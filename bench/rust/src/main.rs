@@ -65,4 +65,26 @@ fn main() {
     let b: [F; 8] = core::array::from_fn(|i| F::from_u32(100 + i as u32));
     let out: Vec<u32> = compress.compress([a, b]).iter().map(|x| x.as_canonical_u32()).collect();
     println!("compress iota/100 -> {:?}", out);
+    // Merkle roots of matrices whose entry k is `base + k`.
+    use p3_commit::Mmcs;
+    use p3_field::Field;
+    use p3_matrix::dense::RowMajorMatrix;
+    type P = <F as Field>::Packing;
+    let mmcs = p3_merkle_tree::MerkleTreeMmcs::<P, P, _, _, 8>::new(hash, compress);
+    let mat = |base: u32, height: usize, width: usize| {
+        RowMajorMatrix::new((0..(height * width) as u32).map(|k| F::from_u32(base + k)).collect(), width)
+    };
+    let cases: Vec<(&str, Vec<(u32, usize, usize)>)> = vec![
+        ("single 8x3", vec![(0, 8, 3)]),
+        ("single 5x2", vec![(0, 5, 2)]),
+        ("single 1x10", vec![(0, 1, 10)]),
+        ("multi", vec![(0, 4, 5), (1000, 8, 3), (2000, 2, 1), (3000, 1, 7), (4000, 8, 2)]),
+        ("odd multi", vec![(0, 6, 3), (500, 3, 2)]),
+    ];
+    for (name, specs) in cases {
+        let ms: Vec<_> = specs.iter().map(|&(b, h, w)| mat(b, h, w)).collect();
+        let (root, _) = mmcs.commit(ms);
+        let root: Vec<u32> = root.into_iter().map(|x: F| x.as_canonical_u32()).collect();
+        println!("merkle {name} -> {:?}", root);
+    }
 }
