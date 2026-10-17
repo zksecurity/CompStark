@@ -11,6 +11,17 @@ require CompPoly from git "https://github.com/mitschabaude-bot/CompPoly.git" @ "
 
 @[default_target]
 lean_lib CompStark where
+  platformIndependent := true
+
+/-- CPU-targeted packed kernels; the proof artifacts remain platform independent. -/
+lean_lib CompStarkPackedNative where
+  roots := #[`CompStark.Poseidon2.Packed]
+  platformIndependent := true
+  moreLeancArgs := #["-march=native", "-mstackrealign"]
 
 lean_lib CompStarkTests where
   srcDir := "tests"
+
+lean_exe CompStarkBench where
+  srcDir := "bench"
+  moreLeancArgs := #["-march=native"]
