@@ -1,0 +1,15 @@
+[package]
+name = "compstark-bench"
+version = "0.1.0"
+edition = "2021"
+publish = false
+
+[dependencies]
+p3-field = "=0.4.2"
+p3-koala-bear = "=0.4.2"
+p3-poseidon2 = "=0.4.2"
+p3-symmetric = "=0.4.2"
+
+[profile.release]
+lto = true
+codegen-units = 1
