@@ -49,7 +49,7 @@ variable [CommRing F] {t : Nat}
 /-- The `4 × 4` MDS matrix `[[2, 3, 1, 1], [1, 2, 3, 1], [1, 1, 2, 3], [3, 1, 1, 2]]`, applied to
 coordinates `4 b, …, 4 b + 3`; `i` selects the output row. -/
 def mat4 (s : Vector F t) (b i : Nat) : F :=
-  let x (j : Nat) : F := s.getD (4 * b + j) 0
+  let x (j : Nat) : F := s[4 * b + j]?.getD 0
   match i with
   | 0 => 2 * x 0 + 3 * x 1 + x 2 + x 3
   | 1 => x 0 + 2 * x 1 + 3 * x 2 + x 3
