@@ -131,23 +131,36 @@ meta def sbox (t L : Nat) : MacroM Term := do
   bs := bs ++ (← store t L "y")
   lets bs (← `($(name "st").1))
 
-/-- `V_j · x + sum` for the width-16 diagonal
-`V = [-2, 1, 2, 1/2, 3, 4, -1/2, -3, -4, 1/2^8, 1/8, 1/2^24, -1/2^8, -1/8, -1/16, -1/2^24]`:
-small multiples and halves as additions, subtractions and halving, the rest as products with the
-diagonal word `d{j}`. -/
-meta def diagonal (j : Nat) (z : Ident) (x acc : Term) : MacroM (Array (Ident × Term)) := do
-  let t (s : String) : Ident := name s!"{z.getId}_{s}"
+/-- `V_j · x + sum` for the width-`t` diagonal `V` of KoalaBear's Poseidon2, which starts
+`[-2, 1, 2, 1/2, 3, 4, -1/2, -3, -4]` and continues with `±1/2^k`: small multiples and halves as
+additions, subtractions and halving, `±1/2^k` with `mulInvPow2`. -/
+meta def diagonal (t j : Nat) (z : Ident) (x acc : Term) : MacroM (Array (Ident × Term)) := do
+  let tmp (s : String) : Ident := name s!"{z.getId}_{s}"
   match j with
-  | 0 => return #[(t "2", ← add x x), (z, ← sub acc (t "2"))]
+  | 0 => return #[(tmp "2", ← add x x), (z, ← sub acc (tmp "2"))]
   | 1 => return #[(z, ← add acc x)]
-  | 2 => return #[(t "2", ← add x x), (z, ← add acc (t "2"))]
-  | 3 => return #[(t "h", ← halve x), (z, ← add acc (t "h"))]
-  | 4 => return #[(t "2", ← add x x), (t "3", ← add (t "2") x), (z, ← add acc (t "3"))]
-  | 5 => return #[(t "2", ← add x x), (t "4", ← add (t "2") (t "2")), (z, ← add acc (t "4"))]
-  | 6 => return #[(t "h", ← halve x), (z, ← sub acc (t "h"))]
-  | 7 => return #[(t "2", ← add x x), (t "3", ← add (t "2") x), (z, ← sub acc (t "3"))]
-  | 8 => return #[(t "2", ← add x x), (t "4", ← add (t "2") (t "2")), (z, ← sub acc (t "4"))]
-  | _ => return #[(z, ← add (← mul (name s!"d{j}") x) acc)]
+  | 2 => return #[(tmp "2", ← add x x), (z, ← add acc (tmp "2"))]
+  | 3 => return #[(tmp "h", ← halve x), (z, ← add acc (tmp "h"))]
+  | 4 => return #[(tmp "2", ← add x x), (tmp "3", ← add (tmp "2") x), (z, ← add acc (tmp "3"))]
+  | 5 =>
+    return #[(tmp "2", ← add x x), (tmp "4", ← add (tmp "2") (tmp "2")),
+      (z, ← add acc (tmp "4"))]
+  | 6 => return #[(tmp "h", ← halve x), (z, ← sub acc (tmp "h"))]
+  | 7 => return #[(tmp "2", ← add x x), (tmp "3", ← add (tmp "2") x), (z, ← sub acc (tmp "3"))]
+  | 8 =>
+    return #[(tmp "2", ← add x x), (tmp "4", ← add (tmp "2") (tmp "2")),
+      (z, ← sub acc (tmp "4"))]
+  | _ =>
+    -- `±2 ^ (-k)`: the exponent `k`, negative entries marked by `true`.
+    let pow2 : List (Nat × Bool) := if t == 16 then
+        [(8, false), (3, false), (24, false), (8, true), (3, true), (4, true), (24, true)]
+      else [(8, false), (2, false), (3, false), (4, false), (5, false), (6, false), (24, false),
+        (8, true), (3, true), (4, true), (5, true), (6, true), (7, true), (9, true), (24, true)]
+    match pow2[j - 9]? with
+    | some (k, neg) =>
+      let s ← `($(name "mulInvPow2") $(lit k) $x)
+      return #[(tmp "s", s), (z, ← (if neg then sub else add) acc (tmp "s"))]
+    | none => return #[(z, ← add (← mul (name s!"d{j}") x) acc)]
 
 /-- A partial round with constant `c` and the internal diagonal `d`. -/
 meta def partialRound (t L : Nat) : MacroM Term := do
@@ -166,10 +179,35 @@ meta def partialRound (t L : Nat) : MacroM Term := do
     let ys : Array Term :=
       #[v "y" 0 l] ++ (Array.range (t - 1)).map fun j ↦ (v "x" (j + 1) l : Term)
     for j in [0:t] do
-      bs := bs ++ (← diagonal j (v "z" j l) ys[j]! acc)
+      bs := bs ++ (← diagonal t j (v "z" j l) ys[j]! acc)
     return bs)
   bs := bs ++ (← store t L "z")
   lets bs (← `($(name "st").1))
+
+/-- Coordinates `0, …, 15` of the eight lanes of a width-`t` group from eight source lines of
+sixteen words: word `j` of line `q{l}` of `m` becomes coordinate `j` of lane `l`. -/
+meta def load16 (t : Nat) : MacroM Term := do
+  let mut bs := #[]
+  for j in [0:16] do
+    for l in [0:8] do
+      bs := bs.push (v "x" j l, ← read (name "m") (name s!"q{l}") (name s!"h{l}") j)
+  bs := bs ++ (← store t 8 "x").extract 0 17
+  lets bs (← `($(name "st").1))
+
+/-- Coordinates `0, …, 7` of the eight lanes of the group at `i` of `st`, stored as eight
+contiguous digests: lane `l` at word `p{l}` of `out`. -/
+meta def store8x8 : MacroM Term := do
+  let mut bs := #[]
+  for j in [0:8] do
+    for l in [0:8] do
+      bs := bs.push (v "x" j l, ← read (name "st") (name "i") (name "hb") (8 * j + l))
+  bs := bs.push (name "o",
+    ← `((⟨$(name "out"), rfl⟩ : { x : ByteArray // x.size = $(name "out").size })))
+  for l in [0:8] do
+    let vs := (Array.range 8).map fun j ↦ (v "x" j l : Term)
+    bs := bs.push (name "o", ← `($(name "store8") $(name "o") $(name s!"p{l}") 0 $vs*
+      ($(name "storeAt") $(name s!"g{l}"))))
+  lets bs (← `($(name "o").1))
 
 end CompStark.Poseidon2.Unrolled
 
@@ -188,3 +226,11 @@ macro "p2_mat4%" t:num L:num : term => mat4Blocks t.getNat L.getNat
 open CompStark.Poseidon2.Unrolled in
 /-- The body of the block-sum mixing of the external matrix. -/
 macro "p2_mix%" t:num L:num : term => mixBlocks t.getNat L.getNat
+
+open CompStark.Poseidon2.Unrolled in
+/-- The body of a transposing load of eight lines into a width-`t` group. -/
+macro "p2_load16%" t:num : term => load16 t.getNat
+
+open CompStark.Poseidon2.Unrolled in
+/-- The body of a transposing store of eight digests from a group. -/
+macro "p2_store8x8%" : term => store8x8

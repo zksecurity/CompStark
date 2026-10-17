@@ -11,11 +11,30 @@ import CompStark.Merkle.Tree
 
 open CompStark.Poseidon2
 
-def timeNs (f : Unit → IO UInt64) : IO (Nat × UInt64) := do
+def timeNs {α : Type} (f : Unit → IO α) : IO (Nat × α) := do
   let t0 ← IO.monoNanosNow
   let r ← f ()
   let t1 ← IO.monoNanosNow
   return (t1 - t0, r)
+
+/-- Median nanoseconds of `samples` calls of `f` on inputs `0, 1, …`, after 200 ms of warmup:
+idle cores take a few hundred milliseconds to reach full clock. -/
+def timeMedian (samples : Nat) (f : Nat → UInt64) : IO Nat := do
+  let t0 ← IO.monoNanosNow
+  let mut k := 0
+  let mut sink : UInt64 := 0
+  while (← IO.monoNanosNow) - t0 < 200000000 do
+    sink := sink + f k
+    k := k + 1
+  let mut out := #[]
+  for _ in [0:samples] do
+    let t ← IO.monoNanosNow
+    sink := sink + f k
+    let t' ← IO.monoNanosNow
+    out := out.push (t' - t)
+    k := k + 1
+  if sink == 12345 then IO.println ""
+  return (out.qsort (· < ·))[samples / 2]!
 
 def main (args : List String) : IO UInt32 := do
   match args with
@@ -93,14 +112,58 @@ def main (args : List String) : IO UInt32 := do
     let canon := (List.range 8).map fun j ↦
       (KoalaBear.Fast.ringEquiv (CompPoly.CPolynomial.NTTFast.Packed.ofWord (CompPoly.CPolynomial.NTTFast.Packed.Native.read rootWords j))).val
     IO.println s!"root {canon}"
+    let m ← timeMedian 15 fun k ↦
+      let input := chunks.modify 0 fun c ↦ CompPoly.CPolynomial.NTTFast.Packed.Native.write c 0 k.toUInt32
+      (CompPoly.CPolynomial.NTTFast.Packed.Native.read (CompStark.Merkle.Packed.root K24 K16 w input) 0).toUInt64
+    IO.println s!"merkle 2^{logH} x {w} ms median {m / 1000000}.{m / 1000 % 1000}"
+    return 0
+  | ["leaves", rowsArg, widthArg] =>
+    let rows := rowsArg.toNat!
+    let w := widthArg.toNat!
+    let K24 := Packed.Packed24.ofParams (KoalaBear.width24 KoalaBear.Fast.Field)
+    let m := CompPoly.CPolynomial.NTTFast.Packed.Native.encodeFields
+      (Array.ofFn (n := rows * w) fun k ↦ KoalaBear.Fast.ofUInt32 k.val.toUInt32)
+    let mut samples := #[]
+    for k in [0:7] do
+      let input := CompPoly.CPolynomial.NTTFast.Packed.Native.write m 0 k.toUInt32
+      let (ns, r) ← timeNs fun _ ↦ do
+        return (CompPoly.CPolynomial.NTTFast.Packed.Native.read
+          (CompStark.Merkle.Packed.hashChunk K24 input w rows) 0).toUInt64
+      samples := samples.push ns
+      if r == 12345 then IO.println ""
+    let med := (samples.qsort (· < ·))[3]!
+    IO.println s!"leaves {rows} x {w}: {med / 1000} us, {med / rows} ns/row"
+    return 0
+  | ["leavespar", rowsArg, widthArg, chunksArg] =>
+    let rows := rowsArg.toNat!
+    let w := widthArg.toNat!
+    let C := chunksArg.toNat!
+    let K24 := Packed.Packed24.ofParams (KoalaBear.width24 KoalaBear.Fast.Field)
+    let chunks := (Array.range C).map fun c ↦ CompPoly.CPolynomial.NTTFast.Packed.Native.encodeFields
+      (Array.ofFn (n := rows / C * w) fun k ↦ KoalaBear.Fast.ofUInt32 (k.val + c).toUInt32)
     let mut samples := #[]
     for k in [0:7] do
       let input := chunks.modify 0 fun c ↦ CompPoly.CPolynomial.NTTFast.Packed.Native.write c 0 k.toUInt32
       let (ns, r) ← timeNs fun _ ↦ do
-        return (CompPoly.CPolynomial.NTTFast.Packed.Native.read (CompStark.Merkle.Packed.root K24 K16 w input) 0).toUInt64
+        let ts := input.map fun c ↦ Task.spawn fun _ ↦
+          CompStark.Merkle.Packed.hashChunk K24 c w (rows / C)
+        let j := CompPoly.Tasks.join ts
+        return j.get.foldl (fun acc t ↦ acc + (CompPoly.CPolynomial.NTTFast.Packed.Native.read t 0).toUInt64) 0
       samples := samples.push ns
       if r == 12345 then IO.println ""
-    let m := (samples.qsort (· < ·))[3]!
-    IO.println s!"merkle 2^{logH} x {w} ms median {m / 1000000}.{m / 1000 % 1000}"
+    let med := (samples.qsort (· < ·))[3]!
+    IO.println s!"leavespar {rows} x {w} in {C} chunks: {med / 1000} us"
+    return 0
+  | ["perm24", logN] =>
+    let groups := 2 ^ logN.toNat! / 8
+    let K := Packed.Packed24.ofParams (KoalaBear.width24 KoalaBear.Fast.Field)
+    let buf := CompPoly.CPolynomial.NTTFast.Packed.Native.encodeFields
+      (Array.ofFn (n := 192 * groups) fun k ↦ KoalaBear.Fast.ofUInt32 k.val.toUInt32)
+    let m ← timeMedian 15 fun k ↦ Id.run do
+      let mut b := CompPoly.CPolynomial.NTTFast.Packed.Native.write buf 0 k.toUInt32
+      for g in [0:groups] do
+        b := Packed.permute24 K b (192 * g).toUSize
+      return (CompPoly.CPolynomial.NTTFast.Packed.Native.read b 0).toUInt64
+    IO.println s!"perm24 ns/perm {m * 10 / (8 * groups) / 10}.{m * 10 / (8 * groups) % 10}"
     return 0
   | _ => IO.eprintln "usage: CompStarkBench poseidon2-spec LOG_N"; return 1

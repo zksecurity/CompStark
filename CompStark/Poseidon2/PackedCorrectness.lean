@@ -122,9 +122,9 @@ def rowSum (c : F) (W : Array F) (i l : Nat) : F :=
     word W i 5 l + word W i 6 l + word W i 7 l + word W i 8 l + word W i 9 l + word W i 10 l +
     word W i 11 l + word W i 12 l + word W i 13 l + word W i 14 l + word W i 15 l
 
-/-- The rows of a partial round: `V_j · x + sum` for the width-16 diagonal `V`, small multiples
-and halves as `partial16` computes them, the rest as products with the diagonal `D`. -/
-def partialRows (c : F) (D W : Array F) (i : Nat) : List (Nat → F) :=
+/-- The rows of a partial round: `V_j · x + sum` for the width-16 diagonal `V`, as `partial16`
+computes them. -/
+def partialRows (c : F) (W : Array F) (i : Nat) : List (Nat → F) :=
   let x (j l : Nat) := word W i j l
   let s (l : Nat) := rowSum c W i l
   [fun l ↦ s l - (cubeAdd c (x 0 l) + cubeAdd c (x 0 l)),
@@ -136,17 +136,17 @@ def partialRows (c : F) (D W : Array F) (i : Nat) : List (Nat → F) :=
    fun l ↦ s l - x 6 l * half,
    fun l ↦ s l - (x 7 l + x 7 l + x 7 l),
    fun l ↦ s l - (x 8 l + x 8 l + (x 8 l + x 8 l)),
-   fun l ↦ D.getD 9 0 * x 9 l + s l,
-   fun l ↦ D.getD 10 0 * x 10 l + s l,
-   fun l ↦ D.getD 11 0 * x 11 l + s l,
-   fun l ↦ D.getD 12 0 * x 12 l + s l,
-   fun l ↦ D.getD 13 0 * x 13 l + s l,
-   fun l ↦ D.getD 14 0 * x 14 l + s l,
-   fun l ↦ D.getD 15 0 * x 15 l + s l]
+   fun l ↦ s l + x 9 l * invPow2 8,
+   fun l ↦ s l + x 10 l * invPow2 3,
+   fun l ↦ s l + x 11 l * invPow2 24,
+   fun l ↦ s l - x 12 l * invPow2 8,
+   fun l ↦ s l - x 13 l * invPow2 3,
+   fun l ↦ s l - x 14 l * invPow2 4,
+   fun l ↦ s l - x 15 l * invPow2 24]
 
 /-- The field-array model of `partial16`. -/
-def partialModel (c : F) (D W : Array F) (i : Nat) : Array F :=
-  spliceList W i (partialRows c D W i)
+def partialModel (c : F) (W : Array F) (i : Nat) : Array F :=
+  spliceList W i (partialRows c W i)
 
 set_option maxRecDepth 65536 in
 set_option maxHeartbeats 4000000 in
@@ -188,11 +188,12 @@ theorem mix16_encode (W : Array F) (i : USize) (hb) :
 set_option maxRecDepth 65536 in
 set_option maxHeartbeats 4000000 in
 theorem partial16_encode (c : F) (D W : Array F) (i : USize) (hb) (hd) :
-    partial16 c.val (encode D) (encode W) i hb hd = encode (partialModel c D W i.toNat) := by
+    partial16 c.val (encode D) (encode W) i hb hd = encode (partialModel c W i.toNat) := by
   have hs := hb
   simp only [GroupFits, Fits, size_encode_fields] at hs
   unfold partial16
-  simp only [readUOffset_encode, add_val, sub_val, mul_val, halve_val, USize.reduceToNat]
+  simp (disch := decide) only [readUOffset_encode, add_val, sub_val, mul_val, halve_val,
+    mulInvPow2_val, USize.reduceToNat, UInt32.reduceToNat]
   simp (disch := (simp only [USize.reduceToNat, size_encode_fields]; omega)) only [store8_encode']
   simp only [USize.reduceToNat, partialModel, partialRows, spliceList, rowSum, cubeAdd, word,
     coords, lit8, List.zip_cons_cons, List.zip_nil_right, List.foldl_cons, List.foldl_nil,
@@ -264,8 +265,8 @@ theorem getD_spliceRows_outside (W : Array F) (i : Nat) (g : Nat → Nat → F)
   (foldl_splice_rows g i coords coords_lt W hW).2.2 k hk
 
 /-- The partial-round model is a row splice of its rows. -/
-theorem partialModel_eq (c : F) (D W : Array F) (i : Nat) :
-    partialModel c D W i = spliceRows W i fun j ↦ (partialRows c D W i).getD j fun _ ↦ 0 := by
+theorem partialModel_eq (c : F) (W : Array F) (i : Nat) :
+    partialModel c W i = spliceRows W i fun j ↦ (partialRows c W i).getD j fun _ ↦ 0 := by
   simp only [partialModel, spliceList, spliceRows, partialRows, coords, List.zip_cons_cons,
     List.zip_nil_right, List.foldl_cons, List.foldl_nil, List.getD_cons_zero,
     List.getD_cons_succ]
@@ -336,18 +337,16 @@ theorem sum16 (g : Nat → F) : ∑ j : Fin 16, g j.val = g 0 + g 1 + g 2 + g 3 
 theorem lane_partial (P : Params F 16) (hd : P.degree = 3)
     (hD : P.diagonal = KoalaBear.diagonal16 F) (c : F) (W : Array F) (i : Nat)
     (hW : i + 128 ≤ W.size) (l : Nat) (hl : l < 8) :
-    lane (partialModel c P.diagonal.toArray W i) i l = partialRound P (lane W i l) c := by
+    lane (partialModel c W i) i l = partialRound P (lane W i l) c := by
   rw [partialModel_eq, lane_spliceRows _ _ _ hW l hl]
   ext j hj
   simp only [Vector.getElem_ofFn, Fin.getElem_fin, partialRound, internalLinear, hd, hD, lane,
     Fin.sum_univ_succ, Fin.sum_univ_zero, Fin.val_zero, Fin.val_succ, Nat.reduceAdd, ↓reduceIte,
     Nat.add_one_ne_zero, add_zero]
   interval_cases j <;>
-    simp only [partialRows, List.getD_cons_zero, List.getD_cons_succ, rowSum, cubeAdd, half,
+    simp only [partialRows, List.getD_cons_zero, List.getD_cons_succ, rowSum, cubeAdd, half, invPow2,
       KoalaBear.diagonal16, Vector.getElem_mk, List.getElem_toArray, List.getElem_cons_zero,
-      List.getElem_cons_succ, Vector.toArray_mk, Array.getD_eq_getD_getElem?, List.getElem?_toArray,
-      List.getElem?_cons_zero, List.getElem?_cons_succ, Option.getD_some, ↓reduceIte,
-      Nat.reduceEqDiff] <;> ring
+      List.getElem_cons_succ, Array.getD_eq_getD_getElem?, ↓reduceIte, Nat.reduceEqDiff] <;> ring
 
 /-! ### The round loops -/
 
@@ -448,7 +447,7 @@ theorem partialRounds_holds (P : Params F 16) (hd : P.degree = 3)
       have := USize.le_size
       omega
     have hp : Holds W0 i.toNat (fun l ↦ partialRound P (S l) c)
-        (partialModel c P.diagonal.toArray W i.toNat) := by
+        (partialModel c W i.toNat) := by
       rw [partialModel_eq]
       refine ⟨by rw [size_spliceRows _ _ _ hW, h.1], fun l hl ↦ ?_, fun k hk ↦ by
         rw [getD_spliceRows_outside _ _ _ hW k hk, h.2.2 k hk]⟩

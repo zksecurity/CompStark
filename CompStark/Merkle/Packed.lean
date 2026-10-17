@@ -6,6 +6,7 @@ module
 
 public import CompStark.Poseidon2.Packed24
 public import CompPoly.Data.Tasks
+import CompStark.Poseidon2.Unrolled
 
 /-! # Packed Merkle commitments
 
@@ -25,53 +26,129 @@ coset LDE returns them; tasks hash the chunks, and the larger layers in ranges.
 @[expose] public section
 namespace CompStark.Merkle.Packed
 open CompStark.Poseidon2.Packed
-open CompPoly.CPolynomial.NTTFast.Packed.Native (read write zeroWords)
+open CompPoly.CPolynomial.NTTFast.Packed.Native (read write zeroWords readUOffset putWords
+  size_putWords wordOffset_toNat)
 
-/-- The digests of the eight rows `r0, …, r0 + 7` of the row-major words `m` of width `w`,
-rows past `rows` reading as zeros. -/
-def hashRows8 (K : @& Packed24) (m : @& ByteArray) (w rows r0 : Nat) : ByteArray := Id.run do
+/-- Eight words stored at word `p`, as a `store8` at offset `0`. -/
+theorem storeAt {b : ByteArray} {p : USize} (h : Fits b p 7) :
+    ((p + 0) * 4).toNat + 4 * 8 ≤ b.size ∧ ((p + 0) * 4).toNat + 4 * 8 < USize.size := by
+  rw [wordOffset_toNat _ _ (by simp only [USize.reduceToNat]; omega)]
+  simp only [USize.reduceToNat]
+  omega
+
+set_option maxRecDepth 16384 in
+/-- Lines `q0, …, q7` of sixteen words of `m` into coordinates `0, …, 15` of the width-24 group
+at `i`. -/
+@[noinline] def load16x24 (m : @& ByteArray) (q0 q1 q2 q3 q4 q5 q6 q7 : USize) (b : ByteArray)
+    (i : USize) (h0 : Fits m q0 15) (h1 : Fits m q1 15) (h2 : Fits m q2 15) (h3 : Fits m q3 15)
+    (h4 : Fits m q4 15) (h5 : Fits m q5 15) (h6 : Fits m q6 15) (h7 : Fits m q7 15)
+    (hb : GroupFits24 b i) : ByteArray :=
+  p2_load16% 24
+
+set_option maxRecDepth 16384 in
+/-- Lines `q0, …, q7` of sixteen words of `m` into coordinates `0, …, 15` of the width-16 group
+at `i`. -/
+@[noinline] def load16x16 (m : @& ByteArray) (q0 q1 q2 q3 q4 q5 q6 q7 : USize) (b : ByteArray)
+    (i : USize) (h0 : Fits m q0 15) (h1 : Fits m q1 15) (h2 : Fits m q2 15) (h3 : Fits m q3 15)
+    (h4 : Fits m q4 15) (h5 : Fits m q5 15) (h6 : Fits m q6 15) (h7 : Fits m q7 15)
+    (hb : GroupFits b i) : ByteArray :=
+  p2_load16% 16
+
+set_option maxRecDepth 16384 in
+/-- Coordinates `0, …, 7` of the eight lanes of the group at `i`, as digests at words
+`p0, …, p7` of `out`. -/
+@[noinline] def store8x8 (st : @& ByteArray) (i : USize) (out : ByteArray)
+    (p0 p1 p2 p3 p4 p5 p6 p7 : USize) (hb : Fits st i 63) (g0 : Fits out p0 7)
+    (g1 : Fits out p1 7) (g2 : Fits out p2 7) (g3 : Fits out p3 7) (g4 : Fits out p4 7)
+    (g5 : Fits out p5 7) (g6 : Fits out p6 7) (g7 : Fits out p7 7) : ByteArray :=
+  p2_store8x8%
+
+/-- Words `q l, …, q l + 15`, `l < 8`, of `m` into coordinates `0, …, 15` of the width-24 group
+at word `0` of `st`, if they fit. -/
+def loadLines24 (m : @& ByteArray) (q : Nat → Nat) (st : ByteArray) : ByteArray :=
+  let u (l : Nat) : USize := (q l).toUSize
+  if h : Fits m (u 0) 15 ∧ Fits m (u 1) 15 ∧ Fits m (u 2) 15 ∧ Fits m (u 3) 15 ∧
+      Fits m (u 4) 15 ∧ Fits m (u 5) 15 ∧ Fits m (u 6) 15 ∧ Fits m (u 7) 15 ∧ GroupFits24 st 0 then
+    load16x24 m (u 0) (u 1) (u 2) (u 3) (u 4) (u 5) (u 6) (u 7) st 0 h.1 h.2.1 h.2.2.1
+      h.2.2.2.1 h.2.2.2.2.1 h.2.2.2.2.2.1 h.2.2.2.2.2.2.1 h.2.2.2.2.2.2.2.1 h.2.2.2.2.2.2.2.2
+  else st
+
+/-- Words `q l, …, q l + 15`, `l < 8`, of `m` into coordinates `0, …, 15` of the width-16 group
+at word `0` of `st`, if they fit. -/
+def loadLines16 (m : @& ByteArray) (q : Nat → Nat) (st : ByteArray) : ByteArray :=
+  let u (l : Nat) : USize := (q l).toUSize
+  if h : Fits m (u 0) 15 ∧ Fits m (u 1) 15 ∧ Fits m (u 2) 15 ∧ Fits m (u 3) 15 ∧
+      Fits m (u 4) 15 ∧ Fits m (u 5) 15 ∧ Fits m (u 6) 15 ∧ Fits m (u 7) 15 ∧ GroupFits st 0 then
+    load16x16 m (u 0) (u 1) (u 2) (u 3) (u 4) (u 5) (u 6) (u 7) st 0 h.1 h.2.1 h.2.2.1
+      h.2.2.2.1 h.2.2.2.2.1 h.2.2.2.2.2.1 h.2.2.2.2.2.2.1 h.2.2.2.2.2.2.2.1 h.2.2.2.2.2.2.2.2
+  else st
+
+/-- The digests in coordinates `0, …, 7` of the eight lanes of `st` as digests `d, …, d + 7`
+of `out`, if they fit. -/
+def storeDigests (st : @& ByteArray) (out : ByteArray) (d : Nat) : ByteArray :=
+  let u (l : Nat) : USize := (8 * (d + l)).toUSize
+  if h : Fits st 0 63 ∧ Fits out (u 0) 7 ∧ Fits out (u 1) 7 ∧ Fits out (u 2) 7 ∧
+      Fits out (u 3) 7 ∧ Fits out (u 4) 7 ∧ Fits out (u 5) 7 ∧ Fits out (u 6) 7 ∧
+      Fits out (u 7) 7 then
+    store8x8 st 0 out (u 0) (u 1) (u 2) (u 3) (u 4) (u 5) (u 6) (u 7) h.1 h.2.1 h.2.2.1
+      h.2.2.2.1 h.2.2.2.2.1 h.2.2.2.2.2.1 h.2.2.2.2.2.2.1 h.2.2.2.2.2.2.2.1 h.2.2.2.2.2.2.2.2
+  else out
+
+/-- The digests of the eight rows `r0, …, r0 + 7` of the row-major words `m` of width `w`, as
+digests `r0, …, r0 + 7` of `out`; rows past `rows` read as zeros and are not stored. -/
+def hashRows8 (K : @& Packed24) (m : @& ByteArray) (w rows r0 : Nat) (out : ByteArray) :
+    ByteArray := Id.run do
+  let full := r0 + 8 ≤ rows
   let mut st := zeroWords 192
   for blk in [:(w + 15) / 16] do
     let cnt := min 16 (w - 16 * blk)
-    for l in [:8] do
-      if r0 + l < rows then
-        for j in [:cnt] do
-          st := write st (8 * j + l) (read m ((r0 + l) * w + 16 * blk + j))
+    if full ∧ cnt = 16 then
+      st := loadLines24 m (fun l ↦ (r0 + l) * w + 16 * blk) st
+    else
+      for l in [:8] do
+        if r0 + l < rows then
+          for j in [:cnt] do
+            st := write st (8 * j + l) (read m ((r0 + l) * w + 16 * blk + j))
     st := permute24 K st 0
-  let mut out := zeroWords 64
+  if full then return storeDigests st out r0
+  let mut out := out
   for l in [:8] do
-    for j in [:8] do
-      out := write out (8 * l + j) (read st (8 * j + l))
+    if r0 + l < rows then
+      for j in [:8] do
+        out := write out (8 * (r0 + l) + j) (read st (8 * j + l))
   return out
 
 /-- The leaf digests of a chunk of `rows` rows of width `w`. -/
 def hashChunk (K : @& Packed24) (m : @& ByteArray) (w rows : Nat) : ByteArray :=
-  (List.range ((rows + 7) / 8)).foldl (fun acc g ↦
-    let d := hashRows8 K m w rows (8 * g)
-    acc ++ d.extract 0 (4 * 8 * min 8 (rows - 8 * g)))
-    (ByteArray.emptyWithCapacity (32 * rows))
+  (List.range ((rows + 7) / 8)).foldl (fun out g ↦ hashRows8 K m w rows (8 * g) out)
+    (zeroWords (8 * rows))
 
-/-- Parents `o, …, o + 7` of the layer `prev` of `n` digests; pairs past `n / 2` read zeros. -/
-def compress8 (K : @& Packed16) (prev : @& ByteArray) (n o : Nat) : ByteArray := Id.run do
+/-- Parents `o, …, o + 7` of the layer `prev` of `n` digests as digests `o - o0, …` of `out`;
+pairs past `n / 2` read zeros and parents past `o0 + count` are not stored. -/
+def compress8 (K : @& Packed16) (prev : @& ByteArray) (n o o0 count : Nat) (out : ByteArray) :
+    ByteArray := Id.run do
+  let full := o + 8 ≤ o0 + count ∧ o + 8 ≤ n / 2
   let mut st := zeroWords 128
-  for l in [:8] do
-    if o + l < n / 2 then
-      for j in [:8] do
-        st := write st (8 * j + l) (read prev (8 * (2 * (o + l)) + j))
-        st := write st (8 * (8 + j) + l) (read prev (8 * (2 * (o + l) + 1) + j))
+  if full then
+    st := loadLines16 prev (fun l ↦ 16 * (o + l)) st
+  else
+    for l in [:8] do
+      if o + l < n / 2 then
+        for j in [:16] do
+          st := write st (8 * j + l) (read prev (16 * (o + l) + j))
   st := permute16 K st 0
-  let mut out := zeroWords 64
+  if full then return storeDigests st out (o - o0)
+  let mut out := out
   for l in [:8] do
-    for j in [:8] do
-      out := write out (8 * l + j) (read st (8 * j + l))
+    if o + l < o0 + count then
+      for j in [:8] do
+        out := write out (8 * (o + l - o0) + j) (read st (8 * j + l))
   return out
 
-/-- Parents `o, …, o + count - 1` of the layer `prev` of `n` digests. -/
-def compressRange (K : @& Packed16) (prev : @& ByteArray) (n o count : Nat) : ByteArray :=
-  (List.range ((count + 7) / 8)).foldl (fun acc g ↦
-    let d := compress8 K prev n (o + 8 * g)
-    acc ++ d.extract 0 (4 * 8 * min 8 (count - 8 * g)))
-    (ByteArray.emptyWithCapacity (32 * count))
+/-- Parents `o0, …, o0 + count - 1` of the layer `prev` of `n` digests. -/
+def compressRange (K : @& Packed16) (prev : @& ByteArray) (n o0 count : Nat) : ByteArray :=
+  (List.range ((count + 7) / 8)).foldl (fun out g ↦ compress8 K prev n (o0 + 8 * g) o0 count out)
+    (zeroWords (8 * count))
 
 /-- `n` digests padded with zero digests to `padded`. -/
 def padDigests (d : ByteArray) (n padded : Nat) : ByteArray :=
@@ -82,23 +159,32 @@ large layers are compressed by parallel range tasks. -/
 def nextLayer (K : Packed16) (prev : ByteArray) (n : Nat) : ByteArray × Nat :=
   let half := n / 2
   let padded := if n = 2 then 1 else (half + 1) / 2 * 2
-  let parts := if half < 4096 then 1 else 16
+  let parts := if half < 64 then 1 else min 16 (half / 32)
   let size := (half + parts - 1) / parts
   let tasks := CompPoly.Tasks.spawnAll parts fun k ↦
     compressRange K prev n (k * size) (min size (half - min half (k * size)))
   let out := tasks.foldl (fun acc t ↦ acc ++ t.get) (ByteArray.emptyWithCapacity (32 * padded))
   (padDigests out half padded, padded)
 
+/-- The leaf digests of a matrix of width `w` given as `chunks` of rows, hashed by parallel
+tasks, and the number of rows. -/
+@[noinline] def leaves (K24 : Packed24) (w : Nat) (chunks : Array ByteArray) : ByteArray × Nat :=
+  let rowsOf (c : ByteArray) := if w = 0 then 0 else c.size / (4 * w)
+  let tasks := CompPoly.Tasks.join (chunks.map fun c ↦ Task.spawn fun _ ↦
+    hashChunk K24 c w (rowsOf c))
+  let h := chunks.foldl (fun acc c ↦ acc + rowsOf c) 0
+  (tasks.get.foldl (· ++ ·) (ByteArray.emptyWithCapacity (32 * (h + 1))), h)
+
+/-- The root above the first layer of `h` leaf digests. -/
+@[noinline] def rootOfLeaves (K16 : Packed16) (first : ByteArray) (h : Nat) : ByteArray :=
+  let padded := if h = 1 then 1 else h + h % 2
+  ((List.range 64).foldl (fun (acc : ByteArray × Nat) _ ↦
+      if acc.2 ≤ 1 then acc else nextLayer K16 acc.1 acc.2)
+    (padDigests first h padded, padded)).1
+
 /-- The root of the Merkle tree of a single matrix of width `w`, given as `chunks` of rows. -/
 def root (K24 : Packed24) (K16 : Packed16) (w : Nat) (chunks : Array ByteArray) : ByteArray :=
-  let rowsOf (c : ByteArray) := if w = 0 then 0 else c.size / (4 * w)
-  let leaves := CompPoly.Tasks.join (chunks.map fun c ↦ Task.spawn fun _ ↦ hashChunk K24 c w (rowsOf c))
-  let h := chunks.foldl (fun acc c ↦ acc + rowsOf c) 0
-  let first := leaves.get.foldl (· ++ ·) (ByteArray.emptyWithCapacity (32 * (h + 1)))
-  let padded := if h = 1 then 1 else h + h % 2
-  let go := fun (fuel : Nat) (layer : ByteArray) (n : Nat) ↦
-    (List.range fuel).foldl (fun (acc : ByteArray × Nat) _ ↦
-      if acc.2 ≤ 1 then acc else nextLayer K16 acc.1 acc.2) (layer, n)
-  (go 64 (padDigests first h padded) padded).1
+  let (first, h) := leaves K24 w chunks
+  rootOfLeaves K16 first h
 
 end CompStark.Merkle.Packed

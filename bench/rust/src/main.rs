@@ -35,6 +35,16 @@ fn bench(log_n: u32) {
         packed.push(t.elapsed().as_nanos() as f64 / n as f64);
     }
     println!("plonky3 width16 ns/perm scalar {:.1} packed({} lanes) {:.1}", median(scalar), P::WIDTH, median(packed));
+    let perm24 = default_koalabear_poseidon2_24();
+    let mut packed24 = vec![];
+    for _ in 0..7 {
+        let mut s: [P; 24] = core::array::from_fn(|i| P::from(F::from_u32(i as u32)));
+        let t = Instant::now();
+        for _ in 0..n / P::WIDTH { perm24.permute_mut(&mut s); }
+        black_box(s);
+        packed24.push(t.elapsed().as_nanos() as f64 / n as f64);
+    }
+    println!("plonky3 width24 ns/perm packed {:.1}", median(packed24));
 }
 
 /// Plonky3's Poseidon2 Merkle commitment to a `2^log_h × width` matrix with entries `7k + 1`:
@@ -55,8 +65,12 @@ fn merkle(log_h: u32, width: usize) {
     let (root, _) = mmcs.commit(vec![m.clone()]);
     let root: Vec<u32> = root.into_iter().map(|x: F| x.as_canonical_u32()).collect();
     println!("root {:?}", root);
+    let warm = Instant::now();
+    while warm.elapsed().as_millis() < 200 {
+        std::hint::black_box(mmcs.commit(vec![m.clone()]));
+    }
     let mut samples = vec![];
-    for _ in 0..7 {
+    for _ in 0..15 {
         let input = m.clone();
         let t = Instant::now();
         let (root, tree) = mmcs.commit(vec![input]);
@@ -64,7 +78,7 @@ fn merkle(log_h: u32, width: usize) {
         std::hint::black_box((root, tree));
     }
     samples.sort_by(|a, b| a.partial_cmp(b).unwrap());
-    println!("plonky3 merkle 2^{log_h} x {width} ms median {:.3}", samples[3]);
+    println!("plonky3 merkle 2^{log_h} x {width} ms median {:.3}", samples[7]);
 }
 
 fn main() {
