@@ -3,6 +3,7 @@ Copyright (c) 2026 zkSecurity. All rights reserved.
 Released under Apache 2.0 license as described in the file LICENSE.
 -/
 import CompStark.Merkle.Tree
+import CompStark.Merkle.RootCorrectness
 
 /-! # Merkle root known answers
 
@@ -31,5 +32,9 @@ def rootOf (ms : List (Nat × Nat × Nat)) : Vector Nat 8 :=
   #v[1170636731, 1464782430, 93151705, 555063351, 1082903266, 2078379327, 13779068, 1472929077]
 #guard rootOf [(0, 6, 3), (500, 3, 2)] == #v[1638766218, 131982039, 1467186891, 1331228402,
   1237520776, 1318414788, 1465319517, 1282851410]
+
+/-- info: 'CompStark.Merkle.Packed.root_eq' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in
+#print axioms CompStark.Merkle.Packed.root_eq
 
 end CompStarkTests.Merkle

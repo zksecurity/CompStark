@@ -10,6 +10,7 @@ import CompStark.Merkle.Tree
 -/
 
 open CompStark.Poseidon2
+open CompPoly.CPolynomial.NTTFast.Packed.Native (read write encodeFields)
 
 def timeNs {α : Type} (f : Unit → IO α) : IO (Nat × α) := do
   let t0 ← IO.monoNanosNow
@@ -95,39 +96,40 @@ def main (args : List String) : IO UInt32 := do
     let C := chunksArg.toNat!
     let K24 := Packed.Packed24.ofParams (KoalaBear.width24 KoalaBear.Fast.Field)
     let K16 := Packed.Packed16.ofParams (KoalaBear.width16 KoalaBear.Fast.Field)
-    let enc := CompPoly.CPolynomial.NTTFast.Packed.Native.encodeFields
-    let entry (k : Nat) : KoalaBear.Fast.Field := KoalaBear.Fast.ofUInt32 ((7 * k + 1) % 2130706433).toUInt32
+    let enc := encodeFields
+    let entry (k : Nat) : KoalaBear.Fast.Field :=
+      KoalaBear.Fast.ofUInt32 ((7 * k + 1) % 2130706433).toUInt32
     -- Check small shapes against the specification: odd heights, single rows, partial blocks.
     for (sh, sw) in [(1, 1), (2, 3), (5, 16), (8, 17), (13, 40), (64, 10), (33, 7)] do
       let vals := Array.ofFn (n := sh * sw) fun k ↦ entry k.val
       let spec := CompStark.Merkle.KoalaBear.root KoalaBear.Fast.Field [⟨sw, sh, vals⟩]
       let got := CompStark.Merkle.Packed.root K24 K16 sw #[enc vals]
       for j in [0:8] do
-        if CompPoly.CPolynomial.NTTFast.Packed.Native.read got j != (spec.toArray.getD j 0).val then
+        if read got j != (spec.toArray.getD j 0).val then
           IO.eprintln s!"merkle mismatch at {sh} × {sw}, word {j}"; return 1
     let rowsPer := h / C
     let chunks := (Array.range C).map fun c ↦
       enc (Array.ofFn (n := rowsPer * w) fun k ↦ entry (c * rowsPer * w + k.val))
     let rootWords := CompStark.Merkle.Packed.root K24 K16 w chunks
     let canon := (List.range 8).map fun j ↦
-      (KoalaBear.Fast.ringEquiv (CompPoly.CPolynomial.NTTFast.Packed.ofWord (CompPoly.CPolynomial.NTTFast.Packed.Native.read rootWords j))).val
+      (KoalaBear.Fast.ringEquiv (CompPoly.CPolynomial.NTTFast.Packed.ofWord (read rootWords j))).val
     IO.println s!"root {canon}"
     let m ← timeMedian 15 fun k ↦
-      let input := chunks.modify 0 fun c ↦ CompPoly.CPolynomial.NTTFast.Packed.Native.write c 0 k.toUInt32
-      (CompPoly.CPolynomial.NTTFast.Packed.Native.read (CompStark.Merkle.Packed.root K24 K16 w input) 0).toUInt64
+      let input := chunks.modify 0 fun c ↦ write c 0 k.toUInt32
+      (read (CompStark.Merkle.Packed.root K24 K16 w input) 0).toUInt64
     IO.println s!"merkle 2^{logH} x {w} ms median {m / 1000000}.{m / 1000 % 1000}"
     return 0
   | ["leaves", rowsArg, widthArg] =>
     let rows := rowsArg.toNat!
     let w := widthArg.toNat!
     let K24 := Packed.Packed24.ofParams (KoalaBear.width24 KoalaBear.Fast.Field)
-    let m := CompPoly.CPolynomial.NTTFast.Packed.Native.encodeFields
+    let m := encodeFields
       (Array.ofFn (n := rows * w) fun k ↦ KoalaBear.Fast.ofUInt32 k.val.toUInt32)
     let mut samples := #[]
     for k in [0:7] do
-      let input := CompPoly.CPolynomial.NTTFast.Packed.Native.write m 0 k.toUInt32
+      let input := write m 0 k.toUInt32
       let (ns, r) ← timeNs fun _ ↦ do
-        return (CompPoly.CPolynomial.NTTFast.Packed.Native.read
+        return (read
           (CompStark.Merkle.Packed.hashChunk K24 input w rows) 0).toUInt64
       samples := samples.push ns
       if r == 12345 then IO.println ""
@@ -139,16 +141,16 @@ def main (args : List String) : IO UInt32 := do
     let w := widthArg.toNat!
     let C := chunksArg.toNat!
     let K24 := Packed.Packed24.ofParams (KoalaBear.width24 KoalaBear.Fast.Field)
-    let chunks := (Array.range C).map fun c ↦ CompPoly.CPolynomial.NTTFast.Packed.Native.encodeFields
+    let chunks := (Array.range C).map fun c ↦ encodeFields
       (Array.ofFn (n := rows / C * w) fun k ↦ KoalaBear.Fast.ofUInt32 (k.val + c).toUInt32)
     let mut samples := #[]
     for k in [0:7] do
-      let input := chunks.modify 0 fun c ↦ CompPoly.CPolynomial.NTTFast.Packed.Native.write c 0 k.toUInt32
+      let input := chunks.modify 0 fun c ↦ write c 0 k.toUInt32
       let (ns, r) ← timeNs fun _ ↦ do
         let ts := input.map fun c ↦ Task.spawn fun _ ↦
           CompStark.Merkle.Packed.hashChunk K24 c w (rows / C)
         let j := CompPoly.Tasks.join ts
-        return j.get.foldl (fun acc t ↦ acc + (CompPoly.CPolynomial.NTTFast.Packed.Native.read t 0).toUInt64) 0
+        return j.get.foldl (fun acc t ↦ acc + (read t 0).toUInt64) 0
       samples := samples.push ns
       if r == 12345 then IO.println ""
     let med := (samples.qsort (· < ·))[3]!

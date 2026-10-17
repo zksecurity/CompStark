@@ -94,23 +94,37 @@ def storeDigests (st : @& ByteArray) (out : ByteArray) (d : Nat) : ByteArray :=
       h.2.2.2.1 h.2.2.2.2.1 h.2.2.2.2.2.1 h.2.2.2.2.2.2.1 h.2.2.2.2.2.2.2.1 h.2.2.2.2.2.2.2.2
   else out
 
-/-- The digests of the eight rows `r0, …, r0 + 7` of the row-major words `m` of width `w`, as
-digests `r0, …, r0 + 7` of `out`; rows past `rows` read as zeros and are not stored. -/
-def hashRows8 (K : @& Packed24) (m : @& ByteArray) (w rows r0 : Nat) (out : ByteArray) :
+/-- Block `blk` of the rows `r0, …, r0 + 7` of the row-major words `m` of width `w` into
+coordinates `0, …, 15` of the lanes of the group at word `0` of `st`, word by word: column
+`16 blk + j` of row `r0 + l` becomes coordinate `j` of lane `l`, for rows below `rows` and columns
+below `w`. -/
+@[inline] def scatterRows (m : @& ByteArray) (w rows r0 blk : Nat) (st : ByteArray) :
     ByteArray := Id.run do
-  let full := r0 + 8 ≤ rows
-  let mut st := zeroWords 192
-  for blk in [:(w + 15) / 16] do
-    let cnt := min 16 (w - 16 * blk)
-    if full ∧ cnt = 16 then
-      st := loadLines24 m (fun l ↦ (r0 + l) * w + 16 * blk) st
-    else
-      for l in [:8] do
-        if r0 + l < rows then
-          for j in [:cnt] do
-            st := write st (8 * j + l) (read m ((r0 + l) * w + 16 * blk + j))
-    st := permute24 K st 0
-  if full then return storeDigests st out r0
+  let mut st := st
+  for l in [:8] do
+    if r0 + l < rows then
+      for j in [:min 16 (w - 16 * blk)] do
+        st := write st (8 * j + l) (read m ((r0 + l) * w + 16 * blk + j))
+  return st
+
+/-- `scatterRows` into a width-24 group, by the load kernel for full blocks of eight rows. -/
+@[inline] def absorbBlock (m : @& ByteArray) (w rows r0 blk : Nat) (st : ByteArray) :
+    ByteArray :=
+  if r0 + 8 ≤ rows ∧ min 16 (w - 16 * blk) = 16 then
+    loadLines24 m (fun l ↦ (r0 + l) * w + 16 * blk) st
+  else scatterRows m w rows r0 blk st
+
+/-- The width-24 group absorbing the rows `r0, …, r0 + 7` of the row-major words `m` of width
+`w`, one lane per row. -/
+@[inline] def absorbRows (K : @& Packed24) (m : @& ByteArray) (w rows r0 : Nat) : ByteArray :=
+  (List.range ((w + 15) / 16)).foldl (fun st blk ↦
+    permute24 K (absorbBlock m w rows r0 blk st) 0) (zeroWords 192)
+
+/-- The digests in coordinates `0, …, 7` of the lanes of `st` as digests `r0, …, r0 + 7` of
+`out`, for rows below `rows`. -/
+@[inline] def storeRows (st : @& ByteArray) (rows r0 : Nat) (out : ByteArray) : ByteArray :=
+  Id.run do
+  if r0 + 8 ≤ rows then return storeDigests st out r0
   let mut out := out
   for l in [:8] do
     if r0 + l < rows then
@@ -118,32 +132,28 @@ def hashRows8 (K : @& Packed24) (m : @& ByteArray) (w rows r0 : Nat) (out : Byte
         out := write out (8 * (r0 + l) + j) (read st (8 * j + l))
   return out
 
+/-- The digests of the eight rows `r0, …, r0 + 7` of the row-major words `m` of width `w`, as
+digests `r0, …, r0 + 7` of `out`; rows past `rows` read as zeros and are not stored. -/
+def hashRows8 (K : @& Packed24) (m : @& ByteArray) (w rows r0 : Nat) (out : ByteArray) :
+    ByteArray :=
+  storeRows (absorbRows K m w rows r0) rows r0 out
+
 /-- The leaf digests of a chunk of `rows` rows of width `w`. -/
 def hashChunk (K : @& Packed24) (m : @& ByteArray) (w rows : Nat) : ByteArray :=
   (List.range ((rows + 7) / 8)).foldl (fun out g ↦ hashRows8 K m w rows (8 * g) out)
     (zeroWords (8 * rows))
 
+/-- The pairs `o, …, o + 7` of the layer `prev` of `n` digests into the lanes of a width-16
+group; pairs past `n / 2` read zeros. -/
+@[inline] def loadPairs (prev : @& ByteArray) (n o : Nat) : ByteArray :=
+  if o + 8 ≤ n / 2 then loadLines16 prev (fun l ↦ (o + l) * 16 + 16 * 0) (zeroWords 128)
+  else scatterRows prev 16 (n / 2) o 0 (zeroWords 128)
+
 /-- Parents `o, …, o + 7` of the layer `prev` of `n` digests as digests `o - o0, …` of `out`;
-pairs past `n / 2` read zeros and parents past `o0 + count` are not stored. -/
+parents past `o0 + count` are not stored. -/
 def compress8 (K : @& Packed16) (prev : @& ByteArray) (n o o0 count : Nat) (out : ByteArray) :
-    ByteArray := Id.run do
-  let full := o + 8 ≤ o0 + count ∧ o + 8 ≤ n / 2
-  let mut st := zeroWords 128
-  if full then
-    st := loadLines16 prev (fun l ↦ 16 * (o + l)) st
-  else
-    for l in [:8] do
-      if o + l < n / 2 then
-        for j in [:16] do
-          st := write st (8 * j + l) (read prev (16 * (o + l) + j))
-  st := permute16 K st 0
-  if full then return storeDigests st out (o - o0)
-  let mut out := out
-  for l in [:8] do
-    if o + l < o0 + count then
-      for j in [:8] do
-        out := write out (8 * (o + l - o0) + j) (read st (8 * j + l))
-  return out
+    ByteArray :=
+  storeRows (permute16 K (loadPairs prev n o) 0) count (o - o0) out
 
 /-- Parents `o0, …, o0 + count - 1` of the layer `prev` of `n` digests. -/
 def compressRange (K : @& Packed16) (prev : @& ByteArray) (n o0 count : Nat) : ByteArray :=
