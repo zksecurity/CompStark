@@ -39,6 +39,13 @@ theorem storeBounds {b : ByteArray} {i : USize} (h : GroupFits b i) (k : USize)
   rw [wordOffset_toNat _ _ (by omega)]
   omega
 
+/-- Words `i + k, …, i + k + 7` of a buffer of size `n`, overwritten without a branch. -/
+@[inline] def store8 {n : Nat} (st : { x : ByteArray // x.size = n }) (i k : USize)
+    (v0 v1 v2 v3 v4 v5 v6 v7 : UInt32)
+    (h : ((i + k) * 4).toNat + 4 * 8 ≤ n ∧ ((i + k) * 4).toNat + 4 * 8 < USize.size) :
+    { x : ByteArray // x.size = n } :=
+  ⟨putWords st ((i + k) * 4) 8 v0 v1 v2 v3 v4 v5 v6 v7 0 0 0 0 0 0 0 0 h, size_putWords ..⟩
+
 set_option maxRecDepth 16384 in
 set_option maxHeartbeats 4000000 in
 /-- A partial round with constant `c` and internal diagonal `d` on the eight states at `i`. -/

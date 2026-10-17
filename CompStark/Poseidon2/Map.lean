@@ -77,7 +77,8 @@ theorem partialRound_map (P : Params F t) (s : Vector F t) (c : F) :
 theorem permute_map (P : Params F t) (s : Vector F t) :
     (permute P s).map f = permute (P.map f) (s.map f) := by
   have hfull (L : List (Vector F t)) (s : Vector F t) :
-      (L.foldl (fullRound P) s).map f = (L.map (·.map f)).foldl (fullRound (P.map f)) (s.map f) := by
+      (L.foldl (fullRound P) s).map f =
+        (L.map (·.map f)).foldl (fullRound (P.map f)) (s.map f) := by
     induction L generalizing s with
     | nil => rfl
     | cons c L ih => simp only [List.foldl_cons, List.map_cons, ih, fullRound_map]

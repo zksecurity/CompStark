@@ -65,16 +65,15 @@ meta def cube (out a : Ident) : MacroM (Array (Ident × Term)) := do
   return #[(sq, ← mul a a), (out, ← mul sq a)]
 
 /-- Store the `t × L` state `z`, one unchecked eight-word store per coordinate: the state stays
-a `ByteArray` of the size `n` of `b`, so the bounds come from `h` and no store branches. -/
+a `ByteArray` of the size of `b`, so the bounds come from `hb` and no store branches. -/
 meta def store (t L : Nat) (z : String) : MacroM (Array (Ident × Term)) := do
-  let mut bs := #[(name "st", ← `((⟨$(name "b"), rfl⟩ : { x : ByteArray // x.size = $(name "b").size })))]
+  let mut bs := #[(name "st",
+    ← `((⟨$(name "b"), rfl⟩ : { x : ByteArray // x.size = $(name "b").size })))]
   for j in [0:t] do
     let vs := (Array.range L).map fun l ↦ (v z j l : Term)
-    let zeros := Array.replicate (16 - L) (lit 0)
-    bs := bs.push (name "st", ← `((⟨$(name "putWords") $(name "st") (($(name "i") + $(lit (j * L))) * 4)
-      $(lit L) $(vs ++ zeros)*
-        ($(name "storeBounds") $(name "hb") $(lit (j * L)) (by simp only [USize.reduceToNat]; decide)),
-      $(name "size_putWords") ..⟩ : { x : ByteArray // x.size = $(name "b").size })))
+    bs := bs.push (name "st", ← `($(name "store8") $(name "st") $(name "i") $(lit (j * L)) $vs*
+      ($(name "storeBounds") $(name "hb") $(lit (j * L))
+        (by simp only [USize.reduceToNat]; decide))))
   return bs
 
 /-- `mat4` on every block of four coordinates of lane `l`, with Plonky3's addition chain. -/
@@ -164,7 +163,8 @@ meta def partialRound (t L : Nat) : MacroM Term := do
     for j in [1:t] do
       bs := bs.push (v "s" j l, ← add acc (v "x" j l))
       acc := v "s" j l
-    let ys : Array Term := #[v "y" 0 l] ++ (Array.range (t - 1)).map fun j ↦ (v "x" (j + 1) l : Term)
+    let ys : Array Term :=
+      #[v "y" 0 l] ++ (Array.range (t - 1)).map fun j ↦ (v "x" (j + 1) l : Term)
     for j in [0:t] do
       bs := bs ++ (← diagonal j (v "z" j l) ys[j]! acc)
     return bs)

@@ -20,7 +20,8 @@ def main (args : List String) : IO UInt32 := do
   | ["poseidon2-spec", logN] =>
     let n := 2 ^ logN.toNat!
     let P := KoalaBear.width16 KoalaBear.Fast.Field
-    let s0 : Vector KoalaBear.Fast.Field 16 := Vector.ofFn fun i ↦ KoalaBear.Fast.ofUInt32 i.val.toUInt32
+    let s0 : Vector KoalaBear.Fast.Field 16 :=
+      Vector.ofFn fun i ↦ KoalaBear.Fast.ofUInt32 i.val.toUInt32
     let mut samples := #[]
     for _ in [0:7] do
       let (ns, r) ← timeNs fun _ ↦ do

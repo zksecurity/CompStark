@@ -8,7 +8,7 @@ CompStark builds on [CompPoly](https://github.com/Verified-zkEVM/CompPoly), whic
 
 - Poseidon2 over KoalaBear, widths 16 and 24, with Plonky3's default constants (`CompStark/Poseidon2`). The specification runs on any field of characteristic `p`; tests check Plonky3's outputs. `permute_map` transports a run along any ring homomorphism, so the permutation on CompPoly's Montgomery field is the specification (`fast_width16`, `fast_width24`).
 
-- Packed Poseidon2 (`CompStark/Poseidon2/Packed.lean`): eight states per vector lane group, macro-generated round kernels on Montgomery words. Its proof against the specification is in progress. Single thread, width 16, on a loaded 8-core Ryzen 7 3700X: about 410 ns per permutation, against 143 ns for Plonky3's AVX2-packed `Poseidon2KoalaBear<16>` and 820 ns for its scalar one (`CompStarkBench poseidon2-packed 14`, `bench/rust: compstark-bench bench 14`).
+- Packed Poseidon2 (`CompStark/Poseidon2/Packed.lean`): eight states at a time, one per vector lane, with macro-generated round kernels on Montgomery words. `permute16_width16` (`PackedCorrectness.lean`) proves that on every group of eight states it computes Plonky3's width-16 permutation, read in the spec field, and leaves the rest of the buffer unchanged. Single thread, on a loaded 8-core Ryzen 7 3700X: about 370 ns per permutation, against 140 ns for Plonky3's AVX2-packed `Poseidon2KoalaBear<16>` and 730 ns for its scalar one (`CompStarkBench poseidon2-packed 14`, `bench/rust: compstark-bench bench 14`).
 
 ## Building
 

@@ -3,6 +3,7 @@ Copyright (c) 2026 zkSecurity. All rights reserved.
 Released under Apache 2.0 license as described in the file LICENSE.
 -/
 import CompStark.Poseidon2.KoalaBear
+import CompStark.Poseidon2.PackedCorrectness
 
 /-! # Poseidon2 known answers
 
@@ -58,5 +59,11 @@ def sage16 : Vector Nat 16 :=
   1255095997, 1603911976, 296344071, 943491381, 527145271, 408365780, 129005542, 652050596,
   1457594694, 1386323341, 1797036470, 1137586744, 1264986356, 1342061487, 1643886210,
   1603170659, 2078478589, 56048766, 446199937, 1551853266]
+
+
+
+/-- info: 'CompStark.Poseidon2.Packed.permute16_width16' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in
+#print axioms CompStark.Poseidon2.Packed.permute16_width16
 
 end CompStarkTests.Poseidon2

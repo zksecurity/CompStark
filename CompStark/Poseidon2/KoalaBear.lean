@@ -10,7 +10,8 @@ public import CompPoly.Fields.KoalaBear.Fast
 /-! # Poseidon2 over KoalaBear
 
 Plonky3's default KoalaBear instances (`default_koalabear_poseidon2_16` and `_24`): S-box
-`x ↦ x ^ 3`, four initial and four terminal full rounds, 20 partial rounds at width 16 and 23 at width 24, and
+`x ↦ x ^ 3`, four initial and four terminal full rounds, 20 partial rounds at width 16 and 23 at
+width 24, and
 the round constants of the Horizen Labs reference parameters. The constants are canonical
 representatives, cast into any field of characteristic `p`, so the same instance runs on the spec
 field `KoalaBear.Field` and on the Montgomery field `KoalaBear.Fast.Field`.
