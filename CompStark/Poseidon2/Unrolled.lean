@@ -64,42 +64,6 @@ meta def cube (out a : Ident) : MacroM (Array (Ident × Term)) := do
   let sq := name s!"{out.getId}_sq"
   return #[(sq, ← mul a a), (out, ← mul sq a)]
 
-/-- The external matrix on lane `l` of `y`: `mat4` per block of four with Plonky3's addition chain,
-then
-the sum over blocks of each row added to every block. -/
-meta def externalLane (t l : Nat) (y : String) (z : String) : MacroM (Array (Ident × Term)) := do
-  let mut bs := #[]
-  let blocks := t / 4
-  for blk in [0:blocks] do
-    let x (k : Nat) : Term := v y (4 * blk + k) l
-    let m (s : String) : Ident := name s!"m{blk}_{l}_{s}"
-    bs := bs.push (m "t01", ← add (x 0) (x 1))
-    bs := bs.push (m "t23", ← add (x 2) (x 3))
-    bs := bs.push (m "t0123", ← add (m "t01") (m "t23"))
-    bs := bs.push (m "t01123", ← add (m "t0123") (x 1))
-    bs := bs.push (m "t01233", ← add (m "t0123") (x 3))
-    bs := bs.push (m "x0x0", ← add (x 0) (x 0))
-    bs := bs.push (m "x2x2", ← add (x 2) (x 2))
-    bs := bs.push (v s!"M{blk}r" 3 l, ← add (m "t01233") (m "x0x0"))
-    bs := bs.push (v s!"M{blk}r" 1 l, ← add (m "t01123") (m "x2x2"))
-    bs := bs.push (v s!"M{blk}r" 0 l, ← add (m "t01123") (m "t01"))
-    bs := bs.push (v s!"M{blk}r" 2 l, ← add (m "t01233") (m "t23"))
-  for k in [0:4] do
-    let mut acc : Term := v "M0r" k l
-    for blk in [1:blocks] do
-      let s := name s!"S{k}_{l}_{blk}"
-      bs := bs.push (s, ← add acc (v s!"M{blk}r" k l))
-      acc := s
-    bs := bs.push (name s!"S{k}_{l}", acc)
-  for blk in [0:blocks] do
-    for k in [0:4] do
-      bs := bs.push (v z (4 * blk + k) l, ← add (v s!"M{blk}r" k l) (name s!"S{k}_{l}"))
-  return bs
-
-/-- The external matrix on all lanes. -/
-meta def external (t L : Nat) (y : String) (z : String) : MacroM (Array (Ident × Term)) :=
-  interleave L fun l ↦ externalLane t l y z
-
 /-- Store the `t × L` state `z`, one unchecked eight-word store per coordinate: the state stays
 a `ByteArray` of the size `n` of `b`, so the bounds come from `h` and no store branches. -/
 meta def store (t L : Nat) (z : String) : MacroM (Array (Ident × Term)) := do
@@ -151,26 +115,6 @@ meta def mixBlocks (t L : Nat) : MacroM Term := do
     for j in [0:t] do
       bs := bs.push (v "z" j l, ← add (v "x" j l) (name s!"S{j % 4}_{l}"))
     return bs) ++ (← store t L "z")
-  lets bs (← `($(name "st").1))
-
-/-- The initial external matrix. -/
-meta def linear (t L : Nat) : MacroM Term := do
-  let bs := (← readState t L) ++ (← external t L "x" "z") ++ (← store t L "z")
-  lets bs (← `($(name "st").1))
-
-/-- A full round with the constants at word `r` of `rc`. -/
-meta def fullRound (t L : Nat) : MacroM Term := do
-  let mut bs := #[]
-  for j in [0:t] do
-    bs := bs.push (name s!"c{j}", ← read (name "rc") (name "r") (name "hr") j)
-  bs := bs ++ (← readState t L)
-  bs := bs ++ (← interleave L fun l ↦ do
-    let mut bs := #[]
-    for j in [0:t] do
-      bs := bs.push (v "a" j l, ← add (v "x" j l) (name s!"c{j}"))
-      bs := bs ++ (← cube (v "y" j l) (v "a" j l))
-    return bs)
-  bs := bs ++ (← external t L "y" "z") ++ (← store t L "z")
   lets bs (← `($(name "st").1))
 
 /-- The constant additions and S-boxes of a full round, in place. -/
@@ -228,14 +172,6 @@ meta def partialRound (t L : Nat) : MacroM Term := do
   lets bs (← `($(name "st").1))
 
 end CompStark.Poseidon2.Unrolled
-
-open CompStark.Poseidon2.Unrolled in
-/-- The body of the external matrix on `L` packed states of width `t`. -/
-macro "p2_linear%" t:num L:num : term => linear t.getNat L.getNat
-
-open CompStark.Poseidon2.Unrolled in
-/-- The body of a full round on `L` packed states of width `t`. -/
-macro "p2_full%" t:num L:num : term => fullRound t.getNat L.getNat
 
 open CompStark.Poseidon2.Unrolled in
 /-- The body of a partial round on `L` packed states of width `t`. -/

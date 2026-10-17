@@ -41,19 +41,6 @@ theorem storeBounds {b : ByteArray} {i : USize} (h : GroupFits b i) (k : USize)
 
 set_option maxRecDepth 16384 in
 set_option maxHeartbeats 4000000 in
-/-- The initial external matrix on the eight states at `i`. -/
-@[noinline] def linear16 (b : ByteArray) (i : USize) (hb : GroupFits b i) : ByteArray :=
-  p2_linear% 16 8
-
-set_option maxRecDepth 16384 in
-set_option maxHeartbeats 4000000 in
-/-- A full round with constants `r, …, r + 15` of `rc` on the eight states at `i`. -/
-@[noinline] def full16 (rc : @& ByteArray) (r : USize) (b : ByteArray) (i : USize)
-    (hb : GroupFits b i) (hr : Fits rc r 15) : ByteArray :=
-  p2_full% 16 8
-
-set_option maxRecDepth 16384 in
-set_option maxHeartbeats 4000000 in
 /-- A partial round with constant `c` and internal diagonal `d` on the eight states at `i`. -/
 @[noinline] def partial16 (c : UInt32) (d : @& ByteArray) (b : ByteArray) (i : USize)
     (hb : GroupFits b i) (hd : Fits d 0 15) : ByteArray :=
