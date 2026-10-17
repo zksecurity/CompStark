@@ -9,3 +9,4 @@ public import CompStark.Poseidon2.ArithmeticLemmas
 public import CompStark.Poseidon2.Unrolled
 public import CompStark.Poseidon2.Packed
 public import CompStark.Poseidon2.PackedCorrectness
+public import CompStark.Hash.Sponge

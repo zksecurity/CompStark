@@ -1,1 +1,2 @@
 import CompStarkTests.Poseidon2
+import CompStarkTests.Hash

@@ -51,4 +51,18 @@ fn main() {
         1783754913], &p16);
     show("w24 zero", [0u32; 24], &p24);
     show("w24 iota", core::array::from_fn::<u32, 24, _>(|i| i as u32), &p24);
+    // Plonky3's Poseidon2 Merkle hash and compression (`examples/src/types.rs`).
+    use p3_symmetric::{CryptographicHasher, PaddingFreeSponge, PseudoCompressionFunction,
+        TruncatedPermutation};
+    let hash = PaddingFreeSponge::<_, 24, 16, 8>::new(p24.clone());
+    let compress = TruncatedPermutation::<_, 2, 8, 16>::new(p16.clone());
+    for n in [0u32, 1, 8, 16, 17, 32, 50] {
+        let out: [F; 8] = hash.hash_iter((0..n).map(F::from_u32));
+        let out: Vec<u32> = out.iter().map(|x| x.as_canonical_u32()).collect();
+        println!("sponge iota {n} -> {:?}", out);
+    }
+    let a: [F; 8] = core::array::from_fn(|i| F::from_u32(i as u32));
+    let b: [F; 8] = core::array::from_fn(|i| F::from_u32(100 + i as u32));
+    let out: Vec<u32> = compress.compress([a, b]).iter().map(|x| x.as_canonical_u32()).collect();
+    println!("compress iota/100 -> {:?}", out);
 }
