@@ -37,8 +37,41 @@ fn bench(log_n: u32) {
     println!("plonky3 width16 ns/perm scalar {:.1} packed({} lanes) {:.1}", median(scalar), P::WIDTH, median(packed));
 }
 
+/// Plonky3's Poseidon2 Merkle commitment to a `2^log_h × width` matrix with entries `7k + 1`:
+/// the root and the median milliseconds of seven commits.
+fn merkle(log_h: u32, width: usize) {
+    use p3_commit::Mmcs;
+    use p3_field::Field;
+    use p3_matrix::dense::RowMajorMatrix;
+    use p3_symmetric::{PaddingFreeSponge, TruncatedPermutation};
+    use std::time::Instant;
+    type P = <F as Field>::Packing;
+    let hash = PaddingFreeSponge::<_, 24, 16, 8>::new(default_koalabear_poseidon2_24());
+    let compress = TruncatedPermutation::<_, 2, 8, 16>::new(default_koalabear_poseidon2_16());
+    let mmcs = p3_merkle_tree::MerkleTreeMmcs::<P, P, _, _, 8>::new(hash, compress);
+    let h = 1usize << log_h;
+    let values: Vec<F> = (0..h * width).map(|k| F::from_u32(((7 * k as u64 + 1) % 2130706433) as u32)).collect();
+    let m = RowMajorMatrix::new(values, width);
+    let (root, _) = mmcs.commit(vec![m.clone()]);
+    let root: Vec<u32> = root.into_iter().map(|x: F| x.as_canonical_u32()).collect();
+    println!("root {:?}", root);
+    let mut samples = vec![];
+    for _ in 0..7 {
+        let input = m.clone();
+        let t = Instant::now();
+        let (root, tree) = mmcs.commit(vec![input]);
+        samples.push(t.elapsed().as_secs_f64() * 1e3);
+        std::hint::black_box((root, tree));
+    }
+    samples.sort_by(|a, b| a.partial_cmp(b).unwrap());
+    println!("plonky3 merkle 2^{log_h} x {width} ms median {:.3}", samples[3]);
+}
+
 fn main() {
     let args: Vec<String> = std::env::args().collect();
+    if args.len() == 4 && args[1] == "merkle" {
+        return merkle(args[2].parse().unwrap(), args[3].parse().unwrap());
+    }
     if args.len() == 3 && args[1] == "bench" {
         return bench(args[2].parse().unwrap());
     }

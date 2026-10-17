@@ -15,7 +15,8 @@ lean_lib CompStark where
 
 /-- CPU-targeted packed kernels; the proof artifacts remain platform independent. -/
 lean_lib CompStarkPackedNative where
-  roots := #[`CompStark.Poseidon2.Packed]
+  roots := #[`CompStark.Poseidon2.Packed, `CompStark.Poseidon2.Packed24,
+    `CompStark.Merkle.Packed]
   platformIndependent := true
   moreLeancArgs := #["-march=native", "-mstackrealign"]
 

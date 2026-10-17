@@ -1,5 +1,7 @@
 import CompStark.Poseidon2.KoalaBear
 import CompStark.Poseidon2.Packed
+import CompStark.Merkle.Packed
+import CompStark.Merkle.Tree
 
 /-! # CompStark micro-benchmarks
 
@@ -67,5 +69,38 @@ def main (args : List String) : IO UInt32 := do
       if r == 12345 then IO.println ""
     let m := (samples.qsort (· < ·))[3]!
     IO.println s!"poseidon2-packed width16 ns/perm median {m / 10}.{m % 10}"
+    return 0
+  | ["merkle", logH, widthArg, chunksArg] =>
+    let h := 2 ^ logH.toNat!
+    let w := widthArg.toNat!
+    let C := chunksArg.toNat!
+    let K24 := Packed.Packed24.ofParams (KoalaBear.width24 KoalaBear.Fast.Field)
+    let K16 := Packed.Packed16.ofParams (KoalaBear.width16 KoalaBear.Fast.Field)
+    let enc := CompPoly.CPolynomial.NTTFast.Packed.Native.encodeFields
+    let entry (k : Nat) : KoalaBear.Fast.Field := KoalaBear.Fast.ofUInt32 ((7 * k + 1) % 2130706433).toUInt32
+    -- Check small shapes against the specification: odd heights, single rows, partial blocks.
+    for (sh, sw) in [(1, 1), (2, 3), (5, 16), (8, 17), (13, 40), (64, 10), (33, 7)] do
+      let vals := Array.ofFn (n := sh * sw) fun k ↦ entry k.val
+      let spec := CompStark.Merkle.KoalaBear.root KoalaBear.Fast.Field [⟨sw, sh, vals⟩]
+      let got := CompStark.Merkle.Packed.root K24 K16 sw #[enc vals]
+      for j in [0:8] do
+        if CompPoly.CPolynomial.NTTFast.Packed.Native.read got j != (spec.toArray.getD j 0).val then
+          IO.eprintln s!"merkle mismatch at {sh} × {sw}, word {j}"; return 1
+    let rowsPer := h / C
+    let chunks := (Array.range C).map fun c ↦
+      enc (Array.ofFn (n := rowsPer * w) fun k ↦ entry (c * rowsPer * w + k.val))
+    let rootWords := CompStark.Merkle.Packed.root K24 K16 w chunks
+    let canon := (List.range 8).map fun j ↦
+      (KoalaBear.Fast.ringEquiv (CompPoly.CPolynomial.NTTFast.Packed.ofWord (CompPoly.CPolynomial.NTTFast.Packed.Native.read rootWords j))).val
+    IO.println s!"root {canon}"
+    let mut samples := #[]
+    for k in [0:7] do
+      let input := chunks.modify 0 fun c ↦ CompPoly.CPolynomial.NTTFast.Packed.Native.write c 0 k.toUInt32
+      let (ns, r) ← timeNs fun _ ↦ do
+        return (CompPoly.CPolynomial.NTTFast.Packed.Native.read (CompStark.Merkle.Packed.root K24 K16 w input) 0).toUInt64
+      samples := samples.push ns
+      if r == 12345 then IO.println ""
+    let m := (samples.qsort (· < ·))[3]!
+    IO.println s!"merkle 2^{logH} x {w} ms median {m / 1000000}.{m / 1000 % 1000}"
     return 0
   | _ => IO.eprintln "usage: CompStarkBench poseidon2-spec LOG_N"; return 1

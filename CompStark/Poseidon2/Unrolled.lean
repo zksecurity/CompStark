@@ -72,7 +72,7 @@ meta def store (t L : Nat) (z : String) : MacroM (Array (Ident × Term)) := do
   for j in [0:t] do
     let vs := (Array.range L).map fun l ↦ (v z j l : Term)
     bs := bs.push (name "st", ← `($(name "store8") $(name "st") $(name "i") $(lit (j * L)) $vs*
-      ($(name "storeBounds") $(name "hb") $(lit (j * L))
+      ($(name s!"storeBounds{t}") $(name "hb") $(lit (j * L))
         (by simp only [USize.reduceToNat]; decide))))
   return bs
 

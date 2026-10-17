@@ -33,7 +33,7 @@ theorem inBounds {b : ByteArray} {i : USize} {n : Nat} (h : Fits b i n) (k : USi
     (hk : k.toNat ≤ n) : 4 * (i.toNat + k.toNat) + 3 < b.size ∧ b.size < USize.size :=
   ⟨by omega, h.2⟩
 
-theorem storeBounds {b : ByteArray} {i : USize} (h : GroupFits b i) (k : USize)
+theorem storeBounds16 {b : ByteArray} {i : USize} (h : GroupFits b i) (k : USize)
     (hk : k.toNat ≤ 120) : ((i + k) * 4).toNat + 4 * 8 ≤ b.size ∧
       ((i + k) * 4).toNat + 4 * 8 < USize.size := by
   rw [wordOffset_toNat _ _ (by omega)]
