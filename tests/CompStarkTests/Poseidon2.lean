@@ -4,6 +4,7 @@ Released under Apache 2.0 license as described in the file LICENSE.
 -/
 import CompStark.Poseidon2.KoalaBear
 import CompStark.Poseidon2.PackedCorrectness
+import CompStark.Poseidon2.PackedCorrectness24
 
 /-! # Poseidon2 known answers
 
@@ -65,5 +66,9 @@ def sage16 : Vector Nat 16 :=
 /-- info: 'CompStark.Poseidon2.Packed.permute16_width16' depends on axioms: [propext, Classical.choice, Quot.sound] -/
 #guard_msgs in
 #print axioms CompStark.Poseidon2.Packed.permute16_width16
+
+/-- info: 'CompStark.Poseidon2.Packed.permute24_width24' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in
+#print axioms CompStark.Poseidon2.Packed.permute24_width24
 
 end CompStarkTests.Poseidon2

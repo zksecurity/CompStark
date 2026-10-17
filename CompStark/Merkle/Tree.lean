@@ -41,7 +41,8 @@ def Matrix.row (m : Matrix F) (i : Nat) : List F :=
 def padEven (n : Nat) : Nat := if n = 1 then 1 else n + n % 2
 
 /-- A list padded with `x` to length `n`. -/
-def padTo {α : Type*} (x : α) (n : Nat) (l : List α) : List α := l ++ List.replicate (n - l.length) x
+def padTo {α : Type*} (x : α) (n : Nat) (l : List α) : List α :=
+  l ++ List.replicate (n - l.length) x
 
 /-- The first digest layer: the hashes of the rows of the tallest matrices `ms` of height `h`. -/
 def firstLayer (hash : List F → Vector F d) (ms : List (Matrix F)) (h : Nat) : List (Vector F d) :=
