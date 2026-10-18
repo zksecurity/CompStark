@@ -162,7 +162,8 @@ def sboxModel (cs : List Nat) (rc W : Array F) (r i : Nat) : Array F :=
     let a := word W i j l + rc.getD (r + j) 0
     a * a * a
 
-/-- `mat4` on coordinates `x0, …, x3` with Plonky3's addition chain; `k` selects the row. -/
+/-- `mat4` on coordinates `x0, …, x3` with Plonky3's addition chain, except row 2 as
+`(t0123 + x2) + 2 x3`; `k` selects the row. -/
 def mat4Word (x0 x1 x2 x3 : F) (k : Nat) : F :=
   let t01 := x0 + x1
   let t23 := x2 + x3
@@ -172,7 +173,7 @@ def mat4Word (x0 x1 x2 x3 : F) (k : Nat) : F :=
   match k with
   | 0 => t01123 + t01
   | 1 => t01123 + (x2 + x2)
-  | 2 => t01233 + t23
+  | 2 => t0123 + x2 + (x3 + x3)
   | _ => t01233 + (x0 + x0)
 
 /-- The model of the `mat4` kernel. -/

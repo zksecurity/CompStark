@@ -76,7 +76,9 @@ meta def store (t L : Nat) (z : String) : MacroM (Array (Ident × Term)) := do
         (by simp only [USize.reduceToNat]; decide))))
   return bs
 
-/-- `mat4` on every block of four coordinates of lane `l`, with Plonky3's addition chain. -/
+/-- `mat4` on every block of four coordinates of lane `l`, with Plonky3's addition chain except
+row 2 as `(t0123 + x2) + 2 x3`: with Plonky3's `t01233 + t23`, clang's SLP vectorizer splices lanes
+across vectors and the kernel grows by a third. -/
 meta def mat4Lane (t l : Nat) : MacroM (Array (Ident × Term)) := do
   let mut bs := #[]
   for blk in [0:t / 4] do
@@ -91,7 +93,9 @@ meta def mat4Lane (t l : Nat) : MacroM (Array (Ident × Term)) := do
     bs := bs.push (m "x2x2", ← add (x 2) (x 2))
     bs := bs.push (v "z" (4 * blk) l, ← add (m "t01123") (m "t01"))
     bs := bs.push (v "z" (4 * blk + 1) l, ← add (m "t01123") (m "x2x2"))
-    bs := bs.push (v "z" (4 * blk + 2) l, ← add (m "t01233") (m "t23"))
+    bs := bs.push (m "t01232", ← add (m "t0123") (x 2))
+    bs := bs.push (m "x3x3", ← add (x 3) (x 3))
+    bs := bs.push (v "z" (4 * blk + 2) l, ← add (m "t01232") (m "x3x3"))
     bs := bs.push (v "z" (4 * blk + 3) l, ← add (m "t01233") (m "x0x0"))
   return bs
 
