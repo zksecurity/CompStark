@@ -343,42 +343,44 @@ def quotient (A : Air) (pis : List F) (degreeBits logChunks : Nat) (ext : Mat) (
     Array EF :=
   quotientWith (quotientTables degreeBits logChunks) A pis ext alpha
 
-/-- Rows `i0, …, i0 + len - 1` (natural order, stored at `perm[i]`) of a packed matrix of width
-`w`, accumulated with the extension weights `wt[i]`: four coordinate planes of `w` words. -/
-def weightedRows (m : @& ByteArray) (w : Nat) (perm : @& Array Nat) (wt : @& EVec)
-    (i0 len : Nat) : Array ByteArray := Id.run do
-  let z := CompPoly.CPolynomial.NTTFast.Packed.Native.zeroWords w
-  let mut p0 := z
-  let mut p1 := z
-  let mut p2 := z
-  let mut p3 := z
-  for i in [i0:i0 + len] do
-    let r := perm.getD i 0 * w
-    p0 := Words.mulAddInto p0 m r (CompPoly.CPolynomial.NTTFast.Packed.Native.read wt.c0 i) w
-    p1 := Words.mulAddInto p1 m r (CompPoly.CPolynomial.NTTFast.Packed.Native.read wt.c1 i) w
-    p2 := Words.mulAddInto p2 m r (CompPoly.CPolynomial.NTTFast.Packed.Native.read wt.c2 i) w
-    p3 := Words.mulAddInto p3 m r (CompPoly.CPolynomial.NTTFast.Packed.Native.read wt.c3 i) w
-  return #[p0, p1, p2, p3]
+/-- The column sums `∑_r m[r][j] · x_r / (z - x_r)` over the stored rows `r0, …, r0 + len - 1` of a
+packed matrix of width `w`, for every point `z` of `zs`: per point four planes of `w` words. The
+range is transposed once; each column is a dot product with each weight plane. -/
+def weightedColumns (m : @& ByteArray) (w : Nat) (zs : @& Array EF) (xs : @& ByteArray)
+    (r0 len : Nat) : Array ByteArray := Id.run do
+  let cols := CompPoly.CPolynomial.NTTFast.Packed.Native.transposeRows m w r0 len
+  let xr := slice xs r0 len
+  let mut out := #[]
+  for z in zs do
+    let wt := (invDenoms z xr len).mulBase xr
+    for p in #[wt.c0, wt.c1, wt.c2, wt.c3] do
+      let mut sums := CompPoly.CPolynomial.NTTFast.Packed.Native.zeroWords w
+      for j in [0:w] do
+        sums := CompPoly.CPolynomial.NTTFast.Packed.Native.write sums j
+          (Words.dotAt cols (j * len) p len)
+      out := out.push sums
+  return out
 
-/-- `openedAt` on packed words: the barycentric weights `x / (z - x)` as planes, by the norm, and
-the sums accumulated row by row in parallel ranges. -/
-def openedAt (logBlowup : Nat) (m : Mat) (z : EF) : Array EF :=
+/-- `openedAt` on packed words, at all points of a matrix: the barycentric weights `x / (z - x)` in
+the stored bit-reversed row order, as planes by the norm, and the column sums over parallel row
+ranges, each range transposed once for all points. -/
+def openedAt (logBlowup : Nat) (m : Mat) (zs : List EF) : List (Array EF) :=
   let logH := Nat.log2 m.height - logBlowup
   let h := 2 ^ logH
   let w := m.width
-  let xs := CompPoly.CPolynomial.NTTFast.Packed.Native.encodeFields (cosetPoints gen logH)
-  let wt := (invDenoms z xs h).mulBase xs
-  let factor := KoalaBear.Fast.cosetFactor logH gen z
-  let perm := bitRevPerm logH
+  let xs := CompPoly.CPolynomial.NTTFast.Packed.Native.encodeFields (cosetPointsBitRev gen logH)
   let parts := if h < 4096 then 1 else 16
   let size := h / parts
   let tasks := (Array.range parts).map fun k ↦ Task.spawn fun _ ↦
-    weightedRows m.words w perm wt (k * size) (if k + 1 = parts then h - k * size else size)
-  let planes := tasks.foldl (fun acc t ↦ (acc.zip t.get).map fun (a, b) ↦ Words.addWords a b w)
-    (Array.replicate 4 (CompPoly.CPolynomial.NTTFast.Packed.Native.zeroWords w))
-  Array.ofFn (n := w) fun j ↦
-    factor * ⟨word (planes.getD 0 .empty) j, word (planes.getD 1 .empty) j,
-      word (planes.getD 2 .empty) j, word (planes.getD 3 .empty) j⟩
+    weightedColumns m.words w zs.toArray xs (k * size)
+      (if k + 1 = parts then h - k * size else size)
+  let sums := tasks.foldl (fun acc t ↦ (acc.zip t.get).map fun (a, b) ↦ Words.addWords a b w)
+    (Array.replicate (4 * zs.length) (CompPoly.CPolynomial.NTTFast.Packed.Native.zeroWords w))
+  zs.zipIdx.map fun (z, k) ↦
+    let factor := KoalaBear.Fast.cosetFactor logH gen z
+    Array.ofFn (n := w) fun j ↦
+      factor * ⟨word (sums.getD (4 * k) .empty) j, word (sums.getD (4 * k + 1) .empty) j,
+        word (sums.getD (4 * k + 2) .empty) j, word (sums.getD (4 * k + 3) .empty) j⟩
 
 /-- Rows `r0, …, r0 + len - 1` of a packed matrix of width `w` batched by the powers of `α`, given
 as four coordinate planes `a0, …, a3`: four planes of `len` words. -/

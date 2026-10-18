@@ -91,7 +91,7 @@ def phases (logN : Nat) : IO UInt32 := do
   let rounds : List OpenRound := [(tc, [[zeta, zeta * zeta]]), (qc, chunks.map fun _ ↦ [zeta])]
   let t6 ← IO.monoMsNow
   let opened := rounds.map fun (c, pts) ↦ (c.mats.zip pts).map fun (m, zs) ↦
-    zs.map fun z ↦ B.openedAt 1 m z
+    B.openedAt 1 m zs
   let t7 ← IO.monoMsNow
   IO.println s!"opened values {t7 - t6} ms {opened.length}"
   let items := ((rounds.zip opened).map fun ((c, pts), orow) ↦

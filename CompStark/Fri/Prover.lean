@@ -85,7 +85,7 @@ def ldeRef (logH bits : Nat) (shift : F) (w : Nat) (m : Array F) : Mat :=
 
 /-- The kernels the prover runs: the transcript's permutation and grinding, low-degree
 extension, matrices from rows, the Merkle digest layers, row access, the quotient values from the
-trace's extension, the values of a committed matrix's columns at a point, and the FRI inputs and
+trace's extension, the values of a committed matrix's columns at points, and the FRI inputs and
 folds on the backend's vectors of extension elements. Every backend computes the same functions;
 `spec` runs the specifications. -/
 structure Backend where
@@ -95,7 +95,7 @@ structure Backend where
   layers : List Mat → Layers
   row : Mat → Nat → Array F
   quotient : Air → List F → Nat → Nat → Mat → EF → Array EF
-  openedAt : Nat → Mat → EF → Array EF
+  openedAt : Nat → Mat → List EF → List (Array EF)
   /-- Vectors of extension elements, with conversions. -/
   V : Type
   toArray : V → Array EF
@@ -336,7 +336,7 @@ def Backend.spec : Backend where
     (ms.map Mat.toMatrix)).map List.toArray).toArray
   row := rowOf
   quotient := quotientOfLde
-  openedAt := Fri.openedAt
+  openedAt b m zs := zs.map (Fri.openedAt b m)
   V := Array EF
   toArray := id
   ofArray := id
@@ -354,11 +354,9 @@ def openPcs (B : Backend) (P : Params) (rounds : List OpenRound) :
   for (c, pts) in rounds do
     let mut om := []
     for (m, zs) in c.mats.zip pts do
-      let mut ov := []
-      for z in zs do
-        let ys := B.openedAt P.logBlowup m z
+      let ov := B.openedAt P.logBlowup m zs
+      for ys in ov do
         pObserveExts ys.toList
-        ov := ov ++ [ys]
       om := om ++ [ov]
     opened := opened ++ [om]
   let alpha ← pSampleExt
