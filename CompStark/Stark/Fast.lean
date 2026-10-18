@@ -221,22 +221,27 @@ def gather (cols : @& ByteArray) (w R c : Nat) (idx : @& Array Nat) (r0 B : Nat)
 
 /-- The packed values of `e` on the rows `r0, …, r0 + B - 1` of the quotient domain in the
 extension's bit-reversed order, `B` dividing the piece height `R`: `evalBlock` on words. The
-next row of row `r` is `next[r]`, and `first`, `last`, `trans` are the selectors in that order. -/
-def evalWords (cols : ByteArray) (w R B : Nat) (next : Array Nat) (pis : List F)
-    (first last trans : ByteArray) (r0 : Nat) : Expr → ByteArray
+next row of row `r` is `next[r]`, and `first`, `last`, `trans` are the selectors in that order.
+Next rows of a block are almost always a block themselves: `contiguous` gives its first row, and
+it is read as one slice. -/
+def evalWords (cols : ByteArray) (w R B : Nat) (next : Array Nat) (contiguous : Array (Option Nat))
+    (pis : List F) (first last trans : ByteArray) (r0 : Nat) : Expr → ByteArray
   | .cur c => slice cols (r0 / R * (R * w) + c * R + r0 % R) B
-  | .next c => gather cols w R c next r0 B
+  | .next c =>
+    match contiguous.getD (r0 / B) none with
+    | some n0 => slice cols (n0 / R * (R * w) + c * R + n0 % R) B
+    | none => gather cols w R c next r0 B
   | .pub j => Words.replicateWord (pis.getD j 0).val B
   | .const c => Words.replicateWord c.val B
   | .isFirstRow => slice first r0 B
   | .isLastRow => slice last r0 B
   | .isTransition => slice trans r0 B
-  | .add a b => Words.addWords (evalWords cols w R B next pis first last trans r0 a)
-      (evalWords cols w R B next pis first last trans r0 b) B
-  | .sub a b => Words.subWords (evalWords cols w R B next pis first last trans r0 a)
-      (evalWords cols w R B next pis first last trans r0 b) B
-  | .mul a b => Words.mulWords (evalWords cols w R B next pis first last trans r0 a)
-      (evalWords cols w R B next pis first last trans r0 b) B
+  | .add a b => Words.addWords (evalWords cols w R B next contiguous pis first last trans r0 a)
+      (evalWords cols w R B next contiguous pis first last trans r0 b) B
+  | .sub a b => Words.subWords (evalWords cols w R B next contiguous pis first last trans r0 a)
+      (evalWords cols w R B next contiguous pis first last trans r0 b) B
+  | .mul a b => Words.mulWords (evalWords cols w R B next contiguous pis first last trans r0 a)
+      (evalWords cols w R B next contiguous pis first last trans r0 b) B
 
 /-- The rows `perm[i0], …, perm[i0 + len - 1]` of a packed row-major matrix of width `w`,
 copied whole. -/
@@ -256,31 +261,58 @@ def permuteWords (m : ByteArray) (w : Nat) (perm : Array Nat) : ByteArray :=
     permuteRange m w perm (k * size) (if k + 1 = parts then n - k * size else size)
   ts.foldl (fun acc t ↦ acc ++ t.get) ByteArray.empty
 
-/-- `quotientOfLde` on packed words. The trace on the quotient domain is the extension's first
-rows, transposed in parallel pieces; constraints are evaluated in that bit-reversed row order,
-every node one vectorized operation per block of 256 rows, in parallel block ranges, and the
-result is put in natural order. -/
-def quotient (A : Air) (pis : List F) (degreeBits logChunks : Nat) (ext : Mat) (alpha : EF) :
-    Array EF := Id.run do
+/-- The tables of the quotient on the quotient domain of a `2 ^ degreeBits`-row trace with
+`2 ^ logChunks` chunks, rows in the extension's bit-reversed order: the order, the selectors, the
+inverse vanishing polynomial (period `2 ^ logChunks`), the next rows, and per block of `B` rows
+the first next row when the next rows form a block. They depend only on the shape. -/
+structure QuotientTables where
+  degreeBits : Nat
+  logChunks : Nat
+  perm : Array Nat
+  invZh : Array F
+  first : ByteArray
+  last : ByteArray
+  trans : ByteArray
+  next : Array Nat
+  B : Nat
+  contiguous : Array (Option Nat)
+
+/-- The quotient tables of a shape. -/
+def quotientTables (degreeBits logChunks : Nat) : QuotientTables :=
   let qlog := degreeBits + logChunks
   let n := 2 ^ qlog
-  let w := ext.width
   let perm := bitRevPerm qlog
   let xs := cosetPoints gen qlog
   let gInv := (twoAdicGen degreeBits)⁻¹
   let period := 2 ^ logChunks
   let zhs := Array.ofFn (n := period) fun k ↦ powF (xs.getD k 0) (2 ^ degreeBits) - 1
-  let invZh := batchInv zhs
   let invFirst := batchInv (xs.map (· - 1))
   let invLast := batchInv (xs.map (· - gInv))
-  -- Selectors and next rows in bit-reversed order: row `r` is the point of natural index `perm[r]`.
-  let first := CompPoly.CPolynomial.NTTFast.Packed.Native.encodeFields (perm.map fun i ↦
-    zhs.getD (i % period) 0 * invFirst.getD i 0)
-  let last := CompPoly.CPolynomial.NTTFast.Packed.Native.encodeFields (perm.map fun i ↦
-    zhs.getD (i % period) 0 * invLast.getD i 0)
-  let trans := CompPoly.CPolynomial.NTTFast.Packed.Native.encodeFields (perm.map fun i ↦
-    xs.getD i 0 - gInv)
   let next := perm.map fun i ↦ perm.getD ((i + period) % n) 0
+  let R := n / (if n < 4096 then 1 else 16)
+  let B := min R 256
+  { degreeBits, logChunks, perm, invZh := batchInv zhs, next, B
+    first := CompPoly.CPolynomial.NTTFast.Packed.Native.encodeFields (perm.map fun i ↦
+      zhs.getD (i % period) 0 * invFirst.getD i 0)
+    last := CompPoly.CPolynomial.NTTFast.Packed.Native.encodeFields (perm.map fun i ↦
+      zhs.getD (i % period) 0 * invLast.getD i 0)
+    trans := CompPoly.CPolynomial.NTTFast.Packed.Native.encodeFields (perm.map fun i ↦
+      xs.getD i 0 - gInv)
+    contiguous := (Array.range (n / B)).map fun b ↦
+      let n0 := next.getD (b * B) 0
+      if n0 % B == 0 && (List.range B).all fun k ↦ next.getD (b * B + k) 0 == n0 + k then some n0
+      else none }
+
+/-- `quotientOfLde` on packed words with the shape's tables `T`. The trace on the quotient domain
+is the extension's first rows, transposed in parallel pieces; constraints are evaluated in that
+bit-reversed row order, every node one vectorized operation per block of rows, in parallel block
+ranges, and the result is put in natural order. -/
+def quotientWith (T : QuotientTables) (A : Air) (pis : List F) (ext : Mat) (alpha : EF) :
+    Array EF := Id.run do
+  let n := 2 ^ (T.degreeBits + T.logChunks)
+  let w := ext.width
+  let period := 2 ^ T.logChunks
+  let perm := T.perm
   let parts := if n < 4096 then 1 else 16
   let R := n / parts
   let pieces := (Array.range parts).map fun k ↦ Task.spawn fun _ ↦
@@ -288,7 +320,7 @@ def quotient (A : Air) (pis : List F) (degreeBits logChunks : Nat) (ext : Mat) (
   let cols := pieces.foldl (fun acc t ↦ acc ++ t.get) ByteArray.empty
   let K := A.constraints.length
   let weights := (List.range K).map fun k ↦ (Ext.coeffs (Ext.pow alpha (K - 1 - k))).map (·.val)
-  let B := min R 256
+  let B := T.B
   let blocks := n / B
   let byRow := parChunks blocks (min blocks 16) fun b0 nb ↦ Id.run do
     let mut out := Array.emptyWithCapacity (nb * B)
@@ -297,14 +329,19 @@ def quotient (A : Air) (pis : List F) (degreeBits logChunks : Nat) (ext : Mat) (
       let z0 := CompPoly.CPolynomial.NTTFast.Packed.Native.zeroWords B
       let mut acc := #[z0, z0, z0, z0]
       for (c, wk) in A.constraints.zip weights do
-        let v := evalWords cols w R B next pis first last trans r0 c
+        let v := evalWords cols w R B T.next T.contiguous pis T.first T.last T.trans r0 c
         acc := (acc.zip wk.toArray).map fun (a, x) ↦ Words.mulAddWords a v x B
       for i in [0:B] do
-        let z := invZh.getD (perm.getD (r0 + i) 0 % period) 0
+        let z := T.invZh.getD (perm.getD (r0 + i) 0 % period) 0
         out := out.push (KoalaBear.Fast.Ext4.smul z
           ⟨word acc[0]! i, word acc[1]! i, word acc[2]! i, word acc[3]! i⟩)
     return out
   return perm.map fun r ↦ byRow.getD r 0
+
+/-- `quotientOfLde` on packed words. -/
+def quotient (A : Air) (pis : List F) (degreeBits logChunks : Nat) (ext : Mat) (alpha : EF) :
+    Array EF :=
+  quotientWith (quotientTables degreeBits logChunks) A pis ext alpha
 
 /-- Rows `i0, …, i0 + len - 1` (natural order, stored at `perm[i]`) of a packed matrix of width
 `w`, accumulated with the extension weights `weights[i]`: four coordinate planes of `w` words. -/
@@ -498,13 +535,19 @@ def backend : Backend where
   addScaled a b x := a.add (b.smul x)
   leaves := leaves
 
-/-- The fast backend with the extension plans of a proof of a `2 ^ logN`-row trace and
-`2 ^ logChunks` quotient chunks prepared: the trace's on `g · ⟨ω_N⟩` and every chunk's. -/
+/-- The fast backend with the extension plans and quotient tables of a proof of a `2 ^ logN`-row
+trace and `2 ^ logChunks` quotient chunks prepared: the trace's extension on `g · ⟨ω_N⟩` and every
+chunk's. -/
 def backendFor (logN logBlowup logChunks : Nat) : Backend :=
   let qlog := logN + logChunks
   let shifts := gen :: (List.range (2 ^ logChunks)).map fun c ↦
     gen * (gen * powF (twoAdicGen qlog) c)⁻¹
   let plans := shifts.filterMap fun s ↦ (plan? logN logBlowup s).map fun P ↦ (logN, logBlowup, s, P)
-  { backend with lde := ldeWith plans }
+  let T := quotientTables logN logChunks
+  { backend with
+    lde := ldeWith plans
+    quotient := fun A pis db lc ext alpha ↦
+      if db == logN && lc == logChunks then quotientWith T A pis ext alpha
+      else quotient A pis db lc ext alpha }
 
 end CompStark.Stark.Fast
