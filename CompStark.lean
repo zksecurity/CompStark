@@ -39,6 +39,7 @@ public import CompStark.Stark.Fast.BatchInv
 public import CompStark.Stark.Fast.Commit
 public import CompStark.Stark.Fast.WordsLemmas
 public import CompStark.Stark.Fast.Vectors
+public import CompStark.Stark.Fast.Openings
 public import CompStark.Stark.Words
 public import CompStark.Stark.Quotient
 public import CompStark.Stark.ExtWords
