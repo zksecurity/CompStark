@@ -29,6 +29,15 @@ open CompStark.Fri CompStark.KoalaBear
 local notation "F" => KoalaBear.Fast.Field
 local notation "EF" => KoalaBear.Fast.Ext4
 
+/-- The coordinates of every `stride`-th quotient value from `c`, `n` of them: chunk `c`'s values,
+as rows of four base elements. -/
+def chunkValues (qs : @& Array EF) (stride c n : Nat) : Array F := Id.run do
+  let mut out := Array.emptyWithCapacity (4 * n)
+  for r in [0:n] do
+    let x := qs.getD (r * stride + c) 0
+    out := ((out.push x.c0).push x.c1 |>.push x.c2).push x.c3
+  return out
+
 /-- A proof of `A` for the row-major trace of `2 ^ logN` rows and public values `pis`, by the
 backend `B`. -/
 def proveWith (B : Backend) (P : Params) (A : Air) (logN : Nat) (trace : Array F) (pis : List F) :
@@ -46,10 +55,10 @@ def proveWith (B : Backend) (P : Params) (A : Air) (logN : Nat) (trace : Array F
     let alpha ← pSampleExt
     let ext := traceC.mats.headD (Mat.ofValues 0 0 #[])
     let qs := B.quotient A pis logN logChunks ext alpha
-    let chunks := (List.range (2 ^ logChunks)).map fun c ↦
+    let stride := 2 ^ logChunks
+    let chunks := (List.range stride).map fun c ↦
       let shift := gen * powF (twoAdicGen qlog) c
-      let vals := (List.range (2 ^ logN)).toArray.flatMap fun r ↦
-        (Ext.coeffs (qs.getD (r * 2 ^ logChunks + c) 0)).toArray
+      let vals := chunkValues qs stride c (2 ^ logN)
       B.lde logN P.logBlowup (gen * shift⁻¹) 4 vals
     let quotC := B.commit chunks
     pObserveList quotC.root.toList

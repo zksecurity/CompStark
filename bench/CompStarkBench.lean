@@ -79,8 +79,7 @@ def phases (logN : Nat) : IO UInt32 := do
   IO.println s!"quotient {t4 - t3} ms {qs.size}"
   let chunks := (List.range 2).map fun c ↦
     let shift := gen * powF (twoAdicGen qlog) c
-    let vals := (List.range (2 ^ logN)).toArray.flatMap fun r ↦
-      (Ext.coeffs (qs.getD (r * 2 + c) 0)).toArray
+    let vals := chunkValues qs 2 c (2 ^ logN)
     B.lde logN 1 (gen * shift⁻¹) 4 vals
   let t5 ← IO.monoMsNow
   IO.println s!"quotient chunks lde {t5 - t4} ms {chunks.length}"
