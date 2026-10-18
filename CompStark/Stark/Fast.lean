@@ -68,36 +68,22 @@ def perm24 (s : Vector F 24) : Vector F 24 :=
 /-- The transcript's duplex on the packed permutation. -/
 def duplex : Duplex F 24 := { KoalaBear.duplex with perm := perm24 }
 
-/-- The first candidate of `8 b, …, 8 b + 7` that passes, from batch `b` on: the duplexed
-states with the candidates in the witness's coordinate `wi` are permuted as one packed group. -/
-def grindFrom (base : Vector F 24) (wi bits : Nat) : Nat → Nat → F
-  | 0, _ => 0
-  | fuel + 1, b =>
-    let W : Array F := Array.ofFn (n := 192) fun k ↦
-      let j := k.val / 8
-      if j = wi then ((8 * b + k.val % 8 : Nat) : F) else base.toArray.getD j 0
-    let out := permute24 K24 (CompPoly.CPolynomial.NTTFast.Packed.Native.encodeFields W) 0
-    let pass (l : Nat) := 8 * b + l < _root_.KoalaBear.fieldSize &&
-      (Montgomery.Native32.FastField.toNat (word out (8 * 15 + l))) % 2 ^ bits == 0
-    match (List.range 8).find? pass with
-    | some l => ((8 * b + l : Nat) : F)
-    | none => grindFrom base wi bits fuel (b + 1)
+/-- The first passing candidate of batch `b`, `8 b, …, 8 b + 7`: `group` holds eight copies of the
+duplexed state as a packed group, and the candidates go into coordinate `wi`. -/
+def grindBatch (group : @& ByteArray) (wi bits b : Nat) : Option Nat :=
+  let W := (List.range 8).foldl (fun W l ↦ CompPoly.CPolynomial.NTTFast.Packed.Native.write W
+    (8 * wi + l) ((8 * b + l : Nat) : F).val) (group.copySlice 0 ByteArray.empty 0 group.size)
+  let out := permute24 K24 W 0
+  ((List.range 8).find? fun l ↦ 8 * b + l < _root_.KoalaBear.fieldSize &&
+    Montgomery.Native32.FastField.toNat (word out (8 * 15 + l)) % 2 ^ bits == 0).map (8 * b + ·)
 
-/-- The first passing candidate of the batches `b0, …, b0 + nb - 1`, if any. `group` is the packed
-group of eight copies of the duplexed state; each batch writes its candidates into coordinate
-`wi`. -/
-def grindRange (group : @& ByteArray) (wi bits b0 nb : Nat) : Option Nat := Id.run do
-  for b in [b0:b0 + nb] do
-    let mut W := group.copySlice 0 ByteArray.empty 0 group.size
-    for l in [0:8] do
-      W := CompPoly.CPolynomial.NTTFast.Packed.Native.write W (8 * wi + l)
-        ((8 * b + l : Nat) : F).val
-    let out := permute24 K24 W 0
-    for l in [0:8] do
-      if 8 * b + l < _root_.KoalaBear.fieldSize &&
-          (Montgomery.Native32.FastField.toNat (word out (8 * 15 + l))) % 2 ^ bits == 0 then
-        return some (8 * b + l)
-  return none
+/-- The first passing candidate of the `nb` batches from `b`, if any. -/
+def grindRange (group : @& ByteArray) (wi bits : Nat) : Nat → Nat → Option Nat
+  | 0, _ => none
+  | nb + 1, b =>
+    match grindBatch group wi bits b with
+    | some m => some m
+    | none => grindRange group wi bits nb (b + 1)
 
 /-- The smallest passing candidate from wave `wave` on: each wave splits 1024 batches of eight
 candidates among 16 tasks, and the first wave with a passing candidate has the smallest. -/
@@ -105,14 +91,18 @@ def grindWaves (group : ByteArray) (wi bits : Nat) : Nat → Nat → F
   | 0, _ => 0
   | fuel + 1, wave =>
     let ts := (Array.range 16).map fun k ↦ Task.spawn fun _ ↦
-      grindRange group wi bits (1024 * wave + 64 * k) 64
+      grindRange group wi bits 64 (1024 * wave + 64 * k)
     match (ts.map Task.get).findSome? id with
     | some c => (c : F)
     | none => grindWaves group wi bits fuel (wave + 1)
 
 /-- The smallest grinding witness for `bits`, eight candidates per packed permutation as Plonky3
-grinds, in parallel waves. -/
+grinds, in parallel waves. A state with a full input, which a transcript never holds, is ground by
+the specification. -/
 def grind (c : Challenger F 24) (bits : Nat) : F :=
+  if bits = 0 ∨ 16 ≤ c.input.size then
+    grindFrom KoalaBear.duplex c bits _root_.KoalaBear.fieldSize 0
+  else
   let base := Hash.overwrite c.state c.input.toList
   let group := CompPoly.CPolynomial.NTTFast.Packed.Native.encodeFields
     (Array.ofFn (n := 192) fun k ↦ base.toArray.getD (k / 8) 0)
