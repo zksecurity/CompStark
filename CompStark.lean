@@ -29,3 +29,4 @@ public import CompStark.Stark.Prover
 public import CompStark.Stark.Fast
 public import CompStark.Stark.Words
 public import CompStark.Stark.Quotient
+public import CompStark.Stark.ExtWords

@@ -85,19 +85,31 @@ def ldeRef (logH bits : Nat) (shift : F) (w : Nat) (m : Array F) : Mat :=
 
 /-- The kernels the prover runs: the transcript's permutation and grinding, low-degree
 extension, matrices from rows, the Merkle digest layers, row access, the quotient values from the
-trace's extension, the values of a committed matrix's columns at a point, and rows batched by
-powers of `α`; `ofExts k` makes the matrix of rows of `k` extension elements, flattened. Every
-backend computes the same functions; `spec` runs the specifications. -/
+trace's extension, the values of a committed matrix's columns at a point, and the FRI inputs and
+folds on the backend's vectors of extension elements. Every backend computes the same functions;
+`spec` runs the specifications. -/
 structure Backend where
   transcript : Transcript
   lde : Nat → Nat → F → Nat → Array F → Mat
   ofRows : Nat → Nat → Array F → Mat
-  ofExts : Nat → Array EF → Mat
   layers : List Mat → Layers
   row : Mat → Nat → Array F
   quotient : Air → List F → Nat → Nat → Mat → EF → Array EF
   openedAt : Nat → Mat → EF → Array EF
-  compress : Mat → Array EF → Array EF
+  /-- Vectors of extension elements, with conversions. -/
+  V : Type
+  toArray : V → Array EF
+  ofArray : Array EF → V
+  size : V → Nat
+  /-- The batched quotients by log height, tallest first, of committed matrices with their points
+  and opened values, for the batching challenge `α`. -/
+  reduce : EF → List (Mat × List (EF × Array EF)) → List (Nat × V)
+  /-- The arity-2 fold at `β` of `2 ^ (logRows + 1)` values. -/
+  fold2 : V → EF → Nat → V
+  /-- `a + s · b`. -/
+  addScaled : V → V → EF → V
+  /-- The matrix of rows of `k` elements, flattened to coordinates. -/
+  leaves : Nat → V → Mat
 
 /-- Commit to matrices. -/
 def Backend.commit (B : Backend) (ms : List Mat) : Committed := ⟨ms, B.layers ms, B.row⟩
@@ -178,38 +190,37 @@ def foldPairs (vs : Array EF) (beta : EF) (logRows : Nat) : Array EF :=
   parChunks rows (if rows < 4096 then 1 else 16) fun r0 len ↦ foldRange vs pw perm beta half r0 len
 
 /-- Plonky3's `commit_phase` on the batched quotients `inputs`, tallest first. -/
-def commitPhase (B : Backend) (P : Params) (inputs : List (Array EF)) : PM CommitPhase := do
-  let fuel := inputs.headD #[] |>.size
-  let mut folded := inputs.headD #[]
-  let mut rest := inputs.tail
+def commitPhase (B : Backend) (P : Params) (inputs : List B.V) : PM CommitPhase := do
+  let mut (folded, rest) := match inputs with
+    | v :: vs => (v, vs)
+    | [] => (B.ofArray #[], [])
   let mut cp : CommitPhase := ⟨#[], #[], #[], #[], #[]⟩
-  for _ in List.range fuel do
-    if folded.size ≤ 2 ^ (P.logBlowup + P.logFinalPolyLen) then break
-    let logCur := Nat.log2 folded.size
-    let la := logArityFor P logCur (rest.head?.map (Nat.log2 ·.size))
+  for _ in List.range (B.size folded) do
+    if B.size folded ≤ 2 ^ (P.logBlowup + P.logFinalPolyLen) then break
+    let logCur := Nat.log2 (B.size folded)
+    let la := logArityFor P logCur (rest.head?.map (Nat.log2 <| B.size ·))
     let arity := 2 ^ la
-    let rows := folded.size / arity
-    let leaves := B.ofExts arity folded
-    let c := B.commit [leaves]
+    let rows := B.size folded / arity
+    let c := B.commit [B.leaves arity folded]
     pObserveList c.root.toList
     let w ← pGrind P.commitPowBits
     let beta ← pSampleExt
     let logRows := Nat.log2 rows
-    folded := if la = 1 then foldPairs folded beta logRows else
-      Array.ofFn (n := rows) fun i ↦
-        foldRow i logRows la beta ((List.range arity).map fun k ↦ folded.getD (i * arity + k) 0)
+    folded := if la = 1 then B.fold2 folded beta logRows else
+      let vs := B.toArray folded
+      B.ofArray <| Array.ofFn (n := rows) fun i ↦
+        foldRow i logRows la beta ((List.range arity).map fun k ↦ vs.getD (i * arity + k) 0)
     match rest with
     | v :: vs =>
-      if v.size == folded.size then
-        let bp := Ext.powTwo beta la
-        folded := Array.ofFn (n := folded.size) fun i ↦ folded.getD i 0 + bp * v.getD i 0
+      if B.size v == B.size folded then
+        folded := B.addScaled folded v (Ext.powTwo beta la)
         rest := vs
     | [] => pure ()
     cp := ⟨cp.commits.push c.root, cp.data.push c, cp.witnesses.push w, cp.arities.push la,
       cp.finalPoly⟩
+  let fa := B.toArray folded
   let len := 2 ^ P.logFinalPolyLen
-  let truncated := Array.ofFn (n := len) fun i ↦
-    folded.getD (reverseBits i P.logFinalPolyLen) 0
+  let truncated := Array.ofFn (n := len) fun i ↦ fa.getD (reverseBits i P.logFinalPolyLen) 0
   let finalPoly := idft P.logFinalPolyLen truncated
   pObserveExts finalPoly.toList
   return { cp with finalPoly := finalPoly }
@@ -292,18 +303,48 @@ def quotientOfLde (A : Air) (pis : List F) (degreeBits logChunks : Nat) (ext : M
   let tq := Mat.ofValues ext.width (2 ^ qlog) (permuteRows ext (bitRevPerm qlog))
   quotientValues A pis degreeBits logChunks tq alpha
 
+/-- The batched quotients `∑ αᵏ (p(z) - p(x)) / (z - x)` by log height, tallest first: each
+matrix's rows batched by the powers of `α` once, then every point accumulated over the rows with
+the running power of `α` of its height. -/
+def reduce (alpha : EF) (items : List (Mat × List (EF × Array EF))) : List (Nat × Array EF) :=
+  Id.run do
+  let mut red : List (Nat × Nat × Array EF) := []
+  for (m, pts) in items do
+    let logH := Nat.log2 m.height
+    let (cnt, acc) := (red.lookup logH).getD (0, Array.replicate m.height 0)
+    let mut cnt := cnt
+    let mut acc := acc
+    let ap := Array.ofFn (n := m.width) fun i ↦ Ext.pow alpha i.val
+    let parts := if m.height < 4096 then 1 else 16
+    let comp := compress m ap
+    let xs := cosetPointsBitRev gen logH
+    for (z, ys) in pts do
+      let offset := Ext.pow alpha cnt
+      let yz := (List.range m.width).foldl (fun s i ↦ s + ap.getD i 0 * ys.getD i 0) 0
+      let prev := acc
+      acc := parChunks m.height parts fun r0 len ↦ accumulateRows prev comp xs z yz offset r0 len
+      cnt := cnt + m.width
+    red := (logH, cnt, acc) :: red.filter (·.1 != logH)
+  return (red.mergeSort fun a b ↦ b.1 ≤ a.1).map fun (h, _, acc) ↦ (h, acc)
+
 /-- The specification backend. -/
 def Backend.spec : Backend where
   transcript := Transcript.init
   lde := ldeRef
   ofRows := Mat.ofValues
-  ofExts k vs := Mat.ofValues (4 * k) (vs.size / k) (vs.flatMap fun x ↦ (Ext.coeffs x).toArray)
   layers ms := Layers.ofArrays ((Merkle.layers (Hash.KoalaBear.hash F) (Hash.KoalaBear.compress F)
     (ms.map Mat.toMatrix)).map List.toArray).toArray
   row := rowOf
   quotient := quotientOfLde
   openedAt := Fri.openedAt
-  compress := Fri.compress
+  V := Array EF
+  toArray := id
+  ofArray := id
+  size := Array.size
+  reduce := Fri.reduce
+  fold2 := foldPairs
+  addScaled a b x := Array.zipWith (fun u v ↦ u + x * v) a b
+  leaves k vs := Mat.ofValues (4 * k) (vs.size / k) (vs.flatMap fun x ↦ (Ext.coeffs x).toArray)
 
 /-- Plonky3's `TwoAdicFriPcs::open`: the opened values, by round, matrix and point, and the FRI
 proof. -/
@@ -321,28 +362,12 @@ def openPcs (B : Backend) (P : Params) (rounds : List OpenRound) :
       om := om ++ [ov]
     opened := opened ++ [om]
   let alpha ← pSampleExt
-  -- The batched quotients by log height, with the number of columns batched into each.
-  let mut red : List (Nat × Nat × Array EF) := []
-  for ((c, pts), orow) in (rounds.zip opened) do
-    for ((m, zs), ovs) in (c.mats.zip pts).zip orow do
-      let logH := Nat.log2 m.height
-      let (cnt, acc) := (red.lookup logH).getD (0, Array.replicate m.height 0)
-      let mut cnt := cnt
-      let mut acc := acc
-      let ap := Array.ofFn (n := m.width) fun i ↦ Ext.pow alpha i.val
-      -- Every row's columns batched by the powers of `α`.
-      let parts := if m.height < 4096 then 1 else 16
-      let comp := B.compress m ap
-      let xs := cosetPointsBitRev gen logH
-      for (z, ys) in zs.zip ovs do
-        let offset := Ext.pow alpha cnt
-        let yz := (List.range m.width).foldl (fun s i ↦ s + ap.getD i 0 * ys.getD i 0) 0
-        let prev := acc
-        acc := parChunks m.height parts fun r0 len ↦ accumulateRows prev comp xs z yz offset r0 len
-        cnt := cnt + m.width
-      red := (logH, cnt, acc) :: red.filter (·.1 != logH)
-  let inputs := ((red.mergeSort fun a b ↦ b.1 ≤ a.1).map (·.2.2))
-  let logMax := Nat.log2 (inputs.headD #[]).size
+  let items := ((rounds.zip opened).map fun ((c, pts), orow) ↦
+    (c.mats.zip pts).zip orow |>.map fun ((m, zs), ovs) ↦ (m, zs.zip ovs)).flatten
+  let inputs := (B.reduce alpha items).map (·.2)
+  let logMax := match inputs with
+    | v :: _ => Nat.log2 (B.size v)
+    | [] => 0
   let cp ← commitPhase B P inputs
   for la in cp.arities do pObserve (la : F)
   let qw ← pGrind P.queryPowBits

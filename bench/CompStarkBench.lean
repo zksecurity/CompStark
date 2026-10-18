@@ -91,15 +91,9 @@ def phases (logN : Nat) : IO UInt32 := do
   let ys := B.openedAt 1 lde zeta
   let t7 ← IO.monoMsNow
   IO.println s!"one trace opening {t7 - t6} ms {ys.size}"
-  let ap := Array.ofFn (n := 64) fun i ↦ Ext.pow alpha i.val
   let t7a ← IO.monoMsNow
-  let comp := B.compress lde ap
-  let t7b ← IO.monoMsNow
-  IO.println s!"compress trace rows {t7b - t7a} ms {comp.size}"
-  let xs := cosetPointsBitRev gen (logN + 1)
-  let acc := parChunks lde.height 16 fun r0 len ↦
-    accumulateRows (Array.replicate lde.height 0) comp xs zeta zeta zeta r0 len
-  IO.println s!"accumulate one point {(← IO.monoMsNow) - t7b} ms {acc.size}"
+  let red := B.reduce alpha [(lde, [(zeta, ys), (zeta * zeta, ys)])]
+  IO.println s!"reduce trace at two points {(← IO.monoMsNow) - t7a} ms {red.length}"
   let t7 ← IO.monoMsNow
   let ((opened, fri), _) := (openPcs B P [(tc, [[zeta, zeta * zeta]]),
     (qc, chunks.map fun _ ↦ [zeta])]).run B.transcript
@@ -114,7 +108,7 @@ def phases (logN : Nat) : IO UInt32 := do
   let inputs := [Array.ofFn (n := 2 ^ (logN + 1)) fun i ↦
     (⟨(i.val : _), 1, 2, 3⟩ : KoalaBear.Fast.Ext4)]
   let t8a ← IO.monoMsNow
-  let (cp, _) := (commitPhase B P inputs).run B.transcript
+  let (cp, _) := (commitPhase B P (inputs.map B.ofArray)).run B.transcript
   IO.println s!"commit phase {(← IO.monoMsNow) - t8a} ms {cp.commits.size}"
   let t8 ← IO.monoMsNow
   let w := B.transcript.grinder B.transcript.state 16

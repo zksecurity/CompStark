@@ -9,6 +9,7 @@ public import CompStark.Merkle.Packed
 public import CompPoly.Univariate.NTTFast.Packed.CosetLde
 public import CompPoly.Univariate.NTT.KoalaBear
 public import CompStark.Stark.Words
+public import CompStark.Stark.ExtWords
 
 /-! # The fast prover backend
 
@@ -117,26 +118,6 @@ def transcript : Transcript := Transcript.initWith duplex grind
 /-- A matrix of packed rows. -/
 def ofRows (w h : Nat) (vals : Array F) : Mat :=
   { width := w, height := h, words := CompPoly.CPolynomial.NTTFast.Packed.Native.encodeFields vals }
-
-/-- The coordinates of extension elements `i0, …, i0 + len - 1`, packed. -/
-def flattenRange (vs : @& Array EF) (i0 len : Nat) : ByteArray := Id.run do
-  let mut out := CompPoly.CPolynomial.NTTFast.Packed.Native.zeroWords (4 * len)
-  for k in [0:len] do
-    let x := vs.getD (i0 + k) 0
-    out := CompPoly.CPolynomial.NTTFast.Packed.Native.write out (4 * k) x.c0.val
-    out := CompPoly.CPolynomial.NTTFast.Packed.Native.write out (4 * k + 1) x.c1.val
-    out := CompPoly.CPolynomial.NTTFast.Packed.Native.write out (4 * k + 2) x.c2.val
-    out := CompPoly.CPolynomial.NTTFast.Packed.Native.write out (4 * k + 3) x.c3.val
-  return out
-
-/-- The matrix of rows of `k` extension elements, flattened, packed in parallel ranges. -/
-def ofExts (k : Nat) (vs : Array EF) : Mat :=
-  let n := vs.size
-  let parts := if n < 4096 then 1 else 16
-  let size := n / parts
-  let ts := (Array.range parts).map fun p ↦ Task.spawn fun _ ↦
-    flattenRange vs (p * size) (if p + 1 = parts then n - p * size else size)
-  { width := 4 * k, height := n / k, words := ts.foldl (fun acc t ↦ acc ++ t.get) .empty }
 
 /-- Row `r` of a packed matrix. -/
 def row (m : Mat) (r : Nat) : Array F := decodeRange m.words (r * m.width) m.width
@@ -363,38 +344,159 @@ def openedAt (logBlowup : Nat) (m : Mat) (z : EF) : Array EF :=
     factor * ⟨word (planes.getD 0 .empty) j, word (planes.getD 1 .empty) j,
       word (planes.getD 2 .empty) j, word (planes.getD 3 .empty) j⟩
 
-/-- Rows `r0, …, r0 + len - 1` of a packed matrix of width `w` batched by the powers of `α` given
-as four coordinate planes. -/
-def compressRange (m : @& ByteArray) (w : Nat) (planes : @& Array ByteArray) (r0 len : Nat) :
-    Array EF := Id.run do
-  let mut out := Array.emptyWithCapacity len
-  for r in [r0:r0 + len] do
-    let ofWord := CompPoly.CPolynomial.NTTFast.Packed.ofWord
-    out := out.push ⟨ofWord (Words.dotAt m (r * w) (planes.getD 0 .empty) w),
-      ofWord (Words.dotAt m (r * w) (planes.getD 1 .empty) w),
-      ofWord (Words.dotAt m (r * w) (planes.getD 2 .empty) w),
-      ofWord (Words.dotAt m (r * w) (planes.getD 3 .empty) w)⟩
+/-- Rows `r0, …, r0 + len - 1` of a packed matrix of width `w` batched by the powers of `α`, given
+as four coordinate planes `a0, …, a3`: four planes of `len` words. -/
+def compressRange (m : @& ByteArray) (w : Nat) (a0 a1 a2 a3 : @& ByteArray) (r0 len : Nat) :
+    Array ByteArray := Id.run do
+  let z := CompPoly.CPolynomial.NTTFast.Packed.Native.zeroWords len
+  let mut p0 := z
+  let mut p1 := z
+  let mut p2 := z
+  let mut p3 := z
+  for k in [0:len] do
+    let o := (r0 + k) * w
+    p0 := CompPoly.CPolynomial.NTTFast.Packed.Native.write p0 k (Words.dotAt m o a0 w)
+    p1 := CompPoly.CPolynomial.NTTFast.Packed.Native.write p1 k (Words.dotAt m o a1 w)
+    p2 := CompPoly.CPolynomial.NTTFast.Packed.Native.write p2 k (Words.dotAt m o a2 w)
+    p3 := CompPoly.CPolynomial.NTTFast.Packed.Native.write p3 k (Words.dotAt m o a3 w)
+  return #[p0, p1, p2, p3]
+
+/-- Concatenate parallel pieces of planes. -/
+def joinPlanes (n : Nat) (pieces : Array (Task (Array ByteArray))) : EVec :=
+  let cat (j : Nat) := pieces.foldl (fun acc t ↦ acc ++ t.get.getD j .empty) ByteArray.empty
+  ⟨n, cat 0, cat 1, cat 2, cat 3⟩
+
+/-- Every row of a packed matrix batched by the powers `ap` of `α`, in parallel row ranges. -/
+def compressPlanes (m : Mat) (ap : Array EF) : EVec :=
+  let a := EVec.ofArray ap
+  let n := m.height
+  let parts := if n < 4096 then 1 else 16
+  let size := n / parts
+  joinPlanes n <| (Array.range parts).map fun k ↦ Task.spawn fun _ ↦
+    compressRange m.words m.width a.c0 a.c1 a.c2 a.c3 (k * size)
+      (if k + 1 = parts then n - k * size else size)
+
+/-- Rows `r0, …, r0 + len - 1` of the batched quotient of one height: for every matrix, its rows
+batched by the planes `a` of the powers of `α`, and for every point `(z, yz, offset)` the term
+`offset · (yz - comp) / (z - x)`, `xs` the height's points. -/
+def reduceRange (items : @& Array (ByteArray × Nat × EVec × List (EF × EF × EF)))
+    (xs : @& ByteArray) (r0 len : Nat) : EVec := Id.run do
+  let xr := slice xs r0 len
+  let mut acc := EVec.zeros len
+  for (words, w, a, pts) in items do
+    let comp := compressRange words w a.c0 a.c1 a.c2 a.c3 r0 len
+    let comp : EVec := ⟨len, comp.getD 0 .empty, comp.getD 1 .empty, comp.getD 2 .empty,
+      comp.getD 3 .empty⟩
+    for (z, yz, offset) in pts do
+      acc := acc.add (((EVec.rsub yz comp).mul (invDenoms z xr len)).smul offset)
+  return acc
+
+/-- `Fri.reduce` on planes, every height in parallel row ranges: rows batched by word dot
+products, `1 / (z - x)` by the norm. -/
+def reduce (alpha : EF) (items : List (Mat × List (EF × Array EF))) : List (Nat × EVec) :=
+  Id.run do
+  -- Per height: the matrices with their points, opened sums and powers of `α`, in order.
+  let mut groups : List (Nat × Nat × Array (ByteArray × Nat × EVec × List (EF × EF × EF))) := []
+  for (m, pts) in items do
+    let logH := Nat.log2 m.height
+    let (cnt, g) := (groups.lookup logH).getD (0, #[])
+    let ap := Array.ofFn (n := m.width) fun i ↦ Ext.pow alpha i.val
+    let mut cnt := cnt
+    let mut terms := []
+    for (z, ys) in pts do
+      let yz := (List.range m.width).foldl (fun s i ↦ s + ap.getD i 0 * ys.getD i 0) 0
+      terms := terms ++ [(z, yz, Ext.pow alpha cnt)]
+      cnt := cnt + m.width
+    groups := (logH, cnt, g.push (m.words, m.width, EVec.ofArray ap, terms)) ::
+      groups.filter (·.1 != logH)
+  let out := groups.map fun (logH, _, g) ↦
+    let n := 2 ^ logH
+    let xs := CompPoly.CPolynomial.NTTFast.Packed.Native.encodeFields (cosetPointsBitRev gen logH)
+    let parts := if n < 4096 then 1 else 16
+    let size := n / parts
+    let ts := (Array.range parts).map fun k ↦ Task.spawn fun _ ↦
+      let v := reduceRange g xs (k * size) (if k + 1 = parts then n - k * size else size)
+      #[v.c0, v.c1, v.c2, v.c3]
+    (logH, joinPlanes n ts)
+  return out.mergeSort fun a b ↦ b.1 ≤ a.1
+
+/-- Words `0, 2, 4, …` and `1, 3, 5, …` of the first `2 n` words of `b`. -/
+def deinterleave (b : @& ByteArray) (n : Nat) : ByteArray × ByteArray := Id.run do
+  let mut e := CompPoly.CPolynomial.NTTFast.Packed.Native.zeroWords n
+  let mut o := CompPoly.CPolynomial.NTTFast.Packed.Native.zeroWords n
+  for i in [0:n] do
+    e := CompPoly.CPolynomial.NTTFast.Packed.Native.write e i
+      (CompPoly.CPolynomial.NTTFast.Packed.Native.read b (2 * i))
+    o := CompPoly.CPolynomial.NTTFast.Packed.Native.write o i
+      (CompPoly.CPolynomial.NTTFast.Packed.Native.read b (2 * i + 1))
+  return (e, o)
+
+/-- Pairs `r0, …, r0 + len - 1` of the arity-2 fold of planes `v` at `β`; `twoX` holds `2 x` of
+every pair. -/
+def fold2Range (v : @& EVec) (twoX : @& ByteArray) (beta : EF) (r0 len : Nat) : EVec :=
+  let split (b : ByteArray) := deinterleave (slice b (2 * r0) (2 * len)) len
+  let (l0, h0) := split v.c0
+  let (l1, h1) := split v.c1
+  let (l2, h2) := split v.c2
+  let (l3, h3) := split v.c3
+  let lo : EVec := ⟨len, l0, l1, l2, l3⟩
+  let hi : EVec := ⟨len, h0, h1, h2, h3⟩
+  let inv2x := batchInvRange twoX r0 len
+  ((lo.add hi).smul (Ext.ofBase (2 : F)⁻¹)).add (((lo.sub hi).mulBase inv2x).smul beta)
+
+/-- `Fri.foldPairs` on planes, `(lo + hi) / 2 + β (lo - hi) / (2 x)`, in parallel ranges. -/
+def fold2 (v : EVec) (beta : EF) (logRows : Nat) : EVec :=
+  let rows := 2 ^ logRows
+  let pw := cosetPoints 1 (logRows + 1)
+  let twoX := CompPoly.CPolynomial.NTTFast.Packed.Native.encodeFields
+    ((bitRevPerm logRows).map fun i ↦ 2 * pw.getD i 0)
+  let parts := if rows < 4096 then 1 else 16
+  let size := rows / parts
+  joinPlanes rows <| (Array.range parts).map fun k ↦ Task.spawn fun _ ↦
+    let f := fold2Range v twoX beta (k * size) (if k + 1 = parts then rows - k * size else size)
+    #[f.c0, f.c1, f.c2, f.c3]
+
+/-- The coordinates of elements `i0, …, i0 + len - 1` of planes, interleaved. -/
+def interleaveRange (a0 a1 a2 a3 : @& ByteArray) (i0 len : Nat) : ByteArray := Id.run do
+  let mut out := CompPoly.CPolynomial.NTTFast.Packed.Native.zeroWords (4 * len)
+  for k in [0:len] do
+    let i := i0 + k
+    out := CompPoly.CPolynomial.NTTFast.Packed.Native.write out (4 * k)
+      (CompPoly.CPolynomial.NTTFast.Packed.Native.read a0 i)
+    out := CompPoly.CPolynomial.NTTFast.Packed.Native.write out (4 * k + 1)
+      (CompPoly.CPolynomial.NTTFast.Packed.Native.read a1 i)
+    out := CompPoly.CPolynomial.NTTFast.Packed.Native.write out (4 * k + 2)
+      (CompPoly.CPolynomial.NTTFast.Packed.Native.read a2 i)
+    out := CompPoly.CPolynomial.NTTFast.Packed.Native.write out (4 * k + 3)
+      (CompPoly.CPolynomial.NTTFast.Packed.Native.read a3 i)
   return out
 
-/-- `compress` on packed words: every row's dot products with the coordinate planes of the powers
-of `α`, in parallel row ranges. -/
-def compress (m : Mat) (ap : Array EF) : Array EF :=
-  let planes := #[ap.map (·.c0), ap.map (·.c1), ap.map (·.c2), ap.map (·.c3)].map
-    CompPoly.CPolynomial.NTTFast.Packed.Native.encodeFields
-  parChunks m.height (if m.height < 4096 then 1 else 16) fun r0 len ↦
-    compressRange m.words m.width planes r0 len
+/-- The matrix of rows of `k` elements, flattened, packed in parallel ranges. -/
+def leaves (k : Nat) (v : EVec) : Mat :=
+  let n := v.n
+  let parts := if n < 4096 then 1 else 16
+  let size := n / parts
+  let ts := (Array.range parts).map fun p ↦ Task.spawn fun _ ↦
+    interleaveRange v.c0 v.c1 v.c2 v.c3 (p * size) (if p + 1 = parts then n - p * size else size)
+  { width := 4 * k, height := n / k, words := ts.foldl (fun acc t ↦ acc ++ t.get) .empty }
 
 /-- The fast backend. -/
 def backend : Backend where
   transcript := transcript
   lde := lde
   ofRows := ofRows
-  ofExts := ofExts
   layers := layers
   row := row
   quotient := quotient
   openedAt := openedAt
-  compress := compress
+  V := EVec
+  toArray := EVec.toArray
+  ofArray := EVec.ofArray
+  size := (·.n)
+  reduce := reduce
+  fold2 := fold2
+  addScaled a b x := a.add (b.smul x)
+  leaves := leaves
 
 /-- The fast backend with the extension plans of a proof of a `2 ^ logN`-row trace and
 `2 ^ logChunks` quotient chunks prepared: the trace's on `g · ⟨ω_N⟩` and every chunk's. -/
