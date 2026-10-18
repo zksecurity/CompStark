@@ -88,31 +88,25 @@ def phases (logN : Nat) : IO UInt32 := do
   let t6 ← IO.monoMsNow
   IO.println s!"quotient commit {t6 - t5} ms {(qc.root.toArray.getD 0 0).val}"
   let zeta : KoalaBear.Fast.Ext4 := ⟨17, 19, 23, 29⟩
-  let ys := B.openedAt 1 lde zeta
+  let rounds : List OpenRound := [(tc, [[zeta, zeta * zeta]]), (qc, chunks.map fun _ ↦ [zeta])]
+  let t6 ← IO.monoMsNow
+  let opened := rounds.map fun (c, pts) ↦ (c.mats.zip pts).map fun (m, zs) ↦
+    zs.map fun z ↦ B.openedAt 1 m z
   let t7 ← IO.monoMsNow
-  IO.println s!"one trace opening {t7 - t6} ms {ys.size}"
-  let t7a ← IO.monoMsNow
-  let red := B.reduce alpha [(lde, [(zeta, ys), (zeta * zeta, ys)])]
-  IO.println s!"reduce trace at two points {(← IO.monoMsNow) - t7a} ms {red.length}"
-  let t7 ← IO.monoMsNow
-  let ((opened, fri), _) := (openPcs B P [(tc, [[zeta, zeta * zeta]]),
-    (qc, chunks.map fun _ ↦ [zeta])]).run B.transcript
+  IO.println s!"opened values {t7 - t6} ms {opened.length}"
+  let items := ((rounds.zip opened).map fun ((c, pts), orow) ↦
+    (c.mats.zip pts).zip orow |>.map fun ((m, zs), ovs) ↦ (m, zs.zip ovs)).flatten
+  let red := B.reduce alpha items
   let t8 ← IO.monoMsNow
-  IO.println s!"openPcs {t8 - t7} ms {opened.length} {fri.queries.size}"
-  for (q, pw) in [(0, 0), (100, 0), (0, 16)] do
-    let t ← IO.monoMsNow
-    let ((o, f), _) := (openPcs B { P with numQueries := q, queryPowBits := pw }
-      [(tc, [[zeta, zeta * zeta]]), (qc, chunks.map fun _ ↦ [zeta])]).run B.transcript
-    IO.println s!"  openPcs with {q} queries, {pw} pow bits: {(← IO.monoMsNow) - t} ms \
-      {o.length} {f.queries.size}"
-  let inputs := [Array.ofFn (n := 2 ^ (logN + 1)) fun i ↦
-    (⟨(i.val : _), 1, 2, 3⟩ : KoalaBear.Fast.Ext4)]
-  let t8a ← IO.monoMsNow
-  let (cp, _) := (commitPhase B P (inputs.map B.ofArray)).run B.transcript
-  IO.println s!"commit phase {(← IO.monoMsNow) - t8a} ms {cp.commits.size}"
-  let t8 ← IO.monoMsNow
+  IO.println s!"reduce {t8 - t7} ms {red.length}"
+  let (cp, _) := (commitPhase B P (red.map (·.2))).run B.transcript
+  let t9 ← IO.monoMsNow
+  IO.println s!"commit phase {t9 - t8} ms {cp.commits.size}"
+  let ((o, f), _) := (openPcs B P rounds).run B.transcript
+  IO.println s!"openPcs {(← IO.monoMsNow) - t9} ms {o.length} {f.queries.size}"
+  let t10 ← IO.monoMsNow
   let w := B.transcript.grinder B.transcript.state 16
-  IO.println s!"grind 16 bits {(← IO.monoMsNow) - t8} ms, \
+  IO.println s!"grind 16 bits {(← IO.monoMsNow) - t10} ms, \
     witness {Montgomery.Native32.FastField.toNat w}"
   return 0
 

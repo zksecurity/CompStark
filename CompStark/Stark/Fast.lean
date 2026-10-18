@@ -344,8 +344,8 @@ def quotient (A : Air) (pis : List F) (degreeBits logChunks : Nat) (ext : Mat) (
   quotientWith (quotientTables degreeBits logChunks) A pis ext alpha
 
 /-- Rows `i0, …, i0 + len - 1` (natural order, stored at `perm[i]`) of a packed matrix of width
-`w`, accumulated with the extension weights `weights[i]`: four coordinate planes of `w` words. -/
-def weightedRows (m : @& ByteArray) (w : Nat) (perm : @& Array Nat) (weights : @& Array EF)
+`w`, accumulated with the extension weights `wt[i]`: four coordinate planes of `w` words. -/
+def weightedRows (m : @& ByteArray) (w : Nat) (perm : @& Array Nat) (wt : @& EVec)
     (i0 len : Nat) : Array ByteArray := Id.run do
   let z := CompPoly.CPolynomial.NTTFast.Packed.Native.zeroWords w
   let mut p0 := z
@@ -354,27 +354,26 @@ def weightedRows (m : @& ByteArray) (w : Nat) (perm : @& Array Nat) (weights : @
   let mut p3 := z
   for i in [i0:i0 + len] do
     let r := perm.getD i 0 * w
-    let x := weights.getD i 0
-    p0 := Words.mulAddInto p0 m r x.c0.val w
-    p1 := Words.mulAddInto p1 m r x.c1.val w
-    p2 := Words.mulAddInto p2 m r x.c2.val w
-    p3 := Words.mulAddInto p3 m r x.c3.val w
+    p0 := Words.mulAddInto p0 m r (CompPoly.CPolynomial.NTTFast.Packed.Native.read wt.c0 i) w
+    p1 := Words.mulAddInto p1 m r (CompPoly.CPolynomial.NTTFast.Packed.Native.read wt.c1 i) w
+    p2 := Words.mulAddInto p2 m r (CompPoly.CPolynomial.NTTFast.Packed.Native.read wt.c2 i) w
+    p3 := Words.mulAddInto p3 m r (CompPoly.CPolynomial.NTTFast.Packed.Native.read wt.c3 i) w
   return #[p0, p1, p2, p3]
 
-/-- `openedAt` on packed words: the barycentric sums accumulated row by row in parallel ranges. -/
+/-- `openedAt` on packed words: the barycentric weights `x / (z - x)` as planes, by the norm, and
+the sums accumulated row by row in parallel ranges. -/
 def openedAt (logBlowup : Nat) (m : Mat) (z : EF) : Array EF :=
   let logH := Nat.log2 m.height - logBlowup
   let h := 2 ^ logH
   let w := m.width
-  let xs := cosetPoints gen logH
-  let invs := batchInv (xs.map fun x ↦ z - Ext.ofBase x)
-  let weights := Array.zipWith KoalaBear.Fast.Ext4.smul xs invs
+  let xs := CompPoly.CPolynomial.NTTFast.Packed.Native.encodeFields (cosetPoints gen logH)
+  let wt := (invDenoms z xs h).mulBase xs
   let factor := KoalaBear.Fast.cosetFactor logH gen z
   let perm := bitRevPerm logH
   let parts := if h < 4096 then 1 else 16
   let size := h / parts
   let tasks := (Array.range parts).map fun k ↦ Task.spawn fun _ ↦
-    weightedRows m.words w perm weights (k * size) (if k + 1 = parts then h - k * size else size)
+    weightedRows m.words w perm wt (k * size) (if k + 1 = parts then h - k * size else size)
   let planes := tasks.foldl (fun acc t ↦ (acc.zip t.get).map fun (a, b) ↦ Words.addWords a b w)
     (Array.replicate 4 (CompPoly.CPolynomial.NTTFast.Packed.Native.zeroWords w))
   Array.ofFn (n := w) fun j ↦
@@ -385,17 +384,20 @@ def openedAt (logBlowup : Nat) (m : Mat) (z : EF) : Array EF :=
 as four coordinate planes `a0, …, a3`: four planes of `len` words. -/
 def compressRange (m : @& ByteArray) (w : Nat) (a0 a1 a2 a3 : @& ByteArray) (r0 len : Nat) :
     Array ByteArray := Id.run do
+  -- The range transposed, column `j` at words `j * len`: every plane is a sum of columns times
+  -- scalars, in place.
+  let cols := CompPoly.CPolynomial.NTTFast.Packed.Native.transposeRows m w r0 len
   let z := CompPoly.CPolynomial.NTTFast.Packed.Native.zeroWords len
   let mut p0 := z
   let mut p1 := z
   let mut p2 := z
   let mut p3 := z
-  for k in [0:len] do
-    let o := (r0 + k) * w
-    p0 := CompPoly.CPolynomial.NTTFast.Packed.Native.write p0 k (Words.dotAt m o a0 w)
-    p1 := CompPoly.CPolynomial.NTTFast.Packed.Native.write p1 k (Words.dotAt m o a1 w)
-    p2 := CompPoly.CPolynomial.NTTFast.Packed.Native.write p2 k (Words.dotAt m o a2 w)
-    p3 := CompPoly.CPolynomial.NTTFast.Packed.Native.write p3 k (Words.dotAt m o a3 w)
+  for j in [0:w] do
+    let read := CompPoly.CPolynomial.NTTFast.Packed.Native.read
+    p0 := Words.mulAddInto p0 cols (j * len) (read a0 j) len
+    p1 := Words.mulAddInto p1 cols (j * len) (read a1 j) len
+    p2 := Words.mulAddInto p2 cols (j * len) (read a2 j) len
+    p3 := Words.mulAddInto p3 cols (j * len) (read a3 j) len
   return #[p0, p1, p2, p3]
 
 /-- Concatenate parallel pieces of planes. -/
@@ -420,12 +422,20 @@ def reduceRange (items : @& Array (ByteArray × Nat × EVec × List (EF × EF ×
     (xs : @& ByteArray) (r0 len : Nat) : EVec := Id.run do
   let xr := slice xs r0 len
   let mut acc := EVec.zeros len
+  -- `1 / (z - x)` once per distinct point.
+  let mut invs : List (EF × EVec) := []
   for (words, w, a, pts) in items do
     let comp := compressRange words w a.c0 a.c1 a.c2 a.c3 r0 len
     let comp : EVec := ⟨len, comp.getD 0 .empty, comp.getD 1 .empty, comp.getD 2 .empty,
       comp.getD 3 .empty⟩
     for (z, yz, offset) in pts do
-      acc := acc.add (((EVec.rsub yz comp).mul (invDenoms z xr len)).smul offset)
+      let inv ← match invs.lookup z with
+        | some v => pure v
+        | none => do
+          let v := invDenoms z xr len
+          invs := (z, v) :: invs
+          pure v
+      acc := acc.add (((EVec.rsub yz comp).mul inv).smul offset)
   return acc
 
 /-- `Fri.reduce` on planes, every height in parallel row ranges: rows batched by word dot
