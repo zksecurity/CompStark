@@ -47,6 +47,17 @@ def fibInstance (n : Nat) : Array KoalaBear.Fast.Field × List KoalaBear.Fast.Fi
       (t.push l |>.push r, r, l + r)) (#[], 0, 1)
   (t, [0, 1, t.getD (2 * n - 1) r])
 
+/-- The trace of `n` rows of `wide w` from `xⱼ = j`. -/
+def wideTrace (w n : Nat) : Array KoalaBear.Fast.Field := Id.run do
+  let mut out := Array.emptyWithCapacity (w * n)
+  let mut row : Array KoalaBear.Fast.Field := Array.ofFn (n := w) fun j ↦ (j.val : _)
+  for _ in [0:n] do
+    out := out ++ row
+    row := Array.ofFn (n := w) fun j ↦
+      let x := row.getD j 0
+      x * x * x + row.getD ((j.val + 1) % w) 0
+  return out
+
 def main (args : List String) : IO UInt32 := do
   match args with
   | ["poseidon2-spec", logN] =>
@@ -178,28 +189,30 @@ def main (args : List String) : IO UInt32 := do
       return (CompPoly.CPolynomial.NTTFast.Packed.Native.read b 0).toUInt64
     IO.println s!"perm24 ns/perm {m * 10 / (8 * groups) / 10}.{m * 10 / (8 * groups) % 10}"
     return 0
-  | "prove" :: backend :: rest =>
-    -- `prove (spec|fast) LOG_N LOG_BLOWUP LOG_FINAL MAX_LOG_ARITY QUERIES COMMIT_POW QUERY_POW
-    -- [JSON]`: the Fibonacci proof's median time, checked against Plonky3's proof in `JSON` if
+  | "prove" :: backend :: air :: rest =>
+    -- `prove (spec|fast) (fib|wide) LOG_N LOG_BLOWUP LOG_FINAL MAX_LOG_ARITY QUERIES COMMIT_POW
+    -- QUERY_POW [JSON]`: the proof's median time, checked against Plonky3's proof in `JSON` if
     -- given.
     let B := if backend == "fast" then CompStark.Stark.Fast.backend else CompStark.Fri.Backend.spec
     let ps := (rest.take 7).map String.toNat!
     let [logN, b, f, a, q, cp, qp] := ps | IO.eprintln "seven parameters"; return 1
     let P : CompStark.Fri.Params := ⟨b, f, a, q, cp, qp⟩
-    let (trace, pis) := fibInstance (2 ^ logN)
+    let A := if air == "wide" then CompStark.Stark.wide 64 else CompStark.Stark.fibonacci
+    let (trace, pis) :=
+      if air == "wide" then (wideTrace 64 (2 ^ logN), []) else fibInstance (2 ^ logN)
     if let path :: _ := rest.drop 7 then
       let rust ← IO.ofExcept (CompStark.Stark.Json.parse (← IO.FS.readFile path))
-      unless CompStark.Stark.proveWith B P CompStark.Stark.fibonacci logN trace pis == rust do
+      unless CompStark.Stark.proveWith B P A logN trace pis == rust do
         IO.eprintln "proof differs from Plonky3's"; return 1
       IO.println "proof matches Plonky3's"
     let mut samples := #[]
     for k in [0:3] do
       let (ns, pf) ← timeNs fun _ ↦ do
-        return CompStark.Stark.proveWith B P CompStark.Stark.fibonacci logN (trace.set! 0 (k : _))
+        return CompStark.Stark.proveWith B P A logN (trace.set! 0 (k : _))
           pis
       samples := samples.push ns
       if pf.degreeBits == 12345 then IO.println ""
     let m := (samples.qsort (· < ·))[1]!
-    IO.println s!"lean {backend} prove fib 2^{logN} ms median {m / 1000000}.{m / 1000 % 1000}"
+    IO.println s!"lean {backend} prove {air} 2^{logN} ms median {m / 1000000}.{m / 1000 % 1000}"
     return 0
   | _ => IO.eprintln "usage: CompStarkBench poseidon2-spec LOG_N"; return 1

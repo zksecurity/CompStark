@@ -29,32 +29,6 @@ open CompStark.Fri CompStark.KoalaBear
 local notation "F" => KoalaBear.Fast.Field
 local notation "EF" => KoalaBear.Fast.Ext4
 
-/-- The constraints of `A`, folded by `α`, on every row of the quotient domain `g · ⟨ω_q⟩` of size
-`2 ^ (degreeBits + logChunks)`, divided by the trace domain's vanishing polynomial. `tq` is the
-trace on the quotient domain in natural order. `Z_H` has period `2 ^ logChunks` there. -/
-def quotientValues (A : Air) (pis : List F) (degreeBits logChunks : Nat) (tq : Mat) (alpha : EF) :
-    Array EF :=
-  let qlog := degreeBits + logChunks
-  let xs := cosetPoints gen qlog
-  let gInv := (twoAdicGen degreeBits)⁻¹
-  let period := 2 ^ logChunks
-  let zhs := Array.ofFn (n := period) fun k ↦ powF (xs.getD k 0) (2 ^ degreeBits) - 1
-  let invZh := batchInv zhs
-  let invFirst := batchInv (xs.map (· - 1))
-  let invLast := batchInv (xs.map (· - gInv))
-  Array.ofFn (n := 2 ^ qlog) fun i ↦
-    let zh := zhs.getD (i.val % period) 0
-    let env : Expr.Env F := {
-      cur := fun j ↦ tq.values.getD (i.val * tq.width + j) 0
-      next := fun j ↦ tq.values.getD (((i.val + period) % 2 ^ qlog) * tq.width + j) 0
-      pub := fun j ↦ pis.getD j 0
-      const := id
-      isFirstRow := zh * invFirst.getD i 0
-      isLastRow := zh * invLast.getD i 0
-      isTransition := xs.getD i 0 - gInv }
-    let acc := A.constraints.foldl (fun acc c ↦ acc * alpha + Ext.ofBase (c.eval env)) 0
-    acc * Ext.ofBase (invZh.getD (i.val % period) 0)
-
 /-- A proof of `A` for the row-major trace of `2 ^ logN` rows and public values `pis`, by the
 backend `B`. -/
 def proveWith (B : Backend) (P : Params) (A : Air) (logN : Nat) (trace : Array F) (pis : List F) :
@@ -72,9 +46,8 @@ def proveWith (B : Backend) (P : Params) (A : Air) (logN : Nat) (trace : Array F
     let alpha ← pSampleExt
     -- The trace on the quotient domain, from the first rows of its bit-reversed extension.
     let ext := traceC.mats.headD ⟨0, 0, #[]⟩
-    let tq : Mat := ⟨w, 2 ^ qlog, Array.ofFn (n := 2 ^ qlog * w) fun k ↦
-      ext.values.getD (reverseBits (k.val / w) qlog * w + k.val % w) 0⟩
-    let qs := quotientValues A pis logN logChunks tq alpha
+    let tq : Mat := ⟨w, 2 ^ qlog, permuteRows ext (bitRevPerm qlog)⟩
+    let qs := B.quotient A pis logN logChunks tq alpha
     let chunks := (List.range (2 ^ logChunks)).map fun c ↦
       let shift := gen * powF (twoAdicGen qlog) c
       let vals := (List.range (2 ^ logN)).toArray.flatMap fun r ↦

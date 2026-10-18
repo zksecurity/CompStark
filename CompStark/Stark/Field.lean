@@ -79,6 +79,14 @@ def reverseBitsGo : Nat → Nat → Nat → Nat
 /-- The low `bits` bits of `i`, reversed. -/
 def reverseBits (i bits : Nat) : Nat := reverseBitsGo bits i 0
 
+/-- The bit-reversal permutation of `0, …, 2 ^ bits - 1`, built by doubling: the reversal for
+`bits + 1` is the reversal for `bits` doubled, then the same plus one. -/
+def bitRevPerm : Nat → Array Nat
+  | 0 => #[0]
+  | bits + 1 =>
+    let p := bitRevPerm bits
+    p.map (2 * ·) ++ p.map (2 * · + 1)
+
 /-- `shift · ω ^ i` for `i < 2 ^ logN`, `ω` of order `2 ^ logN`. -/
 def cosetPoints (shift : F) (logN : Nat) : Array F := Id.run do
   let w := twoAdicGen logN
@@ -92,7 +100,7 @@ def cosetPoints (shift : F) (logN : Nat) : Array F := Id.run do
 /-- The points of `shift · ⟨ω⟩` in bit-reversed order. -/
 def cosetPointsBitRev (shift : F) (logN : Nat) : Array F :=
   let xs := cosetPoints shift logN
-  Array.ofFn (n := 2 ^ logN) fun r ↦ xs.getD (reverseBits r.val logN) 0
+  (bitRevPerm logN).map fun i ↦ xs.getD i 0
 
 /-- The inverses of all elements with one inversion, by prefix products. Defined when no element
 is zero. -/
@@ -109,5 +117,13 @@ def batchInv {K : Type*} [Mul K] [Inv K] [One K] (xs : Array K) : Array K := Id.
     out := out.set! i (inv * pre.getD i 1)
     inv := inv * xs.getD i 1
   return out
+
+/-- `f start len` on `parts` consecutive ranges covering `0, …, n - 1`, as parallel tasks, results
+concatenated in order. -/
+def parChunks {α : Type} (n parts : Nat) (f : Nat → Nat → Array α) : Array α :=
+  let size := (n + parts - 1) / parts
+  let ts := (Array.range parts).map fun k ↦
+    Task.spawn fun _ ↦ f (k * size) (min size (n - min n (k * size)))
+  ts.foldl (fun acc t ↦ acc ++ t.get) #[]
 
 end CompStark.Stark

@@ -101,6 +101,46 @@ fn cube_trace(n: usize) -> (RowMajorMatrix<F>, F) {
     (RowMajorMatrix::new(values, 2), last)
 }
 
+/// The width of `WideAir`.
+pub const WIDE: usize = 64;
+
+/// `WIDE` columns, each next row `x'ⱼ = xⱼ³ + xⱼ₊₁` (indices mod `WIDE`): a representative wide
+/// trace with degree-3 transitions and a two-chunk quotient, no public values.
+pub struct WideAir;
+
+impl<T> BaseAir<T> for WideAir {
+    fn width(&self) -> usize {
+        WIDE
+    }
+}
+
+impl<AB: AirBuilderWithPublicValues> Air<AB> for WideAir {
+    fn eval(&self, builder: &mut AB) {
+        let main = builder.main();
+        let local = main.row_slice(0).unwrap();
+        let next = main.row_slice(1).unwrap();
+        let local: &[AB::Var] = (*local).borrow();
+        let next: &[AB::Var] = (*next).borrow();
+        let mut transition = builder.when_transition();
+        for j in 0..WIDE {
+            let x: AB::Expr = local[j].clone().into();
+            transition.assert_eq(x.clone() * x.clone() * x + local[(j + 1) % WIDE].clone(),
+                next[j].clone());
+        }
+    }
+}
+
+/// The trace of `n` rows of `WideAir` from `xⱼ = j`.
+fn wide_trace(n: usize) -> RowMajorMatrix<F> {
+    let mut values = Vec::with_capacity(WIDE * n);
+    let mut row: Vec<F> = (0..WIDE).map(|j| F::from_u32(j as u32)).collect();
+    for _ in 0..n {
+        values.extend_from_slice(&row);
+        row = (0..WIDE).map(|j| row[j] * row[j] * row[j] + row[(j + 1) % WIDE]).collect();
+    }
+    RowMajorMatrix::new(values, WIDE)
+}
+
 /// The trace of `n` Fibonacci rows from `(0, 1)`, and its last right value.
 fn trace(n: usize) -> (RowMajorMatrix<F>, F) {
     let mut values = Vec::with_capacity(2 * n);
@@ -150,6 +190,12 @@ pub fn stark(air: &str, args: &[usize]) {
             let pis = vec![F::TWO, F::ZERO, x];
             let proof = prove(&config, &CubeAir, trace, &pis);
             verify(&config, &CubeAir, &proof, &pis).expect("Plonky3 rejects its own proof");
+            proof
+        }
+        "wide" => {
+            let trace = wide_trace(1 << log_n);
+            let proof = prove(&config, &WideAir, trace, &[]);
+            verify(&config, &WideAir, &proof, &[]).expect("Plonky3 rejects its own proof");
             proof
         }
         _ => panic!("unknown AIR {air}"),
@@ -208,11 +254,13 @@ pub fn prove_bench(air: &str, args: &[usize]) {
         let (trace, pis) = match air {
             "fib" => { let (t, x) = trace(1 << log_n); (t, vec![F::ZERO, F::ONE, x]) }
             "cube" => { let (t, x) = cube_trace(1 << log_n); (t, vec![F::TWO, F::ZERO, x]) }
+            "wide" => (wide_trace(1 << log_n), vec![]),
             _ => panic!("unknown AIR {air}"),
         };
         let t = Instant::now();
         let proof = match air {
             "fib" => prove(&config, &FibonacciAir, trace, &pis),
+            "wide" => prove(&config, &WideAir, trace, &pis),
             _ => prove(&config, &CubeAir, trace, &pis),
         };
         samples.push(t.elapsed().as_secs_f64() * 1000.0);

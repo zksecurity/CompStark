@@ -27,3 +27,5 @@ public import CompStark.Stark.Verifier
 public import CompStark.Fri.Prover
 public import CompStark.Stark.Prover
 public import CompStark.Stark.Fast
+public import CompStark.Stark.Words
+public import CompStark.Stark.Quotient

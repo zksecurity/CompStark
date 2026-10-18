@@ -5,6 +5,7 @@ Released under Apache 2.0 license as described in the file LICENSE.
 module
 
 public import CompStark.Fri.Verifier
+public import CompStark.Stark.Quotient
 public import CompPoly.Fields.KoalaBear.InterpolateCoset
 
 /-! # The FRI prover of the two-adic commitment scheme
@@ -28,8 +29,6 @@ open CompStark.Stark CompStark.KoalaBear
 local notation "F" => KoalaBear.Fast.Field
 local notation "EF" => KoalaBear.Fast.Ext4
 
-/-- A row-major matrix of base elements. -/
-abbrev Mat := Merkle.Matrix F
 
 /-- The digest layers of a Merkle tree, leaves first: their number, and digest `k` of layer `i`. -/
 structure Layers where
@@ -84,22 +83,32 @@ def ldeRef (logH bits : Nat) (shift : F) (w : Nat) (m : Array F) : Mat :=
   ⟨w, 2 ^ logN, rows.flatten⟩
 
 /-- The kernels the prover runs: the transcript's permutation and grinding, low-degree
-extension, and the Merkle digest layers. Every backend computes the same functions; `spec` runs
-the specifications. -/
+extension, the Merkle digest layers, and the quotient values. Every backend computes the same
+functions; `spec` runs the specifications. -/
 structure Backend where
   transcript : Transcript
   lde : Nat → Nat → F → Nat → Array F → Mat
   layers : List Mat → Layers
+  quotient : Air → List F → Nat → Nat → Mat → EF → Array EF
 
 /-- The specification backend. -/
 def Backend.spec : Backend where
   transcript := Transcript.init
   lde := ldeRef
+  quotient := quotientValues
   layers ms := Layers.ofArrays ((Merkle.layers (Hash.KoalaBear.hash F) (Hash.KoalaBear.compress F)
     ms).map List.toArray).toArray
 
 /-- Commit to matrices. -/
 def Backend.commit (B : Backend) (ms : List Mat) : Committed := ⟨ms, B.layers ms⟩
+
+/-- The rows `perm[0], perm[1], …` of `m`, concatenated. -/
+def permuteRows (m : Mat) (perm : Array Nat) : Array F := Id.run do
+  let mut out := Array.emptyWithCapacity (perm.size * m.width)
+  for r in perm do
+    for j in [0:m.width] do
+      out := out.push (m.values.getD (r * m.width + j) 0)
+  return out
 
 /-- A matrix's row `r` as an array. -/
 def rowOf (m : Mat) (r : Nat) : Array F := Array.ofFn (n := m.width) fun j ↦
@@ -215,14 +224,52 @@ def answerQuery (cp : CommitPhase) (index : Nat) : Array CommitStep := Id.run do
 /-- A committed batch with the points at which each of its matrices is opened. -/
 abbrev OpenRound := Committed × List (List EF)
 
+/-- `factor · ∑ᵢ weights[i] · m[perm[i]][j]` for the columns `j0, …, j0 + nj - 1` of the row-major
+matrix `m` of width `w`: the barycentric evaluation of columns whose natural-order row `i` is
+stored at row `perm[i]`. -/
+def weightedColumns (m : @& Array F) (perm : @& Array Nat) (weights : @& Array EF)
+    (w h j0 nj : Nat) (factor : EF) : Array EF := Id.run do
+  let mut out := Array.emptyWithCapacity nj
+  for j in [j0:j0 + nj] do
+    let mut acc : EF := 0
+    for i in [0:h] do
+      acc := acc + KoalaBear.Fast.Ext4.smul (m.getD (perm.getD i 0 * w + j) 0) (weights.getD i 0)
+    out := out.push (factor * acc)
+  return out
+
+/-- Rows `r0, …, r0 + len - 1` of `m` (width `w`), each batched by the powers `ap` of `α`. -/
+def compressRows (m : @& Array F) (ap : @& Array EF) (w r0 len : Nat) : Array EF := Id.run do
+  let mut out := Array.emptyWithCapacity len
+  for r in [r0:r0 + len] do
+    let mut acc : EF := 0
+    for i in [0:w] do
+      acc := acc + KoalaBear.Fast.Ext4.smul (m.getD (r * w + i) 0) (ap.getD i 0)
+    out := out.push acc
+  return out
+
+/-- Rows `r0, …, r0 + len - 1` of the batched quotient: `acc + offset (yz - comp) / (z - x)`. -/
+def accumulateRows (acc comp : @& Array EF) (xs : @& Array F) (z yz offset : EF)
+    (r0 len : Nat) : Array EF := Id.run do
+  let invs := batchInv ((xs.extract r0 (r0 + len)).map fun x ↦ z - Ext.ofBase x)
+  let mut out := Array.emptyWithCapacity len
+  for k in [0:len] do
+    let r := r0 + k
+    out := out.push (acc.getD r 0 + offset * (yz - comp.getD r 0) * invs.getD k 0)
+  return out
+
 /-- The values of a committed matrix's columns at `z`: the polynomials of degree below
 `height / 2 ^ logBlowup` through its low coset rows. -/
 def openedAt (P : Params) (m : Mat) (z : EF) : Array EF :=
   let logH := Nat.log2 m.height - P.logBlowup
   let h := 2 ^ logH
-  let vals := Array.ofFn (n := h * m.width) fun k ↦
-    m.values.getD (reverseBits (k.val / m.width) logH * m.width + k.val % m.width) 0
-  KoalaBear.Fast.interpolateCoset logH (twoAdicGen logH) gen m.width vals z
+  -- Barycentric weights `xᵢ / (z - xᵢ)` of the natural-order coset, and the scale.
+  let xs := cosetPoints gen logH
+  let invs := batchInv (xs.map fun x ↦ z - Ext.ofBase x)
+  let weights := Array.zipWith KoalaBear.Fast.Ext4.smul xs invs
+  let factor := KoalaBear.Fast.cosetFactor logH gen z
+  let perm := bitRevPerm logH
+  parChunks m.width (min m.width 16) fun j0 nj ↦
+    weightedColumns m.values perm weights m.width h j0 nj factor
 
 /-- Plonky3's `TwoAdicFriPcs::open`: the opened values, by round, matrix and point, and the FRI
 proof. -/
@@ -250,16 +297,14 @@ def openPcs (B : Backend) (P : Params) (rounds : List OpenRound) :
       let mut acc := acc
       let ap := Array.ofFn (n := m.width) fun i ↦ Ext.pow alpha i.val
       -- Every row's columns batched by the powers of `α`.
-      let comp := Array.ofFn (n := m.height) fun r ↦
-        (List.range m.width).foldl (fun s i ↦
-          s + KoalaBear.Fast.Ext4.smul (m.values.getD (r.val * m.width + i) 0) (ap.getD i 0)) 0
+      let parts := if m.height < 4096 then 1 else 16
+      let comp := parChunks m.height parts fun r0 len ↦ compressRows m.values ap m.width r0 len
       let xs := cosetPointsBitRev gen logH
       for (z, ys) in zs.zip ovs do
         let offset := Ext.pow alpha cnt
         let yz := (List.range m.width).foldl (fun s i ↦ s + ap.getD i 0 * ys.getD i 0) 0
-        let invs := batchInv (xs.map fun x ↦ z - Ext.ofBase x)
-        acc := Array.ofFn (n := m.height) fun r ↦
-          acc.getD r 0 + offset * (yz - comp.getD r 0) * invs.getD r 0
+        let prev := acc
+        acc := parChunks m.height parts fun r0 len ↦ accumulateRows prev comp xs z yz offset r0 len
         cnt := cnt + m.width
       red := (logH, cnt, acc) :: red.filter (·.1 != logH)
   let inputs := ((red.mergeSort fun a b ↦ b.1 ≤ a.1).map (·.2.2))

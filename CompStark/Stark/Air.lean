@@ -114,4 +114,11 @@ def cube : Air where
      .isTransition * ((.cur 1 + .const 1) - .next 1),
      .isLastRow * (.cur 0 - .pub 2)]
 
+/-- `w` columns, each next row `x'ⱼ = xⱼ³ + xⱼ₊₁` (indices mod `w`), no public values: the
+representative wide AIR of the benchmarks, with degree-3 transitions and a two-chunk quotient. -/
+def wide (w : Nat) : Air where
+  width := w
+  constraints := (List.range w).map fun j ↦
+    .isTransition * ((.cur j * .cur j * .cur j + .cur ((j + 1) % w)) - .next j)
+
 end CompStark.Stark
