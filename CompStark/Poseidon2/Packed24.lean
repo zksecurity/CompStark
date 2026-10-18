@@ -60,14 +60,20 @@ def external24 (b : ByteArray) (i : USize) : ByteArray :=
   let b := if h : GroupFits24 b i then mat4x24 b i h else b
   if h : GroupFits24 b i then mix24 b i h else b
 
+/-- Width-24 full rounds `r, …, r + n - 1` of `rc`, by recursion so the loop allocates nothing. -/
+def fullRounds24Go (rc : @& ByteArray) (i : USize) : Nat → Nat → ByteArray → ByteArray
+  | 0, _, b => b
+  | n + 1, r, b =>
+    fullRounds24Go rc i n (r + 1)
+      (if h : GroupFits24 b i ∧ 4 * (24 * r + 23) + 3 < rc.size ∧ rc.size < USize.size then
+        let b := sbox24 rc (USize.ofNatLT (24 * r) (by omega)) b i h.1
+          (by simp only [Fits, USize.toNat_ofNatLT]; exact h.2)
+        external24 b i
+      else b)
+
 /-- Width-24 full rounds with the constant rows `0, …, rounds - 1` of `rc`. -/
 def fullRounds24 (rc : @& ByteArray) (rounds : Nat) (b : ByteArray) (i : USize) : ByteArray :=
-  (List.range rounds).foldl (fun b r ↦
-    if h : GroupFits24 b i ∧ 4 * (24 * r + 23) + 3 < rc.size ∧ rc.size < USize.size then
-      let b := sbox24 rc (USize.ofNatLT (24 * r) (by omega)) b i h.1
-        (by simp only [Fits, USize.toNat_ofNatLT]; exact h.2)
-      external24 b i
-    else b) b
+  fullRounds24Go rc i rounds 0 b
 
 /-- A width-24 instance as packed Montgomery words. -/
 structure Packed24 where

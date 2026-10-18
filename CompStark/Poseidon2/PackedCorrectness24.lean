@@ -226,6 +226,26 @@ theorem external24_holds (W0 W : Array F) (i : USize) (S : Nat → Vector F 24)
     · rw [mixModel, getD_spliceRows_outside coords24_spec _ _ _ hW1 k hk, mat4Model,
         getD_spliceRows_outside coords24_spec _ _ _ hW k hk, h.2.2 k hk]
 
+/-- The full-round loop is the fold of its rounds over `List.range`. -/
+theorem fullRounds24_eq_foldl (rc : ByteArray) (n : Nat) (b : ByteArray) (i : USize) :
+    fullRounds24 rc n b i = (List.range n).foldl (fun b r ↦
+      if h : GroupFits24 b i ∧ 4 * (24 * r + 23) + 3 < rc.size ∧ rc.size < USize.size then
+        let b := sbox24 rc (USize.ofNatLT (24 * r) (by omega)) b i h.1
+          (by simp only [Fits, USize.toNat_ofNatLT]; exact h.2)
+        external24 b i
+      else b) b := by
+  have go : ∀ n r b, fullRounds24Go rc i n r b = (List.range' r n).foldl (fun b r ↦
+      if h : GroupFits24 b i ∧ 4 * (24 * r + 23) + 3 < rc.size ∧ rc.size < USize.size then
+        let b := sbox24 rc (USize.ofNatLT (24 * r) (by omega)) b i h.1
+          (by simp only [Fits, USize.toNat_ofNatLT]; exact h.2)
+        external24 b i
+      else b) b := by
+    intro n
+    induction n with
+    | zero => intro r b; rfl
+    | succ n ih => intro r b; rw [List.range'_succ, List.foldl_cons, ← ih]; rfl
+  rw [fullRounds24, go, List.range_eq_range']
+
 /-- The first `n` full rounds with the constant rows of `rcW`. -/
 theorem fullRounds24_holds (P : Params F 24) (hd : P.degree = 3) (rcW W0 : Array F) (i : USize)
     (hfit : GroupFits24 (encode W0) i) (hrc : 4 * rcW.size < USize.size) (n : Nat)
@@ -251,7 +271,7 @@ theorem fullRounds24_holds (P : Params F 24) (hd : P.degree = 3) (rcW W0 : Array
         rw [sboxModel, getD_spliceRows_outside coords24_spec _ _ _ hW k hk, h1.2.2 k hk]⟩
     obtain ⟨W2, e2, h2⟩ := external24_holds W0 _ i _ hsb hfit
     refine ⟨W2, ?_, ?_⟩
-    · unfold fullRounds24 at e1 ⊢
+    · rw [fullRounds24_eq_foldl] at e1 ⊢
       rw [List.range_succ, List.foldl_append, e1, List.foldl_cons, List.foldl_nil,
         dite_eq_left_of_eq_true (eq_true ⟨hg, hr⟩)]
       dsimp only

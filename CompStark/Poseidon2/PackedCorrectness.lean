@@ -209,6 +209,26 @@ theorem external16_holds (W0 W : Array F) (i : USize) (S : Nat → Vector F 16)
     · rw [mixModel, getD_spliceRows_outside coords16_spec _ _ _ hW1 k hk, mat4Model,
         getD_spliceRows_outside coords16_spec _ _ _ hW k hk, h.2.2 k hk]
 
+/-- The full-round loop is the fold of its rounds over `List.range`. -/
+theorem fullRounds_eq_foldl (rc : ByteArray) (n : Nat) (b : ByteArray) (i : USize) :
+    fullRounds rc n b i = (List.range n).foldl (fun b r ↦
+      if h : GroupFits b i ∧ 4 * (16 * r + 15) + 3 < rc.size ∧ rc.size < USize.size then
+        let b := sbox16 rc (USize.ofNatLT (16 * r) (by omega)) b i h.1
+          (by simp only [Fits, USize.toNat_ofNatLT]; exact h.2)
+        external16 b i
+      else b) b := by
+  have go : ∀ n r b, fullRoundsGo rc i n r b = (List.range' r n).foldl (fun b r ↦
+      if h : GroupFits b i ∧ 4 * (16 * r + 15) + 3 < rc.size ∧ rc.size < USize.size then
+        let b := sbox16 rc (USize.ofNatLT (16 * r) (by omega)) b i h.1
+          (by simp only [Fits, USize.toNat_ofNatLT]; exact h.2)
+        external16 b i
+      else b) b := by
+    intro n
+    induction n with
+    | zero => intro r b; rfl
+    | succ n ih => intro r b; rw [List.range'_succ, List.foldl_cons, ← ih]; rfl
+  rw [fullRounds, go, List.range_eq_range']
+
 /-- The first `n` full rounds with the constant rows of `rcW`. -/
 theorem fullRounds_holds (P : Params F 16) (hd : P.degree = 3) (rcW W0 : Array F) (i : USize)
     (hfit : GroupFits (encode W0) i) (hrc : 4 * rcW.size < USize.size) (n : Nat)
@@ -234,7 +254,7 @@ theorem fullRounds_holds (P : Params F 16) (hd : P.degree = 3) (rcW W0 : Array F
         rw [sboxModel, getD_spliceRows_outside coords16_spec _ _ _ hW k hk, h1.2.2 k hk]⟩
     obtain ⟨W2, e2, h2⟩ := external16_holds W0 _ i _ hsb hfit
     refine ⟨W2, ?_, ?_⟩
-    · unfold fullRounds at e1 ⊢
+    · rw [fullRounds_eq_foldl] at e1 ⊢
       rw [List.range_succ, List.foldl_append, e1, List.foldl_cons, List.foldl_nil,
         dite_eq_left_of_eq_true (eq_true ⟨hg, hr⟩)]
       dsimp only

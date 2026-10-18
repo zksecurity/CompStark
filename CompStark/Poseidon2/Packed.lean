@@ -89,14 +89,20 @@ def Packed16.ofParams (P : Params KoalaBear.Fast.Field 16) : Packed16 where
   terminal := encodeFields (P.terminal.foldl (fun acc c ↦ acc ++ c.toArray) #[])
   diagonal := encodeFields P.diagonal.toArray
 
+/-- Full rounds `r, …, r + n - 1` of `rc`, by recursion so the loop allocates nothing. -/
+def fullRoundsGo (rc : @& ByteArray) (i : USize) : Nat → Nat → ByteArray → ByteArray
+  | 0, _, b => b
+  | n + 1, r, b =>
+    fullRoundsGo rc i n (r + 1)
+      (if h : GroupFits b i ∧ 4 * (16 * r + 15) + 3 < rc.size ∧ rc.size < USize.size then
+        let b := sbox16 rc (USize.ofNatLT (16 * r) (by omega)) b i h.1
+          (by simp only [Fits, USize.toNat_ofNatLT]; exact h.2)
+        external16 b i
+      else b)
+
 /-- Full rounds with the constant rows `0, …, rounds - 1` of `rc`. -/
 def fullRounds (rc : @& ByteArray) (rounds : Nat) (b : ByteArray) (i : USize) : ByteArray :=
-  (List.range rounds).foldl (fun b r ↦
-    if h : GroupFits b i ∧ 4 * (16 * r + 15) + 3 < rc.size ∧ rc.size < USize.size then
-      let b := sbox16 rc (USize.ofNatLT (16 * r) (by omega)) b i h.1
-        (by simp only [Fits, USize.toNat_ofNatLT]; exact h.2)
-      external16 b i
-    else b) b
+  fullRoundsGo rc i rounds 0 b
 
 /-- The partial rounds. -/
 def partialRounds (K : @& Packed16) (b : ByteArray) (i : USize) : ByteArray :=
