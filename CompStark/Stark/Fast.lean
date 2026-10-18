@@ -499,7 +499,7 @@ def reduceRange (items : @& Array (ByteArray × Nat × EVec × List (EF × EF ×
 products, `1 / (z - x)` by the norm. -/
 def reduce (alpha : EF) (items : List (PMat × List (EF × Array EF))) : List (Nat × EVec) :=
   if !items.all fun (m, pts) ↦ m.fits && m.height == 2 ^ Nat.log2 m.height &&
-      pts.all (nonBase ·.1) then
+      decide (4 * m.height < USize.size) && pts.all (nonBase ·.1) then
     (Fri.reduce alpha (items.map fun (m, pts) ↦ (m.toMat, pts))).map fun (h, a) ↦
       (h, EVec.ofArray a)
   else Id.run do
