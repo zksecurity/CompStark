@@ -162,9 +162,17 @@ def lde (logH bits : Nat) (shift : F) (w : Nat) (m : Array F) : PMat :=
 /-- Digest `k` of a packed layer. -/
 def digestAt (b : ByteArray) (k : Nat) : Digest := Vector.ofFn fun j ↦ word b (8 * k + j.val)
 
+/-- `out` followed by at most `fuel` layers above `layer` of `n` digests, up to the root. -/
+def upperPacked (layer : ByteArray) (n : Nat) (out : Array ByteArray) : Nat → Array ByteArray
+  | 0 => out
+  | fuel + 1 =>
+    if n ≤ 1 then out else
+    let (l, n') := Merkle.Packed.nextLayer K16 layer n
+    upperPacked l n' (out.push l) fuel
+
 /-- The packed digest layers of the Merkle tree of one matrix of width `w` given as one chunk of
 rows. -/
-def packedLayers (w : Nat) (m : ByteArray) : Array ByteArray := Id.run do
+def packedLayers (w : Nat) (m : ByteArray) : Array ByteArray :=
   let h := if w = 0 then 0 else m.size / (4 * w)
   let parts := if h < 1024 then 1 else 16
   let rows := h / parts
@@ -172,16 +180,8 @@ def packedLayers (w : Nat) (m : ByteArray) : Array ByteArray := Id.run do
     m.extract (4 * w * (k * rows)) (if k + 1 = parts then m.size else 4 * w * ((k + 1) * rows))
   let (first, h) := Merkle.Packed.leaves K24 w chunks
   let padded := if h = 1 then 1 else h + h % 2
-  let mut layer := Merkle.Packed.padDigests first h padded
-  let mut n := padded
-  let mut out := #[layer]
-  for _ in List.range 64 do
-    if n ≤ 1 then break
-    let (l, n') := Merkle.Packed.nextLayer K16 layer n
-    layer := l
-    n := n'
-    out := out.push layer
-  return out
+  let layer := Merkle.Packed.padDigests first h padded
+  upperPacked layer padded #[layer] 64
 
 /-- The rows of matrices of one height side by side, packed. -/
 def sideBySide (ms : List PMat) (h : Nat) : ByteArray :=
@@ -217,7 +217,8 @@ def commit (ms : List PMat) : Commit :=
   ⟨ms, match ms with
     | m :: rest =>
       if rest.all (·.height == m.height) && 0 < m.height && ms.all PMat.fits &&
-          4 * (m.height * ms.foldl (· + ·.width) 0) < USize.size then
+          0 < ms.foldl (· + ·.width) 0 &&
+          32 * (m.height * ms.foldl (· + ·.width) 0 + 1) < USize.size then
         packedLayers (ms.foldl (· + ·.width) 0) (sideBySide ms m.height)
       else (Committed.ofMats (ms.map PMat.toMat)).layers.map encodeDigests
     | [] => (Committed.ofMats []).layers.map encodeDigests⟩
@@ -237,10 +238,13 @@ def fits (c : Commit) : Bool := c.layers.all (·.size < USize.size)
 def root (c : Commit) : Digest :=
   if c.fits then digestAt (c.layers.back?.getD .empty) 0 else c.toCommitted.root
 
-/-- `Committed.openAt` on packed rows and layers. -/
+/-- `Committed.openAt` on packed rows and layers, when every row read is inside its matrix and
+every word index fits `USize`; otherwise on the decoded commitment. -/
 def openAt (c : Commit) (index : Nat) : BatchOpening :=
-  if !(c.fits && c.mats.all PMat.fits) then c.toCommitted.openAt index else
   let logMax := Merkle.log2Ceil c.maxHeight
+  if !(c.fits && c.mats.all PMat.fits && 32 * index + 64 < USize.size &&
+      c.mats.all fun m ↦ index >>> (logMax - Merkle.log2Ceil m.height) < m.height) then
+    c.toCommitted.openAt index else
   let rows := c.mats.map fun m ↦ row m (index >>> (logMax - Merkle.log2Ceil m.height))
   ⟨rows.toArray, Array.ofFn (n := logMax) fun i ↦
     digestAt (c.layers.getD i.val .empty) ((index >>> i.val) ^^^ 1)⟩
