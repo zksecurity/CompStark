@@ -57,6 +57,50 @@ impl<AB: AirBuilderWithPublicValues> Air<AB> for FibonacciAir {
     }
 }
 
+/// Two columns `x, y`: rows `(a, b)` first, `(x³ + y, y + 1)` next, and `x = c` last. Its
+/// transition constraint has degree 3 (the transition selector counts as degree 0), so the
+/// quotient has two chunks.
+pub struct CubeAir;
+
+impl<T> BaseAir<T> for CubeAir {
+    fn width(&self) -> usize {
+        2
+    }
+}
+
+impl<AB: AirBuilderWithPublicValues> Air<AB> for CubeAir {
+    fn eval(&self, builder: &mut AB) {
+        let main = builder.main();
+        let pis = builder.public_values();
+        let (a, b, c) = (pis[0], pis[1], pis[2]);
+        let local = main.row_slice(0).unwrap();
+        let next = main.row_slice(1).unwrap();
+        let local: &[AB::Var] = (*local).borrow();
+        let next: &[AB::Var] = (*next).borrow();
+        let mut first = builder.when_first_row();
+        first.assert_eq(local[0].clone(), a);
+        first.assert_eq(local[1].clone(), b);
+        let x: AB::Expr = local[0].clone().into();
+        let mut transition = builder.when_transition();
+        transition.assert_eq(x.clone() * x.clone() * x + local[1].clone(), next[0].clone());
+        transition.assert_eq(local[1].clone() + AB::Expr::ONE, next[1].clone());
+        builder.when_last_row().assert_eq(local[0].clone(), c);
+    }
+}
+
+/// The trace of `n` rows of `CubeAir` from `(2, 0)`, and its last `x`.
+fn cube_trace(n: usize) -> (RowMajorMatrix<F>, F) {
+    let mut values = Vec::with_capacity(2 * n);
+    let (mut x, mut y) = (F::TWO, F::ZERO);
+    for _ in 0..n {
+        values.push(x);
+        values.push(y);
+        (x, y) = (x * x * x + y, y + F::ONE);
+    }
+    let last = values[2 * n - 2];
+    (RowMajorMatrix::new(values, 2), last)
+}
+
 /// The trace of `n` Fibonacci rows from `(0, 1)`, and its last right value.
 fn trace(n: usize) -> (RowMajorMatrix<F>, F) {
     let mut values = Vec::with_capacity(2 * n);
@@ -70,10 +114,10 @@ fn trace(n: usize) -> (RowMajorMatrix<F>, F) {
     (RowMajorMatrix::new(values, 2), last)
 }
 
-/// `stark LOG_N LOG_BLOWUP LOG_FINAL MAX_LOG_ARITY QUERIES COMMIT_POW QUERY_POW`: the proof as
-/// JSON, after Plonky3 verified it. Run with `RAYON_NUM_THREADS=1` for the smallest grinding
-/// witnesses.
-pub fn stark(args: &[usize]) {
+/// `stark AIR LOG_N LOG_BLOWUP LOG_FINAL MAX_LOG_ARITY QUERIES COMMIT_POW QUERY_POW`, `AIR` one
+/// of `fib`, `cube`: the proof as JSON, after Plonky3 verified it. Run with
+/// `RAYON_NUM_THREADS=1` for the smallest grinding witnesses.
+pub fn stark(air: &str, args: &[usize]) {
     let [log_n, log_blowup, log_final_poly_len, max_log_arity, num_queries, commit_pow, query_pow] =
         args[..]
     else {
@@ -93,11 +137,23 @@ pub fn stark(args: &[usize]) {
     };
     let pcs = Pcs::new(Radix2DitParallel::default(), val_mmcs, fri);
     let config = Config::new(pcs, Challenger::new(default_koalabear_poseidon2_24()));
-    let (trace, x) = trace(1 << log_n);
-    assert!(trace.height() == 1 << log_n);
-    let pis = vec![F::ZERO, F::ONE, x];
-    let proof = prove(&config, &FibonacciAir, trace, &pis);
-    verify(&config, &FibonacciAir, &proof, &pis).expect("Plonky3 rejects its own proof");
+    let proof = match air {
+        "fib" => {
+            let (trace, x) = trace(1 << log_n);
+            let pis = vec![F::ZERO, F::ONE, x];
+            let proof = prove(&config, &FibonacciAir, trace, &pis);
+            verify(&config, &FibonacciAir, &proof, &pis).expect("Plonky3 rejects its own proof");
+            proof
+        }
+        "cube" => {
+            let (trace, x) = cube_trace(1 << log_n);
+            let pis = vec![F::TWO, F::ZERO, x];
+            let proof = prove(&config, &CubeAir, trace, &pis);
+            verify(&config, &CubeAir, &proof, &pis).expect("Plonky3 rejects its own proof");
+            proof
+        }
+        _ => panic!("unknown AIR {air}"),
+    };
     println!("{}", serde_json::to_string(&proof).unwrap());
 }
 

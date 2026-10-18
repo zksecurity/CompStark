@@ -24,3 +24,5 @@ public import CompStark.Stark.Field
 public import CompStark.Fri.Verifier
 public import CompStark.Stark.Air
 public import CompStark.Stark.Verifier
+public import CompStark.Fri.Prover
+public import CompStark.Stark.Prover

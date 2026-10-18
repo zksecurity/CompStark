@@ -27,14 +27,19 @@ variable {F : Type*} [Zero F] {d : Nat}
 /-- `⌈log₂ n⌉`. -/
 def log2Ceil (n : Nat) : Nat := Nat.log2 (n.nextPowerOfTwo)
 
-/-- The opening of the matrices `ms` at `index`: their rows, and the sibling path. -/
-def openBatch (hash : List F → Vector F d) (compress : Vector F d → Vector F d → Vector F d)
-    (ms : List (Matrix F)) (index : Nat) : List (List F) × List (Vector F d) :=
+/-- The opening at `index` of the matrices `ms` whose tree has the digest layers `ls`: their rows,
+and the sibling path. -/
+def openWith (ms : List (Matrix F)) (ls : List (List (Vector F d))) (index : Nat) :
+    List (List F) × List (Vector F d) :=
   let maxH := (sortTallest ms |>.headD ⟨0, 0, #[]⟩).height
   let logMax := log2Ceil maxH
   let rows := ms.map fun m ↦ m.row (index >>> (logMax - log2Ceil m.height))
-  let ls := layers hash compress ms
   (rows, (List.range logMax).map fun i ↦ (ls.getD i []).getD ((index >>> i) ^^^ 1) 0)
+
+/-- The opening of the matrices `ms` at `index`: their rows, and the sibling path. -/
+def openBatch (hash : List F → Vector F d) (compress : Vector F d → Vector F d → Vector F d)
+    (ms : List (Matrix F)) (index : Nat) : List (List F) × List (Vector F d) :=
+  openWith ms (layers hash compress ms) index
 
 /-- The hash of the concatenated opened rows of the matrices at `is`. -/
 def hashRows (hash : List F → Vector F d) (values : List (List F)) (is : List Nat) :

@@ -13,8 +13,9 @@ next row, the public values and the row selectors, each asserted to vanish on ev
 Plonky3, a constraint under `when_first_row`, `when_last_row` or `when_transition` is the
 constraint times that selector, and `assert_eq a b` asserts `a - b`.
 
-`Expr.degree` is Plonky3's `degree_multiple`: columns and selectors have degree 1, constants and
-public values 0. `Expr.eval` evaluates in any ring that holds the field's constants.
+`Expr.degree` is Plonky3's `degree_multiple`: columns and the first- and last-row selectors have
+degree 1, the transition selector, constants and public values 0. `Expr.eval` evaluates in any
+ring that holds the field's constants.
 -/
 
 @[expose] public section
@@ -43,8 +44,8 @@ instance : Mul Expr := ⟨mul⟩
 
 /-- Plonky3's `degree_multiple`. -/
 def degree : Expr → Nat
-  | cur _ | next _ | isFirstRow | isLastRow | isTransition => 1
-  | pub _ | const _ => 0
+  | cur _ | next _ | isFirstRow | isLastRow => 1
+  | isTransition | pub _ | const _ => 0
   | add a b | sub a b => max a.degree b.degree
   | mul a b => a.degree + b.degree
 
@@ -100,5 +101,17 @@ def fibonacci : Air where
      .isTransition * (.cur 1 - .next 0),
      .isTransition * ((.cur 0 + .cur 1) - .next 1),
      .isLastRow * (.cur 1 - .pub 2)]
+
+/-- An AIR on columns `x, y` with public values `a, b, c`: the first row is `(a, b)`, each next row
+is `(x³ + y, y + 1)`, and the last `x` is `c`. Its transition has degree 3, so its quotient has two
+chunks. -/
+def cube : Air where
+  width := 2
+  constraints :=
+    [.isFirstRow * (.cur 0 - .pub 0),
+     .isFirstRow * (.cur 1 - .pub 1),
+     .isTransition * ((.cur 0 * .cur 0 * .cur 0 + .cur 1) - .next 0),
+     .isTransition * ((.cur 1 + .const 1) - .next 1),
+     .isLastRow * (.cur 0 - .pub 2)]
 
 end CompStark.Stark
