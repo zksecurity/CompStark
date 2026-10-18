@@ -918,7 +918,7 @@ theorem foldl_ranges {α : Type} (g : Nat → α) (n parts size : Nat) (hp : 0 <
     ofFn_append g, ofFn_len g (Nat.add_sub_cancel' (by simpa using hs))]
 
 /-- `parChunks` concatenates its ranges. -/
-theorem parChunks_eq {α : Type} (g : Nat → α) (n parts : Nat) (f : Nat → Nat → Array α)
+theorem parChunks_ofFn {α : Type} (g : Nat → α) (n parts : Nat) (f : Nat → Nat → Array α)
     (hp : 0 < parts)
     (hf : ∀ r0 len, len ≤ n - r0 → f r0 len = Array.ofFn (n := len) fun j ↦ g (r0 + j.val)) :
     parChunks n parts f = Array.ofFn (n := n) fun j ↦ g j.val := by
