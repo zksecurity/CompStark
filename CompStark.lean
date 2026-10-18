@@ -32,6 +32,7 @@ public import CompStark.Stark.Fast
 public import CompStark.Stark.Fast.Transcript
 public import CompStark.Stark.Fast.Rel
 public import CompStark.Stark.Fast.Norm
+public import CompStark.Stark.Fast.Lde
 public import CompStark.Stark.Words
 public import CompStark.Stark.Quotient
 public import CompStark.Stark.ExtWords
