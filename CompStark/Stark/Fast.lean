@@ -352,12 +352,19 @@ def quotientTables (degreeBits logChunks : Nat) : QuotientTables :=
       if n0 % B == 0 && (List.range B).all fun k ↦ next.getD (b * B + k) 0 == n0 + k then some n0
       else none }
 
+/-- Every column `e` reads is below `w`. -/
+def colsBelow (w : Nat) : Expr → Bool
+  | .cur c | .next c => c < w
+  | .pub _ | .const _ | .isFirstRow | .isLastRow | .isTransition => true
+  | .add a b | .sub a b | .mul a b => colsBelow w a && colsBelow w b
+
 /-- `quotientOfLde` on packed words with the shape's tables `T`. The trace on the quotient domain
 is the extension's first rows, transposed in parallel pieces; constraints are evaluated in that
 bit-reversed row order, every node one vectorized operation per block of rows, in parallel block
 ranges, and the result is put in natural order. -/
 def quotientWith (T : QuotientTables) (A : Air) (pis : List F) (ext : PMat) (alpha : EF) :
-    Array EF := if !ext.fits || ext.height < 2 ^ (T.degreeBits + T.logChunks) then
+    Array EF := if !ext.fits || ext.height < 2 ^ (T.degreeBits + T.logChunks) ||
+      !A.constraints.all (colsBelow ext.width) then
       quotientOfLde A pis T.degreeBits T.logChunks ext.toMat alpha else Id.run do
   let n := 2 ^ (T.degreeBits + T.logChunks)
   let w := ext.width
