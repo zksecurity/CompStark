@@ -548,9 +548,11 @@ def fold2Range (v : @& EVec) (twoX : @& ByteArray) (beta : EF) (r0 len : Nat) : 
   let inv2x := batchInvRange twoX r0 len
   ((lo.add hi).smul (Ext.ofBase (2 : F)⁻¹)).add (((lo.sub hi).mulBase inv2x).smul beta)
 
-/-- `Fri.foldPairs` on planes, `(lo + hi) / 2 + β (lo - hi) / (2 x)`, in parallel ranges. -/
+/-- `Fri.foldPairs` on planes, `(lo + hi) / 2 + β (lo - hi) / (2 x)`, in parallel ranges; the
+two-adic generators exist up to order `2 ^ 24`. -/
 def fold2 (v : EVec) (beta : EF) (logRows : Nat) : EVec :=
-  if !(v.fits && v.n == 2 ^ (logRows + 1)) then EVec.ofArray (foldPairs v.decode beta logRows)
+  if !(v.fits && v.n == 2 ^ (logRows + 1) && logRows < 24) then
+    EVec.ofArray (foldPairs v.decode beta logRows)
   else
   let rows := 2 ^ logRows
   let pw := cosetPoints 1 (logRows + 1)
@@ -577,9 +579,10 @@ def interleaveRange (a0 a1 a2 a3 : @& ByteArray) (i0 len : Nat) : ByteArray := I
       (CompPoly.CPolynomial.NTTFast.Packed.Native.read a3 i)
   return out
 
-/-- The matrix of rows of `k` elements, flattened, packed in parallel ranges. -/
+/-- The matrix of rows of `k` elements, flattened, packed in parallel ranges; the coordinates fit
+machine indices. -/
 def leaves (k : Nat) (v : EVec) : PMat :=
-  if !v.fits then
+  if !(v.fits && 16 * v.n < USize.size) then
     ofRows (4 * k) (v.n / k) (v.decode.flatMap fun x ↦ (Ext.coeffs x).toArray)
   else
   let n := v.n
