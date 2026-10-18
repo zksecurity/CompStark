@@ -34,6 +34,7 @@ public import CompStark.Stark.Fast.Rel
 public import CompStark.Stark.Fast.Norm
 public import CompStark.Stark.Fast.Lde
 public import CompStark.Stark.Fast.QuotientSpec
+public import CompStark.Stark.Fast.OpeningsSpec
 public import CompStark.Stark.Words
 public import CompStark.Stark.Quotient
 public import CompStark.Stark.ExtWords
