@@ -39,10 +39,11 @@ structure Layers where
 def Layers.ofArrays (ls : Array (Array Digest)) : Layers :=
   ⟨ls.size, fun i k ↦ (ls.getD i #[]).getD k 0⟩
 
-/-- Matrices under one Merkle tree. -/
+/-- Matrices under one Merkle tree, with the backend's row access. -/
 structure Committed where
   mats : List Mat
   layers : Layers
+  row : Mat → Nat → Array F
 
 namespace Committed
 
@@ -54,7 +55,7 @@ shorter than the tallest, and the sibling of every layer below the root (`Merkle
 def openAt (c : Committed) (index : Nat) : BatchOpening :=
   let maxH := c.mats.foldl (fun m a ↦ max m a.height) 0
   let logMax := Merkle.log2Ceil maxH
-  let rows := c.mats.map fun m ↦ (m.row (index >>> (logMax - Merkle.log2Ceil m.height))).toArray
+  let rows := c.mats.map fun m ↦ c.row m (index >>> (logMax - Merkle.log2Ceil m.height))
   ⟨rows.toArray, Array.ofFn (n := logMax) fun i ↦
     c.layers.digest i.val ((index >>> i.val) ^^^ 1)⟩
 
@@ -80,27 +81,26 @@ def ldeRef (logH bits : Nat) (shift : F) (w : Nat) (m : Array F) : Mat :=
   let rows := Array.ofFn (n := 2 ^ logN) fun r ↦
     let y := shift * powF wN (reverseBits r.val logN)
     coeffs.toArray.map fun c ↦ c.foldr (fun a acc ↦ acc * y + a) 0
-  ⟨w, 2 ^ logN, rows.flatten⟩
+  Mat.ofValues w (2 ^ logN) rows.flatten
 
 /-- The kernels the prover runs: the transcript's permutation and grinding, low-degree
-extension, the Merkle digest layers, and the quotient values. Every backend computes the same
-functions; `spec` runs the specifications. -/
+extension, matrices from rows, the Merkle digest layers, row access, the quotient values from the
+trace's extension, the values of a committed matrix's columns at a point, and rows batched by
+powers of `α`; `ofExts k` makes the matrix of rows of `k` extension elements, flattened. Every
+backend computes the same functions; `spec` runs the specifications. -/
 structure Backend where
   transcript : Transcript
   lde : Nat → Nat → F → Nat → Array F → Mat
+  ofRows : Nat → Nat → Array F → Mat
+  ofExts : Nat → Array EF → Mat
   layers : List Mat → Layers
+  row : Mat → Nat → Array F
   quotient : Air → List F → Nat → Nat → Mat → EF → Array EF
-
-/-- The specification backend. -/
-def Backend.spec : Backend where
-  transcript := Transcript.init
-  lde := ldeRef
-  quotient := quotientValues
-  layers ms := Layers.ofArrays ((Merkle.layers (Hash.KoalaBear.hash F) (Hash.KoalaBear.compress F)
-    ms).map List.toArray).toArray
+  openedAt : Nat → Mat → EF → Array EF
+  compress : Mat → Array EF → Array EF
 
 /-- Commit to matrices. -/
-def Backend.commit (B : Backend) (ms : List Mat) : Committed := ⟨ms, B.layers ms⟩
+def Backend.commit (B : Backend) (ms : List Mat) : Committed := ⟨ms, B.layers ms, B.row⟩
 
 /-- The rows `perm[0], perm[1], …` of `m`, concatenated. -/
 def permuteRows (m : Mat) (perm : Array Nat) : Array F := Id.run do
@@ -155,19 +155,27 @@ structure CommitPhase where
   arities : Array Nat
   finalPoly : Array EF
 
+/-- Pairs `r0, …, r0 + len - 1` of the arity-2 fold, with one batch inversion of their `2 x`. -/
+def foldRange (vs : @& Array EF) (pw : @& Array F) (perm : @& Array Nat) (beta half : EF)
+    (r0 len : Nat) : Array EF := Id.run do
+  let inv2x := batchInv (Array.ofFn (n := len) fun k ↦ 2 * pw.getD (perm.getD (r0 + k.val) 0) 0)
+  let mut out := Array.emptyWithCapacity len
+  for k in [0:len] do
+    let i := r0 + k
+    let lo := vs.getD (2 * i) 0
+    let hi := vs.getD (2 * i + 1) 0
+    out := out.push ((lo + hi) * half + beta * (lo - hi) * Ext.ofBase (inv2x.getD k 0))
+  return out
+
 /-- The arity-2 fold of `2 ^ (logRows + 1)` values at `β`: pair `i`, at the points `±x`, `x` the
 `bitrev i`-th power of the generator of order `2 ^ (logRows + 1)`, folds to
 `(lo + hi) / 2 + β (lo - hi) / (2 x)`, Plonky3's `fold_matrix`. It is `foldRow` with arity 2. -/
 def foldPairs (vs : Array EF) (beta : EF) (logRows : Nat) : Array EF :=
   let rows := 2 ^ logRows
   let pw := cosetPoints 1 (logRows + 1)
-  let inv2x := batchInv (Array.ofFn (n := rows) fun i ↦
-    2 * pw.getD (reverseBits i.val logRows) 0)
+  let perm := bitRevPerm logRows
   let half := Ext.ofBase (2 : F)⁻¹
-  Array.ofFn (n := rows) fun i ↦
-    let lo := vs.getD (2 * i.val) 0
-    let hi := vs.getD (2 * i.val + 1) 0
-    (lo + hi) * half + beta * (lo - hi) * Ext.ofBase (inv2x.getD i 0)
+  parChunks rows (if rows < 4096 then 1 else 16) fun r0 len ↦ foldRange vs pw perm beta half r0 len
 
 /-- Plonky3's `commit_phase` on the batched quotients `inputs`, tallest first. -/
 def commitPhase (B : Backend) (P : Params) (inputs : List (Array EF)) : PM CommitPhase := do
@@ -181,7 +189,7 @@ def commitPhase (B : Backend) (P : Params) (inputs : List (Array EF)) : PM Commi
     let la := logArityFor P logCur (rest.head?.map (Nat.log2 ·.size))
     let arity := 2 ^ la
     let rows := folded.size / arity
-    let leaves : Mat := ⟨4 * arity, rows, folded.toList.flatMap Ext.coeffs |>.toArray⟩
+    let leaves := B.ofExts arity folded
     let c := B.commit [leaves]
     pObserveList c.root.toList
     let w ← pGrind P.commitPowBits
@@ -259,8 +267,8 @@ def accumulateRows (acc comp : @& Array EF) (xs : @& Array F) (z yz offset : EF)
 
 /-- The values of a committed matrix's columns at `z`: the polynomials of degree below
 `height / 2 ^ logBlowup` through its low coset rows. -/
-def openedAt (P : Params) (m : Mat) (z : EF) : Array EF :=
-  let logH := Nat.log2 m.height - P.logBlowup
+def openedAt (logBlowup : Nat) (m : Mat) (z : EF) : Array EF :=
+  let logH := Nat.log2 m.height - logBlowup
   let h := 2 ^ logH
   -- Barycentric weights `xᵢ / (z - xᵢ)` of the natural-order coset, and the scale.
   let xs := cosetPoints gen logH
@@ -270,6 +278,32 @@ def openedAt (P : Params) (m : Mat) (z : EF) : Array EF :=
   let perm := bitRevPerm logH
   parChunks m.width (min m.width 16) fun j0 nj ↦
     weightedColumns m.values perm weights m.width h j0 nj factor
+
+/-- Rows batched by the powers `ap` of `α`, in parallel row ranges. -/
+def compress (m : Mat) (ap : Array EF) : Array EF :=
+  parChunks m.height (if m.height < 4096 then 1 else 16) fun r0 len ↦
+    compressRows m.values ap m.width r0 len
+
+/-- The quotient values from the trace's extension `ext`: its first `2 ^ (degreeBits + logChunks)`
+rows in natural order are the trace on the quotient domain. -/
+def quotientOfLde (A : Air) (pis : List F) (degreeBits logChunks : Nat) (ext : Mat) (alpha : EF) :
+    Array EF :=
+  let qlog := degreeBits + logChunks
+  let tq := Mat.ofValues ext.width (2 ^ qlog) (permuteRows ext (bitRevPerm qlog))
+  quotientValues A pis degreeBits logChunks tq alpha
+
+/-- The specification backend. -/
+def Backend.spec : Backend where
+  transcript := Transcript.init
+  lde := ldeRef
+  ofRows := Mat.ofValues
+  ofExts k vs := Mat.ofValues (4 * k) (vs.size / k) (vs.flatMap fun x ↦ (Ext.coeffs x).toArray)
+  layers ms := Layers.ofArrays ((Merkle.layers (Hash.KoalaBear.hash F) (Hash.KoalaBear.compress F)
+    (ms.map Mat.toMatrix)).map List.toArray).toArray
+  row := rowOf
+  quotient := quotientOfLde
+  openedAt := Fri.openedAt
+  compress := Fri.compress
 
 /-- Plonky3's `TwoAdicFriPcs::open`: the opened values, by round, matrix and point, and the FRI
 proof. -/
@@ -281,7 +315,7 @@ def openPcs (B : Backend) (P : Params) (rounds : List OpenRound) :
     for (m, zs) in c.mats.zip pts do
       let mut ov := []
       for z in zs do
-        let ys := openedAt P m z
+        let ys := B.openedAt P.logBlowup m z
         pObserveExts ys.toList
         ov := ov ++ [ys]
       om := om ++ [ov]
@@ -298,7 +332,7 @@ def openPcs (B : Backend) (P : Params) (rounds : List OpenRound) :
       let ap := Array.ofFn (n := m.width) fun i ↦ Ext.pow alpha i.val
       -- Every row's columns batched by the powers of `α`.
       let parts := if m.height < 4096 then 1 else 16
-      let comp := parChunks m.height parts fun r0 len ↦ compressRows m.values ap m.width r0 len
+      let comp := B.compress m ap
       let xs := cosetPointsBitRev gen logH
       for (z, ys) in zs.zip ovs do
         let offset := Ext.pow alpha cnt

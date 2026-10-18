@@ -20,8 +20,19 @@ namespace CompStark.Stark
 local notation "F" => KoalaBear.Fast.Field
 local notation "EF" => KoalaBear.Fast.Ext4
 
-/-- A row-major matrix of base elements. -/
-abbrev Mat := Merkle.Matrix F
+/-- A row-major matrix of base elements: as field elements (`values`), or as packed Montgomery
+words (`words`), whichever the backend that made it uses. -/
+structure Mat where
+  width : Nat
+  height : Nat
+  values : Array F := #[]
+  words : ByteArray := ByteArray.empty
+
+/-- A matrix of field elements. -/
+def Mat.ofValues (width height : Nat) (values : Array F) : Mat := { width, height, values }
+
+/-- The matrix as a Merkle tree's matrix of field elements. -/
+def Mat.toMatrix (m : Mat) : Merkle.Matrix F := ⟨m.width, m.height, m.values⟩
 
 /-- The values of `e` on the rows `r0, …, r0 + B - 1` of the quotient domain of size `n`, one array
 operation per node: `tq` is the trace there, the next row is `period` rows on, and `first`,

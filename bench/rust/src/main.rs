@@ -91,6 +91,10 @@ fn main() {
     if args.len() == 2 && args[1] == "challenger" {
         return stark::challenger();
     }
+    if args.len() >= 3 && args[1] == "prove-trace" {
+        let nums: Vec<usize> = args[3..].iter().map(|a| a.parse().unwrap()).collect();
+        return stark::prove_trace(&args[2], &nums);
+    }
     if args.len() >= 3 && args[1] == "prove-bench" {
         let nums: Vec<usize> = args[3..].iter().map(|a| a.parse().unwrap()).collect();
         return stark::prove_bench(&args[2], &nums);

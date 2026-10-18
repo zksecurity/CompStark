@@ -269,3 +269,15 @@ pub fn prove_bench(air: &str, args: &[usize]) {
     samples.sort_by(|a, b| a.partial_cmp(b).unwrap());
     println!("plonky3 prove {air} 2^{log_n} ms median {:.2}", samples[3]);
 }
+
+/// `prove-trace AIR LOG_N …`: one proof with Plonky3's tracing spans printed.
+pub fn prove_trace(air: &str, args: &[usize]) {
+    use tracing_forest::util::LevelFilter;
+    use tracing_forest::ForestLayer;
+    use tracing_subscriber::layer::SubscriberExt;
+    use tracing_subscriber::util::SubscriberInitExt;
+    use tracing_subscriber::{EnvFilter, Registry};
+    let env_filter = EnvFilter::builder().with_default_directive(LevelFilter::INFO.into()).from_env_lossy();
+    Registry::default().with(env_filter).with(ForestLayer::default()).init();
+    prove_bench(air, args);
+}

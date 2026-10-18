@@ -58,6 +58,70 @@ def wideTrace (w n : Nat) : Array KoalaBear.Fast.Field := Id.run do
       x * x * x + row.getD ((j.val + 1) % w) 0
   return out
 
+open CompStark CompStark.Stark CompStark.Fri in
+/-- The wall time of each phase of the fast prover on `wide 64`, `2 ^ logN` rows, blowup 2. -/
+def phases (logN : Nat) : IO UInt32 := do
+  let B := CompStark.Stark.Fast.backendFor logN 1 1
+  let P : Params := ⟨1, 0, 1, 100, 0, 16⟩
+  let A := wide 64
+  let trace := wideTrace 64 (2 ^ logN)
+  let t ← IO.monoMsNow
+  let lde := B.lde logN 1 gen 64 trace
+  let t1 ← IO.monoMsNow
+  IO.println s!"trace lde {t1 - t} ms ({lde.words.size})"
+  let tc := B.commit [lde]
+  IO.println s!"trace commit {(← IO.monoMsNow) - t1} ms {(tc.root.toArray.getD 0 0).val}"
+  let qlog := logN + 1
+  let t3 ← IO.monoMsNow
+  let alpha : KoalaBear.Fast.Ext4 := ⟨5, 7, 11, 13⟩
+  let qs := B.quotient A [] logN 1 lde alpha
+  let t4 ← IO.monoMsNow
+  IO.println s!"quotient {t4 - t3} ms {qs.size}"
+  let chunks := (List.range 2).map fun c ↦
+    let shift := gen * powF (twoAdicGen qlog) c
+    let vals := (List.range (2 ^ logN)).toArray.flatMap fun r ↦
+      (Ext.coeffs (qs.getD (r * 2 + c) 0)).toArray
+    B.lde logN 1 (gen * shift⁻¹) 4 vals
+  let t5 ← IO.monoMsNow
+  IO.println s!"quotient chunks lde {t5 - t4} ms {chunks.length}"
+  let qc := B.commit chunks
+  let t6 ← IO.monoMsNow
+  IO.println s!"quotient commit {t6 - t5} ms {(qc.root.toArray.getD 0 0).val}"
+  let zeta : KoalaBear.Fast.Ext4 := ⟨17, 19, 23, 29⟩
+  let ys := B.openedAt 1 lde zeta
+  let t7 ← IO.monoMsNow
+  IO.println s!"one trace opening {t7 - t6} ms {ys.size}"
+  let ap := Array.ofFn (n := 64) fun i ↦ Ext.pow alpha i.val
+  let t7a ← IO.monoMsNow
+  let comp := B.compress lde ap
+  let t7b ← IO.monoMsNow
+  IO.println s!"compress trace rows {t7b - t7a} ms {comp.size}"
+  let xs := cosetPointsBitRev gen (logN + 1)
+  let acc := parChunks lde.height 16 fun r0 len ↦
+    accumulateRows (Array.replicate lde.height 0) comp xs zeta zeta zeta r0 len
+  IO.println s!"accumulate one point {(← IO.monoMsNow) - t7b} ms {acc.size}"
+  let t7 ← IO.monoMsNow
+  let ((opened, fri), _) := (openPcs B P [(tc, [[zeta, zeta * zeta]]),
+    (qc, chunks.map fun _ ↦ [zeta])]).run B.transcript
+  let t8 ← IO.monoMsNow
+  IO.println s!"openPcs {t8 - t7} ms {opened.length} {fri.queries.size}"
+  for (q, pw) in [(0, 0), (100, 0), (0, 16)] do
+    let t ← IO.monoMsNow
+    let ((o, f), _) := (openPcs B { P with numQueries := q, queryPowBits := pw }
+      [(tc, [[zeta, zeta * zeta]]), (qc, chunks.map fun _ ↦ [zeta])]).run B.transcript
+    IO.println s!"  openPcs with {q} queries, {pw} pow bits: {(← IO.monoMsNow) - t} ms \
+      {o.length} {f.queries.size}"
+  let inputs := [Array.ofFn (n := 2 ^ (logN + 1)) fun i ↦
+    (⟨(i.val : _), 1, 2, 3⟩ : KoalaBear.Fast.Ext4)]
+  let t8a ← IO.monoMsNow
+  let (cp, _) := (commitPhase B P inputs).run B.transcript
+  IO.println s!"commit phase {(← IO.monoMsNow) - t8a} ms {cp.commits.size}"
+  let t8 ← IO.monoMsNow
+  let w := B.transcript.grinder B.transcript.state 16
+  IO.println s!"grind 16 bits {(← IO.monoMsNow) - t8} ms, \
+    witness {Montgomery.Native32.FastField.toNat w}"
+  return 0
+
 def main (args : List String) : IO UInt32 := do
   match args with
   | ["poseidon2-spec", logN] =>
@@ -189,6 +253,7 @@ def main (args : List String) : IO UInt32 := do
       return (CompPoly.CPolynomial.NTTFast.Packed.Native.read b 0).toUInt64
     IO.println s!"perm24 ns/perm {m * 10 / (8 * groups) / 10}.{m * 10 / (8 * groups) % 10}"
     return 0
+  | ["phases", logN] => phases logN.toNat!
   | "prove" :: backend :: air :: rest =>
     -- `prove (spec|fast) (fib|wide) LOG_N LOG_BLOWUP LOG_FINAL MAX_LOG_ARITY QUERIES COMMIT_POW
     -- QUERY_POW [JSON]`: the proof's median time, checked against Plonky3's proof in `JSON` if
@@ -200,6 +265,9 @@ def main (args : List String) : IO UInt32 := do
     let A := if air == "wide" then CompStark.Stark.wide 64 else CompStark.Stark.fibonacci
     let (trace, pis) :=
       if air == "wide" then (wideTrace 64 (2 ^ logN), []) else fibInstance (2 ^ logN)
+    -- The fast backend's extension plans are built once, outside timing, as Plonky3's twiddles.
+    let B := if backend == "fast" then
+      CompStark.Stark.Fast.backendFor logN b A.logQuotientChunks else B
     if let path :: _ := rest.drop 7 then
       let rust ← IO.ofExcept (CompStark.Stark.Json.parse (← IO.FS.readFile path))
       unless CompStark.Stark.proveWith B P A logN trace pis == rust do

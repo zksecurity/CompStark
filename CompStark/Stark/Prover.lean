@@ -44,10 +44,8 @@ def proveWith (B : Backend) (P : Params) (A : Air) (logN : Nat) (trace : Array F
     pObserveList traceC.root.toList
     pObserveList pis
     let alpha ← pSampleExt
-    -- The trace on the quotient domain, from the first rows of its bit-reversed extension.
-    let ext := traceC.mats.headD ⟨0, 0, #[]⟩
-    let tq : Mat := ⟨w, 2 ^ qlog, permuteRows ext (bitRevPerm qlog)⟩
-    let qs := B.quotient A pis logN logChunks tq alpha
+    let ext := traceC.mats.headD (Mat.ofValues 0 0 #[])
+    let qs := B.quotient A pis logN logChunks ext alpha
     let chunks := (List.range (2 ^ logChunks)).map fun c ↦
       let shift := gen * powF (twoAdicGen qlog) c
       let vals := (List.range (2 ^ logN)).toArray.flatMap fun r ↦
