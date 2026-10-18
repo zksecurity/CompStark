@@ -71,8 +71,43 @@ def coeffs (x : EF) : List F := [x.c0, x.c1, x.c2, x.c3]
 
 end Ext
 
+/-- `acc` followed by the low `bits` bits of `i`, reversed. -/
+def reverseBitsGo : Nat → Nat → Nat → Nat
+  | 0, _, acc => acc
+  | bits + 1, i, acc => reverseBitsGo bits (i / 2) (acc * 2 + i % 2)
+
 /-- The low `bits` bits of `i`, reversed. -/
-def reverseBits (i bits : Nat) : Nat :=
-  (List.range bits).foldl (fun acc k ↦ acc * 2 + (i >>> k) % 2) 0
+def reverseBits (i bits : Nat) : Nat := reverseBitsGo bits i 0
+
+/-- `shift · ω ^ i` for `i < 2 ^ logN`, `ω` of order `2 ^ logN`. -/
+def cosetPoints (shift : F) (logN : Nat) : Array F := Id.run do
+  let w := twoAdicGen logN
+  let mut out := Array.emptyWithCapacity (2 ^ logN)
+  let mut x := shift
+  for _ in [0:2 ^ logN] do
+    out := out.push x
+    x := x * w
+  return out
+
+/-- The points of `shift · ⟨ω⟩` in bit-reversed order. -/
+def cosetPointsBitRev (shift : F) (logN : Nat) : Array F :=
+  let xs := cosetPoints shift logN
+  Array.ofFn (n := 2 ^ logN) fun r ↦ xs.getD (reverseBits r.val logN) 0
+
+/-- The inverses of all elements with one inversion, by prefix products. Defined when no element
+is zero. -/
+def batchInv {K : Type*} [Mul K] [Inv K] [One K] (xs : Array K) : Array K := Id.run do
+  let mut pre := Array.emptyWithCapacity xs.size
+  let mut acc : K := 1
+  for x in xs do
+    pre := pre.push acc
+    acc := acc * x
+  let mut inv := acc⁻¹
+  let mut out := Array.replicate xs.size (1 : K)
+  for k in [0:xs.size] do
+    let i := xs.size - 1 - k
+    out := out.set! i (inv * pre.getD i 1)
+    inv := inv * xs.getD i 1
+  return out
 
 end CompStark.Stark

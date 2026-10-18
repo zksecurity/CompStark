@@ -26,3 +26,4 @@ public import CompStark.Stark.Air
 public import CompStark.Stark.Verifier
 public import CompStark.Fri.Prover
 public import CompStark.Stark.Prover
+public import CompStark.Stark.Fast

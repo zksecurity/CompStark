@@ -88,58 +88,75 @@ def duplex : Duplex F 24 where
   rate := 16
   canon := Montgomery.Native32.FastField.toNat
 
-/-- The transcript of the KoalaBear STARK. -/
-abbrev Transcript := Challenger F 24
-
-namespace Transcript
-
-/-- The empty transcript. -/
-def init : Transcript := Challenger.init
-
-/-- Observe one base element. -/
-def observe (c : Transcript) (x : F) : Transcript := Challenger.observe duplex c x
-
-/-- Observe base elements in order. -/
-def observeList (c : Transcript) (xs : List F) : Transcript := Challenger.observeList duplex c xs
-
-/-- Observe an extension element, lowest coefficient first. -/
-def observeExt (c : Transcript) (x : EF) : Transcript := observeList c [x.c0, x.c1, x.c2, x.c3]
-
-/-- Observe extension elements in order. -/
-def observeExts (c : Transcript) (xs : List EF) : Transcript := xs.foldl observeExt c
-
-/-- Sample a base element. -/
-def sample (c : Transcript) : F × Transcript := Challenger.sample duplex c
-
-/-- Sample an extension element, lowest coefficient first. -/
-def sampleExt (c : Transcript) : EF × Transcript :=
-  let (a, c) := sample c
-  let (b, c) := sample c
-  let (d, c) := sample c
-  let (e, c) := sample c
-  (⟨a, b, d, e⟩, c)
-
-/-- Sample `bits` low bits. -/
-def sampleBits (c : Transcript) (bits : Nat) : Nat × Transcript :=
-  Challenger.sampleBits duplex c bits
-
-/-- Check a grinding witness. -/
-def checkWitness (c : Transcript) (bits : Nat) (w : F) : Bool × Transcript :=
-  Challenger.checkWitness duplex c bits w
-
-/-- The smallest grinding witness for `bits` below `bound`, by search from `n`. -/
-def grindFrom (c : Transcript) (bits : Nat) : Nat → Nat → F
+/-- The smallest grinding witness for `bits` below `bound`, by search from `n`, checking each
+candidate with `D`. -/
+def grindFrom (D : Duplex F 24) (c : Challenger F 24) (bits : Nat) : Nat → Nat → F
   | 0, _ => 0
   | fuel + 1, n =>
     let w := (n : F)
-    if (checkWitness c bits w).1 then w else grindFrom c bits fuel (n + 1)
+    if (Challenger.checkWitness D c bits w).1 then w else grindFrom D c bits fuel (n + 1)
 
-/-- The smallest grinding witness for `bits`, and the transcript after observing it. -/
-def grind (c : Transcript) (bits : Nat) : F × Transcript :=
-  if bits = 0 then (0, c)
+/-- The transcript of the KoalaBear STARK: a challenger with its duplex, and a search for the
+smallest grinding witness of a state. -/
+structure Transcript where
+  duplex : Duplex F 24
+  grinder : Challenger F 24 → Nat → F
+  state : Challenger F 24
+
+namespace Transcript
+
+/-- The empty transcript with the duplex `D` and grinder `g`. -/
+def initWith (D : Duplex F 24) (g : Challenger F 24 → Nat → F) : Transcript :=
+  ⟨D, g, Challenger.init⟩
+
+/-- The empty specification transcript: the spec permutation, and grinding by search. -/
+def init : Transcript :=
+  initWith KoalaBear.duplex fun c bits ↦
+    grindFrom KoalaBear.duplex c bits _root_.KoalaBear.fieldSize 0
+
+/-- Observe one base element. -/
+def observe (t : Transcript) (x : F) : Transcript :=
+  { t with state := Challenger.observe t.duplex t.state x }
+
+/-- Observe base elements in order. -/
+def observeList (t : Transcript) (xs : List F) : Transcript :=
+  { t with state := Challenger.observeList t.duplex t.state xs }
+
+/-- Observe an extension element, lowest coefficient first. -/
+def observeExt (t : Transcript) (x : EF) : Transcript := observeList t [x.c0, x.c1, x.c2, x.c3]
+
+/-- Observe extension elements in order. -/
+def observeExts (t : Transcript) (xs : List EF) : Transcript := xs.foldl observeExt t
+
+/-- Sample a base element. -/
+def sample (t : Transcript) : F × Transcript :=
+  let (x, c) := Challenger.sample t.duplex t.state
+  (x, { t with state := c })
+
+/-- Sample an extension element, lowest coefficient first. -/
+def sampleExt (t : Transcript) : EF × Transcript :=
+  let (a, t) := sample t
+  let (b, t) := sample t
+  let (d, t) := sample t
+  let (e, t) := sample t
+  (⟨a, b, d, e⟩, t)
+
+/-- Sample `bits` low bits. -/
+def sampleBits (t : Transcript) (bits : Nat) : Nat × Transcript :=
+  let (x, c) := Challenger.sampleBits t.duplex t.state bits
+  (x, { t with state := c })
+
+/-- Check a grinding witness. -/
+def checkWitness (t : Transcript) (bits : Nat) (w : F) : Bool × Transcript :=
+  let (b, c) := Challenger.checkWitness t.duplex t.state bits w
+  (b, { t with state := c })
+
+/-- The grinder's witness for `bits`, and the transcript after observing it. -/
+def grind (t : Transcript) (bits : Nat) : F × Transcript :=
+  if bits = 0 then (0, t)
   else
-    let w := grindFrom c bits _root_.KoalaBear.fieldSize 0
-    (w, (checkWitness c bits w).2)
+    let w := t.grinder t.state bits
+    (w, (checkWitness t bits w).2)
 
 end Transcript
 end KoalaBear

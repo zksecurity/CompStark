@@ -2,6 +2,8 @@ import CompStark.Poseidon2.KoalaBear
 import CompStark.Poseidon2.Packed
 import CompStark.Merkle.Packed
 import CompStark.Merkle.Tree
+import CompStark.Stark.Prover
+import CompStark.Stark.Fast
 
 /-! # CompStark micro-benchmarks
 
@@ -36,6 +38,14 @@ def timeMedian (samples : Nat) (f : Nat → UInt64) : IO Nat := do
     k := k + 1
   if sink == 12345 then IO.println ""
   return (out.qsort (· < ·))[samples / 2]!
+
+
+/-- The Fibonacci trace of `n` rows from `(0, 1)` and its public values. -/
+def fibInstance (n : Nat) : Array KoalaBear.Fast.Field × List KoalaBear.Fast.Field :=
+  let (t, _, r) := (List.range n).foldl
+    (fun ((t, l, r) : Array KoalaBear.Fast.Field × KoalaBear.Fast.Field × KoalaBear.Fast.Field) _ ↦
+      (t.push l |>.push r, r, l + r)) (#[], 0, 1)
+  (t, [0, 1, t.getD (2 * n - 1) r])
 
 def main (args : List String) : IO UInt32 := do
   match args with
@@ -167,5 +177,29 @@ def main (args : List String) : IO UInt32 := do
         b := Packed.permute24 K b (192 * g).toUSize
       return (CompPoly.CPolynomial.NTTFast.Packed.Native.read b 0).toUInt64
     IO.println s!"perm24 ns/perm {m * 10 / (8 * groups) / 10}.{m * 10 / (8 * groups) % 10}"
+    return 0
+  | "prove" :: backend :: rest =>
+    -- `prove (spec|fast) LOG_N LOG_BLOWUP LOG_FINAL MAX_LOG_ARITY QUERIES COMMIT_POW QUERY_POW
+    -- [JSON]`: the Fibonacci proof's median time, checked against Plonky3's proof in `JSON` if
+    -- given.
+    let B := if backend == "fast" then CompStark.Stark.Fast.backend else CompStark.Fri.Backend.spec
+    let ps := (rest.take 7).map String.toNat!
+    let [logN, b, f, a, q, cp, qp] := ps | IO.eprintln "seven parameters"; return 1
+    let P : CompStark.Fri.Params := ⟨b, f, a, q, cp, qp⟩
+    let (trace, pis) := fibInstance (2 ^ logN)
+    if let path :: _ := rest.drop 7 then
+      let rust ← IO.ofExcept (CompStark.Stark.Json.parse (← IO.FS.readFile path))
+      unless CompStark.Stark.proveWith B P CompStark.Stark.fibonacci logN trace pis == rust do
+        IO.eprintln "proof differs from Plonky3's"; return 1
+      IO.println "proof matches Plonky3's"
+    let mut samples := #[]
+    for k in [0:3] do
+      let (ns, pf) ← timeNs fun _ ↦ do
+        return CompStark.Stark.proveWith B P CompStark.Stark.fibonacci logN (trace.set! 0 (k : _))
+          pis
+      samples := samples.push ns
+      if pf.degreeBits == 12345 then IO.println ""
+    let m := (samples.qsort (· < ·))[1]!
+    IO.println s!"lean {backend} prove fib 2^{logN} ms median {m / 1000000}.{m / 1000 % 1000}"
     return 0
   | _ => IO.eprintln "usage: CompStarkBench poseidon2-spec LOG_N"; return 1

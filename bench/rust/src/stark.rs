@@ -179,3 +179,45 @@ pub fn challenger() {
     println!("challenger {} {} {:?} {} {} {}", a.as_canonical_u32(), b.as_canonical_u32(), ext, bits,
         w.as_canonical_u32(), z.as_canonical_u32());
 }
+
+/// `prove-bench AIR LOG_N LOG_BLOWUP LOG_FINAL MAX_LOG_ARITY QUERIES COMMIT_POW QUERY_POW`: the
+/// median milliseconds of seven proofs.
+pub fn prove_bench(air: &str, args: &[usize]) {
+    use std::time::Instant;
+    let [log_n, log_blowup, log_final_poly_len, max_log_arity, num_queries, commit_pow, query_pow] =
+        args[..]
+    else {
+        panic!("seven parameters")
+    };
+    let hash = Hash::new(default_koalabear_poseidon2_24());
+    let compress = Compress::new(default_koalabear_poseidon2_16());
+    let val_mmcs = ValMmcs::new(hash, compress);
+    let fri = FriParameters {
+        log_blowup,
+        log_final_poly_len,
+        max_log_arity,
+        num_queries,
+        commit_proof_of_work_bits: commit_pow,
+        query_proof_of_work_bits: query_pow,
+        mmcs: ChallengeMmcs::new(val_mmcs.clone()),
+    };
+    let pcs = Pcs::new(Radix2DitParallel::default(), val_mmcs, fri);
+    let config = Config::new(pcs, Challenger::new(default_koalabear_poseidon2_24()));
+    let mut samples = vec![];
+    for _ in 0..7 {
+        let (trace, pis) = match air {
+            "fib" => { let (t, x) = trace(1 << log_n); (t, vec![F::ZERO, F::ONE, x]) }
+            "cube" => { let (t, x) = cube_trace(1 << log_n); (t, vec![F::TWO, F::ZERO, x]) }
+            _ => panic!("unknown AIR {air}"),
+        };
+        let t = Instant::now();
+        let proof = match air {
+            "fib" => prove(&config, &FibonacciAir, trace, &pis),
+            _ => prove(&config, &CubeAir, trace, &pis),
+        };
+        samples.push(t.elapsed().as_secs_f64() * 1000.0);
+        std::hint::black_box(proof);
+    }
+    samples.sort_by(|a, b| a.partial_cmp(b).unwrap());
+    println!("plonky3 prove {air} 2^{log_n} ms median {:.2}", samples[3]);
+}
