@@ -156,7 +156,7 @@ def idft (logN : Nat) (vs : Array EF) : Array EF :=
 /-- The result of the commit phase, on commitments `C`. -/
 structure CommitPhase (C : Type) where
   commits : Array Digest
-  data : Array C
+  data : List C
   witnesses : Array F
   arities : Array Nat
   finalPoly : Array EF
@@ -209,7 +209,7 @@ def commitRounds (B : Backend) (P : Params) :
           (B.addScaled folded v (Ext.powTwo beta la), vs) else (folded, rest)
       | [] => (folded, [])
     commitRounds B P fuel folded rest
-      ⟨cp.commits.push (B.root c), cp.data.push c, cp.witnesses.push w, cp.arities.push la,
+      ⟨cp.commits.push (B.root c), cp.data ++ [c], cp.witnesses.push w, cp.arities.push la,
         cp.finalPoly⟩
 
 /-- Plonky3's `commit_phase` on the batched quotients `inputs`, tallest first. -/
@@ -217,7 +217,7 @@ def commitPhase (B : Backend) (P : Params) (inputs : List B.V) : PM (CommitPhase
   let (folded, rest) := match inputs with
     | v :: vs => (v, vs)
     | [] => (B.ofArray #[], [])
-  let (folded, cp) ← commitRounds B P (B.size folded) folded rest ⟨#[], #[], #[], #[], #[]⟩
+  let (folded, cp) ← commitRounds B P (B.size folded) folded rest ⟨#[], [], #[], #[], #[]⟩
   let fa := B.toArray folded
   let len := 2 ^ P.logFinalPolyLen
   let truncated := Array.ofFn (n := len) fun i ↦ fa.getD (reverseBits i P.logFinalPolyLen) 0
@@ -225,20 +225,20 @@ def commitPhase (B : Backend) (P : Params) (inputs : List B.V) : PM (CommitPhase
   pObserveExts finalPoly.toList
   return { cp with finalPoly := finalPoly }
 
-/-- The commit-phase openings of a query at `index`. -/
-def answerQuery (B : Backend) (cp : CommitPhase B.C) (index : Nat) : Array CommitStep := Id.run do
-  let mut cur := index
-  let mut steps := #[]
-  for (c, la) in cp.data.toList.zip cp.arities.toList do
-    let arity := 2 ^ la
-    let pos := cur % arity
-    let group := cur >>> la
-    let o := B.openAt c group
+/-- The openings at `cur` of the commit-phase rounds with commitments `cs` and log arities `las`:
+each round opens the group of `cur` and passes the group's index on. -/
+def answerSteps (B : Backend) : List B.C → List Nat → Nat → List CommitStep
+  | c :: cs, la :: las, cur =>
+    let pos := cur % 2 ^ la
+    let o := B.openAt c (cur >>> la)
     let evals := unflatten ((o.values.getD 0 #[]).toList)
-    let siblings := ((List.range arity).filter (· != pos)).map fun j ↦ evals.getD j 0
-    steps := steps.push ⟨la, siblings.toArray, o.path⟩
-    cur := group
-  return steps
+    let siblings := ((List.range (2 ^ la)).filter (· != pos)).map fun j ↦ evals.getD j 0
+    ⟨la, siblings.toArray, o.path⟩ :: answerSteps B cs las (cur >>> la)
+  | _, _, _ => []
+
+/-- The commit-phase openings of a query at `index`. -/
+def answerQuery (B : Backend) (cp : CommitPhase B.C) (index : Nat) : Array CommitStep :=
+  (answerSteps B cp.data cp.arities.toList index).toArray
 
 /-- `factor · ∑ᵢ weights[i] · m[perm[i]][j]` for the columns `j0, …, j0 + nj - 1` of the row-major
 matrix `m` of width `w`: the barycentric evaluation of columns whose natural-order row `i` is
@@ -355,14 +355,10 @@ def openPcs (B : Backend) (P : Params) (rounds : List (OpenRound B)) :
   let opened ← rounds.mapM fun (_, ms) ↦ ms.mapM fun (m, zs) ↦ do
     let ov := B.openedAt P.logBlowup m zs
     ov.forM fun ys ↦ pObserveExts ys.toList
-    return ov
+    return (ov, m, zs.zip ov)
   let alpha ← pSampleExt
-  let items := ((rounds.zip opened).map fun ((_, ms), orow) ↦
-    (ms.zip orow).map fun ((m, zs), ovs) ↦ (m, zs.zip ovs)).flatten
-  let inputs := (B.reduce alpha items).map (·.2)
-  let logMax := match inputs with
-    | v :: _ => Nat.log2 (B.size v)
-    | [] => 0
+  let inputs := (B.reduce alpha (opened.flatten.map (·.2))).map (·.2)
+  let logMax := Nat.log2 ((inputs.map B.size).headD 0)
   let cp ← commitPhase B P inputs
   cp.arities.toList.forM fun la ↦ pObserve (la : F)
   let qw ← pGrind P.queryPowBits
@@ -370,6 +366,6 @@ def openPcs (B : Backend) (P : Params) (rounds : List (OpenRound B)) :
     let index ← pSampleBits logMax
     let ins := rounds.map fun (c, _) ↦ B.openAt c (index >>> (logMax - B.logHeight c))
     return (⟨ins.toArray, answerQuery B cp index⟩ : QueryProof)
-  return (opened, ⟨cp.commits, cp.witnesses, queries.toArray, cp.finalPoly, qw⟩)
+  return (opened.map (·.map (·.1)), ⟨cp.commits, cp.witnesses, queries.toArray, cp.finalPoly, qw⟩)
 
 end CompStark.Fri
