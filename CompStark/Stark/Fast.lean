@@ -115,8 +115,12 @@ def transcript : Transcript := Transcript.initWith duplex grind
 def ofRows (w h : Nat) (vals : Array F) : PMat :=
   { width := w, height := h, words := CompPoly.CPolynomial.NTTFast.Packed.Native.encodeFields vals }
 
-/-- The matrix of field elements. -/
-def PMat.toMat (m : PMat) : Mat := ⟨m.width, m.height, decodeAll m.words (m.width * m.height)⟩
+/-- The matrix of field elements, decoded without bounds. -/
+def PMat.toMat (m : PMat) : Mat := ⟨m.width, m.height, CompPoly.PackedRepr.decode m.words⟩
+
+/-- The words of `m` are its `width × height` elements, and indexable. -/
+def PMat.fits (m : PMat) : Bool :=
+  m.words.size == 4 * (m.width * m.height) && m.words.size < USize.size
 
 /-- Row `r` of a packed matrix. -/
 def row (m : PMat) (r : Nat) : Array F := decodeRange m.words (r * m.width) m.width
@@ -142,6 +146,9 @@ def ldeWith (plans : List (Nat × Nat × F × CompPoly.CPolynomial.NTTFast.Packe
   let found := plans.find? fun (h, b, s, _) ↦ h == logH && b == bits && s == shift
   match found.map (·.2.2.2) <|> plan? logH bits shift with
   | some P =>
+    if m.size ≠ 2 ^ logH * w ∨ USize.size ≤ 4 * (2 ^ (logH + bits) * w) then
+      ofRows w (2 ^ (logH + bits)) (ldeRef logH bits shift w m).values
+    else
     let out := CompPoly.CPolynomial.NTTFast.Packed.Native.joinRows
       (CompPoly.CPolynomial.NTTFast.Packed.Native.cosetLde P w
         (CompPoly.CPolynomial.NTTFast.Packed.Native.encodeFields m))
@@ -194,6 +201,11 @@ def sideBySide (ms : List PMat) (h : Nat) : ByteArray :=
 def encodeDigests (ds : Array Digest) : ByteArray :=
   CompPoly.CPolynomial.NTTFast.Packed.Native.encodeFields (ds.flatMap (·.toArray))
 
+/-- Digests from consecutive words, decoded without bounds. -/
+def decodeDigests (b : ByteArray) : Array Digest :=
+  let a : Array F := CompPoly.PackedRepr.decode b
+  Array.ofFn (n := a.size / 8) fun k ↦ Vector.ofFn fun j ↦ a.getD (8 * k.val + j.val) 0
+
 /-- Packed matrices under one Merkle tree, with the packed digest layers, leaves first. -/
 structure Commit where
   mats : List PMat
@@ -204,7 +216,8 @@ side by side; otherwise the specification's layers. -/
 def commit (ms : List PMat) : Commit :=
   ⟨ms, match ms with
     | m :: rest =>
-      if rest.all (·.height == m.height) && 0 < m.height then
+      if rest.all (·.height == m.height) && 0 < m.height && ms.all PMat.fits &&
+          4 * (m.height * ms.foldl (· + ·.width) 0) < USize.size then
         packedLayers (ms.foldl (· + ·.width) 0) (sideBySide ms m.height)
       else (Committed.ofMats (ms.map PMat.toMat)).layers.map encodeDigests
     | [] => (Committed.ofMats []).layers.map encodeDigests⟩
@@ -214,11 +227,19 @@ namespace Commit
 /-- The largest matrix height. -/
 def maxHeight (c : Commit) : Nat := c.mats.foldl (fun m a ↦ max m a.height) 0
 
+/-- The specification's commitment, decoded. -/
+def toCommitted (c : Commit) : Committed := ⟨c.mats.map PMat.toMat, c.layers.map decodeDigests⟩
+
+/-- The layers are indexable. -/
+def fits (c : Commit) : Bool := c.layers.all (·.size < USize.size)
+
 /-- The Merkle root. -/
-def root (c : Commit) : Digest := digestAt (c.layers.back?.getD .empty) 0
+def root (c : Commit) : Digest :=
+  if c.fits then digestAt (c.layers.back?.getD .empty) 0 else c.toCommitted.root
 
 /-- `Committed.openAt` on packed rows and layers. -/
 def openAt (c : Commit) (index : Nat) : BatchOpening :=
+  if !(c.fits && c.mats.all PMat.fits) then c.toCommitted.openAt index else
   let logMax := Merkle.log2Ceil c.maxHeight
   let rows := c.mats.map fun m ↦ row m (index >>> (logMax - Merkle.log2Ceil m.height))
   ⟨rows.toArray, Array.ofFn (n := logMax) fun i ↦
@@ -332,7 +353,8 @@ is the extension's first rows, transposed in parallel pieces; constraints are ev
 bit-reversed row order, every node one vectorized operation per block of rows, in parallel block
 ranges, and the result is put in natural order. -/
 def quotientWith (T : QuotientTables) (A : Air) (pis : List F) (ext : PMat) (alpha : EF) :
-    Array EF := Id.run do
+    Array EF := if !ext.fits || ext.height < 2 ^ (T.degreeBits + T.logChunks) then
+      quotientOfLde A pis T.degreeBits T.logChunks ext.toMat alpha else Id.run do
   let n := 2 ^ (T.degreeBits + T.logChunks)
   let w := ext.width
   let period := 2 ^ T.logChunks
@@ -385,10 +407,15 @@ def weightedColumns (m : @& ByteArray) (w : Nat) (zs : @& Array EF) (xs : @& Byt
       out := out.push sums
   return out
 
+/-- `z` is not in the base field, so no `z - x` for a base `x` vanishes. -/
+def nonBase (z : EF) : Bool := z.c1 != 0 || z.c2 != 0 || z.c3 != 0
+
 /-- `openedAt` on packed words, at all points of a matrix: the barycentric weights `x / (z - x)` in
 the stored bit-reversed row order, as planes by the norm, and the column sums over parallel row
 ranges, each range transposed once for all points. -/
 def openedAt (logBlowup : Nat) (m : PMat) (zs : List EF) : List (Array EF) :=
+  if !(m.fits && zs.all nonBase) || m.height < 2 ^ (Nat.log2 m.height - logBlowup) then
+    zs.map (Fri.openedAt logBlowup m.toMat) else
   let logH := Nat.log2 m.height - logBlowup
   let h := 2 ^ logH
   let w := m.width
@@ -467,7 +494,11 @@ def reduceRange (items : @& Array (ByteArray × Nat × EVec × List (EF × EF ×
 /-- `Fri.reduce` on planes, every height in parallel row ranges: rows batched by word dot
 products, `1 / (z - x)` by the norm. -/
 def reduce (alpha : EF) (items : List (PMat × List (EF × Array EF))) : List (Nat × EVec) :=
-  Id.run do
+  if !items.all fun (m, pts) ↦ m.fits && m.height == 2 ^ Nat.log2 m.height &&
+      pts.all (nonBase ·.1) then
+    (Fri.reduce alpha (items.map fun (m, pts) ↦ (m.toMat, pts))).map fun (h, a) ↦
+      (h, EVec.ofArray a)
+  else Id.run do
   -- Per height: the matrices with their points, opened sums and powers of `α`, in order.
   let mut groups : List (Nat × Nat × Array (ByteArray × Nat × EVec × List (EF × EF × EF))) := []
   for (m, pts) in items do
@@ -519,6 +550,8 @@ def fold2Range (v : @& EVec) (twoX : @& ByteArray) (beta : EF) (r0 len : Nat) : 
 
 /-- `Fri.foldPairs` on planes, `(lo + hi) / 2 + β (lo - hi) / (2 x)`, in parallel ranges. -/
 def fold2 (v : EVec) (beta : EF) (logRows : Nat) : EVec :=
+  if !(v.fits && v.n == 2 ^ (logRows + 1)) then EVec.ofArray (foldPairs v.decode beta logRows)
+  else
   let rows := 2 ^ logRows
   let pw := cosetPoints 1 (logRows + 1)
   let twoX := CompPoly.CPolynomial.NTTFast.Packed.Native.encodeFields
@@ -546,12 +579,23 @@ def interleaveRange (a0 a1 a2 a3 : @& ByteArray) (i0 len : Nat) : ByteArray := I
 
 /-- The matrix of rows of `k` elements, flattened, packed in parallel ranges. -/
 def leaves (k : Nat) (v : EVec) : PMat :=
+  if !v.fits then
+    ofRows (4 * k) (v.n / k) (v.decode.flatMap fun x ↦ (Ext.coeffs x).toArray)
+  else
   let n := v.n
   let parts := if n < 4096 then 1 else 16
   let size := n / parts
   let ts := (Array.range parts).map fun p ↦ Task.spawn fun _ ↦
     interleaveRange v.c0 v.c1 v.c2 v.c3 (p * size) (if p + 1 = parts then n - p * size else size)
   { width := 4 * k, height := n / k, words := ts.foldl (fun acc t ↦ acc ++ t.get) .empty }
+
+/-- `a + x · b`. -/
+def addScaled (a b : EVec) (x : EF) : EVec :=
+  if a.fits && b.fits && a.n == b.n then a.add (b.smul x)
+  else EVec.ofArray (Array.zipWith (fun u v ↦ u + x * v) a.decode b.decode)
+
+/-- The elements. -/
+def toArray (v : EVec) : Array EF := if v.fits then v.toArray else v.decode
 
 /-- The fast backend. -/
 def backend : Backend where
@@ -566,25 +610,30 @@ def backend : Backend where
   quotient := quotient
   openedAt := openedAt
   V := EVec
-  toArray := EVec.toArray
+  toArray := toArray
   ofArray := EVec.ofArray
   size := (·.n)
   reduce := reduce
   fold2 := fold2
-  addScaled a b x := a.add (b.smul x)
+  addScaled := addScaled
   leaves := leaves
+
+/-- The extension plans of a proof of a `2 ^ logN`-row trace and `2 ^ logChunks` quotient chunks:
+the trace's extension on `g · ⟨ω_N⟩` and every chunk's. -/
+def ldePlans (logN logBlowup logChunks : Nat) :
+    List (Nat × Nat × F × CompPoly.CPolynomial.NTTFast.Packed.LdePlan) :=
+  let qlog := logN + logChunks
+  let shifts := gen :: (List.range (2 ^ logChunks)).map fun c ↦
+    gen * (gen * powF (twoAdicGen qlog) c)⁻¹
+  shifts.filterMap fun s ↦ (plan? logN logBlowup s).map fun P ↦ (logN, logBlowup, s, P)
 
 /-- The fast backend with the extension plans and quotient tables of a proof of a `2 ^ logN`-row
 trace and `2 ^ logChunks` quotient chunks prepared: the trace's extension on `g · ⟨ω_N⟩` and every
 chunk's. -/
 def backendFor (logN logBlowup logChunks : Nat) : Backend :=
-  let qlog := logN + logChunks
-  let shifts := gen :: (List.range (2 ^ logChunks)).map fun c ↦
-    gen * (gen * powF (twoAdicGen qlog) c)⁻¹
-  let plans := shifts.filterMap fun s ↦ (plan? logN logBlowup s).map fun P ↦ (logN, logBlowup, s, P)
   let T := quotientTables logN logChunks
   { backend with
-    lde := ldeWith plans
+    lde := ldeWith (ldePlans logN logBlowup logChunks)
     quotient := fun A pis db lc ext alpha ↦
       if db == logN && lc == logChunks then quotientWith T A pis ext alpha
       else quotient A pis db lc ext alpha }
