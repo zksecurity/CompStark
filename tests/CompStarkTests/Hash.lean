@@ -6,7 +6,7 @@ import CompStark.Hash.Sponge
 
 /-! # Sponge and compression known answers
 
-Outputs of Plonky3 0.4.2's `PaddingFreeSponge<Perm24, 24, 16, 8>` and
+Outputs of Plonky3's `PaddingFreeSponge<Perm24, 24, 16, 8>` and
 `TruncatedPermutation<Perm16, 2, 8, 16>` on the default KoalaBear Poseidon2 permutations
 (`bench/rust`, `cargo run --release`).
 -/

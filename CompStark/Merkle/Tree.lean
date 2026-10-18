@@ -82,6 +82,65 @@ def root (hash : List F → Vector F d) (compress : Vector F d → Vector F d �
   let first := firstLayer hash tallest h
   (upperLayers hash compress first.length (sorted.drop tallest.length) first).headD 0
 
+/-- Every layer from `prev` up, as `upperLayers` builds them. -/
+def upperLayersAll (hash : List F → Vector F d)
+    (compress : Vector F d → Vector F d → Vector F d) :
+    Nat → List (Matrix F) → List (Vector F d) → List (List (Vector F d))
+  | 0, _, prev => [prev]
+  | fuel + 1, rest, prev =>
+    if prev.length ≤ 1 then [prev]
+    else
+      let n := (prev.length / 2).nextPowerOfTwo
+      let ms := rest.takeWhile (·.height.nextPowerOfTwo == n)
+      prev :: upperLayersAll hash compress fuel (rest.drop ms.length)
+        (nextLayer hash compress ms prev)
+
+/-- The matrices sorted tallest first, keeping the given order among equal heights. -/
+def sortTallest (ms : List (Matrix F)) : List (Matrix F) :=
+  ms.mergeSort fun a b ↦ b.height ≤ a.height
+
+/-- The digest layers of the Merkle tree of `ms`, leaves first: Plonky3's `digest_layers`. -/
+def layers (hash : List F → Vector F d) (compress : Vector F d → Vector F d → Vector F d)
+    (ms : List (Matrix F)) : List (List (Vector F d)) :=
+  let sorted := sortTallest ms
+  let h := (sorted.headD ⟨0, 0, #[]⟩).height
+  let tallest := sorted.takeWhile (·.height == h)
+  let first := firstLayer hash tallest h
+  upperLayersAll hash compress first.length (sorted.drop tallest.length) first
+
+theorem getLastD_upperLayersAll (hash : List F → Vector F d)
+    (compress : Vector F d → Vector F d → Vector F d) (fuel : Nat) (rest : List (Matrix F))
+    (prev x y : List (Vector F d)) :
+    (upperLayersAll hash compress fuel rest prev).getLastD x =
+      (upperLayersAll hash compress fuel rest prev).getLastD y := by
+  induction fuel generalizing rest prev with
+  | zero => rfl
+  | succ fuel ih =>
+    simp only [upperLayersAll]
+    split
+    · rfl
+    · simp only [List.getLastD_cons]
+
+theorem upperLayers_eq_getLast (hash : List F → Vector F d)
+    (compress : Vector F d → Vector F d → Vector F d) (fuel : Nat) (rest : List (Matrix F))
+    (prev : List (Vector F d)) :
+    upperLayers hash compress fuel rest prev =
+      (upperLayersAll hash compress fuel rest prev).getLastD [] := by
+  induction fuel generalizing rest prev with
+  | zero => rfl
+  | succ fuel ih =>
+    simp only [upperLayers, upperLayersAll]
+    split
+    · rfl
+    · rw [ih, List.getLastD_cons]
+      exact getLastD_upperLayersAll _ _ _ _ _ _ _
+
+/-- The root is the single digest of the last layer. -/
+theorem root_eq_layers (hash : List F → Vector F d)
+    (compress : Vector F d → Vector F d → Vector F d) (ms : List (Matrix F)) :
+    root hash compress ms = ((layers hash compress ms).getLastD []).headD 0 := by
+  simp only [root, layers, sortTallest, upperLayers_eq_getLast]
+
 /-- Plonky3's Poseidon2 Merkle tree over KoalaBear: `KoalaBear.hash` leaves,
 `KoalaBear.compress` nodes. -/
 def KoalaBear.root (F : Type*) [Field F] (ms : List (Matrix F)) : Vector F 8 :=

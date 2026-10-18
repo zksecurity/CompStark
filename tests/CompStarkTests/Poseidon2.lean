@@ -8,7 +8,7 @@ import CompStark.Poseidon2.PackedCorrectness24
 
 /-! # Poseidon2 known answers
 
-Outputs of Plonky3 0.4.2's `default_koalabear_poseidon2_16` and `_24`
+Outputs of Plonky3's `default_koalabear_poseidon2_16` and `_24`
 (`bench/rust`, `cargo run --release`), on the spec field and the Montgomery
 field.
 -/

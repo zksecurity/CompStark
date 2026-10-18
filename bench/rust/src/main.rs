@@ -81,10 +81,19 @@ fn merkle(log_h: u32, width: usize) {
     println!("plonky3 merkle 2^{log_h} x {width} ms median {:.3}", samples[7]);
 }
 
+mod stark;
+
 fn main() {
     let args: Vec<String> = std::env::args().collect();
     if args.len() == 4 && args[1] == "merkle" {
         return merkle(args[2].parse().unwrap(), args[3].parse().unwrap());
+    }
+    if args.len() == 2 && args[1] == "challenger" {
+        return stark::challenger();
+    }
+    if args.len() >= 2 && args[1] == "stark" {
+        let nums: Vec<usize> = args[2..].iter().map(|a| a.parse().unwrap()).collect();
+        return stark::stark(&nums);
     }
     if args.len() == 3 && args[1] == "bench" {
         return bench(args[2].parse().unwrap());

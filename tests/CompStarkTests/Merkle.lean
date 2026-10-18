@@ -7,7 +7,7 @@ import CompStark.Merkle.RootCorrectness
 
 /-! # Merkle root known answers
 
-Roots of Plonky3 0.4.2's `MerkleTreeMmcs` with the Poseidon2 sponge and compression of
+Roots of Plonky3's `MerkleTreeMmcs` with the Poseidon2 sponge and compression of
 `examples/src/types.rs`, on matrices whose entry `k` is `base + k` (`bench/rust`,
 `cargo run --release`). They cover odd heights, single rows and injected smaller matrices.
 -/
