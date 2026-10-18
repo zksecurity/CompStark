@@ -197,9 +197,20 @@ def spliceList (cs : List Nat) (W : Array F) (i : Nat) (rows : List (Nat → F))
 /-- `(x + c) ^ 3` as two products. -/
 def cubeAdd (c x : F) : F := (x + c) * (x + c) * (x + c)
 
-/-- The sum of lane `l` after the S-box of a partial round, over the coordinates `0 :: ks`. -/
+/-- Neighbours added pairwise, an odd last term carried. -/
+def pairSums : List F → List F
+  | a :: b :: rest => (a + b) :: pairSums rest
+  | xs => xs
+
+/-- The sum of a list of at most `2 ^ n` terms as a tree of pairwise additions, `n` levels deep. -/
+def treeSum : Nat → List F → F
+  | 0, xs => xs.headD 0
+  | n + 1, xs => treeSum n (pairSums xs)
+
+/-- The sum of lane `l` after the S-box of a partial round: the S-box output plus the tree sum of
+the coordinates `ks`. -/
 def rowSum (ks : List Nat) (c : F) (W : Array F) (i l : Nat) : F :=
-  ks.foldl (fun acc j ↦ acc + word W i j l) (cubeAdd c (word W i 0 l))
+  cubeAdd c (word W i 0 l) + treeSum 5 (ks.map fun j ↦ word W i j l)
 
 /-! ### The round loops -/
 

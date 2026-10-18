@@ -22,7 +22,7 @@ specification; the round loops thread `Holds` through them (`permute24_spec`), a
 @[expose] public section
 namespace CompStark.Poseidon2.Packed
 open CompPoly.PackedRepr (encode)
-open CompPoly.CPolynomial.NTTFast.Packed (size_encode_fields add_val sub_val mul_val
+open CompPoly.CPolynomial.NTTFast.Packed (size_encode_fields add_val sub_val
   Native.encodeFields_eq)
 open CompPoly.CPolynomial.NTTFast.Packed.Native (readUOffset_encode)
 
@@ -79,7 +79,7 @@ theorem sbox24_encode (rc W : Array F) (r i : USize) (hb) (hr) :
   have hs := hb
   simp only [GroupFits24, Fits, size_encode_fields] at hs
   unfold sbox24
-  simp only [readUOffset_encode, add_val, mul_val, USize.reduceToNat]
+  simp only [readUOffset_encode, add_val, cube_val, USize.reduceToNat]
   simp (disch := (simp only [USize.reduceToNat, size_encode_fields]; omega)) only [store8_encode']
   simp only [USize.reduceToNat, sboxModel, spliceRows, word, coords24, lit8, List.foldl_cons,
     List.foldl_nil, Nat.reduceMul, Nat.reduceAdd, Nat.add_zero]
@@ -116,10 +116,11 @@ theorem partial24_encode (c : F) (D W : Array F) (i : USize) (hb) (hd) :
   have hs := hb
   simp only [GroupFits24, Fits, size_encode_fields] at hs
   unfold partial24
-  simp (disch := decide) only [readUOffset_encode, add_val, sub_val, mul_val, halve_val,
+  simp (disch := decide) only [readUOffset_encode, add_val, sub_val, cube_val, halve_val,
     mulInvPow2_val, USize.reduceToNat, UInt32.reduceToNat]
   simp (disch := (simp only [USize.reduceToNat, size_encode_fields]; omega)) only [store8_encode']
-  simp only [USize.reduceToNat, partialModel24, partialRows24, spliceList, rowSum, cubeAdd, word,
+  simp only [USize.reduceToNat, partialModel24, partialRows24, spliceList, rowSum,
+    treeSum, pairSums, List.map_cons, List.map_nil, List.headD_cons, cubeAdd, word,
     coords24, lit8, List.zip_cons_cons, List.zip_nil_right, List.foldl_cons, List.foldl_nil,
     Nat.reduceMul, Nat.reduceAdd, Nat.add_zero, Nat.zero_add]
 
@@ -187,7 +188,8 @@ theorem lane_partial24 (P : Params F 24) (hd : P.degree = 3)
     Nat.add_one_ne_zero, add_zero]
   interval_cases j <;>
     simp only [partialRows24, List.getD_cons_zero, List.getD_cons_succ, rowSum, cubeAdd,
-      List.foldl_cons, List.foldl_nil, half, invPow2, KoalaBear.diagonal24, Vector.getElem_mk,
+      treeSum, pairSums, List.map_cons, List.map_nil, List.headD_cons, half, invPow2,
+      KoalaBear.diagonal24, Vector.getElem_mk,
       List.getElem_toArray, List.getElem_cons_zero, List.getElem_cons_succ, ↓reduceIte,
       Nat.reduceEqDiff] <;> ring
 

@@ -162,4 +162,79 @@ theorem mulInvPow2_val (k : UInt32) (hk : k.toNat ≤ 24) (x : F) :
     val_toNat_cast x]
   ring
 
+/-- Below `2 p`, the sign reduction is the conditional subtraction of `p`. -/
+theorem reduceSign_eq (u : UInt32) (h : u.toNat < 2 * 2130706433) :
+    reduceSign u = conditionalSubtract 0x7f000001 u := by
+  unfold reduceSign conditionalSubtract
+  dsimp only
+  have hd : (u - 0x7f000001).toNat = (u.toNat + 4294967296 - 2130706433) % 4294967296 := by
+    simp only [UInt32.toNat_sub, UInt32.reduceToNat]
+    omega
+  by_cases hu : u < 0x7f000001
+  · -- `u - p` wraps: its sign bit is set and `p` is added back.
+    simp only [UInt32.lt_iff_toNat_lt, UInt32.reduceToNat] at hu
+    have hs : (u - 0x7f000001) >>> 31 = 1 := by
+      apply UInt32.toNat_inj.mp
+      simp only [UInt32.toNat_shiftRight, hd, UInt32.reduceToNat, Nat.shiftRight_eq_div_pow,
+        Nat.reduceMod, Nat.reducePow]
+      omega
+    rw [hs, show ((0 : UInt32) - 1) &&& 0x7f000001 = 0x7f000001 by decide, UInt32.sub_add_cancel,
+      ite_eq_left (by simp only [UInt32.lt_iff_toNat_lt, UInt32.reduceToNat]; exact hu)]
+  · -- `u - p` is below `2 ^ 31`: its sign bit is clear.
+    simp only [UInt32.lt_iff_toNat_lt, UInt32.reduceToNat] at hu
+    have hs : (u - 0x7f000001) >>> 31 = 0 := by
+      apply UInt32.toNat_inj.mp
+      simp only [UInt32.toNat_shiftRight, hd, UInt32.reduceToNat, Nat.shiftRight_eq_div_pow,
+        Nat.reduceMod, Nat.reducePow]
+      omega
+    rw [hs, show ((0 : UInt32) - 0) &&& 0x7f000001 = 0 by decide, UInt32.add_zero,
+      ite_eq_right (by simp only [UInt32.lt_iff_toNat_lt, UInt32.reduceToNat]; exact hu)]
+
+/-- The lazy product is the native Montgomery quotient. -/
+theorem mulLazy_eq (x y : UInt32) :
+    mulLazy x y = reduceQuotient 0x7effffff 0x7f000001 (x.toUInt64 * y.toUInt64) := rfl
+
+/-- The lazy product of words `x, y` with `x · y < p · 2 ^ 32`: below `2 p`, and `x · y · 2 ^ (-32)`
+modulo `p`. -/
+theorem mulLazy_toNat (x y : UInt32) (h : x.toNat * y.toNat < 2130706433 * 2 ^ 32) :
+    (mulLazy x y).toNat < 2 * 2130706433 ∧
+      ((mulLazy x y).toNat : ZMod KoalaBear.fieldSize) =
+        (x.toNat * y.toNat : ZMod _) * ((2 ^ 32 : ℕ) : ZMod KoalaBear.fieldSize)⁻¹ := by
+  have hxy : (x.toUInt64 * y.toUInt64).toNat = x.toNat * y.toNat := by
+    simp only [UInt64.toNat_mul, UInt32.toNat_toUInt64]
+    exact Nat.mod_eq_of_lt (by omega)
+  have hq := reduceQuotient_toNat (negInv := 0x7effffff) (p64 := 0x7f000001)
+    (x := x.toUInt64 * y.toUInt64) (by decide) (by decide) (by rw [hxy]; exact h)
+  rw [mulLazy_eq, hq, hxy]
+  simp only [UInt64.reduceToNat, UInt32.reduceToNat]
+  refine ⟨Montgomery.reduceNatQuotient_lt_two_mul _ _ _ _ (by decide) (by decide) h, ?_⟩
+  have := Montgomery.reduceNatQuotient_cast (2 ^ 32) KoalaBear.fieldSize 2130706431 (by decide)
+    (by decide) Mont32Field.two_pow_32_ne_zero (x.toNat * y.toNat)
+  exact this
+
+/-- The cube of a canonical Montgomery word, its square left unreduced, is the field cube. -/
+theorem cube_val (a : F) : mulSign (mulLazy a.val a.val) a.val = (a * a * a).val := by
+  have ha : a.val.toNat < 2130706433 := a.property
+  have hR := Mont32Field.two_pow_32_ne_zero (modulus := KoalaBear.fieldSize)
+  obtain ⟨hq, hqc⟩ := mulLazy_toNat a.val a.val (by nlinarith)
+  set q := mulLazy a.val a.val
+  have hb : q.toNat * a.val.toNat < 2130706433 * 2 ^ 32 := by nlinarith
+  obtain ⟨hr, hrc⟩ := mulLazy_toNat q a.val hb
+  have hb' : (q.toUInt64 * a.val.toUInt64).toNat < KoalaBear.fieldSize * 2 ^ 32 := by
+    simp only [UInt64.toNat_mul, UInt32.toNat_toUInt64]
+    rw [Nat.mod_eq_of_lt (by omega)]
+    exact hb
+  -- The sign reduction is `reduce`, whose field element is the cube.
+  have he : mulSign q a.val = (reduce (modulus := KoalaBear.fieldSize)
+      (q.toUInt64 * a.val.toUInt64) hb').val := by
+    rw [mulSign, reduceSign_eq _ hr]
+    rfl
+  rw [he]
+  congr 1
+  apply toField_injective
+  rw [toField_reduce, toField_mul, toField_mul]
+  simp only [UInt64.toNat_mul, UInt32.toNat_toUInt64]
+  rw [Nat.mod_eq_of_lt (by omega), Nat.cast_mul, hqc, Nat.cast_mul, val_toNat_cast a]
+  field_simp
+
 end CompStark.Poseidon2

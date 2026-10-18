@@ -59,10 +59,10 @@ meta def readState (t L : Nat) : MacroM (Array (Ident × Term)) := do
       bs := bs.push (v "x" j l, ← read (name "b") (name "i") (name "hb") (j * L + l))
   return bs
 
-/-- `y ^ 3` as two products. -/
+/-- `y ^ 3` as two products, the square left unreduced. -/
 meta def cube (out a : Ident) : MacroM (Array (Ident × Term)) := do
   let sq := name s!"{out.getId}_sq"
-  return #[(sq, ← mul a a), (out, ← mul sq a)]
+  return #[(sq, ← `($(name "mulLazy") $a $a)), (out, ← `($(name "mulSign") $sq $a))]
 
 /-- Store the `t × L` state `z`, one unchecked eight-word store per coordinate: the state stays
 a `ByteArray` of the size of `b`, so the bounds come from `hb` and no store branches. -/
@@ -162,6 +162,21 @@ meta def diagonal (t j : Nat) (z : Ident) (x acc : Term) : MacroM (Array (Ident 
       return #[(tmp "s", s), (z, ← (if neg then sub else add) acc (tmp "s"))]
     | none => return #[(z, ← add (← mul (name s!"d{j}") x) acc)]
 
+/-- The sum of `xs` as a tree of additions, adding neighbours level by level, and its root: the
+sum of a partial round runs beside its S-box instead of after it. -/
+meta partial def treeSum (pre : String) (xs : Array Term) (level : Nat := 0) :
+    MacroM (Array (Ident × Term) × Term) := do
+  if xs.size ≤ 1 then return (#[], xs[0]!)
+  let mut bs := #[]
+  let mut ys := #[]
+  for k in [0:xs.size / 2] do
+    let n := name s!"{pre}_{level}_{k}"
+    bs := bs.push (n, ← add xs[2 * k]! xs[2 * k + 1]!)
+    ys := ys.push (n : Term)
+  if xs.size % 2 == 1 then ys := ys.push xs[xs.size - 1]!
+  let (bs', r) ← treeSum pre ys (level + 1)
+  return (bs ++ bs', r)
+
 /-- A partial round with constant `c` and the internal diagonal `d`. -/
 meta def partialRound (t L : Nat) : MacroM Term := do
   let mut bs := #[]
@@ -172,10 +187,10 @@ meta def partialRound (t L : Nat) : MacroM Term := do
     let mut bs := #[]
     bs := bs.push (v "a" 0 l, ← add (v "x" 0 l) (name "c"))
     bs := bs ++ (← cube (v "y" 0 l) (v "a" 0 l))
-    let mut acc : Term := v "y" 0 l
-    for j in [1:t] do
-      bs := bs.push (v "s" j l, ← add acc (v "x" j l))
-      acc := v "s" j l
+    let (sum, rest) ← treeSum s!"r{l}" ((Array.range (t - 1)).map fun j ↦ (v "x" (j + 1) l : Term))
+    bs := bs ++ sum
+    bs := bs.push (name s!"s_{l}", ← add (v "y" 0 l) rest)
+    let acc : Term := name s!"s_{l}"
     let ys : Array Term :=
       #[v "y" 0 l] ++ (Array.range (t - 1)).map fun j ↦ (v "x" (j + 1) l : Term)
     for j in [0:t] do

@@ -25,4 +25,20 @@ result is `x_hi - 127 · 2 ^ (24 - n) · x_lo`, which lies in `(-p, p)`; a wrapp
   let e := d + 0x7f000001
   if e < d then e else d
 
+/-- The Montgomery quotient of `x · y`, left unreduced: below `2 p` when `x · y < 2 ^ 32 · p`. -/
+@[inline] def mulLazy (x y : UInt32) : UInt32 :=
+  let z := x.toUInt64 * y.toUInt64
+  ((z + (z.toUInt32 * 0x7effffff).toUInt64 * 0x7f000001) >>> 32).toUInt32
+
+/-- `u < 2 p` reduced below `p`: `p` is added back to `u - p` under the mask of its sign bit, which
+the vectorizer keeps in 32-bit lanes where an unsigned minimum after a product moves to 64-bit
+ones. -/
+@[inline] def reduceSign (u : UInt32) : UInt32 :=
+  let d := u - 0x7f000001
+  d + (((0 : UInt32) - (d >>> 31)) &&& 0x7f000001)
+
+/-- The Montgomery product of words with `x · y < 2 ^ 32 · p`, reduced by sign. -/
+@[inline] def mulSign (x y : UInt32) : UInt32 :=
+  reduceSign (mulLazy x y)
+
 end CompStark.Poseidon2
