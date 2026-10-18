@@ -917,42 +917,6 @@ theorem foldl_ranges {α : Type} (g : Nat → α) (n parts size : Nat) (hp : 0 <
     ofFn_len (fun j ↦ g (P * size + j)) (ite_eq_left_of_eq_true _ _ (eq_true rfl)),
     ofFn_append g, ofFn_len g (Nat.add_sub_cancel' (by simpa using hs))]
 
-/-- `parChunks` concatenates its ranges. -/
-theorem parChunks_ofFn {α : Type} (g : Nat → α) (n parts : Nat) (f : Nat → Nat → Array α)
-    (hp : 0 < parts)
-    (hf : ∀ r0 len, len ≤ n - r0 → f r0 len = Array.ofFn (n := len) fun j ↦ g (r0 + j.val)) :
-    parChunks n parts f = Array.ofFn (n := n) fun j ↦ g j.val := by
-  unfold parChunks
-  rw [Array.foldl_map, ← Array.foldl_toList, Array.toList_range]
-  simp only [get_spawn]
-  have hsz : n ≤ parts * ((n + parts - 1) / parts) := by
-    have := Nat.div_add_mod (n + parts - 1) parts
-    have := Nat.mod_lt (n + parts - 1) hp
-    omega
-  generalize (n + parts - 1) / parts = size at hsz ⊢
-  have key : ∀ K, (List.range K).foldl (fun acc k ↦ acc ++
-      f (k * size) (min size (n - min n (k * size)))) #[] =
-      Array.ofFn (n := min n (K * size)) fun j ↦ g j.val := by
-    intro K
-    induction K with
-    | zero =>
-      rw [List.range_zero, List.foldl_nil, ofFn_len g (show min n (0 * size) = 0 by
-        rw [Nat.zero_mul, Nat.min_zero])]
-      rfl
-    | succ K ih =>
-      rw [List.range_succ, List.foldl_append, ih, List.foldl_cons, List.foldl_nil,
-        hf _ _ (by omega)]
-      by_cases hk : K * size ≤ n
-      · rw [ofFn_len (fun j ↦ g (K * size + j)) (show min size (n - min n (K * size)) =
-          min size (n - K * size) by rw [Nat.min_eq_right hk]),
-          ofFn_len g (Nat.min_eq_right hk), ofFn_append g]
-        exact ofFn_len g (by rw [Nat.succ_mul]; omega)
-      · rw [ofFn_len (fun j ↦ g (K * size + j)) (show min size (n - min n (K * size)) = 0 by
-          omega)]
-        rw [Array.ofFn_zero, Array.append_empty]
-        exact ofFn_len g (by rw [Nat.succ_mul]; omega)
-  rw [key, Nat.min_eq_left hsz]
-
 /-- Encoded pieces, concatenated. -/
 theorem foldl_bytes (parts : Nat) (B : Nat → ByteArray) (A : Nat → Array F)
     (hB : ∀ k < parts, B k = encode (A k)) :

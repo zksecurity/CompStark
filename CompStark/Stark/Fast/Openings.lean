@@ -9,6 +9,7 @@ public import CompStark.Stark.Fast.OpeningsSpec
 public import CompStark.Stark.Fast.BatchInv
 public import CompStark.Stark.Fast.Norm
 public import CompStark.Stark.Fast.WordsLemmas
+public import CompStark.Stark.Fast.Vectors
 public import CompPoly.Univariate.NTTFast.Permutation
 public import CompPoly.Univariate.NTTFast.Packed.BitReversal
 public import CompPoly.Univariate.NTTFast.Packed.CosetLdeTransposes
@@ -39,14 +40,6 @@ local notation "F" => KoalaBear.Fast.Field
 local notation "EF" => KoalaBear.Fast.Ext4
 
 /-! ### Coordinates -/
-
-/-- Coordinate `c` of an extension element. -/
-def coord (c : Nat) (a : EF) : F :=
-  match c with
-  | 0 => a.c0
-  | 1 => a.c1
-  | 2 => a.c2
-  | _ => a.c3
 
 theorem coord_add (c : Nat) (a b : EF) : coord c (a + b) = coord c a + coord c b := by
   match c with
@@ -1172,10 +1165,6 @@ theorem groupPlanes_rel (alpha : EF) (G : Nat × Nat × Array GItem) (h4 : 4 * 2
     rw [foldl_ranges (fun r ↦ gval alpha logH g r) (2 ^ logH) parts (2 ^ logH / parts) hp
       (ranges_cover _ _), Array.size_ofFn])
   exact reduceRange_rel alpha logH g hg h4 _ _ (range_le _ _ _ hk)
-
-theorem ofArray_rel (a : Array EF) : RV (EVec.ofArray a) a := by
-  simp only [EVec.ofArray, CompPoly.CPolynomial.NTTFast.Packed.Native.encodeFields_eq]
-  exact ⟨rfl, rfl, rfl, rfl, rfl⟩
 
 /-- The fast reduction is the specification's. -/
 theorem reduce_rel (alpha : KoalaBear.Fast.Ext4)
