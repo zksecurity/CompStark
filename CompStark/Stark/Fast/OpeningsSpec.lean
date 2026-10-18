@@ -106,4 +106,25 @@ theorem openedAt_eq (b : Nat) (m : Mat) (z : EF) :
     · exact Or.inr h
     · exact Or.inl (Nat.lt_min.mpr ⟨Nat.pos_of_ne_zero h, by decide⟩)
 
+/-- One matrix of `Fri.reduce`: its rows batched by the powers of `α` accumulate, at each of its
+points in order, onto the running sum of its height. -/
+def reduceStep (alpha : EF) (red : List (Nat × Nat × Array EF))
+    (it : Mat × List (EF × Array EF)) : List (Nat × Nat × Array EF) :=
+  let m := it.1
+  let logH := Nat.log2 m.height
+  let ap := Array.ofFn (n := m.width) fun i ↦ Ext.pow alpha i.val
+  let start := (red.lookup logH).getD (0, Array.replicate m.height 0)
+  let res := it.2.foldl (fun b p ↦ (b.1 + m.width,
+    parChunks m.height (if m.height < 4096 then 1 else 16) fun r0 len ↦
+      accumulateRows b.2 (compress m ap) (cosetPointsBitRev gen logH) p.1
+        ((List.range m.width).foldl (fun s i ↦ s + ap.getD i 0 * p.2.getD i 0) 0)
+        (Ext.pow alpha b.1) r0 len)) (start.1, start.2)
+  (logH, res.1, res.2) :: red.filter (·.1 != logH)
+
+theorem reduce_eq (alpha : EF) (items : List (Mat × List (EF × Array EF))) :
+    Fri.reduce alpha items = ((items.foldl (reduceStep alpha) []).mergeSort
+      fun a b ↦ decide (b.1 ≤ a.1)).map fun x ↦ (x.1, x.2.2) := by
+  simp only [Fri.reduce, Id.run, List.forIn_pure_yield_eq_foldl, pure_bind]
+  rfl
+
 end CompStark.Stark
