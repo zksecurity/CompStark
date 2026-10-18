@@ -29,41 +29,6 @@ open CompStark.Stark CompStark.KoalaBear
 local notation "F" => KoalaBear.Fast.Field
 local notation "EF" => KoalaBear.Fast.Ext4
 
-
-/-- The digest layers of a Merkle tree, leaves first: their number, and digest `k` of layer `i`. -/
-structure Layers where
-  count : Nat
-  digest : Nat → Nat → Digest
-
-/-- Layers held as arrays. -/
-def Layers.ofArrays (ls : Array (Array Digest)) : Layers :=
-  ⟨ls.size, fun i k ↦ (ls.getD i #[]).getD k 0⟩
-
-/-- Matrices under one Merkle tree, with the backend's row access. -/
-structure Committed where
-  mats : List Mat
-  layers : Layers
-  row : Mat → Nat → Array F
-
-namespace Committed
-
-/-- The Merkle root. -/
-def root (c : Committed) : Digest := c.layers.digest (c.layers.count - 1) 0
-
-/-- The opening at `index`: every matrix's row, shifted right by the number of layers it is
-shorter than the tallest, and the sibling of every layer below the root (`Merkle.openWith`). -/
-def openAt (c : Committed) (index : Nat) : BatchOpening :=
-  let maxH := c.mats.foldl (fun m a ↦ max m a.height) 0
-  let logMax := Merkle.log2Ceil maxH
-  let rows := c.mats.map fun m ↦ c.row m (index >>> (logMax - Merkle.log2Ceil m.height))
-  ⟨rows.toArray, Array.ofFn (n := logMax) fun i ↦
-    c.layers.digest i.val ((index >>> i.val) ^^^ 1)⟩
-
-/-- The largest matrix height. -/
-def maxHeight (c : Committed) : Nat := c.mats.foldl (fun m a ↦ max m a.height) 0
-
-end Committed
-
 /-- The low-degree extension by `2 ^ bits` of a `2 ^ logH × w` matrix of values on `⟨ω⟩`, onto
 `shift · ⟨ω_N⟩`, rows in bit-reversed order: Plonky3's `coset_lde_batch` then
 `bit_reverse_rows`. Row `r` holds every column's interpolant at `shift · ω_N ^ bitrev r`; this
@@ -83,36 +48,36 @@ def ldeRef (logH bits : Nat) (shift : F) (w : Nat) (m : Array F) : Mat :=
     coeffs.toArray.map fun c ↦ c.foldr (fun a acc ↦ acc * y + a) 0
   Mat.ofValues w (2 ^ logN) rows.flatten
 
-/-- The kernels the prover runs: the transcript's permutation and grinding, low-degree
-extension, matrices from rows, the Merkle digest layers, row access, the quotient values from the
-trace's extension, the values of a committed matrix's columns at points, and the FRI inputs and
-folds on the backend's vectors of extension elements. Every backend computes the same functions;
-`spec` runs the specifications. -/
+/-- The kernels the prover runs, on the backend's own matrices `M`, commitments `C` and vectors
+of extension elements `V`: the transcript, low-degree extension, commitments with their roots,
+openings and heights, the quotient values from the trace's extension, the values of a matrix's
+columns at points, and the FRI inputs and folds. Every backend computes the same functions
+(`Refines`); `spec` runs the specifications. -/
 structure Backend where
   transcript : Transcript
-  lde : Nat → Nat → F → Nat → Array F → Mat
-  ofRows : Nat → Nat → Array F → Mat
-  layers : List Mat → Layers
-  row : Mat → Nat → Array F
-  quotient : Air → List F → Nat → Nat → Mat → EF → Array EF
-  openedAt : Nat → Mat → List EF → List (Array EF)
-  /-- Vectors of extension elements, with conversions. -/
+  M : Type
+  C : Type
   V : Type
+  lde : Nat → Nat → F → Nat → Array F → M
+  commit : List M → C
+  root : C → Digest
+  openAt : C → Nat → BatchOpening
+  /-- `log₂` of the largest committed height. -/
+  logHeight : C → Nat
+  quotient : Air → List F → Nat → Nat → M → EF → Array EF
+  openedAt : Nat → M → List EF → List (Array EF)
   toArray : V → Array EF
   ofArray : Array EF → V
   size : V → Nat
   /-- The batched quotients by log height, tallest first, of committed matrices with their points
   and opened values, for the batching challenge `α`. -/
-  reduce : EF → List (Mat × List (EF × Array EF)) → List (Nat × V)
+  reduce : EF → List (M × List (EF × Array EF)) → List (Nat × V)
   /-- The arity-2 fold at `β` of `2 ^ (logRows + 1)` values. -/
   fold2 : V → EF → Nat → V
   /-- `a + s · b`. -/
   addScaled : V → V → EF → V
   /-- The matrix of rows of `k` elements, flattened to coordinates. -/
-  leaves : Nat → V → Mat
-
-/-- Commit to matrices. -/
-def Backend.commit (B : Backend) (ms : List Mat) : Committed := ⟨ms, B.layers ms, B.row⟩
+  leaves : Nat → V → M
 
 /-- The rows `perm[0], perm[1], …` of `m`, concatenated. -/
 def permuteRows (m : Mat) (perm : Array Nat) : Array F := Id.run do
@@ -130,6 +95,35 @@ def rowOf (m : Mat) (r : Nat) : Array F := Array.ofFn (n := m.width) fun j ↦
 def unflatten (xs : List F) : List EF :=
   (List.range (xs.length / 4)).map fun i ↦
     ⟨xs.getD (4 * i) 0, xs.getD (4 * i + 1) 0, xs.getD (4 * i + 2) 0, xs.getD (4 * i + 3) 0⟩
+
+/-- Matrices under one Merkle tree: the specification's commitment, with the digest layers leaves
+first. -/
+structure Committed where
+  mats : List Mat
+  layers : Array (Array Digest)
+
+namespace Committed
+
+/-- Commit to matrices. -/
+def ofMats (ms : List Mat) : Committed :=
+  ⟨ms, ((Merkle.layers (Hash.KoalaBear.hash F) (Hash.KoalaBear.compress F) (ms.map Mat.toMatrix)).map
+    List.toArray).toArray⟩
+
+/-- The Merkle root. -/
+def root (c : Committed) : Digest := (c.layers.back?.getD #[]).getD 0 0
+
+/-- The largest matrix height. -/
+def maxHeight (c : Committed) : Nat := c.mats.foldl (fun m a ↦ max m a.height) 0
+
+/-- The opening at `index`: every matrix's row, shifted right by the number of layers it is
+shorter than the tallest, and the sibling of every layer below the root (`Merkle.openWith`). -/
+def openAt (c : Committed) (index : Nat) : BatchOpening :=
+  let logMax := Merkle.log2Ceil c.maxHeight
+  let rows := c.mats.map fun m ↦ rowOf m (index >>> (logMax - Merkle.log2Ceil m.height))
+  ⟨rows.toArray, Array.ofFn (n := logMax) fun i ↦
+    (c.layers.getD i.val #[]).getD ((index >>> i.val) ^^^ 1) 0⟩
+
+end Committed
 
 /-- The prover's monad: a transcript. -/
 abbrev PM := StateM Transcript
@@ -159,10 +153,10 @@ def idft (logN : Nat) (vs : Array EF) : Array EF :=
     nInv * (List.range n).foldl (fun acc j ↦
       acc + Ext.ofBase (powF wInv (j * k.val)) * vs.getD j 0) 0
 
-/-- The result of the commit phase. -/
-structure CommitPhase where
+/-- The result of the commit phase, on commitments `C`. -/
+structure CommitPhase (C : Type) where
   commits : Array Digest
-  data : Array Committed
+  data : Array C
   witnesses : Array F
   arities : Array Nat
   finalPoly : Array EF
@@ -189,35 +183,41 @@ def foldPairs (vs : Array EF) (beta : EF) (logRows : Nat) : Array EF :=
   let half := Ext.ofBase (2 : F)⁻¹
   parChunks rows (if rows < 4096 then 1 else 16) fun r0 len ↦ foldRange vs pw perm beta half r0 len
 
-/-- Plonky3's `commit_phase` on the batched quotients `inputs`, tallest first. -/
-def commitPhase (B : Backend) (P : Params) (inputs : List B.V) : PM CommitPhase := do
-  let mut (folded, rest) := match inputs with
-    | v :: vs => (v, vs)
-    | [] => (B.ofArray #[], [])
-  let mut cp : CommitPhase := ⟨#[], #[], #[], #[], #[]⟩
-  for _ in List.range (B.size folded) do
-    if B.size folded ≤ 2 ^ (P.logBlowup + P.logFinalPolyLen) then break
+/-- The rounds of Plonky3's `commit_phase`, at most `fuel` of them: while the folded vector is
+above the final height, commit to its groups, fold them at a fresh `β`, and add the next input of
+the folded height times `β ^ (2 ^ arity)`. -/
+def commitRounds (B : Backend) (P : Params) :
+    Nat → B.V → List B.V → CommitPhase B.C → PM (B.V × CommitPhase B.C)
+  | 0, folded, _, cp => pure (folded, cp)
+  | fuel + 1, folded, rest, cp => do
+    if B.size folded ≤ 2 ^ (P.logBlowup + P.logFinalPolyLen) then return (folded, cp)
     let logCur := Nat.log2 (B.size folded)
     let la := logArityFor P logCur (rest.head?.map (Nat.log2 <| B.size ·))
     let arity := 2 ^ la
     let rows := B.size folded / arity
     let c := B.commit [B.leaves arity folded]
-    pObserveList c.root.toList
+    pObserveList (B.root c).toList
     let w ← pGrind P.commitPowBits
     let beta ← pSampleExt
     let logRows := Nat.log2 rows
-    folded := if la = 1 then B.fold2 folded beta logRows else
+    let folded := if la = 1 then B.fold2 folded beta logRows else
       let vs := B.toArray folded
       B.ofArray <| Array.ofFn (n := rows) fun i ↦
         foldRow i logRows la beta ((List.range arity).map fun k ↦ vs.getD (i * arity + k) 0)
-    match rest with
-    | v :: vs =>
-      if B.size v == B.size folded then
-        folded := B.addScaled folded v (Ext.powTwo beta la)
-        rest := vs
-    | [] => pure ()
-    cp := ⟨cp.commits.push c.root, cp.data.push c, cp.witnesses.push w, cp.arities.push la,
-      cp.finalPoly⟩
+    let (folded, rest) := match rest with
+      | v :: vs => if B.size v == B.size folded then
+          (B.addScaled folded v (Ext.powTwo beta la), vs) else (folded, rest)
+      | [] => (folded, [])
+    commitRounds B P fuel folded rest
+      ⟨cp.commits.push (B.root c), cp.data.push c, cp.witnesses.push w, cp.arities.push la,
+        cp.finalPoly⟩
+
+/-- Plonky3's `commit_phase` on the batched quotients `inputs`, tallest first. -/
+def commitPhase (B : Backend) (P : Params) (inputs : List B.V) : PM (CommitPhase B.C) := do
+  let (folded, rest) := match inputs with
+    | v :: vs => (v, vs)
+    | [] => (B.ofArray #[], [])
+  let (folded, cp) ← commitRounds B P (B.size folded) folded rest ⟨#[], #[], #[], #[], #[]⟩
   let fa := B.toArray folded
   let len := 2 ^ P.logFinalPolyLen
   let truncated := Array.ofFn (n := len) fun i ↦ fa.getD (reverseBits i P.logFinalPolyLen) 0
@@ -226,22 +226,19 @@ def commitPhase (B : Backend) (P : Params) (inputs : List B.V) : PM CommitPhase 
   return { cp with finalPoly := finalPoly }
 
 /-- The commit-phase openings of a query at `index`. -/
-def answerQuery (cp : CommitPhase) (index : Nat) : Array CommitStep := Id.run do
+def answerQuery (B : Backend) (cp : CommitPhase B.C) (index : Nat) : Array CommitStep := Id.run do
   let mut cur := index
   let mut steps := #[]
   for (c, la) in cp.data.toList.zip cp.arities.toList do
     let arity := 2 ^ la
     let pos := cur % arity
     let group := cur >>> la
-    let o := c.openAt group
+    let o := B.openAt c group
     let evals := unflatten ((o.values.getD 0 #[]).toList)
     let siblings := ((List.range arity).filter (· != pos)).map fun j ↦ evals.getD j 0
     steps := steps.push ⟨la, siblings.toArray, o.path⟩
     cur := group
   return steps
-
-/-- A committed batch with the points at which each of its matrices is opened. -/
-abbrev OpenRound := Committed × List (List EF)
 
 /-- `factor · ∑ᵢ weights[i] · m[perm[i]][j]` for the columns `j0, …, j0 + nj - 1` of the row-major
 matrix `m` of width `w`: the barycentric evaluation of columns whose natural-order row `i` is
@@ -330,14 +327,16 @@ def reduce (alpha : EF) (items : List (Mat × List (EF × Array EF))) : List (Na
 /-- The specification backend. -/
 def Backend.spec : Backend where
   transcript := Transcript.init
+  M := Mat
+  C := Committed
+  V := Array EF
   lde := ldeRef
-  ofRows := Mat.ofValues
-  layers ms := Layers.ofArrays ((Merkle.layers (Hash.KoalaBear.hash F) (Hash.KoalaBear.compress F)
-    (ms.map Mat.toMatrix)).map List.toArray).toArray
-  row := rowOf
+  commit := Committed.ofMats
+  root := Committed.root
+  openAt := Committed.openAt
+  logHeight c := Nat.log2 c.maxHeight
   quotient := quotientOfLde
   openedAt b m zs := zs.map (Fri.openedAt b m)
-  V := Array EF
   toArray := id
   ofArray := id
   size := Array.size
@@ -346,35 +345,31 @@ def Backend.spec : Backend where
   addScaled a b x := Array.zipWith (fun u v ↦ u + x * v) a b
   leaves k vs := Mat.ofValues (4 * k) (vs.size / k) (vs.flatMap fun x ↦ (Ext.coeffs x).toArray)
 
+/-- A committed batch with each of its matrices and the points at which it is opened. -/
+abbrev OpenRound (B : Backend) := B.C × List (B.M × List EF)
+
 /-- Plonky3's `TwoAdicFriPcs::open`: the opened values, by round, matrix and point, and the FRI
 proof. -/
-def openPcs (B : Backend) (P : Params) (rounds : List OpenRound) :
+def openPcs (B : Backend) (P : Params) (rounds : List (OpenRound B)) :
     PM (List (List (List (Array EF))) × FriProof) := do
-  let mut opened := []
-  for (c, pts) in rounds do
-    let mut om := []
-    for (m, zs) in c.mats.zip pts do
-      let ov := B.openedAt P.logBlowup m zs
-      for ys in ov do
-        pObserveExts ys.toList
-      om := om ++ [ov]
-    opened := opened ++ [om]
+  let opened ← rounds.mapM fun (_, ms) ↦ ms.mapM fun (m, zs) ↦ do
+    let ov := B.openedAt P.logBlowup m zs
+    ov.forM fun ys ↦ pObserveExts ys.toList
+    return ov
   let alpha ← pSampleExt
-  let items := ((rounds.zip opened).map fun ((c, pts), orow) ↦
-    (c.mats.zip pts).zip orow |>.map fun ((m, zs), ovs) ↦ (m, zs.zip ovs)).flatten
+  let items := ((rounds.zip opened).map fun ((_, ms), orow) ↦
+    (ms.zip orow).map fun ((m, zs), ovs) ↦ (m, zs.zip ovs)).flatten
   let inputs := (B.reduce alpha items).map (·.2)
   let logMax := match inputs with
     | v :: _ => Nat.log2 (B.size v)
     | [] => 0
   let cp ← commitPhase B P inputs
-  for la in cp.arities do pObserve (la : F)
+  cp.arities.toList.forM fun la ↦ pObserve (la : F)
   let qw ← pGrind P.queryPowBits
-  let mut queries := #[]
-  for _ in List.range P.numQueries do
+  let queries ← (List.range P.numQueries).mapM fun _ ↦ do
     let index ← pSampleBits logMax
-    let ins := rounds.map fun (c, _) ↦
-      c.openAt (index >>> (logMax - Nat.log2 c.maxHeight))
-    queries := queries.push ⟨ins.toArray, answerQuery cp index⟩
-  return (opened, ⟨cp.commits, cp.witnesses, queries, cp.finalPoly, qw⟩)
+    let ins := rounds.map fun (c, _) ↦ B.openAt c (index >>> (logMax - B.logHeight c))
+    return (⟨ins.toArray, answerQuery B cp index⟩ : QueryProof)
+  return (opened, ⟨cp.commits, cp.witnesses, queries.toArray, cp.finalPoly, qw⟩)
 
 end CompStark.Fri

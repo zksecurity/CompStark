@@ -68,9 +68,9 @@ def phases (logN : Nat) : IO UInt32 := do
   let t ← IO.monoMsNow
   let lde := B.lde logN 1 gen 64 trace
   let t1 ← IO.monoMsNow
-  IO.println s!"trace lde {t1 - t} ms ({lde.words.size})"
+  IO.println s!"trace lde {t1 - t} ms"
   let tc := B.commit [lde]
-  IO.println s!"trace commit {(← IO.monoMsNow) - t1} ms {(tc.root.toArray.getD 0 0).val}"
+  IO.println s!"trace commit {(← IO.monoMsNow) - t1} ms {((B.root tc).toArray.getD 0 0).val}"
   let qlog := logN + 1
   let t3 ← IO.monoMsNow
   let alpha : KoalaBear.Fast.Ext4 := ⟨5, 7, 11, 13⟩
@@ -85,16 +85,16 @@ def phases (logN : Nat) : IO UInt32 := do
   IO.println s!"quotient chunks lde {t5 - t4} ms {chunks.length}"
   let qc := B.commit chunks
   let t6 ← IO.monoMsNow
-  IO.println s!"quotient commit {t6 - t5} ms {(qc.root.toArray.getD 0 0).val}"
+  IO.println s!"quotient commit {t6 - t5} ms {((B.root qc).toArray.getD 0 0).val}"
   let zeta : KoalaBear.Fast.Ext4 := ⟨17, 19, 23, 29⟩
-  let rounds : List OpenRound := [(tc, [[zeta, zeta * zeta]]), (qc, chunks.map fun _ ↦ [zeta])]
+  let rounds : List (OpenRound B) :=
+    [(tc, [(lde, [zeta, zeta * zeta])]), (qc, chunks.map fun m ↦ (m, [zeta]))]
   let t6 ← IO.monoMsNow
-  let opened := rounds.map fun (c, pts) ↦ (c.mats.zip pts).map fun (m, zs) ↦
-    B.openedAt 1 m zs
+  let opened := rounds.map fun (_, ms) ↦ ms.map fun (m, zs) ↦ B.openedAt 1 m zs
   let t7 ← IO.monoMsNow
   IO.println s!"opened values {t7 - t6} ms {opened.length}"
-  let items := ((rounds.zip opened).map fun ((c, pts), orow) ↦
-    (c.mats.zip pts).zip orow |>.map fun ((m, zs), ovs) ↦ (m, zs.zip ovs)).flatten
+  let items := ((rounds.zip opened).map fun ((_, ms), orow) ↦
+    (ms.zip orow).map fun ((m, zs), ovs) ↦ (m, zs.zip ovs)).flatten
   let red := B.reduce alpha items
   let t8 ← IO.monoMsNow
   IO.println s!"reduce {t8 - t7} ms {red.length}"

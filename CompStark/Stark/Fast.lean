@@ -30,6 +30,12 @@ open CompStark.Fri CompStark.KoalaBear CompStark.Poseidon2.Packed
 local notation "F" => KoalaBear.Fast.Field
 local notation "EF" => KoalaBear.Fast.Ext4
 
+/-- A row-major matrix of base elements as packed Montgomery words. -/
+structure PMat where
+  width : Nat
+  height : Nat
+  words : ByteArray
+
 /-- The packed constants of the width-24 permutation. -/
 def K24 : Packed24 := Packed24.ofParams (Poseidon2.KoalaBear.width24 F)
 
@@ -116,11 +122,14 @@ def grind (c : Challenger F 24) (bits : Nat) : F :=
 def transcript : Transcript := Transcript.initWith duplex grind
 
 /-- A matrix of packed rows. -/
-def ofRows (w h : Nat) (vals : Array F) : Mat :=
+def ofRows (w h : Nat) (vals : Array F) : PMat :=
   { width := w, height := h, words := CompPoly.CPolynomial.NTTFast.Packed.Native.encodeFields vals }
 
+/-- The matrix of field elements. -/
+def PMat.toMat (m : PMat) : Mat := ⟨m.width, m.height, decodeAll m.words (m.width * m.height)⟩
+
 /-- Row `r` of a packed matrix. -/
-def row (m : Mat) (r : Nat) : Array F := decodeRange m.words (r * m.width) m.width
+def row (m : PMat) (r : Nat) : Array F := decodeRange m.words (r * m.width) m.width
 
 /-- CompPoly's plan for extensions of `2 ^ logH`-row matrices by `2 ^ bits` onto `shift · ⟨ω_N⟩`. -/
 def plan? (logH bits : Nat) (shift : F) : Option CompPoly.CPolynomial.NTTFast.Packed.LdePlan :=
@@ -139,7 +148,7 @@ def plan? (logH bits : Nat) (shift : F) : Option CompPoly.CPolynomial.NTTFast.Pa
 /-- CompPoly's batched coset LDE, bit-reversed rows, packed: `ldeRef` on words. Plans come from
 `plans` when one matches, else are built. -/
 def ldeWith (plans : List (Nat × Nat × F × CompPoly.CPolynomial.NTTFast.Packed.LdePlan))
-    (logH bits : Nat) (shift : F) (w : Nat) (m : Array F) : Mat :=
+    (logH bits : Nat) (shift : F) (w : Nat) (m : Array F) : PMat :=
   let found := plans.find? fun (h, b, s, _) ↦ h == logH && b == bits && s == shift
   match found.map (·.2.2.2) <|> plan? logH bits shift with
   | some P =>
@@ -150,7 +159,7 @@ def ldeWith (plans : List (Nat × Nat × F × CompPoly.CPolynomial.NTTFast.Packe
   | none => ofRows w (2 ^ (logH + bits)) (ldeRef logH bits shift w m).values
 
 /-- The extension without cached plans. -/
-def lde (logH bits : Nat) (shift : F) (w : Nat) (m : Array F) : Mat :=
+def lde (logH bits : Nat) (shift : F) (w : Nat) (m : Array F) : PMat :=
   ldeWith [] logH bits shift w m
 
 /-- Digest `k` of a packed layer. -/
@@ -178,7 +187,7 @@ def packedLayers (w : Nat) (m : ByteArray) : Array ByteArray := Id.run do
   return out
 
 /-- The rows of matrices of one height side by side, packed. -/
-def sideBySide (ms : List Mat) (h : Nat) : ByteArray :=
+def sideBySide (ms : List PMat) (h : Nat) : ByteArray :=
   match ms with
   | [m] => m.words
   | _ => Id.run do
@@ -191,16 +200,41 @@ def sideBySide (ms : List Mat) (h : Nat) : ByteArray :=
         off := off + m.width
     return out
 
-/-- The Merkle digest layers: packed for matrices of one height, side by side; otherwise the
-specification's. -/
-def layers (ms : List Mat) : Layers :=
-  match ms with
-  | m :: rest =>
-    if rest.all (·.height == m.height) && 0 < m.height then
-      let ls := packedLayers (ms.foldl (· + ·.width) 0) (sideBySide ms m.height)
-      ⟨ls.size, fun i k ↦ digestAt (ls.getD i ByteArray.empty) k⟩
-    else Backend.spec.layers ms
-  | [] => Backend.spec.layers ms
+/-- Digests as consecutive packed words. -/
+def encodeDigests (ds : Array Digest) : ByteArray :=
+  CompPoly.CPolynomial.NTTFast.Packed.Native.encodeFields (ds.flatMap (·.toArray))
+
+/-- Packed matrices under one Merkle tree, with the packed digest layers, leaves first. -/
+structure Commit where
+  mats : List PMat
+  layers : Array ByteArray
+
+/-- Commit to packed matrices: the packed Merkle commitment on the rows of matrices of one height
+side by side; otherwise the specification's layers. -/
+def commit (ms : List PMat) : Commit :=
+  ⟨ms, match ms with
+    | m :: rest =>
+      if rest.all (·.height == m.height) && 0 < m.height then
+        packedLayers (ms.foldl (· + ·.width) 0) (sideBySide ms m.height)
+      else (Committed.ofMats (ms.map PMat.toMat)).layers.map encodeDigests
+    | [] => (Committed.ofMats []).layers.map encodeDigests⟩
+
+namespace Commit
+
+/-- The largest matrix height. -/
+def maxHeight (c : Commit) : Nat := c.mats.foldl (fun m a ↦ max m a.height) 0
+
+/-- The Merkle root. -/
+def root (c : Commit) : Digest := digestAt (c.layers.back?.getD .empty) 0
+
+/-- `Committed.openAt` on packed rows and layers. -/
+def openAt (c : Commit) (index : Nat) : BatchOpening :=
+  let logMax := Merkle.log2Ceil c.maxHeight
+  let rows := c.mats.map fun m ↦ row m (index >>> (logMax - Merkle.log2Ceil m.height))
+  ⟨rows.toArray, Array.ofFn (n := logMax) fun i ↦
+    digestAt (c.layers.getD i.val .empty) ((index >>> i.val) ^^^ 1)⟩
+
+end Commit
 
 /-- Words `i, …, i + B - 1` of `b`. -/
 def slice (b : ByteArray) (i B : Nat) : ByteArray := b.extract (4 * i) (4 * (i + B))
@@ -307,7 +341,7 @@ def quotientTables (degreeBits logChunks : Nat) : QuotientTables :=
 is the extension's first rows, transposed in parallel pieces; constraints are evaluated in that
 bit-reversed row order, every node one vectorized operation per block of rows, in parallel block
 ranges, and the result is put in natural order. -/
-def quotientWith (T : QuotientTables) (A : Air) (pis : List F) (ext : Mat) (alpha : EF) :
+def quotientWith (T : QuotientTables) (A : Air) (pis : List F) (ext : PMat) (alpha : EF) :
     Array EF := Id.run do
   let n := 2 ^ (T.degreeBits + T.logChunks)
   let w := ext.width
@@ -339,7 +373,7 @@ def quotientWith (T : QuotientTables) (A : Air) (pis : List F) (ext : Mat) (alph
   return perm.map fun r ↦ byRow.getD r 0
 
 /-- `quotientOfLde` on packed words. -/
-def quotient (A : Air) (pis : List F) (degreeBits logChunks : Nat) (ext : Mat) (alpha : EF) :
+def quotient (A : Air) (pis : List F) (degreeBits logChunks : Nat) (ext : PMat) (alpha : EF) :
     Array EF :=
   quotientWith (quotientTables degreeBits logChunks) A pis ext alpha
 
@@ -364,7 +398,7 @@ def weightedColumns (m : @& ByteArray) (w : Nat) (zs : @& Array EF) (xs : @& Byt
 /-- `openedAt` on packed words, at all points of a matrix: the barycentric weights `x / (z - x)` in
 the stored bit-reversed row order, as planes by the norm, and the column sums over parallel row
 ranges, each range transposed once for all points. -/
-def openedAt (logBlowup : Nat) (m : Mat) (zs : List EF) : List (Array EF) :=
+def openedAt (logBlowup : Nat) (m : PMat) (zs : List EF) : List (Array EF) :=
   let logH := Nat.log2 m.height - logBlowup
   let h := 2 ^ logH
   let w := m.width
@@ -408,7 +442,7 @@ def joinPlanes (n : Nat) (pieces : Array (Task (Array ByteArray))) : EVec :=
   ⟨n, cat 0, cat 1, cat 2, cat 3⟩
 
 /-- Every row of a packed matrix batched by the powers `ap` of `α`, in parallel row ranges. -/
-def compressPlanes (m : Mat) (ap : Array EF) : EVec :=
+def compressPlanes (m : PMat) (ap : Array EF) : EVec :=
   let a := EVec.ofArray ap
   let n := m.height
   let parts := if n < 4096 then 1 else 16
@@ -442,7 +476,7 @@ def reduceRange (items : @& Array (ByteArray × Nat × EVec × List (EF × EF ×
 
 /-- `Fri.reduce` on planes, every height in parallel row ranges: rows batched by word dot
 products, `1 / (z - x)` by the norm. -/
-def reduce (alpha : EF) (items : List (Mat × List (EF × Array EF))) : List (Nat × EVec) :=
+def reduce (alpha : EF) (items : List (PMat × List (EF × Array EF))) : List (Nat × EVec) :=
   Id.run do
   -- Per height: the matrices with their points, opened sums and powers of `α`, in order.
   let mut groups : List (Nat × Nat × Array (ByteArray × Nat × EVec × List (EF × EF × EF))) := []
@@ -521,7 +555,7 @@ def interleaveRange (a0 a1 a2 a3 : @& ByteArray) (i0 len : Nat) : ByteArray := I
   return out
 
 /-- The matrix of rows of `k` elements, flattened, packed in parallel ranges. -/
-def leaves (k : Nat) (v : EVec) : Mat :=
+def leaves (k : Nat) (v : EVec) : PMat :=
   let n := v.n
   let parts := if n < 4096 then 1 else 16
   let size := n / parts
@@ -532,10 +566,13 @@ def leaves (k : Nat) (v : EVec) : Mat :=
 /-- The fast backend. -/
 def backend : Backend where
   transcript := transcript
+  M := PMat
+  C := Commit
   lde := lde
-  ofRows := ofRows
-  layers := layers
-  row := row
+  commit := commit
+  root := Commit.root
+  openAt := Commit.openAt
+  logHeight c := Nat.log2 c.maxHeight
   quotient := quotient
   openedAt := openedAt
   V := EVec

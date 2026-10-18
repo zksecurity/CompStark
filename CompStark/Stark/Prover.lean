@@ -45,15 +45,15 @@ def proveWith (B : Backend) (P : Params) (A : Air) (logN : Nat) (trace : Array F
   let w := A.width
   let logChunks := A.logQuotientChunks
   let qlog := logN + logChunks
-  let traceC := B.commit [B.lde logN P.logBlowup gen w trace]
+  let ext := B.lde logN P.logBlowup gen w trace
+  let traceC := B.commit [ext]
   let run : PM Proof := do
     pObserve (logN : F)
     pObserve (logN : F)
     pObserve 0
-    pObserveList traceC.root.toList
+    pObserveList (B.root traceC).toList
     pObserveList pis
     let alpha ← pSampleExt
-    let ext := traceC.mats.headD (Mat.ofValues 0 0 #[])
     let qs := B.quotient A pis logN logChunks ext alpha
     let stride := 2 ^ logChunks
     let chunks := (List.range stride).map fun c ↦
@@ -61,15 +61,15 @@ def proveWith (B : Backend) (P : Params) (A : Air) (logN : Nat) (trace : Array F
       let vals := chunkValues qs stride c (2 ^ logN)
       B.lde logN P.logBlowup (gen * shift⁻¹) 4 vals
     let quotC := B.commit chunks
-    pObserveList quotC.root.toList
+    pObserveList (B.root quotC).toList
     let zeta ← pSampleExt
     let zetaNext := zeta * Ext.ofBase (twoAdicGen logN)
     let (opened, fri) ← openPcs B P
-      [(traceC, [[zeta, zetaNext]]), (quotC, chunks.map fun _ ↦ [zeta])]
+      [(traceC, [(ext, [zeta, zetaNext])]), (quotC, chunks.map fun m ↦ (m, [zeta]))]
     let traceOpened := (opened.headD []).headD []
     return {
-      traceCommit := traceC.root
-      quotientCommit := quotC.root
+      traceCommit := B.root traceC
+      quotientCommit := B.root quotC
       opened := ⟨traceOpened.headD #[], traceOpened.getD 1 #[],
         ((opened.getD 1 []).map fun pts ↦ pts.headD #[]).toArray⟩
       fri

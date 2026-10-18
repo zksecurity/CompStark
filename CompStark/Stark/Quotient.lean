@@ -20,13 +20,11 @@ namespace CompStark.Stark
 local notation "F" => KoalaBear.Fast.Field
 local notation "EF" => KoalaBear.Fast.Ext4
 
-/-- A row-major matrix of base elements: as field elements (`values`), or as packed Montgomery
-words (`words`), whichever the backend that made it uses. -/
+/-- A row-major matrix of base elements. -/
 structure Mat where
   width : Nat
   height : Nat
-  values : Array F := #[]
-  words : ByteArray := ByteArray.empty
+  values : Array F
 
 /-- A matrix of field elements. -/
 def Mat.ofValues (width height : Nat) (values : Array F) : Mat := { width, height, values }
