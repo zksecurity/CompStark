@@ -5,6 +5,8 @@ Released under Apache 2.0 license as described in the file LICENSE.
 module
 
 public import CompStark.Stark.Fast.WordsLemmas
+public import CompStark.Stark.Fast.OpeningsSpec
+public import CompStark.Stark.Fast.BatchInv
 
 /-! # The fast backend's vector laws
 
@@ -68,104 +70,6 @@ theorem twoAdicGen_ne_zero (bits : Nat) (h : bits ≤ 24) : twoAdicGen bits ≠ 
     Montgomery.Native32.toField_zero, ZMod.natCast_eq_zero_iff] at this
   exact absurd (Nat.le_of_dvd hb.1 this) (by omega)
 
-/-- The prefix products of a list, after `pre`. -/
-theorem foldl_prefix (l : List F) (pre : Array F) (a : F) :
-    l.foldl (fun s x ↦ (s.1.push s.2, s.2 * x)) (pre, a) =
-      (pre ++ Array.ofFn (n := l.length) fun k ↦ a * (l.take k.val).prod, a * l.prod) := by
-  induction l generalizing pre a with
-  | nil => simp only [List.foldl_nil, List.length_nil, Array.ofFn_zero, Array.append_empty,
-      List.prod_nil, mul_one]
-  | cons x l ih =>
-    rw [List.foldl_cons, ih]
-    refine Prod.ext ?_ (by simp only [List.prod_cons, mul_assoc])
-    apply Array.ext (by simp only [Array.size_append, Array.size_push, Array.size_ofFn,
-      List.length_cons]; omega)
-    intro i h1 h2
-    simp only [Array.size_append, Array.size_push, Array.size_ofFn, List.length_cons] at h1 h2
-    rw [Array.getElem_append, Array.getElem_append]
-    simp only [Array.size_push, Array.getElem_ofFn]
-    by_cases hi : i < pre.size
-    · rw [dite_eq_left_of_eq_true (eq_true (by omega)), dite_eq_left_of_eq_true (eq_true hi),
-        Array.getElem_push_lt hi]
-    · rw [dite_eq_right_of_eq_false (eq_false hi)]
-      by_cases hi' : i = pre.size
-      · subst hi'
-        rw [dite_eq_left_of_eq_true (eq_true (Nat.lt_succ_self _)), Array.getElem_push_eq]
-        simp only [Nat.sub_self, List.take_zero, List.prod_nil, mul_one]
-      · rw [dite_eq_right_of_eq_false (eq_false (by omega))]
-        obtain ⟨k, hk⟩ : ∃ k, i - pre.size = k + 1 := ⟨i - pre.size - 1, by omega⟩
-        rw [hk, show i - (pre.size + 1) = k by omega]
-        simp only [List.take_succ_cons, List.prod_cons, mul_assoc]
-
-/-- Batch inversion inverts every element when none is zero. -/
-theorem batchInv_eq (xs : Array F) (h : ∀ x ∈ xs, x ≠ 0) : batchInv xs = xs.map (·⁻¹) := by
-  unfold batchInv
-  simp only [Std.Legacy.Range.forIn_eq_forIn_range', Std.Legacy.Range.size,
-    Nat.sub_zero, Nat.add_sub_cancel, Nat.div_one, ← List.range_eq_range',
-    pure_bind, List.forIn_pure_yield_eq_foldl, Array.forIn_pure_yield_eq_foldl,
-    Id.run_pure, ← Array.foldl_toList]
-  rw [foldl_prefix, Array.emptyWithCapacity_eq, Array.empty_append]
-  simp only [one_mul]
-  generalize hn : xs.size = n
-  have hl : xs.toList.length = n := by rw [Array.length_toList, hn]
-  let P (k : Nat) : F := (xs.toList.take k).prod
-  have hP : ∀ k, P k ≠ 0 := fun k ↦ List.prod_ne_zero fun h0 ↦
-    h 0 (Array.mem_def.mpr (List.mem_of_mem_take h0)) rfl
-  have hPs : ∀ i (hi : i < n), P (i + 1) = P i * xs[i] := fun i hi ↦ by
-    simp only [P]
-    rw [List.prod_take_succ xs.toList i (by omega), Array.getElem_toList]
-  have hpre : ∀ i < n, (Array.ofFn (n := xs.toList.length) fun k ↦ P k.val).getD i 1 = P i :=
-    fun i hi ↦ getD_ofFn_bounded _ _ (by omega) _
-  have key : ∀ K ≤ n, (List.range K).foldl (fun b a ↦ (b.1 * xs.getD (n - 1 - a) 1,
-      b.2.set! (n - 1 - a) (b.1 * (Array.ofFn (n := xs.toList.length) fun k ↦ P k.val).getD
-        (n - 1 - a) 1))) ((xs.toList.prod)⁻¹, Array.replicate n 1) =
-      ((P (n - K))⁻¹, Array.ofFn (n := n) fun j ↦
-        if n - K ≤ j.val then (xs[j.val]'(by omega))⁻¹ else 1) := by
-    intro K hK
-    induction K with
-    | zero =>
-      refine Prod.ext ?_ ?_
-      · simp only [List.range_zero, List.foldl_nil, Nat.sub_zero, P]
-        rw [← hl, List.take_length]
-      · apply Array.ext (by rw [List.range_zero, List.foldl_nil, Array.size_replicate,
-          Array.size_ofFn])
-        intro j h1 h2
-        rw [Array.size_ofFn] at h2
-        simp only [List.range_zero, List.foldl_nil, Array.getElem_replicate, Array.getElem_ofFn,
-          Nat.sub_zero, ite_eq_right_of_eq_false _ _ (eq_false (Nat.not_le_of_lt h2))]
-    | succ K ih =>
-      rw [List.range_succ, List.foldl_append, ih (by omega), List.foldl_cons, List.foldl_nil]
-      have hi : n - 1 - K < n := by omega
-      have he : n - K = n - 1 - K + 1 := by omega
-      rw [hpre _ hi, Array.getD_eq_getD_getElem?, Array.getElem?_eq_getElem (by omega),
-        Option.getD_some]
-      have hx : xs[n - 1 - K] ≠ 0 := h _ (Array.getElem_mem _)
-      have hinv1 : (P (n - K))⁻¹ * xs[n - 1 - K] = (P (n - (K + 1)))⁻¹ := by
-        rw [he, hPs _ hi, mul_inv, mul_assoc, inv_mul_cancel₀ hx, mul_one,
-          show n - (K + 1) = n - 1 - K by omega]
-      have hinv2 : (P (n - K))⁻¹ * P (n - 1 - K) = (xs[n - 1 - K])⁻¹ := by
-        rw [he, hPs _ hi, mul_inv, mul_comm (P _)⁻¹, mul_assoc, inv_mul_cancel₀ (hP _), mul_one]
-      refine Prod.ext hinv1 ?_
-      · apply Array.ext (by simp only [Array.set!_eq_setIfInBounds, Array.size_setIfInBounds,
-          Array.size_ofFn])
-        intro j h1 h2
-        rw [Array.size_ofFn] at h2
-        simp only [Array.set!_eq_setIfInBounds, hinv2]
-        rw [Array.getElem_setIfInBounds]
-        on_goal 2 => rw [Array.size_ofFn]; exact h2
-        simp only [Array.getElem_ofFn]
-        by_cases hj : n - 1 - K = j
-        · subst hj
-          simp only [ite_true, show n - (K + 1) ≤ n - 1 - K by omega]
-        · simp only [hj, ite_false]
-          by_cases hk : n - K ≤ j
-          · simp only [hk, ite_true, show n - (K + 1) ≤ j by omega]
-          · simp only [hk, ite_false, show ¬n - (K + 1) ≤ j by omega]
-  rw [key n (Nat.le_refl _)]
-  apply Array.ext (by rw [Array.size_ofFn, Array.size_map, hn])
-  intro j h1 _
-  simp only [Array.getElem_ofFn, Array.getElem_map, Nat.sub_self, Nat.zero_le, ite_true]
-
 /-- An in-range entry. -/
 theorem getD_lt {α : Type} (xs : Array α) (i : Nat) {d : α} (h : i < xs.size) :
     xs.getD i d = xs[i] := by
@@ -198,7 +102,7 @@ theorem foldRange_eq (vs : Array EF) (pw : Array F) (perm : Array Nat) (beta hal
   simp only [Std.Legacy.Range.forIn_eq_forIn_range', Std.Legacy.Range.size,
     Nat.sub_zero, Nat.add_sub_cancel, Nat.div_one, ← List.range_eq_range',
     pure_bind, List.forIn_pure_yield_eq_foldl, Id.run_pure, Array.emptyWithCapacity_eq]
-  rw [batchInv_eq _ fun x hx ↦ by
+  rw [batchInv_eq id Function.injective_id (fun _ _ ↦ rfl) (fun _ ↦ rfl) rfl _ fun x hx ↦ by
     obtain ⟨k, rfl⟩ := Array.mem_ofFn.mp hx
     exact hnz k k.isLt]
   refine foldl_push_ofFn _ (fun k ↦ foldAt vs pw perm beta half (r0 + k)) len fun a ha ↦ ?_
@@ -221,8 +125,9 @@ theorem foldPairs_eq (vs : Array EF) (beta : EF) (L : Nat) (hL : L < 24) :
     Fri.foldPairs vs beta L = Array.ofFn (n := 2 ^ L) fun i ↦
       foldAt vs (cosetPoints 1 (L + 1)) (bitRevPerm L) beta (Ext.ofBase (2 : F)⁻¹) i.val := by
   unfold Fri.foldPairs
-  exact parChunks_eq _ _ _ _ (by split <;> decide) fun r0 len h ↦
-    foldRange_eq _ _ _ _ _ _ _ fun k hk ↦ twoX_ne_zero L hL _ (by omega)
+  exact parChunks_eq _ _ _ _ (fun r0 len h ↦
+    foldRange_eq _ _ _ _ _ _ _ fun k hk ↦ twoX_ne_zero L hL _ (by omega))
+    (Or.inl (by split <;> decide))
 
 end CompStark.Stark
 
