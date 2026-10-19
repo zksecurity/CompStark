@@ -47,3 +47,4 @@ public import CompStark.Stark.Fast.Refines
 public import CompStark.Stark.Words
 public import CompStark.Stark.Quotient
 public import CompStark.Stark.ExtWords
+public import CompStark.Complete.Defs
