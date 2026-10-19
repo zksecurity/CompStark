@@ -12,11 +12,11 @@ public import CompStark.SoundnessError
 own files:
 
 * `FriStep`: FRI rejects words far from the code (ArkLib's FRI soundness).
-* `BatchingStep`: batching by powers keeps a far summand far, except for few `a` (correlated
-  agreement).
-* `DecodingStep`: if every DEEP summand is close to the code and `ζ` lies outside the base field,
-  the claimed values are those of the decoded polynomials.
-* `AlgebraStep`: if the decoded trace fails the AIR, the constraint check at `ζ` passes for few
+* `BatchingStep`: batching by powers keeps summands that are not near on a common set far, except
+  for few `a` (mutual correlated agreement).
+* `DecodingStep`: if the DEEP summands are near on a common set and `ζ` lies outside the base
+  field, the claimed values are those of a candidate trace and quotient.
+* `AlgebraStep`: if a candidate trace fails the AIR, the constraint check at `ζ` passes for few
   `(α, ζ)`.
 -/
 
@@ -39,10 +39,6 @@ noncomputable def deepComponent (S : Setup) (f : S.Point → 𝔽) (z y : 𝕂) 
 /-- `ζ` is not in the base field. -/
 def OutsideBase (ζ : 𝕂) : Prop := ζ ∉ Set.range (algebraMap 𝔽 𝕂)
 
-/-- The polynomial of degree at most `n` closest to a word on `L`: the extractor's decoding. -/
-noncomputable def decoded (S : Setup) (f : S.Point → 𝔽) : 𝔽[X] :=
-  closestPolynomial (S.n + 1) (fun i : S.Point ↦ basePoint (S.logN + S.params.logBlowup) i) f
-
 /-- FRI accepts a word that is not `δ`-near the code with probability at most `friError`. -/
 def FriStep (S : Setup) : Prop :=
   ∀ (δ : NNReal) (w : S.Point → 𝕂), ¬ Near S δ w → friAcceptance S w ≤ friError S δ
@@ -50,25 +46,20 @@ def FriStep (S : Setup) : Prop :=
 /-- FRI accepts with probability at most `1`. -/
 def FriAtMostOne (S : Setup) : Prop := ∀ w : S.Point → 𝕂, friAcceptance S w ≤ 1
 
+/-- Words are near the code on a common set of at least `(1 - δ) N` points. -/
+def NearTogether (S : Setup) {ι : Type} (δ : ℝ) (ws : ι → S.Point → 𝕂) : Prop :=
+  ∃ T : Finset S.Point, (T.card : ℝ) ≥ S.size * (1 - δ) ∧
+    ∀ k, ∃ u ∈ S.code, ∀ i ∈ T, ws k i = u i
+
 open Classical in
-/-- If one of `numOpened` words is not `δ`-near the code, their combination by the powers of a
-uniform `a` is `δ`-near the code with probability at most `batchingError`. -/
+/-- If `numOpened` words are not near the code on a common set, their combination by the powers
+of a uniform `a` is `δ`-near the code with probability at most `batchingError` (mutual
+correlated agreement). -/
 def BatchingStep (S : Setup) : Prop :=
-  ∀ (δ : NNReal) (ws : Fin S.numOpened → S.Point → 𝕂), (∃ k, ¬ Near S δ (ws k)) →
+  ∀ (δ : NNReal) (ws : Fin S.numOpened → S.Point → 𝕂), ¬ NearTogether S δ ws →
     ((Finset.univ.filter fun a : 𝕂 ↦
         Near S δ fun i ↦ ∑ k : Fin S.numOpened, a ^ (k : Nat) * ws k i).card : ENNReal)
       / Fintype.card 𝕂 ≤ batchingError S δ
-
-/-- If every DEEP component of the opened words is `δ`-near the code, `δ` within the
-unique-decoding radius and `ζ` outside the base field, the claimed values are the decoded
-polynomials' values. -/
-def DecodingStep (S : Setup) : Prop :=
-  ∀ (δ : NNReal), δ ≤ S.uniqueDecodingRadius → ∀ (prover : Prover S) (α ζ : 𝕂), OutsideBase ζ →
-    (∀ w ∈ openedWords prover α ζ, Near S δ (deepComponent S w.1 w.2.1 w.2.2)) →
-    let o := prover.openings α ζ
-    (∀ j, o.traceAt j = aeval ζ (decoded S (prover.trace j))) ∧
-    (∀ j, o.traceNext j = aeval (ζ * rootOfUnity S.logN) (decoded S (prover.trace j))) ∧
-    (∀ c e, o.quotientAt c e = aeval ζ (decoded S (prover.quotient α c e)))
 
 /-- The claimed values of polynomials `trace` and `quotient`: the true ones at `ζ`. -/
 noncomputable def trueOpenings (S : Setup) (trace : Fin S.air.width → 𝔽[X])
@@ -77,12 +68,30 @@ noncomputable def trueOpenings (S : Setup) (trace : Fin S.air.width → 𝔽[X])
   traceNext j := aeval (ζ * rootOfUnity S.logN) (trace j)
   quotientAt c e := aeval ζ (quotient c e)
 
-/-- The trace whose columns take the values of `trace` on the trace domain's rows. -/
-noncomputable def traceOf (S : Setup) (trace : Fin S.air.width → 𝔽[X]) : Array F :=
-  Array.ofFn fun r : Fin (S.n * S.air.width) ↦
-    let (row, column) := finProdFinEquiv.symm r
-    KoalaBear.Fast.ringEquiv.symm
-      ((trace column).eval (Montgomery.Native32.FastField.toField (twoAdicGen S.logN) ^ row.val))
+/-- The DEEP components of the opened words, by position. -/
+noncomputable def components {S : Setup} (p : Prover S) (α ζ : 𝕂) :
+    Fin S.numOpened → S.Point → 𝕂 := fun k ↦
+  let w := (openedWords p α ζ)[k.val]'(by
+    have : (openedWords p α ζ).length = S.numOpened := by
+      simp only [openedWords, List.length_append, List.length_map, List.length_finRange,
+        List.length_flatMap, List.map_const', List.sum_replicate, smul_eq_mul, Setup.numOpened]
+      ring
+    rw [this]; exact k.isLt)
+  deepComponent S w.1 w.2.1 w.2.2
+
+/-- If the DEEP components of the opened words are `δ`-near the code on a common set, `δ` below
+`1 - rate` and `ζ` outside the base field, the claimed values are those of polynomials of degree
+at most `n` that agree with the trace and quotient words on a common set of `(1 - δ) N` points:
+a candidate trace and quotient of the list decoding. -/
+def DecodingStep (S : Setup) : Prop :=
+  ∀ (δ : NNReal), (δ : ℝ) < 1 - S.rate → ∀ (prover : Prover S) (α ζ : 𝕂), OutsideBase ζ →
+    NearTogether S δ (components prover α ζ) →
+    ∃ (trace : Fin S.air.width → 𝔽[X]) (quotient : Fin S.chunks → Fin 4 → 𝔽[X]),
+      (∀ j, (trace j).natDegree ≤ S.n) ∧ Agree S δ prover.trace trace ∧
+      (∀ c e, (quotient c e).natDegree ≤ S.n) ∧
+      Agree S δ (fun ce : Fin S.chunks × Fin 4 ↦ prover.quotient α ce.1 ce.2)
+        (fun ce ↦ quotient ce.1 ce.2) ∧
+      prover.openings α ζ = trueOpenings S trace quotient ζ
 
 open Classical in
 /-- If the trace of polynomials `trace` fails the AIR, then for all but `#constraints - 1` values

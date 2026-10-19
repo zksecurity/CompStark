@@ -28,8 +28,9 @@ length `2 ^ logN`. The prover's oracles are words on the domain `L = g · ⟨ω�
    `2 ^ logN` (`deepWord`). FRI is ArkLib's oracle reduction, folding by Plonky3's arities; the
    prover may follow any FRI strategy, and `friAcceptance` takes the best one.
 
-`acceptance` is the probability that the verifier accepts. The extractor (`extract`) decodes each
-trace column to its closest polynomial of degree at most `2 ^ logN` and reads the trace off it.
+`acceptance` is the probability that the verifier accepts. The extractor list-decodes the
+committed trace: `closeTraces` are the traces whose columns are polynomials of degree at most
+`2 ^ logN` close to the prover's trace words.
 -/
 
 @[expose] public section
@@ -61,6 +62,9 @@ abbrev n : Nat := 2 ^ S.logN
 
 /-- The number of quotient chunks. -/
 abbrev chunks : Nat := 2 ^ S.air.logQuotientChunks
+
+/-- `N = 2 ^ (logN + logBlowup)`, the size of `L`. -/
+abbrev size : Nat := 2 ^ (S.logN + S.params.logBlowup)
 
 /-- The points of `L`, indexed in natural order: `x_i = g ω^i`. -/
 abbrev Point : Type := Fin (2 ^ (S.logN + S.params.logBlowup))
@@ -157,15 +161,27 @@ noncomputable def acceptance {S : Setup} (publicValues : List F) (prover : Prove
     if ConstraintsHoldAt S publicValues α ζ (prover.openings α ζ)
     then friAcceptance S (deepWord prover α ζ a) else 0
 
-/-! ### The extractor -/
+/-! ### The extractor: list decoding -/
 
-/-- The trace the extractor reads off a prover: each column decoded to its closest polynomial of
-degree at most `n` on `L`, at the rows `ω_n ^ i` of the trace domain, row-major. -/
-noncomputable def extract {S : Setup} (prover : Prover S) : Array F :=
+/-- The trace whose columns take the values of the polynomials `columns` on the trace domain's
+rows `ω_n ^ i`, row-major. -/
+noncomputable def traceOf (S : Setup) (columns : Fin S.air.width → 𝔽[X]) : Array F :=
   Array.ofFn fun r : Fin (S.n * S.air.width) ↦
     let (row, column) := finProdFinEquiv.symm r
-    let p := closestPolynomial (S.n + 1)
-      (fun i : S.Point ↦ basePoint (S.logN + S.params.logBlowup) i) (prover.trace column)
-    KoalaBear.Fast.ringEquiv.symm (p.eval (FastField.toField (twoAdicGen S.logN) ^ row.val))
+    KoalaBear.Fast.ringEquiv.symm
+      ((columns column).eval (FastField.toField (twoAdicGen S.logN) ^ row.val))
+
+/-- Words on `L` agree with polynomials on a common set of at least `(1 - δ) N` points. -/
+def Agree (S : Setup) {ι : Type} (δ : ℝ) (words : ι → S.Point → 𝔽) (polys : ι → 𝔽[X]) :
+    Prop :=
+  ∃ T : Finset S.Point, (T.card : ℝ) ≥ S.size * (1 - δ) ∧
+    ∀ i ∈ T, ∀ k, words k i = (polys k).eval (basePoint (S.logN + S.params.logBlowup) i)
+
+/-- The traces the extractor reads off a prover at proximity `δ`, by list decoding: those whose
+columns are polynomials of degree at most `n` agreeing with the prover's trace words on a common
+set of at least `(1 - δ) N` points. -/
+def closeTraces (S : Setup) (δ : ℝ) (prover : Prover S) : Set (Array F) :=
+  {t | ∃ columns : Fin S.air.width → 𝔽[X], (∀ j, (columns j).natDegree ≤ S.n) ∧
+    Agree S δ prover.trace columns ∧ t = traceOf S columns}
 
 end CompStark.Iop

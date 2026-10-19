@@ -8,22 +8,25 @@ public import CompStark.Iop
 
 /-! # The knowledge error of the STARK
 
-The bound of `knowledgeSoundness` (`CompStark/Soundness.lean`), at a proximity `δ` up to the
-unique-decoding radius of the trace's code (`Setup.uniqueDecodingRadius`). It has one term per
-challenge of the interactive oracle proof (`CompStark/Iop.lean`):
+The bound of `knowledgeSoundness` (`CompStark/Soundness.lean`) at a proximity `δ` below
+`1 - rate`. It has one term per challenge of the interactive oracle proof
+(`CompStark/Iop.lean`), with `ℓ` the list sizes of the trace's and the quotient's codes at `δ`
+(`Setup.listSize`):
 
-* `α`: folding the constraints by `α` makes a constraint that fails on some row vanish on every
-  row (`foldingError`).
-* `ζ`: the constraints hold at `ζ` although they fail as polynomials, or `ζ` lies in the base
-  field (`outOfDomainError`).
-* `a`: the batched DEEP word is `δ`-close to low degree although one of its summands is not
-  (`batchingError`, the correlated-agreement error of the powers of `a`).
+* `α`: folding the constraints by `α` makes a constraint that fails on some row of one of the
+  `ℓ` candidate traces vanish on every row (`foldingError`).
+* `ζ`: the constraints hold at `ζ` for one of the `ℓ²` candidate pairs although they fail as
+  polynomials, or `ζ` lies in the base field (`outOfDomainError`).
+* `a`: the batched DEEP word is `δ`-close to low degree although its summands are not, on a
+  common set (`batchingError`, the mutual correlated-agreement error of the powers of `a`).
 * FRI accepts a word that is `δ`-far from low degree (`friError`, ArkLib's FRI soundness).
+
+Below the unique-decoding radius `ℓ ≤ 1`; up to the Johnson bound `1 - √rate`, `ℓ` is small.
 -/
 
 @[expose] public section
 namespace CompStark.Iop
-open CompStark.Stark CompStark.Sound CoreDefinitions
+open CompStark.Stark CompStark.Sound CoreDefinitions Polynomial
 
 local notation "𝔽" => KoalaBear.Field
 local notation "𝕂" => KoalaBear.Ext4
@@ -32,12 +35,16 @@ local notation "F" => KoalaBear.Fast.Field
 namespace Setup
 variable (S : Setup)
 
-/-- `N = 2 ^ (logN + logBlowup)`, the size of `L`. -/
-abbrev size : Nat := 2 ^ (S.logN + S.params.logBlowup)
+/-- The rate `n / N` of the trace's code. -/
+noncomputable def rate : ℝ := (S.n : ℝ) / S.size
 
-/-- The unique-decoding radius of the polynomials of degree at most `n` on `L`, relative to
-`N = |L|`: `(N - n - 1) / 2N`. -/
-noncomputable def uniqueDecodingRadius : NNReal := ((S.size - S.n - 1 : Nat) : NNReal) / 2 / S.size
+/-- The most tuples of polynomials of degree at most `n`, indexed by `ι`, that agree with one
+tuple of words on `L` on a common set of at least `(1 - δ) N` points: the list size of the
+interleaved code. At most `1` below the unique-decoding radius, and bounded by the Johnson bound
+below `1 - √rate`. -/
+noncomputable def listSize (ι : Type) [Fintype ι] [DecidableEq ι] (δ : ℝ) : Nat :=
+  Finset.univ.sup fun words : ι → S.Point → 𝔽 ↦
+    {polys : ι → 𝔽[X] | (∀ k, (polys k).natDegree ≤ S.n) ∧ Agree S δ words polys}.ncard
 
 /-- The number of opened words: each trace column twice, at `ζ` and `ζ ω_n`, and each
 coordinate of each chunk. -/
@@ -54,17 +61,19 @@ noncomputable def code : ModuleCode S.Point 𝕂 𝕂 :=
 
 end Setup
 
-/-- `α` folds a constraint that fails on some row into one that vanishes on every row: at most
-`#constraints - 1` of the `|𝕂|` values of `α` do. -/
-noncomputable def foldingError (S : Setup) : ENNReal :=
-  (S.air.constraints.length - 1 : Nat) / (Fintype.card 𝕂 : ENNReal)
+/-- `α` folds a constraint that fails on some row of a candidate trace into one that vanishes on
+every row: at most `#constraints - 1` values of `α` per candidate, out of `|𝕂|`. -/
+noncomputable def foldingError (S : Setup) (δ : NNReal) : ENNReal :=
+  (S.listSize (Fin S.air.width) δ * (S.air.constraints.length - 1) : Nat) /
+    (Fintype.card 𝕂 : ENNReal)
 
-/-- The constraint identity, a nonzero polynomial of degree at most `identityDegree`, vanishes at
-`ζ`, or `ζ` lies in the base field. -/
-noncomputable def outOfDomainError (S : Setup) : ENNReal :=
-  (S.identityDegree + Fintype.card 𝔽 : Nat) / (Fintype.card 𝕂 : ENNReal)
+/-- For some pair of candidate trace and quotient, the constraint identity, a nonzero polynomial
+of degree at most `identityDegree`, vanishes at `ζ`; or `ζ` lies in the base field. -/
+noncomputable def outOfDomainError (S : Setup) (δ : NNReal) : ENNReal :=
+  (S.listSize (Fin S.air.width) δ * S.listSize (Fin S.chunks × Fin 4) δ * S.identityDegree +
+    Fintype.card 𝔽 : Nat) / (Fintype.card 𝕂 : ENNReal)
 
-/-- The correlated-agreement error of the powers `1, a, a², …` over the opened words at
+/-- The mutual correlated-agreement error of the powers `1, a, a², …` over the opened words at
 proximity `δ`: the batched word is `δ`-close to `code` without the words being so on a common
 set. -/
 noncomputable def batchingError (S : Setup) (δ : NNReal) : ENNReal :=
@@ -78,6 +87,6 @@ noncomputable def friError (S : Setup) (δ : NNReal) : ENNReal :=
 
 /-- The knowledge error at proximity `δ`. -/
 noncomputable def knowledgeError (S : Setup) (δ : NNReal) : ENNReal :=
-  foldingError S + outOfDomainError S + batchingError S δ + friError S δ
+  foldingError S δ + outOfDomainError S δ + batchingError S δ + friError S δ
 
 end CompStark.Iop
