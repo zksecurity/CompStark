@@ -5,6 +5,7 @@ Released under Apache 2.0 license as described in the file LICENSE.
 import CompStark.Stark.Prover
 import CompStark.Completeness
 import CompStark.Soundness
+import CompStark.Security
 
 /-! # STARK known answers
 
@@ -61,3 +62,7 @@ end CompStarkTests.Stark
 /-- info: 'CompStark.Iop.knowledgeSoundness' depends on axioms: [propext, Classical.choice, Quot.sound] -/
 #guard_msgs in
 #print axioms CompStark.Iop.knowledgeSoundness
+
+/-- info: 'CompStark.Iop.fibonacci_knowledgeError_le' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in
+#print axioms CompStark.Iop.fibonacci_knowledgeError_le

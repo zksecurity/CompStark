@@ -71,3 +71,7 @@ public import CompStark.Sound.Decoding
 public import CompStark.Sound.Assembly
 public import CompStark.Soundness
 public import CompStark.Sound.Johnson
+public import CompStark.Sound.CurveBW
+public import CompStark.Sound.PowersMca
+public import CompStark.Sound.Numbers
+public import CompStark.Security
