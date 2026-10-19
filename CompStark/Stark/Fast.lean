@@ -100,10 +100,6 @@ def grind (c : Challenger F 24) (bits : Nat) : F :=
 /-- The fast transcript. -/
 def transcript : Transcript := Transcript.initWith duplex grind
 
-/-- A matrix of packed rows. -/
-def ofRows (w h : Nat) (vals : Array F) : PMat :=
-  { width := w, height := h, words := CompPoly.CPolynomial.NTTFast.Packed.Native.encodeFields vals }
-
 /-- CompPoly's plan for extensions of `2 ^ logH`-row matrices by `2 ^ bits` onto `shift · ⟨ω_N⟩`. -/
 def plan? (logH bits : Nat) (shift : F) : Option CompPoly.CPolynomial.NTTFast.Packed.LdePlan :=
   if h : logH + bits ≤ 24 then
