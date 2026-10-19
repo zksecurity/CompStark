@@ -54,13 +54,15 @@ def backendFor_refines (logN logBlowup logChunks : Nat) :
   addScaled x _ _ _ _ hv hw hab ha := addScaled_rel x hv hw hab ha
   leaves k _ _ h ha := leaves_rel k h ha
 
-/-- **The fast prover is correct.** For a trace of the AIR's shape within KoalaBear's two-adic
-subgroups whose extension and quotient are addressable (`InputOk`), it produces the
-specification's proof whenever that proof's opening point `ζ` lies outside the base field. -/
-theorem prove_fast {P : Params} {A : Air} {logN : Nat} {trace : Array F} (pis : List F)
-    (hin : InputOk P A logN trace) (hz : Ext.OutsideBase (outOfDomainPoint P A logN trace pis)) :
-    proveWith (backendFor logN P.logBlowup A.logQuotientChunks) P A logN trace pis =
-      prove P A logN trace pis :=
-  proveWith_refines (backendFor_refines _ _ _) pis hin hz
+/-- **The fast prover is correct.** For an input of the shapes the prover supports (`InputOk`),
+it produces the specification's proof, unless the out-of-domain point `ζ` lands in the base field
+(probability about `2 ^ -93`), where both provers divide by zero and compute different garbage. -/
+theorem prove_fast {params : Params} {air : Air} {logN : Nat} {trace : Array F}
+    (publicValues : List F) (input : InputOk params air logN trace)
+    (outOfDomain : Ext.OutsideBase (outOfDomainPoint params air logN trace publicValues)) :
+    proveWith (backendFor logN params.logBlowup air.logQuotientChunks) params air logN trace
+        publicValues =
+      prove params air logN trace publicValues :=
+  proveWith_refines (backendFor_refines _ _ _) publicValues input outOfDomain
 
 end CompStark.Stark.Fast

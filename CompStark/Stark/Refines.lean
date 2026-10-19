@@ -61,15 +61,20 @@ theorem outsideBase_mul_ofBase {z : EF} (hz : Ext.OutsideBase z) {x : F} (hx : x
   · exact Or.inr (Or.inl (mul_ne_zero h hx))
   · exact Or.inr (Or.inr (mul_ne_zero h hx))
 
-/-- What the prover assumes of its input: the trace has `2 ^ logN` rows of the AIR's width, a
-positive width, the AIR reads only its columns, the extension stays within the two-adic subgroups
-and the quotient fits the blowup, and the extended trace and quotient are addressable. -/
+/-- The shapes the fast prover supports: a trace and an AIR within KoalaBear's two-adic subgroups
+whose extension fits machine-word indices. -/
 structure InputOk (P : Params) (A : Air) (logN : Nat) (trace : Array F) : Prop where
+  /-- The trace has `2 ^ logN` rows of the AIR's width. -/
   trace : trace.size = 2 ^ logN * A.width
+  /-- The AIR has a column. -/
   width : 0 < A.width
+  /-- The constraints read only the AIR's columns. -/
   cols : A.ColsInWidth
+  /-- The extended trace domain is a subgroup of KoalaBear, whose two-adicity is 24. -/
   twoAdic : logN + P.logBlowup ≤ 24
+  /-- The quotient's chunks fit the blowup. -/
   chunks : A.logQuotientChunks ≤ P.logBlowup
+  /-- The extended trace and quotient are addressable by `USize` word indices. -/
   mem : Addressable (2 ^ (logN + P.logBlowup) * (A.width + 4 * 2 ^ A.logQuotientChunks))
 
 variable {B : Backend}
