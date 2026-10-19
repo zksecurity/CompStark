@@ -124,7 +124,7 @@ theorem card_isMCA_powers_le {deg : ℕ} (hdeg_pos : 0 < deg) (hdeg_le : deg ≤
     have hc := congrArg (fun q ↦ q.coeff j) h0
     simp only [p, curveParamPoly, finsetSum_coeff, coeff_C_mul, coeff_X_pow, coeff_zero] at hc
     rw [Finset.sum_eq_single j (fun b _ hb ↦ by
-      rw [ite_eq_right (fun h ↦ hb (Fin.ext h.symm)), mul_zero]) (by simp)] at hc
+      rw [ite_eq_right (fun h ↦ hb (Fin.ext h.symm)), mul_zero]) (absurd (Finset.mem_univ j))] at hc
     simp only [ite_true, mul_one] at hc
     exact hj (sub_eq_zero.mp hc)
   have hroots : B ⊆ D.biUnion fun i ↦ (p i).roots.toFinset := by
@@ -171,7 +171,8 @@ theorem card_isMCA_powers_le {deg : ℕ} (hdeg_pos : 0 < deg) (hdeg_le : deg ≤
   calc B.card ≤ (D.biUnion fun i ↦ (p i).roots.toFinset).card := Finset.card_le_card hroots
     _ ≤ ∑ i ∈ D, (p i).roots.toFinset.card := Finset.card_biUnion_le
     _ ≤ ∑ _i ∈ D, k := Finset.sum_le_sum fun i _ ↦
-        ((Multiset.toFinset_card_le _).trans (card_roots' _)).trans (curveParamPoly_natDegree_le _ _)
+        ((Multiset.toFinset_card_le _).trans (card_roots' _)).trans
+          (curveParamPoly_natDegree_le _ _)
     _ = D.card * k := Finset.sum_const_nat fun _ _ ↦ rfl
     _ ≤ k * n := by
         rw [mul_comm]
