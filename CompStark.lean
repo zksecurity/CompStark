@@ -52,3 +52,6 @@ public import CompStark.Poseidon2.ArkLib
 public import CompStark.Merkle.VCVio
 public import CompStark.Complete.Merkle
 public import CompStark.Complete.Deep
+public import CompStark.Complete.Fold
+public import CompStark.Complete.FriRound
+public import CompStark.Complete.Fri
