@@ -20,7 +20,11 @@ The kernels of `Backend` on packed Montgomery words:
   smallest that passes.
 * Low-degree extension is CompPoly's batched coset LDE.
 * The Merkle digest layers of matrices of one height come from the packed Merkle commitment, on
-  their rows side by side; other shapes fall back to the specification.
+  their rows side by side.
+
+The kernels compute the specification's functions on the shapes the prover gives them
+(`Fri.Refines`): matrices of `2 ^ k` rows within the two-adic subgroups, addressable by machine
+indices, and opening points outside the base field.
 -/
 
 @[expose] public section
@@ -194,10 +198,10 @@ def readRow (m : PMat) (r : Nat) : Array F :=
     (4 * (r * m.width + m.width)))
   Array.ofFn (n := m.width) fun j ↦ a.getD j.val 0
 
-/-- Digest `k` of a packed layer, read without bounds. -/
+/-- Digest `k` of a packed layer: its 32 bytes, copied out, whose word reads always fit. -/
 def readDigest (b : ByteArray) (k : Nat) : Digest :=
-  let a : Array F := CompPoly.PackedRepr.decode (b.extract (32 * k) (32 * k + 32))
-  Vector.ofFn fun j ↦ a.getD j.val 0
+  let d := b.extract (32 * k) (32 * k + 32)
+  Vector.ofFn fun j ↦ word d j.val
 
 /-- The Merkle root. -/
 def root (c : Commit) : Digest := readDigest (c.layers.back?.getD .empty) 0

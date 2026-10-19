@@ -38,31 +38,36 @@ def chunkValues (qs : @& Array EF) (stride c n : Nat) : Array F := Id.run do
     out := ((out.push x.c0).push x.c1 |>.push x.c2).push x.c3
   return out
 
-/-- A proof of `A` for the row-major trace of `2 ^ logN` rows and public values `pis`, by the
-backend `B`. -/
-def proveWith (B : Backend) (P : Params) (A : Air) (logN : Nat) (trace : Array F) (pis : List F) :
-    Proof :=
-  let w := A.width
+/-- The trace's extension and commitment, the quotient's chunks and commitment, and the opening
+point `ζ` sampled after them, by the backend `B`. -/
+def commitAndSample (B : Backend) (P : Params) (A : Air) (logN : Nat) (trace : Array F)
+    (pis : List F) : PM (B.M × B.C × List B.M × B.C × EF) := do
   let logChunks := A.logQuotientChunks
   let qlog := logN + logChunks
-  let ext := B.lde logN P.logBlowup gen w trace
+  let ext := B.lde logN P.logBlowup gen A.width trace
   let traceC := B.commit [ext]
-  let run : PM Proof := do
-    pObserve (logN : F)
-    pObserve (logN : F)
-    pObserve 0
-    pObserveList (B.root traceC).toList
-    pObserveList pis
-    let alpha ← pSampleExt
-    let qs := B.quotient A pis logN logChunks ext alpha
-    let stride := 2 ^ logChunks
-    let chunks := (List.range stride).map fun c ↦
-      let shift := gen * powF (twoAdicGen qlog) c
-      let vals := chunkValues qs stride c (2 ^ logN)
-      B.lde logN P.logBlowup (gen * shift⁻¹) 4 vals
-    let quotC := B.commit chunks
-    pObserveList (B.root quotC).toList
-    let zeta ← pSampleExt
+  pObserve (logN : F)
+  pObserve (logN : F)
+  pObserve 0
+  pObserveList (B.root traceC).toList
+  pObserveList pis
+  let alpha ← pSampleExt
+  let qs := B.quotient A pis logN logChunks ext alpha
+  let stride := 2 ^ logChunks
+  let chunks := (List.range stride).map fun c ↦
+    let shift := gen * powF (twoAdicGen qlog) c
+    let vals := chunkValues qs stride c (2 ^ logN)
+    B.lde logN P.logBlowup (gen * shift⁻¹) 4 vals
+  let quotC := B.commit chunks
+  pObserveList (B.root quotC).toList
+  let zeta ← pSampleExt
+  return (ext, traceC, chunks, quotC, zeta)
+
+/-- The openings at `ζ` and `ζ ω` of the trace and at `ζ` of the quotient's chunks, and the proof
+assembled from them and the commitments. -/
+def openAndAssemble (B : Backend) (P : Params) (logN : Nat) :
+    B.M × B.C × List B.M × B.C × EF → PM Proof
+  | (ext, traceC, chunks, quotC, zeta) => do
     let zetaNext := zeta * Ext.ofBase (twoAdicGen logN)
     let (opened, fri) ← openPcs B P
       [(traceC, [(ext, [zeta, zetaNext])]), (quotC, chunks.map fun m ↦ (m, [zeta]))]
@@ -74,7 +79,16 @@ def proveWith (B : Backend) (P : Params) (A : Air) (logN : Nat) (trace : Array F
         ((opened.getD 1 []).map fun pts ↦ pts.headD #[]).toArray⟩
       fri
       degreeBits := logN }
-  (run.run B.transcript).1
+
+/-- A proof of `A` for the row-major trace of `2 ^ logN` rows and public values `pis`, by the
+backend `B`. -/
+def proveWith (B : Backend) (P : Params) (A : Air) (logN : Nat) (trace : Array F) (pis : List F) :
+    Proof :=
+  ((commitAndSample B P A logN trace pis >>= openAndAssemble B P logN).run B.transcript).1
+
+/-- The opening point `ζ` of the specification's proof. -/
+def zetaOf (P : Params) (A : Air) (logN : Nat) (trace : Array F) (pis : List F) : EF :=
+  ((commitAndSample Backend.spec P A logN trace pis).run Backend.spec.transcript).1.2.2.2.2
 
 /-- A proof of `A` for the row-major trace of `2 ^ logN` rows and public values `pis`, by the
 specification backend. -/

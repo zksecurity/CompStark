@@ -95,9 +95,13 @@ theorem readDigest_encodeDigests (ds : Array Digest) (k : Nat) :
   ext j hj
   rw [Commit.readDigest, Vector.getElem_ofFn]
   dsimp only
+  have hs : 4 * ((flat ds.toList).extract (8 * k) (8 * k + 8)).size < USize.size := by
+    have := USize.le_size
+    rw [Array.size_extract]
+    omega
   rw [encodeDigests_eq, show 32 * k = 4 * (8 * k) by omega,
     show 4 * (8 * k) + 32 = 4 * (8 * k + 8) by omega, extract_encode,
-    CompPoly.PackedRepr.decode_encode, extract_getD _ _ _ _ hj, getD_flat,
+    word_encode_getD _ _ hs (by have := USize.le_size; omega), extract_getD _ _ _ _ hj, getD_flat,
     show (8 * k + j) / 8 = k by omega, Array.getD_eq_getD_getElem?, List.getD_eq_getElem?_getD,
     Array.getElem?_toList]
   exact CompStark.Merkle.Packed.vget_congr _ (by omega) _ _

@@ -144,4 +144,22 @@ theorem reduce_shape (alpha : EF) (items : List (Mat × List (EF × Array EF)))
   have := hinv items [] hok (fun _ h ↦ absurd h (List.not_mem_nil)) e (List.mem_mergeSort.mp he)
   exact ⟨e.1, this.1, this.2⟩
 
+theorem size_flatten_ofFn {α : Type} (n w : Nat) (f : Fin n → Array α)
+    (hf : ∀ i, (f i).size = w) : (Array.ofFn f).flatten.size = n * w := by
+  rw [← Array.length_toList, Array.toList_flatten, List.length_flatten, Array.toList_ofFn,
+    List.map_ofFn, List.map_ofFn]
+  have : (List.length ∘ Array.toList ∘ f) = fun _ ↦ w := by
+    funext i; simp only [Function.comp, Array.length_toList, hf]
+  rw [this, List.ofFn_const, List.sum_replicate, smul_eq_mul]
+
+/-- The specification's extension of a `2 ^ logH × w` matrix by `2 ^ bits`. -/
+theorem shape_ldeRef (logH bits : Nat) (shift : F) (w : Nat) (m : Array F) :
+    (ldeRef logH bits shift w m).width = w ∧ (ldeRef logH bits shift w m).height =
+      2 ^ (logH + bits) ∧ (ldeRef logH bits shift w m).values.size = w * 2 ^ (logH + bits) := by
+  refine ⟨rfl, rfl, ?_⟩
+  show (Array.ofFn _).flatten.size = _
+  rw [size_flatten_ofFn _ w _ (fun _ ↦ by
+    simp only [Array.size_map, List.size_toArray, List.length_map, List.length_range]),
+    Nat.mul_comm]
+
 end CompStark.Fri

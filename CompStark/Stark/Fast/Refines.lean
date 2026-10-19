@@ -36,27 +36,31 @@ def backendFor_refines (logN logBlowup logChunks : Nat) :
   root := root_rel
   openAt := openAt_rel
   logHeight h := congrArg Nat.log2 (maxHeight_rel h)
-  quotient A pis d l _ _ alpha h := by
+  quotient A pis d l _ _ alpha h hs hh hc := by
     show (if d == logN && l == logChunks then _ else _) = _
     split
     · rename_i hd
       simp only [Bool.and_eq_true, beq_iff_eq] at hd
       rw [hd.1, hd.2]
-      exact quotientWith_rel A pis _ _ alpha h
-    · exact quotientWith_rel A pis _ _ alpha h
-  openedAt b zs _ _ h := openedAt_rel b zs h
+      rw [hd.1, hd.2] at hh
+      exact quotientWith_rel A pis _ _ alpha h hs hh hc
+    · exact quotientWith_rel A pis _ _ alpha h hs hh hc
+  openedAt b zs _ _ h hs hz := openedAt_rel b zs h hs hz
   toArray := toArray_rel
   ofArray := ofArray_rel
   size h := h.1
-  reduce alpha _ _ h := reduce_rel alpha h
-  fold2 beta k _ _ h := fold2_rel beta k h
-  addScaled x _ _ _ _ hv hw := addScaled_rel x hv hw
-  leaves k _ _ h := leaves_rel k h
+  reduce alpha _ _ h hok := reduce_rel alpha h hok
+  fold2 beta k _ _ h ha hk := fold2_rel beta k h ha hk
+  addScaled x _ _ _ _ hv hw hab ha := addScaled_rel x hv hw hab ha
+  leaves k _ _ h ha := leaves_rel k h ha
 
-/-- **The fast prover is correct.** It produces the specification's proof. -/
-theorem prove_fast (P : Params) (A : Air) (logN : Nat) (trace : Array F) (pis : List F) :
+/-- **The fast prover is correct.** For a trace of the AIR's shape within KoalaBear's two-adic
+subgroups whose extension and quotient are addressable (`InputOk`), it produces the
+specification's proof whenever that proof's opening point `ζ` lies outside the base field. -/
+theorem prove_fast {P : Params} {A : Air} {logN : Nat} {trace : Array F} (pis : List F)
+    (hin : InputOk P A logN trace) (hz : Ext.OutsideBase (zetaOf P A logN trace pis)) :
     proveWith (backendFor logN P.logBlowup A.logQuotientChunks) P A logN trace pis =
       prove P A logN trace pis :=
-  proveWith_refines (backendFor_refines _ _ _) P A logN trace pis
+  proveWith_refines (backendFor_refines _ _ _) pis hin hz
 
 end CompStark.Stark.Fast

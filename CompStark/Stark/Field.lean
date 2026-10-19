@@ -30,6 +30,18 @@ def twoAdicTable : Array Nat := #[0x1, 0x7f000000, 0x7e010002, 0x6832fe4a, 0x8db
 /-- The generator of the subgroup of order `2 ^ bits`, `bits ≤ 24`. -/
 def twoAdicGen (bits : Nat) : F := ((twoAdicTable.getD bits 0 : Nat) : F)
 
+/-- Plonky3's two-adic generators are nonzero. -/
+theorem twoAdicGen_ne_zero (bits : Nat) (h : bits ≤ 24) : twoAdicGen bits ≠ 0 := by
+  have hb : 0 < twoAdicTable.getD bits 0 ∧ twoAdicTable.getD bits 0 < KoalaBear.fieldSize := by
+    have : ∀ b < 25, 0 < twoAdicTable.getD b 0 ∧ twoAdicTable.getD b 0 < KoalaBear.fieldSize := by
+      decide
+    exact this bits (by omega)
+  intro h0
+  have := congrArg Montgomery.Native32.FastField.toField h0
+  rw [twoAdicGen, Montgomery.Native32.toField_natCast,
+    Montgomery.Native32.toField_zero, ZMod.natCast_eq_zero_iff] at this
+  exact absurd (Nat.le_of_dvd hb.1 this) (by omega)
+
 /-- `x ^ n` by squaring. -/
 def powF (x : F) : Nat → F
   | 0 => 1

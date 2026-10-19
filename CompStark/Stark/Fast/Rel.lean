@@ -10,8 +10,8 @@ public import CompStark.Fri.Assumptions
 /-! # The fast backend's representations
 
 How the fast backend's packed matrices, commitments and vectors of extension elements represent
-the specification's: by their encodings, with no bound on sizes. The fast kernels check the sizes
-they need and otherwise run the specification on the decoded values.
+the specification's: by their encodings, with no bound on sizes. The laws of the kernels state the
+sizes they need as hypotheses on the specification's values (`CompStark/Fri/Assumptions.lean`).
 -/
 
 @[expose] public section

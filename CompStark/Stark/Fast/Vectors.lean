@@ -58,18 +58,6 @@ theorem cosetPoints_eq (shift : F) (L : Nat) :
       rfl
   rw [key]
 
-/-- Plonky3's two-adic generators are nonzero. -/
-theorem twoAdicGen_ne_zero (bits : Nat) (h : bits ≤ 24) : twoAdicGen bits ≠ 0 := by
-  have hb : 0 < twoAdicTable.getD bits 0 ∧ twoAdicTable.getD bits 0 < KoalaBear.fieldSize := by
-    have : ∀ b < 25, 0 < twoAdicTable.getD b 0 ∧ twoAdicTable.getD b 0 < KoalaBear.fieldSize := by
-      decide
-    exact this bits (by omega)
-  intro h0
-  have := congrArg Montgomery.Native32.FastField.toField h0
-  rw [twoAdicGen, Montgomery.Native32.toField_natCast,
-    Montgomery.Native32.toField_zero, ZMod.natCast_eq_zero_iff] at this
-  exact absurd (Nat.le_of_dvd hb.1 this) (by omega)
-
 /-- An in-range entry. -/
 theorem getD_lt {α : Type} (xs : Array α) (i : Nat) {d : α} (h : i < xs.size) :
     xs.getD i d = xs[i] := by
