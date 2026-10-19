@@ -5,6 +5,7 @@ Released under Apache 2.0 license as described in the file LICENSE.
 module
 
 public import CompStark.Complete.Defs
+public import CompStark.Complete.Merkle
 public import CompStark.Stark.Fast.Openings
 public import CompStark.Stark.Fast.Lde
 public import CompStark.Fri.Shapes
@@ -743,5 +744,23 @@ theorem openInput_honest_of (P : Params) (logMax index : Nat) (alpha : EF)
       (r := fun a b ↦ decide (b.1 ≤ a.1)) (s := fun a b ↦ decide (b.1 ≤ a.1))
       (fun _ _ _ _ ↦ rfl), List.map_map]
   rfl
+
+
+/-- The verifier's batched quotients at a query are the prover's: every round commits matrices of
+one height `2 ^ h` that are honest LDEs with true openings, the verifier's rounds are built as the
+STARK verifier builds them, and the openings are the prover's at the query's row. -/
+theorem openInput_honest (P : Params) (logMax index : Nat) (alpha : EF)
+    (rounds : List (Committed × List (Mat × List (EF × Array EF))))
+    (hidx : index < 2 ^ logMax)
+    (hrounds : ∀ r ∈ rounds, r.2 ≠ [] ∧ r.1 = Committed.ofMats (r.2.map (·.1)) ∧
+      ∃ h ≤ logMax, ∀ x ∈ r.2, Deep.HonestItem P.logBlowup h x) :
+    openInput P logMax index alpha
+      (rounds.map fun r ↦ r.1.openAt (index >>> (logMax - Nat.log2 r.1.maxHeight)))
+      (rounds.map fun r ↦ (r.1.root, r.2.map fun x ↦
+        ((⟨1, Nat.log2 x.1.height - P.logBlowup⟩ : Domain), x.2.map fun y ↦ (y.1, y.2.toList)))) =
+      pure ((Fri.reduce alpha (rounds.flatMap (·.2))).map fun y ↦
+        (y.1, y.2.getD (index >>> (logMax - y.1)) 0)) :=
+  openInput_honest_of P logMax index alpha rounds hidx hrounds Fri.verifyBatch_openAt
+    Fri.openAt_values Fri.maxHeight_ofMats
 
 end CompStark
