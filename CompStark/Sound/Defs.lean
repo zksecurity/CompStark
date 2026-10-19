@@ -9,8 +9,9 @@ public import CompStark.Completeness
 
 /-! # Constructions behind the IOP model
 
-The domain `L` as an ArkLib smooth coset FFT domain, Plonky3's folding schedule, the acceptance
-probability of ArkLib's FRI oracle reduction against its best prover. `CompStark/Iop.lean` states the protocol with them.
+The domain `L` as an ArkLib smooth coset FFT domain, Plonky3's folding schedule, and the
+acceptance probability of ArkLib's FRI oracle reduction against its best prover.
+`CompStark/Iop.lean` states the protocol with them.
 -/
 
 @[expose] public section
