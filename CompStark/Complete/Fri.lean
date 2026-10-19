@@ -340,6 +340,18 @@ theorem forIn_cons_ok {α σ : Type} (a : α) (l : List α) (b b' : σ)
     (h : body a b t = .ok (.yield b', t')) : forIn (a :: l) b body t = forIn l b' body t' := by
   rw [List.forIn_cons, bind_ok h]
 
+theorem same_chain (P : Params) (fuel : Nat) :
+    ∀ (f : Array EF) (rest : List (Array EF)) {t0 : Transcript} (t : Transcript), Same t0 t →
+      Same t0 (chain P fuel f rest t).2.2 := by
+  induction fuel with
+  | zero => intro f rest t0 t h; exact h
+  | succ fuel ih =>
+    intro f rest t0 t h
+    rw [chain]
+    split
+    · exact h
+    · exact ih _ _ _ (same_sampleExt (same_grind (same_observeList h _) _))
+
 /-! ### The verifier's commit loop -/
 
 /-- The body of the verifier's loop over the commitments. -/
@@ -372,7 +384,8 @@ theorem commit_loop (P : Params) (t0 : Transcript)
     ∀ f rest t betas, Same t0 t →
       forIn (((chain P fuel f rest t).1.map (·.c.root)).zip ((chain P fuel f rest t).1.map (·.w)))
         betas body t =
-        .ok (betas ++ ((chain P fuel f rest t).1.map (·.beta)).toArray, (chain P fuel f rest t).2.2) := by
+        .ok (betas ++ ((chain P fuel f rest t).1.map (·.beta)).toArray,
+          (chain P fuel f rest t).2.2) := by
   induction fuel with
   | zero =>
     intro f rest t betas _
@@ -522,7 +535,8 @@ theorem fold_round (P : Params) (hP : 0 < P.maxLogArity) {h : Nat} {f : Array EF
       have hz : idx >>> la < (Array.zipWith (fun u x ↦ u + Ext.powTwo beta la * x)
           (foldOnce la beta f) v).size := by
         rw [Array.size_zipWith, hfo, hvs, he, Nat.min_self]; exact hr
-      rw [he, ← hshift, getD_lt _ _ hz, Array.getElem_zipWith, ← getD_lt _ _ (by rw [hfo]; exact hr),
+      rw [he, ← hshift, getD_lt _ _ hz, Array.getElem_zipWith,
+        ← getD_lt _ _ (by rw [hfo]; exact hr),
         ← getD_lt _ _ (by rw [hvs, he]; exact hr)]
     · have he' : ¬ (v.size == (foldOnce la beta f).size) = true := by
         rw [beq_iff_eq, hvs, hfo]
@@ -534,7 +548,8 @@ theorem answerSteps_cons (r : Rd) (rs : List Rd) (la : Nat) (las : List Nat) (cu
     answerSteps Backend.spec ((r :: rs).map (·.c)) (la :: las) cur =
       ⟨la, (((List.range (2 ^ la)).filter (· != cur % 2 ^ la)).map fun j ↦
           (unflatten (((r.c.openAt (cur >>> la)).values.getD 0 #[]).toList)).getD j 0).toArray,
-        (r.c.openAt (cur >>> la)).path⟩ :: answerSteps Backend.spec (rs.map (·.c)) las (cur >>> la) :=
+        (r.c.openAt (cur >>> la)).path⟩ ::
+          answerSteps Backend.spec (rs.map (·.c)) las (cur >>> la) :=
   rfl
 
 /-- At the final height no input remains. -/
@@ -600,5 +615,384 @@ theorem fold_loop (P : Params) (hP : 0 < P.maxLogArity)
           rw [hbody]; exact fold_round P hP hg hgt beta index0 logMax hidx hh t'),
         shiftRight_shiftRight index0 logMax h _ (by omega) hh]
       exact ih _ _ _ _ t' hg' (by omega) (by omega)
+
+/-- `fold_loop` from the tallest input. -/
+theorem fold_loop0 (P : Params) (hP : 0 < P.maxLogArity)
+    (body : (EF × Digest) × CommitStep → List (Nat × EF) × EF × Nat × Nat →
+      M (ForInStep (List (Nat × EF) × EF × Nat × Nat)))
+    (hbody : ∀ beta commit s ro eval index logH,
+      body ((beta, commit), s) (ro, eval, index, logH) = foldBody beta commit s ro eval index logH)
+    (index0 h0 : Nat) (hidx : index0 < 2 ^ h0) (fuel : Nat) (f rest t t')
+    (hg : Good P h0 f rest) (hfuel : h0 - (P.logBlowup + P.logFinalPolyLen) ≤ fuel) :
+    forIn ((((chain P fuel f rest t).1.map (·.beta)).zip
+        ((chain P fuel f rest t).1.map (·.c.root))).zip
+        (answerSteps Backend.spec ((chain P fuel f rest t).1.map (·.c))
+          ((chain P fuel f rest t).1.map (·.la)) index0))
+      (rest.map (roOf index0 h0), f.getD index0 0, index0, h0) body t' =
+      .ok (([], (chain P fuel f rest t).2.1.getD
+        (index0 >>> (h0 - (P.logBlowup + P.logFinalPolyLen))) 0,
+        index0 >>> (h0 - (P.logBlowup + P.logFinalPolyLen)),
+        P.logBlowup + P.logFinalPolyLen), t') := by
+  have := fold_loop P hP body hbody index0 h0 hidx fuel h0 f rest t t' hg hfuel le_rfl
+  simp only [Nat.sub_self, Nat.shiftRight_zero] at this
+  exact this
+
+theorem length_answerSteps (rs : List Rd) :
+    ∀ cur, (answerSteps Backend.spec (rs.map (·.c)) (rs.map (·.la)) cur).length = rs.length := by
+  induction rs with
+  | nil => intro cur; rfl
+  | cons r rs ih =>
+    intro cur
+    rw [show (r :: rs).map (·.la) = r.la :: rs.map (·.la) from rfl, answerSteps_cons,
+      List.length_cons, ih, List.length_cons]
+
+/-- A query's folds from the reduced openings of the inputs `f0 :: rest` at `index0` end at the
+final vector's entry. -/
+theorem verifyQuery_run (P : Params) (hP : 0 < P.maxLogArity) (f0 : Array EF)
+    (rest : List (Array EF)) (h0 : Nat) (hg : Good P h0 f0 rest) (fuel : Nat)
+    (hfuel : h0 - (P.logBlowup + P.logFinalPolyLen) ≤ fuel) (t t' : Transcript) (index0 : Nat)
+    (hidx : index0 < 2 ^ h0) :
+    verifyQuery P h0 index0 ((chain P fuel f0 rest t).1.map (·.beta))
+      ((chain P fuel f0 rest t).1.map (·.c.root))
+      (answerSteps Backend.spec ((chain P fuel f0 rest t).1.map (·.c))
+        ((chain P fuel f0 rest t).1.map (·.la)) index0)
+      ((f0 :: rest).map (roOf index0 h0)) t' =
+      .ok (((chain P fuel f0 rest t).2.1.getD
+        (index0 >>> (h0 - (P.logBlowup + P.logFinalPolyLen))) 0,
+        index0 >>> (h0 - (P.logBlowup + P.logFinalPolyLen))), t') := by
+  have hlog : Nat.log2 f0.size = h0 := log2_size hg.2.1
+  unfold verifyQuery
+  simp only [List.map_cons, roOf, hlog, Nat.sub_self, Nat.shiftRight_zero]
+  rw [pure_bind]
+  simp only [beq_self_eq_true, ensure_true, pure_bind, List.length_map, length_answerSteps,
+    Bool.and_self, List.tail_cons]
+  rw [bind_ok (fold_loop0 P hP _ ?hb index0 h0 hidx fuel f0 rest t t' hg hfuel)]
+  · simp only [beq_self_eq_true, ensure_true, pure_bind, List.isEmpty_nil]
+    rfl
+  · intros; rfl
+
+/-! ### The commit phase's result and the queries -/
+
+theorem foldl_pushRd (rs : List Rd) :
+    ∀ cp : CommitPhase Committed,
+      (rs.foldl pushRd cp).commits.toList = cp.commits.toList ++ rs.map (·.c.root) ∧
+      (rs.foldl pushRd cp).data = cp.data ++ rs.map (·.c) ∧
+      (rs.foldl pushRd cp).witnesses.toList = cp.witnesses.toList ++ rs.map (·.w) ∧
+      (rs.foldl pushRd cp).arities.toList = cp.arities.toList ++ rs.map (·.la) ∧
+      (rs.foldl pushRd cp).finalPoly = cp.finalPoly := by
+  induction rs with
+  | nil => intro cp; simp only [List.foldl_nil, List.map_nil, List.append_nil, and_self]
+  | cons r rs ih =>
+    intro cp
+    obtain ⟨h1, h2, h3, h4, h5⟩ := ih (pushRd cp r)
+    rw [List.foldl_cons, h1, h2, h3, h4, h5]
+    simp only [pushRd, Array.toList_push, List.map_cons, List.append_assoc, List.singleton_append,
+      and_self]
+
+theorem answerSteps_logArity (rs : List Rd) :
+    ∀ cur, (answerSteps Backend.spec (rs.map (·.c)) (rs.map (·.la)) cur).map (·.logArity) =
+      rs.map (·.la) := by
+  induction rs with
+  | nil => intro cur; rfl
+  | cons r rs ih =>
+    intro cur
+    rw [show (r :: rs).map (·.la) = r.la :: rs.map (·.la) from rfl, answerSteps_cons,
+      List.map_cons, ih]
+
+theorem sampleBits_lt (t : Transcript) (bits : Nat) : (t.sampleBits bits).1 < 2 ^ bits := by
+  unfold Transcript.sampleBits Challenger.sampleBits
+  dsimp only
+  exact Nat.mod_lt _ (by positivity)
+
+/-- The indices `n` queries sample. -/
+def sampleIndices (logMax : Nat) : Nat → Transcript → List Nat × Transcript
+  | 0, t => ([], t)
+  | n + 1, t =>
+    let r := sampleIndices logMax n (t.sampleBits logMax).2
+    ((t.sampleBits logMax).1 :: r.1, r.2)
+
+/-- The prover's queries, each sampling its index. -/
+theorem mapM_queries {α β : Type} (logMax : Nat) (mk : Nat → β) (g : α → PM β)
+    (hg : ∀ a t, (g a).run t = (mk (t.sampleBits logMax).1, (t.sampleBits logMax).2)) :
+    ∀ (l : List α) (t : Transcript), (l.mapM g).run t =
+      ((sampleIndices logMax l.length t).1.map mk, (sampleIndices logMax l.length t).2)
+  | [], _ => rfl
+  | a :: l, t => by
+    rw [List.mapM_cons, prun_bind, hg, prun_bind, mapM_queries logMax mk g hg l]
+    rfl
+
+/-- The verifier's queries sample the prover's indices. -/
+theorem query_loop (logMax : Nat) (t0 : Transcript) (mk : Nat → QueryProof)
+    (body : QueryProof → PUnit → M (ForInStep PUnit)) (qb : QueryProof → M (ForInStep PUnit))
+    (hbody : ∀ q, body q () = qb q)
+    (hstep : ∀ t, Same t0 t →
+      qb (mk (t.sampleBits logMax).1) t = .ok (.yield (), (t.sampleBits logMax).2)) :
+    ∀ n t, Same t0 t →
+      forIn ((sampleIndices logMax n t).1.map mk) () body t = .ok ((), (sampleIndices logMax n t).2)
+  | 0, _, _ => rfl
+  | n + 1, t, ht => by
+    rw [sampleIndices, List.map_cons, forIn_cons_ok _ _ _ _ _ _ _ (by rw [hbody]; exact hstep t ht)]
+    exact query_loop logMax t0 mk body qb hbody hstep n _ (same_sampleBits ht _)
+
+theorem forM_observe (l : List Nat) (t : Transcript) :
+    (l.forM fun la ↦ pObserve (la : F)).run t =
+      ((), l.foldl (fun t (a : Nat) ↦ t.observe (a : F)) t) := by
+  induction l generalizing t with
+  | nil => rfl
+  | cons a l ih =>
+    show StateT.run (do pObserve (a : F); l.forM fun la ↦ pObserve (la : F)) t = _
+    rw [prun_bind, ih]; rfl
+
+theorem same_foldl_observe {t0 : Transcript} (l : List Nat) :
+    ∀ t, Same t0 t → Same t0 (l.foldl (fun t (a : Nat) ↦ t.observe (a : F)) t) := by
+  induction l with
+  | nil => intro t h; exact h
+  | cons a l ih => intro t h; exact ih _ (same_observe h _)
+
+theorem observe_loop (l : List Nat) (body : Nat → PUnit → M (ForInStep PUnit))
+    (hbody : ∀ a t, body a () t = .ok (.yield (), t.observe (a : F))) :
+    ∀ t, forIn l () body t = .ok ((), l.foldl (fun t (a : Nat) ↦ t.observe (a : F)) t) := by
+  induction l with
+  | nil => intro t; rfl
+  | cons a l ih => intro t; rw [forIn_cons_ok _ _ _ _ _ _ _ (hbody a t), ih]; rfl
+
+/-- The body of the verifier's loop over the queries. -/
+def queryBody (P : Params) (logMax : Nat) (alpha : EF) (rounds : List Round) (betas : Array EF)
+    (commits : Array Digest) (finalPoly : Array EF) (q : QueryProof) :
+    M (ForInStep PUnit) := do
+  let index ← sampleBits logMax
+  let ro ← openInput P logMax index alpha q.inputs.toList rounds
+  let e ← verifyQuery P logMax index betas.toList commits.toList q.steps.toList ro
+  ensure (finalPoly.foldr (fun c acc ↦
+    acc * Ext.ofBase (powF (twoAdicGen logMax) (reverseBits e.2 logMax)) + c) 0 == e.1)
+    "final polynomial mismatch"
+  pure (ForInStep.yield PUnit.unit)
+
+theorem queryBody_run (P : Params) (logMax : Nat) (alpha : EF) (rounds : List Round)
+    (betas : Array EF) (commits : Array Digest) (finalPoly : Array EF) (q : QueryProof)
+    (t : Transcript) (ro : List (Nat × EF)) (eval : EF) (idxF : Nat)
+    (h1 : openInput P logMax (t.sampleBits logMax).1 alpha q.inputs.toList rounds
+      (t.sampleBits logMax).2 = .ok (ro, (t.sampleBits logMax).2))
+    (h2 : verifyQuery P logMax (t.sampleBits logMax).1 betas.toList commits.toList q.steps.toList
+      ro (t.sampleBits logMax).2 = .ok ((eval, idxF), (t.sampleBits logMax).2))
+    (h3 : finalPoly.foldr (fun c acc ↦
+      acc * Ext.ofBase (powF (twoAdicGen logMax) (reverseBits idxF logMax)) + c) 0 = eval) :
+    queryBody P logMax alpha rounds betas commits finalPoly q t =
+      .ok (.yield (), (t.sampleBits logMax).2) := by
+  unfold queryBody
+  rw [bind_ok (t' := (t.sampleBits logMax).2) (a := (t.sampleBits logMax).1) rfl, bind_ok h1,
+    bind_ok h2]
+  simp only [h3, beq_self_eq_true, ensure_true, pure_bind]
+  rfl
+
+/-! ### The prover's run -/
+
+/-- The final polynomial of a commit phase ending at `fin`. -/
+def finalPolyOf (P : Params) (fin : Array EF) : Array EF :=
+  idft P.logFinalPolyLen (Array.ofFn (n := 2 ^ P.logFinalPolyLen) fun i ↦
+    fin.getD (reverseBits i P.logFinalPolyLen) 0)
+
+theorem commitPhase_run (P : Params) (f0 : Array EF) (rest : List (Array EF)) (t : Transcript) :
+    (commitPhase Backend.spec P (f0 :: rest)).run t =
+      ({ (chain P f0.size f0 rest t).1.foldl pushRd ⟨#[], [], #[], #[], #[]⟩ with
+          finalPoly := finalPolyOf P (chain P f0.size f0 rest t).2.1 },
+        (chain P f0.size f0 rest t).2.2.observeExts
+          (finalPolyOf P (chain P f0.size f0 rest t).2.1).toList) := by
+  have hc : (commitRounds Backend.spec P (Backend.spec.size f0) f0 rest
+      ⟨#[], [], #[], #[], #[]⟩).run t =
+      let r := chain P f0.size f0 rest t
+      ((r.2.1, r.1.foldl pushRd ⟨#[], [], #[], #[], #[]⟩), r.2.2) :=
+    commitRounds_run P _ f0 rest _ t
+  unfold commitPhase
+  rw [prun_bind, hc]
+  rfl
+
+/-- The specification prover's FRI proof, from the inputs `f0 :: rest`. -/
+theorem proveFri_run (P : Params) (rounds : List (OpenRound Backend.spec))
+    (inputsOf : EF → List (Array EF)) (t : Transcript) (f0 : Array EF) (rest : List (Array EF))
+    (hins : (inputsOf t.sampleExt.1 : List Backend.spec.V) = (f0 :: rest : List Backend.spec.V)) :
+    let r := chain P f0.size f0 rest t.sampleExt.2
+    let cp := { r.1.foldl pushRd ⟨#[], [], #[], #[], #[]⟩ with finalPoly := finalPolyOf P r.2.1 }
+    let t3 := cp.arities.toList.foldl (fun t (a : Nat) ↦ t.observe (a : F))
+      (r.2.2.observeExts (finalPolyOf P r.2.1).toList)
+    let mk : Nat → QueryProof := fun index ↦
+      ⟨(rounds.map fun (c, _) ↦ Backend.spec.openAt c
+        (index >>> (Nat.log2 f0.size - Backend.spec.logHeight c))).toArray,
+        answerQuery Backend.spec cp index⟩
+    let qs := sampleIndices (Nat.log2 f0.size) P.numQueries (t3.grind P.queryPowBits).2
+    (proveFri Backend.spec P rounds inputsOf).run t =
+      (⟨cp.commits, cp.witnesses, (qs.1.map mk).toArray, finalPolyOf P r.2.1,
+        (t3.grind P.queryPowBits).1⟩, qs.2) := by
+  intro r cp t3 mk qs
+  unfold proveFri
+  rw [prun_bind]
+  rw [show (StateT.run pSampleExt t) = t.sampleExt from rfl]
+  dsimp only
+  rw [hins, show ((List.map Backend.spec.size (f0 :: rest)).headD 0).log2 = Nat.log2 f0.size
+    from rfl, prun_bind, commitPhase_run, prun_bind, forM_observe, prun_bind]
+  rw [show StateT.run (pGrind P.queryPowBits) t3 = t3.grind P.queryPowBits from rfl, prun_bind,
+    mapM_queries (Nat.log2 f0.size) mk _ ?hg, List.length_range]
+  · rfl
+  · intro _ _; rfl
+
+theorem length_sampleIndices (logMax : Nat) :
+    ∀ n t, (sampleIndices logMax n t).1.length = n
+  | 0, _ => rfl
+  | n + 1, t => by
+    rw [sampleIndices, List.length_cons, length_sampleIndices logMax n]
+
+/-! ### FRI completeness -/
+
+/-- FRI's inputs: tallest first, with strictly decreasing heights not below the final height,
+each the values in bit-reversed order of a polynomial of degree below its height over the blowup.
+-/
+def InputsOk (P : Params) (ins : List (Array EF)) : Prop :=
+  ∃ f0 rest, ins = f0 :: rest ∧ Good P (Nat.log2 f0.size) f0 rest
+
+/-- **FRI completeness**: the verifier's FRI accepts the specification prover's proof of
+low-degree inputs whose openings give the inputs' entries, when the grinder finds witnesses. -/
+theorem verifyFri_proveFri (P : Params) (rounds : List (OpenRound Backend.spec))
+    (inputsOf : EF → List (Array EF)) (vrounds : List Round) (t : Transcript)
+    (hlow : ∀ alpha, InputsOk P (inputsOf alpha))
+    (hP : 0 < P.maxLogArity) (hq : 0 < P.numQueries)
+    (hgrind : ∀ c, ∀ bits ∈ [P.commitPowBits, P.queryPowBits],
+      (Challenger.checkWitness t.duplex c bits (t.grinder c bits)).1 = true)
+    (hopen : ∀ alpha index, index < 2 ^ Nat.log2 (((inputsOf alpha).map Array.size).headD 0) →
+      openInput P (Nat.log2 (((inputsOf alpha).map Array.size).headD 0)) index alpha
+        (rounds.map fun (c, _) ↦ c.openAt (index >>>
+          (Nat.log2 (((inputsOf alpha).map Array.size).headD 0) - Nat.log2 c.maxHeight)))
+        vrounds =
+      pure ((inputsOf alpha).map fun v ↦ (Nat.log2 v.size, v.getD (index >>>
+        (Nat.log2 (((inputsOf alpha).map Array.size).headD 0) - Nat.log2 v.size)) 0))) :
+    verifyFri P ((proveFri Backend.spec P rounds inputsOf).run t).1 vrounds t =
+      .ok ((), ((proveFri Backend.spec P rounds inputsOf).run t).2) := by
+  obtain ⟨f0, rest, hins, hg⟩ := hlow t.sampleExt.1
+  have hins' : (inputsOf t.sampleExt.1 : List Backend.spec.V) =
+      (f0 :: rest : List Backend.spec.V) := hins
+  set h0 := Nat.log2 f0.size with hh0
+  set r := chain P f0.size f0 rest t.sampleExt.2 with hr
+  set cp : CommitPhase Committed :=
+    { r.1.foldl pushRd ⟨#[], [], #[], #[], #[]⟩ with finalPoly := finalPolyOf P r.2.1 } with hcp
+  set t3 := cp.arities.toList.foldl (fun t (a : Nat) ↦ t.observe (a : F))
+    (r.2.2.observeExts (finalPolyOf P r.2.1).toList) with ht3
+  set mk : Nat → QueryProof := fun index ↦
+      ⟨(rounds.map fun (c, _) ↦ Backend.spec.openAt c
+        (index >>> (h0 - Backend.spec.logHeight c))).toArray,
+        answerQuery Backend.spec cp index⟩ with hmk
+  set qs := sampleIndices h0 P.numQueries (t3.grind P.queryPowBits).2 with hqs
+  have hrun : (proveFri Backend.spec P rounds inputsOf).run t =
+      (⟨cp.commits, cp.witnesses, (qs.1.map mk).toArray, finalPolyOf P r.2.1,
+        (t3.grind P.queryPowBits).1⟩, qs.2) := proveFri_run P rounds inputsOf t f0 rest hins'
+  rw [hrun]
+  obtain ⟨hcom, hdata, hwit, hari, -⟩ := foldl_pushRd r.1 ⟨#[], [], #[], #[], #[]⟩
+  have hL := hg.1
+  have h24 : h0 ≤ 24 := hg.2.1.2.1
+  have hsz : f0.size = 2 ^ h0 := hg.2.1.1
+  have hfuel : h0 - (P.logBlowup + P.logFinalPolyLen) ≤ f0.size := by
+    rw [hsz]; exact le_trans (Nat.sub_le _ _) (Nat.lt_two_pow_self).le
+  obtain ⟨hfin, hsum⟩ := chain_final P hP f0.size h0 f0 rest t.sampleExt.2 hg hfuel
+  have hsteps : ∀ index, (mk index).steps.toList =
+      answerSteps Backend.spec (r.1.map (·.c)) (r.1.map (·.la)) index := by
+    intro index
+    show (answerSteps Backend.spec cp.data cp.arities.toList index).toArray.toList = _
+    rw [List.toList_toArray]
+    show answerSteps Backend.spec (List.foldl pushRd ⟨#[], [], #[], #[], #[]⟩ r.1).data
+      (List.foldl pushRd ⟨#[], [], #[], #[], #[]⟩ r.1).arities.toList index = _
+    rw [hdata, hari]
+    rfl
+  obtain ⟨n, hn⟩ : ∃ n, P.numQueries = n + 1 := ⟨P.numQueries - 1, by omega⟩
+  have hqs1 : ∃ i0 is, qs.1 = i0 :: is := by
+    rw [hqs, hn, sampleIndices]; exact ⟨_, _, rfl⟩
+  obtain ⟨i0, is, hqs1⟩ := hqs1
+  have hlen : ∀ index, (mk index).steps.size = r.1.length := fun index ↦ by
+    rw [← Array.length_toList, hsteps, length_answerSteps]
+  have hcsize : cp.commits.size = r.1.length := by
+    rw [← Array.length_toList]
+    show (List.foldl pushRd ⟨#[], [], #[], #[], #[]⟩ r.1).commits.toList.length = _
+    rw [hcom, List.length_append, List.length_map]; exact Nat.zero_add _
+  have hwsize : cp.witnesses.size = r.1.length := by
+    rw [← Array.length_toList]
+    show (List.foldl pushRd ⟨#[], [], #[], #[], #[]⟩ r.1).witnesses.toList.length = _
+    rw [hwit, List.length_append, List.length_map]; exact Nat.zero_add _
+  have harities : (Option.map (fun q ↦ q.steps.toList.map (·.logArity))
+      (qs.1.map mk).toArray[0]?).getD [] = r.1.map (·.la) := by
+    rw [hqs1]
+    show (List.map (·.logArity) (mk i0).steps.toList) = _
+    rw [hsteps, answerSteps_logArity]
+  have hct : cp.commits.toList = r.1.map (·.c.root) := by
+    show (List.foldl pushRd ⟨#[], [], #[], #[], #[]⟩ r.1).commits.toList = _
+    rw [hcom]; rfl
+  have hwt : cp.witnesses.toList = r.1.map (·.w) := by
+    show (List.foldl pushRd ⟨#[], [], #[], #[], #[]⟩ r.1).witnesses.toList = _
+    rw [hwit]; rfl
+  have ht3' : t3 = (r.1.map (·.la)).foldl (fun t (a : Nat) ↦ t.observe (a : F))
+      (r.2.2.observeExts (finalPolyOf P r.2.1).toList) := by
+    rw [ht3]
+    show List.foldl _ _ (List.foldl pushRd ⟨#[], [], #[], #[], #[]⟩ r.1).arities.toList = _
+    rw [hari]; rfl
+  have hall : ((List.map mk qs.1).toArray.all fun q ↦
+      q.steps.size == cp.commits.size &&
+        List.map (fun x ↦ x.logArity) q.steps.toList == List.map (fun x ↦ x.la) r.1) = true := by
+    rw [Array.all_eq_true']
+    intro x hx
+    obtain ⟨i, -, rfl⟩ := List.mem_map.mp (List.mem_toArray.mp hx)
+    rw [hlen, hcsize, hsteps, answerSteps_logArity, beq_self_eq_true, beq_self_eq_true,
+      Bool.and_self]
+  have hlog : (List.map (fun x ↦ x.la) r.1).sum + P.logBlowup + P.logFinalPolyLen = h0 := by
+    rw [hsum]; omega
+  have hs0 : Same t t := ⟨rfl, rfl⟩
+  have hs1 : Same t t.sampleExt.2 := same_sampleExt hs0
+  have hs3 : Same t t3 := by
+    rw [ht3']
+    exact same_foldl_observe _ _ (same_observeExts (same_chain P _ _ _ _ hs1) _)
+  unfold verifyFri
+  rw [bind_ok (t' := t.sampleExt.2) (a := t.sampleExt.1) rfl]
+  dsimp only
+  rw [harities, hall, ensure_true, pure_bind, hlog, hwsize, hcsize, beq_self_eq_true, ensure_true,
+    pure_bind, hct, hwt]
+  rw [bind_ok (commit_loop P t (fun c ↦ hgrind c _ List.mem_cons_self) _ ?hb f0.size f0 rest
+    t.sampleExt.2 #[] hs1)]
+  rw [show ((finalPolyOf P r.2.1).size == 2 ^ P.logFinalPolyLen) = true by
+      rw [show (finalPolyOf P r.2.1).size = 2 ^ P.logFinalPolyLen from Array.size_ofFn,
+        beq_self_eq_true],
+    ensure_true, pure_bind,
+    bind_ok (t' := r.2.2.observeExts (finalPolyOf P r.2.1).toList) (a := ()) rfl,
+    List.size_toArray, List.length_map, length_sampleIndices, beq_self_eq_true, ensure_true,
+    pure_bind, bind_ok (observe_loop _ _ ?hobs _), ← ht3']
+  rw [bind_ok (t' := (t3.grind P.queryPowBits).2) (a := true) (by
+      show Except.ok (t3.checkWitness P.queryPowBits (t3.grind P.queryPowBits).1) = _
+      rw [checkWitness_grind hs3 _ (fun c ↦ hgrind c _ (List.mem_cons_of_mem _
+        List.mem_cons_self))]),
+    ensure_true, pure_bind, ← Array.forIn_toList, List.toList_toArray,
+    bind_ok (query_loop h0 t mk _ (queryBody P h0 t.sampleExt.1 vrounds
+      (#[] ++ (r.1.map Rd.beta).toArray) (r.1.map (·.c.root)).toArray (finalPolyOf P r.2.1))
+      ?hqb ?hq _ _
+      (same_grind hs3 _))]
+  · rfl
+  · intro _; rfl
+  · intro t' _
+    set i := (t'.sampleBits h0).1 with hi_def
+    have hi : i < 2 ^ h0 := sampleBits_lt _ _
+    have h1 : openInput P h0 i t.sampleExt.1 (mk i).inputs.toList vrounds (t'.sampleBits h0).2 =
+        .ok ((f0 :: rest).map (roOf i h0), (t'.sampleBits h0).2) := by
+      have hop := hopen t.sampleExt.1 i
+      rw [hins] at hop
+      exact congrFun (hop hi) (t'.sampleBits h0).2
+    have hidxF : i >>> (h0 - (P.logBlowup + P.logFinalPolyLen)) <
+        2 ^ (P.logBlowup + P.logFinalPolyLen) := by
+      rw [Nat.shiftRight_eq_div_pow]
+      refine Nat.div_lt_of_lt_mul ?_
+      rw [← pow_add, Nat.sub_add_cancel hL]; exact hi
+    have h2 : verifyQuery P h0 i (#[] ++ (r.1.map Rd.beta).toArray : Array EF).toList
+        (r.1.map (·.c.root)).toArray.toList
+        (mk i).steps.toList ((f0 :: rest).map (roOf i h0)) (t'.sampleBits h0).2 =
+        .ok ((r.2.1.getD (i >>> (h0 - (P.logBlowup + P.logFinalPolyLen))) 0,
+          i >>> (h0 - (P.logBlowup + P.logFinalPolyLen))), (t'.sampleBits h0).2) := by
+      rw [hsteps, Array.toList_append, List.toList_toArray, List.toList_toArray]
+      exact verifyQuery_run P hP f0 rest h0 hg f0.size hfuel t.sampleExt.2 _ i hi
+    exact queryBody_run P h0 t.sampleExt.1 vrounds _ _ (finalPolyOf P r.2.1) (mk i) t' _
+      _ _ h1 h2 (horner_idft r.2.1 P.logBlowup P.logFinalPolyLen h0 _ hfin hL h24 hidxF)
+  · intros; rfl
+  · intros; rfl
 
 end CompStark.Complete

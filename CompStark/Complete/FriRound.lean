@@ -96,7 +96,8 @@ theorem unflatten_flatMap (l : List EF) : unflatten (l.flatMap Ext.coeffs) = l :
     rw [unflatten_cons, ih]
 
 theorem getD_flatMap_coeffs (A : Array EF) (t : Nat) (ht : t < 4 * A.size) :
-    (A.flatMap fun x ↦ (Ext.coeffs x).toArray).getD t 0 = Fast.coord (t % 4) (A.getD (t / 4) 0) := by
+    (A.flatMap fun x ↦ (Ext.coeffs x).toArray).getD t 0 =
+      Fast.coord (t % 4) (A.getD (t / 4) 0) := by
   have hA : A = Array.ofFn (n := A.size) fun j ↦ A.getD j.val 0 :=
     Array.ext (by rw [Array.size_ofFn]) fun i h1 h2 ↦ by
       rw [Array.getElem_ofFn, getD_lt _ _ h1]
@@ -148,7 +149,8 @@ theorem answer_round (f : Array EF) (h la idx : Nat) (hs : f.size = 2 ^ h) (hla 
   have hhl : 2 ^ h = 2 ^ (h - la) * 2 ^ la := by rw [← pow_add, Nat.sub_add_cancel hla]
   have hrlt : idx >>> la < 2 ^ (h - la) := by
     rw [hr]; exact Nat.div_lt_of_lt_mul (by rw [Nat.mul_comm, ← hhl]; exact hidx)
-  have hridx : (idx >>> la) * 2 ^ la + pos = idx := by rw [hr, Nat.mul_comm]; exact Nat.div_add_mod _ _
+  have hridx : (idx >>> la) * 2 ^ la + pos = idx := by
+    rw [hr, Nat.mul_comm]; exact Nat.div_add_mod _ _
   have hrb : (idx >>> la + 1) * 2 ^ la ≤ f.size := by
     rw [hs, hhl]; exact Nat.mul_le_mul_right _ hrlt
   set G := (List.range (2 ^ la)).map fun k ↦ f.getD ((idx >>> la) * 2 ^ la + k) 0 with hG
@@ -166,7 +168,8 @@ theorem answer_round (f : Array EF) (h la idx : Nat) (hs : f.size = 2 ^ h) (hla 
   have hevals : evals = G := by
     show (List.range (2 ^ la)).map _ = G
     rw [evals_answer (2 ^ la) pos hpos ev (f.getD idx 0) (by
-      rw [hev, hG, List.getD_eq_getElem _ _ (by rw [List.length_map, List.length_range]; exact hpos),
+      rw [hev, hG,
+        List.getD_eq_getElem _ _ (by rw [List.length_map, List.length_range]; exact hpos),
         List.getElem_map, List.getElem_range, hridx]), hev]
     exact List.map_congr_left fun j hj ↦ by
       rw [List.getD_eq_getElem _ _ (by rw [hG]; simpa using hj),
