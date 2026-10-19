@@ -10,8 +10,7 @@ public import CompStark.Completeness
 /-! # Constructions behind the IOP model
 
 The domain `L` as an ArkLib smooth coset FFT domain, Plonky3's folding schedule, the acceptance
-probability of ArkLib's FRI oracle reduction against its best prover, and closest-codeword
-decoding. `CompStark/Iop.lean` states the protocol with them.
+probability of ArkLib's FRI oracle reduction against its best prover. `CompStark/Iop.lean` states the protocol with them.
 -/
 
 @[expose] public section
@@ -79,16 +78,6 @@ def folds (maxLogArity : Nat) : Nat → List ℕ+
     let la := max 1 (min maxLogArity (remaining + 1))
     ⟨la, by omega⟩ :: folds maxLogArity (remaining + 1 - la)
   decreasing_by omega
-
-/-- A polynomial of degree below `n` whose values at `points` are closest to `word` in Hamming
-distance. -/
-noncomputable def closestPolynomial {ι : Type} [Fintype ι] (n : Nat) (points : ι → 𝔽)
-    (word : ι → 𝔽) : 𝔽[X] :=
-  let candidates : Finset (Fin n → 𝔽) := Finset.univ
-  let dist (c : Fin n → 𝔽) : Nat :=
-    hammingDist word fun i ↦ ((degreeLTEquiv 𝔽 n).symm c : 𝔽[X]).eval (points i)
-  (degreeLTEquiv 𝔽 n).symm
-    (Classical.choose (candidates.exists_min_image dist Finset.univ_nonempty))
 
 /-- The challenges of ArkLib's FRI protocol, sampled uniformly. -/
 noncomputable instance friChallenges {n k : Nat} (ω : SmoothCosetFftDomain n 𝕂)
