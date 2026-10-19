@@ -250,7 +250,7 @@ theorem evalWords_eq (vals : Array F) (w parts R B : Nat) (next : Array Nat)
     (hEf : ∀ j < parts * R, (E j).isFirstRow = fA.getD j 0)
     (hEl : ∀ j < parts * R, (E j).isLastRow = lA.getD j 0)
     (hEt : ∀ j < parts * R, (E j).isTransition = tA.getD j 0) :
-    ∀ e, colsBelow w e = true →
+    ∀ e : Expr, e.colsBelow w = true →
       evalWords (encode (colsOf vals w parts R)) w R B next contiguous pis (encode fA)
         (encode lA) (encode tA) r0 e =
       encode (Array.ofFn (n := B) fun k ↦ e.eval (E (r0 + k.val))) := by
@@ -266,13 +266,13 @@ theorem evalWords_eq (vals : Array F) (w parts R B : Nat) (next : Array Nat)
   intro e he
   induction e with
   | cur c =>
-    simp only [colsBelow, decide_eq_true_eq] at he
+    simp only [Expr.colsBelow, decide_eq_true_eq] at he
     rw [evalWords, slice_cols vals w parts R B c r0 he hR hBR hBr hB0 hr]
     congr 1
     refine congrArg Array.ofFn (funext fun k ↦ ?_)
     rw [Expr.eval, hEcur _ (by omega) c he]
   | next c =>
-    simp only [colsBelow, decide_eq_true_eq] at he
+    simp only [Expr.colsBelow, decide_eq_true_eq] at he
     rw [evalWords]
     split
     · rename_i n0 hn0
@@ -317,7 +317,7 @@ theorem evalWords_eq (vals : Array F) (w parts R B : Nat) (next : Array Nat)
   | isLastRow => exact hsel lA hl _ hEl
   | isTransition => exact hsel tA ht _ hEt
   | add a b iha ihb =>
-    simp only [colsBelow, Bool.and_eq_true] at he
+    simp only [Expr.colsBelow, Bool.and_eq_true] at he
     rw [evalWords, iha he.1, ihb he.2, Words.addWords_encode _ _ _ (by rw [Array.size_ofFn])
       (by rw [Array.size_ofFn]) (by rw [Array.size_ofFn]; omega) (by rw [Array.size_ofFn]; omega)]
     congr 1
@@ -325,7 +325,7 @@ theorem evalWords_eq (vals : Array F) (w parts R B : Nat) (next : Array Nat)
     rw [NTTFast.Packed.getD_ofFn_bounded _ _ i.isLt, NTTFast.Packed.getD_ofFn_bounded _ _ i.isLt]
     rfl
   | sub a b iha ihb =>
-    simp only [colsBelow, Bool.and_eq_true] at he
+    simp only [Expr.colsBelow, Bool.and_eq_true] at he
     rw [evalWords, iha he.1, ihb he.2, Words.subWords_encode _ _ _ (by rw [Array.size_ofFn])
       (by rw [Array.size_ofFn]) (by rw [Array.size_ofFn]; omega) (by rw [Array.size_ofFn]; omega)]
     congr 1
@@ -333,7 +333,7 @@ theorem evalWords_eq (vals : Array F) (w parts R B : Nat) (next : Array Nat)
     rw [NTTFast.Packed.getD_ofFn_bounded _ _ i.isLt, NTTFast.Packed.getD_ofFn_bounded _ _ i.isLt]
     rfl
   | mul a b iha ihb =>
-    simp only [colsBelow, Bool.and_eq_true] at he
+    simp only [Expr.colsBelow, Bool.and_eq_true] at he
     rw [evalWords, iha he.1, ihb he.2, Words.mulWords_encode _ _ _ (by rw [Array.size_ofFn])
       (by rw [Array.size_ofFn]) (by rw [Array.size_ofFn]; omega) (by rw [Array.size_ofFn]; omega)]
     congr 1
@@ -520,24 +520,17 @@ theorem word_encode_ofFn (B : Nat) (hB : 4 * B < USize.size) (X : Nat → F) (k 
 
 /-- The fast quotient is the specification's. -/
 theorem quotientWith_rel (A : Air) (pis : List F) (d l : Nat) (alpha : EF) {ext : PMat} {s : Mat}
-    (h : RM ext s) :
+    (h : RM ext s) (hs : MatOk s) (hh : 2 ^ (d + l) ≤ s.height)
+    (hc : ∀ c ∈ A.constraints, c.colsBelow s.width) :
     quotientWith (quotientTables d l) A pis ext alpha = quotientOfLde A pis d l s alpha := by
-  obtain ⟨hw, hh, hv⟩ := h
-  have hm : ext.toMat = s := by
-    obtain ⟨sw, sh, sv⟩ := s
-    simp only at hw hh hv
-    simp only [PMat.toMat, hw, hh, hv, CompPoly.PackedRepr.decode_encode]
+  obtain ⟨hw, hhe, hv⟩ := h
+  obtain ⟨-, -, hvs', hadd⟩ := hs
+  have hus : 4 * s.values.size < USize.size := by
+    unfold Addressable at hadd
+    rw [hvs']
+    omega
+  have hn' := hh
   unfold quotientWith
-  split
-  · rw [hm]; rfl
-  rename_i hg
-  simp only [Bool.or_eq_true, Bool.not_eq_true', not_or, Bool.not_eq_false, decide_eq_true_eq,
-    Nat.not_lt] at hg
-  obtain ⟨⟨hfit, hn⟩, hall⟩ := hg
-  have hfit' := hfit
-  simp only [PMat.fits, Bool.and_eq_true, beq_iff_eq, decide_eq_true_eq, hv,
-    NTTFast.Packed.size_encode_fields] at hfit'
-  obtain ⟨hvs, hus⟩ := hfit'
   have hTd : (quotientTables d l).degreeBits = d := rfl
   have hTl : (quotientTables d l).logChunks = l := rfl
   have hTp : (quotientTables d l).perm = bitRevPerm (d + l) := rfl
@@ -552,8 +545,6 @@ theorem quotientWith_rel (A : Air) (pis : List F) (d l : Nat) (alpha : EF) {ext 
   rw [hTd, hTl, hTp, hTz, tables_first, tables_last, tables_trans] at *
   rw [hv, hw] at *
   generalize quotientTables d l = T at hcont hnext hTB ⊢
-  have hn' : 2 ^ (d + l) ≤ s.height := by rw [← hh]; exact hn
-  have hvs' : s.values.size = s.width * s.height := by rw [← hh]; omega
   have hpow : ∃ e, 2 ^ (d + l) / (if 2 ^ (d + l) < 4096 then 1 else 16) = 2 ^ e ∧
       (if 2 ^ (d + l) < 4096 then 1 else 16) * 2 ^ e = 2 ^ (d + l) := by
     split
@@ -647,14 +638,14 @@ theorem quotientWith_rel (A : Air) (pis : List F) (d l : Nat) (alpha : EF) {ext 
       (encode ((bitRevPerm (d + l)).map fun i ↦ (qTrans d l).getD i 0)) (blk * B) a.1 =
       encode (Array.ofFn (n := B) fun k ↦ a.1.eval (E (blk * B + k.val))) := by
     intro a ha
-    have hc : a.1 ∈ A.constraints := (List.of_mem_zip ha).1
+    have hc' : a.1 ∈ A.constraints := (List.of_mem_zip ha).1
     refine evalWords_eq s.values s.width parts (2 ^ e) B T.next T.contiguous pis _ _ _ (blk * B) E
       (Nat.two_pow_pos e) hBR hB0 (Dvd.intro_left blk rfl) (by rw [hpe]; exact hblkB) hM hus
       (by have := USize.le_size; omega) ?_ ?_ (by rw [Array.size_map, hsizeP, hpe]; exact hblkB)
       (by rw [Array.size_map, hsizeP, hpe]; exact hblkB)
       (by rw [Array.size_map, hsizeP, hpe]; exact hblkB) ?_ ?_ (fun _ _ ↦ rfl) (fun _ _ ↦ rfl)
       (fun j hj ↦ hsel _ j hj) (fun j hj ↦ hsel _ j hj) (fun j hj ↦ hsel _ j hj) a.1
-      (List.all_eq_true.mp hall _ hc)
+      (hc _ hc')
     · intro j hj
       rw [hpe] at hj ⊢
       rw [hnext j hj]
