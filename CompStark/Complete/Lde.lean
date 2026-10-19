@@ -1,0 +1,310 @@
+/-
+Copyright (c) 2026 zkSecurity. All rights reserved.
+Released under Apache 2.0 license as described in the file LICENSE.
+-/
+module
+
+public import CompStark.Complete.Defs
+public import CompStark.Stark.Fast.Lde
+public import CompStark.Stark.Fast.Openings
+import all CompPoly.Univariate.Basic
+
+/-! # Low-degree extensions and their openings
+
+`ldeRef` interpolates every column on `⟨ω⟩` by an inverse transform and evaluates the
+interpolant `c` by Horner's rule at the extended coset `shift · ⟨ω_N⟩` (`ldeRef_getD`). Its
+matrix is therefore an LDE in the sense of `Mat.IsLde`, of the polynomials
+`p(X) = c(shift g⁻¹ X)`, which agree with the column at `g shift⁻¹ ωⁱ` (`ldeRef_isLde`).
+
+`Fri.openedAt` reads the first `2 ^ (h - b)` stored rows of an LDE of height `2 ^ h`: in
+bit-reversed order they are the values of the column polynomial on the coset `g · ⟨ω_{h-b}⟩`, so
+the barycentric sum it computes is the polynomial's value at the point (`openedAt_isLde`), by
+CompPoly's `aeval_eq_cosetBarycentric`. A point outside the base field is off the coset.
+-/
+
+public section
+namespace CompStark
+open CompStark.Stark CompStark.Stark.Fast CompStark.Fri Polynomial Montgomery.Native32
+open CompPoly
+
+local notation "F" => KoalaBear.Fast.Field
+local notation "EF" => KoalaBear.Fast.Ext4
+
+/-! ### The two-adic generators in the spec field -/
+
+/-- The spec field's domain of size `2 ^ k`. -/
+noncomputable abbrev specDomain (k : Nat) (hk : k ≤ 24) : CPolynomial.NTT.Domain KoalaBear.Field :=
+  CPolynomial.NTT.KoalaBear.domainOfLogN k hk
+
+/-- Plonky3's generator of order `2 ^ k` is CompPoly's. -/
+theorem toField_twoAdicGen (k : Nat) (hk : k ≤ 24) :
+    FastField.toField (twoAdicGen k) = (specDomain k hk).omega := by
+  rw [twoAdicGen_eq_table ⟨k, by omega⟩]
+  simp only [specDomain, CPolynomial.NTT.KoalaBear.domainOfLogN,
+    CPolynomial.NTT.KoalaBear.bitsOfLogN, Fin.getElem_fin]
+  simp only [List.getElem_of_eq KoalaBear.Fast.twoAdicGenerators_eq_map, List.getElem_map,
+    KoalaBear.Fast.ofField, toField_ofField]
+
+/-- `ω` of order `2 ^ k` is a primitive root of unity in the spec field. -/
+theorem isPrimitiveRoot_twoAdicGen (k : Nat) (hk : k ≤ 24) :
+    IsPrimitiveRoot (FastField.toField (twoAdicGen k)) (2 ^ k) := by
+  rw [toField_twoAdicGen k hk]
+  exact (specDomain k hk).primitive
+
+/-- `gen` is nonzero. -/
+theorem gen_ne_zero : gen ≠ 0 := by
+  intro h
+  have := congrArg FastField.toField h
+  rw [gen, toField_zero] at this
+  revert this
+  decide
+
+
+/-! ### `ldeRef` -/
+
+/-- Column `j`'s coefficients in `ldeRef`: the inverse transform of the column. -/
+def ldeCoeffs (logH w j : Nat) (m : Array F) : Array F :=
+  Array.ofFn (n := 2 ^ logH) fun k ↦ ((2 ^ logH : Nat) : F)⁻¹ *
+    (List.range (2 ^ logH)).foldl (fun acc i ↦
+      acc + m.getD (i * w + j) 0 * powF (twoAdicGen logH)⁻¹ (i * k.val % 2 ^ logH)) 0
+
+/-- Horner's rule is evaluation. -/
+theorem foldr_horner (a : Array F) (y : F) :
+    a.foldr (fun c acc ↦ acc * y + c) 0 = CPolynomial.Raw.eval y a := by
+  rw [CompPoly.CPolynomial.Raw.eval, ← CPolynomial.Raw.eval₂Horner_eq_eval₂]
+  rfl
+
+/-- The values of `ldeRef`: entry `r · w + j` is column `j`'s interpolant at
+`shift · ω_N ^ bitrev r`. -/
+theorem ldeRef_values (logH bits : Nat) (shift : F) (w : Nat) (m : Array F) :
+    (ldeRef logH bits shift w m).values = Array.ofFn (n := 2 ^ (logH + bits) * w) fun k ↦
+      CPolynomial.Raw.eval
+        (shift * twoAdicGen (logH + bits) ^ reverseBits (k.val / w) (logH + bits))
+        (ldeCoeffs logH w (k.val % w) m) := by
+  simp only [ldeRef, Mat.ofValues]
+  rw [flatten_ofFn _ w _ fun r j ↦ CPolynomial.Raw.eval (shift * twoAdicGen (logH + bits) ^
+    reverseBits r (logH + bits)) (ldeCoeffs logH w j m)]
+  intro r
+  apply Array.ext
+  · simp only [Array.size_map, List.size_toArray, List.length_map, List.length_range,
+      Array.size_range]
+  · intro j h1 h2
+    simp only [Array.getElem_map, List.getElem_toArray, List.getElem_map, List.getElem_range,
+      Array.getElem_range, foldr_horner, powF_eq, ldeCoeffs]
+
+
+/-- The polynomial of `ldeCoeffs` takes the column's values on `⟨ω⟩`. -/
+theorem eval_ldeCoeffs (logH bits w j : Nat) (m : Array F) (hlog : logH + bits ≤ 24) (i : Nat)
+    (hi : i < 2 ^ logH) :
+    CPolynomial.Raw.eval (twoAdicGen logH ^ i) (ldeCoeffs logH w j m) = m.getD (i * w + j) 0 := by
+  obtain ⟨P, hP⟩ : ∃ P, plan? logH bits 1 = some P := ⟨_, by rw [plan?, dite_eq_left hlog]⟩
+  obtain ⟨h24, hlogN, hb, -, hω⟩ := plan?_some hP
+  have hlogH : P.logH = logH := by
+    change P.domain.logN - P.bits = logH
+    omega
+  have hn : (CPolynomial.NTTFast.Packed.powDomain P.domain P.bits P.bits_le).n = 2 ^ logH := by
+    change 2 ^ P.logH = 2 ^ logH
+    rw [hlogH]
+  have hDω : (CPolynomial.NTTFast.Packed.powDomain P.domain P.bits P.bits_le).omega =
+      twoAdicGen logH := by
+    change P.domain.omega ^ 2 ^ P.bits = _
+    rw [hω, hb, twoAdicGen_pow _ _ h24]
+  rw [ldeCoeffs, ← inverseSpec_column P logH bits w j m hlogN hb hω h24]
+  have := CPolynomial.NTT.Inverse.inverseSpec_eval_node_eq
+    (CPolynomial.NTTFast.Packed.powDomain P.domain P.bits P.bits_le)
+    (CPolynomial.NTTFast.Packed.column m w (2 ^ P.logH) j).toArray ⟨i, by rw [hn]; exact hi⟩
+  rw [CPolynomial.NTT.Domain.node, hDω] at this
+  rw [this, getD_column _ _ _ _ _ (by rw [hlogH]; exact hi)]
+
+/-- The polynomial of `ldeCoeffs` has degree below `2 ^ logH`. -/
+theorem natDegree_ldeCoeffs (logH w j : Nat) (m : Array F) :
+    (CPolynomial.Raw.toPoly (ldeCoeffs logH w j m)).natDegree < 2 ^ logH :=
+  CPolynomial.NTT.Coset.natDegree_lt_of_size_le _ (Nat.two_pow_pos _)
+    (by rw [ldeCoeffs, Array.size_ofFn])
+
+/-- Column `j` of `ldeRef` as a spec polynomial: its interpolant `c` on `⟨ω⟩` at
+`shift g⁻¹ X`. -/
+noncomputable def ldePoly (logH w j : Nat) (shift : F) (m : Array F) : KoalaBear.Field[X] :=
+  ((CPolynomial.Raw.toPoly (ldeCoeffs logH w j m)).map
+    (ringEquiv KoalaBear.fieldSize).toRingHom).comp
+    (C (FastField.toField (shift * gen⁻¹)) * X)
+
+/-- `ldePoly` at `x` is the interpolant at `shift g⁻¹ x`. -/
+theorem eval_ldePoly (logH w j : Nat) (shift : F) (m : Array F) (x : KoalaBear.Field) (y : F)
+    (h : FastField.toField (shift * gen⁻¹) * x = FastField.toField y) :
+    (ldePoly logH w j shift m).eval x =
+      FastField.toField (CPolynomial.Raw.eval y (ldeCoeffs logH w j m)) := by
+  rw [ldePoly, eval_comp, eval_mul, eval_C, eval_X, h, eval_map]
+  exact (eval₂_at_apply (p := CPolynomial.Raw.toPoly (ldeCoeffs logH w j m))
+    (ringEquiv KoalaBear.fieldSize).toRingHom y).trans
+    (congrArg FastField.toField (CPolynomial.Raw.eval_toPoly_eq_eval y _))
+
+/-- `ldePoly` has degree below `2 ^ logH`. -/
+theorem degree_ldePoly (logH w j : Nat) (shift : F) (m : Array F) :
+    (ldePoly logH w j shift m).degree < ((2 ^ logH : Nat) : WithBot Nat) := by
+  refine degree_le_natDegree.trans_lt (WithBot.coe_lt_coe.mpr ?_)
+  refine natDegree_comp_le.trans_lt ?_
+  refine (Nat.mul_le_mul natDegree_map_le
+    (natDegree_C_mul_le _ _ |>.trans natDegree_X_le)).trans_lt ?_
+  rw [Nat.mul_one]
+  exact natDegree_ldeCoeffs logH w j m
+
+
+/-- Column `j`'s polynomial. -/
+theorem getD_ldePolys (logH w : Nat) (shift : F) (m : Array F) (j : Nat) (hj : j < w) :
+    ((List.range w).map fun j ↦ ldePoly logH w j shift m).getD j 0 = ldePoly logH w j shift m := by
+  rw [List.getD_eq_getElem?_getD, List.getElem?_map, List.getElem?_range hj, Option.map_some,
+    Option.getD_some]
+
+/-- `g ≠ 0` in the spec field. -/
+theorem toField_gen_ne_zero : FastField.toField gen ≠ 0 := fun h ↦
+  gen_ne_zero (toField_injective (h.trans toField_zero.symm))
+
+/-- **`ldeRef` is an LDE**: of the polynomials that take column `j`'s values at
+`g shift⁻¹ ωⁱ`. -/
+theorem ldeRef_isLde (logH bits : Nat) (shift : F) (w : Nat) (m : Array F)
+    (_hm : m.size = 2 ^ logH * w) (hlog : logH + bits ≤ 24) (hs : shift ≠ 0) :
+    ∃ ps, CompStark.Mat.IsLde bits (logH + bits) (ldeRef logH bits shift w m) ps ∧
+      ∀ j < w, ∀ i < 2 ^ logH, (ps.getD j 0).eval (FastField.toField (gen * shift⁻¹) *
+        FastField.toField (twoAdicGen logH) ^ i) = FastField.toField (m.getD (i * w + j) 0) := by
+  have hs' : FastField.toField shift ≠ 0 := fun h ↦
+    hs (toField_injective (h.trans toField_zero.symm))
+  have hg := toField_gen_ne_zero
+  have hw : (ldeRef logH bits shift w m).width = w := rfl
+  refine ⟨(List.range w).map fun j ↦ ldePoly logH w j shift m,
+    ⟨by rw [hw, List.length_map, List.length_range], rfl,
+      by rw [ldeRef_values, Array.size_ofFn, hw, Nat.mul_comm]; rfl, by omega, hlog,
+      fun p hp ↦ ?_, fun r hr j hj ↦ ?_⟩, fun j hj i hi ↦ ?_⟩
+  · obtain ⟨j, -, rfl⟩ := List.mem_map.mp hp
+    rw [Nat.add_sub_cancel]
+    exact degree_ldePoly logH w j shift m
+  · rw [List.length_map, List.length_range] at hj
+    have hlt : r * w + j < 2 ^ (logH + bits) * w := by nlinarith
+    have hq : (r * w + j) / w = r := by
+      rw [Nat.add_comm, Nat.add_mul_div_right _ _ (by omega), Nat.div_eq_of_lt hj, Nat.zero_add]
+    have hr' : (r * w + j) % w = j := by
+      rw [Nat.add_comm, Nat.add_mul_mod_self_right, Nat.mod_eq_of_lt hj]
+    rw [getD_ldePolys _ _ _ _ _ hj, hw, ldeRef_values, Array.getD_eq_getD_getElem?,
+      Array.getElem?_ofFn, dite_eq_left_of_eq_true (eq_true hlt), Option.getD_some]
+    simp only [hq, hr']
+    rw [eval_ldePoly]
+    simp only [toField_mul, toField_inv, toField_npow]
+    field_simp
+  · rw [getD_ldePolys _ _ _ _ _ hj, eval_ldePoly _ _ _ _ _ _ (twoAdicGen logH ^ i),
+      eval_ldeCoeffs logH bits w j m hlog i hi]
+    simp only [toField_mul, toField_inv, toField_npow]
+    field_simp
+
+
+/-! ### Openings -/
+
+open KoalaBear.Fast (Ext4) in
+/-- A point outside the base field is not a base element. -/
+theorem toSpec_ne_ofBase {z : EF} (hz : Ext.OutsideBase z) (y : KoalaBear.Field) :
+    Ext4.toSpec z ≠ CompPoly.Extension.Ext.ofBase y := by
+  intro h
+  apply sub_ofBase_ne_zero hz (KoalaBear.Fast.ofField y)
+  rw [Ext4.toSpec_sub, Ext4.toSpec_ofBase, KoalaBear.Fast.ofField, toField_ofField, h, sub_self]
+
+open KoalaBear.Fast (Ext4) in
+/-- A point outside the base field is off every coset of a two-adic subgroup: its `n`-th power
+is not `sⁿ`. -/
+theorem pow_ne_of_outsideBase {z : EF} (hz : Ext.OutsideBase z)
+    (D : CPolynomial.NTT.Domain KoalaBear.Field) {s : KoalaBear.Field} (hs : s ≠ 0) :
+    Ext4.toSpec z ^ D.n ≠ algebraMap KoalaBear.Field KoalaBear.Ext4 s ^ D.n := by
+  intro h
+  have h0 : (Lagrange.nodal Finset.univ (D.cosetNode s : D.Idx → KoalaBear.Ext4)).eval
+      (Ext4.toSpec z) = 0 := by
+    rw [CPolynomial.NTT.Domain.cosetNodal_eq D hs, eval_sub, eval_pow, eval_X, eval_C, h,
+      sub_self]
+  rw [Lagrange.eval_nodal, Finset.prod_eq_zero_iff] at h0
+  obtain ⟨i, -, hi⟩ := h0
+  exact toSpec_ne_ofBase hz _ (sub_eq_zero.mp hi)
+
+open KoalaBear.Fast (Ext4) in
+/-- A column sum of `Fri.openedAt` in the spec field. -/
+theorem toSpec_colSum (values : Array F) (perm : Array Nat) (weights : Array EF) (w j : Nat) :
+    ∀ h, Ext4.toSpec (colSum values perm weights w h j) =
+      ∑ i ∈ Finset.range h, FastField.toField (values.getD (perm.getD i 0 * w + j) 0) •
+        Ext4.toSpec (weights.getD i 0)
+  | 0 => by rw [colSum, List.range'_zero, List.foldl_nil, Finset.sum_range_zero, Ext4.toSpec_zero]
+  | h + 1 => by
+    rw [Finset.sum_range_succ, ← toSpec_colSum values perm weights w j h, colSum, colSum,
+      List.range'_concat, List.foldl_append, List.foldl_cons, List.foldl_nil, Nat.zero_add,
+      Nat.one_mul, Ext4.toSpec_add, Ext4.toSpec_smul]
+
+/-- Reversing the bits of `0`. -/
+theorem bitRevNat_zero : ∀ b, CPolynomial.NTT.Transform.bitRevNat b 0 = 0
+  | 0 => by
+    have := CPolynomial.NTT.Transform.bitRevNat_lt 0 0
+    rw [Nat.pow_zero] at this
+    omega
+  | b + 1 => by
+    have := CPolynomial.NTT.Transform.bitRevNat_even b 0
+    rw [Nat.mul_zero] at this
+    rw [this, bitRevNat_zero b]
+
+/-- The first `2 ^ L` stored rows of an LDE of height `2 ^ (L + b)` hold the coset
+`g · ⟨ω_L⟩`: stored row `bitrev_L i` is the point `g ω_Lⁱ`. -/
+theorem reverseBits_low (L b i : Nat) (hi : i < 2 ^ L) :
+    reverseBits (CPolynomial.NTT.Transform.bitRevNat L i) (L + b) = 2 ^ b * i := by
+  rw [reverseBits_eq, Nat.add_comm L b]
+  have := CPolynomial.NTTFast.Packed.bitRevNat_concat b L 0
+    (CPolynomial.NTT.Transform.bitRevNat L i) (CPolynomial.NTT.Transform.bitRevNat_lt L i)
+  rw [Nat.mul_zero, Nat.zero_add, bitRevNat_zero, Nat.add_zero,
+    CPolynomial.NTT.Transform.bitRevNat_involutive L i hi] at this
+  exact this
+
+
+open KoalaBear.Fast (Ext4) in
+/-- The scale of the barycentric formula in the spec field. -/
+theorem toSpec_cosetFactor (L : Nat) (s : F) (z : EF) :
+    Ext4.toSpec (KoalaBear.Fast.cosetFactor L s z) =
+      (Ext4.toSpec z ^ 2 ^ L - algebraMap KoalaBear.Field KoalaBear.Ext4
+        (FastField.toField s) ^ 2 ^ L) * (((2 ^ L : Nat) : KoalaBear.Ext4) *
+          algebraMap KoalaBear.Field KoalaBear.Ext4 (FastField.toField s) ^ 2 ^ L)⁻¹ := by
+  simp only [KoalaBear.Fast.cosetFactor]
+  rw [Ext4.toSpec_mul, Ext4.toSpec_sub, KoalaBear.Fast.Ext4.toSpec_powTwo, Ext4.toSpec_ofBase,
+    Ext4.toSpec_inv, Ext4.toSpec_ofBase, toField_mul, toField_natCast, toField_pow]
+  simp only [← CompPoly.Extension.Ext.algebraMap_eq_ofBase, map_mul, map_pow, map_natCast]
+
+open KoalaBear.Fast (Ext4) in
+/-- **Openings are evaluations**: the values `Fri.openedAt` computes from an LDE at a point
+outside the base field are its polynomials' values there. -/
+theorem openedAt_isLde (b h : Nat) (m : Stark.Mat) (ps : List KoalaBear.Field[X]) (z : EF)
+    (hm : CompStark.Mat.IsLde b h m ps) (hz : Ext.OutsideBase z) :
+    (Fri.openedAt b m z).size = ps.length ∧ ∀ j < ps.length,
+      Ext4.toSpec ((Fri.openedAt b m z).getD j 0) = aeval (Ext4.toSpec z) (ps.getD j 0) := by
+  obtain ⟨hw, hh, -, hb, h24, hdeg, hval⟩ := hm
+  have hlog : Nat.log2 m.height - b = h - b := by rw [hh, Nat.log2_two_pow]
+  refine ⟨by rw [openedAt_eq, Array.size_ofFn, hw], fun j hj ↦ ?_⟩
+  set L := h - b with hL
+  have hLb : h = L + b := by omega
+  have hL24 : L ≤ 24 := by omega
+  set D := specDomain L hL24
+  have hDn : D.n = 2 ^ L := rfl
+  have hp : (ps.getD j 0).degree < (D.n : WithBot Nat) :=
+    hdeg _ (by rw [List.getD_eq_getElem _ _ hj]; exact List.getElem_mem hj)
+  rw [openedAt_eq, Array.getD_eq_getD_getElem?, Array.getElem?_ofFn,
+    dite_eq_left_of_eq_true (eq_true (by rw [hw]; exact hj)), Option.getD_some, hlog,
+    Ext4.toSpec_mul, toSpec_cosetFactor, toSpec_colSum,
+    CPolynomial.NTT.Domain.aeval_eq_cosetBarycentric D toField_gen_ne_zero _ hp _
+      (pow_ne_of_outsideBase hz D toField_gen_ne_zero),
+    ← Fin.sum_univ_eq_sum_range (fun i ↦ FastField.toField (m.values.getD
+      ((bitRevPerm L).getD i 0 * m.width + j) 0) • Ext4.toSpec ((baryWeights L z).getD i 0))]
+  refine congrArg₂ (· * ·) rfl (Finset.sum_congr rfl fun i _ ↦ ?_)
+  have hi : i.val < 2 ^ L := i.isLt
+  have hr := CPolynomial.NTT.Transform.bitRevNat_lt L i
+  rw [bitRevPerm_getD L i hi, baryWeights_getD hz L i hi, cosetPoints_eq,
+    getD_lt (Array.ofFn (n := 2 ^ L) fun i ↦ gen * twoAdicGen L ^ i.val) i.val
+      (by rw [Array.size_ofFn]; exact hi), Array.getElem_ofFn,
+    hval _ (by rw [hLb, Nat.pow_add]; nlinarith [Nat.two_pow_pos b]) j hj,
+    hLb, reverseBits_low L b i hi, pow_mul, ← toField_npow,
+    twoAdicGen_pow L b (by omega), toField_twoAdicGen L hL24]
+  simp only [bw, Ext4.toSpec_smul, Ext4.toSpec_inv, Ext4.toSpec_sub, Ext4.toSpec_ofBase,
+    Algebra.smul_def, ← CompPoly.Extension.Ext.algebraMap_eq_ofBase,
+    CPolynomial.NTT.Domain.cosetNode, CPolynomial.NTT.Domain.node, toField_mul, toField_npow,
+    toField_twoAdicGen L hL24, D, map_mul, map_pow]
+  ring
+
+end CompStark
