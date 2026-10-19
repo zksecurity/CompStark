@@ -60,3 +60,7 @@ public import CompStark.Complete.Quotient
 public import CompStark.Complete.Stark
 public import CompStark.Stark.Satisfied
 public import CompStark.Completeness
+public import CompStark.Sound.Defs
+public import CompStark.Iop
+public import CompStark.Soundness
+public import CompStark.Sound.Steps
