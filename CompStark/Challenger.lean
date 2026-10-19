@@ -96,18 +96,20 @@ def grindFrom (D : Duplex F 24) (c : Challenger F 24) (bits : Nat) : Nat → Nat
     let w := (n : F)
     if (Challenger.checkWitness D c bits w).1 then w else grindFrom D c bits fuel (n + 1)
 
-/-- The transcript of the KoalaBear STARK: a challenger with its duplex, and a search for the
-smallest grinding witness of a state. -/
+/-- The transcript of the KoalaBear STARK: a challenger with its duplex, a search for the
+smallest grinding witness of a state, and whether a search has failed. Plonky3's grinder panics
+when it finds no witness; the flag records that instead, and no proof observes it. -/
 structure Transcript where
   duplex : Duplex F 24
   grinder : Challenger F 24 → Nat → F
   state : Challenger F 24
+  grindFailed : Bool
 
 namespace Transcript
 
 /-- The empty transcript with the duplex `D` and grinder `g`. -/
 def initWith (D : Duplex F 24) (g : Challenger F 24 → Nat → F) : Transcript :=
-  ⟨D, g, Challenger.init⟩
+  ⟨D, g, Challenger.init, false⟩
 
 /-- The empty specification transcript: the spec permutation, and grinding by search. -/
 def init : Transcript :=
@@ -151,12 +153,14 @@ def checkWitness (t : Transcript) (bits : Nat) (w : F) : Bool × Transcript :=
   let (b, c) := Challenger.checkWitness t.duplex t.state bits w
   (b, { t with state := c })
 
-/-- The grinder's witness for `bits`, and the transcript after observing it. -/
+/-- The grinder's witness for `bits`, and the transcript after observing it, flagged as failed if
+the witness does not check. -/
 def grind (t : Transcript) (bits : Nat) : F × Transcript :=
   if bits = 0 then (0, t)
   else
     let w := t.grinder t.state bits
-    (w, (checkWitness t bits w).2)
+    let r := t.checkWitness bits w
+    (w, { r.2 with grindFailed := r.2.grindFailed || !r.1 })
 
 end Transcript
 end KoalaBear

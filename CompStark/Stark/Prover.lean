@@ -98,4 +98,11 @@ specification backend. -/
 def prove (P : Params) (A : Air) (logN : Nat) (trace : Array F) (pis : List F) : Proof :=
   proveWith Backend.spec P A logN trace pis
 
+/-- The specification prover's transcript at the end of `prove`. Its `grindFailed` flag records
+whether a grinding search found no witness. -/
+def proveTranscript (P : Params) (A : Air) (logN : Nat) (trace : Array F) (pis : List F) :
+    Transcript :=
+  ((commitAndSample Backend.spec P A logN trace pis >>= openAndAssemble Backend.spec P logN).run
+    Transcript.init).2
+
 end CompStark.Stark
