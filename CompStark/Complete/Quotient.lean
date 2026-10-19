@@ -1153,4 +1153,120 @@ theorem toSpec_recompose (logN lc : Nat) (h : logN + lc ≤ 24) (chs : Nat → A
 
 end Recompose
 
+/-! ### The verifier's check -/
+
+section Check
+open KoalaBear.Fast (Ext4)
+
+theorem toSpec_chunkInner (ch : Array EF) : Ext4.toSpec (chunkInner ch) =
+    ∑ e ∈ Finset.range 4, Ext4.toSpec (Ext.basis e) * Ext4.toSpec (ch.getD e 0) := by
+  simp only [chunkInner, show List.range 4 = [0, 1, 2, 3] from rfl, List.foldl_cons,
+    List.foldl_nil, Ext4.toSpec_add, Ext4.toSpec_mul, Ext4.toSpec_zero, zero_add,
+    Finset.sum_range_succ, Finset.sum_range_zero]
+
+/-- An opened chunk's coordinates combine to its chunk polynomial at the point. -/
+theorem toSpec_chunkInner_openedAt (b h : Nat) (m : Stark.Mat) (ps : List K[X]) (z : EF)
+    (hm : CompStark.Mat.IsLde b h m ps) (h4 : ps.length = 4) (hz : Ext.OutsideBase z) :
+    Ext4.toSpec (chunkInner (Fri.openedAt b m z)) = (chunkPoly ps).eval (Ext4.toSpec z) := by
+  rw [toSpec_chunkInner, eval_chunkPoly]
+  refine Finset.sum_congr rfl fun e he ↦ ?_
+  rw [(openedAt_isLde b h m ps z hm hz).2 e (by rw [h4]; exact Finset.mem_range.mp he)]
+
+theorem toSpec_foldedConstraints (A : Air) (env : Expr.Env EF) (alpha : EF) :
+    Ext4.toSpec (foldedConstraints A env alpha) =
+      horner (A.constraints.map fun c ↦ Ext4.toSpec (c.eval env)) (Ext4.toSpec alpha) := by
+  suffices h : ∀ (l : List Expr) (x : EF), Ext4.toSpec (l.foldl (fun acc c ↦ acc * alpha +
+      c.eval env) x) = (l.map fun c ↦ Ext4.toSpec (c.eval env)).foldl
+        (fun acc v ↦ acc * Ext4.toSpec alpha + v) (Ext4.toSpec x) by
+    rw [foldedConstraints, h, Ext4.toSpec_zero]
+    rfl
+  intro l
+  induction l with
+  | nil => intro x; rfl
+  | cons c l ih =>
+    intro x
+    rw [List.foldl_cons, ih, Ext4.toSpec_add, Ext4.toSpec_mul]
+    rfl
+
+/-- `a * b * b⁻¹ = a` in the spec extension field. -/
+theorem mul_mul_inv_cancel_ext (a b : E) (hb : b ≠ 0) : a * b * b⁻¹ = a := by
+  rw [mul_assoc, CompPoly.Extension.Ext.mul_inv_cancel' hb, mul_one]
+
+/-- The verifier's constraints at `ζ`, from the opened trace values, are the constraint
+polynomials at `ζ`. -/
+theorem toSpec_eval_opened (A : Air) (logN b : Nat) (pis : List F) (m : Stark.Mat)
+    (ps : List K[X]) (hm : CompStark.Mat.IsLde b (logN + b) m ps)
+    (hw : ps.length = A.width) (z : EF) (hz : Ext.OutsideBase z) (c : Expr)
+    (hc : c.colsBelow A.width = true) :
+    Ext4.toSpec (c.eval {
+      cur := fun i ↦ (Fri.openedAt b m z).getD i 0
+      next := fun i ↦ (Fri.openedAt b m (z * Ext.ofBase (twoAdicGen logN))).getD i 0
+      pub := fun i ↦ Ext.ofBase (pis.getD i 0)
+      const := Ext.ofBase
+      isFirstRow := (Ext.powTwo z logN - 1) * (z - 1)⁻¹
+      isLastRow := (Ext.powTwo z logN - 1) * (z - Ext.ofBase (twoAdicGen logN)⁻¹)⁻¹
+      isTransition := z - Ext.ofBase (twoAdicGen logN)⁻¹ }) =
+      aeval (Ext4.toSpec z) (constraintPoly (2 ^ logN) (tw logN) (ps.getD · 0) pis c) := by
+  have h24 : logN ≤ 24 := by have := hm.2.2.2.2.1; omega
+  have hw0 : twoAdicGen logN ≠ 0 := twoAdicGen_ne_zero logN h24
+  have hz' : Ext.OutsideBase (z * Ext.ofBase (twoAdicGen logN)) := outsideBase_mul_ofBase hz hw0
+  have hO := (openedAt_isLde b (logN + b) m ps z hm hz).2
+  have hO' := (openedAt_isLde b (logN + b) m ps _ hm hz').2
+  have hone : Ext4.toSpec z - 1 ≠ 0 := by
+    have := toSpec_ne_ofBase hz 1
+    rwa [CompPoly.Extension.Ext.ofBase_one, ← sub_ne_zero] at this
+  have hlast : Ext4.toSpec z - algebraMap K E (tw logN)⁻¹ ≠ 0 := by
+    have := toSpec_ne_ofBase hz (tw logN)⁻¹
+    rwa [← CompPoly.Extension.Ext.algebraMap_eq_ofBase, ← sub_ne_zero] at this
+  set env : Expr.Env EF := {
+      cur := fun i ↦ (Fri.openedAt b m z).getD i 0
+      next := fun i ↦ (Fri.openedAt b m (z * Ext.ofBase (twoAdicGen logN))).getD i 0
+      pub := fun i ↦ Ext.ofBase (pis.getD i 0)
+      const := Ext.ofBase
+      isFirstRow := (Ext.powTwo z logN - 1) * (z - 1)⁻¹
+      isLastRow := (Ext.powTwo z logN - 1) * (z - Ext.ofBase (twoAdicGen logN)⁻¹)⁻¹
+      isTransition := z - Ext.ofBase (twoAdicGen logN)⁻¹ } with henv
+  let envE : Expr.Env E := {
+    cur := fun j ↦ Ext4.toSpec (env.cur j)
+    next := fun j ↦ Ext4.toSpec (env.next j)
+    pub := fun j ↦ Ext4.toSpec (env.pub j)
+    const := fun x ↦ Ext4.toSpec (env.const x)
+    isFirstRow := Ext4.toSpec env.isFirstRow
+    isLastRow := Ext4.toSpec env.isLastRow
+    isTransition := Ext4.toSpec env.isTransition }
+  refine (Expr.eval_hom Ext4.toSpec Ext4.toSpec_add Ext4.toSpec_sub Ext4.toSpec_mul A.width env
+    envE (fun _ _ ↦ rfl) (fun _ _ ↦ rfl) (fun _ ↦ rfl) (fun _ ↦ rfl) rfl rfl rfl c hc).trans ?_
+  rw [constraintPoly]
+  refine (Expr.eval_hom (fun p ↦ aeval (Ext4.toSpec z) p)
+    (fun a b ↦ (aeval (Ext4.toSpec z)).map_add a b) (fun a b ↦ (aeval (Ext4.toSpec z)).map_sub a b)
+    (fun a b ↦ (aeval (Ext4.toSpec z)).map_mul a b) A.width _ envE (fun j hj ↦ ?_)
+    (fun j hj ↦ ?_) (fun j ↦ ?_) (fun x ↦ ?_) ?_ ?_ ?_ c hc).symm
+  · exact (hO j (by rw [hw]; exact hj)).symm
+  · change aeval (Ext4.toSpec z) ((ps.getD j 0).comp (C (tw logN) * X)) =
+      Ext4.toSpec ((Fri.openedAt b m (z * Ext.ofBase (twoAdicGen logN))).getD j 0)
+    rw [hO' j (by rw [hw]; exact hj), aeval_comp, map_mul, aeval_C, aeval_X, Ext4.toSpec_mul,
+      Ext4.toSpec_ofBase, ← CompPoly.Extension.Ext.algebraMap_eq_ofBase, mul_comm]
+  · change aeval (Ext4.toSpec z) (C (FastField.toField (pis.getD j 0))) =
+      Ext4.toSpec (Ext.ofBase (pis.getD j 0))
+    rw [aeval_C, Ext4.toSpec_ofBase, CompPoly.Extension.Ext.algebraMap_eq_ofBase]
+  · change aeval (Ext4.toSpec z) (C (FastField.toField x)) = Ext4.toSpec (Ext.ofBase x)
+    rw [aeval_C, Ext4.toSpec_ofBase, CompPoly.Extension.Ext.algebraMap_eq_ofBase]
+  · change aeval (Ext4.toSpec z) (firstSel (2 ^ logN)) =
+      Ext4.toSpec ((Ext.powTwo z logN - 1) * (z - 1)⁻¹)
+    rw [Ext4.toSpec_mul, Ext4.toSpec_inv, Ext4.toSpec_sub, Ext4.toSpec_sub, toSpec_extPowTwo,
+      Ext4.toSpec_one, ← aeval_firstSel, mul_mul_inv_cancel_ext _ _ hone]
+  · change aeval (Ext4.toSpec z) (lastSel (2 ^ logN) (tw logN)) =
+      Ext4.toSpec ((Ext.powTwo z logN - 1) * (z - Ext.ofBase (twoAdicGen logN)⁻¹)⁻¹)
+    rw [Ext4.toSpec_mul, Ext4.toSpec_inv, Ext4.toSpec_sub, Ext4.toSpec_sub, toSpec_extPowTwo,
+      Ext4.toSpec_one, Ext4.toSpec_ofBase, toField_inv,
+      ← CompPoly.Extension.Ext.algebraMap_eq_ofBase,
+      ← aeval_lastSel (2 ^ logN) (tw logN) (tw_ne_zero logN h24) (tw_pow logN h24),
+      mul_mul_inv_cancel_ext _ _ hlast]
+  · change aeval (Ext4.toSpec z) (X - C (tw logN)⁻¹) =
+      Ext4.toSpec (z - Ext.ofBase (twoAdicGen logN)⁻¹)
+    rw [map_sub, aeval_X, aeval_C, Ext4.toSpec_sub, Ext4.toSpec_ofBase, toField_inv,
+      CompPoly.Extension.Ext.algebraMap_eq_ofBase]
+
+end Check
+
 end CompStark.Stark
