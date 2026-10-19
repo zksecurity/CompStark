@@ -70,3 +70,4 @@ public import CompStark.Sound.Batching
 public import CompStark.Sound.Decoding
 public import CompStark.Sound.Assembly
 public import CompStark.Soundness
+public import CompStark.Sound.Johnson
