@@ -135,22 +135,19 @@ theorem coord_mk4 (f : Nat → F) (c : Nat) (hc : c < 4) : coord c (mk4 f) = f c
 /-- The barycentric weight `x / (z - x)`. -/
 def bw (z : EF) (x : F) : EF := Ext4.smul x (z - Ext4.ofBase x)⁻¹
 
-theorem nonBase_iff (z : EF) : nonBase z = true ↔ z.c1 ≠ 0 ∨ z.c2 ≠ 0 ∨ z.c3 ≠ 0 := by
-  simp only [nonBase, Bool.or_eq_true, bne_iff_ne, ne_eq, or_assoc]
-
-theorem sub_ofBase_ne_zero {z : EF} (hz : nonBase z = true) (x : F) :
+theorem sub_ofBase_ne_zero {z : EF} (hz : Ext.OutsideBase z) (x : F) :
     Ext4.toSpec (z - Ext4.ofBase x) ≠ 0 := by
   refine Norm.toSpec_ne_zero fun h ↦ ?_
   have h1 := congrArg Ext4.c1 h
   have h2 := congrArg Ext4.c2 h
   have h3 := congrArg Ext4.c3 h
   simp only [Norm.sub_c1, Norm.sub_c2, Norm.sub_c3, Ext4.ofBase, sub_zero] at h1 h2 h3
-  rcases (nonBase_iff z).mp hz with h | h | h
+  rcases hz with h | h | h
   · exact h h1
   · exact h h2
   · exact h h3
 
-theorem baryWeights_getD {z : EF} (hz : nonBase z = true) (logH i : Nat) (hi : i < 2 ^ logH) :
+theorem baryWeights_getD {z : EF} (hz : Ext.OutsideBase z) (logH i : Nat) (hi : i < 2 ^ logH) :
     (baryWeights logH z).getD i 0 = bw z ((cosetPoints gen logH).getD i 0) := by
   have hb := batchInv_eq Ext4.toSpec Ext4.toSpec_injective Ext4.toSpec_mul Ext4.toSpec_inv
     Ext4.toSpec_one ((cosetPoints gen logH).map fun x ↦ z - Ext.ofBase x) (fun y hy ↦ by
@@ -163,7 +160,7 @@ theorem baryWeights_getD {z : EF} (hz : nonBase z = true) (logH i : Nat) (hi : i
   rfl
 
 /-- A column sum of the specification, coordinate by coordinate, reindexed to the stored rows. -/
-theorem coord_colSum (values : Array F) (w L j : Nat) {z : EF} (hz : nonBase z = true) (c : Nat) :
+theorem coord_colSum (values : Array F) (w L j : Nat) {z : EF} (hz : Ext.OutsideBase z) (c : Nat) :
     coord c (colSum values (bitRevPerm L) (baryWeights L z) w (2 ^ L) j) =
       ∑ r ∈ Finset.range (2 ^ L), values.getD (r * w + j) 0 *
         coord c (bw z ((cosetPointsBitRev gen L).getD r 0)) := by
@@ -180,7 +177,7 @@ theorem coord_colSum (values : Array F) (w L j : Nat) {z : EF} (hz : nonBase z =
 
 /-- The specification's opened values, coordinate by coordinate a sum over the stored rows of
 the row times the weight of its stored point. -/
-theorem openedAt_sum (b : Nat) (s : Mat) {z : EF} (hz : nonBase z = true) :
+theorem openedAt_sum (b : Nat) (s : Mat) {z : EF} (hz : Ext.OutsideBase z) :
     Fri.openedAt b s z = Array.ofFn (n := s.width) fun j ↦
       KoalaBear.Fast.cosetFactor (Nat.log2 s.height - b) gen z * mk4 fun c ↦
         ∑ r ∈ Finset.range (2 ^ (Nat.log2 s.height - b)), s.values.getD (r * s.width + j.val) 0 *
@@ -221,10 +218,10 @@ theorem encode_ofFn_getElem (X : Array F) :
   rw [Array.ofFn_getElem]
 
 /-- `invDenoms` inverts `z - x` for every base point `x`, for `z` outside the base field. -/
-theorem invDenoms_rel {z : EF} (hz : nonBase z = true) (X : Array F)
+theorem invDenoms_rel {z : EF} (hz : Ext.OutsideBase z) (X : Array F)
     (hs : 4 * X.size < USize.size) :
     RV (invDenoms z (encode X) X.size) (X.map fun x ↦ (z - Ext4.ofBase x)⁻¹) := by
-  have hz' := (nonBase_iff z).mp hz
+  have hz' := hz
   simp only [invDenoms]
   rw [encode_ofFn_getElem X]
   simp only [EVec.mulWords_ofFn hs, EVec.addWords_ofFn hs, mulAddWords_ofFn hs,
@@ -279,7 +276,7 @@ theorem mul_ofBase (a : EF) (x : F) : a * Ext4.ofBase x = Ext4.smul x a := by
     ring
 
 /-- The weight planes of a range of stored points. -/
-theorem weightPlane {z : EF} (hz : nonBase z = true) (X : Array F) (r0 len : Nat)
+theorem weightPlane {z : EF} (hz : Ext.OutsideBase z) (X : Array F) (r0 len : Nat)
     (hX : r0 + len ≤ X.size) (hs : 4 * X.size < USize.size) :
     #[((invDenoms z (slice (encode X) r0 len) len).mulBase (slice (encode X) r0 len)).c0,
       ((invDenoms z (slice (encode X) r0 len) len).mulBase (slice (encode X) r0 len)).c1,
@@ -369,7 +366,7 @@ theorem colPlane_eq (M P : Array F) (w r0 len : Nat) (hM : (r0 + len) * w ≤ M.
 /-- The fast column sums of a range of stored rows: for every point and coordinate, a plane of
 `w` sums of the rows times the weights of their points. -/
 theorem weightedColumns_encode (M : Array F) (w : Nat) (zs : Array EF)
-    (hz : ∀ z ∈ zs, nonBase z = true) (X : Array F) (r0 len : Nat)
+    (hz : ∀ z ∈ zs, Ext.OutsideBase z) (X : Array F) (r0 len : Nat)
     (hM : (r0 + len) * w ≤ M.size) (hX : r0 + len ≤ X.size) (hsM : 4 * M.size < USize.size)
     (hsX : 4 * X.size < USize.size) (hw : 4 * w < USize.size) :
     weightedColumns (encode M) w zs (encode X) r0 len =
@@ -465,20 +462,18 @@ theorem size_openedAt (b : Nat) (s : Mat) (z : EF) : (Fri.openedAt b s z).size =
   rw [openedAt_eq, Array.size_ofFn]
 
 /-- The fast opened values are the specification's. -/
-theorem openedAt_rel (b : Nat) (zs : List KoalaBear.Fast.Ext4) {m : PMat} {s : Mat} (h : RM m s) :
+theorem openedAt_rel (b : Nat) (zs : List KoalaBear.Fast.Ext4) {m : PMat} {s : Mat} (h : RM m s)
+    (hs : MatOk s) (hz : ∀ z ∈ zs, Ext.OutsideBase z) :
     openedAt b m zs = zs.map (Fri.openedAt b s) := by
   unfold Fast.openedAt
-  split
-  · rw [toMat_of_RM h]
-  rename_i hc
-  simp only [Bool.or_eq_true, Bool.not_eq_true', Bool.and_eq_false_iff, decide_eq_true_eq,
-    not_or, Bool.not_eq_false, Nat.not_lt, List.all_eq_true] at hc
-  obtain ⟨⟨hf, hz⟩, hle⟩ := hc
-  have hM := values_size h hf
+  obtain ⟨-, ⟨k, -, hk⟩, hM, hA⟩ := hs
+  have hle : m.height ≥ 2 ^ (Nat.log2 m.height - b) := by
+    rw [h.2.1, hk, Nat.log2_two_pow]
+    exact Nat.pow_le_pow_right (by decide) (Nat.sub_le k b)
+  have hfits : 4 * s.values.size < USize.size := by
+    unfold Addressable at hA
+    omega
   obtain ⟨hw, hh, he⟩ := h
-  have hfits := hf
-  simp only [PMat.fits, Bool.and_eq_true, beq_iff_eq, decide_eq_true_eq] at hfits
-  rw [he, size_encode_fields] at hfits
   dsimp only
   rw [hh] at hle
   rw [hw, hh, he]
@@ -492,7 +487,7 @@ theorem openedAt_rel (b : Nat) (zs : List KoalaBear.Fast.Ext4) {m : PMat} {s : M
     rw [Array.size_ofFn] at h1
     omega
   have hpos : 0 < s.height := lt_of_lt_of_le (Nat.two_pow_pos L) hle
-  have hsM : 4 * s.values.size < USize.size := hfits.2
+  have hsM : 4 * s.values.size < USize.size := hfits
   have hX : (cosetPointsBitRev gen L).size = 2 ^ L := size_cosetPointsBitRev gen L
   have hw4 : 4 * s.width < USize.size := by
     have := Nat.mul_le_mul_left s.width (show 1 ≤ s.height from hpos)
@@ -562,7 +557,7 @@ theorem compress_eq (s : Mat) (ap : Array EF) :
 def termStep (comp : EF) (x : F) (acc : EF) (t : EF × EF × EF) : EF :=
   acc + t.2.2 * (t.2.1 - comp) * (t.1 - Ext4.ofBase x)⁻¹
 
-theorem accumulateRows_eq (acc comp : Array EF) (xs : Array F) {z : EF} (hz : nonBase z = true)
+theorem accumulateRows_eq (acc comp : Array EF) (xs : Array F) {z : EF} (hz : Ext.OutsideBase z)
     (yz offset : EF) (r0 len : Nat) (hr : r0 + len ≤ xs.size) :
     accumulateRows acc comp xs z yz offset r0 len = Array.ofFn (n := len) fun k ↦
       termStep (comp.getD (r0 + k.val) 0) (xs.getD (r0 + k.val) 0) (acc.getD (r0 + k.val) 0)
@@ -615,7 +610,7 @@ theorem foldl_termsStep (alpha : EF) (ap : Array EF) (w : Nat) :
       List.nil_append, List.append_assoc]
 
 theorem parChunks_accumulate (n : Nat) (f : Nat → EF) (comp : Array EF) (xs : Array F)
-    (hxs : n ≤ xs.size) {z : EF} (hz : nonBase z = true) (yz offset : EF) :
+    (hxs : n ≤ xs.size) {z : EF} (hz : Ext.OutsideBase z) (yz offset : EF) :
     parChunks n (if n < 4096 then 1 else 16) (fun r0 len ↦
       accumulateRows (Array.ofFn (n := n) fun r ↦ f r.val) comp xs z yz offset r0 len) =
       Array.ofFn (n := n) fun r ↦ termStep (comp.getD r.val 0) (xs.getD r.val 0) (f r.val)
@@ -637,7 +632,7 @@ theorem parChunks_accumulate (n : Nat) (f : Nat → EF) (comp : Array EF) (xs : 
 row by row a fold of the fast reduction's terms. -/
 theorem foldl_accumulate (alpha : EF) (ap : Array EF) (w n : Nat) (comp : Array EF)
     (xs : Array F) (hxs : n ≤ xs.size) :
-    ∀ (pts : List (EF × Array EF)), (∀ p ∈ pts, nonBase p.1 = true) → ∀ (c : Nat) (f : Nat → EF),
+    ∀ (pts : List (EF × Array EF)), (∀ p ∈ pts, Ext.OutsideBase p.1) → ∀ (c : Nat) (f : Nat → EF),
       pts.foldl (fun b p ↦ (b.1 + w, parChunks n (if n < 4096 then 1 else 16) fun r0 len ↦
         accumulateRows b.2 comp xs p.1 (yzOf ap w p.2) (Ext.pow alpha b.1) r0 len))
         (c, Array.ofFn (n := n) fun r ↦ f r.val) =
@@ -684,15 +679,11 @@ def groupPlanes (G : Nat × Nat × Array GItem) : Nat × EVec :=
         else 2 ^ G.1 / if 2 ^ G.1 < 4096 then 1 else 16)
       #[v.c0, v.c1, v.c2, v.c3])
 
-/-- With its guards passing, the fast reduction groups by height, then computes every group's
-planes. -/
-theorem reduce_fast (alpha : EF) (items : List (PMat × List (EF × Array EF)))
-    (h : items.all (fun (m, pts) ↦ m.fits && m.height == 2 ^ Nat.log2 m.height &&
-      decide (4 * m.height < USize.size) && pts.all (nonBase ·.1)) = true) :
+/-- The fast reduction groups by height, then computes every group's planes. -/
+theorem reduce_fast (alpha : EF) (items : List (PMat × List (EF × Array EF))) :
     reduce alpha items = ((items.foldl (groupStep alpha) []).map groupPlanes).mergeSort
       fun a b ↦ decide (b.1 ≤ a.1) := by
-  simp only [reduce, Id.run, List.forIn_pure_yield_eq_foldl, pure_bind, h, Bool.not_true,
-    Bool.false_eq_true, ite_false]
+  simp only [reduce, Id.run, List.forIn_pure_yield_eq_foldl, pure_bind]
   rfl
 
 /-! ### The grouping simulates the specification's fold -/
@@ -710,7 +701,7 @@ def gval (alpha : EF) (logH : Nat) (g : Array GItem) (r : Nat) : EF :=
 def Good (alpha : EF) (logH : Nat) (it : GItem) : Prop :=
   ∃ V : Array F, it.1 = encode V ∧ V.size = it.2.1 * 2 ^ logH ∧ 4 * V.size < USize.size ∧
     4 * 2 ^ logH < USize.size ∧ it.2.2.1 = EVec.ofArray (powers alpha it.2.1) ∧
-    ∀ t ∈ it.2.2.2, nonBase t.1 = true
+    ∀ t ∈ it.2.2.2, Ext.OutsideBase t.1
 
 /-- A fast group represents the specification's running sums of its height. -/
 def GR (alpha : EF) (G : Nat × Nat × Array GItem) (S : Nat × Nat × Array EF) : Prop :=
@@ -769,16 +760,17 @@ theorem gval_push (alpha : EF) (logH : Nat) (g : Array GItem) (it : GItem) (r : 
 /-- One matrix of the grouping simulates one step of the specification's fold. -/
 theorem groupStep_rel (alpha : EF) {groups : List (Nat × Nat × Array GItem)}
     {red : List (Nat × Nat × Array EF)} (hgr : List.Forall₂ (GR alpha) groups red) {m : PMat}
-    {s : Mat} (hm : RM m s) (pts : List (EF × Array EF)) (hf : m.fits = true)
-    (hpow : m.height = 2 ^ Nat.log2 m.height) (hus : 4 * m.height < USize.size)
-    (hz : ∀ p ∈ pts, nonBase p.1 = true) :
+    {s : Mat} (hm : RM m s) (pts : List (EF × Array EF)) (hs : MatOk s)
+    (hz : ∀ p ∈ pts, Ext.OutsideBase p.1) :
     List.Forall₂ (GR alpha) (groupStep alpha groups (m, pts)) (reduceStep alpha red (s, pts)) := by
-  have hM := values_size hm hf
-  have hsV : 4 * s.values.size < USize.size := by
-    have := hf
-    simp only [PMat.fits, Bool.and_eq_true, beq_iff_eq, decide_eq_true_eq] at this
-    rw [hm.2.2, size_encode_fields] at this
-    exact this.2
+  obtain ⟨hw0, ⟨k, -, hk⟩, hM, hA⟩ := hs
+  unfold Addressable at hA
+  have hsV : 4 * s.values.size < USize.size := by omega
+  have hpow : m.height = 2 ^ Nat.log2 m.height := by rw [hm.2.1, hk, Nat.log2_two_pow]
+  have hus : 4 * m.height < USize.size := by
+    have := Nat.le_mul_of_pos_left s.height hw0
+    rw [hm.2.1]
+    omega
   obtain ⟨hw, hh, he⟩ := hm
   unfold groupStep reduceStep
   dsimp only
@@ -831,8 +823,7 @@ theorem foldl_groupStep_rel (alpha : EF) :
     ∀ {items : List (PMat × List (EF × Array EF))}
       {sitems : List (Mat × List (EF × Array EF))},
       List.Forall₂ (fun x y ↦ RM x.1 y.1 ∧ x.2 = y.2) items sitems →
-      (∀ it ∈ items, it.1.fits = true ∧ it.1.height = 2 ^ Nat.log2 it.1.height ∧
-        4 * it.1.height < USize.size ∧ ∀ p ∈ it.2, nonBase p.1 = true) →
+      (∀ x ∈ sitems, MatOk x.1 ∧ ∀ p ∈ x.2, Ext.OutsideBase p.1) →
       ∀ {groups : List (Nat × Nat × Array GItem)} {red : List (Nat × Nat × Array EF)},
       List.Forall₂ (GR alpha) groups red →
       List.Forall₂ (GR alpha) (items.foldl (groupStep alpha) groups)
@@ -842,9 +833,9 @@ theorem foldl_groupStep_rel (alpha : EF) :
     simp only at hp
     subst hp
     rw [List.foldl_cons, List.foldl_cons]
-    obtain ⟨hf, hpow, hus, hz⟩ := hgood (m, pts) List.mem_cons_self
+    obtain ⟨hs, hz⟩ := hgood (s, pts) List.mem_cons_self
     exact foldl_groupStep_rel alpha hrest (fun it hit ↦ hgood it (List.mem_cons_of_mem _ hit))
-      (groupStep_rel alpha hgr hm pts hf hpow hus hz)
+      (groupStep_rel alpha hgr hm pts hs hz)
 
 theorem forall₂_zip {α β : Type} {R : α → β → Prop} {l1 : List α} {l2 : List β}
     (h : List.Forall₂ R l1 l2) : ∀ p ∈ l1.zip l2, R p.1 p.2 := by
@@ -1006,7 +997,7 @@ def RInv (xr : ByteArray) (len : Nat) (s : EVec × List (EF × EVec)) (S : Nat �
 theorem term_rel {len : Nat} {acc comp : EVec} {S C : Nat → EF} (X : Array F)
     (hX : X.size = len) (hl : 4 * len < USize.size)
     (hacc : RV acc (Array.ofFn (n := len) fun t ↦ S t.val))
-    (hcomp : RV comp (Array.ofFn (n := len) fun t ↦ C t.val)) {z : EF} (hz : nonBase z = true)
+    (hcomp : RV comp (Array.ofFn (n := len) fun t ↦ C t.val)) {z : EF} (hz : Ext.OutsideBase z)
     (yz offset : EF) :
     RV (acc.add (((EVec.rsub yz comp).mul (invDenoms z (encode X) len)).smul offset))
       (Array.ofFn (n := len) fun t ↦ termStep (C t.val) (X.getD t.val 0) (S t.val)
@@ -1170,37 +1161,19 @@ theorem groupPlanes_rel (alpha : EF) (G : Nat × Nat × Array GItem) (h4 : 4 * 2
 theorem reduce_rel (alpha : KoalaBear.Fast.Ext4)
     {items : List (PMat × List (KoalaBear.Fast.Ext4 × Array KoalaBear.Fast.Ext4))}
     {sitems : List (Mat × List (KoalaBear.Fast.Ext4 × Array KoalaBear.Fast.Ext4))}
-    (h : List.Forall₂ (fun x y ↦ RM x.1 y.1 ∧ x.2 = y.2) items sitems) :
+    (h : List.Forall₂ (fun x y ↦ RM x.1 y.1 ∧ x.2 = y.2) items sitems)
+    (hok : ∀ x ∈ sitems, MatOk x.1 ∧ ∀ p ∈ x.2, Ext.OutsideBase p.1) :
     List.Forall₂ (fun x y ↦ x.1 = y.1 ∧ RV x.2 y.2) (reduce alpha items)
       (Fri.reduce alpha sitems) := by
-  by_cases hg : items.all (fun (m, pts) ↦ m.fits && m.height == 2 ^ Nat.log2 m.height &&
-      decide (4 * m.height < USize.size) && pts.all (nonBase ·.1)) = true
-  · rw [reduce_fast alpha items hg, reduce_eq, List.map_mergeSort
-      (r := fun (a b : Nat × Nat × Array EF) ↦ decide (b.1 ≤ a.1))
-      (s := fun (a b : Nat × Array EF) ↦ decide (b.1 ≤ a.1)) (f := fun x ↦ (x.1, x.2.2))
-      (fun _ _ _ _ ↦ rfl)]
-    refine forall₂_mergeSort (fun (a : Nat × EVec) ↦ a.1) (fun (b : Nat × Array EF) ↦ b.1) ?_
-      (fun _ _ hab ↦ hab.1)
-    have hgood : ∀ it ∈ items, it.1.fits = true ∧ it.1.height = 2 ^ Nat.log2 it.1.height ∧
-        4 * it.1.height < USize.size ∧ ∀ p ∈ it.2, nonBase p.1 = true := by
-      intro it hit
-      have := List.all_eq_true.mp hg it hit
-      simp only [Bool.and_eq_true, beq_iff_eq, decide_eq_true_eq, List.all_eq_true] at this
-      exact ⟨this.1.1.1, this.1.1.2, this.1.2, this.2⟩
-    have hgr := foldl_groupStep_rel alpha h hgood List.Forall₂.nil
-    rw [List.forall₂_map_left_iff, List.forall₂_map_right_iff]
-    refine hgr.imp fun G S hGS ↦ ⟨hGS.1, ?_⟩
-    obtain ⟨-, -, h3, h4, h5⟩ := hGS
-    rw [h3]
-    exact groupPlanes_rel alpha G h4 h5
-  · have hg' : items.all (fun (m, pts) ↦ m.fits && m.height == 2 ^ Nat.log2 m.height &&
-        decide (4 * m.height < USize.size) && pts.all (nonBase ·.1)) = false := by
-      simpa only [Bool.not_eq_true] using hg
-    have hmap : items.map (fun x ↦ (x.1.toMat, x.2)) = sitems := by
-      clear hg hg'
-      induction h with
-      | nil => rfl
-      | cons hab _ ih => rw [List.map_cons, ih, toMat_of_RM hab.1, hab.2]
-    simp only [reduce, hg', Bool.not_false, ite_true, hmap]
-    rw [List.forall₂_map_left_iff]
-    exact List.forall₂_same.mpr fun x _ ↦ ⟨rfl, ofArray_rel x.2⟩
+  rw [reduce_fast alpha items, reduce_eq, List.map_mergeSort
+    (r := fun (a b : Nat × Nat × Array EF) ↦ decide (b.1 ≤ a.1))
+    (s := fun (a b : Nat × Array EF) ↦ decide (b.1 ≤ a.1)) (f := fun x ↦ (x.1, x.2.2))
+    (fun _ _ _ _ ↦ rfl)]
+  refine forall₂_mergeSort (fun (a : Nat × EVec) ↦ a.1) (fun (b : Nat × Array EF) ↦ b.1) ?_
+    (fun _ _ hab ↦ hab.1)
+  have hgr := foldl_groupStep_rel alpha h hok List.Forall₂.nil
+  rw [List.forall₂_map_left_iff, List.forall₂_map_right_iff]
+  refine hgr.imp fun G S hGS ↦ ⟨hGS.1, ?_⟩
+  obtain ⟨-, -, h3, h4, h5⟩ := hGS
+  rw [h3]
+  exact groupPlanes_rel alpha G h4 h5
