@@ -54,16 +54,6 @@ def ofArray (xs : Array EF) : EVec :=
 /-- The elements. -/
 def toArray (v : EVec) : Array EF := Array.ofFn (n := v.n) fun i ↦ v.get i
 
-/-- Every plane holds `n` indexable words. -/
-def fits (v : EVec) : Bool :=
-  [v.c0, v.c1, v.c2, v.c3].all fun c ↦ c.size == 4 * v.n && c.size < USize.size
-
-/-- The elements, decoded without bounds. -/
-def decode (v : EVec) : Array EF :=
-  let d (c : ByteArray) : Array F := CompPoly.PackedRepr.decode c
-  Array.ofFn (n := v.n) fun i ↦
-    ⟨(d v.c0).getD i 0, (d v.c1).getD i 0, (d v.c2).getD i 0, (d v.c3).getD i 0⟩
-
 /-- Zeros. -/
 def zeros (n : Nat) : EVec := ⟨n, zeroWords n, zeroWords n, zeroWords n, zeroWords n⟩
 

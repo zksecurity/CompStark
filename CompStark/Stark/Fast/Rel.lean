@@ -5,6 +5,7 @@ Released under Apache 2.0 license as described in the file LICENSE.
 module
 
 public import CompStark.Stark.Fast
+public import CompStark.Fri.Assumptions
 
 /-! # The fast backend's representations
 

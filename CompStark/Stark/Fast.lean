@@ -46,18 +46,6 @@ def K16 : Packed16 := Packed16.ofParams (Poseidon2.KoalaBear.width16 F)
 def word (b : ByteArray) (i : Nat) : F :=
   CompPoly.CPolynomial.NTTFast.Packed.ofWord (CompPoly.CPolynomial.NTTFast.Packed.Native.read b i)
 
-/-- Words `s, …, s + len - 1` of `b` as field elements. The buffer is borrowed, so parallel
-ranges share it without touching its reference count per word. -/
-def decodeRange (b : @& ByteArray) (s len : Nat) : Array F := Id.run do
-  let mut out := Array.emptyWithCapacity len
-  for i in [s:s + len] do
-    out := out.push (word b i)
-  return out
-
-/-- The first `n` words of `b` as field elements, decoded by parallel ranges. -/
-def decodeAll (b : ByteArray) (n : Nat) : Array F :=
-  parChunks n (if n < 4096 then 1 else 16) fun s len ↦ decodeRange b s len
-
 /-- The width-24 permutation of one state, in lane 0 of a packed group. -/
 def perm24 (s : Vector F 24) : Vector F 24 :=
   let W : Array F := Array.ofFn (n := 192) fun k ↦
@@ -97,12 +85,8 @@ def grindWaves (group : ByteArray) (wi bits : Nat) : Nat → Nat → F
     | none => grindWaves group wi bits fuel (wave + 1)
 
 /-- The smallest grinding witness for `bits`, eight candidates per packed permutation as Plonky3
-grinds, in parallel waves. A state with a full input, which a transcript never holds, is ground by
-the specification. -/
+grinds, in parallel waves. -/
 def grind (c : Challenger F 24) (bits : Nat) : F :=
-  if bits = 0 ∨ 16 ≤ c.input.size then
-    grindFrom KoalaBear.duplex c bits _root_.KoalaBear.fieldSize 0
-  else
   let base := Hash.overwrite c.state c.input.toList
   let group := CompPoly.CPolynomial.NTTFast.Packed.Native.encodeFields
     (Array.ofFn (n := 192) fun k ↦ base.toArray.getD (k / 8) 0)
@@ -114,16 +98,6 @@ def transcript : Transcript := Transcript.initWith duplex grind
 /-- A matrix of packed rows. -/
 def ofRows (w h : Nat) (vals : Array F) : PMat :=
   { width := w, height := h, words := CompPoly.CPolynomial.NTTFast.Packed.Native.encodeFields vals }
-
-/-- The matrix of field elements, decoded without bounds. -/
-def PMat.toMat (m : PMat) : Mat := ⟨m.width, m.height, CompPoly.PackedRepr.decode m.words⟩
-
-/-- The words of `m` are its `width × height` elements, and indexable. -/
-def PMat.fits (m : PMat) : Bool :=
-  m.words.size == 4 * (m.width * m.height) && m.words.size < USize.size
-
-/-- Row `r` of a packed matrix. -/
-def row (m : PMat) (r : Nat) : Array F := decodeRange m.words (r * m.width) m.width
 
 /-- CompPoly's plan for extensions of `2 ^ logH`-row matrices by `2 ^ bits` onto `shift · ⟨ω_N⟩`. -/
 def plan? (logH bits : Nat) (shift : F) : Option CompPoly.CPolynomial.NTTFast.Packed.LdePlan :=
@@ -140,27 +114,21 @@ def plan? (logH bits : Nat) (shift : F) : Option CompPoly.CPolynomial.NTTFast.Pa
   else none
 
 /-- CompPoly's batched coset LDE, bit-reversed rows, packed: `ldeRef` on words. Plans come from
-`plans` when one matches, else are built. -/
+`plans` when one matches, else are built; there is none beyond the two-adic subgroups. -/
 def ldeWith (plans : List (Nat × Nat × F × CompPoly.CPolynomial.NTTFast.Packed.LdePlan))
     (logH bits : Nat) (shift : F) (w : Nat) (m : Array F) : PMat :=
   let found := plans.find? fun (h, b, s, _) ↦ h == logH && b == bits && s == shift
   match found.map (·.2.2.2) <|> plan? logH bits shift with
   | some P =>
-    if m.size ≠ 2 ^ logH * w ∨ USize.size ≤ 4 * (2 ^ (logH + bits) * w) then
-      ofRows w (2 ^ (logH + bits)) (ldeRef logH bits shift w m).values
-    else
     let out := CompPoly.CPolynomial.NTTFast.Packed.Native.joinRows
       (CompPoly.CPolynomial.NTTFast.Packed.Native.cosetLde P w
         (CompPoly.CPolynomial.NTTFast.Packed.Native.encodeFields m))
     { width := w, height := 2 ^ (logH + bits), words := out }
-  | none => ofRows w (2 ^ (logH + bits)) (ldeRef logH bits shift w m).values
+  | none => { width := w, height := 0, words := .empty }
 
 /-- The extension without cached plans. -/
 def lde (logH bits : Nat) (shift : F) (w : Nat) (m : Array F) : PMat :=
   ldeWith [] logH bits shift w m
-
-/-- Digest `k` of a packed layer. -/
-def digestAt (b : ByteArray) (k : Nat) : Digest := Vector.ofFn fun j ↦ word b (8 * k + j.val)
 
 /-- `out` followed by at most `fuel` layers above `layer` of `n` digests, up to the root. -/
 def upperPacked (layer : ByteArray) (n : Nat) (out : Array ByteArray) : Nat → Array ByteArray
@@ -201,53 +169,44 @@ def sideBySide (ms : List PMat) (h : Nat) : ByteArray :=
 def encodeDigests (ds : Array Digest) : ByteArray :=
   CompPoly.CPolynomial.NTTFast.Packed.Native.encodeFields (ds.flatMap (·.toArray))
 
-/-- Digests from consecutive words, decoded without bounds. -/
-def decodeDigests (b : ByteArray) : Array Digest :=
-  let a : Array F := CompPoly.PackedRepr.decode b
-  Array.ofFn (n := a.size / 8) fun k ↦ Vector.ofFn fun j ↦ a.getD (8 * k.val + j.val) 0
-
 /-- Packed matrices under one Merkle tree, with the packed digest layers, leaves first. -/
 structure Commit where
   mats : List PMat
   layers : Array ByteArray
 
-/-- Commit to packed matrices: the packed Merkle commitment on the rows of matrices of one height
-side by side; otherwise the specification's layers. -/
+/-- Commit to packed matrices of one height: the packed Merkle commitment on their rows side by
+side. -/
 def commit (ms : List PMat) : Commit :=
   ⟨ms, match ms with
-    | m :: rest =>
-      if rest.all (·.height == m.height) && 0 < m.height && ms.all PMat.fits &&
-          0 < ms.foldl (· + ·.width) 0 &&
-          32 * (m.height * ms.foldl (· + ·.width) 0 + 1) < USize.size then
-        packedLayers (ms.foldl (· + ·.width) 0) (sideBySide ms m.height)
-      else (Committed.ofMats (ms.map PMat.toMat)).layers.map encodeDigests
-    | [] => (Committed.ofMats []).layers.map encodeDigests⟩
+    | m :: _ => packedLayers (ms.foldl (· + ·.width) 0) (sideBySide ms m.height)
+    | [] => #[]⟩
 
 namespace Commit
 
 /-- The largest matrix height. -/
 def maxHeight (c : Commit) : Nat := c.mats.foldl (fun m a ↦ max m a.height) 0
 
-/-- The specification's commitment, decoded. -/
-def toCommitted (c : Commit) : Committed := ⟨c.mats.map PMat.toMat, c.layers.map decodeDigests⟩
+/-- Row `r` of a packed matrix, read without bounds: a query reads a few rows, so its reads need
+no `USize` index. -/
+def readRow (m : PMat) (r : Nat) : Array F :=
+  let a : Array F := CompPoly.PackedRepr.decode (m.words.extract (4 * (r * m.width))
+    (4 * (r * m.width + m.width)))
+  Array.ofFn (n := m.width) fun j ↦ a.getD j.val 0
 
-/-- The layers are indexable. -/
-def fits (c : Commit) : Bool := c.layers.all (·.size < USize.size)
+/-- Digest `k` of a packed layer, read without bounds. -/
+def readDigest (b : ByteArray) (k : Nat) : Digest :=
+  let a : Array F := CompPoly.PackedRepr.decode (b.extract (32 * k) (32 * k + 32))
+  Vector.ofFn fun j ↦ a.getD j.val 0
 
 /-- The Merkle root. -/
-def root (c : Commit) : Digest :=
-  if c.fits then digestAt (c.layers.back?.getD .empty) 0 else c.toCommitted.root
+def root (c : Commit) : Digest := readDigest (c.layers.back?.getD .empty) 0
 
-/-- `Committed.openAt` on packed rows and layers, when every row read is inside its matrix and
-every word index fits `USize`; otherwise on the decoded commitment. -/
+/-- `Committed.openAt` on packed rows and layers. -/
 def openAt (c : Commit) (index : Nat) : BatchOpening :=
   let logMax := Merkle.log2Ceil c.maxHeight
-  if !(c.fits && c.mats.all PMat.fits && 32 * index + 64 < USize.size &&
-      c.mats.all fun m ↦ index >>> (logMax - Merkle.log2Ceil m.height) < m.height) then
-    c.toCommitted.openAt index else
-  let rows := c.mats.map fun m ↦ row m (index >>> (logMax - Merkle.log2Ceil m.height))
+  let rows := c.mats.map fun m ↦ readRow m (index >>> (logMax - Merkle.log2Ceil m.height))
   ⟨rows.toArray, Array.ofFn (n := logMax) fun i ↦
-    digestAt (c.layers.getD i.val .empty) ((index >>> i.val) ^^^ 1)⟩
+    readDigest (c.layers.getD i.val .empty) ((index >>> i.val) ^^^ 1)⟩
 
 end Commit
 
@@ -352,20 +311,12 @@ def quotientTables (degreeBits logChunks : Nat) : QuotientTables :=
       if n0 % B == 0 && (List.range B).all fun k ↦ next.getD (b * B + k) 0 == n0 + k then some n0
       else none }
 
-/-- Every column `e` reads is below `w`. -/
-def colsBelow (w : Nat) : Expr → Bool
-  | .cur c | .next c => c < w
-  | .pub _ | .const _ | .isFirstRow | .isLastRow | .isTransition => true
-  | .add a b | .sub a b | .mul a b => colsBelow w a && colsBelow w b
-
 /-- `quotientOfLde` on packed words with the shape's tables `T`. The trace on the quotient domain
 is the extension's first rows, transposed in parallel pieces; constraints are evaluated in that
 bit-reversed row order, every node one vectorized operation per block of rows, in parallel block
 ranges, and the result is put in natural order. -/
 def quotientWith (T : QuotientTables) (A : Air) (pis : List F) (ext : PMat) (alpha : EF) :
-    Array EF := if !ext.fits || ext.height < 2 ^ (T.degreeBits + T.logChunks) ||
-      !A.constraints.all (colsBelow ext.width) then
-      quotientOfLde A pis T.degreeBits T.logChunks ext.toMat alpha else Id.run do
+    Array EF := Id.run do
   let n := 2 ^ (T.degreeBits + T.logChunks)
   let w := ext.width
   let period := 2 ^ T.logChunks
@@ -418,15 +369,10 @@ def weightedColumns (m : @& ByteArray) (w : Nat) (zs : @& Array EF) (xs : @& Byt
       out := out.push sums
   return out
 
-/-- `z` is not in the base field, so no `z - x` for a base `x` vanishes. -/
-def nonBase (z : EF) : Bool := z.c1 != 0 || z.c2 != 0 || z.c3 != 0
-
 /-- `openedAt` on packed words, at all points of a matrix: the barycentric weights `x / (z - x)` in
 the stored bit-reversed row order, as planes by the norm, and the column sums over parallel row
 ranges, each range transposed once for all points. -/
 def openedAt (logBlowup : Nat) (m : PMat) (zs : List EF) : List (Array EF) :=
-  if !(m.fits && zs.all nonBase) || m.height < 2 ^ (Nat.log2 m.height - logBlowup) then
-    zs.map (Fri.openedAt logBlowup m.toMat) else
   let logH := Nat.log2 m.height - logBlowup
   let h := 2 ^ logH
   let w := m.width
@@ -505,11 +451,7 @@ def reduceRange (items : @& Array (ByteArray × Nat × EVec × List (EF × EF ×
 /-- `Fri.reduce` on planes, every height in parallel row ranges: rows batched by word dot
 products, `1 / (z - x)` by the norm. -/
 def reduce (alpha : EF) (items : List (PMat × List (EF × Array EF))) : List (Nat × EVec) :=
-  if !items.all fun (m, pts) ↦ m.fits && m.height == 2 ^ Nat.log2 m.height &&
-      decide (4 * m.height < USize.size) && pts.all (nonBase ·.1) then
-    (Fri.reduce alpha (items.map fun (m, pts) ↦ (m.toMat, pts))).map fun (h, a) ↦
-      (h, EVec.ofArray a)
-  else Id.run do
+  Id.run do
   -- Per height: the matrices with their points, opened sums and powers of `α`, in order.
   let mut groups : List (Nat × Nat × Array (ByteArray × Nat × EVec × List (EF × EF × EF))) := []
   for (m, pts) in items do
@@ -559,12 +501,8 @@ def fold2Range (v : @& EVec) (twoX : @& ByteArray) (beta : EF) (r0 len : Nat) : 
   let inv2x := batchInvRange twoX r0 len
   ((lo.add hi).smul (Ext.ofBase (2 : F)⁻¹)).add (((lo.sub hi).mulBase inv2x).smul beta)
 
-/-- `Fri.foldPairs` on planes, `(lo + hi) / 2 + β (lo - hi) / (2 x)`, in parallel ranges; the
-two-adic generators exist up to order `2 ^ 24`. -/
+/-- `Fri.foldPairs` on planes, `(lo + hi) / 2 + β (lo - hi) / (2 x)`, in parallel ranges. -/
 def fold2 (v : EVec) (beta : EF) (logRows : Nat) : EVec :=
-  if !(v.fits && v.n == 2 ^ (logRows + 1) && logRows < 24) then
-    EVec.ofArray (foldPairs v.decode beta logRows)
-  else
   let rows := 2 ^ logRows
   let pw := cosetPoints 1 (logRows + 1)
   let twoX := CompPoly.CPolynomial.NTTFast.Packed.Native.encodeFields
@@ -590,12 +528,8 @@ def interleaveRange (a0 a1 a2 a3 : @& ByteArray) (i0 len : Nat) : ByteArray := I
       (CompPoly.CPolynomial.NTTFast.Packed.Native.read a3 i)
   return out
 
-/-- The matrix of rows of `k` elements, flattened, packed in parallel ranges; the coordinates fit
-machine indices. -/
+/-- The matrix of rows of `k` elements, flattened, packed in parallel ranges. -/
 def leaves (k : Nat) (v : EVec) : PMat :=
-  if !(v.fits && 16 * v.n < USize.size) then
-    ofRows (4 * k) (v.n / k) (v.decode.flatMap fun x ↦ (Ext.coeffs x).toArray)
-  else
   let n := v.n
   let parts := if n < 4096 then 1 else 16
   let size := n / parts
@@ -604,12 +538,7 @@ def leaves (k : Nat) (v : EVec) : PMat :=
   { width := 4 * k, height := n / k, words := ts.foldl (fun acc t ↦ acc ++ t.get) .empty }
 
 /-- `a + x · b`. -/
-def addScaled (a b : EVec) (x : EF) : EVec :=
-  if a.fits && b.fits && a.n == b.n then a.add (b.smul x)
-  else EVec.ofArray (Array.zipWith (fun u v ↦ u + x * v) a.decode b.decode)
-
-/-- The elements. -/
-def toArray (v : EVec) : Array EF := if v.fits then v.toArray else v.decode
+def addScaled (a b : EVec) (x : EF) : EVec := a.add (b.smul x)
 
 /-- The fast backend. -/
 def backend : Backend where
@@ -624,7 +553,7 @@ def backend : Backend where
   quotient := quotient
   openedAt := openedAt
   V := EVec
-  toArray := toArray
+  toArray := EVec.toArray
   ofArray := EVec.ofArray
   size := (·.n)
   reduce := reduce

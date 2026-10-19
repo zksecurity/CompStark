@@ -66,6 +66,9 @@ def basis (e : Nat) : EF :=
   | 2 => ⟨0, 0, 1, 0⟩
   | _ => ⟨0, 0, 0, 1⟩
 
+/-- `z` is outside the base field: no `z - x` for a base `x` vanishes. -/
+def OutsideBase (z : EF) : Prop := z.c1 ≠ 0 ∨ z.c2 ≠ 0 ∨ z.c3 ≠ 0
+
 /-- The base coefficients, lowest first. -/
 def coeffs (x : EF) : List F := [x.c0, x.c1, x.c2, x.c3]
 

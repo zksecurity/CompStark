@@ -25,6 +25,7 @@ public import CompStark.Fri.Verifier
 public import CompStark.Stark.Air
 public import CompStark.Stark.Verifier
 public import CompStark.Fri.Prover
+public import CompStark.Fri.Assumptions
 public import CompStark.Fri.Refines
 public import CompStark.Stark.Prover
 public import CompStark.Stark.Refines

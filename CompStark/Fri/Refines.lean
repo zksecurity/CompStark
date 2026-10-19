@@ -4,7 +4,7 @@ Released under Apache 2.0 license as described in the file LICENSE.
 -/
 module
 
-public import CompStark.Fri.Prover
+public import CompStark.Fri.Assumptions
 public import Mathlib.Data.List.Forall2
 
 /-! # Backends that refine the specification
@@ -22,33 +22,40 @@ open CompStark.Stark CompStark.KoalaBear
 local notation "F" => KoalaBear.Fast.Field
 local notation "EF" => KoalaBear.Fast.Ext4
 
-/-- The backend `B` computes the specification's functions, through relations `RM`, `RC`, `RV`
-between its matrices, commitments and vectors and the specification's. -/
+/-- The backend `B` computes the specification's functions on the inputs the prover gives them,
+through relations `RM`, `RC`, `RV` between its matrices, commitments and vectors and the
+specification's. -/
 structure Refines (B : Backend) where
   RM : B.M → Backend.spec.M → Prop
   RC : B.C → Backend.spec.C → Prop
   RV : B.V → Backend.spec.V → Prop
   transcript : B.transcript = Backend.spec.transcript
-  lde : ∀ logH bits shift w m,
+  lde : ∀ logH bits shift w m, m.size = 2 ^ logH * w → logH + bits ≤ 24 →
+    Addressable (2 ^ (logH + bits) * w) →
     RM (B.lde logH bits shift w m) (Backend.spec.lde logH bits shift w m)
-  commit : ∀ {ms ss}, List.Forall₂ RM ms ss → RC (B.commit ms) (Backend.spec.commit ss)
+  commit : ∀ {ms ss}, List.Forall₂ RM ms ss → CommitOk ss →
+    RC (B.commit ms) (Backend.spec.commit ss)
   root : ∀ {c s}, RC c s → B.root c = Backend.spec.root s
   openAt : ∀ {c s} i, RC c s → B.openAt c i = Backend.spec.openAt s i
   logHeight : ∀ {c s}, RC c s → B.logHeight c = Backend.spec.logHeight s
-  quotient : ∀ A pis d l {m s} alpha, RM m s →
+  quotient : ∀ A pis d l {m s} alpha, RM m s → MatOk s → 2 ^ (d + l) ≤ s.height →
+    (∀ c ∈ A.constraints, c.colsBelow s.width) →
     B.quotient A pis d l m alpha = Backend.spec.quotient A pis d l s alpha
-  openedAt : ∀ b zs {m s}, RM m s → B.openedAt b m zs = Backend.spec.openedAt b s zs
-  toArray : ∀ {v a}, RV v a → B.toArray v = Backend.spec.toArray a
+  openedAt : ∀ b zs {m s}, RM m s → MatOk s → (∀ z ∈ zs, Ext.OutsideBase z) →
+    B.openedAt b m zs = Backend.spec.openedAt b s zs
+  toArray : ∀ {v a}, RV v a → a.size ≤ 2 ^ 24 → B.toArray v = Backend.spec.toArray a
   ofArray : ∀ a, RV (B.ofArray a) (Backend.spec.ofArray a)
   size : ∀ {v a}, RV v a → B.size v = Backend.spec.size a
   reduce : ∀ alpha {items sitems},
     List.Forall₂ (fun x y ↦ RM x.1 y.1 ∧ x.2 = y.2) items sitems →
+    (∀ x ∈ sitems, MatOk x.1 ∧ ∀ p ∈ x.2, Ext.OutsideBase p.1) →
     List.Forall₂ (fun x y ↦ x.1 = y.1 ∧ RV x.2 y.2) (B.reduce alpha items)
       (Backend.spec.reduce alpha sitems)
-  fold2 : ∀ beta k {v a}, RV v a → RV (B.fold2 v beta k) (Backend.spec.fold2 a beta k)
-  addScaled : ∀ x {v a w b}, RV v a → RV w b →
+  fold2 : ∀ beta k {v a}, RV v a → a.size = 2 ^ (k + 1) → k < 24 →
+    RV (B.fold2 v beta k) (Backend.spec.fold2 a beta k)
+  addScaled : ∀ x {v a w b}, RV v a → RV w b → a.size = b.size → a.size ≤ 2 ^ 24 →
     RV (B.addScaled v w x) (Backend.spec.addScaled a b x)
-  leaves : ∀ k {v a}, RV v a → RM (B.leaves k v) (Backend.spec.leaves k a)
+  leaves : ∀ k {v a}, RV v a → a.size ≤ 2 ^ 24 → RM (B.leaves k v) (Backend.spec.leaves k a)
 
 /-- Prover computations that, from every transcript, return related results and the same
 transcript. -/

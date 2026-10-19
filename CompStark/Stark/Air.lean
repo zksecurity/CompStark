@@ -72,6 +72,12 @@ def eval {K : Type*} [Add K] [Sub K] [Mul K] (env : Env K) : Expr → K
   | sub a b => eval env a - eval env b
   | mul a b => eval env a * eval env b
 
+/-- Every column `e` reads is below `w`. -/
+def colsBelow (w : Nat) : Expr → Bool
+  | cur c | next c => c < w
+  | pub _ | const _ | isFirstRow | isLastRow | isTransition => true
+  | add a b | sub a b | mul a b => colsBelow w a && colsBelow w b
+
 end Expr
 
 /-- An AIR. -/
@@ -80,6 +86,9 @@ structure Air where
   constraints : List Expr
 
 namespace Air
+
+/-- Every constraint reads columns below the width. -/
+def ColsInWidth (A : Air) : Prop := ∀ c ∈ A.constraints, c.colsBelow A.width
 
 /-- The largest constraint degree. -/
 def maxDegree (A : Air) : Nat := A.constraints.foldl (fun m c ↦ max m c.degree) 0
