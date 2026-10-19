@@ -1056,6 +1056,101 @@ theorem chunk_lde (logN b lc : Nat) (h24 : logN + b ≤ 24) (hlc : lc ≤ b) (qs
     rw [aeval_algebraMap_apply_eq_algebraMap_eval, ← hpt, hval e he r hr,
       chunkValues_getD _ _ _ _ _ _ hr he]
 
+theorem toSpec_foldl_add {α : Type*} (f : α → EF) : ∀ (l : List α) (x : EF),
+    Ext4.toSpec (l.foldl (fun acc a ↦ acc + f a) x) =
+      Ext4.toSpec x + (l.map fun a ↦ Ext4.toSpec (f a)).sum
+  | [], x => by rw [List.foldl_nil, List.map_nil, List.sum_nil, add_zero]
+  | a :: l, x => by
+    rw [List.foldl_cons, toSpec_foldl_add f l, Ext4.toSpec_add, List.map_cons, List.sum_cons,
+      add_assoc]
+
+theorem toSpec_foldl_mul {α : Type*} (f g : α → EF) : ∀ (l : List α) (x : EF),
+    Ext4.toSpec (l.foldl (fun acc a ↦ acc * f a * (g a)⁻¹) x) =
+      Ext4.toSpec x * (l.map fun a ↦ Ext4.toSpec (f a) * (Ext4.toSpec (g a))⁻¹).prod
+  | [], x => by rw [List.foldl_nil, List.map_nil, List.prod_nil, mul_one]
+  | a :: l, x => by
+    rw [List.foldl_cons, toSpec_foldl_mul f g l, Ext4.toSpec_mul, Ext4.toSpec_mul,
+      Ext4.toSpec_inv, List.map_cons, List.prod_cons]
+    simp only [mul_assoc]
+
+theorem list_sum_range {M : Type*} [AddCommMonoid M] (f : Nat → M) : ∀ n,
+    ((List.range n).map f).sum = ∑ i ∈ Finset.range n, f i
+  | 0 => rfl
+  | n + 1 => by
+    rw [List.range_succ, List.map_append, List.sum_append, list_sum_range f n,
+      Finset.sum_range_succ, List.map_cons, List.map_nil, List.sum_cons, List.sum_nil, add_zero]
+
+/-- The domain of chunk `i`. -/
+abbrev chunkDomain (logN lc i : Nat) : Domain :=
+  ⟨gen * powF (twoAdicGen (logN + lc)) i, logN⟩
+
+theorem toField_chunkShift (logN lc i : Nat) :
+    FastField.toField (chunkDomain logN lc i).shift = qpt (logN + lc) i := by
+  rw [toField_mul, toField_powF]
+
+theorem toSpec_vanishingAt (logN lc i : Nat) (p : EF) :
+    Ext4.toSpec (vanishingAt (chunkDomain logN lc i) p) =
+      vanish logN (qpt (logN + lc) i) (Ext4.toSpec p) := by
+  rw [vanishingAt, Ext4.toSpec_sub, toSpec_extPowTwo, Ext4.toSpec_mul, Ext4.toSpec_ofBase,
+    Ext4.toSpec_one, vanish, toField_inv, toField_chunkShift,
+    CompPoly.Extension.Ext.algebraMap_eq_ofBase]
+
+/-- Chunk shifts are distinct. -/
+theorem chunkShift_beq (logN lc i j : Nat) (h : logN + lc ≤ 24) (hi : i < 2 ^ lc)
+    (hj : j < 2 ^ lc) :
+    ((chunkDomain logN lc j).shift != (chunkDomain logN lc i).shift) = (j != i) := by
+  by_cases hij : j = i
+  · rw [hij]; simp only [bne_self_eq_false]
+  · have hne : (chunkDomain logN lc j).shift ≠ (chunkDomain logN lc i).shift := fun he ↦ by
+      have := congrArg FastField.toField he
+      rw [toField_chunkShift, toField_chunkShift, qpt, qpt] at this
+      have hp := isPrimitiveRoot_twoAdicGen (logN + lc) h
+      have hk : 2 ^ lc ≤ 2 ^ (logN + lc) := Nat.pow_le_pow_right (by omega) (by omega)
+      exact hij (hp.pow_inj (by omega) (by omega) (mul_left_cancel₀ toField_gen_ne_zero this))
+    rw [bne_iff_ne.mpr hne, bne_iff_ne.mpr hij]
+
+/-- The verifier's selector of chunk `i` is `chunkSel`. -/
+theorem toSpec_selector (logN lc i : Nat) (h : logN + lc ≤ 24) (hi : i < 2 ^ lc) (z : EF) :
+    Ext4.toSpec (((chunkDomains logN lc).filter fun dj ↦ dj.shift != (chunkDomain logN lc i).shift).foldl
+      (fun acc dj ↦ acc * vanishingAt dj z *
+        (vanishingAt dj (Ext.ofBase (chunkDomain logN lc i).shift))⁻¹) 1) =
+      chunkSel logN lc i (Ext4.toSpec z) := by
+  have hds : chunkDomains logN lc = (List.range (2 ^ lc)).map (chunkDomain logN lc) := rfl
+  have hf : (List.range (2 ^ lc)).filter (fun j ↦ (chunkDomain logN lc j).shift !=
+      (chunkDomain logN lc i).shift) = (List.range (2 ^ lc)).filter (fun j ↦ j != i) :=
+    List.filter_congr fun j hj ↦ chunkShift_beq logN lc i j h hi (List.mem_range.mp hj)
+  rw [hds, List.filter_map]
+  simp only [Function.comp_def]
+  rw [hf, List.foldl_map, toSpec_foldl_mul, Ext4.toSpec_one, one_mul]
+  have hnd : ((List.range (2 ^ lc)).filter (· != i)).Nodup := (List.nodup_range).filter _
+  have hfs : ((List.range (2 ^ lc)).filter (· != i)).toFinset = (Finset.range (2 ^ lc)).erase i := by
+    ext j
+    simp only [List.mem_toFinset, List.mem_filter, List.mem_range, bne_iff_ne, ne_eq,
+      Finset.mem_erase, Finset.mem_range]
+    exact And.comm
+  rw [← List.prod_toFinset _ hnd, hfs, chunkSel]
+  refine Finset.prod_congr rfl fun j _ ↦ ?_
+  rw [toSpec_vanishingAt, toSpec_vanishingAt, Ext4.toSpec_ofBase, toField_chunkShift,
+    ← CompPoly.Extension.Ext.algebraMap_eq_ofBase]
+
+/-- The verifier's per-chunk sum of the four coordinates. -/
+abbrev chunkInner (ch : Array EF) : EF :=
+  (List.range 4).foldl (fun s e ↦ s + Ext.basis e * ch.getD e 0) 0
+
+/-- **The verifier's recomposition** is `∑_c L_c(ζ) q_c(ζ)` with the chunks' values. -/
+theorem toSpec_recompose (logN lc : Nat) (h : logN + lc ≤ 24) (chs : Nat → Array EF) (z : EF) :
+    Ext4.toSpec (recompose (chunkDomains logN lc) ((List.range (2 ^ lc)).map chs) z) =
+      ∑ c ∈ Finset.range (2 ^ lc),
+        chunkSel logN lc c (Ext4.toSpec z) * Ext4.toSpec (chunkInner (chs c)) := by
+  have hds : chunkDomains logN lc = (List.range (2 ^ lc)).map (chunkDomain logN lc) := rfl
+  unfold recompose
+  rw [hds, List.map_map]
+  simp only [List.zip_map', List.foldl_map, Function.comp_apply]
+  rw [toSpec_foldl_add, Ext4.toSpec_zero, zero_add, list_sum_range]
+  refine Finset.sum_congr rfl fun c hc ↦ ?_
+  rw [Ext4.toSpec_mul, ← hds]
+  exact congrArg (· * _) (toSpec_selector logN lc c h (Finset.mem_range.mp hc) z)
+
 end Recompose
 
 end CompStark.Stark
