@@ -9,12 +9,12 @@ package CompStark where
 -- Pinned to a CompPoly commit with the packed NTT and the batched coset LDE.
 require CompPoly from git "https://github.com/mitschabaude-bot/CompPoly.git" @ "3e09608ea702552a3e3f466926c4607ea959190c"
 
--- ArkLib with its Poseidon2 round-constant fix (Verified-zkEVM/ArkLib#1316), for the equivalence
--- of our Poseidon2 with ArkLib's.
-require Arklib from git "https://github.com/Verified-zkEVM/ArkLib" @ "2817d8c7d2f28d706b17f8de0f885880d0b2eb13"
+-- ArkLib with FRI round-by-round soundness on Lean v4.35: Verified-zkEVM/ArkLib#1317, stacked on
+-- #992 (FRI soundness) and #1251 (VCVio measure probability).
+require Arklib from git "https://github.com/mitschabaude-bot/ArkLib.git" @ "ec3fc4d98321783ae663b4a1e83988fb314a5a97"
 
--- VCVio on Lean v4.35, Verified-zkEVM/VCVio#866, ahead of ArkLib's v4.34 pin.
-require VCVio from git "https://github.com/Verified-zkEVM/VCVio" @ "cf8cf2564ff1a05ca5023fb742ca5e0195cd41ad"
+-- VCVio as ArkLib#1317 pins it: Verified-zkEVM/VCVio#821 on Lean v4.35.
+require VCVio from git "https://github.com/Verified-zkEVM/VCVio" @ "0de3bf11c4acd77a5e750288049ad35e1a650bf9"
 
 -- Mathlib as CompPoly pins it, last so that its dependencies take precedence over ArkLib's.
 require mathlib from git "https://github.com/leanprover-community/mathlib4" @ "v4.35.0"
