@@ -30,6 +30,6 @@ The Rust side lives in `bench/rust`; `cargo run --release` prints the Poseidon2 
 
 ## Roadmap
 
-1. Clean's proof system: the verifier, then Plonky3's `batch-stark` with LogUp lookups and preprocessed columns, as Clean's Plonky3 backend uses them.
+1. Plonky3's multi-table STARK: the verifier, then `batch-stark` with LogUp lookups and preprocessed columns.
 2. Binary fields, following [leanVM](https://github.com/leanEthereum/leanMultisig): a binary tower field, WHIR, and Binius-style ring switching.
 3. Multilinear proving, following [SP1 Hypercube](https://blog.succinct.xyz/sp1-hypercube/): zerocheck by sumcheck, LogUp-GKR, and Basefold behind the jagged commitment, over KoalaBear with Poseidon2.
