@@ -27,3 +27,9 @@ The Rust side lives in `bench/rust`; `cargo run --release` prints the Poseidon2 
 ## Later
 
 - Custom externs for the Poseidon2 kernels. Every `ByteArray` store in Lean carries an exclusivity check, so a loop over the eight lanes stays scalar, and clang's SLP vectorizer only handles one round at a time. Written as one loop over the lanes, the whole width-24 permutation keeps its state in registers and vectorizes cleanly: 211 ns in a C model of the Lean kernels, against 289 ns for the split Lean kernels and 179 ns for Plonky3. A check-free store primitive would unlock that shape, at the price of trusting an extern.
+
+## Roadmap
+
+1. Clean's proof system: the verifier, then Plonky3's `batch-stark` with LogUp lookups and preprocessed columns, as Clean's Plonky3 backend uses them.
+2. Binary fields, following [leanVM](https://github.com/leanEthereum/leanMultisig): a binary tower field, WHIR, and Binius-style ring switching.
+3. Multilinear proving, following [SP1 Hypercube](https://blog.succinct.xyz/sp1-hypercube/): zerocheck by sumcheck, LogUp-GKR, and Basefold behind the jagged commitment, over KoalaBear with Poseidon2.
