@@ -3,6 +3,7 @@ Copyright (c) 2026 zkSecurity. All rights reserved.
 Released under Apache 2.0 license as described in the file LICENSE.
 -/
 import CompStark.Stark.Prover
+import CompStark.Complete.Stark
 
 /-! # STARK known answers
 
@@ -51,3 +52,7 @@ def check (name : String) (A : Air) (inst : Nat → Array F × List F) (ps : Lis
     check "cube" cube cubeInstance ps
 
 end CompStarkTests.Stark
+
+/-- info: 'CompStark.Stark.verify_prove' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in
+#print axioms CompStark.Stark.verify_prove
