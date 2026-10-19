@@ -477,4 +477,271 @@ theorem reduce_heights (alpha : EF) (items : List (Mat × List (EF × Array EF))
   · obtain ⟨e, he, rfl⟩ := List.mem_map.mp hy
     exact hsz e (hperm.mem_iff.mp he)
 
+
+namespace Deep
+
+/-! ### The verifier's loops -/
+
+/-- A loop whose body, on states `Φ c`, yields `Φ (G c d)` runs the fold of `G`. -/
+theorem forIn_map_eq {m : Type → Type} [Monad m] [LawfulMonad m] {α β γ δ : Type}
+    (χ : δ → α) (Φ : γ → β) (G : γ → δ → γ) (Inv : γ → Prop) (f : α → β → m (ForInStep β)) :
+    ∀ (l : List δ), (∀ d ∈ l, ∀ c, Inv c → f (χ d) (Φ c) = pure (.yield (Φ (G c d))) ∧
+      Inv (G c d)) → ∀ c, Inv c → forIn (l.map χ) (Φ c) f = pure (Φ (l.foldl G c))
+  | [], _, _, _ => rfl
+  | d :: l, hf, c, hc => by
+    obtain ⟨h1, h2⟩ := hf d List.mem_cons_self c hc
+    rw [List.map_cons, List.forIn_cons, h1, pure_bind]
+    exact forIn_map_eq χ Φ G Inv f l (fun d hd ↦ hf d (List.mem_cons_of_mem _ hd)) _ h2
+
+/-- The verifier's column loop through `toSpec`: the running power of `α` and the sum
+`∑ᵢ ap αⁱ (yᵢ - vᵢ) q`. -/
+theorem toSpec_foldl_column (alpha q : EF) (ys : Nat → EF) (vs : Nat → F) (ap acc : EF) (w : Nat) :
+    let r := (List.range w).foldl (fun s i ↦ (s.1 * alpha,
+      s.2 + s.1 * (ys i - Ext.ofBase (vs i)) * q)) (ap, acc)
+    Ext4.toSpec r.1 = Ext4.toSpec ap * Ext4.toSpec alpha ^ w ∧
+      Ext4.toSpec r.2 = Ext4.toSpec acc + ∑ i ∈ Finset.range w, Ext4.toSpec ap *
+        Ext4.toSpec alpha ^ i * (Ext4.toSpec (ys i) - ι (FastField.toField (vs i))) *
+          Ext4.toSpec q := by
+  induction w with
+  | zero =>
+    refine ⟨by rw [List.range_zero, List.foldl_nil, pow_zero, mul_one], ?_⟩
+    rw [List.range_zero, List.foldl_nil, Finset.sum_range_zero, add_zero]
+  | succ w ih =>
+    obtain ⟨h1, h2⟩ := ih
+    simp only [List.range_succ, List.foldl_append, List.foldl_cons, List.foldl_nil] at h1 h2 ⊢
+    refine ⟨by rw [Ext4.toSpec_mul, h1, pow_succ, mul_assoc], ?_⟩
+    rw [Ext4.toSpec_add, h2, Finset.sum_range_succ, Ext4.toSpec_mul, Ext4.toSpec_mul, h1,
+      Ext4.toSpec_sub, toSpec_ofBase, add_assoc]
+
+/-- The running sums of `reduce` as the verifier keeps them at a query: the power of `α` for the
+next column and the sum at the queried row of each height. -/
+def atQuery (alpha : EF) (logMax index : Nat) (red : List (Nat × Nat × Array EF)) :
+    List (Nat × EF × EF) :=
+  red.map fun e ↦ (e.1, Ext.pow alpha e.2.1, e.2.2.getD (index >>> (logMax - e.1)) 0)
+
+theorem lookup_atQuery (alpha : EF) (logMax index h : Nat) :
+    ∀ red : List (Nat × Nat × Array EF), (atQuery alpha logMax index red).lookup h =
+      (red.lookup h).map fun v ↦ (Ext.pow alpha v.1, v.2.getD (index >>> (logMax - h)) 0)
+  | [] => rfl
+  | e :: red => by
+    rw [atQuery, List.map_cons, List.lookup_cons, List.lookup_cons]
+    by_cases he : h = e.1
+    · subst he
+      simp only [beq_self_eq_true, Option.map_some]
+    · have hb : (h == e.1) = false := beq_false_of_ne he
+      simp only [hb]
+      exact lookup_atQuery alpha logMax index h red
+
+theorem shiftRight_lt {index logMax h : Nat} (hidx : index < 2 ^ logMax) (hh : h ≤ logMax) :
+    index >>> (logMax - h) < 2 ^ h := by
+  rw [Nat.shiftRight_eq_div_pow, Nat.div_lt_iff_lt_mul (Nat.two_pow_pos _), ← Nat.pow_add,
+    Nat.add_sub_cancel' hh]
+  exact hidx
+
+/-- At the blowup height the polynomials are constants: the batched quotient vanishes. -/
+theorem blowup_zero {b : Nat} {red : List (Nat × Nat × Array EF)} (hred : RedOk b red)
+    (alpha : EF) (logMax index : Nat) (hidx : index < 2 ^ logMax) (hb : b ≤ logMax)
+    {v : EF × EF} (hl : (atQuery alpha logMax index red).lookup b = some v) : v.2 = 0 := by
+  rw [lookup_atQuery] at hl
+  obtain ⟨u, hu, rfl⟩ := Option.map_eq_some_iff.mp hl
+  obtain ⟨-, -, -, p, hp, hv⟩ := hred.2 _ (lookup_mem hu)
+  rw [Nat.sub_self, Nat.pow_zero, Nat.sub_self, Nat.cast_zero, Nat.WithBot.lt_zero_iff,
+    degree_eq_bot] at hp
+  apply Ext4.toSpec_injective
+  rw [hv _ (shiftRight_lt hidx hb), hp, eval_zero, Ext4.toSpec_zero]
+
+/-- The verifier's state for a point count and running sum. -/
+def powPair (alpha : EF) (s : Nat × EF) : EF × EF := (Ext.pow alpha s.1, s.2)
+
+theorem zip_toList (a : Array F) (b : Array EF) (w : Nat) (ha : a.size = w) (hb : b.size = w) :
+    a.toList.zip b.toList = (List.range w).map fun j ↦ (a.getD j 0, b.getD j 0) := by
+  apply List.ext_getElem
+  · simp only [List.length_zip, Array.length_toList, ha, hb, Nat.min_self, List.length_map,
+      List.length_range]
+  · intro j h1 h2
+    simp only [List.length_zip, Array.length_toList, ha, hb, Nat.min_self] at h1
+    simp only [List.getElem_zip, Array.getElem_toList, List.getElem_map, List.getElem_range,
+      Array.getD_eq_getD_getElem?, Array.getElem?_eq_getElem (show j < a.size by omega),
+      Array.getElem?_eq_getElem (show j < b.size by omega), Option.getD_some]
+
+theorem rowOf_getD (m : Mat) (i j : Nat) (hj : j < m.width) :
+    (rowOf m i).getD j 0 = m.values.getD (i * m.width + j) 0 :=
+  CompPoly.CPolynomial.NTTFast.Packed.getD_ofFn_bounded _ _ hj _
+
+theorem lookup_start (alpha : EF) (logMax index h : Nat) (red : List (Nat × Nat × Array EF))
+    (m : Mat) (hm : Nat.log2 m.height = h) :
+    ((atQuery alpha logMax index red).lookup h).getD (1, 0) =
+      powPair alpha ((startOf red m).1, (startOf red m).2.getD (index >>> (logMax - h)) 0) := by
+  rw [lookup_atQuery, startOf, hm]
+  cases red.lookup h with
+  | none =>
+    simp only [Option.map_none, Option.getD_none, powPair]
+    refine Prod.ext (by rw [Ext.pow]) ?_
+    show (0 : EF) = _
+    rw [Array.getD_eq_getD_getElem?, Array.getElem?_replicate]
+    split <;> rfl
+  | some v => rfl
+
+theorem atQuery_cons_filter (alpha : EF) (logMax index k : Nat) (e : Nat × Nat × Array EF)
+    (red : List (Nat × Nat × Array EF)) :
+    atQuery alpha logMax index (e :: red.filter (·.1 != k)) =
+      (e.1, Ext.pow alpha e.2.1, e.2.2.getD (index >>> (logMax - e.1)) 0) ::
+        (atQuery alpha logMax index red).filter (·.1 != k) := by
+  rw [atQuery, atQuery, List.map_cons, List.filter_map]
+  rfl
+
+/-- One point of the verifier's loop is the prover's `ptStep` at the queried row. -/
+theorem column_loop (alpha : EF) (m : Mat) (i : Nat) (hi : i < m.height) (xv : F) (c : Nat)
+    (a : EF) (y : EF × Array EF) :
+    (List.range m.width).foldl (fun s j ↦ (s.1 * alpha, s.2 + s.1 *
+      (y.2.getD j 0 - Ext.ofBase ((rowOf m i).getD j 0)) * (y.1 - Ext.ofBase xv)⁻¹))
+      (Ext.pow alpha c, a) =
+      powPair alpha (ptStep alpha m.width ((compress m (powers alpha m.width)).getD i 0) xv
+        (c, a) y) := by
+  obtain ⟨h1, h2⟩ := toSpec_foldl_column alpha (y.1 - Ext.ofBase xv)⁻¹ (y.2.getD · 0)
+    (fun j ↦ (rowOf m i).getD j 0) (Ext.pow alpha c) a m.width
+  refine Prod.ext (Ext4.toSpec_injective ?_) (Ext4.toSpec_injective ?_)
+  · rw [h1, powPair, ptStep, toSpec_pow, toSpec_pow]
+    exact (pow_add _ _ _).symm
+  · rw [h2, powPair, ptStep, compress_getD _ _ _ hi, toSpec_termStep]
+    refine congrArg _ (Finset.sum_congr rfl fun j hj ↦ ?_)
+    rw [rowOf_getD _ _ _ (Finset.mem_range.mp hj), toSpec_pow, Ext4.toSpec_inv, Ext4.toSpec_sub,
+      toSpec_ofBase, pow_add]
+
+end Deep
+
+
+/-- The verifier's batched quotients at a query are the prover's, given the Merkle facts: every
+round commits matrices of one height `2 ^ h` that are honest LDEs with true openings, the verifier's
+rounds are built as the STARK verifier builds them, and the openings are the prover's at the
+query's row. -/
+theorem openInput_honest_of (P : Params) (logMax index : Nat) (alpha : EF)
+    (rounds : List (Committed × List (Mat × List (EF × Array EF))))
+    (hidx : index < 2 ^ logMax)
+    (hrounds : ∀ r ∈ rounds, r.2 ≠ [] ∧ r.1 = Committed.ofMats (r.2.map (·.1)) ∧
+      ∃ h ≤ logMax, ∀ x ∈ r.2, Deep.HonestItem P.logBlowup h x)
+    (hmerkle : ∀ (ms : List Mat) (k : Nat), ms ≠ [] →
+      (∀ m ∈ ms, m.height = 2 ^ k ∧ m.values.size = m.width * m.height) → ∀ i < 2 ^ k,
+      Merkle.KoalaBear.verifyBatch KoalaBear.Fast.Field (Committed.ofMats ms).root
+        (ms.map (·.height)) i (((Committed.ofMats ms).openAt i).values.toList.map (·.toList))
+        ((Committed.ofMats ms).openAt i).path.toList = true)
+    (hvalues : ∀ (ms : List Mat) (k : Nat), (∀ m ∈ ms, m.height = 2 ^ k) → ∀ i,
+      ((Committed.ofMats ms).openAt i).values = (ms.map fun m ↦ rowOf m i).toArray)
+    (hmax : ∀ (ms : List Mat) (h : Nat), ms ≠ [] → (∀ m ∈ ms, m.height = h) →
+      (Committed.ofMats ms).maxHeight = h) :
+    openInput P logMax index alpha
+      (rounds.map fun r ↦ r.1.openAt (index >>> (logMax - Nat.log2 r.1.maxHeight)))
+      (rounds.map fun r ↦ (r.1.root, r.2.map fun x ↦
+        ((⟨1, Nat.log2 x.1.height - P.logBlowup⟩ : Domain), x.2.map fun y ↦ (y.1, y.2.toList)))) =
+      pure ((Fri.reduce alpha (rounds.flatMap (·.2))).map fun y ↦
+        (y.1, y.2.getD (index >>> (logMax - y.1)) 0)) := by
+  unfold openInput
+  rw [List.zip_map']
+  simp only [ensure, List.length_map, beq_self_eq_true, ite_true, pure_bind,
+    List.forIn_pure_yield_eq_foldl]
+  rw [show ([] : List (Nat × EF × EF)) = Deep.atQuery alpha logMax index [] from rfl]
+  rw [Deep.forIn_map_eq _ (Deep.atQuery alpha logMax index)
+    (fun red r ↦ r.2.foldl (reduceStep alpha) red) (Deep.RedOk P.logBlowup) _ rounds ?hf []
+    ⟨List.nodup_nil, fun _ h ↦ absurd h List.not_mem_nil⟩, pure_bind]
+  case hf =>
+    intro r hr red hred
+    obtain ⟨hne, hc, h, hh, hits⟩ := hrounds r hr
+    obtain ⟨c, its⟩ := r
+    dsimp only at hne hc hits ⊢
+    subst hc
+    have hH : ∀ x ∈ its, x.1.height = 2 ^ h ∧ x.1.values.size = x.1.width * x.1.height := by
+      intro x hx
+      obtain ⟨ps, hm, -⟩ := hits x hx
+      exact ⟨hm.2.1, hm.2.2.1⟩
+    have hlog : ∀ x ∈ its, Nat.log2 x.1.height - P.logBlowup + P.logBlowup = h := by
+      intro x hx
+      obtain ⟨ps, hm, -⟩ := hits x hx
+      rw [hm.2.1, Nat.log2_two_pow, Nat.sub_add_cancel hm.2.2.2.1]
+    have hne' : its.map (·.1) ≠ [] := by rwa [Ne, List.map_eq_nil_iff]
+    have hms : ∀ m ∈ its.map (·.1), m.height = 2 ^ h ∧ m.values.size = m.width * m.height := by
+      intro m hm
+      obtain ⟨x, hx, rfl⟩ := List.mem_map.mp hm
+      exact hH x hx
+    have hheights : List.map (fun x ↦ 2 ^ (x.1.logSize + P.logBlowup))
+        (List.map (fun x ↦ (({ shift := 1, logSize := x.1.height.log2 - P.logBlowup } : Domain),
+          List.map (fun y ↦ (y.1, y.2.toList)) x.2)) its) = (its.map (·.1)).map (·.height) := by
+      rw [List.map_map, List.map_map]
+      refine List.map_congr_left fun x hx ↦ ?_
+      simp only [Function.comp_apply]
+      rw [hlog x hx, (hH x hx).1]
+    have hmaxh : (List.map (·.height) (its.map (·.1))).max? = some (2 ^ h) := by
+      refine List.max?_eq_some_iff.mpr ⟨?_, fun a ha ↦ ?_⟩
+      · obtain ⟨m, hm⟩ := List.exists_mem_of_ne_nil _ hne'
+        exact List.mem_map.mpr ⟨m, hm, (hms m hm).1⟩
+      · obtain ⟨m, hm, rfl⟩ := List.mem_map.mp ha
+        exact Nat.le_of_eq (hms m hm).1
+    have hmx : (Committed.ofMats (its.map (·.1))).maxHeight = 2 ^ h :=
+      hmax _ _ hne' fun m hm ↦ (hms m hm).1
+    have hi := Deep.shiftRight_lt hidx hh
+    have hvb := hmerkle _ h hne' hms _ hi
+    rw [hvalues _ h (fun m hm ↦ (hms m hm).1)] at hvb
+    simp only [List.map_map] at hvb
+    have hb : P.logBlowup ≤ logMax := by
+      obtain ⟨x, hx⟩ := List.exists_mem_of_ne_nil _ hne
+      obtain ⟨ps, hm, -⟩ := hits x hx
+      exact hm.2.2.2.1.trans hh
+    have hok := Deep.foldl_reduceStep_ok P.logBlowup alpha its (fun x hx ↦ ⟨h, hits x hx⟩) red
+      hred
+    rw [hheights, hmaxh, hmx]
+    simp only [Nat.log2_two_pow, hvb, ite_true, pure_bind,
+      hvalues _ h (fun m hm ↦ (hms m hm).1), List.size_toArray, List.length_map,
+      beq_self_eq_true, List.toList_toArray, List.map_map, List.zip_map']
+    rw [Deep.forIn_map_eq _ (Deep.atQuery alpha logMax index) (reduceStep alpha)
+      (Deep.RedOk P.logBlowup) _ its ?hf2 red hred, pure_bind]
+    case hf2 =>
+      intro x hx red' hred'
+      refine ⟨?_, Deep.reduceStep_ok alpha hred' (hits x hx)⟩
+      have hl := hlog x hx
+      obtain ⟨ps, hm, hpts⟩ := hits x hx
+      obtain ⟨m, pts⟩ := x
+      dsimp only at hl hm hpts ⊢
+      have hlog2 : Nat.log2 m.height = h := by rw [hm.2.1, Nat.log2_two_pow]
+      have hrow : (rowOf m (index >>> (logMax - h))).size = m.width := Array.size_ofFn
+      simp only [Function.comp_apply, hl]
+      rw [Deep.lookup_start alpha logMax index h red' m hlog2]
+      rw [Deep.forIn_map_eq _ (Deep.powPair alpha) (Deep.ptStep alpha m.width
+        ((compress m (powers alpha m.width)).getD (index >>> (logMax - h)) 0)
+        (gen * powF (twoAdicGen h) (reverseBits (index >>> (logMax - h)) h))) (fun _ ↦ True) _ pts
+        ?hf3 _ trivial]
+      case hf3 =>
+        intro y hy s _
+        refine ⟨?_, trivial⟩
+        obtain ⟨c, a⟩ := s
+        have hy2 : y.2.size = m.width := by rw [(hpts y hy).2.1, hm.1]
+        simp only [Array.length_toList, hy2, hrow, beq_self_eq_true, ite_true, pure_bind,
+          Deep.zip_toList _ _ m.width hrow hy2, List.foldl_map, Prod.mk.eta]
+        rw [show Deep.powPair alpha (c, a) = (Ext.pow alpha c, a) from rfl, Deep.column_loop]
+        rw [hm.2.1]
+        exact Deep.shiftRight_lt hidx hh
+      have hi : index >>> (logMax - h) < m.height := by
+        rw [hm.2.1]; exact Deep.shiftRight_lt hidx hh
+      have hst := Deep.startOf_lowDeg hred' hm.2.1 hlog2
+      rw [pure_bind, Deep.reduceStep_eq alpha red' m pts (fun y hy ↦ (hpts y hy).1)
+        (by rw [hst.1, hm.2.1]) (by rw [hlog2, hm.2.1]), Deep.atQuery_cons_filter, hlog2,
+        CompPoly.CPolynomial.NTTFast.Packed.getD_ofFn_bounded _ _ hi,
+        Deep.cosetPointsBitRev_getD h _ (by rw [← hm.2.1]; exact hi), Deep.powPair,
+        Deep.foldl_ptStep, Deep.foldl_ptStep, Fast.powF_eq]
+    refine ⟨?_, hok⟩
+    cases hl : List.lookup P.logBlowup
+        (Deep.atQuery alpha logMax index (List.foldl (reduceStep alpha) red its)) with
+    | none => rfl
+    | some v =>
+      obtain ⟨a1, a2⟩ := v
+      have h0 := Deep.blowup_zero hok alpha logMax index hidx hb hl
+      dsimp only at h0
+      subst h0
+      rfl
+  rw [reduce_eq, ← List.foldl_flatMap, List.map_map, Deep.atQuery,
+    ← List.map_mergeSort (l := List.foldl (reduceStep alpha) [] (rounds.flatMap Prod.snd))
+      (f := fun e : Nat × Nat × Array EF ↦
+        (e.1, Ext.pow alpha e.2.1, e.2.2.getD (index >>> (logMax - e.1)) 0))
+      (r := fun a b ↦ decide (b.1 ≤ a.1)) (s := fun a b ↦ decide (b.1 ≤ a.1))
+      (fun _ _ _ _ ↦ rfl), List.map_map]
+  rfl
+
 end CompStark
