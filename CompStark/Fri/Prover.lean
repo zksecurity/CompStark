@@ -348,16 +348,11 @@ def Backend.spec : Backend where
 /-- A committed batch with each of its matrices and the points at which it is opened. -/
 abbrev OpenRound (B : Backend) := B.C × List (B.M × List EF)
 
-/-- Plonky3's `TwoAdicFriPcs::open`: the opened values, by round, matrix and point, and the FRI
-proof. -/
-def openPcs (B : Backend) (P : Params) (rounds : List (OpenRound B)) :
-    PM (List (List (List (Array EF))) × FriProof) := do
-  let opened ← rounds.mapM fun (_, ms) ↦ ms.mapM fun (m, zs) ↦ do
-    let ov := B.openedAt P.logBlowup m zs
-    ov.forM fun ys ↦ pObserveExts ys.toList
-    return (ov, m, zs.zip ov)
+/-- Plonky3's `prove_fri` with the batching: sample `α`, batch the inputs, commit-phase, queries. -/
+def proveFri (B : Backend) (P : Params) (rounds : List (OpenRound B)) (inputsOf : EF → List B.V) :
+    PM FriProof := do
   let alpha ← pSampleExt
-  let inputs := (B.reduce alpha (opened.flatten.map (·.2))).map (·.2)
+  let inputs := inputsOf alpha
   let logMax := Nat.log2 ((inputs.map B.size).headD 0)
   let cp ← commitPhase B P inputs
   cp.arities.toList.forM fun la ↦ pObserve (la : F)
@@ -366,6 +361,17 @@ def openPcs (B : Backend) (P : Params) (rounds : List (OpenRound B)) :
     let index ← pSampleBits logMax
     let ins := rounds.map fun (c, _) ↦ B.openAt c (index >>> (logMax - B.logHeight c))
     return (⟨ins.toArray, answerQuery B cp index⟩ : QueryProof)
-  return (opened.map (·.map (·.1)), ⟨cp.commits, cp.witnesses, queries.toArray, cp.finalPoly, qw⟩)
+  return ⟨cp.commits, cp.witnesses, queries.toArray, cp.finalPoly, qw⟩
+
+/-- Plonky3's `TwoAdicFriPcs::open`: the opened values, by round, matrix and point, and the FRI
+proof. -/
+def openPcs (B : Backend) (P : Params) (rounds : List (OpenRound B)) :
+    PM (List (List (List (Array EF))) × FriProof) := do
+  let opened ← rounds.mapM fun (_, ms) ↦ ms.mapM fun (m, zs) ↦ do
+    let ov := B.openedAt P.logBlowup m zs
+    ov.forM fun ys ↦ pObserveExts ys.toList
+    return (ov, m, zs.zip ov)
+  let fri ← proveFri B P rounds fun alpha ↦ (B.reduce alpha (opened.flatten.map (·.2))).map (·.2)
+  return (opened.map (·.map (·.1)), fri)
 
 end CompStark.Fri

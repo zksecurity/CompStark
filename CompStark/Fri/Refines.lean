@@ -307,6 +307,40 @@ base field. -/
 def RoundsOk (rounds : List (OpenRound Backend.spec)) : Prop :=
   ∀ r ∈ rounds, ∀ x ∈ r.2, MatOk x.1 ∧ ∀ z ∈ x.2, Ext.OutsideBase z
 
+/-- `proveFri` of related rounds and related inputs of the prover's shapes is the
+specification's. -/
+theorem proveFri_refines (h : Refines B) (P : Params) {rounds srounds}
+    (hr : List.Forall₂ (RoundRel h) rounds srounds) {inputsOf : EF → List B.V}
+    {sinputsOf : EF → List Backend.spec.V}
+    (hin : ∀ alpha, List.Forall₂ h.RV (inputsOf alpha) (sinputsOf alpha))
+    (hshape : ∀ alpha, ∀ x ∈ sinputsOf alpha, ShapeOk x) :
+    RelM Eq (proveFri B P rounds inputsOf) (proveFri Backend.spec P srounds sinputsOf) := by
+  rw [proveFri, proveFri]
+  refine RelM.bind_eq fun alpha ↦ ?_
+  have hin := hin alpha
+  have hshape := hshape alpha
+  generalize inputsOf alpha = inputs at hin ⊢
+  generalize sinputsOf alpha = sinputs at hin hshape ⊢
+  dsimp only
+  rw [forall₂_map_eq (fun _ _ hv ↦ h.size hv) hin]
+  generalize ((sinputs.map Backend.spec.size).headD 0).log2 = logMax
+  refine RelM.bind (commitPhase_refines h P hin hshape) fun cp cs hc ↦ ?_
+  rw [hc.arities]
+  refine RelM.bind_eq fun _ ↦ RelM.bind_eq fun qw ↦ ?_
+  have hq : ∀ index, answerQuery B cp index = answerQuery Backend.spec cs index := by
+    intro index
+    simp only [answerQuery, hc.arities, answerSteps_refines h hc.data]
+  have hins : ∀ index, (rounds.map fun (x : OpenRound B) ↦ match x with
+      | (c, _) => B.openAt c (index >>> (logMax - B.logHeight c))) =
+      srounds.map fun (x : OpenRound Backend.spec) ↦ match x with
+      | (c, _) => Backend.spec.openAt c (index >>> (logMax - Backend.spec.logHeight c)) :=
+    fun index ↦ forall₂_map_eq (fun r s hrs ↦ by
+      simp only [h.logHeight hrs.1, h.openAt _ hrs.1]) hr
+  simp only [hq, hins]
+  refine RelM.bind_eq fun queries ↦ ?_
+  rw [hc.commits, hc.witnesses, hc.finalPoly]
+  exact RelM.pure rfl
+
 /-- `openPcs` of related rounds is the specification's. -/
 theorem openPcs_refines (h : Refines B) (P : Params) {rounds srounds}
     (hr : List.Forall₂ (RoundRel h) rounds srounds) (hok : RoundsOk srounds) :
@@ -345,7 +379,6 @@ theorem openPcs_refines (h : Refines B) (P : Params) {rounds srounds}
           fun p hp ↦ hzs p.1 (List.of_mem_zip hp).1⟩) (forall₂_and_mem hrs.1.2 hrs.2))
     (forall₂_and_mem hr hok)
   refine RelM.bind hop fun opened sopened hos ↦ ?_
-  refine RelM.bind_eq fun alpha ↦ ?_
   have hflat := List.rel_flatten hos
   have hitems : List.Forall₂ (fun x y ↦ h.RM x.1 y.1 ∧ x.2 = y.2)
       (opened.flatten.map (·.2)) (sopened.flatten.map (·.2)) :=
@@ -354,36 +387,15 @@ theorem openPcs_refines (h : Refines B) (P : Params) {rounds srounds}
     intro x hx
     obtain ⟨y, hy, rfl⟩ := List.mem_map.mp hx
     exact forall₂_mem_right (R := S) (fun _ _ hs ↦ hs.2.2.2) hflat y hy
-  have hin : List.Forall₂ h.RV ((B.reduce alpha (opened.flatten.map (·.2))).map (·.2))
+  have hin : ∀ alpha, List.Forall₂ h.RV ((B.reduce alpha (opened.flatten.map (·.2))).map (·.2))
       ((Backend.spec.reduce alpha (sopened.flatten.map (·.2))).map (·.2)) :=
-    forall₂_map (fun _ _ hs ↦ hs.2) (h.reduce alpha hitems hsok)
-  have hshape : ∀ x ∈ (Backend.spec.reduce alpha (sopened.flatten.map (·.2))).map (·.2),
-      ShapeOk x := fun x hx ↦ by
+    fun alpha ↦ forall₂_map (fun _ _ hs ↦ hs.2) (h.reduce alpha hitems hsok)
+  have hshape : ∀ alpha, ∀ x ∈ (Backend.spec.reduce alpha (sopened.flatten.map (·.2))).map (·.2),
+      ShapeOk x := fun alpha x hx ↦ by
     obtain ⟨y, hy, rfl⟩ := List.mem_map.mp hx
     exact Or.inr (reduce_shape alpha _ (fun x hx ↦ (hsok x hx).1) y hy)
-  generalize (B.reduce alpha (opened.flatten.map (·.2))).map (·.2) = inputs at hin ⊢
-  generalize hsin : (Backend.spec.reduce alpha (sopened.flatten.map (·.2))).map (·.2) = sinputs
-    at hin ⊢
-  replace hshape : ∀ x ∈ sinputs, ShapeOk x := fun x hx ↦ hshape x (by subst hsin; exact hx)
-  dsimp only
-  rw [forall₂_map_eq (fun _ _ hv ↦ h.size hv) hin]
-  generalize ((sinputs.map Backend.spec.size).headD 0).log2 = logMax
-  refine RelM.bind (commitPhase_refines h P hin hshape) fun cp cs hc ↦ ?_
-  rw [hc.arities]
-  refine RelM.bind_eq fun _ ↦ RelM.bind_eq fun qw ↦ ?_
-  have hq : ∀ index, answerQuery B cp index = answerQuery Backend.spec cs index := by
-    intro index
-    simp only [answerQuery, hc.arities, answerSteps_refines h hc.data]
-  have hins : ∀ index, (rounds.map fun (x : OpenRound B) ↦ match x with
-      | (c, _) => B.openAt c (index >>> (logMax - B.logHeight c))) =
-      srounds.map fun (x : OpenRound Backend.spec) ↦ match x with
-      | (c, _) => Backend.spec.openAt c (index >>> (logMax - Backend.spec.logHeight c)) :=
-    fun index ↦ forall₂_map_eq (fun r s hrs ↦ by
-      simp only [h.logHeight hrs.1, h.openAt _ hrs.1]) hr
-  simp only [hq, hins]
-  refine RelM.bind_eq fun queries ↦ ?_
-  rw [forall₂_map_eq (fun a b hab ↦ forall₂_map_eq (fun x y hxy ↦ hxy.1) hab) hos,
-    hc.commits, hc.witnesses, hc.finalPoly]
+  refine RelM.bind (proveFri_refines h P hr hin hshape) fun fri _ hf ↦ hf ▸ ?_
+  rw [forall₂_map_eq (fun a b hab ↦ forall₂_map_eq (fun x y hxy ↦ hxy.1) hab) hos]
   exact RelM.pure rfl
 
 end CompStark.Fri
