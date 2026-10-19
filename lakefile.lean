@@ -9,6 +9,13 @@ package CompStark where
 -- Pinned to a CompPoly commit with the packed NTT and the batched coset LDE.
 require CompPoly from git "https://github.com/mitschabaude-bot/CompPoly.git" @ "3e09608ea702552a3e3f466926c4607ea959190c"
 
+-- Pinned to Verified-zkEVM/ArkLib#1316, the Poseidon2 round-constant fix, for the equivalence of
+-- our Poseidon2 with ArkLib's.
+require Arklib from git "https://github.com/mitschabaude-bot/ArkLib.git" @ "452a6c33d3f5e57c021eb594eb4ec74ed01ee16c"
+
+-- Mathlib as CompPoly pins it, last so that its dependencies take precedence over ArkLib's.
+require mathlib from git "https://github.com/leanprover-community/mathlib4" @ "v4.35.0"
+
 @[default_target]
 lean_lib CompStark where
   platformIndependent := true
