@@ -194,6 +194,18 @@ theorem prove_eq : prove P A logN trace pis =
   | nil => rfl
   | cons m ms ih => exact congrArg (List.cons _) ih
 
+/-- The prover's final transcript is FRI's. -/
+theorem proveTranscript_eq : proveTranscript P A logN trace pis =
+    ((proveFri Backend.spec P (hRounds P A logN trace pis) (hInputs P A logN trace pis)).run
+      (hT2 P A logN trace pis)).2 := by
+  unfold proveTranscript
+  rw [prun_bind]
+  erw [commitAndSample_run]
+  unfold openAndAssemble
+  simp only [prun_bind]
+  erw [openPcs_run]
+  rfl
+
 end Honest
 
 /-! ### The verifier's observations -/
@@ -654,17 +666,10 @@ theorem verify_ok_of (P : Params) (A : Air) (proof : Proof) (pis : List F) (alph
 section Honest
 variable (P : Params) (A : Air) (logN : Nat) (trace : Array F) (pis : List F)
 
-theorem same_hT2 : Same Transcript.init (hT2 P A logN trace pis) := by
-  unfold hT2 hTC hTA
-  exact same_observeExts (same_sampleExt (same_observeList (same_sampleExt (same_observeList
-    (same_observeList (same_observe (same_observe (same_observe ⟨rfl, rfl⟩ _) _) _) _) _)) _)) _
-
 theorem verifyRun_honest (hin : Fits P A logN trace)
     (hz : Ext.OutsideBase (hZeta P A logN trace pis))
     (hP : 0 < P.maxLogArity) (hq : 0 < P.numQueries) (hfin : P.logFinalPolyLen ≤ logN)
-    (hgrind : ∀ c, ∀ bits ∈ [P.commitPowBits, P.queryPowBits],
-      (Challenger.checkWitness Transcript.init.duplex c bits
-        (Transcript.init.grinder c bits)).1 = true) :
+    (hgrind : (proveTranscript P A logN trace pis).grindFailed = false) :
     ∃ t, verifyRun P (prove P A logN trace pis) pis Transcript.init =
       .ok ((hAlpha P A logN trace pis, hZeta P A logN trace pis), t) := by
   have hTC : vTC (prove P A logN trace pis) pis = hTC P A logN trace pis := by
@@ -675,11 +680,10 @@ theorem verifyRun_honest (hin : Fits P A logN trace)
   have hzeta : (Stark.hTC P A logN trace pis).sampleExt.1 = hZeta P A logN trace pis := rfl
   rw [hzeta]
   have hfri : (prove P A logN trace pis).fri = hFri P A logN trace pis := by rw [prove_eq]
-  have hsame := same_hT2 P A logN trace pis
   have hF := verifyFri_proveFri P (hRounds P A logN trace pis) (hInputs P A logN trace pis)
     (vRounds (prove P A logN trace pis) (hZeta P A logN trace pis)) (hT2 P A logN trace pis)
     (inputsOk_hInputs P A logN trace pis hin hz hfin) hP hq
-    (by rw [hsame.1, hsame.2]; exact hgrind)
+    (by rw [← proveTranscript_eq]; exact hgrind)
     (fun alpha index hidx ↦ hopen P A logN trace pis hin hz alpha index hidx)
   refine ⟨((proveFri Backend.spec P (hRounds P A logN trace pis)
     (hInputs P A logN trace pis)).run (hT2 P A logN trace pis)).2, ?_⟩
@@ -694,9 +698,7 @@ theorem verify_prove_of (P : Params) (A : Air) (logN : Nat) (trace : Array F) (p
     (hin : Fits P A logN trace) (hsat : A.ConstraintsVanish logN trace pis)
     (hdeg : A.DegreeFits logN) (hP : 0 < P.maxLogArity) (hq : 0 < P.numQueries)
     (hfin : P.logFinalPolyLen ≤ logN)
-    (hgrind : ∀ c, ∀ bits ∈ [P.commitPowBits, P.queryPowBits],
-      (Challenger.checkWitness Transcript.init.duplex c bits
-        (Transcript.init.grinder c bits)).1 = true)
+    (hgrind : (proveTranscript P A logN trace pis).grindFailed = false)
     (hz : Ext.OutsideBase (outOfDomainPoint P A logN trace pis)) :
     verify P A (prove P A logN trace pis) pis = .ok () := by
   rw [outOfDomainPoint_eq] at hz

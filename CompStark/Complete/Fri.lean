@@ -273,84 +273,95 @@ theorem chain_final (P : Params) (hP : 0 < P.maxLogArity) (fuel : Nat) :
       dsimp only
       omega
 
-/-! ### The transcript -/
+/-! ### The transcript's failure flag
 
-/-- Transcripts with the same duplex and grinder. -/
-def Same (t0 t : Transcript) : Prop := t.duplex = t0.duplex ∧ t.grinder = t0.grinder
+Observing and sampling keep the flag, and grinding only sets it, so a final transcript without
+the flag had every grind of the run check. -/
 
-theorem same_observeList {t0 t : Transcript} (h : Same t0 t) (xs : List F) :
-    Same t0 (t.observeList xs) := ⟨h.1, h.2⟩
+theorem flag_observeList (t : Transcript) (xs : List F) :
+    (t.observeList xs).grindFailed = t.grindFailed := by
+  unfold Transcript.observeList; dsimp only
 
-theorem same_observe {t0 t : Transcript} (h : Same t0 t) (x : F) :
-    Same t0 (t.observe x) := ⟨h.1, h.2⟩
+theorem flag_observe (t : Transcript) (x : F) : (t.observe x).grindFailed = t.grindFailed := by
+  unfold Transcript.observe; dsimp only
 
-theorem same_observeExts {t0 t : Transcript} (h : Same t0 t) (xs : List EF) :
-    Same t0 (t.observeExts xs) := by
+theorem flag_observeExts (t : Transcript) (xs : List EF) :
+    (t.observeExts xs).grindFailed = t.grindFailed := by
   unfold Transcript.observeExts
   induction xs generalizing t with
-  | nil => exact h
+  | nil => rfl
   | cons x xs ih =>
-    rw [List.foldl_cons]
-    have e1 : (t.observeExt x).duplex = t.duplex := by
-      unfold Transcript.observeExt Transcript.observeList; dsimp only
-    have e2 : (t.observeExt x).grinder = t.grinder := by
-      unfold Transcript.observeExt Transcript.observeList; dsimp only
-    exact ih (t := t.observeExt x) ⟨e1.trans h.1, e2.trans h.2⟩
+    rw [List.foldl_cons, ih]
+    unfold Transcript.observeExt Transcript.observeList; dsimp only
 
-theorem same_grind {t0 t : Transcript} (h : Same t0 t) (bits : Nat) :
-    Same t0 (t.grind bits).2 := by
-  unfold Transcript.grind; split
-  · exact h
-  · exact ⟨h.1, h.2⟩
+theorem flag_sampleExt (t : Transcript) : t.sampleExt.2.grindFailed = t.grindFailed := by
+  unfold Transcript.sampleExt Transcript.sample; dsimp only
 
-theorem same_sampleExt {t0 t : Transcript} (h : Same t0 t) : Same t0 t.sampleExt.2 := by
-  have e1 : t.sampleExt.2.duplex = t.duplex := by
-    unfold Transcript.sampleExt Transcript.sample; dsimp only
-  have e2 : t.sampleExt.2.grinder = t.grinder := by
-    unfold Transcript.sampleExt Transcript.sample; dsimp only
-  exact ⟨e1.trans h.1, e2.trans h.2⟩
+theorem flag_sampleBits (t : Transcript) (bits : Nat) :
+    (t.sampleBits bits).2.grindFailed = t.grindFailed := by
+  unfold Transcript.sampleBits; dsimp only
 
-theorem same_sampleBits {t0 t : Transcript} (h : Same t0 t) (bits : Nat) :
-    Same t0 (t.sampleBits bits).2 := ⟨h.1, h.2⟩
+theorem flag_foldl_observe (l : List Nat) :
+    ∀ t : Transcript, (l.foldl (fun t (a : Nat) ↦ t.observe (a : F)) t).grindFailed =
+      t.grindFailed := by
+  induction l with
+  | nil => intro t; rfl
+  | cons a l ih => intro t; rw [List.foldl_cons, ih, flag_observe]
 
-theorem same_checkWitness {t0 t : Transcript} (h : Same t0 t) (bits : Nat) (w : F) :
-    Same t0 (t.checkWitness bits w).2 := ⟨h.1, h.2⟩
+theorem flag_checkWitness (t : Transcript) (bits : Nat) (w : F) :
+    (t.checkWitness bits w).2.grindFailed = t.grindFailed := by
+  unfold Transcript.checkWitness; dsimp only
 
-/-- The grinder's witness checks when it checks for every challenger state. -/
-theorem checkWitness_grind {t0 t : Transcript} (h : Same t0 t) (bits : Nat)
-    (hg : ∀ c, (Challenger.checkWitness t0.duplex c bits (t0.grinder c bits)).1 = true) :
-    t.checkWitness bits (t.grind bits).1 = (true, (t.grind bits).2) := by
+theorem grind_of_ne (t : Transcript) (bits : Nat) (h0 : bits ≠ 0) :
+    t.grind bits = (t.grinder t.state bits,
+      { (t.checkWitness bits (t.grinder t.state bits)).2 with
+        grindFailed := (t.checkWitness bits (t.grinder t.state bits)).2.grindFailed ||
+          !(t.checkWitness bits (t.grinder t.state bits)).1 }) := by
   unfold Transcript.grind
-  split
-  · rename_i h0
-    subst h0
-    rfl
-  · unfold Transcript.checkWitness
-    have := hg t.state
-    rw [← h.1, ← h.2] at this
-    dsimp only
-    rcases hc : Challenger.checkWitness t.duplex t.state bits (t.grinder t.state bits) with ⟨b, c⟩
-    rw [hc] at this
-    dsimp only at this
-    subst this
-    rfl
+  rw [ite_eq_right h0]
+
+/-- Without the flag after a grind, the transcript had no flag before it. -/
+theorem flag_grind (t : Transcript) (bits : Nat) (h : (t.grind bits).2.grindFailed = false) :
+    t.grindFailed = false := by
+  by_cases h0 : bits = 0
+  · subst h0; exact h
+  · rw [grind_of_ne t bits h0] at h
+    rw [← flag_checkWitness t bits (t.grinder t.state bits)]
+    exact (Bool.or_eq_false_iff.mp h).1
+
+/-- A grind that leaves no flag found a witness that checks. -/
+theorem checkWitness_grind (t : Transcript) (bits : Nat)
+    (h : (t.grind bits).2.grindFailed = false) :
+    t.checkWitness bits (t.grind bits).1 = (true, (t.grind bits).2) := by
+  by_cases h0 : bits = 0
+  · subst h0; rfl
+  · rw [grind_of_ne t bits h0] at h ⊢
+    generalize t.checkWitness bits (t.grinder t.state bits) = cw at h ⊢
+    obtain ⟨b, t'⟩ := cw
+    cases b
+    · simp only [Bool.not_false, Bool.or_true, reduceCtorEq] at h
+    · simp only [Bool.not_true, Bool.or_false]
 
 theorem forIn_cons_ok {α σ : Type} (a : α) (l : List α) (b b' : σ)
     (body : α → σ → M (ForInStep σ)) (t t' : Transcript)
     (h : body a b t = .ok (.yield b', t')) : forIn (a :: l) b body t = forIn l b' body t' := by
   rw [List.forIn_cons, bind_ok h]
 
-theorem same_chain (P : Params) (fuel : Nat) :
-    ∀ (f : Array EF) (rest : List (Array EF)) {t0 : Transcript} (t : Transcript), Same t0 t →
-      Same t0 (chain P fuel f rest t).2.2 := by
+/-- Without the flag after the commit rounds, there was none before them. -/
+theorem flag_chain (P : Params) (fuel : Nat) :
+    ∀ (f : Array EF) (rest : List (Array EF)) (t : Transcript),
+      (chain P fuel f rest t).2.2.grindFailed = false → t.grindFailed = false := by
   induction fuel with
-  | zero => intro f rest t0 t h; exact h
+  | zero => intro f rest t h; exact h
   | succ fuel ih =>
-    intro f rest t0 t h
-    rw [chain]
-    split
+    intro f rest t h
+    rw [chain] at h
+    split at h
     · exact h
-    · exact ih _ _ _ (same_sampleExt (same_grind (same_observeList h _) _))
+    · have := ih _ _ _ h
+      rw [flag_sampleExt] at this
+      rw [← flag_observeList t _]
+      exact flag_grind _ _ this
 
 /-! ### The verifier's commit loop -/
 
@@ -376,12 +387,10 @@ theorem commitBody_run (P : Params) (c : Digest) (w : F) (b : Array EF) (t t2 : 
 
 /-- The verifier observes the prover's commitments, its witnesses check, and it samples the
 prover's folding challenges. -/
-theorem commit_loop (P : Params) (t0 : Transcript)
-    (hg : ∀ c, (Challenger.checkWitness t0.duplex c P.commitPowBits
-      (t0.grinder c P.commitPowBits)).1 = true)
+theorem commit_loop (P : Params)
     (body : Digest × F → Array EF → M (ForInStep (Array EF)))
     (hbody : ∀ c w b, body (c, w) b = commitBody P c w b) (fuel : Nat) :
-    ∀ f rest t betas, Same t0 t →
+    ∀ f rest t betas, (chain P fuel f rest t).2.2.grindFailed = false →
       forIn (((chain P fuel f rest t).1.map (·.c.root)).zip ((chain P fuel f rest t).1.map (·.w)))
         betas body t =
         .ok (betas ++ ((chain P fuel f rest t).1.map (·.beta)).toArray,
@@ -397,19 +406,21 @@ theorem commit_loop (P : Params) (t0 : Transcript)
     · rw [chain, ite_eq_left hs]
       simp only [List.map_nil, List.zip_nil_left, List.forIn_nil, Array.append_empty]
       rfl
-    · rw [chain, ite_eq_right hs]
-      dsimp only
+    · rw [chain, ite_eq_right hs] at ht ⊢
+      dsimp only at ht ⊢
       rw [List.map_cons, List.map_cons, List.zip_cons_cons, List.map_cons]
-      generalize logArityFor P _ _ = la
-      generalize ht1 : t.observeList _ = t1
-      have hs1 : Same t0 t1 := ht1 ▸ same_observeList ht _
+      generalize logArityFor P _ _ = la at ht ⊢
+      generalize ht1 : t.observeList _ = t1 at ht ⊢
+      have hg1 : (t1.grind P.commitPowBits).2.grindFailed = false := by
+        have := flag_chain P fuel _ _ _ ht
+        rwa [flag_sampleExt] at this
       rw [forIn_cons_ok _ _ _ _ _ _ _ (by
         rw [hbody]
         exact commitBody_run P _ _ _ t _ (by
           show (t.observeList (Committed.ofMats [Backend.spec.leaves (2 ^ la) f]).root.toList
             ).checkWitness P.commitPowBits (t1.grind P.commitPowBits).1 = _
-          rw [ht1]; exact checkWitness_grind hs1 _ hg)),
-        ih _ _ _ _ (same_sampleExt (same_grind hs1 _))]
+          rw [ht1]; exact checkWitness_grind _ _ hg1)),
+        ih _ _ _ _ ht]
       refine congrArg Except.ok (Prod.ext (Array.toList_inj.mp ?_) rfl)
       simp only [Array.toList_append, Array.toList_push, List.append_assoc,
         List.singleton_append]
@@ -722,17 +733,22 @@ theorem mapM_queries {α β : Type} (logMax : Nat) (mk : Nat → β) (g : α →
     rfl
 
 /-- The verifier's queries sample the prover's indices. -/
-theorem query_loop (logMax : Nat) (t0 : Transcript) (mk : Nat → QueryProof)
+theorem query_loop (logMax : Nat) (mk : Nat → QueryProof)
     (body : QueryProof → PUnit → M (ForInStep PUnit)) (qb : QueryProof → M (ForInStep PUnit))
     (hbody : ∀ q, body q () = qb q)
-    (hstep : ∀ t, Same t0 t →
-      qb (mk (t.sampleBits logMax).1) t = .ok (.yield (), (t.sampleBits logMax).2)) :
-    ∀ n t, Same t0 t →
+    (hstep : ∀ t, qb (mk (t.sampleBits logMax).1) t = .ok (.yield (), (t.sampleBits logMax).2)) :
+    ∀ n t,
       forIn ((sampleIndices logMax n t).1.map mk) () body t = .ok ((), (sampleIndices logMax n t).2)
-  | 0, _, _ => rfl
-  | n + 1, t, ht => by
-    rw [sampleIndices, List.map_cons, forIn_cons_ok _ _ _ _ _ _ _ (by rw [hbody]; exact hstep t ht)]
-    exact query_loop logMax t0 mk body qb hbody hstep n _ (same_sampleBits ht _)
+  | 0, _ => rfl
+  | n + 1, t => by
+    rw [sampleIndices, List.map_cons, forIn_cons_ok _ _ _ _ _ _ _ (by rw [hbody]; exact hstep t)]
+    exact query_loop logMax mk body qb hbody hstep n _
+
+theorem flag_sampleIndices (logMax : Nat) :
+    ∀ n t, (sampleIndices logMax n t).2.grindFailed = t.grindFailed
+  | 0, _ => rfl
+  | n + 1, t => by
+    rw [sampleIndices]; exact (flag_sampleIndices logMax n _).trans (flag_sampleBits _ _)
 
 theorem forM_observe (l : List Nat) (t : Transcript) :
     (l.forM fun la ↦ pObserve (la : F)).run t =
@@ -742,12 +758,6 @@ theorem forM_observe (l : List Nat) (t : Transcript) :
   | cons a l ih =>
     show StateT.run (do pObserve (a : F); l.forM fun la ↦ pObserve (la : F)) t = _
     rw [prun_bind, ih]; rfl
-
-theorem same_foldl_observe {t0 : Transcript} (l : List Nat) :
-    ∀ t, Same t0 t → Same t0 (l.foldl (fun t (a : Nat) ↦ t.observe (a : F)) t) := by
-  induction l with
-  | nil => intro t h; exact h
-  | cons a l ih => intro t h; exact ih _ (same_observe h _)
 
 theorem observe_loop (l : List Nat) (body : Nat → PUnit → M (ForInStep PUnit))
     (hbody : ∀ a t, body a () t = .ok (.yield (), t.observe (a : F))) :
@@ -850,13 +860,13 @@ def InputsOk (P : Params) (ins : List (Array EF)) : Prop :=
   ∃ f0 rest, ins = f0 :: rest ∧ Good P (Nat.log2 f0.size) f0 rest
 
 /-- **FRI completeness**: the verifier's FRI accepts the specification prover's proof of
-low-degree inputs whose openings give the inputs' entries, when the grinder finds witnesses. -/
+low-degree inputs whose openings give the inputs' entries, when the prover's grinder found its
+witnesses. -/
 theorem verifyFri_proveFri (P : Params) (rounds : List (OpenRound Backend.spec))
     (inputsOf : EF → List (Array EF)) (vrounds : List Round) (t : Transcript)
     (hlow : ∀ alpha, InputsOk P (inputsOf alpha))
     (hP : 0 < P.maxLogArity) (hq : 0 < P.numQueries)
-    (hgrind : ∀ c, ∀ bits ∈ [P.commitPowBits, P.queryPowBits],
-      (Challenger.checkWitness t.duplex c bits (t.grinder c bits)).1 = true)
+    (hgrind : ((proveFri Backend.spec P rounds inputsOf).run t).2.grindFailed = false)
     (hopen : ∀ alpha index, index < 2 ^ Nat.log2 (((inputsOf alpha).map Array.size).headD 0) →
       openInput P (Nat.log2 (((inputsOf alpha).map Array.size).headD 0)) index alpha
         (rounds.map fun (c, _) ↦ c.openAt (index >>>
@@ -940,18 +950,19 @@ theorem verifyFri_proveFri (P : Params) (rounds : List (OpenRound Backend.spec))
       Bool.and_self]
   have hlog : (List.map (fun x ↦ x.la) r.1).sum + P.logBlowup + P.logFinalPolyLen = h0 := by
     rw [hsum]; omega
-  have hs0 : Same t t := ⟨rfl, rfl⟩
-  have hs1 : Same t t.sampleExt.2 := same_sampleExt hs0
-  have hs3 : Same t t3 := by
-    rw [ht3']
-    exact same_foldl_observe _ _ (same_observeExts (same_chain P _ _ _ _ hs1) _)
+  have hq4 : (t3.grind P.queryPowBits).2.grindFailed = false := by
+    rw [hrun] at hgrind
+    rw [← flag_sampleIndices h0 P.numQueries]
+    exact hgrind
+  have hf : r.2.2.grindFailed = false := by
+    have := flag_grind _ _ hq4
+    rwa [ht3', flag_foldl_observe, flag_observeExts] at this
   unfold verifyFri
   rw [bind_ok (t' := t.sampleExt.2) (a := t.sampleExt.1) rfl]
   dsimp only
   rw [harities, hall, ensure_true, pure_bind, hlog, hwsize, hcsize, beq_self_eq_true, ensure_true,
     pure_bind, hct, hwt]
-  rw [bind_ok (commit_loop P t (fun c ↦ hgrind c _ List.mem_cons_self) _ ?hb f0.size f0 rest
-    t.sampleExt.2 #[] hs1)]
+  rw [bind_ok (commit_loop P _ ?hb f0.size f0 rest t.sampleExt.2 #[] hf)]
   rw [show ((finalPolyOf P r.2.1).size == 2 ^ P.logFinalPolyLen) = true by
       rw [show (finalPolyOf P r.2.1).size = 2 ^ P.logFinalPolyLen from Array.size_ofFn,
         beq_self_eq_true],
@@ -961,16 +972,14 @@ theorem verifyFri_proveFri (P : Params) (rounds : List (OpenRound Backend.spec))
     pure_bind, bind_ok (observe_loop _ _ ?hobs _), ← ht3']
   rw [bind_ok (t' := (t3.grind P.queryPowBits).2) (a := true) (by
       show Except.ok (t3.checkWitness P.queryPowBits (t3.grind P.queryPowBits).1) = _
-      rw [checkWitness_grind hs3 _ (fun c ↦ hgrind c _ (List.mem_cons_of_mem _
-        List.mem_cons_self))]),
+      rw [checkWitness_grind _ _ hq4]),
     ensure_true, pure_bind, ← Array.forIn_toList, List.toList_toArray,
-    bind_ok (query_loop h0 t mk _ (queryBody P h0 t.sampleExt.1 vrounds
+    bind_ok (query_loop h0 mk _ (queryBody P h0 t.sampleExt.1 vrounds
       (#[] ++ (r.1.map Rd.beta).toArray) (r.1.map (·.c.root)).toArray (finalPolyOf P r.2.1))
-      ?hqb ?hq _ _
-      (same_grind hs3 _))]
+      ?hqb ?hq _ _)]
   · rfl
   · intro _; rfl
-  · intro t' _
+  · intro t'
     set i := (t'.sampleBits h0).1 with hi_def
     have hi : i < 2 ^ h0 := sampleBits_lt _ _
     have h1 : openInput P h0 i t.sampleExt.1 (mk i).inputs.toList vrounds (t'.sampleBits h0).2 =
