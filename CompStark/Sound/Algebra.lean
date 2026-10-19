@@ -10,16 +10,15 @@ public import CompStark.Sound.Steps
 
 `algebraStep`: if trace polynomials `T_j` of degree at most `n` fail the AIR on the trace domain
 `H = ⟨ω⟩`, then for all but `#constraints - 1` values of `α`, the constraint check at `ζ` on the
-true openings passes for at most `identityDegree` points `ζ` outside the base field.
+true openings passes for at most `identityDegree` points `ζ` off `L` and `H`.
 
 Over `𝕂[X]`, let `C_α = ∑_k α^(K-1-k) C_k` be the constraints over the `T_j` with the selector
 polynomials (`foldedPoly`, from `constraintPoly`), and `R = ∑_c L_c ∑_e genᵉ q_{c,e}` the
 recomposed quotient (`recomposedPoly`, `L_c` the recomposition selector `selPoly`). The identity
 `Φ = C_α - Z_H R` (`identityPoly`) has degree at most `identityDegree`.
 
-* For `ζ` outside the base field, `Z_H(ζ)`, `ζ - 1` and `ζ - ω⁻¹` are nonzero (the base field holds
-  all `n`-th roots of unity), so the verifier's selectors are the selector polynomials at `ζ` and
-  the check says `Φ(ζ) = 0` (`eval_identityPoly_eq_zero`).
+* For `ζ ∉ H`, `Z_H(ζ)`, `ζ - 1` and `ζ - ω⁻¹` are nonzero (`1` and `ω⁻¹` lie in `H`), so the
+  verifier's selectors are the selector polynomials at `ζ` and the check says `Φ(ζ) = 0` (`eval_identityPoly_eq_zero`).
 * At a row `ωⁱ`, `Z_H` vanishes and each `C_k` takes the constraint's value on row `i`
   (`eval_constraintPoly_root`), so `Φ(ωⁱ) = P_i(α)` for `P_i = ∑_k c_k(i) Y^(K-1-k)`
   (`eval_identityPoly_root`).
@@ -237,11 +236,6 @@ theorem logN_le (S : Setup) : S.logN ≤ 24 := (Nat.le_add_right _ _).trans S.va
 /-- `ω_n` lies in the base field. -/
 theorem rootOfUnity_eq (S : Setup) : rootOfUnity S.logN = algebraMap 𝔽 𝕂 (tw S.logN) := rfl
 
-/-- A point outside the base field is no `n`-th root of unity. -/
-theorem pow_n_ne_one (S : Setup) (ζ : 𝕂) (hζ : OutsideBase ζ) : ζ ^ S.n ≠ 1 := fun h ↦ by
-  obtain ⟨i, -, hi⟩ := (isPrimitiveRoot_lift S.logN (logN_le S)).eq_pow_of_pow_eq_one h
-  exact hζ ⟨tw S.logN ^ i, by rw [map_pow]; exact hi⟩
-
 /-- The selector polynomial at `ζ` is the verifier's selector. -/
 theorem eval_selPoly (S : Setup) (c : Fin S.chunks) (ζ : 𝕂) :
     (selPoly S c).eval ζ = selectorAt S ζ c := by
@@ -295,16 +289,16 @@ theorem eval_envAt (S : Setup) (publicValues : List F) (trace : Fin S.air.width 
   · change aeval ζ (Polynomial.X - C (tw S.logN)⁻¹) = ζ - (rootOfUnity S.logN)⁻¹
     rw [map_sub, aeval_X, aeval_C, hinv]
 
-/-- **The check at `ζ` outside the base field** makes `ζ` a root of `Φ`. -/
+/-- **The check at `ζ` off the trace domain** makes `ζ` a root of `Φ`. -/
 theorem eval_identityPoly_eq_zero (S : Setup) (publicValues : List F)
     (trace : Fin S.air.width → 𝔽[X]) (quotient : Fin S.chunks → Fin 4 → 𝔽[X]) (α ζ : 𝕂)
-    (hζ : OutsideBase ζ)
+    (hζ : ζ ^ S.n ≠ 1)
     (h : ConstraintsHoldAt S publicValues α ζ (trueOpenings S trace quotient ζ)) :
     (identityPoly S publicValues trace quotient α).eval ζ = 0 := by
-  have hz : ζ ^ S.n - 1 ≠ 0 := sub_ne_zero.mpr (pow_n_ne_one S ζ hζ)
-  have h1 : ζ - 1 ≠ 0 := sub_ne_zero.mpr fun e ↦ hζ ⟨1, by rw [map_one, e]⟩
-  have hω : ζ - (rootOfUnity S.logN)⁻¹ ≠ 0 := sub_ne_zero.mpr fun e ↦
-    hζ ⟨(tw S.logN)⁻¹, by rw [map_inv₀, e, rootOfUnity_eq]⟩
+  have hz : ζ ^ S.n - 1 ≠ 0 := sub_ne_zero.mpr hζ
+  have h1 : ζ - 1 ≠ 0 := sub_ne_zero.mpr fun e ↦ hζ (by rw [e, one_pow])
+  have hω : ζ - (rootOfUnity S.logN)⁻¹ ≠ 0 := sub_ne_zero.mpr fun e ↦ hζ (by
+    rw [e, inv_pow, rootOfUnity_eq, ← map_pow, tw_pow _ (logN_le S), map_one, inv_one])
   rw [constraintsHoldAt_iff, ← List.foldl_map (g := fun acc v ↦ acc * α + v), ← horner,
     vanishing, div_one, ← eval_recomposedPoly, div_eq_iff hz] at h
   rw [List.map_congr_left fun c hc ↦ eval_envAt S publicValues trace quotient ζ h1 hω c
@@ -392,7 +386,7 @@ theorem algebraStep (S : Setup) : AlgebraStep S := by
         ← eval_horner_C_X] at this
       exact hα (Multiset.mem_toFinset.mpr ((mem_roots hP).mpr this))
     exact (card_filter_le_of_roots _ _ hΦ fun ζ h ↦ eval_identityPoly_eq_zero S publicValues
-      trace quotient α ζ h.1 h.2).trans
+      trace quotient α ζ h.1.2 h.2).trans
       (natDegree_identityPoly S publicValues trace hdeg quotient hq α)
 
 end CompStark.Sound
