@@ -5,16 +5,15 @@ Released under Apache 2.0 license as described in the file LICENSE.
 module
 
 public import CompStark.Sound.Decoding
-public import Mathlib.Algebra.Order.Chebyshev
+public import ArkLib.Data.Finset.PairwiseIntersection
 
 /-! # The Johnson bound on the list size
 
 `Setup.listSize S ι δ` counts tuples of polynomials of degree at most `n` agreeing with one tuple
 of words on a common set of at least `(1 - δ) N` points. Two distinct such tuples agree on at most
 `n` points of `L` (`card_le_of_eqOn`), so their agreement sets meet in at most `n` points. The
-pairwise-intersection count (`card_mul_le_of_inter_card_le`, after ArkLib's
-`Finset.card_mul_sq_sub_card_mul_le_of_inter_card_le`, with a real agreement) then bounds the
-list by `(a - rate) / (a² - rate)` for `a = 1 - δ > √rate` (`listSize_le_johnson`).
+pairwise-intersection count (ArkLib's `Finset.card_mul_sq_sub_card_mul_le_of_inter_card_le`, at
+the agreement `⌈(1 - δ) N⌉`, `lt_of_johnson`) then bounds the list by `(a - rate) / (a² - rate)` for `a = 1 - δ > √rate` (`listSize_le_johnson`).
 For example `rate = 1/16`, `δ = 1/2` gives `7/3`, so at most `2`.
 
 Below the unique-decoding radius `(1 - rate) / 2` two agreement sets meet in more than `n` points,
@@ -64,72 +63,34 @@ theorem ncard_le_of_finset {α : Type} (s : Set α) (ℓ : Nat)
   · rw [Set.Infinite.ncard hs]
     exact Nat.zero_le ℓ
 
-/-- The Cauchy–Schwarz incidence count behind the Johnson bound (after ArkLib's
-`Finset.card_mul_sq_sub_card_mul_le_of_inter_card_le`, with a real agreement `a`): `L` sets of
-at least `a` points of an `N`-point type, pairwise meeting in at most `d` points, `d ≤ a`, satisfy
-`L (a² - N d) ≤ N (a - d)`. -/
-theorem card_mul_le_of_inter_card_le {κ ι : Type} [Fintype ι] [DecidableEq ι]
-    (T : Finset κ) (S : κ → Finset ι) (a d : ℝ) (hd : 0 ≤ d) (hda : d ≤ a)
-    (hclose : ∀ x ∈ T, a ≤ (S x).card)
-    (hpair : ∀ x ∈ T, ∀ y ∈ T, x ≠ y → (((S x) ∩ (S y)).card : ℝ) ≤ d) :
-    (T.card : ℝ) * (a ^ 2 - Fintype.card ι * d) ≤ Fintype.card ι * (a - d) := by
-  classical
-  set L : ℝ := (T.card : ℝ)
-  set n : ℝ := (Fintype.card ι : ℝ)
-  -- `deg i` counts the sets containing `i`.
-  let deg (i : ι) : ℝ := ∑ x ∈ T, if i ∈ S x then (1 : ℝ) else 0
-  set tot : ℝ := ∑ x ∈ T, ((S x).card : ℝ)
-  set sq2 : ℝ := ∑ x ∈ T, ∑ y ∈ T, (((S x) ∩ (S y)).card : ℝ)
-  have hcard (s : Finset ι) : (s.card : ℝ) = ∑ i : ι, if i ∈ s then (1 : ℝ) else 0 := by
-    rw [Finset.sum_boole, Finset.filter_mem_eq_inter, Finset.univ_inter]
-  have hsum : tot = ∑ i : ι, deg i := by
-    simp only [tot, deg, hcard]
-    exact Finset.sum_comm
-  have hsquares : sq2 = ∑ i : ι, deg i ^ 2 := by
-    simp only [sq2, deg, hcard, sq, Finset.sum_mul_sum, Finset.mem_inter, ite_zero_mul_ite_zero,
-      mul_one]
-    conv_rhs => rw [Finset.sum_comm]
-    exact Finset.sum_congr rfl fun x _ ↦ Finset.sum_comm
-  have hZlower : L * a ≤ tot := by
-    have h := Finset.sum_le_sum hclose
-    rwa [Finset.sum_const, nsmul_eq_mul] at h
-  have hQupper : sq2 ≤ tot + L * (L - 1) * d := by
-    have hrow (x) (hx : x ∈ T) :
-        ∑ y ∈ T, (((S x) ∩ (S y)).card : ℝ) ≤ (S x).card + (L - 1) * d := by
-      rw [← Finset.add_sum_erase T _ hx, Finset.inter_self]
-      have h := Finset.sum_le_card_nsmul (T.erase x) (fun y ↦ (((S x) ∩ (S y)).card : ℝ)) d
-        fun y hy ↦ hpair x hx y (Finset.mem_of_mem_erase hy) (Finset.ne_of_mem_erase hy).symm
-      rw [nsmul_eq_mul, Finset.card_erase_of_mem hx,
-        Nat.cast_sub (Finset.card_pos.mpr ⟨x, hx⟩), Nat.cast_one] at h
-      linarith
-    calc sq2 ≤ ∑ x ∈ T, (((S x).card : ℝ) + (L - 1) * d) := Finset.sum_le_sum hrow
-      _ = tot + L * (L - 1) * d := by
-        rw [Finset.sum_add_distrib, Finset.sum_const, nsmul_eq_mul]
-        ring
-  have hCauchy : tot ^ 2 ≤ n * sq2 := by
-    rw [hsum, hsquares]
-    exact sq_sum_le_card_mul_sum_sq
-  have hn : 0 ≤ n := Nat.cast_nonneg _
-  rcases (show (0 : ℝ) ≤ L from Nat.cast_nonneg _).eq_or_lt with hL | hL
-  · rw [← hL, zero_mul]
-    exact mul_nonneg hn (sub_nonneg.mpr hda)
-  by_cases hsmall : L * a ≤ n
-  · have hL1 : 1 ≤ L := by
-      have : 1 ≤ T.card := by
-        have h : (0 : ℝ) < (T.card : ℝ) := hL
-        exact_mod_cast h
-      show (1 : ℝ) ≤ (T.card : ℝ)
-      exact_mod_cast this
-    have ha : 0 ≤ a := hd.trans hda
-    nlinarith [mul_nonneg ha (sub_nonneg.mpr hsmall),
-      mul_nonneg (mul_nonneg hn hd) (sub_nonneg.mpr hL1)]
-  · push Not at hsmall
-    have hmono : (L * a) ^ 2 - n * (L * a) ≤ tot ^ 2 - n * tot := by
-      nlinarith [mul_nonneg (sub_nonneg.mpr hZlower) (by linarith : 0 ≤ tot + L * a - n)]
-    have hkey : tot ^ 2 - n * tot ≤ n * (L * (L - 1) * d) := by
-      nlinarith [mul_le_mul_of_nonneg_left hQupper hn]
-    have : L * (L * (a ^ 2 - n * d)) ≤ L * (n * (a - d)) := by nlinarith
-    exact le_of_mul_le_mul_left this hL
+/-- The real inequality behind the Johnson bound: with agreement `A ≥ x` and `c` tuples,
+`c (A² - N n) ≤ N (A - n)` forces `c < ℓ + 1` once `N (x - n) < (ℓ + 1) (x² - N n)`. -/
+theorem lt_of_johnson (N n A x c ℓ : ℝ) (hn : 0 ≤ n) (hnN : n ≤ N) (hx : 0 ≤ x)
+    (hxA : x ≤ A) (hpos : N * n < x ^ 2)
+    (hℓ : N * (x - n) < (ℓ + 1) * (x ^ 2 - N * n))
+    (hc : c * (A ^ 2 - N * n) ≤ N * (A - n)) : c < ℓ + 1 := by
+  have hxpos : 0 < x := by
+    rcases hx.eq_or_lt with h | h
+    · rw [← h] at hpos
+      nlinarith
+    · exact h
+  have hgap : 0 < x ^ 2 - N * n := by linarith
+  have hgapA : 0 < A ^ 2 - N * n := by nlinarith
+  -- `N (x² - N n) ≤ 2 x N (x - n)`, as `(x - n)² + n (N - n) ≥ 0`.
+  have hsq : N * (x ^ 2 - N * n) ≤ 2 * x * (N * (x - n)) := by
+    nlinarith [sq_nonneg (x - n), mul_nonneg hn (sub_nonneg.mpr hnN)]
+  have h2x : N < (ℓ + 1) * (2 * x) := by
+    have : N * (x ^ 2 - N * n) < (ℓ + 1) * (2 * x) * (x ^ 2 - N * n) := by
+      nlinarith [mul_lt_mul_of_pos_left hℓ (by linarith : (0 : ℝ) < 2 * x)]
+    exact lt_of_mul_lt_mul_right this hgap.le
+  -- `(ℓ + 1) (y² - N n) - N (y - n)` is positive at `x` and grows up to `A`.
+  have hgA : N * (A - n) < (ℓ + 1) * (A ^ 2 - N * n) := by
+    have hmono : 0 ≤ (A - x) * ((ℓ + 1) * (A + x) - N) :=
+      mul_nonneg (by linarith) (by nlinarith)
+    nlinarith
+  by_contra hge
+  push Not at hge
+  nlinarith [mul_le_mul_of_nonneg_right hge hgapA.le]
 
 /-- Each tuple in the list, with an agreement set. -/
 noncomputable def agreeSet (S : Setup) {ι : Type} (δ : ℝ) (words : ι → S.Point → 𝔽)
@@ -177,19 +138,33 @@ theorem listSize_le_johnson (S : Setup) (ι : Type) [Fintype ι] [DecidableEq ι
     have hs := Real.sq_sqrt hrate0
     have hs1 : √S.rate ≤ 1 := Real.sqrt_le_one.mpr hrate1
     nlinarith [Real.sqrt_nonneg S.rate]
-  have hcount := card_mul_le_of_inter_card_le Fs (agreeSet S δ words) (S.size * (1 - δ)) S.n
-    (Nat.cast_nonneg _) hnx (fun p hp ↦ (agreeSet_spec S δ words p (hmem p hp).2).1)
-    (fun p hp q hq hpq ↦ by
-      exact_mod_cast card_inter_agreeSet_le S δ words p q (hmem p hp) (hmem q hq) hpq)
+  set x : ℝ := S.size * (1 - δ)
+  set A : Nat := ⌈x⌉₊
+  have hxA : x ≤ A := Nat.le_ceil x
+  have hpos : (S.size : ℝ) * S.n < x ^ 2 := by
+    rw [hrate, show x ^ 2 = S.size * (S.size * (1 - δ) ^ 2) by ring]
+    exact mul_lt_mul_of_pos_left (mul_lt_mul_of_pos_left hsq hNpos) hNpos
+  have hnA : S.n ≤ A := by exact_mod_cast hnx.trans hxA
+  have hposA : S.size * S.n < A * A := by
+    have : (S.size : ℝ) * S.n < A * A := by nlinarith [mul_nonneg hNpos.le ha]
+    exact_mod_cast this
+  have hcount := Finset.card_mul_sq_sub_card_mul_le_of_inter_card_le Fs (agreeSet S δ words)
+    A S.n hnA (by rwa [Fintype.card_fin])
+    (fun p hp ↦ Nat.ceil_le.mpr (agreeSet_spec S δ words p (hmem p hp).2).1)
+    (fun p hp q hq hpq ↦ card_inter_agreeSet_le S δ words p q (hmem p hp) (hmem q hq) hpq)
   rw [Fintype.card_fin] at hcount
-  -- Divided by `N²`, `hcount` reads `|Fs| ((1 - δ)² - rate) ≤ 1 - δ - rate`.
-  have hN2 : (0 : ℝ) < S.size * S.size := mul_pos hNpos hNpos
-  have hlt : (Fs.card : ℝ) * (S.size * S.size * ((1 - δ) ^ 2 - S.rate)) <
-      (ℓ + 1) * (S.size * S.size * ((1 - δ) ^ 2 - S.rate)) := by
-    have := mul_lt_mul_of_pos_left hℓ hN2
-    rw [hrate] at hcount
-    nlinarith
-  have := lt_of_mul_lt_mul_right hlt (mul_pos hN2 (by linarith)).le
+  have hreal : (Fs.card : ℝ) * ((A : ℝ) ^ 2 - S.size * S.n) ≤ S.size * (A - S.n) := by
+    have := (Nat.cast_le (α := ℝ)).mpr hcount
+    rwa [Nat.cast_mul, Nat.cast_mul, Nat.cast_sub hposA.le, Nat.cast_sub hnA, Nat.cast_mul,
+      Nat.cast_mul, ← sq] at this
+  -- `hℓ` times `N²`.
+  have hℓ' : (S.size : ℝ) * (x - S.n) < (ℓ + 1) * (x ^ 2 - S.size * S.n) := by
+    have := mul_lt_mul_of_pos_left hℓ (mul_pos hNpos hNpos)
+    rw [hrate]
+    linarith
+  have := lt_of_johnson S.size S.n A x Fs.card ℓ (Nat.cast_nonneg _)
+    (by exact_mod_cast Nat.pow_le_pow_right two_pos (Nat.le_add_right _ _))
+    (mul_nonneg hNpos.le ha) hxA hpos hℓ' hreal
   exact Nat.lt_succ_iff.mp (by exact_mod_cast this)
 
 /-- Below the unique-decoding radius `(1 - rate) / 2` the list has at most one tuple. -/
