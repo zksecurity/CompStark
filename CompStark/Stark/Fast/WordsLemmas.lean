@@ -516,23 +516,6 @@ theorem encode_map (a : Array EF) (p : EF → F) :
   rw [Array.size_map] at hi
   simp only [Array.getElem_ofFn, getD_map a p i hi, Array.getElem_map]
 
-/-- Represented planes fit exactly when their words are indexable. -/
-theorem fits_iff {v : EVec} {a : Array EF} (hv : RV v a) :
-    v.fits = true ↔ 4 * a.size < USize.size := by
-  obtain ⟨hvn, h0, h1, h2, h3⟩ := hv
-  simp only [EVec.fits, List.all_cons, List.all_nil, h0, h1, h2, h3, hvn, size_encode_fields,
-    Array.size_map, beq_self_eq_true, Bool.true_and, Bool.and_true, Bool.and_self,
-    decide_eq_true_eq]
-
-/-- Represented planes decode to their elements. -/
-theorem decode_rel {v : EVec} {a : Array EF} (hv : RV v a) : v.decode = a := by
-  obtain ⟨hvn, h0, h1, h2, h3⟩ := hv
-  simp only [EVec.decode, h0, h1, h2, h3, CompPoly.PackedRepr.decode_encode]
-  apply Array.ext (by rw [Array.size_ofFn, hvn])
-  intro i hi _
-  rw [Array.size_ofFn, hvn] at hi
-  simp only [Array.getElem_ofFn, getD_map a _ i hi]
-
 /-- Represented, indexable planes read back their elements. -/
 theorem toArray_eq {v : EVec} {a : Array EF} (hv : RV v a) (hs : 4 * a.size < USize.size) :
     v.toArray = a := by
