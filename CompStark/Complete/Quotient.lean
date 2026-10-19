@@ -656,7 +656,7 @@ theorem points_sub_ne (d l : Nat) (h : d + l ≤ 24) (y : F) (j : Nat) (hj : j �
 /-- The quotient domain's point `x_r = g ω_qʳ`. -/
 noncomputable abbrev qpt (q r : Nat) : K := FastField.toField gen * tw q ^ r
 
-theorem toField_invZh (d l r : Nat) (h : d + l ≤ 24) (hr : r < 2 ^ (d + l)) :
+theorem toField_invZh (d l r : Nat) (h : d + l ≤ 24) :
     FastField.toField ((batchInv (qZh d l)).getD (r % 2 ^ l) 0) =
       (qpt (d + l) r ^ 2 ^ d - 1)⁻¹ := by
   have hk : r % 2 ^ l < (qZh d l).size := by
@@ -699,6 +699,106 @@ theorem toField_qTrans (d l r : Nat) (hr : r < 2 ^ (d + l)) :
     FastField.toField ((qTrans d l).getD r 0) = qpt (d + l) r - (tw d)⁻¹ := by
   rw [qTrans, Fast.getD_map_lt _ _ _ (by rw [qPoints, size_cosetPoints]; exact hr) _ 0,
     toField_sub, toField_qPoints d l r hr, toField_inv]
+
+/-- `a ^ (n mod m) = a ^ n` for `a ^ m = 1`. -/
+theorem pow_mod_of_pow_eq_one {M : Type*} [Monoid M] (a : M) (n m : Nat) (h : a ^ m = 1) :
+    a ^ (n % m) = a ^ n := by
+  conv_rhs => rw [← Nat.mod_add_div n m]
+  rw [pow_add, pow_mul, h, one_pow, mul_one]
+
+/-- The constraints at a row of the quotient domain are the constraint polynomials at its
+point. -/
+theorem toField_rowEnv_eval (A : Air) (d l : Nat) (h : d + l ≤ 24) (tq : Mat) (pis : List F) (T : Nat → K[X])
+    (hq : ∀ j < A.width, ∀ r < 2 ^ (d + l),
+      FastField.toField (tq.values.getD (r * tq.width + j) 0) = (T j).eval (qpt (d + l) r))
+    (c : Expr) (hc : c.colsBelow A.width = true) (r : Nat) (hr : r < 2 ^ (d + l)) :
+    FastField.toField (c.eval
+      (rowEnv tq (2 ^ (d + l)) (2 ^ l) pis (qFirst d l) (qLast d l) (qTrans d l) r)) =
+      (constraintPoly (2 ^ d) (tw d) T pis c).eval (qpt (d + l) r) := by
+  set env := rowEnv tq (2 ^ (d + l)) (2 ^ l) pis (qFirst d l) (qLast d l) (qTrans d l) r
+  let envK : Expr.Env K := {
+    cur := fun j ↦ FastField.toField (env.cur j)
+    next := fun j ↦ FastField.toField (env.next j)
+    pub := fun j ↦ FastField.toField (env.pub j)
+    const := FastField.toField
+    isFirstRow := FastField.toField env.isFirstRow
+    isLastRow := FastField.toField env.isLastRow
+    isTransition := FastField.toField env.isTransition }
+  have hb := Expr.eval_hom FastField.toField toField_add toField_sub toField_mul A.width
+    env envK (fun _ _ ↦ rfl) (fun _ _ ↦ rfl) (fun _ ↦ rfl) (fun _ ↦ rfl) rfl rfl rfl c hc
+  rw [hb, constraintPoly]
+  refine (Expr.eval_hom (eval (qpt (d + l) r)) (fun _ _ ↦ eval_add) (fun a b ↦ eval_sub a b _)
+    (fun _ _ ↦ eval_mul) A.width _ envK (fun j hj ↦ ?_) (fun j hj ↦ ?_) (fun _ ↦ eval_C)
+    (fun _ ↦ eval_C) ?_ ?_ ?_ c hc).symm
+  · change (T j).eval (qpt (d + l) r) = FastField.toField (tq.values.getD (r * tq.width + j) 0)
+    rw [hq j hj r hr]
+  · have hm : (r + 2 ^ l) % 2 ^ (d + l) < 2 ^ (d + l) := Nat.mod_lt _ (Nat.two_pow_pos _)
+    change ((T j).comp (C (tw d) * X)).eval (qpt (d + l) r) = FastField.toField
+      (tq.values.getD ((r + 2 ^ l) % 2 ^ (d + l) * tq.width + j) 0)
+    rw [hq j hj _ hm, eval_comp, eval_mul, eval_C, eval_X, qpt, qpt,
+      pow_mod_of_pow_eq_one _ _ _ (tw_pow (d + l) h), pow_add, tw_pow_tw d l h,
+      mul_comm (tw d), mul_assoc]
+  · exact (toField_qFirst d l r h hr).symm
+  · exact (toField_qLast d l r h hr).symm
+  · change (X - C (tw d)⁻¹).eval (qpt (d + l) r) = FastField.toField ((qTrans d l).getD r 0)
+    rw [toField_qTrans d l r hr, eval_sub, eval_X, eval_C]
+
+/-- The trace's extension read in bit-reversed row order is the trace on the quotient domain. -/
+theorem permuteRows_lde (m : Stark.Mat) (ps : List K[X]) (b L e : Nat)
+    (hm : CompStark.Mat.IsLde b (L + e) m ps) (r : Nat) (hr : r < 2 ^ L) (j : Nat)
+    (hj : j < ps.length) :
+    FastField.toField ((permuteRows m (bitRevPerm L)).getD (r * m.width + j) 0) =
+      (ps.getD j 0).eval (qpt L r) := by
+  obtain ⟨hw, -, -, -, h24, -, hval⟩ := hm
+  have hr' := CompPoly.CPolynomial.NTT.Transform.bitRevNat_lt L r
+  rw [Fast.permuteRows_getD m _ r j (by rw [Fast.size_bitRevPerm]; exact hr) (by omega),
+    Fast.bitRevPerm_getD L r hr, hval _ (lt_of_lt_of_le hr' (Nat.pow_le_pow_right (by omega)
+      (by omega))) j hj, reverseBits_low L e r hr, pow_mul,
+    tw_pow_tw L e h24]
+
+/-- **The prover's quotient values are the folded quotient** on the quotient domain. -/
+theorem toSpec_quotientOfLde (A : Air) (pis : List F) (logN b : Nat) (trace : Array F)
+    (alpha : EF) (hlc : A.logQuotientChunks ≤ b) (h24 : logN + b ≤ 24)
+    (hsat : A.Satisfied logN trace pis) (hcols : A.ColsInWidth) (ps : List K[X])
+    (hps : CompStark.Mat.IsLde b (logN + b) (ldeRef logN b gen A.width trace) ps)
+    (hT : TraceOn logN A.width trace (ps.getD · 0)) (r : Nat)
+    (hr : r < 2 ^ (logN + A.logQuotientChunks)) :
+    Ext4.toSpec ((quotientOfLde A pis logN A.logQuotientChunks
+      (ldeRef logN b gen A.width trace) alpha).getD r 0) =
+      (qFold A logN (ps.getD · 0) pis (Ext4.toSpec alpha)).eval
+        (algebraMap K E (qpt (logN + A.logQuotientChunks) r)) := by
+  set lc := A.logQuotientChunks
+  set ext := ldeRef logN b gen A.width trace
+  have hext : ext.width = A.width := rfl
+  have hlen : ps.length = A.width := hps.1.symm.trans hext
+  have hps' : CompStark.Mat.IsLde b ((logN + lc) + (b - lc)) ext ps := by
+    rw [show logN + lc + (b - lc) = logN + b by omega]; exact hps
+  have hq : ∀ j < A.width, ∀ r < 2 ^ (logN + lc), FastField.toField
+      ((Mat.ofValues ext.width (2 ^ (logN + lc))
+        (permuteRows ext (bitRevPerm (logN + lc)))).values.getD (r * ext.width + j) 0) =
+      (ps.getD j 0).eval (qpt (logN + lc) r) := fun j hj r hr ↦
+    permuteRows_lde ext ps b (logN + lc) (b - lc) hps' r hr j (by omega)
+  have hlc24 : logN + lc ≤ 24 := by omega
+  have hz : (qpt (logN + lc) r) ^ 2 ^ logN - 1 ≠ 0 :=
+    sub_ne_zero.mpr (genPoint_pow_ne _ _ hlc24 logN (by omega))
+  show Ext4.toSpec ((quotientValues A pis logN lc (Mat.ofValues ext.width (2 ^ (logN + lc))
+    (permuteRows ext (bitRevPerm (logN + lc)))) alpha).getD r 0) = _
+  rw [quotientValues_eq, getD_lt _ _ (by rw [Array.size_ofFn]; exact hr), Array.getElem_ofFn,
+    toSpec_quotientRow, toField_invZh logN lc r hlc24, eval_qFold]
+  have hmap : (A.constraints.map fun c ↦ algebraMap K E (FastField.toField (c.eval
+      (rowEnv (Mat.ofValues ext.width (2 ^ (logN + lc)) (permuteRows ext (bitRevPerm (logN + lc))))
+        (2 ^ (logN + lc)) (2 ^ lc) pis (qFirst logN lc) (qLast logN lc) (qTrans logN lc) r)))) =
+      (A.constraints.map fun c ↦ aeval (algebraMap K E (qpt (logN + lc) r))
+        (quotientPoly logN (ps.getD · 0) pis c)).map
+        (· * algebraMap K E (qpt (logN + lc) r ^ 2 ^ logN - 1)) := by
+    rw [List.map_map]
+    refine List.map_congr_left fun c hc ↦ ?_
+    rw [toField_rowEnv_eval A logN lc hlc24 _ pis _ hq c (hcols c hc) r hr,
+      constraintPoly_eq A logN (by omega) trace pis _ hT hsat hcols c hc, eval_mul]
+    simp only [Function.comp_apply]
+    rw [aeval_algebraMap_apply_eq_algebraMap_eval, ← map_mul, mul_comm]
+    simp only [zH, eval_sub, eval_pow, eval_X, eval_C]
+  rw [hmap, horner_mul, mul_comm, mul_assoc, ← map_mul, mul_inv_cancel₀ hz, map_one, mul_one]
 
 end QuotientValues
 
