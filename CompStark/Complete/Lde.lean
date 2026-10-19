@@ -129,6 +129,7 @@ noncomputable def ldePoly (logH w j : Nat) (shift : F) (m : Array F) : KoalaBear
     (ringEquiv KoalaBear.fieldSize).toRingHom).comp
     (C (FastField.toField (shift * gen⁻¹)) * X)
 
+/-- `ldePoly` at `x` is the interpolant at `shift g⁻¹ x`. -/
 theorem eval_ldePoly (logH w j : Nat) (shift : F) (m : Array F) (x : KoalaBear.Field) (y : F)
     (h : FastField.toField (shift * gen⁻¹) * x = FastField.toField y) :
     (ldePoly logH w j shift m).eval x =
@@ -138,6 +139,7 @@ theorem eval_ldePoly (logH w j : Nat) (shift : F) (m : Array F) (x : KoalaBear.F
     (ringEquiv KoalaBear.fieldSize).toRingHom y).trans
     (congrArg FastField.toField (CPolynomial.Raw.eval_toPoly_eq_eval y _))
 
+/-- `ldePoly` has degree below `2 ^ logH`. -/
 theorem degree_ldePoly (logH w j : Nat) (shift : F) (m : Array F) :
     (ldePoly logH w j shift m).degree < ((2 ^ logH : Nat) : WithBot Nat) := by
   refine degree_le_natDegree.trans_lt (WithBot.coe_lt_coe.mpr ?_)
@@ -148,11 +150,13 @@ theorem degree_ldePoly (logH w j : Nat) (shift : F) (m : Array F) :
   exact natDegree_ldeCoeffs logH w j m
 
 
+/-- Column `j`'s polynomial. -/
 theorem getD_ldePolys (logH w : Nat) (shift : F) (m : Array F) (j : Nat) (hj : j < w) :
     ((List.range w).map fun j ↦ ldePoly logH w j shift m).getD j 0 = ldePoly logH w j shift m := by
   rw [List.getD_eq_getElem?_getD, List.getElem?_map, List.getElem?_range hj, Option.map_some,
     Option.getD_some]
 
+/-- `g ≠ 0` in the spec field. -/
 theorem toField_gen_ne_zero : FastField.toField gen ≠ 0 := fun h ↦
   gen_ne_zero (toField_injective (h.trans toField_zero.symm))
 
@@ -218,6 +222,7 @@ theorem pow_ne_of_outsideBase {z : EF} (hz : Ext.OutsideBase z)
   exact toSpec_ne_ofBase hz _ (sub_eq_zero.mp hi)
 
 open KoalaBear.Fast (Ext4) in
+/-- A column sum of `Fri.openedAt` in the spec field. -/
 theorem toSpec_colSum (values : Array F) (perm : Array Nat) (weights : Array EF) (w j : Nat) :
     ∀ h, Ext4.toSpec (colSum values perm weights w h j) =
       ∑ i ∈ Finset.range h, FastField.toField (values.getD (perm.getD i 0 * w + j) 0) •
@@ -228,6 +233,7 @@ theorem toSpec_colSum (values : Array F) (perm : Array Nat) (weights : Array EF)
       List.range'_concat, List.foldl_append, List.foldl_cons, List.foldl_nil, Nat.zero_add,
       Nat.one_mul, Ext4.toSpec_add, Ext4.toSpec_smul]
 
+/-- Reversing the bits of `0`. -/
 theorem bitRevNat_zero : ∀ b, CPolynomial.NTT.Transform.bitRevNat b 0 = 0
   | 0 => by
     have := CPolynomial.NTT.Transform.bitRevNat_lt 0 0

@@ -84,13 +84,17 @@ def Air.DegreeFits (A : Air) (logN : Nat) : Prop :=
 
 /-! ### The example AIRs fit -/
 
+/-- The expression operators are the constructors. -/
 theorem Expr.mul_eq (a b : Expr) : a * b = .mul a b := rfl
 theorem Expr.sub_eq (a b : Expr) : a - b = .sub a b := rfl
 theorem Expr.add_eq (a b : Expr) : a + b = .add a b := rfl
 
+/-- Powers of two are powers of two. -/
 theorem isPowerOfTwo_two_pow : ∀ k, (2 ^ k).isPowerOfTwo
   | 0 => Nat.isPowerOfTwo_one
-  | k + 1 => by rw [Nat.pow_succ]; exact Nat.isPowerOfTwo_mul_two_of_isPowerOfTwo (isPowerOfTwo_two_pow k)
+  | k + 1 => by
+    rw [Nat.pow_succ]
+    exact Nat.isPowerOfTwo_mul_two_of_isPowerOfTwo (isPowerOfTwo_two_pow k)
 
 /-- Plonky3's chunk count for a largest degree `d + 1`, `d = 2 ^ k`. -/
 theorem logQuotientChunks_of (A : Air) (k : Nat) (h : max A.maxDegree 2 - 1 = 2 ^ k) :
@@ -99,6 +103,7 @@ theorem logQuotientChunks_of (A : Air) (k : Nat) (h : max A.maxDegree 2 - 1 = 2 
   simp only [h]
   rw [Nat.nextPowerOfTwo_eq_self (isPowerOfTwo_two_pow k), Nat.log2_two_pow]
 
+/-- The Fibonacci AIR fits its single chunk for every trace length. -/
 theorem fibonacci_degreeFits (logN : Nat) : fibonacci.DegreeFits logN := by
   have hlc : fibonacci.logQuotientChunks = 0 := logQuotientChunks_of _ 0 (by decide)
   have := Nat.two_pow_pos logN
@@ -108,6 +113,7 @@ theorem fibonacci_degreeFits (logN : Nat) : fibonacci.DegreeFits logN := by
   rcases hc with rfl | rfl | rfl | rfl | rfl <;>
     simp only [Expr.sub_eq, Expr.add_eq, Expr.degBound] <;> omega
 
+/-- The cube AIR's degree-3 transition fits its two chunks for every trace length. -/
 theorem cube_degreeFits (logN : Nat) : cube.DegreeFits logN := by
   have hlc : cube.logQuotientChunks = 1 := logQuotientChunks_of _ 1 (by decide)
   have := Nat.two_pow_pos logN
@@ -117,6 +123,7 @@ theorem cube_degreeFits (logN : Nat) : cube.DegreeFits logN := by
   rcases hc with rfl | rfl | rfl | rfl | rfl <;>
     simp only [Expr.sub_eq, Expr.add_eq, Expr.degBound] <;> omega
 
+/-- The largest degree of a nonempty list of degree-3 constraints. -/
 theorem foldl_max_degree (a : Nat) : ∀ l : List Expr, (∀ c ∈ l, c.degree = 3) → l ≠ [] →
     l.foldl (fun m c ↦ max m c.degree) a = max a 3
   | [], _, h => absurd rfl h
@@ -125,6 +132,7 @@ theorem foldl_max_degree (a : Nat) : ∀ l : List Expr, (∀ c ∈ l, c.degree =
     rw [List.foldl_cons, foldl_max_degree _ (d :: l) (fun e he ↦ hl e (List.mem_cons_of_mem _ he))
       (List.cons_ne_nil _ _), hl c List.mem_cons_self, Nat.max_assoc, Nat.max_self]
 
+/-- The wide AIR fits its two chunks for every width and trace length. -/
 theorem wide_degreeFits (w logN : Nat) : (wide w).DegreeFits logN := by
   have := Nat.two_pow_pos logN
   intro c hc
@@ -220,12 +228,14 @@ noncomputable def polyEnv (n : Nat) (w : K) (T : Nat → K[X]) (pis : List F) :
   isLastRow := lastSel n w
   isTransition := X - C w⁻¹
 
+/-- `(X - 1) · Z_H / (X - 1) = Z_H`, at any point. -/
 theorem aeval_firstSel {S : Type*} [CommRing S] [Algebra K S] (n : Nat) (y : S) :
     aeval y (firstSel n) * (y - 1) = y ^ n - 1 := by
   rw [firstSel, map_sum]
   simp only [map_pow, aeval_X]
   exact geom_sum_mul y n
 
+/-- `(X - ω⁻¹) · Z_H / (X - ω⁻¹) = Z_H`, at any point, for `ωⁿ = 1`. -/
 theorem aeval_lastSel {S : Type*} [CommRing S] [Algebra K S] (n : Nat) (w : K) (hw : w ≠ 0)
     (hwn : w ^ n = 1) (y : S) :
     aeval y (lastSel n w) * (y - algebraMap K S w⁻¹) = y ^ n - 1 := by
@@ -239,16 +249,19 @@ theorem aeval_lastSel {S : Type*} [CommRing S] [Algebra K S] (n : Nat) (w : K) (
         rw [← hw']; ring
     _ = y ^ n - 1 := by rw [h, mul_pow, ← map_pow, hwn, map_one, one_mul]
 
+/-- The first-row selector has degree below `n`. -/
 theorem natDegree_firstSel (n : Nat) : (firstSel n).natDegree ≤ n - 1 :=
   natDegree_sum_le_of_forall_le _ _ fun m hm ↦
     (natDegree_X_pow_le m).trans (by have := Finset.mem_range.mp hm; omega)
 
+/-- Composing with `w X` keeps the degree bound. -/
 theorem natDegree_comp_shift (p : K[X]) (w : K) : (p.comp (C w * X)).natDegree ≤ p.natDegree :=
   natDegree_comp_le.trans (by
     have := (natDegree_C_mul_le w (X : K[X])).trans natDegree_X_le
     calc p.natDegree * (C w * X).natDegree ≤ p.natDegree * 1 := Nat.mul_le_mul_left _ this
       _ = p.natDegree := Nat.mul_one _)
 
+/-- The last-row selector has degree below `n`. -/
 theorem natDegree_lastSel (n : Nat) (w : K) : (lastSel n w).natDegree ≤ n - 1 :=
   (natDegree_C_mul_le _ _).trans ((natDegree_comp_shift _ _).trans (natDegree_firstSel n))
 
@@ -257,6 +270,7 @@ noncomputable def constraintPoly (n : Nat) (w : K) (T : Nat → K[X]) (pis : Lis
     K[X] :=
   c.eval (polyEnv n w T pis)
 
+/-- A constraint polynomial has degree at most `degBound`. -/
 theorem natDegree_constraintPoly (n : Nat) (w : K) (T : Nat → K[X]) (pis : List F) (c : Expr)
     (hT : ∀ j, (T j).natDegree ≤ n - 1) :
     (constraintPoly n w T pis c).natDegree ≤ c.degBound n :=
@@ -269,12 +283,15 @@ theorem natDegree_constraintPoly (n : Nat) (w : K) (T : Nat → K[X]) (pis : Lis
 /-- `ω` of order `2 ^ k`, in the spec field. -/
 noncomputable abbrev tw (k : Nat) : K := FastField.toField (twoAdicGen k)
 
+/-- `ω ^ 2 ^ k = 1`. -/
 theorem tw_pow (k : Nat) (hk : k ≤ 24) : tw k ^ 2 ^ k = 1 :=
   (isPrimitiveRoot_twoAdicGen k hk).pow_eq_one
 
+/-- `ω ≠ 0`. -/
 theorem tw_ne_zero (k : Nat) (hk : k ≤ 24) : tw k ≠ 0 :=
   (isPrimitiveRoot_twoAdicGen k hk).ne_zero (Nat.two_pow_pos k).ne'
 
+/-- `ω_{n+b} ^ 2 ^ b = ω_n`. -/
 theorem tw_pow_tw (n b : Nat) (h : n + b ≤ 24) : tw (n + b) ^ 2 ^ b = tw n := by
   rw [tw, tw, ← toField_npow, Fast.twoAdicGen_pow n b h]
 
@@ -283,6 +300,7 @@ def sqIter (x : K) : Nat → K
   | 0 => x
   | k + 1 => sqIter (x * x) k
 
+/-- `sqIter` squares `k` times. -/
 theorem sqIter_eq (x : K) : ∀ k, sqIter x k = x ^ 2 ^ k
   | 0 => (pow_one x).symm
   | k + 1 => by rw [sqIter, sqIter_eq _ k, ← sq, ← pow_mul, pow_succ']
@@ -292,6 +310,7 @@ theorem gen_pow_ne_one : FastField.toField gen ^ 2 ^ 24 ≠ 1 := by
   rw [show FastField.toField gen = 3 by decide, ← sqIter_eq]
   decide
 
+/-- A `2 ^ k`-th root of unity is a `2 ^ 24`-th one. -/
 theorem root_pow_24 (y : K) (k : Nat) (hk : k ≤ 24) (hy : y ^ 2 ^ k = 1) : y ^ 2 ^ 24 = 1 := by
   rw [show 2 ^ 24 = 2 ^ k * 2 ^ (24 - k) by rw [← Nat.pow_add]; congr 1; omega, pow_mul, hy,
     one_pow]
@@ -304,6 +323,7 @@ theorem genPoint_pow_ne (k m : Nat) (hk : k ≤ 24) (j : Nat) (hj : j ≤ 24) :
     mul_one] at this
   exact gen_pow_ne_one this
 
+/-- No point `g ωᵐ` is a two-adic root of unity. -/
 theorem genPoint_ne (k m : Nat) (hk : k ≤ 24) (y : K) (j : Nat) (hj : j ≤ 24)
     (hy : y ^ 2 ^ j = 1) : FastField.toField gen * tw k ^ m ≠ y := fun h ↦
   genPoint_pow_ne k m hk j hj (by rw [h, hy])
@@ -315,6 +335,7 @@ theorem eval_firstSel_mul (n : Nat) (y : K) : (firstSel n).eval y * (y - 1) = y 
   simp only [eval_pow, eval_X]
   exact geom_sum_mul y n
 
+/-- The first-row selector is `n` at `1`. -/
 theorem eval_firstSel_one (n : Nat) : (firstSel n).eval 1 = n := by
   simp only [firstSel, eval_finsetSum, eval_pow, eval_X, one_pow, Finset.sum_const,
     Finset.card_range, nsmul_eq_mul, mul_one]
@@ -380,7 +401,8 @@ theorem eval_constraintPoly_root (A : Air) (logN : Nat) (h : logN ≤ 24) (trace
     · rw [ite_eq_left_of_eq_true _ _ (eq_true hl),
         ite_eq_left_of_eq_true _ _ (eq_true (by rw [hl, Nat.mod_self])), mul_comm]
     · rw [ite_eq_right_of_eq_false _ _ (eq_false hl),
-        ite_eq_right_of_eq_false _ _ (eq_false (by rw [Nat.mod_eq_of_lt (by omega)]; omega)), mul_zero]
+        ite_eq_right_of_eq_false _ _ (eq_false (by rw [Nat.mod_eq_of_lt (by omega)]; omega)),
+        mul_zero]
   · change (X - C (tw logN)⁻¹).eval (tw logN ^ i) =
       FastField.toField (twoAdicGen logN ^ i - (twoAdicGen logN)⁻¹)
     rw [eval_sub, eval_X, eval_C, toField_sub, toField_npow, toField_inv]
@@ -392,6 +414,7 @@ noncomputable abbrev zH (n : Nat) : K[X] := X ^ n - C 1
 noncomputable def quotientPoly (logN : Nat) (T : Nat → K[X]) (pis : List F) (c : Expr) : K[X] :=
   constraintPoly (2 ^ logN) (tw logN) T pis c /ₘ zH (2 ^ logN)
 
+/-- `Z_H` is monic. -/
 theorem zH_monic (logN : Nat) : (zH (2 ^ logN)).Monic :=
   monic_X_pow_sub_C 1 (Nat.two_pow_pos logN).ne'
 
@@ -444,6 +467,7 @@ theorem natDegree_quotientPoly (A : Air) (logN : Nat) (pis : List F) (T : Nat �
 def horner {R : Type*} [Add R] [Mul R] [Zero R] (l : List R) (a : R) : R :=
   l.foldl (fun acc v ↦ acc * a + v) 0
 
+/-- Horner's rule from an accumulator. -/
 theorem foldl_horner {R : Type*} [CommRing R] (a : R) :
     ∀ (l : List R) (x : R), l.foldl (fun acc v ↦ acc * a + v) x = x * a ^ l.length + horner l a
   | [], x => by rw [List.foldl_nil, List.length_nil, pow_zero, mul_one, horner, List.foldl_nil,
@@ -455,6 +479,7 @@ theorem foldl_horner {R : Type*} [CommRing R] (a : R) :
     rw [h1, h2, pow_succ]
     ring
 
+/-- Ring maps commute with Horner's rule. -/
 theorem horner_map {R S : Type*} [CommRing R] [CommRing S] (f : R →+* S) (l : List R) (a : R) :
     f (horner l a) = horner (l.map f) (f a) := by
   suffices h : ∀ (l : List R) (x : R), f (l.foldl (fun acc v ↦ acc * a + v) x) =
@@ -465,6 +490,7 @@ theorem horner_map {R S : Type*} [CommRing R] [CommRing S] (f : R →+* S) (l : 
   | nil => intro x; rfl
   | cons v l ih => intro x; rw [List.foldl_cons, ih, map_add, map_mul]; rfl
 
+/-- Horner's rule is linear: scaling every term scales the result. -/
 theorem horner_mul {R : Type*} [CommRing R] (l : List R) (a s : R) :
     horner (l.map (· * s)) a = horner l a * s := by
   suffices h : ∀ (l : List R) (x : R), (l.map (· * s)).foldl (fun acc v ↦ acc * a + v) (x * s) =
@@ -499,6 +525,7 @@ theorem horner_eq_sum {R : Type*} [CommRing R] (a : R) : ∀ l : List R,
         omega
       rw [this]
 
+/-- Horner's rule in `C a` keeps polynomials below a degree. -/
 theorem natDegree_horner {R : Type*} [CommRing R] (N : Nat) (a : R) :
     ∀ (l : List R[X]) (x : R[X]), x.natDegree < N → (∀ p ∈ l, p.natDegree < N) →
       (l.foldl (fun acc v ↦ acc * C a + v) x).natDegree < N
@@ -515,6 +542,7 @@ theorem natDegree_horner {R : Type*} [CommRing R] (N : Nat) (a : R) :
 noncomputable def qFold (A : Air) (logN : Nat) (T : Nat → K[X]) (pis : List F) (a : E) : E[X] :=
   horner (A.constraints.map fun c ↦ (quotientPoly logN T pis c).map (algebraMap K E)) (C a)
 
+/-- The folded quotient has degree below `k n`. -/
 theorem natDegree_qFold (A : Air) (logN : Nat) (pis : List F) (T : Nat → K[X])
     (hTd : TraceDeg logN T) (hdeg : A.DegreeFits logN) (a : E) :
     (qFold A logN T pis a).natDegree < 2 ^ (logN + A.logQuotientChunks) := by
@@ -523,6 +551,7 @@ theorem natDegree_qFold (A : Air) (logN : Nat) (pis : List F) (T : Nat → K[X])
   obtain ⟨c, hc, rfl⟩ := List.mem_map.mp hp
   exact natDegree_map_le.trans_lt (natDegree_quotientPoly A logN pis T hTd hdeg c hc)
 
+/-- The folded quotient at a point is Horner's rule over the quotients there. -/
 theorem eval_qFold (A : Air) (logN : Nat) (T : Nat → K[X]) (pis : List F) (a y : E) :
     (qFold A logN T pis a).eval y =
       horner (A.constraints.map fun c ↦ aeval y (quotientPoly logN T pis c)) a := by
@@ -536,6 +565,7 @@ theorem eval_qFold (A : Air) (logN : Nat) (T : Nat → K[X]) (pis : List F) (a y
 section QuotientValues
 open KoalaBear.Fast (Ext4)
 
+/-- `Ext.pow` is the power in the spec field. -/
 theorem toSpec_extPow (x : EF) (n : Nat) : Ext4.toSpec (Ext.pow x n) = Ext4.toSpec x ^ n := by
   induction n using Nat.strong_induction_on generalizing x with
   | _ n ih =>
@@ -550,6 +580,7 @@ theorem toSpec_extPow (x : EF) (n : Nat) : Ext4.toSpec (Ext.pow x n) = Ext4.toSp
       · rw [ih _ (by omega), Ext4.toSpec_mul, ← sq, ← pow_mul]
         exact congrArg (Ext4.toSpec x ^ ·) (by omega)
 
+/-- `Ext.powTwo` is `x ^ 2 ^ k` in the spec field. -/
 theorem toSpec_extPowTwo (x : EF) : ∀ k, Ext4.toSpec (Ext.powTwo x k) = Ext4.toSpec x ^ 2 ^ k
   | 0 => by rw [Ext.powTwo, pow_zero, pow_one]
   | k + 1 => by
@@ -558,8 +589,10 @@ theorem toSpec_extPowTwo (x : EF) : ∀ k, Ext4.toSpec (Ext.powTwo x k) = Ext4.t
 /-- The extension element of four coordinates. -/
 def ofCoeffs (l : List F) : EF := ⟨l.getD 0 0, l.getD 1 0, l.getD 2 0, l.getD 3 0⟩
 
+/-- `ofCoeffs` inverts `Ext.coeffs`. -/
 theorem ofCoeffs_coeffs (y : EF) : ofCoeffs (Ext.coeffs y) = y := rfl
 
+/-- The accumulated weighted constraints of a row as a sum in the spec field. -/
 theorem toSpec_rowAcc (ev : Expr → F) : ∀ (cw : List (Expr × List F)) (x0 x1 x2 x3 : F),
     Ext4.toSpec ⟨rowAcc cw ev 0 x0, rowAcc cw ev 1 x1, rowAcc cw ev 2 x2, rowAcc cw ev 3 x3⟩ =
       Ext4.toSpec ⟨x0, x1, x2, x3⟩ + (cw.map fun a ↦
@@ -612,12 +645,15 @@ theorem toField_batchInv (xs : Array F) (hx : ∀ x ∈ xs, FastField.toField x 
   rw [batchInv_eq FastField.toField toField_injective toField_mul toField_inv toField_one xs hx,
     Fast.getD_map_lt _ _ _ hi _ 0, toField_inv]
 
+/-- The quotient domain's points. -/
 theorem toField_qPoints (d l m : Nat) (hm : m < 2 ^ (d + l)) :
     FastField.toField ((qPoints d l).getD m 0) = FastField.toField gen * tw (d + l) ^ m := by
   rw [qPoints, cosetPoints_eq, getD_lt _ _ (by rw [Array.size_ofFn]; exact hm),
     Array.getElem_ofFn, toField_mul, toField_npow]
 
-theorem toField_powF (x : F) (n : Nat) : FastField.toField (powF x n) = FastField.toField x ^ n := by
+/-- `powF` is the power in the spec field. -/
+theorem toField_powF (x : F) (n : Nat) :
+    FastField.toField (powF x n) = FastField.toField x ^ n := by
   rw [Fast.powF_eq, toField_npow]
 
 /-- `Z_H` on the quotient domain has period `k`. -/
@@ -635,6 +671,7 @@ theorem toField_qZh (d l r : Nat) (h : d + l ≤ 24) :
   rw [Nat.add_mul, pow_add, Nat.mul_comm (2 ^ l), Nat.mul_assoc, ← Nat.pow_add, Nat.add_comm l,
     pow_mul' (tw (d + l)) (r / 2 ^ l), tw_pow (d + l) h, one_pow, mul_one]
 
+/-- `Z_H` has no zero on the quotient domain. -/
 theorem qZh_ne (d l : Nat) (h : d + l ≤ 24) : ∀ x ∈ qZh d l, FastField.toField x ≠ 0 := by
   intro x hx
   obtain ⟨i, rfl⟩ := Array.mem_ofFn.mp hx
@@ -643,6 +680,7 @@ theorem qZh_ne (d l : Nat) (h : d + l ≤ 24) : ∀ x ∈ qZh d l, FastField.toF
   rw [toField_sub, toField_powF, toField_qPoints d l _ hi, toField_one, sub_ne_zero]
   exact genPoint_pow_ne _ _ h d (by omega)
 
+/-- No quotient point is a two-adic root of unity `y`. -/
 theorem points_sub_ne (d l : Nat) (h : d + l ≤ 24) (y : F) (j : Nat) (hj : j ≤ 24)
     (hy : FastField.toField y ^ 2 ^ j = 1) :
     ∀ x ∈ (qPoints d l).map (· - y), FastField.toField x ≠ 0 := by
@@ -656,6 +694,7 @@ theorem points_sub_ne (d l : Nat) (h : d + l ≤ 24) (y : F) (j : Nat) (hj : j �
 /-- The quotient domain's point `x_r = g ω_qʳ`. -/
 noncomputable abbrev qpt (q r : Nat) : K := FastField.toField gen * tw q ^ r
 
+/-- The prover's inverse of `Z_H` at a quotient point. -/
 theorem toField_invZh (d l r : Nat) (h : d + l ≤ 24) :
     FastField.toField ((batchInv (qZh d l)).getD (r % 2 ^ l) 0) =
       (qpt (d + l) r ^ 2 ^ d - 1)⁻¹ := by
@@ -664,6 +703,7 @@ theorem toField_invZh (d l r : Nat) (h : d + l ≤ 24) :
     exact Nat.mod_lt _ (Nat.two_pow_pos l)
   rw [toField_batchInv _ (qZh_ne d l h) _ hk, toField_qZh d l r h]
 
+/-- The prover's first-row selector at a quotient point is the polynomial's. -/
 theorem toField_qFirst (d l r : Nat) (h : d + l ≤ 24) (hr : r < 2 ^ (d + l)) :
     FastField.toField ((qFirst d l).getD r 0) = (firstSel (2 ^ d)).eval (qpt (d + l) r) := by
   have hs : r < ((qPoints d l).map (· - 1)).size := by
@@ -677,6 +717,7 @@ theorem toField_qFirst (d l r : Nat) (h : d + l ≤ 24) (hr : r < 2 ^ (d + l)) :
     sub_ne_zero.mpr (genPoint_ne _ _ h 1 0 (by omega) (by rw [one_pow]))
   rw [← eval_firstSel_mul (2 ^ d), mul_assoc, mul_inv_cancel₀ hne, mul_one]
 
+/-- The prover's last-row selector at a quotient point is the polynomial's. -/
 theorem toField_qLast (d l r : Nat) (h : d + l ≤ 24) (hr : r < 2 ^ (d + l)) :
     FastField.toField ((qLast d l).getD r 0) =
       (lastSel (2 ^ d) (tw d)).eval (qpt (d + l) r) := by
@@ -695,6 +736,7 @@ theorem toField_qLast (d l r : Nat) (h : d + l ≤ 24) (hr : r < 2 ^ (d + l)) :
   rw [coe_aeval_eq_eval, Algebra.algebraMap_self, RingHom.id_apply, ← toField_inv] at this
   rw [← this, mul_assoc, mul_inv_cancel₀ hne, mul_one]
 
+/-- The prover's transition selector at a quotient point. -/
 theorem toField_qTrans (d l r : Nat) (hr : r < 2 ^ (d + l)) :
     FastField.toField ((qTrans d l).getD r 0) = qpt (d + l) r - (tw d)⁻¹ := by
   rw [qTrans, Fast.getD_map_lt _ _ _ (by rw [qPoints, size_cosetPoints]; exact hr) _ 0,
@@ -708,7 +750,8 @@ theorem pow_mod_of_pow_eq_one {M : Type*} [Monoid M] (a : M) (n m : Nat) (h : a 
 
 /-- The constraints at a row of the quotient domain are the constraint polynomials at its
 point. -/
-theorem toField_rowEnv_eval (A : Air) (d l : Nat) (h : d + l ≤ 24) (tq : Mat) (pis : List F) (T : Nat → K[X])
+theorem toField_rowEnv_eval (A : Air) (d l : Nat) (h : d + l ≤ 24) (tq : Mat) (pis : List F)
+    (T : Nat → K[X])
     (hq : ∀ j < A.width, ∀ r < 2 ^ (d + l),
       FastField.toField (tq.values.getD (r * tq.width + j) 0) = (T j).eval (qpt (d + l) r))
     (c : Expr) (hc : c.colsBelow A.width = true) (r : Nat) (hr : r < 2 ^ (d + l)) :
@@ -821,6 +864,7 @@ noncomputable def chunkSelPoly (logN lc c : Nat) : E[X] :=
   ∏ d ∈ (Finset.range (2 ^ lc)).erase c, ((X * C (algebraMap K E (qpt (logN + lc) d)⁻¹)) ^ 2 ^ logN
     - 1) * C (vanish logN (qpt (logN + lc) d) (algebraMap K E (qpt (logN + lc) c)))⁻¹
 
+/-- The chunk selector polynomial evaluates to `chunkSel`. -/
 theorem eval_chunkSelPoly (logN lc c : Nat) (y : E) :
     (chunkSelPoly logN lc c).eval y = chunkSel logN lc c y := by
   rw [chunkSelPoly, eval_prod]
@@ -828,6 +872,7 @@ theorem eval_chunkSelPoly (logN lc c : Nat) (y : E) :
   rw [eval_mul, eval_sub, eval_pow, eval_mul, eval_X, eval_C, eval_C, eval_one]
   simp only [vanish]
 
+/-- The chunk selector has degree at most `(k - 1) n`. -/
 theorem natDegree_chunkSelPoly (logN lc c : Nat) (hc : c < 2 ^ lc) :
     (chunkSelPoly logN lc c).natDegree ≤ (2 ^ lc - 1) * 2 ^ logN := by
   refine (natDegree_prod_le _ _).trans ?_
@@ -846,10 +891,12 @@ theorem natDegree_chunkSelPoly (logN lc c : Nat) (hc : c < 2 ^ lc) :
         Nat.mul_le_mul_left _ this
     _ = 2 ^ logN := Nat.mul_one _
 
+/-- A degree bound from a `natDegree` bound. -/
 theorem degree_lt_of_natDegree_lt'' {p : E[X]} {N : Nat} (h : p.natDegree < N) :
     p.degree < (N : WithBot Nat) :=
   degree_le_natDegree.trans_lt (by exact_mod_cast h)
 
+/-- Quotient points are nonzero. -/
 theorem qpt_ne_zero (q m : Nat) (h : q ≤ 24) : qpt q m ≠ 0 :=
   mul_ne_zero toField_gen_ne_zero (pow_ne_zero _ (tw_ne_zero q h))
 
@@ -866,6 +913,7 @@ theorem vanish_coset (logN lc c d r : Nat) (h : logN + lc ≤ 24) :
   rw [mul_right_comm, mul_pow, ← pow_mul, Nat.mul_comm, pow_mul, tw_pow logN (by omega), one_pow,
     mul_one]
 
+/-- `Z_{D_c}(s_c) = 0`. -/
 theorem vanish_self (logN lc c : Nat) (h : logN + lc ≤ 24) :
     vanish logN (qpt (logN + lc) c) (algebraMap K E (qpt (logN + lc) c)) = 0 := by
   rw [vanish, ← map_mul, mul_inv_cancel₀ (qpt_ne_zero _ c h), map_one, one_pow, sub_self]
@@ -974,6 +1022,7 @@ theorem chunkValues_eq (qs : Array EF) (stride c n : Nat) :
     Array.emptyWithCapacity_eq, Array.empty_append]
   simp only [Nat.zero_add]
 
+/-- Coordinate `e` of chunk row `r`. -/
 theorem chunkValues_getD (qs : Array EF) (stride c n r e : Nat) (hr : r < n) (he : e < 4) :
     (chunkValues qs stride c n).getD (r * 4 + e) 0 = Fast.coord e (qs.getD (r * stride + c) 0) := by
   have hlt : r * 4 + e < n * 4 := by omega
@@ -998,12 +1047,14 @@ theorem toSpec_eq_basis (y : EF) : Ext4.toSpec y = ∑ e ∈ Finset.range 4,
 noncomputable def chunkPoly (ps : List K[X]) : E[X] :=
   ∑ e ∈ Finset.range 4, C (Ext4.toSpec (Ext.basis e)) * (ps.getD e 0).map (algebraMap K E)
 
+/-- The chunk polynomial at a point, from its coordinate polynomials there. -/
 theorem eval_chunkPoly (ps : List K[X]) (y : E) : (chunkPoly ps).eval y =
     ∑ e ∈ Finset.range 4, Ext4.toSpec (Ext.basis e) * aeval y (ps.getD e 0) := by
   rw [chunkPoly, eval_finsetSum]
   refine Finset.sum_congr rfl fun e _ ↦ ?_
   rw [eval_mul, eval_C, eval_map_algebraMap]
 
+/-- The chunk polynomial has the degree bound of its coordinates. -/
 theorem natDegree_chunkPoly (ps : List K[X]) (N : Nat) (hN : 0 < N)
     (hps : ∀ e < 4, (ps.getD e 0).natDegree < N) : (chunkPoly ps).natDegree < N := by
   refine lt_of_le_of_lt (natDegree_sum_le_of_forall_le _ _ (n := N - 1) fun e he ↦ ?_) (by omega)
@@ -1011,6 +1062,7 @@ theorem natDegree_chunkPoly (ps : List K[X]) (N : Nat) (hN : 0 < N)
   have := hps e (Finset.mem_range.mp he)
   omega
 
+/-- A `natDegree` bound from a positive degree bound. -/
 theorem natDegree_lt_of_degree_lt' {p : K[X]} {N : Nat} (hN : 0 < N)
     (h : p.degree < (N : WithBot Nat)) : p.natDegree < N := by
   by_cases hp : p = 0
@@ -1056,6 +1108,7 @@ theorem chunk_lde (logN b lc : Nat) (h24 : logN + b ≤ 24) (hlc : lc ≤ b) (qs
     rw [aeval_algebraMap_apply_eq_algebraMap_eval, ← hpt, hval e he r hr,
       chunkValues_getD _ _ _ _ _ _ hr he]
 
+/-- A fold of additions in the spec field. -/
 theorem toSpec_foldl_add {α : Type*} (f : α → EF) : ∀ (l : List α) (x : EF),
     Ext4.toSpec (l.foldl (fun acc a ↦ acc + f a) x) =
       Ext4.toSpec x + (l.map fun a ↦ Ext4.toSpec (f a)).sum
@@ -1064,6 +1117,7 @@ theorem toSpec_foldl_add {α : Type*} (f : α → EF) : ∀ (l : List α) (x : E
     rw [List.foldl_cons, toSpec_foldl_add f l, Ext4.toSpec_add, List.map_cons, List.sum_cons,
       add_assoc]
 
+/-- A fold of quotients in the spec field. -/
 theorem toSpec_foldl_mul {α : Type*} (f g : α → EF) : ∀ (l : List α) (x : EF),
     Ext4.toSpec (l.foldl (fun acc a ↦ acc * f a * (g a)⁻¹) x) =
       Ext4.toSpec x * (l.map fun a ↦ Ext4.toSpec (f a) * (Ext4.toSpec (g a))⁻¹).prod
@@ -1073,6 +1127,7 @@ theorem toSpec_foldl_mul {α : Type*} (f g : α → EF) : ∀ (l : List α) (x :
       Ext4.toSpec_inv, List.map_cons, List.prod_cons]
     simp only [mul_assoc]
 
+/-- A list sum over `0, …, n - 1` is the `Finset` sum. -/
 theorem list_sum_range {M : Type*} [AddCommMonoid M] (f : Nat → M) : ∀ n,
     ((List.range n).map f).sum = ∑ i ∈ Finset.range n, f i
   | 0 => rfl
@@ -1084,10 +1139,12 @@ theorem list_sum_range {M : Type*} [AddCommMonoid M] (f : Nat → M) : ∀ n,
 abbrev chunkDomain (logN lc i : Nat) : Domain :=
   ⟨gen * powF (twoAdicGen (logN + lc)) i, logN⟩
 
+/-- Chunk `i`'s shift is the quotient point `i`. -/
 theorem toField_chunkShift (logN lc i : Nat) :
     FastField.toField (chunkDomain logN lc i).shift = qpt (logN + lc) i := by
   rw [toField_mul, toField_powF]
 
+/-- The verifier's vanishing polynomial of chunk `i`'s coset. -/
 theorem toSpec_vanishingAt (logN lc i : Nat) (p : EF) :
     Ext4.toSpec (vanishingAt (chunkDomain logN lc i) p) =
       vanish logN (qpt (logN + lc) i) (Ext4.toSpec p) := by
@@ -1111,7 +1168,8 @@ theorem chunkShift_beq (logN lc i j : Nat) (h : logN + lc ≤ 24) (hi : i < 2 ^ 
 
 /-- The verifier's selector of chunk `i` is `chunkSel`. -/
 theorem toSpec_selector (logN lc i : Nat) (h : logN + lc ≤ 24) (hi : i < 2 ^ lc) (z : EF) :
-    Ext4.toSpec (((chunkDomains logN lc).filter fun dj ↦ dj.shift != (chunkDomain logN lc i).shift).foldl
+    Ext4.toSpec (((chunkDomains logN lc).filter fun dj ↦
+      dj.shift != (chunkDomain logN lc i).shift).foldl
       (fun acc dj ↦ acc * vanishingAt dj z *
         (vanishingAt dj (Ext.ofBase (chunkDomain logN lc i).shift))⁻¹) 1) =
       chunkSel logN lc i (Ext4.toSpec z) := by
@@ -1123,7 +1181,8 @@ theorem toSpec_selector (logN lc i : Nat) (h : logN + lc ≤ 24) (hi : i < 2 ^ l
   simp only [Function.comp_def]
   rw [hf, List.foldl_map, toSpec_foldl_mul, Ext4.toSpec_one, one_mul]
   have hnd : ((List.range (2 ^ lc)).filter (· != i)).Nodup := (List.nodup_range).filter _
-  have hfs : ((List.range (2 ^ lc)).filter (· != i)).toFinset = (Finset.range (2 ^ lc)).erase i := by
+  have hfs : ((List.range (2 ^ lc)).filter (· != i)).toFinset =
+      (Finset.range (2 ^ lc)).erase i := by
     ext j
     simp only [List.mem_toFinset, List.mem_filter, List.mem_range, bne_iff_ne, ne_eq,
       Finset.mem_erase, Finset.mem_range]
@@ -1158,6 +1217,7 @@ end Recompose
 section Check
 open KoalaBear.Fast (Ext4)
 
+/-- The verifier's per-chunk sum in the spec field. -/
 theorem toSpec_chunkInner (ch : Array EF) : Ext4.toSpec (chunkInner ch) =
     ∑ e ∈ Finset.range 4, Ext4.toSpec (Ext.basis e) * Ext4.toSpec (ch.getD e 0) := by
   simp only [chunkInner, show List.range 4 = [0, 1, 2, 3] from rfl, List.foldl_cons,
@@ -1172,6 +1232,7 @@ theorem toSpec_chunkInner_openedAt (b h : Nat) (m : Stark.Mat) (ps : List K[X]) 
   refine Finset.sum_congr rfl fun e he ↦ ?_
   rw [(openedAt_isLde b h m ps z hm hz).2 e (by rw [h4]; exact Finset.mem_range.mp he)]
 
+/-- The verifier's folded constraints are Horner's rule in `α`. -/
 theorem toSpec_foldedConstraints (A : Air) (env : Expr.Env EF) (alpha : EF) :
     Ext4.toSpec (foldedConstraints A env alpha) =
       horner (A.constraints.map fun c ↦ Ext4.toSpec (c.eval env)) (Ext4.toSpec alpha) := by
@@ -1196,11 +1257,12 @@ theorem mul_mul_inv_cancel_ext (a b : E) (hb : b ≠ 0) : a * b * b⁻¹ = a := 
 polynomials at `ζ`. -/
 theorem toSpec_eval_opened (A : Air) (logN b : Nat) (pis : List F) (m : Stark.Mat)
     (ps : List K[X]) (hm : CompStark.Mat.IsLde b (logN + b) m ps)
-    (hw : ps.length = A.width) (z : EF) (hz : Ext.OutsideBase z) (c : Expr)
-    (hc : c.colsBelow A.width = true) :
+    (hw : ps.length = A.width) (z : EF) (hz : Ext.OutsideBase z) (tl tn : Array EF)
+    (htl : tl = Fri.openedAt b m z) (htn : tn = Fri.openedAt b m (z * Ext.ofBase (twoAdicGen logN)))
+    (c : Expr) (hc : c.colsBelow A.width = true) :
     Ext4.toSpec (c.eval {
-      cur := fun i ↦ (Fri.openedAt b m z).getD i 0
-      next := fun i ↦ (Fri.openedAt b m (z * Ext.ofBase (twoAdicGen logN))).getD i 0
+      cur := fun i ↦ tl.getD i 0
+      next := fun i ↦ tn.getD i 0
       pub := fun i ↦ Ext.ofBase (pis.getD i 0)
       const := Ext.ofBase
       isFirstRow := (Ext.powTwo z logN - 1) * (z - 1)⁻¹
@@ -1218,6 +1280,7 @@ theorem toSpec_eval_opened (A : Air) (logN b : Nat) (pis : List F) (m : Stark.Ma
   have hlast : Ext4.toSpec z - algebraMap K E (tw logN)⁻¹ ≠ 0 := by
     have := toSpec_ne_ofBase hz (tw logN)⁻¹
     rwa [← CompPoly.Extension.Ext.algebraMap_eq_ofBase, ← sub_ne_zero] at this
+  subst htl htn
   set env : Expr.Env EF := {
       cur := fun i ↦ (Fri.openedAt b m z).getD i 0
       next := fun i ↦ (Fri.openedAt b m (z * Ext.ofBase (twoAdicGen logN))).getD i 0
@@ -1266,6 +1329,185 @@ theorem toSpec_eval_opened (A : Air) (logN b : Nat) (pis : List F) (m : Stark.Ma
       Ext4.toSpec (z - Ext.ofBase (twoAdicGen logN)⁻¹)
     rw [map_sub, aeval_X, aeval_C, Ext4.toSpec_sub, Ext4.toSpec_ofBase, toField_inv,
       CompPoly.Extension.Ext.algebraMap_eq_ofBase]
+
+/-- The trace's extension is an LDE of polynomials that take the trace on `⟨ω⟩`. -/
+theorem trace_lde (P : Params) (A : Air) (logN : Nat) (trace : Array F)
+    (hin : InputOk P A logN trace) :
+    ∃ ps, CompStark.Mat.IsLde P.logBlowup (logN + P.logBlowup)
+      (ldeRef logN P.logBlowup gen A.width trace) ps ∧
+      TraceOn logN A.width trace (ps.getD · 0) ∧ TraceDeg logN (ps.getD · 0) := by
+  obtain ⟨ps, hlde, hval⟩ := ldeRef_isLde logN P.logBlowup gen A.width trace hin.trace
+    hin.twoAdic gen_ne_zero
+  refine ⟨ps, hlde, fun j hj i hi ↦ ?_, fun j ↦ ?_⟩
+  · have := hval j hj i hi
+    rwa [mul_inv_cancel₀ gen_ne_zero, toField_one, one_mul] at this
+  · by_cases hj : j < ps.length
+    · have hmem : ps.getD j 0 ∈ ps := by
+        rw [List.getD_eq_getElem _ _ hj]; exact List.getElem_mem _
+      have := hlde.2.2.2.2.2.1 _ hmem
+      rw [Nat.add_sub_cancel] at this
+      have := natDegree_lt_of_degree_lt' (Nat.two_pow_pos _) this
+      show (ps.getD j 0).natDegree ≤ 2 ^ logN - 1
+      omega
+    · show (ps.getD j 0).natDegree ≤ 2 ^ logN - 1
+      rw [List.getD_eq_default _ _ (by omega), natDegree_zero]
+      exact Nat.zero_le _
+
+/-- `checkConstraints` as a function. Rewriting with it, rather than unfolding the definition at
+its arguments, keeps the kernel from evaluating the final `==` on symbolic extension elements. -/
+theorem checkConstraints_eq_fun : checkConstraints = fun (A : Air) (pis : List F)
+    (opened : OpenedValues) (degreeBits : Nat) (zeta alpha quotient : EF) ↦
+  let gInv := Ext.ofBase (twoAdicGen degreeBits)⁻¹
+  let zh := Ext.powTwo zeta degreeBits - 1
+  let env : Expr.Env EF := {
+    cur := fun i ↦ opened.traceLocal.getD i 0
+    next := fun i ↦ opened.traceNext.getD i 0
+    pub := fun i ↦ Ext.ofBase (pis.getD i 0)
+    const := Ext.ofBase
+    isFirstRow := zh * (zeta - 1)⁻¹
+    isLastRow := zh * (zeta - gInv)⁻¹
+    isTransition := zeta - gInv }
+  foldedConstraints A env alpha * zh⁻¹ == quotient := rfl
+
+/-- The check passes when the folded constraints over `Z_H(ζ)` equal the quotient in the spec
+field. -/
+theorem checkConstraints_of (A : Air) (pis : List F) (o : OpenedValues) (logN : Nat)
+    (zeta alpha quotient : EF)
+    (h : Ext4.toSpec (foldedConstraints A {
+      cur := fun i ↦ o.traceLocal.getD i 0
+      next := fun i ↦ o.traceNext.getD i 0
+      pub := fun i ↦ Ext.ofBase (pis.getD i 0)
+      const := Ext.ofBase
+      isFirstRow := (Ext.powTwo zeta logN - 1) * (zeta - 1)⁻¹
+      isLastRow := (Ext.powTwo zeta logN - 1) * (zeta - Ext.ofBase (twoAdicGen logN)⁻¹)⁻¹
+      isTransition := zeta - Ext.ofBase (twoAdicGen logN)⁻¹ } alpha *
+      (Ext.powTwo zeta logN - 1)⁻¹) = Ext4.toSpec quotient) :
+    checkConstraints A pis o logN zeta alpha quotient = true := by
+  rw [checkConstraints_eq_fun]
+  exact beq_iff_eq.mpr (Ext4.toSpec_injective h)
+
+/-- **The out-of-domain check passes on the honest openings.** -/
+theorem checkConstraints_honest (P : Params) (A : Air) (logN : Nat) (trace : Array F)
+    (pis : List F) (alpha zeta : EF) (hin : InputOk P A logN trace)
+    (hsat : A.Satisfied logN trace pis) (hdeg : A.DegreeFits logN) (hz : Ext.OutsideBase zeta) :
+    let ext := ldeRef logN P.logBlowup gen A.width trace
+    let qs := quotientOfLde A pis logN A.logQuotientChunks ext alpha
+    let lc := A.logQuotientChunks
+    let chunks := (List.range (2 ^ lc)).map fun c ↦
+      ldeRef logN P.logBlowup (gen * (gen * powF (twoAdicGen (logN + lc)) c)⁻¹) 4
+        (chunkValues qs (2 ^ lc) c (2 ^ logN))
+    let o : OpenedValues := ⟨Fri.openedAt P.logBlowup ext zeta,
+      Fri.openedAt P.logBlowup ext (zeta * Ext.ofBase (twoAdicGen logN)),
+      (chunks.map fun m ↦ Fri.openedAt P.logBlowup m zeta).toArray⟩
+    checkConstraints A pis o logN zeta alpha
+      (recompose (chunkDomains logN lc) o.quotientChunks.toList zeta) = true := by
+  intro ext qs lc chunks o
+  have h24 := hin.twoAdic
+  have hlc : lc ≤ P.logBlowup := hin.chunks
+  have hq24 : logN + lc ≤ 24 := by omega
+  obtain ⟨ps, hlde, hT, hTd⟩ := trace_lde P A logN trace hin
+  set Q := qFold A logN (ps.getD · 0) pis (Ext4.toSpec alpha)
+  have hQ := natDegree_qFold A logN pis _ hTd hdeg (Ext4.toSpec alpha)
+  have hqs : ∀ m < 2 ^ (logN + lc), Ext4.toSpec (qs.getD m 0) =
+      Q.eval (algebraMap K E (qpt (logN + lc) m)) := fun m hm ↦
+    toSpec_quotientOfLde A pis logN P.logBlowup trace alpha hlc h24 hsat hin.cols ps hlde hT m hm
+  have hch : ∀ c, ∃ cps : List K[X], c < 2 ^ lc →
+      CompStark.Mat.IsLde P.logBlowup (logN + P.logBlowup) (ldeRef logN P.logBlowup
+        (gen * (gen * powF (twoAdicGen (logN + lc)) c)⁻¹) 4
+        (chunkValues qs (2 ^ lc) c (2 ^ logN))) cps ∧ (chunkPoly cps).natDegree < 2 ^ logN ∧
+      ∀ r < 2 ^ logN, (chunkPoly cps).eval (algebraMap K E (qpt (logN + lc) c * tw logN ^ r)) =
+        Q.eval (algebraMap K E (qpt (logN + lc) c * tw logN ^ r)) := by
+    intro c
+    by_cases hc : c < 2 ^ lc
+    · obtain ⟨cps, h1⟩ := chunk_lde logN P.logBlowup lc h24 hlc qs Q hqs c hc
+      exact ⟨cps, fun _ ↦ h1⟩
+    · exact ⟨[], fun h ↦ absurd h hc⟩
+  choose cps hcps using hch
+  -- The recomposed quotient is `Q(ζ)`.
+  have hrec : Ext4.toSpec (recompose (chunkDomains logN lc) o.quotientChunks.toList zeta) =
+      Q.eval (Ext4.toSpec zeta) := by
+    have hl : o.quotientChunks.toList = (List.range (2 ^ lc)).map fun c ↦
+        Fri.openedAt P.logBlowup (ldeRef logN P.logBlowup
+          (gen * (gen * powF (twoAdicGen (logN + lc)) c)⁻¹) 4
+          (chunkValues qs (2 ^ lc) c (2 ^ logN))) zeta := by
+      show (chunks.map fun m ↦ Fri.openedAt P.logBlowup m zeta) = _
+      simp only [chunks, List.map_map, Function.comp_def]
+    rw [hl, toSpec_recompose logN lc hq24, ← sum_chunkSel logN lc hq24 Q hQ
+      (fun c ↦ chunkPoly (cps c)) (fun c hc ↦ (hcps c hc).2.1) (fun c hc ↦ (hcps c hc).2.2)]
+    refine Finset.sum_congr rfl fun c hc ↦ ?_
+    have hc := Finset.mem_range.mp hc
+    have h4 : (cps c).length = 4 := (hcps c hc).1.1.symm
+    rw [toSpec_chunkInner_openedAt _ _ _ _ _ (hcps c hc).1 h4 hz]
+  -- The folded constraints at `ζ` over `Z_H(ζ)` are `Q(ζ)`.
+  have hzh : Ext4.toSpec zeta ^ 2 ^ logN - 1 ≠ 0 := by
+    have := pow_ne_of_outsideBase hz (specDomain logN (by omega)) one_ne_zero
+    rw [map_one, one_pow] at this
+    exact sub_ne_zero.mpr this
+  have hlen : ps.length = A.width := hlde.1.symm
+  refine checkConstraints_of A pis o logN zeta alpha _ ?_
+  rw [hrec, Ext4.toSpec_mul, toSpec_foldedConstraints, Ext4.toSpec_inv, Ext4.toSpec_sub,
+    toSpec_extPowTwo, Ext4.toSpec_one, eval_qFold]
+  have hmap : (A.constraints.map fun c ↦ Ext4.toSpec (c.eval {
+      cur := fun i ↦ o.traceLocal.getD i 0
+      next := fun i ↦ o.traceNext.getD i 0
+      pub := fun i ↦ Ext.ofBase (pis.getD i 0)
+      const := Ext.ofBase
+      isFirstRow := (Ext.powTwo zeta logN - 1) * (zeta - 1)⁻¹
+      isLastRow := (Ext.powTwo zeta logN - 1) * (zeta - Ext.ofBase (twoAdicGen logN)⁻¹)⁻¹
+      isTransition := zeta - Ext.ofBase (twoAdicGen logN)⁻¹ })) =
+      (A.constraints.map fun c ↦ aeval (Ext4.toSpec zeta)
+        (quotientPoly logN (ps.getD · 0) pis c)).map (· * (Ext4.toSpec zeta ^ 2 ^ logN - 1)) := by
+    rw [List.map_map]
+    refine List.map_congr_left fun c hc ↦ ?_
+    rw [toSpec_eval_opened A logN P.logBlowup pis ext ps hlde hlen zeta hz o.traceLocal
+      o.traceNext rfl rfl c (hin.cols c hc),
+      constraintPoly_eq A logN (by omega) trace pis _ hT hsat hin.cols c hc, map_mul]
+    simp only [Function.comp_apply, zH, map_sub, map_pow, aeval_X, map_one]
+    ring
+  rw [hmap, horner_mul, mul_mul_inv_cancel_ext _ _ hzh]
+
+/-- Every chunk of the honest quotient is an LDE of four polynomials. -/
+theorem chunk_isLde (P : Params) (A : Air) (logN : Nat) (qs : Array EF)
+    (h24 : logN + P.logBlowup ≤ 24) (hlc : A.logQuotientChunks ≤ P.logBlowup) (c : Nat) :
+    ∃ ps, CompStark.Mat.IsLde P.logBlowup (logN + P.logBlowup) (ldeRef logN P.logBlowup
+      (gen * (gen * powF (twoAdicGen (logN + A.logQuotientChunks)) c)⁻¹) 4
+      (chunkValues qs (2 ^ A.logQuotientChunks) c (2 ^ logN))) ps ∧ ps.length = 4 := by
+  have hg := toField_gen_ne_zero
+  have hsh : FastField.toField
+      (gen * (gen * powF (twoAdicGen (logN + A.logQuotientChunks)) c)⁻¹) ≠ 0 := by
+    rw [toField_mul, toField_inv, toField_mul, toField_powF]
+    exact mul_ne_zero hg (inv_ne_zero (mul_ne_zero hg (pow_ne_zero _ (tw_ne_zero _ (by omega)))))
+  obtain ⟨ps, hlde, -⟩ := ldeRef_isLde logN P.logBlowup
+    (gen * (gen * powF (twoAdicGen (logN + A.logQuotientChunks)) c)⁻¹) 4
+    (chunkValues qs (2 ^ A.logQuotientChunks) c (2 ^ logN))
+    (by rw [size_chunkValues, Nat.mul_comm]) h24 (fun h0 ↦ hsh (by rw [h0]; exact toField_zero))
+  exact ⟨ps, hlde, hlde.1.symm⟩
+
+/-- The honest openings pass the verifier's shape check. -/
+theorem honest_shape (P : Params) (A : Air) (logN : Nat) (trace : Array F) (pis : List F)
+    (alpha zeta : EF) :
+    let ext := ldeRef logN P.logBlowup gen A.width trace
+    let qs := quotientOfLde A pis logN A.logQuotientChunks ext alpha
+    let lc := A.logQuotientChunks
+    let chunks := (List.range (2 ^ lc)).map fun c ↦
+      ldeRef logN P.logBlowup (gen * (gen * powF (twoAdicGen (logN + lc)) c)⁻¹) 4
+        (chunkValues qs (2 ^ lc) c (2 ^ logN))
+    let o : OpenedValues := ⟨Fri.openedAt P.logBlowup ext zeta,
+      Fri.openedAt P.logBlowup ext (zeta * Ext.ofBase (twoAdicGen logN)),
+      (chunks.map fun m ↦ Fri.openedAt P.logBlowup m zeta).toArray⟩
+    (o.traceLocal.size == A.width && o.traceNext.size == A.width &&
+      o.quotientChunks.size == 2 ^ lc && o.quotientChunks.all (·.size == 4)) = true := by
+  intro ext qs lc chunks o
+  have hs (m : Stark.Mat) (z : EF) : (Fri.openedAt P.logBlowup m z).size = m.width := by
+    rw [openedAt_eq, Array.size_ofFn]
+  simp only [Bool.and_eq_true, beq_iff_eq]
+  refine ⟨⟨⟨hs ext zeta, hs ext _⟩, ?_⟩, ?_⟩
+  · show (chunks.map fun m ↦ Fri.openedAt P.logBlowup m zeta).toArray.size = 2 ^ lc
+    rw [List.size_toArray, List.length_map, List.length_map, List.length_range]
+  · rw [Array.all_eq_true]
+    intro i hi
+    simp only [o, chunks, List.getElem_toArray, List.getElem_map, hs, beq_iff_eq]
+    rfl
 
 end Check
 
