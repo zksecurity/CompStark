@@ -62,12 +62,15 @@ theorem perm24_eq (s : Vector F 24) :
   simp only [lane, Vector.getElem_ofFn, Poseidon2.Packed.word, USize.toNat_zero, Nat.zero_add,
     Nat.add_zero]
 
-/-- A witness check on a state with room in its input permutes the state overwritten by the input
-and the witness, and tests coordinate 15. -/
+/-- A witness check permutes the state overwritten by the input and the witness, and tests
+coordinate 15; with `bits = 0` both accept. -/
 theorem checkWitness_fst (D : Duplex F 24) (hr : D.rate = 16) (c : Challenger F 24)
-    (bits : Nat) (w : F) (hb : bits ≠ 0) :
+    (bits : Nat) (w : F) :
     (Challenger.checkWitness D c bits w).1 =
       (D.canon (D.perm (Hash.overwrite c.state (c.input.push w).toList))[15] % 2 ^ bits == 0) := by
+  by_cases hb : bits = 0
+  · subst hb
+    simp only [Challenger.checkWitness, ite_true, Nat.pow_zero, Nat.mod_one, beq_self_eq_true]
   simp only [Challenger.checkWitness, hb, ite_false, Challenger.sampleBits, Challenger.sample,
     Challenger.observe, Challenger.duplexing, hr]
   have hback (s : Vector F 24) : (s.toArray.extract 0 16).back?.getD 0 = s[15] := by
@@ -147,25 +150,52 @@ theorem copy_encode (a : Array F) :
   rw [Nat.mul_zero, he, Nat.zero_add, ← CompPoly.PackedRepr.size_encode, ByteArray.size_empty] at h
   rw [h, Array.empty_append, Array.extract_size]
 
+/-- A word write sets an element in bounds and leaves the words past the end. -/
+theorem write_encode_set (a : Array F) (i : Nat) (x : F) (hi : 4 * (i + 1) < USize.size)
+    (ha : 4 * a.size < USize.size) :
+    CompPoly.CPolynomial.NTTFast.Packed.Native.write (encode a) i x.val =
+      encode (a.setIfInBounds i x) := by
+  by_cases h : i < a.size
+  · exact CompPoly.CPolynomial.NTTFast.Packed.Native.write_encode a i
+      (by rw [size_encode_fields]; omega) h x
+  · have hsize : (2 : Nat) ^ System.Platform.numBits = USize.size := rfl
+    have ho : (i.toUSize * 4).toNat = 4 * i := by
+      rw [USize.toNat_mul, USize.toNat_ofNat_of_lt' (by omega),
+        CompPoly.CPolynomial.NTTFast.Packed.Native.usize_numeral 4 (by decide),
+        Nat.mod_eq_of_lt (by rw [hsize]; omega)]
+      omega
+    have hs : (encode (a.map Subtype.val)).size < USize.size := by
+      rw [CompPoly.PackedRepr.size_encode_uint32, Array.size_map]; exact ha
+    have hf := CompPoly.CPolynomial.NTTFast.Packed.Native.storeWords_fits (a.map Subtype.val)
+      (i.toUSize * 4) 1 i (by decide) ho hs
+    rw [Array.setIfInBounds_eq_of_size_le (by omega)]
+    unfold CompPoly.CPolynomial.NTTFast.Packed.Native.write
+    rw [CompPoly.CPolynomial.NTTFast.Packed.encode_eq_map_val,
+      CompPoly.CPolynomial.NTTFast.Packed.Native.storeWords_eq]
+    have hn : ¬ (i + (1 : UInt8).toNat ≤ (a.map Subtype.val).size) := by
+      rw [Array.size_map, show (1 : UInt8).toNat = 1 by decide]; omega
+    rw [ite_eq_right_of_eq_false _ _ (eq_false (by decide)),
+      ite_eq_right_of_eq_false _ _ (eq_false fun h' ↦ hn (hf.mp h'))]
+
 /-- The packed group of batch `b` with lanes `0, …, n - 1` written: lane `l` is `base` with the
 candidate `8 b + l` in coordinate `wi`. -/
 def batchGroup (base : Vector F 24) (wi b n : Nat) : Array F :=
-  Array.ofFn (n := 192) fun k ↦ if k.val / 8 = wi ∧ k.val % 8 < n then ((8 * b + k.val % 8 : Nat) : F)
+  Array.ofFn (n := 192) fun k ↦
+    if k.val / 8 = wi ∧ k.val % 8 < n then ((8 * b + k.val % 8 : Nat) : F)
     else base.toArray.getD (k.val / 8) 0
 
 theorem size_batchGroup (base : Vector F 24) (wi b n : Nat) : (batchGroup base wi b n).size = 192 :=
   Array.size_ofFn
 
-theorem writes_encode (base : Vector F 24) (wi b : Nat) (hw : wi < 24) : ∀ n ≤ 8,
+theorem writes_encode (base : Vector F 24) (wi b : Nat) (hw : wi ≤ 24) : ∀ n ≤ 8,
     (List.range n).foldl (fun W l ↦ CompPoly.CPolynomial.NTTFast.Packed.Native.write W
       (8 * wi + l) ((8 * b + l : Nat) : F).val) (encode (batchGroup base wi b 0)) =
       encode (batchGroup base wi b n)
   | 0, _ => rfl
   | n + 1, hn => by
     rw [List.range_succ, List.foldl_append, writes_encode base wi b hw n (by omega),
-      List.foldl_cons, List.foldl_nil, CompPoly.CPolynomial.NTTFast.Packed.Native.write_encode
-        _ _ (by rw [size_encode_fields, size_batchGroup]; have := USize.le_size; omega)
-        (by rw [size_batchGroup]; omega)]
+      List.foldl_cons, List.foldl_nil, write_encode_set _ _ _ (by have := USize.le_size; omega)
+        (by rw [size_batchGroup]; have := USize.le_size; omega)]
     refine congrArg encode ?_
     apply Array.ext
     · rw [Array.size_setIfInBounds, size_batchGroup, size_batchGroup]
@@ -183,8 +213,10 @@ theorem writes_encode (base : Vector F 24) (wi b : Nat) (hw : wi < 24) : ∀ n �
           simp only [hw', true_and, Nat.lt_succ_iff, Nat.le_iff_lt_or_eq, this, or_false]
         · simp only [hw', false_and, ite_false]
 
+/-- Lane `l` of the group of batch `b` is the state overwritten by the input and candidate
+`8 b + l`; a candidate past coordinate 23 is dropped on both sides. -/
 theorem lane_batchGroup (c : Challenger F 24) (b l : Nat) (hl : l < 8) :
-    lane 24 (batchGroup (Hash.overwrite c.state c.input.toList) c.input.size b 8) 0 l =
+    lane 24 (batchGroup (Hash.overwrite c.state c.input.toList) (min c.input.size 24) b 8) 0 l =
       Hash.overwrite c.state (c.input.push ((8 * b + l : Nat) : F)).toList := by
   apply Vector.ext
   intro j hj
@@ -193,13 +225,16 @@ theorem lane_batchGroup (c : Challenger F 24) (b l : Nat) (hl : l < 8) :
   simp only [lane, Vector.getElem_ofFn, Poseidon2.Packed.word, Nat.zero_add, batchGroup,
     Array.getD_eq_getD_getElem?, Array.getElem?_ofFn, show 8 * j + l < 192 by omega, dite_true,
     Option.getD_some, e1, e2, hl, and_true, Hash.overwrite, Array.toList_push]
-  by_cases hj' : j = c.input.size
-  · subst hj'
-    simp only [↓reduceIte, Fin.getElem_fin, List.getD_eq_getElem?_getD, List.length_append,
+  by_cases hj' : j = min c.input.size 24
+  · have hj2 : j = c.input.size := by omega
+    rw [ite_eq_left_of_eq_true _ _ (eq_true hj')]
+    subst hj2
+    simp only [Fin.getElem_fin, List.getD_eq_getElem?_getD, List.length_append,
       Array.length_toList, List.length_cons, List.length_nil, zero_add, getElem?_pos,
       List.getElem_append_right, tsub_self, List.getElem_cons_zero, Option.getD_some,
       lt_add_iff_pos_right, Nat.lt_one_iff, Std.le_refl]
-  · simp only [hj', ite_false, Fin.getElem_fin, List.getD_eq_getElem?_getD, Array.getElem?_toList,
+  · have hj2 : j ≠ c.input.size := by omega
+    simp only [hj', ite_false, Fin.getElem_fin, List.getD_eq_getElem?_getD, Array.getElem?_toList,
       Vector.toArray_ofFn]
     rw [Array.getElem?_ofFn, dite_eq_left_of_eq_true (eq_true hj), Option.getD_some]
     by_cases hlt : j < c.input.size
@@ -219,20 +254,18 @@ abbrev baseGroup (c : Challenger F 24) : ByteArray :=
   CompPoly.CPolynomial.NTTFast.Packed.Native.encodeFields
     (Array.ofFn (n := 192) fun k ↦ (Hash.overwrite c.state c.input.toList).toArray.getD (k / 8) 0)
 
-theorem grindBatch_eq (c : Challenger F 24) (bits b : Nat) (hi : c.input.size < 16) :
-    grindBatch (baseGroup c) c.input.size bits b = firstFrom (passes c bits) 8 (8 * b) := by
+theorem grindBatch_eq (c : Challenger F 24) (bits b : Nat) :
+    grindBatch (baseGroup c) (min c.input.size 24) bits b =
+      firstFrom (passes c bits) 8 (8 * b) := by
   have h0 : (Array.ofFn (n := 192) fun k ↦
       (Hash.overwrite c.state c.input.toList).toArray.getD (k / 8) 0) =
-      batchGroup (Hash.overwrite c.state c.input.toList) c.input.size b 0 := by
+      batchGroup (Hash.overwrite c.state c.input.toList) (min c.input.size 24) b 0 := by
     apply Array.ext
     · rw [Array.size_ofFn, size_batchGroup]
     · intro k h1 _
       simp only [batchGroup, Array.getElem_ofFn, Nat.not_lt_zero, and_false, ite_false]
-  have hs : (encode (batchGroup (Hash.overwrite c.state c.input.toList) c.input.size b 8)).size <
-      USize.size := by
-    rw [size_encode_fields, size_batchGroup]; have := USize.le_size; omega
   obtain ⟨W', e, hsz, hl, -⟩ := permute24_spec (Poseidon2.KoalaBear.width24 F) rfl rfl rfl rfl
-    (batchGroup (Hash.overwrite c.state c.input.toList) c.input.size b 8) 0
+    (batchGroup (Hash.overwrite c.state c.input.toList) (min c.input.size 24) b 8) 0
     (by
       simp only [GroupFits24, Fits, size_encode_fields, size_batchGroup, USize.toNat_zero]
       have := USize.le_size
@@ -249,12 +282,12 @@ theorem grindBatch_eq (c : Challenger F 24) (bits b : Nat) (hi : c.input.size < 
     simp only [lane, Vector.getElem_ofFn, Poseidon2.Packed.word, Nat.zero_add]
   rw [hw, h15]
 
-theorem grindRange_eq (c : Challenger F 24) (bits : Nat) (hi : c.input.size < 16) :
-    ∀ nb b, grindRange (baseGroup c) c.input.size bits nb b =
+theorem grindRange_eq (c : Challenger F 24) (bits : Nat) :
+    ∀ nb b, grindRange (baseGroup c) (min c.input.size 24) bits nb b =
       firstFrom (passes c bits) (8 * nb) (8 * b)
   | 0, _ => rfl
   | nb + 1, b => by
-    rw [grindRange, grindBatch_eq c bits b hi, grindRange_eq c bits hi nb (b + 1),
+    rw [grindRange, grindBatch_eq c bits b, grindRange_eq c bits nb (b + 1),
       show 8 * (nb + 1) = 8 + 8 * nb by omega, firstFrom_add, show 8 * b + 8 = 8 * (b + 1) by omega]
     cases firstFrom (passes c bits) 8 (8 * b) <;> rfl
 
@@ -268,18 +301,19 @@ theorem findSome?_ranges (P : Nat → Bool) (L a : Nat) : ∀ n,
     simp only [List.map_cons, List.map_nil, List.findSome?_cons, id, List.findSome?_nil]
     cases firstFrom P L (a + L * n) <;> rfl
 
-theorem grindWaves_eq (c : Challenger F 24) (bits : Nat) (hi : c.input.size < 16) :
-    ∀ fuel wave, grindWaves (baseGroup c) c.input.size bits fuel wave =
+theorem grindWaves_eq (c : Challenger F 24) (bits : Nat) :
+    ∀ fuel wave, grindWaves (baseGroup c) (min c.input.size 24) bits fuel wave =
       ((firstFrom (passes c bits) (8192 * fuel) (8192 * wave)).map fun m : Nat ↦ (m : F)).getD 0
   | 0, _ => rfl
   | fuel + 1, wave => by
     have hw : ((Array.range 16).map fun k ↦ Task.spawn fun _ ↦
-        grindRange (baseGroup c) c.input.size bits 64 (1024 * wave + 64 * k)).map Task.get =
+        grindRange (baseGroup c) (min c.input.size 24) bits 64 (1024 * wave + 64 * k)).map
+          Task.get =
         ((List.range 16).map fun k ↦
           firstFrom (passes c bits) 512 (8192 * wave + 512 * k)).toArray := by
       rw [Array.map_map]
       apply Array.ext'
-      simp only [Array.toList_map, Array.toList_range, grindRange_eq c bits hi, Nat.mul_add,
+      simp only [Array.toList_map, Array.toList_range, grindRange_eq c bits, Nat.mul_add,
         ← Nat.mul_assoc]
       rfl
     rw [grindWaves, hw, List.findSome?_toArray, findSome?_ranges,
@@ -287,32 +321,28 @@ theorem grindWaves_eq (c : Challenger F 24) (bits : Nat) (hi : c.input.size < 16
       show 8192 * wave + 512 * 16 = 8192 * (wave + 1) by omega]
     cases firstFrom (passes c bits) (512 * 16) (8192 * wave) with
     | some m => rfl
-    | none => rw [grindWaves_eq c bits hi fuel (wave + 1)]; rfl
+    | none => rw [grindWaves_eq c bits fuel (wave + 1)]; rfl
 
 /-- The fast grinder finds the specification's witness. -/
 theorem grind_eq (c : Challenger F 24) (bits : Nat) :
     grind c bits = KoalaBear.grindFrom KoalaBear.duplex c bits _root_.KoalaBear.fieldSize 0 := by
   rw [grind]
-  split
-  · rfl
-  · rename_i h
-    have hb : bits ≠ 0 := fun e ↦ h (Or.inl e)
-    have hi : c.input.size < 16 := by omega
-    rw [grindWaves_eq c bits hi, grindFrom_eq, Nat.mul_zero]
-    have hp : 8192 * (_root_.KoalaBear.fieldSize / 8192 + 1) =
-        _root_.KoalaBear.fieldSize + (8192 * (_root_.KoalaBear.fieldSize / 8192 + 1) -
-          _root_.KoalaBear.fieldSize) := by omega
-    rw [hp, firstFrom_add, firstFrom_none (P := passes c bits)
-      (8192 * (_root_.KoalaBear.fieldSize / 8192 + 1) - _root_.KoalaBear.fieldSize)
-      (0 + _root_.KoalaBear.fieldSize) fun m h1 _ ↦ by
-      simp only [passes, show ¬ m < _root_.KoalaBear.fieldSize by omega,
-        decide_false, Bool.false_and]]
-    rw [Option.or_none, firstFrom_congr
-      (Q := fun m ↦ (Challenger.checkWitness KoalaBear.duplex c bits (m : F)).1) _ 0
-      fun m _ h2 ↦ by
-        rw [checkWitness_fst KoalaBear.duplex rfl c bits _ hb, passes,
-          decide_eq_true (show m < _root_.KoalaBear.fieldSize by omega), Bool.true_and]
-        rfl]
+  refine (grindWaves_eq c bits _ 0).trans ?_
+  rw [grindFrom_eq, Nat.mul_zero]
+  have hp : 8192 * (_root_.KoalaBear.fieldSize / 8192 + 1) =
+      _root_.KoalaBear.fieldSize + (8192 * (_root_.KoalaBear.fieldSize / 8192 + 1) -
+        _root_.KoalaBear.fieldSize) := by omega
+  rw [hp, firstFrom_add, firstFrom_none (P := passes c bits)
+    (8192 * (_root_.KoalaBear.fieldSize / 8192 + 1) - _root_.KoalaBear.fieldSize)
+    (0 + _root_.KoalaBear.fieldSize) fun m h1 _ ↦ by
+    simp only [passes, show ¬ m < _root_.KoalaBear.fieldSize by omega,
+      decide_false, Bool.false_and]]
+  rw [Option.or_none, firstFrom_congr
+    (Q := fun m ↦ (Challenger.checkWitness KoalaBear.duplex c bits (m : F)).1) _ 0
+    fun m _ h2 ↦ by
+      rw [checkWitness_fst KoalaBear.duplex rfl c bits _, passes,
+        decide_eq_true (show m < _root_.KoalaBear.fieldSize by omega), Bool.true_and]
+      rfl]
 
 /-- The fast transcript is the specification's. -/
 theorem transcript_eq : transcript = KoalaBear.Transcript.init := by
