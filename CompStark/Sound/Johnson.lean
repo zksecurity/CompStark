@@ -13,7 +13,8 @@ public import ArkLib.Data.Finset.PairwiseIntersection
 of words on a common set of at least `(1 - δ) N` points. Two distinct such tuples agree on at most
 `n` points of `L` (`card_le_of_eqOn`), so their agreement sets meet in at most `n` points. The
 pairwise-intersection count (ArkLib's `Finset.card_mul_sq_sub_card_mul_le_of_inter_card_le`, at
-the agreement `⌈(1 - δ) N⌉`, `lt_of_johnson`) then bounds the list by `(a - rate) / (a² - rate)` for `a = 1 - δ > √rate` (`listSize_le_johnson`).
+the agreement `⌈(1 - δ) N⌉`, `lt_of_johnson`) then bounds the list by
+`(a - rate) / (a² - rate)` for `a = 1 - δ > √rate` (`listSize_le_johnson`).
 For example `rate = 1/16`, `δ = 1/2` gives `7/3`, so at most `2`.
 
 Below the unique-decoding radius `(1 - rate) / 2` two agreement sets meet in more than `n` points,
