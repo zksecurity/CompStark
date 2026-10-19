@@ -164,7 +164,8 @@ degree at most `n` on `L`, at the rows `ω_n ^ i` of the trace domain, row-major
 noncomputable def extract {S : Setup} (prover : Prover S) : Array F :=
   Array.ofFn fun r : Fin (S.n * S.air.width) ↦
     let (row, column) := finProdFinEquiv.symm r
-    let p := closestPolynomial (S.n + 1) (fun i : S.Point ↦ basePoint (S.logN + S.params.logBlowup) i) (prover.trace column)
+    let p := closestPolynomial (S.n + 1)
+      (fun i : S.Point ↦ basePoint (S.logN + S.params.logBlowup) i) (prover.trace column)
     KoalaBear.Fast.ringEquiv.symm (p.eval (FastField.toField (twoAdicGen S.logN) ^ row.val))
 
 end CompStark.Iop

@@ -62,9 +62,11 @@ public import CompStark.Stark.Satisfied
 public import CompStark.Completeness
 public import CompStark.Sound.Defs
 public import CompStark.Iop
-public import CompStark.Soundness
+public import CompStark.SoundnessError
 public import CompStark.Sound.Steps
 public import CompStark.Sound.Assembly
 public import CompStark.Sound.Batching
 public import CompStark.Sound.Fri
 public import CompStark.Sound.Decoding
+public import CompStark.Sound.Algebra
+public import CompStark.Soundness

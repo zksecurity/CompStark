@@ -4,7 +4,7 @@ Released under Apache 2.0 license as described in the file LICENSE.
 -/
 module
 
-public import CompStark.Soundness
+public import CompStark.SoundnessError
 
 /-! # The steps of the soundness proof
 
@@ -55,7 +55,8 @@ open Classical in
 uniform `a` is `δ`-near the code with probability at most `batchingError`. -/
 def BatchingStep (S : Setup) : Prop :=
   ∀ (δ : NNReal) (ws : Fin S.numOpened → S.Point → 𝕂), (∃ k, ¬ Near S δ (ws k)) →
-    ((Finset.univ.filter fun a : 𝕂 ↦ Near S δ fun i ↦ ∑ k : Fin S.numOpened, a ^ (k : Nat) * ws k i).card : ENNReal)
+    ((Finset.univ.filter fun a : 𝕂 ↦
+        Near S δ fun i ↦ ∑ k : Fin S.numOpened, a ^ (k : Nat) * ws k i).card : ENNReal)
       / Fintype.card 𝕂 ≤ batchingError S δ
 
 /-- If every DEEP component of the opened words is `δ`-near the code, `δ` within the
