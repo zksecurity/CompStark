@@ -85,12 +85,13 @@ def grindWaves (group : ByteArray) (wi bits : Nat) : Nat → Nat → F
     | none => grindWaves group wi bits fuel (wave + 1)
 
 /-- The smallest grinding witness for `bits`, eight candidates per packed permutation as Plonky3
-grinds, in parallel waves. -/
+grinds, in parallel waves. With a full state the candidates go to coordinate 24, past the group,
+and are dropped as `Hash.overwrite` drops them. -/
 def grind (c : Challenger F 24) (bits : Nat) : F :=
   let base := Hash.overwrite c.state c.input.toList
   let group := CompPoly.CPolynomial.NTTFast.Packed.Native.encodeFields
     (Array.ofFn (n := 192) fun k ↦ base.toArray.getD (k / 8) 0)
-  grindWaves group c.input.size bits (_root_.KoalaBear.fieldSize / 8192 + 1) 0
+  grindWaves group (min c.input.size 24) bits (_root_.KoalaBear.fieldSize / 8192 + 1) 0
 
 /-- The fast transcript. -/
 def transcript : Transcript := Transcript.initWith duplex grind
