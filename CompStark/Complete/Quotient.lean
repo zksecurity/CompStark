@@ -802,4 +802,159 @@ theorem toSpec_quotientOfLde (A : Air) (pis : List F) (logN b : Nat) (trace : Ar
 
 end QuotientValues
 
+/-! ### Recomposing the quotient from its chunks -/
+
+section Recompose
+
+/-- The vanishing polynomial `Z_D(y) = (y / s) ^ n - 1` of the coset `D = s · ⟨ω⟩`, `n = 2 ^ logN`,
+at `y`. -/
+noncomputable def vanish (logN : Nat) (s : K) (y : E) : E :=
+  (y * algebraMap K E s⁻¹) ^ 2 ^ logN - 1
+
+/-- The selector of chunk `c` at `y`: `∏_{d ≠ c} Z_{D_d}(y) / Z_{D_d}(s_c)`, `s_c = g ω_qᶜ`. -/
+noncomputable def chunkSel (logN lc c : Nat) (y : E) : E :=
+  ∏ d ∈ (Finset.range (2 ^ lc)).erase c, vanish logN (qpt (logN + lc) d) y *
+    (vanish logN (qpt (logN + lc) d) (algebraMap K E (qpt (logN + lc) c)))⁻¹
+
+/-- The chunk selector as a polynomial. -/
+noncomputable def chunkSelPoly (logN lc c : Nat) : E[X] :=
+  ∏ d ∈ (Finset.range (2 ^ lc)).erase c, ((X * C (algebraMap K E (qpt (logN + lc) d)⁻¹)) ^ 2 ^ logN
+    - 1) * C (vanish logN (qpt (logN + lc) d) (algebraMap K E (qpt (logN + lc) c)))⁻¹
+
+theorem eval_chunkSelPoly (logN lc c : Nat) (y : E) :
+    (chunkSelPoly logN lc c).eval y = chunkSel logN lc c y := by
+  rw [chunkSelPoly, eval_prod]
+  refine Finset.prod_congr rfl fun d _ ↦ ?_
+  rw [eval_mul, eval_sub, eval_pow, eval_mul, eval_X, eval_C, eval_C, eval_one]
+  simp only [vanish]
+
+theorem natDegree_chunkSelPoly (logN lc c : Nat) (hc : c < 2 ^ lc) :
+    (chunkSelPoly logN lc c).natDegree ≤ (2 ^ lc - 1) * 2 ^ logN := by
+  refine (natDegree_prod_le _ _).trans ?_
+  have hcard : ((Finset.range (2 ^ lc)).erase c).card = 2 ^ lc - 1 := by
+    rw [Finset.card_erase_of_mem (Finset.mem_range.mpr hc), Finset.card_range]
+  rw [← hcard, ← smul_eq_mul]
+  refine Finset.sum_le_card_nsmul _ _ _ fun d _ ↦ ?_
+  refine (natDegree_mul_le).trans ?_
+  rw [natDegree_C, Nat.add_zero]
+  refine (natDegree_sub_le _ _).trans ?_
+  rw [natDegree_one, Nat.max_zero]
+  refine natDegree_pow_le.trans ?_
+  have : (X * C (algebraMap K E (qpt (logN + lc) d)⁻¹)).natDegree ≤ 1 :=
+    (natDegree_mul_C_le _ _).trans natDegree_X_le
+  calc 2 ^ logN * (X * C (algebraMap K E (qpt (logN + lc) d)⁻¹)).natDegree ≤ 2 ^ logN * 1 :=
+        Nat.mul_le_mul_left _ this
+    _ = 2 ^ logN := Nat.mul_one _
+
+theorem degree_lt_of_natDegree_lt'' {p : E[X]} {N : Nat} (h : p.natDegree < N) :
+    p.degree < (N : WithBot Nat) :=
+  degree_le_natDegree.trans_lt (by exact_mod_cast h)
+
+theorem qpt_ne_zero (q m : Nat) (h : q ≤ 24) : qpt q m ≠ 0 :=
+  mul_ne_zero toField_gen_ne_zero (pow_ne_zero _ (tw_ne_zero q h))
+
+/-- The point `r` of coset `c` is the quotient domain's point `c + k r`. -/
+theorem qpt_coset (logN lc c r : Nat) (h : logN + lc ≤ 24) :
+    qpt (logN + lc) c * tw logN ^ r = qpt (logN + lc) (c + 2 ^ lc * r) := by
+  rw [qpt, qpt, pow_add, pow_mul, tw_pow_tw logN lc h, mul_assoc]
+
+/-- `Z_{D_d}` takes the same value on all of `D_c`. -/
+theorem vanish_coset (logN lc c d r : Nat) (h : logN + lc ≤ 24) :
+    vanish logN (qpt (logN + lc) d) (algebraMap K E (qpt (logN + lc) c * tw logN ^ r)) =
+      vanish logN (qpt (logN + lc) d) (algebraMap K E (qpt (logN + lc) c)) := by
+  simp only [vanish, ← map_mul, ← map_pow]
+  rw [mul_right_comm, mul_pow, ← pow_mul, Nat.mul_comm, pow_mul, tw_pow logN (by omega), one_pow,
+    mul_one]
+
+theorem vanish_self (logN lc c : Nat) (h : logN + lc ≤ 24) :
+    vanish logN (qpt (logN + lc) c) (algebraMap K E (qpt (logN + lc) c)) = 0 := by
+  rw [vanish, ← map_mul, mul_inv_cancel₀ (qpt_ne_zero _ c h), map_one, one_pow, sub_self]
+
+/-- Distinct chunks' cosets are disjoint: `Z_{D_d}(s_c) ≠ 0`. -/
+theorem vanish_ne_zero (logN lc c d : Nat) (h : logN + lc ≤ 24) (hc : c < 2 ^ lc)
+    (hd : d < 2 ^ lc) (hcd : d ≠ c) :
+    vanish logN (qpt (logN + lc) d) (algebraMap K E (qpt (logN + lc) c)) ≠ 0 := by
+  rw [vanish, ← map_mul, ← map_pow, ← map_one (algebraMap K E), ← map_sub, ne_eq,
+    map_eq_zero_iff _ (algebraMap K E).injective, sub_eq_zero]
+  intro he
+  have hp := isPrimitiveRoot_twoAdicGen (logN + lc) h
+  have hp' : IsPrimitiveRoot (tw (logN + lc) ^ 2 ^ logN) (2 ^ lc) :=
+    hp.pow (Nat.two_pow_pos _) (Nat.pow_add 2 logN lc)
+  have hg := toField_gen_ne_zero
+  have hw := tw_ne_zero (logN + lc) h
+  rw [qpt, qpt, mul_inv, mul_mul_mul_comm, mul_inv_cancel₀ hg, one_mul, mul_pow, inv_pow,
+    ← pow_mul, ← pow_mul, Nat.mul_comm c, Nat.mul_comm d, pow_mul, pow_mul,
+    mul_inv_eq_one₀ (pow_ne_zero _ (pow_ne_zero _ hw))] at he
+  exact hcd (hp'.pow_inj hd hc he.symm)
+
+/-- The chunk selector is `1` on its own coset and `0` on the others. -/
+theorem chunkSel_coset (logN lc c c' r : Nat) (h : logN + lc ≤ 24) (hc : c < 2 ^ lc)
+    (hc' : c' < 2 ^ lc) :
+    chunkSel logN lc c (algebraMap K E (qpt (logN + lc) c' * tw logN ^ r)) =
+      if c = c' then 1 else 0 := by
+  rw [chunkSel]
+  simp only [vanish_coset logN lc c' _ r h]
+  by_cases hcc : c = c'
+  · rw [ite_eq_left_of_eq_true _ _ (eq_true hcc), ← hcc]
+    refine Finset.prod_eq_one fun d hd ↦ ?_
+    have hd' := Finset.mem_erase.mp hd
+    have hne := vanish_ne_zero logN lc c d h hc (Finset.mem_range.mp hd'.2) hd'.1
+    exact CompPoly.Extension.Ext.mul_inv_cancel' hne
+  · rw [ite_eq_right_of_eq_false _ _ (eq_false hcc)]
+    refine Finset.prod_eq_zero (i := c') (Finset.mem_erase.mpr ⟨Ne.symm hcc,
+      Finset.mem_range.mpr hc'⟩) ?_
+    rw [vanish_self logN lc c' h, zero_mul]
+
+/-- **Recomposition**: chunks `q_c` of degree below `n` that agree with `Q`, of degree below
+`k n`, on their cosets `s_c ⟨ω⟩` recompose to `Q` everywhere. -/
+theorem sum_chunkSel (logN lc : Nat) (h : logN + lc ≤ 24) (Q : E[X])
+    (hQ : Q.natDegree < 2 ^ (logN + lc)) (qc : Nat → E[X])
+    (hqd : ∀ c < 2 ^ lc, (qc c).natDegree < 2 ^ logN)
+    (hqa : ∀ c < 2 ^ lc, ∀ r < 2 ^ logN,
+      (qc c).eval (algebraMap K E (qpt (logN + lc) c * tw logN ^ r)) =
+        Q.eval (algebraMap K E (qpt (logN + lc) c * tw logN ^ r))) (y : E) :
+    ∑ c ∈ Finset.range (2 ^ lc), chunkSel logN lc c y * (qc c).eval y = Q.eval y := by
+  set P : E[X] := ∑ c ∈ Finset.range (2 ^ lc), chunkSelPoly logN lc c * qc c
+  have hP : P = Q := by
+    have hp := isPrimitiveRoot_twoAdicGen (logN + lc) h
+    refine eq_of_degree_sub_lt_of_eval_index_eq (Finset.range (2 ^ (logN + lc)))
+      (v := fun m ↦ algebraMap K E (qpt (logN + lc) m)) (fun i hi j hj hij ↦ ?_) ?_
+      (fun m hm ↦ ?_)
+    · have := (algebraMap K E).injective hij
+      simp only [qpt] at this
+      exact hp.pow_inj (Finset.mem_range.mp hi) (Finset.mem_range.mp hj)
+        (mul_left_cancel₀ toField_gen_ne_zero this)
+    · rw [Finset.card_range]
+      refine (degree_sub_le _ _).trans_lt (max_lt ?_ (degree_lt_of_natDegree_lt'' hQ))
+      refine degree_lt_of_natDegree_lt'' ?_
+      refine lt_of_le_of_lt (natDegree_sum_le_of_forall_le _ _ (n := 2 ^ (logN + lc) - 1)
+        fun c hc ↦ ?_) (by have := Nat.two_pow_pos (logN + lc); omega)
+      have hc := Finset.mem_range.mp hc
+      refine natDegree_mul_le.trans ?_
+      have h1 := natDegree_chunkSelPoly logN lc c hc
+      have h2 := hqd c hc
+      have h3 : (2 ^ lc - 1) * 2 ^ logN + 2 ^ logN = 2 ^ (logN + lc) := by
+        rw [Nat.pow_add, Nat.sub_one_mul, Nat.mul_comm]
+        have := Nat.two_pow_pos lc
+        have : 2 ^ logN ≤ 2 ^ logN * 2 ^ lc := Nat.le_mul_of_pos_right _ this
+        omega
+      omega
+    · have hm := Finset.mem_range.mp hm
+      have hk := Nat.two_pow_pos lc
+      have hc' : m % 2 ^ lc < 2 ^ lc := Nat.mod_lt _ hk
+      have hr : m / 2 ^ lc < 2 ^ logN := by
+        rw [Nat.div_lt_iff_lt_mul hk, ← Nat.pow_add]; exact hm
+      have hpt : qpt (logN + lc) m = qpt (logN + lc) (m % 2 ^ lc) * tw logN ^ (m / 2 ^ lc) := by
+        rw [qpt_coset logN lc _ _ h, Nat.mod_add_div]
+      rw [hpt, eval_finsetSum, Finset.sum_eq_single (m % 2 ^ lc) (fun c hc hne ↦ ?_)
+        (fun hn ↦ absurd (Finset.mem_range.mpr hc') hn), eval_mul, eval_chunkSelPoly,
+        chunkSel_coset logN lc _ _ _ h hc' hc', ite_eq_left_of_eq_true _ _ (eq_true rfl), one_mul,
+        hqa _ hc' _ hr]
+      rw [eval_mul, eval_chunkSelPoly, chunkSel_coset logN lc _ _ _ h (Finset.mem_range.mp hc) hc',
+        ite_eq_right_of_eq_false _ _ (eq_false hne), zero_mul]
+  rw [← hP, eval_finsetSum]
+  exact Finset.sum_congr rfl fun c _ ↦ by rw [eval_mul, eval_chunkSelPoly]
+
+end Recompose
+
 end CompStark.Stark
