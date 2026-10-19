@@ -4,7 +4,7 @@ Released under Apache 2.0 license as described in the file LICENSE.
 -/
 module
 
-public import CompStark.Fri.Assumptions
+public import CompStark.Fri.Shapes
 public import Mathlib.Data.List.Forall2
 
 /-! # Backends that refine the specification
@@ -123,20 +123,51 @@ structure CPRel {C D : Type} (RC : C → D → Prop) (cp : CommitPhase C) (cs : 
 
 variable {B : Backend}
 
+/-- A vector of the commit phase: empty, or `2 ^ s` values within the two-adic subgroups. -/
+def ShapeOk (a : Array EF) : Prop := a.size = 0 ∨ ∃ s ≤ 24, a.size = 2 ^ s
+
+theorem shapeOk_le {a : Array EF} (h : ShapeOk a) : a.size ≤ 2 ^ 24 := by
+  rcases h with h | ⟨s, hs, h⟩
+  · omega
+  · rw [h]; exact Nat.pow_le_pow_right (by decide) hs
+
+/-- The leaves of a commit-phase round are a matrix of the prover's shape. -/
+theorem commitOk_leaves (a : Array EF) (s la : Nat) (hs : s ≤ 24) (ha : a.size = 2 ^ s)
+    (hla : la ≤ s) : CommitOk [Backend.spec.leaves (2 ^ la) a] := by
+  have hd : a.size / 2 ^ la = 2 ^ (s - la) := by
+    rw [ha, Nat.pow_div hla (by decide)]
+  have hsz : 2 ^ la * 2 ^ (s - la) = 2 ^ s := by rw [← Nat.pow_add, Nat.add_sub_cancel' hla]
+  have hadd : Addressable (4 * 2 ^ la * 2 ^ (s - la)) := addressable_of_le (by
+    rw [Nat.mul_assoc, hsz]
+    have : 2 ^ s ≤ 2 ^ 24 := Nat.pow_le_pow_right (by decide) hs
+    omega)
+  refine ⟨2 ^ (s - la), List.cons_ne_nil _ _, fun m hm ↦ ?_, ?_⟩
+  · obtain rfl := List.mem_singleton.mp hm
+    refine ⟨⟨by show 0 < 4 * 2 ^ la; positivity, ⟨s - la, by omega, hd⟩, ?_, ?_⟩, hd⟩
+    · show (a.flatMap fun x ↦ (Ext.coeffs x).toArray).size = 4 * 2 ^ la * (a.size / 2 ^ la)
+      rw [size_flatMap_coeffs, hd, Nat.mul_assoc, hsz, ha]
+    · show Addressable (4 * 2 ^ la * (a.size / 2 ^ la))
+      rw [hd]; exact hadd
+  · show Addressable (2 ^ (s - la) * (0 + 4 * 2 ^ la))
+    rw [Nat.zero_add, Nat.mul_comm]; exact hadd
+
 theorem commitRounds_refines (h : Refines B) (P : Params) (fuel : Nat) :
-    ∀ {folded a rest as cp cs}, h.RV folded a → List.Forall₂ h.RV rest as →
-      CPRel h.RC cp cs →
-      RelM (fun p q ↦ h.RV p.1 q.1 ∧ CPRel h.RC p.2 q.2)
+    ∀ {folded a rest as cp cs}, h.RV folded a → ShapeOk a → List.Forall₂ h.RV rest as →
+      (∀ x ∈ as, ShapeOk x) → CPRel h.RC cp cs →
+      RelM (fun p q ↦ h.RV p.1 q.1 ∧ ShapeOk q.1 ∧ CPRel h.RC p.2 q.2)
         (commitRounds B P fuel folded rest cp) (commitRounds Backend.spec P fuel a as cs) := by
   induction fuel with
-  | zero => intro _ _ _ _ _ _ hf _ hc; exact RelM.pure ⟨hf, hc⟩
+  | zero => intro _ _ _ _ _ _ hf hfs _ _ hc; exact RelM.pure ⟨hf, hfs, hc⟩
   | succ fuel ih =>
-    intro folded a rest as cp cs hf hr hc
+    intro folded a rest as cp cs hf hfs hr hrs hc
     rw [commitRounds, commitRounds, h.size hf]
     split
-    · exact RelM.pure ⟨hf, hc⟩
-    have hcm := h.commit (.cons (h.leaves (2 ^ logArityFor P (Backend.spec.size a).log2
-      (Option.map (fun x ↦ (Backend.spec.size x).log2) as.head?)) hf) .nil)
+    · exact RelM.pure ⟨hf, hfs, hc⟩
+    rename_i hgt
+    obtain ⟨s, hs, ha⟩ : ∃ s ≤ 24, a.size = 2 ^ s := by
+      rcases hfs with h0 | h0
+      · exact absurd (by show a.size ≤ _; rw [h0]; exact Nat.zero_le _) hgt
+      · exact h0
     have hhead : Option.map (fun x ↦ (B.size x).log2) rest.head? =
         Option.map (fun x ↦ (Backend.spec.size x).log2) as.head? := by
       cases hr with
@@ -144,18 +175,37 @@ theorem commitRounds_refines (h : Refines B) (P : Params) (fuel : Nat) :
       | cons hv _ => rw [List.head?_cons, List.head?_cons, Option.map_some, Option.map_some,
           h.size hv]
     dsimp only
-    rw [hhead, h.root hcm]
-    refine RelM.bind_eq fun _ ↦ RelM.bind_eq fun w ↦ RelM.bind_eq fun beta ↦ ?_
+    rw [hhead]
+    have hla := logArityFor_le P (Backend.spec.size a).log2
+      (Option.map (fun x ↦ (Backend.spec.size x).log2) as.head?)
     generalize logArityFor P (Backend.spec.size a).log2
-      (Option.map (fun x ↦ (Backend.spec.size x).log2) as.head?) = la at hcm ⊢
+      (Option.map (fun x ↦ (Backend.spec.size x).log2) as.head?) = la at hla ⊢
+    have hlog : (Backend.spec.size a).log2 = s := by
+      show a.size.log2 = s; rw [ha, Nat.log2_two_pow]
+    rw [hlog] at hla
+    have ha24 : a.size ≤ 2 ^ 24 := shapeOk_le (Or.inr ⟨s, hs, ha⟩)
+    have hcm := h.commit (.cons (h.leaves (2 ^ la) hf ha24) .nil)
+      (commitOk_leaves a s la hs ha hla)
+    rw [h.root hcm]
+    refine RelM.bind_eq fun _ ↦ RelM.bind_eq fun w ↦ RelM.bind_eq fun beta ↦ ?_
+    have hrows : Backend.spec.size a / 2 ^ la = 2 ^ (s - la) := by
+      show a.size / 2 ^ la = _; rw [ha, Nat.pow_div hla (by decide)]
     generalize hfB : (if la = 1 then _ else _ : B.V) = fB
     generalize hfS : (if la = 1 then _ else _ : Backend.spec.V) = fS
-    have hfold : h.RV fB fS := by
+    have hfold : h.RV fB fS ∧ ShapeOk fS := by
       subst hfB hfS
       split
-      · exact h.fold2 _ _ hf
-      · rw [h.toArray hf]
-        exact h.ofArray _
+      · rename_i h1
+        subst h1
+        have hk : (Backend.spec.size a / 2 ^ 1).log2 = s - 1 := by
+          rw [hrows, Nat.log2_two_pow]
+        rw [hk]
+        refine ⟨h.fold2 _ _ hf (by rw [ha]; congr 1; omega) (by omega), Or.inr ⟨s - 1, by omega,
+          size_foldPairs ..⟩⟩
+      · rw [h.toArray hf ha24]
+        refine ⟨h.ofArray _, Or.inr ⟨s - la, by omega, ?_⟩⟩
+        show (Array.ofFn _).size = _
+        rw [Array.size_ofFn, hrows]
     have hc' : CPRel h.RC
         ⟨cp.commits.push (Backend.spec.root (Backend.spec.commit [Backend.spec.leaves (2 ^ la) a])),
           cp.data ++ [B.commit [B.leaves (2 ^ la) folded]], cp.witnesses.push w,
@@ -166,20 +216,31 @@ theorem commitRounds_refines (h : Refines B) (P : Params) (fuel : Nat) :
       ⟨by rw [hc.commits], List.rel_append hc.data (.cons hcm .nil), by rw [hc.witnesses],
         by rw [hc.arities], hc.finalPoly⟩
     cases hr with
-    | nil => exact ih hfold .nil hc'
-    | cons hv hvs =>
+    | nil => exact ih hfold.1 hfold.2 .nil (fun _ h ↦ absurd h List.not_mem_nil) hc'
+    | @cons v x _ _ hv hvs =>
       dsimp only
-      rw [h.size hv, h.size hfold]
+      rw [h.size hv, h.size hfold.1]
       split
-      · exact ih (h.addScaled _ hfold hv) hvs hc'
-      · exact ih hfold (.cons hv hvs) hc'
+      · rename_i heq
+        have he : fS.size = _ := beq_iff_eq.mp heq |>.symm
+        refine ih (h.addScaled _ hfold.1 hv he (shapeOk_le hfold.2)) ?_ hvs
+          (fun x hx ↦ hrs x (List.mem_cons_of_mem _ hx)) hc'
+        have hz : Array.size (Backend.spec.addScaled fS x (Ext.powTwo beta la) : Array EF) =
+            Array.size (fS : Array EF) := by
+          exact (Array.size_zipWith ..).trans (Nat.min_eq_left (Nat.le_of_eq he))
+        show ShapeOk (Backend.spec.addScaled fS x (Ext.powTwo beta la))
+        unfold ShapeOk
+        rw [hz]
+        exact hfold.2
+      · exact ih hfold.1 hfold.2 (.cons hv hvs) hrs hc'
 
 theorem commitPhase_refines (h : Refines B) (P : Params) {inputs sinputs}
-    (hi : List.Forall₂ h.RV inputs sinputs) :
+    (hi : List.Forall₂ h.RV inputs sinputs) (hs : ∀ x ∈ sinputs, ShapeOk x) :
     RelM (CPRel h.RC) (commitPhase B P inputs) (commitPhase Backend.spec P sinputs) := by
   have h0 : CPRel h.RC (⟨#[], [], #[], #[], #[]⟩ : CommitPhase B.C) ⟨#[], [], #[], #[], #[]⟩ :=
     ⟨rfl, .nil, rfl, rfl, rfl⟩
-  have tail : ∀ {f a rest as}, h.RV f a → List.Forall₂ h.RV rest as →
+  have tail : ∀ {f a rest as}, h.RV f a → ShapeOk a → List.Forall₂ h.RV rest as →
+      (∀ x ∈ as, ShapeOk x) →
       RelM (CPRel h.RC)
         (do
           let (folded, cp) ← commitRounds B P (B.size f) f rest ⟨#[], [], #[], #[], #[]⟩
@@ -198,18 +259,19 @@ theorem commitPhase_refines (h : Refines B) (P : Params) {inputs sinputs}
           let finalPoly := idft P.logFinalPolyLen truncated
           pObserveExts finalPoly.toList
           return { cp with finalPoly := finalPoly }) := by
-    intro f a rest as hf hr
+    intro f a rest as hf hfs hr hrs
     rw [h.size hf]
-    refine RelM.bind (commitRounds_refines h P _ hf hr h0) ?_
-    rintro ⟨f1, c1⟩ ⟨f2, c2⟩ ⟨hv, hc⟩
+    refine RelM.bind (commitRounds_refines h P _ hf hfs hr hrs h0) ?_
+    rintro ⟨f1, c1⟩ ⟨f2, c2⟩ ⟨hv, hvs, hc⟩
     dsimp only
-    rw [h.toArray hv]
+    rw [h.toArray hv (shapeOk_le hvs)]
     exact RelM.bind_eq fun _ ↦ RelM.pure
       ⟨hc.commits, hc.data, hc.witnesses, hc.arities, rfl⟩
   unfold commitPhase
   cases hi with
-  | nil => exact tail (h.ofArray #[]) .nil
-  | cons hv hvs => exact tail hv hvs
+  | nil => exact tail (h.ofArray #[]) (Or.inl rfl) .nil (fun _ h ↦ absurd h List.not_mem_nil)
+  | cons hv hvs =>
+    exact tail hv (hs _ List.mem_cons_self) hvs fun x hx ↦ hs x (List.mem_cons_of_mem _ hx)
 
 theorem answerSteps_refines (h : Refines B) {cs ss} (hcs : List.Forall₂ h.RC cs ss) :
     ∀ las cur, answerSteps B cs las cur = answerSteps Backend.spec ss las cur := by
@@ -225,15 +287,37 @@ theorem answerSteps_refines (h : Refines B) {cs ss} (hcs : List.Forall₂ h.RC c
 abbrev RoundRel (h : Refines B) (r : OpenRound B) (s : OpenRound Backend.spec) : Prop :=
   h.RC r.1 s.1 ∧ List.Forall₂ (fun x y ↦ h.RM x.1 y.1 ∧ x.2 = y.2) r.2 s.2
 
+theorem forall₂_and_mem {α β : Type} {R : α → β → Prop} {P : β → Prop} :
+    ∀ {xs ys}, List.Forall₂ R xs ys → (∀ y ∈ ys, P y) →
+      List.Forall₂ (fun a b ↦ R a b ∧ P b) xs ys
+  | [], [], .nil, _ => .nil
+  | _ :: _, _ :: _, .cons h hs, hp =>
+    .cons ⟨h, hp _ List.mem_cons_self⟩ (forall₂_and_mem hs fun y hy ↦ hp y (List.mem_cons_of_mem _ hy))
+
+theorem forall₂_mem_right {α β : Type} {R : α → β → Prop} {P : β → Prop}
+    (hRP : ∀ a b, R a b → P b) : ∀ {xs ys}, List.Forall₂ R xs ys → ∀ y ∈ ys, P y
+  | [], [], .nil, _, hy => absurd hy List.not_mem_nil
+  | _ :: _, _ :: _, .cons h hs, y, hy => by
+    rcases List.mem_cons.mp hy with rfl | hy
+    · exact hRP _ _ h
+    · exact forall₂_mem_right hRP hs y hy
+
+/-- The matrices of opening rounds have the prover's shapes, and their points are outside the
+base field. -/
+def RoundsOk (rounds : List (OpenRound Backend.spec)) : Prop :=
+  ∀ r ∈ rounds, ∀ x ∈ r.2, MatOk x.1 ∧ ∀ z ∈ x.2, Ext.OutsideBase z
+
 /-- `openPcs` of related rounds is the specification's. -/
 theorem openPcs_refines (h : Refines B) (P : Params) {rounds srounds}
-    (hr : List.Forall₂ (RoundRel h) rounds srounds) :
+    (hr : List.Forall₂ (RoundRel h) rounds srounds) (hok : RoundsOk srounds) :
     RelM Eq (openPcs B P rounds) (openPcs Backend.spec P srounds) := by
   rw [openPcs, openPcs]
   let S : List (Array EF) × B.M × List (EF × Array EF) →
       List (Array EF) × Backend.spec.M × List (EF × Array EF) → Prop :=
-    fun x y ↦ x.1 = y.1 ∧ h.RM x.2.1 y.2.1 ∧ x.2.2 = y.2.2
-  have hop := RelM.mapM (S := List.Forall₂ S) (R := RoundRel h)
+    fun x y ↦ x.1 = y.1 ∧ h.RM x.2.1 y.2.1 ∧ x.2.2 = y.2.2 ∧
+      (MatOk y.2.1 ∧ ∀ p ∈ y.2.2, Ext.OutsideBase p.1)
+  have hop := RelM.mapM (S := List.Forall₂ S)
+    (R := fun r s ↦ RoundRel h r s ∧ ∀ x ∈ s.2, MatOk x.1 ∧ ∀ z ∈ x.2, Ext.OutsideBase z)
     (f := fun (r : OpenRound B) ↦ r.2.mapM fun (m, zs) ↦ do
       let ov := B.openedAt P.logBlowup m zs
       ov.forM fun ys ↦ pObserveExts ys.toList
@@ -242,25 +326,49 @@ theorem openPcs_refines (h : Refines B) (P : Params) {rounds srounds}
       let ov := Backend.spec.openedAt P.logBlowup m zs
       ov.forM fun ys ↦ pObserveExts ys.toList
       return (ov, m, zs.zip ov))
-    (fun r s hrs ↦ RelM.mapM (R := fun x y ↦ h.RM x.1 y.1 ∧ x.2 = y.2)
-      (fun x y ⟨hm, hz⟩ ↦ by
-        dsimp only
-        rw [h.openedAt _ _ hm, hz]
-        exact RelM.bind_eq fun _ ↦ RelM.pure ⟨rfl, hm, rfl⟩) hrs.2) hr
+    (fun r s hrs ↦ RelM.mapM
+      (R := fun x y ↦ (h.RM x.1 y.1 ∧ x.2 = y.2) ∧ (MatOk y.1 ∧ ∀ z ∈ y.2, Ext.OutsideBase z))
+      (f := fun (x : B.M × List EF) ↦ match x with
+        | (m, zs) => do
+          let ov := B.openedAt P.logBlowup m zs
+          ov.forM fun ys ↦ pObserveExts ys.toList
+          return (ov, m, zs.zip ov))
+      (g := fun (x : Backend.spec.M × List EF) ↦ match x with
+        | (m, zs) => do
+          let ov := Backend.spec.openedAt P.logBlowup m zs
+          ov.forM fun ys ↦ pObserveExts ys.toList
+          return (ov, m, zs.zip ov))
+      (fun ⟨xm, xz⟩ ⟨ym, yz⟩ ⟨⟨hm, hz⟩, hmat, hzs⟩ ↦ by
+        dsimp only at hm hz hmat hzs ⊢
+        rw [hz, h.openedAt _ _ hm hmat hzs]
+        exact RelM.bind_eq fun _ ↦ RelM.pure ⟨rfl, hm, rfl, hmat,
+          fun p hp ↦ hzs p.1 (List.of_mem_zip hp).1⟩) (forall₂_and_mem hrs.1.2 hrs.2))
+    (forall₂_and_mem hr hok)
   refine RelM.bind hop fun opened sopened hos ↦ ?_
   refine RelM.bind_eq fun alpha ↦ ?_
+  have hflat := List.rel_flatten hos
   have hitems : List.Forall₂ (fun x y ↦ h.RM x.1 y.1 ∧ x.2 = y.2)
       (opened.flatten.map (·.2)) (sopened.flatten.map (·.2)) :=
-    forall₂_map (fun _ _ hs ↦ hs.2) (List.rel_flatten hos)
+    forall₂_map (fun _ _ hs ↦ ⟨hs.2.1, hs.2.2.1⟩) hflat
+  have hsok : ∀ x ∈ sopened.flatten.map (·.2), MatOk x.1 ∧ ∀ p ∈ x.2, Ext.OutsideBase p.1 := by
+    intro x hx
+    obtain ⟨y, hy, rfl⟩ := List.mem_map.mp hx
+    exact forall₂_mem_right (R := S) (fun _ _ hs ↦ hs.2.2.2) hflat y hy
   have hin : List.Forall₂ h.RV ((B.reduce alpha (opened.flatten.map (·.2))).map (·.2))
       ((Backend.spec.reduce alpha (sopened.flatten.map (·.2))).map (·.2)) :=
-    forall₂_map (fun _ _ hs ↦ hs.2) (h.reduce alpha hitems)
+    forall₂_map (fun _ _ hs ↦ hs.2) (h.reduce alpha hitems hsok)
+  have hshape : ∀ x ∈ (Backend.spec.reduce alpha (sopened.flatten.map (·.2))).map (·.2),
+      ShapeOk x := fun x hx ↦ by
+    obtain ⟨y, hy, rfl⟩ := List.mem_map.mp hx
+    exact Or.inr (reduce_shape alpha _ (fun x hx ↦ (hsok x hx).1) y hy)
   generalize (B.reduce alpha (opened.flatten.map (·.2))).map (·.2) = inputs at hin ⊢
-  generalize (Backend.spec.reduce alpha (sopened.flatten.map (·.2))).map (·.2) = sinputs at hin ⊢
+  generalize hsin : (Backend.spec.reduce alpha (sopened.flatten.map (·.2))).map (·.2) = sinputs
+    at hin ⊢
+  replace hshape : ∀ x ∈ sinputs, ShapeOk x := fun x hx ↦ hshape x (by subst hsin; exact hx)
   dsimp only
   rw [forall₂_map_eq (fun _ _ hv ↦ h.size hv) hin]
   generalize ((sinputs.map Backend.spec.size).headD 0).log2 = logMax
-  refine RelM.bind (commitPhase_refines h P hin) fun cp cs hc ↦ ?_
+  refine RelM.bind (commitPhase_refines h P hin hshape) fun cp cs hc ↦ ?_
   rw [hc.arities]
   refine RelM.bind_eq fun _ ↦ RelM.bind_eq fun qw ↦ ?_
   have hq : ∀ index, answerQuery B cp index = answerQuery Backend.spec cs index := by
