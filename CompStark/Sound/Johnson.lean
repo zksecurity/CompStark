@@ -136,6 +136,7 @@ noncomputable def agreeSet (S : Setup) {ι : Type} (δ : ℝ) (words : ι → S.
     (p : ι → 𝔽[X]) : Finset S.Point :=
   open Classical in if h : Agree S δ words p then h.choose else ∅
 
+/-- The agreement set of a tuple in the list is large and the tuple agrees with the words on it. -/
 theorem agreeSet_spec (S : Setup) {ι : Type} (δ : ℝ) (words : ι → S.Point → 𝔽)
     (p : ι → 𝔽[X]) (h : Agree S δ words p) :
     ((agreeSet S δ words p).card : ℝ) ≥ S.size * (1 - δ) ∧
