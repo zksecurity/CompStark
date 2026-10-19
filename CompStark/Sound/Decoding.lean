@@ -11,17 +11,18 @@ public import Mathlib.LinearAlgebra.Basis.VectorSpace
 
 Let the DEEP components of the opened words agree with codewords on a common set `T` of
 `|T| ≥ N (1 - δ)` points, `δ < 1 - rate`, so `|T| > n`. For an opened word `f` with point
-`z ∉ 𝔽` and claimed value `y`, whose DEEP component `(y - f(x)) / (z - x)` agrees on `T` with a
+`z ∉ L` and claimed value `y`, whose DEEP component `(y - f(x)) / (z - x)` agrees on `T` with a
 codeword `h` (degree below `n`):
 
 1. `f` agrees on `T` with `P = y - (z - X) h`, of degree at most `n`, and `P(z) = y`
-   (`eval_deepPoly_eq`, `z - x ≠ 0` as `x ∈ 𝔽`).
+   (`eval_deepPoly_eq`, `z - x ≠ 0` as `x ∈ L`).
 2. Projecting `P`'s coefficients to `𝔽` gives `Q ∈ 𝔽[X]` of degree at most `n` that agrees with
    `f` on `T` (`exists_baseAgree`); `P` and `Q` agree on `|T| > n` points, so `P = Q` and
    `Q(z) = y` (`exists_basePoly`).
 
 A trace column is opened at `ζ` and `ζ ω_n`; both polynomials agree with it on `T`, so they are
-equal (`eq_of_agree`). No unique decoding is needed.
+equal (`eq_of_agree`). With `ζ ∉ L`, also `ζ ω_n ∉ L`: `L` is the set of `x` with `x^N = g^N`
+(`exists_domain_of_pow`), and `ω_n^N = 1`. No unique decoding is needed.
 -/
 
 @[expose] public section
@@ -102,11 +103,11 @@ theorem eq_of_agree (S : Setup) (T : Finset S.Point) (hT : S.n < T.card) (P Q : 
     obtain ⟨i, hi, rfl⟩ := Finset.mem_image.mp hx
     exact h i hi
 
-/-- A word whose DEEP component at `z ∉ 𝔽` with claimed value `y` agrees with a codeword on `T`,
+/-- A word whose DEEP component at `z ∉ L` with claimed value `y` agrees with a codeword on `T`,
 `|T| > n`, agrees on `T` with a polynomial over `𝔽` of degree at most `n` whose value at `z` is
 `y`. -/
 theorem exists_basePoly (S : Setup) (T : Finset S.Point) (hT : S.n < T.card)
-    (f : S.Point → 𝔽) (z y : 𝕂) (hz : OutsideBase z)
+    (f : S.Point → 𝔽) (z y : 𝕂) (hz : ∀ i, z ≠ S.domain i)
     (hnear : ∃ u ∈ S.code, ∀ i ∈ T, deepComponent S f z y i = u i) :
     ∃ Q : 𝔽[X], Q.natDegree ≤ S.n ∧
       (∀ i ∈ T, f i = Q.eval (basePoint (S.logN + S.params.logBlowup) i)) ∧ aeval z Q = y := by
@@ -116,7 +117,7 @@ theorem exists_basePoly (S : Setup) (T : Finset S.Point) (hT : S.n < T.card)
   set P : 𝕂[X] := C y - (C z - Polynomial.X) * h
   have hPdeg : P.natDegree ≤ S.n := natDegree_deepPoly_le z y h S.n Nat.one_le_two_pow hh
   have hPT (i) (hi : i ∈ T) : P.eval (algebraMap 𝔽 𝕂 (pts i)) = algebraMap 𝔽 𝕂 (f i) := by
-    have hx : z - algebraMap 𝔽 𝕂 (pts i) ≠ 0 := fun h0 ↦ hz ⟨pts i, (sub_eq_zero.mp h0).symm⟩
+    have hx : z - algebraMap 𝔽 𝕂 (pts i) ≠ 0 := sub_ne_zero.mpr (domain_eq S i ▸ hz i)
     have hdeep := hTu i hi
     simp only [deepComponent, ReedSolomon.evalOnPoints, LinearMap.coe_mk,
       AddHom.coe_mk, Function.Embedding.coeFn_mk, domain_eq] at hdeep
@@ -136,18 +137,38 @@ theorem exists_basePoly (S : Setup) (T : Finset S.Point) (hT : S.n < T.card)
 
 /-! ### The opened words -/
 
-/-- `ζ ω_n` lies outside the base field with `ζ`. -/
-theorem outsideBase_mul_rootOfUnity (S : Setup) (ζ : 𝕂) (hζ : OutsideBase ζ) :
-    OutsideBase (ζ * rootOfUnity S.logN) := by
-  rintro ⟨a, ha⟩
-  set w : 𝔽 := Montgomery.Native32.FastField.toField (twoAdicGen S.logN)
-  have hw : rootOfUnity S.logN = algebraMap 𝔽 𝕂 w := rfl
-  have hω : rootOfUnity S.logN ≠ 0 :=
-    (isPrimitiveRoot_lift S.logN (by have := S.valid.twoAdic; omega)).ne_zero
-      (Nat.two_pow_pos S.logN).ne'
-  refine hζ ⟨a * w⁻¹, ?_⟩
-  rw [map_mul, map_inv₀, ha, ← hw]
-  exact mul_inv_cancel_right₀ hω ζ
+/-- `L`'s points in terms of `g` and `ω_N`. -/
+theorem domain_eq_lift (S : Setup) (i : S.Point) :
+    S.domain i = lift gen * lift (twoAdicGen (S.logN + S.params.logBlowup)) ^ (i : Nat) := by
+  rw [domain_eq, basePoint, map_mul, map_pow]
+
+/-- The points `x` with `x^N = g^N` lie on `L`. -/
+theorem exists_domain_of_pow (S : Setup) (x : 𝕂) (hx : x ^ S.size = lift gen ^ S.size) :
+    ∃ i, x = S.domain i := by
+  have hg : lift gen ≠ 0 := by
+    rw [lift, ne_eq, map_eq_zero_iff _ (algebraMap 𝔽 𝕂).injective]
+    decide
+  have h1 : (x * (lift gen)⁻¹) ^ S.size = 1 := by
+    rw [mul_pow, hx, inv_pow, mul_inv_cancel₀ (pow_ne_zero _ hg)]
+  obtain ⟨i, hi, hω⟩ := (isPrimitiveRoot_lift _ S.valid.twoAdic).eq_pow_of_pow_eq_one h1
+  refine ⟨⟨i, hi⟩, ?_⟩
+  rw [domain_eq_lift, Fin.val_mk, hω, mul_comm x, ← mul_assoc, mul_inv_cancel₀ hg, one_mul]
+
+/-- `L`'s points satisfy `x^N = g^N`. -/
+theorem domain_pow (S : Setup) (i : S.Point) : S.domain i ^ S.size = lift gen ^ S.size := by
+  rw [domain_eq_lift, mul_pow, ← pow_mul, mul_comm (i : Nat), pow_mul,
+    (isPrimitiveRoot_lift _ S.valid.twoAdic).pow_eq_one, one_pow, mul_one]
+
+/-- `ζ ω_n` lies off `L` with `ζ`. -/
+theorem mul_rootOfUnity_ne_domain (S : Setup) (ζ : 𝕂) (hζ : ∀ i, ζ ≠ S.domain i) (i : S.Point) :
+    ζ * rootOfUnity S.logN ≠ S.domain i := fun h ↦ by
+  have hω : rootOfUnity S.logN ^ S.size = 1 := by
+    have h1 : rootOfUnity S.logN ^ S.n = 1 :=
+      (isPrimitiveRoot_lift S.logN (by have := S.valid.twoAdic; omega)).pow_eq_one
+    rw [Setup.size, pow_add, pow_mul, h1, one_pow]
+  obtain ⟨j, hj⟩ := exists_domain_of_pow S ζ (by rw [← mul_one (ζ ^ S.size), ← hω, ← mul_pow, h,
+    domain_pow])
+  exact hζ j hj
 
 /-- A set of at least `(1 - δ) N` points, `δ < 1 - rate`, has more than `n` points. -/
 theorem lt_card_of_rate (S : Setup) (δ : ℝ) (hδ : δ < 1 - S.rate) (t : Nat)
@@ -178,15 +199,15 @@ theorem decodingStep (S : Setup) : DecodingStep S := by
   obtain ⟨T, hTcard, hTnear⟩ := hnear
   have hT := lt_card_of_rate S δ hδ T.card hTcard
   have hmem := near_of_mem prover α ζ T hTnear
-  have hζω := outsideBase_mul_rootOfUnity S ζ hζ
-  have htr (j : Fin S.air.width) := exists_basePoly S T hT (prover.trace j) ζ _ hζ
+  have hζω := mul_rootOfUnity_ne_domain S ζ hζ.1
+  have htr (j : Fin S.air.width) := exists_basePoly S T hT (prover.trace j) ζ _ hζ.1
     (hmem (prover.trace j, ζ, _) (List.mem_append_left _ (List.mem_append_left _
       (List.mem_map.mpr ⟨j, List.mem_finRange j, rfl⟩))))
   have hnx (j : Fin S.air.width) := exists_basePoly S T hT (prover.trace j) _ _ hζω
     (hmem (prover.trace j, ζ * rootOfUnity S.logN, _) (List.mem_append_left _
       (List.mem_append_right _ (List.mem_map.mpr ⟨j, List.mem_finRange j, rfl⟩))))
   have hqu (c : Fin S.chunks) (e : Fin 4) := exists_basePoly S T hT (prover.quotient α c e) ζ _
-    hζ (hmem (prover.quotient α c e, ζ, _) (List.mem_append_right _ (List.mem_flatMap.mpr
+    hζ.1 (hmem (prover.quotient α c e, ζ, _) (List.mem_append_right _ (List.mem_flatMap.mpr
       ⟨c, List.mem_finRange c, List.mem_map.mpr ⟨e, List.mem_finRange e, rfl⟩⟩)))
   choose trace htdeg htT htz using htr
   choose next hndeg hnT hnz using hnx

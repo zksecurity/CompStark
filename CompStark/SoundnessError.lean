@@ -16,7 +16,7 @@ The bound of `knowledgeSoundness` (`CompStark/Soundness.lean`) at a proximity `�
 * `α`: folding the constraints by `α` makes a constraint that fails on some row of one of the
   `ℓ` candidate traces vanish on every row (`foldingError`).
 * `ζ`: the constraints hold at `ζ` for one of the `ℓ²` candidate pairs although they fail as
-  polynomials, or `ζ` lies in the base field (`outOfDomainError`).
+  polynomials, or `ζ` lies on `L` or the trace domain (`outOfDomainError`).
 * `a`: the batched DEEP word is `δ`-close to low degree although its summands are not, on a
   common set (`batchingError`, the mutual correlated-agreement error of the powers of `a`).
 * FRI accepts a word that is `δ`-far from low degree (`friError`, ArkLib's FRI soundness).
@@ -68,10 +68,11 @@ noncomputable def foldingError (S : Setup) (δ : NNReal) : ENNReal :=
     (Fintype.card 𝕂 : ENNReal)
 
 /-- For some pair of candidate trace and quotient, the constraint identity, a nonzero polynomial
-of degree at most `identityDegree`, vanishes at `ζ`; or `ζ` lies in the base field. -/
+of degree at most `identityDegree`, vanishes at `ζ`; or `ζ` lies on `L` or on the trace domain
+`H`, `N + n` points. -/
 noncomputable def outOfDomainError (S : Setup) (δ : NNReal) : ENNReal :=
   (S.listSize (Fin S.air.width) δ * S.listSize (Fin S.chunks × Fin 4) δ * S.identityDegree +
-    Fintype.card 𝔽 : Nat) / (Fintype.card 𝕂 : ENNReal)
+    S.size + S.n : Nat) / (Fintype.card 𝕂 : ENNReal)
 
 /-- The mutual correlated-agreement error of the powers `1, a, a², …` over the opened words at
 proximity `δ`: the batched word is `δ`-close to `code` without the words being so on a common

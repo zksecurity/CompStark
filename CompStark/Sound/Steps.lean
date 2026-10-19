@@ -14,8 +14,8 @@ own files:
 * `FriStep`: FRI rejects words far from the code (ArkLib's FRI soundness).
 * `BatchingStep`: batching by powers keeps summands that are not near on a common set far, except
   for few `a` (mutual correlated agreement).
-* `DecodingStep`: if the DEEP summands are near on a common set and `ζ` lies outside the base
-  field, the claimed values are those of a candidate trace and quotient.
+* `DecodingStep`: if the DEEP summands are near on a common set and `ζ` lies off `L` and the
+  trace domain, the claimed values are those of a candidate trace and quotient.
 * `AlgebraStep`: if a candidate trace fails the AIR, the constraint check at `ζ` passes for few
   `(α, ζ)`.
 -/
@@ -36,8 +36,11 @@ def Near (S : Setup) (δ : ℝ) (w : S.Point → 𝕂) : Prop :=
 noncomputable def deepComponent (S : Setup) (f : S.Point → 𝔽) (z y : 𝕂) : S.Point → 𝕂 :=
   fun i ↦ (y - algebraMap 𝔽 𝕂 (f i)) / (z - S.domain i)
 
-/-- `ζ` is not in the base field. -/
-def OutsideBase (ζ : 𝕂) : Prop := ζ ∉ Set.range (algebraMap 𝔽 𝕂)
+/-- `ζ` lies neither on `L` nor on the trace domain `H = ⟨ω_n⟩`: the DEEP quotients'
+denominators `ζ - x`, `ζ ω_n - x` (`x ∈ L`) and the check's `Z_H(ζ)`, `ζ - 1`, `ζ - ω_n⁻¹` are
+nonzero. -/
+def OffDomain (S : Setup) (ζ : 𝕂) : Prop :=
+  (∀ i : S.Point, ζ ≠ S.domain i) ∧ ζ ^ S.n ≠ 1
 
 /-- FRI accepts a word that is not `δ`-near the code with probability at most `friError`. -/
 def FriStep (S : Setup) : Prop :=
@@ -80,11 +83,11 @@ noncomputable def components {S : Setup} (p : Prover S) (α ζ : 𝕂) :
   deepComponent S w.1 w.2.1 w.2.2
 
 /-- If the DEEP components of the opened words are `δ`-near the code on a common set, `δ` below
-`1 - rate` and `ζ` outside the base field, the claimed values are those of polynomials of degree
-at most `n` that agree with the trace and quotient words on a common set of `(1 - δ) N` points:
-a candidate trace and quotient of the list decoding. -/
+`1 - rate` and `ζ` off `L` and the trace domain, the claimed values are those of polynomials of
+degree at most `n` that agree with the trace and quotient words on a common set of `(1 - δ) N`
+points: a candidate trace and quotient of the list decoding. -/
 def DecodingStep (S : Setup) : Prop :=
-  ∀ (δ : NNReal), (δ : ℝ) < 1 - S.rate → ∀ (prover : Prover S) (α ζ : 𝕂), OutsideBase ζ →
+  ∀ (δ : NNReal), (δ : ℝ) < 1 - S.rate → ∀ (prover : Prover S) (α ζ : 𝕂), OffDomain S ζ →
     NearTogether S δ (components prover α ζ) →
     ∃ (trace : Fin S.air.width → 𝔽[X]) (quotient : Fin S.chunks → Fin 4 → 𝔽[X]),
       (∀ j, (trace j).natDegree ≤ S.n) ∧ Agree S δ prover.trace trace ∧
@@ -96,14 +99,14 @@ def DecodingStep (S : Setup) : Prop :=
 open Classical in
 /-- If the trace of polynomials `trace` fails the AIR, then for all but `#constraints - 1` values
 of `α`, whatever the quotient's polynomials, the constraints hold at at most `identityDegree`
-values of `ζ` outside the base field, with the true values. -/
+values of `ζ` off `L` and the trace domain, with the true values. -/
 def AlgebraStep (S : Setup) : Prop :=
   ∀ (publicValues : List F) (trace : Fin S.air.width → 𝔽[X]),
     (∀ j, (trace j).natDegree ≤ S.n) →
     ¬ S.air.Satisfied S.logN (traceOf S trace) publicValues →
     ∃ bad : Finset 𝕂, bad.card ≤ S.air.constraints.length - 1 ∧
       ∀ α ∉ bad, ∀ quotient : Fin S.chunks → Fin 4 → 𝔽[X], (∀ c e, (quotient c e).natDegree ≤ S.n) →
-        (Finset.univ.filter fun ζ : 𝕂 ↦ OutsideBase ζ ∧
+        (Finset.univ.filter fun ζ : 𝕂 ↦ OffDomain S ζ ∧
           ConstraintsHoldAt S publicValues α ζ (trueOpenings S trace quotient ζ)).card ≤
           S.identityDegree
 
