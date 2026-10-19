@@ -42,7 +42,7 @@ theorem isPrimitiveRoot_lift (n : Nat) (hn : n ≤ 24) :
 noncomputable def basePoint (n : Nat) (i : Nat) : 𝔽 :=
   FastField.toField gen * FastField.toField (twoAdicGen n) ^ i
 
-/-- The subgroup `⟨ω⟩` of order `2 ^ n`, `ω = lift (twoAdicGen n)`, as a hom from the index group. -/
+/-- The subgroup `⟨ω⟩` of order `2 ^ n`, `ω = lift (twoAdicGen n)`, as a hom from the indices. -/
 noncomputable def subgroupHom (n : Nat) (hn : n ≤ 24) : Multiplicative (Fin (2 ^ n)) →* 𝕂ˣ where
   toFun i := ((isPrimitiveRoot_lift n hn).isUnit (Nat.two_pow_pos n).ne').unit ^
     (Multiplicative.toAdd i).val

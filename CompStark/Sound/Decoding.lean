@@ -23,9 +23,8 @@ component `(y - f(x)) / (z - x)` agree with a codeword `h` (degree below `n`) on
    (`card_agree_closest`). Both have degree at most `n`, so `P = D` and `y = P(z) = D(z)`
    (`claimed_eq_decoded`).
 
-This needs `N > n`, i.e. a positive blowup: with `logBlowup = 0` every word on `L` is a codeword,
-so every DEEP component is near the code whatever the claimed value, and `DecodingStep` fails
-(`not_decodingStep`). `decodingStep` takes `0 < logBlowup` as a hypothesis.
+This needs `N > n`, the setup's positive blowup: with `logBlowup = 0` every word on `L` is a
+codeword, so every DEEP component is near the code whatever the claimed value.
 -/
 
 @[expose] public section
@@ -209,11 +208,11 @@ theorem outsideBase_mul_rootOfUnity (S : Setup) (ζ : 𝕂) (hζ : OutsideBase �
   rw [map_mul, map_inv₀, ha, ← hw]
   exact mul_inv_cancel_right₀ hω ζ
 
-/-- **The decoding step**, for a positive blowup. -/
-theorem decodingStep (S : Setup) (hblowup : 0 < S.params.logBlowup) : DecodingStep S := by
+/-- **The decoding step.** -/
+theorem decodingStep (S : Setup) : DecodingStep S := by
   intro δ hδ prover α ζ hζ hnear
   have hN : S.n < S.size :=
-    Nat.pow_lt_pow_right Nat.one_lt_two (Nat.lt_add_of_pos_right hblowup)
+    Nat.pow_lt_pow_right Nat.one_lt_two (Nat.lt_add_of_pos_right S.blowup)
   have hdec := claimed_eq_decoded S hN δ hδ
   have hζω := outsideBase_mul_rootOfUnity S ζ hζ
   refine ⟨fun j ↦ ?_, fun j ↦ ?_, fun c e ↦ ?_⟩
@@ -226,52 +225,5 @@ theorem decodingStep (S : Setup) (hblowup : 0 < S.params.logBlowup) : DecodingSt
   · refine hdec (prover.quotient α c e) ζ _ hζ (hnear (prover.quotient α c e, ζ, _) ?_)
     exact List.mem_append_right _ (List.mem_flatMap.mpr ⟨c, List.mem_finRange c,
       List.mem_map.mpr ⟨e, List.mem_finRange e, rfl⟩⟩)
-
-/-! ### Without blowup -/
-
-/-- `𝕂` has elements outside the base field. -/
-theorem exists_outsideBase : ∃ ζ : 𝕂, OutsideBase ζ := by
-  by_contra h
-  have hs : Function.Surjective (algebraMap 𝔽 𝕂) := fun ζ ↦
-    not_not.mp fun hζ ↦ h ⟨ζ, hζ⟩
-  have hle := Fintype.card_le_of_surjective _ hs
-  rw [CompPoly.Extension.Ext.card_ext] at hle
-  simp only [CompPoly.Extension.BinomialParams.toExtensionParams_q, KoalaBear.ext4Params_q,
-    CompPoly.Extension.BinomialParams.toExtensionParams_d, KoalaBear.ext4Params_d, ZMod.card] at hle
-  have h1 : 1 < KoalaBear.fieldSize := by decide
-  generalize KoalaBear.fieldSize = q at hle h1
-  have := Nat.pow_lt_pow_right h1 (by norm_num : 1 < 4)
-  rw [pow_one] at this
-  omega
-
-/-- Without blowup, `N = n` and every word on `L` is a codeword. -/
-theorem near_zero_of_logBlowup_eq_zero (S : Setup) (h0 : S.params.logBlowup = 0)
-    (w : S.Point → 𝕂) : Near S 0 w := by
-  classical
-  have hinj : Set.InjOn (fun i : S.Point ↦ S.domain i) (Finset.univ : Finset S.Point) :=
-    fun i _ j _ hij ↦ (S.domain).injective hij
-  refine ⟨Finset.univ, ?_, w, Submodule.mem_map.mpr ⟨Lagrange.interpolate Finset.univ
-    (fun i : S.Point ↦ S.domain i) w, ?_, funext fun i ↦ ?_⟩, fun _ _ ↦ rfl⟩
-  · simp only [Finset.card_univ, Fintype.card_fin, sub_zero, mul_one,
-      Nat.cast_pow, Nat.cast_ofNat, ge_iff_le, le_refl]
-  · rw [mem_degreeLT]
-    have := Lagrange.degree_interpolate_lt (r := w) hinj
-    rw [Finset.card_univ, Fintype.card_fin] at this
-    have hn : S.n = 2 ^ (S.logN + S.params.logBlowup) := by rw [h0, Nat.add_zero]
-    rwa [hn]
-  · exact Lagrange.eval_interpolate_at_node w hinj (Finset.mem_univ i)
-
-/-- Without blowup, `DecodingStep` fails: a prover claiming a wrong value is near the code. -/
-theorem not_decodingStep (S : Setup) (h0 : S.params.logBlowup = 0) : ¬ DecodingStep S := by
-  intro hD
-  obtain ⟨ζ, hζ⟩ := exists_outsideBase
-  let y : 𝕂 := aeval ζ (decoded S fun _ ↦ 0) + 1
-  let prover : Prover S :=
-    { trace := fun _ _ ↦ 0, quotient := fun _ _ _ _ ↦ 0,
-      openings := fun _ _ ↦ ⟨fun _ ↦ 0, fun _ ↦ 0, fun _ _ ↦ y⟩ }
-  have c0 : Fin S.chunks := ⟨0, Nat.two_pow_pos _⟩
-  have h := (hD 0 zero_le prover 0 ζ hζ fun _ _ ↦
-    near_zero_of_logBlowup_eq_zero S h0 _).2.2 c0 0
-  exact one_ne_zero (add_eq_left.mp h)
 
 end CompStark.Sound

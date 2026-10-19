@@ -41,12 +41,15 @@ local notation "𝕂" => KoalaBear.Ext4
 local notation "F" => KoalaBear.Fast.Field
 
 /-- A STARK to prove with: FRI parameters, an AIR and a trace of `2 ^ logN` rows, in a valid
-configuration (`ValidConfig`) where FRI folds at least once. -/
+configuration (`ValidConfig`) with a positive blowup and at least one FRI fold. -/
 structure Setup where
   params : Fri.Params
   air : Air
   logN : Nat
   valid : ValidConfig params air logN
+  /-- The trace is extended to at least twice its length, so that its code has room to detect
+  errors. -/
+  blowup : 0 < params.logBlowup
   /-- FRI's final polynomial is shorter than the trace, so FRI folds at least once. -/
   folds : params.logFinalPolyLen < logN
 
