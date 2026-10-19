@@ -55,3 +55,5 @@ public import CompStark.Complete.Deep
 public import CompStark.Complete.Fold
 public import CompStark.Complete.FriRound
 public import CompStark.Complete.Fri
+public import CompStark.Complete.Lde
+public import CompStark.Complete.Quotient
