@@ -955,6 +955,107 @@ theorem sum_chunkSel (logN lc : Nat) (h : logN + lc ≤ 24) (Q : E[X])
   rw [← hP, eval_finsetSum]
   exact Finset.sum_congr rfl fun c _ ↦ by rw [eval_mul, eval_chunkSelPoly]
 
+open KoalaBear.Fast (Ext4)
+
+/-- A chunk's coordinates, tabulated. -/
+theorem chunkValues_eq (qs : Array EF) (stride c n : Nat) :
+    chunkValues qs stride c n = Array.ofFn (n := n * 4) fun k ↦
+      Fast.coord (k.val % 4) (qs.getD (k.val / 4 * stride + c) 0) := by
+  simp only [chunkValues, Id.run, Std.Legacy.Range.forIn_eq_forIn_range',
+    List.forIn_pure_yield_eq_foldl, pure_bind, Std.Legacy.Range.size, Nat.sub_zero,
+    Nat.add_sub_cancel, Nat.div_one]
+  show List.foldl _ _ _ = _
+  have hbody : (fun (out : Array F) (r : Nat) ↦
+      ((((out.push (qs.getD (r * stride + c) 0).c0).push (qs.getD (r * stride + c) 0).c1).push
+        (qs.getD (r * stride + c) 0).c2).push (qs.getD (r * stride + c) 0).c3)) =
+      fun out r ↦ (List.range' 0 4).foldl
+        (fun o i ↦ o.push (Fast.coord i (qs.getD (r * stride + c) 0))) out := rfl
+  rw [hbody, foldl_blocks (fun r i ↦ Fast.coord i (qs.getD (r * stride + c) 0)) 4 n 0,
+    Array.emptyWithCapacity_eq, Array.empty_append]
+  simp only [Nat.zero_add]
+
+theorem chunkValues_getD (qs : Array EF) (stride c n r e : Nat) (hr : r < n) (he : e < 4) :
+    (chunkValues qs stride c n).getD (r * 4 + e) 0 = Fast.coord e (qs.getD (r * stride + c) 0) := by
+  have hlt : r * 4 + e < n * 4 := by omega
+  rw [chunkValues_eq, getD_lt _ _ (by rw [Array.size_ofFn]; exact hlt), Array.getElem_ofFn]
+  simp only
+  rw [show (r * 4 + e) % 4 = e by omega, show (r * 4 + e) / 4 = r by omega]
+
+/-- An extension element is the sum of its coordinates times the basis. -/
+theorem toSpec_eq_basis (y : EF) : Ext4.toSpec y = ∑ e ∈ Finset.range 4,
+    Ext4.toSpec (Ext.basis e) * algebraMap K E (FastField.toField (Fast.coord e y)) := by
+  have hy : y = Ext4.smul y.c0 (Ext.basis 0) + Ext4.smul y.c1 (Ext.basis 1) +
+      Ext4.smul y.c2 (Ext.basis 2) + Ext4.smul y.c3 (Ext.basis 3) := by
+    refine Ext4.ext' ?_ ?_ ?_ ?_ <;>
+    · show _ = _ * _ + _ * _ + _ * _ + _ * _
+      simp only [Ext.basis, mul_one, mul_zero, add_zero, zero_add]
+  conv_lhs => rw [hy]
+  simp only [Ext4.toSpec_add, Ext4.toSpec_smul, Algebra.smul_def, Finset.sum_range_succ,
+    Finset.sum_range_zero, zero_add, Fast.coord]
+  ring
+
+/-- The chunk polynomial over the extension from its four coordinate polynomials. -/
+noncomputable def chunkPoly (ps : List K[X]) : E[X] :=
+  ∑ e ∈ Finset.range 4, C (Ext4.toSpec (Ext.basis e)) * (ps.getD e 0).map (algebraMap K E)
+
+theorem eval_chunkPoly (ps : List K[X]) (y : E) : (chunkPoly ps).eval y =
+    ∑ e ∈ Finset.range 4, Ext4.toSpec (Ext.basis e) * aeval y (ps.getD e 0) := by
+  rw [chunkPoly, eval_finsetSum]
+  refine Finset.sum_congr rfl fun e _ ↦ ?_
+  rw [eval_mul, eval_C, eval_map_algebraMap]
+
+theorem natDegree_chunkPoly (ps : List K[X]) (N : Nat) (hN : 0 < N)
+    (hps : ∀ e < 4, (ps.getD e 0).natDegree < N) : (chunkPoly ps).natDegree < N := by
+  refine lt_of_le_of_lt (natDegree_sum_le_of_forall_le _ _ (n := N - 1) fun e he ↦ ?_) (by omega)
+  refine (natDegree_C_mul_le _ _).trans (natDegree_map_le.trans ?_)
+  have := hps e (Finset.mem_range.mp he)
+  omega
+
+theorem natDegree_lt_of_degree_lt' {p : K[X]} {N : Nat} (hN : 0 < N)
+    (h : p.degree < (N : WithBot Nat)) : p.natDegree < N := by
+  by_cases hp : p = 0
+  · rw [hp, natDegree_zero]; exact hN
+  · exact (natDegree_lt_iff_degree_lt hp).mpr h
+
+/-- Chunk `c` of the quotient values extends to an LDE whose chunk polynomial, of degree below
+`n`, agrees with `Q` on the coset `s_c ⟨ω⟩`. -/
+theorem chunk_lde (logN b lc : Nat) (h24 : logN + b ≤ 24) (hlc : lc ≤ b) (qs : Array EF)
+    (Q : E[X]) (hqs : ∀ m < 2 ^ (logN + lc),
+      Ext4.toSpec (qs.getD m 0) = Q.eval (algebraMap K E (qpt (logN + lc) m)))
+    (c : Nat) (hc : c < 2 ^ lc) :
+    ∃ ps, CompStark.Mat.IsLde b (logN + b) (ldeRef logN b
+      (gen * (gen * powF (twoAdicGen (logN + lc)) c)⁻¹) 4
+      (chunkValues qs (2 ^ lc) c (2 ^ logN))) ps ∧ (chunkPoly ps).natDegree < 2 ^ logN ∧
+      ∀ r < 2 ^ logN, (chunkPoly ps).eval (algebraMap K E (qpt (logN + lc) c * tw logN ^ r)) =
+        Q.eval (algebraMap K E (qpt (logN + lc) c * tw logN ^ r)) := by
+  have hg := toField_gen_ne_zero
+  have hw : tw (logN + lc) ≠ 0 := tw_ne_zero _ (by omega)
+  have hsh : FastField.toField (gen * (gen * powF (twoAdicGen (logN + lc)) c)⁻¹) ≠ 0 := by
+    rw [toField_mul, toField_inv, toField_mul, toField_powF]
+    exact mul_ne_zero hg (inv_ne_zero (mul_ne_zero hg (pow_ne_zero _ hw)))
+  obtain ⟨ps, hlde, hval⟩ := ldeRef_isLde logN b (gen * (gen * powF (twoAdicGen (logN + lc)) c)⁻¹)
+    4 (chunkValues qs (2 ^ lc) c (2 ^ logN)) (by rw [size_chunkValues, Nat.mul_comm]) h24
+    (fun h0 ↦ hsh (by rw [h0]; exact toField_zero))
+  have hlen : ps.length = 4 := hlde.1.symm
+  have hpt : FastField.toField (gen * (gen * (gen * powF (twoAdicGen (logN + lc)) c)⁻¹)⁻¹) =
+      qpt (logN + lc) c := by
+    rw [toField_mul, toField_inv, toField_mul, toField_inv, toField_mul, toField_powF, qpt]
+    field_simp
+  refine ⟨ps, hlde, natDegree_chunkPoly ps _ (Nat.two_pow_pos _) fun e he ↦ ?_, fun r hr ↦ ?_⟩
+  · have hmem : ps.getD e 0 ∈ ps := by
+      rw [List.getD_eq_getElem _ _ (by omega)]; exact List.getElem_mem _
+    have := hlde.2.2.2.2.2.1 _ hmem
+    rw [Nat.add_sub_cancel] at this
+    exact natDegree_lt_of_degree_lt' (Nat.two_pow_pos _) this
+  · have hx : qpt (logN + lc) c * tw logN ^ r = qpt (logN + lc) (r * 2 ^ lc + c) := by
+      rw [qpt_coset logN lc c r (by omega)]; congr 1; ring
+    rw [eval_chunkPoly, hx, ← hqs _ (by rw [Nat.pow_add]; nlinarith [Nat.two_pow_pos lc]),
+      toSpec_eq_basis, ← hx]
+    refine Finset.sum_congr rfl fun e he ↦ ?_
+    have he := Finset.mem_range.mp he
+    rw [aeval_algebraMap_apply_eq_algebraMap_eval, ← hpt, hval e he r hr,
+      chunkValues_getD _ _ _ _ _ _ hr he]
+
 end Recompose
 
 end CompStark.Stark
