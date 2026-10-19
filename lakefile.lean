@@ -9,9 +9,9 @@ package CompStark where
 -- Pinned to a CompPoly commit with the packed NTT and the batched coset LDE.
 require CompPoly from git "https://github.com/mitschabaude-bot/CompPoly.git" @ "3e09608ea702552a3e3f466926c4607ea959190c"
 
--- Pinned to Verified-zkEVM/ArkLib#1316, the Poseidon2 round-constant fix, for the equivalence of
--- our Poseidon2 with ArkLib's.
-require Arklib from git "https://github.com/mitschabaude-bot/ArkLib.git" @ "452a6c33d3f5e57c021eb594eb4ec74ed01ee16c"
+-- ArkLib with its Poseidon2 round-constant fix (Verified-zkEVM/ArkLib#1316), for the equivalence
+-- of our Poseidon2 with ArkLib's.
+require Arklib from git "https://github.com/Verified-zkEVM/ArkLib" @ "2817d8c7d2f28d706b17f8de0f885880d0b2eb13"
 
 -- VCVio on Lean v4.35, Verified-zkEVM/VCVio#866, ahead of ArkLib's v4.34 pin.
 require VCVio from git "https://github.com/Verified-zkEVM/VCVio" @ "cf8cf2564ff1a05ca5023fb742ca5e0195cd41ad"
