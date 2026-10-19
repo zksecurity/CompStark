@@ -251,81 +251,74 @@ theorem fold2Range_rel {v : EVec} {a : Array EF} (hv : RV v a) (T : Array F) (be
       KoalaBear.Fast.Ext4.toSpec_sub]
     ring
 
+/-- Vectors of at most `2 ^ 24` elements have indexable coordinates. -/
+theorem size_bound {n : Nat} (h : n ≤ 2 ^ 24) : 16 * n < USize.size := by
+  have := USize.le_size
+  omega
+
 /-- The fast fold is the specification's: both invert every `2 x` of the pairs, which are
 nonzero below order `2 ^ 24`. -/
-theorem fold2_rel {v : EVec} {a : Array EF} (beta : EF) (k : Nat) (h : RV v a) :
-    RV (fold2 v beta k) (Fri.foldPairs a beta k) := by
+theorem fold2_rel {v : EVec} {a : Array EF} (beta : EF) (k : Nat) (h : RV v a)
+    (ha : a.size = 2 ^ (k + 1)) (hk : k < 24) : RV (fold2 v beta k) (Fri.foldPairs a beta k) := by
   unfold fold2
-  by_cases hg : (v.fits && v.n == 2 ^ (k + 1) && decide (k < 24)) = true
-  · rw [ite_eq_right_of_eq_false _ _ (eq_false (by rw [hg]; decide))]
-    simp only [Bool.and_eq_true, beq_iff_eq, decide_eq_true_eq] at hg
-    obtain ⟨⟨hf, hn⟩, hk⟩ := hg
-    have hs := (EVec.fits_iff h).mp hf
-    have ha : a.size = 2 * 2 ^ k := by rw [← h.1, hn, Nat.pow_succ, Nat.mul_comm]
-    simp only [CompPoly.CPolynomial.NTTFast.Packed.Native.encodeFields_eq]
-    have hp : 0 < (if 2 ^ k < 4096 then 1 else 16) := by split <;> decide
-    generalize (if 2 ^ k < 4096 then 1 else 16) = parts at hp ⊢
-    let pw := cosetPoints 1 (k + 1)
-    let perm := bitRevPerm k
-    let T : Array F := perm.map fun i ↦ 2 * pw.getD i 0
-    have hT : T.size = 2 ^ k := by rw [Array.size_map]; exact (bitRevPerm_spec k).1
-    have hTx : ∀ i < 2 ^ k, T.getD i 0 = twoX pw perm i := fun i hi ↦ by
-      rw [getD_lt _ _ (by rw [hT]; exact hi), Array.getElem_map, twoX,
-        getD_lt perm _ (by rw [(bitRevPerm_spec k).1]; exact hi)]
-    let E (i : Nat) : EF := (a.getD (2 * i) 0 + a.getD (2 * i + 1) 0) * Ext.ofBase (2 : F)⁻¹ +
-      beta * (a.getD (2 * i) 0 - a.getD (2 * i + 1) 0) * Ext.ofBase (T.getD i 0)⁻¹
-    have hcat := foldl_ranges E (2 ^ k) parts _ hp (ranges_cover (2 ^ k) parts)
-    have hj := joinPlanes_rel (2 ^ k) parts
-      (fun p ↦ fold2Range v (encode T) beta (p * (2 ^ k / parts))
-        (if p + 1 = parts then 2 ^ k - p * (2 ^ k / parts) else 2 ^ k / parts))
-      (fun p ↦ Array.ofFn (n := if p + 1 = parts then 2 ^ k - p * (2 ^ k / parts)
-        else 2 ^ k / parts) fun j ↦ E (p * (2 ^ k / parts) + j.val))
-      (fun p hp' ↦ by
-        have hle := range_le (2 ^ k) parts p hp'
-        exact fold2Range_rel h T beta _ _ (by omega) hs (by omega) (by omega)
-          fun j hj ↦ by
-            rw [hTx _ (by omega)]
-            exact twoX_ne_zero k hk _ (by omega))
-      (by rw [hcat, Array.size_ofFn])
-    rw [hcat] at hj
-    refine RV_congr hj ?_
-    rw [foldPairs_eq a beta k hk]
-    refine congrArg (Array.ofFn (n := 2 ^ k)) (funext fun i ↦ ?_)
-    simp only [E, hTx i.val i.isLt]
-    rfl
-  · rw [ite_eq_left_of_eq_true _ _ (eq_true (by
-      simp only [Bool.not_eq_true', Bool.eq_false_iff]; exact hg))]
-    rw [EVec.decode_rel h]
-    exact EVec.ofArray_rel _
+  have hs : 4 * a.size < USize.size := by
+    have := size_bound (n := a.size) (by rw [ha]; exact Nat.pow_le_pow_right (by decide) hk)
+    omega
+  rw [Nat.pow_succ, Nat.mul_comm] at ha
+  simp only [CompPoly.CPolynomial.NTTFast.Packed.Native.encodeFields_eq]
+  have hp : 0 < (if 2 ^ k < 4096 then 1 else 16) := by split <;> decide
+  generalize (if 2 ^ k < 4096 then 1 else 16) = parts at hp ⊢
+  let pw := cosetPoints 1 (k + 1)
+  let perm := bitRevPerm k
+  let T : Array F := perm.map fun i ↦ 2 * pw.getD i 0
+  have hT : T.size = 2 ^ k := by rw [Array.size_map]; exact (bitRevPerm_spec k).1
+  have hTx : ∀ i < 2 ^ k, T.getD i 0 = twoX pw perm i := fun i hi ↦ by
+    rw [getD_lt _ _ (by rw [hT]; exact hi), Array.getElem_map, twoX,
+      getD_lt perm _ (by rw [(bitRevPerm_spec k).1]; exact hi)]
+  let E (i : Nat) : EF := (a.getD (2 * i) 0 + a.getD (2 * i + 1) 0) * Ext.ofBase (2 : F)⁻¹ +
+    beta * (a.getD (2 * i) 0 - a.getD (2 * i + 1) 0) * Ext.ofBase (T.getD i 0)⁻¹
+  have hcat := foldl_ranges E (2 ^ k) parts _ hp (ranges_cover (2 ^ k) parts)
+  have hj := joinPlanes_rel (2 ^ k) parts
+    (fun p ↦ fold2Range v (encode T) beta (p * (2 ^ k / parts))
+      (if p + 1 = parts then 2 ^ k - p * (2 ^ k / parts) else 2 ^ k / parts))
+    (fun p ↦ Array.ofFn (n := if p + 1 = parts then 2 ^ k - p * (2 ^ k / parts)
+      else 2 ^ k / parts) fun j ↦ E (p * (2 ^ k / parts) + j.val))
+    (fun p hp' ↦ by
+      have hle := range_le (2 ^ k) parts p hp'
+      exact fold2Range_rel h T beta _ _ (by omega) hs (by omega) (by omega)
+        fun j hj ↦ by
+          rw [hTx _ (by omega)]
+          exact twoX_ne_zero k hk _ (by omega))
+    (by rw [hcat, Array.size_ofFn])
+  rw [hcat] at hj
+  refine RV_congr hj ?_
+  rw [foldPairs_eq a beta k hk]
+  refine congrArg (Array.ofFn (n := 2 ^ k)) (funext fun i ↦ ?_)
+  simp only [E, hTx i.val i.isLt]
+  rfl
 
 /-- Represented planes read back their elements. -/
-theorem toArray_rel {v : EVec} {a : Array EF} (h : RV v a) : toArray v = a := by
-  unfold toArray
-  split
-  · exact EVec.toArray_eq h ((EVec.fits_iff h).mp (by assumption))
-  · exact EVec.decode_rel h
+theorem toArray_rel {v : EVec} {a : Array EF} (h : RV v a) (ha : a.size ≤ 2 ^ 24) :
+    v.toArray = a :=
+  EVec.toArray_eq h (by have := size_bound ha; omega)
 
 /-- The planes of an array represent it. -/
 theorem ofArray_rel (a : Array EF) : RV (EVec.ofArray a) a := EVec.ofArray_rel a
 
 /-- `a + x · b` on planes. -/
-theorem addScaled_rel {v w : EVec} {a b : Array EF} (x : EF) (hv : RV v a) (hw : RV w b) :
+theorem addScaled_rel {v w : EVec} {a b : Array EF} (x : EF) (hv : RV v a) (hw : RV w b)
+    (hab : a.size = b.size) (ha : a.size ≤ 2 ^ 24) :
     RV (addScaled v w x) (Array.zipWith (fun u v ↦ u + x * v) a b) := by
+  have hs : 4 * a.size < USize.size := by have := size_bound ha; omega
   unfold addScaled
-  by_cases hg : (v.fits && w.fits && v.n == w.n) = true
-  · rw [ite_eq_left_of_eq_true _ _ (eq_true hg)]
-    simp only [Bool.and_eq_true, beq_iff_eq] at hg
-    obtain ⟨⟨hfv, hfw⟩, hn⟩ := hg
-    have h := EVec.add_rel hv (EVec.smul_rel x hw ((EVec.fits_iff hw).mp hfw))
-      (by simp only [EVec.smul]; exact hn) ((EVec.fits_iff hv).mp hfv)
-    refine RV_congr h (Array.ext (by simp only [Array.size_zipWith, Array.size_map])
-      fun i _ _ ↦ ?_)
-    simp only [Array.getElem_zipWith, Array.getElem_map]
-    apply KoalaBear.Fast.Ext4.toSpec_injective
-    simp only [KoalaBear.Fast.Ext4.toSpec_add, KoalaBear.Fast.Ext4.toSpec_mul]
-    ring
-  · rw [ite_eq_right_of_eq_false _ _ (eq_false hg), EVec.decode_rel hv, EVec.decode_rel hw]
-    exact EVec.ofArray_rel _
+  have h := EVec.add_rel hv (EVec.smul_rel x hw (by omega))
+    (by simp only [EVec.smul]; rw [hv.1, hw.1, hab]) hs
+  refine RV_congr h (Array.ext (by simp only [Array.size_zipWith, Array.size_map])
+    fun i _ _ ↦ ?_)
+  simp only [Array.getElem_zipWith, Array.getElem_map]
+  apply KoalaBear.Fast.Ext4.toSpec_injective
+  simp only [KoalaBear.Fast.Ext4.toSpec_add, KoalaBear.Fast.Ext4.toSpec_mul]
+  ring
 
 /-- Coordinate `c` of an extension element. -/
 def coord (c : Nat) (x : EF) : F :=
@@ -411,34 +404,26 @@ theorem foldl_append_flatMap {α β : Type} (g : α → Array β) (A : Nat → A
   | cons k L ih => rw [List.foldl_cons, List.foldl_cons, ← Array.flatMap_append, ih]
 
 /-- The leaves are the elements' coordinates, `k` elements per row. -/
-theorem leaves_rel {v : EVec} {a : Array EF} (k : Nat) (h : RV v a) :
+theorem leaves_rel {v : EVec} {a : Array EF} (k : Nat) (h : RV v a) (ha : a.size ≤ 2 ^ 24) :
     RM (leaves k v) (Mat.ofValues (4 * k) (a.size / k)
       (a.flatMap fun x ↦ (Ext.coeffs x).toArray)) := by
   unfold leaves
-  by_cases hg : (v.fits && decide (16 * v.n < USize.size)) = true
-  · rw [ite_eq_right_of_eq_false _ _ (eq_false (by rw [hg]; decide))]
-    simp only [Bool.and_eq_true, decide_eq_true_eq] at hg
-    obtain ⟨-, hs⟩ := hg
-    rw [h.1] at hs ⊢
-    refine ⟨rfl, rfl, ?_⟩
-    simp only [Mat.ofValues]
-    have hp : 0 < (if a.size < 4096 then 1 else 16) := by split <;> decide
-    generalize (if a.size < 4096 then 1 else 16) = parts at hp ⊢
-    rw [foldl_tasks parts _ (fun p ↦ (Array.ofFn (n := if p + 1 = parts then
-        a.size - p * (a.size / parts) else a.size / parts) fun j ↦
-        a.getD (p * (a.size / parts) + j.val) 0).flatMap fun x ↦ (Ext.coeffs x).toArray)
-        fun p hp' ↦ interleaveRange_encode h _ _ (range_le a.size parts p hp') hs,
-      ← Array.flatMap_empty (fun x : EF ↦ (Ext.coeffs x).toArray), foldl_append_flatMap,
-      foldl_ranges (fun j ↦ a.getD j 0) a.size parts _ hp (ranges_cover a.size parts)]
-    congr 2
-    apply Array.ext (by rw [Array.size_ofFn])
-    intro i h1 _
-    rw [Array.size_ofFn] at h1
-    simp only [Array.getElem_ofFn, getD_lt a i h1]
-  · rw [ite_eq_left_of_eq_true _ _ (eq_true (by
-      simp only [Bool.not_eq_true', Bool.eq_false_iff]; exact hg))]
-    refine ⟨rfl, by rw [h.1]; rfl, ?_⟩
-    simp only [ofRows, Mat.ofValues, CompPoly.CPolynomial.NTTFast.Packed.Native.encodeFields_eq,
-      EVec.decode_rel h]
+  have hs := size_bound ha
+  rw [h.1]
+  refine ⟨rfl, rfl, ?_⟩
+  simp only [Mat.ofValues]
+  have hp : 0 < (if a.size < 4096 then 1 else 16) := by split <;> decide
+  generalize (if a.size < 4096 then 1 else 16) = parts at hp ⊢
+  rw [foldl_tasks parts _ (fun p ↦ (Array.ofFn (n := if p + 1 = parts then
+      a.size - p * (a.size / parts) else a.size / parts) fun j ↦
+      a.getD (p * (a.size / parts) + j.val) 0).flatMap fun x ↦ (Ext.coeffs x).toArray)
+      fun p hp' ↦ interleaveRange_encode h _ _ (range_le a.size parts p hp') hs,
+    ← Array.flatMap_empty (fun x : EF ↦ (Ext.coeffs x).toArray), foldl_append_flatMap,
+    foldl_ranges (fun j ↦ a.getD j 0) a.size parts _ hp (ranges_cover a.size parts)]
+  congr 2
+  apply Array.ext (by rw [Array.size_ofFn])
+  intro i h1 _
+  rw [Array.size_ofFn] at h1
+  simp only [Array.getElem_ofFn, getD_lt a i h1]
 
 end CompStark.Stark.Fast

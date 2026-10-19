@@ -206,40 +206,43 @@ theorem ldeWith_plan (plans : List (Nat × Nat × F × LdePlan))
     obtain ⟨⟨rfl, rfl⟩, rfl⟩ := hm
     exact he
 
-/-- The packed specification represents it. -/
-theorem ofRows_ldeRef_rel (logH bits : Nat) (shift : F) (w : Nat) (m : Array F) :
-    RM (ofRows w (2 ^ (logH + bits)) (ldeRef logH bits shift w m).values)
-      (ldeRef logH bits shift w m) :=
-  ⟨rfl, rfl, NTTFast.Packed.Native.encodeFields_eq _⟩
-
-/-- **The fast low-degree extension is `ldeRef`**, with plans `plan?` built. -/
+/-- **The fast low-degree extension is `ldeRef`**, with plans `plan?` built, on a matrix of
+`2 ^ logH` rows within the two-adic subgroups whose extension is addressable. -/
 theorem ldeWith_rel (plans : List (Nat × Nat × F × LdePlan))
     (hplans : ∀ e ∈ plans, plan? e.1 e.2.1 e.2.2.1 = some e.2.2.2)
-    (logH bits : Nat) (shift : F) (w : Nat) (m : Array F) :
+    (logH bits : Nat) (shift : F) (w : Nat) (m : Array F) (hm : m.size = 2 ^ logH * w)
+    (hb : logH + bits ≤ 24) (ha : Addressable (2 ^ (logH + bits) * w)) :
     RM (ldeWith plans logH bits shift w m) (ldeRef logH bits shift w m) := by
   unfold ldeWith
   dsimp only
   split
   · rename_i P hfound
-    obtain ⟨h24, hlog, hb, hs, hω⟩ :=
+    obtain ⟨h24, hlog, hbits, hs, hω⟩ :=
       plan?_some (ldeWith_plan plans hplans logH bits shift P hfound)
-    split_ifs with hg
-    · exact ofRows_ldeRef_rel logH bits shift w m
-    · have hM : m.size = 2 ^ P.logH * w := by
-        have hlogH : P.logH = logH := by
-          change P.domain.logN - P.bits = logH
-          omega
-        rw [hlogH]
-        exact Classical.not_not.mp fun h ↦ hg (Or.inl h)
-      have hu : 4 * (2 ^ P.domain.logN * w) < USize.size := by
-        rw [hlog]
-        exact Nat.lt_of_not_le fun h ↦ hg (Or.inr h)
-      refine ⟨rfl, rfl, ?_⟩
-      change NTTFast.Packed.Native.joinRows (NTTFast.Packed.Native.cosetLde P w
-        (NTTFast.Packed.Native.encodeFields m)) = encode (ldeRef logH bits shift w m).values
-      rw [NTTFast.Packed.Native.encodeFields_eq,
-        NTTFast.Packed.Native.joinRows_cosetLde P w m hM hu, ldeSpec_eq P logH bits shift w m hlog hb hs hω h24]
-  · exact ofRows_ldeRef_rel logH bits shift w m
+    have hM : m.size = 2 ^ P.logH * w := by
+      have hlogH : P.logH = logH := by
+        change P.domain.logN - P.bits = logH
+        omega
+      rw [hlogH]
+      exact hm
+    have hu : 4 * (2 ^ P.domain.logN * w) < USize.size := by
+      rw [hlog]
+      unfold Addressable at ha
+      omega
+    refine ⟨rfl, rfl, ?_⟩
+    change NTTFast.Packed.Native.joinRows (NTTFast.Packed.Native.cosetLde P w
+      (NTTFast.Packed.Native.encodeFields m)) = encode (ldeRef logH bits shift w m).values
+    rw [NTTFast.Packed.Native.encodeFields_eq,
+      NTTFast.Packed.Native.joinRows_cosetLde P w m hM hu,
+      ldeSpec_eq P logH bits shift w m hlog hbits hs hω h24]
+  · rename_i hnone
+    have hp : plan? logH bits shift ≠ none := by
+      rw [plan?, dite_eq_left_of_eq_true (eq_true hb)]
+      exact Option.some_ne_none _
+    cases hf : (plans.find? fun (h, b, s, _) ↦ h == logH && b == bits && s == shift).map
+      (·.2.2.2) with
+    | none => rw [hf] at hnone; exact absurd hnone hp
+    | some _ => rw [hf] at hnone; exact absurd hnone (Option.some_ne_none _)
 
 /-- Every plan `ldePlans` prepares is `plan?`'s. -/
 theorem ldePlans_valid (logN logBlowup logChunks : Nat) :
