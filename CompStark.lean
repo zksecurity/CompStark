@@ -66,3 +66,7 @@ public import CompStark.SoundnessError
 public import CompStark.Sound.Steps
 public import CompStark.Sound.Fri
 public import CompStark.Sound.Algebra
+public import CompStark.Sound.Batching
+public import CompStark.Sound.Decoding
+public import CompStark.Sound.Assembly
+public import CompStark.Soundness
