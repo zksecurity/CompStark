@@ -53,6 +53,6 @@ def check (name : String) (A : Air) (inst : Nat → Array F × List F) (ps : Lis
 
 end CompStarkTests.Stark
 
-/-- info: 'CompStark.Stark.verify_prove' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+/-- info: 'CompStark.Stark.verify_prove_of' depends on axioms: [propext, Classical.choice, Quot.sound] -/
 #guard_msgs in
-#print axioms CompStark.Stark.verify_prove
+#print axioms CompStark.Stark.verify_prove_of

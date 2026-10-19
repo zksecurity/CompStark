@@ -193,7 +193,7 @@ theorem openAndAssemble_refines (h : Refines B) (P : Params) {logN : Nat}
 shapes, when the specification's opening point `ζ` lies outside the base field. -/
 theorem proveWith_refines (h : Refines B) {P : Params} {A : Air} {logN : Nat} {trace : Array F}
     (pis : List F) (hin : InputOk P A logN trace)
-    (hz : Ext.OutsideBase (zetaOf P A logN trace pis)) :
+    (hz : Ext.OutsideBase (outOfDomainPoint P A logN trace pis)) :
     proveWith B P A logN trace pis = prove P A logN trace pis := by
   unfold prove proveWith
   rw [h.transcript, RelM.run_bind, RelM.run_bind]

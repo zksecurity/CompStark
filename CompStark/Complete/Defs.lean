@@ -46,4 +46,13 @@ def LowDegree (logH logD : Nat) (v : Array EF) : Prop :=
         p.eval (algebraMap KoalaBear.Field KoalaBear.Ext4
           (FastField.toField (twoAdicGen logH)) ^ reverseBits r logH)
 
+/-- The shapes the completeness proof works on: a `2 ^ logN × width` trace, constraints that read
+only the AIR's columns, an extended domain within KoalaBear's two-adic subgroups, and quotient
+chunks that fit the blowup. -/
+structure Fits (P : Params) (A : Air) (logN : Nat) (trace : Array F) : Prop where
+  trace : trace.size = 2 ^ logN * A.width
+  cols : A.ColsInWidth
+  twoAdic : logN + P.logBlowup ≤ 24
+  chunks : A.logQuotientChunks ≤ P.logBlowup
+
 end CompStark

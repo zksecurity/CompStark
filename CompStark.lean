@@ -58,3 +58,4 @@ public import CompStark.Complete.Fri
 public import CompStark.Complete.Lde
 public import CompStark.Complete.Quotient
 public import CompStark.Complete.Stark
+public import CompStark.Stark.Satisfied

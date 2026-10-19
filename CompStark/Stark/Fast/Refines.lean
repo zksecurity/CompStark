@@ -58,7 +58,7 @@ def backendFor_refines (logN logBlowup logChunks : Nat) :
 subgroups whose extension and quotient are addressable (`InputOk`), it produces the
 specification's proof whenever that proof's opening point `ζ` lies outside the base field. -/
 theorem prove_fast {P : Params} {A : Air} {logN : Nat} {trace : Array F} (pis : List F)
-    (hin : InputOk P A logN trace) (hz : Ext.OutsideBase (zetaOf P A logN trace pis)) :
+    (hin : InputOk P A logN trace) (hz : Ext.OutsideBase (outOfDomainPoint P A logN trace pis)) :
     proveWith (backendFor logN P.logBlowup A.logQuotientChunks) P A logN trace pis =
       prove P A logN trace pis :=
   proveWith_refines (backendFor_refines _ _ _) pis hin hz

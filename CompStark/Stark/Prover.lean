@@ -86,8 +86,11 @@ def proveWith (B : Backend) (P : Params) (A : Air) (logN : Nat) (trace : Array F
     Proof :=
   ((commitAndSample B P A logN trace pis >>= openAndAssemble B P logN).run B.transcript).1
 
-/-- The opening point `ζ` of the specification's proof. -/
-def zetaOf (P : Params) (A : Air) (logN : Nat) (trace : Array F) (pis : List F) : EF :=
+/-- The out-of-domain point `ζ` of the specification's proof: the challenge, sampled after the
+trace and quotient commitments, at which the prover opens the trace and the quotient's chunks and
+the verifier checks the constraints. -/
+def outOfDomainPoint (P : Params) (A : Air) (logN : Nat) (trace : Array F) (pis : List F) :
+    EF :=
   ((commitAndSample Backend.spec P A logN trace pis).run Backend.spec.transcript).1.2.2.2.2
 
 /-- A proof of `A` for the row-major trace of `2 ^ logN` rows and public values `pis`, by the

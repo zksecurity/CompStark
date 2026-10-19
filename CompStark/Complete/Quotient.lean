@@ -8,6 +8,7 @@ public import CompStark.Complete.Lde
 public import CompStark.Stark.Fast.Quotient
 public import CompStark.Stark.Prover
 public import CompStark.Stark.Refines
+public import CompStark.Stark.Satisfied
 
 /-! # The quotient and the out-of-domain check
 
@@ -15,7 +16,7 @@ The honest prover's openings pass the verifier's constraint check at `ζ`.
 
 Over the spec field, let `T_j` be the trace's column polynomials (`ldeRef_isLde`) and `C_c` the
 constraint `c` evaluated on them with the selector polynomials `Z_H(X) / (X - 1)`,
-`Z_H(X) / (X - ω⁻¹)` and `X - ω⁻¹` (`polyEnv`). `Air.Satisfied` says `C_c` vanishes on the trace
+`Z_H(X) / (X - ω⁻¹)` and `X - ω⁻¹` (`polyEnv`). `Air.ConstraintsVanish` says `C_c` vanishes on the trace
 domain `H = ⟨ω⟩`, so `C_c = Z_H Q_c`, and `Air.DegreeFits` bounds `Q_c` below `k n`, `k` the
 number of chunks (`quotientPoly`). The folded quotient `Q = ∑_c α^(K-1-c) Q_c` is a polynomial
 of degree below `k n`.
@@ -43,44 +44,6 @@ local notation "F" => KoalaBear.Fast.Field
 local notation "EF" => KoalaBear.Fast.Ext4
 local notation "K" => KoalaBear.Field
 local notation "E" => KoalaBear.Ext4
-
-/-! ### Satisfaction and degree -/
-
-/-- Row `i` of the trace domain `⟨ω⟩` of size `n = 2 ^ logN`: the trace's rows `i` and
-`i + 1 mod n` and the selectors at `ωⁱ`. The first-row selector `Z_H(X) / (X - 1)` is `n` at `1`
-and `0` elsewhere on `⟨ω⟩`, the last-row selector `Z_H(X) / (X - ω⁻¹)` is `n ω` at `ω⁻¹` (row
-`n - 1`) and `0` elsewhere, the transition selector is `X - ω⁻¹`. -/
-def Air.traceRow (A : Air) (logN : Nat) (trace : Array F) (pis : List F) (i : Nat) :
-    Expr.Env F where
-  cur c := trace.getD (i * A.width + c) 0
-  next c := trace.getD ((i + 1) % 2 ^ logN * A.width + c) 0
-  pub j := pis.getD j 0
-  const c := c
-  isFirstRow := if i = 0 then ((2 ^ logN : Nat) : F) else 0
-  isLastRow := if i + 1 = 2 ^ logN then ((2 ^ logN : Nat) : F) * twoAdicGen logN else 0
-  isTransition := twoAdicGen logN ^ i - (twoAdicGen logN)⁻¹
-
-/-- Every constraint vanishes on every row of the trace domain `⟨ω⟩` of size `2 ^ logN`, with
-Plonky3's selectors there: `Z_H(x) / (x - 1)`, `Z_H(x) / (x - ω⁻¹)` and `x - ω⁻¹`
-(`Air.traceRow`). -/
-def Air.Satisfied (A : Air) (logN : Nat) (trace : Array F) (pis : List F) : Prop :=
-  ∀ c ∈ A.constraints, ∀ i < 2 ^ logN, c.eval (A.traceRow logN trace pis i) = 0
-
-/-- A bound on the degree of a constraint as a polynomial on a trace domain of size `n`: the
-columns and the first- and last-row selectors have degree `n - 1`, the transition selector `1`. -/
-def Expr.degBound (n : Nat) : Expr → Nat
-  | .cur _ | .next _ | .isFirstRow | .isLastRow => n - 1
-  | .isTransition => 1
-  | .pub _ | .const _ => 0
-  | .add a b | .sub a b => max (a.degBound n) (b.degBound n)
-  | .mul a b => a.degBound n + b.degBound n
-
-/-- The constraints' degrees fit the quotient's chunks: every constraint, of degree at most
-`degBound n`, is below `(k + 1) n` for `k = 2 ^ logQuotientChunks` chunks of size `n = 2 ^ logN`,
-so that it divided by `Z_H` has degree below `k n`. Unlike Plonky3's `degree_multiple`, the
-transition selector counts as degree `1`. -/
-def Air.DegreeFits (A : Air) (logN : Nat) : Prop :=
-  ∀ c ∈ A.constraints, c.degBound (2 ^ logN) < 2 ^ (logN + A.logQuotientChunks) + 2 ^ logN
 
 /-! ### The example AIRs fit -/
 
@@ -444,7 +407,7 @@ def TraceDeg (logN : Nat) (T : Nat → K[X]) : Prop := ∀ j, (T j).natDegree �
 /-- A satisfied constraint is `Z_H` times its quotient. -/
 theorem constraintPoly_eq (A : Air) (logN : Nat) (h : logN ≤ 24) (trace : Array F)
     (pis : List F) (T : Nat → K[X]) (hT : TraceOn logN A.width trace T)
-    (hsat : A.Satisfied logN trace pis) (hcols : A.ColsInWidth) (c : Expr)
+    (hsat : A.ConstraintsVanish logN trace pis) (hcols : A.ColsInWidth) (c : Expr)
     (hc : c ∈ A.constraints) :
     constraintPoly (2 ^ logN) (tw logN) T pis c = zH (2 ^ logN) * quotientPoly logN T pis c :=
   eq_zH_mul logN h _ fun i hi ↦ by
@@ -802,7 +765,7 @@ theorem permuteRows_lde (m : Stark.Mat) (ps : List K[X]) (b L e : Nat)
 /-- **The prover's quotient values are the folded quotient** on the quotient domain. -/
 theorem toSpec_quotientOfLde (A : Air) (pis : List F) (logN b : Nat) (trace : Array F)
     (alpha : EF) (hlc : A.logQuotientChunks ≤ b) (h24 : logN + b ≤ 24)
-    (hsat : A.Satisfied logN trace pis) (hcols : A.ColsInWidth) (ps : List K[X])
+    (hsat : A.ConstraintsVanish logN trace pis) (hcols : A.ColsInWidth) (ps : List K[X])
     (hps : CompStark.Mat.IsLde b (logN + b) (ldeRef logN b gen A.width trace) ps)
     (hT : TraceOn logN A.width trace (ps.getD · 0)) (r : Nat)
     (hr : r < 2 ^ (logN + A.logQuotientChunks)) :
@@ -1332,7 +1295,7 @@ theorem toSpec_eval_opened (A : Air) (logN b : Nat) (pis : List F) (m : Stark.Ma
 
 /-- The trace's extension is an LDE of polynomials that take the trace on `⟨ω⟩`. -/
 theorem trace_lde (P : Params) (A : Air) (logN : Nat) (trace : Array F)
-    (hin : InputOk P A logN trace) :
+    (hin : Fits P A logN trace) :
     ∃ ps, CompStark.Mat.IsLde P.logBlowup (logN + P.logBlowup)
       (ldeRef logN P.logBlowup gen A.width trace) ps ∧
       TraceOn logN A.width trace (ps.getD · 0) ∧ TraceDeg logN (ps.getD · 0) := by
@@ -1388,8 +1351,8 @@ theorem checkConstraints_of (A : Air) (pis : List F) (o : OpenedValues) (logN : 
 
 /-- **The out-of-domain check passes on the honest openings.** -/
 theorem checkConstraints_honest (P : Params) (A : Air) (logN : Nat) (trace : Array F)
-    (pis : List F) (alpha zeta : EF) (hin : InputOk P A logN trace)
-    (hsat : A.Satisfied logN trace pis) (hdeg : A.DegreeFits logN) (hz : Ext.OutsideBase zeta) :
+    (pis : List F) (alpha zeta : EF) (hin : Fits P A logN trace)
+    (hsat : A.ConstraintsVanish logN trace pis) (hdeg : A.DegreeFits logN) (hz : Ext.OutsideBase zeta) :
     let ext := ldeRef logN P.logBlowup gen A.width trace
     let qs := quotientOfLde A pis logN A.logQuotientChunks ext alpha
     let lc := A.logQuotientChunks

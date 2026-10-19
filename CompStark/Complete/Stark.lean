@@ -64,7 +64,7 @@ theorem commitAndSample_run :
         hChunks P A logN trace pis, Committed.ofMats (hChunks P A logN trace pis),
         hZeta P A logN trace pis), (hTC P A logN trace pis).sampleExt.2) := rfl
 
-theorem zetaOf_eq : zetaOf P A logN trace pis = hZeta P A logN trace pis := rfl
+theorem outOfDomainPoint_eq : outOfDomainPoint P A logN trace pis = hZeta P A logN trace pis := rfl
 
 end Honest
 
@@ -394,7 +394,7 @@ theorem hItems_eq : hItems P A logN trace pis =
   | nil => rfl
   | cons m ms ih => exact congrArg (List.cons _) ih
 
-theorem hItems_honest (hin : InputOk P A logN trace)
+theorem hItems_honest (hin : Fits P A logN trace)
     (hz : Ext.OutsideBase (hZeta P A logN trace pis)) :
     ∀ x ∈ hItems P A logN trace pis, Deep.HonestItem P.logBlowup (logN + P.logBlowup) x := by
   have hzn : Ext.OutsideBase (hZetaNext P A logN trace pis) :=
@@ -430,7 +430,7 @@ section Honest
 variable (P : Params) (A : Air) (logN : Nat) (trace : Array F) (pis : List F)
 
 /-- FRI has one input, low degree, of the extension's height. -/
-theorem reduce_hItems (hin : InputOk P A logN trace)
+theorem reduce_hItems (hin : Fits P A logN trace)
     (hz : Ext.OutsideBase (hZeta P A logN trace pis)) (alpha : EF) :
     ∃ v, Fri.reduce alpha (hItems P A logN trace pis) = [(logN + P.logBlowup, v)] ∧
       LowDegree (logN + P.logBlowup) logN v := by
@@ -493,12 +493,12 @@ end Honest
 section Honest
 variable (P : Params) (A : Air) (logN : Nat) (trace : Array F) (pis : List F)
 
-theorem height_hExt (hin : InputOk P A logN trace) :
+theorem height_hExt (hin : Fits P A logN trace) :
     (hExt P A logN trace).height = 2 ^ (logN + P.logBlowup) := by
   obtain ⟨ps, hl, -⟩ := trace_lde P A logN trace hin
   exact hl.2.1
 
-theorem height_hChunks (hin : InputOk P A logN trace) :
+theorem height_hChunks (hin : Fits P A logN trace) :
     ∀ m ∈ hChunks P A logN trace pis, m.height = 2 ^ (logN + P.logBlowup) := by
   intro m hm
   obtain ⟨c, -, rfl⟩ := List.mem_map.mp hm
@@ -519,7 +519,7 @@ theorem vChunks_eq (ms : List Mat) (hms : ∀ m ∈ ms, m.height = 2 ^ (logN + P
     rw [hms m List.mem_cons_self, Nat.log2_two_pow, Nat.add_sub_cancel]
     rfl
 
-theorem vRounds_eq (hin : InputOk P A logN trace) :
+theorem vRounds_eq (hin : Fits P A logN trace) :
     vRounds (prove P A logN trace pis) (hZeta P A logN trace pis) =
       (hDRounds P A logN trace pis).map fun r ↦ (r.1.root, r.2.map fun x ↦
         ((⟨1, Nat.log2 x.1.height - P.logBlowup⟩ : Domain),
@@ -535,7 +535,7 @@ end Honest
 section Honest
 variable (P : Params) (A : Air) (logN : Nat) (trace : Array F) (pis : List F)
 
-theorem hInputs_eq (hin : InputOk P A logN trace)
+theorem hInputs_eq (hin : Fits P A logN trace)
     (hz : Ext.OutsideBase (hZeta P A logN trace pis)) (alpha : EF) :
     ∃ v, hInputs P A logN trace pis alpha = [v] ∧
       Fri.reduce alpha (hItems P A logN trace pis) = [(logN + P.logBlowup, v)] ∧
@@ -546,7 +546,7 @@ theorem hInputs_eq (hin : InputOk P A logN trace)
   rw [hv]
   rfl
 
-theorem inputsOk_hInputs (hin : InputOk P A logN trace)
+theorem inputsOk_hInputs (hin : Fits P A logN trace)
     (hz : Ext.OutsideBase (hZeta P A logN trace pis)) (hfin : P.logFinalPolyLen ≤ logN)
     (alpha : EF) : InputsOk P (hInputs P A logN trace pis alpha) := by
   obtain ⟨v, hv, -, hl⟩ := hInputs_eq P A logN trace pis hin hz alpha
@@ -556,7 +556,7 @@ theorem inputsOk_hInputs (hin : InputOk P A logN trace)
   refine ⟨by omega, by rwa [Nat.add_sub_cancel], List.Pairwise.nil, fun w hw ↦ ?_⟩
   exact absurd hw List.not_mem_nil
 
-theorem hopen (hin : InputOk P A logN trace)
+theorem hopen (hin : Fits P A logN trace)
     (hz : Ext.OutsideBase (hZeta P A logN trace pis)) (alpha : EF) (index : Nat)
     (hidx : index < 2 ^ Nat.log2 (((hInputs P A logN trace pis alpha).map Array.size).headD 0)) :
     openInput P (Nat.log2 (((hInputs P A logN trace pis alpha).map Array.size).headD 0)) index
@@ -620,7 +620,7 @@ theorem flat_chunks (ms : List Mat) :
     simp only [List.map_cons, List.flatMap_cons, List.flatMap_append] at ih ⊢
     rw [ih, hItemC, flatMap_zip_openedOf]
 
-theorem flat_eq (hin : InputOk P A logN trace) :
+theorem flat_eq (hin : Fits P A logN trace) :
     (vRounds (prove P A logN trace pis) (hZeta P A logN trace pis)).flatMap
       (fun r ↦ r.2.flatMap fun x ↦ x.2.flatMap (·.2)) =
     ((hRounds P A logN trace pis).flatMap fun r ↦ r.2.flatMap (openedOf P.logBlowup)).flatMap
@@ -659,7 +659,7 @@ theorem same_hT2 : Same Transcript.init (hT2 P A logN trace pis) := by
   exact same_observeExts (same_sampleExt (same_observeList (same_sampleExt (same_observeList
     (same_observeList (same_observe (same_observe (same_observe ⟨rfl, rfl⟩ _) _) _) _) _)) _)) _
 
-theorem verifyRun_honest (hin : InputOk P A logN trace)
+theorem verifyRun_honest (hin : Fits P A logN trace)
     (hz : Ext.OutsideBase (hZeta P A logN trace pis))
     (hP : 0 < P.maxLogArity) (hq : 0 < P.numQueries) (hfin : P.logFinalPolyLen ≤ logN)
     (hgrind : ∀ c, ∀ bits ∈ [P.commitPowBits, P.queryPowBits],
@@ -688,21 +688,18 @@ theorem verifyRun_honest (hin : InputOk P A logN trace)
 
 end Honest
 
-/-- **Completeness.** The specification prover's proof of a trace that satisfies the AIR verifies,
-when the trace has the prover's shapes (`InputOk`), the constraints' degrees fit the quotient's
-chunks, FRI folds at least once per round down to a final polynomial no longer than the trace,
-with at least one query, the grinder finds witnesses, and the out-of-domain point lies outside the
-base field. -/
-theorem verify_prove (P : Params) (A : Air) (logN : Nat) (trace : Array F) (pis : List F)
-    (hin : InputOk P A logN trace) (hsat : A.Satisfied logN trace pis)
+/-- Completeness with every assumption spelled out; `completeness` (`CompStark/Complete.lean`)
+groups them. -/
+theorem verify_prove_of (P : Params) (A : Air) (logN : Nat) (trace : Array F) (pis : List F)
+    (hin : Fits P A logN trace) (hsat : A.ConstraintsVanish logN trace pis)
     (hdeg : A.DegreeFits logN) (hP : 0 < P.maxLogArity) (hq : 0 < P.numQueries)
     (hfin : P.logFinalPolyLen ≤ logN)
     (hgrind : ∀ c, ∀ bits ∈ [P.commitPowBits, P.queryPowBits],
       (Challenger.checkWitness Transcript.init.duplex c bits
         (Transcript.init.grinder c bits)).1 = true)
-    (hz : Ext.OutsideBase (zetaOf P A logN trace pis)) :
+    (hz : Ext.OutsideBase (outOfDomainPoint P A logN trace pis)) :
     verify P A (prove P A logN trace pis) pis = .ok () := by
-  rw [zetaOf_eq] at hz
+  rw [outOfDomainPoint_eq] at hz
   obtain ⟨t, hrun⟩ := verifyRun_honest P A logN trace pis hin hz hP hq hfin hgrind
   refine verify_ok_of P A _ pis _ _ t ?_ hrun ?_
   · rw [prove_eq]
