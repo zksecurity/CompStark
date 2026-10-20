@@ -10,7 +10,8 @@ public import CompStark.Stark.Air
 /-! # The STARK verifier
 
 Plonky3's `uni-stark` `verify` (revision `47e442f`) without preprocessed columns or zero
-knowledge, over KoalaBear with the two-adic FRI commitment scheme. `verifyWith` runs on any
+knowledge, over KoalaBear with challenges in the extension `EF` and the two-adic FRI commitment
+scheme. `verifyWith` runs on any
 challenger and Merkle hashes (`Primitives`); `verify` is it on Plonky3's Poseidon2 ones.
 
 * The proof's shape is checked first: the opened values' sizes, and FRI's fold arities, which must
@@ -32,7 +33,6 @@ namespace CompStark.Stark
 open CompStark.Fri
 
 local notation "F" => KoalaBear.Fast.Field
-local notation "EF" => KoalaBear.Fast.Ext4
 
 /-- The domains of the quotient chunks: the cosets `g · ω^i · ⟨ω^k⟩` of the quotient domain
 `g · ⟨ω⟩`, `ω` of order `2 ^ (degreeBits + logChunks)`, `k` the number of chunks. -/
@@ -40,24 +40,26 @@ def chunkDomains (degreeBits logChunks : Nat) : List Domain :=
   let w := twoAdicGen (degreeBits + logChunks)
   (List.range (2 ^ logChunks)).map fun i ↦ ⟨gen * powF w i, degreeBits⟩
 
+variable {EF : Type} [Challenge EF]
+
 /-- `Z_D(p) = (p / s) ^ |D| - 1` for `D = s · ⟨ω⟩`. -/
 def vanishingAt (d : Domain) (p : EF) : EF :=
   Ext.powTwo (p * Ext.ofBase d.shift⁻¹) d.logSize - 1
 
 /-- Plonky3's `recompose_quotient_from_chunks`: the quotient at `ζ` from the chunks' values, each
-the four base coordinates of a chunk at `ζ`. -/
+the `d` base coordinates of a chunk at `ζ`. -/
 def recompose (ds : List Domain) (chunks : List (Array EF)) (zeta : EF) : EF :=
   let zps := ds.map fun di ↦ (ds.filter (fun dj ↦ dj.shift != di.shift)).foldl
     (fun acc dj ↦ acc * vanishingAt dj zeta * (vanishingAt dj (Ext.ofBase di.shift))⁻¹) 1
   (zps.zip chunks).foldl (fun acc (zp, ch) ↦
-    acc + zp * ((List.range 4).foldl (fun s e ↦ s + Ext.basis e * ch.getD e 0) 0)) 0
+    acc + zp * ((List.range (Challenge.d EF)).foldl (fun s e ↦ s + Ext.basis e * ch.getD e 0) 0)) 0
 
 /-- The constraints folded by `α` at `ζ`, Horner style in constraint order. -/
 def foldedConstraints (A : Air) (env : Expr.Env EF) (alpha : EF) : EF :=
   A.constraints.foldl (fun acc c ↦ acc * alpha + c.eval env) 0
 
 /-- The constraint check at `ζ` on the trace domain of size `2 ^ degreeBits`. -/
-def checkConstraints (A : Air) (pis : List F) (opened : OpenedValues) (degreeBits : Nat)
+def checkConstraints (A : Air) (pis : List F) (opened : OpenedValues EF) (degreeBits : Nat)
     (zeta alpha quotient : EF) : Bool :=
   let gInv := Ext.ofBase (twoAdicGen degreeBits)⁻¹
   let zh := Ext.powTwo zeta degreeBits - 1
@@ -73,13 +75,14 @@ def checkConstraints (A : Air) (pis : List F) (opened : OpenedValues) (degreeBit
 
 /-- Verify a proof of `A` with public values `pis` on the primitives `H`. -/
 def verifyWith {m : Type → Type} [Monad m] (H : Primitives m) (P : Params) (A : Air)
-    (proof : Proof) (pis : List F) : m (Except String Unit) := ExceptT.run do
+    (proof : Proof EF) (pis : List F) : m (Except String Unit) := ExceptT.run do
   let db := proof.degreeBits
   let logChunks := A.logQuotientChunks
   let ds := chunkDomains db logChunks
   let o := proof.opened
   unless o.traceLocal.size == A.width && o.traceNext.size == A.width &&
-      o.quotientChunks.size == 2 ^ logChunks && o.quotientChunks.all (·.size == 4) do
+      o.quotientChunks.size == 2 ^ logChunks &&
+      o.quotientChunks.all (·.size == Challenge.d EF) do
     throw "invalid proof shape"
   unless arities proof.fri == foldArities P.maxLogArity (db - P.logFinalPolyLen) do
     throw "fold arities"
@@ -107,7 +110,7 @@ def verifyWith {m : Type → Type} [Monad m] (H : Primitives m) (P : Params) (A 
     throw "out-of-domain evaluation mismatch"
 
 /-- Plonky3's verifier: `verifyWith` on Poseidon2. -/
-def verify (P : Params) (A : Air) (proof : Proof) (pis : List F) : Except String Unit :=
+def verify (P : Params) (A : Air) (proof : Proof EF) (pis : List F) : Except String Unit :=
   verifyWith poseidon2 P A proof pis
 
 end CompStark.Stark

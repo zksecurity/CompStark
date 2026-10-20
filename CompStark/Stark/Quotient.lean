@@ -18,7 +18,6 @@ vanishing polynomial: the quotient the prover splits into chunks and commits.
 namespace CompStark.Stark
 
 local notation "F" => KoalaBear.Fast.Field
-local notation "EF" => KoalaBear.Fast.Ext4
 
 /-- A row-major matrix of base elements. -/
 structure Mat where
@@ -57,10 +56,10 @@ def evalBlock (tq : Mat) (n period : Nat) (pis : List F) (first last trans : Arr
 trace on the quotient domain in natural order. `Z_H` has period `2 ^ logChunks` there.
 
 As in Plonky3, constraint `k` of `K` is weighted by `α ^ (K - 1 - k)` (Horner's rule in
-constraint order), split into its four base coordinates, so that rows accumulate base-field
+constraint order), split into its `d` base coordinates, so that rows accumulate base-field
 products. Rows go in blocks, each node of a constraint one array operation per block. -/
-def quotientValues (A : Air) (pis : List F) (degreeBits logChunks : Nat) (tq : Mat) (alpha : EF) :
-    Array EF := Id.run do
+def quotientValues {EF : Type} [Challenge EF] (A : Air) (pis : List F) (degreeBits logChunks : Nat)
+    (tq : Mat) (alpha : EF) : Array EF := Id.run do
   let qlog := degreeBits + logChunks
   let n := 2 ^ qlog
   let xs := cosetPoints gen qlog
@@ -79,15 +78,14 @@ def quotientValues (A : Air) (pis : List F) (degreeBits logChunks : Nat) (tq : M
   let mut out := Array.emptyWithCapacity n
   for blk in [0:n / B] do
     let r0 := blk * B
-    let mut acc := #[Array.replicate B (0 : F), Array.replicate B 0, Array.replicate B 0,
-      Array.replicate B 0]
+    let mut acc := Array.replicate (Challenge.d EF) (Array.replicate B (0 : F))
     for (c, wk) in A.constraints.zip weights do
       let v := evalBlock tq n period pis first last trans r0 B c
       acc := (acc.zip wk.toArray).map fun (a, w) ↦ Array.zipWith (fun x y ↦ x + y * w) a v
     for i in [0:B] do
       let z := invZh.getD ((r0 + i) % period) 0
-      out := out.push (KoalaBear.Fast.Ext4.smul z
-        ⟨acc[0]!.getD i 0, acc[1]!.getD i 0, acc[2]!.getD i 0, acc[3]!.getD i 0⟩)
+      out := out.push (Challenge.smul z
+        (Challenge.ofCoeffs ((List.range (Challenge.d EF)).map fun j ↦ acc[j]!.getD i 0)))
   return out
 
 end CompStark.Stark

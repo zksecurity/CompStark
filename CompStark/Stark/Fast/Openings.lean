@@ -179,7 +179,7 @@ theorem coord_colSum (values : Array F) (w L j : Nat) {z : EF} (hz : Ext.Outside
 the row times the weight of its stored point. -/
 theorem openedAt_sum (b : Nat) (s : Mat) {z : EF} (hz : Ext.OutsideBase z) :
     Fri.openedAt b s z = Array.ofFn (n := s.width) fun j ↦
-      KoalaBear.Fast.cosetFactor (Nat.log2 s.height - b) gen z * mk4 fun c ↦
+      Fri.cosetFactor (Nat.log2 s.height - b) gen z * mk4 fun c ↦
         ∑ r ∈ Finset.range (2 ^ (Nat.log2 s.height - b)), s.values.getD (r * s.width + j.val) 0 *
           coord c (bw z ((cosetPointsBitRev gen (Nat.log2 s.height - b)).getD r 0)) := by
   rw [openedAt_eq]

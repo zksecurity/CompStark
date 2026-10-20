@@ -22,6 +22,7 @@ namespace CompStark.RandomOracle
 open CompStark.Stark OracleSpec OracleComp
 
 local notation "F" => KoalaBear.Fast.Field
+local notation "EF" => KoalaBear.Fast.Ext4
 
 variable {K : Nat}
 
@@ -39,7 +40,7 @@ theorem withAnswers_map {m n : Type → Type} [Monad m] [Monad n] [LawfulMonad m
 /-- Simulating the oracles of the verifier by `impl` runs the verifier on the answers of
 `impl`. -/
 theorem simulateQ_verifyWith {n : Type → Type} [Monad n] [LawfulMonad n]
-    (impl : QueryImpl (spec K) n) (P : Fri.Params) (A : Air) (proof : Proof) (pis : List F) :
+    (impl : QueryImpl (spec K) n) (P : Fri.Params) (A : Air) (proof : Proof EF) (pis : List F) :
     simulateQ impl (verifyWith (ideal K) P A proof pis) =
       verifyWith (withAnswers K impl) P A proof pis := by
   have h := verifyWith_map (simulateQ' impl) (ideal K) P A proof pis
@@ -53,7 +54,7 @@ abbrev idealLogged (answer : (q : Query) → Answer K q) :
 
 /-- **The verifier against an answer table** is the verifier on `idealOf`. -/
 theorem evalWithAnswerFn_verifyWith (answer : (q : Query) → Answer K q) (P : Fri.Params)
-    (A : Air) (proof : Proof) (pis : List F) :
+    (A : Air) (proof : Proof EF) (pis : List F) :
     evalWithAnswerFn (QueryImpl.ofFn answer) (verifyWith (ideal K) P A proof pis) =
       verifyWith (idealOf answer) P A proof pis :=
   simulateQ_verifyWith (QueryImpl.ofFn answer) P A proof pis
@@ -61,7 +62,7 @@ theorem evalWithAnswerFn_verifyWith (answer : (q : Query) → Answer K q) (P : F
 /-- **The verifier's queries against an answer table** are the log of the verifier on
 `idealLogged`. -/
 theorem tableQueryLog_verifyWith (answer : (q : Query) → Answer K q) (P : Fri.Params)
-    (A : Air) (proof : Proof) (pis : List F) :
+    (A : Air) (proof : Proof EF) (pis : List F) :
     tableQueryLog (verifyWith (ideal K) P A proof pis) answer =
       (verifyWith (idealLogged answer) P A proof pis).run.2 := by
   rw [tableQueryLog, simulateQ_verifyWith]
@@ -72,10 +73,11 @@ namespace CompStark.Iop.Setup
 open CompStark.Stark CompStark.RandomOracle OracleSpec OracleComp
 
 local notation "F" => KoalaBear.Fast.Field
+local notation "EF" => KoalaBear.Fast.Ext4
 
 variable (S : Setup KoalaBear.Fast.Ext4)
 
-theorem evalWithAnswerFn_verifyRo (answer : (q : Query) → Answer S.streamLen q) (proof : Proof)
+theorem evalWithAnswerFn_verifyRo (answer : (q : Query) → Answer S.streamLen q) (proof : Proof EF)
     (pis : List F) :
     evalWithAnswerFn (QueryImpl.ofFn answer) (S.verifyRo proof pis) =
       if proof.degreeBits = S.logN then verifyWith (idealOf answer) S.params S.air proof pis
@@ -85,7 +87,7 @@ theorem evalWithAnswerFn_verifyRo (answer : (q : Query) → Answer S.streamLen q
   · exact evalWithAnswerFn_verifyWith answer _ _ proof pis
   · rfl
 
-theorem tableQueryLog_verifyRo (answer : (q : Query) → Answer S.streamLen q) (proof : Proof)
+theorem tableQueryLog_verifyRo (answer : (q : Query) → Answer S.streamLen q) (proof : Proof EF)
     (pis : List F) :
     tableQueryLog (S.verifyRo proof pis) answer =
       if proof.degreeBits = S.logN then

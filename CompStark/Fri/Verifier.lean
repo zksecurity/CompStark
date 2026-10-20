@@ -11,8 +11,9 @@ public import CompStark.Stark.Field
 
 /-! # The FRI verifier of the two-adic commitment scheme
 
-Plonky3's `TwoAdicFriPcs::verify` and `verify_fri` (revision `47e442f`), over KoalaBear, on the
-challenger and Merkle hashes of primitives `H` (`Primitives`):
+Plonky3's `TwoAdicFriPcs::verify` and `verify_fri` (revision `47e442f`), over KoalaBear with
+challenges in the extension `EF`, on the challenger and Merkle hashes of primitives `H`
+(`Primitives`):
 
 * The verifier observes every opened value, samples the batching challenge `α`, and for every
   commit-phase commitment observes it, checks its grinding witness and samples a folding
@@ -30,7 +31,6 @@ namespace CompStark.Fri
 open CompStark.Stark CompStark.KoalaBear
 
 local notation "F" => KoalaBear.Fast.Field
-local notation "EF" => KoalaBear.Fast.Ext4
 
 /-- FRI parameters, as Plonky3's `FriParameters`. -/
 structure Params where
@@ -47,9 +47,9 @@ structure Domain where
   logSize : Nat
 
 /-- A commitment with, for each committed matrix, its domain and its claimed values at points. -/
-abbrev Round := Digest × List (Domain × List (EF × List EF))
+abbrev Round (EF : Type) := Digest × List (Domain × List (EF × List EF))
 
-variable {m : Type → Type} [Monad m]
+variable {m : Type → Type} [Monad m] {EF : Type} [Challenge EF]
 
 /-- The verifier's monad on primitives `H`: the challenger's state, failure with a reason, and
 the effects of `m`. -/
@@ -62,16 +62,20 @@ def observe (x : F) : M H Unit := modify (H.observe · x)
 def observeList (xs : List F) : M H Unit := modify (xs.foldl H.observe)
 /-- Observe extension elements, lowest coefficient first. -/
 def observeExts (xs : List EF) : M H Unit :=
-  modify (xs.foldl fun s x ↦ [x.c0, x.c1, x.c2, x.c3].foldl H.observe s)
+  modify (xs.foldl fun s x ↦ (Ext.coeffs x).foldl H.observe s)
 def sample : M H F := fun s ↦ ExceptT.lift (H.sample s)
+
+/-- Sample `n` base elements. -/
+def sampleList : Nat → M H (List F)
+  | 0 => pure []
+  | n + 1 => do
+    let a ← sample H
+    let r ← sampleList n
+    return a :: r
 
 /-- Sample an extension element, lowest coefficient first. -/
 def sampleExt : M H EF := do
-  let a ← sample H
-  let b ← sample H
-  let c ← sample H
-  let d ← sample H
-  return ⟨a, b, c, d⟩
+  return Challenge.ofCoeffs (← sampleList H (Challenge.d EF))
 
 /-- Sample the low `bits` bits of an element's canonical value. -/
 def sampleBits (bits : Nat) : M H Nat := do
@@ -104,7 +108,7 @@ def foldArities (maxLogArity : Nat) : Nat → List Nat
   decreasing_by omega
 
 /-- The fold arities of a proof, read off its first query. -/
-def arities (proof : FriProof) : List Nat :=
+def arities (proof : FriProof EF) : List Nat :=
   (proof.queries[0]?.map fun q ↦ q.steps.toList.map (·.logArity)).getD []
 
 /-- The value at `z` of the polynomial through `(xᵢ, yᵢ)`. -/
@@ -129,7 +133,7 @@ def foldRow (index logHeight logArity : Nat) (beta : EF) (evals : List EF) : EF 
 
 /-- The batched quotients of one query at `index`, by log height, tallest first. -/
 def openInput (H : Primitives m) (P : Params) (logMax index : Nat) (alpha : EF)
-    (inputs : List BatchOpening) (rounds : List Round) : M H (List (Nat × EF)) := do
+    (inputs : List BatchOpening) (rounds : List (Round EF)) : M H (List (Nat × EF)) := do
   ensure (inputs.length == rounds.length) "input batches"
   let mut ro : List (Nat × EF × EF) := []
   for (b, (commit, mats)) in inputs.zip rounds do
@@ -160,7 +164,7 @@ def openInput (H : Primitives m) (P : Params) (logMax index : Nat) (alpha : EF)
 
 /-- The folds of one query from the batched quotients `ro`, ending at the final height. -/
 def verifyQuery (H : Primitives m) (P : Params) (logMax : Nat) (index : Nat) (betas : List EF)
-    (commits : List Digest) (steps : List CommitStep) (ro : List (Nat × EF)) :
+    (commits : List Digest) (steps : List (CommitStep EF)) (ro : List (Nat × EF)) :
     M H (EF × Nat) := do
   let (h0, e0) ← match ro with
     | r :: _ => pure r
@@ -194,9 +198,9 @@ def verifyQuery (H : Primitives m) (P : Params) (logMax : Nat) (index : Nat) (be
   return (eval, index)
 
 /-- Plonky3's `verify_fri`, after the opened values were observed. -/
-def verifyFri (H : Primitives m) (P : Params) (proof : FriProof) (rounds : List Round) :
+def verifyFri (H : Primitives m) (P : Params) (proof : FriProof EF) (rounds : List (Round EF)) :
     M H Unit := do
-  let alpha ← sampleExt H
+  let alpha : EF ← sampleExt H
   let arities := arities proof
   ensure (proof.queries.all fun q ↦ q.steps.size == proof.commits.size &&
     q.steps.toList.map (·.logArity) == arities) "fold arities"
@@ -206,7 +210,7 @@ def verifyFri (H : Primitives m) (P : Params) (proof : FriProof) (rounds : List 
   for (c, w) in proof.commits.toList.zip proof.commitWitnesses.toList do
     observeList H c.toList
     ensure (← checkWitness H P.commitPowBits w) "commit witness"
-    betas := betas.push (← sampleExt H)
+    betas := betas.push (← sampleExt H : EF)
   ensure (proof.finalPoly.size == 2 ^ P.logFinalPolyLen) "final polynomial length"
   observeExts H proof.finalPoly.toList
   ensure (proof.queries.size == P.numQueries) "query count"
@@ -222,7 +226,7 @@ def verifyFri (H : Primitives m) (P : Params) (proof : FriProof) (rounds : List 
     ensure (expected == eval) "final polynomial mismatch"
 
 /-- Plonky3's `TwoAdicFriPcs::verify`: observe the opened values, then verify FRI. -/
-def verifyPcs (H : Primitives m) (P : Params) (rounds : List Round) (proof : FriProof) :
+def verifyPcs (H : Primitives m) (P : Params) (rounds : List (Round EF)) (proof : FriProof EF) :
     M H Unit := do
   for (_, mats) in rounds do
     for (_, pts) in mats do

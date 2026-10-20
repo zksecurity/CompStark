@@ -24,6 +24,7 @@ open OracleSpec OracleComp
 open scoped ENNReal
 
 local notation "F" => KoalaBear.Fast.Field
+local notation "EF" => KoalaBear.Fast.Ext4
 local notation "𝔽" => KoalaBear.Field
 
 /-! ### Logged computations on an answer table -/
@@ -74,7 +75,8 @@ variable (S : Iop.Setup KoalaBear.Fast.Ext4) (publicValues : List F)
 
 /-- The game of `run`: the prover, logged, then the verifier on its proof. -/
 def game (prover : NIProver S) :
-    OracleComp (spec S.streamLen) (Proof × QueryLog (spec S.streamLen) × Except String Unit) := do
+    OracleComp (spec S.streamLen) (Proof EF × QueryLog (spec S.streamLen) × Except String Unit) :=
+        do
   let (proof, log) ← (simulateQ loggingOracle prover).run
   return (proof, log, ← S.verifyRo proof publicValues)
 
@@ -118,7 +120,7 @@ variable (S : Iop.Setup KoalaBear.Fast.Ext4) (publicValues : List F) (δ δ' : N
 
 /-- The event of knowledge soundness: an accepted proof for `2 ^ logN` rows, no trace close to
 the committed one satisfying the AIR. -/
-def Unopened (result : Proof × QueryLog (spec S.streamLen) × Except String Unit) : Prop :=
+def Unopened (result : Proof EF × QueryLog (spec S.streamLen) × Except String Unit) : Prop :=
   result.2.2 = .ok () ∧ result.1.degreeBits = S.logN ∧
     ∀ trace ∈ closeTraces S δ' (committedTrace S result.2.1 result.1),
       ¬ S.air.Satisfied S.logN trace publicValues

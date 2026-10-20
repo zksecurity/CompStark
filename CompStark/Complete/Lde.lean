@@ -259,14 +259,15 @@ theorem reverseBits_low (L b i : Nat) (hi : i < 2 ^ L) :
 open KoalaBear.Fast (Ext4) in
 /-- The scale of the barycentric formula in the spec field. -/
 theorem toSpec_cosetFactor (L : Nat) (s : F) (z : EF) :
-    Ext4.toSpec (KoalaBear.Fast.cosetFactor L s z) =
+    Ext4.toSpec (Fri.cosetFactor L s z) =
       (Ext4.toSpec z ^ 2 ^ L - algebraMap KoalaBear.Field KoalaBear.Ext4
         (FastField.toField s) ^ 2 ^ L) * (((2 ^ L : Nat) : KoalaBear.Ext4) *
           algebraMap KoalaBear.Field KoalaBear.Ext4 (FastField.toField s) ^ 2 ^ L)⁻¹ := by
-  simp only [KoalaBear.Fast.cosetFactor]
-  rw [Ext4.toSpec_mul, Ext4.toSpec_sub, KoalaBear.Fast.Ext4.toSpec_powTwo, Ext4.toSpec_ofBase,
-    Ext4.toSpec_inv, Ext4.toSpec_ofBase, toField_mul, toField_natCast, toField_pow]
-  simp only [← CompPoly.Extension.Ext.algebraMap_eq_ofBase, map_mul, map_pow, map_natCast]
+  rw [← KoalaBear.toSpec_ext4, ← KoalaBear.toSpec_ext4 z]
+  simp only [Fri.cosetFactor, Challenge.toSpec_sub, Ext.toSpec_powTwo,
+    Challenge.toSpec_inv, Ext.ofBase, Challenge.toSpec_ofBase, toField_mul, toField_natCast,
+    toField_pow, ← CompPoly.Extension.Ext.algebraMap_eq_ofBase, map_mul, map_pow, map_natCast]
+  rfl
 
 open KoalaBear.Fast (Ext4) in
 /-- **Openings are evaluations**: the values `Fri.openedAt` computes from an LDE at a point

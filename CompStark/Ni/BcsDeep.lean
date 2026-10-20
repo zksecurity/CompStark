@@ -34,12 +34,12 @@ noncomputable def committedColumn (root : Digest) (j : Nat) (z : S.Point) : 𝔽
   FastField.toField ((leafRow cache S.logSize (reverseBits z.val S.logSize) root).getD j 0)
 
 /-- The trace words committed under the proof's trace commitment. -/
-noncomputable def traceWords (proof : Proof) : Fin S.air.width → S.Point → 𝔽 :=
+noncomputable def traceWords (proof : Proof EF) : Fin S.air.width → S.Point → 𝔽 :=
   fun j ↦ committedColumn S cache proof.traceCommit j
 
 /-- The quotient chunks' coordinate words committed under the proof's quotient commitment: chunk
 `c`'s coordinate `e` is column `4 c + e`. -/
-noncomputable def quotientWords (proof : Proof) :
+noncomputable def quotientWords (proof : Proof EF) :
     Fin S.chunks → Fin (Challenge.d EF) → S.Point → 𝔽 :=
   fun c e ↦ committedColumn S cache proof.quotientCommit (4 * c.val + e.val)
 
@@ -144,7 +144,7 @@ theorem domain_finMod (index : Nat) :
 verifier's rounds pass their checks (`BatchOk`), on a proof of the expected shape whose trace and
 quotient commitments bind, `openInput`'s batched quotient at the batching challenge `a` is the
 DEEP word of the extracted trace and quotient words and the opened values at `rev index`. -/
-theorem deepWord_eq (H : Primitives Id) (proof : Proof) (zeta a : EF) (α : 𝕂)
+theorem deepWord_eq (H : Primitives Id) (proof : Proof EF) (zeta a : EF) (α : 𝕂)
     (hdb : proof.degreeBits = S.logN)
     (htl : proof.opened.traceLocal.size = S.air.width)
     (htn : proof.opened.traceNext.size = S.air.width)

@@ -386,7 +386,7 @@ def openedAt (logBlowup : Nat) (m : PMat) (zs : List EF) : List (Array EF) :=
   let sums := tasks.foldl (fun acc t ↦ (acc.zip t.get).map fun (a, b) ↦ Words.addWords a b w)
     (Array.replicate (4 * zs.length) (CompPoly.CPolynomial.NTTFast.Packed.Native.zeroWords w))
   zs.zipIdx.map fun (z, k) ↦
-    let factor := KoalaBear.Fast.cosetFactor logH gen z
+    let factor := Fri.cosetFactor logH gen z
     Array.ofFn (n := w) fun j ↦
       factor * ⟨word (sums.getD (4 * k) .empty) j, word (sums.getD (4 * k + 1) .empty) j,
         word (sums.getD (4 * k + 2) .empty) j, word (sums.getD (4 * k + 3) .empty) j⟩
@@ -542,7 +542,7 @@ def leaves (k : Nat) (v : EVec) : PMat :=
 def addScaled (a b : EVec) (x : EF) : EVec := a.add (b.smul x)
 
 /-- The fast backend. -/
-def backend : Backend where
+def backend : Backend EF where
   transcript := transcript
   M := PMat
   C := Commit
@@ -574,7 +574,7 @@ def ldePlans (logN logBlowup logChunks : Nat) :
 /-- The fast backend with the extension plans and quotient tables of a proof of a `2 ^ logN`-row
 trace and `2 ^ logChunks` quotient chunks prepared: the trace's extension on `g · ⟨ω_N⟩` and every
 chunk's. -/
-def backendFor (logN logBlowup logChunks : Nat) : Backend :=
+def backendFor (logN logBlowup logChunks : Nat) : Backend EF :=
   let T := quotientTables logN logChunks
   { backend with
     lde := ldeWith (ldePlans logN logBlowup logChunks)

@@ -23,6 +23,7 @@ namespace CompStark.Stark.Fast
 open CompStark.Fri
 
 local notation "F" => KoalaBear.Fast.Field
+local notation "EF" => KoalaBear.Fast.Ext4
 
 /-- The fast backend refines the specification. -/
 def backendFor_refines (logN logBlowup logChunks : Nat) :
@@ -59,10 +60,10 @@ it produces the specification's proof, unless the out-of-domain point `ζ` lands
 (probability about `2 ^ -93`), where both provers divide by zero and compute different garbage. -/
 theorem prove_fast {params : Params} {air : Air} {logN : Nat} {trace : Array F}
     (publicValues : List F) (input : InputOk params air logN trace)
-    (outOfDomain : Ext.OutsideBase (outOfDomainPoint params air logN trace publicValues)) :
+    (outOfDomain : Ext.OutsideBase (outOfDomainPoint EF params air logN trace publicValues)) :
     proveWith (backendFor logN params.logBlowup air.logQuotientChunks) params air logN trace
         publicValues =
-      prove params air logN trace publicValues :=
+      prove EF params air logN trace publicValues :=
   proveWith_refines (backendFor_refines _ _ _) publicValues input outOfDomain
 
 end CompStark.Stark.Fast

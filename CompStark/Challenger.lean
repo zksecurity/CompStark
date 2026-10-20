@@ -5,7 +5,7 @@ Released under Apache 2.0 license as described in the file LICENSE.
 module
 
 public import CompStark.Hash.Sponge
-public import CompPoly.Fields.KoalaBear.FastExt4
+public import CompStark.Stark.Challenge
 
 /-! # The duplex challenger
 
@@ -16,7 +16,8 @@ Plonky3's `DuplexChallenger`, the Fiat–Shamir transcript of its STARK prover a
   first `rate` coordinates become the output buffer.
 * A sample permutes first if there is pending input or no output left, then takes the last element
   of the output buffer.
-* Extension elements are observed and sampled coefficient by coefficient, lowest first.
+* Extension elements (`Challenge`) are observed and sampled coefficient by coefficient, lowest
+  first.
 * `sampleBits` keeps the low bits of a sample's canonical value. A grinding witness `w` for `bits`
   is one whose observation makes the next `sampleBits bits` zero; `grind` finds the smallest.
 -/
@@ -80,7 +81,6 @@ end Challenger
 namespace KoalaBear
 
 local notation "F" => _root_.KoalaBear.Fast.Field
-local notation "EF" => _root_.KoalaBear.Fast.Ext4
 
 /-- Plonky3's `DuplexChallenger<KoalaBear, Poseidon2KoalaBear<24>, 24, 16>`. -/
 def duplex : Duplex F 24 where
@@ -124,8 +124,10 @@ def observe (t : Transcript) (x : F) : Transcript :=
 def observeList (t : Transcript) (xs : List F) : Transcript :=
   { t with state := Challenger.observeList t.duplex t.state xs }
 
+variable {EF : Type} [Challenge EF]
+
 /-- Observe an extension element, lowest coefficient first. -/
-def observeExt (t : Transcript) (x : EF) : Transcript := observeList t [x.c0, x.c1, x.c2, x.c3]
+def observeExt (t : Transcript) (x : EF) : Transcript := observeList t (Challenge.coeffs x)
 
 /-- Observe extension elements in order. -/
 def observeExts (t : Transcript) (xs : List EF) : Transcript := xs.foldl observeExt t
@@ -135,13 +137,25 @@ def sample (t : Transcript) : F × Transcript :=
   let (x, c) := Challenger.sample t.duplex t.state
   (x, { t with state := c })
 
-/-- Sample an extension element, lowest coefficient first. -/
-def sampleExt (t : Transcript) : EF × Transcript :=
-  let (a, t) := sample t
-  let (b, t) := sample t
-  let (d, t) := sample t
-  let (e, t) := sample t
-  (⟨a, b, d, e⟩, t)
+/-- Sample `n` base elements. -/
+def sampleList (t : Transcript) : Nat → List F × Transcript
+  | 0 => ([], t)
+  | n + 1 =>
+    let a := sample t
+    let r := sampleList a.2 n
+    (a.1 :: r.1, r.2)
+
+/-- The extension element `sampleExt` samples. -/
+@[irreducible] def sampleExtValue (t : Transcript) : EF :=
+  Challenge.ofCoeffs (sampleList t (Challenge.d EF)).1
+
+/-- The transcript after `sampleExt`. -/
+@[irreducible] def sampleExtState (EF : Type) [Challenge EF] (t : Transcript) : Transcript :=
+  (sampleList t (Challenge.d EF)).2
+
+/-- Sample an extension element, lowest coefficient first. The value and the state are separate
+irreducible definitions, so that checking a proof about them never evaluates the permutation. -/
+def sampleExt (t : Transcript) : EF × Transcript := (sampleExtValue t, sampleExtState EF t)
 
 /-- Sample `bits` low bits. -/
 def sampleBits (t : Transcript) (bits : Nat) : Nat × Transcript :=

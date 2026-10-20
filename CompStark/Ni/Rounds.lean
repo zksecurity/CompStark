@@ -93,7 +93,7 @@ theorem getElem_flatMap_four {α : Type} (L : List (List α)) (hL : ∀ l ∈ L,
       simp only [hl, show 4 * (c + 1) + e - 4 = 4 * c + e by omega, this,
         List.getElem_cons_succ]
 
-theorem openingsAt_coeffs (S : Iop.Setup KoalaBear.Fast.Ext4) (o : OpenedValues)
+theorem openingsAt_coeffs (S : Iop.Setup KoalaBear.Fast.Ext4) (o : OpenedValues EF)
     (htl : o.traceLocal.size = S.air.width) (htn : o.traceNext.size = S.air.width)
     (hqc : o.quotientChunks.size = S.chunks) (hq4 : ∀ ch ∈ o.quotientChunks, ch.size = 4) :
     openingsAt S (coeffs (openedValues o)) = openingsOf S o := by

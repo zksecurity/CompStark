@@ -245,7 +245,8 @@ def main (args : List String) : IO UInt32 := do
     -- `prove (spec|fast) (fib|wide) LOG_N LOG_BLOWUP LOG_FINAL MAX_LOG_ARITY QUERIES COMMIT_POW
     -- QUERY_POW [JSON]`: the proof's median time, checked against Plonky3's proof in `JSON` if
     -- given.
-    let B := if backend == "fast" then CompStark.Stark.Fast.backend else CompStark.Fri.Backend.spec
+    let B := if backend == "fast" then CompStark.Stark.Fast.backend else
+      CompStark.Fri.Backend.spec KoalaBear.Fast.Ext4
     let ps := (rest.take 7).map String.toNat!
     let [logN, b, f, a, q, cp, qp] := ps | IO.eprintln "seven parameters"; return 1
     let P : CompStark.Fri.Params := ⟨b, f, a, q, cp, qp⟩
@@ -256,7 +257,8 @@ def main (args : List String) : IO UInt32 := do
     let B := if backend == "fast" then
       CompStark.Stark.Fast.backendFor logN b A.logQuotientChunks else B
     if let path :: _ := rest.drop 7 then
-      let rust ← IO.ofExcept (CompStark.Stark.Json.parse (← IO.FS.readFile path))
+      let rust ← IO.ofExcept
+        (CompStark.Stark.Json.parse (EF := KoalaBear.Fast.Ext4) (← IO.FS.readFile path))
       unless CompStark.Stark.proveWith B P A logN trace pis == rust do
         IO.eprintln "proof differs from Plonky3's"; return 1
       IO.println "proof matches Plonky3's"

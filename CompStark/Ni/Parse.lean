@@ -50,11 +50,11 @@ def witnessInput (bits : Nat) (w : F) : List F := if bits = 0 then [] else [w]
 
 /-- The opened values in the order the verifier observes them: the trace at `ζ`, the trace at
 `ζ ω`, and every quotient chunk. -/
-def openedValues (o : OpenedValues) : List EF :=
+def openedValues (o : OpenedValues EF) : List EF :=
   o.traceLocal.toList ++ o.traceNext.toList ++ o.quotientChunks.toList.flatMap (·.toList)
 
 /-- The elements the verifier observes on `proof` before each squeeze, round by round. -/
-def inputs (P : Fri.Params) (pis : List F) (proof : Proof) : List (List F) :=
+def inputs (P : Fri.Params) (pis : List F) (proof : Proof EF) : List (List F) :=
   ([(proof.degreeBits : F), (proof.degreeBits : F), 0] ++ proof.traceCommit.toList ++ pis) ::
   proof.quotientCommit.toList ::
   coeffs (openedValues proof.opened) ::
@@ -324,13 +324,13 @@ theorem out_observe (x : F) (s : Sponge) :
     out answer (observe Hl x) s = (.ok ((), ⟨s.cap, s.input ++ [x], []⟩), []) := rfl
 
 theorem foldl_observeExts (xs : List EF) (s : Sponge) :
-    xs.foldl (fun s x ↦ [x.c0, x.c1, x.c2, x.c3].foldl (Hl).observe s) s =
+    xs.foldl (fun s x ↦ (Ext.coeffs x).foldl (Hl).observe s) s =
       (coeffs xs).foldl (Hl).observe s := by
   induction xs generalizing s with
   | nil => rfl
   | cons x xs ih =>
     rw [List.foldl_cons, ih]
-    simp only [coeffs, List.flatMap_cons, List.foldl_append]
+    simp only [coeffs, Ext.coeffs, KoalaBear.coeffs_ext4, List.flatMap_cons, List.foldl_append]
 
 theorem out_observeExts (xs : List EF) (s : Sponge) :
     out answer (observeExts Hl xs) s =
@@ -340,16 +340,17 @@ theorem out_observeExts (xs : List EF) (s : Sponge) :
 /-- Four samples left: an extension sample takes them. -/
 theorem out_sampleExt_pop (cap : Digest) (input : List F) (samples : List F)
     (h : 4 ≤ samples.length) :
-    ∃ v, out answer (sampleExt Hl) ⟨cap, input, samples⟩ =
+    ∃ v, out answer (sampleExt Hl : M Hl EF) ⟨cap, input, samples⟩ =
       (.ok (v, ⟨cap, input, samples.drop 4⟩), []) := by
   match samples, h with
   | a :: b :: c :: d :: rest, _ =>
-    exact ⟨⟨a, b, c, d⟩, by simp only [sampleExt, out_bind, out_sample_cons, out_pure,
-      List.append_nil, List.drop_succ_cons, List.drop_zero]⟩
+    exact ⟨Challenge.ofCoeffs [a, b, c, d], by
+      simp only [sampleExt, KoalaBear.d_ext4, sampleList, out_bind, out_sample_cons, out_pure,
+        List.append_nil, List.drop_succ_cons, List.drop_zero]⟩
 
 /-- No samples left: an extension sample duplexes and takes four samples of the answer. -/
 theorem out_sampleExt_nil (hK : 4 ≤ K) (cap : Digest) (input : List F) :
-    ∃ v, out answer (sampleExt Hl) ⟨cap, input, []⟩ =
+    ∃ v, out answer (sampleExt Hl : M Hl EF) ⟨cap, input, []⟩ =
       (.ok (v, ⟨(answer (.duplex cap input)).1, [],
         (answer (.duplex cap input)).2.toList.drop 4⟩),
         [⟨.duplex cap input, answer (.duplex cap input)⟩]) := by
@@ -358,9 +359,10 @@ theorem out_sampleExt_nil (hK : 4 ≤ K) (cap : Digest) (input : List F) :
     omega
   match hL : (answer (.duplex cap input)).2.toList, hlen with
   | a :: b :: c :: d :: rest, _ =>
-    refine ⟨⟨a, b, c, d⟩, ?_⟩
-    simp only [sampleExt, out_bind, out_sample_nil, hL, List.headD_cons, List.tail_cons,
-      out_sample_cons, out_pure, List.append_nil, List.drop_succ_cons, List.drop_zero]
+    refine ⟨Challenge.ofCoeffs [a, b, c, d], ?_⟩
+    simp only [sampleExt, KoalaBear.d_ext4, sampleList, out_bind, out_sample_nil, hL,
+      List.headD_cons, List.tail_cons, out_sample_cons, out_pure, List.append_nil,
+      List.drop_succ_cons, List.drop_zero]
 
 /-- A loop whose every step from a state satisfying `Inv` yields, keeps `Inv` at the next step
 and queries `q` of its step logs `q` of every step. -/
@@ -477,7 +479,7 @@ theorem logsRounds_left {blocks : List (List F)} {lo hi : Nat} {w₁ w₂ : Quer
 /-- FRI's rounds: from the batching round `r` on, with its input observed, the verifier queries
 the batching round, every fold round and the query round. -/
 theorem verifyFri_logs (hK : P.numQueries + 5 ≤ K) (blocks : List (List F)) (r : Nat)
-    (proof : FriProof) (rounds : List Round) (hne : arities proof ≠ [])
+    (proof : FriProof EF) (rounds : List (Round EF)) (hne : arities proof ≠ [])
     (hfold : ∀ j (hj : j < (proof.commits.toList.zip proof.commitWitnesses.toList).length),
       blocks.getD (r + 1 + j) [] =
         (proof.commits.toList.zip proof.commitWitnesses.toList)[j].1.toList ++
@@ -677,7 +679,7 @@ theorem out_forIn_state {γ : Type} (l : List γ) (body : γ → PUnit → M Hl 
     rfl
 
 /-- The values of the rounds of a commitment scheme opening, in order. -/
-def roundValues (rounds : List Fri.Round) : List EF :=
+def roundValues (rounds : List (Fri.Round EF)) : List EF :=
   rounds.flatMap fun r ↦ r.2.flatMap fun m ↦ m.2.flatMap (·.2)
 
 theorem foldl_coeffs_flatMap {γ : Type} (l : List γ) (f : γ → List EF) (s : Sponge) :
@@ -692,7 +694,7 @@ theorem foldl_coeffs_flatMap {γ : Type} (l : List γ) (f : γ → List EF) (s :
 /-- The commitment scheme: from the round `r` before it, with its values the input of round `r`,
 the verifier queries every round of FRI. -/
 theorem verifyPcs_logs (hK : P.numQueries + 5 ≤ K) (blocks : List (List F)) (r : Nat)
-    (proof : FriProof) (rounds : List Fri.Round) (hne : arities proof ≠ [])
+    (proof : FriProof EF) (rounds : List (Fri.Round EF)) (hne : arities proof ≠ [])
     (hfold : ∀ j (hj : j < (proof.commits.toList.zip proof.commitWitnesses.toList).length),
       blocks.getD (r + 1 + j) [] =
         (proof.commits.toList.zip proof.commitWitnesses.toList)[j].1.toList ++
@@ -757,7 +759,7 @@ theorem coeffs_ne_nil {xs : List EF} (h : xs ≠ []) : coeffs xs ≠ [] := by
   obtain ⟨x, xs, rfl⟩ := List.exists_cons_of_ne_nil h
   simp only [coeffs, List.flatMap_cons, List.cons_append, ne_eq, reduceCtorEq, not_false_eq_true]
 
-theorem inputs_getD_fold (P : Fri.Params) (pis : List F) (proof : Proof) (j : Nat)
+theorem inputs_getD_fold (P : Fri.Params) (pis : List F) (proof : Proof EF) (j : Nat)
     (hj : j < (proof.fri.commits.toList.zip proof.fri.commitWitnesses.toList).length) :
     (inputs P pis proof).getD (2 + 1 + j) [] =
       (proof.fri.commits.toList.zip proof.fri.commitWitnesses.toList)[j].1.toList ++
@@ -768,7 +770,7 @@ theorem inputs_getD_fold (P : Fri.Params) (pis : List F) (proof : Proof) (j : Na
   simp only [List.getElem?_cons_succ, List.getElem?_map, List.getElem?_eq_getElem hj,
     Option.map_some, Option.getD_some]
 
-theorem inputs_getD_last (P : Fri.Params) (pis : List F) (proof : Proof) :
+theorem inputs_getD_last (P : Fri.Params) (pis : List F) (proof : Proof EF) :
     (inputs P pis proof).getD
       (2 + 1 + (proof.fri.commits.toList.zip proof.fri.commitWitnesses.toList).length) [] =
       coeffs proof.fri.finalPoly.toList ++
@@ -779,7 +781,7 @@ theorem inputs_getD_last (P : Fri.Params) (pis : List F) (proof : Proof) :
   simp only [List.length_cons, List.length_map, show ∀ n, 2 + 1 + n - (n + 1 + 1 + 1) = 0 from
     fun n ↦ by omega, List.getElem?_cons_zero, Option.getD_some]
 
-theorem length_inputs (P : Fri.Params) (pis : List F) (proof : Proof) :
+theorem length_inputs (P : Fri.Params) (pis : List F) (proof : Proof EF) :
     (inputs P pis proof).length =
       2 + 2 + (proof.fri.commits.toList.zip proof.fri.commitWitnesses.toList).length := by
   simp only [inputs, List.length_cons, List.length_append, List.length_map, List.length_nil]
@@ -803,7 +805,7 @@ theorem run_stateT_bind {α β : Type} (x : M (idealLogged answer) α) (s : Spon
 /-- **The verifier queries every round.** If the verifier on the logged answers accepts a proof
 that folds at least once, its log holds the duplex call of every round of the proof's
 schedule. -/
-theorem verifyWith_logs (hK : P.numQueries + 5 ≤ K) (A : Air) (proof : Proof) (pis : List F)
+theorem verifyWith_logs (hK : P.numQueries + 5 ≤ K) (A : Air) (proof : Proof EF) (pis : List F)
     (hfolds : P.logFinalPolyLen < proof.degreeBits)
     (hok : (verifyWith (idealLogged answer) P A proof pis).run.1 = .ok ()) :
     LogsRounds answer (inputs P pis proof) 0 (inputs P pis proof).length
@@ -920,7 +922,8 @@ theorem verifyWith_logs (hK : P.numQueries + 5 ≤ K) (A : Air) (proof : Proof) 
           Array.mem_toList_iff, Array.toList_eq_nil_iff] at h
         have := h.2 _ hmem
         rw [this] at h4
-        exact absurd h4 (by simp only [Array.size_empty, OfNat.zero_ne_ofNat, not_false_eq_true])
+        exact absurd h4 (by
+          simp only [Array.size_empty, KoalaBear.d_ext4, OfNat.zero_ne_ofNat, not_false_eq_true])
     · simp only [ExceptT.run_bind, ExceptT.run_throw, pure_bind] at hok
       cases hok
   · simp only [ExceptT.run_bind, ExceptT.run_throw, pure_bind] at hok
@@ -947,7 +950,7 @@ theorem consistent_tableQueryLog {α : Type} (oa : OracleComp (spec K) α) :
     · exact ih _ e he
 
 /-- The verifier on logged answers gives the verifier on the answers, and its log. -/
-theorem run_idealLogged (P : Fri.Params) (A : Air) (proof : Proof) (pis : List F) :
+theorem run_idealLogged (P : Fri.Params) (A : Air) (proof : Proof EF) (pis : List F) :
     (verifyWith (idealLogged answer) P A proof pis).run =
       (verifyWith (idealOf answer) P A proof pis,
         tableQueryLog (verifyWith (ideal K) P A proof pis) answer) := by
@@ -963,7 +966,7 @@ variable (S : Iop.Setup KoalaBear.Fast.Ext4) (answer : (q : Query) → Answer S.
 
 /-- **The verifier queries every round.** If the verifier accepts a proof for `2 ^ logN` rows on
 the answers `answer`, the duplex call of every round of the proof's schedule is in its log. -/
-theorem hasRounds_verifyWith (proof : Proof) (pis : List F) (hdb : proof.degreeBits = S.logN)
+theorem hasRounds_verifyWith (proof : Proof EF) (pis : List F) (hdb : proof.degreeBits = S.logN)
     (hok : verifyWith (idealOf answer) S.params S.air proof pis = .ok ()) :
     HasRounds answer (tableQueryLog (verifyWith (ideal S.streamLen) S.params S.air proof pis)
       answer) (inputs S.params pis proof) (inputs S.params pis proof).length := by
@@ -976,7 +979,7 @@ theorem hasRounds_verifyWith (proof : Proof) (pis : List F) (hdb : proof.degreeB
 answers `answer`, and its duplex calls answer distinct capacities, none the initial one, then its
 log before round `i`'s call parses that call to the rounds before it and its input: the
 proof's prefix up to round `i`. -/
-theorem parse_verifyWith (proof : Proof) (pis : List F) (hdb : proof.degreeBits = S.logN)
+theorem parse_verifyWith (proof : Proof EF) (pis : List F) (hdb : proof.degreeBits = S.logN)
     (hok : verifyWith (idealOf answer) S.params S.air proof pis = .ok ())
     (hinj : CapsInjective answer
       (tableQueryLog (verifyWith (ideal S.streamLen) S.params S.air proof pis) answer))

@@ -30,8 +30,7 @@ theorem size_chunkValues (qs : Array EF) (stride c n : Nat) :
     Nat.add_sub_cancel, Nat.div_one]
   show Array.size (List.foldl _ _ _) = _
   suffices h : ∀ (l : List Nat) (init : Array F), (l.foldl (fun out r ↦
-      ((((out.push (qs.getD (r * stride + c) 0).c0).push (qs.getD (r * stride + c) 0).c1).push
-        (qs.getD (r * stride + c) 0).c2).push (qs.getD (r * stride + c) 0).c3)) init).size =
+      out ++ (Ext.coeffs (qs.getD (r * stride + c) 0)).toArray) init).size =
       init.size + 4 * l.length by
     rw [h, List.length_range', Array.emptyWithCapacity_eq, Array.size_empty, Nat.zero_add]
   intro l
@@ -39,8 +38,9 @@ theorem size_chunkValues (qs : Array EF) (stride c n : Nat) :
   | nil => intro _; rfl
   | cons r l ih =>
     intro init
+    have h4 : (Ext.coeffs (qs.getD (r * stride + c) 0)).length = 4 := Challenge.length_coeffs _
     rw [List.foldl_cons, ih]
-    simp only [Array.size_push, List.length_cons]
+    simp only [Array.size_append, List.size_toArray, h4, List.length_cons]
     omega
 
 theorem addressable_mono {m n : Nat} (h : m ≤ n) (hn : Addressable n) : Addressable m := by
@@ -80,13 +80,14 @@ structure InputOk (P : Params) (A : Air) (logN : Nat) (trace : Array F) : Prop w
   /-- The extended trace and quotient are addressable by `USize` word indices. -/
   mem : Addressable (2 ^ (logN + P.logBlowup) * (A.width + 4 * 2 ^ A.logQuotientChunks))
 
-variable {B : Backend}
+variable {B : Backend EF}
 
 theorem commitAndSample_refines (h : Refines B) {P : Params} {A : Air} {logN : Nat}
     {trace : Array F} (pis : List F) (hin : InputOk P A logN trace) :
     RelM (fun x y ↦ h.RM x.1 y.1 ∧ h.RC x.2.1 y.2.1 ∧ List.Forall₂ h.RM x.2.2.1 y.2.2.1 ∧
         h.RC x.2.2.2.1 y.2.2.2.1 ∧ x.2.2.2.2 = y.2.2.2.2 ∧ MatOk y.1 ∧ ∀ m ∈ y.2.2.1, MatOk m)
-      (commitAndSample B P A logN trace pis) (commitAndSample Backend.spec P A logN trace pis) := by
+      (commitAndSample B P A logN trace pis) (commitAndSample (Backend.spec EF) P A logN trace
+          pis) := by
   obtain ⟨htrace, hw, hcols, hlog, hchunks, hmem⟩ := hin
   have hH : 2 ^ (logN + P.logBlowup) ≤ 2 ^ 24 := Nat.pow_le_pow_right (by decide) hlog
   have hmw : Addressable (2 ^ (logN + P.logBlowup) * A.width) :=
@@ -113,35 +114,36 @@ theorem commitAndSample_refines (h : Refines B) {P : Params} {A : Air} {logN : N
   have hq : 2 ^ (logN + A.logQuotientChunks) ≤ (ldeRef logN P.logBlowup gen A.width trace).height :=
     heh ▸ Nat.pow_le_pow_right (by decide) (by omega)
   rw [h.quotient _ _ _ _ _ hext hextOk hq (hew ▸ hcols)]
-  generalize Backend.spec.quotient _ _ _ _ _ _ = qs
+  generalize (Backend.spec EF).quotient _ _ _ _ _ _ = qs
   -- The quotient's chunks.
   have hchOk : ∀ c, MatOk (ldeRef logN P.logBlowup
-      (gen * (gen * powF (twoAdicGen (logN + A.logQuotientChunks)) c)⁻¹) 4
+      (gen * (gen * powF (twoAdicGen (logN + A.logQuotientChunks)) c)⁻¹) (Challenge.d EF)
       (chunkValues qs (2 ^ A.logQuotientChunks) c (2 ^ logN))) := fun c ↦ by
     obtain ⟨h1, h2, h3⟩ := shape_ldeRef logN P.logBlowup
-      (gen * (gen * powF (twoAdicGen (logN + A.logQuotientChunks)) c)⁻¹) 4
+      (gen * (gen * powF (twoAdicGen (logN + A.logQuotientChunks)) c)⁻¹) (Challenge.d EF)
       (chunkValues qs (2 ^ A.logQuotientChunks) c (2 ^ logN))
     exact ⟨by rw [h1]; decide, ⟨_, hlog, h2⟩, by rw [h3, h1, h2],
       by rw [h1, h2, Nat.mul_comm]; exact hm4⟩
   have hch : List.Forall₂ h.RM
       ((List.range (2 ^ A.logQuotientChunks)).map fun c ↦
-        B.lde logN P.logBlowup (gen * (gen * powF (twoAdicGen (logN + A.logQuotientChunks)) c)⁻¹) 4
+        B.lde logN P.logBlowup (gen * (gen * powF (twoAdicGen (logN + A.logQuotientChunks)) c)⁻¹)
+          (Challenge.d EF)
           (chunkValues qs (2 ^ A.logQuotientChunks) c (2 ^ logN)))
       ((List.range (2 ^ A.logQuotientChunks)).map fun c ↦
-        Backend.spec.lde logN P.logBlowup
-          (gen * (gen * powF (twoAdicGen (logN + A.logQuotientChunks)) c)⁻¹) 4
+        (Backend.spec EF).lde logN P.logBlowup
+          (gen * (gen * powF (twoAdicGen (logN + A.logQuotientChunks)) c)⁻¹) (Challenge.d EF)
           (chunkValues qs (2 ^ A.logQuotientChunks) c (2 ^ logN))) :=
-    forall₂_map (fun _ _ hc ↦ hc ▸ h.lde _ _ _ _ _ (by rw [size_chunkValues, Nat.mul_comm])
+    forall₂_map (fun _ _ hc ↦ hc ▸ h.lde _ _ _ _ _ (by rw [size_chunkValues, Nat.mul_comm]; rfl)
       hlog hm4) (List.forall₂_same.2 fun _ _ ↦ rfl)
   have hall : ∀ m ∈ ((List.range (2 ^ A.logQuotientChunks)).map fun c ↦
-      Backend.spec.lde logN P.logBlowup
-        (gen * (gen * powF (twoAdicGen (logN + A.logQuotientChunks)) c)⁻¹) 4
+      (Backend.spec EF).lde logN P.logBlowup
+        (gen * (gen * powF (twoAdicGen (logN + A.logQuotientChunks)) c)⁻¹) (Challenge.d EF)
         (chunkValues qs (2 ^ A.logQuotientChunks) c (2 ^ logN))), MatOk m ∧
         m.height = 2 ^ (logN + P.logBlowup) := fun m hm ↦ by
     obtain ⟨c, -, rfl⟩ := List.mem_map.mp hm
     exact ⟨hchOk c, (shape_ldeRef ..).2.1⟩
-  have hwsum : ∀ (l : List Nat) (acc : Nat), (l.map fun c ↦ Backend.spec.lde logN P.logBlowup
-      (gen * (gen * powF (twoAdicGen (logN + A.logQuotientChunks)) c)⁻¹) 4
+  have hwsum : ∀ (l : List Nat) (acc : Nat), (l.map fun c ↦ (Backend.spec EF).lde logN P.logBlowup
+      (gen * (gen * powF (twoAdicGen (logN + A.logQuotientChunks)) c)⁻¹) (Challenge.d EF)
       (chunkValues qs (2 ^ A.logQuotientChunks) c (2 ^ logN))).foldl (· + ·.width) acc =
       acc + 4 * l.length := by
     intro l
@@ -165,11 +167,12 @@ theorem commitAndSample_refines (h : Refines B) {P : Params} {A : Air} {logN : N
 specification's. -/
 theorem openAndAssemble_refines (h : Refines B) (P : Params) {logN : Nat}
     (hlog : logN ≤ 24) {x : B.M × B.C × List B.M × B.C × EF}
-    {y : Backend.spec.M × Backend.spec.C × List Backend.spec.M × Backend.spec.C × EF}
+    {y : (Backend.spec EF).M × (Backend.spec EF).C × List (Backend.spec EF).M × (Backend.spec EF).C
+        × EF}
     (hR : h.RM x.1 y.1 ∧ h.RC x.2.1 y.2.1 ∧ List.Forall₂ h.RM x.2.2.1 y.2.2.1 ∧
       h.RC x.2.2.2.1 y.2.2.2.1 ∧ x.2.2.2.2 = y.2.2.2.2 ∧ MatOk y.1 ∧ ∀ m ∈ y.2.2.1, MatOk m)
     (hz : Ext.OutsideBase y.2.2.2.2) :
-    RelM Eq (openAndAssemble B P logN x) (openAndAssemble Backend.spec P logN y) := by
+    RelM Eq (openAndAssemble B P logN x) (openAndAssemble (Backend.spec EF) P logN y) := by
   obtain ⟨ext, traceC, chunks, quotC, zeta⟩ := x
   obtain ⟨ext', traceC', chunks', quotC', zeta'⟩ := y
   obtain ⟨hext, hct, hch, hqc, hzz, hextOk, hchOk⟩ := hR
@@ -201,11 +204,11 @@ theorem openAndAssemble_refines (h : Refines B) (P : Params) {logN : Nat}
 shapes, when the specification's opening point `ζ` lies outside the base field. -/
 theorem proveWith_refines (h : Refines B) {P : Params} {A : Air} {logN : Nat} {trace : Array F}
     (pis : List F) (hin : InputOk P A logN trace)
-    (hz : Ext.OutsideBase (outOfDomainPoint P A logN trace pis)) :
-    proveWith B P A logN trace pis = prove P A logN trace pis := by
+    (hz : Ext.OutsideBase (outOfDomainPoint EF P A logN trace pis)) :
+    proveWith B P A logN trace pis = prove EF P A logN trace pis := by
   unfold prove proveWith
   rw [h.transcript, RelM.run_bind, RelM.run_bind]
-  obtain ⟨hR, ht⟩ := commitAndSample_refines h pis hin Backend.spec.transcript
+  obtain ⟨hR, ht⟩ := commitAndSample_refines h pis hin (Backend.spec EF).transcript
   rw [ht]
   exact (openAndAssemble_refines h P (by have := hin.twoAdic; omega) hR hz _).1
 

@@ -40,6 +40,7 @@ open Polynomial Montgomery.Native32 Fri.Spec OracleSpec OracleComp
 open KoalaBear.Fast (Ext4)
 
 local notation "F" => KoalaBear.Fast.Field
+local notation "EF" => KoalaBear.Fast.Ext4
 
 /-! ### First occurrences -/
 
@@ -137,7 +138,7 @@ def BadAt (log : QueryLog (spec S.streamLen)) (p : Nat) (hp : p < log.length) : 
 answers, accepts a proof for `2 ^ logN` rows, and no trace close to the trace committed in `log`
 satisfies the AIR, then some query of the run is fresh and clashes or is round-bad. -/
 theorem exists_badAt (hδ' : (δ' : ℝ) < 1 - S.rate) (answer : (q : Query) → Answer S.streamLen q)
-    (proof : Proof) (log : QueryLog (spec S.streamLen)) (hcons : Consistent answer log)
+    (proof : Proof EF) (log : QueryLog (spec S.streamLen)) (hcons : Consistent answer log)
     (hdb : proof.degreeBits = S.logN)
     (hok : verifyWith (idealOf answer) S.params S.air proof publicValues = .ok ())
     (hsmall : 3 * (log ++ tableQueryLog

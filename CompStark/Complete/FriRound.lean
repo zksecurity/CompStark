@@ -79,21 +79,38 @@ theorem evals_answer (a pos : Nat) (hpos : pos < a) (ev : List EF) (eval : EF)
     · subst_vars; rfl
     · rw [hs (j - 1) (by omega), ite_eq_right (by omega), Nat.sub_add_cancel (by omega)]
 
-/-- Four coefficients at a time read back extension elements. -/
-theorem unflatten_cons (a b c d : F) (xs : List F) :
-    unflatten (a :: b :: c :: d :: xs) = ⟨a, b, c, d⟩ :: unflatten xs := by
+/-- `d` coefficients at a time read back extension elements. -/
+theorem unflatten_append {K : Type} [Challenge K] (x : K) (xs : List F) :
+    unflatten (Ext.coeffs x ++ xs) = x :: unflatten xs := by
+  have hd : 0 < Challenge.d K := (Challenge.params K).d_pos
+  have hl : (Ext.coeffs x).length = Challenge.d K := Challenge.length_coeffs x
   unfold unflatten
-  rw [show (a :: b :: c :: d :: xs).length / 4 = xs.length / 4 + 1 by
-    simp only [List.length_cons]; omega, List.range_succ_eq_map, List.map_cons, List.map_map]
+  rw [show (Ext.coeffs x ++ xs).length / Challenge.d K = xs.length / Challenge.d K + 1 by
+    rw [List.length_append, hl, Nat.add_comm, Nat.add_div_right _ hd],
+    List.range_succ_eq_map, List.map_cons, List.map_map]
   congr 1
+  · conv_rhs => rw [← Challenge.ofCoeffs_coeffs x]
+    congr 1
+    refine List.ext_getElem (by rw [List.length_map, List.length_range, hl]) fun j h1 _ ↦ ?_
+    rw [List.length_map, List.length_range] at h1
+    rw [List.getElem_map, List.getElem_range, Nat.mul_zero, Nat.zero_add,
+      List.getD_append _ _ _ _ (by rw [hl]; exact h1), List.getD_eq_getElem]
+  · refine List.map_congr_left fun i _ ↦ ?_
+    simp only [Function.comp_apply]
+    congr 1
+    refine List.map_congr_left fun j hj ↦ ?_
+    rw [List.mem_range] at hj
+    rw [List.getD_append_right _ _ _ _ (by rw [hl]; nlinarith), hl]
+    congr 1
+    rw [Nat.mul_succ]
+    omega
 
-theorem unflatten_flatMap (l : List EF) : unflatten (l.flatMap Ext.coeffs) = l := by
+theorem unflatten_flatMap {K : Type} [Challenge K] (l : List K) :
+    unflatten (l.flatMap Ext.coeffs) = l := by
   induction l with
-  | nil => rfl
-  | cons x l ih =>
-    rw [List.flatMap_cons]
-    show unflatten (x.c0 :: x.c1 :: x.c2 :: x.c3 :: l.flatMap Ext.coeffs) = _
-    rw [unflatten_cons, ih]
+  | nil => simp only [unflatten, List.flatMap_nil, List.length_nil, Nat.zero_div, List.range_zero,
+      List.map_nil]
+  | cons x l ih => rw [List.flatMap_cons, unflatten_append, ih]
 
 theorem getD_flatMap_coeffs (A : Array EF) (t : Nat) (ht : t < 4 * A.size) :
     (A.flatMap fun x ↦ (Ext.coeffs x).toArray).getD t 0 =
@@ -107,9 +124,9 @@ theorem getD_flatMap_coeffs (A : Array EF) (t : Nat) (ht : t < 4 * A.size) :
 
 /-- Row `r` of a round's leaves is the coefficients of the group of `r`. -/
 theorem rowOf_leaves (f : Array EF) (la r : Nat) (hr : (r + 1) * 2 ^ la ≤ f.size) :
-    (rowOf (Backend.spec.leaves (2 ^ la) f) r).toList =
+    (rowOf ((Backend.spec EF).leaves (2 ^ la) f) r).toList =
       ((List.range (2 ^ la)).map fun k ↦ f.getD (r * 2 ^ la + k) 0).flatMap Ext.coeffs := by
-  have hrow : rowOf (Backend.spec.leaves (2 ^ la) f) r =
+  have hrow : rowOf ((Backend.spec EF).leaves (2 ^ la) f) r =
       (Array.ofFn (n := 2 ^ la) fun k ↦ f.getD (r * 2 ^ la + k.val) 0).flatMap
         fun x ↦ (Ext.coeffs x).toArray := by
     rw [Fast.flatMap_coeffs (2 ^ la) (fun k ↦ f.getD (r * 2 ^ la + k) 0)]
@@ -131,7 +148,7 @@ theorem rowOf_leaves (f : Array EF) (la r : Nat) (hr : (r + 1) * 2 ^ la ≤ f.si
 group of `idx`, and whose opening verifies. -/
 theorem answer_round (f : Array EF) (h la idx : Nat) (hs : f.size = 2 ^ h) (hla : la ≤ h)
     (hidx : idx < 2 ^ h) :
-    let c := Committed.ofMats [Backend.spec.leaves (2 ^ la) f]
+    let c := Committed.ofMats [(Backend.spec EF).leaves (2 ^ la) f]
     let o := c.openAt (idx >>> la)
     let pos := idx % 2 ^ la
     let ev := unflatten ((o.values.getD 0 #[]).toList)
@@ -154,10 +171,10 @@ theorem answer_round (f : Array EF) (h la idx : Nat) (hs : f.size = 2 ^ h) (hla 
   have hrb : (idx >>> la + 1) * 2 ^ la ≤ f.size := by
     rw [hs, hhl]; exact Nat.mul_le_mul_right _ hrlt
   set G := (List.range (2 ^ la)).map fun k ↦ f.getD ((idx >>> la) * 2 ^ la + k) 0 with hG
-  have hm : (Backend.spec.leaves (2 ^ la) f).height = 2 ^ (h - la) := by
+  have hm : ((Backend.spec EF).leaves (2 ^ la) f).height = 2 ^ (h - la) := by
     show f.size / 2 ^ la = _
     rw [hs, hhl, Nat.mul_div_cancel _ hapos]
-  have hvals : o.values = #[rowOf (Backend.spec.leaves (2 ^ la) f) (idx >>> la)] :=
+  have hvals : o.values = #[rowOf ((Backend.spec EF).leaves (2 ^ la) f) (idx >>> la)] :=
     openAt_values _ (h - la) (fun m hm' ↦ by rw [List.mem_singleton.mp hm']; exact hm) _
   have hev : ev = G := by
     show unflatten ((o.values.getD 0 #[]).toList) = G
@@ -178,7 +195,8 @@ theorem answer_round (f : Array EF) (h la idx : Nat) (hs : f.size = 2 ^ h) (hla 
   refine ⟨?_, hevals, ?_⟩
   · show (List.map _ _).toArray.size = _
     rw [List.size_toArray, List.length_map, length_filter_range _ _ hpos]
-  · have hv := verifyBatch_openAt [Backend.spec.leaves (2 ^ la) f] (h - la) (List.cons_ne_nil _ _)
+  · have hv := verifyBatch_openAt [(Backend.spec EF).leaves (2 ^ la) f] (h - la) (List.cons_ne_nil
+      _ _)
       (fun m hm' ↦ by
         rw [List.mem_singleton.mp hm']
         refine ⟨hm, ?_⟩

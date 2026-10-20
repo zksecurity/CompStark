@@ -131,7 +131,7 @@ theorem obsMats_eq (H : Primitives Id) (mats : List (Domain × List (EF × List 
   | cons m mats ih => rw [List.foldl_cons, ih, obsPts_eq, List.flatMap_cons, coeffs_append,
       obsList_append]
 
-theorem obsOpened_eq (H : Primitives Id) (s : H.State) (rounds : List Round) :
+theorem obsOpened_eq (H : Primitives Id) (s : H.State) (rounds : List (Round EF)) :
     obsOpened H s rounds = obsList H s (coeffs (roundValues rounds)) := by
   induction rounds generalizing s with
   | nil => rfl
@@ -140,13 +140,14 @@ theorem obsOpened_eq (H : Primitives Id) (s : H.State) (rounds : List Round) :
       show roundValues (r :: rounds) = r.2.flatMap (fun m ↦ m.2.flatMap (·.2)) ++
         roundValues rounds from List.flatMap_cons, coeffs_append, obsList_append]
 
-theorem roundValues_vRounds (proof : Proof) (zeta : EF) :
+theorem roundValues_vRounds (proof : Proof EF) (zeta : EF) :
     roundValues (vRounds proof zeta) = openedValues proof.opened := by
   simp only [roundValues, vRounds, openedValues, List.flatMap_cons, List.flatMap_nil,
     List.append_nil, List.flatMap_map, List.append_assoc]
 
 /-- An accepted proof of `2 ^ logN` rows opens values and has a final polynomial. -/
-theorem nonempty_of_verify (S : Iop.Setup KoalaBear.Fast.Ext4) (H : Primitives Id) (proof : Proof)
+theorem nonempty_of_verify (S : Iop.Setup KoalaBear.Fast.Ext4) (H : Primitives Id) (proof : Proof
+    EF)
     (pis : List F)
     (hdb : proof.degreeBits = S.logN) (h : verifyWith H S.params S.air proof pis = .ok ()) :
     openedValues proof.opened ≠ [] ∧ proof.fri.finalPoly.toList ≠ [] := by
@@ -171,7 +172,8 @@ theorem nonempty_of_verify (S : Iop.Setup KoalaBear.Fast.Ext4) (H : Primitives I
 /-- The committed trace of the design (`Iop.committedTrace`) is the extracted trace words on the
 log's cache. -/
 theorem committedTrace_eq (S : Iop.Setup KoalaBear.Fast.Ext4) (log : QueryLog (spec S.streamLen))
-    (proof : Proof) : Iop.committedTrace S log proof = traceWords S (Iop.logCache log) proof := by
+    (proof : Proof EF) : Iop.committedTrace S log proof = traceWords S (Iop.logCache log) proof :=
+        by
   funext j z
   simp only [Iop.committedTrace, traceWords, committedColumn, leafRow]
   split <;> rename_i h <;> rw [h]
@@ -187,7 +189,7 @@ theorem digest_toList_ne_nil (d : Digest) : d.toList ≠ [] := by
   exact absurd this (by decide)
 
 section Rounds
-variable (P : Params) (proof : Proof) (pis : List F)
+variable (P : Params) (proof : Proof EF) (pis : List F)
 
 theorem stateAlpha_idealOf :
     stateAlpha (idealOf answer) proof pis =

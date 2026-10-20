@@ -119,7 +119,7 @@ theorem committedFunction_friOracles (cache : Merkle.Cache F Digest) (commits : 
 
 /-! ### A fold's opened group is the extracted word -/
 
-theorem groupOf_getD (s : CommitStep) (index : Nat) (eval : EF) (k : Nat)
+theorem groupOf_getD (s : CommitStep EF) (index : Nat) (eval : EF) (k : Nat)
     (hk : k < 2 ^ s.logArity) :
     (groupOf s index eval).getD k 0 =
       if k < index % 2 ^ s.logArity then s.siblings.getD k 0
@@ -127,19 +127,19 @@ theorem groupOf_getD (s : CommitStep) (index : Nat) (eval : EF) (k : Nat)
   rw [groupOf, List.getD_eq_getElem _ _ (by rw [List.length_map, List.length_range]; exact hk),
     List.getElem_map, List.getElem_range]
 
-theorem groupOf_pos (s : CommitStep) (index : Nat) (eval : EF) :
+theorem groupOf_pos (s : CommitStep EF) (index : Nat) (eval : EF) :
     (groupOf s index eval).getD (index % 2 ^ s.logArity) 0 = eval := by
   rw [groupOf_getD s index eval _ (Nat.mod_lt _ (Nat.two_pow_pos _))]
   simp only [lt_irrefl, ↓reduceIte]
 
-theorem length_groupOf (s : CommitStep) (index : Nat) (eval : EF) :
+theorem length_groupOf (s : CommitStep EF) (index : Nat) (eval : EF) :
     (groupOf s index eval).length = 2 ^ s.logArity := by
   rw [groupOf, List.length_map, List.length_range]
 
 /-- **An accepted fold opens the extracted word.** If fold `x` passes its checks at index `I` of
 height `2 ^ m` and its commitment binds, the extracted word holds the opened group around `I`. -/
 theorem friWordAt_group (cache : Merkle.Cache F Digest) (H : Primitives Id)
-    (x : (EF × Digest) × CommitStep) (e : EF) (I m : Nat) (hI : I < 2 ^ m)
+    (x : (EF × Digest) × CommitStep EF) (e : EF) (I m : Nat) (hI : I < 2 ^ m)
     (ha : x.2.logArity ≤ m) (hok : StepOk H x (e, I, m)) (hbind : Binding cache H x.1.2)
     (k : Nat) (hk : k < 2 ^ x.2.logArity) :
     friWordAt cache x.1.2 m x.2.logArity
@@ -171,7 +171,7 @@ theorem finMod_val {m r : Nat} (hr : r < 2 ^ m) : (finMod m r).val = r := Nat.mo
 
 /-- An accepted fold's commitment holds the running value at the query's index. -/
 theorem friWordAt_eval (cache : Merkle.Cache F Digest) (H : Primitives Id)
-    (x : (EF × Digest) × CommitStep) (st : EF × Nat × Nat) (m : Nat) (hm : st.2.2 = m)
+    (x : (EF × Digest) × CommitStep EF) (st : EF × Nat × Nat) (m : Nat) (hm : st.2.2 = m)
     (hI : st.2.1 < 2 ^ m) (ha : x.2.logArity ≤ m) (hok : StepOk H x st)
     (hbind : Binding cache H x.1.2) :
     friWordAt cache x.1.2 m x.2.logArity (reverseBits st.2.1 m) = Ext4.toSpec st.1 := by
@@ -185,7 +185,7 @@ theorem friWordAt_eval (cache : Merkle.Cache F Digest) (H : Primitives Id)
 /-- An accepted fold computes ArkLib's fold of the extracted word, at the scaled challenge, at the
 `2 ^ arity`-th power of the query's point. -/
 theorem foldStep_eq_foldValue (cache : Merkle.Cache F Digest) (H : Primitives Id) (n : Nat)
-    (hn : n ≤ 24) (p : Nat) (x : (EF × Digest) × CommitStep) (st : EF × Nat × Nat)
+    (hn : n ≤ 24) (p : Nat) (x : (EF × Digest) × CommitStep EF) (st : EF × Nat × Nat)
     (hm : st.2.2 = n - p) (hI : st.2.1 < 2 ^ (n - p)) (ha : p + x.2.logArity ≤ n)
     (hok : StepOk H x st) (hbind : Binding cache H x.1.2) :
     Ext4.toSpec (foldStep x st).1 =
@@ -273,7 +273,7 @@ their checks from the batched value `e0`, against binding commitments, and whose
 the final polynomial at the last index, passes every ArkLib round check of the extracted oracles
 at the extracted challenges, and the initial oracle holds `e0` at its point. -/
 theorem query_checks (cache : Merkle.Cache F Digest) (H : Primitives Id) (betas : List EF)
-    (commits : List Digest) (steps : List CommitStep) (coeffs : Array EF)
+    (commits : List Digest) (steps : List (CommitStep EF)) (coeffs : Array EF)
     (harity : steps.map (·.logArity) = S.foldArities.map PNat.val)
     (hbl : betas.length = steps.length) (hcl : commits.length = steps.length)
     (hbind : ∀ c ∈ commits, Binding cache H c) (I : Nat) (hI : I < 2 ^ S.logSize) (e0 : EF)

@@ -980,10 +980,15 @@ theorem chunkValues_eq (qs : Array EF) (stride c n : Nat) :
     Nat.add_sub_cancel, Nat.div_one]
   show List.foldl _ _ _ = _
   have hbody : (fun (out : Array F) (r : Nat) ↦
-      ((((out.push (qs.getD (r * stride + c) 0).c0).push (qs.getD (r * stride + c) 0).c1).push
-        (qs.getD (r * stride + c) 0).c2).push (qs.getD (r * stride + c) 0).c3)) =
+      out ++ (Ext.coeffs (qs.getD (r * stride + c) 0)).toArray) =
       fun out r ↦ (List.range' 0 4).foldl
-        (fun o i ↦ o.push (Fast.coord i (qs.getD (r * stride + c) 0))) out := rfl
+        (fun o i ↦ o.push (Fast.coord i (qs.getD (r * stride + c) 0))) out := by
+    funext out r
+    simp only [Ext.coeffs, KoalaBear.coeffs_ext4, List.range', List.foldl_cons, List.foldl_nil,
+      Fast.coord]
+    apply Array.ext'
+    simp only [Array.toList_append, Array.toList_push, List.append_assoc, List.cons_append,
+      List.nil_append]
   rw [hbody, foldl_blocks (fun r i ↦ Fast.coord i (qs.getD (r * stride + c) 0)) 4 n 0,
     Array.emptyWithCapacity_eq, Array.empty_append]
   simp only [Nat.zero_add]
@@ -1320,7 +1325,7 @@ theorem trace_lde (P : Params) (A : Air) (logN : Nat) (trace : Array F)
 /-- `checkConstraints` as a function. Rewriting with it, rather than unfolding the definition at
 its arguments, keeps the kernel from evaluating the final `==` on symbolic extension elements. -/
 theorem checkConstraints_eq_fun : checkConstraints = fun (A : Air) (pis : List F)
-    (opened : OpenedValues) (degreeBits : Nat) (zeta alpha quotient : EF) ↦
+    (opened : OpenedValues EF) (degreeBits : Nat) (zeta alpha quotient : EF) ↦
   let gInv := Ext.ofBase (twoAdicGen degreeBits)⁻¹
   let zh := Ext.powTwo zeta degreeBits - 1
   let env : Expr.Env EF := {
@@ -1335,7 +1340,7 @@ theorem checkConstraints_eq_fun : checkConstraints = fun (A : Air) (pis : List F
 
 /-- The check passes when the folded constraints over `Z_H(ζ)` equal the quotient in the spec
 field. -/
-theorem checkConstraints_of (A : Air) (pis : List F) (o : OpenedValues) (logN : Nat)
+theorem checkConstraints_of (A : Air) (pis : List F) (o : OpenedValues EF) (logN : Nat)
     (zeta alpha quotient : EF)
     (h : Ext4.toSpec (foldedConstraints A {
       cur := fun i ↦ o.traceLocal.getD i 0
@@ -1360,7 +1365,7 @@ theorem checkConstraints_honest (P : Params) (A : Air) (logN : Nat) (trace : Arr
     let chunks := (List.range (2 ^ lc)).map fun c ↦
       ldeRef logN P.logBlowup (gen * (gen * powF (twoAdicGen (logN + lc)) c)⁻¹) 4
         (chunkValues qs (2 ^ lc) c (2 ^ logN))
-    let o : OpenedValues := ⟨Fri.openedAt P.logBlowup ext zeta,
+    let o : OpenedValues EF := ⟨Fri.openedAt P.logBlowup ext zeta,
       Fri.openedAt P.logBlowup ext (zeta * Ext.ofBase (twoAdicGen logN)),
       (chunks.map fun m ↦ Fri.openedAt P.logBlowup m zeta).toArray⟩
     checkConstraints A pis o logN zeta alpha
@@ -1456,7 +1461,7 @@ theorem honest_shape (P : Params) (A : Air) (logN : Nat) (trace : Array F) (pis 
     let chunks := (List.range (2 ^ lc)).map fun c ↦
       ldeRef logN P.logBlowup (gen * (gen * powF (twoAdicGen (logN + lc)) c)⁻¹) 4
         (chunkValues qs (2 ^ lc) c (2 ^ logN))
-    let o : OpenedValues := ⟨Fri.openedAt P.logBlowup ext zeta,
+    let o : OpenedValues EF := ⟨Fri.openedAt P.logBlowup ext zeta,
       Fri.openedAt P.logBlowup ext (zeta * Ext.ofBase (twoAdicGen logN)),
       (chunks.map fun m ↦ Fri.openedAt P.logBlowup m zeta).toArray⟩
     (o.traceLocal.size == A.width && o.traceNext.size == A.width &&

@@ -93,15 +93,15 @@ abbrev baryWeights (logH : Nat) (z : EF) : Array EF :=
 
 theorem openedAt_eq (b : Nat) (m : Mat) (z : EF) :
     Fri.openedAt b m z = Array.ofFn (n := m.width) fun j ↦
-      KoalaBear.Fast.cosetFactor (Nat.log2 m.height - b) gen z *
+      Fri.cosetFactor (Nat.log2 m.height - b) gen z *
         colSum m.values (bitRevPerm (Nat.log2 m.height - b)) (baryWeights (Nat.log2 m.height - b) z)
           m.width (2 ^ (Nat.log2 m.height - b)) j.val := by
   unfold Fri.openedAt
   dsimp only
-  refine parChunks_eq _ _ _ (fun j ↦ KoalaBear.Fast.cosetFactor (Nat.log2 m.height - b) gen z *
+  refine parChunks_eq _ _ _ (fun j ↦ Fri.cosetFactor (Nat.log2 m.height - b) gen z *
     colSum m.values (bitRevPerm (Nat.log2 m.height - b)) (baryWeights (Nat.log2 m.height - b) z)
       m.width (2 ^ (Nat.log2 m.height - b)) j) (fun s len _ ↦ ?_) ?_
-  · rw [weightedColumns_eq]
+  · rw [weightedColumns_eq]; rfl
   · by_cases h : m.width = 0
     · exact Or.inr h
     · exact Or.inl (Nat.lt_min.mpr ⟨Nat.pos_of_ne_zero h, by decide⟩)

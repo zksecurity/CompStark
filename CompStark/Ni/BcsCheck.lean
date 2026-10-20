@@ -26,7 +26,7 @@ local notation "𝔽" => KoalaBear.Field
 local notation "𝕂" => Challenge.Spec KoalaBear.Fast.Ext4
 
 /-- The opened values of a proof as the interactive oracle proof's openings, in the spec field. -/
-noncomputable def openingsOf (S : Iop.Setup KoalaBear.Fast.Ext4) (o : OpenedValues) :
+noncomputable def openingsOf (S : Iop.Setup KoalaBear.Fast.Ext4) (o : OpenedValues EF) :
     Openings S where
   traceAt j := Ext4.toSpec (o.traceLocal.getD j 0)
   traceNext j := Ext4.toSpec (o.traceNext.getD j 0)
@@ -57,7 +57,7 @@ theorem selectorAt_eq (S : Iop.Setup KoalaBear.Fast.Ext4) (ζ : 𝕂) (c : Fin S
   rfl
 
 /-- The spec value of chunk `c` is the verifier's (`chunkInner`). -/
-theorem chunkAt_openingsOf (S : Iop.Setup KoalaBear.Fast.Ext4) (o : OpenedValues)
+theorem chunkAt_openingsOf (S : Iop.Setup KoalaBear.Fast.Ext4) (o : OpenedValues EF)
     (c : Fin S.chunks) :
     chunkAt (openingsOf S o) c = Ext4.toSpec (chunkInner (o.quotientChunks.getD c #[])) := by
   rw [toSpec_chunkInner, chunkAt, ← Fin.sum_univ_eq_sum_range]
@@ -68,7 +68,7 @@ theorem chunkAt_openingsOf (S : Iop.Setup KoalaBear.Fast.Ext4) (o : OpenedValues
 /-- **The constraint check.** If the verifier's check at `ζ` passes on opened values with
 `2 ^ logQuotientChunks` chunks, the constraints hold at `ζ` in the spec field. -/
 theorem constraintsHoldAt_of_check (S : Iop.Setup KoalaBear.Fast.Ext4) (pis : List F)
-    (o : OpenedValues)
+    (o : OpenedValues EF)
     (zeta alpha : EF) (hqc : o.quotientChunks.size = S.chunks)
     (h : checkConstraints S.air pis o S.logN zeta alpha
       (recompose (chunkDomains S.logN S.air.logQuotientChunks) o.quotientChunks.toList zeta) =

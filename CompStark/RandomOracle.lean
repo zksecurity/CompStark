@@ -101,6 +101,7 @@ open CompStark.Stark CompStark.RandomOracle OracleSpec OracleComp
 
 local notation "𝔽" => KoalaBear.Field
 local notation "F" => KoalaBear.Fast.Field
+local notation "EF" => KoalaBear.Fast.Ext4
 
 namespace Setup
 variable (S : Setup KoalaBear.Fast.Ext4)
@@ -125,7 +126,7 @@ def verifierQueries : Nat :=
     S.params.numQueries * (1 + (S.friArities.length + 2) * S.openingQueries)
 
 /-- The verifier in the random-oracle model, on proofs for `2 ^ logN` rows. -/
-def verifyRo (proof : Proof) (publicValues : List F) :
+def verifyRo (proof : Proof EF) (publicValues : List F) :
     OracleComp (spec S.streamLen) (Except String Unit) :=
   if proof.degreeBits = S.logN then
     verifyWith (ideal S.streamLen) S.params S.air proof publicValues
@@ -135,13 +136,13 @@ end Setup
 
 /-- A non-interactive prover for `S`: a computation with oracle access to the hashes that outputs
 a proof. Provers are deterministic; a randomized prover is a mixture of deterministic ones. -/
-abbrev NIProver (S : Setup KoalaBear.Fast.Ext4) := OracleComp (spec S.streamLen) Proof
+abbrev NIProver (S : Setup KoalaBear.Fast.Ext4) := OracleComp (spec S.streamLen) (Proof EF)
 
 /-- Run `prover`, logging its queries, then the verifier on its proof, against one random
 oracle. -/
 noncomputable def run (S : Setup KoalaBear.Fast.Ext4) (publicValues : List F) (prover : NIProver S)
     :
-    ProbComp (Proof × QueryLog (spec S.streamLen) × Except String Unit) :=
+    ProbComp (Proof EF × QueryLog (spec S.streamLen) × Except String Unit) :=
   (simulateQ randomOracle do
     let (proof, log) ← (simulateQ loggingOracle prover).run
     return (proof, log, ← S.verifyRo proof publicValues)).run' ∅
@@ -155,7 +156,7 @@ def logCache {K : Nat} (log : QueryLog (spec K)) : Merkle.Cache F Digest where
 row of the tree on `L` at the leaf of each point (Plonky3's bit-reversed order), zero where `log`
 holds no preimage. -/
 noncomputable def committedTrace (S : Setup KoalaBear.Fast.Ext4) (log : QueryLog (spec S.streamLen))
-    (proof : Proof) :
+    (proof : Proof EF) :
     Fin S.air.width → S.Point → 𝔽 := fun column point ↦
   let depth := S.logN + S.params.logBlowup
   match Merkle.extractRow (logCache log) depth (reverseBits point depth) proof.traceCommit with

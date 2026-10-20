@@ -25,6 +25,7 @@ namespace CompStark.Stark
 open CompStark.Fri
 
 local notation "F" => KoalaBear.Fast.Field
+local notation "EF" => KoalaBear.Fast.Ext4
 
 /-- A configuration the prover supports: an AIR, FRI parameters and traces of `2 ^ logN` rows. -/
 structure ValidConfig (params : Params) (air : Air) (logN : Nat) : Prop where
@@ -50,12 +51,12 @@ structure NoBadLuck (params : Params) (air : Air) (logN : Nat) (trace : Array F)
   /-- The out-of-domain point `ζ` (`outOfDomainPoint`), a random element of the quartic
   extension, does not lie in the base field. It does with probability about `2 ^ -93`; then
   `ζ - x` vanishes for some point `x` of the domains and the openings divide by zero. -/
-  outOfDomain : Ext.OutsideBase (outOfDomainPoint params air logN trace publicValues)
+  outOfDomain : Ext.OutsideBase (outOfDomainPoint EF params air logN trace publicValues)
   /-- Every proof-of-work search of the honest run finds a witness (`proveTranscript` records a
   failed search, where Plonky3's grinder would panic). A search for `b` bits tries every field
   element, each a witness with probability `2 ^ -b`, so it fails with probability about
   `exp (-2 ^ (31 - b))`. -/
-  grinding : (proveTranscript params air logN trace publicValues).grindFailed = false
+  grinding : (proveTranscript EF params air logN trace publicValues).grindFailed = false
 
 /-- **Completeness.** For a valid configuration and an honest run without bad luck, if the trace
 satisfies the AIR, the honest prover's proof verifies. -/
@@ -63,7 +64,7 @@ theorem completeness {params : Params} {air : Air} {logN : Nat} {trace : Array F
     {publicValues : List F} (config : ValidConfig params air logN)
     (luck : NoBadLuck params air logN trace publicValues) :
     air.Satisfied logN trace publicValues →
-      verify params air (prove params air logN trace publicValues) publicValues = .ok () :=
+      verify params air (prove EF params air logN trace publicValues) publicValues = .ok () :=
   fun sat ↦ verify_prove_of params air logN trace publicValues
     ⟨sat.size, config.colsInWidth, config.twoAdic, config.chunksFit⟩ sat.vanish config.degreeFits
     config.folds config.queries config.finalPolyFits luck.grinding luck.outOfDomain

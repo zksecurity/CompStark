@@ -27,7 +27,7 @@ variable {K : Nat} (answer : (q : Query) → Answer K q)
 
 /-- **The first call.** If the verifier on logged answers accepts, its log starts with the duplex
 call of the first round. -/
-theorem verifyWith_log_head (hK : 4 ≤ K) (P : Fri.Params) (A : Air) (proof : Proof)
+theorem verifyWith_log_head (hK : 4 ≤ K) (P : Fri.Params) (A : Air) (proof : Proof EF)
     (pis : List F) (hok : (verifyWith (idealLogged answer) P A proof pis).run.1 = .ok ()) :
     ∃ rest, (verifyWith (idealLogged answer) P A proof pis).run.2 =
       ⟨keyAt answer (inputs P pis proof) 0, answer (keyAt answer (inputs P pis proof) 0)⟩ ::
@@ -117,13 +117,13 @@ theorem commitLoop_wit :
 
 end Commit
 
-variable (P : Params) (proof : Proof) (pis : List F)
+variable (P : Params) (proof : Proof EF) (pis : List F)
 
 /-- **The fold rounds' grinding.** If FRI accepts on the ideal primitives of an answer table,
 then with grinding every fold round's answer has a first sample with `commitPowBits` vanishing
 low bits. -/
 theorem commitWitness_idealOf (hK : P.numQueries + 5 ≤ K) (hopen : openedValues proof.opened ≠ [])
-    (rounds : List Round) (st : Sponge)
+    (rounds : List (Round EF)) (st : Sponge)
     (hfri : verifyFri (idealOf answer) P proof.fri rounds (stateFri (idealOf answer) proof pis) =
       .ok ((), st))
     (i : Nat) (hi : i < (proof.fri.commits.toList.zip proof.fri.commitWitnesses.toList).length)

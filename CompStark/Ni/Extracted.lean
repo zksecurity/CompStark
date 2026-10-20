@@ -119,7 +119,7 @@ end Congr
 /-! ### The schedule of an accepted proof -/
 
 section Schedule
-variable (proof : Proof) (pis : List F)
+variable (proof : Proof EF) (pis : List F)
 
 theorem digestAt_toList (d : Digest) : digestAt d.toList 0 = d := by
   simpa only [List.append_nil] using digestAt_append_zero d []
