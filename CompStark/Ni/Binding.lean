@@ -78,7 +78,8 @@ def fresh (log : QueryLog (spec K)) (answer : (q : Query) → Answer K q) (dstar
     if Query.node left right ∈ log.map Sigma.fst then answer (.node left right) else dstar
 
 theorem fresh_of_mem (log : QueryLog (spec K)) (answer : (q : Query) → Answer K q)
-    (dstar : Digest) (t : Query) (ht : t ∈ log.map Sigma.fst) : fresh log answer dstar t = answer t := by
+    (dstar : Digest) (t : Query) (ht : t ∈ log.map Sigma.fst) :
+    fresh log answer dstar t = answer t := by
   cases t <;> simp only [fresh, ht, ↓reduceIte]
 
 /-! ### Climbing out of the log -/

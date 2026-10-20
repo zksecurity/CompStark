@@ -3,9 +3,10 @@ Copyright (c) 2026 zkSecurity. All rights reserved.
 Released under Apache 2.0 license as described in the file LICENSE.
 -/
 import CompStark.Ni.Parse
+import CompStark.Security
 
 /-! Axiom guards for the random-oracle model: the verifier's query bound, the verifier on answer
-tables, and parsing its rounds. -/
+tables, parsing its rounds, and knowledge soundness. -/
 
 namespace CompStarkTests.RandomOracle
 
@@ -32,5 +33,13 @@ namespace CompStarkTests.RandomOracle
 /-- info: 'CompStark.Ni.parse_verifyWith' depends on axioms: [propext, Classical.choice, Quot.sound] -/
 #guard_msgs in
 #print axioms CompStark.Ni.parse_verifyWith
+
+/-- info: 'CompStark.Iop.knowledgeSoundness_ro' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in
+#print axioms CompStark.Iop.knowledgeSoundness_ro
+
+/-- info: 'CompStark.Iop.wideSp1_knowledgeSoundness_ro' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in
+#print axioms CompStark.Iop.wideSp1_knowledgeSoundness_ro
 
 end CompStarkTests.RandomOracle

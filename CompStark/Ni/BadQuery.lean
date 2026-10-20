@@ -79,7 +79,8 @@ theorem length_history (j : Nat) : (history answer blocks j).length = j := by
   simp only [history, List.length_map, List.length_range]
 
 theorem history_fst (j k : Nat) (hk : k ≤ j) :
-    ((history answer blocks j).map Prod.fst ++ [blocks.getD j []]).getD k [] = blocks.getD k [] := by
+    ((history answer blocks j).map Prod.fst ++ [blocks.getD j []]).getD k [] =
+      blocks.getD k [] := by
   rcases Nat.lt_or_eq_of_le hk with hlt | rfl
   · rw [getD_append_singleton_lt _ _ _ _ (by rw [List.length_map, length_history]; exact hlt),
       List.getD_eq_getElem _ _ (by rw [List.length_map, length_history]; exact hlt)]
@@ -386,7 +387,8 @@ theorem exists_badAt (hδ' : (δ' : ℝ) < 1 - S.rate) (answer : (q : Query) →
     exact (Merkle.extractRow_eq_of_noPrediction _ _ _ hnp k i).symm
   have htraceT : committedTrace S log proof = T.trace := by
     rw [committedTrace_eq, hT, hblk]
-    show traceWords S (logCache log) proof = fun j : Fin S.air.width ↦ committedColumn S (logCache L)
+    show traceWords S (logCache log) proof = fun j : Fin S.air.width ↦
+      committedColumn S (logCache L)
       (digestAt ((inputs S.params publicValues proof).getD 0 []) 3) j.val
     rw [traceRoot_eq, ← committedColumn_congr S hlogL]
     rfl

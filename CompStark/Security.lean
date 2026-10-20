@@ -5,6 +5,7 @@ Released under Apache 2.0 license as described in the file LICENSE.
 module
 
 public import CompStark.Soundness
+public import CompStark.NonInteractive
 public import CompStark.Sound.Numbers
 public import CompStark.Sound.NumbersNi
 public import CompStark.Complete.Quotient
@@ -85,7 +86,10 @@ the largest round error (`roundError`, `CompStark/NonInteractiveError.lean`, ter
   `powFraction 16 = 32513 / p ≈ 2 ^ (-15.99996)`, about `2 ^ (-100.075)`.
 
 Every round error is at most `2 ^ (-100)` (`wideSp1_roundError_le`). `123` queries do not reach it
-at any radius: `(5/8) ^ 123 · 2 ^ (-16)` alone is about `2 ^ (-99.40)`.
+at any radius: `(5/8) ^ 123 · 2 ^ (-16)` alone is about `2 ^ (-99.40)`. By `knowledgeSoundness_ro`,
+a prover making `Q` oracle calls gets a proof accepted that the extractor cannot open with
+probability at most `q · 2 ^ (-100) + 3 q² / |𝔽| ^ 8`, `q = Q + verifierQueries`
+(`wideSp1_knowledgeSoundness_ro`).
 -/
 
 @[expose] public section
@@ -423,5 +427,24 @@ theorem wideSp1_roundError_le :
   · refine powFraction_mul_le _ _ _ (by rw [hδ]; norm_num) ?_
     rw [hδ, KoalaBear.fieldSize]
     norm_num
+
+/-- **100 bits per oracle call on `2 ^ 21` rows.** A prover for `wideSp1Setup` making at most `Q`
+oracle calls gets a proof accepted while no trace close to the one it committed to satisfies the
+AIR with probability at most `q · 2 ^ (-100) + hashError q`, `q = Q + verifierQueries`. -/
+theorem wideSp1_knowledgeSoundness_ro (publicValues : List F) (Q : Nat)
+    (prover : NIProver wideSp1Setup) (hQ : prover.IsTotalQueryBound Q) :
+    Pr{let (proof, log, verdict) ← run wideSp1Setup publicValues prover}[
+      verdict = .ok () ∧ proof.degreeBits = wideSp1Setup.logN ∧
+        ∀ trace ∈ closeTraces wideSp1Setup (3 / 8 - 2 ^ (-18 : ℤ) : NNReal)
+            (committedTrace wideSp1Setup log proof),
+          ¬ wideSp1Setup.air.Satisfied wideSp1Setup.logN trace publicValues] ≤
+      (Q + wideSp1Setup.verifierQueries) * (2 ^ 100)⁻¹ +
+        hashError (Q + wideSp1Setup.verifierQueries) := by
+  refine (knowledgeSoundness_ro wideSp1Setup publicValues (3 / 8 - 2 ^ (-16 : ℤ))
+    (3 / 8 - 2 ^ (-18 : ℤ)) ?_ Q prover hQ).trans ?_
+  · rw [coe_three_eighths_sub (-18) 18 rfl (by norm_num), rate_eq]
+    norm_num [wideSp1Setup, sp1Params]
+  · gcongr
+    exact wideSp1_roundError_le
 
 end CompStark.Iop
