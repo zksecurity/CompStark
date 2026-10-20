@@ -40,7 +40,8 @@ theorem withAnswers_map {m n : Type → Type} [Monad m] [Monad n] [LawfulMonad m
 `impl`. -/
 theorem simulateQ_verifyWith {n : Type → Type} [Monad n] [LawfulMonad n]
     (impl : QueryImpl (spec K) n) (P : Fri.Params) (A : Air) (proof : Proof) (pis : List F) :
-    simulateQ impl (verifyWith (ideal K) P A proof pis) = verifyWith (withAnswers K impl) P A proof pis := by
+    simulateQ impl (verifyWith (ideal K) P A proof pis) =
+      verifyWith (withAnswers K impl) P A proof pis := by
   have h := verifyWith_map (simulateQ' impl) (ideal K) P A proof pis
   rw [withAnswers_map] at h
   simpa only [simulateQ'_apply, simulateQ_spec_query] using h

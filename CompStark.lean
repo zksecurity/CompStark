@@ -90,3 +90,4 @@ public import CompStark.RandomOracle
 public import CompStark.Ni.Natural
 public import CompStark.Ni.Answers
 public import CompStark.Ni.QueryBound
+public import CompStark.Ni.Parse

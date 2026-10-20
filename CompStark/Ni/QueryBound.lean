@@ -125,7 +125,8 @@ theorem isTotalQueryBound_climbM (hash : List F → OracleComp spec (Vector F d)
 
 /-- An opening of matrices of one height `2 ^ k` hashes a leaf and climbs `k` layers, or hashes
 nothing if its shape is wrong. -/
-theorem isTotalQueryBound_verifyBatchM [DecidableEq F] (hash : List F → OracleComp spec (Vector F d))
+theorem isTotalQueryBound_verifyBatchM [DecidableEq F]
+    (hash : List F → OracleComp spec (Vector F d))
     (compress : Vector F d → Vector F d → OracleComp spec (Vector F d))
     (hhash : ∀ xs, IsTotalQueryBound (hash xs) 1)
     (hcompress : ∀ a b, IsTotalQueryBound (compress a b) 1) (commit : Vector F d) (n k : Nat)
@@ -188,7 +189,8 @@ theorem costs_observeExts (xs : List EF) : Costs (observeExts (ideal K) xs) 0 fu
 
 theorem costs_sampleExt : Costs (sampleExt (ideal K)) 4 fun _ ↦ True :=
   costs_bind costs_sample fun _ _ ↦ costs_bind costs_sample fun _ _ ↦
-    costs_bind costs_sample fun _ _ ↦ costs_bind costs_sample fun _ _ ↦ costs_pure _ (fun _ ↦ True) trivial
+    costs_bind costs_sample fun _ _ ↦ costs_bind costs_sample fun _ _ ↦
+      costs_pure _ (fun _ ↦ True) trivial
 
 theorem costs_sampleBits (bits : Nat) : Costs (sampleBits (ideal K) bits) 1 fun _ ↦ True :=
   costs_bind costs_sample fun _ _ ↦ costs_pure _ (fun _ ↦ True) trivial
@@ -342,7 +344,8 @@ theorem costs_verifyFri (P : Params) (proof : FriProof) (rounds : List Round) (d
       costs_bind (costs_observe _) fun _ _ ↦ costs_pure _ (fun _ ↦ True) trivial) fun _ _ ↦
     costs_bind (costs_checkWitness _ _) fun _ _ ↦ costs_bind (costs_ensure _ _) fun _ _ ↦
     costs_bind (b := 0) (costs_forIn_le _ _ _ P.numQueries
-      (1 + rounds.length * (1 + (db + P.logBlowup)) + (arities proof).length * (1 + ((arities proof).sum + P.logBlowup + P.logFinalPolyLen)))
+      (1 + rounds.length * (1 + (db + P.logBlowup)) + (arities proof).length *
+        (1 + ((arities proof).sum + P.logBlowup + P.logFinalPolyLen)))
       ?_ (fun _ ↦ True) trivial fun q hqm _ _ ↦ ?_)
       fun _ _ ↦ costs_pure _ (fun _ ↦ True) trivial) ?_ fun _ _ ↦ trivial
   · rw [List.length_zip, Array.length_toList,

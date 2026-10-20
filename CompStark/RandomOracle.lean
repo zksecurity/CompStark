@@ -65,7 +65,7 @@ structure Sponge where
 def initCap : Digest := Vector.replicate 8 0
 
 /-- The primitives on oracle answers `ask` in a monad `m`. -/
-def withAnswers {m : Type → Type} [Monad m] (K : Nat) (ask : (q : Query) → m (Answer K q)) :
+abbrev withAnswers {m : Type → Type} [Monad m] (K : Nat) (ask : (q : Query) → m (Answer K q)) :
     Primitives m where
   State := Sponge
   init := ⟨initCap, [], []⟩
@@ -79,7 +79,8 @@ def withAnswers {m : Type → Type} [Monad m] (K : Nat) (ask : (q : Query) → m
   compress left right := ask (.node left right)
 
 /-- The verifier's primitives on the random oracles. -/
-abbrev ideal (K : Nat) : Primitives (OracleComp (spec K)) := withAnswers K fun q ↦ liftM ((spec K).query q)
+abbrev ideal (K : Nat) : Primitives (OracleComp (spec K)) :=
+  withAnswers K fun q ↦ liftM ((spec K).query q)
 
 /-- The verifier's primitives on a fixed answer to every query. -/
 abbrev idealOf {K : Nat} (answer : (q : Query) → Answer K q) : Primitives Id :=
@@ -104,8 +105,8 @@ local notation "F" => KoalaBear.Fast.Field
 namespace Setup
 variable (S : Setup)
 
-/-- The samples in one duplex answer: a challenge in `𝕂` and a grinding sample take five, and the
-query round takes a grinding sample and one index per query. -/
+/-- The samples in one duplex answer, enough for every round: a fold takes a grinding sample and
+four for `β`, the query round a grinding sample and one index per query. -/
 def streamLen : Nat := S.params.numQueries + 5
 
 /-- Plonky3's fold arities for `S`, as the verifier checks them. -/
