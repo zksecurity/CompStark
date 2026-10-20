@@ -257,7 +257,8 @@ theorem eval_finalPoly (coeffs : Array EF) (I : Nat)
   have hpt : Ext4.toSpec (Ext.ofBase (powF (twoAdicGen S.logSize) (reverseBits I S.logSize))) =
       Complete.emb (twoAdicGen L ^ reverseBits I L) := by
     rw [Complete.toSpec_ofBase, Fast.powF_eq, hn, Complete.reverseBits_low L _ I hI, pow_mul,
-      Nat.add_comm _ L, Fast.twoAdicGen_pow L _ (by have := S.valid.twoAdic; have := S.folds; omega)]
+      Nat.add_comm _ L,
+      Fast.twoAdicGen_pow L _ (by have := S.valid.twoAdic; have := S.folds; omega)]
   rw [← Array.foldr_toList, Complete.toSpec_horner_list, Array.length_toList, hpt, finalPoly,
     eval_finsetSum]
   refine Finset.sum_congr rfl fun i _ ↦ ?_
@@ -416,7 +417,8 @@ theorem query_checks (cache : Merkle.Cache F Digest) (H : Primitives Id) (betas 
       rw [hlenS, (hst _).1, hPK] at hf
       rw [hf]
   · have h0 := hV 0
-    rw [Fin.castSucc_zero, foldingPrefix_zero, pow_zero, pow_one, Fin.val_zero, foldState_zero] at h0
+    rw [Fin.castSucc_zero, foldingPrefix_zero, pow_zero, pow_one, Fin.val_zero,
+      foldState_zero] at h0
     exact h0
 
 end CompStark.Ni

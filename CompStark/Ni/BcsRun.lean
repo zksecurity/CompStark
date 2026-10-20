@@ -191,7 +191,8 @@ loop ends in the last state. -/
 theorem foldLoop_ok (body : (EF × Digest) × CommitStep → List (Nat × EF) × EF × Nat × Nat →
       M H (ForInStep (List (Nat × EF) × EF × Nat × Nat)))
     (hbody : ∀ beta commit s ro eval index logH,
-      body ((beta, commit), s) (ro, eval, index, logH) = foldBody H beta commit s ro eval index logH) :
+      body ((beta, commit), s) (ro, eval, index, logH) =
+        foldBody H beta commit s ro eval index logH) :
     ∀ (l : List ((EF × Digest) × CommitStep)) (st0 : EF × Nat × Nat) (st : H.State)
       (r : (List (Nat × EF) × EF × Nat × Nat) × H.State),
       forIn l ([], st0) body st = .ok r →

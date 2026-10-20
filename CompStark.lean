@@ -91,3 +91,10 @@ public import CompStark.Ni.Natural
 public import CompStark.Ni.Answers
 public import CompStark.Ni.QueryBound
 public import CompStark.Ni.Parse
+public import CompStark.Ni.BcsRun
+public import CompStark.Ni.BcsFold
+public import CompStark.Ni.BcsFri
+public import CompStark.Ni.BcsCheck
+public import CompStark.Ni.BcsDeep
+public import CompStark.Ni.Bcs
+public import CompStark.Ni.BcsChallenges

@@ -109,6 +109,45 @@ theorem natDegree_finalPoly (S : Iop.Setup) (cache : Merkle.Cache F Digest)
 
 /-! ### BCS consistency -/
 
+/-- The verifier's FRI rounds on an accepted proof of `2 ^ logN` rows: the largest query domain
+is `L`, above the blowup, and every opened matrix has its height. -/
+theorem friHyps (S : Iop.Setup) (H : Primitives Id) (proof : Proof) (pis : List F)
+    (hdb : proof.degreeBits = S.logN)
+    (harity : arities proof.fri = foldArities S.params.maxLogArity
+      (S.logN - S.params.logFinalPolyLen)) :
+    (arities proof.fri).sum + S.params.logBlowup + S.params.logFinalPolyLen = S.logSize ∧
+      (arities proof.fri).sum + S.params.logBlowup + S.params.logFinalPolyLen ≠
+        S.params.logBlowup ∧
+      vRounds proof (zetaOf H proof pis) ≠ [] ∧
+      ∀ x ∈ vRounds proof (zetaOf H proof pis), ∀ dp ∈ x.2,
+        dp.1.logSize + S.params.logBlowup =
+          (arities proof.fri).sum + S.params.logBlowup + S.params.logFinalPolyLen := by
+  have hfolds := S.folds
+  have harr : arities proof.fri = S.foldArities.map PNat.val := by
+    rw [harity, foldArities_eq]; rfl
+  have hsum : (arities proof.fri).sum = S.logN - S.params.logFinalPolyLen := by
+    rw [harr]; exact sum_folds _ _
+  have hlogMax : (arities proof.fri).sum + S.params.logBlowup + S.params.logFinalPolyLen =
+      S.logSize := by
+    rw [hsum]; unfold Iop.Setup.logSize; omega
+  have hh : ∀ x ∈ vRounds proof (zetaOf H proof pis), ∀ dp ∈ x.2,
+      dp.1.logSize + S.params.logBlowup =
+      (arities proof.fri).sum + S.params.logBlowup + S.params.logFinalPolyLen := by
+    intro x hx dp hdp
+    rw [hlogMax]
+    simp only [vRounds, List.mem_cons, List.not_mem_nil, or_false] at hx
+    rcases hx with rfl | rfl
+    · simp only [List.mem_cons, List.not_mem_nil, or_false] at hdp
+      rw [hdp, hdb]
+    · obtain ⟨ch, -, rfl⟩ := List.mem_map.mp hdp
+      dsimp only
+      rw [hdb]
+  have hb : (arities proof.fri).sum + S.params.logBlowup + S.params.logFinalPolyLen ≠
+      S.params.logBlowup := by
+    rw [hlogMax]; unfold Iop.Setup.logSize; omega
+  have hne : vRounds proof (zetaOf H proof pis) ≠ [] := List.cons_ne_nil _ _
+  exact ⟨hlogMax, hb, hne, hh⟩
+
 /-- **BCS consistency.** If the verifier on pure primitives `H` accepts a proof of `2 ^ logN`
 rows whose commitments bind the rows extracted from `cache`, the extracted transcript passes the
 deterministic checks of `Sound.exists_satisfied_of_safe`, with the run's grinding and query
@@ -128,29 +167,9 @@ theorem bcs (S : Iop.Setup) (cache : Merkle.Cache F Digest) (H : Primitives Id) 
   obtain ⟨htl, htn, hqc, hq4, harity, ⟨st, hfriOk⟩, hcheck⟩ :=
     verifyWith_ok H S.params S.air proof pis h
   rw [hdb] at hcheck harity
-  have hfolds := S.folds
   have harr : arities proof.fri = S.foldArities.map PNat.val := by
     rw [harity, foldArities_eq]; rfl
-  have hsum : (arities proof.fri).sum = S.logN - S.params.logFinalPolyLen := by
-    rw [harr]; exact sum_folds _ _
-  have hlogMax : (arities proof.fri).sum + S.params.logBlowup + S.params.logFinalPolyLen =
-      S.logSize := by
-    rw [hsum]; unfold Iop.Setup.logSize; omega
-  have hh : ∀ x ∈ vRounds proof (zetaOf H proof pis), ∀ dp ∈ x.2, dp.1.logSize + S.params.logBlowup =
-      (arities proof.fri).sum + S.params.logBlowup + S.params.logFinalPolyLen := by
-    intro x hx dp hdp
-    rw [hlogMax]
-    simp only [vRounds, List.mem_cons, List.not_mem_nil, or_false] at hx
-    rcases hx with rfl | rfl
-    · simp only [List.mem_cons, List.not_mem_nil, or_false] at hdp
-      rw [hdp, hdb]
-    · obtain ⟨ch, -, rfl⟩ := List.mem_map.mp hdp
-      dsimp only
-      rw [hdb]
-  have hb : (arities proof.fri).sum + S.params.logBlowup + S.params.logFinalPolyLen ≠
-      S.params.logBlowup := by
-    rw [hlogMax]; unfold Iop.Setup.logSize; omega
-  have hne : vRounds proof (zetaOf H proof pis) ≠ [] := List.cons_ne_nil _ _
+  obtain ⟨hlogMax, hb, hne, hh⟩ := friHyps S H proof pis hdb harity
   obtain ⟨hqa, hwit, hfp, hqs, hw, hq⟩ := verifyFri_ok H S.params proof.fri _ hb hne hh _ _
     hfriOk
   rw [hlogMax] at hq
