@@ -95,8 +95,9 @@ noncomputable def batchingError (S : Setup) (δ : NNReal) (δ' : ℝ) : ENNReal 
       Near S δ (fun i ↦ ∑ k : Fin S.numOpened, a ^ (k : Nat) * ws k i) ∧
       ¬ NearTogether S δ' ws).card : ENNReal) / Fintype.card 𝕂
 
-/-- FRI's soundness error at proximity `δ` (ArkLib's `Fri.Spec.soundnessError`): the
-correlated-agreement error of each fold, and `(1 - δ) ^ numQueries` for the queries. -/
+/-- FRI's soundness error at proximity `δ` (ArkLib's `Fri.Spec.soundnessErrorLossy`): the lossy
+correlated-agreement error of each fold, and `(1 - δ + #folds · loss) ^ numQueries` for the
+queries, minimized over the proximity loss `loss ≥ 0`. -/
 noncomputable def friError (S : Setup) (δ : NNReal) : ENNReal :=
   friErrorOf S.domain (Sound.folds S.params.maxLogArity (S.logN - S.params.logFinalPolyLen))
     S.params.logFinalPolyLen S.params.numQueries δ

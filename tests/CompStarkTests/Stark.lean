@@ -70,3 +70,7 @@ end CompStarkTests.Stark
 /-- info: 'CompStark.Iop.wide_knowledgeError_le' depends on axioms: [propext, Classical.choice, Quot.sound] -/
 #guard_msgs in
 #print axioms CompStark.Iop.wide_knowledgeError_le
+
+/-- info: 'CompStark.Iop.wide21_knowledgeError_le' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in
+#print axioms CompStark.Iop.wide21_knowledgeError_le
