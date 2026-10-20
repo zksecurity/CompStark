@@ -6,6 +6,7 @@ module
 
 public import CompStark.Soundness
 public import CompStark.Sound.Numbers
+public import CompStark.Sound.NumbersNi
 public import CompStark.Complete.Quotient
 
 /-! # Concrete security: 100 bits for the Fibonacci STARK and for `wide 64`
@@ -68,6 +69,23 @@ radii, loss and `t`: constraint folding as above, out of domain `(3 · 2 ^ 21 + 
 By `knowledgeSoundness`, a prover that the verifier accepts with probability above `2 ^ (-100)`
 has committed to a trace within `δ'` of one that satisfies the AIR (`fibonacci_knowledgeSoundness`,
 `wide_knowledgeSoundness`, `wide21_knowledgeSoundness`).
+
+`wideSp1Setup`: `wide 64` on `2 ^ 21` rows with SP1's FRI (soundcalc's core circuit, `sp1Params`):
+blowup `4` (`N = 2 ^ 23`), `21` folds of arity `2` down to a constant, `124` queries and `16` bits
+of query grinding. In the random-oracle model each round is one oracle answer, so the bound is on
+the largest round error (`roundError`, `CompStark/NonInteractiveError.lean`, terms bounded in
+`CompStark/Sound/NumbersNi.lean`), with FRI at `δ = 3/8 - 2 ^ (-16)`, the extractor at
+`δ' = 3/8 - 2 ^ (-18)`, `loss = 2 ^ (-22)`, `δ_int = δ + loss` and `t = 16`:
+
+* constraint folding `63`, about `2 ^ (-117.98)`;
+* out of domain `(3 · 2 ^ 21 + 1) + 2 ^ 21`, about `2 ^ (-100.95)`;
+* batching `135 · max(T₁, T₂)`, `T₁ ≈ 32770.67`, `T₂ ≈ 33464.83`, about `2 ^ (-101.85)`;
+* FRI's folds: `max(T₁, δ_int / loss, 2 ^ t) ≈ 1572801` (`δ_int / loss`), about `2 ^ (-103.37)`;
+* FRI's queries `powFraction 16 · (5/8 + 2 ^ (-16) + 21 · 2 ^ (-22) + 1/p) ^ 124`, with
+  `powFraction 16 = 32513 / p ≈ 2 ^ (-15.99996)`, about `2 ^ (-100.075)`.
+
+Every round error is at most `2 ^ (-100)` (`wideSp1_roundError_le`). `123` queries do not reach it
+at any radius: `(5/8) ^ 123 · 2 ^ (-16)` alone is about `2 ^ (-99.40)`.
 -/
 
 @[expose] public section
@@ -333,5 +351,77 @@ theorem wide21_knowledgeSoundness (publicValues : List F) (prover : Prover wide2
     h).trans wide21_knowledgeError_le
   rw [rate_eq]
   norm_num [wide21Setup, wide21Params]
+
+/-- SP1's FRI parameters (soundcalc's `sp1.toml`, core circuit): blowup `4`, folding by arity `2`
+down to a constant (soundcalc's early-stop degree `4` is the final domain's size), `124` queries
+with `16` bits of query grinding. -/
+def sp1Params : Fri.Params where
+  logBlowup := 2
+  logFinalPolyLen := 0
+  maxLogArity := 1
+  numQueries := 124
+  commitPowBits := 0
+  queryPowBits := 16
+
+/-- `wide 64` on `2 ^ 21` rows with `sp1Params`: SP1's FRI on `2 ^ 21` rows. -/
+def wideSp1Setup : Setup where
+  params := sp1Params
+  air := wide 64
+  logN := 21
+  valid :=
+    { colsInWidth := wide_colsInWidth 64
+      degreeFits := wide_degreeFits 64 21
+      twoAdic := by decide
+      chunksFit := by
+        rw [wide_logQuotientChunks 64 (by decide)]
+        decide
+      folds := by decide
+      finalPolyFits := by decide
+      queries := by decide }
+  blowup := by decide
+  folds := by decide
+
+/-- **100 bits per oracle answer on `2 ^ 21` rows.** Every round error of `wideSp1Setup`, FRI at
+`δ = 3/8 - 2 ^ (-16)` and the extractor at `δ' = 3/8 - 2 ^ (-18)`, is at most `2 ^ (-100)`. -/
+theorem wideSp1_roundError_le :
+    roundError wideSp1Setup (3 / 8 - 2 ^ (-16 : ℤ)) (3 / 8 - 2 ^ (-18 : ℤ)) ≤ (2 ^ 100)⁻¹ := by
+  have hδ := coe_three_eighths_sub (-16) 16 rfl (by norm_num)
+  have hδ' := coe_three_eighths_sub (-18) 18 rfl (by norm_num)
+  have hrate : wideSp1Setup.rate = 1 / 2 ^ 2 := rate_eq _
+  have hsize : (wideSp1Setup.size : ℝ) = 2 ^ 23 := by
+    norm_num [Setup.size, wideSp1Setup, sp1Params]
+  have h := roundError_le wideSp1Setup rfl 16 (3 / 8 - 2 ^ (-16 : ℤ)) (3 / 8 - 2 ^ (-18 : ℤ))
+    (1 / 2 ^ 22) (by rw [hδ, hrate, hsize]; norm_num)
+    (by rw [hδ, hrate]; norm_num) (by rw [← NNReal.coe_pos, hδ]; norm_num)
+    (by rw [hδ, hδ', hsize]; norm_num) (by rw [hδ', hrate]; norm_num) (by positivity)
+  have hints := wide_integers_le wideSp1Setup rfl
+  have hn : wideSp1Setup.n = 2097152 := rfl
+  rw [hn] at hints
+  have h1 := (Nat.le_add_right _ _).trans hints
+  have h2 := (Nat.le_add_left _ _).trans hints
+  have hcommit : wideSp1Setup.params.commitPowBits = 0 := rfl
+  have hquery : wideSp1Setup.params.queryPowBits = 16 := rfl
+  have hq : wideSp1Setup.params.numQueries = 124 := rfl
+  have hfolds : wideSp1Setup.logN - wideSp1Setup.params.logFinalPolyLen = 21 := rfl
+  have hb : wideSp1Setup.params.logBlowup = 2 := rfl
+  rw [hcommit, hquery, hq, hfolds, hb, powFraction_zero, one_mul] at h
+  refine h.trans (max_le ?_ (max_le ?_ (max_le ?_ (max_le ?_ ?_))))
+  · refine nat_div_card_le _ ((div_le_div_of_nonneg_right (Nat.cast_le.mpr h1)
+      (by positivity)).trans ?_)
+    norm_num
+  · rw [hn]
+    refine nat_div_card_le _ ((div_le_div_of_nonneg_right (Nat.cast_le.mpr h2)
+      (by positivity)).trans ?_)
+    norm_num
+  · refine ofReal_div_card_le _ ?_
+    rw [wide_numOpened wideSp1Setup rfl, hrate, hsize, hδ, hδ']
+    norm_num
+  · refine ofReal_div_card_le _ ?_
+    simp only [LossyMca.lossyBound]
+    rw [NNReal.coe_add, hδ]
+    norm_num
+  · refine powFraction_mul_le _ _ _ (by rw [hδ]; norm_num) ?_
+    rw [hδ, KoalaBear.fieldSize]
+    norm_num
 
 end CompStark.Iop
