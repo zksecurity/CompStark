@@ -27,7 +27,7 @@ CompStark builds on [CompPoly](https://github.com/Verified-zkEVM/CompPoly), whic
 
   ```lean
   theorem knowledgeSoundness (S : Setup) (publicValues : List F) (prover : Prover S)
-      (δ δ' : NNReal) (hδ : δ ≤ δ') (hδ' : (δ' : ℝ) < 1 - S.rate) :
+      (δ δ' : NNReal) (hδ' : (δ' : ℝ) < 1 - S.rate) :
       (∀ trace ∈ closeTraces S δ' prover, ¬ S.air.Satisfied S.logN trace publicValues) →
         acceptance publicValues prover ≤ knowledgeError S δ δ'
   ```

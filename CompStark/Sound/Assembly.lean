@@ -236,7 +236,7 @@ open Classical in
 /-- Knowledge soundness from the four steps. -/
 theorem knowledgeSoundness_of {S : Setup} (hF : FriStep S) (hF1 : FriAtMostOne S)
     (hB : BatchingStep S) (hD : DecodingStep S) (hA : AlgebraStep S) (publicValues : List F)
-    (p : Prover S) (δ δ' : NNReal) (_hδ : δ ≤ δ') (hδ' : (δ' : ℝ) < 1 - S.rate)
+    (p : Prover S) (δ δ' : NNReal) (hδ' : (δ' : ℝ) < 1 - S.rate)
     (hfail : ∀ trace ∈ closeTraces S δ' p, ¬ S.air.Satisfied S.logN trace publicValues) :
     acceptance publicValues p ≤ knowledgeError S δ δ' := by
   set C1 := (candidates_finite S δ' p.trace).toFinset

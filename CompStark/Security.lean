@@ -105,7 +105,7 @@ theorem fibonacci_knowledgeSoundness (publicValues : List F) (prover : Prover fi
       ¬ fibonacci.Satisfied 10 trace publicValues) →
       acceptance publicValues prover ≤ (2 ^ 100)⁻¹ := by
   intro h
-  refine (knowledgeSoundness fibonacciSetup publicValues prover (7 / 16) (7 / 16) le_rfl ?_
+  refine (knowledgeSoundness fibonacciSetup publicValues prover (7 / 16) (7 / 16) ?_
     h).trans
     fibonacci_knowledgeError_le
   have hrate : fibonacciSetup.rate = 1 / 16 := by
