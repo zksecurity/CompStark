@@ -31,12 +31,13 @@ values at `β` (`foldChallenges`), and its final polynomial is Plonky3's in the 
 namespace CompStark.Ni
 open CompStark.Stark CompStark.Fri CompStark.Sound CompStark.Iop Polynomial Montgomery.Native32
 open Fri.Spec
-open KoalaBear.Fast (Ext4)
 
 local notation "F" => KoalaBear.Fast.Field
-local notation "EF" => KoalaBear.Fast.Ext4
 local notation "𝔽" => KoalaBear.Field
-local notation "𝕂" => Challenge.Spec KoalaBear.Fast.Ext4
+
+variable {EF : Type} [Challenge EF]
+
+local notation "𝕂" => Challenge.Spec EF
 
 /-! ### The run's challenges -/
 
@@ -49,14 +50,15 @@ def batchOf : EF := (smpExt H (stateFri H proof pis)).1
 /-- The commit loop's folding challenges. -/
 def betasOf : List EF :=
   (commitReplay H P (proof.fri.commits.toList.zip proof.fri.commitWitnesses.toList)
-    (smpExt H (stateFri H proof pis)).2).1
+    (smpExt (EF := EF) H (stateFri H proof pis)).2).1
 
 /-- The challenger before the query grinding check: after the commit loop, the final polynomial
 and the fold arities. -/
 def queryState : H.State :=
   (arities proof.fri).foldl (fun s (a : Nat) ↦ H.observe s (a : F))
-    (obsExts H (commitReplay H P (proof.fri.commits.toList.zip proof.fri.commitWitnesses.toList)
-      (smpExt H (stateFri H proof pis)).2).2 proof.fri.finalPoly.toList)
+    (obsExts H (commitReplay (EF := EF) H P
+      (proof.fri.commits.toList.zip proof.fri.commitWitnesses.toList)
+      (smpExt (EF := EF) H (stateFri H proof pis)).2).2 proof.fri.finalPoly.toList)
 
 /-- The query grinding sample, after the witness; `0` without query grinding. -/
 def powSampleOf : 𝔽 :=
@@ -75,15 +77,15 @@ end Challenges
 /-- The interactive oracle proof's transcript extracted from an accepted proof: the words and FRI
 oracles from `cache`, the opened values and final polynomial from the proof, and the challenges
 of the run on `H`. -/
-noncomputable def extract (S : Iop.Setup KoalaBear.Fast.Ext4) (cache : Merkle.Cache F Digest)
+noncomputable def extract (S : Iop.Setup EF) (cache : Merkle.Cache F Digest)
     (H : Primitives Id)
     (proof : Proof EF) (pis : List F) : Sound.Transcript S where
   trace := traceWords S cache proof
-  alpha := Ext4.toSpec (alphaOf H proof pis)
+  alpha := Challenge.toSpec (alphaOf H proof pis)
   quotient := quotientWords S cache proof
-  zeta := Ext4.toSpec (zetaOf H proof pis)
+  zeta := Challenge.toSpec (zetaOf H proof pis)
   openings := openingsOf S proof.opened
-  batch := Ext4.toSpec (batchOf H proof pis)
+  batch := Challenge.toSpec (batchOf H proof pis)
   fri := friOracles S cache proof.fri.commits.toList proof.fri.finalPoly
   betas := foldChallenges S (betasOf H S.params proof pis)
 
@@ -96,7 +98,7 @@ theorem foldArities_eq (m : Nat) : ∀ r, foldArities m r = (folds m r).map PNat
     exact congrArg (List.cons _) (foldArities_eq m _)
   decreasing_by omega
 
-theorem natDegree_finalPoly (S : Iop.Setup KoalaBear.Fast.Ext4) (cache : Merkle.Cache F Digest)
+theorem natDegree_finalPoly (S : Iop.Setup EF) (cache : Merkle.Cache F Digest)
     (commits : List Digest) (coeffs : Array EF)
     (h : coeffs.size = 2 ^ S.params.logFinalPolyLen) :
     (finalPolynomial S.schedule (friOracles S cache commits coeffs)).natDegree <
@@ -112,7 +114,7 @@ theorem natDegree_finalPoly (S : Iop.Setup KoalaBear.Fast.Ext4) (cache : Merkle.
 
 /-- The verifier's FRI rounds on an accepted proof of `2 ^ logN` rows: the largest query domain
 is `L`, above the blowup, and every opened matrix has its height. -/
-theorem friHyps (S : Iop.Setup KoalaBear.Fast.Ext4) (H : Primitives Id) (proof : Proof EF)
+theorem friHyps (S : Iop.Setup EF) (H : Primitives Id) (proof : Proof EF)
     (pis : List F)
     (hdb : proof.degreeBits = S.logN)
     (harity : arities proof.fri = foldArities S.params.maxLogArity
@@ -154,7 +156,7 @@ theorem friHyps (S : Iop.Setup KoalaBear.Fast.Ext4) (H : Primitives Id) (proof :
 rows whose commitments bind the rows extracted from `cache`, the extracted transcript passes the
 deterministic checks of `Sound.exists_satisfied_of_safe`, with the run's grinding and query
 samples. -/
-theorem bcs (S : Iop.Setup KoalaBear.Fast.Ext4) (cache : Merkle.Cache F Digest) (H : Primitives Id)
+theorem bcs (S : Iop.Setup EF) (cache : Merkle.Cache F Digest) (H : Primitives Id)
     (proof : Proof EF)
     (pis : List F) (hdb : proof.degreeBits = S.logN)
     (htrace : Binding cache H proof.traceCommit) (hquot : Binding cache H proof.quotientCommit)
@@ -203,7 +205,7 @@ theorem bcs (S : Iop.Setup KoalaBear.Fast.Ext4) (cache : Merkle.Cache F Digest) 
       (by rw [List.length_zip, List.length_zip, hbl, hcl, Nat.min_self, Nat.min_self] at hfinal
           exact hfinal)
     have hdeep := deepWord_eq S cache H proof (zetaOf H proof pis) (batchOf H proof pis)
-      (Ext4.toSpec (alphaOf H proof pis)) hdb htl htn hqc (fun ch hc ↦ hq4 ch hc) htrace hquot
+      (Challenge.toSpec (alphaOf H proof pis)) hdb htl htn hqc (fun ch hc ↦ hq4 ch hc) htrace hquot
       _ index hidx hlen hbatch
     rw [hpt]
     simp only [Transcript.consistentQueries, Fri.Spec.consistentQueries, Finset.mem_filter]

@@ -37,10 +37,10 @@ Suppose not. Then, with no clashes:
 namespace CompStark.Ni
 open CompStark.Stark CompStark.Fri CompStark.Sound CompStark.Iop CompStark.RandomOracle
 open Polynomial Montgomery.Native32 Fri.Spec OracleSpec OracleComp
-open KoalaBear.Fast (Ext4)
 
 local notation "F" => KoalaBear.Fast.Field
-local notation "EF" => KoalaBear.Fast.Ext4
+
+variable {EF : Type} [Challenge EF]
 
 /-! ### First occurrences -/
 
@@ -125,7 +125,7 @@ end Rounds
 /-! ### The bad query -/
 
 section Bad
-variable (S : Iop.Setup KoalaBear.Fast.Ext4) (publicValues : List F) (δ δ' loss : NNReal)
+variable (S : Iop.Setup EF) (publicValues : List F) (δ δ' loss : NNReal)
 
 /-- Query `p` of `log` is fresh, and its answer clashes with a known digest or makes its round
 bad. -/

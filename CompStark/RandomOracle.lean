@@ -101,14 +101,15 @@ open CompStark.Stark CompStark.RandomOracle OracleSpec OracleComp
 
 local notation "𝔽" => KoalaBear.Field
 local notation "F" => KoalaBear.Fast.Field
-local notation "EF" => KoalaBear.Fast.Ext4
+
+variable {EF : Type} [Challenge EF]
 
 namespace Setup
-variable (S : Setup KoalaBear.Fast.Ext4)
+variable (S : Setup EF)
 
 /-- The samples in one duplex answer, enough for every round: a fold takes a grinding sample and
-four for `β`, the query round a grinding sample and one index per query. -/
-def streamLen : Nat := S.params.numQueries + 5
+`d` for `β`, the query round a grinding sample and one index per query. -/
+def streamLen : Nat := S.params.numQueries + Challenge.d EF + 1
 
 /-- Plonky3's fold arities for `S`, as the verifier checks them. -/
 abbrev friArities : List Nat :=
@@ -118,11 +119,11 @@ abbrev friArities : List Nat :=
 def openingQueries : Nat := 1 + (S.logN + S.params.logBlowup)
 
 /-- The verifier's oracle calls on a proof for `S`, at most one per sample (`α`, `ζ` and the
-batching challenge take four samples each, every fold a grinding sample and four for `β`, the
+batching challenge take `d` samples each, every fold a grinding sample and `d` for `β`, the
 query round a grinding sample), and per query its index and the openings of the trace, the
 quotient and every fold. -/
 def verifierQueries : Nat :=
-  13 + 5 * S.friArities.length +
+  3 * Challenge.d EF + 1 + (Challenge.d EF + 1) * S.friArities.length +
     S.params.numQueries * (1 + (S.friArities.length + 2) * S.openingQueries)
 
 /-- The verifier in the random-oracle model, on proofs for `2 ^ logN` rows. -/
@@ -136,12 +137,11 @@ end Setup
 
 /-- A non-interactive prover for `S`: a computation with oracle access to the hashes that outputs
 a proof. Provers are deterministic; a randomized prover is a mixture of deterministic ones. -/
-abbrev NIProver (S : Setup KoalaBear.Fast.Ext4) := OracleComp (spec S.streamLen) (Proof EF)
+abbrev NIProver (S : Setup EF) := OracleComp (spec S.streamLen) (Proof EF)
 
 /-- Run `prover`, logging its queries, then the verifier on its proof, against one random
 oracle. -/
-noncomputable def run (S : Setup KoalaBear.Fast.Ext4) (publicValues : List F) (prover : NIProver S)
-    :
+noncomputable def run (S : Setup EF) (publicValues : List F) (prover : NIProver S) :
     ProbComp (Proof EF × QueryLog (spec S.streamLen) × Except String Unit) :=
   (simulateQ randomOracle do
     let (proof, log) ← (simulateQ loggingOracle prover).run
@@ -155,7 +155,7 @@ def logCache {K : Nat} (log : QueryLog (spec K)) : Merkle.Cache F Digest where
 /-- The trace words committed under `proof.traceCommit`, read off the hash queries of `log`: the
 row of the tree on `L` at the leaf of each point (Plonky3's bit-reversed order), zero where `log`
 holds no preimage. -/
-noncomputable def committedTrace (S : Setup KoalaBear.Fast.Ext4) (log : QueryLog (spec S.streamLen))
+noncomputable def committedTrace (S : Setup EF) (log : QueryLog (spec S.streamLen))
     (proof : Proof EF) :
     Fin S.air.width → S.Point → 𝔽 := fun column point ↦
   let depth := S.logN + S.params.logBlowup

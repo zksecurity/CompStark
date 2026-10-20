@@ -38,12 +38,13 @@ namespace CompStark.Ni
 open CompStark.Stark CompStark.RandomOracle OracleSpec OracleComp
 
 local notation "F" => KoalaBear.Fast.Field
-local notation "EF" => KoalaBear.Fast.Ext4
+
+variable {EF : Type} [Challenge EF]
 
 /-! ### The transcript schedule -/
 
 /-- Extension elements as base elements, lowest coefficient first. -/
-def coeffs (xs : List EF) : List F := xs.flatMap fun x ↦ [x.c0, x.c1, x.c2, x.c3]
+def coeffs (xs : List EF) : List F := xs.flatMap Ext.coeffs
 
 /-- A grinding witness as the verifier observes it: not at all without grinding. -/
 def witnessInput (bits : Nat) (w : F) : List F := if bits = 0 then [] else [w]
@@ -330,39 +331,52 @@ theorem foldl_observeExts (xs : List EF) (s : Sponge) :
   | nil => rfl
   | cons x xs ih =>
     rw [List.foldl_cons, ih]
-    simp only [coeffs, Ext.coeffs, KoalaBear.coeffs_ext4, List.flatMap_cons, List.foldl_append]
+    simp only [coeffs, List.flatMap_cons, List.foldl_append]
 
 theorem out_observeExts (xs : List EF) (s : Sponge) :
     out answer (observeExts Hl xs) s =
       (.ok ((), if coeffs xs = [] then s else ⟨s.cap, s.input ++ coeffs xs, []⟩), []) := by
   rw [observeExts, out_modify, foldl_observeExts, foldl_observe]
 
-/-- Four samples left: an extension sample takes them. -/
-theorem out_sampleExt_pop (cap : Digest) (input : List F) (samples : List F)
-    (h : 4 ≤ samples.length) :
-    ∃ v, out answer (sampleExt Hl : M Hl EF) ⟨cap, input, samples⟩ =
-      (.ok (v, ⟨cap, input, samples.drop 4⟩), []) := by
-  match samples, h with
-  | a :: b :: c :: d :: rest, _ =>
-    exact ⟨Challenge.ofCoeffs [a, b, c, d], by
-      simp only [sampleExt, KoalaBear.d_ext4, sampleList, out_bind, out_sample_cons, out_pure,
-        List.append_nil, List.drop_succ_cons, List.drop_zero]⟩
+/-- `n` samples left or more: sampling `n` takes them. -/
+theorem out_sampleList_pop (cap : Digest) (input : List F) :
+    ∀ (n : Nat) (samples : List F), n ≤ samples.length →
+      out answer (sampleList Hl n) ⟨cap, input, samples⟩ =
+        (.ok (samples.take n, ⟨cap, input, samples.drop n⟩), [])
+  | 0, _, _ => rfl
+  | n + 1, x :: rest, h => by
+    simp only [sampleList, out_bind, out_sample_cons,
+      out_sampleList_pop cap input n rest (by simp only [List.length_cons] at h; omega), out_pure,
+      List.append_nil, List.take_succ_cons, List.drop_succ_cons]
 
-/-- No samples left: an extension sample duplexes and takes four samples of the answer. -/
-theorem out_sampleExt_nil (hK : 4 ≤ K) (cap : Digest) (input : List F) :
-    ∃ v, out answer (sampleExt Hl : M Hl EF) ⟨cap, input, []⟩ =
-      (.ok (v, ⟨(answer (.duplex cap input)).1, [],
-        (answer (.duplex cap input)).2.toList.drop 4⟩),
+/-- `d` samples left or more: an extension sample takes them. -/
+theorem out_sampleExt_pop (cap : Digest) (input : List F) (samples : List F)
+    (h : Challenge.d EF ≤ samples.length) :
+    out answer (sampleExt Hl : M Hl EF) ⟨cap, input, samples⟩ =
+      (.ok (Challenge.ofCoeffs (samples.take (Challenge.d EF)),
+        ⟨cap, input, samples.drop (Challenge.d EF)⟩), []) := by
+  simp only [sampleExt, out_bind, out_sampleList_pop answer cap input _ samples h, out_pure,
+    List.append_nil]
+
+/-- No samples left: an extension sample duplexes and takes `d` samples of the answer. -/
+theorem out_sampleExt_nil (hK : Challenge.d EF ≤ K) (cap : Digest) (input : List F) :
+    out answer (sampleExt Hl : M Hl EF) ⟨cap, input, []⟩ =
+      (.ok (Challenge.ofCoeffs ((answer (.duplex cap input)).2.toList.take (Challenge.d EF)),
+        ⟨(answer (.duplex cap input)).1, [],
+        (answer (.duplex cap input)).2.toList.drop (Challenge.d EF)⟩),
         [⟨.duplex cap input, answer (.duplex cap input)⟩]) := by
-  have hlen : 3 ≤ (answer (.duplex cap input)).2.toList.tail.length := by
-    rw [List.length_tail, Vector.length_toList]
+  obtain ⟨d, hd⟩ : ∃ d, Challenge.d EF = d + 1 :=
+    ⟨Challenge.d EF - 1, Nat.succ_pred_eq_of_pos (Challenge.params EF).d_pos |>.symm⟩
+  have hlen : d ≤ (answer (.duplex cap input)).2.toList.tail.length := by
+    rw [List.length_tail, Vector.length_toList, ← Nat.add_sub_cancel d 1, ← hd]
+    exact Nat.sub_le_sub_right hK 1
+  simp only [sampleExt, hd, sampleList, out_bind, out_sample_nil,
+    out_sampleList_pop answer _ _ d _ hlen, out_pure, List.append_nil]
+  rcases hL : (answer (.duplex cap input)).2.toList with _ | ⟨a, rest⟩
+  · have := congrArg List.length hL
+    rw [Vector.length_toList, List.length_nil] at this
     omega
-  match hL : (answer (.duplex cap input)).2.toList, hlen with
-  | a :: b :: c :: d :: rest, _ =>
-    refine ⟨Challenge.ofCoeffs [a, b, c, d], ?_⟩
-    simp only [sampleExt, KoalaBear.d_ext4, sampleList, out_bind, out_sample_nil, hL,
-      List.headD_cons, List.tail_cons, out_sample_cons, out_pure, List.append_nil,
-      List.drop_succ_cons, List.drop_zero]
+  · rfl
 
 /-- A loop whose every step from a state satisfying `Inv` yields, keeps `Inv` at the next step
 and queries `q` of its step logs `q` of every step. -/
@@ -478,8 +492,8 @@ theorem logsRounds_left {blocks : List (List F)} {lo hi : Nat} {w₁ w₂ : Quer
 
 /-- FRI's rounds: from the batching round `r` on, with its input observed, the verifier queries
 the batching round, every fold round and the query round. -/
-theorem verifyFri_logs (hK : P.numQueries + 5 ≤ K) (blocks : List (List F)) (r : Nat)
-    (proof : FriProof EF) (rounds : List (Round EF)) (hne : arities proof ≠ [])
+theorem verifyFri_logs (hK : P.numQueries + Challenge.d EF + 1 ≤ K) (blocks : List (List F))
+    (r : Nat) (proof : FriProof EF) (rounds : List (Round EF)) (hne : arities proof ≠ [])
     (hfold : ∀ j (hj : j < (proof.commits.toList.zip proof.commitWitnesses.toList).length),
       blocks.getD (r + 1 + j) [] =
         (proof.commits.toList.zip proof.commitWitnesses.toList)[j].1.toList ++
@@ -498,7 +512,7 @@ theorem verifyFri_logs (hK : P.numQueries + 5 ≤ K) (blocks : List (List F)) (r
   dsimp only at hok ⊢
   simp only [← Array.forIn_toList] at hok ⊢
   -- the batching round
-  obtain ⟨v₁, hv₁⟩ := out_sampleExt_nil answer (by omega) (capAt answer blocks r)
+  have hv₁ := out_sampleExt_nil (EF := EF) answer (by omega) (capAt answer blocks r)
     (blocks.getD r [])
   obtain ⟨alpha, s₁, h₁, hok, hlog⟩ := out_bind_ok answer hok
   rw [hv₁] at h₁
@@ -540,7 +554,7 @@ theorem verifyFri_logs (hK : P.numQueries + 5 ≤ K) (blocks : List (List F)) (r
       rw [hbits, out_checkWitness_zero] at h₂
       obtain ⟨rfl, rfl⟩ := Prod.mk.inj (Except.ok.inj h₂)
       obtain ⟨-, hstep, hlog₃⟩ := out_ensure_bind_ok answer hstep
-      obtain ⟨v₄, hv₄⟩ := out_sampleExt_nil answer (by omega) (capAt answer blocks (r + 1 + k))
+      have hv₄ := out_sampleExt_nil (EF := EF) answer (by omega) (capAt answer blocks (r + 1 + k))
         c.toList
       obtain ⟨β, s₄, h₄, hstep, hlog₄⟩ := out_bind_ok answer hstep
       rw [hv₄] at h₄
@@ -559,7 +573,7 @@ theorem verifyFri_logs (hK : P.numQueries + 5 ≤ K) (blocks : List (List F)) (r
       rw [hv₂] at h₂
       obtain ⟨rfl, rfl⟩ := Prod.mk.inj (Except.ok.inj h₂)
       obtain ⟨-, hstep, hlog₃⟩ := out_ensure_bind_ok answer hstep
-      obtain ⟨v₄, hv₄⟩ := out_sampleExt_pop answer
+      have hv₄ := out_sampleExt_pop (EF := EF) answer
         (answer (.duplex (capAt answer blocks (r + 1 + k)) (c.toList ++ [w]))).1 []
         (answer (.duplex (capAt answer blocks (r + 1 + k)) (c.toList ++ [w]))).2.toList.tail
         (by rw [List.length_tail, Vector.length_toList]; omega)
@@ -693,8 +707,8 @@ theorem foldl_coeffs_flatMap {γ : Type} (l : List γ) (f : γ → List EF) (s :
 
 /-- The commitment scheme: from the round `r` before it, with its values the input of round `r`,
 the verifier queries every round of FRI. -/
-theorem verifyPcs_logs (hK : P.numQueries + 5 ≤ K) (blocks : List (List F)) (r : Nat)
-    (proof : FriProof EF) (rounds : List (Fri.Round EF)) (hne : arities proof ≠ [])
+theorem verifyPcs_logs (hK : P.numQueries + Challenge.d EF + 1 ≤ K) (blocks : List (List F))
+    (r : Nat) (proof : FriProof EF) (rounds : List (Fri.Round EF)) (hne : arities proof ≠ [])
     (hfold : ∀ j (hj : j < (proof.commits.toList.zip proof.commitWitnesses.toList).length),
       blocks.getD (r + 1 + j) [] =
         (proof.commits.toList.zip proof.commitWitnesses.toList)[j].1.toList ++
@@ -757,7 +771,10 @@ theorem verifyPcs_logs (hK : P.numQueries + 5 ≤ K) (blocks : List (List F)) (r
 
 theorem coeffs_ne_nil {xs : List EF} (h : xs ≠ []) : coeffs xs ≠ [] := by
   obtain ⟨x, xs, rfl⟩ := List.exists_cons_of_ne_nil h
-  simp only [coeffs, List.flatMap_cons, List.cons_append, ne_eq, reduceCtorEq, not_false_eq_true]
+  rw [coeffs, List.flatMap_cons, ne_eq, List.append_eq_nil_iff, not_and_or]
+  refine Or.inl (List.ne_nil_of_length_pos ?_)
+  rw [Ext.coeffs, Challenge.length_coeffs]
+  exact (Challenge.params EF).d_pos
 
 theorem inputs_getD_fold (P : Fri.Params) (pis : List F) (proof : Proof EF) (j : Nat)
     (hj : j < (proof.fri.commits.toList.zip proof.fri.commitWitnesses.toList).length) :
@@ -805,7 +822,8 @@ theorem run_stateT_bind {α β : Type} (x : M (idealLogged answer) α) (s : Spon
 /-- **The verifier queries every round.** If the verifier on the logged answers accepts a proof
 that folds at least once, its log holds the duplex call of every round of the proof's
 schedule. -/
-theorem verifyWith_logs (hK : P.numQueries + 5 ≤ K) (A : Air) (proof : Proof EF) (pis : List F)
+theorem verifyWith_logs (hK : P.numQueries + Challenge.d EF + 1 ≤ K) (A : Air) (proof : Proof EF)
+    (pis : List F)
     (hfolds : P.logFinalPolyLen < proof.degreeBits)
     (hok : (verifyWith (idealLogged answer) P A proof pis).run.1 = .ok ()) :
     LogsRounds answer (inputs P pis proof) 0 (inputs P pis proof).length
@@ -861,7 +879,8 @@ theorem verifyWith_logs (hK : P.numQueries + 5 ≤ K) (A : Air) (proof : Proof E
       dsimp only at hrun1 ⊢
       rw [hin₀, show initCap = capAt answer (inputs P pis proof) 0 from rfl] at hrun1 ⊢
       -- the round of `α`
-      obtain ⟨v₀, hv₀⟩ := out_sampleExt_nil answer (by omega) (capAt answer (inputs P pis proof) 0)
+      have hv₀ := out_sampleExt_nil (EF := EF) answer (by omega)
+        (capAt answer (inputs P pis proof) 0)
         ((inputs P pis proof).getD 0 [])
       obtain ⟨_, s₁, h₁, hrun1, hlog⟩ := out_bind_ok answer hrun1
       rw [hv₀] at h₁
@@ -884,7 +903,8 @@ theorem verifyWith_logs (hK : P.numQueries + 5 ≤ K) (A : Air) (proof : Proof E
           List.getElem?_cons_succ, List.getElem?_cons_zero, Option.getD_some]
       dsimp only at hrun1 ⊢
       rw [hin₁] at hrun1 ⊢
-      obtain ⟨v₁, hv₁⟩ := out_sampleExt_nil answer (by omega) (capAt answer (inputs P pis proof) 1)
+      have hv₁ := out_sampleExt_nil (EF := EF) answer (by omega)
+        (capAt answer (inputs P pis proof) 1)
         ((inputs P pis proof).getD 1 [])
       obtain ⟨_, s₁, h₁, hrun1, hlog⟩ := out_bind_ok answer hrun1
       rw [hv₁] at h₁
@@ -922,8 +942,8 @@ theorem verifyWith_logs (hK : P.numQueries + 5 ≤ K) (A : Air) (proof : Proof E
           Array.mem_toList_iff, Array.toList_eq_nil_iff] at h
         have := h.2 _ hmem
         rw [this] at h4
-        exact absurd h4 (by
-          simp only [Array.size_empty, KoalaBear.d_ext4, OfNat.zero_ne_ofNat, not_false_eq_true])
+        rw [Array.size_empty] at h4
+        exact (Challenge.params EF).d_pos.ne h4
     · simp only [ExceptT.run_bind, ExceptT.run_throw, pure_bind] at hok
       cases hok
   · simp only [ExceptT.run_bind, ExceptT.run_throw, pure_bind] at hok
@@ -962,7 +982,7 @@ theorem run_idealLogged (P : Fri.Params) (A : Air) (proof : Proof EF) (pis : Lis
 end Verifier
 
 section Setup
-variable (S : Iop.Setup KoalaBear.Fast.Ext4) (answer : (q : Query) → Answer S.streamLen q)
+variable (S : Iop.Setup EF) (answer : (q : Query) → Answer S.streamLen q)
 
 /-- **The verifier queries every round.** If the verifier accepts a proof for `2 ^ logN` rows on
 the answers `answer`, the duplex call of every round of the proof's schedule is in its log. -/
@@ -994,14 +1014,24 @@ end Setup
 
 /-! ### Reading challenges off a round -/
 
-/-- The extension element of four samples from `offset` on, lowest coefficient first, in `𝕂`. -/
-def extAt (samples : Vector F K) (offset : Nat) : KoalaBear.Ext4 :=
-  KoalaBear.Fast.Ext4.specEquiv ⟨samples.toList.getD offset 0, samples.toList.getD (offset + 1) 0,
-    samples.toList.getD (offset + 2) 0, samples.toList.getD (offset + 3) 0⟩
+/-- The extension element of `d` samples from `offset` on, lowest coefficient first, in `𝕂`. -/
+def extAt (samples : Vector F K) (offset : Nat) : Challenge.Spec EF :=
+  CompPoly.Extension.Ext.ofFn fun i ↦
+    Montgomery.Native32.FastField.toField (samples.toList.getD (offset + i) 0)
+
+/-- An extension sample of the `d` samples from `offset` on is `extAt`. -/
+theorem toSpec_ofCoeffs_drop (samples : Vector F K) (offset : Nat) :
+    Challenge.toSpec (Challenge.ofCoeffs
+      ((samples.toList.drop offset).take (Challenge.d EF)) : EF) = extAt samples offset := by
+  rw [Challenge.toSpec_ofCoeffs, extAt]
+  congr 1
+  funext i
+  rw [List.getD_eq_getElem?_getD, List.getElem?_take_of_lt i.isLt, List.getElem?_drop,
+    ← List.getD_eq_getElem?_getD]
 
 /-- The challenges of the rounds, in the order of `inputs`: `α`, `ζ` and the batching challenge
-take the first four samples of rounds `0`, `1` and `2`; fold `i`'s grinding sample is the first
-sample of round `3 + i` and its `β_i` the next four (the first four without commit grinding); the
+take the first `d` samples of rounds `0`, `1` and `2`; fold `i`'s grinding sample is the first
+sample of round `3 + i` and its `β_i` the next `d` (the first `d` without commit grinding); the
 query round's grinding sample is its first sample, and the query indices the next ones (from the
 first without query grinding). -/
 def challengeOffset (bits : Nat) : Nat := if bits = 0 then 0 else 1

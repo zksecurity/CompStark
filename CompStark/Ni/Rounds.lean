@@ -29,12 +29,13 @@ The decoders invert the verifier's observations (`digestAt_append`, `openingsAt_
 namespace CompStark.Ni
 open CompStark.Stark CompStark.Fri CompStark.Sound CompStark.Iop CompStark.RandomOracle
 open Polynomial Montgomery.Native32 Fri.Spec OracleSpec OracleComp
-open KoalaBear.Fast (Ext4)
 
 local notation "F" => KoalaBear.Fast.Field
-local notation "EF" => KoalaBear.Fast.Ext4
 local notation "𝔽" => KoalaBear.Field
-local notation "𝕂" => Challenge.Spec KoalaBear.Fast.Ext4
+
+variable {EF : Type} [Challenge EF]
+
+local notation "𝕂" => Challenge.Spec EF
 
 /-! ### Decoding observations -/
 
@@ -52,55 +53,60 @@ theorem digestAt_append (d : Digest) (pre rest : List F) :
 theorem digestAt_append_zero (d : Digest) (rest : List F) : digestAt (d.toList ++ rest) 0 = d :=
   digestAt_append d [] rest
 
-/-- The extension element of the four elements of `xs` from `4 k` on. -/
+/-- The extension element of the `d` elements of `xs` from `d k` on. -/
 def extFrom (xs : List F) (k : Nat) : EF :=
-  ⟨xs.getD (4 * k) 0, xs.getD (4 * k + 1) 0, xs.getD (4 * k + 2) 0, xs.getD (4 * k + 3) 0⟩
+  Challenge.ofCoeffs ((xs.drop (Challenge.d EF * k)).take (Challenge.d EF))
 
 theorem extFrom_coeffs (rest : List F) :
     ∀ (l : List EF) (k : Nat) (hk : k < l.length), extFrom (coeffs l ++ rest) k = l[k]
-  | x :: l, 0, _ => rfl
+  | x :: l, 0, _ => by
+    rw [extFrom, Nat.mul_zero, List.drop_zero, coeffs, List.flatMap_cons, List.append_assoc,
+      List.take_left' (Challenge.length_coeffs x), List.getElem_cons_zero]
+    exact Challenge.ofCoeffs_coeffs x
   | x :: l, k + 1, hk => by
     have ih := extFrom_coeffs rest l k (by simp only [List.length_cons] at hk; omega)
-    simp only [extFrom, coeffs, List.flatMap_cons, List.append_assoc] at ih ⊢
-    simp only [show 4 * (k + 1) = 4 * k + 1 + 1 + 1 + 1 by omega, List.cons_append,
-      List.nil_append, List.getD_cons_succ, List.getElem_cons_succ]
-    exact ih
+    rw [extFrom, coeffs, List.flatMap_cons, List.append_assoc, Nat.mul_succ, Nat.add_comm,
+      ← List.drop_drop, List.drop_left' (Challenge.length_coeffs x), List.getElem_cons_succ, ← ih]
+    rfl
 
 /-- The openings of the extension elements in `xs`: the trace at `ζ`, at `ζ ω`, and the quotient
 chunks' coordinates, in the order the verifier observes them. -/
-noncomputable def openingsAt (S : Iop.Setup KoalaBear.Fast.Ext4) (xs : List F) : Openings S where
-  traceAt j := Ext4.toSpec (extFrom xs j)
-  traceNext j := Ext4.toSpec (extFrom xs (S.air.width + j))
-  quotientAt c e := Ext4.toSpec (extFrom xs (2 * S.air.width + (4 * c.val + e.val)))
+noncomputable def openingsAt (S : Iop.Setup EF) (xs : List F) : Openings S where
+  traceAt j := Challenge.toSpec (extFrom (EF := EF) xs j)
+  traceNext j := Challenge.toSpec (extFrom (EF := EF) xs (S.air.width + j))
+  quotientAt c e :=
+    Challenge.toSpec (extFrom (EF := EF) xs (2 * S.air.width + (Challenge.d EF * c.val + e.val)))
 
-theorem getElem_flatMap_four {α : Type} (L : List (List α)) (hL : ∀ l ∈ L, l.length = 4)
-    (c e : Nat) (hc : c < L.length) (he : e < 4) (h : 4 * c + e < (L.flatMap id).length) :
-    (L.flatMap id)[4 * c + e] = L[c][e]'(by rw [hL _ (List.getElem_mem hc)]; exact he) := by
+theorem getElem_flatMap_of_length {α : Type} (w : Nat) (L : List (List α))
+    (hL : ∀ l ∈ L, l.length = w) (c e : Nat) (hc : c < L.length) (he : e < w)
+    (h : w * c + e < (L.flatMap id).length) :
+    (L.flatMap id)[w * c + e] = L[c][e]'(by rw [hL _ (List.getElem_mem hc)]; exact he) := by
   induction L generalizing c with
   | nil => exact absurd hc (Nat.not_lt_zero _)
   | cons l L ih =>
-    have hl : l.length = 4 := hL l List.mem_cons_self
+    have hl : l.length = w := hL l List.mem_cons_self
     simp only [List.flatMap_cons, id] at h ⊢
     cases c with
     | zero =>
       rw [List.getElem_append_left (by rw [hl]; omega)]
       simp only [Nat.mul_zero, Nat.zero_add, List.getElem_cons_zero]
     | succ c =>
-      rw [List.getElem_append_right (by rw [hl]; omega)]
+      rw [List.getElem_append_right (by rw [hl, Nat.mul_succ]; omega)]
       have := ih (fun l' hl' ↦ hL l' (List.mem_cons_of_mem _ hl')) c
         (by simp only [List.length_cons] at hc; omega)
-        (by simp only [List.length_append, hl] at h; omega)
-      simp only [hl, show 4 * (c + 1) + e - 4 = 4 * c + e by omega, this,
+        (by simp only [List.length_append, hl, Nat.mul_succ] at h; omega)
+      simp only [hl, show w * (c + 1) + e - w = w * c + e by rw [Nat.mul_succ]; omega, this,
         List.getElem_cons_succ]
 
-theorem openingsAt_coeffs (S : Iop.Setup KoalaBear.Fast.Ext4) (o : OpenedValues EF)
+theorem openingsAt_coeffs (S : Iop.Setup EF) (o : OpenedValues EF)
     (htl : o.traceLocal.size = S.air.width) (htn : o.traceNext.size = S.air.width)
-    (hqc : o.quotientChunks.size = S.chunks) (hq4 : ∀ ch ∈ o.quotientChunks, ch.size = 4) :
+    (hqc : o.quotientChunks.size = S.chunks)
+    (hq4 : ∀ ch ∈ o.quotientChunks, ch.size = Challenge.d EF) :
     openingsAt S (coeffs (openedValues o)) = openingsOf S o := by
-  have hlen : (openedValues o).length = 2 * S.air.width + 4 * S.chunks := by
+  have hlen : (openedValues o).length = 2 * S.air.width + Challenge.d EF * S.chunks := by
     simp only [openedValues, List.length_append, Array.length_toList, htl, htn,
       List.length_flatMap]
-    rw [List.sum_eq_length_nsmul _ 4 (by
+    rw [List.sum_eq_length_nsmul _ (Challenge.d EF) (by
       intro n hn
       obtain ⟨ch, hch, rfl⟩ := List.mem_map.mp hn
       exact hq4 ch (Array.mem_toList_iff.mp hch)), List.length_map, Array.length_toList, hqc,
@@ -130,12 +136,14 @@ theorem openingsAt_coeffs (S : Iop.Setup KoalaBear.Fast.Ext4) (o : OpenedValues 
     rw [Array.getD_eq_getD_getElem?, Array.getElem?_eq_getElem]
     rfl
   · have hc : c.val < S.chunks := c.isLt
-    have he : e.val < 4 := e.isLt
+    have he : e.val < Challenge.d EF := e.isLt
+    have hce : Challenge.d EF * c.val + e.val < Challenge.d EF * S.chunks :=
+      (Nat.add_lt_add_left he _).trans_le (Nat.mul_le_mul_left _ hc)
     rw [hx _ (by omega)]
     simp only [openingsOf, openedValues, List.append_assoc]
     rw [List.getElem_append_right (by simp only [Array.length_toList, htl]; omega),
       List.getElem_append_right (by simp only [Array.length_toList, htl, htn]; omega)]
-    have hL : ∀ l ∈ o.quotientChunks.toList.map (·.toList), l.length = 4 := by
+    have hL : ∀ l ∈ o.quotientChunks.toList.map (·.toList), l.length = Challenge.d EF := by
       intro l hl
       obtain ⟨ch, hch, rfl⟩ := List.mem_map.mp hl
       rw [Array.length_toList]
@@ -143,10 +151,10 @@ theorem openingsAt_coeffs (S : Iop.Setup KoalaBear.Fast.Ext4) (o : OpenedValues 
     have hfm : o.quotientChunks.toList.flatMap (·.toList) =
         (o.quotientChunks.toList.map (·.toList)).flatMap id := by
       rw [List.flatMap_map]; rfl
-    have hidx : 2 * S.air.width + (4 * c.val + e.val) - S.air.width - S.air.width =
-        4 * c.val + e.val := by omega
+    have hidx : 2 * S.air.width + (Challenge.d EF * c.val + e.val) - S.air.width - S.air.width =
+        Challenge.d EF * c.val + e.val := by omega
     simp only [Array.length_toList, htl, htn, hfm]
-    have := getElem_flatMap_four _ hL c.val e.val
+    have := getElem_flatMap_of_length _ _ hL c.val e.val
       (by simp only [List.length_map, Array.length_toList, hqc]; exact hc) e.isLt
     simp only [List.getElem_map, Array.getElem_toList] at this
     simp only [hidx, this]
@@ -159,10 +167,10 @@ theorem openingsAt_coeffs (S : Iop.Setup KoalaBear.Fast.Ext4) (o : OpenedValues 
 
 /-- The final polynomial's `2 ^ logFinalPolyLen` coefficients, from the extension elements in
 `xs`. -/
-def finalPolyAt (S : Iop.Setup KoalaBear.Fast.Ext4) (xs : List F) : Array EF :=
+def finalPolyAt (S : Iop.Setup EF) (xs : List F) : Array EF :=
   Array.ofFn fun k : Fin (2 ^ S.params.logFinalPolyLen) ↦ extFrom xs k
 
-theorem finalPolyAt_coeffs (S : Iop.Setup KoalaBear.Fast.Ext4) (coeffs' : Array EF) (rest : List F)
+theorem finalPolyAt_coeffs (S : Iop.Setup EF) (coeffs' : Array EF) (rest : List F)
     (h : coeffs'.size = 2 ^ S.params.logFinalPolyLen) :
     finalPolyAt S (coeffs coeffs'.toList ++ rest) = coeffs' := by
   ext k hk₁ hk₂
@@ -173,7 +181,7 @@ theorem finalPolyAt_coeffs (S : Iop.Setup KoalaBear.Fast.Ext4) (coeffs' : Array 
 /-! ### The transcript of a prefix -/
 
 section Prefix
-variable (S : Iop.Setup KoalaBear.Fast.Ext4)
+variable (S : Iop.Setup EF)
 
 /-- The digest observed in a duplex call's input, the one a commitment round binds: after the
 three leading elements of the first round (initial capacity), first otherwise. -/
@@ -183,7 +191,7 @@ def boundDigest (cap : Digest) (input : List F) : Digest :=
 /-- The folding challenges of ArkLib's oracles, from the answers `sample` of the fold rounds:
 `s_j β_j`, `s_j` the shift of word `j`'s domain. -/
 noncomputable def betasAt (sample : Nat → Vector F S.streamLen) : FinalStatement 𝕂 S.lastFold :=
-  fun j ↦ @lift EF _ gen ^ 2 ^ foldingPrefix S.schedule j.castSucc *
+  fun j ↦ lift gen ^ 2 ^ foldingPrefix S.schedule j.castSucc *
     extAt (sample (3 + j.val)) (challengeOffset S.params.commitPowBits)
 
 /-- The transcript read off the inputs `block j` and answers `sample j` of the rounds `j` and
@@ -193,7 +201,7 @@ noncomputable def prefixTranscript (cache : Merkle.Cache F Digest) (block : Nat 
     (sample : Nat → Vector F S.streamLen) : Sound.Transcript S where
   trace j := committedColumn S cache (digestAt (block 0) 3) j
   alpha := extAt (sample 0) 0
-  quotient c e := committedColumn S cache (digestAt (block 1) 0) (4 * c.val + e.val)
+  quotient c e := committedColumn S cache (digestAt (block 1) 0) (Challenge.d EF * c.val + e.val)
   zeta := extAt (sample 1) 0
   openings := openingsAt S (block 2)
   batch := extAt (sample 2) 0

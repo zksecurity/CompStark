@@ -24,9 +24,7 @@ namespace CompStark.Ni
 open CompStark.Stark CompStark.Fri
 
 local notation "F" => KoalaBear.Fast.Field
-local notation "EF" => KoalaBear.Fast.Ext4
-
-variable (H : Primitives Id)
+variable {EF : Type} [Challenge EF] (H : Primitives Id)
 
 /-! ### The verifier's monad on pure primitives -/
 
@@ -523,15 +521,20 @@ def obsList (s : H.State) (xs : List F) : H.State := xs.foldl H.observe s
 
 /-- Observe extension elements, lowest coefficient first. -/
 def obsExts (s : H.State) (xs : List EF) : H.State :=
-  xs.foldl (fun s x ↦ [x.c0, x.c1, x.c2, x.c3].foldl H.observe s) s
+  xs.foldl (fun s x ↦ (Ext.coeffs x).foldl H.observe s) s
+
+/-- Sample `n` elements. -/
+def smpList (s : H.State) : Nat → List F × H.State
+  | 0 => ([], s)
+  | n + 1 =>
+    let a := H.sample s
+    let r := smpList a.2 n
+    (a.1 :: r.1, r.2)
 
 /-- Sample an extension element, lowest coefficient first. -/
 def smpExt (s : H.State) : EF × H.State :=
-  let a := H.sample s
-  let b := H.sample a.2
-  let c := H.sample b.2
-  let d := H.sample c.2
-  (⟨a.1, b.1, c.1, d.1⟩, d.2)
+  let r := smpList H s (Challenge.d EF)
+  (Challenge.ofCoeffs r.1, r.2)
 
 /-- Sample the low `bits` bits of an element's canonical value. -/
 def smpBits (bits : Nat) (s : H.State) : Nat × H.State :=
@@ -552,14 +555,6 @@ theorem observeExts_eq (xs : List EF) (s : H.State) :
     observeExts H xs s = .ok ((), obsExts H s xs) := rfl
 
 theorem sample_eq (s : H.State) : sample H s = .ok (H.sample s) := rfl
-
-/-- Sample `n` elements. -/
-def smpList (s : H.State) : Nat → List F × H.State
-  | 0 => ([], s)
-  | n + 1 =>
-    let a := H.sample s
-    let r := smpList a.2 n
-    (a.1 :: r.1, r.2)
 
 theorem sampleList_eq : ∀ (n : Nat) (s : H.State), sampleList H n s = .ok (smpList H s n)
   | 0, _ => rfl
@@ -639,7 +634,8 @@ def commitReplay (P : Params) : List (Digest × F) → H.State → List EF × H.
 theorem commitLoop_ok (P : Params) :
     ∀ (cws : List (Digest × F)) (betas : Array EF) (s : H.State) (r : Array EF × H.State),
       forIn cws betas (commitBody H P) s = .ok r →
-        r.1.toList = betas.toList ++ (commitReplay H P cws s).1 ∧ r.2 = (commitReplay H P cws s).2
+        r.1.toList = betas.toList ++ (commitReplay H P cws s).1 ∧
+          r.2 = (commitReplay (EF := EF) H P cws s).2
   | [], betas, s, r, h => by
     rw [List.forIn_nil] at h
     rw [pure_eq_ok H h]
@@ -754,7 +750,7 @@ theorem verifyFri_ok (P : Params) (proof : FriProof EF) (rounds : List (Round EF
     (s : H.State) (r : Unit × H.State) (h : verifyFri H P proof rounds s = .ok r) :
     let logMax := (arities proof).sum + P.logBlowup + P.logFinalPolyLen
     let cr := commitReplay H P (proof.commits.toList.zip proof.commitWitnesses.toList)
-      (smpExt H s).2
+      (smpExt (EF := EF) H s).2
     let w := chkWit H P.queryPowBits proof.queryWitness ((arities proof).foldl
       (fun s (a : Nat) ↦ H.observe s (a : F)) (obsExts H cr.2 proof.finalPoly.toList))
     (∀ q ∈ proof.queries.toList, q.steps.size = proof.commits.size ∧
@@ -834,14 +830,15 @@ def alphaOf (proof : Proof EF) (pis : List F) : EF := (smpExt H (stateAlpha H pr
 
 /-- The challenger after the quotient commitment. -/
 def stateZeta (proof : Proof EF) (pis : List F) : H.State :=
-  obsList H (smpExt H (stateAlpha H proof pis)).2 proof.quotientCommit.toList
+  obsList H (smpExt (EF := EF) H (stateAlpha H proof pis)).2 proof.quotientCommit.toList
 
 /-- The out-of-domain point `ζ`. -/
 def zetaOf (proof : Proof EF) (pis : List F) : EF := (smpExt H (stateZeta H proof pis)).1
 
 /-- The challenger when FRI starts, after the opened values. -/
 def stateFri (proof : Proof EF) (pis : List F) : H.State :=
-  obsOpened H (smpExt H (stateZeta H proof pis)).2 (Stark.vRounds proof (zetaOf H proof pis))
+  obsOpened H (smpExt (EF := EF) H (stateZeta H proof pis)).2
+    (Stark.vRounds proof (zetaOf H proof pis))
 
 theorem except_bind_ok {α : Type} (R : ExceptT String Id α) (p : α → Bool) (msg : String)
     (h : (R >>= fun x ↦ if p x = true then pure () else throw msg).run = .ok ()) :
@@ -865,7 +862,8 @@ theorem verifyWith_ok (P : Params) (A : Air) (proof : Proof EF) (pis : List F)
     (h : verifyWith H P A proof pis = .ok ()) :
     let o := proof.opened
     o.traceLocal.size = A.width ∧ o.traceNext.size = A.width ∧
-      o.quotientChunks.size = 2 ^ A.logQuotientChunks ∧ (∀ ch ∈ o.quotientChunks, ch.size = 4) ∧
+      o.quotientChunks.size = 2 ^ A.logQuotientChunks ∧
+      (∀ ch ∈ o.quotientChunks, ch.size = Challenge.d EF) ∧
       arities proof.fri = foldArities P.maxLogArity (proof.degreeBits - P.logFinalPolyLen) ∧
       (∃ st, verifyFri H P proof.fri (Stark.vRounds proof (zetaOf H proof pis))
         (stateFri H proof pis) = .ok ((), st)) ∧

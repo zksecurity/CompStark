@@ -19,15 +19,14 @@ namespace CompStark.Ni
 open CompStark.Stark CompStark.Fri CompStark.RandomOracle Montgomery.Native32 OracleSpec OracleComp
 
 local notation "F" => KoalaBear.Fast.Field
-local notation "EF" => KoalaBear.Fast.Ext4
 
-variable {K : Nat} (answer : (q : Query) → Answer K q)
+variable {EF : Type} [Challenge EF] {K : Nat} (answer : (q : Query) → Answer K q)
 
 /-! ### The first call -/
 
 /-- **The first call.** If the verifier on logged answers accepts, its log starts with the duplex
 call of the first round. -/
-theorem verifyWith_log_head (hK : 4 ≤ K) (P : Fri.Params) (A : Air) (proof : Proof EF)
+theorem verifyWith_log_head (hK : Challenge.d EF ≤ K) (P : Fri.Params) (A : Air) (proof : Proof EF)
     (pis : List F) (hok : (verifyWith (idealLogged answer) P A proof pis).run.1 = .ok ()) :
     ∃ rest, (verifyWith (idealLogged answer) P A proof pis).run.2 =
       ⟨keyAt answer (inputs P pis proof) 0, answer (keyAt answer (inputs P pis proof) 0)⟩ ::
@@ -77,7 +76,7 @@ theorem verifyWith_log_head (hK : 4 ≤ K) (P : Fri.Params) (A : Air) (proof : P
           List.getD_eq_getElem?_getD, List.getElem?_cons_zero, Option.getD_some]
       dsimp only at hrun1 ⊢
       rw [hin₀, show initCap = capAt answer (inputs P pis proof) 0 from rfl] at hrun1 ⊢
-      obtain ⟨v₀, hv₀⟩ := out_sampleExt_nil answer hK (capAt answer (inputs P pis proof) 0)
+      have hv₀ := out_sampleExt_nil (EF := EF) answer hK (capAt answer (inputs P pis proof) 0)
         ((inputs P pis proof).getD 0 [])
       obtain ⟨_, s₁, h₁, hrun1, hlog⟩ := out_bind_ok answer hrun1
       rw [hv₀] at h₁
@@ -100,7 +99,7 @@ theorem commitLoop_wit :
     ∀ (cws : List (Digest × F)) (betas : Array EF) (s : H.State) (r : Array EF × H.State),
       forIn (m := M H) cws betas (commitBody H P) s = .ok r →
         ∀ i (hi : i < cws.length), (chkWit H P.commitPowBits cws[i].2
-          (obsList H (commitReplay H P (cws.take i) s).2 cws[i].1.toList)).1 = true
+          (obsList H (commitReplay (EF := EF) H P (cws.take i) s).2 cws[i].1.toList)).1 = true
   | [], _, _, _, _, i, hi => absurd hi (Nat.not_lt_zero i)
   | cw :: cws, betas, s, r, h, i, hi => by
     obtain ⟨step, st', h1, h2⟩ := forIn_cons_eq_ok H _ _ _ _ _ _ h
@@ -122,7 +121,8 @@ variable (P : Params) (proof : Proof EF) (pis : List F)
 /-- **The fold rounds' grinding.** If FRI accepts on the ideal primitives of an answer table,
 then with grinding every fold round's answer has a first sample with `commitPowBits` vanishing
 low bits. -/
-theorem commitWitness_idealOf (hK : P.numQueries + 5 ≤ K) (hopen : openedValues proof.opened ≠ [])
+theorem commitWitness_idealOf (hK : P.numQueries + Challenge.d EF + 1 ≤ K)
+    (hopen : openedValues proof.opened ≠ [])
     (rounds : List (Round EF)) (st : Sponge)
     (hfri : verifyFri (idealOf answer) P proof.fri rounds (stateFri (idealOf answer) proof pis) =
       .ok ((), st))
@@ -154,7 +154,8 @@ theorem commitWitness_idealOf (hK : P.numQueries + 5 ≤ K) (hopen : openedValue
     rw [List.length_take] at hj
     rw [List.getElem_take]
     exact hcws j (by omega)
-  obtain ⟨-, -, l, hl⟩ := commitReplay_idealOf answer P (by omega) blocks (cws.take i) 3 _ htake
+  obtain ⟨-, -, l, hl⟩ :=
+    commitReplay_idealOf (EF := EF) answer P (by omega) blocks (cws.take i) 3 _ htake
   rw [hl, List.length_take, Nat.min_eq_left hi.le] at hwit
   have hblock : blocks.getD (3 + i) [] = cws[i].1.toList ++ [cws[i].2] := by
     rw [hcws i hi]

@@ -158,9 +158,8 @@ namespace CompStark.Fri
 open CompStark.Stark CompStark.RandomOracle OracleSpec OracleComp
 
 local notation "F" => KoalaBear.Fast.Field
-local notation "EF" => KoalaBear.Fast.Ext4
 
-variable {K : Nat}
+variable {EF : Type} [Challenge EF] {K : Nat}
 
 theorem isTotalQueryBound_query (q : Query) :
     IsTotalQueryBound (liftM ((spec K).query q) : OracleComp (spec K) _) 1 := by
@@ -192,7 +191,7 @@ theorem costs_sampleList : ∀ n, Costs (sampleList (ideal K) n) n fun _ ↦ Tru
   | n + 1 => costs_mono (costs_bind costs_sample fun _ _ ↦ costs_bind (costs_sampleList n)
       fun _ _ ↦ costs_pure _ (fun _ ↦ True) trivial) (by omega) fun _ h ↦ h
 
-theorem costs_sampleExt : Costs (sampleExt (ideal K) : M _ EF) 4 fun _ ↦ True :=
+theorem costs_sampleExt : Costs (sampleExt (ideal K) : M _ EF) (Challenge.d EF) fun _ ↦ True :=
   costs_bind (costs_sampleList _) fun _ _ ↦ costs_pure _ (fun _ ↦ True) trivial
 
 theorem costs_sampleBits (bits : Nat) : Costs (sampleBits (ideal K) bits) 1 fun _ ↦ True :=
@@ -303,6 +302,7 @@ theorem costs_verifyQuery (P : Params) (logMax index : Nat) (betas : List EF)
   · simp only [Nat.zero_add, Nat.add_zero, List.length_zip]
     exact Nat.mul_le_mul_right _ (Nat.min_le_right _ _)
 
+omit [Challenge EF] in
 /-- Every query has a fold per commit-phase commitment. -/
 theorem steps_size_of_all (proof : FriProof EF)
     (hall : (proof.queries.all fun q ↦ q.steps.size == proof.commits.size &&
@@ -314,6 +314,7 @@ theorem steps_size_of_all (proof : FriProof EF)
   simp only [Bool.and_eq_true, beq_iff_eq] at this
   exact this.1
 
+omit [Challenge EF] in
 /-- With some fold, the commit-phase commitments are as many as the folds. -/
 theorem commits_size_of_all (proof : FriProof EF)
     (hall : (proof.queries.all fun q ↦ q.steps.size == proof.commits.size &&
@@ -328,20 +329,20 @@ theorem commits_size_of_all (proof : FriProof EF)
       exact Array.mem_of_getElem? h
     exact (steps_size_of_all proof hall q hq).symm
 
-/-- FRI's oracle calls: four samples for `α`, five per fold, one for the query grinding, and per
+/-- FRI's oracle calls: `d` samples for `α`, `d + 1` per fold, one for the query grinding, and per
 query its index, its input openings and its folds. -/
 theorem costs_verifyFri (P : Params) (proof : FriProof EF) (rounds : List (Round EF)) (db : Nat)
     (hrounds : ∀ r ∈ rounds, ∀ mat ∈ r.2, mat.1.logSize = db) (hne : arities proof ≠ []) :
     Costs (verifyFri (ideal K) P proof rounds)
-      (5 + 5 * (arities proof).length + P.numQueries * (1 + rounds.length * (1 + (db +
-        P.logBlowup)) + (arities proof).length * (1 + ((arities proof).sum + P.logBlowup +
-          P.logFinalPolyLen)))) fun _ ↦ True := by
+      (Challenge.d EF + 1 + (Challenge.d EF + 1) * (arities proof).length +
+        P.numQueries * (1 + rounds.length * (1 + (db + P.logBlowup)) + (arities proof).length *
+          (1 + ((arities proof).sum + P.logBlowup + P.logFinalPolyLen)))) fun _ ↦ True := by
   unfold verifyFri
   simp only [← Array.forIn_toList]
   refine costs_mono (P := fun _ ↦ True) (costs_bind costs_sampleExt fun alpha _ ↦
     costs_bind (costs_ensure _ _) fun _ hall ↦ costs_bind (costs_ensure _ _) fun _ _ ↦
-    costs_bind (costs_forIn_le _ _ _ (arities proof).length 5 ?_ (fun _ ↦ True) trivial
-      fun _ _ _ _ ↦ ?_) fun betas _ ↦
+    costs_bind (costs_forIn_le _ _ _ (arities proof).length (Challenge.d EF + 1) ?_
+      (fun _ ↦ True) trivial fun _ _ _ _ ↦ ?_) fun betas _ ↦
     costs_bind (costs_ensure _ _) fun _ _ ↦ costs_bind (costs_observeExts _) fun _ _ ↦
     costs_bind (costs_ensure _ _) fun _ hq ↦ costs_bind (costs_forIn_zero _ _ _ fun _ _ ↦
       costs_bind (costs_observe _) fun _ _ ↦ costs_pure _ (fun _ ↦ True) trivial) fun _ _ ↦
@@ -354,9 +355,10 @@ theorem costs_verifyFri (P : Params) (proof : FriProof EF) (rounds : List (Round
   · rw [List.length_zip, Array.length_toList,
       commits_size_of_all proof (by simpa only using hall) hne]
     exact Nat.min_le_left _ _
-  · exact costs_bind (costs_observeList _) fun _ _ ↦ costs_bind (costs_checkWitness _ _)
-      fun _ _ ↦ costs_bind (costs_ensure _ _) fun _ _ ↦ costs_bind costs_sampleExt fun _ _ ↦
-        costs_pure _ (fun _ ↦ True) trivial
+  · exact costs_mono (costs_bind (costs_observeList _) fun _ _ ↦ costs_bind
+      (costs_checkWitness _ _) fun _ _ ↦ costs_bind (costs_ensure _ _) fun _ _ ↦
+        costs_bind costs_sampleExt fun _ _ ↦ costs_pure _ (fun _ ↦ True) trivial)
+      (by omega) fun _ h ↦ h
   · rw [Array.length_toList]
     exact (beq_iff_eq.mp hq).le
   · have hsteps := steps_size_of_all proof (by simpa only using hall) q hqm
@@ -368,14 +370,15 @@ theorem costs_verifyFri (P : Params) (proof : FriProof EF) (rounds : List (Round
       rw [Array.length_toList, hsteps, commits_size_of_all proof (by simpa only using hall) hne]
     rw [hlen]
     omega
-  · omega
+  · rw [Nat.mul_comm (arities proof).length]
+    omega
 
 theorem costs_verifyPcs (P : Params) (rounds : List (Round EF)) (proof : FriProof EF) (db : Nat)
     (hrounds : ∀ r ∈ rounds, ∀ mat ∈ r.2, mat.1.logSize = db) (hne : arities proof ≠ []) :
     Costs (verifyPcs (ideal K) P rounds proof)
-      (5 + 5 * (arities proof).length + P.numQueries * (1 + rounds.length * (1 + (db +
-        P.logBlowup)) + (arities proof).length * (1 + ((arities proof).sum + P.logBlowup +
-          P.logFinalPolyLen)))) fun _ ↦ True := by
+      (Challenge.d EF + 1 + (Challenge.d EF + 1) * (arities proof).length +
+        P.numQueries * (1 + rounds.length * (1 + (db + P.logBlowup)) + (arities proof).length *
+          (1 + ((arities proof).sum + P.logBlowup + P.logFinalPolyLen)))) fun _ ↦ True := by
   unfold verifyPcs
   refine costs_mono (P := fun _ ↦ True) (costs_bind (costs_forIn_zero _ _ _ fun _ _ ↦
     costs_bind (costs_forIn_zero _ _ _ fun _ _ ↦ costs_bind (costs_forIn_zero _ _ _ fun _ _ ↦
@@ -401,9 +404,8 @@ namespace CompStark.Iop.Setup
 open CompStark.Stark CompStark.Fri CompStark.RandomOracle OracleSpec OracleComp
 
 local notation "F" => KoalaBear.Fast.Field
-local notation "EF" => KoalaBear.Fast.Ext4
 
-variable (S : Setup KoalaBear.Fast.Ext4)
+variable {EF : Type} [Challenge EF] (S : Setup EF)
 
 /-- **The verifier's oracle calls.** On a proof for `2 ^ logN` rows, the verifier makes at most
 `verifierQueries` oracle calls. -/
@@ -428,9 +430,10 @@ theorem isTotalQueryBound_verifyWith (proof : Proof EF) (publicValues : List F)
           costs_bind (costs_observe _) fun _ _ ↦ costs_bind (costs_observeList _) fun _ _ ↦
           costs_bind (costs_observeList _) fun _ _ ↦ costs_bind costs_sampleExt fun _ _ ↦
           costs_bind (costs_observeList _) fun _ _ ↦ costs_bind costs_sampleExt fun _ _ ↦
-          costs_bind (a := 5 + 5 * (arities proof.fri).length + S.params.numQueries *
-            (1 + 2 * (1 + (proof.degreeBits + S.params.logBlowup)) + (arities proof.fri).length *
-              (1 + ((arities proof.fri).sum + S.params.logBlowup + S.params.logFinalPolyLen))))
+          costs_bind (a := Challenge.d EF + 1 + (Challenge.d EF + 1) * (arities proof.fri).length +
+            S.params.numQueries * (1 + 2 * (1 + (proof.degreeBits + S.params.logBlowup)) +
+              (arities proof.fri).length *
+                (1 + ((arities proof.fri).sum + S.params.logBlowup + S.params.logFinalPolyLen))))
             (b := 0) (costs_verifyPcs _ _ _ proof.degreeBits ?_
             (by rw [harities]; exact hne)) fun _ _ ↦ costs_pure _ (fun _ ↦ True) trivial) ?_
           fun _ h ↦ h
@@ -445,8 +448,9 @@ theorem isTotalQueryBound_verifyWith (proof : Proof EF) (publicValues : List F)
           have h : S.logN - S.params.logFinalPolyLen + S.params.logBlowup +
               S.params.logFinalPolyLen = S.logN + S.params.logBlowup := by omega
           rw [harities, hdb]
-          change _ ≤ 13 + 5 * S.friArities.length + S.params.numQueries *
-            (1 + (S.friArities.length + 2) * (1 + (S.logN + S.params.logBlowup)))
+          change _ ≤ 3 * Challenge.d EF + 1 + (Challenge.d EF + 1) * S.friArities.length +
+            S.params.numQueries *
+              (1 + (S.friArities.length + 2) * (1 + (S.logN + S.params.logBlowup)))
           rw [hsum, h]
           apply le_of_eq
           ring

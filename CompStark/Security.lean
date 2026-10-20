@@ -108,6 +108,10 @@ model, with FRI at `δ = 3/8 - 2 ^ (-18)`, the extractor at `δ' = 3/8 - 2 ^ (-2
 
 Every round error is at most `2 ^ (-128)` (`wide5_roundError_le`). `159` queries do not reach it at
 any radius: `(5/8) ^ 159 · powFraction 20` alone is about `2 ^ (-127.81)`.
+By `knowledgeSoundness_ro`, a prover making `Q` oracle calls gets a proof accepted that the
+extractor cannot open with probability at most `q · 2 ^ (-128) + 3 q² / |𝔽| ^ 8`,
+`q = Q + verifierQueries`, `verifierQueries = 16 + 6 · 21 + 160 · 553 = 88622`
+(`wide5_knowledgeSoundness_ro`).
 
 `wide5iSetup`: the interactive counterpart, which gets no credit for grinding: `wide 64` on `2 ^ 21`
 rows over `KoalaBear.Fast.Ext5`, blowup `4` and `190` queries (`wide5iParams`), with FRI at
@@ -553,6 +557,26 @@ theorem wide5_roundError_le :
   · refine powFraction_mul_le _ _ _ (by rw [hδ]; norm_num) ?_
     rw [hδ, KoalaBear.fieldSize]
     norm_num
+
+/-- **128 bits per oracle call on `2 ^ 21` rows over the quintic extension.** A prover for
+`wide5Setup` making at most `Q` oracle calls gets a proof accepted while no trace close to the one
+it committed to satisfies the AIR with probability at most `q · 2 ^ (-128) + hashError q`,
+`q = Q + verifierQueries`. -/
+theorem wide5_knowledgeSoundness_ro (publicValues : List F) (Q : Nat)
+    (prover : NIProver wide5Setup) (hQ : prover.IsTotalQueryBound Q) :
+    Pr{let (proof, log, verdict) ← run wide5Setup publicValues prover}[
+      verdict = .ok () ∧ proof.degreeBits = wide5Setup.logN ∧
+        ∀ trace ∈ closeTraces wide5Setup (3 / 8 - 2 ^ (-20 : ℤ) : NNReal)
+            (committedTrace wide5Setup log proof),
+          ¬ wide5Setup.air.Satisfied wide5Setup.logN trace publicValues] ≤
+      (Q + wide5Setup.verifierQueries) * (2 ^ 128)⁻¹ +
+        hashError (Q + wide5Setup.verifierQueries) := by
+  refine (knowledgeSoundness_ro wide5Setup publicValues (3 / 8 - 2 ^ (-18 : ℤ))
+    (3 / 8 - 2 ^ (-20 : ℤ)) ?_ Q prover hQ).trans ?_
+  · rw [coe_three_eighths_sub (-20) 20 rfl (by norm_num), rate_eq]
+    norm_num [wide5Setup, wide5Params]
+  · gcongr
+    exact wide5_roundError_le
 
 /-- FRI with blowup `4`, folding by arity `2` down to a constant, and `190` queries without
 grinding. -/

@@ -20,18 +20,19 @@ public import CompStark.Ni.Rounds
 namespace CompStark.Ni
 open CompStark.Stark CompStark.Fri CompStark.Sound CompStark.Iop CompStark.RandomOracle
 open Polynomial Montgomery.Native32 Fri.Spec OracleSpec OracleComp
-open KoalaBear.Fast (Ext4)
 
 local notation "F" => KoalaBear.Fast.Field
-local notation "EF" => KoalaBear.Fast.Ext4
 local notation "𝔽" => KoalaBear.Field
-local notation "𝕂" => Challenge.Spec KoalaBear.Fast.Ext4
+
+variable {EF : Type} [Challenge EF]
+
+local notation "𝕂" => Challenge.Spec EF
 
 /-- Two caches extract the same rows under `root`. -/
 def SameUnder (cache cache' : Merkle.Cache F Digest) (root : Digest) : Prop :=
   ∀ k i, Merkle.extractRow cache k i root = Merkle.extractRow cache' k i root
 
-variable (S : Iop.Setup KoalaBear.Fast.Ext4)
+variable (S : Iop.Setup EF)
 
 /-! ### Congruences -/
 
@@ -45,7 +46,7 @@ theorem committedColumn_congr (h : SameUnder cache cache' root) :
   simp only [committedColumn, leafRow, h]
 
 theorem friWordAt_congr (h : SameUnder cache cache' root) :
-    friWordAt cache root = friWordAt cache' root := by
+    friWordAt (EF := EF) cache root = friWordAt cache' root := by
   funext m a z
   unfold SameUnder at h
   simp only [friWordAt, leafRow, h]

@@ -22,9 +22,8 @@ namespace CompStark.RandomOracle
 open CompStark.Stark OracleSpec OracleComp
 
 local notation "F" => KoalaBear.Fast.Field
-local notation "EF" => KoalaBear.Fast.Ext4
 
-variable {K : Nat}
+variable {EF : Type} [Challenge EF] {K : Nat}
 
 /-- The primitives on answers `ask`, mapped by a monad morphism, are those on the mapped
 answers. -/
@@ -73,9 +72,8 @@ namespace CompStark.Iop.Setup
 open CompStark.Stark CompStark.RandomOracle OracleSpec OracleComp
 
 local notation "F" => KoalaBear.Fast.Field
-local notation "EF" => KoalaBear.Fast.Ext4
 
-variable (S : Setup KoalaBear.Fast.Ext4)
+variable {EF : Type} [Challenge EF] (S : Setup EF)
 
 theorem evalWithAnswerFn_verifyRo (answer : (q : Query) → Answer S.streamLen q) (proof : Proof EF)
     (pis : List F) :

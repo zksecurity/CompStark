@@ -18,19 +18,20 @@ values gives `ConstraintsHoldAt` on them (`openingsOf`), at the spec images of `
 @[expose] public section
 namespace CompStark.Ni
 open CompStark.Stark CompStark.Fri CompStark.Sound CompStark.Iop Polynomial Montgomery.Native32
-open KoalaBear.Fast (Ext4)
 
 local notation "F" => KoalaBear.Fast.Field
-local notation "EF" => KoalaBear.Fast.Ext4
 local notation "𝔽" => KoalaBear.Field
-local notation "𝕂" => Challenge.Spec KoalaBear.Fast.Ext4
+
+variable {EF : Type} [Challenge EF]
+
+local notation "𝕂" => Challenge.Spec EF
 
 /-- The opened values of a proof as the interactive oracle proof's openings, in the spec field. -/
-noncomputable def openingsOf (S : Iop.Setup KoalaBear.Fast.Ext4) (o : OpenedValues EF) :
+noncomputable def openingsOf (S : Iop.Setup EF) (o : OpenedValues EF) :
     Openings S where
-  traceAt j := Ext4.toSpec (o.traceLocal.getD j 0)
-  traceNext j := Ext4.toSpec (o.traceNext.getD j 0)
-  quotientAt c e := Ext4.toSpec ((o.quotientChunks.getD c #[]).getD e 0)
+  traceAt j := Challenge.toSpec (o.traceLocal.getD j 0)
+  traceNext j := Challenge.toSpec (o.traceNext.getD j 0)
+  quotientAt c e := Challenge.toSpec ((o.quotientChunks.getD c #[]).getD e 0)
 
 /-- A product over the chunks other than `c`, as a product over the range. -/
 theorem prod_fin_ne {M : Type*} [CommMonoid M] (n : Nat) (f : Nat → M) (c : Fin n) :
@@ -41,7 +42,7 @@ theorem prod_fin_ne {M : Type*} [CommMonoid M] (n : Nat) (f : Nat → M) (c : Fi
   simp only [ne_eq, Fin.val_eq_val]
 
 /-- The spec selector of chunk `c` is the verifier's (`chunkSel`). -/
-theorem selectorAt_eq (S : Iop.Setup KoalaBear.Fast.Ext4) (ζ : 𝕂) (c : Fin S.chunks) :
+theorem selectorAt_eq (S : Iop.Setup EF) (ζ : 𝕂) (c : Fin S.chunks) :
     selectorAt S ζ c = chunkSel S.logN S.air.logQuotientChunks c.val ζ := by
   have hs : ∀ d : Nat, chunkShift S d =
       algebraMap 𝔽 𝕂 (qpt (S.logN + S.air.logQuotientChunks) d) := fun d ↦ by
@@ -55,23 +56,23 @@ theorem selectorAt_eq (S : Iop.Setup KoalaBear.Fast.Ext4) (ζ : 𝕂) (c : Fin S
   rw [hv, hv, hs, div_eq_mul_inv]
 
 /-- The spec value of chunk `c` is the verifier's (`chunkInner`). -/
-theorem chunkAt_openingsOf (S : Iop.Setup KoalaBear.Fast.Ext4) (o : OpenedValues EF)
+theorem chunkAt_openingsOf (S : Iop.Setup EF) (o : OpenedValues EF)
     (c : Fin S.chunks) :
-    chunkAt (openingsOf S o) c = Ext4.toSpec (chunkInner (o.quotientChunks.getD c #[])) := by
-  rw [← KoalaBear.toSpec_ext4, toSpec_chunkInner, chunkAt, ← Fin.sum_univ_eq_sum_range]
+    chunkAt (openingsOf S o) c = Challenge.toSpec (chunkInner (o.quotientChunks.getD c #[])) := by
+  rw [toSpec_chunkInner, chunkAt, ← Fin.sum_univ_eq_sum_range]
   refine Finset.sum_congr rfl fun e _ ↦ ?_
   rw [Ext.toSpec_basis e.isLt]
   rfl
 
 /-- **The constraint check.** If the verifier's check at `ζ` passes on opened values with
 `2 ^ logQuotientChunks` chunks, the constraints hold at `ζ` in the spec field. -/
-theorem constraintsHoldAt_of_check (S : Iop.Setup KoalaBear.Fast.Ext4) (pis : List F)
+theorem constraintsHoldAt_of_check (S : Iop.Setup EF) (pis : List F)
     (o : OpenedValues EF)
     (zeta alpha : EF) (hqc : o.quotientChunks.size = S.chunks)
     (h : checkConstraints S.air pis o S.logN zeta alpha
       (recompose (chunkDomains S.logN S.air.logQuotientChunks) o.quotientChunks.toList zeta) =
         true) :
-    ConstraintsHoldAt S pis (Ext4.toSpec alpha) (Ext4.toSpec zeta) (openingsOf S o) := by
+    ConstraintsHoldAt S pis (Challenge.toSpec alpha) (Challenge.toSpec zeta) (openingsOf S o) := by
   rw [checkConstraints_eq_fun] at h
   have h' := congrArg Challenge.toSpec (beq_iff_eq.mp h)
   have hlist : o.quotientChunks.toList =
@@ -86,7 +87,7 @@ theorem constraintsHoldAt_of_check (S : Iop.Setup KoalaBear.Fast.Ext4) (pis : Li
   rw [constraintsHoldAt_iff, ← Fin.sum_univ_eq_sum_range] at *
   rw [Challenge.toSpec_mul, toSpec_foldedConstraints, Challenge.toSpec_inv, Challenge.toSpec_sub,
     toSpec_extPowTwo, Challenge.toSpec_one] at h'
-  have hzh : @vanishing EF _ 1 S.n (Ext4.toSpec zeta) = Ext4.toSpec zeta ^ 2 ^ S.logN - 1 := by
+  have hzh : vanishing 1 S.n (Challenge.toSpec zeta) = Challenge.toSpec zeta ^ 2 ^ S.logN - 1 := by
     rw [vanishing, div_one]
   have henv : (S.air.constraints.map fun c ↦ Challenge.toSpec (c.eval {
       cur := fun i ↦ o.traceLocal.getD i 0
@@ -96,10 +97,11 @@ theorem constraintsHoldAt_of_check (S : Iop.Setup KoalaBear.Fast.Ext4) (pis : Li
       isFirstRow := (Ext.powTwo zeta S.logN - 1) * (zeta - 1)⁻¹
       isLastRow := (Ext.powTwo zeta S.logN - 1) * (zeta - Ext.ofBase (twoAdicGen S.logN)⁻¹)⁻¹
       isTransition := zeta - Ext.ofBase (twoAdicGen S.logN)⁻¹ })) =
-      S.air.constraints.map fun c ↦ c.eval (envAt S pis (Ext4.toSpec zeta) (openingsOf S o)) := by
+      S.air.constraints.map fun c ↦
+        c.eval (envAt S pis (Challenge.toSpec zeta) (openingsOf S o)) := by
     refine List.map_congr_left fun c hc ↦ ?_
     have hlast : Challenge.toSpec (Ext.ofBase (twoAdicGen S.logN)⁻¹ : EF) =
-        (@rootOfUnity EF _ S.logN)⁻¹ := by
+        (rootOfUnity S.logN : 𝕂)⁻¹ := by
       rw [Challenge.toSpec_ofBase, toField_inv, ← CompPoly.Extension.Ext.algebraMap_eq_ofBase,
         map_inv₀]
       rfl
@@ -112,14 +114,13 @@ theorem constraintsHoldAt_of_check (S : Iop.Setup KoalaBear.Fast.Ext4) (pis : Li
     · simp only [envAt, Challenge.toSpec_ofBase]; rfl
     · simp only [envAt, Challenge.toSpec_ofBase]; rfl
     · simp only [envAt, Challenge.toSpec_mul, Challenge.toSpec_inv, Challenge.toSpec_sub,
-        toSpec_extPowTwo, Challenge.toSpec_one, KoalaBear.toSpec_ext4, hzh, div_eq_mul_inv]
+        toSpec_extPowTwo, Challenge.toSpec_one, hzh, div_eq_mul_inv]
     · simp only [envAt, Challenge.toSpec_mul, Challenge.toSpec_inv, Challenge.toSpec_sub,
-        toSpec_extPowTwo, Challenge.toSpec_one, KoalaBear.toSpec_ext4, hzh, div_eq_mul_inv, hlast]
-    · simp only [envAt, Challenge.toSpec_sub, KoalaBear.toSpec_ext4, hlast]
+        toSpec_extPowTwo, Challenge.toSpec_one, hzh, div_eq_mul_inv, hlast]
+    · simp only [envAt, Challenge.toSpec_sub, hlast]
   rw [henv, horner, List.foldl_map] at h'
   rw [hzh, div_eq_mul_inv]
   refine h'.trans (Finset.sum_congr rfl fun c _ ↦ ?_)
   rw [selectorAt_eq, chunkAt_openingsOf]
-  rfl
 
 end CompStark.Ni

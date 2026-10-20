@@ -42,4 +42,8 @@ namespace CompStarkTests.RandomOracle
 #guard_msgs in
 #print axioms CompStark.Iop.wideSp1_knowledgeSoundness_ro
 
+/-- info: 'CompStark.Iop.wide5_knowledgeSoundness_ro' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in
+#print axioms CompStark.Iop.wide5_knowledgeSoundness_ro
+
 end CompStarkTests.RandomOracle

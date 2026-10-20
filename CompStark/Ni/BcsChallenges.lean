@@ -21,12 +21,10 @@ The design's `Iop.committedTrace` is `traceWords` on the log's cache (`committed
 @[expose] public section
 namespace CompStark.Ni
 open CompStark.Stark CompStark.Fri CompStark.RandomOracle Montgomery.Native32 OracleSpec OracleComp
-open KoalaBear.Fast (Ext4)
 
 local notation "F" => KoalaBear.Fast.Field
-local notation "EF" => KoalaBear.Fast.Ext4
 
-variable {K : Nat} (answer : (q : Query) → Answer K q)
+variable {EF : Type} [Challenge EF] {K : Nat} (answer : (q : Query) → Answer K q)
 
 /-! ### The ideal challenger on an answer table -/
 
@@ -53,35 +51,53 @@ theorem sample_idealOf_nil (cap : Digest) (input : List F) :
       ((answer (.duplex cap input)).2.toList.headD 0,
         ⟨(answer (.duplex cap input)).1, [], (answer (.duplex cap input)).2.toList.tail⟩) := rfl
 
-/-- An extension sample with four samples left takes them. -/
-theorem smpExt_idealOf_pop (cap : Digest) (input : List F) (a b c d : F) (rest : List F) :
-    smpExt (idealOf answer) ⟨cap, input, a :: b :: c :: d :: rest⟩ =
-      (⟨a, b, c, d⟩, ⟨cap, input, rest⟩) := rfl
-
-/-- An extension sample from no samples duplexes and takes the answer's first four samples. -/
-theorem smpExt_idealOf_nil (hK : 4 ≤ K) (cap : Digest) (input : List F) :
-    Ext4.toSpec (smpExt (idealOf answer) ⟨cap, input, []⟩).1 =
-        extAt (answer (.duplex cap input)).2 0 ∧
-      (smpExt (idealOf answer) ⟨cap, input, []⟩).2 =
-        ⟨(answer (.duplex cap input)).1, [], (answer (.duplex cap input)).2.toList.drop 4⟩ := by
-  have hs : smpExt (idealOf answer) ⟨cap, input, []⟩ =
-      (smpExt (idealOf answer) ⟨(answer (.duplex cap input)).1, [],
-        (answer (.duplex cap input)).2.toList⟩) := by
-    have hlen : 0 < (answer (.duplex cap input)).2.toList.length := by
-      rw [Vector.length_toList]; omega
-    obtain ⟨x, rest, hx⟩ := List.exists_cons_of_length_pos hlen
-    unfold smpExt
-    rw [sample_idealOf_nil, hx]
+/-- Sampling `n` elements with `n` samples left or more takes them. -/
+theorem smpList_idealOf (cap : Digest) (input : List F) :
+    ∀ (n : Nat) (l : List F), n ≤ l.length →
+      smpList (idealOf answer) ⟨cap, input, l⟩ n = (l.take n, ⟨cap, input, l.drop n⟩)
+  | 0, _, _ => rfl
+  | n + 1, x :: rest, h => by
+    show (x :: (smpList (idealOf answer) ⟨cap, input, rest⟩ n).1,
+      (smpList (idealOf answer) ⟨cap, input, rest⟩ n).2) = _
+    rw [smpList_idealOf cap input n rest (by simp only [List.length_cons] at h; omega)]
     rfl
+
+/-- An extension sample with `d` samples left or more takes them. -/
+theorem smpExt_idealOf_pop (cap : Digest) (input : List F) (l : List F)
+    (h : Challenge.d EF ≤ l.length) :
+    smpExt (idealOf answer) ⟨cap, input, l⟩ =
+      ((Challenge.ofCoeffs (l.take (Challenge.d EF)) : EF),
+        ⟨cap, input, l.drop (Challenge.d EF)⟩) := by
+  rw [smpExt, smpList_idealOf answer cap input _ l h]
+
+/-- An extension sample from no samples duplexes and takes the answer's first `d` samples. -/
+theorem smpExt_idealOf_nil (hK : Challenge.d EF ≤ K) (cap : Digest) (input : List F) :
+    Challenge.toSpec (smpExt (idealOf answer) ⟨cap, input, []⟩ : EF × Sponge).1 =
+        extAt (answer (.duplex cap input)).2 0 ∧
+      (smpExt (EF := EF) (idealOf answer) ⟨cap, input, []⟩).2 =
+        ⟨(answer (.duplex cap input)).1, [],
+          (answer (.duplex cap input)).2.toList.drop (Challenge.d EF)⟩ := by
+  obtain ⟨m, hm⟩ : ∃ m, Challenge.d EF = m + 1 :=
+    ⟨Challenge.d EF - 1, Nat.succ_pred_eq_of_pos (Challenge.params EF).d_pos |>.symm⟩
+  have hlen : m ≤ (answer (.duplex cap input)).2.toList.tail.length := by
+    rw [List.length_tail, Vector.length_toList, ← Nat.add_sub_cancel m 1, ← hm]
+    exact Nat.sub_le_sub_right hK 1
+  have hs : smpExt (idealOf answer) ⟨cap, input, []⟩ =
+      ((Challenge.ofCoeffs ((answer (.duplex cap input)).2.toList.take (Challenge.d EF)) : EF),
+        ⟨(answer (.duplex cap input)).1, [],
+          (answer (.duplex cap input)).2.toList.drop (Challenge.d EF)⟩) := by
+    rw [smpExt, hm, smpList, sample_idealOf_nil]
+    dsimp only
+    rw [smpList_idealOf answer _ _ m _ hlen]
+    rcases hL : (answer (.duplex cap input)).2.toList with _ | ⟨x, rest⟩
+    · have := congrArg List.length hL
+      rw [Vector.length_toList, List.length_nil] at this
+      omega
+    · rfl
   rw [hs]
-  have hlen : 4 ≤ (answer (.duplex cap input)).2.toList.length := by
-    rw [Vector.length_toList]; exact hK
-  generalize hL : (answer (.duplex cap input)).2.toList = L at hlen
-  match L, hlen with
-  | a :: b :: c :: d :: rest, _ =>
-    rw [smpExt_idealOf_pop]
-    simp only [extAt, KoalaBear.Fast.Ext4.specEquiv_apply, hL, List.getD_cons_zero,
-      List.getD_cons_succ, List.drop_succ_cons, List.drop_zero, and_self]
+  refine ⟨?_, rfl⟩
+  have h := toSpec_ofCoeffs_drop (EF := EF) (answer (.duplex cap input)).2 0
+  rwa [List.drop_zero] at h
 
 theorem sampleStates_idealOf (cap : Digest) (input : List F) :
     ∀ (l : List F) (j : Nat), j ≤ l.length →
@@ -112,7 +128,8 @@ theorem obsExts_eq (H : Primitives Id) (s : H.State) (xs : List EF) :
   | nil => rfl
   | cons x xs ih =>
     rw [obsExts, List.foldl_cons, ← obsExts, ih, show x :: xs = [x] ++ xs from rfl,
-      coeffs_append, obsList_append]
+      coeffs_append, obsList_append,
+      show coeffs [x] = Ext.coeffs x from List.append_nil _]
     rfl
 
 theorem obsPts_eq (H : Primitives Id) (pts : List (EF × List EF)) (s : H.State) :
@@ -146,7 +163,7 @@ theorem roundValues_vRounds (proof : Proof EF) (zeta : EF) :
     List.append_nil, List.flatMap_map, List.append_assoc]
 
 /-- An accepted proof of `2 ^ logN` rows opens values and has a final polynomial. -/
-theorem nonempty_of_verify (S : Iop.Setup KoalaBear.Fast.Ext4) (H : Primitives Id) (proof : Proof
+theorem nonempty_of_verify (S : Iop.Setup EF) (H : Primitives Id) (proof : Proof
     EF)
     (pis : List F)
     (hdb : proof.degreeBits = S.logN) (h : verifyWith H S.params S.air proof pis = .ok ()) :
@@ -164,14 +181,14 @@ theorem nonempty_of_verify (S : Iop.Setup KoalaBear.Fast.Ext4) (H : Primitives I
     rw [openedValues, List.append_eq_nil_iff, List.flatMap_eq_nil_iff] at he
     have := he.2 _ (Array.getElem_mem_toList hpos)
     rw [← Array.length_toList, this, List.length_nil] at h4
-    exact absurd h4 (by decide)
+    exact (Challenge.params EF).d_pos.ne h4
   · have := congrArg List.length he
     rw [Array.length_toList, hfp, List.length_nil] at this
     exact absurd this (Nat.two_pow_pos _).ne'
 
 /-- The committed trace of the design (`Iop.committedTrace`) is the extracted trace words on the
 log's cache. -/
-theorem committedTrace_eq (S : Iop.Setup KoalaBear.Fast.Ext4) (log : QueryLog (spec S.streamLen))
+theorem committedTrace_eq (S : Iop.Setup EF) (log : QueryLog (spec S.streamLen))
     (proof : Proof EF) : Iop.committedTrace S log proof = traceWords S (Iop.logCache log) proof :=
         by
   funext j z
@@ -198,55 +215,55 @@ theorem stateAlpha_idealOf :
   rw [obsList_idealOf answer _ rfl proof.traceCommit.toList, obsList_idealOf answer _ rfl]
   rfl
 
-theorem alpha_idealOf (hK : 4 ≤ K) :
-    Ext4.toSpec (alphaOf (idealOf answer) proof pis) =
+theorem alpha_idealOf (hK : Challenge.d EF ≤ K) :
+    Challenge.toSpec (alphaOf (idealOf answer) proof pis) =
       extAt (answer (keyAt answer (inputs P pis proof) 0)).2 0 ∧
-    (smpExt (idealOf answer) (stateAlpha (idealOf answer) proof pis)).2 =
+    (smpExt (EF := EF) (idealOf answer) (stateAlpha (idealOf answer) proof pis)).2 =
       ⟨capAt answer (inputs P pis proof) 1, [],
-        (answer (keyAt answer (inputs P pis proof) 0)).2.toList.drop 4⟩ := by
+        (answer (keyAt answer (inputs P pis proof) 0)).2.toList.drop (Challenge.d EF)⟩ := by
   rw [alphaOf, stateAlpha_idealOf answer P]
   exact smpExt_idealOf_nil answer hK _ _
 
-theorem stateZeta_idealOf (hK : 4 ≤ K) :
+theorem stateZeta_idealOf (hK : Challenge.d EF ≤ K) :
     stateZeta (idealOf answer) proof pis =
       ⟨capAt answer (inputs P pis proof) 1, (inputs P pis proof).getD 1 [], []⟩ := by
   rw [stateZeta, (alpha_idealOf answer P proof pis hK).2,
     obsList_idealOf_ne answer _ _ (digest_toList_ne_nil _)]
   rfl
 
-theorem zeta_idealOf (hK : 4 ≤ K) :
-    Ext4.toSpec (zetaOf (idealOf answer) proof pis) =
+theorem zeta_idealOf (hK : Challenge.d EF ≤ K) :
+    Challenge.toSpec (zetaOf (idealOf answer) proof pis) =
       extAt (answer (keyAt answer (inputs P pis proof) 1)).2 0 ∧
-    (smpExt (idealOf answer) (stateZeta (idealOf answer) proof pis)).2 =
+    (smpExt (EF := EF) (idealOf answer) (stateZeta (idealOf answer) proof pis)).2 =
       ⟨capAt answer (inputs P pis proof) 2, [],
-        (answer (keyAt answer (inputs P pis proof) 1)).2.toList.drop 4⟩ := by
+        (answer (keyAt answer (inputs P pis proof) 1)).2.toList.drop (Challenge.d EF)⟩ := by
   rw [zetaOf, stateZeta_idealOf answer P proof pis hK]
   exact smpExt_idealOf_nil answer hK _ _
 
-theorem stateFri_idealOf (hK : 4 ≤ K) (hopen : openedValues proof.opened ≠ []) :
+theorem stateFri_idealOf (hK : Challenge.d EF ≤ K) (hopen : openedValues proof.opened ≠ []) :
     stateFri (idealOf answer) proof pis =
       ⟨capAt answer (inputs P pis proof) 2, (inputs P pis proof).getD 2 [], []⟩ := by
   rw [stateFri, (zeta_idealOf answer P proof pis hK).2, obsOpened_eq, roundValues_vRounds,
     obsList_idealOf_ne answer _ _ (coeffs_ne_nil hopen)]
   rfl
 
-theorem batch_idealOf (hK : 4 ≤ K) (hopen : openedValues proof.opened ≠ []) :
-    Ext4.toSpec (batchOf (idealOf answer) proof pis) =
+theorem batch_idealOf (hK : Challenge.d EF ≤ K) (hopen : openedValues proof.opened ≠ []) :
+    Challenge.toSpec (batchOf (idealOf answer) proof pis) =
       extAt (answer (keyAt answer (inputs P pis proof) 2)).2 0 ∧
-    (smpExt (idealOf answer) (stateFri (idealOf answer) proof pis)).2 =
+    (smpExt (EF := EF) (idealOf answer) (stateFri (idealOf answer) proof pis)).2 =
       ⟨capAt answer (inputs P pis proof) 3, [],
-        (answer (keyAt answer (inputs P pis proof) 2)).2.toList.drop 4⟩ := by
+        (answer (keyAt answer (inputs P pis proof) 2)).2.toList.drop (Challenge.d EF)⟩ := by
   rw [batchOf, stateFri_idealOf answer P proof pis hK hopen]
   exact smpExt_idealOf_nil answer hK _ _
 
 /-- A fold round: observe the commitment and the witness, check the grinding sample, and sample
 `β`, which is the round's answer at the grinding offset. -/
-theorem foldRound_idealOf (hK : 5 ≤ K) (blocks : List (List F)) (r : Nat) (rest : List F)
-    (c : Digest) (w : F)
+theorem foldRound_idealOf (hK : Challenge.d EF + 1 ≤ K) (blocks : List (List F)) (r : Nat)
+    (rest : List F) (c : Digest) (w : F)
     (hr : blocks.getD r [] = c.toList ++ witnessInput P.commitPowBits w) :
-    let b := smpExt (idealOf answer) (chkWit (idealOf answer) P.commitPowBits w
+    let b := smpExt (EF := EF) (idealOf answer) (chkWit (idealOf answer) P.commitPowBits w
       (obsList (idealOf answer) ⟨capAt answer blocks r, [], rest⟩ c.toList)).2
-    Ext4.toSpec b.1 = extAt (answer (keyAt answer blocks r)).2
+    Challenge.toSpec b.1 = extAt (answer (keyAt answer blocks r)).2
       (challengeOffset P.commitPowBits) ∧
     ∃ l, b.2 = ⟨capAt answer blocks (r + 1), [], l⟩ := by
   intro b
@@ -254,7 +271,8 @@ theorem foldRound_idealOf (hK : 5 ≤ K) (blocks : List (List F)) (r : Nat) (res
   rw [obsList_idealOf_ne answer _ _ (digest_toList_ne_nil c), List.nil_append]
   by_cases hb : P.commitPowBits = 0
   · simp only [witnessInput, hb, ↓reduceIte, List.append_nil] at hr
-    have h := smpExt_idealOf_nil answer (by omega) (capAt answer blocks r) (blocks.getD r [])
+    have h := smpExt_idealOf_nil (EF := EF) answer (by omega) (capAt answer blocks r)
+      (blocks.getD r [])
     simp only [chkWit, hb, ↓reduceIte, challengeOffset]
     rw [← hr]
     exact ⟨h.1, _, h.2⟩
@@ -268,27 +286,23 @@ theorem foldRound_idealOf (hK : 5 ≤ K) (blocks : List (List F)) (r : Nat) (res
       rw [sample_idealOf_nil, ← hr]
       rfl
     rw [hst]
-    have hlen : 5 ≤ (answer (keyAt answer blocks r)).2.toList.length := by
-      rw [Vector.length_toList]; exact hK
-    rw [show challengeOffset P.commitPowBits = 1 by simp only [challengeOffset, hb, ↓reduceIte]]
-    generalize hL : (answer (keyAt answer blocks r)).2.toList = L at hlen
-    match L, hlen with
-    | x :: a :: b' :: c' :: d :: rest', _ =>
-      rw [List.tail_cons, smpExt_idealOf_pop]
-      simp only [extAt, KoalaBear.Fast.Ext4.specEquiv_apply, hL, List.getD_cons_succ,
-        List.getD_cons_zero, true_and]
-      exact ⟨_, rfl⟩
+    have hlen : Challenge.d EF ≤ (answer (keyAt answer blocks r)).2.toList.tail.length := by
+      rw [List.length_tail, Vector.length_toList]; omega
+    rw [show challengeOffset P.commitPowBits = 1 by simp only [challengeOffset, hb, ↓reduceIte],
+      smpExt_idealOf_pop answer _ _ _ hlen, ← List.drop_one]
+    exact ⟨toSpec_ofCoeffs_drop _ 1, _, rfl⟩
 
-theorem commitReplay_idealOf (hK : 5 ≤ K) (blocks : List (List F)) :
+theorem commitReplay_idealOf (hK : Challenge.d EF + 1 ≤ K) (blocks : List (List F)) :
     ∀ (cws : List (Digest × F)) (r : Nat) (rest : List F),
       (∀ i (hi : i < cws.length), blocks.getD (r + i) [] =
         cws[i].1.toList ++ witnessInput P.commitPowBits cws[i].2) →
-      (commitReplay (idealOf answer) P cws ⟨capAt answer blocks r, [], rest⟩).1.length =
+      (commitReplay (EF := EF) (idealOf answer) P cws ⟨capAt answer blocks r, [], rest⟩).1.length =
           cws.length ∧
-        (∀ i < cws.length, Ext4.toSpec
-          ((commitReplay (idealOf answer) P cws ⟨capAt answer blocks r, [], rest⟩).1.getD i 0) =
+        (∀ i < cws.length, Challenge.toSpec
+          ((commitReplay (EF := EF) (idealOf answer) P cws ⟨capAt answer blocks r, [], rest⟩).1.getD
+            i 0) =
             extAt (answer (keyAt answer blocks (r + i))).2 (challengeOffset P.commitPowBits)) ∧
-        ∃ l, (commitReplay (idealOf answer) P cws ⟨capAt answer blocks r, [], rest⟩).2 =
+        ∃ l, (commitReplay (EF := EF) (idealOf answer) P cws ⟨capAt answer blocks r, [], rest⟩).2 =
           ⟨capAt answer blocks (r + cws.length), [], l⟩
   | [], r, rest, _ => ⟨rfl, fun i hi ↦ absurd hi (Nat.not_lt_zero _), rest, rfl⟩
   | (c, w) :: cws, r, rest, hr => by
@@ -314,8 +328,8 @@ theorem sample_drop_idealOf (cap : Digest) (input : List F) (l : List F) (j : Na
 /-- The query round: observe the final polynomial, the arities and the witness; the grinding
 sample is the round's first answered sample, and query `j`'s sample the one at the grinding
 offset plus `j`. -/
-theorem queryRound_idealOf (hK : P.numQueries + 5 ≤ K) (blocks : List (List F)) (r : Nat)
-    (rest : List F) (hfp : proof.fri.finalPoly.toList ≠ [])
+theorem queryRound_idealOf (hK : P.numQueries + Challenge.d EF + 1 ≤ K) (blocks : List (List F))
+    (r : Nat) (rest : List F) (hfp : proof.fri.finalPoly.toList ≠ [])
     (hr : blocks.getD r [] = coeffs proof.fri.finalPoly.toList ++
       (arities proof.fri).map (fun a : Nat ↦ (a : F)) ++
       witnessInput P.queryPowBits proof.fri.queryWitness) :
@@ -334,7 +348,8 @@ theorem queryRound_idealOf (hK : P.numQueries + 5 ≤ K) (blocks : List (List F)
     rw [obsExts_eq, obsList_idealOf_ne answer _ _ (coeffs_ne_nil hfp), List.nil_append,
       ← List.foldl_map (f := fun a : Nat ↦ (a : F)) (g := (idealOf answer).observe), ← obsList,
       obsList_idealOf answer _ rfl]
-  have hlen : P.numQueries + 5 ≤ (answer (keyAt answer blocks r)).2.toList.length := by
+  have hlen :
+      P.numQueries + Challenge.d EF + 1 ≤ (answer (keyAt answer blocks r)).2.toList.length := by
     rw [Vector.length_toList]; exact hK
   have htail : ∀ j < P.numQueries, sampleStates (idealOf answer)
       ⟨(answer (keyAt answer blocks r)).1, [], (answer (keyAt answer blocks r)).2.toList.tail⟩ j =
@@ -389,28 +404,29 @@ theorem queryRound_idealOf (hK : P.numQueries + 5 ≤ K) (blocks : List (List F)
 
 /-- **The run's challenges are the oracle's answers.** On the ideal primitives of an answer
 table, with streams long enough for the query round, on a proof that opens values and has a
-final polynomial: `α`, `ζ` and the batching challenge are the first four samples of rounds `0`,
+final polynomial: `α`, `ζ` and the batching challenge are the first `d` samples of rounds `0`,
 `1`, `2`; `β_i` is read at the grinding offset of round `3 + i`; and the query round's grinding
 sample and query samples are its samples from `0` and from the grinding offset. -/
-theorem challenges_idealOf (hK : P.numQueries + 5 ≤ K) (hopen : openedValues proof.opened ≠ [])
-    (hfp : proof.fri.finalPoly.toList ≠ []) :
+theorem challenges_idealOf (hK : P.numQueries + Challenge.d EF + 1 ≤ K)
+    (hopen : openedValues proof.opened ≠ []) (hfp : proof.fri.finalPoly.toList ≠ []) :
     let u := fun j ↦ (answer (keyAt answer (inputs P pis proof) j)).2
     let n := (proof.fri.commits.toList.zip proof.fri.commitWitnesses.toList).length
-    Ext4.toSpec (alphaOf (idealOf answer) proof pis) = extAt (u 0) 0 ∧
-      Ext4.toSpec (zetaOf (idealOf answer) proof pis) = extAt (u 1) 0 ∧
-      Ext4.toSpec (batchOf (idealOf answer) proof pis) = extAt (u 2) 0 ∧
+    Challenge.toSpec (alphaOf (idealOf answer) proof pis) = extAt (u 0) 0 ∧
+      Challenge.toSpec (zetaOf (idealOf answer) proof pis) = extAt (u 1) 0 ∧
+      Challenge.toSpec (batchOf (idealOf answer) proof pis) = extAt (u 2) 0 ∧
       (betasOf (idealOf answer) P proof pis).length = n ∧
-      (∀ i < n, Ext4.toSpec ((betasOf (idealOf answer) P proof pis).getD i 0) =
+      (∀ i < n, Challenge.toSpec ((betasOf (idealOf answer) P proof pis).getD i 0) =
         extAt (u (3 + i)) (challengeOffset P.commitPowBits)) ∧
       (P.queryPowBits ≠ 0 → powSampleOf (idealOf answer) P proof pis =
         FastField.toField ((u (3 + n)).toList.getD 0 0)) ∧
       ∀ j < P.numQueries, querySampleOf (idealOf answer) P proof pis j =
         FastField.toField ((u (3 + n)).toList.getD (challengeOffset P.queryPowBits + j) 0) := by
   intro u n
-  have h4 : 4 ≤ K := by omega
+  have h4 : Challenge.d EF ≤ K := by omega
   obtain ⟨hb1, hb2⟩ := batch_idealOf answer P proof pis h4 hopen
-  obtain ⟨hc1, hc2, l, hl⟩ := commitReplay_idealOf answer P (by omega) (inputs P pis proof)
-    (proof.fri.commits.toList.zip proof.fri.commitWitnesses.toList) 3 _ (fun i hi ↦ by
+  obtain ⟨hc1, hc2, l, hl⟩ := commitReplay_idealOf (EF := EF) answer P (by omega)
+    (inputs P pis proof) (proof.fri.commits.toList.zip proof.fri.commitWitnesses.toList) 3 _
+    (fun i hi ↦ by
       rw [show 3 + i = 2 + 1 + i by omega]; exact inputs_getD_fold P pis proof i hi)
   rw [← hb2] at hc1 hc2 hl
   obtain ⟨hq1, hq2⟩ := queryRound_idealOf answer P proof (by omega) (inputs P pis proof)

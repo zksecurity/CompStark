@@ -30,12 +30,14 @@ open CompStark.Stark CompStark.Ni
 
 local notation "F" => KoalaBear.Fast.Field
 
+variable {EF : Type} [Challenge EF]
+
 /-- **Knowledge soundness in the random-oracle model.** A prover making at most `Q` oracle calls
 gets a proof for `2 ^ logN` rows accepted, while no trace close to the one it committed to
 satisfies the AIR, with probability at most `q · roundError + hashError q`,
 `q = Q + verifierQueries`: FRI tests proximity `δ`, and the extractor list-decodes at any `δ'`
 below `1 - rate`. -/
-theorem knowledgeSoundness_ro (S : Setup KoalaBear.Fast.Ext4) (publicValues : List F)
+theorem knowledgeSoundness_ro (S : Setup EF) (publicValues : List F)
     (δ δ' : NNReal)
     (hδ' : (δ' : ℝ) < 1 - S.rate) (Q : Nat) (prover : NIProver S)
     (hQ : prover.IsTotalQueryBound Q) :
