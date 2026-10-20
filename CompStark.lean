@@ -18,6 +18,7 @@ public import CompStark.Merkle.Packed
 public import CompStark.Merkle.PackedCorrectness
 public import CompStark.Merkle.RootCorrectness
 public import CompStark.Challenger
+public import CompStark.Primitives
 public import CompStark.Stark.Proof
 public import CompStark.Merkle.Mmcs
 public import CompStark.Stark.Field

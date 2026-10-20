@@ -22,6 +22,7 @@ Plonky3's `MerkleTreeMmcs::open_batch` and `verify_batch` over the trees of `Tre
 @[expose] public section
 namespace CompStark.Merkle
 
+section Pure
 variable {F : Type*} [Zero F] {d : Nat}
 
 /-- `⌈log₂ n⌉`. -/
@@ -89,6 +90,52 @@ def verifyBatch [DecidableEq F] (hash : List F → Vector F d)
     compatible && values.length == heights.length && path.length == Nat.log2 padded &&
       index < maxH &&
       climb hash compress values path rest index padded (hashRows hash values tallest) == commit
+
+end Pure
+
+/-! ### With the hashes in a monad
+
+`verifyBatchM` is `verifyBatch` with the hash and compression returning in a monad, so that they
+can be oracles. It checks the opening's shape before hashing anything. With pure hashes it is
+`verifyBatch` (`verifyBatchM_pure`, `CompStark/Complete/Merkle.lean`). -/
+
+section Monadic
+variable {F : Type} [Zero F] {d : Nat} {m : Type → Type} [Monad m]
+
+/-- `climb` with the hashes in `m`. -/
+def climbM (hash : List F → m (Vector F d)) (compress : Vector F d → Vector F d → m (Vector F d))
+    (values : List (List F)) :
+    List (Vector F d) → List (Nat × List Nat) → Nat → Nat → Vector F d → m (Vector F d)
+  | [], _, _, _, root => pure root
+  | sib :: sibs, groups, index, padded, root => do
+    let root ← if index % 2 = 0 then compress root sib else compress sib root
+    let padded := padded / 2
+    match groups with
+    | (h, is) :: rest =>
+      if h.nextPowerOfTwo = padded then
+        let root ← compress root (← hash (is.flatMap fun i ↦ values.getD i []))
+        climbM hash compress values sibs rest (index / 2) padded root
+      else climbM hash compress values sibs groups (index / 2) padded root
+    | [] => climbM hash compress values sibs [] (index / 2) padded root
+
+/-- `verifyBatch` with the hashes in `m`. -/
+def verifyBatchM [DecidableEq F] (hash : List F → m (Vector F d))
+    (compress : Vector F d → Vector F d → m (Vector F d)) (commit : Vector F d)
+    (heights : List Nat) (index : Nat) (values : List (List F)) (path : List (Vector F d)) :
+    m Bool :=
+  match heightGroups heights with
+  | [] => pure false
+  | (maxH, tallest) :: rest => do
+    let padded := maxH.nextPowerOfTwo
+    let compatible := (heightGroups heights).zip (heightGroups heights).tail |>.all
+      fun ((a, _), (b, _)) ↦ a.nextPowerOfTwo != b.nextPowerOfTwo
+    if compatible && values.length == heights.length && path.length == Nat.log2 padded &&
+        index < maxH then
+      let leaf ← hash (tallest.flatMap fun i ↦ values.getD i [])
+      return (← climbM hash compress values path rest index padded leaf) == commit
+    else return false
+
+end Monadic
 
 namespace KoalaBear
 

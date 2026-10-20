@@ -143,7 +143,7 @@ theorem fibonacci_knowledgeError_le :
 extractor at `7679/16384`: if no trace within `7679/16384` of the prover's committed trace
 satisfies the AIR, the verifier accepts with probability at most `2 ^ (-100)`. -/
 theorem fibonacci_knowledgeSoundness (publicValues : List F) (prover : Prover fibonacciSetup) :
-    (∀ trace ∈ closeTraces fibonacciSetup (7679 / 16384 : NNReal) prover,
+    (∀ trace ∈ closeTraces fibonacciSetup (7679 / 16384 : NNReal) prover.trace,
       ¬ fibonacci.Satisfied 10 trace publicValues) →
       acceptance publicValues prover ≤ (2 ^ 100)⁻¹ := by
   intro h
@@ -255,7 +255,7 @@ theorem wide_knowledgeError_le :
 extractor at `24575/65536`: if no trace within `24575/65536` of the prover's committed trace
 satisfies the AIR, the verifier accepts with probability at most `2 ^ (-100)`. -/
 theorem wide_knowledgeSoundness (publicValues : List F) (prover : Prover wideSetup) :
-    (∀ trace ∈ closeTraces wideSetup (24575 / 65536 : NNReal) prover,
+    (∀ trace ∈ closeTraces wideSetup (24575 / 65536 : NNReal) prover.trace,
       ¬ (wide 64).Satisfied 20 trace publicValues) →
       acceptance publicValues prover ≤ (2 ^ 100)⁻¹ := by
   intro h
@@ -325,7 +325,7 @@ theorem wide21_knowledgeError_le :
 extractor at `24575/65536`: if no trace within `24575/65536` of the prover's committed trace
 satisfies the AIR, the verifier accepts with probability at most `2 ^ (-100)`. -/
 theorem wide21_knowledgeSoundness (publicValues : List F) (prover : Prover wide21Setup) :
-    (∀ trace ∈ closeTraces wide21Setup (24575 / 65536 : NNReal) prover,
+    (∀ trace ∈ closeTraces wide21Setup (24575 / 65536 : NNReal) prover.trace,
       ¬ (wide 64).Satisfied 21 trace publicValues) →
       acceptance publicValues prover ≤ (2 ^ 100)⁻¹ := by
   intro h

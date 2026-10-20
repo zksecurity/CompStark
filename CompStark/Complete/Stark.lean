@@ -211,22 +211,24 @@ end Honest
 /-! ### The verifier's observations -/
 
 /-- The innermost body of `verifyPcs`'s observation loop. -/
-def obsPts (p : EF × List EF) (_ : PUnit) : M (ForInStep PUnit) := do
-  observeExts p.2
+def obsPts (p : EF × List EF) (_ : PUnit) : M poseidon2 (ForInStep PUnit) := do
+  observeExts poseidon2 p.2
   pure (ForInStep.yield PUnit.unit)
 
 /-- The middle body of `verifyPcs`'s observation loop. -/
-def obsMats (x : Domain × List (EF × List EF)) (_ : PUnit) : M (ForInStep PUnit) := do
+def obsMats (x : Domain × List (EF × List EF)) (_ : PUnit) : M poseidon2 (ForInStep PUnit) :=
+  do
   forIn x.2 PUnit.unit obsPts
   pure (ForInStep.yield PUnit.unit)
 
 /-- The outer body of `verifyPcs`'s observation loop. -/
-def obsRounds (r : Round) (_ : PUnit) : M (ForInStep PUnit) := do
+def obsRounds (r : Round) (_ : PUnit) : M poseidon2 (ForInStep PUnit) := do
   forIn r.2 PUnit.unit obsMats
   pure (ForInStep.yield PUnit.unit)
 
 theorem verifyPcs_eq (P : Params) (rounds : List Round) (proof : FriProof) :
-    verifyPcs P rounds proof = (do forIn rounds PUnit.unit obsRounds; verifyFri P proof rounds) :=
+    verifyPcs poseidon2 P rounds proof =
+      (do forIn rounds PUnit.unit obsRounds; verifyFri poseidon2 P proof rounds) :=
   rfl
 
 theorem forIn_obsPts (pts : List (EF × List EF)) (t : Transcript) :
@@ -234,7 +236,8 @@ theorem forIn_obsPts (pts : List (EF × List EF)) (t : Transcript) :
   induction pts generalizing t with
   | nil => rfl
   | cons p pts ih =>
-    rw [forIn_cons_ok p pts _ PUnit.unit obsPts t (t.observeExts p.2) rfl, ih,
+    rw [forIn_cons_ok p pts _ PUnit.unit obsPts t (t.observeExts p.2)
+      (bind_ok (observeExts_run t p.2)), ih,
       List.flatMap_cons, observeExts_append]
 
 theorem forIn_obsMats (mats : List (Domain × List (EF × List EF))) (t : Transcript) :
@@ -267,7 +270,7 @@ theorem forIn_obsRounds (rounds : List Round) (t : Transcript) :
       observeExts_append]
 
 theorem verifyPcs_run (P : Params) (rounds : List Round) (proof : FriProof) (t : Transcript) :
-    verifyPcs P rounds proof t = verifyFri P proof rounds
+    verifyPcs poseidon2 P rounds proof t = verifyFri poseidon2 P proof rounds
       (t.observeExts (rounds.flatMap fun r ↦ r.2.flatMap fun x ↦ x.2.flatMap (·.2))) := by
   rw [verifyPcs_eq, bind_ok (forIn_obsRounds rounds t)]
 
@@ -292,20 +295,20 @@ def vTC (proof : Proof) (pis : List F) : Transcript :=
   (vTA proof pis).sampleExt.2.observeList proof.quotientCommit.toList
 
 /-- The transcript part of `verify`. -/
-def verifyRun (P : Params) (proof : Proof) (pis : List F) : M (EF × EF) := do
+def verifyRun (P : Params) (proof : Proof) (pis : List F) : M poseidon2 (EF × EF) := do
   let db := proof.degreeBits
   let o := proof.opened
-  observe (db : F)
-  observe (db : F)
-  observe 0
-  observeList proof.traceCommit.toList
-  observeList pis
-  let alpha ← sampleExt
-  observeList proof.quotientCommit.toList
-  let zeta ← sampleExt
+  observe poseidon2 (db : F)
+  observe poseidon2 (db : F)
+  observe poseidon2 0
+  observeList poseidon2 proof.traceCommit.toList
+  observeList poseidon2 pis
+  let alpha ← sampleExt poseidon2
+  observeList poseidon2 proof.quotientCommit.toList
+  let zeta ← sampleExt poseidon2
   let zetaNext := zeta * Ext.ofBase (twoAdicGen db)
   let traceDomain : Domain := ⟨1, db⟩
-  verifyPcs P
+  verifyPcs poseidon2 P
     [(proof.traceCommit, [(traceDomain, [(zeta, o.traceLocal.toList),
         (zetaNext, o.traceNext.toList)])]),
      (proof.quotientCommit, o.quotientChunks.toList.map fun ch ↦
@@ -315,47 +318,47 @@ def verifyRun (P : Params) (proof : Proof) (pis : List F) : M (EF × EF) := do
 
 /-- The out-of-domain check of `verify`, after the transcript. -/
 def verifyCheck (A : Air) (proof : Proof) (pis : List F) (x : (EF × EF) × Transcript) :
-    Except String Unit :=
+    ExceptT String Id Unit :=
   unless checkConstraints A pis proof.opened proof.degreeBits x.1.2 x.1.1
       (recompose (chunkDomains proof.degreeBits A.logQuotientChunks)
         proof.opened.quotientChunks.toList x.1.2) do
     throw "out-of-domain evaluation mismatch"
 
-theorem except_ok_bind {ε α β : Type} (a : α) (f : α → Except ε β) :
-    (Except.ok a >>= f) = f a := rfl
-
 theorem verifyCheck_ok (A : Air) (proof : Proof) (pis : List F) (x : (EF × EF) × Transcript)
     (h : checkConstraints A pis proof.opened proof.degreeBits x.1.2 x.1.1
       (recompose (chunkDomains proof.degreeBits A.logQuotientChunks)
         proof.opened.quotientChunks.toList x.1.2) = true) :
-    verifyCheck A proof pis x = .ok () := by
+    verifyCheck A proof pis x = pure () := by
   unfold verifyCheck
   rw [h]
   rfl
 
 theorem verify_eq (P : Params) (A : Air) (proof : Proof) (pis : List F) :
-    verify P A proof pis = (do
+    verify P A proof pis = ExceptT.run (do
       let o := proof.opened
       unless o.traceLocal.size == A.width && o.traceNext.size == A.width &&
           o.quotientChunks.size == 2 ^ A.logQuotientChunks &&
           o.quotientChunks.all (·.size == 4) do
         throw "invalid proof shape"
+      unless arities proof.fri ==
+          foldArities P.maxLogArity (proof.degreeBits - P.logFinalPolyLen) do
+        throw "fold arities"
       (verifyRun P proof pis).run Transcript.init >>= verifyCheck A proof pis) := by
-  delta verify verifyRun verifyCheck
+  delta verify verifyWith verifyRun verifyCheck
   rfl
 
-theorem observe_bind {β : Type} (x : F) (f : Unit → M β) (t : Transcript) :
-    (observe x >>= f) t = f () (t.observe x) := bind_ok rfl
+theorem observe_bind {β : Type} (x : F) (f : Unit → M poseidon2 β) (t : Transcript) :
+    (observe poseidon2 x >>= f) t = f () (t.observe x) := bind_ok rfl
 
-theorem observeList_bind {β : Type} (xs : List F) (f : Unit → M β) (t : Transcript) :
-    (observeList xs >>= f) t = f () (t.observeList xs) := bind_ok rfl
+theorem observeList_bind {β : Type} (xs : List F) (f : Unit → M poseidon2 β) (t : Transcript) :
+    (observeList poseidon2 xs >>= f) t = f () (t.observeList xs) := bind_ok (observeList_run t xs)
 
-theorem sampleExt_bind {β : Type} (f : EF → M β) (t : Transcript) :
-    (sampleExt >>= f) t = f t.sampleExt.1 t.sampleExt.2 := bind_ok rfl
+theorem sampleExt_bind {β : Type} (f : EF → M poseidon2 β) (t : Transcript) :
+    (sampleExt poseidon2 >>= f) t = f t.sampleExt.1 t.sampleExt.2 := bind_ok (sampleExt_run t)
 
 theorem verifyRun_run (P : Params) (proof : Proof) (pis : List F) :
     verifyRun P proof pis Transcript.init =
-      (verifyPcs P (vRounds proof (vTC proof pis).sampleExt.1) proof.fri >>= fun _ ↦
+      (verifyPcs poseidon2 P (vRounds proof (vTC proof pis).sampleExt.1) proof.fri >>= fun _ ↦
         pure ((vTA proof pis).sampleExt.1, (vTC proof pis).sampleExt.1))
         (vTC proof pis).sampleExt.2 := by
   simp only [verifyRun, observe_bind, observeList_bind, sampleExt_bind]
@@ -571,8 +574,8 @@ theorem inputsOk_hInputs (hin : Fits P A logN trace)
 theorem hopen (hin : Fits P A logN trace)
     (hz : Ext.OutsideBase (hZeta P A logN trace pis)) (alpha : EF) (index : Nat)
     (hidx : index < 2 ^ Nat.log2 (((hInputs P A logN trace pis alpha).map Array.size).headD 0)) :
-    openInput P (Nat.log2 (((hInputs P A logN trace pis alpha).map Array.size).headD 0)) index
-        alpha ((hRounds P A logN trace pis).map fun (c, _) ↦ c.openAt (index >>>
+    openInput poseidon2 P (Nat.log2 (((hInputs P A logN trace pis alpha).map Array.size).headD 0))
+        index alpha ((hRounds P A logN trace pis).map fun (c, _) ↦ c.openAt (index >>>
           (Nat.log2 (((hInputs P A logN trace pis alpha).map Array.size).headD 0) -
             Nat.log2 c.maxHeight)))
         (vRounds (prove P A logN trace pis) (hZeta P A logN trace pis)) =
@@ -652,16 +655,17 @@ theorem verify_ok_of (P : Params) (A : Air) (proof : Proof) (pis : List F) (alph
     (hshape : (proof.opened.traceLocal.size == A.width && proof.opened.traceNext.size == A.width &&
       proof.opened.quotientChunks.size == 2 ^ A.logQuotientChunks &&
       proof.opened.quotientChunks.all (·.size == 4)) = true)
+    (harities :
+      arities proof.fri = foldArities P.maxLogArity (proof.degreeBits - P.logFinalPolyLen))
     (hrun : verifyRun P proof pis Transcript.init = .ok ((alpha, zeta), t))
     (hcheck : checkConstraints A pis proof.opened proof.degreeBits zeta alpha
       (recompose (chunkDomains proof.degreeBits A.logQuotientChunks)
         proof.opened.quotientChunks.toList zeta) = true) :
     verify P A proof pis = .ok () := by
-  rw [verify_eq]
-  simp only [hshape]
-  show (verifyRun P proof pis Transcript.init >>= verifyCheck A proof pis) = _
-  rw [hrun, except_ok_bind]
-  exact verifyCheck_ok A proof pis ((alpha, zeta), t) hcheck
+  have hrun' : StateT.run (verifyRun P proof pis) Transcript.init = pure ((alpha, zeta), t) := hrun
+  rw [verify_eq, hrun', pure_bind, verifyCheck_ok A proof pis ((alpha, zeta), t) hcheck]
+  simp only [hshape, harities, beq_self_eq_true]
+  rfl
 
 section Honest
 variable (P : Params) (A : Air) (logN : Nat) (trace : Array F) (pis : List F)
@@ -682,6 +686,8 @@ theorem verifyRun_honest (hin : Fits P A logN trace)
   have hfri : (prove P A logN trace pis).fri = hFri P A logN trace pis := by rw [prove_eq]
   have hF := verifyFri_proveFri P (hRounds P A logN trace pis) (hInputs P A logN trace pis)
     (vRounds (prove P A logN trace pis) (hZeta P A logN trace pis)) (hT2 P A logN trace pis)
+    (by rw [hT2, duplex_observeExts, duplex_sampleExt, Stark.hTC, duplex_observeList,
+      duplex_sampleExt, Stark.hTA]; rfl)
     (inputsOk_hInputs P A logN trace pis hin hz hfin) hP hq
     (by rw [← proveTranscript_eq]; exact hgrind)
     (fun alpha index hidx ↦ hopen P A logN trace pis hin hz alpha index hidx)
@@ -691,6 +697,25 @@ theorem verifyRun_honest (hin : Fits P A logN trace)
   rfl
 
 end Honest
+
+/-- The honest proof folds by Plonky3's schedule. -/
+theorem arities_prove (P : Params) (A : Air) (logN : Nat) (trace : Array F) (pis : List F)
+    (hin : Fits P A logN trace) (hP : 0 < P.maxLogArity) (hq : 0 < P.numQueries)
+    (hfin : P.logFinalPolyLen ≤ logN) (hz : Ext.OutsideBase (hZeta P A logN trace pis)) :
+    arities (prove P A logN trace pis).fri =
+      foldArities P.maxLogArity ((prove P A logN trace pis).degreeBits - P.logFinalPolyLen) := by
+  obtain ⟨v, hv, -, hl⟩ := hInputs_eq P A logN trace pis hin hz (hT2 P A logN trace pis).sampleExt.1
+  obtain ⟨f0, rest, hf, hg⟩ := inputsOk_hInputs P A logN trace pis hin hz hfin
+    (hT2 P A logN trace pis).sampleExt.1
+  rw [hv, List.cons.injEq] at hf
+  obtain ⟨rfl, rfl⟩ := hf
+  have hdb : (prove P A logN trace pis).degreeBits = logN := by rw [prove_eq]
+  have hfri : (prove P A logN trace pis).fri = hFri P A logN trace pis := by rw [prove_eq]
+  rw [hfri, hdb, hFri, arities_proveFri P (hRounds P A logN trace pis) (hInputs P A logN trace pis)
+    (hT2 P A logN trace pis) v hv hg hP hq]
+  have hlog : Nat.log2 v.size - (P.logBlowup + P.logFinalPolyLen) = logN - P.logFinalPolyLen := by
+    rw [log2_size hl]; omega
+  exact congrArg _ hlog
 
 /-- Completeness with every assumption spelled out; `completeness` (`CompStark/Complete.lean`)
 groups them. -/
@@ -703,9 +728,10 @@ theorem verify_prove_of (P : Params) (A : Air) (logN : Nat) (trace : Array F) (p
     verify P A (prove P A logN trace pis) pis = .ok () := by
   rw [outOfDomainPoint_eq] at hz
   obtain ⟨t, hrun⟩ := verifyRun_honest P A logN trace pis hin hz hP hq hfin hgrind
-  refine verify_ok_of P A _ pis _ _ t ?_ hrun ?_
+  refine verify_ok_of P A _ pis _ _ t ?_ ?_ hrun ?_
   · rw [prove_eq]
     exact honest_shape P A logN trace pis (hAlpha P A logN trace pis) (hZeta P A logN trace pis)
+  · exact arities_prove P A logN trace pis hin hP hq hfin hz
   · rw [prove_eq]
     exact checkConstraints_honest P A logN trace pis (hAlpha P A logN trace pis)
       (hZeta P A logN trace pis) hin hsat hdeg hz

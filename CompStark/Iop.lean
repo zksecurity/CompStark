@@ -177,11 +177,11 @@ def Agree (S : Setup) {ι : Type} (δ : ℝ) (words : ι → S.Point → 𝔽) (
   ∃ T : Finset S.Point, (T.card : ℝ) ≥ S.size * (1 - δ) ∧
     ∀ i ∈ T, ∀ k, words k i = (polys k).eval (basePoint (S.logN + S.params.logBlowup) i)
 
-/-- The traces the extractor reads off a prover at proximity `δ`, by list decoding: those whose
-columns are polynomials of degree at most `n` agreeing with the prover's trace words on a common
-set of at least `(1 - δ) N` points. -/
-def closeTraces (S : Setup) (δ : ℝ) (prover : Prover S) : Set (Array F) :=
+/-- The traces the extractor reads off committed trace words at proximity `δ`, by list decoding:
+those whose columns are polynomials of degree at most `n` agreeing with the words on a common set
+of at least `(1 - δ) N` points. -/
+def closeTraces (S : Setup) (δ : ℝ) (words : Fin S.air.width → S.Point → 𝔽) : Set (Array F) :=
   {t | ∃ columns : Fin S.air.width → 𝔽[X], (∀ j, (columns j).natDegree ≤ S.n) ∧
-    Agree S δ prover.trace columns ∧ t = traceOf S columns}
+    Agree S δ words columns ∧ t = traceOf S columns}
 
 end CompStark.Iop

@@ -5,6 +5,7 @@ Released under Apache 2.0 license as described in the file LICENSE.
 module
 
 public import CompStark.Fri.Prover
+public import CompStark.Fri.Verifier
 public import CompStark.Merkle.VCVio
 
 /-! # Honest Merkle openings verify
@@ -17,9 +18,80 @@ specification's opening `Committed.openAt` at any row verifies against `Committe
 `hash` and `compress`. `Committed` stores the same digest layers as arrays, so its root is
 `Merkle.root`, its path is `Merkle.openBatch`'s, and, with one height, its rows are the rows at the
 index unshifted, which are `Merkle.openBatch`'s rows.
+
+On Poseidon2 the verifier's `checkOpening` is `Merkle.KoalaBear.verifyBatch` (`checkOpening_eq`),
+by `Merkle.verifyBatchM_pure`: with pure hashes the monadic opening check is the pure one.
 -/
 
 @[expose] public section
+
+namespace CompStark.Merkle
+variable {F : Type} {d : Nat} {m : Type → Type} [Monad m] [LawfulMonad m]
+
+
+theorem climbM_pure (hash : List F → Vector F d) (compress : Vector F d → Vector F d → Vector F d)
+    (values : List (List F)) :
+    ∀ path groups index padded root,
+      climbM (m := m) (fun xs ↦ pure (hash xs)) (fun a b ↦ pure (compress a b)) values path groups
+        index padded root = pure (climb hash compress values path groups index padded root)
+  | [], _, _, _, _ => rfl
+  | sib :: sibs, groups, index, padded, root => by
+    simp only [climbM, climb]
+    have step : ∀ root : Vector F d, (do
+        let root ← (pure root : m (Vector F d))
+        match groups with
+        | (h, is) :: rest =>
+          if h.nextPowerOfTwo = padded / 2 then do
+            let leaf ← pure (hash (is.flatMap fun i ↦ values.getD i []))
+            let root ← pure (compress root leaf)
+            (climbM (fun xs ↦ pure (hash xs)) (fun a b ↦ pure (compress a b)) values sibs rest
+              (index / 2) (padded / 2) root)
+          else (climbM (fun xs ↦ pure (hash xs)) (fun a b ↦ pure (compress a b)) values sibs
+            groups (index / 2) (padded / 2) root)
+        | [] => (climbM (fun xs ↦ pure (hash xs)) (fun a b ↦ pure (compress a b)) values sibs []
+            (index / 2) (padded / 2) root)) =
+        pure (match groups with
+          | (h, is) :: rest =>
+            if h.nextPowerOfTwo = padded / 2 then
+              climb hash compress values sibs rest (index / 2) (padded / 2)
+                (compress root (hashRows hash values is))
+            else climb hash compress values sibs groups (index / 2) (padded / 2) root
+          | [] => climb hash compress values sibs [] (index / 2) (padded / 2) root) := by
+      intro root
+      rw [pure_bind]
+      rcases groups with _ | ⟨⟨h, is⟩, rest⟩
+      · exact climbM_pure hash compress values sibs _ _ _ _
+      · dsimp only
+        by_cases hh : h.nextPowerOfTwo = padded / 2
+        · simp only [hh, ite_true]
+          rw [ pure_bind, pure_bind, hashRows]
+          exact climbM_pure hash compress values sibs _ _ _ _
+        · simp only [hh, ite_false]
+          exact climbM_pure hash compress values sibs _ _ _ _
+    by_cases hi : index % 2 = 0
+    · simp only [hi, ite_true]; exact step _
+    · simp only [hi, ite_false]; exact step _
+
+/-- With pure hashes, `verifyBatchM` is `verifyBatch`. -/
+theorem verifyBatchM_pure [DecidableEq F] (hash : List F → Vector F d)
+    (compress : Vector F d → Vector F d → Vector F d) (commit : Vector F d) (heights : List Nat)
+    (index : Nat) (values : List (List F)) (path : List (Vector F d)) :
+    verifyBatchM (m := m) (fun xs ↦ pure (hash xs)) (fun a b ↦ pure (compress a b)) commit
+      heights index values path =
+      pure (verifyBatch hash compress commit heights index values path) := by
+  unfold verifyBatchM verifyBatch
+  rcases heightGroups heights with _ | ⟨⟨maxH, tallest⟩, rest⟩
+  · rfl
+  · dsimp only
+    split
+    · rename_i h
+      rw [h, Bool.true_and, pure_bind, climbM_pure, pure_bind, hashRows]
+    · rename_i h
+      rw [Bool.not_eq_true] at h
+      rw [h, Bool.false_and]
+
+end CompStark.Merkle
+
 namespace CompStark.Fri
 open CompStark.Stark CompStark.Merkle
 
@@ -129,5 +201,16 @@ theorem verifyBatch_openAt (ms : List Mat) (k : Nat) (hne : ms ≠ [])
     rw [List.map_map]; rfl
   rw [root_ofMats, hv, openAt_path ms k hne hh, hH]
   exact Merkle.verifyBatch_openBatch _ _ _ k i hne' hh' hi
+
+/-- On Poseidon2, the verifier's opening check is `Merkle.KoalaBear.verifyBatch`. -/
+theorem checkOpening_eq (commit : Digest) (heights : List Nat) (index : Nat)
+    (values : List (List F)) (path : List Digest) :
+    checkOpening poseidon2 commit heights index values path =
+      pure (Merkle.KoalaBear.verifyBatch F commit heights index values path) := by
+  unfold checkOpening
+  rw [show Merkle.verifyBatchM poseidon2.hash poseidon2.compress commit heights index values path
+    = (pure (Merkle.KoalaBear.verifyBatch F commit heights index values path) : Id Bool) from
+    Merkle.verifyBatchM_pure _ _ _ _ _ _ _]
+  rfl
 
 end CompStark.Fri

@@ -10,7 +10,12 @@ public import CompStark.Stark.Air
 /-! # The STARK verifier
 
 Plonky3's `uni-stark` `verify` (revision `47e442f`) without preprocessed columns or zero
-knowledge, over KoalaBear with the two-adic FRI commitment scheme:
+knowledge, over KoalaBear with the two-adic FRI commitment scheme. `verifyWith` runs on any
+challenger and Merkle hashes (`Primitives`); `verify` is it on Plonky3's Poseidon2 ones.
+
+* The proof's shape is checked first: the opened values' sizes, and FRI's fold arities, which must
+  be Plonky3's schedule for the degree (`foldArities`). Plonky3 takes the arities from the proof;
+  fixing them makes this verifier slightly stricter.
 
 * The transcript observes the degree, the preprocessed width `0`, the trace commitment and the
   public values, samples the constraint-folding challenge `α`, observes the quotient commitment
@@ -66,8 +71,9 @@ def checkConstraints (A : Air) (pis : List F) (opened : OpenedValues) (degreeBit
     isTransition := zeta - gInv }
   foldedConstraints A env alpha * zh⁻¹ == quotient
 
-/-- Verify a proof of `A` with public values `pis`. -/
-def verify (P : Params) (A : Air) (proof : Proof) (pis : List F) : Except String Unit := do
+/-- Verify a proof of `A` with public values `pis` on the primitives `H`. -/
+def verifyWith {m : Type → Type} [Monad m] (H : Primitives m) (P : Params) (A : Air)
+    (proof : Proof) (pis : List F) : m (Except String Unit) := ExceptT.run do
   let db := proof.degreeBits
   let logChunks := A.logQuotientChunks
   let ds := chunkDomains db logChunks
@@ -75,27 +81,33 @@ def verify (P : Params) (A : Air) (proof : Proof) (pis : List F) : Except String
   unless o.traceLocal.size == A.width && o.traceNext.size == A.width &&
       o.quotientChunks.size == 2 ^ logChunks && o.quotientChunks.all (·.size == 4) do
     throw "invalid proof shape"
-  let run : M (EF × EF) := do
-    observe (db : F)
-    observe (db : F)
-    observe 0
-    observeList proof.traceCommit.toList
-    observeList pis
-    let alpha ← sampleExt
-    observeList proof.quotientCommit.toList
-    let zeta ← sampleExt
+  unless arities proof.fri == foldArities P.maxLogArity (db - P.logFinalPolyLen) do
+    throw "fold arities"
+  let run : M H (EF × EF) := do
+    observe H (db : F)
+    observe H (db : F)
+    observe H 0
+    observeList H proof.traceCommit.toList
+    observeList H pis
+    let alpha ← sampleExt H
+    observeList H proof.quotientCommit.toList
+    let zeta ← sampleExt H
     let zetaNext := zeta * Ext.ofBase (twoAdicGen db)
     let traceDomain : Domain := ⟨1, db⟩
-    verifyPcs P
+    verifyPcs H P
       [(proof.traceCommit, [(traceDomain, [(zeta, o.traceLocal.toList),
           (zetaNext, o.traceNext.toList)])]),
        (proof.quotientCommit, o.quotientChunks.toList.map fun ch ↦
           (traceDomain, [(zeta, ch.toList)]))]
       proof.fri
     return (alpha, zeta)
-  let ((alpha, zeta), _) ← run.run KoalaBear.Transcript.init
+  let ((alpha, zeta), _) ← run.run H.init
   let quotient := recompose ds o.quotientChunks.toList zeta
   unless checkConstraints A pis o db zeta alpha quotient do
     throw "out-of-domain evaluation mismatch"
+
+/-- Plonky3's verifier: `verifyWith` on Poseidon2. -/
+def verify (P : Params) (A : Air) (proof : Proof) (pis : List F) : Except String Unit :=
+  verifyWith poseidon2 P A proof pis
 
 end CompStark.Stark
