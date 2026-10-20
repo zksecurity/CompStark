@@ -18,7 +18,7 @@ squeeze after it duplexes once, and the round's challenges are the answer's firs
 
 @[expose] public section
 namespace CompStark.Ni
-open CompStark.Stark CompStark.Fri CompStark.RandomOracle Montgomery.Native32
+open CompStark.Stark CompStark.Fri CompStark.RandomOracle Montgomery.Native32 OracleSpec OracleComp
 open KoalaBear.Fast (Ext4)
 
 local notation "F" => KoalaBear.Fast.Field
@@ -164,6 +164,16 @@ theorem nonempty_of_verify (S : Iop.Setup) (H : Primitives Id) (proof : Proof) (
   · have := congrArg List.length he
     rw [Array.length_toList, hfp, List.length_nil] at this
     exact absurd this (Nat.two_pow_pos _).ne'
+
+/-- The committed trace of the design (`Iop.committedTrace`) is the extracted trace words on the
+log's cache. -/
+theorem committedTrace_eq (S : Iop.Setup) (log : QueryLog (spec S.streamLen))
+    (proof : Proof) : Iop.committedTrace S log proof = traceWords S (Iop.logCache log) proof := by
+  funext j z
+  simp only [Iop.committedTrace, traceWords, committedColumn, leafRow]
+  split <;> rename_i h <;> rw [h]
+  · rfl
+  · simp only [Option.getD_none, List.getD_nil, toField_zero]
 
 /-! ### Round by round -/
 
