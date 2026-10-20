@@ -86,3 +86,7 @@ public import CompStark.NonInteractiveError
 public import CompStark.Sound.Sampling
 public import CompStark.Sound.ConsistentQueries
 public import CompStark.Sound.Rbr
+public import CompStark.RandomOracle
+public import CompStark.Ni.Natural
+public import CompStark.Ni.Answers
+public import CompStark.Ni.QueryBound
