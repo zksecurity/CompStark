@@ -6,8 +6,8 @@ package CompStark where
   version := v!"0.1.0"
   testDriver := "CompStarkTests"
 
--- Pinned to a CompPoly commit with the packed NTT and the batched coset LDE.
-require CompPoly from git "https://github.com/mitschabaude-bot/CompPoly.git" @ "3e09608ea702552a3e3f466926c4607ea959190c"
+-- Pinned to a CompPoly commit with the packed NTT, the batched coset LDE and fast KoalaBear⁵.
+require CompPoly from git "https://github.com/mitschabaude-bot/CompPoly.git" @ "e18344dbfec38ba813f77d680da91e5946768a9c"
 
 -- ArkLib with FRI round-by-round soundness on Lean v4.35 (Verified-zkEVM/ArkLib#1317, stacked on
 -- #992 and #1251) and lossy mutual correlated agreement (branch `fri-lossy`).
