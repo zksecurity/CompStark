@@ -31,10 +31,13 @@ namespace CompStark.Iop
 open CompStark.Sound
 
 local notation "𝔽" => KoalaBear.Field
-local notation "𝕂" => KoalaBear.Ext4
+
+variable {EF : Type} [Challenge EF]
+
+local notation "𝕂" => Challenge.Spec EF
 
 namespace Setup
-variable (S : Setup)
+variable (S : Setup EF)
 
 /-- Plonky3's folding arities for `S`: `logN - logFinalPolyLen` halvings. -/
 def foldArities : List ℕ+ := Sound.folds S.params.maxLogArity (S.logN - S.params.logFinalPolyLen)
@@ -54,20 +57,20 @@ noncomputable def powFraction (bits : Nat) : ENNReal :=
 
 /-- FRI's fold `i` makes a far word near by folding (ArkLib's `foldingErrorLossy`): the lossy
 correlated-agreement error of the fold's arity at proximity `δ` and loss `loss`. -/
-noncomputable def friFoldError (S : Setup) (δ loss : NNReal) (i : Fin (S.lastFold + 1)) :
+noncomputable def friFoldError (S : Setup EF) (δ loss : NNReal) (i : Fin (S.lastFold + 1)) :
     ENNReal :=
   Fri.Spec.foldingErrorLossy (ω := S.domain) S.schedule (finalDegree S.params.logFinalPolyLen)
     δ loss i
 
 /-- FRI's queries all land where the checks pass, after safe folds, for a word `δ`-far from the
 code: `(1 - min (δ - k loss) (δ - (k + 1) loss) + 1/p) ^ numQueries`, `k + 1` folds. -/
-noncomputable def friQueryError (S : Setup) (δ loss : NNReal) : ENNReal :=
+noncomputable def friQueryError (S : Setup EF) (δ loss : NNReal) : ENNReal :=
   ENNReal.ofReal (1 - min ((δ : ℝ) - S.lastFold * loss) ((δ : ℝ) - (S.lastFold + 1) * loss) +
     1 / Fintype.card 𝔽) ^ S.params.numQueries
 
 /-- The error of one random-oracle answer: the IOP's round-by-round errors, the FRI rounds
 credited with their grinding. FRI's folds and queries share one proximity loss. -/
-noncomputable def roundError (S : Setup) (δ δ' : NNReal) : ENNReal :=
+noncomputable def roundError (S : Setup EF) (δ δ' : NNReal) : ENNReal :=
   ⨅ loss : NNReal,
     (max (foldingError S δ') <| max (outOfDomainError S δ') <|
       max (batchingError S δ ((δ' : ℝ) - 2 / S.size)) <|

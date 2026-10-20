@@ -959,7 +959,7 @@ theorem run_idealLogged (P : Fri.Params) (A : Air) (proof : Proof) (pis : List F
 end Verifier
 
 section Setup
-variable (S : Iop.Setup) (answer : (q : Query) → Answer S.streamLen q)
+variable (S : Iop.Setup KoalaBear.Fast.Ext4) (answer : (q : Query) → Answer S.streamLen q)
 
 /-- **The verifier queries every round.** If the verifier accepts a proof for `2 ^ logN` rows on
 the answers `answer`, the duplex call of every round of the proof's schedule is in its log. -/

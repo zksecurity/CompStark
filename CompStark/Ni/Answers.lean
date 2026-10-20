@@ -73,7 +73,7 @@ open CompStark.Stark CompStark.RandomOracle OracleSpec OracleComp
 
 local notation "F" => KoalaBear.Fast.Field
 
-variable (S : Setup)
+variable (S : Setup KoalaBear.Fast.Ext4)
 
 theorem evalWithAnswerFn_verifyRo (answer : (q : Query) → Answer S.streamLen q) (proof : Proof)
     (pis : List F) :

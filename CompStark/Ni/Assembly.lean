@@ -70,7 +70,7 @@ end Logged
 /-! ### The game -/
 
 section Game
-variable (S : Iop.Setup) (publicValues : List F)
+variable (S : Iop.Setup KoalaBear.Fast.Ext4) (publicValues : List F)
 
 /-- The game of `run`: the prover, logged, then the verifier on its proof. -/
 def game (prover : NIProver S) :
@@ -114,7 +114,7 @@ end Game
 /-! ### The bound -/
 
 section Bound
-variable (S : Iop.Setup) (publicValues : List F) (δ δ' : NNReal)
+variable (S : Iop.Setup KoalaBear.Fast.Ext4) (publicValues : List F) (δ δ' : NNReal)
 
 /-- The event of knowledge soundness: an accepted proof for `2 ^ logN` rows, no trace close to
 the committed one satisfying the AIR. -/

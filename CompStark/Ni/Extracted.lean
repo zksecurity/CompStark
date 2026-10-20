@@ -25,13 +25,13 @@ open KoalaBear.Fast (Ext4)
 local notation "F" => KoalaBear.Fast.Field
 local notation "EF" => KoalaBear.Fast.Ext4
 local notation "𝔽" => KoalaBear.Field
-local notation "𝕂" => KoalaBear.Ext4
+local notation "𝕂" => Challenge.Spec KoalaBear.Fast.Ext4
 
 /-- Two caches extract the same rows under `root`. -/
 def SameUnder (cache cache' : Merkle.Cache F Digest) (root : Digest) : Prop :=
   ∀ k i, Merkle.extractRow cache k i root = Merkle.extractRow cache' k i root
 
-variable (S : Iop.Setup)
+variable (S : Iop.Setup KoalaBear.Fast.Ext4)
 
 /-! ### Congruences -/
 

@@ -31,8 +31,11 @@ namespace CompStark.Sound
 open CompStark.Stark CompStark.Iop Polynomial Montgomery.Native32
 
 local notation "𝔽" => KoalaBear.Field
-local notation "𝕂" => KoalaBear.Ext4
 local notation "F" => KoalaBear.Fast.Field
+
+variable {EF : Type} [Challenge EF]
+
+local notation "𝕂" => Challenge.Spec EF
 
 /-! ### Horner's rule over constants -/
 
@@ -97,35 +100,37 @@ theorem le_foldl_max_of_mem {ι : Type*} (f : ι → Nat) :
 /-! ### The polynomials -/
 
 /-- Column `j` of `trace`, `0` beyond the width. -/
-noncomputable def traceCol (S : Setup) (trace : Fin S.air.width → 𝔽[X]) (j : Nat) : 𝔽[X] :=
+noncomputable def traceCol (S : Setup EF) (trace : Fin S.air.width → 𝔽[X]) (j : Nat) : 𝔽[X] :=
   if h : j < S.air.width then trace ⟨j, h⟩ else 0
 
 /-- `C_α`: the constraints over the trace polynomials, folded by `α`, over `𝕂`. -/
-noncomputable def foldedPoly (S : Setup) (publicValues : List F)
+noncomputable def foldedPoly (S : Setup EF) (publicValues : List F)
     (trace : Fin S.air.width → 𝔽[X]) (α : 𝕂) : 𝕂[X] :=
   horner (S.air.constraints.map fun c ↦
     (constraintPoly S.n (tw S.logN) (traceCol S trace) publicValues c).map (algebraMap 𝔽 𝕂))
     (C α)
 
 /-- The recomposition selector of chunk `c`: `∏_{d ≠ c} Z_{D_d}(X) / Z_{D_d}(s_c)`. -/
-noncomputable def selPoly (S : Setup) (c : Fin S.chunks) : 𝕂[X] :=
+noncomputable def selPoly (S : Setup EF) (c : Fin S.chunks) : 𝕂[X] :=
   ∏ d : Fin S.chunks with d ≠ c, C (vanishing (chunkShift S d) S.n (chunkShift S c))⁻¹ *
     ((Polynomial.X * C (chunkShift S d)⁻¹) ^ S.n - 1)
 
 /-- The quotient recomposed from its chunks' coordinate polynomials. -/
-noncomputable def recomposedPoly (S : Setup) (quotient : Fin S.chunks → Fin 4 → 𝔽[X]) : 𝕂[X] :=
-  ∑ c, selPoly S c * ∑ e : Fin 4,
+noncomputable def recomposedPoly (S : Setup EF)
+    (quotient : Fin S.chunks → Fin (Challenge.d EF) → 𝔽[X]) : 𝕂[X] :=
+  ∑ c, selPoly S c * ∑ e : Fin (Challenge.d EF),
     C (CompPoly.Extension.Ext.gen ^ (e : Nat)) * (quotient c e).map (algebraMap 𝔽 𝕂)
 
 /-- The constraint identity `Φ = C_α - Z_H R`. -/
-noncomputable def identityPoly (S : Setup) (publicValues : List F)
-    (trace : Fin S.air.width → 𝔽[X]) (quotient : Fin S.chunks → Fin 4 → 𝔽[X]) (α : 𝕂) : 𝕂[X] :=
+noncomputable def identityPoly (S : Setup EF) (publicValues : List F)
+    (trace : Fin S.air.width → 𝔽[X]) (quotient : Fin S.chunks → Fin (Challenge.d EF) → 𝔽[X]) (α : 𝕂)
+    : 𝕂[X] :=
   foldedPoly S publicValues trace α - (Polynomial.X ^ S.n - 1) * recomposedPoly S quotient
 
 /-! ### Degrees -/
 
 /-- The columns have degree at most `n`. -/
-theorem natDegree_traceCol (S : Setup) (trace : Fin S.air.width → 𝔽[X])
+theorem natDegree_traceCol (S : Setup EF) (trace : Fin S.air.width → 𝔽[X])
     (hdeg : ∀ j, (trace j).natDegree ≤ S.n) (j : Nat) : (traceCol S trace j).natDegree ≤ S.n := by
   rw [traceCol]
   split
@@ -133,7 +138,7 @@ theorem natDegree_traceCol (S : Setup) (trace : Fin S.air.width → 𝔽[X])
   · rw [natDegree_zero]; exact Nat.zero_le _
 
 /-- On columns of degree at most `n`, a constraint has degree at most `degBound (n + 1)`. -/
-theorem natDegree_constraintPoly_succ (S : Setup) (publicValues : List F)
+theorem natDegree_constraintPoly_succ (S : Setup EF) (publicValues : List F)
     (trace : Fin S.air.width → 𝔽[X]) (hdeg : ∀ j, (trace j).natDegree ≤ S.n) (c : Expr) :
     (constraintPoly S.n (tw S.logN) (traceCol S trace) publicValues c).natDegree ≤
       c.degBound (S.n + 1) :=
@@ -144,7 +149,7 @@ theorem natDegree_constraintPoly_succ (S : Setup) (publicValues : List F)
     (natDegree_sub_le_of_le natDegree_X_le (natDegree_C _).le) c
 
 /-- `C_α` has degree at most the largest constraint degree. -/
-theorem natDegree_foldedPoly (S : Setup) (publicValues : List F)
+theorem natDegree_foldedPoly (S : Setup EF) (publicValues : List F)
     (trace : Fin S.air.width → 𝔽[X]) (hdeg : ∀ j, (trace j).natDegree ≤ S.n) (α : 𝕂) :
     (foldedPoly S publicValues trace α).natDegree ≤
       S.air.constraints.foldl (fun m c ↦ max m (c.degBound (S.n + 1))) 0 := by
@@ -156,7 +161,7 @@ theorem natDegree_foldedPoly (S : Setup) (publicValues : List F)
     trace hdeg c).trans (le_foldl_max_of_mem (fun c ↦ c.degBound (S.n + 1)) _ 0 c hc)))
 
 /-- The recomposition selector has degree at most `(chunks - 1) n`. -/
-theorem natDegree_selPoly (S : Setup) (c : Fin S.chunks) :
+theorem natDegree_selPoly (S : Setup EF) (c : Fin S.chunks) :
     (selPoly S c).natDegree ≤ (S.chunks - 1) * S.n := by
   refine (natDegree_prod_le _ _).trans ?_
   have hcard : (Finset.univ.filter fun d : Fin S.chunks ↦ d ≠ c).card = S.chunks - 1 := by
@@ -172,12 +177,13 @@ theorem natDegree_selPoly (S : Setup) (c : Fin S.chunks) :
   exact (Nat.mul_le_mul_left _ this).trans (Nat.mul_one _).le
 
 /-- The recomposed quotient has degree at most `chunks · n`. -/
-theorem natDegree_recomposedPoly (S : Setup) (quotient : Fin S.chunks → Fin 4 → 𝔽[X])
+theorem natDegree_recomposedPoly (S : Setup EF)
+    (quotient : Fin S.chunks → Fin (Challenge.d EF) → 𝔽[X])
     (hq : ∀ c e, (quotient c e).natDegree ≤ S.n) :
     (recomposedPoly S quotient).natDegree ≤ S.chunks * S.n := by
   refine natDegree_sum_le_of_forall_le _ _ fun c _ ↦ natDegree_mul_le.trans ?_
   have h1 := natDegree_selPoly S c
-  have h2 : (∑ e : Fin 4, C (CompPoly.Extension.Ext.gen ^ (e : Nat)) *
+  have h2 : (∑ e : Fin (Challenge.d EF), C (CompPoly.Extension.Ext.gen ^ (e : Nat)) *
       (quotient c e).map (algebraMap 𝔽 𝕂)).natDegree ≤ S.n :=
     natDegree_sum_le_of_forall_le _ _ fun e _ ↦
       (natDegree_C_mul_le _ _).trans (natDegree_map_le.trans (hq c e))
@@ -187,9 +193,10 @@ theorem natDegree_recomposedPoly (S : Setup) (quotient : Fin S.chunks → Fin 4 
   omega
 
 /-- `Φ` has degree at most `identityDegree`. -/
-theorem natDegree_identityPoly (S : Setup) (publicValues : List F)
+theorem natDegree_identityPoly (S : Setup EF) (publicValues : List F)
     (trace : Fin S.air.width → 𝔽[X]) (hdeg : ∀ j, (trace j).natDegree ≤ S.n)
-    (quotient : Fin S.chunks → Fin 4 → 𝔽[X]) (hq : ∀ c e, (quotient c e).natDegree ≤ S.n)
+    (quotient : Fin S.chunks → Fin (Challenge.d EF) → 𝔽[X])
+    (hq : ∀ c e, (quotient c e).natDegree ≤ S.n)
     (α : 𝕂) : (identityPoly S publicValues trace quotient α).natDegree ≤ S.identityDegree := by
   refine (natDegree_sub_le _ _).trans (max_le
     ((natDegree_foldedPoly S publicValues trace hdeg α).trans (le_max_left _ _))
@@ -204,7 +211,7 @@ theorem natDegree_identityPoly (S : Setup) (publicValues : List F)
 /-! ### The check at `ζ` -/
 
 /-- The verifier's environment at `ζ` (`ConstraintsHoldAt`). -/
-noncomputable def envAt (S : Setup) (publicValues : List F) (ζ : 𝕂) (o : Openings S) :
+noncomputable def envAt (S : Setup EF) (publicValues : List F) (ζ : 𝕂) (o : Openings S) :
     Expr.Env 𝕂 :=
   { cur := fun j ↦ if h : j < S.air.width then o.traceAt ⟨j, h⟩ else 0
     next := fun j ↦ if h : j < S.air.width then o.traceNext ⟨j, h⟩ else 0
@@ -215,29 +222,29 @@ noncomputable def envAt (S : Setup) (publicValues : List F) (ζ : 𝕂) (o : Ope
     isTransition := ζ - (rootOfUnity S.logN)⁻¹ }
 
 /-- The verifier's recomposition selector of chunk `c` at `ζ` (`ConstraintsHoldAt`). -/
-noncomputable def selectorAt (S : Setup) (ζ : 𝕂) (c : Fin S.chunks) : 𝕂 :=
+noncomputable def selectorAt (S : Setup EF) (ζ : 𝕂) (c : Fin S.chunks) : 𝕂 :=
   ∏ d : Fin S.chunks with d ≠ c,
     vanishing (chunkShift S d) S.n ζ / vanishing (chunkShift S d) S.n (chunkShift S c)
 
 /-- Chunk `c`'s claimed value (`ConstraintsHoldAt`). -/
-noncomputable def chunkAt {S : Setup} (o : Openings S) (c : Fin S.chunks) : 𝕂 :=
-  ∑ e : Fin 4, CompPoly.Extension.Ext.gen ^ (e : Nat) * o.quotientAt c e
+noncomputable def chunkAt {S : Setup EF} (o : Openings S) (c : Fin S.chunks) : 𝕂 :=
+  ∑ e : Fin (Challenge.d EF), CompPoly.Extension.Ext.gen ^ (e : Nat) * o.quotientAt c e
 
 /-- `ConstraintsHoldAt` in terms of `envAt`, `selectorAt` and `chunkAt`. -/
-theorem constraintsHoldAt_iff (S : Setup) (publicValues : List F) (α ζ : 𝕂) (o : Openings S) :
+theorem constraintsHoldAt_iff (S : Setup EF) (publicValues : List F) (α ζ : 𝕂) (o : Openings S) :
     ConstraintsHoldAt S publicValues α ζ o ↔
       S.air.constraints.foldl (fun acc c ↦ acc * α + c.eval (envAt S publicValues ζ o)) 0 /
         vanishing 1 S.n ζ = ∑ c, selectorAt S ζ c * chunkAt o c :=
   Iff.rfl
 
 /-- The trace domain is a subgroup of KoalaBear's two-adic group. -/
-theorem logN_le (S : Setup) : S.logN ≤ 24 := (Nat.le_add_right _ _).trans S.valid.twoAdic
+theorem logN_le (S : Setup EF) : S.logN ≤ 24 := (Nat.le_add_right _ _).trans S.valid.twoAdic
 
 /-- `ω_n` lies in the base field. -/
-theorem rootOfUnity_eq (S : Setup) : rootOfUnity S.logN = algebraMap 𝔽 𝕂 (tw S.logN) := rfl
+theorem rootOfUnity_eq (S : Setup EF) : rootOfUnity S.logN = algebraMap 𝔽 𝕂 (tw S.logN) := rfl
 
 /-- The selector polynomial at `ζ` is the verifier's selector. -/
-theorem eval_selPoly (S : Setup) (c : Fin S.chunks) (ζ : 𝕂) :
+theorem eval_selPoly (S : Setup EF) (c : Fin S.chunks) (ζ : 𝕂) :
     (selPoly S c).eval ζ = selectorAt S ζ c := by
   rw [selPoly, eval_prod, selectorAt]
   refine Finset.prod_congr rfl fun d _ ↦ ?_
@@ -246,8 +253,8 @@ theorem eval_selPoly (S : Setup) (c : Fin S.chunks) (ζ : 𝕂) :
   ring
 
 /-- The recomposed quotient at `ζ` is the verifier's recomposition of the true openings. -/
-theorem eval_recomposedPoly (S : Setup) (trace : Fin S.air.width → 𝔽[X])
-    (quotient : Fin S.chunks → Fin 4 → 𝔽[X]) (ζ : 𝕂) :
+theorem eval_recomposedPoly (S : Setup EF) (trace : Fin S.air.width → 𝔽[X])
+    (quotient : Fin S.chunks → Fin (Challenge.d EF) → 𝔽[X]) (ζ : 𝕂) :
     (recomposedPoly S quotient).eval ζ =
       ∑ c, selectorAt S ζ c * chunkAt (trueOpenings S trace quotient ζ) c := by
   rw [recomposedPoly, eval_finsetSum]
@@ -259,7 +266,7 @@ theorem eval_recomposedPoly (S : Setup) (trace : Fin S.air.width → 𝔽[X])
   rfl
 
 /-- `C_α` at a point is Horner's rule over the constraint polynomials there. -/
-theorem eval_foldedPoly (S : Setup) (publicValues : List F) (trace : Fin S.air.width → 𝔽[X])
+theorem eval_foldedPoly (S : Setup EF) (publicValues : List F) (trace : Fin S.air.width → 𝔽[X])
     (α y : 𝕂) : (foldedPoly S publicValues trace α).eval y = horner (S.air.constraints.map
       fun c ↦ aeval y (constraintPoly S.n (tw S.logN) (traceCol S trace) publicValues c)) α := by
   rw [foldedPoly, ← coe_evalRingHom, horner_map, coe_evalRingHom, eval_C, List.map_map]
@@ -268,8 +275,8 @@ theorem eval_foldedPoly (S : Setup) (publicValues : List F) (trace : Fin S.air.w
   simp only [Function.comp_apply, eval_map_algebraMap]
 
 /-- The verifier's constraint at `ζ` is the constraint polynomial at `ζ`. -/
-theorem eval_envAt (S : Setup) (publicValues : List F) (trace : Fin S.air.width → 𝔽[X])
-    (quotient : Fin S.chunks → Fin 4 → 𝔽[X]) (ζ : 𝕂) (h1 : ζ - 1 ≠ 0)
+theorem eval_envAt (S : Setup EF) (publicValues : List F) (trace : Fin S.air.width → 𝔽[X])
+    (quotient : Fin S.chunks → Fin (Challenge.d EF) → 𝔽[X]) (ζ : 𝕂) (h1 : ζ - 1 ≠ 0)
     (hω : ζ - (rootOfUnity S.logN)⁻¹ ≠ 0) (c : Expr) (hc : c.colsBelow S.air.width = true) :
     c.eval (envAt S publicValues ζ (trueOpenings S trace quotient ζ)) =
       aeval ζ (constraintPoly S.n (tw S.logN) (traceCol S trace) publicValues c) := by
@@ -290,8 +297,9 @@ theorem eval_envAt (S : Setup) (publicValues : List F) (trace : Fin S.air.width 
     rw [map_sub, aeval_X, aeval_C, hinv]
 
 /-- **The check at `ζ` off the trace domain** makes `ζ` a root of `Φ`. -/
-theorem eval_identityPoly_eq_zero (S : Setup) (publicValues : List F)
-    (trace : Fin S.air.width → 𝔽[X]) (quotient : Fin S.chunks → Fin 4 → 𝔽[X]) (α ζ : 𝕂)
+theorem eval_identityPoly_eq_zero (S : Setup EF) (publicValues : List F)
+    (trace : Fin S.air.width → 𝔽[X]) (quotient : Fin S.chunks → Fin (Challenge.d EF) → 𝔽[X])
+    (α ζ : 𝕂)
     (hζ : ζ ^ S.n ≠ 1)
     (h : ConstraintsHoldAt S publicValues α ζ (trueOpenings S trace quotient ζ)) :
     (identityPoly S publicValues trace quotient α).eval ζ = 0 := by
@@ -309,7 +317,7 @@ theorem eval_identityPoly_eq_zero (S : Setup) (publicValues : List F)
 /-! ### The identity on the trace domain -/
 
 /-- The trace polynomials take `traceOf`'s values on the trace domain. -/
-theorem traceOn_traceOf (S : Setup) (trace : Fin S.air.width → 𝔽[X]) :
+theorem traceOn_traceOf (S : Setup EF) (trace : Fin S.air.width → 𝔽[X]) :
     TraceOn S.logN S.air.width (traceOf S trace) (traceCol S trace) := by
   intro j hj i hi
   have hr : i * S.air.width + j < S.n * S.air.width :=
@@ -328,8 +336,9 @@ theorem traceOn_traceOf (S : Setup) (trace : Fin S.air.width → 𝔽[X]) :
   simp only [Fin.divNat, Fin.modNat, hd, hm]
 
 /-- On a row `ωⁱ`, `Φ` is Horner's rule over the constraints' values on row `i`. -/
-theorem eval_identityPoly_root (S : Setup) (publicValues : List F)
-    (trace : Fin S.air.width → 𝔽[X]) (quotient : Fin S.chunks → Fin 4 → 𝔽[X]) (α : 𝕂) (i : Nat)
+theorem eval_identityPoly_root (S : Setup EF) (publicValues : List F)
+    (trace : Fin S.air.width → 𝔽[X]) (quotient : Fin S.chunks → Fin (Challenge.d EF) → 𝔽[X]) (α : 𝕂)
+    (i : Nat)
     (hi : i < S.n) :
     (identityPoly S publicValues trace quotient α).eval (algebraMap 𝔽 𝕂 (tw S.logN ^ i)) =
       horner (S.air.constraints.map fun c ↦ algebraMap 𝔽 𝕂 (FastField.toField
@@ -356,7 +365,7 @@ theorem card_filter_le_of_roots {R : Type*} [CommRing R] [IsDomain R] (s : Finse
   exact Multiset.mem_toFinset.mpr ((mem_roots hΦ).mpr (h x (Finset.mem_filter.mp hx).2))
 
 /-- The trace fails some constraint on some row. -/
-theorem exists_failing_row (S : Setup) (publicValues : List F) (trace : Fin S.air.width → 𝔽[X])
+theorem exists_failing_row (S : Setup EF) (publicValues : List F) (trace : Fin S.air.width → 𝔽[X])
     (hsat : ¬ S.air.Satisfied S.logN (traceOf S trace) publicValues) :
     ∃ c ∈ S.air.constraints, ∃ i < S.n,
       c.eval (S.air.traceRow S.logN (traceOf S trace) publicValues i) ≠ 0 := by
@@ -366,7 +375,7 @@ theorem exists_failing_row (S : Setup) (publicValues : List F) (trace : Fin S.ai
   exact hne ⟨c, hc, i, hi, h⟩
 
 /-- **The algebra step.** -/
-theorem algebraStep (S : Setup) : AlgebraStep S := by
+theorem algebraStep (S : Setup EF) : AlgebraStep S := by
   classical
   intro publicValues trace hdeg hsat
   obtain ⟨c₀, hc₀, i, hi, hne⟩ := exists_failing_row S publicValues trace hsat

@@ -36,7 +36,7 @@ open KoalaBear.Fast (Ext4)
 local notation "F" => KoalaBear.Fast.Field
 local notation "EF" => KoalaBear.Fast.Ext4
 local notation "𝔽" => KoalaBear.Field
-local notation "𝕂" => KoalaBear.Ext4
+local notation "𝕂" => Challenge.Spec KoalaBear.Fast.Ext4
 
 /-! ### The run's challenges -/
 
@@ -75,7 +75,8 @@ end Challenges
 /-- The interactive oracle proof's transcript extracted from an accepted proof: the words and FRI
 oracles from `cache`, the opened values and final polynomial from the proof, and the challenges
 of the run on `H`. -/
-noncomputable def extract (S : Iop.Setup) (cache : Merkle.Cache F Digest) (H : Primitives Id)
+noncomputable def extract (S : Iop.Setup KoalaBear.Fast.Ext4) (cache : Merkle.Cache F Digest)
+    (H : Primitives Id)
     (proof : Proof) (pis : List F) : Sound.Transcript S where
   trace := traceWords S cache proof
   alpha := Ext4.toSpec (alphaOf H proof pis)
@@ -95,7 +96,7 @@ theorem foldArities_eq (m : Nat) : ∀ r, foldArities m r = (folds m r).map PNat
     exact congrArg (List.cons _) (foldArities_eq m _)
   decreasing_by omega
 
-theorem natDegree_finalPoly (S : Iop.Setup) (cache : Merkle.Cache F Digest)
+theorem natDegree_finalPoly (S : Iop.Setup KoalaBear.Fast.Ext4) (cache : Merkle.Cache F Digest)
     (commits : List Digest) (coeffs : Array EF)
     (h : coeffs.size = 2 ^ S.params.logFinalPolyLen) :
     (finalPolynomial S.schedule (friOracles S cache commits coeffs)).natDegree <
@@ -111,7 +112,8 @@ theorem natDegree_finalPoly (S : Iop.Setup) (cache : Merkle.Cache F Digest)
 
 /-- The verifier's FRI rounds on an accepted proof of `2 ^ logN` rows: the largest query domain
 is `L`, above the blowup, and every opened matrix has its height. -/
-theorem friHyps (S : Iop.Setup) (H : Primitives Id) (proof : Proof) (pis : List F)
+theorem friHyps (S : Iop.Setup KoalaBear.Fast.Ext4) (H : Primitives Id) (proof : Proof)
+    (pis : List F)
     (hdb : proof.degreeBits = S.logN)
     (harity : arities proof.fri = foldArities S.params.maxLogArity
       (S.logN - S.params.logFinalPolyLen)) :
@@ -152,7 +154,8 @@ theorem friHyps (S : Iop.Setup) (H : Primitives Id) (proof : Proof) (pis : List 
 rows whose commitments bind the rows extracted from `cache`, the extracted transcript passes the
 deterministic checks of `Sound.exists_satisfied_of_safe`, with the run's grinding and query
 samples. -/
-theorem bcs (S : Iop.Setup) (cache : Merkle.Cache F Digest) (H : Primitives Id) (proof : Proof)
+theorem bcs (S : Iop.Setup KoalaBear.Fast.Ext4) (cache : Merkle.Cache F Digest) (H : Primitives Id)
+    (proof : Proof)
     (pis : List F) (hdb : proof.degreeBits = S.logN)
     (htrace : Binding cache H proof.traceCommit) (hquot : Binding cache H proof.quotientCommit)
     (hfri : ∀ c ∈ proof.fri.commits, Binding cache H c)

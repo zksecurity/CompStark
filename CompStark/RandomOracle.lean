@@ -103,7 +103,7 @@ local notation "𝔽" => KoalaBear.Field
 local notation "F" => KoalaBear.Fast.Field
 
 namespace Setup
-variable (S : Setup)
+variable (S : Setup KoalaBear.Fast.Ext4)
 
 /-- The samples in one duplex answer, enough for every round: a fold takes a grinding sample and
 four for `β`, the query round a grinding sample and one index per query. -/
@@ -135,11 +135,12 @@ end Setup
 
 /-- A non-interactive prover for `S`: a computation with oracle access to the hashes that outputs
 a proof. Provers are deterministic; a randomized prover is a mixture of deterministic ones. -/
-abbrev NIProver (S : Setup) := OracleComp (spec S.streamLen) Proof
+abbrev NIProver (S : Setup KoalaBear.Fast.Ext4) := OracleComp (spec S.streamLen) Proof
 
 /-- Run `prover`, logging its queries, then the verifier on its proof, against one random
 oracle. -/
-noncomputable def run (S : Setup) (publicValues : List F) (prover : NIProver S) :
+noncomputable def run (S : Setup KoalaBear.Fast.Ext4) (publicValues : List F) (prover : NIProver S)
+    :
     ProbComp (Proof × QueryLog (spec S.streamLen) × Except String Unit) :=
   (simulateQ randomOracle do
     let (proof, log) ← (simulateQ loggingOracle prover).run
@@ -153,7 +154,8 @@ def logCache {K : Nat} (log : QueryLog (spec K)) : Merkle.Cache F Digest where
 /-- The trace words committed under `proof.traceCommit`, read off the hash queries of `log`: the
 row of the tree on `L` at the leaf of each point (Plonky3's bit-reversed order), zero where `log`
 holds no preimage. -/
-noncomputable def committedTrace (S : Setup) (log : QueryLog (spec S.streamLen)) (proof : Proof) :
+noncomputable def committedTrace (S : Setup KoalaBear.Fast.Ext4) (log : QueryLog (spec S.streamLen))
+    (proof : Proof) :
     Fin S.air.width → S.Point → 𝔽 := fun column point ↦
   let depth := S.logN + S.params.logBlowup
   match Merkle.extractRow (logCache log) depth (reverseBits point depth) proof.traceCommit with

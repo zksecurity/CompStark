@@ -250,6 +250,8 @@ theorem smul_ext4 (x : F) (a : Ext4) : Challenge.smul x a = Ext4.smul x a := rfl
 
 theorem toSpec_ext4 (a : Ext4) : Challenge.toSpec a = Ext4.toSpec a := rfl
 
+@[simp] theorem d_ext4 : Challenge.d Ext4 = 4 := rfl
+
 /-- `Ext4.toSpec_ofBase` for the generic `Ext.ofBase`. -/
 theorem toSpec_ofBase_ext4 (x : F) :
     Ext4.toSpec (Stark.Ext.ofBase x) = Ext.ofBase (FastField.toField x) :=
@@ -300,6 +302,8 @@ instance : Challenge Ext5 where
   toSpec_inv := Ext5.toSpec_inv
 
 theorem toSpec_ext5 (a : Ext5) : Challenge.toSpec a = Ext5.toSpec a := rfl
+
+@[simp] theorem d_ext5 : Challenge.d Ext5 = 5 := rfl
 
 end KoalaBear
 end CompStark

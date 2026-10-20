@@ -146,7 +146,8 @@ theorem roundValues_vRounds (proof : Proof) (zeta : EF) :
     List.append_nil, List.flatMap_map, List.append_assoc]
 
 /-- An accepted proof of `2 ^ logN` rows opens values and has a final polynomial. -/
-theorem nonempty_of_verify (S : Iop.Setup) (H : Primitives Id) (proof : Proof) (pis : List F)
+theorem nonempty_of_verify (S : Iop.Setup KoalaBear.Fast.Ext4) (H : Primitives Id) (proof : Proof)
+    (pis : List F)
     (hdb : proof.degreeBits = S.logN) (h : verifyWith H S.params S.air proof pis = .ok ()) :
     openedValues proof.opened ≠ [] ∧ proof.fri.finalPoly.toList ≠ [] := by
   obtain ⟨-, -, hqc, hq4, harity, ⟨st, hfriOk⟩, -⟩ := verifyWith_ok H S.params S.air proof pis h
@@ -169,7 +170,7 @@ theorem nonempty_of_verify (S : Iop.Setup) (H : Primitives Id) (proof : Proof) (
 
 /-- The committed trace of the design (`Iop.committedTrace`) is the extracted trace words on the
 log's cache. -/
-theorem committedTrace_eq (S : Iop.Setup) (log : QueryLog (spec S.streamLen))
+theorem committedTrace_eq (S : Iop.Setup KoalaBear.Fast.Ext4) (log : QueryLog (spec S.streamLen))
     (proof : Proof) : Iop.committedTrace S log proof = traceWords S (Iop.logCache log) proof := by
   funext j z
   simp only [Iop.committedTrace, traceWords, committedColumn, leafRow]

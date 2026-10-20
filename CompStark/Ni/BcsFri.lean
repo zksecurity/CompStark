@@ -29,7 +29,7 @@ open KoalaBear.Fast (Ext4)
 local notation "F" => KoalaBear.Fast.Field
 local notation "EF" => KoalaBear.Fast.Ext4
 local notation "𝔽" => KoalaBear.Field
-local notation "𝕂" => KoalaBear.Ext4
+local notation "𝕂" => Challenge.Spec KoalaBear.Fast.Ext4
 
 /-! ### Extraction -/
 
@@ -55,14 +55,14 @@ noncomputable def friWordAt (root : Digest) (m a z : Nat) : 𝕂 :=
 
 end Extract
 
-variable (S : Iop.Setup)
+variable (S : Iop.Setup KoalaBear.Fast.Ext4)
 
 /-- `log₂ |L|`. -/
 abbrev _root_.CompStark.Iop.Setup.logSize : Nat := S.logN + S.params.logBlowup
 
 /-- The shift of the final polynomial's domain: `g ^ 2 ^ (logN - logFinalPolyLen)`. -/
 noncomputable def _root_.CompStark.Iop.Setup.finalShift : 𝕂 :=
-  lift gen ^ 2 ^ (S.logN - S.params.logFinalPolyLen)
+  @lift EF _ gen ^ 2 ^ (S.logN - S.params.logFinalPolyLen)
 
 /-- The final polynomial on the coset: `∑ᵢ cᵢ (X / s) ^ i`, `s` the final domain's shift. -/
 noncomputable def finalPoly (coeffs : Array EF) : 𝕂[X] :=
@@ -84,7 +84,7 @@ noncomputable def friOracles (cache : Merkle.Cache F Digest) (commits : List Dig
 /-- The folding challenges of ArkLib's oracles: `s_j β_j`, `s_j = g ^ 2 ^ prefix_j` the shift of
 word `j`'s domain. -/
 noncomputable def foldChallenges (betas : List EF) : FinalStatement 𝕂 S.lastFold := fun j ↦
-  lift gen ^ 2 ^ foldingPrefix S.schedule j.castSucc * Ext4.toSpec (betas.getD j 0)
+  @lift EF _ gen ^ 2 ^ foldingPrefix S.schedule j.castSucc * Ext4.toSpec (betas.getD j 0)
 
 theorem committedWord_friOracles (cache : Merkle.Cache F Digest) (commits : List Digest)
     (coeffs : Array EF) (i : Fin (S.lastFold + 1))
@@ -189,10 +189,10 @@ theorem foldStep_eq_foldValue (cache : Merkle.Cache F Digest) (H : Primitives Id
     (hm : st.2.2 = n - p) (hI : st.2.1 < 2 ^ (n - p)) (ha : p + x.2.logArity ≤ n)
     (hok : StepOk H x st) (hbind : Binding cache H x.1.2) :
     Ext4.toSpec (foldStep x st).1 =
-      ProximityGap.foldValue ((cosetDomain n hn).subdomain p)
+      ProximityGap.foldValue ((@cosetDomain EF _ n hn).subdomain p)
         (fun z ↦ friWordAt cache x.1.2 (n - p) x.2.logArity z.val) x.2.logArity
-        (lift gen ^ 2 ^ p * Ext4.toSpec x.1.1)
-        ((cosetDomain n hn).subdomain p (finMod (n - p) (reverseBits st.2.1 (n - p))) ^
+        (@lift EF _ gen ^ 2 ^ p * Ext4.toSpec x.1.1)
+        ((@cosetDomain EF _ n hn).subdomain p (finMod (n - p) (reverseBits st.2.1 (n - p))) ^
           2 ^ x.2.logArity) := by
   obtain ⟨e, I, m'⟩ := st
   dsimp only at hm hI ⊢
@@ -246,7 +246,7 @@ theorem foldingPrefix_last_eq :
 final polynomial at the subgroup's point. -/
 theorem eval_finalPoly (coeffs : Array EF) (I : Nat)
     (hI : I < 2 ^ (S.params.logBlowup + S.params.logFinalPolyLen)) :
-    (finalPoly S coeffs).eval (lift gen ^ 2 ^ (S.logN - S.params.logFinalPolyLen) *
+    (finalPoly S coeffs).eval (@lift EF _ gen ^ 2 ^ (S.logN - S.params.logFinalPolyLen) *
         Complete.emb (twoAdicGen (S.params.logBlowup + S.params.logFinalPolyLen) ^
           reverseBits I (S.params.logBlowup + S.params.logFinalPolyLen))) =
       Ext4.toSpec (coeffs.foldr (fun c acc ↦
@@ -375,7 +375,7 @@ theorem query_checks (cache : Merkle.Cache F Digest) (H : Primitives Id) (betas 
       have := hPle (i.val + 1) (by omega); rw [hPsucc i.val hi] at this; omega
     have h := foldStep_eq_foldValue cache H n hn (P i.val) l[i.val] _ (hst i.val).2
       ((hst i.val).1 ▸ hIlt i.val (by omega)) ha (hokj i.val hi) (hbindj i.val hi)
-    rw [← foldState_succ l _ _ hi, ← show S.domain = cosetDomain n hn from rfl, (hst i.val).1,
+    rw [← foldState_succ l _ _ hi, ← show S.domain = @cosetDomain EF _ n hn from rfl, (hst i.val).1,
       (hx i.val hi).2.2, (hx i.val hi).1, (hx i.val hi).2.1, hPi] at h
     have hpi := hpt i.val (by omega)
     rw [hPi] at hpi
@@ -408,7 +408,7 @@ theorem query_checks (cache : Merkle.Cache F Digest) (H : Primitives Id) (betas 
       have hL : n - P (S.lastFold + 1) = S.params.logBlowup + S.params.logFinalPolyLen := by
         rw [hPK]; omega
       have hIfin := hIlt (S.lastFold + 1) (by omega)
-      rw [show S.domain = cosetDomain n hn from rfl, subdomain_finMod n hn _
+      rw [show S.domain = @cosetDomain EF _ n hn from rfl, subdomain_finMod n hn _
         (by have := hPle (S.lastFold + 1) (by omega); omega) _ (Complete.reverseBits_lt _ _),
         hL, hPK]
       rw [hL, hPK] at hIfin

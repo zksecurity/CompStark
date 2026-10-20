@@ -24,9 +24,9 @@ open KoalaBear.Fast (Ext4)
 local notation "F" => KoalaBear.Fast.Field
 local notation "EF" => KoalaBear.Fast.Ext4
 local notation "𝔽" => KoalaBear.Field
-local notation "𝕂" => KoalaBear.Ext4
+local notation "𝕂" => Challenge.Spec KoalaBear.Fast.Ext4
 
-variable (S : Iop.Setup) (cache : Merkle.Cache F Digest)
+variable (S : Iop.Setup KoalaBear.Fast.Ext4) (cache : Merkle.Cache F Digest)
 
 /-- Column `j` of the base-field matrices committed under `root`, at the point of `L` of index
 `z`: entry `j` of the extracted leaf `rev z`, zero where nothing is extracted. -/
@@ -39,7 +39,8 @@ noncomputable def traceWords (proof : Proof) : Fin S.air.width → S.Point → �
 
 /-- The quotient chunks' coordinate words committed under the proof's quotient commitment: chunk
 `c`'s coordinate `e` is column `4 c + e`. -/
-noncomputable def quotientWords (proof : Proof) : Fin S.chunks → Fin 4 → S.Point → 𝔽 :=
+noncomputable def quotientWords (proof : Proof) :
+    Fin S.chunks → Fin (Challenge.d EF) → S.Point → 𝔽 :=
   fun c e ↦ committedColumn S cache proof.quotientCommit (4 * c.val + e.val)
 
 /-! ### Sums -/
@@ -137,6 +138,7 @@ theorem domain_finMod (index : Nat) :
       Complete.emb (gen * powF (twoAdicGen S.logSize) (reverseBits index S.logSize)) := by
   rw [show S.domain = cosetDomain S.logSize S.valid.twoAdic from rfl, cosetDomain_apply,
     finMod_val (Complete.reverseBits_lt _ _), Complete.emb_mul, Fast.powF_eq, Complete.emb_pow]
+  rfl
 
 /-- **The batched DEEP word at a query.** If a query's input openings at `index` against the
 verifier's rounds pass their checks (`BatchOk`), on a proof of the expected shape whose trace and
@@ -209,7 +211,7 @@ theorem deepWord_eq (H : Primitives Id) (proof : Proof) (zeta a : EF) (α : 𝕂
   -- The extracted words at the query's point.
   have hTw : ∀ j, traceWords S cache proof j z0 = FastField.toField (rowT.toList.getD j 0) :=
     fun j ↦ committedColumn_eq S cache _ index hidx _ hexT j
-  have hQw : ∀ (c : Fin S.chunks) (e : Fin 4), quotientWords S cache proof c e z0 =
+  have hQw : ∀ (c : Fin S.chunks) (e : Fin (Challenge.d EF)), quotientWords S cache proof c e z0 =
       FastField.toField ((bQ.values.toList.getD c #[]).toList.getD e 0) := by
     intro c e
     have hc : c.val < bQ.values.toList.length := by rw [hlenQ]; exact c.isLt
@@ -231,7 +233,7 @@ theorem deepWord_eq (H : Primitives Id) (proof : Proof) (zeta a : EF) (α : 𝕂
       (l.map fun w ↦ (w.2.2 - algebraMap 𝔽 𝕂 (w.1 z0)) / (w.2.1 - S.domain z0)).foldr
         (fun v acc ↦ v + Ext4.toSpec a * acc) 0 := by
     intro l
-    rw [← one_mul (List.foldr _ 0 _), ← pow_zero (Ext4.toSpec a), ← sum_zipIdx_pow _ _ 0,
+    erw [← one_mul (List.foldr _ 0 _), ← pow_zero (Ext4.toSpec a), ← sum_zipIdx_pow _ _ 0,
       List.zipIdx_map, List.map_map]
     refine congrArg List.sum (List.map_congr_left fun p _ ↦ ?_)
     obtain ⟨⟨f, z, y⟩, k⟩ := p
@@ -256,6 +258,7 @@ theorem deepWord_eq (H : Primitives Id) (proof : Proof) (zeta a : EF) (α : 𝕂
     refine List.map_congr_left fun j _ ↦ ?_
     simp only [Function.comp_apply, fixedProver, openingsOf, hTw, toList_getD, hD,
       div_eq_mul_inv]
+    rfl
   · rw [List.map_map, List.map_map, map_zip_eq_range _ _ S.air.width hw1
       (by rw [Array.length_toList, htn]) _ 0 0,
       ← map_finRange_eq_range]
@@ -266,7 +269,7 @@ theorem deepWord_eq (H : Primitives Id) (proof : Proof) (zeta a : EF) (α : 𝕂
   · rw [List.map_flatMap, batchTerms, List.map_flatMap,
       flatMap_zip_eq_range _ _ S.chunks hlenQ
         (by rw [hmQ, List.length_map, Array.length_toList, hqc]) _ #[] (td, [])]
-    rw [show (fun c : Fin S.chunks ↦ ((List.finRange 4).map fun e ↦
+    erw [show (fun c : Fin S.chunks ↦ ((List.finRange (Challenge.d EF)).map fun e ↦
         ((fixedProver (traceWords S cache proof) (quotientWords S cache proof)
           (openingsOf S o)).quotient α c e, Ext4.toSpec zeta,
           ((fixedProver (traceWords S cache proof) (quotientWords S cache proof)
@@ -299,5 +302,6 @@ theorem deepWord_eq (H : Primitives Id) (proof : Proof) (zeta a : EF) (α : 𝕂
         exact Array.getElem_mem hcq)) _ 0 0]
     refine List.map_congr_left fun e _ ↦ ?_
     simp only [Function.comp_apply, toList_getD, hD, div_eq_mul_inv]
+    rfl
 
 end CompStark.Ni

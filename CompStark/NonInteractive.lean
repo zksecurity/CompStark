@@ -35,7 +35,8 @@ gets a proof for `2 ^ logN` rows accepted, while no trace close to the one it co
 satisfies the AIR, with probability at most `q · roundError + hashError q`,
 `q = Q + verifierQueries`: FRI tests proximity `δ`, and the extractor list-decodes at any `δ'`
 below `1 - rate`. -/
-theorem knowledgeSoundness_ro (S : Setup) (publicValues : List F) (δ δ' : NNReal)
+theorem knowledgeSoundness_ro (S : Setup KoalaBear.Fast.Ext4) (publicValues : List F)
+    (δ δ' : NNReal)
     (hδ' : (δ' : ℝ) < 1 - S.rate) (Q : Nat) (prover : NIProver S)
     (hQ : prover.IsTotalQueryBound Q) :
     Pr{let (proof, log, verdict) ← run S publicValues prover}[

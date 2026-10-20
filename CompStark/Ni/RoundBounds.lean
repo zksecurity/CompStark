@@ -33,7 +33,7 @@ open scoped ENNReal
 local notation "F" => KoalaBear.Fast.Field
 local notation "EF" => KoalaBear.Fast.Ext4
 local notation "𝔽" => KoalaBear.Field
-local notation "𝕂" => KoalaBear.Ext4
+local notation "𝕂" => Challenge.Spec KoalaBear.Fast.Ext4
 
 /-! ### Uniform samples -/
 
@@ -116,11 +116,12 @@ theorem getD_append_singleton_lt {α : Type} (l : List α) (x d : α) (j : Nat) 
     (l ++ [x]).getD j d = l.getD j d := by
   simp only [List.getD_eq_getElem?_getD, List.getElem?_append_left hj]
 
-theorem prefixTranscript_betas_eq (S : Iop.Setup) (cache : Merkle.Cache F Digest)
+theorem prefixTranscript_betas_eq (S : Iop.Setup KoalaBear.Fast.Ext4)
+    (cache : Merkle.Cache F Digest)
     (block : Nat → List F) (sample : Nat → Vector F S.streamLen) :
     (prefixTranscript S cache block sample).betas = betasAt S sample := rfl
 
-theorem prefixTranscript_fri_eq (S : Iop.Setup) (cache : Merkle.Cache F Digest)
+theorem prefixTranscript_fri_eq (S : Iop.Setup KoalaBear.Fast.Ext4) (cache : Merkle.Cache F Digest)
     (block : Nat → List F) (sample sample' : Nat → Vector F S.streamLen) :
     (prefixTranscript S cache block sample).fri = (prefixTranscript S cache block sample').fri :=
   rfl
@@ -128,7 +129,7 @@ theorem prefixTranscript_fri_eq (S : Iop.Setup) (cache : Merkle.Cache F Digest)
 /-! ### The rounds' errors -/
 
 section Bounds
-variable (S : Iop.Setup) (publicValues : List F) (δ δ' loss : NNReal)
+variable (S : Iop.Setup KoalaBear.Fast.Ext4) (publicValues : List F) (δ δ' loss : NNReal)
 
 /-- The largest round error at proximity loss `loss`; `roundError` is its infimum. -/
 noncomputable def roundBound : ENNReal :=
@@ -202,7 +203,8 @@ theorem prob_roundBadAt_le (cache : Merkle.Cache F Digest) (block : Nat → List
     have hi3 : 3 + f.val = samples.length := by
       have : f.val = i - 3 := by rw [hfeq]
       omega
-    obtain ⟨c, hc_def⟩ : ∃ c, c = lift gen ^ 2 ^ foldingPrefix S.schedule f.castSucc := ⟨_, rfl⟩
+    obtain ⟨c, hc_def⟩ : ∃ c, c = @lift EF _ gen ^ 2 ^ foldingPrefix S.schedule f.castSucc :=
+      ⟨_, rfl⟩
     have hc : c ≠ 0 := by rw [hc_def]; exact pow_ne_zero _ lift_gen_ne_zero
     have hβ (v : Vector F S.streamLen) :
         (prefixTranscript S cache block fun j ↦ (samples ++ [v]).getD j d).betas f =

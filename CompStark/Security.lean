@@ -98,6 +98,8 @@ open CompStark.Stark CompStark.Sound
 
 local notation "F" => KoalaBear.Fast.Field
 
+variable {EF : Type} [Challenge EF]
+
 /-- FRI with blowup `16`, folding by arity `2` down to a constant, and `110` queries. -/
 def fibonacciParams : Fri.Params where
   logBlowup := 4
@@ -108,7 +110,7 @@ def fibonacciParams : Fri.Params where
   queryPowBits := 0
 
 /-- The Fibonacci AIR on `2 ^ 10` rows with `fibonacciParams`. -/
-def fibonacciSetup : Setup where
+def fibonacciSetup : Setup KoalaBear.Fast.Ext4 where
   params := fibonacciParams
   air := fibonacci
   logN := 10
@@ -193,7 +195,7 @@ theorem wide_colsInWidth (w : Nat) : (wide w).ColsInWidth := by
   exact ⟨⟨hj, Nat.mod_lt _ (by omega)⟩, hj⟩
 
 /-- `wide 64` on `2 ^ 20` rows with `wideParams`. -/
-def wideSetup : Setup where
+def wideSetup : Setup KoalaBear.Fast.Ext4 where
   params := wideParams
   air := wide 64
   logN := 20
@@ -218,18 +220,21 @@ theorem foldl_max_le {α : Type} (f : α → Nat) (b : Nat) :
       fun y hy ↦ h y (List.mem_cons_of_mem _ hy)
 
 /-- `wide 64` has two quotient chunks. -/
-theorem wide_chunks (S : Setup) (hair : S.air = wide 64) : S.chunks = 2 := by
+theorem wide_chunks (S : Setup EF) (hair : S.air = wide 64) : S.chunks = 2 := by
   rw [Setup.chunks, hair, wide_logQuotientChunks 64 (by decide)]
   rfl
 
-/-- `wide 64` opens `136` words. -/
-theorem wide_numOpened (S : Setup) (hair : S.air = wide 64) : S.numOpened - 1 = 135 := by
+/-- `wide 64` opens `128 + 2 d` words. -/
+theorem wide_numOpened (S : Setup EF) (hair : S.air = wide 64) :
+    S.numOpened - 1 = 127 + 2 * Challenge.d EF := by
   rw [Setup.numOpened, wide_chunks S hair, hair]
-  rfl
+  change 2 * 64 + Challenge.d EF * 2 - 1 = _
+  have := (Challenge.params EF).two_le
+  omega
 
 /-- The constraint-folding and out-of-domain integers of `wide 64`: `63` and
 `(3 n + 1) + n`. -/
-theorem wide_integers_le (S : Setup) (hair : S.air = wide 64) :
+theorem wide_integers_le (S : Setup EF) (hair : S.air = wide 64) :
     (S.air.constraints.length - 1) + (S.identityDegree + S.n) ≤ 4 * S.n + 64 := by
   have hid : S.identityDegree ≤ 3 * S.n + 1 := by
     rw [Setup.identityDegree, wide_chunks S hair]
@@ -296,7 +301,7 @@ def wide21Params : Fri.Params where
   queryPowBits := 0
 
 /-- `wide 64` on `2 ^ 21` rows with `wide21Params`. -/
-def wide21Setup : Setup where
+def wide21Setup : Setup KoalaBear.Fast.Ext4 where
   params := wide21Params
   air := wide 64
   logN := 21
@@ -368,7 +373,7 @@ def sp1Params : Fri.Params where
   queryPowBits := 16
 
 /-- `wide 64` on `2 ^ 21` rows with `sp1Params`: SP1's FRI on `2 ^ 21` rows. -/
-def wideSp1Setup : Setup where
+def wideSp1Setup : Setup KoalaBear.Fast.Ext4 where
   params := sp1Params
   air := wide 64
   logN := 21

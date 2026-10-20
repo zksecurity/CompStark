@@ -26,7 +26,10 @@ For the STARK, Plonky3's arities `folds maxLogArity (logN - logFinalPolyLen)` su
 namespace CompStark.Sound
 open CompStark.Stark CompStark.Iop Polynomial Domain OracleSpec OracleComp ProtocolSpec
 
-local notation "𝕂" => KoalaBear.Ext4
+variable {EF : Type} [Challenge EF]
+
+local notation "𝕂" => Challenge.Spec EF
+
 
 /-- Plonky3's arities sum to the number of halvings they fold away. -/
 theorem sum_folds (m : Nat) : ∀ r, ((folds m r).map (fun x : ℕ+ ↦ x.val)).sum = r
@@ -67,7 +70,7 @@ theorem friAcceptanceOf_le {n : Nat} (ω : SmoothCosetFftDomain n 𝕂) (f : ℕ
     loss.coe_nonneg (pure ()) emptyImpl WitIn WitOut witIn prover _ hfar
 
 /-- A word at relative distance below `δ` from a codeword is `δ`-near the code. -/
-theorem near_of_relHammingDist_lt (S : Setup) (δ : ℝ) (w u : S.Point → 𝕂) (hu : u ∈ S.code)
+theorem near_of_relHammingDist_lt (S : Setup EF) (δ : ℝ) (w u : S.Point → 𝕂) (hu : u ∈ S.code)
     (h : (Code.relHammingDist w u : ℝ) < δ) : Near S δ w := by
   classical
   refine ⟨Finset.univ.filter fun i ↦ w i = u i, ?_, u, hu, fun i hi ↦ (Finset.mem_filter.mp hi).2⟩
@@ -92,7 +95,7 @@ theorem folds_cons (m r : Nat) (hr : r ≠ 0) : ∃ f fs, folds m r = f :: fs :=
   exact ⟨_, _, rfl⟩
 
 /-- FRI accepts a word that is not `δ`-near the code with probability at most `friError`. -/
-theorem friStep (S : Setup) : FriStep S := by
+theorem friStep (S : Setup EF) : FriStep S := by
   intro δ w hw
   have hlt := S.folds
   obtain ⟨f, fs, hL⟩ := folds_cons S.params.maxLogArity (S.logN - S.params.logFinalPolyLen)
@@ -128,6 +131,6 @@ theorem friAcceptanceOf_le_one {n : Nat} (ω : SmoothCosetFftDomain n 𝕂) (fol
     · exact le_rfl
 
 /-- FRI accepts with probability at most `1`. -/
-theorem friAtMostOne (S : Setup) : FriAtMostOne S := fun w ↦ friAcceptanceOf_le_one _ _ _ _ w
+theorem friAtMostOne (S : Setup EF) : FriAtMostOne S := fun w ↦ friAcceptanceOf_le_one _ _ _ _ w
 
 end CompStark.Sound

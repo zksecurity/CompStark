@@ -31,11 +31,14 @@ namespace CompStark.Iop
 open CompStark.Stark CompStark.Sound CoreDefinitions Polynomial
 
 local notation "𝔽" => KoalaBear.Field
-local notation "𝕂" => KoalaBear.Ext4
 local notation "F" => KoalaBear.Fast.Field
 
+variable {EF : Type} [Challenge EF]
+
+local notation "𝕂" => Challenge.Spec EF
+
 namespace Setup
-variable (S : Setup)
+variable (S : Setup EF)
 
 /-- The rate `n / N` of the trace's code. -/
 noncomputable def rate : ℝ := (S.n : ℝ) / S.size
@@ -50,7 +53,7 @@ noncomputable def listSize (ι : Type) [Fintype ι] [DecidableEq ι] (δ : ℝ) 
 
 /-- The number of opened words: each trace column twice, at `ζ` and `ζ ω_n`, and each
 coordinate of each chunk. -/
-abbrev numOpened : Nat := 2 * S.air.width + 4 * S.chunks
+abbrev numOpened : Nat := 2 * S.air.width + Challenge.d EF * S.chunks
 
 /-- A bound on the degree of the constraint identity `C(X) = Z_H(X) Q(X)` in `ζ`, for trace
 columns of degree at most `n`: the largest constraint degree and `n · (chunks + 1)`. -/
@@ -64,32 +67,32 @@ noncomputable def code : ModuleCode S.Point 𝕂 𝕂 :=
 end Setup
 
 /-- A word agrees with a codeword of `S.code` on at least `(1 - δ) N` points. -/
-def Near (S : Setup) (δ : ℝ) (w : S.Point → 𝕂) : Prop :=
+def Near (S : Setup EF) (δ : ℝ) (w : S.Point → 𝕂) : Prop :=
   ∃ T : Finset S.Point, (T.card : ℝ) ≥ S.size * (1 - δ) ∧ ∃ u ∈ S.code, ∀ i ∈ T, w i = u i
 
 /-- Words are near the code on a common set of at least `(1 - δ) N` points. -/
-def NearTogether (S : Setup) {ι : Type} (δ : ℝ) (ws : ι → S.Point → 𝕂) : Prop :=
+def NearTogether (S : Setup EF) {ι : Type} (δ : ℝ) (ws : ι → S.Point → 𝕂) : Prop :=
   ∃ T : Finset S.Point, (T.card : ℝ) ≥ S.size * (1 - δ) ∧
     ∀ k, ∃ u ∈ S.code, ∀ i ∈ T, ws k i = u i
 
 /-- `α` folds a constraint that fails on some row of a candidate trace into one that vanishes on
 every row: at most `#constraints - 1` values of `α` per candidate, out of `|𝕂|`. -/
-noncomputable def foldingError (S : Setup) (δ : NNReal) : ENNReal :=
+noncomputable def foldingError (S : Setup EF) (δ : NNReal) : ENNReal :=
   (S.listSize (Fin S.air.width) δ * (S.air.constraints.length - 1) : Nat) /
     (Fintype.card 𝕂 : ENNReal)
 
 /-- For some pair of candidate trace and quotient, the constraint identity, a nonzero polynomial
 of degree at most `identityDegree`, vanishes at `ζ`; or `ζ` lies on the trace domain `H`, `n`
 points. -/
-noncomputable def outOfDomainError (S : Setup) (δ : NNReal) : ENNReal :=
-  (S.listSize (Fin S.air.width) δ * S.listSize (Fin S.chunks × Fin 4) δ * S.identityDegree +
-    S.n : Nat) / (Fintype.card 𝕂 : ENNReal)
+noncomputable def outOfDomainError (S : Setup EF) (δ : NNReal) : ENNReal :=
+  (S.listSize (Fin S.air.width) δ * S.listSize (Fin S.chunks × Fin (Challenge.d EF)) δ *
+    S.identityDegree + S.n : Nat) / (Fintype.card 𝕂 : ENNReal)
 
 open Classical in
 /-- The correlated-agreement error of the powers `1, a, a², …` over the opened words: the largest
 probability, over the words, that their combination by the powers of a uniform `a` is `δ`-near
 the code although the words are not near on a common set at radius `δ'`. -/
-noncomputable def batchingError (S : Setup) (δ : NNReal) (δ' : ℝ) : ENNReal :=
+noncomputable def batchingError (S : Setup EF) (δ : NNReal) (δ' : ℝ) : ENNReal :=
   ⨆ ws : Fin S.numOpened → S.Point → 𝕂,
     ((Finset.univ.filter fun a : 𝕂 ↦
       Near S δ (fun i ↦ ∑ k : Fin S.numOpened, a ^ (k : Nat) * ws k i) ∧
@@ -98,13 +101,13 @@ noncomputable def batchingError (S : Setup) (δ : NNReal) (δ' : ℝ) : ENNReal 
 /-- FRI's soundness error at proximity `δ` (ArkLib's `Fri.Spec.soundnessErrorLossy`): the lossy
 correlated-agreement error of each fold, and `(1 - δ + #folds · loss) ^ numQueries` for the
 queries, minimized over the proximity loss `loss ≥ 0`. -/
-noncomputable def friError (S : Setup) (δ : NNReal) : ENNReal :=
+noncomputable def friError (S : Setup EF) (δ : NNReal) : ENNReal :=
   friErrorOf S.domain (Sound.folds S.params.maxLogArity (S.logN - S.params.logFinalPolyLen))
     S.params.logFinalPolyLen S.params.numQueries δ
 
 /-- The knowledge error, for FRI at proximity `δ` and the extractor at `δ' ≥ δ + 2/N`; batching
 at `δ' - 2/N` pays for the two points that decoding may lose. -/
-noncomputable def knowledgeError (S : Setup) (δ δ' : NNReal) : ENNReal :=
+noncomputable def knowledgeError (S : Setup EF) (δ δ' : NNReal) : ENNReal :=
   foldingError S δ' + outOfDomainError S δ' + batchingError S δ ((δ' : ℝ) - 2 / S.size) +
     friError S δ
 

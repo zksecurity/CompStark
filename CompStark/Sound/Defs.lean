@@ -19,8 +19,11 @@ namespace CompStark.Sound
 open CompStark.Stark Polynomial Domain Montgomery.Native32 OracleSpec OracleComp ProtocolSpec
 
 local notation "𝔽" => KoalaBear.Field
-local notation "𝕂" => KoalaBear.Ext4
 local notation "F" => KoalaBear.Fast.Field
+
+variable {EF : Type} [Challenge EF]
+
+local notation "𝕂" => Challenge.Spec EF
 
 noncomputable instance : NonBinaryField 𝕂 where
   char_neq_2 := by
@@ -35,8 +38,10 @@ noncomputable instance : SampleableType 𝕂 := SampleableType.ofFintype 𝕂
 noncomputable abbrev lift (x : F) : 𝕂 := algebraMap 𝔽 𝕂 (FastField.toField x)
 
 theorem isPrimitiveRoot_lift (n : Nat) (hn : n ≤ 24) :
-    IsPrimitiveRoot (lift (twoAdicGen n)) (2 ^ n) :=
-  CompStark.Complete.isPrimitiveRoot_emb n hn
+    IsPrimitiveRoot (lift (EF := EF) (twoAdicGen n)) (2 ^ n) :=
+  (CompStark.Complete.isPrimitiveRoot_twoAdicGen n hn).map_of_injective
+    (f := (algebraMap 𝔽 𝕂).comp (ringEquiv KoalaBear.fieldSize).toRingHom)
+    ((algebraMap 𝔽 𝕂).injective.comp (RingEquiv.injective _))
 
 /-- The point `g ω^i` of the coset `g · ⟨ω⟩` of order `2 ^ n`, in `𝔽`. -/
 noncomputable def basePoint (n : Nat) (i : Nat) : 𝔽 :=
@@ -44,11 +49,11 @@ noncomputable def basePoint (n : Nat) (i : Nat) : 𝔽 :=
 
 /-- The subgroup `⟨ω⟩` of order `2 ^ n`, `ω = lift (twoAdicGen n)`, as a hom from the indices. -/
 noncomputable def subgroupHom (n : Nat) (hn : n ≤ 24) : Multiplicative (Fin (2 ^ n)) →* 𝕂ˣ where
-  toFun i := ((isPrimitiveRoot_lift n hn).isUnit (Nat.two_pow_pos n).ne').unit ^
+  toFun i := ((isPrimitiveRoot_lift (EF := EF) n hn).isUnit (Nat.two_pow_pos n).ne').unit ^
     (Multiplicative.toAdd i).val
   map_one' := by simp only [toAdd_one, Fin.val_zero, pow_zero]
   map_mul' a b := by
-    have hp := isPrimitiveRoot_lift n hn
+    have hp := isPrimitiveRoot_lift (EF := EF) n hn
     have hu := (hp.isUnit (Nat.two_pow_pos n).ne')
     rw [toAdd_mul, Fin.val_add, ← pow_add]
     apply Units.ext
@@ -61,7 +66,7 @@ noncomputable def cosetDomain (n : Nat) (hn : n ≤ 24) : SmoothCosetFftDomain n
   subgroupDomain := subgroupHom n hn
   subgroupDomain_inj := by
     intro a b h
-    have hp := isPrimitiveRoot_lift n hn
+    have hp := isPrimitiveRoot_lift (EF := EF) n hn
     have h' := congrArg Units.val h
     simp only [subgroupHom, MonoidHom.coe_mk, OneHom.coe_mk, Units.val_pow_eq_pow_val,
       IsUnit.unit_spec] at h'

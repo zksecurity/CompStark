@@ -399,7 +399,7 @@ open CompStark.Stark CompStark.Fri CompStark.RandomOracle OracleSpec OracleComp
 
 local notation "F" => KoalaBear.Fast.Field
 
-variable (S : Setup)
+variable (S : Setup KoalaBear.Fast.Ext4)
 
 /-- **The verifier's oracle calls.** On a proof for `2 ^ logN` rows, the verifier makes at most
 `verifierQueries` oracle calls. -/

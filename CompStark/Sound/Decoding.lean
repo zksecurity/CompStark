@@ -30,7 +30,10 @@ namespace CompStark.Sound
 open CompStark.Stark CompStark.Iop Polynomial
 
 local notation "𝔽" => KoalaBear.Field
-local notation "𝕂" => KoalaBear.Ext4
+
+variable {EF : Type} [Challenge EF]
+
+local notation "𝕂" => Challenge.Spec EF
 
 /-! ### Polynomials over `𝕂` that take base values -/
 
@@ -58,7 +61,7 @@ theorem exists_baseAgree {ι : Type} (pts : ι → 𝔽) (f : ι → 𝔽) (T : 
 /-! ### One opened word -/
 
 /-- `L`'s points are those of `basePoint` in `𝕂`. -/
-theorem domain_eq (S : Setup) (i : S.Point) :
+theorem domain_eq (S : Setup EF) (i : S.Point) :
     S.domain i = algebraMap 𝔽 𝕂 (basePoint (S.logN + S.params.logBlowup) i) := by
   simp only [Setup.domain, cosetDomain,
     Domain.CosetFftDomain.eval_coset_fft_domain_eq_eval_generator_mul_domain,
@@ -90,7 +93,7 @@ theorem natDegree_deepPoly_le (z y : 𝕂) (h : 𝕂[X]) (n : Nat) (hn : 1 ≤ n
 
 /-- Two polynomials over `𝕂` of degree at most `n` that agree at the points of `T`, `|T| > n`,
 are equal. -/
-theorem eq_of_agree (S : Setup) (T : Finset S.Point) (hT : S.n < T.card) (P Q : 𝕂[X])
+theorem eq_of_agree (S : Setup EF) (T : Finset S.Point) (hT : S.n < T.card) (P Q : 𝕂[X])
     (hP : P.natDegree ≤ S.n) (hQ : Q.natDegree ≤ S.n)
     (h : ∀ i ∈ T, P.eval (S.domain i) = Q.eval (S.domain i)) : P = Q := by
   classical
@@ -106,7 +109,7 @@ theorem eq_of_agree (S : Setup) (T : Finset S.Point) (hT : S.n < T.card) (P Q : 
 /-- A word whose DEEP component at `z` with claimed value `y` agrees with a codeword on `T`,
 `|T| > n` and `z` off `T`, agrees on `T` with a polynomial over `𝔽` of degree at most `n` whose
 value at `z` is `y`. -/
-theorem exists_basePoly (S : Setup) (T : Finset S.Point) (hT : S.n < T.card)
+theorem exists_basePoly (S : Setup EF) (T : Finset S.Point) (hT : S.n < T.card)
     (f : S.Point → 𝔽) (z y : 𝕂) (hz : ∀ i ∈ T, z ≠ S.domain i)
     (hnear : ∃ u ∈ S.code, ∀ i ∈ T, deepComponent S f z y i = u i) :
     ∃ Q : 𝔽[X], Q.natDegree ≤ S.n ∧
@@ -138,7 +141,7 @@ theorem exists_basePoly (S : Setup) (T : Finset S.Point) (hT : S.n < T.card)
 /-! ### The opened words -/
 
 /-- Dropping the points of `T` where `L` meets `z` or `z'` loses at most two points. -/
-theorem card_le_card_filter_add_two (S : Setup) (T : Finset S.Point) (z z' : 𝕂) :
+theorem card_le_card_filter_add_two (S : Setup EF) (T : Finset S.Point) (z z' : 𝕂) :
     T.card ≤ (T.filter fun i ↦ S.domain i ≠ z ∧ S.domain i ≠ z').card + 2 := by
   classical
   have hone (w : 𝕂) : (Finset.univ.filter fun i : S.Point ↦ S.domain i = w).card ≤ 1 :=
@@ -158,7 +161,7 @@ theorem card_le_card_filter_add_two (S : Setup) (T : Finset S.Point) (z z' : �
   omega
 
 /-- A set of at least `(1 - δ) N` points, `δ < 1 - rate`, has more than `n` points. -/
-theorem lt_card_of_rate (S : Setup) (δ : ℝ) (hδ : δ < 1 - S.rate) (t : Nat)
+theorem lt_card_of_rate (S : Setup EF) (δ : ℝ) (hδ : δ < 1 - S.rate) (t : Nat)
     (ht : (t : ℝ) ≥ S.size * (1 - δ)) : S.n < t := by
   have hNpos : (0 : ℝ) < S.size := by exact_mod_cast Nat.two_pow_pos _
   have hn : (S.n : ℝ) = S.size * S.rate := by
@@ -169,7 +172,7 @@ theorem lt_card_of_rate (S : Setup) (δ : ℝ) (hδ : δ < 1 - S.rate) (t : Nat)
   exact_mod_cast this
 
 /-- Each opened word's DEEP component is one of the components. -/
-theorem near_of_mem {S : Setup} (p : Prover S) (α ζ : 𝕂) (T : Finset S.Point)
+theorem near_of_mem {S : Setup EF} (p : Prover S) (α ζ : 𝕂) (T : Finset S.Point)
     (hnear : ∀ k, ∃ u ∈ S.code, ∀ i ∈ T, components p α ζ k i = u i)
     (w : (S.Point → 𝔽) × 𝕂 × 𝕂) (hw : w ∈ openedWords p α ζ) :
     ∃ u ∈ S.code, ∀ i ∈ T, deepComponent S w.1 w.2.1 w.2.2 i = u i := by
@@ -181,7 +184,7 @@ theorem near_of_mem {S : Setup} (p : Prover S) (α ζ : 𝕂) (T : Finset S.Poin
   exact hnear ⟨k, hlen ▸ hk⟩
 
 /-- **The decoding step.** -/
-theorem decodingStep (S : Setup) : DecodingStep S := by
+theorem decodingStep (S : Setup EF) : DecodingStep S := by
   intro δ hδ prover α ζ _ hnear
   obtain ⟨T₀, hT₀card, hT₀near⟩ := hnear
   set T := T₀.filter fun i ↦ S.domain i ≠ ζ ∧ S.domain i ≠ ζ * rootOfUnity S.logN
@@ -206,7 +209,8 @@ theorem decodingStep (S : Setup) : DecodingStep S := by
   have hnx (j : Fin S.air.width) := exists_basePoly S T hT (prover.trace j) _ _ hζω
     (hmem (prover.trace j, ζ * rootOfUnity S.logN, _) (List.mem_append_left _
       (List.mem_append_right _ (List.mem_map.mpr ⟨j, List.mem_finRange j, rfl⟩))))
-  have hqu (c : Fin S.chunks) (e : Fin 4) := exists_basePoly S T hT (prover.quotient α c e) ζ _
+  have hqu (c : Fin S.chunks) (e : Fin (Challenge.d EF)) := exists_basePoly S T hT
+    (prover.quotient α c e) ζ _
     hζ (hmem (prover.quotient α c e, ζ, _) (List.mem_append_right _ (List.mem_flatMap.mpr
       ⟨c, List.mem_finRange c, List.mem_map.mpr ⟨e, List.mem_finRange e, rfl⟩⟩)))
   choose trace htdeg htT htz using htr

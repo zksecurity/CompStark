@@ -25,7 +25,10 @@ namespace CompStark.Sound
 open CompStark.Stark CompStark.Iop NNReal
 
 local notation "𝔽" => KoalaBear.Field
-local notation "𝕂" => KoalaBear.Ext4
+
+variable {EF : Type} [Challenge EF]
+
+local notation "𝕂" => Challenge.Spec EF
 
 /-- A schedule of arity `2` everywhere folds once per round: `i` folds precede fold `i`. -/
 theorem foldingPrefix_ones {k : ℕ} (s : Fin (k + 1) → ℕ+) (hs : ∀ j, s j = 1) (i : Fin (k + 2)) :
@@ -72,19 +75,20 @@ theorem foldingErrorLossy_ones_le {N k : ℕ} {ω : Domain.SmoothCosetFftDomain 
     exact pow_le_pow_right₀ (by norm_num) (by omega)
 
 /-- At arity `2`, Plonky3's schedule halves `logN - logFinalPolyLen` times. -/
-theorem foldArities_eq (S : Setup) (harity : S.params.maxLogArity = 1) :
+theorem foldArities_eq (S : Setup EF) (harity : S.params.maxLogArity = 1) :
     S.foldArities = List.replicate (S.logN - S.params.logFinalPolyLen) 1 := by
   rw [Setup.foldArities, harity, folds_one]
 
 /-- At arity `2`, FRI folds `logN - logFinalPolyLen` times. -/
-theorem lastFold_add_one (S : Setup) (harity : S.params.maxLogArity = 1) :
+theorem lastFold_add_one (S : Setup EF) (harity : S.params.maxLogArity = 1) :
     S.lastFold + 1 = S.logN - S.params.logFinalPolyLen := by
   have := S.folds
   rw [Setup.lastFold, foldArities_eq S harity, List.length_replicate]
   omega
 
 /-- At arity `2`, every fold halves. -/
-theorem schedule_eq_one (S : Setup) (harity : S.params.maxLogArity = 1) (j : Fin (S.lastFold + 1)) :
+theorem schedule_eq_one (S : Setup EF) (harity : S.params.maxLogArity = 1)
+    (j : Fin (S.lastFold + 1)) :
     S.schedule j = 1 := by
   rw [Setup.schedule, foldArities_eq S harity, List.getD_eq_getElem?_getD,
     List.getElem?_replicate]
@@ -93,7 +97,7 @@ theorem schedule_eq_one (S : Setup) (harity : S.params.maxLogArity = 1) (j : Fin
 /-- The largest error of FRI's folds at arity `2`, at a proximity loss `loss > 0` and a radius
 `δ ≤ (1 - rate) / 2 - 1 / 2 ^ t`: `max(T₁, T₂, δ_int / loss, 2 ^ t) / |𝕂|` for any
 `δ_int > δ`. -/
-theorem friFoldError_le (S : Setup) (harity : S.params.maxLogArity = 1) (t : ℕ)
+theorem friFoldError_le (S : Setup EF) (harity : S.params.maxLogArity = 1) (t : ℕ)
     (δ δ_int loss : ℝ≥0) (hδ : (δ : ℝ) ≤ (1 - S.rate) / 2 - 1 / 2 ^ t) (h_pos : 0 < δ)
     (h_lt : δ < δ_int) (h_loss : 0 < loss) :
     ⨆ i, friFoldError S δ loss i ≤
@@ -117,7 +121,7 @@ theorem friFoldError_le (S : Setup) (harity : S.params.maxLogArity = 1) (t : ℕ
     exact hδ
 
 /-- FRI's queries at arity `2`: `(1 - δ + #folds · loss + 1/p) ^ numQueries`. -/
-theorem friQueryError_eq (S : Setup) (harity : S.params.maxLogArity = 1) (δ loss : ℝ≥0) :
+theorem friQueryError_eq (S : Setup EF) (harity : S.params.maxLogArity = 1) (δ loss : ℝ≥0) :
     friQueryError S δ loss =
       ENNReal.ofReal (1 - δ + (S.logN - S.params.logFinalPolyLen : ℕ) * loss +
         1 / KoalaBear.fieldSize) ^ S.params.numQueries := by
@@ -142,7 +146,7 @@ unique-decoding radius, `δ < δ' - 2/N`, at one proximity loss `loss > 0` and a
 `2 ^ t`: constraint folding, out of domain, the curve bound for batching
 (`batchingError_le_curve`), FRI's folds (`friFoldError_le`, `δ_int = δ + loss`) and FRI's
 queries (`friQueryError_eq`). -/
-theorem roundError_le (S : Setup) (harity : S.params.maxLogArity = 1) (t : ℕ)
+theorem roundError_le (S : Setup EF) (harity : S.params.maxLogArity = 1) (t : ℕ)
     (δ δ' loss : ℝ≥0) (h_ud : (δ : ℝ) ≤ (1 - S.rate) / 2 - 1 / S.size)
     (h_udt : (δ : ℝ) ≤ (1 - S.rate) / 2 - 1 / 2 ^ t) (h_pos : 0 < δ)
     (h_lt : (δ : ℝ) < δ' - 2 / S.size) (hδ' : (δ' : ℝ) < (1 - S.rate) / 2) (h_loss : 0 < loss) :
@@ -183,27 +187,29 @@ theorem coe_three_eighths_sub (k : ℤ) (a : ℕ) (hk : k = -a) (ha : 2 ≤ a) :
     norm_num at this ⊢
     linarith
 
-/-- An integer over `|𝕂| = p ^ 4` is at most `2 ^ (-100)` if it is as a real number. -/
-theorem nat_div_card_le (A : ℕ) (h : (A : ℝ) / 2130706433 ^ 4 ≤ (2 ^ 100 : ℝ)⁻¹) :
-    (A : ENNReal) / (Fintype.card 𝕂 : ENNReal) ≤ (2 ^ 100 : ENNReal)⁻¹ := by
+/-- An integer over `|𝕂| = p ^ d` is at most `2 ^ (-bits)` if it is as a real number. -/
+theorem nat_div_card_le {bits : ℕ} (A : ℕ)
+    (h : (A : ℝ) / 2130706433 ^ Challenge.d EF ≤ (2 ^ bits : ℝ)⁻¹) :
+    (A : ENNReal) / (Fintype.card 𝕂 : ENNReal) ≤ (2 ^ bits : ENNReal)⁻¹ := by
   have hK : (0 : ℝ) < Fintype.card 𝕂 := by rw [card_eq]; positivity
   rw [← ENNReal.ofReal_natCast A, ← ENNReal.ofReal_natCast (Fintype.card 𝕂),
     ← ENNReal.ofReal_div_of_pos hK, inv_two_pow_eq, card_eq]
   exact ENNReal.ofReal_le_ofReal h
 
-/-- A real number over `|𝕂| = p ^ 4` is at most `2 ^ (-100)` if it is as a real number. -/
-theorem ofReal_div_card_le (b : ℝ) (h : b / 2130706433 ^ 4 ≤ (2 ^ 100 : ℝ)⁻¹) :
-    ENNReal.ofReal b / (Fintype.card 𝕂 : ENNReal) ≤ (2 ^ 100 : ENNReal)⁻¹ := by
+/-- A real number over `|𝕂| = p ^ d` is at most `2 ^ (-bits)` if it is as a real number. -/
+theorem ofReal_div_card_le {bits : ℕ} (b : ℝ)
+    (h : b / 2130706433 ^ Challenge.d EF ≤ (2 ^ bits : ℝ)⁻¹) :
+    ENNReal.ofReal b / (Fintype.card 𝕂 : ENNReal) ≤ (2 ^ bits : ENNReal)⁻¹ := by
   have hK : (0 : ℝ) < Fintype.card 𝕂 := by rw [card_eq]; positivity
   rw [← ENNReal.ofReal_natCast (Fintype.card 𝕂), ← ENNReal.ofReal_div_of_pos hK, inv_two_pow_eq,
     card_eq]
   exact ENNReal.ofReal_le_ofReal h
 
-/-- A round with grinding, `powFraction bits` times `y ^ l`, is at most `2 ^ (-100)` if it is as
-a real number. -/
-theorem powFraction_mul_le (bits l : ℕ) (y : ℝ) (hy : 0 ≤ y)
-    (h : (127 * 2 ^ (24 - bits) + 1 : ℕ) / 2130706433 * y ^ l ≤ (2 ^ 100 : ℝ)⁻¹) :
-    powFraction bits * ENNReal.ofReal y ^ l ≤ (2 ^ 100 : ENNReal)⁻¹ := by
+/-- A round with grinding, `powFraction bits` times `y ^ l`, is at most `2 ^ (-target)` if it is
+as a real number. -/
+theorem powFraction_mul_le {target : ℕ} (bits l : ℕ) (y : ℝ) (hy : 0 ≤ y)
+    (h : (127 * 2 ^ (24 - bits) + 1 : ℕ) / 2130706433 * y ^ l ≤ (2 ^ target : ℝ)⁻¹) :
+    powFraction bits * ENNReal.ofReal y ^ l ≤ (2 ^ target : ENNReal)⁻¹ := by
   rw [powFraction_eq, KoalaBear.fieldSize, ← ENNReal.ofReal_natCast,
     ← ENNReal.ofReal_natCast (2 ^ 31 - 2 ^ 24 + 1), ← ENNReal.ofReal_div_of_pos (by norm_num),
     ← ENNReal.ofReal_pow hy, ← ENNReal.ofReal_mul (by positivity), inv_two_pow_eq]

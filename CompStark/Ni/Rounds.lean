@@ -34,7 +34,7 @@ open KoalaBear.Fast (Ext4)
 local notation "F" => KoalaBear.Fast.Field
 local notation "EF" => KoalaBear.Fast.Ext4
 local notation "𝔽" => KoalaBear.Field
-local notation "𝕂" => KoalaBear.Ext4
+local notation "𝕂" => Challenge.Spec KoalaBear.Fast.Ext4
 
 /-! ### Decoding observations -/
 
@@ -68,7 +68,7 @@ theorem extFrom_coeffs (rest : List F) :
 
 /-- The openings of the extension elements in `xs`: the trace at `ζ`, at `ζ ω`, and the quotient
 chunks' coordinates, in the order the verifier observes them. -/
-noncomputable def openingsAt (S : Iop.Setup) (xs : List F) : Openings S where
+noncomputable def openingsAt (S : Iop.Setup KoalaBear.Fast.Ext4) (xs : List F) : Openings S where
   traceAt j := Ext4.toSpec (extFrom xs j)
   traceNext j := Ext4.toSpec (extFrom xs (S.air.width + j))
   quotientAt c e := Ext4.toSpec (extFrom xs (2 * S.air.width + (4 * c.val + e.val)))
@@ -93,7 +93,7 @@ theorem getElem_flatMap_four {α : Type} (L : List (List α)) (hL : ∀ l ∈ L,
       simp only [hl, show 4 * (c + 1) + e - 4 = 4 * c + e by omega, this,
         List.getElem_cons_succ]
 
-theorem openingsAt_coeffs (S : Iop.Setup) (o : OpenedValues)
+theorem openingsAt_coeffs (S : Iop.Setup KoalaBear.Fast.Ext4) (o : OpenedValues)
     (htl : o.traceLocal.size = S.air.width) (htn : o.traceNext.size = S.air.width)
     (hqc : o.quotientChunks.size = S.chunks) (hq4 : ∀ ch ∈ o.quotientChunks, ch.size = 4) :
     openingsAt S (coeffs (openedValues o)) = openingsOf S o := by
@@ -130,6 +130,7 @@ theorem openingsAt_coeffs (S : Iop.Setup) (o : OpenedValues)
     rw [Array.getD_eq_getD_getElem?, Array.getElem?_eq_getElem]
     rfl
   · have hc : c.val < S.chunks := c.isLt
+    have he : e.val < 4 := e.isLt
     rw [hx _ (by omega)]
     simp only [openingsOf, openedValues, List.append_assoc]
     rw [List.getElem_append_right (by simp only [Array.length_toList, htl]; omega),
@@ -158,10 +159,10 @@ theorem openingsAt_coeffs (S : Iop.Setup) (o : OpenedValues)
 
 /-- The final polynomial's `2 ^ logFinalPolyLen` coefficients, from the extension elements in
 `xs`. -/
-def finalPolyAt (S : Iop.Setup) (xs : List F) : Array EF :=
+def finalPolyAt (S : Iop.Setup KoalaBear.Fast.Ext4) (xs : List F) : Array EF :=
   Array.ofFn fun k : Fin (2 ^ S.params.logFinalPolyLen) ↦ extFrom xs k
 
-theorem finalPolyAt_coeffs (S : Iop.Setup) (coeffs' : Array EF) (rest : List F)
+theorem finalPolyAt_coeffs (S : Iop.Setup KoalaBear.Fast.Ext4) (coeffs' : Array EF) (rest : List F)
     (h : coeffs'.size = 2 ^ S.params.logFinalPolyLen) :
     finalPolyAt S (coeffs coeffs'.toList ++ rest) = coeffs' := by
   ext k hk₁ hk₂
@@ -172,7 +173,7 @@ theorem finalPolyAt_coeffs (S : Iop.Setup) (coeffs' : Array EF) (rest : List F)
 /-! ### The transcript of a prefix -/
 
 section Prefix
-variable (S : Iop.Setup)
+variable (S : Iop.Setup KoalaBear.Fast.Ext4)
 
 /-- The digest observed in a duplex call's input, the one a commitment round binds: after the
 three leading elements of the first round (initial capacity), first otherwise. -/
@@ -182,7 +183,7 @@ def boundDigest (cap : Digest) (input : List F) : Digest :=
 /-- The folding challenges of ArkLib's oracles, from the answers `sample` of the fold rounds:
 `s_j β_j`, `s_j` the shift of word `j`'s domain. -/
 noncomputable def betasAt (sample : Nat → Vector F S.streamLen) : FinalStatement 𝕂 S.lastFold :=
-  fun j ↦ lift gen ^ 2 ^ foldingPrefix S.schedule j.castSucc *
+  fun j ↦ @lift EF _ gen ^ 2 ^ foldingPrefix S.schedule j.castSucc *
     extAt (sample (3 + j.val)) (challengeOffset S.params.commitPowBits)
 
 /-- The transcript read off the inputs `block j` and answers `sample j` of the rounds `j` and

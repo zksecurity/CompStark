@@ -46,13 +46,16 @@ namespace CompStark.Sound
 open CompStark.Stark CompStark.Iop Polynomial OracleComp Fri.Spec
 
 local notation "𝔽" => KoalaBear.Field
-local notation "𝕂" => KoalaBear.Ext4
 local notation "F" => KoalaBear.Fast.Field
+
+variable {EF : Type} [Challenge EF]
+
+local notation "𝕂" => Challenge.Spec EF
 
 /-! ### FRI's schedule -/
 
 namespace Setup
-variable (S : Iop.Setup)
+variable (S : Iop.Setup EF)
 
 theorem foldArities_ne_nil : S.foldArities ≠ [] := by
   obtain ⟨f, fs, h⟩ := folds_cons S.params.maxLogArity (S.logN - S.params.logFinalPolyLen)
@@ -79,22 +82,22 @@ theorem sum_schedule :
 end Setup
 
 /-- FRI's final degree bound: the final polynomial has degree below `2 ^ logFinalPolyLen`. -/
-abbrev finalDegreeOf (S : Iop.Setup) : ℕ+ := finalDegree S.params.logFinalPolyLen
+abbrev finalDegreeOf (S : Iop.Setup EF) : ℕ+ := finalDegree S.params.logFinalPolyLen
 
-theorem schedule_le (S : Iop.Setup) :
+theorem schedule_le (S : Iop.Setup EF) :
     ∑ j, (S.schedule j).val ≤ S.logN + S.params.logBlowup := by
   rw [Setup.sum_schedule]
   omega
 
 /-- ArkLib's code of the folding schedule is `S.code`: degree below `n`. -/
-theorem schedule_degree (S : Iop.Setup) :
+theorem schedule_degree (S : Iop.Setup EF) :
     2 ^ (∑ j, (S.schedule j).val) * (finalDegreeOf S).val = S.n := by
   have hlt := S.folds
   rw [Setup.sum_schedule, finalDegreeOf, finalDegree, PNat.mk_coe, ← pow_add,
     Nat.sub_add_cancel hlt.le]
 
 /-- A word not `δ`-near `S.code` is at relative distance at least `δ` from ArkLib's code. -/
-theorem le_relHammingDist_of_not_near (S : Iop.Setup) (δ : ℝ) (w : S.Point → 𝕂)
+theorem le_relHammingDist_of_not_near (S : Iop.Setup EF) (δ : ℝ) (w : S.Point → 𝕂)
     (hw : ¬ Near S δ w) :
     ∀ u ∈ ReedSolomon.code S.domain (2 ^ (∑ j, (S.schedule j).val) * (finalDegreeOf S).val),
       δ ≤ (Code.relHammingDist w u : ℝ) := by
@@ -105,16 +108,17 @@ theorem le_relHammingDist_of_not_near (S : Iop.Setup) (δ : ℝ) (w : S.Point �
 /-! ### The transcript -/
 
 /-- The prover with fixed words and messages. -/
-def fixedProver {S : Iop.Setup} (trace : Fin S.air.width → S.Point → 𝔽)
-    (quotient : Fin S.chunks → Fin 4 → S.Point → 𝔽) (openings : Openings S) : Prover S :=
+def fixedProver {S : Iop.Setup EF} (trace : Fin S.air.width → S.Point → 𝔽)
+    (quotient : Fin S.chunks → Fin (Challenge.d EF) → S.Point → 𝔽) (openings : Openings S)
+    : Prover S :=
   ⟨trace, fun _ ↦ quotient, fun _ _ ↦ openings⟩
 
 /-- The transcript of the interactive oracle proof, as the extractor reads it off a
 non-interactive proof: the prover's words and messages, and the challenges. -/
-structure Transcript (S : Iop.Setup) where
+structure Transcript (S : Iop.Setup EF) where
   trace : Fin S.air.width → S.Point → 𝔽
   alpha : 𝕂
-  quotient : Fin S.chunks → Fin 4 → S.Point → 𝔽
+  quotient : Fin S.chunks → Fin (Challenge.d EF) → S.Point → 𝔽
   zeta : 𝕂
   openings : Openings S
   batch : 𝕂
@@ -125,7 +129,7 @@ structure Transcript (S : Iop.Setup) where
   betas : FinalStatement 𝕂 S.lastFold
 
 namespace Transcript
-variable {S : Iop.Setup} (t : Transcript S)
+variable {S : Iop.Setup EF} (t : Transcript S)
 
 /-- The transcript's prover. -/
 def prover : Prover S := fixedProver t.trace t.quotient t.openings
@@ -142,14 +146,14 @@ end Transcript
 /-! ### The bad events -/
 
 section Events
-variable (S : Iop.Setup) (publicValues : List F)
+variable (S : Iop.Setup EF) (publicValues : List F)
 
 open Classical
 
 /-- `α` is bad for a candidate trace `P`: with some quotient of degree at most `n`, the check
 passes with the true values at more than `identityDegree` points `ζ` off the trace domain. -/
 def AlphaBadFor (P : Fin S.air.width → 𝔽[X]) (α : 𝕂) : Prop :=
-  ∃ quotient : Fin S.chunks → Fin 4 → 𝔽[X], (∀ c e, (quotient c e).natDegree ≤ S.n) ∧
+  ∃ quotient : Fin S.chunks → Fin (Challenge.d EF) → 𝔽[X], (∀ c e, (quotient c e).natDegree ≤ S.n) ∧
     S.identityDegree < (Finset.univ.filter fun ζ : 𝕂 ↦ OffTraceDomain S ζ ∧
       ConstraintsHoldAt S publicValues α ζ (trueOpenings S P quotient ζ)).card
 
@@ -161,16 +165,17 @@ def AlphaBad (δ' : ℝ) (trace : Fin S.air.width → S.Point → 𝔽) (α : �
 /-- Round `ζ`: `α` is safe, and `ζ` lies on the trace domain or the check passes at `ζ` with the
 true values of a candidate trace failing the AIR and a candidate quotient. -/
 def ZetaBad (δ' : ℝ) (trace : Fin S.air.width → S.Point → 𝔽) (α : 𝕂)
-    (quotient : Fin S.chunks → Fin 4 → S.Point → 𝔽) (ζ : 𝕂) : Prop :=
+    (quotient : Fin S.chunks → Fin (Challenge.d EF) → S.Point → 𝔽) (ζ : 𝕂) : Prop :=
   ¬ AlphaBad S publicValues δ' trace α ∧ (¬ OffTraceDomain S ζ ∨
     ∃ P ∈ candidates S δ' trace, ¬ S.air.Satisfied S.logN (traceOf S P) publicValues ∧
-      ∃ Q ∈ candidates S δ' (fun ce : Fin S.chunks × Fin 4 ↦ quotient ce.1 ce.2),
+      ∃ Q ∈ candidates S δ' (fun ce : Fin S.chunks × Fin (Challenge.d EF) ↦ quotient ce.1 ce.2),
         ConstraintsHoldAt S publicValues α ζ (trueOpenings S P (fun c e ↦ Q (c, e)) ζ))
 
 /-- Round `a`: the DEEP components are not near the code together at `δ' - 2/N`, but their
 batched word is `δ`-near. -/
 def BatchBad (δ : NNReal) (δ' : ℝ) (trace : Fin S.air.width → S.Point → 𝔽) (α : 𝕂)
-    (quotient : Fin S.chunks → Fin 4 → S.Point → 𝔽) (ζ : 𝕂) (openings : Openings S) (a : 𝕂) :
+    (quotient : Fin S.chunks → Fin (Challenge.d EF) → S.Point → 𝔽) (ζ : 𝕂) (openings : Openings S)
+    (a : 𝕂) :
     Prop :=
   ¬ NearTogether S (δ' - 2 / S.size) (components (fixedProver trace quotient openings) α ζ) ∧
     Near S δ (Iop.deepWord (fixedProver trace quotient openings) α ζ a)
@@ -224,7 +229,7 @@ end Events
 /-! ### The bounds -/
 
 section Bounds
-variable (S : Iop.Setup) (publicValues : List F)
+variable (S : Iop.Setup EF) (publicValues : List F)
 
 open Classical
 
@@ -276,9 +281,9 @@ theorem prob_alphaBad_le (δ' : NNReal) (trace : Fin S.air.width → S.Point →
 set_option linter.constructorNameAsVariable false in
 /-- Round `ζ`: at most `ℓT ℓQ identityDegree + n` bad values. -/
 theorem card_zetaBad_le (δ' : NNReal) (trace : Fin S.air.width → S.Point → 𝔽) (α : 𝕂)
-    (quotient : Fin S.chunks → Fin 4 → S.Point → 𝔽) :
+    (quotient : Fin S.chunks → Fin (Challenge.d EF) → S.Point → 𝔽) :
     (Finset.univ.filter fun ζ : 𝕂 ↦ ZetaBad S publicValues δ' trace α quotient ζ).card ≤
-      S.listSize (Fin S.air.width) δ' * S.listSize (Fin S.chunks × Fin 4) δ' *
+      S.listSize (Fin S.air.width) δ' * S.listSize (Fin S.chunks × Fin (Challenge.d EF)) δ' *
         S.identityDegree + S.n := by
   by_cases hα : AlphaBad S publicValues δ' trace α
   · have h : (Finset.univ.filter fun ζ : 𝕂 ↦ ZetaBad S publicValues δ' trace α quotient ζ) = ∅ :=
@@ -287,8 +292,9 @@ theorem card_zetaBad_le (δ' : NNReal) (trace : Fin S.air.width → S.Point → 
     exact Nat.zero_le _
   set C1 := ((candidates_finite S δ' trace).toFinset.filter
     fun P ↦ ¬ S.air.Satisfied S.logN (traceOf S P) publicValues)
-  set C2 := (candidates_finite S δ' fun ce : Fin S.chunks × Fin 4 ↦ quotient ce.1 ce.2).toFinset
-  set check : (Fin S.air.width → 𝔽[X]) → (Fin S.chunks × Fin 4 → 𝔽[X]) → Finset 𝕂 :=
+  set C2 := (candidates_finite S δ' fun ce : Fin S.chunks × Fin (Challenge.d EF) ↦
+    quotient ce.1 ce.2).toFinset
+  set check : (Fin S.air.width → 𝔽[X]) → (Fin S.chunks × Fin (Challenge.d EF) → 𝔽[X]) → Finset 𝕂 :=
     fun P Q ↦ Finset.univ.filter fun ζ : 𝕂 ↦ OffTraceDomain S ζ ∧
       ConstraintsHoldAt S publicValues α ζ (trueOpenings S P (fun c e ↦ Q (c, e)) ζ)
   have hsub : (Finset.univ.filter fun ζ : 𝕂 ↦ ZetaBad S publicValues δ' trace α quotient ζ) ⊆
@@ -321,7 +327,7 @@ theorem card_zetaBad_le (δ' : NNReal) (trace : Fin S.air.width → S.Point → 
 
 /-- Round `ζ`: a uniform `ζ` is bad with probability at most `outOfDomainError`. -/
 theorem prob_zetaBad_le (δ' : NNReal) (trace : Fin S.air.width → S.Point → 𝔽) (α : 𝕂)
-    (quotient : Fin S.chunks → Fin 4 → S.Point → 𝔽) :
+    (quotient : Fin S.chunks → Fin (Challenge.d EF) → S.Point → 𝔽) :
     Pr{let ζ ← $ᵗ 𝕂}[ZetaBad S publicValues δ' trace α quotient ζ] ≤ outOfDomainError S δ' := by
   rw [SampleableType.prEvent_uniformSample, outOfDomainError]
   gcongr
@@ -329,7 +335,8 @@ theorem prob_zetaBad_le (δ' : NNReal) (trace : Fin S.air.width → S.Point → 
 
 /-- Round `a`: a uniform `a` is bad with probability at most `batchingError`. -/
 theorem prob_batchBad_le (δ : NNReal) (δ' : ℝ) (trace : Fin S.air.width → S.Point → 𝔽)
-    (α : 𝕂) (quotient : Fin S.chunks → Fin 4 → S.Point → 𝔽) (ζ : 𝕂) (openings : Openings S) :
+    (α : 𝕂) (quotient : Fin S.chunks → Fin (Challenge.d EF) → S.Point → 𝔽) (ζ : 𝕂)
+    (openings : Openings S) :
     Pr{let a ← $ᵗ 𝕂}[BatchBad S δ δ' trace α quotient ζ openings a] ≤
       batchingError S δ (δ' - 2 / S.size) := by
   rw [SampleableType.prEvent_uniformSample]
@@ -422,7 +429,7 @@ end Bounds
 /-! ### The terminal lemma -/
 
 section Terminal
-variable (S : Iop.Setup) (publicValues : List F)
+variable (S : Iop.Setup EF) (publicValues : List F)
 
 /-- If every candidate trace fails the AIR, the check passes at `ζ` and the rounds `α`, `ζ`, `a`
 are safe, the DEEP word is `δ`-far from the code. -/
