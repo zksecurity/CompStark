@@ -6,6 +6,7 @@ module
 
 public import CompStark.Ni.Rounds
 public import CompStark.Ni.FirstQueries
+public import CompStark.Sound.NumbersNi
 
 /-! # The bad events of one fresh answer
 
@@ -100,11 +101,6 @@ noncomputable def powFieldsEquiv (n : Nat) : (Fin (n + 1) → F) ≃ 𝔽 × (Fi
   (Fin.consEquiv fun _ ↦ F).symm.trans
     (Equiv.prodCongr KoalaBear.Fast.ringEquiv.toEquiv (fieldsEquiv n))
 
-theorem powFraction_zero : powFraction 0 = 1 := by
-  rw [powFraction, Nat.sub_zero, ← card_field, ENNReal.div_self
-    (by simp only [ne_eq, Nat.cast_eq_zero, Fintype.card_ne_zero, not_false_eq_true])
-    (ENNReal.natCast_ne_top _)]
-
 theorem prEvent_congr_iff {α : Type} (mx : ProbComp α) {p q : α → Prop} (h : ∀ x, p x ↔ q x) :
     Pr{let x ← mx}[p x] = Pr{let x ← mx}[q x] := by
   have : p = q := funext fun x ↦ propext (h x)
@@ -119,6 +115,15 @@ theorem getD_append_singleton {α : Type} (l : List α) (x d : α) (j : Nat) (hj
 theorem getD_append_singleton_lt {α : Type} (l : List α) (x d : α) (j : Nat) (hj : j < l.length) :
     (l ++ [x]).getD j d = l.getD j d := by
   simp only [List.getD_eq_getElem?_getD, List.getElem?_append_left hj]
+
+theorem prefixTranscript_betas_eq (S : Iop.Setup) (cache : Merkle.Cache F Digest)
+    (block : Nat → List F) (sample : Nat → Vector F S.streamLen) :
+    (prefixTranscript S cache block sample).betas = betasAt S sample := rfl
+
+theorem prefixTranscript_fri_eq (S : Iop.Setup) (cache : Merkle.Cache F Digest)
+    (block : Nat → List F) (sample sample' : Nat → Vector F S.streamLen) :
+    (prefixTranscript S cache block sample).fri = (prefixTranscript S cache block sample').fri :=
+  rfl
 
 /-! ### The rounds' errors -/
 
@@ -157,7 +162,8 @@ theorem prob_roundBadAt_le (cache : Merkle.Cache F Digest) (block : Nat → List
             simp only [prefixTranscript, tr, getD_append_singleton samples u.2 d 0 h0.symm,
               extAt_eq, Nat.zero_add]
       _ = Pr{let a ← $ᵗ 𝕂}[AlphaBad S publicValues δ' tr a] := by
-          rw [prob_answer_prefix _ 4 (by omega)]
+          refine (prob_answer_prefix S.streamLen 4 (by omega)
+            (fun x ↦ AlphaBad S publicValues δ' tr (extEquiv x))).trans ?_
           exact SampleableType.prEvent_uniformSample_equiv extEquiv _
       _ ≤ foldingError S δ' := prob_alphaBad_le S publicValues δ' tr
       _ ≤ _ := le_max_left _ _
@@ -170,7 +176,8 @@ theorem prob_roundBadAt_le (cache : Merkle.Cache F Digest) (block : Nat → List
             simp only [prefixTranscript, T, getD_append_singleton samples u.2 d 1 h1.symm,
               getD_append_singleton_lt samples u.2 d 0 (by omega), extAt_eq, Nat.zero_add]
       _ = Pr{let a ← $ᵗ 𝕂}[ZetaBad S publicValues δ' T.trace T.alpha T.quotient a] := by
-          rw [prob_answer_prefix _ 4 (by omega)]
+          refine (prob_answer_prefix S.streamLen 4 (by omega) (fun x ↦
+            ZetaBad S publicValues δ' T.trace T.alpha T.quotient (extEquiv x))).trans ?_
           exact SampleableType.prEvent_uniformSample_equiv extEquiv _
       _ ≤ outOfDomainError S δ' := prob_zetaBad_le S publicValues δ' _ _ _
       _ ≤ _ := (le_max_left _ _).trans (le_max_right _ _)
@@ -184,61 +191,70 @@ theorem prob_roundBadAt_le (cache : Merkle.Cache F Digest) (block : Nat → List
               getD_append_singleton_lt samples u.2 d 0 (by omega),
               getD_append_singleton_lt samples u.2 d 1 (by omega), extAt_eq, Nat.zero_add]
       _ = Pr{let a ← $ᵗ 𝕂}[BatchBad S δ δ' T.trace T.alpha T.quotient T.zeta T.openings a] := by
-          rw [prob_answer_prefix _ 4 (by omega)]
+          refine (prob_answer_prefix S.streamLen 4 (by omega) (fun x ↦
+            BatchBad S δ δ' T.trace T.alpha T.quotient T.zeta T.openings (extEquiv x))).trans ?_
           exact SampleableType.prEvent_uniformSample_equiv extEquiv _
       _ ≤ batchingError S δ ((δ' : ℝ) - 2 / S.size) := prob_batchBad_le S δ δ' _ _ _ _ _
       _ ≤ _ := (le_max_left _ _).trans ((le_max_right _ _).trans (le_max_right _ _))
   · -- fold `i - 3`
-    set f : Fin (S.lastFold + 1) := ⟨i - 3, hf⟩
-    set T := prefixTranscript S cache block fun j ↦ samples.getD j d
-    set c := lift gen ^ 2 ^ foldingPrefix S.schedule f.castSucc
-    have hc : c ≠ 0 := pow_ne_zero _ lift_gen_ne_zero
+    obtain ⟨f, hfeq⟩ : ∃ f : Fin (S.lastFold + 1), f = ⟨i - 3, hf⟩ := ⟨_, rfl⟩
+    rw [← hfeq]
+    have hi3 : 3 + f.val = samples.length := by
+      have : f.val = i - 3 := by rw [hfeq]
+      omega
+    obtain ⟨c, hc_def⟩ : ∃ c, c = lift gen ^ 2 ^ foldingPrefix S.schedule f.castSucc := ⟨_, rfl⟩
+    have hc : c ≠ 0 := by rw [hc_def]; exact pow_ne_zero _ lift_gen_ne_zero
     have hβ (v : Vector F S.streamLen) :
         (prefixTranscript S cache block fun j ↦ (samples ++ [v]).getD j d).betas f =
           c * extAt v (challengeOffset S.params.commitPowBits) := by
-      simp only [prefixTranscript, betasAt, c, f]
-      rw [getD_append_singleton samples v d _ (by simp only [f]; omega)]
+      rw [prefixTranscript_betas_eq, betasAt, getD_append_singleton samples v d _ hi3, hc_def]
+    obtain ⟨fri, hfri_def⟩ :
+        ∃ fri, fri = (prefixTranscript S cache block fun j ↦ samples.getD j d).fri :=
+      ⟨_, rfl⟩
     have hfri (v : Vector F S.streamLen) :
-        (prefixTranscript S cache block fun j ↦ (samples ++ [v]).getD j d).fri = T.fri := rfl
+        (prefixTranscript S cache block fun j ↦ (samples ++ [v]).getD j d).fri = fri := by
+      rw [hfri_def, prefixTranscript_fri_eq]
     have hle : powFraction S.params.commitPowBits * friFoldError S δ loss f ≤
         roundBound S δ δ' loss :=
       (mul_le_mul_right (le_iSup (friFoldError S δ loss) f) _).trans
         ((le_max_left _ _).trans ((le_max_right _ _).trans
           ((le_max_right _ _).trans (le_max_right _ _))))
     refine le_trans ?_ hle
+    simp only [hβ, hfri]
     by_cases hb : S.params.commitPowBits = 0
     · calc _ = Pr{let u ← $ᵗ (Digest × Vector F S.streamLen)}[(fun x ↦
-            FoldBad S δ loss f T.fri (c * extEquiv x)) fun j ↦ u.2.toList.getD j.val 0] :=
+            FoldBad S δ loss f fri (c * extEquiv x)) fun j ↦ u.2.toList.getD j.val 0] :=
             prEvent_congr_iff _ fun u ↦ by
-              rw [hβ, hfri]
               simp only [hb, ne_eq, not_true_eq_false, IsEmpty.forall_iff, true_and,
-                challengeOffset, ↓reduceIte, extAt_eq, Nat.zero_add, f]
-        _ = Pr{let a ← $ᵗ 𝕂}[FoldBad S δ loss f T.fri a] := by
-            rw [prob_answer_prefix _ 4 (by omega)]
-            rw [SampleableType.prEvent_uniformSample_equiv extEquiv
-              (fun a ↦ FoldBad S δ loss f T.fri (c * a))]
+                challengeOffset, ↓reduceIte, extAt_eq, Nat.zero_add]
+        _ = Pr{let a ← $ᵗ 𝕂}[FoldBad S δ loss f fri a] := by
+            refine (prob_answer_prefix S.streamLen 4 (by omega)
+              (fun x ↦ FoldBad S δ loss f fri (c * extEquiv x))).trans ?_
+            refine (SampleableType.prEvent_uniformSample_equiv extEquiv
+              (fun a ↦ FoldBad S δ loss f fri (c * a))).trans ?_
             exact SampleableType.prEvent_uniformSample_equiv (Equiv.mulLeft₀ c hc) _
-        _ ≤ friFoldError S δ loss f := prob_foldBad_le S δ loss f T.fri
+        _ ≤ friFoldError S δ loss f := prob_foldBad_le S δ loss f fri
         _ = _ := by rw [hb, powFraction_zero, one_mul]
     · calc _ = Pr{let u ← $ᵗ (Digest × Vector F S.streamLen)}[(fun x ↦
             (powExtEquiv x).1.val % 2 ^ S.params.commitPowBits = 0 ∧
-              FoldBad S δ loss f T.fri (c * (powExtEquiv x).2))
+              FoldBad S δ loss f fri (c * (powExtEquiv x).2))
               fun j ↦ u.2.toList.getD j.val 0] :=
             prEvent_congr_iff _ fun u ↦ by
-              rw [hβ, hfri]
               simp only [hb, ne_eq, not_false_eq_true, forall_const, challengeOffset,
-                ↓reduceIte, extAt_eq, powExtEquiv_apply, Fin.val_zero, Fin.val_succ, f]
+                ↓reduceIte, extAt_eq, powExtEquiv_apply, Fin.val_zero, Fin.val_succ]
               simp only [Nat.add_comm 1]
         _ = Pr{let z ← $ᵗ (𝔽 × 𝕂)}[z.1.val % 2 ^ S.params.commitPowBits = 0 ∧
-              FoldBad S δ loss f T.fri z.2] := by
-            rw [prob_answer_prefix _ 5 (by omega)]
-            rw [SampleableType.prEvent_uniformSample_equiv powExtEquiv
+              FoldBad S δ loss f fri z.2] := by
+            refine (prob_answer_prefix S.streamLen 5 (by omega) (fun x ↦
+              (powExtEquiv x).1.val % 2 ^ S.params.commitPowBits = 0 ∧
+                FoldBad S δ loss f fri (c * (powExtEquiv x).2))).trans ?_
+            refine (SampleableType.prEvent_uniformSample_equiv powExtEquiv
               (fun z ↦ z.1.val % 2 ^ S.params.commitPowBits = 0 ∧
-                FoldBad S δ loss f T.fri (c * z.2))]
+                FoldBad S δ loss f fri (c * z.2))).trans ?_
             exact SampleableType.prEvent_uniformSample_equiv
               (Equiv.prodCongr (Equiv.refl 𝔽) (Equiv.mulLeft₀ c hc))
-              (fun z ↦ z.1.val % 2 ^ S.params.commitPowBits = 0 ∧ FoldBad S δ loss f T.fri z.2)
-        _ ≤ _ := prob_foldRound_le S δ loss f T.fri
+              (fun z ↦ z.1.val % 2 ^ S.params.commitPowBits = 0 ∧ FoldBad S δ loss f fri z.2)
+        _ ≤ _ := prob_foldRound_le S δ loss f fri
   · -- the queries
     set T := prefixTranscript S cache block fun j ↦ samples.getD j d
     have hT (v : Vector F S.streamLen) :
@@ -258,14 +274,20 @@ theorem prob_roundBadAt_le (cache : Merkle.Cache F Digest) (block : Nat → List
       calc _ = Pr{let u ← $ᵗ (Digest × Vector F S.streamLen)}[(fun x ↦
             QueryBad S δ loss T 0 (fieldsEquiv _ x)) fun j ↦ u.2.toList.getD j.val 0] :=
             prEvent_congr_iff _ fun u ↦ by
-              rw [hT]
-              simp only [powAt, queriesAt, hb, challengeOffset, ↓reduceIte, Nat.zero_add]
-              rfl
+              have hp : powAt S u.2 = 0 := by simp only [powAt, hb, ↓reduceIte]
+              have hqs : queriesAt S u.2 =
+                  fieldsEquiv _ (fun j : Fin S.params.numQueries ↦ u.2.toList.getD j.val 0) := by
+                funext j
+                simp only [queriesAt, challengeOffset, hb, ↓reduceIte, Nat.zero_add]
+                rfl
+              rw [hT, hp, hqs]
         _ = Pr{let q ← $ᵗ (Fin S.params.numQueries → 𝔽)}[QueryBad S δ loss T 0 q] := by
-            rw [prob_answer_prefix _ _ (by omega)]
+            refine (prob_answer_prefix S.streamLen S.params.numQueries (by omega)
+              (fun x ↦ QueryBad S δ loss T 0 (fieldsEquiv _ x))).trans ?_
             exact SampleableType.prEvent_uniformSample_equiv (fieldsEquiv _) _
         _ = _ := by
-            rw [prEvent_congr_iff _ fun z ↦ hpow z.1 z.2]
+            refine Eq.trans ?_ (prEvent_congr_iff ($ᵗ (𝔽 × (Fin S.params.numQueries → 𝔽)))
+              fun z ↦ hpow z.1 z.2).symm
             have h := SampleableType.prEvent_uniformSample_equiv
               (Equiv.prodComm 𝔽 (Fin S.params.numQueries → 𝔽))
               (fun z ↦ QueryBad S δ loss T 0 z.1)
@@ -276,12 +298,20 @@ theorem prob_roundBadAt_le (cache : Merkle.Cache F Digest) (block : Nat → List
             QueryBad S δ loss T (powFieldsEquiv _ x).1 (powFieldsEquiv _ x).2)
               fun j ↦ u.2.toList.getD j.val 0] :=
             prEvent_congr_iff _ fun u ↦ by
-              rw [hT]
-              simp only [powAt, queriesAt, hb, challengeOffset, ↓reduceIte]
-              simp only [Nat.add_comm 1]
-              rfl
+              have hp : powAt S u.2 = (powFieldsEquiv _
+                  (fun j : Fin (S.params.numQueries + 1) ↦ u.2.toList.getD j.val 0)).1 := by
+                simp only [powAt, hb, ↓reduceIte]
+                rfl
+              have hqs : queriesAt S u.2 = (powFieldsEquiv _
+                  (fun j : Fin (S.params.numQueries + 1) ↦ u.2.toList.getD j.val 0)).2 := by
+                funext j
+                simp only [queriesAt, challengeOffset, hb, ↓reduceIte]
+                show _ = FastField.toField (u.2.toList.getD (j.val + 1) 0)
+                rw [Nat.add_comm]
+              rw [hT, hp, hqs]
         _ = _ := by
-            rw [prob_answer_prefix _ _ (by omega)]
+            refine (prob_answer_prefix S.streamLen (S.params.numQueries + 1) (by omega)
+              (fun x ↦ QueryBad S δ loss T (powFieldsEquiv _ x).1 (powFieldsEquiv _ x).2)).trans ?_
             exact SampleableType.prEvent_uniformSample_equiv (powFieldsEquiv _)
               (fun z ↦ QueryBad S δ loss T z.1 z.2)
   · simp only [prEvent_false, zero_le]
@@ -294,16 +324,27 @@ theorem prob_roundBad_le (pre : QueryLog (spec S.streamLen)) (t : Query) :
   cases t with
   | duplex cap input =>
     cases hparse : parse pre (.duplex cap input) with
-    | none => simp only [RoundBad, hparse, prEvent_false, zero_le]
+    | none =>
+      refine le_of_eq_of_le (prEvent_congr_iff _ fun u ↦ (?_ : _ ↔ False)) ?_
+      · unfold RoundBad
+        dsimp only
+        rw [hparse]
+      · simp only [prEvent_false, zero_le]
     | some r =>
       obtain ⟨steps, rest⟩ := r
-      simp only [RoundBad, hparse]
       have h := prob_roundBadAt_le S publicValues δ δ' loss (logCache pre)
         (fun j ↦ (steps.map Prod.fst ++ [input]).getD j []) (steps.map Prod.snd)
       rw [List.length_map] at h
-      exact h
-  | leaf row => simp only [RoundBad, prEvent_false, zero_le]
-  | node left right => simp only [RoundBad, prEvent_false, zero_le]
+      refine le_of_eq_of_le (prEvent_congr_iff _ fun u ↦ ?_) h
+      unfold RoundBad
+      dsimp only
+      rw [hparse]
+  | leaf row =>
+    refine le_of_eq_of_le (prEvent_congr_iff _ fun u ↦ (Iff.rfl : _ ↔ False)) ?_
+    simp only [prEvent_false, zero_le]
+  | node left right =>
+    refine le_of_eq_of_le (prEvent_congr_iff _ fun u ↦ (Iff.rfl : _ ↔ False)) ?_
+    simp only [prEvent_false, zero_le]
 
 end Bounds
 
