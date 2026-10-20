@@ -10,7 +10,7 @@ public import CompStark.Sound.Steps
 
 `algebraStep`: if trace polynomials `T_j` of degree at most `n` fail the AIR on the trace domain
 `H = ⟨ω⟩`, then for all but `#constraints - 1` values of `α`, the constraint check at `ζ` on the
-true openings passes for at most `identityDegree` points `ζ` off `L` and `H`.
+true openings passes for at most `identityDegree` points `ζ` off `H`.
 
 Over `𝕂[X]`, let `C_α = ∑_k α^(K-1-k) C_k` be the constraints over the `T_j` with the selector
 polynomials (`foldedPoly`, from `constraintPoly`), and `R = ∑_c L_c ∑_e genᵉ q_{c,e}` the
@@ -386,7 +386,7 @@ theorem algebraStep (S : Setup) : AlgebraStep S := by
         ← eval_horner_C_X] at this
       exact hα (Multiset.mem_toFinset.mpr ((mem_roots hP).mpr this))
     exact (card_filter_le_of_roots _ _ hΦ fun ζ h ↦ eval_identityPoly_eq_zero S publicValues
-      trace quotient α ζ h.1.2 h.2).trans
+      trace quotient α ζ h.1 h.2).trans
       (natDegree_identityPoly S publicValues trace hdeg quotient hq α)
 
 end CompStark.Sound

@@ -16,16 +16,19 @@ each term of the knowledge error is an integer over `|𝕂|`, except FRI's queri
 bound on batching:
 
 * the candidate lists have at most one element (`listSize_le_one`), so the constraint-folding and
-  out-of-domain terms are at most `#constraints - 1` and `identityDegree + N + n`;
+  out-of-domain terms are at most `#constraints - 1` and `identityDegree + n`;
 * every code involved, the trace's and each folded FRI code, has the rate `1 / 2 ^ logBlowup`, so
   a radius below `(1 - rate) / 2` is within its relative unique-decoding radius (`le_relUDR`), and
   the powers MCA bound `mcaError_powers_le` gives `(numOpened - 1) N` for batching at a single
-  radius (`batchingError_le_mcaError`) and `|L'|` for a fold onto the domain `L'`; the halving
+  radius (`batchingError_le_mcaError`, and so at every larger one, `batchingError_anti`) and `|L'|`
+  for a fold onto the domain `L'`; the halving
   domains of FRI's folds sum to at most `N` (`friError_le_of_le`);
-* batching at `δ < δ'` is at most `(numOpened - 1) max(T₁, T₂)` (`batchingError_le_curve`);
+* batching at `δ < δ'' = δ' - 2/N` is at most `(numOpened - 1) max(T₁, T₂)`
+  (`batchingError_le_curve`);
 * the queries contribute `(1 - δ) ^ numQueries`.
 
-`knowledgeError_le_of_le` (one radius) and `knowledgeError_le_curve` (`δ < δ'`) collect the terms;
+`knowledgeError_le_of_le` (the MCA bound) and `knowledgeError_le_curve` (the curve bound) collect
+the terms;
 `numbers_le` and `numbers_wide_le` close the arithmetic for `CompStark/Security.lean`.
 -/
 
@@ -206,7 +209,7 @@ theorem foldingError_le_of_le (S : Setup) (δ : ℝ≥0) (hδ : (δ : ℝ) < (1 
 /-- The out-of-domain term below the unique-decoding radius. -/
 theorem outOfDomainError_le_of_le (S : Setup) (δ : ℝ≥0) (hδ : (δ : ℝ) < (1 - S.rate) / 2) :
     outOfDomainError S δ ≤
-      (S.identityDegree + S.size + S.n : ℕ) / (Fintype.card 𝕂 : ENNReal) := by
+      (S.identityDegree + S.n : ℕ) / (Fintype.card 𝕂 : ENNReal) := by
   refine ENNReal.div_le_div_right (Nat.cast_le.mpr ?_) _
   have h := Nat.mul_le_mul_right S.identityDegree (Nat.mul_le_mul
     (listSize_le_one S (Fin S.air.width) δ hδ) (listSize_le_one S (Fin S.chunks × Fin 4) δ hδ))
@@ -238,49 +241,56 @@ theorem friError_le_of_le (S : Setup) (harity : S.params.maxLogArity = 1) (δ : 
   apply friErrorOf_replicate_le _ _ _ _ _ (Nat.two_pow_pos _) _ (mul_le_of_le_udr S δ hδ)
   rw [show m + 1 + S.params.logFinalPolyLen = S.logN by omega, pow_add, mul_comm]
 
-/-- The knowledge error at arity `2` with FRI and the extractor at one radius `δ` below the
-unique-decoding radius: one integer over `|𝕂|`, and `(1 - δ) ^ numQueries`. -/
-theorem knowledgeError_le_of_le (S : Setup) (harity : S.params.maxLogArity = 1) (δ : ℝ≥0)
-    (hδ : (δ : ℝ) < (1 - S.rate) / 2) :
-    knowledgeError S δ δ ≤
-      ((S.air.constraints.length - 1) + (S.identityDegree + S.size + S.n) +
+/-- The knowledge error at arity `2` with FRI at `δ` and the extractor at `δ' ≥ δ + 2/N` below
+the unique-decoding radius, with the MCA bound for batching: one integer over `|𝕂|`, and
+`(1 - δ) ^ numQueries`. -/
+theorem knowledgeError_le_of_le (S : Setup) (harity : S.params.maxLogArity = 1) (δ δ' : ℝ≥0)
+    (hδ : (δ : ℝ) ≤ δ' - 2 / S.size) (hδ' : (δ' : ℝ) < (1 - S.rate) / 2) :
+    knowledgeError S δ δ' ≤
+      ((S.air.constraints.length - 1) + (S.identityDegree + S.n) +
         (S.numOpened - 1) * S.size + S.size : ℕ) / (Fintype.card 𝕂 : ENNReal) +
         ((Real.toNNReal (1 - δ) ^ S.params.numQueries : ℝ≥0) : ENNReal) := by
-  calc knowledgeError S δ δ
+  have hδu : (δ : ℝ) ≤ (1 - S.rate) / 2 :=
+    hδ.trans ((sub_le_self _ (by positivity)).trans hδ'.le)
+  calc knowledgeError S δ δ'
       ≤ (S.air.constraints.length - 1 : ℕ) / (Fintype.card 𝕂 : ENNReal) +
-          (S.identityDegree + S.size + S.n : ℕ) / (Fintype.card 𝕂 : ENNReal) +
+          (S.identityDegree + S.n : ℕ) / (Fintype.card 𝕂 : ENNReal) +
           ((S.numOpened - 1) * S.size : ℕ) / (Fintype.card 𝕂 : ENNReal) +
           ((S.size : ℕ) / (Fintype.card 𝕂 : ENNReal) +
             ((Real.toNNReal (1 - δ) ^ S.params.numQueries : ℝ≥0) : ENNReal)) :=
-        add_le_add (add_le_add (add_le_add (foldingError_le_of_le S δ hδ)
-          (outOfDomainError_le_of_le S δ hδ)) (batchingError_le_of_le S δ hδ.le))
-          (friError_le_of_le S harity δ hδ.le)
+        add_le_add (add_le_add (add_le_add (foldingError_le_of_le S δ' hδ')
+          (outOfDomainError_le_of_le S δ' hδ')) ((batchingError_anti S δ hδ).trans
+            (batchingError_le_of_le S δ hδu))) (friError_le_of_le S harity δ hδu)
     _ = _ := by
         simp only [← add_assoc, ENNReal.div_add_div_same, Nat.cast_add]
 
-/-- The knowledge error at arity `2` with FRI at `δ` and the extractor at `δ' ∈ (δ, UDR)`, with
-the curve bound for batching (`batchingError_le_curve`). -/
+/-- The knowledge error at arity `2` with FRI at `δ` and the extractor at `δ'` below the
+unique-decoding radius, `δ < δ' - 2/N`, with the curve bound for batching at `δ' - 2/N`
+(`batchingError_le_curve`). -/
 theorem knowledgeError_le_curve (S : Setup) (harity : S.params.maxLogArity = 1) (δ δ' : ℝ≥0)
-    (h_ud : (δ : ℝ) ≤ (1 - S.rate) / 2 - 1 / S.size) (h_pos : 0 < δ) (h_lt : δ < δ')
-    (hδ' : (δ' : ℝ) < (1 - S.rate) / 2) :
+    (h_ud : (δ : ℝ) ≤ (1 - S.rate) / 2 - 1 / S.size) (h_pos : 0 < δ)
+    (h_lt : (δ : ℝ) < δ' - 2 / S.size) (hδ' : (δ' : ℝ) < (1 - S.rate) / 2) :
     knowledgeError S δ δ' ≤
-      ((S.air.constraints.length - 1) + (S.identityDegree + S.size + S.n) + S.size : ℕ) /
+      ((S.air.constraints.length - 1) + (S.identityDegree + S.n) + S.size : ℕ) /
           (Fintype.card 𝕂 : ENNReal) +
         ENNReal.ofReal ((S.numOpened - 1 : ℕ) *
-          max ((1 - S.rate - δ) / (δ * (1 - S.rate - 2 * δ))) (δ' / (δ' - δ))) /
+          max ((1 - S.rate - δ) / (δ * (1 - S.rate - 2 * δ)))
+            ((δ' - 2 / S.size) / (δ' - 2 / S.size - δ))) /
           Fintype.card 𝕂 +
         ((Real.toNNReal (1 - δ) ^ S.params.numQueries : ℝ≥0) : ENNReal) := by
   have hδ : (δ : ℝ) ≤ (1 - S.rate) / 2 := h_ud.trans (sub_le_self _ (by positivity))
   calc knowledgeError S δ δ'
       ≤ (S.air.constraints.length - 1 : ℕ) / (Fintype.card 𝕂 : ENNReal) +
-          (S.identityDegree + S.size + S.n : ℕ) / (Fintype.card 𝕂 : ENNReal) +
+          (S.identityDegree + S.n : ℕ) / (Fintype.card 𝕂 : ENNReal) +
           ENNReal.ofReal ((S.numOpened - 1 : ℕ) *
-            max ((1 - S.rate - δ) / (δ * (1 - S.rate - 2 * δ))) (δ' / (δ' - δ))) /
+            max ((1 - S.rate - δ) / (δ * (1 - S.rate - 2 * δ)))
+              ((δ' - 2 / S.size) / (δ' - 2 / S.size - δ))) /
             Fintype.card 𝕂 +
           ((S.size : ℕ) / (Fintype.card 𝕂 : ENNReal) +
             ((Real.toNNReal (1 - δ) ^ S.params.numQueries : ℝ≥0) : ENNReal)) :=
         add_le_add (add_le_add (add_le_add (foldingError_le_of_le S δ' hδ')
-          (outOfDomainError_le_of_le S δ' hδ')) (batchingError_le_curve S δ δ' h_ud h_pos h_lt))
+          (outOfDomainError_le_of_le S δ' hδ'))
+            (batchingError_le_curve S δ _ h_ud h_pos h_lt))
           (friError_le_of_le S harity δ hδ)
     _ = _ := by
         simp only [Nat.cast_add, ← ENNReal.div_add_div_same]
@@ -293,14 +303,14 @@ theorem two_pow_le_card : (2 ^ 123 : ℝ) ≤ Fintype.card 𝕂 := by
   rw [KoalaBear.card_ext4, KoalaBear.fieldSize]
   norm_num
 
-/-- At most `2 ^ 19` over `|𝕂|`, plus `(9/16) ^ 123`, is at most `2 ^ (-100)`. -/
+/-- At most `2 ^ 19` over `|𝕂|`, plus `(563/1000) ^ 123`, is at most `2 ^ (-100)`. -/
 theorem numbers_le (A : ℕ) (hA : A ≤ 2 ^ 19) :
     (A : ENNReal) / (Fintype.card 𝕂 : ENNReal) +
-        ((Real.toNNReal (1 - ((7 / 16 : ℝ≥0) : ℝ)) ^ 123 : ℝ≥0) : ENNReal) ≤
+        ((Real.toNNReal (1 - ((437 / 1000 : ℝ≥0) : ℝ)) ^ 123 : ℝ≥0) : ENNReal) ≤
       (2 ^ 100 : ENNReal)⁻¹ := by
   have hK := two_pow_le_card
   have hKpos : (0 : ℝ) < Fintype.card 𝕂 := lt_of_lt_of_le (by positivity) hK
-  have hq : Real.toNNReal (1 - ((7 / 16 : ℝ≥0) : ℝ)) = 9 / 16 := by
+  have hq : Real.toNNReal (1 - ((437 / 1000 : ℝ≥0) : ℝ)) = 563 / 1000 := by
     rw [← NNReal.coe_inj, Real.coe_toNNReal _ (by norm_num)]
     norm_num
   have hAK : (A : ℝ) / Fintype.card 𝕂 ≤ 2 ^ 19 / 2 ^ 123 := by
@@ -313,13 +323,13 @@ theorem numbers_le (A : ℕ) (hA : A ≤ 2 ^ 19) :
     ← ENNReal.ofReal_pow (by norm_num), ← ENNReal.ofReal_inv_of_pos (by positivity)]
   refine ENNReal.ofReal_le_ofReal ?_
   push_cast
-  calc (A : ℝ) / Fintype.card 𝕂 + (9 / 16) ^ 123 ≤ 2 ^ 19 / 2 ^ 123 + (9 / 16) ^ 123 := by
+  calc (A : ℝ) / Fintype.card 𝕂 + (563 / 1000) ^ 123 ≤ 2 ^ 19 / 2 ^ 123 + (563 / 1000) ^ 123 := by
         linarith
     _ ≤ (2 ^ 100)⁻¹ := by norm_num
 
-/-- At most `3 · 2 ^ 22 + 64` and `4995` over `|𝕂| = p ^ 4`, plus `(16/25) ^ 159`, is at most
+/-- At most `2 · 2 ^ 22 + 64` and `4996` over `|𝕂| = p ^ 4`, plus `(16/25) ^ 159`, is at most
 `2 ^ (-100)`. -/
-theorem numbers_wide_le (A : ℕ) (hA : A ≤ 3 * 2 ^ 22 + 64) (B : ℝ) (hB : B ≤ 4995) :
+theorem numbers_wide_le (A : ℕ) (hA : A ≤ 2 * 2 ^ 22 + 64) (B : ℝ) (hB : B ≤ 4996) :
     (A : ENNReal) / (Fintype.card 𝕂 : ENNReal) + ENNReal.ofReal B / Fintype.card 𝕂 +
         ((Real.toNNReal (1 - ((9 / 25 : ℝ≥0) : ℝ)) ^ 159 : ℝ≥0) : ENNReal) ≤
       (2 ^ 100 : ENNReal)⁻¹ := by
@@ -332,11 +342,11 @@ theorem numbers_wide_le (A : ℕ) (hA : A ≤ 3 * 2 ^ 22 + 64) (B : ℝ) (hB : B
     norm_num
   calc (A : ENNReal) / (Fintype.card 𝕂 : ENNReal) + ENNReal.ofReal B / Fintype.card 𝕂 +
         ((Real.toNNReal (1 - ((9 / 25 : ℝ≥0) : ℝ)) ^ 159 : ℝ≥0) : ENNReal)
-      ≤ ((3 * 2 ^ 22 + 64 : ℕ) : ENNReal) / Fintype.card 𝕂 + ENNReal.ofReal 4995 / Fintype.card 𝕂 +
+      ≤ ((2 * 2 ^ 22 + 64 : ℕ) : ENNReal) / Fintype.card 𝕂 + ENNReal.ofReal 4996 / Fintype.card 𝕂 +
           (((16 / 25 : ℝ≥0) ^ 159 : ℝ≥0) : ENNReal) := by
         rw [hq]
         gcongr
-    _ = ENNReal.ofReal ((3 * 2 ^ 22 + 64 + 4995) / Fintype.card 𝕂 + (16 / 25) ^ 159) := by
+    _ = ENNReal.ofReal ((2 * 2 ^ 22 + 64 + 4996) / Fintype.card 𝕂 + (16 / 25) ^ 159) := by
         rw [ENNReal.div_add_div_same, ← ENNReal.ofReal_natCast,
           ← ENNReal.ofReal_add (Nat.cast_nonneg _) (by norm_num),
           ← ENNReal.ofReal_natCast (Fintype.card 𝕂), ← ENNReal.ofReal_div_of_pos hKpos,

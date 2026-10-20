@@ -16,32 +16,35 @@ have at most one element (`listSize_le_one`). The terms of `knowledgeError` are 
 `CompStark/Sound/Numbers.lean`:
 
 * constraint folding: at most `#constraints - 1`;
-* out of domain: `identityDegree + N + n`;
-* batching: at `δ' = δ` the powers MCA error (`batchingError_le_mcaError`, `mcaError_powers_le`,
-  [BCIKS20] Theorem 1.6), `(numOpened - 1) N`; at `δ < δ'` the curve bound
-  `(numOpened - 1) max(T₁, T₂)` with `T₁ = (1 - ρ - δ) / (δ (1 - ρ - 2δ))`, `T₂ = δ' / (δ' - δ)`,
-  independent of `N` (`batchingError_le_curve`);
+* out of domain: `identityDegree + n`;
+* batching, at `δ'' = δ' - 2/N`: for `δ ≤ δ''` the powers MCA error at `δ`
+  (`batchingError_le_mcaError`, `mcaError_powers_le`, [BCIKS20] Theorem 1.6),
+  `(numOpened - 1) N`; for `δ < δ''` the curve bound `(numOpened - 1) max(T₁, T₂)` with
+  `T₁ = (1 - ρ - δ) / (δ (1 - ρ - 2δ))`, `T₂ = δ'' / (δ'' - δ)`, independent of `N`
+  (`batchingError_le_curve`);
 * FRI: each fold the powers MCA bound on its halving domain, `N / 2 + N / 4 + ⋯ ≤ N` together
   (`friError_le_of_le`), and `(1 - δ) ^ numQueries` for the queries;
 
 all but the queries over `|𝕂| = p ^ 4 ≈ 2 ^ 123.95`.
 
 `fibonacciSetup`: the Fibonacci AIR (2 columns, 5 constraints, 1 quotient chunk) on `2 ^ 10`
-rows, blowup `16` (`N = 2 ^ 14`, rate `1/16`) and `123` queries, at `δ = δ' = 7/16`, below the
-unique-decoding radius `15/32`. The integers are `4`, `2048 + 2 ^ 14 + 2 ^ 10`, `7 · 2 ^ 14` and
-`2 ^ 14`, summing to `150532 ≤ 2 ^ 19`, and `(9/16) ^ 123 ≤ 2 ^ (-102.09)`; the error is at most
-`2 ^ (-100)` (`fibonacci_knowledgeError_le`), about `2 ^ (-102.04)` exactly.
+rows, blowup `16` (`N = 2 ^ 14`, rate `1/16`) and `123` queries, with FRI at `δ = 437/1000` and
+the extractor at `δ' = 7/16 ≥ δ + 2/N`, below the unique-decoding radius `15/32`. The integers are
+`4`, `2048 + 2 ^ 10`, `7 · 2 ^ 14` and `2 ^ 14`, summing to `134148 ≤ 2 ^ 19`, and
+`(563/1000) ^ 123 ≤ 2 ^ (-101.94)`; the error is at most `2 ^ (-100)`
+(`fibonacci_knowledgeError_le`), about `2 ^ (-101.90)` exactly.
 
 `wideSetup`: `wide 64` (64 columns, 64 constraints of degree `3`, 2 quotient chunks, so
 `numOpened = 136`) on `2 ^ 20` rows, blowup `4` (`N = 2 ^ 22`, rate `1/4`) and `159` queries, with
 FRI at `δ = 9/25` (below `3/8 - 1/N`) and the extractor at `δ' = 37/100` (below `3/8`):
 
 * constraint folding `63`, about `2 ^ (-117.98)`;
-* out of domain `(3 · 2 ^ 20 + 1) + 2 ^ 22 + 2 ^ 20`, about `2 ^ (-100.95)`;
-* batching `135 · max(325/9, 37) = 4995`, about `2 ^ (-111.67)`;
+* out of domain `(3 · 2 ^ 20 + 1) + 2 ^ 20`, about `2 ^ (-101.95)`;
+* batching `135 · max(325/9, T₂) ≤ 4996`, `T₂ ≈ 37.002` at `δ'' = 37/100 - 2 ^ (-21)`, about
+  `2 ^ (-111.67)`;
 * FRI's folds `2 ^ 22`, about `2 ^ (-101.95)`, and queries `(16/25) ^ 159`, about `2 ^ (-102.37)`.
 
-The total is at most `2 ^ (-100)` (`wide_knowledgeError_le`), about `2 ^ (-100.05)` exactly. The
+The total is at most `2 ^ (-100)` (`wide_knowledgeError_le`), about `2 ^ (-100.50)` exactly. The
 out-of-domain term is why `δ'` stays below the unique-decoding radius: from two candidates on,
 `ℓ² · identityDegree` alone exceeds `2 ^ (-100)` at this size.
 
@@ -83,13 +86,16 @@ def fibonacciSetup : Setup where
   blowup := by decide
   folds := by decide
 
-/-- **100 bits.** The knowledge error of `fibonacciSetup` at `δ = δ' = 7/16` is at most
-`2 ^ (-100)`. -/
+/-- **100 bits.** The knowledge error of `fibonacciSetup`, FRI at `δ = 437/1000` and the
+extractor at `δ' = 7/16`, is at most `2 ^ (-100)`. -/
 theorem fibonacci_knowledgeError_le :
-    knowledgeError fibonacciSetup (7 / 16) (7 / 16) ≤ (2 ^ 100)⁻¹ := by
+    knowledgeError fibonacciSetup (437 / 1000) (7 / 16) ≤ (2 ^ 100)⁻¹ := by
   have ha : fibonacciSetup.params.maxLogArity = 1 := rfl
   have hrate : fibonacciSetup.rate = 1 / 2 ^ 4 := rate_eq _
-  have h1 := knowledgeError_le_of_le fibonacciSetup ha (7 / 16) (by rw [hrate]; norm_num)
+  have hsize : (fibonacciSetup.size : ℝ) = 2 ^ 14 := by
+    norm_num [Setup.size, fibonacciSetup, fibonacciParams]
+  have h1 := knowledgeError_le_of_le fibonacciSetup ha (437 / 1000) (7 / 16)
+    (by rw [hsize]; norm_num) (by rw [hrate]; norm_num)
   have hq : fibonacciSetup.params.numQueries = 123 := rfl
   rw [hq] at h1
   refine h1.trans (numbers_le _ ?_)
@@ -103,19 +109,19 @@ theorem fibonacci_knowledgeError_le :
     rw [logQuotientChunks_of _ 0 (by decide)]
     rfl
   simp only [Setup.numOpened, hid, hc, Setup.size, Setup.n]
-  change (5 - 1) + (2048 + 2 ^ (10 + 4) + 2 ^ 10) + (2 * 2 + 4 * 1 - 1) * 2 ^ (10 + 4) +
+  change (5 - 1) + (2048 + 2 ^ 10) + (2 * 2 + 4 * 1 - 1) * 2 ^ (10 + 4) +
     2 ^ (10 + 4) ≤ 2 ^ 19
   norm_num
 
-/-- Knowledge soundness of `fibonacciSetup` with error `2 ^ (-100)`, FRI and the extractor both at
-`7/16`: if no trace within `7/16` of the prover's committed trace satisfies the AIR, the verifier
-accepts with probability at most `2 ^ (-100)`. -/
+/-- Knowledge soundness of `fibonacciSetup` with error `2 ^ (-100)`, FRI at `437/1000` and the
+extractor at `7/16`: if no trace within `7/16` of the prover's committed trace satisfies the AIR,
+the verifier accepts with probability at most `2 ^ (-100)`. -/
 theorem fibonacci_knowledgeSoundness (publicValues : List F) (prover : Prover fibonacciSetup) :
     (∀ trace ∈ closeTraces fibonacciSetup (7 / 16 : NNReal) prover,
       ¬ fibonacci.Satisfied 10 trace publicValues) →
       acceptance publicValues prover ≤ (2 ^ 100)⁻¹ := by
   intro h
-  refine (knowledgeSoundness fibonacciSetup publicValues prover (7 / 16) (7 / 16) ?_
+  refine (knowledgeSoundness fibonacciSetup publicValues prover (437 / 1000) (7 / 16) ?_
     h).trans
     fibonacci_knowledgeError_le
   rw [rate_eq]
@@ -172,7 +178,8 @@ theorem wide_knowledgeError_le :
   have hrate : wideSetup.rate = 1 / 2 ^ 2 := rate_eq _
   have hsize : (wideSetup.size : ℝ) = 2 ^ 22 := by norm_num [Setup.size, wideSetup, wideParams]
   have h1 := knowledgeError_le_curve wideSetup ha (9 / 25) (37 / 100)
-    (by rw [hrate, hsize]; norm_num) (by norm_num) (by norm_num) (by rw [hrate]; norm_num)
+    (by rw [hrate, hsize]; norm_num) (by norm_num) (by rw [hsize]; norm_num)
+    (by rw [hrate]; norm_num)
   have hq : wideSetup.params.numQueries = 159 := rfl
   have hl : wideSetup.logN = 20 := rfl
   have hb : wideSetup.params.logBlowup = 2 := rfl
@@ -202,7 +209,7 @@ theorem wide_knowledgeError_le :
     have ho : wideSetup.numOpened - 1 = 135 := by
       simp only [Setup.numOpened, hc]
       rfl
-    rw [ho, hrate]
+    rw [ho, hrate, hsize]
     norm_num
 
 /-- Knowledge soundness of `wideSetup` with error `2 ^ (-100)`, FRI at `9/25` and the extractor

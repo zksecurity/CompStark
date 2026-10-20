@@ -11,13 +11,14 @@ public import CompStark.Sound.Steps
 The acceptance probability averages, over `α`, `ζ` and `a`, the constraint check at `ζ` times
 FRI's acceptance of the batched DEEP word. For each `(α, ζ)`:
 
-* if the DEEP components are not `δ'`-near the code on a common set, the batched word is `δ`-near
-  for few `a` (`BatchingStep`), and FRI rejects `δ`-far words (`FriStep`):
+* if the DEEP components are not `(δ' - 2/N)`-near the code on a common set, the batched word is
+  `δ`-near for few `a` (`BatchingStep`), and FRI rejects `δ`-far words (`FriStep`):
   `batchingError + friError`;
-* otherwise, for `ζ` off `L` and the trace domain, the claimed values are those of a candidate trace
-  and quotient (`DecodingStep`), polynomials close to the committed words, of which there are at
-  most `listSize` each; every candidate trace fails the AIR, so the check holds for few `ζ` per
-  pair of candidates unless `α` is one of few bad values per candidate trace (`AlgebraStep`).
+* otherwise, for `ζ` off the trace domain, the claimed values are those of a candidate trace
+  and quotient at `δ'` (`DecodingStep`), polynomials close to the committed words, of which there
+  are at most `listSize` each; every candidate trace fails the AIR, so the check holds for few
+  `ζ` per pair of candidates unless `α` is one of few bad values per candidate trace
+  (`AlgebraStep`).
 -/
 
 @[expose] public section
@@ -78,7 +79,7 @@ open Classical in
 /-- If the DEEP components are not `δ'`-near on a common set, FRI's acceptance at `δ` summed over
 `a` is at most `|𝕂| (batchingError + friError)`. -/
 theorem sum_fri_of_far {S : Setup} (hF : FriStep S) (hF1 : FriAtMostOne S)
-    (hB : BatchingStep S) (δ δ' : NNReal) (p : Prover S) (α ζ : 𝕂)
+    (hB : BatchingStep S) (δ : NNReal) (δ' : ℝ) (p : Prover S) (α ζ : 𝕂)
     (hfar : ¬ NearTogether S δ' (components p α ζ)) :
     ∑ a : 𝕂, friAcceptance S (deepWord p α ζ a) ≤
       card𝕂 * (batchingError S δ δ' + friError S δ) := by
@@ -131,14 +132,13 @@ theorem card_candidates_le (S : Setup) {ι : Type} [Fintype ι] [DecidableEq ι]
 section Sums
 variable {S : Setup} (hF : FriStep S) (hF1 : FriAtMostOne S) (hB : BatchingStep S)
   (hD : DecodingStep S) (hA : AlgebraStep S) (publicValues : List F) (p : Prover S)
-  (δ δ' : NNReal)
 
 open Classical
 
 include hF hF1 hB in
 /-- For one `(α, ζ)`: `|𝕂| (batchingError + friError)` if a component is far, and `|𝕂|` if the
 check passes with near components. -/
-theorem sum_a_le (α ζ : 𝕂) :
+theorem sum_a_le (δ : NNReal) (δ' : ℝ) (α ζ : 𝕂) :
     ∑ a : 𝕂, (if ConstraintsHoldAt S publicValues α ζ (p.openings α ζ)
       then friAcceptance S (deepWord p α ζ a) else 0) ≤
     card𝕂 * (batchingError S δ δ' + friError S δ) +
@@ -156,52 +156,48 @@ theorem sum_a_le (α ζ : 𝕂) :
 
 -- The constructor-name linter exhausts its recursion budget on this proof's locals.
 set_option linter.constructorNameAsVariable false in
-/-- The points on `L` or the trace domain number at most `N + n`. -/
-theorem card_not_offDomain (S : Setup) :
-    (Finset.univ.filter fun ζ : 𝕂 ↦ ¬ OffDomain S ζ).card ≤ S.size + S.n := by
+/-- The points on the trace domain number at most `n`. -/
+theorem card_not_offTraceDomain (S : Setup) :
+    (Finset.univ.filter fun ζ : 𝕂 ↦ ¬ OffTraceDomain S ζ).card ≤ S.n := by
   classical
-  have hsub : (Finset.univ.filter fun ζ : 𝕂 ↦ ¬ OffDomain S ζ) ⊆
-      Finset.univ.image (fun i ↦ S.domain i) ∪ (nthRoots S.n (1 : 𝕂)).toFinset := by
+  have hsub : (Finset.univ.filter fun ζ : 𝕂 ↦ ¬ OffTraceDomain S ζ) ⊆
+      (nthRoots S.n (1 : 𝕂)).toFinset := by
     intro ζ hζ
-    simp only [OffDomain, Finset.mem_filter, Finset.mem_univ, true_and, not_and_or, not_forall,
-      not_not] at hζ
-    rw [Finset.mem_union, Finset.mem_image, Multiset.mem_toFinset,
-      mem_nthRoots (Nat.two_pow_pos S.logN)]
-    rcases hζ with ⟨i, hi⟩ | h
-    · exact Or.inl ⟨i, Finset.mem_univ i, hi.symm⟩
-    · exact Or.inr h
-  refine (Finset.card_le_card hsub).trans ((Finset.card_union_le _ _).trans (Nat.add_le_add ?_ ?_))
-  · exact Finset.card_image_le.trans (by rw [Finset.card_univ, Fintype.card_fin])
-  · exact (Multiset.toFinset_card_le _).trans (card_nthRoots _ _)
+    simp only [OffTraceDomain, Finset.mem_filter, Finset.mem_univ, true_and, not_not] at hζ
+    rw [Multiset.mem_toFinset, mem_nthRoots (Nat.two_pow_pos S.logN)]
+    exact hζ
+  exact (Finset.card_le_card hsub).trans ((Multiset.toFinset_card_le _).trans (card_nthRoots _ _))
 
 -- The constructor-name linter exhausts its recursion budget on this proof's locals.
 set_option linter.constructorNameAsVariable false in
 include hD in
-/-- The `ζ` where the components are near on a common set and the check passes: on `L` or the
-trace domain, or the check passes with the true values of a candidate trace and quotient. -/
-theorem card_near_check_le (hδ : (δ : ℝ) < 1 - S.rate) (α : 𝕂) :
-    (Finset.univ.filter fun ζ : 𝕂 ↦ NearTogether S δ (components p α ζ) ∧
+/-- The `ζ` where the components are near on a common set at `δ - 2/N` and the check passes: on
+the trace domain, or the check passes with the true values of a candidate trace and quotient at
+`δ`. -/
+theorem card_near_check_le (δ : NNReal) (hδ : (δ : ℝ) < 1 - S.rate) (α : 𝕂) :
+    (Finset.univ.filter fun ζ : 𝕂 ↦ NearTogether S ((δ : ℝ) - 2 / S.size) (components p α ζ) ∧
         ConstraintsHoldAt S publicValues α ζ (p.openings α ζ)).card ≤
-      S.size + S.n + ∑ P ∈ (candidates_finite S δ p.trace).toFinset,
+      S.n + ∑ P ∈ (candidates_finite S δ p.trace).toFinset,
         ∑ Q ∈ (candidates_finite S δ fun ce : Fin S.chunks × Fin 4 ↦
           p.quotient α ce.1 ce.2).toFinset,
-        (Finset.univ.filter fun ζ : 𝕂 ↦ OffDomain S ζ ∧
+        (Finset.univ.filter fun ζ : 𝕂 ↦ OffTraceDomain S ζ ∧
           ConstraintsHoldAt S publicValues α ζ
             (trueOpenings S P (fun c e ↦ Q (c, e)) ζ)).card := by
   set C1 := (candidates_finite S δ p.trace).toFinset
   set C2 := (candidates_finite S δ fun ce : Fin S.chunks × Fin 4 ↦ p.quotient α ce.1 ce.2).toFinset
   set check : (Fin S.air.width → 𝔽[X]) → (Fin S.chunks × Fin 4 → 𝔽[X]) → Finset 𝕂 :=
-    fun P Q ↦ Finset.univ.filter fun ζ : 𝕂 ↦ OffDomain S ζ ∧
+    fun P Q ↦ Finset.univ.filter fun ζ : 𝕂 ↦ OffTraceDomain S ζ ∧
       ConstraintsHoldAt S publicValues α ζ (trueOpenings S P (fun c e ↦ Q (c, e)) ζ)
-  have hsub : (Finset.univ.filter fun ζ : 𝕂 ↦ NearTogether S δ (components p α ζ) ∧
+  have hsub : (Finset.univ.filter fun ζ : 𝕂 ↦
+        NearTogether S ((δ : ℝ) - 2 / S.size) (components p α ζ) ∧
         ConstraintsHoldAt S publicValues α ζ (p.openings α ζ)) ⊆
-      (Finset.univ.filter fun ζ : 𝕂 ↦ ¬ OffDomain S ζ) ∪
+      (Finset.univ.filter fun ζ : 𝕂 ↦ ¬ OffTraceDomain S ζ) ∪
         C1.biUnion fun P ↦ C2.biUnion fun Q ↦ check P Q := by
     intro ζ hζ
     simp only [Finset.mem_filter, Finset.mem_univ, true_and] at hζ
     simp only [Finset.mem_union, Finset.mem_filter, Finset.mem_univ, true_and,
       Finset.mem_biUnion]
-    by_cases hb : OffDomain S ζ
+    by_cases hb : OffTraceDomain S ζ
     · right
       obtain ⟨tr, qu, htd, hta, hqd, hqa, ho⟩ := hD δ hδ p α ζ hb hζ.1
       refine ⟨tr, (Set.Finite.mem_toFinset _).mpr ⟨htd, hta⟩, fun ce ↦ qu ce.1 ce.2,
@@ -212,7 +208,7 @@ theorem card_near_check_le (hδ : (δ : ℝ) < 1 - S.rate) (α : 𝕂) :
       exact ⟨hb, h⟩
     · exact Or.inl hb
   refine (Finset.card_le_card hsub).trans ((Finset.card_union_le _ _).trans ?_)
-  exact Nat.add_le_add (card_not_offDomain S) (Finset.card_biUnion_le.trans
+  exact Nat.add_le_add (card_not_offTraceDomain S) (Finset.card_biUnion_le.trans
     (Finset.sum_le_sum fun P _ ↦ Finset.card_biUnion_le))
 
 end Sums
@@ -242,14 +238,14 @@ theorem knowledgeSoundness_of {S : Setup} (hF : FriStep S) (hF1 : FriAtMostOne S
   set C1 := (candidates_finite S δ' p.trace).toFinset
   set ℓT := S.listSize (Fin S.air.width) δ'
   set ℓQ := S.listSize (Fin S.chunks × Fin 4) δ'
-  set E := batchingError S δ δ' + friError S δ
+  set E := batchingError S δ ((δ' : ℝ) - 2 / S.size) + friError S δ
   set D := S.identityDegree
-  set M := S.size + S.n
+  set M := S.n
   -- Every candidate trace fails the AIR, so it has few bad `α`.
   have hbadP : ∀ P ∈ C1, ∃ bad : Finset 𝕂, bad.card ≤ S.air.constraints.length - 1 ∧
       ∀ α ∉ bad, ∀ quotient : Fin S.chunks → Fin 4 → 𝔽[X],
         (∀ c e, (quotient c e).natDegree ≤ S.n) →
-        (Finset.univ.filter fun ζ : 𝕂 ↦ OffDomain S ζ ∧
+        (Finset.univ.filter fun ζ : 𝕂 ↦ OffTraceDomain S ζ ∧
           ConstraintsHoldAt S publicValues α ζ (trueOpenings S P quotient ζ)).card ≤ D := by
     intro P hP
     rw [Set.Finite.mem_toFinset] at hP
@@ -262,7 +258,7 @@ theorem knowledgeSoundness_of {S : Setup} (hF : FriStep S) (hF1 : FriAtMostOne S
       exact Nat.mul_le_mul_right _ (card_candidates_le S δ' p.trace)))
   -- The `ζ` with near components and a passing check, for one `α`.
   have hcount : ∀ α : 𝕂, ((Finset.univ.filter fun ζ : 𝕂 ↦
-      NearTogether S δ' (components p α ζ) ∧
+      NearTogether S ((δ' : ℝ) - 2 / S.size) (components p α ζ) ∧
         ConstraintsHoldAt S publicValues α ζ (p.openings α ζ)).card : ENNReal) ≤
       M + ((if α ∈ bad then card𝕂 else 0) + (ℓT * ℓQ * D : Nat)) := by
     intro α
@@ -276,7 +272,7 @@ theorem knowledgeSoundness_of {S : Setup} (hF : FriStep S) (hF1 : FriAtMostOne S
     refine add_le_add le_rfl (Nat.cast_le.mpr ?_)
     set C2 := (candidates_finite S δ' fun ce : Fin S.chunks × Fin 4 ↦
       p.quotient α ce.1 ce.2).toFinset
-    calc ∑ P ∈ C1, ∑ Q ∈ C2, (Finset.univ.filter fun ζ : 𝕂 ↦ OffDomain S ζ ∧
+    calc ∑ P ∈ C1, ∑ Q ∈ C2, (Finset.univ.filter fun ζ : 𝕂 ↦ OffTraceDomain S ζ ∧
           ConstraintsHoldAt S publicValues α ζ (trueOpenings S P (fun c e ↦ Q (c, e)) ζ)).card
         ≤ ∑ P ∈ C1, ∑ Q ∈ C2, D := by
           refine Finset.sum_le_sum fun P hP ↦ Finset.sum_le_sum fun Q hQ ↦ ?_
@@ -294,7 +290,8 @@ theorem knowledgeSoundness_of {S : Setup} (hF : FriStep S) (hF1 : FriAtMostOne S
       card𝕂 ^ 2 * E + card𝕂 * (M + ((if α ∈ bad then card𝕂 else 0) +
         (ℓT * ℓQ * D : Nat))) := by
     intro α
-    refine (Finset.sum_le_sum fun ζ _ ↦ sum_a_le hF hF1 hB publicValues p δ δ' α ζ).trans ?_
+    refine (Finset.sum_le_sum fun ζ _ ↦
+      sum_a_le hF hF1 hB publicValues p δ ((δ' : ℝ) - 2 / S.size) α ζ).trans ?_
     rw [Finset.sum_add_distrib, Finset.sum_const, Finset.card_univ, nsmul_eq_mul,
       Finset.sum_ite, Finset.sum_const_zero, add_zero, Finset.sum_const, nsmul_eq_mul,
       ← mul_assoc, ← pow_two, mul_comm _ card𝕂]
@@ -318,9 +315,9 @@ theorem knowledgeSoundness_of {S : Setup} (hF : FriStep S) (hF1 : FriAtMostOne S
     _ ≤ knowledgeError S δ δ' := by
         have key : (M + bad.card + (ℓT * ℓQ * D : Nat) : ENNReal) ≤
             ((ℓT * (S.air.constraints.length - 1) : Nat) : ENNReal) +
-              ((ℓT * ℓQ * D + S.size + S.n : Nat) : ENNReal) := by
+              ((ℓT * ℓQ * D + S.n : Nat) : ENNReal) := by
           have hk : M + bad.card + ℓT * ℓQ * D ≤
-              ℓT * (S.air.constraints.length - 1) + (ℓT * ℓQ * D + S.size + S.n) := by
+              ℓT * (S.air.constraints.length - 1) + (ℓT * ℓQ * D + S.n) := by
             simp only [M]
             omega
           exact_mod_cast hk
@@ -330,7 +327,7 @@ theorem knowledgeSoundness_of {S : Setup} (hF : FriStep S) (hF1 : FriAtMostOne S
         rw [knowledgeError, foldingError, outOfDomainError, add_comm E]
         calc (M + bad.card + (ℓT * ℓQ * D : Nat) : ENNReal) / card𝕂 + E
             ≤ ((ℓT * (S.air.constraints.length - 1) : Nat) : ENNReal) / card𝕂 +
-                ((ℓT * ℓQ * D + S.size + S.n : Nat) : ENNReal) / card𝕂 + E :=
+                ((ℓT * ℓQ * D + S.n : Nat) : ENNReal) / card𝕂 + E :=
               add_le_add h le_rfl
           _ = _ := by simp only [E, ← add_assoc]; rfl
 

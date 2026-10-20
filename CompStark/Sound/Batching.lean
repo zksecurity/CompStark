@@ -21,6 +21,8 @@ the code on the common set `T`. So `a` lies in the event `IsMCA` of the powers g
 family `ws`, whose uniform probability is the event's density, and at most the supremum
 `mcaError` over families.
 
+The error only decreases as the radius `δ'` of the common set grows (`batchingError_anti`).
+
 `batchingError_le_curve` bounds the error with proximity loss `δ < δ'` in the unique-decoding
 range by correlated agreement for curves (`CompStark/Sound/CurveCA.lean`): `M · max(T₁, T₂) / |𝕂|`
 with `M = numOpened - 1`. A combination `δ`-near the code is within relative distance `δ` of it,
@@ -88,6 +90,22 @@ theorem batchingError_le_mcaError (S : Setup) (δ : NNReal) :
       Finset.filter_false, Finset.card_empty, Nat.cast_zero, ENNReal.zero_div, zero_le]
   | succ M => exact iSup_le fun ws ↦ density_near_le_mcaError S δ ws
 
+/-- Words near on a common set at a radius are near on it at every larger radius. -/
+theorem NearTogether.mono {S : Setup} {ι : Type} {δ δ' : ℝ} (h : δ ≤ δ')
+    {ws : ι → S.Point → 𝕂} (hnear : NearTogether S δ ws) : NearTogether S δ' ws := by
+  obtain ⟨T, hT, hws⟩ := hnear
+  refine ⟨T, le_trans ?_ hT, hws⟩
+  exact mul_le_mul_of_nonneg_left (by linarith) (Nat.cast_nonneg _)
+
+/-- The batching error decreases as the radius of the common set grows. -/
+theorem batchingError_anti (S : Setup) (δ : NNReal) {δ' δ'' : ℝ} (h : δ' ≤ δ'') :
+    batchingError S δ δ'' ≤ batchingError S δ δ' := by
+  classical
+  refine iSup_le fun ws ↦ le_iSup_of_le ws (ENNReal.div_le_div_right (Nat.cast_le.mpr
+    (Finset.card_le_card fun a ↦ ?_)) _)
+  simp only [Finset.mem_filter_univ]
+  exact fun ⟨hnear, hfar⟩ ↦ ⟨hnear, fun h' ↦ hfar (NearTogether.mono h h')⟩
+
 open Classical in
 /-- Batching by powers keeps words that are not near on a common set far, except with
 probability `batchingError`. -/
@@ -140,13 +158,16 @@ set_option linter.constructorNameAsVariable false in
 /-- **Batching error from curve CA.** In the unique-decoding range, with proximity loss
 `δ < δ'`, the batching error is at most `M · max(T₁, T₂) / |𝕂|` for `M = numOpened - 1`,
 `T₁ = (1 - ρ - δ) / (δ (1 - ρ - 2δ))`, `T₂ = δ' / (δ' - δ)` (`card_goodCoeffs_le`). -/
-theorem batchingError_le_curve (S : Setup) (δ δ' : NNReal)
+theorem batchingError_le_curve (S : Setup) (δ : NNReal) (δ' : ℝ)
     (h_ud : (δ : ℝ) ≤ (1 - S.rate) / 2 - 1 / S.size) (h_pos : 0 < δ) (h_lt : δ < δ') :
     batchingError S δ δ' ≤
       ENNReal.ofReal ((S.numOpened - 1 : ℕ) *
         max ((1 - S.rate - δ) / (δ * (1 - S.rate - 2 * δ))) (δ' / (δ' - δ))) /
         Fintype.card 𝕂 := by
   classical
+  obtain ⟨δ', rfl⟩ : ∃ δ'' : NNReal, (δ'' : ℝ) = δ' :=
+    ⟨δ'.toNNReal, Real.coe_toNNReal _ (le_trans δ.2 h_lt.le)⟩
+  replace h_lt : δ < δ' := by exact_mod_cast h_lt
   unfold batchingError
   generalize S.numOpened = m
   cases m with

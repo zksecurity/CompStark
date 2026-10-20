@@ -9,20 +9,20 @@ public import Mathlib.LinearAlgebra.Basis.VectorSpace
 
 /-! # Decoding: the claimed values are those of polynomials close to the words
 
-Let the DEEP components of the opened words agree with codewords on a common set `T` of
-`|T| ≥ N (1 - δ)` points, `δ < 1 - rate`, so `|T| > n`. For an opened word `f` with point
-`z ∉ L` and claimed value `y`, whose DEEP component `(y - f(x)) / (z - x)` agrees on `T` with a
-codeword `h` (degree below `n`):
+Let the DEEP components of the opened words agree with codewords on a common set of at least
+`N (1 - δ) + 2` points, `δ < 1 - rate`. Drop the at most two points of `L` equal to `ζ` or
+`ζ ω_n`, where the DEEP quotients divide by zero: the rest, `T`, has `|T| ≥ N (1 - δ) > n` points
+(`card_le_card_filter_add_two`). For an opened word `f` with point `z` and claimed value `y`,
+whose DEEP component `(y - f(x)) / (z - x)` agrees on `T` with a codeword `h` (degree below `n`):
 
 1. `f` agrees on `T` with `P = y - (z - X) h`, of degree at most `n`, and `P(z) = y`
-   (`eval_deepPoly_eq`, `z - x ≠ 0` as `x ∈ L`).
+   (`eval_deepPoly_eq`, `z - x ≠ 0` for `x ∈ T`).
 2. Projecting `P`'s coefficients to `𝔽` gives `Q ∈ 𝔽[X]` of degree at most `n` that agrees with
    `f` on `T` (`exists_baseAgree`); `P` and `Q` agree on `|T| > n` points, so `P = Q` and
    `Q(z) = y` (`exists_basePoly`).
 
 A trace column is opened at `ζ` and `ζ ω_n`; both polynomials agree with it on `T`, so they are
-equal (`eq_of_agree`). With `ζ ∉ L`, also `ζ ω_n ∉ L`: `L` is the set of `x` with `x^N = g^N`
-(`exists_domain_of_pow`), and `ω_n^N = 1`. No unique decoding is needed.
+equal (`eq_of_agree`). No unique decoding is needed.
 -/
 
 @[expose] public section
@@ -103,11 +103,11 @@ theorem eq_of_agree (S : Setup) (T : Finset S.Point) (hT : S.n < T.card) (P Q : 
     obtain ⟨i, hi, rfl⟩ := Finset.mem_image.mp hx
     exact h i hi
 
-/-- A word whose DEEP component at `z ∉ L` with claimed value `y` agrees with a codeword on `T`,
-`|T| > n`, agrees on `T` with a polynomial over `𝔽` of degree at most `n` whose value at `z` is
-`y`. -/
+/-- A word whose DEEP component at `z` with claimed value `y` agrees with a codeword on `T`,
+`|T| > n` and `z` off `T`, agrees on `T` with a polynomial over `𝔽` of degree at most `n` whose
+value at `z` is `y`. -/
 theorem exists_basePoly (S : Setup) (T : Finset S.Point) (hT : S.n < T.card)
-    (f : S.Point → 𝔽) (z y : 𝕂) (hz : ∀ i, z ≠ S.domain i)
+    (f : S.Point → 𝔽) (z y : 𝕂) (hz : ∀ i ∈ T, z ≠ S.domain i)
     (hnear : ∃ u ∈ S.code, ∀ i ∈ T, deepComponent S f z y i = u i) :
     ∃ Q : 𝔽[X], Q.natDegree ≤ S.n ∧
       (∀ i ∈ T, f i = Q.eval (basePoint (S.logN + S.params.logBlowup) i)) ∧ aeval z Q = y := by
@@ -117,7 +117,7 @@ theorem exists_basePoly (S : Setup) (T : Finset S.Point) (hT : S.n < T.card)
   set P : 𝕂[X] := C y - (C z - Polynomial.X) * h
   have hPdeg : P.natDegree ≤ S.n := natDegree_deepPoly_le z y h S.n Nat.one_le_two_pow hh
   have hPT (i) (hi : i ∈ T) : P.eval (algebraMap 𝔽 𝕂 (pts i)) = algebraMap 𝔽 𝕂 (f i) := by
-    have hx : z - algebraMap 𝔽 𝕂 (pts i) ≠ 0 := sub_ne_zero.mpr (domain_eq S i ▸ hz i)
+    have hx : z - algebraMap 𝔽 𝕂 (pts i) ≠ 0 := sub_ne_zero.mpr (domain_eq S i ▸ hz i hi)
     have hdeep := hTu i hi
     simp only [deepComponent, ReedSolomon.evalOnPoints, LinearMap.coe_mk,
       AddHom.coe_mk, Function.Embedding.coeFn_mk, domain_eq] at hdeep
@@ -137,38 +137,25 @@ theorem exists_basePoly (S : Setup) (T : Finset S.Point) (hT : S.n < T.card)
 
 /-! ### The opened words -/
 
-/-- `L`'s points in terms of `g` and `ω_N`. -/
-theorem domain_eq_lift (S : Setup) (i : S.Point) :
-    S.domain i = lift gen * lift (twoAdicGen (S.logN + S.params.logBlowup)) ^ (i : Nat) := by
-  rw [domain_eq, basePoint, map_mul, map_pow]
-
-/-- The points `x` with `x^N = g^N` lie on `L`. -/
-theorem exists_domain_of_pow (S : Setup) (x : 𝕂) (hx : x ^ S.size = lift gen ^ S.size) :
-    ∃ i, x = S.domain i := by
-  have hg : lift gen ≠ 0 := by
-    rw [lift, ne_eq, map_eq_zero_iff _ (algebraMap 𝔽 𝕂).injective]
-    decide
-  have h1 : (x * (lift gen)⁻¹) ^ S.size = 1 := by
-    rw [mul_pow, hx, inv_pow, mul_inv_cancel₀ (pow_ne_zero _ hg)]
-  obtain ⟨i, hi, hω⟩ := (isPrimitiveRoot_lift _ S.valid.twoAdic).eq_pow_of_pow_eq_one h1
-  refine ⟨⟨i, hi⟩, ?_⟩
-  rw [domain_eq_lift, Fin.val_mk, hω, mul_comm x, ← mul_assoc, mul_inv_cancel₀ hg, one_mul]
-
-/-- `L`'s points satisfy `x^N = g^N`. -/
-theorem domain_pow (S : Setup) (i : S.Point) : S.domain i ^ S.size = lift gen ^ S.size := by
-  rw [domain_eq_lift, mul_pow, ← pow_mul, mul_comm (i : Nat), pow_mul,
-    (isPrimitiveRoot_lift _ S.valid.twoAdic).pow_eq_one, one_pow, mul_one]
-
-/-- `ζ ω_n` lies off `L` with `ζ`. -/
-theorem mul_rootOfUnity_ne_domain (S : Setup) (ζ : 𝕂) (hζ : ∀ i, ζ ≠ S.domain i) (i : S.Point) :
-    ζ * rootOfUnity S.logN ≠ S.domain i := fun h ↦ by
-  have hω : rootOfUnity S.logN ^ S.size = 1 := by
-    have h1 : rootOfUnity S.logN ^ S.n = 1 :=
-      (isPrimitiveRoot_lift S.logN (by have := S.valid.twoAdic; omega)).pow_eq_one
-    rw [Setup.size, pow_add, pow_mul, h1, one_pow]
-  obtain ⟨j, hj⟩ := exists_domain_of_pow S ζ (by rw [← mul_one (ζ ^ S.size), ← hω, ← mul_pow, h,
-    domain_pow])
-  exact hζ j hj
+/-- Dropping the points of `T` where `L` meets `z` or `z'` loses at most two points. -/
+theorem card_le_card_filter_add_two (S : Setup) (T : Finset S.Point) (z z' : 𝕂) :
+    T.card ≤ (T.filter fun i ↦ S.domain i ≠ z ∧ S.domain i ≠ z').card + 2 := by
+  classical
+  have hone (w : 𝕂) : (Finset.univ.filter fun i : S.Point ↦ S.domain i = w).card ≤ 1 :=
+    Finset.card_le_one.mpr fun i hi j hj ↦ (S.domain).injective
+      ((Finset.mem_filter.mp hi).2.trans (Finset.mem_filter.mp hj).2.symm)
+  have hsub : (T.filter fun i ↦ ¬ (S.domain i ≠ z ∧ S.domain i ≠ z')) ⊆
+      (Finset.univ.filter fun i : S.Point ↦ S.domain i = z) ∪
+        Finset.univ.filter fun i : S.Point ↦ S.domain i = z' := by
+    intro i hi
+    simp only [Finset.mem_filter, ne_eq, not_and_or, not_not] at hi
+    simp only [Finset.mem_union, Finset.mem_filter, Finset.mem_univ, true_and]
+    exact hi.2
+  have h := (Finset.card_le_card hsub).trans ((Finset.card_union_le _ _).trans
+    (Nat.add_le_add (hone z) (hone z')))
+  rw [← Finset.card_filter_add_card_filter_not
+    (fun i ↦ S.domain i ≠ z ∧ S.domain i ≠ z')]
+  omega
 
 /-- A set of at least `(1 - δ) N` points, `δ < 1 - rate`, has more than `n` points. -/
 theorem lt_card_of_rate (S : Setup) (δ : ℝ) (hδ : δ < 1 - S.rate) (t : Nat)
@@ -195,19 +182,32 @@ theorem near_of_mem {S : Setup} (p : Prover S) (α ζ : 𝕂) (T : Finset S.Poin
 
 /-- **The decoding step.** -/
 theorem decodingStep (S : Setup) : DecodingStep S := by
-  intro δ hδ prover α ζ hζ hnear
-  obtain ⟨T, hTcard, hTnear⟩ := hnear
+  intro δ hδ prover α ζ _ hnear
+  obtain ⟨T₀, hT₀card, hT₀near⟩ := hnear
+  set T := T₀.filter fun i ↦ S.domain i ≠ ζ ∧ S.domain i ≠ ζ * rootOfUnity S.logN
+  have hTcard : (T.card : ℝ) ≥ S.size * (1 - δ) := by
+    have h : (T₀.card : ℝ) ≤ T.card + 2 := by
+      exact_mod_cast card_le_card_filter_add_two S T₀ ζ (ζ * rootOfUnity S.logN)
+    have hN : (S.size : ℝ) ≠ 0 := by positivity
+    have : (S.size : ℝ) * (1 - (δ - 2 / S.size)) = S.size * (1 - δ) + 2 := by
+      field_simp
+      ring
+    linarith
   have hT := lt_card_of_rate S δ hδ T.card hTcard
-  have hmem := near_of_mem prover α ζ T hTnear
-  have hζω := mul_rootOfUnity_ne_domain S ζ hζ.1
-  have htr (j : Fin S.air.width) := exists_basePoly S T hT (prover.trace j) ζ _ hζ.1
+  have hmem := near_of_mem prover α ζ T fun k ↦ by
+    obtain ⟨u, hu, hk⟩ := hT₀near k
+    exact ⟨u, hu, fun i hi ↦ hk i (Finset.mem_filter.mp hi).1⟩
+  have hζ (i) (hi : i ∈ T) : ζ ≠ S.domain i := ((Finset.mem_filter.mp hi).2.1).symm
+  have hζω (i) (hi : i ∈ T) : ζ * rootOfUnity S.logN ≠ S.domain i :=
+    ((Finset.mem_filter.mp hi).2.2).symm
+  have htr (j : Fin S.air.width) := exists_basePoly S T hT (prover.trace j) ζ _ hζ
     (hmem (prover.trace j, ζ, _) (List.mem_append_left _ (List.mem_append_left _
       (List.mem_map.mpr ⟨j, List.mem_finRange j, rfl⟩))))
   have hnx (j : Fin S.air.width) := exists_basePoly S T hT (prover.trace j) _ _ hζω
     (hmem (prover.trace j, ζ * rootOfUnity S.logN, _) (List.mem_append_left _
       (List.mem_append_right _ (List.mem_map.mpr ⟨j, List.mem_finRange j, rfl⟩))))
   have hqu (c : Fin S.chunks) (e : Fin 4) := exists_basePoly S T hT (prover.quotient α c e) ζ _
-    hζ.1 (hmem (prover.quotient α c e, ζ, _) (List.mem_append_right _ (List.mem_flatMap.mpr
+    hζ (hmem (prover.quotient α c e, ζ, _) (List.mem_append_right _ (List.mem_flatMap.mpr
       ⟨c, List.mem_finRange c, List.mem_map.mpr ⟨e, List.mem_finRange e, rfl⟩⟩)))
   choose trace htdeg htT htz using htr
   choose next hndeg hnT hnz using hnx
