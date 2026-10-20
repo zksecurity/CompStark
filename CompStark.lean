@@ -50,6 +50,7 @@ public import CompStark.Stark.ExtWords
 public import CompStark.Complete.Defs
 public import CompStark.Poseidon2.ArkLib
 public import CompStark.Merkle.VCVio
+public import CompStark.Merkle.Extract
 public import CompStark.Complete.Merkle
 public import CompStark.Complete.Deep
 public import CompStark.Complete.Fold

@@ -4,6 +4,7 @@ Released under Apache 2.0 license as described in the file LICENSE.
 -/
 import CompStark.Merkle.Tree
 import CompStark.Merkle.RootCorrectness
+import CompStark.Merkle.Extract
 
 /-! # Merkle root known answers
 
@@ -36,5 +37,13 @@ def rootOf (ms : List (Nat × Nat × Nat)) : Vector Nat 8 :=
 /-- info: 'CompStark.Merkle.Packed.root_eq' depends on axioms: [propext, Classical.choice, Quot.sound] -/
 #guard_msgs in
 #print axioms CompStark.Merkle.Packed.root_eq
+
+/-- info: 'CompStark.Merkle.extractRow_eq_of_verifyBatch' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in
+#print axioms CompStark.Merkle.extractRow_eq_of_verifyBatch
+
+/-- info: 'CompStark.Merkle.extractRow_eq_of_noPrediction' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in
+#print axioms CompStark.Merkle.extractRow_eq_of_noPrediction
 
 end CompStarkTests.Merkle
