@@ -4,3 +4,4 @@ import CompStarkTests.Merkle
 import CompStarkTests.Challenger
 import CompStarkTests.Stark
 import CompStarkTests.FreshQuery
+import CompStarkTests.RandomOracle
