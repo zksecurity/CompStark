@@ -95,12 +95,8 @@ theorem foldl_max_degree (a : Nat) : ∀ l : List Expr, (∀ c ∈ l, c.degree =
     rw [List.foldl_cons, foldl_max_degree _ (d :: l) (fun e he ↦ hl e (List.mem_cons_of_mem _ he))
       (List.cons_ne_nil _ _), hl c List.mem_cons_self, Nat.max_assoc, Nat.max_self]
 
-/-- The wide AIR fits its two chunks for every width and trace length. -/
-theorem wide_degreeFits (w logN : Nat) : (wide w).DegreeFits logN := by
-  have := Nat.two_pow_pos logN
-  intro c hc
-  simp only [wide, List.mem_map, List.mem_range] at hc
-  obtain ⟨j, hj, rfl⟩ := hc
+/-- The wide AIR's quotient has two chunks. -/
+theorem wide_logQuotientChunks (w : Nat) (hw : 0 < w) : (wide w).logQuotientChunks = 1 := by
   have hmax : (wide w).maxDegree = 3 := by
     rw [Air.maxDegree, foldl_max_degree 0 _ (fun e he ↦ ?_)
       (by simp only [wide, ne_eq, List.map_eq_nil_iff, List.range_eq_nil]; omega)]
@@ -108,8 +104,15 @@ theorem wide_degreeFits (w logN : Nat) : (wide w).DegreeFits logN := by
     · simp only [wide, List.mem_map, List.mem_range] at he
       obtain ⟨i, -, rfl⟩ := he
       rfl
-  have hlc : (wide w).logQuotientChunks = 1 := logQuotientChunks_of _ 1 (by rw [hmax]; rfl)
-  rw [hlc, Nat.pow_succ]
+  exact logQuotientChunks_of _ 1 (by rw [hmax]; rfl)
+
+/-- The wide AIR fits its two chunks for every width and trace length. -/
+theorem wide_degreeFits (w logN : Nat) : (wide w).DegreeFits logN := by
+  have := Nat.two_pow_pos logN
+  intro c hc
+  simp only [wide, List.mem_map, List.mem_range] at hc
+  obtain ⟨j, hj, rfl⟩ := hc
+  rw [wide_logQuotientChunks w (by omega), Nat.pow_succ]
   simp only [Expr.mul_eq, Expr.sub_eq, Expr.add_eq, Expr.degBound]
   omega
 

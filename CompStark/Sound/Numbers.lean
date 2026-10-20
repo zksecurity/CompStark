@@ -11,22 +11,22 @@ public import CompStark.Sound.Batching
 
 /-! # Bounds on the knowledge error's terms below the unique-decoding radius
 
-At FRI arity `2`, a blowup of at least `16` and a proximity `δ ≤ 7/16` for both FRI and the
-extractor, each term of `knowledgeError S δ δ` is an integer over `|𝕂|`, except FRI's queries
-(`knowledgeError_le_of_le`):
+At FRI arity `2`, with the extractor's radius below the unique-decoding radius `(1 - rate) / 2`,
+each term of the knowledge error is an integer over `|𝕂|`, except FRI's queries and the curve
+bound on batching:
 
-* `δ` is below the unique-decoding radius `(1 - rate) / 2 ≥ 15/32`, so the candidate lists have
-  at most one element (`listSize_le_one`), and the constraint-folding and out-of-domain terms are
-  at most `#constraints - 1` and `identityDegree + N + n`;
-* every code involved, the trace's and each folded FRI code, has rate at most `1/8`, so `7/16` is
-  within its relative unique-decoding radius (`seven_sixteenths_le_relUDR`), and the powers MCA
-  bound `mcaError_powers_le` gives, through `batchingError_le_mcaError`, `(numOpened - 1) N` for
-  batching and at most `N` for each of
-  FRI's `logN - logFinalPolyLen` folds (`friError_le_of_le`);
+* the candidate lists have at most one element (`listSize_le_one`), so the constraint-folding and
+  out-of-domain terms are at most `#constraints - 1` and `identityDegree + N + n`;
+* every code involved, the trace's and each folded FRI code, has the rate `1 / 2 ^ logBlowup`, so
+  a radius below `(1 - rate) / 2` is within its relative unique-decoding radius (`le_relUDR`), and
+  the powers MCA bound `mcaError_powers_le` gives `(numOpened - 1) N` for batching at a single
+  radius (`batchingError_le_mcaError`) and `|L'|` for a fold onto the domain `L'`; the halving
+  domains of FRI's folds sum to at most `N` (`friError_le_of_le`);
+* batching at `δ < δ'` is at most `(numOpened - 1) max(T₁, T₂)` (`batchingError_le_curve`);
 * the queries contribute `(1 - δ) ^ numQueries`.
 
-`numbers_le` closes the arithmetic for `CompStark/Security.lean`: at most `2 ^ 19` over
-`|𝕂| ≥ 2 ^ 123`, plus `(9/16) ^ 123`, is at most `2 ^ (-100)`.
+`knowledgeError_le_of_le` (one radius) and `knowledgeError_le_curve` (`δ < δ'`) collect the terms;
+`numbers_le` and `numbers_wide_le` close the arithmetic for `CompStark/Security.lean`.
 -/
 
 @[expose] public section
@@ -35,76 +35,73 @@ open CompStark.Stark CompStark.Iop NNReal ProximityGap CoreDefinitions Code
 
 local notation "𝕂" => KoalaBear.Ext4
 
-/-- At rate at most `1/8`, `7/16` is within the relative unique-decoding radius of a
-Reed–Solomon code. -/
-theorem seven_sixteenths_le_relUDR {ι : Type} [Fintype ι] {F : Type} [Field F] [DecidableEq F]
-    {domain : ι ↪ F} {deg : ℕ} [NeZero deg] (h : 8 * deg ≤ Fintype.card ι) :
-    (7 / 16 : ℝ≥0) ≤
-      relativeUniqueDecodingRadius (ReedSolomon.code domain deg : Set (ι → F)) := by
+/-- At rate at most `1/c`, a radius `θ ≤ (1 - 1/c) / 2` is within the relative unique-decoding
+radius of a Reed–Solomon code. -/
+theorem le_relUDR {ι : Type} [Fintype ι] {F : Type} [Field F] [DecidableEq F]
+    {domain : ι ↪ F} {deg : ℕ} [NeZero deg] (c : ℕ) (h : c * deg ≤ Fintype.card ι) (θ : ℝ≥0)
+    (hθ : (θ : ℝ) * (2 * c) ≤ c - 1) :
+    θ ≤ relativeUniqueDecodingRadius (ReedSolomon.code domain deg : Set (ι → F)) := by
   have hdeg := NeZero.pos deg
-  have hcard : (0 : ℝ≥0) < Fintype.card ι := by exact_mod_cast (show 0 < Fintype.card ι by omega)
-  rw [relativeUniqueDecodingRadius, dist_eq_minDist, ReedSolomon.minDist_of_le (by omega),
+  have hc : 1 ≤ c := by
+    by_contra hc0
+    have : c = 0 := by omega
+    subst this
+    have := θ.coe_nonneg
+    norm_num at hθ
+  have hcard : (0 : ℝ≥0) < Fintype.card ι := by
+    exact_mod_cast (show 0 < Fintype.card ι from lt_of_lt_of_le (by positivity) h)
+  have hle : deg ≤ Fintype.card ι := le_trans (Nat.le_mul_of_pos_left _ hc) h
+  rw [relativeUniqueDecodingRadius, dist_eq_minDist, ReedSolomon.minDist_of_le hle,
     Nat.cast_add, Nat.cast_one, add_tsub_cancel_right, div_div, le_div_iff₀ (by positivity),
-    ← NNReal.coe_le_coe, NNReal.coe_mul, NNReal.coe_natCast,
-    Nat.cast_sub (show deg ≤ Fintype.card ι by omega)]
+    ← NNReal.coe_le_coe, NNReal.coe_mul, NNReal.coe_natCast, Nat.cast_sub hle]
   push_cast
-  have h' : (8 * deg : ℝ) ≤ Fintype.card ι := by exact_mod_cast h
-  linarith
+  have h' : (c * deg : ℝ) ≤ Fintype.card ι := by exact_mod_cast h
+  have hc' : (1 : ℝ) ≤ c := by exact_mod_cast hc
+  have hk : (0 : ℝ) ≤ Fintype.card ι := Nat.cast_nonneg _
+  have h1 := mul_le_mul_of_nonneg_right hθ hk
+  nlinarith
 
-/-- The degree of FRI's code after fold `i` is at most an eighth of its domain when the initial
+/-- The degree of FRI's code after fold `i` is at most a `c`-th of its domain when the initial
 code's is. -/
-theorem eight_mul_foldingDegree_le {N k : ℕ} (s : Fin (k + 1) → ℕ+) (d : ℕ+) (i : Fin (k + 1))
-    (h : 8 * (2 ^ (∑ j, (s j).val) * d.val) ≤ 2 ^ N) :
-    8 * Fri.Spec.foldingDegree s d i.succ ≤
+theorem mul_foldingDegree_le {N k : ℕ} (c : ℕ) (hc : 0 < c) (s : Fin (k + 1) → ℕ+) (d : ℕ+)
+    (i : Fin (k + 1)) (h : c * (2 ^ (∑ j, (s j).val) * d.val) ≤ 2 ^ N) :
+    c * Fri.Spec.foldingDegree s d i.succ ≤
       2 ^ (N - Fri.Spec.foldingPrefix s i.castSucc - (s i).val) := by
   have hq := Fri.Spec.foldingPrefix_le s i.succ
   rw [Fri.Spec.foldingPrefix_succ] at hq
   have hsN : ∑ j, (s j).val ≤ N := by
     by_contra hlt
     have : 2 ^ N < 2 ^ (∑ j, (s j).val) := Nat.pow_lt_pow_right (by norm_num) (by omega)
-    have h1 : 2 ^ (∑ j, (s j).val) ≤ 8 * (2 ^ (∑ j, (s j).val) * d.val) :=
-      (Nat.le_mul_of_pos_right _ d.pos).trans (Nat.le_mul_of_pos_left _ (by norm_num))
+    have h1 : 2 ^ (∑ j, (s j).val) ≤ c * (2 ^ (∑ j, (s j).val) * d.val) :=
+      (Nat.le_mul_of_pos_right _ d.pos).trans (Nat.le_mul_of_pos_left _ hc)
     omega
   set q := Fri.Spec.foldingPrefix s i.castSucc + (s i).val
   have hpq : N - Fri.Spec.foldingPrefix s i.castSucc - (s i).val = N - q := by omega
   rw [hpq, Fri.Spec.foldingDegree, Fri.Spec.foldingPrefix_succ]
   refine Nat.le_of_mul_le_mul_right (c := 2 ^ q) ?_ (Nat.two_pow_pos q)
   rw [← pow_add, Nat.sub_add_cancel (by omega)]
-  calc 8 * (2 ^ (∑ j, (s j).val - q) * d.val) * 2 ^ q
-      = 8 * (2 ^ (∑ j, (s j).val - q + q) * d.val) := by rw [pow_add]; ring
-    _ = 8 * (2 ^ (∑ j, (s j).val) * d.val) := by rw [Nat.sub_add_cancel hq]
+  calc c * (2 ^ (∑ j, (s j).val - q) * d.val) * 2 ^ q
+      = c * (2 ^ (∑ j, (s j).val - q + q) * d.val) := by rw [pow_add]; ring
+    _ = c * (2 ^ (∑ j, (s j).val) * d.val) := by rw [Nat.sub_add_cancel hq]
     _ ≤ 2 ^ N := h
 
-/-- One FRI fold's error at a radius at most `7/16`, at rate at most `1/8`: the powers MCA bound
-`(2 ^ s - 1) |L'| / |𝕂|`, with `|L'| ≤ 2 ^ N`. -/
-theorem foldingError_le {N k : ℕ} {ω : Domain.SmoothCosetFftDomain N 𝕂} (s : Fin (k + 1) → ℕ+)
-    (d : ℕ+) (i : Fin (k + 1)) (h : 8 * (2 ^ (∑ j, (s j).val) * d.val) ≤ 2 ^ N)
-    (θ : ℝ≥0) (hθ : θ ≤ 7 / 16) :
+/-- One FRI fold's error at rate at most `1/c` and a radius `θ ≤ (1 - 1/c) / 2`: the powers MCA
+bound `(2 ^ s - 1) |L'| / |𝕂|` on the folded domain `L'`. -/
+theorem foldingError_le {N k : ℕ} {ω : Domain.SmoothCosetFftDomain N 𝕂} (c : ℕ) (hc : 0 < c)
+    (s : Fin (k + 1) → ℕ+) (d : ℕ+) (i : Fin (k + 1))
+    (h : c * (2 ^ (∑ j, (s j).val) * d.val) ≤ 2 ^ N) (θ : ℝ≥0) (hθ : (θ : ℝ) * (2 * c) ≤ c - 1) :
     (Fri.Spec.foldingError (ω := ω) s d (θ : ℝ) i : ENNReal) ≤
-      ((2 ^ (s i).val - 1) * 2 ^ N : ℕ) / (Fintype.card 𝕂 : ENNReal) := by
-  have h8 := eight_mul_foldingDegree_le s d i h
+      ((2 ^ (s i).val - 1) * 2 ^ (N - Fri.Spec.foldingPrefix s i.castSucc - (s i).val) : ℕ) /
+        (Fintype.card 𝕂 : ENNReal) := by
+  have hc' := mul_foldingDegree_le c hc s d i h
   have : NeZero (Fri.Spec.foldingDegree s d i.succ) := ⟨(Fri.Spec.foldingDegree_pos s d _).ne'⟩
+  have hle : Fri.Spec.foldingDegree s d i.succ ≤
+      2 ^ (N - Fri.Spec.foldingPrefix s i.castSucc - (s i).val) :=
+    (Nat.le_mul_of_pos_left _ hc).trans hc'
   unfold Fri.Spec.foldingError
   rw [ENNReal.coe_toNNReal (mcaError_ne_top _ _ _)]
-  refine (mcaError_powers_le (Fri.Spec.foldingDegree_pos s d _) (by omega) _
-    (hθ.trans (seven_sixteenths_le_relUDR (by rw [Fintype.card_fin]; exact h8)))).trans ?_
-  refine ENNReal.div_le_div_right (Nat.cast_le.mpr (Nat.mul_le_mul_left _ ?_)) _
-  exact Nat.pow_le_pow_right two_pos (by omega)
-
-/-- FRI's error at a radius at most `7/16`, at rate at most `1/8`: the powers MCA bound for each
-fold and `(1 - δ) ^ numQueries` for the queries. -/
-theorem friErrorOf_le {N : ℕ} (ω : Domain.SmoothCosetFftDomain N 𝕂) (f : ℕ+) (fs : List ℕ+)
-    (logFinal l : ℕ) (δ : ℝ≥0) (hδ : δ ≤ 7 / 16)
-    (h : 8 * (2 ^ (∑ j, (foldsAt f fs j).val) * 2 ^ logFinal) ≤ 2 ^ N) :
-    friErrorOf ω (f :: fs) logFinal l δ ≤
-      ∑ j, ((2 ^ (foldsAt f fs j).val - 1) * 2 ^ N : ℕ) / (Fintype.card 𝕂 : ENNReal) +
-        ((Real.toNNReal (1 - δ) ^ l : ℝ≥0) : ENNReal) := by
-  have hdom : 2 ^ (∑ j, (foldsAt f fs j).val) * (finalDegree logFinal).val ≤ 2 ^ N := by
-    change 2 ^ (∑ j, (foldsAt f fs j).val) * 2 ^ logFinal ≤ 2 ^ N
-    omega
-  simp only [friErrorOf, hdom, ↓reduceIte, Fri.Spec.soundnessError, min_self, ENNReal.coe_add,
-    ENNReal.ofNNReal_finsetSum]
-  refine add_le_add (Finset.sum_le_sum fun j _ ↦ foldingError_le _ _ j h δ hδ) le_rfl
+  exact mcaError_powers_le (Fri.Spec.foldingDegree_pos s d _) hle _
+    (le_relUDR c (by rw [Fintype.card_fin]; exact hc') θ hθ)
 
 /-- Folding by arity `2` halves `r` times. -/
 theorem folds_one : ∀ r, folds 1 r = List.replicate r 1
@@ -123,113 +120,171 @@ theorem foldsAt_replicate (m : ℕ) (j : Fin ((List.replicate m (1 : ℕ+)).leng
     simp only [foldsAt, List.get_eq_getElem, Fin.val_succ, List.getElem_cons_succ,
       List.getElem_replicate]
 
-/-- FRI's error with arity `2`, `r` folds and rate at most `1/8`, at a radius at most `7/16`. -/
+/-- At arity `2`, `i` folds precede fold `i`. -/
+theorem foldingPrefix_replicate (m : ℕ) (i : Fin ((List.replicate m (1 : ℕ+)).length + 2)) :
+    Fri.Spec.foldingPrefix (foldsAt 1 (List.replicate m 1)) i = i := by
+  induction i using Fin.induction with
+  | zero => rw [Fri.Spec.foldingPrefix_zero, Fin.val_zero]
+  | succ i ih =>
+    rw [Fri.Spec.foldingPrefix_succ, ih, foldsAt_replicate, PNat.one_coe, Fin.val_succ,
+      Fin.val_castSucc]
+
+/-- The halving domains of `r ≤ N` folds: `2 ^ (N - 1) + ⋯ + 2 ^ (N - r) = 2 ^ N - 2 ^ (N - r)`. -/
+theorem sum_two_pow_add (N : ℕ) : ∀ r, r ≤ N →
+    ∑ j ∈ Finset.range r, 2 ^ (N - j - 1) + 2 ^ (N - r) = 2 ^ N
+  | 0, _ => by rw [Finset.sum_range_zero, zero_add, Nat.sub_zero]
+  | r + 1, h => by
+    rw [Finset.sum_range_succ, ← sum_two_pow_add N r (by omega), add_assoc]
+    obtain ⟨t, ht⟩ : ∃ t, N - r = t + 1 := ⟨N - r - 1, by omega⟩
+    rw [show N - r - 1 = t by omega, show N - (r + 1) = t by omega, ht, pow_succ]
+    ring
+
+/-- FRI's error with arity `2` and `m + 1` folds, at rate at most `1/c` and a radius
+`δ ≤ (1 - 1/c) / 2`: the folds on the halving domains sum to at most `|L| / |𝕂|`. -/
 theorem friErrorOf_replicate_le {N : ℕ} (ω : Domain.SmoothCosetFftDomain N 𝕂) (m : ℕ)
-    (logFinal l : ℕ) (δ : ℝ≥0) (hδ : δ ≤ 7 / 16) (h : 8 * 2 ^ (m + 1 + logFinal) ≤ 2 ^ N) :
+    (logFinal l : ℕ) (c : ℕ) (hc : 0 < c) (δ : ℝ≥0) (hδ : (δ : ℝ) * (2 * c) ≤ c - 1)
+    (h : c * 2 ^ (m + 1 + logFinal) ≤ 2 ^ N) :
     friErrorOf ω (List.replicate (m + 1) 1) logFinal l δ ≤
-      ((m + 1) * 2 ^ N : ℕ) / (Fintype.card 𝕂 : ENNReal) +
+      (2 ^ N : ℕ) / (Fintype.card 𝕂 : ENNReal) +
         ((Real.toNNReal (1 - δ) ^ l : ℝ≥0) : ENNReal) := by
   have hsum : ∑ j, (foldsAt 1 (List.replicate m 1) j).val = m + 1 := by
     simp only [foldsAt_replicate, PNat.one_coe, Finset.sum_const, Finset.card_univ,
       Fintype.card_fin, List.length_replicate, smul_eq_mul, mul_one]
+  have hh : c * (2 ^ (∑ j, (foldsAt 1 (List.replicate m 1) j).val) *
+      (finalDegree logFinal).val) ≤ 2 ^ N := by
+    change c * (2 ^ _ * 2 ^ logFinal) ≤ 2 ^ N
+    rw [hsum, ← pow_add]
+    exact h
+  have hdom : 2 ^ (∑ j, (foldsAt 1 (List.replicate m 1) j).val) * (finalDegree logFinal).val ≤
+      2 ^ N := (Nat.le_mul_of_pos_left _ hc).trans hh
+  have hmN : m + 1 ≤ N := by
+    by_contra hlt
+    have : 2 ^ N < 2 ^ (m + 1 + logFinal) := Nat.pow_lt_pow_right (by norm_num) (by omega)
+    have := Nat.le_mul_of_pos_left (2 ^ (m + 1 + logFinal)) hc
+    omega
   rw [List.replicate_succ]
-  refine (friErrorOf_le ω 1 _ logFinal l δ hδ (by rw [hsum, ← pow_add, mul_comm]; omega)).trans ?_
-  simp only [foldsAt_replicate, PNat.one_coe, pow_one, Nat.add_one_sub_one, one_mul,
-    Finset.sum_const, Finset.card_univ, Fintype.card_fin, List.length_replicate, nsmul_eq_mul]
-  rw [← mul_div_assoc, Nat.cast_mul, Nat.cast_add, Nat.cast_one]
+  simp only [friErrorOf, hdom, ↓reduceIte, Fri.Spec.soundnessError, min_self, ENNReal.coe_add,
+    ENNReal.ofNNReal_finsetSum]
+  refine add_le_add ((Finset.sum_le_sum fun j _ ↦ foldingError_le c hc _ _ j hh δ hδ).trans ?_)
+    le_rfl
+  rw [← ENNReal.sum_div, ← Nat.cast_sum]
+  refine ENNReal.div_le_div_right (Nat.cast_le.mpr ?_) _
+  simp only [foldsAt_replicate, foldingPrefix_replicate, PNat.one_coe, pow_one,
+    Nat.add_one_sub_one, one_mul, Fin.val_castSucc]
+  have := sum_two_pow_add N (m + 1) hmN
+  rw [Fin.sum_univ_eq_sum_range (fun i ↦ 2 ^ (N - i - 1)), List.length_replicate]
+  exact this ▸ Nat.le_add_right _ _
 
-/-! ### The terms of a setup with blowup at least `16` at `δ ≤ 7/16` -/
+/-! ### The terms of a setup -/
 
-/-- `16 n ≤ N` for a blowup of at least `16`. -/
-theorem sixteen_mul_n_le_size (S : Setup) (hb : 4 ≤ S.params.logBlowup) : 16 * S.n ≤ S.size := by
-  rw [Setup.n, Setup.size, pow_add, mul_comm]
-  exact Nat.mul_le_mul_left _ (by
-    calc 16 = 2 ^ 4 := by norm_num
-      _ ≤ 2 ^ S.params.logBlowup := Nat.pow_le_pow_right two_pos hb)
+/-- The rate is `1 / 2 ^ logBlowup`. -/
+theorem rate_eq (S : Setup) : S.rate = 1 / 2 ^ S.params.logBlowup := by
+  rw [Setup.rate, Setup.n, Setup.size, pow_add]
+  push_cast
+  field_simp
 
-/-- Below `7/16` at a blowup of at least `16`, the lists have at most one element. -/
-theorem listSize_le_one_of_le (S : Setup) (hb : 4 ≤ S.params.logBlowup) (ι : Type) [Fintype ι]
-    [DecidableEq ι] (δ : ℝ≥0) (hδ : δ ≤ 7 / 16) : S.listSize ι δ ≤ 1 := by
-  apply listSize_le_one
-  have h16 : (16 * S.n : ℝ) ≤ S.size := by exact_mod_cast sixteen_mul_n_le_size S hb
-  have hpos : (0 : ℝ) < S.size := by exact_mod_cast Nat.two_pow_pos _
-  have hrate : S.rate ≤ 1 / 16 := by
-    rw [Setup.rate, div_le_iff₀ hpos]
-    linarith
-  have hδ' : (δ : ℝ) ≤ 7 / 16 := by exact_mod_cast hδ
-  linarith
+/-- Below the unique-decoding radius `(1 - rate) / 2`, with `c = 2 ^ logBlowup`. -/
+theorem mul_le_of_le_udr (S : Setup) (δ : ℝ≥0) (hδ : (δ : ℝ) ≤ (1 - S.rate) / 2) :
+    (δ : ℝ) * (2 * (2 ^ S.params.logBlowup : ℕ)) ≤ (2 ^ S.params.logBlowup : ℕ) - 1 := by
+  rw [rate_eq, le_div_iff₀ two_pos] at hδ
+  have hc : (0 : ℝ) < 2 ^ S.params.logBlowup := by positivity
+  have h1 := mul_le_mul_of_nonneg_right hδ hc.le
+  have h2 : (1 - 1 / (2 : ℝ) ^ S.params.logBlowup) * 2 ^ S.params.logBlowup =
+      2 ^ S.params.logBlowup - 1 := by field_simp
+  push_cast
+  nlinarith
 
-/-- The constraint-folding term with lists of at most one element. -/
-theorem foldingError_le_of_le (S : Setup) (hb : 4 ≤ S.params.logBlowup) (δ : ℝ≥0)
-    (hδ : δ ≤ 7 / 16) :
+/-- Below the unique-decoding radius, the lists have at most one element. -/
+theorem foldingError_le_of_le (S : Setup) (δ : ℝ≥0) (hδ : (δ : ℝ) < (1 - S.rate) / 2) :
     foldingError S δ ≤ (S.air.constraints.length - 1 : ℕ) / (Fintype.card 𝕂 : ENNReal) := by
   refine ENNReal.div_le_div_right (Nat.cast_le.mpr ?_) _
   calc S.listSize (Fin S.air.width) δ * (S.air.constraints.length - 1)
       ≤ 1 * (S.air.constraints.length - 1) :=
-        Nat.mul_le_mul_right _ (listSize_le_one_of_le S hb _ δ hδ)
+        Nat.mul_le_mul_right _ (listSize_le_one S _ δ hδ)
     _ = _ := one_mul _
 
-/-- The out-of-domain term with lists of at most one element. -/
-theorem outOfDomainError_le_of_le (S : Setup) (hb : 4 ≤ S.params.logBlowup) (δ : ℝ≥0)
-    (hδ : δ ≤ 7 / 16) :
+/-- The out-of-domain term below the unique-decoding radius. -/
+theorem outOfDomainError_le_of_le (S : Setup) (δ : ℝ≥0) (hδ : (δ : ℝ) < (1 - S.rate) / 2) :
     outOfDomainError S δ ≤
       (S.identityDegree + S.size + S.n : ℕ) / (Fintype.card 𝕂 : ENNReal) := by
   refine ENNReal.div_le_div_right (Nat.cast_le.mpr ?_) _
   have h := Nat.mul_le_mul_right S.identityDegree (Nat.mul_le_mul
-    (listSize_le_one_of_le S hb (Fin S.air.width) δ hδ)
-    (listSize_le_one_of_le S hb (Fin S.chunks × Fin 4) δ hδ))
+    (listSize_le_one S (Fin S.air.width) δ hδ) (listSize_le_one S (Fin S.chunks × Fin 4) δ hδ))
   omega
 
-/-- The batching term at a single radius: the powers MCA bound `(numOpened - 1) N / |𝕂|`. -/
-theorem batchingError_le_of_le (S : Setup) (hb : 4 ≤ S.params.logBlowup) (δ : ℝ≥0)
-    (hδ : δ ≤ 7 / 16) :
+/-- The batching term at a single radius below the unique-decoding radius: the powers MCA bound
+`(numOpened - 1) N / |𝕂|`. -/
+theorem batchingError_le_of_le (S : Setup) (δ : ℝ≥0) (hδ : (δ : ℝ) ≤ (1 - S.rate) / 2) :
     batchingError S δ δ ≤ ((S.numOpened - 1) * S.size : ℕ) / (Fintype.card 𝕂 : ENNReal) := by
-  have h16 : 16 * 2 ^ S.logN ≤ 2 ^ (S.logN + S.params.logBlowup) := sixteen_mul_n_le_size S hb
+  have hN : 2 ^ S.params.logBlowup * S.n ≤ S.size := by
+    rw [Setup.n, Setup.size, pow_add, mul_comm]
+  have hb := S.blowup
   have : NeZero S.n := ⟨(Nat.two_pow_pos _).ne'⟩
   refine (batchingError_le_mcaError S δ).trans ?_
-  exact mcaError_powers_le (Nat.two_pow_pos _) (by omega) _
-    (hδ.trans (seven_sixteenths_le_relUDR (by rw [Fintype.card_fin]; omega)))
+  exact mcaError_powers_le (Nat.two_pow_pos _)
+    ((Nat.le_mul_of_pos_left _ (Nat.two_pow_pos _)).trans hN) _
+    (le_relUDR _ (by rw [Fintype.card_fin]; exact hN) δ (mul_le_of_le_udr S δ hδ))
 
-/-- FRI's term at arity `2`: `logN - logFinalPolyLen` folds, each at most `N / |𝕂|`, and the
-queries. -/
-theorem friError_le_of_le (S : Setup) (hb : 4 ≤ S.params.logBlowup)
-    (harity : S.params.maxLogArity = 1) (δ : ℝ≥0) (hδ : δ ≤ 7 / 16) :
-    friError S δ ≤ ((S.logN - S.params.logFinalPolyLen) * S.size : ℕ) / (Fintype.card 𝕂 : ENNReal)
-      + ((Real.toNNReal (1 - δ) ^ S.params.numQueries : ℝ≥0) : ENNReal) := by
+/-- FRI's term at arity `2` below the unique-decoding radius: the folds on the halving domains,
+at most `N / |𝕂|` together, and the queries. -/
+theorem friError_le_of_le (S : Setup) (harity : S.params.maxLogArity = 1) (δ : ℝ≥0)
+    (hδ : (δ : ℝ) ≤ (1 - S.rate) / 2) :
+    friError S δ ≤ (S.size : ℕ) / (Fintype.card 𝕂 : ENNReal) +
+      ((Real.toNNReal (1 - δ) ^ S.params.numQueries : ℝ≥0) : ENNReal) := by
   have hlt := S.folds
   obtain ⟨m, hm⟩ : ∃ m, S.logN - S.params.logFinalPolyLen = m + 1 := ⟨_, (Nat.succ_pred_eq_of_pos
     (by omega)).symm⟩
   rw [friError, harity, hm, folds_one]
-  apply friErrorOf_replicate_le _ _ _ _ _ hδ
-  rw [show m + 1 + S.params.logFinalPolyLen = S.logN by omega, pow_add]
-  calc 8 * 2 ^ S.logN ≤ 2 ^ S.logN * 2 ^ S.params.logBlowup := by
-        rw [mul_comm]
-        exact Nat.mul_le_mul_left _ (by
-          calc 8 ≤ 2 ^ 4 := by norm_num
-            _ ≤ 2 ^ S.params.logBlowup := Nat.pow_le_pow_right two_pos hb)
-    _ = _ := rfl
+  apply friErrorOf_replicate_le _ _ _ _ _ (Nat.two_pow_pos _) _ (mul_le_of_le_udr S δ hδ)
+  rw [show m + 1 + S.params.logFinalPolyLen = S.logN by omega, pow_add, mul_comm]
 
-/-- The knowledge error at arity `2`, blowup at least `16` and `δ ≤ 7/16` for both FRI and the
-extractor: one integer over
-`|𝕂|`, and `(1 - δ) ^ numQueries`. -/
-theorem knowledgeError_le_of_le (S : Setup) (hb : 4 ≤ S.params.logBlowup)
-    (harity : S.params.maxLogArity = 1) (δ : ℝ≥0) (hδ : δ ≤ 7 / 16) :
+/-- The knowledge error at arity `2` with FRI and the extractor at one radius `δ` below the
+unique-decoding radius: one integer over `|𝕂|`, and `(1 - δ) ^ numQueries`. -/
+theorem knowledgeError_le_of_le (S : Setup) (harity : S.params.maxLogArity = 1) (δ : ℝ≥0)
+    (hδ : (δ : ℝ) < (1 - S.rate) / 2) :
     knowledgeError S δ δ ≤
       ((S.air.constraints.length - 1) + (S.identityDegree + S.size + S.n) +
-        (S.numOpened - 1) * S.size + (S.logN - S.params.logFinalPolyLen) * S.size : ℕ) /
-          (Fintype.card 𝕂 : ENNReal) +
+        (S.numOpened - 1) * S.size + S.size : ℕ) / (Fintype.card 𝕂 : ENNReal) +
         ((Real.toNNReal (1 - δ) ^ S.params.numQueries : ℝ≥0) : ENNReal) := by
   calc knowledgeError S δ δ
       ≤ (S.air.constraints.length - 1 : ℕ) / (Fintype.card 𝕂 : ENNReal) +
           (S.identityDegree + S.size + S.n : ℕ) / (Fintype.card 𝕂 : ENNReal) +
           ((S.numOpened - 1) * S.size : ℕ) / (Fintype.card 𝕂 : ENNReal) +
-          (((S.logN - S.params.logFinalPolyLen) * S.size : ℕ) / (Fintype.card 𝕂 : ENNReal) +
+          ((S.size : ℕ) / (Fintype.card 𝕂 : ENNReal) +
             ((Real.toNNReal (1 - δ) ^ S.params.numQueries : ℝ≥0) : ENNReal)) :=
-        add_le_add (add_le_add (add_le_add (foldingError_le_of_le S hb δ hδ)
-          (outOfDomainError_le_of_le S hb δ hδ)) (batchingError_le_of_le S hb δ hδ))
-          (friError_le_of_le S hb harity δ hδ)
+        add_le_add (add_le_add (add_le_add (foldingError_le_of_le S δ hδ)
+          (outOfDomainError_le_of_le S δ hδ)) (batchingError_le_of_le S δ hδ.le))
+          (friError_le_of_le S harity δ hδ.le)
     _ = _ := by
         simp only [← add_assoc, ENNReal.div_add_div_same, Nat.cast_add]
+
+/-- The knowledge error at arity `2` with FRI at `δ` and the extractor at `δ' ∈ (δ, UDR)`, with
+the curve bound for batching (`batchingError_le_curve`). -/
+theorem knowledgeError_le_curve (S : Setup) (harity : S.params.maxLogArity = 1) (δ δ' : ℝ≥0)
+    (h_ud : (δ : ℝ) ≤ (1 - S.rate) / 2 - 1 / S.size) (h_pos : 0 < δ) (h_lt : δ < δ')
+    (hδ' : (δ' : ℝ) < (1 - S.rate) / 2) :
+    knowledgeError S δ δ' ≤
+      ((S.air.constraints.length - 1) + (S.identityDegree + S.size + S.n) + S.size : ℕ) /
+          (Fintype.card 𝕂 : ENNReal) +
+        ENNReal.ofReal ((S.numOpened - 1 : ℕ) *
+          max ((1 - S.rate - δ) / (δ * (1 - S.rate - 2 * δ))) (δ' / (δ' - δ))) /
+          Fintype.card 𝕂 +
+        ((Real.toNNReal (1 - δ) ^ S.params.numQueries : ℝ≥0) : ENNReal) := by
+  have hδ : (δ : ℝ) ≤ (1 - S.rate) / 2 := h_ud.trans (sub_le_self _ (by positivity))
+  calc knowledgeError S δ δ'
+      ≤ (S.air.constraints.length - 1 : ℕ) / (Fintype.card 𝕂 : ENNReal) +
+          (S.identityDegree + S.size + S.n : ℕ) / (Fintype.card 𝕂 : ENNReal) +
+          ENNReal.ofReal ((S.numOpened - 1 : ℕ) *
+            max ((1 - S.rate - δ) / (δ * (1 - S.rate - 2 * δ))) (δ' / (δ' - δ))) /
+            Fintype.card 𝕂 +
+          ((S.size : ℕ) / (Fintype.card 𝕂 : ENNReal) +
+            ((Real.toNNReal (1 - δ) ^ S.params.numQueries : ℝ≥0) : ENNReal)) :=
+        add_le_add (add_le_add (add_le_add (foldingError_le_of_le S δ' hδ')
+          (outOfDomainError_le_of_le S δ' hδ')) (batchingError_le_curve S δ δ' h_ud h_pos h_lt))
+          (friError_le_of_le S harity δ hδ)
+    _ = _ := by
+        simp only [Nat.cast_add, ← ENNReal.div_add_div_same]
+        ring
 
 /-! ### The numbers -/
 
@@ -261,5 +316,37 @@ theorem numbers_le (A : ℕ) (hA : A ≤ 2 ^ 19) :
   calc (A : ℝ) / Fintype.card 𝕂 + (9 / 16) ^ 123 ≤ 2 ^ 19 / 2 ^ 123 + (9 / 16) ^ 123 := by
         linarith
     _ ≤ (2 ^ 100)⁻¹ := by norm_num
+
+/-- At most `3 · 2 ^ 22 + 64` and `4995` over `|𝕂| = p ^ 4`, plus `(16/25) ^ 159`, is at most
+`2 ^ (-100)`. -/
+theorem numbers_wide_le (A : ℕ) (hA : A ≤ 3 * 2 ^ 22 + 64) (B : ℝ) (hB : B ≤ 4995) :
+    (A : ENNReal) / (Fintype.card 𝕂 : ENNReal) + ENNReal.ofReal B / Fintype.card 𝕂 +
+        ((Real.toNNReal (1 - ((9 / 25 : ℝ≥0) : ℝ)) ^ 159 : ℝ≥0) : ENNReal) ≤
+      (2 ^ 100 : ENNReal)⁻¹ := by
+  have hK : (Fintype.card 𝕂 : ℝ) = 2130706433 ^ 4 := by
+    rw [KoalaBear.card_ext4, KoalaBear.fieldSize]
+    norm_num
+  have hKpos : (0 : ℝ) < Fintype.card 𝕂 := by rw [hK]; positivity
+  have hq : Real.toNNReal (1 - ((9 / 25 : ℝ≥0) : ℝ)) = 16 / 25 := by
+    rw [← NNReal.coe_inj, Real.coe_toNNReal _ (by norm_num)]
+    norm_num
+  calc (A : ENNReal) / (Fintype.card 𝕂 : ENNReal) + ENNReal.ofReal B / Fintype.card 𝕂 +
+        ((Real.toNNReal (1 - ((9 / 25 : ℝ≥0) : ℝ)) ^ 159 : ℝ≥0) : ENNReal)
+      ≤ ((3 * 2 ^ 22 + 64 : ℕ) : ENNReal) / Fintype.card 𝕂 + ENNReal.ofReal 4995 / Fintype.card 𝕂 +
+          (((16 / 25 : ℝ≥0) ^ 159 : ℝ≥0) : ENNReal) := by
+        rw [hq]
+        gcongr
+    _ = ENNReal.ofReal ((3 * 2 ^ 22 + 64 + 4995) / Fintype.card 𝕂 + (16 / 25) ^ 159) := by
+        rw [ENNReal.div_add_div_same, ← ENNReal.ofReal_natCast,
+          ← ENNReal.ofReal_add (Nat.cast_nonneg _) (by norm_num),
+          ← ENNReal.ofReal_natCast (Fintype.card 𝕂), ← ENNReal.ofReal_div_of_pos hKpos,
+          ← ENNReal.ofReal_coe_nnreal, ← ENNReal.ofReal_add (by positivity) (by positivity)]
+        norm_num
+    _ ≤ (2 ^ 100 : ENNReal)⁻¹ := by
+        rw [← ENNReal.ofReal_ofNat, ← ENNReal.ofReal_pow (by norm_num),
+          ← ENNReal.ofReal_inv_of_pos (by positivity)]
+        refine ENNReal.ofReal_le_ofReal ?_
+        rw [hK]
+        norm_num
 
 end CompStark.Sound
