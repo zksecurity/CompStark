@@ -5,7 +5,7 @@ Released under Apache 2.0 license as described in the file LICENSE.
 module
 
 public import CompStark.Stark.Verifier
-public import CompStark.Complete.Merkle
+public import CompStark.Complete.Stark
 
 /-! # Accepting runs of the verifier on pure primitives
 
@@ -510,5 +510,369 @@ theorem openInput_ok (P : Params) (logMax index : Nat) (alpha : EF) (inputs : Li
   refine ⟨hlen', hok, ?_⟩
   rw [pure_eq_ok H h2, List.mergeSort_singleton]
   rfl
+
+/-! ### The challenger on pure primitives -/
+
+/-- Observe a list of elements. -/
+def obsList (s : H.State) (xs : List F) : H.State := xs.foldl H.observe s
+
+/-- Observe extension elements, lowest coefficient first. -/
+def obsExts (s : H.State) (xs : List EF) : H.State :=
+  xs.foldl (fun s x ↦ [x.c0, x.c1, x.c2, x.c3].foldl H.observe s) s
+
+/-- Sample an extension element, lowest coefficient first. -/
+def smpExt (s : H.State) : EF × H.State :=
+  let a := H.sample s
+  let b := H.sample a.2
+  let c := H.sample b.2
+  let d := H.sample c.2
+  (⟨a.1, b.1, c.1, d.1⟩, d.2)
+
+/-- Sample the low `bits` bits of an element's canonical value. -/
+def smpBits (bits : Nat) (s : H.State) : Nat × H.State :=
+  (Montgomery.Native32.FastField.toNat (H.sample s).1 % 2 ^ bits, (H.sample s).2)
+
+/-- Check a grinding witness: observe it and sample `bits` bits, which must vanish. -/
+def chkWit (bits : Nat) (w : F) (s : H.State) : Bool × H.State :=
+  if bits = 0 then (true, s) else
+    let r := smpBits H bits (H.observe s w)
+    (r.1 == 0, r.2)
+
+theorem observe_eq (x : F) (s : H.State) : observe H x s = .ok ((), H.observe s x) := rfl
+
+theorem observeList_eq (xs : List F) (s : H.State) :
+    observeList H xs s = .ok ((), obsList H s xs) := rfl
+
+theorem observeExts_eq (xs : List EF) (s : H.State) :
+    observeExts H xs s = .ok ((), obsExts H s xs) := rfl
+
+theorem sample_eq (s : H.State) : sample H s = .ok (H.sample s) := rfl
+
+theorem sampleExt_eq (s : H.State) : sampleExt H s = .ok (smpExt H s) := by
+  unfold sampleExt
+  rw [bind_ok_of H (sample_eq H s), bind_ok_of H (sample_eq H _), bind_ok_of H (sample_eq H _),
+    bind_ok_of H (sample_eq H _)]
+  rfl
+
+theorem sampleBits_eq (bits : Nat) (s : H.State) :
+    sampleBits H bits s = .ok (smpBits H bits s) := by
+  unfold sampleBits
+  rw [bind_ok_of H (sample_eq H s)]
+  rfl
+
+theorem checkWitness_eq (bits : Nat) (w : F) (s : H.State) :
+    checkWitness H bits w s = .ok (chkWit H bits w s) := by
+  unfold checkWitness chkWit
+  by_cases hb : bits = 0
+  · simp only [hb, ↓reduceIte]; rfl
+  · simp only [hb, ↓reduceIte]
+    rw [bind_ok_of H (observe_eq H w s), bind_ok_of H (sampleBits_eq H bits _)]
+    rfl
+
+/-! ### FRI's verifier -/
+
+/-- The body of `verifyFri`'s loop over the commitments. -/
+def commitBody (P : Params) (cw : Digest × F) (betas : Array EF) :
+    M H (ForInStep (Array EF)) := do
+  observeList H cw.1.toList
+  ensure (← checkWitness H P.commitPowBits cw.2) "commit witness"
+  pure (ForInStep.yield (betas.push (← sampleExt H)))
+
+/-- The body of `verifyFri`'s loop over the queries. -/
+def queryBody (P : Params) (logMax : Nat) (alpha : EF) (rounds : List Round) (betas : List EF)
+    (commits : List Digest) (finalPoly : Array EF) (q : QueryProof) (_ : PUnit) :
+    M H (ForInStep PUnit) := do
+  let index ← sampleBits H logMax
+  let ro ← openInput H P logMax index alpha q.inputs.toList rounds
+  let e ← verifyQuery H P logMax index betas commits q.steps.toList ro
+  ensure (finalPoly.foldr (fun c acc ↦
+    acc * Ext.ofBase (powF (twoAdicGen logMax) (reverseBits e.2 logMax)) + c) 0 == e.1)
+    "final polynomial mismatch"
+  pure (ForInStep.yield PUnit.unit)
+
+/-- `verifyFri` with its loop bodies named. -/
+theorem verifyFri_eq (P : Params) (proof : FriProof) (rounds : List Round) :
+    verifyFri H P proof rounds = (do
+      let alpha ← sampleExt H
+      ensure (proof.queries.all fun q ↦ q.steps.size == proof.commits.size &&
+        q.steps.toList.map (·.logArity) == arities proof) "fold arities"
+      ensure (proof.commitWitnesses.size == proof.commits.size) "commit witnesses"
+      let betas ← forIn (proof.commits.toList.zip proof.commitWitnesses.toList) #[]
+        (commitBody H P)
+      ensure (proof.finalPoly.size == 2 ^ P.logFinalPolyLen) "final polynomial length"
+      observeExts H proof.finalPoly.toList
+      ensure (proof.queries.size == P.numQueries) "query count"
+      for a in arities proof do observe H (a : F)
+      ensure (← checkWitness H P.queryPowBits proof.queryWitness) "query witness"
+      let _ ← forIn (m := M H) proof.queries PUnit.unit
+        (queryBody H P ((arities proof).sum + P.logBlowup + P.logFinalPolyLen) alpha rounds
+          betas.toList proof.commits.toList proof.finalPoly)
+      pure ()) := rfl
+
+/-- The folding challenges the commit loop samples, and the challenger after it. -/
+def commitReplay (P : Params) : List (Digest × F) → H.State → List EF × H.State
+  | [], s => ([], s)
+  | cw :: cws, s =>
+    let b := smpExt H (chkWit H P.commitPowBits cw.2 (obsList H s cw.1.toList)).2
+    let r := commitReplay P cws b.2
+    (b.1 :: r.1, r.2)
+
+theorem commitLoop_ok (P : Params) :
+    ∀ (cws : List (Digest × F)) (betas : Array EF) (s : H.State) (r : Array EF × H.State),
+      forIn cws betas (commitBody H P) s = .ok r →
+        r.1.toList = betas.toList ++ (commitReplay H P cws s).1 ∧ r.2 = (commitReplay H P cws s).2
+  | [], betas, s, r, h => by
+    rw [List.forIn_nil] at h
+    rw [pure_eq_ok H h]
+    simp only [commitReplay, List.append_nil, and_self]
+  | cw :: cws, betas, s, r, h => by
+    obtain ⟨step, st', h1, h2⟩ := forIn_cons_eq_ok H _ _ _ _ _ _ h
+    unfold commitBody at h1
+    rw [bind_ok_of H (observeList_eq H _ s), bind_ok_of H (checkWitness_eq H _ _ _)] at h1
+    obtain ⟨-, h1⟩ := ensure_bind_eq_ok H h1
+    rw [bind_ok_of H (sampleExt_eq H _)] at h1
+    obtain ⟨hs1, hs2⟩ := Prod.mk.inj (pure_eq_ok H h1)
+    subst hs1 hs2
+    obtain ⟨hr1, hr2⟩ := commitLoop_ok P cws _ _ r h2
+    refine ⟨?_, hr2⟩
+    rw [hr1, Array.toList_push, List.append_assoc]
+    rfl
+
+/-- The challenger's states as it samples one element after another from `s`. -/
+def sampleStates (s : H.State) : Nat → H.State
+  | 0 => s
+  | j + 1 => (H.sample (sampleStates s j)).2
+
+/-- One FRI query at `index` passes the verifier's checks: its input batches open at `index`, its
+folds from the batched quotient `e0` pass, end at the final height, and match the final
+polynomial. -/
+def QueryOk (P : Params) (logMax : Nat) (alpha : EF) (rounds : List Round) (betas : List EF)
+    (commits : List Digest) (finalPoly : Array EF) (q : QueryProof) (index : Nat) : Prop :=
+  let e0 := (accTerms alpha (gen * powF (twoAdicGen logMax) (reverseBits index logMax))
+    (inputTerms (q.inputs.toList.zip rounds)) (1, 0)).2
+  let l := (betas.zip commits).zip q.steps.toList
+  let fin := foldState l (e0, index, logMax) l.length
+  q.inputs.toList.length = rounds.length ∧
+    (∀ x ∈ q.inputs.toList.zip rounds, BatchOk H logMax index x) ∧
+    betas.length = q.steps.toList.length ∧ commits.length = q.steps.toList.length ∧
+    (∀ j x, l[j]? = some x → StepOk H x (foldState l (e0, index, logMax) j)) ∧
+    fin.2.2 = P.logBlowup + P.logFinalPolyLen ∧
+    finalPoly.foldr (fun c acc ↦
+      acc * Ext.ofBase (powF (twoAdicGen logMax) (reverseBits fin.2.1 logMax)) + c) 0 = fin.1
+
+theorem queryBody_ok (P : Params) (logMax : Nat) (alpha : EF) (rounds : List Round)
+    (betas : List EF) (commits : List Digest) (finalPoly : Array EF)
+    (hb : logMax ≠ P.logBlowup) (hne : rounds ≠ [])
+    (hh : ∀ x ∈ rounds, ∀ dp ∈ x.2, dp.1.logSize + P.logBlowup = logMax) (q : QueryProof)
+    (st : H.State) (r : ForInStep PUnit × H.State)
+    (h : queryBody H P logMax alpha rounds betas commits finalPoly q () st = .ok r) :
+    QueryOk H P logMax alpha rounds betas commits finalPoly q (smpBits H logMax st).1 ∧
+      r = (.yield (), (smpBits H logMax st).2) := by
+  unfold queryBody at h
+  rw [bind_ok_of H (sampleBits_eq H _ _)] at h
+  obtain ⟨ro, st1, h1, h⟩ := bind_eq_ok H h
+  obtain ⟨hlen, hbatch, hro⟩ := openInput_ok H P logMax _ alpha _ rounds hb hne hh _ _ h1
+  obtain ⟨hro1, hst1⟩ := Prod.mk.inj hro
+  subst hro1 hst1
+  obtain ⟨e, st2, h2, h⟩ := bind_eq_ok H h
+  obtain ⟨hbl, hcl, hsteps, hfin, he⟩ := verifyQuery_ok H P logMax _ betas commits _ _ _ _ h2
+  obtain ⟨he1, hst2⟩ := Prod.mk.inj he
+  subst he1 hst2
+  obtain ⟨hfinal, h⟩ := ensure_bind_eq_ok H h
+  exact ⟨⟨hlen, hbatch, hbl, hcl, hsteps, hfin, beq_iff_eq.mp hfinal⟩, pure_eq_ok H h⟩
+
+theorem queryLoop_ok (P : Params) (logMax : Nat) (alpha : EF) (rounds : List Round)
+    (betas : List EF) (commits : List Digest) (finalPoly : Array EF)
+    (hb : logMax ≠ P.logBlowup) (hne : rounds ≠ [])
+    (hh : ∀ x ∈ rounds, ∀ dp ∈ x.2, dp.1.logSize + P.logBlowup = logMax) :
+    ∀ (qs : List QueryProof) (st : H.State) (r : PUnit × H.State),
+      forIn qs PUnit.unit (queryBody H P logMax alpha rounds betas commits finalPoly) st =
+        .ok r →
+      ∀ j (hj : j < qs.length), QueryOk H P logMax alpha rounds betas commits finalPoly qs[j]
+        (smpBits H logMax (sampleStates H st j)).1
+  | [], _, _, _, j, hj => absurd hj (Nat.not_lt_zero _)
+  | q :: qs, st, r, h, j, hj => by
+    obtain ⟨step, st', h1, h2⟩ := forIn_cons_eq_ok H _ _ _ _ _ _ h
+    obtain ⟨hok, hr⟩ := queryBody_ok H P logMax alpha rounds betas commits finalPoly hb hne hh
+      q st _ h1
+    obtain ⟨hs1, hs2⟩ := Prod.mk.inj hr
+    subst hs1 hs2
+    cases j with
+    | zero => exact hok
+    | succ j =>
+      have := queryLoop_ok P logMax alpha rounds betas commits finalPoly hb hne hh qs _ r h2 j
+        (by simp only [List.length_cons] at hj; omega)
+      have hs : ∀ k, sampleStates H (smpBits H logMax st).2 k = sampleStates H st (k + 1) := by
+        intro k
+        induction k with
+        | zero => rfl
+        | succ k ih => simp only [sampleStates, ih]
+      rw [hs] at this
+      exact this
+
+theorem observeLoop_ok (body : Nat → PUnit → M H (ForInStep PUnit))
+    (hbody : ∀ a s, body a () s = .ok (.yield (), H.observe s (a : F))) :
+    ∀ (l : List Nat) (s : H.State) (r : PUnit × H.State), forIn l () body s = .ok r →
+      r = ((), l.foldl (fun s (a : Nat) ↦ H.observe s (a : F)) s)
+  | [], s, r, h => by rw [List.forIn_nil] at h; exact pure_eq_ok H h
+  | a :: l, s, r, h => by
+    obtain ⟨step, st', h1, h2⟩ := forIn_cons_eq_ok H _ _ _ _ _ _ h
+    rw [hbody] at h1
+    obtain ⟨hs1, hs2⟩ := Prod.mk.inj (Except.ok.inj h1)
+    subst hs1 hs2
+    exact observeLoop_ok body hbody l _ r h2
+
+/-- **An accepting FRI verifier**, on batches whose matrices all have the height of the largest
+query domain, above the blowup: the proof's shape checks pass, the query grinding witness checks,
+and every query passes its checks at the index it samples. The challenges are those the
+challenger returns: the batching challenge, the folding challenges of the commit loop
+(`commitReplay`), and the query indices after the grinding check (`sampleStates`). -/
+theorem verifyFri_ok (P : Params) (proof : FriProof) (rounds : List Round)
+    (hb : (arities proof).sum + P.logBlowup + P.logFinalPolyLen ≠ P.logBlowup)
+    (hne : rounds ≠ [])
+    (hh : ∀ x ∈ rounds, ∀ dp ∈ x.2, dp.1.logSize + P.logBlowup =
+      (arities proof).sum + P.logBlowup + P.logFinalPolyLen)
+    (s : H.State) (r : Unit × H.State) (h : verifyFri H P proof rounds s = .ok r) :
+    let logMax := (arities proof).sum + P.logBlowup + P.logFinalPolyLen
+    let cr := commitReplay H P (proof.commits.toList.zip proof.commitWitnesses.toList)
+      (smpExt H s).2
+    let w := chkWit H P.queryPowBits proof.queryWitness ((arities proof).foldl
+      (fun s (a : Nat) ↦ H.observe s (a : F)) (obsExts H cr.2 proof.finalPoly.toList))
+    (∀ q ∈ proof.queries.toList, q.steps.size = proof.commits.size ∧
+      q.steps.toList.map (·.logArity) = arities proof) ∧
+    proof.commitWitnesses.size = proof.commits.size ∧
+    proof.finalPoly.size = 2 ^ P.logFinalPolyLen ∧ proof.queries.size = P.numQueries ∧
+    w.1 = true ∧
+    ∀ j (hj : j < proof.queries.size), QueryOk H P logMax (smpExt H s).1 rounds cr.1
+      proof.commits.toList proof.finalPoly proof.queries[j]
+      (smpBits H logMax (sampleStates H w.2 j)).1 := by
+  intro logMax cr w
+  rw [verifyFri_eq] at h
+  rw [bind_ok_of H (sampleExt_eq H s)] at h
+  obtain ⟨hall, h⟩ := ensure_bind_eq_ok H h
+  obtain ⟨hwit, h⟩ := ensure_bind_eq_ok H h
+  obtain ⟨betas, st1, h1, h⟩ := bind_eq_ok H h
+  obtain ⟨hb1, hb2⟩ := commitLoop_ok H P _ _ _ _ h1
+  simp only at hb2
+  subst hb2
+  obtain ⟨hfp, h⟩ := ensure_bind_eq_ok H h
+  rw [bind_ok_of H (observeExts_eq H _ _)] at h
+  obtain ⟨hqc, h⟩ := ensure_bind_eq_ok H h
+  obtain ⟨u, st2, h2, h⟩ := bind_eq_ok H h
+  have ho := observeLoop_ok H _ (fun _ _ ↦ rfl) _ _ _ h2
+  obtain ⟨-, hst2⟩ := Prod.mk.inj ho
+  subst hst2
+  rw [bind_ok_of H (checkWitness_eq H _ _ _)] at h
+  obtain ⟨hw, h⟩ := ensure_bind_eq_ok H h
+  obtain ⟨u', st3, h3, -⟩ := bind_eq_ok H h
+  rw [← Array.forIn_toList] at h3
+  have hq := queryLoop_ok H P logMax _ rounds _ _ _ hb hne hh _ _ _ h3
+  rw [Array.all_eq_true] at hall
+  refine ⟨fun q hq' ↦ ?_, beq_iff_eq.mp hwit, beq_iff_eq.mp hfp, beq_iff_eq.mp hqc, hw,
+    fun j hj ↦ ?_⟩
+  · obtain ⟨i, hi, rfl⟩ := List.getElem_of_mem hq'
+    have := hall i (by simpa using hi)
+    simp only [Bool.and_eq_true, beq_iff_eq] at this
+    simp only [Array.getElem_toList]
+    exact this
+  · have := hq j (by simpa using hj)
+    simp only [Array.getElem_toList] at this
+    rw [show betas.toList = cr.1 by rw [hb1]; rfl] at this
+    exact this
+
+/-! ### The STARK verifier -/
+
+theorem forIn_unit_state {α : Type} (body : α → PUnit → M H (ForInStep PUnit))
+    (f : H.State → α → H.State) (hbody : ∀ a s, body a () s = .ok (.yield (), f s a)) :
+    ∀ (l : List α) (s : H.State), forIn l () body s = .ok ((), l.foldl f s)
+  | [], _ => rfl
+  | a :: l, s => by
+    rw [List.forIn_cons, bind_ok_of H (hbody a s)]
+    exact forIn_unit_state body f hbody l _
+
+/-- The challenger after observing every opened value of `rounds`, in `verifyPcs`'s order. -/
+def obsOpened (s : H.State) (rounds : List Round) : H.State :=
+  rounds.foldl (fun s r ↦ r.2.foldl (fun s m ↦ m.2.foldl (fun s p ↦ obsExts H s p.2) s) s) s
+
+theorem verifyPcs_eq (P : Params) (rounds : List Round) (proof : FriProof) (s : H.State) :
+    verifyPcs H P rounds proof s = verifyFri H P proof rounds (obsOpened H s rounds) := by
+  unfold verifyPcs
+  refine bind_ok_of H (forIn_unit_state H _ _ (fun r s ↦ ?_) rounds s)
+  obtain ⟨c, mats⟩ := r
+  refine (bind_ok_of H (forIn_unit_state H _ _ (fun m s ↦ ?_) mats s)).trans rfl
+  obtain ⟨d, pts⟩ := m
+  refine (bind_ok_of H (forIn_unit_state H _ _ (fun p s ↦ ?_) pts s)).trans rfl
+  obtain ⟨z, ys⟩ := p
+  exact (bind_ok_of H (observeExts_eq H ys s)).trans rfl
+
+/-- The challenger after the instance, the trace commitment and the public values. -/
+def stateAlpha (proof : Proof) (pis : List F) : H.State :=
+  obsList H (obsList H (H.observe (H.observe (H.observe H.init (proof.degreeBits : F))
+    (proof.degreeBits : F)) 0) proof.traceCommit.toList) pis
+
+/-- The constraint-folding challenge `α`. -/
+def alphaOf (proof : Proof) (pis : List F) : EF := (smpExt H (stateAlpha H proof pis)).1
+
+/-- The challenger after the quotient commitment. -/
+def stateZeta (proof : Proof) (pis : List F) : H.State :=
+  obsList H (smpExt H (stateAlpha H proof pis)).2 proof.quotientCommit.toList
+
+/-- The out-of-domain point `ζ`. -/
+def zetaOf (proof : Proof) (pis : List F) : EF := (smpExt H (stateZeta H proof pis)).1
+
+/-- The challenger when FRI starts, after the opened values. -/
+def stateFri (proof : Proof) (pis : List F) : H.State :=
+  obsOpened H (smpExt H (stateZeta H proof pis)).2 (Stark.vRounds proof (zetaOf H proof pis))
+
+theorem except_bind_ok {α : Type} (R : ExceptT String Id α) (p : α → Bool) (msg : String)
+    (h : (R >>= fun x ↦ if p x = true then pure () else throw msg).run = .ok ()) :
+    ∃ x, R = .ok x ∧ p x = true := by
+  revert h
+  match R with
+  | .ok x =>
+    intro h
+    refine ⟨x, rfl, ?_⟩
+    by_contra hp
+    simp only [Bool.not_eq_true] at hp
+    change (if p x = true then pure () else throw msg : ExceptT String Id Unit).run = _ at h
+    rw [hp] at h
+    exact absurd h (by intro h'; cases h')
+  | .error e => intro h; exact absurd h (by intro h'; cases h')
+
+/-- **An accepting STARK verifier** on pure primitives: the proof's shape and fold arities check,
+FRI accepts from the challenger after the opened values, and the constraints hold at `ζ` with the
+challenger's `α` and `ζ`. -/
+theorem verifyWith_ok (P : Params) (A : Air) (proof : Proof) (pis : List F)
+    (h : verifyWith H P A proof pis = .ok ()) :
+    let o := proof.opened
+    o.traceLocal.size = A.width ∧ o.traceNext.size = A.width ∧
+      o.quotientChunks.size = 2 ^ A.logQuotientChunks ∧ (∀ ch ∈ o.quotientChunks, ch.size = 4) ∧
+      arities proof.fri = foldArities P.maxLogArity (proof.degreeBits - P.logFinalPolyLen) ∧
+      (∃ st, verifyFri H P proof.fri (Stark.vRounds proof (zetaOf H proof pis))
+        (stateFri H proof pis) = .ok ((), st)) ∧
+      checkConstraints A pis o proof.degreeBits (zetaOf H proof pis) (alphaOf H proof pis)
+        (recompose (chunkDomains proof.degreeBits A.logQuotientChunks) o.quotientChunks.toList
+          (zetaOf H proof pis)) = true := by
+  intro o
+  unfold verifyWith at h
+  dsimp only at h
+  split at h
+  · split at h
+    · rename_i h1 h2
+      obtain ⟨x, hx, hc⟩ := except_bind_ok _ _ _ h
+      unfold StateT.run at hx
+      rw [bind_ok_of H (observe_eq H _ _), bind_ok_of H (observe_eq H _ _),
+        bind_ok_of H (observe_eq H _ _), bind_ok_of H (observeList_eq H _ _),
+        bind_ok_of H (observeList_eq H _ _), bind_ok_of H (sampleExt_eq H _),
+        bind_ok_of H (observeList_eq H _ _), bind_ok_of H (sampleExt_eq H _)] at hx
+      obtain ⟨u, st, h3, h4⟩ := bind_eq_ok H hx
+      rw [verifyPcs_eq] at h3
+      have hx' := pure_eq_ok H h4
+      subst hx'
+      simp only [Bool.and_eq_true, beq_iff_eq, Array.all_eq_true'] at h1
+      obtain ⟨⟨⟨h1a, h1b⟩, h1c⟩, h1d⟩ := h1
+      exact ⟨h1a, h1b, h1c, h1d, beq_iff_eq.mp h2, ⟨st, h3⟩, hc⟩
+    · exact absurd h (by intro h'; cases h')
+  · exact absurd h (by intro h'; cases h')
 
 end CompStark.Ni
