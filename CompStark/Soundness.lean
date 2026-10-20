@@ -40,7 +40,7 @@ prover accepted with higher probability has committed to a trace within `δ'` of
 satisfies the AIR. -/
 theorem knowledgeSoundness (S : Setup) (publicValues : List F) (prover : Prover S)
     (δ δ' : NNReal) (hδ' : (δ' : ℝ) < 1 - S.rate) :
-    (∀ trace ∈ closeTraces S δ' prover, ¬ S.air.Satisfied S.logN trace publicValues) →
+    (∀ trace ∈ closeTraces S δ' prover.trace, ¬ S.air.Satisfied S.logN trace publicValues) →
       acceptance publicValues prover ≤ knowledgeError S δ δ' :=
   knowledgeSoundness_of (friStep S) (friAtMostOne S) (batchingStep S) (decodingStep S)
     (algebraStep S) publicValues prover δ δ' hδ'

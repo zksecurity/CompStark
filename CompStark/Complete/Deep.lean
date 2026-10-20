@@ -630,7 +630,7 @@ theorem openInput_honest_of (P : Params) (logMax index : Nat) (alpha : EF)
       ((Committed.ofMats ms).openAt i).values = (ms.map fun m ↦ rowOf m i).toArray)
     (hmax : ∀ (ms : List Mat) (h : Nat), ms ≠ [] → (∀ m ∈ ms, m.height = h) →
       (Committed.ofMats ms).maxHeight = h) :
-    openInput P logMax index alpha
+    openInput poseidon2 P logMax index alpha
       (rounds.map fun r ↦ r.1.openAt (index >>> (logMax - Nat.log2 r.1.maxHeight)))
       (rounds.map fun r ↦ (r.1.root, r.2.map fun x ↦
         ((⟨1, Nat.log2 x.1.height - P.logBlowup⟩ : Domain), x.2.map fun y ↦ (y.1, y.2.toList)))) =
@@ -689,7 +689,7 @@ theorem openInput_honest_of (P : Params) (logMax index : Nat) (alpha : EF)
     have hok := Deep.foldl_reduceStep_ok P.logBlowup alpha its (fun x hx ↦ ⟨h, hits x hx⟩) red
       hred
     rw [hheights, hmaxh, hmx]
-    simp only [Nat.log2_two_pow, hvb, ite_true, pure_bind,
+    simp only [Nat.log2_two_pow, Fri.checkOpening_eq, pure_bind, hvb, ite_true, pure_bind,
       hvalues _ h (fun m hm ↦ (hms m hm).1), List.size_toArray, List.length_map,
       beq_self_eq_true, List.toList_toArray, List.map_map, List.zip_map']
     rw [Deep.forIn_map_eq _ (Deep.atQuery alpha logMax index) (reduceStep alpha)
@@ -754,7 +754,7 @@ theorem openInput_honest (P : Params) (logMax index : Nat) (alpha : EF)
     (hidx : index < 2 ^ logMax)
     (hrounds : ∀ r ∈ rounds, r.2 ≠ [] ∧ r.1 = Committed.ofMats (r.2.map (·.1)) ∧
       ∃ h ≤ logMax, ∀ x ∈ r.2, Deep.HonestItem P.logBlowup h x) :
-    openInput P logMax index alpha
+    openInput poseidon2 P logMax index alpha
       (rounds.map fun r ↦ r.1.openAt (index >>> (logMax - Nat.log2 r.1.maxHeight)))
       (rounds.map fun r ↦ (r.1.root, r.2.map fun x ↦
         ((⟨1, Nat.log2 x.1.height - P.logBlowup⟩ : Domain), x.2.map fun y ↦ (y.1, y.2.toList)))) =
