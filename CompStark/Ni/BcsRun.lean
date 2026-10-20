@@ -243,4 +243,272 @@ theorem verifyQuery_ok (P : Params) (logMax index : Nat) (betas : List EF) (comm
   simp only [Bool.and_eq_true, beq_iff_eq] at hlen
   exact ⟨hlen.1, hlen.2, hl, beq_iff_eq.mp hfin, pure_eq_ok H h5⟩
 
+/-! ### A query's input openings -/
+
+/-- One opened value's term of the batched quotient: `acc + ap (pz - px) q`, and the next power
+of `α`. -/
+def ptBody (alpha q : EF) (pp : F × EF) (s : EF × EF) : EF × EF :=
+  (s.1 * alpha, s.2 + s.1 * (pp.2 - Ext.ofBase pp.1) * q)
+
+/-- The body of `openInput`'s loop over a matrix's opening points. -/
+def pointsBody (alpha : EF) (row : Array F) (x : F) (zy : EF × List EF) (s : EF × EF) :
+    M H (ForInStep (EF × EF)) := do
+  ensure (zy.2.length == row.size) "opened width"
+  let s ← forIn (row.toList.zip zy.2) s fun pp s ↦
+    pure (ForInStep.yield (ptBody alpha (zy.1 - Ext.ofBase x)⁻¹ pp s))
+  pure (ForInStep.yield (s.1, s.2))
+
+/-- The body of `openInput`'s loop over a batch's matrices. -/
+def rowsBody (P : Params) (logMax index : Nat) (alpha : EF)
+    (x : Array F × Domain × List (EF × List EF)) (ro : List (Nat × EF × EF)) :
+    M H (ForInStep (List (Nat × EF × EF))) := do
+  let logH := x.2.1.logSize + P.logBlowup
+  let xpt := gen * powF (twoAdicGen logH) (reverseBits (index >>> (logMax - logH)) logH)
+  let s ← forIn x.2.2 ((ro.lookup logH).getD (1, 0)) (pointsBody H alpha x.1 xpt)
+  pure (ForInStep.yield ((logH, s.1, s.2) :: ro.filter (·.1 != logH)))
+
+/-- The body of `openInput`'s loop over the batches. -/
+def batchBody (P : Params) (logMax index : Nat) (alpha : EF) (x : BatchOpening × Round)
+    (ro : List (Nat × EF × EF)) : M H (ForInStep (List (Nat × EF × EF))) := do
+  let heights := x.2.2.map fun (d, _) ↦ 2 ^ (d.logSize + P.logBlowup)
+  let reduced := match heights.max? with
+    | some h => index >>> (logMax - Nat.log2 h)
+    | none => 0
+  ensure (← checkOpening H x.2.1 heights reduced (x.1.values.toList.map (·.toList))
+    x.1.path.toList) "input opening"
+  ensure (x.1.values.size == x.2.2.length) "input rows"
+  let ro ← forIn (x.1.values.toList.zip x.2.2) ro (rowsBody H P logMax index alpha)
+  match ro.lookup P.logBlowup with
+  | some (_, acc) => do
+    ensure (acc == 0) "nonzero quotient at the blowup height"
+    pure (ForInStep.yield ro)
+  | _ => pure (ForInStep.yield ro)
+
+/-- `openInput` with its loop bodies named. -/
+theorem openInput_eq (P : Params) (logMax index : Nat) (alpha : EF) (inputs : List BatchOpening)
+    (rounds : List Round) :
+    openInput H P logMax index alpha inputs rounds = (do
+      ensure (inputs.length == rounds.length) "input batches"
+      let ro ← forIn (inputs.zip rounds) [] (batchBody H P logMax index alpha)
+      pure ((ro.mergeSort fun a b ↦ b.1 ≤ a.1).map fun (h, _, acc) ↦ (h, acc))) := rfl
+
+/-- The opened values of a batch's matrices, each with its point, in `openInput`'s order. -/
+def batchTerms (rows : List (Array F × Domain × List (EF × List EF))) : List ((F × EF) × EF) :=
+  rows.flatMap fun x ↦ x.2.2.flatMap fun zy ↦ (x.1.toList.zip zy.2).map fun pp ↦ (pp, zy.1)
+
+/-- The batched quotient's running power of `α` and sum over opened values at the point `x`. -/
+def accTerms (alpha : EF) (x : F) (terms : List ((F × EF) × EF)) (s : EF × EF) : EF × EF :=
+  terms.foldl (fun s t ↦ ptBody alpha (t.2 - Ext.ofBase x)⁻¹ t.1 s) s
+
+theorem pointsLoop_ok (alpha : EF) (row : Array F) (x : F) :
+    ∀ (pts : List (EF × List EF)) (s : EF × EF) (st : H.State) (r : (EF × EF) × H.State),
+      forIn pts s (pointsBody H alpha row x) st = .ok r →
+        (∀ zy ∈ pts, zy.2.length = row.size) ∧
+          r = (accTerms alpha x (pts.flatMap fun zy ↦
+            (row.toList.zip zy.2).map fun pp ↦ (pp, zy.1)) s, st)
+  | [], s, st, r, h => by
+    rw [List.forIn_nil] at h
+    exact ⟨fun _ h ↦ absurd h List.not_mem_nil, by rw [pure_eq_ok H h]; rfl⟩
+  | zy :: pts, s, st, r, h => by
+    obtain ⟨step, st', h1, h2⟩ := forIn_cons_eq_ok H _ _ _ _ _ _ h
+    unfold pointsBody at h1
+    obtain ⟨hw, h1⟩ := ensure_bind_eq_ok H h1
+    obtain ⟨s', st'', h3, h4⟩ := bind_eq_ok H h1
+    rw [List.forIn_pure_yield_eq_foldl] at h3
+    obtain ⟨hs1, hs2⟩ := Prod.mk.inj (pure_eq_ok H h3)
+    subst hs1 hs2
+    obtain ⟨hs3, hs4⟩ := Prod.mk.inj (pure_eq_ok H h4)
+    subst hs3 hs4
+    obtain ⟨hl, hr⟩ := pointsLoop_ok alpha row x pts _ _ r h2
+    refine ⟨fun zy' hz ↦ ?_, ?_⟩
+    · rcases List.mem_cons.mp hz with rfl | hz
+      · exact beq_iff_eq.mp hw
+      · exact hl zy' hz
+    · rw [hr, List.flatMap_cons, accTerms, accTerms, List.foldl_append, List.foldl_map]
+
+/-- `openInput`'s state for a single height `logMax`: the lookup at `logMax` gives `s`, and nothing
+else is pending. -/
+def RoAt (logMax : Nat) (ro : List (Nat × EF × EF)) (s : EF × EF) : Prop :=
+  (ro.lookup logMax).getD (1, 0) = s ∧ ro.filter (·.1 != logMax) = []
+
+theorem rowsLoop_ok (P : Params) (logMax index : Nat) (alpha : EF) :
+    ∀ (rows : List (Array F × Domain × List (EF × List EF))) (ro : List (Nat × EF × EF))
+      (s : EF × EF) (st : H.State) (r : List (Nat × EF × EF) × H.State),
+      (∀ x ∈ rows, x.2.1.logSize + P.logBlowup = logMax) → RoAt logMax ro s →
+      forIn rows ro (rowsBody H P logMax index alpha) st = .ok r →
+        (∀ x ∈ rows, ∀ zy ∈ x.2.2, zy.2.length = x.1.size) ∧ r.2 = st ∧
+          RoAt logMax r.1 (accTerms alpha
+            (gen * powF (twoAdicGen logMax) (reverseBits index logMax)) (batchTerms rows) s) ∧
+          (rows ≠ [] → r.1 = [(logMax, accTerms alpha
+            (gen * powF (twoAdicGen logMax) (reverseBits index logMax)) (batchTerms rows) s)])
+  | [], ro, s, st, r, _, hro, h => by
+    rw [List.forIn_nil] at h
+    rw [pure_eq_ok H h]
+    exact ⟨fun _ h ↦ absurd h List.not_mem_nil, rfl, hro, fun h ↦ absurd rfl h⟩
+  | x :: rows, ro, s, st, r, hh, hro, h => by
+    obtain ⟨step, st', h1, h2⟩ := forIn_cons_eq_ok H _ _ _ _ _ _ h
+    have hx := hh x List.mem_cons_self
+    unfold rowsBody at h1
+    obtain ⟨s', st'', h3, h4⟩ := bind_eq_ok H h1
+    simp only [hx, Nat.sub_self, Nat.shiftRight_zero, hro.1] at h3 h4
+    obtain ⟨hw, hr3⟩ := pointsLoop_ok H alpha x.1 _ x.2.2 s st _ h3
+    obtain ⟨hs1, hs2⟩ := Prod.mk.inj hr3
+    subst hs1 hs2
+    obtain ⟨hs3, hs4⟩ := Prod.mk.inj (pure_eq_ok H h4)
+    subst hs3 hs4
+    set A := accTerms alpha (gen * powF (twoAdicGen logMax) (reverseBits index logMax))
+      (x.2.2.flatMap fun zy ↦ (x.1.toList.zip zy.2).map fun pp ↦ (pp, zy.1)) s with hA
+    have hro' : RoAt logMax ((logMax, A.1, A.2) :: ro.filter (·.1 != logMax)) A := by
+      refine ⟨?_, ?_⟩
+      · simp only [List.lookup_cons, beq_self_eq_true, Option.getD_some]
+      · rw [hro.2]; simp only [List.filter_cons, bne_self_eq_false, Bool.false_eq_true,
+          ↓reduceIte, List.filter_nil]
+    obtain ⟨hl, hst, hro'', hne⟩ := rowsLoop_ok P logMax index alpha rows _ _ _ r
+      (fun y hy ↦ hh y (List.mem_cons_of_mem _ hy)) hro' h2
+    have hterms : accTerms alpha (gen * powF (twoAdicGen logMax) (reverseBits index logMax))
+        (batchTerms (x :: rows)) s = accTerms alpha (gen * powF (twoAdicGen logMax)
+          (reverseBits index logMax)) (batchTerms rows) A := by
+      rw [batchTerms, List.flatMap_cons, accTerms, List.foldl_append]; rfl
+    refine ⟨fun y hy ↦ ?_, hst, by rw [hterms]; exact hro'', fun _ ↦ ?_⟩
+    · rcases List.mem_cons.mp hy with rfl | hy
+      · exact hw
+      · exact hl y hy
+    · rw [hterms]
+      cases rows with
+      | nil =>
+        dsimp only at h2
+        rw [List.forIn_nil] at h2
+        rw [pure_eq_ok H h2, hro.2]
+        rfl
+      | cons y ys => exact hne (List.cons_ne_nil _ _)
+
+theorem verifyBatchH_nil (commit : Digest) (index : Nat) (values : List (List F))
+    (path : List Digest) : verifyBatchH H commit [] index values path = false := by
+  simp only [verifyBatchH, Merkle.verifyBatch, Merkle.heightGroups, List.length_nil,
+    List.range_zero, List.mergeSort_nil, List.foldr_nil]
+
+/-- One batch of a query's input openings passes its checks at `index`: its matrices, all of
+height `2 ^ logMax`, open at `index` against the batch's commitment, one row per matrix, and every
+opened point has a value per column. -/
+def BatchOk (logMax index : Nat) (x : BatchOpening × Round) : Prop :=
+  x.2.2 ≠ [] ∧
+    verifyBatchH H x.2.1 (List.replicate x.2.2.length (2 ^ logMax)) index
+      (x.1.values.toList.map (·.toList)) x.1.path.toList = true ∧
+    x.1.values.size = x.2.2.length ∧
+    ∀ y ∈ x.1.values.toList.zip x.2.2, ∀ zy ∈ y.2.2, zy.2.length = y.1.size
+
+/-- The opened values of a query's batches, in `openInput`'s order. -/
+def inputTerms (xs : List (BatchOpening × Round)) : List ((F × EF) × EF) :=
+  xs.flatMap fun x ↦ batchTerms (x.1.values.toList.zip x.2.2)
+
+theorem batchLoop_ok (P : Params) (logMax index : Nat) (alpha : EF)
+    (hb : logMax ≠ P.logBlowup) :
+    ∀ (xs : List (BatchOpening × Round)) (ro : List (Nat × EF × EF)) (s : EF × EF)
+      (st : H.State) (r : List (Nat × EF × EF) × H.State),
+      (∀ x ∈ xs, ∀ dp ∈ x.2.2, dp.1.logSize + P.logBlowup = logMax) → RoAt logMax ro s →
+      forIn xs ro (batchBody H P logMax index alpha) st = .ok r →
+        (∀ x ∈ xs, BatchOk H logMax index x) ∧ r.2 = st ∧
+          RoAt logMax r.1 (accTerms alpha
+            (gen * powF (twoAdicGen logMax) (reverseBits index logMax)) (inputTerms xs) s) ∧
+          (xs ≠ [] → r.1 = [(logMax, accTerms alpha
+            (gen * powF (twoAdicGen logMax) (reverseBits index logMax)) (inputTerms xs) s)])
+  | [], ro, s, st, r, _, hro, h => by
+    rw [List.forIn_nil] at h
+    rw [pure_eq_ok H h]
+    exact ⟨fun _ h ↦ absurd h List.not_mem_nil, rfl, hro, fun h ↦ absurd rfl h⟩
+  | x :: xs, ro, s, st, r, hh, hro, h => by
+    obtain ⟨step, st', h1, h2⟩ := forIn_cons_eq_ok H _ _ _ _ _ _ h
+    have hx := hh x List.mem_cons_self
+    have hheights : (x.2.2.map fun (d, _) ↦ 2 ^ (d.logSize + P.logBlowup)) =
+        List.replicate x.2.2.length (2 ^ logMax) := by
+      rw [List.eq_replicate_iff, List.length_map]
+      refine ⟨rfl, fun b hb ↦ ?_⟩
+      obtain ⟨⟨d, q⟩, hdp, rfl⟩ := List.mem_map.mp hb
+      have := hx (d, q) hdp
+      dsimp only at this ⊢
+      rw [this]
+    unfold batchBody at h1
+    rw [hheights] at h1
+    obtain ⟨ok, st1, h3, h1⟩ := bind_eq_ok H h1
+    rw [checkOpening_eq] at h3
+    obtain ⟨hok, hst1⟩ := Prod.mk.inj (Except.ok.inj h3)
+    subst hst1
+    obtain ⟨hv, h1⟩ := ensure_bind_eq_ok H h1
+    have hne : x.2.2 ≠ [] := by
+      intro he
+      rw [he, List.length_nil, List.replicate_zero, List.max?_nil] at hok
+      rw [← hok, verifyBatchH_nil] at hv
+      exact Bool.false_ne_true hv
+    rw [List.max?_replicate_of_pos (List.length_pos_of_ne_nil hne)] at hok
+    dsimp only at hok
+    rw [Nat.log2_two_pow, Nat.sub_self, Nat.shiftRight_zero] at hok
+    obtain ⟨hsize, h1⟩ := ensure_bind_eq_ok H h1
+    obtain ⟨ro', st2, h4, h5⟩ := bind_eq_ok H h1
+    obtain ⟨hw, hst2, hro', hne'⟩ := rowsLoop_ok H P logMax index alpha _ ro s st _
+      (fun y hy ↦ hx y.2 (List.of_mem_zip hy).2) hro h4
+    simp only at hst2
+    subst hst2
+    have hvne : x.1.values.toList.zip x.2.2 ≠ [] := by
+      intro he
+      rw [List.zip_eq_nil_iff] at he
+      rcases he with he | he
+      · have := beq_iff_eq.mp hsize
+        rw [← Array.length_toList, he] at this
+        exact hne (List.length_eq_zero_iff.mp this.symm)
+      · exact hne he
+    have hro1 := hne' hvne
+    simp only at hro1
+    rw [hro1] at h5
+    simp only [List.lookup_cons, show (P.logBlowup == logMax) = false from
+      beq_false_of_ne (Ne.symm hb), List.lookup_nil] at h5
+    obtain ⟨hs1, hs2⟩ := Prod.mk.inj (pure_eq_ok H h5)
+    subst hs1 hs2
+    have hterms : inputTerms (x :: xs) =
+        batchTerms (x.1.values.toList.zip x.2.2) ++ inputTerms xs := List.flatMap_cons
+    obtain ⟨hl, hst, hro'', hne''⟩ := batchLoop_ok P logMax index alpha hb xs _ _ _ r
+      (fun y hy ↦ hh y (List.mem_cons_of_mem _ hy)) (by rw [hro1] at hro'; exact hro') h2
+    refine ⟨fun y hy ↦ ?_, hst, ?_, fun _ ↦ ?_⟩
+    · rcases List.mem_cons.mp hy with rfl | hy
+      · exact ⟨hne, by rw [hok]; exact hv, beq_iff_eq.mp hsize, hw⟩
+      · exact hl y hy
+    · rw [hterms, accTerms, List.foldl_append]; exact hro''
+    · rw [hterms, accTerms, List.foldl_append]
+      cases xs with
+      | nil =>
+        dsimp only at h2
+        rw [List.forIn_nil] at h2
+        rw [pure_eq_ok H h2]
+        rfl
+      | cons y ys => exact hne'' (List.cons_ne_nil _ _)
+
+/-- **An accepting `openInput`** on batches whose matrices all have height `2 ^ logMax`, above the
+blowup: every batch passes its checks at `index`, and the result is the single reduced opening at
+`logMax`, the batched quotient over all opened values at the query's point. -/
+theorem openInput_ok (P : Params) (logMax index : Nat) (alpha : EF) (inputs : List BatchOpening)
+    (rounds : List Round) (hb : logMax ≠ P.logBlowup) (hne : rounds ≠ [])
+    (hh : ∀ x ∈ rounds, ∀ dp ∈ x.2, dp.1.logSize + P.logBlowup = logMax) (st : H.State)
+    (r : List (Nat × EF) × H.State)
+    (h : openInput H P logMax index alpha inputs rounds st = .ok r) :
+    inputs.length = rounds.length ∧ (∀ x ∈ inputs.zip rounds, BatchOk H logMax index x) ∧
+      r = ([(logMax, (accTerms alpha (gen * powF (twoAdicGen logMax) (reverseBits index logMax))
+        (inputTerms (inputs.zip rounds)) (1, 0)).2)], st) := by
+  rw [openInput_eq] at h
+  obtain ⟨hlen, h⟩ := ensure_bind_eq_ok H h
+  obtain ⟨ro, st', h1, h2⟩ := bind_eq_ok H h
+  have hlen' := beq_iff_eq.mp hlen
+  have hzne : inputs.zip rounds ≠ [] := by
+    intro he
+    rw [List.zip_eq_nil_iff] at he
+    rcases he with he | he
+    · rw [he, List.length_nil] at hlen'; exact hne (List.length_eq_zero_iff.mp hlen'.symm)
+    · exact hne he
+  obtain ⟨hok, hst, -, hro⟩ := batchLoop_ok H P logMax index alpha hb _ [] (1, 0) st _
+    (fun x hx ↦ hh x.2 (List.of_mem_zip hx).2) ⟨rfl, rfl⟩ h1
+  simp only at hst hro
+  subst hst
+  rw [hro hzne] at h2
+  refine ⟨hlen', hok, ?_⟩
+  rw [pure_eq_ok H h2, List.mergeSort_singleton]
+  rfl
+
 end CompStark.Ni
