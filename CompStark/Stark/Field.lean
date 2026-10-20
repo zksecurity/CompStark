@@ -4,19 +4,18 @@ Released under Apache 2.0 license as described in the file LICENSE.
 -/
 module
 
-public import CompPoly.Fields.KoalaBear.FastExt4
+public import CompStark.Stark.Challenge
 
 /-! # Field helpers of the STARK
 
 KoalaBear's multiplicative generator `3` and two-adic generators as Plonky3 chooses them,
-exponentiation, the extension field's operations with base elements, and bit reversal.
+exponentiation, and bit reversal.
 -/
 
 @[expose] public section
 namespace CompStark.Stark
 
 local notation "F" => KoalaBear.Fast.Field
-local notation "EF" => KoalaBear.Fast.Ext4
 
 /-- Plonky3's multiplicative generator of KoalaBear. -/
 def gen : F := 3
@@ -50,41 +49,6 @@ def powF (x : F) : Nat → F
     if (n + 1) % 2 = 1 then x * y else y
 termination_by n => n
 decreasing_by omega
-
-namespace Ext
-
-/-- An extension element of a base element. -/
-abbrev ofBase (x : F) : EF := KoalaBear.Fast.Ext4.ofBase x
-
-/-- `x ^ n` by squaring. -/
-def pow (x : EF) : Nat → EF
-  | 0 => 1
-  | n + 1 =>
-    let y := pow (x * x) ((n + 1) / 2)
-    if (n + 1) % 2 = 1 then x * y else y
-termination_by n => n
-decreasing_by omega
-
-/-- `x ^ (2 ^ k)`. -/
-def powTwo (x : EF) : Nat → EF
-  | 0 => x
-  | k + 1 => powTwo (x * x) k
-
-/-- `X ^ e`, the basis element `e`. -/
-def basis (e : Nat) : EF :=
-  match e with
-  | 0 => ⟨1, 0, 0, 0⟩
-  | 1 => ⟨0, 1, 0, 0⟩
-  | 2 => ⟨0, 0, 1, 0⟩
-  | _ => ⟨0, 0, 0, 1⟩
-
-/-- `z` is outside the base field: no `z - x` for a base `x` vanishes. -/
-def OutsideBase (z : EF) : Prop := z.c1 ≠ 0 ∨ z.c2 ≠ 0 ∨ z.c3 ≠ 0
-
-/-- The base coefficients, lowest first. -/
-def coeffs (x : EF) : List F := [x.c0, x.c1, x.c2, x.c3]
-
-end Ext
 
 /-- `acc` followed by the low `bits` bits of `i`, reversed. -/
 def reverseBitsGo : Nat → Nat → Nat → Nat

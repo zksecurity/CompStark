@@ -31,26 +31,6 @@ noncomputable def openingsOf (S : Iop.Setup) (o : OpenedValues) : Openings S whe
   traceNext j := Ext4.toSpec (o.traceNext.getD j 0)
   quotientAt c e := Ext4.toSpec ((o.quotientChunks.getD c #[]).getD e 0)
 
-theorem toSpec_basis_one : Ext4.toSpec (Ext.basis 1) = CompPoly.Extension.Ext.gen := by
-  unfold KoalaBear.Fast.Ext4.toSpec CompPoly.Extension.Ext.gen
-  congr 1
-  funext i
-  fin_cases i <;>
-    simp [KoalaBear.Fast.Ext4.coord, Ext.basis, toField_zero, toField_one]
-
-/-- The verifier's basis of the extension is the powers of the spec field's generator. -/
-theorem toSpec_basis (e : Nat) (he : e < 4) :
-    Ext4.toSpec (Ext.basis e) = CompPoly.Extension.Ext.gen ^ e := by
-  have h0 : Ext.basis 0 = 1 := by decide
-  have h2 : Ext.basis 2 = Ext.basis 1 * Ext.basis 1 := by decide
-  have h3 : Ext.basis 3 = Ext.basis 1 * Ext.basis 2 := by decide
-  interval_cases e
-  · rw [h0, Ext4.toSpec_one, pow_zero]
-  · rw [toSpec_basis_one, pow_one]
-  · rw [h2, Ext4.toSpec_mul, toSpec_basis_one, sq]
-  · rw [h3, h2, Ext4.toSpec_mul, Ext4.toSpec_mul, toSpec_basis_one, pow_succ, sq]
-    ring
-
 /-- A product over the chunks other than `c`, as a product over the range. -/
 theorem prod_fin_ne {M : Type*} [CommMonoid M] (n : Nat) (f : Nat → M) (c : Fin n) :
     ∏ d : Fin n with d ≠ c, f d.val = ∏ d ∈ (Finset.range n).erase c.val, f d := by
@@ -78,7 +58,7 @@ theorem chunkAt_openingsOf (S : Iop.Setup) (o : OpenedValues) (c : Fin S.chunks)
     chunkAt (openingsOf S o) c = Ext4.toSpec (chunkInner (o.quotientChunks.getD c #[])) := by
   rw [toSpec_chunkInner, chunkAt, ← Fin.sum_univ_eq_sum_range]
   refine Finset.sum_congr rfl fun e _ ↦ ?_
-  rw [toSpec_basis e e.isLt]
+  rw [← KoalaBear.toSpec_ext4, Ext.toSpec_basis e.isLt]
   rfl
 
 /-- **The constraint check.** If the verifier's check at `ζ` passes on opened values with
@@ -116,15 +96,16 @@ theorem constraintsHoldAt_of_check (S : Iop.Setup) (pis : List F) (o : OpenedVal
       S.air.constraints.map fun c ↦ c.eval (envAt S pis (Ext4.toSpec zeta) (openingsOf S o)) := by
     refine List.map_congr_left fun c hc ↦ ?_
     have hlast : Ext4.toSpec (Ext.ofBase (twoAdicGen S.logN)⁻¹) = (rootOfUnity S.logN)⁻¹ := by
-      rw [Ext4.toSpec_ofBase, toField_inv, ← CompPoly.Extension.Ext.algebraMap_eq_ofBase, map_inv₀]
+      rw [KoalaBear.toSpec_ofBase_ext4, toField_inv, ← CompPoly.Extension.Ext.algebraMap_eq_ofBase,
+        map_inv₀]
       rfl
     refine Expr.eval_hom Ext4.toSpec Ext4.toSpec_add Ext4.toSpec_sub Ext4.toSpec_mul S.air.width
       _ _ (fun j hj ↦ ?_) (fun j hj ↦ ?_) (fun j ↦ ?_) (fun x ↦ ?_) ?_ ?_ ?_ c
       (S.valid.colsInWidth c hc)
     · simp only [envAt, hj, ↓reduceDIte]; rfl
     · simp only [envAt, hj, ↓reduceDIte]; rfl
-    · simp only [envAt, Ext4.toSpec_ofBase]; rfl
-    · simp only [envAt, Ext4.toSpec_ofBase]; rfl
+    · simp only [envAt, KoalaBear.toSpec_ofBase_ext4]; rfl
+    · simp only [envAt, KoalaBear.toSpec_ofBase_ext4]; rfl
     · simp only [envAt, Ext4.toSpec_mul, Ext4.toSpec_inv, Ext4.toSpec_sub,
         toSpec_extPowTwo, Ext4.toSpec_one, hzh, div_eq_mul_inv]
     · simp only [envAt, Ext4.toSpec_mul, Ext4.toSpec_inv, Ext4.toSpec_sub,

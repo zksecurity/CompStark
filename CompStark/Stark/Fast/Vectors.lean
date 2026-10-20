@@ -329,11 +329,11 @@ theorem flatMap_coeffs (n : Nat) (g : Nat → EF) :
       (show 4 * (n + 1) = 4 * n + 4 by omega),
       ← ofFn_append (fun t ↦ coord (t % 4) (g (t / 4))) (4 * n) 4]
     congr 1
-    apply Array.ext (by simp only [Array.size_ofFn, Ext.coeffs, List.size_toArray,
-      List.length_cons, List.length_nil])
+    apply Array.ext (by simp only [Array.size_ofFn, Ext.coeffs, KoalaBear.coeffs_ext4,
+      List.size_toArray, List.length_cons, List.length_nil])
     intro t _ h1
     rw [Array.size_ofFn] at h1
-    simp only [Array.getElem_ofFn, Ext.coeffs]
+    simp only [Array.getElem_ofFn, Ext.coeffs, KoalaBear.coeffs_ext4]
     rw [show (4 * n + t) / 4 = n by omega, show (4 * n + t) % 4 = t by omega]
     interval_cases t <;> rfl
 

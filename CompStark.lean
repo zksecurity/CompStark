@@ -21,6 +21,7 @@ public import CompStark.Challenger
 public import CompStark.Primitives
 public import CompStark.Stark.Proof
 public import CompStark.Merkle.Mmcs
+public import CompStark.Stark.Challenge
 public import CompStark.Stark.Field
 public import CompStark.Fri.Verifier
 public import CompStark.Stark.Air

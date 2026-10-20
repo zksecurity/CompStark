@@ -49,12 +49,15 @@ theorem addressable_mono {m n : Nat} (h : m ≤ n) (hn : Addressable n) : Addres
 theorem outsideBase_mul_ofBase {z : EF} (hz : Ext.OutsideBase z) {x : F} (hx : x ≠ 0) :
     Ext.OutsideBase (z * Ext.ofBase x) := by
   have e1 : (z * Ext.ofBase x).c1 = z.c1 * x := by
-    rw [Norm.mul_c1]; simp only [Ext.ofBase, KoalaBear.Fast.Ext4.ofBase]; ring
+    rw [Norm.mul_c1]
+    simp only [Ext.ofBase, KoalaBear.ofBase_ext4, KoalaBear.Fast.Ext4.ofBase]; ring
   have e2 : (z * Ext.ofBase x).c2 = z.c2 * x := by
-    rw [Norm.mul_c2]; simp only [Ext.ofBase, KoalaBear.Fast.Ext4.ofBase]; ring
+    rw [Norm.mul_c2]
+    simp only [Ext.ofBase, KoalaBear.ofBase_ext4, KoalaBear.Fast.Ext4.ofBase]; ring
   have e3 : (z * Ext.ofBase x).c3 = z.c3 * x := by
-    rw [Norm.mul_c3]; simp only [Ext.ofBase, KoalaBear.Fast.Ext4.ofBase]; ring
-  unfold Ext.OutsideBase at *
+    rw [Norm.mul_c3]
+    simp only [Ext.ofBase, KoalaBear.ofBase_ext4, KoalaBear.Fast.Ext4.ofBase]; ring
+  rw [KoalaBear.outsideBase_ext4] at *
   rw [e1, e2, e3]
   rcases hz with h | h | h
   · exact Or.inl (mul_ne_zero h hx)

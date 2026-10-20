@@ -999,15 +999,12 @@ theorem chunkValues_getD (qs : Array EF) (stride c n r e : Nat) (hr : r < n) (he
 /-- An extension element is the sum of its coordinates times the basis. -/
 theorem toSpec_eq_basis (y : EF) : Ext4.toSpec y = ∑ e ∈ Finset.range 4,
     Ext4.toSpec (Ext.basis e) * algebraMap K E (FastField.toField (Fast.coord e y)) := by
-  have hy : y = Ext4.smul y.c0 (Ext.basis 0) + Ext4.smul y.c1 (Ext.basis 1) +
-      Ext4.smul y.c2 (Ext.basis 2) + Ext4.smul y.c3 (Ext.basis 3) := by
-    refine Ext4.ext' ?_ ?_ ?_ ?_ <;>
-    · show _ = _ * _ + _ * _ + _ * _ + _ * _
-      simp only [Ext.basis, mul_one, mul_zero, add_zero, zero_add]
-  conv_lhs => rw [hy]
-  simp only [Ext4.toSpec_add, Ext4.toSpec_smul, Algebra.smul_def, Finset.sum_range_succ,
-    Finset.sum_range_zero, zero_add, Fast.coord]
-  ring
+  rw [← KoalaBear.toSpec_ext4, Challenge.toSpec_eq_sum]
+  refine Finset.sum_congr rfl fun e he ↦ ?_
+  have he' : e < 4 := Finset.mem_range.mp he
+  rw [← KoalaBear.toSpec_ext4, Ext.toSpec_basis he']
+  congr 3
+  interval_cases e <;> rfl
 
 /-- The chunk polynomial over the extension from its four coordinate polynomials. -/
 noncomputable def chunkPoly (ps : List K[X]) : E[X] :=
@@ -1114,7 +1111,8 @@ theorem toField_chunkShift (logN lc i : Nat) :
 theorem toSpec_vanishingAt (logN lc i : Nat) (p : EF) :
     Ext4.toSpec (vanishingAt (chunkDomain logN lc i) p) =
       vanish logN (qpt (logN + lc) i) (Ext4.toSpec p) := by
-  rw [vanishingAt, Ext4.toSpec_sub, toSpec_extPowTwo, Ext4.toSpec_mul, Ext4.toSpec_ofBase,
+  rw [vanishingAt, Ext4.toSpec_sub, toSpec_extPowTwo, Ext4.toSpec_mul,
+    KoalaBear.toSpec_ofBase_ext4,
     Ext4.toSpec_one, vanish, toField_inv, toField_chunkShift,
     CompPoly.Extension.Ext.algebraMap_eq_ofBase]
 
@@ -1155,7 +1153,7 @@ theorem toSpec_selector (logN lc i : Nat) (h : logN + lc ≤ 24) (hi : i < 2 ^ l
     exact And.comm
   rw [← List.prod_toFinset _ hnd, hfs, chunkSel]
   refine Finset.prod_congr rfl fun j _ ↦ ?_
-  rw [toSpec_vanishingAt, toSpec_vanishingAt, Ext4.toSpec_ofBase, toField_chunkShift,
+  rw [toSpec_vanishingAt, toSpec_vanishingAt, KoalaBear.toSpec_ofBase_ext4, toField_chunkShift,
     ← CompPoly.Extension.Ext.algebraMap_eq_ofBase]
 
 /-- The verifier's per-chunk sum of the four coordinates. -/
@@ -1274,12 +1272,12 @@ theorem toSpec_eval_opened (A : Air) (logN b : Nat) (pis : List F) (m : Stark.Ma
   · change aeval (Ext4.toSpec z) ((ps.getD j 0).comp (C (tw logN) * X)) =
       Ext4.toSpec ((Fri.openedAt b m (z * Ext.ofBase (twoAdicGen logN))).getD j 0)
     rw [hO' j (by rw [hw]; exact hj), aeval_comp, map_mul, aeval_C, aeval_X, Ext4.toSpec_mul,
-      Ext4.toSpec_ofBase, ← CompPoly.Extension.Ext.algebraMap_eq_ofBase, mul_comm]
+      KoalaBear.toSpec_ofBase_ext4, ← CompPoly.Extension.Ext.algebraMap_eq_ofBase, mul_comm]
   · change aeval (Ext4.toSpec z) (C (FastField.toField (pis.getD j 0))) =
       Ext4.toSpec (Ext.ofBase (pis.getD j 0))
-    rw [aeval_C, Ext4.toSpec_ofBase, CompPoly.Extension.Ext.algebraMap_eq_ofBase]
+    rw [aeval_C, KoalaBear.toSpec_ofBase_ext4, CompPoly.Extension.Ext.algebraMap_eq_ofBase]
   · change aeval (Ext4.toSpec z) (C (FastField.toField x)) = Ext4.toSpec (Ext.ofBase x)
-    rw [aeval_C, Ext4.toSpec_ofBase, CompPoly.Extension.Ext.algebraMap_eq_ofBase]
+    rw [aeval_C, KoalaBear.toSpec_ofBase_ext4, CompPoly.Extension.Ext.algebraMap_eq_ofBase]
   · change aeval (Ext4.toSpec z) (firstSel (2 ^ logN)) =
       Ext4.toSpec ((Ext.powTwo z logN - 1) * (z - 1)⁻¹)
     rw [Ext4.toSpec_mul, Ext4.toSpec_inv, Ext4.toSpec_sub, Ext4.toSpec_sub, toSpec_extPowTwo,
@@ -1287,13 +1285,13 @@ theorem toSpec_eval_opened (A : Air) (logN b : Nat) (pis : List F) (m : Stark.Ma
   · change aeval (Ext4.toSpec z) (lastSel (2 ^ logN) (tw logN)) =
       Ext4.toSpec ((Ext.powTwo z logN - 1) * (z - Ext.ofBase (twoAdicGen logN)⁻¹)⁻¹)
     rw [Ext4.toSpec_mul, Ext4.toSpec_inv, Ext4.toSpec_sub, Ext4.toSpec_sub, toSpec_extPowTwo,
-      Ext4.toSpec_one, Ext4.toSpec_ofBase, toField_inv,
+      Ext4.toSpec_one, KoalaBear.toSpec_ofBase_ext4, toField_inv,
       ← CompPoly.Extension.Ext.algebraMap_eq_ofBase,
       ← aeval_lastSel (2 ^ logN) (tw logN) (tw_ne_zero logN h24) (tw_pow logN h24),
       mul_mul_inv_cancel_ext _ _ hlast]
   · change aeval (Ext4.toSpec z) (X - C (tw logN)⁻¹) =
       Ext4.toSpec (z - Ext.ofBase (twoAdicGen logN)⁻¹)
-    rw [map_sub, aeval_X, aeval_C, Ext4.toSpec_sub, Ext4.toSpec_ofBase, toField_inv,
+    rw [map_sub, aeval_X, aeval_C, Ext4.toSpec_sub, KoalaBear.toSpec_ofBase_ext4, toField_inv,
       CompPoly.Extension.Ext.algebraMap_eq_ofBase]
 
 /-- The trace's extension is an LDE of polynomials that take the trace on `⟨ω⟩`. -/

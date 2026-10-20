@@ -63,6 +63,9 @@ theorem toSpec_pow (x : EF) (n : Nat) : Ext4.toSpec (Ext.pow x n) = Ext4.toSpec 
 theorem toSpec_ofBase (x : F) : Ext4.toSpec (Ext.ofBase x) = ι (FastField.toField x) :=
   Ext4.toSpec_ofBase x
 
+theorem toSpec_ofBase4 (x : F) : Ext4.toSpec (Ext4.ofBase x) = ι (FastField.toField x) :=
+  Ext4.toSpec_ofBase x
+
 theorem toSpec_foldl_range (f : Nat → EF) (a : EF) (w : Nat) :
     Ext4.toSpec ((List.range w).foldl (fun s i ↦ s + f i) a) =
       Ext4.toSpec a + ∑ i ∈ Finset.range w, Ext4.toSpec (f i) := by
@@ -86,7 +89,7 @@ theorem toSpec_termStep (alpha z acc : EF) (V : Array F) (ys : Array EF) (w r cn
   rw [termStep, crow, ← List.range_eq_range', yzOf]
   dsimp only
   rw [Ext4.toSpec_add, Ext4.toSpec_mul, Ext4.toSpec_mul, Ext4.toSpec_sub, Ext4.toSpec_inv,
-    Ext4.toSpec_sub, toSpec_ofBase, toSpec_pow, toSpec_foldl_range, toSpec_foldl_range,
+    Ext4.toSpec_sub, toSpec_ofBase4, toSpec_pow, toSpec_foldl_range, toSpec_foldl_range,
     Ext4.toSpec_zero, zero_add, zero_add, ← Finset.sum_sub_distrib, Finset.mul_sum,
     Finset.sum_mul]
   refine congrArg _ (Finset.sum_congr rfl fun i hi ↦ ?_)
@@ -279,7 +282,7 @@ theorem toSpec_ptStep {b h : Nat} {m : Mat} {ps : List KoalaBear.Field[X]} (hm :
         (ι (FastField.toField (twoAdicGen h)) ^ reverseBits r h) := by
   obtain ⟨hw, hh, -, -, -, -, hv⟩ := hm
   have hne := Fast.sub_ofBase_ne_zero hz ((cosetPointsBitRev gen h).getD r 0)
-  rw [Ext4.toSpec_sub, toSpec_ofBase, cosetPointsBitRev_getD h r hr,
+  rw [Ext4.toSpec_sub, toSpec_ofBase4, cosetPointsBitRev_getD h r hr,
     toField_mul, toField_npow, map_mul, map_pow] at hne
   rw [ptStep, compress_getD _ _ _ (by rw [hh]; exact hr), toSpec_termStep,
     cosetPointsBitRev_getD h r hr, toField_mul, toField_npow, map_mul, map_pow,
