@@ -10,7 +10,7 @@ public import CompStark.Sound.Numbers
 public import CompStark.Sound.NumbersNi
 public import CompStark.Complete.Quotient
 
-/-! # Concrete security: 100 bits for the Fibonacci STARK and for `wide 64`
+/-! # Concrete security: 100 bits over the quartic extension, 128 bits over the quintic
 
 All configurations fold FRI by arity `2` down to a constant, and pick FRI's radius `δ` and the
 extractor's `δ'` below the unique-decoding radius `(1 - rate) / 2`, where the candidate lists have
@@ -29,7 +29,9 @@ at most one element (`listSize_le_one`). The terms of `knowledgeError` are bound
   `δ_int = δ + loss`, independent of the domain; the smaller folds the powers MCA bound on their
   halving domains, `2 ^ t` together; and `(1 - δ + #folds · loss) ^ numQueries` for the queries;
 
-all but the queries over `|𝕂| = p ^ 4 ≈ 2 ^ 123.95`.
+all but the queries over `|𝕂|`: `p ^ 4 ≈ 2 ^ 123.95` for `KoalaBear.Fast.Ext4`, which caps every
+configuration below `2 ^ (-123.95)` (constraint folding alone is about `2 ^ (-117.98)`), and
+`p ^ 5 ≈ 2 ^ 154.94` for `KoalaBear.Fast.Ext5`.
 
 `fibonacciSetup`: the Fibonacci AIR (2 columns, 5 constraints, 1 quotient chunk) on `2 ^ 10`
 rows, blowup `16` (`N = 2 ^ 14`, rate `1/16`) and `110` queries, with FRI at
@@ -90,6 +92,35 @@ at any radius: `(5/8) ^ 123 · 2 ^ (-16)` alone is about `2 ^ (-99.40)`. By `kno
 a prover making `Q` oracle calls gets a proof accepted that the extractor cannot open with
 probability at most `q · 2 ^ (-100) + 3 q² / |𝔽| ^ 8`, `q = Q + verifierQueries`
 (`wideSp1_knowledgeSoundness_ro`).
+
+`wide5Setup`: `wide 64` on `2 ^ 21` rows over the quintic extension `KoalaBear.Fast.Ext5` with
+zkDTVM's FRI (soundcalc's `zkdtvm_v080.toml`, `wide5Params`): blowup `4` (`N = 2 ^ 23`), `21` folds
+of arity `2` down to a constant, `160` queries and `20` bits of query grinding. In the random-oracle
+model, with FRI at `δ = 3/8 - 2 ^ (-18)`, the extractor at `δ' = 3/8 - 2 ^ (-20)`,
+`loss = 2 ^ (-26)`, `δ_int = δ + loss` and `t = 18`:
+
+* constraint folding `63`, about `2 ^ (-148.97)`;
+* out of domain `(3 · 2 ^ 21 + 1) + 2 ^ 21`, about `2 ^ (-131.94)`;
+* batching `137 · max(T₁, T₂)`, `T₁ ≈ 131074.67`, `T₂ ≈ 142987.18`, about `2 ^ (-130.72)`;
+* FRI's folds: `max(T₁, δ_int / loss, 2 ^ t) = δ · 2 ^ 26 + 1 = 25165569`, about `2 ^ (-130.36)`;
+* FRI's queries `powFraction 20 · (5/8 + 2 ^ (-18) + 21 · 2 ^ (-26) + 1/p) ^ 160`, with
+  `powFraction 20 = 2033 / p ≈ 2 ^ (-19.9993)`, about `2 ^ (-128.49)`.
+
+Every round error is at most `2 ^ (-128)` (`wide5_roundError_le`). `159` queries do not reach it at
+any radius: `(5/8) ^ 159 · powFraction 20` alone is about `2 ^ (-127.81)`.
+
+`wide5iSetup`: the interactive counterpart, which gets no credit for grinding: `wide 64` on `2 ^ 21`
+rows over `KoalaBear.Fast.Ext5`, blowup `4` and `190` queries (`wide5iParams`), with FRI at
+`δ = 3/8 - 2 ^ (-14)`, the extractor at `δ' = 3/8 - 2 ^ (-17)`, `loss = 2 ^ (-18)` and `t = 14`:
+
+* constraint folding and out of domain together at most `4 · 2 ^ 21 + 64`, about `2 ^ (-131.94)`;
+* batching `137 · max(T₁, T₂) ≤ 1122670`, `T₁ ≈ 8194.67`, `T₂ ≈ 7053.05`, about `2 ^ (-134.84)`;
+* FRI's folds: the `9` onto at least `2 ^ 14` points `δ · 2 ^ 18 + 1 = 98289` each, the `12` smaller
+  ones `2 ^ 14`, about `2 ^ (-135.16)`;
+* FRI's queries `(5/8 + 2 ^ (-14) + 21 · 2 ^ (-18)) ^ 190`, about `2 ^ (-128.77)`.
+
+The total is at most `2 ^ (-128)` (`wide5i_knowledgeError_le`, `wide5i_knowledgeSoundness`), about
+`2 ^ (-128.59)` exactly; `189` queries do not reach it at these radii.
 -/
 
 @[expose] public section
@@ -451,5 +482,148 @@ theorem wideSp1_knowledgeSoundness_ro (publicValues : List F) (Q : Nat)
     norm_num [wideSp1Setup, sp1Params]
   · gcongr
     exact wideSp1_roundError_le
+
+/-- zkDTVM's FRI parameters (soundcalc's `zkdtvm_v080.toml`, compress circuit): blowup `4`, folding
+by arity `2` down to a constant, `160` queries with `20` bits of query grinding. -/
+def wide5Params : Fri.Params where
+  logBlowup := 2
+  logFinalPolyLen := 0
+  maxLogArity := 1
+  numQueries := 160
+  commitPowBits := 0
+  queryPowBits := 20
+
+/-- `wide 64` on `2 ^ 21` rows over the quintic extension with `wide5Params`. -/
+def wide5Setup : Setup KoalaBear.Fast.Ext5 where
+  params := wide5Params
+  air := wide 64
+  logN := 21
+  valid :=
+    { colsInWidth := wide_colsInWidth 64
+      degreeFits := wide_degreeFits 64 21
+      twoAdic := by decide
+      chunksFit := by
+        rw [wide_logQuotientChunks 64 (by decide)]
+        decide
+      folds := by decide
+      finalPolyFits := by decide
+      queries := by decide }
+  blowup := by decide
+  folds := by decide
+
+/-- **128 bits per oracle answer on `2 ^ 21` rows.** Every round error of `wide5Setup`, FRI at
+`δ = 3/8 - 2 ^ (-18)` and the extractor at `δ' = 3/8 - 2 ^ (-20)`, is at most `2 ^ (-128)`. -/
+theorem wide5_roundError_le :
+    roundError wide5Setup (3 / 8 - 2 ^ (-18 : ℤ)) (3 / 8 - 2 ^ (-20 : ℤ)) ≤ (2 ^ 128)⁻¹ := by
+  have hδ := coe_three_eighths_sub (-18) 18 rfl (by norm_num)
+  have hδ' := coe_three_eighths_sub (-20) 20 rfl (by norm_num)
+  have hrate : wide5Setup.rate = 1 / 2 ^ 2 := rate_eq _
+  have hsize : (wide5Setup.size : ℝ) = 2 ^ 23 := by
+    norm_num [Setup.size, wide5Setup, wide5Params]
+  have h := roundError_le wide5Setup rfl 18 (3 / 8 - 2 ^ (-18 : ℤ)) (3 / 8 - 2 ^ (-20 : ℤ))
+    (1 / 2 ^ 26) (by rw [hδ, hrate, hsize]; norm_num)
+    (by rw [hδ, hrate]; norm_num) (by rw [← NNReal.coe_pos, hδ]; norm_num)
+    (by rw [hδ, hδ', hsize]; norm_num) (by rw [hδ', hrate]; norm_num) (by positivity)
+  have hints := wide_integers_le wide5Setup rfl
+  have hn : wide5Setup.n = 2097152 := rfl
+  rw [hn] at hints
+  have h1 := (Nat.le_add_right _ _).trans hints
+  have h2 := (Nat.le_add_left _ _).trans hints
+  have hcommit : wide5Setup.params.commitPowBits = 0 := rfl
+  have hquery : wide5Setup.params.queryPowBits = 20 := rfl
+  have hq : wide5Setup.params.numQueries = 160 := rfl
+  have hfolds : wide5Setup.logN - wide5Setup.params.logFinalPolyLen = 21 := rfl
+  have hb : wide5Setup.params.logBlowup = 2 := rfl
+  rw [hcommit, hquery, hq, hfolds, hb, powFraction_zero, one_mul] at h
+  refine h.trans (max_le ?_ (max_le ?_ (max_le ?_ (max_le ?_ ?_))))
+  · refine nat_div_card_le _ ((div_le_div_of_nonneg_right (Nat.cast_le.mpr h1)
+      (by positivity)).trans ?_)
+    norm_num
+  · rw [hn]
+    refine nat_div_card_le _ ((div_le_div_of_nonneg_right (Nat.cast_le.mpr h2)
+      (by positivity)).trans ?_)
+    norm_num
+  · refine ofReal_div_card_le _ ?_
+    rw [wide_numOpened wide5Setup rfl, hrate, hsize, hδ, hδ']
+    norm_num
+  · refine ofReal_div_card_le _ ?_
+    simp only [LossyMca.lossyBound]
+    rw [NNReal.coe_add, hδ]
+    norm_num
+  · refine powFraction_mul_le _ _ _ (by rw [hδ]; norm_num) ?_
+    rw [hδ, KoalaBear.fieldSize]
+    norm_num
+
+/-- FRI with blowup `4`, folding by arity `2` down to a constant, and `190` queries without
+grinding. -/
+def wide5iParams : Fri.Params where
+  logBlowup := 2
+  logFinalPolyLen := 0
+  maxLogArity := 1
+  numQueries := 190
+  commitPowBits := 0
+  queryPowBits := 0
+
+/-- `wide 64` on `2 ^ 21` rows over the quintic extension with `wide5iParams`. -/
+def wide5iSetup : Setup KoalaBear.Fast.Ext5 where
+  params := wide5iParams
+  air := wide 64
+  logN := 21
+  valid :=
+    { colsInWidth := wide_colsInWidth 64
+      degreeFits := wide_degreeFits 64 21
+      twoAdic := by decide
+      chunksFit := by
+        rw [wide_logQuotientChunks 64 (by decide)]
+        decide
+      folds := by decide
+      finalPolyFits := by decide
+      queries := by decide }
+  blowup := by decide
+  folds := by decide
+
+/-- **128 bits, interactively, on `2 ^ 21` rows.** The knowledge error of `wide5iSetup`, FRI at
+`δ = 6143/16384 = 3/8 - 2 ^ (-14)` and the extractor at `δ' = 49151/131072 = 3/8 - 2 ^ (-17)`, is
+at most `2 ^ (-128)`. -/
+theorem wide5i_knowledgeError_le :
+    knowledgeError wide5iSetup (6143 / 16384) (49151 / 131072) ≤ (2 ^ 128)⁻¹ := by
+  have ha : wide5iSetup.params.maxLogArity = 1 := rfl
+  have hrate : wide5iSetup.rate = 1 / 2 ^ 2 := rate_eq _
+  have hsize : (wide5iSetup.size : ℝ) = 2 ^ 23 := by
+    norm_num [Setup.size, wide5iSetup, wide5iParams]
+  have h1 := knowledgeError_le_curve wide5iSetup (6143 / 16384) (49151 / 131072)
+    (by rw [hrate, hsize]; norm_num) (by norm_num) (by rw [hsize]; norm_num)
+    (by rw [hrate]; norm_num)
+  have h2 := friError_le_lossy wide5iSetup ha 14 (6143 / 16384) (6143 / 16384 + 1 / 2 ^ 18)
+    (1 / 2 ^ 18) (by rw [hrate]; norm_num) (by norm_num) (lt_add_of_pos_right _ (by positivity))
+    (by positivity)
+  have hq : wide5iSetup.params.numQueries = 190 := rfl
+  have hlarge : wide5iSetup.logN + wide5iSetup.params.logBlowup - 14 = 9 := rfl
+  have hfolds : wide5iSetup.logN - wide5iSetup.params.logFinalPolyLen = 21 := rfl
+  have hb : wide5iSetup.params.logBlowup = 2 := rfl
+  rw [hq, hlarge, hfolds, hb] at h2
+  refine h1.trans ((add_le_add le_rfl h2).trans
+    (numbers_curve_le _ (2 ^ 23 + 64) _ _ _ _ 1122670 _ 884601 _ (10241 / 16384 + 21 / 2 ^ 18)
+      ?_ ?_ ?_ le_rfl ?_ (by norm_num) (by norm_num) (by norm_num) ?_))
+  · exact (wide_integers_le wide5iSetup rfl).trans (by decide)
+  · rw [wide_numOpened wide5iSetup rfl, hrate, hsize]
+    norm_num
+  · simp only [LossyMca.lossyBound]
+    norm_num
+  · norm_num
+  · norm_num
+
+/-- Knowledge soundness of `wide5iSetup` with error `2 ^ (-128)`, FRI at `6143/16384` and the
+extractor at `49151/131072`: if no trace within `49151/131072` of the prover's committed trace
+satisfies the AIR, the verifier accepts with probability at most `2 ^ (-128)`. -/
+theorem wide5i_knowledgeSoundness (publicValues : List F) (prover : Prover wide5iSetup) :
+    (∀ trace ∈ closeTraces wide5iSetup (49151 / 131072 : NNReal) prover.trace,
+      ¬ (wide 64).Satisfied 21 trace publicValues) →
+      acceptance publicValues prover ≤ (2 ^ 128)⁻¹ := by
+  intro h
+  refine (knowledgeSoundness wide5iSetup publicValues prover (6143 / 16384) (49151 / 131072) ?_
+    h).trans wide5i_knowledgeError_le
+  rw [rate_eq]
+  norm_num [wide5iSetup, wide5iParams]
 
 end CompStark.Iop

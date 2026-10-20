@@ -99,6 +99,18 @@ end CompStarkTests.Stark
 #guard_msgs in
 #print axioms CompStark.Iop.wideSp1_roundError_le
 
+/-- info: 'CompStark.Iop.wide5_roundError_le' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in
+#print axioms CompStark.Iop.wide5_roundError_le
+
+/-- info: 'CompStark.Iop.wide5i_knowledgeError_le' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in
+#print axioms CompStark.Iop.wide5i_knowledgeError_le
+
+/-- info: 'CompStark.Iop.wide5i_knowledgeSoundness' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in
+#print axioms CompStark.Iop.wide5i_knowledgeSoundness
+
 /-- info: 'CompStark.Sound.exists_satisfied_of_safe' depends on axioms: [propext, Classical.choice, Quot.sound] -/
 #guard_msgs in
 #print axioms CompStark.Sound.exists_satisfied_of_safe
