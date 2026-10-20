@@ -6,6 +6,7 @@ import CompStark.Stark.Prover
 import CompStark.Completeness
 import CompStark.Soundness
 import CompStark.Security
+import CompStark.Sound.Rbr
 
 /-! # STARK known answers
 
@@ -74,3 +75,27 @@ end CompStarkTests.Stark
 /-- info: 'CompStark.Iop.wide21_knowledgeError_le' depends on axioms: [propext, Classical.choice, Quot.sound] -/
 #guard_msgs in
 #print axioms CompStark.Iop.wide21_knowledgeError_le
+
+/-- info: 'CompStark.Sound.exists_satisfied_of_safe' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in
+#print axioms CompStark.Sound.exists_satisfied_of_safe
+
+/-- info: 'CompStark.Sound.prob_alphaBad_le' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in
+#print axioms CompStark.Sound.prob_alphaBad_le
+
+/-- info: 'CompStark.Sound.prob_zetaBad_le' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in
+#print axioms CompStark.Sound.prob_zetaBad_le
+
+/-- info: 'CompStark.Sound.prob_batchBad_le' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in
+#print axioms CompStark.Sound.prob_batchBad_le
+
+/-- info: 'CompStark.Sound.prob_foldRound_le' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in
+#print axioms CompStark.Sound.prob_foldRound_le
+
+/-- info: 'CompStark.Sound.prob_queryBad_le' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in
+#print axioms CompStark.Sound.prob_queryBad_le
