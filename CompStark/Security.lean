@@ -21,29 +21,35 @@ have at most one element (`listSize_le_one`). The terms of `knowledgeError` are 
   [BCIKS20] Theorem 1.6), `(numOpened - 1) N`; at `δ < δ'` the curve bound
   `(numOpened - 1) max(T₁, T₂)` with `T₁ = (1 - ρ - δ) / (δ (1 - ρ - 2δ))`, `T₂ = δ' / (δ' - δ)`,
   independent of `N` (`batchingError_le_curve`);
-* FRI: each fold the powers MCA bound on its halving domain, `N / 2 + N / 4 + ⋯ ≤ N` together
-  (`friError_le_of_le`), and `(1 - δ) ^ numQueries` for the queries;
+* FRI at a proximity loss `loss = 2 ^ (-16)` (`friError_le_lossy`): each fold onto a domain of at
+  least `2 ^ t` points the lossy MCA bound `max(T₁, T₂, δ_int / loss)` with `δ_int = δ + loss`,
+  about `δ · 2 ^ 16`, independent of the domain; the smaller folds the powers MCA bound on their
+  halving domains, `2 ^ t` together; and `(1 - δ + #folds · loss) ^ numQueries` for the queries;
 
 all but the queries over `|𝕂| = p ^ 4 ≈ 2 ^ 123.95`.
 
 `fibonacciSetup`: the Fibonacci AIR (2 columns, 5 constraints, 1 quotient chunk) on `2 ^ 10`
 rows, blowup `16` (`N = 2 ^ 14`, rate `1/16`) and `123` queries, at `δ = δ' = 7/16`, below the
-unique-decoding radius `15/32`. The integers are `4`, `2048 + 2 ^ 14 + 2 ^ 10`, `7 · 2 ^ 14` and
-`2 ^ 14`, summing to `150532 ≤ 2 ^ 19`, and `(9/16) ^ 123 ≤ 2 ^ (-102.09)`; the error is at most
-`2 ^ (-100)` (`fibonacci_knowledgeError_le`), about `2 ^ (-102.04)` exactly.
+unique-decoding radius `15/32`. At this size the lossless bound is the better one for every fold
+(`t = 14`). The integers are `4`, `2048 + 2 ^ 14 + 2 ^ 10`, `7 · 2 ^ 14` and `2 ^ 14`, summing to
+`150532`, and `(9/16 + 10 · 2 ^ (-16)) ^ 123 ≤ 2 ^ (-102.05)`; the error is at most `2 ^ (-100)`
+(`fibonacci_knowledgeError_le`), about `2 ^ (-102.00)` exactly.
 
 `wideSetup`: `wide 64` (64 columns, 64 constraints of degree `3`, 2 quotient chunks, so
-`numOpened = 136`) on `2 ^ 20` rows, blowup `4` (`N = 2 ^ 22`, rate `1/4`) and `159` queries, with
+`numOpened = 136`) on `2 ^ 20` rows, blowup `4` (`N = 2 ^ 22`, rate `1/4`) and `158` queries, with
 FRI at `δ = 9/25` (below `3/8 - 1/N`) and the extractor at `δ' = 37/100` (below `3/8`):
 
 * constraint folding `63`, about `2 ^ (-117.98)`;
 * out of domain `(3 · 2 ^ 20 + 1) + 2 ^ 22 + 2 ^ 20`, about `2 ^ (-100.95)`;
 * batching `135 · max(325/9, 37) = 4995`, about `2 ^ (-111.67)`;
-* FRI's folds `2 ^ 22`, about `2 ^ (-101.95)`, and queries `(16/25) ^ 159`, about `2 ^ (-102.37)`.
+* FRI's folds, at `t = 7` (`9/25 ≤ 3/8 - 1/128`): the `15` folds onto at least `2 ^ 7` points
+  `max(325/9, 9/25 · 2 ^ 16 + 1)` each, and the `5` smaller ones `2 ^ 7`, about `2 ^ (-105.52)`;
+* FRI's queries `(16/25 + 20 · 2 ^ (-16)) ^ 158`, about `2 ^ (-101.62)`.
 
-The total is at most `2 ^ (-100)` (`wide_knowledgeError_le`), about `2 ^ (-100.05)` exactly. The
-out-of-domain term is why `δ'` stays below the unique-decoding radius: from two candidates on,
-`ℓ² · identityDegree` alone exceeds `2 ^ (-100)` at this size.
+The total is at most `2 ^ (-100)` (`wide_knowledgeError_le`), about `2 ^ (-100.21)` exactly. With
+these bounds `157` queries do not reach `2 ^ (-100)`: the out-of-domain term alone is about half.
+The out-of-domain term is also why `δ'` stays below the unique-decoding radius: from two
+candidates on, `ℓ² · identityDegree` alone exceeds `2 ^ (-100)` at this size.
 
 By `knowledgeSoundness`, a prover that the verifier accepts with probability above `2 ^ (-100)`
 has committed to a trace within `δ'` of one that satisfies the AIR (`fibonacci_knowledgeSoundness`,
@@ -89,23 +95,29 @@ theorem fibonacci_knowledgeError_le :
     knowledgeError fibonacciSetup (7 / 16) (7 / 16) ≤ (2 ^ 100)⁻¹ := by
   have ha : fibonacciSetup.params.maxLogArity = 1 := rfl
   have hrate : fibonacciSetup.rate = 1 / 2 ^ 4 := rate_eq _
-  have h1 := knowledgeError_le_of_le fibonacciSetup ha (7 / 16) (by rw [hrate]; norm_num)
+  have h1 := knowledgeError_le_of_le fibonacciSetup (7 / 16) (by rw [hrate]; norm_num)
+  have h2 := friError_le_lossy fibonacciSetup ha 14 (7 / 16) (7 / 16 + 1 / 2 ^ 16) (1 / 2 ^ 16)
+    (by rw [hrate]; norm_num) (by norm_num) (lt_add_of_pos_right _ (by positivity))
+    (by positivity)
   have hq : fibonacciSetup.params.numQueries = 123 := rfl
-  rw [hq] at h1
-  refine h1.trans (numbers_le _ ?_)
-  have hid : fibonacciSetup.identityDegree = 2048 := by
-    simp only [Setup.identityDegree, Setup.n, Setup.chunks, fibonacciSetup]
-    rw [logQuotientChunks_of _ 0 (by decide)]
-    simp only [fibonacci, List.foldl, Expr.mul_eq, Expr.sub_eq, Expr.add_eq, Expr.degBound]
+  have hlarge : fibonacciSetup.logN + fibonacciSetup.params.logBlowup - 14 = 0 := rfl
+  have hfolds : fibonacciSetup.logN - fibonacciSetup.params.logFinalPolyLen = 10 := rfl
+  rw [hq, hlarge, hfolds] at h2
+  refine h1.trans ((add_le_add le_rfl h2).trans (numbers_le _ ?_ _ ?_ _ le_rfl _ ?_))
+  · have hid : fibonacciSetup.identityDegree = 2048 := by
+      simp only [Setup.identityDegree, Setup.n, Setup.chunks, fibonacciSetup]
+      rw [logQuotientChunks_of _ 0 (by decide)]
+      simp only [fibonacci, List.foldl, Expr.mul_eq, Expr.sub_eq, Expr.add_eq, Expr.degBound]
+      norm_num
+    have hc : fibonacciSetup.chunks = 1 := by
+      change 2 ^ fibonacci.logQuotientChunks = 1
+      rw [logQuotientChunks_of _ 0 (by decide)]
+      rfl
+    simp only [Setup.numOpened, hid, hc, Setup.size, Setup.n]
+    change (5 - 1) + (2048 + 2 ^ (10 + 4) + 2 ^ 10) + (2 * 2 + 4 * 1 - 1) * 2 ^ (10 + 4) ≤ 2 ^ 18
     norm_num
-  have hc : fibonacciSetup.chunks = 1 := by
-    change 2 ^ fibonacci.logQuotientChunks = 1
-    rw [logQuotientChunks_of _ 0 (by decide)]
-    rfl
-  simp only [Setup.numOpened, hid, hc, Setup.size, Setup.n]
-  change (5 - 1) + (2048 + 2 ^ (10 + 4) + 2 ^ 10) + (2 * 2 + 4 * 1 - 1) * 2 ^ (10 + 4) +
-    2 ^ (10 + 4) ≤ 2 ^ 19
-  norm_num
+  · rw [Nat.cast_zero, zero_mul]
+  · norm_num
 
 /-- Knowledge soundness of `fibonacciSetup` with error `2 ^ (-100)`, FRI and the extractor both at
 `7/16`: if no trace within `7/16` of the prover's committed trace satisfies the AIR, the verifier
@@ -121,12 +133,12 @@ theorem fibonacci_knowledgeSoundness (publicValues : List F) (prover : Prover fi
   rw [rate_eq]
   norm_num [fibonacciSetup, fibonacciParams]
 
-/-- FRI with blowup `4`, folding by arity `2` down to a constant, and `159` queries. -/
+/-- FRI with blowup `4`, folding by arity `2` down to a constant, and `158` queries. -/
 def wideParams : Fri.Params where
   logBlowup := 2
   logFinalPolyLen := 0
   maxLogArity := 1
-  numQueries := 159
+  numQueries := 158
   commitPowBits := 0
   queryPowBits := 0
 
@@ -171,18 +183,24 @@ theorem wide_knowledgeError_le :
   have ha : wideSetup.params.maxLogArity = 1 := rfl
   have hrate : wideSetup.rate = 1 / 2 ^ 2 := rate_eq _
   have hsize : (wideSetup.size : ℝ) = 2 ^ 22 := by norm_num [Setup.size, wideSetup, wideParams]
-  have h1 := knowledgeError_le_curve wideSetup ha (9 / 25) (37 / 100)
+  have h1 := knowledgeError_le_curve wideSetup (9 / 25) (37 / 100)
     (by rw [hrate, hsize]; norm_num) (by norm_num) (by norm_num) (by rw [hrate]; norm_num)
-  have hq : wideSetup.params.numQueries = 159 := rfl
+  have h2 := friError_le_lossy wideSetup ha 7 (9 / 25) (9 / 25 + 1 / 2 ^ 16) (1 / 2 ^ 16)
+    (by rw [hrate]; norm_num) (by norm_num) (lt_add_of_pos_right _ (by positivity))
+    (by positivity)
+  have hq : wideSetup.params.numQueries = 158 := rfl
   have hl : wideSetup.logN = 20 := rfl
   have hb : wideSetup.params.logBlowup = 2 := rfl
-  rw [hq] at h1
-  refine h1.trans (numbers_wide_le _ ?_ _ ?_)
-  · have hc : wideSetup.chunks = 2 := by
-      change 2 ^ (wide 64).logQuotientChunks = 2
-      rw [wide_logQuotientChunks 64 (by decide)]
-      rfl
-    have hid : wideSetup.identityDegree ≤ 3 * 2 ^ 20 + 1 := by
+  have hlarge : wideSetup.logN + wideSetup.params.logBlowup - 7 = 15 := rfl
+  have hfolds : wideSetup.logN - wideSetup.params.logFinalPolyLen = 20 := rfl
+  rw [hq, hlarge, hfolds, hb] at h2
+  have hc : wideSetup.chunks = 2 := by
+    change 2 ^ (wide 64).logQuotientChunks = 2
+    rw [wide_logQuotientChunks 64 (by decide)]
+    rfl
+  refine h1.trans ((add_le_add le_rfl h2).trans
+    (numbers_wide_le _ ?_ _ ?_ _ ?_ _ le_rfl _ ?_))
+  · have hid : wideSetup.identityDegree ≤ 3 * 2 ^ 20 + 1 := by
       simp only [Setup.identityDegree, Setup.n, hc, hl]
       refine max_le (foldl_max_le _ _ _ _ (Nat.zero_le _) fun c hc ↦ ?_) (by norm_num)
       simp only [wideSetup, wide, List.mem_map, List.mem_range] at hc
@@ -195,15 +213,14 @@ theorem wide_knowledgeError_le :
     norm_num at hid ⊢
     generalize wideSetup.identityDegree = x at hid ⊢
     omega
-  · have hc : wideSetup.chunks = 2 := by
-      change 2 ^ (wide 64).logQuotientChunks = 2
-      rw [wide_logQuotientChunks 64 (by decide)]
-      rfl
-    have ho : wideSetup.numOpened - 1 = 135 := by
+  · have ho : wideSetup.numOpened - 1 = 135 := by
       simp only [Setup.numOpened, hc]
       rfl
     rw [ho, hrate]
     norm_num
+  · simp only [LossyMca.lossyBound]
+    norm_num
+  · norm_num
 
 /-- Knowledge soundness of `wideSetup` with error `2 ^ (-100)`, FRI at `9/25` and the extractor
 at `37/100`: if no trace within `37/100` of the prover's committed trace satisfies the AIR, the

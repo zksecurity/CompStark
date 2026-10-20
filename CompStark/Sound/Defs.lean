@@ -137,8 +137,9 @@ noncomputable def friAcceptanceOf {n : Nat} (ω : SmoothCosetFftDomain n 𝕂) (
             (← (pure () : ProbComp Unit))}[stmtOut ∈ Set.univ]
     else 1
 
-/-- FRI's soundness error (`Fri.Spec.soundnessError`) for the reduction of `friAcceptanceOf`, at
-proximity `δ`: one correlated-agreement error per fold and `(1 - δ) ^ numQueries`. `1` without
+/-- FRI's soundness error from lossy correlated agreement (`Fri.Spec.soundnessErrorLossy`) for the
+reduction of `friAcceptanceOf`, at proximity `δ` and the best proximity loss: one lossy
+correlated-agreement error per fold and `(1 - δ + #folds · loss) ^ numQueries`. `1` without
 folds. -/
 noncomputable def friErrorOf {n : Nat} (ω : SmoothCosetFftDomain n 𝕂) (folds : List ℕ+)
     (logFinal numQueries : Nat) (δ : NNReal) : ENNReal :=
@@ -148,7 +149,7 @@ noncomputable def friErrorOf {n : Nat} (ω : SmoothCosetFftDomain n 𝕂) (folds
     let s := foldsAt f fs
     let d := finalDegree logFinal
     if 2 ^ (∑ j, (s j).val) * d.val ≤ 2 ^ n then
-      Fri.Spec.soundnessError (ω := ω) s d numQueries δ δ
+      ⨅ loss : NNReal, (Fri.Spec.soundnessErrorLossy (ω := ω) s d numQueries δ δ loss : ENNReal)
     else 1
 
 end CompStark.Sound

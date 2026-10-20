@@ -9,9 +9,10 @@ public import CompStark.Sound.Steps
 /-! # FRI rejects far words
 
 `friStep`: FRI accepts a word that is not `δ`-near the code with probability at most
-`friError S δ`. This is ArkLib's `Fri.Spec.soundness_proximity`, which bounds every prover's
-acceptance by `soundnessError` for inputs outside `proximityLanguage s d δ`, the words at relative
-distance below `δ` from the Reed–Solomon code of degree `2 ^ (∑ s) * d` on the domain.
+`friError S δ`. This is ArkLib's `Fri.Spec.soundness_proximity_lossy`, which bounds every
+prover's acceptance by `soundnessErrorLossy` at every proximity loss, for inputs outside
+`proximityLanguage s d δ`, the words at relative distance below `δ` from the Reed–Solomon code of
+degree `2 ^ (∑ s) * d` on the domain.
 
 For the STARK, Plonky3's arities `folds maxLogArity (logN - logFinalPolyLen)` sum to
 `logN - logFinalPolyLen` (`sum_folds`), so ArkLib's code has degree `2 ^ logN = S.n` and is
@@ -60,9 +61,10 @@ theorem friAcceptanceOf_le {n : Nat} (ω : SmoothCosetFftDomain n 𝕂) (f : ℕ
       Fri.Spec.proximityLanguage (foldsAt f fs) (finalDegree logFinal) δ) :
     friAcceptanceOf ω (f :: fs) logFinal l word ≤ friErrorOf ω (f :: fs) logFinal l δ := by
   simp only [friAcceptanceOf, friErrorOf, hdom, ↓reduceDIte, ↓reduceIte]
-  refine iSup_le fun WitIn ↦ iSup_le fun WitOut ↦ iSup_le fun witIn ↦ iSup_le fun prover ↦ ?_
-  exact Fri.Spec.soundness_proximity (foldsAt f fs) (finalDegree logFinal) l hdom δ δ
-    (pure ()) emptyImpl WitIn WitOut witIn prover _ hfar
+  refine le_iInf fun loss ↦ iSup_le fun WitIn ↦ iSup_le fun WitOut ↦ iSup_le fun witIn ↦
+    iSup_le fun prover ↦ ?_
+  exact Fri.Spec.soundness_proximity_lossy (foldsAt f fs) (finalDegree logFinal) l hdom δ δ loss
+    loss.coe_nonneg (pure ()) emptyImpl WitIn WitOut witIn prover _ hfar
 
 /-- A word at relative distance below `δ` from a codeword is `δ`-near the code. -/
 theorem near_of_relHammingDist_lt (S : Setup) (δ : ℝ) (w u : S.Point → 𝕂) (hu : u ∈ S.code)
