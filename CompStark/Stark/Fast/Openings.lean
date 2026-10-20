@@ -45,7 +45,7 @@ theorem coord_add (c : Nat) (a b : EF) : coord c (a + b) = coord c a + coord c b
   match c with
   | 0 | 1 | 2 | _ + 3 => rfl
 
-theorem coord_smul (c : Nat) (x : F) (a : EF) : coord c (Ext4.smul x a) = x * coord c a := by
+theorem coord_smul (c : Nat) (x : F) (a : EF) : coord c (Challenge.smul x a) = x * coord c a := by
   match c with
   | 0 | 1 | 2 | _ + 3 => rfl
 
@@ -58,7 +58,7 @@ theorem ext_coord {a b : EF} (h : ∀ c < 4, coord c a = coord c b) : a = b :=
 
 /-- Coordinate `c` of a sum of scaled elements is the sum of the scaled coordinates. -/
 theorem coord_foldl_smul (f : Nat → F) (g : Nat → EF) (c : Nat) (acc : EF) : ∀ n,
-    coord c ((List.range' 0 n).foldl (fun acc i ↦ acc + Ext4.smul (f i) (g i)) acc) =
+    coord c ((List.range' 0 n).foldl (fun acc i ↦ acc + Challenge.smul (f i) (g i)) acc) =
       coord c acc + ∑ i ∈ Finset.range n, f i * coord c (g i)
   | 0 => by rw [List.range'_zero, List.foldl_nil, Finset.sum_range_zero, add_zero]
   | n + 1 => by
@@ -131,33 +131,6 @@ def mk4 (f : Nat → F) : EF := ⟨f 0, f 1, f 2, f 3⟩
 theorem coord_mk4 (f : Nat → F) (c : Nat) (hc : c < 4) : coord c (mk4 f) = f c := by
   match c, hc with
   | 0, _ | 1, _ | 2, _ | 3, _ => rfl
-
-/-- The barycentric weight `x / (z - x)`. -/
-def bw (z : EF) (x : F) : EF := Ext4.smul x (z - Ext4.ofBase x)⁻¹
-
-theorem sub_ofBase_ne_zero {z : EF} (hz : Ext.OutsideBase z) (x : F) :
-    Ext4.toSpec (z - Ext4.ofBase x) ≠ 0 := by
-  refine Norm.toSpec_ne_zero fun h ↦ ?_
-  have h1 := congrArg Ext4.c1 h
-  have h2 := congrArg Ext4.c2 h
-  have h3 := congrArg Ext4.c3 h
-  simp only [Norm.sub_c1, Norm.sub_c2, Norm.sub_c3, Ext4.ofBase, sub_zero] at h1 h2 h3
-  rcases (KoalaBear.outsideBase_ext4 z).mp hz with h | h | h
-  · exact h h1
-  · exact h h2
-  · exact h h3
-
-theorem baryWeights_getD {z : EF} (hz : Ext.OutsideBase z) (logH i : Nat) (hi : i < 2 ^ logH) :
-    (baryWeights logH z).getD i 0 = bw z ((cosetPoints gen logH).getD i 0) := by
-  have hb := batchInv_eq Ext4.toSpec Ext4.toSpec_injective Ext4.toSpec_mul Ext4.toSpec_inv
-    Ext4.toSpec_one ((cosetPoints gen logH).map fun x ↦ z - Ext.ofBase x) (fun y hy ↦ by
-      obtain ⟨x, -, rfl⟩ := Array.mem_map.mp hy
-      exact sub_ofBase_ne_zero hz x)
-  have hs := size_cosetPoints gen logH
-  rw [baryWeights, hb, Array.getD_eq_getD_getElem?, Array.getElem?_zipWith,
-    Array.getElem?_map, Array.getElem?_map, Array.getElem?_eq_getElem (by omega), Option.map_some,
-    Option.map_some, Array.getD_eq_getD_getElem?, Array.getElem?_eq_getElem (by omega)]
-  rfl
 
 /-- A column sum of the specification, coordinate by coordinate, reindexed to the stored rows. -/
 theorem coord_colSum (values : Array F) (w L j : Nat) {z : EF} (hz : Ext.OutsideBase z) (c : Nat) :
@@ -537,11 +510,14 @@ theorem openedAt_rel (b : Nat) (zs : List KoalaBear.Fast.Ext4) {m : PMat} {s : M
 
 /-! ### The specification's reduction row by row -/
 
-/-- Row `r` of a matrix of width `w` batched by the powers `ap` of `α`. -/
-def crow (V : Array F) (ap : Array EF) (w r : Nat) : EF :=
-  (List.range' 0 w).foldl (fun acc i ↦ acc + Ext4.smul (V.getD (r * w + i) 0) (ap.getD i 0)) 0
+section
+variable {K : Type} [Challenge K]
 
-theorem compress_eq (s : Mat) (ap : Array EF) :
+/-- Row `r` of a matrix of width `w` batched by the powers `ap` of `α`. -/
+def crow (V : Array F) (ap : Array K) (w r : Nat) : K :=
+  (List.range' 0 w).foldl (fun acc i ↦ acc + Challenge.smul (V.getD (r * w + i) 0) (ap.getD i 0)) 0
+
+theorem compress_eq (s : Mat) (ap : Array K) :
     compress s ap = Array.ofFn (n := s.height) fun r ↦ crow s.values ap s.width r.val := by
   unfold compress
   refine parChunks_eq _ _ _ (fun r ↦ crow s.values ap s.width r) (fun r0 len _ ↦ ?_)
@@ -555,19 +531,19 @@ theorem compress_eq (s : Mat) (ap : Array EF) :
   exact this
 
 /-- One point's term at a row: `offset · (yz - comp) / (z - x)`. -/
-def termStep (comp : EF) (x : F) (acc : EF) (t : EF × EF × EF) : EF :=
-  acc + t.2.2 * (t.2.1 - comp) * (t.1 - Ext4.ofBase x)⁻¹
+def termStep (comp : K) (x : F) (acc : K) (t : K × K × K) : K :=
+  acc + t.2.2 * (t.2.1 - comp) * (t.1 - Ext.ofBase x)⁻¹
 
-theorem accumulateRows_eq (acc comp : Array EF) (xs : Array F) {z : EF} (hz : Ext.OutsideBase z)
-    (yz offset : EF) (r0 len : Nat) (hr : r0 + len ≤ xs.size) :
+theorem accumulateRows_eq (acc comp : Array K) (xs : Array F) {z : K} (hz : Ext.OutsideBase z)
+    (yz offset : K) (r0 len : Nat) (hr : r0 + len ≤ xs.size) :
     accumulateRows acc comp xs z yz offset r0 len = Array.ofFn (n := len) fun k ↦
       termStep (comp.getD (r0 + k.val) 0) (xs.getD (r0 + k.val) 0) (acc.getD (r0 + k.val) 0)
         (z, yz, offset) := by
   simp only [accumulateRows, Id.run, Std.Legacy.Range.forIn_eq_forIn_range',
     List.forIn_pure_yield_eq_foldl, pure_bind, Std.Legacy.Range.size, Nat.sub_zero,
     Nat.add_sub_cancel, Nat.div_one]
-  rw [batchInv_eq Ext4.toSpec Ext4.toSpec_injective Ext4.toSpec_mul Ext4.toSpec_inv
-    Ext4.toSpec_one _ (fun y hy ↦ by
+  rw [batchInv_eq Challenge.toSpec Challenge.toSpec_injective Challenge.toSpec_mul
+    Challenge.toSpec_inv Challenge.toSpec_one _ (fun y hy ↦ by
       obtain ⟨x, -, rfl⟩ := Array.mem_map.mp hy
       exact sub_ofBase_ne_zero hz x)]
   have := foldl_push_range' (fun k ↦ termStep (comp.getD (r0 + k) 0) (xs.getD (r0 + k) 0)
@@ -580,7 +556,7 @@ theorem accumulateRows_eq (acc comp : Array EF) (xs : Array F) {z : EF} (hz : Ex
   rw [Nat.zero_add] at hk
   refine congrArg b.push ?_
   have e : ((Array.map (fun x ↦ x⁻¹) (Array.map (fun x ↦ z - Ext.ofBase x)
-      (xs.extract r0 (r0 + len)))).getD k 0) = (z - Ext4.ofBase (xs.getD (r0 + k) 0))⁻¹ := by
+      (xs.extract r0 (r0 + len)))).getD k 0) = (z - Ext.ofBase (xs.getD (r0 + k) 0))⁻¹ := by
     have hx : k < (xs.extract r0 (r0 + len)).size := by rw [Array.size_extract]; omega
     rw [Array.getD_eq_getD_getElem?, Array.getElem?_map, Array.getElem?_map,
       Array.getElem?_eq_getElem hx, Array.getElem_extract, Array.getD_eq_getD_getElem?,
@@ -590,17 +566,17 @@ theorem accumulateRows_eq (acc comp : Array EF) (xs : Array F) {z : EF} (hz : Ex
   rfl
 
 /-- The batched opened value of a point: `∑ᵢ αⁱ ys[i]`. -/
-abbrev yzOf (ap : Array EF) (w : Nat) (ys : Array EF) : EF :=
+abbrev yzOf (ap : Array K) (w : Nat) (ys : Array K) : K :=
   (List.range w).foldl (fun s i ↦ s + ap.getD i 0 * ys.getD i 0) 0
 
 /-- The points of a matrix with their batched values and offsets `α ^ cnt`, `cnt` stepping by the
 width: the fast reduction's terms. -/
-def termsStep (alpha : EF) (ap : Array EF) (w : Nat) (b : Nat × List (EF × EF × EF))
-    (p : EF × Array EF) : Nat × List (EF × EF × EF) :=
+def termsStep (alpha : K) (ap : Array K) (w : Nat) (b : Nat × List (K × K × K))
+    (p : K × Array K) : Nat × List (K × K × K) :=
   (b.1 + w, b.2 ++ [(p.1, yzOf ap w p.2, Ext.pow alpha b.1)])
 
-theorem foldl_termsStep (alpha : EF) (ap : Array EF) (w : Nat) :
-    ∀ (pts : List (EF × Array EF)) (c : Nat) (T : List (EF × EF × EF)),
+theorem foldl_termsStep (alpha : K) (ap : Array K) (w : Nat) :
+    ∀ (pts : List (K × Array K)) (c : Nat) (T : List (K × K × K)),
       pts.foldl (termsStep alpha ap w) (c, T) =
         ((pts.foldl (termsStep alpha ap w) (c, [])).1,
           T ++ (pts.foldl (termsStep alpha ap w) (c, [])).2)
@@ -610,8 +586,8 @@ theorem foldl_termsStep (alpha : EF) (ap : Array EF) (w : Nat) :
       foldl_termsStep alpha ap w pts _ (T ++ _), foldl_termsStep alpha ap w pts _ ([] ++ _),
       List.nil_append, List.append_assoc]
 
-theorem parChunks_accumulate (n : Nat) (f : Nat → EF) (comp : Array EF) (xs : Array F)
-    (hxs : n ≤ xs.size) {z : EF} (hz : Ext.OutsideBase z) (yz offset : EF) :
+theorem parChunks_accumulate (n : Nat) (f : Nat → K) (comp : Array K) (xs : Array F)
+    (hxs : n ≤ xs.size) {z : K} (hz : Ext.OutsideBase z) (yz offset : K) :
     parChunks n (if n < 4096 then 1 else 16) (fun r0 len ↦
       accumulateRows (Array.ofFn (n := n) fun r ↦ f r.val) comp xs z yz offset r0 len) =
       Array.ofFn (n := n) fun r ↦ termStep (comp.getD r.val 0) (xs.getD r.val 0) (f r.val)
@@ -631,9 +607,9 @@ theorem parChunks_accumulate (n : Nat) (f : Nat → EF) (comp : Array EF) (xs : 
 
 /-- The specification's accumulation of a matrix's points onto the running sums of its height,
 row by row a fold of the fast reduction's terms. -/
-theorem foldl_accumulate (alpha : EF) (ap : Array EF) (w n : Nat) (comp : Array EF)
+theorem foldl_accumulate (alpha : K) (ap : Array K) (w n : Nat) (comp : Array K)
     (xs : Array F) (hxs : n ≤ xs.size) :
-    ∀ (pts : List (EF × Array EF)), (∀ p ∈ pts, Ext.OutsideBase p.1) → ∀ (c : Nat) (f : Nat → EF),
+    ∀ (pts : List (K × Array K)), (∀ p ∈ pts, Ext.OutsideBase p.1) → ∀ (c : Nat) (f : Nat → K),
       pts.foldl (fun b p ↦ (b.1 + w, parChunks n (if n < 4096 then 1 else 16) fun r0 len ↦
         accumulateRows b.2 comp xs p.1 (yzOf ap w p.2) (Ext.pow alpha b.1) r0 len))
         (c, Array.ofFn (n := n) fun r ↦ f r.val) =
@@ -650,6 +626,11 @@ theorem foldl_accumulate (alpha : EF) (ap : Array EF) (w n : Nat) (comp : Array 
     dsimp only at ih ⊢
     rw [ih, termsStep, foldl_termsStep alpha ap w pts _ ([] ++ _)]
     simp only [List.nil_append, List.cons_append, List.foldl_cons]
+
+/-- The powers `1, α, …, α ^ (w - 1)`. -/
+abbrev powers (alpha : K) (w : Nat) : Array K := Array.ofFn (n := w) fun i ↦ Ext.pow alpha i.val
+
+end
 
 /-! ### The fast reduction as a fold -/
 
@@ -688,9 +669,6 @@ theorem reduce_fast (alpha : EF) (items : List (PMat × List (EF × Array EF))) 
   rfl
 
 /-! ### The grouping simulates the specification's fold -/
-
-/-- The powers `1, α, …, α ^ (w - 1)`. -/
-abbrev powers (alpha : EF) (w : Nat) : Array EF := Array.ofFn (n := w) fun i ↦ Ext.pow alpha i.val
 
 /-- Row `r` of a group's batched quotient: every term of every matrix in order. -/
 def gval (alpha : EF) (logH : Nat) (g : Array GItem) (r : Nat) : EF :=
@@ -1019,7 +997,8 @@ theorem term_rel {len : Nat} {acc comp : EVec} {S C : Nat → EF} (X : Array F)
     rw [Array.size_ofFn, Array.size_zipWith, Array.size_ofFn, Array.size_map, Array.size_zipWith,
       Array.size_map, hsz, Array.size_map, hX, Nat.min_self, Nat.min_self]) fun t h1 _ ↦ ?_
   rw [Array.size_ofFn] at h1
-  simp only [Array.getElem_ofFn, Array.getElem_zipWith, Array.getElem_map, termStep]
+  simp only [Array.getElem_ofFn, Array.getElem_zipWith, Array.getElem_map, termStep, Ext.ofBase,
+    KoalaBear.ofBase_ext4]
   rw [Array.getD_eq_getD_getElem?, Array.getElem?_eq_getElem (by omega), Option.getD_some,
     mul_assoc', mul_comm' offset, mul_assoc']
 

@@ -35,45 +35,44 @@ their opening points `z`, at every row `x = g · ω ^ bitrev r` of the extended 
 namespace CompStark
 open CompStark.Stark CompStark.Fri Polynomial Montgomery.Native32
 open CompStark.Stark.Fast (crow termStep termsStep yzOf powers)
-open KoalaBear.Fast (Ext4)
+
+variable {EF : Type} [Challenge EF]
 
 local notation "F" => KoalaBear.Fast.Field
-local notation "EF" => KoalaBear.Fast.Ext4
-local notation "K" => KoalaBear.Ext4
-local notation "ι" => algebraMap KoalaBear.Field KoalaBear.Ext4
+local notation "K" => Challenge.Spec EF
+local notation "ι" => algebraMap KoalaBear.Field (Challenge.Spec EF)
 
 namespace Deep
 
 /-! ### Arithmetic through `toSpec` -/
 
-theorem toSpec_pow (x : EF) (n : Nat) : Ext4.toSpec (Ext.pow x n) = Ext4.toSpec x ^ n := by
+theorem toSpec_pow (x : EF) (n : Nat) :
+    Challenge.toSpec (Ext.pow x n) = Challenge.toSpec x ^ n := by
   induction n using Nat.strong_induction_on generalizing x with
   | _ n ih =>
     cases n with
-    | zero => rw [Ext.pow, pow_zero, Ext4.toSpec_one]
+    | zero => rw [Ext.pow, pow_zero, Challenge.toSpec_one]
     | succ k =>
       rw [Ext.pow]
       have h := Nat.div_add_mod (k + 1) 2
       split_ifs with hp
-      · rw [Ext4.toSpec_mul, ih _ (by omega), Ext4.toSpec_mul, ← sq, ← pow_mul, ← pow_succ']
-        exact congrArg (Ext4.toSpec x ^ ·) (by omega)
-      · rw [ih _ (by omega), Ext4.toSpec_mul, ← sq, ← pow_mul]
-        exact congrArg (Ext4.toSpec x ^ ·) (by omega)
+      · rw [Challenge.toSpec_mul, ih _ (by omega), Challenge.toSpec_mul, ← sq, ← pow_mul,
+          ← pow_succ']
+        exact congrArg (Challenge.toSpec x ^ ·) (by omega)
+      · rw [ih _ (by omega), Challenge.toSpec_mul, ← sq, ← pow_mul]
+        exact congrArg (Challenge.toSpec x ^ ·) (by omega)
 
-theorem toSpec_ofBase (x : F) : Ext4.toSpec (Ext.ofBase x) = ι (FastField.toField x) :=
-  Ext4.toSpec_ofBase x
-
-theorem toSpec_ofBase4 (x : F) : Ext4.toSpec (Ext4.ofBase x) = ι (FastField.toField x) :=
-  Ext4.toSpec_ofBase x
+theorem toSpec_ofBase (x : F) : Challenge.toSpec (Ext.ofBase x : EF) = ι (FastField.toField x) :=
+  Challenge.toSpec_ofBase x
 
 theorem toSpec_foldl_range (f : Nat → EF) (a : EF) (w : Nat) :
-    Ext4.toSpec ((List.range w).foldl (fun s i ↦ s + f i) a) =
-      Ext4.toSpec a + ∑ i ∈ Finset.range w, Ext4.toSpec (f i) := by
+    Challenge.toSpec ((List.range w).foldl (fun s i ↦ s + f i) a) =
+      Challenge.toSpec a + ∑ i ∈ Finset.range w, Challenge.toSpec (f i) := by
   induction w with
   | zero => rw [List.range_zero, List.foldl_nil, Finset.sum_range_zero, add_zero]
   | succ w ih =>
-    rw [List.range_succ, List.foldl_append, List.foldl_cons, List.foldl_nil, Ext4.toSpec_add, ih,
-      Finset.sum_range_succ, add_assoc]
+    rw [List.range_succ, List.foldl_append, List.foldl_cons, List.foldl_nil, Challenge.toSpec_add,
+      ih, Finset.sum_range_succ, add_assoc]
 
 theorem powers_getD (alpha : EF) (w i : Nat) (hi : i < w) :
     (powers alpha w).getD i 0 = Ext.pow alpha i :=
@@ -81,19 +80,20 @@ theorem powers_getD (alpha : EF) (w i : Nat) (hi : i < w) :
 
 /-- A point's term at a row, through `toSpec`: `∑ᵢ α ^ (cnt + i) (yᵢ - vᵢ) / (z - x)`. -/
 theorem toSpec_termStep (alpha z acc : EF) (V : Array F) (ys : Array EF) (w r cnt : Nat) (x : F) :
-    Ext4.toSpec (termStep (crow V (powers alpha w) w r) x acc
+    Challenge.toSpec (termStep (crow V (powers alpha w) w r) x acc
       (z, yzOf (powers alpha w) w ys, Ext.pow alpha cnt)) =
-      Ext4.toSpec acc + ∑ i ∈ Finset.range w, Ext4.toSpec alpha ^ (cnt + i) *
-        (Ext4.toSpec (ys.getD i 0) - ι (FastField.toField (V.getD (r * w + i) 0))) *
-        (Ext4.toSpec z - ι (FastField.toField x))⁻¹ := by
+      Challenge.toSpec acc + ∑ i ∈ Finset.range w, Challenge.toSpec alpha ^ (cnt + i) *
+        (Challenge.toSpec (ys.getD i 0) - ι (FastField.toField (V.getD (r * w + i) 0))) *
+        (Challenge.toSpec z - ι (FastField.toField x))⁻¹ := by
   rw [termStep, crow, ← List.range_eq_range', yzOf]
   dsimp only
-  rw [Ext4.toSpec_add, Ext4.toSpec_mul, Ext4.toSpec_mul, Ext4.toSpec_sub, Ext4.toSpec_inv,
-    Ext4.toSpec_sub, toSpec_ofBase4, toSpec_pow, toSpec_foldl_range, toSpec_foldl_range,
-    Ext4.toSpec_zero, zero_add, zero_add, ← Finset.sum_sub_distrib, Finset.mul_sum,
+  rw [Challenge.toSpec_add, Challenge.toSpec_mul, Challenge.toSpec_mul, Challenge.toSpec_sub,
+      Challenge.toSpec_inv,
+    Challenge.toSpec_sub, toSpec_ofBase, toSpec_pow, toSpec_foldl_range, toSpec_foldl_range,
+    Challenge.toSpec_zero, zero_add, zero_add, ← Finset.sum_sub_distrib, Finset.mul_sum,
     Finset.sum_mul]
   refine congrArg _ (Finset.sum_congr rfl fun i hi ↦ ?_)
-  rw [powers_getD _ _ _ (Finset.mem_range.mp hi), Ext4.toSpec_mul, Ext4.toSpec_smul,
+  rw [powers_getD _ _ _ (Finset.mem_range.mp hi), Challenge.toSpec_mul, Challenge.toSpec_smul,
     Algebra.smul_def, toSpec_pow, pow_add]
   ring
 
@@ -224,13 +224,13 @@ theorem reduceStep_eq (alpha : EF) (red : List (Nat × Nat × Array EF)) (m : Ma
 `2 ^ h`: the extension of polynomials `ps`, opened outside the base field at their values. -/
 def HonestItem (b h : Nat) (x : Mat × List (EF × Array EF)) : Prop :=
   ∃ ps, Mat.IsLde b h x.1 ps ∧ ∀ y ∈ x.2, Ext.OutsideBase y.1 ∧ y.2.size = ps.length ∧
-    ∀ j < ps.length, Ext4.toSpec (y.2.getD j 0) = aeval (Ext4.toSpec y.1) (ps.getD j 0)
+    ∀ j < ps.length, Challenge.toSpec (y.2.getD j 0) = aeval (Challenge.toSpec y.1) (ps.getD j 0)
 
 /-- The values on `⟨ω⟩`, `ω` of order `2 ^ h`, in bit-reversed order, of a polynomial of degree
 below `2 ^ (h - b) - 1`. -/
 def LowDeg (b h : Nat) (v : Array EF) : Prop :=
   v.size = 2 ^ h ∧ ∃ p : K[X], p.degree < ((2 ^ (h - b) - 1 : Nat) : WithBot Nat) ∧
-    ∀ r < 2 ^ h, Ext4.toSpec (v.getD r 0) =
+    ∀ r < 2 ^ h, Challenge.toSpec (v.getD r 0) =
       p.eval (ι (FastField.toField (twoAdicGen h)) ^ reverseBits r h)
 
 /-- The running sums of `reduceStep`: distinct heights, each low degree. -/
@@ -248,6 +248,7 @@ theorem compress_getD (m : Mat) (ap : Array EF) (r : Nat) (hr : r < m.height) :
     (compress m ap).getD r 0 = crow m.values ap m.width r := by
   rw [Fast.compress_eq, CompPoly.CPolynomial.NTTFast.Packed.getD_ofFn_bounded _ _ hr]
 
+omit [Challenge EF] in
 theorem lookup_mem {red : List (Nat × Nat × Array EF)} {h : Nat} {v : Nat × Array EF}
     (hl : red.lookup h = some v) : (h, v) ∈ red := by
   obtain ⟨l₁, l₂, e, -⟩ := List.lookup_eq_some_iff.mp hl
@@ -266,7 +267,7 @@ theorem startOf_lowDeg {b : Nat} {red : List (Nat × Nat × Array EF)} (hred : R
     rw [Option.getD_none, Array.getD_eq_getD_getElem?, Array.getElem?_eq_getElem
       (by rw [Array.size_replicate, hm]; exact hr), Array.getElem_replicate, Option.getD_some,
       eval_zero]
-    exact Ext4.toSpec_zero
+    exact Challenge.toSpec_zero
   | some v =>
     rw [Option.getD_some]
     exact (hred.2 _ (lookup_mem hl)).2.2
@@ -274,15 +275,17 @@ theorem startOf_lowDeg {b : Nat} {red : List (Nat × Nat × Array EF)} (hred : R
 /-- A point's term at row `r` of an honest matrix is the value of `pointPoly`. -/
 theorem toSpec_ptStep {b h : Nat} {m : Mat} {ps : List KoalaBear.Field[X]} (hm : Mat.IsLde b h m ps)
     (alpha a : EF) (c : Nat) (y : EF × Array EF) (hz : Ext.OutsideBase y.1)
-    (hys : ∀ j < ps.length, Ext4.toSpec (y.2.getD j 0) = aeval (Ext4.toSpec y.1) (ps.getD j 0))
+    (hys : ∀ j < ps.length,
+        Challenge.toSpec (y.2.getD j 0) = aeval (Challenge.toSpec y.1) (ps.getD j 0))
     (r : Nat) (hr : r < 2 ^ h) :
-    Ext4.toSpec (ptStep alpha m.width ((compress m (powers alpha m.width)).getD r 0)
-      ((cosetPointsBitRev gen h).getD r 0) (c, a) y).2 = Ext4.toSpec a +
-      (pointPoly (Ext4.toSpec alpha) (Ext4.toSpec y.1) (ι (FastField.toField gen)) c ps).eval
+    Challenge.toSpec (ptStep alpha m.width ((compress m (powers alpha m.width)).getD r 0)
+      ((cosetPointsBitRev gen h).getD r 0) (c, a) y).2 = Challenge.toSpec a +
+      (pointPoly (Challenge.toSpec alpha) (Challenge.toSpec y.1) (ι (FastField.toField gen))
+        c ps).eval
         (ι (FastField.toField (twoAdicGen h)) ^ reverseBits r h) := by
   obtain ⟨hw, hh, -, -, -, -, hv⟩ := hm
-  have hne := Fast.sub_ofBase_ne_zero hz ((cosetPointsBitRev gen h).getD r 0)
-  rw [Ext4.toSpec_sub, toSpec_ofBase4, cosetPointsBitRev_getD h r hr,
+  have hne := sub_ofBase_ne_zero hz ((cosetPointsBitRev gen h).getD r 0)
+  rw [Challenge.toSpec_sub, toSpec_ofBase, cosetPointsBitRev_getD h r hr,
     toField_mul, toField_npow, map_mul, map_pow] at hne
   rw [ptStep, compress_getD _ _ _ (by rw [hh]; exact hr), toSpec_termStep,
     cosetPointsBitRev_getD h r hr, toField_mul, toField_npow, map_mul, map_pow,
@@ -290,18 +293,20 @@ theorem toSpec_ptStep {b h : Nat} {m : Mat} {ps : List KoalaBear.Field[X]} (hm :
   rw [hw] at hv
   refine congrArg _ (Finset.sum_congr rfl fun i hi ↦ ?_)
   have hi := Finset.mem_range.mp hi
-  rw [hys i hi, hv r hr i hi, aeval_def, eval_map, eval_map, ← map_pow, ← map_mul, eval₂_hom]
+  rw [hys i hi, hv r hr i hi, aeval_def, eval_map, eval_map, ← map_pow (algebraMap _ K),
+    ← map_mul (algebraMap _ K), eval₂_hom]
 
 /-- Accumulating honest points keeps the running sums low degree. -/
 theorem foldl_ptStep_lowDeg {b h : Nat} {m : Mat} {ps : List KoalaBear.Field[X]}
     (hm : Mat.IsLde b h m ps) (alpha : EF) :
     ∀ (pts : List (EF × Array EF)), (∀ y ∈ pts, Ext.OutsideBase y.1 ∧
-      ∀ j < ps.length, Ext4.toSpec (y.2.getD j 0) = aeval (Ext4.toSpec y.1) (ps.getD j 0)) →
+      ∀ j < ps.length,
+        Challenge.toSpec (y.2.getD j 0) = aeval (Challenge.toSpec y.1) (ps.getD j 0)) →
     ∀ (c : Nat) (f : Nat → EF) (p : K[X]), p.degree < ((2 ^ (h - b) - 1 : Nat) : WithBot Nat) →
-      (∀ r < 2 ^ h, Ext4.toSpec (f r) =
+      (∀ r < 2 ^ h, Challenge.toSpec (f r) =
         p.eval (ι (FastField.toField (twoAdicGen h)) ^ reverseBits r h)) →
       ∃ q : K[X], q.degree < ((2 ^ (h - b) - 1 : Nat) : WithBot Nat) ∧ ∀ r < 2 ^ h,
-        Ext4.toSpec (pts.foldl (ptStep alpha m.width
+        Challenge.toSpec (pts.foldl (ptStep alpha m.width
           ((compress m (powers alpha m.width)).getD r 0) ((cosetPointsBitRev gen h).getD r 0))
           (c, f r)).2 = q.eval (ι (FastField.toField (twoAdicGen h)) ^ reverseBits r h)
   | [], _, _, _, p, hp, hf => ⟨p, hp, hf⟩
@@ -310,7 +315,8 @@ theorem foldl_ptStep_lowDeg {b h : Nat} {m : Mat} {ps : List KoalaBear.Field[X]}
     have := foldl_ptStep_lowDeg hm alpha pts (fun y hy ↦ hpts y (List.mem_cons_of_mem _ hy))
       (c + m.width) (fun r ↦ (ptStep alpha m.width ((compress m (powers alpha m.width)).getD r 0)
         ((cosetPointsBitRev gen h).getD r 0) (c, f r) y).2)
-      (p + pointPoly (Ext4.toSpec alpha) (Ext4.toSpec y.1) (ι (FastField.toField gen)) c ps)
+      (p + pointPoly (Challenge.toSpec alpha) (Challenge.toSpec y.1)
+        (ι (FastField.toField gen)) c ps)
       (by
         rw [← mem_degreeLT] at hp ⊢
         exact Submodule.add_mem _ hp (mem_degreeLT.mpr
@@ -362,7 +368,7 @@ open Deep
 theorem reduce_lowDegree (b : Nat) (alpha : EF) (items : List (Mat × List (EF × Array EF)))
     (hitems : ∀ x ∈ items, ∃ h ps, Mat.IsLde b h x.1 ps ∧ ∀ y ∈ x.2, Ext.OutsideBase y.1 ∧
       y.2.size = ps.length ∧ ∀ j < ps.length,
-        Ext4.toSpec (y.2.getD j 0) = aeval (Ext4.toSpec y.1) (ps.getD j 0)) :
+        Challenge.toSpec (y.2.getD j 0) = aeval (Challenge.toSpec y.1) (ps.getD j 0)) :
     ∀ x ∈ Fri.reduce alpha items, LowDegree x.1 (x.1 - b) x.2 := by
   intro x hx
   rw [reduce_eq] at hx
@@ -502,10 +508,10 @@ theorem forIn_map_eq {m : Type → Type} [Monad m] [LawfulMonad m] {α β γ δ 
 theorem toSpec_foldl_column (alpha q : EF) (ys : Nat → EF) (vs : Nat → F) (ap acc : EF) (w : Nat) :
     let r := (List.range w).foldl (fun s i ↦ (s.1 * alpha,
       s.2 + s.1 * (ys i - Ext.ofBase (vs i)) * q)) (ap, acc)
-    Ext4.toSpec r.1 = Ext4.toSpec ap * Ext4.toSpec alpha ^ w ∧
-      Ext4.toSpec r.2 = Ext4.toSpec acc + ∑ i ∈ Finset.range w, Ext4.toSpec ap *
-        Ext4.toSpec alpha ^ i * (Ext4.toSpec (ys i) - ι (FastField.toField (vs i))) *
-          Ext4.toSpec q := by
+    Challenge.toSpec r.1 = Challenge.toSpec ap * Challenge.toSpec alpha ^ w ∧
+      Challenge.toSpec r.2 = Challenge.toSpec acc + ∑ i ∈ Finset.range w, Challenge.toSpec ap *
+        Challenge.toSpec alpha ^ i * (Challenge.toSpec (ys i) - ι (FastField.toField (vs i))) *
+          Challenge.toSpec q := by
   induction w with
   | zero =>
     refine ⟨by rw [List.range_zero, List.foldl_nil, pow_zero, mul_one], ?_⟩
@@ -513,9 +519,9 @@ theorem toSpec_foldl_column (alpha q : EF) (ys : Nat → EF) (vs : Nat → F) (a
   | succ w ih =>
     obtain ⟨h1, h2⟩ := ih
     simp only [List.range_succ, List.foldl_append, List.foldl_cons, List.foldl_nil] at h1 h2 ⊢
-    refine ⟨by rw [Ext4.toSpec_mul, h1, pow_succ, mul_assoc], ?_⟩
-    rw [Ext4.toSpec_add, h2, Finset.sum_range_succ, Ext4.toSpec_mul, Ext4.toSpec_mul, h1,
-      Ext4.toSpec_sub, toSpec_ofBase, add_assoc]
+    refine ⟨by rw [Challenge.toSpec_mul, h1, pow_succ, mul_assoc], ?_⟩
+    rw [Challenge.toSpec_add, h2, Finset.sum_range_succ, Challenge.toSpec_mul,
+      Challenge.toSpec_mul, h1, Challenge.toSpec_sub, toSpec_ofBase, add_assoc]
 
 /-- The running sums of `reduce` as the verifier keeps them at a query: the power of `α` for the
 next column and the sum at the queried row of each height. -/
@@ -551,8 +557,8 @@ theorem blowup_zero {b : Nat} {red : List (Nat × Nat × Array EF)} (hred : RedO
   obtain ⟨-, -, -, p, hp, hv⟩ := hred.2 _ (lookup_mem hu)
   rw [Nat.sub_self, Nat.pow_zero, Nat.sub_self, Nat.cast_zero, Nat.WithBot.lt_zero_iff,
     degree_eq_bot] at hp
-  apply Ext4.toSpec_injective
-  rw [hv _ (shiftRight_lt hidx hb), hp, eval_zero, Ext4.toSpec_zero]
+  apply Challenge.toSpec_injective
+  rw [hv _ (shiftRight_lt hidx hb), hp, eval_zero, Challenge.toSpec_zero]
 
 /-- The verifier's state for a point count and running sum. -/
 def powPair (alpha : EF) (s : Nat × EF) : EF × EF := (Ext.pow alpha s.1, s.2)
@@ -604,13 +610,13 @@ theorem column_loop (alpha : EF) (m : Mat) (i : Nat) (hi : i < m.height) (xv : F
         (c, a) y) := by
   obtain ⟨h1, h2⟩ := toSpec_foldl_column alpha (y.1 - Ext.ofBase xv)⁻¹ (y.2.getD · 0)
     (fun j ↦ (rowOf m i).getD j 0) (Ext.pow alpha c) a m.width
-  refine Prod.ext (Ext4.toSpec_injective ?_) (Ext4.toSpec_injective ?_)
+  refine Prod.ext (Challenge.toSpec_injective ?_) (Challenge.toSpec_injective ?_)
   · rw [h1, powPair, ptStep, toSpec_pow, toSpec_pow]
     exact (pow_add _ _ _).symm
   · rw [h2, powPair, ptStep, compress_getD _ _ _ hi, toSpec_termStep]
     refine congrArg _ (Finset.sum_congr rfl fun j hj ↦ ?_)
-    rw [rowOf_getD _ _ _ (Finset.mem_range.mp hj), toSpec_pow, Ext4.toSpec_inv, Ext4.toSpec_sub,
-      toSpec_ofBase, pow_add]
+    rw [rowOf_getD _ _ _ (Finset.mem_range.mp hj), toSpec_pow, Challenge.toSpec_inv,
+      Challenge.toSpec_sub, toSpec_ofBase, pow_add]
 
 end Deep
 
@@ -739,7 +745,7 @@ theorem openInput_honest_of (P : Params) (logMax index : Nat) (alpha : EF)
       have h0 := Deep.blowup_zero hok alpha logMax index hidx hb hl
       dsimp only at h0
       subst h0
-      rfl
+      simp only [beq_self_eq_true, ite_true, pure_bind]
   rw [reduce_eq, ← List.foldl_flatMap, List.map_map, Deep.atQuery,
     ← List.map_mergeSort (l := List.foldl (reduceStep alpha) [] (rounds.flatMap Prod.snd))
       (f := fun e : Nat × Nat × Array EF ↦

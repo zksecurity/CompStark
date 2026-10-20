@@ -24,7 +24,7 @@ of degree below `k n`.
 * The prover's quotient values are `Q` on the quotient domain `g · ⟨ω_q⟩`
   (`quotientOfLde_toSpec`): `quotientValues` evaluates the same constraints there, with the same
   selectors, divided by `Z_H`.
-* Chunk `c` holds `Q` on the coset `s_c ⟨ω⟩`, `s_c = g ω_qᶜ`; its extension's four coordinate
+* Chunk `c` holds `Q` on the coset `s_c ⟨ω⟩`, `s_c = g ω_qᶜ`; its extension's `d` coordinate
   polynomials combine to `q_c` of degree below `n`, which agrees with `Q` on that coset.
 * `recompose` evaluates `∑_c L_c q_c` at `ζ`, `L_c = ∏_{d ≠ c} Z_{D_d} / Z_{D_d}(s_c)`. This
   polynomial has degree below `k n` and agrees with `Q` on the whole quotient domain (`L_c` is
@@ -40,10 +40,11 @@ holds all two-adic roots of unity.
 namespace CompStark.Stark
 open CompStark.Fri Polynomial Montgomery.Native32
 
+variable {EF : Type} [Challenge EF]
+
 local notation "F" => KoalaBear.Fast.Field
-local notation "EF" => KoalaBear.Fast.Ext4
 local notation "K" => KoalaBear.Field
-local notation "E" => KoalaBear.Ext4
+local notation "E" => Challenge.Spec EF
 
 /-! ### The example AIRs fit -/
 
@@ -529,77 +530,88 @@ theorem eval_qFold (A : Air) (logN : Nat) (T : Nat → K[X]) (pis : List F) (a y
 /-! ### The prover's quotient values -/
 
 section QuotientValues
-open KoalaBear.Fast (Ext4)
 
 /-- `Ext.pow` is the power in the spec field. -/
-theorem toSpec_extPow (x : EF) (n : Nat) : Ext4.toSpec (Ext.pow x n) = Ext4.toSpec x ^ n := by
-  induction n using Nat.strong_induction_on generalizing x with
-  | _ n ih =>
-    cases n with
-    | zero => rw [Ext.pow, Ext4.toSpec_one, pow_zero]
-    | succ k =>
-      rw [Ext.pow]
-      have h := Nat.div_add_mod (k + 1) 2
-      split_ifs with hp
-      · rw [Ext4.toSpec_mul, ih _ (by omega), Ext4.toSpec_mul, ← sq, ← pow_mul, ← pow_succ']
-        exact congrArg (Ext4.toSpec x ^ ·) (by omega)
-      · rw [ih _ (by omega), Ext4.toSpec_mul, ← sq, ← pow_mul]
-        exact congrArg (Ext4.toSpec x ^ ·) (by omega)
+theorem toSpec_extPow (x : EF) (n : Nat) :
+    Challenge.toSpec (Ext.pow x n) = Challenge.toSpec x ^ n :=
+  Ext.toSpec_pow x n
 
 /-- `Ext.powTwo` is `x ^ 2 ^ k` in the spec field. -/
-theorem toSpec_extPowTwo (x : EF) : ∀ k, Ext4.toSpec (Ext.powTwo x k) = Ext4.toSpec x ^ 2 ^ k
-  | 0 => by rw [Ext.powTwo, pow_zero, pow_one]
-  | k + 1 => by
-    rw [Ext.powTwo, toSpec_extPowTwo _ k, Ext4.toSpec_mul, ← sq, ← pow_mul, ← Nat.pow_succ']
+theorem toSpec_extPowTwo (x : EF) (k : Nat) :
+    Challenge.toSpec (Ext.powTwo x k) = Challenge.toSpec x ^ 2 ^ k :=
+  Ext.toSpec_powTwo x k
 
-/-- The extension element of four coordinates. -/
-def ofCoeffs (l : List F) : EF := ⟨l.getD 0 0, l.getD 1 0, l.getD 2 0, l.getD 3 0⟩
+/-- An element of given coordinates in the spec field. -/
+theorem toSpec_ofCoeffs_sum (l : List F) : Challenge.toSpec (Challenge.ofCoeffs l : EF) =
+    ∑ e ∈ Finset.range (Challenge.d EF),
+      CompPoly.Extension.Ext.gen ^ e * algebraMap K E (FastField.toField (l.getD e 0)) := by
+  rw [Challenge.toSpec_eq_sum]
+  refine Finset.sum_congr rfl fun e he ↦ ?_
+  rw [Challenge.toField_coeffs, Challenge.toSpec_ofCoeffs,
+    CompPoly.Extension.Ext.coeffNat_of_lt _ (Finset.mem_range.mp he),
+    CompPoly.Extension.Ext.coeff_ofFn]
 
-/-- `ofCoeffs` inverts `Ext.coeffs`. -/
-theorem ofCoeffs_coeffs (y : EF) : ofCoeffs (Ext.coeffs y) = y := rfl
+/-- Entry `e < n` of a tabulated list. -/
+theorem getD_map_range {α : Type} (f : Nat → α) (n e : Nat) (d : α) (he : e < n) :
+    ((List.range n).map f).getD e d = f e := by
+  rw [List.getD_eq_getElem _ _ (by rw [List.length_map, List.length_range]; exact he),
+    List.getElem_map, List.getElem_range]
 
 /-- The accumulated weighted constraints of a row as a sum in the spec field. -/
-theorem toSpec_rowAcc (ev : Expr → F) : ∀ (cw : List (Expr × List F)) (x0 x1 x2 x3 : F),
-    Ext4.toSpec ⟨rowAcc cw ev 0 x0, rowAcc cw ev 1 x1, rowAcc cw ev 2 x2, rowAcc cw ev 3 x3⟩ =
-      Ext4.toSpec ⟨x0, x1, x2, x3⟩ + (cw.map fun a ↦
-        algebraMap K E (FastField.toField (ev a.1)) * Ext4.toSpec (ofCoeffs a.2)).sum
-  | [], x0, x1, x2, x3 => by
+theorem toSpec_rowAcc (ev : Expr → F) : ∀ (cw : List (Expr × List F)) (x : Nat → F),
+    Challenge.toSpec (Challenge.ofCoeffs
+      ((List.range (Challenge.d EF)).map fun j ↦ rowAcc cw ev j (x j)) : EF) =
+      Challenge.toSpec (Challenge.ofCoeffs ((List.range (Challenge.d EF)).map x) : EF) +
+        (cw.map fun a ↦ algebraMap K E (FastField.toField (ev a.1)) *
+          Challenge.toSpec (Challenge.ofCoeffs a.2 : EF)).sum
+  | [], x => by
     rw [List.map_nil, List.sum_nil, add_zero]
     rfl
-  | a :: cw, x0, x1, x2, x3 => by
+  | a :: cw, x => by
     simp only [Fast.rowAcc_cons]
-    rw [toSpec_rowAcc ev cw, List.map_cons, List.sum_cons, ← add_assoc, ← Algebra.smul_def,
-      ← Ext4.toSpec_smul, ← Ext4.toSpec_add]
-    congr 2
+    rw [toSpec_rowAcc ev cw (fun j ↦ x j + ev a.1 * a.2.getD j 0), List.map_cons, List.sum_cons,
+      ← add_assoc]
+    congr 1
+    rw [toSpec_ofCoeffs_sum, toSpec_ofCoeffs_sum, toSpec_ofCoeffs_sum, Finset.mul_sum,
+      ← Finset.sum_add_distrib]
+    refine Finset.sum_congr rfl fun e he ↦ ?_
+    have he := Finset.mem_range.mp he
+    rw [getD_map_range _ _ _ _ he, getD_map_range _ _ _ _ he, toField_add, toField_mul, map_add,
+      map_mul]
+    ring
 
 /-- The weighted constraints' sum is Horner's rule in `α`. -/
 theorem weighted_sum (A : Air) (alpha : EF) (g : Expr → E) :
-    ((weighted A alpha).map fun a ↦ g a.1 * Ext4.toSpec (ofCoeffs a.2)).sum =
-      horner (A.constraints.map g) (Ext4.toSpec alpha) := by
+    ((weighted A alpha).map fun a ↦ g a.1 * Challenge.toSpec (Challenge.ofCoeffs a.2 : EF)).sum =
+      horner (A.constraints.map g) (Challenge.toSpec alpha) := by
   rw [horner_eq_sum, List.length_map, weighted]
-  have : (List.range A.constraints.length).map (fun k ↦ Ext4.toSpec alpha ^
+  have : (List.range A.constraints.length).map (fun k ↦ Challenge.toSpec alpha ^
       (A.constraints.length - 1 - k)) = ((List.range A.constraints.length).map fun k ↦
         Ext.coeffs (Ext.pow alpha (A.constraints.length - 1 - k))).map
-          (fun l ↦ Ext4.toSpec (ofCoeffs l)) := by
+          (fun l ↦ Challenge.toSpec (Challenge.ofCoeffs l : EF)) := by
     rw [List.map_map]
     refine List.map_congr_left fun k _ ↦ ?_
     simp only [Function.comp_apply]
-    rw [ofCoeffs_coeffs, toSpec_extPow]
+    rw [Challenge.ofCoeffs_coeffs, toSpec_extPow]
   rw [this, List.zip_map, List.map_map]
   congr 1
 
 /-- The prover's quotient row in the spec field. -/
 theorem toSpec_quotientRow (A : Air) (pis : List F) (d l : Nat) (tq : Mat) (alpha : EF)
-    (r : Nat) : Ext4.toSpec (quotientRow A pis d l tq alpha r) =
+    (r : Nat) : Challenge.toSpec (quotientRow A pis d l tq alpha r) =
       algebraMap K E (FastField.toField ((batchInv (qZh d l)).getD (r % 2 ^ l) 0)) *
         horner (A.constraints.map fun c ↦ algebraMap K E (FastField.toField (c.eval
           (rowEnv tq (2 ^ (d + l)) (2 ^ l) pis (qFirst d l) (qLast d l) (qTrans d l) r))))
-          (Ext4.toSpec alpha) := by
+          (Challenge.toSpec alpha) := by
   simp only [quotientRow]
-  rw [Ext4.toSpec_smul, Algebra.smul_def]
+  rw [Challenge.toSpec_smul, Algebra.smul_def]
   refine congrArg₂ (· * ·) rfl ?_
-  refine (toSpec_rowAcc _ _ 0 0 0 0).trans ?_
-  have h0 : Ext4.toSpec ⟨0, 0, 0, 0⟩ = 0 := Ext4.toSpec_zero
+  refine (toSpec_rowAcc _ _ fun _ ↦ 0).trans ?_
+  have h0 : Challenge.toSpec (Challenge.ofCoeffs
+      ((List.range (Challenge.d EF)).map fun _ ↦ (0 : F)) : EF) = 0 := by
+    rw [toSpec_ofCoeffs_sum]
+    refine Finset.sum_eq_zero fun e he ↦ ?_
+    rw [getD_map_range _ _ _ _ (Finset.mem_range.mp he), toField_zero, map_zero, mul_zero]
   rw [h0, zero_add]
   exact weighted_sum A alpha fun c ↦ algebraMap K E (FastField.toField (c.eval
     (rowEnv tq (2 ^ (d + l)) (2 ^ l) pis (qFirst d l) (qLast d l) (qTrans d l) r)))
@@ -772,9 +784,9 @@ theorem toSpec_quotientOfLde (A : Air) (pis : List F) (logN b : Nat) (trace : Ar
     (hps : CompStark.Mat.IsLde b (logN + b) (ldeRef logN b gen A.width trace) ps)
     (hT : TraceOn logN A.width trace (ps.getD · 0)) (r : Nat)
     (hr : r < 2 ^ (logN + A.logQuotientChunks)) :
-    Ext4.toSpec ((quotientOfLde A pis logN A.logQuotientChunks
+    Challenge.toSpec ((quotientOfLde A pis logN A.logQuotientChunks
       (ldeRef logN b gen A.width trace) alpha).getD r 0) =
-      (qFold A logN (ps.getD · 0) pis (Ext4.toSpec alpha)).eval
+      (qFold A logN (ps.getD · 0) pis (Challenge.toSpec alpha)).eval
         (algebraMap K E (qpt (logN + A.logQuotientChunks) r)) := by
   set lc := A.logQuotientChunks
   set ext := ldeRef logN b gen A.width trace
@@ -790,7 +802,7 @@ theorem toSpec_quotientOfLde (A : Air) (pis : List F) (logN b : Nat) (trace : Ar
   have hlc24 : logN + lc ≤ 24 := by omega
   have hz : (qpt (logN + lc) r) ^ 2 ^ logN - 1 ≠ 0 :=
     sub_ne_zero.mpr (genPoint_pow_ne _ _ hlc24 logN (by omega))
-  show Ext4.toSpec ((quotientValues A pis logN lc (Mat.ofValues ext.width (2 ^ (logN + lc))
+  show Challenge.toSpec ((quotientValues A pis logN lc (Mat.ofValues ext.width (2 ^ (logN + lc))
     (permuteRows ext (bitRevPerm (logN + lc)))) alpha).getD r 0) = _
   rw [quotientValues_eq, getD_lt _ _ (by rw [Array.size_ofFn]; exact hr), Array.getElem_ofFn,
     toSpec_quotientRow, toField_invZh logN lc r hlc24, eval_qFold]
@@ -825,6 +837,7 @@ noncomputable def chunkSel (logN lc c : Nat) (y : E) : E :=
   ∏ d ∈ (Finset.range (2 ^ lc)).erase c, vanish logN (qpt (logN + lc) d) y *
     (vanish logN (qpt (logN + lc) d) (algebraMap K E (qpt (logN + lc) c)))⁻¹
 
+variable (EF) in
 /-- The chunk selector as a polynomial. -/
 noncomputable def chunkSelPoly (logN lc c : Nat) : E[X] :=
   ∏ d ∈ (Finset.range (2 ^ lc)).erase c, ((X * C (algebraMap K E (qpt (logN + lc) d)⁻¹)) ^ 2 ^ logN
@@ -832,7 +845,7 @@ noncomputable def chunkSelPoly (logN lc c : Nat) : E[X] :=
 
 /-- The chunk selector polynomial evaluates to `chunkSel`. -/
 theorem eval_chunkSelPoly (logN lc c : Nat) (y : E) :
-    (chunkSelPoly logN lc c).eval y = chunkSel logN lc c y := by
+    (chunkSelPoly EF logN lc c).eval y = chunkSel logN lc c y := by
   rw [chunkSelPoly, eval_prod]
   refine Finset.prod_congr rfl fun d _ ↦ ?_
   rw [eval_mul, eval_sub, eval_pow, eval_mul, eval_X, eval_C, eval_C, eval_one]
@@ -840,7 +853,7 @@ theorem eval_chunkSelPoly (logN lc c : Nat) (y : E) :
 
 /-- The chunk selector has degree at most `(k - 1) n`. -/
 theorem natDegree_chunkSelPoly (logN lc c : Nat) (hc : c < 2 ^ lc) :
-    (chunkSelPoly logN lc c).natDegree ≤ (2 ^ lc - 1) * 2 ^ logN := by
+    (chunkSelPoly EF logN lc c).natDegree ≤ (2 ^ lc - 1) * 2 ^ logN := by
   refine (natDegree_prod_le _ _).trans ?_
   have hcard : ((Finset.range (2 ^ lc)).erase c).card = 2 ^ lc - 1 := by
     rw [Finset.card_erase_of_mem (Finset.mem_range.mpr hc), Finset.card_range]
@@ -912,7 +925,7 @@ theorem chunkSel_coset (logN lc c c' r : Nat) (h : logN + lc ≤ 24) (hc : c < 2
   · rw [ite_eq_left_of_eq_true _ _ (eq_true hcc), ← hcc]
     refine Finset.prod_eq_one fun d hd ↦ ?_
     have hd' := Finset.mem_erase.mp hd
-    have hne := vanish_ne_zero logN lc c d h hc (Finset.mem_range.mp hd'.2) hd'.1
+    have hne := vanish_ne_zero (EF := EF) logN lc c d h hc (Finset.mem_range.mp hd'.2) hd'.1
     exact CompPoly.Extension.Ext.mul_inv_cancel' hne
   · rw [ite_eq_right_of_eq_false _ _ (eq_false hcc)]
     refine Finset.prod_eq_zero (i := c') (Finset.mem_erase.mpr ⟨Ne.symm hcc,
@@ -928,7 +941,7 @@ theorem sum_chunkSel (logN lc : Nat) (h : logN + lc ≤ 24) (Q : E[X])
       (qc c).eval (algebraMap K E (qpt (logN + lc) c * tw logN ^ r)) =
         Q.eval (algebraMap K E (qpt (logN + lc) c * tw logN ^ r))) (y : E) :
     ∑ c ∈ Finset.range (2 ^ lc), chunkSel logN lc c y * (qc c).eval y = Q.eval y := by
-  set P : E[X] := ∑ c ∈ Finset.range (2 ^ lc), chunkSelPoly logN lc c * qc c
+  set P : E[X] := ∑ c ∈ Finset.range (2 ^ lc), chunkSelPoly EF logN lc c * qc c
   have hP : P = Q := by
     have hp := isPrimitiveRoot_twoAdicGen (logN + lc) h
     refine eq_of_degree_sub_lt_of_eval_index_eq (Finset.range (2 ^ (logN + lc)))
@@ -945,7 +958,7 @@ theorem sum_chunkSel (logN lc : Nat) (h : logN + lc ≤ 24) (Q : E[X])
         fun c hc ↦ ?_) (by have := Nat.two_pow_pos (logN + lc); omega)
       have hc := Finset.mem_range.mp hc
       refine natDegree_mul_le.trans ?_
-      have h1 := natDegree_chunkSelPoly logN lc c hc
+      have h1 := natDegree_chunkSelPoly (EF := EF) logN lc c hc
       have h2 := hqd c hc
       have h3 : (2 ^ lc - 1) * 2 ^ logN + 2 ^ logN = 2 ^ (logN + lc) := by
         rw [Nat.pow_add, Nat.sub_one_mul, Nat.mul_comm]
@@ -969,62 +982,69 @@ theorem sum_chunkSel (logN lc : Nat) (h : logN + lc ≤ 24) (Q : E[X])
   rw [← hP, eval_finsetSum]
   exact Finset.sum_congr rfl fun c _ ↦ by rw [eval_mul, eval_chunkSelPoly]
 
-open KoalaBear.Fast (Ext4)
+/-- Coordinate `e` of an extension element. -/
+abbrev coordOf (e : Nat) (y : EF) : F := (Ext.coeffs y).getD e 0
 
 /-- A chunk's coordinates, tabulated. -/
 theorem chunkValues_eq (qs : Array EF) (stride c n : Nat) :
-    chunkValues qs stride c n = Array.ofFn (n := n * 4) fun k ↦
-      Fast.coord (k.val % 4) (qs.getD (k.val / 4 * stride + c) 0) := by
+    chunkValues qs stride c n = Array.ofFn (n := n * Challenge.d EF) fun k ↦
+      coordOf (k.val % Challenge.d EF) (qs.getD (k.val / Challenge.d EF * stride + c) 0) := by
   simp only [chunkValues, Id.run, Std.Legacy.Range.forIn_eq_forIn_range',
     List.forIn_pure_yield_eq_foldl, pure_bind, Std.Legacy.Range.size, Nat.sub_zero,
     Nat.add_sub_cancel, Nat.div_one]
   show List.foldl _ _ _ = _
   have hbody : (fun (out : Array F) (r : Nat) ↦
       out ++ (Ext.coeffs (qs.getD (r * stride + c) 0)).toArray) =
-      fun out r ↦ (List.range' 0 4).foldl
-        (fun o i ↦ o.push (Fast.coord i (qs.getD (r * stride + c) 0))) out := by
+      fun out r ↦ (List.range' 0 (Challenge.d EF)).foldl
+        (fun o i ↦ o.push (coordOf i (qs.getD (r * stride + c) 0))) out := by
     funext out r
-    simp only [Ext.coeffs, KoalaBear.coeffs_ext4, List.range', List.foldl_cons, List.foldl_nil,
-      Fast.coord]
-    apply Array.ext'
-    simp only [Array.toList_append, Array.toList_push, List.append_assoc, List.cons_append,
-      List.nil_append]
-  rw [hbody, foldl_blocks (fun r i ↦ Fast.coord i (qs.getD (r * stride + c) 0)) 4 n 0,
+    have hl : (Ext.coeffs (qs.getD (r * stride + c) 0)).length = Challenge.d EF :=
+      Challenge.length_coeffs _
+    rw [foldl_push_range']
+    congr 1
+    refine Array.ext (by rw [List.size_toArray, Array.size_ofFn, hl]) fun i h1 _ ↦ ?_
+    rw [Array.getElem_ofFn, List.getElem_toArray, coordOf, Nat.zero_add,
+      List.getD_eq_getElem _ _ (by rw [List.size_toArray] at h1; exact h1)]
+  rw [hbody, foldl_blocks (fun r i ↦ coordOf i (qs.getD (r * stride + c) 0)) (Challenge.d EF) n 0,
     Array.emptyWithCapacity_eq, Array.empty_append]
   simp only [Nat.zero_add]
 
 /-- Coordinate `e` of chunk row `r`. -/
-theorem chunkValues_getD (qs : Array EF) (stride c n r e : Nat) (hr : r < n) (he : e < 4) :
-    (chunkValues qs stride c n).getD (r * 4 + e) 0 = Fast.coord e (qs.getD (r * stride + c) 0) := by
-  have hlt : r * 4 + e < n * 4 := by omega
+theorem chunkValues_getD (qs : Array EF) (stride c n r e : Nat) (hr : r < n)
+    (he : e < Challenge.d EF) :
+    (chunkValues qs stride c n).getD (r * Challenge.d EF + e) 0 =
+      coordOf e (qs.getD (r * stride + c) 0) := by
+  have hlt : r * Challenge.d EF + e < n * Challenge.d EF := by nlinarith
   rw [chunkValues_eq, getD_lt _ _ (by rw [Array.size_ofFn]; exact hlt), Array.getElem_ofFn]
   simp only
-  rw [show (r * 4 + e) % 4 = e by omega, show (r * 4 + e) / 4 = r by omega]
+  rw [Nat.add_comm, Nat.add_mul_mod_self_right, Nat.mod_eq_of_lt he,
+    Nat.add_mul_div_right _ _ (by omega), Nat.div_eq_of_lt he, Nat.zero_add]
 
 /-- An extension element is the sum of its coordinates times the basis. -/
-theorem toSpec_eq_basis (y : EF) : Ext4.toSpec y = ∑ e ∈ Finset.range 4,
-    Ext4.toSpec (Ext.basis e) * algebraMap K E (FastField.toField (Fast.coord e y)) := by
-  rw [← KoalaBear.toSpec_ext4, Challenge.toSpec_eq_sum]
+theorem toSpec_eq_basis (y : EF) : Challenge.toSpec y = ∑ e ∈ Finset.range (Challenge.d EF),
+    Challenge.toSpec (Ext.basis e : EF) * algebraMap K E (FastField.toField (coordOf e y)) := by
+  rw [Challenge.toSpec_eq_sum]
   refine Finset.sum_congr rfl fun e he ↦ ?_
-  have he' : e < 4 := Finset.mem_range.mp he
-  rw [← KoalaBear.toSpec_ext4, Ext.toSpec_basis he']
-  congr 3
-  interval_cases e <;> rfl
+  rw [Ext.toSpec_basis (Finset.mem_range.mp he)]
 
-/-- The chunk polynomial over the extension from its four coordinate polynomials. -/
+variable (EF) in
+/-- The chunk polynomial over the extension from its `d` coordinate polynomials. -/
 noncomputable def chunkPoly (ps : List K[X]) : E[X] :=
-  ∑ e ∈ Finset.range 4, C (Ext4.toSpec (Ext.basis e)) * (ps.getD e 0).map (algebraMap K E)
+  ∑ e ∈ Finset.range (Challenge.d EF),
+    C (Challenge.toSpec (Ext.basis e : EF)) * (ps.getD e 0).map (algebraMap K E)
 
 /-- The chunk polynomial at a point, from its coordinate polynomials there. -/
-theorem eval_chunkPoly (ps : List K[X]) (y : E) : (chunkPoly ps).eval y =
-    ∑ e ∈ Finset.range 4, Ext4.toSpec (Ext.basis e) * aeval y (ps.getD e 0) := by
+theorem eval_chunkPoly (ps : List K[X]) (y : E) : (chunkPoly EF ps).eval y =
+    ∑ e ∈ Finset.range (Challenge.d EF),
+      Challenge.toSpec (Ext.basis e : EF) * aeval y (ps.getD e 0) := by
   rw [chunkPoly, eval_finsetSum]
   refine Finset.sum_congr rfl fun e _ ↦ ?_
   rw [eval_mul, eval_C, eval_map_algebraMap]
 
 /-- The chunk polynomial has the degree bound of its coordinates. -/
 theorem natDegree_chunkPoly (ps : List K[X]) (N : Nat) (hN : 0 < N)
-    (hps : ∀ e < 4, (ps.getD e 0).natDegree < N) : (chunkPoly ps).natDegree < N := by
+    (hps : ∀ e < Challenge.d EF, (ps.getD e 0).natDegree < N) :
+    (chunkPoly EF ps).natDegree < N := by
   refine lt_of_le_of_lt (natDegree_sum_le_of_forall_le _ _ (n := N - 1) fun e he ↦ ?_) (by omega)
   refine (natDegree_C_mul_le _ _).trans (natDegree_map_le.trans ?_)
   have := hps e (Finset.mem_range.mp he)
@@ -1041,12 +1061,12 @@ theorem natDegree_lt_of_degree_lt' {p : K[X]} {N : Nat} (hN : 0 < N)
 `n`, agrees with `Q` on the coset `s_c ⟨ω⟩`. -/
 theorem chunk_lde (logN b lc : Nat) (h24 : logN + b ≤ 24) (hlc : lc ≤ b) (qs : Array EF)
     (Q : E[X]) (hqs : ∀ m < 2 ^ (logN + lc),
-      Ext4.toSpec (qs.getD m 0) = Q.eval (algebraMap K E (qpt (logN + lc) m)))
+      Challenge.toSpec (qs.getD m 0) = Q.eval (algebraMap K E (qpt (logN + lc) m)))
     (c : Nat) (hc : c < 2 ^ lc) :
     ∃ ps, CompStark.Mat.IsLde b (logN + b) (ldeRef logN b
-      (gen * (gen * powF (twoAdicGen (logN + lc)) c)⁻¹) 4
-      (chunkValues qs (2 ^ lc) c (2 ^ logN))) ps ∧ (chunkPoly ps).natDegree < 2 ^ logN ∧
-      ∀ r < 2 ^ logN, (chunkPoly ps).eval (algebraMap K E (qpt (logN + lc) c * tw logN ^ r)) =
+      (gen * (gen * powF (twoAdicGen (logN + lc)) c)⁻¹) (Challenge.d EF)
+      (chunkValues qs (2 ^ lc) c (2 ^ logN))) ps ∧ (chunkPoly EF ps).natDegree < 2 ^ logN ∧
+      ∀ r < 2 ^ logN, (chunkPoly EF ps).eval (algebraMap K E (qpt (logN + lc) c * tw logN ^ r)) =
         Q.eval (algebraMap K E (qpt (logN + lc) c * tw logN ^ r)) := by
   have hg := toField_gen_ne_zero
   have hw : tw (logN + lc) ≠ 0 := tw_ne_zero _ (by omega)
@@ -1054,9 +1074,10 @@ theorem chunk_lde (logN b lc : Nat) (h24 : logN + b ≤ 24) (hlc : lc ≤ b) (qs
     rw [toField_mul, toField_inv, toField_mul, toField_powF]
     exact mul_ne_zero hg (inv_ne_zero (mul_ne_zero hg (pow_ne_zero _ hw)))
   obtain ⟨ps, hlde, hval⟩ := ldeRef_isLde logN b (gen * (gen * powF (twoAdicGen (logN + lc)) c)⁻¹)
-    4 (chunkValues qs (2 ^ lc) c (2 ^ logN)) (by rw [size_chunkValues, Nat.mul_comm]) h24
+    (Challenge.d EF) (chunkValues qs (2 ^ lc) c (2 ^ logN)) (by rw [size_chunkValues, Nat.mul_comm])
+    h24
     (fun h0 ↦ hsh (by rw [h0]; exact toField_zero))
-  have hlen : ps.length = 4 := hlde.1.symm
+  have hlen : ps.length = Challenge.d EF := hlde.1.symm
   have hpt : FastField.toField (gen * (gen * (gen * powF (twoAdicGen (logN + lc)) c)⁻¹)⁻¹) =
       qpt (logN + lc) c := by
     rw [toField_mul, toField_inv, toField_mul, toField_inv, toField_mul, toField_powF, qpt]
@@ -1078,21 +1099,21 @@ theorem chunk_lde (logN b lc : Nat) (h24 : logN + b ≤ 24) (hlc : lc ≤ b) (qs
 
 /-- A fold of additions in the spec field. -/
 theorem toSpec_foldl_add {α : Type*} (f : α → EF) : ∀ (l : List α) (x : EF),
-    Ext4.toSpec (l.foldl (fun acc a ↦ acc + f a) x) =
-      Ext4.toSpec x + (l.map fun a ↦ Ext4.toSpec (f a)).sum
+    Challenge.toSpec (l.foldl (fun acc a ↦ acc + f a) x) =
+      Challenge.toSpec x + (l.map fun a ↦ Challenge.toSpec (f a)).sum
   | [], x => by rw [List.foldl_nil, List.map_nil, List.sum_nil, add_zero]
   | a :: l, x => by
-    rw [List.foldl_cons, toSpec_foldl_add f l, Ext4.toSpec_add, List.map_cons, List.sum_cons,
+    rw [List.foldl_cons, toSpec_foldl_add f l, Challenge.toSpec_add, List.map_cons, List.sum_cons,
       add_assoc]
 
 /-- A fold of quotients in the spec field. -/
 theorem toSpec_foldl_mul {α : Type*} (f g : α → EF) : ∀ (l : List α) (x : EF),
-    Ext4.toSpec (l.foldl (fun acc a ↦ acc * f a * (g a)⁻¹) x) =
-      Ext4.toSpec x * (l.map fun a ↦ Ext4.toSpec (f a) * (Ext4.toSpec (g a))⁻¹).prod
+    Challenge.toSpec (l.foldl (fun acc a ↦ acc * f a * (g a)⁻¹) x) =
+      Challenge.toSpec x * (l.map fun a ↦ Challenge.toSpec (f a) * (Challenge.toSpec (g a))⁻¹).prod
   | [], x => by rw [List.foldl_nil, List.map_nil, List.prod_nil, mul_one]
   | a :: l, x => by
-    rw [List.foldl_cons, toSpec_foldl_mul f g l, Ext4.toSpec_mul, Ext4.toSpec_mul,
-      Ext4.toSpec_inv, List.map_cons, List.prod_cons]
+    rw [List.foldl_cons, toSpec_foldl_mul f g l, Challenge.toSpec_mul, Challenge.toSpec_mul,
+      Challenge.toSpec_inv, List.map_cons, List.prod_cons]
     simp only [mul_assoc]
 
 /-- A list sum over `0, …, n - 1` is the `Finset` sum. -/
@@ -1114,11 +1135,11 @@ theorem toField_chunkShift (logN lc i : Nat) :
 
 /-- The verifier's vanishing polynomial of chunk `i`'s coset. -/
 theorem toSpec_vanishingAt (logN lc i : Nat) (p : EF) :
-    Ext4.toSpec (vanishingAt (chunkDomain logN lc i) p) =
-      vanish logN (qpt (logN + lc) i) (Ext4.toSpec p) := by
-  rw [vanishingAt, Ext4.toSpec_sub, toSpec_extPowTwo, Ext4.toSpec_mul,
-    KoalaBear.toSpec_ofBase_ext4,
-    Ext4.toSpec_one, vanish, toField_inv, toField_chunkShift,
+    Challenge.toSpec (vanishingAt (chunkDomain logN lc i) p) =
+      vanish logN (qpt (logN + lc) i) (Challenge.toSpec p) := by
+  rw [vanishingAt, Challenge.toSpec_sub, toSpec_extPowTwo, Challenge.toSpec_mul,
+    Challenge.toSpec_ofBase,
+    Challenge.toSpec_one, vanish, toField_inv, toField_chunkShift,
     CompPoly.Extension.Ext.algebraMap_eq_ofBase]
 
 /-- Chunk shifts are distinct. -/
@@ -1137,18 +1158,18 @@ theorem chunkShift_beq (logN lc i j : Nat) (h : logN + lc ≤ 24) (hi : i < 2 ^ 
 
 /-- The verifier's selector of chunk `i` is `chunkSel`. -/
 theorem toSpec_selector (logN lc i : Nat) (h : logN + lc ≤ 24) (hi : i < 2 ^ lc) (z : EF) :
-    Ext4.toSpec (((chunkDomains logN lc).filter fun dj ↦
+    Challenge.toSpec (((chunkDomains logN lc).filter fun dj ↦
       dj.shift != (chunkDomain logN lc i).shift).foldl
       (fun acc dj ↦ acc * vanishingAt dj z *
         (vanishingAt dj (Ext.ofBase (chunkDomain logN lc i).shift))⁻¹) 1) =
-      chunkSel logN lc i (Ext4.toSpec z) := by
+      chunkSel logN lc i (Challenge.toSpec z) := by
   have hds : chunkDomains logN lc = (List.range (2 ^ lc)).map (chunkDomain logN lc) := rfl
   have hf : (List.range (2 ^ lc)).filter (fun j ↦ (chunkDomain logN lc j).shift !=
       (chunkDomain logN lc i).shift) = (List.range (2 ^ lc)).filter (fun j ↦ j != i) :=
     List.filter_congr fun j hj ↦ chunkShift_beq logN lc i j h hi (List.mem_range.mp hj)
   rw [hds, List.filter_map]
   simp only [Function.comp_def]
-  rw [hf, List.foldl_map, toSpec_foldl_mul, Ext4.toSpec_one, one_mul]
+  rw [hf, List.foldl_map, toSpec_foldl_mul, Challenge.toSpec_one, one_mul]
   have hnd : ((List.range (2 ^ lc)).filter (· != i)).Nodup := (List.nodup_range).filter _
   have hfs : ((List.range (2 ^ lc)).filter (· != i)).toFinset =
       (Finset.range (2 ^ lc)).erase i := by
@@ -1158,25 +1179,25 @@ theorem toSpec_selector (logN lc i : Nat) (h : logN + lc ≤ 24) (hi : i < 2 ^ l
     exact And.comm
   rw [← List.prod_toFinset _ hnd, hfs, chunkSel]
   refine Finset.prod_congr rfl fun j _ ↦ ?_
-  rw [toSpec_vanishingAt, toSpec_vanishingAt, KoalaBear.toSpec_ofBase_ext4, toField_chunkShift,
+  rw [toSpec_vanishingAt, toSpec_vanishingAt, Challenge.toSpec_ofBase, toField_chunkShift,
     ← CompPoly.Extension.Ext.algebraMap_eq_ofBase]
 
-/-- The verifier's per-chunk sum of the four coordinates. -/
+/-- The verifier's per-chunk sum of the `d` coordinates. -/
 abbrev chunkInner (ch : Array EF) : EF :=
-  (List.range 4).foldl (fun s e ↦ s + Ext.basis e * ch.getD e 0) 0
+  (List.range (Challenge.d EF)).foldl (fun s e ↦ s + Ext.basis e * ch.getD e 0) 0
 
 /-- **The verifier's recomposition** is `∑_c L_c(ζ) q_c(ζ)` with the chunks' values. -/
 theorem toSpec_recompose (logN lc : Nat) (h : logN + lc ≤ 24) (chs : Nat → Array EF) (z : EF) :
-    Ext4.toSpec (recompose (chunkDomains logN lc) ((List.range (2 ^ lc)).map chs) z) =
+    Challenge.toSpec (recompose (chunkDomains logN lc) ((List.range (2 ^ lc)).map chs) z) =
       ∑ c ∈ Finset.range (2 ^ lc),
-        chunkSel logN lc c (Ext4.toSpec z) * Ext4.toSpec (chunkInner (chs c)) := by
+        chunkSel logN lc c (Challenge.toSpec z) * Challenge.toSpec (chunkInner (chs c)) := by
   have hds : chunkDomains logN lc = (List.range (2 ^ lc)).map (chunkDomain logN lc) := rfl
   unfold recompose
   rw [hds, List.map_map]
   simp only [List.zip_map', List.foldl_map, Function.comp_apply]
-  rw [toSpec_foldl_add, Ext4.toSpec_zero, zero_add, list_sum_range]
+  rw [toSpec_foldl_add, Challenge.toSpec_zero, zero_add, list_sum_range]
   refine Finset.sum_congr rfl fun c hc ↦ ?_
-  rw [Ext4.toSpec_mul, ← hds]
+  rw [Challenge.toSpec_mul, ← hds]
   exact congrArg (· * _) (toSpec_selector logN lc c h (Finset.mem_range.mp hc) z)
 
 end Recompose
@@ -1184,38 +1205,39 @@ end Recompose
 /-! ### The verifier's check -/
 
 section Check
-open KoalaBear.Fast (Ext4)
 
 /-- The verifier's per-chunk sum in the spec field. -/
-theorem toSpec_chunkInner (ch : Array EF) : Ext4.toSpec (chunkInner ch) =
-    ∑ e ∈ Finset.range 4, Ext4.toSpec (Ext.basis e) * Ext4.toSpec (ch.getD e 0) := by
-  simp only [chunkInner, show List.range 4 = [0, 1, 2, 3] from rfl, List.foldl_cons,
-    List.foldl_nil, Ext4.toSpec_add, Ext4.toSpec_mul, Ext4.toSpec_zero, zero_add,
-    Finset.sum_range_succ, Finset.sum_range_zero]
+theorem toSpec_chunkInner (ch : Array EF) : Challenge.toSpec (chunkInner ch) =
+    ∑ e ∈ Finset.range (Challenge.d EF),
+      Challenge.toSpec (Ext.basis e : EF) * Challenge.toSpec (ch.getD e 0) := by
+  rw [chunkInner, toSpec_foldl_add, Challenge.toSpec_zero, zero_add, ← list_sum_range]
+  simp only [Challenge.toSpec_mul]
 
 /-- An opened chunk's coordinates combine to its chunk polynomial at the point. -/
 theorem toSpec_chunkInner_openedAt (b h : Nat) (m : Stark.Mat) (ps : List K[X]) (z : EF)
-    (hm : CompStark.Mat.IsLde b h m ps) (h4 : ps.length = 4) (hz : Ext.OutsideBase z) :
-    Ext4.toSpec (chunkInner (Fri.openedAt b m z)) = (chunkPoly ps).eval (Ext4.toSpec z) := by
+    (hm : CompStark.Mat.IsLde b h m ps) (h4 : ps.length = Challenge.d EF)
+    (hz : Ext.OutsideBase z) :
+    Challenge.toSpec (chunkInner (Fri.openedAt b m z)) =
+      (chunkPoly EF ps).eval (Challenge.toSpec z) := by
   rw [toSpec_chunkInner, eval_chunkPoly]
   refine Finset.sum_congr rfl fun e he ↦ ?_
   rw [(openedAt_isLde b h m ps z hm hz).2 e (by rw [h4]; exact Finset.mem_range.mp he)]
 
 /-- The verifier's folded constraints are Horner's rule in `α`. -/
 theorem toSpec_foldedConstraints (A : Air) (env : Expr.Env EF) (alpha : EF) :
-    Ext4.toSpec (foldedConstraints A env alpha) =
-      horner (A.constraints.map fun c ↦ Ext4.toSpec (c.eval env)) (Ext4.toSpec alpha) := by
-  suffices h : ∀ (l : List Expr) (x : EF), Ext4.toSpec (l.foldl (fun acc c ↦ acc * alpha +
-      c.eval env) x) = (l.map fun c ↦ Ext4.toSpec (c.eval env)).foldl
-        (fun acc v ↦ acc * Ext4.toSpec alpha + v) (Ext4.toSpec x) by
-    rw [foldedConstraints, h, Ext4.toSpec_zero]
+    Challenge.toSpec (foldedConstraints A env alpha) = horner
+      (A.constraints.map fun c ↦ Challenge.toSpec (c.eval env)) (Challenge.toSpec alpha) := by
+  suffices h : ∀ (l : List Expr) (x : EF), Challenge.toSpec (l.foldl (fun acc c ↦ acc * alpha +
+      c.eval env) x) = (l.map fun c ↦ Challenge.toSpec (c.eval env)).foldl
+        (fun acc v ↦ acc * Challenge.toSpec alpha + v) (Challenge.toSpec x) by
+    rw [foldedConstraints, h, Challenge.toSpec_zero]
     rfl
   intro l
   induction l with
   | nil => intro x; rfl
   | cons c l ih =>
     intro x
-    rw [List.foldl_cons, ih, Ext4.toSpec_add, Ext4.toSpec_mul]
+    rw [List.foldl_cons, ih, Challenge.toSpec_add, Challenge.toSpec_mul]
     rfl
 
 /-- `a * b * b⁻¹ = a` in the spec extension field. -/
@@ -1229,7 +1251,7 @@ theorem toSpec_eval_opened (A : Air) (logN b : Nat) (pis : List F) (m : Stark.Ma
     (hw : ps.length = A.width) (z : EF) (hz : Ext.OutsideBase z) (tl tn : Array EF)
     (htl : tl = Fri.openedAt b m z) (htn : tn = Fri.openedAt b m (z * Ext.ofBase (twoAdicGen logN)))
     (c : Expr) (hc : c.colsBelow A.width = true) :
-    Ext4.toSpec (c.eval {
+    Challenge.toSpec (c.eval {
       cur := fun i ↦ tl.getD i 0
       next := fun i ↦ tn.getD i 0
       pub := fun i ↦ Ext.ofBase (pis.getD i 0)
@@ -1237,16 +1259,16 @@ theorem toSpec_eval_opened (A : Air) (logN b : Nat) (pis : List F) (m : Stark.Ma
       isFirstRow := (Ext.powTwo z logN - 1) * (z - 1)⁻¹
       isLastRow := (Ext.powTwo z logN - 1) * (z - Ext.ofBase (twoAdicGen logN)⁻¹)⁻¹
       isTransition := z - Ext.ofBase (twoAdicGen logN)⁻¹ }) =
-      aeval (Ext4.toSpec z) (constraintPoly (2 ^ logN) (tw logN) (ps.getD · 0) pis c) := by
+      aeval (Challenge.toSpec z) (constraintPoly (2 ^ logN) (tw logN) (ps.getD · 0) pis c) := by
   have h24 : logN ≤ 24 := by have := hm.2.2.2.2.1; omega
   have hw0 : twoAdicGen logN ≠ 0 := twoAdicGen_ne_zero logN h24
   have hz' : Ext.OutsideBase (z * Ext.ofBase (twoAdicGen logN)) := outsideBase_mul_ofBase hz hw0
   have hO := (openedAt_isLde b (logN + b) m ps z hm hz).2
   have hO' := (openedAt_isLde b (logN + b) m ps _ hm hz').2
-  have hone : Ext4.toSpec z - 1 ≠ 0 := by
+  have hone : Challenge.toSpec z - 1 ≠ 0 := by
     have := toSpec_ne_ofBase hz 1
     rwa [CompPoly.Extension.Ext.ofBase_one, ← sub_ne_zero] at this
-  have hlast : Ext4.toSpec z - algebraMap K E (tw logN)⁻¹ ≠ 0 := by
+  have hlast : Challenge.toSpec z - algebraMap K E (tw logN)⁻¹ ≠ 0 := by
     have := toSpec_ne_ofBase hz (tw logN)⁻¹
     rwa [← CompPoly.Extension.Ext.algebraMap_eq_ofBase, ← sub_ne_zero] at this
   subst htl htn
@@ -1259,44 +1281,46 @@ theorem toSpec_eval_opened (A : Air) (logN b : Nat) (pis : List F) (m : Stark.Ma
       isLastRow := (Ext.powTwo z logN - 1) * (z - Ext.ofBase (twoAdicGen logN)⁻¹)⁻¹
       isTransition := z - Ext.ofBase (twoAdicGen logN)⁻¹ } with henv
   let envE : Expr.Env E := {
-    cur := fun j ↦ Ext4.toSpec (env.cur j)
-    next := fun j ↦ Ext4.toSpec (env.next j)
-    pub := fun j ↦ Ext4.toSpec (env.pub j)
-    const := fun x ↦ Ext4.toSpec (env.const x)
-    isFirstRow := Ext4.toSpec env.isFirstRow
-    isLastRow := Ext4.toSpec env.isLastRow
-    isTransition := Ext4.toSpec env.isTransition }
-  refine (Expr.eval_hom Ext4.toSpec Ext4.toSpec_add Ext4.toSpec_sub Ext4.toSpec_mul A.width env
+    cur := fun j ↦ Challenge.toSpec (env.cur j)
+    next := fun j ↦ Challenge.toSpec (env.next j)
+    pub := fun j ↦ Challenge.toSpec (env.pub j)
+    const := fun x ↦ Challenge.toSpec (env.const x)
+    isFirstRow := Challenge.toSpec env.isFirstRow
+    isLastRow := Challenge.toSpec env.isLastRow
+    isTransition := Challenge.toSpec env.isTransition }
+  refine (Expr.eval_hom Challenge.toSpec Challenge.toSpec_add Challenge.toSpec_sub
+      Challenge.toSpec_mul A.width env
     envE (fun _ _ ↦ rfl) (fun _ _ ↦ rfl) (fun _ ↦ rfl) (fun _ ↦ rfl) rfl rfl rfl c hc).trans ?_
   rw [constraintPoly]
-  refine (Expr.eval_hom (fun p ↦ aeval (Ext4.toSpec z) p)
-    (fun a b ↦ (aeval (Ext4.toSpec z)).map_add a b) (fun a b ↦ (aeval (Ext4.toSpec z)).map_sub a b)
-    (fun a b ↦ (aeval (Ext4.toSpec z)).map_mul a b) A.width _ envE (fun j hj ↦ ?_)
+  refine (Expr.eval_hom (fun p ↦ aeval (Challenge.toSpec z) p)
+    (fun a b ↦ (aeval (Challenge.toSpec z)).map_add a b) (fun a b ↦ (aeval (Challenge.toSpec
+        z)).map_sub a b)
+    (fun a b ↦ (aeval (Challenge.toSpec z)).map_mul a b) A.width _ envE (fun j hj ↦ ?_)
     (fun j hj ↦ ?_) (fun j ↦ ?_) (fun x ↦ ?_) ?_ ?_ ?_ c hc).symm
   · exact (hO j (by rw [hw]; exact hj)).symm
-  · change aeval (Ext4.toSpec z) ((ps.getD j 0).comp (C (tw logN) * X)) =
-      Ext4.toSpec ((Fri.openedAt b m (z * Ext.ofBase (twoAdicGen logN))).getD j 0)
-    rw [hO' j (by rw [hw]; exact hj), aeval_comp, map_mul, aeval_C, aeval_X, Ext4.toSpec_mul,
-      KoalaBear.toSpec_ofBase_ext4, ← CompPoly.Extension.Ext.algebraMap_eq_ofBase, mul_comm]
-  · change aeval (Ext4.toSpec z) (C (FastField.toField (pis.getD j 0))) =
-      Ext4.toSpec (Ext.ofBase (pis.getD j 0))
-    rw [aeval_C, KoalaBear.toSpec_ofBase_ext4, CompPoly.Extension.Ext.algebraMap_eq_ofBase]
-  · change aeval (Ext4.toSpec z) (C (FastField.toField x)) = Ext4.toSpec (Ext.ofBase x)
-    rw [aeval_C, KoalaBear.toSpec_ofBase_ext4, CompPoly.Extension.Ext.algebraMap_eq_ofBase]
-  · change aeval (Ext4.toSpec z) (firstSel (2 ^ logN)) =
-      Ext4.toSpec ((Ext.powTwo z logN - 1) * (z - 1)⁻¹)
-    rw [Ext4.toSpec_mul, Ext4.toSpec_inv, Ext4.toSpec_sub, Ext4.toSpec_sub, toSpec_extPowTwo,
-      Ext4.toSpec_one, ← aeval_firstSel, mul_mul_inv_cancel_ext _ _ hone]
-  · change aeval (Ext4.toSpec z) (lastSel (2 ^ logN) (tw logN)) =
-      Ext4.toSpec ((Ext.powTwo z logN - 1) * (z - Ext.ofBase (twoAdicGen logN)⁻¹)⁻¹)
-    rw [Ext4.toSpec_mul, Ext4.toSpec_inv, Ext4.toSpec_sub, Ext4.toSpec_sub, toSpec_extPowTwo,
-      Ext4.toSpec_one, KoalaBear.toSpec_ofBase_ext4, toField_inv,
+  · change aeval (Challenge.toSpec z) ((ps.getD j 0).comp (C (tw logN) * X)) =
+      Challenge.toSpec ((Fri.openedAt b m (z * Ext.ofBase (twoAdicGen logN))).getD j 0)
+    rw [hO' j (by rw [hw]; exact hj), aeval_comp, map_mul, aeval_C, aeval_X, Challenge.toSpec_mul,
+      Challenge.toSpec_ofBase, ← CompPoly.Extension.Ext.algebraMap_eq_ofBase, mul_comm]
+  · change aeval (Challenge.toSpec z) (C (FastField.toField (pis.getD j 0))) =
+      Challenge.toSpec (Ext.ofBase (pis.getD j 0))
+    rw [aeval_C, Challenge.toSpec_ofBase, CompPoly.Extension.Ext.algebraMap_eq_ofBase]
+  · change aeval (Challenge.toSpec z) (C (FastField.toField x)) = Challenge.toSpec (Ext.ofBase x)
+    rw [aeval_C, Challenge.toSpec_ofBase, CompPoly.Extension.Ext.algebraMap_eq_ofBase]
+  · change aeval (Challenge.toSpec z) (firstSel (2 ^ logN)) =
+      Challenge.toSpec ((Ext.powTwo z logN - 1) * (z - 1)⁻¹)
+    rw [Challenge.toSpec_mul, Challenge.toSpec_inv, Challenge.toSpec_sub, Challenge.toSpec_sub,
+      toSpec_extPowTwo, Challenge.toSpec_one, ← aeval_firstSel, mul_mul_inv_cancel_ext _ _ hone]
+  · change aeval (Challenge.toSpec z) (lastSel (2 ^ logN) (tw logN)) =
+      Challenge.toSpec ((Ext.powTwo z logN - 1) * (z - Ext.ofBase (twoAdicGen logN)⁻¹)⁻¹)
+    rw [Challenge.toSpec_mul, Challenge.toSpec_inv, Challenge.toSpec_sub, Challenge.toSpec_sub,
+      toSpec_extPowTwo, Challenge.toSpec_one, Challenge.toSpec_ofBase, toField_inv,
       ← CompPoly.Extension.Ext.algebraMap_eq_ofBase,
       ← aeval_lastSel (2 ^ logN) (tw logN) (tw_ne_zero logN h24) (tw_pow logN h24),
       mul_mul_inv_cancel_ext _ _ hlast]
-  · change aeval (Ext4.toSpec z) (X - C (tw logN)⁻¹) =
-      Ext4.toSpec (z - Ext.ofBase (twoAdicGen logN)⁻¹)
-    rw [map_sub, aeval_X, aeval_C, Ext4.toSpec_sub, KoalaBear.toSpec_ofBase_ext4, toField_inv,
+  · change aeval (Challenge.toSpec z) (X - C (tw logN)⁻¹) =
+      Challenge.toSpec (z - Ext.ofBase (twoAdicGen logN)⁻¹)
+    rw [map_sub, aeval_X, aeval_C, Challenge.toSpec_sub, Challenge.toSpec_ofBase, toField_inv,
       CompPoly.Extension.Ext.algebraMap_eq_ofBase]
 
 /-- The trace's extension is an LDE of polynomials that take the trace on `⟨ω⟩`. -/
@@ -1342,7 +1366,7 @@ theorem checkConstraints_eq_fun : checkConstraints = fun (A : Air) (pis : List F
 field. -/
 theorem checkConstraints_of (A : Air) (pis : List F) (o : OpenedValues EF) (logN : Nat)
     (zeta alpha quotient : EF)
-    (h : Ext4.toSpec (foldedConstraints A {
+    (h : Challenge.toSpec (foldedConstraints A {
       cur := fun i ↦ o.traceLocal.getD i 0
       next := fun i ↦ o.traceNext.getD i 0
       pub := fun i ↦ Ext.ofBase (pis.getD i 0)
@@ -1350,20 +1374,21 @@ theorem checkConstraints_of (A : Air) (pis : List F) (o : OpenedValues EF) (logN
       isFirstRow := (Ext.powTwo zeta logN - 1) * (zeta - 1)⁻¹
       isLastRow := (Ext.powTwo zeta logN - 1) * (zeta - Ext.ofBase (twoAdicGen logN)⁻¹)⁻¹
       isTransition := zeta - Ext.ofBase (twoAdicGen logN)⁻¹ } alpha *
-      (Ext.powTwo zeta logN - 1)⁻¹) = Ext4.toSpec quotient) :
+      (Ext.powTwo zeta logN - 1)⁻¹) = Challenge.toSpec quotient) :
     checkConstraints A pis o logN zeta alpha quotient = true := by
   rw [checkConstraints_eq_fun]
-  exact beq_iff_eq.mpr (Ext4.toSpec_injective h)
+  exact beq_iff_eq.mpr (Challenge.toSpec_injective h)
 
 /-- **The out-of-domain check passes on the honest openings.** -/
 theorem checkConstraints_honest (P : Params) (A : Air) (logN : Nat) (trace : Array F)
     (pis : List F) (alpha zeta : EF) (hin : Fits P A logN trace)
-    (hsat : A.ConstraintsVanish logN trace pis) (hdeg : A.DegreeFits logN) (hz : Ext.OutsideBase zeta) :
+    (hsat : A.ConstraintsVanish logN trace pis) (hdeg : A.DegreeFits logN)
+    (hz : Ext.OutsideBase zeta) :
     let ext := ldeRef logN P.logBlowup gen A.width trace
     let qs := quotientOfLde A pis logN A.logQuotientChunks ext alpha
     let lc := A.logQuotientChunks
     let chunks := (List.range (2 ^ lc)).map fun c ↦
-      ldeRef logN P.logBlowup (gen * (gen * powF (twoAdicGen (logN + lc)) c)⁻¹) 4
+      ldeRef logN P.logBlowup (gen * (gen * powF (twoAdicGen (logN + lc)) c)⁻¹) (Challenge.d EF)
         (chunkValues qs (2 ^ lc) c (2 ^ logN))
     let o : OpenedValues EF := ⟨Fri.openedAt P.logBlowup ext zeta,
       Fri.openedAt P.logBlowup ext (zeta * Ext.ofBase (twoAdicGen logN)),
@@ -1375,16 +1400,16 @@ theorem checkConstraints_honest (P : Params) (A : Air) (logN : Nat) (trace : Arr
   have hlc : lc ≤ P.logBlowup := hin.chunks
   have hq24 : logN + lc ≤ 24 := by omega
   obtain ⟨ps, hlde, hT, hTd⟩ := trace_lde P A logN trace hin
-  set Q := qFold A logN (ps.getD · 0) pis (Ext4.toSpec alpha)
-  have hQ := natDegree_qFold A logN pis _ hTd hdeg (Ext4.toSpec alpha)
-  have hqs : ∀ m < 2 ^ (logN + lc), Ext4.toSpec (qs.getD m 0) =
+  set Q := qFold A logN (ps.getD · 0) pis (Challenge.toSpec alpha)
+  have hQ := natDegree_qFold A logN pis _ hTd hdeg (Challenge.toSpec alpha)
+  have hqs : ∀ m < 2 ^ (logN + lc), Challenge.toSpec (qs.getD m 0) =
       Q.eval (algebraMap K E (qpt (logN + lc) m)) := fun m hm ↦
     toSpec_quotientOfLde A pis logN P.logBlowup trace alpha hlc h24 hsat hin.cols ps hlde hT m hm
   have hch : ∀ c, ∃ cps : List K[X], c < 2 ^ lc →
       CompStark.Mat.IsLde P.logBlowup (logN + P.logBlowup) (ldeRef logN P.logBlowup
-        (gen * (gen * powF (twoAdicGen (logN + lc)) c)⁻¹) 4
-        (chunkValues qs (2 ^ lc) c (2 ^ logN))) cps ∧ (chunkPoly cps).natDegree < 2 ^ logN ∧
-      ∀ r < 2 ^ logN, (chunkPoly cps).eval (algebraMap K E (qpt (logN + lc) c * tw logN ^ r)) =
+        (gen * (gen * powF (twoAdicGen (logN + lc)) c)⁻¹) (Challenge.d EF)
+        (chunkValues qs (2 ^ lc) c (2 ^ logN))) cps ∧ (chunkPoly EF cps).natDegree < 2 ^ logN ∧
+      ∀ r < 2 ^ logN, (chunkPoly EF cps).eval (algebraMap K E (qpt (logN + lc) c * tw logN ^ r)) =
         Q.eval (algebraMap K E (qpt (logN + lc) c * tw logN ^ r)) := by
     intro c
     by_cases hc : c < 2 ^ lc
@@ -1393,30 +1418,30 @@ theorem checkConstraints_honest (P : Params) (A : Air) (logN : Nat) (trace : Arr
     · exact ⟨[], fun h ↦ absurd h hc⟩
   choose cps hcps using hch
   -- The recomposed quotient is `Q(ζ)`.
-  have hrec : Ext4.toSpec (recompose (chunkDomains logN lc) o.quotientChunks.toList zeta) =
-      Q.eval (Ext4.toSpec zeta) := by
+  have hrec : Challenge.toSpec (recompose (chunkDomains logN lc) o.quotientChunks.toList zeta) =
+      Q.eval (Challenge.toSpec zeta) := by
     have hl : o.quotientChunks.toList = (List.range (2 ^ lc)).map fun c ↦
         Fri.openedAt P.logBlowup (ldeRef logN P.logBlowup
-          (gen * (gen * powF (twoAdicGen (logN + lc)) c)⁻¹) 4
+          (gen * (gen * powF (twoAdicGen (logN + lc)) c)⁻¹) (Challenge.d EF)
           (chunkValues qs (2 ^ lc) c (2 ^ logN))) zeta := by
       show (chunks.map fun m ↦ Fri.openedAt P.logBlowup m zeta) = _
       simp only [chunks, List.map_map, Function.comp_def]
     rw [hl, toSpec_recompose logN lc hq24, ← sum_chunkSel logN lc hq24 Q hQ
-      (fun c ↦ chunkPoly (cps c)) (fun c hc ↦ (hcps c hc).2.1) (fun c hc ↦ (hcps c hc).2.2)]
+      (fun c ↦ chunkPoly EF (cps c)) (fun c hc ↦ (hcps c hc).2.1) (fun c hc ↦ (hcps c hc).2.2)]
     refine Finset.sum_congr rfl fun c hc ↦ ?_
     have hc := Finset.mem_range.mp hc
-    have h4 : (cps c).length = 4 := (hcps c hc).1.1.symm
+    have h4 : (cps c).length = Challenge.d EF := (hcps c hc).1.1.symm
     rw [toSpec_chunkInner_openedAt _ _ _ _ _ (hcps c hc).1 h4 hz]
   -- The folded constraints at `ζ` over `Z_H(ζ)` are `Q(ζ)`.
-  have hzh : Ext4.toSpec zeta ^ 2 ^ logN - 1 ≠ 0 := by
+  have hzh : Challenge.toSpec zeta ^ 2 ^ logN - 1 ≠ 0 := by
     have := pow_ne_of_outsideBase hz (specDomain logN (by omega)) one_ne_zero
     rw [map_one, one_pow] at this
     exact sub_ne_zero.mpr this
   have hlen : ps.length = A.width := hlde.1.symm
   refine checkConstraints_of A pis o logN zeta alpha _ ?_
-  rw [hrec, Ext4.toSpec_mul, toSpec_foldedConstraints, Ext4.toSpec_inv, Ext4.toSpec_sub,
-    toSpec_extPowTwo, Ext4.toSpec_one, eval_qFold]
-  have hmap : (A.constraints.map fun c ↦ Ext4.toSpec (c.eval {
+  rw [hrec, Challenge.toSpec_mul, toSpec_foldedConstraints, Challenge.toSpec_inv,
+    Challenge.toSpec_sub, toSpec_extPowTwo, Challenge.toSpec_one, eval_qFold]
+  have hmap : (A.constraints.map fun c ↦ Challenge.toSpec (c.eval {
       cur := fun i ↦ o.traceLocal.getD i 0
       next := fun i ↦ o.traceNext.getD i 0
       pub := fun i ↦ Ext.ofBase (pis.getD i 0)
@@ -1424,8 +1449,9 @@ theorem checkConstraints_honest (P : Params) (A : Air) (logN : Nat) (trace : Arr
       isFirstRow := (Ext.powTwo zeta logN - 1) * (zeta - 1)⁻¹
       isLastRow := (Ext.powTwo zeta logN - 1) * (zeta - Ext.ofBase (twoAdicGen logN)⁻¹)⁻¹
       isTransition := zeta - Ext.ofBase (twoAdicGen logN)⁻¹ })) =
-      (A.constraints.map fun c ↦ aeval (Ext4.toSpec zeta)
-        (quotientPoly logN (ps.getD · 0) pis c)).map (· * (Ext4.toSpec zeta ^ 2 ^ logN - 1)) := by
+      (A.constraints.map fun c ↦ aeval (Challenge.toSpec zeta)
+        (quotientPoly logN (ps.getD · 0) pis c)).map (· * (Challenge.toSpec zeta ^ 2 ^ logN -
+            1)) := by
     rw [List.map_map]
     refine List.map_congr_left fun c hc ↦ ?_
     rw [toSpec_eval_opened A logN P.logBlowup pis ext ps hlde hlen zeta hz o.traceLocal
@@ -1435,19 +1461,20 @@ theorem checkConstraints_honest (P : Params) (A : Air) (logN : Nat) (trace : Arr
     ring
   rw [hmap, horner_mul, mul_mul_inv_cancel_ext _ _ hzh]
 
-/-- Every chunk of the honest quotient is an LDE of four polynomials. -/
+/-- Every chunk of the honest quotient is an LDE of `d` polynomials. -/
 theorem chunk_isLde (P : Params) (A : Air) (logN : Nat) (qs : Array EF)
     (h24 : logN + P.logBlowup ≤ 24) (hlc : A.logQuotientChunks ≤ P.logBlowup) (c : Nat) :
     ∃ ps, CompStark.Mat.IsLde P.logBlowup (logN + P.logBlowup) (ldeRef logN P.logBlowup
-      (gen * (gen * powF (twoAdicGen (logN + A.logQuotientChunks)) c)⁻¹) 4
-      (chunkValues qs (2 ^ A.logQuotientChunks) c (2 ^ logN))) ps ∧ ps.length = 4 := by
+      (gen * (gen * powF (twoAdicGen (logN + A.logQuotientChunks)) c)⁻¹) (Challenge.d EF)
+      (chunkValues qs (2 ^ A.logQuotientChunks) c (2 ^ logN))) ps ∧
+        ps.length = Challenge.d EF := by
   have hg := toField_gen_ne_zero
   have hsh : FastField.toField
       (gen * (gen * powF (twoAdicGen (logN + A.logQuotientChunks)) c)⁻¹) ≠ 0 := by
     rw [toField_mul, toField_inv, toField_mul, toField_powF]
     exact mul_ne_zero hg (inv_ne_zero (mul_ne_zero hg (pow_ne_zero _ (tw_ne_zero _ (by omega)))))
   obtain ⟨ps, hlde, -⟩ := ldeRef_isLde logN P.logBlowup
-    (gen * (gen * powF (twoAdicGen (logN + A.logQuotientChunks)) c)⁻¹) 4
+    (gen * (gen * powF (twoAdicGen (logN + A.logQuotientChunks)) c)⁻¹) (Challenge.d EF)
     (chunkValues qs (2 ^ A.logQuotientChunks) c (2 ^ logN))
     (by rw [size_chunkValues, Nat.mul_comm]) h24 (fun h0 ↦ hsh (by rw [h0]; exact toField_zero))
   exact ⟨ps, hlde, hlde.1.symm⟩
@@ -1459,13 +1486,14 @@ theorem honest_shape (P : Params) (A : Air) (logN : Nat) (trace : Array F) (pis 
     let qs := quotientOfLde A pis logN A.logQuotientChunks ext alpha
     let lc := A.logQuotientChunks
     let chunks := (List.range (2 ^ lc)).map fun c ↦
-      ldeRef logN P.logBlowup (gen * (gen * powF (twoAdicGen (logN + lc)) c)⁻¹) 4
+      ldeRef logN P.logBlowup (gen * (gen * powF (twoAdicGen (logN + lc)) c)⁻¹) (Challenge.d EF)
         (chunkValues qs (2 ^ lc) c (2 ^ logN))
     let o : OpenedValues EF := ⟨Fri.openedAt P.logBlowup ext zeta,
       Fri.openedAt P.logBlowup ext (zeta * Ext.ofBase (twoAdicGen logN)),
       (chunks.map fun m ↦ Fri.openedAt P.logBlowup m zeta).toArray⟩
     (o.traceLocal.size == A.width && o.traceNext.size == A.width &&
-      o.quotientChunks.size == 2 ^ lc && o.quotientChunks.all (·.size == 4)) = true := by
+      o.quotientChunks.size == 2 ^ lc && o.quotientChunks.all (·.size == Challenge.d EF)) =
+      true := by
   intro ext qs lc chunks o
   have hs (m : Stark.Mat) (z : EF) : (Fri.openedAt P.logBlowup m z).size = m.width := by
     rw [openedAt_eq, Array.size_ofFn]

@@ -49,20 +49,18 @@ theorem selectorAt_eq (S : Iop.Setup KoalaBear.Fast.Ext4) (ζ : 𝕂) (c : Fin S
   have hv : ∀ (d : Nat) (x : 𝕂), vanishing (chunkShift S d) S.n x =
       vanish S.logN (qpt (S.logN + S.air.logQuotientChunks) d) x := fun d x ↦ by
     rw [vanishing, vanish, hs, div_eq_mul_inv, map_inv₀]
-    rfl
   unfold selectorAt chunkSel
   rw [← prod_fin_ne]
   refine Finset.prod_congr rfl fun d _ ↦ ?_
   rw [hv, hv, hs, div_eq_mul_inv]
-  rfl
 
 /-- The spec value of chunk `c` is the verifier's (`chunkInner`). -/
 theorem chunkAt_openingsOf (S : Iop.Setup KoalaBear.Fast.Ext4) (o : OpenedValues EF)
     (c : Fin S.chunks) :
     chunkAt (openingsOf S o) c = Ext4.toSpec (chunkInner (o.quotientChunks.getD c #[])) := by
-  rw [toSpec_chunkInner, chunkAt, ← Fin.sum_univ_eq_sum_range]
+  rw [← KoalaBear.toSpec_ext4, toSpec_chunkInner, chunkAt, ← Fin.sum_univ_eq_sum_range]
   refine Finset.sum_congr rfl fun e _ ↦ ?_
-  rw [← KoalaBear.toSpec_ext4, Ext.toSpec_basis e.isLt]
+  rw [Ext.toSpec_basis e.isLt]
   rfl
 
 /-- **The constraint check.** If the verifier's check at `ζ` passes on opened values with
@@ -75,7 +73,7 @@ theorem constraintsHoldAt_of_check (S : Iop.Setup KoalaBear.Fast.Ext4) (pis : Li
         true) :
     ConstraintsHoldAt S pis (Ext4.toSpec alpha) (Ext4.toSpec zeta) (openingsOf S o) := by
   rw [checkConstraints_eq_fun] at h
-  have h' := congrArg Ext4.toSpec (beq_iff_eq.mp h)
+  have h' := congrArg Challenge.toSpec (beq_iff_eq.mp h)
   have hlist : o.quotientChunks.toList =
       (List.range S.chunks).map fun c ↦ o.quotientChunks.getD c #[] := by
     refine List.ext_getElem (by rw [List.length_map, List.length_range, Array.length_toList, hqc])
@@ -86,11 +84,11 @@ theorem constraintsHoldAt_of_check (S : Iop.Setup KoalaBear.Fast.Ext4) (pis : Li
     have := S.valid.twoAdic; have := S.valid.chunksFit; omega
   rw [hlist, toSpec_recompose S.logN _ h24] at h'
   rw [constraintsHoldAt_iff, ← Fin.sum_univ_eq_sum_range] at *
-  rw [Ext4.toSpec_mul, toSpec_foldedConstraints, Ext4.toSpec_inv, Ext4.toSpec_sub,
-    toSpec_extPowTwo, Ext4.toSpec_one] at h'
+  rw [Challenge.toSpec_mul, toSpec_foldedConstraints, Challenge.toSpec_inv, Challenge.toSpec_sub,
+    toSpec_extPowTwo, Challenge.toSpec_one] at h'
   have hzh : @vanishing EF _ 1 S.n (Ext4.toSpec zeta) = Ext4.toSpec zeta ^ 2 ^ S.logN - 1 := by
     rw [vanishing, div_one]
-  have henv : (S.air.constraints.map fun c ↦ Ext4.toSpec (c.eval {
+  have henv : (S.air.constraints.map fun c ↦ Challenge.toSpec (c.eval {
       cur := fun i ↦ o.traceLocal.getD i 0
       next := fun i ↦ o.traceNext.getD i 0
       pub := fun i ↦ Ext.ofBase (pis.getD i 0)
@@ -100,25 +98,28 @@ theorem constraintsHoldAt_of_check (S : Iop.Setup KoalaBear.Fast.Ext4) (pis : Li
       isTransition := zeta - Ext.ofBase (twoAdicGen S.logN)⁻¹ })) =
       S.air.constraints.map fun c ↦ c.eval (envAt S pis (Ext4.toSpec zeta) (openingsOf S o)) := by
     refine List.map_congr_left fun c hc ↦ ?_
-    have hlast : Ext4.toSpec (Ext.ofBase (twoAdicGen S.logN)⁻¹) = (@rootOfUnity EF _ S.logN)⁻¹ := by
-      rw [KoalaBear.toSpec_ofBase_ext4, toField_inv, ← CompPoly.Extension.Ext.algebraMap_eq_ofBase,
+    have hlast : Challenge.toSpec (Ext.ofBase (twoAdicGen S.logN)⁻¹ : EF) =
+        (@rootOfUnity EF _ S.logN)⁻¹ := by
+      rw [Challenge.toSpec_ofBase, toField_inv, ← CompPoly.Extension.Ext.algebraMap_eq_ofBase,
         map_inv₀]
       rfl
-    refine Expr.eval_hom Ext4.toSpec Ext4.toSpec_add Ext4.toSpec_sub Ext4.toSpec_mul S.air.width
+    refine Expr.eval_hom Challenge.toSpec Challenge.toSpec_add Challenge.toSpec_sub
+      Challenge.toSpec_mul S.air.width
       _ _ (fun j hj ↦ ?_) (fun j hj ↦ ?_) (fun j ↦ ?_) (fun x ↦ ?_) ?_ ?_ ?_ c
       (S.valid.colsInWidth c hc)
     · simp only [envAt, hj, ↓reduceDIte]; rfl
     · simp only [envAt, hj, ↓reduceDIte]; rfl
-    · simp only [envAt, KoalaBear.toSpec_ofBase_ext4]; rfl
-    · simp only [envAt, KoalaBear.toSpec_ofBase_ext4]; rfl
-    · simp only [envAt, Ext4.toSpec_mul, Ext4.toSpec_inv, Ext4.toSpec_sub,
-        toSpec_extPowTwo, Ext4.toSpec_one, hzh, div_eq_mul_inv]
-    · simp only [envAt, Ext4.toSpec_mul, Ext4.toSpec_inv, Ext4.toSpec_sub,
-        toSpec_extPowTwo, Ext4.toSpec_one, hzh, div_eq_mul_inv, hlast]
-    · simp only [envAt, Ext4.toSpec_sub, hlast]
+    · simp only [envAt, Challenge.toSpec_ofBase]; rfl
+    · simp only [envAt, Challenge.toSpec_ofBase]; rfl
+    · simp only [envAt, Challenge.toSpec_mul, Challenge.toSpec_inv, Challenge.toSpec_sub,
+        toSpec_extPowTwo, Challenge.toSpec_one, KoalaBear.toSpec_ext4, hzh, div_eq_mul_inv]
+    · simp only [envAt, Challenge.toSpec_mul, Challenge.toSpec_inv, Challenge.toSpec_sub,
+        toSpec_extPowTwo, Challenge.toSpec_one, KoalaBear.toSpec_ext4, hzh, div_eq_mul_inv, hlast]
+    · simp only [envAt, Challenge.toSpec_sub, KoalaBear.toSpec_ext4, hlast]
   rw [henv, horner, List.foldl_map] at h'
   rw [hzh, div_eq_mul_inv]
   refine h'.trans (Finset.sum_congr rfl fun c _ ↦ ?_)
   rw [selectorAt_eq, chunkAt_openingsOf]
+  rfl
 
 end CompStark.Ni

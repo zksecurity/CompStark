@@ -20,7 +20,8 @@ open CompPoly.PackedRepr (encode)
 open CompPoly.CPolynomial.NTTFast.Packed (getD_ofFn_bounded)
 
 local notation "F" => KoalaBear.Fast.Field
-local notation "EF" => KoalaBear.Fast.Ext4
+
+variable {EF : Type} [Challenge EF]
 
 /-- The bit-reversal permutation of `2 ^ bits` indices below `2 ^ bits`. -/
 theorem bitRevPerm_spec (bits : Nat) :

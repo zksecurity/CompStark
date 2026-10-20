@@ -9,7 +9,7 @@ public import CompStark.Fri.Prover
 /-! # Low-degree vectors and matrices
 
 The predicates the completeness proof passes between the prover's layers, over the Mathlib fields
-`KoalaBear.Field` and `KoalaBear.Ext4` that the Montgomery elements denote:
+`KoalaBear.Field` and `Challenge.Spec EF` that the Montgomery elements denote:
 
 * `Mat.IsLde`: a committed matrix is the low-degree extension of polynomials onto the coset
   `g · ⟨ω⟩`, rows in bit-reversed order.
@@ -23,7 +23,6 @@ namespace CompStark
 open CompStark.Stark CompStark.Fri Polynomial Montgomery.Native32
 
 local notation "F" => KoalaBear.Fast.Field
-local notation "EF" => KoalaBear.Fast.Ext4
 
 /-- The columns of `m`, of height `2 ^ logH`, are the values on the coset `g · ⟨ω⟩`, `ω` of order
 `2 ^ logH`, rows in bit-reversed order, of the polynomials `ps` of degree below
@@ -39,11 +38,11 @@ def Mat.IsLde (logBlowup logH : Nat) (m : Mat) (ps : List KoalaBear.Field[X]) : 
 
 /-- `v` holds the values on the subgroup `⟨ω⟩`, `ω` of order `2 ^ logH`, in bit-reversed order, of
 a polynomial over the extension of degree below `2 ^ logD`. -/
-def LowDegree (logH logD : Nat) (v : Array EF) : Prop :=
-  v.size = 2 ^ logH ∧ logH ≤ 24 ∧ ∃ p : KoalaBear.Ext4[X],
+def LowDegree {EF : Type} [Challenge EF] (logH logD : Nat) (v : Array EF) : Prop :=
+  v.size = 2 ^ logH ∧ logH ≤ 24 ∧ ∃ p : (Challenge.Spec EF)[X],
     p.degree < ((2 ^ logD : Nat) : WithBot Nat) ∧ ∀ r < 2 ^ logH,
-      KoalaBear.Fast.Ext4.toSpec (v.getD r 0) =
-        p.eval (algebraMap KoalaBear.Field KoalaBear.Ext4
+      Challenge.toSpec (v.getD r 0) =
+        p.eval (algebraMap KoalaBear.Field (Challenge.Spec EF)
           (FastField.toField (twoAdicGen logH)) ^ reverseBits r logH)
 
 /-- The shapes the completeness proof works on: a `2 ^ logN × width` trace, constraints that read

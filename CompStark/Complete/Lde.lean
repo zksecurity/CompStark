@@ -28,7 +28,6 @@ open CompStark.Stark CompStark.Stark.Fast CompStark.Fri Polynomial Montgomery.Na
 open CompPoly
 
 local notation "F" => KoalaBear.Fast.Field
-local notation "EF" => KoalaBear.Fast.Ext4
 
 /-! ### The two-adic generators in the spec field -/
 
@@ -198,40 +197,40 @@ theorem ldeRef_isLde (logH bits : Nat) (shift : F) (w : Nat) (m : Array F)
 
 /-! ### Openings -/
 
-open KoalaBear.Fast (Ext4) in
+variable {EF : Type} [Challenge EF]
+local notation "𝕂" => Challenge.Spec EF
+
 /-- A point outside the base field is not a base element. -/
 theorem toSpec_ne_ofBase {z : EF} (hz : Ext.OutsideBase z) (y : KoalaBear.Field) :
-    Ext4.toSpec z ≠ CompPoly.Extension.Ext.ofBase y := by
-  intro h
-  apply sub_ofBase_ne_zero hz (KoalaBear.Fast.ofField y)
-  rw [Ext4.toSpec_sub, Ext4.toSpec_ofBase, KoalaBear.Fast.ofField, toField_ofField, h, sub_self]
+    Challenge.toSpec z ≠ CompPoly.Extension.Ext.ofBase y := by
+  rw [← CompPoly.Extension.Ext.algebraMap_eq_ofBase]
+  exact Ext.toSpec_ne_algebraMap hz y
 
-open KoalaBear.Fast (Ext4) in
 /-- A point outside the base field is off every coset of a two-adic subgroup: its `n`-th power
 is not `sⁿ`. -/
 theorem pow_ne_of_outsideBase {z : EF} (hz : Ext.OutsideBase z)
     (D : CPolynomial.NTT.Domain KoalaBear.Field) {s : KoalaBear.Field} (hs : s ≠ 0) :
-    Ext4.toSpec z ^ D.n ≠ algebraMap KoalaBear.Field KoalaBear.Ext4 s ^ D.n := by
+    Challenge.toSpec z ^ D.n ≠ algebraMap KoalaBear.Field 𝕂 s ^ D.n := by
   intro h
-  have h0 : (Lagrange.nodal Finset.univ (D.cosetNode s : D.Idx → KoalaBear.Ext4)).eval
-      (Ext4.toSpec z) = 0 := by
+  have h0 : (Lagrange.nodal Finset.univ (D.cosetNode s : D.Idx → 𝕂)).eval
+      (Challenge.toSpec z) = 0 := by
     rw [CPolynomial.NTT.Domain.cosetNodal_eq D hs, eval_sub, eval_pow, eval_X, eval_C, h,
       sub_self]
   rw [Lagrange.eval_nodal, Finset.prod_eq_zero_iff] at h0
   obtain ⟨i, -, hi⟩ := h0
-  exact toSpec_ne_ofBase hz _ (sub_eq_zero.mp hi)
+  exact Ext.toSpec_ne_algebraMap hz _ (sub_eq_zero.mp hi)
 
-open KoalaBear.Fast (Ext4) in
 /-- A column sum of `Fri.openedAt` in the spec field. -/
 theorem toSpec_colSum (values : Array F) (perm : Array Nat) (weights : Array EF) (w j : Nat) :
-    ∀ h, Ext4.toSpec (colSum values perm weights w h j) =
+    ∀ h, Challenge.toSpec (colSum values perm weights w h j) =
       ∑ i ∈ Finset.range h, FastField.toField (values.getD (perm.getD i 0 * w + j) 0) •
-        Ext4.toSpec (weights.getD i 0)
-  | 0 => by rw [colSum, List.range'_zero, List.foldl_nil, Finset.sum_range_zero, Ext4.toSpec_zero]
+        Challenge.toSpec (weights.getD i 0)
+  | 0 => by
+    rw [colSum, List.range'_zero, List.foldl_nil, Finset.sum_range_zero, Challenge.toSpec_zero]
   | h + 1 => by
     rw [Finset.sum_range_succ, ← toSpec_colSum values perm weights w j h, colSum, colSum,
       List.range'_concat, List.foldl_append, List.foldl_cons, List.foldl_nil, Nat.zero_add,
-      Nat.one_mul, Ext4.toSpec_add, Ext4.toSpec_smul]
+      Nat.one_mul, Challenge.toSpec_add, Challenge.toSpec_smul]
 
 /-- Reversing the bits of `0`. -/
 theorem bitRevNat_zero : ∀ b, CPolynomial.NTT.Transform.bitRevNat b 0 = 0
@@ -256,26 +255,23 @@ theorem reverseBits_low (L b i : Nat) (hi : i < 2 ^ L) :
   exact this
 
 
-open KoalaBear.Fast (Ext4) in
 /-- The scale of the barycentric formula in the spec field. -/
 theorem toSpec_cosetFactor (L : Nat) (s : F) (z : EF) :
-    Ext4.toSpec (Fri.cosetFactor L s z) =
-      (Ext4.toSpec z ^ 2 ^ L - algebraMap KoalaBear.Field KoalaBear.Ext4
-        (FastField.toField s) ^ 2 ^ L) * (((2 ^ L : Nat) : KoalaBear.Ext4) *
-          algebraMap KoalaBear.Field KoalaBear.Ext4 (FastField.toField s) ^ 2 ^ L)⁻¹ := by
-  rw [← KoalaBear.toSpec_ext4, ← KoalaBear.toSpec_ext4 z]
+    Challenge.toSpec (Fri.cosetFactor L s z) =
+      (Challenge.toSpec z ^ 2 ^ L - algebraMap KoalaBear.Field 𝕂
+        (FastField.toField s) ^ 2 ^ L) * (((2 ^ L : Nat) : 𝕂) *
+          algebraMap KoalaBear.Field 𝕂 (FastField.toField s) ^ 2 ^ L)⁻¹ := by
   simp only [Fri.cosetFactor, Challenge.toSpec_sub, Ext.toSpec_powTwo,
     Challenge.toSpec_inv, Ext.ofBase, Challenge.toSpec_ofBase, toField_mul, toField_natCast,
     toField_pow, ← CompPoly.Extension.Ext.algebraMap_eq_ofBase, map_mul, map_pow, map_natCast]
-  rfl
 
-open KoalaBear.Fast (Ext4) in
 /-- **Openings are evaluations**: the values `Fri.openedAt` computes from an LDE at a point
 outside the base field are its polynomials' values there. -/
 theorem openedAt_isLde (b h : Nat) (m : Stark.Mat) (ps : List KoalaBear.Field[X]) (z : EF)
     (hm : CompStark.Mat.IsLde b h m ps) (hz : Ext.OutsideBase z) :
     (Fri.openedAt b m z).size = ps.length ∧ ∀ j < ps.length,
-      Ext4.toSpec ((Fri.openedAt b m z).getD j 0) = aeval (Ext4.toSpec z) (ps.getD j 0) := by
+      Challenge.toSpec ((Fri.openedAt b m z).getD j 0) =
+        aeval (Challenge.toSpec z) (ps.getD j 0) := by
   obtain ⟨hw, hh, -, hb, h24, hdeg, hval⟩ := hm
   have hlog : Nat.log2 m.height - b = h - b := by rw [hh, Nat.log2_two_pow]
   refine ⟨by rw [openedAt_eq, Array.size_ofFn, hw], fun j hj ↦ ?_⟩
@@ -288,11 +284,11 @@ theorem openedAt_isLde (b h : Nat) (m : Stark.Mat) (ps : List KoalaBear.Field[X]
     hdeg _ (by rw [List.getD_eq_getElem _ _ hj]; exact List.getElem_mem hj)
   rw [openedAt_eq, Array.getD_eq_getD_getElem?, Array.getElem?_ofFn,
     dite_eq_left_of_eq_true (eq_true (by rw [hw]; exact hj)), Option.getD_some, hlog,
-    Ext4.toSpec_mul, toSpec_cosetFactor, toSpec_colSum,
+    Challenge.toSpec_mul, toSpec_cosetFactor, toSpec_colSum,
     CPolynomial.NTT.Domain.aeval_eq_cosetBarycentric D toField_gen_ne_zero _ hp _
       (pow_ne_of_outsideBase hz D toField_gen_ne_zero),
     ← Fin.sum_univ_eq_sum_range (fun i ↦ FastField.toField (m.values.getD
-      ((bitRevPerm L).getD i 0 * m.width + j) 0) • Ext4.toSpec ((baryWeights L z).getD i 0))]
+      ((bitRevPerm L).getD i 0 * m.width + j) 0) • Challenge.toSpec ((baryWeights L z).getD i 0))]
   refine congrArg₂ (· * ·) rfl (Finset.sum_congr rfl fun i _ ↦ ?_)
   have hi : i.val < 2 ^ L := i.isLt
   have hr := CPolynomial.NTT.Transform.bitRevNat_lt L i
@@ -302,7 +298,8 @@ theorem openedAt_isLde (b h : Nat) (m : Stark.Mat) (ps : List KoalaBear.Field[X]
     hval _ (by rw [hLb, Nat.pow_add]; nlinarith [Nat.two_pow_pos b]) j hj,
     hLb, reverseBits_low L b i hi, pow_mul, ← toField_npow,
     twoAdicGen_pow L b (by omega), toField_twoAdicGen L hL24]
-  simp only [bw, Ext4.toSpec_smul, Ext4.toSpec_inv, Ext4.toSpec_sub, Ext4.toSpec_ofBase,
+  simp only [bw, Challenge.toSpec_smul, Challenge.toSpec_inv, Challenge.toSpec_sub, Ext.ofBase,
+    Challenge.toSpec_ofBase,
     Algebra.smul_def, ← CompPoly.Extension.Ext.algebraMap_eq_ofBase,
     CPolynomial.NTT.Domain.cosetNode, CPolynomial.NTT.Domain.node, toField_mul, toField_npow,
     toField_twoAdicGen L hL24, D, map_mul, map_pow]
