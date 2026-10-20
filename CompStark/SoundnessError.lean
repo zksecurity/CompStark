@@ -8,17 +8,18 @@ public import CompStark.Iop
 
 /-! # The knowledge error of the STARK
 
-The bound of `knowledgeSoundness` (`CompStark/Soundness.lean`) at a proximity `δ` below
-`1 - rate`. It has one term per challenge of the interactive oracle proof
-(`CompStark/Iop.lean`), with `ℓ` the list sizes of the trace's and the quotient's codes at `δ`
-(`Setup.listSize`):
+The bound of `knowledgeSoundness` (`CompStark/Soundness.lean`), for FRI at proximity `δ` and the
+extractor at a proximity `δ' ≥ δ` below `1 - rate`. It has one term per challenge of the
+interactive oracle proof (`CompStark/Iop.lean`), with `ℓ` the list sizes of the trace's and the
+quotient's codes at `δ'` (`Setup.listSize`):
 
 * `α`: folding the constraints by `α` makes a constraint that fails on some row of one of the
   `ℓ` candidate traces vanish on every row (`foldingError`).
 * `ζ`: the constraints hold at `ζ` for one of the `ℓ²` candidate pairs although they fail as
   polynomials, or `ζ` lies on `L` or the trace domain (`outOfDomainError`).
-* `a`: the batched DEEP word is `δ`-close to low degree although its summands are not, on a
-  common set (`batchingError`, the mutual correlated-agreement error of the powers of `a`).
+* `a`: the batched DEEP word is `δ`-close to low degree although its summands are not on a common
+  set at `δ'` (`batchingError`, the correlated-agreement error of the powers of `a`; the
+  difference `δ' - δ` is the proximity loss).
 * FRI accepts a word that is `δ`-far from low degree (`friError`, ArkLib's FRI soundness).
 
 Below the unique-decoding radius `ℓ ≤ 1`; up to the Johnson bound `1 - √rate`, `ℓ` is small.
@@ -61,6 +62,15 @@ noncomputable def code : ModuleCode S.Point 𝕂 𝕂 :=
 
 end Setup
 
+/-- A word agrees with a codeword of `S.code` on at least `(1 - δ) N` points. -/
+def Near (S : Setup) (δ : ℝ) (w : S.Point → 𝕂) : Prop :=
+  ∃ T : Finset S.Point, (T.card : ℝ) ≥ S.size * (1 - δ) ∧ ∃ u ∈ S.code, ∀ i ∈ T, w i = u i
+
+/-- Words are near the code on a common set of at least `(1 - δ) N` points. -/
+def NearTogether (S : Setup) {ι : Type} (δ : ℝ) (ws : ι → S.Point → 𝕂) : Prop :=
+  ∃ T : Finset S.Point, (T.card : ℝ) ≥ S.size * (1 - δ) ∧
+    ∀ k, ∃ u ∈ S.code, ∀ i ∈ T, ws k i = u i
+
 /-- `α` folds a constraint that fails on some row of a candidate trace into one that vanishes on
 every row: at most `#constraints - 1` values of `α` per candidate, out of `|𝕂|`. -/
 noncomputable def foldingError (S : Setup) (δ : NNReal) : ENNReal :=
@@ -74,11 +84,15 @@ noncomputable def outOfDomainError (S : Setup) (δ : NNReal) : ENNReal :=
   (S.listSize (Fin S.air.width) δ * S.listSize (Fin S.chunks × Fin 4) δ * S.identityDegree +
     S.size + S.n : Nat) / (Fintype.card 𝕂 : ENNReal)
 
-/-- The mutual correlated-agreement error of the powers `1, a, a², …` over the opened words at
-proximity `δ`: the batched word is `δ`-close to `code` without the words being so on a common
-set. -/
-noncomputable def batchingError (S : Setup) (δ : NNReal) : ENNReal :=
-  mcaError (univariatePowersGenerator 𝕂 (S.numOpened - 1)) S.code δ
+open Classical in
+/-- The correlated-agreement error of the powers `1, a, a², …` over the opened words: the largest
+probability, over the words, that their combination by the powers of a uniform `a` is `δ`-near
+the code although the words are not near on a common set at radius `δ' ≥ δ`. -/
+noncomputable def batchingError (S : Setup) (δ δ' : NNReal) : ENNReal :=
+  ⨆ ws : Fin S.numOpened → S.Point → 𝕂,
+    ((Finset.univ.filter fun a : 𝕂 ↦
+      Near S δ (fun i ↦ ∑ k : Fin S.numOpened, a ^ (k : Nat) * ws k i) ∧
+      ¬ NearTogether S δ' ws).card : ENNReal) / Fintype.card 𝕂
 
 /-- FRI's soundness error at proximity `δ` (ArkLib's `Fri.Spec.soundnessError`): the
 correlated-agreement error of each fold, and `(1 - δ) ^ numQueries` for the queries. -/
@@ -86,8 +100,8 @@ noncomputable def friError (S : Setup) (δ : NNReal) : ENNReal :=
   friErrorOf S.domain (Sound.folds S.params.maxLogArity (S.logN - S.params.logFinalPolyLen))
     S.params.logFinalPolyLen S.params.numQueries δ
 
-/-- The knowledge error at proximity `δ`. -/
-noncomputable def knowledgeError (S : Setup) (δ : NNReal) : ENNReal :=
-  foldingError S δ + outOfDomainError S δ + batchingError S δ + friError S δ
+/-- The knowledge error, for FRI at proximity `δ` and the extractor at `δ' ≥ δ`. -/
+noncomputable def knowledgeError (S : Setup) (δ δ' : NNReal) : ENNReal :=
+  foldingError S δ' + outOfDomainError S δ' + batchingError S δ δ' + friError S δ
 
 end CompStark.Iop

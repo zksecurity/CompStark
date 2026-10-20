@@ -8,13 +8,15 @@ public import CompStark.Sound.Steps
 
 /-! # The batching step
 
-`batchingStep`: if the opened words `ws` are not `δ`-near the code on a common set, the set of
-`a` for which `∑ₖ aᵏ ws k` is `δ`-near the code has density at most `batchingError`.
+`batchingStep`: if the opened words `ws` are not `δ'`-near the code on a common set, the set of
+`a` for which `∑ₖ aᵏ ws k` is `δ`-near the code has density at most `batchingError S δ δ'`. This
+is immediate from the definition of `batchingError` as a supremum over the words.
 
-The argument is by inclusion of events. If the combination agrees with a codeword on a set `T` of
-at least `N (1 - δ)` points, its projection to `T` lies in the projected code; some `ws k`
-projected to `T` does not, as otherwise the words would be near the code on the common set `T`.
-So `a` lies in the mutual-correlated-agreement event `IsMCA` of the powers generator for the
+`batchingError_le_mcaError` bounds the error at a single radius by the mutual
+correlated-agreement error of the powers generator, by inclusion of events. If the combination
+agrees with a codeword on a set `T` of at least `N (1 - δ)` points, its projection to `T` lies in
+the projected code; some `ws k` projected to `T` does not, as otherwise the words would be near
+the code on the common set `T`. So `a` lies in the event `IsMCA` of the powers generator for the
 family `ws`, whose uniform probability is the event's density, and at most the supremum
 `mcaError` over families.
 -/
@@ -43,11 +45,13 @@ theorem isMCA_of_near (S : Setup) (δ : NNReal) {M : Nat} (ws : Fin (M + 1) → 
     exact ⟨v, hv, fun i hi ↦ (congrFun heq ⟨i, hi⟩).symm⟩
 
 open Classical in
-/-- `batchingStep` for `M + 1` words. -/
+/-- The density of `a` making a combination of `M + 1` words not near on a common set `δ`-near
+is at most the MCA error of the powers generator. -/
 theorem density_near_le_mcaError (S : Setup) (δ : NNReal) {M : Nat}
-    (ws : Fin (M + 1) → S.Point → 𝕂) (hfar : ¬ NearTogether S δ ws) :
+    (ws : Fin (M + 1) → S.Point → 𝕂) :
     ((Finset.univ.filter fun a : 𝕂 ↦
-        Near S δ fun i ↦ ∑ k : Fin (M + 1), a ^ (k : Nat) * ws k i).card : ENNReal)
+        Near S δ (fun i ↦ ∑ k : Fin (M + 1), a ^ (k : Nat) * ws k i) ∧
+        ¬ NearTogether S δ ws).card : ENNReal)
       / Fintype.card 𝕂 ≤ mcaError (univariatePowersGenerator 𝕂 M) S.code δ := by
   refine le_iSup_of_le ws ?_
   rw [SampleableType.prEvent_uniformSample]
@@ -56,7 +60,7 @@ theorem density_near_le_mcaError (S : Setup) (δ : NNReal) {M : Nat}
   apply Finset.card_le_card
   intro a
   simp only [Finset.mem_filter_univ]
-  exact isMCA_of_near S δ ws hfar a
+  exact fun ⟨hnear, hfar⟩ ↦ isMCA_of_near S δ ws hfar a hnear
 
 /-- An empty family of words is near the code on a common set. -/
 theorem nearTogether_of_isEmpty (S : Setup) (δ : NNReal) {ι : Type} [IsEmpty ι]
@@ -65,14 +69,28 @@ theorem nearTogether_of_isEmpty (S : Setup) (δ : NNReal) {ι : Type} [IsEmpty �
   rw [Finset.card_univ, Fintype.card_fin, ge_iff_le]
   exact mul_le_of_le_one_right (Nat.cast_nonneg _) (sub_le_self 1 δ.2)
 
+/-- At a single radius, the batching error is at most the mutual correlated-agreement error of
+the powers `1, a, a², …`. -/
+theorem batchingError_le_mcaError (S : Setup) (δ : NNReal) :
+    batchingError S δ δ ≤ mcaError (univariatePowersGenerator 𝕂 (S.numOpened - 1)) S.code δ := by
+  unfold batchingError
+  generalize S.numOpened = m
+  cases m with
+  | zero =>
+    refine iSup_le fun ws ↦ ?_
+    simp only [nearTogether_of_isEmpty S δ ws, not_true_eq_false, and_false,
+      Finset.filter_false, Finset.card_empty, Nat.cast_zero, ENNReal.zero_div, zero_le]
+  | succ M => exact iSup_le fun ws ↦ density_near_le_mcaError S δ ws
+
+open Classical in
 /-- Batching by powers keeps words that are not near on a common set far, except with
 probability `batchingError`. -/
 theorem batchingStep (S : Setup) : BatchingStep S := by
-  intro δ ws hfar
-  unfold batchingError
-  generalize S.numOpened = m at ws hfar ⊢
-  cases m with
-  | zero => exact absurd (nearTogether_of_isEmpty S δ ws) hfar
-  | succ M => exact density_near_le_mcaError S δ ws hfar
+  intro δ δ' ws hfar
+  refine le_trans (le_of_eq ?_) (le_iSup (fun ws : Fin S.numOpened → S.Point → 𝕂 ↦
+    ((Finset.univ.filter fun a : 𝕂 ↦
+      Near S δ (fun i ↦ ∑ k : Fin S.numOpened, a ^ (k : Nat) * ws k i) ∧
+      ¬ NearTogether S δ' ws).card : ENNReal) / Fintype.card 𝕂) ws)
+  simp only [hfar, not_false_eq_true, and_true]
 
 end CompStark.Sound

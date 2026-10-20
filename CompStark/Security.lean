@@ -12,9 +12,9 @@ public import CompStark.Complete.Quotient
 
 `fibonacciSetup`: the Fibonacci AIR (2 columns, 5 constraints, 1 quotient chunk) on `2 ^ 10`
 rows, blowup `16` (`N = 2 ^ 14`, rate `1/16`), FRI folding by arity `2` down to a constant, and
-`123` queries. At proximity `δ = 7/16`, below the unique-decoding radius `15/32`, its knowledge
-error is at most `2 ^ (-100)` (`fibonacci_knowledgeError_le`). So, by `knowledgeSoundness`, a
-prover that the verifier accepts with probability above `2 ^ (-100)` has committed to a trace
+`123` queries. With FRI and the extractor both at proximity `δ = δ' = 7/16`, below the
+unique-decoding radius `15/32`, its knowledge error is at most `2 ^ (-100)`
+(`fibonacci_knowledgeError_le`). So, by `knowledgeSoundness`, a prover that the verifier accepts with probability above `2 ^ (-100)` has committed to a trace
 within `7/16` of one that satisfies the AIR (`fibonacci_knowledgeSoundness`).
 
 The terms of `knowledgeError` (`CompStark/Sound/Numbers.lean`), over `|𝕂| = p ^ 4 ≥ 2 ^ 123`:
@@ -22,8 +22,9 @@ The terms of `knowledgeError` (`CompStark/Sound/Numbers.lean`), over `|𝕂| = p
 * constraint folding: lists of at most one candidate below the unique-decoding radius, so at most
   `#constraints - 1 = 4`;
 * out of domain: `identityDegree + N + n = 2048 + 2 ^ 14 + 2 ^ 10`;
-* batching: the powers MCA bound below the unique-decoding radius (`mcaError_powers_le`,
-  [BCIKS20] Theorem 1.6), `(numOpened - 1) N = 7 · 2 ^ 14`;
+* batching: at a single radius at most the powers MCA error (`batchingError_le_mcaError`), bounded
+  below the unique-decoding radius (`mcaError_powers_le`, [BCIKS20] Theorem 1.6) by
+  `(numOpened - 1) N = 7 · 2 ^ 14`;
 * FRI: `10` folds by affine lines, each at most `2 ^ 14` by the same bound, and
   `(9/16) ^ 123 ≤ 2 ^ (-102.09)` for the queries.
 
@@ -72,9 +73,10 @@ def fibonacciSetup : Setup where
   blowup := by decide
   folds := by decide
 
-/-- **100 bits.** The knowledge error of `fibonacciSetup` at `δ = 7/16` is at most
+/-- **100 bits.** The knowledge error of `fibonacciSetup` at `δ = δ' = 7/16` is at most
 `2 ^ (-100)`. -/
-theorem fibonacci_knowledgeError_le : knowledgeError fibonacciSetup (7 / 16) ≤ (2 ^ 100)⁻¹ := by
+theorem fibonacci_knowledgeError_le :
+    knowledgeError fibonacciSetup (7 / 16) (7 / 16) ≤ (2 ^ 100)⁻¹ := by
   have hb : 4 ≤ fibonacciSetup.params.logBlowup := le_rfl
   have ha : fibonacciSetup.params.maxLogArity = 1 := rfl
   have h1 := knowledgeError_le_of_le fibonacciSetup hb ha (7 / 16) le_rfl
@@ -95,15 +97,16 @@ theorem fibonacci_knowledgeError_le : knowledgeError fibonacciSetup (7 / 16) ≤
     (10 - 0) * 2 ^ (10 + 4) ≤ 2 ^ 19
   norm_num
 
-/-- Knowledge soundness of `fibonacciSetup` with error `2 ^ (-100)`: if no trace within `7/16`
-of the prover's committed trace satisfies the AIR, the verifier accepts with probability at most
-`2 ^ (-100)`. -/
+/-- Knowledge soundness of `fibonacciSetup` with error `2 ^ (-100)`, FRI and the extractor both at
+`7/16`: if no trace within `7/16` of the prover's committed trace satisfies the AIR, the verifier
+accepts with probability at most `2 ^ (-100)`. -/
 theorem fibonacci_knowledgeSoundness (publicValues : List F) (prover : Prover fibonacciSetup) :
     (∀ trace ∈ closeTraces fibonacciSetup (7 / 16 : NNReal) prover,
       ¬ fibonacci.Satisfied 10 trace publicValues) →
       acceptance publicValues prover ≤ (2 ^ 100)⁻¹ := by
   intro h
-  refine (knowledgeSoundness fibonacciSetup publicValues prover (7 / 16) ?_ h).trans
+  refine (knowledgeSoundness fibonacciSetup publicValues prover (7 / 16) (7 / 16) le_rfl ?_
+    h).trans
     fibonacci_knowledgeError_le
   have hrate : fibonacciSetup.rate = 1 / 16 := by
     rw [Setup.rate]

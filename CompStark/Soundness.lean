@@ -33,14 +33,14 @@ open CompStark.Stark CompStark.Sound
 local notation "F" => KoalaBear.Fast.Field
 
 /-- **Knowledge soundness.** If no trace close to the prover's committed trace satisfies the AIR,
-the verifier accepts the prover with probability at most the knowledge error, at any proximity
-`δ` below `1 - rate`. So a prover accepted with higher probability has committed to a trace
-within `δ` of one that satisfies the AIR, which list decoding extracts. -/
+the verifier accepts the prover with probability at most the knowledge error: FRI tests proximity
+`δ`, and the extractor list-decodes at any `δ' ≥ δ` below `1 - rate`. So a prover accepted with
+higher probability has committed to a trace within `δ'` of one that satisfies the AIR. -/
 theorem knowledgeSoundness (S : Setup) (publicValues : List F) (prover : Prover S)
-    (δ : NNReal) (hδ : (δ : ℝ) < 1 - S.rate) :
-    (∀ trace ∈ closeTraces S δ prover, ¬ S.air.Satisfied S.logN trace publicValues) →
-      acceptance publicValues prover ≤ knowledgeError S δ :=
+    (δ δ' : NNReal) (hδ : δ ≤ δ') (hδ' : (δ' : ℝ) < 1 - S.rate) :
+    (∀ trace ∈ closeTraces S δ' prover, ¬ S.air.Satisfied S.logN trace publicValues) →
+      acceptance publicValues prover ≤ knowledgeError S δ δ' :=
   knowledgeSoundness_of (friStep S) (friAtMostOne S) (batchingStep S) (decodingStep S)
-    (algebraStep S) publicValues prover δ hδ
+    (algebraStep S) publicValues prover δ δ' hδ hδ'
 
 end CompStark.Iop

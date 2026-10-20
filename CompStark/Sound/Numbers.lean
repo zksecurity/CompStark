@@ -7,18 +7,21 @@ module
 public import CompStark.Sound.PowersMca
 public import CompStark.Sound.Johnson
 public import CompStark.Sound.Fri
+public import CompStark.Sound.Batching
 
 /-! # Bounds on the knowledge error's terms below the unique-decoding radius
 
-At FRI arity `2`, a blowup of at least `16` and a proximity `δ ≤ 7/16`, each term of
-`knowledgeError` is an integer over `|𝕂|`, except FRI's queries (`knowledgeError_le_of_le`):
+At FRI arity `2`, a blowup of at least `16` and a proximity `δ ≤ 7/16` for both FRI and the
+extractor, each term of `knowledgeError S δ δ` is an integer over `|𝕂|`, except FRI's queries
+(`knowledgeError_le_of_le`):
 
 * `δ` is below the unique-decoding radius `(1 - rate) / 2 ≥ 15/32`, so the candidate lists have
   at most one element (`listSize_le_one`), and the constraint-folding and out-of-domain terms are
   at most `#constraints - 1` and `identityDegree + N + n`;
 * every code involved, the trace's and each folded FRI code, has rate at most `1/8`, so `7/16` is
   within its relative unique-decoding radius (`seven_sixteenths_le_relUDR`), and the powers MCA
-  bound `mcaError_powers_le` gives `(numOpened - 1) N` for batching and at most `N` for each of
+  bound `mcaError_powers_le` gives, through `batchingError_le_mcaError`, `(numOpened - 1) N` for
+  batching and at most `N` for each of
   FRI's `logN - logFinalPolyLen` folds (`friError_le_of_le`);
 * the queries contribute `(1 - δ) ^ numQueries`.
 
@@ -177,12 +180,13 @@ theorem outOfDomainError_le_of_le (S : Setup) (hb : 4 ≤ S.params.logBlowup) (�
     (listSize_le_one_of_le S hb (Fin S.chunks × Fin 4) δ hδ))
   omega
 
-/-- The batching term: the powers MCA bound `(numOpened - 1) N / |𝕂|`. -/
+/-- The batching term at a single radius: the powers MCA bound `(numOpened - 1) N / |𝕂|`. -/
 theorem batchingError_le_of_le (S : Setup) (hb : 4 ≤ S.params.logBlowup) (δ : ℝ≥0)
     (hδ : δ ≤ 7 / 16) :
-    batchingError S δ ≤ ((S.numOpened - 1) * S.size : ℕ) / (Fintype.card 𝕂 : ENNReal) := by
+    batchingError S δ δ ≤ ((S.numOpened - 1) * S.size : ℕ) / (Fintype.card 𝕂 : ENNReal) := by
   have h16 : 16 * 2 ^ S.logN ≤ 2 ^ (S.logN + S.params.logBlowup) := sixteen_mul_n_le_size S hb
   have : NeZero S.n := ⟨(Nat.two_pow_pos _).ne'⟩
+  refine (batchingError_le_mcaError S δ).trans ?_
   exact mcaError_powers_le (Nat.two_pow_pos _) (by omega) _
     (hδ.trans (seven_sixteenths_le_relUDR (by rw [Fintype.card_fin]; omega)))
 
@@ -205,16 +209,17 @@ theorem friError_le_of_le (S : Setup) (hb : 4 ≤ S.params.logBlowup)
             _ ≤ 2 ^ S.params.logBlowup := Nat.pow_le_pow_right two_pos hb)
     _ = _ := rfl
 
-/-- The knowledge error at arity `2`, blowup at least `16` and `δ ≤ 7/16`: one integer over
+/-- The knowledge error at arity `2`, blowup at least `16` and `δ ≤ 7/16` for both FRI and the
+extractor: one integer over
 `|𝕂|`, and `(1 - δ) ^ numQueries`. -/
 theorem knowledgeError_le_of_le (S : Setup) (hb : 4 ≤ S.params.logBlowup)
     (harity : S.params.maxLogArity = 1) (δ : ℝ≥0) (hδ : δ ≤ 7 / 16) :
-    knowledgeError S δ ≤
+    knowledgeError S δ δ ≤
       ((S.air.constraints.length - 1) + (S.identityDegree + S.size + S.n) +
         (S.numOpened - 1) * S.size + (S.logN - S.params.logFinalPolyLen) * S.size : ℕ) /
           (Fintype.card 𝕂 : ENNReal) +
         ((Real.toNNReal (1 - δ) ^ S.params.numQueries : ℝ≥0) : ENNReal) := by
-  calc knowledgeError S δ
+  calc knowledgeError S δ δ
       ≤ (S.air.constraints.length - 1 : ℕ) / (Fintype.card 𝕂 : ENNReal) +
           (S.identityDegree + S.size + S.n : ℕ) / (Fintype.card 𝕂 : ENNReal) +
           ((S.numOpened - 1) * S.size : ℕ) / (Fintype.card 𝕂 : ENNReal) +

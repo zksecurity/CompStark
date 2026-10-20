@@ -12,8 +12,8 @@ public import CompStark.SoundnessError
 own files:
 
 * `FriStep`: FRI rejects words far from the code (ArkLib's FRI soundness).
-* `BatchingStep`: batching by powers keeps summands that are not near on a common set far, except
-  for few `a` (mutual correlated agreement).
+* `BatchingStep`: batching by powers keeps summands that are not `δ'`-near on a common set
+  `δ`-far, except for few `a` (correlated agreement).
 * `DecodingStep`: if the DEEP summands are near on a common set and `ζ` lies off `L` and the
   trace domain, the claimed values are those of a candidate trace and quotient.
 * `AlgebraStep`: if a candidate trace fails the AIR, the constraint check at `ζ` passes for few
@@ -27,10 +27,6 @@ open CompStark.Stark CompStark.Iop Polynomial
 local notation "𝔽" => KoalaBear.Field
 local notation "𝕂" => KoalaBear.Ext4
 local notation "F" => KoalaBear.Fast.Field
-
-/-- A word agrees with a codeword of `S.code` on at least `(1 - δ) N` points. -/
-def Near (S : Setup) (δ : ℝ) (w : S.Point → 𝕂) : Prop :=
-  ∃ T : Finset S.Point, (T.card : ℝ) ≥ S.size * (1 - δ) ∧ ∃ u ∈ S.code, ∀ i ∈ T, w i = u i
 
 /-- The DEEP quotient of a word `f` with claimed value `y` at `z`: `(y - f(x)) / (z - x)`. -/
 noncomputable def deepComponent (S : Setup) (f : S.Point → 𝔽) (z y : 𝕂) : S.Point → 𝕂 :=
@@ -49,20 +45,14 @@ def FriStep (S : Setup) : Prop :=
 /-- FRI accepts with probability at most `1`. -/
 def FriAtMostOne (S : Setup) : Prop := ∀ w : S.Point → 𝕂, friAcceptance S w ≤ 1
 
-/-- Words are near the code on a common set of at least `(1 - δ) N` points. -/
-def NearTogether (S : Setup) {ι : Type} (δ : ℝ) (ws : ι → S.Point → 𝕂) : Prop :=
-  ∃ T : Finset S.Point, (T.card : ℝ) ≥ S.size * (1 - δ) ∧
-    ∀ k, ∃ u ∈ S.code, ∀ i ∈ T, ws k i = u i
-
 open Classical in
-/-- If `numOpened` words are not near the code on a common set, their combination by the powers
-of a uniform `a` is `δ`-near the code with probability at most `batchingError` (mutual
-correlated agreement). -/
+/-- If `numOpened` words are not near the code on a common set at radius `δ'`, their combination
+by the powers of a uniform `a` is `δ`-near the code with probability at most `batchingError`. -/
 def BatchingStep (S : Setup) : Prop :=
-  ∀ (δ : NNReal) (ws : Fin S.numOpened → S.Point → 𝕂), ¬ NearTogether S δ ws →
+  ∀ (δ δ' : NNReal) (ws : Fin S.numOpened → S.Point → 𝕂), ¬ NearTogether S δ' ws →
     ((Finset.univ.filter fun a : 𝕂 ↦
         Near S δ fun i ↦ ∑ k : Fin S.numOpened, a ^ (k : Nat) * ws k i).card : ENNReal)
-      / Fintype.card 𝕂 ≤ batchingError S δ
+      / Fintype.card 𝕂 ≤ batchingError S δ δ'
 
 /-- The claimed values of polynomials `trace` and `quotient`: the true ones at `ζ`. -/
 noncomputable def trueOpenings (S : Setup) (trace : Fin S.air.width → 𝔽[X])
