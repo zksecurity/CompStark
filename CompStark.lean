@@ -103,3 +103,4 @@ public import CompStark.Ni.FirstQueries
 public import CompStark.Ni.RoundBounds
 public import CompStark.Ni.Binding
 public import CompStark.Ni.Accepted
+public import CompStark.Ni.Extracted
