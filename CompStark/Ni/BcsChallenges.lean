@@ -13,7 +13,9 @@ On the ideal primitives of an answer table (`idealOf answer`), the challenges of
 run (`alphaOf`, `zetaOf`, `batchOf`, `betasOf`, `powSampleOf`, `querySampleOf`) are read off the
 answers to the duplex calls of the proof's transcript schedule (`inputs`, `keyAt`), as `Ni/Parse`
 reads them (`extAt`, `challengeOffset`): every round of the schedule observes something, so every
-squeeze after it duplexes once, and the round's challenges are the answer's first samples.
+squeeze after it duplexes once, and the round's challenges are the answer's first samples
+(`challenges_idealOf`; an accepted proof observes something in every round, `nonempty_of_verify`).
+The design's `Iop.committedTrace` is `traceWords` on the log's cache (`committedTrace_eq`).
 -/
 
 @[expose] public section
