@@ -55,6 +55,9 @@ Let `e = ⌊δ_fld n⌋`, `u(x, Z) = ∑ⱼ uⱼ(x) Zʲ`, and `G` the set of goo
 
 For `k = 0` the code is `{0}`; step 5 applies directly with `p = 0`.
 
+Steps 1–5 are exported as `exists_jointCodewords`: the codewords `p`, co-curvilinearity, and
+`|D| ≤ δ_int n`, without the joint-closeness hypothesis.
+
 ## Deviations from the line theorem
 
 The line theorem assumes `δ_min / 3 ≤ δ_fld`, but only uses it to get `δ_fld > 0`; here
@@ -606,25 +609,25 @@ noncomputable def goodCoeffs (domain : ι ↪ F) (k : ℕ) {M : ℕ} (u : Fin (M
     (δ : ℝ≥0) : Finset F :=
   Finset.univ.filter fun z => δᵣ(curveWord u z, ReedSolomon.code domain k) ≤ δ
 
-/-- **Curve CA, count.** If `u₀, …, u_M` are not jointly `δ_int`-close to the Reed–Solomon
-code, at most `M · max(T₁, T₂)` curve points `∑ⱼ zʲ uⱼ` are `δ_fld`-close to it. -/
-theorem card_goodCoeffs_le (domain : ι ↪ F) (k M : ℕ) (u : Fin (M + 1) → ι → F)
+/-- **Joint codewords.** If more than `M · max(T₁, T₂)` curve points are `δ_fld`-close, there are
+codewords `p₀, …, p_M` such that every close curve point is within `⌊δ_fld n⌋` of `∑ⱼ zʲ pⱼ`
+(co-curvilinearity), and `p` differs from `u` on at most `δ_int n` coordinates. -/
+theorem exists_jointCodewords (domain : ι ↪ F) (k M : ℕ) (u : Fin (M + 1) → ι → F)
     (δ_fld δ_int : ℝ≥0)
     (h_ud : (δ_fld : ℝ) ≤ (1 - (k : ℝ) / Fintype.card ι) / 2 - 1 / Fintype.card ι)
     (h_pos : 0 < δ_fld) (h_lt : δ_fld < δ_int)
-    (hjoint : ¬ Code.jointProximity
-      (C := (ReedSolomon.code domain k : Set (ι → F))) (u := u) δ_int) :
-    ((goodCoeffs domain k u δ_fld).card : ℝ) ≤
-      M * max
+    (hcon : M * max
         ((1 - (k : ℝ) / Fintype.card ι - δ_fld) /
           ((δ_fld : ℝ) * (1 - (k : ℝ) / Fintype.card ι - 2 * δ_fld)))
-        ((δ_int : ℝ) / (δ_int - δ_fld)) := by
+        ((δ_int : ℝ) / (δ_int - δ_fld)) < (goodCoeffs domain k u δ_fld).card) :
+    ∃ p : Fin (M + 1) → ι → F, (∀ j, p j ∈ ReedSolomon.code domain k) ∧
+      (∀ z ∈ goodCoeffs domain k u δ_fld,
+        Δ₀(curveWord u z, curveWord p z) ≤ Nat.floor (δ_fld * Fintype.card ι)) ∧
+      ((disagree u p).card : ℝ) ≤ δ_int * Fintype.card ι := by
   classical
   set good := goodCoeffs domain k u δ_fld
   set n := Fintype.card ι
   set a := good.card
-  by_contra hcon
-  push Not at hcon
   have hM0 : (0 : ℝ) ≤ M := Nat.cast_nonneg M
   have hT1 := (mul_le_mul_of_nonneg_left (le_max_left _ _) hM0).trans_lt hcon
   have hT2 := (mul_le_mul_of_nonneg_left (le_max_right _ _) hM0).trans_lt hcon
@@ -671,8 +674,7 @@ theorem card_goodCoeffs_le (domain : ι ↪ F) (k M : ℕ) (u : Fin (M + 1) → 
         hbx hdim ((Nat.zero_le M).trans_lt haM)
         ((Rat.cast_lt (K := ℝ)).mp (by push_cast at hreal ⊢; exact hreal))
   have hdc := double_count good u p e hclose
-  apply hjoint
-  refine jointProximity_of_disagree_card_le _ u p δ_int hp (Nat.le_floor ?_)
+  refine ⟨p, hp, hclose, ?_⟩
   have hdcR : ((a : ℝ) - M) * (disagree u p).card ≤ a * e := by
     have := (Nat.cast_le (α := ℝ)).mpr hdc
     rw [Nat.cast_mul, Nat.cast_mul, Nat.cast_sub haM.le] at this
@@ -690,9 +692,26 @@ theorem card_goodCoeffs_le (domain : ι ↪ F) (k M : ℕ) (u : Fin (M + 1) → 
       rw [← mul_assoc]
       exact mul_lt_mul_of_pos_right hgap hnR
     linarith
-  have := lt_of_mul_lt_mul_left hlt haM'.le
-  have : ((disagree u p).card : ℝ) ≤ δ_int * n := this.le
-  exact_mod_cast this
+  exact (lt_of_mul_lt_mul_left hlt haM'.le).le
+
+/-- **Curve CA, count.** If `u₀, …, u_M` are not jointly `δ_int`-close to the Reed–Solomon
+code, at most `M · max(T₁, T₂)` curve points `∑ⱼ zʲ uⱼ` are `δ_fld`-close to it. -/
+theorem card_goodCoeffs_le (domain : ι ↪ F) (k M : ℕ) (u : Fin (M + 1) → ι → F)
+    (δ_fld δ_int : ℝ≥0)
+    (h_ud : (δ_fld : ℝ) ≤ (1 - (k : ℝ) / Fintype.card ι) / 2 - 1 / Fintype.card ι)
+    (h_pos : 0 < δ_fld) (h_lt : δ_fld < δ_int)
+    (hjoint : ¬ Code.jointProximity
+      (C := (ReedSolomon.code domain k : Set (ι → F))) (u := u) δ_int) :
+    ((goodCoeffs domain k u δ_fld).card : ℝ) ≤
+      M * max
+        ((1 - (k : ℝ) / Fintype.card ι - δ_fld) /
+          ((δ_fld : ℝ) * (1 - (k : ℝ) / Fintype.card ι - 2 * δ_fld)))
+        ((δ_int : ℝ) / (δ_int - δ_fld)) := by
+  by_contra hcon
+  push Not at hcon
+  obtain ⟨p, hp, -, hD⟩ := exists_jointCodewords domain k M u δ_fld δ_int h_ud h_pos h_lt hcon
+  exact hjoint (jointProximity_of_disagree_card_le _ u p δ_int hp
+    (Nat.le_floor (by exact_mod_cast hD)))
 
 /-- **Curve CA, probability.** Over a uniform `z`, the curve point `∑ⱼ zʲ uⱼ` of words that are
 not jointly `δ_int`-close is `δ_fld`-close with probability at most `M · max(T₁, T₂) / q`. -/
