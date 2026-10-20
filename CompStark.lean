@@ -80,3 +80,7 @@ public import CompStark.Sound.CurveCA
 public import CompStark.Sound.LossyMca
 public import CompStark.Fs.FreshQuery
 public import CompStark.Fs.DigestClash
+public import CompStark.NonInteractiveError
+public import CompStark.Sound.Sampling
+public import CompStark.Sound.ConsistentQueries
+public import CompStark.Sound.Rbr
