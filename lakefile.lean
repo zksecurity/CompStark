@@ -11,7 +11,7 @@ require CompPoly from git "https://github.com/mitschabaude-bot/CompPoly.git" @ "
 
 -- ArkLib with FRI round-by-round soundness on Lean v4.35 (Verified-zkEVM/ArkLib#1317, stacked on
 -- #992 and #1251) and lossy mutual correlated agreement (branch `fri-lossy`).
-require Arklib from git "https://github.com/mitschabaude-bot/ArkLib.git" @ "64d2c64e11ba6efc737a5161283619cb4eac3892"
+require Arklib from git "https://github.com/mitschabaude-bot/ArkLib.git" @ "03d276bab5e918542cfbeb0953884b1553f86d1e"
 
 -- VCVio as ArkLib#1317 pins it: Verified-zkEVM/VCVio#821 on Lean v4.35.
 require VCVio from git "https://github.com/Verified-zkEVM/VCVio" @ "0de3bf11c4acd77a5e750288049ad35e1a650bf9"
