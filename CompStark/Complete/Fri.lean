@@ -25,7 +25,7 @@ namespace CompStark.Complete
 open CompStark.Stark CompStark.Fri CompStark.KoalaBear
 
 local notation "F" => KoalaBear.Fast.Field
-local notation "EF" => KoalaBear.Fast.Ext4
+variable {EF : Type} [Challenge EF]
 
 /-! ### The verifier's monad on Poseidon2
 
@@ -88,8 +88,7 @@ theorem observeList_run (t : Transcript) (xs : List F) :
 theorem observeExts_run (t : Transcript) (xs : List EF) :
     observeExts poseidon2 xs t = .ok ((), t.observeExts xs) := by
   unfold observeExts
-  show Except.ok ((), xs.foldl (fun s x ↦ [x.c0, x.c1, x.c2, x.c3].foldl Transcript.observe s) t) =
-    _
+  show Except.ok ((), xs.foldl (fun s x ↦ (Ext.coeffs x).foldl Transcript.observe s) t) = _
   simp only [foldl_observe]
   rfl
 
@@ -117,7 +116,7 @@ def addNext (la : Nat) (beta : EF) (f : Array EF) (rest : List (Array EF)) :
 
 /-- A commit round: its log arity, the folded vector and remaining inputs it starts from, the
 transcript before it, its grinding witness and its folding challenge. -/
-structure Rd where
+structure Rd (EF : Type) [Challenge EF] where
   la : Nat
   folded : Array EF
   rest : List (Array EF)
@@ -126,11 +125,11 @@ structure Rd where
   beta : EF
 
 /-- A round's commitment. -/
-def Rd.c (r : Rd) : Committed := Committed.ofMats [(Backend.spec EF).leaves (2 ^ r.la) r.folded]
+def Rd.c (r : Rd EF) : Committed := Committed.ofMats [(Backend.spec EF).leaves (2 ^ r.la) r.folded]
 
 /-- The commit rounds of the specification prover, the final vector and transcript. -/
 def chain (P : Params) :
-    Nat → Array EF → List (Array EF) → Transcript → List Rd × Array EF × Transcript
+    Nat → Array EF → List (Array EF) → Transcript → List (Rd EF) × Array EF × Transcript
   | 0, f, _, t => ([], f, t)
   | fuel + 1, f, rest, t =>
     if f.size ≤ 2 ^ (P.logBlowup + P.logFinalPolyLen) then ([], f, t) else
@@ -143,7 +142,7 @@ def chain (P : Params) :
     (⟨la, f, rest, t, (t1.grind P.commitPowBits).1, beta⟩ :: r.1, r.2)
 
 /-- Record a round in the commit phase's result. -/
-def pushRd (cp : CommitPhase EF Committed) (r : Rd) : CommitPhase EF Committed :=
+def pushRd (cp : CommitPhase EF Committed) (r : Rd EF) : CommitPhase EF Committed :=
   ⟨cp.commits.push r.c.root, cp.data ++ [r.c], cp.witnesses.push r.w, cp.arities.push r.la,
     cp.finalPoly⟩
 
@@ -729,7 +728,7 @@ theorem fold_round (P : Params) (hP : 0 < P.maxLogArity) {h : Nat} {f : Array EF
       rw [ite_eq_right (by rw [beq_iff_eq]; exact he), ite_eq_right he']
       rfl
 
-theorem answerSteps_cons (r : Rd) (rs : List Rd) (la : Nat) (las : List Nat) (cur : Nat) :
+theorem answerSteps_cons (r : Rd EF) (rs : List (Rd EF)) (la : Nat) (las : List Nat) (cur : Nat) :
     answerSteps (Backend.spec EF) ((r :: rs).map (·.c)) (la :: las) cur =
       ⟨la, (((List.range (2 ^ la)).filter (· != cur % 2 ^ la)).map fun j ↦
           (unflatten (((r.c.openAt (cur >>> la)).values.getD 0 #[]).toList)).getD j 0).toArray,
@@ -823,7 +822,7 @@ theorem fold_loop0 (P : Params) (hP : 0 < P.maxLogArity)
   simp only [Nat.sub_self, Nat.shiftRight_zero] at this
   exact this
 
-theorem length_answerSteps (rs : List Rd) :
+theorem length_answerSteps (rs : List (Rd EF)) :
     ∀ cur, (answerSteps (Backend.spec EF) (rs.map (·.c)) (rs.map (·.la)) cur).length = rs.length :=
         by
   induction rs with
@@ -860,7 +859,7 @@ theorem verifyQuery_run (P : Params) (hP : 0 < P.maxLogArity) (f0 : Array EF)
 
 /-! ### The commit phase's result and the queries -/
 
-theorem foldl_pushRd (rs : List Rd) :
+theorem foldl_pushRd (rs : List (Rd EF)) :
     ∀ cp : CommitPhase EF Committed,
       (rs.foldl pushRd cp).commits.toList = cp.commits.toList ++ rs.map (·.c.root) ∧
       (rs.foldl pushRd cp).data = cp.data ++ rs.map (·.c) ∧
@@ -876,7 +875,7 @@ theorem foldl_pushRd (rs : List Rd) :
     simp only [pushRd, Array.toList_push, List.map_cons, List.append_assoc, List.singleton_append,
       and_self]
 
-theorem answerSteps_logArity (rs : List Rd) :
+theorem answerSteps_logArity (rs : List (Rd EF)) :
     ∀ cur, (answerSteps (Backend.spec EF) (rs.map (·.c)) (rs.map (·.la)) cur).map (·.logArity) =
       rs.map (·.la) := by
   induction rs with
@@ -908,6 +907,7 @@ theorem mapM_queries {α β : Type} (logMax : Nat) (mk : Nat → β) (g : α →
     rw [List.mapM_cons, prun_bind, hg, prun_bind, mapM_queries logMax mk g hg l]
     rfl
 
+omit [Challenge EF] in
 /-- The verifier's queries sample the prover's indices. -/
 theorem query_loop (logMax : Nat) (mk : Nat → QueryProof EF)
     (body : QueryProof EF → PUnit → M poseidon2 (ForInStep PUnit))

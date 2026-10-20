@@ -17,7 +17,8 @@ public import CompStark.Fri.Prover
 namespace CompStark.Stark
 
 local notation "F" => KoalaBear.Fast.Field
-local notation "EF" => KoalaBear.Fast.Ext4
+
+variable {EF : Type} [Challenge EF]
 
 /-- Row `r` of the quotient domain: the trace's row `r` and the row `period` on, cyclically. -/
 def rowEnv (tq : Mat) (n period : Nat) (pis : List F) (first last trans : Array F) (r : Nat) :
@@ -126,25 +127,25 @@ constraint `c`, accumulated onto `x`. -/
 def rowAcc (cw : List (Expr × List F)) (ev : Expr → F) (j : Nat) (x : F) : F :=
   cw.foldl (fun x a ↦ x + ev a.1 * a.2.getD j 0) x
 
-/-- The weighted constraints accumulated block-wise, four coordinate arrays of `B` entries: entry
+/-- The weighted constraints accumulated block-wise, `D` coordinate arrays of `B` entries: entry
 `i` of coordinate `j` is `rowAcc` at that row. -/
-theorem accBlocks (B : Nat) (ev : Expr → Array F) (hev : ∀ c, (ev c).size = B) :
-    ∀ (cw : List (Expr × List F)), (∀ a ∈ cw, a.2.length = 4) → ∀ (acc : Array (Array F)),
-      acc.size = 4 → (∀ j < 4, (acc.getD j #[]).size = B) →
+theorem accBlocks (D B : Nat) (ev : Expr → Array F) (hev : ∀ c, (ev c).size = B) :
+    ∀ (cw : List (Expr × List F)), (∀ a ∈ cw, a.2.length = D) → ∀ (acc : Array (Array F)),
+      acc.size = D → (∀ j < D, (acc.getD j #[]).size = B) →
       let res := cw.foldl (fun b a ↦ (b.zip a.2.toArray).map fun x ↦
         Array.zipWith (fun u v ↦ u + v * x.2) x.1 (ev a.1)) acc
-      res.size = 4 ∧ ∀ j < 4, (res.getD j #[]).size = B ∧ ∀ i < B,
+      res.size = D ∧ ∀ j < D, (res.getD j #[]).size = B ∧ ∀ i < B,
         (res.getD j #[]).getD i 0 =
           rowAcc cw (fun c ↦ (ev c).getD i 0) j ((acc.getD j #[]).getD i 0)
   | [], _, acc, hs, hj => by
     refine ⟨hs, fun j hj' ↦ ⟨hj j hj', fun i _ ↦ rfl⟩⟩
   | a :: cw, hw, acc, hs, hj => by
-    have ha : a.2.toArray.size = 4 := by
+    have ha : a.2.toArray.size = D := by
       rw [List.size_toArray]; exact hw a List.mem_cons_self
     have hs' : ((acc.zip a.2.toArray).map fun x ↦
-        Array.zipWith (fun u v ↦ u + v * x.2) x.1 (ev a.1)).size = 4 := by
+        Array.zipWith (fun u v ↦ u + v * x.2) x.1 (ev a.1)).size = D := by
       rw [Array.size_map, Array.size_zip, hs, ha, Nat.min_self]
-    have hget (j : Nat) (hj4 : j < 4) : (((acc.zip a.2.toArray).map fun x ↦
+    have hget (j : Nat) (hj4 : j < D) : (((acc.zip a.2.toArray).map fun x ↦
         Array.zipWith (fun u v ↦ u + v * x.2) x.1 (ev a.1)).getD j #[]) =
         Array.zipWith (fun u v ↦ u + v * a.2.getD j 0) (acc.getD j #[]) (ev a.1) := by
       have hz : j < (acc.zip a.2.toArray).size := by
@@ -154,7 +155,7 @@ theorem accBlocks (B : Nat) (ev : Expr → Array F) (hev : ∀ c, (ev c).size = 
         Array.getElem?_eq_getElem (by omega), Option.getD_some, List.getD_eq_getElem?_getD,
         List.getElem?_eq_getElem (by rw [← List.size_toArray, ha]; omega), Option.getD_some]
       rfl
-    obtain ⟨h1, h2⟩ := accBlocks B ev hev cw (fun b hb ↦ hw b (List.mem_cons_of_mem a hb)) _ hs'
+    obtain ⟨h1, h2⟩ := accBlocks D B ev hev cw (fun b hb ↦ hw b (List.mem_cons_of_mem a hb)) _ hs'
       (fun j hj4 ↦ by rw [hget j hj4, Array.size_zipWith, hj j hj4, hev, Nat.min_self])
     refine ⟨h1, fun j hj4 ↦ ⟨(h2 j hj4).1, fun i hi ↦ ?_⟩⟩
     rw [List.foldl_cons, (h2 j hj4).2 i hi, hget j hj4]
@@ -185,9 +186,8 @@ the vanishing polynomial. -/
 def quotientRow (A : Air) (pis : List F) (d l : Nat) (tq : Mat) (alpha : EF) (r : Nat) : EF :=
   let env := rowEnv tq (2 ^ (d + l)) (2 ^ l) pis (qFirst d l) (qLast d l) (qTrans d l) r
   let ev (c : Expr) := c.eval env
-  KoalaBear.Fast.Ext4.smul ((batchInv (qZh d l)).getD (r % 2 ^ l) 0)
-    ⟨rowAcc (weighted A alpha) ev 0 0, rowAcc (weighted A alpha) ev 1 0,
-      rowAcc (weighted A alpha) ev 2 0, rowAcc (weighted A alpha) ev 3 0⟩
+  Challenge.smul ((batchInv (qZh d l)).getD (r % 2 ^ l) 0) (Challenge.ofCoeffs
+    ((List.range (Challenge.d EF)).map fun j ↦ rowAcc (weighted A alpha) ev j 0))
 
 theorem size_cosetPoints (shift : F) (logN : Nat) : (cosetPoints shift logN).size = 2 ^ logN := by
   simp only [cosetPoints, Id.run, Std.Legacy.Range.forIn_eq_forIn_range',
@@ -208,39 +208,37 @@ theorem size_cosetPoints (shift : F) (logN : Nat) : (cosetPoints shift logN).siz
 
 /-- Row `blk · B + i` of the block-wise evaluation. -/
 theorem blockRow (tq : Mat) (n period : Nat) (pis : List F) (first last trans invZh : Array F)
-    (cw : List (Expr × List F)) (hw : ∀ a ∈ cw, a.2.length = 4) (B r : Nat) (hB : 0 < B)
-    (hf : (0 + r / B) * B + B ≤ first.size) (hl : (0 + r / B) * B + B ≤ last.size)
+    (D : Nat) (cw : List (Expr × List F)) (hw : ∀ a ∈ cw, a.2.length = D) (B r : Nat)
+    (hB : 0 < B) (hf : (0 + r / B) * B + B ≤ first.size) (hl : (0 + r / B) * B + B ≤ last.size)
     (ht : (0 + r / B) * B + B ≤ trans.size) :
     let acc := cw.foldl (fun b a ↦ (b.zip a.2.toArray).map fun x ↦
       Array.zipWith (fun u v ↦ u + v * x.2) x.1
         (evalBlock tq n period pis first last trans ((0 + r / B) * B) B a.1))
-      #[Array.replicate B 0, Array.replicate B 0, Array.replicate B 0, Array.replicate B 0]
+      (Array.replicate D (Array.replicate B 0))
     let ev (c : Expr) := c.eval (rowEnv tq n period pis first last trans r)
-    KoalaBear.Fast.Ext4.smul (invZh.getD (((0 + r / B) * B + r % B) % period) 0)
-      ⟨acc[0]!.getD (r % B) 0, acc[1]!.getD (r % B) 0, acc[2]!.getD (r % B) 0,
-        acc[3]!.getD (r % B) 0⟩ =
-    KoalaBear.Fast.Ext4.smul (invZh.getD (r % period) 0)
-      ⟨rowAcc cw ev 0 0, rowAcc cw ev 1 0, rowAcc cw ev 2 0, rowAcc cw ev 3 0⟩ := by
+    Challenge.smul (invZh.getD (((0 + r / B) * B + r % B) % period) 0)
+      (Challenge.ofCoeffs ((List.range D).map fun j ↦ acc[j]!.getD (r % B) 0) : EF) =
+    Challenge.smul (invZh.getD (r % period) 0)
+      (Challenge.ofCoeffs ((List.range D).map fun j ↦ rowAcc cw ev j 0)) := by
   intro acc ev
   have hr : (0 + r / B) * B + r % B = r := by rw [Nat.zero_add, Nat.div_add_mod']
-  obtain ⟨-, h2⟩ := accBlocks B
+  obtain ⟨-, h2⟩ := accBlocks D B
     (fun c ↦ evalBlock tq n period pis first last trans ((0 + r / B) * B) B c)
     (size_evalBlock tq n period pis first last trans _ B hf hl ht) cw hw
-    #[Array.replicate B 0, Array.replicate B 0, Array.replicate B 0, Array.replicate B 0] rfl
-    (fun j hj ↦ by interval_cases j <;> exact Array.size_replicate)
+    (Array.replicate D (Array.replicate B 0)) Array.size_replicate
+    (fun j hj ↦ by
+      simp only [Array.getD_eq_getD_getElem?, Array.getElem?_replicate, hj, ite_true,
+        Option.getD_some, Array.size_replicate])
   have hi : r % B < B := Nat.mod_lt _ hB
-  have hrow (j : Nat) (hj : j < 4) : acc[j]!.getD (r % B) 0 = rowAcc cw ev j 0 := by
+  have hrow (j : Nat) (hj : j < D) : acc[j]!.getD (r % B) 0 = rowAcc cw ev j 0 := by
     rw [Array.getElem!_eq_getD, show (default : Array F) = #[] from rfl, (h2 j hj).2 _ hi]
-    have h0 : (((#[Array.replicate B 0, Array.replicate B 0, Array.replicate B 0,
-        Array.replicate B 0] : Array (Array F)).getD j #[]).getD (r % B) 0) = 0 := by
-      have hz : (Array.replicate B (0 : F)).getD (r % B) 0 = 0 := by
-        simp only [Array.getD_eq_getD_getElem?, Array.getElem?_replicate, hi, ite_true,
-          Option.getD_some]
-      interval_cases j <;> exact hz
+    have h0 : ((Array.replicate D (Array.replicate B (0 : F))).getD j #[]).getD (r % B) 0 = 0 := by
+      simp only [Array.getD_eq_getD_getElem?, Array.getElem?_replicate, hj, hi, ite_true,
+        Option.getD_some]
     rw [h0]
     refine congrArg (fun f ↦ rowAcc cw f j 0) (funext fun c ↦ ?_)
     rw [evalBlock_getD tq n period pis first last trans _ B hf hl ht _ hi, hr]
-  rw [hr, hrow 0 (by decide), hrow 1 (by decide), hrow 2 (by decide), hrow 3 (by decide)]
+  rw [hr, List.map_congr_left fun j hj ↦ hrow j (List.mem_range.mp hj)]
 
 theorem quotientValues_eq (A : Air) (pis : List F) (d l : Nat) (tq : Mat) (alpha : EF) :
     quotientValues A pis d l tq alpha =
@@ -259,11 +257,11 @@ theorem quotientValues_eq (A : Air) (pis : List F) (d l : Nat) (tq : Mat) (alpha
       exact h (le_trans (Nat.pow_le_pow_right (by decide) (by omega)) (le_refl (2 ^ 8)))
   have hn : 2 ^ (d + l) / min (2 ^ (d + l)) 256 * min (2 ^ (d + l)) 256 = 2 ^ (d + l) :=
     Nat.div_mul_cancel hdvd
-  have hw : ∀ a ∈ weighted A alpha, a.2.length = 4 := fun a ha ↦ by
+  have hw : ∀ a ∈ weighted A alpha, a.2.length = Challenge.d EF := fun a ha ↦ by
     obtain ⟨-, h2⟩ := List.of_mem_zip ha
     obtain ⟨k, -, hk⟩ := List.mem_map.mp h2
     rw [← hk]
-    rfl
+    exact Challenge.length_coeffs _
   show (Array.emptyWithCapacity _ ++ _ : Array EF) = _
   rw [Array.emptyWithCapacity_eq, Array.empty_append]
   apply Array.ext
@@ -283,7 +281,7 @@ theorem quotientValues_eq (A : Air) (pis : List F) (d l : Nat) (tq : Mat) (alpha
         _ = 2 ^ (d + l) := hn
     unfold quotientRow
     exact blockRow tq _ _ pis (qFirst d l) (qLast d l) (qTrans d l) (batchInv (qZh d l))
-      (weighted A alpha) hw _ r hB
+      _ (weighted A alpha) hw _ r hB
       (by rw [qFirst, Array.size_ofFn]; exact hle) (by rw [qLast, Array.size_ofFn]; exact hle)
       (by rw [qTrans, Array.size_map, qPoints, size_cosetPoints]; exact hle)
 

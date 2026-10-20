@@ -254,17 +254,19 @@ theorem eval_finalPoly (coeffs : Array EF) (I : Nat)
   set L := S.params.logBlowup + S.params.logFinalPolyLen
   have hn : S.logSize = (S.logN - S.params.logFinalPolyLen) + L := by
     have := S.folds; unfold Iop.Setup.logSize; omega
-  have hpt : Ext4.toSpec (Ext.ofBase (powF (twoAdicGen S.logSize) (reverseBits I S.logSize))) =
+  have hpt : Challenge.toSpec
+      (Ext.ofBase (powF (twoAdicGen S.logSize) (reverseBits I S.logSize)) : EF) =
       Complete.emb (twoAdicGen L ^ reverseBits I L) := by
     rw [Complete.toSpec_ofBase, Fast.powF_eq, hn, Complete.reverseBits_low L _ I hI, pow_mul,
       Nat.add_comm _ L,
       Fast.twoAdicGen_pow L _ (by have := S.valid.twoAdic; have := S.folds; omega)]
-  rw [← Array.foldr_toList, Complete.toSpec_horner_list, Array.length_toList, hpt, finalPoly,
-    eval_finsetSum]
+  rw [← KoalaBear.toSpec_ext4, ← Array.foldr_toList, Complete.toSpec_horner_list,
+    Array.length_toList, hpt, finalPoly, eval_finsetSum]
   refine Finset.sum_congr rfl fun i _ ↦ ?_
   rw [eval_mul, eval_C, eval_pow, eval_X, Iop.Setup.finalShift, Array.getD_eq_getD_getElem?,
     List.getD_eq_getElem?_getD, Array.getElem?_toList, mul_assoc, ← mul_pow, ← mul_assoc,
     inv_mul_cancel₀ (pow_ne_zero _ lift_gen_ne_zero), one_mul]
+  rfl
 
 /-! ### The query checks -/
 

@@ -59,8 +59,9 @@ theorem sum_zipIdx_pow (a : 𝕂) :
 theorem toSpec_accTerms (alpha : EF) (x : F) :
     ∀ (terms : List ((F × EF) × EF)) (ap acc : EF),
       Ext4.toSpec (accTerms alpha x terms (ap, acc)).2 = Ext4.toSpec acc + Ext4.toSpec ap *
-        (terms.map fun t ↦ (Ext4.toSpec t.1.2 - Complete.emb t.1.1) *
-          (Ext4.toSpec t.2 - Complete.emb x)⁻¹).foldr (fun v acc ↦ v + Ext4.toSpec alpha * acc) 0
+        (terms.map fun t ↦ (Ext4.toSpec t.1.2 - @Complete.emb EF _ t.1.1) *
+          (Ext4.toSpec t.2 - @Complete.emb EF _ x)⁻¹).foldr (fun v acc ↦ v + Ext4.toSpec alpha *
+              acc) 0
   | [], ap, acc => by
     simp only [accTerms, List.foldl_nil, List.map_nil, List.foldr_nil, mul_zero, add_zero]
   | t :: terms, ap, acc => by
@@ -68,8 +69,8 @@ theorem toSpec_accTerms (alpha : EF) (x : F) :
       (acc + ap * (t.1.2 - Ext.ofBase t.1.1) * (t.2 - Ext.ofBase x)⁻¹)
     simp only [accTerms, List.foldl_cons, ptBody] at h ⊢
     rw [h, List.map_cons, List.foldr_cons]
-    simp only [Ext4.toSpec_add, Ext4.toSpec_mul, Ext4.toSpec_sub, Ext4.toSpec_inv,
-      Complete.toSpec_ofBase]
+    simp only [← KoalaBear.toSpec_ext4, Challenge.toSpec_add, Challenge.toSpec_mul,
+      Challenge.toSpec_sub, Challenge.toSpec_inv, Complete.toSpec_ofBase]
     ring
 
 /-! ### Lists -/
@@ -138,7 +139,6 @@ theorem domain_finMod (index : Nat) :
       Complete.emb (gen * powF (twoAdicGen S.logSize) (reverseBits index S.logSize)) := by
   rw [show S.domain = cosetDomain S.logSize S.valid.twoAdic from rfl, cosetDomain_apply,
     finMod_val (Complete.reverseBits_lt _ _), Complete.emb_mul, Fast.powF_eq, Complete.emb_pow]
-  rfl
 
 /-- **The batched DEEP word at a query.** If a query's input openings at `index` against the
 verifier's rounds pass their checks (`BatchOk`), on a proof of the expected shape whose trace and
@@ -258,13 +258,12 @@ theorem deepWord_eq (H : Primitives Id) (proof : Proof EF) (zeta a : EF) (α : �
     refine List.map_congr_left fun j _ ↦ ?_
     simp only [Function.comp_apply, fixedProver, openingsOf, hTw, toList_getD, hD,
       div_eq_mul_inv]
-    rfl
   · rw [List.map_map, List.map_map, map_zip_eq_range _ _ S.air.width hw1
       (by rw [Array.length_toList, htn]) _ 0 0,
       ← map_finRange_eq_range]
     refine List.map_congr_left fun j _ ↦ ?_
     simp only [Function.comp_apply, fixedProver, openingsOf, hTw, toList_getD, hD,
-      div_eq_mul_inv, Ext4.toSpec_mul, Complete.toSpec_ofBase, hdb]
+      div_eq_mul_inv, ← KoalaBear.toSpec_ext4, Challenge.toSpec_mul, Complete.toSpec_ofBase, hdb]
     rfl
   · rw [List.map_flatMap, batchTerms, List.map_flatMap,
       flatMap_zip_eq_range _ _ S.chunks hlenQ
@@ -302,6 +301,5 @@ theorem deepWord_eq (H : Primitives Id) (proof : Proof EF) (zeta a : EF) (α : �
         exact Array.getElem_mem hcq)) _ 0 0]
     refine List.map_congr_left fun e _ ↦ ?_
     simp only [Function.comp_apply, toList_getD, hD, div_eq_mul_inv]
-    rfl
 
 end CompStark.Ni

@@ -19,7 +19,8 @@ namespace CompStark.Fri
 open CompStark.Stark
 
 local notation "F" => KoalaBear.Fast.Field
-local notation "EF" => KoalaBear.Fast.Ext4
+
+variable {EF : Type} [Challenge EF]
 
 theorem size_parChunks {α : Type} (n parts : Nat) (f : Nat → Nat → Array α)
     (hf : ∀ s len, (f s len).size = len) (hp : 0 < parts ∨ n = 0) :
@@ -82,11 +83,10 @@ theorem logArityFor_le (P : Params) (logCur : Nat) (next : Option Nat) :
   cases next <;> simp only <;> omega
 
 theorem size_flatMap_coeffs (a : Array EF) :
-    (a.flatMap fun x ↦ (Ext.coeffs x).toArray).size = 4 * a.size := by
+    (a.flatMap fun x ↦ (Ext.coeffs x).toArray).size = Challenge.d EF * a.size := by
   rw [← Array.length_toList, Array.toList_flatMap, List.length_flatMap]
   simp only [Ext.coeffs, Challenge.length_coeffs]
   rw [List.map_const', List.sum_replicate, Array.length_toList, smul_eq_mul, Nat.mul_comm]
-  rfl
 
 /-- Up to `2 ^ 26` words are always addressable. -/
 theorem addressable_of_le {n : Nat} (h : n ≤ 2 ^ 26) : Addressable n := by
