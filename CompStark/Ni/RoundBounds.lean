@@ -5,7 +5,7 @@ Released under Apache 2.0 license as described in the file LICENSE.
 module
 
 public import CompStark.Ni.Rounds
-public import CompStark.Fs.DigestClash
+public import CompStark.Ni.FirstQueries
 
 /-! # The bad events of one fresh answer
 
@@ -286,6 +286,52 @@ theorem prob_roundBadAt_le (cache : Merkle.Cache F Digest) (block : Nat → List
               (fun z ↦ QueryBad S δ loss T z.1 z.2)
   · simp only [prEvent_false, zero_le]
 
+/-- **A fresh duplex answer.** After any queries `pre`, a uniform answer to any call is
+round-bad with probability at most the largest round error. -/
+theorem prob_roundBad_le (pre : QueryLog (spec S.streamLen)) (t : Query) :
+    Pr{let u ← $ᵗ (Answer S.streamLen t)}[RoundBad S publicValues δ δ' loss pre t u] ≤
+      roundBound S δ δ' loss := by
+  cases t with
+  | duplex cap input =>
+    cases hparse : parse pre (.duplex cap input) with
+    | none => simp only [RoundBad, hparse, prEvent_false, zero_le]
+    | some r =>
+      obtain ⟨steps, rest⟩ := r
+      simp only [RoundBad, hparse]
+      have h := prob_roundBadAt_le S publicValues δ δ' loss (logCache pre)
+        (fun j ↦ (steps.map Prod.fst ++ [input]).getD j []) (steps.map Prod.snd)
+      rw [List.length_map] at h
+      exact h
+  | leaf row => simp only [RoundBad, prEvent_false, zero_le]
+  | node left right => simp only [RoundBad, prEvent_false, zero_le]
+
 end Bounds
+
+/-! ### Digest clashes -/
+
+/-- `|Digest| = |𝔽| ^ 8`. -/
+theorem card_digest : Fintype.card Digest = Fintype.card 𝔽 ^ 8 := by
+  rw [Fintype.card_congr (arrayVectorEquivFin F 8), Fintype.card_fun, Fintype.card_fin,
+    Fintype.card_congr KoalaBear.Fast.ringEquiv.toEquiv]
+
+/-- An answer's digest is uniform. -/
+theorem prob_digestOf_eq_le (K : Nat) (t : Query) (x : Digest) :
+    Pr{let u ← $ᵗ (Answer K t)}[digestOf t u = x] ≤ (Fintype.card Digest : ℝ≥0∞)⁻¹ := by
+  cases t with
+  | duplex cap input => exact (prEvent_uniformSample_fst_eq (β := Vector F K) x).le
+  | leaf row => exact (SampleableType.prEvent_uniformSample_eq_singleton x).le
+  | node left right => exact (SampleableType.prEvent_uniformSample_eq_singleton x).le
+
+/-- A fresh answer after fewer than `n` queries clashes with probability at most
+`3 n / |Digest|`. -/
+theorem prob_clash_le (K n : Nat) (pre : QueryLog (spec K)) (hpre : pre.length < n)
+    (t : Query) :
+    Pr{let u ← $ᵗ (Answer K t)}[Clash pre t u] ≤
+      (3 * n : ℕ) * (Fintype.card Digest : ℝ≥0∞)⁻¹ := by
+  refine (prEvent_digestClash_le digestOf (prob_digestOf_eq_le K) keyDigests 2
+    length_keyDigests_le [initCap] pre t).trans ?_
+  gcongr
+  simp only [List.length_cons, List.length_nil]
+  omega
 
 end CompStark.Ni

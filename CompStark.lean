@@ -99,5 +99,7 @@ public import CompStark.Ni.BcsDeep
 public import CompStark.Ni.Bcs
 public import CompStark.Ni.BcsChallenges
 public import CompStark.Ni.Rounds
-public import CompStark.Ni.RoundBounds
 public import CompStark.Ni.FirstQueries
+public import CompStark.Ni.RoundBounds
+public import CompStark.Ni.Binding
+public import CompStark.Ni.Accepted
