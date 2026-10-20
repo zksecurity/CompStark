@@ -5,6 +5,7 @@ Released under Apache 2.0 license as described in the file LICENSE.
 module
 
 public import CompStark.Stark.Fast.QuotientSpec
+public import CompStark.Stark.Fast.BatchInv
 
 /-! # The specification's openings in closed form
 
@@ -17,7 +18,8 @@ namespace CompStark.Stark
 open CompStark.Fri
 
 local notation "F" => KoalaBear.Fast.Field
-local notation "EF" => KoalaBear.Fast.Ext4
+
+variable {EF : Type} [Challenge EF]
 
 theorem ofFn_append_ofFn {α : Type} (g : Nat → α) (a b : Nat) :
     (Array.ofFn (n := a) fun i ↦ g i.val) ++ (Array.ofFn (n := b) fun i ↦ g (a + i.val)) =
@@ -72,7 +74,7 @@ theorem parChunks_eq {α : Type} (n parts : Nat) (f : Nat → Nat → Array α) 
 /-- `∑ᵢ m[perm[i]][j] · weights[i]` over the first `h` rows, in order. -/
 def colSum (m : Array F) (perm : Array Nat) (weights : Array EF) (w h j : Nat) : EF :=
   (List.range' 0 h).foldl (fun acc i ↦
-    acc + KoalaBear.Fast.Ext4.smul (m.getD (perm.getD i 0 * w + j) 0) (weights.getD i 0)) 0
+    acc + Challenge.smul (m.getD (perm.getD i 0 * w + j) 0) (weights.getD i 0)) 0
 
 theorem weightedColumns_eq (m : Array F) (perm : Array Nat) (weights : Array EF)
     (w h j0 nj : Nat) (factor : EF) :
@@ -88,8 +90,29 @@ theorem weightedColumns_eq (m : Array F) (perm : Array Nat) (weights : Array EF)
 
 /-- The barycentric weights `x / (z - x)` of the natural-order coset of `2 ^ logH` points. -/
 abbrev baryWeights (logH : Nat) (z : EF) : Array EF :=
-  Array.zipWith KoalaBear.Fast.Ext4.smul (cosetPoints gen logH)
+  Array.zipWith Challenge.smul (cosetPoints gen logH)
     (batchInv ((cosetPoints gen logH).map fun x ↦ z - Ext.ofBase x))
+
+/-- The barycentric weight `x / (z - x)`. -/
+def bw (z : EF) (x : F) : EF := Challenge.smul x (z - Ext.ofBase x)⁻¹
+
+theorem sub_ofBase_ne_zero {z : EF} (hz : Ext.OutsideBase z) (x : F) :
+    Challenge.toSpec (z - Ext.ofBase x) ≠ 0 := by
+  rw [Challenge.toSpec_sub, Ext.ofBase, Challenge.toSpec_ofBase', sub_ne_zero]
+  exact Ext.toSpec_ne_algebraMap hz _
+
+theorem baryWeights_getD {z : EF} (hz : Ext.OutsideBase z) (logH i : Nat) (hi : i < 2 ^ logH) :
+    (baryWeights logH z).getD i 0 = bw z ((cosetPoints gen logH).getD i 0) := by
+  have hb := batchInv_eq Challenge.toSpec Challenge.toSpec_injective Challenge.toSpec_mul
+    Challenge.toSpec_inv Challenge.toSpec_one
+    ((cosetPoints gen logH).map fun x ↦ z - Ext.ofBase x) (fun y hy ↦ by
+      obtain ⟨x, -, rfl⟩ := Array.mem_map.mp hy
+      exact sub_ofBase_ne_zero hz x)
+  have hs := size_cosetPoints gen logH
+  rw [baryWeights, hb, Array.getD_eq_getD_getElem?, Array.getElem?_zipWith,
+    Array.getElem?_map, Array.getElem?_map, Array.getElem?_eq_getElem (by omega), Option.map_some,
+    Option.map_some, Array.getD_eq_getD_getElem?, Array.getElem?_eq_getElem (by omega)]
+  rfl
 
 theorem openedAt_eq (b : Nat) (m : Mat) (z : EF) :
     Fri.openedAt b m z = Array.ofFn (n := m.width) fun j ↦
@@ -101,7 +124,7 @@ theorem openedAt_eq (b : Nat) (m : Mat) (z : EF) :
   refine parChunks_eq _ _ _ (fun j ↦ Fri.cosetFactor (Nat.log2 m.height - b) gen z *
     colSum m.values (bitRevPerm (Nat.log2 m.height - b)) (baryWeights (Nat.log2 m.height - b) z)
       m.width (2 ^ (Nat.log2 m.height - b)) j) (fun s len _ ↦ ?_) ?_
-  · rw [weightedColumns_eq]; rfl
+  · rw [weightedColumns_eq]
   · by_cases h : m.width = 0
     · exact Or.inr h
     · exact Or.inl (Nat.lt_min.mpr ⟨Nat.pos_of_ne_zero h, by decide⟩)

@@ -30,26 +30,26 @@ The pure facts behind FRI's completeness, over the Mathlib fields the Montgomery
 @[expose] public section
 namespace CompStark.Complete
 open CompStark.Stark CompStark.Fri Polynomial Montgomery.Native32
-open KoalaBear.Fast (Ext4)
+
+variable {EF : Type} [Challenge EF]
 
 local notation "F" => KoalaBear.Fast.Field
-local notation "EF" => KoalaBear.Fast.Ext4
 local notation "K" => KoalaBear.Field
-local notation "L" => KoalaBear.Ext4
+local notation "L" => Challenge.Spec EF
 
 /-- A base element in the specification's extension. -/
 abbrev emb (x : F) : L := algebraMap K L (FastField.toField x)
 
-theorem toSpec_ofBase (x : F) : KoalaBear.Fast.Ext4.toSpec (Ext.ofBase x) = emb x :=
-  KoalaBear.Fast.Ext4.toSpec_ofBase x
+theorem toSpec_ofBase (x : F) : Challenge.toSpec (Ext.ofBase x : EF) = emb x :=
+  Challenge.toSpec_ofBase x
 
-theorem emb_mul (x y : F) : emb (x * y) = emb x * emb y := by
+theorem emb_mul (x y : F) : (emb (x * y) : L) = emb x * emb y := by
   rw [emb, toField_mul, map_mul]
 
-theorem emb_pow (x : F) (n : Nat) : emb (x ^ n) = emb x ^ n := by
+theorem emb_pow (x : F) (n : Nat) : (emb (x ^ n) : L) = emb x ^ n := by
   rw [emb, toField_npow, map_pow]
 
-theorem emb_injective : Function.Injective emb :=
+theorem emb_injective : Function.Injective (emb : F → L) :=
   (algebraMap K L).injective.comp toField_injective
 
 /-- The two-adic generator of order `2 ^ n`, `n ≤ 24`, is a primitive root. -/
@@ -73,18 +73,18 @@ theorem isPrimitiveRoot_twoAdicGen (n : Nat) (hn : n ≤ 24) :
 /-! ### `lagrange` evaluates the interpolant -/
 
 theorem toSpec_foldl_add (n : Nat) (f : Nat → EF) (a : EF) :
-    Ext4.toSpec ((List.range n).foldl (fun acc k ↦ acc + f k) a) =
-      Ext4.toSpec a + ∑ k ∈ Finset.range n, Ext4.toSpec (f k) := by
+    Challenge.toSpec ((List.range n).foldl (fun acc k ↦ acc + f k) a) =
+      Challenge.toSpec a + ∑ k ∈ Finset.range n, Challenge.toSpec (f k) := by
   induction n with
   | zero => rw [List.range_zero, List.foldl_nil, Finset.sum_range_zero, add_zero]
   | succ n ih =>
-    rw [List.range_succ, List.foldl_append, List.foldl_cons, List.foldl_nil, Ext4.toSpec_add, ih,
-      Finset.sum_range_succ, add_assoc]
+    rw [List.range_succ, List.foldl_append, List.foldl_cons, List.foldl_nil, Challenge.toSpec_add,
+      ih, Finset.sum_range_succ, add_assoc]
 
 theorem toSpec_foldl_weight (n : Nat) (gx : Nat → F) (x : F) (c d : Nat → EF) (a : EF) :
-    Ext4.toSpec ((List.range n).foldl (fun w k ↦ if gx k == x then w else w * c k * d k) a) =
-      Ext4.toSpec a * ∏ k ∈ Finset.range n,
-        if gx k = x then 1 else Ext4.toSpec (c k) * Ext4.toSpec (d k) := by
+    Challenge.toSpec ((List.range n).foldl (fun w k ↦ if gx k == x then w else w * c k * d k) a) =
+      Challenge.toSpec a * ∏ k ∈ Finset.range n,
+        if gx k = x then 1 else Challenge.toSpec (c k) * Challenge.toSpec (d k) := by
   induction n with
   | zero => rw [List.range_zero, List.foldl_nil, Finset.prod_range_zero, mul_one]
   | succ n ih =>
@@ -92,15 +92,15 @@ theorem toSpec_foldl_weight (n : Nat) (gx : Nat → F) (x : F) (c d : Nat → EF
       Finset.prod_range_succ, ← mul_assoc, ← ih]
     by_cases h : gx n = x
     · simp only [h, beq_self_eq_true, ite_true, mul_one]
-    · simp only [beq_iff_eq, h, ite_false, Ext4.toSpec_mul, mul_assoc]
+    · simp only [beq_iff_eq, h, ite_false, Challenge.toSpec_mul, mul_assoc]
 
 /-- `lagrange` through distinct points `gx k`, `k < n`, holding the values of `q` of degree below
 `n`, is `q`'s value. -/
 theorem toSpec_lagrange (n : Nat) (gx : Nat → F) (gy : Nat → EF) (z : EF) (q : L[X])
     (hinj : ∀ i < n, ∀ j < n, gx i = gx j → i = j) (hdeg : q.degree < n)
-    (hq : ∀ i < n, Ext4.toSpec (gy i) = q.eval (emb (gx i))) :
-    Ext4.toSpec (lagrange ((List.range n).map gx) ((List.range n).map gy) z) =
-      q.eval (Ext4.toSpec z) := by
+    (hq : ∀ i < n, Challenge.toSpec (gy i) = q.eval (emb (gx i))) :
+    Challenge.toSpec (lagrange ((List.range n).map gx) ((List.range n).map gy) z) =
+      q.eval (Challenge.toSpec z) := by
   unfold lagrange
   rw [List.zip_map']
   dsimp only
@@ -113,25 +113,26 @@ theorem toSpec_lagrange (n : Nat) (gx : Nat → F) (gy : Nat → EF) (z : EF) (q
     rw [beq_iff_eq] at hp
     rw [hp, toSpec_ofBase, hq k (List.mem_range.mp hk)]
   · simp only [List.foldl_map]
-    rw [toSpec_foldl_add, Ext4.toSpec_zero, zero_add]
-    simp only [Ext4.toSpec_mul]
-    have hinj' : Set.InjOn (fun k ↦ emb (gx k)) (Finset.range n : Set Nat) :=
+    rw [toSpec_foldl_add, Challenge.toSpec_zero, zero_add]
+    simp only [Challenge.toSpec_mul]
+    have hinj' : Set.InjOn (fun k ↦ (emb (gx k) : L)) (Finset.range n : Set Nat) :=
       fun i hi j hj h ↦ hinj i (Finset.mem_range.mp hi) j (Finset.mem_range.mp hj)
         (emb_injective h)
-    rw [Lagrange.eq_interpolate_of_eval_eq (r := fun k ↦ Ext4.toSpec (gy k)) hinj'
+    rw [Lagrange.eq_interpolate_of_eval_eq (r := fun k ↦ Challenge.toSpec (gy k)) hinj'
       (by rwa [Finset.card_range]) (fun i hi ↦ (hq i (Finset.mem_range.mp hi)).symm),
       Lagrange.interpolate_apply, eval_finsetSum]
     refine Finset.sum_congr rfl fun k hk ↦ ?_
     rw [eval_mul, eval_C, Lagrange.basis, eval_prod]
     congr 1
-    rw [toSpec_foldl_weight, Ext4.toSpec_one, one_mul, ← Finset.mul_prod_erase _ _ hk,
+    rw [toSpec_foldl_weight, Challenge.toSpec_one, one_mul, ← Finset.mul_prod_erase _ _ hk,
       ite_eq_left rfl,
       one_mul]
     refine Finset.prod_congr rfl fun j hj ↦ ?_
     obtain ⟨hjk, hj⟩ := Finset.mem_erase.mp hj
     rw [ite_eq_right (fun h ↦ hjk (hinj _ (Finset.mem_range.mp hj) _ (Finset.mem_range.mp hk) h)),
       Lagrange.basisDivisor, eval_mul, eval_C, eval_sub, eval_X, eval_C]
-    simp only [Ext4.toSpec_sub, toSpec_ofBase, emb, toField_inv, toField_sub, map_inv₀, map_sub]
+    simp only [Challenge.toSpec_sub, toSpec_ofBase, emb, toField_inv, toField_sub, map_inv₀,
+        map_sub]
     ring
 
 /-! ### Folding a polynomial -/
@@ -249,12 +250,12 @@ domain of order `2 ^ (m + la)` in bit-reversed order, is the fold's value at ent
 folded domain. -/
 theorem toSpec_foldRow (vs : Array EF) (m la d : Nat) (beta : EF) (p : L[X])
     (hml : m + la ≤ 24) (hla : la ≤ d) (hd : p.degree < ((2 ^ d : Nat) : WithBot Nat))
-    (hv : ∀ r < 2 ^ (m + la), Ext4.toSpec (vs.getD r 0) =
+    (hv : ∀ r < 2 ^ (m + la), Challenge.toSpec (vs.getD r 0) =
       p.eval (emb (twoAdicGen (m + la)) ^ reverseBits r (m + la)))
     (i : Nat) (hi : i < 2 ^ m) :
-    Ext4.toSpec (foldRow i m la beta
+    Challenge.toSpec (foldRow i m la beta
         ((List.range (2 ^ la)).map fun k ↦ vs.getD (i * 2 ^ la + k) 0)) =
-      (foldPoly la (Ext4.toSpec beta) (2 ^ (d - la)) p).eval
+      (foldPoly la (Challenge.toSpec beta) (2 ^ (d - la)) p).eval
         (emb (twoAdicGen m) ^ reverseBits i m) := by
   have hg := isPrimitiveRoot_twoAdicGen la (by omega)
   have hN : p.natDegree < 2 ^ (d - la) * 2 ^ la := by
@@ -289,7 +290,7 @@ theorem lowDegree_foldRows (vs : Array EF) (m la d : Nat) (beta : EF)
     LowDegree m d (Array.ofFn (n := 2 ^ m) fun i ↦ foldRow i m la beta
       ((List.range (2 ^ la)).map fun k ↦ vs.getD (i * 2 ^ la + k) 0)) := by
   obtain ⟨-, hml, p, hp, hpv⟩ := hv
-  refine ⟨Array.size_ofFn, by omega, foldPoly la (Ext4.toSpec beta) (2 ^ d) p,
+  refine ⟨Array.size_ofFn, by omega, foldPoly la (Challenge.toSpec beta) (2 ^ d) p,
     degree_foldPoly _ _ _ _, fun i hi ↦ ?_⟩
   rw [CompPoly.CPolynomial.NTTFast.Packed.getD_ofFn_bounded _ _ hi]
   have := toSpec_foldRow vs m la (d + la) beta p hml (by omega) hp hpv i hi
@@ -305,14 +306,14 @@ theorem foldPairs_getD (vs : Array EF) (beta : EF) (m : Nat) (hm : m < 24) (i : 
       foldRow i m 1 beta ((List.range (2 ^ 1)).map fun k ↦ vs.getD (i * 2 ^ 1 + k) 0) := by
   set start := twoAdicGen (m + 1) ^ reverseBits i m with hstart
   have hs : start ≠ 0 := twoAdicGen_ne_zero' _ (by omega) _
-  have hs' : emb start ≠ 0 := fun h ↦ hs (emb_injective (h.trans (map_zero _).symm |>.trans
+  have hs' : (emb start : L) ≠ 0 := fun h ↦ hs (emb_injective (h.trans (map_zero _).symm |>.trans
     (by rw [emb, toField_zero])))
-  set lo := Ext4.toSpec (vs.getD (2 * i) 0)
-  set hi' := Ext4.toSpec (vs.getD (2 * i + 1) 0)
+  set lo := Challenge.toSpec (vs.getD (2 * i) 0)
+  set hi' := Challenge.toSpec (vs.getD (2 * i + 1) 0)
   have h2 : (2 : L) ≠ 0 := by
     have h : (2 : K) ≠ 0 := by decide
     rw [← map_ofNat (algebraMap K L) 2]; exact (_root_.map_ne_zero _).mpr h
-  apply Ext4.toSpec_injective
+  apply Challenge.toSpec_injective
   unfold foldRow
   dsimp only
   rw [Fast.powF_eq, ← hstart,
@@ -320,8 +321,8 @@ theorem foldPairs_getD (vs : Array EF) (beta : EF) (m : Nat) (hm : m < 24) (i : 
     (fun k ↦ vs.getD (i * 2 ^ 1 + k) 0) beta
     (C ((lo + hi') / 2) + C ((lo - hi') / (2 * emb start)) * X)]
   · rw [foldPairs_eq vs beta m hm, CompPoly.CPolynomial.NTTFast.Packed.getD_ofFn_bounded _ _ hi]
-    simp only [foldAt, twoX, Ext4.toSpec_add, Ext4.toSpec_mul, Ext4.toSpec_sub, toSpec_ofBase,
-      eval_add, eval_C, eval_mul, eval_X]
+    simp only [foldAt, twoX, Challenge.toSpec_add, Challenge.toSpec_mul, Challenge.toSpec_sub,
+      toSpec_ofBase, eval_add, eval_C, eval_mul, eval_X]
     rw [cosetPoints_eq, Fast.bitRevPerm_getD m i hi, ← Fast.reverseBits_eq,
       CompPoly.CPolynomial.NTTFast.Packed.getD_ofFn_bounded _ _ (by
         have := reverseBits_lt i m; rw [pow_succ]; omega)]
@@ -359,12 +360,13 @@ theorem lowDegree_addScaled (H D : Nat) (a b : Array EF) (x : EF) (ha : LowDegre
   obtain ⟨hsb, -, q, hq, hqb⟩ := hb
   have hs : (Array.zipWith (fun u v ↦ u + x * v) a b).size = 2 ^ H := by
     rw [Array.size_zipWith, hsa, hsb, Nat.min_self]
-  refine ⟨hs, hH, p + C (Ext4.toSpec x) * q, ?_, fun r hr ↦ ?_⟩
+  refine ⟨hs, hH, p + C (Challenge.toSpec x) * q, ?_, fun r hr ↦ ?_⟩
   · refine lt_of_le_of_lt (degree_add_le _ _) (max_lt hp (lt_of_le_of_lt (degree_mul_le _ _) ?_))
     refine lt_of_le_of_lt (add_le_add_left degree_C_le _) ?_
     rwa [zero_add]
   · rw [getD_lt _ r (by rw [hs]; exact hr), Array.getElem_zipWith, ← getD_lt a r (by omega),
-      ← getD_lt b r (by omega), Ext4.toSpec_add, Ext4.toSpec_mul, hpa r hr, hqb r hr, eval_add,
+      ← getD_lt b r (by omega), Challenge.toSpec_add, Challenge.toSpec_mul, hpa r hr, hqb r hr,
+          eval_add,
       eval_mul, eval_C]
 
 /-! ### The final polynomial -/
@@ -404,7 +406,7 @@ theorem sum_roots (ζ : L) (n : Nat) (hζ : IsPrimitiveRoot ζ n) (m k : Nat) (h
       pow_mul, inv_pow, hζ.pow_eq_one, inv_one, one_pow, one_pow, mul_one, sub_self, zero_div]
 
 theorem isPrimitiveRoot_emb (n : Nat) (hn : n ≤ 24) :
-    IsPrimitiveRoot (emb (twoAdicGen n)) (2 ^ n) :=
+    IsPrimitiveRoot (emb (twoAdicGen n) : L) (2 ^ n) :=
   (isPrimitiveRoot_twoAdicGen n hn).map_of_injective
     (f := (algebraMap K L).comp (ringEquiv KoalaBear.fieldSize).toRingHom)
     ((algebraMap K L).injective.comp (RingEquiv.injective _))
@@ -418,23 +420,23 @@ theorem two_pow_ne_zero (n : Nat) : ((2 ^ n : Nat) : L) ≠ 0 := by
 generator of order `n` gives `p`'s coefficients. -/
 theorem toSpec_idft (lf : Nat) (hlf : lf ≤ 24) (vs : Array EF) (p : L[X])
     (hp : p.degree < ((2 ^ lf : Nat) : WithBot Nat))
-    (hv : ∀ j < 2 ^ lf, Ext4.toSpec (vs.getD j 0) = p.eval (emb (twoAdicGen lf) ^ j))
-    (k : Nat) (hk : k < 2 ^ lf) : Ext4.toSpec ((idft lf vs).getD k 0) = p.coeff k := by
-  have hζ := isPrimitiveRoot_emb lf hlf
-  set ζ := emb (twoAdicGen lf)
+    (hv : ∀ j < 2 ^ lf, Challenge.toSpec (vs.getD j 0) = p.eval (emb (twoAdicGen lf) ^ j))
+    (k : Nat) (hk : k < 2 ^ lf) : Challenge.toSpec ((idft lf vs).getD k 0) = p.coeff k := by
+  have hζ := isPrimitiveRoot_emb (EF := EF) lf hlf
+  set ζ : L := emb (twoAdicGen lf)
   have hN := natDegree_lt_of_degree hp (by positivity)
   unfold idft
   dsimp only
-  rw [CompPoly.CPolynomial.NTTFast.Packed.getD_ofFn_bounded _ _ hk, Ext4.toSpec_mul,
-    toSpec_foldl_add, Ext4.toSpec_zero, zero_add, toSpec_ofBase]
+  rw [CompPoly.CPolynomial.NTTFast.Packed.getD_ofFn_bounded _ _ hk, Challenge.toSpec_mul,
+    toSpec_foldl_add, Challenge.toSpec_zero, zero_add, toSpec_ofBase]
   have hinv : emb ((((2 ^ lf : Nat) : F))⁻¹) = (((2 ^ lf : Nat) : L))⁻¹ := by
     rw [emb, toField_inv, toField_natCast, map_inv₀, map_natCast]
   rw [hinv]
-  have hterm : ∀ j ∈ Finset.range (2 ^ lf), Ext4.toSpec (Ext.ofBase
+  have hterm : ∀ j ∈ Finset.range (2 ^ lf), Challenge.toSpec (Ext.ofBase
       (powF (twoAdicGen lf)⁻¹ (j * k)) * vs.getD j 0) =
       ∑ m ∈ Finset.range (2 ^ lf), p.coeff m * (ζ ^ m * ζ⁻¹ ^ k) ^ j := by
     intro j hj
-    rw [Ext4.toSpec_mul, toSpec_ofBase, hv j (Finset.mem_range.mp hj), Fast.powF_eq, emb_pow,
+    rw [Challenge.toSpec_mul, toSpec_ofBase, hv j (Finset.mem_range.mp hj), Fast.powF_eq, emb_pow,
       emb, toField_inv, map_inv₀, eval_eq_sum_range' hN, Finset.mul_sum]
     refine Finset.sum_congr rfl fun m _ ↦ ?_
     rw [mul_pow, ← pow_mul, ← pow_mul, ← pow_mul]
@@ -456,12 +458,12 @@ theorem toList_getD {α : Type} (a : Array α) (k : Nat) (d : α) :
   rw [List.getD_eq_getElem?_getD, Array.getElem?_toList, Array.getD_eq_getD_getElem?]
 
 theorem toSpec_horner_list (l : List EF) (x : EF) :
-    Ext4.toSpec (l.foldr (fun c acc ↦ acc * x + c) 0) =
-      ∑ k ∈ Finset.range l.length, Ext4.toSpec (l.getD k 0) * Ext4.toSpec x ^ k := by
+    Challenge.toSpec (l.foldr (fun c acc ↦ acc * x + c) 0) =
+      ∑ k ∈ Finset.range l.length, Challenge.toSpec (l.getD k 0) * Challenge.toSpec x ^ k := by
   induction l with
-  | nil => rw [List.foldr_nil, Ext4.toSpec_zero, List.length_nil, Finset.sum_range_zero]
+  | nil => rw [List.foldr_nil, Challenge.toSpec_zero, List.length_nil, Finset.sum_range_zero]
   | cons c l ih =>
-    rw [List.foldr_cons, Ext4.toSpec_add, Ext4.toSpec_mul, ih, List.length_cons,
+    rw [List.foldr_cons, Challenge.toSpec_add, Challenge.toSpec_mul, ih, List.length_cons,
       Finset.sum_range_succ', Finset.sum_mul]
     simp only [List.getD_cons_succ, List.getD_cons_zero, pow_zero, mul_one, pow_succ, mul_assoc]
 
@@ -475,7 +477,7 @@ theorem horner_idft (fa : Array EF) (lb lf M idx : Nat) (hfa : LowDegree (lb + l
       fa.getD idx 0 := by
   obtain ⟨-, hL, p, hp, hpv⟩ := hfa
   have hN := natDegree_lt_of_degree hp (by positivity)
-  apply Ext4.toSpec_injective
+  apply Challenge.toSpec_injective
   rw [← Array.foldr_toList, toSpec_horner_list, Array.length_toList,
     show (idft lf _).size = 2 ^ lf from Array.size_ofFn, hpv idx hidx, eval_eq_sum_range' hN]
   refine Finset.sum_congr rfl fun k hk ↦ ?_
@@ -485,7 +487,7 @@ theorem horner_idft (fa : Array EF) (lb lf M idx : Nat) (hfa : LowDegree (lb + l
     rw [toSpec_ofBase, Fast.powF_eq, emb_pow, ← emb_pow,
       show M = (M - (lb + lf)) + (lb + lf) by omega,
       twoAdicGen_pow_low (lb + lf) (M - (lb + lf)) idx (by omega) hidx]
-    exact (emb_pow _ _).symm ▸ rfl
+    exact (emb_pow (EF := EF) _ _).symm ▸ rfl
   · have hr := reverseBits_lt j lf
     rw [CompPoly.CPolynomial.NTTFast.Packed.getD_ofFn_bounded _ _ hj,
       hpv _ (lt_of_lt_of_le hr (Nat.pow_le_pow_right (by decide) (by omega))), ← emb_pow,

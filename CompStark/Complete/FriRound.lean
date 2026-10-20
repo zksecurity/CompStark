@@ -21,7 +21,8 @@ namespace CompStark.Complete
 open CompStark.Stark CompStark.Fri
 
 local notation "F" => KoalaBear.Fast.Field
-local notation "EF" => KoalaBear.Fast.Ext4
+
+variable {EF : Type} [Challenge EF]
 
 /-- The indices below `n` other than `p`. -/
 theorem filter_range (n p : Nat) (hp : p < n) :
@@ -112,37 +113,63 @@ theorem unflatten_flatMap {K : Type} [Challenge K] (l : List K) :
       List.map_nil]
   | cons x l ih => rw [List.flatMap_cons, unflatten_append, ih]
 
-theorem getD_flatMap_coeffs (A : Array EF) (t : Nat) (ht : t < 4 * A.size) :
+/-- Entry `t` of flattened coordinates is coordinate `t % d` of element `t / d`. -/
+theorem getD_flatMap_coeffs_list : ∀ (l : List EF) (t : Nat), t < Challenge.d EF * l.length →
+    (l.flatMap Ext.coeffs).getD t 0 =
+      (Ext.coeffs (l.getD (t / Challenge.d EF) 0)).getD (t % Challenge.d EF) 0
+  | [], t, h => by rw [List.length_nil, Nat.mul_zero] at h; omega
+  | x :: l, t, h => by
+    have hl : (Ext.coeffs x).length = Challenge.d EF := Challenge.length_coeffs x
+    rw [List.flatMap_cons]
+    by_cases ht : t < Challenge.d EF
+    · rw [List.getD_append _ _ _ _ (by rw [hl]; exact ht), Nat.div_eq_of_lt ht, Nat.mod_eq_of_lt ht,
+        List.getD_cons_zero]
+    · rw [List.length_cons, Nat.mul_succ] at h
+      have hd : 0 < Challenge.d EF := (Challenge.params EF).d_pos
+      have e1 : t / Challenge.d EF = (t - Challenge.d EF) / Challenge.d EF + 1 :=
+        Nat.div_eq_sub_div (by omega) (by omega)
+      have e2 : t % Challenge.d EF = (t - Challenge.d EF) % Challenge.d EF :=
+        Nat.mod_eq_sub_mod (by omega)
+      rw [List.getD_append_right _ _ _ _ (by rw [hl]; omega), hl,
+        getD_flatMap_coeffs_list l _ (by omega), e1, e2, List.getD_cons_succ]
+
+theorem getD_flatMap_coeffs (A : Array EF) (t : Nat) (ht : t < Challenge.d EF * A.size) :
     (A.flatMap fun x ↦ (Ext.coeffs x).toArray).getD t 0 =
-      Fast.coord (t % 4) (A.getD (t / 4) 0) := by
-  have hA : A = Array.ofFn (n := A.size) fun j ↦ A.getD j.val 0 :=
-    Array.ext (by rw [Array.size_ofFn]) fun i h1 h2 ↦ by
-      rw [Array.getElem_ofFn, getD_lt _ _ h1]
-  conv_lhs => rw [hA]
-  rw [Fast.flatMap_coeffs A.size (fun k ↦ A.getD k 0),
-    CompPoly.CPolynomial.NTTFast.Packed.getD_ofFn_bounded _ _ ht]
+      (Ext.coeffs (A.getD (t / Challenge.d EF) 0)).getD (t % Challenge.d EF) 0 := by
+  rw [Array.getD_eq_getD_getElem?, ← Array.getElem?_toList, Array.toList_flatMap,
+    ← List.getD_eq_getElem?_getD]
+  rw [show (A.toList.flatMap fun x ↦ Ext.coeffs x) = A.toList.flatMap Ext.coeffs from rfl,
+    getD_flatMap_coeffs_list _ _ (by rw [Array.length_toList]; exact ht),
+        Array.getD_eq_getD_getElem?,
+    ← Array.getElem?_toList, ← List.getD_eq_getElem?_getD]
 
 /-- Row `r` of a round's leaves is the coefficients of the group of `r`. -/
 theorem rowOf_leaves (f : Array EF) (la r : Nat) (hr : (r + 1) * 2 ^ la ≤ f.size) :
     (rowOf ((Backend.spec EF).leaves (2 ^ la) f) r).toList =
       ((List.range (2 ^ la)).map fun k ↦ f.getD (r * 2 ^ la + k) 0).flatMap Ext.coeffs := by
-  have hrow : rowOf ((Backend.spec EF).leaves (2 ^ la) f) r =
-      (Array.ofFn (n := 2 ^ la) fun k ↦ f.getD (r * 2 ^ la + k.val) 0).flatMap
-        fun x ↦ (Ext.coeffs x).toArray := by
-    rw [Fast.flatMap_coeffs (2 ^ la) (fun k ↦ f.getD (r * 2 ^ la + k) 0)]
-    show Array.ofFn (n := 4 * 2 ^ la) (fun j ↦ (f.flatMap fun x ↦ (Ext.coeffs x).toArray).getD
-      (r * (4 * 2 ^ la) + j.val) 0) = _
-    congr 1
-    funext j
-    have hj := j.isLt
-    rw [Nat.succ_mul] at hr
-    rw [getD_flatMap_coeffs f _ (by
-      rw [show r * (4 * 2 ^ la) = 4 * (r * 2 ^ la) by ring]; omega)]
-    rw [show r * (4 * 2 ^ la) = 4 * (r * 2 ^ la) by ring]
-    generalize r * 2 ^ la = X at hr ⊢
-    rw [show (4 * X + j.val) % 4 = j.val % 4 by omega,
-      show (4 * X + j.val) / 4 = X + j.val / 4 by omega]
-  rw [hrow, Array.toList_flatMap, toList_ofFn_eq_map (fun k ↦ f.getD (r * 2 ^ la + k) 0)]
+  have hd : 0 < Challenge.d EF := (Challenge.params EF).d_pos
+  set G := (List.range (2 ^ la)).map fun k ↦ f.getD (r * 2 ^ la + k) 0 with hG
+  have hGl : G.length = 2 ^ la := by rw [hG, List.length_map, List.length_range]
+  have hlen : (G.flatMap Ext.coeffs).length = Challenge.d EF * 2 ^ la := by
+    rw [List.length_flatMap]
+    simp only [Ext.coeffs, Challenge.length_coeffs]
+    rw [List.map_const', List.sum_replicate, hGl, smul_eq_mul, Nat.mul_comm]
+  refine List.ext_getElem (by
+    simp only [Array.length_toList, rowOf, Array.size_ofFn, hlen]; rfl) fun j h1 h2 ↦ ?_
+  rw [hlen] at h2
+  simp only [Array.getElem_toList, rowOf, Array.getElem_ofFn]
+  rw [← List.getD_eq_getElem _ 0,
+    getD_flatMap_coeffs_list _ _ (by rw [hGl]; exact h2)]
+  show (f.flatMap fun x ↦ (Ext.coeffs x).toArray).getD (r * (Challenge.d EF * 2 ^ la) + j) 0 = _
+  rw [Nat.succ_mul] at hr
+  have hj : j / Challenge.d EF < 2 ^ la := Nat.div_lt_of_lt_mul h2
+  rw [getD_flatMap_coeffs f _ (by nlinarith [Nat.mod_add_div j (Challenge.d EF)]),
+    show r * (Challenge.d EF * 2 ^ la) + j = Challenge.d EF * (r * 2 ^ la) + j by ring,
+    Nat.mul_add_div hd, Nat.mul_add_mod]
+  congr 2
+  rw [hG, List.getD_eq_getElem _ _ (by rw [List.length_map, List.length_range]; exact hj),
+        List.getElem_map,
+        List.getElem_range]
 
 /-- A round's answer at `idx`: `2 ^ la - 1` siblings, which with the running value give back the
 group of `idx`, and whose opening verifies. -/
@@ -200,7 +227,8 @@ theorem answer_round (f : Array EF) (h la idx : Nat) (hs : f.size = 2 ^ h) (hla 
       (fun m hm' ↦ by
         rw [List.mem_singleton.mp hm']
         refine ⟨hm, ?_⟩
-        show (f.flatMap fun x ↦ (Ext.coeffs x).toArray).size = 4 * 2 ^ la * (f.size / 2 ^ la)
+        show (f.flatMap fun x ↦ (Ext.coeffs x).toArray).size =
+          Challenge.d EF * 2 ^ la * (f.size / 2 ^ la)
         rw [size_flatMap_coeffs, hs, hhl, Nat.mul_div_cancel _ hapos]
         ring) (idx >>> la) hrlt
     replace hv : Merkle.KoalaBear.verifyBatch F c.root [2 ^ (h - la)] (idx >>> la)

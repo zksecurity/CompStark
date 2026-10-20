@@ -75,7 +75,6 @@ theorem subdomain_finMod (n : Nat) (hn : n ≤ 24) (p : Nat) (hp : p ≤ n) (r :
     (@cosetDomain EF _ n hn).subdomain p (finMod (n - p) r) =
       @lift EF _ gen ^ 2 ^ p * Complete.emb (twoAdicGen (n - p) ^ r) := by
   rw [subdomain_apply n hn p hp, finMod, Fin.val_mk, Nat.mod_eq_of_lt hr, Complete.emb_pow]
-  rfl
 
 theorem natDegree_comp_C_mul_X (q : 𝕂[X]) (s : 𝕂) :
     (q.comp (Polynomial.C s * Polynomial.X)).natDegree ≤ q.natDegree :=
@@ -124,15 +123,17 @@ theorem toSpec_foldRow_eq_foldValue (n : Nat) (hn : n ≤ 24) (p lF la : Nat)
     rw [hstart, Fast.powF_eq]; exact Complete.twoAdicGen_ne_zero' _ (by omega) _
   unfold foldRow
   dsimp only
-  rw [Complete.toSpec_lagrange (2 ^ la) (fun k ↦ start * powF (twoAdicGen la) (reverseBits k la))
+  rw [← KoalaBear.toSpec_ext4,
+      Complete.toSpec_lagrange (2 ^ la) (fun k ↦ start * powF (twoAdicGen la) (reverseBits k la))
     gy beta (I.comp (Polynomial.C s * Polynomial.X))]
   · rw [eval_comp, eval_mul, eval_C, eval_X]
+    rfl
   · exact Complete.groupPoints_injective la start (by omega) hstart0
   · refine (degree_le_natDegree).trans_lt ?_
     exact_mod_cast (natDegree_comp_C_mul_X I s).trans_lt
       (ProximityGap.foldWordAux_natDegree (domain := D) (f := f))
   · intro k hk
-    rw [hgy k hk, eval_comp, eval_mul, eval_C, eval_X, ← hpt k hk]
+    rw [KoalaBear.toSpec_ext4, hgy k hk, eval_comp, eval_mul, eval_C, eval_X, ← hpt k hk]
     refine (Lagrange.eval_interpolate_at_node _ hinjD ?_).symm
     rw [Domain.CosetFftDomainClass.mem_blockIdx, hy, hpow k hk, hpow pos hpos]
 
@@ -159,7 +160,7 @@ theorem domain_pow_eq (n : Nat) (hn : n ≤ 24) (p : Nat) (hp : p ≤ n) (I : Na
   congr 1
   have h := Fast.twoAdicGen_pow (n - p) p (by omega)
   rw [Nat.sub_add_cancel hp] at h
-  have hord := (Complete.isPrimitiveRoot_emb (n - p) (by omega)).pow_eq_one
+  have hord := (@Complete.isPrimitiveRoot_emb EF _ (n - p) (by omega)).pow_eq_one
   rw [lift_eq_emb, ← Complete.emb_pow, h, Complete.emb_pow]
   conv_lhs => rw [← Nat.div_add_mod (reverseBits I n) (2 ^ (n - p)), pow_add, pow_mul, hord,
     one_pow, one_mul]

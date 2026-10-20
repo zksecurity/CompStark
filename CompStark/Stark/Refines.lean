@@ -23,46 +23,62 @@ open CompStark.Fri CompStark.KoalaBear
 local notation "F" => KoalaBear.Fast.Field
 local notation "EF" => KoalaBear.Fast.Ext4
 
-theorem size_chunkValues (qs : Array EF) (stride c n : Nat) :
-    (chunkValues qs stride c n).size = 4 * n := by
+theorem size_chunkValues {K : Type} [Challenge K] (qs : Array K) (stride c n : Nat) :
+    (chunkValues qs stride c n).size = Challenge.d K * n := by
   simp only [chunkValues, Id.run, Std.Legacy.Range.forIn_eq_forIn_range',
     List.forIn_pure_yield_eq_foldl, pure_bind, Std.Legacy.Range.size, Nat.sub_zero,
     Nat.add_sub_cancel, Nat.div_one]
   show Array.size (List.foldl _ _ _) = _
   suffices h : ∀ (l : List Nat) (init : Array F), (l.foldl (fun out r ↦
       out ++ (Ext.coeffs (qs.getD (r * stride + c) 0)).toArray) init).size =
-      init.size + 4 * l.length by
+      init.size + Challenge.d K * l.length by
     rw [h, List.length_range', Array.emptyWithCapacity_eq, Array.size_empty, Nat.zero_add]
   intro l
   induction l with
   | nil => intro _; rfl
   | cons r l ih =>
     intro init
-    have h4 : (Ext.coeffs (qs.getD (r * stride + c) 0)).length = 4 := Challenge.length_coeffs _
+    have h4 : (Ext.coeffs (qs.getD (r * stride + c) 0)).length = Challenge.d K :=
+      Challenge.length_coeffs _
     rw [List.foldl_cons, ih]
     simp only [Array.size_append, List.size_toArray, h4, List.length_cons]
+    rw [Nat.mul_succ]
     omega
 
 theorem addressable_mono {m n : Nat} (h : m ≤ n) (hn : Addressable n) : Addressable m := by
   unfold Addressable at *; omega
 
-theorem outsideBase_mul_ofBase {z : EF} (hz : Ext.OutsideBase z) {x : F} (hx : x ≠ 0) :
-    Ext.OutsideBase (z * Ext.ofBase x) := by
-  have e1 : (z * Ext.ofBase x).c1 = z.c1 * x := by
-    rw [Norm.mul_c1]
-    simp only [Ext.ofBase, KoalaBear.ofBase_ext4, KoalaBear.Fast.Ext4.ofBase]; ring
-  have e2 : (z * Ext.ofBase x).c2 = z.c2 * x := by
-    rw [Norm.mul_c2]
-    simp only [Ext.ofBase, KoalaBear.ofBase_ext4, KoalaBear.Fast.Ext4.ofBase]; ring
-  have e3 : (z * Ext.ofBase x).c3 = z.c3 * x := by
-    rw [Norm.mul_c3]
-    simp only [Ext.ofBase, KoalaBear.ofBase_ext4, KoalaBear.Fast.Ext4.ofBase]; ring
-  rw [KoalaBear.outsideBase_ext4] at *
-  rw [e1, e2, e3]
-  rcases hz with h | h | h
-  · exact Or.inl (mul_ne_zero h hx)
-  · exact Or.inr (Or.inl (mul_ne_zero h hx))
-  · exact Or.inr (Or.inr (mul_ne_zero h hx))
+/-- An element is outside the base field exactly when it is no base element. -/
+theorem outsideBase_iff {K : Type} [Challenge K] {z : K} :
+    Ext.OutsideBase z ↔
+      ∀ y, Challenge.toSpec z ≠ algebraMap KoalaBear.Field (Challenge.Spec K) y := by
+  refine ⟨Ext.toSpec_ne_algebraMap, fun h ↦ ?_⟩
+  by_contra hn
+  apply h (Montgomery.Native32.FastField.toField ((Ext.coeffs z).getD 0 0))
+  have hs := Finset.sum_eq_single (s := Finset.range (Challenge.d K)) (a := 0)
+    (f := fun e ↦ CompPoly.Extension.Ext.gen ^ e * algebraMap KoalaBear.Field (Challenge.Spec K)
+      (Montgomery.Native32.FastField.toField ((Challenge.coeffs z).getD e 0)))
+    (fun e _ he ↦ by
+      have h0 : (Ext.coeffs z).getD e 0 = 0 := by
+        by_contra hne
+        exact hn ⟨e, Nat.pos_of_ne_zero he, hne⟩
+      rw [show (Challenge.coeffs z).getD e 0 = 0 from h0, Montgomery.Native32.toField_zero,
+        map_zero, mul_zero])
+    (fun h0 ↦ absurd (Finset.mem_range.mpr (Challenge.params K).d_pos) h0)
+  rw [Challenge.toSpec_eq_sum, hs, pow_zero, one_mul]
+
+theorem outsideBase_mul_ofBase {K : Type} [Challenge K] {z : K} (hz : Ext.OutsideBase z) {x : F}
+    (hx : x ≠ 0) : Ext.OutsideBase (z * Ext.ofBase x) := by
+  rw [outsideBase_iff] at *
+  intro y hy
+  have hx' : algebraMap KoalaBear.Field (Challenge.Spec K)
+      (Montgomery.Native32.FastField.toField x) ≠ 0 := by
+    rw [ne_eq, map_eq_zero_iff _ (algebraMap KoalaBear.Field (Challenge.Spec K)).injective]
+    exact fun h ↦ hx (Montgomery.Native32.toField_injective
+      (h.trans Montgomery.Native32.toField_zero.symm))
+  apply hz (y / Montgomery.Native32.FastField.toField x)
+  rw [Challenge.toSpec_mul, Ext.ofBase, Challenge.toSpec_ofBase'] at hy
+  rw [map_div₀, ← hy, mul_div_cancel_right₀ _ hx']
 
 /-- The shapes the fast prover supports: a trace and an AIR within KoalaBear's two-adic subgroups
 whose extension fits machine-word indices. -/
@@ -133,7 +149,7 @@ theorem commitAndSample_refines (h : Refines B) {P : Params} {A : Air} {logN : N
         (Backend.spec EF).lde logN P.logBlowup
           (gen * (gen * powF (twoAdicGen (logN + A.logQuotientChunks)) c)⁻¹) (Challenge.d EF)
           (chunkValues qs (2 ^ A.logQuotientChunks) c (2 ^ logN))) :=
-    forall₂_map (fun _ _ hc ↦ hc ▸ h.lde _ _ _ _ _ (by rw [size_chunkValues, Nat.mul_comm]; rfl)
+    forall₂_map (fun _ _ hc ↦ hc ▸ h.lde _ _ _ _ _ (by rw [size_chunkValues, Nat.mul_comm])
       hlog hm4) (List.forall₂_same.2 fun _ _ ↦ rfl)
   have hall : ∀ m ∈ ((List.range (2 ^ A.logQuotientChunks)).map fun c ↦
       (Backend.spec EF).lde logN P.logBlowup

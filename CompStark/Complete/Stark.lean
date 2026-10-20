@@ -24,12 +24,13 @@ namespace CompStark.Stark
 open CompStark.Fri CompStark.KoalaBear CompStark.Complete
 
 local notation "F" => KoalaBear.Fast.Field
-local notation "EF" => KoalaBear.Fast.Ext4
+
+variable {EF : Type} [Challenge EF]
 
 /-! ### The prover's run, step by step -/
 
 section Honest
-variable (P : Params) (A : Air) (logN : Nat) (trace : Array F) (pis : List F)
+variable (EF) (P : Params) (A : Air) (logN : Nat) (trace : Array F) (pis : List F)
 
 /-- The trace's extension. -/
 def hExt : Mat := ldeRef logN P.logBlowup gen A.width trace
@@ -45,7 +46,7 @@ def hAlpha : EF := ((hTA P A logN trace pis).sampleExtValue : EF)
 /-- The quotient's chunks' extensions. -/
 def hChunks : List Mat :=
   let lc := A.logQuotientChunks
-  let qs := quotientOfLde A pis logN lc (hExt P A logN trace) (hAlpha P A logN trace pis)
+  let qs := quotientOfLde A pis logN lc (hExt P A logN trace) (hAlpha EF P A logN trace pis)
   (List.range (2 ^ lc)).map fun c ↦
     ldeRef logN P.logBlowup (gen * (gen * powF (twoAdicGen (logN + lc)) c)⁻¹) (Challenge.d EF)
       (chunkValues qs (2 ^ lc) c (2 ^ logN))
@@ -53,19 +54,21 @@ def hChunks : List Mat :=
 /-- The transcript after the quotient commitment. -/
 def hTC : Transcript :=
   (Transcript.sampleExtState EF ((hTA P A logN trace pis))).observeList
-    (Committed.ofMats (hChunks P A logN trace pis)).root.toList
+    (Committed.ofMats (hChunks EF P A logN trace pis)).root.toList
 
 /-- The out-of-domain point. -/
-def hZeta : EF := ((hTC P A logN trace pis).sampleExtValue : EF)
+def hZeta : EF := ((hTC EF P A logN trace pis).sampleExtValue : EF)
 
 theorem commitAndSample_run :
     (commitAndSample (Backend.spec EF) P A logN trace pis).run Transcript.init =
       ((hExt P A logN trace, Committed.ofMats [hExt P A logN trace],
-        hChunks P A logN trace pis, Committed.ofMats (hChunks P A logN trace pis),
-        hZeta P A logN trace pis), (Transcript.sampleExtState EF ((hTC P A logN trace pis)))) := rfl
+        hChunks EF P A logN trace pis, Committed.ofMats (hChunks EF P A logN trace pis),
+        hZeta EF P A logN trace pis),
+        (Transcript.sampleExtState EF ((hTC EF P A logN trace pis)))) := rfl
 
-theorem outOfDomainPoint_eq : outOfDomainPoint EF P A logN trace pis = hZeta P A logN trace pis :=
-    rfl
+theorem outOfDomainPoint_eq :
+    outOfDomainPoint EF P A logN trace pis = hZeta EF P A logN trace pis :=
+  rfl
 
 end Honest
 
@@ -139,46 +142,47 @@ theorem openPcs_run (P : Params) (rounds : List (OpenRound (Backend.spec EF))) (
 /-! ### The proof -/
 
 section Honest
-variable (P : Params) (A : Air) (logN : Nat) (trace : Array F) (pis : List F)
+variable (EF) (P : Params) (A : Air) (logN : Nat) (trace : Array F) (pis : List F)
 
 /-- `ζ ω`. -/
-def hZetaNext : EF := hZeta P A logN trace pis * Ext.ofBase (twoAdicGen logN)
+def hZetaNext : EF := hZeta EF P A logN trace pis * Ext.ofBase (twoAdicGen logN)
 
 /-- The rounds the prover opens. -/
 def hRounds : List (OpenRound (Backend.spec EF)) :=
   [(Committed.ofMats [hExt P A logN trace],
-      [(hExt P A logN trace, [hZeta P A logN trace pis, hZetaNext P A logN trace pis])]),
-    (Committed.ofMats (hChunks P A logN trace pis),
-      (hChunks P A logN trace pis).map fun m ↦ (m, [hZeta P A logN trace pis]))]
+      [(hExt P A logN trace, [hZeta EF P A logN trace pis, hZetaNext EF P A logN trace pis])]),
+    (Committed.ofMats (hChunks EF P A logN trace pis),
+      (hChunks EF P A logN trace pis).map fun m ↦ (m, [hZeta EF P A logN trace pis]))]
 
 /-- The opened values, with their matrices and points. -/
 def hOpened : List (List (List (Array EF) × Mat × List (EF × Array EF))) :=
-  (hRounds P A logN trace pis).map fun r ↦ r.2.map fun x ↦
+  (hRounds EF P A logN trace pis).map fun r ↦ r.2.map fun x ↦
     (openedOf P.logBlowup x, x.1, x.2.zip (openedOf P.logBlowup x))
 
 /-- The transcript after observing the opened values. -/
 def hT2 : Transcript :=
-  (Transcript.sampleExtState EF ((hTC P A logN trace pis))).observeExts
-    (((hRounds P A logN trace pis).flatMap fun r ↦ r.2.flatMap (openedOf P.logBlowup)).flatMap
+  (Transcript.sampleExtState EF ((hTC EF P A logN trace pis))).observeExts
+    (((hRounds EF P A logN trace pis).flatMap fun r ↦ r.2.flatMap (openedOf P.logBlowup)).flatMap
       (·.toList))
 
 /-- FRI's inputs for the batching challenge `α`. -/
 def hInputs (alpha : EF) : List (Array EF) :=
-  (Fri.reduce alpha ((hOpened P A logN trace pis).flatten.map (·.2))).map (·.2)
+  (Fri.reduce alpha ((hOpened EF P A logN trace pis).flatten.map (·.2))).map (·.2)
 
 /-- The FRI proof. -/
 def hFri : FriProof EF :=
-  ((proveFri (Backend.spec EF) P (hRounds P A logN trace pis) (hInputs P A logN trace pis)).run
-    (hT2 P A logN trace pis)).1
+  ((proveFri (Backend.spec EF) P (hRounds EF P A logN trace pis)
+    (hInputs EF P A logN trace pis)).run
+    (hT2 EF P A logN trace pis)).1
 
 theorem prove_eq : prove EF P A logN trace pis =
     { traceCommit := (Committed.ofMats [hExt P A logN trace]).root
-      quotientCommit := (Committed.ofMats (hChunks P A logN trace pis)).root
-      opened := ⟨Fri.openedAt P.logBlowup (hExt P A logN trace) (hZeta P A logN trace pis),
-        Fri.openedAt P.logBlowup (hExt P A logN trace) (hZetaNext P A logN trace pis),
-        ((hChunks P A logN trace pis).map fun m ↦
-          Fri.openedAt P.logBlowup m (hZeta P A logN trace pis)).toArray⟩
-      fri := hFri P A logN trace pis
+      quotientCommit := (Committed.ofMats (hChunks EF P A logN trace pis)).root
+      opened := ⟨Fri.openedAt P.logBlowup (hExt P A logN trace) (hZeta EF P A logN trace pis),
+        Fri.openedAt P.logBlowup (hExt P A logN trace) (hZetaNext EF P A logN trace pis),
+        ((hChunks EF P A logN trace pis).map fun m ↦
+          Fri.openedAt P.logBlowup m (hZeta EF P A logN trace pis)).toArray⟩
+      fri := hFri EF P A logN trace pis
       degreeBits := logN } := by
   unfold prove proveWith
   rw [prun_bind]
@@ -193,14 +197,15 @@ theorem prove_eq : prove EF P A logN trace pis =
   repeat' apply And.intro
   all_goals try rfl
   refine congrArg List.toArray ?_
-  induction hChunks P A logN trace pis with
+  induction hChunks EF P A logN trace pis with
   | nil => rfl
   | cons m ms ih => exact congrArg (List.cons _) ih
 
 /-- The prover's final transcript is FRI's. -/
 theorem proveTranscript_eq : proveTranscript EF P A logN trace pis =
-    ((proveFri (Backend.spec EF) P (hRounds P A logN trace pis) (hInputs P A logN trace pis)).run
-      (hT2 P A logN trace pis)).2 := by
+    ((proveFri (Backend.spec EF) P (hRounds EF P A logN trace pis)
+      (hInputs EF P A logN trace pis)).run
+      (hT2 EF P A logN trace pis)).2 := by
   unfold proveTranscript
   rw [prun_bind]
   erw [commitAndSample_run]
@@ -342,7 +347,7 @@ theorem verify_eq (P : Params) (A : Air) (proof : Proof EF) (pis : List F) :
       let o := proof.opened
       unless o.traceLocal.size == A.width && o.traceNext.size == A.width &&
           o.quotientChunks.size == 2 ^ A.logQuotientChunks &&
-          o.quotientChunks.all (·.size == 4) do
+          o.quotientChunks.all (·.size == Challenge.d EF) do
         throw "invalid proof shape"
       unless arities proof.fri ==
           foldArities P.maxLogArity (proof.degreeBits - P.logFinalPolyLen) do
@@ -394,31 +399,31 @@ theorem honestItem_of (b h : Nat) (m : Mat) (zs : List EF) (ps : List (Polynomia
   exact ⟨hzs _ hz, hy2 ▸ hs, fun j hj ↦ hy2 ▸ hv j hj⟩
 
 section Honest
-variable (P : Params) (A : Air) (logN : Nat) (trace : Array F) (pis : List F)
+variable (EF) (P : Params) (A : Air) (logN : Nat) (trace : Array F) (pis : List F)
 
 /-- The matrices FRI batches, with their opened points and values. -/
 def hItems : List (Mat × List (EF × Array EF)) :=
-  (hOpened P A logN trace pis).flatten.map (·.2)
+  (hOpened EF P A logN trace pis).flatten.map (·.2)
 
-theorem hItems_eq : hItems P A logN trace pis =
-    (hExt P A logN trace, [hZeta P A logN trace pis, hZetaNext P A logN trace pis].zip
+theorem hItems_eq : hItems EF P A logN trace pis =
+    (hExt P A logN trace, [hZeta EF P A logN trace pis, hZetaNext EF P A logN trace pis].zip
       (openedOf P.logBlowup (hExt P A logN trace,
-        [hZeta P A logN trace pis, hZetaNext P A logN trace pis]))) ::
-    (hChunks P A logN trace pis).map fun m ↦
-      (m, [hZeta P A logN trace pis].zip
-        (openedOf P.logBlowup (m, [hZeta P A logN trace pis]))) := by
+        [hZeta EF P A logN trace pis, hZetaNext EF P A logN trace pis]))) ::
+    (hChunks EF P A logN trace pis).map fun m ↦
+      (m, [hZeta EF P A logN trace pis].zip
+        (openedOf P.logBlowup (m, [hZeta EF P A logN trace pis]))) := by
   simp only [hItems, hOpened, hRounds, List.map_cons, List.map_nil, List.flatten_cons,
     List.flatten_nil, List.append_nil]
   rw [List.map_append]
   refine congrArg (List.cons _) ?_
-  induction hChunks P A logN trace pis with
+  induction hChunks EF P A logN trace pis with
   | nil => rfl
   | cons m ms ih => exact congrArg (List.cons _) ih
 
 theorem hItems_honest (hin : Fits P A logN trace)
-    (hz : Ext.OutsideBase (hZeta P A logN trace pis)) :
-    ∀ x ∈ hItems P A logN trace pis, Deep.HonestItem P.logBlowup (logN + P.logBlowup) x := by
-  have hzn : Ext.OutsideBase (hZetaNext P A logN trace pis) :=
+    (hz : Ext.OutsideBase (hZeta EF P A logN trace pis)) :
+    ∀ x ∈ hItems EF P A logN trace pis, Deep.HonestItem P.logBlowup (logN + P.logBlowup) x := by
+  have hzn : Ext.OutsideBase (hZetaNext EF P A logN trace pis) :=
     outsideBase_mul_ofBase hz (twoAdicGen_ne_zero logN (by have := hin.twoAdic; omega))
   rw [hItems_eq]
   intro x hx
@@ -430,7 +435,7 @@ theorem hItems_honest (hin : Fits P A logN trace)
     · rw [List.mem_singleton] at hz'; exact hz' ▸ hzn
   · obtain ⟨m, hm, rfl⟩ := List.mem_map.mp hx
     obtain ⟨c, -, rfl⟩ := List.mem_map.mp hm
-    obtain ⟨ps, hlde, -⟩ := chunk_isLde P A logN _ hin.twoAdic hin.chunks c
+    obtain ⟨ps, hlde, -⟩ := chunk_isLde (EF := EF) P A logN _ hin.twoAdic hin.chunks c
     exact honestItem_of _ _ _ _ ps hlde fun z hz' ↦ (List.mem_singleton.mp hz') ▸ hz
 
 end Honest
@@ -448,23 +453,23 @@ theorem eq_singleton_of_pairwise {α : Type} (L : List (Nat × α)) (H : Nat)
     omega
 
 section Honest
-variable (P : Params) (A : Air) (logN : Nat) (trace : Array F) (pis : List F)
+variable (EF) (P : Params) (A : Air) (logN : Nat) (trace : Array F) (pis : List F)
 
 /-- FRI has one input, low degree, of the extension's height. -/
 theorem reduce_hItems (hin : Fits P A logN trace)
-    (hz : Ext.OutsideBase (hZeta P A logN trace pis)) (alpha : EF) :
-    ∃ v, Fri.reduce alpha (hItems P A logN trace pis) = [(logN + P.logBlowup, v)] ∧
+    (hz : Ext.OutsideBase (hZeta EF P A logN trace pis)) (alpha : EF) :
+    ∃ v, Fri.reduce alpha (hItems EF P A logN trace pis) = [(logN + P.logBlowup, v)] ∧
       LowDegree (logN + P.logBlowup) logN v := by
-  have hon := hItems_honest P A logN trace pis hin hz
-  have hh : ∀ x ∈ hItems P A logN trace pis, x.1.height = 2 ^ (logN + P.logBlowup) :=
+  have hon := hItems_honest EF P A logN trace pis hin hz
+  have hh : ∀ x ∈ hItems EF P A logN trace pis, x.1.height = 2 ^ (logN + P.logBlowup) :=
     fun x hx ↦ by obtain ⟨ps, hl, -⟩ := hon x hx; exact hl.2.1
-  obtain ⟨hpw, hmem, -⟩ := reduce_heights alpha (hItems P A logN trace pis)
+  obtain ⟨hpw, hmem, -⟩ := reduce_heights alpha (hItems EF P A logN trace pis)
     fun x hx ↦ by rw [hh x hx, Nat.log2_two_pow]
-  have hH : ∀ y ∈ Fri.reduce alpha (hItems P A logN trace pis), y.1 = logN + P.logBlowup := by
+  have hH : ∀ y ∈ Fri.reduce alpha (hItems EF P A logN trace pis), y.1 = logN + P.logBlowup := by
     intro y hy
     obtain ⟨x, hx, hxy⟩ := (hmem y.1).mp (List.mem_map_of_mem hy)
     rw [← hxy, hh x hx, Nat.log2_two_pow]
-  have hne : Fri.reduce alpha (hItems P A logN trace pis) ≠ [] := by
+  have hne : Fri.reduce alpha (hItems EF P A logN trace pis) ≠ [] := by
     intro h0
     have := (hmem (logN + P.logBlowup)).mpr ⟨_, by rw [hItems_eq]; exact List.mem_cons_self,
       by rw [hh _ (by rw [hItems_eq]; exact List.mem_cons_self), Nat.log2_two_pow]⟩
@@ -479,40 +484,41 @@ theorem reduce_hItems (hin : Fits P A logN trace)
 end Honest
 
 section Honest
-variable (P : Params) (A : Air) (logN : Nat) (trace : Array F) (pis : List F)
+variable (EF) (P : Params) (A : Air) (logN : Nat) (trace : Array F) (pis : List F)
 
 /-- A chunk with its opening at `ζ`. -/
 def hItemC (m : Mat) : Mat × List (EF × Array EF) :=
-  (m, [hZeta P A logN trace pis].zip (openedOf P.logBlowup (m, [hZeta P A logN trace pis])))
+  (m, [hZeta EF P A logN trace pis].zip (openedOf P.logBlowup (m, [hZeta EF P A logN trace pis])))
 
 /-- The rounds with their openings, as `openInput_honest` takes them. -/
 def hDRounds : List (Committed × List (Mat × List (EF × Array EF))) :=
   [(Committed.ofMats [hExt P A logN trace],
-      [(hExt P A logN trace, [hZeta P A logN trace pis, hZetaNext P A logN trace pis].zip
+      [(hExt P A logN trace, [hZeta EF P A logN trace pis, hZetaNext EF P A logN trace pis].zip
         (openedOf P.logBlowup (hExt P A logN trace,
-          [hZeta P A logN trace pis, hZetaNext P A logN trace pis])))]),
-    (Committed.ofMats (hChunks P A logN trace pis),
-      (hChunks P A logN trace pis).map (hItemC P A logN trace pis))]
+          [hZeta EF P A logN trace pis, hZetaNext EF P A logN trace pis])))]),
+    (Committed.ofMats (hChunks EF P A logN trace pis),
+      (hChunks EF P A logN trace pis).map (hItemC EF P A logN trace pis))]
 
-theorem map_fst_hItemC (ms : List Mat) : (ms.map (hItemC P A logN trace pis)).map (·.1) = ms := by
+theorem map_fst_hItemC (ms : List Mat) :
+    (ms.map (hItemC EF P A logN trace pis)).map (·.1) = ms := by
   induction ms with
   | nil => rfl
   | cons m ms ih => exact congrArg (List.cons m) ih
 
 theorem flatMap_hDRounds :
-    (hDRounds P A logN trace pis).flatMap (·.2) = hItems P A logN trace pis := by
+    (hDRounds EF P A logN trace pis).flatMap (·.2) = hItems EF P A logN trace pis := by
   rw [hItems_eq]
   simp only [hDRounds, List.flatMap_cons, List.flatMap_nil, List.append_nil]
   rfl
 
-theorem hChunks_ne_nil : hChunks P A logN trace pis ≠ [] := by
+theorem hChunks_ne_nil : hChunks EF P A logN trace pis ≠ [] := by
   simp only [hChunks, ne_eq, List.map_eq_nil_iff, List.range_eq_nil]
   exact Nat.pos_iff_ne_zero.mp (Nat.two_pow_pos _)
 
 end Honest
 
 section Honest
-variable (P : Params) (A : Air) (logN : Nat) (trace : Array F) (pis : List F)
+variable (EF) (P : Params) (A : Air) (logN : Nat) (trace : Array F) (pis : List F)
 
 theorem height_hExt (hin : Fits P A logN trace) :
     (hExt P A logN trace).height = 2 ^ (logN + P.logBlowup) := by
@@ -520,16 +526,16 @@ theorem height_hExt (hin : Fits P A logN trace) :
   exact hl.2.1
 
 theorem height_hChunks (hin : Fits P A logN trace) :
-    ∀ m ∈ hChunks P A logN trace pis, m.height = 2 ^ (logN + P.logBlowup) := by
+    ∀ m ∈ hChunks EF P A logN trace pis, m.height = 2 ^ (logN + P.logBlowup) := by
   intro m hm
   obtain ⟨c, -, rfl⟩ := List.mem_map.mp hm
-  obtain ⟨ps, hl, -⟩ := chunk_isLde P A logN _ hin.twoAdic hin.chunks c
+  obtain ⟨ps, hl, -⟩ := chunk_isLde (EF := EF) P A logN _ hin.twoAdic hin.chunks c
   exact hl.2.1
 
 theorem vChunks_eq (ms : List Mat) (hms : ∀ m ∈ ms, m.height = 2 ^ (logN + P.logBlowup)) :
-    (ms.map fun m ↦ Fri.openedAt P.logBlowup m (hZeta P A logN trace pis)).map
-      (fun ch ↦ ((⟨1, logN⟩ : Domain), [(hZeta P A logN trace pis, ch.toList)])) =
-    (ms.map (hItemC P A logN trace pis)).map fun x ↦
+    (ms.map fun m ↦ Fri.openedAt P.logBlowup m (hZeta EF P A logN trace pis)).map
+      (fun ch ↦ ((⟨1, logN⟩ : Domain), [(hZeta EF P A logN trace pis, ch.toList)])) =
+    (ms.map (hItemC EF P A logN trace pis)).map fun x ↦
       ((⟨1, Nat.log2 x.1.height - P.logBlowup⟩ : Domain), x.2.map fun y ↦ (y.1, y.2.toList)) := by
   induction ms with
   | nil => rfl
@@ -541,36 +547,36 @@ theorem vChunks_eq (ms : List Mat) (hms : ∀ m ∈ ms, m.height = 2 ^ (logN + P
     rfl
 
 theorem vRounds_eq (hin : Fits P A logN trace) :
-    vRounds (prove EF P A logN trace pis) (hZeta P A logN trace pis) =
-      (hDRounds P A logN trace pis).map fun r ↦ (r.1.root, r.2.map fun x ↦
+    vRounds (prove EF P A logN trace pis) (hZeta EF P A logN trace pis) =
+      (hDRounds EF P A logN trace pis).map fun r ↦ (r.1.root, r.2.map fun x ↦
         ((⟨1, Nat.log2 x.1.height - P.logBlowup⟩ : Domain),
           x.2.map fun y ↦ (y.1, y.2.toList))) := by
   rw [prove_eq]
   simp only [vRounds, hDRounds, List.map_cons, List.map_nil, height_hExt P A logN trace hin,
     Nat.log2_two_pow, Nat.add_sub_cancel]
-  rw [vChunks_eq P A logN trace pis _ (height_hChunks P A logN trace pis hin)]
+  rw [vChunks_eq EF P A logN trace pis _ (height_hChunks EF P A logN trace pis hin)]
   rfl
 
 end Honest
 
 section Honest
-variable (P : Params) (A : Air) (logN : Nat) (trace : Array F) (pis : List F)
+variable (EF) (P : Params) (A : Air) (logN : Nat) (trace : Array F) (pis : List F)
 
 theorem hInputs_eq (hin : Fits P A logN trace)
-    (hz : Ext.OutsideBase (hZeta P A logN trace pis)) (alpha : EF) :
-    ∃ v, hInputs P A logN trace pis alpha = [v] ∧
-      Fri.reduce alpha (hItems P A logN trace pis) = [(logN + P.logBlowup, v)] ∧
+    (hz : Ext.OutsideBase (hZeta EF P A logN trace pis)) (alpha : EF) :
+    ∃ v, hInputs EF P A logN trace pis alpha = [v] ∧
+      Fri.reduce alpha (hItems EF P A logN trace pis) = [(logN + P.logBlowup, v)] ∧
       LowDegree (logN + P.logBlowup) logN v := by
-  obtain ⟨v, hv, hl⟩ := reduce_hItems P A logN trace pis hin hz alpha
+  obtain ⟨v, hv, hl⟩ := reduce_hItems EF P A logN trace pis hin hz alpha
   refine ⟨v, ?_, hv, hl⟩
-  show (Fri.reduce alpha (hItems P A logN trace pis)).map (·.2) = _
+  show (Fri.reduce alpha (hItems EF P A logN trace pis)).map (·.2) = _
   rw [hv]
   rfl
 
 theorem inputsOk_hInputs (hin : Fits P A logN trace)
-    (hz : Ext.OutsideBase (hZeta P A logN trace pis)) (hfin : P.logFinalPolyLen ≤ logN)
-    (alpha : EF) : InputsOk P (hInputs P A logN trace pis alpha) := by
-  obtain ⟨v, hv, -, hl⟩ := hInputs_eq P A logN trace pis hin hz alpha
+    (hz : Ext.OutsideBase (hZeta EF P A logN trace pis)) (hfin : P.logFinalPolyLen ≤ logN)
+    (alpha : EF) : InputsOk P (hInputs EF P A logN trace pis alpha) := by
+  obtain ⟨v, hv, -, hl⟩ := hInputs_eq EF P A logN trace pis hin hz alpha
   have hs := log2_size hl
   refine ⟨v, [], hv, ?_⟩
   rw [hs]
@@ -578,26 +584,27 @@ theorem inputsOk_hInputs (hin : Fits P A logN trace)
   exact absurd hw List.not_mem_nil
 
 theorem hopen (hin : Fits P A logN trace)
-    (hz : Ext.OutsideBase (hZeta P A logN trace pis)) (alpha : EF) (index : Nat)
-    (hidx : index < 2 ^ Nat.log2 (((hInputs P A logN trace pis alpha).map Array.size).headD 0)) :
-    openInput poseidon2 P (Nat.log2 (((hInputs P A logN trace pis alpha).map Array.size).headD 0))
-        index alpha ((hRounds P A logN trace pis).map fun (c, _) ↦ c.openAt (index >>>
-          (Nat.log2 (((hInputs P A logN trace pis alpha).map Array.size).headD 0) -
+    (hz : Ext.OutsideBase (hZeta EF P A logN trace pis)) (alpha : EF) (index : Nat)
+    (hidx : index < 2 ^ Nat.log2 (((hInputs EF P A logN trace pis alpha).map Array.size).headD 0)) :
+    openInput poseidon2 P
+        (Nat.log2 (((hInputs EF P A logN trace pis alpha).map Array.size).headD 0))
+        index alpha ((hRounds EF P A logN trace pis).map fun (c, _) ↦ c.openAt (index >>>
+          (Nat.log2 (((hInputs EF P A logN trace pis alpha).map Array.size).headD 0) -
             Nat.log2 c.maxHeight)))
-        (vRounds (prove EF P A logN trace pis) (hZeta P A logN trace pis)) =
-      pure ((hInputs P A logN trace pis alpha).map fun v ↦ (Nat.log2 v.size, v.getD (index >>>
-        (Nat.log2 (((hInputs P A logN trace pis alpha).map Array.size).headD 0) -
+        (vRounds (prove EF P A logN trace pis) (hZeta EF P A logN trace pis)) =
+      pure ((hInputs EF P A logN trace pis alpha).map fun v ↦ (Nat.log2 v.size, v.getD (index >>>
+        (Nat.log2 (((hInputs EF P A logN trace pis alpha).map Array.size).headD 0) -
           Nat.log2 v.size)) 0)) := by
-  obtain ⟨v, hv, hred, hl⟩ := hInputs_eq P A logN trace pis hin hz alpha
+  obtain ⟨v, hv, hred, hl⟩ := hInputs_eq EF P A logN trace pis hin hz alpha
   have hs := log2_size hl
-  have hL : Nat.log2 (((hInputs P A logN trace pis alpha).map Array.size).headD 0) =
+  have hL : Nat.log2 (((hInputs EF P A logN trace pis alpha).map Array.size).headD 0) =
       logN + P.logBlowup := by
     rw [hv]; exact hs
   rw [hL] at hidx ⊢
-  rw [vRounds_eq P A logN trace pis hin, hv]
-  have hon := hItems_honest P A logN trace pis hin hz
+  rw [vRounds_eq EF P A logN trace pis hin, hv]
+  have hon := hItems_honest EF P A logN trace pis hin hz
   rw [← flatMap_hDRounds] at hon
-  have hD := openInput_honest P (logN + P.logBlowup) index alpha (hDRounds P A logN trace pis)
+  have hD := openInput_honest P (logN + P.logBlowup) index alpha (hDRounds EF P A logN trace pis)
     hidx fun r hr ↦ by
       refine ⟨?_, ?_, logN + P.logBlowup, le_rfl, fun x hx ↦
         hon x (List.mem_flatMap.mpr ⟨r, hr, hx⟩)⟩
@@ -605,11 +612,11 @@ theorem hopen (hin : Fits P A logN trace)
         rcases hr with rfl | rfl
         · exact List.cons_ne_nil _ _
         · simp only [ne_eq, List.map_eq_nil_iff]
-          exact hChunks_ne_nil P A logN trace pis
+          exact hChunks_ne_nil EF P A logN trace pis
       · simp only [hDRounds, List.mem_cons, List.mem_nil_iff, or_false] at hr
         rcases hr with rfl | rfl
         · rfl
-        · exact congrArg Committed.ofMats (map_fst_hItemC P A logN trace pis _).symm
+        · exact congrArg Committed.ofMats (map_fst_hItemC EF P A logN trace pis _).symm
   rw [flatMap_hDRounds, hred] at hD
   rw [List.map_singleton, hs]
   exact hD
@@ -626,14 +633,14 @@ theorem flatMap_zip_openedOf (b : Nat) (m : Mat) (zs : List EF) :
     rw [ih]
 
 section Honest
-variable (P : Params) (A : Air) (logN : Nat) (trace : Array F) (pis : List F)
+variable (EF) (P : Params) (A : Air) (logN : Nat) (trace : Array F) (pis : List F)
 
 theorem flat_chunks (ms : List Mat) :
-    ((ms.map (hItemC P A logN trace pis)).map fun x ↦
+    ((ms.map (hItemC EF P A logN trace pis)).map fun x ↦
       ((⟨1, Nat.log2 x.1.height - P.logBlowup⟩ : Domain),
         x.2.map fun y ↦ (y.1, y.2.toList))).flatMap
         (fun x ↦ x.2.flatMap (·.2)) =
-      ((ms.map fun m ↦ (m, [hZeta P A logN trace pis])).flatMap (openedOf P.logBlowup)).flatMap
+      ((ms.map fun m ↦ (m, [hZeta EF P A logN trace pis])).flatMap (openedOf P.logBlowup)).flatMap
         (·.toList) := by
   induction ms with
   | nil => rfl
@@ -642,11 +649,11 @@ theorem flat_chunks (ms : List Mat) :
     rw [ih, hItemC, flatMap_zip_openedOf]
 
 theorem flat_eq (hin : Fits P A logN trace) :
-    (vRounds (prove EF P A logN trace pis) (hZeta P A logN trace pis)).flatMap
+    (vRounds (prove EF P A logN trace pis) (hZeta EF P A logN trace pis)).flatMap
       (fun r ↦ r.2.flatMap fun x ↦ x.2.flatMap (·.2)) =
-    ((hRounds P A logN trace pis).flatMap fun r ↦ r.2.flatMap (openedOf P.logBlowup)).flatMap
+    ((hRounds EF P A logN trace pis).flatMap fun r ↦ r.2.flatMap (openedOf P.logBlowup)).flatMap
       (·.toList) := by
-  rw [vRounds_eq P A logN trace pis hin]
+  rw [vRounds_eq EF P A logN trace pis hin]
   simp only [hDRounds, hRounds, List.map_cons, List.map_nil, List.flatMap_cons, List.flatMap_nil,
     List.append_nil, List.flatMap_append]
   rw [flat_chunks, flatMap_zip_openedOf]
@@ -660,7 +667,7 @@ theorem verify_ok_of (P : Params) (A : Air) (proof : Proof EF) (pis : List F) (a
     (t : Transcript)
     (hshape : (proof.opened.traceLocal.size == A.width && proof.opened.traceNext.size == A.width &&
       proof.opened.quotientChunks.size == 2 ^ A.logQuotientChunks &&
-      proof.opened.quotientChunks.all (·.size == 4)) = true)
+      proof.opened.quotientChunks.all (·.size == Challenge.d EF)) = true)
     (harities :
       arities proof.fri = foldArities P.maxLogArity (proof.degreeBits - P.logFinalPolyLen))
     (hrun : verifyRun P proof pis Transcript.init = .ok ((alpha, zeta), t))
@@ -674,33 +681,35 @@ theorem verify_ok_of (P : Params) (A : Air) (proof : Proof EF) (pis : List F) (a
   rfl
 
 section Honest
-variable (P : Params) (A : Air) (logN : Nat) (trace : Array F) (pis : List F)
+variable (EF) (P : Params) (A : Air) (logN : Nat) (trace : Array F) (pis : List F)
 
 theorem verifyRun_honest (hin : Fits P A logN trace)
-    (hz : Ext.OutsideBase (hZeta P A logN trace pis))
+    (hz : Ext.OutsideBase (hZeta EF P A logN trace pis))
     (hP : 0 < P.maxLogArity) (hq : 0 < P.numQueries) (hfin : P.logFinalPolyLen ≤ logN)
     (hgrind : (proveTranscript EF P A logN trace pis).grindFailed = false) :
     ∃ t, verifyRun P (prove EF P A logN trace pis) pis Transcript.init =
-      .ok ((hAlpha P A logN trace pis, hZeta P A logN trace pis), t) := by
-  have hTC : vTC (prove EF P A logN trace pis) pis = hTC P A logN trace pis := by
+      .ok ((hAlpha EF P A logN trace pis, hZeta EF P A logN trace pis), t) := by
+  have hTC : vTC (prove EF P A logN trace pis) pis = hTC EF P A logN trace pis := by
     rw [prove_eq]; rfl
   have hTA : vTA (prove EF P A logN trace pis) pis = hTA P A logN trace pis := by
     rw [prove_eq]; rfl
   rw [verifyRun_run, hTC, hTA]
-  have hzeta : ((Stark.hTC P A logN trace pis).sampleExtValue : EF) = hZeta P A logN trace pis :=
+  have hzeta :
+      ((Stark.hTC EF P A logN trace pis).sampleExtValue : EF) = hZeta EF P A logN trace pis :=
       rfl
   rw [hzeta]
-  have hfri : (prove EF P A logN trace pis).fri = hFri P A logN trace pis := by rw [prove_eq]
-  have hF := verifyFri_proveFri P (hRounds P A logN trace pis) (hInputs P A logN trace pis)
-    (vRounds (prove EF P A logN trace pis) (hZeta P A logN trace pis)) (hT2 P A logN trace pis)
+  have hfri : (prove EF P A logN trace pis).fri = hFri EF P A logN trace pis := by rw [prove_eq]
+  have hF := verifyFri_proveFri P (hRounds EF P A logN trace pis) (hInputs EF P A logN trace pis)
+    (vRounds (prove EF P A logN trace pis) (hZeta EF P A logN trace pis))
+    (hT2 EF P A logN trace pis)
     (by rw [hT2, duplex_observeExts, duplex_sampleExt, Stark.hTC, duplex_observeList,
       duplex_sampleExt, Stark.hTA]; rfl)
-    (inputsOk_hInputs P A logN trace pis hin hz hfin) hP hq
+    (inputsOk_hInputs EF P A logN trace pis hin hz hfin) hP hq
     (by rw [← proveTranscript_eq]; exact hgrind)
-    (fun alpha index hidx ↦ hopen P A logN trace pis hin hz alpha index hidx)
-  refine ⟨((proveFri (Backend.spec EF) P (hRounds P A logN trace pis)
-    (hInputs P A logN trace pis)).run (hT2 P A logN trace pis)).2, ?_⟩
-  rw [bind_ok (by rw [verifyPcs_run, hfri, flat_eq P A logN trace pis hin]; exact hF)]
+    (fun alpha index hidx ↦ hopen EF P A logN trace pis hin hz alpha index hidx)
+  refine ⟨((proveFri (Backend.spec EF) P (hRounds EF P A logN trace pis)
+    (hInputs EF P A logN trace pis)).run (hT2 EF P A logN trace pis)).2, ?_⟩
+  rw [bind_ok (by rw [verifyPcs_run, hfri, flat_eq EF P A logN trace pis hin]; exact hF)]
   rfl
 
 end Honest
@@ -708,24 +717,25 @@ end Honest
 /-- The honest proof folds by Plonky3's schedule. -/
 theorem arities_prove (P : Params) (A : Air) (logN : Nat) (trace : Array F) (pis : List F)
     (hin : Fits P A logN trace) (hP : 0 < P.maxLogArity) (hq : 0 < P.numQueries)
-    (hfin : P.logFinalPolyLen ≤ logN) (hz : Ext.OutsideBase (hZeta P A logN trace pis)) :
+    (hfin : P.logFinalPolyLen ≤ logN) (hz : Ext.OutsideBase (hZeta EF P A logN trace pis)) :
     arities (prove EF P A logN trace pis).fri =
       foldArities P.maxLogArity ((prove EF P A logN trace pis).degreeBits - P.logFinalPolyLen) := by
   obtain ⟨v, hv, -,
-      hl⟩ := hInputs_eq P A logN trace pis hin hz ((hT2 P A logN trace pis).sampleExtValue : EF)
-  obtain ⟨f0, rest, hf, hg⟩ := inputsOk_hInputs P A logN trace pis hin hz hfin
-    ((hT2 P A logN trace pis).sampleExtValue : EF)
+    hl⟩ := hInputs_eq EF P A logN trace pis hin hz ((hT2 EF P A logN trace pis).sampleExtValue : EF)
+  obtain ⟨f0, rest, hf, hg⟩ := inputsOk_hInputs EF P A logN trace pis hin hz hfin
+    ((hT2 EF P A logN trace pis).sampleExtValue : EF)
   rw [hv, List.cons.injEq] at hf
   obtain ⟨rfl, rfl⟩ := hf
   have hdb : (prove EF P A logN trace pis).degreeBits = logN := by rw [prove_eq]
-  have hfri : (prove EF P A logN trace pis).fri = hFri P A logN trace pis := by rw [prove_eq]
-  rw [hfri, hdb, hFri, arities_proveFri P (hRounds P A logN trace pis) (hInputs P A logN trace pis)
-    (hT2 P A logN trace pis) v hv hg hP hq]
+  have hfri : (prove EF P A logN trace pis).fri = hFri EF P A logN trace pis := by rw [prove_eq]
+  rw [hfri, hdb, hFri,
+      arities_proveFri P (hRounds EF P A logN trace pis) (hInputs EF P A logN trace pis)
+    (hT2 EF P A logN trace pis) v hv hg hP hq]
   have hlog : Nat.log2 v.size - (P.logBlowup + P.logFinalPolyLen) = logN - P.logFinalPolyLen := by
     rw [log2_size hl]; omega
   exact congrArg _ hlog
 
-/-- Completeness with every assumption spelled out; `completeness` (`CompStark/Complete.lean`)
+/-- Completeness with every assumption spelled out; `completeness` (`CompStark/Completeness.lean`)
 groups them. -/
 theorem verify_prove_of (P : Params) (A : Air) (logN : Nat) (trace : Array F) (pis : List F)
     (hin : Fits P A logN trace) (hsat : A.ConstraintsVanish logN trace pis)
@@ -735,13 +745,14 @@ theorem verify_prove_of (P : Params) (A : Air) (logN : Nat) (trace : Array F) (p
     (hz : Ext.OutsideBase (outOfDomainPoint EF P A logN trace pis)) :
     verify P A (prove EF P A logN trace pis) pis = .ok () := by
   rw [outOfDomainPoint_eq] at hz
-  obtain ⟨t, hrun⟩ := verifyRun_honest P A logN trace pis hin hz hP hq hfin hgrind
+  obtain ⟨t, hrun⟩ := verifyRun_honest EF P A logN trace pis hin hz hP hq hfin hgrind
   refine verify_ok_of P A _ pis _ _ t ?_ ?_ hrun ?_
   · rw [prove_eq]
-    exact honest_shape P A logN trace pis (hAlpha P A logN trace pis) (hZeta P A logN trace pis)
+    exact honest_shape P A logN trace pis (hAlpha EF P A logN trace pis)
+      (hZeta EF P A logN trace pis)
   · exact arities_prove P A logN trace pis hin hP hq hfin hz
   · rw [prove_eq]
-    exact checkConstraints_honest P A logN trace pis (hAlpha P A logN trace pis)
-      (hZeta P A logN trace pis) hin hsat hdeg hz
+    exact checkConstraints_honest P A logN trace pis (hAlpha EF P A logN trace pis)
+      (hZeta EF P A logN trace pis) hin hsat hdeg hz
 
 end CompStark.Stark

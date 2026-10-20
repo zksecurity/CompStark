@@ -25,7 +25,8 @@ namespace CompStark.Stark
 open CompStark.Fri
 
 local notation "F" => KoalaBear.Fast.Field
-local notation "EF" => KoalaBear.Fast.Ext4
+
+variable {EF : Type} [Challenge EF]
 
 /-- A configuration the prover supports: an AIR, FRI parameters and traces of `2 ^ logN` rows. -/
 structure ValidConfig (params : Params) (air : Air) (logN : Nat) : Prop where
@@ -45,12 +46,14 @@ structure ValidConfig (params : Params) (air : Air) (logN : Nat) : Prop where
   /-- FRI makes at least one query. -/
   queries : 0 < params.numQueries
 
-/-- The honest run avoids two unlikely events in which it fails. -/
+variable (EF) in
+/-- The honest run over the extension `EF` avoids two unlikely events in which it fails. -/
 structure NoBadLuck (params : Params) (air : Air) (logN : Nat) (trace : Array F)
     (publicValues : List F) : Prop where
-  /-- The out-of-domain point `ζ` (`outOfDomainPoint`), a random element of the quartic
-  extension, does not lie in the base field. It does with probability about `2 ^ -93`; then
-  `ζ - x` vanishes for some point `x` of the domains and the openings divide by zero. -/
+  /-- The out-of-domain point `ζ` (`outOfDomainPoint`), a random element of the extension of
+  degree `d`, does not lie in the base field. It does with probability `fieldSize ^ (1 - d)`, about
+  `2 ^ -93` for `d = 4` and `2 ^ -124` for `d = 5`; then `ζ - x` vanishes for some point `x` of the
+  domains and the openings divide by zero. -/
   outOfDomain : Ext.OutsideBase (outOfDomainPoint EF params air logN trace publicValues)
   /-- Every proof-of-work search of the honest run finds a witness (`proveTranscript` records a
   failed search, where Plonky3's grinder would panic). A search for `b` bits tries every field
@@ -58,11 +61,11 @@ structure NoBadLuck (params : Params) (air : Air) (logN : Nat) (trace : Array F)
   `exp (-2 ^ (31 - b))`. -/
   grinding : (proveTranscript EF params air logN trace publicValues).grindFailed = false
 
-/-- **Completeness.** For a valid configuration and an honest run without bad luck, if the trace
-satisfies the AIR, the honest prover's proof verifies. -/
+/-- **Completeness.** For a valid configuration and an honest run over any challenge field `EF`
+without bad luck, if the trace satisfies the AIR, the honest prover's proof verifies. -/
 theorem completeness {params : Params} {air : Air} {logN : Nat} {trace : Array F}
     {publicValues : List F} (config : ValidConfig params air logN)
-    (luck : NoBadLuck params air logN trace publicValues) :
+    (luck : NoBadLuck EF params air logN trace publicValues) :
     air.Satisfied logN trace publicValues →
       verify params air (prove EF params air logN trace publicValues) publicValues = .ok () :=
   fun sat ↦ verify_prove_of params air logN trace publicValues

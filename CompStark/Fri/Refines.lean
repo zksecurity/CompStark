@@ -146,7 +146,7 @@ theorem commitOk_leaves (a : Array EF) (s la : Nat) (hs : s ≤ 24) (ha : a.size
   · obtain rfl := List.mem_singleton.mp hm
     refine ⟨⟨by show 0 < 4 * 2 ^ la; positivity, ⟨s - la, by omega, hd⟩, ?_, ?_⟩, hd⟩
     · show (a.flatMap fun x ↦ (Ext.coeffs x).toArray).size = 4 * 2 ^ la * (a.size / 2 ^ la)
-      rw [size_flatMap_coeffs, hd, Nat.mul_assoc, hsz, ha]
+      rw [size_flatMap_coeffs, KoalaBear.d_ext4, hd, Nat.mul_assoc, hsz, ha]
     · show Addressable (4 * 2 ^ la * (a.size / 2 ^ la))
       rw [hd]; exact hadd
   · show Addressable (2 ^ (s - la) * (0 + 4 * 2 ^ la))
