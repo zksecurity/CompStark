@@ -35,6 +35,7 @@ public import CompStark.Stark.Proof
 public import CompStark.Merkle.Mmcs
 public import CompStark.Merkle.Multi
 public import CompStark.Merkle.Mixed
+public import CompStark.Merkle.MixedMulti
 public import CompStark.Stark.Challenge
 public import CompStark.DomainSeparator
 public import CompStark.KoalaBear.Challenge
@@ -83,6 +84,7 @@ public import CompStark.Complete.Defs
 public import CompStark.Poseidon2.ArkLib
 public import CompStark.Merkle.VCVio
 public import CompStark.Merkle.Extract
+public import CompStark.Merkle.ExtractMixed
 public import CompStark.Complete.Merkle
 public import CompStark.Complete.Deep
 public import CompStark.Complete.Fold
@@ -124,6 +126,9 @@ public import CompStark.Sound.LossyMca
 public import CompStark.Fs.FreshQuery
 public import CompStark.Fs.DigestClash
 public import CompStark.NonInteractiveError
+public import CompStark.Sound.FriRun
+public import CompStark.BatchNonInteractiveError
+public import CompStark.Sound.BatchRbr
 public import CompStark.Sound.Sampling
 public import CompStark.Sound.ConsistentQueries
 public import CompStark.Sound.Rbr
