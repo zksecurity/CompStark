@@ -354,19 +354,20 @@ theorem sample_drop_idealOf (cap : Digest F) (input : List F) (l : List F) (j : 
 /-- The query round: observe the final polynomial after `pre` and the witness; the grinding
 sample is the round's first answered sample, and query `j`'s sample the one at the grinding
 offset plus `j`. -/
-theorem queryRound_idealOf (hK : P.numQueries + Challenge.d EF + 1 ≤ K) (blocks : List (List F))
-    (r : Nat) (pre rest : List F) (hfp : proof.fri.finalPoly.toList ≠ [])
-    (hr : blocks.getD r [] = pre ++ coeffs proof.fri.finalPoly.toList ++
-      witnessInput P.queryPowBits proof.fri.queryWitness) :
-    let qs := obsExts (idealOf answer) ⟨capAt answer blocks r, pre, rest⟩ proof.fri.finalPoly.toList
+theorem queryRound_idealOf (fri : FriProof F EF) (hK : P.numQueries + Challenge.d EF + 1 ≤ K)
+    (blocks : List (List F))
+    (r : Nat) (pre rest : List F) (hfp : fri.finalPoly.toList ≠ [])
+    (hr : blocks.getD r [] = pre ++ coeffs fri.finalPoly.toList ++
+      witnessInput P.queryPowBits fri.queryWitness) :
+    let qs := obsExts (idealOf answer) ⟨capAt answer blocks r, pre, rest⟩ fri.finalPoly.toList
     (P.queryPowBits ≠ 0 →
-      ((idealOf answer).sample ((idealOf answer).observe qs proof.fri.queryWitness)).1 =
+      ((idealOf answer).sample ((idealOf answer).observe qs fri.queryWitness)).1 =
         (answer (keyAt answer blocks r)).2.toList.getD 0 0) ∧
     ∀ j < P.numQueries, ((idealOf answer).sample (sampleStates (idealOf answer)
-      (chkWit (idealOf answer) P.queryPowBits proof.fri.queryWitness qs).2 j)).1 =
+      (chkWit (idealOf answer) P.queryPowBits fri.queryWitness qs).2 j)).1 =
         (answer (keyAt answer blocks r)).2.toList.getD (challengeOffset P.queryPowBits + j) 0 := by
   intro qs
-  have hqs : qs = ⟨capAt answer blocks r, pre ++ coeffs proof.fri.finalPoly.toList, []⟩ := by
+  have hqs : qs = ⟨capAt answer blocks r, pre ++ coeffs fri.finalPoly.toList, []⟩ := by
     simp only [qs]
     rw [obsExts_eq, obsList_idealOf_ne answer _ _ (coeffs_ne_nil hfp)]
   have hlen :
@@ -386,7 +387,7 @@ theorem queryRound_idealOf (hK : P.numQueries + Challenge.d EF + 1 ≤ K) (block
     rw [hx, List.tail_cons, Nat.add_comm, List.getD_cons_succ]
   by_cases hb : P.queryPowBits = 0
   · simp only [witnessInput, hb, ↓reduceIte, List.append_nil] at hr
-    have hw : (chkWit (idealOf answer) P.queryPowBits proof.fri.queryWitness qs).2 =
+    have hw : (chkWit (idealOf answer) P.queryPowBits fri.queryWitness qs).2 =
         ⟨capAt answer blocks r, blocks.getD r [], []⟩ := by
       rw [chkWit, ite_eq_left_of_eq_true _ _ (eq_true hb), hqs, hr]
     refine ⟨fun h ↦ absurd hb h, fun j hj ↦ ?_⟩
@@ -404,13 +405,13 @@ theorem queryRound_idealOf (hK : P.numQueries + Challenge.d EF + 1 ≤ K) (block
       rw [sampleStates_succ, sample_idealOf_nil]
       exact (htail j (by omega)) ▸ (hhead j (by omega)).trans (by rw [Nat.add_comm])
   · simp only [witnessInput, hb, ↓reduceIte] at hr
-    have hobs : (idealOf answer).observe qs proof.fri.queryWitness =
+    have hobs : (idealOf answer).observe qs fri.queryWitness =
         ⟨capAt answer blocks r, blocks.getD r [], []⟩ := by rw [hqs, hr]
-    have hw : (chkWit (idealOf answer) P.queryPowBits proof.fri.queryWitness qs).2 =
+    have hw : (chkWit (idealOf answer) P.queryPowBits fri.queryWitness qs).2 =
         ⟨(answer (keyAt answer blocks r)).1, [],
           (answer (keyAt answer blocks r)).2.toList.tail⟩ := by
       rw [chkWit, ite_eq_right hb]
-      show ((idealOf answer).sample ((idealOf answer).observe qs proof.fri.queryWitness)).2 = _
+      show ((idealOf answer).sample ((idealOf answer).observe qs fri.queryWitness)).2 = _
       rw [hobs, sample_idealOf_nil]
       rfl
     refine ⟨fun _ ↦ ?_, fun j hj ↦ ?_⟩
@@ -456,7 +457,7 @@ theorem challenges_idealOf (hK : P.numQueries + Challenge.d EF + 1 ≤ K)
     (inputs P A vk pis proof) (proof.fri.commits.toList.zip proof.fri.commitWitnesses.toList) 3
     (friSeedOf P proof) [] (fun i hi ↦ inputs_getD_fold P A vk pis proof i hi)
   rw [← hstart] at hc1 hc2 hl
-  obtain ⟨hq1, hq2⟩ := queryRound_idealOf answer P proof (by omega) (inputs P A vk pis proof)
+  obtain ⟨hq1, hq2⟩ := queryRound_idealOf answer P proof.fri (by omega) (inputs P A vk pis proof)
     (3 + n) _ l hfp (inputs_getD_last P A vk pis proof)
   have hqs : queryState (idealOf answer) P A vk proof pis =
       obsExts (idealOf answer) ⟨capAt answer (inputs P A vk pis proof) (3 + n),
