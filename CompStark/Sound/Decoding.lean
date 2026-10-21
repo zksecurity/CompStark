@@ -22,7 +22,8 @@ whose DEEP component `(y - f(x)) / (z - x)` agrees on `T` with a codeword `h` (d
    `Q(z) = y` (`exists_basePoly`).
 
 A trace column is opened at `ζ` and `ζ ω_n`; both polynomials agree with it on `T`, so they are
-equal (`eq_of_agree`). No unique decoding is needed.
+equal (`eq_of_agree`). A preprocessed column's word is the verifier's, the values of a polynomial
+of degree below `n`, so the polynomial is that one. No unique decoding is needed.
 -/
 
 @[expose] public section
@@ -201,19 +202,38 @@ theorem decodingStep (S : Setup EF) : DecodingStep S := by
   have hζ (i) (hi : i ∈ T) : ζ ≠ S.domain i := ((Finset.mem_filter.mp hi).2.1).symm
   have hζω (i) (hi : i ∈ T) : ζ * rootOfUnity S.logN ≠ S.domain i :=
     ((Finset.mem_filter.mp hi).2.2).symm
+  have hl2 {w : (S.Point → F) × 𝕂 × 𝕂} {l : List _} (h : w ∈ l) (l₁ l₂) :
+      w ∈ l ++ l₁ ++ l₂ := List.mem_append_left _ (List.mem_append_left _ h)
   have htr (j : Fin S.air.width) := exists_basePoly S T hT (prover.trace j) ζ _ hζ
-    (hmem (prover.trace j, ζ, _) (List.mem_append_left _ (List.mem_append_left _
-      (List.mem_map.mpr ⟨j, List.mem_finRange j, rfl⟩))))
+    (hmem (prover.trace j, ζ, _) (hl2 (List.mem_append_left _ (List.mem_append_left _
+      (List.mem_map.mpr ⟨j, List.mem_finRange j, rfl⟩))) _ _))
   have hnx (j : Fin S.air.width) := exists_basePoly S T hT (prover.trace j) _ _ hζω
-    (hmem (prover.trace j, ζ * rootOfUnity S.logN, _) (List.mem_append_left _
-      (List.mem_append_right _ (List.mem_map.mpr ⟨j, List.mem_finRange j, rfl⟩))))
+    (hmem (prover.trace j, ζ * rootOfUnity S.logN, _) (hl2 (List.mem_append_left _
+      (List.mem_append_right _ (List.mem_map.mpr ⟨j, List.mem_finRange j, rfl⟩))) _ _))
   have hqu (c : Fin S.chunks) (e : Fin (Challenge.d EF)) := exists_basePoly S T hT
     (prover.quotient α c e) ζ _
-    hζ (hmem (prover.quotient α c e, ζ, _) (List.mem_append_right _ (List.mem_flatMap.mpr
-      ⟨c, List.mem_finRange c, List.mem_map.mpr ⟨e, List.mem_finRange e, rfl⟩⟩)))
+    hζ (hmem (prover.quotient α c e, ζ, _) (hl2 (List.mem_append_right _ (List.mem_flatMap.mpr
+      ⟨c, List.mem_finRange c, List.mem_map.mpr ⟨e, List.mem_finRange e, rfl⟩⟩)) _ _))
+  have hpr (j : Fin S.air.preprocessedWidth) := exists_basePoly S T hT (S.preprocessedWord j) ζ _
+    hζ (hmem (S.preprocessedWord j, ζ, _) (List.mem_append_left _ (List.mem_append_right _
+      (List.mem_map.mpr ⟨j, List.mem_finRange j, rfl⟩))))
+  have hpn (j : Fin S.air.preprocessedNextWidth) := exists_basePoly S T hT
+    (S.preprocessedWord j) _ _ hζω (hmem (S.preprocessedWord j, ζ * rootOfUnity S.logN, _)
+      (List.mem_append_right _ (List.mem_map.mpr ⟨j, List.mem_finRange j, rfl⟩)))
   choose trace htdeg htT htz using htr
   choose next hndeg hnT hnz using hnx
   choose quotient hqdeg hqT hqz using hqu
+  choose prep hpdeg hpT hpz using hpr
+  choose prepNext hpndeg hpnT hpnz using hpn
+  have hprep (j : Nat) (Q : F[X]) (hQ : Q.natDegree ≤ S.n)
+      (hQT : ∀ i ∈ T, S.preprocessedWord j i = Q.eval (basePoint (S.logN + S.params.logBlowup) i)) :
+      Q = S.preprocessedPoly j := by
+    refine map_injective (algebraMap F 𝕂) (algebraMap F 𝕂).injective
+      (eq_of_agree S T hT _ _ (natDegree_map_le.trans hQ)
+        (natDegree_map_le.trans (natDegree_preprocessedPoly_le S j)) fun i hi ↦ ?_)
+    rw [domain_eq, eval_map_algebraMap, eval_map_algebraMap, aeval_algebraMap_apply,
+      aeval_algebraMap_apply, coe_aeval_eq_eval, ← hQT i hi]
+    rfl
   have hnext (j : Fin S.air.width) : next j = trace j := by
     refine map_injective (algebraMap F 𝕂) (algebraMap F 𝕂).injective
       (eq_of_agree S T hT _ _ (natDegree_map_le.trans (hndeg j))
@@ -223,10 +243,14 @@ theorem decodingStep (S : Setup EF) : DecodingStep S := by
   refine ⟨trace, quotient, htdeg, ⟨T, hTcard, fun i hi j ↦ htT j i hi⟩, hqdeg,
     ⟨T, hTcard, fun i hi ce ↦ hqT ce.1 ce.2 i hi⟩, ?_⟩
   have hnz' (j : Fin S.air.width) := hnext j ▸ hnz j
-  generalize prover.openings α ζ = o at htz hnz' hqz
+  have hpz' (j : Fin S.air.preprocessedWidth) := hprep j _ (hpdeg j) (hpT j) ▸ hpz j
+  have hpnz' (j : Fin S.air.preprocessedNextWidth) :=
+    hprep j _ (hpndeg j) (hpnT j) ▸ hpnz j
+  generalize prover.openings α ζ = o at htz hnz' hqz hpz' hpnz'
   cases o
   simp only [trueOpenings, Openings.mk.injEq]
   exact ⟨funext fun j ↦ (htz j).symm, funext fun j ↦ (hnz' j).symm,
-    funext fun c ↦ funext fun e ↦ (hqz c e).symm⟩
+    funext fun c ↦ funext fun e ↦ (hqz c e).symm, funext fun j ↦ (hpz' j).symm,
+    funext fun j ↦ (hpnz' j).symm⟩
 
 end CompStark.Sound

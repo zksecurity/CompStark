@@ -67,13 +67,18 @@ theorem extFrom_coeffs (rest : List F) :
       ← List.drop_drop, List.drop_left' (Challenge.length_coeffs x), List.getElem_cons_succ, ← ih]
     rfl
 
-/-- The openings of the extension elements in `xs`: the trace at `ζ`, at `ζ ω`, and the quotient
-chunks' coordinates, in the order the verifier observes them. -/
+/-- The openings of the extension elements in `xs`: the trace at `ζ`, at `ζ ω`, the quotient
+chunks' coordinates, and the preprocessed trace at `ζ` and, if opened, at `ζ ω`, in the order the
+verifier observes them. -/
 noncomputable def openingsAt (S : Iop.Setup EF) (xs : List F) : Openings S where
   traceAt j := Challenge.toSpec (extFrom (EF := EF) xs j)
   traceNext j := Challenge.toSpec (extFrom (EF := EF) xs (S.air.width + j))
   quotientAt c e :=
     Challenge.toSpec (extFrom (EF := EF) xs (2 * S.air.width + (Challenge.d EF * c.val + e.val)))
+  preprocessedAt j :=
+    Challenge.toSpec (extFrom (EF := EF) xs (2 * S.air.width + Challenge.d EF * S.chunks + j))
+  preprocessedNext j := Challenge.toSpec (extFrom (EF := EF) xs
+    (2 * S.air.width + Challenge.d EF * S.chunks + S.air.preprocessedWidth + j))
 
 theorem getElem_flatMap_of_length {α : Type} (w : Nat) (L : List (List α))
     (hL : ∀ l ∈ L, l.length = w) (c e : Nat) (hc : c < L.length) (he : e < w)
@@ -99,28 +104,35 @@ theorem getElem_flatMap_of_length {α : Type} (w : Nat) (L : List (List α))
 theorem openingsAt_coeffs (S : Iop.Setup EF) (o : OpenedValues EF) (rest : List F)
     (htl : o.traceLocal.size = S.air.width) (htn : o.traceNext.size = S.air.width)
     (hqc : o.quotientChunks.size = S.chunks)
-    (hq4 : ∀ ch ∈ o.quotientChunks, ch.size = Challenge.d EF) :
+    (hq4 : ∀ ch ∈ o.quotientChunks, ch.size = Challenge.d EF)
+    (hpl : (o.preprocessedLocal.getD #[]).size = S.air.preprocessedWidth)
+    (hpn : (o.preprocessedNext.getD #[]).size = S.air.preprocessedNextWidth) :
     openingsAt S (coeffs (openedValues o) ++ rest) = openingsOf S o := by
-  have hlen : (openedValues o).length = 2 * S.air.width + Challenge.d EF * S.chunks := by
-    simp only [openedValues, List.length_append, Array.length_toList, htl, htn,
-      List.length_flatMap]
-    rw [List.sum_eq_length_nsmul _ (Challenge.d EF) (by
+  have hq : (o.quotientChunks.toList.flatMap (·.toList)).length =
+      Challenge.d EF * S.chunks := by
+    rw [List.length_flatMap, List.sum_eq_length_nsmul _ (Challenge.d EF) (by
       intro n hn
       obtain ⟨ch, hch, rfl⟩ := List.mem_map.mp hn
       exact hq4 ch (Array.mem_toList_iff.mp hch)), List.length_map, Array.length_toList, hqc,
-      smul_eq_mul]
+      smul_eq_mul, Nat.mul_comm]
+  have hlen : (openedValues o).length = 2 * S.air.width + Challenge.d EF * S.chunks +
+      S.air.preprocessedWidth + S.air.preprocessedNextWidth := by
+    simp only [openedValues, List.length_append, Array.length_toList, htl, htn, hq, hpl, hpn]
     ring
   have hx (k : Nat) (hk : k < (openedValues o).length) :
       extFrom (coeffs (openedValues o) ++ rest) k = (openedValues o)[k] :=
     extFrom_coeffs rest (openedValues o) k hk
   cases hS : openingsOf S o with
-  | mk ta tn qa =>
+  | mk ta tn qa pa pn =>
   have hta : ta = (openingsOf S o).traceAt := by rw [hS]
   have htn' : tn = (openingsOf S o).traceNext := by rw [hS]
   have hqa : qa = (openingsOf S o).quotientAt := by rw [hS]
-  subst hta htn' hqa
+  have hpa : pa = (openingsOf S o).preprocessedAt := by rw [hS]
+  have hpn' : pn = (openingsOf S o).preprocessedNext := by rw [hS]
+  subst hta htn' hqa hpa hpn'
   simp only [openingsAt, Openings.mk.injEq]
-  refine ⟨funext fun j ↦ ?_, funext fun j ↦ ?_, funext fun c ↦ funext fun e ↦ ?_⟩
+  refine ⟨funext fun j ↦ ?_, funext fun j ↦ ?_, funext fun c ↦ funext fun e ↦ ?_,
+    funext fun j ↦ ?_, funext fun j ↦ ?_⟩
   · rw [hx j (by omega)]
     simp only [openingsOf, openedValues, List.append_assoc]
     rw [List.getElem_append_left (by simp only [Array.length_toList, htl]; exact j.isLt),
@@ -140,7 +152,8 @@ theorem openingsAt_coeffs (S : Iop.Setup EF) (o : OpenedValues EF) (rest : List 
     rw [hx _ (by omega)]
     simp only [openingsOf, openedValues, List.append_assoc]
     rw [List.getElem_append_right (by simp only [Array.length_toList, htl]; omega),
-      List.getElem_append_right (by simp only [Array.length_toList, htl, htn]; omega)]
+      List.getElem_append_right (by simp only [Array.length_toList, htl, htn]; omega),
+      List.getElem_append_left (by simp only [Array.length_toList, htl, htn, hq]; omega)]
     have hL : ∀ l ∈ o.quotientChunks.toList.map (·.toList), l.length = Challenge.d EF := by
       intro l hl
       obtain ⟨ch, hch, rfl⟩ := List.mem_map.mp hl
@@ -162,6 +175,30 @@ theorem openingsAt_coeffs (S : Iop.Setup EF) (o : OpenedValues EF) (rest : List 
     have he : e.val < o.quotientChunks[c.val].size := by
       rw [hq4 _ (Array.getElem_mem hc')]; exact e.isLt
     rw [hch, Array.getD_eq_getD_getElem?, Array.getElem?_eq_getElem he, Option.getD_some]
+  · have hj := j.isLt
+    rw [hx _ (by omega)]
+    simp only [openingsOf, openedValues, List.append_assoc]
+    rw [List.getElem_append_right (by simp only [Array.length_toList, htl]; omega),
+      List.getElem_append_right (by simp only [Array.length_toList, htl, htn]; omega),
+      List.getElem_append_right (by simp only [Array.length_toList, htl, htn, hq]; omega),
+      List.getElem_append_left (by simp only [Array.length_toList, htl, htn, hq, hpl]; omega)]
+    simp only [Array.length_toList, htl, htn, hq, Array.getElem_toList]
+    rw [Array.getD_eq_getD_getElem?, Array.getElem?_eq_getElem (by rw [hpl]; omega),
+      Option.getD_some]
+    congr 2
+    omega
+  · have hj := j.isLt
+    rw [hx _ (by omega)]
+    simp only [openingsOf, openedValues, List.append_assoc]
+    rw [List.getElem_append_right (by simp only [Array.length_toList, htl]; omega),
+      List.getElem_append_right (by simp only [Array.length_toList, htl, htn]; omega),
+      List.getElem_append_right (by simp only [Array.length_toList, htl, htn, hq]; omega),
+      List.getElem_append_right (by simp only [Array.length_toList, htl, htn, hq, hpl]; omega)]
+    simp only [Array.length_toList, htl, htn, hq, hpl, Array.getElem_toList]
+    rw [Array.getD_eq_getD_getElem?, Array.getElem?_eq_getElem (by rw [hpn]; omega),
+      Option.getD_some]
+    congr 2
+    omega
 
 /-- The final polynomial's `2 ^ logFinalPolyLen` coefficients, from the extension elements in
 `xs`. -/
@@ -182,13 +219,14 @@ section Prefix
 variable (S : Iop.Setup EF)
 
 /-- The STARK's domain separator on a proof for `S`. -/
-def starkSeedS : List F :=
-  DomainSeparator.starkSeed F EF S.logN S.air.width S.air.numPublicValues S.chunks
-    S.params.oodPowBits
+def starkSeedS : List F := starkSeedOf EF S.params S.air S.logN
 
 /-- The claimed evaluation counts of a proof for `S`. -/
 def pcsCountsS : List (List (List Nat)) :=
-  [[[S.air.width, S.air.width]], List.replicate S.chunks [Challenge.d EF]]
+  [[[S.air.width, S.air.width]], List.replicate S.chunks [Challenge.d EF]] ++
+    if S.air.preprocessedWidth = 0 then [] else
+      [[S.air.preprocessedWidth ::
+        if S.air.opensPreprocessedNext then [S.air.preprocessedWidth] else []]]
 
 /-- The PCS's domain separator on a proof for `S`. -/
 def pcsSeedS : List F := DomainSeparator.pcsSeed F EF (pcsCountsS S) S.params.batchPowBits

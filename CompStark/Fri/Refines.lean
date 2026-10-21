@@ -94,9 +94,11 @@ structure Refines (B : Backend F EF 24) where
   root : ∀ {c s}, RC c s → B.root c = (specBackend EF).root s
   openAt : ∀ {c s} i, RC c s → B.openAt c i = (specBackend EF).openAt s i
   logHeight : ∀ {c s}, RC c s → B.logHeight c = (specBackend EF).logHeight s
-  quotient : ∀ A pis d l {m s} alpha, RM m s → MatOk s → 2 ^ (d + l) ≤ s.height →
-    (∀ c ∈ A.constraints, c.colsBelow s.width) →
-    B.quotient A pis d l m alpha = (specBackend EF).quotient A pis d l s alpha
+  quotient : ∀ A pis d l {m s pm ps} alpha, RM m s → MatOk s → 2 ^ (d + l) ≤ s.height →
+    Option.Rel RM pm ps → (∀ p ∈ ps, MatOk p ∧ p.height = s.height) →
+    (∀ c ∈ A.constraints, c.colsBelow s.width ((ps.map (·.width)).getD 0)
+      ((ps.map (·.width)).getD 0)) →
+    B.quotient A pis d l m pm alpha = (specBackend EF).quotient A pis d l s ps alpha
   openedAt : ∀ b zs {m s}, RM m s → MatOk s → (∀ z ∈ zs, Ext.OutsideBase z) →
     B.openedAt b m zs = (specBackend EF).openedAt b s zs
   toArray : ∀ {v a}, RV v a → a.size ≤ 2 ^ twoAdicity F → B.toArray v = (specBackend EF).toArray a
@@ -352,7 +354,7 @@ theorem proveFri_refines (hA : DomainsAddressable F EF) (h : Refines B) (P : Par
       cases (List.map (fun x ↦ ((specBackend EF).size x).log2) []).headD 0 <;> rfl
     | cons x xs =>
       have hl : logMax = x.size.log2 := by
-        rw [← hlogMax, ← hheights, List.map_cons, List.headD_cons]; rfl
+        rw [← hlogMax, ← hheights, List.map_cons, List.headD_cons]
       rcases hshape x List.mem_cons_self with h0 | ⟨s, hs, hx⟩
       · left
         rw [hl, h0]

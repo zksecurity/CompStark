@@ -287,30 +287,79 @@ theorem slice_cols (vals : Array F) (w parts R B c r0 : Nat) (hc : c < w) (hR : 
   rw [Array.getElem_ofFn, Array.getElem_ofFn, hcell k h1,
     colsOf_cell vals w parts R c (r0 + k) hc (by omega)]
 
+/-- A block of `B` stored rows from `r0` of the next rows of column `c`, as `evalWords` reads
+it: the values `g` there. -/
+theorem nextWords_eq (vals : Array F) (w parts R B : Nat) (next : Array Nat)
+    (contiguous : Array (Option Nat)) (r0 c : Nat) (hc : c < w) (hR : 0 < R) (hBR : B ∣ R)
+    (hB0 : 0 < B) (hr : r0 + B ≤ parts * R) (hsC : 4 * (colsOf vals w parts R).size < USize.size)
+    (hBs : 4 * B < USize.size) (hnext : ∀ j < parts * R, next.getD j 0 < parts * R)
+    (hcont : ∀ n0, contiguous.getD (r0 / B) none = some n0 →
+      B ∣ n0 ∧ ∀ k < B, next.getD (r0 + k) 0 = n0 + k)
+    (g : Nat → F) (hg : ∀ j < parts * R, g j = vals.getD (next.getD j 0 * w + c) 0) :
+    (match contiguous.getD (r0 / B) none with
+      | some n0 => slice (encode (colsOf vals w parts R)) (n0 / R * (R * w) + c * R + n0 % R) B
+      | none => gather (encode (colsOf vals w parts R)) w R c next r0 B) =
+      encode (Array.ofFn (n := B) fun k ↦ g (r0 + k.val)) := by
+  split
+  · rename_i n0 hn0
+    obtain ⟨hdvd, hk⟩ := hcont n0 hn0
+    have hn0lt : n0 < parts * R := by
+      have h0 := hk 0 hB0
+      rw [Nat.add_zero, Nat.add_zero] at h0
+      rw [← h0]
+      exact hnext r0 (by omega)
+    have hn0B : n0 + B ≤ parts * R := by
+      obtain ⟨a, ha⟩ := hdvd
+      obtain ⟨b, hb⟩ := Nat.dvd_trans hBR (Dvd.intro_left parts rfl)
+      rw [ha] at hn0lt ⊢
+      rw [hb] at hn0lt ⊢
+      have := Nat.lt_of_mul_lt_mul_left hn0lt
+      rw [← Nat.mul_succ]
+      exact Nat.mul_le_mul_left B this
+    rw [slice_cols vals w parts R B c n0 hc hR hBR hdvd hB0 hn0B]
+    congr 1
+    refine congrArg Array.ofFn (funext fun k ↦ ?_)
+    rw [hg _ (by omega), hk k.val k.isLt]
+  · rw [gather_encode _ _ _ _ _ _ _ hsC (by omega) (fun k hk ↦ by
+      rw [colsOf, Array.size_ofFn]
+      exact cell_lt w parts R c _ hc (hnext _ (by omega)))]
+    congr 1
+    refine congrArg Array.ofFn (funext fun k ↦ ?_)
+    rw [colsOf_cell vals w parts R c _ hc (hnext _ (by omega)), hg _ (by omega)]
+
+theorem size_colsOf (vals : Array F) (w parts R : Nat) (hv : parts * R * w ≤ vals.size)
+    (hs : 4 * vals.size < USize.size) : 4 * (colsOf vals w parts R).size < USize.size := by
+  rw [colsOf, Array.size_ofFn]
+  have : parts * (w * R) ≤ vals.size := by rw [← Nat.mul_assoc, Nat.mul_right_comm]; exact hv
+  omega
+
 /-- `evalWords` on a block of `B` stored rows from `r0` is the expression at those rows, for
-expressions on the trace's columns. `E j` is the environment of stored row `j`. -/
-theorem evalWords_eq (vals : Array F) (w parts R B : Nat) (next : Array Nat)
+expressions on the columns of the trace `vals` and the preprocessed trace `pvals`. `E j` is the
+environment of stored row `j`. -/
+theorem evalWords_eq (vals pvals : Array F) (w pw parts R B : Nat) (next : Array Nat)
     (contiguous : Array (Option Nat)) (pis : List F) (fA lA tA : Array F) (r0 : Nat)
     (E : Nat → Expr.Env F F) (hR : 0 < R) (hBR : B ∣ R) (hB0 : 0 < B) (hBr : B ∣ r0)
     (hr : r0 + B ≤ parts * R) (hv : parts * R * w ≤ vals.size) (hs : 4 * vals.size < USize.size)
+    (hpv : parts * R * pw ≤ pvals.size) (hps : 4 * pvals.size < USize.size)
     (hBs : 4 * B < USize.size) (hnext : ∀ j < parts * R, next.getD j 0 < parts * R)
     (hcont : ∀ n0, contiguous.getD (r0 / B) none = some n0 →
       B ∣ n0 ∧ ∀ k < B, next.getD (r0 + k) 0 = n0 + k)
     (hf : r0 + B ≤ fA.size) (hl : r0 + B ≤ lA.size) (ht : r0 + B ≤ tA.size)
     (hEcur : ∀ j < parts * R, ∀ c < w, (E j).cur c = vals.getD (j * w + c) 0)
     (hEnext : ∀ j < parts * R, ∀ c < w, (E j).next c = vals.getD (next.getD j 0 * w + c) 0)
+    (hEpcur : ∀ j < parts * R, ∀ c < pw, (E j).prepCur c = pvals.getD (j * pw + c) 0)
+    (hEpnext : ∀ j < parts * R, ∀ c < pw,
+      (E j).prepNext c = pvals.getD (next.getD j 0 * pw + c) 0)
     (hEpub : ∀ j i, (E j).pub i = pis.getD i 0) (hEconst : ∀ j x, (E j).const x = x)
     (hEf : ∀ j < parts * R, (E j).isFirstRow = fA.getD j 0)
     (hEl : ∀ j < parts * R, (E j).isLastRow = lA.getD j 0)
     (hEt : ∀ j < parts * R, (E j).isTransition = tA.getD j 0) :
-    ∀ e : Expr F, e.colsBelow w = true →
-      evalWords (encode (colsOf vals w parts R)) w R B next contiguous pis (encode fA)
-        (encode lA) (encode tA) r0 e =
+    ∀ e : Expr F, e.colsBelow w pw pw = true →
+      evalWords (encode (colsOf vals w parts R)) (encode (colsOf pvals pw parts R)) w pw R B next
+        contiguous pis (encode fA) (encode lA) (encode tA) r0 e =
       encode (Array.ofFn (n := B) fun k ↦ e.eval (E (r0 + k.val))) := by
-  have hsC : 4 * (colsOf vals w parts R).size < USize.size := by
-    rw [colsOf, Array.size_ofFn]
-    have : parts * (w * R) ≤ vals.size := by rw [← Nat.mul_assoc, Nat.mul_right_comm]; exact hv
-    omega
+  have hsC := size_colsOf vals w parts R hv hs
+  have hpsC := size_colsOf pvals pw parts R hpv hps
   have hsel (X : Array F) (hX : r0 + B ≤ X.size) (g : Nat → F)
       (hg : ∀ j < parts * R, g j = X.getD j 0) :
       slice (encode X) r0 B = encode (Array.ofFn (n := B) fun k ↦ g (r0 + k.val)) := by
@@ -327,33 +376,19 @@ theorem evalWords_eq (vals : Array F) (w parts R B : Nat) (next : Array Nat)
   | next c =>
     simp only [Expr.colsBelow, decide_eq_true_eq] at he
     rw [evalWords]
-    split
-    · rename_i n0 hn0
-      obtain ⟨hdvd, hk⟩ := hcont n0 hn0
-      have hn0lt : n0 < parts * R := by
-        have h0 := hk 0 hB0
-        rw [Nat.add_zero, Nat.add_zero] at h0
-        rw [← h0]
-        exact hnext r0 (by omega)
-      have hn0B : n0 + B ≤ parts * R := by
-        obtain ⟨a, ha⟩ := hdvd
-        obtain ⟨b, hb⟩ := Nat.dvd_trans hBR (Dvd.intro_left parts rfl)
-        rw [ha] at hn0lt ⊢
-        rw [hb] at hn0lt ⊢
-        have := Nat.lt_of_mul_lt_mul_left hn0lt
-        rw [← Nat.mul_succ]
-        exact Nat.mul_le_mul_left B this
-      rw [slice_cols vals w parts R B c n0 he hR hBR hdvd hB0 hn0B]
-      congr 1
-      refine congrArg Array.ofFn (funext fun k ↦ ?_)
-      rw [Expr.eval, hEnext _ (by omega) c he, hk k.val k.isLt]
-    · rw [gather_encode _ _ _ _ _ _ _ hsC (by omega) (fun k hk ↦ by
-        rw [colsOf, Array.size_ofFn]
-        exact cell_lt w parts R c _ he (hnext _ (by omega)))]
-      congr 1
-      refine congrArg Array.ofFn (funext fun k ↦ ?_)
-      rw [colsOf_cell vals w parts R c _ he (hnext _ (by omega)), Expr.eval,
-        hEnext _ (by omega) c he]
+    exact nextWords_eq vals w parts R B next contiguous r0 c he hR hBR hB0 hr hsC hBs hnext hcont
+      _ fun j hj ↦ hEnext j hj c he
+  | prepCur c =>
+    simp only [Expr.colsBelow, decide_eq_true_eq] at he
+    rw [evalWords, slice_cols pvals pw parts R B c r0 he hR hBR hBr hB0 hr]
+    congr 1
+    refine congrArg Array.ofFn (funext fun k ↦ ?_)
+    rw [Expr.eval, hEpcur _ (by omega) c he]
+  | prepNext c =>
+    simp only [Expr.colsBelow, decide_eq_true_eq] at he
+    rw [evalWords]
+    exact nextWords_eq pvals pw parts R B next contiguous r0 c he hR hBR hB0 hr hpsC hBs hnext
+      hcont _ fun j hj ↦ hEpnext j hj c he
   | pub i =>
     rw [evalWords, Words.replicateWord_encode _ _ hBs]
     congr 1
@@ -530,20 +565,81 @@ theorem word_encode_ofFn (B : Nat) (hB : 4 * B < USize.size) (X : Nat → F) (k 
       (by rw [Array.size_ofFn]; exact hk),
     NTTFast.Packed.ofWord_val, NTTFast.Packed.getD_ofFn_bounded _ _ hk]
 
-/-- The fast quotient is the specification's. -/
+/-- The preprocessed trace the quotient reads: the one given, or none of `height` rows. -/
+abbrev prepOrEmpty (ps : Option (Mat F)) (height : Nat) : Mat F := ps.getD ⟨0, height, #[]⟩
+
+theorem transposePieces_rel {m : PMat} {s : Mat F} (h : RM m s) (parts R : Nat)
+    (hM : parts * R * s.width ≤ s.values.size) (hs : 4 * s.values.size < USize.size) :
+    transposePieces m parts R = encode (colsOf s.values s.width parts R) := by
+  obtain ⟨hw, -, hv⟩ := h
+  unfold transposePieces
+  rw [hv, hw]
+  exact pieces_eq s.values s.width parts R hM hs
+
+/-- The fast quotient is the specification's on related extensions of the trace and the
+preprocessed trace. -/
 theorem quotientWith_rel [Mont32BaseField p] [Binomial4 p] (A : Air F) (pis : List F) (d l : Nat)
-    (alpha : EF) {ext : PMat}
-    {s : Mat F}
-    (h : RM ext s) (hs : MatOk s) (hh : 2 ^ (d + l) ≤ s.height)
-    (hc : ∀ c ∈ A.constraints, c.colsBelow s.width) :
+    (alpha : EF) {ext : PMat} {s : Mat F} {prep : Option PMat} {ps : Option (Mat F)}
+    (h : RM ext s) (hs : MatOk s) (hh : 2 ^ (d + l) ≤ s.height) (hp : Option.Rel RM prep ps)
+    (hps : ∀ q ∈ ps, MatOk q ∧ q.height = s.height)
+    (hc : ∀ c ∈ A.constraints, c.colsBelow s.width ((ps.map (·.width)).getD 0)
+      ((ps.map (·.width)).getD 0)) :
     quotientWith (quotientTables
-        (p := p) d l) A pis ext alpha = quotientOfLde A pis d l s alpha := by
+        (p := p) d l) A pis ext prep alpha = quotientOfLde A pis d l s ps alpha := by
+  have hRM := h
   obtain ⟨hw, hhe, hv⟩ := h
   obtain ⟨-, -, hvs', hadd⟩ := hs
   have hus : 4 * s.values.size < USize.size := by
     unfold Addressable at hadd
     rw [hvs']
     omega
+  have hpw : (ps.map (·.width)).getD 0 = (prepOrEmpty ps s.height).width := by cases ps <;> rfl
+  have hpw' : (prep.map (·.width)).getD 0 = (prepOrEmpty ps s.height).width := by
+    cases hp with
+    | none => rfl
+    | @some a q hr => exact hr.1
+  have hspv : (prepOrEmpty ps s.height).values.size =
+      (prepOrEmpty ps s.height).width * s.height := by
+    cases hp with
+    | none => show (#[] : Array F).size = 0 * s.height; rw [Nat.zero_mul]; rfl
+    | @some a q hr =>
+      obtain ⟨⟨-, -, hq, -⟩, hqh⟩ := hps q rfl
+      show q.values.size = q.width * s.height
+      rw [hq, hqh]
+  have husp : 4 * (prepOrEmpty ps s.height).values.size < USize.size := by
+    cases hp with
+    | none => show 4 * 0 < USize.size; have := USize.le_size; omega
+    | @some a q hr =>
+      obtain ⟨⟨-, -, hq, hqa⟩, -⟩ := hps q rfl
+      unfold Addressable at hqa
+      show 4 * q.values.size < USize.size
+      rw [hq]
+      omega
+  have hpcols (parts R : Nat)
+      (hM : parts * R * (prepOrEmpty ps s.height).width ≤
+        (prepOrEmpty ps s.height).values.size) :
+      (prep.map (transposePieces · parts R)).getD ByteArray.empty =
+        encode (colsOf (prepOrEmpty ps s.height).values (prepOrEmpty ps s.height).width parts
+          R) := by
+    cases hp with
+    | none =>
+      show ByteArray.empty = encode (colsOf #[] 0 parts R)
+      rw [Array.eq_empty_of_size_eq_zero (xs := colsOf _ _ _ _)
+        (by rw [colsOf, Array.size_ofFn, Nat.zero_mul, Nat.mul_zero])]
+      rfl
+    | @some a q hr => exact transposePieces_rel hr parts R hM husp
+  have hpq : (ps.map fun m ↦ Mat.ofValues m.width (2 ^ (d + l))
+        (permuteRows m (bitRevPerm (d + l)))).getD (Mat.ofValues 0 (2 ^ (d + l)) #[]) =
+      Mat.ofValues (prepOrEmpty ps s.height).width (2 ^ (d + l))
+        (permuteRows (prepOrEmpty ps s.height) (bitRevPerm (d + l))) := by
+    cases ps with
+    | none =>
+      show Mat.ofValues 0 (2 ^ (d + l)) #[] = Mat.ofValues 0 (2 ^ (d + l)) (permuteRows _ _)
+      rw [Array.eq_empty_of_size_eq_zero (xs := permuteRows _ _)
+        (by rw [permuteRows_eq, Array.size_ofFn]; rfl)]
+    | some q => rfl
+  generalize prepOrEmpty ps s.height = sp at hpw hpw' hspv husp hpcols hpq
+  rw [hpw] at hc
   have hn' := hh
   unfold quotientWith
   have hTd : (quotientTables (p := p) d l).degreeBits = d := rfl
@@ -594,13 +690,18 @@ theorem quotientWith_rel [Mont32BaseField p] [Binomial4 p] (A : Air F) (pis : Li
   have hM : parts * 2 ^ e * s.width ≤ s.values.size := by
     rw [hpe, hvs', Nat.mul_comm]
     exact Nat.mul_le_mul_left _ hn'
-  rw [pieces_eq s.values s.width parts (2 ^ e) hM hus]
+  have hMp : parts * 2 ^ e * sp.width ≤ sp.values.size := by
+    rw [hpe, hspv, Nat.mul_comm]
+    exact Nat.mul_le_mul_left _ hn'
+  rw [transposePieces_rel hRM parts (2 ^ e) hM hus, hpcols parts (2 ^ e) hMp, hpw']
   unfold quotientOfLde
   dsimp only
-  rw [quotientValues_eq]
+  rw [hpq, quotientValues_eq]
   rw [parChunks_eq_blocks (2 ^ (d + l) / B) (min (2 ^ (d + l) / B) 16) B _
     (fun j ↦ quotientRow A pis d l (Mat.ofValues s.width (2 ^ (d + l))
-      (permuteRows s (bitRevPerm (d + l)))) alpha ((bitRevPerm (d + l)).getD j 0)) ?_
+      (permuteRows s (bitRevPerm (d + l))))
+      (Mat.ofValues sp.width (2 ^ (d + l)) (permuteRows sp (bitRevPerm (d + l)))) alpha
+      ((bitRevPerm (d + l)).getD j 0)) ?_
     (Or.inl (Nat.lt_min.mpr ⟨Nat.div_pos (Nat.le_of_dvd (Nat.two_pow_pos _) hBn) hB0,
       by decide⟩))]
   · show Array.map _ (bitRevPerm (d + l)) = _
@@ -640,27 +741,31 @@ theorem quotientWith_rel [Mont32BaseField p] [Binomial4 p] (A : Air F) (pis : Li
     exact this
   have hsizeP : (bitRevPerm (d + l)).size = parts * 2 ^ e := by rw [size_bitRevPerm, hpe]
   let E (j : Nat) : Expr.Env F F := rowEnv (Mat.ofValues s.width (2 ^ (d + l))
-    (permuteRows s (bitRevPerm (d + l)))) (2 ^ (d + l)) (2 ^ l) pis (qFirst d l) (qLast d l)
-    (qTrans d l) ((bitRevPerm (d + l)).getD j 0)
+    (permuteRows s (bitRevPerm (d + l))))
+    (Mat.ofValues sp.width (2 ^ (d + l)) (permuteRows sp (bitRevPerm (d + l)))) (2 ^ (d + l))
+    (2 ^ l) pis (qFirst d l) (qLast d l) (qTrans d l) ((bitRevPerm (d + l)).getD j 0)
   have hsel (sel : Array F) (j : Nat) (hj : j < parts * 2 ^ e) :
       sel.getD ((bitRevPerm (d + l)).getD j 0) 0 =
         ((bitRevPerm (d + l)).map fun i ↦ sel.getD i 0).getD j 0 := by
     rw [getD_map_lt _ _ j (by rw [hsizeP]; exact hj) 0 0]
   have hV : ∀ a ∈ weighted A alpha, evalWords
-      (encode (colsOf s.values s.width parts (2 ^ e))) s.width (2 ^ e) B T.next T.contiguous pis
+      (encode (colsOf s.values s.width parts (2 ^ e)))
+      (encode (colsOf sp.values sp.width parts (2 ^ e))) s.width sp.width (2 ^ e) B T.next
+      T.contiguous pis
       (encode ((bitRevPerm (d + l)).map fun i ↦ (qFirst d l : Array F).getD i 0))
       (encode ((bitRevPerm (d + l)).map fun i ↦ (qLast d l : Array F).getD i 0))
       (encode ((bitRevPerm (d + l)).map fun i ↦ (qTrans d l : Array F).getD i 0)) (blk * B) a.1 =
       encode (Array.ofFn (n := B) fun k ↦ a.1.eval (E (blk * B + k.val))) := by
     intro a ha
     have hc' : a.1 ∈ A.constraints := (List.of_mem_zip ha).1
-    refine evalWords_eq s.values s.width parts (2 ^ e) B T.next T.contiguous pis _ _ _ (blk * B) E
-      (Nat.two_pow_pos e) hBR hB0 (Dvd.intro_left blk rfl) (by rw [hpe]; exact hblkB) hM hus
+    refine evalWords_eq s.values sp.values s.width sp.width parts (2 ^ e) B T.next T.contiguous
+      pis _ _ _ (blk * B) E (Nat.two_pow_pos e) hBR hB0 (Dvd.intro_left blk rfl)
+      (by rw [hpe]; exact hblkB) hM hus hMp husp
       (by have := USize.le_size; omega) ?_ ?_ (by rw [Array.size_map, hsizeP, hpe]; exact hblkB)
       (by rw [Array.size_map, hsizeP, hpe]; exact hblkB)
-      (by rw [Array.size_map, hsizeP, hpe]; exact hblkB) ?_ ?_ (fun _ _ ↦ rfl) (fun _ _ ↦ rfl)
-      (fun j hj ↦ hsel _ j hj) (fun j hj ↦ hsel _ j hj) (fun j hj ↦ hsel _ j hj) a.1
-      (hc _ hc')
+      (by rw [Array.size_map, hsizeP, hpe]; exact hblkB) ?_ ?_ ?_ ?_ (fun _ _ ↦ rfl)
+      (fun _ _ ↦ rfl) (fun j hj ↦ hsel _ j hj) (fun j hj ↦ hsel _ j hj) (fun j hj ↦ hsel _ j hj)
+      a.1 (hc _ hc')
     · intro j hj
       rw [hpe] at hj ⊢
       rw [hnext j hj]
@@ -680,6 +785,18 @@ theorem quotientWith_rel [Mont32BaseField p] [Binomial4 p] (A : Air F) (pis : Li
         ((((bitRevPerm (d + l)).getD j 0 + 2 ^ l) % 2 ^ (d + l)) * s.width + c) 0 = _
       rw [permuteRows_getD s _ _ c (by rw [size_bitRevPerm]; exact Nat.mod_lt _ (Nat.two_pow_pos _))
         hc, hnext j hj]
+    · intro j hj c hc
+      rw [hpe] at hj
+      show (permuteRows sp (bitRevPerm (d + l))).getD
+        ((bitRevPerm (d + l)).getD j 0 * sp.width + c) 0 = _
+      rw [permuteRows_getD sp _ _ c (by rw [size_bitRevPerm]; exact bitRevPerm_getD_lt _ _ hj)
+        hc, bitRevPerm_getD_getD _ _ hj]
+    · intro j hj c hc
+      rw [hpe] at hj
+      show (permuteRows sp (bitRevPerm (d + l))).getD
+        ((((bitRevPerm (d + l)).getD j 0 + 2 ^ l) % 2 ^ (d + l)) * sp.width + c) 0 = _
+      rw [permuteRows_getD sp _ _ c
+        (by rw [size_bitRevPerm]; exact Nat.mod_lt _ (Nat.two_pow_pos _)) hc, hnext j hj]
   have hw4 : ∀ a ∈ weighted A alpha, a.2.length = 4 := fun a ha ↦ by
     obtain ⟨-, h2⟩ := List.of_mem_zip ha
     obtain ⟨k, -, hk⟩ := List.mem_map.mp h2

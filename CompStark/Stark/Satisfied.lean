@@ -19,14 +19,17 @@ namespace CompStark.Stark
 
 variable {F : Type} [BaseField F]
 
-/-- Row `i` of the trace domain `⟨ω⟩` of size `n = 2 ^ logN`: the trace's rows `i` and
-`i + 1 mod n` and the selectors at `ωⁱ`. The first-row selector `Z_H(X) / (X - 1)` is `n` at `1`
-and `0` elsewhere on `⟨ω⟩`, the last-row selector `Z_H(X) / (X - ω⁻¹)` is `n ω` at `ω⁻¹` (row
-`n - 1`) and `0` elsewhere, the transition selector is `X - ω⁻¹`. -/
+/-- Row `i` of the trace domain `⟨ω⟩` of size `n = 2 ^ logN`: the trace's and the preprocessed
+trace's rows `i` and `i + 1 mod n` and the selectors at `ωⁱ`. The first-row selector
+`Z_H(X) / (X - 1)` is `n` at `1` and `0` elsewhere on `⟨ω⟩`, the last-row selector
+`Z_H(X) / (X - ω⁻¹)` is `n ω` at `ω⁻¹` (row `n - 1`) and `0` elsewhere, the transition selector
+is `X - ω⁻¹`. -/
 def Air.traceRow (air : Air F) (logN : Nat) (trace : Array F) (publicValues : List F)
     (i : Nat) : Expr.Env F F where
   cur c := trace.getD (i * air.width + c) 0
   next c := trace.getD ((i + 1) % 2 ^ logN * air.width + c) 0
+  prepCur c := air.preprocessed.getD (i * air.preprocessedWidth + c) 0
+  prepNext c := air.preprocessed.getD ((i + 1) % 2 ^ logN * air.preprocessedWidth + c) 0
   pub j := publicValues.getD j 0
   const c := c
   isFirstRow := if i = 0 then ((2 ^ logN : Nat) : F) else 0
@@ -43,7 +46,7 @@ def Air.ConstraintsVanish (air : Air F) (logN : Nat) (trace : Array F) (publicVa
 /-- A bound on the degree of a constraint as a polynomial on a trace domain of size `n`: the
 columns and the first- and last-row selectors have degree `n - 1`, the transition selector `1`. -/
 def Expr.degBound (n : Nat) : Expr F → Nat
-  | .cur _ | .next _ | .isFirstRow | .isLastRow => n - 1
+  | .cur _ | .next _ | .prepCur _ | .prepNext _ | .isFirstRow | .isLastRow => n - 1
   | .isTransition => 1
   | .pub _ | .const _ => 0
   | .add a b | .sub a b => max (a.degBound n) (b.degBound n)

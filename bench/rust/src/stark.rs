@@ -1,5 +1,6 @@
 //! Plonky3 `uni-stark` proofs for known-answer tests: the Poseidon2 Merkle commitment of
-//! `examples/src/types.rs` (binary, cap height 0), a width-24 duplex challenger, and three AIRs.
+//! `examples/src/types.rs` (binary, cap height 0), a width-24 duplex challenger, and five AIRs,
+//! two of them with preprocessed columns.
 use p3_air::{Air, AirBuilder, BaseAir, WindowAccess};
 use p3_challenger::DuplexChallenger;
 use p3_commit::ExtensionMmcs;
@@ -14,7 +15,10 @@ use p3_koala_bear::{
 use p3_matrix::dense::RowMajorMatrix;
 use p3_merkle_tree::MerkleTreeMmcs;
 use p3_symmetric::{CryptographicPermutation, PaddingFreeSponge, TruncatedPermutation};
-use p3_uni_stark::{prove, verify, Proof, StarkConfig};
+use p3_uni_stark::{
+    prove, prove_with_preprocessed, setup_preprocessed, verify, verify_with_preprocessed, Proof,
+    StarkConfig,
+};
 
 type F = KoalaBear;
 
@@ -175,6 +179,79 @@ pub fn wide_trace<F: Field>(n: usize) -> RowMajorMatrix<F> {
     RowMajorMatrix::new(values, WIDE)
 }
 
+/// Two columns `a, b` and two preprocessed columns `p = i mod 2`, `s = (i + 1) mod 6` on row `i`
+/// of `n`, with public values `x, y`: rows `(x, y)` first, then `(b, p·a·b + s·(a + b))`
+/// (Plonky3's `MulFibPAir` of `uni-stark/tests/mul_fib_pair.rs`, with public values). With
+/// `next_row` it also reads the next preprocessed row, `p' + p = 1` on transitions; without, it
+/// declares no next preprocessed row and the proof opens the preprocessed trace at `ζ` only.
+pub struct PrepAir {
+    pub n: usize,
+    pub next_row: bool,
+}
+
+impl<F: PrimeField64> BaseAir<F> for PrepAir {
+    fn width(&self) -> usize {
+        2
+    }
+
+    fn num_public_values(&self) -> usize {
+        2
+    }
+
+    fn preprocessed_width(&self) -> usize {
+        2
+    }
+
+    fn preprocessed_trace(&self) -> Option<RowMajorMatrix<F>> {
+        let values = (0..self.n)
+            .flat_map(|i| [F::from_u32((i % 2) as u32), F::from_u32(((i + 1) % 6) as u32)])
+            .collect();
+        Some(RowMajorMatrix::new(values, 2))
+    }
+
+    fn preprocessed_next_row_columns(&self) -> Vec<usize> {
+        if self.next_row { vec![0, 1] } else { vec![] }
+    }
+}
+
+impl<AB: AirBuilder> Air<AB> for PrepAir
+where
+    AB::F: PrimeField64,
+{
+    fn eval(&self, builder: &mut AB) {
+        let main = builder.main();
+        let pis = builder.public_values();
+        let (x, y) = (pis[0], pis[1]);
+        let local: &[AB::Var] = main.current_slice();
+        let next: &[AB::Var] = main.next_slice();
+        let prep = builder.preprocessed();
+        let (p, s) = (prep.current(0).unwrap(), prep.current(1).unwrap());
+        let p_next = if self.next_row { prep.next(0) } else { None };
+        let mut first = builder.when_first_row();
+        first.assert_eq(local[0], x);
+        first.assert_eq(local[1], y);
+        let mut transition = builder.when_transition();
+        transition.assert_eq(local[1], next[0]);
+        transition.assert_eq(p * local[0] * local[1] + s * (local[0] + local[1]), next[1]);
+        if let Some(p_next) = p_next {
+            transition.assert_eq(p_next + p, AB::Expr::ONE);
+        }
+    }
+}
+
+/// The trace of `n` rows of `PrepAir` from `(1, 2)`, and its public values.
+pub fn prep_trace<F: Field>(n: usize) -> (RowMajorMatrix<F>, Vec<F>) {
+    let mut values = Vec::with_capacity(2 * n);
+    let (mut a, mut b) = (F::ONE, F::TWO);
+    for i in 0..n {
+        values.push(a);
+        values.push(b);
+        let (p, s) = (F::from_u32((i % 2) as u32), F::from_u32(((i + 1) % 6) as u32));
+        (a, b) = (b, p * a * b + s * (a + b));
+    }
+    (RowMajorMatrix::new(values, 2), vec![F::ONE, F::TWO])
+}
+
 /// The trace of `n` Fibonacci rows from `(0, 1)`, and its last right value.
 pub fn trace<F: Field>(n: usize) -> (RowMajorMatrix<F>, F) {
     let mut values = Vec::with_capacity(2 * n);
@@ -188,7 +265,8 @@ pub fn trace<F: Field>(n: usize) -> (RowMajorMatrix<F>, F) {
     (RowMajorMatrix::new(values, 2), last)
 }
 
-/// A proof of `air` (`fib`, `cube` or `wide`) on `2^log_n` rows, checked by Plonky3's verifier.
+/// A proof of `air` (`fib`, `cube`, `wide`, or `prep` and `prep0`, `PrepAir` with and without its
+/// next preprocessed row) on `2^log_n` rows, checked by Plonky3's verifier.
 pub fn prove_air<F, P16, P24>(config: &Config<F, P16, P24>, air: &str, log_n: usize)
     -> Proof<Config<F, P16, P24>>
 where
@@ -217,6 +295,18 @@ where
             verify(config, &WideAir, &proof, &[]).expect("Plonky3 rejects its own proof");
             proof
         }
+        "prep" | "prep0" => {
+            let air = PrepAir { n, next_row: air == "prep" };
+            let (data, vk) = setup_preprocessed(config, &air, log_n)
+                .expect("Plonky3 cannot commit")
+                .expect("no preprocessed columns");
+            let (trace, pis) = prep_trace::<F>(n);
+            let proof = prove_with_preprocessed(config, &air, trace, &pis, Some(&data))
+                .expect("Plonky3 cannot prove");
+            verify_with_preprocessed(config, &air, &proof, &pis, Some(&vk))
+                .expect("Plonky3 rejects its own proof");
+            proof
+        }
         _ => panic!("unknown AIR {air}"),
     }
 }
@@ -227,8 +317,8 @@ fn koalabear_config(args: &[usize]) -> Config<F, p3_koala_bear::Poseidon2KoalaBe
 }
 
 /// `stark AIR LOG_N LOG_BLOWUP LOG_FINAL MAX_LOG_ARITY QUERIES COMMIT_POW QUERY_POW [BATCH_POW
-/// OOD_POW]`, `AIR` one of `fib`, `cube`, `wide`: the proof as JSON, after Plonky3 verified it. Run
-/// with `RAYON_NUM_THREADS=1` for the smallest grinding witnesses.
+/// OOD_POW]`, `AIR` one of `fib`, `cube`, `wide`, `prep`, `prep0`: the proof as JSON, after
+/// Plonky3 verified it. Run with `RAYON_NUM_THREADS=1` for the smallest grinding witnesses.
 pub fn stark(air: &str, args: &[usize]) {
     let config = koalabear_config(&args[1..]);
     let proof = prove_air(&config, air, args[0]);
@@ -258,8 +348,8 @@ pub fn challenger() {
         w.as_canonical_u32(), z.as_canonical_u32());
 }
 
-/// `prove-bench AIR LOG_N LOG_BLOWUP LOG_FINAL MAX_LOG_ARITY QUERIES COMMIT_POW QUERY_POW`: the
-/// median milliseconds of seven proofs.
+/// `prove-bench AIR LOG_N LOG_BLOWUP LOG_FINAL MAX_LOG_ARITY QUERIES COMMIT_POW QUERY_POW
+/// [BATCH_POW OOD_POW]`: the median milliseconds of seven proofs.
 pub fn prove_bench(air: &str, args: &[usize]) {
     use std::time::Instant;
     let log_n = args[0];

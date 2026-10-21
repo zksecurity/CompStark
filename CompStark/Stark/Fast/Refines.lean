@@ -47,15 +47,15 @@ def backendFor_refines (hζ : 2 ≤ twoAdicity F) (hA : DomainsAddressable F EF)
     root := root_rel
     openAt := openAt_rel
     logHeight := fun h ↦ congrArg Nat.log2 (maxHeight_rel h)
-    quotient := fun A pis d l _ _ alpha h hs hh hc ↦ by
+    quotient := fun A pis d l _ _ _ _ alpha h hs hh hp hps hc ↦ by
       show (if d == logN && l == logChunks then _ else _) = _
       split
       · rename_i hd
         simp only [Bool.and_eq_true, beq_iff_eq] at hd
         rw [hd.1, hd.2]
         rw [hd.1, hd.2] at hh
-        exact quotientWith_rel A pis _ _ alpha h hs hh hc
-      · exact quotientWith_rel A pis _ _ alpha h hs hh hc
+        exact quotientWith_rel A pis _ _ alpha h hs hh hp hps hc
+      · exact quotientWith_rel A pis _ _ alpha h hs hh hp hps hc
     openedAt := fun b zs _ _ h hs hz ↦ openedAt_rel hζ b zs h hs hz
     toArray := toArray_rel h16
     ofArray := ofArray_rel

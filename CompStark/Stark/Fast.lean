@@ -256,28 +256,38 @@ def gather (cols : @& ByteArray) (w R c : Nat) (idx : @& Array Nat) (r0 B : Nat)
   return out
 
 /-- The packed values of `e` on the rows `r0, …, r0 + B - 1` of the quotient domain in the
-extension's bit-reversed order, `B` dividing the piece height `R`: `evalBlock` on words. The
-next row of row `r` is `next[r]`, and `first`, `last`, `trans` are the selectors in that order.
-Next rows of a block are almost always a block themselves: `contiguous` gives its first row, and
-it is read as one slice. -/
-def evalWords (cols : ByteArray) (w R B : Nat) (next : Array Nat) (contiguous : Array (Option Nat))
-    (pis : List F) (first last trans : ByteArray) (r0 : Nat) : Expr F → ByteArray
+extension's bit-reversed order, `B` dividing the piece height `R`: `evalBlock` on words. `cols` and
+`pcols` hold the trace and the preprocessed trace, of widths `w` and `pw`. The next row of row `r`
+is `next[r]`, and `first`, `last`, `trans` are the selectors in that order. Next rows of a block
+are almost always a block themselves: `contiguous` gives its first row, and it is read as one
+slice. -/
+def evalWords (cols pcols : ByteArray) (w pw R B : Nat) (next : Array Nat)
+    (contiguous : Array (Option Nat)) (pis : List F) (first last trans : ByteArray) (r0 : Nat) :
+    Expr F → ByteArray
   | .cur c => slice cols (r0 / R * (R * w) + c * R + r0 % R) B
   | .next c =>
     match contiguous.getD (r0 / B) none with
     | some n0 => slice cols (n0 / R * (R * w) + c * R + n0 % R) B
     | none => gather cols w R c next r0 B
+  | .prepCur c => slice pcols (r0 / R * (R * pw) + c * R + r0 % R) B
+  | .prepNext c =>
+    match contiguous.getD (r0 / B) none with
+    | some n0 => slice pcols (n0 / R * (R * pw) + c * R + n0 % R) B
+    | none => gather pcols pw R c next r0 B
   | .pub j => Words.replicateWord (pis.getD j 0).val B
   | .const c => Words.replicateWord c.val B
   | .isFirstRow => slice first r0 B
   | .isLastRow => slice last r0 B
   | .isTransition => slice trans r0 B
-  | .add a b => Words.addWords p (evalWords cols w R B next contiguous pis first last trans r0 a)
-      (evalWords cols w R B next contiguous pis first last trans r0 b) B
-  | .sub a b => Words.subWords p (evalWords cols w R B next contiguous pis first last trans r0 a)
-      (evalWords cols w R B next contiguous pis first last trans r0 b) B
-  | .mul a b => Words.mulWords p (evalWords cols w R B next contiguous pis first last trans r0 a)
-      (evalWords cols w R B next contiguous pis first last trans r0 b) B
+  | .add a b => Words.addWords p
+      (evalWords cols pcols w pw R B next contiguous pis first last trans r0 a)
+      (evalWords cols pcols w pw R B next contiguous pis first last trans r0 b) B
+  | .sub a b => Words.subWords p
+      (evalWords cols pcols w pw R B next contiguous pis first last trans r0 a)
+      (evalWords cols pcols w pw R B next contiguous pis first last trans r0 b) B
+  | .mul a b => Words.mulWords p
+      (evalWords cols pcols w pw R B next contiguous pis first last trans r0 a)
+      (evalWords cols pcols w pw R B next contiguous pis first last trans r0 b) B
 
 /-- The rows `perm[i0], …, perm[i0 + len - 1]` of a packed row-major matrix of width `w`,
 copied whole. -/
@@ -339,21 +349,28 @@ def quotientTables [Mont32BaseField p] (degreeBits logChunks : Nat) : QuotientTa
       if n0 % B == 0 && (List.range B).all fun k ↦ next.getD (b * B + k) 0 == n0 + k then some n0
       else none }
 
-/-- `quotientOfLde` on packed words with the shape's tables `T`. The trace on the quotient domain
-is the extension's first rows, transposed in parallel pieces; constraints are evaluated in that
-bit-reversed row order, every node one vectorized operation per block of rows, in parallel block
-ranges, and the result is put in natural order. -/
+/-- The first `parts · R` rows of `m`, transposed in `parts` pieces of `R` rows each: within a piece
+column-major, the pieces one after another. -/
+def transposePieces (m : PMat) (parts R : Nat) : ByteArray :=
+  let pieces := (Array.range parts).map fun k ↦ Task.spawn fun _ ↦
+    CompPoly.CPolynomial.NTTFast.Packed.Native.transposeRows m.words m.width (k * R) R
+  pieces.foldl (fun acc t ↦ acc ++ t.get) ByteArray.empty
+
+/-- `quotientOfLde` on packed words with the shape's tables `T`. The traces on the quotient
+domain are their extensions' first rows, transposed in parallel pieces; constraints are evaluated
+in that bit-reversed row order, every node one vectorized operation per block of rows, in
+parallel block ranges, and the result is put in natural order. -/
 def quotientWith [Mont32BaseField p] [Binomial4 p] (T : QuotientTables p) (A : Air F)
-    (pis : List F) (ext : PMat) (alpha : EF) : Array EF := Id.run do
+    (pis : List F) (ext : PMat) (prep : Option PMat) (alpha : EF) : Array EF := Id.run do
   let n := 2 ^ (T.degreeBits + T.logChunks)
   let w := ext.width
+  let pw := (prep.map (·.width)).getD 0
   let period := 2 ^ T.logChunks
   let perm := T.perm
   let parts := if n < 4096 then 1 else 16
   let R := n / parts
-  let pieces := (Array.range parts).map fun k ↦ Task.spawn fun _ ↦
-    CompPoly.CPolynomial.NTTFast.Packed.Native.transposeRows ext.words w (k * R) R
-  let cols := pieces.foldl (fun acc t ↦ acc ++ t.get) ByteArray.empty
+  let cols := transposePieces ext parts R
+  let pcols := (prep.map (transposePieces · parts R)).getD ByteArray.empty
   let K := A.constraints.length
   let weights := (List.range K).map fun k ↦ (Ext.coeffs (Ext.pow alpha (K - 1 - k))).map (·.val)
   let B := T.B
@@ -365,7 +382,7 @@ def quotientWith [Mont32BaseField p] [Binomial4 p] (T : QuotientTables p) (A : A
       let z0 := CompPoly.CPolynomial.NTTFast.Packed.Native.zeroWords B
       let mut acc := #[z0, z0, z0, z0]
       for (c, wk) in A.constraints.zip weights do
-        let v := evalWords cols w R B T.next T.contiguous pis T.first T.last T.trans r0 c
+        let v := evalWords cols pcols w pw R B T.next T.contiguous pis T.first T.last T.trans r0 c
         acc := (acc.zip wk.toArray).map fun (a, x) ↦ Words.mulAddWords p a v x B
       for i in [0:B] do
         let z := T.invZh.getD (perm.getD (r0 + i) 0 % period) 0
@@ -376,8 +393,8 @@ def quotientWith [Mont32BaseField p] [Binomial4 p] (T : QuotientTables p) (A : A
 
 /-- `quotientOfLde` on packed words. -/
 def quotient [Mont32BaseField p] [Binomial4 p] (A : Air F) (pis : List F)
-    (degreeBits logChunks : Nat) (ext : PMat) (alpha : EF) : Array EF :=
-  quotientWith (quotientTables degreeBits logChunks) A pis ext alpha
+    (degreeBits logChunks : Nat) (ext : PMat) (prep : Option PMat) (alpha : EF) : Array EF :=
+  quotientWith (quotientTables degreeBits logChunks) A pis ext prep alpha
 
 /-- The column sums `∑_r m[r][j] · x_r / (z - x_r)` over the stored rows `r0, …, r0 + len - 1` of a
 packed matrix of width `w`, for every point `z` of `zs`: per point four planes of `w` words. The
@@ -607,8 +624,8 @@ def backendFor (logN logBlowup logChunks : Nat) : Backend F EF 24 :=
   let T := quotientTables logN logChunks
   { backend with
     lde := ldeWith (ldePlans logN logBlowup logChunks)
-    quotient := fun A pis db lc ext alpha ↦
-      if db == logN && lc == logChunks then quotientWith T A pis ext alpha
-      else quotient A pis db lc ext alpha }
+    quotient := fun A pis db lc ext prep alpha ↦
+      if db == logN && lc == logChunks then quotientWith T A pis ext prep alpha
+      else quotient A pis db lc ext prep alpha }
 
 end CompStark.Stark.Fast

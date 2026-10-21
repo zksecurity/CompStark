@@ -120,23 +120,25 @@ local notation "E" => Challenge.Spec EF
 
 /-! ### The folded quotient -/
 
-/-- The quotient of the constraints folded by `α`: `∑_c α^(K-1-c) Q_c` over the extension. -/
-noncomputable def qFold (A : Air F) (logN : Nat) (T : Nat → K[X]) (pis : List F) (a : E) : E[X] :=
-  horner (A.constraints.map fun c ↦ (quotientPoly logN T pis c).map (algebraMap K E)) (C a)
+/-- The quotient of the constraints folded by `α`: `∑_c α^(K-1-c) Q_c` over the extension, on
+the polynomials `T` of the trace and `Tp` of the preprocessed trace. -/
+noncomputable def qFold (A : Air F) (logN : Nat) (T Tp : Nat → K[X]) (pis : List F) (a : E) :
+    E[X] :=
+  horner (A.constraints.map fun c ↦ (quotientPoly logN T Tp pis c).map (algebraMap K E)) (C a)
 
 /-- The folded quotient has degree below `k n`. -/
-theorem natDegree_qFold (A : Air F) (logN : Nat) (pis : List F) (T : Nat → K[X])
-    (hTd : TraceDeg logN T) (hdeg : A.DegreeFits logN) (a : E) :
-    (qFold A logN T pis a).natDegree < 2 ^ (logN + A.logQuotientChunks) := by
+theorem natDegree_qFold (A : Air F) (logN : Nat) (pis : List F) (T Tp : Nat → K[X])
+    (hTd : TraceDeg logN T) (hTpd : TraceDeg logN Tp) (hdeg : A.DegreeFits logN) (a : E) :
+    (qFold A logN T Tp pis a).natDegree < 2 ^ (logN + A.logQuotientChunks) := by
   refine natDegree_horner _ a _ 0 (by rw [natDegree_zero]; exact Nat.two_pow_pos _)
     (fun p hp ↦ ?_)
   obtain ⟨c, hc, rfl⟩ := List.mem_map.mp hp
-  exact natDegree_map_le.trans_lt (natDegree_quotientPoly A logN pis T hTd hdeg c hc)
+  exact natDegree_map_le.trans_lt (natDegree_quotientPoly A logN pis T Tp hTd hTpd hdeg c hc)
 
 /-- The folded quotient at a point is Horner's rule over the quotients there. -/
-theorem eval_qFold (A : Air F) (logN : Nat) (T : Nat → K[X]) (pis : List F) (a y : E) :
-    (qFold A logN T pis a).eval y =
-      horner (A.constraints.map fun c ↦ aeval y (quotientPoly logN T pis c)) a := by
+theorem eval_qFold (A : Air F) (logN : Nat) (T Tp : Nat → K[X]) (pis : List F) (a y : E) :
+    (qFold A logN T Tp pis a).eval y =
+      horner (A.constraints.map fun c ↦ aeval y (quotientPoly logN T Tp pis c)) a := by
   rw [qFold, ← coe_evalRingHom, horner_map, coe_evalRingHom, eval_C, List.map_map]
   congr 1
   refine List.map_congr_left fun c _ ↦ ?_
@@ -202,11 +204,11 @@ theorem weighted_sum (A : Air F) (alpha : EF) (g : Expr F → E) :
   congr 1
 
 /-- The prover's quotient row in the spec field. -/
-theorem toSpec_quotientRow (A : Air F) (pis : List F) (d l : Nat) (tq : Mat F) (alpha : EF)
-    (r : Nat) : Challenge.toSpec (quotientRow A pis d l tq alpha r) =
+theorem toSpec_quotientRow (A : Air F) (pis : List F) (d l : Nat) (tq pq : Mat F) (alpha : EF)
+    (r : Nat) : Challenge.toSpec (quotientRow A pis d l tq pq alpha r) =
       algebraMap K E (((batchInv (qZh d l)).getD (r % 2 ^ l) 0)) *
         horner (A.constraints.map fun c ↦ algebraMap K E ((c.eval
-          (rowEnv tq (2 ^ (d + l)) (2 ^ l) pis (qFirst d l) (qLast d l) (qTrans d l) r))))
+          (rowEnv tq pq (2 ^ (d + l)) (2 ^ l) pis (qFirst d l) (qLast d l) (qTrans d l) r))))
           (Challenge.toSpec alpha) := by
   simp only [quotientRow]
   rw [Challenge.toSpec_smul, Algebra.smul_def]
@@ -219,7 +221,7 @@ theorem toSpec_quotientRow (A : Air F) (pis : List F) (d l : Nat) (tq : Mat F) (
     rw [getD_map_range _ _ _ _ (Finset.mem_range.mp he), map_zero, mul_zero]
   rw [h0, zero_add]
   exact weighted_sum A alpha fun c ↦ algebraMap K E ((c.eval
-    (rowEnv tq (2 ^ (d + l)) (2 ^ l) pis (qFirst d l) (qLast d l) (qTrans d l) r)))
+    (rowEnv tq pq (2 ^ (d + l)) (2 ^ l) pis (qFirst d l) (qLast d l) (qTrans d l) r)))
 
 /-- A batch inversion of nonzero elements, entry by entry. -/
 theorem getD_batchInv (xs : Array F) (hx : ∀ x ∈ xs, x ≠ 0) (i : Nat) (hi : i < xs.size) :
@@ -320,27 +322,42 @@ theorem pow_mod_of_pow_eq_one {M : Type*} [Monoid M] (a : M) (n m : Nat) (h : a 
   conv_rhs => rw [← Nat.mod_add_div n m]
   rw [pow_add, pow_mul, h, one_pow, mul_one]
 
+/-- The next row of a column at a quotient point. -/
+theorem eval_next_qpt (d l : Nat) (h : d + l ≤ twoAdicity F) (m : Mat F) (p : F[X]) (j : Nat)
+    (hq : ∀ r < 2 ^ (d + l), m.values.getD (r * m.width + j) 0 = p.eval (qpt (d + l) r))
+    (r : Nat) :
+    (p.comp (C (twoAdicGen d) * X)).eval (qpt (d + l) r) =
+      m.values.getD ((r + 2 ^ l) % 2 ^ (d + l) * m.width + j) 0 := by
+  have hm : (r + 2 ^ l) % 2 ^ (d + l) < 2 ^ (d + l) := Nat.mod_lt _ (Nat.two_pow_pos _)
+  rw [hq _ hm, eval_comp, eval_mul, eval_C, eval_X, qpt, qpt,
+    pow_mod_of_pow_eq_one _ _ _ (twoAdicGen_pow_self (d + l) h), pow_add,
+    BaseField.twoAdicGen_pow d l h, mul_comm (twoAdicGen d : F), mul_assoc]
+
 /-- The constraints at a row of the quotient domain are the constraint polynomials at its
 point. -/
-theorem eval_rowEnv (A : Air F) (d l : Nat) (h : d + l ≤ twoAdicity F) (tq : Mat F) (pis : List F)
-    (T : Nat → F[X])
+theorem eval_rowEnv (A : Air F) (d l : Nat) (h : d + l ≤ twoAdicity F) (tq pq : Mat F)
+    (pis : List F) (T Tp : Nat → F[X])
     (hq : ∀ j < A.width, ∀ r < 2 ^ (d + l),
       tq.values.getD (r * tq.width + j) 0 = (T j).eval (qpt (d + l) r))
-    (c : Expr F) (hc : c.colsBelow A.width = true) (r : Nat) (hr : r < 2 ^ (d + l)) :
-    c.eval (rowEnv tq (2 ^ (d + l)) (2 ^ l) pis (qFirst d l) (qLast d l) (qTrans d l) r) =
-      (constraintPoly (2 ^ d) (twoAdicGen d) T pis c).eval (qpt (d + l) r) := by
+    (hpq : ∀ j < A.preprocessedWidth, ∀ r < 2 ^ (d + l),
+      pq.values.getD (r * pq.width + j) 0 = (Tp j).eval (qpt (d + l) r))
+    (c : Expr F)
+    (hc : c.colsBelow A.width A.preprocessedWidth A.preprocessedNextWidth = true) (r : Nat)
+    (hr : r < 2 ^ (d + l)) :
+    c.eval (rowEnv tq pq (2 ^ (d + l)) (2 ^ l) pis (qFirst d l) (qLast d l) (qTrans d l) r) =
+      (constraintPoly (2 ^ d) (twoAdicGen d) T Tp pis c).eval (qpt (d + l) r) := by
+  have hnw := A.preprocessedNextWidth_le
   rw [constraintPoly]
   refine (Expr.eval_hom (eval (qpt (d + l) r)) (fun _ _ ↦ eval_add) (fun a b ↦ eval_sub a b _)
-    (fun _ _ ↦ eval_mul) A.width _ _ (fun j hj ↦ ?_) (fun j hj ↦ ?_) (fun _ ↦ eval_C)
+    (fun _ _ ↦ eval_mul) A.width A.preprocessedWidth A.preprocessedNextWidth _ _
+    (fun j hj ↦ ?_) (fun j hj ↦ ?_) (fun j hj ↦ ?_) (fun j hj ↦ ?_) (fun _ ↦ eval_C)
     (fun _ ↦ eval_C) ?_ ?_ ?_ c hc).symm
   · change (T j).eval (qpt (d + l) r) = tq.values.getD (r * tq.width + j) 0
     rw [hq j hj r hr]
-  · have hm : (r + 2 ^ l) % 2 ^ (d + l) < 2 ^ (d + l) := Nat.mod_lt _ (Nat.two_pow_pos _)
-    change ((T j).comp (C (twoAdicGen d) * X)).eval (qpt (d + l) r) =
-      tq.values.getD ((r + 2 ^ l) % 2 ^ (d + l) * tq.width + j) 0
-    rw [hq j hj _ hm, eval_comp, eval_mul, eval_C, eval_X, qpt, qpt,
-      pow_mod_of_pow_eq_one _ _ _ (twoAdicGen_pow_self (d + l) h), pow_add,
-      BaseField.twoAdicGen_pow d l h, mul_comm (twoAdicGen d : F), mul_assoc]
+  · exact eval_next_qpt d l h tq (T j) j (hq j hj) r
+  · change (Tp j).eval (qpt (d + l) r) = pq.values.getD (r * pq.width + j) 0
+    rw [hpq j hj r hr]
+  · exact eval_next_qpt d l h pq (Tp j) j (hpq j (by omega)) r
   · exact (getD_qFirst d l r h hr).symm
   · exact (getD_qLast d l r h hr).symm
   · change (X - C (twoAdicGen d : F)⁻¹).eval (qpt (d + l) r) = (@qTrans F _ d l).getD r 0
@@ -359,16 +376,41 @@ theorem permuteRows_lde (m : Stark.Mat F) (ps : List K[X]) (b L e : Nat)
       (by omega))) j hj, reverseBits_bitRevNat L e r hr, pow_mul,
     BaseField.twoAdicGen_pow L e h24]
 
+/-- The preprocessed trace's extension, if it has columns. -/
+def prepLde (b : Nat) (A : Air F) (logN : Nat) : Option (Mat F) :=
+  if A.preprocessedWidth = 0 then none else
+    some (ldeRef logN b gen A.preprocessedWidth A.preprocessed)
+
+/-- The preprocessed trace on the quotient domain: `quotientOfLde`'s reading of the preprocessed
+extension. -/
+theorem prepLde_onQuotient (A : Air F) (logN b lc : Nat) (hlc : lc ≤ b) (pps : List K[X])
+    (hpps : CompStark.Mat.IsLde b (logN + b)
+      (ldeRef logN b gen A.preprocessedWidth A.preprocessed) pps)
+    (j : Nat) (hj : j < A.preprocessedWidth) (r : Nat) (hr : r < 2 ^ (logN + lc)) :
+    let pq := ((prepLde b A logN).map fun m ↦ Mat.ofValues m.width (2 ^ (logN + lc))
+      (permuteRows m (bitRevPerm (logN + lc)))).getD (Mat.ofValues 0 (2 ^ (logN + lc)) #[])
+    pq.values.getD (r * pq.width + j) 0 = (pps.getD j 0).eval (qpt (logN + lc) r) := by
+  have hpw : A.preprocessedWidth ≠ 0 := by omega
+  have hps' : CompStark.Mat.IsLde b ((logN + lc) + (b - lc))
+      (ldeRef logN b gen A.preprocessedWidth A.preprocessed) pps := by
+    rw [show logN + lc + (b - lc) = logN + b by omega]; exact hpps
+  simp only [prepLde, hpw, ↓reduceIte, Option.map_some, Option.getD_some]
+  exact permuteRows_lde _ pps b (logN + lc) (b - lc) hps' r hr j
+    (by rw [← hpps.1]; exact hj)
+
 /-- **The prover's quotient values are the folded quotient** on the quotient domain. -/
 theorem toSpec_quotientOfLde (A : Air F) (pis : List F) (logN b : Nat) (trace : Array F)
     (alpha : EF) (hlc : A.logQuotientChunks ≤ b) (h24 : logN + b ≤ twoAdicity F)
-    (hsat : A.ConstraintsVanish logN trace pis) (hcols : A.ColsInWidth) (ps : List K[X])
+    (hsat : A.ConstraintsVanish logN trace pis) (hcols : A.ColsInWidth) (ps pps : List K[X])
     (hps : CompStark.Mat.IsLde b (logN + b) (ldeRef logN b gen A.width trace) ps)
-    (hT : TraceOn logN A.width trace (ps.getD · 0)) (r : Nat)
+    (hT : TraceOn logN A.width trace (ps.getD · 0))
+    (hpps : CompStark.Mat.IsLde b (logN + b)
+      (ldeRef logN b gen A.preprocessedWidth A.preprocessed) pps)
+    (hTp : TraceOn logN A.preprocessedWidth A.preprocessed (pps.getD · 0)) (r : Nat)
     (hr : r < 2 ^ (logN + A.logQuotientChunks)) :
     Challenge.toSpec ((quotientOfLde A pis logN A.logQuotientChunks
-      (ldeRef logN b gen A.width trace) alpha).getD r 0) =
-      (qFold A logN (ps.getD · 0) pis (Challenge.toSpec alpha)).eval
+      (ldeRef logN b gen A.width trace) (prepLde b A logN) alpha).getD r 0) =
+      (qFold A logN (ps.getD · 0) (pps.getD · 0) pis (Challenge.toSpec alpha)).eval
         (algebraMap K E (qpt (logN + A.logQuotientChunks) r)) := by
   set lc := A.logQuotientChunks
   set ext := ldeRef logN b gen A.width trace
@@ -381,23 +423,28 @@ theorem toSpec_quotientOfLde (A : Air F) (pis : List F) (logN b : Nat) (trace : 
         (permuteRows ext (bitRevPerm (logN + lc)))).values.getD (r * ext.width + j) 0) =
       (ps.getD j 0).eval (qpt (logN + lc) r) := fun j hj r hr ↦
     permuteRows_lde ext ps b (logN + lc) (b - lc) hps' r hr j (by omega)
+  have hpq := prepLde_onQuotient A logN b lc hlc pps hpps
   have hlc24 : logN + lc ≤ twoAdicity F := by omega
   have hz : (qpt (logN + lc) r : F) ^ 2 ^ logN - 1 ≠ 0 :=
     sub_ne_zero.mpr (@genPoint_pow_ne F _ (logN + lc) r hlc24 logN (by omega))
-  show Challenge.toSpec ((quotientValues A pis logN lc (Mat.ofValues ext.width (2 ^ (logN + lc))
-    (permuteRows ext (bitRevPerm (logN + lc)))) alpha).getD r 0) = _
+  unfold quotientOfLde
+  dsimp only
+  generalize ((prepLde b A logN).map fun m ↦ Mat.ofValues m.width (2 ^ (logN + lc))
+      (permuteRows m (bitRevPerm (logN + lc)))).getD (Mat.ofValues 0 (2 ^ (logN + lc)) #[]) = pq
+    at hpq
   rw [quotientValues_eq, getD_lt _ _ (by rw [Array.size_ofFn]; exact hr), Array.getElem_ofFn,
     toSpec_quotientRow, getD_invZh logN lc r hlc24, eval_qFold]
   have hmap : (A.constraints.map fun c ↦ algebraMap K E ((c.eval
       (rowEnv (Mat.ofValues ext.width (2 ^ (logN + lc)) (permuteRows ext (bitRevPerm (logN + lc))))
-        (2 ^ (logN + lc)) (2 ^ lc) pis (qFirst logN lc) (qLast logN lc) (qTrans logN lc) r)))) =
+        pq (2 ^ (logN + lc)) (2 ^ lc) pis (qFirst logN lc) (qLast logN lc) (qTrans logN lc)
+        r)))) =
       (A.constraints.map fun c ↦ aeval (algebraMap K E (qpt (logN + lc) r))
-        (quotientPoly logN (ps.getD · 0) pis c)).map
+        (quotientPoly logN (ps.getD · 0) (pps.getD · 0) pis c)).map
         (· * algebraMap K E (qpt (logN + lc) r ^ 2 ^ logN - 1)) := by
     rw [List.map_map]
     refine List.map_congr_left fun c hc ↦ ?_
-    rw [eval_rowEnv A logN lc hlc24 _ pis _ hq c (hcols c hc) r hr,
-      constraintPoly_eq A logN (by omega) trace pis _ hT hsat hcols c hc, eval_mul]
+    rw [eval_rowEnv A logN lc hlc24 _ _ pis _ _ hq hpq c (hcols c hc) r hr,
+      constraintPoly_eq A logN (by omega) trace pis _ _ hT hTp hsat hcols c hc, eval_mul]
     simp only [Function.comp_apply]
     rw [aeval_algebraMap_apply_eq_algebraMap_eval, ← map_mul, mul_comm]
     simp only [zH, eval_sub, eval_pow, eval_X, eval_C]
@@ -502,9 +549,7 @@ theorem chunk_lde (logN b lc : Nat) (h24 : logN + b ≤ twoAdicity F) (hlc : lc 
     rw [powF_eq]
     exact mul_ne_zero hg (inv_ne_zero (mul_ne_zero hg (pow_ne_zero _ hw)))
   obtain ⟨ps, hlde, hval⟩ := ldeRef_isLde logN b (gen * (gen * powF (twoAdicGen (logN + lc)) c)⁻¹)
-    (Challenge.d EF) (chunkValues qs (2 ^ lc) c (2 ^ logN)) (by rw [size_chunkValues, Nat.mul_comm])
-    h24
-    hsh
+    (Challenge.d EF) (chunkValues qs (2 ^ lc) c (2 ^ logN)) h24 hsh
   have hlen : ps.length = Challenge.d EF := hlde.1.symm
   have hpt : (gen * (gen * (gen * powF (twoAdicGen (logN + lc)) c)⁻¹)⁻¹ : F) =
       qpt (logN + lc) c := by
@@ -541,28 +586,40 @@ theorem toSpec_chunkInner_openedAt (b h : Nat) (m : Stark.Mat F) (ps : List K[X]
   refine Finset.sum_congr rfl fun e he ↦ ?_
   rw [(openedAt_isLde b h m ps z hm hz).2 e (by rw [h4]; exact Finset.mem_range.mp he)]
 
-/-- The verifier's constraints at `ζ`, from the opened trace values, are the constraint
-polynomials at `ζ`. -/
-theorem toSpec_eval_opened (A : Air F) (logN b : Nat) (pis : List F) (m : Stark.Mat F)
-    (ps : List K[X]) (hm : CompStark.Mat.IsLde b (logN + b) m ps)
-    (hw : ps.length = A.width) (z : EF) (hz : Ext.OutsideBase z) (tl tn : Array EF)
+/-- The verifier's constraints at `ζ`, from the opened values of the trace and the preprocessed
+trace, are the constraint polynomials at `ζ`. -/
+theorem toSpec_eval_opened (A : Air F) (logN b : Nat) (pis : List F) (m pm : Stark.Mat F)
+    (ps pps : List K[X]) (hm : CompStark.Mat.IsLde b (logN + b) m ps)
+    (hpm : CompStark.Mat.IsLde b (logN + b) pm pps)
+    (hw : ps.length = A.width) (hpw : pps.length = A.preprocessedWidth) (z : EF)
+    (hz : Ext.OutsideBase z) (tl tn pl pn : Array EF)
     (htl : tl = Fri.openedAt b m z) (htn : tn = Fri.openedAt b m (z * Ext.ofBase (twoAdicGen logN)))
-    (c : Expr F) (hc : c.colsBelow A.width = true) :
+    (hpl : ∀ i < A.preprocessedWidth, pl.getD i 0 = (Fri.openedAt b pm z).getD i 0)
+    (hpn : ∀ i < A.preprocessedNextWidth,
+      pn.getD i 0 = (Fri.openedAt b pm (z * Ext.ofBase (twoAdicGen logN))).getD i 0)
+    (c : Expr F)
+    (hc : c.colsBelow A.width A.preprocessedWidth A.preprocessedNextWidth = true) :
     Challenge.toSpec (c.eval {
       cur := fun i ↦ tl.getD i 0
       next := fun i ↦ tn.getD i 0
+      prepCur := fun i ↦ pl.getD i 0
+      prepNext := fun i ↦ pn.getD i 0
       pub := fun i ↦ Ext.ofBase (pis.getD i 0)
       const := Ext.ofBase
       isFirstRow := (Ext.powTwo z logN - 1) * (z - 1)⁻¹
       isLastRow := (Ext.powTwo z logN - 1) * (z - Ext.ofBase (twoAdicGen logN)⁻¹)⁻¹
       isTransition := z - Ext.ofBase (twoAdicGen logN)⁻¹ }) =
       aeval (Challenge.toSpec z)
-          (constraintPoly (2 ^ logN) ((twoAdicGen logN : F)) (ps.getD · 0) pis c) := by
+          (constraintPoly (2 ^ logN) ((twoAdicGen logN : F)) (ps.getD · 0) (pps.getD · 0) pis
+            c) := by
   have h24 : logN ≤ twoAdicity F := by have := hm.2.2.2.2.1; omega
   have hw0 : (twoAdicGen logN : F) ≠ 0 := BaseField.twoAdicGen_ne_zero logN h24
   have hz' : Ext.OutsideBase (z * Ext.ofBase (twoAdicGen logN)) := Ext.outsideBase_mul_ofBase hz hw0
   have hO := (openedAt_isLde b (logN + b) m ps z hm hz).2
   have hO' := (openedAt_isLde b (logN + b) m ps _ hm hz').2
+  have hP := (openedAt_isLde b (logN + b) pm pps z hpm hz).2
+  have hP' := (openedAt_isLde b (logN + b) pm pps _ hpm hz').2
+  have hnw := A.preprocessedNextWidth_le
   have hone : Challenge.toSpec z - 1 ≠ 0 := by
     have := toSpec_ne_ofBase hz 1
     rwa [CompPoly.Extension.Ext.ofBase_one, ← sub_ne_zero] at this
@@ -573,6 +630,8 @@ theorem toSpec_eval_opened (A : Air F) (logN b : Nat) (pis : List F) (m : Stark.
   set env : Expr.Env F EF := {
       cur := fun i ↦ (Fri.openedAt b m z).getD i 0
       next := fun i ↦ (Fri.openedAt b m (z * Ext.ofBase (twoAdicGen logN))).getD i 0
+      prepCur := fun i ↦ pl.getD i 0
+      prepNext := fun i ↦ pn.getD i 0
       pub := fun i ↦ Ext.ofBase (pis.getD i 0)
       const := Ext.ofBase
       isFirstRow := (Ext.powTwo z logN - 1) * (z - 1)⁻¹
@@ -581,19 +640,23 @@ theorem toSpec_eval_opened (A : Air F) (logN b : Nat) (pis : List F) (m : Stark.
   let envE : Expr.Env F E := {
     cur := fun j ↦ Challenge.toSpec (env.cur j)
     next := fun j ↦ Challenge.toSpec (env.next j)
+    prepCur := fun j ↦ Challenge.toSpec (env.prepCur j)
+    prepNext := fun j ↦ Challenge.toSpec (env.prepNext j)
     pub := fun j ↦ Challenge.toSpec (env.pub j)
     const := fun x ↦ Challenge.toSpec (env.const x)
     isFirstRow := Challenge.toSpec env.isFirstRow
     isLastRow := Challenge.toSpec env.isLastRow
     isTransition := Challenge.toSpec env.isTransition }
   refine (Expr.eval_hom Challenge.toSpec Challenge.toSpec_add Challenge.toSpec_sub
-      Challenge.toSpec_mul A.width env
-    envE (fun _ _ ↦ rfl) (fun _ _ ↦ rfl) (fun _ ↦ rfl) (fun _ ↦ rfl) rfl rfl rfl c hc).trans ?_
+      Challenge.toSpec_mul A.width A.preprocessedWidth A.preprocessedNextWidth env
+    envE (fun _ _ ↦ rfl) (fun _ _ ↦ rfl) (fun _ _ ↦ rfl) (fun _ _ ↦ rfl) (fun _ ↦ rfl)
+    (fun _ ↦ rfl) rfl rfl rfl c hc).trans ?_
   rw [constraintPoly]
   refine (Expr.eval_hom (fun p ↦ aeval (Challenge.toSpec z) p)
     (fun a b ↦ (aeval (Challenge.toSpec z)).map_add a b)
         (fun a b ↦ (aeval (Challenge.toSpec z)).map_sub a b)
-    (fun a b ↦ (aeval (Challenge.toSpec z)).map_mul a b) A.width _ envE (fun j hj ↦ ?_)
+    (fun a b ↦ (aeval (Challenge.toSpec z)).map_mul a b) A.width A.preprocessedWidth
+    A.preprocessedNextWidth _ envE (fun j hj ↦ ?_) (fun j hj ↦ ?_) (fun j hj ↦ ?_)
     (fun j hj ↦ ?_) (fun j ↦ ?_) (fun x ↦ ?_) ?_ ?_ ?_ c hc).symm
   · exact (hO j (by rw [hw]; exact hj)).symm
   · change aeval (Challenge.toSpec z)
@@ -601,6 +664,14 @@ theorem toSpec_eval_opened (A : Air F) (logN b : Nat) (pis : List F) (m : Stark.
           ((Fri.openedAt b m (z * Ext.ofBase (twoAdicGen logN))).getD j 0)
     rw [hO' j (by rw [hw]; exact hj), aeval_comp, map_mul, aeval_C, aeval_X, Challenge.toSpec_mul,
       Challenge.toSpec_ofBase, ← CompPoly.Extension.Ext.algebraMap_eq_ofBase, mul_comm]
+  · change aeval (Challenge.toSpec z) (pps.getD j 0) = Challenge.toSpec (pl.getD j 0)
+    rw [hpl j hj]
+    exact (hP j (by rw [hpw]; exact hj)).symm
+  · change aeval (Challenge.toSpec z)
+      ((pps.getD j 0).comp (C ((twoAdicGen logN : F)) * X)) = Challenge.toSpec (pn.getD j 0)
+    rw [hpn j hj, hP' j (by rw [hpw]; omega), aeval_comp, map_mul, aeval_C, aeval_X,
+      Challenge.toSpec_mul, Challenge.toSpec_ofBase,
+      ← CompPoly.Extension.Ext.algebraMap_eq_ofBase, mul_comm]
   · change aeval (Challenge.toSpec z) (C ((pis.getD j 0))) =
       Challenge.toSpec (Ext.ofBase (pis.getD j 0))
     rw [aeval_C, Challenge.toSpec_ofBase, CompPoly.Extension.Ext.algebraMap_eq_ofBase]
@@ -624,14 +695,12 @@ theorem toSpec_eval_opened (A : Air F) (logN b : Nat) (pis : List F) (m : Stark.
     rw [map_sub, aeval_X, aeval_C, Challenge.toSpec_sub, Challenge.toSpec_ofBase,
         CompPoly.Extension.Ext.algebraMap_eq_ofBase]
 
-/-- The trace's extension is an LDE of polynomials that take the trace on `⟨ω⟩`. -/
-theorem trace_lde (P : Params) (A : Air F) (logN : Nat) (trace : Array F)
-    (hin : Fits P A logN trace) :
-    ∃ ps, CompStark.Mat.IsLde P.logBlowup (logN + P.logBlowup)
-      (ldeRef logN P.logBlowup gen A.width trace) ps ∧
-      TraceOn logN A.width trace (ps.getD · 0) ∧ TraceDeg logN (ps.getD · 0) := by
-  obtain ⟨ps, hlde, hval⟩ := ldeRef_isLde logN P.logBlowup gen A.width trace hin.trace
-    hin.twoAdic gen_ne_zero
+/-- An extension of a `2 ^ logN × w` matrix is an LDE of polynomials that take its values on
+`⟨ω⟩`, of degree below `2 ^ logN`. -/
+theorem matrix_lde (b logN w : Nat) (m : Array F) (h24 : logN + b ≤ twoAdicity F) :
+    ∃ ps, CompStark.Mat.IsLde b (logN + b) (ldeRef logN b gen w m) ps ∧
+      TraceOn logN w m (ps.getD · 0) ∧ TraceDeg logN (ps.getD · 0) := by
+  obtain ⟨ps, hlde, hval⟩ := ldeRef_isLde logN b gen w m h24 gen_ne_zero
   refine ⟨ps, hlde, fun j hj i hi ↦ ?_, fun j ↦ ?_⟩
   · have := hval j hj i hi
     rwa [mul_inv_cancel₀ gen_ne_zero, one_mul] at this
@@ -647,6 +716,23 @@ theorem trace_lde (P : Params) (A : Air F) (logN : Nat) (trace : Array F)
       rw [List.getD_eq_default _ _ (by omega), natDegree_zero]
       exact Nat.zero_le _
 
+/-- The trace's extension is an LDE of polynomials that take the trace on `⟨ω⟩`. -/
+theorem trace_lde (P : Params) (A : Air F) (logN : Nat) (trace : Array F)
+    (hin : Fits P A logN trace) :
+    ∃ ps, CompStark.Mat.IsLde P.logBlowup (logN + P.logBlowup)
+      (ldeRef logN P.logBlowup gen A.width trace) ps ∧
+      TraceOn logN A.width trace (ps.getD · 0) ∧ TraceDeg logN (ps.getD · 0) :=
+  matrix_lde P.logBlowup logN A.width trace hin.twoAdic
+
+/-- The preprocessed trace's extension is an LDE of polynomials that take it on `⟨ω⟩`. -/
+theorem prep_lde (P : Params) (A : Air F) (logN : Nat) (trace : Array F)
+    (hin : Fits P A logN trace) :
+    ∃ ps, CompStark.Mat.IsLde P.logBlowup (logN + P.logBlowup)
+      (ldeRef logN P.logBlowup gen A.preprocessedWidth A.preprocessed) ps ∧
+      TraceOn logN A.preprocessedWidth A.preprocessed (ps.getD · 0) ∧
+      TraceDeg logN (ps.getD · 0) :=
+  matrix_lde P.logBlowup logN A.preprocessedWidth A.preprocessed hin.twoAdic
+
 /-- The check passes when the folded constraints over `Z_H(ζ)` equal the quotient in the spec
 field. -/
 theorem checkConstraints_of (A : Air F) (pis : List F) (o : OpenedValues EF) (logN : Nat)
@@ -654,6 +740,8 @@ theorem checkConstraints_of (A : Air F) (pis : List F) (o : OpenedValues EF) (lo
     (h : Challenge.toSpec (foldedConstraints A {
       cur := fun i ↦ o.traceLocal.getD i 0
       next := fun i ↦ o.traceNext.getD i 0
+      prepCur := fun i ↦ (o.preprocessedLocal.getD #[]).getD i 0
+      prepNext := fun i ↦ (o.preprocessedNext.getD #[]).getD i 0
       pub := fun i ↦ Ext.ofBase (pis.getD i 0)
       const := Ext.ofBase
       isFirstRow := (Ext.powTwo zeta logN - 1) * (zeta - 1)⁻¹
@@ -664,20 +752,30 @@ theorem checkConstraints_of (A : Air F) (pis : List F) (o : OpenedValues EF) (lo
   rw [checkConstraints_eq_fun]
   exact beq_iff_eq.mpr (Challenge.toSpec_injective h)
 
+/-- The honest proof's opened values: the trace's extension `ext` at `ζ` and `ζ ω`, the
+preprocessed trace's extension at `ζ` and, if the AIR reads its next row, at `ζ ω`, and the
+chunks `chunks` at `ζ`. -/
+def honestOpened (b : Nat) (A : Air F) (logN : Nat) (ext : Mat F) (chunks : List (Mat F))
+    (zeta : EF) : OpenedValues EF :=
+  let pext := ldeRef logN b gen A.preprocessedWidth A.preprocessed
+  let zetaNext := zeta * Ext.ofBase (twoAdicGen logN)
+  ⟨Fri.openedAt b ext zeta, Fri.openedAt b ext zetaNext,
+    if A.preprocessedWidth = 0 then none else some (Fri.openedAt b pext zeta),
+    if A.opensPreprocessedNext then some (Fri.openedAt b pext zetaNext) else none,
+    (chunks.map fun m ↦ Fri.openedAt b m zeta).toArray⟩
+
 /-- **The out-of-domain check passes on the honest openings.** -/
 theorem checkConstraints_honest (P : Params) (A : Air F) (logN : Nat) (trace : Array F)
     (pis : List F) (alpha zeta : EF) (hin : Fits P A logN trace)
     (hsat : A.ConstraintsVanish logN trace pis) (hdeg : A.DegreeFits logN)
     (hz : Ext.OutsideBase zeta) :
     let ext := ldeRef logN P.logBlowup gen A.width trace
-    let qs := quotientOfLde A pis logN A.logQuotientChunks ext alpha
+    let qs := quotientOfLde A pis logN A.logQuotientChunks ext (prepLde P.logBlowup A logN) alpha
     let lc := A.logQuotientChunks
     let chunks := (List.range (2 ^ lc)).map fun c ↦
       ldeRef logN P.logBlowup (gen * (gen * powF (twoAdicGen (logN + lc)) c)⁻¹) (Challenge.d EF)
         (chunkValues qs (2 ^ lc) c (2 ^ logN))
-    let o : OpenedValues EF := ⟨Fri.openedAt P.logBlowup ext zeta,
-      Fri.openedAt P.logBlowup ext (zeta * Ext.ofBase (twoAdicGen logN)),
-      (chunks.map fun m ↦ Fri.openedAt P.logBlowup m zeta).toArray⟩
+    let o : OpenedValues EF := honestOpened P.logBlowup A logN ext chunks zeta
     checkConstraints A pis o logN zeta alpha
       (recompose (chunkDomains logN lc) o.quotientChunks.toList zeta) = true := by
   intro ext qs lc chunks o
@@ -685,11 +783,13 @@ theorem checkConstraints_honest (P : Params) (A : Air F) (logN : Nat) (trace : A
   have hlc : lc ≤ P.logBlowup := hin.chunks
   have hq24 : logN + lc ≤ twoAdicity F := by omega
   obtain ⟨ps, hlde, hT, hTd⟩ := trace_lde P A logN trace hin
-  set Q := qFold A logN (ps.getD · 0) pis (Challenge.toSpec alpha)
-  have hQ := natDegree_qFold A logN pis _ hTd hdeg (Challenge.toSpec alpha)
+  obtain ⟨pps, hplde, hTp, hTpd⟩ := prep_lde P A logN trace hin
+  set Q := qFold A logN (ps.getD · 0) (pps.getD · 0) pis (Challenge.toSpec alpha)
+  have hQ := natDegree_qFold A logN pis _ _ hTd hTpd hdeg (Challenge.toSpec alpha)
   have hqs : ∀ m < 2 ^ (logN + lc), Challenge.toSpec (qs.getD m 0) =
       Q.eval (algebraMap K E (qpt (logN + lc) m)) := fun m hm ↦
-    toSpec_quotientOfLde A pis logN P.logBlowup trace alpha hlc h24 hsat hin.cols ps hlde hT m hm
+    toSpec_quotientOfLde A pis logN P.logBlowup trace alpha hlc h24 hsat hin.cols ps pps hlde hT
+      hplde hTp m hm
   have hch : ∀ c, ∃ cps : List K[X], c < 2 ^ lc →
       CompStark.Mat.IsLde P.logBlowup (logN + P.logBlowup) (ldeRef logN P.logBlowup
         (gen * (gen * powF (twoAdicGen (logN + lc)) c)⁻¹) (Challenge.d EF)
@@ -725,25 +825,43 @@ theorem checkConstraints_honest (P : Params) (A : Air F) (logN : Nat) (trace : A
     rw [map_one, one_pow] at this
     exact sub_ne_zero.mpr this
   have hlen : ps.length = A.width := hlde.1.symm
+  have hplen : pps.length = A.preprocessedWidth := hplde.1.symm
   refine checkConstraints_of A pis o logN zeta alpha _ ?_
   rw [hrec, Challenge.toSpec_mul, toSpec_foldedConstraints, Challenge.toSpec_inv,
     Challenge.toSpec_sub, toSpec_extPowTwo, Challenge.toSpec_one, eval_qFold]
+  have hpl : ∀ i < A.preprocessedWidth, (o.preprocessedLocal.getD #[]).getD i 0 =
+      (Fri.openedAt P.logBlowup (ldeRef logN P.logBlowup gen A.preprocessedWidth A.preprocessed)
+        zeta).getD i 0 := by
+    intro i hi
+    have hpw : A.preprocessedWidth ≠ 0 := by omega
+    simp only [o, honestOpened, hpw, ↓reduceIte, Option.getD_some]
+  have hpn : ∀ i < A.preprocessedNextWidth, (o.preprocessedNext.getD #[]).getD i 0 =
+      (Fri.openedAt P.logBlowup (ldeRef logN P.logBlowup gen A.preprocessedWidth A.preprocessed)
+        (zeta * Ext.ofBase (twoAdicGen logN))).getD i 0 := by
+    intro i hi
+    have hn : A.opensPreprocessedNext = true := by
+      unfold Air.preprocessedNextWidth at hi; split at hi
+      · assumption
+      · omega
+    simp only [o, honestOpened, hn, ↓reduceIte, Option.getD_some]
   have hmap : (A.constraints.map fun c ↦ Challenge.toSpec (c.eval {
       cur := fun i ↦ o.traceLocal.getD i 0
       next := fun i ↦ o.traceNext.getD i 0
+      prepCur := fun i ↦ (o.preprocessedLocal.getD #[]).getD i 0
+      prepNext := fun i ↦ (o.preprocessedNext.getD #[]).getD i 0
       pub := fun i ↦ Ext.ofBase (pis.getD i 0)
       const := Ext.ofBase
       isFirstRow := (Ext.powTwo zeta logN - 1) * (zeta - 1)⁻¹
       isLastRow := (Ext.powTwo zeta logN - 1) * (zeta - Ext.ofBase (twoAdicGen logN)⁻¹)⁻¹
       isTransition := zeta - Ext.ofBase (twoAdicGen logN)⁻¹ })) =
       (A.constraints.map fun c ↦ aeval (Challenge.toSpec zeta)
-        (quotientPoly logN (ps.getD · 0) pis c)).map
+        (quotientPoly logN (ps.getD · 0) (pps.getD · 0) pis c)).map
             (· * (Challenge.toSpec zeta ^ 2 ^ logN - 1)) := by
     rw [List.map_map]
     refine List.map_congr_left fun c hc ↦ ?_
-    rw [toSpec_eval_opened A logN P.logBlowup pis ext ps hlde hlen zeta hz o.traceLocal
-      o.traceNext rfl rfl c (hin.cols c hc),
-      constraintPoly_eq A logN (by omega) trace pis _ hT hsat hin.cols c hc, map_mul]
+    rw [toSpec_eval_opened A logN P.logBlowup pis ext _ ps pps hlde hplde hlen hplen zeta hz
+      o.traceLocal o.traceNext _ _ rfl rfl hpl hpn c (hin.cols c hc),
+      constraintPoly_eq A logN (by omega) trace pis _ _ hT hTp hsat hin.cols c hc, map_mul]
     simp only [Function.comp_apply, zH, map_sub, map_pow, aeval_X, map_one]
     ring
   rw [hmap, horner_mul, mul_mul_inv_cancel_ext _ _ hzh]
@@ -762,36 +880,47 @@ theorem chunk_isLde (P : Params) (A : Air F) (logN : Nat) (qs : Array EF)
       (pow_ne_zero _ (BaseField.twoAdicGen_ne_zero _ (by omega)))))
   obtain ⟨ps, hlde, -⟩ := ldeRef_isLde logN P.logBlowup
     (gen * (gen * powF (twoAdicGen (logN + A.logQuotientChunks)) c)⁻¹) (Challenge.d EF)
-    (chunkValues qs (2 ^ A.logQuotientChunks) c (2 ^ logN))
-    (by rw [size_chunkValues, Nat.mul_comm]) h24 hsh
+    (chunkValues qs (2 ^ A.logQuotientChunks) c (2 ^ logN)) h24 hsh
   exact ⟨ps, hlde, hlde.1.symm⟩
 
 /-- The honest openings pass the verifier's shape check. -/
 theorem honest_shape (P : Params) (A : Air F) (logN : Nat) (trace : Array F) (pis : List F)
-    (alpha zeta : EF) :
+    (alpha zeta : EF) (r : Digest F) :
     let ext := ldeRef logN P.logBlowup gen A.width trace
-    let qs := quotientOfLde A pis logN A.logQuotientChunks ext alpha
+    let qs := quotientOfLde A pis logN A.logQuotientChunks ext (prepLde P.logBlowup A logN) alpha
     let lc := A.logQuotientChunks
     let chunks := (List.range (2 ^ lc)).map fun c ↦
       ldeRef logN P.logBlowup (gen * (gen * powF (twoAdicGen (logN + lc)) c)⁻¹) (Challenge.d EF)
         (chunkValues qs (2 ^ lc) c (2 ^ logN))
-    let o : OpenedValues EF := ⟨Fri.openedAt P.logBlowup ext zeta,
-      Fri.openedAt P.logBlowup ext (zeta * Ext.ofBase (twoAdicGen logN)),
-      (chunks.map fun m ↦ Fri.openedAt P.logBlowup m zeta).toArray⟩
+    let o : OpenedValues EF := honestOpened P.logBlowup A logN ext chunks zeta
+    let vk : Option (PreprocessedKey F) :=
+      if A.preprocessedWidth = 0 then none else some ⟨A.preprocessedWidth, logN, r⟩
     (o.traceLocal.size == A.width && o.traceNext.size == A.width &&
-      o.quotientChunks.size == 2 ^ lc && o.quotientChunks.all (·.size == Challenge.d EF)) =
-      true := by
-  intro ext qs lc chunks o
+      o.quotientChunks.size == 2 ^ lc && o.quotientChunks.all (·.size == Challenge.d EF) &&
+      preprocessedShapeOk A vk o logN) = true := by
+  intro ext qs lc chunks o vk
   have hs (m : Stark.Mat F) (z : EF) : (Fri.openedAt P.logBlowup m z).size = m.width := by
     rw [openedAt_eq, Array.size_ofFn]
   simp only [Bool.and_eq_true, beq_iff_eq]
-  refine ⟨⟨⟨hs ext zeta, hs ext _⟩, ?_⟩, ?_⟩
+  refine ⟨⟨⟨⟨hs ext zeta, hs ext _⟩, ?_⟩, ?_⟩, ?_⟩
   · show (chunks.map fun m ↦ Fri.openedAt P.logBlowup m zeta).toArray.size = 2 ^ lc
     rw [List.size_toArray, List.length_map, List.length_map, List.length_range]
   · rw [Array.all_eq_true]
     intro i hi
-    simp only [o, chunks, List.getElem_toArray, List.getElem_map, hs, beq_iff_eq]
+    simp only [o, honestOpened, chunks, List.getElem_toArray, List.getElem_map, hs, beq_iff_eq]
     rfl
+  · by_cases hpw : A.preprocessedWidth = 0
+    · have hn : A.opensPreprocessedNext = false := by
+        simp only [Air.opensPreprocessedNext, hpw, Nat.lt_irrefl, decide_false, Bool.false_and]
+      simp only [vk, o, honestOpened, hpw, hn, ↓reduceIte, preprocessedShapeOk, beq_self_eq_true,
+        Bool.false_eq_true]
+    · have hw : (ldeRef logN P.logBlowup gen A.preprocessedWidth A.preprocessed).width =
+          A.preprocessedWidth := rfl
+      have h0 : 0 < A.preprocessedWidth := Nat.pos_of_ne_zero hpw
+      simp only [vk, o, honestOpened, hpw, ↓reduceIte, preprocessedShapeOk]
+      cases hn : A.opensPreprocessedNext <;>
+        simp only [hs, hw, h0, beq_self_eq_true, Bool.and_true, Bool.not_false,
+          decide_true, Bool.false_eq_true, ↓reduceIte]
 
 end Check
 

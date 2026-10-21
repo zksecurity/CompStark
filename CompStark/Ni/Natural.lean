@@ -221,9 +221,9 @@ theorem exceptT_mapHom_run {α : Type} (H : Primitives F m) (x : M H α) (s : H.
 variable [LawfulMonad m] [LawfulMonad n] [BaseField F] {EF : Type} [Challenge F EF]
 
 /-- **The verifier is natural in its primitives.** -/
-theorem verifyWith_map (H : Primitives F m) (P : Params) (A : Air F) (proof : Proof F EF)
-    (pis : List F) :
-    φ (verifyWith H P A proof pis) = verifyWith (H.map φ) P A proof pis := by
+theorem verifyWith_map (H : Primitives F m) (P : Params) (A : Air F)
+    (vk : Option (PreprocessedKey F)) (proof : Proof F EF) (pis : List F) :
+    φ (verifyWith H P A vk proof pis) = verifyWith (H.map φ) P A vk proof pis := by
   change (ExceptT.mapHom φ _).run = _
   simp only [verifyWith, MonadHom.mmap_bind, MonadHom.mmap_pure, MonadHom.mmap_ite,
     exceptT_mapHom_throw, exceptT_mapHom_run, mapM_observeList, mapM_sampleExt, mapM_ensure,

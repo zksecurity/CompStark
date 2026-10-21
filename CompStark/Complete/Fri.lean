@@ -497,7 +497,6 @@ theorem siblings_answerFolds [Poseidon2Field F] (r : Rd EF) (cur : List Nat) :
     List.toList_toArray, Nat.min_self])
   intro i h1 h2
   simp only [openMulti, List.toList_toArray, List.getElem_map, List.getElem_zip, sibsAt]
-  rfl
 
 theorem answerFolds_cons [Poseidon2Field F] (r : Rd EF) (rs : List (Rd EF)) (las : List Nat)
     (cur : List Nat) :
@@ -859,8 +858,8 @@ theorem multiBody_run [Poseidon2Field F] (P : Params) {h : Nat} {f : Array EF} (
       [(specBackend EF).leaves (2 ^ la) f'].map fun m ↦ (m.height, m.width) by
         rw [List.map_cons, List.map_nil, hm, hmw]]
     simp only [openMulti, List.toList_toArray]
-    have hmax' : (specBackend EF).logHeight (Committed.ofMats hashF compF
-        [(specBackend EF).leaves (2 ^ la) f']) = h - la := hmax
+    have hmax' : Nat.log2 (Committed.ofMats hashF compF
+        [(specBackend EF).leaves (2 ^ la) f']).maxHeight = h - la := hmax
     rw [hmax']
     refine Eq.trans ?_ hv
     congr 2

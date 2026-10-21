@@ -1162,7 +1162,8 @@ theorem verifyPcs_ok (P : Params) (rounds : List (Round F EF)) (proof : FriProof
   exact ⟨hbw, hc, h⟩
 
 section States
-variable (P : Params) (A : Air F) (proof : Proof F EF) (pis : List F)
+variable (P : Params) (A : Air F) (vk : Option (PreprocessedKey F)) (proof : Proof F EF)
+  (pis : List F)
 
 /-- FRI's largest height on `proof`: the trace's extension. -/
 abbrev friLogMax : Nat := proof.degreeBits + P.logBlowup
@@ -1177,33 +1178,34 @@ abbrev friSeedOf : List F :=
   DomainSeparator.friSeed F EF (friSchedule P proof) (2 ^ P.logFinalPolyLen) P.commitPowBits
     P.queryPowBits P.numQueries (friLogMax P proof) P.logBlowup P.maxLogArity
 
-/-- The challenger after the domain separator, the trace commitment and the public values. -/
+/-- The challenger after the domain separator, the trace and preprocessed commitments and the
+public values. -/
 abbrev stateAlpha : H.State :=
-  obsList H (obsList H (obsList H H.init (DomainSeparator.starkSeed F EF proof.degreeBits A.width
-    A.numPublicValues (2 ^ A.logQuotientChunks) P.oodPowBits)) proof.traceCommit.toList) pis
+  obsList H (obsList H (obsList H (obsList H H.init (starkSeedOf EF P A proof.degreeBits))
+    proof.traceCommit.toList) (preprocessedDigest vk)) pis
 
 /-- The constraint-folding challenge `α`. -/
-def alphaOf : EF := (smpExt H (stateAlpha H P A proof pis)).1
+def alphaOf : EF := (smpExt H (stateAlpha H P A vk proof pis)).1
 
 /-- The out-of-domain grinding check, after the quotient commitment. -/
 abbrev oodCheck : Bool × H.State :=
   chkWit H P.oodPowBits proof.oodWitness
-    (obsList H (smpExt (EF := EF) H (stateAlpha H P A proof pis)).2 proof.quotientCommit.toList)
+    (obsList H (smpExt (EF := EF) H (stateAlpha H P A vk proof pis)).2 proof.quotientCommit.toList)
 
 /-- The out-of-domain point `ζ`. -/
-def zetaOf : EF := (smpExt H (oodCheck (EF := EF) H P A proof pis).2).1
+def zetaOf : EF := (smpExt H (oodCheck (EF := EF) H P A vk proof pis).2).1
 
 /-- The batching grinding check, after the PCS's domain separator and the opened values. -/
 def batchCheck : Bool × H.State :=
   chkWit H P.batchPowBits proof.fri.batchWitness
-    (pcsState H P (vRounds proof (zetaOf H P A proof pis))
-    (smpExt (EF := EF) H (oodCheck (EF := EF) H P A proof pis).2).2)
+    (pcsState H P (openingRounds A vk proof (zetaOf H P A vk proof pis))
+    (smpExt (EF := EF) H (oodCheck (EF := EF) H P A vk proof pis).2).2)
 
 /-- FRI's batching challenge. -/
-def batchOf : EF := (smpExt H (batchCheck H P A proof pis).2).1
+def batchOf : EF := (smpExt H (batchCheck H P A vk proof pis).2).1
 
 /-- The challenger when FRI starts, after the batching challenge. -/
-def stateFri : H.State := (smpExt (EF := EF) H (batchCheck H P A proof pis).2).2
+def stateFri : H.State := (smpExt (EF := EF) H (batchCheck H P A vk proof pis).2).2
 
 end States
 
@@ -1225,21 +1227,22 @@ theorem except_bind_ok {α : Type} (R : ExceptT String Id α) (p : α → Bool) 
 /-- **An accepting STARK verifier** on pure primitives: the proof's shape checks, the grinding
 witnesses check, `ζ` is off the trace domain, FRI accepts from the challenger after the batching
 challenge, and the constraints hold at `ζ` with the challenger's `α` and `ζ`. -/
-theorem verifyWith_ok (P : Params) (A : Air F) (proof : Proof F EF) (pis : List F)
-    (h : verifyWith H P A proof pis = .ok ()) :
+theorem verifyWith_ok (P : Params) (A : Air F) (vk : Option (PreprocessedKey F))
+    (proof : Proof F EF) (pis : List F) (h : verifyWith H P A vk proof pis = .ok ()) :
     let o := proof.opened
-    let zeta := zetaOf H P A proof pis
+    let zeta := zetaOf H P A vk proof pis
     o.traceLocal.size = A.width ∧ o.traceNext.size = A.width ∧
       o.quotientChunks.size = 2 ^ A.logQuotientChunks ∧
       (∀ ch ∈ o.quotientChunks, ch.size = Challenge.d EF) ∧
+      preprocessedShapeOk A vk o proof.degreeBits = true ∧
       proof.degreeBits + A.logQuotientChunks ≤ twoAdicity F ∧
       pis.length = A.numPublicValues ∧
-      (oodCheck (EF := EF) H P A proof pis).1 = true ∧
+      (oodCheck (EF := EF) H P A vk proof pis).1 = true ∧
       (Ext.powTwo zeta proof.degreeBits - 1 != 0) = true ∧
-      (batchCheck H P A proof pis).1 = true ∧
-      (∃ st, verifyFri H P proof.fri (vRounds proof zeta) (batchOf H P A proof pis)
-        (stateFri H P A proof pis) = .ok ((), st)) ∧
-      checkConstraints A pis o proof.degreeBits zeta (alphaOf H P A proof pis)
+      (batchCheck H P A vk proof pis).1 = true ∧
+      (∃ st, verifyFri H P proof.fri (openingRounds A vk proof zeta) (batchOf H P A vk proof pis)
+        (stateFri H P A vk proof pis) = .ok ((), st)) ∧
+      checkConstraints A pis o proof.degreeBits zeta (alphaOf H P A vk proof pis)
         (recompose (chunkDomains proof.degreeBits A.logQuotientChunks) o.quotientChunks.toList
           zeta) = true := by
   intro o zeta
@@ -1255,23 +1258,24 @@ theorem verifyWith_ok (P : Params) (A : Air F) (proof : Proof F EF) (pis : List 
         · obtain ⟨x, hx, hc⟩ := except_bind_ok _ _ _ h
           unfold StateT.run at hx
           rw [bind_ok_of H (observeList_eq H _ _), bind_ok_of H (observeList_eq H _ _),
+            bind_ok_of H (observeList_eq H _ _), bind_ok_of H (observeList_eq H _ _),
+            bind_ok_of H (a := alphaOf H P A vk proof pis)
+              (s' := (smpExt (EF := EF) H (stateAlpha H P A vk proof pis)).2) (sampleExt_eq H _),
             bind_ok_of H (observeList_eq H _ _),
-            bind_ok_of H (a := alphaOf H P A proof pis)
-              (s' := (smpExt (EF := EF) H (stateAlpha H P A proof pis)).2) (sampleExt_eq H _),
-            bind_ok_of H (observeList_eq H _ _),
-            bind_ok_of H (a := (oodCheck (EF := EF) H P A proof pis).1)
-              (s' := (oodCheck (EF := EF) H P A proof pis).2) (checkWitness_eq H _ _ _)] at hx
+            bind_ok_of H (a := (oodCheck (EF := EF) H P A vk proof pis).1)
+              (s' := (oodCheck (EF := EF) H P A vk proof pis).2) (checkWitness_eq H _ _ _)] at hx
           obtain ⟨hood, hx⟩ := ensure_bind_eq_ok H hx
           rw [bind_ok_of H (a := zeta) (s' := (smpExt (EF := EF) H
-            (oodCheck (EF := EF) H P A proof pis).2).2) (sampleExt_eq H _)] at hx
+            (oodCheck (EF := EF) H P A vk proof pis).2).2) (sampleExt_eq H _)] at hx
           obtain ⟨hz, hx⟩ := ensure_bind_eq_ok H hx
           obtain ⟨u, st, h3, h4⟩ := bind_eq_ok H hx
           obtain ⟨-, hbc, hfri⟩ := verifyPcs_ok H P _ proof.fri _ _ h3
           have hx' := pure_eq_ok H h4
           subst hx'
           simp only [Bool.and_eq_true, beq_iff_eq, Array.all_eq_true'] at hshape
-          obtain ⟨⟨⟨h1a, h1b⟩, h1c⟩, h1d⟩ := hshape
-          exact ⟨h1a, h1b, h1c, h1d, hdeg, beq_iff_eq.mp hpis, hood, hz, hbc, ⟨_, hfri⟩, hc⟩
+          obtain ⟨⟨⟨⟨h1a, h1b⟩, h1c⟩, h1d⟩, h1e⟩ := hshape
+          exact ⟨h1a, h1b, h1c, h1d, h1e, hdeg, beq_iff_eq.mp hpis, hood, hz, hbc, ⟨_, hfri⟩,
+            hc⟩
         · exact absurd h (by intro h'; cases h')
       · exact absurd h (by intro h'; cases h')
     · exact absurd h (by intro h'; cases h')

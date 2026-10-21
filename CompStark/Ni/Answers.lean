@@ -37,11 +37,11 @@ theorem withAnswers_map {m n : Type → Type} [Monad m] [Monad n] [LawfulMonad m
 /-- Simulating the oracles of the verifier by `impl` runs the verifier on the answers of
 `impl`. -/
 theorem simulateQ_verifyWith {n : Type → Type} [Monad n] [LawfulMonad n]
-    (impl : QueryImpl (spec F K) n) (P : Fri.Params) (A : Air F) (proof : Proof F EF)
-    (pis : List F) :
-    simulateQ impl (verifyWith (ideal F K) P A proof pis) =
-      verifyWith (withAnswers K impl) P A proof pis := by
-  have h := verifyWith_map (simulateQ' impl) (ideal F K) P A proof pis
+    (impl : QueryImpl (spec F K) n) (P : Fri.Params) (A : Air F)
+    (vk : Option (PreprocessedKey F)) (proof : Proof F EF) (pis : List F) :
+    simulateQ impl (verifyWith (ideal F K) P A vk proof pis) =
+      verifyWith (withAnswers K impl) P A vk proof pis := by
+  have h := verifyWith_map (simulateQ' impl) (ideal F K) P A vk proof pis
   rw [withAnswers_map] at h
   simpa only [simulateQ'_apply, simulateQ_spec_query] using h
 
@@ -52,17 +52,17 @@ abbrev idealLogged (answer : (q : Query F) → Answer K q) :
 
 /-- **The verifier against an answer table** is the verifier on `idealOf`. -/
 theorem evalWithAnswerFn_verifyWith (answer : (q : Query F) → Answer K q) (P : Fri.Params)
-    (A : Air F) (proof : Proof F EF) (pis : List F) :
-    evalWithAnswerFn (QueryImpl.ofFn answer) (verifyWith (ideal F K) P A proof pis) =
-      verifyWith (idealOf answer) P A proof pis :=
-  simulateQ_verifyWith (QueryImpl.ofFn answer) P A proof pis
+    (A : Air F) (vk : Option (PreprocessedKey F)) (proof : Proof F EF) (pis : List F) :
+    evalWithAnswerFn (QueryImpl.ofFn answer) (verifyWith (ideal F K) P A vk proof pis) =
+      verifyWith (idealOf answer) P A vk proof pis :=
+  simulateQ_verifyWith (QueryImpl.ofFn answer) P A vk proof pis
 
 /-- **The verifier's queries against an answer table** are the log of the verifier on
 `idealLogged`. -/
 theorem tableQueryLog_verifyWith (answer : (q : Query F) → Answer K q) (P : Fri.Params)
-    (A : Air F) (proof : Proof F EF) (pis : List F) :
-    tableQueryLog (verifyWith (ideal F K) P A proof pis) answer =
-      (verifyWith (idealLogged answer) P A proof pis).run.2 := by
+    (A : Air F) (vk : Option (PreprocessedKey F)) (proof : Proof F EF) (pis : List F) :
+    tableQueryLog (verifyWith (ideal F K) P A vk proof pis) answer =
+      (verifyWith (idealLogged answer) P A vk proof pis).run.2 := by
   rw [tableQueryLog, simulateQ_verifyWith]
 
 end CompStark.RandomOracle
@@ -73,25 +73,24 @@ open CompStark.Stark CompStark.RandomOracle OracleSpec OracleComp
 variable {F : Type} [BaseField F] {EF : Type} [Challenge F EF] (S : Setup EF)
 
 theorem evalWithAnswerFn_verifyRo (answer : (q : Query F) → Answer S.streamLen q)
-    (proof : Proof F EF)
-    (pis : List F) :
-    evalWithAnswerFn (QueryImpl.ofFn answer) (S.verifyRo proof pis) =
-      if proof.degreeBits = S.logN then verifyWith (idealOf answer) S.params S.air proof pis
+    (vk : Option (PreprocessedKey F)) (proof : Proof F EF) (pis : List F) :
+    evalWithAnswerFn (QueryImpl.ofFn answer) (S.verifyRo vk proof pis) =
+      if proof.degreeBits = S.logN then verifyWith (idealOf answer) S.params S.air vk proof pis
       else .error "degree bits" := by
   unfold verifyRo
   split
-  · exact evalWithAnswerFn_verifyWith answer _ _ proof pis
+  · exact evalWithAnswerFn_verifyWith answer _ _ vk proof pis
   · rfl
 
-theorem tableQueryLog_verifyRo (answer : (q : Query F) → Answer S.streamLen q) (proof : Proof F EF)
-    (pis : List F) :
-    tableQueryLog (S.verifyRo proof pis) answer =
+theorem tableQueryLog_verifyRo (answer : (q : Query F) → Answer S.streamLen q)
+    (vk : Option (PreprocessedKey F)) (proof : Proof F EF) (pis : List F) :
+    tableQueryLog (S.verifyRo vk proof pis) answer =
       if proof.degreeBits = S.logN then
-        (verifyWith (idealLogged answer) S.params S.air proof pis).run.2
+        (verifyWith (idealLogged answer) S.params S.air vk proof pis).run.2
       else [] := by
   unfold verifyRo
   split
-  · exact tableQueryLog_verifyWith answer _ _ proof pis
+  · exact tableQueryLog_verifyWith answer _ _ vk proof pis
   · exact tableQueryLog_pure _ _
 
 end CompStark.Iop.Setup

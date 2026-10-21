@@ -31,34 +31,38 @@ def Mat.ofValues {F : Type} (width height : Nat) (values : Array F) : Mat F :=
 def Mat.toMatrix {F : Type} (m : Mat F) : Merkle.Matrix F := ⟨m.width, m.height, m.values⟩
 
 /-- The values of `e` on the rows `r0, …, r0 + B - 1` of the quotient domain of size `n`, one array
-operation per node: `tq` is the trace there, the next row is `period` rows on, and `first`,
-`last`, `trans` are the selectors. -/
-def evalBlock {F : Type} [BaseField F] (tq : Mat F) (n period : Nat) (pis : List F)
+operation per node: `tq` and `pq` are the trace and the preprocessed trace there, the next row is
+`period` rows on, and `first`, `last`, `trans` are the selectors. -/
+def evalBlock {F : Type} [BaseField F] (tq pq : Mat F) (n period : Nat) (pis : List F)
     (first last trans : Array F) (r0 B : Nat) : Expr F → Array F
   | .cur c => Array.ofFn (n := B) fun i ↦ tq.values.getD ((r0 + i.val) * tq.width + c) 0
   | .next c => Array.ofFn (n := B) fun i ↦
       tq.values.getD (((r0 + i.val + period) % n) * tq.width + c) 0
+  | .prepCur c => Array.ofFn (n := B) fun i ↦ pq.values.getD ((r0 + i.val) * pq.width + c) 0
+  | .prepNext c => Array.ofFn (n := B) fun i ↦
+      pq.values.getD (((r0 + i.val + period) % n) * pq.width + c) 0
   | .pub j => Array.replicate B (pis.getD j 0)
   | .const c => Array.replicate B c
   | .isFirstRow => first.extract r0 (r0 + B)
   | .isLastRow => last.extract r0 (r0 + B)
   | .isTransition => trans.extract r0 (r0 + B)
-  | .add a b => Array.zipWith (· + ·) (evalBlock tq n period pis first last trans r0 B a)
-      (evalBlock tq n period pis first last trans r0 B b)
-  | .sub a b => Array.zipWith (· - ·) (evalBlock tq n period pis first last trans r0 B a)
-      (evalBlock tq n period pis first last trans r0 B b)
-  | .mul a b => Array.zipWith (· * ·) (evalBlock tq n period pis first last trans r0 B a)
-      (evalBlock tq n period pis first last trans r0 B b)
+  | .add a b => Array.zipWith (· + ·) (evalBlock tq pq n period pis first last trans r0 B a)
+      (evalBlock tq pq n period pis first last trans r0 B b)
+  | .sub a b => Array.zipWith (· - ·) (evalBlock tq pq n period pis first last trans r0 B a)
+      (evalBlock tq pq n period pis first last trans r0 B b)
+  | .mul a b => Array.zipWith (· * ·) (evalBlock tq pq n period pis first last trans r0 B a)
+      (evalBlock tq pq n period pis first last trans r0 B b)
 
 /-- The constraints of `A`, folded by `α`, on every row of the quotient domain `g · ⟨ω_q⟩` of size
-`2 ^ (degreeBits + logChunks)`, divided by the trace domain's vanishing polynomial. `tq` is the
-trace on the quotient domain in natural order. `Z_H` has period `2 ^ logChunks` there.
+`2 ^ (degreeBits + logChunks)`, divided by the trace domain's vanishing polynomial. `tq` and `pq`
+are the trace and the preprocessed trace on the quotient domain in natural order. `Z_H` has period
+`2 ^ logChunks` there.
 
 As in Plonky3, constraint `k` of `K` is weighted by `α ^ (K - 1 - k)` (Horner's rule in
 constraint order), split into its `d` base coordinates, so that rows accumulate base-field
 products. Rows go in blocks, each node of a constraint one array operation per block. -/
 def quotientValues {F : Type} [BaseField F] {EF : Type} [Challenge F EF] (A : Air F)
-    (pis : List F) (degreeBits logChunks : Nat) (tq : Mat F) (alpha : EF) : Array EF := Id.run do
+    (pis : List F) (degreeBits logChunks : Nat) (tq pq : Mat F) (alpha : EF) : Array EF := Id.run do
   let qlog := degreeBits + logChunks
   let n := 2 ^ qlog
   let xs := cosetPoints gen qlog
@@ -79,7 +83,7 @@ def quotientValues {F : Type} [BaseField F] {EF : Type} [Challenge F EF] (A : Ai
     let r0 := blk * B
     let mut acc := Array.replicate (Challenge.d EF) (Array.replicate B (0 : F))
     for (c, wk) in A.constraints.zip weights do
-      let v := evalBlock tq n period pis first last trans r0 B c
+      let v := evalBlock tq pq n period pis first last trans r0 B c
       acc := (acc.zip wk.toArray).map fun (a, w) ↦ Array.zipWith (fun x y ↦ x + y * w) a v
     for i in [0:B] do
       let z := invZh.getD ((r0 + i) % period) 0

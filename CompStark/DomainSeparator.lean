@@ -21,8 +21,7 @@ indented line per step (`render`). The type tag of a field element names its fie
 the degree and the Keccak-256 hash of the algebra's identity (`Challenge.algebraId`).
 
 `starkSeed`, `pcsSeed` and `friSeed` are the seeds of `p3-uni-stark`, `p3-fri-pcs` and `p3-fri`
-(`StarkShape`, `PcsShape`, `FriShape`), here without preprocessed columns, periodic columns or
-zero knowledge.
+(`StarkShape`, `PcsShape`, `FriShape`), here without periodic columns or zero knowledge.
 -/
 
 @[expose] public section
@@ -145,17 +144,20 @@ def challenge (label : String) : Step := ⟨.atomic, .challenge, label, .scalar,
 def bracket (label : String) : List Step :=
   [⟨.begin, .protocol, label, .none, .marker⟩, ⟨.close, .protocol, label, .none, .marker⟩]
 
-/-- The seed of `p3-uni-stark` for a trace of `2 ^ logDegree` rows and `width` columns,
-`numPublic` public values, `chunks` quotient chunks and `oodBits` bits of out-of-domain grinding.
-The trace is opened at the next row. -/
-def starkSeed (logDegree width numPublic chunks oodBits : Nat) : List F :=
+/-- The seed of `p3-uni-stark` for a trace of `2 ^ logDegree` rows and `width` columns, a
+preprocessed trace of `prepWidth` columns, committed if there are any and opened at the next row
+if `prepNext`, `numPublic` public values, `chunks` quotient chunks and `oodBits` bits of
+out-of-domain grinding. The trace is opened at the next row. -/
+def starkSeed (logDegree width prepWidth numPublic chunks oodBits : Nat) (prepNext : Bool) :
+    List F :=
   toElems F <| seedBytes 1 "p3-uni-stark"
-    ([commitment "trace_commitment",
-      ⟨.atomic, .publicValue, "public_values", .fixed numPublic, baseTag F⟩,
+    ([commitment "trace_commitment"] ++
+      (if prepWidth = 0 then [] else [commitment "preprocessed_commitment"]) ++
+      [⟨.atomic, .publicValue, "public_values", .fixed numPublic, baseTag F⟩,
       challenge F EF "alpha",
       commitment "quotient_commitment"] ++ pow F "ood_pow" oodBits ++
       [challenge F EF "zeta"] ++ bracket "opening_argument")
-    [logDegree, logDegree, width, 0, 0, chunks, 1, 0]
+    [logDegree, logDegree, width, prepWidth, 0, chunks, 1, if prepNext then 1 else 0]
 
 /-- The seed of `p3-fri-pcs` for claimed evaluations of `counts[c][m][k]` elements at the `k`-th
 point of matrix `m` of commitment `c`, and `batchBits` bits of grinding before the batching

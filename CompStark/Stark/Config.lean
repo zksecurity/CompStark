@@ -20,8 +20,11 @@ open CompStark.Fri
 /-- A configuration the prover supports: an AIR, FRI parameters and traces of `2 ^ logN` rows. -/
 structure ValidConfig {F : Type} [BaseField F] (params : Params) (air : Air F) (logN : Nat) :
     Prop where
-  /-- The constraints read only the AIR's columns. -/
+  /-- The constraints read only the AIR's columns, and the next preprocessed row only if the
+  AIR declares it reads it. -/
   colsInWidth : air.ColsInWidth
+  /-- The preprocessed trace has `2 ^ logN` rows of the AIR's preprocessed width. -/
+  preprocessedSize : air.preprocessed.size = 2 ^ logN * air.preprocessedWidth
   /-- The constraints divided by the trace domain's vanishing polynomial fit the quotient's
   chunks (`Air.DegreeFits`). -/
   degreeFits : air.DegreeFits logN

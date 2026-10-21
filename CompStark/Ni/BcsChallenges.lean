@@ -170,19 +170,19 @@ theorem obsOpened_eq (H : Primitives F Id) (s : H.State) (rounds : List (Round F
         roundValues rounds from List.flatMap_cons, coeffs_append, obsList_append]
 
 /-- An accepted proof opens values and has a final polynomial. -/
-theorem nonempty_of_verify (S : Iop.Setup EF) (H : Primitives F Id) (proof : Proof F EF)
-    (pis : List F)
-    (hdb : proof.degreeBits = S.logN) (h : verifyWith H S.params S.air proof pis = .ok ()) :
+theorem nonempty_of_verify (S : Iop.Setup EF) (H : Primitives F Id)
+    (vk : Option (PreprocessedKey F)) (proof : Proof F EF) (pis : List F)
+    (hdb : proof.degreeBits = S.logN) (h : verifyWith H S.params S.air vk proof pis = .ok ()) :
     openedValues proof.opened ≠ [] ∧ proof.fri.finalPoly.toList ≠ [] := by
-  obtain ⟨-, -, hqc, hq4, -, -, -, -, -, ⟨st, hfriOk⟩, -⟩ :=
-    verifyWith_ok H S.params S.air proof pis h
-  obtain ⟨-, hb, hh, -⟩ := friHyps S proof (zetaOf H S.params S.air proof pis) hdb
+  obtain ⟨-, -, hqc, hq4, -, -, -, -, -, -, ⟨st, hfriOk⟩, -⟩ :=
+    verifyWith_ok H S.params S.air vk proof pis h
+  obtain ⟨-, hb, hh, -⟩ := friHyps S vk proof (zetaOf H S.params S.air vk proof pis) hdb
   obtain ⟨-, -, -, -, hfp, -⟩ := verifyFri_ok H S.params proof.fri _ _ _ hb hh _ _ hfriOk
   refine ⟨fun he ↦ ?_, fun he ↦ ?_⟩
   · have hpos : 0 < proof.opened.quotientChunks.size := by rw [hqc]; exact Nat.two_pow_pos _
     have h4 := hq4 _ (Array.getElem_mem hpos)
-    rw [openedValues, List.append_eq_nil_iff, List.flatMap_eq_nil_iff] at he
-    have := he.2 _ (Array.getElem_mem_toList hpos)
+    simp only [openedValues, List.append_eq_nil_iff, List.flatMap_eq_nil_iff] at he
+    have := he.1.1.2 _ (Array.getElem_mem_toList hpos)
     rw [← Array.length_toList, this, List.length_nil] at h4
     exact (Challenge.params EF).d_pos.ne h4
   · have := congrArg List.length he
@@ -203,7 +203,8 @@ theorem committedTrace_eq (S : Iop.Setup EF) (log : QueryLog (spec F S.streamLen
 /-! ### Round by round -/
 
 section Rounds
-variable (P : Params) (A : Air F) (proof : Proof F EF) (pis : List F)
+variable (P : Params) (A : Air F) (vk : Option (PreprocessedKey F)) (proof : Proof F EF)
+  (pis : List F)
 
 /-- A round with grinding: after observing `input`, check the grinding witness and sample an
 extension element, which is the round's answer at the grinding offset. -/
@@ -239,55 +240,58 @@ theorem grindRound_idealOf (hK : Challenge.d EF + 1 ≤ K) (blocks : List (List 
     exact ⟨toSpec_ofCoeffs_drop _ 1, _, rfl⟩
 
 theorem stateAlpha_idealOf :
-    stateAlpha (idealOf answer) P A proof pis =
-      ⟨capAt answer (inputs P A pis proof) 0, (inputs P A pis proof).getD 0 [], []⟩ := by
+    stateAlpha (idealOf answer) P A vk proof pis =
+      ⟨capAt answer (inputs P A vk pis proof) 0, (inputs P A vk pis proof).getD 0 [], []⟩ := by
   unfold stateAlpha
   rw [show (idealOf answer).init = ⟨initCap, [], []⟩ from rfl]
   simp only [obsList_idealOf_mk, List.nil_append]
   rfl
 
 theorem alpha_idealOf (hK : Challenge.d EF ≤ K) :
-    Challenge.toSpec (alphaOf (idealOf answer) P A proof pis) =
-      extAt (answer (keyAt answer (inputs P A pis proof) 0)).2 0 ∧
-    (smpExt (EF := EF) (idealOf answer) (stateAlpha (idealOf answer) P A proof pis)).2 =
-      ⟨capAt answer (inputs P A pis proof) 1, [],
-        (answer (keyAt answer (inputs P A pis proof) 0)).2.toList.drop (Challenge.d EF)⟩ := by
+    Challenge.toSpec (alphaOf (idealOf answer) P A vk proof pis) =
+      extAt (answer (keyAt answer (inputs P A vk pis proof) 0)).2 0 ∧
+    (smpExt (EF := EF) (idealOf answer) (stateAlpha (idealOf answer) P A vk proof pis)).2 =
+      ⟨capAt answer (inputs P A vk pis proof) 1, [],
+        (answer (keyAt answer (inputs P A vk pis proof) 0)).2.toList.drop (Challenge.d EF)⟩ := by
   rw [alphaOf, stateAlpha_idealOf answer P]
   exact smpExt_idealOf_nil answer hK _ _
 
 theorem zeta_idealOf (hK : Challenge.d EF + 1 ≤ K) :
-    Challenge.toSpec (zetaOf (idealOf answer) P A proof pis) =
-      extAt (answer (keyAt answer (inputs P A pis proof) 1)).2 (challengeOffset P.oodPowBits) ∧
-    ∃ l, (smpExt (EF := EF) (idealOf answer) (oodCheck (EF := EF) (idealOf answer) P A proof
-      pis).2).2 = ⟨capAt answer (inputs P A pis proof) 2, [], l⟩ := by
+    Challenge.toSpec (zetaOf (idealOf answer) P A vk proof pis) =
+      extAt (answer (keyAt answer (inputs P A vk pis proof) 1)).2 (challengeOffset P.oodPowBits) ∧
+    ∃ l, (smpExt (EF := EF) (idealOf answer) (oodCheck (EF := EF) (idealOf answer) P A vk proof
+      pis).2).2 = ⟨capAt answer (inputs P A vk pis proof) 2, [], l⟩ := by
   have hst : obsList (idealOf answer) (smpExt (EF := EF) (idealOf answer)
-      (stateAlpha (idealOf answer) P A proof pis)).2 proof.quotientCommit.toList =
-      ⟨capAt answer (inputs P A pis proof) 1, proof.quotientCommit.toList, []⟩ := by
-    rw [(alpha_idealOf answer P A proof pis (by omega)).2,
+      (stateAlpha (idealOf answer) P A vk proof pis)).2 proof.quotientCommit.toList =
+      ⟨capAt answer (inputs P A vk pis proof) 1, proof.quotientCommit.toList, []⟩ := by
+    rw [(alpha_idealOf answer P A vk proof pis (by omega)).2,
       obsList_idealOf_ne answer _ _ (digest_toList_ne_nil _)]
     rfl
-  have h := grindRound_idealOf (EF := EF) answer hK (inputs P A pis proof) 1
+  have h := grindRound_idealOf (EF := EF) answer hK (inputs P A vk pis proof) 1
     proof.quotientCommit.toList P.oodPowBits proof.oodWitness (by
       simp only [inputs, List.getD_eq_getElem?_getD, List.getElem?_cons_succ,
         List.getElem?_cons_zero, Option.getD_some])
   rw [← hst] at h
   exact h
 
-theorem batch_idealOf (hK : Challenge.d EF + 1 ≤ K) :
-    Challenge.toSpec (batchOf (idealOf answer) P A proof pis) =
-      extAt (answer (keyAt answer (inputs P A pis proof) 2)).2 (challengeOffset P.batchPowBits) ∧
-    ∃ l, stateFri (idealOf answer) P A proof pis =
-      ⟨capAt answer (inputs P A pis proof) 3, [], l⟩ := by
-  obtain ⟨-, l, hl⟩ := zeta_idealOf answer P A proof pis hK
-  have hst : pcsState (idealOf answer) P (vRounds proof (zetaOf (idealOf answer) P A proof pis))
-      (smpExt (EF := EF) (idealOf answer) (oodCheck (EF := EF) (idealOf answer) P A proof
+theorem batch_idealOf (hK : Challenge.d EF + 1 ≤ K)
+    (hshape : preprocessedShapeOk A vk proof.opened proof.degreeBits = true) :
+    Challenge.toSpec (batchOf (idealOf answer) P A vk proof pis) =
+      extAt (answer (keyAt answer (inputs P A vk pis proof) 2)).2 (challengeOffset P.batchPowBits) ∧
+    ∃ l, stateFri (idealOf answer) P A vk proof pis =
+      ⟨capAt answer (inputs P A vk pis proof) 3, [], l⟩ := by
+  obtain ⟨-, l, hl⟩ := zeta_idealOf answer P A vk proof pis hK
+  have hst : pcsState (idealOf answer) P
+      (openingRounds A vk proof (zetaOf (idealOf answer) P A vk proof pis))
+      (smpExt (EF := EF) (idealOf answer) (oodCheck (EF := EF) (idealOf answer) P A vk proof
         pis).2).2 =
-      ⟨capAt answer (inputs P A pis proof) 2, DomainSeparator.pcsSeed F EF
+      ⟨capAt answer (inputs P A vk pis proof) 2, DomainSeparator.pcsSeed F EF
         (pcsCounts proof.opened) P.batchPowBits ++ coeffs (openedValues proof.opened), []⟩ := by
-    rw [hl, pcsState, obsOpened_eq, roundValues_vRounds', claimCounts_vRounds,
+    rw [hl, pcsState, obsOpened_eq, roundValues_openingRounds A vk proof _ hshape,
+      claimCounts_openingRounds A vk proof _ hshape,
       obsList_idealOf_ne answer _ _ (pcsSeed_ne_nil _ _), obsList_idealOf answer _ rfl]
     rfl
-  have h := grindRound_idealOf (EF := EF) answer hK (inputs P A pis proof) 2
+  have h := grindRound_idealOf (EF := EF) answer hK (inputs P A vk pis proof) 2
     (DomainSeparator.pcsSeed F EF (pcsCounts proof.opened) P.batchPowBits ++
       coeffs (openedValues proof.opened)) P.batchPowBits proof.fri.batchWitness (by
       simp only [inputs, List.getD_eq_getElem?_getD, List.getElem?_cons_succ,
@@ -425,39 +429,40 @@ the first `d` samples of round `0`; `ζ`, the batching challenge and `β_i` are 
 offsets of rounds `1`, `2` and `3 + i`; and the query round's grinding sample and query samples
 are its samples from `0` and from the grinding offset. -/
 theorem challenges_idealOf (hK : P.numQueries + Challenge.d EF + 1 ≤ K)
+    (hshape : preprocessedShapeOk A vk proof.opened proof.degreeBits = true)
     (hfp : proof.fri.finalPoly.toList ≠ []) :
-    let u := fun j ↦ (answer (keyAt answer (inputs P A pis proof) j)).2
+    let u := fun j ↦ (answer (keyAt answer (inputs P A vk pis proof) j)).2
     let n := (proof.fri.commits.toList.zip proof.fri.commitWitnesses.toList).length
-    Challenge.toSpec (alphaOf (idealOf answer) P A proof pis) = extAt (u 0) 0 ∧
-      Challenge.toSpec (zetaOf (idealOf answer) P A proof pis) =
+    Challenge.toSpec (alphaOf (idealOf answer) P A vk proof pis) = extAt (u 0) 0 ∧
+      Challenge.toSpec (zetaOf (idealOf answer) P A vk proof pis) =
         extAt (u 1) (challengeOffset P.oodPowBits) ∧
-      Challenge.toSpec (batchOf (idealOf answer) P A proof pis) =
+      Challenge.toSpec (batchOf (idealOf answer) P A vk proof pis) =
         extAt (u 2) (challengeOffset P.batchPowBits) ∧
-      (betasOf (idealOf answer) P A proof pis).length = n ∧
-      (∀ i < n, Challenge.toSpec ((betasOf (idealOf answer) P A proof pis).getD i 0) =
+      (betasOf (idealOf answer) P A vk proof pis).length = n ∧
+      (∀ i < n, Challenge.toSpec ((betasOf (idealOf answer) P A vk proof pis).getD i 0) =
         extAt (u (3 + i)) (challengeOffset P.commitPowBits)) ∧
-      (P.queryPowBits ≠ 0 → powSampleOf (idealOf answer) P A proof pis =
+      (P.queryPowBits ≠ 0 → powSampleOf (idealOf answer) P A vk proof pis =
         ((u (3 + n)).toList.getD 0 0)) ∧
-      ∀ j < P.numQueries, querySampleOf (idealOf answer) P A proof pis j =
+      ∀ j < P.numQueries, querySampleOf (idealOf answer) P A vk proof pis j =
         ((u (3 + n)).toList.getD (challengeOffset P.queryPowBits + j) 0) := by
   intro u n
-  obtain ⟨hb1, l₀, hl₀⟩ := batch_idealOf answer P A proof pis (by omega)
-  have hstart : friStart (idealOf answer) P A proof pis =
-      ⟨capAt answer (inputs P A pis proof) 3, friSeedOf P proof, []⟩ := by
+  obtain ⟨hb1, l₀, hl₀⟩ := batch_idealOf answer P A vk proof pis (by omega) hshape
+  have hstart : friStart (idealOf answer) P A vk proof pis =
+      ⟨capAt answer (inputs P A vk pis proof) 3, friSeedOf P proof, []⟩ := by
     rw [friStart, hl₀, obsList_idealOf_ne answer _ _ (friSeed_ne_nil _ _ _ _ _ _ _ _)]
     rfl
   obtain ⟨hc1, hc2, l, hl⟩ := commitReplay_idealOf (EF := EF) answer P (by omega)
-    (inputs P A pis proof) (proof.fri.commits.toList.zip proof.fri.commitWitnesses.toList) 3
-    (friSeedOf P proof) [] (fun i hi ↦ inputs_getD_fold P A pis proof i hi)
+    (inputs P A vk pis proof) (proof.fri.commits.toList.zip proof.fri.commitWitnesses.toList) 3
+    (friSeedOf P proof) [] (fun i hi ↦ inputs_getD_fold P A vk pis proof i hi)
   rw [← hstart] at hc1 hc2 hl
-  obtain ⟨hq1, hq2⟩ := queryRound_idealOf answer P proof (by omega) (inputs P A pis proof)
-    (3 + n) _ l hfp (inputs_getD_last P A pis proof)
-  have hqs : queryState (idealOf answer) P A proof pis =
-      obsExts (idealOf answer) ⟨capAt answer (inputs P A pis proof) (3 + n),
+  obtain ⟨hq1, hq2⟩ := queryRound_idealOf answer P proof (by omega) (inputs P A vk pis proof)
+    (3 + n) _ l hfp (inputs_getD_last P A vk pis proof)
+  have hqs : queryState (idealOf answer) P A vk proof pis =
+      obsExts (idealOf answer) ⟨capAt answer (inputs P A vk pis proof) (3 + n),
         seedAt (friSeedOf P proof) n, l⟩ proof.fri.finalPoly.toList := by
     rw [queryState, hl]
-  refine ⟨(alpha_idealOf answer P A proof pis (by omega)).1,
-    (zeta_idealOf answer P A proof pis (by omega)).1, hb1, hc1, hc2, fun hb ↦ ?_, fun j hj ↦ ?_⟩
+  refine ⟨(alpha_idealOf answer P A vk proof pis (by omega)).1,
+    (zeta_idealOf answer P A vk proof pis (by omega)).1, hb1, hc1, hc2, fun hb ↦ ?_, fun j hj ↦ ?_⟩
   · rw [powSampleOf, ite_eq_right hb, hqs, hq1 hb]
   · rw [querySampleOf, hqs, hq2 j hj]
 

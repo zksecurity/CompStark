@@ -75,7 +75,7 @@ def phases (logN : Nat) : IO UInt32 := do
   let qlog := logN + 1
   let t3 ← IO.monoMsNow
   let alpha : _root_.KoalaBear.Fast.Ext4 := ⟨5, 7, 11, 13⟩
-  let qs := B.quotient A [] logN 1 lde alpha
+  let qs := B.quotient A [] logN 1 lde none alpha
   let t4 ← IO.monoMsNow
   IO.println s!"quotient {t4 - t3} ms {qs.size}"
   let chunks := (List.range 2).map fun c ↦
@@ -244,19 +244,22 @@ def main (args : List String) : IO UInt32 := do
   | ["phases", logN] => phases logN.toNat!
   | "prove" :: backend :: air :: rest =>
     -- `prove (spec|fast) (fib|wide) LOG_N LOG_BLOWUP LOG_FINAL MAX_LOG_ARITY QUERIES COMMIT_POW
-    -- QUERY_POW [JSON]`: the proof's median time, checked against Plonky3's proof in `JSON` if
-    -- given.
+    -- QUERY_POW [BATCH_POW OOD_POW] [JSON]`: the proof's median time, checked against Plonky3's
+    -- proof in `JSON` if given.
     let B := CompStark.Stark.specBackend KoalaBear.Fast.Ext4
-    let ps := (rest.take 7).map String.toNat!
-    let [logN, b, f, a, q, cp, qp] := ps | IO.eprintln "seven parameters"; return 1
-    let P : CompStark.Fri.Params := ⟨b, f, a, q, cp, qp, 0, 0⟩
+    let ps := (rest.takeWhile String.isNat).map String.toNat!
+    let P : CompStark.Fri.Params ← match ps.drop 1 with
+      | [b, f, a, q, cp, qp] => pure ⟨b, f, a, q, cp, qp, 0, 0⟩
+      | [b, f, a, q, cp, qp, bp, op] => pure ⟨b, f, a, q, cp, qp, bp, op⟩
+      | _ => IO.eprintln "seven or nine parameters"; return 1
+    let logN := ps.headD 0
     let A := if air == "wide" then CompStark.Stark.wide 64 else CompStark.Stark.fibonacci
     let (trace, pis) :=
       if air == "wide" then (wideTrace 64 (2 ^ logN), []) else fibInstance (2 ^ logN)
     -- The fast backend's extension plans are built once, outside timing, as Plonky3's twiddles.
     let B := if backend == "fast" then
-      CompStark.KoalaBear.backendFor logN b A.logQuotientChunks else B
-    if let path :: _ := rest.drop 7 then
+      CompStark.KoalaBear.backendFor logN P.logBlowup A.logQuotientChunks else B
+    if let path :: _ := rest.drop ps.length then
       let rust ← IO.ofExcept
         (CompStark.Stark.Json.parse (p := KoalaBear.fieldSize) (EF := KoalaBear.Fast.Ext4)
           (← IO.FS.readFile path))

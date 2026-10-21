@@ -15,12 +15,11 @@ public import Mathlib.LinearAlgebra.Lagrange
 An AIR's constraints over polynomials, as the analysis of the constraint check sees them:
 
 * `Expr.eval_hom`: evaluation commutes with maps that respect `+`, `-` and `*`.
-* `constraintPoly`: a constraint over trace polynomials `T`, with the selector polynomials
-  `firstSel`, `lastSel` and `X - ω⁻¹`; its degree is at most `degBound`
-  (`natDegree_constraintPoly`),
-  and on the trace domain `⟨ω⟩` it takes the constraint's value on the trace's rows
-  (`eval_constraintPoly_root`). A satisfied constraint is `Z_H` times its quotient
-  (`constraintPoly_eq`).
+* `constraintPoly`: a constraint over the polynomials `T` of the trace and `Tp` of the
+  preprocessed trace, with the selector polynomials `firstSel`, `lastSel` and `X - ω⁻¹`; its
+  degree is at most `degBound` (`natDegree_constraintPoly`), and on the trace domain `⟨ω⟩` it
+  takes the constraint's value on the traces' rows (`eval_constraintPoly_root`). A satisfied
+  constraint is `Z_H` times its quotient (`constraintPoly_eq`).
 * Points `g ωᵐ` of the shifted cosets are not two-adic roots of unity (`genPoint_ne`).
 * `horner`: Horner's rule, the folding of the constraints by `α`.
 -/
@@ -32,18 +31,23 @@ open Polynomial
 /-! ### Constraints under ring maps -/
 
 /-- Evaluation commutes with a map that respects `+`, `-` and `*`, for expressions reading
-columns below `w` of environments that agree there. -/
+columns below `w`, `pw` and `pwNext` (`colsBelow`) of environments that agree there. -/
 theorem Expr.eval_hom {F : Type} {R S : Type*} [Add R] [Sub R] [Mul R] [Add S] [Sub S] [Mul S]
     (f : R → S)
     (hadd : ∀ a b, f (a + b) = f a + f b) (hsub : ∀ a b, f (a - b) = f a - f b)
-    (hmul : ∀ a b, f (a * b) = f a * f b) (w : Nat) (r : Expr.Env F R) (s : Expr.Env F S)
+    (hmul : ∀ a b, f (a * b) = f a * f b) (w pw pwNext : Nat) (r : Expr.Env F R)
+    (s : Expr.Env F S)
     (hcur : ∀ c < w, f (r.cur c) = s.cur c) (hnext : ∀ c < w, f (r.next c) = s.next c)
+    (hpcur : ∀ c < pw, f (r.prepCur c) = s.prepCur c)
+    (hpnext : ∀ c < pwNext, f (r.prepNext c) = s.prepNext c)
     (hpub : ∀ j, f (r.pub j) = s.pub j) (hconst : ∀ c, f (r.const c) = s.const c)
     (h1 : f r.isFirstRow = s.isFirstRow) (h2 : f r.isLastRow = s.isLastRow)
     (h3 : f r.isTransition = s.isTransition) :
-    ∀ e : Expr F, e.colsBelow w = true → f (e.eval r) = e.eval s
+    ∀ e : Expr F, e.colsBelow w pw pwNext = true → f (e.eval r) = e.eval s
   | .cur c, h => hcur c (of_decide_eq_true h)
   | .next c, h => hnext c (of_decide_eq_true h)
+  | .prepCur c, h => hpcur c (of_decide_eq_true h)
+  | .prepNext c, h => hpnext c (of_decide_eq_true h)
   | .pub j, _ => hpub j
   | .const c, _ => hconst c
   | .isFirstRow, _ => h1
@@ -52,41 +56,48 @@ theorem Expr.eval_hom {F : Type} {R S : Type*} [Add R] [Sub R] [Mul R] [Add S] [
   | .add a b, h => by
     simp only [Expr.colsBelow, Bool.and_eq_true] at h
     simp only [Expr.eval]
-    rw [hadd, Expr.eval_hom f hadd hsub hmul w r s hcur hnext hpub hconst h1 h2 h3 a h.1,
-      Expr.eval_hom f hadd hsub hmul w r s hcur hnext hpub hconst h1 h2 h3 b h.2]
+    rw [hadd, Expr.eval_hom f hadd hsub hmul w pw pwNext r s hcur hnext hpcur hpnext hpub hconst
+      h1 h2 h3 a h.1, Expr.eval_hom f hadd hsub hmul w pw pwNext r s hcur hnext hpcur hpnext
+      hpub hconst h1 h2 h3 b h.2]
   | .sub a b, h => by
     simp only [Expr.colsBelow, Bool.and_eq_true] at h
     simp only [Expr.eval]
-    rw [hsub, Expr.eval_hom f hadd hsub hmul w r s hcur hnext hpub hconst h1 h2 h3 a h.1,
-      Expr.eval_hom f hadd hsub hmul w r s hcur hnext hpub hconst h1 h2 h3 b h.2]
+    rw [hsub, Expr.eval_hom f hadd hsub hmul w pw pwNext r s hcur hnext hpcur hpnext hpub hconst
+      h1 h2 h3 a h.1, Expr.eval_hom f hadd hsub hmul w pw pwNext r s hcur hnext hpcur hpnext
+      hpub hconst h1 h2 h3 b h.2]
   | .mul a b, h => by
     simp only [Expr.colsBelow, Bool.and_eq_true] at h
     simp only [Expr.eval]
-    rw [hmul, Expr.eval_hom f hadd hsub hmul w r s hcur hnext hpub hconst h1 h2 h3 a h.1,
-      Expr.eval_hom f hadd hsub hmul w r s hcur hnext hpub hconst h1 h2 h3 b h.2]
+    rw [hmul, Expr.eval_hom f hadd hsub hmul w pw pwNext r s hcur hnext hpcur hpnext hpub hconst
+      h1 h2 h3 a h.1, Expr.eval_hom f hadd hsub hmul w pw pwNext r s hcur hnext hpcur hpnext
+      hpub hconst h1 h2 h3 b h.2]
 
 /-- The degree of a constraint over polynomials is at most `degBound`. -/
 theorem Expr.natDegree_eval {F : Type} [Field F] (n : Nat) (env : Expr.Env F F[X])
     (hcur : ∀ c, (env.cur c).natDegree ≤ n - 1) (hnext : ∀ c, (env.next c).natDegree ≤ n - 1)
+    (hpcur : ∀ c, (env.prepCur c).natDegree ≤ n - 1)
+    (hpnext : ∀ c, (env.prepNext c).natDegree ≤ n - 1)
     (hpub : ∀ j, (env.pub j).natDegree = 0) (hconst : ∀ c, (env.const c).natDegree = 0)
     (h1 : env.isFirstRow.natDegree ≤ n - 1) (h2 : env.isLastRow.natDegree ≤ n - 1)
     (h3 : env.isTransition.natDegree ≤ 1) : ∀ e : Expr F, (e.eval env).natDegree ≤ e.degBound n
   | .cur c => hcur c
   | .next c => hnext c
+  | .prepCur c => hpcur c
+  | .prepNext c => hpnext c
   | .pub j => (hpub j).le
   | .const c => (hconst c).le
   | .isFirstRow => h1
   | .isLastRow => h2
   | .isTransition => h3
   | .add a b => (natDegree_add_le _ _).trans (max_le_max
-      (Expr.natDegree_eval n env hcur hnext hpub hconst h1 h2 h3 a)
-      (Expr.natDegree_eval n env hcur hnext hpub hconst h1 h2 h3 b))
+      (Expr.natDegree_eval n env hcur hnext hpcur hpnext hpub hconst h1 h2 h3 a)
+      (Expr.natDegree_eval n env hcur hnext hpcur hpnext hpub hconst h1 h2 h3 b))
   | .sub a b => (natDegree_sub_le _ _).trans (max_le_max
-      (Expr.natDegree_eval n env hcur hnext hpub hconst h1 h2 h3 a)
-      (Expr.natDegree_eval n env hcur hnext hpub hconst h1 h2 h3 b))
+      (Expr.natDegree_eval n env hcur hnext hpcur hpnext hpub hconst h1 h2 h3 a)
+      (Expr.natDegree_eval n env hcur hnext hpcur hpnext hpub hconst h1 h2 h3 b))
   | .mul a b => natDegree_mul_le.trans (Nat.add_le_add
-      (Expr.natDegree_eval n env hcur hnext hpub hconst h1 h2 h3 a)
-      (Expr.natDegree_eval n env hcur hnext hpub hconst h1 h2 h3 b))
+      (Expr.natDegree_eval n env hcur hnext hpcur hpnext hpub hconst h1 h2 h3 a)
+      (Expr.natDegree_eval n env hcur hnext hpcur hpnext hpub hconst h1 h2 h3 b))
 
 /-! ### The constraints as polynomials -/
 
@@ -99,12 +110,14 @@ noncomputable def firstSel (n : Nat) : F[X] := ∑ m ∈ Finset.range n, X ^ m
 /-- `Z_H(X) / (X - ω⁻¹) = ω · (Z_H / (X - 1))(ω X)`. -/
 noncomputable def lastSel (n : Nat) (w : F) : F[X] := C w * (firstSel n).comp (C w * X)
 
-/-- The constraints' environment over the spec polynomials: the trace's column polynomials `T`,
-shifted by `ω` for the next row, and the selectors. -/
-noncomputable def polyEnv (n : Nat) (w : F) (T : Nat → F[X]) (pis : List F) :
+/-- The constraints' environment over the spec polynomials: the column polynomials `T` of the
+trace and `Tp` of the preprocessed trace, shifted by `ω` for the next row, and the selectors. -/
+noncomputable def polyEnv (n : Nat) (w : F) (T Tp : Nat → F[X]) (pis : List F) :
     Expr.Env F F[X] where
   cur := T
   next j := (T j).comp (C w * X)
+  prepCur := Tp
+  prepNext j := (Tp j).comp (C w * X)
   pub j := C (pis.getD j 0)
   const c := C c
   isFirstRow := firstSel n
@@ -148,16 +161,19 @@ theorem natDegree_comp_shift (p : F[X]) (w : F) : (p.comp (C w * X)).natDegree �
 theorem natDegree_lastSel (n : Nat) (w : F) : (lastSel n w).natDegree ≤ n - 1 :=
   (natDegree_C_mul_le _ _).trans ((natDegree_comp_shift _ _).trans (natDegree_firstSel n))
 
-/-- The constraint `c` over the trace polynomials. -/
-noncomputable def constraintPoly (n : Nat) (w : F) (T : Nat → F[X]) (pis : List F) (c : Expr F) :
-    F[X] :=
-  c.eval (polyEnv n w T pis)
+/-- The constraint `c` over the polynomials `T` of the trace and `Tp` of the preprocessed
+trace. -/
+noncomputable def constraintPoly (n : Nat) (w : F) (T Tp : Nat → F[X]) (pis : List F)
+    (c : Expr F) : F[X] :=
+  c.eval (polyEnv n w T Tp pis)
 
 /-- A constraint polynomial has degree at most `degBound`. -/
-theorem natDegree_constraintPoly (n : Nat) (w : F) (T : Nat → F[X]) (pis : List F) (c : Expr F)
-    (hT : ∀ j, (T j).natDegree ≤ n - 1) :
-    (constraintPoly n w T pis c).natDegree ≤ c.degBound n :=
-  Expr.natDegree_eval n (polyEnv n w T pis) hT (fun j ↦ (natDegree_comp_shift _ _).trans (hT j))
+theorem natDegree_constraintPoly (n : Nat) (w : F) (T Tp : Nat → F[X]) (pis : List F)
+    (c : Expr F) (hT : ∀ j, (T j).natDegree ≤ n - 1) (hTp : ∀ j, (Tp j).natDegree ≤ n - 1) :
+    (constraintPoly n w T Tp pis c).natDegree ≤ c.degBound n :=
+  Expr.natDegree_eval n (polyEnv n w T Tp pis) hT
+    (fun j ↦ (natDegree_comp_shift _ _).trans (hT j)) hTp
+    (fun j ↦ (natDegree_comp_shift _ _).trans (hTp j))
     (fun _ ↦ natDegree_C _) (fun _ ↦ natDegree_C _) (natDegree_firstSel n)
     (natDegree_lastSel n w) (natDegree_sub_le_of_le natDegree_X_le (natDegree_C _).le) c
 
@@ -217,25 +233,43 @@ theorem eval_firstSel_root (logN i : Nat) (h : logN ≤ twoAdicity F) (hi : i < 
 def TraceOn (logN w : Nat) (trace : Array F) (T : Nat → F[X]) : Prop :=
   ∀ j < w, ∀ i < 2 ^ logN, (T j).eval (twoAdicGen logN ^ i) = trace.getD (i * w + j) 0
 
-/-- The constraints over the trace polynomials take the constraints' values on the trace's rows. -/
+/-- The next row's value of polynomials taking a trace's values on `⟨ω⟩`. -/
+theorem eval_comp_root (logN : Nat) (h : logN ≤ twoAdicity F) (w : Nat) (trace : Array F)
+    (T : Nat → F[X]) (hT : TraceOn logN w trace T) (j : Nat) (hj : j < w) (i : Nat) :
+    ((T j).comp (C (twoAdicGen logN) * X)).eval (twoAdicGen logN ^ i) =
+      trace.getD ((i + 1) % 2 ^ logN * w + j) 0 := by
+  have hp := BaseField.isPrimitiveRoot_twoAdicGen (F := F) logN h
+  have hsucc : twoAdicGen (F := F) logN ^ (i + 1) =
+      twoAdicGen logN ^ ((i + 1) % 2 ^ logN) := by
+    conv_lhs => rw [← Nat.mod_add_div (i + 1) (2 ^ logN)]
+    rw [pow_add, pow_mul, hp.pow_eq_one, one_pow, mul_one]
+  have hm : (i + 1) % 2 ^ logN < 2 ^ logN := Nat.mod_lt _ (Nat.two_pow_pos _)
+  rw [eval_comp, eval_mul, eval_C, eval_X, ← hT j hj _ hm, ← pow_succ', hsucc]
+
+/-- The constraints over the polynomials of the trace and the preprocessed trace take the
+constraints' values on the traces' rows. -/
 theorem eval_constraintPoly_root (A : Air F) (logN : Nat) (h : logN ≤ twoAdicity F)
-    (trace : Array F) (pis : List F) (T : Nat → F[X]) (hT : TraceOn logN A.width trace T)
-    (c : Expr F) (hc : c.colsBelow A.width = true) (i : Nat) (hi : i < 2 ^ logN) :
-    (constraintPoly (2 ^ logN) (twoAdicGen logN) T pis c).eval (twoAdicGen logN ^ i) =
+    (trace : Array F) (pis : List F) (T Tp : Nat → F[X]) (hT : TraceOn logN A.width trace T)
+    (hTp : TraceOn logN A.preprocessedWidth A.preprocessed Tp) (c : Expr F)
+    (hc : c.colsBelow A.width A.preprocessedWidth A.preprocessedNextWidth = true) (i : Nat)
+    (hi : i < 2 ^ logN) :
+    (constraintPoly (2 ^ logN) (twoAdicGen logN) T Tp pis c).eval (twoAdicGen logN ^ i) =
       c.eval (A.traceRow logN trace pis i) := by
   have hp := BaseField.isPrimitiveRoot_twoAdicGen (F := F) logN h
   have hsucc : twoAdicGen (F := F) logN ^ (i + 1) =
       twoAdicGen logN ^ ((i + 1) % 2 ^ logN) := by
     conv_lhs => rw [← Nat.mod_add_div (i + 1) (2 ^ logN)]
     rw [pow_add, pow_mul, hp.pow_eq_one, one_pow, mul_one]
+  have hnw : A.preprocessedNextWidth ≤ A.preprocessedWidth := by
+    unfold Air.preprocessedNextWidth; split <;> omega
   rw [constraintPoly]
   refine Expr.eval_hom (eval (twoAdicGen logN ^ i)) (fun _ _ ↦ eval_add)
-    (fun a b ↦ eval_sub a b _) (fun _ _ ↦ eval_mul) A.width _ (A.traceRow logN trace pis i)
-    (fun j hj ↦ hT j hj i hi) (fun j hj ↦ ?_) (fun _ ↦ eval_C) (fun _ ↦ eval_C) ?_ ?_ ?_ c hc
-  · have hm : (i + 1) % 2 ^ logN < 2 ^ logN := Nat.mod_lt _ (Nat.two_pow_pos _)
-    change ((T j).comp (C (twoAdicGen logN) * X)).eval (twoAdicGen logN ^ i) =
-      trace.getD ((i + 1) % 2 ^ logN * A.width + j) 0
-    rw [eval_comp, eval_mul, eval_C, eval_X, ← hT j hj _ hm, ← pow_succ', hsucc]
+    (fun a b ↦ eval_sub a b _) (fun _ _ ↦ eval_mul) A.width A.preprocessedWidth
+    A.preprocessedNextWidth _ (A.traceRow logN trace pis i)
+    (fun j hj ↦ hT j hj i hi) (fun j hj ↦ eval_comp_root logN h _ trace T hT j hj i)
+    (fun j hj ↦ hTp j hj i hi)
+    (fun j hj ↦ eval_comp_root logN h _ _ Tp hTp j (by omega) i)
+    (fun _ ↦ eval_C) (fun _ ↦ eval_C) ?_ ?_ ?_ c hc
   · exact eval_firstSel_root logN i h hi
   · change (lastSel (2 ^ logN) (twoAdicGen logN)).eval (twoAdicGen logN ^ i) =
       (if i + 1 = 2 ^ logN then ((2 ^ logN : Nat) : F) * twoAdicGen logN else 0)
@@ -256,8 +290,9 @@ theorem eval_constraintPoly_root (A : Air F) (logN : Nat) (h : logN ≤ twoAdici
 noncomputable abbrev zH (n : Nat) : F[X] := X ^ n - C 1
 
 /-- A constraint that vanishes on the trace domain, divided by `Z_H`. -/
-noncomputable def quotientPoly (logN : Nat) (T : Nat → F[X]) (pis : List F) (c : Expr F) : F[X] :=
-  constraintPoly (2 ^ logN) (twoAdicGen logN) T pis c /ₘ zH (2 ^ logN)
+noncomputable def quotientPoly (logN : Nat) (T Tp : Nat → F[X]) (pis : List F) (c : Expr F) :
+    F[X] :=
+  constraintPoly (2 ^ logN) (twoAdicGen logN) T Tp pis c /ₘ zH (2 ^ logN)
 
 /-- `Z_H` is monic. -/
 theorem zH_monic (logN : Nat) : (zH (2 ^ logN) : F[X]).Monic :=
@@ -289,20 +324,23 @@ def TraceDeg (logN : Nat) (T : Nat → F[X]) : Prop := ∀ j, (T j).natDegree �
 
 /-- A satisfied constraint is `Z_H` times its quotient. -/
 theorem constraintPoly_eq (A : Air F) (logN : Nat) (h : logN ≤ twoAdicity F) (trace : Array F)
-    (pis : List F) (T : Nat → F[X]) (hT : TraceOn logN A.width trace T)
+    (pis : List F) (T Tp : Nat → F[X]) (hT : TraceOn logN A.width trace T)
+    (hTp : TraceOn logN A.preprocessedWidth A.preprocessed Tp)
     (hsat : A.ConstraintsVanish logN trace pis) (hcols : A.ColsInWidth) (c : Expr F)
     (hc : c ∈ A.constraints) :
-    constraintPoly (2 ^ logN) (twoAdicGen logN) T pis c = zH (2 ^ logN) * quotientPoly logN T pis
-        c :=
+    constraintPoly (2 ^ logN) (twoAdicGen logN) T Tp pis c =
+      zH (2 ^ logN) * quotientPoly logN T Tp pis c :=
   eq_zH_mul logN h _ fun i hi ↦ by
-    rw [eval_constraintPoly_root A logN h trace pis T hT c (hcols c hc) i hi, hsat c hc i hi]
+    rw [eval_constraintPoly_root A logN h trace pis T Tp hT hTp c (hcols c hc) i hi,
+      hsat c hc i hi]
 
 /-- A constraint's quotient has degree below `k n`. -/
-theorem natDegree_quotientPoly (A : Air F) (logN : Nat) (pis : List F) (T : Nat → F[X])
-    (hTd : TraceDeg logN T) (hdeg : A.DegreeFits logN) (c : Expr F) (hc : c ∈ A.constraints) :
-    (quotientPoly logN T pis c).natDegree < 2 ^ (logN + A.logQuotientChunks) := by
+theorem natDegree_quotientPoly (A : Air F) (logN : Nat) (pis : List F) (T Tp : Nat → F[X])
+    (hTd : TraceDeg logN T) (hTpd : TraceDeg logN Tp) (hdeg : A.DegreeFits logN) (c : Expr F)
+    (hc : c ∈ A.constraints) :
+    (quotientPoly logN T Tp pis c).natDegree < 2 ^ (logN + A.logQuotientChunks) := by
   rw [quotientPoly, natDegree_divByMonic _ (zH_monic logN), natDegree_X_pow_sub_C]
-  have h1 := natDegree_constraintPoly (2 ^ logN) (twoAdicGen logN) T pis c hTd
+  have h1 := natDegree_constraintPoly (2 ^ logN) (twoAdicGen logN) T Tp pis c hTd hTpd
   have h2 := hdeg c hc
   have h3 := Nat.two_pow_pos (logN + A.logQuotientChunks)
   omega

@@ -130,7 +130,7 @@ theorem gen_ne_zero : (gen : F) ≠ 0 := BaseField.gen_ne_zero
 /-- **`ldeRef` is an LDE**: of the polynomials that take column `j`'s values at
 `g shift⁻¹ ωⁱ`. -/
 theorem ldeRef_isLde (logH bits : Nat) (shift : F) (w : Nat) (m : Array F)
-    (_hm : m.size = 2 ^ logH * w) (hlog : logH + bits ≤ twoAdicity F) (hs : shift ≠ 0) :
+    (hlog : logH + bits ≤ twoAdicity F) (hs : shift ≠ 0) :
     ∃ ps, CompStark.Mat.IsLde bits (logH + bits) (ldeRef logH bits shift w m) ps ∧
       ∀ j < w, ∀ i < 2 ^ logH, (ps.getD j 0).eval ((gen * shift⁻¹) *
         (twoAdicGen logH) ^ i) = (m.getD (i * w + j) 0) := by

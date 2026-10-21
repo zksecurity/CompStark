@@ -86,6 +86,7 @@ public import CompStark.Complete.Lde
 public import CompStark.Complete.Quotient
 public import CompStark.Complete.Stark
 public import CompStark.Stark.Satisfied
+public import CompStark.Stark.Setup
 public import CompStark.Completeness
 public import CompStark.KoalaBear.Completeness
 public import CompStark.Sound.Defs
@@ -128,6 +129,7 @@ public import CompStark.Ni.Rounds
 public import CompStark.Ni.FirstQueries
 public import CompStark.Ni.RoundBounds
 public import CompStark.Ni.Binding
+public import CompStark.Ni.Setup
 public import CompStark.Ni.Accepted
 public import CompStark.Ni.Extracted
 public import CompStark.Ni.BadQuery

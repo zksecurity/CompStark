@@ -22,8 +22,9 @@ round has an error, the probability that a fresh answer makes it bad:
 
 A round with grinding (`oodPowBits` for `ζ`, `batchPowBits` for `a`, `commitPowBits` for the
 folds, `queryPowBits` for the queries) also needs its proof-of-work sample to vanish on its low
-bits, in the same answer: its error is multiplied by `powFraction`. `roundError` is the largest round error, at the best proximity loss. `hashError`
-bounds collisions and predictions among the digests of `q` queries.
+bits, in the same answer: its error is multiplied by `powFraction`. `roundError` is the largest
+round error, at the best proximity loss. `hashError` bounds collisions and predictions among the
+digests of `q` queries.
 -/
 
 @[expose] public section

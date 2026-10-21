@@ -54,10 +54,12 @@ namespace Stark
 
 variable {EF : Type} [Challenge F EF]
 
-/-- Plonky3's verifier: `verifyWith` on Poseidon2. -/
-def verify (P : Fri.Params) (A : Air F) (proof : Proof F EF) (pis : List F) :
+/-- Plonky3's verifier: `verifyWith` on Poseidon2, against the verifying key `vk` of the AIR's
+preprocessed trace, if any. -/
+def verify (P : Fri.Params) (A : Air F) (vk : Option (PreprocessedKey F)) (proof : Proof F EF)
+    (pis : List F) :
     Except String Unit :=
-  verifyWith (poseidon2 F) P A proof pis
+  verifyWith (poseidon2 F) P A vk proof pis
 
 end Stark
 end CompStark

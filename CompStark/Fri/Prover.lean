@@ -52,9 +52,9 @@ def ldeRef (logH bits : Nat) (shift : F) (w : Nat) (m : Array F) : Mat F :=
 
 /-- The kernels the prover runs, on the backend's own matrices `M`, commitments `C` and vectors
 of extension elements `V`: the transcript, low-degree extension, commitments with their roots,
-openings and heights, the quotient values from the trace's extension, the values of a matrix's
-columns at points, and the FRI inputs and folds. Every backend computes the same functions
-(`Refines`); `spec` runs the specifications. -/
+openings and heights, the quotient values from the extensions of the trace and the preprocessed
+trace, if any, the values of a matrix's columns at points, and the FRI inputs and folds. Every
+backend computes the same functions (`Refines`); `spec` runs the specifications. -/
 structure Backend (F EF : Type) (width : Nat) where
   transcript : Transcript F width
   M : Type
@@ -66,7 +66,7 @@ structure Backend (F EF : Type) (width : Nat) where
   openAt : C → Nat → BatchOpening F
   /-- `log₂` of the largest committed height. -/
   logHeight : C → Nat
-  quotient : Air F → List F → Nat → Nat → M → EF → Array EF
+  quotient : Air F → List F → Nat → Nat → M → Option M → EF → Array EF
   openedAt : Nat → M → List EF → List (Array EF)
   toArray : V → Array EF
   ofArray : Array EF → V
@@ -300,14 +300,15 @@ def compress (m : Mat F) (ap : Array EF) : Array EF :=
   parChunks m.height (if m.height < 4096 then 1 else 16) fun r0 len ↦
     compressRows m.values ap m.width r0 len
 
-/-- The quotient values from the trace's extension `ext`: its first `2 ^ (degreeBits + logChunks)`
-rows in natural order are the trace on the quotient domain. -/
+/-- The quotient values from the extensions `ext` of the trace and `prep` of the preprocessed
+trace, if any: their first `2 ^ (degreeBits + logChunks)` rows in natural order are the traces on
+the quotient domain. -/
 def quotientOfLde (A : Air F) (pis : List F) (degreeBits logChunks : Nat) (ext : Mat F)
-    (alpha : EF) :
-    Array EF :=
+    (prep : Option (Mat F)) (alpha : EF) : Array EF :=
   let qlog := degreeBits + logChunks
-  let tq := Mat.ofValues ext.width (2 ^ qlog) (permuteRows ext (bitRevPerm qlog))
-  quotientValues A pis degreeBits logChunks tq alpha
+  let onQuotient (m : Mat F) := Mat.ofValues m.width (2 ^ qlog) (permuteRows m (bitRevPerm qlog))
+  quotientValues A pis degreeBits logChunks (onQuotient ext)
+    ((prep.map onQuotient).getD (Mat.ofValues 0 (2 ^ qlog) #[])) alpha
 
 /-- The batched quotients `∑ αᵏ (p(z) - p(x)) / (z - x)` by log height, tallest first: each
 matrix's rows batched by the powers of `α` once, then every point accumulated over the rows with
@@ -335,6 +336,7 @@ def reduce (alpha : EF) (items : List (Mat F × List (EF × Array EF))) : List (
 
 /-- The specification backend, on the transcript `t` and the Merkle hashes `hash` and
 `compress`. -/
+@[reducible]
 def Backend.spec (EF : Type) [Challenge F EF] (t : Transcript F width) (hash : List F → Digest F)
     (compress : Digest F → Digest F → Digest F) : Backend F EF width where
   transcript := t

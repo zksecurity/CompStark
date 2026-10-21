@@ -19,7 +19,9 @@ and runs it.
   root of single matrices against them.
 * Plonky3 `uni-stark` proofs over KoalaBear (`tests/data/AIR_*.json`, from `RAYON_NUM_THREADS=1
   compstark-bench stark AIR LOG_N LOG_BLOWUP LOG_FINAL MAX_LOG_ARITY QUERIES COMMIT_POW
-  QUERY_POW`): each verifies, the verifier rejects it with a changed opened value, and the
+  QUERY_POW`), with preprocessed columns for `prep` and `prep0` (`mulFib`): each verifies against
+  the verifying key of its preprocessed trace, the verifier rejects it with a changed opened
+  value, a changed preprocessed opening, or a missing or wrong verifying key, and the
   specification prover and the fast prover reproduce it from the same trace. Over the quintic
   extension, the specification prover's proofs verify.
 * The fast prover over BabyBear reproduces Plonky3's BabyBear proofs
@@ -132,6 +134,14 @@ def cubeInstance (n : Nat) : Array F × List F :=
     (t.push x |>.push y, x * x * x + y, y + 1)) (#[], 2, 0)
   (t, [2, 0, t.getD (2 * n - 2) 0])
 
+/-- The `mulFib` trace of `n` rows from `(1, 2)` and its public values. -/
+def prepInstance (n : Nat) : Array F × List F :=
+  let (t, _, _) := (List.range n).foldl (fun ((t, a, b) : Array F × F × F) i ↦
+    let p : F := ((i % 2 : Nat) : F)
+    let s : F := (((i + 1) % 6 : Nat) : F)
+    (t.push a |>.push b, b, p * a * b + s * (a + b))) (#[], 1, 2)
+  (t, [1, 2])
+
 /-- The trace of `n` rows of `wide 64` from `xⱼ = j`. -/
 def wideTrace (n : Nat) : Array F := Id.run do
   let mut out := Array.emptyWithCapacity (64 * n)
@@ -155,17 +165,32 @@ def tamper (proof : Proof F EF) : Proof F EF :=
   { proof with opened := { proof.opened with
       traceLocal := proof.opened.traceLocal.modify 0 (· + 1) } }
 
-/-- The saved proof of `air` for parameters `logN logBlowup logFinal maxLogArity queries
-commitPow queryPow [batchPow oodPow]` verifies, is rejected when tampered, and both provers
-reproduce it. -/
-def proof (name : String) (A : Air F) (inst : Nat → Array F × List F)
+/-- The proof with its first opened preprocessed value changed. -/
+def tamperPreprocessed (proof : Proof F EF) : Proof F EF :=
+  { proof with opened := { proof.opened with
+      preprocessedLocal := proof.opened.preprocessedLocal.map (·.modify 0 (· + 1)) } }
+
+/-- The saved proof of `air logN` for parameters `logN logBlowup logFinal maxLogArity queries
+commitPow queryPow [batchPow oodPow]` verifies against the verifying key of its preprocessed
+trace, is rejected when tampered, and both provers reproduce it. With preprocessed columns, it is
+also rejected with a changed preprocessed opening, without a verifying key, and against the key
+of another preprocessed trace. -/
+def proof (name : String) (air : Nat → Air F) (inst : Nat → Array F × List F)
     (ps : List Nat) : IO Unit := do
   let (logN, P) ← params ps
+  let A := air logN
+  let vk := setup P A logN
   let file := s!"{name}_{"_".intercalate (ps.map toString)}"
   let rust : Proof F EF ← IO.ofExcept (Json.parse (← IO.FS.readFile s!"tests/data/{file}.json"))
   let (trace, pis) := inst (2 ^ logN)
-  if let .error e := verify P A rust pis then throw (IO.userError s!"{file}: {e}")
-  check s!"{file}: rejects a tampered proof" (verify P A (tamper rust) pis matches .error _)
+  if let .error e := verify P A vk rust pis then throw (IO.userError s!"{file}: {e}")
+  check s!"{file}: rejects a tampered proof" (verify P A vk (tamper rust) pis matches .error _)
+  if 0 < A.preprocessedWidth then
+    check s!"{file}: rejects a tampered preprocessed opening"
+      (verify P A vk (tamperPreprocessed rust) pis matches .error _)
+    check s!"{file}: rejects a missing verifying key" (verify P A none rust pis matches .error _)
+    let other := setup P { A with preprocessed := A.preprocessed.modify 0 (· + 1) } logN
+    check s!"{file}: rejects another verifying key" (verify P A other rust pis matches .error _)
   check s!"{file}: specification prover" (prove EF P A logN trace pis == rust)
   check s!"{file}: fast prover"
     (proveWith (CompStark.KoalaBear.backendFor logN P.logBlowup A.logQuotientChunks) P A logN
@@ -173,24 +198,31 @@ def proof (name : String) (A : Air F) (inst : Nat → Array F × List F)
 
 /-- Over the quintic extension, the specification prover's proof verifies, and is rejected for
 other public values. -/
-def proofExt5 (A : Air F) (inst : Nat → Array F × List F) (ps : List Nat) : IO Unit := do
+def proofExt5 (air : Nat → Air F) (inst : Nat → Array F × List F) (ps : List Nat) : IO Unit := do
   let (logN, P) ← params ps
+  let A := air logN
   let (trace, pis) := inst (2 ^ logN)
   let pf := prove _root_.KoalaBear.Fast.Ext5 P A logN trace pis
-  if let .error e := verify P A pf pis then throw (IO.userError s!"Ext5 {ps}: {e}")
+  if let .error e := verify P A (setup P A logN) pf pis then
+    throw (IO.userError s!"Ext5 {ps}: {e}")
   check s!"Ext5 {ps}: rejects other public values"
-    (verify P A pf (pis.map (· + 1)) matches .error _)
+    (verify P A (setup P A logN) pf (pis.map (· + 1)) matches .error _)
 
 def proofs : IO Unit := do
   for ps in [[3, 2, 2, 1, 2, 0, 0], [3, 2, 2, 1, 2, 1, 1], [6, 1, 0, 1, 10, 0, 8],
       [6, 1, 1, 3, 8, 2, 4], [5, 2, 0, 2, 5, 0, 0], [5, 2, 1, 2, 6, 1, 2, 2, 3]] do
-    proof "fib" fibonacci fibInstance ps
+    proof "fib" (fun _ ↦ fibonacci) fibInstance ps
   for ps in [[4, 2, 0, 1, 4, 0, 0], [5, 3, 1, 2, 6, 1, 3], [5, 1, 0, 1, 7, 2, 3, 4, 1]] do
-    proof "cube" cube cubeInstance ps
-  proof "wide" (wide 64) (fun n ↦ (wideTrace n, [])) [10, 1, 0, 1, 20, 0, 4]
+    proof "cube" (fun _ ↦ cube) cubeInstance ps
+  proof "wide" (fun _ ↦ wide 64) (fun n ↦ (wideTrace n, [])) [10, 1, 0, 1, 20, 0, 4]
+  for ps in [[4, 2, 0, 1, 4, 0, 0], [5, 1, 1, 2, 6, 1, 2, 2, 3], [3, 2, 2, 1, 2, 0, 0]] do
+    proof "prep" (mulFib · true) prepInstance ps
+  for ps in [[4, 2, 0, 1, 4, 0, 0], [5, 3, 1, 2, 6, 1, 3]] do
+    proof "prep0" (mulFib · false) prepInstance ps
   for ps in [[3, 2, 2, 1, 2, 0, 0], [5, 2, 0, 2, 5, 0, 3], [4, 1, 0, 1, 3, 1, 1, 2, 2]] do
-    proofExt5 fibonacci fibInstance ps
-  proofExt5 cube cubeInstance [4, 2, 0, 1, 4, 1, 2]
+    proofExt5 (fun _ ↦ fibonacci) fibInstance ps
+  proofExt5 (fun _ ↦ cube) cubeInstance [4, 2, 0, 1, 4, 1, 2]
+  proofExt5 (mulFib · true) prepInstance [4, 2, 0, 1, 4, 1, 2]
 
 end KoalaBear
 
@@ -199,10 +231,11 @@ namespace BabyBear
 local notation "F" => _root_.BabyBear.Fast.Field
 local notation "EF" => _root_.BabyBear.Fast.Ext4
 
-/-- The fast prover reproduces Plonky3's saved BabyBear proof of `air`. -/
-def proof (name : String) (A : Air F) (inst : Nat → Array F × List F)
+/-- The fast prover reproduces Plonky3's saved BabyBear proof of `air logN`. -/
+def proof (name : String) (air : Nat → Air F) (inst : Nat → Array F × List F)
     (ps : List Nat) : IO Unit := do
   let (logN, P) ← KoalaBear.params ps
+  let A := air logN
   let file := s!"babybear_{name}_{"_".intercalate (ps.map toString)}"
   let rust : Proof F EF ← IO.ofExcept (Json.parse (← IO.FS.readFile s!"tests/data/{file}.json"))
   let (trace, pis) := inst (2 ^ logN)
@@ -212,8 +245,10 @@ def proof (name : String) (A : Air F) (inst : Nat → Array F × List F)
 
 def proofs : IO Unit := do
   for ps in [[3, 2, 2, 1, 2, 0, 0], [6, 1, 1, 3, 8, 2, 4], [4, 1, 1, 2, 5, 1, 1, 3, 2]] do
-    proof "fib" fibonacci CompStarkTests.BabyBear.fibInstance ps
-  proof "cube" cube CompStarkTests.BabyBear.cubeInstance [5, 3, 1, 2, 6, 1, 3]
+    proof "fib" (fun _ ↦ fibonacci) CompStarkTests.BabyBear.fibInstance ps
+  proof "cube" (fun _ ↦ cube) CompStarkTests.BabyBear.cubeInstance [5, 3, 1, 2, 6, 1, 3]
+  proof "prep" (mulFib · true) CompStarkTests.BabyBear.prepInstance [4, 2, 0, 1, 4, 0, 0]
+  proof "prep0" (mulFib · false) CompStarkTests.BabyBear.prepInstance [5, 1, 1, 2, 5, 1, 1, 3, 2]
 
 end BabyBear
 

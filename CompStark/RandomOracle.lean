@@ -5,6 +5,7 @@ Released under Apache 2.0 license as described in the file LICENSE.
 module
 
 public import CompStark.Stark.Verifier
+public import CompStark.Stark.Setup
 public import CompStark.Iop
 public import CompStark.Merkle.Extract
 public import VCVio.OracleComp.QueryTracking.RandomOracle.Basic
@@ -24,12 +25,13 @@ verifier runs on them through its primitives interface (`Primitives`, `Stark.ver
   none left queries the duplex oracle. `idealOf answer` is the same on a fixed answer function.
 * `Setup.streamLen`: the stream is long enough that every challenge round takes one answer, the
   query round's grinding sample and indices included.
-* `NIProver`, `run`: a prover is an oracle computation that outputs a proof. The game runs it,
-  logging its queries, and then the verifier on its proof, against one lazy random oracle. The
-  verifier trusts `proof.degreeBits`, and its oracle calls grow with it, so the game rejects proofs
-  for other trace lengths up front (`Setup.verifyRo`); it makes at most `Setup.verifierQueries`
-  calls.
-* `committedTrace`: the trace words a proof commits to, read off the prover's hash queries.
+* `NIProver`, `run`: a prover is an oracle computation that outputs a proof. The game computes
+  the verifying key of the AIR's preprocessed trace on the oracles (`Setup.setupRo`), runs the
+  prover, logging both's queries, and then the verifier on the prover's proof against that key,
+  against one lazy random oracle. The verifier trusts `proof.degreeBits`, and its oracle calls grow
+  with it, so the game rejects proofs for other trace lengths up front (`Setup.verifyRo`); the
+  setup and the verifier together make at most `Setup.verifierQueries` calls.
+* `committedTrace`: the trace words a proof commits to, read off the logged hash queries.
 -/
 
 @[expose] public section
@@ -111,19 +113,35 @@ abbrev friArities : List Nat :=
 /-- The oracle calls of one Merkle opening on `L`: the leaf hash and one compression per layer. -/
 def openingQueries : Nat := 1 + (S.logN + S.params.logBlowup)
 
+/-- The committed rounds the verifier opens at every query: the trace, the quotient, and the
+preprocessed trace if the AIR has one. -/
+def inputRounds : Nat := if S.air.preprocessedWidth = 0 then 2 else 3
+
+/-- The oracle calls of the verifying key's computation: a leaf hash per row of the preprocessed
+trace's extension and a compression per inner node, none without preprocessed columns. -/
+def setupQueries : Nat := if S.air.preprocessedWidth = 0 then 0 else 2 * S.size - 1
+
 /-- The verifier's oracle calls on a proof for `S`, at most one per sample (`α`, `ζ` and the
 batching challenge take `d` samples each, the out-of-domain and batching grinding one each, every
 fold a grinding sample and `d` for `β`, the query round a grinding sample), and per query its
-index and its paths in the multi-openings of the trace, the quotient and every fold. -/
-def verifierQueries : Nat :=
+index and its paths in the multi-openings of the committed rounds and every fold. -/
+def verifierCalls : Nat :=
   3 * Challenge.d EF + 3 + (Challenge.d EF + 1) * S.friArities.length +
-    S.params.numQueries * (1 + (S.friArities.length + 2) * S.openingQueries)
+    S.params.numQueries * (1 + (S.friArities.length + S.inputRounds) * S.openingQueries)
 
-/-- The verifier in the random-oracle model, on proofs for `2 ^ logN` rows. -/
-def verifyRo (proof : Proof F EF) (publicValues : List F) :
+/-- The oracle calls of the verifying key's computation and of the verifier. -/
+def verifierQueries : Nat := S.setupQueries + S.verifierCalls
+
+/-- The verifying key of the AIR's preprocessed trace on the random oracles. -/
+def setupRo : OracleComp (spec F S.streamLen) (Option (PreprocessedKey F)) :=
+  preprocessedKeyWith (ideal F S.streamLen) S.params S.air S.logN
+
+/-- The verifier in the random-oracle model, on proofs for `2 ^ logN` rows, against the verifying
+key `vk`. -/
+def verifyRo (vk : Option (PreprocessedKey F)) (proof : Proof F EF) (publicValues : List F) :
     OracleComp (spec F S.streamLen) (Except String Unit) :=
   if proof.degreeBits = S.logN then
-    verifyWith (ideal F S.streamLen) S.params S.air proof publicValues
+    verifyWith (ideal F S.streamLen) S.params S.air vk proof publicValues
   else pure (.error "degree bits")
 
 end Setup
@@ -132,13 +150,15 @@ end Setup
 a proof. Provers are deterministic; a randomized prover is a mixture of deterministic ones. -/
 abbrev NIProver (S : Setup EF) := OracleComp (spec F S.streamLen) (Proof F EF)
 
-/-- Run `prover`, logging its queries, then the verifier on its proof, against one random
-oracle. -/
+/-- Compute the verifying key and run `prover`, logging their queries, then the verifier on the
+proof against the key, against one random oracle. -/
 noncomputable def run (S : Setup EF) (publicValues : List F) (prover : NIProver S) :
     ProbComp (Proof F EF × QueryLog (spec F S.streamLen) × Except String Unit) :=
   (simulateQ randomOracle do
-    let (proof, log) ← (simulateQ loggingOracle prover).run
-    return (proof, log, ← S.verifyRo proof publicValues)).run' ∅
+    let ((vk, proof), log) ← (simulateQ loggingOracle do
+      let vk ← S.setupRo
+      return (vk, ← prover)).run
+    return (proof, log, ← S.verifyRo vk proof publicValues)).run' ∅
 
 /-- The hash queries of a log, as a Merkle cache. -/
 def logCache {K : Nat} (log : QueryLog (spec F K)) : Merkle.Cache F (Digest F) where
