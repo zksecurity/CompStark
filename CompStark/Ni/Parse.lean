@@ -37,7 +37,6 @@ earlier round's input and answered samples) and its own input.
 namespace CompStark.Ni
 open CompStark.Stark CompStark.RandomOracle OracleSpec OracleComp
 
-
 variable {F : Type} [BaseField F] {EF : Type} [Challenge F EF]
 
 /-! ### The transcript schedule -/
@@ -821,7 +820,8 @@ theorem run_stateT_bind {α β : Type} (x : M (idealLogged answer) α) (s : Spon
 /-- **The verifier queries every round.** If the verifier on the logged answers accepts a proof
 that folds at least once, its log holds the duplex call of every round of the proof's
 schedule. -/
-theorem verifyWith_logs (hK : P.numQueries + Challenge.d EF + 1 ≤ K) (A : Air F) (proof : Proof F EF)
+theorem verifyWith_logs (hK : P.numQueries + Challenge.d EF + 1 ≤ K) (A : Air F)
+    (proof : Proof F EF)
     (pis : List F)
     (hfolds : P.logFinalPolyLen < proof.degreeBits)
     (hok : (verifyWith (idealLogged answer) P A proof pis).run.1 = .ok ()) :
@@ -956,6 +956,7 @@ section Verifier
 
 variable {answer : (q : Query F) → Answer K q}
 
+omit [BaseField F] in
 /-- A log of answers by `answer` is answered by `answer`. -/
 theorem consistent_tableQueryLog {α : Type} (oa : OracleComp (spec F K) α) :
     Consistent answer (tableQueryLog oa answer) := by

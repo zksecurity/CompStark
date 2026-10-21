@@ -31,7 +31,6 @@ recomposed quotient (`recomposedPoly`, `L_c` the recomposition selector `selPoly
 namespace CompStark.Sound
 open CompStark.Stark CompStark.Iop Polynomial
 
-
 variable {F : Type} [BaseField F] {EF : Type} [Challenge F EF]
 
 local notation "𝕂" => Challenge.Spec EF
@@ -237,7 +236,8 @@ theorem constraintsHoldAt_iff (S : Setup EF) (publicValues : List F) (α ζ : �
   Iff.rfl
 
 /-- The trace domain is a two-adic subgroup of the base field. -/
-theorem logN_le (S : Setup EF) : S.logN ≤ twoAdicity F := (Nat.le_add_right _ _).trans S.valid.twoAdic
+theorem logN_le (S : Setup EF) : S.logN ≤ twoAdicity F := (Nat.le_add_right _ _).trans
+    S.valid.twoAdic
 
 /-- `ω_n` lies in the base field. -/
 theorem rootOfUnity_eq (S : Setup EF) : rootOfUnity S.logN = algebraMap F 𝕂 (twoAdicGen S.logN) :=
@@ -268,7 +268,8 @@ theorem eval_recomposedPoly (S : Setup EF) (trace : Fin S.air.width → F[X])
 /-- `C_α` at a point is Horner's rule over the constraint polynomials there. -/
 theorem eval_foldedPoly (S : Setup EF) (publicValues : List F) (trace : Fin S.air.width → F[X])
     (α y : 𝕂) : (foldedPoly S publicValues trace α).eval y = horner (S.air.constraints.map
-      fun c ↦ aeval y (constraintPoly S.n (twoAdicGen S.logN) (traceCol S trace) publicValues c)) α := by
+      fun c ↦ aeval y (constraintPoly S.n (twoAdicGen S.logN) (traceCol S trace) publicValues c))
+          α := by
   rw [foldedPoly, ← coe_evalRingHom, horner_map, coe_evalRingHom, eval_C, List.map_map]
   congr 1
   refine List.map_congr_left fun c _ ↦ ?_
@@ -291,8 +292,11 @@ theorem eval_envAt (S : Setup EF) (publicValues : List F) (trace : Fin S.air.wid
     rw [aeval_comp, map_mul, aeval_C, aeval_X, mul_comm, rootOfUnity_eq]
   · change aeval ζ (firstSel S.n) = vanishing 1 S.n ζ / (ζ - 1)
     rw [eq_div_iff h1, aeval_firstSel, vanishing, div_one]
-  · change aeval ζ (lastSel S.n (twoAdicGen S.logN)) = vanishing 1 S.n ζ / (ζ - (rootOfUnity S.logN)⁻¹)
-    rw [eq_div_iff hω, hinv, aeval_lastSel _ _ (BaseField.twoAdicGen_ne_zero _ hl) (twoAdicGen_pow_self _ hl), vanishing, div_one]
+  · change aeval ζ (lastSel S.n (twoAdicGen S.logN)) = vanishing 1 S.n ζ /
+      (ζ - (rootOfUnity S.logN)⁻¹)
+    rw [eq_div_iff hω, hinv,
+        aeval_lastSel _ _ (BaseField.twoAdicGen_ne_zero _ hl) (twoAdicGen_pow_self _ hl), vanishing,
+        div_one]
   · change aeval ζ (Polynomial.X - C (twoAdicGen S.logN)⁻¹) = ζ - (rootOfUnity S.logN)⁻¹
     rw [map_sub, aeval_X, aeval_C, hinv]
 
@@ -343,7 +347,8 @@ theorem eval_identityPoly_root (S : Setup EF) (publicValues : List F)
         (c.eval (S.air.traceRow S.logN (traceOf S trace) publicValues i))) α := by
   have hl := logN_le S
   have hz : (algebraMap F 𝕂 (twoAdicGen S.logN ^ i)) ^ S.n - 1 = 0 := by
-    rw [← map_pow, ← pow_mul, Nat.mul_comm, pow_mul, twoAdicGen_pow_self _ hl, one_pow, map_one, sub_self]
+    rw [← map_pow, ← pow_mul, Nat.mul_comm, pow_mul, twoAdicGen_pow_self _ hl, one_pow, map_one,
+        sub_self]
   rw [identityPoly, eval_sub, eval_mul, eval_sub, eval_pow, eval_X, eval_one, hz, zero_mul,
     sub_zero, eval_foldedPoly]
   congr 1

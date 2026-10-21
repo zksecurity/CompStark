@@ -41,7 +41,6 @@ holds all two-adic roots of unity.
 namespace CompStark.Stark
 open CompStark.Fri Polynomial Montgomery.Native32
 
-
 local notation "F" => _root_.KoalaBear.Fast.Field
 variable {EF : Type} [Challenge F EF]
 local notation "K" => F
@@ -281,7 +280,8 @@ theorem getD_qFirst (d l r : Nat) (h : d + l ≤ 24) (hr : r < 2 ^ (d + l)) :
   have hs : r < ((@qPoints F _ d l).map (· - 1)).size := by
     rw [Array.size_map, qPoints, size_cosetPoints]; exact hr
   rw [qFirst, getD_lt _ _ (by rw [Array.size_ofFn]; exact hr), Array.getElem_ofFn,
-    getD_qZh d l r h, getD_batchInv _ (points_sub_ne d l h (1 : F) 0 (by omega24) (by rw [one_pow])) _ hs,
+    getD_qZh d l r h,
+        getD_batchInv _ (points_sub_ne d l h (1 : F) 0 (by omega24) (by rw [one_pow])) _ hs,
     Fast.getD_map_lt _ _ _ (by rw [Array.size_map] at hs; exact hs) _ 0, getD_qPoints d l r hr]
   have hne : (qpt (d + l) r : F) - 1 ≠ 0 :=
     sub_ne_zero.mpr (genPoint_ne (d + l) r h (1 : F) 0 (by omega24) (by rw [one_pow]))
@@ -491,7 +491,8 @@ theorem chunk_lde (logN b lc : Nat) (h24 : logN + b ≤ 24) (hlc : lc ≤ b) (qs
     ∃ ps, CompStark.Mat.IsLde b (logN + b) (ldeRef logN b
       (gen * (gen * powF (twoAdicGen (logN + lc)) c)⁻¹) (Challenge.d EF)
       (chunkValues qs (2 ^ lc) c (2 ^ logN))) ps ∧ (chunkPoly EF ps).natDegree < 2 ^ logN ∧
-      ∀ r < 2 ^ logN, (chunkPoly EF ps).eval (algebraMap K E (qpt (logN + lc) c * (twoAdicGen logN : F) ^ r)) =
+      ∀ r < 2 ^ logN,
+          (chunkPoly EF ps).eval (algebraMap K E (qpt (logN + lc) c * (twoAdicGen logN : F) ^ r)) =
         Q.eval (algebraMap K E (qpt (logN + lc) c * (twoAdicGen logN : F) ^ r)) := by
   have hg := gen_ne_zero
   have hw : (twoAdicGen (logN + lc) : F) ≠ 0 := BaseField.twoAdicGen_ne_zero _ (by omega24)
@@ -553,7 +554,8 @@ theorem toSpec_eval_opened (A : Air F) (logN b : Nat) (pis : List F) (m : Stark.
       isFirstRow := (Ext.powTwo z logN - 1) * (z - 1)⁻¹
       isLastRow := (Ext.powTwo z logN - 1) * (z - Ext.ofBase (twoAdicGen logN)⁻¹)⁻¹
       isTransition := z - Ext.ofBase (twoAdicGen logN)⁻¹ }) =
-      aeval (Challenge.toSpec z) (constraintPoly (2 ^ logN) ((twoAdicGen logN : F)) (ps.getD · 0) pis c) := by
+      aeval (Challenge.toSpec z)
+          (constraintPoly (2 ^ logN) ((twoAdicGen logN : F)) (ps.getD · 0) pis c) := by
   have h24 : logN ≤ 24 := by have := hm.2.2.2.2.1; omega
   have hw0 : (twoAdicGen logN : F) ≠ 0 := BaseField.twoAdicGen_ne_zero logN h24
   have hz' : Ext.OutsideBase (z * Ext.ofBase (twoAdicGen logN)) := Ext.outsideBase_mul_ofBase hz hw0
@@ -604,17 +606,20 @@ theorem toSpec_eval_opened (A : Air F) (logN b : Nat) (pis : List F) (m : Stark.
   · change aeval (Challenge.toSpec z) (firstSel (2 ^ logN)) =
       Challenge.toSpec ((Ext.powTwo z logN - 1) * (z - 1)⁻¹)
     rw [Challenge.toSpec_mul, Challenge.toSpec_inv, Challenge.toSpec_sub, Challenge.toSpec_sub,
-      toSpec_extPowTwo, Challenge.toSpec_one, ← @aeval_firstSel F _ _ _ _, mul_mul_inv_cancel_ext _ _ hone]
+      toSpec_extPowTwo, Challenge.toSpec_one, ← @aeval_firstSel F _ _ _ _,
+          mul_mul_inv_cancel_ext _ _ hone]
   · change aeval (Challenge.toSpec z) (lastSel (2 ^ logN) ((twoAdicGen logN : F))) =
       Challenge.toSpec ((Ext.powTwo z logN - 1) * (z - Ext.ofBase (twoAdicGen logN)⁻¹)⁻¹)
     rw [Challenge.toSpec_mul, Challenge.toSpec_inv, Challenge.toSpec_sub, Challenge.toSpec_sub,
-      toSpec_extPowTwo, Challenge.toSpec_one, Challenge.toSpec_ofBase, ← CompPoly.Extension.Ext.algebraMap_eq_ofBase,
+      toSpec_extPowTwo, Challenge.toSpec_one, Challenge.toSpec_ofBase,
+          ← CompPoly.Extension.Ext.algebraMap_eq_ofBase,
       ← aeval_lastSel (2 ^ logN) ((twoAdicGen logN : F)) (BaseField.twoAdicGen_ne_zero logN h24)
         (twoAdicGen_pow_self logN h24),
       mul_mul_inv_cancel_ext _ _ hlast]
   · change aeval (Challenge.toSpec z) (X - C ((twoAdicGen logN : F))⁻¹) =
       Challenge.toSpec (z - Ext.ofBase (twoAdicGen logN)⁻¹)
-    rw [map_sub, aeval_X, aeval_C, Challenge.toSpec_sub, Challenge.toSpec_ofBase, CompPoly.Extension.Ext.algebraMap_eq_ofBase]
+    rw [map_sub, aeval_X, aeval_C, Challenge.toSpec_sub, Challenge.toSpec_ofBase,
+        CompPoly.Extension.Ext.algebraMap_eq_ofBase]
 
 /-- The trace's extension is an LDE of polynomials that take the trace on `⟨ω⟩`. -/
 theorem trace_lde (P : Params) (A : Air F) (logN : Nat) (trace : Array F)
@@ -686,7 +691,8 @@ theorem checkConstraints_honest (P : Params) (A : Air F) (logN : Nat) (trace : A
       CompStark.Mat.IsLde P.logBlowup (logN + P.logBlowup) (ldeRef logN P.logBlowup
         (gen * (gen * powF (twoAdicGen (logN + lc)) c)⁻¹) (Challenge.d EF)
         (chunkValues qs (2 ^ lc) c (2 ^ logN))) cps ∧ (chunkPoly EF cps).natDegree < 2 ^ logN ∧
-      ∀ r < 2 ^ logN, (chunkPoly EF cps).eval (algebraMap K E (qpt (logN + lc) c * (twoAdicGen logN : F) ^ r)) =
+      ∀ r < 2 ^ logN,
+          (chunkPoly EF cps).eval (algebraMap K E (qpt (logN + lc) c * (twoAdicGen logN : F) ^ r)) =
         Q.eval (algebraMap K E (qpt (logN + lc) c * (twoAdicGen logN : F) ^ r)) := by
     intro c
     by_cases hc : c < 2 ^ lc

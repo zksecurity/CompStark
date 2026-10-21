@@ -37,7 +37,6 @@ variable {F : Type} [BaseField F] {EF : Type} [Challenge F EF]
 
 local notation "𝕂" => Challenge.Spec EF
 
-
 /-- A combination `δ`-near the code, of words not near the code on a common set, is an MCA event
 for the powers generator. -/
 theorem isMCA_of_near (S : Setup EF) (δ : NNReal) {M : Nat} (ws : Fin (M + 1) → S.Point → 𝕂)

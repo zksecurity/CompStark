@@ -26,7 +26,6 @@ open CompPoly.Extension Montgomery.Native32
 namespace KoalaBear
 open _root_.KoalaBear.Fast
 
-
 /-- Multiplication by `W = 3`. -/
 theorem mulW_eq (x : Field) : Binomial4.mulW (p := _root_.KoalaBear.fieldSize) x = 3 * x := by
   rw [Binomial4.mulW_eq]; rfl
@@ -96,7 +95,6 @@ theorem outsideBase_ext4 (z : Ext4) :
     · exact ⟨1, by omega, h⟩
     · exact ⟨2, by omega, h⟩
     · exact ⟨3, by omega, h⟩
-
 
 /-- The quintic extension `KoalaBear[X] / (X^5 + X^2 - 1)`, Plonky3's
 `QuinticTrinomialExtensionField<KoalaBear>`. -/

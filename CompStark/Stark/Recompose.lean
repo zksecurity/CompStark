@@ -44,7 +44,6 @@ theorem toSpec_extPowTwo (x : EF) (k : Nat) :
     Challenge.toSpec (Ext.powTwo x k) = Challenge.toSpec x ^ 2 ^ k :=
   Ext.toSpec_powTwo x k
 
-
 /-! ### The verifier's rounds -/
 
 /-- The verifier's rounds of a proof: the trace opened at `ζ` and `ζ ω`, the quotient's chunks at
@@ -121,7 +120,8 @@ theorem vanish_coset (logN lc c d r : Nat) (h : logN + lc ≤ twoAdicity F) :
     vanish logN (qpt (logN + lc) d) (algebraMap F E (qpt (logN + lc) c * twoAdicGen logN ^ r)) =
       vanish logN (qpt (logN + lc) d) (algebraMap F E (qpt (logN + lc) c)) := by
   simp only [vanish, ← map_mul, ← map_pow]
-  rw [mul_right_comm, mul_pow, ← pow_mul, Nat.mul_comm, pow_mul, twoAdicGen_pow_self logN (by omega), one_pow,
+  rw [mul_right_comm, mul_pow, ← pow_mul, Nat.mul_comm, pow_mul,
+      twoAdicGen_pow_self logN (by omega), one_pow,
     mul_one]
 
 /-- `Z_{D_c}(s_c) = 0`. -/
@@ -215,7 +215,6 @@ theorem sum_chunkSel (logN lc : Nat) (h : logN + lc ≤ twoAdicity F) (Q : E[X])
   rw [← hP, eval_finsetSum]
   exact Finset.sum_congr rfl fun c _ ↦ by rw [eval_mul, eval_chunkSelPoly]
 
-
 /-- A fold of additions in the spec field. -/
 theorem toSpec_foldl_add {α : Type*} (f : α → EF) : ∀ (l : List α) (x : EF),
     Challenge.toSpec (l.foldl (fun acc a ↦ acc + f a) x) =
@@ -277,7 +276,8 @@ theorem chunkShift_beq (logN lc i j : Nat) (h : logN + lc ≤ twoAdicity F) (hi 
     rw [bne_iff_ne.mpr hne, bne_iff_ne.mpr hij]
 
 /-- The verifier's selector of chunk `i` is `chunkSel`. -/
-theorem toSpec_selector (logN lc i : Nat) (h : logN + lc ≤ twoAdicity F) (hi : i < 2 ^ lc) (z : EF) :
+theorem toSpec_selector (logN lc i : Nat) (h : logN + lc ≤ twoAdicity F) (hi : i < 2 ^ lc)
+    (z : EF) :
     Challenge.toSpec (((chunkDomains logN lc).filter fun dj ↦
       dj.shift != (chunkDomain logN lc i).shift).foldl
       (fun acc dj ↦ acc * vanishingAt dj z *
@@ -308,7 +308,8 @@ abbrev chunkInner (ch : Array EF) : EF :=
   (List.range (Challenge.d EF)).foldl (fun s e ↦ s + Ext.basis e * ch.getD e 0) 0
 
 /-- **The verifier's recomposition** is `∑_c L_c(ζ) q_c(ζ)` with the chunks' values. -/
-theorem toSpec_recompose (logN lc : Nat) (h : logN + lc ≤ twoAdicity F) (chs : Nat → Array EF) (z : EF) :
+theorem toSpec_recompose (logN lc : Nat) (h : logN + lc ≤ twoAdicity F) (chs : Nat → Array EF)
+    (z : EF) :
     Challenge.toSpec (recompose (chunkDomains logN lc) ((List.range (2 ^ lc)).map chs) z) =
       ∑ c ∈ Finset.range (2 ^ lc),
         chunkSel logN lc c (Challenge.toSpec z) * Challenge.toSpec (chunkInner (chs c)) := by
@@ -322,7 +323,6 @@ theorem toSpec_recompose (logN lc : Nat) (h : logN + lc ≤ twoAdicity F) (chs :
   rw [Challenge.toSpec_mul, ← hds]
   exact congrArg (· * _) (toSpec_selector logN lc c h (Finset.mem_range.mp hc) z)
 
-
 /-! ### The verifier's check -/
 
 /-- The verifier's per-chunk sum in the spec field. -/
@@ -331,7 +331,6 @@ theorem toSpec_chunkInner (ch : Array EF) : Challenge.toSpec (chunkInner ch) =
       Challenge.toSpec (Ext.basis e : EF) * Challenge.toSpec (ch.getD e 0) := by
   rw [chunkInner, toSpec_foldl_add, Challenge.toSpec_zero, zero_add, ← list_sum_range]
   simp only [Challenge.toSpec_mul]
-
 
 /-- The verifier's folded constraints are Horner's rule in `α`. -/
 theorem toSpec_foldedConstraints (A : Air F) (env : Expr.Env F EF) (alpha : EF) :
@@ -353,7 +352,6 @@ theorem toSpec_foldedConstraints (A : Air F) (env : Expr.Env F EF) (alpha : EF) 
 /-- `a * b * b⁻¹ = a` in the spec extension field. -/
 theorem mul_mul_inv_cancel_ext (a b : E) (hb : b ≠ 0) : a * b * b⁻¹ = a := by
   rw [mul_assoc, CompPoly.Extension.Ext.mul_inv_cancel' hb, mul_one]
-
 
 /-- `checkConstraints` as a function. Rewriting with it, rather than unfolding the definition at
 its arguments, keeps the kernel from evaluating the final `==` on symbolic extension elements. -/

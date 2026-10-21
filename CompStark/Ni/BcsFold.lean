@@ -19,7 +19,6 @@ Plonky3's fold at `β` is ArkLib's fold at `s β` (`toSpec_foldRow_eq_foldValue`
 namespace CompStark.Ni
 open CompStark.Stark CompStark.Fri CompStark.Sound Polynomial
 
-
 variable {F : Type} [BaseField F] {EF : Type} [Challenge F EF]
 
 local notation "𝕂" => Challenge.Spec EF
@@ -164,6 +163,5 @@ theorem domain_pow_eq (n : Nat) (hn : n ≤ twoAdicity F) (p : Nat) (hp : p ≤ 
   rw [← lift_pow, h, lift_pow]
   conv_lhs => rw [← Nat.div_add_mod (reverseBits I n) (2 ^ (n - p)), pow_add, pow_mul, hord,
     one_pow, one_mul]
-
 
 end CompStark.Ni

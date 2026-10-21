@@ -18,14 +18,15 @@ public import CompStark.Ni.BcsChallenges
 namespace CompStark.Ni
 open CompStark.Stark CompStark.Fri CompStark.RandomOracle OracleSpec OracleComp
 
-
-variable {F : Type} [BaseField F] {EF : Type} [Challenge F EF] {K : Nat} (answer : (q : Query F) → Answer K q)
+variable {F : Type} [BaseField F] {EF : Type} [Challenge F EF] {K : Nat}
+    (answer : (q : Query F) → Answer K q)
 
 /-! ### The first call -/
 
 /-- **The first call.** If the verifier on logged answers accepts, its log starts with the duplex
 call of the first round. -/
-theorem verifyWith_log_head (hK : Challenge.d EF ≤ K) (P : Fri.Params) (A : Air F) (proof : Proof F EF)
+theorem verifyWith_log_head (hK : Challenge.d EF ≤ K) (P : Fri.Params) (A : Air F)
+    (proof : Proof F EF)
     (pis : List F) (hok : (verifyWith (idealLogged answer) P A proof pis).run.1 = .ok ()) :
     ∃ rest, (verifyWith (idealLogged answer) P A proof pis).run.2 =
       ⟨keyAt answer (inputs P pis proof) 0, answer (keyAt answer (inputs P pis proof) 0)⟩ ::

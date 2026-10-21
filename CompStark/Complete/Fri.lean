@@ -66,7 +66,8 @@ theorem sampleBits_run (t : Transcript F 24) (bits : Nat) (hd : t.duplex = Koala
   obtain ⟨x, c⟩ := p
   rfl
 theorem duplex_observe (t : Transcript F 24) (x : F) : (t.observe x).duplex = t.duplex := rfl
-theorem checkWitness_run (t : Transcript F 24) (bits : Nat) (w : F) (hd : t.duplex = KoalaBear.duplex) :
+theorem checkWitness_run (t : Transcript F 24) (bits : Nat) (w : F)
+    (hd : t.duplex = KoalaBear.duplex) :
     checkWitness poseidon2 bits w t = .ok (t.checkWitness bits w) := by
   unfold checkWitness Transcript.checkWitness Challenger.checkWitness
   split
@@ -127,7 +128,8 @@ structure Rd (EF : Type) [Challenge F EF] where
   beta : EF
 
 /-- A round's commitment. -/
-def Rd.c (r : Rd EF) : Committed F := Committed.ofMats hashF compF [(specBackend EF).leaves (2 ^ r.la) r.folded]
+def Rd.c (r : Rd EF) : Committed F := Committed.ofMats hashF compF
+    [(specBackend EF).leaves (2 ^ r.la) r.folded]
 
 /-- The commit rounds of the specification prover, the final vector and transcript. -/
 def chain (P : Params) :
@@ -136,7 +138,8 @@ def chain (P : Params) :
   | fuel + 1, f, rest, t =>
     if f.size ≤ 2 ^ (P.logBlowup + P.logFinalPolyLen) then ([], f, t) else
     let la := logArityFor P (Nat.log2 f.size) (rest.head?.map (Nat.log2 ·.size))
-    let t1 := t.observeList (Committed.ofMats hashF compF [(specBackend EF).leaves (2 ^ la) f]).root.toList
+    let t1 := t.observeList
+        (Committed.ofMats hashF compF [(specBackend EF).leaves (2 ^ la) f]).root.toList
     let t2 := (t1.grind P.commitPowBits).2
     let beta := (t2.sampleExtValue : EF)
     let (f', rest') := addNext la beta (foldOnce la beta f) rest
@@ -149,7 +152,8 @@ def pushRd (cp : CommitPhase F EF (Committed F)) (r : Rd EF) : CommitPhase F EF 
     cp.finalPoly⟩
 
 theorem commitRounds_run (P : Params) (fuel : Nat) :
-    ∀ (f : Array EF) (rest : List (Array EF)) (cp : CommitPhase F EF (Committed F)) (t : Transcript F 24),
+    ∀ (f : Array EF) (rest : List (Array EF)) (cp : CommitPhase F EF (Committed F))
+        (t : Transcript F 24),
       (commitRounds (specBackend EF) P fuel f rest cp).run t =
         let r := chain P fuel f rest t
         ((r.2.1, r.1.foldl pushRd cp), r.2.2) := by
@@ -591,7 +595,8 @@ theorem commit_loop (P : Params)
       rw [forIn_cons_ok _ _ _ _ _ _ _ (by
         rw [hbody]
         exact commitBody_run P _ _ _ t _ hd (by
-          show (t.observeList (Committed.ofMats hashF compF [(specBackend EF).leaves (2 ^ la) f]).root.toList
+          show (t.observeList
+              (Committed.ofMats hashF compF [(specBackend EF).leaves (2 ^ la) f]).root.toList
             ).checkWitness P.commitPowBits (t1.grind P.commitPowBits).1 = _
           rw [ht1]; exact checkWitness_grind _ _ hg1)),
         ih _ _ _ _ hd1 ht]
@@ -948,7 +953,8 @@ theorem observe_loop (l : List Nat) (body : Nat → PUnit → M poseidon2 (ForIn
   | cons a l ih => intro t; rw [forIn_cons_ok _ _ _ _ _ _ _ (hbody a t), ih]; rfl
 
 /-- The body of the verifier's loop over the queries. -/
-def queryBody (P : Params) (logMax : Nat) (alpha : EF) (rounds : List (Round F EF)) (betas : Array EF)
+def queryBody (P : Params) (logMax : Nat) (alpha : EF) (rounds : List (Round F EF))
+    (betas : Array EF)
     (commits : Array (Digest F)) (finalPoly : Array EF) (q : QueryProof F EF) :
     M poseidon2 (ForInStep PUnit) := do
   let index ← sampleBits poseidon2 logMax
@@ -985,7 +991,8 @@ def finalPolyOf (P : Params) (fin : Array EF) : Array EF :=
   idft P.logFinalPolyLen (Array.ofFn (n := 2 ^ P.logFinalPolyLen) fun i ↦
     fin.getD (reverseBits i P.logFinalPolyLen) 0)
 
-theorem commitPhase_run (P : Params) (f0 : Array EF) (rest : List (Array EF)) (t : Transcript F 24) :
+theorem commitPhase_run (P : Params) (f0 : Array EF) (rest : List (Array EF))
+    (t : Transcript F 24) :
     (commitPhase (specBackend EF) P (f0 :: rest)).run t =
       ({ (chain P f0.size f0 rest t).1.foldl pushRd ⟨#[], [], #[], #[], #[]⟩ with
           finalPoly := finalPolyOf P (chain P f0.size f0 rest t).2.1 },

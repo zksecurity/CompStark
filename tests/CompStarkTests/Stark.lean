@@ -41,7 +41,8 @@ def cubeInstance (n : Nat) : Array F × List F :=
 
 /-- Verify and reproduce the saved proof of `air` for parameters `logN logBlowup logFinal
 maxLogArity queries commitPow queryPow`. -/
-def check (name : String) (A : Air F) (inst : Nat → Array F × List F) (ps : List Nat) : IO Unit := do
+def check (name : String) (A : Air F) (inst : Nat → Array F × List F) (ps : List Nat) : IO Unit :=
+    do
   let [logN, b, f, a, q, cp, qp] := ps | throw (IO.userError "seven parameters")
   let file := s!"{name}_{"_".intercalate (ps.map toString)}"
   let rust : Proof F EF ← IO.ofExcept (Json.parse (← IO.FS.readFile s!"tests/data/{file}.json"))

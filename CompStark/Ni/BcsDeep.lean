@@ -20,7 +20,6 @@ query's point `rev index`, with the verifier's batching challenge.
 namespace CompStark.Ni
 open CompStark.Stark CompStark.Fri CompStark.Sound CompStark.Iop Polynomial
 
-
 variable {F : Type} [BaseField F] {EF : Type} [Challenge F EF]
 
 local notation "𝕂" => Challenge.Spec EF

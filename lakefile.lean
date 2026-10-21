@@ -8,7 +8,8 @@ package CompStark where
 
 -- Pinned to a CompPoly commit with the packed NTT, the batched coset LDE, fast KoalaBear⁵ and
 -- spec fields over the fast base field.
-require CompPoly from git "https://github.com/mitschabaude-bot/CompPoly.git" @ "b89ea8e27f32ea3ecb6925d06f5a06c3f71e417f"
+require CompPoly from git "https://github.com/mitschabaude-bot/CompPoly.git" @
+    "b89ea8e27f32ea3ecb6925d06f5a06c3f71e417f"
 
 -- ArkLib with FRI round-by-round soundness on Lean v4.35 (Verified-zkEVM/ArkLib#1317, stacked on
 -- #992 and #1251) and lossy mutual correlated agreement (branch `fri-lossy`).

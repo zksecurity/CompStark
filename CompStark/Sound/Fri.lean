@@ -30,7 +30,6 @@ variable {F : Type} [BaseField F] {EF : Type} [Challenge F EF]
 
 local notation "𝕂" => Challenge.Spec EF
 
-
 /-- Plonky3's arities sum to the number of halvings they fold away. -/
 theorem sum_folds (m : Nat) : ∀ r, ((folds m r).map (fun x : ℕ+ ↦ x.val)).sum = r
   | 0 => by rw [folds]; rfl

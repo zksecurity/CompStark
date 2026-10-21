@@ -31,7 +31,6 @@ open CompStark.Stark CompStark.Iop CompStark.RandomOracle OracleSpec OracleComp
 
 variable {F : Type} [BaseField F]
 
-
 variable {K : Nat}
 
 /-- The digest of an answer: the hash, or the duplex call's new capacity. -/
@@ -88,6 +87,7 @@ theorem not_mem_take_idx {t : Query F} (ht : t ∈ log.map Sigma.fst) :
   rw [mem_take_iff ht]
   exact lt_irrefl _
 
+omit [BaseField F] in
 /-- A consistent log holds the answer of each of its keys. -/
 theorem mk_mem_of_consistent (hcons : Consistent answer log) {t : Query F}
     (ht : t ∈ log.map Sigma.fst) : (⟨t, answer t⟩ : (q : Query F) × Answer K q) ∈ log := by
@@ -96,9 +96,11 @@ theorem mk_mem_of_consistent (hcons : Consistent answer log) {t : Query F}
   subst ha
   exact he
 
+omit [BaseField F] in
 theorem consistent_take (hcons : Consistent answer log) (p : Nat) :
     Consistent answer (log.take p) := fun e he ↦ hcons e (List.mem_of_mem_take he)
 
+omit [BaseField F] in
 theorem getElem_snd (hcons : Consistent answer log) (p : Nat) (hp : p < log.length) :
     log[p].2 = answer log[p].1 := hcons _ (List.getElem_mem hp)
 
@@ -119,6 +121,7 @@ theorem mem_known_of_mem (e : (q : Query F) × Answer K q) (pre : QueryLog (spec
   unfold knownDigests
   exact List.mem_append_left _ (List.mem_append_right _ (List.mem_flatMap.mpr ⟨e, he, hd⟩))
 
+omit [BaseField F] in
 theorem getElem_mem_take (p i : Nat) (hi : i < p) (hl : i < log.length) :
     log[i] ∈ log.take p := by
   have h : i < (log.take p).length := by rw [List.length_take]; omega

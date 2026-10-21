@@ -30,6 +30,7 @@ def Primitives.map {m n : Type → Type} [Monad m] [Monad n] (φ : m →ᵐ n) (
   hash xs := φ (H.hash xs)
   compress a b := φ (H.compress a b)
 
+omit [BaseField F] in
 @[simp] theorem Primitives.map_init {m n : Type → Type} [Monad m] [Monad n] (φ : m →ᵐ n)
     (H : Primitives F m) : (H.map φ).init = H.init := rfl
 
@@ -73,7 +74,6 @@ end Merkle
 namespace Fri
 open CompStark.Stark
 
-
 variable {m n : Type → Type} [Monad m] [Monad n] [LawfulMonad m] [LawfulMonad n] (φ : m →ᵐ n)
   {EF : Type} [Challenge F EF]
   (H : Primitives F m)
@@ -82,6 +82,7 @@ variable {m n : Type → Type} [Monad m] [Monad n] [LawfulMonad m] [LawfulMonad 
 abbrev mapM : M H →ᵐ M (H.map φ) := StateT.mapHom (ExceptT.mapHom φ)
 
 omit [LawfulMonad m] [LawfulMonad n] in
+omit [BaseField F] in
 theorem mapM_modify (f : H.State → H.State) :
     mapM φ H (modify f : M H Unit) = (modify f : M (H.map φ) Unit) := by
   apply StateT.ext
@@ -89,11 +90,11 @@ theorem mapM_modify (f : H.State → H.State) :
   apply ExceptT.ext
   exact φ.mmap_pure (Except.ok ((), f s))
 
-omit [LawfulMonad m] [LawfulMonad n] in
+omit [BaseField F] [LawfulMonad m] [LawfulMonad n] in
 theorem mapM_observe (x : F) : mapM φ H (observe H x) = observe (H.map φ) x :=
   mapM_modify φ H _
 
-omit [LawfulMonad m] [LawfulMonad n] in
+omit [BaseField F] [LawfulMonad m] [LawfulMonad n] in
 theorem mapM_observeList (xs : List F) :
     mapM φ H (observeList H xs) = observeList (H.map φ) xs :=
   mapM_modify φ H _
@@ -103,12 +104,14 @@ theorem mapM_observeExts (xs : List EF) :
     mapM φ H (observeExts H xs) = observeExts (H.map φ) xs :=
   mapM_modify φ H _
 
+omit [BaseField F] in
 theorem mapM_sample : mapM φ H (sample H) = sample (H.map φ) := by
   apply StateT.ext
   intro s
   apply ExceptT.ext
   exact φ.mmap_map (H.sample s) Except.ok
 
+omit [BaseField F] in
 theorem mapM_throw {α : Type} (e : String) :
     mapM φ H (throw e : M H α) = (throw e : M (H.map φ) α) := by
   apply StateT.ext
@@ -118,6 +121,7 @@ theorem mapM_throw {α : Type} (e : String) :
     ((throw e : ExceptT String n α) >>= fun a ↦ pure (a, s)).run
   simp only [ExceptT.run_bind, ExceptT.run_throw, pure_bind, MonadHom.mmap_pure]
 
+omit [BaseField F] in
 theorem mapM_sampleList : ∀ k, mapM φ H (sampleList H k) = sampleList (H.map φ) k
   | 0 => by simp only [sampleList, MonadHom.mmap_pure]
   | k + 1 => by
@@ -135,6 +139,7 @@ theorem mapM_checkWitness (bits : Nat) (w : F) :
   simp only [checkWitness, MonadHom.mmap_ite, MonadHom.mmap_bind, MonadHom.mmap_pure,
     mapM_sampleBits, mapM_observe]
 
+omit [BaseField F] in
 theorem mapM_ensure (b : Bool) (msg : String) :
     mapM φ H (ensure (H := H) b msg) = ensure (H := H.map φ) b msg := by
   simp only [ensure, MonadHom.mmap_ite, MonadHom.mmap_pure, mapM_throw]
@@ -190,7 +195,6 @@ end Fri
 namespace Stark
 open CompStark.Fri
 
-
 variable {m n : Type → Type} [Monad m] [Monad n] [LawfulMonad m] [LawfulMonad n] (φ : m →ᵐ n)
   {EF : Type} [Challenge F EF]
 
@@ -200,6 +204,7 @@ theorem exceptT_mapHom_throw {α : Type} (e : String) :
   ExceptT.ext (φ.mmap_pure (Except.error e))
 
 omit [LawfulMonad m] [LawfulMonad n] in
+omit [BaseField F] in
 theorem exceptT_mapHom_run {α : Type} (H : Primitives F m) (x : M H α) (s : H.State) :
     ExceptT.mapHom φ (x.run s) = (Fri.mapM φ H x).run s := rfl
 

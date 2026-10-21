@@ -29,7 +29,6 @@ equal (`eq_of_agree`). No unique decoding is needed.
 namespace CompStark.Sound
 open CompStark.Stark CompStark.Iop Polynomial
 
-
 variable {F : Type} [BaseField F] {EF : Type} [Challenge F EF]
 
 local notation "𝕂" => Challenge.Spec EF

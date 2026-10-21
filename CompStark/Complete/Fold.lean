@@ -29,7 +29,6 @@ The pure facts behind FRI's completeness, over the Mathlib fields the Montgomery
 namespace CompStark.Complete
 open CompStark.Stark CompStark.Fri Polynomial Montgomery.Native32
 
-
 local notation "F" => _root_.KoalaBear.Fast.Field
 variable {EF : Type} [Challenge F EF]
 local notation "K" => F

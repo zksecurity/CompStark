@@ -28,7 +28,6 @@ open CompStark.Stark CompStark.Fri CompStark.Sound CompStark.Iop CompStark.Rando
 open Polynomial Fri.Spec OracleSpec OracleComp
 open scoped ENNReal
 
-
 variable {F : Type} [BaseField F] {EF : Type} [Challenge F EF]
 
 local notation "𝕂" => Challenge.Spec EF
@@ -235,7 +234,8 @@ theorem prob_roundBadAt_le (cache : Merkle.Cache F (Digest F)) (block : Nat → 
               simp only [hb, ne_eq, not_false_eq_true, forall_const, challengeOffset,
                 ↓reduceIte, extAt_eq, powExtEquiv_apply, Fin.val_zero, Fin.val_succ]
               simp only [Nat.add_comm 1]
-        _ = Pr{let z ← $ᵗ (F × 𝕂)}[CompPoly.CanonicalNat.toNat z.1 % 2 ^ S.params.commitPowBits = 0 ∧
+        _ = Pr{let z ← $ᵗ (F × 𝕂)}[
+              CompPoly.CanonicalNat.toNat z.1 % 2 ^ S.params.commitPowBits = 0 ∧
               FoldBad S δ loss f fri z.2] := by
             refine (prob_answer_prefix S.streamLen (Challenge.d EF + 1) (by omega) (fun x ↦
               CompPoly.CanonicalNat.toNat (powExtEquiv x).1 % 2 ^ S.params.commitPowBits = 0 ∧
@@ -245,7 +245,8 @@ theorem prob_roundBadAt_le (cache : Merkle.Cache F (Digest F)) (block : Nat → 
                 FoldBad S δ loss f fri (c * z.2))).trans ?_
             exact SampleableType.prEvent_uniformSample_equiv
               (Equiv.prodCongr (Equiv.refl F) (Equiv.mulLeft₀ c hc))
-              (fun z ↦ CompPoly.CanonicalNat.toNat z.1 % 2 ^ S.params.commitPowBits = 0 ∧ FoldBad S δ loss f fri z.2)
+              (fun z ↦ CompPoly.CanonicalNat.toNat z.1 % 2 ^ S.params.commitPowBits = 0 ∧
+                FoldBad S δ loss f fri z.2)
         _ ≤ _ := prob_foldRound_le S δ loss f fri
   · -- the queries
     set T := prefixTranscript S cache block fun j ↦ samples.getD j d

@@ -22,8 +22,8 @@ The design's `Iop.committedTrace` is `traceWords` on the log's cache (`committed
 namespace CompStark.Ni
 open CompStark.Stark CompStark.Fri CompStark.RandomOracle OracleSpec OracleComp
 
-
-variable {F : Type} [BaseField F] {EF : Type} [Challenge F EF] {K : Nat} (answer : (q : Query F) → Answer K q)
+variable {F : Type} [BaseField F] {EF : Type} [Challenge F EF] {K : Nat}
+    (answer : (q : Query F) → Answer K q)
 
 /-! ### The ideal challenger on an answer table -/
 
@@ -108,6 +108,7 @@ theorem sampleStates_idealOf (cap : Digest F) (input : List F) :
       (by rw [List.length_drop]; omega)
     rw [hx, sample_idealOf_cons, ← List.drop_drop, hx, List.drop_one, List.tail_cons]
 
+omit [BaseField F] in
 theorem sampleStates_succ (H : Primitives F Id) (s : H.State) :
     ∀ j, sampleStates H s (j + 1) = sampleStates H (H.sample s).2 j
   | 0 => rfl
@@ -115,6 +116,7 @@ theorem sampleStates_succ (H : Primitives F Id) (s : H.State) :
 
 /-! ### Observations as lists -/
 
+omit [BaseField F] in
 theorem obsList_append (H : Primitives F Id) (s : H.State) (a b : List F) :
     obsList H s (a ++ b) = obsList H (obsList H s a) b := List.foldl_append
 
@@ -197,6 +199,7 @@ theorem committedTrace_eq (S : Iop.Setup EF) (log : QueryLog (spec F S.streamLen
 
 /-! ### Round by round -/
 
+omit [BaseField F] in
 theorem digest_toList_ne_nil (d : Digest F) : d.toList ≠ [] := by
   intro h
   have := congrArg List.length h

@@ -25,7 +25,6 @@ at the query's point and the initial oracle there is the query's batched value.
 namespace CompStark.Ni
 open CompStark.Stark CompStark.Fri CompStark.Sound Polynomial Fri.Spec
 
-
 variable {F : Type} [BaseField F] {EF : Type} [Challenge F EF]
 
 local notation "𝕂" => Challenge.Spec EF

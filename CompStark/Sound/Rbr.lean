@@ -45,7 +45,6 @@ are ArkLib's `SafeHistory`; and then not every query can pass.
 namespace CompStark.Sound
 open CompStark.Stark CompStark.Iop Polynomial OracleComp Fri.Spec
 
-
 variable {F : Type} [BaseField F] {EF : Type} [Challenge F EF]
 
 local notation "𝕂" => Challenge.Spec EF
@@ -190,7 +189,8 @@ def FoldBad (δ loss : NNReal) (i : Fin (S.lastFold + 1))
 /-- The point of `L` that a query sample selects: the low `log N` bits of its canonical value, the
 index into `L` in bit-reversed order. -/
 def queryPoint (x : F) : S.Point :=
-  ⟨reverseBits (CompPoly.CanonicalNat.toNat x % 2 ^ (S.logN + S.params.logBlowup)) (S.logN + S.params.logBlowup),
+  ⟨reverseBits (CompPoly.CanonicalNat.toNat x % 2 ^ (S.logN + S.params.logBlowup))
+      (S.logN + S.params.logBlowup),
     reverseBits_lt _ _⟩
 
 /-- Before the queries: the DEEP word is `δ`-far, no fold is bad and the final polynomial has

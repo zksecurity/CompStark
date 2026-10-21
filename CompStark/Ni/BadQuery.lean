@@ -38,7 +38,6 @@ namespace CompStark.Ni
 open CompStark.Stark CompStark.Fri CompStark.Sound CompStark.Iop CompStark.RandomOracle
 open Polynomial Fri.Spec OracleSpec OracleComp
 
-
 variable {F : Type} [BaseField F] {EF : Type} [Challenge F EF]
 
 /-! ### First occurrences -/
@@ -65,6 +64,7 @@ theorem mem_logDigests {K : Nat} {log : QueryLog (spec F K)} {t : Query F}
   obtain ⟨e, he, rfl⟩ := List.mem_map.mp ht
   exact List.mem_flatMap.mpr ⟨e, he, List.mem_cons_of_mem _ hd⟩
 
+omit [BaseField F] in
 theorem mem_map_fst_take {K : Nat} {log : QueryLog (spec F K)} {t : Query F} {n : Nat}
     (h : t ∈ (log.take n).map Sigma.fst) : t ∈ log.map Sigma.fst := by
   rw [List.map_take] at h

@@ -25,7 +25,6 @@ FRI's acceptance of the batched DEEP word. For each `(α, ζ)`:
 namespace CompStark.Sound
 open CompStark.Stark CompStark.Iop Polynomial
 
-
 variable {F : Type} [BaseField F] {EF : Type} [Challenge F EF]
 
 local notation "𝕂" => Challenge.Spec EF
@@ -69,7 +68,8 @@ theorem deepWord_eq {S : Setup EF} (p : Prover S) (α ζ a : 𝕂) :
 /-! ### Far components -/
 
 /-- `|𝕂|` as an extended real. -/
-noncomputable abbrev card𝕂 (EF : Type) [Challenge F EF] : ENNReal := Fintype.card (Challenge.Spec EF)
+noncomputable abbrev card𝕂 (EF : Type) [Challenge F EF] : ENNReal := Fintype.card
+    (Challenge.Spec EF)
 
 theorem card𝕂_ne_zero : card𝕂 EF ≠ 0 := by
   simp only [card𝕂, ne_eq, Nat.cast_eq_zero, Fintype.card_ne_zero, not_false_eq_true]
@@ -231,7 +231,6 @@ theorem inv_cube_mul (u v : ENNReal) :
         = ((card𝕂 EF)⁻¹ ^ 2 * card𝕂 EF ^ 2) * (v * (card𝕂 EF)⁻¹) := by ring
     _ = v * (card𝕂 EF)⁻¹ := by rw [h2, one_mul]
 
-
 open Classical in
 /-- Knowledge soundness from the four steps. -/
 theorem knowledgeSoundness_of {S : Setup EF} (hF : FriStep S) (hF1 : FriAtMostOne S)
@@ -334,6 +333,5 @@ theorem knowledgeSoundness_of {S : Setup EF} (hF : FriStep S) (hF1 : FriAtMostOn
                 ((ℓT * ℓQ * D + S.n : Nat) : ENNReal) / card𝕂 EF + E :=
               add_le_add h le_rfl
           _ = _ := by simp only [E, ← add_assoc]; rfl
-
 
 end CompStark.Sound

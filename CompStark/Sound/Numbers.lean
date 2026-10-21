@@ -44,7 +44,6 @@ variable {F : Type} [BaseField F] {EF : Type} [Challenge F EF]
 
 local notation "𝕂" => Challenge.Spec EF
 
-
 /-- At rate at most `1/c`, a radius `θ ≤ (1 - 1/c) / 2` is within the relative unique-decoding
 radius of a Reed–Solomon code. -/
 theorem le_relUDR {ι : Type} [Fintype ι] {F : Type} [Field F] [DecidableEq F]

@@ -30,7 +30,6 @@ constraint check at `ζ` is a polynomial identity that a failing candidate satis
 namespace CompStark.Iop
 open CompStark.Stark CompStark.Sound
 
-
 variable {F : Type} [BaseField F] {EF : Type} [Challenge F EF]
 
 /-- **Knowledge soundness.** If no trace close to the prover's committed trace satisfies the AIR,

@@ -28,7 +28,6 @@ by `Merkle.verifyBatchM_pure`: with pure hashes the monadic opening check is the
 
 @[expose] public section
 
-
 namespace CompStark.Fri
 open CompStark.Stark CompStark.Merkle
 
@@ -123,7 +122,8 @@ theorem verifyBatch_openAt (ms : List (Mat F)) (k : Nat) (hne : ms ≠ [])
     (hms : ∀ m ∈ ms, m.height = 2 ^ k ∧ m.values.size = m.width * m.height)
     (i : Nat) (hi : i < 2 ^ k) :
     Merkle.KoalaBear.verifyBatch KoalaBear.Fast.Field (Committed.ofMats hashF compF ms).root
-      (ms.map (·.height)) i (((Committed.ofMats hashF compF ms).openAt i).values.toList.map (·.toList))
+      (ms.map (·.height)) i
+          (((Committed.ofMats hashF compF ms).openAt i).values.toList.map (·.toList))
       ((Committed.ofMats hashF compF ms).openAt i).path.toList = true := by
   have hh : ∀ m ∈ ms, m.height = 2 ^ k := fun m hm ↦ (hms m hm).1
   have hh' : ∀ m ∈ ms.map Mat.toMatrix, m.height = 2 ^ k := fun m hm ↦ by

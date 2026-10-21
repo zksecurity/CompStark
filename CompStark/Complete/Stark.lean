@@ -127,7 +127,8 @@ theorem mapM_rounds (b : Nat) (rounds : List (OpenRound (specBackend EF))) (t : 
     simp only [List.flatMap_cons, List.flatMap_append, observeExts_append, List.map_cons]
     rfl
 
-theorem openPcs_run (P : Params) (rounds : List (OpenRound (specBackend EF))) (t : Transcript F 24) :
+theorem openPcs_run (P : Params) (rounds : List (OpenRound (specBackend EF)))
+    (t : Transcript F 24) :
     (openPcs (specBackend EF) P rounds).run t =
       let opened := rounds.map fun r ↦ r.2.map fun x ↦
         (openedOf P.logBlowup x, x.1, x.2.zip (openedOf P.logBlowup x))
@@ -289,7 +290,8 @@ theorem verifyPcs_run (P : Params) (rounds : List (Round F EF)) (proof : FriProo
 
 /-- The verifier's transcript after the trace commitment and the public values. -/
 def vTA (proof : Proof F EF) (pis : List F) : Transcript F 24 :=
-  (((((KoalaBear.initTranscript.observe (proof.degreeBits : F)).observe (proof.degreeBits : F)).observe
+  (((((KoalaBear.initTranscript.observe (proof.degreeBits : F)).observe
+      (proof.degreeBits : F)).observe
     0).observeList proof.traceCommit.toList).observeList pis)
 
 /-- The verifier's transcript after the quotient commitment. -/
@@ -326,7 +328,8 @@ def verifyCheck (A : Air F) (proof : Proof F EF) (pis : List F) (x : (EF × EF) 
         proof.opened.quotientChunks.toList x.1.2) do
     throw "out-of-domain evaluation mismatch"
 
-theorem verifyCheck_ok (A : Air F) (proof : Proof F EF) (pis : List F) (x : (EF × EF) × Transcript F 24)
+theorem verifyCheck_ok (A : Air F) (proof : Proof F EF) (pis : List F)
+    (x : (EF × EF) × Transcript F 24)
     (h : checkConstraints A pis proof.opened proof.degreeBits x.1.2 x.1.1
       (recompose (chunkDomains proof.degreeBits A.logQuotientChunks)
         proof.opened.quotientChunks.toList x.1.2) = true) :
@@ -417,7 +420,8 @@ theorem hItems_honest (hin : Fits P A logN trace)
     (hz : Ext.OutsideBase (hZeta EF P A logN trace pis)) :
     ∀ x ∈ hItems EF P A logN trace pis, Deep.HonestItem P.logBlowup (logN + P.logBlowup) x := by
   have hzn : Ext.OutsideBase (hZetaNext EF P A logN trace pis) :=
-    Ext.outsideBase_mul_ofBase hz (BaseField.twoAdicGen_ne_zero logN (by have := hin.twoAdic; omega24))
+    Ext.outsideBase_mul_ofBase hz
+        (BaseField.twoAdicGen_ne_zero logN (by have := hin.twoAdic; omega24))
   rw [hItems_eq]
   intro x hx
   rcases List.mem_cons.mp hx with rfl | hx
@@ -609,7 +613,8 @@ theorem hopen (hin : Fits P A logN trace)
       · simp only [hDRounds, List.mem_cons, List.mem_nil_iff, or_false] at hr
         rcases hr with rfl | rfl
         · rfl
-        · exact congrArg (Committed.ofMats hashF compF) (map_fst_hItemC EF P A logN trace pis _).symm
+        · exact congrArg (Committed.ofMats hashF compF)
+            (map_fst_hItemC EF P A logN trace pis _).symm
   rw [flatMap_hDRounds, hred] at hD
   rw [List.map_singleton, hs]
   exact hD
@@ -668,7 +673,8 @@ theorem verify_ok_of (P : Params) (A : Air F) (proof : Proof F EF) (pis : List F
       (recompose (chunkDomains proof.degreeBits A.logQuotientChunks)
         proof.opened.quotientChunks.toList zeta) = true) :
     verify P A proof pis = .ok () := by
-  have hrun' : StateT.run (verifyRun P proof pis) KoalaBear.initTranscript = pure ((alpha, zeta), t) := hrun
+  have hrun' : StateT.run (verifyRun P proof pis) KoalaBear.initTranscript = pure
+      ((alpha, zeta), t) := hrun
   rw [verify_eq, hrun', pure_bind, verifyCheck_ok A proof pis ((alpha, zeta), t) hcheck]
   simp only [hshape, harities, beq_self_eq_true]
   rfl

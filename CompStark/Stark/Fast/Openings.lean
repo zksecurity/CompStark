@@ -1053,7 +1053,8 @@ theorem reduceRange_rel (alpha : EF) (logH : Nat) (g : Array GItem)
       (Array.ofFn (n := len) fun t ↦ gval alpha logH g (r0 + t.val)) := by
   have hXs := size_cosetPointsBitRev (gen : F) logH
   have hxr : slice (encode (cosetPointsBitRev (gen : F) logH)) r0 len =
-      encode ((cosetPointsBitRev (gen : F) logH).extract r0 (r0 + len)) := extract_encode _ r0 (r0 + len)
+      encode ((cosetPointsBitRev (gen : F) logH).extract r0 (r0 + len)) := extract_encode _ r0
+          (r0 + len)
   generalize hXr : (cosetPointsBitRev (gen : F) logH).extract r0 (r0 + len) = Xr at hxr
   have hXrs : Xr.size = len := by rw [← hXr, Array.size_extract]; omega
   have hXget (t : Nat) (ht : t < len) :

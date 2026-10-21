@@ -76,7 +76,8 @@ theorem pure {a : α} {b : β} (h : R a b) : RelM R (Pure.pure a) (Pure.pure b) 
 
 theorem refl (x : PM F 24 α) : RelM Eq x x := fun _ ↦ ⟨rfl, rfl⟩
 
-theorem bind {x : PM F 24 α} {y : PM F 24 β} {f : α → PM F 24 γ} {g : β → PM F 24 δ} (hx : RelM R x y)
+theorem bind {x : PM F 24 α} {y : PM F 24 β} {f : α → PM F 24 γ} {g : β → PM F 24 δ}
+    (hx : RelM R x y)
     (hf : ∀ a b, R a b → RelM S (f a) (g b)) : RelM S (x >>= f) (y >>= g) := by
   intro t
   obtain ⟨h1, h2⟩ := hx t
@@ -146,7 +147,8 @@ theorem commitOk_leaves (a : Array EF) (s la : Nat) (hs : s ≤ 24) (ha : a.size
     omega)
   refine ⟨2 ^ (s - la), List.cons_ne_nil _ _, fun m hm ↦ ?_, ?_⟩
   · obtain rfl := List.mem_singleton.mp hm
-    refine ⟨⟨by show 0 < 4 * 2 ^ la; positivity, ⟨s - la, by rw [KoalaBear.twoAdicity_eq]; omega, hd⟩,
+    refine ⟨⟨by show 0 < 4 * 2 ^ la; positivity,
+        ⟨s - la, by rw [KoalaBear.twoAdicity_eq]; omega, hd⟩,
       ?_, ?_⟩, hd⟩
     · show (a.flatMap fun x ↦ (Ext.coeffs x).toArray).size = 4 * 2 ^ la * (a.size / 2 ^ la)
       rw [size_flatMap_coeffs, KoalaBear.d_ext4, hd, Nat.mul_assoc, hsz, ha]
@@ -211,10 +213,12 @@ theorem commitRounds_refines (h : Refines B) (P : Params) (fuel : Nat) :
         show (Array.ofFn _).size = _
         rw [Array.size_ofFn, hrows]
     have hc' : CPRel h.RC
-        ⟨cp.commits.push ((specBackend EF).root ((specBackend EF).commit [(specBackend EF).leaves (2 ^ la) a])),
+        ⟨cp.commits.push
+            ((specBackend EF).root ((specBackend EF).commit [(specBackend EF).leaves (2 ^ la) a])),
           cp.data ++ [B.commit [B.leaves (2 ^ la) folded]], cp.witnesses.push w,
           cp.arities.push la, cp.finalPoly⟩
-        ⟨cs.commits.push ((specBackend EF).root ((specBackend EF).commit [(specBackend EF).leaves (2 ^ la) a])),
+        ⟨cs.commits.push
+            ((specBackend EF).root ((specBackend EF).commit [(specBackend EF).leaves (2 ^ la) a])),
           cs.data ++ [(specBackend EF).commit [(specBackend EF).leaves (2 ^ la) a]],
               cs.witnesses.push w,
           cs.arities.push la, cs.finalPoly⟩ :=

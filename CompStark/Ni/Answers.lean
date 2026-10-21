@@ -21,7 +21,6 @@ query (`tableQueryLog_verifyWith`). Both follow from the naturality of the verif
 namespace CompStark.RandomOracle
 open CompStark.Stark OracleSpec OracleComp
 
-
 variable {F : Type} [BaseField F] {EF : Type} [Challenge F EF] {K : Nat}
 
 /-- The primitives on answers `ask`, mapped by a monad morphism, are those on the mapped
@@ -38,7 +37,8 @@ theorem withAnswers_map {m n : Type → Type} [Monad m] [Monad n] [LawfulMonad m
 /-- Simulating the oracles of the verifier by `impl` runs the verifier on the answers of
 `impl`. -/
 theorem simulateQ_verifyWith {n : Type → Type} [Monad n] [LawfulMonad n]
-    (impl : QueryImpl (spec F K) n) (P : Fri.Params) (A : Air F) (proof : Proof F EF) (pis : List F) :
+    (impl : QueryImpl (spec F K) n) (P : Fri.Params) (A : Air F) (proof : Proof F EF)
+    (pis : List F) :
     simulateQ impl (verifyWith (ideal F K) P A proof pis) =
       verifyWith (withAnswers K impl) P A proof pis := by
   have h := verifyWith_map (simulateQ' impl) (ideal F K) P A proof pis
@@ -70,10 +70,10 @@ end CompStark.RandomOracle
 namespace CompStark.Iop.Setup
 open CompStark.Stark CompStark.RandomOracle OracleSpec OracleComp
 
-
 variable {F : Type} [BaseField F] {EF : Type} [Challenge F EF] (S : Setup EF)
 
-theorem evalWithAnswerFn_verifyRo (answer : (q : Query F) → Answer S.streamLen q) (proof : Proof F EF)
+theorem evalWithAnswerFn_verifyRo (answer : (q : Query F) → Answer S.streamLen q)
+    (proof : Proof F EF)
     (pis : List F) :
     evalWithAnswerFn (QueryImpl.ofFn answer) (S.verifyRo proof pis) =
       if proof.degreeBits = S.logN then verifyWith (idealOf answer) S.params S.air proof pis

@@ -349,7 +349,8 @@ theorem rowAcc_cons (a : Expr F × List F) (cw : List (Expr F × List F)) (ev : 
 
 /-- The fast accumulation of weighted constraints over a block of `B` rows: entry `i` of plane `j`
 is `rowAcc` at that row, from `X j i`. -/
-theorem accWords (B : Nat) (hB : 4 * B < USize.size) (V : Expr F → ByteArray) (ev : Expr F → Nat → F) :
+theorem accWords (B : Nat) (hB : 4 * B < USize.size) (V : Expr F → ByteArray)
+    (ev : Expr F → Nat → F) :
     ∀ (cw : List (Expr F × List F)),
       (∀ a ∈ cw, V a.1 = encode (Array.ofFn (n := B) fun i ↦ ev a.1 i.val)) →
       (∀ a ∈ cw, a.2.length = 4) → ∀ (X : Nat → Nat → F),
@@ -519,7 +520,8 @@ theorem word_encode_ofFn (B : Nat) (hB : 4 * B < USize.size) (X : Nat → F) (k 
     NTTFast.Packed.ofWord_val, NTTFast.Packed.getD_ofFn_bounded _ _ hk]
 
 /-- The fast quotient is the specification's. -/
-theorem quotientWith_rel (A : Air F) (pis : List F) (d l : Nat) (alpha : EF) {ext : PMat} {s : Mat F}
+theorem quotientWith_rel (A : Air F) (pis : List F) (d l : Nat) (alpha : EF) {ext : PMat}
+    {s : Mat F}
     (h : RM ext s) (hs : MatOk s) (hh : 2 ^ (d + l) ≤ s.height)
     (hc : ∀ c ∈ A.constraints, c.colsBelow s.width) :
     quotientWith (quotientTables d l) A pis ext alpha = quotientOfLde A pis d l s alpha := by

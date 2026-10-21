@@ -23,7 +23,6 @@ open CompStark.Stark CompStark.Sound CompStark.Iop CompStark.RandomOracle
 open OracleSpec OracleComp
 open scoped ENNReal
 
-
 variable {F : Type} [BaseField F] {EF : Type} [Challenge F EF]
 
 /-! ### Logged computations on an answer table -/
@@ -31,11 +30,13 @@ variable {F : Type} [BaseField F] {EF : Type} [Challenge F EF]
 section Logged
 variable {K : Nat} (answer : (q : Query F) → Answer K q)
 
+omit [BaseField F] in
 theorem tableQueryLog_map {α β : Type} (f : α → β) (oa : OracleComp (spec F K) α) :
     tableQueryLog (f <$> oa) answer = tableQueryLog oa answer := by
   rw [map_eq_bind_pure_comp, tableQueryLog_bind, Function.comp_apply, tableQueryLog_pure,
     List.append_nil]
 
+omit [BaseField F] in
 theorem evalWithAnswerFn_logged {α : Type} (oa : OracleComp (spec F K) α) :
     evalWithAnswerFn (QueryImpl.ofFn answer) (simulateQ loggingOracle oa).run =
       (evalWithAnswerFn (QueryImpl.ofFn answer) oa, tableQueryLog oa answer) := by
@@ -47,6 +48,7 @@ theorem evalWithAnswerFn_logged {α : Type} (oa : OracleComp (spec F K) α) :
     simp only [evalWithAnswerFn_bind]
     rfl
 
+omit [BaseField F] in
 theorem tableQueryLog_logged {α : Type} (oa : OracleComp (spec F K) α) :
     tableQueryLog (simulateQ loggingOracle oa).run answer = tableQueryLog oa answer := by
   induction oa using OracleComp.inductionOn with
@@ -55,6 +57,7 @@ theorem tableQueryLog_logged {α : Type} (oa : OracleComp (spec F K) α) :
     rw [run_simulateQ_loggingOracle_query_bind, tableQueryLog_query_bind, tableQueryLog_map,
       ih, tableQueryLog_query_bind]
 
+omit [BaseField F] in
 theorem length_tableQueryLog_le {α : Type} (oa : OracleComp (spec F K) α) (n : Nat)
     (hn : IsTotalQueryBound oa n) : (tableQueryLog oa answer).length ≤ n := by
   induction oa using OracleComp.inductionOn generalizing n with
@@ -74,7 +77,8 @@ variable (S : Iop.Setup EF) (publicValues : List F)
 
 /-- The game of `run`: the prover, logged, then the verifier on its proof. -/
 def game (prover : NIProver S) :
-    OracleComp (spec F S.streamLen) (Proof F EF × QueryLog (spec F S.streamLen) × Except String Unit) :=
+    OracleComp (spec F S.streamLen)
+        (Proof F EF × QueryLog (spec F S.streamLen) × Except String Unit) :=
         do
   let (proof, log) ← (simulateQ loggingOracle prover).run
   return (proof, log, ← S.verifyRo proof publicValues)

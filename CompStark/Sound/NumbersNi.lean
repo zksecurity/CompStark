@@ -24,7 +24,6 @@ extractor's radius below the unique-decoding radius, as in `CompStark/Sound/Numb
 namespace CompStark.Sound
 open CompStark.Stark CompStark.Iop NNReal
 
-
 variable {F : Type} [BaseField F] {EF : Type} [Challenge F EF]
 
 local notation "𝕂" => Challenge.Spec EF

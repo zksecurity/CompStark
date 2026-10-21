@@ -30,7 +30,6 @@ bounds collisions and predictions among the digests of `q` queries.
 namespace CompStark.Iop
 open CompStark.Sound
 
-
 variable {F : Type} [BaseField F] {EF : Type} [Challenge F EF]
 
 local notation "𝕂" => Challenge.Spec EF

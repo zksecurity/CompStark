@@ -25,11 +25,11 @@ open CompStark.Stark CompStark.Iop CompStark.RandomOracle OracleSpec OracleComp
 
 variable {F : Type} [BaseField F]
 
-
 variable {K : Nat}
 
 /-! ### Changing the answers outside a run -/
 
+omit [BaseField F] in
 /-- A computation's result on an answer table depends only on the answers to the keys it
 queries. -/
 theorem evalWithAnswerFn_congr {α : Type} (answer answer' : (q : Query F) → Answer K q) :
@@ -65,7 +65,8 @@ theorem exists_not_mem (l : List (Digest F)) (h : l.length < Fintype.card (Diges
   classical
   by_contra hall
   simp only [not_exists, not_not] at hall
-  have hsub : (Finset.univ : Finset (Digest F)) ⊆ l.toFinset := fun d _ ↦ List.mem_toFinset.mpr (hall d)
+  have hsub : (Finset.univ : Finset (Digest F)) ⊆ l.toFinset := fun d _ ↦ List.mem_toFinset.mpr
+      (hall d)
   have := (Finset.card_le_card hsub).trans (List.toFinset_card_le l)
   rw [Finset.card_univ] at this
   omega
@@ -89,6 +90,7 @@ section Climb
 variable {d : Nat} (hash : List F → Vector F d) (compress : Vector F d → Vector F d → Vector F d)
   (values : List (List F)) (dstar : Vector F d) (cached : Vector F d → Vector F d → Prop)
 
+omit [BaseField F] in
 /-- A climb that does not end at `dstar` compresses only cached pairs, if compressing an uncached
 pair or a pair with `dstar` gives `dstar`. -/
 theorem climb_cached (hfresh : ∀ a b, ¬ cached a b → compress a b = dstar)

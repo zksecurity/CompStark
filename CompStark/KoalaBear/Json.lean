@@ -26,7 +26,8 @@ open Lean (Json)
 /-- A field element from its Montgomery word. -/
 def field (j : Json) : Except String F := do
   let n ← j.getNat?
-  if n < _root_.KoalaBear.fieldSize then return CompPoly.CPolynomial.NTTFast.Packed.ofWord n.toUInt32
+  if n < _root_.KoalaBear.fieldSize then
+    return CompPoly.CPolynomial.NTTFast.Packed.ofWord n.toUInt32
   else throw s!"not a canonical Montgomery word: {n}"
 
 /-- An array. -/

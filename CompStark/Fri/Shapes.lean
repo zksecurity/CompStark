@@ -18,7 +18,6 @@ values for height `2 ^ h` (`reduce_shape`).
 namespace CompStark.Fri
 open CompStark.Stark
 
-
 variable {F : Type} [BaseField F] {EF : Type} [Challenge F EF]
 
 theorem size_parChunks {α : Type} (n parts : Nat) (f : Nat → Nat → Array α)
@@ -95,8 +94,10 @@ theorem addressable_of_le {n : Nat} (h : n ≤ 2 ^ 26) : Addressable n := by
 
 /-- One matrix of the reduction keeps every running sum at `2 ^ h` values for height `2 ^ h`. -/
 theorem reduceStep_shape (alpha : EF) (red : List (Nat × Nat × Array EF))
-    (hred : ∀ e ∈ red, e.1 ≤ twoAdicity F ∧ e.2.2.size = 2 ^ e.1) (it : Mat F × List (EF × Array EF))
-    (hit : MatOk it.1) : ∀ e ∈ reduceStep alpha red it, e.1 ≤ twoAdicity F ∧ e.2.2.size = 2 ^ e.1 := by
+    (hred : ∀ e ∈ red, e.1 ≤ twoAdicity F ∧ e.2.2.size = 2 ^ e.1)
+    (it : Mat F × List (EF × Array EF))
+    (hit : MatOk it.1) : ∀ e ∈ reduceStep alpha red it,
+    e.1 ≤ twoAdicity F ∧ e.2.2.size = 2 ^ e.1 := by
   obtain ⟨-, ⟨k, hk, hh⟩, -⟩ := hit
   have hlog : Nat.log2 it.1.height = k := by rw [hh, Nat.log2_two_pow]
   have hstart : ((red.lookup k).getD (0, Array.replicate it.1.height 0)).2.size = 2 ^ k := by
@@ -126,7 +127,8 @@ theorem reduceStep_shape (alpha : EF) (red : List (Nat × Nat × Array EF))
 
 /-- The batched reductions of matrices of the prover's shapes have `2 ^ h` values. -/
 theorem reduce_shape (alpha : EF) (items : List (Mat F × List (EF × Array EF)))
-    (hok : ∀ x ∈ items, MatOk x.1) : ∀ y ∈ Fri.reduce alpha items, ∃ s ≤ twoAdicity F, y.2.size = 2 ^ s := by
+    (hok : ∀ x ∈ items, MatOk x.1) : ∀ y ∈ Fri.reduce alpha items, ∃ s ≤ twoAdicity F,
+    y.2.size = 2 ^ s := by
   have hinv : ∀ (l : List (Mat F × List (EF × Array EF))) (red : List (Nat × Nat × Array EF)),
       (∀ x ∈ l, MatOk x.1) → (∀ e ∈ red, e.1 ≤ twoAdicity F ∧ e.2.2.size = 2 ^ e.1) →
       ∀ e ∈ l.foldl (reduceStep alpha) red, e.1 ≤ twoAdicity F ∧ e.2.2.size = 2 ^ e.1 := by

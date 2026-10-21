@@ -36,7 +36,8 @@ def Air.traceRow (air : Air F) (logN : Nat) (trace : Array F) (publicValues : Li
 /-- Every constraint vanishes on every row of the trace domain `⟨ω⟩` of size `2 ^ logN`, with
 Plonky3's selectors there: `Z_H(x) / (x - 1)`, `Z_H(x) / (x - ω⁻¹)` and `x - ω⁻¹`
 (`Air.traceRow`). -/
-def Air.ConstraintsVanish (air : Air F) (logN : Nat) (trace : Array F) (publicValues : List F) : Prop :=
+def Air.ConstraintsVanish (air : Air F) (logN : Nat) (trace : Array F) (publicValues : List F) :
+    Prop :=
   ∀ c ∈ air.constraints, ∀ i < 2 ^ logN, c.eval (air.traceRow logN trace publicValues i) = 0
 
 /-- A bound on the degree of a constraint as a polynomial on a trace domain of size `n`: the

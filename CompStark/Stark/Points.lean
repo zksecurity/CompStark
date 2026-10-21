@@ -32,7 +32,8 @@ open CompStark.Fri Polynomial
 
 /-- The accumulator form of bit reversal is CompPoly's. -/
 theorem reverseBitsGo_eq (bits : Nat) :
-    ∀ i acc, reverseBitsGo bits i acc = CompPoly.CPolynomial.NTT.Transform.bitRevAcc bits i acc := by
+    ∀ i acc, reverseBitsGo bits i acc = CompPoly.CPolynomial.NTT.Transform.bitRevAcc bits i acc :=
+        by
   induction bits with
   | zero => intro i acc; rfl
   | succ bits ih =>

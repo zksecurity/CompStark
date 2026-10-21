@@ -16,7 +16,6 @@ public import CompStark.Fri.Prover
 @[expose] public section
 namespace CompStark.Stark
 
-
 variable {F : Type} [BaseField F] {EF : Type} [Challenge F EF]
 
 /-- Row `r` of the quotient domain: the trace's row `r` and the row `period` on, cyclically. -/

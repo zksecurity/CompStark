@@ -11,7 +11,8 @@ public import CompStark.Stark.Air
 
 Plonky3's `uni-stark` `verify` (revision `47e442f`) without preprocessed columns or zero
 knowledge, over a base field `F` with challenges in the extension `EF` and the two-adic FRI
-commitment scheme. `verifyWith` runs on any challenger and Merkle hashes (`Primitives`).
+commitment scheme. `verifyWith` runs on any challenger and Merkle hashes (`Primitives`); Plonky3's
+verifier `verify` is it on Plonky3's Poseidon2 ones (`poseidon2`).
 
 * The proof's shape is checked first: the opened values' sizes, and FRI's fold arities, which must
   be Plonky3's schedule for the degree (`foldArities`). Plonky3 takes the arities from the proof;

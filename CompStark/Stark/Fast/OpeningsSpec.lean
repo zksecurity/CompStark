@@ -17,7 +17,6 @@ point are, column by column, a weighted sum over the rows (`openedAt_eq`).
 namespace CompStark.Stark
 open CompStark.Fri
 
-
 variable {F : Type} [BaseField F] {EF : Type} [Challenge F EF]
 
 theorem ofFn_append_ofFn {α : Type} (g : Nat → α) (a b : Nat) :

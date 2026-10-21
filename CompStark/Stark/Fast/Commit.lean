@@ -173,7 +173,8 @@ theorem upper_succ (fuel : Nat) (L : List (Digest F)) :
       if L.length ≤ 1 then [L] else L :: upper fuel (Merkle.nextLayer hashF compF [] L) := by
   simp only [upper, Merkle.upperLayersAll, List.takeWhile_nil, List.length_nil, List.drop_nil]
 
-theorem upper_eq_cons (fuel : Nat) (L : List (Digest F)) : upper fuel L = L :: (upper fuel L).tail := by
+theorem upper_eq_cons (fuel : Nat) (L : List (Digest F)) : upper fuel L = L ::
+    (upper fuel L).tail := by
   cases fuel with
   | zero => rfl
   | succ fuel =>

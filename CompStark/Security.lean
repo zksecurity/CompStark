@@ -306,7 +306,8 @@ theorem wide_knowledgeError_le :
   rw [hq, hlarge, hfolds, hb] at h2
   refine h1.trans ((add_le_add le_rfl h2).trans
     (numbers_curve_le _ (2 ^ 22 + 64) _ _ _ _ 276841 _ 294726 _ (2561 / 4096 + 20 / 2 ^ 17)
-      ?_ ?_ ?_ le_rfl ?_ (by norm_num [KoalaBear.card_eq]) (by norm_num [KoalaBear.card_eq]) (by norm_num [KoalaBear.card_eq]) (by norm_num [KoalaBear.card_eq])))
+      ?_ ?_ ?_ le_rfl ?_ (by norm_num [KoalaBear.card_eq]) (by norm_num [KoalaBear.card_eq])
+          (by norm_num [KoalaBear.card_eq]) (by norm_num [KoalaBear.card_eq])))
   · exact (wide_integers_le wideSetup rfl).trans (by decide)
   · rw [wide_numOpened wideSetup rfl, hrate, hsize]
     norm_num
@@ -376,7 +377,8 @@ theorem wide21_knowledgeError_le :
   rw [hq, hlarge, hfolds, hb] at h2
   refine h1.trans ((add_le_add le_rfl h2).trans
     (numbers_curve_le _ (2 ^ 23 + 64) _ _ _ _ 276841 _ 343847 _ (2561 / 4096 + 21 / 2 ^ 17)
-      ?_ ?_ ?_ le_rfl ?_ (by norm_num [KoalaBear.card_eq]) (by norm_num [KoalaBear.card_eq]) (by norm_num [KoalaBear.card_eq]) (by norm_num [KoalaBear.card_eq])))
+      ?_ ?_ ?_ le_rfl ?_ (by norm_num [KoalaBear.card_eq]) (by norm_num [KoalaBear.card_eq])
+          (by norm_num [KoalaBear.card_eq]) (by norm_num [KoalaBear.card_eq])))
   · exact (wide_integers_le wide21Setup rfl).trans (by decide)
   · rw [wide_numOpened wide21Setup rfl, hrate, hsize]
     norm_num

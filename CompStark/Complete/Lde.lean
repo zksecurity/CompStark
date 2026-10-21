@@ -43,7 +43,6 @@ theorem twoAdicGen_eq_omega (k : Nat) (hk : k ≤ 24) :
   simp only [specDomain, CPolynomial.NTT.KoalaBear.fastDomainOfLogN,
     CPolynomial.NTT.KoalaBear.bitsOfLogN, Fin.getElem_fin]
 
-
 /-! ### `ldeRef` -/
 
 /-- Column `j`'s coefficients in `ldeRef`: the inverse transform of the column. -/
@@ -75,7 +74,6 @@ theorem ldeRef_values (logH bits : Nat) (shift : F) (w : Nat) (m : Array F) :
   · intro j h1 h2
     simp only [Array.getElem_map, List.getElem_toArray, List.getElem_map, List.getElem_range,
       Array.getElem_range, foldr_horner, powF_eq, ldeCoeffs]
-
 
 /-- The polynomial of `ldeCoeffs` takes the column's values on `⟨ω⟩`. -/
 theorem eval_ldeCoeffs (logH bits w j : Nat) (m : Array F) (hlog : logH + bits ≤ 24) (i : Nat)
@@ -129,7 +127,6 @@ theorem degree_ldePoly (logH w j : Nat) (shift : F) (m : Array F) :
   rw [Nat.mul_one]
   exact natDegree_ldeCoeffs logH w j m
 
-
 /-- Column `j`'s polynomial. -/
 theorem getD_ldePolys (logH w : Nat) (shift : F) (m : Array F) (j : Nat) (hj : j < w) :
     ((List.range w).map fun j ↦ ldePoly logH w j shift m).getD j 0 = ldePoly logH w j shift m := by
@@ -170,7 +167,6 @@ theorem ldeRef_isLde (logH bits : Nat) (shift : F) (w : Nat) (m : Array F)
   · rw [getD_ldePolys _ _ _ _ _ hj, eval_ldePoly _ _ _ _ _ _ (twoAdicGen logH ^ i),
       eval_ldeCoeffs logH bits w j m hlog i hi]
     field_simp
-
 
 /-! ### Openings -/
 
@@ -230,7 +226,6 @@ theorem reverseBits_bitRevNat (L b i : Nat) (hi : i < 2 ^ L) :
   rw [Nat.mul_zero, Nat.zero_add, bitRevNat_zero, Nat.add_zero,
     CPolynomial.NTT.Transform.bitRevNat_involutive L i hi] at this
   exact this
-
 
 /-- The scale of the barycentric formula in the spec field. -/
 theorem toSpec_cosetFactor (L : Nat) (s : F) (z : EF) :

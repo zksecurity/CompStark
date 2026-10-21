@@ -30,7 +30,6 @@ Below the unique-decoding radius `ℓ ≤ 1`; up to the Johnson bound `1 - √ra
 namespace CompStark.Iop
 open CompStark.Stark CompStark.Sound CoreDefinitions Polynomial
 
-
 variable {F : Type} [BaseField F] {EF : Type} [Challenge F EF]
 
 local notation "𝕂" => Challenge.Spec EF

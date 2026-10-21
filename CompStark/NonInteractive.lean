@@ -11,9 +11,10 @@ public import CompStark.Ni.Assembly
 The non-interactive STARK, with the verifier's hashes as random oracles
 (`CompStark/RandomOracle.lean`), is knowledge sound: a prover making at most `Q` oracle calls gets
 a proof accepted while no trace close to the one it committed to satisfies the AIR with
-probability at most `q · roundError + hashError F q`, `q = Q + verifierQueries`. `roundError` is the
-largest error of one oracle answer, every round of the interactive oracle proof credited with its
-grinding, and `hashError` bounds collisions and predictions of digests (`CompStark/NonInteractiveError.lean`).
+probability at most `q · roundError + hashError F q`, `q = Q + verifierQueries`. `roundError` is
+the largest error of one oracle answer, every round of the interactive oracle proof credited with
+its grinding, and `hashError` bounds collisions and predictions of digests
+(`CompStark/NonInteractiveError.lean`).
 
 The committed trace is read off the prover's own hash queries (`committedTrace`), so the extractor
 is straight-line. The proof (`CompStark/Ni/`) bounds, query by query, the probability that a fresh
@@ -27,7 +28,6 @@ hold for the extracted transcript (`Ni/Bcs.lean`), and safe rounds then give a s
 @[expose] public section
 namespace CompStark.Iop
 open CompStark.Stark CompStark.Ni
-
 
 variable {F : Type} [BaseField F] {EF : Type} [Challenge F EF]
 

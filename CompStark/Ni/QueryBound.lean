@@ -157,9 +157,9 @@ end CompStark.Merkle
 namespace CompStark.Fri
 open CompStark.Stark CompStark.RandomOracle OracleSpec OracleComp
 
-
 variable {F : Type} [BaseField F] {EF : Type} [Challenge F EF] {K : Nat}
 
+omit [BaseField F] in
 theorem isTotalQueryBound_query (q : Query F) :
     IsTotalQueryBound (liftM ((spec F K).query q) : OracleComp (spec F K) _) 1 := by
   rw [← bind_pure (liftM _), isTotalQueryBound_query_bind_iff]
@@ -302,6 +302,7 @@ theorem costs_verifyQuery (P : Params) (logMax index : Nat) (betas : List EF)
     exact Nat.mul_le_mul_right _ (Nat.min_le_right _ _)
 
 omit [Challenge F EF] in
+omit [BaseField F] in
 /-- Every query has a fold per commit-phase commitment. -/
 theorem steps_size_of_all (proof : FriProof F EF)
     (hall : (proof.queries.all fun q ↦ q.steps.size == proof.commits.size &&
@@ -313,7 +314,7 @@ theorem steps_size_of_all (proof : FriProof F EF)
   simp only [Bool.and_eq_true, beq_iff_eq] at this
   exact this.1
 
-omit [Challenge F EF] in
+omit [BaseField F] [Challenge F EF] in
 /-- With some fold, the commit-phase commitments are as many as the folds. -/
 theorem commits_size_of_all (proof : FriProof F EF)
     (hall : (proof.queries.all fun q ↦ q.steps.size == proof.commits.size &&
@@ -401,7 +402,6 @@ end CompStark.Fri
 
 namespace CompStark.Iop.Setup
 open CompStark.Stark CompStark.Fri CompStark.RandomOracle OracleSpec OracleComp
-
 
 variable {F : Type} [BaseField F] {EF : Type} [Challenge F EF] (S : Setup EF)
 

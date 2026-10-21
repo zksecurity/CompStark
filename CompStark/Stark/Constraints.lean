@@ -16,7 +16,8 @@ An AIR's constraints over polynomials, as the analysis of the constraint check s
 
 * `Expr.eval_hom`: evaluation commutes with maps that respect `+`, `-` and `*`.
 * `constraintPoly`: a constraint over trace polynomials `T`, with the selector polynomials
-  `firstSel`, `lastSel` and `X - ω⁻¹`; its degree is at most `degBound` (`natDegree_constraintPoly`),
+  `firstSel`, `lastSel` and `X - ω⁻¹`; its degree is at most `degBound`
+  (`natDegree_constraintPoly`),
   and on the trace domain `⟨ω⟩` it takes the constraint's value on the trace's rows
   (`eval_constraintPoly_root`). A satisfied constraint is `Z_H` times its quotient
   (`constraintPoly_eq`).
@@ -32,7 +33,8 @@ open Polynomial
 
 /-- Evaluation commutes with a map that respects `+`, `-` and `*`, for expressions reading
 columns below `w` of environments that agree there. -/
-theorem Expr.eval_hom {F : Type} {R S : Type*} [Add R] [Sub R] [Mul R] [Add S] [Sub S] [Mul S] (f : R → S)
+theorem Expr.eval_hom {F : Type} {R S : Type*} [Add R] [Sub R] [Mul R] [Add S] [Sub S] [Mul S]
+    (f : R → S)
     (hadd : ∀ a b, f (a + b) = f a + f b) (hsub : ∀ a b, f (a - b) = f a - f b)
     (hmul : ∀ a b, f (a * b) = f a * f b) (w : Nat) (r : Expr.Env F R) (s : Expr.Env F S)
     (hcur : ∀ c < w, f (r.cur c) = s.cur c) (hnext : ∀ c < w, f (r.next c) = s.next c)
@@ -263,7 +265,8 @@ theorem zH_monic (logN : Nat) : (zH (2 ^ logN) : F[X]).Monic :=
 
 /-- A polynomial vanishing on `⟨ω⟩` is `Z_H` times its quotient. -/
 theorem eq_zH_mul (logN : Nat) (h : logN ≤ twoAdicity F) (p : F[X])
-    (hp : ∀ i < 2 ^ logN, p.eval (twoAdicGen logN ^ i) = 0) : p = zH (2 ^ logN) * (p /ₘ zH (2 ^ logN)) := by
+    (hp : ∀ i < 2 ^ logN, p.eval (twoAdicGen logN ^ i) = 0) : p = zH (2 ^ logN) *
+    (p /ₘ zH (2 ^ logN)) := by
   have hr : p %ₘ zH (2 ^ logN) = 0 := by
     have hpr := BaseField.isPrimitiveRoot_twoAdicGen (F := F) logN h
     refine eq_zero_of_degree_lt_of_eval_index_eq_zero (Finset.range (2 ^ logN))
@@ -289,7 +292,8 @@ theorem constraintPoly_eq (A : Air F) (logN : Nat) (h : logN ≤ twoAdicity F) (
     (pis : List F) (T : Nat → F[X]) (hT : TraceOn logN A.width trace T)
     (hsat : A.ConstraintsVanish logN trace pis) (hcols : A.ColsInWidth) (c : Expr F)
     (hc : c ∈ A.constraints) :
-    constraintPoly (2 ^ logN) (twoAdicGen logN) T pis c = zH (2 ^ logN) * quotientPoly logN T pis c :=
+    constraintPoly (2 ^ logN) (twoAdicGen logN) T pis c = zH (2 ^ logN) * quotientPoly logN T pis
+        c :=
   eq_zH_mul logN h _ fun i hi ↦ by
     rw [eval_constraintPoly_root A logN h trace pis T hT c (hcols c hc) i hi, hsat c hc i hi]
 

@@ -19,7 +19,6 @@ values gives `ConstraintsHoldAt` on them (`openingsOf`), at the spec images of `
 namespace CompStark.Ni
 open CompStark.Stark CompStark.Fri CompStark.Sound CompStark.Iop Polynomial
 
-
 variable {F : Type} [BaseField F] {EF : Type} [Challenge F EF]
 
 local notation "𝕂" => Challenge.Spec EF

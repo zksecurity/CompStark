@@ -25,7 +25,6 @@ so the list has at most one element (`listSize_le_one`).
 namespace CompStark.Sound
 open CompStark.Stark CompStark.Iop Polynomial
 
-
 variable {F : Type} [BaseField F] {EF : Type} [Challenge F EF]
 
 /-- The points of `L` in `F` are distinct. -/

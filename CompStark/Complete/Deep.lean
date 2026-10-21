@@ -36,7 +36,6 @@ namespace CompStark
 open CompStark.Stark CompStark.Fri Polynomial Montgomery.Native32
 open CompStark.Stark.Fast (crow termStep termsStep yzOf powers)
 
-
 local notation "F" => _root_.KoalaBear.Fast.Field
 variable {EF : Type} [Challenge F EF]
 local notation "hashF" => CompStark.Hash.KoalaBear.hash F
@@ -257,7 +256,8 @@ theorem lookup_mem {red : List (Nat × Nat × Array EF)} {h : Nat} {v : Nat × A
   rw [e]
   exact List.mem_append_right _ List.mem_cons_self
 
-theorem startOf_lowDeg {b : Nat} {red : List (Nat × Nat × Array EF)} (hred : RedOk b red) {m : Mat F}
+theorem startOf_lowDeg {b : Nat} {red : List (Nat × Nat × Array EF)} (hred : RedOk b red)
+    {m : Mat F}
     {h : Nat} (hm : m.height = 2 ^ h) (hlog : Nat.log2 m.height = h) :
     LowDeg b h (startOf red m).2 := by
   unfold startOf
@@ -379,7 +379,6 @@ theorem reduce_lowDegree (b : Nat) (alpha : EF) (items : List (Mat F × List (EF
     ⟨List.nodup_nil, fun _ h ↦ absurd h List.not_mem_nil⟩).2 e (List.mem_mergeSort.mp he)
   refine ⟨hsz, h24, p, hp.trans_le (WithBot.coe_le_coe.mpr (Nat.sub_le _ _)), hv⟩
 
-
 namespace Deep
 
 /-- The running sums have distinct heights `h`, each of `2 ^ h` values. -/
@@ -488,7 +487,6 @@ theorem reduce_heights (alpha : EF) (items : List (Mat F × List (EF × Array EF
     simp only [List.map_nil, List.not_mem_nil, false_or]
   · obtain ⟨e, he, rfl⟩ := List.mem_map.mp hy
     exact hsz e (hperm.mem_iff.mp he)
-
 
 namespace Deep
 
@@ -622,7 +620,6 @@ theorem column_loop (alpha : EF) (m : Mat F) (i : Nat) (hi : i < m.height) (xv :
 
 end Deep
 
-
 /-- The verifier's batched quotients at a query are the prover's, given the Merkle facts: every
 round commits matrices of one height `2 ^ h` that are honest LDEs with true openings, the verifier's
 rounds are built as the STARK verifier builds them, and the openings are the prover's at the
@@ -635,7 +632,8 @@ theorem openInput_honest_of (P : Params) (logMax index : Nat) (alpha : EF)
     (hmerkle : ∀ (ms : List (Mat F)) (k : Nat), ms ≠ [] →
       (∀ m ∈ ms, m.height = 2 ^ k ∧ m.values.size = m.width * m.height) → ∀ i < 2 ^ k,
       Merkle.KoalaBear.verifyBatch KoalaBear.Fast.Field (Committed.ofMats hashF compF ms).root
-        (ms.map (·.height)) i (((Committed.ofMats hashF compF ms).openAt i).values.toList.map (·.toList))
+        (ms.map (·.height)) i
+            (((Committed.ofMats hashF compF ms).openAt i).values.toList.map (·.toList))
         ((Committed.ofMats hashF compF ms).openAt i).path.toList = true)
     (hvalues : ∀ (ms : List (Mat F)) (k : Nat), (∀ m ∈ ms, m.height = 2 ^ k) → ∀ i,
       ((Committed.ofMats hashF compF ms).openAt i).values = (ms.map fun m ↦ rowOf m i).toArray)
@@ -755,7 +753,6 @@ theorem openInput_honest_of (P : Params) (logMax index : Nat) (alpha : EF)
       (r := fun a b ↦ decide (b.1 ≤ a.1)) (s := fun a b ↦ decide (b.1 ≤ a.1))
       (fun _ _ _ _ ↦ rfl), List.map_map]
   rfl
-
 
 /-- The verifier's batched quotients at a query are the prover's: every round commits matrices of
 one height `2 ^ h` that are honest LDEs with true openings, the verifier's rounds are built as the
