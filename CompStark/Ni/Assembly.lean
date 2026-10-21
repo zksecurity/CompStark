@@ -23,20 +23,18 @@ open CompStark.Stark CompStark.Sound CompStark.Iop CompStark.RandomOracle
 open OracleSpec OracleComp
 open scoped ENNReal
 
-variable {F : Type} [BaseField F] {EF : Type} [Challenge F EF]
+variable {F : Type}
 
 /-! ### Logged computations on an answer table -/
 
 section Logged
 variable {K : Nat} (answer : (q : Query F) → Answer K q)
 
-omit [BaseField F] in
 theorem tableQueryLog_map {α β : Type} (f : α → β) (oa : OracleComp (spec F K) α) :
     tableQueryLog (f <$> oa) answer = tableQueryLog oa answer := by
   rw [map_eq_bind_pure_comp, tableQueryLog_bind, Function.comp_apply, tableQueryLog_pure,
     List.append_nil]
 
-omit [BaseField F] in
 theorem evalWithAnswerFn_logged {α : Type} (oa : OracleComp (spec F K) α) :
     evalWithAnswerFn (QueryImpl.ofFn answer) (simulateQ loggingOracle oa).run =
       (evalWithAnswerFn (QueryImpl.ofFn answer) oa, tableQueryLog oa answer) := by
@@ -48,7 +46,6 @@ theorem evalWithAnswerFn_logged {α : Type} (oa : OracleComp (spec F K) α) :
     simp only [evalWithAnswerFn_bind]
     rfl
 
-omit [BaseField F] in
 theorem tableQueryLog_logged {α : Type} (oa : OracleComp (spec F K) α) :
     tableQueryLog (simulateQ loggingOracle oa).run answer = tableQueryLog oa answer := by
   induction oa using OracleComp.inductionOn with
@@ -57,7 +54,6 @@ theorem tableQueryLog_logged {α : Type} (oa : OracleComp (spec F K) α) :
     rw [run_simulateQ_loggingOracle_query_bind, tableQueryLog_query_bind, tableQueryLog_map,
       ih, tableQueryLog_query_bind]
 
-omit [BaseField F] in
 theorem length_tableQueryLog_le {α : Type} (oa : OracleComp (spec F K) α) (n : Nat)
     (hn : IsTotalQueryBound oa n) : (tableQueryLog oa answer).length ≤ n := by
   induction oa using OracleComp.inductionOn generalizing n with
@@ -69,6 +65,8 @@ theorem length_tableQueryLog_le {α : Type} (oa : OracleComp (spec F K) α) (n :
     omega
 
 end Logged
+
+variable [BaseField F] {EF : Type} [Challenge F EF]
 
 /-! ### The game -/
 

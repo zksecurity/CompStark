@@ -25,9 +25,27 @@ open CompPoly.CPolynomial
 open CompPoly.CPolynomial.NTTFast.Packed (LdePlan PackedCosetLde ldeSpec column powDomain)
 open Montgomery.Native32
 
-variable {p : ℕ} [Mont32Field p] [Mont32BaseField p]
+variable {p : ℕ} [Mont32Field p]
 
 local notation "F" => FastField p
+
+/-- Polynomial evaluation of the inverse transform is the interpolant's. -/
+theorem eval_interpolatePow (D : NTT.Domain F) (col : Vector F D.n) (y : F) :
+    (CLagrange.interpolatePow D.omega col).eval y =
+      (NTT.Inverse.inverseSpec D col.toArray).foldr (fun a acc ↦ acc * y + a) 0 := by
+  conv_lhs => rw [← NTT.loadNaturalVector_toArray D col]
+  change Raw.eval y (CLagrange.interpolatePow D.omega _).val = _
+  rw [← NTT.Inverse.inverseSpec_interpolatePow_eq, Raw.eval_trim_eq_eval, Raw.eval,
+    ← Raw.eval₂Horner_eq_eval₂]
+  rfl
+
+/-- Entry `i` of a column. -/
+theorem getD_column (m : Array F) (w h j i : Nat) (hi : i < h) :
+    (column m w h j).toArray.getD i 0 = m.getD (i * w + j) 0 := by
+  simp only [column, Vector.toArray_ofFn, Array.getD_eq_getD_getElem?, Array.getElem?_ofFn]
+  rw [dite_eq_left_of_eq_true (eq_true hi), Option.getD_some]
+
+variable [Mont32BaseField p]
 
 /-- A plan `plan?` returns extends onto `shift · ⟨ω_N⟩`, `ω_N = twoAdicGen (logH + bits)`. -/
 theorem plan?_some {logH bits : Nat} {shift : F} {P : LdePlan p}
@@ -77,24 +95,6 @@ theorem inverseSpec_twoAdic (D : NTT.Domain K) (logH : Nat) (hn : D.n = 2 ^ logH
     rw [powF_eq, hmod, Nat.mul_comm i k]
 
 end
-
-omit [Mont32BaseField p] in
-/-- Polynomial evaluation of the inverse transform is the interpolant's. -/
-theorem eval_interpolatePow (D : NTT.Domain F) (col : Vector F D.n) (y : F) :
-    (CLagrange.interpolatePow D.omega col).eval y =
-      (NTT.Inverse.inverseSpec D col.toArray).foldr (fun a acc ↦ acc * y + a) 0 := by
-  conv_lhs => rw [← NTT.loadNaturalVector_toArray D col]
-  change Raw.eval y (CLagrange.interpolatePow D.omega _).val = _
-  rw [← NTT.Inverse.inverseSpec_interpolatePow_eq, Raw.eval_trim_eq_eval, Raw.eval,
-    ← Raw.eval₂Horner_eq_eval₂]
-  rfl
-
-omit [Mont32BaseField p] in
-/-- Entry `i` of a column. -/
-theorem getD_column (m : Array F) (w h j i : Nat) (hi : i < h) :
-    (column m w h j).toArray.getD i 0 = m.getD (i * w + j) 0 := by
-  simp only [column, Vector.toArray_ofFn, Array.getD_eq_getD_getElem?, Array.getElem?_ofFn]
-  rw [dite_eq_left_of_eq_true (eq_true hi), Option.getD_some]
 
 /-- The coefficients `ldeRef` computes are the inverse transform of the column. -/
 theorem inverseSpec_column (P : LdePlan p) (logH bits w j : Nat) (m : Array F)

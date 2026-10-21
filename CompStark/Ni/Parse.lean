@@ -37,7 +37,28 @@ earlier round's input and answered samples) and its own input.
 namespace CompStark.Ni
 open CompStark.Stark CompStark.RandomOracle OracleSpec OracleComp
 
-variable {F : Type} [BaseField F] {EF : Type} [Challenge F EF]
+variable {F : Type}
+
+/-! ### Consistent logs -/
+
+/-- Every query of `log` is answered by `answer`. -/
+def Consistent {K : Nat} (answer : (q : Query F) → Answer K q) (log : QueryLog (spec F K)) : Prop :=
+  ∀ e ∈ log, e.2 = answer e.1
+
+/-- A log of answers by `answer` is answered by `answer`. -/
+theorem consistent_tableQueryLog {K : Nat} {answer : (q : Query F) → Answer K q} {α : Type}
+    (oa : OracleComp (spec F K) α) :
+    Consistent answer (tableQueryLog oa answer) := by
+  induction oa using OracleComp.inductionOn with
+  | pure a => simp only [Consistent, tableQueryLog_pure, List.not_mem_nil, IsEmpty.forall_iff,
+      implies_true]
+  | query_bind t k ih =>
+    rw [Consistent, tableQueryLog_query_bind]
+    rintro e (_ | ⟨_, he⟩)
+    · rfl
+    · exact ih _ e he
+
+variable [BaseField F] {EF : Type} [Challenge F EF]
 
 /-! ### The transcript schedule -/
 
@@ -106,9 +127,6 @@ input. -/
 def parse (log : QueryLog (spec F K)) : Query F → Option (List (Step F K) × List F)
   | .duplex cap input => (stepsTo log log.length cap).map (·, input)
   | _ => none
-
-/-- Every query of `log` is answered by `answer`. -/
-def Consistent (log : QueryLog (spec F K)) : Prop := ∀ e ∈ log, e.2 = answer e.1
 
 /-- On the duplex calls of `log`, `answer` never gives the initial capacity, and gives distinct
 calls distinct capacities. -/
@@ -955,19 +973,6 @@ end Run
 section Verifier
 
 variable {answer : (q : Query F) → Answer K q}
-
-omit [BaseField F] in
-/-- A log of answers by `answer` is answered by `answer`. -/
-theorem consistent_tableQueryLog {α : Type} (oa : OracleComp (spec F K) α) :
-    Consistent answer (tableQueryLog oa answer) := by
-  induction oa using OracleComp.inductionOn with
-  | pure a => simp only [Consistent, tableQueryLog_pure, List.not_mem_nil, IsEmpty.forall_iff,
-      implies_true]
-  | query_bind t k ih =>
-    rw [Consistent, tableQueryLog_query_bind]
-    rintro e (_ | ⟨_, he⟩)
-    · rfl
-    · exact ih _ e he
 
 /-- The verifier on logged answers gives the verifier on the answers, and its log. -/
 theorem run_idealLogged (P : Fri.Params) (A : Air F) (proof : Proof F EF) (pis : List F) :

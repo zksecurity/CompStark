@@ -67,12 +67,21 @@ theorem mul_c3 [Binomial4 p] (a b : EF) :
 @[simp] theorem sub_c2 (a b : EF) : (a - b).c2 = a.c2 - b.c2 := rfl
 @[simp] theorem sub_c3 (a b : EF) : (a - b).c3 = a.c3 - b.c3 := rfl
 
+theorem toSpec_ne_zero [Binomial4 p] {a : EF} (h : a ≠ 0) : Ext4.toSpec a ≠ 0 := fun h' ↦
+  h (Ext4.toSpec_injective (h'.trans Ext4.toSpec_zero.symm))
+
+theorem smul_eq_ofBase_mul [Binomial4 p] (x : F) (a : EF) :
+    Ext4.smul x a = Ext4.ofBase x * a := by
+  apply ext <;> simp only [Ext4.smul, Ext4.ofBase, mul_c0, mul_c1, mul_c2, mul_c3] <;> ring
+
 section Zeta
 
 variable [Mont32BaseField p]
 
 /-- `ζ`, of order 4. -/
 abbrev zeta (p : ℕ) [Mont32Field p] [Mont32BaseField p] : FastField p := twoAdicGen 2
+
+theorem powF_zeta_1 : powF (zeta p) 1 = zeta p := by rw [powF_eq, pow_one]
 
 variable (hζ : 2 ≤ BaseField.twoAdicity (FastField p))
 include hζ
@@ -89,8 +98,6 @@ theorem zeta_pow_two : zeta p ^ 2 = (-1 : F) := by
 
 theorem zeta_sq : zeta p * zeta p = (-1 : F) := by rw [← pow_two, zeta_pow_two hζ]
 
-omit hζ in
-theorem powF_zeta_1 : powF (zeta p) 1 = zeta p := by rw [powF_eq, pow_one]
 theorem powF_zeta_2 : powF (zeta p) 2 = -1 := by rw [powF_eq, zeta_pow_two hζ]
 theorem powF_zeta_3 : powF (zeta p) 3 = -zeta p := by
   rw [powF_eq, show zeta p ^ 3 = zeta p ^ 2 * zeta p by ring, zeta_pow_two hζ, neg_one_mul]
@@ -100,6 +107,11 @@ theorem powF_zeta_6 : powF (zeta p) 6 = -1 := by
   rw [powF_eq, show zeta p ^ 6 = (zeta p ^ 2) ^ 3 by ring, zeta_pow_two hζ]; norm_num
 theorem powF_zeta_9 : powF (zeta p) 9 = zeta p := by
   rw [powF_eq, show zeta p ^ 9 = (zeta p ^ 2) ^ 4 * zeta p by ring, zeta_pow_two hζ]; norm_num
+
+theorem zeta_ne_zero : zeta p ≠ 0 := fun h ↦ by
+  have := zeta_sq hζ
+  rw [h, mul_zero] at this
+  exact one_ne_zero (neg_eq_zero.mp this.symm)
 
 end Zeta
 
@@ -150,16 +162,6 @@ theorem cubic_eq_prod (hζ : 2 ≤ BaseField.twoAdicity (FastField p)) (z : EF) 
       sub_c2, sub_c3, cubic, e1, e2, e3, conj, Ext4.ofBase, Nat.reduceMul, powF_zeta_1,
       powF_zeta_2 hζ, powF_zeta_3 hζ, powF_zeta_4 hζ, powF_zeta_6 hζ, powF_zeta_9 hζ] <;> ring
 
-omit [Binomial4 p] in
-theorem zeta_ne_zero (hζ : 2 ≤ BaseField.twoAdicity (FastField p)) : zeta p ≠ 0 := fun h ↦ by
-  have := zeta_sq hζ
-  rw [h, mul_zero] at this
-  exact one_ne_zero (neg_eq_zero.mp this.symm)
-
-omit [Mont32BaseField p] in
-theorem toSpec_ne_zero {a : EF} (h : a ≠ 0) : Ext4.toSpec a ≠ 0 := fun h' ↦
-  h (Ext4.toSpec_injective (h'.trans Ext4.toSpec_zero.symm))
-
 /-- For `z` outside the base field, the norm of `z - x` is not zero. -/
 theorem norm_ne_zero (hζ : 2 ≤ BaseField.twoAdicity (FastField p)) {z : EF}
     (hz : z.c1 ≠ 0 ∨ z.c2 ≠ 0 ∨ z.c3 ≠ 0) (x : F) : norm z x ≠ 0 := by
@@ -203,10 +205,6 @@ theorem norm_ne_zero (hζ : 2 ≤ BaseField.twoAdicity (FastField p)) {z : EF}
       · exact toSpec_ne_zero (hconj 1 (by decide)) e
       · exact toSpec_ne_zero (hconj 2 (by decide)) e
     · exact toSpec_ne_zero (hconj 3 (by decide)) e
-
-omit [Mont32BaseField p] in
-theorem smul_eq_ofBase_mul (x : F) (a : EF) : Ext4.smul x a = Ext4.ofBase x * a := by
-  apply ext <;> simp only [Ext4.smul, Ext4.ofBase, mul_c0, mul_c1, mul_c2, mul_c3] <;> ring
 
 /-- **The norm trick.** For `z` outside the base field, `1 / (z - x)` is the cubic over the
 norm. -/

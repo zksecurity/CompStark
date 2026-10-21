@@ -23,11 +23,10 @@ them into the consistency of the extracted oracles.
 namespace CompStark.Ni
 open CompStark.Stark CompStark.Fri
 
-variable {F : Type} [BaseField F] {EF : Type} [Challenge F EF] (H : Primitives F Id)
+variable {F : Type} (H : Primitives F Id)
 
 /-! ### The verifier's monad on pure primitives -/
 
-omit [BaseField F] in
 theorem bind_eq_ok {α β : Type} {x : M H α} {f : α → M H β} {s : H.State} {r : β × H.State}
     (h : (x >>= f) s = .ok r) : ∃ a s', x s = .ok (a, s') ∧ f a s' = .ok r := by
   change StateT.bind x f s = _ at h
@@ -39,14 +38,12 @@ theorem bind_eq_ok {α β : Type} {x : M H α} {f : α → M H β} {s : H.State}
   | .ok (a, s'), h => exact ⟨a, s', rfl, h⟩
   | .error e, h => exact absurd h (by intro h'; cases h')
 
-omit [BaseField F] in
 theorem bind_ok_of {α β : Type} {x : M H α} {f : α → M H β} {s s' : H.State} {a : α}
     (h : x s = .ok (a, s')) : (x >>= f) s = f a s' := by
   change StateT.bind x f s = _
   simp only [StateT.bind, h]
   rfl
 
-omit [BaseField F] in
 theorem ensure_eq_ok {b : Bool} {msg : String} {s : H.State} {r : Unit × H.State}
     (h : ensure (H := H) b msg s = .ok r) : b = true ∧ r.2 = s := by
   unfold ensure at h
@@ -54,7 +51,6 @@ theorem ensure_eq_ok {b : Bool} {msg : String} {s : H.State} {r : Unit × H.Stat
   | true => exact ⟨rfl, (Except.ok.inj h).symm ▸ rfl⟩
   | false => exact absurd h (by intro h'; cases h')
 
-omit [BaseField F] in
 theorem ensure_bind_eq_ok {β : Type} {b : Bool} {msg : String} {f : Unit → M H β} {s : H.State}
     {r : β × H.State} (h : (ensure (H := H) b msg >>= f) s = .ok r) :
     b = true ∧ f () s = .ok r := by
@@ -62,11 +58,9 @@ theorem ensure_bind_eq_ok {β : Type} {b : Bool} {msg : String} {f : Unit → M 
   obtain ⟨hb, hs⟩ := ensure_eq_ok H h1
   exact ⟨hb, by rw [← show s' = s from hs]; exact h2⟩
 
-omit [BaseField F] in
 theorem pure_eq_ok {α : Type} {a : α} {s : H.State} {r : α × H.State}
     (h : (pure a : M H α) s = .ok r) : r = (a, s) := (Except.ok.inj h).symm
 
-omit [BaseField F] in
 /-- A step of an accepting loop. -/
 theorem forIn_cons_eq_ok {α σ : Type} (a : α) (l : List α) (b : σ)
     (body : α → σ → M H (ForInStep σ)) (s : H.State) (r : σ × H.State)
@@ -81,6 +75,17 @@ theorem forIn_cons_eq_ok {α σ : Type} (a : α) (l : List α) (b : σ)
   cases step with
   | done b' => exact (pure_eq_ok H h2)
   | yield b' => exact h2
+
+theorem forIn_unit_state {α : Type} (body : α → PUnit → M H (ForInStep PUnit))
+    (f : H.State → α → H.State) (hbody : ∀ a s, body a () s = .ok (.yield (), f s a)) :
+    ∀ (l : List α) (s : H.State), forIn l () body s = .ok ((), l.foldl f s)
+  | [], _ => rfl
+  | a :: l, s => by
+    rw [List.forIn_cons, bind_ok_of H (hbody a s)]
+    exact forIn_unit_state body f hbody l _
+
+section
+variable [BaseField F] {EF : Type} [Challenge F EF]
 
 /-- The pure Merkle check of `H`. -/
 abbrev verifyBatchH (commit : Digest F) (heights : List Nat) (index : Nat) (values : List (List F))
@@ -522,14 +527,12 @@ theorem openInput_ok (P : Params) (logMax index : Nat) (alpha : EF) (inputs : Li
   rw [pure_eq_ok H h2, List.mergeSort_singleton]
   rfl
 
+end
+
 /-! ### The challenger on pure primitives -/
 
 /-- Observe a list of elements. -/
 def obsList (s : H.State) (xs : List F) : H.State := xs.foldl H.observe s
-
-/-- Observe extension elements, lowest coefficient first. -/
-def obsExts (s : H.State) (xs : List EF) : H.State :=
-  xs.foldl (fun s x ↦ (Ext.coeffs x).foldl H.observe s) s
 
 /-- Sample `n` elements. -/
 def smpList (s : H.State) : Nat → List F × H.State
@@ -538,6 +541,26 @@ def smpList (s : H.State) : Nat → List F × H.State
     let a := H.sample s
     let r := smpList a.2 n
     (a.1 :: r.1, r.2)
+
+theorem observe_eq (x : F) (s : H.State) : observe H x s = .ok ((), H.observe s x) := rfl
+
+theorem observeList_eq (xs : List F) (s : H.State) :
+    observeList H xs s = .ok ((), obsList H s xs) := rfl
+
+theorem sample_eq (s : H.State) : sample H s = .ok (H.sample s) := rfl
+
+theorem sampleList_eq : ∀ (n : Nat) (s : H.State), sampleList H n s = .ok (smpList H s n)
+  | 0, _ => rfl
+  | n + 1, s => by
+    unfold sampleList
+    rw [bind_ok_of H (sample_eq H s), bind_ok_of H (sampleList_eq n _)]
+    rfl
+
+variable [BaseField F] {EF : Type} [Challenge F EF]
+
+/-- Observe extension elements, lowest coefficient first. -/
+def obsExts (s : H.State) (xs : List EF) : H.State :=
+  xs.foldl (fun s x ↦ (Ext.coeffs x).foldl H.observe s) s
 
 /-- Sample an extension element, lowest coefficient first. -/
 def smpExt (s : H.State) : EF × H.State :=
@@ -554,26 +577,8 @@ def chkWit (bits : Nat) (w : F) (s : H.State) : Bool × H.State :=
     let r := smpBits H bits (H.observe s w)
     (r.1 == 0, r.2)
 
-omit [BaseField F] in
-theorem observe_eq (x : F) (s : H.State) : observe H x s = .ok ((), H.observe s x) := rfl
-
-omit [BaseField F] in
-theorem observeList_eq (xs : List F) (s : H.State) :
-    observeList H xs s = .ok ((), obsList H s xs) := rfl
-
 theorem observeExts_eq (xs : List EF) (s : H.State) :
     observeExts H xs s = .ok ((), obsExts H s xs) := rfl
-
-omit [BaseField F] in
-theorem sample_eq (s : H.State) : sample H s = .ok (H.sample s) := rfl
-
-omit [BaseField F] in
-theorem sampleList_eq : ∀ (n : Nat) (s : H.State), sampleList H n s = .ok (smpList H s n)
-  | 0, _ => rfl
-  | n + 1, s => by
-    unfold sampleList
-    rw [bind_ok_of H (sample_eq H s), bind_ok_of H (sampleList_eq n _)]
-    rfl
 
 theorem sampleExt_eq (s : H.State) : (sampleExt H : M H EF) s = .ok (smpExt H s) := by
   unfold sampleExt
@@ -809,15 +814,6 @@ theorem verifyFri_ok (P : Params) (proof : FriProof F EF) (rounds : List (Round 
     exact this
 
 /-! ### The STARK verifier -/
-
-omit [BaseField F] in
-theorem forIn_unit_state {α : Type} (body : α → PUnit → M H (ForInStep PUnit))
-    (f : H.State → α → H.State) (hbody : ∀ a s, body a () s = .ok (.yield (), f s a)) :
-    ∀ (l : List α) (s : H.State), forIn l () body s = .ok ((), l.foldl f s)
-  | [], _ => rfl
-  | a :: l, s => by
-    rw [List.forIn_cons, bind_ok_of H (hbody a s)]
-    exact forIn_unit_state body f hbody l _
 
 /-- The challenger after observing every opened value of `rounds`, in `verifyPcs`'s order. -/
 def obsOpened (s : H.State) (rounds : List (Round F EF)) : H.State :=

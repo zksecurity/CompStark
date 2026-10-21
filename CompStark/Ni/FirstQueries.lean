@@ -29,9 +29,34 @@ Positions are first occurrences: `idx log t` is the index of the first query of 
 namespace CompStark.Ni
 open CompStark.Stark CompStark.Iop CompStark.RandomOracle OracleSpec OracleComp
 
-variable {F : Type} [BaseField F]
+variable {F : Type} {K : Nat}
 
-variable {K : Nat}
+section Consistent
+variable {answer : (q : Query F) → Answer K q} {log : QueryLog (spec F K)}
+
+/-- A consistent log holds the answer of each of its keys. -/
+theorem mk_mem_of_consistent (hcons : Consistent answer log) {t : Query F}
+    (ht : t ∈ log.map Sigma.fst) : (⟨t, answer t⟩ : (q : Query F) × Answer K q) ∈ log := by
+  obtain ⟨⟨t', a⟩, he, rfl⟩ := List.mem_map.mp ht
+  have ha : a = answer t' := hcons _ he
+  subst ha
+  exact he
+
+theorem consistent_take (hcons : Consistent answer log) (p : Nat) :
+    Consistent answer (log.take p) := fun e he ↦ hcons e (List.mem_of_mem_take he)
+
+theorem getElem_snd (hcons : Consistent answer log) (p : Nat) (hp : p < log.length) :
+    log[p].2 = answer log[p].1 := hcons _ (List.getElem_mem hp)
+
+theorem getElem_mem_take (p i : Nat) (hi : i < p) (hl : i < log.length) :
+    log[i] ∈ log.take p := by
+  have h : i < (log.take p).length := by rw [List.length_take]; omega
+  rw [← List.getElem_take (h := h)]
+  exact List.getElem_mem h
+
+end Consistent
+
+variable [BaseField F]
 
 /-- The digest of an answer: the hash, or the duplex call's new capacity. -/
 def digestOf : (t : Query F) → Answer K t → Digest F
@@ -87,23 +112,6 @@ theorem not_mem_take_idx {t : Query F} (ht : t ∈ log.map Sigma.fst) :
   rw [mem_take_iff ht]
   exact lt_irrefl _
 
-omit [BaseField F] in
-/-- A consistent log holds the answer of each of its keys. -/
-theorem mk_mem_of_consistent (hcons : Consistent answer log) {t : Query F}
-    (ht : t ∈ log.map Sigma.fst) : (⟨t, answer t⟩ : (q : Query F) × Answer K q) ∈ log := by
-  obtain ⟨⟨t', a⟩, he, rfl⟩ := List.mem_map.mp ht
-  have ha : a = answer t' := hcons _ he
-  subst ha
-  exact he
-
-omit [BaseField F] in
-theorem consistent_take (hcons : Consistent answer log) (p : Nat) :
-    Consistent answer (log.take p) := fun e he ↦ hcons e (List.mem_of_mem_take he)
-
-omit [BaseField F] in
-theorem getElem_snd (hcons : Consistent answer log) (p : Nat) (hp : p < log.length) :
-    log[p].2 = answer log[p].1 := hcons _ (List.getElem_mem hp)
-
 /-- A digest known before position `p` gives a clash at the first occurrence at `p`. -/
 theorem clash_of_known (hcons : Consistent answer log) (hclash : NoClash log)
     (p : Nat) (hp : p < log.length) (hfresh : log[p].1 ∉ (log.take p).map Sigma.fst)
@@ -120,13 +128,6 @@ theorem mem_known_of_mem (e : (q : Query F) × Answer K q) (pre : QueryLog (spec
     d ∈ knownDigests digestOf keyDigests [initCap] pre t := by
   unfold knownDigests
   exact List.mem_append_left _ (List.mem_append_right _ (List.mem_flatMap.mpr ⟨e, he, hd⟩))
-
-omit [BaseField F] in
-theorem getElem_mem_take (p i : Nat) (hi : i < p) (hl : i < log.length) :
-    log[i] ∈ log.take p := by
-  have h : i < (log.take p).length := by rw [List.length_take]; omega
-  rw [← List.getElem_take (h := h)]
-  exact List.getElem_mem h
 
 variable (hcons : Consistent answer log) (hclash : NoClash log)
 include hcons hclash

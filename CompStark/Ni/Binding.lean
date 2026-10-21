@@ -23,13 +23,10 @@ climb leaves the log it is stuck at `dstar`), so it opens the extracted rows (D'
 namespace CompStark.Ni
 open CompStark.Stark CompStark.Iop CompStark.RandomOracle OracleSpec OracleComp
 
-variable {F : Type} [BaseField F]
-
-variable {K : Nat}
+variable {F : Type} {K : Nat}
 
 /-! ### Changing the answers outside a run -/
 
-omit [BaseField F] in
 /-- A computation's result on an answer table depends only on the answers to the keys it
 queries. -/
 theorem evalWithAnswerFn_congr {α : Type} (answer answer' : (q : Query F) → Answer K q) :
@@ -45,6 +42,9 @@ theorem evalWithAnswerFn_congr {α : Type} (answer answer' : (q : Query F) → A
     have ht : answer' t = answer t := h _ List.mem_cons_self
     simp only [evalWithAnswerFn_bind, evalWithAnswerFn_liftM_query, QueryImpl.ofFn_apply, ht]
     exact ih _ fun e he ↦ h e (List.mem_cons_of_mem _ he)
+
+section
+variable [BaseField F]
 
 /-- The digests of a log: its answers' and its keys'. -/
 def logDigests (log : QueryLog (spec F K)) : List (Digest F) :=
@@ -84,13 +84,14 @@ theorem fresh_of_mem (log : QueryLog (spec F K)) (answer : (q : Query F) → Ans
     fresh log answer dstar t = answer t := by
   cases t <;> simp only [fresh, ht, ↓reduceIte]
 
+end
+
 /-! ### Climbing out of the log -/
 
 section Climb
 variable {d : Nat} (hash : List F → Vector F d) (compress : Vector F d → Vector F d → Vector F d)
   (values : List (List F)) (dstar : Vector F d) (cached : Vector F d → Vector F d → Prop)
 
-omit [BaseField F] in
 /-- A climb that does not end at `dstar` compresses only cached pairs, if compressing an uncached
 pair or a pair with `dstar` gives `dstar`. -/
 theorem climb_cached (hfresh : ∀ a b, ¬ cached a b → compress a b = dstar)
@@ -118,6 +119,8 @@ theorem climb_cached (hfresh : ∀ a b, ¬ cached a b → compress a b = dstar)
       · exact hrest p hp
 
 end Climb
+
+variable [BaseField F]
 
 /-- An accepted single-height opening climbs from the hash of the opened rows to the
 commitment. -/

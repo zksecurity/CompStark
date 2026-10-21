@@ -157,13 +157,39 @@ end CompStark.Merkle
 namespace CompStark.Fri
 open CompStark.Stark CompStark.RandomOracle OracleSpec OracleComp
 
-variable {F : Type} [BaseField F] {EF : Type} [Challenge F EF] {K : Nat}
+variable {F : Type} {EF : Type} {K : Nat}
 
-omit [BaseField F] in
 theorem isTotalQueryBound_query (q : Query F) :
     IsTotalQueryBound (liftM ((spec F K).query q) : OracleComp (spec F K) _) 1 := by
   rw [← bind_pure (liftM _), isTotalQueryBound_query_bind_iff]
   exact ⟨Nat.one_pos, fun _ ↦ trivial⟩
+
+/-- Every query has a fold per commit-phase commitment. -/
+theorem steps_size_of_all (proof : FriProof F EF)
+    (hall : (proof.queries.all fun q ↦ q.steps.size == proof.commits.size &&
+      q.steps.toList.map (·.logArity) == arities proof) = true) :
+    ∀ q ∈ proof.queries.toList, q.steps.size = proof.commits.size := by
+  intro q hq
+  rw [Array.all_eq_true_iff_forall_mem] at hall
+  have := hall q (Array.mem_toList_iff.mp hq)
+  simp only [Bool.and_eq_true, beq_iff_eq] at this
+  exact this.1
+
+/-- With some fold, the commit-phase commitments are as many as the folds. -/
+theorem commits_size_of_all (proof : FriProof F EF)
+    (hall : (proof.queries.all fun q ↦ q.steps.size == proof.commits.size &&
+      q.steps.toList.map (·.logArity) == arities proof) = true) (hne : arities proof ≠ []) :
+    proof.commits.size = (arities proof).length := by
+  unfold arities at hne ⊢
+  rcases h : proof.queries[0]? with _ | q
+  · simp only [h, Option.map_none, Option.getD_none, ne_eq, not_true_eq_false] at hne
+  · simp only [Option.map_some, Option.getD_some, List.length_map, Array.length_toList]
+    have hq : q ∈ proof.queries.toList := by
+      rw [Array.mem_toList_iff]
+      exact Array.mem_of_getElem? h
+    exact (steps_size_of_all proof hall q hq).symm
+
+variable [BaseField F] [Challenge F EF]
 
 theorem costs_sample : Costs (sample (ideal F K)) 1 fun _ ↦ True := fun s ↦ by
   refine ⟨?_, fun _ _ _ ↦ trivial⟩
@@ -300,34 +326,6 @@ theorem costs_verifyQuery (P : Params) (logMax index : Nat) (betas : List EF)
       costs_pure _ (fun _ ↦ True) trivial
   · simp only [Nat.zero_add, Nat.add_zero, List.length_zip]
     exact Nat.mul_le_mul_right _ (Nat.min_le_right _ _)
-
-omit [Challenge F EF] in
-omit [BaseField F] in
-/-- Every query has a fold per commit-phase commitment. -/
-theorem steps_size_of_all (proof : FriProof F EF)
-    (hall : (proof.queries.all fun q ↦ q.steps.size == proof.commits.size &&
-      q.steps.toList.map (·.logArity) == arities proof) = true) :
-    ∀ q ∈ proof.queries.toList, q.steps.size = proof.commits.size := by
-  intro q hq
-  rw [Array.all_eq_true_iff_forall_mem] at hall
-  have := hall q (Array.mem_toList_iff.mp hq)
-  simp only [Bool.and_eq_true, beq_iff_eq] at this
-  exact this.1
-
-omit [BaseField F] [Challenge F EF] in
-/-- With some fold, the commit-phase commitments are as many as the folds. -/
-theorem commits_size_of_all (proof : FriProof F EF)
-    (hall : (proof.queries.all fun q ↦ q.steps.size == proof.commits.size &&
-      q.steps.toList.map (·.logArity) == arities proof) = true) (hne : arities proof ≠ []) :
-    proof.commits.size = (arities proof).length := by
-  unfold arities at hne ⊢
-  rcases h : proof.queries[0]? with _ | q
-  · simp only [h, Option.map_none, Option.getD_none, ne_eq, not_true_eq_false] at hne
-  · simp only [Option.map_some, Option.getD_some, List.length_map, Array.length_toList]
-    have hq : q ∈ proof.queries.toList := by
-      rw [Array.mem_toList_iff]
-      exact Array.mem_of_getElem? h
-    exact (steps_size_of_all proof hall q hq).symm
 
 /-- FRI's oracle calls: `d` samples for `α`, `d + 1` per fold, one for the query grinding, and per
 query its index, its input openings and its folds. -/
