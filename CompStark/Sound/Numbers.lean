@@ -352,7 +352,7 @@ theorem batchingError_le_of_le (S : Setup EF) (δ : ℝ≥0) (hδ : (δ : ℝ) �
     batchingError S δ δ ≤ ((S.numOpened - 1) * S.size : ℕ) / (Fintype.card 𝕂 : ENNReal) := by
   have hN : 2 ^ S.params.logBlowup * S.n ≤ S.size := by
     rw [Setup.n, Setup.size, pow_add, mul_comm]
-  have hb := S.blowup
+  have hb := S.valid.blowup
   have : NeZero S.n := ⟨(Nat.two_pow_pos _).ne'⟩
   refine (batchingError_le_mcaError S δ).trans ?_
   exact mcaError_powers_le (Nat.two_pow_pos _)

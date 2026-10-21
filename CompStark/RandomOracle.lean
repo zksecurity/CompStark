@@ -99,8 +99,9 @@ variable {F : Type} [BaseField F] {EF : Type} [Challenge F EF]
 namespace Setup
 variable (S : Setup EF)
 
-/-- The samples in one duplex answer, enough for every round: a fold takes a grinding sample and
-`d` for `β`, the query round a grinding sample and one index per query. -/
+/-- The samples in one duplex answer, enough for every round: the rounds of `ζ`, of the batching
+challenge and of every fold take a grinding sample and `d` for the challenge, the query round a
+grinding sample and one index per query. -/
 def streamLen : Nat := S.params.numQueries + Challenge.d EF + 1
 
 /-- Plonky3's fold arities for `S`, as the verifier checks them. -/
@@ -111,11 +112,11 @@ abbrev friArities : List Nat :=
 def openingQueries : Nat := 1 + (S.logN + S.params.logBlowup)
 
 /-- The verifier's oracle calls on a proof for `S`, at most one per sample (`α`, `ζ` and the
-batching challenge take `d` samples each, every fold a grinding sample and `d` for `β`, the
-query round a grinding sample), and per query its index and the openings of the trace, the
-quotient and every fold. -/
+batching challenge take `d` samples each, the out-of-domain and batching grinding one each, every
+fold a grinding sample and `d` for `β`, the query round a grinding sample), and per query its
+index and its paths in the multi-openings of the trace, the quotient and every fold. -/
 def verifierQueries : Nat :=
-  3 * Challenge.d EF + 1 + (Challenge.d EF + 1) * S.friArities.length +
+  3 * Challenge.d EF + 3 + (Challenge.d EF + 1) * S.friArities.length +
     S.params.numQueries * (1 + (S.friArities.length + 2) * S.openingQueries)
 
 /-- The verifier in the random-oracle model, on proofs for `2 ^ logN` rows. -/

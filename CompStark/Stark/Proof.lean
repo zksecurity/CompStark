@@ -18,31 +18,37 @@ namespace CompStark.Stark
 /-- A Merkle digest. -/
 abbrev Digest (F : Type) := Vector F 8
 
-/-- The rows opened at one index in a batch of committed matrices, and the sibling digests from the
-leaf layer up. -/
+/-- A Merkle opening at one index of a batch of committed matrices: the row of every matrix, and
+the sibling digests from the leaf layer up. -/
 structure BatchOpening (F : Type) where
   values : Array (Array F)
   path : Array (Digest F)
 deriving BEq
 
-/-- One FRI fold of a query: the arity, the other members of the folded group, and their path. -/
-structure CommitStep (F EF : Type) where
-  logArity : Nat
-  siblings : Array EF
+/-- A Merkle opening at several indices of a batch of committed matrices: for every index, in the
+order of the queries, the row of every matrix; and the sibling digests the indices' paths do not
+cover, level by level from the leaves, left to right (Plonky3's pruned multi-opening). -/
+structure MultiOpening (F : Type) where
+  values : Array (Array (Array F))
+  siblings : Array (Digest F)
+deriving BEq
+
+/-- The openings of one FRI fold: for every query the other members of its folded group, and the
+pruned siblings of the groups' Merkle paths. -/
+structure CommitOpening (F EF : Type) where
+  siblings : Array (Array EF)
   path : Array (Digest F)
 deriving BEq
 
-/-- The openings of one FRI query: the input batches, then the folds. -/
-structure QueryProof (F EF : Type) where
-  inputs : Array (BatchOpening F)
-  steps : Array (CommitStep F EF)
-deriving BEq
-
-/-- A FRI proof. -/
+/-- A FRI proof: the grinding witness of the batching challenge, the commit phase's commitments
+and grinding witnesses, the input openings at the queries (one per committed batch), the folds'
+openings at the queries (one per fold), the final polynomial and the query grinding witness. -/
 structure FriProof (F EF : Type) where
+  batchWitness : F
   commits : Array (Digest F)
   commitWitnesses : Array F
-  queries : Array (QueryProof F EF)
+  inputs : Array (MultiOpening F)
+  folds : Array (CommitOpening F EF)
   finalPoly : Array EF
   queryWitness : F
 deriving BEq
@@ -61,6 +67,8 @@ structure Proof (F EF : Type) where
   opened : OpenedValues EF
   fri : FriProof F EF
   degreeBits : Nat
+  /-- The grinding witness of the out-of-domain point. -/
+  oodWitness : F
 deriving BEq
 
 end CompStark.Stark

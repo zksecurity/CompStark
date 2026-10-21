@@ -37,36 +37,49 @@ namespace Merkle
 
 variable {d : Nat} {m n : Type → Type} [Monad m] [Monad n] (φ : m →ᵐ n)
 
-theorem climbM_map (hash : List F → m (Vector F d))
-    (compress : Vector F d → Vector F d → m (Vector F d)) (values : List (List F)) :
-    ∀ path groups index padded root, φ (climbM hash compress values path groups index padded root) =
-      climbM (fun xs ↦ φ (hash xs)) (fun a b ↦ φ (compress a b)) values path groups index padded
-        root
-  | [], _, _, _, _ => by simp only [climbM, MonadHom.mmap_pure]
-  | sib :: sibs, groups, index, padded, root => by
-    simp only [climbM]
-    split <;>
-    · simp only [MonadHom.mmap_bind]
-      refine bind_congr fun r ↦ ?_
-      rcases groups with _ | ⟨⟨h, is⟩, rest⟩
-      · exact climbM_map hash compress values sibs [] _ _ r
-      · dsimp only
-        split
-        · simp only [MonadHom.mmap_bind]
-          refine bind_congr fun x ↦ bind_congr fun y ↦ ?_
-          exact climbM_map hash compress values sibs rest _ _ y
-        · exact climbM_map hash compress values sibs _ _ _ r
+theorem levelM_map [Zero F] (compress : Vector F d → Vector F d → m (Vector F d)) :
+    ∀ (nodes : List (Nat × Nat × Vector F d)) (sibs : List (Vector F d)),
+      φ (levelM compress nodes sibs) = levelM (fun a b ↦ φ (compress a b)) nodes sibs
+  | [], _ => by simp only [levelM, MonadHom.mmap_pure]
+  | [(i, q, x)], sibs => by
+    simp only [levelM, MonadHom.mmap_bind, MonadHom.mmap_pure, MonadHom.mmap_ite]
+  | (i, q, x) :: (j, q', y) :: rest, sibs => by
+    simp only [levelM]
+    have h1 := levelM_map compress rest sibs
+    have h2 := levelM_map compress ((j, q', y) :: rest) sibs.tail
+    split <;> simp only [MonadHom.mmap_bind, MonadHom.mmap_pure, MonadHom.mmap_ite, h1, h2]
 
-theorem verifyBatchM_map [DecidableEq F] (hash : List F → m (Vector F d))
+theorem walkM_map [Zero F] [LawfulMonad m] [LawfulMonad n] (hash : List F → m (Vector F d))
+    (compress : Vector F d → Vector F d → m (Vector F d)) (rows : List (List (List F))) :
+    ∀ levels groups padded (nodes : List (Nat × Nat × Vector F d)) (sibs : List (Vector F d)),
+      φ (walkM hash compress rows levels groups padded nodes sibs) =
+        walkM (fun xs ↦ φ (hash xs)) (fun a b ↦ φ (compress a b)) rows levels groups padded nodes
+          sibs
+  | 0, _, _, _, _ => by simp only [walkM, MonadHom.mmap_pure]
+  | levels + 1, groups, padded, nodes, sibs => by
+    simp only [walkM, MonadHom.mmap_bind, levelM_map]
+    refine bind_congr fun r ↦ ?_
+    rcases groups with _ | ⟨⟨h, is⟩, rest⟩
+    · exact walkM_map hash compress rows levels [] _ _ _
+    · dsimp only
+      split
+      · simp only [MonadHom.mmap_bind, MonadHom.mmap_mapM, MonadHom.mmap_pure,
+          walkM_map hash compress rows levels rest]
+      · exact walkM_map hash compress rows levels _ _ _ _
+
+theorem verifyMultiM_map [Zero F] [DecidableEq F] [LawfulMonad m] [LawfulMonad n]
+    (hash : List F → m (Vector F d))
     (compress : Vector F d → Vector F d → m (Vector F d)) (commit : Vector F d)
-    (heights : List Nat) (index : Nat) (values : List (List F)) (path : List (Vector F d)) :
-    φ (verifyBatchM hash compress commit heights index values path) =
-      verifyBatchM (fun xs ↦ φ (hash xs)) (fun a b ↦ φ (compress a b)) commit heights index values
-        path := by
-  unfold verifyBatchM
+    (dims : List (Nat × Nat)) (indices : List Nat) (rows : List (List (List F)))
+    (sibs : List (Vector F d)) :
+    φ (verifyMultiM hash compress commit dims indices rows sibs) =
+      verifyMultiM (fun xs ↦ φ (hash xs)) (fun a b ↦ φ (compress a b)) commit dims indices rows
+        sibs := by
+  unfold verifyMultiM
   split
   · simp only [MonadHom.mmap_pure]
-  · simp only [MonadHom.mmap_ite, MonadHom.mmap_bind, MonadHom.mmap_pure, climbM_map]
+  · simp only [MonadHom.mmap_ite, MonadHom.mmap_bind, MonadHom.mmap_pure, MonadHom.mmap_mapM,
+      walkM_map]
 
 end Merkle
 
@@ -136,51 +149,60 @@ theorem mapM_checkWitness (bits : Nat) (w : F) :
   simp only [checkWitness, MonadHom.mmap_ite, MonadHom.mmap_bind, MonadHom.mmap_pure,
     mapM_sampleBits, mapM_observe]
 
-theorem mapM_checkOpening (commit : Digest F) (heights : List Nat) (index : Nat)
-    (values : List (List F)) (path : List (Digest F)) :
-    mapM φ H (checkOpening H commit heights index values path) =
-      checkOpening (H.map φ) commit heights index values path := by
+theorem mapM_checkMulti (commit : Digest F) (dims : List (Nat × Nat)) (indices : List Nat)
+    (rows : List (List (List F))) (sibs : List (Digest F)) :
+    mapM φ H (checkMulti H commit dims indices rows sibs) =
+      checkMulti (H.map φ) commit dims indices rows sibs := by
   apply StateT.ext
   intro s
   apply ExceptT.ext
-  change φ ((ExceptT.lift (Merkle.verifyBatchM H.hash H.compress commit heights index values
-    path) >>= fun a ↦ pure (a, s) : ExceptT String m _).run) =
-    (ExceptT.lift (Merkle.verifyBatchM (H.map φ).hash (H.map φ).compress commit heights index
-      values path) >>= fun a ↦ pure (a, s) : ExceptT String n _).run
+  change φ ((ExceptT.lift (Merkle.verifyMultiM H.hash H.compress commit dims indices rows
+    sibs) >>= fun a ↦ pure (a, s) : ExceptT String m _).run) =
+    (ExceptT.lift (Merkle.verifyMultiM (H.map φ).hash (H.map φ).compress commit dims indices rows
+      sibs) >>= fun a ↦ pure (a, s) : ExceptT String n _).run
   simp only [ExceptT.run_bind, ExceptT.run_lift, bind_map_left, ExceptT.run_pure,
-    MonadHom.mmap_bind, MonadHom.mmap_pure, Merkle.verifyBatchM_map]
+    MonadHom.mmap_bind, MonadHom.mmap_pure, Merkle.verifyMultiM_map]
   rfl
 
-theorem mapM_openInput (P : Params) (logMax index : Nat) (alpha : EF)
-    (inputs : List (BatchOpening F)) (rounds : List (Round F EF)) :
-    mapM φ H (openInput H P logMax index alpha inputs rounds) =
-      openInput (H.map φ) P logMax index alpha inputs rounds := by
-  simp only [openInput, MonadHom.mmap_bind, MonadHom.mmap_pure, MonadHom.mmap_forIn,
-    mapM_ensure, mapM_checkOpening]
+theorem mapM_verifyInputs (P : Params) (logMax : Nat) (indices : List Nat)
+    (inputs : List (MultiOpening F)) (rounds : List (Round F EF)) :
+    mapM φ H (verifyInputs H P logMax indices inputs rounds) =
+      verifyInputs (H.map φ) P logMax indices inputs rounds := by
+  simp only [verifyInputs, MonadHom.mmap_bind, MonadHom.mmap_pure, MonadHom.mmap_forIn,
+    mapM_ensure, mapM_checkMulti]
+
+theorem mapM_reduceQuery (P : Params) (logMax index : Nat) (alpha : EF)
+    (rows : List (List (Array F))) (rounds : List (Round F EF)) :
+    mapM φ H (reduceQuery H P logMax index alpha rows rounds) =
+      reduceQuery (H.map φ) P logMax index alpha rows rounds := by
+  simp only [reduceQuery, MonadHom.mmap_bind, MonadHom.mmap_pure, MonadHom.mmap_forIn,
+    mapM_ensure]
   congr! with a
   split <;> simp only [MonadHom.mmap_bind, MonadHom.mmap_pure, mapM_ensure]
 
-theorem mapM_verifyQuery (P : Params) (logMax index : Nat) (betas : List EF)
-    (commits : List (Digest F)) (steps : List (CommitStep F EF)) (ro : List (Nat × EF)) :
-    mapM φ H (verifyQuery H P logMax index betas commits steps ro) =
-      verifyQuery (H.map φ) P logMax index betas commits steps ro := by
+theorem mapM_foldQuery (P : Params) (logMax index q : Nat) (betas : List EF)
+    (arities : List Nat) (folds : List (CommitOpening F EF)) (ro : List (Nat × EF)) :
+    mapM φ H (foldQuery H P logMax index q betas arities folds ro) =
+      foldQuery (H.map φ) P logMax index q betas arities folds ro := by
   rcases ro with _ | ⟨r, rest⟩ <;>
-  · simp only [verifyQuery, MonadHom.mmap_bind, MonadHom.mmap_pure, MonadHom.mmap_forIn,
-      mapM_ensure, mapM_checkOpening, mapM_throw]
+  · simp only [foldQuery, MonadHom.mmap_bind, MonadHom.mmap_pure, MonadHom.mmap_forIn,
+      mapM_ensure, mapM_throw]
     congr! with a
     split <;> simp only [MonadHom.mmap_ite, MonadHom.mmap_pure]
 
-theorem mapM_verifyFri (P : Params) (proof : FriProof F EF) (rounds : List (Round F EF)) :
-    mapM φ H (verifyFri H P proof rounds) = verifyFri (H.map φ) P proof rounds := by
-  simp only [verifyFri, ← Array.forIn_toList, MonadHom.mmap_bind, MonadHom.mmap_pure,
-    MonadHom.mmap_forIn,
-    mapM_ensure, mapM_sampleExt, mapM_sampleBits, mapM_checkWitness,
-    mapM_observe, mapM_observeList, mapM_observeExts, mapM_openInput, mapM_verifyQuery]
+theorem mapM_verifyFri (P : Params) (proof : FriProof F EF) (rounds : List (Round F EF))
+    (alpha : EF) :
+    mapM φ H (verifyFri H P proof rounds alpha) = verifyFri (H.map φ) P proof rounds alpha := by
+  simp only [verifyFri, MonadHom.mmap_bind, MonadHom.mmap_pure,
+    MonadHom.mmap_forIn, MonadHom.mmap_mapM,
+    mapM_ensure, mapM_sampleExt, mapM_sampleBits, mapM_checkWitness, mapM_checkMulti,
+    mapM_observeList, mapM_observeExts, mapM_verifyInputs, mapM_reduceQuery, mapM_foldQuery]
 
 theorem mapM_verifyPcs (P : Params) (rounds : List (Round F EF)) (proof : FriProof F EF) :
     mapM φ H (verifyPcs H P rounds proof) = verifyPcs (H.map φ) P rounds proof := by
   simp only [verifyPcs, MonadHom.mmap_bind, MonadHom.mmap_pure, MonadHom.mmap_forIn,
-    mapM_observeExts, mapM_verifyFri]
+    mapM_ensure, mapM_observeList, mapM_observeExts, mapM_checkWitness, mapM_sampleExt,
+    mapM_verifyFri]
 
 end Fri
 
@@ -204,8 +226,8 @@ theorem verifyWith_map (H : Primitives F m) (P : Params) (A : Air F) (proof : Pr
     φ (verifyWith H P A proof pis) = verifyWith (H.map φ) P A proof pis := by
   change (ExceptT.mapHom φ _).run = _
   simp only [verifyWith, MonadHom.mmap_bind, MonadHom.mmap_pure, MonadHom.mmap_ite,
-    exceptT_mapHom_throw, exceptT_mapHom_run, mapM_observe, mapM_observeList, mapM_sampleExt,
-    mapM_verifyPcs, Primitives.map_init]
+    exceptT_mapHom_throw, exceptT_mapHom_run, mapM_observeList, mapM_sampleExt, mapM_ensure,
+    mapM_checkWitness, mapM_verifyPcs, Primitives.map_init]
   rfl
 
 end Stark

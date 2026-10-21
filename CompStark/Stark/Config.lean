@@ -35,5 +35,7 @@ structure ValidConfig {F : Type} [BaseField F] (params : Params) (air : Air F) (
   finalPolyFits : params.logFinalPolyLen ≤ logN
   /-- FRI makes at least one query. -/
   queries : 0 < params.numQueries
+  /-- The trace is extended to at least twice its length. -/
+  blowup : 0 < params.logBlowup
 
 end CompStark.Stark

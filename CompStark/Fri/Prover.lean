@@ -10,17 +10,19 @@ public import CompStark.Stark.Quotient
 
 /-! # The FRI prover of the two-adic commitment scheme
 
-Plonky3's `TwoAdicFriPcs::commit` and `open`, `prove_fri` (revision `47e442f`), over a base field
+Plonky3's `TwoAdicFriPcs::commit` and `open`, `prove_fri` (revision `a4982ec`), over a base field
 `F` with challenges in the extension `EF`:
 
 * A committed matrix is the low-degree extension of its columns onto the coset `g · ⟨ω_N⟩`, rows
   in bit-reversed order, under a Merkle tree.
-* Opening observes every claimed value, samples the batching challenge `α`, and sums, for every
-  height, `α^k (p(z) - p(x)) / (z - x)` over the committed columns `p` and their points `z`, at
-  every row `x` of the extended domain.
-* The commit phase folds the tallest sum by `2 ^ arity` per round, committing the groups as rows
-  and adding each shorter sum when its height is reached, down to the final polynomial. Each
-  query then opens the inputs and every round's group at a sampled index.
+* Opening observes the domain separator and every claimed value, grinds, samples the batching
+  challenge `α`, and sums, for every height, `α^k (p(z) - p(x)) / (z - x)` over the committed
+  columns `p` and their points `z`, at every row `x` of the extended domain.
+* FRI observes its domain separator; the commit phase folds the tallest sum by `2 ^ arity` per
+  round of Plonky3's schedule, committing the groups as rows and adding each shorter sum when its
+  height is reached, down to the final polynomial. After the query grinding it samples every
+  query's index and opens the inputs and every round's groups at them, as multi-openings with
+  pruned siblings.
 -/
 
 @[expose] public section
@@ -138,14 +140,6 @@ def pSampleExt : PM F width EF := modifyGet (·.sampleExt)
 def pSampleBits (bits : Nat) : PM F width Nat := modifyGet (·.sampleBits bits)
 def pGrind (bits : Nat) : PM F width F := modifyGet (·.grind bits)
 
-/-- Plonky3's `compute_log_arity_for_round`. -/
-def logArityFor (P : Params) (logCur : Nat) (nextInput : Option Nat) : Nat :=
-  let toTarget := logCur - (P.logBlowup + P.logFinalPolyLen)
-  let maxFold := match nextInput with
-    | some h => min (logCur - h) toTarget
-    | none => toTarget
-  min maxFold P.maxLogArity
-
 /-- The coefficients of the polynomial of degree below `n` with the values `vs` on the subgroup
 of order `n = 2 ^ logN`, natural order. -/
 def idft (logN : Nat) (vs : Array EF) : Array EF :=
@@ -186,16 +180,13 @@ def foldPairs (vs : Array EF) (beta : EF) (logRows : Nat) : Array EF :=
   let half := Ext.ofBase (2 : F)⁻¹
   parChunks rows (if rows < 4096 then 1 else 16) fun r0 len ↦ foldRange vs pw perm beta half r0 len
 
-/-- The rounds of Plonky3's `commit_phase`, at most `fuel` of them: while the folded vector is
-above the final height, commit to its groups, fold them at a fresh `β`, and add the next input of
-the folded height times `β ^ (2 ^ arity)`. -/
+/-- The rounds of Plonky3's `commit_phase` with log arities `arities`: commit to the folded
+vector's groups, fold them at a fresh `β`, and add the next input of the folded height times
+`β ^ (2 ^ arity)`. -/
 def commitRounds (B : Backend F EF width) (P : Params) :
-    Nat → B.V → List B.V → CommitPhase F EF B.C → PM F width (B.V × CommitPhase F EF B.C)
-  | 0, folded, _, cp => pure (folded, cp)
-  | fuel + 1, folded, rest, cp => do
-    if B.size folded ≤ 2 ^ (P.logBlowup + P.logFinalPolyLen) then return (folded, cp)
-    let logCur := Nat.log2 (B.size folded)
-    let la := logArityFor P logCur (rest.head?.map (Nat.log2 <| B.size ·))
+    List Nat → B.V → List B.V → CommitPhase F EF B.C → PM F width (B.V × CommitPhase F EF B.C)
+  | [], folded, _, cp => pure (folded, cp)
+  | la :: las, folded, rest, cp => do
     let arity := 2 ^ la
     let rows := B.size folded / arity
     let c := B.commit [B.leaves arity folded]
@@ -211,17 +202,18 @@ def commitRounds (B : Backend F EF width) (P : Params) :
       | v :: vs => if B.size v == B.size folded then
           (B.addScaled folded v (Ext.powTwo beta la), vs) else (folded, rest)
       | [] => (folded, [])
-    commitRounds B P fuel folded rest
+    commitRounds B P las folded rest
       ⟨cp.commits.push (B.root c), cp.data ++ [c], cp.witnesses.push w, cp.arities.push la,
         cp.finalPoly⟩
 
-/-- Plonky3's `commit_phase` on the batched quotients `inputs`, tallest first. -/
-def commitPhase (B : Backend F EF width) (P : Params) (inputs : List B.V) :
+/-- Plonky3's `commit_phase` on the batched quotients `inputs`, tallest first, with log arities
+`arities`. -/
+def commitPhase (B : Backend F EF width) (P : Params) (arities : List Nat) (inputs : List B.V) :
     PM F width (CommitPhase F EF B.C) := do
   let (folded, rest) := match inputs with
     | v :: vs => (v, vs)
     | [] => (B.ofArray #[], [])
-  let (folded, cp) ← commitRounds B P (B.size folded) folded rest ⟨#[], [], #[], #[], #[]⟩
+  let (folded, cp) ← commitRounds B P arities folded rest ⟨#[], [], #[], #[], #[]⟩
   let fa := B.toArray folded
   let len := 2 ^ P.logFinalPolyLen
   let truncated := Array.ofFn (n := len) fun i ↦ fa.getD (reverseBits i P.logFinalPolyLen) 0
@@ -229,21 +221,26 @@ def commitPhase (B : Backend F EF width) (P : Params) (inputs : List B.V) :
   pObserveExts finalPoly.toList
   return { cp with finalPoly := finalPoly }
 
-/-- The openings at `cur` of the commit-phase rounds with commitments `cs` and log arities `las`:
-each round opens the group of `cur` and passes the group's index on. -/
-def answerSteps (B : Backend F EF width) : List B.C → List Nat → Nat → List (CommitStep F EF)
-  | c :: cs, la :: las, cur =>
-    let pos := cur % 2 ^ la
-    let o := B.openAt c (cur >>> la)
-    let evals : List EF := unflatten ((o.values.getD 0 #[]).toList)
-    let siblings := ((List.range (2 ^ la)).filter (· != pos)).map fun j ↦ evals.getD j 0
-    ⟨la, siblings.toArray, o.path⟩ :: answerSteps B cs las (cur >>> la)
-  | _, _, _ => []
+/-- The multi-opening of the commitment `c` at `indices`: every query's rows, and the siblings of
+their paths pruned (`Merkle.prune`). -/
+def openMulti (B : Backend F EF width) (c : B.C) (indices : List Nat) : MultiOpening F :=
+  let os := indices.map (B.openAt c)
+  ⟨(os.map (·.values)).toArray,
+    (Merkle.prune (B.logHeight c) indices (os.map (·.path.toList))).toArray⟩
 
-/-- The commit-phase openings of a query at `index`. -/
-def answerQuery (B : Backend F EF width) (cp : CommitPhase F EF B.C) (index : Nat) :
-    Array (CommitStep F EF) :=
-  (answerSteps B cp.data cp.arities.toList index).toArray
+/-- The openings of the commit-phase rounds with commitments `cs` and log arities `las` at the
+queries' indices `cur`: each round opens the groups of `cur`, gives every query the other members
+of its group, and passes the group indices on. -/
+def answerFolds (B : Backend F EF width) : List B.C → List Nat → List Nat →
+    List (CommitOpening F EF)
+  | c :: cs, la :: las, cur =>
+    let groups := cur.map (· >>> la)
+    let o := openMulti B c groups
+    let siblings := (cur.zip o.values.toList).map fun (i, rows) ↦
+      let evals : List EF := unflatten ((rows.getD 0 #[]).toList)
+      (((List.range (2 ^ la)).filter (· != i % 2 ^ la)).map fun j ↦ evals.getD j 0).toArray
+    ⟨siblings.toArray, o.siblings⟩ :: answerFolds B cs las groups
+  | _, _, _ => []
 
 /-- `factor · ∑ᵢ weights[i] · m[perm[i]][j]` for the columns `j0, …, j0 + nj - 1` of the row-major
 matrix `m` of width `w`: the barycentric evaluation of columns whose natural-order row `i` is
@@ -363,30 +360,36 @@ def Backend.spec (EF : Type) [Challenge F EF] (t : Transcript F width) (hash : L
 /-- A committed batch with each of its matrices and the points at which it is opened. -/
 abbrev OpenRound (B : Backend F EF width) := B.C × List (B.M × List EF)
 
-/-- Plonky3's `prove_fri` with the batching: sample `α`, batch the inputs, commit-phase, queries. -/
+/-- Plonky3's `prove_fri` on the batched quotients `inputs`, tallest first, after the batching
+grinding witness `batchWitness`: the domain separator, the commit phase, the query grinding, the
+queries' indices, and the input and commit-phase openings at them. -/
 def proveFri (B : Backend F EF width) (P : Params) (rounds : List (OpenRound B))
-    (inputsOf : EF → List B.V) : PM F width (FriProof F EF) := do
-  let alpha : EF ← pSampleExt
-  let inputs := inputsOf alpha
-  let logMax := Nat.log2 ((inputs.map B.size).headD 0)
-  let cp ← commitPhase B P inputs
-  cp.arities.toList.forM fun la ↦ pObserve (la : F)
+    (inputs : List B.V) (batchWitness : F) : PM F width (FriProof F EF) := do
+  let heights := inputs.map (Nat.log2 <| B.size ·)
+  let logMax := heights.headD 0
+  let arities := foldSchedule P.maxLogArity (P.logBlowup + P.logFinalPolyLen) logMax heights
+  pObserveList (DomainSeparator.friSeed F EF arities (2 ^ P.logFinalPolyLen) P.commitPowBits
+    P.queryPowBits P.numQueries logMax P.logBlowup P.maxLogArity)
+  let cp ← commitPhase B P arities inputs
   let qw ← pGrind P.queryPowBits
-  let queries ← (List.range P.numQueries).mapM fun _ ↦ do
-    let index ← pSampleBits logMax
-    let ins := rounds.map fun (c, _) ↦ B.openAt c (index >>> (logMax - B.logHeight c))
-    return (⟨ins.toArray, answerQuery B cp index⟩ : QueryProof F EF)
-  return ⟨cp.commits, cp.witnesses, queries.toArray, cp.finalPoly, qw⟩
+  let indices ← (List.range P.numQueries).mapM fun _ ↦ pSampleBits logMax
+  let ins := rounds.map fun (c, _) ↦ openMulti B c (indices.map (· >>> (logMax - B.logHeight c)))
+  return ⟨batchWitness, cp.commits, cp.witnesses, ins.toArray,
+    (answerFolds B cp.data cp.arities.toList indices).toArray, cp.finalPoly, qw⟩
 
-/-- Plonky3's `TwoAdicFriPcs::open`: the opened values, by round, matrix and point, and the FRI
-proof. -/
+/-- Plonky3's `TwoAdicFriPcs::open`: the opened values, by round, matrix and point, observed
+after the domain separator, the batching grinding and challenge `α`, and the FRI proof. -/
 def openPcs (B : Backend F EF width) (P : Params) (rounds : List (OpenRound B)) :
     PM F width (List (List (List (Array EF))) × FriProof F EF) := do
-  let opened ← rounds.mapM fun (_, ms) ↦ ms.mapM fun (m, zs) ↦ do
+  let opened := rounds.map fun (_, ms) ↦ ms.map fun (m, zs) ↦
     let ov := B.openedAt P.logBlowup m zs
-    ov.forM fun ys ↦ pObserveExts ys.toList
-    return (ov, m, zs.zip ov)
-  let fri ← proveFri B P rounds fun alpha ↦ (B.reduce alpha (opened.flatten.map (·.2))).map (·.2)
+    (ov, m, zs.zip ov)
+  pObserveList (DomainSeparator.pcsSeed F EF
+    (opened.map (·.map fun (ov, _) ↦ ov.map (·.size))) P.batchPowBits)
+  opened.forM fun os ↦ os.forM fun (ov, _) ↦ ov.forM fun ys ↦ pObserveExts ys.toList
+  let bw ← pGrind P.batchPowBits
+  let alpha : EF ← pSampleExt
+  let fri ← proveFri B P rounds ((B.reduce alpha (opened.flatten.map (·.2))).map (·.2)) bw
   return (opened.map (·.map (·.1)), fri)
 
 end CompStark.Fri

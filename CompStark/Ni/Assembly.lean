@@ -157,10 +157,10 @@ theorem prob_unopened_le (hδ' : (δ' : ℝ) < 1 - S.rate) (Q : Nat) (prover : N
     rw [run_eq]
     refine (prEvent_exists_fresh_bad_le (game S publicValues prover) n
       (isTotalQueryBound_game S publicValues prover Q hQ) (Unopened S publicValues δ')
-      (fun pre t u ↦ Clash pre t u ∨ RoundBad S publicValues δ δ' loss pre t u)
+      (fun pre t u ↦ Clash (boundDigest S) pre t u ∨ RoundBad S publicValues δ δ' loss pre t u)
       (((3 * n : Nat) : ℝ≥0∞) * (Fintype.card (Digest F) : ℝ≥0∞)⁻¹ + roundBound S δ δ' loss)
       (fun pre t hlen _ ↦ (prEvent_or_le _ _ _).trans
-        (add_le_add (prob_clash_le _ n pre hlen t)
+        (add_le_add (prob_clash_le (boundDigest S) _ n pre hlen t)
           (prob_roundBad_le S publicValues δ δ' loss pre t)))
       fun answer hev ↦ ?_).trans ?_
     · rw [evalWithAnswerFn_game] at hev

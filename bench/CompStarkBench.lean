@@ -63,7 +63,7 @@ open CompStark CompStark.Stark CompStark.Fri in
 /-- The wall time of each phase of the fast prover on `wide 64`, `2 ^ logN` rows, blowup 2. -/
 def phases (logN : Nat) : IO UInt32 := do
   let B := CompStark.KoalaBear.backendFor logN 1 1
-  let P : Params := ⟨1, 0, 1, 100, 0, 16⟩
+  let P : Params := ⟨1, 0, 1, 100, 0, 16, 0, 0⟩
   let A := wide 64
   let trace := wideTrace 64 (2 ^ logN)
   let t ← IO.monoMsNow
@@ -99,11 +99,13 @@ def phases (logN : Nat) : IO UInt32 := do
   let red := B.reduce alpha items
   let t8 ← IO.monoMsNow
   IO.println s!"reduce {t8 - t7} ms {red.length}"
-  let (cp, _) := (commitPhase B P (red.map (·.2))).run B.transcript
+  let arities := foldSchedule P.maxLogArity (P.logBlowup + P.logFinalPolyLen) (logN + 1)
+    [logN + 1]
+  let (cp, _) := (commitPhase B P arities (red.map (·.2))).run B.transcript
   let t9 ← IO.monoMsNow
   IO.println s!"commit phase {t9 - t8} ms {cp.commits.size}"
   let ((o, f), _) := (openPcs B P rounds).run B.transcript
-  IO.println s!"openPcs {(← IO.monoMsNow) - t9} ms {o.length} {f.queries.size}"
+  IO.println s!"openPcs {(← IO.monoMsNow) - t9} ms {o.length} {f.folds.size}"
   let t10 ← IO.monoMsNow
   let w := B.transcript.grinder B.transcript.state 16
   IO.println s!"grind 16 bits {(← IO.monoMsNow) - t10} ms, \
@@ -247,7 +249,7 @@ def main (args : List String) : IO UInt32 := do
     let B := CompStark.Stark.specBackend KoalaBear.Fast.Ext4
     let ps := (rest.take 7).map String.toNat!
     let [logN, b, f, a, q, cp, qp] := ps | IO.eprintln "seven parameters"; return 1
-    let P : CompStark.Fri.Params := ⟨b, f, a, q, cp, qp⟩
+    let P : CompStark.Fri.Params := ⟨b, f, a, q, cp, qp, 0, 0⟩
     let A := if air == "wide" then CompStark.Stark.wide 64 else CompStark.Stark.fibonacci
     let (trace, pis) :=
       if air == "wide" then (wideTrace 64 (2 ^ logN), []) else fibInstance (2 ^ logN)

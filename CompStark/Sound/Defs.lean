@@ -75,7 +75,7 @@ noncomputable def cosetDomain (n : Nat) (hn : n ≤ twoAdicity F) : SmoothCosetF
     rw [lift, ne_eq, map_eq_zero_iff _ (algebraMap F 𝕂).injective]
     exact BaseField.gen_ne_zero)
 
-/-- Plonky3's folding arities (`logArityFor` with a single input): fold by
+/-- Plonky3's folding arities (`foldSchedule` with a single input): fold by
 `min maxLogArity remaining` until `remaining = 0`, with at least `1` per fold. -/
 def folds (maxLogArity : Nat) : Nat → List ℕ+
   | 0 => []

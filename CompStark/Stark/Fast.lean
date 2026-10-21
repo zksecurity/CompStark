@@ -90,15 +90,19 @@ def grindWaves (p : ℕ) [Mont32Field p] [Poseidon2Field (FastField p)] [PackedP
     | some c => (c : FastField p)
     | none => grindWaves p group wi bits fuel (wave + 1)
 
+/-- The coordinate of a grinding witness after the pending input `c.input`: its length, or 24,
+past the group, if the input fills the rate, where the absorption drops the witness. -/
+def witnessSlot (c : Challenger F 24) : Nat := if c.input.size < 16 then c.input.size else 24
+
 /-- The smallest grinding witness for `bits`, eight candidates per packed permutation as Plonky3
-grinds, in parallel waves. With a full state the candidates go to coordinate 24, past the group,
-and are dropped as `Hash.overwrite` drops them. -/
+grinds, in parallel waves: the state absorbing the input and a witness, with the candidates in
+the witness's coordinate. -/
 def grind [Poseidon2Field (FastField p)] [PackedPoseidon2 p] (c : Challenger F 24)
     (bits : Nat) : F :=
-  let base := Hash.overwrite c.state c.input.toList
+  let base := Challenger.absorbInto 16 c.state (c.input.push 0).toList
   let group := CompPoly.CPolynomial.NTTFast.Packed.Native.encodeFields
     (Array.ofFn (n := 192) fun k ↦ base.toArray.getD (k / 8) 0)
-  grindWaves p group (min c.input.size 24) bits (p / 8192 + 1) 0
+  grindWaves p group (witnessSlot c) bits (p / 8192 + 1) 0
 
 /-- The fast transcript. -/
 def transcript [Mont32BaseField p] [Poseidon2Field (FastField p)]

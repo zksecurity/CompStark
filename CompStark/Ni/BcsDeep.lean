@@ -11,7 +11,7 @@ public import CompStark.Ni.BcsCheck
 
 The trace and quotient words extracted from a cache (`traceWords`, `quotientWords`: column `j`
 at the point of `L` of index `z` is entry `j` of leaf `rev z`), and `deepWord_eq`: if a query's
-input openings at `index` pass the verifier's checks against binding commitments, `openInput`'s
+input rows at `index` pass the verifier's checks against binding commitments, `reduceQuery`'s
 batched quotient is the DEEP word of the extracted words and the proof's opened values at the
 query's point `rev index`, with the verifier's batching challenge.
 -/
@@ -53,7 +53,7 @@ theorem sum_zipIdx_pow (a : 𝕂) :
       List.foldr_cons, pow_succ]
     ring
 
-/-- `openInput`'s accumulation is Horner's rule over the terms. -/
+/-- `reduceQuery`'s accumulation is Horner's rule over the terms. -/
 theorem toSpec_accTerms (alpha : EF) (x : F) :
     ∀ (terms : List ((F × EF) × EF)) (ap acc : EF),
       Challenge.toSpec (accTerms alpha x terms (ap, acc)).2 =
@@ -139,9 +139,9 @@ theorem domain_finMod (index : Nat) :
   rw [show S.domain = cosetDomain S.logSize S.valid.twoAdic from rfl, cosetDomain_apply,
     finMod_val (reverseBits_lt _ _), lift_mul, powF_eq, lift_pow]
 
-/-- **The batched DEEP word at a query.** If a query's input openings at `index` against the
+/-- **The batched DEEP word at a query.** If a query's input rows at `index` against the
 verifier's rounds pass their checks (`BatchOk`), on a proof of the expected shape whose trace and
-quotient commitments bind, `openInput`'s batched quotient at the batching challenge `a` is the
+quotient commitments bind, `reduceQuery`'s batched quotient at the batching challenge `a` is the
 DEEP word of the extracted trace and quotient words and the opened values at `rev index`. -/
 theorem deepWord_eq (H : Primitives F Id) (proof : Proof F EF) (zeta a : EF) (α : 𝕂)
     (hdb : proof.degreeBits = S.logN)
@@ -150,7 +150,7 @@ theorem deepWord_eq (H : Primitives F Id) (proof : Proof F EF) (zeta a : EF) (α
     (hqc : proof.opened.quotientChunks.size = S.chunks)
     (hq4 : ∀ ch ∈ proof.opened.quotientChunks, ch.size = Challenge.d EF)
     (hbT : Binding cache H proof.traceCommit) (hbQ : Binding cache H proof.quotientCommit)
-    (inputs : List (BatchOpening F)) (index : Nat) (hidx : index < 2 ^ S.logSize)
+    (inputs : List (List (Array F))) (index : Nat) (hidx : index < 2 ^ S.logSize)
     (hlen : inputs.length = (vRounds proof zeta).length)
     (hok : ∀ x ∈ inputs.zip (vRounds proof zeta), BatchOk H S.logSize index x) :
     Iop.deepWord (fixedProver (traceWords S cache proof) (quotientWords S cache proof)
@@ -176,12 +176,12 @@ theorem deepWord_eq (H : Primitives F Id) (proof : Proof F EF) (zeta a : EF) (α
   have hz : [bT, bQ].zip [(proof.traceCommit, mT), (proof.quotientCommit, mQ)] =
       [(bT, (proof.traceCommit, mT)), (bQ, (proof.quotientCommit, mQ))] := rfl
   rw [hz] at hok ⊢
-  obtain ⟨-, hvT, hsT, hwT⟩ := hok _ List.mem_cons_self
-  obtain ⟨hneQ, hvQ, hsQ, hwQ⟩ := hok _ (List.mem_cons_of_mem _ List.mem_cons_self)
+  obtain ⟨-, ⟨pT, hvT⟩, hsT, hwT⟩ := hok _ List.mem_cons_self
+  obtain ⟨hneQ, ⟨pQ, hvQ⟩, hsQ, hwQ⟩ := hok _ (List.mem_cons_of_mem _ List.mem_cons_self)
   dsimp only at hvT hsT hwT hneQ hvQ hsQ hwQ
   -- The trace batch: one row of the trace's width, extracted.
-  obtain ⟨rowT, hrowT⟩ : ∃ rowT, bT.values.toList = [rowT] :=
-    List.length_eq_one_iff.mp (by rw [Array.length_toList, hsT]; rfl)
+  obtain ⟨rowT, hrowT⟩ : ∃ rowT, bT = [rowT] :=
+    List.length_eq_one_iff.mp (by rw [hsT]; rfl)
   rw [hrowT] at hvT hwT
   have hwidth : rowT.size = S.air.width := by
     have := hwT (rowT, mT.head (List.cons_ne_nil _ _)) List.mem_cons_self
@@ -191,14 +191,14 @@ theorem deepWord_eq (H : Primitives F Id) (proof : Proof F EF) (zeta a : EF) (α
   simp only [List.map_cons, List.map_nil, List.flatten_cons, List.flatten_nil,
     List.append_nil] at hexT
   -- The quotient batch: a row of `d` coordinates per chunk, extracted.
-  have hlenQ : bQ.values.toList.length = S.chunks := by
-    rw [Array.length_toList, hsQ, hmQ, List.length_map, Array.length_toList, hqc]
-  have h4 : ∀ c < S.chunks, (bQ.values.toList.getD c #[]).size = Challenge.d EF := by
+  have hlenQ : bQ.length = S.chunks := by
+    rw [hsQ, hmQ, List.length_map, Array.length_toList, hqc]
+  have h4 : ∀ c < S.chunks, (bQ.getD c #[]).size = Challenge.d EF := by
     intro c hc
-    have hc' : c < bQ.values.toList.length := by rw [hlenQ]; exact hc
+    have hc' : c < bQ.length := by rw [hlenQ]; exact hc
     have hcq : c < o.quotientChunks.size := by rw [hqc]; exact hc
     have hcm : c < mQ.length := by rw [hmQ, List.length_map, Array.length_toList]; exact hcq
-    have hmem : (bQ.values.toList[c], mQ[c]) ∈ bQ.values.toList.zip mQ := by
+    have hmem : (bQ[c], mQ[c]) ∈ bQ.zip mQ := by
       rw [List.mem_iff_getElem]
       exact ⟨c, by rw [List.length_zip]; omega, by rw [List.getElem_zip]⟩
     have := hwQ _ hmem (zeta, (o.quotientChunks[c]'hcq).toList) (by
@@ -211,14 +211,14 @@ theorem deepWord_eq (H : Primitives F Id) (proof : Proof F EF) (zeta a : EF) (α
   have hTw : ∀ j, traceWords S cache proof j z0 = (rowT.toList.getD j 0) :=
     fun j ↦ committedColumn_eq S cache _ index hidx _ hexT j
   have hQw : ∀ (c : Fin S.chunks) (e : Fin (Challenge.d EF)), quotientWords S cache proof c e z0 =
-      ((bQ.values.toList.getD c #[]).toList.getD e 0) := by
+      ((bQ.getD c #[]).toList.getD e 0) := by
     intro c e
-    have hc : c.val < bQ.values.toList.length := by rw [hlenQ]; exact c.isLt
-    have hmap : (bQ.values.toList.map (·.toList)).getD c [] =
-        (bQ.values.toList.getD c #[]).toList := by
+    have hc : c.val < bQ.length := by rw [hlenQ]; exact c.isLt
+    have hmap : (bQ.map (·.toList)).getD c [] =
+        (bQ.getD c #[]).toList := by
       rw [List.getD_eq_getElem _ _ (by rw [List.length_map]; exact hc), List.getElem_map,
         List.getD_eq_getElem _ #[] hc]
-    have hall : ∀ l ∈ bQ.values.toList.map (·.toList), l.length = Challenge.d EF := by
+    have hall : ∀ l ∈ bQ.map (·.toList), l.length = Challenge.d EF := by
       intro l hl
       obtain ⟨r, hr, rfl⟩ := List.mem_map.mp hl
       obtain ⟨i, hi, rfl⟩ := List.getElem_of_mem hr
@@ -245,7 +245,7 @@ theorem deepWord_eq (H : Primitives F Id) (proof : Proof F EF) (zeta a : EF) (α
       ((rowT.toList.zip o.traceLocal.toList).map fun pp ↦ (pp, zeta)) ++
       ((rowT.toList.zip o.traceNext.toList).map fun pp ↦
         (pp, zeta * Ext.ofBase (twoAdicGen proof.degreeBits))) ++
-      batchTerms (bQ.values.toList.zip mQ) := by
+      batchTerms (bQ.zip mQ) := by
     simp only [inputTerms, batchTerms, hrowT, hmT, List.zip_cons_cons, List.zip_nil_right,
       List.flatMap_cons, List.flatMap_nil, List.append_nil, List.append_assoc]
   rw [hterms, openedWords]
@@ -276,14 +276,14 @@ theorem deepWord_eq (H : Primitives F Id) (proof : Proof F EF) (zeta a : EF) (α
         fun w ↦ (w.2.2 - algebraMap F 𝕂 (w.1 z0)) / (w.2.1 - S.domain z0)) =
       fun c : Fin S.chunks ↦ (List.range (Challenge.d EF)).map fun e ↦
         (Challenge.toSpec (((o.quotientChunks.getD c #[]).getD e 0)) - algebraMap F 𝕂
-          (((bQ.values.toList.getD c #[]).toList.getD e 0))) /
+          (((bQ.getD c #[]).toList.getD e 0))) /
           (Challenge.toSpec zeta - S.domain z0) from funext fun c ↦ by
         rw [List.map_map, ← map_finRange_eq_range]
         refine List.map_congr_left fun e _ ↦ ?_
         simp only [Function.comp_apply, fixedProver, openingsOf, hQw]]
     refine (flatMap_finRange_eq_range S.chunks (fun c ↦ (List.range (Challenge.d EF)).map fun e ↦
         (Challenge.toSpec (((o.quotientChunks.getD c #[]).getD e 0)) - algebraMap F 𝕂
-          (((bQ.values.toList.getD c #[]).toList.getD e 0))) /
+          (((bQ.getD c #[]).toList.getD e 0))) /
           (Challenge.toSpec zeta - S.domain z0))).trans ?_
     rw [List.flatMap_def, List.flatMap_def]
     refine congrArg List.flatten (List.map_congr_left fun c hc ↦ ?_)

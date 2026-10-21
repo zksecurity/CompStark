@@ -117,7 +117,7 @@ theorem committedFunction_friOracles (cache : Merkle.Cache F (Digest F)) (commit
 
 /-! ### A fold's opened group is the extracted word -/
 
-theorem groupOf_getD (s : CommitStep F EF) (index : Nat) (eval : EF) (k : Nat)
+theorem groupOf_getD (s : QueryFold EF) (index : Nat) (eval : EF) (k : Nat)
     (hk : k < 2 ^ s.logArity) :
     (groupOf s index eval).getD k 0 =
       if k < index % 2 ^ s.logArity then s.siblings.getD k 0
@@ -125,22 +125,22 @@ theorem groupOf_getD (s : CommitStep F EF) (index : Nat) (eval : EF) (k : Nat)
   rw [groupOf, List.getD_eq_getElem _ _ (by rw [List.length_map, List.length_range]; exact hk),
     List.getElem_map, List.getElem_range]
 
-theorem groupOf_pos (s : CommitStep F EF) (index : Nat) (eval : EF) :
+theorem groupOf_pos (s : QueryFold EF) (index : Nat) (eval : EF) :
     (groupOf s index eval).getD (index % 2 ^ s.logArity) 0 = eval := by
   rw [groupOf_getD s index eval _ (Nat.mod_lt _ (Nat.two_pow_pos _))]
   simp only [lt_irrefl, ↓reduceIte]
 
-theorem length_groupOf (s : CommitStep F EF) (index : Nat) (eval : EF) :
+theorem length_groupOf (s : QueryFold EF) (index : Nat) (eval : EF) :
     (groupOf s index eval).length = 2 ^ s.logArity := by
   rw [groupOf, List.length_map, List.length_range]
 
 /-- **An accepted fold opens the extracted word.** If fold `x` passes its checks at index `I` of
 height `2 ^ m` and its commitment binds, the extracted word holds the opened group around `I`. -/
 theorem friWordAt_group (cache : Merkle.Cache F (Digest F)) (H : Primitives F Id)
-    (x : (EF × Digest F) × CommitStep F EF) (e : EF) (I m : Nat) (hI : I < 2 ^ m)
-    (ha : x.2.logArity ≤ m) (hok : StepOk H x (e, I, m)) (hbind : Binding cache H x.1.2)
+    (commit : Digest F) (x : EF × QueryFold EF) (e : EF) (I m : Nat) (hI : I < 2 ^ m)
+    (ha : x.2.logArity ≤ m) (hok : StepOk H commit x (e, I, m)) (hbind : Binding cache H commit)
     (k : Nat) (hk : k < 2 ^ x.2.logArity) :
-    friWordAt cache x.1.2 m x.2.logArity
+    friWordAt cache commit m x.2.logArity
         (reverseBits ((I >>> x.2.logArity) * 2 ^ x.2.logArity + k) m) =
       Challenge.toSpec ((groupOf x.2 I e).getD k 0) := by
   set a := x.2.logArity
@@ -151,7 +151,8 @@ theorem friWordAt_group (cache : Merkle.Cache F (Digest F)) (H : Primitives F Id
     have : (I >>> a + 1) * 2 ^ a ≤ 2 ^ (m - a) * 2 ^ a := Nat.mul_le_mul_right _ hshift
     rw [← pow_add, Nat.sub_add_cancel ha, Nat.succ_mul] at this
     omega
-  have hrow := hbind 1 (m - a) (I >>> a) _ _ Nat.one_pos hok.2
+  obtain ⟨path, hpath⟩ := hok.2
+  have hrow := hbind 1 (m - a) (I >>> a) _ _ Nat.one_pos hpath
   have hdiv : ((I >>> a) * 2 ^ a + k) >>> a = I >>> a := by
     rw [Nat.shiftRight_eq_div_pow ((I >>> a) * 2 ^ a + k), Nat.add_comm,
       Nat.add_mul_div_right _ _ (Nat.two_pow_pos a), Nat.div_eq_of_lt hk, Nat.zero_add]
@@ -169,27 +170,28 @@ theorem finMod_val {m r : Nat} (hr : r < 2 ^ m) : (finMod m r).val = r := Nat.mo
 
 /-- An accepted fold's commitment holds the running value at the query's index. -/
 theorem friWordAt_eval (cache : Merkle.Cache F (Digest F)) (H : Primitives F Id)
-    (x : (EF × Digest F) × CommitStep F EF) (st : EF × Nat × Nat) (m : Nat) (hm : st.2.2 = m)
-    (hI : st.2.1 < 2 ^ m) (ha : x.2.logArity ≤ m) (hok : StepOk H x st)
-    (hbind : Binding cache H x.1.2) :
-    friWordAt cache x.1.2 m x.2.logArity (reverseBits st.2.1 m) = Challenge.toSpec st.1 := by
+    (commit : Digest F) (x : EF × QueryFold EF) (st : EF × Nat × Nat) (m : Nat) (hm : st.2.2 = m)
+    (hI : st.2.1 < 2 ^ m) (ha : x.2.logArity ≤ m) (hok : StepOk H commit x st)
+    (hbind : Binding cache H commit) :
+    friWordAt cache commit m x.2.logArity (reverseBits st.2.1 m) = Challenge.toSpec st.1 := by
   obtain ⟨e, I, m'⟩ := st
   dsimp only at hm hI ⊢
   subst hm
-  have h := friWordAt_group cache H x e I m' hI ha hok hbind (I % 2 ^ x.2.logArity)
+  have h := friWordAt_group cache H commit x e I m' hI ha hok hbind (I % 2 ^ x.2.logArity)
     (Nat.mod_lt _ (Nat.two_pow_pos _))
   rwa [shiftRight_mul_add_mod, groupOf_pos] at h
 
 /-- An accepted fold computes ArkLib's fold of the extracted word, at the scaled challenge, at the
 `2 ^ arity`-th power of the query's point. -/
 theorem foldStep_eq_foldValue (cache : Merkle.Cache F (Digest F)) (H : Primitives F Id) (n : Nat)
-    (hn : n ≤ twoAdicity F) (p : Nat) (x : (EF × Digest F) × CommitStep F EF) (st : EF × Nat × Nat)
+    (hn : n ≤ twoAdicity F) (p : Nat) (commit : Digest F) (x : EF × QueryFold EF)
+    (st : EF × Nat × Nat)
     (hm : st.2.2 = n - p) (hI : st.2.1 < 2 ^ (n - p)) (ha : p + x.2.logArity ≤ n)
-    (hok : StepOk H x st) (hbind : Binding cache H x.1.2) :
+    (hok : StepOk H commit x st) (hbind : Binding cache H commit) :
     Challenge.toSpec (foldStep x st).1 =
       ProximityGap.foldValue ((cosetDomain (EF := EF) n hn).subdomain p)
-        (fun z ↦ friWordAt cache x.1.2 (n - p) x.2.logArity z.val) x.2.logArity
-        (lift gen ^ 2 ^ p * Challenge.toSpec x.1.1)
+        (fun z ↦ friWordAt cache commit (n - p) x.2.logArity z.val) x.2.logArity
+        (lift gen ^ 2 ^ p * Challenge.toSpec x.1)
         ((cosetDomain (EF := EF) n hn).subdomain p (finMod (n - p) (reverseBits st.2.1 (n - p))) ^
           2 ^ x.2.logArity) := by
   obtain ⟨e, I, m'⟩ := st
@@ -198,11 +200,11 @@ theorem foldStep_eq_foldValue (cache : Merkle.Cache F (Digest F)) (H : Primitive
   set a := x.2.logArity
   have hpos : I % 2 ^ a < 2 ^ a := Nat.mod_lt _ (Nat.two_pow_pos _)
   have h := toSpec_foldRow_eq_foldValue n hn p (n - p - a) a (by omega) (by omega)
-    (fun z ↦ friWordAt cache x.1.2 (n - p) a z.val) (I >>> a) x.1.1
+    (fun z ↦ friWordAt cache commit (n - p) a z.val) (I >>> a) x.1
     (fun j ↦ if j < I % 2 ^ a then x.2.siblings.getD j 0
       else if j = I % 2 ^ a then e else x.2.siblings.getD (j - 1) 0)
     (fun k hk ↦ by
-      have hg := friWordAt_group cache H x e I (n - p) hI (by omega) hok hbind k hk
+      have hg := friWordAt_group cache H commit x e I (n - p) hI (by omega) hok hbind k hk
       rw [groupOf_getD _ _ _ _ hk] at hg
       rw [← hg, finMod_val (reverseBits_lt _ _)]) (I % 2 ^ a) hpos
   rw [shiftRight_mul_add_mod] at h
@@ -271,22 +273,22 @@ their checks from the batched value `e0`, against binding commitments, and whose
 the final polynomial at the last index, passes every ArkLib round check of the extracted oracles
 at the extracted challenges, and the initial oracle holds `e0` at its point. -/
 theorem query_checks (cache : Merkle.Cache F (Digest F)) (H : Primitives F Id) (betas : List EF)
-    (commits : List (Digest F)) (steps : List (CommitStep F EF)) (coeffs : Array EF)
+    (commits : List (Digest F)) (steps : List (QueryFold EF)) (coeffs : Array EF)
     (harity : steps.map (·.logArity) = S.foldArities.map PNat.val)
     (hbl : betas.length = steps.length) (hcl : commits.length = steps.length)
     (hbind : ∀ c ∈ commits, Binding cache H c) (I : Nat) (hI : I < 2 ^ S.logSize) (e0 : EF)
-    (hsteps : ∀ j x, ((betas.zip commits).zip steps)[j]? = some x →
-      StepOk H x (foldState ((betas.zip commits).zip steps) (e0, I, S.logSize) j))
+    (hsteps : ∀ (j : Nat) (x : EF × QueryFold EF), (betas.zip steps)[j]? = some x →
+      StepOk H (commits.getD j 0) x (foldState (betas.zip steps) (e0, I, S.logSize) j))
     (hfinal : coeffs.foldr (fun c acc ↦ acc * Ext.ofBase (powF (twoAdicGen S.logSize)
-        (reverseBits (foldState ((betas.zip commits).zip steps) (e0, I, S.logSize)
+        (reverseBits (foldState (betas.zip steps) (e0, I, S.logSize)
           steps.length).2.1 S.logSize)) + c) 0 =
-      (foldState ((betas.zip commits).zip steps) (e0, I, S.logSize) steps.length).1) :
+      (foldState (betas.zip steps) (e0, I, S.logSize) steps.length).1) :
     finMod S.logSize (reverseBits I S.logSize) ∈
         acceptingQueries S.schedule (schedule_le S) (friOracles S cache commits coeffs)
           (foldChallenges S betas) ∧
       initialWord S.schedule (friOracles S cache commits coeffs)
         (finMod S.logSize (reverseBits I S.logSize)) = Challenge.toSpec e0 := by
-  set l := (betas.zip commits).zip steps with hl
+  set l := betas.zip steps with hl
   set n := S.logSize
   set o := friOracles S cache commits coeffs
   set z0 : S.Point := finMod n (reverseBits I n)
@@ -296,10 +298,9 @@ theorem query_checks (cache : Merkle.Cache F (Digest F)) (H : Primitives F Id) (
   have hlenS : steps.length = S.lastFold + 1 := by
     rw [← List.length_map (f := (·.logArity)), harity, List.length_map, length_foldArities]
   have hlen : l.length = S.lastFold + 1 := by
-    rw [hl, List.length_zip, List.length_zip, hbl, hcl, hlenS, Nat.min_self, Nat.min_self]
+    rw [hl, List.length_zip, hbl, hlenS, Nat.min_self]
   have harr : l.map (·.2.logArity) = S.foldArities.map PNat.val := by
-    have hsnd : l.map Prod.snd = steps :=
-      List.map_snd_zip (by rw [List.length_zip, hbl, hcl, Nat.min_self])
+    have hsnd : l.map Prod.snd = steps := List.map_snd_zip (by rw [hbl])
     rw [← harity, ← hsnd, List.map_map]
     rfl
   -- The folds before fold `j`, and the state before it.
@@ -315,8 +316,8 @@ theorem query_checks (cache : Merkle.Cache F (Digest F)) (H : Primitives F Id) (
     have := hPle j hj
     rw [Nat.shiftRight_eq_div_pow]
     exact Nat.div_lt_of_lt_mul (by rw [← pow_add, Nat.add_sub_cancel' (by omega)]; exact hI)
-  have hx : ∀ j (hj : j < l.length), l[j].1.2 = commits.getD j 0 ∧
-      l[j].1.1 = betas.getD j 0 ∧ l[j].2.logArity = (S.schedule ⟨j, by omega⟩).val := by
+  have hx : ∀ j (hj : j < l.length),
+      l[j].1 = betas.getD j 0 ∧ l[j].2.logArity = (S.schedule ⟨j, by omega⟩).val := by
     intro j hj
     have hjc : j < commits.length := by omega
     have hjb : j < betas.length := by omega
@@ -325,18 +326,17 @@ theorem query_checks (cache : Merkle.Cache F (Digest F)) (H : Primitives F Id) (
         (S.foldArities.map PNat.val)[j]'(by rw [List.length_map, length_foldArities]; omega) := by
       simp only [harr]
     rw [List.getElem_map] at harj
-    refine ⟨?_, ?_, ?_⟩
-    · simp only [hl, List.getElem_zip, List.getD_eq_getElem _ _ hjc]
+    refine ⟨?_, ?_⟩
     · simp only [hl, List.getElem_zip, List.getD_eq_getElem _ _ hjb]
     · rw [harj, schedule_val]
   have hPsucc : ∀ j (hj : j < l.length), P (j + 1) = P j + l[j].2.logArity := fun j hj ↦ by
     simp only [hPdef, List.take_add_one, List.getElem?_eq_getElem hj, Option.toList_some,
       List.map_append, List.sum_append, List.map_cons, List.map_nil, List.sum_cons, List.sum_nil,
       Nat.add_zero]
-  have hbindj : ∀ j (hj : j < l.length), Binding cache H l[j].1.2 := fun j hj ↦
-    hbind _ (by rw [(hx j hj).1, List.getD_eq_getElem _ _ (by omega)]; exact List.getElem_mem _)
-  have hokj : ∀ j (hj : j < l.length), StepOk H l[j] (foldState l (e0, I, n) j) := fun j hj ↦
-    hsteps j _ (List.getElem?_eq_getElem hj)
+  have hbindj : ∀ j (hj : j < l.length), Binding cache H (commits.getD j 0) := fun j hj ↦
+    hbind _ (by rw [List.getD_eq_getElem _ _ (by omega)]; exact List.getElem_mem _)
+  have hokj : ∀ j (hj : j < l.length), StepOk H (commits.getD j 0) l[j]
+      (foldState l (e0, I, n) j) := fun j hj ↦ hsteps j _ (List.getElem?_eq_getElem hj)
   -- The query's point at each fold.
   have hpt : ∀ j (hj : j < S.lastFold + 2), S.domain z0 ^ 2 ^ P j =
       S.domain.subdomain (P j) (finMod (n - P j) (reverseBits (I >>> P j) (n - P j))) :=
@@ -351,11 +351,11 @@ theorem query_checks (cache : Merkle.Cache F (Digest F)) (H : Primitives F Id) (
     have hpi := hpt i.val (by omega)
     rw [hPi] at hpi
     rw [hpi, committedFunction_friOracles, finMod_val (reverseBits_lt _ _),
-      ← (hx i.val hi).1, show S.schedule i = S.schedule ⟨i.val, by omega⟩ from rfl,
-      ← (hx i.val hi).2.2, ← hPi, ← (hst i.val).1]
+      show S.schedule i = S.schedule ⟨i.val, by omega⟩ from rfl,
+      ← (hx i.val hi).2, ← hPi, ← (hst i.val).1]
     have ha : P i.val + l[i.val].2.logArity ≤ n := by
       have := hPle (i.val + 1) (by omega); rw [hPsucc i.val hi] at this; omega
-    exact friWordAt_eval cache H l[i.val] _ (n - P i.val) (hst i.val).2
+    exact friWordAt_eval cache H (commits.getD i.val 0) l[i.val] _ (n - P i.val) (hst i.val).2
       ((hst i.val).1 ▸ hIlt i.val (by omega)) (by omega) (hokj i.val hi) (hbindj i.val hi)
   -- Each fold computes ArkLib's fold at the next point.
   have hF : ∀ i : Fin (S.lastFold + 1), ProximityGap.foldValue
@@ -371,11 +371,12 @@ theorem query_checks (cache : Merkle.Cache F (Digest F)) (H : Primitives F Id) (
     have hPi' : P (i.val + 1) = foldingPrefix S.schedule i.succ := hP (i.val + 1) (by omega)
     have ha : P i.val + l[i.val].2.logArity ≤ n := by
       have := hPle (i.val + 1) (by omega); rw [hPsucc i.val hi] at this; omega
-    have h := foldStep_eq_foldValue cache H n hn (P i.val) l[i.val] _ (hst i.val).2
+    have h := foldStep_eq_foldValue cache H n hn (P i.val) (commits.getD i.val 0) l[i.val] _
+      (hst i.val).2
       ((hst i.val).1 ▸ hIlt i.val (by omega)) ha (hokj i.val hi) (hbindj i.val hi)
     rw [← foldState_succ l _ _ hi, ← show S.domain = cosetDomain (EF := EF) n hn from rfl,
       (hst i.val).1,
-      (hx i.val hi).2.2, (hx i.val hi).1, (hx i.val hi).2.1, hPi] at h
+      (hx i.val hi).2, (hx i.val hi).1, hPi] at h
     have hpi := hpt i.val (by omega)
     rw [hPi] at hpi
     rw [← hpi, ← pow_mul, ← pow_add] at h

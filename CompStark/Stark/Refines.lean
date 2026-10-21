@@ -92,8 +92,8 @@ theorem commitAndSample_refines (h : Refines B) {P : Params} {A : Air F} {logN :
   unfold commitAndSample
   dsimp only
   rw [h.root hct]
-  refine RelM.bind_eq fun _ ↦ RelM.bind_eq fun _ ↦ RelM.bind_eq fun _ ↦ RelM.bind_eq fun _ ↦
-    RelM.bind_eq fun _ ↦ RelM.bind_eq fun alpha ↦ ?_
+  refine RelM.bind_eq fun _ ↦ RelM.bind_eq fun _ ↦ RelM.bind_eq fun _ ↦
+    RelM.bind_eq fun alpha ↦ ?_
   have hq : 2 ^ (logN + A.logQuotientChunks) ≤ (ldeRef logN P.logBlowup gen A.width trace).height :=
     heh ▸ Nat.pow_le_pow_right (by decide) (by omega)
   rw [h.quotient _ _ _ _ _ hext hextOk hq (hew ▸ hcols)]
@@ -145,24 +145,24 @@ theorem commitAndSample_refines (h : Refines B) {P : Params} {A : Air F} {logN :
     rw [List.length_range, Nat.zero_add] at e
     exact e.symm ▸ hmq⟩
   rw [h.root hqc]
-  refine RelM.bind_eq fun _ ↦ RelM.bind_eq fun zeta ↦ ?_
+  refine RelM.bind_eq fun _ ↦ RelM.bind_eq fun _ ↦ RelM.bind_eq fun _ ↦ ?_
   exact RelM.pure ⟨hext, hct, hch, hqc, rfl, hextOk, fun m hm ↦ (hall m hm).1⟩
 
 /-- The openings of related commitments at an opening point outside the base field are the
 specification's. -/
 theorem openAndAssemble_refines (hA : DomainsAddressable F EF) (h : Refines B) (P : Params)
-    {logN : Nat} (hlog : logN ≤ twoAdicity F) {x : B.M × B.C × List B.M × B.C × EF}
+    {logN : Nat} (hlog : logN ≤ twoAdicity F) {x : B.M × B.C × List B.M × B.C × EF × F}
     {y : (specBackend EF).M × (specBackend EF).C × List (specBackend EF).M ×
-        (specBackend EF).C × EF}
+        (specBackend EF).C × EF × F}
     (hR : h.RM x.1 y.1 ∧ h.RC x.2.1 y.2.1 ∧ List.Forall₂ h.RM x.2.2.1 y.2.2.1 ∧
       h.RC x.2.2.2.1 y.2.2.2.1 ∧ x.2.2.2.2 = y.2.2.2.2 ∧ MatOk y.1 ∧ ∀ m ∈ y.2.2.1, MatOk m)
-    (hz : Ext.OutsideBase y.2.2.2.2) :
+    (hz : Ext.OutsideBase y.2.2.2.2.1) :
     RelM Eq (openAndAssemble B P logN x) (openAndAssemble (specBackend EF) P logN y) := by
-  obtain ⟨ext, traceC, chunks, quotC, zeta⟩ := x
-  obtain ⟨ext', traceC', chunks', quotC', zeta'⟩ := y
+  obtain ⟨ext, traceC, chunks, quotC, zeta, ow⟩ := x
+  obtain ⟨ext', traceC', chunks', quotC', zeta', ow'⟩ := y
   obtain ⟨hext, hct, hch, hqc, hzz, hextOk, hchOk⟩ := hR
   dsimp only at hext hct hch hqc hzz hextOk hchOk hz
-  subst hzz
+  obtain ⟨rfl, rfl⟩ := Prod.mk.inj hzz
   unfold openAndAssemble
   refine RelM.bind (openPcs_refines hA h P ?_ ?_) fun _ _ hx ↦ hx ▸ ?_
   · exact .cons ⟨hct, .cons ⟨hext, rfl⟩ .nil⟩

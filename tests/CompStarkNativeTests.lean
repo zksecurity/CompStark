@@ -49,22 +49,22 @@ def hashIota (n : Nat) : Vector Nat 8 :=
 `TruncatedPermutation<Perm16, 2, 8, 16>`. -/
 def hashes : IO Unit := do
   check "hash 0" (hashIota 0 == #v[0, 0, 0, 0, 0, 0, 0, 0])
-  check "hash 1" (hashIota 1 == #v[1372179428, 133812428, 696896225, 1987094720, 2054524407,
-    903120858, 1657571027, 324691152])
-  check "hash 8" (hashIota 8 == #v[2067671377, 285730248, 67081120, 1570755920, 810744145,
-    2106090739, 18027642, 346009986])
-  check "hash 16" (hashIota 16 == #v[403818341, 1636855270, 787684945, 1713176768, 2101345750,
-    943584829, 1807014356, 1669906235])
-  check "hash 17" (hashIota 17 == #v[1076045929, 1862126369, 541684338, 161054317, 197069995,
-    79500844, 1582073440, 882092014])
-  check "hash 32" (hashIota 32 == #v[300880145, 421418732, 997536514, 622983904, 1383735143,
-    464819595, 1098806565, 1343681663])
-  check "hash 50" (hashIota 50 == #v[856552550, 535981396, 1199560609, 1880955451, 1889767569,
-    338613516, 2127631099, 1133148347])
+  check "hash 1" (hashIota 1 == #v[1918697942, 2025897067, 904050874, 1093610768, 214053233,
+    1029880100, 2130076554, 348914674])
+  check "hash 8" (hashIota 8 == #v[2129455014, 874087217, 1458168736, 922046730, 1131850208,
+    1220695934, 117092781, 1149877263])
+  check "hash 16" (hashIota 16 == #v[2025173805, 376571109, 397667895, 290387531, 643976470,
+    262727570, 1515118423, 1345373838])
+  check "hash 17" (hashIota 17 == #v[844004974, 1951610042, 349288228, 1448257859, 1632348304,
+    293373545, 1305932743, 1694177388])
+  check "hash 32" (hashIota 32 == #v[672207092, 533529338, 1473891192, 529835554, 826152480,
+    2004142315, 2127886961, 765825440])
+  check "hash 50" (hashIota 50 == #v[152354270, 1737983126, 949754739, 63128631, 744917888,
+    2129863449, 1572018287, 40780702])
   check "compress" ((Hash.Poseidon2.compress F (Vector.ofFn fun i ↦ (i.val : _))
       (Vector.ofFn fun i ↦ ((100 + i.val : Nat) : _))).map canon ==
-    #v[1735060840, 251194189, 1830597343, 733824892, 2052730034, 1625998731, 1433224953,
-      835724207])
+    #v[1291065250, 534321063, 510018167, 1981420033, 1609350329, 949133113, 1145580169,
+      1762919665])
 
 /-- A `height × width` matrix with entries `base, base + 1, …`. -/
 def mat (base height width : Nat) : Merkle.Matrix F :=
@@ -83,20 +83,20 @@ def packedRoot (base height width : Nat) : Vector Nat 8 :=
 /-- Roots of Plonky3's `MerkleTreeMmcs` on its Poseidon2 sponge and compression, covering odd
 heights, single rows and injected smaller matrices. -/
 def merkle : IO Unit := do
-  let r1 := #v[839328004, 1713888626, 47538326, 961529694, 1367537855, 384103636, 1060544133,
-    485679400]
-  let r2 := #v[489187703, 929509427, 1512075425, 176164476, 1755927159, 1019341202, 1923645285,
-    1724637561]
-  let r3 := #v[807353722, 690866596, 1884109333, 1323245552, 1700476937, 1797497072, 1087871157,
-    1493878500]
+  let r1 := #v[1155711827, 200156654, 541381612, 2023518838, 127806045, 1732402474, 795809767,
+    424002287]
+  let r2 := #v[1179533772, 1644046154, 885019917, 499638768, 755068498, 1225070632, 492715846,
+    349555037]
+  let r3 := #v[1560602542, 1248288235, 887541759, 535668730, 308529504, 1692843089, 1979814949,
+    502346592]
   check "root 8 × 3" (rootOf [(0, 8, 3)] == r1 && packedRoot 0 8 3 == r1)
   check "root 5 × 2" (rootOf [(0, 5, 2)] == r2 && packedRoot 0 5 2 == r2)
   check "root 1 × 10" (rootOf [(0, 1, 10)] == r3 && packedRoot 0 1 10 == r3)
   check "root of five" (rootOf [(0, 4, 5), (1000, 8, 3), (2000, 2, 1), (3000, 1, 7),
-    (4000, 8, 2)] == #v[1170636731, 1464782430, 93151705, 555063351, 1082903266, 2078379327,
-      13779068, 1472929077])
-  check "root of two" (rootOf [(0, 6, 3), (500, 3, 2)] == #v[1638766218, 131982039, 1467186891,
-    1331228402, 1237520776, 1318414788, 1465319517, 1282851410])
+    (4000, 8, 2)] == #v[1288239597, 509039961, 491576154, 1966105894, 2160008, 1134247778,
+      1401521895, 388012225])
+  check "root of two" (rootOf [(0, 6, 3), (500, 3, 2)] == #v[869426140, 1213736601, 1861497526,
+    1175038896, 43495077, 968121270, 579718730, 338406565])
 
 /-- Plonky3's challenger on a fixed sequence from the transcript `t`: observe `0, …, 19`, sample
 two elements and an extension element, observe `7` and an extension element, sample 10 bits,
@@ -114,8 +114,8 @@ def challengerRun (t : Transcript F 24) : List Nat :=
 
 /-- The specification and the fast transcripts against Plonky3's challenger. -/
 def challenger : IO Unit := do
-  let expected := [1315075128, 621498114, 1241469331, 965142788, 1213494102, 2071041246, 703, 123,
-    1348157896]
+  let expected := [69659790, 574214938, 972478078, 1575898908, 847888869, 1166426239, 701, 195,
+    759660911]
   check "challenger" (challengerRun Poseidon2.initTranscript == expected)
   check "fast challenger"
       (challengerRun (CompStark.KoalaBear.backendFor 0 0 0).transcript == expected)
@@ -143,32 +143,38 @@ def wideTrace (n : Nat) : Array F := Id.run do
       x * x * x + row.getD ((j.val + 1) % 64) 0
   return out
 
+/-- The parameters `logN logBlowup logFinal maxLogArity queries commitPow queryPow [batchPow
+oodPow]`. -/
+def params : List Nat → IO (Nat × Fri.Params)
+  | [logN, b, f, a, q, cp, qp] => pure (logN, ⟨b, f, a, q, cp, qp, 0, 0⟩)
+  | [logN, b, f, a, q, cp, qp, bp, op] => pure (logN, ⟨b, f, a, q, cp, qp, bp, op⟩)
+  | _ => throw (IO.userError "seven or nine parameters")
+
 /-- The proof with its first opened trace value changed. -/
 def tamper (proof : Proof F EF) : Proof F EF :=
   { proof with opened := { proof.opened with
       traceLocal := proof.opened.traceLocal.modify 0 (· + 1) } }
 
 /-- The saved proof of `air` for parameters `logN logBlowup logFinal maxLogArity queries
-commitPow queryPow` verifies, is rejected when tampered, and both provers reproduce it. -/
+commitPow queryPow [batchPow oodPow]` verifies, is rejected when tampered, and both provers
+reproduce it. -/
 def proof (name : String) (A : Air F) (inst : Nat → Array F × List F)
     (ps : List Nat) : IO Unit := do
-  let [logN, b, f, a, q, cp, qp] := ps | throw (IO.userError "seven parameters")
+  let (logN, P) ← params ps
   let file := s!"{name}_{"_".intercalate (ps.map toString)}"
   let rust : Proof F EF ← IO.ofExcept (Json.parse (← IO.FS.readFile s!"tests/data/{file}.json"))
-  let P : Fri.Params := ⟨b, f, a, q, cp, qp⟩
   let (trace, pis) := inst (2 ^ logN)
   if let .error e := verify P A rust pis then throw (IO.userError s!"{file}: {e}")
   check s!"{file}: rejects a tampered proof" (verify P A (tamper rust) pis matches .error _)
   check s!"{file}: specification prover" (prove EF P A logN trace pis == rust)
   check s!"{file}: fast prover"
-    (proveWith (CompStark.KoalaBear.backendFor logN b A.logQuotientChunks) P A logN trace pis ==
-        rust)
+    (proveWith (CompStark.KoalaBear.backendFor logN P.logBlowup A.logQuotientChunks) P A logN
+      trace pis == rust)
 
 /-- Over the quintic extension, the specification prover's proof verifies, and is rejected for
 other public values. -/
 def proofExt5 (A : Air F) (inst : Nat → Array F × List F) (ps : List Nat) : IO Unit := do
-  let [logN, b, f, a, q, cp, qp] := ps | throw (IO.userError "seven parameters")
-  let P : Fri.Params := ⟨b, f, a, q, cp, qp⟩
+  let (logN, P) ← params ps
   let (trace, pis) := inst (2 ^ logN)
   let pf := prove _root_.KoalaBear.Fast.Ext5 P A logN trace pis
   if let .error e := verify P A pf pis then throw (IO.userError s!"Ext5 {ps}: {e}")
@@ -177,12 +183,12 @@ def proofExt5 (A : Air F) (inst : Nat → Array F × List F) (ps : List Nat) : I
 
 def proofs : IO Unit := do
   for ps in [[3, 2, 2, 1, 2, 0, 0], [3, 2, 2, 1, 2, 1, 1], [6, 1, 0, 1, 10, 0, 8],
-      [6, 1, 1, 3, 8, 2, 4], [5, 2, 0, 2, 5, 0, 0]] do
+      [6, 1, 1, 3, 8, 2, 4], [5, 2, 0, 2, 5, 0, 0], [5, 2, 1, 2, 6, 1, 2, 2, 3]] do
     proof "fib" fibonacci fibInstance ps
-  for ps in [[4, 2, 0, 1, 4, 0, 0], [5, 3, 1, 2, 6, 1, 3]] do
+  for ps in [[4, 2, 0, 1, 4, 0, 0], [5, 3, 1, 2, 6, 1, 3], [5, 1, 0, 1, 7, 2, 3, 4, 1]] do
     proof "cube" cube cubeInstance ps
   proof "wide" (wide 64) (fun n ↦ (wideTrace n, [])) [10, 1, 0, 1, 20, 0, 4]
-  for ps in [[3, 2, 2, 1, 2, 0, 0], [5, 2, 0, 2, 5, 0, 3]] do
+  for ps in [[3, 2, 2, 1, 2, 0, 0], [5, 2, 0, 2, 5, 0, 3], [4, 1, 0, 1, 3, 1, 1, 2, 2]] do
     proofExt5 fibonacci fibInstance ps
   proofExt5 cube cubeInstance [4, 2, 0, 1, 4, 1, 2]
 
@@ -196,17 +202,16 @@ local notation "EF" => _root_.BabyBear.Fast.Ext4
 /-- The fast prover reproduces Plonky3's saved BabyBear proof of `air`. -/
 def proof (name : String) (A : Air F) (inst : Nat → Array F × List F)
     (ps : List Nat) : IO Unit := do
-  let [logN, b, f, a, q, cp, qp] := ps | throw (IO.userError "seven parameters")
+  let (logN, P) ← KoalaBear.params ps
   let file := s!"babybear_{name}_{"_".intercalate (ps.map toString)}"
   let rust : Proof F EF ← IO.ofExcept (Json.parse (← IO.FS.readFile s!"tests/data/{file}.json"))
-  let P : Fri.Params := ⟨b, f, a, q, cp, qp⟩
   let (trace, pis) := inst (2 ^ logN)
   check s!"{file}: fast prover"
-    (proveWith (CompStark.BabyBear.backendFor logN b A.logQuotientChunks) P A logN trace pis ==
-        rust)
+    (proveWith (CompStark.BabyBear.backendFor logN P.logBlowup A.logQuotientChunks) P A logN
+      trace pis == rust)
 
 def proofs : IO Unit := do
-  for ps in [[3, 2, 2, 1, 2, 0, 0], [6, 1, 1, 3, 8, 2, 4]] do
+  for ps in [[3, 2, 2, 1, 2, 0, 0], [6, 1, 1, 3, 8, 2, 4], [4, 1, 1, 2, 5, 1, 1, 3, 2]] do
     proof "fib" fibonacci CompStarkTests.BabyBear.fibInstance ps
   proof "cube" cube CompStarkTests.BabyBear.cubeInstance [5, 3, 1, 2, 6, 1, 3]
 

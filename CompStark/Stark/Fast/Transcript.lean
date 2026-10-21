@@ -29,13 +29,14 @@ theorem word_encode (a : Array F) (i : Nat) (hs : (encode a).size < USize.size)
     (hi : i < a.size) : word (encode a) i = a.getD i 0 := by
   rw [word, CompPoly.CPolynomial.NTTFast.Packed.Native.read_encode a i hs hi, ofWord_val]
 
-/-- A witness check permutes the state overwritten by the input and the witness, and tests
+/-- A witness check permutes the state absorbing the input and the witness, and tests
 coordinate 15; with `bits = 0` both accept. -/
 theorem checkWitness_fst [Mont32BaseField p] (D : Duplex F 24) (hr : D.rate = 16)
     (c : Challenger F 24)
     (bits : Nat) (w : F) :
     (Challenger.checkWitness D c bits w).1 =
-      (D.canon (D.perm (Hash.overwrite c.state (c.input.push w).toList))[15] % 2 ^ bits == 0) := by
+      (D.canon (D.perm (Challenger.absorbInto 16 c.state (c.input.push w).toList))[15] %
+        2 ^ bits == 0) := by
   by_cases hb : bits = 0
   · subst hb
     simp only [Challenger.checkWitness, ite_true, Nat.pow_zero, Nat.mod_one, beq_self_eq_true]
@@ -182,36 +183,66 @@ theorem writes_encode (base : Vector F 24) (wi b : Nat) (hw : wi ≤ 24) : ∀ n
           simp only [hw', true_and, Nat.lt_succ_iff, Nat.le_iff_lt_or_eq, this, or_false]
         · simp only [hw', false_and, ite_false]
 
-/-- Lane `l` of the group of batch `b` is the state overwritten by the input and candidate
-`8 b + l`; a candidate past coordinate 23 is dropped on both sides. -/
+/-- Absorbing the input and a witness `x`. -/
+theorem absorbInto_push (s : Vector F 24) (input : Array F) (x : F) :
+    Challenger.absorbInto 16 s (input.push x).toList = Vector.ofFn fun i ↦
+      if i.val < 16 then (input.push x).getD i.val 0
+      else if i.val = 16 then s[i] + ((input.size + 1 : Nat) : F) else s[i] := by
+  unfold Challenger.absorbInto
+  have he : (input.push x).toList.isEmpty = false := by
+    rw [Array.toList_push, List.isEmpty_eq_false_iff]; exact List.append_ne_nil_of_right_ne_nil _
+      (List.cons_ne_nil _ _)
+  have hl : (input.push x).toList.length = input.size + 1 := by
+    rw [Array.length_toList, Array.size_push]
+  simp only [he, Bool.false_eq_true, ite_false, hl, List.getD_eq_getElem?_getD,
+    Array.getElem?_toList, Array.getD_eq_getD_getElem?]
+
+/-- Absorbing the input and a witness: the witness's coordinate, below the rate, holds it. -/
+theorem absorbInto_push_slot (s : Vector F 24) (input : Array F) (x : F)
+    (h : input.size < 16) :
+    (Challenger.absorbInto 16 s (input.push x).toList)[input.size]'(by omega) = x := by
+  simp only [absorbInto_push, Vector.getElem_ofFn, h, ↓reduceIte, Array.getD_eq_getD_getElem?,
+    Array.getElem?_push_size, Option.getD_some]
+
+/-- Absorbing the input and a witness: the other coordinates do not depend on the witness. -/
+theorem absorbInto_push_other (s : Vector F 24) (input : Array F) (x y : F) (j : Nat)
+    (hj : j < 24) (hne : j ≠ input.size ∨ 16 ≤ j) :
+    (Challenger.absorbInto 16 s (input.push x).toList)[j] =
+      (Challenger.absorbInto 16 s (input.push y).toList)[j] := by
+  rw [absorbInto_push, absorbInto_push, Vector.getElem_ofFn, Vector.getElem_ofFn]
+  by_cases h16 : j < 16
+  · have hj' : j ≠ input.size := by omega
+    simp only [h16, ↓reduceIte, Array.getD_eq_getD_getElem?, Array.getElem?_push, hj']
+  · simp only [h16, ↓reduceIte]
+
+/-- Lane `l` of the group of batch `b` is the state absorbing the input and candidate `8 b + l`; a
+candidate past the rate is dropped on both sides. -/
 theorem lane_batchGroup [Mont32BaseField p] (c : Challenger F 24) (b l : Nat)
     (hl : l < 8) : lane 24
-        (batchGroup (Hash.overwrite c.state c.input.toList) (min c.input.size 24) b 8) 0 l =
-      Hash.overwrite c.state (c.input.push ((8 * b + l : Nat) : F)).toList := by
+        (batchGroup (Challenger.absorbInto 16 c.state (c.input.push 0).toList) (witnessSlot c) b
+          8) 0 l =
+      Challenger.absorbInto 16 c.state (c.input.push ((8 * b + l : Nat) : F)).toList := by
   apply Vector.ext
   intro j hj
   have e1 : (8 * j + l) / 8 = j := by omega
   have e2 : (8 * j + l) % 8 = l := by omega
   simp only [lane, Vector.getElem_ofFn, Poseidon2.Packed.word, Nat.zero_add, batchGroup,
     Array.getD_eq_getD_getElem?, Array.getElem?_ofFn, show 8 * j + l < 192 by omega, dite_true,
-    Option.getD_some, e1, e2, hl, and_true, Hash.overwrite, Array.toList_push]
-  by_cases hj' : j = min c.input.size 24
-  · have hj2 : j = c.input.size := by omega
-    rw [ite_eq_left_of_eq_true _ _ (eq_true hj')]
+    Option.getD_some, e1, e2, hl, and_true]
+  by_cases hj' : j = witnessSlot c
+  · rw [ite_eq_left_of_eq_true _ _ (eq_true hj')]
+    have hs : c.input.size < 16 := by
+      unfold witnessSlot at hj'; split at hj' <;> omega
+    have hj2 : j = c.input.size := by
+      unfold witnessSlot at hj'; simp only [hs, ↓reduceIte] at hj'; exact hj'
     subst hj2
-    simp only [Fin.getElem_fin, List.getD_eq_getElem?_getD, List.length_append,
-      Array.length_toList, List.length_cons, List.length_nil, zero_add, getElem?_pos,
-      List.getElem_append_right, tsub_self, List.getElem_cons_zero, Option.getD_some,
-      lt_add_iff_pos_right, Nat.lt_one_iff, Std.le_refl]
-  · have hj2 : j ≠ c.input.size := by omega
-    simp only [hj', ite_false, Fin.getElem_fin, List.getD_eq_getElem?_getD, Array.getElem?_toList,
-      Vector.toArray_ofFn]
-    rw [Array.getElem?_ofFn, dite_eq_left_of_eq_true (eq_true hj), Option.getD_some]
-    by_cases hlt : j < c.input.size
-    · rw [List.getElem?_append_left (by rw [Array.length_toList]; exact hlt), Array.getElem?_toList]
-    · rw [List.getElem?_append_right (by rw [Array.length_toList]; omega),
-        Array.getElem?_eq_none (show c.input.size ≤ j by omega), Array.length_toList,
-        List.getElem?_eq_none (by simp only [List.length_singleton]; omega)]
+    rw [absorbInto_push_slot _ _ _ hs]
+  · rw [ite_eq_right_of_eq_false _ _ (eq_false hj'),
+      Array.getElem?_eq_getElem (by rw [Vector.size_toArray]; exact hj), Option.getD_some,
+      Vector.getElem_toArray]
+    refine absorbInto_push_other _ _ _ _ j hj ?_
+    unfold witnessSlot at hj'
+    split at hj' <;> omega
 
 variable [Mont32BaseField p] [Poseidon2Field (FastField p)] [PackedPoseidon2 p]
 
@@ -219,30 +250,33 @@ variable [Mont32BaseField p] [Poseidon2Field (FastField p)] [PackedPoseidon2 p]
 def passes (c : Challenger F 24) (bits m : Nat) : Bool :=
   m < p && FastField.toNat
     (permute (Poseidon2Field.params24 : Params (FastField p) 24)
-      (Hash.overwrite c.state (c.input.push (m : F)).toList))[15] % 2 ^ bits == 0
+      (Challenger.absorbInto 16 c.state (c.input.push (m : F)).toList))[15] % 2 ^ bits == 0
+
+/-- The state absorbing the input and a zero witness. -/
+abbrev baseState (c : Challenger F 24) : Vector F 24 :=
+  Challenger.absorbInto 16 c.state (c.input.push 0).toList
 
 /-- The packed group of eight copies of the duplexed state. -/
 abbrev baseGroup (c : Challenger F 24) : ByteArray :=
   CompPoly.CPolynomial.NTTFast.Packed.Native.encodeFields
-    (Array.ofFn (n := 192) fun k ↦ (Hash.overwrite c.state c.input.toList).toArray.getD (k / 8) 0)
+    (Array.ofFn (n := 192) fun k ↦ (baseState c).toArray.getD (k / 8) 0)
 
 theorem grindBatch_eq (c : Challenger F 24) (bits b : Nat) :
-    grindBatch p (baseGroup c) (min c.input.size 24) bits b =
+    grindBatch p (baseGroup c) (witnessSlot c) bits b =
       firstFrom (passes c bits) 8 (8 * b) := by
-  have h0 : (Array.ofFn (n := 192) fun k ↦
-      (Hash.overwrite c.state c.input.toList).toArray.getD (k / 8) 0) =
-      batchGroup (Hash.overwrite c.state c.input.toList) (min c.input.size 24) b 0 := by
+  have h0 : (Array.ofFn (n := 192) fun k ↦ (baseState c).toArray.getD (k / 8) 0) =
+      batchGroup (baseState c) (witnessSlot c) b 0 := by
     apply Array.ext
     · rw [Array.size_ofFn, size_batchGroup]
     · intro k h1 _
       simp only [batchGroup, Array.getElem_ofFn, Nat.not_lt_zero, and_false, ite_false]
   obtain ⟨W', e, hsz, hl⟩ := Merkle.Packed.permute24_lanes
-    (batchGroup (Hash.overwrite c.state c.input.toList) (min c.input.size 24) b 8)
-    (size_batchGroup _ _ _ _)
+    (batchGroup (baseState c) (witnessSlot c) b 8) (size_batchGroup _ _ _ _)
   have hs' : (encode W').size < USize.size := by
     rw [size_encode_fields, hsz]; have := USize.le_size; omega
+  have hw : witnessSlot c ≤ 24 := by unfold witnessSlot; split <;> omega
   rw [grindBatch, baseGroup, Native.encodeFields_eq, copy_encode, h0,
-    writes_encode _ _ _ (by omega) 8 (Nat.le_refl 8), e]
+    writes_encode _ _ _ hw 8 (Nat.le_refl 8), e]
   refine find?_range_map _ _ 8 (8 * b) fun l hl8 ↦ ?_
   rw [word_encode _ _ hs' (by rw [hsz]; omega), passes]
   have h15 := hl l hl8
@@ -252,7 +286,7 @@ theorem grindBatch_eq (c : Challenger F 24) (bits b : Nat) :
   rw [hw, h15]
 
 theorem grindRange_eq (c : Challenger F 24) (bits : Nat) :
-    ∀ nb b, grindRange p (baseGroup c) (min c.input.size 24) bits nb b =
+    ∀ nb b, grindRange p (baseGroup c) (witnessSlot c) bits nb b =
       firstFrom (passes c bits) (8 * nb) (8 * b)
   | 0, _ => rfl
   | nb + 1, b => by
@@ -271,12 +305,12 @@ theorem findSome?_ranges (P : Nat → Bool) (L a : Nat) : ∀ n,
     cases firstFrom P L (a + L * n) <;> rfl
 
 theorem grindWaves_eq (c : Challenger F 24) (bits : Nat) :
-    ∀ fuel wave, grindWaves p (baseGroup c) (min c.input.size 24) bits fuel wave =
+    ∀ fuel wave, grindWaves p (baseGroup c) (witnessSlot c) bits fuel wave =
       ((firstFrom (passes c bits) (8192 * fuel) (8192 * wave)).map fun m : Nat ↦ (m : F)).getD 0
   | 0, _ => rfl
   | fuel + 1, wave => by
     have hw : ((Array.range 16).map fun k ↦ Task.spawn fun _ ↦
-        grindRange p (baseGroup c) (min c.input.size 24) bits 64 (1024 * wave + 64 * k)).map
+        grindRange p (baseGroup c) (witnessSlot c) bits 64 (1024 * wave + 64 * k)).map
           Task.get =
         ((List.range 16).map fun k ↦
           firstFrom (passes c bits) 512 (8192 * wave + 512 * k)).toArray := by

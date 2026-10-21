@@ -12,8 +12,10 @@ public import CompStark.Stark.Challenge
 Plonky3's `DuplexChallenger`, the Fiat–Shamir transcript of its STARK prover and verifier:
 
 * Observed elements queue in an input buffer and clear the output buffer; a full buffer of `rate`
-  elements overwrites the first coordinates of the sponge state, which is then permuted, and the
-  first `rate` coordinates become the output buffer.
+  elements is absorbed and the sponge state permuted, and the first `rate` coordinates become the
+  output buffer. Absorbing `k > 0` elements writes them to the first coordinates, zeroes the rest
+  of the rate and adds `k` to the first capacity coordinate, so that inputs of different lengths
+  differ (`absorbInto`).
 * A sample permutes first if there is pending input or no output left, then takes the last element
   of the output buffer.
 * Extension elements (`Challenge`) are observed and sampled coefficient by coefficient, lowest
@@ -42,14 +44,22 @@ structure Challenger (F : Type*) (width : Nat) where
 
 namespace Challenger
 
-variable {F : Type*} [Zero F] {width : Nat} (D : Duplex F width)
+variable {F : Type*} [AddMonoidWithOne F] {width : Nat} (D : Duplex F width)
+
+/-- The state to permute after observing `xs`: unchanged if `xs` is empty (a squeeze); otherwise
+`xs` in the first coordinates, zeros up to the rate, and the first capacity coordinate plus the
+length of `xs`. -/
+def absorbInto (rate : Nat) (s : Vector F width) (xs : List F) : Vector F width :=
+  if xs.isEmpty then s else Vector.ofFn fun i ↦
+    if i.val < rate then xs.getD i.val 0
+    else if i.val = rate then s[i] + (xs.length : F) else s[i]
 
 /-- The challenger with a zero state and empty buffers. -/
 def init : Challenger F width := ⟨Vector.replicate width 0, #[], #[]⟩
 
-/-- Overwrite the state with the input, permute, and refill the output buffer. -/
+/-- Absorb the input, permute, and refill the output buffer. -/
 def duplexing (c : Challenger F width) : Challenger F width :=
-  let s := D.perm (Hash.overwrite c.state c.input.toList)
+  let s := D.perm (absorbInto D.rate c.state c.input.toList)
   ⟨s, #[], (s.toArray.extract 0 D.rate)⟩
 
 /-- Observe one element. -/

@@ -44,20 +44,22 @@ theorem evalWithAnswerFn_congr {α : Type} (answer answer' : (q : Query F) → A
     exact ih _ fun e he ↦ h e (List.mem_cons_of_mem _ he)
 
 section
-variable [BaseField F]
+variable (bd : Digest F → List F → Digest F)
 
 /-- The digests of a log: its answers' and its keys'. -/
 def logDigests (log : QueryLog (spec F K)) : List (Digest F) :=
-  log.flatMap fun e ↦ digestOf e.1 e.2 :: keyDigests e.1
+  log.flatMap fun e ↦ digestOf e.1 e.2 :: keyDigests bd e.1
 
 theorem length_logDigests_le (log : QueryLog (spec F K)) :
-    (logDigests log).length ≤ 3 * log.length := by
+    (logDigests bd log).length ≤ 3 * log.length := by
   induction log with
   | nil => simp only [logDigests, List.flatMap_nil, List.length_nil, Nat.zero_le]
   | cons e log ih =>
     simp only [logDigests, List.flatMap_cons, List.length_append, List.length_cons] at ih ⊢
-    have := length_keyDigests_le e.1
+    have := length_keyDigests_le bd e.1
     omega
+
+variable [BaseField F]
 
 /-- A digest outside a list shorter than the digests. -/
 theorem exists_not_mem (l : List (Digest F)) (h : l.length < Fintype.card (Digest F)) :
@@ -145,9 +147,10 @@ theorem climb_of_verifyBatch {d : Nat} (hash : List F → Vector F d)
 
 /-- **Binding from a log.** With no digest clashes in `log`, answered by `answer`, the primitives
 on `fresh log answer dstar` bind every digest of `log` to the rows extracted from it. -/
-theorem binding_fresh (answer : (q : Query F) → Answer K q) (log : QueryLog (spec F K))
-    (hcons : Consistent answer log) (hclash : NoClash log) (dstar : Digest F)
-    (hdstar : dstar ∉ logDigests log) (root : Digest F) (hroot : root ∈ logDigests log) :
+theorem binding_fresh {bd : Digest F → List F → Digest F} (answer : (q : Query F) → Answer K q)
+    (log : QueryLog (spec F K)) (hcons : Consistent answer log) (hclash : NoClash bd log)
+    (dstar : Digest F) (hdstar : dstar ∉ logDigests bd log) (root : Digest F)
+    (hroot : root ∈ logDigests bd log) :
     Binding (logCache log) (idealOf (fresh log answer dstar)) root := by
   intro n k i values path hn hv
   set g' := fresh log answer dstar
@@ -156,7 +159,7 @@ theorem binding_fresh (answer : (q : Query F) → Answer K q) (log : QueryLog (s
   have hv' : Merkle.verifyBatch hash compress root (List.replicate n (2 ^ k)) i values path =
       true := hv
   have hclimb := climb_of_verifyBatch hash compress root n k i hn values path hv'
-  have hmem_digests : ∀ e ∈ log, ∀ x ∈ keyDigests e.1, x ∈ logDigests log := fun e he x hx ↦
+  have hmem_digests : ∀ e ∈ log, ∀ x ∈ keyDigests bd e.1, x ∈ logDigests bd log := fun e he x hx ↦
     List.mem_flatMap.mpr ⟨e, he, List.mem_cons_of_mem _ hx⟩
   have hfresh_node : ∀ a b, ¬ Query.node a b ∈ log.map Sigma.fst → compress a b = dstar :=
     fun a b h ↦ by simp only [compress, g', fresh, h, ↓reduceIte]

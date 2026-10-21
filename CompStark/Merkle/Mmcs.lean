@@ -20,6 +20,19 @@ Plonky3's `MerkleTreeMmcs::open_batch` and `verify_batch` over the trees of `Tre
 
 `verifyBatchM` runs the verification with hashes in a monad; with pure hashes it is `verifyBatch`
 (`verifyBatchM_pure`).
+
+Plonky3's `open_multi_batch` and `verify_multi_batch` open several indices at once with one
+pruned list of siblings (`verifyMultiM`, `prune`):
+
+* The frontier starts at the distinct indices, each led by the first query opening it. Level by
+  level, the frontier's nodes are grouped by parent; a parent with both children on the frontier
+  takes no sibling, otherwise the absent child is the next sibling of the list. Rows of shorter
+  matrices are injected as in a single opening, from the lead's rows.
+* Verification first checks the shape: reachable heights, every row's width, indices below the
+  height, rows that agree wherever two queries open the same row of a matrix, and the number of
+  siblings the walk takes. It accepts if the walk ends at the commitment.
+* `prune` collects the siblings a walk takes from the queries' full paths: each absent child is
+  the sibling on its group's lead's path.
 -/
 
 @[expose] public section
@@ -139,6 +152,137 @@ def verifyBatchM [DecidableEq F] (hash : List F → m (Vector F d))
     else return false
 
 end Monadic
+
+/-! ### Multi-openings -/
+
+section Multi
+variable {F : Type} [Zero F] {d : Nat} {m : Type → Type} [Monad m]
+
+/-- The distinct indices, sorted, each with its lead: the first query opening it. -/
+def frontier (indices : List Nat) : List (Nat × Nat) :=
+  (indices.dedup.mergeSort (· ≤ ·)).map fun i ↦ (i, indices.idxOf i)
+
+/-- One level of a walk: the frontier's nodes `(index, lead, digest)`, sorted by index, grouped
+by parent; the parent of two nodes compresses them, the parent of one compresses it with the
+next sibling of `sibs` on the other side. The parents and the siblings left. -/
+def levelM (compress : Vector F d → Vector F d → m (Vector F d)) :
+    List (Nat × Nat × Vector F d) → List (Vector F d) →
+      m (List (Nat × Nat × Vector F d) × List (Vector F d))
+  | [], sibs => pure ([], sibs)
+  | [(i, q, x)], sibs => do
+    let z ← if i % 2 = 0 then compress x (sibs.headD 0) else compress (sibs.headD 0) x
+    return ([(i / 2, q, z)], sibs.tail)
+  | (i, q, x) :: (j, q', y) :: rest, sibs => do
+    if i % 2 = 0 ∧ j = i + 1 then
+      let z ← compress x y
+      let (ps, sibs) ← levelM compress rest sibs
+      return ((i / 2, q, z) :: ps, sibs)
+    else
+      let z ← if i % 2 = 0 then compress x (sibs.headD 0) else compress (sibs.headD 0) x
+      let (ps, sibs) ← levelM compress ((j, q', y) :: rest) sibs.tail
+      return ((i / 2, q, z) :: ps, sibs)
+
+/-- The walk from the frontier `nodes` over `levels` levels, the layer above the leaves of
+padded height `padded`, injecting the groups of shorter matrices `groups` (heights, tallest
+first, with their indices) from the leads' rows `rows`. -/
+def walkM (hash : List F → m (Vector F d)) (compress : Vector F d → Vector F d → m (Vector F d))
+    (rows : List (List (List F))) :
+    Nat → List (Nat × List Nat) → Nat → List (Nat × Nat × Vector F d) → List (Vector F d) →
+      m (List (Nat × Nat × Vector F d) × List (Vector F d))
+  | 0, _, _, nodes, sibs => pure (nodes, sibs)
+  | levels + 1, groups, padded, nodes, sibs => do
+    let (ps, sibs) ← levelM compress nodes sibs
+    let padded := padded / 2
+    match groups with
+    | (h, is) :: rest =>
+      if h.nextPowerOfTwo = padded then
+        let ps ← ps.mapM fun (i, q, z) ↦ do
+          return (i, q, ← compress z (← hash (is.flatMap fun k ↦ (rows.getD q []).getD k [])))
+        walkM hash compress rows levels rest padded ps sibs
+      else walkM hash compress rows levels groups padded ps sibs
+    | [] => walkM hash compress rows levels [] padded ps sibs
+
+/-- One level of the frontier's indices, sorted: the parents, and the number of siblings taken. -/
+def countLevel : List Nat → List Nat × Nat
+  | [] => ([], 0)
+  | [i] => ([i / 2], 1)
+  | i :: j :: rest =>
+    if i % 2 = 0 ∧ j = i + 1 then
+      let (ps, c) := countLevel rest
+      (i / 2 :: ps, c)
+    else
+      let (ps, c) := countLevel (j :: rest)
+      (i / 2 :: ps, c + 1)
+
+/-- The number of siblings a walk over `levels` levels from the frontier indices `nodes` takes. -/
+def siblingCount : Nat → List Nat → Nat
+  | 0, _ => 0
+  | levels + 1, nodes => (countLevel nodes).2 + siblingCount levels (countLevel nodes).1
+
+/-- The shape checks of a multi-opening of matrices of dimensions `dims` (height, width) at
+`indices` with rows `rows` and siblings `sibs`, the tallest height `maxH` and `levels` levels. -/
+def multiShapeOk [DecidableEq F] (dims : List (Nat × Nat)) (maxH levels : Nat)
+    (indices : List Nat) (rows : List (List (List F))) (sibs : List (Vector F d)) : Bool :=
+  let shift (h : Nat) := log2Ceil maxH - log2Ceil h
+  (dims.all fun (h, _) ↦ h = (maxH - 1) >>> shift h + 1) && 0 < maxH &&
+    rows.length == indices.length &&
+    (rows.all fun r ↦
+      r.length == dims.length && (r.zip dims).all fun (x, (_, w)) ↦ x.length == w) &&
+    (indices.all (· < maxH)) &&
+    ((indices.zip rows).all fun (i, r) ↦ (indices.zip rows).all fun (i', r') ↦
+      ((dims.zip (r.zip r')).all fun ((h, _), (x, x')) ↦
+        i >>> shift h != i' >>> shift h || x == x')) &&
+    sibs.length == siblingCount levels ((frontier indices).map (·.1))
+
+/-- Plonky3's `verify_multi_batch`: the multi-opening of matrices of dimensions `dims` (height,
+width) at `indices`, with the queries' rows `rows` and the pruned siblings `sibs`, against
+`commit`, with the hashes in `m`. -/
+def verifyMultiM [DecidableEq F] (hash : List F → m (Vector F d))
+    (compress : Vector F d → Vector F d → m (Vector F d)) (commit : Vector F d)
+    (dims : List (Nat × Nat)) (indices : List Nat) (rows : List (List (List F)))
+    (sibs : List (Vector F d)) : m Bool :=
+  match heightGroups (dims.map (·.1)) with
+  | [] => pure false
+  | (maxH, tallest) :: rest => do
+    let padded := maxH.nextPowerOfTwo
+    let levels := Nat.log2 padded
+    if multiShapeOk dims maxH levels indices rows sibs then
+      let leaves ← (frontier indices).mapM fun (i, q) ↦ do
+        return (i, q, ← hash (tallest.flatMap fun k ↦ (rows.getD q []).getD k []))
+      let (top, _) ← walkM hash compress rows levels rest padded leaves sibs
+      return top.all fun (_, _, x) ↦ x == commit
+    else return false
+
+/-- One level of `prune` at `level`: the parents of the frontier `nodes`, each led by its first
+child's lead, and the siblings taken, from the leads' paths `paths`. -/
+def pruneLevel (paths : List (List (Vector F d))) (level : Nat) :
+    List (Nat × Nat) → List (Nat × Nat) × List (Vector F d)
+  | [] => ([], [])
+  | [(i, q)] => ([(i / 2, q)], [(paths.getD q []).getD level 0])
+  | (i, q) :: (j, q') :: rest =>
+    if i % 2 = 0 ∧ j = i + 1 then
+      let (ps, out) := pruneLevel paths level rest
+      ((i / 2, q) :: ps, out)
+    else
+      let (ps, out) := pruneLevel paths level ((j, q') :: rest)
+      ((i / 2, q) :: ps, (paths.getD q []).getD level 0 :: out)
+
+/-- The siblings a walk over `levels` levels from the frontier `nodes` at `level` takes, read off
+the queries' full paths `paths`. -/
+def pruneWalk (paths : List (List (Vector F d))) :
+    Nat → Nat → List (Nat × Nat) → List (Vector F d)
+  | 0, _, _ => []
+  | levels + 1, level, nodes =>
+    let (parents, out) := pruneLevel paths level nodes
+    out ++ pruneWalk paths levels (level + 1) parents
+
+/-- The pruned siblings of the openings at `indices` with full paths `paths` (Plonky3's
+`open_multi_batch`), over `levels` levels. -/
+def prune (levels : Nat) (indices : List Nat) (paths : List (List (Vector F d))) :
+    List (Vector F d) :=
+  pruneWalk paths levels 0 (frontier indices)
+
+end Multi
 
 section PureHashes
 variable {F : Type} {d : Nat} {m : Type → Type} [Monad m] [LawfulMonad m]

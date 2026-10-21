@@ -43,16 +43,12 @@ variable {F : Type} [BaseField F] {EF : Type} [Challenge F EF]
 local notation "𝕂" => Challenge.Spec EF
 
 /-- A STARK to prove with over the challenge field `EF`: FRI parameters, an AIR and a trace of
-`2 ^ logN` rows, in a valid configuration (`ValidConfig`) with a positive blowup and at least one
-FRI fold. -/
+`2 ^ logN` rows, in a valid configuration (`ValidConfig`) with at least one FRI fold. -/
 structure Setup (EF : Type) [Challenge F EF] where
   params : Fri.Params
   air : Air F
   logN : Nat
   valid : ValidConfig params air logN
-  /-- The trace is extended to at least twice its length, so that its code has room to detect
-  errors. -/
-  blowup : 0 < params.logBlowup
   /-- FRI's final polynomial is shorter than the trace, so FRI folds at least once. -/
   folds : params.logFinalPolyLen < logN
 

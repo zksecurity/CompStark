@@ -13,7 +13,8 @@ public import Lean.Data.Json
 
 A proof's JSON form as Plonky3 serializes it (`serde_json`) for a base field `MontyField31`, here
 `FastField p`: field elements as Montgomery words, extension elements as
-`{"value": [c0, …, c(d-1)]}`, digests as `{"value": [eight words]}`.
+`{"value": [c0, …, c(d-1)]}`, commitments as Merkle caps of one root `{"cap": [[eight words]]}`,
+and Merkle multi-openings with their pruned siblings `{"sibling_hashes": [...]}`.
 -/
 
 @[expose] public section
@@ -45,9 +46,10 @@ def vector {α : Type} (n : Nat) (f : Json → Except String α) (j : Json) :
   let a ← array f j
   if h : a.size = n then return ⟨a, h⟩ else throw s!"expected {n} elements, got {a.size}"
 
-/-- A digest `{"value": [...]}`. -/
+/-- A commitment: a Merkle cap `{"cap": [root]}` of one root. -/
 def digest (j : Json) : Except String (Digest (FastField p)) := do
-  vector 8 field (← j.getObjVal? "value")
+  let roots ← array (vector 8 field) (← j.getObjVal? "cap")
+  if h : roots.size = 1 then return roots[0] else throw s!"expected one root, got {roots.size}"
 
 variable [Mont32BaseField p] {EF : Type} [Challenge (FastField p) EF]
 
@@ -56,25 +58,24 @@ def ext (j : Json) : Except String EF := do
   let v ← vector (Challenge.d EF) field (← j.getObjVal? "value")
   return Challenge.ofCoeffs v.toList
 
-/-- A sibling path: an array of digests, each a bare array of words. -/
-def path (j : Json) : Except String (Array (Digest (FastField p))) := array (vector 8 field) j
+/-- Pruned siblings `{"sibling_hashes": [...]}`, each a bare array of words. -/
+def siblings (j : Json) : Except String (Array (Digest (FastField p))) :=
+  do array (vector 8 field) (← j.getObjVal? "sibling_hashes")
 
-def batchOpening (j : Json) : Except String (BatchOpening (FastField p)) := do
-  return ⟨← array (array field) (← j.getObjVal? "opened_values"),
-    ← path (← j.getObjVal? "opening_proof")⟩
+def multiOpening (j : Json) : Except String (MultiOpening (FastField p)) := do
+  return ⟨← array (array (array field)) (← j.getObjVal? "opened_values"),
+    ← siblings (← j.getObjVal? "opening_proof")⟩
 
-def commitStep (j : Json) : Except String (CommitStep (FastField p) EF) := do
-  return ⟨← (← j.getObjVal? "log_arity").getNat?, ← array ext (← j.getObjVal? "sibling_values"),
-    ← path (← j.getObjVal? "opening_proof")⟩
-
-def queryProof (j : Json) : Except String (QueryProof (FastField p) EF) := do
-  return ⟨← array batchOpening (← j.getObjVal? "input_proof"),
-    ← array commitStep (← j.getObjVal? "commit_phase_openings")⟩
+def commitOpening (j : Json) : Except String (CommitOpening (FastField p) EF) := do
+  return ⟨← array (array ext) (← j.getObjVal? "sibling_values"),
+    ← siblings (← j.getObjVal? "opening_proof")⟩
 
 def friProof (j : Json) : Except String (FriProof (FastField p) EF) := do
-  return ⟨← array digest (← j.getObjVal? "commit_phase_commits"),
+  return ⟨← field (← j.getObjVal? "batch_pow_witness"),
+    ← array digest (← j.getObjVal? "commit_phase_commits"),
     ← array field (← j.getObjVal? "commit_pow_witnesses"),
-    ← array queryProof (← j.getObjVal? "query_proofs"),
+    ← array multiOpening (← j.getObjVal? "input_openings"),
+    ← array commitOpening (← j.getObjVal? "commit_phase_openings"),
     ← array ext (← j.getObjVal? "final_poly"),
     ← field (← j.getObjVal? "query_pow_witness")⟩
 
@@ -96,7 +97,8 @@ def proof (j : Json) : Except String (Proof (FastField p) EF) := do
     ⟨← array ext (← ov.getObjVal? "trace_local"), ← array ext (← ov.getObjVal? "trace_next"),
       ← array (array ext) (← ov.getObjVal? "quotient_chunks")⟩,
     ← friProof (← j.getObjVal? "opening_proof"),
-    ← (← j.getObjVal? "degree_bits").getNat?⟩
+    ← (← j.getObjVal? "degree_bits").getNat?,
+    ← field (← j.getObjVal? "ood_pow_witness")⟩
 
 /-- A proof from its JSON text. -/
 def parse (s : String) : Except String (Proof (FastField p) EF) := do

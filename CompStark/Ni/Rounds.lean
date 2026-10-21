@@ -16,8 +16,9 @@ the transcript read off the parsed prefix and the cache of the earlier hash quer
 
 * the trace and quotient words are extracted under the digests the rounds `0` and `1` observe,
   the FRI oracles under those of the fold rounds, and the final polynomial is the one the query
-  round observes;
-* the openings are the extension elements the batching round observes;
+  round observes, each after the domain separator the round observes first, if any;
+* the openings are the extension elements the batching round observes after the PCS's domain
+  separator;
 * the challenges are read off the answers as the verifier reads them (`extAt`,
   `challengeOffset`), the folding challenges substituted to ArkLib's coset coordinate.
 
@@ -95,11 +96,11 @@ theorem getElem_flatMap_of_length {α : Type} (w : Nat) (L : List (List α))
       simp only [hl, show w * (c + 1) + e - w = w * c + e by rw [Nat.mul_succ]; omega, this,
         List.getElem_cons_succ]
 
-theorem openingsAt_coeffs (S : Iop.Setup EF) (o : OpenedValues EF)
+theorem openingsAt_coeffs (S : Iop.Setup EF) (o : OpenedValues EF) (rest : List F)
     (htl : o.traceLocal.size = S.air.width) (htn : o.traceNext.size = S.air.width)
     (hqc : o.quotientChunks.size = S.chunks)
     (hq4 : ∀ ch ∈ o.quotientChunks, ch.size = Challenge.d EF) :
-    openingsAt S (coeffs (openedValues o)) = openingsOf S o := by
+    openingsAt S (coeffs (openedValues o) ++ rest) = openingsOf S o := by
   have hlen : (openedValues o).length = 2 * S.air.width + Challenge.d EF * S.chunks := by
     simp only [openedValues, List.length_append, Array.length_toList, htl, htn,
       List.length_flatMap]
@@ -110,8 +111,8 @@ theorem openingsAt_coeffs (S : Iop.Setup EF) (o : OpenedValues EF)
       smul_eq_mul]
     ring
   have hx (k : Nat) (hk : k < (openedValues o).length) :
-      extFrom (coeffs (openedValues o)) k = (openedValues o)[k] := by
-    simpa only [List.append_nil] using extFrom_coeffs [] (openedValues o) k hk
+      extFrom (coeffs (openedValues o) ++ rest) k = (openedValues o)[k] :=
+    extFrom_coeffs rest (openedValues o) k hk
   cases hS : openingsOf S o with
   | mk ta tn qa =>
   have hta : ta = (openingsOf S o).traceAt := by rw [hS]
@@ -180,10 +181,31 @@ theorem finalPolyAt_coeffs (S : Iop.Setup EF) (coeffs' : Array EF) (rest : List 
 section Prefix
 variable (S : Iop.Setup EF)
 
+/-- The STARK's domain separator on a proof for `S`. -/
+def starkSeedS : List F :=
+  DomainSeparator.starkSeed F EF S.logN S.air.width S.air.numPublicValues S.chunks
+    S.params.oodPowBits
+
+/-- The claimed evaluation counts of a proof for `S`. -/
+def pcsCountsS : List (List (List Nat)) :=
+  [[[S.air.width, S.air.width]], List.replicate S.chunks [Challenge.d EF]]
+
+/-- The PCS's domain separator on a proof for `S`. -/
+def pcsSeedS : List F := DomainSeparator.pcsSeed F EF (pcsCountsS S) S.params.batchPowBits
+
+/-- FRI's domain separator on a proof for `S`. -/
+def friSeedS : List F :=
+  DomainSeparator.friSeed F EF (S.foldArities.map PNat.val) (2 ^ S.params.logFinalPolyLen)
+    S.params.commitPowBits S.params.queryPowBits S.params.numQueries S.logSize
+    S.params.logBlowup S.params.maxLogArity
+
 /-- The digest observed in a duplex call's input, the one a commitment round binds: after the
-three leading elements of the first round (initial capacity), first otherwise. -/
+STARK's domain separator in the first round (initial capacity), after FRI's in the first fold
+round (an input of its length), first otherwise. -/
 def boundDigest (cap : Digest F) (input : List F) : Digest F :=
-  digestAt input (if cap = initCap then 3 else 0)
+  digestAt input (if cap = initCap then (starkSeedS S).length
+    else if input.length = (friSeedS S).length + 8 + challengeOffset S.params.commitPowBits
+      then (friSeedS S).length else 0)
 
 /-- The folding challenges of ArkLib's oracles, from the answers `sample` of the fold rounds:
 `s_j β_j`, `s_j` the shift of word `j`'s domain. -/
@@ -196,14 +218,15 @@ the hash queries `cache`: the words and FRI oracles extracted under the observed
 observed openings and final polynomial, and the challenges of the answers. -/
 noncomputable def prefixTranscript (cache : Merkle.Cache F (Digest F)) (block : Nat → List F)
     (sample : Nat → Vector F S.streamLen) : Sound.Transcript S where
-  trace j := committedColumn S cache (digestAt (block 0) 3) j
+  trace j := committedColumn S cache (digestAt (block 0) (starkSeedS S).length) j
   alpha := extAt (sample 0) 0
   quotient c e := committedColumn S cache (digestAt (block 1) 0) (Challenge.d EF * c.val + e.val)
-  zeta := extAt (sample 1) 0
-  openings := openingsAt S (block 2)
-  batch := extAt (sample 2) 0
+  zeta := extAt (sample 1) (challengeOffset S.params.oodPowBits)
+  openings := openingsAt S ((block 2).drop (pcsSeedS S).length)
+  batch := extAt (sample 2) (challengeOffset S.params.batchPowBits)
   fri := friOracles S cache
-    ((List.range (S.lastFold + 1)).map fun i ↦ digestAt (block (3 + i)) 0)
+    ((List.range (S.lastFold + 1)).map fun i ↦
+      digestAt (block (3 + i)) (if i = 0 then (friSeedS S).length else 0))
     (finalPolyAt S (block (4 + S.lastFold)))
   betas := betasAt S sample
 

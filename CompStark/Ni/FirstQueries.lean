@@ -56,28 +56,30 @@ theorem getElem_mem_take (p i : Nat) (hi : i < p) (hl : i < log.length) :
 
 end Consistent
 
-variable [BaseField F]
-
 /-- The digest of an answer: the hash, or the duplex call's new capacity. -/
 def digestOf : (t : Query F) → Answer K t → Digest F
   | .duplex .., u => u.1
   | .leaf _, u => u
   | .node .., u => u
 
+variable (bd : Digest F → List F → Digest F)
+
 /-- The digests in a key: a compression's children, and a duplex call's capacity and the digest
-its input binds. -/
+`bd` its input binds. -/
 def keyDigests : Query F → List (Digest F)
-  | .duplex cap input => [cap, boundDigest cap input]
+  | .duplex cap input => [cap, bd cap input]
   | .leaf _ => []
   | .node left right => [left, right]
 
-theorem length_keyDigests_le (t : Query F) : (keyDigests t).length ≤ 2 := by
+theorem length_keyDigests_le (t : Query F) : (keyDigests bd t).length ≤ 2 := by
   cases t <;> simp only [keyDigests, List.length_cons, List.length_nil] <;> omega
+
+variable [BaseField F]
 
 /-- The answer `u` to `t` after the queries `pre` has a digest known before: the initial capacity,
 an earlier answer's, or one in an earlier key or in `t`. -/
 abbrev Clash (pre : QueryLog (spec F K)) (t : Query F) (u : Answer K t) : Prop :=
-  DigestClash digestOf keyDigests [initCap] pre t u
+  DigestClash digestOf (keyDigests bd) [initCap] pre t u
 
 /-- The first position of the key `t` in `log`. -/
 def idx (log : QueryLog (spec F K)) (t : Query F) : Nat := (log.map Sigma.fst).idxOf t
@@ -88,9 +90,9 @@ variable (answer : (q : Query F) → Answer K q) (log : QueryLog (spec F K))
 /-- No query of `log` gets, at its first occurrence, an answer with a known digest. -/
 def NoClash : Prop :=
   ∀ p (hp : p < log.length), log[p].1 ∉ (log.take p).map Sigma.fst →
-    ¬ Clash (log.take p) log[p].1 log[p].2
+    ¬ Clash bd (log.take p) log[p].1 log[p].2
 
-variable {answer log}
+variable {answer log bd}
 
 theorem idx_lt {t : Query F} (ht : t ∈ log.map Sigma.fst) : idx log t < log.length := by
   have := List.idxOf_lt_length_of_mem ht
@@ -113,10 +115,10 @@ theorem not_mem_take_idx {t : Query F} (ht : t ∈ log.map Sigma.fst) :
   exact lt_irrefl _
 
 /-- A digest known before position `p` gives a clash at the first occurrence at `p`. -/
-theorem clash_of_known (hcons : Consistent answer log) (hclash : NoClash log)
+theorem clash_of_known (hcons : Consistent answer log) (hclash : NoClash bd log)
     (p : Nat) (hp : p < log.length) (hfresh : log[p].1 ∉ (log.take p).map Sigma.fst)
     (hknown : digestOf log[p].1 (answer log[p].1) ∈
-      knownDigests digestOf keyDigests [initCap] (log.take p) log[p].1) : False := by
+      knownDigests digestOf (keyDigests bd) [initCap] (log.take p) log[p].1) : False := by
   refine hclash p hp hfresh ?_
   unfold Clash DigestClash
   rw [getElem_snd hcons p hp]
@@ -124,17 +126,17 @@ theorem clash_of_known (hcons : Consistent answer log) (hclash : NoClash log)
 
 /-- An entry before position `p` contributes its digests to the known ones. -/
 theorem mem_known_of_mem (e : (q : Query F) × Answer K q) (pre : QueryLog (spec F K)) (he : e ∈ pre)
-    (t : Query F) (d : Digest F) (hd : d ∈ digestOf e.1 e.2 :: keyDigests e.1) :
-    d ∈ knownDigests digestOf keyDigests [initCap] pre t := by
+    (t : Query F) (d : Digest F) (hd : d ∈ digestOf e.1 e.2 :: keyDigests bd e.1) :
+    d ∈ knownDigests digestOf (keyDigests bd) [initCap] pre t := by
   unfold knownDigests
   exact List.mem_append_left _ (List.mem_append_right _ (List.mem_flatMap.mpr ⟨e, he, hd⟩))
 
-variable (hcons : Consistent answer log) (hclash : NoClash log)
+variable (hcons : Consistent answer log) (hclash : NoClash bd log)
 include hcons hclash
 
 /-- **No prediction.** A digest in a key was answered before the key's first query. -/
 theorem idx_lt_of_mem_keyDigests {t t' : Query F} (ht : t ∈ log.map Sigma.fst)
-    (ht' : t' ∈ log.map Sigma.fst) {d : Digest F} (hd : d ∈ keyDigests t)
+    (ht' : t' ∈ log.map Sigma.fst) {d : Digest F} (hd : d ∈ keyDigests bd t)
     (hdig : digestOf t' (answer t') = d) : idx log t' < idx log t := by
   by_contra hle
   have hle : idx log t ≤ idx log t' := not_lt.mp hle
@@ -238,7 +240,7 @@ theorem hasRounds_take (blocks : List (List F)) (n : Nat)
 /-- **Stable extraction.** Extraction under a digest bound by a key of the log does not change
 after that key's first query. -/
 theorem noPrediction_take (root : Digest F) (t₀ : Query F) (ht₀ : t₀ ∈ log.map Sigma.fst)
-    (hroot : root ∈ keyDigests t₀) (p p' : Nat) (hp : idx log t₀ ≤ p) (hpp' : p ≤ p') :
+    (hroot : root ∈ keyDigests bd t₀) (p p' : Nat) (hp : idx log t₀ ≤ p) (hpp' : p ≤ p') :
     (logCache (log.take p)).NoPrediction (logCache (log.take p')) root := by
   have hsub : ∀ e ∈ log.take p, e ∈ log.take p' := fun e he ↦ by
     rw [show log.take p = (log.take p').take p by rw [List.take_take, Nat.min_eq_left hpp']]

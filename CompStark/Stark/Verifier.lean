@@ -9,18 +9,17 @@ public import CompStark.Stark.Air
 
 /-! # The STARK verifier
 
-Plonky3's `uni-stark` `verify` (revision `47e442f`) without preprocessed columns or zero
+Plonky3's `uni-stark` `verify` (revision `a4982ec`) without preprocessed columns or zero
 knowledge, over a base field `F` with challenges in the extension `EF` and the two-adic FRI
 commitment scheme. `verifyWith` runs on any challenger and Merkle hashes (`Primitives`); Plonky3's
 verifier `verify` is it on Plonky3's Poseidon2 ones (`poseidon2`).
 
-* The proof's shape is checked first: the opened values' sizes, and FRI's fold arities, which must
-  be Plonky3's schedule for the degree (`foldArities`). Plonky3 takes the arities from the proof;
-  fixing them makes this verifier slightly stricter.
-
-* The transcript observes the degree, the preprocessed width `0`, the trace commitment and the
-  public values, samples the constraint-folding challenge `α`, observes the quotient commitment
-  and samples the out-of-domain point `ζ`.
+* The proof's shape is checked first: the degree and the quotient domain fit the two-adic
+  subgroups, the public values are as many as the AIR declares, and the opened values' sizes.
+* The transcript observes the STARK's domain separator (`starkSeed`), the trace commitment and
+  the public values, samples the constraint-folding challenge `α`, observes the quotient
+  commitment, checks the out-of-domain grinding witness and samples the out-of-domain point `ζ`,
+  which must lie outside the trace domain.
 * The commitment scheme verifies the trace's openings at `ζ` and `ζ ω` and every quotient chunk's
   at `ζ`.
 * The quotient at `ζ` is recomposed from its chunks, which live on the cosets of the quotient
@@ -80,21 +79,26 @@ def verifyWith {m : Type → Type} [Monad m] (H : Primitives F m) (P : Params) (
   let logChunks := A.logQuotientChunks
   let ds := chunkDomains db logChunks
   let o := proof.opened
+  unless db + logChunks ≤ twoAdicity F do
+    throw "degree bits"
+  unless pis.length == A.numPublicValues do
+    throw "public values"
   unless o.traceLocal.size == A.width && o.traceNext.size == A.width &&
       o.quotientChunks.size == 2 ^ logChunks &&
       o.quotientChunks.all (·.size == Challenge.d EF) do
     throw "invalid proof shape"
-  unless arities proof.fri == foldArities P.maxLogArity (db - P.logFinalPolyLen) do
-    throw "fold arities"
+  unless P.oodPowBits != 0 || proof.oodWitness == 0 do
+    throw "out-of-domain witness"
   let run : M H (EF × EF) := do
-    observe H (db : F)
-    observe H (db : F)
-    observe H 0
+    observeList H (DomainSeparator.starkSeed F EF db A.width A.numPublicValues (2 ^ logChunks)
+      P.oodPowBits)
     observeList H proof.traceCommit.toList
     observeList H pis
     let alpha ← sampleExt H
     observeList H proof.quotientCommit.toList
+    ensure (← checkWitness H P.oodPowBits proof.oodWitness) "out-of-domain witness"
     let zeta ← sampleExt H
+    ensure (Ext.powTwo zeta db - 1 != 0) "out-of-domain point in the trace domain"
     let zetaNext := zeta * Ext.ofBase (twoAdicGen db)
     let traceDomain : Domain F := ⟨1, db⟩
     verifyPcs H P

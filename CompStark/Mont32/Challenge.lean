@@ -32,6 +32,7 @@ instance instChallengeExt4 : Challenge (FastField p) (Ext4 p) where
   ofBase := Ext4.ofBase
   smul := Ext4.smul
   toSpec := Ext4.specEquiv p
+  algebraId := s!"p3-power-basis-v1:X^4-{CompPoly.CanonicalNat.toNat (Binomial4.W (p := p))}"
   length_coeffs _ := rfl
   coeffNat_toSpec x i := by
     rw [Ext4.specEquiv_apply]

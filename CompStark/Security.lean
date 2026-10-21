@@ -92,7 +92,7 @@ Every round error is at most `2 ^ (-100)` (`wideSp1_roundError_le`). `123` queri
 at any radius: `(5/8) ^ 123 · 2 ^ (-16)` alone is about `2 ^ (-99.40)`. By `knowledgeSoundness_ro`,
 a prover making `Q` oracle calls gets a proof accepted that the extractor cannot open with
 probability at most `q · 2 ^ (-100) + 3 q² / |𝔽| ^ 8`, `q = Q + verifierQueries`,
-`verifierQueries = 13 + 5 · 21 + 124 · 553 = 68690` (`wideSp1Setup_verifierQueries`,
+`verifierQueries = 15 + 5 · 21 + 124 · 553 = 68692` (`wideSp1Setup_verifierQueries`,
 `wideSp1_knowledgeSoundness_ro`).
 
 `wide5Setup`: `wide 64` on `2 ^ 21` rows over the quintic extension `KoalaBear.Fast.Ext5` with
@@ -112,7 +112,7 @@ Every round error is at most `2 ^ (-128)` (`wide5_roundError_le`). `159` queries
 any radius: `(5/8) ^ 159 · powFraction 20` alone is about `2 ^ (-127.81)`.
 By `knowledgeSoundness_ro`, a prover making `Q` oracle calls gets a proof accepted that the
 extractor cannot open with probability at most `q · 2 ^ (-128) + 3 q² / |𝔽| ^ 8`,
-`q = Q + verifierQueries`, `verifierQueries = 16 + 6 · 21 + 160 · 553 = 88622`
+`q = Q + verifierQueries`, `verifierQueries = 18 + 6 · 21 + 160 · 553 = 88624`
 (`wide5Setup_verifierQueries`, `wide5_knowledgeSoundness_ro`).
 
 `wide5iSetup`: the interactive counterpart, which gets no credit for grinding: `wide 64` on `2 ^ 21`
@@ -160,8 +160,8 @@ def fibonacciSetup : Setup KoalaBear.Fast.Ext4 where
         exact Nat.zero_le _
       folds := by decide
       finalPolyFits := by decide
-      queries := by decide }
-  blowup := by decide
+      queries := by decide
+      blowup := by decide }
   folds := by decide
 
 /-- **100 bits.** The knowledge error of `fibonacciSetup`, FRI at
@@ -245,8 +245,8 @@ def wideSetup : Setup KoalaBear.Fast.Ext4 where
         decide
       folds := by decide
       finalPolyFits := by decide
-      queries := by decide }
-  blowup := by decide
+      queries := by decide
+      blowup := by decide }
   folds := by decide
 
 /-- The largest of values at most `b` is at most `b`. -/
@@ -352,8 +352,8 @@ def wide21Setup : Setup KoalaBear.Fast.Ext4 where
         decide
       folds := by decide
       finalPolyFits := by decide
-      queries := by decide }
-  blowup := by decide
+      queries := by decide
+      blowup := by decide }
   folds := by decide
 
 /-- **100 bits on `2 ^ 21` rows.** The knowledge error of `wide21Setup`, FRI at
@@ -425,12 +425,12 @@ def wideSp1Setup : Setup KoalaBear.Fast.Ext4 where
         decide
       folds := by decide
       finalPolyFits := by decide
-      queries := by decide }
-  blowup := by decide
+      queries := by decide
+      blowup := by decide }
   folds := by decide
 
-/-- The verifier's oracle calls on a proof for `wideSp1Setup`: `13 + 5 · 21 + 124 · 553`. -/
-theorem wideSp1Setup_verifierQueries : wideSp1Setup.verifierQueries = 68690 := by decide +kernel
+/-- The verifier's oracle calls on a proof for `wideSp1Setup`: `15 + 5 · 21 + 124 · 553`. -/
+theorem wideSp1Setup_verifierQueries : wideSp1Setup.verifierQueries = 68692 := by decide +kernel
 
 /-- **100 bits per oracle answer on `2 ^ 21` rows.** Every round error of `wideSp1Setup`, FRI at
 `δ = 3/8 - 2 ^ (-16)` and the extractor at `δ' = 3/8 - 2 ^ (-18)`, is at most `2 ^ (-100)`. -/
@@ -518,12 +518,12 @@ def wide5Setup : Setup KoalaBear.Fast.Ext5 where
         decide
       folds := by decide
       finalPolyFits := by decide
-      queries := by decide }
-  blowup := by decide
+      queries := by decide
+      blowup := by decide }
   folds := by decide
 
-/-- The verifier's oracle calls on a proof for `wide5Setup`: `16 + 6 · 21 + 160 · 553`. -/
-theorem wide5Setup_verifierQueries : wide5Setup.verifierQueries = 88622 := by decide +kernel
+/-- The verifier's oracle calls on a proof for `wide5Setup`: `18 + 6 · 21 + 160 · 553`. -/
+theorem wide5Setup_verifierQueries : wide5Setup.verifierQueries = 88624 := by decide +kernel
 
 /-- **128 bits per oracle answer on `2 ^ 21` rows.** Every round error of `wide5Setup`, FRI at
 `δ = 3/8 - 2 ^ (-18)` and the extractor at `δ' = 3/8 - 2 ^ (-20)`, is at most `2 ^ (-128)`. -/
@@ -612,8 +612,8 @@ def wide5iSetup : Setup KoalaBear.Fast.Ext5 where
         decide
       folds := by decide
       finalPolyFits := by decide
-      queries := by decide }
-  blowup := by decide
+      queries := by decide
+      blowup := by decide }
   folds := by decide
 
 /-- **128 bits, interactively, on `2 ^ 21` rows.** The knowledge error of `wide5iSetup`, FRI at

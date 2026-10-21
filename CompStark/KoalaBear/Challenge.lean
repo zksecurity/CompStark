@@ -40,6 +40,7 @@ instance instChallengeExt5 : Challenge (FastField _root_.KoalaBear.fieldSize) Ex
   ofBase := Ext5.ofBase
   smul := Ext5.smul
   toSpec := Ext5.specEquiv
+  algebraId := "p3-power-basis-v1:X^5+X^2-1"
   length_coeffs _ := rfl
   coeffNat_toSpec x i := by
     rw [Ext5.specEquiv_apply]

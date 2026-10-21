@@ -10,8 +10,9 @@ public import CompStark.Stark.Fast.OpeningsSpec
 /-! # Shapes through the prover
 
 The sizes of the specification's intermediate values: parallel ranges concatenate to their total
-size (`size_parChunks`), a fold halves (`size_foldPairs`), and the batched reductions have `2 ^ h`
-values for height `2 ^ h` (`reduce_shape`).
+size (`size_parChunks`), a fold halves (`size_foldPairs`), the batched reductions have `2 ^ h`
+values for height `2 ^ h` (`reduce_shape`), and the fold schedule folds no further than the
+tallest input (`sum_foldSchedule_le`).
 -/
 
 @[expose] public section
@@ -75,10 +76,74 @@ theorem size_accumulateRows (acc comp : Array EF) (xs : Array F) (z yz offset : 
   rw [size_foldl_push, Array.emptyWithCapacity_eq, Array.size_empty, List.length_range']
   omega
 
-theorem logArityFor_le (P : Params) (logCur : Nat) (next : Option Nat) :
-    logArityFor P logCur next ≤ logCur := by
-  unfold logArityFor
-  cases next <;> simp only <;> omega
+/-- The largest of a nonempty list of one value, from a smaller start, is that value. -/
+theorem foldl_max_const (a : Nat) : ∀ (l : List Nat) (acc : Nat), (∀ x ∈ l, x = a) → l ≠ [] →
+    acc ≤ a → l.foldl max acc = a
+  | [], _, _, hne, _ => absurd rfl hne
+  | [x], acc, h, _, hacc => by
+    rw [List.foldl_cons, List.foldl_nil, h x List.mem_cons_self]; exact Nat.max_eq_right hacc
+  | x :: y :: l, acc, h, _, hacc => by
+    rw [List.foldl_cons, h x List.mem_cons_self, Nat.max_eq_right hacc]
+    exact foldl_max_const a (y :: l) a (fun z hz ↦ h z (List.mem_cons_of_mem _ hz))
+      (List.cons_ne_nil _ _) le_rfl
+
+/-- Sorting and deduplicating a nonempty list of one value leaves that value. -/
+theorem dedup_mergeSort_const (a : Nat) (l : List Nat) (r : Nat → Nat → Bool)
+    (h : ∀ x ∈ l, x = a) (hne : l ≠ []) : (l.mergeSort r).dedup = [a] := by
+  have hd : ∀ x ∈ (l.mergeSort r).dedup, x = a := fun x hx ↦
+    h x (List.mem_mergeSort.mp (List.mem_dedup.mp hx))
+  obtain ⟨y, hy⟩ := List.exists_mem_of_ne_nil _ hne
+  have ha : a ∈ (l.mergeSort r).dedup :=
+    List.mem_dedup.mpr (List.mem_mergeSort.mpr (h y hy ▸ hy))
+  have hrep := List.eq_replicate_iff.mpr ⟨rfl, hd⟩
+  have hnd := List.nodup_dedup (l.mergeSort r)
+  rw [hrep] at hnd ha ⊢
+  have h1 := List.nodup_replicate.mp hnd
+  have h0 := List.length_pos_of_mem ha
+  try simp only [List.length_replicate] at h0 h1
+  rw [show (l.mergeSort r).dedup.length = 1 by omega]
+  rfl
+
+/-- With one input, the fold schedule is `foldArities`. -/
+theorem foldSchedule_single (m f : Nat) (hm : 0 < m) : ∀ fuel h, h - f ≤ fuel →
+    foldSchedule m f fuel [h] = foldArities m (h - f)
+  | 0, h, hh => by rw [show h - f = 0 by omega, foldArities]; rfl
+  | fuel + 1, h, hh => by
+    rw [foldSchedule]
+    split
+    · rename_i hf
+      rw [show h - f = 0 by omega, foldArities]
+    · rename_i hf
+      obtain ⟨r, hr⟩ : ∃ r, h - f = r + 1 := ⟨h - f - 1, by omega⟩
+      rw [hr, foldArities]
+      simp only [List.headD_nil, List.head?_nil, reduceCtorEq, ↓reduceIte, List.cons.injEq]
+      have hla : min (min (h - f) (r + 1)) m = max 1 (min m (r + 1)) := by omega
+      refine ⟨hla, ?_⟩
+      rw [hla, foldSchedule_single m f hm fuel _ (by omega)]
+      congr 1
+      omega
+
+/-- The arities of the fold schedule add up to at most the tallest log height. -/
+theorem sum_foldSchedule_le (m f : Nat) : ∀ fuel heights,
+    (foldSchedule m f fuel heights).sum ≤ heights.headD 0
+  | 0, _ => Nat.zero_le _
+  | fuel + 1, [] => Nat.zero_le _
+  | fuel + 1, h :: rest => by
+    rw [foldSchedule]
+    split
+    · exact Nat.zero_le _
+    · rename_i hf
+      dsimp only
+      generalize hla : min (min _ (h - f)) m = la
+      have hle : la ≤ h - f := by rw [← hla]; omega
+      rw [List.sum_cons]
+      have hhead : (if rest.head? = some (h - la) then (h - la) :: rest.tail
+          else (h - la) :: rest).headD 0 = h - la := by split <;> rfl
+      have := sum_foldSchedule_le m f fuel
+        (if rest.head? = some (h - la) then (h - la) :: rest.tail else (h - la) :: rest)
+      rw [hhead] at this
+      rw [List.headD_cons]
+      omega
 
 theorem size_flatMap_coeffs (a : Array EF) :
     (a.flatMap fun x ↦ (Ext.coeffs x).toArray).size = Challenge.d EF * a.size := by

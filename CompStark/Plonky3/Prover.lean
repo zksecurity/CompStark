@@ -29,7 +29,7 @@ the verifier checks the constraints. -/
 def outOfDomainPoint (EF : Type) [Challenge F EF] (P : Params) (A : Air F) (logN : Nat)
     (trace : Array F) (pis : List F) : EF :=
   ((commitAndSample (specBackend EF) P A logN trace pis).run
-    (specBackend EF).transcript).1.2.2.2.2
+    (specBackend EF).transcript).1.2.2.2.2.1
 
 /-- A proof of `A` for the row-major trace of `2 ^ logN` rows and public values `pis`, by the
 specification backend. -/

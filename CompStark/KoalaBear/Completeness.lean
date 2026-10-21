@@ -23,12 +23,12 @@ open CompStark.Fri CompStark.Stark
 local notation "F" => _root_.KoalaBear.Fast.Field
 
 /-- **Completeness over KoalaBear.** For a valid configuration and an honest run over any
-challenge field `EF` without bad luck, if the trace satisfies the AIR, the honest prover's proof
-verifies. -/
+challenge field `EF` without bad luck, if the trace satisfies the AIR with as many public values
+as the AIR declares, the honest prover's proof verifies. -/
 theorem completeness {EF : Type} [Challenge F EF] {params : Params} {air : Air F} {logN : Nat}
     {trace : Array F} {publicValues : List F} (config : ValidConfig params air logN)
     (luck : NoBadLuck EF params air logN trace publicValues) :
-    air.Satisfied logN trace publicValues →
+    air.Satisfied logN trace publicValues → publicValues.length = air.numPublicValues →
       verify params air (prove EF params air logN trace publicValues) publicValues = .ok () :=
   Stark.completeness config luck
 

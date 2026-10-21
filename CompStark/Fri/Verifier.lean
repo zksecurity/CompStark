@@ -4,6 +4,7 @@ Released under Apache 2.0 license as described in the file LICENSE.
 -/
 module
 
+public import CompStark.DomainSeparator
 public import CompStark.Primitives
 public import CompStark.Merkle.Mmcs
 public import CompStark.Stark.Proof
@@ -11,26 +12,29 @@ public import CompStark.Stark.Field
 
 /-! # The FRI verifier of the two-adic commitment scheme
 
-Plonky3's `TwoAdicFriPcs::verify` and `verify_fri` (revision `47e442f`), over a base field `F`
+Plonky3's `TwoAdicFriPcs::verify` and `verify_fri` (revision `a4982ec`), over a base field `F`
 with challenges in the extension `EF`, on the challenger and Merkle hashes of primitives `H`
 (`Primitives`):
 
-* The verifier observes every opened value, samples the batching challenge `α`, and for every
-  commit-phase commitment observes it, checks its grinding witness and samples a folding
-  challenge `β`. It observes the final polynomial and the arity of every fold, and checks the
-  query grinding witness.
-* Every query samples an index into the largest LDE domain. The input openings at that index,
-  verified against their commitments, give the batched quotients `∑ αⁱ (pᵢ(z) - pᵢ(x)) / (z - x)`
-  of every height. The folds then interpolate each group of `2 ^ arity` values at `β`, adding
-  the next height's batched quotient times `β ^ (2 ^ arity)`, and must end at the final
-  polynomial's value.
+* The commitment scheme observes its domain separator (`pcsSeed`) and every opened value, checks
+  the batching grinding witness and samples the batching challenge `α`.
+* FRI folds by Plonky3's schedule for the input heights (`foldSchedule`). It observes its domain
+  separator (`friSeed`), and for every commit-phase commitment observes it, checks its grinding
+  witness and samples a folding challenge `β`. It observes the final polynomial, checks the
+  query grinding witness and samples one index into the largest domain per query.
+* The input openings at the queries, verified against their commitments as Merkle
+  multi-openings, give each query the batched quotients `∑ αⁱ (pᵢ(z) - pᵢ(x)) / (z - x)` of
+  every height. The folds then interpolate each group of `2 ^ arity` values at `β`, adding the
+  next height's batched quotient times `β ^ (2 ^ arity)`, and must end at the final
+  polynomial's value. Last, every fold's groups are verified as a multi-opening against its
+  commitment.
 -/
 
 @[expose] public section
 namespace CompStark.Fri
 open CompStark.Stark
 
-/-- FRI parameters, as Plonky3's `FriParameters`. -/
+/-- FRI parameters, as Plonky3's `FriParameters`, with the STARK's out-of-domain grinding. -/
 structure Params where
   logBlowup : Nat
   logFinalPolyLen : Nat
@@ -38,6 +42,11 @@ structure Params where
   numQueries : Nat
   commitPowBits : Nat
   queryPowBits : Nat
+  /-- Grinding before the batching challenge. -/
+  batchPowBits : Nat := 0
+  /-- Grinding before the STARK's out-of-domain point (`StarkConfig`'s
+  `ood_proof_of_work_bits`). -/
+  oodPowBits : Nat := 0
 
 /-- The coset `shift · ⟨ω⟩` with `ω` of order `2 ^ logSize`. -/
 structure Domain (F : Type) where
@@ -85,10 +94,10 @@ def checkWitness (bits : Nat) (w : F) : M H Bool :=
     observe H w
     return (← sampleBits H bits) == 0
 
-/-- Verify a Merkle opening with the hashes of `H` (`Merkle.verifyBatch`). -/
-def checkOpening (commit : Digest F) (heights : List Nat) (index : Nat) (values : List (List F))
-    (path : List (Digest F)) : M H Bool :=
-  monadLift (Merkle.verifyBatchM H.hash H.compress commit heights index values path)
+/-- Verify a Merkle multi-opening with the hashes of `H` (`Merkle.verifyMultiM`). -/
+def checkMulti (commit : Digest F) (dims : List (Nat × Nat)) (indices : List Nat)
+    (rows : List (List (List F))) (siblings : List (Digest F)) : M H Bool :=
+  monadLift (Merkle.verifyMultiM H.hash H.compress commit dims indices rows siblings)
 
 end Challenger
 
@@ -105,9 +114,16 @@ def foldArities (maxLogArity : Nat) : Nat → List Nat
     la :: foldArities maxLogArity (remaining + 1 - la)
   decreasing_by omega
 
-/-- The fold arities of a proof, read off its first query. -/
-def arities (proof : FriProof F EF) : List Nat :=
-  (proof.queries[0]?.map fun q ↦ q.steps.toList.map (·.logArity)).getD []
+/-- Plonky3's `fold_schedule`: the log arities of the folds of inputs of log heights `heights`,
+tallest first, down to `logFinal`. Each round folds by at most `maxLogArity` bits and stops at
+the next input's height. -/
+def foldSchedule (maxLogArity logFinal : Nat) : Nat → List Nat → List Nat
+  | 0, _ | _ + 1, [] => []
+  | fuel + 1, h :: rest =>
+    if h ≤ logFinal then [] else
+      let la := min (min (h - rest.headD logFinal) (h - logFinal)) maxLogArity
+      la :: foldSchedule maxLogArity logFinal fuel
+        (if rest.head? = some (h - la) then (h - la) :: rest.tail else (h - la) :: rest)
 
 /-- The value at `z` of the polynomial through `(xᵢ, yᵢ)`. -/
 def lagrange (xs : List F) (ys : List EF) (z : EF) : EF :=
@@ -129,20 +145,28 @@ def foldRow (index logHeight logArity : Nat) (beta : EF) (evals : List EF) : EF 
   let xs := (List.range arity).map fun k ↦ start * powF g (reverseBits k logArity)
   lagrange xs evals beta
 
-/-- The batched quotients of one query at `index`, by log height, tallest first. -/
-def openInput (H : Primitives F m) (P : Params) (logMax index : Nat) (alpha : EF)
-    (inputs : List (BatchOpening F)) (rounds : List (Round F EF)) : M H (List (Nat × EF)) := do
+/-- Verify the input openings at the queries `indices` into the largest domain, of log size
+`logMax`: each batch's rows of every query, as a multi-opening of its matrices' extensions. -/
+def verifyInputs (H : Primitives F m) (P : Params) (logMax : Nat) (indices : List Nat)
+    (inputs : List (MultiOpening F)) (rounds : List (Round F EF)) : M H Unit := do
   ensure (inputs.length == rounds.length) "input batches"
-  let mut ro : List (Nat × EF × EF) := []
   for (b, (commit, mats)) in inputs.zip rounds do
-    let heights := mats.map fun (d, _) ↦ 2 ^ (d.logSize + P.logBlowup)
-    let reduced := match heights.max? with
-      | some h => index >>> (logMax - Nat.log2 h)
-      | none => 0
-    ensure (← checkOpening H commit heights reduced (b.values.toList.map (·.toList))
-      b.path.toList) "input opening"
-    ensure (b.values.size == mats.length) "input rows"
-    for (row, (d, pts)) in b.values.toList.zip mats do
+    ensure (b.values.size == indices.length) "input queries"
+    ensure (b.values.all (·.size == mats.length)) "input rows"
+    ensure (mats.all (!·.2.isEmpty)) "matrix without opening points"
+    let dims := mats.map fun (d, pts) ↦
+      (2 ^ (d.logSize + P.logBlowup), (pts.headD default).2.length)
+    let logBatch := (mats.map (·.1.logSize + P.logBlowup)).foldl max 0
+    ensure (← checkMulti H commit dims (indices.map (· >>> (logMax - logBatch)))
+      (b.values.toList.map fun r ↦ r.toList.map (·.toList)) b.siblings.toList) "input opening"
+
+/-- The batched quotients of the query at `index` from its rows `rows` (per batch, per matrix),
+by log height, tallest first. -/
+def reduceQuery (H : Primitives F m) (P : Params) (logMax index : Nat) (alpha : EF)
+    (rows : List (List (Array F))) (rounds : List (Round F EF)) : M H (List (Nat × EF)) := do
+  let mut ro : List (Nat × EF × EF) := []
+  for (b, (_, mats)) in rows.zip rounds do
+    for (row, (d, pts)) in b.zip mats do
       let logH := d.logSize + P.logBlowup
       let rev := reverseBits (index >>> (logMax - logH)) logH
       let x := gen * powF (twoAdicGen logH) rev
@@ -151,19 +175,21 @@ def openInput (H : Primitives F m) (P : Params) (logMax index : Nat) (alpha : EF
       let mut acc := acc
       for (z, ys) in pts do
         ensure (ys.length == row.size) "opened width"
+        ensure (z - Ext.ofBase x != 0) "opening point is the query point"
         let q := (z - Ext.ofBase x)⁻¹
         for (px, pz) in row.toList.zip ys do
           acc := acc + ap * (pz - Ext.ofBase px) * q
           ap := ap * alpha
       ro := (logH, ap, acc) :: ro.filter (·.1 != logH)
-    if let some (_, acc) := ro.lookup P.logBlowup then
-      ensure (acc == 0) "nonzero quotient at the blowup height"
+  if let some (_, acc) := ro.lookup P.logBlowup then
+    ensure (acc == 0) "nonzero quotient at the blowup height"
   return (ro.mergeSort fun a b ↦ b.1 ≤ a.1).map fun (h, _, acc) ↦ (h, acc)
 
-/-- The folds of one query from the batched quotients `ro`, ending at the final height. -/
-def verifyQuery (H : Primitives F m) (P : Params) (logMax : Nat) (index : Nat) (betas : List EF)
-    (commits : List (Digest F)) (steps : List (CommitStep F EF)) (ro : List (Nat × EF)) :
-    M H (EF × Nat) := do
+/-- The folds of the query `q` at `index` from its batched quotients `ro`, ending at the final
+height: the final value, the folded index, and every fold's group index and group values. -/
+def foldQuery (H : Primitives F m) (P : Params) (logMax : Nat) (index q : Nat) (betas : List EF)
+    (arities : List Nat) (folds : List (CommitOpening F EF)) (ro : List (Nat × EF)) :
+    M H (EF × Nat × List (Nat × List EF)) := do
   let (h0, e0) ← match ro with
     | r :: _ => pure r
     | [] => throw "no reduced openings"
@@ -172,66 +198,92 @@ def verifyQuery (H : Primitives F m) (P : Params) (logMax : Nat) (index : Nat) (
   let mut eval := e0
   let mut index := index
   let mut logH := logMax
-  ensure (betas.length == steps.length && commits.length == steps.length) "fold count"
-  for ((beta, commit), s) in (betas.zip commits).zip steps do
-    let arity := 2 ^ s.logArity
-    ensure (s.siblings.size == arity - 1) "sibling count"
+  let mut groups := []
+  for ((beta, la), o) in (betas.zip arities).zip folds do
+    let arity := 2 ^ la
+    let sibs := o.siblings.getD q #[]
+    ensure (sibs.size == arity - 1) "sibling count"
     let pos := index % arity
     let evals := (List.range arity).map fun j ↦
-      if j < pos then s.siblings.getD j 0 else if j = pos then eval else s.siblings.getD (j - 1) 0
-    let logFolded := logH - s.logArity
-    index := index >>> s.logArity
-    ensure (← checkOpening H commit [2 ^ logFolded] index [evals.flatMap Ext.coeffs]
-      s.path.toList) "commit-phase opening"
-    eval := foldRow index logFolded s.logArity beta evals
+      if j < pos then sibs.getD j 0 else if j = pos then eval else sibs.getD (j - 1) 0
+    let logFolded := logH - la
+    index := index >>> la
+    groups := groups ++ [(index, evals)]
+    eval := foldRow index logFolded la beta evals
     logH := logFolded
     match ro with
     | (h, r) :: rest =>
       if h == logFolded then
-        eval := eval + Ext.powTwo beta s.logArity * r
+        eval := eval + Ext.powTwo beta la * r
         ro := rest
     | [] => pure ()
   ensure (logH == P.logBlowup + P.logFinalPolyLen) "final height"
   ensure ro.isEmpty "leftover reduced openings"
-  return (eval, index)
+  return (eval, index, groups)
 
-/-- Plonky3's `verify_fri`, after the opened values were observed. -/
+/-- Plonky3's `verify_fri`, after the batching challenge `α` was sampled. -/
 def verifyFri (H : Primitives F m) (P : Params) (proof : FriProof F EF)
-    (rounds : List (Round F EF)) :
-    M H Unit := do
-  let alpha : EF ← sampleExt H
-  let arities := arities proof
-  ensure (proof.queries.all fun q ↦ q.steps.size == proof.commits.size &&
-    q.steps.toList.map (·.logArity) == arities) "fold arities"
-  let logMax := arities.sum + P.logBlowup + P.logFinalPolyLen
-  ensure (proof.commitWitnesses.size == proof.commits.size) "commit witnesses"
+    (rounds : List (Round F EF)) (alpha : EF) : M H Unit := do
+  ensure (0 < P.numQueries && 0 < P.logBlowup && 0 < P.maxLogArity) "parameters"
+  ensure (rounds.any (!·.2.isEmpty)) "no committed matrices"
+  let heights := ((rounds.flatMap (·.2)).map (·.1.logSize + P.logBlowup)).mergeSort
+    (fun a b ↦ b ≤ a) |>.dedup
+  let logMax := heights.headD 0
+  ensure (logMax ≤ twoAdicity F) "largest height"
+  let logFinal := P.logBlowup + P.logFinalPolyLen
+  let arities := foldSchedule P.maxLogArity logFinal logMax heights
+  ensure (proof.folds.size == arities.length) "fold openings"
+  ensure ((proof.folds.toList.zip arities).all fun (o, la) ↦
+    o.siblings.size == P.numQueries && o.siblings.all (·.size == 2 ^ la - 1)) "fold siblings"
+  ensure (P.commitPowBits != 0 || proof.commitWitnesses.all (· == 0)) "commit witnesses"
+  ensure (P.queryPowBits != 0 || proof.queryWitness == 0) "query witness"
+  ensure (proof.finalPoly.size == 2 ^ P.logFinalPolyLen) "final polynomial length"
+  observeList H (DomainSeparator.friSeed F EF arities (2 ^ P.logFinalPolyLen) P.commitPowBits
+    P.queryPowBits P.numQueries logMax P.logBlowup P.maxLogArity)
+  ensure (proof.commits.size == arities.length &&
+    proof.commitWitnesses.size == arities.length) "commit rounds"
   let mut betas := #[]
   for (c, w) in proof.commits.toList.zip proof.commitWitnesses.toList do
     observeList H c.toList
     ensure (← checkWitness H P.commitPowBits w) "commit witness"
     betas := betas.push (← sampleExt H : EF)
-  ensure (proof.finalPoly.size == 2 ^ P.logFinalPolyLen) "final polynomial length"
   observeExts H proof.finalPoly.toList
-  ensure (proof.queries.size == P.numQueries) "query count"
-  for a in arities do observe H (a : F)
   ensure (← checkWitness H P.queryPowBits proof.queryWitness) "query witness"
-  for q in proof.queries do
-    let index ← sampleBits H logMax
-    let ro ← openInput H P logMax index alpha q.inputs.toList rounds
-    let (eval, index) ←
-      verifyQuery H P logMax index betas.toList proof.commits.toList q.steps.toList ro
+  let indices ← (List.range P.numQueries).mapM fun _ ↦ sampleBits H logMax
+  verifyInputs H P logMax indices proof.inputs.toList rounds
+  let groups ← indices.zipIdx.mapM fun (index, q) ↦ do
+    let ro ← reduceQuery H P logMax index alpha
+      (proof.inputs.toList.map fun b ↦ (b.values.getD q #[]).toList) rounds
+    let (eval, index, gs) ← foldQuery H P logMax index q betas.toList arities proof.folds.toList ro
     let x := Ext.ofBase (powF (twoAdicGen logMax) (reverseBits index logMax))
     let expected := proof.finalPoly.foldr (fun c acc ↦ acc * x + c) 0
     ensure (expected == eval) "final polynomial mismatch"
+    return gs
+  let mut logH := logMax
+  for ((c, o), (la, i)) in (proof.commits.toList.zip proof.folds.toList).zip arities.zipIdx do
+    let logFolded := logH - la
+    let gs := groups.map fun g ↦ g.getD i (0, [])
+    ensure (← checkMulti H c [(2 ^ logFolded, Challenge.d EF * 2 ^ la)] (gs.map (·.1))
+      (gs.map fun (_, evals) ↦ [evals.flatMap Ext.coeffs]) o.path.toList) "commit-phase opening"
+    logH := logFolded
 
-/-- Plonky3's `TwoAdicFriPcs::verify`: observe the opened values, then verify FRI. -/
+/-- The claimed evaluation counts of the rounds: per commitment, per matrix, per point. -/
+def claimCounts (rounds : List (Round F EF)) : List (List (List Nat)) :=
+  rounds.map fun (_, mats) ↦ mats.map fun (_, pts) ↦ pts.map (·.2.length)
+
+/-- Plonky3's `TwoAdicFriPcs::verify`: observe the domain separator and the opened values, check
+the batching grinding, sample `α`, then verify FRI. -/
 def verifyPcs (H : Primitives F m) (P : Params) (rounds : List (Round F EF))
     (proof : FriProof F EF) :
     M H Unit := do
+  ensure (P.batchPowBits != 0 || proof.batchWitness == 0) "batch witness"
+  observeList H (DomainSeparator.pcsSeed F EF (claimCounts rounds) P.batchPowBits)
   for (_, mats) in rounds do
     for (_, pts) in mats do
       for (_, ys) in pts do
         observeExts H ys
-  verifyFri H P proof rounds
+  ensure (← checkWitness H P.batchPowBits proof.batchWitness) "batch witness"
+  let alpha ← sampleExt H
+  verifyFri H P proof rounds alpha
 
 end CompStark.Fri

@@ -95,6 +95,38 @@ theorem prEvent_congr_iff {α : Type} (mx : ProbComp α) {p q : α → Prop} (h 
   have : p = q := funext fun x ↦ propext (h x)
   rw [this]
 
+/-- An extension element read at any offset of a uniform answer is uniform. -/
+theorem prob_extAt (K o : Nat) (ho : o + Challenge.d EF ≤ K) (P : 𝕂 → Prop) :
+    Pr{let u ← $ᵗ (Digest F × Vector F K)}[P (extAt u.2 o)] = Pr{let a ← $ᵗ 𝕂}[P a] := by
+  let e : (Fin (o + Challenge.d EF) → F) ≃ (Fin o → F) × (Fin (Challenge.d EF) → F) :=
+    (Equiv.arrowCongr finSumFinEquiv.symm (Equiv.refl F)).trans
+      (Equiv.sumArrowEquivProdArrow _ _ _)
+  have he : ∀ x : Fin (o + Challenge.d EF) → F, (e x).2 = fun j ↦ x (Fin.natAdd o j) := by
+    intro x
+    funext j
+    simp only [e, Equiv.trans_apply, Equiv.sumArrowEquivProdArrow_apply_snd, Function.comp_apply,
+      Equiv.arrowCongr_apply, Equiv.symm_symm, finSumFinEquiv_apply_right, Equiv.refl_apply]
+  calc _ = Pr{let u ← $ᵗ (Digest F × Vector F K)}[(fun x ↦ P (extEquiv (e x).2))
+        fun j ↦ u.2.toList.getD j.val 0] :=
+        prEvent_congr_iff _ fun u ↦ by
+          dsimp only
+          rw [he, extAt_eq]
+          rfl
+    _ = Pr{let x ← $ᵗ (Fin (o + Challenge.d EF) → F)}[P (extEquiv (e x).2)] :=
+        prob_answer_prefix (F := F) K _ ho (fun x ↦ P (extEquiv (e x).2))
+    _ = Pr{let y ← $ᵗ ((Fin o → F) × (Fin (Challenge.d EF) → F))}[P (extEquiv y.2)] :=
+        SampleableType.prEvent_uniformSample_equiv e (fun y ↦ P (extEquiv y.2))
+    _ = Pr{let z ← $ᵗ (Fin (Challenge.d EF) → F)}[P (extEquiv z)] := by
+        have h := SampleableType.prEvent_uniformSample_equiv
+          (Equiv.prodComm (Fin o → F) (Fin (Challenge.d EF) → F)) (fun z ↦ P (extEquiv z.1))
+        simp only [Equiv.prodComm_apply, Prod.fst_swap] at h
+        rw [h]
+        exact SampleableType.prEvent_uniformSample_fst (fun z ↦ P (extEquiv z))
+    _ = _ := SampleableType.prEvent_uniformSample_equiv extEquiv P
+
+theorem challengeOffset_le_one (bits : Nat) : challengeOffset bits ≤ 1 := by
+  unfold challengeOffset; split <;> omega
+
 theorem getD_append_singleton {α : Type} (l : List α) (x d : α) (j : Nat) (hj : j = l.length) :
     (l ++ [x]).getD j d = x := by
   subst hj
@@ -159,31 +191,27 @@ theorem prob_roundBadAt_le (cache : Merkle.Cache F (Digest F)) (block : Nat → 
       _ ≤ _ := le_max_left _ _
   · -- `ζ`
     set T := prefixTranscript S cache block fun j ↦ samples.getD j d
-    calc _ = Pr{let u ← $ᵗ (Digest F × Vector F S.streamLen)}[(fun x ↦
-          ZetaBad S publicValues δ' T.trace T.alpha T.quotient (extEquiv x))
-            fun j ↦ u.2.toList.getD j.val 0] :=
+    have ho := challengeOffset_le_one S.params.oodPowBits
+    calc _ = Pr{let u ← $ᵗ (Digest F × Vector F S.streamLen)}[ZetaBad S publicValues δ' T.trace
+          T.alpha T.quotient (extAt u.2 (challengeOffset S.params.oodPowBits))] :=
           prEvent_congr_iff _ fun u ↦ by
             simp only [prefixTranscript, T, getD_append_singleton samples u.2 d 1 h1.symm,
-              getD_append_singleton_lt samples u.2 d 0 (by omega), extAt_eq, Nat.zero_add]
-      _ = Pr{let a ← $ᵗ 𝕂}[ZetaBad S publicValues δ' T.trace T.alpha T.quotient a] := by
-          refine (prob_answer_prefix S.streamLen (Challenge.d EF) (by omega) (fun x ↦
-            ZetaBad S publicValues δ' T.trace T.alpha T.quotient (extEquiv x))).trans ?_
-          exact SampleableType.prEvent_uniformSample_equiv extEquiv _
+              getD_append_singleton_lt samples u.2 d 0 (by omega)]
+      _ = Pr{let a ← $ᵗ 𝕂}[ZetaBad S publicValues δ' T.trace T.alpha T.quotient a] :=
+          prob_extAt S.streamLen _ (by omega) _
       _ ≤ outOfDomainError S δ' := prob_zetaBad_le S publicValues δ' _ _ _
       _ ≤ _ := (le_max_left _ _).trans (le_max_right _ _)
   · -- batching
     set T := prefixTranscript S cache block fun j ↦ samples.getD j d
-    calc _ = Pr{let u ← $ᵗ (Digest F × Vector F S.streamLen)}[(fun x ↦
-          BatchBad S δ δ' T.trace T.alpha T.quotient T.zeta T.openings (extEquiv x))
-            fun j ↦ u.2.toList.getD j.val 0] :=
+    have ho := challengeOffset_le_one S.params.batchPowBits
+    calc _ = Pr{let u ← $ᵗ (Digest F × Vector F S.streamLen)}[BatchBad S δ δ' T.trace T.alpha
+          T.quotient T.zeta T.openings (extAt u.2 (challengeOffset S.params.batchPowBits))] :=
           prEvent_congr_iff _ fun u ↦ by
             simp only [prefixTranscript, T, getD_append_singleton samples u.2 d 2 h2.symm,
               getD_append_singleton_lt samples u.2 d 0 (by omega),
-              getD_append_singleton_lt samples u.2 d 1 (by omega), extAt_eq, Nat.zero_add]
-      _ = Pr{let a ← $ᵗ 𝕂}[BatchBad S δ δ' T.trace T.alpha T.quotient T.zeta T.openings a] := by
-          refine (prob_answer_prefix S.streamLen (Challenge.d EF) (by omega) (fun x ↦
-            BatchBad S δ δ' T.trace T.alpha T.quotient T.zeta T.openings (extEquiv x))).trans ?_
-          exact SampleableType.prEvent_uniformSample_equiv extEquiv _
+              getD_append_singleton_lt samples u.2 d 1 (by omega)]
+      _ = Pr{let a ← $ᵗ 𝕂}[BatchBad S δ δ' T.trace T.alpha T.quotient T.zeta T.openings a] :=
+          prob_extAt S.streamLen _ (by omega) _
       _ ≤ batchingError S δ ((δ' : ℝ) - 2 / S.size) := prob_batchBad_le S δ δ' _ _ _ _ _
       _ ≤ _ := (le_max_left _ _).trans ((le_max_right _ _).trans (le_max_right _ _))
   · -- fold `i - 3`
@@ -358,12 +386,12 @@ theorem prob_digestOf_eq_le (K : Nat) (t : Query F) (x : Digest F) :
 
 /-- A fresh answer after fewer than `n` queries clashes with probability at most
 `3 n / |Digest|`. -/
-theorem prob_clash_le (K n : Nat) (pre : QueryLog (spec F K)) (hpre : pre.length < n)
-    (t : Query F) :
-    Pr{let u ← $ᵗ (Answer K t)}[Clash pre t u] ≤
+theorem prob_clash_le (bd : Digest F → List F → Digest F) (K n : Nat)
+    (pre : QueryLog (spec F K)) (hpre : pre.length < n) (t : Query F) :
+    Pr{let u ← $ᵗ (Answer K t)}[Clash bd pre t u] ≤
       (3 * n : ℕ) * (Fintype.card (Digest F) : ℝ≥0∞)⁻¹ := by
-  refine (prEvent_digestClash_le digestOf (prob_digestOf_eq_le K) keyDigests 2
-    length_keyDigests_le [initCap] pre t).trans ?_
+  refine (prEvent_digestClash_le digestOf (prob_digestOf_eq_le K) (keyDigests bd) 2
+    (length_keyDigests_le bd) [initCap] pre t).trans ?_
   gcongr
   simp only [List.length_cons, List.length_nil]
   omega

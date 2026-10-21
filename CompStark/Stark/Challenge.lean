@@ -45,6 +45,9 @@ class Challenge (F : outParam Type) [BaseField F] (EF : Type) extends Add EF, Su
   smul : F → EF → EF
   /-- The isomorphism with the spec field. -/
   toSpec : EF ≃+* Ext params
+  /-- Plonky3's identity of the algebra and its basis (`AlgebraIdentity::algebra_id`), which the
+  transcript's domain separators bind. -/
+  algebraId : String
   length_coeffs (x : EF) : (coeffs x).length = params.d
   coeffNat_toSpec (x : EF) (i : Nat) : Ext.coeffNat (toSpec x) i = (coeffs x).getD i 0
   toSpec_ofCoeffs (l : List F) : toSpec (ofCoeffs l) = Ext.ofFn fun i ↦ l.getD i 0

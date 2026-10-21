@@ -6,6 +6,7 @@ module
 
 public import CompStark.Complete.Defs
 public import CompStark.Complete.Merkle
+public import CompStark.Complete.Lde
 public import CompStark.Stark.Fast.Openings
 public import CompStark.Stark.Fast.Lde
 public import CompStark.Fri.Shapes
@@ -27,7 +28,7 @@ their opening points `z`, at every row `x = g · ω ^ bitrev r` of the extended 
 * The verifier recomputes the batched quotients at a query from the opened rows, column by column
   with the running power of `α`; the prover sums point by point with the batched row. Both are
   `∑ᵢ α ^ (k + i) (yᵢ - vᵢ) / (z - x)` (`toSpec_termStep`, `toSpec_foldl_column`), so the
-  verifier's running sums are the prover's at the queried rows (`openInput_honest`). At the
+  verifier's running sums are the prover's at the queried rows (`reduceQuery_honest`). At the
   blowup height the polynomials are constants and the quotients vanish.
 -/
 
@@ -620,35 +621,30 @@ theorem column_loop (alpha : EF) (m : Mat F) (i : Nat) (hi : i < m.height) (xv :
 
 end Deep
 
-/-- The verifier's batched quotients at a query are the prover's, given the Merkle facts: every
-round commits matrices of one height `2 ^ h` that are honest LDEs with true openings, the verifier's
-rounds are built as the STARK verifier builds them, and the openings are the prover's at the
+/-- **The verifier's batched quotients at a query are the prover's**: every round commits matrices
+of one height `2 ^ h` that are honest LDEs with true openings at points outside the base field, the
+verifier's rounds are built as the STARK verifier builds them, and the rows are the prover's at the
 query's row. -/
-theorem openInput_honest_of [Poseidon2Field F] (P : Params) (logMax index : Nat) (alpha : EF)
+theorem reduceQuery_honest [Poseidon2Field F] (P : Params) (logMax index : Nat) (alpha : EF)
     (rounds : List (Committed F × List (Mat F × List (EF × Array EF))))
     (hidx : index < 2 ^ logMax)
     (hrounds : ∀ r ∈ rounds, r.2 ≠ [] ∧ r.1 = Committed.ofMats hashF compF (r.2.map (·.1)) ∧
-      ∃ h ≤ logMax, ∀ x ∈ r.2, Deep.HonestItem P.logBlowup h x)
-    (hmerkle : ∀ (ms : List (Mat F)) (k : Nat), ms ≠ [] →
-      (∀ m ∈ ms, m.height = 2 ^ k ∧ m.values.size = m.width * m.height) → ∀ i < 2 ^ k,
-      Merkle.Poseidon2.verifyBatch F (Committed.ofMats hashF compF ms).root
-        (ms.map (·.height)) i
-            (((Committed.ofMats hashF compF ms).openAt i).values.toList.map (·.toList))
-        ((Committed.ofMats hashF compF ms).openAt i).path.toList = true)
-    (hvalues : ∀ (ms : List (Mat F)) (k : Nat), (∀ m ∈ ms, m.height = 2 ^ k) → ∀ i,
-      ((Committed.ofMats hashF compF ms).openAt i).values = (ms.map fun m ↦ rowOf m i).toArray)
-    (hmax : ∀ (ms : List (Mat F)) (h : Nat), ms ≠ [] → (∀ m ∈ ms, m.height = h) →
-      (Committed.ofMats hashF compF ms).maxHeight = h) :
-    openInput (poseidon2 F) P logMax index alpha
-      (rounds.map fun r ↦ r.1.openAt (index >>> (logMax - Nat.log2 r.1.maxHeight)))
+      ∃ h ≤ logMax, ∀ x ∈ r.2, Deep.HonestItem P.logBlowup h x) :
+    reduceQuery (poseidon2 F) P logMax index alpha
+      (rounds.map fun r ↦ (r.1.openAt (index >>> (logMax - Nat.log2 r.1.maxHeight))).values.toList)
       (rounds.map fun r ↦ (r.1.root, r.2.map fun x ↦
         ((⟨1, Nat.log2 x.1.height - P.logBlowup⟩ : Domain F), x.2.map fun y ↦ (y.1, y.2.toList)))) =
       pure ((Fri.reduce alpha (rounds.flatMap (·.2))).map fun y ↦
         (y.1, y.2.getD (index >>> (logMax - y.1)) 0)) := by
-  unfold openInput
+  have hb : rounds ≠ [] → P.logBlowup ≤ logMax := fun hne ↦ by
+    obtain ⟨r, hr⟩ := List.exists_mem_of_ne_nil _ hne
+    obtain ⟨hne', -, h, hh, hits⟩ := hrounds r hr
+    obtain ⟨x, hx⟩ := List.exists_mem_of_ne_nil _ hne'
+    obtain ⟨ps, hm, -⟩ := hits x hx
+    exact hm.2.2.2.1.trans hh
+  unfold reduceQuery
   rw [List.zip_map']
-  simp only [ensure, List.length_map, beq_self_eq_true, ite_true, pure_bind,
-    List.forIn_pure_yield_eq_foldl]
+  simp only [List.forIn_pure_yield_eq_foldl]
   rw [show ([] : List (Nat × EF × EF)) = Deep.atQuery alpha logMax index [] from rfl]
   rw [Deep.forIn_map_eq _ (Deep.atQuery alpha logMax index)
     (fun red r ↦ r.2.foldl (reduceStep alpha) red) (Deep.RedOk P.logBlowup) _ rounds ?hf []
@@ -672,35 +668,14 @@ theorem openInput_honest_of [Poseidon2Field F] (P : Params) (logMax index : Nat)
       intro m hm
       obtain ⟨x, hx, rfl⟩ := List.mem_map.mp hm
       exact hH x hx
-    have hheights : List.map (fun x ↦ 2 ^ (x.1.logSize + P.logBlowup))
-        (List.map (fun x ↦ (({ shift := 1, logSize := x.1.height.log2 - P.logBlowup } : Domain F),
-          List.map (fun y ↦ (y.1, y.2.toList)) x.2)) its) = (its.map (·.1)).map (·.height) := by
-      rw [List.map_map, List.map_map]
-      refine List.map_congr_left fun x hx ↦ ?_
-      simp only [Function.comp_apply]
-      rw [hlog x hx, (hH x hx).1]
-    have hmaxh : (List.map (·.height) (its.map (·.1))).max? = some (2 ^ h) := by
-      refine List.max?_eq_some_iff.mpr ⟨?_, fun a ha ↦ ?_⟩
-      · obtain ⟨m, hm⟩ := List.exists_mem_of_ne_nil _ hne'
-        exact List.mem_map.mpr ⟨m, hm, (hms m hm).1⟩
-      · obtain ⟨m, hm, rfl⟩ := List.mem_map.mp ha
-        exact Nat.le_of_eq (hms m hm).1
     have hmx : (Committed.ofMats hashF compF (its.map (·.1))).maxHeight = 2 ^ h :=
-      hmax _ _ hne' fun m hm ↦ (hms m hm).1
-    have hi := Deep.shiftRight_lt hidx hh
-    have hvb := hmerkle _ h hne' hms _ hi
-    rw [hvalues _ h (fun m hm ↦ (hms m hm).1)] at hvb
-    simp only [List.map_map] at hvb
-    have hb : P.logBlowup ≤ logMax := by
-      obtain ⟨x, hx⟩ := List.exists_mem_of_ne_nil _ hne
-      obtain ⟨ps, hm, -⟩ := hits x hx
-      exact hm.2.2.2.1.trans hh
+      Fri.maxHeight_ofMats _ _ hne' fun m hm ↦ (hms m hm).1
     have hok := Deep.foldl_reduceStep_ok P.logBlowup alpha its (fun x hx ↦ ⟨h, hits x hx⟩) red
       hred
-    rw [hheights, hmaxh, hmx]
-    simp only [Nat.log2_two_pow, Fri.checkOpening_eq, pure_bind, hvb, ite_true, pure_bind,
-      hvalues _ h (fun m hm ↦ (hms m hm).1), List.size_toArray, List.length_map,
-      beq_self_eq_true, List.toList_toArray, List.map_map, List.zip_map']
+    refine ⟨?_, hok⟩
+    rw [hmx]
+    simp only [Nat.log2_two_pow, Fri.openAt_values _ h (fun m hm ↦ (hms m hm).1),
+      List.toList_toArray, List.map_map, List.zip_map']
     rw [Deep.forIn_map_eq _ (Deep.atQuery alpha logMax index) (reduceStep alpha)
       (Deep.RedOk P.logBlowup) _ its ?hf2 red hred, pure_bind]
     case hf2 =>
@@ -714,6 +689,8 @@ theorem openInput_honest_of [Poseidon2Field F] (P : Params) (logMax index : Nat)
       have hrow : (rowOf m (index >>> (logMax - h))).size = m.width := Array.size_ofFn
       simp only [Function.comp_apply, hl]
       rw [Deep.lookup_start alpha logMax index h red' m hlog2]
+      have hi : index >>> (logMax - h) < m.height := by
+        rw [hm.2.1]; exact Deep.shiftRight_lt hidx hh
       rw [Deep.forIn_map_eq _ (Deep.powPair alpha) (Deep.ptStep alpha m.width
         ((compress m (powers alpha m.width)).getD (index >>> (logMax - h)) 0)
         (gen * powF (twoAdicGen h) (reverseBits (index >>> (logMax - h)) h))) (fun _ ↦ True) _ pts
@@ -723,52 +700,47 @@ theorem openInput_honest_of [Poseidon2Field F] (P : Params) (logMax index : Nat)
         refine ⟨?_, trivial⟩
         obtain ⟨c, a⟩ := s
         have hy2 : y.2.size = m.width := by rw [(hpts y hy).2.1, hm.1]
-        simp only [Array.length_toList, hy2, hrow, beq_self_eq_true, ite_true, pure_bind,
-          Deep.zip_toList _ _ m.width hrow hy2, List.foldl_map, Prod.mk.eta]
+        have hz : y.1 - Ext.ofBase (gen * powF (twoAdicGen h) (reverseBits (index >>>
+            (logMax - h)) h)) ≠ 0 := fun he ↦ toSpec_ne_ofBase (hpts y hy).1 _ (by
+          have := congrArg Challenge.toSpec he
+          rwa [Challenge.toSpec_sub, Challenge.toSpec_zero, sub_eq_zero,
+            Challenge.toSpec_ofBase] at this)
+        have hz' : (y.1 - Ext.ofBase (gen * powF (twoAdicGen h) (reverseBits (index >>>
+            (logMax - h)) h)) != 0) = true := bne_iff_ne.mpr hz
+        simp only [Array.length_toList, hy2, hrow, beq_self_eq_true, ensure, ↓reduceIte,
+          pure_bind, hz', Deep.zip_toList _ _ m.width hrow hy2, List.foldl_map, Prod.mk.eta]
         rw [show Deep.powPair alpha (c, a) = (Ext.pow alpha c, a) from rfl, Deep.column_loop]
         rw [hm.2.1]
         exact Deep.shiftRight_lt hidx hh
-      have hi : index >>> (logMax - h) < m.height := by
-        rw [hm.2.1]; exact Deep.shiftRight_lt hidx hh
       have hst := Deep.startOf_lowDeg hred' hm.2.1 hlog2
       rw [pure_bind, Deep.reduceStep_eq alpha red' m pts (fun y hy ↦ (hpts y hy).1)
         (by rw [hst.1, hm.2.1]) (by rw [hlog2, hm.2.1]), Deep.atQuery_cons_filter, hlog2,
         CompPoly.CPolynomial.NTTFast.Packed.getD_ofFn_bounded _ _ hi,
         Deep.cosetPointsBitRev_getD h _ (by rw [← hm.2.1]; exact hi), Deep.powPair,
         Deep.foldl_ptStep, Deep.foldl_ptStep, powF_eq]
-    refine ⟨?_, hok⟩
-    cases hl : List.lookup P.logBlowup
-        (Deep.atQuery alpha logMax index (List.foldl (reduceStep alpha) red its)) with
-    | none => rfl
-    | some v =>
-      obtain ⟨a1, a2⟩ := v
-      have h0 := Deep.blowup_zero hok alpha logMax index hidx hb hl
-      dsimp only at h0
-      subst h0
-      simp only [beq_self_eq_true, ite_true, pure_bind]
-  rw [reduce_eq, ← List.foldl_flatMap, List.map_map, Deep.atQuery,
-    ← List.map_mergeSort (l := List.foldl (reduceStep alpha) [] (rounds.flatMap Prod.snd))
-      (f := fun e : Nat × Nat × Array EF ↦
-        (e.1, Ext.pow alpha e.2.1, e.2.2.getD (index >>> (logMax - e.1)) 0))
-      (r := fun a b ↦ decide (b.1 ≤ a.1)) (s := fun a b ↦ decide (b.1 ≤ a.1))
-      (fun _ _ _ _ ↦ rfl), List.map_map]
-  rfl
-
-/-- The verifier's batched quotients at a query are the prover's: every round commits matrices of
-one height `2 ^ h` that are honest LDEs with true openings, the verifier's rounds are built as the
-STARK verifier builds them, and the openings are the prover's at the query's row. -/
-theorem openInput_honest [Poseidon2Field F] (P : Params) (logMax index : Nat) (alpha : EF)
-    (rounds : List (Committed F × List (Mat F × List (EF × Array EF))))
-    (hidx : index < 2 ^ logMax)
-    (hrounds : ∀ r ∈ rounds, r.2 ≠ [] ∧ r.1 = Committed.ofMats hashF compF (r.2.map (·.1)) ∧
-      ∃ h ≤ logMax, ∀ x ∈ r.2, Deep.HonestItem P.logBlowup h x) :
-    openInput (poseidon2 F) P logMax index alpha
-      (rounds.map fun r ↦ r.1.openAt (index >>> (logMax - Nat.log2 r.1.maxHeight)))
-      (rounds.map fun r ↦ (r.1.root, r.2.map fun x ↦
-        ((⟨1, Nat.log2 x.1.height - P.logBlowup⟩ : Domain F), x.2.map fun y ↦ (y.1, y.2.toList)))) =
-      pure ((Fri.reduce alpha (rounds.flatMap (·.2))).map fun y ↦
-        (y.1, y.2.getD (index >>> (logMax - y.1)) 0)) :=
-  openInput_honest_of P logMax index alpha rounds hidx hrounds Fri.verifyBatch_openAt
-    Fri.openAt_values Fri.maxHeight_ofMats
+  rw [← List.foldl_flatMap]
+  have hok := Deep.foldl_reduceStep_ok P.logBlowup alpha (rounds.flatMap (·.2)) (fun x hx ↦ by
+      obtain ⟨r, hr, hx⟩ := List.mem_flatMap.mp hx
+      obtain ⟨-, -, h, -, hits⟩ := hrounds r hr
+      exact ⟨h, hits x hx⟩) [] ⟨List.nodup_nil, fun _ h ↦ absurd h List.not_mem_nil⟩
+  have htail : ((Deep.atQuery alpha logMax index ((rounds.flatMap (·.2)).foldl (reduceStep alpha)
+      [])).mergeSort (fun a b ↦ decide (b.1 ≤ a.1))).map (fun x ↦ (x.1, x.2.2)) =
+      (Fri.reduce alpha (rounds.flatMap (·.2))).map fun y ↦
+        (y.1, y.2.getD (index >>> (logMax - y.1)) 0) := by
+    rw [reduce_eq, List.map_map, Deep.atQuery,
+      ← List.map_mergeSort (l := List.foldl (reduceStep alpha) [] (rounds.flatMap Prod.snd))
+        (f := fun e : Nat × Nat × Array EF ↦
+          (e.1, Ext.pow alpha e.2.1, e.2.2.getD (index >>> (logMax - e.1)) 0))
+        (r := fun a b ↦ decide (b.1 ≤ a.1)) (s := fun a b ↦ decide (b.1 ≤ a.1))
+        (fun _ _ _ _ ↦ rfl), List.map_map]
+    rfl
+  split
+  · rename_i v w hl
+    have hne : rounds ≠ [] := by
+      rintro rfl
+      exact absurd hl (by simp only [List.flatMap_nil, List.foldl_nil]; exact nofun)
+    have h0 : w = 0 := Deep.blowup_zero hok alpha logMax index hidx (hb hne) (v := (v, w)) hl
+    simp only [h0, beq_self_eq_true, ensure, ↓reduceIte, pure_bind, htail]
+  · exact congrArg pure htail
 
 end CompStark

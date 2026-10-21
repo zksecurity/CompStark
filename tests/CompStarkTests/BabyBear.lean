@@ -82,8 +82,8 @@ def challengerRun : List Nat :=
   let (z, _) := c.sample
   [canon a, canon b, canon e.c0, canon e.c1, canon e.c2, canon e.c3, bits, canon w, canon z]
 
-#guard challengerRun == [716817998, 1948094687, 27804589, 1309176249, 1428613477, 1764375465, 212,
-  49, 328847845]
+#guard challengerRun == [1136121201, 999034627, 1736188539, 573305400, 1322564753, 481613251, 227,
+  139, 1612444506]
 
 /-- The Fibonacci trace of `n` rows from `(0, 1)` and its public values. -/
 def fibInstance (n : Nat) : Array F × List F :=
@@ -103,13 +103,15 @@ def tamper (proof : Proof F EF) : Proof F EF :=
       traceLocal := proof.opened.traceLocal.modify 0 (· + 1) } }
 
 /-- Verify, reproduce and reject when tampered the saved proof of `air` for parameters `logN
-logBlowup logFinal maxLogArity queries commitPow queryPow`. -/
+logBlowup logFinal maxLogArity queries commitPow queryPow [batchPow oodPow]`. -/
 def check (name : String) (A : Air F) (inst : Nat → Array F × List F) (ps : List Nat) : IO Unit :=
     do
-  let [logN, b, f, a, q, cp, qp] := ps | throw (IO.userError "seven parameters")
+  let (logN, P) ← match ps with
+    | [logN, b, f, a, q, cp, qp] => pure (logN, (⟨b, f, a, q, cp, qp, 0, 0⟩ : Fri.Params))
+    | [logN, b, f, a, q, cp, qp, bp, op] => pure (logN, ⟨b, f, a, q, cp, qp, bp, op⟩)
+    | _ => throw (IO.userError "seven or nine parameters")
   let file := s!"babybear_{name}_{"_".intercalate (ps.map toString)}"
   let rust : Proof F EF ← IO.ofExcept (Json.parse (← IO.FS.readFile s!"tests/data/{file}.json"))
-  let P : Fri.Params := ⟨b, f, a, q, cp, qp⟩
   let (trace, pis) := inst (2 ^ logN)
   if let .error e := verify P A rust pis then throw (IO.userError s!"{file}: {e}")
   unless prove EF P A logN trace pis == rust do throw (IO.userError s!"{file}: proofs differ")
@@ -117,7 +119,7 @@ def check (name : String) (A : Air F) (inst : Nat → Array F × List F) (ps : L
     throw (IO.userError s!"{file}: accepted a tampered proof")
 
 #eval do
-  for ps in [[3, 2, 2, 1, 2, 0, 0], [6, 1, 1, 3, 8, 2, 4]] do
+  for ps in [[3, 2, 2, 1, 2, 0, 0], [6, 1, 1, 3, 8, 2, 4], [4, 1, 1, 2, 5, 1, 1, 3, 2]] do
     check "fib" fibonacci fibInstance ps
   check "cube" cube cubeInstance [5, 3, 1, 2, 6, 1, 3]
 

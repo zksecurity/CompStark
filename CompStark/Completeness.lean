@@ -10,9 +10,9 @@ public import CompStark.Stark.Config
 /-! # Completeness of the STARK verifier
 
 Over any base field with Plonky3's Poseidon2 instances and any challenge field, if a trace
-satisfies an AIR, the honest prover's proof of it verifies (`completeness`). Besides
-that premise, the theorem assumes two things, each a structure with one documented field per
-condition:
+satisfies an AIR with as many public values as the AIR declares, the honest prover's proof of it
+verifies (`completeness`). Besides these premises, the theorem assumes two things, each a
+structure with one documented field per condition:
 
 * `ValidConfig` (`CompStark/Stark/Config.lean`): the configuration is one the prover supports.
   These conditions are checkable before proving and do not depend on the trace.
@@ -43,14 +43,16 @@ structure NoBadLuck (params : Params) (air : Air F) (logN : Nat) (trace : Array 
   grinding : (proveTranscript EF params air logN trace publicValues).grindFailed = false
 
 /-- **Completeness.** For a valid configuration and an honest run over any challenge field `EF`
-without bad luck, if the trace satisfies the AIR, the honest prover's proof verifies. -/
+without bad luck, if the trace satisfies the AIR with as many public values as the AIR declares,
+the honest prover's proof verifies. -/
 theorem completeness {params : Params} {air : Air F} {logN : Nat} {trace : Array F}
     {publicValues : List F} (config : ValidConfig params air logN)
     (luck : NoBadLuck EF params air logN trace publicValues) :
-    air.Satisfied logN trace publicValues →
+    air.Satisfied logN trace publicValues → publicValues.length = air.numPublicValues →
       verify params air (prove EF params air logN trace publicValues) publicValues = .ok () :=
-  fun sat ↦ verify_prove_of params air logN trace publicValues
-    ⟨sat.size, config.colsInWidth, config.twoAdic, config.chunksFit⟩ sat.vanish config.degreeFits
-    config.folds config.queries config.finalPolyFits luck.grinding luck.outOfDomain
+  fun sat count ↦ verify_prove_of params air logN trace publicValues
+    ⟨sat.size, config.colsInWidth, config.twoAdic, config.chunksFit⟩ sat.vanish count
+    config.degreeFits config.folds config.queries config.blowup config.finalPolyFits
+    luck.grinding luck.outOfDomain
 
 end CompStark.Stark

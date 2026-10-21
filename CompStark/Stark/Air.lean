@@ -80,9 +80,11 @@ def colsBelow (w : Nat) : Expr F → Bool
 
 end Expr
 
-/-- An AIR over the field `F`. -/
+/-- An AIR over the field `F`: the trace's width, the number of public values, and the
+constraints. -/
 structure Air (F : Type) where
   width : Nat
+  numPublicValues : Nat
   constraints : List (Expr F)
 
 namespace Air
@@ -106,6 +108,7 @@ end Air
 the first row is `(a, b)`, each next row is `(right, left + right)`, and the last `right` is `x`. -/
 def fibonacci {F : Type} : Air F where
   width := 2
+  numPublicValues := 3
   constraints :=
     [.isFirstRow * (.cur 0 - .pub 0),
      .isFirstRow * (.cur 1 - .pub 1),
@@ -118,6 +121,7 @@ is `(x³ + y, y + 1)`, and the last `x` is `c`. Its transition has degree 3, so 
 chunks. -/
 def cube {F : Type} [One F] : Air F where
   width := 2
+  numPublicValues := 3
   constraints :=
     [.isFirstRow * (.cur 0 - .pub 0),
      .isFirstRow * (.cur 1 - .pub 1),
@@ -129,6 +133,7 @@ def cube {F : Type} [One F] : Air F where
 representative wide AIR of the benchmarks, with degree-3 transitions and a two-chunk quotient. -/
 def wide {F : Type} (w : Nat) : Air F where
   width := w
+  numPublicValues := 0
   constraints := (List.range w).map fun j ↦
     .isTransition * ((.cur j * .cur j * .cur j + .cur ((j + 1) % w)) - .next j)
 
