@@ -81,44 +81,41 @@ theorem natDegree_comp_C_mul_X (q : 𝕂[X]) (s : 𝕂) :
     ((natDegree_C_mul_le _ _).trans natDegree_X_le)).trans (Nat.mul_one _).le)
 
 /-- **Plonky3's fold is ArkLib's.** A group of `2 ^ la` values at the folded index `i` of a word
-`f` on the `p`-th subdomain, of size `2 ^ (lF + la)`, in bit-reversed order (entry `k` of the group
-is the word at `rev (i 2 ^ la + k)`), folds by `foldRow` at `β` to ArkLib's fold of `f` at
-`s β`, `s = g ^ 2 ^ p` the subdomain's shift, at the group's `2 ^ la`-th power. -/
-theorem toSpec_foldRow_eq_foldValue (n : Nat) (hn : n ≤ twoAdicity F) (p lF la : Nat)
-    (hm : n - p = lF + la) (hp : p ≤ n) (f : Fin (2 ^ (n - p)) → 𝕂) (i : Nat)
-    (beta : EF) (gy : Nat → EF)
+`f` on a domain `D = s ⟨ω⟩` of size `2 ^ (lF + la)`, in bit-reversed order (entry `k` of the group
+is the word at `rev (i 2 ^ la + k)`), folds by `foldRow` at `β` to ArkLib's fold of `f` at `s β`,
+at the group's `2 ^ la`-th power. -/
+theorem toSpec_foldRow_eq_foldValue_of {m : Nat} (D : Domain.SmoothCosetFftDomain m 𝕂) (s : 𝕂)
+    (hmA : m ≤ twoAdicity F) (hD : ∀ x : Fin (2 ^ m), D x =
+      s * lift (twoAdicGen m ^ x.val)) (lF la : Nat) (hm : m = lF + la) (f : Fin (2 ^ m) → 𝕂)
+    (i : Nat) (beta : EF) (gy : Nat → EF)
     (hgy : ∀ k < 2 ^ la, Challenge.toSpec (gy k) =
-      f (finMod (n - p) (reverseBits (i * 2 ^ la + k) (n - p))))
+      f (finMod m (reverseBits (i * 2 ^ la + k) m)))
     (pos : Nat) (hpos : pos < 2 ^ la) :
     Challenge.toSpec (foldRow i lF la beta ((List.range (2 ^ la)).map gy)) =
-      ProximityGap.foldValue ((cosetDomain (EF := EF) n hn).subdomain p) f la
-        (lift gen ^ 2 ^ p * Challenge.toSpec beta)
-        ((cosetDomain (EF := EF) n hn).subdomain p
-          (finMod (n - p) (reverseBits (i * 2 ^ la + pos) (n - p))) ^ 2 ^ la) := by
-  set D := (cosetDomain (EF := EF) n hn).subdomain p
-  set s : 𝕂 := lift gen ^ 2 ^ p
+      ProximityGap.foldValue D f la (s * Challenge.toSpec beta)
+        (D (finMod m (reverseBits (i * 2 ^ la + pos) m)) ^ 2 ^ la) := by
+  subst hm
   set start := powF (twoAdicGen (F := F) (lF + la)) (reverseBits i lF) with hstart
-  have h24 : lF + la ≤ twoAdicity F := by omega
+  have h24 : lF + la ≤ twoAdicity F := hmA
   have hgx : ∀ k < 2 ^ la, start * powF (twoAdicGen la) (reverseBits k la) =
       twoAdicGen (lF + la) ^ reverseBits (i * 2 ^ la + k) (lF + la) := fun k hk ↦ by
     rw [hstart, powF_eq, powF_eq, twoAdicGen_pow_concat la lF i k h24 hk]
-  -- The group's points on the subdomain.
-  have hpt : ∀ k < 2 ^ la, D (finMod (n - p) (reverseBits (i * 2 ^ la + k) (n - p))) =
+  -- The group's points on the domain.
+  have hpt : ∀ k < 2 ^ la, D (finMod (lF + la) (reverseBits (i * 2 ^ la + k) (lF + la))) =
       s * lift (start * powF (twoAdicGen la) (reverseBits k la)) := fun k hk ↦ by
-    rw [subdomain_finMod n hn p hp _ (by rw [hm]; exact reverseBits_lt _ _), hm,
-      hgx k hk]
-  have hpow : ∀ k < 2 ^ la, D (finMod (n - p) (reverseBits (i * 2 ^ la + k) (n - p))) ^ 2 ^ la =
-      (s * lift start) ^ 2 ^ la := fun k hk ↦ by
+    rw [hD, finMod, Fin.val_mk, Nat.mod_eq_of_lt (reverseBits_lt _ _), hgx k hk]
+  have hpow : ∀ k < 2 ^ la,
+      D (finMod (lF + la) (reverseBits (i * 2 ^ la + k) (lF + la))) ^ 2 ^ la =
+        (s * lift start) ^ 2 ^ la := fun k hk ↦ by
     rw [hpt k hk, lift_mul, ← mul_assoc, mul_pow, powF_eq, lift_pow, ← pow_mul, Nat.mul_comm,
       pow_mul,
       (isPrimitiveRoot_algebraMap (EF := EF) la (by omega)).pow_eq_one, one_pow,
       mul_one]
-  set y := D (finMod (n - p) (reverseBits (i * 2 ^ la + pos) (n - p))) ^ 2 ^ la with hy
+  set y := D (finMod (lF + la) (reverseBits (i * 2 ^ la + pos) (lF + la))) ^ 2 ^ la with hy
   set I := Lagrange.interpolate (Domain.CosetFftDomainClass.blockIdx D la y) (⇑D) f
   have hinjD : Set.InjOn (⇑D) (Domain.CosetFftDomainClass.blockIdx D la y : Set _) :=
     fun a _ b _ h ↦ Domain.CosetFftDomainClass.injective D h
   rw [ProximityGap.foldValue_def']
-  have hs0 : s ≠ 0 := pow_ne_zero _ lift_gen_ne_zero
   have hstart0 : start ≠ 0 := by
     rw [hstart, powF_eq]; exact twoAdicGen_pow_ne_zero _ (by omega) _
   unfold foldRow
@@ -134,6 +131,21 @@ theorem toSpec_foldRow_eq_foldValue (n : Nat) (hn : n ≤ twoAdicity F) (p lF la
     rw [hgy k hk, eval_comp, eval_mul, eval_C, eval_X, ← hpt k hk]
     refine (Lagrange.eval_interpolate_at_node _ hinjD ?_).symm
     rw [Domain.CosetFftDomainClass.mem_blockIdx, hy, hpow k hk, hpow pos hpos]
+
+/-- **Plonky3's fold is ArkLib's**, on the `p`-th subdomain of `L`, of shift `g ^ 2 ^ p`. -/
+theorem toSpec_foldRow_eq_foldValue (n : Nat) (hn : n ≤ twoAdicity F) (p lF la : Nat)
+    (hm : n - p = lF + la) (hp : p ≤ n) (f : Fin (2 ^ (n - p)) → 𝕂) (i : Nat)
+    (beta : EF) (gy : Nat → EF)
+    (hgy : ∀ k < 2 ^ la, Challenge.toSpec (gy k) =
+      f (finMod (n - p) (reverseBits (i * 2 ^ la + k) (n - p))))
+    (pos : Nat) (hpos : pos < 2 ^ la) :
+    Challenge.toSpec (foldRow i lF la beta ((List.range (2 ^ la)).map gy)) =
+      ProximityGap.foldValue ((cosetDomain (EF := EF) n hn).subdomain p) f la
+        (lift gen ^ 2 ^ p * Challenge.toSpec beta)
+        ((cosetDomain (EF := EF) n hn).subdomain p
+          (finMod (n - p) (reverseBits (i * 2 ^ la + pos) (n - p))) ^ 2 ^ la) :=
+  toSpec_foldRow_eq_foldValue_of _ _ (by omega)
+    (fun x ↦ by rw [subdomain_apply n hn p hp, lift_pow]) lF la hm f i beta gy hgy pos hpos
 
 /-! ### The query's point at each fold -/
 

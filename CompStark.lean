@@ -155,4 +155,5 @@ public import CompStark.Ni.BadQuery
 public import CompStark.Ni.Assembly
 public import CompStark.Ni.BatchRun
 public import CompStark.Ni.BatchAccept
+public import CompStark.Ni.BatchFri
 public import CompStark.NonInteractive
