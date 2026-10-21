@@ -27,7 +27,7 @@ The batch verifier `verifyBatchWith` runs on the random oracles of the STARK's r
   and a hash and a compression where it injects a shorter domain's matrices.
 * `committedTraces`: every instance's trace words the proof commits to, read off the logged hash
   queries under the main commitment, an instance's columns at its offset among the matrices of its
-  height (`Merkle.extractGroup`).
+  height (`Merkle.matColumn`).
 -/
 
 @[expose] public section
@@ -87,10 +87,8 @@ def verifyRo (common : CompStark.Batch.Common F) (proof : CompStark.Batch.BatchP
 /-- The heights of the main commitment's matrices: every instance's extended trace. -/
 def mainHeights : List ℕ := List.ofFn fun i ↦ 2 ^ (S.logN i + S.params.logBlowup)
 
-/-- The offset of instance `i`'s columns among the matrices of its height: the widths of the
-earlier instances of that height. -/
-def mainOffset (i : Fin S.k) : ℕ :=
-  ∑ i' with i' < i ∧ S.logN i' = S.logN i, (S.air i').width
+/-- The widths of the main commitment's matrices: every instance's trace. -/
+def mainWidths : List ℕ := List.ofFn fun i ↦ (S.air i).width
 
 end Setup
 
@@ -110,15 +108,14 @@ noncomputable def run (S : Setup EF) (publicValues : Fin S.k → List F) (prover
     return (proof, log, ← S.verifyRo common proof publicValues)).run' ∅
 
 /-- Every instance's trace words committed under `proof.mainCommit`, read off the hash queries of
-`log`: at each point, the instance's columns, at its offset, of the rows of its height at the
-point's index (Plonky3's bit-reversed order), zero where `log` holds no preimage. -/
+`log`: at each point, the instance's columns, at its offset among the matrices of its height, of
+the rows of that height at the point's index (Plonky3's bit-reversed order), zero where `log` holds
+no preimage. -/
 noncomputable def committedTraces (S : Setup EF) (log : QueryLog (spec F S.streamLen))
     (proof : CompStark.Batch.BatchProof F EF) :
     (i : Fin S.k) → Fin (S.air i).width → (S.instanceSetup i).Point → F := fun i column point ↦
   let m := S.logN i + S.params.logBlowup
-  match Merkle.extractGroup (logCache log) (Merkle.injLevels S.logTop S.mainHeights) S.logTop m
-      (reverseBits point m) proof.mainCommit with
-  | some row => row.getD (S.mainOffset i + column) 0
-  | none => 0
+  Merkle.matColumn (logCache log) proof.mainCommit S.logTop S.mainHeights S.mainWidths i column m
+    (reverseBits point m)
 
 end CompStark.Iop.Batch

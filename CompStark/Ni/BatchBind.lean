@@ -17,9 +17,9 @@ a cache (`Merkle.extractGroup`), group by group of matrices of one height. As fo
 outside it elsewhere, bind every digest of the log (`bindingM_fresh`): an accepted climb only makes
 queries of the log (`Merkle.climbCached_of_fresh`).
 
-`matColumn`: the extracted column `j` of matrix `t` of a commitment, read off its group's rows at
-the matrix's offset among the matrices of its height; an accepted opening that binds opens it
-(`matColumn_eq`).
+`Merkle.matColumn`: the extracted column `j` of matrix `t` of a commitment, read off its group's
+rows at the matrix's offset among the matrices of its height; an accepted opening that binds opens
+it (`matColumn_eq`).
 -/
 
 @[expose] public section
@@ -172,26 +172,13 @@ theorem range_filter_lt : ∀ (n t : ℕ), t ≤ n → (List.range n).filter (·
       simp only [Bool.cond_false, List.append_nil]
     · exact List.filter_eq_self.mpr fun x hx ↦ decide_eq_true (List.mem_range.mp hx)
 
-/-- The offset of matrix `t`'s columns among its group's: the widths `ws` of the earlier matrices
-of its height. -/
-def matOffset (hs ws : List ℕ) (t : ℕ) : ℕ :=
-  (((List.range t).filter fun t' ↦ hs.getD t' 0 = hs.getD t 0).map (ws.getD · 0)).sum
-
-/-- Column `j` of matrix `t`, of heights `hs` and widths `ws`, at row `r` of its height `2 ^ m`,
-extracted under `root`: entry `j` past its offset of its group's extracted rows, zero where
-nothing is extracted. -/
-noncomputable def matColumn (cache : Merkle.Cache F (Digest F)) (root : Digest F) (K : ℕ)
-    (hs ws : List ℕ) (t j m r : ℕ) : F :=
-  ((Merkle.extractGroup cache (Merkle.injLevels K hs) K m r root).getD []).getD
-    (matOffset hs ws t + j) 0
-
 /-- **An opening that binds opens the extracted columns.** -/
 theorem matColumn_eq (cache : Merkle.Cache F (Digest F)) (H : Primitives F Id) (root : Digest F)
     (K : ℕ) (hs ws : List ℕ) (hb : BindingM cache H root K hs) (i : ℕ) (values : List (List F))
     (path : List (Digest F)) (hv : verifyBatchH H root hs i values path = true)
     (hw : ∀ t < hs.length, (values.getD t []).length = ws.getD t 0)
     (t m : ℕ) (ht : t < hs.length) (htm : hs.getD t 0 = 2 ^ m) (j : ℕ) (hj : j < ws.getD t 0) :
-    matColumn cache root K hs ws t j m (i >>> (K - m)) = (values.getD t []).getD j 0 := by
+    Merkle.matColumn cache root K hs ws t j m (i >>> (K - m)) = (values.getD t []).getD j 0 := by
   obtain ⟨keys, hk, hmem, hG⟩ := Merkle.heightGroups_eq hs
   have hkey : 2 ^ m ∈ keys := (hmem _).mpr (by
     rw [← htm, List.getD_eq_getElem?_getD, List.getElem?_eq_getElem ht, Option.getD_some]
@@ -201,10 +188,10 @@ theorem matColumn_eq (cache : Merkle.Cache F (Digest F)) (H : Primitives F Id) (
     rw [hG]
     exact List.mem_map.mpr ⟨_, hkey, rfl⟩
   have hext := hb i values path hv _ hg m rfl
-  unfold matColumn
+  unfold Merkle.matColumn
   rw [hext, Option.getD_some]
-  have hoff : matOffset hs ws t = ((idx.filter (· < t)).map (ws.getD · 0)).sum := by
-    unfold matOffset
+  have hoff : Merkle.matOffset hs ws t = ((idx.filter (· < t)).map (ws.getD · 0)).sum := by
+    unfold Merkle.matOffset
     congr 2
     rw [hidx, List.filter_filter, ← range_filter_lt hs.length t ht.le, List.filter_filter]
     refine List.filter_congr fun x _ ↦ ?_

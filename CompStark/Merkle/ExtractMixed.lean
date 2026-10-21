@@ -26,6 +26,9 @@ such a tree back from a cache of hash queries, walking down from the root:
   whose answers are not digests the extraction could reach.
 
 Without injected levels, `extractGroup` at the leaf level is `extractRow` (`extractGroup_nil`).
+
+`matColumn` reads column `j` of matrix `t` off its group's extracted rows, at the matrix's offset
+among the matrices of its height (`matOffset`).
 -/
 
 @[expose] public section
@@ -443,5 +446,25 @@ theorem extractGroup_of_verifyBatch [DecidableEq F] (hinj : cache.Injective) (ro
   · exact hext g hg l hgl
 
 end Climb
+
+/-! ### Columns of mixed heights -/
+
+section Columns
+variable {F D : Type*}
+
+/-- The offset of matrix `t`'s columns among its group's: the widths `ws` of the earlier matrices
+of its height. -/
+def matOffset (hs ws : List ℕ) (t : ℕ) : ℕ :=
+  (((List.range t).filter fun t' ↦ hs.getD t' 0 = hs.getD t 0).map (ws.getD · 0)).sum
+
+/-- Column `j` of matrix `t`, of heights `hs` and widths `ws`, at row `r` of its height `2 ^ m`,
+extracted under `root`: entry `j` past its offset of its group's extracted rows, zero where
+nothing is extracted. -/
+noncomputable def matColumn [Zero F] (cache : Cache F D) (root : D) (K : ℕ)
+    (hs ws : List ℕ) (t j m r : ℕ) : F :=
+  ((Merkle.extractGroup cache (Merkle.injLevels K hs) K m r root).getD []).getD
+    (matOffset hs ws t + j) 0
+
+end Columns
 
 end CompStark.Merkle
