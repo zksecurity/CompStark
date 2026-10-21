@@ -4,8 +4,9 @@ Released under Apache 2.0 license as described in the file LICENSE.
 -/
 module
 
-public import CompStark.Poseidon2.Basic
+public import CompStark.Poseidon2.Map
 public import CompPoly.Fields.KoalaBear.Fast
+import Mathlib.Algebra.GroupWithZero.Units.Lemmas
 
 /-! # Poseidon2 over KoalaBear
 
@@ -14,7 +15,9 @@ Plonky3's default KoalaBear instances (`default_koalabear_poseidon2_16` and `_24
 width 24, and
 the round constants of the Horizen Labs reference parameters. The constants are canonical
 representatives, cast into any field of characteristic `p`, so the same instance runs on the spec
-field `KoalaBear.Field` and on the Montgomery field `KoalaBear.Fast.Field`.
+field `KoalaBear.Field` and on the Montgomery field `KoalaBear.Fast.Field`: the permutation on the
+Montgomery field is the specification on `KoalaBear.Field`, read through the ring isomorphism
+between them (`fast_width16`, `fast_width24`).
 -/
 
 @[expose] public section
@@ -125,19 +128,39 @@ def diagonal24 : Vector F 24 :=
     -(2 ^ 8)⁻¹, -8⁻¹, -16⁻¹, -32⁻¹, -64⁻¹, -(2 ^ 7)⁻¹, -(2 ^ 9)⁻¹, -(2 ^ 24)⁻¹]
 
 /-- Plonky3's default width-16 Poseidon2 over KoalaBear, in a field `F` of characteristic `p`. -/
-def width16 : Params F 16 where
-  degree := 3
-  initial := Constants.initial16.map (·.map Nat.cast)
-  internal := Constants.internal16.map Nat.cast
-  terminal := Constants.terminal16.map (·.map Nat.cast)
-  diagonal := diagonal16 F
+def width16 : Params F 16 :=
+  .ofNat 3 Constants.initial16 Constants.internal16 Constants.terminal16 (diagonal16 F)
 
 /-- Plonky3's default width-24 Poseidon2 over KoalaBear, in a field `F` of characteristic `p`. -/
-def width24 : Params F 24 where
-  degree := 3
-  initial := Constants.initial24.map (·.map Nat.cast)
-  internal := Constants.internal24.map Nat.cast
-  terminal := Constants.terminal24.map (·.map Nat.cast)
-  diagonal := diagonal24 F
+def width24 : Params F 24 :=
+  .ofNat 3 Constants.initial24 Constants.internal24 Constants.terminal24 (diagonal24 F)
+
+variable {F} {K : Type*} [Field K] (f : F →+* K)
+
+theorem width16_map : (width16 F).map f = width16 K := by
+  simp only [width16, Params.ofNat_map, diagonal16, Vector.map_mk, List.map_toArray,
+    List.map_cons, List.map_nil, map_neg, map_inv₀, map_pow, map_ofNat, map_one]
+
+theorem width24_map : (width24 F).map f = width24 K := by
+  simp only [width24, Params.ofNat_map, diagonal24, Vector.map_mk, List.map_toArray,
+    List.map_cons, List.map_nil, map_neg, map_inv₀, map_pow, map_ofNat, map_one]
+
+open _root_.KoalaBear.Fast (ringEquiv) in
+/-- On the Montgomery field the width-16 permutation is the specification. -/
+theorem fast_width16 (s : Vector _root_.KoalaBear.Fast.Field 16) :
+    (permute (width16 _) s).map ringEquiv =
+      permute (width16 _root_.KoalaBear.Field) (s.map ringEquiv) := by
+  have h := permute_map ringEquiv.toRingHom (width16 _) s
+  rw [width16_map] at h
+  exact h
+
+open _root_.KoalaBear.Fast (ringEquiv) in
+/-- On the Montgomery field the width-24 permutation is the specification. -/
+theorem fast_width24 (s : Vector _root_.KoalaBear.Fast.Field 24) :
+    (permute (width24 _) s).map ringEquiv =
+      permute (width24 _root_.KoalaBear.Field) (s.map ringEquiv) := by
+  have h := permute_map ringEquiv.toRingHom (width24 _) s
+  rw [width24_map] at h
+  exact h
 
 end CompStark.Poseidon2.KoalaBear

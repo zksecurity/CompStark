@@ -2,8 +2,9 @@
 Copyright (c) 2026 zkSecurity. All rights reserved.
 Released under Apache 2.0 license as described in the file LICENSE.
 -/
-import CompStark.KoalaBear.Prover
-import CompStark.KoalaBear.Json
+import CompStark.Plonky3.Prover
+import CompStark.KoalaBear.Poseidon2
+import CompStark.Mont32.Json
 import CompStark.Completeness
 import CompStark.Soundness
 import CompStark.Security
@@ -19,6 +20,9 @@ Lean prover's own proofs must verify.
 
 Lake does not track the data files: check a replaced proof with
 `lake env lean tests/CompStarkTests/Stark.lean`.
+The interpreter cannot run KoalaBear's packed kernels (CompPoly's inline C stores), so these
+checks run Plonky3's primitives on the specification implementation, a local instance;
+`KoalaBear.perm16_eq` and `perm24_eq` prove the packed kernels equal to it.
 -/
 
 namespace CompStarkTests.Stark
@@ -26,6 +30,10 @@ open CompStark CompStark.Stark
 
 local notation "F" => _root_.KoalaBear.Fast.Field
 local notation "EF" => _root_.KoalaBear.Fast.Ext4
+
+/-- The specification implementation of KoalaBear's instances, which the interpreter runs. -/
+local instance (priority := high) specPoseidon2 : CompStark.Poseidon2Field F :=
+  .ofSpec (CompStark.Poseidon2.KoalaBear.width16 _) (CompStark.Poseidon2.KoalaBear.width24 _)
 
 /-- The Fibonacci trace of `n` rows from `(0, 1)` and its public values. -/
 def fibInstance (n : Nat) : Array F × List F :=

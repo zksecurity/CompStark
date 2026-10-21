@@ -24,8 +24,8 @@ namespace CompStark.Stark
 open CompStark.Fri CompStark.KoalaBear CompStark.Complete
 
 local notation "F" => _root_.KoalaBear.Fast.Field
-local notation "hashF" => CompStark.Hash.KoalaBear.hash F
-local notation "compF" => CompStark.Hash.KoalaBear.compress F
+local notation "hashF" => CompStark.Hash.Poseidon2.hash F
+local notation "compF" => CompStark.Hash.Poseidon2.compress F
 
 variable {EF : Type} [Challenge F EF]
 
@@ -39,7 +39,7 @@ def hExt : Mat F := ldeRef logN P.logBlowup gen A.width trace
 
 /-- The transcript after the trace commitment and the public values. -/
 def hTA : Transcript F 24 :=
-  (((((KoalaBear.initTranscript.observe (logN : F)).observe (logN : F)).observe 0).observeList
+  (((((Poseidon2.initTranscript.observe (logN : F)).observe (logN : F)).observe 0).observeList
     (Committed.ofMats hashF compF [hExt P A logN trace]).root.toList).observeList pis)
 
 /-- The constraint-folding challenge. -/
@@ -62,7 +62,7 @@ def hTC : Transcript F 24 :=
 def hZeta : EF := ((hTC EF P A logN trace pis).sampleExtValue : EF)
 
 theorem commitAndSample_run :
-    (commitAndSample (specBackend EF) P A logN trace pis).run KoalaBear.initTranscript =
+    (commitAndSample (specBackend EF) P A logN trace pis).run Poseidon2.initTranscript =
       ((hExt P A logN trace, Committed.ofMats hashF compF [hExt P A logN trace],
         hChunks EF P A logN trace pis, Committed.ofMats hashF compF (hChunks EF P A logN trace pis),
         hZeta EF P A logN trace pis),
@@ -222,24 +222,24 @@ end Honest
 /-! ### The verifier's observations -/
 
 /-- The innermost body of `verifyPcs`'s observation loop. -/
-def obsPts (p : EF × List EF) (_ : PUnit) : M poseidon2 (ForInStep PUnit) := do
-  observeExts poseidon2 p.2
+def obsPts (p : EF × List EF) (_ : PUnit) : M (poseidon2 F) (ForInStep PUnit) := do
+  observeExts (poseidon2 F) p.2
   pure (ForInStep.yield PUnit.unit)
 
 /-- The middle body of `verifyPcs`'s observation loop. -/
-def obsMats (x : Domain F × List (EF × List EF)) (_ : PUnit) : M poseidon2 (ForInStep PUnit) :=
+def obsMats (x : Domain F × List (EF × List EF)) (_ : PUnit) : M (poseidon2 F) (ForInStep PUnit) :=
   do
   forIn x.2 PUnit.unit obsPts
   pure (ForInStep.yield PUnit.unit)
 
 /-- The outer body of `verifyPcs`'s observation loop. -/
-def obsRounds (r : Round F EF) (_ : PUnit) : M poseidon2 (ForInStep PUnit) := do
+def obsRounds (r : Round F EF) (_ : PUnit) : M (poseidon2 F) (ForInStep PUnit) := do
   forIn r.2 PUnit.unit obsMats
   pure (ForInStep.yield PUnit.unit)
 
 theorem verifyPcs_eq (P : Params) (rounds : List (Round F EF)) (proof : FriProof F EF) :
-    verifyPcs poseidon2 P rounds proof =
-      (do forIn rounds PUnit.unit obsRounds; verifyFri poseidon2 P proof rounds) :=
+    verifyPcs (poseidon2 F) P rounds proof =
+      (do forIn rounds PUnit.unit obsRounds; verifyFri (poseidon2 F) P proof rounds) :=
   rfl
 
 theorem forIn_obsPts (pts : List (EF × List EF)) (t : Transcript F 24) :
@@ -282,7 +282,7 @@ theorem forIn_obsRounds (rounds : List (Round F EF)) (t : Transcript F 24) :
 
 theorem verifyPcs_run (P : Params) (rounds : List (Round F EF)) (proof : FriProof F EF) (t :
     Transcript F 24) :
-    verifyPcs poseidon2 P rounds proof t = verifyFri poseidon2 P proof rounds
+    verifyPcs (poseidon2 F) P rounds proof t = verifyFri (poseidon2 F) P proof rounds
       (t.observeExts (rounds.flatMap fun r ↦ r.2.flatMap fun x ↦ x.2.flatMap (·.2))) := by
   rw [verifyPcs_eq, bind_ok (forIn_obsRounds rounds t)]
 
@@ -290,7 +290,7 @@ theorem verifyPcs_run (P : Params) (rounds : List (Round F EF)) (proof : FriProo
 
 /-- The verifier's transcript after the trace commitment and the public values. -/
 def vTA (proof : Proof F EF) (pis : List F) : Transcript F 24 :=
-  (((((KoalaBear.initTranscript.observe (proof.degreeBits : F)).observe
+  (((((Poseidon2.initTranscript.observe (proof.degreeBits : F)).observe
       (proof.degreeBits : F)).observe
     0).observeList proof.traceCommit.toList).observeList pis)
 
@@ -299,20 +299,20 @@ def vTC (proof : Proof F EF) (pis : List F) : Transcript F 24 :=
   (Transcript.sampleExtState EF ((vTA proof pis))).observeList proof.quotientCommit.toList
 
 /-- The transcript part of `verify`. -/
-def verifyRun (P : Params) (proof : Proof F EF) (pis : List F) : M poseidon2 (EF × EF) := do
+def verifyRun (P : Params) (proof : Proof F EF) (pis : List F) : M (poseidon2 F) (EF × EF) := do
   let db := proof.degreeBits
   let o := proof.opened
-  observe poseidon2 (db : F)
-  observe poseidon2 (db : F)
-  observe poseidon2 0
-  observeList poseidon2 proof.traceCommit.toList
-  observeList poseidon2 pis
-  let alpha ← (sampleExt poseidon2 : M poseidon2 EF)
-  observeList poseidon2 proof.quotientCommit.toList
-  let zeta ← (sampleExt poseidon2 : M poseidon2 EF)
+  observe (poseidon2 F) (db : F)
+  observe (poseidon2 F) (db : F)
+  observe (poseidon2 F) 0
+  observeList (poseidon2 F) proof.traceCommit.toList
+  observeList (poseidon2 F) pis
+  let alpha ← (sampleExt (poseidon2 F) : M (poseidon2 F) EF)
+  observeList (poseidon2 F) proof.quotientCommit.toList
+  let zeta ← (sampleExt (poseidon2 F) : M (poseidon2 F) EF)
   let zetaNext := zeta * Ext.ofBase (twoAdicGen db)
   let traceDomain : Domain F := ⟨1, db⟩
-  verifyPcs poseidon2 P
+  verifyPcs (poseidon2 F) P
     [(proof.traceCommit, [(traceDomain, [(zeta, o.traceLocal.toList),
         (zetaNext, o.traceNext.toList)])]),
      (proof.quotientCommit, o.quotientChunks.toList.map fun ch ↦
@@ -348,23 +348,25 @@ theorem verify_eq (P : Params) (A : Air F) (proof : Proof F EF) (pis : List F) :
       unless arities proof.fri ==
           foldArities P.maxLogArity (proof.degreeBits - P.logFinalPolyLen) do
         throw "fold arities"
-      (verifyRun P proof pis).run KoalaBear.initTranscript >>= verifyCheck A proof pis) := by
+      (verifyRun P proof pis).run Poseidon2.initTranscript >>= verifyCheck A proof pis) := by
   delta verify verifyWith verifyRun verifyCheck
   rfl
 
-theorem observe_bind {β : Type} (x : F) (f : Unit → M poseidon2 β) (t : Transcript F 24) :
-    (observe poseidon2 x >>= f) t = f () (t.observe x) := bind_ok rfl
+theorem observe_bind {β : Type} (x : F) (f : Unit → M (poseidon2 F) β) (t : Transcript F 24) :
+    (observe (poseidon2 F) x >>= f) t = f () (t.observe x) := bind_ok rfl
 
-theorem observeList_bind {β : Type} (xs : List F) (f : Unit → M poseidon2 β) (t : Transcript F 24) :
-    (observeList poseidon2 xs >>= f) t = f () (t.observeList xs) := bind_ok (observeList_run t xs)
+theorem observeList_bind {β : Type} (xs : List F) (f : Unit → M (poseidon2 F) β)
+    (t : Transcript F 24) :
+    (observeList (poseidon2 F) xs >>= f) t = f () (t.observeList xs) :=
+  bind_ok (observeList_run t xs)
 
-theorem sampleExt_bind {β : Type} (f : EF → M poseidon2 β) (t : Transcript F 24) :
-    ((sampleExt poseidon2 : M poseidon2 EF) >>= f) t = f (t.sampleExtValue : EF)
+theorem sampleExt_bind {β : Type} (f : EF → M (poseidon2 F) β) (t : Transcript F 24) :
+    ((sampleExt (poseidon2 F) : M (poseidon2 F) EF) >>= f) t = f (t.sampleExtValue : EF)
         (Transcript.sampleExtState EF t) := bind_ok (sampleExt_run t)
 
 theorem verifyRun_run (P : Params) (proof : Proof F EF) (pis : List F) :
-    verifyRun P proof pis KoalaBear.initTranscript =
-      (verifyPcs poseidon2 P (vRounds proof ((vTC proof pis).sampleExtValue : EF)) proof.fri >>=
+    verifyRun P proof pis Poseidon2.initTranscript =
+      (verifyPcs (poseidon2 F) P (vRounds proof ((vTC proof pis).sampleExtValue : EF)) proof.fri >>=
           fun _ ↦
         pure (((vTA proof pis).sampleExtValue : EF), ((vTC proof pis).sampleExtValue : EF)))
         (Transcript.sampleExtState EF ((vTC proof pis))) := by
@@ -583,7 +585,7 @@ theorem inputsOk_hInputs (hin : Fits P A logN trace)
 theorem hopen (hin : Fits P A logN trace)
     (hz : Ext.OutsideBase (hZeta EF P A logN trace pis)) (alpha : EF) (index : Nat)
     (hidx : index < 2 ^ Nat.log2 (((hInputs EF P A logN trace pis alpha).map Array.size).headD 0)) :
-    openInput poseidon2 P
+    openInput (poseidon2 F) P
         (Nat.log2 (((hInputs EF P A logN trace pis alpha).map Array.size).headD 0))
         index alpha ((hRounds EF P A logN trace pis).map fun (c, _) ↦ c.openAt (index >>>
           (Nat.log2 (((hInputs EF P A logN trace pis alpha).map Array.size).headD 0) -
@@ -668,12 +670,12 @@ theorem verify_ok_of (P : Params) (A : Air F) (proof : Proof F EF) (pis : List F
       proof.opened.quotientChunks.all (·.size == Challenge.d EF)) = true)
     (harities :
       arities proof.fri = foldArities P.maxLogArity (proof.degreeBits - P.logFinalPolyLen))
-    (hrun : verifyRun P proof pis KoalaBear.initTranscript = .ok ((alpha, zeta), t))
+    (hrun : verifyRun P proof pis Poseidon2.initTranscript = .ok ((alpha, zeta), t))
     (hcheck : checkConstraints A pis proof.opened proof.degreeBits zeta alpha
       (recompose (chunkDomains proof.degreeBits A.logQuotientChunks)
         proof.opened.quotientChunks.toList zeta) = true) :
     verify P A proof pis = .ok () := by
-  have hrun' : StateT.run (verifyRun P proof pis) KoalaBear.initTranscript = pure
+  have hrun' : StateT.run (verifyRun P proof pis) Poseidon2.initTranscript = pure
       ((alpha, zeta), t) := hrun
   rw [verify_eq, hrun', pure_bind, verifyCheck_ok A proof pis ((alpha, zeta), t) hcheck]
   simp only [hshape, harities, beq_self_eq_true]
@@ -686,7 +688,7 @@ theorem verifyRun_honest (hin : Fits P A logN trace)
     (hz : Ext.OutsideBase (hZeta EF P A logN trace pis))
     (hP : 0 < P.maxLogArity) (hq : 0 < P.numQueries) (hfin : P.logFinalPolyLen ≤ logN)
     (hgrind : (proveTranscript EF P A logN trace pis).grindFailed = false) :
-    ∃ t, verifyRun P (prove EF P A logN trace pis) pis KoalaBear.initTranscript =
+    ∃ t, verifyRun P (prove EF P A logN trace pis) pis Poseidon2.initTranscript =
       .ok ((hAlpha EF P A logN trace pis, hZeta EF P A logN trace pis), t) := by
   have hTC : vTC (prove EF P A logN trace pis) pis = hTC EF P A logN trace pis := by
     rw [prove_eq]; rfl

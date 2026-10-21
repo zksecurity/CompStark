@@ -4,7 +4,8 @@ Released under Apache 2.0 license as described in the file LICENSE.
 -/
 module
 
-public import CompStark.KoalaBear.Prover
+public import CompStark.Plonky3.Prover
+public import CompStark.KoalaBear.Poseidon2
 public import CompStark.KoalaBear.Challenge
 public import CompStark.Merkle.Packed
 public import CompPoly.Univariate.NTTFast.Packed.CosetLde
@@ -16,9 +17,9 @@ public import CompStark.Stark.ExtWords
 
 The kernels of `Backend` on packed Montgomery words:
 
-* The transcript permutes with the packed width-24 Poseidon2, the state in lane 0 of a group.
-  Grinding tries eight candidates per packed permutation, as Plonky3 does, and returns the
-  smallest that passes.
+* The transcript is Plonky3's duplex challenger on KoalaBear's Poseidon2 implementation, the packed
+  width-24 permutation with the state in lane 0 of a group (`KoalaBear.perm24`). Grinding tries
+  eight candidates per packed permutation, as Plonky3 does, and returns the smallest that passes.
 * Low-degree extension is CompPoly's batched coset LDE.
 * The Merkle digest layers of matrices of one height come from the packed Merkle commitment, on
   their rows side by side.
@@ -41,25 +42,9 @@ structure PMat where
   height : Nat
   words : ByteArray
 
-/-- The packed constants of the width-24 permutation. -/
-def K24 : Packed24 := Packed24.ofParams (Poseidon2.KoalaBear.width24 F)
-
-/-- The packed constants of the width-16 permutation. -/
-def K16 : Packed16 := Packed16.ofParams (Poseidon2.KoalaBear.width16 F)
-
 /-- A field element from a packed word. -/
 def word (b : ByteArray) (i : Nat) : F :=
   CompPoly.CPolynomial.NTTFast.Packed.ofWord (CompPoly.CPolynomial.NTTFast.Packed.Native.read b i)
-
-/-- The width-24 permutation of one state, in lane 0 of a packed group. -/
-def perm24 (s : Vector F 24) : Vector F 24 :=
-  let W : Array F := Array.ofFn (n := 192) fun k ↦
-    if k.val % 8 = 0 then s.toArray.getD (k / 8) 0 else 0
-  let out := permute24 K24 (CompPoly.CPolynomial.NTTFast.Packed.Native.encodeFields W) 0
-  Vector.ofFn fun j ↦ word out (8 * j.val)
-
-/-- The transcript's duplex on the packed permutation. -/
-def duplex : Duplex F 24 := { KoalaBear.duplex with perm := perm24 }
 
 /-- The first passing candidate of batch `b`, `8 b, …, 8 b + 7`: `group` holds eight copies of the
 duplexed state as a packed group, and the candidates go into coordinate `wi`. -/
@@ -99,7 +84,7 @@ def grind (c : Challenger F 24) (bits : Nat) : F :=
   grindWaves group (min c.input.size 24) bits (_root_.KoalaBear.fieldSize / 8192 + 1) 0
 
 /-- The fast transcript. -/
-def transcript : Transcript F 24 := Transcript.initWith duplex grind
+def transcript : Transcript F 24 := Transcript.initWith Poseidon2.duplex grind
 
 /-- CompPoly's plan for extensions of `2 ^ logH`-row matrices by `2 ^ bits` onto `shift · ⟨ω_N⟩`. -/
 def plan? (logH bits : Nat) (shift : F) : Option CompPoly.CPolynomial.NTTFast.Packed.LdePlan :=

@@ -9,7 +9,9 @@ public import CompStark.Poseidon2.PackedCorrectness24
 
 /-! # The fast transcript is the specification's
 
-The packed permutation of one state is the specification's (`perm24_eq`).
+The fast grinder, eight candidates per packed permutation in parallel waves, finds the
+specification's smallest witness (`grind_eq`), so the fast transcript is the specification's
+(`transcript_eq`).
 -/
 
 @[expose] public section
@@ -24,43 +26,6 @@ local notation "F" => _root_.KoalaBear.Fast.Field
 theorem word_encode (a : Array F) (i : Nat) (hs : (encode a).size < USize.size)
     (hi : i < a.size) : word (encode a) i = a.getD i 0 := by
   rw [word, CompPoly.CPolynomial.NTTFast.Packed.Native.read_encode a i hs hi, ofWord_val]
-
-theorem perm24_eq (s : Vector F 24) :
-    perm24 s = Poseidon2.permute (Poseidon2.KoalaBear.width24 F) s := by
-  have hs : (encode (Array.ofFn (n := 192) fun k ↦
-      if k.val % 8 = 0 then s.toArray.getD (k / 8) 0 else 0)).size < USize.size := by
-    rw [size_encode_fields, Array.size_ofFn]
-    have := USize.le_size
-    omega
-  obtain ⟨W', e, hsz, hl, -⟩ := permute24_spec (Poseidon2.KoalaBear.width24 F) rfl rfl rfl rfl
-    (Array.ofFn (n := 192) fun k ↦ if k.val % 8 = 0 then s.toArray.getD (k / 8) 0 else 0) 0
-    (by
-      simp only [GroupFits24, Fits, size_encode_fields, Array.size_ofFn, USize.toNat_zero]
-      have := USize.le_size
-      omega)
-  have h0 := hl 0 (by decide)
-  rw [perm24, K24, Native.encodeFields_eq, e]
-  have hW : W'.size = 192 := by rw [hsz, Array.size_ofFn]
-  have hs' : (encode W').size < USize.size := by
-    rw [size_encode_fields, hW]
-    have := USize.le_size
-    omega
-  have hin : lane 24 (Array.ofFn (n := 192) fun k ↦
-      if k.val % 8 = 0 then s.toArray.getD (k / 8) 0 else 0) (USize.toNat 0) 0 = s := by
-    apply Vector.ext
-    intro k hk
-    simp only [lane, Vector.getElem_ofFn, Poseidon2.Packed.word, USize.toNat_zero,
-      Nat.zero_add, Nat.add_zero, Array.getD_eq_getD_getElem?, Array.getElem?_ofFn]
-    rw [dite_eq_left_of_eq_true (eq_true (by omega))]
-    simp only [Option.getD_some, Nat.mul_mod_right, ite_true, Nat.mul_div_cancel_left _
-      (show 0 < 8 by decide), Vector.getElem_toArray, Array.getElem?_eq_getElem
-      (show k < s.toArray.size by simp only [Vector.size_toArray]; exact hk)]
-  rw [hin] at h0
-  apply Vector.ext
-  intro j hj
-  rw [Vector.getElem_ofFn, word_encode _ _ hs' (by omega), ← h0]
-  simp only [lane, Vector.getElem_ofFn, Poseidon2.Packed.word, USize.toNat_zero, Nat.zero_add,
-    Nat.add_zero]
 
 /-- A witness check permutes the state overwritten by the input and the witness, and tests
 coordinate 15; with `bits = 0` both accept. -/
@@ -273,7 +238,7 @@ theorem grindBatch_eq (c : Challenger F 24) (bits b : Nat) :
   have hs' : (encode W').size < USize.size := by
     rw [size_encode_fields, hsz, size_batchGroup]; have := USize.le_size; omega
   rw [grindBatch, baseGroup, Native.encodeFields_eq, copy_encode, h0,
-    writes_encode _ _ _ (by omega) 8 (Nat.le_refl 8), K24, e]
+    writes_encode _ _ _ (by omega) 8 (Nat.le_refl 8), KoalaBear.K24, e]
   refine find?_range_map _ _ 8 (8 * b) fun l hl8 ↦ ?_
   rw [word_encode _ _ hs' (by rw [hsz, size_batchGroup]; omega), passes]
   have h15 := hl l hl8
@@ -325,7 +290,7 @@ theorem grindWaves_eq (c : Challenger F 24) (bits : Nat) :
 
 /-- The fast grinder finds the specification's witness. -/
 theorem grind_eq (c : Challenger F 24) (bits : Nat) :
-    grind c bits = grindFrom KoalaBear.duplex c bits _root_.KoalaBear.fieldSize 0 := by
+    grind c bits = grindFrom Poseidon2.duplex c bits _root_.KoalaBear.fieldSize 0 := by
   rw [grind]
   refine (grindWaves_eq c bits _ 0).trans ?_
   rw [grindFrom_eq, Nat.mul_zero]
@@ -338,18 +303,16 @@ theorem grind_eq (c : Challenger F 24) (bits : Nat) :
     simp only [passes, show ¬ m < _root_.KoalaBear.fieldSize by omega,
       decide_false, Bool.false_and]]
   rw [Option.or_none, firstFrom_congr
-    (Q := fun m ↦ (Challenger.checkWitness KoalaBear.duplex c bits (m : F)).1) _ 0
+    (Q := fun m ↦ (Challenger.checkWitness Poseidon2.duplex c bits (m : F)).1) _ 0
     fun m _ h2 ↦ by
-      rw [checkWitness_fst KoalaBear.duplex rfl c bits _, passes,
-        decide_eq_true (show m < _root_.KoalaBear.fieldSize by omega), Bool.true_and]
+      rw [checkWitness_fst Poseidon2.duplex rfl c bits _, passes,
+        decide_eq_true (show m < _root_.KoalaBear.fieldSize by omega), Bool.true_and,
+        show (Poseidon2.duplex : Duplex F 24).perm = _ from funext KoalaBear.perm24_eq]
       rfl]
 
 /-- The fast transcript is the specification's. -/
-theorem transcript_eq : transcript = KoalaBear.initTranscript := by
-  have hd : duplex = KoalaBear.duplex := by
-    simp only [duplex, funext perm24_eq]
-    rfl
-  rw [transcript, KoalaBear.initTranscript, hd, funext fun c ↦ funext (grind_eq c)]
+theorem transcript_eq : transcript = Poseidon2.initTranscript := by
+  rw [transcript, Poseidon2.initTranscript, funext fun c ↦ funext (grind_eq c)]
   rfl
 
 end CompStark.Stark.Fast

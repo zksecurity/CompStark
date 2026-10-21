@@ -5,7 +5,8 @@ Released under Apache 2.0 license as described in the file LICENSE.
 module
 
 public import CompStark.Fri.Prover
-public import CompStark.KoalaBear.Prover
+public import CompStark.Plonky3.Prover
+public import CompStark.KoalaBear.Poseidon2
 public import CompStark.KoalaBear.Challenge
 public import CompStark.Stark.Points
 public import CompPoly.Fields.KoalaBear.InterpolateCoset

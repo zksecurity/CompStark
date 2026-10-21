@@ -621,7 +621,7 @@ theorem mulBase_rel {v : EVec} {a : Array EF} (bs : Array F) (hv : RV v a)
   all_goals try (apply mulWords_encode <;> (try simp only [Array.size_map]) <;> omega)
   rw [Array.size_zipWith] at hi
   simp only [Array.getElem_zipWith, getD_map a _ i (by omega), mul_coords, Ext.ofBase,
-    KoalaBear.ofBase_ext4, Montgomery.Native32.Ext4.ofBase, Array.getD_eq_getD_getElem?,
+    Mont32.ofBase_ext4, Montgomery.Native32.Ext4.ofBase, Array.getD_eq_getD_getElem?,
     Array.getElem?_eq_getElem
       (show i < bs.size by omega), Option.getD_some]
   congr 1 <;> ring

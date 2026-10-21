@@ -5,7 +5,8 @@ Released under Apache 2.0 license as described in the file LICENSE.
 module
 
 public import CompStark.Fri.Shapes
-public import CompStark.KoalaBear.Prover
+public import CompStark.Plonky3.Prover
+public import CompStark.KoalaBear.Poseidon2
 public import CompStark.KoalaBear.Challenge
 public import Mathlib.Data.List.Forall2
 
@@ -151,7 +152,7 @@ theorem commitOk_leaves (a : Array EF) (s la : Nat) (hs : s ≤ 24) (ha : a.size
         ⟨s - la, by rw [KoalaBear.twoAdicity_eq]; omega, hd⟩,
       ?_, ?_⟩, hd⟩
     · show (a.flatMap fun x ↦ (Ext.coeffs x).toArray).size = 4 * 2 ^ la * (a.size / 2 ^ la)
-      rw [size_flatMap_coeffs, KoalaBear.d_ext4, hd, Nat.mul_assoc, hsz, ha]
+      rw [size_flatMap_coeffs, Mont32.d_ext4, hd, Nat.mul_assoc, hsz, ha]
     · show Addressable (4 * 2 ^ la * (a.size / 2 ^ la))
       rw [hd]; exact hadd
   · show Addressable (2 ^ (s - la) * (0 + 4 * 2 ^ la))

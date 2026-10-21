@@ -350,6 +350,6 @@ theorem permute24_width24 (W : Array F) (i : USize) (hfit : GroupFits24 (encode 
           ((lane 24 W i.toNat l).map KoalaBear.Fast.ringEquiv)) ∧
       ∀ k, (k < i.toNat ∨ i.toNat + 8 * 24 ≤ k) → W'.getD k 0 = W.getD k 0 := by
   obtain ⟨W', e, hs, hl, ho⟩ := permute24_spec (KoalaBear.width24 F) rfl rfl rfl rfl W i hfit
-  exact ⟨W', e, hs, fun l hl' ↦ by rw [hl l hl', fast_width24], ho⟩
+  exact ⟨W', e, hs, fun l hl' ↦ by rw [hl l hl', KoalaBear.fast_width24], ho⟩
 
 end CompStark.Poseidon2.Packed

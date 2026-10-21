@@ -89,7 +89,7 @@ impl<AB: AirBuilderWithPublicValues> Air<AB> for CubeAir {
 }
 
 /// The trace of `n` rows of `CubeAir` from `(2, 0)`, and its last `x`.
-fn cube_trace(n: usize) -> (RowMajorMatrix<F>, F) {
+pub fn cube_trace<F: Field>(n: usize) -> (RowMajorMatrix<F>, F) {
     let mut values = Vec::with_capacity(2 * n);
     let (mut x, mut y) = (F::TWO, F::ZERO);
     for _ in 0..n {
@@ -142,7 +142,7 @@ fn wide_trace(n: usize) -> RowMajorMatrix<F> {
 }
 
 /// The trace of `n` Fibonacci rows from `(0, 1)`, and its last right value.
-fn trace(n: usize) -> (RowMajorMatrix<F>, F) {
+pub fn trace<F: Field>(n: usize) -> (RowMajorMatrix<F>, F) {
     let mut values = Vec::with_capacity(2 * n);
     let (mut l, mut r) = (F::ZERO, F::ONE);
     for _ in 0..n {

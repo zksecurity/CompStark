@@ -38,8 +38,8 @@ open CompStark.Stark.Fast (crow termStep termsStep yzOf powers)
 
 local notation "F" => _root_.KoalaBear.Fast.Field
 variable {EF : Type} [Challenge F EF]
-local notation "hashF" => CompStark.Hash.KoalaBear.hash F
-local notation "compF" => CompStark.Hash.KoalaBear.compress F
+local notation "hashF" => CompStark.Hash.Poseidon2.hash F
+local notation "compF" => CompStark.Hash.Poseidon2.compress F
 local notation "K" => Challenge.Spec EF
 local notation "ι" => algebraMap F (Challenge.Spec EF)
 
@@ -631,7 +631,7 @@ theorem openInput_honest_of (P : Params) (logMax index : Nat) (alpha : EF)
       ∃ h ≤ logMax, ∀ x ∈ r.2, Deep.HonestItem P.logBlowup h x)
     (hmerkle : ∀ (ms : List (Mat F)) (k : Nat), ms ≠ [] →
       (∀ m ∈ ms, m.height = 2 ^ k ∧ m.values.size = m.width * m.height) → ∀ i < 2 ^ k,
-      Merkle.KoalaBear.verifyBatch KoalaBear.Fast.Field (Committed.ofMats hashF compF ms).root
+      Merkle.Poseidon2.verifyBatch KoalaBear.Fast.Field (Committed.ofMats hashF compF ms).root
         (ms.map (·.height)) i
             (((Committed.ofMats hashF compF ms).openAt i).values.toList.map (·.toList))
         ((Committed.ofMats hashF compF ms).openAt i).path.toList = true)
@@ -639,7 +639,7 @@ theorem openInput_honest_of (P : Params) (logMax index : Nat) (alpha : EF)
       ((Committed.ofMats hashF compF ms).openAt i).values = (ms.map fun m ↦ rowOf m i).toArray)
     (hmax : ∀ (ms : List (Mat F)) (h : Nat), ms ≠ [] → (∀ m ∈ ms, m.height = h) →
       (Committed.ofMats hashF compF ms).maxHeight = h) :
-    openInput poseidon2 P logMax index alpha
+    openInput (poseidon2 F) P logMax index alpha
       (rounds.map fun r ↦ r.1.openAt (index >>> (logMax - Nat.log2 r.1.maxHeight)))
       (rounds.map fun r ↦ (r.1.root, r.2.map fun x ↦
         ((⟨1, Nat.log2 x.1.height - P.logBlowup⟩ : Domain F), x.2.map fun y ↦ (y.1, y.2.toList)))) =
@@ -762,7 +762,7 @@ theorem openInput_honest (P : Params) (logMax index : Nat) (alpha : EF)
     (hidx : index < 2 ^ logMax)
     (hrounds : ∀ r ∈ rounds, r.2 ≠ [] ∧ r.1 = Committed.ofMats hashF compF (r.2.map (·.1)) ∧
       ∃ h ≤ logMax, ∀ x ∈ r.2, Deep.HonestItem P.logBlowup h x) :
-    openInput poseidon2 P logMax index alpha
+    openInput (poseidon2 F) P logMax index alpha
       (rounds.map fun r ↦ r.1.openAt (index >>> (logMax - Nat.log2 r.1.maxHeight)))
       (rounds.map fun r ↦ (r.1.root, r.2.map fun x ↦
         ((⟨1, Nat.log2 x.1.height - P.logBlowup⟩ : Domain F), x.2.map fun y ↦ (y.1, y.2.toList)))) =

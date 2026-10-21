@@ -4,15 +4,14 @@ Released under Apache 2.0 license as described in the file LICENSE.
 -/
 module
 
-public import CompStark.BaseField
+public import CompStark.Mont32.BaseField
 public import CompPoly.Fields.KoalaBear.Fast
-public import CompPoly.Fields.Montgomery.Native32Bytes
 
 /-! # KoalaBear as the base field
 
-The fast KoalaBear field `KoalaBear.Fast.Field`, `p = 127 · 2^24 + 1`, is a `BaseField` with
-Plonky3's choices: the multiplicative generator `3` as the coset shift, and Plonky3's
-`TWO_ADIC_GENERATORS`, two-adicity `24`.
+The fast KoalaBear field `KoalaBear.Fast.Field`, `p = 127 · 2^24 + 1`, is a `BaseField`
+(`Mont32BaseField`) with Plonky3's choices: the multiplicative generator `3` as the coset shift,
+and Plonky3's `TWO_ADIC_GENERATORS`, two-adicity `24`.
 -/
 
 @[expose] public section
@@ -62,15 +61,6 @@ theorem isPrimitiveRoot_twoAdicGen (n : Nat) (hn : n ≤ 24) :
   rw [e]
   exact h
 
-/-- `x ^ 2 ^ k` by squaring. -/
-def sqIter {K : Type} [Mul K] (x : K) : Nat → K
-  | 0 => x
-  | k + 1 => sqIter (x * x) k
-
-theorem sqIter_eq {K : Type} [Monoid K] (x : K) : ∀ k, sqIter x k = x ^ 2 ^ k
-  | 0 => (pow_one x).symm
-  | k + 1 => by rw [sqIter, sqIter_eq _ k, ← sq, ← pow_mul, pow_succ']
-
 /-- `3` is not in the two-adic subgroup. -/
 theorem three_pow_ne_one : (3 : F) ^ 2 ^ 24 ≠ 1 := by
   intro h
@@ -80,10 +70,7 @@ theorem three_pow_ne_one : (3 : F) ^ 2 ^ 24 ≠ 1 := by
   decide
 
 /-- KoalaBear with Plonky3's coset shift `3` and two-adic generators. -/
-instance instBaseField : BaseField F where
-  toField := inferInstance
-  toFintype := inferInstance
-  two_ne_zero := NonBinaryField.char_neq_2
+instance instMont32BaseField : Mont32BaseField _root_.KoalaBear.fieldSize where
   twoAdicity := 24
   twoAdicGen := twoAdicGen
   isPrimitiveRoot_twoAdicGen := isPrimitiveRoot_twoAdicGen
@@ -94,8 +81,11 @@ instance instBaseField : BaseField F where
 
 @[simp] theorem twoAdicity_eq : twoAdicity F = 24 := rfl
 
-/-- `p = 2130706433 = 127 · 2^24 + 1`, for the base field's `Fintype`. -/
-theorem card_eq : @Fintype.card F BaseField.toFintype = 2130706433 := card_fastField
+/-- `p = 2130706433 = 127 · 2^24 + 1`, for the base field's `Fintype`, on `FastField p` as the
+generic instances elaborate it. -/
+theorem card_eq :
+    @Fintype.card (FastField _root_.KoalaBear.fieldSize) BaseField.toFintype = 2130706433 :=
+  card_fastField
 
 /-- `omega` with KoalaBear's two-adicity unfolded to `24`. -/
 macro "omega24" : tactic =>

@@ -37,6 +37,7 @@ name = "compstark-bench"
 version = "0.1.0"
 dependencies = [
  "p3-air",
+ "p3-baby-bear",
  "p3-challenger",
  "p3-commit",
  "p3-dft",
@@ -187,6 +188,20 @@ dependencies = [
  "p3-field",
  "p3-matrix",
  "serde",
+]
+
+[[package]]
+name = "p3-baby-bear"
+version = "0.4.2"
+source = "git+https://github.com/Plonky3/Plonky3?rev=47e442f#47e442ffb5ad5f6c86f845e48283867f348243ba"
+dependencies = [
+ "p3-challenger",
+ "p3-field",
+ "p3-mds",
+ "p3-monty-31",
+ "p3-poseidon2",
+ "p3-symmetric",
+ "rand",
 ]
 
 [[package]]

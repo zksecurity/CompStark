@@ -5,7 +5,8 @@ Released under Apache 2.0 license as described in the file LICENSE.
 module
 
 public import CompStark.Merkle.Packed
-public import CompStark.KoalaBear.Hash
+public import CompStark.Plonky3.Hash
+public import CompStark.KoalaBear.Poseidon2
 public import CompStark.Poseidon2.PackedCorrectness24
 import all CompStark.Merkle.Packed
 import all CompPoly.Univariate.NTTFast.Packed.Native
@@ -512,23 +513,23 @@ theorem storeRows_encode (S O : Array F) (rows r0 : Nat) (hS : 64 ≤ S.size)
     exact ⟨O', e, s, g⟩
 
 theorem getElem_hash (xs : List F) (j : Nat) (hj : j < 8) :
-    (CompStark.Hash.KoalaBear.hash F xs)[j] =
+    (CompStark.Hash.Poseidon2.hash F xs)[j] =
       (CompStark.Hash.absorb (permute (KoalaBear.width24 F)) 16 (by decide)
         (Vector.replicate 24 0) xs)[j] := by
-  simp only [CompStark.Hash.KoalaBear.hash, CompStark.Hash.sponge, Vector.getElem_cast,
-    Vector.getElem_take]
+  simp only [CompStark.Hash.Poseidon2.hash_eq, CompStark.KoalaBear.params24_eq,
+    CompStark.Hash.sponge, Vector.getElem_cast, Vector.getElem_take]
 
 theorem hashChunk_encode (M : Array F) (w rows : Nat) (hM : M.size = rows * w)
     (hu : 4 * M.size < USize.size) (ho : 4 * (8 * rows) < USize.size) :
     ∃ D, hashChunk (Packed24.ofParams (KoalaBear.width24 F)) (encode M) w rows = encode D ∧
       D.size = 8 * rows ∧ ∀ r < rows, ∀ j (hj : j < 8), D.getD (8 * r + j) 0 =
-        (CompStark.Hash.KoalaBear.hash F
+        (CompStark.Hash.Poseidon2.hash F
           ((⟨w, rows, M⟩ : CompStark.Merkle.Matrix F).row r))[j]'hj := by
   have key : ∀ G, ∃ D, (List.range G).foldl (fun out g ↦
       hashRows8 (Packed24.ofParams (KoalaBear.width24 F)) (encode M) w rows (8 * g) out)
       (encode (Array.replicate (8 * rows) (0 : F))) = encode D ∧ D.size = 8 * rows ∧
       ∀ r < rows, ∀ j (hj : j < 8), D.getD (8 * r + j) 0 = if r < 8 * G then
-        (CompStark.Hash.KoalaBear.hash F ((⟨w, rows, M⟩ : CompStark.Merkle.Matrix F).row r))[j]'hj
+        (CompStark.Hash.Poseidon2.hash F ((⟨w, rows, M⟩ : CompStark.Merkle.Matrix F).row r))[j]'hj
         else 0 := by
     intro G
     induction G with
@@ -627,7 +628,7 @@ theorem compress8_encode (P O : Array F) (n o o0 count : Nat) (hP : P.size = 8 *
     ∃ O', compress8 (Packed16.ofParams (KoalaBear.width16 F)) (encode P) n o o0 count (encode O) =
       encode O' ∧ O'.size = 8 * count ∧ ∀ k, O'.getD k 0 =
         if 8 * (o - o0) ≤ k ∧ k < 8 * count ∧ k < 8 * (o - o0) + 64 then
-          (CompStark.Hash.KoalaBear.compress F (dig P (2 * (o0 + k / 8)))
+          (CompStark.Hash.Poseidon2.compress F (dig P (2 * (o0 + k / 8)))
             (dig P (2 * (o0 + k / 8) + 1)))[k % 8]'(Nat.mod_lt _ (by decide))
         else O.getD k 0 := by
   obtain ⟨S, e, s, ls⟩ := loadPairs_encode P n o hP hu
@@ -643,7 +644,8 @@ theorem compress8_encode (P O : Array F) (n o o0 count : Nat) (hP : P.size = 8 *
   · have hl : k / 8 - (o - o0) < 8 := by omega
     have hpl := l2 _ hl
     rw [ls _ hl (by omega), show o + (k / 8 - (o - o0)) = o0 + k / 8 by omega] at hpl
-    simp only [CompStark.Hash.KoalaBear.compress, CompStark.Hash.compress, overwrite_pair,
+    simp only [CompStark.Hash.Poseidon2.compress_eq, CompStark.KoalaBear.params16_eq,
+      CompStark.Hash.compress, overwrite_pair,
       ← hpl, Vector.getElem_cast, Vector.getElem_take, lane, Vector.getElem_ofFn]
   · rfl
 

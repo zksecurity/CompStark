@@ -4,6 +4,7 @@ import CompStark.Merkle.Packed
 import CompStark.Merkle.Tree
 import CompStark.Stark.Prover
 import CompStark.Stark.Fast
+import CompStark.Mont32.Json
 
 /-! # CompStark micro-benchmarks
 
@@ -174,7 +175,8 @@ def main (args : List String) : IO UInt32 := do
     -- Check small shapes against the specification: odd heights, single rows, partial blocks.
     for (sh, sw) in [(1, 1), (2, 3), (5, 16), (8, 17), (13, 40), (64, 10), (33, 7)] do
       let vals := Array.ofFn (n := sh * sw) fun k ↦ entry k.val
-      let spec := CompStark.Merkle.KoalaBear.root KoalaBear.Fast.Field [⟨sw, sh, vals⟩]
+      let spec := @CompStark.Merkle.Poseidon2.root KoalaBear.Fast.Field _
+        (.ofSpec (KoalaBear.width16 _) (KoalaBear.width24 _)) [⟨sw, sh, vals⟩]
       let got := CompStark.Merkle.Packed.root K24 K16 sw #[enc vals]
       for j in [0:8] do
         if read got j != (spec.toArray.getD j 0).val then
@@ -246,7 +248,7 @@ def main (args : List String) : IO UInt32 := do
     -- QUERY_POW [JSON]`: the proof's median time, checked against Plonky3's proof in `JSON` if
     -- given.
     let B := if backend == "fast" then CompStark.Stark.Fast.backend else
-      CompStark.Fri.Backend.spec KoalaBear.Fast.Ext4
+      CompStark.Stark.specBackend KoalaBear.Fast.Ext4
     let ps := (rest.take 7).map String.toNat!
     let [logN, b, f, a, q, cp, qp] := ps | IO.eprintln "seven parameters"; return 1
     let P : CompStark.Fri.Params := ⟨b, f, a, q, cp, qp⟩
@@ -258,7 +260,8 @@ def main (args : List String) : IO UInt32 := do
       CompStark.Stark.Fast.backendFor logN b A.logQuotientChunks else B
     if let path :: _ := rest.drop 7 then
       let rust ← IO.ofExcept
-        (CompStark.Stark.Json.parse (EF := KoalaBear.Fast.Ext4) (← IO.FS.readFile path))
+        (CompStark.Stark.Json.parse (p := KoalaBear.fieldSize) (EF := KoalaBear.Fast.Ext4)
+          (← IO.FS.readFile path))
       unless CompStark.Stark.proveWith B P A logN trace pis == rust do
         IO.eprintln "proof differs from Plonky3's"; return 1
       IO.println "proof matches Plonky3's"

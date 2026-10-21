@@ -5,7 +5,8 @@ Released under Apache 2.0 license as described in the file LICENSE.
 module
 
 public import CompStark.Fri.Prover
-public import CompStark.KoalaBear.Prover
+public import CompStark.Plonky3.Prover
+public import CompStark.KoalaBear.Poseidon2
 public import CompStark.KoalaBear.Challenge
 public import CompStark.Stark.Points
 public import CompStark.Fri.Verifier
@@ -22,7 +23,7 @@ specification's opening `Committed.openAt` at any row verifies against `Committe
 `Merkle.root`, its path is `Merkle.openBatch`'s, and, with one height, its rows are the rows at the
 index unshifted, which are `Merkle.openBatch`'s rows.
 
-On Poseidon2 the verifier's `checkOpening` is `Merkle.KoalaBear.verifyBatch` (`checkOpening_eq`),
+On Poseidon2 the verifier's `checkOpening` is `Merkle.Poseidon2.verifyBatch` (`checkOpening_eq`),
 by `Merkle.verifyBatchM_pure`: with pure hashes the monadic opening check is the pure one.
 -/
 
@@ -32,8 +33,8 @@ namespace CompStark.Fri
 open CompStark.Stark CompStark.Merkle
 
 local notation "F" => _root_.KoalaBear.Fast.Field
-local notation "hashF" => CompStark.Hash.KoalaBear.hash F
-local notation "compF" => CompStark.Hash.KoalaBear.compress F
+local notation "hashF" => CompStark.Hash.Poseidon2.hash F
+local notation "compF" => CompStark.Hash.Poseidon2.compress F
 
 /-- A running maximum from at most `h` over matrices of height `h` is `h`. -/
 theorem foldl_max_height (ms : List (Mat F)) (h : Nat) (hms : ∀ m ∈ ms, m.height = h) :
@@ -66,10 +67,10 @@ theorem rowOf_toList (m : Mat F) (i : Nat) : (rowOf m i).toList = m.toMatrix.row
 /-- The committed root is the Merkle root. -/
 theorem root_ofMats (ms : List (Mat F)) :
     (Committed.ofMats hashF compF ms).root =
-      Merkle.root (Hash.KoalaBear.hash F) (Hash.KoalaBear.compress F) (ms.map Mat.toMatrix) := by
+      Merkle.root (Hash.Poseidon2.hash F) (Hash.Poseidon2.compress F) (ms.map Mat.toMatrix) := by
   rw [Merkle.root_eq_layers]
   simp only [Committed.ofMats, Committed.root]
-  generalize Merkle.layers (Hash.KoalaBear.hash F) (Hash.KoalaBear.compress F)
+  generalize Merkle.layers (Hash.Poseidon2.hash F) (Hash.Poseidon2.compress F)
     (ms.map Mat.toMatrix) = ls
   simp only [List.back?_toArray, List.getLast?_map, List.getLastD_eq_getLast?]
   cases ls.getLast? with
@@ -99,7 +100,7 @@ theorem getD_toArrays {α : Type*} [Zero α] (ls : List (List α)) (j x : Nat) :
 theorem openAt_path (ms : List (Mat F)) (k : Nat) (hne : ms ≠ [])
     (hms : ∀ m ∈ ms, m.height = 2 ^ k) (i : Nat) :
     ((Committed.ofMats hashF compF ms).openAt i).path.toList =
-      (Merkle.openBatch (Hash.KoalaBear.hash F) (Hash.KoalaBear.compress F)
+      (Merkle.openBatch (Hash.Poseidon2.hash F) (Hash.Poseidon2.compress F)
         (ms.map Mat.toMatrix) i).2 := by
   have hms' : ∀ m ∈ ms.map Mat.toMatrix, m.height = 2 ^ k := fun m hm ↦ by
     obtain ⟨a, ha, rfl⟩ := List.mem_map.mp hm; exact hms a ha
@@ -121,7 +122,7 @@ verifies against its root. -/
 theorem verifyBatch_openAt (ms : List (Mat F)) (k : Nat) (hne : ms ≠ [])
     (hms : ∀ m ∈ ms, m.height = 2 ^ k ∧ m.values.size = m.width * m.height)
     (i : Nat) (hi : i < 2 ^ k) :
-    Merkle.KoalaBear.verifyBatch KoalaBear.Fast.Field (Committed.ofMats hashF compF ms).root
+    Merkle.Poseidon2.verifyBatch KoalaBear.Fast.Field (Committed.ofMats hashF compF ms).root
       (ms.map (·.height)) i
           (((Committed.ofMats hashF compF ms).openAt i).values.toList.map (·.toList))
       ((Committed.ofMats hashF compF ms).openAt i).path.toList = true := by
@@ -131,7 +132,7 @@ theorem verifyBatch_openAt (ms : List (Mat F)) (k : Nat) (hne : ms ≠ [])
   have hne' : ms.map Mat.toMatrix ≠ [] := by
     rwa [Ne, List.map_eq_nil_iff]
   have hv : ((Committed.ofMats hashF compF ms).openAt i).values.toList.map (·.toList) =
-      (Merkle.openBatch (Hash.KoalaBear.hash F) (Hash.KoalaBear.compress F)
+      (Merkle.openBatch (Hash.Poseidon2.hash F) (Hash.Poseidon2.compress F)
         (ms.map Mat.toMatrix) i).1 := by
     rw [openAt_values ms k hh, Merkle.openBatch_fst _ _ _ k i hh', List.toList_toArray,
       List.map_map, List.map_map]
@@ -141,14 +142,15 @@ theorem verifyBatch_openAt (ms : List (Mat F)) (k : Nat) (hne : ms ≠ [])
   rw [root_ofMats, hv, openAt_path ms k hne hh, hH]
   exact Merkle.verifyBatch_openBatch _ _ _ k i hne' hh' hi
 
-/-- On Poseidon2, the verifier's opening check is `Merkle.KoalaBear.verifyBatch`. -/
+/-- On Poseidon2, the verifier's opening check is `Merkle.Poseidon2.verifyBatch`. -/
 theorem checkOpening_eq (commit : Digest F) (heights : List Nat) (index : Nat)
     (values : List (List F)) (path : List (Digest F)) :
-    checkOpening poseidon2 commit heights index values path =
-      pure (Merkle.KoalaBear.verifyBatch F commit heights index values path) := by
+    checkOpening (poseidon2 F) commit heights index values path =
+      pure (Merkle.Poseidon2.verifyBatch F commit heights index values path) := by
   unfold checkOpening
-  rw [show Merkle.verifyBatchM poseidon2.hash poseidon2.compress commit heights index values path
-    = (pure (Merkle.KoalaBear.verifyBatch F commit heights index values path) : Id Bool) from
+  rw [show Merkle.verifyBatchM (poseidon2 F).hash (poseidon2 F).compress commit heights index values
+      path
+    = (pure (Merkle.Poseidon2.verifyBatch F commit heights index values path) : Id Bool) from
     Merkle.verifyBatchM_pure _ _ _ _ _ _ _]
   rfl
 

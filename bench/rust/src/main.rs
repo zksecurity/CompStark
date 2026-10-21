@@ -81,6 +81,7 @@ fn merkle(log_h: u32, width: usize) {
     println!("plonky3 merkle 2^{log_h} x {width} ms median {:.3}", samples[7]);
 }
 
+mod babybear;
 mod stark;
 
 fn main() {
@@ -102,6 +103,13 @@ fn main() {
     if args.len() >= 3 && args[1] == "stark" {
         let nums: Vec<usize> = args[3..].iter().map(|a| a.parse().unwrap()).collect();
         return stark::stark(&args[2], &nums);
+    }
+    if args.len() == 2 && args[1] == "babybear" {
+        return babybear::known_answers();
+    }
+    if args.len() >= 3 && args[1] == "stark-babybear" {
+        let nums: Vec<usize> = args[3..].iter().map(|a| a.parse().unwrap()).collect();
+        return babybear::stark(&args[2], &nums);
     }
     if args.len() == 3 && args[1] == "bench" {
         return bench(args[2].parse().unwrap());

@@ -21,8 +21,8 @@ namespace CompStark.Complete
 open CompStark.Stark CompStark.Fri
 
 local notation "F" => _root_.KoalaBear.Fast.Field
-local notation "hashF" => CompStark.Hash.KoalaBear.hash F
-local notation "compF" => CompStark.Hash.KoalaBear.compress F
+local notation "hashF" => CompStark.Hash.Poseidon2.hash F
+local notation "compF" => CompStark.Hash.Poseidon2.compress F
 
 variable {EF : Type} [Challenge F EF]
 
@@ -153,7 +153,7 @@ theorem answer_round (f : Array EF) (h la idx : Nat) (hs : f.size = 2 ^ h) (hla 
       if j < pos then sib.getD j 0 else if j = pos then f.getD idx 0 else sib.getD (j - 1) 0
     sib.size = 2 ^ la - 1 ∧
       evals = (List.range (2 ^ la)).map (fun k ↦ f.getD ((idx >>> la) * 2 ^ la + k) 0) ∧
-      Merkle.KoalaBear.verifyBatch F c.root [2 ^ (h - la)] (idx >>> la)
+      Merkle.Poseidon2.verifyBatch F c.root [2 ^ (h - la)] (idx >>> la)
         [evals.flatMap Ext.coeffs] o.path.toList = true := by
   intro c o pos ev sib evals
   have hapos : 0 < 2 ^ la := by positivity
@@ -200,7 +200,7 @@ theorem answer_round (f : Array EF) (h la idx : Nat) (hs : f.size = 2 ^ h) (hla 
           Challenge.d EF * 2 ^ la * (f.size / 2 ^ la)
         rw [size_flatMap_coeffs, hs, hhl, Nat.mul_div_cancel _ hapos]
         ring) (idx >>> la) hrlt
-    replace hv : Merkle.KoalaBear.verifyBatch F c.root [2 ^ (h - la)] (idx >>> la)
+    replace hv : Merkle.Poseidon2.verifyBatch F c.root [2 ^ (h - la)] (idx >>> la)
         (o.values.toList.map (·.toList)) o.path.toList = true := by
       rw [← hm]; exact hv
     rw [hevals]

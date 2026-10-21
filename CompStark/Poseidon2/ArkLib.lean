@@ -144,8 +144,8 @@ theorem permute_eq (params : _root_.Poseidon2.Params) (P : Params 𝔽 params.wi
 theorem permute_arkLib16 (s : Vector 𝔽 16) :
     permute (KoalaBear.width16 𝔽) s = _root_.Poseidon2.permute _root_.Poseidon2.params16 s := by
   apply permute_eq _root_.Poseidon2.params16 (KoalaBear.width16 𝔽) rfl
-  · simp only [KoalaBear.width16, KoalaBear.diagonal16, _root_.Poseidon2.params16, one_div,
-      neg_div]
+  · simp only [KoalaBear.width16, Params.ofNat, KoalaBear.diagonal16, _root_.Poseidon2.params16,
+      one_div, neg_div]
   · decide +kernel
   · decide +kernel
   · decide +kernel
@@ -154,8 +154,8 @@ theorem permute_arkLib16 (s : Vector 𝔽 16) :
 theorem permute_arkLib24 (s : Vector 𝔽 24) :
     permute (KoalaBear.width24 𝔽) s = _root_.Poseidon2.permute _root_.Poseidon2.params24 s := by
   apply permute_eq _root_.Poseidon2.params24 (KoalaBear.width24 𝔽) rfl
-  · simp only [KoalaBear.width24, KoalaBear.diagonal24, _root_.Poseidon2.params24, one_div,
-      neg_div]
+  · simp only [KoalaBear.width24, Params.ofNat, KoalaBear.diagonal24, _root_.Poseidon2.params24,
+      one_div, neg_div]
   · decide +kernel
   · decide +kernel
   · decide +kernel

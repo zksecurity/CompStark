@@ -11,7 +11,7 @@ import CompPoly.Univariate.NTTFast.Packed.ArrayLemmas
 /-! # Correctness of the packed Merkle root
 
 The leaf digests of the chunk tasks, the compression range tasks of every layer and the layer
-loop agree with `Merkle.KoalaBear.root` on a single matrix: `root_eq`.
+loop agree with `Merkle.Poseidon2.root` on a single matrix: `root_eq`.
 -/
 
 @[expose] public section
@@ -71,7 +71,7 @@ theorem dig_flat (ds : List (Vector F 8)) (k : Nat) : dig (flat ds) k = ds.getD 
 
 /-- Parent `i` of a layer stored as consecutive words. -/
 def parent (P : Array F) (i : Nat) : Vector F 8 :=
-  CompStark.Hash.KoalaBear.compress F (dig P (2 * i)) (dig P (2 * i + 1))
+  CompStark.Hash.Poseidon2.compress F (dig P (2 * i)) (dig P (2 * i + 1))
 
 theorem compressRange_encode (P : Array F) (n o0 count : Nat) (hP : P.size = 8 * n)
     (hu : 4 * P.size < USize.size) (huO : 4 * (8 * count) < USize.size) (hc : o0 + count ≤ n / 2) :
@@ -166,10 +166,10 @@ theorem nextLayer_encode (ds : List (Vector F 8))
     (hu : 4 * (8 * ds.length) < USize.size) :
     CompStark.Merkle.Packed.nextLayer (Packed16.ofParams (KoalaBear.width16 F)) (encode (flat ds))
         ds.length =
-      (encode (flat (CompStark.Merkle.nextLayer (CompStark.Hash.KoalaBear.hash F)
-          (CompStark.Hash.KoalaBear.compress F) [] ds)),
-        (CompStark.Merkle.nextLayer (CompStark.Hash.KoalaBear.hash F)
-          (CompStark.Hash.KoalaBear.compress F) [] ds).length) := by
+      (encode (flat (CompStark.Merkle.nextLayer (CompStark.Hash.Poseidon2.hash F)
+          (CompStark.Hash.Poseidon2.compress F) [] ds)),
+        (CompStark.Merkle.nextLayer (CompStark.Hash.Poseidon2.hash F)
+          (CompStark.Hash.Poseidon2.compress F) [] ds).length) := by
   have hP := size_flat ds
   unfold CompStark.Merkle.Packed.nextLayer
   dsimp only
@@ -196,7 +196,7 @@ theorem nextLayer_encode (ds : List (Vector F 8))
     foldl_encode_flat, foldl_tiles,
     show min (ds.length / 2) (parts * size) = ds.length / 2 by omega]
   have hpair : (List.range (ds.length / 2)).map (parent (flat ds)) =
-      (List.range (ds.length / 2)).map fun i ↦ CompStark.Hash.KoalaBear.compress F
+      (List.range (ds.length / 2)).map fun i ↦ CompStark.Hash.Poseidon2.compress F
         (ds.getD (2 * i) 0) (ds.getD (2 * i + 1) 0) := by
     refine List.map_congr_left fun i _ ↦ ?_
     rw [parent, dig_flat, dig_flat]
@@ -221,12 +221,12 @@ theorem getD_append (A B : Array F) (k : Nat) :
 /-- The leaf digests of a chunk of rows of width `w`. -/
 def chunkLeaves (w : Nat) (c : Array F) : List (Vector F 8) :=
   (List.range (c.size / w)).map fun r ↦
-    CompStark.Hash.KoalaBear.hash F ((⟨w, c.size / w, c⟩ : CompStark.Merkle.Matrix F).row r)
+    CompStark.Hash.Poseidon2.hash F ((⟨w, c.size / w, c⟩ : CompStark.Merkle.Matrix F).row r)
 
 theorem flatMap_chunkLeaves (w : Nat) (cs : List (Array F))
     (hc : ∀ c ∈ cs, c.size % w = 0) (h : Nat) :
     cs.flatMap (chunkLeaves w) = (List.range (cs.map (·.size / w)).sum).map fun r ↦
-      CompStark.Hash.KoalaBear.hash F
+      CompStark.Hash.Poseidon2.hash F
         ((⟨w, h, cs.toArray.flatten⟩ : CompStark.Merkle.Matrix F).row r) := by
   induction cs with
   | nil => rfl
@@ -296,8 +296,8 @@ theorem leaves_encode (w : Nat) (hw : 0 < w) (cs : List (Array F))
   simp only [size_encode_fields, Nat.mul_div_mul_left _ _ (show 0 < 4 by decide)]
   rw [sum, List.nil_append, Nat.zero_add]
 
-local notation "hashF" => CompStark.Hash.KoalaBear.hash F
-local notation "compF" => CompStark.Hash.KoalaBear.compress F
+local notation "hashF" => CompStark.Hash.Poseidon2.hash F
+local notation "compF" => CompStark.Hash.Poseidon2.compress F
 
 /-- One step of the layer loop. -/
 def step (L : List (Vector F 8)) : List (Vector F 8) :=
@@ -439,7 +439,7 @@ theorem root_eq (w : Nat) (hw : 0 < w) (cs : List (Array F))
     (hl : 32 * ((cs.map (·.size / w)).sum + 1) < USize.size) :
     root (Packed24.ofParams (KoalaBear.width24 F)) (Packed16.ofParams (KoalaBear.width16 F)) w
         (cs.toArray.map encode) =
-      encode (CompStark.Merkle.KoalaBear.root F
+      encode (CompStark.Merkle.Poseidon2.root F
         [⟨w, (cs.map (·.size / w)).sum, cs.toArray.flatten⟩]).toArray := by
   generalize hH : (cs.map (·.size / w)).sum = H at hh hl
   unfold root
@@ -453,7 +453,7 @@ theorem root_eq (w : Nat) (hw : 0 < w) (cs : List (Array F))
     (by rw [hlen]; exact hh) (by rw [hlen]; exact hl)
   rw [hlen] at e
   rw [e]
-  simp only [CompStark.Merkle.KoalaBear.root, CompStark.Merkle.root, List.mergeSort_singleton,
+  simp only [CompStark.Merkle.Poseidon2.root, CompStark.Merkle.root, List.mergeSort_singleton,
     List.headD_cons, List.takeWhile_cons, beq_self_eq_true, List.takeWhile_nil,
     CompStark.Merkle.firstLayer, List.flatMap_cons, List.flatMap_nil, List.append_nil,
     List.length_cons, List.length_nil, ite_true,

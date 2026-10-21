@@ -132,7 +132,7 @@ The total is at most `2 ^ (-128)` (`wide5i_knowledgeError_le`, `wide5i_knowledge
 namespace CompStark.Iop
 open CompStark.Stark CompStark.Sound
 
-local notation "F" => _root_.KoalaBear.Fast.Field
+local notation "F" => Montgomery.Native32.FastField _root_.KoalaBear.fieldSize
 
 variable {EF : Type} [Challenge F EF]
 

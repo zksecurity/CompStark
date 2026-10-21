@@ -194,7 +194,7 @@ theorem encode_ofFn_getElem (X : Array F) :
 theorem invDenoms_rel {z : EF} (hz : Ext.OutsideBase z) (X : Array F)
     (hs : 4 * X.size < USize.size) :
     RV (invDenoms z (encode X) X.size) (X.map fun x ↦ (z - Ext4.ofBase x)⁻¹) := by
-  have hz' := (KoalaBear.outsideBase_ext4 z).mp hz
+  have hz' := (Mont32.outsideBase_ext4 z).mp hz
   simp only [invDenoms]
   rw [encode_ofFn_getElem X]
   simp only [EVec.mulWords_ofFn hs, EVec.addWords_ofFn hs, mulAddWords_ofFn hs,
@@ -274,7 +274,7 @@ theorem weightPlane {z : EF} (hz : Ext.OutsideBase z) (X : Array F) (r0 len : Na
         Nat.min_self]) fun t h1 _ ↦ ?_)
     rw [Array.size_map, Array.size_zipWith, Array.size_map, hsz, Nat.min_self] at h1
     rw [Array.getElem_map, Array.getElem_zipWith, Array.getElem_map, Array.getElem_ofFn,
-      Array.getElem_extract, Ext.ofBase, KoalaBear.ofBase_ext4, mul_ofBase,
+      Array.getElem_extract, Ext.ofBase, Mont32.ofBase_ext4, mul_ofBase,
       Array.getD_eq_getD_getElem?,
       Array.getElem?_eq_getElem (by omega), Option.getD_some]
     rfl
@@ -998,7 +998,7 @@ theorem term_rel {len : Nat} {acc comp : EVec} {S C : Nat → EF} (X : Array F)
       Array.size_map, hsz, Array.size_map, hX, Nat.min_self, Nat.min_self]) fun t h1 _ ↦ ?_
   rw [Array.size_ofFn] at h1
   simp only [Array.getElem_ofFn, Array.getElem_zipWith, Array.getElem_map, termStep, Ext.ofBase,
-    KoalaBear.ofBase_ext4]
+    Mont32.ofBase_ext4]
   rw [Array.getD_eq_getD_getElem?, Array.getElem?_eq_getElem (by omega), Option.getD_some,
     mul_assoc', mul_comm' offset, mul_assoc']
 

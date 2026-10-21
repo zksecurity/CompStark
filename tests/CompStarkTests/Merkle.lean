@@ -2,7 +2,8 @@
 Copyright (c) 2026 zkSecurity. All rights reserved.
 Released under Apache 2.0 license as described in the file LICENSE.
 -/
-import CompStark.KoalaBear.Hash
+import CompStark.Plonky3.Hash
+import CompStark.KoalaBear.Poseidon2
 import CompStark.Merkle.RootCorrectness
 import CompStark.Merkle.Extract
 
@@ -11,17 +12,26 @@ import CompStark.Merkle.Extract
 Roots of Plonky3's `MerkleTreeMmcs` with the Poseidon2 sponge and compression of
 `examples/src/types.rs`, on matrices whose entry `k` is `base + k` (`bench/rust`,
 `cargo run --release`). They cover odd heights, single rows and injected smaller matrices.
+The interpreter cannot run KoalaBear's packed kernels (CompPoly's inline C stores), so these
+checks run Plonky3's primitives on the specification implementation, a local instance;
+`KoalaBear.perm16_eq` and `perm24_eq` prove the packed kernels equal to it.
 -/
 
 namespace CompStarkTests.Merkle
 open CompStark.Merkle
 
+local notation "F" => _root_.KoalaBear.Fast.Field
+
+/-- The specification implementation of KoalaBear's instances, which the interpreter runs. -/
+local instance (priority := high) specPoseidon2 : CompStark.Poseidon2Field F :=
+  .ofSpec (CompStark.Poseidon2.KoalaBear.width16 _) (CompStark.Poseidon2.KoalaBear.width24 _)
+
 /-- A `height × width` matrix with entries `base, base + 1, …`. -/
-def mat (base height width : Nat) : Matrix _root_.KoalaBear.Field :=
+def mat (base height width : Nat) : Matrix F :=
   ⟨width, height, Array.ofFn (n := height * width) fun k ↦ ((base + k.val : Nat) : _)⟩
 
 def rootOf (ms : List (Nat × Nat × Nat)) : Vector Nat 8 :=
-  (KoalaBear.root _ (ms.map fun (b, h, w) ↦ mat b h w)).map ZMod.val
+  (Poseidon2.root F (ms.map fun (b, h, w) ↦ mat b h w)).map Montgomery.Native32.FastField.toNat
 
 #guard rootOf [(0, 8, 3)] == #v[839328004, 1713888626, 47538326, 961529694, 1367537855,
   384103636, 1060544133, 485679400]

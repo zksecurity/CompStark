@@ -4,7 +4,7 @@ Released under Apache 2.0 license as described in the file LICENSE.
 -/
 module
 
-public import CompStark.Poseidon2.KoalaBear
+public import CompStark.Poseidon2.Basic
 public import Mathlib.Algebra.Ring.Hom.Defs
 import Mathlib.Algebra.BigOperators.Ring.Finset
 import Mathlib.Algebra.GroupWithZero.Units.Lemmas
@@ -12,10 +12,9 @@ import Mathlib.Algebra.GroupWithZero.Units.Lemmas
 /-! # Poseidon2 along ring homomorphisms
 
 The permutation uses only ring operations and its parameters, so a ring homomorphism maps a run
-of the permutation to a run with the mapped parameters (`permute_map`). Plonky3's KoalaBear
-instances map to themselves (`width16_map`, `width24_map`), so the permutation on the Montgomery
-field `KoalaBear.Fast.Field` is the specification on `KoalaBear.Field`, read through the ring
-isomorphism between them (`fast_width16`, `fast_width24`).
+of the permutation to a run with the mapped parameters (`permute_map`). Parameters given by
+canonical round constants map to the same constants (`Params.ofNat_map`), so such an instance on
+one field is, read through a ring isomorphism, the same instance on another.
 -/
 
 @[expose] public section
@@ -91,39 +90,14 @@ theorem permute_map (P : Params F t) (s : Vector F t) :
   rw [hfull, hpart, hfull, externalLinear_map]
   rfl
 
+/-- Canonical round constants map to themselves. -/
+theorem Params.ofNat_map (degree : Nat) (initial : List (Vector Nat t)) (internal : List Nat)
+    (terminal : List (Vector Nat t)) (diagonal : Vector F t) :
+    (Params.ofNat degree initial internal terminal diagonal).map f =
+      Params.ofNat degree initial internal terminal (diagonal.map f) := by
+  simp only [Params.map, Params.ofNat, List.map_map, Function.comp_def, Vector.map_map,
+    map_natCast]
+
 end Ring
-
-section Field
-variable [Field F] [Field K] (f : F →+* K)
-
-theorem width16_map : (KoalaBear.width16 F).map f = KoalaBear.width16 K := by
-  simp only [Params.map, KoalaBear.width16, KoalaBear.diagonal16, List.map_map, Function.comp_def,
-    Vector.map_map, map_natCast, Vector.map_mk, List.map_toArray, List.map_cons, List.map_nil,
-    map_neg, map_inv₀, map_pow, map_ofNat, map_one]
-
-theorem width24_map : (KoalaBear.width24 F).map f = KoalaBear.width24 K := by
-  simp only [Params.map, KoalaBear.width24, KoalaBear.diagonal24, List.map_map, Function.comp_def,
-    Vector.map_map, map_natCast, Vector.map_mk, List.map_toArray, List.map_cons, List.map_nil,
-    map_neg, map_inv₀, map_pow, map_ofNat, map_one]
-
-end Field
-
-open _root_.KoalaBear.Fast (ringEquiv) in
-/-- On the Montgomery field the width-16 permutation is the specification. -/
-theorem fast_width16 (s : Vector _root_.KoalaBear.Fast.Field 16) :
-    (permute (KoalaBear.width16 _) s).map ringEquiv =
-      permute (KoalaBear.width16 _root_.KoalaBear.Field) (s.map ringEquiv) := by
-  have h := permute_map ringEquiv.toRingHom (KoalaBear.width16 _) s
-  rw [width16_map] at h
-  exact h
-
-open _root_.KoalaBear.Fast (ringEquiv) in
-/-- On the Montgomery field the width-24 permutation is the specification. -/
-theorem fast_width24 (s : Vector _root_.KoalaBear.Fast.Field 24) :
-    (permute (KoalaBear.width24 _) s).map ringEquiv =
-      permute (KoalaBear.width24 _root_.KoalaBear.Field) (s.map ringEquiv) := by
-  have h := permute_map ringEquiv.toRingHom (KoalaBear.width24 _) s
-  rw [width24_map] at h
-  exact h
 
 end CompStark.Poseidon2

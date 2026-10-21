@@ -43,6 +43,16 @@ structure Params (F : Type*) (t : Nat) where
   /-- The internal matrix is `1 · 1ᵀ + diag diagonal`. -/
   diagonal : Vector F t
 
+/-- Parameters with round constants given by their canonical values, cast into `F`. -/
+def Params.ofNat [NatCast F] {t : Nat} (degree : Nat) (initial : List (Vector Nat t))
+    (internal : List Nat) (terminal : List (Vector Nat t)) (diagonal : Vector F t) :
+    Params F t where
+  degree := degree
+  initial := initial.map (·.map Nat.cast)
+  internal := internal.map Nat.cast
+  terminal := terminal.map (·.map Nat.cast)
+  diagonal := diagonal
+
 section Ring
 variable [CommRing F] {t : Nat}
 

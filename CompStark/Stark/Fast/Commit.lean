@@ -161,8 +161,8 @@ theorem openAt_rel {c : Commit} {s : Committed F} (i : Nat) (h : RC c s) :
 
 /-! ### The digest layers -/
 
-local notation "hashF" => CompStark.Hash.KoalaBear.hash F
-local notation "compF" => CompStark.Hash.KoalaBear.compress F
+local notation "hashF" => CompStark.Hash.Poseidon2.hash F
+local notation "compF" => CompStark.Hash.Poseidon2.compress F
 
 /-- The layers from `L` up, with no matrices to inject. -/
 abbrev upper (fuel : Nat) (L : List (Digest F)) : List (List (Digest F)) :=
@@ -236,7 +236,7 @@ theorem upperPacked_encode (fuel : Nat) : ∀ (L : List (Digest F)) (out : Array
     · rw [ite_eq_left_of_eq_true _ _ (eq_true h1), ite_eq_left_of_eq_true _ _ (eq_true h1)]
       exact Array.append_empty.symm
     · rw [ite_eq_right_of_eq_false _ _ (eq_false h1), ite_eq_right_of_eq_false _ _ (eq_false h1),
-        K16, CompStark.Merkle.Packed.nextLayer_encode L (by omega)]
+        KoalaBear.K16, CompStark.Merkle.Packed.nextLayer_encode L (by omega)]
       dsimp only
       have hl := (length_nextLayer_le L L.length (by omega)
         (Nat.lt_two_pow_self.le.trans (Nat.pow_le_pow_right (by decide) (by omega)))).2
@@ -358,7 +358,7 @@ theorem packedLayers_encode (W H : Nat) (V : Array F) (hV : V.size = H * W) (hW 
     have := Array.size_flatten (xss := cs.toArray)
     rw [hfl, List.map_toArray, List.sum_toArray, hV, ← h1] at this
     exact (Nat.eq_of_mul_eq_mul_right hW this).symm
-  rw [hc, K24, CompStark.Merkle.Packed.leaves_encode W hW cs hmod hsz,
+  rw [hc, KoalaBear.K24, CompStark.Merkle.Packed.leaves_encode W hW cs hmod hsz,
     CompStark.Merkle.Packed.flatMap_chunkLeaves W cs hmod H, hsum, hfl]
   dsimp only
   generalize hL : List.map (fun r ↦ hashF ((⟨W, H, V⟩ : Merkle.Matrix F).row r)) (List.range H) = L
