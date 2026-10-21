@@ -51,12 +51,9 @@ namespace Batch
 section Injected
 variable (S : Iop.Batch.Setup EF)
 
-/-- The log size of the tallest domain, where FRI starts. -/
-noncomputable abbrev logTop : ℕ := S.logN S.top + S.params.logBlowup
-
 /-- The shift of the domain of `2 ^ m` points that FRI's folds reach from the tallest domain
 `g ⟨ω⟩`: `g ^ 2 ^ (logTop - m)`. -/
-noncomputable def foldShift (m : ℕ) : 𝕂 := lift gen ^ 2 ^ (logTop S - m)
+noncomputable def foldShift (m : ℕ) : 𝕂 := lift gen ^ 2 ^ (S.logTop - m)
 
 theorem foldShift_ne_zero (m : ℕ) : foldShift S m ≠ 0 := by
   refine pow_ne_zero _ ?_
@@ -112,7 +109,7 @@ noncomputable def deepWords (m : ℕ) : Fin (2 ^ m) → 𝕂 :=
 
 /-- FRI's rounds: Plonky3's schedule from the tallest domain, injecting the shorter domains'
 batched words. -/
-noncomputable def rounds : Rounds 𝕂 (logTop S) :=
+noncomputable def rounds : Rounds 𝕂 S.logTop :=
   S.domainSetup.friRounds (injected S t.deepWords) S.friHeights
 
 /-- FRI's run on the committed words. -/
@@ -124,7 +121,7 @@ open Classical in
 /-- The points where FRI's query checks pass and its first word agrees with the tallest batched
 word. -/
 noncomputable def consistentQueries : Finset S.domainSetup.Point :=
-  t.fri.accepting.filter fun x ↦ t.fri.initial x = t.deepWords (logTop S) x
+  t.fri.accepting.filter fun x ↦ t.fri.initial x = t.deepWords S.logTop x
 
 end Transcript
 
@@ -181,7 +178,7 @@ def BatchBad (α : 𝕂)
     Near (S.instanceSetup i) δ (Iop.Batch.groupDeepWord p α ζ a (S.logN i + S.params.logBlowup))
 
 /-- FRI fold `j`: the fold of committed word `j` at `β` fails, on FRI's rounds `rounds`. -/
-def FoldBad (rounds : Rounds 𝕂 (logTop S)) (words : ℕ → (m : ℕ) → Fin (2 ^ m) → 𝕂) (j : ℕ)
+def FoldBad (rounds : Rounds 𝕂 S.logTop) (words : ℕ → (m : ℕ) → Fin (2 ^ m) → 𝕂) (j : ℕ)
     (β : 𝕂) : Prop :=
   Rounds.FoldFails (2 ^ S.params.logFinalPolyLen) δ loss β words j S.domainSetup.domain rounds
 
@@ -189,7 +186,7 @@ def FoldBad (rounds : Rounds 𝕂 (logTop S)) (words : ℕ → (m : ℕ) → Fin
 fold fails and the final polynomial has degree below `2 ^ logFinalPolyLen`. -/
 def QueryReady (t : Transcript S) : Prop :=
   ¬ (Agrees S.domainSetup.domain (t.rounds.degree (2 ^ S.params.logFinalPolyLen)) (1 - δ)
-      (t.deepWords (logTop S)) ∧
+      (t.deepWords S.logTop) ∧
     t.rounds.InputsAgree (2 ^ S.params.logFinalPolyLen) (1 - δ) S.domainSetup.domain) ∧
   t.fri.SafeLossy δ loss ∧ t.finalPoly.natDegree < 2 ^ S.params.logFinalPolyLen
 
@@ -296,7 +293,7 @@ theorem prob_queryBad_le (t : Transcript S) :
     set m := D.logN + D.params.logBlowup
     set G := t.consistentQueries.image fun z ↦ reverseBits z.val m
     set nf : ℕ := t.rounds.numFolds
-    have hdens := t.fri.consistent_density_le (t.deepWords (logTop S)) δ δ loss loss.coe_nonneg
+    have hdens := t.fri.consistent_density_le (t.deepWords S.logTop) δ δ loss loss.coe_nonneg
       hready.2.1 (Rounds.finalInCode_run _ _ t.finalPoly hready.2.2 _ _ _ _)
       (by rw [Transcript.fri, Rounds.inputsAgree_run]; exact hready.1)
     rw [Transcript.fri, Rounds.numFolds_run] at hdens
@@ -374,7 +371,7 @@ is the tallest batched word, or FRI injects it at its domain's size. -/
 theorem not_agrees_of_not_near (δ : NNReal) (t : Transcript S) (i : Fin S.k)
     (hfar : ¬ Near (S.instanceSetup i) δ (t.deepWords (S.logN i + S.params.logBlowup))) :
     ¬ (Agrees S.domainSetup.domain (t.rounds.degree (2 ^ S.params.logFinalPolyLen)) (1 - δ)
-        (t.deepWords (logTop S)) ∧
+        (t.deepWords S.logTop) ∧
       t.rounds.InputsAgree (2 ^ S.params.logFinalPolyLen) (1 - δ) S.domainSetup.domain) := by
   set D := S.domainSetup
   have hf := D.valid.finalPolyFits

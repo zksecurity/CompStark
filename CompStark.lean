@@ -128,6 +128,8 @@ public import CompStark.Fs.DigestClash
 public import CompStark.NonInteractiveError
 public import CompStark.Sound.FriRun
 public import CompStark.BatchNonInteractiveError
+public import CompStark.Batch.Setup
+public import CompStark.BatchRandomOracle
 public import CompStark.Sound.BatchRbr
 public import CompStark.Sound.Sampling
 public import CompStark.Sound.ConsistentQueries
@@ -156,4 +158,6 @@ public import CompStark.Ni.Assembly
 public import CompStark.Ni.BatchRun
 public import CompStark.Ni.BatchAccept
 public import CompStark.Ni.BatchFri
+public import CompStark.Ni.BatchBind
+public import CompStark.Ni.BatchDeep
 public import CompStark.NonInteractive

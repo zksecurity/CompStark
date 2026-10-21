@@ -39,10 +39,12 @@ variable {F : Type} [BaseField F] {EF : Type} [Challenge F EF]
 namespace Setup
 variable (S : Setup EF)
 
+/-- The log size of the tallest domain, where FRI starts. -/
+noncomputable abbrev logTop : ℕ := S.logN S.top + S.params.logBlowup
+
 /-- FRI's rounds: Plonky3's folding schedule from the tallest domain, injecting at the sizes of
 the shorter instances' domains. Their errors depend on the sizes only. -/
-noncomputable abbrev friRounds : FriGame.Rounds (Challenge.Spec EF)
-    (S.logN S.top + S.params.logBlowup) :=
+noncomputable abbrev friRounds : FriGame.Rounds (Challenge.Spec EF) S.logTop :=
   S.domainSetup.friRounds (fun _ _ ↦ 0) S.friHeights
 
 end Setup
