@@ -8,6 +8,7 @@ public import CompStark.Ni.RoundBounds
 public import CompStark.Ni.Binding
 public import CompStark.Ni.Accepted
 public import CompStark.Ni.Extracted
+public import CompStark.Ni.Setup
 
 /-! # An accepted proof the extractor cannot open makes a bad query
 
@@ -135,22 +136,26 @@ def BadAt (log : QueryLog (spec F S.streamLen)) (p : Nat) (hp : p < log.length) 
     (Clash (boundDigest S) (log.take p) log[p].1 log[p].2 ∨
       RoundBad S publicValues δ δ' loss (log.take p) log[p].1 log[p].2)
 
-/-- **The bad query.** If the verifier, run after a prover whose queries `log` an answer table
-answers, accepts a proof for `2 ^ logN` rows, and no trace close to the trace committed in `log`
-satisfies the AIR, then some query of the run is fresh and clashes or is round-bad. -/
+/-- **The bad query.** If the verifier, run after the setup and a prover whose queries `log` an
+answer table answers, accepts a proof for `2 ^ logN` rows against the setup's key `vk`, and no
+trace close to the trace committed in `log` satisfies the AIR, then some query of the run is fresh
+and clashes or is round-bad. -/
 theorem exists_badAt (hδ' : (δ' : ℝ) < 1 - S.rate) (answer : (q : Query F) → Answer S.streamLen q)
-    (proof : Proof F EF) (log : QueryLog (spec F S.streamLen)) (hcons : Consistent answer log)
+    (vk : Option (PreprocessedKey F)) (proof : Proof F EF) (log : QueryLog (spec F S.streamLen))
+    (hcons : Consistent answer log)
+    (hvk : preprocessedKeyWith (idealOf answer) S.params S.air S.logN = vk)
+    (hsetup : ∀ e ∈ tableQueryLog S.setupRo answer, e ∈ log)
     (hdb : proof.degreeBits = S.logN)
-    (hok : verifyWith (idealOf answer) S.params S.air proof publicValues = .ok ())
+    (hok : verifyWith (idealOf answer) S.params S.air vk proof publicValues = .ok ())
     (hsmall : 3 * (log ++ tableQueryLog
-      (verifyWith (ideal F S.streamLen) S.params S.air proof publicValues) answer).length <
+      (verifyWith (ideal F S.streamLen) S.params S.air vk proof publicValues) answer).length <
         Fintype.card (Digest F))
     (hfail : ∀ trace ∈ closeTraces S δ' (committedTrace S log proof),
       ¬ S.air.Satisfied S.logN trace publicValues) :
     ∃ p hp, BadAt S publicValues δ δ' loss (log ++ tableQueryLog
-      (verifyWith (ideal F S.streamLen) S.params S.air proof publicValues) answer) p hp := by
-  set vlog := tableQueryLog (verifyWith (ideal F S.streamLen) S.params S.air proof publicValues)
-    answer with hvlog
+      (verifyWith (ideal F S.streamLen) S.params S.air vk proof publicValues) answer) p hp := by
+  set vlog := tableQueryLog (verifyWith (ideal F S.streamLen) S.params S.air vk proof
+    publicValues) answer with hvlog
   set L := log ++ vlog with hL
   by_contra hno
   have hclash : NoClash (boundDigest S) L := fun p hp hfresh hc ↦ hno ⟨p, hp, hfresh, Or.inl hc⟩
@@ -163,14 +168,14 @@ theorem exists_badAt (hδ' : (δ' : ℝ) < 1 - S.rate) (answer : (q : Query F) �
       ¬ RoundBad S publicValues δ δ' loss (L.take (idx L t)) t (answer t) :=
     fun t ht ↦ of_first hconsL (fun pre t u ↦ ¬ RoundBad S publicValues δ δ' loss pre t u)
       (fun p hp hfresh hr ↦ hno ⟨p, hp, hfresh, Or.inr hr⟩) ht
-  set blocks := inputs S.params S.air publicValues proof with hblocks
+  set blocks := inputs S.params S.air vk publicValues proof with hblocks
   have hz := length_zip_commits S answer hdb hok
   have hlen : blocks.length = S.lastFold + 5 := by
     rw [hblocks, length_inputs, hz]
     omega
   have hkeys : ∀ j < blocks.length, keyAt answer blocks j ∈ L.map Sigma.fst := fun j hj ↦ by
     rw [List.map_append]
-    exact List.mem_append_right _ (hasRounds_verifyWith S answer proof publicValues hok j hj)
+    exact List.mem_append_right _ (hasRounds_verifyWith S answer vk proof publicValues hok j hj)
   have hinjL : CapsInjective answer L := capsInjective hconsL hclash L fun t ht ↦ ht
   have hcap : ∀ j, j < blocks.length → capAt answer blocks (j + 1) ≠ initCap :=
     fun j hj ↦ capAt_ne_initCap hinjL (fun k hk ↦ hkeys k hk) j hj
@@ -199,7 +204,7 @@ theorem exists_badAt (hδ' : (δ' : ℝ) < 1 - S.rate) (answer : (q : Query F) �
     intro f hf
     have hcap3 := hcap (2 + f) (by omega)
     rw [show 2 + f + 1 = 3 + f by omega] at hcap3
-    have hblk3 := inputs_getD_fold S.params S.air publicValues proof f (by omega)
+    have hblk3 := inputs_getD_fold S.params S.air vk publicValues proof f (by omega)
     rw [friSeedOf_eq S proof hdb] at hblk3
     rw [← hblocks] at hblk3
     by_cases hf0 : f = 0
@@ -329,9 +334,9 @@ theorem exists_badAt (hδ' : (δ' : ℝ) < 1 - S.rate) (answer : (q : Query F) �
       hz, hb, ho, ← hT] at h
     exact h
   -- the shapes and the run of FRI
-  obtain ⟨-, -, -, -, -, -, -, -, -, ⟨st, hfriOk⟩, -⟩ := verifyWith_ok (idealOf answer) S.params
-    S.air proof publicValues hok
-  obtain ⟨-, hfp⟩ := nonempty_of_verify S (idealOf answer) proof publicValues hdb hok
+  obtain ⟨-, -, -, -, hshape, -, -, -, -, -, ⟨st, hfriOk⟩, -⟩ := verifyWith_ok (idealOf answer)
+    S.params S.air vk proof publicValues hok
+  obtain ⟨-, hfp⟩ := nonempty_of_verify S (idealOf answer) vk proof publicValues hdb hok
   -- the folds
   have hfolds : ∀ f : Fin (S.lastFold + 1), ¬ FoldBad S δ loss f T.fri (T.betas f) := by
     intro f
@@ -344,8 +349,8 @@ theorem exists_badAt (hδ' : (δ' : ℝ) < 1 - S.rate) (answer : (q : Query F) �
     have hpow : S.params.commitPowBits ≠ 0 → CompPoly.CanonicalNat.toNat
         ((smp (3 + f.val)).toList.getD 0 0) % 2 ^ S.params.commitPowBits = 0 := fun hb ↦ by
       rw [hsmp]
-      exact commitWitness_idealOf answer S.params S.air proof publicValues (le_refl _) _
-        (heights_vRounds S.params proof _) st hfriOk f.val (by omega) hb
+      exact commitWitness_idealOf answer S.params S.air vk proof publicValues (le_refl _) _
+        (heights_openingRounds S.params S.air vk proof _) st hshape hfriOk f.val (by omega) hb
     have h' := fun hfb ↦ h ⟨hpow, hfb⟩
     rw [foldBad_congr S δ loss f (prefixTranscript_committedWord S f
         (hBk _ _ le_rfl) (hfoldS _ f.val le_rfl (by omega) hf)),
@@ -367,26 +372,41 @@ theorem exists_badAt (hδ' : (δ' : ℝ) < 1 - S.rate) (answer : (q : Query F) �
   have hagree : ∀ e ∈ vlog, g' e.1 = answer e.1 := fun e he ↦
     fresh_of_mem L answer dstar _ (by
       rw [List.map_append]; exact List.mem_append_right _ (List.mem_map_of_mem he))
-  have hok' : verifyWith (idealOf g') S.params S.air proof publicValues = .ok () := by
+  have hok' : verifyWith (idealOf g') S.params S.air vk proof publicValues = .ok () := by
     rw [← evalWithAnswerFn_verifyWith, evalWithAnswerFn_congr answer g' _ hagree,
       evalWithAnswerFn_verifyWith]
     exact hok
   have hbind : ∀ r ∈ logDigests (boundDigest S) L, Binding (logCache L) (idealOf g') r :=
     binding_fresh answer L hconsL hclash dstar hdstar
   have htr : proof.traceCommit ∈ logDigests (boundDigest S) L := by
-    rw [← traceRoot_eq S proof publicValues hdb]
+    rw [← traceRoot_eq S vk proof publicValues hdb]
     exact mem_logDigests (hkeys 0 (by omega)) hroot0
   have hqu : proof.quotientCommit ∈ logDigests (boundDigest S) L := by
-    rw [← quotientRoot_eq S proof publicValues]
+    rw [← quotientRoot_eq S vk proof publicValues]
     exact mem_logDigests (hkeys 1 (by omega)) hroot1
-  have hbcs := bcs S (logCache L) (idealOf g') proof publicValues hdb (hbind _ htr) (hbind _ hqu)
+  -- the setup's key: its root is a digest of the setup's queries, on which `g'` is `answer`
+  have hsetupL : ∀ e ∈ tableQueryLog S.setupRo answer, g' e.1 = answer e.1 := fun e he ↦
+    fresh_of_mem L answer dstar _ (by
+      rw [List.map_append]; exact List.mem_append_left _ (List.mem_map_of_mem (hsetup e he)))
+  have hvk' : preprocessedKeyWith (idealOf g') S.params S.air S.logN = vk := by
+    rw [← evalWithAnswerFn_setupRo S g', evalWithAnswerFn_congr answer g' _ hsetupL,
+      evalWithAnswerFn_setupRo, hvk]
+  have hprepMem : ∀ k ∈ vk, k.commit ∈ logDigests (boundDigest S) L := fun k hk ↦ by
+    obtain ⟨e, he, hd⟩ := exists_root_mem S answer k (by rw [hvk]; exact hk)
+    rw [← hd]
+    exact List.mem_flatMap.mpr ⟨e, List.mem_append_left _ (hsetup e he), List.mem_cons_self⟩
+  have hbcs := bcs S (logCache L) (idealOf g') vk proof publicValues hdb (hbind _ htr)
+    (hbind _ hqu)
     (fun c hc ↦ by
       obtain ⟨i, hi, rfl⟩ := Array.getElem_of_mem hc
       have hsize := (length_commits S answer hdb hok).2
       rw [← foldRoot_eq S answer hdb hok i (by omega)]
       exact hbind _ (mem_logDigests (hkeys _ (by omega)) (hrootF i (by omega))))
+    (fun k hk ↦ hbind _ (hprepMem k hk))
+    (fun k hk ↦ committedColumn_setup S (logCache L) g' k (by rw [hvk']; exact hk)
+      (hbind _ (hprepMem k hk)))
     hok'
-  have hext : extract S (logCache L) (idealOf g') proof publicValues = T := by
+  have hext : extract S (logCache L) (idealOf g') vk proof publicValues = T := by
     rw [extract_eq_prefixTranscript S g' (logCache L) hdb hok', hT, hblk, hsmp]
     congr 1
     funext k
@@ -394,8 +414,8 @@ theorem exists_badAt (hδ' : (δ' : ℝ) < 1 - S.rate) (answer : (q : Query F) �
   dsimp only at hbcs
   rw [hext] at hbcs
   obtain ⟨hcheck, hdeg, hpow, hqueries⟩ := hbcs
-  obtain ⟨-, -, -, -, -, hpowEq, hqEq⟩ := challenges_idealOf g' S.params S.air proof publicValues
-    (le_refl _) hfp
+  obtain ⟨-, -, -, -, -, hpowEq, hqEq⟩ := challenges_idealOf g' S.params S.air vk proof
+    publicValues (le_refl _) hshape hfp
   have h4 : 3 + (proof.fri.commits.toList.zip proof.fri.commitWitnesses.toList).length =
       4 + S.lastFold := by rw [hz]; omega
   rw [h4, hg'] at hpowEq hqEq
@@ -426,7 +446,7 @@ theorem exists_badAt (hδ' : (δ' : ℝ) < 1 - S.rate) (answer : (q : Query F) �
       rw [List.map_append, List.idxOf_append_of_mem hin]
       exact this.le
     · obtain ⟨rest, hrest⟩ := verifyWith_log_head answer (by unfold Iop.Setup.streamLen; omega)
-        S.params S.air proof publicValues (by rw [run_idealLogged]; exact hok)
+        S.params S.air vk proof publicValues (by rw [run_idealLogged]; exact hok)
       rw [run_idealLogged] at hrest
       dsimp only at hrest
       rw [← hvlog] at hrest
@@ -436,7 +456,7 @@ theorem exists_badAt (hδ' : (δ' : ℝ) < 1 - S.rate) (answer : (q : Query F) �
   have hlogL : SameUnder (logCache log) (logCache L) proof.traceCommit := by
     intro k i
     have hnp := noPrediction_take hconsL hclash proof.traceCommit _ (hkeys 0 (by omega))
-      (by rw [← traceRoot_eq S proof publicValues hdb]; exact hroot0) log.length L.length hhead
+      (by rw [← traceRoot_eq S vk proof publicValues hdb]; exact hroot0) log.length L.length hhead
       (by rw [hL, List.length_append]; omega)
     rw [List.take_length, hL, List.take_left' rfl] at hnp
     exact (Merkle.extractRow_eq_of_noPrediction _ _ _ hnp k i).symm
@@ -444,8 +464,9 @@ theorem exists_badAt (hδ' : (δ' : ℝ) < 1 - S.rate) (answer : (q : Query F) �
     rw [committedTrace_eq, hT, hblk]
     show traceWords S (logCache log) proof = fun j : Fin S.air.width ↦
       committedColumn S (logCache L)
-      (digestAt ((inputs S.params S.air publicValues proof).getD 0 []) (starkSeedS S).length) j.val
-    rw [traceRoot_eq S proof publicValues hdb, ← committedColumn_congr S hlogL]
+      (digestAt ((inputs S.params S.air vk publicValues proof).getD 0 [])
+        (starkSeedS S).length) j.val
+    rw [traceRoot_eq S vk proof publicValues hdb, ← committedColumn_congr S hlogL]
     rfl
   rw [← htraceT] at hP
   exact hfail _ ⟨P, hP.1, hP.2, rfl⟩ hsat

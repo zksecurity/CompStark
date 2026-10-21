@@ -126,23 +126,23 @@ end Congr
 /-! ### The schedule of an accepted proof -/
 
 section Schedule
-variable (proof : Proof F EF) (pis : List F)
+variable (vk : Option (PreprocessedKey F)) (proof : Proof F EF) (pis : List F)
 
 theorem digestAt_toList (d : Digest F) : digestAt d.toList 0 = d := by
   simpa only [List.append_nil] using digestAt_append_zero d []
 
 theorem inputs_getD_zero :
-    (inputs S.params S.air pis proof).getD 0 [] =
-      DomainSeparator.starkSeed F EF proof.degreeBits S.air.width S.air.numPublicValues
-        S.chunks S.params.oodPowBits ++ proof.traceCommit.toList ++ pis := by
+    (inputs S.params S.air vk pis proof).getD 0 [] =
+      starkSeedOf EF S.params S.air proof.degreeBits ++ proof.traceCommit.toList ++
+        preprocessedDigest vk ++ pis := by
   simp only [inputs, List.getD_eq_getElem?_getD, List.getElem?_cons_zero, Option.getD_some]
 
-theorem inputs_getD_one : (inputs S.params S.air pis proof).getD 1 [] =
+theorem inputs_getD_one : (inputs S.params S.air vk pis proof).getD 1 [] =
     proof.quotientCommit.toList ++ witnessInput S.params.oodPowBits proof.oodWitness := by
   simp only [inputs, List.getD_eq_getElem?_getD, List.getElem?_cons_succ,
     List.getElem?_cons_zero, Option.getD_some]
 
-theorem inputs_getD_two : (inputs S.params S.air pis proof).getD 2 [] =
+theorem inputs_getD_two : (inputs S.params S.air vk pis proof).getD 2 [] =
     DomainSeparator.pcsSeed F EF (pcsCounts proof.opened) S.params.batchPowBits ++
       coeffs (openedValues proof.opened) ++
       witnessInput S.params.batchPowBits proof.fri.batchWitness := by
@@ -150,12 +150,12 @@ theorem inputs_getD_two : (inputs S.params S.air pis proof).getD 2 [] =
     List.getElem?_cons_zero, Option.getD_some]
 
 theorem traceRoot_eq (hdb : proof.degreeBits = S.logN) :
-    digestAt ((inputs S.params S.air pis proof).getD 0 []) (starkSeedS S).length =
+    digestAt ((inputs S.params S.air vk pis proof).getD 0 []) (starkSeedS S).length =
       proof.traceCommit := by
-  rw [inputs_getD_zero, starkSeedS, hdb]
+  rw [inputs_getD_zero, starkSeedS, hdb, List.append_assoc]
   exact digestAt_append _ _ _
 
-theorem quotientRoot_eq : digestAt ((inputs S.params S.air pis proof).getD 1 []) 0 =
+theorem quotientRoot_eq : digestAt ((inputs S.params S.air vk pis proof).getD 1 []) 0 =
     proof.quotientCommit := by
   rw [inputs_getD_one, digestAt_append_zero]
 
@@ -163,9 +163,11 @@ theorem quotientRoot_eq : digestAt ((inputs S.params S.air pis proof).getD 1 [])
 theorem pcsCounts_eq (htl : proof.opened.traceLocal.size = S.air.width)
     (htn : proof.opened.traceNext.size = S.air.width)
     (hqc : proof.opened.quotientChunks.size = S.chunks)
-    (hq4 : ∀ ch ∈ proof.opened.quotientChunks, ch.size = Challenge.d EF) :
+    (hq4 : ∀ ch ∈ proof.opened.quotientChunks, ch.size = Challenge.d EF)
+    (hshape : preprocessedShapeOk S.air vk proof.opened S.logN = true) :
     pcsCounts proof.opened = pcsCountsS S := by
-  simp only [pcsCounts, pcsCountsS, htl, htn, List.cons.injEq, and_true, true_and]
+  rw [pcsCounts, pcsCountsS, (prep_of_shapeOk hshape).2.2]
+  simp only [htl, htn, List.cons_append, List.cons.injEq, List.nil_append, and_true, true_and]
   rw [List.eq_replicate_iff, List.length_map, Array.length_toList, hqc]
   refine ⟨rfl, fun b hb ↦ ?_⟩
   obtain ⟨ch, hch, rfl⟩ := List.mem_map.mp hb
@@ -174,63 +176,65 @@ theorem pcsCounts_eq (htl : proof.opened.traceLocal.size = S.air.width)
 theorem openings_eq (htl : proof.opened.traceLocal.size = S.air.width)
     (htn : proof.opened.traceNext.size = S.air.width)
     (hqc : proof.opened.quotientChunks.size = S.chunks)
-    (hq4 : ∀ ch ∈ proof.opened.quotientChunks, ch.size = Challenge.d EF) :
-    openingsAt S (((inputs S.params S.air pis proof).getD 2 []).drop (pcsSeedS S).length) =
+    (hq4 : ∀ ch ∈ proof.opened.quotientChunks, ch.size = Challenge.d EF)
+    (hshape : preprocessedShapeOk S.air vk proof.opened S.logN = true) :
+    openingsAt S (((inputs S.params S.air vk pis proof).getD 2 []).drop (pcsSeedS S).length) =
       openingsOf S proof.opened := by
-  rw [inputs_getD_two, pcsCounts_eq S proof htl htn hqc hq4, ← pcsSeedS, List.append_assoc,
-    List.drop_left]
-  exact openingsAt_coeffs S _ _ htl htn hqc hq4
+  rw [inputs_getD_two, pcsCounts_eq S vk proof htl htn hqc hq4 hshape, ← pcsSeedS,
+    List.append_assoc, List.drop_left]
+  exact openingsAt_coeffs S _ _ htl htn hqc hq4 (prep_of_shapeOk hshape).1
+    (prep_of_shapeOk hshape).2.1
 
 /-- On a proof for `2 ^ logN` rows, FRI's domain separator is `S`'s. -/
 theorem friSeedOf_eq (hdb : proof.degreeBits = S.logN) :
     friSeedOf S.params proof = friSeedS S := by
-  obtain ⟨hL, -, -, hsched⟩ := friHyps S proof 0 hdb
+  obtain ⟨hL, -, -, hsched⟩ := friHyps S none proof 0 hdb
   rw [friSeedOf, hsched, hL, friSeedS]
 
 variable (answer : (q : Query F) → Answer S.streamLen q)
-variable {proof pis}
+variable {vk proof pis}
 
 /-- An accepted proof for `2 ^ logN` rows commits once per fold of `S`'s schedule. -/
 theorem length_commits (hdb : proof.degreeBits = S.logN)
-    (hok : verifyWith (idealOf answer) S.params S.air proof pis = .ok ()) :
+    (hok : verifyWith (idealOf answer) S.params S.air vk proof pis = .ok ()) :
     proof.fri.commitWitnesses.size = proof.fri.commits.size ∧
       proof.fri.commits.size = S.lastFold + 1 := by
-  obtain ⟨-, -, -, -, -, -, -, -, -, ⟨st, hfriOk⟩, -⟩ := verifyWith_ok (idealOf answer) S.params
-    S.air proof pis hok
-  obtain ⟨-, hb, hh, hsched⟩ := friHyps S proof (zetaOf (idealOf answer) S.params S.air proof pis)
-    hdb
+  obtain ⟨-, -, -, -, -, -, -, -, -, -, ⟨st, hfriOk⟩, -⟩ := verifyWith_ok (idealOf answer)
+    S.params S.air vk proof pis hok
+  obtain ⟨-, hb, hh, hsched⟩ := friHyps S vk proof
+    (zetaOf (idealOf answer) S.params S.air vk proof pis) hdb
   obtain ⟨-, -, hcs, hcw, -⟩ := verifyFri_ok (idealOf answer) S.params proof.fri _ _ _ hb hh _ _
     hfriOk
   have hsched' : foldSchedule S.params.maxLogArity
       (S.params.logBlowup + S.params.logFinalPolyLen) S.logSize [S.logSize] =
       S.foldArities.map PNat.val := by
-    obtain ⟨hL, -⟩ := friHyps S proof 0 hdb
+    obtain ⟨hL, -⟩ := friHyps S vk proof 0 hdb
     rw [← hsched, friSchedule, hL]
   rw [hsched', List.length_map, length_foldArities] at hcs hcw
   exact ⟨hcw.trans hcs.symm, hcs⟩
 
 theorem length_zip_commits (hdb : proof.degreeBits = S.logN)
-    (hok : verifyWith (idealOf answer) S.params S.air proof pis = .ok ()) :
+    (hok : verifyWith (idealOf answer) S.params S.air vk proof pis = .ok ()) :
     (proof.fri.commits.toList.zip proof.fri.commitWitnesses.toList).length = S.lastFold + 1 := by
   obtain ⟨hwit, hsize⟩ := length_commits S answer hdb hok
   rw [List.length_zip, Array.length_toList, Array.length_toList, hwit, Nat.min_self, hsize]
 
 theorem foldRoot_eq (hdb : proof.degreeBits = S.logN)
-    (hok : verifyWith (idealOf answer) S.params S.air proof pis = .ok ()) (i : Nat)
+    (hok : verifyWith (idealOf answer) S.params S.air vk proof pis = .ok ()) (i : Nat)
     (hi : i < S.lastFold + 1) :
-    digestAt ((inputs S.params S.air pis proof).getD (3 + i) []) (friOffset S i) =
+    digestAt ((inputs S.params S.air vk pis proof).getD (3 + i) []) (friOffset S i) =
       proof.fri.commits[i]'(by rw [(length_commits S answer hdb hok).2]; exact hi) := by
   have hz := length_zip_commits S answer hdb hok
-  rw [inputs_getD_fold _ _ _ _ i (by omega), friSeedOf_eq S proof hdb]
+  rw [inputs_getD_fold _ _ _ _ _ i (by omega), friSeedOf_eq S proof hdb]
   have hpre : (friOffset S i) = (seedAt (friSeedS S) i).length := by
     simp only [friOffset, seedAt]
     split <;> rfl
   rw [hpre, digestAt_append, List.getElem_zip, Array.getElem_toList]
 
 theorem commits_eq (hdb : proof.degreeBits = S.logN)
-    (hok : verifyWith (idealOf answer) S.params S.air proof pis = .ok ()) :
+    (hok : verifyWith (idealOf answer) S.params S.air vk proof pis = .ok ()) :
     ((List.range (S.lastFold + 1)).map fun i ↦
-      digestAt ((inputs S.params S.air pis proof).getD (3 + i) [])
+      digestAt ((inputs S.params S.air vk pis proof).getD (3 + i) [])
         (if i = 0 then (friSeedS S).length else 0)) = proof.fri.commits.toList := by
   have hsize := (length_commits S answer hdb hok).2
   refine List.ext_getElem (by rw [List.length_map, List.length_range, Array.length_toList,
@@ -240,16 +244,17 @@ theorem commits_eq (hdb : proof.degreeBits = S.logN)
   exact (foldRoot_eq S answer hdb hok i h₁).trans (Array.getElem_toList _).symm
 
 theorem finalPoly_eq (hdb : proof.degreeBits = S.logN)
-    (hok : verifyWith (idealOf answer) S.params S.air proof pis = .ok ()) :
-    finalPolyAt S ((inputs S.params S.air pis proof).getD (4 + S.lastFold) []) =
+    (hok : verifyWith (idealOf answer) S.params S.air vk proof pis = .ok ()) :
+    finalPolyAt S ((inputs S.params S.air vk pis proof).getD (4 + S.lastFold) []) =
       proof.fri.finalPoly := by
   have hz := length_zip_commits S answer hdb hok
-  obtain ⟨-, -, -, -, -, -, -, -, -, ⟨st, hfriOk⟩, -⟩ := verifyWith_ok (idealOf answer) S.params
-    S.air proof pis hok
-  obtain ⟨-, hb, hh, -⟩ := friHyps S proof (zetaOf (idealOf answer) S.params S.air proof pis) hdb
+  obtain ⟨-, -, -, -, -, -, -, -, -, -, ⟨st, hfriOk⟩, -⟩ := verifyWith_ok (idealOf answer)
+    S.params S.air vk proof pis hok
+  obtain ⟨-, hb, hh, -⟩ := friHyps S vk proof
+    (zetaOf (idealOf answer) S.params S.air vk proof pis) hdb
   obtain ⟨-, -, -, -, hfp, -⟩ := verifyFri_ok (idealOf answer) S.params proof.fri _ _ _ hb hh _ _
     hfriOk
-  have hlast := inputs_getD_last S.params S.air pis proof
+  have hlast := inputs_getD_last S.params S.air vk pis proof
   rw [hz, show 3 + (S.lastFold + 1) = 4 + S.lastFold by omega] at hlast
   rw [hlast, show seedAt (friSeedOf S.params proof) (S.lastFold + 1) = [] from rfl,
     List.nil_append]
@@ -260,24 +265,24 @@ extracted from a run on the answers `answer` is the prefix transcript of the pro
 with the answers to its duplex calls. -/
 theorem extract_eq_prefixTranscript (cache : Merkle.Cache F (Digest F))
     (hdb : proof.degreeBits = S.logN)
-    (hok : verifyWith (idealOf answer) S.params S.air proof pis = .ok ()) :
-    extract S cache (idealOf answer) proof pis =
-      prefixTranscript S cache (fun k ↦ (inputs S.params S.air pis proof).getD k [])
-        (fun k ↦ (answer (keyAt answer (inputs S.params S.air pis proof) k)).2) := by
-  obtain ⟨htl, htn, hqc, hq4, -⟩ := verifyWith_ok (idealOf answer) S.params S.air proof pis
-    hok
-  obtain ⟨-, hfp⟩ := nonempty_of_verify S (idealOf answer) proof pis hdb hok
+    (hok : verifyWith (idealOf answer) S.params S.air vk proof pis = .ok ()) :
+    extract S cache (idealOf answer) vk proof pis =
+      prefixTranscript S cache (fun k ↦ (inputs S.params S.air vk pis proof).getD k [])
+        (fun k ↦ (answer (keyAt answer (inputs S.params S.air vk pis proof) k)).2) := by
+  obtain ⟨htl, htn, hqc, hq4, hshape, -⟩ := verifyWith_ok (idealOf answer) S.params S.air vk
+    proof pis hok
+  obtain ⟨-, hfp⟩ := nonempty_of_verify S (idealOf answer) vk proof pis hdb hok
   have hz := length_zip_commits S answer hdb hok
-  obtain ⟨hα, hζ, hbatch, -, hβ, -, -⟩ := challenges_idealOf answer S.params S.air proof pis
-    (le_refl _) hfp
-  have hbetas : foldChallenges S (betasOf (idealOf answer) S.params S.air proof pis) =
-      betasAt S (fun k ↦ (answer (keyAt answer (inputs S.params S.air pis proof) k)).2) := by
+  obtain ⟨hα, hζ, hbatch, -, hβ, -, -⟩ := challenges_idealOf answer S.params S.air vk proof pis
+    (le_refl _) hshape hfp
+  have hbetas : foldChallenges S (betasOf (idealOf answer) S.params S.air vk proof pis) =
+      betasAt S (fun k ↦ (answer (keyAt answer (inputs S.params S.air vk pis proof) k)).2) := by
     funext j
     simp only [foldChallenges, betasAt]
     rw [hβ j.val (by rw [hz]; exact j.isLt)]
-  simp only [extract, prefixTranscript, traceRoot_eq S proof pis hdb, quotientRoot_eq,
-    openings_eq S proof pis htl htn hqc hq4, hα, hζ, hbatch, commits_eq S answer hdb hok,
-    finalPoly_eq S answer hdb hok, hbetas]
+  simp only [extract, prefixTranscript, traceRoot_eq S vk proof pis hdb, quotientRoot_eq,
+    openings_eq S vk proof pis htl htn hqc hq4 (hdb ▸ hshape), hα, hζ, hbatch,
+    commits_eq S answer hdb hok, finalPoly_eq S answer hdb hok, hbetas]
   rfl
 
 end Schedule

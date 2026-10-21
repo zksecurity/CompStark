@@ -19,8 +19,6 @@ there (`recompose`, `checkConstraints`). In the spec field:
   recompose to it (`sum_chunkSel`).
 * `toSpec_recompose`: the verifier's recomposition is `∑_c L_c(ζ) q_c(ζ)`.
 * `toSpec_foldedConstraints`: the folded constraints are Horner's rule in `α`.
-
-`vRounds` are the verifier's opening rounds of a proof.
 -/
 
 @[expose] public section
@@ -43,18 +41,6 @@ theorem toSpec_extPow (x : EF) (n : Nat) :
 theorem toSpec_extPowTwo (x : EF) (k : Nat) :
     Challenge.toSpec (Ext.powTwo x k) = Challenge.toSpec x ^ 2 ^ k :=
   Ext.toSpec_powTwo x k
-
-/-! ### The verifier's rounds -/
-
-/-- The verifier's rounds of a proof: the trace opened at `ζ` and `ζ ω`, the quotient's chunks at
-`ζ`. -/
-def vRounds (proof : Proof F EF) (zeta : EF) : List (Round F EF) :=
-  let o := proof.opened
-  let traceDomain : Domain F := ⟨1, proof.degreeBits⟩
-  [(proof.traceCommit, [(traceDomain, [(zeta, o.traceLocal.toList),
-      (zeta * Ext.ofBase (twoAdicGen proof.degreeBits), o.traceNext.toList)])]),
-    (proof.quotientCommit, o.quotientChunks.toList.map fun ch ↦
-      (traceDomain, [(zeta, ch.toList)]))]
 
 /-! ### Recomposing the quotient from its chunks -/
 
@@ -362,6 +348,8 @@ theorem checkConstraints_eq_fun : checkConstraints = fun (A : Air F) (pis : List
   let env : Expr.Env F EF := {
     cur := fun i ↦ opened.traceLocal.getD i 0
     next := fun i ↦ opened.traceNext.getD i 0
+    prepCur := fun i ↦ (opened.preprocessedLocal.getD #[]).getD i 0
+    prepNext := fun i ↦ (opened.preprocessedNext.getD #[]).getD i 0
     pub := fun i ↦ Ext.ofBase (pis.getD i 0)
     const := Ext.ofBase
     isFirstRow := zh * (zeta - 1)⁻¹

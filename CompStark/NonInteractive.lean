@@ -16,13 +16,18 @@ the largest error of one oracle answer, every round of the interactive oracle pr
 its grinding, and `hashError` bounds collisions and predictions of digests
 (`CompStark/NonInteractiveError.lean`).
 
+The preprocessed trace is part of the AIR, so of the statement: the game computes its verifying key
+on the oracles before the prover runs (`Setup.setupRo`), and `verifierQueries` counts the setup's
+calls with the verifier's. The extractor outputs only the main trace.
+
 The committed trace is read off the prover's own hash queries (`committedTrace`), so the extractor
 is straight-line. The proof (`CompStark/Ni/`) bounds, query by query, the probability that a fresh
 answer clashes with a known digest or makes its round bad (`Ni/RoundBounds.lean`), and shows that
 an accepted proof the extractor cannot open forces such a query (`Ni/BadQuery.lean`): without
 clashes, every round is parsed in order and binds what the extractor reads, the verifier's checks
-hold for the extracted transcript (`Ni/Bcs.lean`), and safe rounds then give a satisfying trace
-(`Sound/Rbr.lean`). `Ni/Assembly.lean` sums the bounds.
+hold for the extracted transcript (`Ni/Bcs.lean`), whose preprocessed columns are the AIR's since
+the setup's queries bind the key's root (`Ni/Setup.lean`), and safe rounds then give a satisfying
+trace (`Sound/Rbr.lean`). `Ni/Assembly.lean` sums the bounds.
 -/
 
 @[expose] public section

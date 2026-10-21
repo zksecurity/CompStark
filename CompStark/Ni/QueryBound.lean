@@ -280,7 +280,7 @@ theorem isTotalQueryBound_verifyMultiM [DecidableEq F]
     refine (isTotalQueryBound_bind_of_mem_support hleaves.1 (suffixBound := k * indices.length)
       fun leaves hl ↦ ?_).mono (by rw [Nat.mul_one]; nlinarith)
     refine (isTotalQueryBound_bind (walkM_bound hash compress hcompress rows k _ leaves sibs)
-      fun _ ↦ isTotalQueryBound_pure _).mono ?_
+      fun _ ↦ Merkle.isTotalQueryBound_pure _).mono ?_
     rw [hleaves.2 _ hl, Nat.add_zero]
     exact Nat.mul_le_mul_left _ hf
   · trivial
@@ -499,18 +499,43 @@ end CompStark.Fri
 namespace CompStark.Iop.Setup
 open CompStark.Stark CompStark.Fri CompStark.RandomOracle OracleSpec OracleComp
 
+/-- A verifying key that passes the shape check belongs to preprocessed columns. -/
+theorem preprocessedWidth_pos {F EF : Type} {A : Air F} {k : PreprocessedKey F}
+    {o : OpenedValues EF} {db : Nat} (h : preprocessedShapeOk A (some k) o db = true) :
+    0 < A.preprocessedWidth := by
+  rcases o with ⟨tl, tn, _ | l, n, qc⟩
+  · simp only [preprocessedShapeOk, Bool.false_eq_true] at h
+  · simp only [preprocessedShapeOk, Bool.and_eq_true, decide_eq_true_eq] at h
+    exact h.1.1.1.1
+
 variable {F : Type} [BaseField F] {EF : Type} [Challenge F EF] (S : Setup EF)
 
+/-- The verifier opens at most `inputRounds` committed rounds at a query. -/
+theorem length_openingRounds_le (vk : Option (PreprocessedKey F)) (proof : Proof F EF) (zeta : EF)
+    (hshape : preprocessedShapeOk S.air vk proof.opened proof.degreeBits = true) :
+    (openingRounds S.air vk proof zeta).length ≤ S.inputRounds := by
+  unfold openingRounds preprocessedRound inputRounds
+  cases vk with
+  | none =>
+    simp only [List.length_append, List.length_cons, List.length_nil]
+    split <;> omega
+  | some k =>
+    have h0 := preprocessedWidth_pos hshape
+    simp only [Nat.pos_iff_ne_zero.mp h0, ↓reduceIte, List.length_append, List.length_cons,
+      List.length_nil]
+    omega
+
 /-- **The verifier's oracle calls.** On a proof for `2 ^ logN` rows, the verifier makes at most
-`verifierQueries` oracle calls. -/
-theorem isTotalQueryBound_verifyWith (proof : Proof F EF) (publicValues : List F)
-    (hdb : proof.degreeBits = S.logN) :
-    IsTotalQueryBound (verifyWith (ideal F S.streamLen) S.params S.air proof publicValues)
-      S.verifierQueries := by
-  have hrun : Costs (H := ideal F S.streamLen) (do
-      observeList (ideal F S.streamLen) (DomainSeparator.starkSeed F EF proof.degreeBits
-        S.air.width S.air.numPublicValues (2 ^ S.air.logQuotientChunks) S.params.oodPowBits)
+`verifierCalls` oracle calls. -/
+theorem isTotalQueryBound_verifyWith (vk : Option (PreprocessedKey F)) (proof : Proof F EF)
+    (publicValues : List F) (hdb : proof.degreeBits = S.logN) :
+    IsTotalQueryBound (verifyWith (ideal F S.streamLen) S.params S.air vk proof publicValues)
+      S.verifierCalls := by
+  have hrun (hshape : preprocessedShapeOk S.air vk proof.opened proof.degreeBits = true) :
+      Costs (H := ideal F S.streamLen) (do
+      observeList (ideal F S.streamLen) (starkSeedOf EF S.params S.air proof.degreeBits)
       observeList (ideal F S.streamLen) proof.traceCommit.toList
+      observeList (ideal F S.streamLen) (preprocessedDigest vk)
       observeList (ideal F S.streamLen) publicValues
       let alpha ← (sampleExt (ideal F S.streamLen) : M _ EF)
       observeList (ideal F S.streamLen) proof.quotientCommit.toList
@@ -518,44 +543,50 @@ theorem isTotalQueryBound_verifyWith (proof : Proof F EF) (publicValues : List F
         "out-of-domain witness"
       let zeta ← (sampleExt (ideal F S.streamLen) : M _ EF)
       ensure (Ext.powTwo zeta proof.degreeBits - 1 != 0) "out-of-domain point in the trace domain"
-      let zetaNext := zeta * Ext.ofBase (twoAdicGen proof.degreeBits)
-      let traceDomain : Domain F := ⟨1, proof.degreeBits⟩
-      verifyPcs (ideal F S.streamLen) S.params
-        [(proof.traceCommit, [(traceDomain, [(zeta, proof.opened.traceLocal.toList),
-            (zetaNext, proof.opened.traceNext.toList)])]),
-         (proof.quotientCommit, proof.opened.quotientChunks.toList.map fun ch ↦
-            (traceDomain, [(zeta, ch.toList)]))]
-        proof.fri
-      return (alpha, zeta)) S.verifierQueries fun _ ↦ True := by
+      verifyPcs (ideal F S.streamLen) S.params (openingRounds S.air vk proof zeta) proof.fri
+      return (alpha, zeta)) S.verifierCalls fun _ ↦ True := by
     set A := foldArities S.params.maxLogArity (proof.degreeBits - S.params.logFinalPolyLen)
     set V := Challenge.d EF + 2 + (Challenge.d EF + 1) * A.length + S.params.numQueries *
-      (1 + (2 + A.length) * (1 + (proof.degreeBits + S.params.logBlowup)))
+      (1 + (S.inputRounds + A.length) * (1 + (proof.degreeBits + S.params.logBlowup)))
     refine costs_free_bind (costs_observeList _) fun _ _ ↦ costs_free_bind (costs_observeList _)
-      fun _ _ ↦ costs_free_bind (costs_observeList _) fun _ _ ↦ costs_bind_le
+      fun _ _ ↦ costs_free_bind (costs_observeList _) fun _ _ ↦
+      costs_free_bind (costs_observeList _) fun _ _ ↦ costs_bind_le
       (b := 1 + Challenge.d EF + V) costs_sampleExt (fun alpha _ ↦ costs_free_bind
         (costs_observeList _) fun _ _ ↦ costs_bind_le (b := Challenge.d EF + V)
         (costs_checkWitness _ _) (fun _ _ ↦ costs_ensure_bind fun _ ↦ costs_bind_le (b := V)
           costs_sampleExt (fun zeta _ ↦ costs_ensure_bind fun _ ↦ costs_bind_le (a := V) (b := 0)
             (costs_mono (costs_verifyPcs _ _ _ proof.degreeBits fun r hr mat hmat ↦ ?_)
-              (le_of_eq (by simp only [List.length_cons, List.length_nil]; ring)) fun _ h ↦ h)
+              (Nat.add_le_add_left (Nat.mul_le_mul_left _ (Nat.add_le_add_left
+                (Nat.mul_le_mul_right _ (Nat.add_le_add_right
+                  (length_openingRounds_le S vk proof zeta hshape) _)) 1)) _) fun _ h ↦ h)
             (fun _ _ ↦ costs_pure _ (fun _ ↦ True) trivial) le_rfl) le_rfl) (by omega)) ?_
-    · simp only [List.mem_cons, List.not_mem_nil, or_false] at hr
-      rcases hr with rfl | rfl
+    · simp only [openingRounds, List.cons_append, List.nil_append, List.mem_cons] at hr
+      rcases hr with rfl | rfl | hr
       · simp only [List.mem_cons, List.not_mem_nil, or_false] at hmat
         rw [hmat]
       · obtain ⟨ch, -, rfl⟩ := List.mem_map.mp hmat
         rfl
-    · simp only [V, A, hdb, verifierQueries, openingQueries, friArities]
+      · unfold preprocessedRound at hr
+        split at hr
+        · rw [List.mem_singleton] at hr
+          subst hr
+          rw [List.mem_singleton] at hmat
+          rw [hmat]
+        · exact absurd hr List.not_mem_nil
+    · simp only [V, A, hdb, verifierCalls, openingQueries, friArities]
       exact le_of_eq (by ring)
   unfold verifyWith
   dsimp only
   split
   · split
     · split
-      · split
+      · rename_i hshape
+        split
         · rw [ExceptT.run_bind]
-          apply IsTotalQueryBound.mono (n₁ := S.verifierQueries + 0) _ (Nat.add_zero _).le
-          refine isTotalQueryBound_bind (hrun _).1 fun r ↦ ?_
+          apply IsTotalQueryBound.mono (n₁ := S.verifierCalls + 0) _ (Nat.add_zero _).le
+          refine isTotalQueryBound_bind (hrun (by
+            simp only [Bool.and_eq_true] at hshape
+            exact hshape.2) _).1 fun r ↦ ?_
           rcases r with _ | ⟨⟨alpha, zeta⟩, s⟩
           · trivial
           · dsimp only
@@ -568,12 +599,40 @@ theorem isTotalQueryBound_verifyWith (proof : Proof F EF) (publicValues : List F
   all_goals trivial
 
 /-- **The game's verifier's oracle calls.** On every proof, the verifier in the random-oracle
-model makes at most `verifierQueries` oracle calls. -/
-theorem isTotalQueryBound_verifyRo (proof : Proof F EF) (publicValues : List F) :
-    IsTotalQueryBound (S.verifyRo proof publicValues) S.verifierQueries := by
+model makes at most `verifierCalls` oracle calls. -/
+theorem isTotalQueryBound_verifyRo (vk : Option (PreprocessedKey F)) (proof : Proof F EF)
+    (publicValues : List F) :
+    IsTotalQueryBound (S.verifyRo vk proof publicValues) S.verifierCalls := by
   unfold verifyRo
   split
-  · exact S.isTotalQueryBound_verifyWith proof publicValues (by assumption)
+  · exact S.isTotalQueryBound_verifyWith vk proof publicValues (by assumption)
   · trivial
+
+/-- **The setup's oracle calls.** -/
+theorem isTotalQueryBound_setupRo : IsTotalQueryBound S.setupRo S.setupQueries := by
+  have hnode : ∀ (leaf : Nat → OracleComp (spec F S.streamLen) (Digest F)),
+      (∀ r, IsTotalQueryBound (leaf r) 1) → ∀ j t,
+      IsTotalQueryBound (merkleNodeWith (ideal F S.streamLen) leaf j t) (2 ^ (j + 1) - 1) := by
+    intro leaf hleaf j
+    have hc : ∀ l r, IsTotalQueryBound ((ideal F S.streamLen).compress l r) 1 :=
+      fun l r ↦ isTotalQueryBound_query (.node l r)
+    induction j with
+    | zero => intro t; exact hleaf t
+    | succ j ih =>
+      intro t
+      rw [merkleNodeWith]
+      refine (isTotalQueryBound_bind (ih _) fun _ ↦ isTotalQueryBound_bind (ih _) fun _ ↦
+        hc _ _).mono ?_
+      have := Nat.one_le_two_pow (n := j + 1)
+      rw [Nat.pow_succ 2 (j + 1)]
+      omega
+  unfold setupRo preprocessedKeyWith setupQueries
+  split
+  · trivial
+  · refine (isTotalQueryBound_bind (hnode _ (fun _ ↦ isTotalQueryBound_query _) _ 0)
+      fun _ ↦ Merkle.isTotalQueryBound_pure _).mono ?_
+    rw [Nat.add_zero, Nat.pow_succ]
+    unfold size
+    omega
 
 end CompStark.Iop.Setup

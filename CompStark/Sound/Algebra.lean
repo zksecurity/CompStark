@@ -13,8 +13,9 @@ public import CompStark.Stark.Constraints
 `H = ⟨ω⟩`, then for all but `#constraints - 1` values of `α`, the constraint check at `ζ` on the
 true openings passes for at most `identityDegree` points `ζ` off `H`.
 
-Over `𝕂[X]`, let `C_α = ∑_k α^(K-1-k) C_k` be the constraints over the `T_j` with the selector
-polynomials (`foldedPoly`, from `constraintPoly`), and `R = ∑_c L_c ∑_e genᵉ q_{c,e}` the
+Over `𝕂[X]`, let `C_α = ∑_k α^(K-1-k) C_k` be the constraints over the `T_j` and the
+preprocessed trace's polynomials with the selector polynomials (`foldedPoly`, from
+`constraintPoly`), and `R = ∑_c L_c ∑_e genᵉ q_{c,e}` the
 recomposed quotient (`recomposedPoly`, `L_c` the recomposition selector `selPoly`). The identity
 `Φ = C_α - Z_H R` (`identityPoly`) has degree at most `identityDegree`.
 
@@ -101,11 +102,13 @@ theorem le_foldl_max_of_mem {ι : Type*} (f : ι → Nat) :
 noncomputable def traceCol (S : Setup EF) (trace : Fin S.air.width → F[X]) (j : Nat) : F[X] :=
   if h : j < S.air.width then trace ⟨j, h⟩ else 0
 
-/-- `C_α`: the constraints over the trace polynomials, folded by `α`, over `𝕂`. -/
+/-- `C_α`: the constraints over the trace polynomials and the preprocessed trace's, folded by
+`α`, over `𝕂`. -/
 noncomputable def foldedPoly (S : Setup EF) (publicValues : List F)
     (trace : Fin S.air.width → F[X]) (α : 𝕂) : 𝕂[X] :=
   horner (S.air.constraints.map fun c ↦
-    (constraintPoly S.n (twoAdicGen S.logN) (traceCol S trace) publicValues c).map (algebraMap F 𝕂))
+    (constraintPoly S.n (twoAdicGen S.logN) (traceCol S trace) S.preprocessedPoly publicValues
+      c).map (algebraMap F 𝕂))
     (C α)
 
 /-- The recomposition selector of chunk `c`: `∏_{d ≠ c} Z_{D_d}(X) / Z_{D_d}(s_c)`. -/
@@ -138,10 +141,18 @@ theorem natDegree_traceCol (S : Setup EF) (trace : Fin S.air.width → F[X])
 /-- On columns of degree at most `n`, a constraint has degree at most `degBound (n + 1)`. -/
 theorem natDegree_constraintPoly_succ (S : Setup EF) (publicValues : List F)
     (trace : Fin S.air.width → F[X]) (hdeg : ∀ j, (trace j).natDegree ≤ S.n) (c : Expr F) :
-    (constraintPoly S.n (twoAdicGen S.logN) (traceCol S trace) publicValues c).natDegree ≤
-      c.degBound (S.n + 1) :=
-  Expr.natDegree_eval (S.n + 1) _ (natDegree_traceCol S trace hdeg)
-    (fun j ↦ (natDegree_comp_shift _ _).trans (natDegree_traceCol S trace hdeg j))
+    (constraintPoly S.n (twoAdicGen S.logN) (traceCol S trace) S.preprocessedPoly publicValues
+      c).natDegree ≤ c.degBound (S.n + 1) := by
+  have hp (j : Nat) : (S.preprocessedPoly j).natDegree ≤ S.n + 1 - 1 := by
+    rw [Nat.add_sub_cancel]; exact natDegree_preprocessedPoly_le S j
+  have hpn (j : Nat) :
+      ((S.preprocessedPoly j).comp (C (twoAdicGen S.logN) * Polynomial.X)).natDegree ≤
+        S.n + 1 - 1 :=
+    (natDegree_comp_shift _ _).trans (hp j)
+  exact Expr.natDegree_eval (S.n + 1)
+    (polyEnv S.n (twoAdicGen S.logN) (traceCol S trace) S.preprocessedPoly publicValues)
+    (natDegree_traceCol S trace hdeg)
+    (fun j ↦ (natDegree_comp_shift _ _).trans (natDegree_traceCol S trace hdeg j)) hp hpn
     (fun _ ↦ natDegree_C _) (fun _ ↦ natDegree_C _) ((natDegree_firstSel _).trans (by omega))
     ((natDegree_lastSel _ _).trans (by omega))
     (natDegree_sub_le_of_le natDegree_X_le (natDegree_C _).le) c
@@ -213,6 +224,9 @@ noncomputable def envAt (S : Setup EF) (publicValues : List F) (ζ : 𝕂) (o : 
     Expr.Env F 𝕂 :=
   { cur := fun j ↦ if h : j < S.air.width then o.traceAt ⟨j, h⟩ else 0
     next := fun j ↦ if h : j < S.air.width then o.traceNext ⟨j, h⟩ else 0
+    prepCur := fun j ↦ if h : j < S.air.preprocessedWidth then o.preprocessedAt ⟨j, h⟩ else 0
+    prepNext := fun j ↦
+      if h : j < S.air.preprocessedNextWidth then o.preprocessedNext ⟨j, h⟩ else 0
     pub := fun i ↦ lift (publicValues.getD i 0)
     const := lift
     isFirstRow := vanishing 1 S.n ζ / (ζ - 1)
@@ -268,8 +282,8 @@ theorem eval_recomposedPoly (S : Setup EF) (trace : Fin S.air.width → F[X])
 /-- `C_α` at a point is Horner's rule over the constraint polynomials there. -/
 theorem eval_foldedPoly (S : Setup EF) (publicValues : List F) (trace : Fin S.air.width → F[X])
     (α y : 𝕂) : (foldedPoly S publicValues trace α).eval y = horner (S.air.constraints.map
-      fun c ↦ aeval y (constraintPoly S.n (twoAdicGen S.logN) (traceCol S trace) publicValues c))
-          α := by
+      fun c ↦ aeval y (constraintPoly S.n (twoAdicGen S.logN) (traceCol S trace) S.preprocessedPoly
+        publicValues c)) α := by
   rw [foldedPoly, ← coe_evalRingHom, horner_map, coe_evalRingHom, eval_C, List.map_map]
   congr 1
   refine List.map_congr_left fun c _ ↦ ?_
@@ -278,17 +292,23 @@ theorem eval_foldedPoly (S : Setup EF) (publicValues : List F) (trace : Fin S.ai
 /-- The verifier's constraint at `ζ` is the constraint polynomial at `ζ`. -/
 theorem eval_envAt (S : Setup EF) (publicValues : List F) (trace : Fin S.air.width → F[X])
     (quotient : Fin S.chunks → Fin (Challenge.d EF) → F[X]) (ζ : 𝕂) (h1 : ζ - 1 ≠ 0)
-    (hω : ζ - (rootOfUnity S.logN)⁻¹ ≠ 0) (c : Expr F) (hc : c.colsBelow S.air.width = true) :
+    (hω : ζ - (rootOfUnity S.logN)⁻¹ ≠ 0) (c : Expr F)
+    (hc : c.colsBelow S.air.width S.air.preprocessedWidth S.air.preprocessedNextWidth = true) :
     c.eval (envAt S publicValues ζ (trueOpenings S trace quotient ζ)) =
-      aeval ζ (constraintPoly S.n (twoAdicGen S.logN) (traceCol S trace) publicValues c) := by
+      aeval ζ (constraintPoly S.n (twoAdicGen S.logN) (traceCol S trace) S.preprocessedPoly
+        publicValues c) := by
   have hl := logN_le S
   have hinv : (rootOfUnity S.logN)⁻¹ = algebraMap F 𝕂 (twoAdicGen S.logN)⁻¹ := by
     rw [rootOfUnity_eq, map_inv₀]
   refine (Expr.eval_hom (fun p : F[X] ↦ aeval ζ p) (fun a b ↦ map_add _ a b)
-    (fun a b ↦ map_sub _ a b) (fun a b ↦ map_mul _ a b) S.air.width _ _ (fun j hj ↦ ?_)
+    (fun a b ↦ map_sub _ a b) (fun a b ↦ map_mul _ a b) S.air.width S.air.preprocessedWidth
+    S.air.preprocessedNextWidth _ _ (fun j hj ↦ ?_) (fun j hj ↦ ?_) (fun j hj ↦ ?_)
     (fun j hj ↦ ?_) (fun _ ↦ aeval_C _ _) (fun _ ↦ aeval_C _ _) ?_ ?_ ?_ c hc).symm
   · simp only [polyEnv, envAt, traceCol, trueOpenings, dite_eq_left hj]
   · simp only [polyEnv, envAt, traceCol, trueOpenings, dite_eq_left hj]
+    rw [aeval_comp, map_mul, aeval_C, aeval_X, mul_comm, rootOfUnity_eq]
+  · simp only [polyEnv, envAt, trueOpenings, dite_eq_left hj]
+  · simp only [polyEnv, envAt, trueOpenings, dite_eq_left hj]
     rw [aeval_comp, map_mul, aeval_C, aeval_X, mul_comm, rootOfUnity_eq]
   · change aeval ζ (firstSel S.n) = vanishing 1 S.n ζ / (ζ - 1)
     rw [eq_div_iff h1, aeval_firstSel, vanishing, div_one]
@@ -353,8 +373,9 @@ theorem eval_identityPoly_root (S : Setup EF) (publicValues : List F)
     sub_zero, eval_foldedPoly]
   congr 1
   refine List.map_congr_left fun c hc ↦ ?_
-  rw [aeval_algebraMap_apply_eq_algebraMap_eval, eval_constraintPoly_root S.air S.logN hl _ _ _
-    (traceOn_traceOf S trace) c (S.valid.colsInWidth c hc) i hi]
+  rw [aeval_algebraMap_apply_eq_algebraMap_eval, eval_constraintPoly_root S.air S.logN hl _ _ _ _
+    (traceOn_traceOf S trace) (fun j _ i hi ↦ eval_preprocessedPoly S j i hi) c
+    (S.valid.colsInWidth c hc) i hi]
 
 /-! ### The algebra step -/
 

@@ -8,7 +8,8 @@ public import CompStark.Ni.BadQuery
 
 /-! # Knowledge soundness in the random-oracle model, assembled
 
-The game of `run` (`game`) makes at most `Q + verifierQueries` oracle calls. B's
+The game of `run` (`game`) makes at most `Q + verifierQueries` oracle calls: the setup's, the
+prover's and the verifier's. B's
 `prEvent_exists_fresh_bad_le` bounds the probability of an event that forces a fresh bad query by
 the number of calls times the probability that one fresh answer is bad. Here a fresh answer is bad
 if its digest clashes (`prob_clash_le`: `3 q / |F|^8`) or it makes its round bad
@@ -73,13 +74,20 @@ variable [BaseField F] {EF : Type} [Challenge F EF]
 section Game
 variable (S : Iop.Setup EF) (publicValues : List F)
 
-/-- The game of `run`: the prover, logged, then the verifier on its proof. -/
+/-- The setup, then the prover. -/
+def setupAndProve (prover : NIProver S) :
+    OracleComp (spec F S.streamLen) (Option (PreprocessedKey F) × Proof F EF) := do
+  let vk ← S.setupRo
+  return (vk, ← prover)
+
+/-- The game of `run`: the setup and the prover, logged, then the verifier on the proof against
+the setup's key. -/
 def game (prover : NIProver S) :
     OracleComp (spec F S.streamLen)
         (Proof F EF × QueryLog (spec F S.streamLen) × Except String Unit) :=
         do
-  let (proof, log) ← (simulateQ loggingOracle prover).run
-  return (proof, log, ← S.verifyRo proof publicValues)
+  let ((vk, proof), log) ← (simulateQ loggingOracle (setupAndProve S prover)).run
+  return (proof, log, ← S.verifyRo vk proof publicValues)
 
 theorem run_eq (prover : NIProver S) :
     run S publicValues prover = (simulateQ randomOracle (game S publicValues prover)).run' ∅ :=
@@ -88,29 +96,53 @@ theorem run_eq (prover : NIProver S) :
 theorem isTotalQueryBound_game (prover : NIProver S) (Q : Nat)
     (hQ : prover.IsTotalQueryBound Q) :
     (game S publicValues prover).IsTotalQueryBound (Q + S.verifierQueries) := by
-  refine isTotalQueryBound_bind
-    ((isTotalQueryBound_run_simulateQ_loggingOracle_iff prover Q).mpr hQ) fun x ↦ ?_
-  obtain ⟨proof, log⟩ := x
-  exact (isTotalQueryBound_bind (n₂ := 0) (S.isTotalQueryBound_verifyRo proof publicValues)
+  have hsp : (setupAndProve S prover).IsTotalQueryBound (S.setupQueries + Q) :=
+    isTotalQueryBound_bind S.isTotalQueryBound_setupRo fun vk ↦
+      (isTotalQueryBound_bind (n₂ := 0) hQ fun proof ↦
+        (show IsTotalQueryBound (pure (vk, proof) : OracleComp (spec F S.streamLen) _) 0
+          from trivial)).mono (by omega)
+  refine (isTotalQueryBound_bind (n₂ := S.verifierCalls)
+    ((isTotalQueryBound_run_simulateQ_loggingOracle_iff _ _).mpr hsp) fun x ↦ ?_).mono
+    (by unfold Setup.verifierQueries; omega)
+  obtain ⟨⟨vk, proof⟩, log⟩ := x
+  exact (isTotalQueryBound_bind (n₂ := 0) (S.isTotalQueryBound_verifyRo vk proof publicValues)
     fun v ↦ (show IsTotalQueryBound (pure (proof, log, v) :
       OracleComp (spec F S.streamLen) _) 0 from trivial)).mono (by omega)
 
 variable (answer : (q : Query F) → Answer S.streamLen q) (prover : NIProver S)
 
+theorem evalWithAnswerFn_setupAndProve :
+    evalWithAnswerFn (QueryImpl.ofFn answer) (setupAndProve S prover) =
+      (preprocessedKeyWith (idealOf answer) S.params S.air S.logN,
+        evalWithAnswerFn (QueryImpl.ofFn answer) prover) := by
+  simp only [setupAndProve, evalWithAnswerFn_bind, evalWithAnswerFn_pure,
+    evalWithAnswerFn_setupRo]
+
+theorem tableQueryLog_setupAndProve :
+    tableQueryLog (setupAndProve S prover) answer =
+      tableQueryLog S.setupRo answer ++ tableQueryLog prover answer := by
+  simp only [setupAndProve]
+  rw [tableQueryLog_bind, tableQueryLog_bind]
+  simp only [tableQueryLog_pure, List.append_nil]
+
 theorem evalWithAnswerFn_game :
     evalWithAnswerFn (QueryImpl.ofFn answer) (game S publicValues prover) =
-      (evalWithAnswerFn (QueryImpl.ofFn answer) prover, tableQueryLog prover answer,
+      (evalWithAnswerFn (QueryImpl.ofFn answer) prover,
+        tableQueryLog (setupAndProve S prover) answer,
         evalWithAnswerFn (QueryImpl.ofFn answer)
-          (S.verifyRo (evalWithAnswerFn (QueryImpl.ofFn answer) prover) publicValues)) := by
-  simp only [game, evalWithAnswerFn_bind, evalWithAnswerFn_logged, evalWithAnswerFn_pure]
+          (S.verifyRo (preprocessedKeyWith (idealOf answer) S.params S.air S.logN)
+            (evalWithAnswerFn (QueryImpl.ofFn answer) prover) publicValues)) := by
+  simp only [game, evalWithAnswerFn_bind, evalWithAnswerFn_logged, evalWithAnswerFn_pure,
+    evalWithAnswerFn_setupAndProve]
 
 theorem tableQueryLog_game :
-    tableQueryLog (game S publicValues prover) answer = tableQueryLog prover answer ++
-      tableQueryLog (S.verifyRo (evalWithAnswerFn (QueryImpl.ofFn answer) prover) publicValues)
-        answer := by
+    tableQueryLog (game S publicValues prover) answer =
+      tableQueryLog (setupAndProve S prover) answer ++
+      tableQueryLog (S.verifyRo (preprocessedKeyWith (idealOf answer) S.params S.air S.logN)
+        (evalWithAnswerFn (QueryImpl.ofFn answer) prover) publicValues) answer := by
   simp only [game]
   rw [tableQueryLog_bind, evalWithAnswerFn_logged, tableQueryLog_logged, tableQueryLog_bind,
-    tableQueryLog_pure, List.append_nil]
+    tableQueryLog_pure, List.append_nil, evalWithAnswerFn_setupAndProve]
 
 end Game
 
@@ -138,7 +170,7 @@ theorem prob_unopened_le (hδ' : (δ' : ℝ) < 1 - S.rate) (Q : Nat) (prover : N
     Pr{let result ← run S publicValues prover}[Unopened S publicValues δ' result] ≤
       (Q + S.verifierQueries) * roundError S δ δ' + hashError F (Q + S.verifierQueries) := by
   set n := Q + S.verifierQueries
-  have hn0 : 0 < n := by unfold n Setup.verifierQueries; omega
+  have hn0 : 0 < n := by unfold n Setup.verifierQueries Setup.verifierCalls; omega
   by_cases hbig : Fintype.card (Digest F) ≤ 3 * n
   · refine (prEvent_le_one _).trans (le_add_left ?_)
     rw [hashError_eq]
@@ -173,8 +205,11 @@ theorem prob_unopened_le (hδ' : (δ' : ℝ) < 1 - S.rate) (Q : Nat) (prover : N
         (isTotalQueryBound_game S publicValues prover Q hQ)
       rw [hlog] at hlen
       set proof := evalWithAnswerFn (QueryImpl.ofFn answer) prover
-      obtain ⟨p, hp, hfresh, hbad⟩ := exists_badAt S publicValues δ δ' loss hδ' answer proof
-        (tableQueryLog prover answer) (consistent_tableQueryLog _) hdb hok (by omega) hfail
+      obtain ⟨p, hp, hfresh, hbad⟩ := exists_badAt S publicValues δ δ' loss hδ' answer _ proof
+        (tableQueryLog (setupAndProve S prover) answer) (consistent_tableQueryLog _) rfl
+        (fun e he ↦ by
+          rw [tableQueryLog_setupAndProve]; exact List.mem_append_left _ he)
+        hdb hok (by omega) hfail
       rw [hlog]
       exact ⟨_, _, _, (List.take_append_drop p _).symm.trans
         (by rw [List.drop_eq_getElem_cons hp]), hfresh, hbad⟩

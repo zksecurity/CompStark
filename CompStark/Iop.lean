@@ -13,16 +13,18 @@ challenges by the verifier's uniform randomness. It runs over a base field `F` (
 the spec field `𝕂 = Challenge.Spec EF` of a challenge field `EF` of degree `d` over it
 (`Challenge`), for a `Setup EF`: FRI parameters, an AIR and a trace length `2 ^ logN`. The
 prover's oracles are words on the domain `L = g · ⟨ω⟩` of `2 ^ (logN + logBlowup)` points, `g`
-the base field's shift, that the trace is extended to.
+the base field's shift, that the trace is extended to. The verifier holds the extension of the
+AIR's preprocessed trace, the polynomials through its columns on the trace domain evaluated on
+`L` (`Setup.preprocessedWord`), as oracles of its own.
 
 1. The prover sends the extended trace, one word over `F` per column (`Prover.trace`).
 2. The verifier samples the constraint-folding challenge `α`.
 3. The prover sends the quotient's chunks, each as the `d` coordinates of a word over `𝕂`
    (`Prover.quotient`).
 4. The verifier samples the out-of-domain point `ζ`.
-5. The prover sends the claimed values of the trace's columns at `ζ` and `ζ ω_n` and of the
-   chunks at `ζ` (`Prover.openings`). The verifier checks the constraints at `ζ`
-   (`ConstraintsHoldAt`).
+5. The prover sends the claimed values of the trace's columns at `ζ` and `ζ ω_n`, of the chunks
+   at `ζ`, and of the preprocessed trace's columns at `ζ` and, if the AIR reads its next row, at
+   `ζ ω_n` (`Prover.openings`). The verifier checks the constraints at `ζ` (`ConstraintsHoldAt`).
 6. The verifier samples the batching challenge `a`.
 7. The prover shows with FRI that the batched DEEP word `∑ᵢ aⁱ (yᵢ - fᵢ(x)) / (zᵢ - x)` over
    the opened words `fᵢ`, points `zᵢ` and values `yᵢ` is close to a polynomial of degree below
@@ -33,7 +35,6 @@ the base field's shift, that the trace is extended to.
 committed trace: `closeTraces` are the traces whose columns are polynomials of degree at most
 `2 ^ logN` close to the prover's trace words.
 -/
-
 @[expose] public section
 namespace CompStark.Iop
 open CompStark.Stark CompStark.Sound Polynomial
@@ -71,6 +72,16 @@ abbrev Point : Type := Fin (2 ^ (S.logN + S.params.logBlowup))
 noncomputable def domain : Domain.SmoothCosetFftDomain (S.logN + S.params.logBlowup) 𝕂 :=
   cosetDomain _ S.valid.twoAdic
 
+/-- The polynomial of degree below `n` through column `j` of the preprocessed trace on the trace
+domain `⟨ω_n⟩`. -/
+noncomputable def preprocessedPoly (j : Nat) : F[X] :=
+  Lagrange.interpolate (Finset.range S.n) (fun i ↦ twoAdicGen S.logN ^ i)
+    fun i ↦ S.air.preprocessed.getD (i * S.air.preprocessedWidth + j) 0
+
+/-- The preprocessed trace's extension, column `j` on `L`: the verifier's own oracle. -/
+noncomputable def preprocessedWord (j : Nat) (i : S.Point) : F :=
+  (S.preprocessedPoly j).eval (basePoint (S.logN + S.params.logBlowup) i)
+
 end Setup
 
 /-- `ω_k`, the base field's generator of order `2 ^ k`, in `𝕂`. -/
@@ -86,6 +97,10 @@ structure Openings (S : Setup EF) where
   traceNext : Fin S.air.width → 𝕂
   /-- Each coordinate of each quotient chunk at `ζ`. -/
   quotientAt : Fin S.chunks → Fin (Challenge.d EF) → 𝕂
+  /-- Each preprocessed column at `ζ`. -/
+  preprocessedAt : Fin S.air.preprocessedWidth → 𝕂
+  /-- Each preprocessed column at `ζ ω_n`, if the AIR reads the next preprocessed row. -/
+  preprocessedNext : Fin S.air.preprocessedNextWidth → 𝕂
 
 /-- A prover: its oracles and messages, each a function of the challenges before it. Provers are
 deterministic; a randomized prover is a mixture of deterministic ones. -/
@@ -107,14 +122,19 @@ noncomputable def chunkShift (S : Setup EF) (c : Nat) : 𝕂 :=
   lift gen * rootOfUnity (S.logN + S.air.logQuotientChunks) ^ c
 
 /-- The constraint check at `ζ` (`checkConstraints` and `recompose`, over `𝕂`): the constraints,
-folded by `α`, on the claimed trace values with the selectors at `ζ`, divided by `Z_H(ζ)`, equal
-the quotient recomposed from the claimed chunks. -/
+folded by `α`, on the claimed values of the trace and the preprocessed trace (zeros for an
+unopened row) with the selectors at `ζ`, divided by `Z_H(ζ)`, equal the quotient recomposed from
+the claimed chunks. -/
 def ConstraintsHoldAt (S : Setup EF) (publicValues : List F) (α ζ : 𝕂) (o : Openings S) : Prop :=
   let ω := rootOfUnity S.logN
   let zh := vanishing 1 S.n ζ
   let env : Expr.Env F 𝕂 :=
     { cur := fun j ↦ if h : j < S.air.width then o.traceAt ⟨j, h⟩ else 0
       next := fun j ↦ if h : j < S.air.width then o.traceNext ⟨j, h⟩ else 0
+      prepCur := fun j ↦
+        if h : j < S.air.preprocessedWidth then o.preprocessedAt ⟨j, h⟩ else 0
+      prepNext := fun j ↦
+        if h : j < S.air.preprocessedNextWidth then o.preprocessedNext ⟨j, h⟩ else 0
       pub := fun i ↦ lift (publicValues.getD i 0)
       const := lift
       isFirstRow := zh / (ζ - 1)
@@ -128,14 +148,19 @@ def ConstraintsHoldAt (S : Setup EF) (publicValues : List F) (α ζ : 𝕂) (o :
   folded / zh = ∑ c, selector c * chunk c
 
 /-- The opened words with their points and claimed values, in Plonky3's batching order: the trace
-columns at `ζ`, the trace columns at `ζ ω_n`, each chunk's coordinates at `ζ`. -/
+columns at `ζ`, the trace columns at `ζ ω_n`, each chunk's coordinates at `ζ`, the preprocessed
+columns at `ζ` and, if opened, at `ζ ω_n`. -/
 noncomputable def openedWords {S : Setup EF} (p : Prover S) (α ζ : 𝕂) :
     List ((S.Point → F) × 𝕂 × 𝕂) :=
   let o := p.openings α ζ
   (List.finRange S.air.width).map (fun j ↦ (p.trace j, ζ, o.traceAt j)) ++
   (List.finRange S.air.width).map (fun j ↦ (p.trace j, ζ * rootOfUnity S.logN, o.traceNext j)) ++
-  (List.finRange S.chunks).flatMap fun c ↦ (List.finRange (Challenge.d EF)).map fun e ↦
-    (p.quotient α c e, ζ, o.quotientAt c e)
+  ((List.finRange S.chunks).flatMap fun c ↦ (List.finRange (Challenge.d EF)).map fun e ↦
+    (p.quotient α c e, ζ, o.quotientAt c e)) ++
+  (List.finRange S.air.preprocessedWidth).map
+    (fun j ↦ (S.preprocessedWord j.val, ζ, o.preprocessedAt j)) ++
+  (List.finRange S.air.preprocessedNextWidth).map
+    (fun j ↦ (S.preprocessedWord j.val, ζ * rootOfUnity S.logN, o.preprocessedNext j))
 
 /-- The batched DEEP word: `∑ᵢ aⁱ (yᵢ - fᵢ(x)) / (zᵢ - x)` at each point `x` of `L`. -/
 noncomputable def deepWord {S : Setup EF} (p : Prover S) (α ζ a : 𝕂) (i : S.Point) : 𝕂 :=

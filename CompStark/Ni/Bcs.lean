@@ -39,32 +39,33 @@ local notation "𝕂" => Challenge.Spec EF
 /-! ### The run's challenges -/
 
 section Challenges
-variable (H : Primitives F Id) (P : Params) (A : Air F) (proof : Proof F EF) (pis : List F)
+variable (H : Primitives F Id) (P : Params) (A : Air F) (vk : Option (PreprocessedKey F))
+  (proof : Proof F EF) (pis : List F)
 
 /-- The challenger when FRI's commit loop starts, after FRI's domain separator. -/
-def friStart : H.State := obsList H (stateFri H P A proof pis) (friSeedOf P proof)
+def friStart : H.State := obsList H (stateFri H P A vk proof pis) (friSeedOf P proof)
 
 /-- The commit loop's folding challenges. -/
 def betasOf : List EF :=
   (commitReplay H P (proof.fri.commits.toList.zip proof.fri.commitWitnesses.toList)
-    (friStart H P A proof pis)).1
+    (friStart H P A vk proof pis)).1
 
 /-- The challenger before the query grinding check: after the commit loop and the final
 polynomial. -/
 def queryState : H.State :=
   obsExts H (commitReplay (EF := EF) H P
     (proof.fri.commits.toList.zip proof.fri.commitWitnesses.toList)
-    (friStart H P A proof pis)).2 proof.fri.finalPoly.toList
+    (friStart H P A vk proof pis)).2 proof.fri.finalPoly.toList
 
 /-- The query grinding sample, after the witness; `0` without query grinding. -/
 def powSampleOf : F :=
   if P.queryPowBits = 0 then 0
-  else (H.sample (H.observe (queryState H P A proof pis) proof.fri.queryWitness)).1
+  else (H.sample (H.observe (queryState H P A vk proof pis) proof.fri.queryWitness)).1
 
 /-- Query `j`'s sample, whose low bits are its index. -/
 def querySampleOf (j : Nat) : F :=
   (H.sample (sampleStates H
-    (chkWit H P.queryPowBits proof.fri.queryWitness (queryState H P A proof pis)).2 j)).1
+    (chkWit H P.queryPowBits proof.fri.queryWitness (queryState H P A vk proof pis)).2 j)).1
 
 end Challenges
 
@@ -74,16 +75,16 @@ end Challenges
 oracles from `cache`, the opened values and final polynomial from the proof, and the challenges
 of the run on `H`. -/
 noncomputable def extract (S : Iop.Setup EF) (cache : Merkle.Cache F (Digest F))
-    (H : Primitives F Id)
-    (proof : Proof F EF) (pis : List F) : Sound.Transcript S where
+    (H : Primitives F Id) (vk : Option (PreprocessedKey F)) (proof : Proof F EF) (pis : List F) :
+    Sound.Transcript S where
   trace := traceWords S cache proof
-  alpha := Challenge.toSpec (alphaOf H S.params S.air proof pis)
+  alpha := Challenge.toSpec (alphaOf H S.params S.air vk proof pis)
   quotient := quotientWords S cache proof
-  zeta := Challenge.toSpec (zetaOf H S.params S.air proof pis)
+  zeta := Challenge.toSpec (zetaOf H S.params S.air vk proof pis)
   openings := openingsOf S proof.opened
-  batch := Challenge.toSpec (batchOf H S.params S.air proof pis)
+  batch := Challenge.toSpec (batchOf H S.params S.air vk proof pis)
   fri := friOracles S cache proof.fri.commits.toList proof.fri.finalPoly
-  betas := foldChallenges S (betasOf H S.params S.air proof pis)
+  betas := foldChallenges S (betasOf H S.params S.air vk proof pis)
 
 /-! ### Arities -/
 
@@ -110,22 +111,30 @@ theorem natDegree_finalPoly (S : Iop.Setup EF) (cache : Merkle.Cache F (Digest F
 
 /-- The verifier's FRI rounds on a proof of `2 ^ logN` rows: the largest query domain is `L`,
 above the blowup, every opened matrix has its height, and FRI folds by `S`'s schedule. -/
-theorem friHyps (S : Iop.Setup EF) (proof : Proof F EF) (zeta : EF)
-    (hdb : proof.degreeBits = S.logN) :
+theorem friHyps (S : Iop.Setup EF) (vk : Option (PreprocessedKey F)) (proof : Proof F EF)
+    (zeta : EF) (hdb : proof.degreeBits = S.logN) :
     friLogMax S.params proof = S.logSize ∧ S.logSize ≠ S.params.logBlowup ∧
-      (∀ x ∈ vRounds proof zeta, ∀ dp ∈ x.2, dp.1.logSize + S.params.logBlowup = S.logSize) ∧
+      (∀ x ∈ openingRounds S.air vk proof zeta, ∀ dp ∈ x.2,
+        dp.1.logSize + S.params.logBlowup = S.logSize) ∧
       friSchedule S.params proof = S.foldArities.map PNat.val := by
   have hfolds := S.folds
   have hL : friLogMax S.params proof = S.logSize := by
     simp only [friLogMax, hdb, Iop.Setup.logSize]
   refine ⟨hL, by unfold Iop.Setup.logSize; omega, fun x hx dp hdp ↦ ?_, ?_⟩
   · rw [← hL]
-    simp only [vRounds, List.mem_cons, List.not_mem_nil, or_false] at hx
-    rcases hx with rfl | rfl
+    simp only [openingRounds, List.cons_append, List.nil_append, List.mem_cons] at hx
+    rcases hx with rfl | rfl | hx
     · simp only [List.mem_cons, List.not_mem_nil, or_false] at hdp
       rw [hdp]
     · obtain ⟨ch, -, rfl⟩ := List.mem_map.mp hdp
       rfl
+    · unfold preprocessedRound at hx
+      split at hx
+      · rw [List.mem_singleton] at hx
+        subst hx
+        rw [List.mem_singleton] at hdp
+        rw [hdp]
+      · exact absurd hx List.not_mem_nil
   · have hsub : proof.degreeBits + S.params.logBlowup -
         (S.params.logBlowup + S.params.logFinalPolyLen) = S.logN - S.params.logFinalPolyLen := by
       omega
@@ -134,30 +143,34 @@ theorem friHyps (S : Iop.Setup EF) (proof : Proof F EF) (zeta : EF)
     rfl
 
 /-- **BCS consistency.** If the verifier on pure primitives `H` accepts a proof of `2 ^ logN`
-rows whose commitments bind the rows extracted from `cache`, the extracted transcript passes the
+rows whose commitments bind the rows extracted from `cache`, and under whose preprocessed
+commitment `cache` holds the preprocessed trace's extension, the extracted transcript passes the
 deterministic checks of `Sound.exists_satisfied_of_safe`, with the run's grinding and query
 samples. -/
 theorem bcs (S : Iop.Setup EF) (cache : Merkle.Cache F (Digest F)) (H : Primitives F Id)
-    (proof : Proof F EF)
+    (vk : Option (PreprocessedKey F)) (proof : Proof F EF)
     (pis : List F) (hdb : proof.degreeBits = S.logN)
     (htrace : Binding cache H proof.traceCommit) (hquot : Binding cache H proof.quotientCommit)
     (hfri : ∀ c ∈ proof.fri.commits, Binding cache H c)
-    (h : verifyWith H S.params S.air proof pis = .ok ()) :
-    let t := extract S cache H proof pis
+    (hprepBind : ∀ k ∈ vk, Binding cache H k.commit)
+    (hprep : ∀ k ∈ vk, ∀ j < S.air.preprocessedWidth,
+      committedColumn S cache k.commit j = S.preprocessedWord j)
+    (h : verifyWith H S.params S.air vk proof pis = .ok ()) :
+    let t := extract S cache H vk proof pis
     ConstraintsHoldAt S pis t.alpha t.zeta t.openings ∧
       (finalPolynomial S.schedule t.fri).natDegree < (finalDegreeOf S).val ∧
-      CompPoly.CanonicalNat.toNat (powSampleOf H S.params S.air proof pis) %
+      CompPoly.CanonicalNat.toNat (powSampleOf H S.params S.air vk proof pis) %
         2 ^ S.params.queryPowBits = 0 ∧
       ∀ j : Fin S.params.numQueries,
-        queryPoint S (querySampleOf H S.params S.air proof pis j) ∈ t.consistentQueries := by
+        queryPoint S (querySampleOf H S.params S.air vk proof pis j) ∈ t.consistentQueries := by
   intro t
-  obtain ⟨htl, htn, hqc, hq4, -, -, -, -, -, ⟨st, hfriOk⟩, hcheck⟩ :=
-    verifyWith_ok H S.params S.air proof pis h
-  rw [hdb] at hcheck
-  obtain ⟨hL, hb, hh, hsched⟩ := friHyps S proof (zetaOf H S.params S.air proof pis) hdb
+  obtain ⟨htl, htn, hqc, hq4, hshape, -, -, -, -, -, ⟨st, hfriOk⟩, hcheck⟩ :=
+    verifyWith_ok H S.params S.air vk proof pis h
+  rw [hdb] at hcheck hshape
+  obtain ⟨hL, hb, hh, hsched⟩ := friHyps S vk proof (zetaOf H S.params S.air vk proof pis) hdb
   have hok := verifyFri_ok H S.params proof.fri _ _ _ hb hh _ _ hfriOk
-  have hstart : friStart H S.params S.air proof pis =
-      obsList H (stateFri H S.params S.air proof pis)
+  have hstart : friStart H S.params S.air vk proof pis =
+      obsList H (stateFri H S.params S.air vk proof pis)
       (DomainSeparator.friSeed F EF (foldSchedule S.params.maxLogArity
         (S.params.logBlowup + S.params.logFinalPolyLen) S.logSize [S.logSize])
         (2 ^ S.params.logFinalPolyLen) S.params.commitPowBits S.params.queryPowBits
@@ -181,10 +194,10 @@ theorem bcs (S : Iop.Setup EF) (cache : Merkle.Cache F (Digest F)) (H : Primitiv
     set index := (smpBits H S.logSize (sampleStates H (chkWit H S.params.queryPowBits
       proof.fri.queryWitness (obsExts H (commitReplay (EF := EF) H S.params
         (proof.fri.commits.toList.zip proof.fri.commitWitnesses.toList)
-        (friStart H S.params S.air proof pis)).2 proof.fri.finalPoly.toList)).2 j.val)).1
+        (friStart H S.params S.air vk proof pis)).2 proof.fri.finalPoly.toList)).2 j.val)).1
       with hindex
     have hidx : index < 2 ^ S.logSize := Nat.mod_lt _ (Nat.two_pow_pos _)
-    have hpt : queryPoint S (querySampleOf H S.params S.air proof pis j) =
+    have hpt : queryPoint S (querySampleOf H S.params S.air vk proof pis j) =
         finMod S.logSize (reverseBits index S.logSize) := by
       apply Fin.ext
       simp only [queryPoint, finMod, Nat.mod_eq_of_lt (reverseBits_lt _ _), hindex,
@@ -201,12 +214,14 @@ theorem bcs (S : Iop.Setup EF) (cache : Merkle.Cache F (Digest F)) (H : Primitiv
       (by rw [hslen]; exact hcrlen)
       (by rw [hslen, Array.length_toList]; exact hcs)
       (fun c hc ↦ hfri c (Array.mem_toList_iff.mp hc))
-      index hidx (queryValue S.logSize (batchOf H S.params S.air proof pis)
-        (vRounds proof (zetaOf H S.params S.air proof pis)) proof.fri.inputs.toList j.val index)
+      index hidx (queryValue S.logSize (batchOf H S.params S.air vk proof pis)
+        (openingRounds S.air vk proof (zetaOf H S.params S.air vk proof pis))
+        proof.fri.inputs.toList j.val index)
       hsteps hfinal
-    have hdeep := deepWord_eq S cache H proof (zetaOf H S.params S.air proof pis)
-      (batchOf H S.params S.air proof pis) (Challenge.toSpec (alphaOf H S.params S.air proof pis))
-      hdb htl htn hqc (fun ch hc ↦ hq4 ch hc) htrace hquot _ index hidx hlen hbatch
+    have hdeep := deepWord_eq S cache H vk proof (zetaOf H S.params S.air vk proof pis)
+      (batchOf H S.params S.air vk proof pis)
+      (Challenge.toSpec (alphaOf H S.params S.air vk proof pis)) hdb htl htn hqc
+      (fun ch hc ↦ hq4 ch hc) hshape htrace hquot hprepBind hprep _ index hidx hlen hbatch
     rw [hpt]
     simp only [Transcript.consistentQueries, Fri.Spec.consistentQueries, Finset.mem_filter]
     exact ⟨hacc, hinit.trans hdeep.symm⟩

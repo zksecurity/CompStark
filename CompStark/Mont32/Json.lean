@@ -14,7 +14,8 @@ public import Lean.Data.Json
 A proof's JSON form as Plonky3 serializes it (`serde_json`) for a base field `MontyField31`, here
 `FastField p`: field elements as Montgomery words, extension elements as
 `{"value": [c0, …, c(d-1)]}`, commitments as Merkle caps of one root `{"cap": [[eight words]]}`,
-and Merkle multi-openings with their pruned siblings `{"sibling_hashes": [...]}`.
+Merkle multi-openings with their pruned siblings `{"sibling_hashes": [...]}`, and absent openings
+as `null`.
 -/
 
 @[expose] public section
@@ -85,16 +86,21 @@ def absent (j : Json) (k : String) : Except String Unit := do
   | .null => return ()
   | _ => throw s!"unsupported: {k}"
 
-/-- A proof, rejecting preprocessed columns and randomization. -/
+/-- `null`, or a value. -/
+def optional {α : Type} (f : Json → Except String α) : Json → Except String (Option α)
+  | .null => return none
+  | j => some <$> f j
+
+/-- A proof, rejecting randomization. -/
 def proof (j : Json) : Except String (Proof (FastField p) EF) := do
   let cs ← j.getObjVal? "commitments"
   absent cs "random"
   let ov ← j.getObjVal? "opened_values"
-  absent ov "preprocessed_local"
-  absent ov "preprocessed_next"
   absent ov "random"
   return ⟨← digest (← cs.getObjVal? "trace"), ← digest (← cs.getObjVal? "quotient_chunks"),
     ⟨← array ext (← ov.getObjVal? "trace_local"), ← array ext (← ov.getObjVal? "trace_next"),
+      ← optional (array ext) (← ov.getObjVal? "preprocessed_local"),
+      ← optional (array ext) (← ov.getObjVal? "preprocessed_next"),
       ← array (array ext) (← ov.getObjVal? "quotient_chunks")⟩,
     ← friProof (← j.getObjVal? "opening_proof"),
     ← (← j.getObjVal? "degree_bits").getNat?,

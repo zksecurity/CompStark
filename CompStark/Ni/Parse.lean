@@ -16,7 +16,7 @@ back from the queries made before it by following capacities to the initial one 
 capacity was answered by the call of the round before. This gives the call's history (each
 earlier round's input and answered samples) and its own input.
 
-* `inputs P A pis proof`: the transcript schedule, the elements the verifier observes before
+* `inputs P A vk pis proof`: the transcript schedule, the elements the verifier observes before
   each squeeze: the STARK's domain separator, the trace commitment and the public values; the
   quotient commitment and the out-of-domain grinding witness; the PCS's domain separator, the
   opened values and the batching grinding witness; each commit-phase commitment with its
@@ -90,6 +90,76 @@ theorem getD_prependSeed (seed : List F) (b : List F) (bs : List (List F)) (k : 
   | succ k => simp only [prependSeed, List.getD_cons_succ, seedAt, Nat.add_one_ne_zero,
       ↓reduceIte, List.nil_append]
 
+/-! ### The preprocessed shape -/
+
+/-- The preprocessed round of an opening in the verifier's shape: present with the key, opened at
+the next row exactly when the AIR reads it. -/
+theorem preprocessedRound_cases {EF : Type} (A : Air F) (vk : Option (PreprocessedKey F))
+    (o : OpenedValues EF) (db : Nat) (hshape : preprocessedShapeOk A vk o db = true) (d : Fri.Domain F)
+    (zeta zetaNext : EF) :
+    (vk = none ∧ o.preprocessedLocal = none ∧ o.preprocessedNext = none ∧
+      preprocessedRound A vk o d zeta zetaNext = []) ∨
+    ∃ k l, vk = some k ∧ o.preprocessedLocal = some l ∧
+      preprocessedRound A vk o d zeta zetaNext =
+        [(k.commit, [(d, (zeta, l.toList) ::
+          ((o.preprocessedNext.map fun r ↦ (zetaNext, r.toList)).toList))])] := by
+  rcases o with ⟨tl, tn, pl, pn, qc⟩
+  match vk, pl, pn, hshape with
+  | none, none, none, _ => exact Or.inl ⟨rfl, rfl, rfl, rfl⟩
+  | some k, some l, none, h =>
+    simp only [preprocessedShapeOk, Bool.and_eq_true, Bool.not_eq_eq_eq_not, Bool.not_true]
+      at h
+    refine Or.inr ⟨k, l, rfl, rfl, ?_⟩
+    simp only [preprocessedRound, h.2, Bool.false_eq_true, ↓reduceIte, Option.getD_some,
+      Option.map_none, Option.toList_none]
+  | some k, some l, some r, h =>
+    simp only [preprocessedShapeOk, Bool.and_eq_true] at h
+    refine Or.inr ⟨k, l, rfl, rfl, ?_⟩
+    simp only [preprocessedRound, h.2.1, ↓reduceIte, Option.getD_some, Option.map_some,
+      Option.toList_some]
+  | none, some _, _, h => simp only [preprocessedShapeOk, Bool.false_eq_true] at h
+  | none, none, some _, h => simp only [preprocessedShapeOk, Bool.false_eq_true] at h
+  | some _, none, _, h => simp only [preprocessedShapeOk, Bool.false_eq_true] at h
+
+/-- An opening in the verifier's preprocessed shape holds rows of the AIR's widths, and its claim
+counts are the AIR's. -/
+theorem prep_of_shapeOk {EF : Type} {A : Air F} {vk : Option (PreprocessedKey F)}
+    {o : OpenedValues EF} {db : Nat} (h : preprocessedShapeOk A vk o db = true) :
+    (o.preprocessedLocal.getD #[]).size = A.preprocessedWidth ∧
+      (o.preprocessedNext.getD #[]).size = A.preprocessedNextWidth ∧
+      (o.preprocessedLocal.map fun l ↦
+          [l.size :: (o.preprocessedNext.map (·.size)).toList]).toList =
+        if A.preprocessedWidth = 0 then [] else
+          [[A.preprocessedWidth ::
+            if A.opensPreprocessedNext then [A.preprocessedWidth] else []]] := by
+  rcases o with ⟨tl, tn, pl, pn, qc⟩
+  match vk, pl, pn, h with
+  | none, none, none, h =>
+    simp only [preprocessedShapeOk, beq_iff_eq] at h
+    have hn : A.preprocessedNextWidth = 0 := by
+      have := A.preprocessedNextWidth_le; omega
+    simp only [Option.getD_none, Array.size_empty, h, hn, Option.map_none, Option.toList_none,
+      ↓reduceIte, and_self]
+  | some k, some l, none, h =>
+    simp only [preprocessedShapeOk, Bool.and_eq_true, beq_iff_eq, decide_eq_true_eq,
+      Bool.not_eq_eq_eq_not, Bool.not_true] at h
+    obtain ⟨⟨⟨⟨h0, -⟩, -⟩, hl⟩, hn⟩ := h
+    have hnw : A.preprocessedNextWidth = 0 := by
+      simp only [Air.preprocessedNextWidth, hn, Bool.false_eq_true, ↓reduceIte]
+    simp only [Option.getD_some, hl, Option.getD_none, Array.size_empty, hnw, Option.map_some,
+      Option.map_none, Option.toList_none, Option.toList_some, Nat.pos_iff_ne_zero.mp h0,
+      ↓reduceIte, hn, Bool.false_eq_true, and_self]
+  | some k, some l, some r, h =>
+    simp only [preprocessedShapeOk, Bool.and_eq_true, beq_iff_eq, decide_eq_true_eq] at h
+    obtain ⟨⟨⟨⟨h0, -⟩, -⟩, hl⟩, hn, hr⟩ := h
+    have hnw : A.preprocessedNextWidth = A.preprocessedWidth := by
+      simp only [Air.preprocessedNextWidth, hn, ↓reduceIte]
+    simp only [Option.getD_some, hl, hr, hnw, Option.map_some, Option.toList_some,
+      Nat.pos_iff_ne_zero.mp h0, ↓reduceIte, hn, and_self]
+  | none, some _, _, h => simp only [preprocessedShapeOk, Bool.false_eq_true] at h
+  | none, none, some _, h => simp only [preprocessedShapeOk, Bool.false_eq_true] at h
+  | some _, none, _, h => simp only [preprocessedShapeOk, Bool.false_eq_true] at h
+
 variable [BaseField F] {EF : Type} [Challenge F EF]
 
 /-! ### The transcript schedule -/
@@ -98,30 +168,44 @@ variable [BaseField F] {EF : Type} [Challenge F EF]
 def coeffs (xs : List EF) : List F := xs.flatMap Ext.coeffs
 
 /-- The opened values in the order the verifier observes them: the trace at `ζ`, the trace at
-`ζ ω`, and every quotient chunk. -/
+`ζ ω`, every quotient chunk, and the preprocessed trace at `ζ` and `ζ ω` if opened. -/
 def openedValues (o : OpenedValues EF) : List EF :=
-  o.traceLocal.toList ++ o.traceNext.toList ++ o.quotientChunks.toList.flatMap (·.toList)
+  o.traceLocal.toList ++ o.traceNext.toList ++ o.quotientChunks.toList.flatMap (·.toList) ++
+    (o.preprocessedLocal.getD #[]).toList ++ (o.preprocessedNext.getD #[]).toList
 
 /-- The claimed evaluation counts of a proof's openings: the trace at two points, every quotient
-chunk at one. -/
+chunk at one, and the preprocessed trace, if opened, at one or two. -/
 def pcsCounts (o : OpenedValues EF) : List (List (List Nat)) :=
-  [[[o.traceLocal.size, o.traceNext.size]], o.quotientChunks.toList.map fun ch ↦ [ch.size]]
+  [[[o.traceLocal.size, o.traceNext.size]], o.quotientChunks.toList.map fun ch ↦ [ch.size]] ++
+    (o.preprocessedLocal.map fun l ↦ [l.size :: (o.preprocessedNext.map (·.size)).toList]).toList
 
-theorem claimCounts_vRounds (proof : Proof F EF) (zeta : EF) :
-    Fri.claimCounts (vRounds proof zeta) = pcsCounts proof.opened := by
-  simp only [Fri.claimCounts, vRounds, pcsCounts, List.map_cons, List.map_nil, List.map_map,
-    Array.length_toList]
-  rfl
+theorem claimCounts_openingRounds (A : Air F) (vk : Option (PreprocessedKey F))
+    (proof : Proof F EF) (zeta : EF)
+    (hshape : preprocessedShapeOk A vk proof.opened proof.degreeBits = true) :
+    Fri.claimCounts (openingRounds A vk proof zeta) = pcsCounts proof.opened := by
+  unfold openingRounds
+  rcases preprocessedRound_cases A vk proof.opened _ hshape ⟨1, proof.degreeBits⟩ zeta
+    (zeta * Ext.ofBase (twoAdicGen proof.degreeBits)) with ⟨-, hl, hn, hr⟩ | ⟨k, l, -, hl, hr⟩
+  · simp only [Fri.claimCounts, pcsCounts, hr, hl, List.map_cons, List.map_nil, List.map_map,
+      Array.length_toList, Option.map_none, Option.toList_none, List.append_nil]
+    rfl
+  · simp only [Fri.claimCounts, pcsCounts, hr, hl, List.map_cons, List.map_nil, List.map_map,
+      Array.length_toList, Option.map_some, Option.toList_some, List.cons_append,
+      List.nil_append]
+    refine congrArg (List.cons _) (congrArg₂ (fun a b ↦ a :: b) rfl ?_)
+    cases proof.opened.preprocessedNext <;> rfl
 
 /-- The elements the verifier observes on `proof` before each squeeze, round by round: the
-STARK's domain separator, the trace commitment and the public values; the quotient commitment
+STARK's domain separator, the trace commitment, the preprocessed commitment of the verifying key
+`vk` and the public values; the quotient commitment
 and the out-of-domain grinding witness; the PCS's domain separator, the opened values and the
 batching grinding witness; each commit-phase commitment with its grinding witness, the first
 after FRI's domain separator; the final polynomial and the query grinding witness. A grinding
 witness is not observed without grinding. -/
-def inputs (P : Fri.Params) (A : Air F) (pis : List F) (proof : Proof F EF) : List (List F) :=
-  (DomainSeparator.starkSeed F EF proof.degreeBits A.width A.numPublicValues
-    (2 ^ A.logQuotientChunks) P.oodPowBits ++ proof.traceCommit.toList ++ pis) ::
+def inputs (P : Fri.Params) (A : Air F) (vk : Option (PreprocessedKey F)) (pis : List F)
+    (proof : Proof F EF) : List (List F) :=
+  (starkSeedOf EF P A proof.degreeBits ++ proof.traceCommit.toList ++ preprocessedDigest vk ++
+    pis) ::
   (proof.quotientCommit.toList ++ witnessInput P.oodPowBits proof.oodWitness) ::
   (DomainSeparator.pcsSeed F EF (pcsCounts proof.opened) P.batchPowBits ++
     coeffs (openedValues proof.opened) ++ witnessInput P.batchPowBits proof.fri.batchWitness) ::
@@ -927,8 +1011,9 @@ theorem verifyPcs_logs (hK : P.numQueries + Challenge.d EF + 1 ≤ K) (blocks : 
     have := verifyFri_logs hK blocks (r + 1) proof rounds _ logMax hheights hfold hlast _ hok
     rwa [show r + 1 + 1 = r + 2 by omega] at this
 
-theorem inputs_getD_fri (P : Fri.Params) (A : Air F) (pis : List F) (proof : Proof F EF)
-    (k : Nat) : (inputs P A pis proof).getD (3 + k) [] = seedAt (friSeedOf P proof) k ++
+theorem inputs_getD_fri (P : Fri.Params) (A : Air F) (vk : Option (PreprocessedKey F))
+    (pis : List F) (proof : Proof F EF)
+    (k : Nat) : (inputs P A vk pis proof).getD (3 + k) [] = seedAt (friSeedOf P proof) k ++
       ((((proof.fri.commits.toList.zip proof.fri.commitWitnesses.toList).map fun cw ↦
         cw.1.toList ++ witnessInput P.commitPowBits cw.2) ++
       [coeffs proof.fri.finalPoly.toList ++
@@ -943,9 +1028,10 @@ theorem inputs_getD_fri (P : Fri.Params) (A : Air F) (pis : List F) (proof : Pro
   · simp only [List.append_eq_nil_iff, List.cons_ne_nil, and_false] at h
   · exact getD_prependSeed _ _ _ _
 
-theorem inputs_getD_fold (P : Fri.Params) (A : Air F) (pis : List F) (proof : Proof F EF)
+theorem inputs_getD_fold (P : Fri.Params) (A : Air F) (vk : Option (PreprocessedKey F))
+    (pis : List F) (proof : Proof F EF)
     (j : Nat) (hj : j < (proof.fri.commits.toList.zip proof.fri.commitWitnesses.toList).length) :
-    (inputs P A pis proof).getD (3 + j) [] = seedAt (friSeedOf P proof) j ++
+    (inputs P A vk pis proof).getD (3 + j) [] = seedAt (friSeedOf P proof) j ++
       (proof.fri.commits.toList.zip proof.fri.commitWitnesses.toList)[j].1.toList ++
         witnessInput P.commitPowBits
           (proof.fri.commits.toList.zip proof.fri.commitWitnesses.toList)[j].2 := by
@@ -953,8 +1039,9 @@ theorem inputs_getD_fold (P : Fri.Params) (A : Air F) (pis : List F) (proof : Pr
     List.getElem?_append_left (by simp only [List.length_map]; exact hj)]
   simp only [List.getElem?_map, List.getElem?_eq_getElem hj, Option.map_some, Option.getD_some]
 
-theorem inputs_getD_last (P : Fri.Params) (A : Air F) (pis : List F) (proof : Proof F EF) :
-    (inputs P A pis proof).getD
+theorem inputs_getD_last (P : Fri.Params) (A : Air F) (vk : Option (PreprocessedKey F))
+    (pis : List F) (proof : Proof F EF) :
+    (inputs P A vk pis proof).getD
       (3 + (proof.fri.commits.toList.zip proof.fri.commitWitnesses.toList).length) [] =
       seedAt (friSeedOf P proof)
         (proof.fri.commits.toList.zip proof.fri.commitWitnesses.toList).length ++
@@ -963,8 +1050,9 @@ theorem inputs_getD_last (P : Fri.Params) (A : Air F) (pis : List F) (proof : Pr
     List.getElem?_append_right (by simp only [List.length_map]; omega)]
   simp only [List.length_map, Nat.sub_self, List.getElem?_cons_zero, Option.getD_some]
 
-theorem length_inputs (P : Fri.Params) (A : Air F) (pis : List F) (proof : Proof F EF) :
-    (inputs P A pis proof).length =
+theorem length_inputs (P : Fri.Params) (A : Air F) (vk : Option (PreprocessedKey F)) (pis : List F)
+    (proof : Proof F EF) :
+    (inputs P A vk pis proof).length =
       2 + 2 + (proof.fri.commits.toList.zip proof.fri.commitWitnesses.toList).length := by
   rw [inputs]
   rcases h : ((proof.fri.commits.toList.zip proof.fri.commitWitnesses.toList).map fun cw ↦
@@ -992,29 +1080,51 @@ theorem run_stateT_bind {α β : Type} (x : M (idealLogged answer) α) (s : Spon
   · change (((g a).run.run).1, w ++ ((g a).run.run).2) = _
     rw [hg, List.append_nil]
 
-theorem heights_vRounds (P : Fri.Params) (proof : Proof F EF) (zeta : EF) :
-    ((((vRounds proof zeta).flatMap (·.2)).map (·.1.logSize + P.logBlowup)).mergeSort
+theorem heights_openingRounds (P : Fri.Params) (A : Air F) (vk : Option (PreprocessedKey F))
+    (proof : Proof F EF) (zeta : EF) :
+    ((((openingRounds A vk proof zeta).flatMap (·.2)).map (·.1.logSize + P.logBlowup)).mergeSort
       (fun a b ↦ b ≤ a)).dedup = [proof.degreeBits + P.logBlowup] := by
   refine Fri.dedup_mergeSort_const _ _ _ (fun x hx ↦ ?_) ?_
   · obtain ⟨y, hy, rfl⟩ := List.mem_map.mp hx
-    simp only [vRounds, List.flatMap_cons, List.flatMap_nil, List.append_nil, List.mem_append,
-      List.mem_cons, List.mem_nil_iff, or_false, List.mem_map] at hy
-    rcases hy with rfl | ⟨ch, -, rfl⟩ <;> rfl
-  · simp only [vRounds, List.flatMap_cons, List.map_append, List.map_cons, ne_eq,
+    simp only [openingRounds, List.cons_append, List.nil_append, List.flatMap_cons,
+      List.mem_append, List.mem_cons, List.mem_map, List.mem_flatMap] at hy
+    rcases hy with rfl | ⟨ch, -, rfl⟩ | ⟨r, hr, hy⟩
+    · rfl
+    · rfl
+    · unfold preprocessedRound at hr
+      split at hr
+      · rw [List.mem_singleton] at hr
+        subst hr
+        rw [List.mem_singleton] at hy
+        rw [hy]
+      · exact absurd hr List.not_mem_nil
+  · simp only [openingRounds, List.flatMap_cons, List.map_append, List.map_cons, ne_eq,
       List.cons_append, reduceCtorEq, not_false_eq_true]
 
-theorem roundValues_vRounds' (proof : Proof F EF) (zeta : EF) :
-    roundValues (vRounds proof zeta) = openedValues proof.opened := by
-  simp only [roundValues, vRounds, openedValues, List.flatMap_cons, List.flatMap_nil,
-    List.flatMap_map, List.append_nil, List.append_assoc]
+theorem roundValues_openingRounds (A : Air F) (vk : Option (PreprocessedKey F))
+    (proof : Proof F EF) (zeta : EF)
+    (hshape : preprocessedShapeOk A vk proof.opened proof.degreeBits = true) :
+    roundValues (openingRounds A vk proof zeta) = openedValues proof.opened := by
+  unfold openingRounds
+  rcases preprocessedRound_cases A vk proof.opened _ hshape ⟨1, proof.degreeBits⟩ zeta
+    (zeta * Ext.ofBase (twoAdicGen proof.degreeBits)) with ⟨-, hl, hn, hr⟩ | ⟨k, l, -, hl, hr⟩
+  · simp only [roundValues, openedValues, hr, hl, hn, List.flatMap_cons, List.flatMap_nil,
+      List.flatMap_map, List.append_nil, List.append_assoc, Option.getD_none, Array.toList_empty]
+  · simp only [roundValues, openedValues, hr, hl, List.flatMap_cons, List.flatMap_nil,
+      List.flatMap_map, List.append_nil, List.append_assoc, List.cons_append, List.nil_append,
+      Option.getD_some]
+    cases proof.opened.preprocessedNext <;>
+      simp only [Option.map_none, Option.map_some, Option.toList_none, Option.toList_some,
+        List.flatMap_nil, List.flatMap_cons, List.append_nil, Option.getD_none, Option.getD_some,
+        Array.toList_empty]
 
 /-- **The verifier queries every round.** If the verifier on the logged answers accepts a proof,
 its log holds the duplex call of every round of the proof's schedule. -/
 theorem verifyWith_logs (hK : P.numQueries + Challenge.d EF + 1 ≤ K) (A : Air F)
-    (proof : Proof F EF) (pis : List F)
-    (hok : (verifyWith (idealLogged answer) P A proof pis).run.1 = .ok ()) :
-    LogsRounds answer (inputs P A pis proof) 0 (inputs P A pis proof).length
-      (verifyWith (idealLogged answer) P A proof pis).run.2 := by
+    (vk : Option (PreprocessedKey F)) (proof : Proof F EF) (pis : List F)
+    (hok : (verifyWith (idealLogged answer) P A vk proof pis).run.1 = .ok ()) :
+    LogsRounds answer (inputs P A vk pis proof) 0 (inputs P A vk pis proof).length
+      (verifyWith (idealLogged answer) P A vk proof pis).run.2 := by
   unfold verifyWith at hok ⊢
   dsimp only at hok ⊢
   split at hok
@@ -1065,23 +1175,26 @@ theorem verifyWith_logs (hK : P.numQueries + Challenge.d EF + 1 ≤ K) (A : Air 
   rw [out_observeList_nil] at h₁
   obtain ⟨-, rfl⟩ := Prod.mk.inj (Except.ok.inj h₁)
   rw [hlog, out_observeList_nil, List.nil_append]
-  have hin₀ : DomainSeparator.starkSeed F EF proof.degreeBits A.width A.numPublicValues
-      (2 ^ A.logQuotientChunks) P.oodPowBits ++ proof.traceCommit.toList ++ pis =
-      (inputs P A pis proof).getD 0 [] := by
+  obtain ⟨_, s₁, h₁, hrun1, hlog⟩ := out_bind_ok answer hrun1
+  rw [out_observeList_nil] at h₁
+  obtain ⟨-, rfl⟩ := Prod.mk.inj (Except.ok.inj h₁)
+  rw [hlog, out_observeList_nil, List.nil_append]
+  have hin₀ : starkSeedOf EF P A proof.degreeBits ++ proof.traceCommit.toList ++
+      preprocessedDigest vk ++ pis = (inputs P A vk pis proof).getD 0 [] := by
     simp only [inputs, List.getD_eq_getElem?_getD, List.getElem?_cons_zero, Option.getD_some]
   simp only [List.nil_append] at hrun1 ⊢
-  rw [hin₀, show initCap = capAt answer (inputs P A pis proof) 0 from rfl] at hrun1 ⊢
+  rw [hin₀, show initCap = capAt answer (inputs P A vk pis proof) 0 from rfl] at hrun1 ⊢
   -- the round of `α`
   have hv₀ := out_sampleExt_nil (EF := EF) answer (by omega)
-    (capAt answer (inputs P A pis proof) 0) ((inputs P A pis proof).getD 0 [])
+    (capAt answer (inputs P A vk pis proof) 0) ((inputs P A vk pis proof).getD 0 [])
   obtain ⟨_, s₁, h₁, hrun1, hlog⟩ := out_bind_ok answer hrun1
   rw [hv₀] at h₁
   obtain ⟨rfl, rfl⟩ := Prod.mk.inj (Except.ok.inj h₁)
   rw [hlog, hv₀]
   refine logsRounds_cons (by simp only [keyAt, List.map_cons, List.map_nil,
     List.mem_singleton]) ?_
-  rw [show (answer (.duplex (capAt answer (inputs P A pis proof) 0)
-    ((inputs P A pis proof).getD 0 []))).1 = capAt answer (inputs P A pis proof) 1 from rfl]
+  rw [show (answer (.duplex (capAt answer (inputs P A vk pis proof) 0)
+    ((inputs P A vk pis proof).getD 0 []))).1 = capAt answer (inputs P A vk pis proof) 1 from rfl]
     at hrun1 ⊢
   -- the round of `ζ`
   have hqc : proof.quotientCommit.toList ≠ [] :=
@@ -1092,7 +1205,7 @@ theorem verifyWith_logs (hK : P.numQueries + Challenge.d EF + 1 ≤ K) (A : Air 
   rw [hlog, out_observeList, ite_eq_right_of_eq_false _ _ (eq_false hqc), List.nil_append]
   dsimp only at hrun1 ⊢
   rw [List.nil_append] at hrun1 ⊢
-  have hin₁ : (inputs P A pis proof).getD 1 [] =
+  have hin₁ : (inputs P A vk pis proof).getD 1 [] =
       proof.quotientCommit.toList ++ witnessInput P.oodPowBits proof.oodWitness := by
     simp only [inputs, List.getD_eq_getElem?_getD, List.getElem?_cons_succ,
       List.getElem?_cons_zero, Option.getD_some]
@@ -1100,14 +1213,14 @@ theorem verifyWith_logs (hK : P.numQueries + Challenge.d EF + 1 ≤ K) (A : Air 
       (out answer (do
         ensure (Ext.powTwo zeta proof.degreeBits - 1 != 0)
           "out-of-domain point in the trace domain"
-        verifyPcs (idealLogged answer) P (vRounds proof zeta) proof.fri
-        pure (alpha, zeta)) ⟨capAt answer (inputs P A pis proof) 2, [], smp⟩).1 = .ok res →
-      LogsRounds answer (inputs P A pis proof) 2 (inputs P A pis proof).length
+        verifyPcs (idealLogged answer) P (openingRounds A vk proof zeta) proof.fri
+        pure (alpha, zeta)) ⟨capAt answer (inputs P A vk pis proof) 2, [], smp⟩).1 = .ok res →
+      LogsRounds answer (inputs P A vk pis proof) 2 (inputs P A vk pis proof).length
         (out answer (do
           ensure (Ext.powTwo zeta proof.degreeBits - 1 != 0)
             "out-of-domain point in the trace domain"
-          verifyPcs (idealLogged answer) P (vRounds proof zeta) proof.fri
-          pure (alpha, zeta)) ⟨capAt answer (inputs P A pis proof) 2, [], smp⟩).2 := by
+          verifyPcs (idealLogged answer) P (openingRounds A vk proof zeta) proof.fri
+          pure (alpha, zeta)) ⟨capAt answer (inputs P A vk pis proof) 2, [], smp⟩).2 := by
     intro alpha zeta smp res h
     obtain ⟨-, h, hlog⟩ := out_ensure_bind_ok answer h
     rw [hlog]
@@ -1115,11 +1228,15 @@ theorem verifyWith_logs (hK : P.numQueries + Challenge.d EF + 1 ≤ K) (A : Air 
     rw [hlog]
     refine logsRounds_left ?_
     rw [length_inputs]
-    refine verifyPcs_logs hK (inputs P A pis proof) 2 proof.fri (vRounds proof zeta)
-      (proof.degreeBits + P.logBlowup) (heights_vRounds P proof zeta) ?_
-      (fun j hj ↦ inputs_getD_fold P A pis proof j hj) (inputs_getD_last P A pis proof) _ h₂
+    refine verifyPcs_logs hK (inputs P A vk pis proof) 2 proof.fri (openingRounds A vk proof zeta)
+      (proof.degreeBits + P.logBlowup) (heights_openingRounds P A vk proof zeta) ?_
+      (fun j hj ↦ inputs_getD_fold P A vk pis proof j hj) (inputs_getD_last P A vk pis proof) _ h₂
+    have hshape' : preprocessedShapeOk A vk proof.opened proof.degreeBits = true := by
+      simp only [Bool.and_eq_true] at hshape
+      exact hshape.2
     simp only [inputs, List.getD_eq_getElem?_getD, List.getElem?_cons_succ,
-      List.getElem?_cons_zero, Option.getD_some, claimCounts_vRounds, roundValues_vRounds']
+      List.getElem?_cons_zero, Option.getD_some, claimCounts_openingRounds A vk proof zeta hshape',
+      roundValues_openingRounds A vk proof zeta hshape']
   by_cases hbits : P.oodPowBits = 0
   · simp only [witnessInput, hbits, ↓reduceIte, List.append_nil] at hin₁
     obtain ⟨_, s₂, h₂, hrun1, hlog⟩ := out_bind_ok answer hrun1
@@ -1131,7 +1248,7 @@ theorem verifyWith_logs (hK : P.numQueries + Challenge.d EF + 1 ≤ K) (A : Air 
     rw [hlog]
     rw [← hin₁] at hrun1 ⊢
     have hv₁ := out_sampleExt_nil (EF := EF) answer (by omega)
-      (capAt answer (inputs P A pis proof) 1) ((inputs P A pis proof).getD 1 [])
+      (capAt answer (inputs P A vk pis proof) 1) ((inputs P A vk pis proof).getD 1 [])
     obtain ⟨_, s₃, h₃, hrun1, hlog⟩ := out_bind_ok answer hrun1
     rw [hv₁] at h₃
     obtain ⟨rfl, rfl⟩ := Prod.mk.inj (Except.ok.inj h₃)
@@ -1141,7 +1258,7 @@ theorem verifyWith_logs (hK : P.numQueries + Challenge.d EF + 1 ≤ K) (A : Air 
     exact hzeta _ _ _ hrun1
   · simp only [witnessInput, hbits, ↓reduceIte] at hin₁
     obtain ⟨v, hv⟩ := out_checkWitness_pos answer _ hbits proof.oodWitness
-      (capAt answer (inputs P A pis proof) 1) proof.quotientCommit.toList []
+      (capAt answer (inputs P A vk pis proof) 1) proof.quotientCommit.toList []
     obtain ⟨_, s₂, h₂, hrun1, hlog⟩ := out_bind_ok answer hrun1
     rw [hv] at h₂
     obtain ⟨rfl, rfl⟩ := Prod.mk.inj (Except.ok.inj h₂)
@@ -1152,10 +1269,10 @@ theorem verifyWith_logs (hK : P.numQueries + Challenge.d EF + 1 ≤ K) (A : Air 
     obtain ⟨-, hrun1, hlog⟩ := out_ensure_bind_ok answer hrun1
     rw [hlog]
     have hv₁ := out_sampleExt_pop (EF := EF) answer
-      (answer (.duplex (capAt answer (inputs P A pis proof) 1)
-        ((inputs P A pis proof).getD 1 []))).1 []
-      (answer (.duplex (capAt answer (inputs P A pis proof) 1)
-        ((inputs P A pis proof).getD 1 []))).2.toList.tail
+      (answer (.duplex (capAt answer (inputs P A vk pis proof) 1)
+        ((inputs P A vk pis proof).getD 1 []))).1 []
+      (answer (.duplex (capAt answer (inputs P A vk pis proof) 1)
+        ((inputs P A vk pis proof).getD 1 []))).2.toList.tail
       (by rw [List.length_tail, Vector.length_toList]; omega)
     obtain ⟨_, s₃, h₃, hrun1, hlog⟩ := out_bind_ok answer hrun1
     rw [hv₁] at h₃
@@ -1172,14 +1289,15 @@ section Verifier
 variable {answer : (q : Query F) → Answer K q}
 
 /-- The verifier on logged answers gives the verifier on the answers, and its log. -/
-theorem run_idealLogged (P : Fri.Params) (A : Air F) (proof : Proof F EF) (pis : List F) :
-    (verifyWith (idealLogged answer) P A proof pis).run =
-      (verifyWith (idealOf answer) P A proof pis,
-        tableQueryLog (verifyWith (ideal F K) P A proof pis) answer) := by
+theorem run_idealLogged (P : Fri.Params) (A : Air F) (vk : Option (PreprocessedKey F))
+    (proof : Proof F EF) (pis : List F) :
+    (verifyWith (idealLogged answer) P A vk proof pis).run =
+      (verifyWith (idealOf answer) P A vk proof pis,
+        tableQueryLog (verifyWith (ideal F K) P A vk proof pis) answer) := by
   have h := QueryImpl.fst_map_run_withLogging (QueryImpl.ofFn answer)
-    (verifyWith (ideal F K) P A proof pis)
+    (verifyWith (ideal F K) P A vk proof pis)
   rw [simulateQ_verifyWith, simulateQ_verifyWith] at h
-  exact Prod.ext h (tableQueryLog_verifyWith answer P A proof pis).symm
+  exact Prod.ext h (tableQueryLog_verifyWith answer P A vk proof pis).symm
 
 end Verifier
 
@@ -1188,11 +1306,11 @@ variable (S : Iop.Setup EF) (answer : (q : Query F) → Answer S.streamLen q)
 
 /-- **The verifier queries every round.** If the verifier accepts a proof on the answers
 `answer`, the duplex call of every round of the proof's schedule is in its log. -/
-theorem hasRounds_verifyWith (proof : Proof F EF) (pis : List F)
-    (hok : verifyWith (idealOf answer) S.params S.air proof pis = .ok ()) :
-    HasRounds answer (tableQueryLog (verifyWith (ideal F S.streamLen) S.params S.air proof pis)
-      answer) (inputs S.params S.air pis proof) (inputs S.params S.air pis proof).length := by
-  have h := verifyWith_logs (answer := answer) (P := S.params) (le_refl _) S.air proof pis
+theorem hasRounds_verifyWith (vk : Option (PreprocessedKey F)) (proof : Proof F EF) (pis : List F)
+    (hok : verifyWith (idealOf answer) S.params S.air vk proof pis = .ok ()) :
+    HasRounds answer (tableQueryLog (verifyWith (ideal F S.streamLen) S.params S.air vk proof pis)
+      answer) (inputs S.params S.air vk pis proof) (inputs S.params S.air vk pis proof).length := by
+  have h := verifyWith_logs (answer := answer) (P := S.params) (le_refl _) S.air vk proof pis
     (by rw [run_idealLogged]; exact hok)
   rw [run_idealLogged] at h
   exact fun j hj ↦ h j (Nat.zero_le j) hj
@@ -1201,17 +1319,17 @@ theorem hasRounds_verifyWith (proof : Proof F EF) (pis : List F)
 and its duplex calls answer distinct capacities, none the initial one, then its
 log before round `i`'s call parses that call to the rounds before it and its input: the
 proof's prefix up to round `i`. -/
-theorem parse_verifyWith (proof : Proof F EF) (pis : List F)
-    (hok : verifyWith (idealOf answer) S.params S.air proof pis = .ok ())
+theorem parse_verifyWith (vk : Option (PreprocessedKey F)) (proof : Proof F EF) (pis : List F)
+    (hok : verifyWith (idealOf answer) S.params S.air vk proof pis = .ok ())
     (hinj : CapsInjective answer
-      (tableQueryLog (verifyWith (ideal F S.streamLen) S.params S.air proof pis) answer))
-    (i : Nat) (hi : i ≤ (inputs S.params S.air pis proof).length) :
-    parse (tableQueryLog (verifyWith (ideal F S.streamLen) S.params S.air proof pis) answer)
-        (keyAt answer (inputs S.params S.air pis proof) i) =
-      some (history answer (inputs S.params S.air pis proof) i,
-        (inputs S.params S.air pis proof).getD i []) :=
+      (tableQueryLog (verifyWith (ideal F S.streamLen) S.params S.air vk proof pis) answer))
+    (i : Nat) (hi : i ≤ (inputs S.params S.air vk pis proof).length) :
+    parse (tableQueryLog (verifyWith (ideal F S.streamLen) S.params S.air vk proof pis) answer)
+        (keyAt answer (inputs S.params S.air vk pis proof) i) =
+      some (history answer (inputs S.params S.air vk pis proof) i,
+        (inputs S.params S.air vk pis proof).getD i []) :=
   parse_keyAt (consistent_tableQueryLog _) hinj
-    fun j hj ↦ hasRounds_verifyWith S answer proof pis hok j (by omega)
+    fun j hj ↦ hasRounds_verifyWith S answer vk proof pis hok j (by omega)
 
 end Setup
 

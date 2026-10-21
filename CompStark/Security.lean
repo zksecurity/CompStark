@@ -153,6 +153,7 @@ def fibonacciSetup : Setup KoalaBear.Fast.Ext4 where
   logN := 10
   valid :=
     { colsInWidth := by unfold Air.ColsInWidth; decide
+      preprocessedSize := rfl
       degreeFits := fibonacci_degreeFits 10
       twoAdic := by decide
       chunksFit := by
@@ -238,6 +239,7 @@ def wideSetup : Setup KoalaBear.Fast.Ext4 where
   logN := 20
   valid :=
     { colsInWidth := wide_colsInWidth 64
+      preprocessedSize := rfl
       degreeFits := wide_degreeFits 64 20
       twoAdic := by decide
       chunksFit := by
@@ -345,6 +347,7 @@ def wide21Setup : Setup KoalaBear.Fast.Ext4 where
   logN := 21
   valid :=
     { colsInWidth := wide_colsInWidth 64
+      preprocessedSize := rfl
       degreeFits := wide_degreeFits 64 21
       twoAdic := by decide
       chunksFit := by
@@ -418,6 +421,7 @@ def wideSp1Setup : Setup KoalaBear.Fast.Ext4 where
   logN := 21
   valid :=
     { colsInWidth := wide_colsInWidth 64
+      preprocessedSize := rfl
       degreeFits := wide_degreeFits 64 21
       twoAdic := by decide
       chunksFit := by
@@ -511,6 +515,7 @@ def wide5Setup : Setup KoalaBear.Fast.Ext5 where
   logN := 21
   valid :=
     { colsInWidth := wide_colsInWidth 64
+      preprocessedSize := rfl
       degreeFits := wide_degreeFits 64 21
       twoAdic := by decide
       chunksFit := by
@@ -605,6 +610,7 @@ def wide5iSetup : Setup KoalaBear.Fast.Ext5 where
   logN := 21
   valid :=
     { colsInWidth := wide_colsInWidth 64
+      preprocessedSize := rfl
       degreeFits := wide_degreeFits 64 21
       twoAdic := by decide
       chunksFit := by

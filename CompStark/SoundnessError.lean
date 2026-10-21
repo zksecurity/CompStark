@@ -48,9 +48,11 @@ noncomputable def listSize (ι : Type) [Fintype ι] [DecidableEq ι] (δ : ℝ) 
   Finset.univ.sup fun words : ι → S.Point → F ↦
     {polys : ι → F[X] | (∀ k, (polys k).natDegree ≤ S.n) ∧ Agree S δ words polys}.ncard
 
-/-- The number of opened words: each trace column twice, at `ζ` and `ζ ω_n`, and each
-coordinate of each chunk. -/
-abbrev numOpened : Nat := 2 * S.air.width + Challenge.d EF * S.chunks
+/-- The number of opened words: each trace column twice, at `ζ` and `ζ ω_n`, each coordinate of
+each chunk, and each preprocessed column at `ζ` and, if opened, at `ζ ω_n`. -/
+abbrev numOpened : Nat :=
+  2 * S.air.width + Challenge.d EF * S.chunks + S.air.preprocessedWidth +
+    S.air.preprocessedNextWidth
 
 /-- A bound on the degree of the constraint identity `C(X) = Z_H(X) Q(X)` in `ζ`, for trace
 columns of degree at most `n`: the largest constraint degree and `n · (chunks + 1)`. -/

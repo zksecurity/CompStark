@@ -52,12 +52,39 @@ def BatchingStep (S : Setup EF) : Prop :=
         Near S δ fun i ↦ ∑ k : Fin S.numOpened, a ^ (k : Nat) * ws k i).card : ENNReal)
       / Fintype.card 𝕂 ≤ batchingError S δ δ'
 
-/-- The claimed values of polynomials `trace` and `quotient`: the true ones at `ζ`. -/
+/-- The preprocessed trace's polynomials have degree below `n`. -/
+theorem natDegree_preprocessedPoly_le (S : Setup EF) (j : Nat) :
+    (S.preprocessedPoly j).natDegree ≤ S.n := by
+  rcases eq_or_ne (S.preprocessedPoly j) 0 with h | h
+  · rw [h, natDegree_zero]; exact Nat.zero_le _
+  · have := Lagrange.degree_interpolate_lt (s := Finset.range S.n)
+      (v := fun i ↦ twoAdicGen (F := F) S.logN ^ i)
+      (fun i ↦ S.air.preprocessed.getD (i * S.air.preprocessedWidth + j) 0) ?_
+    · rw [Finset.card_range] at this
+      exact ((natDegree_lt_iff_degree_lt h).mpr this).le
+    · intro a ha b hb hab
+      exact (BaseField.isPrimitiveRoot_twoAdicGen (F := F) S.logN
+        (by have := S.valid.twoAdic; omega)).pow_inj
+        (Finset.mem_range.mp ha) (Finset.mem_range.mp hb) hab
+
+/-- The preprocessed trace's polynomials take its values on the trace domain. -/
+theorem eval_preprocessedPoly (S : Setup EF) (j i : Nat) (hi : i < S.n) :
+    (S.preprocessedPoly j).eval (twoAdicGen S.logN ^ i) =
+      S.air.preprocessed.getD (i * S.air.preprocessedWidth + j) 0 :=
+  Lagrange.eval_interpolate_at_node _
+    (fun a ha b hb hab ↦ (BaseField.isPrimitiveRoot_twoAdicGen (F := F) S.logN
+      (by have := S.valid.twoAdic; omega)).pow_inj
+      (Finset.mem_range.mp ha) (Finset.mem_range.mp hb) hab) (Finset.mem_range.mpr hi)
+
+/-- The claimed values of polynomials `trace` and `quotient`, and of the preprocessed trace's: the
+true ones at `ζ`. -/
 noncomputable def trueOpenings (S : Setup EF) (trace : Fin S.air.width → F[X])
     (quotient : Fin S.chunks → Fin (Challenge.d EF) → F[X]) (ζ : 𝕂) : Openings S where
   traceAt j := aeval ζ (trace j)
   traceNext j := aeval (ζ * rootOfUnity S.logN) (trace j)
   quotientAt c e := aeval ζ (quotient c e)
+  preprocessedAt j := aeval ζ (S.preprocessedPoly j)
+  preprocessedNext j := aeval (ζ * rootOfUnity S.logN) (S.preprocessedPoly j)
 
 /-- The DEEP components of the opened words, by position. -/
 noncomputable def components {S : Setup EF} (p : Prover S) (α ζ : 𝕂) :

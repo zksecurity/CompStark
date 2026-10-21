@@ -11,9 +11,10 @@ public import CompStark.Ni.BcsCheck
 
 The trace and quotient words extracted from a cache (`traceWords`, `quotientWords`: column `j`
 at the point of `L` of index `z` is entry `j` of leaf `rev z`), and `deepWord_eq`: if a query's
-input rows at `index` pass the verifier's checks against binding commitments, `reduceQuery`'s
-batched quotient is the DEEP word of the extracted words and the proof's opened values at the
-query's point `rev index`, with the verifier's batching challenge.
+input rows at `index` pass the verifier's checks against binding commitments, under which the
+cache holds the preprocessed trace's extension, `reduceQuery`'s batched quotient is the DEEP word
+of the extracted words and the proof's opened values at the query's point `rev index`, with the
+verifier's batching challenge.
 -/
 
 @[expose] public section
@@ -139,25 +140,137 @@ theorem domain_finMod (index : Nat) :
   rw [show S.domain = cosetDomain S.logSize S.valid.twoAdic from rfl, cosetDomain_apply,
     finMod_val (reverseBits_lt _ _), lift_mul, powF_eq, lift_pow]
 
+theorem map_finRange_eq_nil {α : Type*} {n : Nat} (h : n = 0) (f : Fin n → α) :
+    (List.finRange n).map f = [] := by
+  subst h; rfl
+
+/-- The DEEP terms of the preprocessed trace's round at a query, when its rows there bind to the
+preprocessed trace's extension: the preprocessed words' DEEP quotients with the claimed values. -/
+theorem prepTerms_eq (H : Primitives F Id) (vk : Option (PreprocessedKey F)) (o : OpenedValues EF)
+    (zeta : EF) (index : Nat) (hidx : index < 2 ^ S.logSize) (db : Nat) (hdb : db = S.logN)
+    (hprep : preprocessedShapeOk S.air vk o db = true)
+    (hbP : ∀ k ∈ vk, Binding cache H k.commit)
+    (hP : ∀ k ∈ vk, ∀ j < S.air.preprocessedWidth,
+      committedColumn S cache k.commit j = S.preprocessedWord j)
+    (bP : List (List (Array F)))
+    (hlen : bP.length = (preprocessedRound S.air vk o ⟨1, db⟩ zeta
+      (zeta * Ext.ofBase (twoAdicGen db))).length)
+    (hok : ∀ x ∈ bP.zip (preprocessedRound S.air vk o ⟨1, db⟩ zeta
+      (zeta * Ext.ofBase (twoAdicGen db))), BatchOk H S.logSize index x) :
+    let z0 : S.Point := finMod S.logSize (reverseBits index S.logSize)
+    let x : F := gen * powF (twoAdicGen S.logSize) (reverseBits index S.logSize)
+    ((List.finRange S.air.preprocessedWidth).map
+        (fun (j : Fin S.air.preprocessedWidth) ↦ (S.preprocessedWord j.val,
+          Challenge.toSpec zeta, (openingsOf S o).preprocessedAt j)) ++
+      (List.finRange S.air.preprocessedNextWidth).map
+        (fun (j : Fin S.air.preprocessedNextWidth) ↦ (S.preprocessedWord j.val,
+          Challenge.toSpec zeta * rootOfUnity S.logN, (openingsOf S o).preprocessedNext j))).map
+      (fun (w : (S.Point → F) × 𝕂 × 𝕂) ↦
+        (w.2.2 - algebraMap F 𝕂 (w.1 z0)) / (w.2.1 - S.domain z0)) =
+    (inputTerms (bP.zip (preprocessedRound S.air vk o ⟨1, db⟩ zeta
+      (zeta * Ext.ofBase (twoAdicGen db))))).map fun t ↦
+        (Challenge.toSpec t.1.2 - lift t.1.1) * (Challenge.toSpec t.2 - lift x)⁻¹ := by
+  intro z0 x
+  subst hdb
+  have hD : S.domain z0 = lift x := domain_finMod S index
+  have hω : Challenge.toSpec (zeta * Ext.ofBase (twoAdicGen S.logN) : EF) =
+      Challenge.toSpec zeta * rootOfUnity S.logN := by
+    rw [Challenge.toSpec_mul, Challenge.toSpec_ofBase']
+    rfl
+  match vk, o, hprep, hbP, hP, hlen, hok with
+  | none, ⟨tl, tn, none, none, qc⟩, hprep, _, _, hlen, _ =>
+    have hpw : S.air.preprocessedWidth = 0 := by
+      simp only [preprocessedShapeOk, beq_iff_eq] at hprep; exact hprep
+    have hnw : S.air.preprocessedNextWidth = 0 := by
+      have := S.air.preprocessedNextWidth_le; omega
+    obtain rfl : bP = [] := List.eq_nil_of_length_eq_zero hlen
+    rw [map_finRange_eq_nil hpw, map_finRange_eq_nil hnw]
+    rfl
+  | some k, ⟨tl, tn, some l, nx, qc⟩, hprep, hbP, hP, hlen, hok =>
+    simp only [preprocessedShapeOk, Bool.and_eq_true, beq_iff_eq, decide_eq_true_eq] at hprep
+    obtain ⟨⟨⟨⟨h0, hkw⟩, -⟩, hl⟩, hnx⟩ := hprep
+    obtain ⟨bp, rfl⟩ : ∃ bp, bP = [bp] := List.length_eq_one_iff.mp hlen
+    obtain ⟨-, ⟨path, hv⟩, hsP, hwP⟩ := hok _ List.mem_cons_self
+    simp only [List.length_cons, List.length_nil, Nat.zero_add, Option.getD_some] at hsP hv hwP
+    obtain ⟨rowP, rfl⟩ : ∃ rowP, bp = [rowP] := List.length_eq_one_iff.mp hsP
+    have hex := hbP k rfl _ _ _ _ _ Nat.one_pos hv
+    simp only [List.map_cons, List.map_nil, List.flatten_cons, List.flatten_nil,
+      List.append_nil] at hex
+    have hwidth : rowP.size = S.air.preprocessedWidth := by
+      have := hwP (rowP, _) List.mem_cons_self _ List.mem_cons_self
+      rw [← this]
+      simp only [Array.length_toList]
+      exact hl
+    have hPw : ∀ j : Fin S.air.preprocessedWidth,
+        S.preprocessedWord j.val z0 = rowP.toList.getD j 0 := fun j ↦ by
+      rw [← hP k rfl j j.isLt]
+      exact committedColumn_eq S cache _ index hidx _ hex j
+    have hw1 : rowP.toList.length = S.air.preprocessedWidth := by
+      rw [Array.length_toList, hwidth]
+    simp only [inputTerms, batchTerms, preprocessedRound, List.zip_cons_cons, List.zip_nil_right,
+      List.flatMap_cons, List.flatMap_nil, List.append_nil, List.map_append, Option.getD_some]
+    refine congrArg₂ (· ++ ·) ?_ ?_
+    · rw [List.map_map, List.map_map, map_zip_eq_range _ _ S.air.preprocessedWidth hw1
+        (by rw [Array.length_toList, hl]) _ 0 0, ← map_finRange_eq_range]
+      refine List.map_congr_left fun j _ ↦ ?_
+      simp only [Function.comp_apply, openingsOf, Option.getD_some, hPw, toList_getD, hD,
+        div_eq_mul_inv]
+    · cases hn : S.air.opensPreprocessedNext
+      · have hnw : S.air.preprocessedNextWidth = 0 := by
+          simp only [Air.preprocessedNextWidth, hn, Bool.false_eq_true, ↓reduceIte]
+        simp only [Bool.false_eq_true, ↓reduceIte, List.flatMap_nil, List.map_nil]
+        rw [map_finRange_eq_nil hnw]
+        rfl
+      · have hnw : S.air.preprocessedNextWidth = S.air.preprocessedWidth := by
+          simp only [Air.preprocessedNextWidth, hn, ↓reduceIte]
+        obtain ⟨r, rfl, hr⟩ : ∃ r, nx = some r ∧ r.size = S.air.preprocessedWidth := by
+          cases nx with
+          | none => simp only [hn, Bool.not_true, Bool.false_eq_true] at hnx
+          | some r =>
+            simp only [hn, Bool.true_and, beq_iff_eq] at hnx
+            exact ⟨r, rfl, hnx⟩
+        simp only [↓reduceIte, List.flatMap_cons, List.flatMap_nil, List.append_nil,
+          Option.getD_some]
+        rw [List.map_map, List.map_map, map_zip_eq_range _ _ S.air.preprocessedWidth hw1
+          (by rw [Array.length_toList, hr]) _ 0 0]
+        refine (List.ext_getElem (by rw [List.length_map, List.length_finRange, List.length_map,
+          List.length_range, hnw]) fun i h1 h2 ↦ ?_)
+        rw [List.length_map, List.length_finRange] at h1
+        rw [List.getElem_map, List.getElem_map, List.getElem_finRange, List.getElem_range]
+        simp only [Function.comp_apply, openingsOf, Option.getD_some, Fin.cast_mk, hD,
+          div_eq_mul_inv, hω]
+        rw [hPw ⟨i, by omega⟩, toList_getD, toList_getD]
+  | none, ⟨_, _, some _, _, _⟩, hprep, _, _, _, _ =>
+    simp only [preprocessedShapeOk, Bool.false_eq_true] at hprep
+  | none, ⟨_, _, none, some _, _⟩, hprep, _, _, _, _ =>
+    simp only [preprocessedShapeOk, Bool.false_eq_true] at hprep
+  | some _, ⟨_, _, none, _, _⟩, hprep, _, _, _, _ =>
+    simp only [preprocessedShapeOk, Bool.false_eq_true] at hprep
+
 /-- **The batched DEEP word at a query.** If a query's input rows at `index` against the
 verifier's rounds pass their checks (`BatchOk`), on a proof of the expected shape whose trace and
-quotient commitments bind, `reduceQuery`'s batched quotient at the batching challenge `a` is the
-DEEP word of the extracted trace and quotient words and the opened values at `rev index`. -/
-theorem deepWord_eq (H : Primitives F Id) (proof : Proof F EF) (zeta a : EF) (α : 𝕂)
-    (hdb : proof.degreeBits = S.logN)
+quotient commitments bind, and whose preprocessed commitment binds to the preprocessed trace's
+extension, `reduceQuery`'s batched quotient at the batching challenge `a` is the DEEP word of the
+extracted trace and quotient words and the opened values at `rev index`. -/
+theorem deepWord_eq (H : Primitives F Id) (vk : Option (PreprocessedKey F)) (proof : Proof F EF)
+    (zeta a : EF) (α : 𝕂) (hdb : proof.degreeBits = S.logN)
     (htl : proof.opened.traceLocal.size = S.air.width)
     (htn : proof.opened.traceNext.size = S.air.width)
     (hqc : proof.opened.quotientChunks.size = S.chunks)
     (hq4 : ∀ ch ∈ proof.opened.quotientChunks, ch.size = Challenge.d EF)
+    (hprep : preprocessedShapeOk S.air vk proof.opened S.logN = true)
     (hbT : Binding cache H proof.traceCommit) (hbQ : Binding cache H proof.quotientCommit)
+    (hbP : ∀ k ∈ vk, Binding cache H k.commit)
+    (hP : ∀ k ∈ vk, ∀ j < S.air.preprocessedWidth,
+      committedColumn S cache k.commit j = S.preprocessedWord j)
     (inputs : List (List (Array F))) (index : Nat) (hidx : index < 2 ^ S.logSize)
-    (hlen : inputs.length = (vRounds proof zeta).length)
-    (hok : ∀ x ∈ inputs.zip (vRounds proof zeta), BatchOk H S.logSize index x) :
+    (hlen : inputs.length = (openingRounds S.air vk proof zeta).length)
+    (hok : ∀ x ∈ inputs.zip (openingRounds S.air vk proof zeta), BatchOk H S.logSize index x) :
     Iop.deepWord (fixedProver (traceWords S cache proof) (quotientWords S cache proof)
         (openingsOf S proof.opened)) α (Challenge.toSpec zeta) (Challenge.toSpec a)
         (finMod S.logSize (reverseBits index S.logSize)) =
       Challenge.toSpec (accTerms a (gen * powF (twoAdicGen S.logSize) (reverseBits index S.logSize))
-        (inputTerms (inputs.zip (vRounds proof zeta))) (1, 0)).2 := by
+        (inputTerms (inputs.zip (openingRounds S.air vk proof zeta))) (1, 0)).2 := by
   set n := S.logSize
   set x : F := gen * powF (twoAdicGen n) (reverseBits index n)
   set z0 : S.Point := finMod n (reverseBits index n)
@@ -167,17 +280,24 @@ theorem deepWord_eq (H : Primitives F Id) (proof : Proof F EF) (zeta a : EF) (α
     (zeta * Ext.ofBase (twoAdicGen proof.degreeBits), o.traceNext.toList)])] with hmT
   set mQ : List (Domain F × List (EF × List EF)) :=
     o.quotientChunks.toList.map fun ch ↦ (td, [(zeta, ch.toList)]) with hmQ
-  have hrounds : vRounds proof zeta = [(proof.traceCommit, mT), (proof.quotientCommit, mQ)] :=
-    rfl
+  set mP := preprocessedRound S.air vk o td zeta (zeta * Ext.ofBase (twoAdicGen proof.degreeBits))
+    with hmP
+  have hrounds : openingRounds S.air vk proof zeta =
+      (proof.traceCommit, mT) :: (proof.quotientCommit, mQ) :: mP := rfl
   rw [hrounds] at hlen hok ⊢
-  obtain ⟨bT, bQ, rfl⟩ : ∃ bT bQ, inputs = [bT, bQ] := by
+  obtain ⟨bT, bQ, bP, rfl⟩ : ∃ bT bQ bP, inputs = bT :: bQ :: bP := by
     match inputs, hlen with
-    | [bT, bQ], _ => exact ⟨bT, bQ, rfl⟩
-  have hz : [bT, bQ].zip [(proof.traceCommit, mT), (proof.quotientCommit, mQ)] =
-      [(bT, (proof.traceCommit, mT)), (bQ, (proof.quotientCommit, mQ))] := rfl
+    | bT :: bQ :: bP, _ => exact ⟨bT, bQ, bP, rfl⟩
+  have hlenP : bP.length = mP.length := by
+    simp only [List.length_cons, Nat.add_right_cancel_iff] at hlen
+    exact hlen
+  have hz : (bT :: bQ :: bP).zip ((proof.traceCommit, mT) :: (proof.quotientCommit, mQ) :: mP) =
+      (bT, (proof.traceCommit, mT)) :: (bQ, (proof.quotientCommit, mQ)) :: bP.zip mP := rfl
   rw [hz] at hok ⊢
   obtain ⟨-, ⟨pT, hvT⟩, hsT, hwT⟩ := hok _ List.mem_cons_self
   obtain ⟨hneQ, ⟨pQ, hvQ⟩, hsQ, hwQ⟩ := hok _ (List.mem_cons_of_mem _ List.mem_cons_self)
+  have hokP : ∀ y ∈ bP.zip mP, BatchOk H S.logSize index y := fun y hy ↦
+    hok y (List.mem_cons_of_mem _ (List.mem_cons_of_mem _ hy))
   dsimp only at hvT hsT hwT hneQ hvQ hsQ hwQ
   -- The trace batch: one row of the trace's width, extracted.
   obtain ⟨rowT, hrowT⟩ : ∃ rowT, bT = [rowT] :=
@@ -241,17 +361,23 @@ theorem deepWord_eq (H : Primitives F Id) (proof : Proof F EF) (zeta a : EF) (α
     one_mul]
   refine congrArg (List.foldr _ 0) ?_
   have hD : S.domain z0 = lift x := domain_finMod S index
-  have hterms : inputTerms [(bT, (proof.traceCommit, mT)), (bQ, (proof.quotientCommit, mQ))] =
+  have hterms : inputTerms ((bT, (proof.traceCommit, mT)) :: (bQ, (proof.quotientCommit, mQ)) ::
+      bP.zip mP) =
       ((rowT.toList.zip o.traceLocal.toList).map fun pp ↦ (pp, zeta)) ++
       ((rowT.toList.zip o.traceNext.toList).map fun pp ↦
         (pp, zeta * Ext.ofBase (twoAdicGen proof.degreeBits))) ++
-      batchTerms (bQ.zip mQ) := by
+      batchTerms (bQ.zip mQ) ++ inputTerms (bP.zip mP) := by
     simp only [inputTerms, batchTerms, hrowT, hmT, List.zip_cons_cons, List.zip_nil_right,
       List.flatMap_cons, List.flatMap_nil, List.append_nil, List.append_assoc]
   rw [hterms, openedWords]
   simp only [List.map_append]
   have hw1 : rowT.toList.length = S.air.width := by rw [Array.length_toList, hwidth]
-  refine congrArg₂ (· ++ ·) (congrArg₂ (· ++ ·) ?_ ?_) ?_
+  have hprepEq := prepTerms_eq S cache H vk o zeta index hidx proof.degreeBits hdb
+    (hdb ▸ hprep) hbP hP bP hlenP hokP
+  simp only [List.map_append] at hprepEq
+  rw [← hprepEq, ← List.append_assoc]
+  refine congrArg₂ (· ++ ·) (congrArg₂ (· ++ ·) (congrArg₂ (· ++ ·)
+    (congrArg₂ (· ++ ·) ?_ ?_) ?_) rfl) rfl
   · rw [List.map_map, List.map_map, map_zip_eq_range _ _ S.air.width hw1
       (by rw [Array.length_toList, htl]) _ 0 0,
       ← map_finRange_eq_range]

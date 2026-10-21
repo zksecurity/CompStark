@@ -9,7 +9,8 @@ public import CompStark.Stark.Challenge
 /-! # STARK proofs
 
 The proof of Plonky3's `uni-stark` with the two-adic FRI commitment scheme over a base field `F`,
-its challenges in the extension `EF`, and Merkle digests of eight base elements.
+its challenges in the extension `EF`, and Merkle digests of eight base elements; and the
+verifying key of a preprocessed trace.
 -/
 
 @[expose] public section
@@ -53,14 +54,25 @@ structure FriProof (F EF : Type) where
   queryWitness : F
 deriving BEq
 
-/-- The values a STARK proof opens at `ζ` and `ζ ω`. -/
+/-- The values a STARK proof opens at `ζ` and `ζ ω`: the trace's, the preprocessed trace's if the
+AIR has one (at `ζ ω` only if the AIR reads its next row), and the quotient chunks'. -/
 structure OpenedValues (EF : Type) where
   traceLocal : Array EF
   traceNext : Array EF
+  preprocessedLocal : Option (Array EF)
+  preprocessedNext : Option (Array EF)
   quotientChunks : Array (Array EF)
 deriving BEq
 
-/-- A STARK proof, without preprocessed columns or zero knowledge. -/
+/-- The verifying key of a preprocessed trace (Plonky3's `PreprocessedVerifierKey`): its width,
+the log of its height and its commitment. -/
+structure PreprocessedKey (F : Type) where
+  width : Nat
+  degreeBits : Nat
+  commit : Digest F
+deriving BEq
+
+/-- A STARK proof, without zero knowledge. -/
 structure Proof (F EF : Type) where
   traceCommit : Digest F
   quotientCommit : Digest F

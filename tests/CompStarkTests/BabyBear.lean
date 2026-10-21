@@ -14,8 +14,9 @@ Poseidon2 permutations `default_babybear_poseidon2_16` and `_24`, the Merkle spo
 compression on them, and the challenger `DuplexChallenger<BabyBear, Poseidon2BabyBear<24>, 24, 16>`
 on the sequence of `CompStarkTests.Challenger`. Then `uni-stark` proofs over BabyBear with the
 quartic extension (`compstark-bench stark-babybear AIR LOG_N LOG_BLOWUP LOG_FINAL MAX_LOG_ARITY
-QUERIES COMMIT_POW QUERY_POW`), saved as `tests/data/babybear_AIR_*.json`: each must verify, the
-Lean prover must reproduce it exactly, and the verifier must reject it with a changed opened value.
+QUERIES COMMIT_POW QUERY_POW`), saved as `tests/data/babybear_AIR_*.json`: each must verify, with
+the verifying key of its preprocessed trace for `prep` and `prep0`, the Lean prover must reproduce
+it exactly, and the verifier must reject it with a changed opened value.
 -/
 
 namespace CompStarkTests.BabyBear
@@ -97,30 +98,43 @@ def cubeInstance (n : Nat) : Array F × List F :=
     (t.push x |>.push y, x * x * x + y, y + 1)) (#[], 2, 0)
   (t, [2, 0, t.getD (2 * n - 2) 0])
 
+/-- The `mulFib` trace of `n` rows from `(1, 2)` and its public values. -/
+def prepInstance (n : Nat) : Array F × List F :=
+  let (t, _, _) := (List.range n).foldl (fun ((t, a, b) : Array F × F × F) i ↦
+    let p : F := ((i % 2 : Nat) : F)
+    let s : F := (((i + 1) % 6 : Nat) : F)
+    (t.push a |>.push b, b, p * a * b + s * (a + b))) (#[], 1, 2)
+  (t, [1, 2])
+
 /-- The proof with its first opened trace value changed. -/
 def tamper (proof : Proof F EF) : Proof F EF :=
   { proof with opened := { proof.opened with
       traceLocal := proof.opened.traceLocal.modify 0 (· + 1) } }
 
-/-- Verify, reproduce and reject when tampered the saved proof of `air` for parameters `logN
-logBlowup logFinal maxLogArity queries commitPow queryPow [batchPow oodPow]`. -/
-def check (name : String) (A : Air F) (inst : Nat → Array F × List F) (ps : List Nat) : IO Unit :=
-    do
+/-- Verify against the verifying key of its preprocessed trace, reproduce and reject when
+tampered the saved proof of `air logN` for parameters `logN logBlowup logFinal maxLogArity queries
+commitPow queryPow [batchPow oodPow]`. -/
+def check (name : String) (air : Nat → Air F) (inst : Nat → Array F × List F) (ps : List Nat) :
+    IO Unit := do
   let (logN, P) ← match ps with
     | [logN, b, f, a, q, cp, qp] => pure (logN, (⟨b, f, a, q, cp, qp, 0, 0⟩ : Fri.Params))
     | [logN, b, f, a, q, cp, qp, bp, op] => pure (logN, ⟨b, f, a, q, cp, qp, bp, op⟩)
     | _ => throw (IO.userError "seven or nine parameters")
+  let A := air logN
+  let vk := setup P A logN
   let file := s!"babybear_{name}_{"_".intercalate (ps.map toString)}"
   let rust : Proof F EF ← IO.ofExcept (Json.parse (← IO.FS.readFile s!"tests/data/{file}.json"))
   let (trace, pis) := inst (2 ^ logN)
-  if let .error e := verify P A rust pis then throw (IO.userError s!"{file}: {e}")
+  if let .error e := verify P A vk rust pis then throw (IO.userError s!"{file}: {e}")
   unless prove EF P A logN trace pis == rust do throw (IO.userError s!"{file}: proofs differ")
-  if let .ok () := verify P A (tamper rust) pis then
+  if let .ok () := verify P A vk (tamper rust) pis then
     throw (IO.userError s!"{file}: accepted a tampered proof")
 
 #eval do
   for ps in [[3, 2, 2, 1, 2, 0, 0], [6, 1, 1, 3, 8, 2, 4], [4, 1, 1, 2, 5, 1, 1, 3, 2]] do
-    check "fib" fibonacci fibInstance ps
-  check "cube" cube cubeInstance [5, 3, 1, 2, 6, 1, 3]
+    check "fib" (fun _ ↦ fibonacci) fibInstance ps
+  check "cube" (fun _ ↦ cube) cubeInstance [5, 3, 1, 2, 6, 1, 3]
+  check "prep" (mulFib · true) prepInstance [4, 2, 0, 1, 4, 0, 0]
+  check "prep0" (mulFib · false) prepInstance [5, 1, 1, 2, 5, 1, 1, 3, 2]
 
 end CompStarkTests.BabyBear
