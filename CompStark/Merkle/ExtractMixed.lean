@@ -228,7 +228,8 @@ theorem extractGroup_of_climb (hinj : cache.Injective) (inj : List Nat) (K : Nat
       have ht' : t' ∉ inj := fun h ↦ by
         obtain ⟨g, hg, -⟩ := (hinjl t' (by omega)).mp h
         exact absurd hg List.not_mem_nil
-      obtain ⟨hn, -⟩ := extractGroup_of_climb hinj inj K root path t' [] (i / 2) z (by omega) (by omega)
+      obtain ⟨hn, -⟩ := extractGroup_of_climb hinj inj K root path t' [] (i / 2) z (by omega)
+        (by omega)
         List.Pairwise.nil (fun _ h ↦ absurd h List.not_mem_nil)
         (fun l hl ↦ hinjl l (by omega)) hrest' hc'
       exact ⟨hnode z hn (by simp only [ht', ↓reduceIte]), fun g hg ↦ absurd hg List.not_mem_nil⟩

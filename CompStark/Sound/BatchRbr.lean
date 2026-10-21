@@ -172,8 +172,8 @@ def ZetaBad (α : 𝕂)
 not near the code on a common set at `δ' - 2/N`, but their batched word is `δ`-near. -/
 def BatchBad (α : 𝕂)
     (quotients : (i : Fin S.k) → Fin (S.instanceSetup i).chunks → Fin (Challenge.d EF) →
-      (S.instanceSetup i).Point → F) (ζ : 𝕂) (openings : (i : Fin S.k) → Openings (S.instanceSetup i))
-    (a : 𝕂) : Prop :=
+      (S.instanceSetup i).Point → F) (ζ : 𝕂)
+    (openings : (i : Fin S.k) → Openings (S.instanceSetup i)) (a : 𝕂) : Prop :=
   let i := failing S publicValues δ' traces
   let p : Iop.Batch.Prover S := ⟨traces, fun _ ↦ quotients, fun _ _ ↦ openings⟩
   ¬ NearTogether (S.instanceSetup i) ((δ' : ℝ) - 2 / (S.instanceSetup i).size)

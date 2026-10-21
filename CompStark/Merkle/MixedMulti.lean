@@ -330,7 +330,9 @@ theorem frontier_walkM (k : Nat) (hG : ∀ g ∈ G0, ∃ j < k, g.1 = 2 ^ j)
           rw [hjh, nextPowerOfTwo_two_pow, hpad] at hi
           exact Nat.pow_right_injective (le_refl 2) hi
         have hstep := frontier_level l ((hh, is) :: rest) rest _ nodes sibs h (some is)
-          (fun r root s tail i ↦ by rw [climb_cons_cons, ite_eq_left_of_eq_true _ _ (eq_true hi)]) (fun r q hr hq he z ↦ by
+          (fun r root s tail i ↦ by
+            rw [climb_cons_cons, ite_eq_left_of_eq_true _ _ (eq_true hi)])
+          (fun r q hr hq he z ↦ by
             have hc := hcons _ (hsub _ List.mem_cons_self) r q hr hq (by
               dsimp only
               rw [hjh, Nat.log2_two_pow, show k - j = l + 1 by omega]
@@ -343,7 +345,8 @@ theorem frontier_walkM (k : Nat) (hG : ∀ g ∈ G0, ∃ j < k, g.1 = 2 ^ j)
           (fun g hg ↦ hsub g (List.mem_cons_of_mem _ hg)) hstep
       · rw [ite_eq_right_of_eq_false _ _ (eq_false hi)]
         have hstep := frontier_level l ((hh, is) :: rest) ((hh, is) :: rest) _ nodes sibs h none
-          (fun r root s tail i ↦ by rw [climb_cons_cons, ite_eq_right_of_eq_false _ _ (eq_false hi)]) hnone
+          (fun r root s tail i ↦ by
+            rw [climb_cons_cons, ite_eq_right_of_eq_false _ _ (eq_false hi)]) hnone
         rw [map_injectWith_none hash compress rows, hpad] at hstep
         rw [hpad]
         exact frontier_walkM k hG hcons levels (l + 1) _ _ _ (by omega) hsub hstep
