@@ -5,6 +5,9 @@ Released under Apache 2.0 license as described in the file LICENSE.
 module
 
 public import CompStark.Fri.Prover
+public import CompStark.KoalaBear.Prover
+public import CompStark.KoalaBear.Challenge
+public import CompStark.Stark.Points
 public import CompStark.Fri.Verifier
 public import CompStark.Merkle.VCVio
 
@@ -15,7 +18,7 @@ extension, the quotient chunks' extensions, each commit-phase round. For such a 
 specification's opening `Committed.openAt` at any row verifies against `Committed.root`.
 
 `Merkle.verifyBatch_openBatch` proves this for `Merkle.openBatch` and `Merkle.root` over any
-`hash` and `compress`. `Committed` stores the same digest layers as arrays, so its root is
+`hash` and `compress`. `(Committed F)` stores the same digest layers as arrays, so its root is
 `Merkle.root`, its path is `Merkle.openBatch`'s, and, with one height, its rows are the rows at the
 index unshifted, which are `Merkle.openBatch`'s rows.
 
@@ -25,80 +28,16 @@ by `Merkle.verifyBatchM_pure`: with pure hashes the monadic opening check is the
 
 @[expose] public section
 
-namespace CompStark.Merkle
-variable {F : Type} {d : Nat} {m : Type → Type} [Monad m] [LawfulMonad m]
-
-
-theorem climbM_pure (hash : List F → Vector F d) (compress : Vector F d → Vector F d → Vector F d)
-    (values : List (List F)) :
-    ∀ path groups index padded root,
-      climbM (m := m) (fun xs ↦ pure (hash xs)) (fun a b ↦ pure (compress a b)) values path groups
-        index padded root = pure (climb hash compress values path groups index padded root)
-  | [], _, _, _, _ => rfl
-  | sib :: sibs, groups, index, padded, root => by
-    simp only [climbM, climb]
-    have step : ∀ root : Vector F d, (do
-        let root ← (pure root : m (Vector F d))
-        match groups with
-        | (h, is) :: rest =>
-          if h.nextPowerOfTwo = padded / 2 then do
-            let leaf ← pure (hash (is.flatMap fun i ↦ values.getD i []))
-            let root ← pure (compress root leaf)
-            (climbM (fun xs ↦ pure (hash xs)) (fun a b ↦ pure (compress a b)) values sibs rest
-              (index / 2) (padded / 2) root)
-          else (climbM (fun xs ↦ pure (hash xs)) (fun a b ↦ pure (compress a b)) values sibs
-            groups (index / 2) (padded / 2) root)
-        | [] => (climbM (fun xs ↦ pure (hash xs)) (fun a b ↦ pure (compress a b)) values sibs []
-            (index / 2) (padded / 2) root)) =
-        pure (match groups with
-          | (h, is) :: rest =>
-            if h.nextPowerOfTwo = padded / 2 then
-              climb hash compress values sibs rest (index / 2) (padded / 2)
-                (compress root (hashRows hash values is))
-            else climb hash compress values sibs groups (index / 2) (padded / 2) root
-          | [] => climb hash compress values sibs [] (index / 2) (padded / 2) root) := by
-      intro root
-      rw [pure_bind]
-      rcases groups with _ | ⟨⟨h, is⟩, rest⟩
-      · exact climbM_pure hash compress values sibs _ _ _ _
-      · dsimp only
-        by_cases hh : h.nextPowerOfTwo = padded / 2
-        · simp only [hh, ite_true]
-          rw [ pure_bind, pure_bind, hashRows]
-          exact climbM_pure hash compress values sibs _ _ _ _
-        · simp only [hh, ite_false]
-          exact climbM_pure hash compress values sibs _ _ _ _
-    by_cases hi : index % 2 = 0
-    · simp only [hi, ite_true]; exact step _
-    · simp only [hi, ite_false]; exact step _
-
-/-- With pure hashes, `verifyBatchM` is `verifyBatch`. -/
-theorem verifyBatchM_pure [DecidableEq F] (hash : List F → Vector F d)
-    (compress : Vector F d → Vector F d → Vector F d) (commit : Vector F d) (heights : List Nat)
-    (index : Nat) (values : List (List F)) (path : List (Vector F d)) :
-    verifyBatchM (m := m) (fun xs ↦ pure (hash xs)) (fun a b ↦ pure (compress a b)) commit
-      heights index values path =
-      pure (verifyBatch hash compress commit heights index values path) := by
-  unfold verifyBatchM verifyBatch
-  rcases heightGroups heights with _ | ⟨⟨maxH, tallest⟩, rest⟩
-  · rfl
-  · dsimp only
-    split
-    · rename_i h
-      rw [h, Bool.true_and, pure_bind, climbM_pure, pure_bind, hashRows]
-    · rename_i h
-      rw [Bool.not_eq_true] at h
-      rw [h, Bool.false_and]
-
-end CompStark.Merkle
 
 namespace CompStark.Fri
 open CompStark.Stark CompStark.Merkle
 
-local notation "F" => KoalaBear.Fast.Field
+local notation "F" => _root_.KoalaBear.Fast.Field
+local notation "hashF" => CompStark.Hash.KoalaBear.hash F
+local notation "compF" => CompStark.Hash.KoalaBear.compress F
 
 /-- A running maximum from at most `h` over matrices of height `h` is `h`. -/
-theorem foldl_max_height (ms : List Mat) (h : Nat) (hms : ∀ m ∈ ms, m.height = h) :
+theorem foldl_max_height (ms : List (Mat F)) (h : Nat) (hms : ∀ m ∈ ms, m.height = h) :
     ∀ acc, acc ≤ h → ms ≠ [] → ms.foldl (fun m a ↦ max m a.height) acc = h := by
   induction ms with
   | nil => intro _ _ hne; exact absurd rfl hne
@@ -112,12 +51,12 @@ theorem foldl_max_height (ms : List Mat) (h : Nat) (hms : ∀ m ∈ ms, m.height
         (List.cons_ne_nil b t)
 
 /-- The largest height of matrices of one height `h` is `h`. -/
-theorem maxHeight_ofMats (ms : List Mat) (h : Nat) (hne : ms ≠ [])
-    (hms : ∀ m ∈ ms, m.height = h) : (Committed.ofMats ms).maxHeight = h :=
+theorem maxHeight_ofMats (ms : List (Mat F)) (h : Nat) (hne : ms ≠ [])
+    (hms : ∀ m ∈ ms, m.height = h) : (Committed.ofMats hashF compF ms).maxHeight = h :=
   foldl_max_height ms h hms 0 (Nat.zero_le h) hne
 
 /-- `rowOf` is the Merkle tree's row. -/
-theorem rowOf_toList (m : Mat) (i : Nat) : (rowOf m i).toList = m.toMatrix.row i := by
+theorem rowOf_toList (m : Mat F) (i : Nat) : (rowOf m i).toList = m.toMatrix.row i := by
   apply List.ext_getElem
   · simp only [rowOf, Array.toList_ofFn, List.length_ofFn, Merkle.Matrix.row, Mat.toMatrix,
       List.length_map, List.length_range]
@@ -126,8 +65,8 @@ theorem rowOf_toList (m : Mat) (i : Nat) : (rowOf m i).toList = m.toMatrix.row i
       List.getElem_map, List.getElem_range]
 
 /-- The committed root is the Merkle root. -/
-theorem root_ofMats (ms : List Mat) :
-    (Committed.ofMats ms).root =
+theorem root_ofMats (ms : List (Mat F)) :
+    (Committed.ofMats hashF compF ms).root =
       Merkle.root (Hash.KoalaBear.hash F) (Hash.KoalaBear.compress F) (ms.map Mat.toMatrix) := by
   rw [Merkle.root_eq_layers]
   simp only [Committed.ofMats, Committed.root]
@@ -141,8 +80,8 @@ theorem root_ofMats (ms : List Mat) :
       List.getElem?_toArray, List.getD_eq_getElem?_getD]
 
 /-- The opening's rows of matrices of one height `2 ^ k` are their rows at the index. -/
-theorem openAt_values (ms : List Mat) (k : Nat) (hms : ∀ m ∈ ms, m.height = 2 ^ k) (i : Nat) :
-    ((Committed.ofMats ms).openAt i).values = (ms.map fun m ↦ rowOf m i).toArray := by
+theorem openAt_values (ms : List (Mat F)) (k : Nat) (hms : ∀ m ∈ ms, m.height = 2 ^ k) (i : Nat) :
+    ((Committed.ofMats hashF compF ms).openAt i).values = (ms.map fun m ↦ rowOf m i).toArray := by
   simp only [Committed.openAt]
   congr 1
   apply List.map_congr_left
@@ -158,9 +97,9 @@ theorem getD_toArrays {α : Type*} [Zero α] (ls : List (List α)) (j x : Nat) :
     Option.getD_none, List.getElem?_toArray, List.getElem?_nil]
 
 /-- The opening's path of matrices of one height `2 ^ k` is `Merkle.openBatch`'s. -/
-theorem openAt_path (ms : List Mat) (k : Nat) (hne : ms ≠ [])
+theorem openAt_path (ms : List (Mat F)) (k : Nat) (hne : ms ≠ [])
     (hms : ∀ m ∈ ms, m.height = 2 ^ k) (i : Nat) :
-    ((Committed.ofMats ms).openAt i).path.toList =
+    ((Committed.ofMats hashF compF ms).openAt i).path.toList =
       (Merkle.openBatch (Hash.KoalaBear.hash F) (Hash.KoalaBear.compress F)
         (ms.map Mat.toMatrix) i).2 := by
   have hms' : ∀ m ∈ ms.map Mat.toMatrix, m.height = 2 ^ k := fun m hm ↦ by
@@ -180,18 +119,18 @@ theorem openAt_path (ms : List Mat) (k : Nat) (hne : ms ≠ [])
 
 /-- The specification's opening at row `i` of a batch of matrices of one height `2 ^ k`
 verifies against its root. -/
-theorem verifyBatch_openAt (ms : List Mat) (k : Nat) (hne : ms ≠ [])
+theorem verifyBatch_openAt (ms : List (Mat F)) (k : Nat) (hne : ms ≠ [])
     (hms : ∀ m ∈ ms, m.height = 2 ^ k ∧ m.values.size = m.width * m.height)
     (i : Nat) (hi : i < 2 ^ k) :
-    Merkle.KoalaBear.verifyBatch KoalaBear.Fast.Field (Committed.ofMats ms).root
-      (ms.map (·.height)) i (((Committed.ofMats ms).openAt i).values.toList.map (·.toList))
-      ((Committed.ofMats ms).openAt i).path.toList = true := by
+    Merkle.KoalaBear.verifyBatch KoalaBear.Fast.Field (Committed.ofMats hashF compF ms).root
+      (ms.map (·.height)) i (((Committed.ofMats hashF compF ms).openAt i).values.toList.map (·.toList))
+      ((Committed.ofMats hashF compF ms).openAt i).path.toList = true := by
   have hh : ∀ m ∈ ms, m.height = 2 ^ k := fun m hm ↦ (hms m hm).1
   have hh' : ∀ m ∈ ms.map Mat.toMatrix, m.height = 2 ^ k := fun m hm ↦ by
     obtain ⟨a, ha, rfl⟩ := List.mem_map.mp hm; exact hh a ha
   have hne' : ms.map Mat.toMatrix ≠ [] := by
     rwa [Ne, List.map_eq_nil_iff]
-  have hv : ((Committed.ofMats ms).openAt i).values.toList.map (·.toList) =
+  have hv : ((Committed.ofMats hashF compF ms).openAt i).values.toList.map (·.toList) =
       (Merkle.openBatch (Hash.KoalaBear.hash F) (Hash.KoalaBear.compress F)
         (ms.map Mat.toMatrix) i).1 := by
     rw [openAt_values ms k hh, Merkle.openBatch_fst _ _ _ k i hh', List.toList_toArray,
@@ -203,8 +142,8 @@ theorem verifyBatch_openAt (ms : List Mat) (k : Nat) (hne : ms ≠ [])
   exact Merkle.verifyBatch_openBatch _ _ _ k i hne' hh' hi
 
 /-- On Poseidon2, the verifier's opening check is `Merkle.KoalaBear.verifyBatch`. -/
-theorem checkOpening_eq (commit : Digest) (heights : List Nat) (index : Nat)
-    (values : List (List F)) (path : List Digest) :
+theorem checkOpening_eq (commit : Digest F) (heights : List Nat) (index : Nat)
+    (values : List (List F)) (path : List (Digest F)) :
     checkOpening poseidon2 commit heights index values path =
       pure (Merkle.KoalaBear.verifyBatch F commit heights index values path) := by
   unfold checkOpening

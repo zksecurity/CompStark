@@ -29,20 +29,18 @@ values at `β` (`foldChallenges`), and its final polynomial is Plonky3's in the 
 
 @[expose] public section
 namespace CompStark.Ni
-open CompStark.Stark CompStark.Fri CompStark.Sound CompStark.Iop Polynomial Montgomery.Native32
+open CompStark.Stark CompStark.Fri CompStark.Sound CompStark.Iop Polynomial
 open Fri.Spec
 
-local notation "F" => KoalaBear.Fast.Field
-local notation "𝔽" => KoalaBear.Field
 
-variable {EF : Type} [Challenge EF]
+variable {F : Type} [BaseField F] {EF : Type} [Challenge F EF]
 
 local notation "𝕂" => Challenge.Spec EF
 
 /-! ### The run's challenges -/
 
 section Challenges
-variable (H : Primitives Id) (P : Params) (proof : Proof EF) (pis : List F)
+variable (H : Primitives F Id) (P : Params) (proof : Proof F EF) (pis : List F)
 
 /-- FRI's batching challenge. -/
 def batchOf : EF := (smpExt H (stateFri H proof pis)).1
@@ -61,13 +59,13 @@ def queryState : H.State :=
       (smpExt (EF := EF) H (stateFri H proof pis)).2).2 proof.fri.finalPoly.toList)
 
 /-- The query grinding sample, after the witness; `0` without query grinding. -/
-def powSampleOf : 𝔽 :=
+def powSampleOf : F :=
   if P.queryPowBits = 0 then 0
-  else FastField.toField (H.sample (H.observe (queryState H P proof pis) proof.fri.queryWitness)).1
+  else (H.sample (H.observe (queryState H P proof pis) proof.fri.queryWitness)).1
 
 /-- Query `j`'s sample, whose low bits are its index. -/
-def querySampleOf (j : Nat) : 𝔽 :=
-  FastField.toField (H.sample (sampleStates H
+def querySampleOf (j : Nat) : F :=
+  (H.sample (sampleStates H
     (chkWit H P.queryPowBits proof.fri.queryWitness (queryState H P proof pis)).2 j)).1
 
 end Challenges
@@ -77,9 +75,9 @@ end Challenges
 /-- The interactive oracle proof's transcript extracted from an accepted proof: the words and FRI
 oracles from `cache`, the opened values and final polynomial from the proof, and the challenges
 of the run on `H`. -/
-noncomputable def extract (S : Iop.Setup EF) (cache : Merkle.Cache F Digest)
-    (H : Primitives Id)
-    (proof : Proof EF) (pis : List F) : Sound.Transcript S where
+noncomputable def extract (S : Iop.Setup EF) (cache : Merkle.Cache F (Digest F))
+    (H : Primitives F Id)
+    (proof : Proof F EF) (pis : List F) : Sound.Transcript S where
   trace := traceWords S cache proof
   alpha := Challenge.toSpec (alphaOf H proof pis)
   quotient := quotientWords S cache proof
@@ -98,23 +96,23 @@ theorem foldArities_eq (m : Nat) : ∀ r, foldArities m r = (folds m r).map PNat
     exact congrArg (List.cons _) (foldArities_eq m _)
   decreasing_by omega
 
-theorem natDegree_finalPoly (S : Iop.Setup EF) (cache : Merkle.Cache F Digest)
-    (commits : List Digest) (coeffs : Array EF)
+theorem natDegree_finalPoly (S : Iop.Setup EF) (cache : Merkle.Cache F (Digest F))
+    (commits : List (Digest F)) (coeffs : Array EF)
     (h : coeffs.size = 2 ^ S.params.logFinalPolyLen) :
     (finalPolynomial S.schedule (friOracles S cache commits coeffs)).natDegree <
       (finalDegreeOf S).val := by
   rw [finalPolynomial_friOracles, CompPoly.CPolynomial.natDegree_toPoly,
     ← CompPoly.CPolynomial.ringEquiv_apply, RingEquiv.apply_symm_apply, finalPoly]
   rw [finalDegreeOf, finalDegree, PNat.mk_coe]
-  refine Complete.natDegree_lt_of_degree ?_ (Nat.two_pow_pos _)
+  refine natDegree_lt_of_degree ?_ (Nat.two_pow_pos _)
   rw [← h]
-  exact Complete.degree_sum_C_mul_X_pow_lt _ _
+  exact degree_sum_C_mul_X_pow_lt _ _
 
 /-! ### BCS consistency -/
 
 /-- The verifier's FRI rounds on an accepted proof of `2 ^ logN` rows: the largest query domain
 is `L`, above the blowup, and every opened matrix has its height. -/
-theorem friHyps (S : Iop.Setup EF) (H : Primitives Id) (proof : Proof EF)
+theorem friHyps (S : Iop.Setup EF) (H : Primitives F Id) (proof : Proof F EF)
     (pis : List F)
     (hdb : proof.degreeBits = S.logN)
     (harity : arities proof.fri = foldArities S.params.maxLogArity
@@ -156,8 +154,8 @@ theorem friHyps (S : Iop.Setup EF) (H : Primitives Id) (proof : Proof EF)
 rows whose commitments bind the rows extracted from `cache`, the extracted transcript passes the
 deterministic checks of `Sound.exists_satisfied_of_safe`, with the run's grinding and query
 samples. -/
-theorem bcs (S : Iop.Setup EF) (cache : Merkle.Cache F Digest) (H : Primitives Id)
-    (proof : Proof EF)
+theorem bcs (S : Iop.Setup EF) (cache : Merkle.Cache F (Digest F)) (H : Primitives F Id)
+    (proof : Proof F EF)
     (pis : List F) (hdb : proof.degreeBits = S.logN)
     (htrace : Binding cache H proof.traceCommit) (hquot : Binding cache H proof.quotientCommit)
     (hfri : ∀ c ∈ proof.fri.commits, Binding cache H c)
@@ -165,7 +163,8 @@ theorem bcs (S : Iop.Setup EF) (cache : Merkle.Cache F Digest) (H : Primitives I
     let t := extract S cache H proof pis
     ConstraintsHoldAt S pis t.alpha t.zeta t.openings ∧
       (finalPolynomial S.schedule t.fri).natDegree < (finalDegreeOf S).val ∧
-      (powSampleOf H S.params proof pis).val % 2 ^ S.params.queryPowBits = 0 ∧
+      CompPoly.CanonicalNat.toNat (powSampleOf H S.params proof pis) % 2 ^ S.params.queryPowBits =
+        0 ∧
       ∀ j : Fin S.params.numQueries,
         queryPoint S (querySampleOf H S.params proof pis j) ∈ t.consistentQueries := by
   intro t
@@ -185,7 +184,6 @@ theorem bcs (S : Iop.Setup EF) (cache : Merkle.Cache F Digest) (H : Primitives I
     · rename_i h0; rw [h0, pow_zero, Nat.mod_one]
     · rename_i h0
       simp only [chkWit, h0, ↓reduceIte, beq_iff_eq] at hw
-      rw [← FastField.toNat_eq_val_toField]
       exact hw
   · have hj : j.val < proof.fri.queries.size := by rw [hqs]; exact j.isLt
     obtain ⟨hlen, hbatch, hbl, hcl, hsteps, -, hfinal⟩ := hq j.val hj
@@ -195,8 +193,8 @@ theorem bcs (S : Iop.Setup EF) (cache : Merkle.Cache F Digest) (H : Primitives I
     have hpt : queryPoint S (querySampleOf H S.params proof pis j) =
         finMod S.logSize (reverseBits index S.logSize) := by
       apply Fin.ext
-      simp only [queryPoint, finMod, Nat.mod_eq_of_lt (Complete.reverseBits_lt _ _), hindex,
-        smpBits, querySampleOf, FastField.toNat_eq_val_toField]
+      simp only [queryPoint, finMod, Nat.mod_eq_of_lt (reverseBits_lt _ _), hindex,
+        smpBits, querySampleOf]
     have hsl : (proof.fri.queries[j.val].steps.toList).map (·.logArity) =
         S.foldArities.map PNat.val := by
       rw [← harr]; exact (hqa _ (Array.getElem_mem_toList hj)).2

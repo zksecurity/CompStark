@@ -19,17 +19,15 @@ public import CompStark.Ni.Rounds
 @[expose] public section
 namespace CompStark.Ni
 open CompStark.Stark CompStark.Fri CompStark.Sound CompStark.Iop CompStark.RandomOracle
-open Polynomial Montgomery.Native32 Fri.Spec OracleSpec OracleComp
+open Polynomial Fri.Spec OracleSpec OracleComp
 
-local notation "F" => KoalaBear.Fast.Field
-local notation "𝔽" => KoalaBear.Field
 
-variable {EF : Type} [Challenge EF]
+variable {F : Type} [BaseField F] {EF : Type} [Challenge F EF]
 
 local notation "𝕂" => Challenge.Spec EF
 
 /-- Two caches extract the same rows under `root`. -/
-def SameUnder (cache cache' : Merkle.Cache F Digest) (root : Digest) : Prop :=
+def SameUnder (cache cache' : Merkle.Cache F (Digest F)) (root : Digest F) : Prop :=
   ∀ k i, Merkle.extractRow cache k i root = Merkle.extractRow cache' k i root
 
 variable (S : Iop.Setup EF)
@@ -37,7 +35,7 @@ variable (S : Iop.Setup EF)
 /-! ### Congruences -/
 
 section Congr
-variable {cache cache' : Merkle.Cache F Digest} {root : Digest}
+variable {cache cache' : Merkle.Cache F (Digest F)} {root : Digest F}
 
 theorem committedColumn_congr (h : SameUnder cache cache' root) :
     committedColumn S cache root = committedColumn S cache' root := by
@@ -51,7 +49,7 @@ theorem friWordAt_congr (h : SameUnder cache cache' root) :
   unfold SameUnder at h
   simp only [friWordAt, leafRow, h]
 
-theorem friOracles_congr (commits : List Digest) (coeffs : Array EF)
+theorem friOracles_congr (commits : List (Digest F)) (coeffs : Array EF)
     (h : ∀ i < S.lastFold + 1, SameUnder cache cache' (commits.getD i 0)) :
     friOracles S cache commits coeffs = friOracles S cache' commits coeffs := by
   funext j
@@ -120,9 +118,9 @@ end Congr
 /-! ### The schedule of an accepted proof -/
 
 section Schedule
-variable (proof : Proof EF) (pis : List F)
+variable (proof : Proof F EF) (pis : List F)
 
-theorem digestAt_toList (d : Digest) : digestAt d.toList 0 = d := by
+theorem digestAt_toList (d : Digest F) : digestAt d.toList 0 = d := by
   simpa only [List.append_nil] using digestAt_append_zero d []
 
 theorem inputs_getD_zero :
@@ -148,7 +146,7 @@ theorem quotientRoot_eq : digestAt ((inputs S.params pis proof).getD 1 []) 0 =
     proof.quotientCommit := by
   rw [inputs_getD_one, digestAt_toList]
 
-variable (answer : (q : Query) → Answer S.streamLen q)
+variable (answer : (q : Query F) → Answer S.streamLen q)
 variable {proof pis}
 
 /-- An accepted proof for `2 ^ logN` rows commits once per fold of `S`'s schedule. -/
@@ -220,7 +218,7 @@ theorem finalPoly_eq (hdb : proof.degreeBits = S.logN)
 /-- **The extracted transcript.** On an accepted proof for `2 ^ logN` rows, the transcript
 extracted from a run on the answers `answer` is the prefix transcript of the proof's schedule
 with the answers to its duplex calls. -/
-theorem extract_eq_prefixTranscript (cache : Merkle.Cache F Digest)
+theorem extract_eq_prefixTranscript (cache : Merkle.Cache F (Digest F))
     (hdb : proof.degreeBits = S.logN)
     (hok : verifyWith (idealOf answer) S.params S.air proof pis = .ok ()) :
     extract S cache (idealOf answer) proof pis =

@@ -17,10 +17,10 @@ with base coefficients, and `∏_{k ≠ 0} (σₖ z - x)` is a cubic `Q(x)` with
 
 @[expose] public section
 namespace CompStark.Stark.Norm
-open KoalaBear.Fast
+open KoalaBear.Fast Montgomery.Native32
 
-local notation "F" => KoalaBear.Fast.Field
-local notation "EF" => KoalaBear.Fast.Ext4
+local notation "F" => _root_.KoalaBear.Fast.Field
+local notation "EF" => _root_.KoalaBear.Fast.Ext4
 
 theorem mulAdd4_eq (a b c d e f g k : F) :
     Montgomery.Native32.mulAdd4 a b c d e f g k = a * b + c * d + e * f + g * k := by
@@ -37,17 +37,17 @@ theorem ext {a b : EF} (h0 : a.c0 = b.c0) (h1 : a.c1 = b.c1) (h2 : a.c2 = b.c2)
 theorem mul_c0 (a b : EF) :
     (a * b).c0 = a.c0 * b.c0 + 3 * (a.c1 * b.c3 + a.c2 * b.c2 + a.c3 * b.c1) := by
   show (Ext4.mul a b).c0 = _
-  simp only [Ext4.mul, mulAdd4_eq, Ext4.triple]; ring
+  simp only [Ext4.mul, mulAdd4_eq, KoalaBear.mulW_eq]; ring
 
 theorem mul_c1 (a b : EF) :
     (a * b).c1 = a.c0 * b.c1 + a.c1 * b.c0 + 3 * (a.c2 * b.c3 + a.c3 * b.c2) := by
   show (Ext4.mul a b).c1 = _
-  simp only [Ext4.mul, mulAdd4_eq, Ext4.triple]; ring
+  simp only [Ext4.mul, mulAdd4_eq, KoalaBear.mulW_eq]; ring
 
 theorem mul_c2 (a b : EF) :
     (a * b).c2 = a.c0 * b.c2 + a.c1 * b.c1 + a.c2 * b.c0 + 3 * (a.c3 * b.c3) := by
   show (Ext4.mul a b).c2 = _
-  simp only [Ext4.mul, mulAdd4_eq, Ext4.triple]; ring
+  simp only [Ext4.mul, mulAdd4_eq, KoalaBear.mulW_eq]; ring
 
 theorem mul_c3 (a b : EF) :
     (a * b).c3 = a.c0 * b.c3 + a.c1 * b.c2 + a.c2 * b.c1 + a.c3 * b.c0 := by
@@ -67,24 +67,6 @@ theorem mul_c3 (a b : EF) :
 abbrev zeta : F := twoAdicGen 2
 
 theorem zeta_sq : zeta * zeta = -1 := by decide
-
-/-- `powF` is exponentiation. -/
-theorem powF_eq (x : F) (n : Nat) : powF x n = x ^ n := by
-  induction n using Nat.strong_induction_on generalizing x with
-  | _ n ih =>
-    cases n with
-    | zero => rw [powF, pow_zero]
-    | succ n =>
-      rw [powF, ih _ (by omega)]
-      have hn := Nat.div_add_mod (n + 1) 2
-      split
-      · rename_i h
-        rw [← pow_two, ← pow_mul, ← pow_succ']
-        congr 1
-        omega
-      · rw [← pow_two, ← pow_mul]
-        congr 1
-        omega
 
 theorem zeta_pow_two : zeta ^ 2 = -1 := by rw [pow_two, zeta_sq]
 
@@ -181,8 +163,8 @@ theorem norm_ne_zero {z : EF} (hz : z.c1 ≠ 0 ∨ z.c2 ≠ 0 ∨ z.c3 ≠ 0) (x
   intro hN
   have e := congrArg Ext4.toSpec (mul_cubic z x)
   rw [hN, cubic_eq_prod, Ext4.toSpec_mul, Ext4.toSpec_mul, Ext4.toSpec_mul] at e
-  have hzero : Ext4.toSpec (Ext4.ofBase 0) = 0 := by
-    rw [show Ext4.ofBase 0 = 0 from rfl, Ext4.toSpec_zero]
+  have hzero : Ext4.toSpec (Ext4.ofBase 0 : EF) = 0 := by
+    rw [show (Ext4.ofBase 0 : EF) = 0 from rfl, Ext4.toSpec_zero]
   rw [hzero] at e
   rcases mul_eq_zero.mp e with e | e
   · exact toSpec_ne_zero h0 e

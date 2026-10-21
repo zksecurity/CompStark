@@ -24,9 +24,8 @@ extractor's radius below the unique-decoding radius, as in `CompStark/Sound/Numb
 namespace CompStark.Sound
 open CompStark.Stark CompStark.Iop NNReal
 
-local notation "𝔽" => KoalaBear.Field
 
-variable {EF : Type} [Challenge EF]
+variable {F : Type} [BaseField F] {EF : Type} [Challenge F EF]
 
 local notation "𝕂" => Challenge.Spec EF
 
@@ -124,22 +123,12 @@ theorem friFoldError_le (S : Setup EF) (harity : S.params.maxLogArity = 1) (t : 
 theorem friQueryError_eq (S : Setup EF) (harity : S.params.maxLogArity = 1) (δ loss : ℝ≥0) :
     friQueryError S δ loss =
       ENNReal.ofReal (1 - δ + (S.logN - S.params.logFinalPolyLen : ℕ) * loss +
-        1 / KoalaBear.fieldSize) ^ S.params.numQueries := by
-  rw [friQueryError, ← lastFold_add_one S harity, ZMod.card,
+        1 / Fintype.card F) ^ S.params.numQueries := by
+  rw [friQueryError, ← lastFold_add_one S harity,
     min_eq_right (by nlinarith [loss.coe_nonneg])]
   congr 2
   push_cast
   ring
-
-/-- No grinding: a proof-of-work sample of `0` bits always vanishes. -/
-theorem powFraction_zero : powFraction 0 = 1 := by
-  rw [powFraction, ZMod.card, KoalaBear.fieldSize]
-  exact ENNReal.div_self (by norm_num) (by norm_num)
-
-/-- `powFraction` as a fraction of `p`. -/
-theorem powFraction_eq (bits : ℕ) :
-    powFraction bits = ((127 * 2 ^ (24 - bits) + 1 : ℕ) : ENNReal) / KoalaBear.fieldSize := by
-  rw [powFraction, ZMod.card]
 
 /-- The round errors at FRI arity `2`, FRI at `δ` and the extractor at `δ'` below the
 unique-decoding radius, `δ < δ' - 2/N`, at one proximity loss `loss > 0` and a fold threshold
@@ -156,12 +145,12 @@ theorem roundError_le (S : Setup EF) (harity : S.params.maxLogArity = 1) (t : �
       max (ENNReal.ofReal ((S.numOpened - 1 : ℕ) *
           max ((1 - S.rate - δ) / (δ * (1 - S.rate - 2 * δ)))
             ((δ' - 2 / S.size) / (δ' - 2 / S.size - δ))) / Fintype.card 𝕂) <|
-      max (powFraction S.params.commitPowBits *
+      max (powFraction F S.params.commitPowBits *
           (ENNReal.ofReal (max (LossyMca.lossyBound 1 (2 ^ S.params.logBlowup) δ (δ + loss) loss)
             (2 ^ t)) / Fintype.card 𝕂))
-        (powFraction S.params.queryPowBits *
+        (powFraction F S.params.queryPowBits *
           ENNReal.ofReal (1 - δ + (S.logN - S.params.logFinalPolyLen : ℕ) * loss +
-            1 / KoalaBear.fieldSize) ^ S.params.numQueries)) := by
+            1 / Fintype.card F) ^ S.params.numQueries)) := by
   refine (iInf_le _ loss).trans ?_
   rw [← friQueryError_eq S harity]
   gcongr
@@ -189,18 +178,18 @@ theorem coe_three_eighths_sub (k : ℤ) (a : ℕ) (hk : k = -a) (ha : 2 ≤ a) :
 
 /-- An integer over `|𝕂| = p ^ d` is at most `2 ^ (-bits)` if it is as a real number. -/
 theorem nat_div_card_le {bits : ℕ} (A : ℕ)
-    (h : (A : ℝ) / 2130706433 ^ Challenge.d EF ≤ (2 ^ bits : ℝ)⁻¹) :
+    (h : (A : ℝ) / (Fintype.card F : ℝ) ^ Challenge.d EF ≤ (2 ^ bits : ℝ)⁻¹) :
     (A : ENNReal) / (Fintype.card 𝕂 : ENNReal) ≤ (2 ^ bits : ENNReal)⁻¹ := by
-  have hK : (0 : ℝ) < Fintype.card 𝕂 := by rw [card_eq]; positivity
+  have hK : (0 : ℝ) < Fintype.card 𝕂 := by exact_mod_cast Fintype.card_pos
   rw [← ENNReal.ofReal_natCast A, ← ENNReal.ofReal_natCast (Fintype.card 𝕂),
     ← ENNReal.ofReal_div_of_pos hK, inv_two_pow_eq, card_eq]
   exact ENNReal.ofReal_le_ofReal h
 
 /-- A real number over `|𝕂| = p ^ d` is at most `2 ^ (-bits)` if it is as a real number. -/
 theorem ofReal_div_card_le {bits : ℕ} (b : ℝ)
-    (h : b / 2130706433 ^ Challenge.d EF ≤ (2 ^ bits : ℝ)⁻¹) :
+    (h : b / (Fintype.card F : ℝ) ^ Challenge.d EF ≤ (2 ^ bits : ℝ)⁻¹) :
     ENNReal.ofReal b / (Fintype.card 𝕂 : ENNReal) ≤ (2 ^ bits : ENNReal)⁻¹ := by
-  have hK : (0 : ℝ) < Fintype.card 𝕂 := by rw [card_eq]; positivity
+  have hK : (0 : ℝ) < Fintype.card 𝕂 := by exact_mod_cast Fintype.card_pos
   rw [← ENNReal.ofReal_natCast (Fintype.card 𝕂), ← ENNReal.ofReal_div_of_pos hK, inv_two_pow_eq,
     card_eq]
   exact ENNReal.ofReal_le_ofReal h
@@ -208,13 +197,13 @@ theorem ofReal_div_card_le {bits : ℕ} (b : ℝ)
 /-- A round with grinding, `powFraction bits` times `y ^ l`, is at most `2 ^ (-target)` if it is
 as a real number. -/
 theorem powFraction_mul_le {target : ℕ} (bits l : ℕ) (y : ℝ) (hy : 0 ≤ y)
-    (h : (127 * 2 ^ (24 - bits) + 1 : ℕ) / 2130706433 * y ^ l ≤ (2 ^ target : ℝ)⁻¹) :
-    powFraction bits * ENNReal.ofReal y ^ l ≤ (2 ^ target : ENNReal)⁻¹ := by
-  rw [powFraction_eq, KoalaBear.fieldSize, ← ENNReal.ofReal_natCast,
-    ← ENNReal.ofReal_natCast (2 ^ 31 - 2 ^ 24 + 1), ← ENNReal.ofReal_div_of_pos (by norm_num),
-    ← ENNReal.ofReal_pow hy, ← ENNReal.ofReal_mul (by positivity), inv_two_pow_eq]
-  refine ENNReal.ofReal_le_ofReal ?_
-  norm_num at h ⊢
-  exact h
+    (h : ((Fintype.card F - 1) / 2 ^ bits + 1 : ℕ) / (Fintype.card F : ℝ) * y ^ l ≤
+      (2 ^ target : ℝ)⁻¹) :
+    powFraction F bits * ENNReal.ofReal y ^ l ≤ (2 ^ target : ENNReal)⁻¹ := by
+  have hp : (0 : ℝ) < Fintype.card F := by exact_mod_cast Fintype.card_pos
+  rw [powFraction, ← ENNReal.ofReal_natCast, ← ENNReal.ofReal_natCast (Fintype.card F),
+    ← ENNReal.ofReal_div_of_pos hp, ← ENNReal.ofReal_pow hy,
+    ← ENNReal.ofReal_mul (by positivity), inv_two_pow_eq]
+  exact ENNReal.ofReal_le_ofReal h
 
 end CompStark.Sound

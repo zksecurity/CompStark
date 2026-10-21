@@ -18,9 +18,11 @@ verifier.
 @[expose] public section
 namespace CompStark
 
+variable {F : Type} [BaseField F]
+
 /-- The primitives `H` with their results mapped by `φ`. -/
-def Primitives.map {m n : Type → Type} [Monad m] [Monad n] (φ : m →ᵐ n) (H : Primitives m) :
-    Primitives n where
+def Primitives.map {m n : Type → Type} [Monad m] [Monad n] (φ : m →ᵐ n) (H : Primitives F m) :
+    Primitives F n where
   State := H.State
   init := H.init
   observe := H.observe
@@ -29,7 +31,7 @@ def Primitives.map {m n : Type → Type} [Monad m] [Monad n] (φ : m →ᵐ n) (
   compress a b := φ (H.compress a b)
 
 @[simp] theorem Primitives.map_init {m n : Type → Type} [Monad m] [Monad n] (φ : m →ᵐ n)
-    (H : Primitives m) : (H.map φ).init = H.init := rfl
+    (H : Primitives F m) : (H.map φ).init = H.init := rfl
 
 namespace Merkle
 
@@ -71,11 +73,10 @@ end Merkle
 namespace Fri
 open CompStark.Stark
 
-local notation "F" => KoalaBear.Fast.Field
 
 variable {m n : Type → Type} [Monad m] [Monad n] [LawfulMonad m] [LawfulMonad n] (φ : m →ᵐ n)
-  {EF : Type} [Challenge EF]
-  (H : Primitives m)
+  {EF : Type} [Challenge F EF]
+  (H : Primitives F m)
 
 /-- `φ` on the verifier's monad. -/
 abbrev mapM : M H →ᵐ M (H.map φ) := StateT.mapHom (ExceptT.mapHom φ)
@@ -138,8 +139,8 @@ theorem mapM_ensure (b : Bool) (msg : String) :
     mapM φ H (ensure (H := H) b msg) = ensure (H := H.map φ) b msg := by
   simp only [ensure, MonadHom.mmap_ite, MonadHom.mmap_pure, mapM_throw]
 
-theorem mapM_checkOpening (commit : Digest) (heights : List Nat) (index : Nat)
-    (values : List (List F)) (path : List Digest) :
+theorem mapM_checkOpening (commit : Digest F) (heights : List Nat) (index : Nat)
+    (values : List (List F)) (path : List (Digest F)) :
     mapM φ H (checkOpening H commit heights index values path) =
       checkOpening (H.map φ) commit heights index values path := by
   apply StateT.ext
@@ -154,7 +155,7 @@ theorem mapM_checkOpening (commit : Digest) (heights : List Nat) (index : Nat)
   rfl
 
 theorem mapM_openInput (P : Params) (logMax index : Nat) (alpha : EF)
-    (inputs : List BatchOpening) (rounds : List (Round EF)) :
+    (inputs : List (BatchOpening F)) (rounds : List (Round F EF)) :
     mapM φ H (openInput H P logMax index alpha inputs rounds) =
       openInput (H.map φ) P logMax index alpha inputs rounds := by
   simp only [openInput, MonadHom.mmap_bind, MonadHom.mmap_pure, MonadHom.mmap_forIn,
@@ -163,7 +164,7 @@ theorem mapM_openInput (P : Params) (logMax index : Nat) (alpha : EF)
   split <;> simp only [MonadHom.mmap_bind, MonadHom.mmap_pure, mapM_ensure]
 
 theorem mapM_verifyQuery (P : Params) (logMax index : Nat) (betas : List EF)
-    (commits : List Digest) (steps : List (CommitStep EF)) (ro : List (Nat × EF)) :
+    (commits : List (Digest F)) (steps : List (CommitStep F EF)) (ro : List (Nat × EF)) :
     mapM φ H (verifyQuery H P logMax index betas commits steps ro) =
       verifyQuery (H.map φ) P logMax index betas commits steps ro := by
   rcases ro with _ | ⟨r, rest⟩ <;>
@@ -172,14 +173,14 @@ theorem mapM_verifyQuery (P : Params) (logMax index : Nat) (betas : List EF)
     congr! with a
     split <;> simp only [MonadHom.mmap_ite, MonadHom.mmap_pure]
 
-theorem mapM_verifyFri (P : Params) (proof : FriProof EF) (rounds : List (Round EF)) :
+theorem mapM_verifyFri (P : Params) (proof : FriProof F EF) (rounds : List (Round F EF)) :
     mapM φ H (verifyFri H P proof rounds) = verifyFri (H.map φ) P proof rounds := by
   simp only [verifyFri, ← Array.forIn_toList, MonadHom.mmap_bind, MonadHom.mmap_pure,
     MonadHom.mmap_forIn,
     mapM_ensure, mapM_sampleExt, mapM_sampleBits, mapM_checkWitness,
     mapM_observe, mapM_observeList, mapM_observeExts, mapM_openInput, mapM_verifyQuery]
 
-theorem mapM_verifyPcs (P : Params) (rounds : List (Round EF)) (proof : FriProof EF) :
+theorem mapM_verifyPcs (P : Params) (rounds : List (Round F EF)) (proof : FriProof F EF) :
     mapM φ H (verifyPcs H P rounds proof) = verifyPcs (H.map φ) P rounds proof := by
   simp only [verifyPcs, MonadHom.mmap_bind, MonadHom.mmap_pure, MonadHom.mmap_forIn,
     mapM_observeExts, mapM_verifyFri]
@@ -189,10 +190,9 @@ end Fri
 namespace Stark
 open CompStark.Fri
 
-local notation "F" => KoalaBear.Fast.Field
 
 variable {m n : Type → Type} [Monad m] [Monad n] [LawfulMonad m] [LawfulMonad n] (φ : m →ᵐ n)
-  {EF : Type} [Challenge EF]
+  {EF : Type} [Challenge F EF]
 
 omit [LawfulMonad m] [LawfulMonad n] in
 theorem exceptT_mapHom_throw {α : Type} (e : String) :
@@ -200,11 +200,11 @@ theorem exceptT_mapHom_throw {α : Type} (e : String) :
   ExceptT.ext (φ.mmap_pure (Except.error e))
 
 omit [LawfulMonad m] [LawfulMonad n] in
-theorem exceptT_mapHom_run {α : Type} (H : Primitives m) (x : M H α) (s : H.State) :
+theorem exceptT_mapHom_run {α : Type} (H : Primitives F m) (x : M H α) (s : H.State) :
     ExceptT.mapHom φ (x.run s) = (Fri.mapM φ H x).run s := rfl
 
 /-- **The verifier is natural in its primitives.** -/
-theorem verifyWith_map (H : Primitives m) (P : Params) (A : Air) (proof : Proof EF)
+theorem verifyWith_map (H : Primitives F m) (P : Params) (A : Air F) (proof : Proof F EF)
     (pis : List F) :
     φ (verifyWith H P A proof pis) = verifyWith (H.map φ) P A proof pis := by
   change (ExceptT.mapHom φ _).run = _

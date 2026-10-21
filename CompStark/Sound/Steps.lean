@@ -24,16 +24,14 @@ own files:
 namespace CompStark.Sound
 open CompStark.Stark CompStark.Iop Polynomial
 
-local notation "𝔽" => KoalaBear.Field
-local notation "F" => KoalaBear.Fast.Field
 
-variable {EF : Type} [Challenge EF]
+variable {F : Type} [BaseField F] {EF : Type} [Challenge F EF]
 
 local notation "𝕂" => Challenge.Spec EF
 
 /-- The DEEP quotient of a word `f` with claimed value `y` at `z`: `(y - f(x)) / (z - x)`. -/
-noncomputable def deepComponent (S : Setup EF) (f : S.Point → 𝔽) (z y : 𝕂) : S.Point → 𝕂 :=
-  fun i ↦ (y - algebraMap 𝔽 𝕂 (f i)) / (z - S.domain i)
+noncomputable def deepComponent (S : Setup EF) (f : S.Point → F) (z y : 𝕂) : S.Point → 𝕂 :=
+  fun i ↦ (y - algebraMap F 𝕂 (f i)) / (z - S.domain i)
 
 /-- `ζ` lies off the trace domain `H = ⟨ω_n⟩`: the check's denominators `Z_H(ζ)`, `ζ - 1`,
 `ζ - ω_n⁻¹` are nonzero. -/
@@ -56,8 +54,8 @@ def BatchingStep (S : Setup EF) : Prop :=
       / Fintype.card 𝕂 ≤ batchingError S δ δ'
 
 /-- The claimed values of polynomials `trace` and `quotient`: the true ones at `ζ`. -/
-noncomputable def trueOpenings (S : Setup EF) (trace : Fin S.air.width → 𝔽[X])
-    (quotient : Fin S.chunks → Fin (Challenge.d EF) → 𝔽[X]) (ζ : 𝕂) : Openings S where
+noncomputable def trueOpenings (S : Setup EF) (trace : Fin S.air.width → F[X])
+    (quotient : Fin S.chunks → Fin (Challenge.d EF) → F[X]) (ζ : 𝕂) : Openings S where
   traceAt j := aeval ζ (trace j)
   traceNext j := aeval (ζ * rootOfUnity S.logN) (trace j)
   quotientAt c e := aeval ζ (quotient c e)
@@ -81,7 +79,7 @@ points: a candidate trace and quotient of the list decoding. The two points lost
 def DecodingStep (S : Setup EF) : Prop :=
   ∀ (δ : NNReal), (δ : ℝ) < 1 - S.rate → ∀ (prover : Prover S) (α ζ : 𝕂), OffTraceDomain S ζ →
     NearTogether S ((δ : ℝ) - 2 / S.size) (components prover α ζ) →
-    ∃ (trace : Fin S.air.width → 𝔽[X]) (quotient : Fin S.chunks → Fin (Challenge.d EF) → 𝔽[X]),
+    ∃ (trace : Fin S.air.width → F[X]) (quotient : Fin S.chunks → Fin (Challenge.d EF) → F[X]),
       (∀ j, (trace j).natDegree ≤ S.n) ∧ Agree S δ prover.trace trace ∧
       (∀ c e, (quotient c e).natDegree ≤ S.n) ∧
       Agree S δ (fun ce : Fin S.chunks × Fin (Challenge.d EF) ↦ prover.quotient α ce.1 ce.2)
@@ -93,11 +91,11 @@ open Classical in
 of `α`, whatever the quotient's polynomials, the constraints hold at at most `identityDegree`
 values of `ζ` off the trace domain, with the true values. -/
 def AlgebraStep (S : Setup EF) : Prop :=
-  ∀ (publicValues : List F) (trace : Fin S.air.width → 𝔽[X]),
+  ∀ (publicValues : List F) (trace : Fin S.air.width → F[X]),
     (∀ j, (trace j).natDegree ≤ S.n) →
     ¬ S.air.Satisfied S.logN (traceOf S trace) publicValues →
     ∃ bad : Finset 𝕂, bad.card ≤ S.air.constraints.length - 1 ∧
-      ∀ α ∉ bad, ∀ quotient : Fin S.chunks → Fin (Challenge.d EF) → 𝔽[X],
+      ∀ α ∉ bad, ∀ quotient : Fin S.chunks → Fin (Challenge.d EF) → F[X],
         (∀ c e, (quotient c e).natDegree ≤ S.n) →
         (Finset.univ.filter fun ζ : 𝕂 ↦ OffTraceDomain S ζ ∧
           ConstraintsHoldAt S publicValues α ζ (trueOpenings S trace quotient ζ)).card ≤

@@ -23,34 +23,32 @@ at the query's point and the initial oracle there is the query's batched value.
 
 @[expose] public section
 namespace CompStark.Ni
-open CompStark.Stark CompStark.Fri CompStark.Sound Polynomial Montgomery.Native32 Fri.Spec
+open CompStark.Stark CompStark.Fri CompStark.Sound Polynomial Fri.Spec
 
-local notation "F" => KoalaBear.Fast.Field
-local notation "𝔽" => KoalaBear.Field
 
-variable {EF : Type} [Challenge EF]
+variable {F : Type} [BaseField F] {EF : Type} [Challenge F EF]
 
 local notation "𝕂" => Challenge.Spec EF
 
 /-! ### Extraction -/
 
 section Extract
-variable (cache : Merkle.Cache F Digest)
+variable (cache : Merkle.Cache F (Digest F))
 
 /-- Accepted openings against `root` of matrices of one height open the rows extracted from
 `cache`. -/
-def Binding (H : Primitives Id) (root : Digest) : Prop :=
-  ∀ (n k i : Nat) (values : List (List F)) (path : List Digest), 0 < n →
+def Binding (H : Primitives F Id) (root : Digest F) : Prop :=
+  ∀ (n k i : Nat) (values : List (List F)) (path : List (Digest F)), 0 < n →
     verifyBatchH H root (List.replicate n (2 ^ k)) i values path = true →
       Merkle.extractRow cache k i root = some values.flatten
 
 /-- The row extracted at leaf `i` of the depth-`k` tree under `root`, empty if there is none. -/
-noncomputable def leafRow (k i : Nat) (root : Digest) : List F :=
+noncomputable def leafRow (k i : Nat) (root : Digest F) : List F :=
   (Merkle.extractRow cache k i root).getD []
 
 /-- The value at index `z` of a FRI word of size `2 ^ m` folded by `2 ^ a`, committed under `root`:
 entry `rev z % 2 ^ a` of leaf `rev z >>> a`. -/
-noncomputable def friWordAt (root : Digest) (m a z : Nat) : 𝕂 :=
+noncomputable def friWordAt (root : Digest F) (m a z : Nat) : 𝕂 :=
   Challenge.toSpec ((unflatten (leafRow cache (m - a) (reverseBits z m >>> a) root)).getD
     (reverseBits z m % 2 ^ a) 0)
 
@@ -71,7 +69,7 @@ noncomputable def finalPoly (coeffs : Array EF) : 𝕂[X] :=
     Polynomial.C (Challenge.toSpec (coeffs.getD i 0) * (S.finalShift)⁻¹ ^ i) * Polynomial.X ^ i
 
 /-- The extracted FRI oracles of commitments `commits` and final polynomial `coeffs`. -/
-noncomputable def friOracles (cache : Merkle.Cache F Digest) (commits : List Digest)
+noncomputable def friOracles (cache : Merkle.Cache F (Digest F)) (commits : List (Digest F))
     (coeffs : Array EF) : ∀ j, FinalOracleStatement S.schedule S.domain j := fun j ↦
   if h : j.val = S.lastFold + 1 then
     cast (by simp only [FinalOracleStatement, h, ↓reduceIte])
@@ -87,7 +85,7 @@ word `j`'s domain. -/
 noncomputable def foldChallenges (betas : List EF) : FinalStatement 𝕂 S.lastFold := fun j ↦
   lift gen ^ 2 ^ foldingPrefix S.schedule j.castSucc * Challenge.toSpec (betas.getD j 0)
 
-theorem committedWord_friOracles (cache : Merkle.Cache F Digest) (commits : List Digest)
+theorem committedWord_friOracles (cache : Merkle.Cache F (Digest F)) (commits : List (Digest F))
     (coeffs : Array EF) (i : Fin (S.lastFold + 1))
     (x : (S.domain.subdomain (foldingPrefix S.schedule i.castSucc)).toFinset) :
     committedWord S.schedule (friOracles S cache commits coeffs) i x =
@@ -98,7 +96,7 @@ theorem committedWord_friOracles (cache : Merkle.Cache F Digest) (commits : List
   simp only [Fin.val_castSucc, show i.val ≠ S.lastFold + 1 by omega, ↓reduceDIte]
   exact congrFun (eq_of_heq ((cast_heq _ _).trans (cast_heq _ _))) x
 
-theorem finalPolynomial_friOracles (cache : Merkle.Cache F Digest) (commits : List Digest)
+theorem finalPolynomial_friOracles (cache : Merkle.Cache F (Digest F)) (commits : List (Digest F))
     (coeffs : Array EF) :
     finalPolynomial S.schedule (friOracles S cache commits coeffs) =
       CompPoly.CPolynomial.ringEquiv.symm (finalPoly S coeffs) := by
@@ -107,7 +105,7 @@ theorem finalPolynomial_friOracles (cache : Merkle.Cache F Digest) (commits : Li
   exact eq_of_heq ((cast_heq _ _).trans (cast_heq _ _))
 
 /-- The extracted word `i` at the point of index `z` of its domain. -/
-theorem committedFunction_friOracles (cache : Merkle.Cache F Digest) (commits : List Digest)
+theorem committedFunction_friOracles (cache : Merkle.Cache F (Digest F)) (commits : List (Digest F))
     (coeffs : Array EF) (i : Fin (S.lastFold + 1))
     (z : Fin (2 ^ (S.logSize - foldingPrefix S.schedule i.castSucc))) :
     committedFunction S.schedule (friOracles S cache commits coeffs) i.castSucc
@@ -120,7 +118,7 @@ theorem committedFunction_friOracles (cache : Merkle.Cache F Digest) (commits : 
 
 /-! ### A fold's opened group is the extracted word -/
 
-theorem groupOf_getD (s : CommitStep EF) (index : Nat) (eval : EF) (k : Nat)
+theorem groupOf_getD (s : CommitStep F EF) (index : Nat) (eval : EF) (k : Nat)
     (hk : k < 2 ^ s.logArity) :
     (groupOf s index eval).getD k 0 =
       if k < index % 2 ^ s.logArity then s.siblings.getD k 0
@@ -128,19 +126,19 @@ theorem groupOf_getD (s : CommitStep EF) (index : Nat) (eval : EF) (k : Nat)
   rw [groupOf, List.getD_eq_getElem _ _ (by rw [List.length_map, List.length_range]; exact hk),
     List.getElem_map, List.getElem_range]
 
-theorem groupOf_pos (s : CommitStep EF) (index : Nat) (eval : EF) :
+theorem groupOf_pos (s : CommitStep F EF) (index : Nat) (eval : EF) :
     (groupOf s index eval).getD (index % 2 ^ s.logArity) 0 = eval := by
   rw [groupOf_getD s index eval _ (Nat.mod_lt _ (Nat.two_pow_pos _))]
   simp only [lt_irrefl, ↓reduceIte]
 
-theorem length_groupOf (s : CommitStep EF) (index : Nat) (eval : EF) :
+theorem length_groupOf (s : CommitStep F EF) (index : Nat) (eval : EF) :
     (groupOf s index eval).length = 2 ^ s.logArity := by
   rw [groupOf, List.length_map, List.length_range]
 
 /-- **An accepted fold opens the extracted word.** If fold `x` passes its checks at index `I` of
 height `2 ^ m` and its commitment binds, the extracted word holds the opened group around `I`. -/
-theorem friWordAt_group (cache : Merkle.Cache F Digest) (H : Primitives Id)
-    (x : (EF × Digest) × CommitStep EF) (e : EF) (I m : Nat) (hI : I < 2 ^ m)
+theorem friWordAt_group (cache : Merkle.Cache F (Digest F)) (H : Primitives F Id)
+    (x : (EF × Digest F) × CommitStep F EF) (e : EF) (I m : Nat) (hI : I < 2 ^ m)
     (ha : x.2.logArity ≤ m) (hok : StepOk H x (e, I, m)) (hbind : Binding cache H x.1.2)
     (k : Nat) (hk : k < 2 ^ x.2.logArity) :
     friWordAt cache x.1.2 m x.2.logArity
@@ -161,9 +159,9 @@ theorem friWordAt_group (cache : Merkle.Cache F Digest) (H : Primitives Id)
   have hmod : ((I >>> a) * 2 ^ a + k) % 2 ^ a = k := by
     rw [Nat.add_comm, Nat.add_mul_mod_self_right, Nat.mod_eq_of_lt hk]
   unfold friWordAt leafRow
-  rw [Complete.reverseBits_reverseBits hlt, hdiv, hmod, hrow]
+  rw [reverseBits_reverseBits hlt, hdiv, hmod, hrow]
   simp only [List.flatten_cons, List.flatten_nil, List.append_nil, Option.getD_some,
-    Complete.unflatten_flatMap]
+    unflatten_flatMap]
 
 theorem shiftRight_mul_add_mod (I a : Nat) : (I >>> a) * 2 ^ a + I % 2 ^ a = I := by
   rw [Nat.shiftRight_eq_div_pow, Nat.mul_comm]; exact Nat.div_add_mod I (2 ^ a)
@@ -171,8 +169,8 @@ theorem shiftRight_mul_add_mod (I a : Nat) : (I >>> a) * 2 ^ a + I % 2 ^ a = I :
 theorem finMod_val {m r : Nat} (hr : r < 2 ^ m) : (finMod m r).val = r := Nat.mod_eq_of_lt hr
 
 /-- An accepted fold's commitment holds the running value at the query's index. -/
-theorem friWordAt_eval (cache : Merkle.Cache F Digest) (H : Primitives Id)
-    (x : (EF × Digest) × CommitStep EF) (st : EF × Nat × Nat) (m : Nat) (hm : st.2.2 = m)
+theorem friWordAt_eval (cache : Merkle.Cache F (Digest F)) (H : Primitives F Id)
+    (x : (EF × Digest F) × CommitStep F EF) (st : EF × Nat × Nat) (m : Nat) (hm : st.2.2 = m)
     (hI : st.2.1 < 2 ^ m) (ha : x.2.logArity ≤ m) (hok : StepOk H x st)
     (hbind : Binding cache H x.1.2) :
     friWordAt cache x.1.2 m x.2.logArity (reverseBits st.2.1 m) = Challenge.toSpec st.1 := by
@@ -185,8 +183,8 @@ theorem friWordAt_eval (cache : Merkle.Cache F Digest) (H : Primitives Id)
 
 /-- An accepted fold computes ArkLib's fold of the extracted word, at the scaled challenge, at the
 `2 ^ arity`-th power of the query's point. -/
-theorem foldStep_eq_foldValue (cache : Merkle.Cache F Digest) (H : Primitives Id) (n : Nat)
-    (hn : n ≤ 24) (p : Nat) (x : (EF × Digest) × CommitStep EF) (st : EF × Nat × Nat)
+theorem foldStep_eq_foldValue (cache : Merkle.Cache F (Digest F)) (H : Primitives F Id) (n : Nat)
+    (hn : n ≤ twoAdicity F) (p : Nat) (x : (EF × Digest F) × CommitStep F EF) (st : EF × Nat × Nat)
     (hm : st.2.2 = n - p) (hI : st.2.1 < 2 ^ (n - p)) (ha : p + x.2.logArity ≤ n)
     (hok : StepOk H x st) (hbind : Binding cache H x.1.2) :
     Challenge.toSpec (foldStep x st).1 =
@@ -207,7 +205,7 @@ theorem foldStep_eq_foldValue (cache : Merkle.Cache F Digest) (H : Primitives Id
     (fun k hk ↦ by
       have hg := friWordAt_group cache H x e I (n - p) hI (by omega) hok hbind k hk
       rw [groupOf_getD _ _ _ _ hk] at hg
-      rw [← hg, finMod_val (Complete.reverseBits_lt _ _)]) (I % 2 ^ a) hpos
+      rw [← hg, finMod_val (reverseBits_lt _ _)]) (I % 2 ^ a) hpos
   rw [shiftRight_mul_add_mod] at h
   exact h
 
@@ -257,10 +255,10 @@ theorem eval_finalPoly (coeffs : Array EF) (I : Nat)
     have := S.folds; unfold Iop.Setup.logSize; omega
   have hpt : Challenge.toSpec (Ext.ofBase (powF (twoAdicGen S.logSize) (reverseBits I S.logSize)) :
       EF) = lift (twoAdicGen L ^ reverseBits I L) := by
-    rw [Challenge.toSpec_ofBase', ← lift, Fast.powF_eq, hn, Complete.reverseBits_low L _ I hI,
+    rw [Challenge.toSpec_ofBase', ← lift, powF_eq, hn, reverseBits_low L _ I hI,
       pow_mul, Nat.add_comm _ L,
-      Fast.twoAdicGen_pow L _ (by have := S.valid.twoAdic; have := S.folds; omega)]
-  rw [← Array.foldr_toList, Complete.toSpec_horner_list, Array.length_toList, hpt, finalPoly,
+      BaseField.twoAdicGen_pow (F := F) L _ (by have := S.valid.twoAdic; have := S.folds; omega)]
+  rw [← Array.foldr_toList, toSpec_horner_list, Array.length_toList, hpt, finalPoly,
     eval_finsetSum]
   refine Finset.sum_congr rfl fun i _ ↦ ?_
   rw [eval_mul, eval_C, eval_pow, eval_X, Iop.Setup.finalShift, Array.getD_eq_getD_getElem?,
@@ -273,8 +271,8 @@ theorem eval_finalPoly (coeffs : Array EF) (I : Nat)
 their checks from the batched value `e0`, against binding commitments, and whose last value is
 the final polynomial at the last index, passes every ArkLib round check of the extracted oracles
 at the extracted challenges, and the initial oracle holds `e0` at its point. -/
-theorem query_checks (cache : Merkle.Cache F Digest) (H : Primitives Id) (betas : List EF)
-    (commits : List Digest) (steps : List (CommitStep EF)) (coeffs : Array EF)
+theorem query_checks (cache : Merkle.Cache F (Digest F)) (H : Primitives F Id) (betas : List EF)
+    (commits : List (Digest F)) (steps : List (CommitStep F EF)) (coeffs : Array EF)
     (harity : steps.map (·.logArity) = S.foldArities.map PNat.val)
     (hbl : betas.length = steps.length) (hcl : commits.length = steps.length)
     (hbind : ∀ c ∈ commits, Binding cache H c) (I : Nat) (hI : I < 2 ^ S.logSize) (e0 : EF)
@@ -293,7 +291,7 @@ theorem query_checks (cache : Merkle.Cache F Digest) (H : Primitives Id) (betas 
   set n := S.logSize
   set o := friOracles S cache commits coeffs
   set z0 : S.Point := finMod n (reverseBits I n)
-  have hn : n ≤ 24 := S.valid.twoAdic
+  have hn : n ≤ twoAdicity F := S.valid.twoAdic
   have hnS : n = S.logN + S.params.logBlowup := rfl
   have hfolds := S.folds
   have hlenS : steps.length = S.lastFold + 1 := by
@@ -353,7 +351,7 @@ theorem query_checks (cache : Merkle.Cache F Digest) (H : Primitives Id) (betas 
     have hPi : P i.val = foldingPrefix S.schedule i.castSucc := hP i.val (by omega)
     have hpi := hpt i.val (by omega)
     rw [hPi] at hpi
-    rw [hpi, committedFunction_friOracles, finMod_val (Complete.reverseBits_lt _ _),
+    rw [hpi, committedFunction_friOracles, finMod_val (reverseBits_lt _ _),
       ← (hx i.val hi).1, show S.schedule i = S.schedule ⟨i.val, by omega⟩ from rfl,
       ← (hx i.val hi).2.2, ← hPi, ← (hst i.val).1]
     have ha : P i.val + l[i.val].2.logArity ≤ n := by
@@ -411,7 +409,7 @@ theorem query_checks (cache : Merkle.Cache F Digest) (H : Primitives Id) (betas 
         rw [hPK]; omega
       have hIfin := hIlt (S.lastFold + 1) (by omega)
       rw [show S.domain = cosetDomain (EF := EF) n hn from rfl, subdomain_finMod n hn _
-        (by have := hPle (S.lastFold + 1) (by omega); omega) _ (Complete.reverseBits_lt _ _),
+        (by have := hPle (S.lastFold + 1) (by omega); omega) _ (reverseBits_lt _ _),
         hL, hPK]
       rw [hL, hPK] at hIfin
       rw [eval_finalPoly S coeffs _ hIfin, show i.val + 1 = S.lastFold + 1 by omega]

@@ -5,6 +5,7 @@ Released under Apache 2.0 license as described in the file LICENSE.
 module
 
 public import CompStark.Stark.Fast.Rel
+public import CompStark.Stark.Points
 public import CompPoly.Univariate.NTTFast.Packed.CosetLdeCorrectness
 public import CompPoly.Univariate.NTT.Interpolation
 import all CompPoly.Univariate.Basic
@@ -23,54 +24,7 @@ open CompPoly.PackedRepr (encode)
 open CompPoly.CPolynomial
 open CompPoly.CPolynomial.NTTFast.Packed (LdePlan ldeSpec column powDomain)
 
-local notation "F" => KoalaBear.Fast.Field
-
-/-- `powF` is `^`. -/
-theorem powF_eq (x : F) (n : Nat) : powF x n = x ^ n := by
-  induction n using Nat.strong_induction_on generalizing x with
-  | _ n ih =>
-    cases n with
-    | zero => rw [powF, pow_zero]
-    | succ k =>
-      rw [powF, ih _ (by omega), ← sq, ← pow_mul]
-      have h := Nat.div_add_mod (k + 1) 2
-      split_ifs with hp
-      · rw [← pow_succ']
-        exact congrArg (x ^ ·) (by omega)
-      · exact congrArg (x ^ ·) (by omega)
-
-/-- The accumulator form of bit reversal is CompPoly's. -/
-theorem reverseBitsGo_eq (bits : Nat) :
-    ∀ i acc, reverseBitsGo bits i acc = NTT.Transform.bitRevAcc bits i acc := by
-  induction bits with
-  | zero => intro i acc; rfl
-  | succ bits ih =>
-    intro i acc
-    rw [reverseBitsGo, NTT.Transform.bitRevAcc, ih, Nat.mul_comm acc 2]
-
-/-- `reverseBits` is CompPoly's `bitRevNat`. -/
-theorem reverseBits_eq (i bits : Nat) : reverseBits i bits = NTT.Transform.bitRevNat bits i := by
-  rw [reverseBits, reverseBitsGo_eq, NTT.Transform.bitRevAcc_eq, Nat.zero_mul, Nat.zero_add]
-
-set_option maxRecDepth 10000 in
-/-- The canonical table holds CompPoly's Montgomery generators. -/
-theorem twoAdicGen_eq_table : ∀ n : Fin 25,
-    twoAdicGen n.val = KoalaBear.Fast.twoAdicGenerators[n.val]'(by
-      simp only [KoalaBear.Fast.twoAdicGenerators, List.length_cons, List.length_nil]; omega) := by
-  decide
-
-set_option maxRecDepth 10000 in
-/-- Each generator is the square of the next. -/
-theorem twoAdicGen_sq_table : ∀ n : Fin 24, twoAdicGen (n.val + 1) ^ 2 = twoAdicGen n.val := by
-  decide
-
-/-- `ω_{n + b} ^ 2 ^ b = ω_n`. -/
-theorem twoAdicGen_pow (n b : Nat) (h : n + b ≤ 24) :
-    twoAdicGen (n + b) ^ 2 ^ b = twoAdicGen n := by
-  induction b with
-  | zero => rw [Nat.add_zero, pow_zero, pow_one]
-  | succ b ih =>
-    rw [pow_succ', pow_mul, ← Nat.add_assoc, twoAdicGen_sq_table ⟨n + b, by omega⟩, ih (by omega)]
+local notation "F" => _root_.KoalaBear.Fast.Field
 
 /-- A plan `plan?` returns extends onto `shift · ⟨ω_N⟩`, `ω_N = twoAdicGen (logH + bits)`. -/
 theorem plan?_some {logH bits : Nat} {shift : F} {P : LdePlan}
@@ -81,7 +35,7 @@ theorem plan?_some {logH bits : Nat} {shift : F} {P : LdePlan}
   split at h
   · rename_i h24
     cases Option.some.inj h
-    exact ⟨h24, rfl, rfl, rfl, (twoAdicGen_eq_table ⟨logH + bits, by omega⟩).symm⟩
+    exact ⟨h24, rfl, rfl, rfl, (KoalaBear.twoAdicGen_eq_table ⟨logH + bits, by omega⟩).symm⟩
   · cases h
 
 /-- Polynomial evaluation of the inverse transform is the interpolant's. -/
@@ -126,11 +80,12 @@ theorem inverseSpec_column (P : LdePlan) (logH bits w j : Nat) (m : Array F)
     rw [hlogH]
   have hDω : (powDomain P.domain P.bits P.bits_le).omega = twoAdicGen logH := by
     change P.domain.omega ^ 2 ^ P.bits = _
-    rw [hω, hb, twoAdicGen_pow _ _ h24]
-  have h1 : (twoAdicGen logH)⁻¹ ^ 2 ^ logH = 1 := by
+    rw [hω, hb, BaseField.twoAdicGen_pow _ _ h24]
+  have h1 : (twoAdicGen logH : F)⁻¹ ^ 2 ^ logH = 1 := by
     rw [inv_pow, ← hDω, ← hn, inv_eq_one]
     exact (powDomain P.domain P.bits P.bits_le).primitive.pow_eq_one
-  have hmod (a : Nat) : (twoAdicGen logH)⁻¹ ^ (a % 2 ^ logH) = (twoAdicGen logH)⁻¹ ^ a := by
+  have hmod (a : Nat) :
+      (twoAdicGen logH : F)⁻¹ ^ (a % 2 ^ logH) = (twoAdicGen logH)⁻¹ ^ a := by
     conv_rhs => rw [← Nat.mod_add_div a (2 ^ logH), pow_add, pow_mul, h1, one_pow, mul_one]
   apply Array.ext
   · rw [NTT.Inverse.size_inverseSpec, Array.size_ofFn, hn]

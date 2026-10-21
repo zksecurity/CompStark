@@ -24,8 +24,10 @@ polynomial evaluates to the last entry.
 namespace CompStark.Complete
 open CompStark.Stark CompStark.Fri CompStark.KoalaBear
 
-local notation "F" => KoalaBear.Fast.Field
-variable {EF : Type} [Challenge EF]
+local notation "F" => _root_.KoalaBear.Fast.Field
+local notation "hashF" => CompStark.Hash.KoalaBear.hash F
+local notation "compF" => CompStark.Hash.KoalaBear.compress F
+variable {EF : Type} [Challenge F EF]
 
 /-! ### The verifier's monad on Poseidon2
 
@@ -34,27 +36,27 @@ Sampling bits reads the canonical value of the transcript's duplex, so it needs 
 KoalaBear's, which every step keeps. -/
 
 theorem bind_ok {α β : Type} {x : M poseidon2 α}
-    {f : α → M poseidon2 β} {t t' : Transcript} {a : α}
+    {f : α → M poseidon2 β} {t t' : Transcript F 24} {a : α}
     (h : x t = .ok (a, t')) : (x >>= f) t = f a t' := by
   show StateT.bind x f t = _
   simp only [StateT.bind, h]
   rfl
-theorem sample_bind {β : Type} (f : F → M poseidon2 β) (t : Transcript) :
+theorem sample_bind {β : Type} (f : F → M poseidon2 β) (t : Transcript F 24) :
     (sample poseidon2 >>= f) t = f t.sample.1 t.sample.2 := bind_ok rfl
-theorem sampleList_run (t : Transcript) :
+theorem sampleList_run (t : Transcript F 24) :
     ∀ k, sampleList poseidon2 k t = .ok (t.sampleList k)
   | 0 => rfl
   | k + 1 => by
     simp only [sampleList, sample_bind]
     rw [bind_ok (sampleList_run _ k)]
     rfl
-theorem sampleExt_run (t : Transcript) :
+theorem sampleExt_run (t : Transcript F 24) :
     (sampleExt poseidon2 : M poseidon2 EF) t =
       .ok ((t.sampleExtValue : EF), (Transcript.sampleExtState EF t)) := by
   simp only [sampleExt, Transcript.sampleExtValue, Transcript.sampleExtState]
   rw [bind_ok (sampleList_run t _)]
   rfl
-theorem sampleBits_run (t : Transcript) (bits : Nat) (hd : t.duplex = KoalaBear.duplex) :
+theorem sampleBits_run (t : Transcript F 24) (bits : Nat) (hd : t.duplex = KoalaBear.duplex) :
     sampleBits poseidon2 bits t = .ok (t.sampleBits bits) := by
   unfold sampleBits Transcript.sampleBits Challenger.sampleBits
   rw [sample_bind]
@@ -63,8 +65,8 @@ theorem sampleBits_run (t : Transcript) (bits : Nat) (hd : t.duplex = KoalaBear.
   generalize Challenger.sample KoalaBear.duplex t.state = p
   obtain ⟨x, c⟩ := p
   rfl
-theorem duplex_observe (t : Transcript) (x : F) : (t.observe x).duplex = t.duplex := rfl
-theorem checkWitness_run (t : Transcript) (bits : Nat) (w : F) (hd : t.duplex = KoalaBear.duplex) :
+theorem duplex_observe (t : Transcript F 24) (x : F) : (t.observe x).duplex = t.duplex := rfl
+theorem checkWitness_run (t : Transcript F 24) (bits : Nat) (w : F) (hd : t.duplex = KoalaBear.duplex) :
     checkWitness poseidon2 bits w t = .ok (t.checkWitness bits w) := by
   unfold checkWitness Transcript.checkWitness Challenger.checkWitness
   split
@@ -76,23 +78,23 @@ theorem checkWitness_run (t : Transcript) (bits : Nat) (w : F) (hd : t.duplex = 
     generalize Challenger.sampleBits t.duplex (Challenger.observe t.duplex t.state w) bits = p
     obtain ⟨b, c⟩ := p
     rfl
-theorem foldl_observe (t : Transcript) (xs : List F) :
+theorem foldl_observe (t : Transcript F 24) (xs : List F) :
     xs.foldl Transcript.observe t = t.observeList xs := by
   unfold Transcript.observeList Challenger.observeList
   induction xs generalizing t with
   | nil => rfl
   | cons x xs ih => rw [List.foldl_cons, ih]; rfl
-theorem observeList_run (t : Transcript) (xs : List F) :
+theorem observeList_run (t : Transcript F 24) (xs : List F) :
     observeList poseidon2 xs t = .ok ((), t.observeList xs) := by
   rw [← foldl_observe]; rfl
-theorem observeExts_run (t : Transcript) (xs : List EF) :
+theorem observeExts_run (t : Transcript F 24) (xs : List EF) :
     observeExts poseidon2 xs t = .ok ((), t.observeExts xs) := by
   unfold observeExts
   show Except.ok ((), xs.foldl (fun s x ↦ (Ext.coeffs x).foldl Transcript.observe s) t) = _
   simp only [foldl_observe]
   rfl
 
-theorem prun_bind {α β : Type} (x : PM α) (f : α → PM β) (t : Transcript) :
+theorem prun_bind {α β : Type} (x : PM F 24 α) (f : α → PM F 24 β) (t : Transcript F 24) :
     (x >>= f).run t = (f (x.run t).1).run (x.run t).2 := rfl
 
 theorem ensure_true (msg : String) : ensure (H := poseidon2) true msg = pure () := rfl
@@ -116,25 +118,25 @@ def addNext (la : Nat) (beta : EF) (f : Array EF) (rest : List (Array EF)) :
 
 /-- A commit round: its log arity, the folded vector and remaining inputs it starts from, the
 transcript before it, its grinding witness and its folding challenge. -/
-structure Rd (EF : Type) [Challenge EF] where
+structure Rd (EF : Type) [Challenge F EF] where
   la : Nat
   folded : Array EF
   rest : List (Array EF)
-  t : Transcript
+  t : Transcript F 24
   w : F
   beta : EF
 
 /-- A round's commitment. -/
-def Rd.c (r : Rd EF) : Committed := Committed.ofMats [(Backend.spec EF).leaves (2 ^ r.la) r.folded]
+def Rd.c (r : Rd EF) : Committed F := Committed.ofMats hashF compF [(specBackend EF).leaves (2 ^ r.la) r.folded]
 
 /-- The commit rounds of the specification prover, the final vector and transcript. -/
 def chain (P : Params) :
-    Nat → Array EF → List (Array EF) → Transcript → List (Rd EF) × Array EF × Transcript
+    Nat → Array EF → List (Array EF) → Transcript F 24 → List (Rd EF) × Array EF × Transcript F 24
   | 0, f, _, t => ([], f, t)
   | fuel + 1, f, rest, t =>
     if f.size ≤ 2 ^ (P.logBlowup + P.logFinalPolyLen) then ([], f, t) else
     let la := logArityFor P (Nat.log2 f.size) (rest.head?.map (Nat.log2 ·.size))
-    let t1 := t.observeList (Committed.ofMats [(Backend.spec EF).leaves (2 ^ la) f]).root.toList
+    let t1 := t.observeList (Committed.ofMats hashF compF [(specBackend EF).leaves (2 ^ la) f]).root.toList
     let t2 := (t1.grind P.commitPowBits).2
     let beta := (t2.sampleExtValue : EF)
     let (f', rest') := addNext la beta (foldOnce la beta f) rest
@@ -142,13 +144,13 @@ def chain (P : Params) :
     (⟨la, f, rest, t, (t1.grind P.commitPowBits).1, beta⟩ :: r.1, r.2)
 
 /-- Record a round in the commit phase's result. -/
-def pushRd (cp : CommitPhase EF Committed) (r : Rd EF) : CommitPhase EF Committed :=
+def pushRd (cp : CommitPhase F EF (Committed F)) (r : Rd EF) : CommitPhase F EF (Committed F) :=
   ⟨cp.commits.push r.c.root, cp.data ++ [r.c], cp.witnesses.push r.w, cp.arities.push r.la,
     cp.finalPoly⟩
 
 theorem commitRounds_run (P : Params) (fuel : Nat) :
-    ∀ (f : Array EF) (rest : List (Array EF)) (cp : CommitPhase EF Committed) (t : Transcript),
-      (commitRounds (Backend.spec EF) P fuel f rest cp).run t =
+    ∀ (f : Array EF) (rest : List (Array EF)) (cp : CommitPhase F EF (Committed F)) (t : Transcript F 24),
+      (commitRounds (specBackend EF) P fuel f rest cp).run t =
         let r := chain P fuel f rest t
         ((r.2.1, r.1.foldl pushRd cp), r.2.2) := by
   induction fuel with
@@ -162,16 +164,16 @@ theorem commitRounds_run (P : Params) (fuel : Nat) :
     · have hc : chain P (fuel + 1) f rest t = ([], f, t) := by rw [chain, ite_eq_left hs]
       rw [hc]
       simp only [commitRounds]
-      rw [ite_eq_left (show (Backend.spec EF).size f ≤ _ from hs)]
+      rw [ite_eq_left (show (specBackend EF).size f ≤ _ from hs)]
       rfl
     · rw [chain, ite_eq_right hs]
       simp only [commitRounds]
-      rw [ite_eq_right (show ¬ (Backend.spec EF).size f ≤ _ from hs)]
+      rw [ite_eq_right (show ¬ (specBackend EF).size f ≤ _ from hs)]
       rw [prun_bind, prun_bind, prun_bind]
       cases rest with
       | nil => exact ih _ _ _ _
       | cons v vs =>
-        dsimp only [addNext, foldOnce, Backend.spec, id]
+        dsimp only [addNext, foldOnce, specBackend, Backend.spec, id]
         split
         · rename_i h
           simp only [h, ite_true]
@@ -223,7 +225,7 @@ theorem foldOnce_eq (la h : Nat) (beta : EF) (f : Array EF) (hs : f.size = 2 ^ h
     apply Array.ext (by rw [size_foldPairs, Array.size_ofFn])
     intro i h1 h2
     rw [Array.size_ofFn] at h2
-    rw [← getD_lt _ i h1, foldPairs_getD f beta (h - 1) (by omega) i h2, Array.getElem_ofFn]
+    rw [← getD_lt _ i h1, foldPairs_getD f beta (h - 1) (by omega24) i h2, Array.getElem_ofFn]
   · rfl
 
 theorem size_foldOnce (la h : Nat) (beta : EF) (f : Array EF) (hs : f.size = 2 ^ h)
@@ -234,7 +236,7 @@ theorem lowDegree_foldOnce (P : Params) (la h : Nat) (beta : EF) (f : Array EF)
     (hf : LowDegree h (h - P.logBlowup) f) (hla : la ≤ h - P.logBlowup) (hla1 : 1 ≤ la) :
     LowDegree (h - la) (h - la - P.logBlowup) (foldOnce la beta f) := by
   have h24 := hf.2.1
-  rw [foldOnce_eq la h beta f hf.1 (by omega) h24 hla1]
+  rw [foldOnce_eq la h beta f hf.1 (by omega24) h24 hla1]
   refine lowDegree_foldRows f (h - la) la (h - la - P.logBlowup) beta ?_
   rwa [show h - la + la = h by omega, show h - la - P.logBlowup + la = h - P.logBlowup by omega]
 
@@ -253,7 +255,7 @@ theorem good_step (P : Params) (hP : 0 < P.maxLogArity) {h : Nat} {f : Array EF}
     exact (hrest v (List.mem_of_mem_head? hv)).1)
   intro la
   refine ⟨hb.1, hb.2.1, ?_⟩
-  have hfo := lowDegree_foldOnce P la h beta f hf (by omega) hb.1
+  have hfo := lowDegree_foldOnce P la h beta f hf (by omega24) hb.1
   have hsz : (foldOnce la beta f).size = 2 ^ (h - la) := hfo.1
   cases rest with
   | nil => exact ⟨by omega, hfo, List.Pairwise.nil, fun _ hv ↦ absurd hv List.not_mem_nil⟩
@@ -291,7 +293,7 @@ theorem good_step (P : Params) (hP : 0 < P.maxLogArity) {h : Nat} {f : Array EF}
 /-- The chain ends at the final height with a low-degree vector, after folding by the height's
 excess. -/
 theorem chain_final (P : Params) (hP : 0 < P.maxLogArity) (fuel : Nat) :
-    ∀ (h : Nat) (f : Array EF) (rest : List (Array EF)) (t : Transcript), Good P h f rest →
+    ∀ (h : Nat) (f : Array EF) (rest : List (Array EF)) (t : Transcript F 24), Good P h f rest →
       h - (P.logBlowup + P.logFinalPolyLen) ≤ fuel →
       LowDegree (P.logBlowup + P.logFinalPolyLen) P.logFinalPolyLen (chain P fuel f rest t).2.1 ∧
         ((chain P fuel f rest t).1.map (·.la)).sum = h - (P.logBlowup + P.logFinalPolyLen) := by
@@ -319,12 +321,12 @@ theorem chain_final (P : Params) (hP : 0 < P.maxLogArity) (fuel : Nat) :
     · rw [chain, ite_eq_right hs]
       have hgt : P.logBlowup + P.logFinalPolyLen < h := by
         by_contra hc
-        exact hs (by rw [hsz]; exact Nat.pow_le_pow_right (by decide) (by omega))
+        exact hs (by rw [hsz]; exact Nat.pow_le_pow_right (by decide) (by omega24))
       rw [hsz, Nat.log2_two_pow]
       dsimp only
       generalize (((Transcript.observeList _ _).grind P.commitPowBits).2.sampleExtValue : EF) = beta
       obtain ⟨h1, h2, hg'⟩ := good_step P hP hg hgt beta
-      have := fun t' ↦ ih _ _ _ t' hg' (by omega)
+      have := fun t' ↦ ih _ _ _ t' hg' (by omega24)
       refine ⟨(this _).1, ?_⟩
       rw [List.map_cons, List.sum_cons, (this _).2]
       dsimp only
@@ -340,7 +342,7 @@ theorem foldArities_succ (a r : Nat) :
 
 /-- With one input, the commit rounds fold by Plonky3's schedule `foldArities`. -/
 theorem chain_arities (P : Params) (hP : 0 < P.maxLogArity) (fuel : Nat) :
-    ∀ (h : Nat) (f : Array EF) (t : Transcript), Good P h f [] →
+    ∀ (h : Nat) (f : Array EF) (t : Transcript F 24), Good P h f [] →
       h - (P.logBlowup + P.logFinalPolyLen) ≤ fuel →
       (chain P fuel f [] t).1.map (·.la) =
         foldArities P.maxLogArity (h - (P.logBlowup + P.logFinalPolyLen)) := by
@@ -362,7 +364,7 @@ theorem chain_arities (P : Params) (hP : 0 < P.maxLogArity) (fuel : Nat) :
     · rw [chain, ite_eq_right hs]
       have hgt : P.logBlowup + P.logFinalPolyLen < h := by
         by_contra hc
-        exact hs (by rw [hsz]; exact Nat.pow_le_pow_right (by decide) (by omega))
+        exact hs (by rw [hsz]; exact Nat.pow_le_pow_right (by decide) (by omega24))
       rw [hsz, Nat.log2_two_pow]
       dsimp only
       generalize (((Transcript.observeList _ _).grind P.commitPowBits).2.sampleExtValue : EF) = beta
@@ -371,7 +373,7 @@ theorem chain_arities (P : Params) (hP : 0 < P.maxLogArity) (fuel : Nat) :
           (h - (P.logBlowup + P.logFinalPolyLen) - 1 + 1)) := by
         simp only [logArityFor]; omega
       simp only [List.head?_nil, Option.map_none, addNext_nil] at h1 h2 hg' ⊢
-      rw [List.map_cons, ih _ _ _ hg' (by omega),
+      rw [List.map_cons, ih _ _ _ hg' (by omega24),
         show h - (P.logBlowup + P.logFinalPolyLen) =
           h - (P.logBlowup + P.logFinalPolyLen) - 1 + 1 by omega, foldArities_succ, ← hla]
       congr 2
@@ -382,14 +384,14 @@ theorem chain_arities (P : Params) (hP : 0 < P.maxLogArity) (fuel : Nat) :
 Observing and sampling keep the flag, and grinding only sets it, so a final transcript without
 the flag had every grind of the run check. -/
 
-theorem flag_observeList (t : Transcript) (xs : List F) :
+theorem flag_observeList (t : Transcript F 24) (xs : List F) :
     (t.observeList xs).grindFailed = t.grindFailed := by
   unfold Transcript.observeList; dsimp only
 
-theorem flag_observe (t : Transcript) (x : F) : (t.observe x).grindFailed = t.grindFailed := by
+theorem flag_observe (t : Transcript F 24) (x : F) : (t.observe x).grindFailed = t.grindFailed := by
   unfold Transcript.observe; dsimp only
 
-theorem flag_observeExts (t : Transcript) (xs : List EF) :
+theorem flag_observeExts (t : Transcript F 24) (xs : List EF) :
     (t.observeExts xs).grindFailed = t.grindFailed := by
   unfold Transcript.observeExts
   induction xs generalizing t with
@@ -398,31 +400,31 @@ theorem flag_observeExts (t : Transcript) (xs : List EF) :
     rw [List.foldl_cons, ih]
     unfold Transcript.observeExt Transcript.observeList; dsimp only
 
-theorem flag_sampleList (t : Transcript) :
+theorem flag_sampleList (t : Transcript F 24) :
     ∀ k, (t.sampleList k).2.grindFailed = t.grindFailed
   | 0 => rfl
   | k + 1 => (flag_sampleList _ k).trans rfl
 
-theorem flag_sampleExt (t : Transcript) :
+theorem flag_sampleExt (t : Transcript F 24) :
     (Transcript.sampleExtState EF t).grindFailed = t.grindFailed := by
   unfold Transcript.sampleExtState; exact flag_sampleList t _
 
-theorem flag_sampleBits (t : Transcript) (bits : Nat) :
+theorem flag_sampleBits (t : Transcript F 24) (bits : Nat) :
     (t.sampleBits bits).2.grindFailed = t.grindFailed := by
   unfold Transcript.sampleBits; dsimp only
 
 theorem flag_foldl_observe (l : List Nat) :
-    ∀ t : Transcript, (l.foldl (fun t (a : Nat) ↦ t.observe (a : F)) t).grindFailed =
+    ∀ t : Transcript F 24, (l.foldl (fun t (a : Nat) ↦ t.observe (a : F)) t).grindFailed =
       t.grindFailed := by
   induction l with
   | nil => intro t; rfl
   | cons a l ih => intro t; rw [List.foldl_cons, ih, flag_observe]
 
-theorem flag_checkWitness (t : Transcript) (bits : Nat) (w : F) :
+theorem flag_checkWitness (t : Transcript F 24) (bits : Nat) (w : F) :
     (t.checkWitness bits w).2.grindFailed = t.grindFailed := by
   unfold Transcript.checkWitness; dsimp only
 
-theorem grind_of_ne (t : Transcript) (bits : Nat) (h0 : bits ≠ 0) :
+theorem grind_of_ne (t : Transcript F 24) (bits : Nat) (h0 : bits ≠ 0) :
     t.grind bits = (t.grinder t.state bits,
       { (t.checkWitness bits (t.grinder t.state bits)).2 with
         grindFailed := (t.checkWitness bits (t.grinder t.state bits)).2.grindFailed ||
@@ -431,7 +433,7 @@ theorem grind_of_ne (t : Transcript) (bits : Nat) (h0 : bits ≠ 0) :
   rw [ite_eq_right h0]
 
 /-- Without the flag after a grind, the transcript had no flag before it. -/
-theorem flag_grind (t : Transcript) (bits : Nat) (h : (t.grind bits).2.grindFailed = false) :
+theorem flag_grind (t : Transcript F 24) (bits : Nat) (h : (t.grind bits).2.grindFailed = false) :
     t.grindFailed = false := by
   by_cases h0 : bits = 0
   · subst h0; exact h
@@ -440,7 +442,7 @@ theorem flag_grind (t : Transcript) (bits : Nat) (h : (t.grind bits).2.grindFail
     exact (Bool.or_eq_false_iff.mp h).1
 
 /-- A grind that leaves no flag found a witness that checks. -/
-theorem checkWitness_grind (t : Transcript) (bits : Nat)
+theorem checkWitness_grind (t : Transcript F 24) (bits : Nat)
     (h : (t.grind bits).2.grindFailed = false) :
     t.checkWitness bits (t.grind bits).1 = (true, (t.grind bits).2) := by
   by_cases h0 : bits = 0
@@ -457,46 +459,46 @@ theorem checkWitness_grind (t : Transcript) (bits : Nat)
 Every step keeps the transcript's duplex, so a run from `Transcript.init` stays on KoalaBear's,
 as the verifier's `sampleBits` and `checkWitness` need. -/
 
-theorem duplex_observeList (t : Transcript) (xs : List F) :
+theorem duplex_observeList (t : Transcript F 24) (xs : List F) :
     (t.observeList xs).duplex = t.duplex := rfl
 
-theorem duplex_observeExts (t : Transcript) (xs : List EF) :
+theorem duplex_observeExts (t : Transcript F 24) (xs : List EF) :
     (t.observeExts xs).duplex = t.duplex := by
   unfold Transcript.observeExts
   induction xs generalizing t with
   | nil => rfl
   | cons x xs ih => rw [List.foldl_cons, ih]; rfl
 
-theorem duplex_sampleList (t : Transcript) : ∀ k, (t.sampleList k).2.duplex = t.duplex
+theorem duplex_sampleList (t : Transcript F 24) : ∀ k, (t.sampleList k).2.duplex = t.duplex
   | 0 => rfl
   | k + 1 => (duplex_sampleList _ k).trans rfl
 
-theorem duplex_sampleExt (t : Transcript) :
+theorem duplex_sampleExt (t : Transcript F 24) :
     (Transcript.sampleExtState EF t).duplex = t.duplex := by
   unfold Transcript.sampleExtState; exact duplex_sampleList t _
 
-theorem duplex_sampleBits (t : Transcript) (bits : Nat) :
+theorem duplex_sampleBits (t : Transcript F 24) (bits : Nat) :
     (t.sampleBits bits).2.duplex = t.duplex := by
   unfold Transcript.sampleBits; dsimp only
 
-theorem duplex_checkWitness (t : Transcript) (bits : Nat) (w : F) :
+theorem duplex_checkWitness (t : Transcript F 24) (bits : Nat) (w : F) :
     (t.checkWitness bits w).2.duplex = t.duplex := by
   unfold Transcript.checkWitness; dsimp only
 
-theorem duplex_grind (t : Transcript) (bits : Nat) : (t.grind bits).2.duplex = t.duplex := by
+theorem duplex_grind (t : Transcript F 24) (bits : Nat) : (t.grind bits).2.duplex = t.duplex := by
   by_cases h0 : bits = 0
   · subst h0; rfl
   · rw [grind_of_ne t bits h0]
     exact duplex_checkWitness t bits (t.grinder t.state bits)
 
 theorem duplex_foldl_observe (l : List Nat) :
-    ∀ t : Transcript, (l.foldl (fun t (a : Nat) ↦ t.observe (a : F)) t).duplex = t.duplex := by
+    ∀ t : Transcript F 24, (l.foldl (fun t (a : Nat) ↦ t.observe (a : F)) t).duplex = t.duplex := by
   induction l with
   | nil => intro t; rfl
   | cons a l ih => intro t; rw [List.foldl_cons, ih]; rfl
 
 theorem duplex_chain (P : Params) (fuel : Nat) :
-    ∀ (f : Array EF) (rest : List (Array EF)) (t : Transcript),
+    ∀ (f : Array EF) (rest : List (Array EF)) (t : Transcript F 24),
       (chain P fuel f rest t).2.2.duplex = t.duplex := by
   induction fuel with
   | zero => intro f rest t; rfl
@@ -509,13 +511,13 @@ theorem duplex_chain (P : Params) (fuel : Nat) :
       rw [ih, duplex_sampleExt, duplex_grind, duplex_observeList]
 
 theorem forIn_cons_ok {α σ : Type} (a : α) (l : List α) (b b' : σ)
-    (body : α → σ → M poseidon2 (ForInStep σ)) (t t' : Transcript)
+    (body : α → σ → M poseidon2 (ForInStep σ)) (t t' : Transcript F 24)
     (h : body a b t = .ok (.yield b', t')) : forIn (a :: l) b body t = forIn l b' body t' := by
   rw [List.forIn_cons, bind_ok h]
 
 /-- Without the flag after the commit rounds, there was none before them. -/
 theorem flag_chain (P : Params) (fuel : Nat) :
-    ∀ (f : Array EF) (rest : List (Array EF)) (t : Transcript),
+    ∀ (f : Array EF) (rest : List (Array EF)) (t : Transcript F 24),
       (chain P fuel f rest t).2.2.grindFailed = false → t.grindFailed = false := by
   induction fuel with
   | zero => intro f rest t h; exact h
@@ -532,7 +534,7 @@ theorem flag_chain (P : Params) (fuel : Nat) :
 /-! ### The verifier's commit loop -/
 
 /-- The body of the verifier's loop over the commitments. -/
-def commitBody (P : Params) (c : Digest) (w : F) (betas : Array EF) :
+def commitBody (P : Params) (c : Digest F) (w : F) (betas : Array EF) :
     M poseidon2 (ForInStep (Array EF)) :=
   do
   observeList poseidon2 c.toList
@@ -541,7 +543,7 @@ def commitBody (P : Params) (c : Digest) (w : F) (betas : Array EF) :
   let beta ← (sampleExt poseidon2 : M poseidon2 EF)
   pure (ForInStep.yield (betas.push beta))
 
-theorem commitBody_run (P : Params) (c : Digest) (w : F) (b : Array EF) (t t2 : Transcript)
+theorem commitBody_run (P : Params) (c : Digest F) (w : F) (b : Array EF) (t t2 : Transcript F 24)
     (hd : t.duplex = KoalaBear.duplex)
     (h : (t.observeList c.toList).checkWitness P.commitPowBits w = (true, t2)) :
     commitBody P c w b t = .ok (.yield (b.push (t2.sampleExtValue : EF)),
@@ -556,7 +558,7 @@ theorem commitBody_run (P : Params) (c : Digest) (w : F) (b : Array EF) (t t2 : 
 /-- The verifier observes the prover's commitments, its witnesses check, and it samples the
 prover's folding challenges. -/
 theorem commit_loop (P : Params)
-    (body : Digest × F → Array EF → M poseidon2 (ForInStep (Array EF)))
+    (body : Digest F × F → Array EF → M poseidon2 (ForInStep (Array EF)))
     (hbody : ∀ c w b, body (c, w) b = commitBody P c w b) (fuel : Nat) :
     ∀ f rest t betas, t.duplex = KoalaBear.duplex →
       (chain P fuel f rest t).2.2.grindFailed = false →
@@ -589,7 +591,7 @@ theorem commit_loop (P : Params)
       rw [forIn_cons_ok _ _ _ _ _ _ _ (by
         rw [hbody]
         exact commitBody_run P _ _ _ t _ hd (by
-          show (t.observeList (Committed.ofMats [(Backend.spec EF).leaves (2 ^ la) f]).root.toList
+          show (t.observeList (Committed.ofMats hashF compF [(specBackend EF).leaves (2 ^ la) f]).root.toList
             ).checkWitness P.commitPowBits (t1.grind P.commitPowBits).1 = _
           rw [ht1]; exact checkWitness_grind _ _ hg1)),
         ih _ _ _ _ hd1 ht]
@@ -600,7 +602,7 @@ theorem commit_loop (P : Params)
 /-! ### The verifier's fold loop -/
 
 /-- The body of the verifier's loop over a query's folds. -/
-def foldBody {K : Type} [Challenge K] (beta : K) (commit : Digest) (s : CommitStep K)
+def foldBody {K : Type} [Challenge F K] (beta : K) (commit : Digest F) (s : CommitStep F K)
     (ro : List (Nat × K)) (eval : K) (index logH : Nat) :
     M poseidon2 (ForInStep (List (Nat × K) × K × Nat × Nat)) := do
   let arity := 2 ^ s.logArity
@@ -629,8 +631,8 @@ def foldNext (beta : EF) (la : Nat) (ro : List (Nat × EF)) (eval : EF) (index l
     else (ro, eval, index, logFolded)
   | [] => (ro, eval, index, logFolded)
 
-theorem foldBody_run (beta : EF) (commit : Digest) (s : CommitStep EF) (ro : List (Nat × EF))
-    (eval : EF) (index logH : Nat) (t : Transcript) (G : List EF)
+theorem foldBody_run (beta : EF) (commit : Digest F) (s : CommitStep F EF) (ro : List (Nat × EF))
+    (eval : EF) (index logH : Nat) (t : Transcript F 24) (G : List EF)
     (h1 : s.siblings.size = 2 ^ s.logArity - 1)
     (h2 : (List.range (2 ^ s.logArity)).map (fun j ↦
       if j < index % 2 ^ s.logArity then s.siblings.getD j 0
@@ -661,10 +663,10 @@ theorem shiftRight_shiftRight (i a b c : Nat) (hc : c ≤ b) (hb : b ≤ a) :
 theorem fold_round (P : Params) (hP : 0 < P.maxLogArity) {h : Nat} {f : Array EF}
     {rest : List (Array EF)} (hg : Good P h f rest)
     (hgt : P.logBlowup + P.logFinalPolyLen < h) (beta : EF) (index0 logMax : Nat)
-    (hidx : index0 < 2 ^ logMax) (hh : h ≤ logMax) (t : Transcript) :
+    (hidx : index0 < 2 ^ logMax) (hh : h ≤ logMax) (t : Transcript F 24) :
     let la := logArityFor P h (rest.head?.map (Nat.log2 ·.size))
     let idx := index0 >>> (logMax - h)
-    let c := Committed.ofMats [(Backend.spec EF).leaves (2 ^ la) f]
+    let c := Committed.ofMats hashF compF [(specBackend EF).leaves (2 ^ la) f]
     let o := c.openAt (idx >>> la)
     let ev := unflatten ((o.values.getD 0 #[]).toList)
     let sib := ((List.range (2 ^ la)).filter (· != idx % 2 ^ la)).map fun j ↦ ev.getD j 0
@@ -682,7 +684,7 @@ theorem fold_round (P : Params) (hP : 0 < P.maxLogArity) {h : Nat} {f : Array EF
     rw [Nat.shiftRight_eq_div_pow]
     refine Nat.div_lt_of_lt_mul ?_
     rw [← pow_add, Nat.sub_add_cancel hh]; exact hidx
-  obtain ⟨hs1, hs2, hs3⟩ := answer_round f h la idx hsz (by omega) hidx'
+  obtain ⟨hs1, hs2, hs3⟩ := answer_round f h la idx hsz (by omega24) hidx'
   rw [hs2] at hs3
   rw [foldBody_run beta c.root ⟨la, sib.toArray, o.path⟩ (rest.map (roOf index0 logMax))
     (f.getD idx 0) idx h t ((List.range (2 ^ la)).map fun k ↦ f.getD ((idx >>> la) * 2 ^ la + k) 0)
@@ -690,20 +692,20 @@ theorem fold_round (P : Params) (hP : 0 < P.maxLogArity) {h : Nat} {f : Array EF
   have hr : idx >>> la < 2 ^ (h - la) := by
     rw [Nat.shiftRight_eq_div_pow]
     refine Nat.div_lt_of_lt_mul ?_
-    rw [← pow_add, Nat.add_sub_cancel' (by omega)]; exact hidx'
+    rw [← pow_add, Nat.add_sub_cancel' (by omega24)]; exact hidx'
   have hfold : foldRow (idx >>> la) (h - la) la beta
       ((List.range (2 ^ la)).map fun k ↦ f.getD ((idx >>> la) * 2 ^ la + k) 0) =
       (foldOnce la beta f).getD (idx >>> la) 0 := by
-    rw [foldOnce_eq la h beta f hsz (by omega) h24 h1,
+    rw [foldOnce_eq la h beta f hsz (by omega24) h24 h1,
       CompPoly.CPolynomial.NTTFast.Packed.getD_ofFn_bounded _ _ hr]
   have hfo : (foldOnce la beta f).size = 2 ^ (h - la) :=
-    size_foldOnce la h beta f hsz (by omega) h24 h1
+    size_foldOnce la h beta f hsz (by omega24) h24 h1
   dsimp only
   rw [hfold]
   refine congrArg Except.ok (Prod.ext (congrArg ForInStep.yield ?_) rfl)
   show foldNext beta la (rest.map (roOf index0 logMax)) _ _ _ = _
   have hshift : idx >>> la = index0 >>> (logMax - (h - la)) :=
-    shiftRight_shiftRight index0 logMax h la (by omega) hh
+    shiftRight_shiftRight index0 logMax h la (by omega24) hh
   cases rest with
   | nil => rfl
   | cons v vs =>
@@ -729,11 +731,11 @@ theorem fold_round (P : Params) (hP : 0 < P.maxLogArity) {h : Nat} {f : Array EF
       rfl
 
 theorem answerSteps_cons (r : Rd EF) (rs : List (Rd EF)) (la : Nat) (las : List Nat) (cur : Nat) :
-    answerSteps (Backend.spec EF) ((r :: rs).map (·.c)) (la :: las) cur =
+    answerSteps (specBackend EF) ((r :: rs).map (·.c)) (la :: las) cur =
       ⟨la, (((List.range (2 ^ la)).filter (· != cur % 2 ^ la)).map fun j ↦
           (unflatten (((r.c.openAt (cur >>> la)).values.getD 0 #[]).toList)).getD j 0).toArray,
         (r.c.openAt (cur >>> la)).path⟩ ::
-          answerSteps (Backend.spec EF) (rs.map (·.c)) las (cur >>> la) :=
+          answerSteps (specBackend EF) (rs.map (·.c)) las (cur >>> la) :=
   rfl
 
 /-- At the final height no input remains. -/
@@ -748,7 +750,7 @@ theorem good_final {P : Params} {f : Array EF} {rest : List (Array EF)}
 /-- A query's folds walk the chain at the query's index and end at the final vector's entry, with
 every reduced opening consumed. -/
 theorem fold_loop (P : Params) (hP : 0 < P.maxLogArity)
-    (body : (EF × Digest) × CommitStep EF → List (Nat × EF) × EF × Nat × Nat →
+    (body : (EF × Digest F) × CommitStep F EF → List (Nat × EF) × EF × Nat × Nat →
       M poseidon2 (ForInStep (List (Nat × EF) × EF × Nat × Nat)))
     (hbody : ∀ beta commit s ro eval index logH,
       body ((beta, commit), s) (ro, eval, index, logH) = foldBody beta commit s ro eval index logH)
@@ -757,7 +759,7 @@ theorem fold_loop (P : Params) (hP : 0 < P.maxLogArity)
       h ≤ logMax →
       forIn ((((chain P fuel f rest t).1.map (·.beta)).zip
           ((chain P fuel f rest t).1.map (·.c.root))).zip
-          (answerSteps (Backend.spec EF) ((chain P fuel f rest t).1.map (·.c))
+          (answerSteps (specBackend EF) ((chain P fuel f rest t).1.map (·.c))
             ((chain P fuel f rest t).1.map (·.la)) (index0 >>> (logMax - h))))
         (rest.map (roOf index0 logMax), f.getD (index0 >>> (logMax - h)) 0,
           index0 >>> (logMax - h), h) body t' =
@@ -787,7 +789,7 @@ theorem fold_loop (P : Params) (hP : 0 < P.maxLogArity)
     · rw [chain, ite_eq_right hs]
       have hgt : P.logBlowup + P.logFinalPolyLen < h := by
         by_contra hc
-        exact hs (by rw [hsz]; exact Nat.pow_le_pow_right (by decide) (by omega))
+        exact hs (by rw [hsz]; exact Nat.pow_le_pow_right (by decide) (by omega24))
       rw [hsz, Nat.log2_two_pow]
       dsimp only
       generalize (((Transcript.observeList _ _).grind P.commitPowBits).2.sampleExtValue : EF) = beta
@@ -798,12 +800,12 @@ theorem fold_loop (P : Params) (hP : 0 < P.maxLogArity)
       rw [answerSteps_cons, List.zip_cons_cons, List.zip_cons_cons,
         forIn_cons_ok _ _ _ _ _ _ _ (by
           rw [hbody]; exact fold_round P hP hg hgt beta index0 logMax hidx hh t'),
-        shiftRight_shiftRight index0 logMax h _ (by omega) hh]
-      exact ih _ _ _ _ t' hg' (by omega) (by omega)
+        shiftRight_shiftRight index0 logMax h _ (by omega24) hh]
+      exact ih _ _ _ _ t' hg' (by omega24) (by omega24)
 
 /-- `fold_loop` from the tallest input. -/
 theorem fold_loop0 (P : Params) (hP : 0 < P.maxLogArity)
-    (body : (EF × Digest) × CommitStep EF → List (Nat × EF) × EF × Nat × Nat →
+    (body : (EF × Digest F) × CommitStep F EF → List (Nat × EF) × EF × Nat × Nat →
       M poseidon2 (ForInStep (List (Nat × EF) × EF × Nat × Nat)))
     (hbody : ∀ beta commit s ro eval index logH,
       body ((beta, commit), s) (ro, eval, index, logH) = foldBody beta commit s ro eval index logH)
@@ -811,7 +813,7 @@ theorem fold_loop0 (P : Params) (hP : 0 < P.maxLogArity)
     (hg : Good P h0 f rest) (hfuel : h0 - (P.logBlowup + P.logFinalPolyLen) ≤ fuel) :
     forIn ((((chain P fuel f rest t).1.map (·.beta)).zip
         ((chain P fuel f rest t).1.map (·.c.root))).zip
-        (answerSteps (Backend.spec EF) ((chain P fuel f rest t).1.map (·.c))
+        (answerSteps (specBackend EF) ((chain P fuel f rest t).1.map (·.c))
           ((chain P fuel f rest t).1.map (·.la)) index0))
       (rest.map (roOf index0 h0), f.getD index0 0, index0, h0) body t' =
       .ok (([], (chain P fuel f rest t).2.1.getD
@@ -823,7 +825,7 @@ theorem fold_loop0 (P : Params) (hP : 0 < P.maxLogArity)
   exact this
 
 theorem length_answerSteps (rs : List (Rd EF)) :
-    ∀ cur, (answerSteps (Backend.spec EF) (rs.map (·.c)) (rs.map (·.la)) cur).length = rs.length :=
+    ∀ cur, (answerSteps (specBackend EF) (rs.map (·.c)) (rs.map (·.la)) cur).length = rs.length :=
         by
   induction rs with
   | nil => intro cur; rfl
@@ -836,11 +838,11 @@ theorem length_answerSteps (rs : List (Rd EF)) :
 final vector's entry. -/
 theorem verifyQuery_run (P : Params) (hP : 0 < P.maxLogArity) (f0 : Array EF)
     (rest : List (Array EF)) (h0 : Nat) (hg : Good P h0 f0 rest) (fuel : Nat)
-    (hfuel : h0 - (P.logBlowup + P.logFinalPolyLen) ≤ fuel) (t t' : Transcript) (index0 : Nat)
+    (hfuel : h0 - (P.logBlowup + P.logFinalPolyLen) ≤ fuel) (t t' : Transcript F 24) (index0 : Nat)
     (hidx : index0 < 2 ^ h0) :
     verifyQuery poseidon2 P h0 index0 ((chain P fuel f0 rest t).1.map (·.beta))
       ((chain P fuel f0 rest t).1.map (·.c.root))
-      (answerSteps (Backend.spec EF) ((chain P fuel f0 rest t).1.map (·.c))
+      (answerSteps (specBackend EF) ((chain P fuel f0 rest t).1.map (·.c))
         ((chain P fuel f0 rest t).1.map (·.la)) index0)
       ((f0 :: rest).map (roOf index0 h0)) t' =
       .ok (((chain P fuel f0 rest t).2.1.getD
@@ -860,7 +862,7 @@ theorem verifyQuery_run (P : Params) (hP : 0 < P.maxLogArity) (f0 : Array EF)
 /-! ### The commit phase's result and the queries -/
 
 theorem foldl_pushRd (rs : List (Rd EF)) :
-    ∀ cp : CommitPhase EF Committed,
+    ∀ cp : CommitPhase F EF (Committed F),
       (rs.foldl pushRd cp).commits.toList = cp.commits.toList ++ rs.map (·.c.root) ∧
       (rs.foldl pushRd cp).data = cp.data ++ rs.map (·.c) ∧
       (rs.foldl pushRd cp).witnesses.toList = cp.witnesses.toList ++ rs.map (·.w) ∧
@@ -876,7 +878,7 @@ theorem foldl_pushRd (rs : List (Rd EF)) :
       and_self]
 
 theorem answerSteps_logArity (rs : List (Rd EF)) :
-    ∀ cur, (answerSteps (Backend.spec EF) (rs.map (·.c)) (rs.map (·.la)) cur).map (·.logArity) =
+    ∀ cur, (answerSteps (specBackend EF) (rs.map (·.c)) (rs.map (·.la)) cur).map (·.logArity) =
       rs.map (·.la) := by
   induction rs with
   | nil => intro cur; rfl
@@ -885,37 +887,37 @@ theorem answerSteps_logArity (rs : List (Rd EF)) :
     rw [show (r :: rs).map (·.la) = r.la :: rs.map (·.la) from rfl, answerSteps_cons,
       List.map_cons, ih]
 
-theorem sampleBits_lt (t : Transcript) (bits : Nat) : (t.sampleBits bits).1 < 2 ^ bits := by
+theorem sampleBits_lt (t : Transcript F 24) (bits : Nat) : (t.sampleBits bits).1 < 2 ^ bits := by
   unfold Transcript.sampleBits Challenger.sampleBits
   dsimp only
   exact Nat.mod_lt _ (by positivity)
 
 /-- The indices `n` queries sample. -/
-def sampleIndices (logMax : Nat) : Nat → Transcript → List Nat × Transcript
+def sampleIndices (logMax : Nat) : Nat → Transcript F 24 → List Nat × Transcript F 24
   | 0, t => ([], t)
   | n + 1, t =>
     let r := sampleIndices logMax n (t.sampleBits logMax).2
     ((t.sampleBits logMax).1 :: r.1, r.2)
 
 /-- The prover's queries, each sampling its index. -/
-theorem mapM_queries {α β : Type} (logMax : Nat) (mk : Nat → β) (g : α → PM β)
+theorem mapM_queries {α β : Type} (logMax : Nat) (mk : Nat → β) (g : α → PM F 24 β)
     (hg : ∀ a t, (g a).run t = (mk (t.sampleBits logMax).1, (t.sampleBits logMax).2)) :
-    ∀ (l : List α) (t : Transcript), (l.mapM g).run t =
+    ∀ (l : List α) (t : Transcript F 24), (l.mapM g).run t =
       ((sampleIndices logMax l.length t).1.map mk, (sampleIndices logMax l.length t).2)
   | [], _ => rfl
   | a :: l, t => by
     rw [List.mapM_cons, prun_bind, hg, prun_bind, mapM_queries logMax mk g hg l]
     rfl
 
-omit [Challenge EF] in
+omit [Challenge F EF] in
 /-- The verifier's queries sample the prover's indices. -/
-theorem query_loop (logMax : Nat) (mk : Nat → QueryProof EF)
-    (body : QueryProof EF → PUnit → M poseidon2 (ForInStep PUnit))
-    (qb : QueryProof EF → M poseidon2 (ForInStep PUnit))
+theorem query_loop (logMax : Nat) (mk : Nat → QueryProof F EF)
+    (body : QueryProof F EF → PUnit → M poseidon2 (ForInStep PUnit))
+    (qb : QueryProof F EF → M poseidon2 (ForInStep PUnit))
     (hbody : ∀ q, body q () = qb q)
-    (hstep : ∀ t : Transcript, t.duplex = KoalaBear.duplex →
+    (hstep : ∀ t : Transcript F 24, t.duplex = KoalaBear.duplex →
       qb (mk (t.sampleBits logMax).1) t = .ok (.yield (), (t.sampleBits logMax).2)) :
-    ∀ n (t : Transcript), t.duplex = KoalaBear.duplex →
+    ∀ n (t : Transcript F 24), t.duplex = KoalaBear.duplex →
       forIn ((sampleIndices logMax n t).1.map mk) () body t = .ok ((), (sampleIndices logMax n t).2)
   | 0, _, _ => rfl
   | n + 1, t, hd => by
@@ -929,7 +931,7 @@ theorem flag_sampleIndices (logMax : Nat) :
   | n + 1, t => by
     rw [sampleIndices]; exact (flag_sampleIndices logMax n _).trans (flag_sampleBits _ _)
 
-theorem forM_observe (l : List Nat) (t : Transcript) :
+theorem forM_observe (l : List Nat) (t : Transcript F 24) :
     (l.forM fun la ↦ pObserve (la : F)).run t =
       ((), l.foldl (fun t (a : Nat) ↦ t.observe (a : F)) t) := by
   induction l generalizing t with
@@ -946,8 +948,8 @@ theorem observe_loop (l : List Nat) (body : Nat → PUnit → M poseidon2 (ForIn
   | cons a l ih => intro t; rw [forIn_cons_ok _ _ _ _ _ _ _ (hbody a t), ih]; rfl
 
 /-- The body of the verifier's loop over the queries. -/
-def queryBody (P : Params) (logMax : Nat) (alpha : EF) (rounds : List (Round EF)) (betas : Array EF)
-    (commits : Array Digest) (finalPoly : Array EF) (q : QueryProof EF) :
+def queryBody (P : Params) (logMax : Nat) (alpha : EF) (rounds : List (Round F EF)) (betas : Array EF)
+    (commits : Array (Digest F)) (finalPoly : Array EF) (q : QueryProof F EF) :
     M poseidon2 (ForInStep PUnit) := do
   let index ← sampleBits poseidon2 logMax
   let ro ← openInput poseidon2 P logMax index alpha q.inputs.toList rounds
@@ -957,9 +959,9 @@ def queryBody (P : Params) (logMax : Nat) (alpha : EF) (rounds : List (Round EF)
     "final polynomial mismatch"
   pure (ForInStep.yield PUnit.unit)
 
-theorem queryBody_run (P : Params) (logMax : Nat) (alpha : EF) (rounds : List (Round EF))
-    (betas : Array EF) (commits : Array Digest) (finalPoly : Array EF) (q : QueryProof EF)
-    (t : Transcript) (hd : t.duplex = KoalaBear.duplex) (ro : List (Nat × EF)) (eval : EF)
+theorem queryBody_run (P : Params) (logMax : Nat) (alpha : EF) (rounds : List (Round F EF))
+    (betas : Array EF) (commits : Array (Digest F)) (finalPoly : Array EF) (q : QueryProof F EF)
+    (t : Transcript F 24) (hd : t.duplex = KoalaBear.duplex) (ro : List (Nat × EF)) (eval : EF)
     (idxF : Nat)
     (h1 : openInput poseidon2 P logMax (t.sampleBits logMax).1 alpha q.inputs.toList rounds
       (t.sampleBits logMax).2 = .ok (ro, (t.sampleBits logMax).2))
@@ -983,13 +985,13 @@ def finalPolyOf (P : Params) (fin : Array EF) : Array EF :=
   idft P.logFinalPolyLen (Array.ofFn (n := 2 ^ P.logFinalPolyLen) fun i ↦
     fin.getD (reverseBits i P.logFinalPolyLen) 0)
 
-theorem commitPhase_run (P : Params) (f0 : Array EF) (rest : List (Array EF)) (t : Transcript) :
-    (commitPhase (Backend.spec EF) P (f0 :: rest)).run t =
+theorem commitPhase_run (P : Params) (f0 : Array EF) (rest : List (Array EF)) (t : Transcript F 24) :
+    (commitPhase (specBackend EF) P (f0 :: rest)).run t =
       ({ (chain P f0.size f0 rest t).1.foldl pushRd ⟨#[], [], #[], #[], #[]⟩ with
           finalPoly := finalPolyOf P (chain P f0.size f0 rest t).2.1 },
         (chain P f0.size f0 rest t).2.2.observeExts
           (finalPolyOf P (chain P f0.size f0 rest t).2.1).toList) := by
-  have hc : (commitRounds (Backend.spec EF) P ((Backend.spec EF).size f0) f0 rest
+  have hc : (commitRounds (specBackend EF) P ((specBackend EF).size f0) f0 rest
       ⟨#[], [], #[], #[], #[]⟩).run t =
       let r := chain P f0.size f0 rest t
       ((r.2.1, r.1.foldl pushRd ⟨#[], [], #[], #[], #[]⟩), r.2.2) :=
@@ -999,20 +1001,20 @@ theorem commitPhase_run (P : Params) (f0 : Array EF) (rest : List (Array EF)) (t
   rfl
 
 /-- The specification prover's FRI proof, from the inputs `f0 :: rest`. -/
-theorem proveFri_run (P : Params) (rounds : List (OpenRound (Backend.spec EF)))
-    (inputsOf : EF → List (Array EF)) (t : Transcript) (f0 : Array EF) (rest : List (Array EF))
-    (hins : (inputsOf (t.sampleExtValue : EF) : List (Backend.spec EF).V) = (f0 :: rest : List
-        (Backend.spec EF).V)) :
+theorem proveFri_run (P : Params) (rounds : List (OpenRound (specBackend EF)))
+    (inputsOf : EF → List (Array EF)) (t : Transcript F 24) (f0 : Array EF) (rest : List (Array EF))
+    (hins : (inputsOf (t.sampleExtValue : EF) : List (specBackend EF).V) = (f0 :: rest : List
+        (specBackend EF).V)) :
     let r := chain P f0.size f0 rest (Transcript.sampleExtState EF t)
     let cp := { r.1.foldl pushRd ⟨#[], [], #[], #[], #[]⟩ with finalPoly := finalPolyOf P r.2.1 }
     let t3 := cp.arities.toList.foldl (fun t (a : Nat) ↦ t.observe (a : F))
       (r.2.2.observeExts (finalPolyOf P r.2.1).toList)
-    let mk : Nat → QueryProof EF := fun index ↦
-      ⟨(rounds.map fun (c, _) ↦ (Backend.spec EF).openAt c
-        (index >>> (Nat.log2 f0.size - (Backend.spec EF).logHeight c))).toArray,
-        answerQuery (Backend.spec EF) cp index⟩
+    let mk : Nat → QueryProof F EF := fun index ↦
+      ⟨(rounds.map fun (c, _) ↦ (specBackend EF).openAt c
+        (index >>> (Nat.log2 f0.size - (specBackend EF).logHeight c))).toArray,
+        answerQuery (specBackend EF) cp index⟩
     let qs := sampleIndices (Nat.log2 f0.size) P.numQueries (t3.grind P.queryPowBits).2
-    (proveFri (Backend.spec EF) P rounds inputsOf).run t =
+    (proveFri (specBackend EF) P rounds inputsOf).run t =
       (⟨cp.commits, cp.witnesses, (qs.1.map mk).toArray, finalPolyOf P r.2.1,
         (t3.grind P.queryPowBits).1⟩, qs.2) := by
   intro r cp t3 mk qs
@@ -1021,7 +1023,7 @@ theorem proveFri_run (P : Params) (rounds : List (OpenRound (Backend.spec EF)))
   rw [show (StateT.run pSampleExt t) =
     ((t.sampleExtValue : EF), Transcript.sampleExtState EF t) from rfl]
   dsimp only
-  rw [hins, show ((List.map (Backend.spec EF).size (f0 :: rest)).headD 0).log2 = Nat.log2 f0.size
+  rw [hins, show ((List.map (specBackend EF).size (f0 :: rest)).headD 0).log2 = Nat.log2 f0.size
     from rfl, prun_bind, commitPhase_run, prun_bind, forM_observe, prun_bind]
   rw [show StateT.run (pGrind P.queryPowBits) t3 = t3.grind P.queryPowBits from rfl, prun_bind,
     mapM_queries (Nat.log2 f0.size) mk _ ?hg, List.length_range]
@@ -1045,11 +1047,11 @@ def InputsOk (P : Params) (ins : List (Array EF)) : Prop :=
 /-- **FRI completeness**: the verifier's FRI accepts the specification prover's proof of
 low-degree inputs whose openings give the inputs' entries, when the prover's grinder found its
 witnesses. -/
-theorem verifyFri_proveFri (P : Params) (rounds : List (OpenRound (Backend.spec EF)))
-    (inputsOf : EF → List (Array EF)) (vrounds : List (Round EF)) (t : Transcript)
+theorem verifyFri_proveFri (P : Params) (rounds : List (OpenRound (specBackend EF)))
+    (inputsOf : EF → List (Array EF)) (vrounds : List (Round F EF)) (t : Transcript F 24)
     (hd : t.duplex = KoalaBear.duplex) (hlow : ∀ alpha, InputsOk P (inputsOf alpha))
     (hP : 0 < P.maxLogArity) (hq : 0 < P.numQueries)
-    (hgrind : ((proveFri (Backend.spec EF) P rounds inputsOf).run t).2.grindFailed = false)
+    (hgrind : ((proveFri (specBackend EF) P rounds inputsOf).run t).2.grindFailed = false)
     (hopen : ∀ alpha index, index < 2 ^ Nat.log2 (((inputsOf alpha).map Array.size).headD 0) →
       openInput poseidon2 P (Nat.log2 (((inputsOf alpha).map Array.size).headD 0)) index alpha
         (rounds.map fun (c, _) ↦ c.openAt (index >>>
@@ -1057,23 +1059,23 @@ theorem verifyFri_proveFri (P : Params) (rounds : List (OpenRound (Backend.spec 
         vrounds =
       pure ((inputsOf alpha).map fun v ↦ (Nat.log2 v.size, v.getD (index >>>
         (Nat.log2 (((inputsOf alpha).map Array.size).headD 0) - Nat.log2 v.size)) 0))) :
-    verifyFri poseidon2 P ((proveFri (Backend.spec EF) P rounds inputsOf).run t).1 vrounds t =
-      .ok ((), ((proveFri (Backend.spec EF) P rounds inputsOf).run t).2) := by
+    verifyFri poseidon2 P ((proveFri (specBackend EF) P rounds inputsOf).run t).1 vrounds t =
+      .ok ((), ((proveFri (specBackend EF) P rounds inputsOf).run t).2) := by
   obtain ⟨f0, rest, hins, hg⟩ := hlow (t.sampleExtValue : EF)
-  have hins' : (inputsOf (t.sampleExtValue : EF) : List (Backend.spec EF).V) =
-      (f0 :: rest : List (Backend.spec EF).V) := hins
+  have hins' : (inputsOf (t.sampleExtValue : EF) : List (specBackend EF).V) =
+      (f0 :: rest : List (specBackend EF).V) := hins
   set h0 := Nat.log2 f0.size with hh0
   set r := chain P f0.size f0 rest (Transcript.sampleExtState EF t) with hr
-  set cp : CommitPhase EF Committed :=
+  set cp : CommitPhase F EF (Committed F) :=
     { r.1.foldl pushRd ⟨#[], [], #[], #[], #[]⟩ with finalPoly := finalPolyOf P r.2.1 } with hcp
   set t3 := cp.arities.toList.foldl (fun t (a : Nat) ↦ t.observe (a : F))
     (r.2.2.observeExts (finalPolyOf P r.2.1).toList) with ht3
-  set mk : Nat → QueryProof EF := fun index ↦
-      ⟨(rounds.map fun (c, _) ↦ (Backend.spec EF).openAt c
-        (index >>> (h0 - (Backend.spec EF).logHeight c))).toArray,
-        answerQuery (Backend.spec EF) cp index⟩ with hmk
+  set mk : Nat → QueryProof F EF := fun index ↦
+      ⟨(rounds.map fun (c, _) ↦ (specBackend EF).openAt c
+        (index >>> (h0 - (specBackend EF).logHeight c))).toArray,
+        answerQuery (specBackend EF) cp index⟩ with hmk
   set qs := sampleIndices h0 P.numQueries (t3.grind P.queryPowBits).2 with hqs
-  have hrun : (proveFri (Backend.spec EF) P rounds inputsOf).run t =
+  have hrun : (proveFri (specBackend EF) P rounds inputsOf).run t =
       (⟨cp.commits, cp.witnesses, (qs.1.map mk).toArray, finalPolyOf P r.2.1,
         (t3.grind P.queryPowBits).1⟩, qs.2) := proveFri_run P rounds inputsOf t f0 rest hins'
   rw [hrun]
@@ -1086,11 +1088,11 @@ theorem verifyFri_proveFri (P : Params) (rounds : List (OpenRound (Backend.spec 
   obtain ⟨hfin,
       hsum⟩ := chain_final P hP f0.size h0 f0 rest (Transcript.sampleExtState EF t) hg hfuel
   have hsteps : ∀ index, (mk index).steps.toList =
-      answerSteps (Backend.spec EF) (r.1.map (·.c)) (r.1.map (·.la)) index := by
+      answerSteps (specBackend EF) (r.1.map (·.c)) (r.1.map (·.la)) index := by
     intro index
-    show (answerSteps (Backend.spec EF) cp.data cp.arities.toList index).toArray.toList = _
+    show (answerSteps (specBackend EF) cp.data cp.arities.toList index).toArray.toList = _
     rw [List.toList_toArray]
-    show answerSteps (Backend.spec EF) (List.foldl pushRd ⟨#[], [], #[], #[], #[]⟩ r.1).data
+    show answerSteps (specBackend EF) (List.foldl pushRd ⟨#[], [], #[], #[], #[]⟩ r.1).data
       (List.foldl pushRd ⟨#[], [], #[], #[], #[]⟩ r.1).arities.toList index = _
     rw [hdata, hari]
     rfl
@@ -1196,11 +1198,11 @@ theorem verifyFri_proveFri (P : Params) (rounds : List (OpenRound (Backend.spec 
 
 /-- With one input, the specification prover's proof folds by Plonky3's schedule, as the
 verifier checks. -/
-theorem arities_proveFri (P : Params) (rounds : List (OpenRound (Backend.spec EF)))
-    (inputsOf : EF → List (Array EF)) (t : Transcript) (f0 : Array EF)
+theorem arities_proveFri (P : Params) (rounds : List (OpenRound (specBackend EF)))
+    (inputsOf : EF → List (Array EF)) (t : Transcript F 24) (f0 : Array EF)
     (hins : inputsOf (t.sampleExtValue : EF) = [f0]) (hg : Good P (Nat.log2 f0.size) f0 [])
     (hP : 0 < P.maxLogArity) (hq : 0 < P.numQueries) :
-    arities ((proveFri (Backend.spec EF) P rounds inputsOf).run t).1 =
+    arities ((proveFri (specBackend EF) P rounds inputsOf).run t).1 =
       foldArities P.maxLogArity (Nat.log2 f0.size - (P.logBlowup + P.logFinalPolyLen)) := by
   rw [proveFri_run P rounds inputsOf t f0 [] hins]
   dsimp only
@@ -1212,7 +1214,7 @@ theorem arities_proveFri (P : Params) (rounds : List (OpenRound (Backend.spec EF
   rw [← chain_arities P hP f0.size _ f0 (Transcript.sampleExtState EF t) hg hfuel, hn,
       sampleIndices]
   show List.map (·.logArity)
-    (answerSteps (Backend.spec EF) (List.foldl pushRd ⟨#[], [], #[], #[], #[]⟩ r.1).data
+    (answerSteps (specBackend EF) (List.foldl pushRd ⟨#[], [], #[], #[], #[]⟩ r.1).data
       (List.foldl pushRd ⟨#[], [], #[], #[], #[]⟩ r.1).arities.toList _).toArray.toList = _
   rw [List.toList_toArray, hdata, hari]
   exact answerSteps_logArity r.1 _

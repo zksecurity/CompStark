@@ -5,6 +5,7 @@ Released under Apache 2.0 license as described in the file LICENSE.
 module
 
 public import CompStark.Soundness
+public import CompStark.KoalaBear.Challenge
 public import CompStark.NonInteractive
 public import CompStark.Sound.Numbers
 public import CompStark.Sound.NumbersNi
@@ -131,9 +132,9 @@ The total is at most `2 ^ (-128)` (`wide5i_knowledgeError_le`, `wide5i_knowledge
 namespace CompStark.Iop
 open CompStark.Stark CompStark.Sound
 
-local notation "F" => KoalaBear.Fast.Field
+local notation "F" => _root_.KoalaBear.Fast.Field
 
-variable {EF : Type} [Challenge EF]
+variable {EF : Type} [Challenge F EF]
 
 /-- FRI with blowup `16`, folding by arity `2` down to a constant, and `110` queries. -/
 def fibonacciParams : Fri.Params where
@@ -182,7 +183,7 @@ theorem fibonacci_knowledgeError_le :
   rw [hq, hlarge, hfolds] at h2
   refine h1.trans ((add_le_add le_rfl h2).trans
     (numbers_le _ (2 ^ 17) _ _ _ _ 0 _ (2177 / 4096 + 10 / 2 ^ 20) ?_ ?_ le_rfl ?_ le_rfl
-      (by norm_num) (by norm_num)))
+      (by norm_num [KoalaBear.card_eq]) (by norm_num [KoalaBear.card_eq])))
   · have hid : fibonacciSetup.identityDegree = 2048 := by
       simp only [Setup.identityDegree, Setup.n, Setup.chunks, fibonacciSetup]
       rw [logQuotientChunks_of _ 0 (by decide)]
@@ -221,7 +222,7 @@ def wideParams : Fri.Params where
   queryPowBits := 0
 
 /-- The wide AIR reads only its columns. -/
-theorem wide_colsInWidth (w : Nat) : (wide w).ColsInWidth := by
+theorem wide_colsInWidth (w : Nat) : (wide w : Air F).ColsInWidth := by
   intro c hc
   simp only [wide, List.mem_map, List.mem_range] at hc
   obtain ⟨j, hj, rfl⟩ := hc
@@ -305,7 +306,7 @@ theorem wide_knowledgeError_le :
   rw [hq, hlarge, hfolds, hb] at h2
   refine h1.trans ((add_le_add le_rfl h2).trans
     (numbers_curve_le _ (2 ^ 22 + 64) _ _ _ _ 276841 _ 294726 _ (2561 / 4096 + 20 / 2 ^ 17)
-      ?_ ?_ ?_ le_rfl ?_ (by norm_num) (by norm_num) (by norm_num) (by norm_num)))
+      ?_ ?_ ?_ le_rfl ?_ (by norm_num [KoalaBear.card_eq]) (by norm_num [KoalaBear.card_eq]) (by norm_num [KoalaBear.card_eq]) (by norm_num [KoalaBear.card_eq])))
   · exact (wide_integers_le wideSetup rfl).trans (by decide)
   · rw [wide_numOpened wideSetup rfl, hrate, hsize]
     norm_num
@@ -375,7 +376,7 @@ theorem wide21_knowledgeError_le :
   rw [hq, hlarge, hfolds, hb] at h2
   refine h1.trans ((add_le_add le_rfl h2).trans
     (numbers_curve_le _ (2 ^ 23 + 64) _ _ _ _ 276841 _ 343847 _ (2561 / 4096 + 21 / 2 ^ 17)
-      ?_ ?_ ?_ le_rfl ?_ (by norm_num) (by norm_num) (by norm_num) (by norm_num)))
+      ?_ ?_ ?_ le_rfl ?_ (by norm_num [KoalaBear.card_eq]) (by norm_num [KoalaBear.card_eq]) (by norm_num [KoalaBear.card_eq]) (by norm_num [KoalaBear.card_eq])))
   · exact (wide_integers_le wide21Setup rfl).trans (by decide)
   · rw [wide_numOpened wide21Setup rfl, hrate, hsize]
     norm_num
@@ -452,20 +453,20 @@ theorem wideSp1_roundError_le :
   refine h.trans (max_le ?_ (max_le ?_ (max_le ?_ (max_le ?_ ?_))))
   · refine nat_div_card_le _ ((div_le_div_of_nonneg_right (Nat.cast_le.mpr h1)
       (by positivity)).trans ?_)
-    norm_num
+    norm_num [KoalaBear.card_eq]
   · rw [hn]
     refine nat_div_card_le _ ((div_le_div_of_nonneg_right (Nat.cast_le.mpr h2)
       (by positivity)).trans ?_)
-    norm_num
+    norm_num [KoalaBear.card_eq]
   · refine ofReal_div_card_le _ ?_
     rw [wide_numOpened wideSp1Setup rfl, hrate, hsize, hδ, hδ']
-    norm_num
+    norm_num [KoalaBear.card_eq]
   · refine ofReal_div_card_le _ ?_
     simp only [LossyMca.lossyBound]
     rw [NNReal.coe_add, hδ]
-    norm_num
-  · refine powFraction_mul_le _ _ _ (by rw [hδ]; norm_num) ?_
-    rw [hδ, KoalaBear.fieldSize]
+    norm_num [KoalaBear.card_eq]
+  · refine powFraction_mul_le _ _ _ (by rw [hδ]; norm_num [KoalaBear.card_eq]) ?_
+    rw [hδ, KoalaBear.card_eq]
     norm_num
 
 /-- **100 bits per oracle call on `2 ^ 21` rows.** A prover for `wideSp1Setup` making at most `Q`
@@ -479,7 +480,7 @@ theorem wideSp1_knowledgeSoundness_ro (publicValues : List F) (Q : Nat)
             (committedTrace wideSp1Setup log proof),
           ¬ wideSp1Setup.air.Satisfied wideSp1Setup.logN trace publicValues] ≤
       (Q + wideSp1Setup.verifierQueries) * (2 ^ 100)⁻¹ +
-        hashError (Q + wideSp1Setup.verifierQueries) := by
+        hashError F (Q + wideSp1Setup.verifierQueries) := by
   refine (knowledgeSoundness_ro wideSp1Setup publicValues (3 / 8 - 2 ^ (-16 : ℤ))
     (3 / 8 - 2 ^ (-18 : ℤ)) ?_ Q prover hQ).trans ?_
   · rw [coe_three_eighths_sub (-18) 18 rfl (by norm_num), rate_eq]
@@ -542,20 +543,20 @@ theorem wide5_roundError_le :
   refine h.trans (max_le ?_ (max_le ?_ (max_le ?_ (max_le ?_ ?_))))
   · refine nat_div_card_le _ ((div_le_div_of_nonneg_right (Nat.cast_le.mpr h1)
       (by positivity)).trans ?_)
-    norm_num
+    norm_num [KoalaBear.card_eq]
   · rw [hn]
     refine nat_div_card_le _ ((div_le_div_of_nonneg_right (Nat.cast_le.mpr h2)
       (by positivity)).trans ?_)
-    norm_num
+    norm_num [KoalaBear.card_eq]
   · refine ofReal_div_card_le _ ?_
     rw [wide_numOpened wide5Setup rfl, hrate, hsize, hδ, hδ']
-    norm_num
+    norm_num [KoalaBear.card_eq]
   · refine ofReal_div_card_le _ ?_
     simp only [LossyMca.lossyBound]
     rw [NNReal.coe_add, hδ]
-    norm_num
-  · refine powFraction_mul_le _ _ _ (by rw [hδ]; norm_num) ?_
-    rw [hδ, KoalaBear.fieldSize]
+    norm_num [KoalaBear.card_eq]
+  · refine powFraction_mul_le _ _ _ (by rw [hδ]; norm_num [KoalaBear.card_eq]) ?_
+    rw [hδ, KoalaBear.card_eq]
     norm_num
 
 /-- **128 bits per oracle call on `2 ^ 21` rows over the quintic extension.** A prover for
@@ -570,7 +571,7 @@ theorem wide5_knowledgeSoundness_ro (publicValues : List F) (Q : Nat)
             (committedTrace wide5Setup log proof),
           ¬ wide5Setup.air.Satisfied wide5Setup.logN trace publicValues] ≤
       (Q + wide5Setup.verifierQueries) * (2 ^ 128)⁻¹ +
-        hashError (Q + wide5Setup.verifierQueries) := by
+        hashError F (Q + wide5Setup.verifierQueries) := by
   refine (knowledgeSoundness_ro wide5Setup publicValues (3 / 8 - 2 ^ (-18 : ℤ))
     (3 / 8 - 2 ^ (-20 : ℤ)) ?_ Q prover hQ).trans ?_
   · rw [coe_three_eighths_sub (-20) 20 rfl (by norm_num), rate_eq]
@@ -635,7 +636,7 @@ theorem wide5i_knowledgeError_le :
   · simp only [LossyMca.lossyBound]
     norm_num
   · norm_num
-  · norm_num
+  · norm_num [KoalaBear.card_eq]
 
 /-- Knowledge soundness of `wide5iSetup` with error `2 ^ (-128)`, FRI at `6143/16384` and the
 extractor at `49151/131072`: if no trace within `49151/131072` of the prover's committed trace

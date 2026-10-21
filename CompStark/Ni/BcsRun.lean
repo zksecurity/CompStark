@@ -5,7 +5,7 @@ Released under Apache 2.0 license as described in the file LICENSE.
 module
 
 public import CompStark.Stark.Verifier
-public import CompStark.Complete.Stark
+public import CompStark.Stark.Recompose
 
 /-! # Accepting runs of the verifier on pure primitives
 
@@ -23,8 +23,7 @@ them into the consistency of the extracted oracles.
 namespace CompStark.Ni
 open CompStark.Stark CompStark.Fri
 
-local notation "F" => KoalaBear.Fast.Field
-variable {EF : Type} [Challenge EF] (H : Primitives Id)
+variable {F : Type} [BaseField F] {EF : Type} [Challenge F EF] (H : Primitives F Id)
 
 /-! ### The verifier's monad on pure primitives -/
 
@@ -78,12 +77,12 @@ theorem forIn_cons_eq_ok {α σ : Type} (a : α) (l : List α) (b : σ)
   | yield b' => exact h2
 
 /-- The pure Merkle check of `H`. -/
-abbrev verifyBatchH (commit : Digest) (heights : List Nat) (index : Nat) (values : List (List F))
-    (path : List Digest) : Bool :=
+abbrev verifyBatchH (commit : Digest F) (heights : List Nat) (index : Nat) (values : List (List F))
+    (path : List (Digest F)) : Bool :=
   Merkle.verifyBatch H.hash H.compress commit heights index values path
 
-theorem checkOpening_eq (commit : Digest) (heights : List Nat) (index : Nat)
-    (values : List (List F)) (path : List Digest) (s : H.State) :
+theorem checkOpening_eq (commit : Digest F) (heights : List Nat) (index : Nat)
+    (values : List (List F)) (path : List (Digest F)) (s : H.State) :
     checkOpening H commit heights index values path s =
       .ok (verifyBatchH H commit heights index values path, s) := by
   unfold checkOpening
@@ -95,40 +94,39 @@ theorem checkOpening_eq (commit : Digest) (heights : List Nat) (index : Nat)
 /-! ### A query's folds -/
 
 /-- The group a fold opens: the siblings with the running value `eval` at the index's position. -/
-def groupOf (s : CommitStep EF) (index : Nat) (eval : EF) : List EF :=
+def groupOf (s : CommitStep F EF) (index : Nat) (eval : EF) : List EF :=
   (List.range (2 ^ s.logArity)).map fun j ↦
     if j < index % 2 ^ s.logArity then s.siblings.getD j 0
     else if j = index % 2 ^ s.logArity then eval else s.siblings.getD (j - 1) 0
 
 /-- One fold `x = ((β, commit), step)` of a query in state `(eval, index, logH)`: fold the group
 at `β`, shift the index and lower the height by the arity. -/
-def foldStep (x : (EF × Digest) × CommitStep EF) (st : EF × Nat × Nat) : EF × Nat × Nat :=
+def foldStep (x : (EF × Digest F) × CommitStep F EF) (st : EF × Nat × Nat) : EF × Nat × Nat :=
   let a := x.2.logArity
   (foldRow (st.2.1 >>> a) (st.2.2 - a) a x.1.1 (groupOf x.2 st.2.1 st.1), st.2.1 >>> a,
     st.2.2 - a)
 
 /-- The state of a query before fold `j` of the folds `l`, from the state `st0` before the first. -/
-def foldState (l : List ((EF × Digest) × CommitStep EF)) (st0 : EF × Nat × Nat) (j : Nat) :
+def foldState (l : List ((EF × Digest F) × CommitStep F EF)) (st0 : EF × Nat × Nat) (j : Nat) :
     EF × Nat × Nat :=
   (l.take j).foldl (fun st x ↦ foldStep x st) st0
 
-theorem foldState_cons (x : (EF × Digest) × CommitStep EF) (l : List ((EF × Digest) × CommitStep
-    EF))
-    (st0 : EF × Nat × Nat) (j : Nat) :
+theorem foldState_cons (x : (EF × Digest F) × CommitStep F EF)
+    (l : List ((EF × Digest F) × CommitStep F EF)) (st0 : EF × Nat × Nat) (j : Nat) :
     foldState (x :: l) st0 (j + 1) = foldState l (foldStep x st0) j := by
   simp only [foldState, List.take_succ_cons, List.foldl_cons]
 
-theorem foldState_zero (l : List ((EF × Digest) × CommitStep EF)) (st0 : EF × Nat × Nat) :
+theorem foldState_zero (l : List ((EF × Digest F) × CommitStep F EF)) (st0 : EF × Nat × Nat) :
     foldState l st0 0 = st0 := by
   simp only [foldState, List.take_zero, List.foldl_nil]
 
-theorem foldState_succ (l : List ((EF × Digest) × CommitStep EF)) (st0 : EF × Nat × Nat) (j : Nat)
+theorem foldState_succ (l : List ((EF × Digest F) × CommitStep F EF)) (st0 : EF × Nat × Nat) (j : Nat)
     (hj : j < l.length) : foldState l st0 (j + 1) = foldStep l[j] (foldState l st0 j) := by
   simp only [foldState, List.take_add_one, List.getElem?_eq_getElem hj, Option.toList_some,
     List.foldl_append, List.foldl_cons, List.foldl_nil]
 
 /-- The index and height before fold `j`: the arities before `j` shifted out. -/
-theorem foldState_snd (l : List ((EF × Digest) × CommitStep EF)) :
+theorem foldState_snd (l : List ((EF × Digest F) × CommitStep F EF)) :
     ∀ (e : EF) (i h j : Nat), (foldState l (e, i, h) j).2 =
       (i >>> ((l.take j).map (·.2.logArity)).sum, h - ((l.take j).map (·.2.logArity)).sum) := by
   induction l with
@@ -147,13 +145,13 @@ theorem foldState_snd (l : List ((EF × Digest) × CommitStep EF)) :
 
 /-- Fold `x` passes its checks in state `st`: the sibling count, and the opening of its group
 against its commitment. -/
-def StepOk (x : (EF × Digest) × CommitStep EF) (st : EF × Nat × Nat) : Prop :=
+def StepOk (x : (EF × Digest F) × CommitStep F EF) (st : EF × Nat × Nat) : Prop :=
   x.2.siblings.size = 2 ^ x.2.logArity - 1 ∧
     verifyBatchH H x.1.2 [2 ^ (st.2.2 - x.2.logArity)] (st.2.1 >>> x.2.logArity)
       [(groupOf x.2 st.2.1 st.1).flatMap Ext.coeffs] x.2.path.toList = true
 
 /-- The body of `verifyQuery`'s loop. -/
-def foldBody {K : Type} [Challenge K] (beta : K) (commit : Digest) (s : CommitStep K) (ro : List
+def foldBody {K : Type} [Challenge F K] (beta : K) (commit : Digest F) (s : CommitStep F K) (ro : List
     (Nat × K)) (eval : K)
     (index logH : Nat) : M H (ForInStep (List (Nat × K) × K × Nat × Nat)) := do
   let arity := 2 ^ s.logArity
@@ -173,7 +171,7 @@ def foldBody {K : Type} [Challenge K] (beta : K) (commit : Digest) (s : CommitSt
     else pure (ForInStep.yield (ro, eval, index, logFolded))
   | [] => pure (ForInStep.yield (ro, eval, index, logFolded))
 
-theorem foldBody_ok (beta : EF) (commit : Digest) (s : CommitStep EF) (eval : EF) (index logH : Nat)
+theorem foldBody_ok (beta : EF) (commit : Digest F) (s : CommitStep F EF) (eval : EF) (index logH : Nat)
     (st : H.State) (r : ForInStep (List (Nat × EF) × EF × Nat × Nat) × H.State)
     (h : foldBody H beta commit s [] eval index logH st = .ok r) :
     StepOk H ((beta, commit), s) (eval, index, logH) ∧
@@ -188,12 +186,12 @@ theorem foldBody_ok (beta : EF) (commit : Digest) (s : CommitStep EF) (eval : EF
 
 /-- An accepting fold loop from no pending reduced openings: every fold passes its checks, and the
 loop ends in the last state. -/
-theorem foldLoop_ok (body : (EF × Digest) × CommitStep EF → List (Nat × EF) × EF × Nat × Nat →
+theorem foldLoop_ok (body : (EF × Digest F) × CommitStep F EF → List (Nat × EF) × EF × Nat × Nat →
       M H (ForInStep (List (Nat × EF) × EF × Nat × Nat)))
     (hbody : ∀ beta commit s ro eval index logH,
       body ((beta, commit), s) (ro, eval, index, logH) =
         foldBody H beta commit s ro eval index logH) :
-    ∀ (l : List ((EF × Digest) × CommitStep EF)) (st0 : EF × Nat × Nat) (st : H.State)
+    ∀ (l : List ((EF × Digest F) × CommitStep F EF)) (st0 : EF × Nat × Nat) (st : H.State)
       (r : (List (Nat × EF) × EF × Nat × Nat) × H.State),
       forIn l ([], st0) body st = .ok r →
         (∀ j x, l[j]? = some x → StepOk H x (foldState l st0 j)) ∧
@@ -222,8 +220,8 @@ theorem foldLoop_ok (body : (EF × Digest) × CommitStep EF → List (Nat × EF)
 /-- **An accepting `verifyQuery`** from one reduced opening at the top height `logMax`: the fold
 counts match, every fold passes its checks, the folds end at the final height, and the result is
 the last state's value and index. -/
-theorem verifyQuery_ok (P : Params) (logMax index : Nat) (betas : List EF) (commits : List Digest)
-    (steps : List (CommitStep EF)) (e0 : EF) (st : H.State) (r : (EF × Nat) × H.State)
+theorem verifyQuery_ok (P : Params) (logMax index : Nat) (betas : List EF) (commits : List (Digest F))
+    (steps : List (CommitStep F EF)) (e0 : EF) (st : H.State) (r : (EF × Nat) × H.State)
     (h : verifyQuery H P logMax index betas commits steps [(logMax, e0)] st = .ok r) :
     let l := (betas.zip commits).zip steps
     let fin := foldState l (e0, index, logMax) l.length
@@ -248,11 +246,11 @@ theorem verifyQuery_ok (P : Params) (logMax index : Nat) (betas : List EF) (comm
 
 /-- One opened value's term of the batched quotient: `acc + ap (pz - px) q`, and the next power
 of `α`. -/
-def ptBody {K : Type} [Challenge K] (alpha q : K) (pp : F × K) (s : K × K) : K × K :=
+def ptBody {K : Type} [Challenge F K] (alpha q : K) (pp : F × K) (s : K × K) : K × K :=
   (s.1 * alpha, s.2 + s.1 * (pp.2 - Ext.ofBase pp.1) * q)
 
 /-- The body of `openInput`'s loop over a matrix's opening points. -/
-def pointsBody {K : Type} [Challenge K] (alpha : K) (row : Array F) (x : F) (zy : K × List K) (s :
+def pointsBody {K : Type} [Challenge F K] (alpha : K) (row : Array F) (x : F) (zy : K × List K) (s :
     K × K) :
     M H (ForInStep (K × K)) := do
   ensure (zy.2.length == row.size) "opened width"
@@ -261,8 +259,8 @@ def pointsBody {K : Type} [Challenge K] (alpha : K) (row : Array F) (x : F) (zy 
   pure (ForInStep.yield (s.1, s.2))
 
 /-- The body of `openInput`'s loop over a batch's matrices. -/
-def rowsBody {K : Type} [Challenge K] (P : Params) (logMax index : Nat) (alpha : K)
-    (x : Array F × Domain × List (K × List K)) (ro : List (Nat × K × K)) :
+def rowsBody {K : Type} [Challenge F K] (P : Params) (logMax index : Nat) (alpha : K)
+    (x : Array F × Domain F × List (K × List K)) (ro : List (Nat × K × K)) :
     M H (ForInStep (List (Nat × K × K))) := do
   let logH := x.2.1.logSize + P.logBlowup
   let xpt := gen * powF (twoAdicGen logH) (reverseBits (index >>> (logMax - logH)) logH)
@@ -270,8 +268,8 @@ def rowsBody {K : Type} [Challenge K] (P : Params) (logMax index : Nat) (alpha :
   pure (ForInStep.yield ((logH, s.1, s.2) :: ro.filter (·.1 != logH)))
 
 /-- The body of `openInput`'s loop over the batches. -/
-def batchBody {K : Type} [Challenge K] (P : Params) (logMax index : Nat) (alpha : K) (x :
-    BatchOpening × Round K)
+def batchBody {K : Type} [Challenge F K] (P : Params) (logMax index : Nat) (alpha : K) (x :
+    BatchOpening F × Round F K)
     (ro : List (Nat × K × K)) : M H (ForInStep (List (Nat × K × K))) := do
   let heights := x.2.2.map fun (d, _) ↦ 2 ^ (d.logSize + P.logBlowup)
   let reduced := match heights.max? with
@@ -288,15 +286,15 @@ def batchBody {K : Type} [Challenge K] (P : Params) (logMax index : Nat) (alpha 
   | _ => pure (ForInStep.yield ro)
 
 /-- `openInput` with its loop bodies named. -/
-theorem openInput_eq (P : Params) (logMax index : Nat) (alpha : EF) (inputs : List BatchOpening)
-    (rounds : List (Round EF)) :
+theorem openInput_eq (P : Params) (logMax index : Nat) (alpha : EF) (inputs : List (BatchOpening F))
+    (rounds : List (Round F EF)) :
     openInput H P logMax index alpha inputs rounds = (do
       ensure (inputs.length == rounds.length) "input batches"
       let ro ← forIn (inputs.zip rounds) [] (batchBody H P logMax index alpha)
       pure ((ro.mergeSort fun a b ↦ b.1 ≤ a.1).map fun (h, _, acc) ↦ (h, acc))) := rfl
 
 /-- The opened values of a batch's matrices, each with its point, in `openInput`'s order. -/
-def batchTerms (rows : List (Array F × Domain × List (EF × List EF))) : List ((F × EF) × EF) :=
+def batchTerms (rows : List (Array F × Domain F × List (EF × List EF))) : List ((F × EF) × EF) :=
   rows.flatMap fun x ↦ x.2.2.flatMap fun zy ↦ (x.1.toList.zip zy.2).map fun pp ↦ (pp, zy.1)
 
 /-- The batched quotient's running power of `α` and sum over opened values at the point `x`. -/
@@ -335,7 +333,7 @@ def RoAt (logMax : Nat) (ro : List (Nat × EF × EF)) (s : EF × EF) : Prop :=
   (ro.lookup logMax).getD (1, 0) = s ∧ ro.filter (·.1 != logMax) = []
 
 theorem rowsLoop_ok (P : Params) (logMax index : Nat) (alpha : EF) :
-    ∀ (rows : List (Array F × Domain × List (EF × List EF))) (ro : List (Nat × EF × EF))
+    ∀ (rows : List (Array F × Domain F × List (EF × List EF))) (ro : List (Nat × EF × EF))
       (s : EF × EF) (st : H.State) (r : List (Nat × EF × EF) × H.State),
       (∀ x ∈ rows, x.2.1.logSize + P.logBlowup = logMax) → RoAt logMax ro s →
       forIn rows ro (rowsBody H P logMax index alpha) st = .ok r →
@@ -385,15 +383,15 @@ theorem rowsLoop_ok (P : Params) (logMax index : Nat) (alpha : EF) :
         rfl
       | cons y ys => exact hne (List.cons_ne_nil _ _)
 
-theorem verifyBatchH_nil (commit : Digest) (index : Nat) (values : List (List F))
-    (path : List Digest) : verifyBatchH H commit [] index values path = false := by
+theorem verifyBatchH_nil (commit : Digest F) (index : Nat) (values : List (List F))
+    (path : List (Digest F)) : verifyBatchH H commit [] index values path = false := by
   simp only [verifyBatchH, Merkle.verifyBatch, Merkle.heightGroups, List.length_nil,
     List.range_zero, List.mergeSort_nil, List.foldr_nil]
 
 /-- One batch of a query's input openings passes its checks at `index`: its matrices, all of
 height `2 ^ logMax`, open at `index` against the batch's commitment, one row per matrix, and every
 opened point has a value per column. -/
-def BatchOk (logMax index : Nat) (x : BatchOpening × Round EF) : Prop :=
+def BatchOk (logMax index : Nat) (x : BatchOpening F × Round F EF) : Prop :=
   x.2.2 ≠ [] ∧
     verifyBatchH H x.2.1 (List.replicate x.2.2.length (2 ^ logMax)) index
       (x.1.values.toList.map (·.toList)) x.1.path.toList = true ∧
@@ -401,12 +399,12 @@ def BatchOk (logMax index : Nat) (x : BatchOpening × Round EF) : Prop :=
     ∀ y ∈ x.1.values.toList.zip x.2.2, ∀ zy ∈ y.2.2, zy.2.length = y.1.size
 
 /-- The opened values of a query's batches, in `openInput`'s order. -/
-def inputTerms (xs : List (BatchOpening × Round EF)) : List ((F × EF) × EF) :=
+def inputTerms (xs : List (BatchOpening F × Round F EF)) : List ((F × EF) × EF) :=
   xs.flatMap fun x ↦ batchTerms (x.1.values.toList.zip x.2.2)
 
 theorem batchLoop_ok (P : Params) (logMax index : Nat) (alpha : EF)
     (hb : logMax ≠ P.logBlowup) :
-    ∀ (xs : List (BatchOpening × Round EF)) (ro : List (Nat × EF × EF)) (s : EF × EF)
+    ∀ (xs : List (BatchOpening F × Round F EF)) (ro : List (Nat × EF × EF)) (s : EF × EF)
       (st : H.State) (r : List (Nat × EF × EF) × H.State),
       (∀ x ∈ xs, ∀ dp ∈ x.2.2, dp.1.logSize + P.logBlowup = logMax) → RoAt logMax ro s →
       forIn xs ro (batchBody H P logMax index alpha) st = .ok r →
@@ -487,8 +485,8 @@ theorem batchLoop_ok (P : Params) (logMax index : Nat) (alpha : EF)
 /-- **An accepting `openInput`** on batches whose matrices all have height `2 ^ logMax`, above the
 blowup: every batch passes its checks at `index`, and the result is the single reduced opening at
 `logMax`, the batched quotient over all opened values at the query's point. -/
-theorem openInput_ok (P : Params) (logMax index : Nat) (alpha : EF) (inputs : List BatchOpening)
-    (rounds : List (Round EF)) (hb : logMax ≠ P.logBlowup) (hne : rounds ≠ [])
+theorem openInput_ok (P : Params) (logMax index : Nat) (alpha : EF) (inputs : List (BatchOpening F))
+    (rounds : List (Round F EF)) (hb : logMax ≠ P.logBlowup) (hne : rounds ≠ [])
     (hh : ∀ x ∈ rounds, ∀ dp ∈ x.2, dp.1.logSize + P.logBlowup = logMax) (st : H.State)
     (r : List (Nat × EF) × H.State)
     (h : openInput H P logMax index alpha inputs rounds st = .ok r) :
@@ -538,7 +536,7 @@ def smpExt (s : H.State) : EF × H.State :=
 
 /-- Sample the low `bits` bits of an element's canonical value. -/
 def smpBits (bits : Nat) (s : H.State) : Nat × H.State :=
-  (Montgomery.Native32.FastField.toNat (H.sample s).1 % 2 ^ bits, (H.sample s).2)
+  (CompPoly.CanonicalNat.toNat (H.sample s).1 % 2 ^ bits, (H.sample s).2)
 
 /-- Check a grinding witness: observe it and sample `bits` bits, which must vanish. -/
 def chkWit (bits : Nat) (w : F) (s : H.State) : Bool × H.State :=
@@ -586,15 +584,15 @@ theorem checkWitness_eq (bits : Nat) (w : F) (s : H.State) :
 /-! ### FRI's verifier -/
 
 /-- The body of `verifyFri`'s loop over the commitments. -/
-def commitBody (P : Params) (cw : Digest × F) (betas : Array EF) :
+def commitBody (P : Params) (cw : Digest F × F) (betas : Array EF) :
     M H (ForInStep (Array EF)) := do
   observeList H cw.1.toList
   ensure (← checkWitness H P.commitPowBits cw.2) "commit witness"
   pure (ForInStep.yield (betas.push (← sampleExt H)))
 
 /-- The body of `verifyFri`'s loop over the queries. -/
-def queryBody (P : Params) (logMax : Nat) (alpha : EF) (rounds : List (Round EF)) (betas : List EF)
-    (commits : List Digest) (finalPoly : Array EF) (q : QueryProof EF) (_ : PUnit) :
+def queryBody (P : Params) (logMax : Nat) (alpha : EF) (rounds : List (Round F EF)) (betas : List EF)
+    (commits : List (Digest F)) (finalPoly : Array EF) (q : QueryProof F EF) (_ : PUnit) :
     M H (ForInStep PUnit) := do
   let index ← sampleBits H logMax
   let ro ← openInput H P logMax index alpha q.inputs.toList rounds
@@ -605,7 +603,7 @@ def queryBody (P : Params) (logMax : Nat) (alpha : EF) (rounds : List (Round EF)
   pure (ForInStep.yield PUnit.unit)
 
 /-- `verifyFri` with its loop bodies named. -/
-theorem verifyFri_eq (P : Params) (proof : FriProof EF) (rounds : List (Round EF)) :
+theorem verifyFri_eq (P : Params) (proof : FriProof F EF) (rounds : List (Round F EF)) :
     verifyFri H P proof rounds = (do
       let alpha ← sampleExt H
       ensure (proof.queries.all fun q ↦ q.steps.size == proof.commits.size &&
@@ -624,7 +622,7 @@ theorem verifyFri_eq (P : Params) (proof : FriProof EF) (rounds : List (Round EF
       pure ()) := rfl
 
 /-- The folding challenges the commit loop samples, and the challenger after it. -/
-def commitReplay (P : Params) : List (Digest × F) → H.State → List EF × H.State
+def commitReplay (P : Params) : List (Digest F × F) → H.State → List EF × H.State
   | [], s => ([], s)
   | cw :: cws, s =>
     let b := smpExt H (chkWit H P.commitPowBits cw.2 (obsList H s cw.1.toList)).2
@@ -632,7 +630,7 @@ def commitReplay (P : Params) : List (Digest × F) → H.State → List EF × H.
     (b.1 :: r.1, r.2)
 
 theorem commitLoop_ok (P : Params) :
-    ∀ (cws : List (Digest × F)) (betas : Array EF) (s : H.State) (r : Array EF × H.State),
+    ∀ (cws : List (Digest F × F)) (betas : Array EF) (s : H.State) (r : Array EF × H.State),
       forIn cws betas (commitBody H P) s = .ok r →
         r.1.toList = betas.toList ++ (commitReplay H P cws s).1 ∧
           r.2 = (commitReplay (EF := EF) H P cws s).2
@@ -661,8 +659,8 @@ def sampleStates (s : H.State) : Nat → H.State
 /-- One FRI query at `index` passes the verifier's checks: its input batches open at `index`, its
 folds from the batched quotient `e0` pass, end at the final height, and match the final
 polynomial. -/
-def QueryOk (P : Params) (logMax : Nat) (alpha : EF) (rounds : List (Round EF)) (betas : List EF)
-    (commits : List Digest) (finalPoly : Array EF) (q : QueryProof EF) (index : Nat) : Prop :=
+def QueryOk (P : Params) (logMax : Nat) (alpha : EF) (rounds : List (Round F EF)) (betas : List EF)
+    (commits : List (Digest F)) (finalPoly : Array EF) (q : QueryProof F EF) (index : Nat) : Prop :=
   let e0 := (accTerms alpha (gen * powF (twoAdicGen logMax) (reverseBits index logMax))
     (inputTerms (q.inputs.toList.zip rounds)) (1, 0)).2
   let l := (betas.zip commits).zip q.steps.toList
@@ -675,10 +673,10 @@ def QueryOk (P : Params) (logMax : Nat) (alpha : EF) (rounds : List (Round EF)) 
     finalPoly.foldr (fun c acc ↦
       acc * Ext.ofBase (powF (twoAdicGen logMax) (reverseBits fin.2.1 logMax)) + c) 0 = fin.1
 
-theorem queryBody_ok (P : Params) (logMax : Nat) (alpha : EF) (rounds : List (Round EF))
-    (betas : List EF) (commits : List Digest) (finalPoly : Array EF)
+theorem queryBody_ok (P : Params) (logMax : Nat) (alpha : EF) (rounds : List (Round F EF))
+    (betas : List EF) (commits : List (Digest F)) (finalPoly : Array EF)
     (hb : logMax ≠ P.logBlowup) (hne : rounds ≠ [])
-    (hh : ∀ x ∈ rounds, ∀ dp ∈ x.2, dp.1.logSize + P.logBlowup = logMax) (q : QueryProof EF)
+    (hh : ∀ x ∈ rounds, ∀ dp ∈ x.2, dp.1.logSize + P.logBlowup = logMax) (q : QueryProof F EF)
     (st : H.State) (r : ForInStep PUnit × H.State)
     (h : queryBody H P logMax alpha rounds betas commits finalPoly q () st = .ok r) :
     QueryOk H P logMax alpha rounds betas commits finalPoly q (smpBits H logMax st).1 ∧
@@ -696,11 +694,11 @@ theorem queryBody_ok (P : Params) (logMax : Nat) (alpha : EF) (rounds : List (Ro
   obtain ⟨hfinal, h⟩ := ensure_bind_eq_ok H h
   exact ⟨⟨hlen, hbatch, hbl, hcl, hsteps, hfin, beq_iff_eq.mp hfinal⟩, pure_eq_ok H h⟩
 
-theorem queryLoop_ok (P : Params) (logMax : Nat) (alpha : EF) (rounds : List (Round EF))
-    (betas : List EF) (commits : List Digest) (finalPoly : Array EF)
+theorem queryLoop_ok (P : Params) (logMax : Nat) (alpha : EF) (rounds : List (Round F EF))
+    (betas : List EF) (commits : List (Digest F)) (finalPoly : Array EF)
     (hb : logMax ≠ P.logBlowup) (hne : rounds ≠ [])
     (hh : ∀ x ∈ rounds, ∀ dp ∈ x.2, dp.1.logSize + P.logBlowup = logMax) :
-    ∀ (qs : List (QueryProof EF)) (st : H.State) (r : PUnit × H.State),
+    ∀ (qs : List (QueryProof F EF)) (st : H.State) (r : PUnit × H.State),
       forIn qs PUnit.unit (queryBody H P logMax alpha rounds betas commits finalPoly) st =
         .ok r →
       ∀ j (hj : j < qs.length), QueryOk H P logMax alpha rounds betas commits finalPoly qs[j]
@@ -742,7 +740,7 @@ query domain, above the blowup: the proof's shape checks pass, the query grindin
 and every query passes its checks at the index it samples. The challenges are those the
 challenger returns: the batching challenge, the folding challenges of the commit loop
 (`commitReplay`), and the query indices after the grinding check (`sampleStates`). -/
-theorem verifyFri_ok (P : Params) (proof : FriProof EF) (rounds : List (Round EF))
+theorem verifyFri_ok (P : Params) (proof : FriProof F EF) (rounds : List (Round F EF))
     (hb : (arities proof).sum + P.logBlowup + P.logFinalPolyLen ≠ P.logBlowup)
     (hne : rounds ≠ [])
     (hh : ∀ x ∈ rounds, ∀ dp ∈ x.2, dp.1.logSize + P.logBlowup =
@@ -806,10 +804,11 @@ theorem forIn_unit_state {α : Type} (body : α → PUnit → M H (ForInStep PUn
     exact forIn_unit_state body f hbody l _
 
 /-- The challenger after observing every opened value of `rounds`, in `verifyPcs`'s order. -/
-def obsOpened (s : H.State) (rounds : List (Round EF)) : H.State :=
+def obsOpened (s : H.State) (rounds : List (Round F EF)) : H.State :=
   rounds.foldl (fun s r ↦ r.2.foldl (fun s m ↦ m.2.foldl (fun s p ↦ obsExts H s p.2) s) s) s
 
-theorem verifyPcs_eq (P : Params) (rounds : List (Round EF)) (proof : FriProof EF) (s : H.State) :
+theorem verifyPcs_eq (P : Params) (rounds : List (Round F EF)) (proof : FriProof F EF)
+    (s : H.State) :
     verifyPcs H P rounds proof s = verifyFri H P proof rounds (obsOpened H s rounds) := by
   unfold verifyPcs
   refine bind_ok_of H (forIn_unit_state H _ _ (fun r s ↦ ?_) rounds s)
@@ -821,22 +820,22 @@ theorem verifyPcs_eq (P : Params) (rounds : List (Round EF)) (proof : FriProof E
   exact (bind_ok_of H (observeExts_eq H ys s)).trans rfl
 
 /-- The challenger after the instance, the trace commitment and the public values. -/
-def stateAlpha (proof : Proof EF) (pis : List F) : H.State :=
+def stateAlpha (proof : Proof F EF) (pis : List F) : H.State :=
   obsList H (obsList H (H.observe (H.observe (H.observe H.init (proof.degreeBits : F))
     (proof.degreeBits : F)) 0) proof.traceCommit.toList) pis
 
 /-- The constraint-folding challenge `α`. -/
-def alphaOf (proof : Proof EF) (pis : List F) : EF := (smpExt H (stateAlpha H proof pis)).1
+def alphaOf (proof : Proof F EF) (pis : List F) : EF := (smpExt H (stateAlpha H proof pis)).1
 
 /-- The challenger after the quotient commitment. -/
-def stateZeta (proof : Proof EF) (pis : List F) : H.State :=
+def stateZeta (proof : Proof F EF) (pis : List F) : H.State :=
   obsList H (smpExt (EF := EF) H (stateAlpha H proof pis)).2 proof.quotientCommit.toList
 
 /-- The out-of-domain point `ζ`. -/
-def zetaOf (proof : Proof EF) (pis : List F) : EF := (smpExt H (stateZeta H proof pis)).1
+def zetaOf (proof : Proof F EF) (pis : List F) : EF := (smpExt H (stateZeta H proof pis)).1
 
 /-- The challenger when FRI starts, after the opened values. -/
-def stateFri (proof : Proof EF) (pis : List F) : H.State :=
+def stateFri (proof : Proof F EF) (pis : List F) : H.State :=
   obsOpened H (smpExt (EF := EF) H (stateZeta H proof pis)).2
     (Stark.vRounds proof (zetaOf H proof pis))
 
@@ -858,7 +857,7 @@ theorem except_bind_ok {α : Type} (R : ExceptT String Id α) (p : α → Bool) 
 /-- **An accepting STARK verifier** on pure primitives: the proof's shape and fold arities check,
 FRI accepts from the challenger after the opened values, and the constraints hold at `ζ` with the
 challenger's `α` and `ζ`. -/
-theorem verifyWith_ok (P : Params) (A : Air) (proof : Proof EF) (pis : List F)
+theorem verifyWith_ok (P : Params) (A : Air F) (proof : Proof F EF) (pis : List F)
     (h : verifyWith H P A proof pis = .ok ()) :
     let o := proof.opened
     o.traceLocal.size = A.width ∧ o.traceNext.size = A.width ∧

@@ -16,17 +16,16 @@ public import CompStark.Ni.BcsChallenges
 
 @[expose] public section
 namespace CompStark.Ni
-open CompStark.Stark CompStark.Fri CompStark.RandomOracle Montgomery.Native32 OracleSpec OracleComp
+open CompStark.Stark CompStark.Fri CompStark.RandomOracle OracleSpec OracleComp
 
-local notation "F" => KoalaBear.Fast.Field
 
-variable {EF : Type} [Challenge EF] {K : Nat} (answer : (q : Query) → Answer K q)
+variable {F : Type} [BaseField F] {EF : Type} [Challenge F EF] {K : Nat} (answer : (q : Query F) → Answer K q)
 
 /-! ### The first call -/
 
 /-- **The first call.** If the verifier on logged answers accepts, its log starts with the duplex
 call of the first round. -/
-theorem verifyWith_log_head (hK : Challenge.d EF ≤ K) (P : Fri.Params) (A : Air) (proof : Proof EF)
+theorem verifyWith_log_head (hK : Challenge.d EF ≤ K) (P : Fri.Params) (A : Air F) (proof : Proof F EF)
     (pis : List F) (hok : (verifyWith (idealLogged answer) P A proof pis).run.1 = .ok ()) :
     ∃ rest, (verifyWith (idealLogged answer) P A proof pis).run.2 =
       ⟨keyAt answer (inputs P pis proof) 0, answer (keyAt answer (inputs P pis proof) 0)⟩ ::
@@ -91,12 +90,12 @@ theorem verifyWith_log_head (hK : Challenge.d EF ≤ K) (P : Fri.Params) (A : Ai
 /-! ### The fold rounds' grinding -/
 
 section Commit
-variable (H : Primitives Id) (P : Params)
+variable (H : Primitives F Id) (P : Params)
 
 /-- An accepting commit loop passes every grinding check, from the state `commitReplay` reaches
 before each round. -/
 theorem commitLoop_wit :
-    ∀ (cws : List (Digest × F)) (betas : Array EF) (s : H.State) (r : Array EF × H.State),
+    ∀ (cws : List (Digest F × F)) (betas : Array EF) (s : H.State) (r : Array EF × H.State),
       forIn (m := M H) cws betas (commitBody H P) s = .ok r →
         ∀ i (hi : i < cws.length), (chkWit H P.commitPowBits cws[i].2
           (obsList H (commitReplay (EF := EF) H P (cws.take i) s).2 cws[i].1.toList)).1 = true
@@ -116,20 +115,20 @@ theorem commitLoop_wit :
 
 end Commit
 
-variable (P : Params) (proof : Proof EF) (pis : List F)
+variable (P : Params) (proof : Proof F EF) (pis : List F)
 
 /-- **The fold rounds' grinding.** If FRI accepts on the ideal primitives of an answer table,
 then with grinding every fold round's answer has a first sample with `commitPowBits` vanishing
 low bits. -/
 theorem commitWitness_idealOf (hK : P.numQueries + Challenge.d EF + 1 ≤ K)
     (hopen : openedValues proof.opened ≠ [])
-    (rounds : List (Round EF)) (st : Sponge)
+    (rounds : List (Round F EF)) (st : Sponge F)
     (hfri : verifyFri (idealOf answer) P proof.fri rounds (stateFri (idealOf answer) proof pis) =
       .ok ((), st))
     (i : Nat) (hi : i < (proof.fri.commits.toList.zip proof.fri.commitWitnesses.toList).length)
     (hbits : P.commitPowBits ≠ 0) :
-    (FastField.toField ((answer (keyAt answer (inputs P pis proof) (3 + i))).2.toList.getD 0 0)).val
-      % 2 ^ P.commitPowBits = 0 := by
+    CompPoly.CanonicalNat.toNat ((answer (keyAt answer (inputs P pis proof) (3 + i))).2.toList.getD
+      0 0) % 2 ^ P.commitPowBits = 0 := by
   set H := idealOf answer
   have hcws : ∀ j (hj : j < (proof.fri.commits.toList.zip proof.fri.commitWitnesses.toList).length),
       (inputs P pis proof).getD (3 + j) [] =
@@ -162,9 +161,9 @@ theorem commitWitness_idealOf (hK : P.numQueries + Challenge.d EF + 1 ≤ K)
     simp only [witnessInput, hbits, ↓reduceIte]
   rw [obsList_idealOf_ne answer _ _ (digest_toList_ne_nil _)] at hwit
   simp only [chkWit, hbits, ↓reduceIte, smpBits, beq_iff_eq] at hwit
-  change FastField.toNat (H.sample ⟨capAt answer blocks (3 + i),
+  change CompPoly.CanonicalNat.toNat (H.sample ⟨capAt answer blocks (3 + i),
     [] ++ cws[i].1.toList ++ [cws[i].2], []⟩).1 % 2 ^ P.commitPowBits = 0 at hwit
-  rw [sample_idealOf_nil, List.nil_append, ← hblock, FastField.toNat_eq_val_toField] at hwit
+  rw [sample_idealOf_nil, List.nil_append, ← hblock] at hwit
   rw [← List.headD_eq_getD]
   exact hwit
 

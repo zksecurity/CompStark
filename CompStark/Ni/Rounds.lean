@@ -28,21 +28,19 @@ The decoders invert the verifier's observations (`digestAt_append`, `openingsAt_
 @[expose] public section
 namespace CompStark.Ni
 open CompStark.Stark CompStark.Fri CompStark.Sound CompStark.Iop CompStark.RandomOracle
-open Polynomial Montgomery.Native32 Fri.Spec OracleSpec OracleComp
+open Polynomial Fri.Spec OracleSpec OracleComp
 
-local notation "F" => KoalaBear.Fast.Field
-local notation "𝔽" => KoalaBear.Field
 
-variable {EF : Type} [Challenge EF]
+variable {F : Type} [BaseField F] {EF : Type} [Challenge F EF]
 
 local notation "𝕂" => Challenge.Spec EF
 
 /-! ### Decoding observations -/
 
 /-- The digest of the eight elements of `xs` from `offset` on. -/
-def digestAt (xs : List F) (offset : Nat) : Digest := Vector.ofFn fun k ↦ xs.getD (offset + k) 0
+def digestAt (xs : List F) (offset : Nat) : Digest F := Vector.ofFn fun k ↦ xs.getD (offset + k) 0
 
-theorem digestAt_append (d : Digest) (pre rest : List F) :
+theorem digestAt_append (d : Digest F) (pre rest : List F) :
     digestAt (pre ++ d.toList ++ rest) pre.length = d := by
   ext k hk
   rw [digestAt, Vector.getElem_ofFn, List.append_assoc, List.getD_eq_getElem?_getD,
@@ -50,7 +48,7 @@ theorem digestAt_append (d : Digest) (pre rest : List F) :
     List.getElem?_append_left (l₁ := d.toList) (by rw [Vector.length_toList]; exact hk),
     Vector.getElem?_toList, Vector.getElem?_eq_getElem hk, Option.getD_some]
 
-theorem digestAt_append_zero (d : Digest) (rest : List F) : digestAt (d.toList ++ rest) 0 = d :=
+theorem digestAt_append_zero (d : Digest F) (rest : List F) : digestAt (d.toList ++ rest) 0 = d :=
   digestAt_append d [] rest
 
 /-- The extension element of the `d` elements of `xs` from `d k` on. -/
@@ -185,7 +183,7 @@ variable (S : Iop.Setup EF)
 
 /-- The digest observed in a duplex call's input, the one a commitment round binds: after the
 three leading elements of the first round (initial capacity), first otherwise. -/
-def boundDigest (cap : Digest) (input : List F) : Digest :=
+def boundDigest (cap : Digest F) (input : List F) : Digest F :=
   digestAt input (if cap = initCap then 3 else 0)
 
 /-- The folding challenges of ArkLib's oracles, from the answers `sample` of the fold rounds:
@@ -197,7 +195,7 @@ noncomputable def betasAt (sample : Nat → Vector F S.streamLen) : FinalStateme
 /-- The transcript read off the inputs `block j` and answers `sample j` of the rounds `j` and
 the hash queries `cache`: the words and FRI oracles extracted under the observed digests, the
 observed openings and final polynomial, and the challenges of the answers. -/
-noncomputable def prefixTranscript (cache : Merkle.Cache F Digest) (block : Nat → List F)
+noncomputable def prefixTranscript (cache : Merkle.Cache F (Digest F)) (block : Nat → List F)
     (sample : Nat → Vector F S.streamLen) : Sound.Transcript S where
   trace j := committedColumn S cache (digestAt (block 0) 3) j
   alpha := extAt (sample 0) 0
@@ -211,7 +209,7 @@ noncomputable def prefixTranscript (cache : Merkle.Cache F Digest) (block : Nat 
   betas := betasAt S sample
 
 /-- The prefix transcript reads the answers of the rounds before the query round only. -/
-theorem prefixTranscript_sample_congr (cache : Merkle.Cache F Digest) (block : Nat → List F)
+theorem prefixTranscript_sample_congr (cache : Merkle.Cache F (Digest F)) (block : Nat → List F)
     {sample sample' : Nat → Vector F S.streamLen}
     (h : ∀ j, j ≤ 3 + S.lastFold → sample j = sample' j) :
     prefixTranscript S cache block sample = prefixTranscript S cache block sample' := by
@@ -221,12 +219,12 @@ theorem prefixTranscript_sample_congr (cache : Merkle.Cache F Digest) (block : N
   simp only [prefixTranscript, h 0 (by omega), h 1 (by omega), h 2 (by omega), hβ]
 
 /-- The query round's grinding sample: the answer's first sample, `0` without grinding. -/
-def powAt (u : Vector F S.streamLen) : 𝔽 :=
-  if S.params.queryPowBits = 0 then 0 else FastField.toField (u.toList.getD 0 0)
+def powAt (u : Vector F S.streamLen) : F :=
+  if S.params.queryPowBits = 0 then 0 else (u.toList.getD 0 0)
 
 /-- The query round's query samples, after the grinding sample. -/
-def queriesAt (u : Vector F S.streamLen) (j : Fin S.params.numQueries) : 𝔽 :=
-  FastField.toField (u.toList.getD (challengeOffset S.params.queryPowBits + j.val) 0)
+def queriesAt (u : Vector F S.streamLen) (j : Fin S.params.numQueries) : F :=
+  (u.toList.getD (challengeOffset S.params.queryPowBits + j.val) 0)
 
 variable (publicValues : List F) (δ δ' loss : NNReal)
 
@@ -238,15 +236,15 @@ def roundBadAt (i : Nat) (t : Sound.Transcript S) (u : Vector F S.streamLen) : P
   else if i = 2 then BatchBad S δ δ' t.trace t.alpha t.quotient t.zeta t.openings t.batch
   else if h : i - 3 < S.lastFold + 1 then
     (S.params.commitPowBits ≠ 0 →
-      (FastField.toField (u.toList.getD 0 0)).val % 2 ^ S.params.commitPowBits = 0) ∧
+      CompPoly.CanonicalNat.toNat ((u.toList.getD 0 0)) % 2 ^ S.params.commitPowBits = 0) ∧
       FoldBad S δ loss ⟨i - 3, h⟩ t.fri (t.betas ⟨i - 3, h⟩)
   else if i = 4 + S.lastFold then QueryBad S δ loss t (powAt S u) (queriesAt S u)
   else False
 
 /-- A duplex call is bad after the queries `pre` if `pre` parses it as round `i` and its answer
 makes round `i` bad for the prefix transcript on `pre`'s hash queries. -/
-def RoundBad (pre : QueryLog (spec S.streamLen)) :
-    (t : Query) → Answer S.streamLen t → Prop
+def RoundBad (pre : QueryLog (spec F S.streamLen)) :
+    (t : Query F) → Answer S.streamLen t → Prop
   | .duplex cap input, u => match parse pre (.duplex cap input) with
     | some (steps, _) =>
       roundBadAt S publicValues δ δ' loss steps.length

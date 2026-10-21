@@ -4,7 +4,7 @@ Released under Apache 2.0 license as described in the file LICENSE.
 -/
 module
 
-public import CompStark.Poseidon2.KoalaBear
+public import Mathlib.Data.Vector.Defs
 
 /-! # Sponge hashing and truncated-permutation compression
 
@@ -16,10 +16,6 @@ elements:
   without padding. The digest is the first `out` coordinates. The empty input hashes to zeros.
 * `compress perm a b` places `a` and `b` side by side in a zero state, permutes and keeps the
   first coordinates.
-
-`KoalaBear.hash` and `KoalaBear.compress` are the instances of Plonky3's Poseidon2 Merkle tree:
-the sponge on the width-24 permutation with rate 16 and eight-element digests, and compression
-by the width-16 permutation.
 -/
 
 @[expose] public section
@@ -49,21 +45,5 @@ def sponge (perm : Vector F t → Vector F t) (rate out : Nat) (hr : 0 < rate) (
 def compress {n : Nat} (perm : Vector F t → Vector F t) (h : 2 * n ≤ t) (a b : Vector F n) :
     Vector F n :=
   (perm (overwrite (Vector.replicate t 0) (a.toList ++ b.toList))).take n |>.cast (by omega)
-
-namespace KoalaBear
-
-variable (F : Type*) [Field F]
-
-/-- Plonky3's Poseidon2 Merkle leaf hash: the sponge on the width-24 permutation, rate 16,
-eight-element digests. -/
-def hash (xs : List F) : Vector F 8 :=
-  sponge (Poseidon2.permute (Poseidon2.KoalaBear.width24 F)) 16 8 (by decide) (by decide) xs
-
-/-- Plonky3's Poseidon2 Merkle compression: the width-16 permutation, truncated to eight
-elements. -/
-def compress (a b : Vector F 8) : Vector F 8 :=
-  Hash.compress (Poseidon2.permute (Poseidon2.KoalaBear.width16 F)) (by decide) a b
-
-end KoalaBear
 
 end CompStark.Hash

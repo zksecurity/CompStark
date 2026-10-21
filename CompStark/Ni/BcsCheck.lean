@@ -5,7 +5,7 @@ Released under Apache 2.0 license as described in the file LICENSE.
 module
 
 public import CompStark.Sound.Rbr
-public import CompStark.Complete.Quotient
+public import CompStark.Stark.Recompose
 
 /-! # The verifier's constraint check in the spec field
 
@@ -17,12 +17,10 @@ values gives `ConstraintsHoldAt` on them (`openingsOf`), at the spec images of `
 
 @[expose] public section
 namespace CompStark.Ni
-open CompStark.Stark CompStark.Fri CompStark.Sound CompStark.Iop Polynomial Montgomery.Native32
+open CompStark.Stark CompStark.Fri CompStark.Sound CompStark.Iop Polynomial
 
-local notation "F" => KoalaBear.Fast.Field
-local notation "𝔽" => KoalaBear.Field
 
-variable {EF : Type} [Challenge EF]
+variable {F : Type} [BaseField F] {EF : Type} [Challenge F EF]
 
 local notation "𝕂" => Challenge.Spec EF
 
@@ -45,7 +43,7 @@ theorem prod_fin_ne {M : Type*} [CommMonoid M] (n : Nat) (f : Nat → M) (c : Fi
 theorem selectorAt_eq (S : Iop.Setup EF) (ζ : 𝕂) (c : Fin S.chunks) :
     selectorAt S ζ c = chunkSel S.logN S.air.logQuotientChunks c.val ζ := by
   have hs : ∀ d : Nat, chunkShift S d =
-      algebraMap 𝔽 𝕂 (qpt (S.logN + S.air.logQuotientChunks) d) := fun d ↦ by
+      algebraMap F 𝕂 (qpt (S.logN + S.air.logQuotientChunks) d) := fun d ↦ by
     rw [chunkShift, rootOfUnity, lift, lift, qpt, map_mul, map_pow]
   have hv : ∀ (d : Nat) (x : 𝕂), vanishing (chunkShift S d) S.n x =
       vanish S.logN (qpt (S.logN + S.air.logQuotientChunks) d) x := fun d x ↦ by
@@ -81,7 +79,7 @@ theorem constraintsHoldAt_of_check (S : Iop.Setup EF) (pis : List F)
       fun i h1 h2 ↦ ?_
     rw [List.getElem_map, List.getElem_range, Array.getElem_toList, Array.getD_eq_getD_getElem?,
       Array.getElem?_eq_getElem (by rwa [← Array.length_toList]), Option.getD_some]
-  have h24 : S.logN + S.air.logQuotientChunks ≤ 24 := by
+  have h24 : S.logN + S.air.logQuotientChunks ≤ twoAdicity F := by
     have := S.valid.twoAdic; have := S.valid.chunksFit; omega
   rw [hlist, toSpec_recompose S.logN _ h24] at h'
   rw [constraintsHoldAt_iff, ← Fin.sum_univ_eq_sum_range] at *
@@ -102,7 +100,7 @@ theorem constraintsHoldAt_of_check (S : Iop.Setup EF) (pis : List F)
     refine List.map_congr_left fun c hc ↦ ?_
     have hlast : Challenge.toSpec (Ext.ofBase (twoAdicGen S.logN)⁻¹ : EF) =
         (rootOfUnity S.logN : 𝕂)⁻¹ := by
-      rw [Challenge.toSpec_ofBase, toField_inv, ← CompPoly.Extension.Ext.algebraMap_eq_ofBase,
+      rw [Challenge.toSpec_ofBase, ← CompPoly.Extension.Ext.algebraMap_eq_ofBase,
         map_inv₀]
       rfl
     refine Expr.eval_hom Challenge.toSpec Challenge.toSpec_add Challenge.toSpec_sub

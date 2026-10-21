@@ -8,47 +8,35 @@ public import CompStark.Stark.Challenge
 
 /-! # Field helpers of the STARK
 
-KoalaBear's multiplicative generator `3` and two-adic generators as Plonky3 chooses them,
-exponentiation, and bit reversal.
+Exponentiation by squaring, bit reversal, the points of two-adic cosets, batch inversion and
+parallel chunks.
 -/
 
 @[expose] public section
 namespace CompStark.Stark
 
-local notation "F" => KoalaBear.Fast.Field
-
-/-- Plonky3's multiplicative generator of KoalaBear. -/
-def gen : F := 3
-
-/-- Plonky3's `TWO_ADIC_GENERATORS` of KoalaBear, canonical values. -/
-def twoAdicTable : Array Nat := #[0x1, 0x7f000000, 0x7e010002, 0x6832fe4a, 0x8dbd69c, 0xa28f031,
-  0x5c4a5b99, 0x29b75a80, 0x17668b8a, 0x27ad539b, 0x334d48c7, 0x7744959c, 0x768fc6fa, 0x303964b2,
-  0x3e687d4d, 0x45a60e61, 0x6e2f4d7a, 0x163bd499, 0x6c4a8a45, 0x143ef899, 0x514ddcad, 0x484ef19b,
-  0x205d63c3, 0x68e7dd49, 0x6ac49f88]
-
-/-- The generator of the subgroup of order `2 ^ bits`, `bits ≤ 24`. -/
-def twoAdicGen (bits : Nat) : F := ((twoAdicTable.getD bits 0 : Nat) : F)
-
-/-- Plonky3's two-adic generators are nonzero. -/
-theorem twoAdicGen_ne_zero (bits : Nat) (h : bits ≤ 24) : twoAdicGen bits ≠ 0 := by
-  have hb : 0 < twoAdicTable.getD bits 0 ∧ twoAdicTable.getD bits 0 < KoalaBear.fieldSize := by
-    have : ∀ b < 25, 0 < twoAdicTable.getD b 0 ∧ twoAdicTable.getD b 0 < KoalaBear.fieldSize := by
-      decide
-    exact this bits (by omega)
-  intro h0
-  have := congrArg Montgomery.Native32.FastField.toField h0
-  rw [twoAdicGen, Montgomery.Native32.toField_natCast,
-    Montgomery.Native32.toField_zero, ZMod.natCast_eq_zero_iff] at this
-  exact absurd (Nat.le_of_dvd hb.1 this) (by omega)
-
 /-- `x ^ n` by squaring. -/
-def powF (x : F) : Nat → F
+def powF {K : Type*} [Mul K] [One K] (x : K) : Nat → K
   | 0 => 1
   | n + 1 =>
     let y := powF (x * x) ((n + 1) / 2)
     if (n + 1) % 2 = 1 then x * y else y
 termination_by n => n
 decreasing_by omega
+
+/-- `powF` is the power. -/
+theorem powF_eq {K : Type*} [Monoid K] (x : K) (n : Nat) : powF x n = x ^ n := by
+  induction n using Nat.strong_induction_on generalizing x with
+  | _ n ih =>
+    cases n with
+    | zero => rw [powF, pow_zero]
+    | succ k =>
+      rw [powF, ih _ (by omega), ← sq, ← pow_mul]
+      have h := Nat.div_add_mod (k + 1) 2
+      split_ifs with hp
+      · rw [← pow_succ']
+        exact congrArg (x ^ ·) (by omega)
+      · exact congrArg (x ^ ·) (by omega)
 
 /-- `acc` followed by the low `bits` bits of `i`, reversed. -/
 def reverseBitsGo : Nat → Nat → Nat → Nat
@@ -67,7 +55,7 @@ def bitRevPerm : Nat → Array Nat
     p.map (2 * ·) ++ p.map (2 * · + 1)
 
 /-- `shift · ω ^ i` for `i < 2 ^ logN`, `ω` of order `2 ^ logN`. -/
-def cosetPoints (shift : F) (logN : Nat) : Array F := Id.run do
+def cosetPoints {F : Type} [BaseField F] (shift : F) (logN : Nat) : Array F := Id.run do
   let w := twoAdicGen logN
   let mut out := Array.emptyWithCapacity (2 ^ logN)
   let mut x := shift
@@ -77,7 +65,7 @@ def cosetPoints (shift : F) (logN : Nat) : Array F := Id.run do
   return out
 
 /-- The points of `shift · ⟨ω⟩` in bit-reversed order. -/
-def cosetPointsBitRev (shift : F) (logN : Nat) : Array F :=
+def cosetPointsBitRev {F : Type} [BaseField F] (shift : F) (logN : Nat) : Array F :=
   let xs := cosetPoints shift logN
   (bitRevPerm logN).map fun i ↦ xs.getD i 0
 

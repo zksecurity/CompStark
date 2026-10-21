@@ -19,9 +19,9 @@ namespace CompStark.Stark
 open CompPoly.PackedRepr (encode)
 open CompPoly.CPolynomial.NTTFast.Packed (getD_ofFn_bounded)
 
-local notation "F" => KoalaBear.Fast.Field
+local notation "F" => _root_.KoalaBear.Fast.Field
 
-variable {EF : Type} [Challenge EF]
+variable {EF : Type} [Challenge F EF]
 
 /-- The bit-reversal permutation of `2 ^ bits` indices below `2 ^ bits`. -/
 theorem bitRevPerm_spec (bits : Nat) :
@@ -100,19 +100,20 @@ theorem foldRange_eq (vs : Array EF) (pw : Array F) (perm : Array Nat) (beta hal
 
 /-- The `2 x` of the fold's pairs are nonzero. -/
 theorem twoX_ne_zero (L : Nat) (hL : L < 24) (i : Nat) (hi : i < 2 ^ L) :
-    twoX (cosetPoints 1 (L + 1)) (bitRevPerm L) i ≠ 0 := by
+    twoX (cosetPoints (1 : F) (L + 1)) (bitRevPerm L) i ≠ 0 := by
   obtain ⟨hs, hb⟩ := bitRevPerm_spec L
   have hp : (bitRevPerm L).getD i 0 < 2 ^ L := by
     rw [getD_lt _ i (by omega)]
     exact hb _ (Array.getElem_mem _)
-  have hw := twoAdicGen_ne_zero (L + 1) (by omega)
+  have hw : (twoAdicGen (L + 1) : F) ≠ 0 :=
+    BaseField.twoAdicGen_ne_zero _ (by rw [KoalaBear.twoAdicity_eq]; omega)
   rw [twoX, cosetPoints_eq, getD_ofFn_bounded _ _ (by rw [Nat.pow_succ]; omega)]
   exact mul_ne_zero NonBinaryField.char_neq_2 (mul_ne_zero one_ne_zero (pow_ne_zero _ hw))
 
 /-- The fold, pair by pair. -/
 theorem foldPairs_eq (vs : Array EF) (beta : EF) (L : Nat) (hL : L < 24) :
     Fri.foldPairs vs beta L = Array.ofFn (n := 2 ^ L) fun i ↦
-      foldAt vs (cosetPoints 1 (L + 1)) (bitRevPerm L) beta (Ext.ofBase (2 : F)⁻¹) i.val := by
+      foldAt vs (cosetPoints (1 : F) (L + 1)) (bitRevPerm L) beta (Ext.ofBase (2 : F)⁻¹) i.val := by
   unfold Fri.foldPairs
   exact parChunks_eq _ _ _ _ (fun r0 len h ↦
     foldRange_eq _ _ _ _ _ _ _ fun k hk ↦ twoX_ne_zero L hL _ (by omega))
@@ -126,8 +127,8 @@ open CompStark.Words
 open CompPoly.CPolynomial.NTTFast.Packed (getD_ofFn_bounded size_encode_fields)
 open CompPoly.CPolynomial.NTTFast.Packed.Native (zeroWords read write)
 
-local notation "F" => KoalaBear.Fast.Field
-local notation "EF" => KoalaBear.Fast.Ext4
+local notation "F" => _root_.KoalaBear.Fast.Field
+local notation "EF" => _root_.KoalaBear.Fast.Ext4
 
 /-- Representation transfers along equal arrays. -/
 theorem RV_congr {v : EVec} {a b : Array EF} (h : RV v a) (e : a = b) : RV v b := e ▸ h
@@ -235,9 +236,9 @@ theorem fold2Range_rel {v : EVec} {a : Array EF} (hv : RV v a) (T : Array F) (be
   refine RV_congr h3 (Array.ext ?_ fun k h1 h2 ↦ ?_)
   · simp only [Array.size_zipWith, Array.size_map, Array.size_ofFn, Nat.min_self]
   · simp only [Array.getElem_zipWith, Array.getElem_map, Array.getElem_ofFn]
-    apply KoalaBear.Fast.Ext4.toSpec_injective
-    simp only [KoalaBear.Fast.Ext4.toSpec_add, KoalaBear.Fast.Ext4.toSpec_mul,
-      KoalaBear.Fast.Ext4.toSpec_sub]
+    apply Montgomery.Native32.Ext4.toSpec_injective
+    simp only [Montgomery.Native32.Ext4.toSpec_add, Montgomery.Native32.Ext4.toSpec_mul,
+      Montgomery.Native32.Ext4.toSpec_sub]
     ring
 
 /-- Vectors of at most `2 ^ 24` elements have indexable coordinates. -/
@@ -257,7 +258,7 @@ theorem fold2_rel {v : EVec} {a : Array EF} (beta : EF) (k : Nat) (h : RV v a)
   simp only [CompPoly.CPolynomial.NTTFast.Packed.Native.encodeFields_eq]
   have hp : 0 < (if 2 ^ k < 4096 then 1 else 16) := by split <;> decide
   generalize (if 2 ^ k < 4096 then 1 else 16) = parts at hp ⊢
-  let pw := cosetPoints 1 (k + 1)
+  let pw := cosetPoints (1 : F) (k + 1)
   let perm := bitRevPerm k
   let T : Array F := perm.map fun i ↦ 2 * pw.getD i 0
   have hT : T.size = 2 ^ k := by rw [Array.size_map]; exact (bitRevPerm_spec k).1
@@ -305,8 +306,8 @@ theorem addScaled_rel {v w : EVec} {a b : Array EF} (x : EF) (hv : RV v a) (hw :
   refine RV_congr h (Array.ext (by simp only [Array.size_zipWith, Array.size_map])
     fun i _ _ ↦ ?_)
   simp only [Array.getElem_zipWith, Array.getElem_map]
-  apply KoalaBear.Fast.Ext4.toSpec_injective
-  simp only [KoalaBear.Fast.Ext4.toSpec_add, KoalaBear.Fast.Ext4.toSpec_mul]
+  apply Montgomery.Native32.Ext4.toSpec_injective
+  simp only [Montgomery.Native32.Ext4.toSpec_add, Montgomery.Native32.Ext4.toSpec_mul]
   ring
 
 /-- Coordinate `c` of an extension element. -/

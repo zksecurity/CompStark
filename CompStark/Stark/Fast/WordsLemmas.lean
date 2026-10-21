@@ -27,7 +27,7 @@ open CompPoly.CPolynomial.NTTFast.Packed (add sub mul add_val sub_val mul_val of
 open CompPoly.CPolynomial.NTTFast.Packed.Native (read write write16U zeroWords readUOffset)
 open CompStark.Poseidon2.Packed (Fits)
 
-local notation "F" => KoalaBear.Fast.Field
+local notation "F" => _root_.KoalaBear.Fast.Field
 
 /-! ### Words of encoded arrays -/
 
@@ -463,8 +463,8 @@ open CompPoly.CPolynomial.NTTFast.Packed (size_encode_fields getD_ofFn_bounded o
 open CompPoly.CPolynomial.NTTFast.Packed.Native (zeroWords)
 open CompPoly.CPolynomial.NTTFast.Packed (Native.encodeFields_eq)
 
-local notation "F" => KoalaBear.Fast.Field
-local notation "EF" => KoalaBear.Fast.Ext4
+local notation "F" => _root_.KoalaBear.Fast.Field
+local notation "EF" => _root_.KoalaBear.Fast.Ext4
 
 /-- The fused sum of four products. -/
 theorem mulAdd4_eq (a b c d e f g k : F) :
@@ -479,9 +479,9 @@ theorem mul_coords (x y : EF) : x * y =
       x.c0 * y.c1 + x.c1 * y.c0 + 3 * (x.c2 * y.c3 + x.c3 * y.c2),
       x.c0 * y.c2 + x.c1 * y.c1 + x.c2 * y.c0 + 3 * (x.c3 * y.c3),
       x.c0 * y.c3 + x.c1 * y.c2 + x.c2 * y.c1 + x.c3 * y.c0⟩ := by
-  change KoalaBear.Fast.Ext4.mul x y = _
-  simp only [KoalaBear.Fast.Ext4.mul, KoalaBear.Fast.Ext4.triple, mulAdd4_eq]
-  congr 1 <;> ring
+  apply Montgomery.Native32.Ext4.ext' <;>
+    simp only [show x * y = Montgomery.Native32.Ext4.mul x y from rfl, Montgomery.Native32.Ext4.mul,
+      KoalaBear.mulW_eq, mulAdd4_eq] <;> ring
 
 /-- An in-range coordinate of an array of extension elements. -/
 theorem getD_map (a : Array EF) (p : EF → F) (i : Nat) (h : i < a.size) :
@@ -621,7 +621,7 @@ theorem mulBase_rel {v : EVec} {a : Array EF} (bs : Array F) (hv : RV v a)
   all_goals try (apply mulWords_encode <;> (try simp only [Array.size_map]) <;> omega)
   rw [Array.size_zipWith] at hi
   simp only [Array.getElem_zipWith, getD_map a _ i (by omega), mul_coords, Ext.ofBase,
-    KoalaBear.ofBase_ext4, KoalaBear.Fast.Ext4.ofBase, Array.getD_eq_getD_getElem?,
+    KoalaBear.ofBase_ext4, Montgomery.Native32.Ext4.ofBase, Array.getD_eq_getD_getElem?,
     Array.getElem?_eq_getElem
       (show i < bs.size by omega), Option.getD_some]
   congr 1 <;> ring
@@ -742,7 +742,7 @@ theorem mul_rel {v w : EVec} {a b : Array EF} (hv : RV v a) (hw : RV w b) (hn : 
   simp only [Array.getElem_zipWith, mul_coords]
   generalize a[i.val] = x
   generalize b[i.val]'(by omega) = y
-  simp only [KoalaBear.Fast.Ext4.mk.injEq]
+  simp only [Montgomery.Native32.Ext4.mk.injEq]
   refine ⟨by ring, by ring, by ring, by ring⟩
 
 end CompStark.Stark.EVec
@@ -754,7 +754,7 @@ open CompPoly.CPolynomial.NTTFast.Packed (size_encode_fields getD_ofFn_bounded a
   ofWord_val mul array_eq_of_getD getD_setIfInBounds)
 open CompPoly.CPolynomial.NTTFast.Packed.Native (zeroWords read write)
 
-local notation "F" => KoalaBear.Fast.Field
+local notation "F" => _root_.KoalaBear.Fast.Field
 
 /-- An entry of a tabulated array. -/
 theorem getD_ofFn' {n : Nat} (f : Fin n → F) (i : Nat) :
@@ -964,7 +964,7 @@ end CompStark.Stark
 namespace CompStark.Stark.Fast
 open CompPoly.PackedRepr (encode)
 
-local notation "EF" => KoalaBear.Fast.Ext4
+local notation "EF" => _root_.KoalaBear.Fast.Ext4
 
 /-- Planes of parallel pieces, concatenated. -/
 theorem joinPlanes_rel (n parts : Nat) (V : Nat → EVec) (A : Nat → Array EF)

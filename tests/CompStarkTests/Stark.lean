@@ -2,7 +2,8 @@
 Copyright (c) 2026 zkSecurity. All rights reserved.
 Released under Apache 2.0 license as described in the file LICENSE.
 -/
-import CompStark.Stark.Prover
+import CompStark.KoalaBear.Prover
+import CompStark.KoalaBear.Json
 import CompStark.Completeness
 import CompStark.Soundness
 import CompStark.Security
@@ -40,10 +41,10 @@ def cubeInstance (n : Nat) : Array F × List F :=
 
 /-- Verify and reproduce the saved proof of `air` for parameters `logN logBlowup logFinal
 maxLogArity queries commitPow queryPow`. -/
-def check (name : String) (A : Air) (inst : Nat → Array F × List F) (ps : List Nat) : IO Unit := do
+def check (name : String) (A : Air F) (inst : Nat → Array F × List F) (ps : List Nat) : IO Unit := do
   let [logN, b, f, a, q, cp, qp] := ps | throw (IO.userError "seven parameters")
   let file := s!"{name}_{"_".intercalate (ps.map toString)}"
-  let rust : Proof EF ← IO.ofExcept (Json.parse (← IO.FS.readFile s!"tests/data/{file}.json"))
+  let rust : Proof F EF ← IO.ofExcept (Json.parse (← IO.FS.readFile s!"tests/data/{file}.json"))
   let P : Fri.Params := ⟨b, f, a, q, cp, qp⟩
   let (trace, pis) := inst (2 ^ logN)
   if let .error e := verify P A rust pis then throw (IO.userError s!"{file}: {e}")
@@ -59,7 +60,7 @@ def check (name : String) (A : Air) (inst : Nat → Array F × List F) (ps : Lis
 /-- Prove `air` over the quintic extension `Fast.Ext5` for parameters `logN logBlowup logFinal
 maxLogArity queries commitPow queryPow`: the verifier accepts the proof, and rejects it for other
 public values. -/
-def checkExt5 (A : Air) (inst : Nat → Array F × List F) (ps : List Nat) : IO Unit := do
+def checkExt5 (A : Air F) (inst : Nat → Array F × List F) (ps : List Nat) : IO Unit := do
   let [logN, b, f, a, q, cp, qp] := ps | throw (IO.userError "seven parameters")
   let P : Fri.Params := ⟨b, f, a, q, cp, qp⟩
   let (trace, pis) := inst (2 ^ logN)

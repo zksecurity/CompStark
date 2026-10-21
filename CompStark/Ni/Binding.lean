@@ -23,7 +23,8 @@ climb leaves the log it is stuck at `dstar`), so it opens the extracted rows (D'
 namespace CompStark.Ni
 open CompStark.Stark CompStark.Iop CompStark.RandomOracle OracleSpec OracleComp
 
-local notation "F" => KoalaBear.Fast.Field
+variable {F : Type} [BaseField F]
+
 
 variable {K : Nat}
 
@@ -31,8 +32,8 @@ variable {K : Nat}
 
 /-- A computation's result on an answer table depends only on the answers to the keys it
 queries. -/
-theorem evalWithAnswerFn_congr {α : Type} (answer answer' : (q : Query) → Answer K q) :
-    ∀ (oa : OracleComp (spec K) α), (∀ e ∈ tableQueryLog oa answer, answer' e.1 = answer e.1) →
+theorem evalWithAnswerFn_congr {α : Type} (answer answer' : (q : Query F) → Answer K q) :
+    ∀ (oa : OracleComp (spec F K) α), (∀ e ∈ tableQueryLog oa answer, answer' e.1 = answer e.1) →
       evalWithAnswerFn (QueryImpl.ofFn answer') oa = evalWithAnswerFn (QueryImpl.ofFn answer) oa
   := by
   intro oa
@@ -46,10 +47,10 @@ theorem evalWithAnswerFn_congr {α : Type} (answer answer' : (q : Query) → Ans
     exact ih _ fun e he ↦ h e (List.mem_cons_of_mem _ he)
 
 /-- The digests of a log: its answers' and its keys'. -/
-def logDigests (log : QueryLog (spec K)) : List Digest :=
+def logDigests (log : QueryLog (spec F K)) : List (Digest F) :=
   log.flatMap fun e ↦ digestOf e.1 e.2 :: keyDigests e.1
 
-theorem length_logDigests_le (log : QueryLog (spec K)) :
+theorem length_logDigests_le (log : QueryLog (spec F K)) :
     (logDigests log).length ≤ 3 * log.length := by
   induction log with
   | nil => simp only [logDigests, List.flatMap_nil, List.length_nil, Nat.zero_le]
@@ -59,26 +60,26 @@ theorem length_logDigests_le (log : QueryLog (spec K)) :
     omega
 
 /-- A digest outside a list shorter than the digests. -/
-theorem exists_not_mem (l : List Digest) (h : l.length < Fintype.card Digest) :
+theorem exists_not_mem (l : List (Digest F)) (h : l.length < Fintype.card (Digest F)) :
     ∃ d, d ∉ l := by
   classical
   by_contra hall
   simp only [not_exists, not_not] at hall
-  have hsub : (Finset.univ : Finset Digest) ⊆ l.toFinset := fun d _ ↦ List.mem_toFinset.mpr (hall d)
+  have hsub : (Finset.univ : Finset (Digest F)) ⊆ l.toFinset := fun d _ ↦ List.mem_toFinset.mpr (hall d)
   have := (Finset.card_le_card hsub).trans (List.toFinset_card_le l)
   rw [Finset.card_univ] at this
   omega
 
 /-- The answers of `log`, and `dstar` to every other hash query. -/
-def fresh (log : QueryLog (spec K)) (answer : (q : Query) → Answer K q) (dstar : Digest) :
-    (q : Query) → Answer K q
+def fresh (log : QueryLog (spec F K)) (answer : (q : Query F) → Answer K q) (dstar : Digest F) :
+    (q : Query F) → Answer K q
   | .duplex cap input => answer (.duplex cap input)
   | .leaf row => if Query.leaf row ∈ log.map Sigma.fst then answer (.leaf row) else dstar
   | .node left right =>
     if Query.node left right ∈ log.map Sigma.fst then answer (.node left right) else dstar
 
-theorem fresh_of_mem (log : QueryLog (spec K)) (answer : (q : Query) → Answer K q)
-    (dstar : Digest) (t : Query) (ht : t ∈ log.map Sigma.fst) :
+theorem fresh_of_mem (log : QueryLog (spec F K)) (answer : (q : Query F) → Answer K q)
+    (dstar : Digest F) (t : Query F) (ht : t ∈ log.map Sigma.fst) :
     fresh log answer dstar t = answer t := by
   cases t <;> simp only [fresh, ht, ↓reduceIte]
 
@@ -139,14 +140,14 @@ theorem climb_of_verifyBatch {d : Nat} (hash : List F → Vector F d)
 
 /-- **Binding from a log.** With no digest clashes in `log`, answered by `answer`, the primitives
 on `fresh log answer dstar` bind every digest of `log` to the rows extracted from it. -/
-theorem binding_fresh (answer : (q : Query) → Answer K q) (log : QueryLog (spec K))
-    (hcons : Consistent answer log) (hclash : NoClash log) (dstar : Digest)
-    (hdstar : dstar ∉ logDigests log) (root : Digest) (hroot : root ∈ logDigests log) :
+theorem binding_fresh (answer : (q : Query F) → Answer K q) (log : QueryLog (spec F K))
+    (hcons : Consistent answer log) (hclash : NoClash log) (dstar : Digest F)
+    (hdstar : dstar ∉ logDigests log) (root : Digest F) (hroot : root ∈ logDigests log) :
     Binding (logCache log) (idealOf (fresh log answer dstar)) root := by
   intro n k i values path hn hv
   set g' := fresh log answer dstar
-  set hash : List F → Digest := fun row ↦ g' (.leaf row)
-  set compress : Digest → Digest → Digest := fun a b ↦ g' (.node a b)
+  set hash : List F → Digest F := fun row ↦ g' (.leaf row)
+  set compress : Digest F → Digest F → Digest F := fun a b ↦ g' (.node a b)
   have hv' : Merkle.verifyBatch hash compress root (List.replicate n (2 ^ k)) i values path =
       true := hv
   have hclimb := climb_of_verifyBatch hash compress root n k i hn values path hv'
@@ -170,12 +171,12 @@ theorem binding_fresh (answer : (q : Query) → Answer K q) (log : QueryLog (spe
     exact hleaf (by simp only [hash, g', fresh, h, ↓reduceIte])
   refine Merkle.extractRow_eq_of_verifyBatch (logCache log) (logCache_injective hcons hclash)
     hash compress root n k i hn values path hv' ?_ fun pair hp ↦ ?_
-  · show (⟨.leaf values.flatten, g' (.leaf values.flatten)⟩ : (q : Query) × Answer K q) ∈ log
+  · show (⟨.leaf values.flatten, g' (.leaf values.flatten)⟩ : (q : Query F) × Answer K q) ∈ log
     rw [show g' (.leaf values.flatten) = answer (.leaf values.flatten) from
       fresh_of_mem log answer dstar _ hleaf_mem]
     exact mk_mem_of_consistent hcons hleaf_mem
   · have hm := hnodes pair hp
-    show (⟨.node pair.1 pair.2, g' (.node pair.1 pair.2)⟩ : (q : Query) × Answer K q) ∈ log
+    show (⟨.node pair.1 pair.2, g' (.node pair.1 pair.2)⟩ : (q : Query F) × Answer K q) ∈ log
     rw [show g' (.node pair.1 pair.2) = answer (.node pair.1 pair.2) from
       fresh_of_mem log answer dstar _ hm]
     exact mk_mem_of_consistent hcons hm

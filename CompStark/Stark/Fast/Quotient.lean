@@ -22,8 +22,8 @@ open CompStark.Fri
 open CompPoly.PackedRepr (encode)
 open CompPoly.CPolynomial
 
-local notation "F" => KoalaBear.Fast.Field
-local notation "EF" => KoalaBear.Fast.Ext4
+local notation "F" => _root_.KoalaBear.Fast.Field
+local notation "EF" => _root_.KoalaBear.Fast.Ext4
 
 /-! ### The bit-reversal permutation -/
 
@@ -238,7 +238,7 @@ theorem slice_cols (vals : Array F) (w parts R B c r0 : Nat) (hc : c < w) (hR : 
 expressions on the trace's columns. `E j` is the environment of stored row `j`. -/
 theorem evalWords_eq (vals : Array F) (w parts R B : Nat) (next : Array Nat)
     (contiguous : Array (Option Nat)) (pis : List F) (fA lA tA : Array F) (r0 : Nat)
-    (E : Nat → Expr.Env F) (hR : 0 < R) (hBR : B ∣ R) (hB0 : 0 < B) (hBr : B ∣ r0)
+    (E : Nat → Expr.Env F F) (hR : 0 < R) (hBR : B ∣ R) (hB0 : 0 < B) (hBr : B ∣ r0)
     (hr : r0 + B ≤ parts * R) (hv : parts * R * w ≤ vals.size) (hs : 4 * vals.size < USize.size)
     (hBs : 4 * B < USize.size) (hnext : ∀ j < parts * R, next.getD j 0 < parts * R)
     (hcont : ∀ n0, contiguous.getD (r0 / B) none = some n0 →
@@ -250,7 +250,7 @@ theorem evalWords_eq (vals : Array F) (w parts R B : Nat) (next : Array Nat)
     (hEf : ∀ j < parts * R, (E j).isFirstRow = fA.getD j 0)
     (hEl : ∀ j < parts * R, (E j).isLastRow = lA.getD j 0)
     (hEt : ∀ j < parts * R, (E j).isTransition = tA.getD j 0) :
-    ∀ e : Expr, e.colsBelow w = true →
+    ∀ e : Expr F, e.colsBelow w = true →
       evalWords (encode (colsOf vals w parts R)) w R B next contiguous pis (encode fA)
         (encode lA) (encode tA) r0 e =
       encode (Array.ofFn (n := B) fun k ↦ e.eval (E (r0 + k.val))) := by
@@ -343,14 +343,14 @@ theorem evalWords_eq (vals : Array F) (w parts R B : Nat) (next : Array Nat)
 
 /-! ### Accumulating the weighted constraints -/
 
-theorem rowAcc_cons (a : Expr × List F) (cw : List (Expr × List F)) (ev : Expr → F) (j : Nat)
+theorem rowAcc_cons (a : Expr F × List F) (cw : List (Expr F × List F)) (ev : Expr F → F) (j : Nat)
     (x : F) : rowAcc (a :: cw) ev j x = rowAcc cw ev j (x + ev a.1 * a.2.getD j 0) := by
   rw [rowAcc, rowAcc, List.foldl_cons]
 
 /-- The fast accumulation of weighted constraints over a block of `B` rows: entry `i` of plane `j`
 is `rowAcc` at that row, from `X j i`. -/
-theorem accWords (B : Nat) (hB : 4 * B < USize.size) (V : Expr → ByteArray) (ev : Expr → Nat → F) :
-    ∀ (cw : List (Expr × List F)),
+theorem accWords (B : Nat) (hB : 4 * B < USize.size) (V : Expr F → ByteArray) (ev : Expr F → Nat → F) :
+    ∀ (cw : List (Expr F × List F)),
       (∀ a ∈ cw, V a.1 = encode (Array.ofFn (n := B) fun i ↦ ev a.1 i.val)) →
       (∀ a ∈ cw, a.2.length = 4) → ∀ (X : Nat → Nat → F),
       (cw.map fun a ↦ (a.1, a.2.map Subtype.val)).foldl (fun b a ↦
@@ -407,7 +407,7 @@ theorem accWords (B : Nat) (hB : 4 * B < USize.size) (V : Expr → ByteArray) (e
 /-! ### The specification's trace and the tables -/
 
 /-- The rows `perm[0], perm[1], …` of a matrix. -/
-theorem permuteRows_eq (m : Mat) (perm : Array Nat) : permuteRows m perm =
+theorem permuteRows_eq (m : Mat F) (perm : Array Nat) : permuteRows m perm =
     Array.ofFn (n := perm.size * m.width) fun k ↦
       m.values.getD (perm.getD (k.val / m.width) 0 * m.width + k.val % m.width) 0 := by
   simp only [permuteRows, Id.run, Std.Legacy.Range.forIn_eq_forIn_range',
@@ -426,7 +426,7 @@ theorem permuteRows_eq (m : Mat) (perm : Array Nat) : permuteRows m perm =
   rfl
 
 /-- Entry `(r, c)` of the rows `perm[0], perm[1], …`. -/
-theorem permuteRows_getD (m : Mat) (perm : Array Nat) (r c : Nat) (hr : r < perm.size)
+theorem permuteRows_getD (m : Mat F) (perm : Array Nat) (r c : Nat) (hr : r < perm.size)
     (hc : c < m.width) : (permuteRows m perm).getD (r * m.width + c) 0 =
       m.values.getD (perm.getD r 0 * m.width + c) 0 := by
   have hlt : r * m.width + c < perm.size * m.width := by
@@ -460,16 +460,16 @@ theorem table_encode (d l : Nat) (sel : Array F) (f : Nat → F)
   exact congrArg encode (Array.map_congr_left fun i hi ↦ hf i (lt_of_mem_bitRevPerm hi))
 
 theorem tables_first (d l : Nat) : (quotientTables d l).first =
-    encode ((bitRevPerm (d + l)).map fun i ↦ (qFirst d l).getD i 0) :=
+    encode ((bitRevPerm (d + l)).map fun i ↦ (qFirst d l : Array F).getD i 0) :=
   table_encode d l _ _ fun i hi ↦ by unfold qFirst; rw [NTTFast.Packed.getD_ofFn_bounded _ i hi]
 
 theorem tables_last (d l : Nat) : (quotientTables d l).last =
-    encode ((bitRevPerm (d + l)).map fun i ↦ (qLast d l).getD i 0) :=
+    encode ((bitRevPerm (d + l)).map fun i ↦ (qLast d l : Array F).getD i 0) :=
   table_encode d l _ _ fun i hi ↦ by unfold qLast; rw [NTTFast.Packed.getD_ofFn_bounded _ i hi]
 
 theorem tables_trans (d l : Nat) : (quotientTables d l).trans =
-    encode ((bitRevPerm (d + l)).map fun i ↦ (qTrans d l).getD i 0) :=
-  table_encode d l _ _ fun i hi ↦ (getD_map_lt (cosetPoints gen (d + l))
+    encode ((bitRevPerm (d + l)).map fun i ↦ (qTrans d l : Array F).getD i 0) :=
+  table_encode d l _ _ fun i hi ↦ (getD_map_lt (cosetPoints (gen : F) (d + l))
     (· - (twoAdicGen d)⁻¹) i (by rw [size_cosetPoints]; exact hi) 0 0).symm
 
 /-- When a block's next rows are flagged contiguous, they are the block from the flagged row. -/
@@ -519,7 +519,7 @@ theorem word_encode_ofFn (B : Nat) (hB : 4 * B < USize.size) (X : Nat → F) (k 
     NTTFast.Packed.ofWord_val, NTTFast.Packed.getD_ofFn_bounded _ _ hk]
 
 /-- The fast quotient is the specification's. -/
-theorem quotientWith_rel (A : Air) (pis : List F) (d l : Nat) (alpha : EF) {ext : PMat} {s : Mat}
+theorem quotientWith_rel (A : Air F) (pis : List F) (d l : Nat) (alpha : EF) {ext : PMat} {s : Mat F}
     (h : RM ext s) (hs : MatOk s) (hh : 2 ^ (d + l) ≤ s.height)
     (hc : ∀ c ∈ A.constraints, c.colsBelow s.width) :
     quotientWith (quotientTables d l) A pis ext alpha = quotientOfLde A pis d l s alpha := by
@@ -624,7 +624,7 @@ theorem quotientWith_rel (A : Air) (pis : List F) (d l : Nat) (alpha : EF) {ext 
     rw [Nat.succ_mul, Nat.div_mul_cancel hBn] at this
     exact this
   have hsizeP : (bitRevPerm (d + l)).size = parts * 2 ^ e := by rw [size_bitRevPerm, hpe]
-  let E (j : Nat) : Expr.Env F := rowEnv (Mat.ofValues s.width (2 ^ (d + l))
+  let E (j : Nat) : Expr.Env F F := rowEnv (Mat.ofValues s.width (2 ^ (d + l))
     (permuteRows s (bitRevPerm (d + l)))) (2 ^ (d + l)) (2 ^ l) pis (qFirst d l) (qLast d l)
     (qTrans d l) ((bitRevPerm (d + l)).getD j 0)
   have hsel (sel : Array F) (j : Nat) (hj : j < parts * 2 ^ e) :
@@ -633,9 +633,9 @@ theorem quotientWith_rel (A : Air) (pis : List F) (d l : Nat) (alpha : EF) {ext 
     rw [getD_map_lt _ _ j (by rw [hsizeP]; exact hj) 0 0]
   have hV : ∀ a ∈ weighted A alpha, evalWords (encode (colsOf s.values s.width parts (2 ^ e)))
       s.width (2 ^ e) B T.next T.contiguous pis
-      (encode ((bitRevPerm (d + l)).map fun i ↦ (qFirst d l).getD i 0))
-      (encode ((bitRevPerm (d + l)).map fun i ↦ (qLast d l).getD i 0))
-      (encode ((bitRevPerm (d + l)).map fun i ↦ (qTrans d l).getD i 0)) (blk * B) a.1 =
+      (encode ((bitRevPerm (d + l)).map fun i ↦ (qFirst d l : Array F).getD i 0))
+      (encode ((bitRevPerm (d + l)).map fun i ↦ (qLast d l : Array F).getD i 0))
+      (encode ((bitRevPerm (d + l)).map fun i ↦ (qTrans d l : Array F).getD i 0)) (blk * B) a.1 =
       encode (Array.ofFn (n := B) fun k ↦ a.1.eval (E (blk * B + k.val))) := by
     intro a ha
     have hc' : a.1 ∈ A.constraints := (List.of_mem_zip ha).1

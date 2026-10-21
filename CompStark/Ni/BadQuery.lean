@@ -36,20 +36,19 @@ Suppose not. Then, with no clashes:
 @[expose] public section
 namespace CompStark.Ni
 open CompStark.Stark CompStark.Fri CompStark.Sound CompStark.Iop CompStark.RandomOracle
-open Polynomial Montgomery.Native32 Fri.Spec OracleSpec OracleComp
+open Polynomial Fri.Spec OracleSpec OracleComp
 
-local notation "F" => KoalaBear.Fast.Field
 
-variable {EF : Type} [Challenge EF]
+variable {F : Type} [BaseField F] {EF : Type} [Challenge F EF]
 
 /-! ### First occurrences -/
 
 /-- A property of every fresh query holds at the first query of each key. -/
-theorem of_first {K : Nat} {answer : (q : Query) → Answer K q} {log : QueryLog (spec K)}
-    (hcons : Consistent answer log) (P : QueryLog (spec K) → (t : Query) → Answer K t → Prop)
+theorem of_first {K : Nat} {answer : (q : Query F) → Answer K q} {log : QueryLog (spec F K)}
+    (hcons : Consistent answer log) (P : QueryLog (spec F K) → (t : Query F) → Answer K t → Prop)
     (h : ∀ p (hp : p < log.length), log[p].1 ∉ (log.take p).map Sigma.fst →
       P (log.take p) log[p].1 log[p].2)
-    {t : Query} (ht : t ∈ log.map Sigma.fst) : P (log.take (idx log t)) t (answer t) := by
+    {t : Query F} (ht : t ∈ log.map Sigma.fst) : P (log.take (idx log t)) t (answer t) := by
   have h1 := h (idx log t) (idx_lt ht) (by rw [getElem_idx_fst ht]; exact not_mem_take_idx ht)
   have hfst := getElem_idx_fst ht
   have hmem := List.getElem_mem (idx_lt ht)
@@ -61,12 +60,12 @@ theorem of_first {K : Nat} {answer : (q : Query) → Answer K q} {log : QueryLog
   subst ha
   exact h1
 
-theorem mem_logDigests {K : Nat} {log : QueryLog (spec K)} {t : Query}
-    (ht : t ∈ log.map Sigma.fst) {d : Digest} (hd : d ∈ keyDigests t) : d ∈ logDigests log := by
+theorem mem_logDigests {K : Nat} {log : QueryLog (spec F K)} {t : Query F}
+    (ht : t ∈ log.map Sigma.fst) {d : Digest F} (hd : d ∈ keyDigests t) : d ∈ logDigests log := by
   obtain ⟨e, he, rfl⟩ := List.mem_map.mp ht
   exact List.mem_flatMap.mpr ⟨e, he, List.mem_cons_of_mem _ hd⟩
 
-theorem mem_map_fst_take {K : Nat} {log : QueryLog (spec K)} {t : Query} {n : Nat}
+theorem mem_map_fst_take {K : Nat} {log : QueryLog (spec F K)} {t : Query F} {n : Nat}
     (h : t ∈ (log.take n).map Sigma.fst) : t ∈ log.map Sigma.fst := by
   rw [List.map_take] at h
   exact List.mem_of_mem_take h
@@ -74,7 +73,7 @@ theorem mem_map_fst_take {K : Nat} {log : QueryLog (spec K)} {t : Query} {n : Na
 /-! ### The schedule's rounds -/
 
 section Rounds
-variable {K : Nat} (answer : (q : Query) → Answer K q) (blocks : List (List F))
+variable {K : Nat} (answer : (q : Query F) → Answer K q) (blocks : List (List F))
 
 theorem length_history (j : Nat) : (history answer blocks j).length = j := by
   simp only [history, List.length_map, List.length_range]
@@ -98,7 +97,7 @@ theorem history_snd (j k : Nat) (hk : k ≤ j) (d : Vector F K) :
     rw [List.getElem_range]
   · exact getD_append_singleton _ _ _ _ (by rw [List.length_map, length_history])
 
-theorem capAt_fresh (log : QueryLog (spec K)) (dstar : Digest) :
+theorem capAt_fresh (log : QueryLog (spec F K)) (dstar : Digest F) :
     ∀ j, capAt (fresh log answer dstar) blocks j = capAt answer blocks j
   | 0 => rfl
   | j + 1 => by
@@ -106,18 +105,18 @@ theorem capAt_fresh (log : QueryLog (spec K)) (dstar : Digest) :
     rw [capAt_fresh log dstar j]
     rfl
 
-theorem keyAt_fresh (log : QueryLog (spec K)) (dstar : Digest) (j : Nat) :
+theorem keyAt_fresh (log : QueryLog (spec F K)) (dstar : Digest F) (j : Nat) :
     keyAt (fresh log answer dstar) blocks j = keyAt answer blocks j := by
   simp only [keyAt, capAt_fresh]
 
-theorem samples_keyAt_fresh (log : QueryLog (spec K)) (dstar : Digest) (j : Nat) :
+theorem samples_keyAt_fresh (log : QueryLog (spec F K)) (dstar : Digest F) (j : Nat) :
     (fresh log answer dstar (keyAt (fresh log answer dstar) blocks j)).2 =
       (answer (keyAt answer blocks j)).2 := by
   show (fresh log answer dstar (.duplex (capAt (fresh log answer dstar) blocks j) _)).2 = _
   rw [capAt_fresh]
   rfl
 
-theorem fresh_keyAt (log : QueryLog (spec K)) (dstar : Digest) (j : Nat) :
+theorem fresh_keyAt (log : QueryLog (spec F K)) (dstar : Digest F) (j : Nat) :
     fresh log answer dstar (keyAt answer blocks j) = answer (keyAt answer blocks j) := rfl
 
 end Rounds
@@ -129,7 +128,7 @@ variable (S : Iop.Setup EF) (publicValues : List F) (δ δ' loss : NNReal)
 
 /-- Query `p` of `log` is fresh, and its answer clashes with a known digest or makes its round
 bad. -/
-def BadAt (log : QueryLog (spec S.streamLen)) (p : Nat) (hp : p < log.length) : Prop :=
+def BadAt (log : QueryLog (spec F S.streamLen)) (p : Nat) (hp : p < log.length) : Prop :=
   log[p].1 ∉ (log.take p).map Sigma.fst ∧
     (Clash (log.take p) log[p].1 log[p].2 ∨
       RoundBad S publicValues δ δ' loss (log.take p) log[p].1 log[p].2)
@@ -137,18 +136,18 @@ def BadAt (log : QueryLog (spec S.streamLen)) (p : Nat) (hp : p < log.length) : 
 /-- **The bad query.** If the verifier, run after a prover whose queries `log` an answer table
 answers, accepts a proof for `2 ^ logN` rows, and no trace close to the trace committed in `log`
 satisfies the AIR, then some query of the run is fresh and clashes or is round-bad. -/
-theorem exists_badAt (hδ' : (δ' : ℝ) < 1 - S.rate) (answer : (q : Query) → Answer S.streamLen q)
-    (proof : Proof EF) (log : QueryLog (spec S.streamLen)) (hcons : Consistent answer log)
+theorem exists_badAt (hδ' : (δ' : ℝ) < 1 - S.rate) (answer : (q : Query F) → Answer S.streamLen q)
+    (proof : Proof F EF) (log : QueryLog (spec F S.streamLen)) (hcons : Consistent answer log)
     (hdb : proof.degreeBits = S.logN)
     (hok : verifyWith (idealOf answer) S.params S.air proof publicValues = .ok ())
     (hsmall : 3 * (log ++ tableQueryLog
-      (verifyWith (ideal S.streamLen) S.params S.air proof publicValues) answer).length <
-        Fintype.card Digest)
+      (verifyWith (ideal F S.streamLen) S.params S.air proof publicValues) answer).length <
+        Fintype.card (Digest F))
     (hfail : ∀ trace ∈ closeTraces S δ' (committedTrace S log proof),
       ¬ S.air.Satisfied S.logN trace publicValues) :
     ∃ p hp, BadAt S publicValues δ δ' loss (log ++ tableQueryLog
-      (verifyWith (ideal S.streamLen) S.params S.air proof publicValues) answer) p hp := by
-  set vlog := tableQueryLog (verifyWith (ideal S.streamLen) S.params S.air proof publicValues)
+      (verifyWith (ideal F S.streamLen) S.params S.air proof publicValues) answer) p hp := by
+  set vlog := tableQueryLog (verifyWith (ideal F S.streamLen) S.params S.air proof publicValues)
     answer with hvlog
   set L := log ++ vlog with hL
   by_contra hno
@@ -195,7 +194,7 @@ theorem exists_badAt (hδ' : (δ' : ℝ) < 1 - S.rate) (answer : (q : Query) →
     rw [List.take_length] at hnp
     exact (Merkle.extractRow_eq_of_noPrediction _ _ r hnp k i).symm
   -- the rounds' prefixes, kept opaque
-  obtain ⟨C, hC⟩ : ∃ C : Nat → Merkle.Cache F Digest,
+  obtain ⟨C, hC⟩ : ∃ C : Nat → Merkle.Cache F (Digest F),
       C = fun j ↦ logCache (L.take (idx L (keyAt answer blocks j))) := ⟨_, rfl⟩
   obtain ⟨B, hB⟩ : ∃ B : Nat → Nat → List F,
       B = fun j k ↦ ((history answer blocks j).map Prod.fst ++ [blocks.getD j []]).getD k [] :=
@@ -289,8 +288,8 @@ theorem exists_badAt (hδ' : (δ' : ℝ) < 1 - S.rate) (answer : (q : Query) →
       dite_eq_left (by omega)] at h
     have hfin : (⟨3 + f.val - 3, by omega⟩ : Fin (S.lastFold + 1)) = f := Fin.ext (by simp)
     rw [hfin] at h
-    have hpow : S.params.commitPowBits ≠ 0 → (FastField.toField
-        ((smp (3 + f.val)).toList.getD 0 0)).val % 2 ^ S.params.commitPowBits = 0 := fun hb ↦ by
+    have hpow : S.params.commitPowBits ≠ 0 → CompPoly.CanonicalNat.toNat
+        ((smp (3 + f.val)).toList.getD 0 0) % 2 ^ S.params.commitPowBits = 0 := fun hb ↦ by
       rw [hsmp]
       exact commitWitness_idealOf answer S.params proof publicValues (le_refl _) hopen _ st hfriOk
         f.val (by omega) hb
@@ -348,7 +347,8 @@ theorem exists_badAt (hδ' : (δ' : ℝ) < 1 - S.rate) (answer : (q : Query) →
   rw [h4, hg'] at hpowEq hqEq
   dsimp only at hpowEq hqEq
   rw [samples_keyAt_fresh answer _ L dstar] at hpowEq hqEq
-  have hpow' : (powAt S (smp (4 + S.lastFold))).val % 2 ^ S.params.queryPowBits = 0 := by
+  have hpow' : CompPoly.CanonicalNat.toNat (powAt S (smp (4 + S.lastFold))) %
+      2 ^ S.params.queryPowBits = 0 := by
     by_cases hb : S.params.queryPowBits = 0
     · simp only [hb, pow_zero, Nat.mod_one]
     · rw [powAt, ite_eq_right hb, hsmp]

@@ -17,6 +17,9 @@ Plonky3's `MerkleTreeMmcs::open_batch` and `verify_batch` over the trees of `Tre
   compresses with the siblings from the leaves up, and wherever a layer has the padded height of
   the next shorter matrices compresses in the hash of their rows. It accepts if this ends at the
   commitment.
+
+`verifyBatchM` runs the verification with hashes in a monad; with pure hashes it is `verifyBatch`
+(`verifyBatchM_pure`).
 -/
 
 @[expose] public section
@@ -137,19 +140,72 @@ def verifyBatchM [DecidableEq F] (hash : List F → m (Vector F d))
 
 end Monadic
 
-namespace KoalaBear
+section PureHashes
+variable {F : Type} {d : Nat} {m : Type → Type} [Monad m] [LawfulMonad m]
 
-variable (F : Type*) [Field F]
+/-! ### Pure hashes -/
 
-/-- The KoalaBear Poseidon2 opening of base-field matrices. -/
-def openBatch (ms : List (Matrix F)) (index : Nat) : List (List F) × List (Vector F 8) :=
-  Merkle.openBatch (Hash.KoalaBear.hash F) (Hash.KoalaBear.compress F) ms index
+theorem climbM_pure (hash : List F → Vector F d) (compress : Vector F d → Vector F d → Vector F d)
+    (values : List (List F)) :
+    ∀ path groups index padded root,
+      climbM (m := m) (fun xs ↦ pure (hash xs)) (fun a b ↦ pure (compress a b)) values path groups
+        index padded root = pure (climb hash compress values path groups index padded root)
+  | [], _, _, _, _ => rfl
+  | sib :: sibs, groups, index, padded, root => by
+    simp only [climbM, climb]
+    have step : ∀ root : Vector F d, (do
+        let root ← (pure root : m (Vector F d))
+        match groups with
+        | (h, is) :: rest =>
+          if h.nextPowerOfTwo = padded / 2 then do
+            let leaf ← pure (hash (is.flatMap fun i ↦ values.getD i []))
+            let root ← pure (compress root leaf)
+            (climbM (fun xs ↦ pure (hash xs)) (fun a b ↦ pure (compress a b)) values sibs rest
+              (index / 2) (padded / 2) root)
+          else (climbM (fun xs ↦ pure (hash xs)) (fun a b ↦ pure (compress a b)) values sibs
+            groups (index / 2) (padded / 2) root)
+        | [] => (climbM (fun xs ↦ pure (hash xs)) (fun a b ↦ pure (compress a b)) values sibs []
+            (index / 2) (padded / 2) root)) =
+        pure (match groups with
+          | (h, is) :: rest =>
+            if h.nextPowerOfTwo = padded / 2 then
+              climb hash compress values sibs rest (index / 2) (padded / 2)
+                (compress root (hashRows hash values is))
+            else climb hash compress values sibs groups (index / 2) (padded / 2) root
+          | [] => climb hash compress values sibs [] (index / 2) (padded / 2) root) := by
+      intro root
+      rw [pure_bind]
+      rcases groups with _ | ⟨⟨h, is⟩, rest⟩
+      · exact climbM_pure hash compress values sibs _ _ _ _
+      · dsimp only
+        by_cases hh : h.nextPowerOfTwo = padded / 2
+        · simp only [hh, ite_true]
+          rw [ pure_bind, pure_bind, hashRows]
+          exact climbM_pure hash compress values sibs _ _ _ _
+        · simp only [hh, ite_false]
+          exact climbM_pure hash compress values sibs _ _ _ _
+    by_cases hi : index % 2 = 0
+    · simp only [hi, ite_true]; exact step _
+    · simp only [hi, ite_false]; exact step _
 
-/-- The KoalaBear Poseidon2 verification of a base-field opening. -/
-def verifyBatch [DecidableEq F] (commit : Vector F 8) (heights : List Nat) (index : Nat)
-    (values : List (List F)) (path : List (Vector F 8)) : Bool :=
-  Merkle.verifyBatch (Hash.KoalaBear.hash F) (Hash.KoalaBear.compress F) commit heights index
-    values path
+/-- With pure hashes, `verifyBatchM` is `verifyBatch`. -/
+theorem verifyBatchM_pure [DecidableEq F] (hash : List F → Vector F d)
+    (compress : Vector F d → Vector F d → Vector F d) (commit : Vector F d) (heights : List Nat)
+    (index : Nat) (values : List (List F)) (path : List (Vector F d)) :
+    verifyBatchM (m := m) (fun xs ↦ pure (hash xs)) (fun a b ↦ pure (compress a b)) commit
+      heights index values path =
+      pure (verifyBatch hash compress commit heights index values path) := by
+  unfold verifyBatchM verifyBatch
+  rcases heightGroups heights with _ | ⟨⟨maxH, tallest⟩, rest⟩
+  · rfl
+  · dsimp only
+    split
+    · rename_i h
+      rw [h, Bool.true_and, pure_bind, climbM_pure, pure_bind, hashRows]
+    · rename_i h
+      rw [Bool.not_eq_true] at h
+      rw [h, Bool.false_and]
 
-end KoalaBear
+end PureHashes
+
 end CompStark.Merkle

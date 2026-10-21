@@ -5,7 +5,7 @@ Released under Apache 2.0 license as described in the file LICENSE.
 module
 
 public import CompStark.Merkle.Packed
-public import CompStark.Merkle.Tree
+public import CompStark.KoalaBear.Hash
 public import CompStark.Poseidon2.PackedCorrectness24
 import all CompStark.Merkle.Packed
 import all CompPoly.Univariate.NTTFast.Packed.Native

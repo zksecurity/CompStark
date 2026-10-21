@@ -40,7 +40,7 @@ the terms other than FRI's; `numbers_le` and `numbers_curve_le` close the arithm
 namespace CompStark.Sound
 open CompStark.Stark CompStark.Iop NNReal ProximityGap CoreDefinitions Code
 
-variable {EF : Type} [Challenge EF]
+variable {F : Type} [BaseField F] {EF : Type} [Challenge F EF]
 
 local notation "𝕂" => Challenge.Spec EF
 
@@ -435,9 +435,8 @@ theorem knowledgeError_le_curve (S : Setup EF) (δ δ' : ℝ≥0)
 /-! ### The numbers -/
 
 /-- `|𝕂| = p ^ d`. -/
-theorem card_eq : (Fintype.card 𝕂 : ℝ) = 2130706433 ^ Challenge.d EF := by
-  rw [Challenge.card_spec, KoalaBear.fieldSize]
-  norm_num
+theorem card_eq : (Fintype.card 𝕂 : ℝ) = (Fintype.card F : ℝ) ^ Challenge.d EF := by
+  rw [Challenge.card_spec, Nat.cast_pow]
 
 /-- The terms of a knowledge error bound as one real number. -/
 theorem terms_eq (A T : ℕ) (b c y : ℝ) (hb : 0 ≤ b) (hc : 0 ≤ c) (hy : 0 ≤ y) (l : ℕ) :
@@ -445,7 +444,8 @@ theorem terms_eq (A T : ℕ) (b c y : ℝ) (hb : 0 ≤ b) (hc : 0 ≤ c) (hy : 0
         (ENNReal.ofReal c / Fintype.card 𝕂 + (T : ENNReal) / Fintype.card 𝕂 +
           ((Real.toNNReal y ^ l : ℝ≥0) : ENNReal)) =
       ENNReal.ofReal ((A + b + c + T) / Fintype.card 𝕂 + y ^ l) := by
-  have hK : (0 : ℝ) < Fintype.card 𝕂 := by rw [card_eq]; positivity
+  have hK : (0 : ℝ) < Fintype.card 𝕂 := by
+    rw [card_eq]; exact pow_pos (Nat.cast_pos.mpr Fintype.card_pos) _
   have hpow : ((Real.toNNReal y ^ l : ℝ≥0) : ENNReal) = ENNReal.ofReal (y ^ l) := by
     rw [ENNReal.ofReal_pow hy, ENNReal.coe_pow]
     rfl
@@ -471,7 +471,7 @@ bounds are. -/
 theorem numbers_curve_le {bits : ℕ} (A A₀ T T₀ l : ℕ) (b b₀ c c₀ y y₀ : ℝ) (hA : A ≤ A₀)
     (hb : b ≤ b₀)
     (hc : c ≤ c₀) (hT : T ≤ T₀) (hy : y ≤ y₀) (hb₀ : 0 ≤ b₀) (hc₀ : 0 ≤ c₀) (hy₀ : 0 ≤ y₀)
-    (h : (A₀ + b₀ + c₀ + T₀) / 2130706433 ^ Challenge.d EF + y₀ ^ l ≤ (2 ^ bits : ℝ)⁻¹) :
+    (h : (A₀ + b₀ + c₀ + T₀) / (Fintype.card F : ℝ) ^ Challenge.d EF + y₀ ^ l ≤ (2 ^ bits : ℝ)⁻¹) :
     (A : ENNReal) / (Fintype.card 𝕂 : ENNReal) + ENNReal.ofReal b / Fintype.card 𝕂 +
         (ENNReal.ofReal c / Fintype.card 𝕂 + (T : ENNReal) / Fintype.card 𝕂 +
           ((Real.toNNReal y ^ l : ℝ≥0) : ENNReal)) ≤
@@ -493,7 +493,7 @@ theorem numbers_curve_le {bits : ℕ} (A A₀ T T₀ l : ℕ) (b b₀ c c₀ y y
 theorem numbers_le {bits : ℕ} (A A₀ T T₀ l : ℕ) (c c₀ y y₀ : ℝ) (hA : A ≤ A₀) (hc : c ≤ c₀)
     (hT : T ≤ T₀)
     (hy : y ≤ y₀) (hc₀ : 0 ≤ c₀) (hy₀ : 0 ≤ y₀)
-    (h : (A₀ + c₀ + T₀) / 2130706433 ^ Challenge.d EF + y₀ ^ l ≤ (2 ^ bits : ℝ)⁻¹) :
+    (h : (A₀ + c₀ + T₀) / (Fintype.card F : ℝ) ^ Challenge.d EF + y₀ ^ l ≤ (2 ^ bits : ℝ)⁻¹) :
     (A : ENNReal) / (Fintype.card 𝕂 : ENNReal) +
         (ENNReal.ofReal c / Fintype.card 𝕂 + (T : ENNReal) / Fintype.card 𝕂 +
           ((Real.toNNReal y ^ l : ℝ≥0) : ENNReal)) ≤

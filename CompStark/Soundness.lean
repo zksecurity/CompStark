@@ -30,9 +30,8 @@ constraint check at `ζ` is a polynomial identity that a failing candidate satis
 namespace CompStark.Iop
 open CompStark.Stark CompStark.Sound
 
-local notation "F" => KoalaBear.Fast.Field
 
-variable {EF : Type} [Challenge EF]
+variable {F : Type} [BaseField F] {EF : Type} [Challenge F EF]
 
 /-- **Knowledge soundness.** If no trace close to the prover's committed trace satisfies the AIR,
 the verifier accepts the prover with probability at most the knowledge error: FRI tests proximity

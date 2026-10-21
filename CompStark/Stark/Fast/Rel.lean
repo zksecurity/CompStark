@@ -19,10 +19,11 @@ namespace CompStark.Stark.Fast
 open CompStark.Fri
 open CompPoly.PackedRepr (encode)
 
-local notation "EF" => KoalaBear.Fast.Ext4
+local notation "F" => _root_.KoalaBear.Fast.Field
+local notation "EF" => _root_.KoalaBear.Fast.Ext4
 
 /-- A packed matrix represents the matrix of its encoded values. -/
-def RM (pm : PMat) (m : Mat) : Prop :=
+def RM (pm : PMat) (m : Mat F) : Prop :=
   pm.width = m.width ∧ pm.height = m.height ∧ pm.words = encode m.values
 
 /-- Planes represent the elements whose coordinates they encode. -/
@@ -32,7 +33,7 @@ def RV (v : EVec) (a : Array EF) : Prop :=
 
 /-- A packed commitment represents the specification's of the represented matrices, with the
 encoded digest layers. -/
-def RC (c : Commit) (s : Committed) : Prop :=
+def RC (c : Commit) (s : Committed F) : Prop :=
   List.Forall₂ RM c.mats s.mats ∧ c.layers = s.layers.map encodeDigests
 
 end CompStark.Stark.Fast

@@ -25,20 +25,19 @@ so the list has at most one element (`listSize_le_one`).
 namespace CompStark.Sound
 open CompStark.Stark CompStark.Iop Polynomial
 
-local notation "𝔽" => KoalaBear.Field
 
-variable {EF : Type} [Challenge EF]
+variable {F : Type} [BaseField F] {EF : Type} [Challenge F EF]
 
-/-- The points of `L` in `𝔽` are distinct. -/
+/-- The points of `L` in `F` are distinct. -/
 theorem basePoint_injective (S : Setup EF) :
-    Function.Injective fun i : S.Point ↦ basePoint (S.logN + S.params.logBlowup) i := by
+    Function.Injective fun i : S.Point ↦ basePoint (F := F) (S.logN + S.params.logBlowup) i := by
   intro i j h
   apply S.domain.injective
   rw [domain_eq, domain_eq]
-  exact congrArg (algebraMap 𝔽 (Challenge.Spec EF)) h
+  exact congrArg (algebraMap F (Challenge.Spec EF)) h
 
 /-- Distinct tuples of polynomials of degree at most `n` agree on at most `n` points of `L`. -/
-theorem card_le_of_eqOn (S : Setup EF) {ι : Type} (p q : ι → 𝔽[X])
+theorem card_le_of_eqOn (S : Setup EF) {ι : Type} (p q : ι → F[X])
     (hp : ∀ k, (p k).natDegree ≤ S.n) (hq : ∀ k, (q k).natDegree ≤ S.n) (hpq : p ≠ q)
     (U : Finset S.Point)
     (hU : ∀ i ∈ U, ∀ k, (p k).eval (basePoint (S.logN + S.params.logBlowup) i) =
@@ -96,13 +95,13 @@ theorem lt_of_johnson (N n A x c ℓ : ℝ) (hn : 0 ≤ n) (hnN : n ≤ N) (hx :
   nlinarith [mul_le_mul_of_nonneg_right hge hgapA.le]
 
 /-- Each tuple in the list, with an agreement set. -/
-noncomputable def agreeSet (S : Setup EF) {ι : Type} (δ : ℝ) (words : ι → S.Point → 𝔽)
-    (p : ι → 𝔽[X]) : Finset S.Point :=
+noncomputable def agreeSet (S : Setup EF) {ι : Type} (δ : ℝ) (words : ι → S.Point → F)
+    (p : ι → F[X]) : Finset S.Point :=
   open Classical in if h : Agree S δ words p then h.choose else ∅
 
 /-- The agreement set of a tuple in the list is large and the tuple agrees with the words on it. -/
-theorem agreeSet_spec (S : Setup EF) {ι : Type} (δ : ℝ) (words : ι → S.Point → 𝔽)
-    (p : ι → 𝔽[X]) (h : Agree S δ words p) :
+theorem agreeSet_spec (S : Setup EF) {ι : Type} (δ : ℝ) (words : ι → S.Point → F)
+    (p : ι → F[X]) (h : Agree S δ words p) :
     ((agreeSet S δ words p).card : ℝ) ≥ S.size * (1 - δ) ∧
       ∀ i ∈ agreeSet S δ words p, ∀ k,
         words k i = (p k).eval (basePoint (S.logN + S.params.logBlowup) i) := by
@@ -110,8 +109,8 @@ theorem agreeSet_spec (S : Setup EF) {ι : Type} (δ : ℝ) (words : ι → S.Po
   exact h.choose_spec
 
 /-- The agreement sets of two distinct tuples in the list meet in at most `n` points. -/
-theorem card_inter_agreeSet_le (S : Setup EF) {ι : Type} (δ : ℝ) (words : ι → S.Point → 𝔽)
-    (p q : ι → 𝔽[X]) (hp : (∀ k, (p k).natDegree ≤ S.n) ∧ Agree S δ words p)
+theorem card_inter_agreeSet_le (S : Setup EF) {ι : Type} (δ : ℝ) (words : ι → S.Point → F)
+    (p q : ι → F[X]) (hp : (∀ k, (p k).natDegree ≤ S.n) ∧ Agree S δ words p)
     (hq : (∀ k, (q k).natDegree ≤ S.n) ∧ Agree S δ words q) (hpq : p ≠ q) :
     (agreeSet S δ words p ∩ agreeSet S δ words q).card ≤ S.n := by
   refine card_le_of_eqOn S p q hp.1 hq.1 hpq _ fun i hi k ↦ ?_

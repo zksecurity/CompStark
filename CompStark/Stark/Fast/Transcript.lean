@@ -18,7 +18,7 @@ open CompPoly.PackedRepr (encode)
 open CompPoly.CPolynomial.NTTFast.Packed (size_encode_fields Native.encodeFields_eq ofWord_val)
 open CompStark.Poseidon2.Packed
 
-local notation "F" => KoalaBear.Fast.Field
+local notation "F" => _root_.KoalaBear.Fast.Field
 
 /-- A word of an encoded array is its element. -/
 theorem word_encode (a : Array F) (i : Nat) (hs : (encode a).size < USize.size)
@@ -132,12 +132,12 @@ theorem find?_range_map (P Q : Nat → Bool) : ∀ k n, (∀ l < k, Q l = P (n +
 
 /-- The specification's grinding is a search for the first passing candidate. -/
 theorem grindFrom_eq (D : Duplex F 24) (c : Challenger F 24) (bits : Nat) : ∀ fuel n,
-    KoalaBear.grindFrom D c bits fuel n =
+    grindFrom D c bits fuel n =
       ((firstFrom (fun m ↦ (Challenger.checkWitness D c bits (m : F)).1) fuel n).map
         (fun m : Nat ↦ (m : F))).getD 0
   | 0, _ => rfl
   | fuel + 1, n => by
-    rw [KoalaBear.grindFrom, firstFrom]
+    rw [grindFrom, firstFrom]
     split
     · rfl
     · exact grindFrom_eq D c bits fuel (n + 1)
@@ -325,7 +325,7 @@ theorem grindWaves_eq (c : Challenger F 24) (bits : Nat) :
 
 /-- The fast grinder finds the specification's witness. -/
 theorem grind_eq (c : Challenger F 24) (bits : Nat) :
-    grind c bits = KoalaBear.grindFrom KoalaBear.duplex c bits _root_.KoalaBear.fieldSize 0 := by
+    grind c bits = grindFrom KoalaBear.duplex c bits _root_.KoalaBear.fieldSize 0 := by
   rw [grind]
   refine (grindWaves_eq c bits _ 0).trans ?_
   rw [grindFrom_eq, Nat.mul_zero]
@@ -345,10 +345,11 @@ theorem grind_eq (c : Challenger F 24) (bits : Nat) :
       rfl]
 
 /-- The fast transcript is the specification's. -/
-theorem transcript_eq : transcript = KoalaBear.Transcript.init := by
+theorem transcript_eq : transcript = KoalaBear.initTranscript := by
   have hd : duplex = KoalaBear.duplex := by
     simp only [duplex, funext perm24_eq]
     rfl
-  rw [transcript, KoalaBear.Transcript.init, hd, funext fun c ↦ funext (grind_eq c)]
+  rw [transcript, KoalaBear.initTranscript, hd, funext fun c ↦ funext (grind_eq c)]
+  rfl
 
 end CompStark.Stark.Fast

@@ -29,36 +29,37 @@ Positions are first occurrences: `idx log t` is the index of the first query of 
 namespace CompStark.Ni
 open CompStark.Stark CompStark.Iop CompStark.RandomOracle OracleSpec OracleComp
 
-local notation "F" => KoalaBear.Fast.Field
+variable {F : Type} [BaseField F]
+
 
 variable {K : Nat}
 
 /-- The digest of an answer: the hash, or the duplex call's new capacity. -/
-def digestOf : (t : Query) → Answer K t → Digest
+def digestOf : (t : Query F) → Answer K t → Digest F
   | .duplex .., u => u.1
   | .leaf _, u => u
   | .node .., u => u
 
 /-- The digests in a key: a compression's children, and a duplex call's capacity and the digest
 its input binds. -/
-def keyDigests : Query → List Digest
+def keyDigests : Query F → List (Digest F)
   | .duplex cap input => [cap, boundDigest cap input]
   | .leaf _ => []
   | .node left right => [left, right]
 
-theorem length_keyDigests_le (t : Query) : (keyDigests t).length ≤ 2 := by
+theorem length_keyDigests_le (t : Query F) : (keyDigests t).length ≤ 2 := by
   cases t <;> simp only [keyDigests, List.length_cons, List.length_nil] <;> omega
 
 /-- The answer `u` to `t` after the queries `pre` has a digest known before: the initial capacity,
 an earlier answer's, or one in an earlier key or in `t`. -/
-abbrev Clash (pre : QueryLog (spec K)) (t : Query) (u : Answer K t) : Prop :=
+abbrev Clash (pre : QueryLog (spec F K)) (t : Query F) (u : Answer K t) : Prop :=
   DigestClash digestOf keyDigests [initCap] pre t u
 
 /-- The first position of the key `t` in `log`. -/
-def idx (log : QueryLog (spec K)) (t : Query) : Nat := (log.map Sigma.fst).idxOf t
+def idx (log : QueryLog (spec F K)) (t : Query F) : Nat := (log.map Sigma.fst).idxOf t
 
 section Log
-variable (answer : (q : Query) → Answer K q) (log : QueryLog (spec K))
+variable (answer : (q : Query F) → Answer K q) (log : QueryLog (spec F K))
 
 /-- No query of `log` gets, at its first occurrence, an answer with a known digest. -/
 def NoClash : Prop :=
@@ -67,29 +68,29 @@ def NoClash : Prop :=
 
 variable {answer log}
 
-theorem idx_lt {t : Query} (ht : t ∈ log.map Sigma.fst) : idx log t < log.length := by
+theorem idx_lt {t : Query F} (ht : t ∈ log.map Sigma.fst) : idx log t < log.length := by
   have := List.idxOf_lt_length_of_mem ht
   rwa [List.length_map] at this
 
-theorem getElem_idx_fst {t : Query} (ht : t ∈ log.map Sigma.fst) :
+theorem getElem_idx_fst {t : Query F} (ht : t ∈ log.map Sigma.fst) :
     (log[idx log t]'(idx_lt ht)).1 = t := by
   have h := List.getElem_idxOf (List.idxOf_lt_length_of_mem ht)
   simp only [List.getElem_map] at h
   exact h
 
-theorem mem_take_iff {t : Query} (ht : t ∈ log.map Sigma.fst) (p : Nat) :
+theorem mem_take_iff {t : Query F} (ht : t ∈ log.map Sigma.fst) (p : Nat) :
     t ∈ (log.take p).map Sigma.fst ↔ idx log t < p := by
   rw [List.map_take, List.mem_take_iff_idxOf_lt ht]
   rfl
 
-theorem not_mem_take_idx {t : Query} (ht : t ∈ log.map Sigma.fst) :
+theorem not_mem_take_idx {t : Query F} (ht : t ∈ log.map Sigma.fst) :
     t ∉ (log.take (idx log t)).map Sigma.fst := by
   rw [mem_take_iff ht]
   exact lt_irrefl _
 
 /-- A consistent log holds the answer of each of its keys. -/
-theorem mk_mem_of_consistent (hcons : Consistent answer log) {t : Query}
-    (ht : t ∈ log.map Sigma.fst) : (⟨t, answer t⟩ : (q : Query) × Answer K q) ∈ log := by
+theorem mk_mem_of_consistent (hcons : Consistent answer log) {t : Query F}
+    (ht : t ∈ log.map Sigma.fst) : (⟨t, answer t⟩ : (q : Query F) × Answer K q) ∈ log := by
   obtain ⟨⟨t', a⟩, he, rfl⟩ := List.mem_map.mp ht
   have ha : a = answer t' := hcons _ he
   subst ha
@@ -112,8 +113,8 @@ theorem clash_of_known (hcons : Consistent answer log) (hclash : NoClash log)
   exact hknown
 
 /-- An entry before position `p` contributes its digests to the known ones. -/
-theorem mem_known_of_mem (e : (q : Query) × Answer K q) (pre : QueryLog (spec K)) (he : e ∈ pre)
-    (t : Query) (d : Digest) (hd : d ∈ digestOf e.1 e.2 :: keyDigests e.1) :
+theorem mem_known_of_mem (e : (q : Query F) × Answer K q) (pre : QueryLog (spec F K)) (he : e ∈ pre)
+    (t : Query F) (d : Digest F) (hd : d ∈ digestOf e.1 e.2 :: keyDigests e.1) :
     d ∈ knownDigests digestOf keyDigests [initCap] pre t := by
   unfold knownDigests
   exact List.mem_append_left _ (List.mem_append_right _ (List.mem_flatMap.mpr ⟨e, he, hd⟩))
@@ -128,8 +129,8 @@ variable (hcons : Consistent answer log) (hclash : NoClash log)
 include hcons hclash
 
 /-- **No prediction.** A digest in a key was answered before the key's first query. -/
-theorem idx_lt_of_mem_keyDigests {t t' : Query} (ht : t ∈ log.map Sigma.fst)
-    (ht' : t' ∈ log.map Sigma.fst) {d : Digest} (hd : d ∈ keyDigests t)
+theorem idx_lt_of_mem_keyDigests {t t' : Query F} (ht : t ∈ log.map Sigma.fst)
+    (ht' : t' ∈ log.map Sigma.fst) {d : Digest F} (hd : d ∈ keyDigests t)
     (hdig : digestOf t' (answer t') = d) : idx log t' < idx log t := by
   by_contra hle
   have hle : idx log t ≤ idx log t' := not_lt.mp hle
@@ -151,7 +152,7 @@ theorem idx_lt_of_mem_keyDigests {t t' : Query} (ht : t ∈ log.map Sigma.fst)
     exact List.mem_append_right _ hd
 
 /-- **No collision.** Distinct keys of the log have distinct digests. -/
-theorem eq_of_digestOf_eq {t t' : Query} (ht : t ∈ log.map Sigma.fst)
+theorem eq_of_digestOf_eq {t t' : Query F} (ht : t ∈ log.map Sigma.fst)
     (ht' : t' ∈ log.map Sigma.fst) (h : digestOf t (answer t) = digestOf t' (answer t')) :
     t = t' := by
   by_contra hne
@@ -171,7 +172,7 @@ theorem eq_of_digestOf_eq {t t' : Query} (ht : t ∈ log.map Sigma.fst)
   exact List.mem_cons_self
 
 /-- No answer's digest is the initial capacity. -/
-theorem digestOf_ne_initCap {t : Query} (ht : t ∈ log.map Sigma.fst) :
+theorem digestOf_ne_initCap {t : Query F} (ht : t ∈ log.map Sigma.fst) :
     digestOf t (answer t) ≠ initCap := by
   intro h
   set p := idx log t
@@ -182,7 +183,7 @@ theorem digestOf_ne_initCap {t : Query} (ht : t ∈ log.map Sigma.fst) :
   exact List.mem_append_left _ (List.mem_append_left _ List.mem_cons_self)
 
 /-- The duplex calls of a part of the log answer distinct capacities, none the initial one. -/
-theorem capsInjective (sub : QueryLog (spec K))
+theorem capsInjective (sub : QueryLog (spec F K))
     (hsub : ∀ t ∈ sub.map Sigma.fst, t ∈ log.map Sigma.fst) : CapsInjective answer sub := by
   intro c input hmem
   refine ⟨digestOf_ne_initCap hcons hclash (hsub _ hmem), fun c' input' hmem' heq ↦ ?_⟩
@@ -232,7 +233,7 @@ theorem hasRounds_take (blocks : List (List F)) (n : Nat)
 
 /-- **Stable extraction.** Extraction under a digest bound by a key of the log does not change
 after that key's first query. -/
-theorem noPrediction_take (root : Digest) (t₀ : Query) (ht₀ : t₀ ∈ log.map Sigma.fst)
+theorem noPrediction_take (root : Digest F) (t₀ : Query F) (ht₀ : t₀ ∈ log.map Sigma.fst)
     (hroot : root ∈ keyDigests t₀) (p p' : Nat) (hp : idx log t₀ ≤ p) (hpp' : p ≤ p') :
     (logCache (log.take p)).NoPrediction (logCache (log.take p')) root := by
   have hsub : ∀ e ∈ log.take p, e ∈ log.take p' := fun e he ↦ by
@@ -253,9 +254,9 @@ theorem noPrediction_take (root : Digest) (t₀ : Query) (ht₀ : t₀ ∈ log.m
         rfl).trans ((mem_take_iff hlog p).mp hmem)
       rcases hy with h | h <;> simp only [keyDigests, h, List.mem_cons, List.not_mem_nil,
         or_false, true_or, or_true]
-  have hnew : ∀ t (y : Answer K t), (⟨t, y⟩ : (q : Query) × Answer K q) ∈ log.take p' →
+  have hnew : ∀ t (y : Answer K t), (⟨t, y⟩ : (q : Query F) × Answer K q) ∈ log.take p' →
       (logCache (log.take p)).Known root (digestOf t y) →
-        (⟨t, y⟩ : (q : Query) × Answer K q) ∈ log.take p := by
+        (⟨t, y⟩ : (q : Query F) × Answer K q) ∈ log.take p := by
     intro t y he hk
     have he' := List.mem_of_mem_take he
     have hy : y = answer t := hcons _ he'

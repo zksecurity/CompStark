@@ -11,8 +11,8 @@ public import CompStark.Stark.Field
 
 /-! # The FRI verifier of the two-adic commitment scheme
 
-Plonky3's `TwoAdicFriPcs::verify` and `verify_fri` (revision `47e442f`), over KoalaBear with
-challenges in the extension `EF`, on the challenger and Merkle hashes of primitives `H`
+Plonky3's `TwoAdicFriPcs::verify` and `verify_fri` (revision `47e442f`), over a base field `F`
+with challenges in the extension `EF`, on the challenger and Merkle hashes of primitives `H`
 (`Primitives`):
 
 * The verifier observes every opened value, samples the batching challenge `α`, and for every
@@ -28,9 +28,7 @@ challenges in the extension `EF`, on the challenger and Merkle hashes of primiti
 
 @[expose] public section
 namespace CompStark.Fri
-open CompStark.Stark CompStark.KoalaBear
-
-local notation "F" => KoalaBear.Fast.Field
+open CompStark.Stark
 
 /-- FRI parameters, as Plonky3's `FriParameters`. -/
 structure Params where
@@ -42,21 +40,21 @@ structure Params where
   queryPowBits : Nat
 
 /-- The coset `shift · ⟨ω⟩` with `ω` of order `2 ^ logSize`. -/
-structure Domain where
+structure Domain (F : Type) where
   shift : F
   logSize : Nat
 
 /-- A commitment with, for each committed matrix, its domain and its claimed values at points. -/
-abbrev Round (EF : Type) := Digest × List (Domain × List (EF × List EF))
+abbrev Round (F EF : Type) := Digest F × List (Domain F × List (EF × List EF))
 
-variable {m : Type → Type} [Monad m] {EF : Type} [Challenge EF]
+variable {m : Type → Type} [Monad m] {F : Type} [BaseField F] {EF : Type} [Challenge F EF]
 
 /-- The verifier's monad on primitives `H`: the challenger's state, failure with a reason, and
 the effects of `m`. -/
-abbrev M (H : Primitives m) := StateT H.State (ExceptT String m)
+abbrev M (H : Primitives F m) := StateT H.State (ExceptT String m)
 
 section Challenger
-variable (H : Primitives m)
+variable (H : Primitives F m)
 
 def observe (x : F) : M H Unit := modify (H.observe · x)
 def observeList (xs : List F) : M H Unit := modify (xs.foldl H.observe)
@@ -79,7 +77,7 @@ def sampleExt : M H EF := do
 
 /-- Sample the low `bits` bits of an element's canonical value. -/
 def sampleBits (bits : Nat) : M H Nat := do
-  return Montgomery.Native32.FastField.toNat (← sample H) % 2 ^ bits
+  return CompPoly.CanonicalNat.toNat (← sample H) % 2 ^ bits
 
 /-- Observe a grinding witness and check that the next `bits` sampled bits are zero. -/
 def checkWitness (bits : Nat) (w : F) : M H Bool :=
@@ -88,14 +86,14 @@ def checkWitness (bits : Nat) (w : F) : M H Bool :=
     return (← sampleBits H bits) == 0
 
 /-- Verify a Merkle opening with the hashes of `H` (`Merkle.verifyBatch`). -/
-def checkOpening (commit : Digest) (heights : List Nat) (index : Nat) (values : List (List F))
-    (path : List Digest) : M H Bool :=
+def checkOpening (commit : Digest F) (heights : List Nat) (index : Nat) (values : List (List F))
+    (path : List (Digest F)) : M H Bool :=
   monadLift (Merkle.verifyBatchM H.hash H.compress commit heights index values path)
 
 end Challenger
 
 /-- Fail with `msg` unless `b`. -/
-def ensure {H : Primitives m} (b : Bool) (msg : String) : M H Unit :=
+def ensure {H : Primitives F m} (b : Bool) (msg : String) : M H Unit :=
   if b then pure () else throw msg
 
 /-- Plonky3's fold arities for one input of degree `2 ^ (logFinalPolyLen + remaining)`: fold by
@@ -108,7 +106,7 @@ def foldArities (maxLogArity : Nat) : Nat → List Nat
   decreasing_by omega
 
 /-- The fold arities of a proof, read off its first query. -/
-def arities (proof : FriProof EF) : List Nat :=
+def arities (proof : FriProof F EF) : List Nat :=
   (proof.queries[0]?.map fun q ↦ q.steps.toList.map (·.logArity)).getD []
 
 /-- The value at `z` of the polynomial through `(xᵢ, yᵢ)`. -/
@@ -132,8 +130,8 @@ def foldRow (index logHeight logArity : Nat) (beta : EF) (evals : List EF) : EF 
   lagrange xs evals beta
 
 /-- The batched quotients of one query at `index`, by log height, tallest first. -/
-def openInput (H : Primitives m) (P : Params) (logMax index : Nat) (alpha : EF)
-    (inputs : List BatchOpening) (rounds : List (Round EF)) : M H (List (Nat × EF)) := do
+def openInput (H : Primitives F m) (P : Params) (logMax index : Nat) (alpha : EF)
+    (inputs : List (BatchOpening F)) (rounds : List (Round F EF)) : M H (List (Nat × EF)) := do
   ensure (inputs.length == rounds.length) "input batches"
   let mut ro : List (Nat × EF × EF) := []
   for (b, (commit, mats)) in inputs.zip rounds do
@@ -163,8 +161,8 @@ def openInput (H : Primitives m) (P : Params) (logMax index : Nat) (alpha : EF)
   return (ro.mergeSort fun a b ↦ b.1 ≤ a.1).map fun (h, _, acc) ↦ (h, acc)
 
 /-- The folds of one query from the batched quotients `ro`, ending at the final height. -/
-def verifyQuery (H : Primitives m) (P : Params) (logMax : Nat) (index : Nat) (betas : List EF)
-    (commits : List Digest) (steps : List (CommitStep EF)) (ro : List (Nat × EF)) :
+def verifyQuery (H : Primitives F m) (P : Params) (logMax : Nat) (index : Nat) (betas : List EF)
+    (commits : List (Digest F)) (steps : List (CommitStep F EF)) (ro : List (Nat × EF)) :
     M H (EF × Nat) := do
   let (h0, e0) ← match ro with
     | r :: _ => pure r
@@ -198,7 +196,8 @@ def verifyQuery (H : Primitives m) (P : Params) (logMax : Nat) (index : Nat) (be
   return (eval, index)
 
 /-- Plonky3's `verify_fri`, after the opened values were observed. -/
-def verifyFri (H : Primitives m) (P : Params) (proof : FriProof EF) (rounds : List (Round EF)) :
+def verifyFri (H : Primitives F m) (P : Params) (proof : FriProof F EF)
+    (rounds : List (Round F EF)) :
     M H Unit := do
   let alpha : EF ← sampleExt H
   let arities := arities proof
@@ -226,7 +225,8 @@ def verifyFri (H : Primitives m) (P : Params) (proof : FriProof EF) (rounds : Li
     ensure (expected == eval) "final polynomial mismatch"
 
 /-- Plonky3's `TwoAdicFriPcs::verify`: observe the opened values, then verify FRI. -/
-def verifyPcs (H : Primitives m) (P : Params) (rounds : List (Round EF)) (proof : FriProof EF) :
+def verifyPcs (H : Primitives F m) (P : Params) (rounds : List (Round F EF))
+    (proof : FriProof F EF) :
     M H Unit := do
   for (_, mats) in rounds do
     for (_, pts) in mats do

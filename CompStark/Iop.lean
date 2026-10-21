@@ -9,13 +9,13 @@ public import CompStark.Sound.Defs
 /-! # The STARK as an interactive oracle proof
 
 The protocol behind `verify`, with the Merkle commitments replaced by oracles and the Fiat–Shamir
-challenges by the verifier's uniform randomness. It runs over KoalaBear `𝔽 = KoalaBear.Field` and
-the spec field `𝕂 = Challenge.Spec EF` of a challenge field `EF` of degree `d` (`Challenge`), for a
-`Setup EF`: FRI parameters, an AIR and a trace length `2 ^ logN`. The prover's oracles are words
-on the domain `L = g · ⟨ω⟩` of `2 ^ (logN + logBlowup)` points, `g = 3`, that the trace is
-extended to.
+challenges by the verifier's uniform randomness. It runs over a base field `F` (`BaseField`) and
+the spec field `𝕂 = Challenge.Spec EF` of a challenge field `EF` of degree `d` over it
+(`Challenge`), for a `Setup EF`: FRI parameters, an AIR and a trace length `2 ^ logN`. The
+prover's oracles are words on the domain `L = g · ⟨ω⟩` of `2 ^ (logN + logBlowup)` points, `g`
+the base field's shift, that the trace is extended to.
 
-1. The prover sends the extended trace, one word over `𝔽` per column (`Prover.trace`).
+1. The prover sends the extended trace, one word over `F` per column (`Prover.trace`).
 2. The verifier samples the constraint-folding challenge `α`.
 3. The prover sends the quotient's chunks, each as the `d` coordinates of a word over `𝕂`
    (`Prover.quotient`).
@@ -36,21 +36,18 @@ committed trace: `closeTraces` are the traces whose columns are polynomials of d
 
 @[expose] public section
 namespace CompStark.Iop
-open CompStark.Stark CompStark.Sound Polynomial Montgomery.Native32
+open CompStark.Stark CompStark.Sound Polynomial
 
-local notation "𝔽" => KoalaBear.Field
-local notation "F" => KoalaBear.Fast.Field
-
-variable {EF : Type} [Challenge EF]
+variable {F : Type} [BaseField F] {EF : Type} [Challenge F EF]
 
 local notation "𝕂" => Challenge.Spec EF
 
 /-- A STARK to prove with over the challenge field `EF`: FRI parameters, an AIR and a trace of
 `2 ^ logN` rows, in a valid configuration (`ValidConfig`) with a positive blowup and at least one
 FRI fold. -/
-structure Setup (EF : Type) [Challenge EF] where
+structure Setup (EF : Type) [Challenge F EF] where
   params : Fri.Params
-  air : Air
+  air : Air F
   logN : Nat
   valid : ValidConfig params air logN
   /-- The trace is extended to at least twice its length, so that its code has room to detect
@@ -80,7 +77,7 @@ noncomputable def domain : Domain.SmoothCosetFftDomain (S.logN + S.params.logBlo
 
 end Setup
 
-/-- `ω_k`, KoalaBear's generator of order `2 ^ k`, in `𝕂`. -/
+/-- `ω_k`, the base field's generator of order `2 ^ k`, in `𝕂`. -/
 noncomputable def rootOfUnity (k : Nat) : 𝕂 := lift (twoAdicGen k)
 
 /-! ### The prover -/
@@ -98,9 +95,9 @@ structure Openings (S : Setup EF) where
 deterministic; a randomized prover is a mixture of deterministic ones. -/
 structure Prover (S : Setup EF) where
   /-- The extended trace: each column's values on `L`. -/
-  trace : Fin S.air.width → S.Point → 𝔽
+  trace : Fin S.air.width → S.Point → F
   /-- The quotient's chunks, after `α`: coordinate `e` of chunk `c` on `L`. -/
-  quotient : (α : 𝕂) → Fin S.chunks → Fin (Challenge.d EF) → S.Point → 𝔽
+  quotient : (α : 𝕂) → Fin S.chunks → Fin (Challenge.d EF) → S.Point → F
   /-- The claimed values, after `α` and `ζ`. -/
   openings : (α ζ : 𝕂) → Openings S
 
@@ -119,7 +116,7 @@ the quotient recomposed from the claimed chunks. -/
 def ConstraintsHoldAt (S : Setup EF) (publicValues : List F) (α ζ : 𝕂) (o : Openings S) : Prop :=
   let ω := rootOfUnity S.logN
   let zh := vanishing 1 S.n ζ
-  let env : Expr.Env 𝕂 :=
+  let env : Expr.Env F 𝕂 :=
     { cur := fun j ↦ if h : j < S.air.width then o.traceAt ⟨j, h⟩ else 0
       next := fun j ↦ if h : j < S.air.width then o.traceNext ⟨j, h⟩ else 0
       pub := fun i ↦ lift (publicValues.getD i 0)
@@ -137,7 +134,7 @@ def ConstraintsHoldAt (S : Setup EF) (publicValues : List F) (α ζ : 𝕂) (o :
 /-- The opened words with their points and claimed values, in Plonky3's batching order: the trace
 columns at `ζ`, the trace columns at `ζ ω_n`, each chunk's coordinates at `ζ`. -/
 noncomputable def openedWords {S : Setup EF} (p : Prover S) (α ζ : 𝕂) :
-    List ((S.Point → 𝔽) × 𝕂 × 𝕂) :=
+    List ((S.Point → F) × 𝕂 × 𝕂) :=
   let o := p.openings α ζ
   (List.finRange S.air.width).map (fun j ↦ (p.trace j, ζ, o.traceAt j)) ++
   (List.finRange S.air.width).map (fun j ↦ (p.trace j, ζ * rootOfUnity S.logN, o.traceNext j)) ++
@@ -147,7 +144,7 @@ noncomputable def openedWords {S : Setup EF} (p : Prover S) (α ζ : 𝕂) :
 /-- The batched DEEP word: `∑ᵢ aⁱ (yᵢ - fᵢ(x)) / (zᵢ - x)` at each point `x` of `L`. -/
 noncomputable def deepWord {S : Setup EF} (p : Prover S) (α ζ a : 𝕂) (i : S.Point) : 𝕂 :=
   ((openedWords p α ζ).zipIdx.map fun ((f, z, y), k) ↦
-    a ^ k * (y - algebraMap 𝔽 𝕂 (f i)) / (z - S.domain i)).sum
+    a ^ k * (y - algebraMap F 𝕂 (f i)) / (z - S.domain i)).sum
 
 /-- The probability that FRI accepts `word` against the best FRI prover: ArkLib's FRI oracle
 reduction on `L`, folding by Plonky3's arities down to a final polynomial of degree below
@@ -170,14 +167,13 @@ noncomputable def acceptance {S : Setup EF} (publicValues : List F) (prover : Pr
 
 /-- The trace whose columns take the values of the polynomials `columns` on the trace domain's
 rows `ω_n ^ i`, row-major. -/
-noncomputable def traceOf (S : Setup EF) (columns : Fin S.air.width → 𝔽[X]) : Array F :=
+noncomputable def traceOf (S : Setup EF) (columns : Fin S.air.width → F[X]) : Array F :=
   Array.ofFn fun r : Fin (S.n * S.air.width) ↦
     let (row, column) := finProdFinEquiv.symm r
-    KoalaBear.Fast.ringEquiv.symm
-      ((columns column).eval (FastField.toField (twoAdicGen S.logN) ^ row.val))
+    (columns column).eval (twoAdicGen S.logN ^ row.val)
 
 /-- Words on `L` agree with polynomials on a common set of at least `(1 - δ) N` points. -/
-def Agree (S : Setup EF) {ι : Type} (δ : ℝ) (words : ι → S.Point → 𝔽) (polys : ι → 𝔽[X]) :
+def Agree (S : Setup EF) {ι : Type} (δ : ℝ) (words : ι → S.Point → F) (polys : ι → F[X]) :
     Prop :=
   ∃ T : Finset S.Point, (T.card : ℝ) ≥ S.size * (1 - δ) ∧
     ∀ i ∈ T, ∀ k, words k i = (polys k).eval (basePoint (S.logN + S.params.logBlowup) i)
@@ -185,8 +181,8 @@ def Agree (S : Setup EF) {ι : Type} (δ : ℝ) (words : ι → S.Point → 𝔽
 /-- The traces the extractor reads off committed trace words at proximity `δ`, by list decoding:
 those whose columns are polynomials of degree at most `n` agreeing with the words on a common set
 of at least `(1 - δ) N` points. -/
-def closeTraces (S : Setup EF) (δ : ℝ) (words : Fin S.air.width → S.Point → 𝔽) : Set (Array F) :=
-  {t | ∃ columns : Fin S.air.width → 𝔽[X], (∀ j, (columns j).natDegree ≤ S.n) ∧
+def closeTraces (S : Setup EF) (δ : ℝ) (words : Fin S.air.width → S.Point → F) : Set (Array F) :=
+  {t | ∃ columns : Fin S.air.width → F[X], (∀ j, (columns j).natDegree ≤ S.n) ∧
     Agree S δ words columns ∧ t = traceOf S columns}
 
 end CompStark.Iop

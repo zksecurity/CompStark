@@ -34,10 +34,10 @@ namespace CompStark.Stark.Fast
 open CompStark.Fri
 open CompPoly.PackedRepr (encode)
 open CompPoly.CPolynomial.NTT.Transform (bitRevNat bitRevNat_lt bitRevNat_involutive)
-open KoalaBear.Fast (Ext4)
+open Montgomery.Native32 (Ext4)
 
-local notation "F" => KoalaBear.Fast.Field
-local notation "EF" => KoalaBear.Fast.Ext4
+local notation "F" => _root_.KoalaBear.Fast.Field
+local notation "EF" => _root_.KoalaBear.Fast.Ext4
 
 /-! ### Coordinates -/
 
@@ -136,7 +136,7 @@ theorem coord_mk4 (f : Nat → F) (c : Nat) (hc : c < 4) : coord c (mk4 f) = f c
 theorem coord_colSum (values : Array F) (w L j : Nat) {z : EF} (hz : Ext.OutsideBase z) (c : Nat) :
     coord c (colSum values (bitRevPerm L) (baryWeights L z) w (2 ^ L) j) =
       ∑ r ∈ Finset.range (2 ^ L), values.getD (r * w + j) 0 *
-        coord c (bw z ((cosetPointsBitRev gen L).getD r 0)) := by
+        coord c (bw z ((cosetPointsBitRev (gen : F) L).getD r 0)) := by
   rw [colSum, coord_foldl_smul, coord_zero, zero_add]
   refine Finset.sum_nbij' (bitRevNat L) (bitRevNat L) (fun i _ ↦ ?_) (fun i _ ↦ ?_)
     (fun i hi ↦ ?_) (fun i hi ↦ ?_) (fun i hi ↦ ?_)
@@ -150,11 +150,11 @@ theorem coord_colSum (values : Array F) (w L j : Nat) {z : EF} (hz : Ext.Outside
 
 /-- The specification's opened values, coordinate by coordinate a sum over the stored rows of
 the row times the weight of its stored point. -/
-theorem openedAt_sum (b : Nat) (s : Mat) {z : EF} (hz : Ext.OutsideBase z) :
+theorem openedAt_sum (b : Nat) (s : Mat F) {z : EF} (hz : Ext.OutsideBase z) :
     Fri.openedAt b s z = Array.ofFn (n := s.width) fun j ↦
       Fri.cosetFactor (Nat.log2 s.height - b) gen z * mk4 fun c ↦
         ∑ r ∈ Finset.range (2 ^ (Nat.log2 s.height - b)), s.values.getD (r * s.width + j.val) 0 *
-          coord c (bw z ((cosetPointsBitRev gen (Nat.log2 s.height - b)).getD r 0)) := by
+          coord c (bw z ((cosetPointsBitRev (gen : F) (Nat.log2 s.height - b)).getD r 0)) := by
   rw [openedAt_eq]
   refine Array.ext (by rw [Array.size_ofFn, Array.size_ofFn]) fun j h1 h2 ↦ ?_
   rw [Array.getElem_ofFn, Array.getElem_ofFn]
@@ -204,7 +204,7 @@ theorem invDenoms_rel {z : EF} (hz : Ext.OutsideBase z) (X : Array F)
     refine EVec.rv_ofFn _ (Array.size_map ..) _ _ _ _ fun i ↦ ?_
     rw [Array.getElem_map, Norm.inv_eq hz']
     apply Norm.ext <;>
-      simp only [KoalaBear.Fast.Ext4.smul, Norm.cubic, Norm.norm, Norm.e1, Norm.e2, Norm.e3,
+      simp only [Montgomery.Native32.Ext4.smul, Norm.cubic, Norm.norm, Norm.e1, Norm.e2, Norm.e3,
         Norm.conj] <;> ring
   · intro i
     have := Norm.norm_ne_zero hz' X[i.val]
@@ -432,11 +432,11 @@ theorem word_plane (n w : Nat) (G : Nat → Nat → F) (idx j : Nat) (hidx : idx
   rw [getD_ofFn_bounded _ _ hidx, word_encode_getD _ _ (by rw [Array.size_ofFn]; exact hw)
     (by omega), getD_ofFn_bounded _ _ hj]
 
-theorem size_openedAt (b : Nat) (s : Mat) (z : EF) : (Fri.openedAt b s z).size = s.width := by
+theorem size_openedAt (b : Nat) (s : Mat F) (z : EF) : (Fri.openedAt b s z).size = s.width := by
   rw [openedAt_eq, Array.size_ofFn]
 
 /-- The fast opened values are the specification's. -/
-theorem openedAt_rel (b : Nat) (zs : List KoalaBear.Fast.Ext4) {m : PMat} {s : Mat} (h : RM m s)
+theorem openedAt_rel (b : Nat) (zs : List KoalaBear.Fast.Ext4) {m : PMat} {s : Mat F} (h : RM m s)
     (hs : MatOk s) (hz : ∀ z ∈ zs, Ext.OutsideBase z) :
     openedAt b m zs = zs.map (Fri.openedAt b s) := by
   unfold Fast.openedAt
@@ -462,20 +462,20 @@ theorem openedAt_rel (b : Nat) (zs : List KoalaBear.Fast.Ext4) {m : PMat} {s : M
     omega
   have hpos : 0 < s.height := lt_of_lt_of_le (Nat.two_pow_pos L) hle
   have hsM : 4 * s.values.size < USize.size := hfits
-  have hX : (cosetPointsBitRev gen L).size = 2 ^ L := size_cosetPointsBitRev gen L
+  have hX : (cosetPointsBitRev (gen : F) L).size = 2 ^ L := size_cosetPointsBitRev (gen : F) L
   have hw4 : 4 * s.width < USize.size := by
     have := Nat.mul_le_mul_left s.width (show 1 ≤ s.height from hpos)
     omega
-  have hsX : 4 * (cosetPointsBitRev gen L).size < USize.size := by
+  have hsX : 4 * (cosetPointsBitRev (gen : F) L).size < USize.size := by
     have := Nat.mul_le_mul_right s.height (show 1 ≤ s.width by omega)
     omega
   rw [CompPoly.CPolynomial.NTTFast.Packed.Native.encodeFields_eq]
   have hp : 0 < (if 2 ^ L < 4096 then 1 else 16) := by split <;> decide
   rw [parts_sum (4 * zs.length) s.width (2 ^ L) _ hp hw4
     (fun i j r ↦ s.values.getD (r * s.width + j) 0 *
-      coord (i % 4) (bw (zs.getD (i / 4) 0) ((cosetPointsBitRev gen L).getD r 0)))
+      coord (i % 4) (bw (zs.getD (i / 4) 0) ((cosetPointsBitRev (gen : F) L).getD r 0)))
     (fun r0 len ↦ weightedColumns (encode s.values) s.width zs.toArray
-      (encode (cosetPointsBitRev gen L)) r0 len) (fun r0 len hr ↦ ?_)]
+      (encode (cosetPointsBitRev (gen : F) L)) r0 len) (fun r0 len hr ↦ ?_)]
   · refine List.ext_getElem (by rw [List.length_map, List.length_map, List.length_zipIdx])
       fun k h1 h2 ↦ ?_
     rw [List.getElem_map, List.getElem_map, List.getElem_zipIdx, Nat.zero_add]
@@ -484,13 +484,13 @@ theorem openedAt_rel (b : Nat) (zs : List KoalaBear.Fast.Ext4) {m : PMat} {s : M
     have hwp : ∀ idx, idx < 4 * zs.length → ∀ j, j < s.width →
         word ((Array.ofFn (n := 4 * zs.length) fun i ↦ encode (Array.ofFn (n := s.width) fun j ↦
           ∑ r ∈ Finset.range (2 ^ L), s.values.getD (r * s.width + j.val) 0 * coord (i.val % 4)
-            (bw (zs.getD (i.val / 4) 0) ((cosetPointsBitRev gen L).getD r 0)))).getD
+            (bw (zs.getD (i.val / 4) 0) ((cosetPointsBitRev (gen : F) L).getD r 0)))).getD
           idx .empty) j =
         ∑ r ∈ Finset.range (2 ^ L), s.values.getD (r * s.width + j) 0 * coord (idx % 4)
-          (bw (zs.getD (idx / 4) 0) ((cosetPointsBitRev gen L).getD r 0)) :=
+          (bw (zs.getD (idx / 4) 0) ((cosetPointsBitRev (gen : F) L).getD r 0)) :=
       fun idx hidx j hj ↦ word_plane (4 * zs.length) s.width (fun i j ↦
         ∑ r ∈ Finset.range (2 ^ L), s.values.getD (r * s.width + j) 0 * coord (i % 4)
-          (bw (zs.getD (i / 4) 0) ((cosetPointsBitRev gen L).getD r 0))) idx j hidx hj hw4
+          (bw (zs.getD (i / 4) 0) ((cosetPointsBitRev (gen : F) L).getD r 0))) idx j hidx hj hw4
     refine congrArg Array.ofFn (funext fun j ↦ congrArg _ (Norm.ext ?_ ?_ ?_ ?_)) <;>
       dsimp only [mk4] <;>
       rw [hwp _ (by omega) _ j.isLt] <;>
@@ -511,13 +511,13 @@ theorem openedAt_rel (b : Nat) (zs : List KoalaBear.Fast.Ext4) {m : PMat} {s : M
 /-! ### The specification's reduction row by row -/
 
 section
-variable {K : Type} [Challenge K]
+variable {K : Type} [Challenge F K]
 
 /-- Row `r` of a matrix of width `w` batched by the powers `ap` of `α`. -/
 def crow (V : Array F) (ap : Array K) (w r : Nat) : K :=
   (List.range' 0 w).foldl (fun acc i ↦ acc + Challenge.smul (V.getD (r * w + i) 0) (ap.getD i 0)) 0
 
-theorem compress_eq (s : Mat) (ap : Array K) :
+theorem compress_eq (s : Mat F) (ap : Array K) :
     compress s ap = Array.ofFn (n := s.height) fun r ↦ crow s.values ap s.width r.val := by
   unfold compress
   refine parChunks_eq _ _ _ (fun r ↦ crow s.values ap s.width r) (fun r0 len _ ↦ ?_)
@@ -654,7 +654,7 @@ def groupPlanes (G : Nat × Nat × Array GItem) : Nat × EVec :=
   (G.1, joinPlanes (2 ^ G.1) <| (Array.range (if 2 ^ G.1 < 4096 then 1 else 16)).map fun k ↦
     Task.spawn fun _ ↦
       let v := reduceRange G.2.2
-        (CompPoly.CPolynomial.NTTFast.Packed.Native.encodeFields (cosetPointsBitRev gen G.1))
+        (CompPoly.CPolynomial.NTTFast.Packed.Native.encodeFields (cosetPointsBitRev (gen : F) G.1))
         (k * (2 ^ G.1 / if 2 ^ G.1 < 4096 then 1 else 16))
         (if k + 1 = (if 2 ^ G.1 < 4096 then 1 else 16) then
           2 ^ G.1 - k * (2 ^ G.1 / if 2 ^ G.1 < 4096 then 1 else 16)
@@ -674,7 +674,7 @@ theorem reduce_fast (alpha : EF) (items : List (PMat × List (EF × Array EF))) 
 def gval (alpha : EF) (logH : Nat) (g : Array GItem) (r : Nat) : EF :=
   g.toList.foldl (fun a it ↦ it.2.2.2.foldl (termStep
     (crow (CompPoly.PackedRepr.decode it.1) (powers alpha it.2.1) it.2.1 r)
-    ((cosetPointsBitRev gen logH).getD r 0)) a) 0
+    ((cosetPointsBitRev (gen : F) logH).getD r 0)) a) 0
 
 /-- A matrix of a group of height `2 ^ logH` the fast kernels compute on. -/
 def Good (alpha : EF) (logH : Nat) (it : GItem) : Prop :=
@@ -733,13 +733,13 @@ theorem mem_terms (alpha : EF) (ap : Array EF) (w : Nat) : ∀ (pts : List (EF �
 theorem gval_push (alpha : EF) (logH : Nat) (g : Array GItem) (it : GItem) (r : Nat) :
     gval alpha logH (g.push it) r = it.2.2.2.foldl (termStep
       (crow (CompPoly.PackedRepr.decode it.1) (powers alpha it.2.1) it.2.1 r)
-      ((cosetPointsBitRev gen logH).getD r 0)) (gval alpha logH g r) := by
+      ((cosetPointsBitRev (gen : F) logH).getD r 0)) (gval alpha logH g r) := by
   rw [gval, gval, Array.toList_push, List.foldl_append, List.foldl_cons, List.foldl_nil]
 
 /-- One matrix of the grouping simulates one step of the specification's fold. -/
 theorem groupStep_rel (alpha : EF) {groups : List (Nat × Nat × Array GItem)}
     {red : List (Nat × Nat × Array EF)} (hgr : List.Forall₂ (GR alpha) groups red) {m : PMat}
-    {s : Mat} (hm : RM m s) (pts : List (EF × Array EF)) (hs : MatOk s)
+    {s : Mat F} (hm : RM m s) (pts : List (EF × Array EF)) (hs : MatOk s)
     (hz : ∀ p ∈ pts, Ext.OutsideBase p.1) :
     List.Forall₂ (GR alpha) (groupStep alpha groups (m, pts)) (reduceStep alpha red (s, pts)) := by
   obtain ⟨hw0, ⟨k, -, hk⟩, hM, hA⟩ := hs
@@ -772,7 +772,7 @@ theorem groupStep_rel (alpha : EF) {groups : List (Nat × Nat × Array GItem)}
     · refine ⟨c, g, by rw [h1]; rfl, by rw [h2, Option.getD_some, ← hpow], hg⟩
   rw [h1, h2]
   dsimp only
-  have hxs : s.height ≤ (cosetPointsBitRev gen logH).size := by
+  have hxs : s.height ≤ (cosetPointsBitRev (gen : F) logH).size := by
     rw [size_cosetPointsBitRev, ← hpow]
   rw [foldl_accumulate alpha (powers alpha s.width) s.width s.height _ _ hxs pts hz c]
   refine ⟨rfl, rfl, ?_, show 4 * 2 ^ logH < USize.size by rw [← hpow]; exact hus,
@@ -800,7 +800,7 @@ theorem groupStep_rel (alpha : EF) {groups : List (Nat × Nat × Array GItem)}
 /-- The grouping simulates the specification's fold. -/
 theorem foldl_groupStep_rel (alpha : EF) :
     ∀ {items : List (PMat × List (EF × Array EF))}
-      {sitems : List (Mat × List (EF × Array EF))},
+      {sitems : List (Mat F × List (EF × Array EF))},
       List.Forall₂ (fun x y ↦ RM x.1 y.1 ∧ x.2 = y.2) items sitems →
       (∀ x ∈ sitems, MatOk x.1 ∧ ∀ p ∈ x.2, Ext.OutsideBase p.1) →
       ∀ {groups : List (Nat × Nat × Array GItem)} {red : List (Nat × Nat × Array EF)},
@@ -1049,15 +1049,15 @@ theorem lookup_mem {k : EF} {v : EVec} : ∀ {l : List (EF × EVec)}, l.lookup k
 theorem reduceRange_rel (alpha : EF) (logH : Nat) (g : Array GItem)
     (hg : ∀ it ∈ g, Good alpha logH it) (h4 : 4 * 2 ^ logH < USize.size) (r0 len : Nat)
     (hr : r0 + len ≤ 2 ^ logH) :
-    RV (reduceRange g (encode (cosetPointsBitRev gen logH)) r0 len)
+    RV (reduceRange g (encode (cosetPointsBitRev (gen : F) logH)) r0 len)
       (Array.ofFn (n := len) fun t ↦ gval alpha logH g (r0 + t.val)) := by
-  have hXs := size_cosetPointsBitRev gen logH
-  have hxr : slice (encode (cosetPointsBitRev gen logH)) r0 len =
-      encode ((cosetPointsBitRev gen logH).extract r0 (r0 + len)) := extract_encode _ r0 (r0 + len)
-  generalize hXr : (cosetPointsBitRev gen logH).extract r0 (r0 + len) = Xr at hxr
+  have hXs := size_cosetPointsBitRev (gen : F) logH
+  have hxr : slice (encode (cosetPointsBitRev (gen : F) logH)) r0 len =
+      encode ((cosetPointsBitRev (gen : F) logH).extract r0 (r0 + len)) := extract_encode _ r0 (r0 + len)
+  generalize hXr : (cosetPointsBitRev (gen : F) logH).extract r0 (r0 + len) = Xr at hxr
   have hXrs : Xr.size = len := by rw [← hXr, Array.size_extract]; omega
   have hXget (t : Nat) (ht : t < len) :
-      Xr.getD t 0 = (cosetPointsBitRev gen logH).getD (r0 + t) 0 := by
+      Xr.getD t 0 = (cosetPointsBitRev (gen : F) logH).getD (r0 + t) 0 := by
     rw [← hXr, Array.getD_eq_getD_getElem?, Array.getElem?_extract,
       ite_eq_left_of_eq_true _ _ (eq_true (by rw [Nat.min_def]; split <;> omega)),
       Array.getD_eq_getD_getElem?]
@@ -1105,7 +1105,7 @@ theorem reduceRange_rel (alpha : EF) (logH : Nat) (g : Array GItem)
   have key : ∀ (l : List GItem) (S : Nat → EF), (l.foldl (fun c a ↦ σ a c) S) t.val =
       l.foldl (fun a it ↦ it.2.2.2.foldl (termStep
         (crow (CompPoly.PackedRepr.decode it.1) (powers alpha it.2.1) it.2.1 (r0 + t.val))
-        ((cosetPointsBitRev gen logH).getD (r0 + t.val) 0)) a) (S t.val) := by
+        ((cosetPointsBitRev (gen : F) logH).getD (r0 + t.val) 0)) a) (S t.val) := by
     intro l
     induction l with
     | nil => intro S; rfl
@@ -1140,7 +1140,7 @@ theorem groupPlanes_rel (alpha : EF) (G : Nat × Nat × Array GItem) (h4 : 4 * 2
 /-- The fast reduction is the specification's. -/
 theorem reduce_rel (alpha : KoalaBear.Fast.Ext4)
     {items : List (PMat × List (KoalaBear.Fast.Ext4 × Array KoalaBear.Fast.Ext4))}
-    {sitems : List (Mat × List (KoalaBear.Fast.Ext4 × Array KoalaBear.Fast.Ext4))}
+    {sitems : List (Mat F × List (KoalaBear.Fast.Ext4 × Array KoalaBear.Fast.Ext4))}
     (h : List.Forall₂ (fun x y ↦ RM x.1 y.1 ∧ x.2 = y.2) items sitems)
     (hok : ∀ x ∈ sitems, MatOk x.1 ∧ ∀ p ∈ x.2, Ext.OutsideBase p.1) :
     List.Forall₂ (fun x y ↦ x.1 = y.1 ∧ RV x.2 y.2) (reduce alpha items)

@@ -30,10 +30,8 @@ Below the unique-decoding radius `ℓ ≤ 1`; up to the Johnson bound `1 - √ra
 namespace CompStark.Iop
 open CompStark.Stark CompStark.Sound CoreDefinitions Polynomial
 
-local notation "𝔽" => KoalaBear.Field
-local notation "F" => KoalaBear.Fast.Field
 
-variable {EF : Type} [Challenge EF]
+variable {F : Type} [BaseField F] {EF : Type} [Challenge F EF]
 
 local notation "𝕂" => Challenge.Spec EF
 
@@ -48,8 +46,8 @@ tuple of words on `L` on a common set of at least `(1 - δ) N` points: the list 
 interleaved code. At most `1` below the unique-decoding radius, and bounded by the Johnson bound
 below `1 - √rate`. -/
 noncomputable def listSize (ι : Type) [Fintype ι] [DecidableEq ι] (δ : ℝ) : Nat :=
-  Finset.univ.sup fun words : ι → S.Point → 𝔽 ↦
-    {polys : ι → 𝔽[X] | (∀ k, (polys k).natDegree ≤ S.n) ∧ Agree S δ words polys}.ncard
+  Finset.univ.sup fun words : ι → S.Point → F ↦
+    {polys : ι → F[X] | (∀ k, (polys k).natDegree ≤ S.n) ∧ Agree S δ words polys}.ncard
 
 /-- The number of opened words: each trace column twice, at `ζ` and `ζ ω_n`, and each
 coordinate of each chunk. -/

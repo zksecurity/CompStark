@@ -26,7 +26,7 @@ For the STARK, Plonky3's arities `folds maxLogArity (logN - logFinalPolyLen)` su
 namespace CompStark.Sound
 open CompStark.Stark CompStark.Iop Polynomial Domain OracleSpec OracleComp ProtocolSpec
 
-variable {EF : Type} [Challenge EF]
+variable {F : Type} [BaseField F] {EF : Type} [Challenge F EF]
 
 local notation "𝕂" => Challenge.Spec EF
 

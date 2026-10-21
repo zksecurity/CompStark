@@ -2,7 +2,8 @@
 Copyright (c) 2026 zkSecurity. All rights reserved.
 Released under Apache 2.0 license as described in the file LICENSE.
 -/
-import CompStark.Challenger
+import CompStark.KoalaBear.Primitives
+import CompStark.KoalaBear.Challenge
 
 /-! # Challenger known answers
 
@@ -13,17 +14,17 @@ elements and an extension element, observe `7` and the extension element `100 + 
 -/
 
 namespace CompStarkTests.Challenger
-open CompStark.KoalaBear
+open CompStark
 
 local notation "F" => _root_.KoalaBear.Fast.Field
 
 def canon (x : F) : Nat := Montgomery.Native32.FastField.toNat x
 
 def run : List Nat :=
-  let c := (List.range 20).foldl (fun c i ↦ Transcript.observe c (i : F)) Transcript.init
+  let c := (List.range 20).foldl (fun c i ↦ Transcript.observe c (i : F)) KoalaBear.initTranscript
   let (a, c) := c.sample
   let (b, c) := c.sample
-  let (e, c) := (c.sampleExt : _root_.KoalaBear.Fast.Ext4 × Transcript)
+  let (e, c) := (c.sampleExt : _root_.KoalaBear.Fast.Ext4 × Transcript F 24)
   let c := (c.observe 7).observeExt (⟨100, 101, 102, 103⟩ : _root_.KoalaBear.Fast.Ext4)
   let (bits, c) := c.sampleBits 10
   let (w, c) := c.grind 6

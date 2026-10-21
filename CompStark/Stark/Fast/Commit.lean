@@ -23,7 +23,7 @@ open CompStark.Fri
 open CompPoly.PackedRepr (encode)
 open CompPoly.CPolynomial.NTTFast.Packed (size_encode_fields ofWord_val Native.encodeFields_eq)
 
-local notation "F" => KoalaBear.Fast.Field
+local notation "F" => _root_.KoalaBear.Fast.Field
 
 /-- A word past the end of a buffer reads zero. -/
 theorem word_oob (b : ByteArray) (i : Nat) (hb : b.size < USize.size)
@@ -61,14 +61,14 @@ theorem word_encode_getD (a : Array F) (i : Nat) (hs : 4 * a.size < USize.size)
 
 open CompStark.Merkle.Packed (flat size_flat getD_flat)
 
-theorem encodeDigests_eq (ds : Array Digest) : encodeDigests ds = encode (flat ds.toList) := by
+theorem encodeDigests_eq (ds : Array (Digest F)) : encodeDigests ds = encode (flat ds.toList) := by
   rw [encodeDigests, Native.encodeFields_eq]
   congr 1
   apply Array.toList_inj.mp
   simp only [flat, Array.toList_flatMap, List.toList_toArray]
   rfl
 
-theorem size_encodeDigests (ds : Array Digest) : (encodeDigests ds).size = 32 * ds.size := by
+theorem size_encodeDigests (ds : Array (Digest F)) : (encodeDigests ds).size = 32 * ds.size := by
   rw [encodeDigests_eq, size_encode_fields, size_flat, Array.length_toList]
   omega
 
@@ -90,7 +90,7 @@ theorem extract_getD (V : Array F) (a w j : Nat) (hj : j < w) :
   · rw [Array.getElem?_eq_none (by omega)]
 
 /-- A digest read from encoded digests is the digest, or zero past the end. -/
-theorem readDigest_encodeDigests (ds : Array Digest) (k : Nat) :
+theorem readDigest_encodeDigests (ds : Array (Digest F)) (k : Nat) :
     Commit.readDigest (encodeDigests ds) k = ds.getD k 0 := by
   ext j hj
   rw [Commit.readDigest, Vector.getElem_ofFn]
@@ -107,7 +107,7 @@ theorem readDigest_encodeDigests (ds : Array Digest) (k : Nat) :
   exact CompStark.Merkle.Packed.vget_congr _ (by omega) _ _
 
 /-- A row read from a packed matrix is the row of its matrix. -/
-theorem readRow_rel {pm : PMat} {m : Mat} (h : RM pm m) (r : Nat) :
+theorem readRow_rel {pm : PMat} {m : Mat F} (h : RM pm m) (r : Nat) :
     Commit.readRow pm r = rowOf m r := by
   obtain ⟨hw, -, he⟩ := h
   rw [Commit.readRow, rowOf, he, hw, extract_encode, CompPoly.PackedRepr.decode_encode]
@@ -118,36 +118,36 @@ theorem readRow_rel {pm : PMat} {m : Mat} (h : RM pm m) (r : Nat) :
     rw [Array.size_ofFn] at h1
     exact extract_getD _ _ _ _ h1
 
-theorem foldl_maxHeight {ms : List PMat} {ss : List Mat} (h : List.Forall₂ RM ms ss) (a : Nat) :
+theorem foldl_maxHeight {ms : List PMat} {ss : List (Mat F)} (h : List.Forall₂ RM ms ss) (a : Nat) :
     ms.foldl (fun m x ↦ max m x.height) a = ss.foldl (fun m x ↦ max m x.height) a := by
   induction h generalizing a with
   | nil => rfl
   | cons hr _ ih => rw [List.foldl_cons, List.foldl_cons, hr.2.1, ih]
 
 /-- Heights are the represented matrices'. -/
-theorem maxHeight_rel {c : Commit} {s : Committed} (h : RC c s) : c.maxHeight = s.maxHeight :=
+theorem maxHeight_rel {c : Commit} {s : Committed F} (h : RC c s) : c.maxHeight = s.maxHeight :=
   foldl_maxHeight h.1 0
 
-theorem layer_rel {c : Commit} {s : Committed} (h : RC c s) (i : Nat) :
+theorem layer_rel {c : Commit} {s : Committed F} (h : RC c s) (i : Nat) :
     c.layers.getD i .empty = encodeDigests (s.layers.getD i #[]) := by
   rw [h.2, Array.getD_eq_getD_getElem?, Array.getD_eq_getD_getElem?, Array.getElem?_map,
     ← encodeDigests_empty, Option.getD_map]
 
 /-- The packed root is the specification's. -/
-theorem root_rel {c : Commit} {s : Committed} (h : RC c s) : Commit.root c = s.root := by
+theorem root_rel {c : Commit} {s : Committed F} (h : RC c s) : Commit.root c = s.root := by
   have hb : ∀ {α : Type} (xs : Array α) (d : α), xs.back?.getD d = xs.getD (xs.size - 1) d :=
     fun xs d ↦ by rw [Array.back?_eq_getElem?, Array.getD_eq_getD_getElem?]
   have hs : c.layers.size = s.layers.size := by rw [h.2, Array.size_map]
   rw [Commit.root, Committed.root, hb, hb, layer_rel h, hs, readDigest_encodeDigests]
 
-theorem rows_rel (g : Nat → Nat) {ms : List PMat} {ss : List Mat} (h : List.Forall₂ RM ms ss) :
+theorem rows_rel (g : Nat → Nat) {ms : List PMat} {ss : List (Mat F)} (h : List.Forall₂ RM ms ss) :
     ms.map (fun m ↦ Commit.readRow m (g m.height)) = ss.map fun m ↦ rowOf m (g m.height) := by
   induction h with
   | nil => rfl
   | cons hm _ ih => rw [List.map_cons, List.map_cons, ih, readRow_rel hm, hm.2.1]
 
 /-- The packed opening is the specification's. -/
-theorem openAt_rel {c : Commit} {s : Committed} (i : Nat) (h : RC c s) :
+theorem openAt_rel {c : Commit} {s : Committed F} (i : Nat) (h : RC c s) :
     Commit.openAt c i = s.openAt i := by
   unfold Commit.openAt Committed.openAt
   dsimp only
@@ -165,22 +165,22 @@ local notation "hashF" => CompStark.Hash.KoalaBear.hash F
 local notation "compF" => CompStark.Hash.KoalaBear.compress F
 
 /-- The layers from `L` up, with no matrices to inject. -/
-abbrev upper (fuel : Nat) (L : List Digest) : List (List Digest) :=
+abbrev upper (fuel : Nat) (L : List (Digest F)) : List (List (Digest F)) :=
   Merkle.upperLayersAll hashF compF fuel [] L
 
-theorem upper_succ (fuel : Nat) (L : List Digest) :
+theorem upper_succ (fuel : Nat) (L : List (Digest F)) :
     upper (fuel + 1) L =
       if L.length ≤ 1 then [L] else L :: upper fuel (Merkle.nextLayer hashF compF [] L) := by
   simp only [upper, Merkle.upperLayersAll, List.takeWhile_nil, List.length_nil, List.drop_nil]
 
-theorem upper_eq_cons (fuel : Nat) (L : List Digest) : upper fuel L = L :: (upper fuel L).tail := by
+theorem upper_eq_cons (fuel : Nat) (L : List (Digest F)) : upper fuel L = L :: (upper fuel L).tail := by
   cases fuel with
   | zero => rfl
   | succ fuel =>
     rw [upper_succ]
     split <;> rfl
 
-theorem length_nextLayer (L : List Digest) (h2 : 2 ≤ L.length) :
+theorem length_nextLayer (L : List (Digest F)) (h2 : 2 ≤ L.length) :
     (Merkle.nextLayer hashF compF [] L).length =
       if L.length = 2 then 1 else (L.length / 2 + 1) / 2 * 2 := by
   have := CompStark.Merkle.Packed.length_step L
@@ -188,7 +188,7 @@ theorem length_nextLayer (L : List Digest) (h2 : 2 ≤ L.length) :
     ite_eq_right_of_eq_false _ _ (eq_false (by omega))] at this
   exact this
 
-theorem length_nextLayer_le (L : List Digest) (k : Nat) (h2 : 2 ≤ L.length)
+theorem length_nextLayer_le (L : List (Digest F)) (k : Nat) (h2 : 2 ≤ L.length)
     (hk : L.length ≤ 2 ^ (k + 1)) :
     (Merkle.nextLayer hashF compF [] L).length ≤ 2 ^ k ∧
       (Merkle.nextLayer hashF compF [] L).length ≤ L.length := by
@@ -203,7 +203,7 @@ theorem length_nextLayer_le (L : List Digest) (k : Nat) (h2 : 2 ≤ L.length)
       omega
 
 /-- Fuel past `log₂` of the length adds no layers. -/
-theorem upper_stable (k : Nat) : ∀ (L : List Digest), L.length ≤ 2 ^ k → ∀ a, k ≤ a →
+theorem upper_stable (k : Nat) : ∀ (L : List (Digest F)), L.length ≤ 2 ^ k → ∀ a, k ≤ a →
     upper a L = upper k L := by
   induction k with
   | zero =>
@@ -222,7 +222,7 @@ theorem upper_stable (k : Nat) : ∀ (L : List Digest), L.length ≤ 2 ^ k → �
     · rw [ih _ (length_nextLayer_le L k (by omega) hL).1 a (by omega)]
 
 /-- The packed layer loop builds the specification's layers. -/
-theorem upperPacked_encode (fuel : Nat) : ∀ (L : List Digest) (out : Array ByteArray),
+theorem upperPacked_encode (fuel : Nat) : ∀ (L : List (Digest F)) (out : Array ByteArray),
     32 * L.length < USize.size →
     upperPacked (encode (flat L)) L.length out fuel =
       out ++ ((upper fuel L).tail.map fun l ↦ encode (flat l)).toArray := by
@@ -382,12 +382,12 @@ theorem packedLayers_encode (W H : Nat) (V : Array F) (hV : V.size = H * W) (hW 
 /-! ### Rows side by side -/
 
 /-- Row `r` of matrices side by side. -/
-def rowcat (ss : List Mat) (r : Nat) : List F := ss.flatMap fun s ↦ s.toMatrix.row r
+def rowcat (ss : List (Mat F)) (r : Nat) : List F := ss.flatMap fun s ↦ s.toMatrix.row r
 
 theorem length_row (m : Merkle.Matrix F) (r : Nat) : (m.row r).length = m.width := by
   rw [Merkle.Matrix.row, List.length_map, List.length_range]
 
-theorem length_rowcat (ss : List Mat) (r : Nat) :
+theorem length_rowcat (ss : List (Mat F)) (r : Nat) :
     (rowcat ss r).length = (ss.map Mat.width).sum := by
   induction ss with
   | nil => rfl
@@ -432,14 +432,14 @@ theorem foldl_width (ms : List PMat) (a : Nat) :
   | nil => rfl
   | cons m ms ih => rw [List.foldl_cons, ih, List.map_cons, List.sum_cons]; omega
 
-theorem sum_width {ms : List PMat} {ss : List Mat} (h : List.Forall₂ RM ms ss) :
+theorem sum_width {ms : List PMat} {ss : List (Mat F)} (h : List.Forall₂ RM ms ss) :
     (ms.map PMat.width).sum = (ss.map Mat.width).sum := by
   induction h with
   | nil => rfl
   | cons hm _ ih => rw [List.map_cons, List.map_cons, List.sum_cons, List.sum_cons, ih, hm.1]
 
 /-- One row of the copies of `sideBySide`. -/
-theorem foldl_row (H r : Nat) (hr : r < H) {ms : List PMat} {ss : List Mat}
+theorem foldl_row (H r : Nat) (hr : r < H) {ms : List PMat} {ss : List (Mat F)}
     (h : List.Forall₂ RM ms ss)
     (hf : ∀ s ∈ ss, s.values.size = s.width * s.height ∧ s.height = H) (P : Array F) (z : Nat) :
     ms.foldl (fun b m ↦ (m.words.copySlice (4 * r * m.width) b.1 (4 * b.2) (4 * m.width),
@@ -502,7 +502,7 @@ theorem getD_flatMap_range (f : Nat → List F) (W : Nat) (hf : ∀ i, (f i).len
         ← List.getD_eq_getElem?_getD]
 
 /-- Matrices of one height side by side are the packed matrix of their rows side by side. -/
-theorem sideBySide_eq (H : Nat) {ms : List PMat} {ss : List Mat} (h : List.Forall₂ RM ms ss)
+theorem sideBySide_eq (H : Nat) {ms : List PMat} {ss : List (Mat F)} (h : List.Forall₂ RM ms ss)
     (hf : ∀ s ∈ ss, s.values.size = s.width * s.height ∧ s.height = H) :
     ∃ V, sideBySide ms H = encode V ∧ V.size = H * (ss.map Mat.width).sum ∧
       ∀ r < H, (⟨(ss.map Mat.width).sum, H, V⟩ : Merkle.Matrix F).row r = rowcat ss r := by
@@ -573,7 +573,7 @@ theorem takeWhile_all {α : Type*} (p : α → Bool) (l : List α) (h : ∀ x �
       ih fun y hy ↦ h y (List.mem_cons_of_mem x hy)]
 
 /-- The specification's layers of matrices of one height. -/
-theorem layers_eq (H : Nat) (ss : List Mat) (hne : ss ≠ []) (hH : ∀ s ∈ ss, s.height = H) :
+theorem layers_eq (H : Nat) (ss : List (Mat F)) (hne : ss ≠ []) (hH : ∀ s ∈ ss, s.height = H) :
     Merkle.layers hashF compF (ss.map Mat.toMatrix) =
       upper (Merkle.firstLayer hashF (ss.map Mat.toMatrix) H).length
         (Merkle.firstLayer hashF (ss.map Mat.toMatrix) H) := by
@@ -598,7 +598,7 @@ theorem layers_eq (H : Nat) (ss : List Mat) (hne : ss ≠ []) (hH : ∀ s ∈ ss
       rw [← List.map_cons] at hx; rw [hall x hx]; exact beq_self_eq_true H
   rw [hs, htw, List.drop_length]
 
-theorem map_encodeDigests (L : List (List Digest)) :
+theorem map_encodeDigests (L : List (List (Digest F))) :
     ((L.map List.toArray).toArray).map encodeDigests = (L.map fun l ↦ encode (flat l)).toArray := by
   rw [List.map_toArray, List.map_map]
   congr 1
@@ -606,12 +606,12 @@ theorem map_encodeDigests (L : List (List Digest)) :
   rw [Function.comp_apply, encodeDigests_eq, List.toList_toArray]
 
 /-- The packed commitment of matrices of one height has the specification's layers. -/
-theorem packedLayers_eq (H : Nat) {ms : List PMat} {ss : List Mat} (h : List.Forall₂ RM ms ss)
+theorem packedLayers_eq (H : Nat) {ms : List PMat} {ss : List (Mat F)} (h : List.Forall₂ RM ms ss)
     (hne : ms ≠ []) (hf : ∀ s ∈ ss, s.values.size = s.width * s.height ∧ s.height = H)
     (hW : 0 < (ss.map Mat.width).sum)
     (hu : 32 * (H * (ss.map Mat.width).sum + 1) < USize.size) :
     packedLayers (ss.map Mat.width).sum (sideBySide ms H) =
-      (Committed.ofMats ss).layers.map encodeDigests := by
+      (Committed.ofMats hashF compF ss).layers.map encodeDigests := by
   obtain ⟨V, e, hV, hrow⟩ := sideBySide_eq H h hf
   have hss : ss ≠ [] := by rintro rfl; cases h; exact hne rfl
   have hH : ∀ s ∈ ss, s.height = H := fun s hs ↦ (hf s hs).2
@@ -638,15 +638,15 @@ theorem packedLayers_eq (H : Nat) {ms : List PMat} {ss : List Mat} (h : List.For
   rw [← upper_stable 64 P h64 (64 + P.length) (by omega),
     ← upper_stable P.length P Nat.lt_two_pow_self.le (64 + P.length) (by omega)]
 
-theorem foldl_width_mat (ss : List Mat) (a : Nat) :
+theorem foldl_width_mat (ss : List (Mat F)) (a : Nat) :
     ss.foldl (fun x m ↦ x + m.width) a = a + (ss.map Mat.width).sum := by
   induction ss generalizing a with
   | nil => rfl
   | cons m ss ih => rw [List.foldl_cons, ih, List.map_cons, List.sum_cons]; omega
 
 /-- The fast commitment represents the specification's. -/
-theorem commit_rel {ms : List PMat} {ss : List Mat} (h : List.Forall₂ RM ms ss)
-    (hok : CommitOk ss) : RC (commit ms) (Committed.ofMats ss) := by
+theorem commit_rel {ms : List PMat} {ss : List (Mat F)} (h : List.Forall₂ RM ms ss)
+    (hok : CommitOk ss) : RC (commit ms) (Committed.ofMats hashF compF ss) := by
   obtain ⟨H, hne, hall, hu⟩ := hok
   refine ⟨h, ?_⟩
   cases h with

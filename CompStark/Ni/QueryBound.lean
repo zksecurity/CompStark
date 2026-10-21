@@ -26,7 +26,7 @@ state.
 namespace CompStark.Fri
 open CompStark.Stark CompStark.RandomOracle OracleSpec OracleComp
 
-variable {ι : Type} {spec : OracleSpec ι} {H : Primitives (OracleComp spec)}
+variable {ι : Type} {spec : OracleSpec ι} {F : Type} {H : Primitives F (OracleComp spec)}
 
 /-- From every state, `x` makes at most `n` oracle calls and its results satisfy `post`. -/
 def Costs {α : Type} (x : M H α) (n : Nat) (post : α → Prop) : Prop :=
@@ -157,20 +157,19 @@ end CompStark.Merkle
 namespace CompStark.Fri
 open CompStark.Stark CompStark.RandomOracle OracleSpec OracleComp
 
-local notation "F" => KoalaBear.Fast.Field
 
-variable {EF : Type} [Challenge EF] {K : Nat}
+variable {F : Type} [BaseField F] {EF : Type} [Challenge F EF] {K : Nat}
 
-theorem isTotalQueryBound_query (q : Query) :
-    IsTotalQueryBound (liftM ((spec K).query q) : OracleComp (spec K) _) 1 := by
+theorem isTotalQueryBound_query (q : Query F) :
+    IsTotalQueryBound (liftM ((spec F K).query q) : OracleComp (spec F K) _) 1 := by
   rw [← bind_pure (liftM _), isTotalQueryBound_query_bind_iff]
   exact ⟨Nat.one_pos, fun _ ↦ trivial⟩
 
-theorem costs_sample : Costs (sample (ideal K)) 1 fun _ ↦ True := fun s ↦ by
+theorem costs_sample : Costs (sample (ideal F K)) 1 fun _ ↦ True := fun s ↦ by
   refine ⟨?_, fun _ _ _ ↦ trivial⟩
-  change IsTotalQueryBound (Except.ok <$> (ideal K).sample s) 1
+  change IsTotalQueryBound (Except.ok <$> (ideal F K).sample s) 1
   refine (isQueryBound_map_iff _ _ _ _ _).mpr ?_
-  show IsTotalQueryBound ((withAnswers K fun q ↦ liftM ((spec K).query q)).sample s) 1
+  show IsTotalQueryBound ((withAnswers K fun q ↦ liftM ((spec F K).query q)).sample s) 1
   unfold withAnswers
   dsimp only
   split
@@ -178,27 +177,27 @@ theorem costs_sample : Costs (sample (ideal K)) 1 fun _ ↦ True := fun s ↦ by
   · rw [isTotalQueryBound_query_bind_iff]
     exact ⟨Nat.one_pos, fun _ ↦ trivial⟩
 
-theorem costs_observe (x : F) : Costs (observe (ideal K) x) 0 fun _ ↦ True := costs_modify _
+theorem costs_observe (x : F) : Costs (observe (ideal F K) x) 0 fun _ ↦ True := costs_modify _
 
-theorem costs_observeList (xs : List F) : Costs (observeList (ideal K) xs) 0 fun _ ↦ True :=
+theorem costs_observeList (xs : List F) : Costs (observeList (ideal F K) xs) 0 fun _ ↦ True :=
   costs_modify _
 
-theorem costs_observeExts (xs : List EF) : Costs (observeExts (ideal K) xs) 0 fun _ ↦ True :=
+theorem costs_observeExts (xs : List EF) : Costs (observeExts (ideal F K) xs) 0 fun _ ↦ True :=
   costs_modify _
 
-theorem costs_sampleList : ∀ n, Costs (sampleList (ideal K) n) n fun _ ↦ True
+theorem costs_sampleList : ∀ n, Costs (sampleList (ideal F K) n) n fun _ ↦ True
   | 0 => costs_pure _ (fun _ ↦ True) trivial
   | n + 1 => costs_mono (costs_bind costs_sample fun _ _ ↦ costs_bind (costs_sampleList n)
       fun _ _ ↦ costs_pure _ (fun _ ↦ True) trivial) (by omega) fun _ h ↦ h
 
-theorem costs_sampleExt : Costs (sampleExt (ideal K) : M _ EF) (Challenge.d EF) fun _ ↦ True :=
+theorem costs_sampleExt : Costs (sampleExt (ideal F K) : M _ EF) (Challenge.d EF) fun _ ↦ True :=
   costs_bind (costs_sampleList _) fun _ _ ↦ costs_pure _ (fun _ ↦ True) trivial
 
-theorem costs_sampleBits (bits : Nat) : Costs (sampleBits (ideal K) bits) 1 fun _ ↦ True :=
+theorem costs_sampleBits (bits : Nat) : Costs (sampleBits (ideal F K) bits) 1 fun _ ↦ True :=
   costs_bind costs_sample fun _ _ ↦ costs_pure _ (fun _ ↦ True) trivial
 
 theorem costs_checkWitness (bits : Nat) (w : F) :
-    Costs (checkWitness (ideal K) bits w) 1 fun _ ↦ True := by
+    Costs (checkWitness (ideal F K) bits w) 1 fun _ ↦ True := by
   unfold checkWitness
   split
   · exact costs_mono (costs_pure _ (fun _ ↦ True) trivial) (Nat.zero_le _) fun _ h ↦ h
@@ -206,24 +205,24 @@ theorem costs_checkWitness (bits : Nat) (w : F) :
       costs_bind (costs_sampleBits bits) fun _ _ ↦ costs_pure _ (fun _ ↦ True) trivial
 
 /-- An opening of matrices of one height `2 ^ k` costs at most `1 + k` calls. -/
-theorem costs_checkOpening (commit : Digest) (n k index : Nat) (values : List (List F))
-    (path : List Digest) :
-    Costs (checkOpening (ideal K) commit (List.replicate n (2 ^ k)) index values path) (1 + k)
+theorem costs_checkOpening (commit : Digest F) (n k index : Nat) (values : List (List F))
+    (path : List (Digest F)) :
+    Costs (checkOpening (ideal F K) commit (List.replicate n (2 ^ k)) index values path) (1 + k)
       fun _ ↦ True := fun s ↦ by
   refine ⟨?_, fun _ _ _ ↦ trivial⟩
-  change IsTotalQueryBound ((ExceptT.lift (Merkle.verifyBatchM (ideal K).hash
-    (ideal K).compress commit (List.replicate n (2 ^ k)) index values path) >>=
-      fun a ↦ pure (a, s) : ExceptT String (OracleComp (spec K)) _).run) (1 + k)
+  change IsTotalQueryBound ((ExceptT.lift (Merkle.verifyBatchM (ideal F K).hash
+    (ideal F K).compress commit (List.replicate n (2 ^ k)) index values path) >>=
+      fun a ↦ pure (a, s) : ExceptT String (OracleComp (spec F K)) _).run) (1 + k)
   simp only [ExceptT.run_bind, ExceptT.run_lift, bind_map_left, ExceptT.run_pure]
   simpa only [Nat.add_zero] using isTotalQueryBound_bind
     (Merkle.isTotalQueryBound_verifyBatchM _ _ (fun _ ↦ isTotalQueryBound_query _)
       (fun _ _ ↦ isTotalQueryBound_query _) commit n k index values path)
-    fun x ↦ (show IsTotalQueryBound (pure (Except.ok (x, s)) : OracleComp (spec K) _) 0
+    fun x ↦ (show IsTotalQueryBound (pure (Except.ok (x, s)) : OracleComp (spec F K) _) 0
       from trivial)
 
 /-- A loop whose body makes no oracle calls makes none. -/
 theorem costs_forIn_zero {α β : Type} (l : List α) (init : β)
-    (f : α → β → M (ideal K) (ForInStep β)) (hf : ∀ a b, Costs (f a b) 0 fun _ ↦ True) :
+    (f : α → β → M (ideal F K) (ForInStep β)) (hf : ∀ a b, Costs (f a b) 0 fun _ ↦ True) :
     Costs (forIn l init f) 0 fun _ ↦ True := by
   simpa only [Nat.mul_zero] using
     costs_forIn l init f 0 (fun _ ↦ True) trivial fun a _ b _ ↦ hf a b
@@ -231,9 +230,9 @@ theorem costs_forIn_zero {α β : Type} (l : List α) (init : β)
 /-- The input openings of one query: one opening per round, of matrices on domains of size
 `2 ^ db`. -/
 theorem costs_openInput (P : Params) (logMax index : Nat) (alpha : EF)
-    (inputs : List BatchOpening) (rounds : List (Round EF)) (db : Nat)
+    (inputs : List (BatchOpening F)) (rounds : List (Round F EF)) (db : Nat)
     (hrounds : ∀ r ∈ rounds, ∀ mat ∈ r.2, mat.1.logSize = db) :
-    Costs (openInput (ideal K) P logMax index alpha inputs rounds)
+    Costs (openInput (ideal F K) P logMax index alpha inputs rounds)
       (rounds.length * (1 + (db + P.logBlowup))) fun _ ↦ True := by
   unfold openInput
   refine costs_mono (costs_bind (costs_ensure _ _) fun _ _ ↦ costs_bind
@@ -241,7 +240,7 @@ theorem costs_openInput (P : Params) (logMax index : Nat) (alpha : EF)
     fun _ _ ↦ costs_pure _ (fun _ ↦ True) trivial) ?_ fun _ _ ↦ trivial
   · obtain ⟨bo, commit, mats⟩ := a
     have hmats : ∀ mat ∈ mats, mat.1.logSize = db := hrounds _ (List.of_mem_zip ha).2
-    have hheights : mats.map (fun x : Domain × List (EF × List EF) ↦ 2 ^ (x.1.logSize +
+    have hheights : mats.map (fun x : Domain F × List (EF × List EF) ↦ 2 ^ (x.1.logSize +
         P.logBlowup)) = List.replicate mats.length (2 ^ (db + P.logBlowup)) := by
       rw [List.eq_replicate_iff, List.length_map]
       refine ⟨rfl, fun h hh ↦ ?_⟩
@@ -267,15 +266,15 @@ theorem costs_openInput (P : Params) (logMax index : Nat) (alpha : EF)
   · simp only [Nat.zero_add, Nat.add_zero, List.length_zip]
     exact Nat.mul_le_mul_right _ (Nat.min_le_right _ _)
 
-theorem costs_checkOpening_single (commit : Digest) (k index : Nat) (values : List (List F))
-    (path : List Digest) :
-    Costs (checkOpening (ideal K) commit [2 ^ k] index values path) (1 + k) fun _ ↦ True :=
+theorem costs_checkOpening_single (commit : Digest F) (k index : Nat) (values : List (List F))
+    (path : List (Digest F)) :
+    Costs (checkOpening (ideal F K) commit [2 ^ k] index values path) (1 + k) fun _ ↦ True :=
   costs_checkOpening commit 1 k index values path
 
 /-- The folds of one query: one opening per fold, on domains no larger than the query's. -/
 theorem costs_verifyQuery (P : Params) (logMax index : Nat) (betas : List EF)
-    (commits : List Digest) (steps : List (CommitStep EF)) (ro : List (Nat × EF)) :
-    Costs (verifyQuery (ideal K) P logMax index betas commits steps ro)
+    (commits : List (Digest F)) (steps : List (CommitStep F EF)) (ro : List (Nat × EF)) :
+    Costs (verifyQuery (ideal F K) P logMax index betas commits steps ro)
       (steps.length * (1 + logMax)) fun _ ↦ True := by
   unfold verifyQuery
   rcases ro with _ | ⟨⟨h0, e0⟩, tail⟩
@@ -302,9 +301,9 @@ theorem costs_verifyQuery (P : Params) (logMax index : Nat) (betas : List EF)
   · simp only [Nat.zero_add, Nat.add_zero, List.length_zip]
     exact Nat.mul_le_mul_right _ (Nat.min_le_right _ _)
 
-omit [Challenge EF] in
+omit [Challenge F EF] in
 /-- Every query has a fold per commit-phase commitment. -/
-theorem steps_size_of_all (proof : FriProof EF)
+theorem steps_size_of_all (proof : FriProof F EF)
     (hall : (proof.queries.all fun q ↦ q.steps.size == proof.commits.size &&
       q.steps.toList.map (·.logArity) == arities proof) = true) :
     ∀ q ∈ proof.queries.toList, q.steps.size = proof.commits.size := by
@@ -314,9 +313,9 @@ theorem steps_size_of_all (proof : FriProof EF)
   simp only [Bool.and_eq_true, beq_iff_eq] at this
   exact this.1
 
-omit [Challenge EF] in
+omit [Challenge F EF] in
 /-- With some fold, the commit-phase commitments are as many as the folds. -/
-theorem commits_size_of_all (proof : FriProof EF)
+theorem commits_size_of_all (proof : FriProof F EF)
     (hall : (proof.queries.all fun q ↦ q.steps.size == proof.commits.size &&
       q.steps.toList.map (·.logArity) == arities proof) = true) (hne : arities proof ≠ []) :
     proof.commits.size = (arities proof).length := by
@@ -331,9 +330,9 @@ theorem commits_size_of_all (proof : FriProof EF)
 
 /-- FRI's oracle calls: `d` samples for `α`, `d + 1` per fold, one for the query grinding, and per
 query its index, its input openings and its folds. -/
-theorem costs_verifyFri (P : Params) (proof : FriProof EF) (rounds : List (Round EF)) (db : Nat)
+theorem costs_verifyFri (P : Params) (proof : FriProof F EF) (rounds : List (Round F EF)) (db : Nat)
     (hrounds : ∀ r ∈ rounds, ∀ mat ∈ r.2, mat.1.logSize = db) (hne : arities proof ≠ []) :
-    Costs (verifyFri (ideal K) P proof rounds)
+    Costs (verifyFri (ideal F K) P proof rounds)
       (Challenge.d EF + 1 + (Challenge.d EF + 1) * (arities proof).length +
         P.numQueries * (1 + rounds.length * (1 + (db + P.logBlowup)) + (arities proof).length *
           (1 + ((arities proof).sum + P.logBlowup + P.logFinalPolyLen)))) fun _ ↦ True := by
@@ -373,9 +372,9 @@ theorem costs_verifyFri (P : Params) (proof : FriProof EF) (rounds : List (Round
   · rw [Nat.mul_comm (arities proof).length]
     omega
 
-theorem costs_verifyPcs (P : Params) (rounds : List (Round EF)) (proof : FriProof EF) (db : Nat)
+theorem costs_verifyPcs (P : Params) (rounds : List (Round F EF)) (proof : FriProof F EF) (db : Nat)
     (hrounds : ∀ r ∈ rounds, ∀ mat ∈ r.2, mat.1.logSize = db) (hne : arities proof ≠ []) :
-    Costs (verifyPcs (ideal K) P rounds proof)
+    Costs (verifyPcs (ideal F K) P rounds proof)
       (Challenge.d EF + 1 + (Challenge.d EF + 1) * (arities proof).length +
         P.numQueries * (1 + rounds.length * (1 + (db + P.logBlowup)) + (arities proof).length *
           (1 + ((arities proof).sum + P.logBlowup + P.logFinalPolyLen)))) fun _ ↦ True := by
@@ -403,15 +402,14 @@ end CompStark.Fri
 namespace CompStark.Iop.Setup
 open CompStark.Stark CompStark.Fri CompStark.RandomOracle OracleSpec OracleComp
 
-local notation "F" => KoalaBear.Fast.Field
 
-variable {EF : Type} [Challenge EF] (S : Setup EF)
+variable {F : Type} [BaseField F] {EF : Type} [Challenge F EF] (S : Setup EF)
 
 /-- **The verifier's oracle calls.** On a proof for `2 ^ logN` rows, the verifier makes at most
 `verifierQueries` oracle calls. -/
-theorem isTotalQueryBound_verifyWith (proof : Proof EF) (publicValues : List F)
+theorem isTotalQueryBound_verifyWith (proof : Proof F EF) (publicValues : List F)
     (hdb : proof.degreeBits = S.logN) :
-    IsTotalQueryBound (verifyWith (ideal S.streamLen) S.params S.air proof publicValues)
+    IsTotalQueryBound (verifyWith (ideal F S.streamLen) S.params S.air proof publicValues)
       S.verifierQueries := by
   have hne : S.friArities ≠ [] := foldArities_ne_nil _ _ (by have := S.folds; omega)
   have hsum : S.friArities.sum = S.logN - S.params.logFinalPolyLen := sum_foldArities _ _
@@ -469,7 +467,7 @@ theorem isTotalQueryBound_verifyWith (proof : Proof EF) (publicValues : List F)
 
 /-- **The game's verifier's oracle calls.** On every proof, the verifier in the random-oracle
 model makes at most `verifierQueries` oracle calls. -/
-theorem isTotalQueryBound_verifyRo (proof : Proof EF) (publicValues : List F) :
+theorem isTotalQueryBound_verifyRo (proof : Proof F EF) (publicValues : List F) :
     IsTotalQueryBound (S.verifyRo proof publicValues) S.verifierQueries := by
   unfold verifyRo
   split

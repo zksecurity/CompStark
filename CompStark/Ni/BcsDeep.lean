@@ -18,30 +18,28 @@ query's point `rev index`, with the verifier's batching challenge.
 
 @[expose] public section
 namespace CompStark.Ni
-open CompStark.Stark CompStark.Fri CompStark.Sound CompStark.Iop Polynomial Montgomery.Native32
+open CompStark.Stark CompStark.Fri CompStark.Sound CompStark.Iop Polynomial
 
-local notation "F" => KoalaBear.Fast.Field
-local notation "𝔽" => KoalaBear.Field
 
-variable {EF : Type} [Challenge EF]
+variable {F : Type} [BaseField F] {EF : Type} [Challenge F EF]
 
 local notation "𝕂" => Challenge.Spec EF
 
-variable (S : Iop.Setup EF) (cache : Merkle.Cache F Digest)
+variable (S : Iop.Setup EF) (cache : Merkle.Cache F (Digest F))
 
 /-- Column `j` of the base-field matrices committed under `root`, at the point of `L` of index
 `z`: entry `j` of the extracted leaf `rev z`, zero where nothing is extracted. -/
-noncomputable def committedColumn (root : Digest) (j : Nat) (z : S.Point) : 𝔽 :=
-  FastField.toField ((leafRow cache S.logSize (reverseBits z.val S.logSize) root).getD j 0)
+noncomputable def committedColumn (root : Digest F) (j : Nat) (z : S.Point) : F :=
+  ((leafRow cache S.logSize (reverseBits z.val S.logSize) root).getD j 0)
 
 /-- The trace words committed under the proof's trace commitment. -/
-noncomputable def traceWords (proof : Proof EF) : Fin S.air.width → S.Point → 𝔽 :=
+noncomputable def traceWords (proof : Proof F EF) : Fin S.air.width → S.Point → F :=
   fun j ↦ committedColumn S cache proof.traceCommit j
 
 /-- The quotient chunks' coordinate words committed under the proof's quotient commitment: chunk
 `c`'s coordinate `e` is column `d c + e`. -/
-noncomputable def quotientWords (proof : Proof EF) :
-    Fin S.chunks → Fin (Challenge.d EF) → S.Point → 𝔽 :=
+noncomputable def quotientWords (proof : Proof F EF) :
+    Fin S.chunks → Fin (Challenge.d EF) → S.Point → F :=
   fun c e ↦ committedColumn S cache proof.quotientCommit (Challenge.d EF * c.val + e.val)
 
 /-! ### Sums -/
@@ -128,32 +126,32 @@ theorem getD_flatten_of_length (w : Nat) (L : List (List F)) (hL : ∀ l ∈ L, 
 /-! ### The DEEP word -/
 
 /-- An opened row at `index` that binds is the committed column at the query's point. -/
-theorem committedColumn_eq (root : Digest) (index : Nat) (hidx : index < 2 ^ S.logSize)
+theorem committedColumn_eq (root : Digest F) (index : Nat) (hidx : index < 2 ^ S.logSize)
     (row : List F) (h : Merkle.extractRow cache S.logSize index root = some row) (j : Nat) :
     committedColumn S cache root j (finMod S.logSize (reverseBits index S.logSize)) =
-      FastField.toField (row.getD j 0) := by
-  rw [committedColumn, finMod_val (Complete.reverseBits_lt _ _),
-    Complete.reverseBits_reverseBits hidx, leafRow, h, Option.getD_some]
+      (row.getD j 0) := by
+  rw [committedColumn, finMod_val (reverseBits_lt _ _),
+    reverseBits_reverseBits hidx, leafRow, h, Option.getD_some]
 
 /-- The point of `L` of index `rev index` is the verifier's query point. -/
 theorem domain_finMod (index : Nat) :
     S.domain (finMod S.logSize (reverseBits index S.logSize)) =
       lift (gen * powF (twoAdicGen S.logSize) (reverseBits index S.logSize)) := by
   rw [show S.domain = cosetDomain S.logSize S.valid.twoAdic from rfl, cosetDomain_apply,
-    finMod_val (Complete.reverseBits_lt _ _), lift_mul, Fast.powF_eq, lift_pow]
+    finMod_val (reverseBits_lt _ _), lift_mul, powF_eq, lift_pow]
 
 /-- **The batched DEEP word at a query.** If a query's input openings at `index` against the
 verifier's rounds pass their checks (`BatchOk`), on a proof of the expected shape whose trace and
 quotient commitments bind, `openInput`'s batched quotient at the batching challenge `a` is the
 DEEP word of the extracted trace and quotient words and the opened values at `rev index`. -/
-theorem deepWord_eq (H : Primitives Id) (proof : Proof EF) (zeta a : EF) (α : 𝕂)
+theorem deepWord_eq (H : Primitives F Id) (proof : Proof F EF) (zeta a : EF) (α : 𝕂)
     (hdb : proof.degreeBits = S.logN)
     (htl : proof.opened.traceLocal.size = S.air.width)
     (htn : proof.opened.traceNext.size = S.air.width)
     (hqc : proof.opened.quotientChunks.size = S.chunks)
     (hq4 : ∀ ch ∈ proof.opened.quotientChunks, ch.size = Challenge.d EF)
     (hbT : Binding cache H proof.traceCommit) (hbQ : Binding cache H proof.quotientCommit)
-    (inputs : List BatchOpening) (index : Nat) (hidx : index < 2 ^ S.logSize)
+    (inputs : List (BatchOpening F)) (index : Nat) (hidx : index < 2 ^ S.logSize)
     (hlen : inputs.length = (vRounds proof zeta).length)
     (hok : ∀ x ∈ inputs.zip (vRounds proof zeta), BatchOk H S.logSize index x) :
     Iop.deepWord (fixedProver (traceWords S cache proof) (quotientWords S cache proof)
@@ -162,13 +160,13 @@ theorem deepWord_eq (H : Primitives Id) (proof : Proof EF) (zeta a : EF) (α : �
       Challenge.toSpec (accTerms a (gen * powF (twoAdicGen S.logSize) (reverseBits index S.logSize))
         (inputTerms (inputs.zip (vRounds proof zeta))) (1, 0)).2 := by
   set n := S.logSize
-  set x := gen * powF (twoAdicGen n) (reverseBits index n)
+  set x : F := gen * powF (twoAdicGen n) (reverseBits index n)
   set z0 : S.Point := finMod n (reverseBits index n)
   set o := proof.opened
-  set td : Domain := ⟨1, proof.degreeBits⟩
-  set mT : List (Domain × List (EF × List EF)) := [(td, [(zeta, o.traceLocal.toList),
+  set td : Domain F := ⟨1, proof.degreeBits⟩
+  set mT : List (Domain F × List (EF × List EF)) := [(td, [(zeta, o.traceLocal.toList),
     (zeta * Ext.ofBase (twoAdicGen proof.degreeBits), o.traceNext.toList)])] with hmT
-  set mQ : List (Domain × List (EF × List EF)) :=
+  set mQ : List (Domain F × List (EF × List EF)) :=
     o.quotientChunks.toList.map fun ch ↦ (td, [(zeta, ch.toList)]) with hmQ
   have hrounds : vRounds proof zeta = [(proof.traceCommit, mT), (proof.quotientCommit, mQ)] :=
     rfl
@@ -211,10 +209,10 @@ theorem deepWord_eq (H : Primitives Id) (proof : Proof EF) (zeta a : EF) (α : �
     exact hq4 _ (Array.getElem_mem hcq)
   have hexQ := hbQ _ _ _ _ _ (List.length_pos_of_ne_nil hneQ) hvQ
   -- The extracted words at the query's point.
-  have hTw : ∀ j, traceWords S cache proof j z0 = FastField.toField (rowT.toList.getD j 0) :=
+  have hTw : ∀ j, traceWords S cache proof j z0 = (rowT.toList.getD j 0) :=
     fun j ↦ committedColumn_eq S cache _ index hidx _ hexT j
   have hQw : ∀ (c : Fin S.chunks) (e : Fin (Challenge.d EF)), quotientWords S cache proof c e z0 =
-      FastField.toField ((bQ.values.toList.getD c #[]).toList.getD e 0) := by
+      ((bQ.values.toList.getD c #[]).toList.getD e 0) := by
     intro c e
     have hc : c.val < bQ.values.toList.length := by rw [hlenQ]; exact c.isLt
     have hmap : (bQ.values.toList.map (·.toList)).getD c [] =
@@ -230,9 +228,9 @@ theorem deepWord_eq (H : Primitives Id) (proof : Proof EF) (zeta a : EF) (α : �
     rw [quotientWords, committedColumn_eq S cache _ index hidx _ hexQ,
       getD_flatten_of_length _ _ hall _ _ (by rw [List.length_map]; exact hc) e.isLt, hmap]
   -- Both sides by Horner's rule in the batching challenge.
-  have hlhs : ∀ l : List ((S.Point → 𝔽) × 𝕂 × 𝕂), (l.zipIdx.map fun ((f, z, y), k) ↦
-      Challenge.toSpec a ^ k * (y - algebraMap 𝔽 𝕂 (f z0)) / (z - S.domain z0)).sum =
-      (l.map fun w ↦ (w.2.2 - algebraMap 𝔽 𝕂 (w.1 z0)) / (w.2.1 - S.domain z0)).foldr
+  have hlhs : ∀ l : List ((S.Point → F) × 𝕂 × 𝕂), (l.zipIdx.map fun ((f, z, y), k) ↦
+      Challenge.toSpec a ^ k * (y - algebraMap F 𝕂 (f z0)) / (z - S.domain z0)).sum =
+      (l.map fun w ↦ (w.2.2 - algebraMap F 𝕂 (w.1 z0)) / (w.2.1 - S.domain z0)).foldr
         (fun v acc ↦ v + Challenge.toSpec a * acc) 0 := by
     intro l
     rw [← one_mul (List.foldr _ 0 _), ← pow_zero (Challenge.toSpec a), ← sum_zipIdx_pow _ _ 0,
@@ -276,17 +274,17 @@ theorem deepWord_eq (H : Primitives Id) (proof : Proof EF) (zeta a : EF) (α : �
           (openingsOf S o)).quotient α c e, Challenge.toSpec zeta,
           ((fixedProver (traceWords S cache proof) (quotientWords S cache proof)
           (openingsOf S o)).openings α (Challenge.toSpec zeta)).quotientAt c e)).map
-        fun w ↦ (w.2.2 - algebraMap 𝔽 𝕂 (w.1 z0)) / (w.2.1 - S.domain z0)) =
+        fun w ↦ (w.2.2 - algebraMap F 𝕂 (w.1 z0)) / (w.2.1 - S.domain z0)) =
       fun c : Fin S.chunks ↦ (List.range (Challenge.d EF)).map fun e ↦
-        (Challenge.toSpec (((o.quotientChunks.getD c #[]).getD e 0)) - algebraMap 𝔽 𝕂
-          (FastField.toField ((bQ.values.toList.getD c #[]).toList.getD e 0))) /
+        (Challenge.toSpec (((o.quotientChunks.getD c #[]).getD e 0)) - algebraMap F 𝕂
+          (((bQ.values.toList.getD c #[]).toList.getD e 0))) /
           (Challenge.toSpec zeta - S.domain z0) from funext fun c ↦ by
         rw [List.map_map, ← map_finRange_eq_range]
         refine List.map_congr_left fun e _ ↦ ?_
         simp only [Function.comp_apply, fixedProver, openingsOf, hQw]]
     refine (flatMap_finRange_eq_range S.chunks (fun c ↦ (List.range (Challenge.d EF)).map fun e ↦
-        (Challenge.toSpec (((o.quotientChunks.getD c #[]).getD e 0)) - algebraMap 𝔽 𝕂
-          (FastField.toField ((bQ.values.toList.getD c #[]).toList.getD e 0))) /
+        (Challenge.toSpec (((o.quotientChunks.getD c #[]).getD e 0)) - algebraMap F 𝕂
+          (((bQ.values.toList.getD c #[]).toList.getD e 0))) /
           (Challenge.toSpec zeta - S.domain z0))).trans ?_
     rw [List.flatMap_def, List.flatMap_def]
     refine congrArg List.flatten (List.map_congr_left fun c hc ↦ ?_)

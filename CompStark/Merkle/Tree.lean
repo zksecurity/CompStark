@@ -141,9 +141,4 @@ theorem root_eq_layers (hash : List F → Vector F d)
     root hash compress ms = ((layers hash compress ms).getLastD []).headD 0 := by
   simp only [root, layers, sortTallest, upperLayers_eq_getLast]
 
-/-- Plonky3's Poseidon2 Merkle tree over KoalaBear: `KoalaBear.hash` leaves,
-`KoalaBear.compress` nodes. -/
-def KoalaBear.root (F : Type*) [Field F] (ms : List (Matrix F)) : Vector F 8 :=
-  Merkle.root (Hash.KoalaBear.hash F) (Hash.KoalaBear.compress F) ms
-
 end CompStark.Merkle

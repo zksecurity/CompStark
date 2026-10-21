@@ -5,6 +5,7 @@ Released under Apache 2.0 license as described in the file LICENSE.
 module
 
 public import CompStark.Complete.Stark
+public import CompStark.Stark.Config
 
 /-! # Completeness of the STARK verifier
 
@@ -12,8 +13,8 @@ If a trace satisfies an AIR, the honest prover's proof of it verifies (`complete
 that premise, the theorem assumes two things, each a structure with one documented field per
 condition:
 
-* `ValidConfig`: the configuration is one the prover supports. These conditions are checkable
-  before proving and do not depend on the trace.
+* `ValidConfig` (`CompStark/Stark/Config.lean`): the configuration is one the prover supports.
+  These conditions are checkable before proving and do not depend on the trace.
 * `NoBadLuck`: the honest run avoids two events of negligible probability that make it fail:
   the out-of-domain point lands in the base field, or a proof-of-work search finds no witness.
 
@@ -24,31 +25,13 @@ The proof is in `CompStark/Complete/`.
 namespace CompStark.Stark
 open CompStark.Fri
 
-local notation "F" => KoalaBear.Fast.Field
+local notation "F" => _root_.KoalaBear.Fast.Field
 
-variable {EF : Type} [Challenge EF]
-
-/-- A configuration the prover supports: an AIR, FRI parameters and traces of `2 ^ logN` rows. -/
-structure ValidConfig (params : Params) (air : Air) (logN : Nat) : Prop where
-  /-- The constraints read only the AIR's columns. -/
-  colsInWidth : air.ColsInWidth
-  /-- The constraints divided by the trace domain's vanishing polynomial fit the quotient's
-  chunks (`Air.DegreeFits`). -/
-  degreeFits : air.DegreeFits logN
-  /-- The extended trace domain is a subgroup of KoalaBear, whose two-adicity is 24. -/
-  twoAdic : logN + params.logBlowup ≤ 24
-  /-- The quotient's chunks fit the blowup. -/
-  chunksFit : air.logQuotientChunks ≤ params.logBlowup
-  /-- FRI folds at least once per round. -/
-  folds : 0 < params.maxLogArity
-  /-- FRI's final polynomial is no longer than the trace. -/
-  finalPolyFits : params.logFinalPolyLen ≤ logN
-  /-- FRI makes at least one query. -/
-  queries : 0 < params.numQueries
+variable {EF : Type} [Challenge F EF]
 
 variable (EF) in
 /-- The honest run over the extension `EF` avoids two unlikely events in which it fails. -/
-structure NoBadLuck (params : Params) (air : Air) (logN : Nat) (trace : Array F)
+structure NoBadLuck (params : Params) (air : Air F) (logN : Nat) (trace : Array F)
     (publicValues : List F) : Prop where
   /-- The out-of-domain point `ζ` (`outOfDomainPoint`), a random element of the extension of
   degree `d`, does not lie in the base field. It does with probability `fieldSize ^ (1 - d)`, about
@@ -63,7 +46,7 @@ structure NoBadLuck (params : Params) (air : Air) (logN : Nat) (trace : Array F)
 
 /-- **Completeness.** For a valid configuration and an honest run over any challenge field `EF`
 without bad luck, if the trace satisfies the AIR, the honest prover's proof verifies. -/
-theorem completeness {params : Params} {air : Air} {logN : Nat} {trace : Array F}
+theorem completeness {params : Params} {air : Air F} {logN : Nat} {trace : Array F}
     {publicValues : List F} (config : ValidConfig params air logN)
     (luck : NoBadLuck EF params air logN trace publicValues) :
     air.Satisfied logN trace publicValues →

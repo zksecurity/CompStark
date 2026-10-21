@@ -37,9 +37,8 @@ earlier round's input and answered samples) and its own input.
 namespace CompStark.Ni
 open CompStark.Stark CompStark.RandomOracle OracleSpec OracleComp
 
-local notation "F" => KoalaBear.Fast.Field
 
-variable {EF : Type} [Challenge EF]
+variable {F : Type} [BaseField F] {EF : Type} [Challenge F EF]
 
 /-! ### The transcript schedule -/
 
@@ -55,7 +54,7 @@ def openedValues (o : OpenedValues EF) : List EF :=
   o.traceLocal.toList ++ o.traceNext.toList ++ o.quotientChunks.toList.flatMap (·.toList)
 
 /-- The elements the verifier observes on `proof` before each squeeze, round by round. -/
-def inputs (P : Fri.Params) (pis : List F) (proof : Proof EF) : List (List F) :=
+def inputs (P : Fri.Params) (pis : List F) (proof : Proof F EF) : List (List F) :=
   ([(proof.degreeBits : F), (proof.degreeBits : F), 0] ++ proof.traceCommit.toList ++ pis) ::
   proof.quotientCommit.toList ::
   coeffs (openedValues proof.opened) ::
@@ -66,35 +65,35 @@ def inputs (P : Fri.Params) (pis : List F) (proof : Proof EF) : List (List F) :=
 
 /-! ### The duplex chain of a schedule -/
 
-variable {K : Nat} (answer : (q : Query) → Answer K q)
+variable {K : Nat} (answer : (q : Query F) → Answer K q)
 
 /-- The capacity before round `j` of `blocks` when every round is answered by `answer`. -/
-def capAt (blocks : List (List F)) : Nat → Digest
+def capAt (blocks : List (List F)) : Nat → Digest F
   | 0 => initCap
   | j + 1 => (answer (.duplex (capAt blocks j) (blocks.getD j []))).1
 
 /-- The duplex call of round `j`. -/
-def keyAt (blocks : List (List F)) (j : Nat) : Query :=
+def keyAt (blocks : List (List F)) (j : Nat) : Query F :=
   .duplex (capAt answer blocks j) (blocks.getD j [])
 
 /-- A round of a duplex chain: its input and the samples answered. -/
-abbrev Step (K : Nat) := List F × Vector F K
+abbrev Step (F : Type) (K : Nat) := List F × Vector F K
 
 /-- The rounds before round `i`. -/
-def history (blocks : List (List F)) (i : Nat) : List (Step K) :=
+def history (blocks : List (List F)) (i : Nat) : List (Step F K) :=
   (List.range i).map fun j ↦ (blocks.getD j [], (answer (keyAt answer blocks j)).2)
 
 /-! ### Parsing -/
 
 /-- The first duplex call in `log` answering capacity `cap`: its capacity, input and samples. -/
-def answering (log : QueryLog (spec K)) (cap : Digest) : Option (Digest × Step K) :=
+def answering (log : QueryLog (spec F K)) (cap : Digest F) : Option (Digest F × Step F K) :=
   log.findSome? fun e ↦ match e with
     | ⟨.duplex c input, answer⟩ => if answer.1 = cap then some (c, input, answer.2) else none
     | _ => none
 
 /-- The rounds that led to capacity `cap` in `log`, oldest first, following capacities back to
 the initial one in at most `fuel` steps. -/
-def stepsTo (log : QueryLog (spec K)) : Nat → Digest → Option (List (Step K))
+def stepsTo (log : QueryLog (spec F K)) : Nat → Digest F → Option (List (Step F K))
   | fuel, cap =>
     if cap = initCap then some [] else
       match fuel with
@@ -105,16 +104,16 @@ def stepsTo (log : QueryLog (spec K)) : Nat → Digest → Option (List (Step K)
 
 /-- A duplex call parsed against the queries `log` before it: the rounds before it and its
 input. -/
-def parse (log : QueryLog (spec K)) : Query → Option (List (Step K) × List F)
+def parse (log : QueryLog (spec F K)) : Query F → Option (List (Step F K) × List F)
   | .duplex cap input => (stepsTo log log.length cap).map (·, input)
   | _ => none
 
 /-- Every query of `log` is answered by `answer`. -/
-def Consistent (log : QueryLog (spec K)) : Prop := ∀ e ∈ log, e.2 = answer e.1
+def Consistent (log : QueryLog (spec F K)) : Prop := ∀ e ∈ log, e.2 = answer e.1
 
 /-- On the duplex calls of `log`, `answer` never gives the initial capacity, and gives distinct
 calls distinct capacities. -/
-def CapsInjective (log : QueryLog (spec K)) : Prop :=
+def CapsInjective (log : QueryLog (spec F K)) : Prop :=
   ∀ c input, Query.duplex c input ∈ log.map Sigma.fst →
     (answer (.duplex c input)).1 ≠ initCap ∧
     ∀ c' input', Query.duplex c' input' ∈ log.map Sigma.fst →
@@ -122,8 +121,8 @@ def CapsInjective (log : QueryLog (spec K)) : Prop :=
 
 variable {answer}
 
-theorem answering_eq (log : QueryLog (spec K)) (hcons : Consistent answer log)
-    (hinj : CapsInjective answer log) (c : Digest) (input : List F)
+theorem answering_eq (log : QueryLog (spec F K)) (hcons : Consistent answer log)
+    (hinj : CapsInjective answer log) (c : Digest F) (input : List F)
     (hmem : Query.duplex c input ∈ log.map Sigma.fst) :
     answering log (answer (.duplex c input)).1 = some (c, input, (answer (.duplex c input)).2) := by
   obtain ⟨e, he, hek⟩ := List.mem_map.mp hmem
@@ -154,10 +153,10 @@ theorem answering_eq (log : QueryLog (spec K)) (hcons : Consistent answer log)
   · exact absurd hqr (by simp only [reduceCtorEq, not_false_eq_true])
   · exact absurd hqr (by simp only [reduceCtorEq, not_false_eq_true])
 
-variable {log : QueryLog (spec K)} {blocks : List (List F)} {i : Nat}
+variable {log : QueryLog (spec F K)} {blocks : List (List F)} {i : Nat}
 
 /-- The calls of the rounds before `i` are in `log`. -/
-def HasRounds (answer : (q : Query) → Answer K q) (log : QueryLog (spec K))
+def HasRounds (answer : (q : Query F) → Answer K q) (log : QueryLog (spec F K))
     (blocks : List (List F)) (i : Nat) : Prop :=
   ∀ j < i, keyAt answer blocks j ∈ log.map Sigma.fst
 
@@ -221,19 +220,19 @@ theorem parse_keyAt (hcons : Consistent answer log) (hinj : CapsInjective answer
 section Run
 open CompStark.Fri
 
-variable (answer : (q : Query) → Answer K q) {P : Fri.Params}
+variable (answer : (q : Query F) → Answer K q) {P : Fri.Params}
 
 local notation "Hl" => idealLogged answer
 
 /-- The result and the query log of `x` from state `s`, on the logged answers. -/
-def out {α : Type} (x : M Hl α) (s : Sponge) :
-    Except String (α × Sponge) × QueryLog (spec K) :=
+def out {α : Type} (x : M Hl α) (s : Sponge F) :
+    Except String (α × Sponge F) × QueryLog (spec F K) :=
   ((x.run s).run).run
 
-theorem out_pure {α : Type} (a : α) (s : Sponge) :
+theorem out_pure {α : Type} (a : α) (s : Sponge F) :
     out answer (pure a : M Hl α) s = (.ok (a, s), []) := rfl
 
-theorem out_bind {α β : Type} (x : M Hl α) (f : α → M Hl β) (s : Sponge) :
+theorem out_bind {α β : Type} (x : M Hl α) (f : α → M Hl β) (s : Sponge F) :
     out answer (x >>= f) s = match out answer x s with
       | (.ok (v, s'), w) => ((out answer (f v) s').1, w ++ (out answer (f v) s').2)
       | (.error e, w) => (.error e, w) := by
@@ -245,7 +244,7 @@ theorem out_bind {α β : Type} (x : M Hl α) (f : α → M Hl β) (s : Sponge) 
   · rfl
 
 /-- A computation that succeeds within a bind succeeded first, and logged a prefix. -/
-theorem out_bind_ok {α β : Type} {x : M Hl α} {f : α → M Hl β} {s : Sponge} {r : β × Sponge}
+theorem out_bind_ok {α β : Type} {x : M Hl α} {f : α → M Hl β} {s : Sponge F} {r : β × Sponge F}
     (h : (out answer (x >>= f) s).1 = .ok r) :
     ∃ v s', (out answer x s).1 = .ok (v, s') ∧ (out answer (f v) s').1 = .ok r ∧
       (out answer (x >>= f) s).2 = (out answer x s).2 ++ (out answer (f v) s').2 := by
@@ -256,13 +255,13 @@ theorem out_bind_ok {α β : Type} {x : M Hl α} {f : α → M Hl β} {s : Spong
   · rw [hx] at h
     exact ⟨v, s', rfl, h, rfl⟩
 
-theorem out_modify (f : Sponge → Sponge) (s : Sponge) :
+theorem out_modify (f : Sponge F → Sponge F) (s : Sponge F) :
     out answer (modify f : M Hl Unit) s = (.ok ((), f s), []) := rfl
 
-theorem out_throw {α : Type} (e : String) (s : Sponge) :
+theorem out_throw {α : Type} (e : String) (s : Sponge F) :
     out answer (throw e : M Hl α) s = (.error e, []) := rfl
 
-theorem out_ensure_ok {b : Bool} {msg : String} {s : Sponge} {r : Unit × Sponge}
+theorem out_ensure_ok {b : Bool} {msg : String} {s : Sponge F} {r : Unit × Sponge F}
     (h : (out answer (ensure (H := Hl) b msg) s).1 = .ok r) : b = true ∧ r = ((), s) := by
   unfold ensure at h
   split at h
@@ -270,8 +269,8 @@ theorem out_ensure_ok {b : Bool} {msg : String} {s : Sponge} {r : Unit × Sponge
   · exact absurd h (by simp only [out_throw, reduceCtorEq, not_false_eq_true])
 
 /-- A passed check: its condition holds, and the rest runs from the same state. -/
-theorem out_ensure_bind_ok {β : Type} {b : Bool} {msg : String} {f : Unit → M Hl β} {s : Sponge}
-    {r : β × Sponge} (h : (out answer (ensure (H := Hl) b msg >>= f) s).1 = .ok r) :
+theorem out_ensure_bind_ok {β : Type} {b : Bool} {msg : String} {f : Unit → M Hl β} {s : Sponge F}
+    {r : β × Sponge F} (h : (out answer (ensure (H := Hl) b msg >>= f) s).1 = .ok r) :
     b = true ∧ (out answer (f ()) s).1 = .ok r ∧
       (out answer (ensure (H := Hl) b msg >>= f) s).2 = (out answer (f ()) s).2 := by
   obtain ⟨v, s', h₁, h₂, hlog⟩ := out_bind_ok answer h
@@ -283,10 +282,10 @@ theorem out_ensure_bind_ok {β : Type} {b : Bool} {msg : String} {f : Unit → M
   rw [ite_eq_left_of_eq_true _ _ (eq_true hb)]
   rfl
 
-theorem out_sample_cons (cap : Digest) (input : List F) (x : F) (rest : List F) :
+theorem out_sample_cons (cap : Digest F) (input : List F) (x : F) (rest : List F) :
     out answer (sample Hl) ⟨cap, input, x :: rest⟩ = (.ok (x, ⟨cap, input, rest⟩), []) := rfl
 
-theorem out_sample_nil (cap : Digest) (input : List F) :
+theorem out_sample_nil (cap : Digest F) (input : List F) :
     out answer (sample Hl) ⟨cap, input, []⟩ =
       (.ok (((answer (.duplex cap input)).2.toList.headD 0),
         ⟨(answer (.duplex cap input)).1, [], (answer (.duplex cap input)).2.toList.tail⟩),
@@ -296,7 +295,7 @@ theorem out_sample_nil (cap : Digest) (input : List F) :
   simp only [QueryImpl.withLogging_apply, QueryImpl.ofFn_apply]
   rfl
 
-theorem foldl_observe : ∀ (xs : List F) (s : Sponge),
+theorem foldl_observe : ∀ (xs : List F) (s : Sponge F),
     xs.foldl (Hl).observe s = if xs = [] then s else ⟨s.cap, s.input ++ xs, []⟩
   | [], _ => rfl
   | x :: xs, s => by
@@ -308,12 +307,12 @@ theorem foldl_observe : ∀ (xs : List F) (s : Sponge),
       rfl
     · simp only [List.append_assoc, List.singleton_append]
 
-theorem out_observeList (xs : List F) (s : Sponge) :
+theorem out_observeList (xs : List F) (s : Sponge F) :
     out answer (observeList Hl xs) s =
       (.ok ((), if xs = [] then s else ⟨s.cap, s.input ++ xs, []⟩), []) := by
   rw [observeList, out_modify, foldl_observe]
 
-theorem out_observeList_nil (xs : List F) (cap : Digest) (input : List F) :
+theorem out_observeList_nil (xs : List F) (cap : Digest F) (input : List F) :
     out answer (observeList Hl xs) ⟨cap, input, []⟩ = (.ok ((), ⟨cap, input ++ xs, []⟩), []) := by
   rw [out_observeList]
   split
@@ -321,10 +320,10 @@ theorem out_observeList_nil (xs : List F) (cap : Digest) (input : List F) :
     rw [h, List.append_nil]
   · rfl
 
-theorem out_observe (x : F) (s : Sponge) :
+theorem out_observe (x : F) (s : Sponge F) :
     out answer (observe Hl x) s = (.ok ((), ⟨s.cap, s.input ++ [x], []⟩), []) := rfl
 
-theorem foldl_observeExts (xs : List EF) (s : Sponge) :
+theorem foldl_observeExts (xs : List EF) (s : Sponge F) :
     xs.foldl (fun s x ↦ (Ext.coeffs x).foldl (Hl).observe s) s =
       (coeffs xs).foldl (Hl).observe s := by
   induction xs generalizing s with
@@ -333,13 +332,13 @@ theorem foldl_observeExts (xs : List EF) (s : Sponge) :
     rw [List.foldl_cons, ih]
     simp only [coeffs, List.flatMap_cons, List.foldl_append]
 
-theorem out_observeExts (xs : List EF) (s : Sponge) :
+theorem out_observeExts (xs : List EF) (s : Sponge F) :
     out answer (observeExts Hl xs) s =
       (.ok ((), if coeffs xs = [] then s else ⟨s.cap, s.input ++ coeffs xs, []⟩), []) := by
   rw [observeExts, out_modify, foldl_observeExts, foldl_observe]
 
 /-- `n` samples left or more: sampling `n` takes them. -/
-theorem out_sampleList_pop (cap : Digest) (input : List F) :
+theorem out_sampleList_pop (cap : Digest F) (input : List F) :
     ∀ (n : Nat) (samples : List F), n ≤ samples.length →
       out answer (sampleList Hl n) ⟨cap, input, samples⟩ =
         (.ok (samples.take n, ⟨cap, input, samples.drop n⟩), [])
@@ -350,7 +349,7 @@ theorem out_sampleList_pop (cap : Digest) (input : List F) :
       List.append_nil, List.take_succ_cons, List.drop_succ_cons]
 
 /-- `d` samples left or more: an extension sample takes them. -/
-theorem out_sampleExt_pop (cap : Digest) (input : List F) (samples : List F)
+theorem out_sampleExt_pop (cap : Digest F) (input : List F) (samples : List F)
     (h : Challenge.d EF ≤ samples.length) :
     out answer (sampleExt Hl : M Hl EF) ⟨cap, input, samples⟩ =
       (.ok (Challenge.ofCoeffs (samples.take (Challenge.d EF)),
@@ -359,7 +358,7 @@ theorem out_sampleExt_pop (cap : Digest) (input : List F) (samples : List F)
     List.append_nil]
 
 /-- No samples left: an extension sample duplexes and takes `d` samples of the answer. -/
-theorem out_sampleExt_nil (hK : Challenge.d EF ≤ K) (cap : Digest) (input : List F) :
+theorem out_sampleExt_nil (hK : Challenge.d EF ≤ K) (cap : Digest F) (input : List F) :
     out answer (sampleExt Hl : M Hl EF) ⟨cap, input, []⟩ =
       (.ok (Challenge.ofCoeffs ((answer (.duplex cap input)).2.toList.take (Challenge.d EF)),
         ⟨(answer (.duplex cap input)).1, [],
@@ -380,10 +379,10 @@ theorem out_sampleExt_nil (hK : Challenge.d EF ≤ K) (cap : Digest) (input : Li
 
 /-- A loop whose every step from a state satisfying `Inv` yields, keeps `Inv` at the next step
 and queries `q` of its step logs `q` of every step. -/
-theorem out_forIn_keys {γ β : Type} (f : γ → β → M Hl (ForInStep β)) (q : Nat → Query)
-    (Inv : Nat → Sponge → Prop) :
-    ∀ (l : List γ) (k0 : Nat) (b : β) (s : Sponge) (r : β × Sponge),
-      (∀ k (hk : k < l.length) b s (r : ForInStep β × Sponge), Inv (k0 + k) s →
+theorem out_forIn_keys {γ β : Type} (f : γ → β → M Hl (ForInStep β)) (q : Nat → Query F)
+    (Inv : Nat → Sponge F → Prop) :
+    ∀ (l : List γ) (k0 : Nat) (b : β) (s : Sponge F) (r : β × Sponge F),
+      (∀ k (hk : k < l.length) b s (r : ForInStep β × Sponge F), Inv (k0 + k) s →
         (out answer (f l[k] b) s).1 = .ok r →
         (∃ b', r.1 = .yield b') ∧ Inv (k0 + k + 1) r.2 ∧
           q (k0 + k) ∈ (out answer (f l[k] b) s).2.map Sigma.fst) →
@@ -417,17 +416,17 @@ theorem out_forIn_keys {γ β : Type} (f : γ → β → M Hl (ForInStep β)) (q
       exact Or.inr (e' ▸ ih.2 k (by simp only [List.length_cons] at hk; omega))
 
 /-- No samples left: a sample of bits duplexes and takes the first sample of the answer. -/
-theorem out_sampleBits_nil (bits : Nat) (cap : Digest) (input : List F) :
+theorem out_sampleBits_nil (bits : Nat) (cap : Digest F) (input : List F) :
     ∃ v, out answer (sampleBits Hl bits) ⟨cap, input, []⟩ =
       (.ok (v, ⟨(answer (.duplex cap input)).1, [], (answer (.duplex cap input)).2.toList.tail⟩),
         [⟨.duplex cap input, answer (.duplex cap input)⟩]) :=
   ⟨_, by simp only [sampleBits, out_bind, out_sample_nil, out_pure, List.append_nil]; rfl⟩
 
-theorem out_checkWitness_zero (w : F) (s : Sponge) :
+theorem out_checkWitness_zero (w : F) (s : Sponge F) :
     out answer (checkWitness Hl 0 w) s = (.ok (true, s), []) := rfl
 
 /-- With grinding, a witness check observes the witness, duplexes and takes the first sample. -/
-theorem out_checkWitness_pos (bits : Nat) (hbits : bits ≠ 0) (w : F) (cap : Digest)
+theorem out_checkWitness_pos (bits : Nat) (hbits : bits ≠ 0) (w : F) (cap : Digest F)
     (input samples : List F) :
     ∃ v, out answer (checkWitness Hl bits w) ⟨cap, input, samples⟩ =
       (.ok (v, ⟨(answer (.duplex cap (input ++ [w]))).1, [],
@@ -438,7 +437,7 @@ theorem out_checkWitness_pos (bits : Nat) (hbits : bits ≠ 0) (w : F) (cap : Di
   simp only [checkWitness, hbits, ↓reduceIte, out_bind, out_observe, hv, out_pure,
     List.append_nil, List.nil_append]
 
-theorem out_forIn_observe {γ : Type} (l : List γ) (f : γ → F) (s : Sponge) :
+theorem out_forIn_observe {γ : Type} (l : List γ) (f : γ → F) (s : Sponge F) :
     out answer (forIn l PUnit.unit fun a _ ↦ do
       observe Hl (f a)
       pure (ForInStep.yield PUnit.unit)) s =
@@ -454,11 +453,11 @@ theorem out_forIn_observe {γ : Type} (l : List γ) (f : γ → F) (s : Sponge) 
 variable {answer}
 
 /-- The keys of the rounds `j` with `lo ≤ j < hi` are in the log `w`. -/
-def LogsRounds (answer : (q : Query) → Answer K q) (blocks : List (List F)) (lo hi : Nat)
-    (w : QueryLog (spec K)) : Prop :=
+def LogsRounds (answer : (q : Query F) → Answer K q) (blocks : List (List F)) (lo hi : Nat)
+    (w : QueryLog (spec F K)) : Prop :=
   ∀ j, lo ≤ j → j < hi → keyAt answer blocks j ∈ w.map Sigma.fst
 
-theorem logsRounds_cons {blocks : List (List F)} {lo hi : Nat} {w₁ w₂ : QueryLog (spec K)}
+theorem logsRounds_cons {blocks : List (List F)} {lo hi : Nat} {w₁ w₂ : QueryLog (spec F K)}
     (h₁ : keyAt answer blocks lo ∈ w₁.map Sigma.fst)
     (h₂ : LogsRounds answer blocks (lo + 1) hi w₂) :
     LogsRounds answer blocks lo hi (w₁ ++ w₂) := fun j hlo hhi ↦ by
@@ -467,7 +466,7 @@ theorem logsRounds_cons {blocks : List (List F)} {lo hi : Nat} {w₁ w₂ : Quer
   · exact Or.inl h₁
   · exact Or.inr (h₂ j hlt hhi)
 
-theorem logsRounds_append {blocks : List (List F)} {lo mid hi : Nat} {w₁ w₂ : QueryLog (spec K)}
+theorem logsRounds_append {blocks : List (List F)} {lo mid hi : Nat} {w₁ w₂ : QueryLog (spec F K)}
     (h₁ : LogsRounds answer blocks lo mid w₁) (h₂ : LogsRounds answer blocks mid hi w₂) :
     LogsRounds answer blocks lo hi (w₁ ++ w₂) := fun j hlo hhi ↦ by
   rw [List.map_append, List.mem_append]
@@ -475,16 +474,16 @@ theorem logsRounds_append {blocks : List (List F)} {lo mid hi : Nat} {w₁ w₂ 
   · exact Or.inl (h₁ j hlo h)
   · exact Or.inr (h₂ j h hhi)
 
-theorem logsRounds_empty {blocks : List (List F)} {lo hi : Nat} {w : QueryLog (spec K)}
+theorem logsRounds_empty {blocks : List (List F)} {lo hi : Nat} {w : QueryLog (spec F K)}
     (h : hi ≤ lo) : LogsRounds answer blocks lo hi w := fun _ hlo hhi ↦ by omega
 
-theorem logsRounds_right {blocks : List (List F)} {lo hi : Nat} {w₁ w₂ : QueryLog (spec K)}
+theorem logsRounds_right {blocks : List (List F)} {lo hi : Nat} {w₁ w₂ : QueryLog (spec F K)}
     (h₂ : LogsRounds answer blocks lo hi w₂) : LogsRounds answer blocks lo hi (w₁ ++ w₂) :=
   fun j hlo hhi ↦ by
     rw [List.map_append, List.mem_append]
     exact Or.inr (h₂ j hlo hhi)
 
-theorem logsRounds_left {blocks : List (List F)} {lo hi : Nat} {w₁ w₂ : QueryLog (spec K)}
+theorem logsRounds_left {blocks : List (List F)} {lo hi : Nat} {w₁ w₂ : QueryLog (spec F K)}
     (h₁ : LogsRounds answer blocks lo hi w₁) : LogsRounds answer blocks lo hi (w₁ ++ w₂) :=
   fun j hlo hhi ↦ by
     rw [List.map_append, List.mem_append]
@@ -493,7 +492,7 @@ theorem logsRounds_left {blocks : List (List F)} {lo hi : Nat} {w₁ w₂ : Quer
 /-- FRI's rounds: from the batching round `r` on, with its input observed, the verifier queries
 the batching round, every fold round and the query round. -/
 theorem verifyFri_logs (hK : P.numQueries + Challenge.d EF + 1 ≤ K) (blocks : List (List F))
-    (r : Nat) (proof : FriProof EF) (rounds : List (Round EF)) (hne : arities proof ≠ [])
+    (r : Nat) (proof : FriProof F EF) (rounds : List (Round F EF)) (hne : arities proof ≠ [])
     (hfold : ∀ j (hj : j < (proof.commits.toList.zip proof.commitWitnesses.toList).length),
       blocks.getD (r + 1 + j) [] =
         (proof.commits.toList.zip proof.commitWitnesses.toList)[j].1.toList ++
@@ -501,7 +500,7 @@ theorem verifyFri_logs (hK : P.numQueries + Challenge.d EF + 1 ≤ K) (blocks : 
     (hlast : blocks.getD (r + 1 + (proof.commits.toList.zip proof.commitWitnesses.toList).length)
       [] = coeffs proof.finalPoly.toList ++ (arities proof).map (fun a : Nat ↦ (a : F)) ++
         witnessInput P.queryPowBits proof.queryWitness)
-    {res : Unit × Sponge}
+    {res : Unit × Sponge F}
     (hok : (out answer (verifyFri (idealLogged answer) P proof rounds)
       ⟨capAt answer blocks r, blocks.getD r [], []⟩).1 = .ok res) :
     LogsRounds answer blocks r
@@ -679,9 +678,9 @@ theorem verifyFri_logs (hK : P.numQueries + Challenge.d EF + 1 ≤ K) (blocks : 
 
 /-- A loop of steps that only change the state. -/
 theorem out_forIn_state {γ : Type} (l : List γ) (body : γ → PUnit → M Hl (ForInStep PUnit))
-    (g : γ → Sponge → Sponge)
+    (g : γ → Sponge F → Sponge F)
     (hbody : ∀ a s, out answer (body a PUnit.unit) s = (.ok (.yield PUnit.unit, g a s), []))
-    (s : Sponge) :
+    (s : Sponge F) :
     out answer (forIn l PUnit.unit body) s =
       (.ok (PUnit.unit, l.foldl (fun s a ↦ g a s) s), []) := by
   induction l generalizing s with
@@ -693,10 +692,10 @@ theorem out_forIn_state {γ : Type} (l : List γ) (body : γ → PUnit → M Hl 
     rfl
 
 /-- The values of the rounds of a commitment scheme opening, in order. -/
-def roundValues (rounds : List (Fri.Round EF)) : List EF :=
+def roundValues (rounds : List (Fri.Round F EF)) : List EF :=
   rounds.flatMap fun r ↦ r.2.flatMap fun m ↦ m.2.flatMap (·.2)
 
-theorem foldl_coeffs_flatMap {γ : Type} (l : List γ) (f : γ → List EF) (s : Sponge) :
+theorem foldl_coeffs_flatMap {γ : Type} (l : List γ) (f : γ → List EF) (s : Sponge F) :
     l.foldl (fun s a ↦ (coeffs (f a)).foldl (idealLogged answer).observe s) s =
       (coeffs (l.flatMap f)).foldl (idealLogged answer).observe s := by
   induction l generalizing s with
@@ -708,7 +707,7 @@ theorem foldl_coeffs_flatMap {γ : Type} (l : List γ) (f : γ → List EF) (s :
 /-- The commitment scheme: from the round `r` before it, with its values the input of round `r`,
 the verifier queries every round of FRI. -/
 theorem verifyPcs_logs (hK : P.numQueries + Challenge.d EF + 1 ≤ K) (blocks : List (List F))
-    (r : Nat) (proof : FriProof EF) (rounds : List (Fri.Round EF)) (hne : arities proof ≠ [])
+    (r : Nat) (proof : FriProof F EF) (rounds : List (Fri.Round F EF)) (hne : arities proof ≠ [])
     (hfold : ∀ j (hj : j < (proof.commits.toList.zip proof.commitWitnesses.toList).length),
       blocks.getD (r + 1 + j) [] =
         (proof.commits.toList.zip proof.commitWitnesses.toList)[j].1.toList ++
@@ -717,7 +716,7 @@ theorem verifyPcs_logs (hK : P.numQueries + Challenge.d EF + 1 ≤ K) (blocks : 
       [] = coeffs proof.finalPoly.toList ++ (arities proof).map (fun a : Nat ↦ (a : F)) ++
         witnessInput P.queryPowBits proof.queryWitness)
     (hvals : coeffs (roundValues rounds) = blocks.getD r []) (hin : blocks.getD r [] ≠ [])
-    (cap : Digest) (hcap : cap = capAt answer blocks r) (samples : List F) {res : Unit × Sponge}
+    (cap : Digest F) (hcap : cap = capAt answer blocks r) (samples : List F) {res : Unit × Sponge F}
     (hok : (out answer (verifyPcs (idealLogged answer) P rounds proof) ⟨cap, [], samples⟩).1 =
       .ok res) :
     LogsRounds answer blocks r
@@ -776,7 +775,7 @@ theorem coeffs_ne_nil {xs : List EF} (h : xs ≠ []) : coeffs xs ≠ [] := by
   rw [Ext.coeffs, Challenge.length_coeffs]
   exact (Challenge.params EF).d_pos
 
-theorem inputs_getD_fold (P : Fri.Params) (pis : List F) (proof : Proof EF) (j : Nat)
+theorem inputs_getD_fold (P : Fri.Params) (pis : List F) (proof : Proof F EF) (j : Nat)
     (hj : j < (proof.fri.commits.toList.zip proof.fri.commitWitnesses.toList).length) :
     (inputs P pis proof).getD (2 + 1 + j) [] =
       (proof.fri.commits.toList.zip proof.fri.commitWitnesses.toList)[j].1.toList ++
@@ -787,7 +786,7 @@ theorem inputs_getD_fold (P : Fri.Params) (pis : List F) (proof : Proof EF) (j :
   simp only [List.getElem?_cons_succ, List.getElem?_map, List.getElem?_eq_getElem hj,
     Option.map_some, Option.getD_some]
 
-theorem inputs_getD_last (P : Fri.Params) (pis : List F) (proof : Proof EF) :
+theorem inputs_getD_last (P : Fri.Params) (pis : List F) (proof : Proof F EF) :
     (inputs P pis proof).getD
       (2 + 1 + (proof.fri.commits.toList.zip proof.fri.commitWitnesses.toList).length) [] =
       coeffs proof.fri.finalPoly.toList ++
@@ -798,15 +797,15 @@ theorem inputs_getD_last (P : Fri.Params) (pis : List F) (proof : Proof EF) :
   simp only [List.length_cons, List.length_map, show ∀ n, 2 + 1 + n - (n + 1 + 1 + 1) = 0 from
     fun n ↦ by omega, List.getElem?_cons_zero, Option.getD_some]
 
-theorem length_inputs (P : Fri.Params) (pis : List F) (proof : Proof EF) :
+theorem length_inputs (P : Fri.Params) (pis : List F) (proof : Proof F EF) :
     (inputs P pis proof).length =
       2 + 2 + (proof.fri.commits.toList.zip proof.fri.commitWitnesses.toList).length := by
   simp only [inputs, List.length_cons, List.length_append, List.length_map, List.length_nil]
   omega
 
 /-- The verifier's last step: run the challenger part, then a check that queries nothing. -/
-theorem run_stateT_bind {α β : Type} (x : M (idealLogged answer) α) (s : Sponge)
-    (g : α × Sponge → ExceptT String (WriterT (QueryLog (spec K)) Id) β)
+theorem run_stateT_bind {α β : Type} (x : M (idealLogged answer) α) (s : Sponge F)
+    (g : α × Sponge F → ExceptT String (WriterT (QueryLog (spec F K)) Id) β)
     (hg : ∀ a, ((g a).run.run).2 = []) :
     ((StateT.run x s >>= g).run.run) = match out answer x s with
       | (.ok a, w) => (((g a).run.run).1, w)
@@ -822,7 +821,7 @@ theorem run_stateT_bind {α β : Type} (x : M (idealLogged answer) α) (s : Spon
 /-- **The verifier queries every round.** If the verifier on the logged answers accepts a proof
 that folds at least once, its log holds the duplex call of every round of the proof's
 schedule. -/
-theorem verifyWith_logs (hK : P.numQueries + Challenge.d EF + 1 ≤ K) (A : Air) (proof : Proof EF)
+theorem verifyWith_logs (hK : P.numQueries + Challenge.d EF + 1 ≤ K) (A : Air F) (proof : Proof F EF)
     (pis : List F)
     (hfolds : P.logFinalPolyLen < proof.degreeBits)
     (hok : (verifyWith (idealLogged answer) P A proof pis).run.1 = .ok ()) :
@@ -955,10 +954,10 @@ end Run
 
 section Verifier
 
-variable {answer : (q : Query) → Answer K q}
+variable {answer : (q : Query F) → Answer K q}
 
 /-- A log of answers by `answer` is answered by `answer`. -/
-theorem consistent_tableQueryLog {α : Type} (oa : OracleComp (spec K) α) :
+theorem consistent_tableQueryLog {α : Type} (oa : OracleComp (spec F K) α) :
     Consistent answer (tableQueryLog oa answer) := by
   induction oa using OracleComp.inductionOn with
   | pure a => simp only [Consistent, tableQueryLog_pure, List.not_mem_nil, IsEmpty.forall_iff,
@@ -970,25 +969,25 @@ theorem consistent_tableQueryLog {α : Type} (oa : OracleComp (spec K) α) :
     · exact ih _ e he
 
 /-- The verifier on logged answers gives the verifier on the answers, and its log. -/
-theorem run_idealLogged (P : Fri.Params) (A : Air) (proof : Proof EF) (pis : List F) :
+theorem run_idealLogged (P : Fri.Params) (A : Air F) (proof : Proof F EF) (pis : List F) :
     (verifyWith (idealLogged answer) P A proof pis).run =
       (verifyWith (idealOf answer) P A proof pis,
-        tableQueryLog (verifyWith (ideal K) P A proof pis) answer) := by
+        tableQueryLog (verifyWith (ideal F K) P A proof pis) answer) := by
   have h := QueryImpl.fst_map_run_withLogging (QueryImpl.ofFn answer)
-    (verifyWith (ideal K) P A proof pis)
+    (verifyWith (ideal F K) P A proof pis)
   rw [simulateQ_verifyWith, simulateQ_verifyWith] at h
   exact Prod.ext h (tableQueryLog_verifyWith answer P A proof pis).symm
 
 end Verifier
 
 section Setup
-variable (S : Iop.Setup EF) (answer : (q : Query) → Answer S.streamLen q)
+variable (S : Iop.Setup EF) (answer : (q : Query F) → Answer S.streamLen q)
 
 /-- **The verifier queries every round.** If the verifier accepts a proof for `2 ^ logN` rows on
 the answers `answer`, the duplex call of every round of the proof's schedule is in its log. -/
-theorem hasRounds_verifyWith (proof : Proof EF) (pis : List F) (hdb : proof.degreeBits = S.logN)
+theorem hasRounds_verifyWith (proof : Proof F EF) (pis : List F) (hdb : proof.degreeBits = S.logN)
     (hok : verifyWith (idealOf answer) S.params S.air proof pis = .ok ()) :
-    HasRounds answer (tableQueryLog (verifyWith (ideal S.streamLen) S.params S.air proof pis)
+    HasRounds answer (tableQueryLog (verifyWith (ideal F S.streamLen) S.params S.air proof pis)
       answer) (inputs S.params pis proof) (inputs S.params pis proof).length := by
   have h := verifyWith_logs (answer := answer) (P := S.params) (le_refl _) S.air proof pis
     (by have := S.folds; omega) (by rw [run_idealLogged]; exact hok)
@@ -999,12 +998,12 @@ theorem hasRounds_verifyWith (proof : Proof EF) (pis : List F) (hdb : proof.degr
 answers `answer`, and its duplex calls answer distinct capacities, none the initial one, then its
 log before round `i`'s call parses that call to the rounds before it and its input: the
 proof's prefix up to round `i`. -/
-theorem parse_verifyWith (proof : Proof EF) (pis : List F) (hdb : proof.degreeBits = S.logN)
+theorem parse_verifyWith (proof : Proof F EF) (pis : List F) (hdb : proof.degreeBits = S.logN)
     (hok : verifyWith (idealOf answer) S.params S.air proof pis = .ok ())
     (hinj : CapsInjective answer
-      (tableQueryLog (verifyWith (ideal S.streamLen) S.params S.air proof pis) answer))
+      (tableQueryLog (verifyWith (ideal F S.streamLen) S.params S.air proof pis) answer))
     (i : Nat) (hi : i ≤ (inputs S.params pis proof).length) :
-    parse (tableQueryLog (verifyWith (ideal S.streamLen) S.params S.air proof pis) answer)
+    parse (tableQueryLog (verifyWith (ideal F S.streamLen) S.params S.air proof pis) answer)
         (keyAt answer (inputs S.params pis proof) i) =
       some (history answer (inputs S.params pis proof) i, (inputs S.params pis proof).getD i []) :=
   parse_keyAt (consistent_tableQueryLog _) hinj
@@ -1016,8 +1015,7 @@ end Setup
 
 /-- The extension element of `d` samples from `offset` on, lowest coefficient first, in `𝕂`. -/
 def extAt (samples : Vector F K) (offset : Nat) : Challenge.Spec EF :=
-  CompPoly.Extension.Ext.ofFn fun i ↦
-    Montgomery.Native32.FastField.toField (samples.toList.getD (offset + i) 0)
+  CompPoly.Extension.Ext.ofFn fun i ↦ samples.toList.getD (offset + i) 0
 
 /-- An extension sample of the `d` samples from `offset` on is `extAt`. -/
 theorem toSpec_ofCoeffs_drop (samples : Vector F K) (offset : Nat) :

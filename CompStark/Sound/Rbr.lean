@@ -45,10 +45,8 @@ are ArkLib's `SafeHistory`; and then not every query can pass.
 namespace CompStark.Sound
 open CompStark.Stark CompStark.Iop Polynomial OracleComp Fri.Spec
 
-local notation "𝔽" => KoalaBear.Field
-local notation "F" => KoalaBear.Fast.Field
 
-variable {EF : Type} [Challenge EF]
+variable {F : Type} [BaseField F] {EF : Type} [Challenge F EF]
 
 local notation "𝕂" => Challenge.Spec EF
 
@@ -108,17 +106,17 @@ theorem le_relHammingDist_of_not_near (S : Iop.Setup EF) (δ : ℝ) (w : S.Point
 /-! ### The transcript -/
 
 /-- The prover with fixed words and messages. -/
-def fixedProver {S : Iop.Setup EF} (trace : Fin S.air.width → S.Point → 𝔽)
-    (quotient : Fin S.chunks → Fin (Challenge.d EF) → S.Point → 𝔽) (openings : Openings S)
+def fixedProver {S : Iop.Setup EF} (trace : Fin S.air.width → S.Point → F)
+    (quotient : Fin S.chunks → Fin (Challenge.d EF) → S.Point → F) (openings : Openings S)
     : Prover S :=
   ⟨trace, fun _ ↦ quotient, fun _ _ ↦ openings⟩
 
 /-- The transcript of the interactive oracle proof, as the extractor reads it off a
 non-interactive proof: the prover's words and messages, and the challenges. -/
 structure Transcript (S : Iop.Setup EF) where
-  trace : Fin S.air.width → S.Point → 𝔽
+  trace : Fin S.air.width → S.Point → F
   alpha : 𝕂
-  quotient : Fin S.chunks → Fin (Challenge.d EF) → S.Point → 𝔽
+  quotient : Fin S.chunks → Fin (Challenge.d EF) → S.Point → F
   zeta : 𝕂
   openings : Openings S
   batch : 𝕂
@@ -152,20 +150,20 @@ open Classical
 
 /-- `α` is bad for a candidate trace `P`: with some quotient of degree at most `n`, the check
 passes with the true values at more than `identityDegree` points `ζ` off the trace domain. -/
-def AlphaBadFor (P : Fin S.air.width → 𝔽[X]) (α : 𝕂) : Prop :=
-  ∃ quotient : Fin S.chunks → Fin (Challenge.d EF) → 𝔽[X], (∀ c e, (quotient c e).natDegree ≤ S.n) ∧
+def AlphaBadFor (P : Fin S.air.width → F[X]) (α : 𝕂) : Prop :=
+  ∃ quotient : Fin S.chunks → Fin (Challenge.d EF) → F[X], (∀ c e, (quotient c e).natDegree ≤ S.n) ∧
     S.identityDegree < (Finset.univ.filter fun ζ : 𝕂 ↦ OffTraceDomain S ζ ∧
       ConstraintsHoldAt S publicValues α ζ (trueOpenings S P quotient ζ)).card
 
 /-- Round `α`: `α` is bad for a candidate trace that fails the AIR. -/
-def AlphaBad (δ' : ℝ) (trace : Fin S.air.width → S.Point → 𝔽) (α : 𝕂) : Prop :=
+def AlphaBad (δ' : ℝ) (trace : Fin S.air.width → S.Point → F) (α : 𝕂) : Prop :=
   ∃ P ∈ candidates S δ' trace, ¬ S.air.Satisfied S.logN (traceOf S P) publicValues ∧
     AlphaBadFor S publicValues P α
 
 /-- Round `ζ`: `α` is safe, and `ζ` lies on the trace domain or the check passes at `ζ` with the
 true values of a candidate trace failing the AIR and a candidate quotient. -/
-def ZetaBad (δ' : ℝ) (trace : Fin S.air.width → S.Point → 𝔽) (α : 𝕂)
-    (quotient : Fin S.chunks → Fin (Challenge.d EF) → S.Point → 𝔽) (ζ : 𝕂) : Prop :=
+def ZetaBad (δ' : ℝ) (trace : Fin S.air.width → S.Point → F) (α : 𝕂)
+    (quotient : Fin S.chunks → Fin (Challenge.d EF) → S.Point → F) (ζ : 𝕂) : Prop :=
   ¬ AlphaBad S publicValues δ' trace α ∧ (¬ OffTraceDomain S ζ ∨
     ∃ P ∈ candidates S δ' trace, ¬ S.air.Satisfied S.logN (traceOf S P) publicValues ∧
       ∃ Q ∈ candidates S δ' (fun ce : Fin S.chunks × Fin (Challenge.d EF) ↦ quotient ce.1 ce.2),
@@ -173,8 +171,8 @@ def ZetaBad (δ' : ℝ) (trace : Fin S.air.width → S.Point → 𝔽) (α : �
 
 /-- Round `a`: the DEEP components are not near the code together at `δ' - 2/N`, but their
 batched word is `δ`-near. -/
-def BatchBad (δ : NNReal) (δ' : ℝ) (trace : Fin S.air.width → S.Point → 𝔽) (α : 𝕂)
-    (quotient : Fin S.chunks → Fin (Challenge.d EF) → S.Point → 𝔽) (ζ : 𝕂) (openings : Openings S)
+def BatchBad (δ : NNReal) (δ' : ℝ) (trace : Fin S.air.width → S.Point → F) (α : 𝕂)
+    (quotient : Fin S.chunks → Fin (Challenge.d EF) → S.Point → F) (ζ : 𝕂) (openings : Openings S)
     (a : 𝕂) :
     Prop :=
   ¬ NearTogether S (δ' - 2 / S.size) (components (fixedProver trace quotient openings) α ζ) ∧
@@ -191,9 +189,9 @@ def FoldBad (δ loss : NNReal) (i : Fin (S.lastFold + 1))
 
 /-- The point of `L` that a query sample selects: the low `log N` bits of its canonical value, the
 index into `L` in bit-reversed order. -/
-def queryPoint (x : 𝔽) : S.Point :=
-  ⟨reverseBits (x.val % 2 ^ (S.logN + S.params.logBlowup)) (S.logN + S.params.logBlowup),
-    Complete.reverseBits_lt _ _⟩
+def queryPoint (x : F) : S.Point :=
+  ⟨reverseBits (CompPoly.CanonicalNat.toNat x % 2 ^ (S.logN + S.params.logBlowup)) (S.logN + S.params.logBlowup),
+    reverseBits_lt _ _⟩
 
 /-- Before the queries: the DEEP word is `δ`-far, no fold is bad and the final polynomial has
 degree below `2 ^ logFinalPolyLen`. -/
@@ -203,9 +201,9 @@ def QueryReady (δ loss : NNReal) (t : Transcript S) : Prop :=
 
 /-- The query round: ready, the grinding sample `pow` has `queryPowBits` vanishing low bits, and
 every query sample selects a point where the checks pass and `f₀'` agrees with the DEEP word. -/
-def QueryBad (δ loss : NNReal) (t : Transcript S) (pow : 𝔽)
-    (queries : Fin S.params.numQueries → 𝔽) : Prop :=
-  QueryReady S δ loss t ∧ pow.val % 2 ^ S.params.queryPowBits = 0 ∧
+def QueryBad (δ loss : NNReal) (t : Transcript S) (pow : F)
+    (queries : Fin S.params.numQueries → F) : Prop :=
+  QueryReady S δ loss t ∧ CompPoly.CanonicalNat.toNat pow % 2 ^ S.params.queryPowBits = 0 ∧
     ∀ j, queryPoint S (queries j) ∈ t.consistentQueries
 
 /-- The folds of a transcript are safe in ArkLib's sense when none is bad. -/
@@ -236,7 +234,7 @@ open Classical
 -- The constructor-name linter exhausts its recursion budget on this proof's locals.
 set_option linter.constructorNameAsVariable false in
 /-- The `α` bad for a failing candidate trace number at most `#constraints - 1`. -/
-theorem card_alphaBadFor_le (P : Fin S.air.width → 𝔽[X]) (hP : ∀ j, (P j).natDegree ≤ S.n)
+theorem card_alphaBadFor_le (P : Fin S.air.width → F[X]) (hP : ∀ j, (P j).natDegree ≤ S.n)
     (hfail : ¬ S.air.Satisfied S.logN (traceOf S P) publicValues) :
     (Finset.univ.filter fun α : 𝕂 ↦ AlphaBadFor S publicValues P α).card ≤
       S.air.constraints.length - 1 := by
@@ -250,7 +248,7 @@ theorem card_alphaBadFor_le (P : Fin S.air.width → 𝔽[X]) (hP : ∀ j, (P j)
 -- The constructor-name linter exhausts its recursion budget on this proof's locals.
 set_option linter.constructorNameAsVariable false in
 /-- Round `α`: at most `ℓT (#constraints - 1)` bad values. -/
-theorem card_alphaBad_le (δ' : NNReal) (trace : Fin S.air.width → S.Point → 𝔽) :
+theorem card_alphaBad_le (δ' : NNReal) (trace : Fin S.air.width → S.Point → F) :
     (Finset.univ.filter fun α : 𝕂 ↦ AlphaBad S publicValues δ' trace α).card ≤
       S.listSize (Fin S.air.width) δ' * (S.air.constraints.length - 1) := by
   set C := (candidates_finite S δ' trace).toFinset
@@ -271,7 +269,7 @@ theorem card_alphaBad_le (δ' : NNReal) (trace : Fin S.air.width → S.Point →
     exact Nat.mul_le_mul_right _ ((Finset.card_filter_le _ _).trans (card_candidates_le S δ' _))
 
 /-- Round `α`: a uniform `α` is bad with probability at most `foldingError`. -/
-theorem prob_alphaBad_le (δ' : NNReal) (trace : Fin S.air.width → S.Point → 𝔽) :
+theorem prob_alphaBad_le (δ' : NNReal) (trace : Fin S.air.width → S.Point → F) :
     Pr{let α ← $ᵗ 𝕂}[AlphaBad S publicValues δ' trace α] ≤ foldingError S δ' := by
   rw [SampleableType.prEvent_uniformSample, Iop.foldingError]
   gcongr
@@ -280,8 +278,8 @@ theorem prob_alphaBad_le (δ' : NNReal) (trace : Fin S.air.width → S.Point →
 -- The constructor-name linter exhausts its recursion budget on this proof's locals.
 set_option linter.constructorNameAsVariable false in
 /-- Round `ζ`: at most `ℓT ℓQ identityDegree + n` bad values. -/
-theorem card_zetaBad_le (δ' : NNReal) (trace : Fin S.air.width → S.Point → 𝔽) (α : 𝕂)
-    (quotient : Fin S.chunks → Fin (Challenge.d EF) → S.Point → 𝔽) :
+theorem card_zetaBad_le (δ' : NNReal) (trace : Fin S.air.width → S.Point → F) (α : 𝕂)
+    (quotient : Fin S.chunks → Fin (Challenge.d EF) → S.Point → F) :
     (Finset.univ.filter fun ζ : 𝕂 ↦ ZetaBad S publicValues δ' trace α quotient ζ).card ≤
       S.listSize (Fin S.air.width) δ' * S.listSize (Fin S.chunks × Fin (Challenge.d EF)) δ' *
         S.identityDegree + S.n := by
@@ -294,7 +292,7 @@ theorem card_zetaBad_le (δ' : NNReal) (trace : Fin S.air.width → S.Point → 
     fun P ↦ ¬ S.air.Satisfied S.logN (traceOf S P) publicValues)
   set C2 := (candidates_finite S δ' fun ce : Fin S.chunks × Fin (Challenge.d EF) ↦
     quotient ce.1 ce.2).toFinset
-  set check : (Fin S.air.width → 𝔽[X]) → (Fin S.chunks × Fin (Challenge.d EF) → 𝔽[X]) → Finset 𝕂 :=
+  set check : (Fin S.air.width → F[X]) → (Fin S.chunks × Fin (Challenge.d EF) → F[X]) → Finset 𝕂 :=
     fun P Q ↦ Finset.univ.filter fun ζ : 𝕂 ↦ OffTraceDomain S ζ ∧
       ConstraintsHoldAt S publicValues α ζ (trueOpenings S P (fun c e ↦ Q (c, e)) ζ)
   have hsub : (Finset.univ.filter fun ζ : 𝕂 ↦ ZetaBad S publicValues δ' trace α quotient ζ) ⊆
@@ -326,16 +324,16 @@ theorem card_zetaBad_le (δ' : NNReal) (trace : Fin S.air.width → S.Point → 
       (card_candidates_le S δ' _))
 
 /-- Round `ζ`: a uniform `ζ` is bad with probability at most `outOfDomainError`. -/
-theorem prob_zetaBad_le (δ' : NNReal) (trace : Fin S.air.width → S.Point → 𝔽) (α : 𝕂)
-    (quotient : Fin S.chunks → Fin (Challenge.d EF) → S.Point → 𝔽) :
+theorem prob_zetaBad_le (δ' : NNReal) (trace : Fin S.air.width → S.Point → F) (α : 𝕂)
+    (quotient : Fin S.chunks → Fin (Challenge.d EF) → S.Point → F) :
     Pr{let ζ ← $ᵗ 𝕂}[ZetaBad S publicValues δ' trace α quotient ζ] ≤ outOfDomainError S δ' := by
   rw [SampleableType.prEvent_uniformSample, outOfDomainError]
   gcongr
   exact_mod_cast card_zetaBad_le S publicValues δ' trace α quotient
 
 /-- Round `a`: a uniform `a` is bad with probability at most `batchingError`. -/
-theorem prob_batchBad_le (δ : NNReal) (δ' : ℝ) (trace : Fin S.air.width → S.Point → 𝔽)
-    (α : 𝕂) (quotient : Fin S.chunks → Fin (Challenge.d EF) → S.Point → 𝔽) (ζ : 𝕂)
+theorem prob_batchBad_le (δ : NNReal) (δ' : ℝ) (trace : Fin S.air.width → S.Point → F)
+    (α : 𝕂) (quotient : Fin S.chunks → Fin (Challenge.d EF) → S.Point → F) (ζ : 𝕂)
     (openings : Openings S) :
     Pr{let a ← $ᵗ 𝕂}[BatchBad S δ δ' trace α quotient ζ openings a] ≤
       batchingError S δ (δ' - 2 / S.size) := by
@@ -369,33 +367,33 @@ theorem prob_foldBad_le (δ loss : NNReal) (i : Fin (S.lastFold + 1))
 `powFraction commitPowBits · friFoldError`. -/
 theorem prob_foldRound_le (δ loss : NNReal) (i : Fin (S.lastFold + 1))
     (fri : ∀ j, FinalOracleStatement S.schedule S.domain j) :
-    Pr{let z ← $ᵗ (𝔽 × 𝕂)}[z.1.val % 2 ^ S.params.commitPowBits = 0 ∧
+    Pr{let z ← $ᵗ (F × 𝕂)}[CompPoly.CanonicalNat.toNat z.1 % 2 ^ S.params.commitPowBits = 0 ∧
       FoldBad S δ loss i fri z.2] ≤
-      powFraction S.params.commitPowBits * friFoldError S δ loss i := by
+      powFraction F S.params.commitPowBits * friFoldError S δ loss i := by
   exact (prob_pow_and_le _ _).trans (mul_le_mul_right (prob_foldBad_le S δ loss i fri) _)
 
 /-- The query samples that select a point of `G` are those whose residues lie in the
 bit-reversed `G`, a set of the same size. -/
-theorem queryPoint_mem_iff (G : Finset S.Point) (x : 𝔽) :
-    queryPoint S x ∈ G ↔ x.val % 2 ^ (S.logN + S.params.logBlowup) ∈
+theorem queryPoint_mem_iff (G : Finset S.Point) (x : F) :
+    queryPoint S x ∈ G ↔ CompPoly.CanonicalNat.toNat x % 2 ^ (S.logN + S.params.logBlowup) ∈
       G.image fun z ↦ reverseBits z.val (S.logN + S.params.logBlowup) := by
   set m := S.logN + S.params.logBlowup
-  have hlt : x.val % 2 ^ m < 2 ^ m := Nat.mod_lt _ (Nat.two_pow_pos m)
+  have hlt : CompPoly.CanonicalNat.toNat x % 2 ^ m < 2 ^ m := Nat.mod_lt _ (Nat.two_pow_pos m)
   simp only [Finset.mem_image]
   constructor
   · intro h
-    exact ⟨_, h, Complete.reverseBits_reverseBits hlt⟩
+    exact ⟨_, h, reverseBits_reverseBits hlt⟩
   · rintro ⟨z, hz, hzx⟩
     have hz' : queryPoint S x = z := by
       apply Fin.ext
-      simp only [queryPoint, ← hzx, Complete.reverseBits_reverseBits z.isLt]
+      simp only [queryPoint, ← hzx, reverseBits_reverseBits z.isLt]
     rw [hz']
     exact hz
 
 /-- The query round: at most `powFraction queryPowBits · friQueryError`. -/
 theorem prob_queryBad_le (δ loss : NNReal) (t : Transcript S) :
-    Pr{let z ← $ᵗ (𝔽 × (Fin S.params.numQueries → 𝔽))}[QueryBad S δ loss t z.1 z.2] ≤
-      powFraction S.params.queryPowBits * friQueryError S δ loss := by
+    Pr{let z ← $ᵗ (F × (Fin S.params.numQueries → F))}[QueryBad S δ loss t z.1 z.2] ≤
+      powFraction F S.params.queryPowBits * friQueryError S δ loss := by
   by_cases hready : QueryReady S δ loss t
   · set m := S.logN + S.params.logBlowup
     set G := t.consistentQueries.image fun z ↦ reverseBits z.val m
@@ -412,13 +410,13 @@ theorem prob_queryBad_le (δ loss : NNReal) (t : Transcript S) :
       change (G.card : ℝ) ≤ _
       linarith
     have h := prob_queryRound_le S.params.queryPowBits m S.params.numQueries
-      S.valid.twoAdic G _ hG
+      (BaseField.two_pow_dvd_card_sub_one_of_le S.valid.twoAdic) G _ hG
     refine le_trans (le_of_eq ?_) h
     congr 1
     funext z
     simp only [QueryBad, hready, true_and, queryPoint_mem_iff, G, m, Transcript.consistentQueries]
   · rw [SampleableType.prEvent_uniformSample]
-    have h : (Finset.univ.filter fun z : 𝔽 × (Fin S.params.numQueries → 𝔽) ↦
+    have h : (Finset.univ.filter fun z : F × (Fin S.params.numQueries → F) ↦
         QueryBad S δ loss t z.1 z.2) = ∅ :=
       Finset.filter_false_of_mem fun z _ hz ↦ hready hz.1
     rw [h, Finset.card_empty, Nat.cast_zero, ENNReal.zero_div]
@@ -458,10 +456,10 @@ safe, some candidate trace satisfies the AIR: the check at `ζ`, a final polynom
 below `2 ^ logFinalPolyLen`, a grinding sample with `queryPowBits` vanishing low bits, and every
 query sample selecting a point where the checks pass and `f₀'` agrees with the DEEP word. -/
 theorem exists_satisfied_of_safe (δ δ' loss : NNReal) (hδ' : (δ' : ℝ) < 1 - S.rate)
-    (t : Transcript S) (pow : 𝔽) (queries : Fin S.params.numQueries → 𝔽)
+    (t : Transcript S) (pow : F) (queries : Fin S.params.numQueries → F)
     (hcheck : ConstraintsHoldAt S publicValues t.alpha t.zeta t.openings)
     (hdegree : (finalPolynomial S.schedule t.fri).natDegree < (finalDegreeOf S).val)
-    (hpow : pow.val % 2 ^ S.params.queryPowBits = 0)
+    (hpow : CompPoly.CanonicalNat.toNat pow % 2 ^ S.params.queryPowBits = 0)
     (hqueries : ∀ j, queryPoint S (queries j) ∈ t.consistentQueries)
     (hα : ¬ AlphaBad S publicValues δ' t.trace t.alpha)
     (hζ : ¬ ZetaBad S publicValues δ' t.trace t.alpha t.quotient t.zeta)

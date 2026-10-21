@@ -17,9 +17,8 @@ point are, column by column, a weighted sum over the rows (`openedAt_eq`).
 namespace CompStark.Stark
 open CompStark.Fri
 
-local notation "F" => KoalaBear.Fast.Field
 
-variable {EF : Type} [Challenge EF]
+variable {F : Type} [BaseField F] {EF : Type} [Challenge F EF]
 
 theorem ofFn_append_ofFn {α : Type} (g : Nat → α) (a b : Nat) :
     (Array.ofFn (n := a) fun i ↦ g i.val) ++ (Array.ofFn (n := b) fun i ↦ g (a + i.val)) =
@@ -90,8 +89,8 @@ theorem weightedColumns_eq (m : Array F) (perm : Array Nat) (weights : Array EF)
 
 /-- The barycentric weights `x / (z - x)` of the natural-order coset of `2 ^ logH` points. -/
 abbrev baryWeights (logH : Nat) (z : EF) : Array EF :=
-  Array.zipWith Challenge.smul (cosetPoints gen logH)
-    (batchInv ((cosetPoints gen logH).map fun x ↦ z - Ext.ofBase x))
+  Array.zipWith Challenge.smul (cosetPoints (gen : F) logH)
+    (batchInv ((cosetPoints (gen : F) logH).map fun x ↦ z - Ext.ofBase x))
 
 /-- The barycentric weight `x / (z - x)`. -/
 def bw (z : EF) (x : F) : EF := Challenge.smul x (z - Ext.ofBase x)⁻¹
@@ -102,19 +101,19 @@ theorem sub_ofBase_ne_zero {z : EF} (hz : Ext.OutsideBase z) (x : F) :
   exact Ext.toSpec_ne_algebraMap hz _
 
 theorem baryWeights_getD {z : EF} (hz : Ext.OutsideBase z) (logH i : Nat) (hi : i < 2 ^ logH) :
-    (baryWeights logH z).getD i 0 = bw z ((cosetPoints gen logH).getD i 0) := by
+    (baryWeights logH z).getD i 0 = bw z ((cosetPoints (gen : F) logH).getD i 0) := by
   have hb := batchInv_eq Challenge.toSpec Challenge.toSpec_injective Challenge.toSpec_mul
     Challenge.toSpec_inv Challenge.toSpec_one
-    ((cosetPoints gen logH).map fun x ↦ z - Ext.ofBase x) (fun y hy ↦ by
+    ((cosetPoints (gen : F) logH).map fun x ↦ z - Ext.ofBase x) (fun y hy ↦ by
       obtain ⟨x, -, rfl⟩ := Array.mem_map.mp hy
       exact sub_ofBase_ne_zero hz x)
-  have hs := size_cosetPoints gen logH
+  have hs := size_cosetPoints (gen : F) logH
   rw [baryWeights, hb, Array.getD_eq_getD_getElem?, Array.getElem?_zipWith,
     Array.getElem?_map, Array.getElem?_map, Array.getElem?_eq_getElem (by omega), Option.map_some,
     Option.map_some, Array.getD_eq_getD_getElem?, Array.getElem?_eq_getElem (by omega)]
   rfl
 
-theorem openedAt_eq (b : Nat) (m : Mat) (z : EF) :
+theorem openedAt_eq (b : Nat) (m : Mat F) (z : EF) :
     Fri.openedAt b m z = Array.ofFn (n := m.width) fun j ↦
       Fri.cosetFactor (Nat.log2 m.height - b) gen z *
         colSum m.values (bitRevPerm (Nat.log2 m.height - b)) (baryWeights (Nat.log2 m.height - b) z)
@@ -132,19 +131,19 @@ theorem openedAt_eq (b : Nat) (m : Mat) (z : EF) :
 /-- One matrix of `Fri.reduce`: its rows batched by the powers of `α` accumulate, at each of its
 points in order, onto the running sum of its height. -/
 def reduceStep (alpha : EF) (red : List (Nat × Nat × Array EF))
-    (it : Mat × List (EF × Array EF)) : List (Nat × Nat × Array EF) :=
+    (it : Mat F × List (EF × Array EF)) : List (Nat × Nat × Array EF) :=
   let m := it.1
   let logH := Nat.log2 m.height
   let ap := Array.ofFn (n := m.width) fun i ↦ Ext.pow alpha i.val
   let start := (red.lookup logH).getD (0, Array.replicate m.height 0)
   let res := it.2.foldl (fun b p ↦ (b.1 + m.width,
     parChunks m.height (if m.height < 4096 then 1 else 16) fun r0 len ↦
-      accumulateRows b.2 (compress m ap) (cosetPointsBitRev gen logH) p.1
+      accumulateRows b.2 (compress m ap) (cosetPointsBitRev (gen : F) logH) p.1
         ((List.range m.width).foldl (fun s i ↦ s + ap.getD i 0 * p.2.getD i 0) 0)
         (Ext.pow alpha b.1) r0 len)) (start.1, start.2)
   (logH, res.1, res.2) :: red.filter (·.1 != logH)
 
-theorem reduce_eq (alpha : EF) (items : List (Mat × List (EF × Array EF))) :
+theorem reduce_eq (alpha : EF) (items : List (Mat F × List (EF × Array EF))) :
     Fri.reduce alpha items = ((items.foldl (reduceStep alpha) []).mergeSort
       fun a b ↦ decide (b.1 ≤ a.1)).map fun x ↦ (x.1, x.2.2) := by
   simp only [Fri.reduce, Id.run, List.forIn_pure_yield_eq_foldl, pure_bind]

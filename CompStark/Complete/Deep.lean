@@ -36,11 +36,13 @@ namespace CompStark
 open CompStark.Stark CompStark.Fri Polynomial Montgomery.Native32
 open CompStark.Stark.Fast (crow termStep termsStep yzOf powers)
 
-variable {EF : Type} [Challenge EF]
 
-local notation "F" => KoalaBear.Fast.Field
+local notation "F" => _root_.KoalaBear.Fast.Field
+variable {EF : Type} [Challenge F EF]
+local notation "hashF" => CompStark.Hash.KoalaBear.hash F
+local notation "compF" => CompStark.Hash.KoalaBear.compress F
 local notation "K" => Challenge.Spec EF
-local notation "ι" => algebraMap KoalaBear.Field (Challenge.Spec EF)
+local notation "ι" => algebraMap F (Challenge.Spec EF)
 
 namespace Deep
 
@@ -56,13 +58,13 @@ theorem toSpec_pow (x : EF) (n : Nat) :
       rw [Ext.pow]
       have h := Nat.div_add_mod (k + 1) 2
       split_ifs with hp
-      · rw [Challenge.toSpec_mul, ih _ (by omega), Challenge.toSpec_mul, ← sq, ← pow_mul,
+      · rw [Challenge.toSpec_mul, ih _ (by omega24), Challenge.toSpec_mul, ← sq, ← pow_mul,
           ← pow_succ']
-        exact congrArg (Challenge.toSpec x ^ ·) (by omega)
-      · rw [ih _ (by omega), Challenge.toSpec_mul, ← sq, ← pow_mul]
-        exact congrArg (Challenge.toSpec x ^ ·) (by omega)
+        exact congrArg (Challenge.toSpec x ^ ·) (by omega24)
+      · rw [ih _ (by omega24), Challenge.toSpec_mul, ← sq, ← pow_mul]
+        exact congrArg (Challenge.toSpec x ^ ·) (by omega24)
 
-theorem toSpec_ofBase (x : F) : Challenge.toSpec (Ext.ofBase x : EF) = ι (FastField.toField x) :=
+theorem toSpec_ofBase (x : F) : Challenge.toSpec (Ext.ofBase x : EF) = ι (x) :=
   Challenge.toSpec_ofBase x
 
 theorem toSpec_foldl_range (f : Nat → EF) (a : EF) (w : Nat) :
@@ -83,8 +85,8 @@ theorem toSpec_termStep (alpha z acc : EF) (V : Array F) (ys : Array EF) (w r cn
     Challenge.toSpec (termStep (crow V (powers alpha w) w r) x acc
       (z, yzOf (powers alpha w) w ys, Ext.pow alpha cnt)) =
       Challenge.toSpec acc + ∑ i ∈ Finset.range w, Challenge.toSpec alpha ^ (cnt + i) *
-        (Challenge.toSpec (ys.getD i 0) - ι (FastField.toField (V.getD (r * w + i) 0))) *
-        (Challenge.toSpec z - ι (FastField.toField x))⁻¹ := by
+        (Challenge.toSpec (ys.getD i 0) - ι ((V.getD (r * w + i) 0))) *
+        (Challenge.toSpec z - ι (x))⁻¹ := by
   rw [termStep, crow, ← List.range_eq_range', yzOf]
   dsimp only
   rw [Challenge.toSpec_add, Challenge.toSpec_mul, Challenge.toSpec_mul, Challenge.toSpec_sub,
@@ -141,10 +143,10 @@ theorem degree_comp_lt {p : K[X]} (a : K) {n : Nat} (h : p.degree < (n : WithBot
 
 /-- The polynomial in `X` whose value at `ω ^ bitrev r` is a point's term at row `r`: the divided
 differences of the columns `ps` at `z`, at `g X`, batched by `α ^ (cnt + i)`. -/
-noncomputable def pointPoly (a z g : K) (cnt : Nat) (ps : List KoalaBear.Field[X]) : K[X] :=
+noncomputable def pointPoly (a z g : K) (cnt : Nat) (ps : List F[X]) : K[X] :=
   ∑ i ∈ Finset.range ps.length, C (a ^ (cnt + i)) * (divPoly ((ps.getD i 0).map ι) z).comp (C g * X)
 
-theorem eval_pointPoly (a z g y : K) (cnt : Nat) (ps : List KoalaBear.Field[X])
+theorem eval_pointPoly (a z g y : K) (cnt : Nat) (ps : List F[X])
     (hy : z - g * y ≠ 0) :
     (pointPoly a z g cnt ps).eval y = ∑ i ∈ Finset.range ps.length, a ^ (cnt + i) *
       (((ps.getD i 0).map ι).eval z - ((ps.getD i 0).map ι).eval (g * y)) * (z - g * y)⁻¹ := by
@@ -152,7 +154,7 @@ theorem eval_pointPoly (a z g y : K) (cnt : Nat) (ps : List KoalaBear.Field[X])
   refine Finset.sum_congr rfl fun i _ ↦ ?_
   rw [eval_mul, eval_C, eval_comp, eval_mul, eval_C, eval_X, eval_divPoly _ _ _ hy, mul_assoc]
 
-theorem degree_pointPoly (a z g : K) (cnt n : Nat) (ps : List KoalaBear.Field[X])
+theorem degree_pointPoly (a z g : K) (cnt n : Nat) (ps : List F[X])
     (hps : ∀ p ∈ ps, p.degree < (n : WithBot Nat)) :
     (pointPoly a z g cnt ps).degree < ((n - 1 : Nat) : WithBot Nat) := by
   rw [← mem_degreeLT, pointPoly]
@@ -183,7 +185,7 @@ theorem foldl_ptStep (alpha : EF) (w : Nat) (comp : EF) (x : F) :
     simp only [List.nil_append, List.cons_append, List.foldl_cons]
 
 /-- The running sums `reduceStep` starts a matrix from. -/
-def startOf (red : List (Nat × Nat × Array EF)) (m : Mat) : Nat × Array EF :=
+def startOf (red : List (Nat × Nat × Array EF)) (m : Mat F) : Nat × Array EF :=
   (red.lookup (Nat.log2 m.height)).getD (0, Array.replicate m.height 0)
 
 theorem ofFn_getD_self {α : Type} (v : Array α) (d : α) (n : Nat) (h : v.size = n) :
@@ -194,17 +196,17 @@ theorem ofFn_getD_self {α : Type} (v : Array α) (d : α) (n : Nat) (h : v.size
     Option.getD_some]
 
 /-- `reduceStep` row by row: every point in turn adds its term onto the running sum. -/
-theorem reduceStep_eq (alpha : EF) (red : List (Nat × Nat × Array EF)) (m : Mat)
+theorem reduceStep_eq (alpha : EF) (red : List (Nat × Nat × Array EF)) (m : Mat F)
     (pts : List (EF × Array EF)) (hpts : ∀ p ∈ pts, Ext.OutsideBase p.1)
     (hst : (startOf red m).2.size = m.height) (hxs : m.height ≤ 2 ^ Nat.log2 m.height) :
     reduceStep alpha red (m, pts) = (Nat.log2 m.height,
       (pts.foldl (termsStep alpha (powers alpha m.width) m.width) ((startOf red m).1, [])).1,
       Array.ofFn (n := m.height) fun r ↦ (pts.foldl (ptStep alpha m.width
         ((compress m (powers alpha m.width)).getD r.val 0)
-        ((cosetPointsBitRev gen (Nat.log2 m.height)).getD r.val 0))
+        ((cosetPointsBitRev (gen : F) (Nat.log2 m.height)).getD r.val 0))
         ((startOf red m).1, (startOf red m).2.getD r.val 0)).2) ::
       red.filter (·.1 != Nat.log2 m.height) := by
-  have hx : m.height ≤ (cosetPointsBitRev gen (Nat.log2 m.height)).size := by
+  have hx : m.height ≤ (cosetPointsBitRev (gen : F) (Nat.log2 m.height)).size := by
     rw [Fast.size_cosetPointsBitRev]; exact hxs
   have e := Fast.foldl_accumulate alpha (powers alpha m.width) m.width m.height
     (compress m (powers alpha m.width)) _ hx pts hpts (startOf red m).1
@@ -222,7 +224,7 @@ theorem reduceStep_eq (alpha : EF) (red : List (Nat × Nat × Array EF)) (m : Ma
 
 /-- A committed matrix with its points and opened values, honest for blowup `2 ^ b` at height
 `2 ^ h`: the extension of polynomials `ps`, opened outside the base field at their values. -/
-def HonestItem (b h : Nat) (x : Mat × List (EF × Array EF)) : Prop :=
+def HonestItem (b h : Nat) (x : Mat F × List (EF × Array EF)) : Prop :=
   ∃ ps, Mat.IsLde b h x.1 ps ∧ ∀ y ∈ x.2, Ext.OutsideBase y.1 ∧ y.2.size = ps.length ∧
     ∀ j < ps.length, Challenge.toSpec (y.2.getD j 0) = aeval (Challenge.toSpec y.1) (ps.getD j 0)
 
@@ -231,7 +233,7 @@ below `2 ^ (h - b) - 1`. -/
 def LowDeg (b h : Nat) (v : Array EF) : Prop :=
   v.size = 2 ^ h ∧ ∃ p : K[X], p.degree < ((2 ^ (h - b) - 1 : Nat) : WithBot Nat) ∧
     ∀ r < 2 ^ h, Challenge.toSpec (v.getD r 0) =
-      p.eval (ι (FastField.toField (twoAdicGen h)) ^ reverseBits r h)
+      p.eval (ι ((twoAdicGen h)) ^ reverseBits r h)
 
 /-- The running sums of `reduceStep`: distinct heights, each low degree. -/
 def RedOk (b : Nat) (red : List (Nat × Nat × Array EF)) : Prop :=
@@ -239,23 +241,23 @@ def RedOk (b : Nat) (red : List (Nat × Nat × Array EF)) : Prop :=
 
 /-- Stored row `r` of the coset `g · ⟨ω⟩` is `g ω ^ bitrev r`. -/
 theorem cosetPointsBitRev_getD (h r : Nat) (hr : r < 2 ^ h) :
-    (cosetPointsBitRev gen h).getD r 0 = gen * twoAdicGen h ^ reverseBits r h := by
+    (cosetPointsBitRev (gen : F) h).getD r 0 = gen * twoAdicGen h ^ reverseBits r h := by
   rw [Fast.cosetPointsBitRev_getD _ _ _ hr, cosetPoints_eq,
     CompPoly.CPolynomial.NTTFast.Packed.getD_ofFn_bounded _ _
-      (CompPoly.CPolynomial.NTT.Transform.bitRevNat_lt h r), Fast.reverseBits_eq]
+      (CompPoly.CPolynomial.NTT.Transform.bitRevNat_lt h r), reverseBits_eq]
 
-theorem compress_getD (m : Mat) (ap : Array EF) (r : Nat) (hr : r < m.height) :
+theorem compress_getD (m : Mat F) (ap : Array EF) (r : Nat) (hr : r < m.height) :
     (compress m ap).getD r 0 = crow m.values ap m.width r := by
   rw [Fast.compress_eq, CompPoly.CPolynomial.NTTFast.Packed.getD_ofFn_bounded _ _ hr]
 
-omit [Challenge EF] in
+omit [Challenge F EF] in
 theorem lookup_mem {red : List (Nat × Nat × Array EF)} {h : Nat} {v : Nat × Array EF}
     (hl : red.lookup h = some v) : (h, v) ∈ red := by
   obtain ⟨l₁, l₂, e, -⟩ := List.lookup_eq_some_iff.mp hl
   rw [e]
   exact List.mem_append_right _ List.mem_cons_self
 
-theorem startOf_lowDeg {b : Nat} {red : List (Nat × Nat × Array EF)} (hred : RedOk b red) {m : Mat}
+theorem startOf_lowDeg {b : Nat} {red : List (Nat × Nat × Array EF)} (hred : RedOk b red) {m : Mat F}
     {h : Nat} (hm : m.height = 2 ^ h) (hlog : Nat.log2 m.height = h) :
     LowDeg b h (startOf red m).2 := by
   unfold startOf
@@ -273,22 +275,22 @@ theorem startOf_lowDeg {b : Nat} {red : List (Nat × Nat × Array EF)} (hred : R
     exact (hred.2 _ (lookup_mem hl)).2.2
 
 /-- A point's term at row `r` of an honest matrix is the value of `pointPoly`. -/
-theorem toSpec_ptStep {b h : Nat} {m : Mat} {ps : List KoalaBear.Field[X]} (hm : Mat.IsLde b h m ps)
+theorem toSpec_ptStep {b h : Nat} {m : Mat F} {ps : List F[X]} (hm : Mat.IsLde b h m ps)
     (alpha a : EF) (c : Nat) (y : EF × Array EF) (hz : Ext.OutsideBase y.1)
     (hys : ∀ j < ps.length,
         Challenge.toSpec (y.2.getD j 0) = aeval (Challenge.toSpec y.1) (ps.getD j 0))
     (r : Nat) (hr : r < 2 ^ h) :
     Challenge.toSpec (ptStep alpha m.width ((compress m (powers alpha m.width)).getD r 0)
-      ((cosetPointsBitRev gen h).getD r 0) (c, a) y).2 = Challenge.toSpec a +
-      (pointPoly (Challenge.toSpec alpha) (Challenge.toSpec y.1) (ι (FastField.toField gen))
+      ((cosetPointsBitRev (gen : F) h).getD r 0) (c, a) y).2 = Challenge.toSpec a +
+      (pointPoly (Challenge.toSpec alpha) (Challenge.toSpec y.1) (ι (gen))
         c ps).eval
-        (ι (FastField.toField (twoAdicGen h)) ^ reverseBits r h) := by
+        (ι ((twoAdicGen h)) ^ reverseBits r h) := by
   obtain ⟨hw, hh, -, -, -, -, hv⟩ := hm
-  have hne := sub_ofBase_ne_zero hz ((cosetPointsBitRev gen h).getD r 0)
+  have hne := sub_ofBase_ne_zero hz ((cosetPointsBitRev (gen : F) h).getD r 0)
   rw [Challenge.toSpec_sub, toSpec_ofBase, cosetPointsBitRev_getD h r hr,
-    toField_mul, toField_npow, map_mul, map_pow] at hne
+    map_mul, map_pow] at hne
   rw [ptStep, compress_getD _ _ _ (by rw [hh]; exact hr), toSpec_termStep,
-    cosetPointsBitRev_getD h r hr, toField_mul, toField_npow, map_mul, map_pow,
+    cosetPointsBitRev_getD h r hr, map_mul, map_pow,
     eval_pointPoly _ _ _ _ _ _ hne, hw]
   rw [hw] at hv
   refine congrArg _ (Finset.sum_congr rfl fun i hi ↦ ?_)
@@ -297,26 +299,26 @@ theorem toSpec_ptStep {b h : Nat} {m : Mat} {ps : List KoalaBear.Field[X]} (hm :
     ← map_mul (algebraMap _ K), eval₂_hom]
 
 /-- Accumulating honest points keeps the running sums low degree. -/
-theorem foldl_ptStep_lowDeg {b h : Nat} {m : Mat} {ps : List KoalaBear.Field[X]}
+theorem foldl_ptStep_lowDeg {b h : Nat} {m : Mat F} {ps : List F[X]}
     (hm : Mat.IsLde b h m ps) (alpha : EF) :
     ∀ (pts : List (EF × Array EF)), (∀ y ∈ pts, Ext.OutsideBase y.1 ∧
       ∀ j < ps.length,
         Challenge.toSpec (y.2.getD j 0) = aeval (Challenge.toSpec y.1) (ps.getD j 0)) →
     ∀ (c : Nat) (f : Nat → EF) (p : K[X]), p.degree < ((2 ^ (h - b) - 1 : Nat) : WithBot Nat) →
       (∀ r < 2 ^ h, Challenge.toSpec (f r) =
-        p.eval (ι (FastField.toField (twoAdicGen h)) ^ reverseBits r h)) →
+        p.eval (ι ((twoAdicGen h)) ^ reverseBits r h)) →
       ∃ q : K[X], q.degree < ((2 ^ (h - b) - 1 : Nat) : WithBot Nat) ∧ ∀ r < 2 ^ h,
         Challenge.toSpec (pts.foldl (ptStep alpha m.width
-          ((compress m (powers alpha m.width)).getD r 0) ((cosetPointsBitRev gen h).getD r 0))
-          (c, f r)).2 = q.eval (ι (FastField.toField (twoAdicGen h)) ^ reverseBits r h)
+          ((compress m (powers alpha m.width)).getD r 0) ((cosetPointsBitRev (gen : F) h).getD r 0))
+          (c, f r)).2 = q.eval (ι ((twoAdicGen h)) ^ reverseBits r h)
   | [], _, _, _, p, hp, hf => ⟨p, hp, hf⟩
   | y :: pts, hpts, c, f, p, hp, hf => by
     obtain ⟨hz, hys⟩ := hpts y List.mem_cons_self
     have := foldl_ptStep_lowDeg hm alpha pts (fun y hy ↦ hpts y (List.mem_cons_of_mem _ hy))
       (c + m.width) (fun r ↦ (ptStep alpha m.width ((compress m (powers alpha m.width)).getD r 0)
-        ((cosetPointsBitRev gen h).getD r 0) (c, f r) y).2)
+        ((cosetPointsBitRev (gen : F) h).getD r 0) (c, f r) y).2)
       (p + pointPoly (Challenge.toSpec alpha) (Challenge.toSpec y.1)
-        (ι (FastField.toField gen)) c ps)
+        (ι (gen)) c ps)
       (by
         rw [← mem_degreeLT] at hp ⊢
         exact Submodule.add_mem _ hp (mem_degreeLT.mpr
@@ -326,7 +328,7 @@ theorem foldl_ptStep_lowDeg {b h : Nat} {m : Mat} {ps : List KoalaBear.Field[X]}
 
 /-- One honest matrix keeps the running sums low degree. -/
 theorem reduceStep_ok {b h : Nat} (alpha : EF) {red : List (Nat × Nat × Array EF)}
-    (hred : RedOk b red) {it : Mat × List (EF × Array EF)} (hit : HonestItem b h it) :
+    (hred : RedOk b red) {it : Mat F × List (EF × Array EF)} (hit : HonestItem b h it) :
     RedOk b (reduceStep alpha red it) := by
   obtain ⟨ps, hm, hpts⟩ := hit
   have hh := hm.2.1
@@ -353,7 +355,7 @@ theorem reduceStep_ok {b h : Nat} (alpha : EF) {red : List (Nat × Nat × Array 
     · exact hred.2 e (List.mem_filter.mp he).1
 
 theorem foldl_reduceStep_ok (b : Nat) (alpha : EF) :
-    ∀ (items : List (Mat × List (EF × Array EF))), (∀ x ∈ items, ∃ h, HonestItem b h x) →
+    ∀ (items : List (Mat F × List (EF × Array EF))), (∀ x ∈ items, ∃ h, HonestItem b h x) →
       ∀ red, RedOk b red → RedOk b (items.foldl (reduceStep alpha) red)
   | [], _, _, hred => hred
   | it :: items, hitems, red, hred => by
@@ -365,7 +367,7 @@ end Deep
 open Deep
 
 /-- The batched quotients of LDE matrices with true openings are low degree. -/
-theorem reduce_lowDegree (b : Nat) (alpha : EF) (items : List (Mat × List (EF × Array EF)))
+theorem reduce_lowDegree (b : Nat) (alpha : EF) (items : List (Mat F × List (EF × Array EF)))
     (hitems : ∀ x ∈ items, ∃ h ps, Mat.IsLde b h x.1 ps ∧ ∀ y ∈ x.2, Ext.OutsideBase y.1 ∧
       y.2.size = ps.length ∧ ∀ j < ps.length,
         Challenge.toSpec (y.2.getD j 0) = aeval (Challenge.toSpec y.1) (ps.getD j 0)) :
@@ -385,7 +387,7 @@ def RedShape (red : List (Nat × Nat × Array EF)) : Prop :=
   (red.map (·.1)).Nodup ∧ ∀ e ∈ red, e.2.2.size = 2 ^ e.1
 
 theorem keys_reduceStep (alpha : EF) (red : List (Nat × Nat × Array EF))
-    (it : Mat × List (EF × Array EF)) (h : Nat) :
+    (it : Mat F × List (EF × Array EF)) (h : Nat) :
     h ∈ (reduceStep alpha red it).map (·.1) ↔ h = Nat.log2 it.1.height ∨ h ∈ red.map (·.1) := by
   simp only [reduceStep, List.map_cons, List.mem_cons, List.mem_map, List.mem_filter, bne_iff_ne,
     ne_eq]
@@ -400,7 +402,7 @@ theorem keys_reduceStep (alpha : EF) (red : List (Nat × Nat × Array EF))
       · exact Or.inr ⟨e, ⟨he, hk⟩, rfl⟩
 
 theorem reduceStep_shape (alpha : EF) {red : List (Nat × Nat × Array EF)} (hred : RedShape red)
-    {it : Mat × List (EF × Array EF)} (hit : it.1.height = 2 ^ Nat.log2 it.1.height) :
+    {it : Mat F × List (EF × Array EF)} (hit : it.1.height = 2 ^ Nat.log2 it.1.height) :
     RedShape (reduceStep alpha red it) := by
   refine ⟨?_, fun e he ↦ ?_⟩
   · show (Nat.log2 it.1.height :: (red.filter (·.1 != Nat.log2 it.1.height)).map (·.1)).Nodup
@@ -431,7 +433,7 @@ theorem reduceStep_shape (alpha : EF) {red : List (Nat × Nat × Array EF)} (hre
   · exact hred.2 e he
 
 theorem foldl_reduceStep_shape (alpha : EF) :
-    ∀ (items : List (Mat × List (EF × Array EF))),
+    ∀ (items : List (Mat F × List (EF × Array EF))),
       (∀ x ∈ items, x.1.height = 2 ^ Nat.log2 x.1.height) → ∀ red, RedShape red →
       RedShape (items.foldl (reduceStep alpha) red) ∧ ∀ h,
         (h ∈ (items.foldl (reduceStep alpha) red).map (·.1) ↔
@@ -459,7 +461,7 @@ end Deep
 
 /-- The shape of the batched quotients: their heights are the distinct `log₂` heights of the
 matrices, strictly decreasing, and the batched quotient of height `h` has `2 ^ h` values. -/
-theorem reduce_heights (alpha : EF) (items : List (Mat × List (EF × Array EF)))
+theorem reduce_heights (alpha : EF) (items : List (Mat F × List (EF × Array EF)))
     (hitems : ∀ x ∈ items, x.1.height = 2 ^ Nat.log2 x.1.height) :
     ((Fri.reduce alpha items).map (·.1)).Pairwise (· > ·) ∧
       (∀ h, h ∈ (Fri.reduce alpha items).map (·.1) ↔ ∃ x ∈ items, Nat.log2 x.1.height = h) ∧
@@ -510,7 +512,7 @@ theorem toSpec_foldl_column (alpha q : EF) (ys : Nat → EF) (vs : Nat → F) (a
       s.2 + s.1 * (ys i - Ext.ofBase (vs i)) * q)) (ap, acc)
     Challenge.toSpec r.1 = Challenge.toSpec ap * Challenge.toSpec alpha ^ w ∧
       Challenge.toSpec r.2 = Challenge.toSpec acc + ∑ i ∈ Finset.range w, Challenge.toSpec ap *
-        Challenge.toSpec alpha ^ i * (Challenge.toSpec (ys i) - ι (FastField.toField (vs i))) *
+        Challenge.toSpec alpha ^ i * (Challenge.toSpec (ys i) - ι ((vs i))) *
           Challenge.toSpec q := by
   induction w with
   | zero =>
@@ -574,12 +576,12 @@ theorem zip_toList (a : Array F) (b : Array EF) (w : Nat) (ha : a.size = w) (hb 
       Array.getD_eq_getD_getElem?, Array.getElem?_eq_getElem (show j < a.size by omega),
       Array.getElem?_eq_getElem (show j < b.size by omega), Option.getD_some]
 
-theorem rowOf_getD (m : Mat) (i j : Nat) (hj : j < m.width) :
+theorem rowOf_getD (m : Mat F) (i j : Nat) (hj : j < m.width) :
     (rowOf m i).getD j 0 = m.values.getD (i * m.width + j) 0 :=
   CompPoly.CPolynomial.NTTFast.Packed.getD_ofFn_bounded _ _ hj _
 
 theorem lookup_start (alpha : EF) (logMax index h : Nat) (red : List (Nat × Nat × Array EF))
-    (m : Mat) (hm : Nat.log2 m.height = h) :
+    (m : Mat F) (hm : Nat.log2 m.height = h) :
     ((atQuery alpha logMax index red).lookup h).getD (1, 0) =
       powPair alpha ((startOf red m).1, (startOf red m).2.getD (index >>> (logMax - h)) 0) := by
   rw [lookup_atQuery, startOf, hm]
@@ -601,7 +603,7 @@ theorem atQuery_cons_filter (alpha : EF) (logMax index k : Nat) (e : Nat × Nat 
   rfl
 
 /-- One point of the verifier's loop is the prover's `ptStep` at the queried row. -/
-theorem column_loop (alpha : EF) (m : Mat) (i : Nat) (hi : i < m.height) (xv : F) (c : Nat)
+theorem column_loop (alpha : EF) (m : Mat F) (i : Nat) (hi : i < m.height) (xv : F) (c : Nat)
     (a : EF) (y : EF × Array EF) :
     (List.range m.width).foldl (fun s j ↦ (s.1 * alpha, s.2 + s.1 *
       (y.2.getD j 0 - Ext.ofBase ((rowOf m i).getD j 0)) * (y.1 - Ext.ofBase xv)⁻¹))
@@ -626,23 +628,23 @@ round commits matrices of one height `2 ^ h` that are honest LDEs with true open
 rounds are built as the STARK verifier builds them, and the openings are the prover's at the
 query's row. -/
 theorem openInput_honest_of (P : Params) (logMax index : Nat) (alpha : EF)
-    (rounds : List (Committed × List (Mat × List (EF × Array EF))))
+    (rounds : List (Committed F × List (Mat F × List (EF × Array EF))))
     (hidx : index < 2 ^ logMax)
-    (hrounds : ∀ r ∈ rounds, r.2 ≠ [] ∧ r.1 = Committed.ofMats (r.2.map (·.1)) ∧
+    (hrounds : ∀ r ∈ rounds, r.2 ≠ [] ∧ r.1 = Committed.ofMats hashF compF (r.2.map (·.1)) ∧
       ∃ h ≤ logMax, ∀ x ∈ r.2, Deep.HonestItem P.logBlowup h x)
-    (hmerkle : ∀ (ms : List Mat) (k : Nat), ms ≠ [] →
+    (hmerkle : ∀ (ms : List (Mat F)) (k : Nat), ms ≠ [] →
       (∀ m ∈ ms, m.height = 2 ^ k ∧ m.values.size = m.width * m.height) → ∀ i < 2 ^ k,
-      Merkle.KoalaBear.verifyBatch KoalaBear.Fast.Field (Committed.ofMats ms).root
-        (ms.map (·.height)) i (((Committed.ofMats ms).openAt i).values.toList.map (·.toList))
-        ((Committed.ofMats ms).openAt i).path.toList = true)
-    (hvalues : ∀ (ms : List Mat) (k : Nat), (∀ m ∈ ms, m.height = 2 ^ k) → ∀ i,
-      ((Committed.ofMats ms).openAt i).values = (ms.map fun m ↦ rowOf m i).toArray)
-    (hmax : ∀ (ms : List Mat) (h : Nat), ms ≠ [] → (∀ m ∈ ms, m.height = h) →
-      (Committed.ofMats ms).maxHeight = h) :
+      Merkle.KoalaBear.verifyBatch KoalaBear.Fast.Field (Committed.ofMats hashF compF ms).root
+        (ms.map (·.height)) i (((Committed.ofMats hashF compF ms).openAt i).values.toList.map (·.toList))
+        ((Committed.ofMats hashF compF ms).openAt i).path.toList = true)
+    (hvalues : ∀ (ms : List (Mat F)) (k : Nat), (∀ m ∈ ms, m.height = 2 ^ k) → ∀ i,
+      ((Committed.ofMats hashF compF ms).openAt i).values = (ms.map fun m ↦ rowOf m i).toArray)
+    (hmax : ∀ (ms : List (Mat F)) (h : Nat), ms ≠ [] → (∀ m ∈ ms, m.height = h) →
+      (Committed.ofMats hashF compF ms).maxHeight = h) :
     openInput poseidon2 P logMax index alpha
       (rounds.map fun r ↦ r.1.openAt (index >>> (logMax - Nat.log2 r.1.maxHeight)))
       (rounds.map fun r ↦ (r.1.root, r.2.map fun x ↦
-        ((⟨1, Nat.log2 x.1.height - P.logBlowup⟩ : Domain), x.2.map fun y ↦ (y.1, y.2.toList)))) =
+        ((⟨1, Nat.log2 x.1.height - P.logBlowup⟩ : Domain F), x.2.map fun y ↦ (y.1, y.2.toList)))) =
       pure ((Fri.reduce alpha (rounds.flatMap (·.2))).map fun y ↦
         (y.1, y.2.getD (index >>> (logMax - y.1)) 0)) := by
   unfold openInput
@@ -673,7 +675,7 @@ theorem openInput_honest_of (P : Params) (logMax index : Nat) (alpha : EF)
       obtain ⟨x, hx, rfl⟩ := List.mem_map.mp hm
       exact hH x hx
     have hheights : List.map (fun x ↦ 2 ^ (x.1.logSize + P.logBlowup))
-        (List.map (fun x ↦ (({ shift := 1, logSize := x.1.height.log2 - P.logBlowup } : Domain),
+        (List.map (fun x ↦ (({ shift := 1, logSize := x.1.height.log2 - P.logBlowup } : Domain F),
           List.map (fun y ↦ (y.1, y.2.toList)) x.2)) its) = (its.map (·.1)).map (·.height) := by
       rw [List.map_map, List.map_map]
       refine List.map_congr_left fun x hx ↦ ?_
@@ -685,7 +687,7 @@ theorem openInput_honest_of (P : Params) (logMax index : Nat) (alpha : EF)
         exact List.mem_map.mpr ⟨m, hm, (hms m hm).1⟩
       · obtain ⟨m, hm, rfl⟩ := List.mem_map.mp ha
         exact Nat.le_of_eq (hms m hm).1
-    have hmx : (Committed.ofMats (its.map (·.1))).maxHeight = 2 ^ h :=
+    have hmx : (Committed.ofMats hashF compF (its.map (·.1))).maxHeight = 2 ^ h :=
       hmax _ _ hne' fun m hm ↦ (hms m hm).1
     have hi := Deep.shiftRight_lt hidx hh
     have hvb := hmerkle _ h hne' hms _ hi
@@ -735,7 +737,7 @@ theorem openInput_honest_of (P : Params) (logMax index : Nat) (alpha : EF)
         (by rw [hst.1, hm.2.1]) (by rw [hlog2, hm.2.1]), Deep.atQuery_cons_filter, hlog2,
         CompPoly.CPolynomial.NTTFast.Packed.getD_ofFn_bounded _ _ hi,
         Deep.cosetPointsBitRev_getD h _ (by rw [← hm.2.1]; exact hi), Deep.powPair,
-        Deep.foldl_ptStep, Deep.foldl_ptStep, Fast.powF_eq]
+        Deep.foldl_ptStep, Deep.foldl_ptStep, powF_eq]
     refine ⟨?_, hok⟩
     cases hl : List.lookup P.logBlowup
         (Deep.atQuery alpha logMax index (List.foldl (reduceStep alpha) red its)) with
@@ -759,14 +761,14 @@ theorem openInput_honest_of (P : Params) (logMax index : Nat) (alpha : EF)
 one height `2 ^ h` that are honest LDEs with true openings, the verifier's rounds are built as the
 STARK verifier builds them, and the openings are the prover's at the query's row. -/
 theorem openInput_honest (P : Params) (logMax index : Nat) (alpha : EF)
-    (rounds : List (Committed × List (Mat × List (EF × Array EF))))
+    (rounds : List (Committed F × List (Mat F × List (EF × Array EF))))
     (hidx : index < 2 ^ logMax)
-    (hrounds : ∀ r ∈ rounds, r.2 ≠ [] ∧ r.1 = Committed.ofMats (r.2.map (·.1)) ∧
+    (hrounds : ∀ r ∈ rounds, r.2 ≠ [] ∧ r.1 = Committed.ofMats hashF compF (r.2.map (·.1)) ∧
       ∃ h ≤ logMax, ∀ x ∈ r.2, Deep.HonestItem P.logBlowup h x) :
     openInput poseidon2 P logMax index alpha
       (rounds.map fun r ↦ r.1.openAt (index >>> (logMax - Nat.log2 r.1.maxHeight)))
       (rounds.map fun r ↦ (r.1.root, r.2.map fun x ↦
-        ((⟨1, Nat.log2 x.1.height - P.logBlowup⟩ : Domain), x.2.map fun y ↦ (y.1, y.2.toList)))) =
+        ((⟨1, Nat.log2 x.1.height - P.logBlowup⟩ : Domain F), x.2.map fun y ↦ (y.1, y.2.toList)))) =
       pure ((Fri.reduce alpha (rounds.flatMap (·.2))).map fun y ↦
         (y.1, y.2.getD (index >>> (logMax - y.1)) 0)) :=
   openInput_honest_of P logMax index alpha rounds hidx hrounds Fri.verifyBatch_openAt

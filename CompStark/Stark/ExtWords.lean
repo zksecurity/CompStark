@@ -6,6 +6,7 @@ module
 
 public import CompStark.Stark.Words
 public import CompStark.Stark.Field
+public import CompStark.KoalaBear.Challenge
 
 /-! # Vectors of extension elements
 
@@ -26,8 +27,8 @@ open CompStark.Words
 open CompPoly.CPolynomial.NTTFast.Packed (add sub mul)
 open CompPoly.CPolynomial.NTTFast.Packed.Native (read write zeroWords)
 
-local notation "F" => KoalaBear.Fast.Field
-local notation "EF" => KoalaBear.Fast.Ext4
+local notation "F" => _root_.KoalaBear.Fast.Field
+local notation "EF" => _root_.KoalaBear.Fast.Ext4
 
 /-- `n` extension elements as four coordinate planes of words. -/
 structure EVec where

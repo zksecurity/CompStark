@@ -1,6 +1,8 @@
 module
 
 public import CompStark.Basic
+public import CompStark.BaseField
+public import CompStark.KoalaBear.Field
 public import CompStark.Poseidon2.Basic
 public import CompStark.Poseidon2.KoalaBear
 public import CompStark.Poseidon2.Map
@@ -17,20 +19,29 @@ public import CompStark.Merkle.Tree
 public import CompStark.Merkle.Packed
 public import CompStark.Merkle.PackedCorrectness
 public import CompStark.Merkle.RootCorrectness
+public import CompStark.KoalaBear.Hash
 public import CompStark.Challenger
 public import CompStark.Primitives
 public import CompStark.Stark.Proof
 public import CompStark.Merkle.Mmcs
 public import CompStark.Stark.Challenge
+public import CompStark.KoalaBear.Challenge
 public import CompStark.Stark.Field
 public import CompStark.Fri.Verifier
 public import CompStark.Stark.Air
 public import CompStark.Stark.Verifier
+public import CompStark.KoalaBear.Primitives
+public import CompStark.KoalaBear.Json
+public import CompStark.Stark.Config
+public import CompStark.Stark.Points
+public import CompStark.Stark.Constraints
+public import CompStark.Stark.Recompose
 public import CompStark.Fri.Prover
 public import CompStark.Fri.Assumptions
 public import CompStark.Fri.Shapes
 public import CompStark.Fri.Refines
 public import CompStark.Stark.Prover
+public import CompStark.KoalaBear.Prover
 public import CompStark.Stark.Refines
 public import CompStark.Stark.Fast
 public import CompStark.Stark.Fast.Transcript

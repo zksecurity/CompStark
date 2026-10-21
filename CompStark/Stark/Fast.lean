@@ -4,7 +4,8 @@ Released under Apache 2.0 license as described in the file LICENSE.
 -/
 module
 
-public import CompStark.Fri.Prover
+public import CompStark.KoalaBear.Prover
+public import CompStark.KoalaBear.Challenge
 public import CompStark.Merkle.Packed
 public import CompPoly.Univariate.NTTFast.Packed.CosetLde
 public import CompPoly.Univariate.NTT.KoalaBear
@@ -31,8 +32,8 @@ indices, and opening points outside the base field.
 namespace CompStark.Stark.Fast
 open CompStark.Fri CompStark.KoalaBear CompStark.Poseidon2.Packed
 
-local notation "F" => KoalaBear.Fast.Field
-local notation "EF" => KoalaBear.Fast.Ext4
+local notation "F" => _root_.KoalaBear.Fast.Field
+local notation "EF" => _root_.KoalaBear.Fast.Ext4
 
 /-- A row-major matrix of base elements as packed Montgomery words. -/
 structure PMat where
@@ -98,7 +99,7 @@ def grind (c : Challenger F 24) (bits : Nat) : F :=
   grindWaves group (min c.input.size 24) bits (_root_.KoalaBear.fieldSize / 8192 + 1) 0
 
 /-- The fast transcript. -/
-def transcript : Transcript := Transcript.initWith duplex grind
+def transcript : Transcript F 24 := Transcript.initWith duplex grind
 
 /-- CompPoly's plan for extensions of `2 ^ logH`-row matrices by `2 ^ bits` onto `shift · ⟨ω_N⟩`. -/
 def plan? (logH bits : Nat) (shift : F) : Option CompPoly.CPolynomial.NTTFast.Packed.LdePlan :=
@@ -167,7 +168,7 @@ def sideBySide (ms : List PMat) (h : Nat) : ByteArray :=
     return out
 
 /-- Digests as consecutive packed words. -/
-def encodeDigests (ds : Array Digest) : ByteArray :=
+def encodeDigests (ds : Array (Digest F)) : ByteArray :=
   CompPoly.CPolynomial.NTTFast.Packed.Native.encodeFields (ds.flatMap (·.toArray))
 
 /-- Packed matrices under one Merkle tree, with the packed digest layers, leaves first. -/
@@ -195,15 +196,15 @@ def readRow (m : PMat) (r : Nat) : Array F :=
   Array.ofFn (n := m.width) fun j ↦ a.getD j.val 0
 
 /-- Digest `k` of a packed layer: its 32 bytes, copied out, whose word reads always fit. -/
-def readDigest (b : ByteArray) (k : Nat) : Digest :=
+def readDigest (b : ByteArray) (k : Nat) : Digest F :=
   let d := b.extract (32 * k) (32 * k + 32)
   Vector.ofFn fun j ↦ word d j.val
 
 /-- The Merkle root. -/
-def root (c : Commit) : Digest := readDigest (c.layers.back?.getD .empty) 0
+def root (c : Commit) : Digest F := readDigest (c.layers.back?.getD .empty) 0
 
 /-- `Committed.openAt` on packed rows and layers. -/
-def openAt (c : Commit) (index : Nat) : BatchOpening :=
+def openAt (c : Commit) (index : Nat) : BatchOpening F :=
   let logMax := Merkle.log2Ceil c.maxHeight
   let rows := c.mats.map fun m ↦ readRow m (index >>> (logMax - Merkle.log2Ceil m.height))
   ⟨rows.toArray, Array.ofFn (n := logMax) fun i ↦
@@ -234,7 +235,7 @@ next row of row `r` is `next[r]`, and `first`, `last`, `trans` are the selectors
 Next rows of a block are almost always a block themselves: `contiguous` gives its first row, and
 it is read as one slice. -/
 def evalWords (cols : ByteArray) (w R B : Nat) (next : Array Nat) (contiguous : Array (Option Nat))
-    (pis : List F) (first last trans : ByteArray) (r0 : Nat) : Expr → ByteArray
+    (pis : List F) (first last trans : ByteArray) (r0 : Nat) : Expr F → ByteArray
   | .cur c => slice cols (r0 / R * (R * w) + c * R + r0 % R) B
   | .next c =>
     match contiguous.getD (r0 / B) none with
@@ -316,7 +317,7 @@ def quotientTables (degreeBits logChunks : Nat) : QuotientTables :=
 is the extension's first rows, transposed in parallel pieces; constraints are evaluated in that
 bit-reversed row order, every node one vectorized operation per block of rows, in parallel block
 ranges, and the result is put in natural order. -/
-def quotientWith (T : QuotientTables) (A : Air) (pis : List F) (ext : PMat) (alpha : EF) :
+def quotientWith (T : QuotientTables) (A : Air F) (pis : List F) (ext : PMat) (alpha : EF) :
     Array EF := Id.run do
   let n := 2 ^ (T.degreeBits + T.logChunks)
   let w := ext.width
@@ -342,13 +343,13 @@ def quotientWith (T : QuotientTables) (A : Air) (pis : List F) (ext : PMat) (alp
         acc := (acc.zip wk.toArray).map fun (a, x) ↦ Words.mulAddWords a v x B
       for i in [0:B] do
         let z := T.invZh.getD (perm.getD (r0 + i) 0 % period) 0
-        out := out.push (KoalaBear.Fast.Ext4.smul z
+        out := out.push (Montgomery.Native32.Ext4.smul z
           ⟨word acc[0]! i, word acc[1]! i, word acc[2]! i, word acc[3]! i⟩)
     return out
   return perm.map fun r ↦ byRow.getD r 0
 
 /-- `quotientOfLde` on packed words. -/
-def quotient (A : Air) (pis : List F) (degreeBits logChunks : Nat) (ext : PMat) (alpha : EF) :
+def quotient (A : Air F) (pis : List F) (degreeBits logChunks : Nat) (ext : PMat) (alpha : EF) :
     Array EF :=
   quotientWith (quotientTables degreeBits logChunks) A pis ext alpha
 
@@ -542,7 +543,7 @@ def leaves (k : Nat) (v : EVec) : PMat :=
 def addScaled (a b : EVec) (x : EF) : EVec := a.add (b.smul x)
 
 /-- The fast backend. -/
-def backend : Backend EF where
+def backend : Backend F EF 24 where
   transcript := transcript
   M := PMat
   C := Commit
@@ -574,7 +575,7 @@ def ldePlans (logN logBlowup logChunks : Nat) :
 /-- The fast backend with the extension plans and quotient tables of a proof of a `2 ^ logN`-row
 trace and `2 ^ logChunks` quotient chunks prepared: the trace's extension on `g · ⟨ω_N⟩` and every
 chunk's. -/
-def backendFor (logN logBlowup logChunks : Nat) : Backend EF :=
+def backendFor (logN logBlowup logChunks : Nat) : Backend F EF 24 :=
   let T := quotientTables logN logChunks
   { backend with
     lde := ldeWith (ldePlans logN logBlowup logChunks)

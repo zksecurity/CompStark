@@ -17,7 +17,7 @@ whose DEEP component `(y - f(x)) / (z - x)` agrees on `T` with a codeword `h` (d
 
 1. `f` agrees on `T` with `P = y - (z - X) h`, of degree at most `n`, and `P(z) = y`
    (`eval_deepPoly_eq`, `z - x ≠ 0` for `x ∈ T`).
-2. Projecting `P`'s coefficients to `𝔽` gives `Q ∈ 𝔽[X]` of degree at most `n` that agrees with
+2. Projecting `P`'s coefficients to `F` gives `Q ∈ F[X]` of degree at most `n` that agrees with
    `f` on `T` (`exists_baseAgree`); `P` and `Q` agree on `|T| > n` points, so `P = Q` and
    `Q(z) = y` (`exists_basePoly`).
 
@@ -29,23 +29,22 @@ equal (`eq_of_agree`). No unique decoding is needed.
 namespace CompStark.Sound
 open CompStark.Stark CompStark.Iop Polynomial
 
-local notation "𝔽" => KoalaBear.Field
 
-variable {EF : Type} [Challenge EF]
+variable {F : Type} [BaseField F] {EF : Type} [Challenge F EF]
 
 local notation "𝕂" => Challenge.Spec EF
 
 /-! ### Polynomials over `𝕂` that take base values -/
 
-/-- A polynomial over `𝕂` of degree at most `n` that takes values in `𝔽` at the points of `T`
-agrees there with a polynomial over `𝔽` of degree at most `n`. -/
-theorem exists_baseAgree {ι : Type} (pts : ι → 𝔽) (f : ι → 𝔽) (T : Finset ι) (n : Nat)
+/-- A polynomial over `𝕂` of degree at most `n` that takes values in `F` at the points of `T`
+agrees there with a polynomial over `F` of degree at most `n`. -/
+theorem exists_baseAgree {ι : Type} (pts : ι → F) (f : ι → F) (T : Finset ι) (n : Nat)
     (P : 𝕂[X]) (hP : P.natDegree ≤ n)
-    (hT : ∀ i ∈ T, P.eval (algebraMap 𝔽 𝕂 (pts i)) = algebraMap 𝔽 𝕂 (f i)) :
-    ∃ Q : 𝔽[X], Q ∈ degreeLT 𝔽 (n + 1) ∧ ∀ i ∈ T, Q.eval (pts i) = f i := by
-  obtain ⟨π, hπ⟩ := (Algebra.linearMap 𝔽 𝕂).exists_leftInverse_of_injective
-    (LinearMap.ker_eq_bot.mpr (algebraMap 𝔽 𝕂).injective)
-  have hπa (a : 𝔽) : π (algebraMap 𝔽 𝕂 a) = a := LinearMap.congr_fun hπ a
+    (hT : ∀ i ∈ T, P.eval (algebraMap F 𝕂 (pts i)) = algebraMap F 𝕂 (f i)) :
+    ∃ Q : F[X], Q ∈ degreeLT F (n + 1) ∧ ∀ i ∈ T, Q.eval (pts i) = f i := by
+  obtain ⟨π, hπ⟩ := (Algebra.linearMap F 𝕂).exists_leftInverse_of_injective
+    (LinearMap.ker_eq_bot.mpr (algebraMap F 𝕂).injective)
+  have hπa (a : F) : π (algebraMap F 𝕂 a) = a := LinearMap.congr_fun hπ a
   refine ⟨∑ k ∈ Finset.range (n + 1), C (π (P.coeff k)) * Polynomial.X ^ k, ?_, fun i hi ↦ ?_⟩
   · rw [degreeLT_succ_eq_degreeLE]
     refine Submodule.sum_mem _ fun k hk ↦ ?_
@@ -62,7 +61,7 @@ theorem exists_baseAgree {ι : Type} (pts : ι → 𝔽) (f : ι → 𝔽) (T : 
 
 /-- `L`'s points are those of `basePoint` in `𝕂`. -/
 theorem domain_eq (S : Setup EF) (i : S.Point) :
-    S.domain i = algebraMap 𝔽 𝕂 (basePoint (S.logN + S.params.logBlowup) i) := by
+    S.domain i = algebraMap F 𝕂 (basePoint (S.logN + S.params.logBlowup) i) := by
   simp only [Setup.domain, cosetDomain,
     Domain.CosetFftDomain.eval_coset_fft_domain_eq_eval_generator_mul_domain,
     Domain.CosetFftDomain.subgroupUnit, subgroupHom, MonoidHom.coe_mk, OneHom.coe_mk,
@@ -107,20 +106,20 @@ theorem eq_of_agree (S : Setup EF) (T : Finset S.Point) (hT : S.n < T.card) (P Q
     exact h i hi
 
 /-- A word whose DEEP component at `z` with claimed value `y` agrees with a codeword on `T`,
-`|T| > n` and `z` off `T`, agrees on `T` with a polynomial over `𝔽` of degree at most `n` whose
+`|T| > n` and `z` off `T`, agrees on `T` with a polynomial over `F` of degree at most `n` whose
 value at `z` is `y`. -/
 theorem exists_basePoly (S : Setup EF) (T : Finset S.Point) (hT : S.n < T.card)
-    (f : S.Point → 𝔽) (z y : 𝕂) (hz : ∀ i ∈ T, z ≠ S.domain i)
+    (f : S.Point → F) (z y : 𝕂) (hz : ∀ i ∈ T, z ≠ S.domain i)
     (hnear : ∃ u ∈ S.code, ∀ i ∈ T, deepComponent S f z y i = u i) :
-    ∃ Q : 𝔽[X], Q.natDegree ≤ S.n ∧
+    ∃ Q : F[X], Q.natDegree ≤ S.n ∧
       (∀ i ∈ T, f i = Q.eval (basePoint (S.logN + S.params.logBlowup) i)) ∧ aeval z Q = y := by
   obtain ⟨u, hu, hTu⟩ := hnear
   obtain ⟨h, hh, rfl⟩ := Submodule.mem_map.mp hu
-  set pts : S.Point → 𝔽 := fun i ↦ basePoint (S.logN + S.params.logBlowup) i
+  set pts : S.Point → F := fun i ↦ basePoint (S.logN + S.params.logBlowup) i
   set P : 𝕂[X] := C y - (C z - Polynomial.X) * h
   have hPdeg : P.natDegree ≤ S.n := natDegree_deepPoly_le z y h S.n Nat.one_le_two_pow hh
-  have hPT (i) (hi : i ∈ T) : P.eval (algebraMap 𝔽 𝕂 (pts i)) = algebraMap 𝔽 𝕂 (f i) := by
-    have hx : z - algebraMap 𝔽 𝕂 (pts i) ≠ 0 := sub_ne_zero.mpr (domain_eq S i ▸ hz i hi)
+  have hPT (i) (hi : i ∈ T) : P.eval (algebraMap F 𝕂 (pts i)) = algebraMap F 𝕂 (f i) := by
+    have hx : z - algebraMap F 𝕂 (pts i) ≠ 0 := sub_ne_zero.mpr (domain_eq S i ▸ hz i hi)
     have hdeep := hTu i hi
     simp only [deepComponent, ReedSolomon.evalOnPoints, LinearMap.coe_mk,
       AddHom.coe_mk, Function.Embedding.coeFn_mk, domain_eq] at hdeep
@@ -129,7 +128,7 @@ theorem exists_basePoly (S : Setup EF) (T : Finset S.Point) (hT : S.n < T.card)
   obtain ⟨Q, hQ, hQT⟩ := exists_baseAgree pts f T S.n P hPdeg hPT
   have hQdeg : Q.natDegree ≤ S.n := by
     rwa [degreeLT_succ_eq_degreeLE, mem_degreeLE, ← natDegree_le_iff_degree_le] at hQ
-  have hPQ : P = Q.map (algebraMap 𝔽 𝕂) := by
+  have hPQ : P = Q.map (algebraMap F 𝕂) := by
     refine eq_of_agree S T hT _ _ hPdeg (natDegree_map_le.trans hQdeg) fun i hi ↦ ?_
     rw [domain_eq, hPT i hi, eval_map_algebraMap, aeval_algebraMap_apply, coe_aeval_eq_eval,
       hQT i hi]
@@ -174,7 +173,7 @@ theorem lt_card_of_rate (S : Setup EF) (δ : ℝ) (hδ : δ < 1 - S.rate) (t : N
 /-- Each opened word's DEEP component is one of the components. -/
 theorem near_of_mem {S : Setup EF} (p : Prover S) (α ζ : 𝕂) (T : Finset S.Point)
     (hnear : ∀ k, ∃ u ∈ S.code, ∀ i ∈ T, components p α ζ k i = u i)
-    (w : (S.Point → 𝔽) × 𝕂 × 𝕂) (hw : w ∈ openedWords p α ζ) :
+    (w : (S.Point → F) × 𝕂 × 𝕂) (hw : w ∈ openedWords p α ζ) :
     ∃ u ∈ S.code, ∀ i ∈ T, deepComponent S w.1 w.2.1 w.2.2 i = u i := by
   obtain ⟨k, hk, rfl⟩ := List.mem_iff_getElem.mp hw
   have hlen : (openedWords p α ζ).length = S.numOpened := by
@@ -217,7 +216,7 @@ theorem decodingStep (S : Setup EF) : DecodingStep S := by
   choose next hndeg hnT hnz using hnx
   choose quotient hqdeg hqT hqz using hqu
   have hnext (j : Fin S.air.width) : next j = trace j := by
-    refine map_injective (algebraMap 𝔽 𝕂) (algebraMap 𝔽 𝕂).injective
+    refine map_injective (algebraMap F 𝕂) (algebraMap F 𝕂).injective
       (eq_of_agree S T hT _ _ (natDegree_map_le.trans (hndeg j))
         (natDegree_map_le.trans (htdeg j)) fun i hi ↦ ?_)
     rw [domain_eq, eval_map_algebraMap, eval_map_algebraMap, aeval_algebraMap_apply,

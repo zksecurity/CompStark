@@ -25,10 +25,8 @@ FRI's acceptance of the batched DEEP word. For each `(α, ζ)`:
 namespace CompStark.Sound
 open CompStark.Stark CompStark.Iop Polynomial
 
-local notation "𝔽" => KoalaBear.Field
-local notation "F" => KoalaBear.Fast.Field
 
-variable {EF : Type} [Challenge EF]
+variable {F : Type} [BaseField F] {EF : Type} [Challenge F EF]
 
 local notation "𝕂" => Challenge.Spec EF
 
@@ -56,14 +54,14 @@ theorem deepWord_eq {S : Setup EF} (p : Prover S) (α ζ a : 𝕂) :
     deepWord p α ζ a = fun i ↦ ∑ k : Fin S.numOpened, a ^ (k : Nat) * components p α ζ k i := by
   funext i
   rw [deepWord]
-  have hmap : (fun x : ((S.Point → 𝔽) × 𝕂 × 𝕂) × Nat ↦ match x with
-      | ((f, z, y), k) => a ^ k * (y - algebraMap 𝔽 𝕂 (f i)) / (z - S.domain i)) =
-      fun x ↦ a ^ x.2 * (x.1.2.2 - algebraMap 𝔽 𝕂 (x.1.1 i)) / (x.1.2.1 - S.domain i) := by
+  have hmap : (fun x : ((S.Point → F) × 𝕂 × 𝕂) × Nat ↦ match x with
+      | ((f, z, y), k) => a ^ k * (y - algebraMap F 𝕂 (f i)) / (z - S.domain i)) =
+      fun x ↦ a ^ x.2 * (x.1.2.2 - algebraMap F 𝕂 (x.1.1 i)) / (x.1.2.1 - S.domain i) := by
     funext x
     rcases x with ⟨⟨f, z, y⟩, k⟩
     rfl
-  rw [hmap, sum_zipIdx_map (fun (w : (S.Point → 𝔽) × 𝕂 × 𝕂) k ↦
-    a ^ k * (w.2.2 - algebraMap 𝔽 𝕂 (w.1 i)) / (w.2.1 - S.domain i)) _ 0]
+  rw [hmap, sum_zipIdx_map (fun (w : (S.Point → F) × 𝕂 × 𝕂) k ↦
+    a ^ k * (w.2.2 - algebraMap F 𝕂 (w.1 i)) / (w.2.1 - S.domain i)) _ 0]
   refine Fintype.sum_equiv (finCongr (length_openedWords p α ζ)) _ _ fun k ↦ ?_
   simp only [Nat.zero_add, components, deepComponent, finCongr_apply, Fin.val_cast, mul_div_assoc]
   rfl
@@ -71,7 +69,7 @@ theorem deepWord_eq {S : Setup EF} (p : Prover S) (α ζ a : 𝕂) :
 /-! ### Far components -/
 
 /-- `|𝕂|` as an extended real. -/
-noncomputable abbrev card𝕂 (EF : Type) [Challenge EF] : ENNReal := Fintype.card (Challenge.Spec EF)
+noncomputable abbrev card𝕂 (EF : Type) [Challenge F EF] : ENNReal := Fintype.card (Challenge.Spec EF)
 
 theorem card𝕂_ne_zero : card𝕂 EF ≠ 0 := by
   simp only [card𝕂, ne_eq, Nat.cast_eq_zero, Fintype.card_ne_zero, not_false_eq_true]
@@ -110,11 +108,11 @@ theorem sum_fri_of_far {S : Setup EF} (hF : FriStep S) (hF1 : FriAtMostOne S)
 
 /-- The candidate polynomials of words `words` at proximity `δ`: degree at most `n`, agreeing with
 the words on a common set of `(1 - δ) N` points. -/
-def candidates (S : Setup EF) {ι : Type} (δ : ℝ) (words : ι → S.Point → 𝔽) : Set (ι → 𝔽[X]) :=
+def candidates (S : Setup EF) {ι : Type} (δ : ℝ) (words : ι → S.Point → F) : Set (ι → F[X]) :=
   {polys | (∀ k, (polys k).natDegree ≤ S.n) ∧ Agree S δ words polys}
 
 theorem candidates_finite (S : Setup EF) {ι : Type} [Fintype ι] (δ : ℝ)
-    (words : ι → S.Point → 𝔽) : (candidates S δ words).Finite := by
+    (words : ι → S.Point → F) : (candidates S δ words).Finite := by
   classical
   refine Set.Finite.of_finite_image (f := fun polys k (i : Fin (S.n + 1)) ↦ (polys k).coeff i)
     (Set.toFinite _) fun P hP Q hQ h ↦ funext fun k ↦ Polynomial.ext fun m ↦ ?_
@@ -124,11 +122,11 @@ theorem candidates_finite (S : Setup EF) {ι : Type} [Fintype ι] (δ : ℝ)
       coeff_eq_zero_of_natDegree_lt (lt_of_le_of_lt (hQ.1 k) (Nat.lt_of_not_le hm))]
 
 theorem card_candidates_le (S : Setup EF) {ι : Type} [Fintype ι] [DecidableEq ι] (δ : ℝ)
-    (words : ι → S.Point → 𝔽) :
+    (words : ι → S.Point → F) :
     (candidates_finite S δ words).toFinset.card ≤ S.listSize ι δ := by
   rw [← Set.ncard_eq_toFinset_card _ (candidates_finite S δ words)]
-  exact Finset.le_sup (f := fun words : ι → S.Point → 𝔽 ↦
-    {polys : ι → 𝔽[X] | (∀ k, (polys k).natDegree ≤ S.n) ∧ Agree S δ words polys}.ncard)
+  exact Finset.le_sup (f := fun words : ι → S.Point → F ↦
+    {polys : ι → F[X] | (∀ k, (polys k).natDegree ≤ S.n) ∧ Agree S δ words polys}.ncard)
     (Finset.mem_univ words)
 
 /-! ### Summing over the challenges -/
@@ -190,7 +188,7 @@ theorem card_near_check_le (δ : NNReal) (hδ : (δ : ℝ) < 1 - S.rate) (α : �
   set C1 := (candidates_finite S δ p.trace).toFinset
   set C2 := (candidates_finite S δ fun ce : Fin S.chunks × Fin (Challenge.d EF) ↦
     p.quotient α ce.1 ce.2).toFinset
-  set check : (Fin S.air.width → 𝔽[X]) → (Fin S.chunks × Fin (Challenge.d EF) → 𝔽[X]) → Finset 𝕂 :=
+  set check : (Fin S.air.width → F[X]) → (Fin S.chunks × Fin (Challenge.d EF) → F[X]) → Finset 𝕂 :=
     fun P Q ↦ Finset.univ.filter fun ζ : 𝕂 ↦ OffTraceDomain S ζ ∧
       ConstraintsHoldAt S publicValues α ζ (trueOpenings S P (fun c e ↦ Q (c, e)) ζ)
   have hsub : (Finset.univ.filter fun ζ : 𝕂 ↦
@@ -249,7 +247,7 @@ theorem knowledgeSoundness_of {S : Setup EF} (hF : FriStep S) (hF1 : FriAtMostOn
   set M := S.n
   -- Every candidate trace fails the AIR, so it has few bad `α`.
   have hbadP : ∀ P ∈ C1, ∃ bad : Finset 𝕂, bad.card ≤ S.air.constraints.length - 1 ∧
-      ∀ α ∉ bad, ∀ quotient : Fin S.chunks → Fin (Challenge.d EF) → 𝔽[X],
+      ∀ α ∉ bad, ∀ quotient : Fin S.chunks → Fin (Challenge.d EF) → F[X],
         (∀ c e, (quotient c e).natDegree ≤ S.n) →
         (Finset.univ.filter fun ζ : 𝕂 ↦ OffTraceDomain S ζ ∧
           ConstraintsHoldAt S publicValues α ζ (trueOpenings S P quotient ζ)).card ≤ D := by

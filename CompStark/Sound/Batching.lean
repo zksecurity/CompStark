@@ -33,7 +33,7 @@ and words jointly `δ'`-close to the code are near it on a common set.
 namespace CompStark.Sound
 open CompStark.Stark CompStark.Iop CoreDefinitions LinearCode
 
-variable {EF : Type} [Challenge EF]
+variable {F : Type} [BaseField F] {EF : Type} [Challenge F EF]
 
 local notation "𝕂" => Challenge.Spec EF
 

@@ -19,7 +19,9 @@ Plonky3's `DuplexChallenger`, the Fiat–Shamir transcript of its STARK prover a
 * Extension elements (`Challenge`) are observed and sampled coefficient by coefficient, lowest
   first.
 * `sampleBits` keeps the low bits of a sample's canonical value. A grinding witness `w` for `bits`
-  is one whose observation makes the next `sampleBits bits` zero; `grind` finds the smallest.
+  is one whose observation makes the next `sampleBits bits` zero; `grindFrom` finds the smallest.
+
+`Transcript` is the prover's: a challenger on a duplex, with a grinder.
 -/
 
 @[expose] public section
@@ -78,67 +80,57 @@ def checkWitness (c : Challenger F width) (bits : Nat) (w : F) : Bool × Challen
 
 end Challenger
 
-namespace KoalaBear
-
-local notation "F" => _root_.KoalaBear.Fast.Field
-
-/-- Plonky3's `DuplexChallenger<KoalaBear, Poseidon2KoalaBear<24>, 24, 16>`. -/
-def duplex : Duplex F 24 where
-  perm := Poseidon2.permute (Poseidon2.KoalaBear.width24 F)
-  rate := 16
-  canon := Montgomery.Native32.FastField.toNat
-
 /-- The smallest grinding witness for `bits` below `bound`, by search from `n`, checking each
 candidate with `D`. -/
-def grindFrom (D : Duplex F 24) (c : Challenger F 24) (bits : Nat) : Nat → Nat → F
+def grindFrom {F : Type} [BaseField F] {width : Nat} (D : Duplex F width) (c : Challenger F width)
+    (bits : Nat) : Nat → Nat → F
   | 0, _ => 0
   | fuel + 1, n =>
     let w := (n : F)
     if (Challenger.checkWitness D c bits w).1 then w else grindFrom D c bits fuel (n + 1)
 
-/-- The transcript of the KoalaBear STARK: a challenger with its duplex, a search for the
-smallest grinding witness of a state, and whether a search has failed. Plonky3's grinder panics
-when it finds no witness; the flag records that instead, and no proof observes it. -/
-structure Transcript where
-  duplex : Duplex F 24
-  grinder : Challenger F 24 → Nat → F
-  state : Challenger F 24
+/-- The prover's transcript: a challenger with its duplex, a search for the smallest grinding
+witness of a state, and whether a search has failed. Plonky3's grinder panics when it finds no
+witness; the flag records that instead, and no proof observes it. -/
+structure Transcript (F : Type) (width : Nat) where
+  duplex : Duplex F width
+  grinder : Challenger F width → Nat → F
+  state : Challenger F width
   grindFailed : Bool
 
 namespace Transcript
 
+variable {F : Type} [BaseField F] {width : Nat}
+
 /-- The empty transcript with the duplex `D` and grinder `g`. -/
-def initWith (D : Duplex F 24) (g : Challenger F 24 → Nat → F) : Transcript :=
+def initWith (D : Duplex F width) (g : Challenger F width → Nat → F) : Transcript F width :=
   ⟨D, g, Challenger.init, false⟩
 
-/-- The empty specification transcript: the spec permutation, and grinding by search. -/
-def init : Transcript :=
-  initWith KoalaBear.duplex fun c bits ↦
-    grindFrom KoalaBear.duplex c bits _root_.KoalaBear.fieldSize 0
-
 /-- Observe one base element. -/
-def observe (t : Transcript) (x : F) : Transcript :=
+def observe (t : Transcript F width) (x : F) : Transcript F width :=
   { t with state := Challenger.observe t.duplex t.state x }
 
 /-- Observe base elements in order. -/
-def observeList (t : Transcript) (xs : List F) : Transcript :=
+def observeList (t : Transcript F width) (xs : List F) : Transcript F width :=
   { t with state := Challenger.observeList t.duplex t.state xs }
 
-variable {EF : Type} [Challenge EF]
+variable {EF : Type} [Challenge F EF]
 
 /-- Observe an extension element, lowest coefficient first. -/
-def observeExt (t : Transcript) (x : EF) : Transcript := observeList t (Challenge.coeffs x)
+def observeExt (t : Transcript F width) (x : EF) : Transcript F width :=
+  observeList t (Challenge.coeffs x)
 
 /-- Observe extension elements in order. -/
-def observeExts (t : Transcript) (xs : List EF) : Transcript := xs.foldl observeExt t
+def observeExts (t : Transcript F width) (xs : List EF) : Transcript F width :=
+  xs.foldl observeExt t
 
 /-- Sample a base element. -/
-def sample (t : Transcript) : F × Transcript :=
+def sample (t : Transcript F width) : F × Transcript F width :=
   let (x, c) := Challenger.sample t.duplex t.state
   (x, { t with state := c })
 
 /-- Sample `n` base elements. -/
-def sampleList (t : Transcript) : Nat → List F × Transcript
+def sampleList (t : Transcript F width) : Nat → List F × Transcript F width
   | 0 => ([], t)
   | n + 1 =>
     let a := sample t
@@ -146,30 +138,32 @@ def sampleList (t : Transcript) : Nat → List F × Transcript
     (a.1 :: r.1, r.2)
 
 /-- The extension element `sampleExt` samples. -/
-@[irreducible] def sampleExtValue (t : Transcript) : EF :=
+@[irreducible] def sampleExtValue (t : Transcript F width) : EF :=
   Challenge.ofCoeffs (sampleList t (Challenge.d EF)).1
 
 /-- The transcript after `sampleExt`. -/
-@[irreducible] def sampleExtState (EF : Type) [Challenge EF] (t : Transcript) : Transcript :=
+@[irreducible] def sampleExtState (EF : Type) [Challenge F EF] (t : Transcript F width) :
+    Transcript F width :=
   (sampleList t (Challenge.d EF)).2
 
 /-- Sample an extension element, lowest coefficient first. The value and the state are separate
 irreducible definitions, so that checking a proof about them never evaluates the permutation. -/
-def sampleExt (t : Transcript) : EF × Transcript := (sampleExtValue t, sampleExtState EF t)
+def sampleExt (t : Transcript F width) : EF × Transcript F width :=
+  (sampleExtValue t, sampleExtState EF t)
 
 /-- Sample `bits` low bits. -/
-def sampleBits (t : Transcript) (bits : Nat) : Nat × Transcript :=
+def sampleBits (t : Transcript F width) (bits : Nat) : Nat × Transcript F width :=
   let (x, c) := Challenger.sampleBits t.duplex t.state bits
   (x, { t with state := c })
 
 /-- Check a grinding witness. -/
-def checkWitness (t : Transcript) (bits : Nat) (w : F) : Bool × Transcript :=
+def checkWitness (t : Transcript F width) (bits : Nat) (w : F) : Bool × Transcript F width :=
   let (b, c) := Challenger.checkWitness t.duplex t.state bits w
   (b, { t with state := c })
 
 /-- The grinder's witness for `bits`, and the transcript after observing it, flagged as failed if
 the witness does not check. -/
-def grind (t : Transcript) (bits : Nat) : F × Transcript :=
+def grind (t : Transcript F width) (bits : Nat) : F × Transcript F width :=
   if bits = 0 then (0, t)
   else
     let w := t.grinder t.state bits
@@ -177,5 +171,4 @@ def grind (t : Transcript) (bits : Nat) : F × Transcript :=
     (w, { r.2 with grindFailed := r.2.grindFailed || !r.1 })
 
 end Transcript
-end KoalaBear
 end CompStark

@@ -18,7 +18,7 @@ round has an error, the probability that a fresh answer makes it bad:
   proximity loss `loss`.
 * FRI's queries (`friQueryError`): every query lands where the checks pass, a density of at most
   `1 - min (δ - k loss, δ - (k + 1) loss)` after `k + 1` safe folds, plus `1/p` per query for the
-  bias of `sampleBits` (a residue of a uniform KoalaBear element is not quite uniform).
+  bias of `sampleBits` (a residue of a uniform base element is not quite uniform).
 
 A round with grinding (`commitPowBits` for the folds, `queryPowBits` for the queries) also needs
 its proof-of-work sample to vanish on its low bits, in the same answer: its error is multiplied by
@@ -30,9 +30,8 @@ bounds collisions and predictions among the digests of `q` queries.
 namespace CompStark.Iop
 open CompStark.Sound
 
-local notation "𝔽" => KoalaBear.Field
 
-variable {EF : Type} [Challenge EF]
+variable {F : Type} [BaseField F] {EF : Type} [Challenge F EF]
 
 local notation "𝕂" => Challenge.Spec EF
 
@@ -50,10 +49,11 @@ def schedule (i : Fin (S.lastFold + 1)) : ℕ+ := S.foldArities.getD i 1
 
 end Setup
 
-/-- The probability that `bits` low bits of a uniform KoalaBear element vanish:
-`(127 · 2^(24 - bits) + 1) / p ≤ 2^-bits (1 + 2^bits / p)`; `1` for `bits = 0`. -/
-noncomputable def powFraction (bits : Nat) : ENNReal :=
-  ((127 * 2 ^ (24 - bits) + 1 : Nat) : ENNReal) / Fintype.card 𝔽
+/-- The probability that `bits` low bits of a uniform element of `F`, `p = |F|`, vanish:
+`((p - 1) / 2^bits + 1) / p ≤ 2^-bits + 1/p`, the multiples of `2 ^ bits` below `p`; `1` for
+`bits = 0`. -/
+noncomputable def powFraction (F : Type) [Fintype F] (bits : Nat) : ENNReal :=
+  (((Fintype.card F - 1) / 2 ^ bits + 1 : Nat) : ENNReal) / Fintype.card F
 
 /-- FRI's fold `i` makes a far word near by folding (ArkLib's `foldingErrorLossy`): the lossy
 correlated-agreement error of the fold's arity at proximity `δ` and loss `loss`. -/
@@ -66,7 +66,7 @@ noncomputable def friFoldError (S : Setup EF) (δ loss : NNReal) (i : Fin (S.las
 code: `(1 - min (δ - k loss) (δ - (k + 1) loss) + 1/p) ^ numQueries`, `k + 1` folds. -/
 noncomputable def friQueryError (S : Setup EF) (δ loss : NNReal) : ENNReal :=
   ENNReal.ofReal (1 - min ((δ : ℝ) - S.lastFold * loss) ((δ : ℝ) - (S.lastFold + 1) * loss) +
-    1 / Fintype.card 𝔽) ^ S.params.numQueries
+    1 / Fintype.card F) ^ S.params.numQueries
 
 /-- The error of one random-oracle answer: the IOP's round-by-round errors, the FRI rounds
 credited with their grinding. FRI's folds and queries share one proximity loss. -/
@@ -74,10 +74,11 @@ noncomputable def roundError (S : Setup EF) (δ δ' : NNReal) : ENNReal :=
   ⨅ loss : NNReal,
     (max (foldingError S δ') <| max (outOfDomainError S δ') <|
       max (batchingError S δ ((δ' : ℝ) - 2 / S.size)) <|
-      max (powFraction S.params.commitPowBits * ⨆ i, friFoldError S δ loss i)
-        (powFraction S.params.queryPowBits * friQueryError S δ loss))
+      max (powFraction F S.params.commitPowBits * ⨆ i, friFoldError S δ loss i)
+        (powFraction F S.params.queryPowBits * friQueryError S δ loss))
 
-/-- Digest collisions and predictions among `q` queries. -/
-noncomputable def hashError (q : Nat) : ENNReal := 3 * q ^ 2 / (Fintype.card 𝔽 : ENNReal) ^ 8
+/-- Digest collisions and predictions among `q` queries, digests of eight elements of `F`. -/
+noncomputable def hashError (F : Type) [Fintype F] (q : Nat) : ENNReal :=
+  3 * q ^ 2 / (Fintype.card F : ENNReal) ^ 8
 
 end CompStark.Iop

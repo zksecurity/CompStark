@@ -10,9 +10,9 @@ public import CompStark.Stark.Verifier
 /-! # The STARK prover
 
 Plonky3's `uni-stark` `prove` (revision `47e442f`) without preprocessed columns or zero knowledge,
-over KoalaBear with challenges in the extension `EF` and the two-adic FRI commitment scheme. For
-the same AIR, trace, public values and parameters it produces Plonky3's proof, grinding witnesses
-included when Plonky3 grinds on one thread:
+over a base field `F` with challenges in the extension `EF` and the two-adic FRI commitment scheme,
+on a backend (`Backend`). For the same AIR, trace, public values and parameters it produces
+Plonky3's proof, grinding witnesses included when Plonky3 grinds on one thread:
 
 * Commit to the trace's low-degree extension; observe the degree, the preprocessed width `0`, the
   commitment and the public values; sample `α`.
@@ -24,11 +24,9 @@ included when Plonky3 grinds on one thread:
 
 @[expose] public section
 namespace CompStark.Stark
-open CompStark.Fri CompStark.KoalaBear
+open CompStark.Fri
 
-local notation "F" => KoalaBear.Fast.Field
-
-variable {EF : Type} [Challenge EF]
+variable {F : Type} [BaseField F] {EF : Type} [Challenge F EF] {width : Nat}
 
 /-- The coordinates of every `stride`-th quotient value from `c`, `n` of them: chunk `c`'s values,
 as rows of `d` base elements. -/
@@ -40,8 +38,8 @@ def chunkValues (qs : @& Array EF) (stride c n : Nat) : Array F := Id.run do
 
 /-- The trace's extension and commitment, the quotient's chunks and commitment, and the opening
 point `ζ` sampled after them, by the backend `B`. -/
-def commitAndSample (B : Backend EF) (P : Params) (A : Air) (logN : Nat) (trace : Array F)
-    (pis : List F) : PM (B.M × B.C × List B.M × B.C × EF) := do
+def commitAndSample (B : Backend F EF width) (P : Params) (A : Air F) (logN : Nat)
+    (trace : Array F) (pis : List F) : PM F width (B.M × B.C × List B.M × B.C × EF) := do
   let logChunks := A.logQuotientChunks
   let qlog := logN + logChunks
   let ext := B.lde logN P.logBlowup gen A.width trace
@@ -65,8 +63,8 @@ def commitAndSample (B : Backend EF) (P : Params) (A : Air) (logN : Nat) (trace 
 
 /-- The openings at `ζ` and `ζ ω` of the trace and at `ζ` of the quotient's chunks, and the proof
 assembled from them and the commitments. -/
-def openAndAssemble (B : Backend EF) (P : Params) (logN : Nat) :
-    B.M × B.C × List B.M × B.C × EF → PM (Proof EF)
+def openAndAssemble (B : Backend F EF width) (P : Params) (logN : Nat) :
+    B.M × B.C × List B.M × B.C × EF → PM F width (Proof F EF)
   | (ext, traceC, chunks, quotC, zeta) => do
     let zetaNext := zeta * Ext.ofBase (twoAdicGen logN)
     let (opened, fri) ← openPcs B P
@@ -82,29 +80,8 @@ def openAndAssemble (B : Backend EF) (P : Params) (logN : Nat) :
 
 /-- A proof of `A` for the row-major trace of `2 ^ logN` rows and public values `pis`, by the
 backend `B`. -/
-def proveWith (B : Backend EF) (P : Params) (A : Air) (logN : Nat) (trace : Array F)
-    (pis : List F) : Proof EF :=
+def proveWith (B : Backend F EF width) (P : Params) (A : Air F) (logN : Nat) (trace : Array F)
+    (pis : List F) : Proof F EF :=
   ((commitAndSample B P A logN trace pis >>= openAndAssemble B P logN).run B.transcript).1
-
-/-- The out-of-domain point `ζ` of the specification's proof: the challenge, sampled after the
-trace and quotient commitments, at which the prover opens the trace and the quotient's chunks and
-the verifier checks the constraints. -/
-def outOfDomainPoint (EF : Type) [Challenge EF] (P : Params) (A : Air) (logN : Nat)
-    (trace : Array F) (pis : List F) : EF :=
-  ((commitAndSample (Backend.spec EF) P A logN trace pis).run
-    (Backend.spec EF).transcript).1.2.2.2.2
-
-/-- A proof of `A` for the row-major trace of `2 ^ logN` rows and public values `pis`, by the
-specification backend. -/
-def prove (EF : Type) [Challenge EF] (P : Params) (A : Air) (logN : Nat) (trace : Array F)
-    (pis : List F) : Proof EF :=
-  proveWith (Backend.spec EF) P A logN trace pis
-
-/-- The specification prover's transcript at the end of `prove`. Its `grindFailed` flag records
-whether a grinding search found no witness. -/
-def proveTranscript (EF : Type) [Challenge EF] (P : Params) (A : Air) (logN : Nat)
-    (trace : Array F) (pis : List F) : Transcript :=
-  ((commitAndSample (Backend.spec EF) P A logN trace pis >>=
-    openAndAssemble (Backend.spec EF) P logN).run Transcript.init).2
 
 end CompStark.Stark

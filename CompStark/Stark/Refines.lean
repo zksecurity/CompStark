@@ -20,10 +20,10 @@ base field.
 namespace CompStark.Stark
 open CompStark.Fri CompStark.KoalaBear
 
-local notation "F" => KoalaBear.Fast.Field
-local notation "EF" => KoalaBear.Fast.Ext4
+local notation "F" => _root_.KoalaBear.Fast.Field
+local notation "EF" => _root_.KoalaBear.Fast.Ext4
 
-theorem size_chunkValues {K : Type} [Challenge K] (qs : Array K) (stride c n : Nat) :
+theorem size_chunkValues {K : Type} [Challenge F K] (qs : Array K) (stride c n : Nat) :
     (chunkValues qs stride c n).size = Challenge.d K * n := by
   simp only [chunkValues, Id.run, Std.Legacy.Range.forIn_eq_forIn_range',
     List.forIn_pure_yield_eq_foldl, pure_bind, Std.Legacy.Range.size, Nat.sub_zero,
@@ -48,41 +48,9 @@ theorem size_chunkValues {K : Type} [Challenge K] (qs : Array K) (stride c n : N
 theorem addressable_mono {m n : Nat} (h : m ≤ n) (hn : Addressable n) : Addressable m := by
   unfold Addressable at *; omega
 
-/-- An element is outside the base field exactly when it is no base element. -/
-theorem outsideBase_iff {K : Type} [Challenge K] {z : K} :
-    Ext.OutsideBase z ↔
-      ∀ y, Challenge.toSpec z ≠ algebraMap KoalaBear.Field (Challenge.Spec K) y := by
-  refine ⟨Ext.toSpec_ne_algebraMap, fun h ↦ ?_⟩
-  by_contra hn
-  apply h (Montgomery.Native32.FastField.toField ((Ext.coeffs z).getD 0 0))
-  have hs := Finset.sum_eq_single (s := Finset.range (Challenge.d K)) (a := 0)
-    (f := fun e ↦ CompPoly.Extension.Ext.gen ^ e * algebraMap KoalaBear.Field (Challenge.Spec K)
-      (Montgomery.Native32.FastField.toField ((Challenge.coeffs z).getD e 0)))
-    (fun e _ he ↦ by
-      have h0 : (Ext.coeffs z).getD e 0 = 0 := by
-        by_contra hne
-        exact hn ⟨e, Nat.pos_of_ne_zero he, hne⟩
-      rw [show (Challenge.coeffs z).getD e 0 = 0 from h0, Montgomery.Native32.toField_zero,
-        map_zero, mul_zero])
-    (fun h0 ↦ absurd (Finset.mem_range.mpr (Challenge.params K).d_pos) h0)
-  rw [Challenge.toSpec_eq_sum, hs, pow_zero, one_mul]
-
-theorem outsideBase_mul_ofBase {K : Type} [Challenge K] {z : K} (hz : Ext.OutsideBase z) {x : F}
-    (hx : x ≠ 0) : Ext.OutsideBase (z * Ext.ofBase x) := by
-  rw [outsideBase_iff] at *
-  intro y hy
-  have hx' : algebraMap KoalaBear.Field (Challenge.Spec K)
-      (Montgomery.Native32.FastField.toField x) ≠ 0 := by
-    rw [ne_eq, map_eq_zero_iff _ (algebraMap KoalaBear.Field (Challenge.Spec K)).injective]
-    exact fun h ↦ hx (Montgomery.Native32.toField_injective
-      (h.trans Montgomery.Native32.toField_zero.symm))
-  apply hz (y / Montgomery.Native32.FastField.toField x)
-  rw [Challenge.toSpec_mul, Ext.ofBase, Challenge.toSpec_ofBase'] at hy
-  rw [map_div₀, ← hy, mul_div_cancel_right₀ _ hx']
-
 /-- The shapes the fast prover supports: a trace and an AIR within KoalaBear's two-adic subgroups
 whose extension fits machine-word indices. -/
-structure InputOk (P : Params) (A : Air) (logN : Nat) (trace : Array F) : Prop where
+structure InputOk (P : Params) (A : Air F) (logN : Nat) (trace : Array F) : Prop where
   /-- The trace has `2 ^ logN` rows of the AIR's width. -/
   trace : trace.size = 2 ^ logN * A.width
   /-- The AIR has a column. -/
@@ -96,13 +64,13 @@ structure InputOk (P : Params) (A : Air) (logN : Nat) (trace : Array F) : Prop w
   /-- The extended trace and quotient are addressable by `USize` word indices. -/
   mem : Addressable (2 ^ (logN + P.logBlowup) * (A.width + 4 * 2 ^ A.logQuotientChunks))
 
-variable {B : Backend EF}
+variable {B : Backend F EF 24}
 
-theorem commitAndSample_refines (h : Refines B) {P : Params} {A : Air} {logN : Nat}
+theorem commitAndSample_refines (h : Refines B) {P : Params} {A : Air F} {logN : Nat}
     {trace : Array F} (pis : List F) (hin : InputOk P A logN trace) :
     RelM (fun x y ↦ h.RM x.1 y.1 ∧ h.RC x.2.1 y.2.1 ∧ List.Forall₂ h.RM x.2.2.1 y.2.2.1 ∧
         h.RC x.2.2.2.1 y.2.2.2.1 ∧ x.2.2.2.2 = y.2.2.2.2 ∧ MatOk y.1 ∧ ∀ m ∈ y.2.2.1, MatOk m)
-      (commitAndSample B P A logN trace pis) (commitAndSample (Backend.spec EF) P A logN trace
+      (commitAndSample B P A logN trace pis) (commitAndSample (specBackend EF) P A logN trace
           pis) := by
   obtain ⟨htrace, hw, hcols, hlog, hchunks, hmem⟩ := hin
   have hH : 2 ^ (logN + P.logBlowup) ≤ 2 ^ 24 := Nat.pow_le_pow_right (by decide) hlog
@@ -130,7 +98,7 @@ theorem commitAndSample_refines (h : Refines B) {P : Params} {A : Air} {logN : N
   have hq : 2 ^ (logN + A.logQuotientChunks) ≤ (ldeRef logN P.logBlowup gen A.width trace).height :=
     heh ▸ Nat.pow_le_pow_right (by decide) (by omega)
   rw [h.quotient _ _ _ _ _ hext hextOk hq (hew ▸ hcols)]
-  generalize (Backend.spec EF).quotient _ _ _ _ _ _ = qs
+  generalize (specBackend EF).quotient _ _ _ _ _ _ = qs
   -- The quotient's chunks.
   have hchOk : ∀ c, MatOk (ldeRef logN P.logBlowup
       (gen * (gen * powF (twoAdicGen (logN + A.logQuotientChunks)) c)⁻¹) (Challenge.d EF)
@@ -146,19 +114,19 @@ theorem commitAndSample_refines (h : Refines B) {P : Params} {A : Air} {logN : N
           (Challenge.d EF)
           (chunkValues qs (2 ^ A.logQuotientChunks) c (2 ^ logN)))
       ((List.range (2 ^ A.logQuotientChunks)).map fun c ↦
-        (Backend.spec EF).lde logN P.logBlowup
+        (specBackend EF).lde logN P.logBlowup
           (gen * (gen * powF (twoAdicGen (logN + A.logQuotientChunks)) c)⁻¹) (Challenge.d EF)
           (chunkValues qs (2 ^ A.logQuotientChunks) c (2 ^ logN))) :=
     forall₂_map (fun _ _ hc ↦ hc ▸ h.lde _ _ _ _ _ (by rw [size_chunkValues, Nat.mul_comm])
       hlog hm4) (List.forall₂_same.2 fun _ _ ↦ rfl)
   have hall : ∀ m ∈ ((List.range (2 ^ A.logQuotientChunks)).map fun c ↦
-      (Backend.spec EF).lde logN P.logBlowup
+      (specBackend EF).lde logN P.logBlowup
         (gen * (gen * powF (twoAdicGen (logN + A.logQuotientChunks)) c)⁻¹) (Challenge.d EF)
         (chunkValues qs (2 ^ A.logQuotientChunks) c (2 ^ logN))), MatOk m ∧
         m.height = 2 ^ (logN + P.logBlowup) := fun m hm ↦ by
     obtain ⟨c, -, rfl⟩ := List.mem_map.mp hm
     exact ⟨hchOk c, (shape_ldeRef ..).2.1⟩
-  have hwsum : ∀ (l : List Nat) (acc : Nat), (l.map fun c ↦ (Backend.spec EF).lde logN P.logBlowup
+  have hwsum : ∀ (l : List Nat) (acc : Nat), (l.map fun c ↦ (specBackend EF).lde logN P.logBlowup
       (gen * (gen * powF (twoAdicGen (logN + A.logQuotientChunks)) c)⁻¹) (Challenge.d EF)
       (chunkValues qs (2 ^ A.logQuotientChunks) c (2 ^ logN))).foldl (· + ·.width) acc =
       acc + 4 * l.length := by
@@ -183,12 +151,12 @@ theorem commitAndSample_refines (h : Refines B) {P : Params} {A : Air} {logN : N
 specification's. -/
 theorem openAndAssemble_refines (h : Refines B) (P : Params) {logN : Nat}
     (hlog : logN ≤ 24) {x : B.M × B.C × List B.M × B.C × EF}
-    {y : (Backend.spec EF).M × (Backend.spec EF).C × List (Backend.spec EF).M × (Backend.spec EF).C
+    {y : (specBackend EF).M × (specBackend EF).C × List (specBackend EF).M × (specBackend EF).C
         × EF}
     (hR : h.RM x.1 y.1 ∧ h.RC x.2.1 y.2.1 ∧ List.Forall₂ h.RM x.2.2.1 y.2.2.1 ∧
       h.RC x.2.2.2.1 y.2.2.2.1 ∧ x.2.2.2.2 = y.2.2.2.2 ∧ MatOk y.1 ∧ ∀ m ∈ y.2.2.1, MatOk m)
     (hz : Ext.OutsideBase y.2.2.2.2) :
-    RelM Eq (openAndAssemble B P logN x) (openAndAssemble (Backend.spec EF) P logN y) := by
+    RelM Eq (openAndAssemble B P logN x) (openAndAssemble (specBackend EF) P logN y) := by
   obtain ⟨ext, traceC, chunks, quotC, zeta⟩ := x
   obtain ⟨ext', traceC', chunks', quotC', zeta'⟩ := y
   obtain ⟨hext, hct, hch, hqc, hzz, hextOk, hchOk⟩ := hR
@@ -198,7 +166,7 @@ theorem openAndAssemble_refines (h : Refines B) (P : Params) {logN : Nat}
   refine RelM.bind (openPcs_refines h P ?_ ?_) fun _ _ hx ↦ hx ▸ ?_
   · exact .cons ⟨hct, .cons ⟨hext, rfl⟩ .nil⟩
       (.cons ⟨hqc, forall₂_map (fun _ _ hm ↦ ⟨hm, rfl⟩) hch⟩ .nil)
-  · have hw := outsideBase_mul_ofBase hz (twoAdicGen_ne_zero logN hlog)
+  · have hw := Ext.outsideBase_mul_ofBase hz (BaseField.twoAdicGen_ne_zero logN hlog)
     intro r hr x hx
     simp only [List.mem_cons, List.not_mem_nil, or_false] at hr
     rcases hr with rfl | rfl
@@ -218,13 +186,13 @@ theorem openAndAssemble_refines (h : Refines B) (P : Params) {logN : Nat}
 
 /-- **A refining backend proves what the specification proves**, for inputs of the prover's
 shapes, when the specification's opening point `ζ` lies outside the base field. -/
-theorem proveWith_refines (h : Refines B) {P : Params} {A : Air} {logN : Nat} {trace : Array F}
+theorem proveWith_refines (h : Refines B) {P : Params} {A : Air F} {logN : Nat} {trace : Array F}
     (pis : List F) (hin : InputOk P A logN trace)
     (hz : Ext.OutsideBase (outOfDomainPoint EF P A logN trace pis)) :
     proveWith B P A logN trace pis = prove EF P A logN trace pis := by
   unfold prove proveWith
   rw [h.transcript, RelM.run_bind, RelM.run_bind]
-  obtain ⟨hR, ht⟩ := commitAndSample_refines h pis hin (Backend.spec EF).transcript
+  obtain ⟨hR, ht⟩ := commitAndSample_refines h pis hin (specBackend EF).transcript
   rw [ht]
   exact (openAndAssemble_refines h P (by have := hin.twoAdic; omega) hR hz _).1
 

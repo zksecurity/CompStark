@@ -6,7 +6,6 @@ module
 
 public import CompStark.Ni.Rounds
 public import CompStark.Ni.FirstQueries
-public import CompStark.Sound.NumbersNi
 
 /-! # The bad events of one fresh answer
 
@@ -18,7 +17,7 @@ bijections (`prob_answer_prefix`, `extEquiv`). The fold rounds' challenges are P
 a nonzero shift to ArkLib's coordinate, another bijection.
 
 The answer's digest (a hash, or the duplex's new capacity) clashes with the known digests with
-probability at most `3 q / |𝔽|^8` after fewer than `q` queries (`prob_digestClash_le`), for the
+probability at most `3 q / |F|^8` after fewer than `q` queries (`prob_digestClash_le`), for the
 digests of the keys: a compression's two children, a duplex call's capacity and the digest a
 commitment round observes (`keyDigests`).
 -/
@@ -26,13 +25,11 @@ commitment round observes (`keyDigests`).
 @[expose] public section
 namespace CompStark.Ni
 open CompStark.Stark CompStark.Fri CompStark.Sound CompStark.Iop CompStark.RandomOracle
-open Polynomial Montgomery.Native32 Fri.Spec OracleSpec OracleComp
+open Polynomial Fri.Spec OracleSpec OracleComp
 open scoped ENNReal
 
-local notation "F" => KoalaBear.Fast.Field
-local notation "𝔽" => KoalaBear.Field
 
-variable {EF : Type} [Challenge EF]
+variable {F : Type} [BaseField F] {EF : Type} [Challenge F EF]
 
 local notation "𝕂" => Challenge.Spec EF
 
@@ -61,9 +58,9 @@ theorem prob_vector_prefix (K m : Nat) (hm : m ≤ K) (P : (Fin m → F) → Pro
 
 /-- The first `m` samples of a uniform answer to a duplex call are uniform. -/
 theorem prob_answer_prefix (K m : Nat) (hm : m ≤ K) (P : (Fin m → F) → Prop) :
-    Pr{let u ← $ᵗ (Digest × Vector F K)}[P fun j ↦ u.2.toList.getD j.val 0] =
+    Pr{let u ← $ᵗ (Digest F × Vector F K)}[P fun j ↦ u.2.toList.getD j.val 0] =
       Pr{let x ← $ᵗ (Fin m → F)}[P x] := by
-  have h := SampleableType.prEvent_uniformSample_equiv (Equiv.prodComm Digest (Vector F K))
+  have h := SampleableType.prEvent_uniformSample_equiv (Equiv.prodComm (Digest F) (Vector F K))
     (fun z ↦ P fun j ↦ z.1.toList.getD j.val 0)
   simp only [Equiv.prodComm_apply, Prod.fst_swap] at h
   rw [h, SampleableType.prEvent_uniformSample_fst
@@ -71,28 +68,28 @@ theorem prob_answer_prefix (K m : Nat) (hm : m ≤ K) (P : (Fin m → F) → Pro
 
 /-- `d` samples as an element of `𝕂`, lowest coefficient first. -/
 noncomputable def extEquiv : (Fin (Challenge.d EF) → F) ≃ 𝕂 :=
-  (Equiv.arrowCongr (Equiv.refl _) KoalaBear.Fast.ringEquiv.toEquiv).trans
+  (Equiv.arrowCongr (Equiv.refl _) (Equiv.refl F)).trans
     (CompPoly.Extension.Ext.equivFn (Challenge.params EF)).symm
 
 theorem extAt_eq (K : Nat) (v : Vector F K) (offset : Nat) :
     (extAt v offset : 𝕂) = extEquiv fun j ↦ v.toList.getD (offset + j.val) 0 := rfl
 
-/-- A grinding sample and `d` samples as a pair in `𝔽 × 𝕂`. -/
-noncomputable def powExtEquiv : (Fin (Challenge.d EF + 1) → F) ≃ 𝔽 × 𝕂 :=
+/-- A grinding sample and `d` samples as a pair in `F × 𝕂`. -/
+noncomputable def powExtEquiv : (Fin (Challenge.d EF + 1) → F) ≃ F × 𝕂 :=
   (Fin.consEquiv fun _ ↦ F).symm.trans
-    (Equiv.prodCongr KoalaBear.Fast.ringEquiv.toEquiv extEquiv)
+    (Equiv.prodCongr (Equiv.refl F) extEquiv)
 
 theorem powExtEquiv_apply (x : Fin (Challenge.d EF + 1) → F) :
-    powExtEquiv x = (FastField.toField (x 0), extEquiv fun j ↦ x j.succ) := rfl
+    powExtEquiv x = ((x 0), extEquiv fun j ↦ x j.succ) := rfl
 
-/-- Samples as elements of `𝔽`. -/
-noncomputable def fieldsEquiv (n : Nat) : (Fin n → F) ≃ (Fin n → 𝔽) :=
-  Equiv.arrowCongr (Equiv.refl _) KoalaBear.Fast.ringEquiv.toEquiv
+/-- Samples as elements of `F`. -/
+noncomputable def fieldsEquiv (n : Nat) : (Fin n → F) ≃ (Fin n → F) :=
+  Equiv.arrowCongr (Equiv.refl _) (Equiv.refl F)
 
-/-- A grinding sample and `n` samples, in `𝔽`. -/
-noncomputable def powFieldsEquiv (n : Nat) : (Fin (n + 1) → F) ≃ 𝔽 × (Fin n → 𝔽) :=
+/-- A grinding sample and `n` samples, in `F`. -/
+noncomputable def powFieldsEquiv (n : Nat) : (Fin (n + 1) → F) ≃ F × (Fin n → F) :=
   (Fin.consEquiv fun _ ↦ F).symm.trans
-    (Equiv.prodCongr KoalaBear.Fast.ringEquiv.toEquiv (fieldsEquiv n))
+    (Equiv.prodCongr (Equiv.refl F) (fieldsEquiv n))
 
 theorem prEvent_congr_iff {α : Type} (mx : ProbComp α) {p q : α → Prop} (h : ∀ x, p x ↔ q x) :
     Pr{let x ← mx}[p x] = Pr{let x ← mx}[q x] := by
@@ -110,11 +107,11 @@ theorem getD_append_singleton_lt {α : Type} (l : List α) (x d : α) (j : Nat) 
   simp only [List.getD_eq_getElem?_getD, List.getElem?_append_left hj]
 
 theorem prefixTranscript_betas_eq (S : Iop.Setup EF)
-    (cache : Merkle.Cache F Digest)
+    (cache : Merkle.Cache F (Digest F))
     (block : Nat → List F) (sample : Nat → Vector F S.streamLen) :
     (prefixTranscript S cache block sample).betas = betasAt S sample := rfl
 
-theorem prefixTranscript_fri_eq (S : Iop.Setup EF) (cache : Merkle.Cache F Digest)
+theorem prefixTranscript_fri_eq (S : Iop.Setup EF) (cache : Merkle.Cache F (Digest F))
     (block : Nat → List F) (sample sample' : Nat → Vector F S.streamLen) :
     (prefixTranscript S cache block sample).fri = (prefixTranscript S cache block sample').fri :=
   rfl
@@ -128,8 +125,8 @@ variable (S : Iop.Setup EF) (publicValues : List F) (δ δ' loss : NNReal)
 noncomputable def roundBound : ENNReal :=
   max (foldingError S δ') <| max (outOfDomainError S δ') <|
     max (batchingError S δ ((δ' : ℝ) - 2 / S.size)) <|
-    max (powFraction S.params.commitPowBits * ⨆ i, friFoldError S δ loss i)
-      (powFraction S.params.queryPowBits * friQueryError S δ loss)
+    max (powFraction F S.params.commitPowBits * ⨆ i, friFoldError S δ loss i)
+      (powFraction F S.params.queryPowBits * friQueryError S δ loss)
 
 theorem roundError_eq : roundError S δ δ' = ⨅ loss, roundBound S δ δ' loss := rfl
 
@@ -137,9 +134,9 @@ theorem streamLen_eq : S.streamLen = S.params.numQueries + Challenge.d EF + 1 :=
 
 /-- **One fresh answer.** The bad event of round `i` on the prefix transcript of `i` earlier
 rounds, the answer to round `i` uniform, has probability at most the round's error. -/
-theorem prob_roundBadAt_le (cache : Merkle.Cache F Digest) (block : Nat → List F)
+theorem prob_roundBadAt_le (cache : Merkle.Cache F (Digest F)) (block : Nat → List F)
     (samples : List (Vector F S.streamLen)) :
-    Pr{let u ← $ᵗ (Digest × Vector F S.streamLen)}[roundBadAt S publicValues δ δ' loss
+    Pr{let u ← $ᵗ (Digest F × Vector F S.streamLen)}[roundBadAt S publicValues δ δ' loss
       samples.length (prefixTranscript S cache block
         fun j ↦ (samples ++ [u.2]).getD j (Vector.replicate _ 0)) u.2] ≤
       roundBound S δ δ' loss := by
@@ -150,7 +147,7 @@ theorem prob_roundBadAt_le (cache : Merkle.Cache F Digest) (block : Nat → List
   split_ifs with h0 h1 h2 hf hq
   · -- `α`
     set tr := (prefixTranscript S cache block fun j ↦ samples.getD j d).trace
-    calc _ = Pr{let u ← $ᵗ (Digest × Vector F S.streamLen)}[(fun x ↦
+    calc _ = Pr{let u ← $ᵗ (Digest F × Vector F S.streamLen)}[(fun x ↦
           AlphaBad S publicValues δ' tr (extEquiv x)) fun j ↦ u.2.toList.getD j.val 0] :=
           prEvent_congr_iff _ fun u ↦ by
             simp only [prefixTranscript, tr, getD_append_singleton samples u.2 d 0 h0.symm,
@@ -163,7 +160,7 @@ theorem prob_roundBadAt_le (cache : Merkle.Cache F Digest) (block : Nat → List
       _ ≤ _ := le_max_left _ _
   · -- `ζ`
     set T := prefixTranscript S cache block fun j ↦ samples.getD j d
-    calc _ = Pr{let u ← $ᵗ (Digest × Vector F S.streamLen)}[(fun x ↦
+    calc _ = Pr{let u ← $ᵗ (Digest F × Vector F S.streamLen)}[(fun x ↦
           ZetaBad S publicValues δ' T.trace T.alpha T.quotient (extEquiv x))
             fun j ↦ u.2.toList.getD j.val 0] :=
           prEvent_congr_iff _ fun u ↦ by
@@ -177,7 +174,7 @@ theorem prob_roundBadAt_le (cache : Merkle.Cache F Digest) (block : Nat → List
       _ ≤ _ := (le_max_left _ _).trans (le_max_right _ _)
   · -- batching
     set T := prefixTranscript S cache block fun j ↦ samples.getD j d
-    calc _ = Pr{let u ← $ᵗ (Digest × Vector F S.streamLen)}[(fun x ↦
+    calc _ = Pr{let u ← $ᵗ (Digest F × Vector F S.streamLen)}[(fun x ↦
           BatchBad S δ δ' T.trace T.alpha T.quotient T.zeta T.openings (extEquiv x))
             fun j ↦ u.2.toList.getD j.val 0] :=
           prEvent_congr_iff _ fun u ↦ by
@@ -209,7 +206,7 @@ theorem prob_roundBadAt_le (cache : Merkle.Cache F Digest) (block : Nat → List
     have hfri (v : Vector F S.streamLen) :
         (prefixTranscript S cache block fun j ↦ (samples ++ [v]).getD j d).fri = fri := by
       rw [hfri_def, prefixTranscript_fri_eq]
-    have hle : powFraction S.params.commitPowBits * friFoldError S δ loss f ≤
+    have hle : powFraction F S.params.commitPowBits * friFoldError S δ loss f ≤
         roundBound S δ δ' loss :=
       (mul_le_mul_right (le_iSup (friFoldError S δ loss) f) _).trans
         ((le_max_left _ _).trans ((le_max_right _ _).trans
@@ -217,7 +214,7 @@ theorem prob_roundBadAt_le (cache : Merkle.Cache F Digest) (block : Nat → List
     refine le_trans ?_ hle
     simp only [hβ, hfri]
     by_cases hb : S.params.commitPowBits = 0
-    · calc _ = Pr{let u ← $ᵗ (Digest × Vector F S.streamLen)}[(fun x ↦
+    · calc _ = Pr{let u ← $ᵗ (Digest F × Vector F S.streamLen)}[(fun x ↦
             FoldBad S δ loss f fri (c * extEquiv x)) fun j ↦ u.2.toList.getD j.val 0] :=
             prEvent_congr_iff _ fun u ↦ by
               simp only [hb, ne_eq, not_true_eq_false, IsEmpty.forall_iff, true_and,
@@ -230,25 +227,25 @@ theorem prob_roundBadAt_le (cache : Merkle.Cache F Digest) (block : Nat → List
             exact SampleableType.prEvent_uniformSample_equiv (Equiv.mulLeft₀ c hc) _
         _ ≤ friFoldError S δ loss f := prob_foldBad_le S δ loss f fri
         _ = _ := by rw [hb, powFraction_zero, one_mul]
-    · calc _ = Pr{let u ← $ᵗ (Digest × Vector F S.streamLen)}[(fun x ↦
-            (powExtEquiv x).1.val % 2 ^ S.params.commitPowBits = 0 ∧
+    · calc _ = Pr{let u ← $ᵗ (Digest F × Vector F S.streamLen)}[(fun x ↦
+            CompPoly.CanonicalNat.toNat (powExtEquiv x).1 % 2 ^ S.params.commitPowBits = 0 ∧
               FoldBad S δ loss f fri (c * (powExtEquiv x).2))
               fun j ↦ u.2.toList.getD j.val 0] :=
             prEvent_congr_iff _ fun u ↦ by
               simp only [hb, ne_eq, not_false_eq_true, forall_const, challengeOffset,
                 ↓reduceIte, extAt_eq, powExtEquiv_apply, Fin.val_zero, Fin.val_succ]
               simp only [Nat.add_comm 1]
-        _ = Pr{let z ← $ᵗ (𝔽 × 𝕂)}[z.1.val % 2 ^ S.params.commitPowBits = 0 ∧
+        _ = Pr{let z ← $ᵗ (F × 𝕂)}[CompPoly.CanonicalNat.toNat z.1 % 2 ^ S.params.commitPowBits = 0 ∧
               FoldBad S δ loss f fri z.2] := by
             refine (prob_answer_prefix S.streamLen (Challenge.d EF + 1) (by omega) (fun x ↦
-              (powExtEquiv x).1.val % 2 ^ S.params.commitPowBits = 0 ∧
+              CompPoly.CanonicalNat.toNat (powExtEquiv x).1 % 2 ^ S.params.commitPowBits = 0 ∧
                 FoldBad S δ loss f fri (c * (powExtEquiv x).2))).trans ?_
             refine (SampleableType.prEvent_uniformSample_equiv powExtEquiv
-              (fun z ↦ z.1.val % 2 ^ S.params.commitPowBits = 0 ∧
+              (fun z ↦ CompPoly.CanonicalNat.toNat z.1 % 2 ^ S.params.commitPowBits = 0 ∧
                 FoldBad S δ loss f fri (c * z.2))).trans ?_
             exact SampleableType.prEvent_uniformSample_equiv
-              (Equiv.prodCongr (Equiv.refl 𝔽) (Equiv.mulLeft₀ c hc))
-              (fun z ↦ z.1.val % 2 ^ S.params.commitPowBits = 0 ∧ FoldBad S δ loss f fri z.2)
+              (Equiv.prodCongr (Equiv.refl F) (Equiv.mulLeft₀ c hc))
+              (fun z ↦ CompPoly.CanonicalNat.toNat z.1 % 2 ^ S.params.commitPowBits = 0 ∧ FoldBad S δ loss f fri z.2)
         _ ≤ _ := prob_foldRound_le S δ loss f fri
   · -- the queries
     set T := prefixTranscript S cache block fun j ↦ samples.getD j d
@@ -256,17 +253,17 @@ theorem prob_roundBadAt_le (cache : Merkle.Cache F Digest) (block : Nat → List
         (prefixTranscript S cache block fun j ↦ (samples ++ [v]).getD j d) = T :=
       prefixTranscript_sample_congr S cache block fun j hj ↦
         getD_append_singleton_lt samples v d j (by omega)
-    have hle : powFraction S.params.queryPowBits * friQueryError S δ loss ≤
+    have hle : powFraction F S.params.queryPowBits * friQueryError S δ loss ≤
         roundBound S δ δ' loss :=
       (le_max_right _ _).trans ((le_max_right _ _).trans
         ((le_max_right _ _).trans (le_max_right _ _)))
     refine le_trans ?_ hle
     refine le_trans (le_of_eq ?_) (prob_queryBad_le S δ loss T)
     by_cases hb : S.params.queryPowBits = 0
-    · have hpow (a : 𝔽) (q : Fin S.params.numQueries → 𝔽) :
+    · have hpow (a : F) (q : Fin S.params.numQueries → F) :
           QueryBad S δ loss T a q ↔ QueryBad S δ loss T 0 q := by
         simp only [QueryBad, hb, pow_zero, Nat.mod_one]
-      calc _ = Pr{let u ← $ᵗ (Digest × Vector F S.streamLen)}[(fun x ↦
+      calc _ = Pr{let u ← $ᵗ (Digest F × Vector F S.streamLen)}[(fun x ↦
             QueryBad S δ loss T 0 (fieldsEquiv _ x)) fun j ↦ u.2.toList.getD j.val 0] :=
             prEvent_congr_iff _ fun u ↦ by
               have hp : powAt S u.2 = 0 := by simp only [powAt, hb, ↓reduceIte]
@@ -276,20 +273,20 @@ theorem prob_roundBadAt_le (cache : Merkle.Cache F Digest) (block : Nat → List
                 simp only [queriesAt, challengeOffset, hb, ↓reduceIte, Nat.zero_add]
                 rfl
               rw [hT, hp, hqs]
-        _ = Pr{let q ← $ᵗ (Fin S.params.numQueries → 𝔽)}[QueryBad S δ loss T 0 q] := by
+        _ = Pr{let q ← $ᵗ (Fin S.params.numQueries → F)}[QueryBad S δ loss T 0 q] := by
             refine (prob_answer_prefix S.streamLen S.params.numQueries (by omega)
               (fun x ↦ QueryBad S δ loss T 0 (fieldsEquiv _ x))).trans ?_
             exact SampleableType.prEvent_uniformSample_equiv (fieldsEquiv _) _
         _ = _ := by
-            refine Eq.trans ?_ (prEvent_congr_iff ($ᵗ (𝔽 × (Fin S.params.numQueries → 𝔽)))
+            refine Eq.trans ?_ (prEvent_congr_iff ($ᵗ (F × (Fin S.params.numQueries → F)))
               fun z ↦ hpow z.1 z.2).symm
             have h := SampleableType.prEvent_uniformSample_equiv
-              (Equiv.prodComm 𝔽 (Fin S.params.numQueries → 𝔽))
+              (Equiv.prodComm F (Fin S.params.numQueries → F))
               (fun z ↦ QueryBad S δ loss T 0 z.1)
             simp only [Equiv.prodComm_apply, Prod.fst_swap] at h
             rw [h, SampleableType.prEvent_uniformSample_fst
               (p := fun q ↦ QueryBad S δ loss T 0 q)]
-    · calc _ = Pr{let u ← $ᵗ (Digest × Vector F S.streamLen)}[(fun x ↦
+    · calc _ = Pr{let u ← $ᵗ (Digest F × Vector F S.streamLen)}[(fun x ↦
             QueryBad S δ loss T (powFieldsEquiv _ x).1 (powFieldsEquiv _ x).2)
               fun j ↦ u.2.toList.getD j.val 0] :=
             prEvent_congr_iff _ fun u ↦ by
@@ -301,7 +298,7 @@ theorem prob_roundBadAt_le (cache : Merkle.Cache F Digest) (block : Nat → List
                   (fun j : Fin (S.params.numQueries + 1) ↦ u.2.toList.getD j.val 0)).2 := by
                 funext j
                 simp only [queriesAt, challengeOffset, hb, ↓reduceIte]
-                show _ = FastField.toField (u.2.toList.getD (j.val + 1) 0)
+                show _ = (u.2.toList.getD (j.val + 1) 0)
                 rw [Nat.add_comm]
               rw [hT, hp, hqs]
         _ = _ := by
@@ -313,7 +310,7 @@ theorem prob_roundBadAt_le (cache : Merkle.Cache F Digest) (block : Nat → List
 
 /-- **A fresh duplex answer.** After any queries `pre`, a uniform answer to any call is
 round-bad with probability at most the largest round error. -/
-theorem prob_roundBad_le (pre : QueryLog (spec S.streamLen)) (t : Query) :
+theorem prob_roundBad_le (pre : QueryLog (spec F S.streamLen)) (t : Query F) :
     Pr{let u ← $ᵗ (Answer S.streamLen t)}[RoundBad S publicValues δ δ' loss pre t u] ≤
       roundBound S δ δ' loss := by
   cases t with
@@ -345,14 +342,14 @@ end Bounds
 
 /-! ### Digest clashes -/
 
-/-- `|Digest| = |𝔽| ^ 8`. -/
-theorem card_digest : Fintype.card Digest = Fintype.card 𝔽 ^ 8 := by
+/-- `|Digest| = |F| ^ 8`. -/
+theorem card_digest : Fintype.card (Digest F) = Fintype.card F ^ 8 := by
   rw [Fintype.card_congr (arrayVectorEquivFin F 8), Fintype.card_fun, Fintype.card_fin,
-    Fintype.card_congr KoalaBear.Fast.ringEquiv.toEquiv]
+    Fintype.card_congr (Equiv.refl F)]
 
 /-- An answer's digest is uniform. -/
-theorem prob_digestOf_eq_le (K : Nat) (t : Query) (x : Digest) :
-    Pr{let u ← $ᵗ (Answer K t)}[digestOf t u = x] ≤ (Fintype.card Digest : ℝ≥0∞)⁻¹ := by
+theorem prob_digestOf_eq_le (K : Nat) (t : Query F) (x : Digest F) :
+    Pr{let u ← $ᵗ (Answer K t)}[digestOf t u = x] ≤ (Fintype.card (Digest F) : ℝ≥0∞)⁻¹ := by
   cases t with
   | duplex cap input => exact (prEvent_uniformSample_fst_eq (β := Vector F K) x).le
   | leaf row => exact (SampleableType.prEvent_uniformSample_eq_singleton x).le
@@ -360,10 +357,10 @@ theorem prob_digestOf_eq_le (K : Nat) (t : Query) (x : Digest) :
 
 /-- A fresh answer after fewer than `n` queries clashes with probability at most
 `3 n / |Digest|`. -/
-theorem prob_clash_le (K n : Nat) (pre : QueryLog (spec K)) (hpre : pre.length < n)
-    (t : Query) :
+theorem prob_clash_le (K n : Nat) (pre : QueryLog (spec F K)) (hpre : pre.length < n)
+    (t : Query F) :
     Pr{let u ← $ᵗ (Answer K t)}[Clash pre t u] ≤
-      (3 * n : ℕ) * (Fintype.card Digest : ℝ≥0∞)⁻¹ := by
+      (3 * n : ℕ) * (Fintype.card (Digest F) : ℝ≥0∞)⁻¹ := by
   refine (prEvent_digestClash_le digestOf (prob_digestOf_eq_le K) keyDigests 2
     length_keyDigests_le [initCap] pre t).trans ?_
   gcongr
