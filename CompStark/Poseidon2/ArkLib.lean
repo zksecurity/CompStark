@@ -10,8 +10,11 @@ public import ArkLib.Data.Hash.Poseidon2
 /-! # CompStark's Poseidon2 is ArkLib's
 
 ArkLib's Poseidon2 (`_root_.Poseidon2.permute`, a translation of leanSpec over
-`KoalaBear.Field`) agrees with ours on Plonky3's KoalaBear instances at width 16 and 24
-(`permute_arkLib16`, `permute_arkLib24`).
+`KoalaBear.Field`) agrees with ours whenever the parameters do (`permute_eq`). ArkLib's instances
+`params16` and `params24` carry the round constants Plonky3 used before it regenerated them with
+the correct Grain LFSR (Plonky3#1398); with Plonky3's current constants in ArkLib's flat layout
+(`plonky3Params16`, `plonky3Params24`), ArkLib's permutation is Plonky3's KoalaBear instance at
+width 16 and 24 (`permute_arkLib16`, `permute_arkLib24`).
 -/
 
 @[expose] public section
@@ -140,22 +143,43 @@ theorem permute_eq (params : _root_.Poseidon2.Params) (P : Params 𝔽 params.wi
     List.foldl_map, externalLinear_eq, fullRound_eq params P hd, partialRound_eq params P hd hV,
     Fin.getElem_fin]
 
-/-- Plonky3's width-16 instance is ArkLib's `params16`. -/
+/-- Round constants in ArkLib's flat layout: the initial full rounds, the partial rounds, then
+the terminal full rounds. -/
+def flatConstants {w : Nat} (initial : List (Vector Nat w)) (internal : List Nat)
+    (terminal : List (Vector Nat w)) (n : Nat) : Vector 𝔽 n :=
+  Vector.ofFn fun i ↦ ((initial.flatMap Vector.toList ++ internal ++
+    terminal.flatMap Vector.toList).getD i 0 : 𝔽)
+
+/-- Plonky3's width-16 instance in ArkLib's parameters: `params16` with Plonky3's round
+constants. -/
+def plonky3Params16 : _root_.Poseidon2.Params :=
+  { _root_.Poseidon2.params16 with
+    roundConstants := flatConstants KoalaBear.Constants.initial16 KoalaBear.Constants.internal16
+      KoalaBear.Constants.terminal16 _ }
+
+/-- Plonky3's width-24 instance in ArkLib's parameters: `params24` with Plonky3's round
+constants. -/
+def plonky3Params24 : _root_.Poseidon2.Params :=
+  { _root_.Poseidon2.params24 with
+    roundConstants := flatConstants KoalaBear.Constants.initial24 KoalaBear.Constants.internal24
+      KoalaBear.Constants.terminal24 _ }
+
+/-- Plonky3's width-16 instance is ArkLib's permutation on `plonky3Params16`. -/
 theorem permute_arkLib16 (s : Vector 𝔽 16) :
-    permute (KoalaBear.width16 𝔽) s = _root_.Poseidon2.permute _root_.Poseidon2.params16 s := by
-  apply permute_eq _root_.Poseidon2.params16 (KoalaBear.width16 𝔽) rfl
-  · simp only [KoalaBear.width16, Params.ofNat, KoalaBear.diagonal16, _root_.Poseidon2.params16,
-      one_div, neg_div]
+    permute (KoalaBear.width16 𝔽) s = _root_.Poseidon2.permute plonky3Params16 s := by
+  apply permute_eq plonky3Params16 (KoalaBear.width16 𝔽) rfl
+  · simp only [KoalaBear.width16, Params.ofNat, KoalaBear.diagonal16, plonky3Params16,
+      _root_.Poseidon2.params16, one_div, neg_div]
   · decide +kernel
   · decide +kernel
   · decide +kernel
 
-/-- Plonky3's width-24 instance is ArkLib's `params24`. -/
+/-- Plonky3's width-24 instance is ArkLib's permutation on `plonky3Params24`. -/
 theorem permute_arkLib24 (s : Vector 𝔽 24) :
-    permute (KoalaBear.width24 𝔽) s = _root_.Poseidon2.permute _root_.Poseidon2.params24 s := by
-  apply permute_eq _root_.Poseidon2.params24 (KoalaBear.width24 𝔽) rfl
-  · simp only [KoalaBear.width24, Params.ofNat, KoalaBear.diagonal24, _root_.Poseidon2.params24,
-      one_div, neg_div]
+    permute (KoalaBear.width24 𝔽) s = _root_.Poseidon2.permute plonky3Params24 s := by
+  apply permute_eq plonky3Params24 (KoalaBear.width24 𝔽) rfl
+  · simp only [KoalaBear.width24, Params.ofNat, KoalaBear.diagonal24, plonky3Params24,
+      _root_.Poseidon2.params24, one_div, neg_div]
   · decide +kernel
   · decide +kernel
   · decide +kernel
