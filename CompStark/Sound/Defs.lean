@@ -5,14 +5,15 @@ Released under Apache 2.0 license as described in the file LICENSE.
 module
 
 public import ArkLib.ProofSystem.Fri.Spec.Soundness
+public import CompStark.Sound.FriSchedule
 public import CompStark.Stark.Config
 public import CompStark.Stark.Points
 
 /-! # Constructions behind the IOP model
 
-The domain `L` as an ArkLib smooth coset FFT domain, Plonky3's folding schedule, and the
-acceptance probability of ArkLib's FRI oracle reduction against its best prover.
-`CompStark/Iop.lean` states the protocol with them.
+The domain `L` as an ArkLib smooth coset FFT domain and Plonky3's folding schedule for a single
+input. `CompStark/Iop.lean` states the protocol with them and FRI with injected inputs
+(`CompStark/Sound/FriGame.lean`).
 -/
 
 @[expose] public section
@@ -84,76 +85,7 @@ def folds (maxLogArity : Nat) : Nat → List ℕ+
     ⟨la, by omega⟩ :: folds maxLogArity (remaining + 1 - la)
   decreasing_by omega
 
-/-- The challenges of ArkLib's FRI protocol, sampled uniformly. -/
-noncomputable instance friChallenges {n k : Nat} (ω : SmoothCosetFftDomain n 𝕂)
-    (s : Fin (k + 1) → ℕ+) (l : Nat) :
-    ∀ j, SampleableType ((Fri.Spec.pSpec k (ω := ω) s l).Challenge j) :=
-  @ProtocolSpec.instSampleableTypeChallengeAppend _ _ _ _
-    (@ProtocolSpec.instSampleableTypeChallengeAppend _ _ _ _
-      (@ProtocolSpec.instSampleableTypeChallengeSeqCompose _ _ _
-        (fun _ _ ↦ SampleableType.ofFintype _))
-      (fun _ ↦ SampleableType.ofFintype _))
-    (fun _ ↦ SampleableType.ofFintype _)
-
-/-- The folding arities of a nonempty list, indexed by `Fin (k + 1)`. -/
-def foldsAt (f : ℕ+) (fs : List ℕ+) (j : Fin (fs.length + 1)) : ℕ+ := (f :: fs).get j
-
 /-- FRI's final degree bound `2 ^ logFinal`. -/
 def finalDegree (logFinal : Nat) : ℕ+ := ⟨2 ^ logFinal, Nat.two_pow_pos logFinal⟩
-
-/-- FRI's input statement: no challenges yet, and `word` as the one initial oracle, a function on
-the domain's points. -/
-noncomputable def friInput {n k : Nat} (ω : SmoothCosetFftDomain n 𝕂) (s : Fin (k + 1) → ℕ+)
-    (word : Fin (2 ^ n) → 𝕂) :
-    Fri.Spec.Statement 𝕂 (0 : Fin (k + 1)) × ∀ j, Fri.Spec.OracleStatement s ω 0 j :=
-  (Fin.elim0, fun j ↦ cast (by
-    rw [Fin.fin_one_eq_zero j]
-    simp only [Fri.Spec.OracleStatement, finRangeTo, Fin.val_zero, List.take_zero,
-      List.toFinset_nil, Finset.sum_empty]
-    rfl)
-    fun x : (ω.subdomain 0).toFinset ↦ word ((ω.subdomain 0).equivToFinset.symm x))
-
-/-- The trivial implementation of the empty oracle set. -/
-def emptyImpl : QueryImpl (OracleSpec.emptySpec.{0, 0}) (StateT Unit ProbComp) := fun q ↦ q.elim
-
-/-- The probability that ArkLib's FRI oracle reduction on the domain `ω` accepts `word`, against
-its best prover: folding by `folds`, a final polynomial of degree below `2 ^ logFinal`, and
-`numQueries` queries. `1` without folds. -/
-noncomputable def friAcceptanceOf {n : Nat} (ω : SmoothCosetFftDomain n 𝕂) (folds : List ℕ+)
-    (logFinal numQueries : Nat) (word : Fin (2 ^ n) → 𝕂) : ENNReal :=
-  match folds with
-  | [] => 1
-  | f :: fs =>
-    let s := foldsAt f fs
-    let d := finalDegree logFinal
-    if hdom : 2 ^ (∑ j, (s j).val) * d.val ≤ 2 ^ n then
-      ⨆ (WitIn : Type) (WitOut : Type) (witIn : WitIn)
-        (prover : Prover []ₒ (Fri.Spec.Statement 𝕂 (0 : Fin (fs.length + 1)) ×
-          ∀ j, Fri.Spec.OracleStatement s ω 0 j) WitIn
-          (Fri.Spec.FinalStatement 𝕂 fs.length × ∀ j, Fri.Spec.FinalOracleStatement s ω j)
-          WitOut (Fri.Spec.pSpec fs.length (ω := ω) s numQueries)),
-        let pImpl : QueryImpl ([]ₒ + [(Fri.Spec.pSpec fs.length (ω := ω) s numQueries).Challenge]ₒ)
-            (StateT Unit ProbComp) := emptyImpl.addLift ProtocolSpec.challengeQueryImpl
-        letI reduction := Reduction.mk prover
-          (Fri.Spec.reduction fs.length s d hdom numQueries).verifier.toVerifier
-        Pr{let ⟨_, stmtOut⟩ ← OptionT.mk do
-          (simulateQ pImpl (reduction.run (friInput ω s word) witIn).run).run'
-            (← (pure () : ProbComp Unit))}[stmtOut ∈ Set.univ]
-    else 1
-
-/-- FRI's soundness error from lossy correlated agreement (`Fri.Spec.soundnessErrorLossy`) for the
-reduction of `friAcceptanceOf`, at proximity `δ` and the best proximity loss: one lossy
-correlated-agreement error per fold and `(1 - δ + #folds · loss) ^ numQueries`. `1` without
-folds. -/
-noncomputable def friErrorOf {n : Nat} (ω : SmoothCosetFftDomain n 𝕂) (folds : List ℕ+)
-    (logFinal numQueries : Nat) (δ : NNReal) : ENNReal :=
-  match folds with
-  | [] => 1
-  | f :: fs =>
-    let s := foldsAt f fs
-    let d := finalDegree logFinal
-    if 2 ^ (∑ j, (s j).val) * d.val ≤ 2 ^ n then
-      ⨅ loss : NNReal, (Fri.Spec.soundnessErrorLossy (ω := ω) s d numQueries δ δ loss : ENNReal)
-    else 1
 
 end CompStark.Sound

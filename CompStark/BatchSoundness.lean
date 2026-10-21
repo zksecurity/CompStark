@@ -14,11 +14,13 @@ AIR, the verifier accepts with probability at most the knowledge error
 (`CompStark/BatchSoundnessError.lean`).
 
 The proof (`Sound/BatchAssembly.lean`) finds an instance none of whose close traces satisfies its
-AIR and runs the single STARK's argument (`CompStark/Soundness.lean`) on it: FRI rejects words far
-from low degree; batching by powers keeps DEEP quotients that are not near on a common set far;
-the DEEP quotients of all opened words near on a common set make that instance's near too, which
-forces its claimed values to be those of a candidate trace and quotient; and its constraint check
-at `ζ` is a polynomial identity that a failing candidate satisfies at few points.
+AIR and runs the single STARK's argument (`CompStark/Soundness.lean`) on it, among the instances of
+its domain's size: FRI rejects when the batched word of that size is far from low degree, be it
+FRI's word or injected mid-folding (`Sound/FriGame.lean`); batching by powers keeps DEEP quotients
+that are not near on a common set far; the DEEP quotients of that size near on a common set make
+the instance's near too, which forces its claimed values to be those of a candidate trace and
+quotient; and its constraint check at `ζ` is a polynomial identity that a failing candidate
+satisfies at few points.
 -/
 
 @[expose] public section
@@ -34,7 +36,7 @@ every instance at any `δ'` below `1 - rate`. -/
 theorem batchKnowledgeSoundness (S : Batch.Setup EF) (publicValues : Fin S.k → List F)
     (prover : Batch.Prover S) (δ δ' : NNReal) (hδ' : (δ' : ℝ) < 1 - S.rate) :
     (∀ traces ∈ Batch.closeTraces S δ' prover.trace,
-      ¬ ∀ i, (S.air i).Satisfied S.logN (traces i) (publicValues i)) →
+      ¬ ∀ i, (S.air i).Satisfied (S.logN i) (traces i) (publicValues i)) →
       Batch.acceptance publicValues prover ≤ Batch.knowledgeError S δ δ' :=
   batchAcceptance_le S publicValues prover δ δ' hδ'
 

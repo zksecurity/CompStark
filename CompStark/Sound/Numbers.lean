@@ -174,141 +174,152 @@ theorem folds_one : ∀ r, folds 1 r = List.replicate r 1
     rw [show r + 1 - max 1 (min 1 (r + 1)) = r by omega]
     exact folds_one r
 
-theorem foldsAt_replicate (m : ℕ) (j : Fin ((List.replicate m (1 : ℕ+)).length + 1)) :
-    foldsAt 1 (List.replicate m 1) j = 1 := by
-  cases j using Fin.cases with
-  | zero => rfl
-  | succ j =>
-    simp only [foldsAt, List.get_eq_getElem, Fin.val_succ, List.getElem_cons_succ,
-      List.getElem_replicate]
-
-/-- At arity `2`, `i` folds precede fold `i`. -/
-theorem foldingPrefix_replicate (m : ℕ) (i : Fin ((List.replicate m (1 : ℕ+)).length + 2)) :
-    Fri.Spec.foldingPrefix (foldsAt 1 (List.replicate m 1)) i = i := by
-  induction i using Fin.induction with
-  | zero => rw [Fri.Spec.foldingPrefix_zero, Fin.val_zero]
-  | succ i ih =>
-    rw [Fri.Spec.foldingPrefix_succ, ih, foldsAt_replicate, PNat.one_coe, Fin.val_succ,
-      Fin.val_castSucc]
-
-/-- The folds onto domains smaller than `2 ^ t` sum to at most `2 ^ t`: with `r ≤ N` folds,
-`2 ^ min (N - r) t` more still fit. -/
-theorem sum_small_add_le (N t : ℕ) : ∀ r, r ≤ N →
-    ∑ j ∈ Finset.range r, (if t + j + 1 ≤ N then 0 else 2 ^ (N - j - 1)) +
-      2 ^ min (N - r) t ≤ 2 ^ t
-  | 0, _ => by
-    rw [Finset.sum_range_zero, zero_add]
-    exact Nat.pow_le_pow_right two_pos (min_le_right _ _)
-  | r + 1, h => by
-    have ih := sum_small_add_le N t r (by omega)
-    rw [Finset.sum_range_succ]
-    obtain ⟨a, ha⟩ : ∃ a, N - r = a + 1 := ⟨N - r - 1, by omega⟩
-    rw [show N - (r + 1) = a by omega, show N - r - 1 = a by omega]
-    rw [ha] at ih
-    by_cases hta : t + r + 1 ≤ N
-    · rw [ite_eq_left hta, add_zero, min_eq_right (by omega)]
-      rwa [min_eq_right (by omega)] at ih
-    · rw [ite_eq_right hta, min_eq_left (by omega), add_assoc, ← two_mul, ← pow_succ']
-      by_cases hat : a + 1 ≤ t
-      · rwa [min_eq_left hat] at ih
-      · rw [min_eq_right (by omega)] at ih
-        rw [show a + 1 = t by omega]
-        exact ih
-
-/-- At most `N - t` folds are onto domains of at least `2 ^ t` points. -/
-theorem card_large_le (N t r : ℕ) :
-    ((Finset.range r).filter fun j ↦ t + j + 1 ≤ N).card ≤ N - t := by
-  refine (Finset.card_le_card fun j hj ↦ ?_).trans (Finset.card_range (N - t)).le
-  rw [Finset.mem_filter] at hj
-  exact Finset.mem_range.mpr (by omega)
-
-/-- FRI's error with arity `2` and `m + 1` folds at rate `1/c`, from lossy correlated agreement
-at a proximity loss `loss > 0`, for a radius `δ ≤ (1 - 1/c) / 2 - 1 / 2 ^ t`: the at most `N - t`
-folds onto domains of at least `2 ^ t` points contribute the lossy bound
-`max(T₁, T₂, δ_int / loss) / |𝕂|` each, the smaller ones the powers MCA bound, their domains
-`2 ^ t` together, and the queries `(1 - δ + (m + 1) loss) ^ l`. -/
-theorem friErrorOf_replicate_le {N : ℕ} (ω : Domain.SmoothCosetFftDomain N 𝕂) (m : ℕ)
-    (logFinal l : ℕ) (c t : ℕ) (hc : 0 < c) (δ δ_int loss : ℝ≥0)
-    (hδ : (δ : ℝ) ≤ (1 - 1 / c) / 2 - 1 / 2 ^ t) (h_pos : 0 < δ) (h_lt : δ < δ_int)
-    (h_loss : 0 < loss) (h : c * 2 ^ (m + 1 + logFinal) = 2 ^ N) :
-    friErrorOf ω (List.replicate (m + 1) 1) logFinal l δ ≤
-      ENNReal.ofReal ((N - t : ℕ) * LossyMca.lossyBound 1 c δ δ_int loss) /
-          (Fintype.card 𝕂 : ENNReal) +
-        (2 ^ t : ℕ) / (Fintype.card 𝕂 : ENNReal) +
-        ((Real.toNNReal (1 - δ + (m + 1) * loss) ^ l : ℝ≥0) : ENNReal) := by
-  have hsum : ∑ j, (foldsAt 1 (List.replicate m 1) j).val = m + 1 := by
-    simp only [foldsAt_replicate, PNat.one_coe, Finset.sum_const, Finset.card_univ,
-      Fintype.card_fin, List.length_replicate, smul_eq_mul, mul_one]
-  have hh : c * (2 ^ (∑ j, (foldsAt 1 (List.replicate m 1) j).val) *
-      (finalDegree logFinal).val) = 2 ^ N := by
-    change c * (2 ^ _ * 2 ^ logFinal) = 2 ^ N
-    rw [hsum, ← pow_add]
-    exact h
-  have hdom : 2 ^ (∑ j, (foldsAt 1 (List.replicate m 1) j).val) * (finalDegree logFinal).val ≤
-      2 ^ N := (Nat.le_mul_of_pos_left _ hc).trans hh.le
-  have hmN : m + 1 ≤ N := by
-    by_contra hlt
-    have : 2 ^ N < 2 ^ (m + 1 + logFinal) := Nat.pow_lt_pow_right (by norm_num) (by omega)
-    have := Nat.le_mul_of_pos_left (2 ^ (m + 1 + logFinal)) hc
-    omega
+/-- An arity-`2` fold's error onto a domain `D` of `2 ^ m` points at rate `1/c`, over `M + 1`
+words (the fold's two coefficient words, and an injected input): `M · max(T₁, T₂, δ_int / loss)`
+over `|𝕂|` if `D` has at least `2 ^ t` points (`lossyMcaError_le`), and the powers MCA bound
+`M · 2 ^ m` over `|𝕂|` otherwise. -/
+theorem levelError_le {m : ℕ} (D : Domain.SmoothCosetFftDomain m 𝕂) (M c t deg : ℕ) (hc : 0 < c)
+    (hdeg : c * deg = 2 ^ m) (δ δ_int loss : ℝ≥0) (hδ : (δ : ℝ) ≤ (1 - 1 / c) / 2 - 1 / 2 ^ t)
+    (h_pos : 0 < δ) (h_lt : δ < δ_int) (h_loss : 0 < loss) :
+    lossyMcaError (univariatePowersGenerator 𝕂 M) (ReedSolomon.code (D : Fin (2 ^ m) ↪ 𝕂) deg)
+        δ loss ≤
+      if t ≤ m then ENNReal.ofReal (M * LossyMca.lossyBound 1 c δ δ_int loss / Fintype.card 𝕂)
+      else ((M * 2 ^ m : ℕ) : ENNReal) / Fintype.card 𝕂 := by
   have hcR : (0 : ℝ) < c := by exact_mod_cast hc
-  have hudr : (δ : ℝ) * (2 * c) ≤ c - 1 := by
-    have h2 : (0 : ℝ) < 1 / 2 ^ t := by positivity
-    have h3 : ((1 - 1 / c) / 2 : ℝ) * (2 * c) = c - 1 := by field_simp
-    nlinarith
-  have hK : (0 : ℝ) < Fintype.card 𝕂 := by exact_mod_cast Fintype.card_pos
-  set B := LossyMca.lossyBound 1 c δ δ_int loss
-  rw [List.replicate_succ]
-  simp only [friErrorOf, hdom, ↓reduceIte]
-  refine (iInf_le _ loss).trans ?_
-  simp only [Fri.Spec.soundnessErrorLossy, ENNReal.coe_add, ENNReal.ofNNReal_finsetSum]
-  refine add_le_add ?_ (le_of_eq ?_)
-  · -- Each fold: the lossy bound on large domains, the powers MCA bound on small ones.
-    have hfold : ∀ j : Fin ((List.replicate m (1 : ℕ+)).length + 1),
-        (Fri.Spec.foldingErrorLossy (ω := ω) (foldsAt 1 (List.replicate m 1))
-          (finalDegree logFinal) δ loss j : ENNReal) ≤
-        if t + j + 1 ≤ N then ENNReal.ofReal B / Fintype.card 𝕂
-        else ((2 ^ (N - j - 1) : ℕ) : ENNReal) / Fintype.card 𝕂 := by
-      intro j
-      split_ifs with hj
-      · refine (foldingErrorLossy_le c _ _ j hh δ δ_int loss ?_ h_pos h_lt h_loss).trans
-          (le_of_eq ?_)
-        · simp only [foldingPrefix_replicate, foldsAt_replicate, PNat.one_coe,
-            Fin.val_castSucc]
-          have hpow : (2 : ℝ) ^ t ≤ ((2 ^ (N - j - 1) : ℕ) : ℝ) := by
-            push_cast
-            exact pow_le_pow_right₀ (by norm_num) (by omega)
-          have := one_div_le_one_div_of_le (by positivity) hpow
-          linarith
-        · simp only [foldsAt_replicate, PNat.one_coe, pow_one]
-          rw [show ((2 : ℝ) - 1) = 1 by norm_num, one_mul, ENNReal.ofReal_div_of_pos hK,
-            ENNReal.ofReal_natCast]
-      · refine (foldingErrorLossy_le_foldingError _ _ j _ _ loss.coe_nonneg).trans
-          ((foldingError_le c hc _ _ j hh δ hudr).trans (le_of_eq ?_))
-        simp only [foldsAt_replicate, foldingPrefix_replicate, PNat.one_coe, pow_one,
-          Nat.add_one_sub_one, one_mul, Fin.val_castSucc]
-    refine (Finset.sum_le_sum fun j _ ↦ hfold j).trans ?_
-    rw [Fin.sum_univ_eq_sum_range (fun j ↦ if t + j + 1 ≤ N then ENNReal.ofReal B /
-      Fintype.card 𝕂 else ((2 ^ (N - j - 1) : ℕ) : ENNReal) / Fintype.card 𝕂),
-      List.length_replicate, Finset.sum_ite, Finset.sum_const, nsmul_eq_mul,
-      ← ENNReal.sum_div, ← Nat.cast_sum]
-    refine add_le_add ?_ (ENNReal.div_le_div_right (Nat.cast_le.mpr ?_) _)
-    · rw [← mul_div_assoc]
-      refine ENNReal.div_le_div_right ?_ _
-      rw [ENNReal.ofReal_mul (Nat.cast_nonneg _), ENNReal.ofReal_natCast]
-      exact mul_le_mul_left (Nat.cast_le.mpr (card_large_le N t (m + 1))) _
-    · have := sum_small_add_le N t (m + 1) hmN
-      rw [Finset.sum_filter] at *
-      calc ∑ j ∈ Finset.range (m + 1), (if ¬ t + j + 1 ≤ N then 2 ^ (N - j - 1) else 0)
-          = ∑ j ∈ Finset.range (m + 1), (if t + j + 1 ≤ N then 0 else 2 ^ (N - j - 1)) :=
-            Finset.sum_congr rfl fun j _ ↦ by split_ifs <;> rfl
-        _ ≤ 2 ^ t := le_trans (Nat.le_add_right _ _) this
-  · -- The queries: `min` picks the larger loss `(m + 1) loss`.
-    congr 2
-    simp only [List.length_replicate]
-    rw [min_eq_right (by nlinarith [loss.coe_nonneg])]
-    congr 1
-    ring
+  have hdegpos : 0 < deg := Nat.pos_of_ne_zero fun h ↦ by
+    rw [h, mul_zero] at hdeg
+    exact (Nat.two_pow_pos m).ne' hdeg.symm
+  have hrate : (deg : ℝ) / (Fintype.card (Fin (2 ^ m)) : ℝ) = ((1 : ℕ) : ℝ) / (c : ℕ) := by
+    rw [Fintype.card_fin, ← hdeg, Nat.cast_mul, Nat.cast_one]
+    have : (0 : ℝ) < deg := by exact_mod_cast hdegpos
+    field_simp
+  split_ifs with ht
+  · rw [← lossyBound_congr hrate]
+    refine LossyMca.lossyMcaError_le _ _ _ δ δ_int loss ?_ h_pos h_lt h_loss
+    rw [hrate, Fintype.card_fin, Nat.cast_one]
+    have hpow : (2 : ℝ) ^ t ≤ ((2 ^ m : ℕ) : ℝ) := by
+      push_cast
+      exact pow_le_pow_right₀ (by norm_num) ht
+    have := one_div_le_one_div_of_le (by positivity) hpow
+    push_cast at this ⊢
+    linarith
+  · have : NeZero (2 ^ m) := ⟨(Nat.two_pow_pos m).ne'⟩
+    have : NeZero deg := ⟨hdegpos.ne'⟩
+    have hudr : (δ : ℝ) * (2 * c) ≤ c - 1 := by
+      have h2 : (0 : ℝ) < 1 / 2 ^ t := by positivity
+      have h3 : ((1 - 1 / c) / 2 : ℝ) * (2 * c) = c - 1 := by field_simp
+      nlinarith
+    refine (lossyMcaError_le_mcaError _ _ _ loss.coe_nonneg).trans ?_
+    exact mcaError_powers_le hdegpos (by rw [← hdeg]; exact Nat.le_mul_of_pos_left _ hc) M
+      (le_relUDR c (by rw [Fintype.card_fin, hdeg]) δ hudr)
+
+/-- `ofReal (a x / K) + ofReal (b x / K) = ofReal ((a + b) x / K)`. -/
+theorem ofReal_add_mul_div (a b : ℕ) (x K : ℝ) (hx : 0 ≤ x) (hK : 0 < K) :
+    ENNReal.ofReal (a * x / K) + ENNReal.ofReal (b * x / K) =
+      ENNReal.ofReal ((a + b : ℕ) * x / K) := by
+  rw [← ENNReal.ofReal_add (by positivity) (by positivity)]
+  congr 1
+  push_cast
+  ring
+
+/-- One fold's error `e` and the rest's: a large fold adds `M` bounds `B`, a small one `2 ^ (n - 1)`
+to the small folds' `2 ^ min (n - 1) t`. -/
+theorem fold_add_le (n t len M L : ℕ) (hn : 1 ≤ n) (hM : M = 1 ∨ (M = 2 ∧ t ≤ n - 1))
+    (hL : n - t + (len + (M - 1)) = L) (B : ℝ) (K : ℕ) (hB : 0 ≤ B) (hK : 0 < K) (e rest : ENNReal)
+    (he : e ≤ if t ≤ n - 1 then ENNReal.ofReal (M * B / K)
+      else ((M * 2 ^ (n - 1) : ℕ) : ENNReal) / K)
+    (hrest : rest ≤ ENNReal.ofReal ((n - 1 - t + len : ℕ) * B / K) +
+      ((2 ^ min (n - 1) t : ℕ) : ENNReal) / K) :
+    e + rest ≤ ENNReal.ofReal ((L : ℕ) * B / K) + ((2 ^ min n t : ℕ) : ENNReal) / K := by
+  subst hL
+  have hK' : (0 : ℝ) < K := by exact_mod_cast hK
+  split_ifs at he with h
+  · have hcount : M + (n - 1 - t + len) = n - t + (len + (M - 1)) := by omega
+    calc e + rest
+        ≤ ENNReal.ofReal (M * B / K) + (ENNReal.ofReal ((n - 1 - t + len : ℕ) * B / K) +
+            ((2 ^ min (n - 1) t : ℕ) : ENNReal) / K) := add_le_add he hrest
+      _ = ENNReal.ofReal ((n - t + (len + (M - 1)) : ℕ) * B / K) +
+            ((2 ^ min (n - 1) t : ℕ) : ENNReal) / K := by
+          rw [← add_assoc, ofReal_add_mul_div _ _ _ _ hB hK', hcount]
+      _ ≤ _ := by
+          gcongr
+          omega
+  · have hM1 : M = 1 := by omega
+    subst hM1
+    have hsmall : 2 ^ min (n - 1) t + 2 ^ (n - 1) ≤ 2 ^ min n t := by
+      rw [min_eq_left (by omega), min_eq_left (by omega), ← two_mul, ← pow_succ']
+      exact Nat.pow_le_pow_right two_pos (by omega)
+    have hcount : n - 1 - t + len = n - t + (len + (1 - 1)) := by omega
+    calc e + rest
+        ≤ ((1 * 2 ^ (n - 1) : ℕ) : ENNReal) / K +
+            (ENNReal.ofReal ((n - 1 - t + len : ℕ) * B / K) +
+              ((2 ^ min (n - 1) t : ℕ) : ENNReal) / K) := add_le_add he hrest
+      _ = ENNReal.ofReal ((n - t + (len + (1 - 1)) : ℕ) * B / K) +
+            ((2 ^ min (n - 1) t + 2 ^ (n - 1) : ℕ) : ENNReal) / K := by
+          rw [hcount, one_mul, Nat.cast_add (2 ^ min (n - 1) t), ENNReal.add_div]
+          ring
+      _ ≤ _ := by
+          gcongr
+
+open FriGame in
+/-- The folds' errors of Plonky3's schedule at arity `2` and rate `1/c` (`c d = 2 ^ logFinal`), with
+inputs injected at heights of at least `2 ^ t` points: the at most `n - t` folds onto domains of
+at least `2 ^ t` points contribute `max(T₁, T₂, δ_int / loss) / |𝕂|` each, and each injected input
+one more; the smaller ones the powers MCA bound on their halving domains, `2 ^ t` together. -/
+theorem foldError_schedule_one_le (c t : ℕ) (hc : 0 < c) (d logFinal : ℕ)
+    (hd : c * d = 2 ^ logFinal) (δ δ_int loss : ℝ≥0)
+    (hδ : (δ : ℝ) ≤ (1 - 1 / c) / 2 - 1 / 2 ^ t) (h_pos : 0 < δ) (h_lt : δ < δ_int)
+    (h_loss : 0 < loss) (words : (m : ℕ) → Fin (2 ^ m) → 𝕂) :
+    ∀ (fuel n : ℕ) (ω : Domain.SmoothCosetFftDomain n 𝕂) (heights : List ℕ),
+      logFinal ≤ n → n - logFinal ≤ fuel → Rounds.Fits logFinal n heights →
+      (∀ m ∈ heights, t ≤ m) →
+      (Rounds.schedule 1 logFinal words fuel n heights).foldError d δ loss ω ≤
+        ENNReal.ofReal ((n - t + heights.length : ℕ) * LossyMca.lossyBound 1 c δ δ_int loss /
+          Fintype.card 𝕂) + ((2 ^ min n t : ℕ) : ENNReal) / Fintype.card 𝕂
+  | 0, n, ω, heights, hn, hfuel, hfit, ht => by
+    rw [Rounds.schedule, Rounds.foldError]
+    exact bot_le
+  | fuel + 1, n, ω, heights, hn, hfuel, hfit, ht => by
+    by_cases hfin : n ≤ logFinal
+    · rw [Rounds.schedule, ite_eq_left hfin, Rounds.foldError]
+      exact bot_le
+    have hB : 0 ≤ LossyMca.lossyBound 1 c δ δ_int loss :=
+      le_trans (by positivity) (le_max_right _ _)
+    have hla := Rounds.logArity_one (by omega) hfit
+    have hdeg (h : List ℕ) (hf : Rounds.Fits logFinal (n - 1) h) :
+        c * (Rounds.schedule 1 logFinal words fuel (n - 1) h).degree d = 2 ^ (n - 1) := by
+      rw [Rounds.degree_schedule Nat.one_pos words d fuel _ h (by omega) (by omega) hf,
+        mul_left_comm, hd, ← pow_add]
+      congr 1
+      omega
+    have hlevel (M : ℕ) (h : List ℕ) (hf : Rounds.Fits logFinal (n - 1) h) :=
+      levelError_le (ω.subdomain 1) M c t _ hc (hdeg h hf) δ δ_int loss hδ h_pos h_lt h_loss
+    have ih (h : List ℕ) (hf : Rounds.Fits logFinal (n - 1) h) (ht' : ∀ m ∈ h, t ≤ m) :=
+      foldError_schedule_one_le c t hc d logFinal hd δ δ_int loss hδ h_pos h_lt h_loss words
+        fuel (n - 1) (ω.subdomain 1) h (by omega) (by omega) hf ht'
+    have hK := Fintype.card_pos (α := 𝕂)
+    rw [Rounds.schedule, ite_eq_right hfin]
+    match heights, hfit, ht, hla with
+    | [], hfit, ht, hla =>
+      simp only [Rounds.foldError]
+      rw [hla]
+      exact fold_add_le n t 0 (2 ^ 1 - 1) _ (by omega) (Or.inl rfl) (by simp) _ _ hB hK _ _
+        (hlevel _ [] (Rounds.fits_nil _ _))
+        (ih [] (Rounds.fits_nil _ _) fun _ h ↦ absurd h List.not_mem_nil)
+    | m :: rest, hfit, ht, hla =>
+      have h3 := Rounds.logArity_le_cons 1 logFinal n m rest
+      by_cases hm : m = n - Rounds.logArity 1 logFinal n (m :: rest)
+      · simp only [ite_eq_left hm, Rounds.foldError]
+        rw [hla] at hm ⊢
+        have hfr := Rounds.fits_of_eq hfit hm
+        exact fold_add_le n t rest.length (2 ^ 1) _ (by omega)
+          (Or.inr ⟨rfl, hm ▸ ht m List.mem_cons_self⟩) (by simp) _ _ hB hK _ _ (hlevel _ rest hfr)
+          (ih rest hfr fun m' h ↦ ht m' (List.mem_cons_of_mem _ h))
+      · simp only [ite_eq_right hm, Rounds.foldError]
+        rw [hla] at hm ⊢
+        have hfr := Rounds.fits_cons_of_ne hfit (by omega) hm
+        exact fold_add_le n t (rest.length + 1) (2 ^ 1 - 1) _ (by omega) (Or.inl rfl) (by simp) _ _
+          hB hK _ _ (hlevel _ _ hfr) (ih _ hfr ht)
 
 /-! ### The terms of a setup -/
 
@@ -362,10 +373,44 @@ theorem batchingError_le_of_le (S : Setup EF) (δ : ℝ≥0) (hδ : (δ : ℝ) �
     (le_relUDR _ (by rw [Fintype.card_fin]; exact hN) δ (mul_le_of_le_udr S δ hδ))
 
 /-- FRI's term at arity `2` from lossy correlated agreement, at a proximity loss `loss > 0` and a
-radius `δ ≤ (1 - rate) / 2 - 1 / 2 ^ t`: the at most `log₂ N - t` folds onto domains of at least
-`2 ^ t` points contribute `max(T₁, T₂, δ_int / loss) / |𝕂|` each (`lossyMcaError_line_le`, any
-`δ_int > δ`), the smaller ones `2 ^ t / |𝕂|` together, and the queries
+radius `δ ≤ (1 - rate) / 2 - 1 / 2 ^ t`, with inputs injected at heights of at least `2 ^ t`
+points: the at most `log₂ N - t` folds onto domains of at least `2 ^ t` points contribute
+`max(T₁, T₂, δ_int / loss) / |𝕂|` each (`lossyMcaError_line_le`, any `δ_int > δ`), and each
+injected input one more; the smaller ones `2 ^ t / |𝕂|` together, and the queries
 `(1 - δ + #folds · loss) ^ numQueries`. -/
+theorem friErrorWith_le_lossy (S : Setup EF) (harity : S.params.maxLogArity = 1) (t : ℕ)
+    (heights : List ℕ)
+    (hfit : FriGame.Rounds.Fits (S.params.logFinalPolyLen + S.params.logBlowup)
+      (S.logN + S.params.logBlowup) heights) (ht : ∀ m ∈ heights, t ≤ m)
+    (δ δ_int loss : ℝ≥0) (hδ : (δ : ℝ) ≤ (1 - S.rate) / 2 - 1 / 2 ^ t) (h_pos : 0 < δ)
+    (h_lt : δ < δ_int) (h_loss : 0 < loss) :
+    friErrorWith S heights δ ≤
+      ENNReal.ofReal ((S.logN + S.params.logBlowup - t + heights.length : ℕ) *
+          LossyMca.lossyBound 1 (2 ^ S.params.logBlowup) δ δ_int loss) /
+          (Fintype.card 𝕂 : ENNReal) +
+        (2 ^ t : ℕ) / (Fintype.card 𝕂 : ENNReal) +
+        ((Real.toNNReal (1 - δ + (S.logN - S.params.logFinalPolyLen : ℕ) * loss) ^
+          S.params.numQueries : ℝ≥0) : ENNReal) := by
+  have hf := S.valid.finalPolyFits
+  have hK : (0 : ℝ) < Fintype.card 𝕂 := by exact_mod_cast Fintype.card_pos
+  refine (iInf_le _ loss).trans (add_le_add ?_ (le_of_eq ?_))
+  · rw [Setup.friRounds, harity]
+    refine (foldError_schedule_one_le (2 ^ S.params.logBlowup) t (Nat.two_pow_pos _) _ _
+      (by rw [← pow_add, add_comm]) δ δ_int loss ?_ h_pos h_lt h_loss _ _ _ S.domain heights
+      (by omega) (Nat.sub_le _ _) hfit ht).trans ?_
+    · rw [rate_eq] at hδ
+      push_cast
+      exact hδ
+    · rw [ENNReal.ofReal_div_of_pos hK, ENNReal.ofReal_natCast]
+      gcongr
+      exact min_le_right _ _
+  · rw [Setup.friRounds, harity, FriGame.Rounds.numFolds_schedule_one _ _ _ _ (by omega)
+      (Nat.sub_le _ _) hfit, ENNReal.coe_pow,
+      show S.logN + S.params.logBlowup - (S.params.logFinalPolyLen + S.params.logBlowup) =
+        S.logN - S.params.logFinalPolyLen by omega]
+    rfl
+
+/-- `friErrorWith_le_lossy` without injected inputs. -/
 theorem friError_le_lossy (S : Setup EF) (harity : S.params.maxLogArity = 1) (t : ℕ)
     (δ δ_int loss : ℝ≥0) (hδ : (δ : ℝ) ≤ (1 - S.rate) / 2 - 1 / 2 ^ t) (h_pos : 0 < δ)
     (h_lt : δ < δ_int) (h_loss : 0 < loss) :
@@ -376,15 +421,10 @@ theorem friError_le_lossy (S : Setup EF) (harity : S.params.maxLogArity = 1) (t 
         (2 ^ t : ℕ) / (Fintype.card 𝕂 : ENNReal) +
         ((Real.toNNReal (1 - δ + (S.logN - S.params.logFinalPolyLen : ℕ) * loss) ^
           S.params.numQueries : ℝ≥0) : ENNReal) := by
-  have hlt := S.folds
-  obtain ⟨m, hm⟩ : ∃ m, S.logN - S.params.logFinalPolyLen = m + 1 := ⟨_, (Nat.succ_pred_eq_of_pos
-    (by omega)).symm⟩
-  rw [friError, harity, hm, folds_one, Nat.cast_add, Nat.cast_one]
-  refine friErrorOf_replicate_le _ _ _ _ _ _ (Nat.two_pow_pos _) _ _ _ ?_ h_pos h_lt h_loss ?_
-  · rw [rate_eq] at hδ
-    push_cast
-    exact hδ
-  · rw [show m + 1 + S.params.logFinalPolyLen = S.logN by omega, ← pow_add, add_comm]
+  have h := friErrorWith_le_lossy S harity t [] (FriGame.Rounds.fits_nil _ _)
+    (fun _ h ↦ absurd h List.not_mem_nil) δ δ_int loss hδ h_pos h_lt h_loss
+  simp only [List.length_nil, add_zero] at h
+  exact h
 
 /-- The knowledge error with FRI at `δ` and the extractor at `δ' ≥ δ + 2/N` below the
 unique-decoding radius, with the MCA bound for batching: one integer over `|𝕂|`, and FRI's
@@ -434,27 +474,31 @@ theorem knowledgeError_le_curve (S : Setup EF) (δ δ' : ℝ≥0)
         simp only [Nat.cast_add, ENNReal.div_add_div_same]
 
 /-- The knowledge error of a batch with FRI at `δ` and the extractor at `δ'` below the
-unique-decoding radius, `δ < δ' - 2/N`: every instance's constraint-folding and out-of-domain
-integers at most `A`, the curve bound for batching all opened words at `δ' - 2/N`, and FRI's
-error. -/
-theorem batchKnowledgeError_le_curve (S : Batch.Setup EF) (δ δ' : ℝ≥0) (A : ℕ)
+unique-decoding radius, `δ < δ' - 2/N` on every domain: every instance's constraint-folding and
+out-of-domain integers at most `A`, the curve bound on batching the opened words of every
+instance's domain size at `δ' - 2/N` at most `b`, and FRI's error. -/
+theorem batchKnowledgeError_le_curve (S : Batch.Setup EF) (δ δ' : ℝ≥0) (A : ℕ) (b : ℝ)
     (hA : ∀ i, ((S.air i).constraints.length - 1) + ((S.instanceSetup i).identityDegree +
-      2 ^ S.logN) ≤ A)
-    (h_ud : (δ : ℝ) ≤ (1 - S.rate) / 2 - 1 / S.size) (h_pos : 0 < δ)
-    (h_lt : (δ : ℝ) < δ' - 2 / S.size) (hδ' : (δ' : ℝ) < (1 - S.rate) / 2) :
+      2 ^ S.logN i) ≤ A)
+    (hb : ∀ i, ((S.groupNumOpened (S.logN i + S.params.logBlowup) - 1 : ℕ) *
+      max ((1 - S.rate - δ) / (δ * (1 - S.rate - 2 * δ)))
+        ((δ' - 2 / (S.instanceSetup i).size) / (δ' - 2 / (S.instanceSetup i).size - δ))) ≤ b)
+    (h_ud : ∀ i, (δ : ℝ) ≤ (1 - S.rate) / 2 - 1 / (S.instanceSetup i).size) (h_pos : 0 < δ)
+    (h_lt : ∀ i, (δ : ℝ) < δ' - 2 / (S.instanceSetup i).size)
+    (hδ' : (δ' : ℝ) < (1 - S.rate) / 2) :
     Batch.knowledgeError S δ δ' ≤
-      (A : ENNReal) / (Fintype.card 𝕂 : ENNReal) +
-        ENNReal.ofReal ((S.numOpened - 1 : ℕ) *
-          max ((1 - S.rate - δ) / (δ * (1 - S.rate - 2 * δ)))
-            ((δ' - 2 / S.size) / (δ' - 2 / S.size - δ))) /
-          Fintype.card 𝕂 +
-        friError S.domainSetup δ := by
-  refine add_le_add (add_le_add (iSup_le fun i ↦ ?_)
-    (batchingError_le_curve S.domainSetup S.numOpened δ _ h_ud h_pos h_lt)) le_rfl
-  refine (add_le_add (foldingError_le_of_le (S.instanceSetup i) δ' hδ')
-    (outOfDomainError_le_of_le (S.instanceSetup i) δ' hδ')).trans ?_
-  rw [ENNReal.div_add_div_same, ← Nat.cast_add]
-  exact ENNReal.div_le_div_right (Nat.cast_le.mpr (hA i)) _
+      ((A : ENNReal) / (Fintype.card 𝕂 : ENNReal) + ENNReal.ofReal b / Fintype.card 𝕂) +
+        friErrorWith S.domainSetup S.friHeights δ := by
+  refine add_le_add (iSup_le fun i ↦ ?_) le_rfl
+  have hrate : (S.instanceSetup i).rate = S.rate := by
+    rw [rate_eq, Batch.Setup.rate]
+  rw [← hrate] at hδ' hb
+  refine add_le_add ((add_le_add (foldingError_le_of_le (S.instanceSetup i) δ' hδ')
+    (outOfDomainError_le_of_le (S.instanceSetup i) δ' hδ')).trans ?_) ?_
+  · rw [ENNReal.div_add_div_same, ← Nat.cast_add]
+    exact ENNReal.div_le_div_right (Nat.cast_le.mpr (hA i)) _
+  · refine (batchingError_le_curve (S.instanceSetup i) _ δ _ (hrate ▸ h_ud i) h_pos
+      (h_lt i)).trans (ENNReal.div_le_div_right (ENNReal.ofReal_le_ofReal (hb i)) _)
 
 /-! ### The numbers -/
 

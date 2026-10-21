@@ -30,7 +30,9 @@ known polynomials, itself.
 6. The verifier samples the batching challenge `a`.
 7. The prover shows with FRI that the batched DEEP word `∑ᵢ aⁱ (yᵢ - fᵢ(x)) / (zᵢ - x)` over
    the opened words `fᵢ`, points `zᵢ` and values `yᵢ` is close to a polynomial of degree below
-   `2 ^ logN` (`deepWord`). FRI is ArkLib's oracle reduction, folding by Plonky3's arities; the
+   `2 ^ logN` (`deepWord`). FRI is Plonky3's (`CompStark/Sound/FriGame.lean`): the prover
+   commits to the word again and to its folds by Plonky3's arities, each after the challenge
+   before it, and the queries check them against each other and against the DEEP word; the
    prover may follow any FRI strategy, and `friAcceptance` takes the best one.
 
 `acceptance` is the probability that the verifier accepts. The extractor list-decodes the
@@ -171,13 +173,25 @@ noncomputable def deepWord {S : Setup EF} (p : Prover S) (α ζ a : 𝕂) (i : S
   ((openedWords p α ζ).zipIdx.map fun ((f, z, y), k) ↦
     a ^ k * (y - algebraMap F 𝕂 (f i)) / (z - S.domain i)).sum
 
-/-- The probability that FRI accepts `word` against the best FRI prover: ArkLib's FRI oracle
-reduction on `L`, folding by Plonky3's arities down to a final polynomial of degree below
-`2 ^ logFinalPolyLen`, with `numQueries` queries. -/
+/-- FRI's rounds on `L`: Plonky3's folding schedule from `L` down to the final polynomial's
+domain of `2 ^ (logFinalPolyLen + logBlowup)` points, injecting the word `words m` of the domain
+of `2 ^ m` points at each log size `m` of `heights` (tallest first) when the folds reach it. -/
+noncomputable def Setup.friRounds (S : Setup EF) (words : (m : ℕ) → Fin (2 ^ m) → 𝕂)
+    (heights : List ℕ) : FriGame.Rounds 𝕂 (S.logN + S.params.logBlowup) :=
+  FriGame.Rounds.schedule S.params.maxLogArity (S.params.logFinalPolyLen + S.params.logBlowup)
+    words (S.logN + S.params.logBlowup) (S.logN + S.params.logBlowup) heights
+
+/-- The probability that FRI accepts `word` on `L`, with the words `words m` injected at the log
+sizes `heights`, against the best FRI prover: Plonky3's FRI (`FriGame.acceptance`) with a final
+polynomial of degree below `2 ^ logFinalPolyLen` and `numQueries` queries. -/
+noncomputable def friAcceptanceWith (S : Setup EF) (words : (m : ℕ) → Fin (2 ^ m) → 𝕂)
+    (heights : List ℕ) (word : S.Point → 𝕂) : ENNReal :=
+  FriGame.acceptance S.domain (S.friRounds words heights) (2 ^ S.params.logFinalPolyLen)
+    S.params.numQueries (Nat.two_pow_pos _) word
+
+/-- The probability that FRI accepts `word` against the best FRI prover. -/
 noncomputable def friAcceptance (S : Setup EF) (word : S.Point → 𝕂) : ENNReal :=
-  friAcceptanceOf S.domain
-    (Sound.folds S.params.maxLogArity (S.logN - S.params.logFinalPolyLen))
-    S.params.logFinalPolyLen S.params.numQueries word
+  friAcceptanceWith S (fun _ _ ↦ 0) [] word
 
 open Classical in
 /-- The probability that the verifier accepts `prover`: over uniform `α`, `ζ` and `a`, the
