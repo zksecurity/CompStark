@@ -16,7 +16,7 @@ probability at most the knowledge error (`CompStark/SoundnessError.lean`).
 A STARK is a batch of one instance (`Setup.toBatch`), with the same acceptance and knowledge
 error (`Sound/Single.lean`), so this is `batchKnowledgeSoundness` (`CompStark/BatchSoundness.lean`)
 for one instance. The proof (`CompStark/Sound/`) bounds the acceptance probability challenge by
-challenge: FRI rejects words far from low degree (ArkLib's FRI soundness, `Sound/Fri.lean`);
+challenge: FRI rejects words far from low degree (`Sound/Fri.lean`, `Sound/FriGame.lean`);
 batching by powers keeps DEEP quotients that are not near on a common set far
 (`Sound/Batching.lean`); DEEP quotients near on a common set force the claimed values to be those
 of a candidate trace and quotient, polynomials close to the committed words
@@ -43,7 +43,8 @@ theorem knowledgeSoundness (S : Setup EF) (publicValues : List F) (prover : Prov
       acceptance publicValues prover ≤ knowledgeError S δ δ' := by
   intro h
   rw [← acceptance_toBatch, ← knowledgeError_toBatch]
-  exact batchKnowledgeSoundness S.toBatch (fun _ ↦ publicValues) prover.toBatch δ δ' hδ'
-    fun traces htraces hsat ↦ h _ (htraces ⟨0, Nat.one_pos⟩) (hsat ⟨0, Nat.one_pos⟩)
+  exact batchKnowledgeSoundness S.toBatch (fun _ ↦ publicValues) prover.toBatch δ δ'
+    (by rwa [rate_toBatch]) fun traces htraces hsat ↦
+      h _ (htraces ⟨0, Nat.one_pos⟩) (hsat ⟨0, Nat.one_pos⟩)
 
 end CompStark.Iop

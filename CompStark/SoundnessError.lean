@@ -21,7 +21,7 @@ quotient's codes at `δ'` (`Setup.listSize`):
   set at `δ' - 2/N` (`batchingError`, the correlated-agreement error of the powers of `a`; the
   difference `δ' - 2/N - δ` is the proximity loss). Decoding loses the up to two points of `L`
   where `ζ` or `ζ ω_n` lies, at which the DEEP quotients divide by zero.
-* FRI accepts a word that is `δ`-far from low degree (`friError`, ArkLib's FRI soundness).
+* FRI accepts a word that is `δ`-far from low degree (`friError`, `FriGame.acceptance_le`).
 
 Below the unique-decoding radius `ℓ ≤ 1`; up to the Johnson bound `1 - √rate`, `ℓ` is small.
 -/
@@ -102,12 +102,16 @@ noncomputable def batchingErrorOf (S : Setup EF) (m : Nat) (δ : NNReal) (δ' : 
 noncomputable def batchingError (S : Setup EF) (δ : NNReal) (δ' : ℝ) : ENNReal :=
   batchingErrorOf S S.numOpened δ δ'
 
-/-- FRI's soundness error at proximity `δ` (ArkLib's `Fri.Spec.soundnessErrorLossy`): the lossy
-correlated-agreement error of each fold, and `(1 - δ + #folds · loss) ^ numQueries` for the
-queries, minimized over the proximity loss `loss ≥ 0`. -/
-noncomputable def friError (S : Setup EF) (δ : NNReal) : ENNReal :=
-  friErrorOf S.domain (Sound.folds S.params.maxLogArity (S.logN - S.params.logFinalPolyLen))
-    S.params.logFinalPolyLen S.params.numQueries δ
+/-- FRI's soundness error at proximity `δ` with inputs injected at the log heights `heights`
+(`FriGame.error`): the lossy correlated-agreement error of each fold, and
+`(1 - δ + #folds · loss) ^ numQueries` for the queries, minimized over the proximity loss
+`loss ≥ 0`. It depends on the inputs' heights only. -/
+noncomputable def friErrorWith (S : Setup EF) (heights : List ℕ) (δ : NNReal) : ENNReal :=
+  FriGame.error S.domain (S.friRounds (fun _ _ ↦ 0) heights)
+    (2 ^ S.params.logFinalPolyLen) S.params.numQueries δ
+
+/-- FRI's soundness error at proximity `δ`. -/
+noncomputable def friError (S : Setup EF) (δ : NNReal) : ENNReal := friErrorWith S [] δ
 
 /-- The knowledge error, for FRI at proximity `δ` and the extractor at `δ' ≥ δ + 2/N`; batching
 at `δ' - 2/N` pays for the two points that decoding may lose. -/
