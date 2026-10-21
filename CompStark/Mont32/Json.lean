@@ -5,7 +5,7 @@ Released under Apache 2.0 license as described in the file LICENSE.
 module
 
 public import CompStark.Stark.Challenge
-public import CompStark.Stark.Proof
+public import CompStark.Batch.Proof
 public import CompStark.Mont32.BaseField
 public import Lean.Data.Json
 
@@ -15,7 +15,7 @@ A proof's JSON form as Plonky3 serializes it (`serde_json`) for a base field `Mo
 `FastField p`: field elements as Montgomery words, extension elements as
 `{"value": [c0, …, c(d-1)]}`, commitments as Merkle caps of one root `{"cap": [[eight words]]}`,
 Merkle multi-openings with their pruned siblings `{"sibling_hashes": [...]}`, and absent openings
-as `null`.
+as `null`; and batch proofs (`parseBatch`), every instance's opened values in the same format.
 -/
 
 @[expose] public section
@@ -91,17 +91,20 @@ def optional {α : Type} (f : Json → Except String α) : Json → Except Strin
   | .null => return none
   | j => some <$> f j
 
+/-- Opened values, rejecting randomization. -/
+def openedValues (ov : Json) : Except String (OpenedValues EF) := do
+  absent ov "random"
+  return ⟨← array ext (← ov.getObjVal? "trace_local"), ← array ext (← ov.getObjVal? "trace_next"),
+    ← optional (array ext) (← ov.getObjVal? "preprocessed_local"),
+    ← optional (array ext) (← ov.getObjVal? "preprocessed_next"),
+    ← array (array ext) (← ov.getObjVal? "quotient_chunks")⟩
+
 /-- A proof, rejecting randomization. -/
 def proof (j : Json) : Except String (Proof (FastField p) EF) := do
   let cs ← j.getObjVal? "commitments"
   absent cs "random"
-  let ov ← j.getObjVal? "opened_values"
-  absent ov "random"
   return ⟨← digest (← cs.getObjVal? "trace"), ← digest (← cs.getObjVal? "quotient_chunks"),
-    ⟨← array ext (← ov.getObjVal? "trace_local"), ← array ext (← ov.getObjVal? "trace_next"),
-      ← optional (array ext) (← ov.getObjVal? "preprocessed_local"),
-      ← optional (array ext) (← ov.getObjVal? "preprocessed_next"),
-      ← array (array ext) (← ov.getObjVal? "quotient_chunks")⟩,
+    ← openedValues (← j.getObjVal? "opened_values"),
     ← friProof (← j.getObjVal? "opening_proof"),
     ← (← j.getObjVal? "degree_bits").getNat?,
     ← field (← j.getObjVal? "ood_pow_witness")⟩
@@ -109,6 +112,34 @@ def proof (j : Json) : Except String (Proof (FastField p) EF) := do
 /-- A proof from its JSON text. -/
 def parse (s : String) : Except String (Proof (FastField p) EF) := do
   proof (← Lean.Json.parse s)
+
+/-- Fail unless `j` is an empty array. -/
+def empty (j : Json) (k : String) : Except String Unit := do
+  unless (← (← j.getObjVal? k).getArr?).isEmpty do throw s!"unsupported: {k}"
+
+/-- One instance's opened values in a batch proof, rejecting permutation openings. -/
+def batchOpened (j : Json) : Except String (OpenedValues EF) := do
+  empty j "permutation_local"
+  empty j "permutation_next"
+  openedValues (← j.getObjVal? "base_opened_values")
+
+/-- A batch proof, rejecting randomization and lookups. -/
+def batchProof (j : Json) : Except String (Batch.BatchProof (FastField p) EF) := do
+  let cs ← j.getObjVal? "commitments"
+  absent cs "random"
+  absent cs "permutation"
+  absent j "lookup_pow_witness"
+  unless (← (← j.getObjVal? "lookup_terminals").getArr?).all (· == .null) do
+    throw "unsupported: lookup_terminals"
+  return ⟨← digest (← cs.getObjVal? "main"), ← digest (← cs.getObjVal? "quotient_chunks"),
+    ← array batchOpened (← (← j.getObjVal? "opened_values").getObjVal? "instances"),
+    ← friProof (← j.getObjVal? "opening_proof"),
+    ← array (·.getNat?) (← j.getObjVal? "degree_bits"),
+    ← field (← j.getObjVal? "ood_pow_witness")⟩
+
+/-- A batch proof from its JSON text. -/
+def parseBatch (s : String) : Except String (Batch.BatchProof (FastField p) EF) := do
+  batchProof (← Lean.Json.parse s)
 
 end Json
 end CompStark.Stark

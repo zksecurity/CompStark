@@ -254,6 +254,7 @@ pub fn prep_trace<F: Field>(n: usize) -> (RowMajorMatrix<F>, Vec<F>) {
 
 /// Two columns, each the periodic column of the same index (Plonky3's `PeriodicAir` of
 /// `uni-stark/tests/periodic_air.rs`).
+#[derive(Clone)]
 pub struct PeriodicAir<F> {
     pub periodic: Vec<Vec<F>>,
 }

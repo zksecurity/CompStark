@@ -21,7 +21,8 @@ indented line per step (`render`). The type tag of a field element names its fie
 the degree and the Keccak-256 hash of the algebra's identity (`Challenge.algebraId`).
 
 `starkSeed`, `pcsSeed` and `friSeed` are the seeds of `p3-uni-stark`, `p3-fri-pcs` and `p3-fri`
-(`StarkShape`, `PcsShape`, `FriShape`), here without zero knowledge.
+(`StarkShape`, `PcsShape`, `FriShape`), and `batchSeed` that of `p3-batch-stark` (`BatchShape`),
+here without zero knowledge or lookups.
 -/
 
 @[expose] public section
@@ -133,9 +134,12 @@ def extTag : Tag :=
 /-- A commitment. -/
 def commitment (label : String) : Step := ⟨.atomic, .message, label, .scalar, .opaque⟩
 
+/-- A grinding step of `bits` bits. -/
+def powStep (label : String) (bits : Nat) : Step := ⟨.atomic, .pow, label, .fixed bits, baseTag F⟩
+
 /-- A grinding step of `bits` bits, absent at zero difficulty. -/
 def pow (label : String) (bits : Nat) : List Step :=
-  if bits = 0 then [] else [⟨.atomic, .pow, label, .fixed bits, baseTag F⟩]
+  if bits = 0 then [] else [powStep F label bits]
 
 /-- An extension challenge. -/
 def challenge (label : String) : Step := ⟨.atomic, .challenge, label, .scalar, extTag F EF⟩
@@ -181,5 +185,20 @@ def friSeed (arities : List Nat) (finalLen commitBits queryBits numQueries index
       pow F "query_pow" queryBits ++
       [⟨.atomic, .challenge, "query_indices", .fixed numQueries, .bits indexBits⟩])
     (logBlowup :: maxLogArity :: arities)
+
+/-- The seed of `p3-batch-stark` for instances of trace widths `widths`, preprocessed widths
+`prepWidths` and `numPublic` public values, with a commitment to the preprocessed traces if
+`hasPrep` and `oodBits` bits of out-of-domain grinding, without lookups. Every instance's degree
+bits are an extension message, and the out-of-domain grinding is a step at zero difficulty too. -/
+def batchSeed (widths prepWidths numPublic : List Nat) (hasPrep : Bool) (oodBits : Nat) :
+    List F :=
+  toElems F <| seedBytes 1 "p3-batch-stark"
+    (widths.map (fun _ ↦ ⟨.atomic, .message, "degree_bits", .scalar, extTag F EF⟩) ++
+      [commitment "main_commitment"] ++
+      numPublic.map (fun k ↦ ⟨.atomic, .publicValue, "public_values", .fixed k, baseTag F⟩) ++
+      (if hasPrep then [commitment "preprocessed_commitment"] else []) ++
+      [challenge F EF "constraint_challenge", commitment "quotient_commitment",
+        powStep F "ood_pow" oodBits, challenge F EF "zeta"] ++ bracket "opening_argument")
+    (widths.length :: widths ++ prepWidths)
 
 end CompStark.DomainSeparator

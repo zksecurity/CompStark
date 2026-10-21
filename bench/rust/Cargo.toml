@@ -14,6 +14,7 @@ p3-merkle-tree = { git = "https://github.com/Plonky3/Plonky3", rev = "a4982ec" }
 p3-matrix = { git = "https://github.com/Plonky3/Plonky3", rev = "a4982ec" }
 p3-commit = { git = "https://github.com/Plonky3/Plonky3", rev = "a4982ec" }
 p3-uni-stark = { git = "https://github.com/Plonky3/Plonky3", rev = "a4982ec" }
+p3-batch-stark = { git = "https://github.com/Plonky3/Plonky3", rev = "a4982ec" }
 p3-fri = { git = "https://github.com/Plonky3/Plonky3", rev = "a4982ec" }
 p3-challenger = { git = "https://github.com/Plonky3/Plonky3", rev = "a4982ec" }
 p3-air = { git = "https://github.com/Plonky3/Plonky3", rev = "a4982ec" }

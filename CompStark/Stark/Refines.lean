@@ -157,7 +157,7 @@ theorem commitAndSample_refines (h : Refines B) {P : Params} {A : Air F} {logN :
     obtain ⟨y, hy, rfl⟩ := Option.mem_map.mp hq
     obtain ⟨hok, hh, -⟩ := hprepOk y hy
     exact ⟨hok, by rw [hh, heh]⟩
-  unfold commitAndSample
+  unfold commitAndSample quotientChunks
   dsimp only
   rw [h.root hct, hroots]
   refine RelM.bind_eq fun _ ↦ RelM.bind_eq fun _ ↦ RelM.bind_eq fun _ ↦

@@ -53,6 +53,10 @@ public import CompStark.Fri.Shapes
 public import CompStark.Fri.Refines
 public import CompStark.Stark.Prover
 public import CompStark.Plonky3.Prover
+public import CompStark.Batch.Proof
+public import CompStark.Batch.Verifier
+public import CompStark.Batch.Prover
+public import CompStark.Plonky3.Batch
 public import CompStark.Stark.Refines
 public import CompStark.Stark.Fast
 public import CompStark.Stark.Fast.Transcript

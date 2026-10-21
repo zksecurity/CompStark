@@ -47,14 +47,27 @@ def setupWith (B : Backend F EF width) (P : Params) (A : Air F) (logN : Nat) :
     let ext := B.lde logN P.logBlowup gen A.preprocessedWidth A.preprocessed
     some (ext, B.commit [ext])
 
+/-- The extensions of the quotient's chunks for `A` on `2 ^ logN` rows, from the extensions `ext`
+of the trace and `prep` of the preprocessed trace, if any: the quotient's values on the quotient
+domain of `2 ^ logChunks` cosets, chunk `c` the values on coset `c`, extended by the backend `B`
+onto `L`. -/
+def quotientChunks (B : Backend F EF width) (P : Params) (A : Air F) (logN : Nat) (ext : B.M)
+    (prep : Option B.M) (pis : List F) (alpha : EF) : List B.M :=
+  let logChunks := A.logQuotientChunks logN
+  let qlog := logN + logChunks
+  let qs := B.quotient A pis logN logChunks ext prep alpha
+  let stride := 2 ^ logChunks
+  (List.range stride).map fun c ↦
+    let shift := gen * powF (twoAdicGen qlog) c
+    let vals := chunkValues qs stride c (2 ^ logN)
+    B.lde logN P.logBlowup (gen * shift⁻¹) (Challenge.d EF) vals
+
 /-- The trace's extension and commitment, the quotient's chunks and commitment, the opening point
 `ζ` sampled after them, and the out-of-domain grinding witness before it, by the backend `B`, with
 the preprocessed trace's extension and commitment `prep`. -/
 def commitAndSample (B : Backend F EF width) (P : Params) (A : Air F) (logN : Nat)
     (prep : Option (B.M × B.C)) (trace : Array F) (pis : List F) :
     PM F width (B.M × B.C × List B.M × B.C × EF × F) := do
-  let logChunks := A.logQuotientChunks logN
-  let qlog := logN + logChunks
   let ext := B.lde logN P.logBlowup gen A.width trace
   let traceC := B.commit [ext]
   pObserveList (starkSeedOf EF P A logN)
@@ -62,12 +75,7 @@ def commitAndSample (B : Backend F EF width) (P : Params) (A : Air F) (logN : Na
   pObserveList ((prep.map fun x ↦ (B.root x.2).toList).getD [])
   pObserveList pis
   let alpha : EF ← pSampleExt
-  let qs := B.quotient A pis logN logChunks ext (prep.map (·.1)) alpha
-  let stride := 2 ^ logChunks
-  let chunks := (List.range stride).map fun c ↦
-    let shift := gen * powF (twoAdicGen qlog) c
-    let vals := chunkValues qs stride c (2 ^ logN)
-    B.lde logN P.logBlowup (gen * shift⁻¹) (Challenge.d EF) vals
+  let chunks := quotientChunks B P A logN ext (prep.map (·.1)) pis alpha
   let quotC := B.commit chunks
   pObserveList (B.root quotC).toList
   let ow ← pGrind P.oodPowBits

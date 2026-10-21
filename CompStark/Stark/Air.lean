@@ -291,4 +291,32 @@ def periodicCube {F : Type} [NatCast F] : Air F where
      .isLastRow * (.cur 0 - .pub 1)]
   periodic := [[(3 : Nat)], [(1 : Nat), (2 : Nat), (3 : Nat), (4 : Nat)]]
 
+/-- `fibonacci` with a preprocessed column holding the row index on `2 ^ logN` rows, which no
+constraint reads (Plonky3's `FibonacciAir` of `batch-stark/tests/simple.rs`). -/
+def fibonacciIndexed {F : Type} [NatCast F] (logN : Nat) : Air F :=
+  { fibonacci with
+    preprocessedWidth := 1
+    preprocessed := Array.ofFn (n := 2 ^ logN) fun i ↦ (i.val : F) }
+
+/-- `reps` repetitions of columns `a, b, c` with `a b = c` and next row `(b, a + b)`, and one more
+column no constraint reads (Plonky3's `MulAir` of `batch-stark/tests/simple.rs`). -/
+def mulAir {F : Type} (reps : Nat) : Air F where
+  width := 3 * reps + 1
+  numPublicValues := 0
+  constraints := (List.range reps).flatMap fun i ↦
+    [.cur (3 * i) * .cur (3 * i + 1) - .cur (3 * i + 2),
+     .isTransition * (.cur (3 * i + 1) - .next (3 * i)),
+     .isTransition * ((.cur (3 * i) + .cur (3 * i + 1)) - .next (3 * i + 1))]
+
+/-- One column, `multiplier` times a preprocessed column holding the row index on `2 ^ logN` rows,
+which is not read at the next row (Plonky3's `PreprocessedMulAir` of
+`batch-stark/tests/simple.rs`). -/
+def preprocessedMul {F : Type} [NatCast F] (logN multiplier : Nat) : Air F where
+  width := 1
+  numPublicValues := 0
+  constraints := [.cur 0 - .prepCur 0 * .const (multiplier : F)]
+  preprocessedWidth := 1
+  preprocessed := Array.ofFn (n := 2 ^ logN) fun i ↦ (i.val : F)
+  preprocessedNextRow := false
+
 end CompStark.Stark

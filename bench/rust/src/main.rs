@@ -82,6 +82,7 @@ fn merkle(log_h: u32, width: usize) {
 }
 
 mod babybear;
+mod batch;
 mod seeds;
 mod stark;
 
@@ -107,6 +108,10 @@ fn main() {
     if args.len() >= 3 && args[1] == "stark" {
         let nums: Vec<usize> = args[3..].iter().map(|a| a.parse().unwrap()).collect();
         return stark::stark(&args[2], &nums);
+    }
+    if args.len() >= 3 && args[1] == "batch" {
+        let nums: Vec<usize> = args[3..].iter().map(|a| a.parse().unwrap()).collect();
+        return batch::batch(&args[2], &nums);
     }
     if args.len() == 2 && args[1] == "babybear" {
         return babybear::known_answers();

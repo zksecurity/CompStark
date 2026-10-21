@@ -6,6 +6,7 @@ import CompStarkTests
 import CompStark.KoalaBear.Fast
 import CompStark.BabyBear.Fast
 import CompStark.Mont32.Json
+import CompStark.Plonky3.Batch
 
 /-! # Compiled known-answer tests
 
@@ -28,6 +29,12 @@ and runs it.
   extension, the specification prover's proofs verify.
 * The fast prover over BabyBear reproduces Plonky3's BabyBear proofs
   (`tests/data/babybear_AIR_*.json`).
+* Plonky3 `batch-stark` proofs over KoalaBear (`tests/data/batch_CASE_*.json`, from
+  `RAYON_NUM_THREADS=1 compstark-bench batch CASE LOG_BLOWUP LOG_FINAL MAX_LOG_ARITY QUERIES
+  COMMIT_POW QUERY_POW`), of instances of mixed heights with and without preprocessed and
+  periodic columns: each verifies against the batch's common data and is rejected tampered, with
+  other degree bits or public values, with reordered instances, or against other preprocessed
+  traces; and the specification prover reproduces it.
 -/
 
 namespace CompStarkTests.Native
@@ -228,6 +235,87 @@ def proofExt5 (air : Nat → Air F) (inst : Nat → Array F × List F) (ps : Lis
   check s!"Ext5 {ps}: rejects other public values"
     (verify P A (setup P A logN) pf (pis.map (· + 1)) matches .error _)
 
+/-- The Fibonacci numbers `F_0, …, F_n`. -/
+def fibs (n : Nat) : Array F :=
+  ((List.range n).foldl (fun ((a, b, out) : F × F × Array F) _ ↦ (b, a + b, out.push b))
+    (0, 1, #[0])).2.2
+
+/-- `mul_trace` of `batch-stark/tests/simple.rs`: `rows` rows of `mulAir reps`. -/
+def mulTrace (rows reps : Nat) : Array F :=
+  let w := 3 * reps + 1
+  let f := fibs rows
+  Array.ofFn (n := rows * w) fun k ↦
+    let i := k.val / w
+    let j := k.val % w
+    if j + 1 = w then (if i + 1 = rows then 0 else f.getD (i + 1) 0)
+    else if j % 3 = 0 then f.getD i 0
+    else if j % 3 = 1 then f.getD (i + 1) 0
+    else f.getD i 0 * f.getD (i + 1) 0
+
+/-- An instance of the batch KATs with its trace and public values. -/
+abbrev BatchInstance := Batch.Instance F × Array F × List F
+
+def fibIndexed (logN : Nat) : BatchInstance :=
+  (⟨fibonacciIndexed logN, logN⟩, fibInstance (2 ^ logN))
+def mulInstance (logN reps : Nat) : BatchInstance :=
+  (⟨mulAir reps, logN⟩, mulTrace (2 ^ logN) reps, [])
+
+/-- The batches of `compstark-bench batch CASE`. -/
+def batchCase : String → List BatchInstance
+  | "three" => [fibIndexed 4, mulInstance 3 2, fibIndexed 3]
+  | "mixed" => [fibIndexed 4, mulInstance 4 2]
+  | "periodic" => [(⟨periodicAir periodicCols, 6⟩, periodicInstance periodicCols 64)]
+  | "single" => [fibIndexed 5]
+  | "prepmul" => [(⟨preprocessedMul 4 2, 4⟩, Array.ofFn (n := 16) fun i ↦ ((2 * i.val : Nat) : F),
+      []), fibIndexed 5, mulInstance 3 1]
+  | _ => []
+
+/-- The saved batch proof of `name` for the parameters `logBlowup logFinal maxLogArity queries
+commitPow queryPow [batchPow oodPow]` verifies against the batch's common data; is rejected when
+tampered, with reordered instances, with other degree bits, against the commitment to other
+preprocessed traces, and with an instance's public values changed; and the specification prover
+reproduces it. -/
+def batchProof (name : String) (ps : List Nat) : IO Unit := do
+  let (_, P) ← params (0 :: ps)
+  let insts := batchCase name
+  let instances := insts.map (·.1)
+  let traces := insts.map (·.2.1)
+  let pis := insts.map (·.2.2)
+  let common := Batch.setupBatch P instances
+  let file := s!"batch_{name}_{"_".intercalate (ps.map toString)}"
+  let rust : Batch.BatchProof F EF ←
+    IO.ofExcept (Json.parseBatch (← IO.FS.readFile s!"tests/data/{file}.json"))
+  if let .error e := Batch.verifyBatch P instances common rust pis then
+    throw (IO.userError s!"{file}: {e}")
+  let tampered := { rust with opened := rust.opened.modify (rust.opened.size - 1) fun o ↦
+    { o with traceLocal := o.traceLocal.modify 0 (· + 1) } }
+  check s!"{file}: rejects a tampered proof"
+    (Batch.verifyBatch P instances common tampered pis matches .error _)
+  check s!"{file}: rejects other degree bits"
+    (Batch.verifyBatch P instances common
+      { rust with degreeBits := rust.degreeBits.modify 0 (· + 1) } pis matches .error _)
+  check s!"{file}: rejects other public values"
+    (Batch.verifyBatch P instances common rust (pis.map (·.map (· + 1)))
+      matches .error _ || pis.all (·.isEmpty))
+  if 1 < instances.length then
+    let swapped := instances.drop 1 ++ instances.take 1
+    check s!"{file}: rejects reordered instances" (Batch.verifyBatch P swapped
+      (Batch.setupBatch P swapped) rust (pis.drop 1 ++ pis.take 1) matches .error _)
+  let other := instances.map fun I ↦
+    { I with air := { I.air with preprocessed := I.air.preprocessed.modify 2 (· + 1) } }
+  if common.preprocessed.isSome then
+    check s!"{file}: rejects other preprocessed traces"
+      (Batch.verifyBatch P instances (Batch.setupBatch P other) rust pis matches .error _)
+  check s!"{file}: specification prover" (Batch.proveBatch EF P instances traces pis == rust)
+
+def batchProofs : IO Unit := do
+  for ps in [[2, 0, 1, 4, 0, 0], [1, 1, 2, 6, 1, 2, 2, 3]] do
+    batchProof "three" ps
+  batchProof "mixed" [2, 0, 2, 5, 0, 0]
+  batchProof "periodic" [2, 3, 2, 8, 0, 8]
+  batchProof "single" [1, 0, 1, 5, 0, 2]
+  batchProof "prepmul" [1, 1, 2, 6, 1, 2, 2, 3]
+
 def proofs : IO Unit := do
   for ps in [[3, 2, 2, 1, 2, 0, 0], [3, 2, 2, 1, 2, 1, 1], [6, 1, 0, 1, 10, 0, 8],
       [6, 1, 1, 3, 8, 2, 4], [5, 2, 0, 2, 5, 0, 0], [5, 2, 1, 2, 6, 1, 2, 2, 3]] do
@@ -298,6 +386,7 @@ def main : IO UInt32 := do
     KoalaBear.merkle
     KoalaBear.challenger
     KoalaBear.proofs
+    KoalaBear.batchProofs
     BabyBear.proofs
     IO.println "native tests passed"
     return 0
