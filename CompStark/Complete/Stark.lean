@@ -165,6 +165,14 @@ theorem grind_canonical (t : Transcript F 24) (bits : Nat) :
     simp only [Transcript.grind, ↓reduceIte, beq_self_eq_true, Bool.or_true]
   · rw [bne_iff_ne.mpr h, Bool.true_or]
 
+/-- Matrices of one height `2 ^ H` are of heights at most `2 ^ H`, some of height `2 ^ H`. -/
+theorem one_height {b H : Nat} {its : List (Mat F × List (EF × Array EF))} (hne : its ≠ [])
+    (h : ∀ x ∈ its, Deep.HonestItem b H x) :
+    (∃ x ∈ its, x.1.height = 2 ^ H) ∧ ∀ x ∈ its, ∃ h ≤ H, Deep.HonestItem b h x := by
+  obtain ⟨x, hx⟩ := List.exists_mem_of_ne_nil _ hne
+  obtain ⟨ps, hl, -⟩ := h x hx
+  exact ⟨⟨x, hx, hl.2.1⟩, fun y hy ↦ ⟨H, le_rfl, h y hy⟩⟩
+
 variable [Poseidon2Field F]
 
 /-- A round's matrices with their opened values at their points. -/
@@ -832,13 +840,32 @@ theorem hInputs_eq (hin : Fits P A logN trace)
 
 end Honest
 
-/-- The verifier's input checks accept the honest multi-openings of rounds of matrices of the
-largest height. -/
+/-- A running maximum from at most `a` over values at most `a`, one of them `a`, is `a`. -/
+theorem foldl_max_of_mem (a : Nat) : ∀ (l : List Nat) (acc : Nat), (∀ x ∈ l, x ≤ a) →
+    (acc = a ∨ a ∈ l) → acc ≤ a → l.foldl max acc = a
+  | [], _, _, h, _ => by
+    rcases h with h | h
+    · exact h
+    · exact absurd h List.not_mem_nil
+  | x :: l, acc, hle, h, hacc => by
+    rw [List.foldl_cons]
+    refine foldl_max_of_mem a l _ (fun y hy ↦ hle y (List.mem_cons_of_mem _ hy)) ?_
+      (Nat.max_le.mpr ⟨hacc, hle x List.mem_cons_self⟩)
+    rcases h with h | h
+    · left; rw [h]; exact Nat.max_eq_left (hle x List.mem_cons_self)
+    · rcases List.mem_cons.mp h with rfl | h
+      · left; exact Nat.max_eq_right hacc
+      · right; exact h
+
+/-- The verifier's input checks accept the honest multi-openings of rounds of matrices of heights
+`2 ^ h ≤ 2 ^ H ≤ 2 ^ logMax`, some of height `2 ^ H`. -/
 theorem verifyInputs_honest (P : Params) (logMax : Nat) (indices : List Nat)
     (rounds : List (Committed F × List (Mat F × List (EF × Array EF))))
     (hidx : ∀ i ∈ indices, i < 2 ^ logMax)
     (hrounds : ∀ r ∈ rounds, r.2 ≠ [] ∧ r.1 = Committed.ofMats hashF compF (r.2.map (·.1)) ∧
-      ∀ x ∈ r.2, x.2 ≠ [] ∧ Deep.HonestItem P.logBlowup logMax x) (t : Transcript F 24) :
+      ∃ H ≤ logMax, (∃ x ∈ r.2, x.1.height = 2 ^ H) ∧
+        ∀ x ∈ r.2, x.2 ≠ [] ∧ ∃ h ≤ H, Deep.HonestItem P.logBlowup h x)
+    (t : Transcript F 24) :
     verifyInputs (poseidon2 F) P logMax indices
       (rounds.map fun r ↦ openMulti (specBackend EF) r.1
         (indices.map (· >>> (logMax - (specBackend EF).logHeight r.1))))
@@ -851,73 +878,80 @@ theorem verifyInputs_honest (P : Params) (logMax : Nat) (indices : List Nat)
   induction rounds with
   | nil => rfl
   | cons r rounds ih =>
-    obtain ⟨hne, hc, hits⟩ := hrounds r List.mem_cons_self
+    obtain ⟨hne, hc, H, hH, htop, hits⟩ := hrounds r List.mem_cons_self
     rw [List.map_cons]
     refine (forIn_cons_ok _ _ _ PUnit.unit _ t t ?_).trans
       (ih fun r' hr' ↦ hrounds r' (List.mem_cons_of_mem _ hr'))
     obtain ⟨c, its⟩ := r
-    dsimp only at hne hc hits ⊢
+    dsimp only at hne hc hits htop ⊢
     subst hc
-    have hms : ∀ m ∈ its.map (·.1), m.height = 2 ^ logMax ∧ m.values.size = m.width * m.height := by
-      intro m hm
-      obtain ⟨x, hx, rfl⟩ := List.mem_map.mp hm
-      obtain ⟨ps, hl, -⟩ := (hits x hx).2
-      exact ⟨hl.2.1, hl.2.2.1⟩
-    have hne' : its.map (·.1) ≠ [] := by rwa [Ne, List.map_eq_nil_iff]
-    have hmx : Nat.log2 (Committed.ofMats hashF compF (its.map (·.1))).maxHeight = logMax := by
-      rw [Fri.maxHeight_ofMats _ _ hne' fun m hm ↦ (hms m hm).1, Nat.log2_two_pow]
-    have hlh : (specBackend EF).logHeight (Committed.ofMats hashF compF (its.map (·.1))) = logMax :=
-      hmx
+    have hmix : Fri.MixedHeights H (its.map (·.1)) := by
+      refine ⟨fun m hm ↦ ?_, ?_⟩
+      · obtain ⟨x, hx, rfl⟩ := List.mem_map.mp hm
+        obtain ⟨-, h, hh, ps, hl, -⟩ := hits x hx
+        exact ⟨h, hh, hl.2.1⟩
+      · obtain ⟨x, hx, hxH⟩ := htop
+        exact ⟨x.1, List.mem_map_of_mem hx, hxH⟩
+    have hmx : Nat.log2 (Committed.ofMats hashF compF (its.map (·.1))).maxHeight = H := by
+      rw [Fri.maxHeight_mixed hmix, Nat.log2_two_pow]
     have hdims : ((its.map fun x ↦ ((⟨1, Nat.log2 x.1.height - P.logBlowup⟩ : Domain F),
         x.2.map fun y ↦ (y.1, y.2.toList))).map fun x ↦
           (2 ^ (x.1.logSize + P.logBlowup), (x.2.headD default).2.length)) =
         (its.map (·.1)).map fun m ↦ (m.height, m.width) := by
       rw [List.map_map, List.map_map]
       refine List.map_congr_left fun x hx ↦ ?_
-      obtain ⟨hpne, ps, hl, hpts⟩ := hits x hx
+      obtain ⟨hpne, h, -, ps, hl, hpts⟩ := hits x hx
       obtain ⟨y, ys, hy⟩ := List.exists_cons_of_ne_nil hpne
       have hys := (hpts y (by rw [hy]; exact List.mem_cons_self)).2.1
       simp only [Function.comp_apply, hy, List.map_cons, List.headD_cons, Array.length_toList]
       rw [hys, ← hl.1, hl.2.1, Nat.log2_two_pow, Nat.sub_add_cancel hl.2.2.2.1]
     have hbatch : ((its.map fun x ↦ ((⟨1, Nat.log2 x.1.height - P.logBlowup⟩ : Domain F),
         x.2.map fun y ↦ (y.1, y.2.toList))).map fun x ↦ x.1.logSize + P.logBlowup).foldl max 0 =
-          logMax := by
-      refine foldl_max_const logMax _ 0 (fun z hz ↦ ?_) (by simpa only [ne_eq, List.map_eq_nil_iff])
-        (Nat.zero_le _)
-      obtain ⟨d, hd, rfl⟩ := List.mem_map.mp hz
-      obtain ⟨x, hx, rfl⟩ := List.mem_map.mp hd
-      obtain ⟨-, ps, hl, -⟩ := hits x hx
-      dsimp only
-      rw [hl.2.1, Nat.log2_two_pow, Nat.sub_add_cancel hl.2.2.2.1]
+          H := by
+      have hlog : ∀ x ∈ its, Nat.log2 x.1.height - P.logBlowup + P.logBlowup =
+          Nat.log2 x.1.height := fun x hx ↦ by
+        obtain ⟨-, h, -, ps, hl, -⟩ := hits x hx
+        rw [hl.2.1, Nat.log2_two_pow, Nat.sub_add_cancel hl.2.2.2.1]
+      refine foldl_max_of_mem H _ 0 (fun z hz ↦ ?_) (Or.inr ?_) (Nat.zero_le _)
+      · obtain ⟨d, hd, rfl⟩ := List.mem_map.mp hz
+        obtain ⟨x, hx, rfl⟩ := List.mem_map.mp hd
+        obtain ⟨-, h, hh, ps, hl, -⟩ := hits x hx
+        dsimp only
+        rw [hlog x hx, hl.2.1, Nat.log2_two_pow]; exact hh
+      · obtain ⟨x, hx, hxH⟩ := htop
+        refine List.mem_map.mpr ⟨_, List.mem_map_of_mem hx, ?_⟩
+        dsimp only
+        rw [hlog x hx, hxH, Nat.log2_two_pow]
     have hrows : ∀ i, ((Committed.ofMats hashF compF (its.map (·.1))).openAt i).values.size =
         its.length := fun i ↦ by
-      rw [Fri.openAt_values _ logMax (fun m hm ↦ (hms m hm).1), List.size_toArray, List.length_map,
-        List.length_map]
+      rw [Fri.openAt_values_mixed hmix, List.size_toArray, List.length_map, List.length_map]
     have hpts : (its.map fun x ↦ ((⟨1, Nat.log2 x.1.height - P.logBlowup⟩ : Domain F),
         x.2.map fun y ↦ (y.1, y.2.toList))).all (fun x ↦ !x.2.isEmpty) = true := by
       simp only [List.all_map, List.all_eq_true, Function.comp_apply, Bool.not_eq_eq_eq_not,
         Bool.not_true, List.isEmpty_eq_false_iff, ne_eq, List.map_eq_nil_iff]
       exact fun x hx ↦ (hits x hx).1
-    simp only [hmx, Nat.sub_self, Nat.shiftRight_zero, List.map_id', openMulti,
-      List.size_toArray, List.length_map, beq_self_eq_true, ensure_true, pure_bind, hdims, hbatch,
-      hpts]
-    have hall : ((indices.map
+    simp only [hmx, openMulti, List.size_toArray, List.length_map, beq_self_eq_true, ensure_true,
+      pure_bind, hdims, hbatch, hpts]
+    set idx' := indices.map (· >>> (logMax - H)) with hidx'
+    have hall : ((idx'.map
         (Committed.ofMats hashF compF (its.map (·.1))).openAt).map (·.values)).toArray.all
           (fun a ↦ a.size == its.length) 0 indices.length = true := by
-      rw [show indices.length = ((indices.map
+      rw [show indices.length = ((idx'.map
         (Committed.ofMats hashF compF (its.map (·.1))).openAt).map (·.values)).toArray.size by
-          simp only [List.size_toArray, List.length_map], List.all_toArray]
+          simp only [hidx', List.size_toArray, List.length_map], List.all_toArray]
       simp only [List.all_map, List.all_eq_true, Function.comp_apply, beq_iff_eq]
       exact fun i _ ↦ hrows i
     rw [hall, ensure_true, pure_bind]
-    have hv := Fri.verifyMulti_openMulti (its.map (·.1)) logMax hne' hms indices hidx
+    have hv := Fri.verifyMulti_openMulti hmix idx' fun i hi ↦ by
+      obtain ⟨j, hj, rfl⟩ := List.mem_map.mp hi
+      exact Deep.shiftRight_lt (hidx j hj) hH
     set C := Committed.ofMats hashF compF (its.map (·.1))
-    have e1 : (((indices.map ((specBackend EF).openAt C)).map (·.values)).map fun r ↦
+    have e1 : (((idx'.map ((specBackend EF).openAt C)).map (·.values)).map fun r ↦
         r.toList.map (·.toList)) =
-        indices.map fun i ↦ (C.openAt i).values.toList.map (·.toList) := by
+        idx'.map fun i ↦ (C.openAt i).values.toList.map (·.toList) := by
       rw [List.map_map, List.map_map]; rfl
-    have e2 : (indices.map ((specBackend EF).openAt C)).map (·.path.toList) =
-        indices.map fun i ↦ (C.openAt i).path.toList := by
+    have e2 : (idx'.map ((specBackend EF).openAt C)).map (·.path.toList) =
+        idx'.map fun i ↦ (C.openAt i).path.toList := by
       rw [List.map_map]; rfl
     rw [bind_ok (checkMulti_eq _ _ _ _ _ t), e1, e2, hv]
     rfl
@@ -1049,7 +1083,7 @@ theorem hreduce (hin : Fits P A logN trace)
   have hD := reduceQuery_honest P (logN + P.logBlowup) index alpha (hDRounds EF P A logN trace pis)
     hidx fun r hr ↦ by
       obtain ⟨h1, h2, h3⟩ := hDRounds_ok EF P A logN trace pis hin hz r hr
-      exact ⟨h1, h2, _, le_rfl, fun x hx ↦ (h3 x hx).2⟩
+      exact ⟨h1, h2, _, le_rfl, one_height h1 fun x hx ↦ (h3 x hx).2⟩
   rw [flatMap_hDRounds] at hD
   have hmap : ((hRounds EF P A logN trace pis).map fun (c, _) ↦ ((specBackend EF).openAt c
       (index >>> (logN + P.logBlowup - (specBackend EF).logHeight c))).values.toList) =
@@ -1078,8 +1112,10 @@ theorem hinputs (hin : Fits P A logN trace)
       (indices.map (· >>> (logN + P.logBlowup - (specBackend EF).logHeight c)))) _ _
       (fst_hRounds EF P A logN trace pis)
   rw [hmap]
-  exact verifyInputs_honest P _ indices (hDRounds EF P A logN trace pis) hidx
-    (hDRounds_ok EF P A logN trace pis hin hz) t
+  refine verifyInputs_honest P _ indices (hDRounds EF P A logN trace pis) hidx (fun r hr ↦ ?_) t
+  obtain ⟨h1, h2, h3⟩ := hDRounds_ok EF P A logN trace pis hin hz r hr
+  obtain ⟨htop, hall⟩ := one_height h1 fun x hx ↦ (h3 x hx).2
+  exact ⟨h1, h2, _, le_rfl, htop, fun x hx ↦ ⟨(h3 x hx).1, hall x hx⟩⟩
 
 theorem hheights :
     ((((openingRounds A (setup P A logN) (prove EF P A logN trace pis)
@@ -1160,7 +1196,7 @@ theorem verifyRun_honest (hin : Fits P A logN trace)
   have hgF : ((proveFri (specBackend EF) P (hRounds EF P A logN trace pis) [v]
       (hBatch EF P A logN trace pis).1).run (hT2 EF P A logN trace pis)).2.grindFailed = false := by
     rw [← hrun, ← proveTranscript_eq]; exact hgrind
-  have hg2 := flag_proveFri P _ v _ _ hgF
+  have hg2 := flag_proveFri P _ v [] _ _ hgF
   have hgB : (hBatch EF P A logN trace pis).2.grindFailed = false := by
     rwa [hT2, flag_sampleExt] at hg2
   have hgO : (hOod EF P A logN trace pis).2.grindFailed = false := by
@@ -1197,10 +1233,12 @@ theorem verifyRun_honest (hin : Fits P A logN trace)
         fun r ↦ r.2.flatMap fun x ↦ x.2.flatMap (·.2)) = hTP EF P A logN trace pis := by
     rw [claimCounts_eq, flat_eq EF P A logN trace pis hin]
     rfl
-  have hF := verifyFri_proveFri P (hRounds EF P A logN trace pis) v (hBatch EF P A logN trace pis).1
+  have hF := verifyFri_proveFri P (hRounds EF P A logN trace pis) v []
+    (hBatch EF P A logN trace pis).1
     (openingRounds A (setup P A logN) (prove EF P A logN trace pis) (hZeta EF P A logN trace pis))
-    (hBatchAlpha EF P A logN trace pis) (hT2 EF P A logN trace pis) hd2 hgood hP hq hb hgF rfl
-    (by rw [hs]; exact hheights EF P A logN trace pis)
+    (hBatchAlpha EF P A logN trace pis) (hT2 EF P A logN trace pis) hd2 hgood
+    ⟨List.Pairwise.nil, fun _ h ↦ absurd h List.not_mem_nil⟩ (fun _ h ↦ absurd h List.not_mem_nil)
+    hP hq hb hgF rfl (by rw [List.map_singleton, hs]; exact hheights EF P A logN trace pis)
     (fun indices t hidx ↦ by
       rw [hs] at hidx ⊢; exact hinputs EF P A logN trace pis hin hz indices t hidx)
     (fun index t hidx ↦ by
@@ -1209,7 +1247,8 @@ theorem verifyRun_honest (hin : Fits P A logN trace)
         (hBatchAlpha EF P A logN trace pis)
       rw [hv, List.cons.injEq] at hv'
       rw [hreduce EF P A logN trace pis hin hz _ index t hidx, hred, hv'.1]
-      simp only [List.map_cons, List.map_nil, Nat.sub_self, Nat.shiftRight_zero])
+      simp only [List.map_cons, List.map_nil, Nat.sub_self, Nat.shiftRight_zero]
+      rfl)
   refine ⟨((proveFri (specBackend EF) P (hRounds EF P A logN trace pis) [v]
     (hBatch EF P A logN trace pis).1).run (hT2 EF P A logN trace pis)).2, ?_⟩
   have hcO : checkWitness (poseidon2 F) P.oodPowBits (hOod EF P A logN trace pis).1

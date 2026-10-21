@@ -34,6 +34,7 @@ public import CompStark.Primitives
 public import CompStark.Stark.Proof
 public import CompStark.Merkle.Mmcs
 public import CompStark.Merkle.Multi
+public import CompStark.Merkle.Mixed
 public import CompStark.Stark.Challenge
 public import CompStark.DomainSeparator
 public import CompStark.KoalaBear.Challenge

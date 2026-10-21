@@ -14,8 +14,9 @@ pure hashes:
 * `verifyBatch_of_verifyMulti`: an accepted multi-opening gives every query an accepted single
   opening (`verifyBatch`): the walk restores each query's path, every sibling a node of the
   frontier or a sibling of the list.
-* `verifyMulti_prune`: the honest multi-opening of a tree, its rows and the pruned siblings of
-  its paths (`prune`), is accepted. Every node of the walk is the tree's node.
+* `pruneLevel_parents`, `length_pruneWalk`: the parents and the sibling count of `prune`, which
+  collects the siblings a walk takes from the queries' full paths. That honest multi-openings,
+  of any heights, are accepted is `verifyMulti_prune_mixed` (`CompStark/Merkle/Mixed.lean`).
 -/
 
 @[expose] public section
@@ -464,75 +465,10 @@ theorem verifyBatch_of_verifyMulti [DecidableEq F] (commit : Vector F d) (n k : 
 
 end Accept
 
-/-! ### Honest multi-openings -/
+/-! ### Pruning -/
 
 section Honest
-variable (hash : List F → Vector F d) (compress : Vector F d → Vector F d → Vector F d)
-  (g : Nat → Vector F d)
-
-local notation "N" => nodeValue compress g
-
-/-- The nodes of a level, each with its digest in the tree of leaves `g`. -/
-def nodesAt (l : Nat) (ns : List (Nat × Nat)) : List (Nat × Nat × Vector F d) :=
-  ns.map fun e ↦ (e.1, e.2, N l e.1)
-
-/-- A parent is the compression of its node and the node's sibling, on the node's side. -/
-theorem nodeValue_parent (l i : Nat) :
-    (if i % 2 = 0 then compress (N l i) (N l (i ^^^ 1)) else compress (N l (i ^^^ 1)) (N l i)) =
-      N (l + 1) (i / 2) := by
-  rw [nodeValue_succ]
-  have hx : i ^^^ 1 = if i % 2 = 0 then i + 1 else i - 1 := by
-    rw [show i ^^^ 1 = 2 * (i / 2) + (i + 1) % 2 from by
-      have h1 : (i ^^^ 1) / 2 = i / 2 := by
-        rw [Nat.xor_div_two]; simp only [Nat.reduceDiv, Nat.xor_zero]
-      have h2 : (i ^^^ 1) % 2 = (i + 1) % 2 := by
-        have := Nat.xor_mod_two_pow (a := i) (b := 1) (n := 1)
-        rcases Nat.mod_two_eq_zero_or_one i with h | h <;>
-          simp only [Nat.pow_one, h, Nat.one_mod, Nat.reduceXor] at this <;> omega
-      have := Nat.div_add_mod (i ^^^ 1) 2
-      omega]
-    split <;> omega
-  by_cases h : i % 2 = 0
-  · simp only [hx, h, ↓reduceIte]
-    congr 2 <;> omega
-  · simp only [hx, h, ↓reduceIte]
-    congr 2 <;> omega
-
 variable [Zero F]
-
-/-- One level of the honest walk: the pruned siblings of the leads' paths take the frontier's
-nodes to their parents. -/
-theorem level_prune (paths : List (List (Vector F d))) (l : Nat) :
-    ∀ (ns : List (Nat × Nat)) (rest : List (Vector F d)),
-      (∀ e ∈ ns, (paths.getD e.2 []).getD l 0 = N l (e.1 ^^^ 1)) →
-      level compress (nodesAt compress g l ns) ((pruneLevel paths l ns).2 ++ rest) =
-        (nodesAt compress g (l + 1) (pruneLevel paths l ns).1, rest)
-  | [], rest, _ => rfl
-  | [(i, q)], rest, h => by
-    simp only [nodesAt, List.map_cons, List.map_nil, pruneLevel, List.singleton_append,
-      level_single, List.headD_cons, List.tail_cons]
-    rw [h (i, q) (List.mem_singleton_self _), nodeValue_parent]
-  | (i, q) :: (j, q') :: ns, rest, h => by
-    have h1 := h (i, q) List.mem_cons_self
-    have hj : ∀ e ∈ (j, q') :: ns, (paths.getD e.2 []).getD l 0 = N l (e.1 ^^^ 1) :=
-      fun e he ↦ h e (List.mem_cons_of_mem _ he)
-    have hns : ∀ e ∈ ns, (paths.getD e.2 []).getD l 0 = N l (e.1 ^^^ 1) :=
-      fun e he ↦ hj e (List.mem_cons_of_mem _ he)
-    simp only [nodesAt, List.map_cons]
-    rw [level_cons_cons]
-    simp only [pruneLevel]
-    split
-    · rename_i hp
-      obtain ⟨he, rfl⟩ := hp
-      have := level_prune paths l ns rest hns
-      simp only [nodesAt] at this
-      rw [this]
-      simp only [List.map_cons]
-      rw [nodeValue_succ, show 2 * (i / 2) = i by omega]
-    · have := level_prune paths l ((j, q') :: ns) rest hj
-      simp only [nodesAt, List.map_cons] at this
-      simp only [List.cons_append, List.headD_cons, List.tail_cons, this, h1, nodeValue_parent,
-        List.map_cons]
 
 /-- The parents of `pruneLevel`, each the parent of a node led by the node's lead. -/
 theorem pruneLevel_parents (paths : List (List (Vector F d))) (l : Nat) :
@@ -577,136 +513,6 @@ theorem length_pruneWalk (paths : List (List (Vector F d))) :
     obtain ⟨h1, h2⟩ := pruneLevel_count paths l ns
     simp only [pruneWalk, siblingCount, List.length_append, h1, length_pruneWalk paths levels,
       h2]
-
-/-- The honest walk over `levels` levels from the frontier `ns` at level `l`, whose leads open
-the tree's paths: every node is the tree's node. -/
-theorem walk_prune (rows : List (List (List F))) (indices : List Nat) (k : Nat)
-    (paths : List (List (Vector F d)))
-    (hpaths : ∀ q (hq : q < indices.length), ∀ j < k,
-      (paths.getD q []).getD j 0 = N j ((indices[q] >>> j) ^^^ 1)) :
-    ∀ (levels l padded : Nat) (ns : List (Nat × Nat)) (rest : List (Vector F d)),
-      l + levels ≤ k → (∀ e ∈ ns, ∃ h : e.2 < indices.length, indices[e.2] >>> l = e.1) →
-      ∃ ns' : List (Nat × Nat), (∀ e ∈ ns', ∃ h : e.2 < indices.length,
-          indices[e.2] >>> (l + levels) = e.1) ∧
-        walk hash compress rows levels padded (nodesAt compress g l ns)
-          (pruneWalk paths levels l ns ++ rest) = (nodesAt compress g (l + levels) ns', rest)
-  | 0, l, _, ns, rest, _, hns => ⟨ns, hns, rfl⟩
-  | levels + 1, l, padded, ns, rest, hk, hns => by
-    have hlev : ∀ e ∈ ns, (paths.getD e.2 []).getD l 0 = N l (e.1 ^^^ 1) := fun e he ↦ by
-      obtain ⟨hq, hi⟩ := hns e he
-      rw [hpaths e.2 hq l (by omega), hi]
-    have hpar : ∀ e ∈ (pruneLevel paths l ns).1, ∃ h : e.2 < indices.length,
-        indices[e.2] >>> (l + 1) = e.1 := fun e' he' ↦ by
-      obtain ⟨e, he, rfl⟩ := pruneLevel_parents paths l ns e' he'
-      obtain ⟨hq, hi⟩ := hns e he
-      exact ⟨hq, by rw [shiftRight_succ, hi]⟩
-    simp only [pruneWalk, List.append_assoc]
-    rw [walk_succ, level_prune compress g paths l ns _ hlev]
-    obtain ⟨ns', h1, h2⟩ := walk_prune rows indices k paths hpaths levels (l + 1) (padded / 2)
-      (pruneLevel paths l ns).1 rest (by omega) hpar
-    exact ⟨ns', by rw [show l + (levels + 1) = l + 1 + levels by omega]; exact h1,
-      by rw [h2, show l + 1 + levels = l + (levels + 1) by omega]⟩
-
-/-- **Honest multi-openings verify.** The multi-opening at `indices` of `n > 0` matrices of one
-height `2 ^ k` whose leaves hash to `g`, with the rows at the indices and the pruned siblings of
-the tree's paths, is accepted against the tree's root. -/
-theorem verifyMulti_prune [DecidableEq F] (n k : Nat) (hn : 0 < n) (dims : List (Nat × Nat))
-    (hdims : dims.map (·.1) = List.replicate n (2 ^ k)) (rowsAt : Nat → List (List F))
-    (hw : ∀ i, (rowsAt i).map List.length = dims.map (·.2))
-    (hleaf : ∀ i, hash ((List.range n).flatMap fun m ↦ (rowsAt i).getD m []) = g i)
-    (indices : List Nat) (hidx : ∀ i ∈ indices, i < 2 ^ k) (paths : List (List (Vector F d)))
-    (hpaths : ∀ q (hq : q < indices.length), ∀ j < k,
-      (paths.getD q []).getD j 0 = N j ((indices[q] >>> j) ^^^ 1)) :
-    verifyMultiM (m := Id) hash compress (N k 0) dims indices (indices.map rowsAt)
-      (prune k indices paths) = true := by
-  have hlen : dims.length = n := by
-    rw [← List.length_map (f := (·.1)), hdims, List.length_replicate]
-  have hh : ∀ x ∈ dims, x.1 = 2 ^ k := fun x hx ↦ by
-    have : x.1 ∈ dims.map (·.1) := List.mem_map_of_mem hx
-    rw [hdims] at this
-    exact List.eq_of_mem_replicate this
-  have hrowlen : ∀ i, (rowsAt i).length = dims.length := fun i ↦ by
-    rw [← List.length_map (f := List.length), hw, List.length_map]
-  have hzip : ∀ i, ∀ x ∈ (rowsAt i).zip dims, x.1.length = x.2.2 := fun i x hx ↦ by
-    obtain ⟨j, hj, rfl⟩ := List.mem_iff_getElem.mp hx
-    rw [List.getElem_zip]
-    have hj1 : j < (rowsAt i).length := by rw [List.length_zip] at hj; omega
-    have := congrArg (·[j]?) (hw i)
-    simp only [List.getElem?_map, List.getElem?_eq_getElem hj1,
-      List.getElem?_eq_getElem (show j < dims.length by rw [← hrowlen i]; exact hj1),
-      Option.map_some, Option.some.injEq] at this
-    exact this
-  have hgetD : ∀ q (hq : q < indices.length), (indices.map rowsAt).getD q [] = rowsAt indices[q] :=
-    fun q hq ↦ by
-      rw [List.getD_eq_getElem?_getD, List.getElem?_map, List.getElem?_eq_getElem hq,
-        Option.map_some, Option.getD_some]
-  have hshape : multiShapeOk dims (2 ^ k) k indices (indices.map rowsAt)
-      (prune k indices paths) = true := by
-    simp only [multiShapeOk, Bool.and_eq_true, beq_iff_eq, List.all_eq_true, decide_eq_true_eq,
-      List.length_map]
-    have hzipself : ∀ i, ∀ x ∈ dims.zip ((rowsAt i).zip (rowsAt i)), x.2.1 = x.2.2 :=
-      fun i x hx ↦ by
-        obtain ⟨j, hj, rfl⟩ := List.mem_iff_getElem.mp hx
-        simp only [List.getElem_zip]
-    have hmemzip : ∀ a ∈ indices.zip (indices.map rowsAt), a.2 = rowsAt a.1 := fun a ha ↦ by
-      obtain ⟨j, hj, rfl⟩ := List.mem_iff_getElem.mp ha
-      simp only [List.getElem_zip, List.getElem_map]
-    refine ⟨⟨⟨⟨⟨⟨fun x hx ↦ ?_, Nat.two_pow_pos k⟩, trivial⟩, fun r hr ↦ ?_⟩, hidx⟩, ?_⟩, ?_⟩
-    · rw [hh x hx, Nat.sub_self, Nat.shiftRight_zero]
-      have := Nat.two_pow_pos k
-      omega
-    · obtain ⟨i, -, rfl⟩ := List.mem_map.mp hr
-      exact ⟨hrowlen i, hzip i⟩
-    · intro a ha b hb x hx
-      rw [hh x.1 (List.of_mem_zip hx).1, Nat.sub_self, Nat.shiftRight_zero, Nat.shiftRight_zero]
-      by_cases he : a.1 = b.1
-      · rw [hmemzip a ha, hmemzip b hb, he] at hx
-        rw [he, hzipself b.1 x hx]
-        simp only [bne_self_eq_false, beq_self_eq_true, Bool.false_or]
-      · have : (a.1 != b.1) = true := bne_iff_ne.mpr he
-        rw [this, Bool.true_or]
-    · rw [prune, length_pruneWalk]
-  have hpad : (2 ^ k).nextPowerOfTwo = 2 ^ k := nextPowerOfTwo_two_pow k
-  unfold verifyMultiM
-  rw [hdims, heightGroups_replicate n _ hn]
-  dsimp only
-  rw [hpad, Nat.log2_two_pow]
-  simp only [hshape, ↓reduceIte]
-  have hleaves : ((frontier indices).mapM (m := Id) fun (x : Nat × Nat) ↦ match x with
-      | (i, q) => do
-        return (i, q, ← hash ((List.range n).flatMap fun m ↦
-          ((indices.map rowsAt).getD q []).getD m []))) =
-        nodesAt compress g 0 (frontier indices) := by
-    rw [nodesAt]
-    refine List.idRun_mapM.trans ?_
-    apply List.map_congr_left
-    rintro ⟨i, q⟩ he
-    obtain ⟨hi, hq⟩ := mem_frontier.mp he
-    dsimp only at hi hq ⊢
-    have hql : q < indices.length := hq ▸ List.idxOf_lt_length_of_mem hi
-    have hqi : indices[q] = i := by subst hq; exact List.getElem_idxOf hql
-    rw [hgetD q hql, hqi, hleaf, nodeValue_zero]
-    rfl
-  rw [hleaves]
-  obtain ⟨ns', hns', hwalk⟩ := walk_prune hash compress g (indices.map rowsAt) indices k paths
-    hpaths k 0 (2 ^ k) (frontier indices) [] (by omega) fun ⟨i, q⟩ he ↦ by
-      obtain ⟨hi, hq⟩ := mem_frontier.mp he
-      dsimp only at hi hq ⊢
-      subst hq
-      have hql : indices.idxOf i < indices.length := List.idxOf_lt_length_of_mem hi
-      exact ⟨hql, by rw [Nat.shiftRight_zero]; exact List.getElem_idxOf hql⟩
-  rw [prune, ← List.append_nil (pruneWalk paths k 0 (frontier indices))]
-  change ((walk hash compress _ k (2 ^ k) _ _).1.all fun (x : Nat × Nat × Vector F d) ↦
-    x.2.2 == N k 0) = true
-  rw [hwalk, List.all_eq_true]
-  intro x hx
-  obtain ⟨e, he, rfl⟩ := List.mem_map.mp hx
-  obtain ⟨hq, hi⟩ := hns' e he
-  have h0 : indices[e.2] >>> (0 + k) = 0 := by
-    rw [Nat.zero_add, Nat.shiftRight_eq_div_pow]
-    exact Nat.div_eq_of_lt (hidx _ (List.getElem_mem hq))
-  rw [h0] at hi
-  simp only [← hi, Nat.zero_add, beq_self_eq_true]
 
 end Honest
 
