@@ -165,6 +165,14 @@ theorem numFolds_schedule_one {logFinal : ℕ} (words : (m : ℕ) → Fin (2 ^ m
           (fits_cons_of_ne hfit h3 hm)]
         omega
 
+/-- Without inputs, the rounds do not read the words. -/
+theorem schedule_nil (maxLogArity logFinal : ℕ) (words words' : (m : ℕ) → Fin (2 ^ m) → K) :
+    ∀ fuel n, schedule maxLogArity logFinal words fuel n [] =
+      schedule maxLogArity logFinal words' fuel n []
+  | 0, _ => rfl
+  | fuel + 1, n => by
+    simp only [schedule, schedule_nil maxLogArity logFinal words words' fuel]
+
 variable [Field K]
 
 /-- The rounds' fold errors, number of folds and degree depend on the heights only, not on the

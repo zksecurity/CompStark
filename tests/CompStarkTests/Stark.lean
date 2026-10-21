@@ -79,6 +79,11 @@ Quot.sound] -/
 #guard_msgs in
 #print axioms CompStark.Iop.wide5i_knowledgeSoundness
 
+/-- info: 'CompStark.Sound.FriGame.acceptance_le' depends on axioms: [propext,
+Classical.choice, Quot.sound] -/
+#guard_msgs in
+#print axioms CompStark.Sound.FriGame.acceptance_le
+
 /-- info: 'CompStark.Iop.batchKnowledgeSoundness' depends on axioms: [propext, Classical.choice,
 Quot.sound] -/
 #guard_msgs in

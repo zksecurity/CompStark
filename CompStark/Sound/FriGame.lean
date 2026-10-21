@@ -100,23 +100,26 @@ def trace (d : ℕ) (hd : 0 < d) : {n : ℕ} → {ω : SmoothCosetFftDomain n K}
         (trace d hd (next (βs ⟨0, Nat.succ_pos _⟩)) fun j ↦ βs j.succ)
 
 /-- The realized trace has the rounds' number of folds. -/
-theorem numFolds_trace {d : ℕ} (hd : 0 < d) : ∀ {n : ℕ} {ω : SmoothCosetFftDomain n K} {r : Rounds K n}
-    (m : Messages d ω r) (βs : Fin r.numFolds → K), (trace d hd m βs).numFolds = r.numFolds
+theorem numFolds_trace {d : ℕ} (hd : 0 < d) :
+    ∀ {n : ℕ} {ω : SmoothCosetFftDomain n K} {r : Rounds K n}
+      (m : Messages d ω r) (βs : Fin r.numFolds → K), (trace d hd m βs).numFolds = r.numFolds
   | _, _, .final, .final _ _, _ => rfl
   | _, _, .fold _ _ none _, .fold _ next, _ => congrArg (· + 1) (numFolds_trace hd (next _) _)
   | _, _, .fold _ _ (some _) _, .fold _ next, _ => congrArg (· + 1) (numFolds_trace hd (next _) _)
 
 /-- The realized trace's final word is a codeword. -/
-theorem finalInCode_trace {d : ℕ} (hd : 0 < d) : ∀ {n : ℕ} {ω : SmoothCosetFftDomain n K} {r : Rounds K n}
-    (m : Messages d ω r) (βs : Fin r.numFolds → K), (trace d hd m βs).FinalInCode
+theorem finalInCode_trace {d : ℕ} (hd : 0 < d) :
+    ∀ {n : ℕ} {ω : SmoothCosetFftDomain n K} {r : Rounds K n}
+      (m : Messages d ω r) (βs : Fin r.numFolds → K), (trace d hd m βs).FinalInCode
   | _, _, .final, .final _ hw, _ => hw
   | _, _, .fold _ _ none _, .fold _ next, _ => finalInCode_trace hd (next _) _
   | _, _, .fold _ _ (some _) _, .fold _ next, _ => finalInCode_trace hd (next _) _
 
 /-- The realized trace's injected words are the rounds' inputs. -/
-theorem inputsAgree_trace {d : ℕ} (hd : 0 < d) (ρ : ℝ) : ∀ {n : ℕ} {ω : SmoothCosetFftDomain n K} {r : Rounds K n}
-    (m : Messages d ω r) (βs : Fin r.numFolds → K),
-      (trace d hd m βs).InputsAgree ρ ↔ r.InputsAgree d ρ ω
+theorem inputsAgree_trace {d : ℕ} (hd : 0 < d) (ρ : ℝ) :
+    ∀ {n : ℕ} {ω : SmoothCosetFftDomain n K} {r : Rounds K n}
+      (m : Messages d ω r) (βs : Fin r.numFolds → K),
+        (trace d hd m βs).InputsAgree ρ ↔ r.InputsAgree d ρ ω
   | _, _, .final, .final _ _, _ => Iff.rfl
   | _, _, .fold _ _ none _, .fold _ next, _ => inputsAgree_trace hd ρ (next _) _
   | _, _, .fold _ _ (some _) _, .fold _ next, _ =>
@@ -154,7 +157,8 @@ noncomputable def acceptance {n : ℕ} (ω : SmoothCosetFftDomain n K) (r : Roun
 
 /-- FRI's soundness error at proximity `δ`, at the best proximity loss: the folds' errors and
 `(1 - δ + m · loss) ^ t` for the queries. -/
-noncomputable def error [SampleableType K] {n : ℕ} (ω : SmoothCosetFftDomain n K) (r : Rounds K n) (d t : ℕ)
+noncomputable def error [SampleableType K] {n : ℕ} (ω : SmoothCosetFftDomain n K)
+    (r : Rounds K n) (d t : ℕ)
     (δ : ℝ) : ENNReal :=
   ⨅ loss : ℝ≥0, r.foldError d δ loss ω + ENNReal.ofReal (1 - δ + r.numFolds * loss) ^ t
 
@@ -241,7 +245,8 @@ end Rounds
 open Classical in
 /-- **FRI with injected inputs is sound.** If the tallest input `word` or an injected input is
 `δ`-far from its code, FRI accepts with probability at most its error. -/
-theorem acceptance_le [SampleableType K] {n : ℕ} (ω : SmoothCosetFftDomain n K) (r : Rounds K n) (d t : ℕ)
+theorem acceptance_le [SampleableType K] {n : ℕ} (ω : SmoothCosetFftDomain n K)
+    (r : Rounds K n) (d t : ℕ)
     (hd : 0 < d) (word : Fin (2 ^ n) → K) (δ : ℝ)
     (hfar : ¬ (Agrees ω (r.degree d) (1 - δ) word ∧ r.InputsAgree d (1 - δ) ω)) :
     acceptance ω r d t hd word ≤ error ω r d t δ := by
@@ -257,7 +262,8 @@ theorem acceptance_le [SampleableType K] {n : ℕ} (ω : SmoothCosetFftDomain n 
     set tr := trace d hd m βs
     set A := tr.accepting.filter fun i ↦ tr.initial i = word i
     have hA : Pr{let xs ←$ᵗ (Fin t → Fin (2 ^ n))}[∀ j, xs j ∈ tr.accepting ∧
-        tr.initial (xs j) = word (xs j)] = ((A.card : ENNReal) / Fintype.card (Fin (2 ^ n))) ^ t := by
+        tr.initial (xs j) = word (xs j)] =
+          ((A.card : ENNReal) / Fintype.card (Fin (2 ^ n))) ^ t := by
       rw [← Probability.prob_uniform_pi_mem_finset_eq A t]
       simp only [A, Finset.mem_filter]
     by_cases hs : tr.SafeLossy δ loss

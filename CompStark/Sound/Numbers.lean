@@ -474,27 +474,31 @@ theorem knowledgeError_le_curve (S : Setup EF) (δ δ' : ℝ≥0)
         simp only [Nat.cast_add, ENNReal.div_add_div_same]
 
 /-- The knowledge error of a batch with FRI at `δ` and the extractor at `δ'` below the
-unique-decoding radius, `δ < δ' - 2/N`: every instance's constraint-folding and out-of-domain
-integers at most `A`, the curve bound for batching all opened words at `δ' - 2/N`, and FRI's
-error. -/
-theorem batchKnowledgeError_le_curve (S : Batch.Setup EF) (δ δ' : ℝ≥0) (A : ℕ)
+unique-decoding radius, `δ < δ' - 2/N` on every domain: every instance's constraint-folding and
+out-of-domain integers at most `A`, the curve bound on batching the opened words of every
+instance's domain size at `δ' - 2/N` at most `b`, and FRI's error. -/
+theorem batchKnowledgeError_le_curve (S : Batch.Setup EF) (δ δ' : ℝ≥0) (A : ℕ) (b : ℝ)
     (hA : ∀ i, ((S.air i).constraints.length - 1) + ((S.instanceSetup i).identityDegree +
-      2 ^ S.logN) ≤ A)
-    (h_ud : (δ : ℝ) ≤ (1 - S.rate) / 2 - 1 / S.size) (h_pos : 0 < δ)
-    (h_lt : (δ : ℝ) < δ' - 2 / S.size) (hδ' : (δ' : ℝ) < (1 - S.rate) / 2) :
+      2 ^ S.logN i) ≤ A)
+    (hb : ∀ i, ((S.groupNumOpened (S.logN i + S.params.logBlowup) - 1 : ℕ) *
+      max ((1 - S.rate - δ) / (δ * (1 - S.rate - 2 * δ)))
+        ((δ' - 2 / (S.instanceSetup i).size) / (δ' - 2 / (S.instanceSetup i).size - δ))) ≤ b)
+    (h_ud : ∀ i, (δ : ℝ) ≤ (1 - S.rate) / 2 - 1 / (S.instanceSetup i).size) (h_pos : 0 < δ)
+    (h_lt : ∀ i, (δ : ℝ) < δ' - 2 / (S.instanceSetup i).size)
+    (hδ' : (δ' : ℝ) < (1 - S.rate) / 2) :
     Batch.knowledgeError S δ δ' ≤
-      (A : ENNReal) / (Fintype.card 𝕂 : ENNReal) +
-        ENNReal.ofReal ((S.numOpened - 1 : ℕ) *
-          max ((1 - S.rate - δ) / (δ * (1 - S.rate - 2 * δ)))
-            ((δ' - 2 / S.size) / (δ' - 2 / S.size - δ))) /
-          Fintype.card 𝕂 +
-        friError S.domainSetup δ := by
-  refine add_le_add (add_le_add (iSup_le fun i ↦ ?_)
-    (batchingError_le_curve S.domainSetup S.numOpened δ _ h_ud h_pos h_lt)) le_rfl
-  refine (add_le_add (foldingError_le_of_le (S.instanceSetup i) δ' hδ')
-    (outOfDomainError_le_of_le (S.instanceSetup i) δ' hδ')).trans ?_
-  rw [ENNReal.div_add_div_same, ← Nat.cast_add]
-  exact ENNReal.div_le_div_right (Nat.cast_le.mpr (hA i)) _
+      ((A : ENNReal) / (Fintype.card 𝕂 : ENNReal) + ENNReal.ofReal b / Fintype.card 𝕂) +
+        friErrorWith S.domainSetup S.friHeights δ := by
+  refine add_le_add (iSup_le fun i ↦ ?_) le_rfl
+  have hrate : (S.instanceSetup i).rate = S.rate := by
+    rw [rate_eq, Batch.Setup.rate]
+  rw [← hrate] at hδ' hb
+  refine add_le_add ((add_le_add (foldingError_le_of_le (S.instanceSetup i) δ' hδ')
+    (outOfDomainError_le_of_le (S.instanceSetup i) δ' hδ')).trans ?_) ?_
+  · rw [ENNReal.div_add_div_same, ← Nat.cast_add]
+    exact ENNReal.div_le_div_right (Nat.cast_le.mpr (hA i)) _
+  · refine (batchingError_le_curve (S.instanceSetup i) _ δ _ (hrate ▸ h_ud i) h_pos
+      (h_lt i)).trans (ENNReal.div_le_div_right (ENNReal.ofReal_le_ofReal (hb i)) _)
 
 /-! ### The numbers -/
 

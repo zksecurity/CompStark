@@ -11,7 +11,7 @@ public import CompStark.SoundnessError
 `knowledgeSoundness` and `batchKnowledgeSoundness` follow from four facts about a STARK, stated
 here as propositions and proved in their own files:
 
-* `FriStep`: FRI rejects words far from the code (ArkLib's FRI soundness).
+* `FriStep`: FRI rejects words far from the code (`FriGame.acceptance_le`).
 * `BatchingStep`: batching by powers keeps summands that are not `δ'`-near on a common set
   `δ`-far, except for few `a` (correlated agreement).
 * `DecodingStep`: if the DEEP summands are near on a common set and `ζ` lies off the trace
