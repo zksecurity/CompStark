@@ -64,6 +64,8 @@ def backendFor_refines (hζ : 2 ≤ twoAdicity F) (hA : DomainsAddressable F EF)
         obtain ⟨rfl, rfl⟩ := hd
         exact quotientWith_rel A pis _ _ alpha h hs hh hp hps hc
       · exact quotientWith_rel A pis _ _ alpha h hs hh hp hps hc
+    lookupQuotient := fun A ext pis d l _ _ _ _ _ _ chs t alpha h hp hr ↦
+      lookupQuotient_rel A ext pis d l chs t alpha h hp hr
     openedAt := fun b zs _ _ h hs hz ↦ openedAt_rel hζ b zs h hs hz
     toArray := toArray_rel h16
     ofArray := ofArray_rel

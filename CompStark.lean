@@ -42,6 +42,9 @@ public import CompStark.KoalaBear.Challenge
 public import CompStark.Stark.Field
 public import CompStark.Fri.Verifier
 public import CompStark.Stark.Air
+public import CompStark.Lookup.LogUp
+public import CompStark.Lookup.Lookup
+public import CompStark.Lookup.Quotient
 public import CompStark.Stark.Verifier
 public import CompStark.Plonky3.Primitives
 public import CompStark.Mont32.Json
@@ -59,6 +62,8 @@ public import CompStark.Batch.Proof
 public import CompStark.Batch.Verifier
 public import CompStark.Batch.Prover
 public import CompStark.Plonky3.Batch
+public import CompStark.Complete.LogUp
+public import CompStark.Complete.LogUpQuotient
 public import CompStark.Batch.Refines
 public import CompStark.Stark.Refines
 public import CompStark.Stark.Fast

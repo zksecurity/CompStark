@@ -24,6 +24,10 @@ a power of two dividing the trace's height `n`: on row `i` it reads value `i mod
 of the AIR, neither committed nor opened: as a polynomial it is `f(Xⁿᐟᵖ)`, `f` of degree below `p`
 through the period's values on the subgroup of order `p`, of degree `n - n / p`.
 
+An AIR may declare lookups (`Lookup`, Plonky3's LogUp lookups): tuples of expressions with signed
+multiplicities, balanced inside the AIR or across the AIRs of a batch on a named bus. Only the
+batch STARK proves them (`CompStark/Lookup/`); `uni-stark` ignores them, as Plonky3's does.
+
 `Expr.degree` is Plonky3's `degree_multiple`: columns and the first- and last-row selectors have
 degree 1, the transition selector, constants and public values 0. `Expr.degBound` is Plonky3's
 `poly_degree`, a constraint's degree as a polynomial on a trace domain of size `n`. Plonky3 sizes
@@ -129,10 +133,21 @@ theorem colsBelow_mono {w wNext pw pwNext wNext' pw' pwNext' : Nat} (h0 : wNext 
 
 end Expr
 
+/-- A lookup of an AIR (Plonky3's `Lookup` without exclusive flags): tuples of expressions, each
+with a signed multiplicity, positive for a receive and negative for a send. A local lookup
+(`bus = none`) balances inside its AIR; a global one balances with every lookup of the batch on
+the bus of its name. `countWeight` bounds the magnitude of its multiplicities on a row (Plonky3's
+`count_weight`), which the verifier's multiplicity bound trusts the AIR to enforce. -/
+structure Lookup (F : Type) where
+  bus : Option String
+  tuples : List (List (Expr F) × Expr F)
+  countWeight : Nat
+
 /-- An AIR over the field `F`: the trace's width, the number of public values, the constraints,
 the trace opened at the next row if `mainNextRow`, the preprocessed trace, row-major, of
-`preprocessedWidth` columns, opened at the next row if `preprocessedNextRow`, and the periodic
-columns, one period each. -/
+`preprocessedWidth` columns, opened at the next row if `preprocessedNextRow`, the periodic
+columns, one period each, and the lookups in Plonky3's order: the local lookups, then the global
+interactions, one tuple each, each in the order the AIR emits them. -/
 structure Air (F : Type) where
   width : Nat
   numPublicValues : Nat
@@ -142,6 +157,7 @@ structure Air (F : Type) where
   preprocessed : Array F := #[]
   preprocessedNextRow : Bool := true
   periodic : List (List F) := []
+  lookups : List (Lookup F) := []
 
 namespace Air
 
@@ -328,6 +344,36 @@ def preprocessedMul {F : Type} [NatCast F] (logN multiplier : Nat) : Air F where
   preprocessedWidth := 1
   preprocessed := Array.ofFn (n := 2 ^ logN) fun i ↦ (i.val : F)
   preprocessedNextRow := false
+
+/-- `mulAir reps` with lookups (Plonky3's `MulAirLookups` of `batch-stark/tests/simple.rs`): if
+`isLocal`, a local lookup of every repetition's `a` against the last column; and sending every
+repetition `i`'s `(a, b)` on the bus `global[i]`, if `global` is not empty. -/
+def mulAirLookups {F : Type} [One F] [Neg F] (reps : Nat) (isLocal : Bool) (global : List String) :
+    Air F :=
+  { mulAir reps with
+    lookups :=
+      (if isLocal then (List.range reps).map fun i ↦
+        ⟨none, [([.cur (3 * i)], .const 1), ([.cur (3 * reps)], .const (-1))], 1⟩ else []) ++
+      (if global.isEmpty then [] else (List.range reps).map fun i ↦
+        ⟨some (global.getD i ""), [([.cur (3 * i), .cur (3 * i + 1)], .const (-1))], 1⟩) }
+
+/-- `fibonacciIndexed logN` receiving its rows `(left, right)` on the bus `bus` with the
+multiplicity `count`, bounded by `|count|` (Plonky3's `FibAirLookups` of
+`batch-stark/tests/simple.rs`, with a signed multiplicity). -/
+def fibonacciLookups {F : Type} [NatCast F] [IntCast F] (logN : Nat) (bus : String) (count : Int) :
+    Air F :=
+  { fibonacciIndexed logN with
+    lookups := [⟨some bus, [([.cur 0, .cur 1], .const (count : F))], count.natAbs⟩] }
+
+/-- Three local lookups of the columns `s₁, s₂, s₃` against the table column `t` on the first row,
+on transitions and on the last row, with the multiplicity columns `m₁, m₂, m₃`, the selectors in
+the multiplicities (Plonky3's `SingleTableLocalLookupAir` of `batch-stark/tests/simple.rs`). -/
+def singleTableLocalLookup {F : Type} [Zero F] : Air F where
+  width := 7
+  numPublicValues := 0
+  constraints := []
+  lookups := [(0, Expr.isFirstRow), (1, .isTransition), (2, .isLastRow)].map fun (j, sel) ↦
+    ⟨none, [([.cur j], sel), ([.cur 3], .const 0 - sel * .cur (4 + j))], 1⟩
 
 /-- Two columns `a, b` with `a² = b` on every row, never reading the next row (Plonky3's
 `SquareAir` of `uni-stark/tests/no_next_row.rs`). -/

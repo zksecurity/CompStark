@@ -368,7 +368,7 @@ theorem height_hChunks (hin : Fits P A logN trace) :
     ∀ m ∈ hChunks EF P A logN trace pis, m.height = 2 ^ (logN + P.logBlowup) := by
   intro m hm
   obtain ⟨c, -, rfl⟩ := List.mem_map.mp hm
-  obtain ⟨ps, hl, -⟩ := chunk_isLde (EF := EF) P A logN _ hin.twoAdic hin.chunks c
+  obtain ⟨ps, hl, -⟩ := chunk_isLde (EF := EF) P logN _ _ hin.twoAdic hin.chunks c
   exact hl.2.1
 
 theorem vChunks_eq (ms : List (Mat F)) (hms : ∀ m ∈ ms, m.height = 2 ^ (logN + P.logBlowup)) :
@@ -499,7 +499,7 @@ theorem hRounds_honest (hin : Fits P A logN trace)
     exact ⟨_, ps, hl, hhl⟩
   · obtain ⟨m, hm, rfl⟩ := List.mem_map.mp hx
     obtain ⟨c, -, rfl⟩ := List.mem_map.mp hm
-    obtain ⟨ps, hl, -⟩ := chunk_isLde (EF := EF) P A logN _ hin.twoAdic hin.chunks c
+    obtain ⟨ps, hl, -⟩ := chunk_isLde (EF := EF) P logN _ _ hin.twoAdic hin.chunks c
     exact ⟨_, ps, hl, hhl⟩
   · simp only [setupWith] at hr
     split at hr

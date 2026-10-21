@@ -15,7 +15,8 @@ A proof's JSON form as Plonky3 serializes it (`serde_json`) for a base field `Mo
 `FastField p`: field elements as Montgomery words, extension elements as
 `{"value": [c0, …, c(d-1)]}`, commitments as Merkle caps of one root `{"cap": [[eight words]]}`,
 Merkle multi-openings with their pruned siblings `{"sibling_hashes": [...]}`, and absent openings
-as `null`; and batch proofs (`parseBatch`), every instance's opened values in the same format.
+as `null`; and batch proofs (`parseBatch`), every instance's opened values in the same format with
+its permutation trace's rows, and its lookup terminal.
 -/
 
 @[expose] public section
@@ -114,28 +115,20 @@ def proof (j : Json) : Except String (Proof (FastField p) EF) := do
 def parse (s : String) : Except String (Proof (FastField p) EF) := do
   proof (← Lean.Json.parse s)
 
-/-- Fail unless `j` is an empty array. -/
-def empty (j : Json) (k : String) : Except String Unit := do
-  unless (← (← j.getObjVal? k).getArr?).isEmpty do throw s!"unsupported: {k}"
-
-/-- One instance's opened values in a batch proof, rejecting permutation openings. -/
-def batchOpened (j : Json) : Except String (OpenedValues EF) := do
-  empty j "permutation_local"
-  empty j "permutation_next"
-  openedValues (← j.getObjVal? "base_opened_values")
-
-/-- A batch proof, rejecting randomization and lookups. -/
+/-- A batch proof, rejecting randomization. -/
 def batchProof (j : Json) : Except String (Batch.BatchProof (FastField p) EF) := do
   let cs ← j.getObjVal? "commitments"
   absent cs "random"
-  absent cs "permutation"
-  absent j "lookup_pow_witness"
-  unless (← (← j.getObjVal? "lookup_terminals").getArr?).all (· == .null) do
-    throw "unsupported: lookup_terminals"
-  return ⟨← digest (← cs.getObjVal? "main"), ← digest (← cs.getObjVal? "quotient_chunks"),
-    ← array batchOpened (← (← j.getObjVal? "opened_values").getObjVal? "instances"),
+  let insts ← (← (← j.getObjVal? "opened_values").getObjVal? "instances").getArr?
+  return ⟨← digest (← cs.getObjVal? "main"), ← optional digest (← cs.getObjVal? "permutation"),
+    ← digest (← cs.getObjVal? "quotient_chunks"),
+    ← insts.mapM fun i ↦ do openedValues (← i.getObjVal? "base_opened_values"),
+    ← insts.mapM fun i ↦ do array ext (← i.getObjVal? "permutation_local"),
+    ← insts.mapM fun i ↦ do array ext (← i.getObjVal? "permutation_next"),
     ← friProof (← j.getObjVal? "opening_proof"),
+    ← array (optional ext) (← j.getObjVal? "lookup_terminals"),
     ← array (·.getNat?) (← j.getObjVal? "degree_bits"),
+    ← optional field (← j.getObjVal? "lookup_pow_witness"),
     ← field (← j.getObjVal? "ood_pow_witness")⟩
 
 /-- A batch proof from its JSON text. -/

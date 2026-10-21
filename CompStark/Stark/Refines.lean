@@ -141,7 +141,7 @@ theorem quotientChunks_refines (h : Refines B) {P : Params} {A : Air F} {logN : 
     intro q hq
     obtain ⟨hok, hh⟩ := hpok q hq
     exact ⟨hok, by rw [hh, heh]⟩
-  unfold quotientChunks
+  unfold quotientChunks chunksOf
   dsimp only
   have hq :
       2 ^ (logN + A.logQuotientChunks logN) ≤ (ldeRef logN P.logBlowup gen A.width trace).height :=

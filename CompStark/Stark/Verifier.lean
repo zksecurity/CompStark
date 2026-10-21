@@ -68,14 +68,14 @@ def periodicAt (col : List F) (logN : Nat) (zeta : EF) : EF :=
 def foldedConstraints (A : Air F) (env : Expr.Env F EF) (alpha : EF) : EF :=
   A.constraints.foldl (fun acc c ↦ acc * alpha + c.eval env) 0
 
-/-- The constraint check at `ζ` on the trace domain of size `2 ^ degreeBits`. An unopened next
-row reads as zeros, the periodic columns as their values at `ζ`. -/
-def checkConstraints (A : Air F) (pis : List F) (opened : OpenedValues EF) (degreeBits : Nat)
-    (zeta alpha quotient : EF) : Bool :=
+/-- The constraints' environment at `ζ` on the trace domain of size `2 ^ degreeBits`: the opened
+rows, an unopened next row reading as zeros, the periodic columns' values at `ζ`, and the
+selectors at `ζ`. -/
+def outOfDomainEnv (A : Air F) (pis : List F) (opened : OpenedValues EF) (degreeBits : Nat)
+    (zeta : EF) : Expr.Env F EF :=
   let gInv := Ext.ofBase (twoAdicGen degreeBits)⁻¹
   let zh := Ext.powTwo zeta degreeBits - 1
-  let env : Expr.Env F EF := {
-    cur := fun i ↦ opened.traceLocal.getD i 0
+  { cur := fun i ↦ opened.traceLocal.getD i 0
     next := fun i ↦ (opened.traceNext.getD #[]).getD i 0
     prepCur := fun i ↦ (opened.preprocessedLocal.getD #[]).getD i 0
     prepNext := fun i ↦ (opened.preprocessedNext.getD #[]).getD i 0
@@ -85,7 +85,12 @@ def checkConstraints (A : Air F) (pis : List F) (opened : OpenedValues EF) (degr
     isFirstRow := zh * (zeta - 1)⁻¹
     isLastRow := zh * (zeta - gInv)⁻¹
     isTransition := zeta - gInv }
-  foldedConstraints A env alpha * zh⁻¹ == quotient
+
+/-- The constraint check at `ζ` on the trace domain of size `2 ^ degreeBits` (`outOfDomainEnv`). -/
+def checkConstraints (A : Air F) (pis : List F) (opened : OpenedValues EF) (degreeBits : Nat)
+    (zeta alpha quotient : EF) : Bool :=
+  foldedConstraints A (outOfDomainEnv A pis opened degreeBits zeta) alpha *
+    (Ext.powTwo zeta degreeBits - 1)⁻¹ == quotient
 
 /-- The proof opens the trace's next row exactly when the AIR reads it, of the AIR's width. -/
 def traceNextOk (A : Air F) (o : OpenedValues EF) : Bool :=

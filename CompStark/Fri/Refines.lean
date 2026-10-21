@@ -99,6 +99,10 @@ structure Refines (B : Backend F EF 24) where
     (∀ c ∈ A.constraints, c.colsBelow s.width s.width ((ps.map (·.width)).getD 0)
       ((ps.map (·.width)).getD 0)) →
     B.quotient A pis d l m pm alpha = (specBackend EF).quotient A pis d l s ps alpha
+  lookupQuotient : ∀ A ext pis d l {m s pm ps rm rs} chs t alpha, RM m s →
+    Option.Rel RM pm ps → RM rm rs →
+    B.lookupQuotient A ext pis d l m pm rm chs t alpha =
+      (specBackend EF).lookupQuotient A ext pis d l s ps rs chs t alpha
   openedAt : ∀ b zs {m s}, RM m s → MatOk s → (∀ z ∈ zs, Ext.OutsideBase z) →
     B.openedAt b m zs = (specBackend EF).openedAt b s zs
   toArray : ∀ {v a}, RV v a → a.size ≤ 2 ^ twoAdicity F → B.toArray v = (specBackend EF).toArray a

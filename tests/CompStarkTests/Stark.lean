@@ -49,6 +49,21 @@ Quot.sound] -/
 #guard_msgs in
 #print axioms CompStark.KoalaBear.proveBatch_fast
 
+/-- info: 'CompStark.Lookup.logUpConstraints_honest' depends on axioms: [propext, Classical.choice,
+Quot.sound] -/
+#guard_msgs in
+#print axioms CompStark.Lookup.logUpConstraints_honest
+
+/-- info: 'CompStark.Batch.terminals_sum_eq_zero' depends on axioms: [propext, Classical.choice,
+Quot.sound] -/
+#guard_msgs in
+#print axioms CompStark.Batch.terminals_sum_eq_zero
+
+/-- info: 'CompStark.Batch.instanceCheck_honest' depends on axioms: [propext, Classical.choice,
+Quot.sound] -/
+#guard_msgs in
+#print axioms CompStark.Batch.instanceCheck_honest
+
 /-- info: 'CompStark.Iop.knowledgeSoundness' depends on axioms: [propext, Classical.choice,
 Quot.sound] -/
 #guard_msgs in

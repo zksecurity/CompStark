@@ -47,6 +47,9 @@ structure Params where
   /-- Grinding before the STARK's out-of-domain point (`StarkConfig`'s
   `ood_proof_of_work_bits`). -/
   oodPowBits : Nat := 0
+  /-- Grinding before the batch STARK's lookup challenges (`StarkConfig`'s
+  `lookup_proof_of_work_bits`). -/
+  lookupPowBits : Nat := 0
 
 /-- The coset `shift · ⟨ω⟩` with `ω` of order `2 ^ logSize`. -/
 structure Domain (F : Type) where

@@ -190,15 +190,22 @@ def friSeed (arities : List Nat) (finalLen commitBits queryBits numQueries index
 
 /-- The seed of `p3-batch-stark` for instances of trace widths `widths`, preprocessed widths
 `prepWidths` and `numPublic` public values, with a commitment to the preprocessed traces if
-`hasPrep` and `oodBits` bits of out-of-domain grinding, without lookups. Every instance's degree
-bits are an extension message, and the out-of-domain grinding is a step at zero difficulty too. -/
-def batchSeed (widths prepWidths numPublic : List Nat) (hasPrep : Bool) (oodBits : Nat) :
-    List F :=
+`hasPrep`, `lookupInstances` instances with lookups, `lookupBits` bits of grinding before the
+lookup challenges and `oodBits` bits of out-of-domain grinding. Every instance's degree bits and
+every lookup terminal are an extension message, and the grinding steps are present at zero
+difficulty too. -/
+def batchSeed (widths prepWidths numPublic : List Nat) (hasPrep : Bool)
+    (lookupInstances lookupBits oodBits : Nat) : List F :=
   toElems F <| seedBytes 1 "p3-batch-stark"
     (widths.map (fun _ ↦ ⟨.atomic, .message, "degree_bits", .scalar, extTag F EF⟩) ++
       [commitment "main_commitment"] ++
       numPublic.map (fun k ↦ ⟨.atomic, .publicValue, "public_values", .fixed k, baseTag F⟩) ++
       (if hasPrep then [commitment "preprocessed_commitment"] else []) ++
+      (if lookupInstances = 0 then [] else
+        [powStep F "lookup_pow" lookupBits, challenge F EF "lookup_alpha",
+          challenge F EF "lookup_beta", commitment "permutation_commitment"] ++
+        List.replicate lookupInstances
+          ⟨.atomic, .message, "lookup_terminal", .scalar, extTag F EF⟩) ++
       [challenge F EF "constraint_challenge", commitment "quotient_commitment",
         powStep F "ood_pow" oodBits, challenge F EF "zeta"] ++ bracket "opening_argument")
     (widths.length :: widths ++ prepWidths)
