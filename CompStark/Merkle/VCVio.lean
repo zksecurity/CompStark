@@ -67,7 +67,7 @@ theorem nodeValue_succ_pairUp (compress : α → α → α) (g : Nat → α) (j 
 
 end Perfect
 
-variable {F : Type*} [Zero F] {d : Nat}
+variable {F : Type*} {d : Nat}
 
 /-- Reading a tabulated list. -/
 private theorem getD_map_range {β : Type*} (g : Nat → β) (n i : Nat) (x : β) (hi : i < n) :
@@ -81,7 +81,7 @@ theorem padTo_of_length {β : Type*} (x : β) (l : List β) (n : Nat) (h : l.len
   simp only [padTo, h, Nat.sub_self, List.replicate_zero, List.append_nil]
 
 /-- One layer up from a full layer of `2 ^ (k + 1)` digests. -/
-theorem nextLayer_range (hash : List F → Vector F d)
+theorem nextLayer_range [Zero F] (hash : List F → Vector F d)
     (compress : Vector F d → Vector F d → Vector F d) (g : Nat → Vector F d) (k : Nat) :
     nextLayer hash compress [] ((List.range (2 ^ (k + 1))).map g) =
       (List.range (2 ^ k)).map (pairUp compress g) := by
@@ -103,7 +103,7 @@ theorem nextLayer_range (hash : List F → Vector F d)
       omega
 
 /-- The layers above a full layer of `2 ^ k` digests. -/
-theorem upperLayersAll_range (hash : List F → Vector F d)
+theorem upperLayersAll_range [Zero F] (hash : List F → Vector F d)
     (compress : Vector F d → Vector F d → Vector F d) (k fuel : Nat) (hk : k ≤ fuel)
     (g : Nat → Vector F d) :
     upperLayersAll hash compress fuel [] ((List.range (2 ^ k)).map g) =
@@ -151,7 +151,6 @@ private theorem takeWhile_of_forall {β : Type*} (p : β → Bool) (l : List β)
     simp only [List.takeWhile_cons, h a List.mem_cons_self, ↓reduceIte,
       ih fun x hx ↦ h x (List.mem_cons_of_mem a hx)]
 
-omit [Zero F] in
 /-- Matrices of one height are already sorted tallest first. -/
 theorem sortTallest_of_height (ms : List (Matrix F)) (h : Nat) (hh : ∀ m ∈ ms, m.height = h) :
     sortTallest ms = ms := by
@@ -171,18 +170,19 @@ theorem log2Ceil_two_pow (k : Nat) : log2Ceil (2 ^ k) = k := by
   simp only [log2Ceil, Nat.nextPowerOfTwo_eq_self (isPowerOfTwo_two_pow k), Nat.log2_two_pow]
 
 /-- Leaf `i` of a batch: the hash of the concatenated rows `i`. -/
-def leafHashes (hash : List F → Vector F d) (ms : List (Matrix F)) (i : Nat) : Vector F d :=
+def leafHashes [Zero F] (hash : List F → Vector F d) (ms : List (Matrix F))
+    (i : Nat) : Vector F d :=
   hash (ms.flatMap (·.row i))
 
 /-- The leaves of the Merkle tree of a batch of matrices of height `2 ^ k`, on the perfect
 skeleton of depth `k`. -/
-def leafData (hash : List F → Vector F d) (ms : List (Matrix F)) (k : Nat) :
+def leafData [Zero F] (hash : List F → Vector F d) (ms : List (Matrix F)) (k : Nat) :
     LeafData (Vector F d) (Skeleton.perfect k) :=
   perfectLeaves (leafHashes hash ms) k 0
 
 /-- The digest layers of a batch of matrices of height `2 ^ k`: layer `j` holds the nodes at
 height `j`. -/
-theorem layers_eq_nodeValue (hash : List F → Vector F d)
+theorem layers_eq_nodeValue [Zero F] (hash : List F → Vector F d)
     (compress : Vector F d → Vector F d → Vector F d)
     (ms : List (Matrix F)) (k : Nat) (hms : ms ≠ []) (hh : ∀ m ∈ ms, m.height = 2 ^ k) :
     layers hash compress ms = (List.range (k + 1)).map fun j ↦
@@ -205,7 +205,7 @@ theorem layers_eq_nodeValue (hash : List F → Vector F d)
 
 /-- The commitment to a batch of matrices of height `2 ^ k` is the root of VCVio's Merkle tree
 on their leaf hashes. -/
-theorem root_eq_buildMerkleTreeWithHash (hash : List F → Vector F d)
+theorem root_eq_buildMerkleTreeWithHash [Zero F] (hash : List F → Vector F d)
     (compress : Vector F d → Vector F d → Vector F d)
     (ms : List (Matrix F)) (k : Nat) (hms : ms ≠ []) (hh : ∀ m ∈ ms, m.height = 2 ^ k) :
     root hash compress ms =
@@ -218,7 +218,7 @@ theorem root_eq_buildMerkleTreeWithHash (hash : List F → Vector F d)
   rfl
 
 /-- The opened rows at `i` are the rows `i`. -/
-theorem openBatch_fst (hash : List F → Vector F d)
+theorem openBatch_fst [Zero F] (hash : List F → Vector F d)
     (compress : Vector F d → Vector F d → Vector F d) (ms : List (Matrix F)) (k i : Nat)
     (hh : ∀ m ∈ ms, m.height = 2 ^ k) :
     (openBatch hash compress ms i).1 = ms.map (·.row i) := by
@@ -234,7 +234,7 @@ theorem openBatch_fst (hash : List F → Vector F d)
   · rfl
 
 /-- The sibling path at `i < 2 ^ k`: the sibling `(i >>> j) ^^^ 1` of every height `j < k`. -/
-theorem openBatch_snd_eq_nodeValue (hash : List F → Vector F d)
+theorem openBatch_snd_eq_nodeValue [Zero F] (hash : List F → Vector F d)
     (compress : Vector F d → Vector F d → Vector F d) (ms : List (Matrix F)) (k i : Nat)
     (hms : ms ≠ []) (hh : ∀ m ∈ ms, m.height = 2 ^ k) (hi : i < 2 ^ k) :
     (openBatch hash compress ms i).2 = (List.range k).map fun j ↦
@@ -291,7 +291,7 @@ theorem generateProof_perfectLeaves {α : Type*} (compress : α → α → α) (
 
 /-- The sibling path of an opening at `i < 2 ^ k` is VCVio's proof for the leaf `ofNat k i`,
 reversed. -/
-theorem openBatch_snd (hash : List F → Vector F d)
+theorem openBatch_snd [Zero F] (hash : List F → Vector F d)
     (compress : Vector F d → Vector F d → Vector F d) (ms : List (Matrix F)) (k i : Nat)
     (hms : ms ≠ []) (hh : ∀ m ∈ ms, m.height = 2 ^ k) (hi : i < 2 ^ k) :
     (openBatch hash compress ms i).2 =
@@ -303,7 +303,6 @@ theorem openBatch_snd (hash : List F → Vector F d)
   rw [leafData, this, List.reverse_reverse,
     openBatch_snd_eq_nodeValue hash compress ms k i hms hh hi]
 
-omit [Zero F] in
 /-- The last sibling of a path is compressed in last, on the side of bit `path.length` of the
 index. -/
 theorem climb_append (hash : List F → Vector F d)
@@ -319,7 +318,6 @@ theorem climb_append (hash : List F → Vector F d)
     simp only [List.cons_append, climb, ih, List.length_cons, Nat.pow_succ, Nat.mul_comm _ 2,
       ← Nat.div_div_eq_div_mul]
 
-omit [Zero F] in
 /-- Climbing a path without injections is VCVio's putative root at the leaf `ofNat k i`, for
 any proof listing the path from the root down. -/
 theorem climb_eq_getPutativeRootWithHash (hash : List F → Vector F d)
@@ -407,7 +405,6 @@ theorem heightGroups_replicate (n h : Nat) (hn : 0 < n) :
   rw [List.range_succ] at hget ⊢
   exact foldr_group _ _ _ _ hget
 
-omit [Zero F] in
 /-- Concatenating a list of lists by index. -/
 private theorem flatMap_range_getD {β : Type*} (l : List (List β)) :
     (List.range l.length).flatMap (l.getD · []) = l.flatten := by
@@ -417,7 +414,6 @@ private theorem flatMap_range_getD {β : Type*} (l : List (List β)) :
     simp only [List.length_cons, List.range_succ_eq_map, List.flatMap_cons, List.getD_cons_zero,
       List.flatMap_map, Nat.succ_eq_add_one, List.getD_cons_succ, ih, List.flatten_cons]
 
-omit [Zero F] in
 /-- Verification of an opening at `i` of a batch of `n > 0` matrices of height `2 ^ k` accepts
 exactly when there are `n` rows, `i < 2 ^ k`, and VCVio's putative root of the leaf
 `hash values.flatten`, with any proof listing `path` from the root down, is the commitment. -/
@@ -450,7 +446,6 @@ theorem verifyBatch_iff [DecidableEq F] (hash : List F → Vector F d)
     rw [hashRows, flatMap_range_getD]
     exact ⟨rfl, hi, hr⟩
 
-omit [Zero F] in
 /-- `flatten` is injective on lists of lists of the same lengths. -/
 private theorem flatten_injective_of_lengths {β : Type*} (l₁ l₂ : List (List β))
     (hw : l₁.map List.length = l₂.map List.length) (h : l₁.flatten = l₂.flatten) : l₁ = l₂ := by
@@ -466,7 +461,6 @@ private theorem flatten_injective_of_lengths {β : Type*} (l₁ l₂ : List (Lis
       obtain ⟨hab, hl⟩ := List.append_inj h hw.1
       rw [hab, ih l₂ hw.2 hl]
 
-omit [Zero F] in
 /-- Binding of the commitment to a batch of `n > 0` matrices of height `2 ^ k`: two accepted
 openings of the same index with different rows of the same widths give a collision of `hash` on
 the leaves or of `compress`. -/
@@ -514,7 +508,7 @@ theorem perfectLeaves_get {α : Type*} (g : Nat → α) (k i : Nat) :
 
 /-- Completeness: an honest opening at `i < 2 ^ k` of a batch of matrices of height `2 ^ k`
 verifies against its commitment, as an instance of VCVio's `functional_completeness`. -/
-theorem verifyBatch_openBatch [DecidableEq F] (hash : List F → Vector F d)
+theorem verifyBatch_openBatch [Zero F] [DecidableEq F] (hash : List F → Vector F d)
     (compress : Vector F d → Vector F d → Vector F d) (ms : List (Matrix F)) (k i : Nat)
     (hms : ms ≠ []) (hh : ∀ m ∈ ms, m.height = 2 ^ k) (hi : i < 2 ^ k) :
     verifyBatch hash compress (root hash compress ms) (ms.map (·.height)) i

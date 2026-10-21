@@ -126,16 +126,14 @@ open CompPoly.CPolynomial.NTTFast.Packed (getD_ofFn_bounded size_encode_fields)
 open CompPoly.CPolynomial.NTTFast.Packed.Native (zeroWords read write)
 open Montgomery.Native32
 
-variable {p : ℕ} [Mont32Field p] [Mont32BaseField p] [Binomial4 p]
+variable {p : ℕ} [Mont32Field p]
 
 local notation "F" => FastField p
 local notation "EF" => Ext4 p
 
-omit [Mont32BaseField p] [Binomial4 p] in
 /-- Representation transfers along equal arrays. -/
 theorem RV_congr {v : EVec p} {a b : Array EF} (h : RV v a) (e : a = b) : RV v b := e ▸ h
 
-omit [Mont32BaseField p] [Binomial4 p] in
 /-- A slice of words is the encoded range. -/
 theorem slice_encode (X : Array F) (i B : Nat) :
     slice (encode X) i B = encode (X.extract i (i + B)) := by
@@ -143,7 +141,6 @@ theorem slice_encode (X : Array F) (i B : Nat) :
   rw [slice, ByteArray.data_extract]
   exact CompPoly.PackedRepr.encode_extract X i (i + B)
 
-omit [Mont32BaseField p] [Binomial4 p] in
 /-- The even and odd words. -/
 theorem deinterleave_encode (Y : Array F) (n : Nat) (hn : 2 * n ≤ Y.size)
     (hs : 4 * Y.size < USize.size) :
@@ -173,7 +170,6 @@ theorem deinterleave_encode (Y : Array F) (n : Nat) (hn : 2 * n ≤ Y.size)
   rw [key n (Nat.le_refl _), upto_full _ _ _ (Array.size_replicate ..),
     upto_full _ _ _ (Array.size_replicate ..)]
 
-omit [Mont32BaseField p] [Binomial4 p] in
 /-- The even and odd elements of pairs `r0, …, r0 + len - 1`. -/
 theorem split_rel {v : EVec p} {a : Array EF} (hv : RV v a) (r0 len : Nat)
     (hr : 2 * (r0 + len) ≤ a.size) (hs : 4 * a.size < USize.size) :
@@ -215,7 +211,8 @@ theorem split_rel {v : EVec p} {a : Array EF} (hv : RV v a) (r0 len : Nat)
       Nat.add_assoc]
 
 /-- Pairs `r0, …, r0 + len - 1` of the fold, given the encoded `2 x` of all pairs. -/
-theorem fold2Range_rel {v : EVec p} {a : Array EF} (hv : RV v a) (T : Array F) (beta : EF)
+theorem fold2Range_rel [Mont32BaseField p] [Binomial4 p] {v : EVec p} {a : Array EF} (hv : RV v a)
+    (T : Array F) (beta : EF)
     (r0 len : Nat) (hr : 2 * (r0 + len) ≤ a.size) (hs : 4 * a.size < USize.size)
     (hT : r0 + len ≤ T.size) (hsT : 4 * T.size < USize.size)
     (hnz : ∀ k < len, T.getD (r0 + k) 0 ≠ 0) :
@@ -247,16 +244,16 @@ theorem fold2Range_rel {v : EVec p} {a : Array EF} (hv : RV v a) (T : Array F) (
       Montgomery.Native32.Ext4.toSpec_sub]
     ring
 
-omit [Binomial4 p] in
 /-- Vectors within the two-adic subgroups have indexable coordinates when the largest
 subgroup's do. -/
-theorem size_bound {n : Nat} (hA : 16 * 2 ^ twoAdicity F < USize.size)
+theorem size_bound [Mont32BaseField p] {n : Nat} (hA : 16 * 2 ^ twoAdicity F < USize.size)
     (h : n ≤ 2 ^ twoAdicity F) : 16 * n < USize.size := by
   omega
 
 /-- The fast fold is the specification's: both invert every `2 x` of the pairs, which are
 nonzero within the two-adic subgroups. -/
-theorem fold2_rel (hA : 16 * 2 ^ twoAdicity F < USize.size) {v : EVec p} {a : Array EF} (beta : EF)
+theorem fold2_rel [Mont32BaseField p] [Binomial4 p] (hA : 16 * 2 ^ twoAdicity F < USize.size)
+    {v : EVec p} {a : Array EF} (beta : EF)
     (k : Nat) (h : RV v a) (ha : a.size = 2 ^ (k + 1)) (hk : k < twoAdicity F) :
     RV (fold2 v beta k) (Fri.foldPairs a beta k) := by
   unfold fold2
@@ -296,18 +293,18 @@ theorem fold2_rel (hA : 16 * 2 ^ twoAdicity F < USize.size) {v : EVec p} {a : Ar
   simp only [E, hTx i.val i.isLt]
   rfl
 
-omit [Binomial4 p] in
 /-- Represented planes read back their elements. -/
-theorem toArray_rel (hA : 16 * 2 ^ twoAdicity F < USize.size) {v : EVec p} {a : Array EF}
+theorem toArray_rel [Mont32BaseField p] (hA : 16 * 2 ^ twoAdicity F < USize.size) {v : EVec p}
+    {a : Array EF}
     (h : RV v a) (ha : a.size ≤ 2 ^ twoAdicity F) : v.toArray = a :=
   EVec.toArray_eq h (by have := size_bound hA ha; omega)
 
-omit [Mont32BaseField p] [Binomial4 p] in
 /-- The planes of an array represent it. -/
 theorem ofArray_rel (a : Array EF) : RV (EVec.ofArray a) a := EVec.ofArray_rel a
 
 /-- `a + x · b` on planes. -/
-theorem addScaled_rel (hA : 16 * 2 ^ twoAdicity F < USize.size) {v w : EVec p} {a b : Array EF}
+theorem addScaled_rel [Mont32BaseField p] [Binomial4 p] (hA : 16 * 2 ^ twoAdicity F < USize.size)
+    {v w : EVec p} {a b : Array EF}
     (x : EF) (hv : RV v a) (hw : RV w b) (hab : a.size = b.size) (ha : a.size ≤ 2 ^ twoAdicity F) :
     RV (addScaled v w x) (Array.zipWith (fun u v ↦ u + x * v) a b) := by
   have hs : 4 * a.size < USize.size := by have := size_bound hA ha; omega
@@ -330,7 +327,7 @@ def coord (c : Nat) (x : EF) : F :=
   | _ => x.c3
 
 /-- The coordinates of tabulated elements, flattened. -/
-theorem flatMap_coeffs (n : Nat) (g : Nat → EF) :
+theorem flatMap_coeffs [Mont32BaseField p] [Binomial4 p] (n : Nat) (g : Nat → EF) :
     (Array.ofFn (n := n) fun j ↦ g j.val).flatMap (fun x ↦ (Ext.coeffs x).toArray) =
       Array.ofFn (n := 4 * n) fun t ↦ coord (t.val % 4) (g (t.val / 4)) := by
   induction n with
@@ -351,7 +348,8 @@ theorem flatMap_coeffs (n : Nat) (g : Nat → EF) :
     interval_cases t <;> rfl
 
 /-- The coordinates of elements `i0, …, i0 + len - 1`, interleaved. -/
-theorem interleaveRange_encode {v : EVec p} {a : Array EF} (hv : RV v a) (i0 len : Nat)
+theorem interleaveRange_encode [Mont32BaseField p] [Binomial4 p] {v : EVec p} {a : Array EF}
+    (hv : RV v a) (i0 len : Nat)
     (hi : i0 + len ≤ a.size) (hs : 16 * a.size < USize.size) :
     interleaveRange v.c0 v.c1 v.c2 v.c3 i0 len = encode ((Array.ofFn (n := len) fun j ↦
       a.getD (i0 + j.val) 0).flatMap fun x ↦ (Ext.coeffs x).toArray) := by
@@ -405,7 +403,8 @@ theorem foldl_append_flatMap {α β : Type} (g : α → Array β) (A : Nat → A
   | cons k L ih => rw [List.foldl_cons, List.foldl_cons, ← Array.flatMap_append, ih]
 
 /-- The leaves are the elements' coordinates, `k` elements per row. -/
-theorem leaves_rel (hA : 16 * 2 ^ twoAdicity F < USize.size) {v : EVec p} {a : Array EF} (k : Nat)
+theorem leaves_rel [Mont32BaseField p] [Binomial4 p] (hA : 16 * 2 ^ twoAdicity F < USize.size)
+    {v : EVec p} {a : Array EF} (k : Nat)
     (h : RV v a) (ha : a.size ≤ 2 ^ twoAdicity F) :
     RM (leaves k v) (Mat.ofValues (4 * k) (a.size / k)
       (a.flatMap fun x ↦ (Ext.coeffs x).toArray)) := by

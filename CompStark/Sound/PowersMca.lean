@@ -28,12 +28,11 @@ polynomial of degree at most `k` attached to `i ∈ D`. Hence at most `k |D| ≤
 namespace CompStark.Sound
 open NNReal Finset Polynomial ProximityGap CurveBW CoreDefinitions LinearCode Code
 
-variable {F : Type} [Field F] [Fintype F] [DecidableEq F] {n : ℕ} [NeZero n]
+variable {F : Type} [Field F] {n : ℕ}
 
-omit [Fintype F] [NeZero n] in
 /-- A codeword of the Reed–Solomon code of degree below `deg` that vanishes on `deg` points is
 zero. -/
-theorem eq_zero_of_vanish {deg : ℕ} {domain : Fin n ↪ F} {c : Fin n → F}
+theorem eq_zero_of_vanish [DecidableEq F] {deg : ℕ} {domain : Fin n ↪ F} {c : Fin n → F}
     (hc : c ∈ ReedSolomon.code domain deg) (A : Finset (Fin n)) (hA : deg ≤ A.card)
     (hz : ∀ i ∈ A, c i = 0) : c = 0 := by
   obtain ⟨p, hp, rfl⟩ := Submodule.mem_map.mp hc
@@ -51,7 +50,6 @@ theorem eq_zero_of_vanish {deg : ℕ} {domain : Fin n ↪ F} {c : Fin n → F}
   subst hp0
   exact map_zero _
 
-omit [Fintype F] [DecidableEq F] [NeZero n] in
 /-- The word on a powers curve at `x` is the curve point of ArkLib's `polynomialCurveEval`. -/
 theorem powers_sum_eq {k : ℕ} (U : Fin (k + 1) → Fin n → F) (x : F) :
     (fun i ↦ ∑ j, univariatePowersGenerator F k x j • U j i) =
@@ -60,7 +58,8 @@ theorem powers_sum_eq {k : ℕ} (U : Fin (k + 1) → Fin n → F) (x : F) :
   simp only [Curve.polynomialCurveEval, Finset.sum_apply, Pi.smul_apply]
 
 /-- At most `k n` values `x` make the powers curve through `U` an MCA event. -/
-theorem card_isMCA_powers_le {deg : ℕ} (hdeg_pos : 0 < deg) (hdeg_le : deg ≤ n)
+theorem card_isMCA_powers_le [Fintype F] [DecidableEq F] [NeZero n] {deg : ℕ} (hdeg_pos : 0 < deg)
+    (hdeg_le : deg ≤ n)
     {domain : Fin n ↪ F} (k : ℕ) {δ : ℝ≥0}
     (hδ : δ ≤ relativeUniqueDecodingRadius (ReedSolomon.code domain deg : Set (Fin n → F)))
     (U : Fin (k + 1) → Fin n → F) [DecidablePred fun x ↦
@@ -181,7 +180,8 @@ theorem card_isMCA_powers_le {deg : ℕ} (hdeg_pos : 0 < deg) (hdeg_le : deg ≤
 /-- **Powers MCA below the unique-decoding radius** ([BCIKS20] Theorem 1.6, unique-decoding
 case): the mutual correlated-agreement error of `x ↦ (1, x, …, x^k)` for a Reed–Solomon code of
 length `n` is at most `k n / |F|`. -/
-theorem mcaError_powers_le [SampleableType F] {deg : ℕ} (hdeg_pos : 0 < deg) (hdeg_le : deg ≤ n)
+theorem mcaError_powers_le [Fintype F] [DecidableEq F] [NeZero n] [SampleableType F] {deg : ℕ}
+    (hdeg_pos : 0 < deg) (hdeg_le : deg ≤ n)
     {domain : Fin n ↪ F} (k : ℕ) {δ : ℝ≥0}
     (hδ : δ ≤ relativeUniqueDecodingRadius (ReedSolomon.code domain deg : Set (Fin n → F))) :
     mcaError (univariatePowersGenerator F k) (ReedSolomon.code domain deg) δ ≤

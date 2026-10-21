@@ -73,7 +73,7 @@ theorem getD_map_lt {α β : Type} (a : Array α) (f : α → β) (j : Nat) (h :
 
 end
 
-variable {p : ℕ} [Mont32Field p] [Mont32BaseField p] [Binomial4 p]
+variable {p : ℕ} [Mont32Field p]
 
 local notation "F" => FastField p
 local notation "EF" => Ext4 p
@@ -138,7 +138,6 @@ def colsOf (vals : Array F) (w parts R : Nat) : Array F :=
   Array.ofFn (n := parts * (w * R)) fun m ↦
     vals.getD ((m.val / (w * R) * R + m.val % (w * R) % R) * w + m.val % (w * R) / R) 0
 
-omit [Mont32BaseField p] [Binomial4 p] in
 /-- The pieces `quotientWith` transposes, concatenated, are `colsOf`. -/
 theorem pieces_eq (vals : Array F) (w parts R : Nat) (hM : parts * R * w ≤ vals.size)
     (hs : 4 * vals.size < USize.size) :
@@ -175,7 +174,6 @@ theorem pieces_eq (vals : Array F) (w parts R : Nat) (hM : parts * R * w ≤ val
       rw [Nat.add_comm, Nat.add_mul_mod_self_right, Nat.mod_eq_of_lt h1]
     simp only [g, hd, hm]
 
-omit [Mont32BaseField p] [Binomial4 p] in
 /-- The cell of column `c < w` at row `j` is the trace's. -/
 theorem colsOf_cell (vals : Array F) (w parts R c j : Nat) (hc : c < w) (hj : j < parts * R) :
     (colsOf vals w parts R).getD (j / R * (R * w) + c * R + j % R) 0 = vals.getD (j * w + c) 0 := by
@@ -206,7 +204,6 @@ theorem colsOf_cell (vals : Array F) (w parts R c j : Nat) (hc : c < w) (hj : j 
       Nat.zero_add]
   rw [hd, hmod, h1, h2, Nat.div_add_mod' j R]
 
-omit [Mont32BaseField p] [Binomial4 p] in
 /-- Words `i, …, i + B - 1` of an encoded array. -/
 theorem slice_encode_ofFn (a : Array F) (i B : Nat) (h : i + B ≤ a.size) :
     slice (encode a) i B = encode (Array.ofFn (n := B) fun k ↦ a.getD (i + k.val) 0) := by
@@ -238,7 +235,6 @@ theorem block_in_piece (B R r0 k : Nat) (hR : 0 < R) (hB : B ∣ R) (hr : B ∣ 
   · rw [hsplit, Nat.add_mul_div_left _ _ hR, Nat.div_eq_of_lt (by omega), Nat.zero_add]
   · rw [hsplit, Nat.add_mul_mod_self_left, Nat.mod_eq_of_lt (by omega)]
 
-omit [Mont32BaseField p] [Binomial4 p] in
 /-- Gathered words are the encoded array's at the gathered cells. -/
 theorem gather_encode (C : Array F) (w R c : Nat) (idx : Array Nat) (r0 B : Nat)
     (hs : 4 * C.size < USize.size) (hB : 4 * B < USize.size)
@@ -271,7 +267,6 @@ theorem cell_lt (w parts R c j : Nat) (hc : c < w) (hj : j < parts * R) :
   rw [Nat.succ_mul, Nat.mul_comm R w] at *
   omega
 
-omit [Mont32BaseField p] [Binomial4 p] in
 /-- A slice of column `c < w` over a block of `B` stored rows from `r0` is the trace's column
 there. -/
 theorem slice_cols (vals : Array F) (w parts R B c r0 : Nat) (hc : c < w) (hR : 0 < R)
@@ -292,7 +287,6 @@ theorem slice_cols (vals : Array F) (w parts R B c r0 : Nat) (hc : c < w) (hR : 
   rw [Array.getElem_ofFn, Array.getElem_ofFn, hcell k h1,
     colsOf_cell vals w parts R c (r0 + k) hc (by omega)]
 
-omit [Mont32BaseField p] [Binomial4 p] in
 /-- `evalWords` on a block of `B` stored rows from `r0` is the expression at those rows, for
 expressions on the trace's columns. `E j` is the environment of stored row `j`. -/
 theorem evalWords_eq (vals : Array F) (w parts R B : Nat) (next : Array Nat)
@@ -402,10 +396,9 @@ theorem evalWords_eq (vals : Array F) (w parts R B : Nat) (next : Array Nat)
 
 /-! ### Accumulating the weighted constraints -/
 
-omit [Binomial4 p] in
 /-- The fast accumulation of weighted constraints over a block of `B` rows: entry `i` of plane `j`
 is `rowAcc` at that row, from `X j i`. -/
-theorem accWords (B : Nat) (hB : 4 * B < USize.size) (V : Expr F → ByteArray)
+theorem accWords [Mont32BaseField p] (B : Nat) (hB : 4 * B < USize.size) (V : Expr F → ByteArray)
     (ev : Expr F → Nat → F) :
     ∀ (cw : List (Expr F × List F)),
       (∀ a ∈ cw, V a.1 = encode (Array.ofFn (n := B) fun i ↦ ev a.1 i.val)) →
@@ -468,7 +461,6 @@ theorem lt_of_mem_bitRevPerm {b i : Nat} (h : i ∈ bitRevPerm b) : i < 2 ^ b :=
   have := bitRevPerm_getD_lt b j (by rw [← size_bitRevPerm b]; exact hj)
   rwa [Array.getD_eq_getD_getElem?, Array.getElem?_eq_getElem hj, Option.getD_some] at this
 
-omit [Mont32BaseField p] [Binomial4 p] in
 /-- A table of the selector values `sel` in stored order. -/
 theorem table_encode (d l : Nat) (sel : Array F) (f : Nat → F)
     (hf : ∀ i < 2 ^ (d + l), f i = sel.getD i 0) :
@@ -477,18 +469,15 @@ theorem table_encode (d l : Nat) (sel : Array F) (f : Nat → F)
   rw [NTTFast.Packed.Native.encodeFields_eq]
   exact congrArg encode (Array.map_congr_left fun i hi ↦ hf i (lt_of_mem_bitRevPerm hi))
 
-omit [Binomial4 p] in
-theorem tables_first (d l : Nat) : (quotientTables (p := p) d l).first =
+theorem tables_first [Mont32BaseField p] (d l : Nat) : (quotientTables (p := p) d l).first =
     encode ((bitRevPerm (d + l)).map fun i ↦ (qFirst d l : Array F).getD i 0) :=
   table_encode d l _ _ fun i hi ↦ by unfold qFirst; rw [NTTFast.Packed.getD_ofFn_bounded _ i hi]
 
-omit [Binomial4 p] in
-theorem tables_last (d l : Nat) : (quotientTables (p := p) d l).last =
+theorem tables_last [Mont32BaseField p] (d l : Nat) : (quotientTables (p := p) d l).last =
     encode ((bitRevPerm (d + l)).map fun i ↦ (qLast d l : Array F).getD i 0) :=
   table_encode d l _ _ fun i hi ↦ by unfold qLast; rw [NTTFast.Packed.getD_ofFn_bounded _ i hi]
 
-omit [Binomial4 p] in
-theorem tables_trans (d l : Nat) : (quotientTables (p := p) d l).trans =
+theorem tables_trans [Mont32BaseField p] (d l : Nat) : (quotientTables (p := p) d l).trans =
     encode ((bitRevPerm (d + l)).map fun i ↦ (qTrans d l : Array F).getD i 0) :=
   table_encode d l _ _ fun i hi ↦ (getD_map_lt (cosetPoints (gen : F) (d + l))
     (· - (twoAdicGen d)⁻¹) i (by rw [size_cosetPoints]; exact hi) 0 0).symm
@@ -517,16 +506,14 @@ theorem contiguous_spec (next : Array Nat) (B m b n0 : Nat)
       (by rw [Array.size_map, Array.size_range]; omega), Option.getD_none] at h
     exact absurd h (by simp only [reduceCtorEq, not_false_eq_true])
 
-omit [Binomial4 p] in
-theorem tables_contiguous (d l b n0 : Nat)
+theorem tables_contiguous [Mont32BaseField p] (d l b n0 : Nat)
     (h : (quotientTables (p := p) d l).contiguous.getD b none = some n0) :
     (quotientTables (p := p) d l).B ∣ n0 ∧ ∀ k < (quotientTables (p := p) d l).B,
       (quotientTables (p := p) d l).next.getD
           (b * (quotientTables (p := p) d l).B + k) 0 = n0 + k :=
   contiguous_spec _ _ _ b n0 h
 
-omit [Binomial4 p] in
-theorem tables_next (d l j : Nat) (hj : j < 2 ^ (d + l)) :
+theorem tables_next [Mont32BaseField p] (d l j : Nat) (hj : j < 2 ^ (d + l)) :
     (quotientTables (p := p) d l).next.getD j 0 =
       (bitRevPerm (d + l)).getD (((bitRevPerm (d + l)).getD j 0 + 2 ^ l) % 2 ^ (d + l)) 0 :=
   getD_map_lt _ _ j (by rw [size_bitRevPerm]; exact hj) 0 0
@@ -537,7 +524,6 @@ theorem getElem!_lit4
     (a b c d : ByteArray) : #[a, b, c, d][0]! = a ∧ #[a, b, c, d][1]! = b ∧ #[a, b, c,
         d][2]! = c ∧ #[a, b, c, d][3]! = d := ⟨rfl, rfl, rfl, rfl⟩
 
-omit [Mont32BaseField p] [Binomial4 p] in
 theorem word_encode_ofFn (B : Nat) (hB : 4 * B < USize.size) (X : Nat → F) (k : Nat)
     (hk : k < B) : word (encode (Array.ofFn (n := B) fun i ↦ X i.val)) k = X k := by
   rw [word, Words.read_encode _ _ (by rw [Array.size_ofFn]; exact hB)
@@ -545,7 +531,8 @@ theorem word_encode_ofFn (B : Nat) (hB : 4 * B < USize.size) (X : Nat → F) (k 
     NTTFast.Packed.ofWord_val, NTTFast.Packed.getD_ofFn_bounded _ _ hk]
 
 /-- The fast quotient is the specification's. -/
-theorem quotientWith_rel (A : Air F) (pis : List F) (d l : Nat) (alpha : EF) {ext : PMat}
+theorem quotientWith_rel [Mont32BaseField p] [Binomial4 p] (A : Air F) (pis : List F) (d l : Nat)
+    (alpha : EF) {ext : PMat}
     {s : Mat F}
     (h : RM ext s) (hs : MatOk s) (hh : 2 ^ (d + l) ≤ s.height)
     (hc : ∀ c ∈ A.constraints, c.colsBelow s.width) :

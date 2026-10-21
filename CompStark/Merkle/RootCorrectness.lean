@@ -20,7 +20,7 @@ open CompStark.Poseidon2 CompStark.Poseidon2.Packed Montgomery.Native32
 open CompPoly.PackedRepr (encode)
 open CompPoly.CPolynomial.NTTFast.Packed (size_encode_fields array_eq_of_getD)
 
-variable {p : ℕ} [Mont32Field p] [Poseidon2Field (FastField p)]
+variable {p : ℕ} [Mont32Field p]
 
 local notation "F" => FastField p
 
@@ -30,7 +30,6 @@ theorem vget_congr {α : Type*} {n : Nat} (v : Vector α n) {a b : Nat} (h : a =
 /-- Digests as consecutive words. -/
 def flat (ds : List (Vector F 8)) : Array F := (ds.flatMap Vector.toList).toArray
 
-omit [Poseidon2Field (FastField p)] in
 theorem size_flat (ds : List (Vector F 8)) : (flat ds).size = 8 * ds.length := by
   induction ds with
   | nil => rfl
@@ -39,7 +38,6 @@ theorem size_flat (ds : List (Vector F 8)) : (flat ds).size = 8 * ds.length := b
       Vector.length_toList, List.length_cons] at ih ⊢
     omega
 
-omit [Poseidon2Field (FastField p)] in
 theorem getD_flat (ds : List (Vector F 8)) (k : Nat) :
     (flat ds).getD k 0 = (ds.getD (k / 8) 0)[k % 8]'(Nat.mod_lt _ (by decide)) := by
   induction ds generalizing k with
@@ -56,7 +54,6 @@ theorem getD_flat (ds : List (Vector F 8)) (k : Nat) :
         show k / 8 = (k - 8) / 8 + 1 by omega, List.getD_cons_succ]
       exact vget_congr _ (by omega) _ _
 
-omit [Poseidon2Field (FastField p)] in
 theorem flat_eq (A : Array F) (ds : List (Vector F 8)) (hs : A.size = 8 * ds.length)
     (h : ∀ i < ds.length, ∀ j (hj : j < 8), A.getD (8 * i + j) 0 = (ds.getD i 0)[j]'hj) :
     A = flat ds := by
@@ -69,17 +66,17 @@ theorem flat_eq (A : Array F) (ds : List (Vector F 8)) (hs : A.size = 8 * ds.len
   · rw [Array.getD_eq_getD_getElem?, Array.getElem?_eq_none (by omega),
       List.getD_eq_default _ _ (by omega), Option.getD_none, Vector.getElem_zero]
 
-omit [Poseidon2Field (FastField p)] in
 theorem dig_flat (ds : List (Vector F 8)) (k : Nat) : dig (flat ds) k = ds.getD k 0 := by
   ext j hj
   simp only [dig, Vector.getElem_ofFn, getD_flat, show (8 * k + j) / 8 = k by omega]
   exact vget_congr _ (by omega) _ _
 
 /-- Parent `i` of a layer stored as consecutive words. -/
-def parent (P : Array F) (i : Nat) : Vector F 8 :=
+def parent [Poseidon2Field (FastField p)] (P : Array F) (i : Nat) : Vector F 8 :=
   Hash.Poseidon2.compress (FastField p) (dig P (2 * i)) (dig P (2 * i + 1))
 
-theorem compressRange_encode [PackedPoseidon2 p] (P : Array F) (n o0 count : Nat)
+theorem compressRange_encode [Poseidon2Field (FastField p)] [PackedPoseidon2 p] (P : Array F)
+    (n o0 count : Nat)
     (hP : P.size = 8 * n)
     (hu : 4 * P.size < USize.size) (huO : 4 * (8 * count) < USize.size) (hc : o0 + count ≤ n / 2) :
     compressRange p (encode P) n o0 count =
@@ -121,11 +118,9 @@ theorem compressRange_encode [PackedPoseidon2 p] (P : Array F) (n o0 count : Nat
     List.getElem_range, show (8 * i + j) / 8 = i by omega]
   exact vget_congr _ (by omega) _ _
 
-omit [Poseidon2Field (FastField p)] in
 theorem flat_append (a b : List (Vector F 8)) : flat (a ++ b) = flat a ++ flat b := by
   simp only [flat, List.flatMap_append, List.append_toArray]
 
-omit [Poseidon2Field (FastField p)] in
 theorem flat_replicate (m : Nat) : flat (p := p) (List.replicate m 0) = Array.replicate
     (8 * m) 0 := by
   symm
@@ -142,7 +137,6 @@ theorem foldl_spawnAll (parts : Nat) (f : Nat → ByteArray) (e : ByteArray) :
   rw [← Array.foldl_map (f := Task.get) (g := fun acc x ↦ acc ++ x),
     CompPoly.Tasks.map_get_spawnAll, Array.foldl_map, ← Array.foldl_toList, Array.toList_range]
 
-omit [Poseidon2Field (FastField p)] in
 theorem foldl_encode_flat (L : Nat → List (Vector F 8)) (m : Nat) :
     (List.range m).foldl (fun acc k ↦ acc ++ encode (flat (L k))) (ByteArray.emptyWithCapacity 0) =
       encode (flat ((List.range m).foldl (fun acc k ↦ acc ++ L k) [])) := by
@@ -173,7 +167,7 @@ theorem foldl_tiles {α : Type*} (half size : Nat) (g : Nat → α) (m : Nat) :
       congr 2
       omega
 
-theorem nextLayer_encode [PackedPoseidon2 p] (ds : List (Vector F 8))
+theorem nextLayer_encode [Poseidon2Field (FastField p)] [PackedPoseidon2 p] (ds : List (Vector F 8))
     (hu : 4 * (8 * ds.length) < USize.size) :
     CompStark.Merkle.Packed.nextLayer p (encode (flat ds))
         ds.length =
@@ -219,24 +213,22 @@ theorem nextLayer_encode [PackedPoseidon2 p] (ds : List (Vector F 8))
     List.length_map, List.length_range, List.length_replicate]
   exact Prod.ext rfl (by omega)
 
-omit [Poseidon2Field (FastField p)] in
 theorem flatten_cons (c : Array F) (cs : List (Array F)) :
     (c :: cs).toArray.flatten = c ++ cs.toArray.flatten := by
   apply Array.toList_inj.mp
   simp only [Array.toList_flatten, List.map_cons, List.flatten_cons, Array.toList_append]
 
-omit [Poseidon2Field (FastField p)] in
 theorem getD_append (A B : Array F) (k : Nat) :
     (A ++ B).getD k 0 = if k < A.size then A.getD k 0 else B.getD (k - A.size) 0 := by
   simp only [Array.getD_eq_getD_getElem?, Array.getElem?_append]
   split <;> rfl
 
 /-- The leaf digests of a chunk of rows of width `w`. -/
-def chunkLeaves (w : Nat) (c : Array F) : List (Vector F 8) :=
+def chunkLeaves [Poseidon2Field (FastField p)] (w : Nat) (c : Array F) : List (Vector F 8) :=
   (List.range (c.size / w)).map fun r ↦
     Hash.Poseidon2.hash (FastField p) ((⟨w, c.size / w, c⟩ : CompStark.Merkle.Matrix F).row r)
 
-theorem flatMap_chunkLeaves (w : Nat) (cs : List (Array F))
+theorem flatMap_chunkLeaves [Poseidon2Field (FastField p)] (w : Nat) (cs : List (Array F))
     (hc : ∀ c ∈ cs, c.size % w = 0) (h : Nat) :
     cs.flatMap (chunkLeaves w) = (List.range (cs.map (·.size / w)).sum).map fun r ↦
       Hash.Poseidon2.hash (FastField p)
@@ -265,7 +257,8 @@ theorem flatMap_chunkLeaves (w : Nat) (cs : List (Array F))
       have : (c.size / w + r) * w + j = c.size + (r * w + j) := by rw [Nat.add_mul, ← hs]; omega
       rw [this, ite_eq_right (by omega), Nat.add_sub_cancel_left]
 
-theorem hashChunk_flat [PackedPoseidon2 p] (w : Nat) (c : Array F) (hc : c.size % w = 0)
+theorem hashChunk_flat [Poseidon2Field (FastField p)] [PackedPoseidon2 p] (w : Nat) (c : Array F)
+    (hc : c.size % w = 0)
     (hu : 32 * c.size < USize.size) :
     hashChunk p (encode c) w (c.size / w) =
       encode (flat (chunkLeaves w c)) := by
@@ -279,7 +272,8 @@ theorem hashChunk_flat [PackedPoseidon2 p] (w : Nat) (c : Array F) (hc : c.size 
   rw [g r hr j hj, List.getD_eq_getElem _ _ hl]
   simp only [chunkLeaves, List.getElem_map, List.getElem_range]
 
-theorem leaves_encode [PackedPoseidon2 p] (w : Nat) (hw : 0 < w) (cs : List (Array F))
+theorem leaves_encode [Poseidon2Field (FastField p)] [PackedPoseidon2 p] (w : Nat) (hw : 0 < w)
+    (cs : List (Array F))
     (hc : ∀ c ∈ cs, c.size % w = 0) (hu : ∀ c ∈ cs, 32 * c.size < USize.size) :
     leaves p w (cs.toArray.map encode) =
       (encode (flat (cs.flatMap (chunkLeaves w))), (cs.map (·.size / w)).sum) := by
@@ -313,10 +307,10 @@ local notation "hashF" => Hash.Poseidon2.hash (FastField p)
 local notation "compF" => Hash.Poseidon2.compress (FastField p)
 
 /-- One step of the layer loop. -/
-def step (L : List (Vector F 8)) : List (Vector F 8) :=
+def step [Poseidon2Field (FastField p)] (L : List (Vector F 8)) : List (Vector F 8) :=
   if L.length ≤ 1 then L else CompStark.Merkle.nextLayer hashF compF [] L
 
-theorem upperLayers_nil (f : Nat) (L : List (Vector F 8)) :
+theorem upperLayers_nil [Poseidon2Field (FastField p)] (f : Nat) (L : List (Vector F 8)) :
     CompStark.Merkle.upperLayers hashF compF f [] L = step^[f] L := by
   induction f generalizing L with
   | zero => rfl
@@ -331,7 +325,7 @@ theorem upperLayers_nil (f : Nat) (L : List (Vector F 8)) :
     · rw [ite_eq_right h, step, ite_eq_right h, ← ih]
       rfl
 
-theorem length_step (L : List (Vector F 8)) :
+theorem length_step [Poseidon2Field (FastField p)] (L : List (Vector F 8)) :
     (step L).length = if L.length ≤ 1 then L.length else
       if L.length = 2 then 1 else (L.length / 2 + 1) / 2 * 2 := by
   unfold step
@@ -341,12 +335,14 @@ theorem length_step (L : List (Vector F 8)) :
       List.length_map, List.length_range, List.length_replicate]
     split <;> omega
 
-theorem iterate_step_fix (L : List (Vector F 8)) (h : L.length ≤ 1) (g : Nat) : step^[g] L = L := by
+theorem iterate_step_fix [Poseidon2Field (FastField p)] (L : List (Vector F 8)) (h : L.length ≤ 1)
+    (g : Nat) : step^[g] L = L := by
   induction g with
   | zero => rfl
   | succ g ihg => rw [Function.iterate_succ_apply', ihg, step, ite_eq_left h]
 
-theorem iterate_step_length (k : Nat) : ∀ L : List (Vector F 8), L.length ≤ 2 ^ k →
+theorem iterate_step_length [Poseidon2Field (FastField p)] (k : Nat) : ∀ L : List
+    (Vector F 8), L.length ≤ 2 ^ k →
     (step^[k] L).length ≤ 1 := by
   induction k with
   | zero => intro L h; exact h
@@ -366,7 +362,8 @@ theorem iterate_step_length (k : Nat) : ∀ L : List (Vector F 8), L.length ≤ 
         · have : 2 ∣ 2 ^ k := dvd_pow_self 2 (by omega)
           omega
 
-theorem iterate_step_stable (k a : Nat) (L : List (Vector F 8)) (h : L.length ≤ 2 ^ k)
+theorem iterate_step_stable [Poseidon2Field (FastField p)] (k a : Nat) (L : List (Vector F 8))
+    (h : L.length ≤ 2 ^ k)
     (hk : k ≤ a) : step^[a] L = step^[k] L := by
   rw [show a = (a - k) + k by omega, Function.iterate_add_apply,
     iterate_step_fix _ (iterate_step_length k L h)]
@@ -378,19 +375,18 @@ theorem foldl_range_const {α : Type*} (g : α → α) (n : Nat) (x : α) :
   | succ n ih => rw [List.range_succ, List.foldl_append, ih, List.foldl_cons, List.foldl_nil,
       Function.iterate_succ_apply']
 
-omit [Poseidon2Field (FastField p)] in
 theorem padDigests_flat (L : List (Vector F 8)) (padded : Nat) :
     padDigests (encode (flat L)) L.length padded = encode
         (flat (CompStark.Merkle.padTo 0 padded L)) := by
   rw [padDigests, zeroWords_fields (p := p), CompStark.Merkle.padTo, flat_append, flat_replicate,
     CompPoly.PackedRepr.encode_append]
 
-omit [Poseidon2Field (FastField p)] in
 theorem flat_singleton (r : Vector F 8) : flat [r] = r.toArray :=
   Array.toList_inj.mp (by
     simp only [flat, List.flatMap_cons, List.flatMap_nil, List.append_nil]; rfl)
 
-theorem rootOfLeaves_encode [PackedPoseidon2 p] (L : List (Vector F 8)) (h1 : 1 ≤ L.length)
+theorem rootOfLeaves_encode [Poseidon2Field (FastField p)] [PackedPoseidon2 p] (L : List
+    (Vector F 8)) (h1 : 1 ≤ L.length)
     (hu : 32 * (L.length + 1) < USize.size) :
     rootOfLeaves p (encode (flat L)) L.length =
       encode ((CompStark.Merkle.upperLayers hashF compF
@@ -449,7 +445,8 @@ theorem rootOfLeaves_encode [PackedPoseidon2 p] (L : List (Vector F 8)) (h1 : 1 
     simp only [flat_singleton, List.headD_cons]
 
 /-- The packed Merkle root of a matrix given as chunks of rows is Plonky3's root. -/
-theorem root_eq [PackedPoseidon2 p] (w : Nat) (hw : 0 < w) (cs : List (Array F))
+theorem root_eq [Poseidon2Field (FastField p)] [PackedPoseidon2 p] (w : Nat) (hw : 0 < w) (cs : List
+    (Array F))
     (hc : ∀ c ∈ cs, c.size % w = 0) (hu : ∀ c ∈ cs, 32 * c.size < USize.size)
     (hh : 0 < (cs.map (·.size / w)).sum)
     (hl : 32 * ((cs.map (·.size / w)).sum + 1) < USize.size) :

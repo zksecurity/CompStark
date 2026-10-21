@@ -219,33 +219,32 @@ theorem size_cosetPointsBitRev (shift : F) (b : Nat) :
 
 end
 
-variable {p : ℕ} [Mont32Field p] [Mont32BaseField p] [Binomial4 p]
+variable {p : ℕ} [Mont32Field p]
 
 local notation "F" => FastField p
 local notation "EF" => Ext4 p
 
 /-! ### Coordinates -/
 
-omit [Mont32BaseField p] [Binomial4 p] in
 theorem coord_add (c : Nat) (a b : EF) : coord c (a + b) = coord c a + coord c b := by
   match c with
   | 0 | 1 | 2 | _ + 3 => rfl
 
-theorem coord_smul (c : Nat) (x : F) (a : EF) : coord c (Challenge.smul x a) = x * coord c a := by
+theorem coord_smul [Mont32BaseField p] [Binomial4 p] (c : Nat) (x : F) (a : EF) : coord c
+    (Challenge.smul x a) = x * coord c a := by
   match c with
   | 0 | 1 | 2 | _ + 3 => rfl
 
-omit [Mont32BaseField p] [Binomial4 p] in
 theorem coord_zero (c : Nat) : coord c (0 : EF) = 0 := by
   match c with
   | 0 | 1 | 2 | _ + 3 => rfl
 
-omit [Mont32BaseField p] [Binomial4 p] in
 theorem ext_coord {a b : EF} (h : ∀ c < 4, coord c a = coord c b) : a = b :=
   Norm.ext (h 0 (by decide)) (h 1 (by decide)) (h 2 (by decide)) (h 3 (by decide))
 
 /-- Coordinate `c` of a sum of scaled elements is the sum of the scaled coordinates. -/
-theorem coord_foldl_smul (f : Nat → F) (g : Nat → EF) (c : Nat) (acc : EF) : ∀ n,
+theorem coord_foldl_smul [Mont32BaseField p] [Binomial4 p] (f : Nat → F) (g : Nat → EF) (c : Nat)
+    (acc : EF) : ∀ n,
     coord c ((List.range' 0 n).foldl (fun acc i ↦ acc + Challenge.smul (f i) (g i)) acc) =
       coord c acc + ∑ i ∈ Finset.range n, f i * coord c (g i)
   | 0 => by rw [List.range'_zero, List.foldl_nil, Finset.sum_range_zero, add_zero]
@@ -261,13 +260,13 @@ theorem coord_foldl_smul (f : Nat → F) (g : Nat → EF) (c : Nat) (acc : EF) :
 /-- The extension element of four coordinates. -/
 def mk4 (f : Nat → F) : EF := ⟨f 0, f 1, f 2, f 3⟩
 
-omit [Mont32BaseField p] [Binomial4 p] in
 theorem coord_mk4 (f : Nat → F) (c : Nat) (hc : c < 4) : coord c (mk4 f) = f c := by
   match c, hc with
   | 0, _ | 1, _ | 2, _ | 3, _ => rfl
 
 /-- A column sum of the specification, coordinate by coordinate, reindexed to the stored rows. -/
-theorem coord_colSum (values : Array F) (w L j : Nat) {z : EF} (hz : Ext.OutsideBase z)
+theorem coord_colSum [Mont32BaseField p] [Binomial4 p] (values : Array F) (w L j : Nat) {z : EF}
+    (hz : Ext.OutsideBase z)
     (c : Nat) : coord c (colSum values (bitRevPerm L) (baryWeights L z) w (2 ^ L) j) =
       ∑ r ∈ Finset.range (2 ^ L), values.getD (r * w + j) 0 *
         coord c (bw z ((cosetPointsBitRev (gen : F) L).getD r 0)) := by
@@ -284,7 +283,8 @@ theorem coord_colSum (values : Array F) (w L j : Nat) {z : EF} (hz : Ext.Outside
 
 /-- The specification's opened values, coordinate by coordinate a sum over the stored rows of
 the row times the weight of its stored point. -/
-theorem openedAt_sum (b : Nat) (s : Mat F) {z : EF} (hz : Ext.OutsideBase z) :
+theorem openedAt_sum [Mont32BaseField p] [Binomial4 p] (b : Nat) (s : Mat F) {z : EF}
+    (hz : Ext.OutsideBase z) :
     Fri.openedAt b s z = Array.ofFn (n := s.width) fun j ↦
       Fri.cosetFactor (Nat.log2 s.height - b) gen z * mk4 fun c ↦
         ∑ r ∈ Finset.range (2 ^ (Nat.log2 s.height - b)), s.values.getD (r * s.width + j.val) 0 *
@@ -296,7 +296,6 @@ theorem openedAt_sum (b : Nat) (s : Mat F) {z : EF} (hz : Ext.OutsideBase z) :
 
 /-! ### Inverses by the norm on words -/
 
-omit [Mont32BaseField p] [Binomial4 p] in
 theorem mulAddWords_ofFn {n : Nat} (hn : 4 * n < USize.size) (f g : Fin n → F)
     (c : F) : Words.mulAddWords p (encode (Array.ofFn f)) (encode (Array.ofFn g)) c.val n =
       encode (Array.ofFn fun i ↦ f i + g i * c) := by
@@ -306,7 +305,6 @@ theorem mulAddWords_ofFn {n : Nat} (hn : 4 * n < USize.size) (f g : Fin n → F)
   rw [CompPoly.CPolynomial.NTTFast.Packed.getD_ofFn_bounded _ _ i.isLt,
     CompPoly.CPolynomial.NTTFast.Packed.getD_ofFn_bounded _ _ i.isLt]
 
-omit [Mont32BaseField p] [Binomial4 p] in
 theorem replicateWord_ofFn {n : Nat} (hn : 4 * n < USize.size) (c : F) :
     Words.replicateWord c.val n = encode (Array.ofFn (n := n) fun _ ↦ c) := by
   rw [Words.replicateWord_encode _ _ hn]
@@ -314,7 +312,6 @@ theorem replicateWord_ofFn {n : Nat} (hn : 4 * n < USize.size) (c : F) :
   intro i _ _
   simp only [Array.getElem_ofFn, Array.getElem_replicate]
 
-omit [Mont32BaseField p] [Binomial4 p] in
 theorem batchInvWords_ofFn {n : Nat} (hn : 4 * n < USize.size) (f : Fin n → F)
     (hf : ∀ i, f i ≠ 0) :
     batchInvWords p (encode (Array.ofFn f)) n = encode (Array.ofFn fun i ↦ (f i)⁻¹) := by
@@ -323,13 +320,13 @@ theorem batchInvWords_ofFn {n : Nat} (hn : 4 * n < USize.size) (f : Fin n → F)
   refine congrArg encode (congrArg Array.ofFn (funext fun i ↦ ?_))
   rw [CompPoly.CPolynomial.NTTFast.Packed.getD_ofFn_bounded _ _ i.isLt]
 
-omit [Mont32BaseField p] [Binomial4 p] in
 theorem encode_ofFn_getElem (X : Array F) :
     encode X = encode (Array.ofFn (n := X.size) fun i ↦ X[i.val]) := by
   rw [Array.ofFn_getElem]
 
 /-- `invDenoms` inverts `z - x` for every base point `x`, for `z` outside the base field. -/
-theorem invDenoms_rel (hζ : 2 ≤ twoAdicity F) {z : EF} (hz : Ext.OutsideBase z) (X : Array F)
+theorem invDenoms_rel [Mont32BaseField p] [Binomial4 p] (hζ : 2 ≤ twoAdicity F) {z : EF}
+    (hz : Ext.OutsideBase z) (X : Array F)
     (hs : 4 * X.size < USize.size) :
     RV (invDenoms z (encode X) X.size) (X.map fun x ↦ (z - Ext4.ofBase x)⁻¹) := by
   have hz' := (Mont32.outsideBase_ext4 z).mp hz
@@ -355,7 +352,6 @@ theorem invDenoms_rel (hζ : 2 ≤ twoAdicity F) {z : EF} (hz : Ext.OutsideBase 
 open CompPoly.CPolynomial.NTTFast.Packed (getD_ofFn_bounded size_encode_fields)
 open CompPoly.CPolynomial.NTTFast.Packed.Native (write zeroWords transposeRows)
 
-omit [Mont32BaseField p] [Binomial4 p] in
 /-- Words `0, …, w - 1` written in order. -/
 theorem writeAll_eq (f : Nat → F) (g : Nat → UInt32) (w : Nat) (hw : 4 * w < USize.size)
     (hg : ∀ j < w, g j = (f j).val) :
@@ -368,7 +364,6 @@ theorem writeAll_eq (f : Nat → F) (g : Nat → UInt32) (w : Nat) (hw : 4 * w <
         (by rw [Array.size_replicate]; omega)),
     Nat.zero_add, Words.upto_full _ _ _ (Array.size_replicate ..)]
 
-omit [Mont32BaseField p] [Binomial4 p] in
 /-- The transpose of a range of rows of an encoded matrix, on field elements. -/
 theorem transposeRows_encode (M : Array F) (w r0 rows : Nat) (hM : (r0 + rows) * w ≤ M.size)
     (hs : 4 * M.size < USize.size) :
@@ -383,14 +378,14 @@ theorem transposeRows_encode (M : Array F) (w r0 rows : Nat) (hM : (r0 + rows) *
   rw [Array.getElem_map, Array.getElem_ofFn, Array.getElem_ofFn,
     CompPoly.CPolynomial.NTTFast.Packed.getD_map_val]
 
-omit [Mont32BaseField p] in
-theorem mul_ofBase (a : EF) (x : F) : a * Ext4.ofBase x = Ext4.smul x a := by
+theorem mul_ofBase [Binomial4 p] (a : EF) (x : F) : a * Ext4.ofBase x = Ext4.smul x a := by
   apply Norm.ext <;>
     simp only [Norm.mul_c0, Norm.mul_c1, Norm.mul_c2, Norm.mul_c3, Ext4.ofBase, Ext4.smul] <;>
     ring
 
 /-- The weight planes of a range of stored points. -/
-theorem weightPlane (hζ : 2 ≤ twoAdicity F) {z : EF} (hz : Ext.OutsideBase z) (X : Array F)
+theorem weightPlane [Mont32BaseField p] [Binomial4 p] (hζ : 2 ≤ twoAdicity F) {z : EF}
+    (hz : Ext.OutsideBase z) (X : Array F)
     (r0 len : Nat)
     (hX : r0 + len ≤ X.size) (hs : 4 * X.size < USize.size) :
     #[((invDenoms z (slice (encode X) r0 len) len).mulBase (slice (encode X) r0 len)).c0,
@@ -429,7 +424,6 @@ theorem weightPlane (hζ : 2 ≤ twoAdicity F) {z : EF} (hz : Ext.OutsideBase z)
   | 2, _ => exact h2
   | 3, _ => exact h3
 
-omit [Mont32BaseField p] [Binomial4 p] in
 /-- Appending four elements per item. -/
 theorem foldl_append_ofFn4 {α : Type} (R : EF → Fin 4 → α) : ∀ (l : List EF) (b : Array α), l.foldl
     (fun b z ↦ b ++ Array.ofFn (R z)) b =
@@ -454,7 +448,6 @@ theorem foldl_append_ofFn4 {α : Type} (R : EF → Fin 4 → α) : ∀ (l : List
       · rw [show i / 4 = (i - 4) / 4 + 1 by omega, List.getD_cons_succ]
       · exact Fin.ext (by simp only; omega)
 
-omit [Mont32BaseField p] [Binomial4 p] in
 /-- One plane of column sums: column `j` of the transposed range dotted with a weight plane. -/
 theorem colPlane_eq (M P : Array F) (w r0 len : Nat) (hM : (r0 + len) * w ≤ M.size)
     (hP : len ≤ P.size) (hsM : 4 * M.size < USize.size) (hsP : 4 * P.size < USize.size)
@@ -483,7 +476,8 @@ theorem colPlane_eq (M P : Array F) (w r0 len : Nat) (hM : (r0 + len) * w ≤ M.
 
 /-- The fast column sums of a range of stored rows: for every point and coordinate, a plane of
 `w` sums of the rows times the weights of their points. -/
-theorem weightedColumns_encode (hζ : 2 ≤ twoAdicity F) (M : Array F) (w : Nat) (zs : Array EF)
+theorem weightedColumns_encode [Mont32BaseField p] [Binomial4 p] (hζ : 2 ≤ twoAdicity F)
+    (M : Array F) (w : Nat) (zs : Array EF)
     (hz : ∀ z ∈ zs, Ext.OutsideBase z) (X : Array F) (r0 len : Nat)
     (hM : (r0 + len) * w ≤ M.size) (hX : r0 + len ≤ X.size) (hsM : 4 * M.size < USize.size)
     (hsX : 4 * X.size < USize.size) (hw : 4 * w < USize.size) :
@@ -510,7 +504,6 @@ theorem weightedColumns_encode (hζ : 2 ≤ twoAdicity F) (M : Array F) (w : Nat
   refine congrArg encode (congrArg Array.ofFn (funext fun j ↦ Finset.sum_congr rfl fun t ht ↦ ?_))
   rw [getD_ofFn_bounded _ _ (Finset.mem_range.mp ht)]
 
-omit [Mont32BaseField p] [Binomial4 p] in
 theorem zip_map_addWords (N w : Nat) (hw : 4 * w < USize.size) (A B : Fin N → Fin w → F) :
     ((Array.ofFn (n := N) fun i ↦ encode (Array.ofFn (A i))).zip
       (Array.ofFn (n := N) fun i ↦ encode (Array.ofFn (B i)))).map
@@ -522,7 +515,6 @@ theorem zip_map_addWords (N w : Nat) (hw : 4 * w < USize.size) (A B : Fin N → 
     Array.getElem_ofFn]
   exact EVec.addWords_ofFn hw _ _
 
-omit [Mont32BaseField p] [Binomial4 p] in
 /-- Sums over parallel ranges of `h` rows, added plane by plane, are the sums over all rows. -/
 theorem parts_sum (N w h parts : Nat) (hp : 0 < parts) (hw : 4 * w < USize.size)
     (g : Nat → Nat → Nat → F) (WC : Nat → Nat → Array ByteArray)
@@ -570,8 +562,6 @@ theorem parts_sum (N w h parts : Nat) (hp : 0 < parts) (hw : 4 * w < USize.size)
   rw [ite_eq_left_of_eq_true _ _ (eq_true rfl)] at this
   exact this
 
-omit [Binomial4 p] in
-omit [Mont32BaseField p] in
 /-- A word of a plane of tabulated sums. -/
 theorem word_plane (n w : Nat) (G : Nat → Nat → F) (idx j : Nat) (hidx : idx < n) (hj : j < w)
     (hw : 4 * w < USize.size) :
@@ -580,11 +570,13 @@ theorem word_plane (n w : Nat) (G : Nat → Nat → F) (idx j : Nat) (hidx : idx
   rw [getD_ofFn_bounded _ _ hidx, word_encode_getD _ _ (by rw [Array.size_ofFn]; exact hw)
     (by omega), getD_ofFn_bounded _ _ hj]
 
-theorem size_openedAt (b : Nat) (s : Mat F) (z : EF) : (Fri.openedAt b s z).size = s.width := by
+theorem size_openedAt [Mont32BaseField p] [Binomial4 p] (b : Nat) (s : Mat F) (z : EF) :
+    (Fri.openedAt b s z).size = s.width := by
   rw [openedAt_eq, Array.size_ofFn]
 
 /-- The fast opened values are the specification's. -/
-theorem openedAt_rel (hζ : 2 ≤ twoAdicity F) (b : Nat) (zs : List EF) {m : PMat} {s : Mat F}
+theorem openedAt_rel [Mont32BaseField p] [Binomial4 p] (hζ : 2 ≤ twoAdicity F) (b : Nat)
+    (zs : List EF) {m : PMat} {s : Mat F}
     (h : RM m s)
     (hs : MatOk s) (hz : ∀ z ∈ zs, Ext.OutsideBase z) :
     openedAt b m zs = zs.map (Fri.openedAt b s) := by
@@ -667,7 +659,8 @@ and its terms `(z, yz, offset)`. -/
 abbrev GItem (q : ℕ) [Mont32Field q] := ByteArray × Nat × EVec q × List (Ext4 q × Ext4 q × Ext4 q)
 
 /-- One matrix of the fast reduction's grouping by height. -/
-def groupStep (alpha : EF) (groups : List (Nat × Nat × Array (GItem p)))
+def groupStep [Mont32BaseField p] [Binomial4 p] (alpha : EF) (groups : List (Nat × Nat × Array
+    (GItem p)))
     (it : PMat × List (EF × Array EF)) : List (Nat × Nat × Array (GItem p)) :=
   let m := it.1
   let logH := Nat.log2 m.height
@@ -678,7 +671,8 @@ def groupStep (alpha : EF) (groups : List (Nat × Nat × Array (GItem p)))
     groups.filter (·.1 != logH)
 
 /-- The batched quotient of one group, by parallel row ranges. -/
-def groupPlanes (G : Nat × Nat × Array (GItem p)) : Nat × EVec p :=
+def groupPlanes [Mont32BaseField p] [Binomial4 p] (G : Nat × Nat × Array
+    (GItem p)) : Nat × EVec p :=
   (G.1, joinPlanes p (2 ^ G.1) <| (Array.range (if 2 ^ G.1 < 4096 then 1 else 16)).map fun k ↦
     Task.spawn fun _ ↦
       let v := reduceRange G.2.2
@@ -690,7 +684,8 @@ def groupPlanes (G : Nat × Nat × Array (GItem p)) : Nat × EVec p :=
       #[v.c0, v.c1, v.c2, v.c3])
 
 /-- The fast reduction groups by height, then computes every group's planes. -/
-theorem reduce_fast (alpha : EF) (items : List (PMat × List (EF × Array EF))) :
+theorem reduce_fast [Mont32BaseField p] [Binomial4 p] (alpha : EF) (items : List (PMat × List
+    (EF × Array EF))) :
     reduce alpha items = ((items.foldl (groupStep alpha) []).map groupPlanes).mergeSort
       fun a b ↦ decide (b.1 ≤ a.1) := by
   simp only [reduce, Id.run, List.forIn_pure_yield_eq_foldl, pure_bind]
@@ -699,24 +694,27 @@ theorem reduce_fast (alpha : EF) (items : List (PMat × List (EF × Array EF))) 
 /-! ### The grouping simulates the specification's fold -/
 
 /-- Row `r` of a group's batched quotient: every term of every matrix in order. -/
-def gval (alpha : EF) (logH : Nat) (g : Array (GItem p)) (r : Nat) : EF :=
+def gval [Mont32BaseField p] [Binomial4 p] (alpha : EF) (logH : Nat) (g : Array (GItem p))
+    (r : Nat) : EF :=
   g.toList.foldl (fun a it ↦ it.2.2.2.foldl (termStep
     (crow (CompPoly.PackedRepr.decode it.1) (powers alpha it.2.1) it.2.1 r)
     ((cosetPointsBitRev (gen : F) logH).getD r 0)) a) 0
 
 /-- A matrix of a group of height `2 ^ logH` the fast kernels compute on. -/
-def Good (alpha : EF) (logH : Nat) (it : GItem p) : Prop :=
+def Good [Mont32BaseField p] [Binomial4 p] (alpha : EF) (logH : Nat) (it : GItem p) : Prop :=
   ∃ V : Array F, it.1 = encode V ∧ V.size = it.2.1 * 2 ^ logH ∧ 4 * V.size < USize.size ∧
     4 * 2 ^ logH < USize.size ∧ it.2.2.1 = EVec.ofArray (powers alpha it.2.1) ∧
     ∀ t ∈ it.2.2.2, Ext.OutsideBase t.1
 
 /-- A fast group represents the specification's running sums of its height. -/
-def GR (alpha : EF) (G : Nat × Nat × Array (GItem p)) (S : Nat × Nat × Array EF) : Prop :=
+def GR [Mont32BaseField p] [Binomial4 p] (alpha : EF) (G : Nat × Nat × Array (GItem p))
+    (S : Nat × Nat × Array EF) : Prop :=
   G.1 = S.1 ∧ G.2.1 = S.2.1 ∧ S.2.2 = Array.ofFn (n := 2 ^ G.1) (fun r ↦ gval alpha G.1 G.2.2 r) ∧
     4 * 2 ^ G.1 < USize.size ∧ ∀ it ∈ G.2.2, Good alpha G.1 it
 
 /-- Related group lists hold related groups of every height. -/
-theorem lookup_rel (alpha : EF) (k : Nat) {l1 : List (Nat × Nat × Array (GItem p))}
+theorem lookup_rel [Mont32BaseField p] [Binomial4 p] (alpha : EF) (k : Nat) {l1 : List
+    (Nat × Nat × Array (GItem p))}
     {l2 : List (Nat × Nat × Array EF)} (h : List.Forall₂ (GR alpha) l1 l2) :
     (l1.lookup k = none ∧ l2.lookup k = none) ∨ ∃ c g, l1.lookup k = some (c, g) ∧
       l2.lookup k = some (c, Array.ofFn (n := 2 ^ k) fun r ↦ gval alpha k g r) ∧
@@ -736,7 +734,8 @@ theorem lookup_rel (alpha : EF) (k : Nat) {l1 : List (Nat × Nat × Array (GItem
       simp only [List.lookup, e]
       exact ih
 
-theorem filter_rel (alpha : EF) (k : Nat) {l1 : List (Nat × Nat × Array (GItem p))}
+theorem filter_rel [Mont32BaseField p] [Binomial4 p] (alpha : EF) (k : Nat) {l1 : List
+    (Nat × Nat × Array (GItem p))}
     {l2 : List (Nat × Nat × Array EF)} (h : List.Forall₂ (GR alpha) l1 l2) :
     List.Forall₂ (GR alpha) (l1.filter (·.1 != k)) (l2.filter (·.1 != k)) := by
   induction h with
@@ -747,7 +746,8 @@ theorem filter_rel (alpha : EF) (k : Nat) {l1 : List (Nat × Nat × Array (GItem
     · exact List.Forall₂.cons hGS ih
     · exact ih
 
-theorem mem_terms (alpha : EF) (ap : Array EF) (w : Nat) : ∀ (pts : List (EF × Array EF))
+theorem mem_terms [Mont32BaseField p] [Binomial4 p] (alpha : EF) (ap : Array EF) (w : Nat) : ∀
+    (pts : List (EF × Array EF))
     (c : Nat), ∀ t ∈ (pts.foldl (termsStep alpha ap w) (c, [])).2, ∃ pr ∈ pts, t.1 = pr.1
   | [], _, t, ht => absurd ht List.not_mem_nil
   | pr :: pts, c, t, ht => by
@@ -758,14 +758,16 @@ theorem mem_terms (alpha : EF) (ap : Array EF) (w : Nat) : ∀ (pts : List (EF �
     · obtain ⟨q, hq, e⟩ := mem_terms alpha ap w pts _ t ht
       exact ⟨q, List.mem_cons_of_mem pr hq, e⟩
 
-theorem gval_push (alpha : EF) (logH : Nat) (g : Array (GItem p)) (it : GItem p)
+theorem gval_push [Mont32BaseField p] [Binomial4 p] (alpha : EF) (logH : Nat) (g : Array (GItem p))
+    (it : GItem p)
     (r : Nat) : gval alpha logH (g.push it) r = it.2.2.2.foldl (termStep
       (crow (CompPoly.PackedRepr.decode it.1) (powers alpha it.2.1) it.2.1 r)
       ((cosetPointsBitRev (gen : F) logH).getD r 0)) (gval alpha logH g r) := by
   rw [gval, gval, Array.toList_push, List.foldl_append, List.foldl_cons, List.foldl_nil]
 
 /-- One matrix of the grouping simulates one step of the specification's fold. -/
-theorem groupStep_rel (alpha : EF) {groups : List (Nat × Nat × Array (GItem p))}
+theorem groupStep_rel [Mont32BaseField p] [Binomial4 p] (alpha : EF) {groups : List
+    (Nat × Nat × Array (GItem p))}
     {red : List (Nat × Nat × Array EF)} (hgr : List.Forall₂ (GR alpha) groups red) {m : PMat}
     {s : Mat F} (hm : RM m s) (pts : List (EF × Array EF)) (hs : MatOk s)
     (hz : ∀ pr ∈ pts, Ext.OutsideBase pr.1) :
@@ -827,7 +829,7 @@ theorem groupStep_rel (alpha : EF) {groups : List (Nat × Nat × Array (GItem p)
       exact hz pr hp
 
 /-- The grouping simulates the specification's fold. -/
-theorem foldl_groupStep_rel (alpha : EF) :
+theorem foldl_groupStep_rel [Mont32BaseField p] [Binomial4 p] (alpha : EF) :
     ∀ {items : List (PMat × List (EF × Array EF))}
       {sitems : List (Mat F × List (EF × Array EF))},
       List.Forall₂ (fun x y ↦ RM x.1 y.1 ∧ x.2 = y.2) items sitems →
@@ -885,7 +887,6 @@ theorem forall₂_mergeSort {α β : Type} {R : α → β → Prop} {l1 : List �
 def colSums (T : Array F) (ap : Array EF) (pr : EF → F) (len k : Nat) : Array F :=
   Array.ofFn (n := len) fun t ↦ ∑ j ∈ Finset.range k, T.getD (j * len + t.val) 0 * pr (ap.getD j 0)
 
-omit [Mont32BaseField p] [Binomial4 p] in
 /-- One column of `compressRange`'s multiply-adds. -/
 theorem mulAddInto_colSums (T : Array F) (ap : Array EF) (pr : EF → F) (len k : Nat)
     (hT : (k + 1) * len ≤ T.size) (hk : k < ap.size) (hsT : 4 * T.size < USize.size)
@@ -906,7 +907,8 @@ theorem mulAddInto_colSums (T : Array F) (ap : Array EF) (pr : EF → F) (len k 
   rw [colSums, getD_ofFn_bounded _ _ t.isLt, Finset.sum_range_succ, e]
 
 /-- The fast batching of a range of rows by the powers `ap` of `α`, coordinate by coordinate. -/
-theorem compressRange_encode (V : Array F) (ap : Array EF) (r0 len : Nat)
+theorem compressRange_encode [Mont32BaseField p] [Binomial4 p] (V : Array F) (ap : Array EF)
+    (r0 len : Nat)
     (hV : (r0 + len) * ap.size ≤ V.size) (hs : 4 * V.size < USize.size)
     (hsa : 4 * ap.size < USize.size) (hl : 4 * len < USize.size) :
     compressRange p (encode V) ap.size (encode (ap.map (·.c0))) (encode (ap.map (·.c1)))
@@ -983,7 +985,6 @@ theorem forIn_sim {α β γ : Type} (Inv : β → γ → Prop) (σ : α → γ �
     rw [List.forIn_cons, e, List.foldl_cons]
     exact forIn_sim Inv σ f l b' (σ a c) h' fun a ha ↦ hs a (List.mem_cons_of_mem _ ha)
 
-omit [Mont32BaseField p] [Binomial4 p] in
 /-- A fold of functions, pointwise. -/
 theorem foldl_pointwise {α : Type} (g : Nat → EF → α → EF) :
     ∀ (l : List α) (S : Nat → EF) (t : Nat),
@@ -992,21 +993,21 @@ theorem foldl_pointwise {α : Type} (g : Nat → EF → α → EF) :
   | a :: l, S, t => by
     rw [List.foldl_cons, List.foldl_cons, foldl_pointwise g l _ t]
 
-omit [Mont32BaseField p] in
-theorem mul_comm' (a b : EF) : a * b = b * a :=
+theorem mul_comm' [Binomial4 p] (a b : EF) : a * b = b * a :=
   Ext4.toSpec_injective (by rw [Ext4.toSpec_mul, Ext4.toSpec_mul, mul_comm])
 
-omit [Mont32BaseField p] in
-theorem mul_assoc' (a b c : EF) : a * b * c = a * (b * c) :=
+theorem mul_assoc' [Binomial4 p] (a b c : EF) : a * b * c = a * (b * c) :=
   Ext4.toSpec_injective (by
     rw [Ext4.toSpec_mul, Ext4.toSpec_mul, Ext4.toSpec_mul, Ext4.toSpec_mul, mul_assoc])
 
 /-- The state of `reduceRange`: the running sums and the cached inverses. -/
-def RInv (xr : ByteArray) (len : Nat) (s : EVec p × List (EF × EVec p)) (S : Nat → EF) : Prop :=
+def RInv [Mont32BaseField p] [Binomial4 p] (xr : ByteArray) (len : Nat) (s : EVec p × List
+    (EF × EVec p)) (S : Nat → EF) : Prop :=
   RV s.1 (Array.ofFn (n := len) fun t ↦ S t.val) ∧ ∀ pr ∈ s.2, pr.2 = invDenoms pr.1 xr len
 
 /-- One term of `reduceRange` on planes. -/
-theorem term_rel (hζ : 2 ≤ twoAdicity F) {len : Nat} {acc comp : EVec p} {S C : Nat → EF}
+theorem term_rel [Mont32BaseField p] [Binomial4 p] (hζ : 2 ≤ twoAdicity F) {len : Nat}
+    {acc comp : EVec p} {S C : Nat → EF}
     (X : Array F)
     (hX : X.size = len) (hl : 4 * len < USize.size)
     (hacc : RV acc (Array.ofFn (n := len) fun t ↦ S t.val))
@@ -1037,7 +1038,8 @@ theorem term_rel (hζ : 2 ≤ twoAdicity F) {len : Nat} {acc comp : EVec p} {S C
     mul_assoc', mul_comm' offset, mul_assoc']
 
 /-- The rows of a range of a group's matrix batched by the powers of `α`, as planes. -/
-theorem comp_rel (alpha : EF) (logH : Nat) (it : GItem p) (hit : Good alpha logH it) (r0 len : Nat)
+theorem comp_rel [Mont32BaseField p] [Binomial4 p] (alpha : EF) (logH : Nat) (it : GItem p)
+    (hit : Good alpha logH it) (r0 len : Nat)
     (hr : r0 + len ≤ 2 ^ logH) :
     RV ⟨len, (compressRange p it.1 it.2.1 it.2.2.1.c0 it.2.2.1.c1 it.2.2.1.c2 it.2.2.1.c3 r0
         len).getD 0 .empty,
@@ -1083,7 +1085,8 @@ theorem lookup_mem {k : EF} {v : EVec p} : ∀ {l : List (EF × EVec p)}, l.look
       exact List.mem_cons_of_mem _ (lookup_mem h)
 
 /-- A range of rows of a group's batched quotient, on planes. -/
-theorem reduceRange_rel (hζ : 2 ≤ twoAdicity F) (alpha : EF) (logH : Nat) (g : Array (GItem p))
+theorem reduceRange_rel [Mont32BaseField p] [Binomial4 p] (hζ : 2 ≤ twoAdicity F) (alpha : EF)
+    (logH : Nat) (g : Array (GItem p))
     (hg : ∀ it ∈ g, Good alpha logH it) (h4 : 4 * 2 ^ logH < USize.size) (r0 len : Nat)
     (hr : r0 + len ≤ 2 ^ logH) :
     RV (reduceRange g (encode (cosetPointsBitRev (gen : F) logH)) r0 len)
@@ -1160,7 +1163,8 @@ theorem reduceRange_rel (hζ : 2 ≤ twoAdicity F) (alpha : EF) (logH : Nat) (g 
   rfl
 
 /-- A group's planes, by parallel ranges, hold its batched quotient. -/
-theorem groupPlanes_rel (hζ : 2 ≤ twoAdicity F) (alpha : EF) (G : Nat × Nat × Array (GItem p))
+theorem groupPlanes_rel [Mont32BaseField p] [Binomial4 p] (hζ : 2 ≤ twoAdicity F) (alpha : EF)
+    (G : Nat × Nat × Array (GItem p))
     (h4 : 4 * 2 ^ G.1 < USize.size)
     (hg : ∀ it ∈ G.2.2, Good alpha G.1 it) :
     RV (groupPlanes G).2 (Array.ofFn (n := 2 ^ G.1) fun r ↦ gval alpha G.1 G.2.2 r.val) := by
@@ -1179,7 +1183,7 @@ theorem groupPlanes_rel (hζ : 2 ≤ twoAdicity F) (alpha : EF) (G : Nat × Nat 
   exact reduceRange_rel hζ alpha logH g hg h4 _ _ (range_le _ _ _ hk)
 
 /-- The fast reduction is the specification's. -/
-theorem reduce_rel (hζ : 2 ≤ twoAdicity F) (alpha : EF)
+theorem reduce_rel [Mont32BaseField p] [Binomial4 p] (hζ : 2 ≤ twoAdicity F) (alpha : EF)
     {items : List (PMat × List (EF × Array EF))}
     {sitems : List (Mat F × List (EF × Array EF))}
     (h : List.Forall₂ (fun x y ↦ RM x.1 y.1 ∧ x.2 = y.2) items sitems)
