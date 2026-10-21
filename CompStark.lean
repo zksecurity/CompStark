@@ -57,6 +57,7 @@ public import CompStark.Batch.Proof
 public import CompStark.Batch.Verifier
 public import CompStark.Batch.Prover
 public import CompStark.Plonky3.Batch
+public import CompStark.Batch.Refines
 public import CompStark.Stark.Refines
 public import CompStark.Stark.Fast
 public import CompStark.Stark.Fast.Transcript

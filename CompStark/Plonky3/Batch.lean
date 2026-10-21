@@ -11,7 +11,8 @@ public import CompStark.Plonky3.Prover
 
 Over a base field with Plonky3's Poseidon2 instances: the common data of a batch (`setupBatch`,
 the Poseidon2 Merkle root of its preprocessed traces' extensions), the prover `proveBatch` on the
-specification backend, and Plonky3's verifier `verifyBatch`, `verifyBatchWith` on Poseidon2.
+specification backend with its out-of-domain point (`outOfDomainPoint`), and Plonky3's verifier
+`verifyBatch`, `verifyBatchWith` on Poseidon2.
 -/
 
 @[expose] public section
@@ -35,6 +36,12 @@ values `pis`, by the specification backend. -/
 def proveBatch (EF : Type) [Challenge F EF] (P : Params) (instances : List (Instance F))
     (traces : List (Array F)) (pis : List (List F)) : BatchProof F EF :=
   proveBatchWith (specBackend EF) P instances traces pis
+
+/-- The out-of-domain point `ζ` of the specification's batch proof. -/
+def outOfDomainPoint (EF : Type) [Challenge F EF] (P : Params) (instances : List (Instance F))
+    (traces : List (Array F)) (pis : List (List F)) : EF :=
+  ((batchCommitAndSample (specBackend EF) P instances (setupBatchWith (specBackend EF) P instances)
+    traces pis).run (specBackend EF).transcript).1.2.2.2.2.1
 
 variable {EF : Type} [Challenge F EF]
 

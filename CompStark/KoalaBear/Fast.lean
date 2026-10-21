@@ -49,4 +49,19 @@ theorem prove_fast {params : Params} {air : Air F} {logN : Nat} {trace : Array F
   Stark.Fast.prove_fast (by rw [twoAdicity_eq]; decide) domainsAddressable publicValues input
     outOfDomain
 
+/-- **The fast batch prover over KoalaBear is correct**: for a batch of the shapes the prover
+supports (`Batch.InputOk`) with a list of public values per instance, it produces the
+specification's proof, unless the out-of-domain point `ζ` lands in the base field. -/
+theorem proveBatch_fast {params : Params} {instances : List (Batch.Instance F)}
+    {traces : List (Array F)} {publicValues : List (List F)}
+    (input : Batch.InputOk EF params instances traces)
+    (publicValuesLength : publicValues.length = instances.length)
+    (outOfDomain :
+      Ext.OutsideBase (Batch.outOfDomainPoint EF params instances traces publicValues)) :
+    Batch.proveBatchWith (backendFor params.logBlowup (Batch.shapes instances)) params instances
+        traces publicValues =
+      Batch.proveBatch EF params instances traces publicValues :=
+  Stark.Fast.proveBatch_fast (by rw [twoAdicity_eq]; decide) domainsAddressable input
+    publicValuesLength outOfDomain
+
 end CompStark.KoalaBear

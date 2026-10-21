@@ -107,6 +107,79 @@ theorem width_setupWith (P : Params) (A : Air F) (logN : Nat) :
   · simp only [hpw, ↓reduceIte, Option.map_some, Option.getD_some]
     exact (shape_ldeRef ..).1
 
+/-- The quotient's chunks by a refining backend and by the specification, from related
+extensions of a trace of the prover's shapes and of its preprocessed trace, are related, of the
+prover's shapes, `d` columns wide and `2 ^ logChunks` of them. -/
+theorem quotientChunks_refines (h : Refines B) {P : Params} {A : Air F} {logN : Nat}
+    {trace : Array F} (pis : List F) (hin : InputOk EF P A logN trace) {ext : B.M}
+    (hext : h.RM ext (ldeRef logN P.logBlowup gen A.width trace)) {pext : Option B.M}
+    {spext : Option (Mat F)} (hp : Option.Rel h.RM pext spext)
+    (hpok : ∀ q ∈ spext, MatOk q ∧ q.height = 2 ^ (logN + P.logBlowup))
+    (hpw : (spext.map (·.width)).getD 0 = A.preprocessedWidth) (alpha : EF) :
+    List.Forall₂ h.RM (quotientChunks B P A logN ext pext pis alpha)
+        (quotientChunks (specBackend EF) P A logN (ldeRef logN P.logBlowup gen A.width trace)
+          spext pis alpha) ∧
+      (∀ m ∈ quotientChunks (specBackend EF) P A logN (ldeRef logN P.logBlowup gen A.width trace)
+        spext pis alpha, MatOk m ∧ m.height = 2 ^ (logN + P.logBlowup) ∧
+          m.width = Challenge.d EF) ∧
+      (quotientChunks (specBackend EF) P A logN (ldeRef logN P.logBlowup gen A.width trace)
+        spext pis alpha).length = 2 ^ A.logQuotientChunks logN := by
+  obtain ⟨-, -, hw, hcols, hlog, hchunks, hmem⟩ := hin
+  have hmq :
+      Addressable (2 ^ (logN + P.logBlowup) * (Challenge.d EF * 2 ^ A.logQuotientChunks logN)) :=
+    addressable_mono (Nat.mul_le_mul_left _ (Nat.le_add_left _ _)) hmem
+  have h1 : 1 ≤ 2 ^ A.logQuotientChunks logN := Nat.one_le_two_pow
+  have hm4 : Addressable (2 ^ (logN + P.logBlowup) * Challenge.d EF) :=
+    addressable_mono (Nat.mul_le_mul_left _ (Nat.le_mul_of_pos_right _ h1)) hmq
+  obtain ⟨hew, heh, hev⟩ := shape_ldeRef logN P.logBlowup gen A.width trace
+  have hextOk : MatOk (ldeRef logN P.logBlowup gen A.width trace) :=
+    ⟨by rw [hew]; exact hw, ⟨_, hlog, heh⟩, by rw [hev, hew, heh],
+      by rw [hew, heh, Nat.mul_comm]
+         exact addressable_mono (Nat.mul_le_mul_left _ (by omega)) hmem⟩
+  have hprepQok : ∀ q ∈ spext,
+      MatOk q ∧ q.height = (ldeRef logN P.logBlowup gen A.width trace).height := by
+    intro q hq
+    obtain ⟨hok, hh⟩ := hpok q hq
+    exact ⟨hok, by rw [hh, heh]⟩
+  unfold quotientChunks
+  dsimp only
+  have hq :
+      2 ^ (logN + A.logQuotientChunks logN) ≤ (ldeRef logN P.logBlowup gen A.width trace).height :=
+    heh ▸ Nat.pow_le_pow_right (by decide) (by omega)
+  rw [h.quotient _ _ _ _ _ hext hextOk hq hp hprepQok (fun c hc ↦ by
+    rw [hew, hpw]
+    exact Expr.colsBelow_mono A.mainNextWidth_le le_rfl A.preprocessedNextWidth_le c
+      (hcols c hc))]
+  dsimp only
+  generalize quotientOfLde A pis logN (A.logQuotientChunks logN) _ _ alpha = qs
+  have hchOk : ∀ c, MatOk (ldeRef logN P.logBlowup
+      (gen * (gen * powF (twoAdicGen (logN + A.logQuotientChunks logN)) c)⁻¹) (Challenge.d EF)
+      (chunkValues qs (2 ^ A.logQuotientChunks logN) c (2 ^ logN))) := fun c ↦ by
+    obtain ⟨h1, h2, h3⟩ := shape_ldeRef logN P.logBlowup
+      (gen * (gen * powF (twoAdicGen (logN + A.logQuotientChunks logN)) c)⁻¹) (Challenge.d EF)
+      (chunkValues qs (2 ^ A.logQuotientChunks logN) c (2 ^ logN))
+    exact ⟨by rw [h1]; exact (Challenge.params EF).d_pos, ⟨_, hlog, h2⟩, by rw [h3, h1, h2],
+      by rw [h1, h2, Nat.mul_comm]; exact hm4⟩
+  refine ⟨forall₂_map (fun c c' hc ↦ ?_) (List.forall₂_same.2 fun _ _ ↦ rfl), fun m hm ↦ ?_, by
+    rw [List.length_map, List.length_range]⟩
+  · subst hc
+    exact h.lde _ _ _ _ _ (by
+      rw [size_chunkValues (K := EF) qs (2 ^ A.logQuotientChunks logN) c (2 ^ logN), Nat.mul_comm])
+      hlog hm4
+  obtain ⟨c, -, rfl⟩ := List.mem_map.mp hm
+  exact ⟨hchOk c, (shape_ldeRef ..).2.1, (shape_ldeRef ..).1⟩
+
+/-- The widths of matrices of width `w` side by side. -/
+theorem foldl_width_const {K : Type} (l : List (Mat K)) (w : Nat) (hl : ∀ m ∈ l, m.width = w)
+    (a : Nat) :
+    l.foldl (· + ·.width) a = a + w * l.length := by
+  induction l generalizing a with
+  | nil => rfl
+  | cons m l ih =>
+    rw [List.foldl_cons, ih (fun x hx ↦ hl x (List.mem_cons_of_mem _ hx)), hl m List.mem_cons_self,
+      List.length_cons, Nat.mul_succ]
+    omega
+
 theorem commitAndSample_refines (h : Refines B) {P : Params} {A : Air F} {logN : Nat}
     {trace : Array F} (pis : List F) (hin : InputOk EF P A logN trace) :
     RelM (fun x y ↦ h.RM x.1 y.1 ∧ h.RC x.2.1 y.2.1 ∧ List.Forall₂ h.RM x.2.2.1 y.2.2.1 ∧
@@ -115,15 +188,13 @@ theorem commitAndSample_refines (h : Refines B) {P : Params} {A : Air F} {logN :
           (commitAndSample (specBackend EF) P A logN (setupWith (specBackend EF) P A logN)
             trace pis) := by
   obtain ⟨hprep, hprepOk⟩ := setupWith_refines h hin
+  have hin' := hin
   obtain ⟨htrace, -, hw, hcols, hlog, hchunks, hmem⟩ := hin
   have hmw : Addressable (2 ^ (logN + P.logBlowup) * A.width) :=
     addressable_mono (Nat.mul_le_mul_left _ (by omega)) hmem
   have hmq :
       Addressable (2 ^ (logN + P.logBlowup) * (Challenge.d EF * 2 ^ A.logQuotientChunks logN)) :=
     addressable_mono (Nat.mul_le_mul_left _ (Nat.le_add_left _ _)) hmem
-  have h1 : 1 ≤ 2 ^ A.logQuotientChunks logN := Nat.one_le_two_pow
-  have hm4 : Addressable (2 ^ (logN + P.logBlowup) * Challenge.d EF) :=
-    addressable_mono (Nat.mul_le_mul_left _ (Nat.le_mul_of_pos_right _ h1)) hmq
   -- The extended trace.
   obtain ⟨hew, heh, hev⟩ := shape_ldeRef logN P.logBlowup gen A.width trace
   have hextOk : MatOk (ldeRef logN P.logBlowup gen A.width trace) :=
@@ -152,74 +223,21 @@ theorem commitAndSample_refines (h : Refines B) {P : Params} {A : Air F} {logN :
     | none => exact .none
     | @some a b hr => exact .some hr.1
   have hprepQok : ∀ q ∈ (setupWith (specBackend EF) P A logN).map (·.1),
-      MatOk q ∧ q.height = (ldeRef logN P.logBlowup gen A.width trace).height := by
+      MatOk q ∧ q.height = 2 ^ (logN + P.logBlowup) := by
     intro q hq
     obtain ⟨y, hy, rfl⟩ := Option.mem_map.mp hq
-    obtain ⟨hok, hh, -⟩ := hprepOk y hy
-    exact ⟨hok, by rw [hh, heh]⟩
-  unfold commitAndSample quotientChunks
+    exact ⟨(hprepOk y hy).1, (hprepOk y hy).2.1⟩
+  unfold commitAndSample
   dsimp only
   rw [h.root hct, hroots]
   refine RelM.bind_eq fun _ ↦ RelM.bind_eq fun _ ↦ RelM.bind_eq fun _ ↦
     RelM.bind_eq fun _ ↦ RelM.bind_eq fun alpha ↦ ?_
-  have hq :
-      2 ^ (logN + A.logQuotientChunks logN) ≤ (ldeRef logN P.logBlowup gen A.width trace).height :=
-    heh ▸ Nat.pow_le_pow_right (by decide) (by omega)
-  rw [h.quotient _ _ _ _ _ hext hextOk hq hprepQ hprepQok (fun c hc ↦ by
-    change Expr.colsBelow (ldeRef logN P.logBlowup gen A.width trace).width
-      (ldeRef logN P.logBlowup gen A.width trace).width _ _ c = true
-    rw [hew, width_setupWith]
-    exact Expr.colsBelow_mono A.mainNextWidth_le le_rfl A.preprocessedNextWidth_le c
-      (hcols c hc))]
-  dsimp only
-  generalize quotientOfLde A pis logN (A.logQuotientChunks logN) _ _ alpha = qs
-  -- The quotient's chunks.
-  have hchOk : ∀ c, MatOk (ldeRef logN P.logBlowup
-      (gen * (gen * powF (twoAdicGen (logN + A.logQuotientChunks logN)) c)⁻¹) (Challenge.d EF)
-      (chunkValues qs (2 ^ A.logQuotientChunks logN) c (2 ^ logN))) := fun c ↦ by
-    obtain ⟨h1, h2, h3⟩ := shape_ldeRef logN P.logBlowup
-      (gen * (gen * powF (twoAdicGen (logN + A.logQuotientChunks logN)) c)⁻¹) (Challenge.d EF)
-      (chunkValues qs (2 ^ A.logQuotientChunks logN) c (2 ^ logN))
-    exact ⟨by rw [h1]; exact (Challenge.params EF).d_pos, ⟨_, hlog, h2⟩, by rw [h3, h1, h2],
-      by rw [h1, h2, Nat.mul_comm]; exact hm4⟩
-  have hch : List.Forall₂ h.RM
-      ((List.range (2 ^ A.logQuotientChunks logN)).map fun c ↦
-        B.lde logN P.logBlowup
-          (gen * (gen * powF (twoAdicGen (logN + A.logQuotientChunks logN)) c)⁻¹) (Challenge.d EF)
-          (chunkValues qs (2 ^ A.logQuotientChunks logN) c (2 ^ logN)))
-      ((List.range (2 ^ A.logQuotientChunks logN)).map fun c ↦
-        (specBackend EF).lde logN P.logBlowup
-          (gen * (gen * powF (twoAdicGen (logN + A.logQuotientChunks logN)) c)⁻¹) (Challenge.d EF)
-          (chunkValues qs (2 ^ A.logQuotientChunks logN) c (2 ^ logN))) :=
-    forall₂_map (fun _ _ hc ↦ hc ▸ h.lde _ _ _ _ _ (by rw [size_chunkValues, Nat.mul_comm])
-      hlog hm4) (List.forall₂_same.2 fun _ _ ↦ rfl)
-  have hall : ∀ m ∈ ((List.range (2 ^ A.logQuotientChunks logN)).map fun c ↦
-      (specBackend EF).lde logN P.logBlowup
-        (gen * (gen * powF (twoAdicGen (logN + A.logQuotientChunks logN)) c)⁻¹) (Challenge.d EF)
-        (chunkValues qs (2 ^ A.logQuotientChunks logN) c (2 ^ logN))), MatOk m ∧
-        m.height = 2 ^ (logN + P.logBlowup) := fun m hm ↦ by
-    obtain ⟨c, -, rfl⟩ := List.mem_map.mp hm
-    exact ⟨hchOk c, (shape_ldeRef ..).2.1⟩
-  have hwsum : ∀ (l : List Nat) (acc : Nat),
-      (l.map fun c ↦ (specBackend EF).lde logN P.logBlowup
-          (gen * (gen * powF (twoAdicGen (logN + A.logQuotientChunks logN)) c)⁻¹) (Challenge.d EF)
-      (chunkValues qs (2 ^ A.logQuotientChunks logN) c (2 ^ logN))).foldl (· + ·.width) acc =
-      acc + Challenge.d EF * l.length := by
-    intro l
-    induction l with
-    | nil => intro acc; rfl
-    | cons c l ih =>
-      intro acc
-      rw [List.map_cons, List.foldl_cons, ih, List.length_cons]
-      show acc + Challenge.d EF + Challenge.d EF * l.length = _
-      rw [Nat.mul_succ]
-      omega
-  have hqc := h.commit hch ⟨_, List.ne_nil_of_length_pos (by
-    rw [List.length_map, List.length_range]; exact Nat.two_pow_pos _),
-    fun m hm ↦ ⟨(hall m hm).1, (hall m hm).2.le⟩, by
-    have e := hwsum (List.range (2 ^ A.logQuotientChunks logN)) 0
-    rw [List.length_range, Nat.zero_add] at e
-    exact e.symm ▸ hmq⟩
+  obtain ⟨hch, hall, hlen⟩ := quotientChunks_refines h pis hin' hext hprepQ hprepQok
+    (width_setupWith (EF := EF) P A logN) alpha
+  have hqc := h.commit hch ⟨_, List.ne_nil_of_length_pos (by rw [hlen]; exact Nat.two_pow_pos _),
+    fun m hm ↦ ⟨(hall m hm).1, (hall m hm).2.1.le⟩, by
+      rw [foldl_width_const _ _ (fun m hm ↦ (hall m hm).2.2), hlen, Nat.zero_add]
+      exact hmq⟩
   rw [h.root hqc]
   dsimp only
   refine RelM.bind_eq fun _ ↦ RelM.bind_eq fun _ ↦ RelM.bind_eq fun _ ↦ ?_

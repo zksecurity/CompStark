@@ -34,6 +34,11 @@ Quot.sound] -/
 #guard_msgs in
 #print axioms CompStark.KoalaBear.prove_fast
 
+/-- info: 'CompStark.KoalaBear.proveBatch_fast' depends on axioms: [propext, Classical.choice,
+Quot.sound] -/
+#guard_msgs in
+#print axioms CompStark.KoalaBear.proveBatch_fast
+
 /-- info: 'CompStark.Iop.knowledgeSoundness' depends on axioms: [propext, Classical.choice,
 Quot.sound] -/
 #guard_msgs in

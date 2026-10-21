@@ -5,6 +5,7 @@ Released under Apache 2.0 license as described in the file LICENSE.
 module
 
 public import CompStark.Stark.Refines
+public import CompStark.Batch.Refines
 public import CompStark.Stark.Fast.Transcript
 public import CompStark.Stark.Fast.Lde
 public import CompStark.Stark.Fast.Commit
@@ -17,7 +18,7 @@ public import CompStark.Stark.Fast.Openings
 Over a Montgomery field with a fourth root of unity (`2 ≤ twoAdicity`, for the norm of `invDenoms`)
 whose largest domains of extension elements are addressable (`DomainsAddressable`), the fast
 backend refines the specification (`backendFor_refines`), so its proofs are the specification's
-(`prove_fast`).
+(`prove_fast`), batch proofs included (`proveBatch_fast`).
 -/
 
 @[expose] public section
@@ -83,5 +84,20 @@ theorem prove_fast (hζ : 2 ≤ twoAdicity F) (hA : DomainsAddressable F EF) {pa
         trace publicValues =
       prove EF params air logN trace publicValues :=
   proveWith_refines hA (backendFor_refines hζ hA _ _) publicValues input outOfDomain
+
+/-- **The fast batch prover is correct.** For a batch of the shapes the prover supports
+(`Batch.InputOk`) with a list of public values per instance, it produces the specification's
+proof, unless the out-of-domain point `ζ` lands in the base field. -/
+theorem proveBatch_fast (hζ : 2 ≤ twoAdicity F) (hA : DomainsAddressable F EF) {params : Params}
+    {instances : List (Batch.Instance F)} {traces : List (Array F)} {publicValues : List (List F)}
+    (input : Batch.InputOk EF params instances traces)
+    (publicValuesLength : publicValues.length = instances.length)
+    (outOfDomain :
+      Ext.OutsideBase (Batch.outOfDomainPoint EF params instances traces publicValues)) :
+    Batch.proveBatchWith (backendFor params.logBlowup (Batch.shapes instances)) params instances
+        traces publicValues =
+      Batch.proveBatch EF params instances traces publicValues :=
+  Batch.proveBatchWith_refines hA (backendFor_refines hζ hA _ _) input publicValuesLength
+    outOfDomain
 
 end CompStark.Stark.Fast
