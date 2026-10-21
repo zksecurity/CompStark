@@ -38,17 +38,10 @@ class Mont32BaseField (p : ℕ) [Mont32Field p] where
   gen_ne_zero : gen ≠ 0
   gen_pow_ne_one : gen ^ 2 ^ twoAdicity ≠ 1
 
-/-- The elements of `FastField p`, enumerated only when called. Neither inlined nor specialized,
-so the compiler does not evaluate the enumeration where it builds a `BaseField` instance. -/
-@[instance_reducible, noinline, nospecialize] def lazyFintype (p : ℕ) [Mont32Field p]
-    (_ : Unit) : Fintype (FastField p) :=
-  instFintype
-
 /-- A fast Montgomery field with its domain data is a base field. -/
-instance Mont32BaseField.instBaseField (p : ℕ) [Mont32Field p] [D : Mont32BaseField p] : BaseField
-    (FastField p) where
+instance Mont32BaseField.instBaseField (p : ℕ) [Mont32Field p] [D : Mont32BaseField p] :
+    BaseField (FastField p) where
   toField := instField
-  fintype := lazyFintype p
   two_ne_zero := NonBinaryField.char_neq_2
   twoAdicity := D.twoAdicity
   twoAdicGen := D.twoAdicGen
@@ -65,8 +58,8 @@ theorem Mont32BaseField.twoAdicity_le_29 (p : ℕ) [Mont32Field p]
   by_contra h
   have hdvd := BaseField.two_pow_dvd_card_sub_one_of_le (F := FastField p)
     (k := 30) (by omega)
-  have hc : Fintype.card (FastField p) = p :=
-    card_fastField
+  have hc : Nat.card (FastField p) = p := by
+    rw [Nat.card_eq_fintype_card, card_fastField]
   rw [hc] at hdvd
   have hlt := Mont32Field.modulus_lt_two_pow_31 (modulus := p)
   have h2 := Mont32Field.two_lt_modulus (modulus := p)

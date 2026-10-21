@@ -183,7 +183,7 @@ theorem fibonacci_knowledgeError_le :
   rw [hq, hlarge, hfolds] at h2
   refine h1.trans ((add_le_add le_rfl h2).trans
     (numbers_le _ (2 ^ 17) _ _ _ _ 0 _ (2177 / 4096 + 10 / 2 ^ 20) ?_ ?_ le_rfl ?_ le_rfl
-      (by norm_num [KoalaBear.card_eq]) (by norm_num [KoalaBear.card_eq])))
+      (by norm_num) (by norm_num)))
   · have hid : fibonacciSetup.identityDegree = 2048 := by
       simp only [Setup.identityDegree, Setup.n, Setup.chunks, fibonacciSetup]
       rw [logQuotientChunks_of _ 0 (by decide)]
@@ -306,8 +306,8 @@ theorem wide_knowledgeError_le :
   rw [hq, hlarge, hfolds, hb] at h2
   refine h1.trans ((add_le_add le_rfl h2).trans
     (numbers_curve_le _ (2 ^ 22 + 64) _ _ _ _ 276841 _ 294726 _ (2561 / 4096 + 20 / 2 ^ 17)
-      ?_ ?_ ?_ le_rfl ?_ (by norm_num [KoalaBear.card_eq]) (by norm_num [KoalaBear.card_eq])
-          (by norm_num [KoalaBear.card_eq]) (by norm_num [KoalaBear.card_eq])))
+      ?_ ?_ ?_ le_rfl ?_ (by norm_num) (by norm_num)
+          (by norm_num) (by norm_num)))
   · exact (wide_integers_le wideSetup rfl).trans (by decide)
   · rw [wide_numOpened wideSetup rfl, hrate, hsize]
     norm_num
@@ -377,8 +377,8 @@ theorem wide21_knowledgeError_le :
   rw [hq, hlarge, hfolds, hb] at h2
   refine h1.trans ((add_le_add le_rfl h2).trans
     (numbers_curve_le _ (2 ^ 23 + 64) _ _ _ _ 276841 _ 343847 _ (2561 / 4096 + 21 / 2 ^ 17)
-      ?_ ?_ ?_ le_rfl ?_ (by norm_num [KoalaBear.card_eq]) (by norm_num [KoalaBear.card_eq])
-          (by norm_num [KoalaBear.card_eq]) (by norm_num [KoalaBear.card_eq])))
+      ?_ ?_ ?_ le_rfl ?_ (by norm_num) (by norm_num)
+          (by norm_num) (by norm_num)))
   · exact (wide_integers_le wide21Setup rfl).trans (by decide)
   · rw [wide_numOpened wide21Setup rfl, hrate, hsize]
     norm_num
@@ -455,19 +455,19 @@ theorem wideSp1_roundError_le :
   refine h.trans (max_le ?_ (max_le ?_ (max_le ?_ (max_le ?_ ?_))))
   · refine nat_div_card_le _ ((div_le_div_of_nonneg_right (Nat.cast_le.mpr h1)
       (by positivity)).trans ?_)
-    norm_num [KoalaBear.card_eq]
+    norm_num
   · rw [hn]
     refine nat_div_card_le _ ((div_le_div_of_nonneg_right (Nat.cast_le.mpr h2)
       (by positivity)).trans ?_)
-    norm_num [KoalaBear.card_eq]
+    norm_num
   · refine ofReal_div_card_le _ ?_
     rw [wide_numOpened wideSp1Setup rfl, hrate, hsize, hδ, hδ']
-    norm_num [KoalaBear.card_eq]
+    norm_num
   · refine ofReal_div_card_le _ ?_
     simp only [LossyMca.lossyBound]
     rw [NNReal.coe_add, hδ]
-    norm_num [KoalaBear.card_eq]
-  · refine powFraction_mul_le _ _ _ (by rw [hδ]; norm_num [KoalaBear.card_eq]) ?_
+    norm_num
+  · refine powFraction_mul_le _ _ _ (by rw [hδ]; norm_num) ?_
     rw [hδ, KoalaBear.card_eq]
     norm_num
 
@@ -545,19 +545,19 @@ theorem wide5_roundError_le :
   refine h.trans (max_le ?_ (max_le ?_ (max_le ?_ (max_le ?_ ?_))))
   · refine nat_div_card_le _ ((div_le_div_of_nonneg_right (Nat.cast_le.mpr h1)
       (by positivity)).trans ?_)
-    norm_num [KoalaBear.card_eq]
+    norm_num
   · rw [hn]
     refine nat_div_card_le _ ((div_le_div_of_nonneg_right (Nat.cast_le.mpr h2)
       (by positivity)).trans ?_)
-    norm_num [KoalaBear.card_eq]
+    norm_num
   · refine ofReal_div_card_le _ ?_
     rw [wide_numOpened wide5Setup rfl, hrate, hsize, hδ, hδ']
-    norm_num [KoalaBear.card_eq]
+    norm_num
   · refine ofReal_div_card_le _ ?_
     simp only [LossyMca.lossyBound]
     rw [NNReal.coe_add, hδ]
-    norm_num [KoalaBear.card_eq]
-  · refine powFraction_mul_le _ _ _ (by rw [hδ]; norm_num [KoalaBear.card_eq]) ?_
+    norm_num
+  · refine powFraction_mul_le _ _ _ (by rw [hδ]; norm_num) ?_
     rw [hδ, KoalaBear.card_eq]
     norm_num
 
@@ -638,7 +638,7 @@ theorem wide5i_knowledgeError_le :
   · simp only [LossyMca.lossyBound]
     norm_num
   · norm_num
-  · norm_num [KoalaBear.card_eq]
+  · norm_num
 
 /-- Knowledge soundness of `wide5iSetup` with error `2 ^ (-128)`, FRI at `6143/16384` and the
 extractor at `49151/131072`: if no trace within `49151/131072` of the prover's committed trace

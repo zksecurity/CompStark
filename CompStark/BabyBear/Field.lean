@@ -81,7 +81,8 @@ instance instMont32BaseField : Mont32BaseField _root_.BabyBear.fieldSize where
 
 @[simp] theorem twoAdicity_eq : twoAdicity F = 27 := rfl
 
-/-- `p = 2013265921 = 15 · 2^27 + 1`, for the base field's `Fintype`. -/
-theorem card_eq : @Fintype.card F BaseField.toFintype = 2013265921 := card_fastField
+/-- `p = 2013265921 = 15 · 2^27 + 1`. -/
+@[simp high] theorem card_eq : Nat.card F = 2013265921 := by
+  rw [Nat.card_eq_fintype_card, card_fastField]; rfl
 
 end CompStark.BabyBear

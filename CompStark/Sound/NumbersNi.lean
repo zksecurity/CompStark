@@ -122,7 +122,7 @@ theorem friFoldError_le (S : Setup EF) (harity : S.params.maxLogArity = 1) (t : 
 theorem friQueryError_eq (S : Setup EF) (harity : S.params.maxLogArity = 1) (δ loss : ℝ≥0) :
     friQueryError S δ loss =
       ENNReal.ofReal (1 - δ + (S.logN - S.params.logFinalPolyLen : ℕ) * loss +
-        1 / Fintype.card F) ^ S.params.numQueries := by
+        1 / Nat.card F) ^ S.params.numQueries := by
   rw [friQueryError, ← lastFold_add_one S harity,
     min_eq_right (by nlinarith [loss.coe_nonneg])]
   congr 2
@@ -149,7 +149,7 @@ theorem roundError_le (S : Setup EF) (harity : S.params.maxLogArity = 1) (t : �
             (2 ^ t)) / Fintype.card 𝕂))
         (powFraction F S.params.queryPowBits *
           ENNReal.ofReal (1 - δ + (S.logN - S.params.logFinalPolyLen : ℕ) * loss +
-            1 / Fintype.card F) ^ S.params.numQueries)) := by
+            1 / Nat.card F) ^ S.params.numQueries)) := by
   refine (iInf_le _ loss).trans ?_
   rw [← friQueryError_eq S harity]
   gcongr
@@ -177,7 +177,7 @@ theorem coe_three_eighths_sub (k : ℤ) (a : ℕ) (hk : k = -a) (ha : 2 ≤ a) :
 
 /-- An integer over `|𝕂| = p ^ d` is at most `2 ^ (-bits)` if it is as a real number. -/
 theorem nat_div_card_le {bits : ℕ} (A : ℕ)
-    (h : (A : ℝ) / (Fintype.card F : ℝ) ^ Challenge.d EF ≤ (2 ^ bits : ℝ)⁻¹) :
+    (h : (A : ℝ) / (Nat.card F : ℝ) ^ Challenge.d EF ≤ (2 ^ bits : ℝ)⁻¹) :
     (A : ENNReal) / (Fintype.card 𝕂 : ENNReal) ≤ (2 ^ bits : ENNReal)⁻¹ := by
   have hK : (0 : ℝ) < Fintype.card 𝕂 := by exact_mod_cast Fintype.card_pos
   rw [← ENNReal.ofReal_natCast A, ← ENNReal.ofReal_natCast (Fintype.card 𝕂),
@@ -186,7 +186,7 @@ theorem nat_div_card_le {bits : ℕ} (A : ℕ)
 
 /-- A real number over `|𝕂| = p ^ d` is at most `2 ^ (-bits)` if it is as a real number. -/
 theorem ofReal_div_card_le {bits : ℕ} (b : ℝ)
-    (h : b / (Fintype.card F : ℝ) ^ Challenge.d EF ≤ (2 ^ bits : ℝ)⁻¹) :
+    (h : b / (Nat.card F : ℝ) ^ Challenge.d EF ≤ (2 ^ bits : ℝ)⁻¹) :
     ENNReal.ofReal b / (Fintype.card 𝕂 : ENNReal) ≤ (2 ^ bits : ENNReal)⁻¹ := by
   have hK : (0 : ℝ) < Fintype.card 𝕂 := by exact_mod_cast Fintype.card_pos
   rw [← ENNReal.ofReal_natCast (Fintype.card 𝕂), ← ENNReal.ofReal_div_of_pos hK, inv_two_pow_eq,
@@ -196,11 +196,11 @@ theorem ofReal_div_card_le {bits : ℕ} (b : ℝ)
 /-- A round with grinding, `powFraction bits` times `y ^ l`, is at most `2 ^ (-target)` if it is
 as a real number. -/
 theorem powFraction_mul_le {target : ℕ} (bits l : ℕ) (y : ℝ) (hy : 0 ≤ y)
-    (h : ((Fintype.card F - 1) / 2 ^ bits + 1 : ℕ) / (Fintype.card F : ℝ) * y ^ l ≤
+    (h : ((Nat.card F - 1) / 2 ^ bits + 1 : ℕ) / (Nat.card F : ℝ) * y ^ l ≤
       (2 ^ target : ℝ)⁻¹) :
     powFraction F bits * ENNReal.ofReal y ^ l ≤ (2 ^ target : ENNReal)⁻¹ := by
-  have hp : (0 : ℝ) < Fintype.card F := by exact_mod_cast Fintype.card_pos
-  rw [powFraction, ← ENNReal.ofReal_natCast, ← ENNReal.ofReal_natCast (Fintype.card F),
+  have hp : (0 : ℝ) < Nat.card F := by exact_mod_cast Nat.card_pos
+  rw [powFraction, ← ENNReal.ofReal_natCast, ← ENNReal.ofReal_natCast (Nat.card F),
     ← ENNReal.ofReal_div_of_pos hp, ← ENNReal.ofReal_pow hy,
     ← ENNReal.ofReal_mul (by positivity), inv_two_pow_eq]
   exact ENNReal.ofReal_le_ofReal h

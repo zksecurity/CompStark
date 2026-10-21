@@ -81,11 +81,9 @@ instance instMont32BaseField : Mont32BaseField _root_.KoalaBear.fieldSize where
 
 @[simp] theorem twoAdicity_eq : twoAdicity F = 24 := rfl
 
-/-- `p = 2130706433 = 127 · 2^24 + 1`, for the base field's `Fintype`, on `FastField p` as the
-generic instances elaborate it. -/
-theorem card_eq :
-    @Fintype.card (FastField _root_.KoalaBear.fieldSize) BaseField.toFintype = 2130706433 :=
-  card_fastField
+/-- `p = 2130706433 = 127 · 2^24 + 1`. -/
+@[simp high] theorem card_eq : Nat.card F = 2130706433 := by
+  rw [Nat.card_eq_fintype_card, card_fastField]; rfl
 
 /-- `omega` with KoalaBear's two-adicity unfolded to `24`. -/
 macro "omega24" : tactic =>

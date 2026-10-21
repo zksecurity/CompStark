@@ -70,11 +70,10 @@ abbrev d : Nat := (params EF).d
 
 variable {EF}
 
-theorem q_eq : (params EF).q = Fintype.card F := by
-  rw [← (card (EF := EF)).out, Nat.card_eq_fintype_card]
+theorem q_eq : (params EF).q = Nat.card F := (card (EF := EF)).out.symm
 
 /-- The spec field has `p ^ d` elements. -/
-theorem card_spec : Fintype.card (Spec EF) = Fintype.card F ^ d EF := by
+theorem card_spec : Fintype.card (Spec EF) = Nat.card F ^ d EF := by
   rw [Ext.card_ext, q_eq]
 
 @[simp] theorem toSpec_add (a b : EF) : toSpec (a + b) = toSpec a + toSpec b :=

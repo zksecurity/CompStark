@@ -13,8 +13,8 @@ public import Mathlib.RingTheory.RootsOfUnity.PrimitiveRoots
 The STARK runs over a finite field `F` of odd characteristic, the base field. `BaseField F` is what
 the verifier and its analysis use of it, on the executable type itself:
 
-* the field operations, finitely many elements, decidable equality; the elements are behind a
-  thunk (`fintype`), so that an executable instance never enumerates them;
+* the field operations, decidable equality, and finiteness as a proposition: no executable code
+  enumerates the elements, and the analysis counts them by `Nat.card F`;
 * the canonical value `CanonicalNat.toNat : F → ℕ`, a bijection onto `[0, p)` for `p = |F|`, of
   which `sampleBits` keeps the low bits;
 * the shift `gen` of the evaluation domains, a nonzero element outside the two-adic subgroup;
@@ -31,8 +31,7 @@ namespace CompStark
 /-- A finite field of odd characteristic with a canonical value per element, a coset shift and
 two-adic generators: the base field of the STARK. -/
 class BaseField (F : Type) extends Field F where
-  /-- The elements, enumerated only when called. -/
-  fintype : Unit → Fintype F
+  [finite : Finite F]
   [decEq : DecidableEq F]
   [canonicalNat : CompPoly.CanonicalNat F]
   /-- The characteristic is odd. -/
@@ -52,10 +51,12 @@ class BaseField (F : Type) extends Field F where
 
 namespace BaseField
 
+attribute [instance] finite
 attribute [instance_reducible, instance] decEq canonicalNat
 
-/-- The finitely many elements. -/
-instance toFintype {F : Type} [BaseField F] : Fintype F := fintype ()
+/-- The elements, for the analysis; noncomputable, so no executable code enumerates them. -/
+noncomputable instance (priority := low) toFintype {F : Type} [BaseField F] : Fintype F :=
+  Fintype.ofFinite F
 
 variable {F : Type} [BaseField F]
 
@@ -71,15 +72,15 @@ theorem twoAdicGen_ne_zero (k : ℕ) (hk : k ≤ twoAdicity F) : twoAdicGen (F :
   (isPrimitiveRoot_twoAdicGen k hk).ne_zero (Nat.two_pow_pos k).ne'
 
 /-- `2 ^ twoAdicity` divides `p - 1`: the two-adic subgroup is a subgroup of the units. -/
-theorem two_pow_dvd_card_sub_one : 2 ^ twoAdicity F ∣ Fintype.card F - 1 := by
+theorem two_pow_dvd_card_sub_one : 2 ^ twoAdicity F ∣ Nat.card F - 1 := by
   have h := isPrimitiveRoot_twoAdicGen (F := F) (twoAdicity F) le_rfl
   have hu := h.isUnit (Nat.two_pow_pos _).ne'
-  rw [← Fintype.card_units, h.eq_orderOf, ← hu.unit_spec, orderOf_units]
+  rw [Nat.card_eq_fintype_card, ← Fintype.card_units, h.eq_orderOf, ← hu.unit_spec, orderOf_units]
   exact orderOf_dvd_card
 
 /-- `2 ^ k` divides `p - 1` for `k ≤ twoAdicity`. -/
 theorem two_pow_dvd_card_sub_one_of_le {k : ℕ} (hk : k ≤ twoAdicity F) :
-    2 ^ k ∣ Fintype.card F - 1 :=
+    2 ^ k ∣ Nat.card F - 1 :=
   (Nat.pow_dvd_pow 2 hk).trans two_pow_dvd_card_sub_one
 
 end BaseField

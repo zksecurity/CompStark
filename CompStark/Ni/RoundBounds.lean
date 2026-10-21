@@ -344,9 +344,9 @@ end Bounds
 /-! ### Digest clashes -/
 
 /-- `|Digest| = |F| ^ 8`. -/
-theorem card_digest : Fintype.card (Digest F) = Fintype.card F ^ 8 := by
-  rw [Fintype.card_congr (arrayVectorEquivFin F 8), Fintype.card_fun, Fintype.card_fin,
-    Fintype.card_congr (Equiv.refl F)]
+theorem card_digest : Fintype.card (Digest F) = Nat.card F ^ 8 := by
+  rw [Nat.card_eq_fintype_card, Fintype.card_congr (arrayVectorEquivFin F 8), Fintype.card_fun,
+    Fintype.card_fin]
 
 /-- An answer's digest is uniform. -/
 theorem prob_digestOf_eq_le (K : Nat) (t : Query F) (x : Digest F) :
