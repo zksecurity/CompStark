@@ -150,6 +150,20 @@ theorem length_prepVals (A : Air F) (o : OpenedValues EF)
     simp only [List.length_nil]
     omega
 
+theorem traceOpenings_counts (A : Air F) (o : OpenedValues EF) (z zn : EF)
+    (htl : o.traceLocal.size = A.width) (htn : traceNextOk A o = true) :
+    (traceOpenings A o z zn).map (·.2.length) =
+      A.width :: if A.mainNextRow then [A.width] else [] := by
+  unfold traceOpenings
+  unfold traceNextOk at htn
+  rcases h : o.traceNext with _ | r <;> rw [h] at htn
+  · simp only [Bool.not_eq_eq_eq_not, Bool.not_true] at htn
+    simp only [htn, Bool.false_eq_true, ↓reduceIte, List.map_cons, List.map_nil,
+      Array.length_toList, htl]
+  · simp only [Bool.and_eq_true, beq_iff_eq] at htn
+    simp only [htn.1, ↓reduceIte, List.map_cons, List.map_nil, Array.length_toList, htl,
+      Option.getD_some, htn.2]
+
 end Values
 
 section Layout
@@ -395,5 +409,187 @@ theorem openingsAtB_coeffs (common : CompStark.Batch.Common F)
     rfl
 
 end Layout
+
+/-! ### The static counts and domain separators -/
+
+section Static
+variable [BaseField F] [Challenge F EF] (S : Iop.Batch.Setup EF)
+
+theorem hasPreprocessed_eq :
+    S.hasPreprocessed = S.instances.any (0 < ·.air.preprocessedWidth) := by
+  rw [Iop.Batch.Setup.hasPreprocessed, Iop.Batch.Setup.instances, List.ofFn_eq_map,
+    List.ofFn_eq_map, List.any_map, List.any_map]
+  rfl
+
+/-- The claimed evaluation counts of a batch proof for `S`: every instance's trace at one or two
+points, every quotient chunk at one, and every preprocessed trace at one or two. -/
+def countsB : List (List (List Nat)) :=
+  [(List.finRange S.k).map (fun i ↦
+      (S.air i).width :: if (S.air i).mainNextRow then [(S.air i).width] else []),
+    (List.finRange S.k).flatMap fun i ↦
+      List.replicate (S.instanceSetup i).chunks [Challenge.d EF]] ++
+    if S.hasPreprocessed then
+      [((List.finRange S.k).filter fun i ↦ 0 < (S.air i).preprocessedWidth).map fun i ↦
+        (S.air i).preprocessedWidth ::
+          if (S.air i).opensPreprocessedNext then [(S.air i).preprocessedWidth] else []]
+    else []
+
+/-- The PCS's domain separator on a batch proof for `S`. -/
+def pcsSeedB : List F := DomainSeparator.pcsSeed F EF (countsB S) S.params.batchPowBits
+
+/-- The batch's domain separator on a proof for `S`. -/
+def batchSeedS : List F :=
+  DomainSeparator.batchSeed F EF (S.instances.map (·.air.width))
+    (S.instances.map (·.air.preprocessedWidth)) (S.instances.map (·.air.numPublicValues))
+    S.hasPreprocessed S.params.oodPowBits
+
+/-- Where the main commitment sits in the first round's input: after the batch's domain separator
+and every instance's degree bits. -/
+def mainOffsetB : Nat := (batchSeedS S).length + Challenge.d EF * S.k
+
+/-- **The PCS's counts are static.** On opened values in the instances' shapes, the PCS observes
+the counts `countsB`. -/
+theorem claimCounts_batchRounds_eq (common : CompStark.Batch.Common F)
+    (proof : CompStark.Batch.BatchProof F EF) (hsize : proof.opened.size = S.k)
+    (hshape : ∀ i : Fin S.k, CompStark.Batch.openedShapeOk (S.air i)
+      (proof.opened.toList.getD i noOpenings) (S.logN i) = true)
+    (hprep : common.preprocessed.isSome = S.instances.any (0 < ·.air.preprocessedWidth))
+    (z : EF) : claimCounts (CompStark.Batch.batchRounds S.instances common proof z) = countsB S := by
+  have hos : proof.opened.toList.length = S.k := by rw [Array.length_toList, hsize]
+  have hsh := fun i ↦ openedShapeOk_spec (hshape i)
+  have hM : ((S.instances.zip proof.opened.toList).map fun x ↦
+      ((⟨1, x.1.logN⟩ : Domain F), traceOpenings x.1.air x.2 z
+        (z * Ext.ofBase (twoAdicGen x.1.logN)))).map (fun m ↦ m.2.map (·.2.length)) =
+      (List.finRange S.k).map (fun i ↦
+        (S.air i).width :: if (S.air i).mainNextRow then [(S.air i).width] else []) := by
+    rw [zip_instances S _ hos, List.map_map, List.map_map]
+    exact List.map_congr_left fun i _ ↦ traceOpenings_counts _ _ _ _ (hsh i).1 (hsh i).2.1
+  have hQ : ((S.instances.zip proof.opened.toList).flatMap fun x ↦
+      x.2.quotientChunks.toList.map fun ch ↦
+        ((⟨1, x.1.logN⟩ : Domain F), [(z, ch.toList)])).map (fun m ↦ m.2.map (·.2.length)) =
+      (List.finRange S.k).flatMap fun i ↦
+        List.replicate (S.instanceSetup i).chunks [Challenge.d EF] := by
+    rw [zip_instances S _ hos, List.flatMap_map, List.map_flatMap]
+    refine List.flatMap_congr fun i _ ↦ ?_
+    rw [List.map_map, List.eq_replicate_iff, List.length_map, Array.length_toList]
+    refine ⟨(hsh i).2.2.1, fun l hl ↦ ?_⟩
+    obtain ⟨ch, hch, rfl⟩ := List.mem_map.mp hl
+    simp only [Function.comp_apply, List.map_cons, List.map_nil, Array.length_toList,
+      (hsh i).2.2.2.1 ch (Array.mem_toList_iff.mp hch)]
+  rw [batchRounds_cases, claimCounts, List.map_append, List.map_cons, List.map_cons,
+    List.map_nil]
+  dsimp only
+  rw [hM, hQ, countsB, hasPreprocessed_eq, ← hprep]
+  congr 1
+  cases common.preprocessed with
+  | none => rfl
+  | some root =>
+    simp only [Option.isSome_some, ↓reduceIte, List.map_cons, List.map_nil, List.cons.injEq,
+      and_true]
+    rw [zip_instances S _ hos, List.filter_map, List.map_map, List.map_map]
+    refine List.map_congr_left fun i hi ↦ ?_
+    have hp : 0 < (S.air i).preprocessedWidth := by
+      simpa using (List.mem_filter.mp hi).2
+    obtain ⟨-, -, -, -, hpl, hpn⟩ := hsh i
+    by_cases h : (S.air i).opensPreprocessedNext = true
+    · have hw : (S.air i).preprocessedNextWidth = (S.air i).preprocessedWidth := by
+        simp only [Air.preprocessedNextWidth, h, ↓reduceIte]
+      simp only [Function.comp_apply, h, ↓reduceIte, List.map_cons, List.map_nil,
+        Array.length_toList, hpl, hpn, hw]
+    · simp only [Function.comp_apply, h, Bool.false_eq_true, ↓reduceIte, List.map_cons,
+        List.map_nil, Array.length_toList, hpl]
+
+end Static
+
+/-! ### The transcript of a prefix -/
+
+section Prefix
+variable [BaseField F] [Challenge F EF] (S : Iop.Batch.Setup EF)
+
+/-- The digest observed in a duplex call's input, the one a commitment round binds: the main
+commitment after the batch's domain separator and the degree bits in the first round (initial
+capacity), after FRI's domain separator in the first fold round (an input of its length), first
+otherwise. -/
+noncomputable def boundDigestB (cap : Digest F) (input : List F) : Digest F :=
+  digestAt input (if cap = initCap then mainOffsetB S
+    else if input.length = (friSeedB S).length + 8 + challengeOffset S.params.commitPowBits
+      then (friSeedB S).length else 0)
+
+/-- FRI's folding challenges in ArkLib's coordinate, from the answers `sample` of the fold rounds:
+`s_j β_j`, `s_j` the shift of word `j`'s domain; none past the last fold. -/
+noncomputable def betasAtB (sample : ℕ → Vector F S.streamLen) (j : ℕ) : 𝕂 :=
+  if j < (friAritiesB S).length then
+    lift gen ^ 2 ^ ((friAritiesB S).take j).sum *
+      extAt (sample (3 + j)) (challengeOffset S.params.commitPowBits)
+  else 0
+
+/-- The batch transcript read off the inputs `block j` and answers `sample j` of the rounds `j`
+and the hash queries `cache`: the words extracted under the observed digests, the observed
+openings and final polynomial, and the challenges of the answers. -/
+noncomputable def prefixTranscriptB (cache : Merkle.Cache F (Digest F)) (block : ℕ → List F)
+    (sample : ℕ → Vector F S.streamLen) : Sound.Batch.Transcript S where
+  trace i c x := Merkle.matColumn cache (digestAt (block 0) (mainOffsetB S)) S.logTop
+    S.mainHeights S.mainWidths i c (S.logN i + S.params.logBlowup)
+    (reverseBits x (S.logN i + S.params.logBlowup))
+  alpha := extAt (sample 0) 0
+  quotient i c e x := Merkle.matColumn cache (digestAt (block 1) 0) S.logTop (quotHeights S)
+    (quotWidths S) (quotOffset S i + c) e (S.logN i + S.params.logBlowup)
+    (reverseBits x (S.logN i + S.params.logBlowup))
+  zeta := extAt (sample 1) (challengeOffset S.params.oodPowBits)
+  openings := openingsAtB S ((block 2).drop (pcsSeedB S).length)
+  batch := extAt (sample 2) (challengeOffset S.params.batchPowBits)
+  words j m z := friWordAt cache
+    (digestAt (block (3 + j)) (if j = 0 then (friSeedB S).length else 0)) m
+    ((friAritiesB S).getD j 0) z.val
+  finalPoly := finalPoly S.domainSetup
+    (finalPolyAt S.domainSetup (block (3 + (friAritiesB S).length)))
+  betas := betasAtB S sample
+
+/-- The query round's grinding sample: the answer's first sample, `0` without grinding. -/
+def powAtB (u : Vector F S.streamLen) : F :=
+  if S.params.queryPowBits = 0 then 0 else u.toList.getD 0 0
+
+/-- The query round's query samples, after the grinding sample. -/
+def queriesAtB (u : Vector F S.streamLen) (j : Fin S.params.numQueries) : F :=
+  u.toList.getD (challengeOffset S.params.queryPowBits + j.val) 0
+
+variable (publicValues : Fin S.k → List F) (δ δ' loss : NNReal)
+
+/-- Round `i`'s bad event (`Sound/BatchRbr.lean`) on the transcript `t`, whose round `i` was
+answered `u`: `α`; `ζ`, batching and fold `i - 3`, each with its grinding sample, the answer's
+first; and the queries. -/
+def roundBadAtB (i : ℕ) (t : Sound.Batch.Transcript S) (u : Vector F S.streamLen) : Prop :=
+  if i = 0 then Sound.Batch.AlphaBad S publicValues δ' t.trace t.alpha
+  else if i = 1 then
+    (S.params.oodPowBits ≠ 0 →
+      CompPoly.CanonicalNat.toNat (u.toList.getD 0 0) % 2 ^ S.params.oodPowBits = 0) ∧
+      Sound.Batch.ZetaBad S publicValues δ' t.trace t.alpha t.quotient t.zeta
+  else if i = 2 then
+    (S.params.batchPowBits ≠ 0 →
+      CompPoly.CanonicalNat.toNat (u.toList.getD 0 0) % 2 ^ S.params.batchPowBits = 0) ∧
+      Sound.Batch.BatchBad S publicValues δ δ' t.trace t.alpha t.quotient t.zeta t.openings
+        t.batch
+  else if i - 3 < (friAritiesB S).length then
+    (S.params.commitPowBits ≠ 0 →
+      CompPoly.CanonicalNat.toNat (u.toList.getD 0 0) % 2 ^ S.params.commitPowBits = 0) ∧
+      Sound.Batch.FoldBad S δ loss t.rounds t.words (i - 3) (t.betas (i - 3))
+  else if i = 3 + (friAritiesB S).length then
+    Sound.Batch.QueryBad S δ loss t (powAtB S u) (queriesAtB S u)
+  else False
+
+/-- A duplex call is bad after the queries `pre` if `pre` parses it as round `i` and its answer
+makes round `i` bad for the prefix transcript on `pre`'s hash queries. -/
+def RoundBadB (pre : QueryLog (spec F S.streamLen)) :
+    (t : Query F) → Answer S.streamLen t → Prop
+  | .duplex cap input, u => match parse pre (.duplex cap input) with
+    | some (steps, _) =>
+      roundBadAtB S publicValues δ δ' loss steps.length
+        (prefixTranscriptB S (logCache pre) (fun j ↦ (steps.map Prod.fst ++ [input]).getD j [])
+          fun j ↦ (steps.map Prod.snd ++ [u.2]).getD j (Vector.replicate _ 0)) u.2
+    | none => False
+  | .leaf _, _ => False
+  | .node .., _ => False
+
+end Prefix
 
 end CompStark.Ni
