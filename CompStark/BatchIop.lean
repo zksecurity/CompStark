@@ -19,8 +19,8 @@ the STARK's, every instance in each:
 2. The verifier samples one constraint-folding challenge `α`.
 3. The prover sends every instance's quotient chunks (`Prover.quotient`).
 4. The verifier samples one out-of-domain point `ζ`.
-5. The prover sends every instance's claimed values at `ζ` and `ζ ω_n` (`Prover.openings`). The
-   verifier checks every instance's constraints at `ζ` (`ConstraintsHoldAt`).
+5. The prover sends every instance's claimed values (`Prover.openings`). The verifier checks
+   every instance's constraints at `ζ` (`ConstraintsHoldAt`).
 6. The verifier samples the batching challenge `a`.
 7. The prover shows with FRI that the batched DEEP word over all opened words, in Plonky3's order
    (`openedWords`: the main traces, the quotients, the preprocessed traces), is close to a
