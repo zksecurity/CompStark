@@ -634,8 +634,9 @@ noncomputable def extractB [BaseField F] [Challenge F EF] (S : Iop.Batch.Setup E
   zeta := Challenge.toSpec (zetaOfB H S.params S.instances common proof pis)
   openings i := openingsOf (S.instanceSetup i) (proof.opened.toList.getD i noOpenings)
   batch := Challenge.toSpec (batchOfB H S.params S.instances common proof pis)
-  words j m z := friWordAt cache (proof.fri.commits.toList.getD j 0) m ((friAritiesB S).getD j 0)
-    z.val
+  words j m z := if j < (friAritiesB S).length then
+      friWordAt cache (proof.fri.commits.toList.getD j 0) m ((friAritiesB S).getD j 0) z.val
+    else 0
   finalPoly := finalPoly S.domainSetup proof.fri.finalPoly
   betas j := lift gen ^ 2 ^ ((friAritiesB S).take j).sum *
     Challenge.toSpec ((commitReplayB H S common proof pis).1.getD j 0)
@@ -877,9 +878,9 @@ theorem bcsB (S : Iop.Batch.Setup EF) (cache : Merkle.Cache F (Digest F)) (H : P
         List.getElem_map] at this
       exact this
     funext m z
-    show friWordAt cache (proof.fri.commits.toList.getD j' 0) m ((friAritiesB S).getD j' 0)
-      z.val = _
-    rw [hget]
+    show (if j' < (friAritiesB S).length then friWordAt cache (proof.fri.commits.toList.getD j' 0)
+      m ((friAritiesB S).getD j' 0) z.val else 0) = _
+    rw [ite_eq_left_of_eq_true _ _ (eq_true (hll ▸ hj')), hget]
   have hβ : ∀ j' (hj' : j' < l.length), t.betas j' = (lift gen : 𝕂) ^ 2 ^ (S.logTop -
       (foldStateR l (ro, e0, index >>> (S.logTop - S.logTop), S.logTop) j').2.2.2) *
         Challenge.toSpec l[j'].1 := by

@@ -524,6 +524,10 @@ noncomputable def betasAtB (sample : ℕ → Vector F S.streamLen) (j : ℕ) : �
       extAt (sample (3 + j)) (challengeOffset S.params.commitPowBits)
   else 0
 
+/-- Where fold round `j`'s commitment sits in its input: after FRI's domain separator in the
+first fold round. -/
+noncomputable def friOffsetB (j : ℕ) : ℕ := if j = 0 then (friSeedB S).length else 0
+
 /-- The batch transcript read off the inputs `block j` and answers `sample j` of the rounds `j`
 and the hash queries `cache`: the words extracted under the observed digests, the observed
 openings and final polynomial, and the challenges of the answers. -/
@@ -539,9 +543,10 @@ noncomputable def prefixTranscriptB (cache : Merkle.Cache F (Digest F)) (block :
   zeta := extAt (sample 1) (challengeOffset S.params.oodPowBits)
   openings := openingsAtB S ((block 2).drop (pcsSeedB S).length)
   batch := extAt (sample 2) (challengeOffset S.params.batchPowBits)
-  words j m z := friWordAt cache
-    (digestAt (block (3 + j)) (if j = 0 then (friSeedB S).length else 0)) m
-    ((friAritiesB S).getD j 0) z.val
+  words j m z := if j < (friAritiesB S).length then
+      friWordAt cache (digestAt (block (3 + j)) (friOffsetB S j)) m ((friAritiesB S).getD j 0)
+        z.val
+    else 0
   finalPoly := finalPoly S.domainSetup
     (finalPolyAt S.domainSetup (block (3 + (friAritiesB S).length)))
   betas := betasAtB S sample
