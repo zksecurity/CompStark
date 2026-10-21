@@ -42,7 +42,7 @@ the base field (probability about `2 ^ -93`). -/
 theorem prove_fast {params : Params} {air : Air F} {logN : Nat} {trace : Array F}
     (publicValues : List F) (input : InputOk EF params air logN trace)
     (outOfDomain : Ext.OutsideBase (outOfDomainPoint EF params air logN trace publicValues)) :
-    proveWith (backendFor logN params.logBlowup air.logQuotientChunks) params air logN trace
+    proveWith (backendFor logN params.logBlowup (air.logQuotientChunks logN)) params air logN trace
         publicValues =
       prove EF params air logN trace publicValues :=
   Stark.Fast.prove_fast (by rw [twoAdicity_eq]; decide) domainsAddressable publicValues input

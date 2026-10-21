@@ -19,7 +19,8 @@ thread:
 * Commit to the trace's low-degree extension; observe the STARK's domain separator, the
   commitment, the preprocessed commitment and the public values; sample `α`.
 * On the quotient domain `g · ⟨ω_q⟩` of size `|H| · 2 ^ logChunks`, read the traces from their
-  extensions, fold the constraints by `α` and divide by `Z_H`. Split the quotient's values into
+  extensions and the periodic columns from the extensions of their periods
+  (`periodicOnQuotient`), fold the constraints by `α` and divide by `Z_H`. Split the quotient's values into
   chunks on the cosets `g ω_qⁱ · ⟨ω_q^k⟩`, commit to their extensions, grind, and sample `ζ`.
 * Open the trace at `ζ` and `ζ ω`, every chunk at `ζ`, and the preprocessed trace at `ζ` and, if
   the AIR reads its next row, at `ζ ω`.
@@ -52,7 +53,7 @@ the preprocessed trace's extension and commitment `prep`. -/
 def commitAndSample (B : Backend F EF width) (P : Params) (A : Air F) (logN : Nat)
     (prep : Option (B.M × B.C)) (trace : Array F) (pis : List F) :
     PM F width (B.M × B.C × List B.M × B.C × EF × F) := do
-  let logChunks := A.logQuotientChunks
+  let logChunks := A.logQuotientChunks logN
   let qlog := logN + logChunks
   let ext := B.lde logN P.logBlowup gen A.width trace
   let traceC := B.commit [ext]

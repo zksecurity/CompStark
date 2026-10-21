@@ -53,7 +53,8 @@ theorem completeness {params : Params} {air : Air F} {logN : Nat} {trace : Array
       verify params air (setup params air logN) (prove EF params air logN trace publicValues)
         publicValues = .ok () :=
   fun sat count ↦ verify_prove_of params air logN trace publicValues
-    ⟨sat.size, config.colsInWidth, config.twoAdic, config.chunksFit⟩ sat.vanish count
+    ⟨sat.size, config.colsInWidth, config.twoAdic, config.chunksFit, config.periodicFits⟩
+    sat.vanish count
     config.degreeFits config.folds config.queries config.blowup config.finalPolyFits
     luck.grinding luck.outOfDomain
 

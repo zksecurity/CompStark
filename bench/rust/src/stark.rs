@@ -1,6 +1,6 @@
 //! Plonky3 `uni-stark` proofs for known-answer tests: the Poseidon2 Merkle commitment of
-//! `examples/src/types.rs` (binary, cap height 0), a width-24 duplex challenger, and five AIRs,
-//! two of them with preprocessed columns.
+//! `examples/src/types.rs` (binary, cap height 0), a width-24 duplex challenger, and AIRs with
+//! preprocessed and periodic columns.
 use p3_air::{Air, AirBuilder, BaseAir, WindowAccess};
 use p3_challenger::DuplexChallenger;
 use p3_commit::ExtensionMmcs;
@@ -252,6 +252,133 @@ pub fn prep_trace<F: Field>(n: usize) -> (RowMajorMatrix<F>, Vec<F>) {
     (RowMajorMatrix::new(values, 2), vec![F::ONE, F::TWO])
 }
 
+/// Two columns, each the periodic column of the same index (Plonky3's `PeriodicAir` of
+/// `uni-stark/tests/periodic_air.rs`).
+pub struct PeriodicAir<F> {
+    pub periodic: Vec<Vec<F>>,
+}
+
+impl<F: PrimeField64> PeriodicAir<F> {
+    /// Plonky3's periods: `1, 2, 3, 4` and `10, 20`.
+    pub fn new() -> Self {
+        let tens = vec![F::from_u32(10), F::from_u32(20)];
+        Self { periodic: vec![(1..=4).map(F::from_u32).collect(), tens] }
+    }
+
+    /// A constant column and one of period 32 (Plonky3's `wide_period_range` test).
+    pub fn wide() -> Self {
+        Self { periodic: vec![vec![F::from_u32(7)], (0..32).map(F::from_u32).collect()] }
+    }
+
+    /// A constant column and one of period 2 (Plonky3's `tiny_quotient` test, on two rows).
+    pub fn tiny() -> Self {
+        Self { periodic: vec![vec![F::from_u32(9)], vec![F::ONE, F::TWO]] }
+    }
+
+    /// The trace of `n` rows: each column its periodic column.
+    pub fn trace(&self, n: usize) -> RowMajorMatrix<F> {
+        let values = (0..n)
+            .flat_map(|i| self.periodic.iter().map(move |c| c[i % c.len()]))
+            .collect();
+        RowMajorMatrix::new(values, 2)
+    }
+}
+
+impl<F: Field> BaseAir<F> for PeriodicAir<F> {
+    fn width(&self) -> usize {
+        2
+    }
+
+    fn num_periodic_columns(&self) -> usize {
+        self.periodic.len()
+    }
+
+    fn periodic_columns(&self) -> std::borrow::Cow<'_, [Vec<F>]> {
+        std::borrow::Cow::Borrowed(&self.periodic)
+    }
+}
+
+impl<AB: AirBuilder> Air<AB> for PeriodicAir<AB::F>
+where
+    AB::F: Field,
+{
+    fn eval(&self, builder: &mut AB) {
+        let main = builder.main();
+        let local = main.current_slice();
+        let p0: AB::Expr = builder.periodic_values()[0].into();
+        let p1: AB::Expr = builder.periodic_values()[1].into();
+        builder.assert_eq(local[0], p0);
+        builder.assert_eq(local[1], p1);
+    }
+}
+
+/// Columns `x, y`, a constant periodic column `k = 3` and one `s` of period `1, 2, 3, 4`, with
+/// public values `a, c`: `x = a` first, `(k x³ + s y, y + s)` next, `x = c` last. With periodic
+/// columns Plonky3 sizes the quotient by polynomial degrees: two chunks, where the degree
+/// multiple would give four.
+pub struct PeriodicCubeAir<F> {
+    pub periodic: Vec<Vec<F>>,
+}
+
+impl<F: PrimeField64> PeriodicCubeAir<F> {
+    pub fn new() -> Self {
+        Self { periodic: vec![vec![F::from_u32(3)], (1..=4).map(F::from_u32).collect()] }
+    }
+
+    /// The trace of `n` rows from `(2, 0)`, and its public values.
+    pub fn trace(&self, n: usize) -> (RowMajorMatrix<F>, Vec<F>) {
+        let mut values = Vec::with_capacity(2 * n);
+        let (mut x, mut y) = (F::TWO, F::ZERO);
+        for i in 0..n {
+            values.push(x);
+            values.push(y);
+            let s = self.periodic[1][i % 4];
+            (x, y) = (F::from_u32(3) * x * x * x + s * y, y + s);
+        }
+        let last = values[2 * n - 2];
+        (RowMajorMatrix::new(values, 2), vec![F::TWO, last])
+    }
+}
+
+impl<F: Field> BaseAir<F> for PeriodicCubeAir<F> {
+    fn width(&self) -> usize {
+        2
+    }
+
+    fn num_public_values(&self) -> usize {
+        2
+    }
+
+    fn num_periodic_columns(&self) -> usize {
+        self.periodic.len()
+    }
+
+    fn periodic_columns(&self) -> std::borrow::Cow<'_, [Vec<F>]> {
+        std::borrow::Cow::Borrowed(&self.periodic)
+    }
+}
+
+impl<AB: AirBuilder> Air<AB> for PeriodicCubeAir<AB::F>
+where
+    AB::F: Field,
+{
+    fn eval(&self, builder: &mut AB) {
+        let main = builder.main();
+        let pis = builder.public_values();
+        let (a, c) = (pis[0], pis[1]);
+        let local: &[AB::Var] = main.current_slice();
+        let next: &[AB::Var] = main.next_slice();
+        let k: AB::Expr = builder.periodic_values()[0].into();
+        let s: AB::Expr = builder.periodic_values()[1].into();
+        builder.when_first_row().assert_eq(local[0], a);
+        let x: AB::Expr = local[0].into();
+        let mut transition = builder.when_transition();
+        transition.assert_eq(k * x.clone() * x.clone() * x + s.clone() * local[1], next[0]);
+        transition.assert_eq(local[1] + s, next[1]);
+        builder.when_last_row().assert_eq(local[0], c);
+    }
+}
+
 /// The trace of `n` Fibonacci rows from `(0, 1)`, and its last right value.
 pub fn trace<F: Field>(n: usize) -> (RowMajorMatrix<F>, F) {
     let mut values = Vec::with_capacity(2 * n);
@@ -265,8 +392,10 @@ pub fn trace<F: Field>(n: usize) -> (RowMajorMatrix<F>, F) {
     (RowMajorMatrix::new(values, 2), last)
 }
 
-/// A proof of `air` (`fib`, `cube`, `wide`, or `prep` and `prep0`, `PrepAir` with and without its
-/// next preprocessed row) on `2^log_n` rows, checked by Plonky3's verifier.
+/// A proof of `air` (`fib`, `cube`, `wide`, `prep` and `prep0`, `PrepAir` with and without its
+/// next preprocessed row, `periodic`, `periodic-wide` and `periodic-tiny`, `PeriodicAir` with
+/// Plonky3's periods, or `pcube`, `PeriodicCubeAir`) on `2^log_n` rows, checked by Plonky3's
+/// verifier.
 pub fn prove_air<F, P16, P24>(config: &Config<F, P16, P24>, air: &str, log_n: usize)
     -> Proof<Config<F, P16, P24>>
 where
@@ -307,6 +436,23 @@ where
                 .expect("Plonky3 rejects its own proof");
             proof
         }
+        "periodic" | "periodic-wide" | "periodic-tiny" => {
+            let air = match air {
+                "periodic" => PeriodicAir::new(),
+                "periodic-wide" => PeriodicAir::wide(),
+                _ => PeriodicAir::tiny(),
+            };
+            let proof = prove(config, &air, air.trace(n), &[]).expect("Plonky3 cannot prove");
+            verify(config, &air, &proof, &[]).expect("Plonky3 rejects its own proof");
+            proof
+        }
+        "pcube" => {
+            let air = PeriodicCubeAir::new();
+            let (trace, pis) = air.trace(n);
+            let proof = prove(config, &air, trace, &pis).expect("Plonky3 cannot prove");
+            verify(config, &air, &proof, &pis).expect("Plonky3 rejects its own proof");
+            proof
+        }
         _ => panic!("unknown AIR {air}"),
     }
 }
@@ -317,8 +463,9 @@ fn koalabear_config(args: &[usize]) -> Config<F, p3_koala_bear::Poseidon2KoalaBe
 }
 
 /// `stark AIR LOG_N LOG_BLOWUP LOG_FINAL MAX_LOG_ARITY QUERIES COMMIT_POW QUERY_POW [BATCH_POW
-/// OOD_POW]`, `AIR` one of `fib`, `cube`, `wide`, `prep`, `prep0`: the proof as JSON, after
-/// Plonky3 verified it. Run with `RAYON_NUM_THREADS=1` for the smallest grinding witnesses.
+/// OOD_POW]`, `AIR` one of `fib`, `cube`, `wide`, `prep`, `prep0`, `periodic`, `periodic-wide`,
+/// `periodic-tiny`, `pcube`: the proof as JSON, after Plonky3 verified it. Run with
+/// `RAYON_NUM_THREADS=1` for the smallest grinding witnesses.
 pub fn stark(air: &str, args: &[usize]) {
     let config = koalabear_config(&args[1..]);
     let proof = prove_air(&config, air, args[0]);

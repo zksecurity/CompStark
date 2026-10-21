@@ -72,7 +72,7 @@ theorem prove_fast (hζ : 2 ≤ twoAdicity F) (hA : DomainsAddressable F EF) {pa
     {air : Air F} {logN : Nat} {trace : Array F} (publicValues : List F)
     (input : InputOk EF params air logN trace)
     (outOfDomain : Ext.OutsideBase (outOfDomainPoint EF params air logN trace publicValues)) :
-    proveWith (backendFor logN params.logBlowup air.logQuotientChunks) params air logN trace
+    proveWith (backendFor logN params.logBlowup (air.logQuotientChunks logN)) params air logN trace
         publicValues =
       prove EF params air logN trace publicValues :=
   proveWith_refines hA (backendFor_refines hζ hA _ _ _) publicValues input outOfDomain

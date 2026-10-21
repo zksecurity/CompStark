@@ -25,13 +25,15 @@ structure ValidConfig {F : Type} [BaseField F] (params : Params) (air : Air F) (
   colsInWidth : air.ColsInWidth
   /-- The preprocessed trace has `2 ^ logN` rows of the AIR's preprocessed width. -/
   preprocessedSize : air.preprocessed.size = 2 ^ logN * air.preprocessedWidth
+  /-- Each periodic column's period is a power of two dividing `2 ^ logN`. -/
+  periodicFits : air.periodicFits logN = true
   /-- The constraints divided by the trace domain's vanishing polynomial fit the quotient's
   chunks (`Air.DegreeFits`). -/
   degreeFits : air.DegreeFits logN
   /-- The extended trace domain is a two-adic subgroup of the base field. -/
   twoAdic : logN + params.logBlowup ≤ twoAdicity F
   /-- The quotient's chunks fit the blowup. -/
-  chunksFit : air.logQuotientChunks ≤ params.logBlowup
+  chunksFit : air.logQuotientChunks logN ≤ params.logBlowup
   /-- FRI folds at least once per round. -/
   folds : 0 < params.maxLogArity
   /-- FRI's final polynomial is no longer than the trace. -/

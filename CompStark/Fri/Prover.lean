@@ -300,15 +300,26 @@ def compress (m : Mat F) (ap : Array EF) : Array EF :=
   parChunks m.height (if m.height < 4096 then 1 else 16) fun r0 len ↦
     compressRows m.values ap m.width r0 len
 
+/-- A periodic column of period `p = 2 ^ k` on the quotient domain `g · ⟨ω_q⟩` of a trace of
+`2 ^ degreeBits` rows with `2 ^ logChunks` chunks, in natural order: its first `p · 2 ^ logChunks`
+rows, after which it repeats. Its polynomial `f(X ^ (n / p))` at `g ω_qʳ` is `f` at
+`g ^ (n / p) ω_Lʳ`, `ω_L` of order `L = p · 2 ^ logChunks`: the extension of its period onto that
+coset (Plonky3's `build_periodic_lde_table`). -/
+def periodicOnQuotient (col : List F) (degreeBits logChunks : Nat) : Array F :=
+  let k := Nat.log2 col.length
+  permuteRows (ldeRef k logChunks (powF gen (2 ^ (degreeBits - k))) 1 col.toArray)
+    (bitRevPerm (k + logChunks))
+
 /-- The quotient values from the extensions `ext` of the trace and `prep` of the preprocessed
 trace, if any: their first `2 ^ (degreeBits + logChunks)` rows in natural order are the traces on
-the quotient domain. -/
+the quotient domain; and the AIR's periodic columns there. -/
 def quotientOfLde (A : Air F) (pis : List F) (degreeBits logChunks : Nat) (ext : Mat F)
     (prep : Option (Mat F)) (alpha : EF) : Array EF :=
   let qlog := degreeBits + logChunks
   let onQuotient (m : Mat F) := Mat.ofValues m.width (2 ^ qlog) (permuteRows m (bitRevPerm qlog))
   quotientValues A pis degreeBits logChunks (onQuotient ext)
-    ((prep.map onQuotient).getD (Mat.ofValues 0 (2 ^ qlog) #[])) alpha
+    ((prep.map onQuotient).getD (Mat.ofValues 0 (2 ^ qlog) #[]))
+    (A.periodic.map fun col ↦ periodicOnQuotient col degreeBits logChunks) alpha
 
 /-- The batched quotients `∑ αᵏ (p(z) - p(x)) / (z - x)` by log height, tallest first: each
 matrix's rows batched by the powers of `α` once, then every point accumulated over the rows with

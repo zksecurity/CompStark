@@ -42,12 +42,12 @@ theorem prod_fin_ne {M : Type*} [CommMonoid M] (n : Nat) (f : Nat → M) (c : Fi
 
 /-- The spec selector of chunk `c` is the verifier's (`chunkSel`). -/
 theorem selectorAt_eq (S : Iop.Setup EF) (ζ : 𝕂) (c : Fin S.chunks) :
-    selectorAt S ζ c = chunkSel S.logN S.air.logQuotientChunks c.val ζ := by
+    selectorAt S ζ c = chunkSel S.logN (S.air.logQuotientChunks S.logN) c.val ζ := by
   have hs : ∀ d : Nat, chunkShift S d =
-      algebraMap F 𝕂 (qpt (S.logN + S.air.logQuotientChunks) d) := fun d ↦ by
+      algebraMap F 𝕂 (qpt (S.logN + (S.air.logQuotientChunks S.logN)) d) := fun d ↦ by
     rw [chunkShift, rootOfUnity, lift, lift, qpt, map_mul, map_pow]
   have hv : ∀ (d : Nat) (x : 𝕂), vanishing (chunkShift S d) S.n x =
-      vanish S.logN (qpt (S.logN + S.air.logQuotientChunks) d) x := fun d x ↦ by
+      vanish S.logN (qpt (S.logN + (S.air.logQuotientChunks S.logN)) d) x := fun d x ↦ by
     rw [vanishing, vanish, hs, div_eq_mul_inv, map_inv₀]
   unfold selectorAt chunkSel
   rw [← prod_fin_ne]
@@ -69,7 +69,8 @@ theorem constraintsHoldAt_of_check (S : Iop.Setup EF) (pis : List F)
     (o : OpenedValues EF)
     (zeta alpha : EF) (hqc : o.quotientChunks.size = S.chunks)
     (h : checkConstraints S.air pis o S.logN zeta alpha
-      (recompose (chunkDomains S.logN S.air.logQuotientChunks) o.quotientChunks.toList zeta) =
+      (recompose (chunkDomains S.logN (S.air.logQuotientChunks S.logN)) o.quotientChunks.toList
+        zeta) =
         true) :
     ConstraintsHoldAt S pis (Challenge.toSpec alpha) (Challenge.toSpec zeta) (openingsOf S o) := by
   rw [checkConstraints_eq_fun] at h
@@ -80,7 +81,7 @@ theorem constraintsHoldAt_of_check (S : Iop.Setup EF) (pis : List F)
       fun i h1 h2 ↦ ?_
     rw [List.getElem_map, List.getElem_range, Array.getElem_toList, Array.getD_eq_getD_getElem?,
       Array.getElem?_eq_getElem (by rwa [← Array.length_toList]), Option.getD_some]
-  have h24 : S.logN + S.air.logQuotientChunks ≤ twoAdicity F := by
+  have h24 : S.logN + (S.air.logQuotientChunks S.logN) ≤ twoAdicity F := by
     have := S.valid.twoAdic; have := S.valid.chunksFit; omega
   rw [hlist, toSpec_recompose S.logN _ h24] at h'
   rw [constraintsHoldAt_iff, ← Fin.sum_univ_eq_sum_range] at *
@@ -93,6 +94,7 @@ theorem constraintsHoldAt_of_check (S : Iop.Setup EF) (pis : List F)
       next := fun i ↦ o.traceNext.getD i 0
       prepCur := fun i ↦ (o.preprocessedLocal.getD #[]).getD i 0
       prepNext := fun i ↦ (o.preprocessedNext.getD #[]).getD i 0
+      periodic := fun i ↦ periodicAt (S.air.periodicColumn i) S.logN zeta
       pub := fun i ↦ Ext.ofBase (pis.getD i 0)
       const := Ext.ofBase
       isFirstRow := (Ext.powTwo zeta S.logN - 1) * (zeta - 1)⁻¹
@@ -109,11 +111,13 @@ theorem constraintsHoldAt_of_check (S : Iop.Setup EF) (pis : List F)
     refine Expr.eval_hom Challenge.toSpec Challenge.toSpec_add Challenge.toSpec_sub
       Challenge.toSpec_mul S.air.width S.air.preprocessedWidth S.air.preprocessedNextWidth
       _ _ (fun j hj ↦ ?_) (fun j hj ↦ ?_) (fun j hj ↦ ?_) (fun j hj ↦ ?_) (fun j ↦ ?_)
-      (fun x ↦ ?_) ?_ ?_ ?_ c (S.valid.colsInWidth c hc)
+      (fun j ↦ ?_) (fun x ↦ ?_) ?_ ?_ ?_ c (S.valid.colsInWidth c hc)
     · simp only [envAt, hj, ↓reduceDIte]; rfl
     · simp only [envAt, hj, ↓reduceDIte]; rfl
     · simp only [envAt, hj, ↓reduceDIte]; rfl
     · simp only [envAt, hj, ↓reduceDIte]; rfl
+    · exact toSpec_periodicAt _ S.logN (periodShape_of_fits S.air S.logN S.valid.periodicFits j)
+        ((Nat.le_add_right _ _).trans S.valid.twoAdic) zeta
     · simp only [envAt, Challenge.toSpec_ofBase]; rfl
     · simp only [envAt, Challenge.toSpec_ofBase]; rfl
     · simp only [envAt, Challenge.toSpec_mul, Challenge.toSpec_inv, Challenge.toSpec_sub,

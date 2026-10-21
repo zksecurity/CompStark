@@ -281,7 +281,7 @@ theorem extract_eq_prefixTranscript (cache : Merkle.Cache F (Digest F))
     simp only [foldChallenges, betasAt]
     rw [hβ j.val (by rw [hz]; exact j.isLt)]
   simp only [extract, prefixTranscript, traceRoot_eq S vk proof pis hdb, quotientRoot_eq,
-    openings_eq S vk proof pis htl htn hqc hq4 (hdb ▸ hshape), hα, hζ, hbatch,
+    openings_eq S vk proof pis htl htn (by rw [hqc, hdb]) hq4 (hdb ▸ hshape), hα, hζ, hbatch,
     commits_eq S answer hdb hok, finalPoly_eq S answer hdb hok, hbetas]
   rfl
 

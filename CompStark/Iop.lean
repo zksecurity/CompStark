@@ -5,6 +5,7 @@ Released under Apache 2.0 license as described in the file LICENSE.
 module
 
 public import CompStark.Sound.Defs
+public import CompStark.Stark.Constraints
 
 /-! # The STARK as an interactive oracle proof
 
@@ -15,7 +16,8 @@ the spec field `𝕂 = Challenge.Spec EF` of a challenge field `EF` of degree `d
 prover's oracles are words on the domain `L = g · ⟨ω⟩` of `2 ^ (logN + logBlowup)` points, `g`
 the base field's shift, that the trace is extended to. The verifier holds the extension of the
 AIR's preprocessed trace, the polynomials through its columns on the trace domain evaluated on
-`L` (`Setup.preprocessedWord`), as oracles of its own.
+`L` (`Setup.preprocessedWord`), as oracles of its own, and evaluates the AIR's periodic columns,
+known polynomials, itself.
 
 1. The prover sends the extended trace, one word over `F` per column (`Prover.trace`).
 2. The verifier samples the constraint-folding challenge `α`.
@@ -60,7 +62,7 @@ variable (S : Setup EF)
 abbrev n : Nat := 2 ^ S.logN
 
 /-- The number of quotient chunks. -/
-abbrev chunks : Nat := 2 ^ S.air.logQuotientChunks
+abbrev chunks : Nat := 2 ^ S.air.logQuotientChunks S.logN
 
 /-- `N = 2 ^ (logN + logBlowup)`, the size of `L`. -/
 abbrev size : Nat := 2 ^ (S.logN + S.params.logBlowup)
@@ -119,12 +121,12 @@ noncomputable def vanishing (s : 𝕂) (m : Nat) (x : 𝕂) : 𝕂 := (x / s) ^ 
 
 /-- The shift of quotient chunk `c`'s domain: `g ω_q ^ c`, `ω_q` of order `n · chunks`. -/
 noncomputable def chunkShift (S : Setup EF) (c : Nat) : 𝕂 :=
-  lift gen * rootOfUnity (S.logN + S.air.logQuotientChunks) ^ c
+  lift gen * rootOfUnity (S.logN + S.air.logQuotientChunks S.logN) ^ c
 
 /-- The constraint check at `ζ` (`checkConstraints` and `recompose`, over `𝕂`): the constraints,
 folded by `α`, on the claimed values of the trace and the preprocessed trace (zeros for an
-unopened row) with the selectors at `ζ`, divided by `Z_H(ζ)`, equal the quotient recomposed from
-the claimed chunks. -/
+unopened row), the periodic columns' polynomials and the selectors at `ζ`, divided by `Z_H(ζ)`,
+equal the quotient recomposed from the claimed chunks. -/
 def ConstraintsHoldAt (S : Setup EF) (publicValues : List F) (α ζ : 𝕂) (o : Openings S) : Prop :=
   let ω := rootOfUnity S.logN
   let zh := vanishing 1 S.n ζ
@@ -135,6 +137,7 @@ def ConstraintsHoldAt (S : Setup EF) (publicValues : List F) (α ζ : 𝕂) (o :
         if h : j < S.air.preprocessedWidth then o.preprocessedAt ⟨j, h⟩ else 0
       prepNext := fun j ↦
         if h : j < S.air.preprocessedNextWidth then o.preprocessedNext ⟨j, h⟩ else 0
+      periodic := fun j ↦ aeval ζ (S.air.periodicPolys S.logN j)
       pub := fun i ↦ lift (publicValues.getD i 0)
       const := lift
       isFirstRow := zh / (ζ - 1)

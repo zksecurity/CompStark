@@ -49,12 +49,13 @@ def LowDegree {EF : Type} [Challenge F EF] (logH logD : Nat) (v : Array EF) : Pr
           ((twoAdicGen logH)) ^ reverseBits r logH)
 
 /-- The shapes the completeness proof works on: a `2 ^ logN × width` trace, constraints that read
-only the AIR's columns, an extended domain within the base field's two-adic subgroups, and quotient
-chunks that fit the blowup. -/
+only the AIR's columns, an extended domain within the base field's two-adic subgroups, quotient
+chunks that fit the blowup, and periodic columns that fit the trace. -/
 structure Fits (P : Params) (A : Air F) (logN : Nat) (trace : Array F) : Prop where
   trace : trace.size = 2 ^ logN * A.width
   cols : A.ColsInWidth
   twoAdic : logN + P.logBlowup ≤ twoAdicity F
-  chunks : A.logQuotientChunks ≤ P.logBlowup
+  chunks : A.logQuotientChunks logN ≤ P.logBlowup
+  periodic : A.periodicFits logN = true
 
 end CompStark

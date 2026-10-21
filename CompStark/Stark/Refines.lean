@@ -61,10 +61,10 @@ structure InputOk (EF : Type) [Challenge F EF] (P : Params) (A : Air F) (logN : 
   /-- The extended trace domain is a two-adic subgroup of the base field. -/
   twoAdic : logN + P.logBlowup ≤ twoAdicity F
   /-- The quotient's chunks fit the blowup. -/
-  chunks : A.logQuotientChunks ≤ P.logBlowup
+  chunks : A.logQuotientChunks logN ≤ P.logBlowup
   /-- The extended traces and quotient are addressable by `USize` word indices. -/
   mem : Addressable (2 ^ (logN + P.logBlowup) *
-    (A.width + A.preprocessedWidth + Challenge.d EF * 2 ^ A.logQuotientChunks))
+    (A.width + A.preprocessedWidth + Challenge.d EF * 2 ^ A.logQuotientChunks logN))
 
 variable [Poseidon2Field F] {EF : Type} [Challenge F EF] {B : Backend F EF 24}
 
@@ -118,9 +118,10 @@ theorem commitAndSample_refines (h : Refines B) {P : Params} {A : Air F} {logN :
   obtain ⟨htrace, -, hw, hcols, hlog, hchunks, hmem⟩ := hin
   have hmw : Addressable (2 ^ (logN + P.logBlowup) * A.width) :=
     addressable_mono (Nat.mul_le_mul_left _ (by omega)) hmem
-  have hmq : Addressable (2 ^ (logN + P.logBlowup) * (Challenge.d EF * 2 ^ A.logQuotientChunks)) :=
+  have hmq :
+      Addressable (2 ^ (logN + P.logBlowup) * (Challenge.d EF * 2 ^ A.logQuotientChunks logN)) :=
     addressable_mono (Nat.mul_le_mul_left _ (Nat.le_add_left _ _)) hmem
-  have h1 : 1 ≤ 2 ^ A.logQuotientChunks := Nat.one_le_two_pow
+  have h1 : 1 ≤ 2 ^ A.logQuotientChunks logN := Nat.one_le_two_pow
   have hm4 : Addressable (2 ^ (logN + P.logBlowup) * Challenge.d EF) :=
     addressable_mono (Nat.mul_le_mul_left _ (Nat.le_mul_of_pos_right _ h1)) hmq
   -- The extended trace.
@@ -161,45 +162,46 @@ theorem commitAndSample_refines (h : Refines B) {P : Params} {A : Air F} {logN :
   rw [h.root hct, hroots]
   refine RelM.bind_eq fun _ ↦ RelM.bind_eq fun _ ↦ RelM.bind_eq fun _ ↦
     RelM.bind_eq fun _ ↦ RelM.bind_eq fun alpha ↦ ?_
-  have hq : 2 ^ (logN + A.logQuotientChunks) ≤ (ldeRef logN P.logBlowup gen A.width trace).height :=
+  have hq :
+      2 ^ (logN + A.logQuotientChunks logN) ≤ (ldeRef logN P.logBlowup gen A.width trace).height :=
     heh ▸ Nat.pow_le_pow_right (by decide) (by omega)
   rw [h.quotient _ _ _ _ _ hext hextOk hq hprepQ hprepQok (fun c hc ↦ by
     change Expr.colsBelow (ldeRef logN P.logBlowup gen A.width trace).width _ _ c = true
     rw [hew, width_setupWith]
     exact Expr.colsBelow_mono le_rfl A.preprocessedNextWidth_le c (hcols c hc))]
   dsimp only
-  generalize quotientOfLde A pis logN A.logQuotientChunks _ _ alpha = qs
+  generalize quotientOfLde A pis logN (A.logQuotientChunks logN) _ _ alpha = qs
   -- The quotient's chunks.
   have hchOk : ∀ c, MatOk (ldeRef logN P.logBlowup
-      (gen * (gen * powF (twoAdicGen (logN + A.logQuotientChunks)) c)⁻¹) (Challenge.d EF)
-      (chunkValues qs (2 ^ A.logQuotientChunks) c (2 ^ logN))) := fun c ↦ by
+      (gen * (gen * powF (twoAdicGen (logN + A.logQuotientChunks logN)) c)⁻¹) (Challenge.d EF)
+      (chunkValues qs (2 ^ A.logQuotientChunks logN) c (2 ^ logN))) := fun c ↦ by
     obtain ⟨h1, h2, h3⟩ := shape_ldeRef logN P.logBlowup
-      (gen * (gen * powF (twoAdicGen (logN + A.logQuotientChunks)) c)⁻¹) (Challenge.d EF)
-      (chunkValues qs (2 ^ A.logQuotientChunks) c (2 ^ logN))
+      (gen * (gen * powF (twoAdicGen (logN + A.logQuotientChunks logN)) c)⁻¹) (Challenge.d EF)
+      (chunkValues qs (2 ^ A.logQuotientChunks logN) c (2 ^ logN))
     exact ⟨by rw [h1]; exact (Challenge.params EF).d_pos, ⟨_, hlog, h2⟩, by rw [h3, h1, h2],
       by rw [h1, h2, Nat.mul_comm]; exact hm4⟩
   have hch : List.Forall₂ h.RM
-      ((List.range (2 ^ A.logQuotientChunks)).map fun c ↦
-        B.lde logN P.logBlowup (gen * (gen * powF (twoAdicGen (logN + A.logQuotientChunks)) c)⁻¹)
-          (Challenge.d EF)
-          (chunkValues qs (2 ^ A.logQuotientChunks) c (2 ^ logN)))
-      ((List.range (2 ^ A.logQuotientChunks)).map fun c ↦
+      ((List.range (2 ^ A.logQuotientChunks logN)).map fun c ↦
+        B.lde logN P.logBlowup
+          (gen * (gen * powF (twoAdicGen (logN + A.logQuotientChunks logN)) c)⁻¹) (Challenge.d EF)
+          (chunkValues qs (2 ^ A.logQuotientChunks logN) c (2 ^ logN)))
+      ((List.range (2 ^ A.logQuotientChunks logN)).map fun c ↦
         (specBackend EF).lde logN P.logBlowup
-          (gen * (gen * powF (twoAdicGen (logN + A.logQuotientChunks)) c)⁻¹) (Challenge.d EF)
-          (chunkValues qs (2 ^ A.logQuotientChunks) c (2 ^ logN))) :=
+          (gen * (gen * powF (twoAdicGen (logN + A.logQuotientChunks logN)) c)⁻¹) (Challenge.d EF)
+          (chunkValues qs (2 ^ A.logQuotientChunks logN) c (2 ^ logN))) :=
     forall₂_map (fun _ _ hc ↦ hc ▸ h.lde _ _ _ _ _ (by rw [size_chunkValues, Nat.mul_comm])
       hlog hm4) (List.forall₂_same.2 fun _ _ ↦ rfl)
-  have hall : ∀ m ∈ ((List.range (2 ^ A.logQuotientChunks)).map fun c ↦
+  have hall : ∀ m ∈ ((List.range (2 ^ A.logQuotientChunks logN)).map fun c ↦
       (specBackend EF).lde logN P.logBlowup
-        (gen * (gen * powF (twoAdicGen (logN + A.logQuotientChunks)) c)⁻¹) (Challenge.d EF)
-        (chunkValues qs (2 ^ A.logQuotientChunks) c (2 ^ logN))), MatOk m ∧
+        (gen * (gen * powF (twoAdicGen (logN + A.logQuotientChunks logN)) c)⁻¹) (Challenge.d EF)
+        (chunkValues qs (2 ^ A.logQuotientChunks logN) c (2 ^ logN))), MatOk m ∧
         m.height = 2 ^ (logN + P.logBlowup) := fun m hm ↦ by
     obtain ⟨c, -, rfl⟩ := List.mem_map.mp hm
     exact ⟨hchOk c, (shape_ldeRef ..).2.1⟩
   have hwsum : ∀ (l : List Nat) (acc : Nat),
       (l.map fun c ↦ (specBackend EF).lde logN P.logBlowup
-          (gen * (gen * powF (twoAdicGen (logN + A.logQuotientChunks)) c)⁻¹) (Challenge.d EF)
-      (chunkValues qs (2 ^ A.logQuotientChunks) c (2 ^ logN))).foldl (· + ·.width) acc =
+          (gen * (gen * powF (twoAdicGen (logN + A.logQuotientChunks logN)) c)⁻¹) (Challenge.d EF)
+      (chunkValues qs (2 ^ A.logQuotientChunks logN) c (2 ^ logN))).foldl (· + ·.width) acc =
       acc + Challenge.d EF * l.length := by
     intro l
     induction l with
@@ -212,7 +214,7 @@ theorem commitAndSample_refines (h : Refines B) {P : Params} {A : Air F} {logN :
       omega
   have hqc := h.commit hch ⟨_, List.ne_nil_of_length_pos (by
     rw [List.length_map, List.length_range]; exact Nat.two_pow_pos _), hall, by
-    have e := hwsum (List.range (2 ^ A.logQuotientChunks)) 0
+    have e := hwsum (List.range (2 ^ A.logQuotientChunks logN)) 0
     rw [List.length_range, Nat.zero_add] at e
     exact e.symm ▸ hmq⟩
   rw [h.root hqc]

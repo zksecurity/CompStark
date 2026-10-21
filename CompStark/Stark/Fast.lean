@@ -257,11 +257,11 @@ def gather (cols : @& ByteArray) (w R c : Nat) (idx : @& Array Nat) (r0 B : Nat)
 
 /-- The packed values of `e` on the rows `r0, …, r0 + B - 1` of the quotient domain in the
 extension's bit-reversed order, `B` dividing the piece height `R`: `evalBlock` on words. `cols` and
-`pcols` hold the trace and the preprocessed trace, of widths `w` and `pw`. The next row of row `r`
-is `next[r]`, and `first`, `last`, `trans` are the selectors in that order. Next rows of a block
-are almost always a block themselves: `contiguous` gives its first row, and it is read as one
-slice. -/
-def evalWords (cols pcols : ByteArray) (w pw R B : Nat) (next : Array Nat)
+`pcols` hold the trace and the preprocessed trace, of widths `w` and `pw`, and `per` the `np`
+periodic columns, `n` rows each in that order. The next row of row `r` is `next[r]`, and `first`,
+`last`, `trans` are the selectors in that order. Next rows of a block are almost always a block
+themselves: `contiguous` gives its first row, and it is read as one slice. -/
+def evalWords (cols pcols per : ByteArray) (w pw np n R B : Nat) (next : Array Nat)
     (contiguous : Array (Option Nat)) (pis : List F) (first last trans : ByteArray) (r0 : Nat) :
     Expr F → ByteArray
   | .cur c => slice cols (r0 / R * (R * w) + c * R + r0 % R) B
@@ -274,20 +274,23 @@ def evalWords (cols pcols : ByteArray) (w pw R B : Nat) (next : Array Nat)
     match contiguous.getD (r0 / B) none with
     | some n0 => slice pcols (n0 / R * (R * pw) + c * R + n0 % R) B
     | none => gather pcols pw R c next r0 B
+  | .periodic j =>
+    if j < np then slice per (j * n + r0) B
+    else CompPoly.CPolynomial.NTTFast.Packed.Native.zeroWords B
   | .pub j => Words.replicateWord (pis.getD j 0).val B
   | .const c => Words.replicateWord c.val B
   | .isFirstRow => slice first r0 B
   | .isLastRow => slice last r0 B
   | .isTransition => slice trans r0 B
   | .add a b => Words.addWords p
-      (evalWords cols pcols w pw R B next contiguous pis first last trans r0 a)
-      (evalWords cols pcols w pw R B next contiguous pis first last trans r0 b) B
+      (evalWords cols pcols per w pw np n R B next contiguous pis first last trans r0 a)
+      (evalWords cols pcols per w pw np n R B next contiguous pis first last trans r0 b) B
   | .sub a b => Words.subWords p
-      (evalWords cols pcols w pw R B next contiguous pis first last trans r0 a)
-      (evalWords cols pcols w pw R B next contiguous pis first last trans r0 b) B
+      (evalWords cols pcols per w pw np n R B next contiguous pis first last trans r0 a)
+      (evalWords cols pcols per w pw np n R B next contiguous pis first last trans r0 b) B
   | .mul a b => Words.mulWords p
-      (evalWords cols pcols w pw R B next contiguous pis first last trans r0 a)
-      (evalWords cols pcols w pw R B next contiguous pis first last trans r0 b) B
+      (evalWords cols pcols per w pw np n R B next contiguous pis first last trans r0 a)
+      (evalWords cols pcols per w pw np n R B next contiguous pis first last trans r0 b) B
 
 /-- The rows `perm[i0], …, perm[i0 + len - 1]` of a packed row-major matrix of width `w`,
 copied whole. -/
@@ -371,6 +374,10 @@ def quotientWith [Mont32BaseField p] [Binomial4 p] (T : QuotientTables p) (A : A
   let R := n / parts
   let cols := transposePieces ext parts R
   let pcols := (prep.map (transposePieces · parts R)).getD ByteArray.empty
+  let tabs := (A.periodic.map fun col ↦ periodicOnQuotient col T.degreeBits T.logChunks).toArray
+  let np := tabs.size
+  let per := CompPoly.CPolynomial.NTTFast.Packed.Native.encodeFields (Array.ofFn (n := np * n)
+    fun k ↦ periodicRow (tabs.getD (k.val / n) #[]) (perm.getD (k.val % n) 0))
   let K := A.constraints.length
   let weights := (List.range K).map fun k ↦ (Ext.coeffs (Ext.pow alpha (K - 1 - k))).map (·.val)
   let B := T.B
@@ -382,7 +389,8 @@ def quotientWith [Mont32BaseField p] [Binomial4 p] (T : QuotientTables p) (A : A
       let z0 := CompPoly.CPolynomial.NTTFast.Packed.Native.zeroWords B
       let mut acc := #[z0, z0, z0, z0]
       for (c, wk) in A.constraints.zip weights do
-        let v := evalWords cols pcols w pw R B T.next T.contiguous pis T.first T.last T.trans r0 c
+        let v := evalWords cols pcols per w pw np n R B T.next T.contiguous pis T.first T.last
+          T.trans r0 c
         acc := (acc.zip wk.toArray).map fun (a, x) ↦ Words.mulAddWords p a v x B
       for i in [0:B] do
         let z := T.invZh.getD (perm.getD (r0 + i) 0 % period) 0

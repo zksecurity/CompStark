@@ -258,7 +258,7 @@ def main (args : List String) : IO UInt32 := do
       if air == "wide" then (wideTrace 64 (2 ^ logN), []) else fibInstance (2 ^ logN)
     -- The fast backend's extension plans are built once, outside timing, as Plonky3's twiddles.
     let B := if backend == "fast" then
-      CompStark.KoalaBear.backendFor logN P.logBlowup A.logQuotientChunks else B
+      CompStark.KoalaBear.backendFor logN P.logBlowup (A.logQuotientChunks logN) else B
     if let path :: _ := rest.drop ps.length then
       let rust ← IO.ofExcept
         (CompStark.Stark.Json.parse (p := KoalaBear.fieldSize) (EF := KoalaBear.Fast.Ext4)

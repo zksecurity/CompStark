@@ -107,7 +107,8 @@ noncomputable def traceCol (S : Setup EF) (trace : Fin S.air.width → F[X]) (j 
 noncomputable def foldedPoly (S : Setup EF) (publicValues : List F)
     (trace : Fin S.air.width → F[X]) (α : 𝕂) : 𝕂[X] :=
   horner (S.air.constraints.map fun c ↦
-    (constraintPoly S.n (twoAdicGen S.logN) (traceCol S trace) S.preprocessedPoly publicValues
+    (constraintPoly S.n (twoAdicGen S.logN) (traceCol S trace) S.preprocessedPoly
+      (S.air.periodicPolys S.logN) publicValues
       c).map (algebraMap F 𝕂))
     (C α)
 
@@ -141,18 +142,23 @@ theorem natDegree_traceCol (S : Setup EF) (trace : Fin S.air.width → F[X])
 /-- On columns of degree at most `n`, a constraint has degree at most `degBound (n + 1)`. -/
 theorem natDegree_constraintPoly_succ (S : Setup EF) (publicValues : List F)
     (trace : Fin S.air.width → F[X]) (hdeg : ∀ j, (trace j).natDegree ≤ S.n) (c : Expr F) :
-    (constraintPoly S.n (twoAdicGen S.logN) (traceCol S trace) S.preprocessedPoly publicValues
-      c).natDegree ≤ c.degBound (S.n + 1) := by
+    (constraintPoly S.n (twoAdicGen S.logN) (traceCol S trace) S.preprocessedPoly
+      (S.air.periodicPolys S.logN) publicValues
+      c).natDegree ≤ c.degBound (S.n + 1) (S.air.periodicDegree S.n) := by
   have hp (j : Nat) : (S.preprocessedPoly j).natDegree ≤ S.n + 1 - 1 := by
     rw [Nat.add_sub_cancel]; exact natDegree_preprocessedPoly_le S j
   have hpn (j : Nat) :
       ((S.preprocessedPoly j).comp (C (twoAdicGen S.logN) * Polynomial.X)).natDegree ≤
         S.n + 1 - 1 :=
     (natDegree_comp_shift _ _).trans (hp j)
-  exact Expr.natDegree_eval (S.n + 1)
-    (polyEnv S.n (twoAdicGen S.logN) (traceCol S trace) S.preprocessedPoly publicValues)
+  have hper (j : Nat) : (S.air.periodicPolys S.logN j).natDegree ≤ S.air.periodicDegree S.n j :=
+    natDegree_periodicPolys S.air S.logN S.valid.periodicFits
+      ((Nat.le_add_right _ _).trans S.valid.twoAdic) j
+  exact Expr.natDegree_eval (S.n + 1) (S.air.periodicDegree S.n)
+    (polyEnv S.n (twoAdicGen S.logN) (traceCol S trace) S.preprocessedPoly
+      (S.air.periodicPolys S.logN) publicValues)
     (natDegree_traceCol S trace hdeg)
-    (fun j ↦ (natDegree_comp_shift _ _).trans (natDegree_traceCol S trace hdeg j)) hp hpn
+    (fun j ↦ (natDegree_comp_shift _ _).trans (natDegree_traceCol S trace hdeg j)) hp hpn hper
     (fun _ ↦ natDegree_C _) (fun _ ↦ natDegree_C _) ((natDegree_firstSel _).trans (by omega))
     ((natDegree_lastSel _ _).trans (by omega))
     (natDegree_sub_le_of_le natDegree_X_le (natDegree_C _).le) c
@@ -161,13 +167,15 @@ theorem natDegree_constraintPoly_succ (S : Setup EF) (publicValues : List F)
 theorem natDegree_foldedPoly (S : Setup EF) (publicValues : List F)
     (trace : Fin S.air.width → F[X]) (hdeg : ∀ j, (trace j).natDegree ≤ S.n) (α : 𝕂) :
     (foldedPoly S publicValues trace α).natDegree ≤
-      S.air.constraints.foldl (fun m c ↦ max m (c.degBound (S.n + 1))) 0 := by
+      S.air.constraints.foldl
+        (fun m c ↦ max m (c.degBound (S.n + 1) (S.air.periodicDegree S.n))) 0 := by
   rw [foldedPoly, horner]
   refine Nat.lt_succ_iff.mp (natDegree_horner _ α _ 0 ?_ fun p hp ↦ ?_)
   · rw [natDegree_zero]; exact Nat.succ_pos _
   obtain ⟨c, hc, rfl⟩ := List.mem_map.mp hp
   exact Nat.lt_succ_of_le (natDegree_map_le.trans ((natDegree_constraintPoly_succ S publicValues
-    trace hdeg c).trans (le_foldl_max_of_mem (fun c ↦ c.degBound (S.n + 1)) _ 0 c hc)))
+    trace hdeg c).trans (le_foldl_max_of_mem
+      (fun c ↦ c.degBound (S.n + 1) (S.air.periodicDegree S.n)) _ 0 c hc)))
 
 /-- The recomposition selector has degree at most `(chunks - 1) n`. -/
 theorem natDegree_selPoly (S : Setup EF) (c : Fin S.chunks) :
@@ -197,7 +205,7 @@ theorem natDegree_recomposedPoly (S : Setup EF)
     natDegree_sum_le_of_forall_le _ _ fun e _ ↦
       (natDegree_C_mul_le _ _).trans (natDegree_map_le.trans (hq c e))
   have h3 : (S.chunks - 1) * S.n + S.n = S.chunks * S.n := by
-    have := Nat.two_pow_pos S.air.logQuotientChunks
+    have := Nat.two_pow_pos (S.air.logQuotientChunks S.logN)
     rw [Nat.sub_one_mul, Nat.sub_add_cancel (Nat.le_mul_of_pos_left _ this)]
   omega
 
@@ -227,6 +235,7 @@ noncomputable def envAt (S : Setup EF) (publicValues : List F) (ζ : 𝕂) (o : 
     prepCur := fun j ↦ if h : j < S.air.preprocessedWidth then o.preprocessedAt ⟨j, h⟩ else 0
     prepNext := fun j ↦
       if h : j < S.air.preprocessedNextWidth then o.preprocessedNext ⟨j, h⟩ else 0
+    periodic := fun j ↦ aeval ζ (S.air.periodicPolys S.logN j)
     pub := fun i ↦ lift (publicValues.getD i 0)
     const := lift
     isFirstRow := vanishing 1 S.n ζ / (ζ - 1)
@@ -283,7 +292,7 @@ theorem eval_recomposedPoly (S : Setup EF) (trace : Fin S.air.width → F[X])
 theorem eval_foldedPoly (S : Setup EF) (publicValues : List F) (trace : Fin S.air.width → F[X])
     (α y : 𝕂) : (foldedPoly S publicValues trace α).eval y = horner (S.air.constraints.map
       fun c ↦ aeval y (constraintPoly S.n (twoAdicGen S.logN) (traceCol S trace) S.preprocessedPoly
-        publicValues c)) α := by
+        (S.air.periodicPolys S.logN) publicValues c)) α := by
   rw [foldedPoly, ← coe_evalRingHom, horner_map, coe_evalRingHom, eval_C, List.map_map]
   congr 1
   refine List.map_congr_left fun c _ ↦ ?_
@@ -296,14 +305,14 @@ theorem eval_envAt (S : Setup EF) (publicValues : List F) (trace : Fin S.air.wid
     (hc : c.colsBelow S.air.width S.air.preprocessedWidth S.air.preprocessedNextWidth = true) :
     c.eval (envAt S publicValues ζ (trueOpenings S trace quotient ζ)) =
       aeval ζ (constraintPoly S.n (twoAdicGen S.logN) (traceCol S trace) S.preprocessedPoly
-        publicValues c) := by
+        (S.air.periodicPolys S.logN) publicValues c) := by
   have hl := logN_le S
   have hinv : (rootOfUnity S.logN)⁻¹ = algebraMap F 𝕂 (twoAdicGen S.logN)⁻¹ := by
     rw [rootOfUnity_eq, map_inv₀]
   refine (Expr.eval_hom (fun p : F[X] ↦ aeval ζ p) (fun a b ↦ map_add _ a b)
     (fun a b ↦ map_sub _ a b) (fun a b ↦ map_mul _ a b) S.air.width S.air.preprocessedWidth
     S.air.preprocessedNextWidth _ _ (fun j hj ↦ ?_) (fun j hj ↦ ?_) (fun j hj ↦ ?_)
-    (fun j hj ↦ ?_) (fun _ ↦ aeval_C _ _) (fun _ ↦ aeval_C _ _) ?_ ?_ ?_ c hc).symm
+    (fun j hj ↦ ?_) (fun _ ↦ rfl) (fun _ ↦ aeval_C _ _) (fun _ ↦ aeval_C _ _) ?_ ?_ ?_ c hc).symm
   · simp only [polyEnv, envAt, traceCol, trueOpenings, dite_eq_left hj]
   · simp only [polyEnv, envAt, traceCol, trueOpenings, dite_eq_left hj]
     rw [aeval_comp, map_mul, aeval_C, aeval_X, mul_comm, rootOfUnity_eq]
@@ -374,7 +383,8 @@ theorem eval_identityPoly_root (S : Setup EF) (publicValues : List F)
   congr 1
   refine List.map_congr_left fun c hc ↦ ?_
   rw [aeval_algebraMap_apply_eq_algebraMap_eval, eval_constraintPoly_root S.air S.logN hl _ _ _ _
-    (traceOn_traceOf S trace) (fun j _ i hi ↦ eval_preprocessedPoly S j i hi) c
+    _ (traceOn_traceOf S trace) (fun j _ i hi ↦ eval_preprocessedPoly S j i hi)
+    (periodicOn_periodicPolys S.air S.logN S.valid.periodicFits hl) c
     (S.valid.colsInWidth c hc) i hi]
 
 /-! ### The algebra step -/

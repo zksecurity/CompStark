@@ -180,10 +180,11 @@ def fibonacciSetup : Setup KoalaBear.Fast.Ext4 where
   valid :=
     { colsInWidth := by unfold Air.ColsInWidth; decide
       preprocessedSize := rfl
+      periodicFits := rfl
       degreeFits := fibonacci_degreeFits 10
       twoAdic := by decide
       chunksFit := by
-        rw [logQuotientChunks_of _ 0 (by decide)]
+        rw [logQuotientChunks_of _ _ 0 rfl (by decide)]
         exact Nat.zero_le _
       folds := by decide
       finalPolyFits := by decide
@@ -214,12 +215,12 @@ theorem fibonacci_knowledgeError_le :
       (by norm_num) (by norm_num)))
   · have hid : fibonacciSetup.identityDegree = 2048 := by
       simp only [Setup.identityDegree, Setup.n, Setup.chunks, fibonacciSetup]
-      rw [logQuotientChunks_of _ 0 (by decide)]
+      rw [logQuotientChunks_of _ _ 0 rfl (by decide)]
       simp only [fibonacci, List.foldl, Expr.mul_eq, Expr.sub_eq, Expr.add_eq, Expr.degBound]
       norm_num
     have hc : fibonacciSetup.chunks = 1 := by
-      change 2 ^ fibonacci.logQuotientChunks = 1
-      rw [logQuotientChunks_of _ 0 (by decide)]
+      change 2 ^ fibonacci.logQuotientChunks 10 = 1
+      rw [logQuotientChunks_of _ _ 0 rfl (by decide)]
       rfl
     simp only [Setup.numOpened, hid, hc, Setup.size, Setup.n]
     change (5 - 1) + (2048 + 2 ^ 10) + (2 * 2 + 4 * 1 - 1) * 2 ^ (10 + 4) ≤ 2 ^ 17
@@ -266,10 +267,11 @@ def wideSetup : Setup KoalaBear.Fast.Ext4 where
   valid :=
     { colsInWidth := wide_colsInWidth 64
       preprocessedSize := rfl
+      periodicFits := rfl
       degreeFits := wide_degreeFits 64 20
       twoAdic := by decide
       chunksFit := by
-        rw [wide_logQuotientChunks 64 (by decide)]
+        rw [wide_logQuotientChunks 64 _ (by decide)]
         decide
       folds := by decide
       finalPolyFits := by decide
@@ -286,7 +288,7 @@ theorem foldl_max_le {α : Type} (f : α → Nat) (b : Nat) :
 
 /-- `wide 64` has two quotient chunks. -/
 theorem wide_chunks (S : Setup EF) (hair : S.air = wide 64) : S.chunks = 2 := by
-  rw [Setup.chunks, hair, wide_logQuotientChunks 64 (by decide)]
+  rw [Setup.chunks, hair, wide_logQuotientChunks 64 _ (by decide)]
   rfl
 
 /-- `wide 64` opens `128 + 2 d` words. -/
@@ -374,10 +376,11 @@ def wide21Setup : Setup KoalaBear.Fast.Ext4 where
   valid :=
     { colsInWidth := wide_colsInWidth 64
       preprocessedSize := rfl
+      periodicFits := rfl
       degreeFits := wide_degreeFits 64 21
       twoAdic := by decide
       chunksFit := by
-        rw [wide_logQuotientChunks 64 (by decide)]
+        rw [wide_logQuotientChunks 64 _ (by decide)]
         decide
       folds := by decide
       finalPolyFits := by decide
@@ -448,10 +451,11 @@ def wideSp1Setup : Setup KoalaBear.Fast.Ext4 where
   valid :=
     { colsInWidth := wide_colsInWidth 64
       preprocessedSize := rfl
+      periodicFits := rfl
       degreeFits := wide_degreeFits 64 21
       twoAdic := by decide
       chunksFit := by
-        rw [wide_logQuotientChunks 64 (by decide)]
+        rw [wide_logQuotientChunks 64 _ (by decide)]
         decide
       folds := by decide
       finalPolyFits := by decide
@@ -548,10 +552,11 @@ def wideGrindSetup : Setup KoalaBear.Fast.Ext4 where
   valid :=
     { colsInWidth := wide_colsInWidth 64
       preprocessedSize := rfl
+      periodicFits := rfl
       degreeFits := wide_degreeFits 64 21
       twoAdic := by decide
       chunksFit := by
-        rw [wide_logQuotientChunks 64 (by decide)]
+        rw [wide_logQuotientChunks 64 _ (by decide)]
         decide
       folds := by decide
       finalPolyFits := by decide
@@ -649,10 +654,11 @@ def wide5Setup : Setup KoalaBear.Fast.Ext5 where
   valid :=
     { colsInWidth := wide_colsInWidth 64
       preprocessedSize := rfl
+      periodicFits := rfl
       degreeFits := wide_degreeFits 64 21
       twoAdic := by decide
       chunksFit := by
-        rw [wide_logQuotientChunks 64 (by decide)]
+        rw [wide_logQuotientChunks 64 _ (by decide)]
         decide
       folds := by decide
       finalPolyFits := by decide
@@ -747,10 +753,11 @@ def wide5iSetup : Setup KoalaBear.Fast.Ext5 where
   valid :=
     { colsInWidth := wide_colsInWidth 64
       preprocessedSize := rfl
+      periodicFits := rfl
       degreeFits := wide_degreeFits 64 21
       twoAdic := by decide
       chunksFit := by
-        rw [wide_logQuotientChunks 64 (by decide)]
+        rw [wide_logQuotientChunks 64 _ (by decide)]
         decide
       folds := by decide
       finalPolyFits := by decide

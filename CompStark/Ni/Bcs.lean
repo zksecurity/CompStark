@@ -166,7 +166,7 @@ theorem bcs (S : Iop.Setup EF) (cache : Merkle.Cache F (Digest F)) (H : Primitiv
   intro t
   obtain ⟨htl, htn, hqc, hq4, hshape, -, -, -, -, -, ⟨st, hfriOk⟩, hcheck⟩ :=
     verifyWith_ok H S.params S.air vk proof pis h
-  rw [hdb] at hcheck hshape
+  rw [hdb] at hcheck hshape hqc
   obtain ⟨hL, hb, hh, hsched⟩ := friHyps S vk proof (zetaOf H S.params S.air vk proof pis) hdb
   have hok := verifyFri_ok H S.params proof.fri _ _ _ hb hh _ _ hfriOk
   have hstart : friStart H S.params S.air vk proof pis =

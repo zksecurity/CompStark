@@ -34,12 +34,18 @@ theorem verifyWith_log_head (hK : Challenge.d EF ≤ K) (P : Fri.Params) (A : Ai
         answer (keyAt answer (inputs P A vk pis proof) 0)⟩ :: rest := by
   unfold verifyWith at hok ⊢
   dsimp only at hok ⊢
-  split at hok
+  by_cases hdeg : proof.degreeBits + A.logQuotientChunks proof.degreeBits ≤ twoAdicity F
   swap
-  · simp only [ExceptT.run_bind, ExceptT.run_throw, pure_bind] at hok
+  · rw [ite_eq_right hdeg] at hok
+    simp only [ExceptT.run_bind, ExceptT.run_throw, pure_bind] at hok
     cases hok
-  rename_i hdeg
-  simp only [hdeg, ↓reduceIte] at ⊢
+  rw [ite_eq_left hdeg] at hok ⊢
+  by_cases hper : A.periodicFits proof.degreeBits = true
+  swap
+  · rw [ite_eq_right hper] at hok
+    simp only [ExceptT.run_bind, ExceptT.run_throw, pure_bind] at hok
+    cases hok
+  rw [ite_eq_left hper] at hok ⊢
   split at hok
   swap
   · simp only [ExceptT.run_bind, ExceptT.run_throw, pure_bind] at hok

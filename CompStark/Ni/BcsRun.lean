@@ -1232,10 +1232,10 @@ theorem verifyWith_ok (P : Params) (A : Air F) (vk : Option (PreprocessedKey F))
     let o := proof.opened
     let zeta := zetaOf H P A vk proof pis
     o.traceLocal.size = A.width ∧ o.traceNext.size = A.width ∧
-      o.quotientChunks.size = 2 ^ A.logQuotientChunks ∧
+      o.quotientChunks.size = 2 ^ A.logQuotientChunks proof.degreeBits ∧
       (∀ ch ∈ o.quotientChunks, ch.size = Challenge.d EF) ∧
       preprocessedShapeOk A vk o proof.degreeBits = true ∧
-      proof.degreeBits + A.logQuotientChunks ≤ twoAdicity F ∧
+      proof.degreeBits + A.logQuotientChunks proof.degreeBits ≤ twoAdicity F ∧
       pis.length = A.numPublicValues ∧
       (oodCheck (EF := EF) H P A vk proof pis).1 = true ∧
       (Ext.powTwo zeta proof.degreeBits - 1 != 0) = true ∧
@@ -1243,42 +1243,47 @@ theorem verifyWith_ok (P : Params) (A : Air F) (vk : Option (PreprocessedKey F))
       (∃ st, verifyFri H P proof.fri (openingRounds A vk proof zeta) (batchOf H P A vk proof pis)
         (stateFri H P A vk proof pis) = .ok ((), st)) ∧
       checkConstraints A pis o proof.degreeBits zeta (alphaOf H P A vk proof pis)
-        (recompose (chunkDomains proof.degreeBits A.logQuotientChunks) o.quotientChunks.toList
-          zeta) = true := by
+        (recompose (chunkDomains proof.degreeBits (A.logQuotientChunks proof.degreeBits))
+          o.quotientChunks.toList zeta) = true := by
   intro o zeta
   unfold verifyWith at h
   dsimp only at h
-  split at h
-  · rename_i hdeg
-    split at h
-    · rename_i hpis
+  by_cases hdeg : proof.degreeBits + A.logQuotientChunks proof.degreeBits ≤ twoAdicity F
+  · rw [ite_eq_left hdeg] at h
+    by_cases hper : A.periodicFits proof.degreeBits = true
+    · rw [ite_eq_left hper] at h
       split at h
-      · rename_i hshape
+      · rename_i hpis
         split at h
-        · obtain ⟨x, hx, hc⟩ := except_bind_ok _ _ _ h
-          unfold StateT.run at hx
-          rw [bind_ok_of H (observeList_eq H _ _), bind_ok_of H (observeList_eq H _ _),
-            bind_ok_of H (observeList_eq H _ _), bind_ok_of H (observeList_eq H _ _),
-            bind_ok_of H (a := alphaOf H P A vk proof pis)
-              (s' := (smpExt (EF := EF) H (stateAlpha H P A vk proof pis)).2) (sampleExt_eq H _),
-            bind_ok_of H (observeList_eq H _ _),
-            bind_ok_of H (a := (oodCheck (EF := EF) H P A vk proof pis).1)
-              (s' := (oodCheck (EF := EF) H P A vk proof pis).2) (checkWitness_eq H _ _ _)] at hx
-          obtain ⟨hood, hx⟩ := ensure_bind_eq_ok H hx
-          rw [bind_ok_of H (a := zeta) (s' := (smpExt (EF := EF) H
-            (oodCheck (EF := EF) H P A vk proof pis).2).2) (sampleExt_eq H _)] at hx
-          obtain ⟨hz, hx⟩ := ensure_bind_eq_ok H hx
-          obtain ⟨u, st, h3, h4⟩ := bind_eq_ok H hx
-          obtain ⟨-, hbc, hfri⟩ := verifyPcs_ok H P _ proof.fri _ _ h3
-          have hx' := pure_eq_ok H h4
-          subst hx'
-          simp only [Bool.and_eq_true, beq_iff_eq, Array.all_eq_true'] at hshape
-          obtain ⟨⟨⟨⟨h1a, h1b⟩, h1c⟩, h1d⟩, h1e⟩ := hshape
-          exact ⟨h1a, h1b, h1c, h1d, h1e, hdeg, beq_iff_eq.mp hpis, hood, hz, hbc, ⟨_, hfri⟩,
-            hc⟩
+        · rename_i hshape
+          split at h
+          · obtain ⟨x, hx, hc⟩ := except_bind_ok _ _ _ h
+            unfold StateT.run at hx
+            rw [bind_ok_of H (observeList_eq H _ _), bind_ok_of H (observeList_eq H _ _),
+              bind_ok_of H (observeList_eq H _ _), bind_ok_of H (observeList_eq H _ _),
+              bind_ok_of H (a := alphaOf H P A vk proof pis)
+                (s' := (smpExt (EF := EF) H (stateAlpha H P A vk proof pis)).2) (sampleExt_eq H _),
+              bind_ok_of H (observeList_eq H _ _),
+              bind_ok_of H (a := (oodCheck (EF := EF) H P A vk proof pis).1)
+                (s' := (oodCheck (EF := EF) H P A vk proof pis).2) (checkWitness_eq H _ _ _)] at hx
+            obtain ⟨hood, hx⟩ := ensure_bind_eq_ok H hx
+            rw [bind_ok_of H (a := zeta) (s' := (smpExt (EF := EF) H
+              (oodCheck (EF := EF) H P A vk proof pis).2).2) (sampleExt_eq H _)] at hx
+            obtain ⟨hz, hx⟩ := ensure_bind_eq_ok H hx
+            obtain ⟨u, st, h3, h4⟩ := bind_eq_ok H hx
+            obtain ⟨-, hbc, hfri⟩ := verifyPcs_ok H P _ proof.fri _ _ h3
+            have hx' := pure_eq_ok H h4
+            subst hx'
+            simp only [Bool.and_eq_true, beq_iff_eq, Array.all_eq_true'] at hshape
+            obtain ⟨⟨⟨⟨h1a, h1b⟩, h1c⟩, h1d⟩, h1e⟩ := hshape
+            exact ⟨h1a, h1b, h1c, h1d, h1e, hdeg, beq_iff_eq.mp hpis, hood, hz, hbc, ⟨_, hfri⟩,
+              hc⟩
+          · exact absurd h (by intro h'; cases h')
         · exact absurd h (by intro h'; cases h')
       · exact absurd h (by intro h'; cases h')
-    · exact absurd h (by intro h'; cases h')
-  · exact absurd h (by intro h'; cases h')
+    · rw [ite_eq_right hper] at h
+      exact absurd h (by intro h'; cases h')
+  · rw [ite_eq_right hdeg] at h
+    exact absurd h (by intro h'; cases h')
 
 end CompStark.Ni

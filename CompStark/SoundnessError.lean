@@ -57,7 +57,8 @@ abbrev numOpened : Nat :=
 /-- A bound on the degree of the constraint identity `C(X) = Z_H(X) Q(X)` in `ζ`, for trace
 columns of degree at most `n`: the largest constraint degree and `n · (chunks + 1)`. -/
 def identityDegree : Nat :=
-  max (S.air.constraints.foldl (fun m c ↦ max m (c.degBound (S.n + 1))) 0) (S.n * (S.chunks + 1))
+  max (S.air.constraints.foldl
+    (fun m c ↦ max m (c.degBound (S.n + 1) (S.air.periodicDegree S.n))) 0) (S.n * (S.chunks + 1))
 
 /-- The Reed–Solomon code of FRI and the DEEP words: polynomials of degree below `n` on `L`. -/
 noncomputable def code : ModuleCode S.Point 𝕂 𝕂 :=

@@ -339,6 +339,30 @@ theorem toSpec_foldedConstraints (A : Air F) (env : Expr.Env F EF) (alpha : EF) 
 theorem mul_mul_inv_cancel_ext (a b : E) (hb : b ≠ 0) : a * b * b⁻¹ = a := by
   rw [mul_assoc, CompPoly.Extension.Ext.mul_inv_cancel' hb, mul_one]
 
+/-- **A periodic column at `ζ`**: the verifier's interpolation is its polynomial's value. -/
+theorem toSpec_periodicAt (col : List F) (logN : Nat) (h : PeriodShape logN col)
+    (hl : logN ≤ twoAdicity F) (zeta : EF) :
+    Challenge.toSpec (periodicAt col logN zeta) =
+      aeval (Challenge.toSpec zeta) (periodicPoly logN col) := by
+  obtain ⟨hs, hk⟩ := h
+  have hinj := periodInterp_injOn col (hk.trans hl) hs
+  have hdeg : ((periodInterp col).map (algebraMap F E)).degree < col.length := by
+    rw [degree_map]
+    have := Lagrange.degree_interpolate_lt (r := fun i ↦ col.getD i 0) hinj
+    rwa [Finset.card_range] at this
+  rw [periodicAt, toSpec_lagrange col.length _ _ _ ((periodInterp col).map (algebraMap F E))
+    (fun i hi j hj hij ↦ hinj (Finset.mem_coe.mpr (Finset.mem_range.mpr hi))
+      (Finset.mem_coe.mpr (Finset.mem_range.mpr hj)) (by rwa [powF_eq, powF_eq] at hij)) hdeg
+    (fun i hi ↦ by
+      rw [eval_map_algebraMap, powF_eq, aeval_algebraMap_apply_eq_algebraMap_eval, periodInterp,
+        Lagrange.eval_interpolate_at_node _ hinj
+        (Finset.mem_range.mpr hi), Ext.ofBase, Challenge.toSpec_ofBase']),
+    toSpec_extPowTwo, periodicPoly, aeval_comp, map_pow, aeval_X, ← eval_map_algebraMap]
+  rcases hs with h0 | hs
+  · simp only [periodInterp, h0, List.length_nil, Finset.range_zero, Lagrange.interpolate_empty,
+      Polynomial.map_zero, eval_zero]
+  · rw [hs, Nat.pow_div hk (by norm_num), ← hs]
+
 /-- `checkConstraints` as a function. Rewriting with it, rather than unfolding the definition at
 its arguments, keeps the kernel from evaluating the final `==` on symbolic extension elements. -/
 theorem checkConstraints_eq_fun : checkConstraints = fun (A : Air F) (pis : List F)
@@ -350,6 +374,7 @@ theorem checkConstraints_eq_fun : checkConstraints = fun (A : Air F) (pis : List
     next := fun i ↦ opened.traceNext.getD i 0
     prepCur := fun i ↦ (opened.preprocessedLocal.getD #[]).getD i 0
     prepNext := fun i ↦ (opened.preprocessedNext.getD #[]).getD i 0
+    periodic := fun i ↦ periodicAt (A.periodicColumn i) degreeBits zeta
     pub := fun i ↦ Ext.ofBase (pis.getD i 0)
     const := Ext.ofBase
     isFirstRow := zh * (zeta - 1)⁻¹

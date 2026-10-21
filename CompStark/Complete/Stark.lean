@@ -106,14 +106,14 @@ theorem honestItem_of (b h : Nat) (m : Mat F) (zs : List EF) (ps : List (Polynom
 def verifyCheck (A : Air F) (proof : Proof F EF) (pis : List F)
     (x : (EF × EF) × Transcript F 24) : ExceptT String Id Unit :=
   unless checkConstraints A pis proof.opened proof.degreeBits x.1.2 x.1.1
-      (recompose (chunkDomains proof.degreeBits A.logQuotientChunks)
+      (recompose (chunkDomains proof.degreeBits (A.logQuotientChunks proof.degreeBits))
         proof.opened.quotientChunks.toList x.1.2) do
     throw "out-of-domain evaluation mismatch"
 
 theorem verifyCheck_ok (A : Air F) (proof : Proof F EF) (pis : List F)
     (x : (EF × EF) × Transcript F 24)
     (h : checkConstraints A pis proof.opened proof.degreeBits x.1.2 x.1.1
-      (recompose (chunkDomains proof.degreeBits A.logQuotientChunks)
+      (recompose (chunkDomains proof.degreeBits (A.logQuotientChunks proof.degreeBits))
         proof.opened.quotientChunks.toList x.1.2) = true) :
     verifyCheck A proof pis x = pure () := by
   unfold verifyCheck
@@ -199,7 +199,7 @@ def hAlpha : EF := ((hTA EF P A logN trace pis).sampleExtValue : EF)
 
 /-- The quotient's chunks' extensions. -/
 def hChunks : List (Mat F) :=
-  let lc := A.logQuotientChunks
+  let lc := A.logQuotientChunks logN
   let qs := quotientOfLde A pis logN lc (hExt P A logN trace) ((hPrep EF P A logN).map (·.1))
     (hAlpha EF P A logN trace pis)
   (List.range (2 ^ lc)).map fun c ↦
@@ -497,12 +497,14 @@ theorem verify_eq (P : Params) (A : Air F) (vk : Option (PreprocessedKey F)) (pr
     (pis : List F) :
     verify P A vk proof pis = ExceptT.run (do
       let o := proof.opened
-      unless proof.degreeBits + A.logQuotientChunks ≤ twoAdicity F do
+      unless proof.degreeBits + A.logQuotientChunks proof.degreeBits ≤ twoAdicity F do
         throw "degree bits"
+      unless A.periodicFits proof.degreeBits do
+        throw "periodic columns"
       unless pis.length == A.numPublicValues do
         throw "public values"
       unless o.traceLocal.size == A.width && o.traceNext.size == A.width &&
-          o.quotientChunks.size == 2 ^ A.logQuotientChunks &&
+          o.quotientChunks.size == 2 ^ A.logQuotientChunks proof.degreeBits &&
           o.quotientChunks.all (·.size == Challenge.d EF) &&
           preprocessedShapeOk A vk o proof.degreeBits do
         throw "invalid proof shape"
@@ -1100,22 +1102,22 @@ end Honest
 
 theorem verify_ok_of (P : Params) (A : Air F) (vk : Option (PreprocessedKey F))
     (proof : Proof F EF) (pis : List F) (alpha zeta : EF) (t : Transcript F 24)
-    (hdeg : proof.degreeBits + A.logQuotientChunks ≤ twoAdicity F)
-    (hpis : pis.length = A.numPublicValues)
+    (hdeg : proof.degreeBits + A.logQuotientChunks proof.degreeBits ≤ twoAdicity F)
+    (hper : A.periodicFits proof.degreeBits = true) (hpis : pis.length = A.numPublicValues)
     (hshape : (proof.opened.traceLocal.size == A.width && proof.opened.traceNext.size == A.width &&
-      proof.opened.quotientChunks.size == 2 ^ A.logQuotientChunks &&
+      proof.opened.quotientChunks.size == 2 ^ A.logQuotientChunks proof.degreeBits &&
       proof.opened.quotientChunks.all (·.size == Challenge.d EF) &&
       preprocessedShapeOk A vk proof.opened proof.degreeBits) = true)
     (hood : (P.oodPowBits != 0 || proof.oodWitness == 0) = true)
     (hrun : verifyRun P A vk proof pis Poseidon2.initTranscript = .ok ((alpha, zeta), t))
     (hcheck : checkConstraints A pis proof.opened proof.degreeBits zeta alpha
-      (recompose (chunkDomains proof.degreeBits A.logQuotientChunks)
+      (recompose (chunkDomains proof.degreeBits (A.logQuotientChunks proof.degreeBits))
         proof.opened.quotientChunks.toList zeta) = true) :
     verify P A vk proof pis = .ok () := by
   have hrun' : StateT.run (verifyRun P A vk proof pis) Poseidon2.initTranscript = pure
       ((alpha, zeta), t) := hrun
   rw [verify_eq, hrun', pure_bind, verifyCheck_ok A proof pis ((alpha, zeta), t) hcheck]
-  simp only [hdeg, hpis, hshape, hood, beq_self_eq_true, ↓reduceIte]
+  simp only [hdeg, hper, hpis, hshape, hood, beq_self_eq_true, ↓reduceIte]
   rfl
 
 section Honest
@@ -1233,7 +1235,8 @@ theorem verify_prove_of (P : Params) (A : Air F) (logN : Nat) (trace : Array F) 
     · simp only [hPrep, setupWith, prepLde, hpw, ↓reduceIte, Option.map_none]
     · simp only [hPrep, setupWith, prepLde, hpw, ↓reduceIte, Option.map_some]
   refine verify_ok_of P A _ _ pis _ _ t
-    (by rw [hdb]; have := hin.twoAdic; have := hin.chunks; omega) hpis ?_ ?_ hrun ?_
+    (by rw [hdb]; have := hin.twoAdic; have := hin.chunks; omega) (by rw [hdb]; exact hin.periodic)
+    hpis ?_ ?_ hrun ?_
   · rw [prove_eq, setup_eq]
     have := honest_shape (EF := EF) P A logN trace pis (hAlpha EF P A logN trace pis)
       (hZeta EF P A logN trace pis)

@@ -16,7 +16,8 @@ on the sequence of `CompStarkTests.Challenger`. Then `uni-stark` proofs over Bab
 quartic extension (`compstark-bench stark-babybear AIR LOG_N LOG_BLOWUP LOG_FINAL MAX_LOG_ARITY
 QUERIES COMMIT_POW QUERY_POW`), saved as `tests/data/babybear_AIR_*.json`: each must verify, with
 the verifying key of its preprocessed trace for `prep` and `prep0`, the Lean prover must reproduce
-it exactly, and the verifier must reject it with a changed opened value.
+it exactly, and the verifier must reject it with a changed opened value. `periodic`,
+`periodic-tiny` and `pcube` have periodic columns.
 -/
 
 namespace CompStarkTests.BabyBear
@@ -106,6 +107,23 @@ def prepInstance (n : Nat) : Array F × List F :=
     (t.push a |>.push b, b, p * a * b + s * (a + b))) (#[], 1, 2)
   (t, [1, 2])
 
+/-- The trace of `n` rows of `periodicAir cols`: each column its periodic column. -/
+def periodicInstance (cols : List (List F)) (n : Nat) : Array F × List F :=
+  (Array.ofFn (n := n * 2) fun k ↦
+    let c := cols.getD (k.val % 2) []
+    c.getD (k.val / 2 % c.length) 0, [])
+
+/-- The `periodicCube` trace of `n` rows from `(2, 0)` and its public values. -/
+def pcubeInstance (n : Nat) : Array F × List F :=
+  let (t, _, _) := (List.range n).foldl (fun ((t, x, y) : Array F × F × F) i ↦
+    let s : F := ((i % 4 + 1 : Nat) : F)
+    (t.push x |>.push y, 3 * x * x * x + s * y, y + s)) (#[], 2, 0)
+  (t, [2, t.getD (2 * n - 2) 0])
+
+/-- Plonky3's periods of `PeriodicAir`, and those of its tiny-quotient test. -/
+def periodicCols : List (List F) := [[1, 2, 3, 4], [10, 20]]
+def periodicTinyCols : List (List F) := [[9], [1, 2]]
+
 /-- The proof with its first opened trace value changed. -/
 def tamper (proof : Proof F EF) : Proof F EF :=
   { proof with opened := { proof.opened with
@@ -136,5 +154,10 @@ def check (name : String) (air : Nat → Air F) (inst : Nat → Array F × List 
   check "cube" (fun _ ↦ cube) cubeInstance [5, 3, 1, 2, 6, 1, 3]
   check "prep" (mulFib · true) prepInstance [4, 2, 0, 1, 4, 0, 0]
   check "prep0" (mulFib · false) prepInstance [5, 1, 1, 2, 5, 1, 1, 3, 2]
+  check "periodic" (fun _ ↦ periodicAir periodicCols) (periodicInstance periodicCols)
+    [5, 1, 1, 2, 6, 1, 2, 2, 3]
+  check "periodic-tiny" (fun _ ↦ periodicAir periodicTinyCols) (periodicInstance periodicTinyCols)
+    [1, 1, 0, 1, 6, 0, 2]
+  check "pcube" (fun _ ↦ periodicCube) pcubeInstance [4, 1, 1, 2, 6, 1, 2, 2, 3]
 
 end CompStarkTests.BabyBear

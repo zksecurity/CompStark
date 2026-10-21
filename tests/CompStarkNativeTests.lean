@@ -19,7 +19,9 @@ and runs it.
   root of single matrices against them.
 * Plonky3 `uni-stark` proofs over KoalaBear (`tests/data/AIR_*.json`, from `RAYON_NUM_THREADS=1
   compstark-bench stark AIR LOG_N LOG_BLOWUP LOG_FINAL MAX_LOG_ARITY QUERIES COMMIT_POW
-  QUERY_POW`), with preprocessed columns for `prep` and `prep0` (`mulFib`): each verifies against
+  QUERY_POW`), with preprocessed columns for `prep` and `prep0` (`mulFib`) and periodic columns
+  for `periodic`, `periodic-wide`, `periodic-tiny` (`periodicAir`) and `pcube` (`periodicCube`):
+  each verifies against
   the verifying key of its preprocessed trace, the verifier rejects it with a changed opened
   value, a changed preprocessed opening, or a missing or wrong verifying key, and the
   specification prover and the fast prover reproduce it from the same trace. Over the quintic
@@ -153,6 +155,24 @@ def wideTrace (n : Nat) : Array F := Id.run do
       x * x * x + row.getD ((j.val + 1) % 64) 0
   return out
 
+/-- The trace of `n` rows of `periodicAir cols`: each column its periodic column. -/
+def periodicInstance (cols : List (List F)) (n : Nat) : Array F × List F :=
+  (Array.ofFn (n := n * 2) fun k ↦
+    let c := cols.getD (k.val % 2) []
+    c.getD (k.val / 2 % c.length) 0, [])
+
+/-- The `periodicCube` trace of `n` rows from `(2, 0)` and its public values. -/
+def pcubeInstance (n : Nat) : Array F × List F :=
+  let (t, _, _) := (List.range n).foldl (fun ((t, x, y) : Array F × F × F) i ↦
+    let s : F := ((i % 4 + 1 : Nat) : F)
+    (t.push x |>.push y, 3 * x * x * x + s * y, y + s)) (#[], 2, 0)
+  (t, [2, t.getD (2 * n - 2) 0])
+
+/-- Plonky3's periods of `PeriodicAir`: the default, the wide range and the tiny quotient. -/
+def periodicCols : List (List F) := [[1, 2, 3, 4], [10, 20]]
+def periodicWideCols : List (List F) := [[7], (List.range 32).map Nat.cast]
+def periodicTinyCols : List (List F) := [[9], [1, 2]]
+
 /-- The parameters `logN logBlowup logFinal maxLogArity queries commitPow queryPow [batchPow
 oodPow]`. -/
 def params : List Nat → IO (Nat × Fri.Params)
@@ -193,8 +213,8 @@ def proof (name : String) (air : Nat → Air F) (inst : Nat → Array F × List 
     check s!"{file}: rejects another verifying key" (verify P A other rust pis matches .error _)
   check s!"{file}: specification prover" (prove EF P A logN trace pis == rust)
   check s!"{file}: fast prover"
-    (proveWith (CompStark.KoalaBear.backendFor logN P.logBlowup A.logQuotientChunks) P A logN
-      trace pis == rust)
+    (proveWith (CompStark.KoalaBear.backendFor logN P.logBlowup (A.logQuotientChunks logN)) P A
+      logN trace pis == rust)
 
 /-- Over the quintic extension, the specification prover's proof verifies, and is rejected for
 other public values. -/
@@ -215,6 +235,14 @@ def proofs : IO Unit := do
   for ps in [[4, 2, 0, 1, 4, 0, 0], [5, 3, 1, 2, 6, 1, 3], [5, 1, 0, 1, 7, 2, 3, 4, 1]] do
     proof "cube" (fun _ ↦ cube) cubeInstance ps
   proof "wide" (fun _ ↦ wide 64) (fun n ↦ (wideTrace n, [])) [10, 1, 0, 1, 20, 0, 4]
+  for ps in [[6, 2, 3, 2, 8, 0, 8], [5, 1, 1, 2, 6, 1, 2, 2, 3]] do
+    proof "periodic" (fun _ ↦ periodicAir periodicCols) (periodicInstance periodicCols) ps
+  proof "periodic-wide" (fun _ ↦ periodicAir periodicWideCols) (periodicInstance periodicWideCols)
+    [6, 2, 3, 2, 8, 0, 8]
+  proof "periodic-tiny" (fun _ ↦ periodicAir periodicTinyCols) (periodicInstance periodicTinyCols)
+    [1, 1, 0, 1, 6, 0, 2]
+  for ps in [[5, 2, 0, 2, 5, 0, 0], [4, 1, 1, 2, 6, 1, 2, 2, 3]] do
+    proof "pcube" (fun _ ↦ periodicCube) pcubeInstance ps
   for ps in [[4, 2, 0, 1, 4, 0, 0], [5, 1, 1, 2, 6, 1, 2, 2, 3], [3, 2, 2, 1, 2, 0, 0]] do
     proof "prep" (mulFib · true) prepInstance ps
   for ps in [[4, 2, 0, 1, 4, 0, 0], [5, 3, 1, 2, 6, 1, 3]] do
@@ -223,6 +251,7 @@ def proofs : IO Unit := do
     proofExt5 (fun _ ↦ fibonacci) fibInstance ps
   proofExt5 (fun _ ↦ cube) cubeInstance [4, 2, 0, 1, 4, 1, 2]
   proofExt5 (mulFib · true) prepInstance [4, 2, 0, 1, 4, 1, 2]
+  proofExt5 (fun _ ↦ periodicCube) pcubeInstance [4, 2, 0, 1, 4, 1, 2]
 
 end KoalaBear
 
@@ -240,8 +269,8 @@ def proof (name : String) (air : Nat → Air F) (inst : Nat → Array F × List 
   let rust : Proof F EF ← IO.ofExcept (Json.parse (← IO.FS.readFile s!"tests/data/{file}.json"))
   let (trace, pis) := inst (2 ^ logN)
   check s!"{file}: fast prover"
-    (proveWith (CompStark.BabyBear.backendFor logN P.logBlowup A.logQuotientChunks) P A logN
-      trace pis == rust)
+    (proveWith (CompStark.BabyBear.backendFor logN P.logBlowup (A.logQuotientChunks logN)) P A
+      logN trace pis == rust)
 
 def proofs : IO Unit := do
   for ps in [[3, 2, 2, 1, 2, 0, 0], [6, 1, 1, 3, 8, 2, 4], [4, 1, 1, 2, 5, 1, 1, 3, 2]] do
@@ -249,6 +278,14 @@ def proofs : IO Unit := do
   proof "cube" (fun _ ↦ cube) CompStarkTests.BabyBear.cubeInstance [5, 3, 1, 2, 6, 1, 3]
   proof "prep" (mulFib · true) CompStarkTests.BabyBear.prepInstance [4, 2, 0, 1, 4, 0, 0]
   proof "prep0" (mulFib · false) CompStarkTests.BabyBear.prepInstance [5, 1, 1, 2, 5, 1, 1, 3, 2]
+  proof "periodic" (fun _ ↦ periodicAir CompStarkTests.BabyBear.periodicCols)
+    (CompStarkTests.BabyBear.periodicInstance CompStarkTests.BabyBear.periodicCols)
+    [5, 1, 1, 2, 6, 1, 2, 2, 3]
+  proof "periodic-tiny" (fun _ ↦ periodicAir CompStarkTests.BabyBear.periodicTinyCols)
+    (CompStarkTests.BabyBear.periodicInstance CompStarkTests.BabyBear.periodicTinyCols)
+    [1, 1, 0, 1, 6, 0, 2]
+  proof "pcube" (fun _ ↦ periodicCube) CompStarkTests.BabyBear.pcubeInstance
+    [4, 1, 1, 2, 6, 1, 2, 2, 3]
 
 end BabyBear
 

@@ -16,7 +16,8 @@ is it on Plonky3's Poseidon2 ones (`poseidon2`). An AIR with preprocessed column
 against the verifying key of its preprocessed trace (`PreprocessedKey`).
 
 * The proof's shape is checked first: the degree and the quotient domain fit the two-adic
-  subgroups, the public values are as many as the AIR declares, the verifying key is present
+  subgroups, the periodic columns fit the trace, the public values are as many as the AIR
+  declares, the verifying key is present
   exactly when the AIR has preprocessed columns and matches their width and the trace's height,
   and the opened values' sizes, the preprocessed trace's next row present exactly when the AIR
   reads it (`preprocessedShapeOk`).
@@ -28,7 +29,7 @@ against the verifying key of its preprocessed trace (`PreprocessedKey`).
   `ζ`, and the preprocessed trace's at `ζ` and, if the AIR reads its next row, at `ζ ω`.
 * The quotient at `ζ` is recomposed from its chunks, which live on the cosets of the quotient
   domain, and must equal the constraints folded by `α` and divided by the trace domain's vanishing
-  polynomial.
+  polynomial. The periodic columns at `ζ` are interpolated from their periods (`periodicAt`).
 -/
 @[expose] public section
 namespace CompStark.Stark
@@ -56,12 +57,19 @@ def recompose (ds : List (Domain F)) (chunks : List (Array EF)) (zeta : EF) : EF
   (zps.zip chunks).foldl (fun acc (zp, ch) ↦
     acc + zp * ((List.range (Challenge.d EF)).foldl (fun s e ↦ s + Ext.basis e * ch.getD e 0) 0)) 0
 
+/-- The value at `ζ` of a periodic column of period `p = 2 ^ k` on a trace of `2 ^ logN` rows:
+its period's interpolant on the subgroup of order `p` at `ζ ^ (2 ^ logN / p)`. -/
+def periodicAt (col : List F) (logN : Nat) (zeta : EF) : EF :=
+  let k := Nat.log2 col.length
+  lagrange ((List.range col.length).map fun i ↦ powF (twoAdicGen k) i)
+    ((List.range col.length).map fun i ↦ Ext.ofBase (col.getD i 0)) (Ext.powTwo zeta (logN - k))
+
 /-- The constraints folded by `α` at `ζ`, Horner style in constraint order. -/
 def foldedConstraints (A : Air F) (env : Expr.Env F EF) (alpha : EF) : EF :=
   A.constraints.foldl (fun acc c ↦ acc * alpha + c.eval env) 0
 
 /-- The constraint check at `ζ` on the trace domain of size `2 ^ degreeBits`. An unopened
-preprocessed row reads as zeros. -/
+preprocessed row reads as zeros, the periodic columns as their values at `ζ`. -/
 def checkConstraints (A : Air F) (pis : List F) (opened : OpenedValues EF) (degreeBits : Nat)
     (zeta alpha quotient : EF) : Bool :=
   let gInv := Ext.ofBase (twoAdicGen degreeBits)⁻¹
@@ -71,6 +79,7 @@ def checkConstraints (A : Air F) (pis : List F) (opened : OpenedValues EF) (degr
     next := fun i ↦ opened.traceNext.getD i 0
     prepCur := fun i ↦ (opened.preprocessedLocal.getD #[]).getD i 0
     prepNext := fun i ↦ (opened.preprocessedNext.getD #[]).getD i 0
+    periodic := fun i ↦ periodicAt (A.periodicColumn i) degreeBits zeta
     pub := fun i ↦ Ext.ofBase (pis.getD i 0)
     const := Ext.ofBase
     isFirstRow := zh * (zeta - 1)⁻¹
@@ -126,8 +135,8 @@ def openingRounds (A : Air F) (vk : Option (PreprocessedKey F)) (proof : Proof F
 /-- The STARK's domain separator for a proof of `A` with `2 ^ degreeBits` rows (`starkSeed`). -/
 def starkSeedOf (EF : Type) [Challenge F EF] (P : Params) (A : Air F) (degreeBits : Nat) :
     List F :=
-  DomainSeparator.starkSeed F EF degreeBits A.width A.preprocessedWidth A.numPublicValues
-    (2 ^ A.logQuotientChunks) P.oodPowBits A.opensPreprocessedNext
+  DomainSeparator.starkSeed F EF degreeBits A.width A.preprocessedWidth A.periodic.length
+    A.numPublicValues (2 ^ A.logQuotientChunks degreeBits) P.oodPowBits A.opensPreprocessedNext
 
 /-- Verify a proof of `A` with public values `pis` on the primitives `H`, against the verifying key
 `vk` of `A`'s preprocessed trace if it has one. -/
@@ -135,11 +144,13 @@ def verifyWith {m : Type → Type} [Monad m] (H : Primitives F m) (P : Params) (
     (vk : Option (PreprocessedKey F)) (proof : Proof F EF) (pis : List F) :
     m (Except String Unit) := ExceptT.run do
   let db := proof.degreeBits
-  let logChunks := A.logQuotientChunks
+  let logChunks := A.logQuotientChunks db
   let ds := chunkDomains db logChunks
   let o := proof.opened
   unless db + logChunks ≤ twoAdicity F do
     throw "degree bits"
+  unless A.periodicFits db do
+    throw "periodic columns"
   unless pis.length == A.numPublicValues do
     throw "public values"
   unless o.traceLocal.size == A.width && o.traceNext.size == A.width &&

@@ -577,26 +577,32 @@ theorem isTotalQueryBound_verifyWith (vk : Option (PreprocessedKey F)) (proof : 
       exact le_of_eq (by ring)
   unfold verifyWith
   dsimp only
-  split
-  · split
-    · split
-      · rename_i hshape
-        split
-        · rw [ExceptT.run_bind]
-          apply IsTotalQueryBound.mono (n₁ := S.verifierCalls + 0) _ (Nat.add_zero _).le
-          refine isTotalQueryBound_bind (hrun (by
-            simp only [Bool.and_eq_true] at hshape
-            exact hshape.2) _).1 fun r ↦ ?_
-          rcases r with _ | ⟨⟨alpha, zeta⟩, s⟩
-          · trivial
-          · dsimp only
-            split
+  by_cases h1 : proof.degreeBits + S.air.logQuotientChunks proof.degreeBits ≤ twoAdicity F
+  · rw [ite_eq_left h1]
+    by_cases h2 : S.air.periodicFits proof.degreeBits = true
+    · rw [ite_eq_left h2]
+      split
+      · split
+        · rename_i hshape
+          split
+          · rw [ExceptT.run_bind]
+            apply IsTotalQueryBound.mono (n₁ := S.verifierCalls + 0) _ (Nat.add_zero _).le
+            refine isTotalQueryBound_bind (hrun (by
+              simp only [Bool.and_eq_true] at hshape
+              exact hshape.2) _).1 fun r ↦ ?_
+            rcases r with _ | ⟨⟨alpha, zeta⟩, s⟩
             · trivial
-            · trivial
+            · dsimp only
+              split
+              · trivial
+              · trivial
+          all_goals trivial
         all_goals trivial
       all_goals trivial
-    all_goals trivial
-  all_goals trivial
+    · rw [ite_eq_right h2]
+      trivial
+  · rw [ite_eq_right h1]
+    trivial
 
 /-- **The game's verifier's oracle calls.** On every proof, the verifier in the random-oracle
 model makes at most `verifierCalls` oracle calls. -/

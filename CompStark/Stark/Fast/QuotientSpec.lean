@@ -19,13 +19,14 @@ namespace CompStark.Stark
 variable {F : Type} [BaseField F] {EF : Type} [Challenge F EF]
 
 /-- Row `r` of the quotient domain: the trace's and the preprocessed trace's row `r` and the row
-`period` on, cyclically. -/
-def rowEnv (tq pq : Mat F) (n period : Nat) (pis : List F) (first last trans : Array F)
-    (r : Nat) : Expr.Env F F where
+`period` on, cyclically, and the periodic columns' row `r`. -/
+def rowEnv (tq pq : Mat F) (per : List (Array F)) (n period : Nat) (pis : List F)
+    (first last trans : Array F) (r : Nat) : Expr.Env F F where
   cur c := tq.values.getD (r * tq.width + c) 0
   next c := tq.values.getD (((r + period) % n) * tq.width + c) 0
   prepCur c := pq.values.getD (r * pq.width + c) 0
   prepNext c := pq.values.getD (((r + period) % n) * pq.width + c) 0
+  periodic j := periodicRow (per.getD j #[]) r
   pub j := pis.getD j 0
   const c := c
   isFirstRow := first.getD r 0
@@ -40,29 +41,32 @@ theorem getD_extract (a : Array F) (r0 B i : Nat) (hi : i < B) :
   · rename_i h
     rw [Array.getElem?_eq_none (by omega)]
 
-theorem size_evalBlock (tq pq : Mat F) (n period : Nat) (pis : List F) (first last trans : Array F)
+theorem size_evalBlock (tq pq : Mat F) (per : List (Array F)) (n period : Nat) (pis : List F)
+    (first last trans : Array F)
     (r0 B : Nat) (hf : r0 + B ≤ first.size) (hl : r0 + B ≤ last.size)
     (ht : r0 + B ≤ trans.size) :
-    ∀ e, (evalBlock tq pq n period pis first last trans r0 B e).size = B
-  | .cur _ | .next _ | .prepCur _ | .prepNext _ => Array.size_ofFn
+    ∀ e, (evalBlock tq pq per n period pis first last trans r0 B e).size = B
+  | .cur _ | .next _ | .prepCur _ | .prepNext _ | .periodic _ => Array.size_ofFn
   | .pub _ | .const _ => Array.size_replicate
   | .isFirstRow => by simp only [evalBlock, Array.size_extract]; omega
   | .isLastRow => by simp only [evalBlock, Array.size_extract]; omega
   | .isTransition => by simp only [evalBlock, Array.size_extract]; omega
   | .add a b | .sub a b | .mul a b => by
     simp only [evalBlock, Array.size_zipWith,
-      size_evalBlock tq pq n period pis first last trans r0 B hf hl ht a, size_evalBlock tq pq n period pis first last trans r0 B hf hl ht b, Nat.min_self]
+      size_evalBlock tq pq per n period pis first last trans r0 B hf hl ht a,
+      size_evalBlock tq pq per n period pis first last trans r0 B hf hl ht b, Nat.min_self]
 
 /-- Entry `i` of a block is the expression at row `r0 + i`. -/
-theorem evalBlock_getD (tq pq : Mat F) (n period : Nat) (pis : List F) (first last trans : Array F)
+theorem evalBlock_getD (tq pq : Mat F) (per : List (Array F)) (n period : Nat) (pis : List F)
+    (first last trans : Array F)
     (r0 B : Nat) (hf : r0 + B ≤ first.size) (hl : r0 + B ≤ last.size)
     (ht : r0 + B ≤ trans.size) (i : Nat) (hi : i < B) :
-    ∀ e, (evalBlock tq pq n period pis first last trans r0 B e).getD i 0 =
-      e.eval (rowEnv tq pq n period pis first last trans (r0 + i))
+    ∀ e, (evalBlock tq pq per n period pis first last trans r0 B e).getD i 0 =
+      e.eval (rowEnv tq pq per n period pis first last trans (r0 + i))
   | .cur c => by
     simp only [evalBlock, Array.getD_eq_getD_getElem?, Array.getElem?_ofFn, hi, dite_true,
       Option.getD_some, Expr.eval, rowEnv]
-  | .next c | .prepCur c | .prepNext c => by
+  | .next c | .prepCur c | .prepNext c | .periodic c => by
     simp only [evalBlock, Array.getD_eq_getD_getElem?, Array.getElem?_ofFn, hi, dite_true,
       Option.getD_some, Expr.eval, rowEnv]
   | .pub j => by
@@ -75,10 +79,11 @@ theorem evalBlock_getD (tq pq : Mat F) (n period : Nat) (pis : List F) (first la
   | .isLastRow => by rw [evalBlock, getD_extract _ _ _ _ hi]; rfl
   | .isTransition => by rw [evalBlock, getD_extract _ _ _ _ hi]; rfl
   | .add a b | .sub a b | .mul a b => by
-    have ha := size_evalBlock tq pq n period pis first last trans r0 B hf hl ht a
-    have hb := size_evalBlock tq pq n period pis first last trans r0 B hf hl ht b
-    simp only [evalBlock, Expr.eval, ← evalBlock_getD tq pq n period pis first last trans r0 B hf hl
-      ht i hi a, ← evalBlock_getD tq pq n period pis first last trans r0 B hf hl ht i hi b,
+    have ha := size_evalBlock tq pq per n period pis first last trans r0 B hf hl ht a
+    have hb := size_evalBlock tq pq per n period pis first last trans r0 B hf hl ht b
+    simp only [evalBlock, Expr.eval, ← evalBlock_getD tq pq per n period pis first last trans r0 B
+      hf hl ht i hi a,
+      ← evalBlock_getD tq pq per n period pis first last trans r0 B hf hl ht i hi b,
       Array.getD_eq_getD_getElem?, Array.getElem?_zipWith]
     rw [Array.getElem?_eq_getElem (by omega), Array.getElem?_eq_getElem (by omega)]
     rfl
@@ -184,9 +189,10 @@ abbrev weighted (A : Air F) (alpha : EF) : List (Expr F × List F) :=
 
 /-- Row `r` of the quotient: the weighted constraints at row `r`, coordinate by coordinate, over
 the vanishing polynomial. -/
-def quotientRow (A : Air F) (pis : List F) (d l : Nat) (tq pq : Mat F) (alpha : EF) (r : Nat) :
+def quotientRow (A : Air F) (pis : List F) (d l : Nat) (tq pq : Mat F) (per : List (Array F))
+    (alpha : EF) (r : Nat) :
     EF :=
-  let env := rowEnv tq pq (2 ^ (d + l)) (2 ^ l) pis (qFirst d l) (qLast d l) (qTrans d l) r
+  let env := rowEnv tq pq per (2 ^ (d + l)) (2 ^ l) pis (qFirst d l) (qLast d l) (qTrans d l) r
   let ev (c : Expr F) := c.eval env
   Challenge.smul ((batchInv (qZh d l)).getD (r % 2 ^ l) 0) (Challenge.ofCoeffs
     ((List.range (Challenge.d EF)).map fun j ↦ rowAcc (weighted A alpha) ev j 0))
@@ -209,15 +215,16 @@ theorem size_cosetPoints (shift : F) (logN : Nat) : (cosetPoints shift logN).siz
     omega
 
 /-- Row `blk · B + i` of the block-wise evaluation. -/
-theorem blockRow (tq pq : Mat F) (n period : Nat) (pis : List F) (first last trans invZh : Array F)
+theorem blockRow (tq pq : Mat F) (per : List (Array F)) (n period : Nat) (pis : List F)
+    (first last trans invZh : Array F)
     (D : Nat) (cw : List (Expr F × List F)) (hw : ∀ a ∈ cw, a.2.length = D) (B r : Nat)
     (hB : 0 < B) (hf : (0 + r / B) * B + B ≤ first.size) (hl : (0 + r / B) * B + B ≤ last.size)
     (ht : (0 + r / B) * B + B ≤ trans.size) :
     let acc := cw.foldl (fun b a ↦ (b.zip a.2.toArray).map fun x ↦
       Array.zipWith (fun u v ↦ u + v * x.2) x.1
-        (evalBlock tq pq n period pis first last trans ((0 + r / B) * B) B a.1))
+        (evalBlock tq pq per n period pis first last trans ((0 + r / B) * B) B a.1))
       (Array.replicate D (Array.replicate B 0))
-    let ev (c : Expr F) := c.eval (rowEnv tq pq n period pis first last trans r)
+    let ev (c : Expr F) := c.eval (rowEnv tq pq per n period pis first last trans r)
     Challenge.smul (invZh.getD (((0 + r / B) * B + r % B) % period) 0)
       (Challenge.ofCoeffs ((List.range D).map fun j ↦ acc[j]!.getD (r % B) 0) : EF) =
     Challenge.smul (invZh.getD (r % period) 0)
@@ -225,8 +232,8 @@ theorem blockRow (tq pq : Mat F) (n period : Nat) (pis : List F) (first last tra
   intro acc ev
   have hr : (0 + r / B) * B + r % B = r := by rw [Nat.zero_add, Nat.div_add_mod']
   obtain ⟨-, h2⟩ := accBlocks D B
-    (fun c ↦ evalBlock tq pq n period pis first last trans ((0 + r / B) * B) B c)
-    (size_evalBlock tq pq n period pis first last trans _ B hf hl ht) cw hw
+    (fun c ↦ evalBlock tq pq per n period pis first last trans ((0 + r / B) * B) B c)
+    (size_evalBlock tq pq per n period pis first last trans _ B hf hl ht) cw hw
     (Array.replicate D (Array.replicate B 0)) Array.size_replicate
     (fun j hj ↦ by
       simp only [Array.getD_eq_getD_getElem?, Array.getElem?_replicate, hj, ite_true,
@@ -239,12 +246,13 @@ theorem blockRow (tq pq : Mat F) (n period : Nat) (pis : List F) (first last tra
         Option.getD_some]
     rw [h0]
     refine congrArg (fun f ↦ rowAcc cw f j 0) (funext fun c ↦ ?_)
-    rw [evalBlock_getD tq pq n period pis first last trans _ B hf hl ht _ hi, hr]
+    rw [evalBlock_getD tq pq per n period pis first last trans _ B hf hl ht _ hi, hr]
   rw [hr, List.map_congr_left fun j hj ↦ hrow j (List.mem_range.mp hj)]
 
-theorem quotientValues_eq (A : Air F) (pis : List F) (d l : Nat) (tq pq : Mat F) (alpha : EF) :
-    quotientValues A pis d l tq pq alpha =
-      Array.ofFn (n := 2 ^ (d + l)) fun r ↦ quotientRow A pis d l tq pq alpha r.val := by
+theorem quotientValues_eq (A : Air F) (pis : List F) (d l : Nat) (tq pq : Mat F)
+    (per : List (Array F)) (alpha : EF) :
+    quotientValues A pis d l tq pq per alpha =
+      Array.ofFn (n := 2 ^ (d + l)) fun r ↦ quotientRow A pis d l tq pq per alpha r.val := by
   simp only [quotientValues, Id.run, Std.Legacy.Range.forIn_eq_forIn_range',
     List.forIn_pure_yield_eq_foldl, pure_bind, bind_pure, Std.Legacy.Range.size, Nat.sub_zero,
     Nat.add_sub_cancel, Nat.div_one]
@@ -282,7 +290,7 @@ theorem quotientValues_eq (A : Air F) (pis : List F) (d l : Nat) (tq pq : Mat F)
           Nat.mul_le_mul_right _ this
         _ = 2 ^ (d + l) := hn
     unfold quotientRow
-    exact blockRow tq pq _ _ pis (qFirst d l) (qLast d l) (qTrans d l) (batchInv (qZh d l))
+    exact blockRow tq pq per _ _ pis (qFirst d l) (qLast d l) (qTrans d l) (batchInv (qZh d l))
       _ (weighted A alpha) hw _ r hB
       (by rw [qFirst, Array.size_ofFn]; exact hle) (by rw [qLast, Array.size_ofFn]; exact hle)
       (by rw [qTrans, Array.size_map, qPoints, size_cosetPoints]; exact hle)
