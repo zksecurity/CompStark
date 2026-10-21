@@ -240,8 +240,8 @@ def obsRounds (r : Round F EF) (_ : PUnit) : M (poseidon2 F) (ForInStep PUnit) :
   forIn r.2 PUnit.unit obsMats
   pure (ForInStep.yield PUnit.unit)
 
-theorem verifyPcs_eq (P : Params) (rounds : List (Round F EF)) (proof : FriProof F EF) :
-    verifyPcs (poseidon2 F) P rounds proof =
+theorem verifyPcs_eq (P : Params) (rounds : List (Round F EF)) (proof : FriProof F EF) : verifyPcs
+    (poseidon2 F) P rounds proof =
       (do forIn rounds PUnit.unit obsRounds; verifyFri (poseidon2 F) P proof rounds) :=
   rfl
 
@@ -254,8 +254,8 @@ theorem forIn_obsPts (pts : List (EF × List EF)) (t : Transcript F 24) :
       (bind_ok (observeExts_run t p.2)), ih,
       List.flatMap_cons, observeExts_append]
 
-theorem forIn_obsMats (mats : List (Domain F × List (EF × List EF))) (t : Transcript F 24) :
-    forIn mats PUnit.unit obsMats t =
+theorem forIn_obsMats (mats : List (Domain F × List (EF × List EF)))
+    (t : Transcript F 24) : forIn mats PUnit.unit obsMats t =
       .ok (PUnit.unit, t.observeExts (mats.flatMap fun x ↦ x.2.flatMap (·.2))) := by
   induction mats generalizing t with
   | nil => rfl
@@ -283,8 +283,8 @@ theorem forIn_obsRounds (rounds : List (Round F EF)) (t : Transcript F 24) :
     rw [forIn_cons_ok r rounds _ PUnit.unit obsRounds t _ h, ih, List.flatMap_cons,
       observeExts_append]
 
-theorem verifyPcs_run (P : Params) (rounds : List (Round F EF)) (proof : FriProof F EF) (t :
-    Transcript F 24) :
+theorem verifyPcs_run (P : Params) (rounds : List (Round F EF)) (proof : FriProof F EF)
+    (t : Transcript F 24) :
     verifyPcs (poseidon2 F) P rounds proof t = verifyFri (poseidon2 F) P proof rounds
       (t.observeExts (rounds.flatMap fun r ↦ r.2.flatMap fun x ↦ x.2.flatMap (·.2))) := by
   rw [verifyPcs_eq, bind_ok (forIn_obsRounds rounds t)]
@@ -324,8 +324,8 @@ def verifyRun (P : Params) (proof : Proof F EF) (pis : List F) : M (poseidon2 F)
   return (alpha, zeta)
 
 /-- The out-of-domain check of `verify`, after the transcript. -/
-def verifyCheck (A : Air F) (proof : Proof F EF) (pis : List F) (x : (EF × EF) × Transcript F 24) :
-    ExceptT String Id Unit :=
+def verifyCheck (A : Air F) (proof : Proof F EF) (pis : List F)
+    (x : (EF × EF) × Transcript F 24) : ExceptT String Id Unit :=
   unless checkConstraints A pis proof.opened proof.degreeBits x.1.2 x.1.1
       (recompose (chunkDomains proof.degreeBits A.logQuotientChunks)
         proof.opened.quotientChunks.toList x.1.2) do
@@ -370,8 +370,8 @@ theorem sampleExt_bind {β : Type} (f : EF → M (poseidon2 F) β) (t : Transcri
 
 theorem verifyRun_run (P : Params) (proof : Proof F EF) (pis : List F) :
     verifyRun P proof pis Poseidon2.initTranscript =
-      (verifyPcs (poseidon2 F) P (vRounds proof ((vTC proof pis).sampleExtValue : EF)) proof.fri >>=
-          fun _ ↦
+      (verifyPcs (poseidon2 F) P
+          (vRounds proof ((vTC proof pis).sampleExtValue : EF)) proof.fri >>= fun _ ↦
         pure (((vTA proof pis).sampleExtValue : EF), ((vTC proof pis).sampleExtValue : EF)))
         (Transcript.sampleExtState EF ((vTC proof pis))) := by
   simp only [verifyRun, observe_bind, observeList_bind, sampleExt_bind]
@@ -602,8 +602,8 @@ theorem hopen (hin : Fits P A logN trace)
           Nat.log2 v.size)) 0)) := by
   obtain ⟨v, hv, hred, hl⟩ := hInputs_eq EF P A logN trace pis hin hz alpha
   have hs := log2_size hl
-  have hL : Nat.log2 (((hInputs EF P A logN trace pis alpha).map Array.size).headD 0) =
-      logN + P.logBlowup := by
+  have hL : Nat.log2 (((hInputs EF P A logN trace pis alpha).map Array.size).headD 0) = logN +
+      P.logBlowup := by
     rw [hv]; exact hs
   rw [hL] at hidx ⊢
   rw [vRounds_eq EF P A logN trace pis hin, hv]

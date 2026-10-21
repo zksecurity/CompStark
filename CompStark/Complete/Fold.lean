@@ -198,8 +198,8 @@ theorem foldPairs_getD (vs : Array EF) (beta : EF) (m : Nat) (hm : m < twoAdicit
     have e1 : powF (twoAdicGen 1 : F) 1 = -1 := by rw [powF_eq, pow_one, twoAdicGen_one (by omega)]
     have hs'' : (algebraMap K L) (start) ≠ 0 := hs'
     interval_cases k
-    · rw [show i * 2 ^ 1 + 0 = 2 * i by ring, show reverseBits 0 1 = 0 from rfl, powF_eq,
-        pow_zero, mul_one]
+    · rw [show i * 2 ^ 1 + 0 = 2 * i by ring, show reverseBits 0 1 = 0 from rfl, powF_eq, pow_zero,
+        mul_one]
       show lo = _
       simp only [eval_add, eval_C, eval_mul, eval_X, emb]
       field_simp
@@ -221,8 +221,9 @@ theorem lowDegree_addScaled (H D : Nat) (a b : Array EF) (x : EF) (ha : LowDegre
   · refine lt_of_le_of_lt (degree_add_le _ _) (max_lt hp (lt_of_le_of_lt (degree_mul_le _ _) ?_))
     refine lt_of_le_of_lt (add_le_add_left degree_C_le _) ?_
     rwa [zero_add]
-  · rw [getD_lt _ r (by rw [hs]; exact hr), Array.getElem_zipWith, ← getD_lt a r (by omega),
-      ← getD_lt b r (by omega), Challenge.toSpec_add, Challenge.toSpec_mul, hpa r hr, hqb r hr,
+  · rw [getD_lt _ r (by rw [hs]; exact hr), Array.getElem_zipWith, ← getD_lt a r
+      (by omega), ← getD_lt b r
+          (by omega), Challenge.toSpec_add, Challenge.toSpec_mul, hpa r hr, hqb r hr,
           eval_add,
       eval_mul, eval_C]
 

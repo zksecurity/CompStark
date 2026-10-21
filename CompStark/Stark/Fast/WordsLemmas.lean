@@ -44,14 +44,14 @@ theorem zeroWords_eq (n : Nat) : zeroWords n = encode (Array.replicate n (0 : F)
   rfl
 
 /-- A word of an encoded array is its element. -/
-theorem read_encode (a : Array F) (i : Nat) (hs : 4 * a.size < USize.size) (hi : i < a.size) :
-    read (encode a) i = (a.getD i 0).val :=
+theorem read_encode (a : Array F) (i : Nat) (hs : 4 * a.size < USize.size) (hi : i < a.size) : read
+    (encode a) i = (a.getD i 0).val :=
   CompPoly.CPolynomial.NTTFast.Packed.Native.read_encode a i
     (by rw [size_encode_fields]; exact hs) hi
 
 /-- A word read by a sixteen-word kernel is its element. -/
-theorem rd_encode (a : Array F) (i : USize) (k : Nat) (h : Fits (encode a) i 15) (hk : k ≤ 15) :
-    rd (encode a) i k h hk = (a.getD (i.toNat + k) 0).val := by
+theorem rd_encode (a : Array F) (i : USize) (k : Nat) (h : Fits (encode a) i 15) (hk : k ≤ 15) : rd
+    (encode a) i k h hk = (a.getD (i.toNat + k) 0).val := by
   rw [rd, CompPoly.CPolynomial.NTTFast.Packed.Native.readUOffset_encode,
     USize.toNat_ofNat_of_lt' (by have := USize.le_size; omega)]
 
@@ -513,8 +513,8 @@ theorem encode_map (a : Array EF) (pr : EF → F) :
   simp only [Array.getElem_ofFn, getD_map a pr i hi, Array.getElem_map]
 
 /-- Represented, indexable planes read back their elements. -/
-theorem toArray_eq {v : EVec p} {a : Array EF} (hv : RV v a) (hs : 4 * a.size < USize.size) :
-    v.toArray = a := by
+theorem toArray_eq {v : EVec p} {a : Array EF} (hv : RV v a)
+    (hs : 4 * a.size < USize.size) : v.toArray = a := by
   obtain ⟨hvn, h0, h1, h2, h3⟩ := hv
   have hm : ∀ pr : EF → F, 4 * (a.map pr).size < USize.size := fun pr ↦ by
     rw [Array.size_map]; exact hs
@@ -657,8 +657,8 @@ theorem smul_rel [Binomial4 p] {v : EVec p} {a : Array EF} (s : EF) (hv : RV v a
       (hm' _) (hm' _) (hm' _) (hm' _)]
   let A (pr : EF → F) (i : Nat) : F := (a.map pr).getD i 0
   refine rv_mk _ (Array.size_map ..)
-    (fun i ↦ A (·.c0) i * s.c0 + A (·.c1) i * (Binomial4.mulW s.c3) + A (·.c2) i * (Binomial4.mulW
-        s.c2) +
+    (fun i ↦ A (·.c0) i * s.c0 + A (·.c1) i * (Binomial4.mulW s.c3) + A (·.c2) i *
+        (Binomial4.mulW s.c2) +
       A (·.c3) i * (Binomial4.mulW s.c1))
     (fun i ↦ A (·.c0) i * s.c1 + A (·.c1) i * s.c0 + A (·.c2) i * (Binomial4.mulW s.c3) +
       A (·.c3) i * (Binomial4.mulW s.c2))
@@ -705,8 +705,8 @@ theorem mulWords_ofFn {n : Nat} (hn : 4 * n < USize.size) (f g : Fin n → F) :
   rw [getD_ofFn_bounded _ _ i.isLt, getD_ofFn_bounded _ _ i.isLt]
 
 /-- Multiply-adds of tabulated arrays. -/
-theorem mulAddWords_ofFn {n : Nat} (hn : 4 * n < USize.size) (f g : Fin n → F) (c : F) :
-    mulAddWords p (encode (Array.ofFn f)) (encode (Array.ofFn g)) c.val n =
+theorem mulAddWords_ofFn {n : Nat} (hn : 4 * n < USize.size) (f g : Fin n → F)
+    (c : F) : mulAddWords p (encode (Array.ofFn f)) (encode (Array.ofFn g)) c.val n =
       encode (Array.ofFn fun i ↦ f i + g i * c) := by
   rw [mulAddWords_encode _ _ _ _ (by rw [Array.size_ofFn]) (by rw [Array.size_ofFn])
     (by rw [Array.size_ofFn]; exact hn) (by rw [Array.size_ofFn]; exact hn)]
@@ -727,8 +727,8 @@ theorem rv_ofFn {n : Nat} (c : Array EF) (hn : c.size = n) (f0 f1 f2 f3 : Fin n 
     simp only [Array.getElem_ofFn, Array.getElem_map, hc ⟨i, hi⟩]
 
 /-- Elementwise products. -/
-theorem mul_rel [Binomial4 p] {v w : EVec p} {a b : Array EF} (hv : RV v a) (hw : RV w b) (hn : v.n
-    = w.n)
+theorem mul_rel [Binomial4 p] {v w : EVec p} {a b : Array EF} (hv : RV v a) (hw : RV w b)
+    (hn : v.n = w.n)
     (hs : 4 * a.size < USize.size) : RV (v.mul w) (Array.zipWith (· * ·) a b) := by
   obtain ⟨hvn, h0, h1, h2, h3⟩ := hv
   obtain ⟨hwn, g0, g1, g2, g3⟩ := hw
@@ -959,8 +959,9 @@ theorem batchInvWords_encode (a : Array F) (n : Nat) (ha : n ≤ a.size)
   unfold batchInvWords
   have hp : 0 < (if n < 4096 then 1 else 16) := by split <;> decide
   generalize (if n < 4096 then 1 else 16) = parts at hp ⊢
-  rw [foldl_tasks parts _ (fun k ↦ Array.ofFn (n := if k + 1 = parts then n - k * (n / parts)
-      else n / parts) fun j ↦ (a.getD (k * (n / parts) + j.val) 0)⁻¹) fun k hk ↦
+  rw [foldl_tasks parts _
+      (fun k ↦ Array.ofFn (n := if k + 1 = parts then n - k * (n / parts) else n / parts) fun j ↦
+          (a.getD (k * (n / parts) + j.val) 0)⁻¹) fun k hk ↦
       batchInvRange_encode a _ _ (Nat.le_trans (range_le n parts k hk) ha) hs fun j hj ↦
         hnz _ (by have := range_le n parts k hk; omega),
     foldl_ranges (fun j ↦ (a.getD j 0)⁻¹) n parts _ hp (ranges_cover n parts)]

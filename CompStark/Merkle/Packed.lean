@@ -138,14 +138,14 @@ below `w`. -/
 
 /-- The digests of the eight rows `r0, …, r0 + 7` of the row-major words `m` of width `w`, as
 digests `r0, …, r0 + 7` of `out`; rows past `rows` read as zeros and are not stored. -/
-@[specialize] def hashRows8 (p : ℕ) [Mont32Field p] [Poseidon2Field (FastField p)] [PackedPoseidon2
-    p] (m : @& ByteArray)
+@[specialize] def hashRows8 (p : ℕ) [Mont32Field p] [Poseidon2Field (FastField p)]
+    [PackedPoseidon2 p] (m : @& ByteArray)
     (w rows r0 : Nat) (out : ByteArray) : ByteArray :=
   storeRows (absorbRows p m w rows r0) rows r0 out
 
 /-- The leaf digests of a chunk of `rows` rows of width `w`. -/
-@[specialize] def hashChunk (p : ℕ) [Mont32Field p] [Poseidon2Field (FastField p)] [PackedPoseidon2
-    p] (m : @& ByteArray)
+@[specialize] def hashChunk (p : ℕ) [Mont32Field p] [Poseidon2Field (FastField p)]
+    [PackedPoseidon2 p] (m : @& ByteArray)
     (w rows : Nat) : ByteArray :=
   (List.range ((rows + 7) / 8)).foldl (fun out g ↦ hashRows8 p m w rows (8 * g) out)
     (zeroWords (8 * rows))
@@ -158,8 +158,8 @@ group; pairs past `n / 2` read zeros. -/
 
 /-- Parents `o, …, o + 7` of the layer `prev` of `n` digests as digests `o - o0, …` of `out`;
 parents past `o0 + count` are not stored. -/
-@[specialize] def compress8 (p : ℕ) [Mont32Field p] [Poseidon2Field (FastField p)] [PackedPoseidon2
-    p] (prev : @& ByteArray)
+@[specialize] def compress8 (p : ℕ) [Mont32Field p] [Poseidon2Field (FastField p)]
+    [PackedPoseidon2 p] (prev : @& ByteArray)
     (n o o0 count : Nat) (out : ByteArray) : ByteArray :=
   storeRows (PackedPoseidon2.permute16 p (loadPairs prev n o)) count (o - o0) out
 
@@ -176,8 +176,8 @@ def padDigests (d : ByteArray) (n padded : Nat) : ByteArray :=
 
 /-- The next layer of a layer of `n` digests, padded to even length unless it is the root;
 large layers are compressed by parallel range tasks. -/
-@[specialize] def nextLayer (p : ℕ) [Mont32Field p] [Poseidon2Field (FastField p)] [PackedPoseidon2
-    p] (prev : ByteArray)
+@[specialize] def nextLayer (p : ℕ) [Mont32Field p] [Poseidon2Field (FastField p)]
+    [PackedPoseidon2 p] (prev : ByteArray)
     (n : Nat) : ByteArray × Nat :=
   let half := n / 2
   let padded := if n = 2 then 1 else (half + 1) / 2 * 2

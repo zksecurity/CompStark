@@ -112,8 +112,9 @@ open CompPoly.CPolynomial.NTTFast.Packed.Native (readUOffset read write write16U
   write16U out i x0 x1 x2 x3 x4 x5 x6 x7 x8 x9 x10 x11 x12 x13 x14 x15
 
 /-- Apply a sixteen-word kernel and its word operation to words `0, …, n - 1` of `a` and `b`. -/
-@[inline] def zipWords (k16 : (a b : ByteArray) → (i : USize) → ByteArray → Fits a i 15 →
-    Fits b i 15 → ByteArray) (op : UInt32 → UInt32 → UInt32) (a b : @& ByteArray) (n : Nat) :
+@[inline] def zipWords
+    (k16 : (a b : ByteArray) → (i : USize) → ByteArray → Fits a i 15 → Fits b i 15 → ByteArray)
+        (op : UInt32 → UInt32 → UInt32) (a b : @& ByteArray) (n : Nat) :
     ByteArray := Id.run do
   let mut out := zeroWords n
   for block in [:n / 16] do
@@ -140,8 +141,8 @@ open CompPoly.CPolynomial.NTTFast.Packed.Native (readUOffset read write write16U
   zipWords (mul16 p) (mul p) a b n
 
 /-- `a + b · c` on `n` words, for a word `c`. -/
-@[specialize] def mulAddWords (p : ℕ) [Mont32Field p] (a b : @& ByteArray) (c : UInt32) (n : Nat) :
-    ByteArray :=
+@[specialize] def mulAddWords (p : ℕ) [Mont32Field p] (a b : @& ByteArray) (c : UInt32)
+    (n : Nat) : ByteArray :=
   zipWords (fun a b i out ha hb ↦ mulAdd16 p a b c i out ha hb) (fun x y ↦ add p x (mul p y c))
     a b n
 
@@ -198,8 +199,8 @@ def replicateWord (c : UInt32) (n : Nat) : ByteArray := Id.run do
   write16U out io x0 x1 x2 x3 x4 x5 x6 x7 x8 x9 x10 x11 x12 x13 x14 x15
 
 /-- `out[k] += c · b[bo + k]` for `k < n`, in place. -/
-@[specialize] def mulAddInto (p : ℕ) [Mont32Field p] (out : ByteArray) (b : @& ByteArray) (bo : Nat)
-    (c : UInt32) (n : Nat) :
+@[specialize] def mulAddInto (p : ℕ) [Mont32Field p] (out : ByteArray) (b : @& ByteArray)
+    (bo : Nat) (c : UInt32) (n : Nat) :
     ByteArray := Id.run do
   let mut out := out
   for block in [:n / 16] do
@@ -219,8 +220,9 @@ def replicateWord (c : UInt32) (n : Nat) : ByteArray := Id.run do
   let mut acc := zeroWords 16
   for block in [:n / 16] do
     let i := 16 * block
-    if h : 4 * 15 + 3 < acc.size ∧ 4 * (bo + i + 15) + 3 < b.size ∧ 4 * (i + 15) + 3 < c.size ∧
-        acc.size < USize.size ∧ b.size < USize.size ∧ c.size < USize.size then
+    if h : 4 * 15 + 3 < acc.size ∧ 4 * (bo + i + 15) + 3 < b.size ∧ 4 *
+        (i + 15) + 3 < c.size ∧ acc.size < USize.size ∧ b.size < USize.size ∧ c.size <
+            USize.size then
       acc := dotInto16 p acc 0 b (USize.ofNatLT (bo + i) (by omega)) c (USize.ofNatLT i (by omega))
         (by simp only [Fits]; exact ⟨by simpa using h.1, h.2.2.2.1⟩)
         (by simp only [Fits, USize.toNat_ofNatLT]; exact ⟨h.2.1, h.2.2.2.2.1⟩)

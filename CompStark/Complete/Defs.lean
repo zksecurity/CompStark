@@ -11,8 +11,8 @@ public import CompPoly.Univariate.NTT.CosetBarycentric
 
 /-! # Low-degree vectors and matrices
 
-The predicates the completeness proof passes between the prover's layers, over the Mathlib fields
-`KoalaBear.Field` and `Challenge.Spec EF` that the Montgomery elements denote:
+The predicates the completeness proof passes between the prover's layers, over the base field `F`
+and the spec field `Challenge.Spec EF` of the challenge field:
 
 * `Mat.IsLde`: a committed matrix is the low-degree extension of polynomials onto the coset
   `g · ⟨ω⟩`, rows in bit-reversed order.
@@ -49,7 +49,7 @@ def LowDegree {EF : Type} [Challenge F EF] (logH logD : Nat) (v : Array EF) : Pr
           ((twoAdicGen logH)) ^ reverseBits r logH)
 
 /-- The shapes the completeness proof works on: a `2 ^ logN × width` trace, constraints that read
-only the AIR's columns, an extended domain within KoalaBear's two-adic subgroups, and quotient
+only the AIR's columns, an extended domain within the base field's two-adic subgroups, and quotient
 chunks that fit the blowup. -/
 structure Fits (P : Params) (A : Air F) (logN : Nat) (trace : Array F) : Prop where
   trace : trace.size = 2 ^ logN * A.width

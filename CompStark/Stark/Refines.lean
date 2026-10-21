@@ -70,8 +70,8 @@ theorem commitAndSample_refines (h : Refines B) {P : Params} {A : Air F} {logN :
     {trace : Array F} (pis : List F) (hin : InputOk EF P A logN trace) :
     RelM (fun x y ↦ h.RM x.1 y.1 ∧ h.RC x.2.1 y.2.1 ∧ List.Forall₂ h.RM x.2.2.1 y.2.2.1 ∧
         h.RC x.2.2.2.1 y.2.2.2.1 ∧ x.2.2.2.2 = y.2.2.2.2 ∧ MatOk y.1 ∧ ∀ m ∈ y.2.2.1, MatOk m)
-      (commitAndSample B P A logN trace pis) (commitAndSample (specBackend EF) P A logN trace
-          pis) := by
+      (commitAndSample B P A logN trace pis)
+          (commitAndSample (specBackend EF) P A logN trace pis) := by
   obtain ⟨htrace, hw, hcols, hlog, hchunks, hmem⟩ := hin
   have hmw : Addressable (2 ^ (logN + P.logBlowup) * A.width) :=
     addressable_mono (Nat.mul_le_mul_left _ (Nat.le_add_right _ _)) hmem
@@ -125,8 +125,9 @@ theorem commitAndSample_refines (h : Refines B) {P : Params} {A : Air F} {logN :
         m.height = 2 ^ (logN + P.logBlowup) := fun m hm ↦ by
     obtain ⟨c, -, rfl⟩ := List.mem_map.mp hm
     exact ⟨hchOk c, (shape_ldeRef ..).2.1⟩
-  have hwsum : ∀ (l : List Nat) (acc : Nat), (l.map fun c ↦ (specBackend EF).lde logN P.logBlowup
-      (gen * (gen * powF (twoAdicGen (logN + A.logQuotientChunks)) c)⁻¹) (Challenge.d EF)
+  have hwsum : ∀ (l : List Nat) (acc : Nat),
+      (l.map fun c ↦ (specBackend EF).lde logN P.logBlowup
+          (gen * (gen * powF (twoAdicGen (logN + A.logQuotientChunks)) c)⁻¹) (Challenge.d EF)
       (chunkValues qs (2 ^ A.logQuotientChunks) c (2 ^ logN))).foldl (· + ·.width) acc =
       acc + Challenge.d EF * l.length := by
     intro l
@@ -151,8 +152,8 @@ theorem commitAndSample_refines (h : Refines B) {P : Params} {A : Air F} {logN :
 specification's. -/
 theorem openAndAssemble_refines (hA : DomainsAddressable F EF) (h : Refines B) (P : Params)
     {logN : Nat} (hlog : logN ≤ twoAdicity F) {x : B.M × B.C × List B.M × B.C × EF}
-    {y : (specBackend EF).M × (specBackend EF).C × List (specBackend EF).M × (specBackend EF).C
-        × EF}
+    {y : (specBackend EF).M × (specBackend EF).C × List (specBackend EF).M ×
+        (specBackend EF).C × EF}
     (hR : h.RM x.1 y.1 ∧ h.RC x.2.1 y.2.1 ∧ List.Forall₂ h.RM x.2.2.1 y.2.2.1 ∧
       h.RC x.2.2.2.1 y.2.2.2.1 ∧ x.2.2.2.2 = y.2.2.2.2 ∧ MatOk y.1 ∧ ∀ m ∈ y.2.2.1, MatOk m)
     (hz : Ext.OutsideBase y.2.2.2.2) :

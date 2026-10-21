@@ -31,8 +31,8 @@ theorem word_encode (a : Array F) (i : Nat) (hs : (encode a).size < USize.size)
 
 /-- A witness check permutes the state overwritten by the input and the witness, and tests
 coordinate 15; with `bits = 0` both accept. -/
-theorem checkWitness_fst [Mont32BaseField p] (D : Duplex F 24) (hr : D.rate = 16) (c : Challenger F
-    24)
+theorem checkWitness_fst [Mont32BaseField p] (D : Duplex F 24) (hr : D.rate = 16)
+    (c : Challenger F 24)
     (bits : Nat) (w : F) :
     (Challenger.checkWitness D c bits w).1 =
       (D.canon (D.perm (Hash.overwrite c.state (c.input.push w).toList))[15] % 2 ^ bits == 0) := by
@@ -68,15 +68,15 @@ theorem firstFrom_add (P : Nat → Bool) (a b : Nat) : ∀ n,
     · rfl
     · rw [Nat.add_right_comm, Nat.add_assoc]
 
-theorem firstFrom_congr {P Q : Nat → Bool} : ∀ k n, (∀ m, n ≤ m → m < n + k → P m = Q m) →
-    firstFrom P k n = firstFrom Q k n
+theorem firstFrom_congr {P Q : Nat → Bool} : ∀ k n,
+    (∀ m, n ≤ m → m < n + k → P m = Q m) → firstFrom P k n = firstFrom Q k n
   | 0, _, _ => rfl
   | k + 1, n, h => by
     rw [firstFrom, firstFrom, h n (Nat.le_refl n) (by omega),
       firstFrom_congr k (n + 1) fun m h1 h2 ↦ h m (by omega) (by omega)]
 
-theorem firstFrom_none {P : Nat → Bool} : ∀ k n, (∀ m, n ≤ m → m < n + k → P m = false) →
-    firstFrom P k n = none
+theorem firstFrom_none {P : Nat → Bool} : ∀ k n,
+    (∀ m, n ≤ m → m < n + k → P m = false) → firstFrom P k n = none
   | 0, _, _ => rfl
   | k + 1, n, h => by
     rw [firstFrom, h n (Nat.le_refl n) (by omega), firstFrom_none k (n + 1) fun m h1 h2 ↦
@@ -99,8 +99,8 @@ theorem find?_range_map (P Q : Nat → Bool) : ∀ k n, (∀ l < k, Q l = P (n +
       rw [e2]
 
 /-- The specification's grinding is a search for the first passing candidate. -/
-theorem grindFrom_eq [Mont32BaseField p] (D : Duplex F 24) (c : Challenger F 24) (bits : Nat) : ∀
-    fuel n,
+theorem grindFrom_eq [Mont32BaseField p] (D : Duplex F 24) (c : Challenger F 24)
+    (bits : Nat) : ∀ fuel n,
     grindFrom D c bits fuel n =
       ((firstFrom (fun m ↦ (Challenger.checkWitness D c bits (m : F)).1) fuel n).map
         (fun m : Nat ↦ (m : F))).getD 0
@@ -184,8 +184,9 @@ theorem writes_encode (base : Vector F 24) (wi b : Nat) (hw : wi ≤ 24) : ∀ n
 
 /-- Lane `l` of the group of batch `b` is the state overwritten by the input and candidate
 `8 b + l`; a candidate past coordinate 23 is dropped on both sides. -/
-theorem lane_batchGroup [Mont32BaseField p] (c : Challenger F 24) (b l : Nat) (hl : l < 8) :
-    lane 24 (batchGroup (Hash.overwrite c.state c.input.toList) (min c.input.size 24) b 8) 0 l =
+theorem lane_batchGroup [Mont32BaseField p] (c : Challenger F 24) (b l : Nat)
+    (hl : l < 8) : lane 24
+        (batchGroup (Hash.overwrite c.state c.input.toList) (min c.input.size 24) b 8) 0 l =
       Hash.overwrite c.state (c.input.push ((8 * b + l : Nat) : F)).toList := by
   apply Vector.ext
   intro j hj

@@ -79,8 +79,8 @@ theorem dig_flat (ds : List (Vector F 8)) (k : Nat) : dig (flat ds) k = ds.getD 
 def parent (P : Array F) (i : Nat) : Vector F 8 :=
   Hash.Poseidon2.compress (FastField p) (dig P (2 * i)) (dig P (2 * i + 1))
 
-theorem compressRange_encode [PackedPoseidon2 p] (P : Array F) (n o0 count : Nat) (hP : P.size = 8
-    * n)
+theorem compressRange_encode [PackedPoseidon2 p] (P : Array F) (n o0 count : Nat)
+    (hP : P.size = 8 * n)
     (hu : 4 * P.size < USize.size) (huO : 4 * (8 * count) < USize.size) (hc : o0 + count ≤ n / 2) :
     compressRange p (encode P) n o0 count =
       encode (flat ((List.range count).map fun i ↦ parent P (o0 + i))) := by
@@ -126,8 +126,8 @@ theorem flat_append (a b : List (Vector F 8)) : flat (a ++ b) = flat a ++ flat b
   simp only [flat, List.flatMap_append, List.append_toArray]
 
 omit [Poseidon2Field (FastField p)] in
-theorem flat_replicate (m : Nat) : flat (p := p) (List.replicate m 0) = Array.replicate (8 * m) 0
-    := by
+theorem flat_replicate (m : Nat) : flat (p := p) (List.replicate m 0) = Array.replicate
+    (8 * m) 0 := by
   symm
   apply flat_eq _ _ (by rw [Array.size_replicate, List.length_replicate])
   intro i hi j hj
@@ -167,8 +167,8 @@ theorem foldl_tiles {α : Type*} (half size : Nat) (g : Nat → α) (m : Nat) :
       rw [hs, List.range_add, List.map_append, List.map_map,
         show min half (m * size) = m * size by omega]
       rfl
-    · rw [show half - min half (m * size) = 0 by omega, Nat.min_zero, List.range_zero, List.map_nil,
-        List.append_nil]
+    · rw [show half - min half
+        (m * size) = 0 by omega, Nat.min_zero, List.range_zero, List.map_nil, List.append_nil]
       rw [Nat.succ_mul]
       congr 2
       omega
@@ -380,8 +380,8 @@ theorem foldl_range_const {α : Type*} (g : α → α) (n : Nat) (x : α) :
 
 omit [Poseidon2Field (FastField p)] in
 theorem padDigests_flat (L : List (Vector F 8)) (padded : Nat) :
-    padDigests (encode (flat L)) L.length padded = encode (flat (CompStark.Merkle.padTo 0 padded
-        L)) := by
+    padDigests (encode (flat L)) L.length padded = encode
+        (flat (CompStark.Merkle.padTo 0 padded L)) := by
   rw [padDigests, zeroWords_fields (p := p), CompStark.Merkle.padTo, flat_append, flat_replicate,
     CompPoly.PackedRepr.encode_append]
 
@@ -454,8 +454,8 @@ theorem root_eq [PackedPoseidon2 p] (w : Nat) (hw : 0 < w) (cs : List (Array F))
     (hh : 0 < (cs.map (·.size / w)).sum)
     (hl : 32 * ((cs.map (·.size / w)).sum + 1) < USize.size) :
     root p w (cs.toArray.map encode) =
-      encode (CompStark.Merkle.Poseidon2.root (FastField p) [⟨w, (cs.map (·.size / w)).sum,
-          cs.toArray.flatten⟩]).toArray := by
+      encode (CompStark.Merkle.Poseidon2.root (FastField p)
+          [⟨w, (cs.map (·.size / w)).sum, cs.toArray.flatten⟩]).toArray := by
   generalize hH : (cs.map (·.size / w)).sum = H at hh hl
   unfold root
   rw [leaves_encode w hw cs hc hu, hH, flatMap_chunkLeaves w cs hc H, hH]

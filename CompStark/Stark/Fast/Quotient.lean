@@ -521,8 +521,8 @@ omit [Binomial4 p] in
 theorem tables_contiguous (d l b n0 : Nat)
     (h : (quotientTables (p := p) d l).contiguous.getD b none = some n0) :
     (quotientTables (p := p) d l).B ∣ n0 ∧ ∀ k < (quotientTables (p := p) d l).B,
-      (quotientTables (p := p) d l).next.getD (b * (quotientTables (p := p) d l).B + k) 0 = n0 + k
-          :=
+      (quotientTables (p := p) d l).next.getD
+          (b * (quotientTables (p := p) d l).B + k) 0 = n0 + k :=
   contiguous_spec _ _ _ b n0 h
 
 omit [Binomial4 p] in
@@ -533,12 +533,13 @@ theorem tables_next (d l j : Nat) (hj : j < 2 ^ (d + l)) :
 
 /-! ### The quotient law -/
 
-theorem getElem!_lit4 (a b c d : ByteArray) : #[a, b, c, d][0]! = a ∧ #[a, b, c, d][1]! = b ∧
-    #[a, b, c, d][2]! = c ∧ #[a, b, c, d][3]! = d := ⟨rfl, rfl, rfl, rfl⟩
+theorem getElem!_lit4
+    (a b c d : ByteArray) : #[a, b, c, d][0]! = a ∧ #[a, b, c, d][1]! = b ∧ #[a, b, c,
+        d][2]! = c ∧ #[a, b, c, d][3]! = d := ⟨rfl, rfl, rfl, rfl⟩
 
 omit [Mont32BaseField p] [Binomial4 p] in
-theorem word_encode_ofFn (B : Nat) (hB : 4 * B < USize.size) (X : Nat → F) (k : Nat) (hk : k < B) :
-    word (encode (Array.ofFn (n := B) fun i ↦ X i.val)) k = X k := by
+theorem word_encode_ofFn (B : Nat) (hB : 4 * B < USize.size) (X : Nat → F) (k : Nat)
+    (hk : k < B) : word (encode (Array.ofFn (n := B) fun i ↦ X i.val)) k = X k := by
   rw [word, Words.read_encode _ _ (by rw [Array.size_ofFn]; exact hB)
       (by rw [Array.size_ofFn]; exact hk),
     NTTFast.Packed.ofWord_val, NTTFast.Packed.getD_ofFn_bounded _ _ hk]
@@ -548,8 +549,8 @@ theorem quotientWith_rel (A : Air F) (pis : List F) (d l : Nat) (alpha : EF) {ex
     {s : Mat F}
     (h : RM ext s) (hs : MatOk s) (hh : 2 ^ (d + l) ≤ s.height)
     (hc : ∀ c ∈ A.constraints, c.colsBelow s.width) :
-    quotientWith (quotientTables (p := p) d l) A pis ext alpha = quotientOfLde A pis d l s alpha :=
-        by
+    quotientWith (quotientTables
+        (p := p) d l) A pis ext alpha = quotientOfLde A pis d l s alpha := by
   obtain ⟨hw, hhe, hv⟩ := h
   obtain ⟨-, -, hvs', hadd⟩ := hs
   have hus : 4 * s.values.size < USize.size := by
@@ -599,8 +600,8 @@ theorem quotientWith_rel (A : Air F) (pis : List F) (d l : Nat) (alpha : EF) {ex
     rw [hTB]
     by_cases h8 : e ≤ 8
     · rw [Nat.min_eq_left (le_trans (Nat.pow_le_pow_right (by decide) h8) (le_refl (2 ^ 8)))]
-    · rw [Nat.min_eq_right (le_trans (le_refl (2 ^ 8)) (Nat.pow_le_pow_right (by decide)
-        (by omega)))]
+    · rw [Nat.min_eq_right
+        (le_trans (le_refl (2 ^ 8)) (Nat.pow_le_pow_right (by decide) (by omega)))]
       exact Nat.pow_dvd_pow 2 (by omega)
   have hBn : B ∣ 2 ^ (d + l) := by rw [← hpe]; exact Dvd.dvd.mul_left hBR parts
   have hM : parts * 2 ^ e * s.width ≤ s.values.size := by
@@ -658,8 +659,8 @@ theorem quotientWith_rel (A : Air F) (pis : List F) (d l : Nat) (alpha : EF) {ex
       sel.getD ((bitRevPerm (d + l)).getD j 0) 0 =
         ((bitRevPerm (d + l)).map fun i ↦ sel.getD i 0).getD j 0 := by
     rw [getD_map_lt _ _ j (by rw [hsizeP]; exact hj) 0 0]
-  have hV : ∀ a ∈ weighted A alpha, evalWords (encode (colsOf s.values s.width parts (2 ^ e)))
-      s.width (2 ^ e) B T.next T.contiguous pis
+  have hV : ∀ a ∈ weighted A alpha, evalWords
+      (encode (colsOf s.values s.width parts (2 ^ e))) s.width (2 ^ e) B T.next T.contiguous pis
       (encode ((bitRevPerm (d + l)).map fun i ↦ (qFirst d l : Array F).getD i 0))
       (encode ((bitRevPerm (d + l)).map fun i ↦ (qLast d l : Array F).getD i 0))
       (encode ((bitRevPerm (d + l)).map fun i ↦ (qTrans d l : Array F).getD i 0)) (blk * B) a.1 =

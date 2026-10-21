@@ -117,8 +117,8 @@ def challenger : IO Unit := do
   let expected := [1315075128, 621498114, 1241469331, 965142788, 1213494102, 2071041246, 703, 123,
     1348157896]
   check "challenger" (challengerRun Poseidon2.initTranscript == expected)
-  check "fast challenger" (challengerRun (CompStark.KoalaBear.backendFor 0 0 0).transcript ==
-      expected)
+  check "fast challenger"
+      (challengerRun (CompStark.KoalaBear.backendFor 0 0 0).transcript == expected)
 
 /-- The Fibonacci trace of `n` rows from `(0, 1)` and its public values. -/
 def fibInstance (n : Nat) : Array F × List F :=
@@ -150,8 +150,8 @@ def tamper (proof : Proof F EF) : Proof F EF :=
 
 /-- The saved proof of `air` for parameters `logN logBlowup logFinal maxLogArity queries
 commitPow queryPow` verifies, is rejected when tampered, and both provers reproduce it. -/
-def proof (name : String) (A : Air F) (inst : Nat → Array F × List F) (ps : List Nat) : IO Unit :=
-    do
+def proof (name : String) (A : Air F) (inst : Nat → Array F × List F)
+    (ps : List Nat) : IO Unit := do
   let [logN, b, f, a, q, cp, qp] := ps | throw (IO.userError "seven parameters")
   let file := s!"{name}_{"_".intercalate (ps.map toString)}"
   let rust : Proof F EF ← IO.ofExcept (Json.parse (← IO.FS.readFile s!"tests/data/{file}.json"))
@@ -194,8 +194,8 @@ local notation "F" => _root_.BabyBear.Fast.Field
 local notation "EF" => _root_.BabyBear.Fast.Ext4
 
 /-- The fast prover reproduces Plonky3's saved BabyBear proof of `air`. -/
-def proof (name : String) (A : Air F) (inst : Nat → Array F × List F) (ps : List Nat) : IO Unit :=
-    do
+def proof (name : String) (A : Air F) (inst : Nat → Array F × List F)
+    (ps : List Nat) : IO Unit := do
   let [logN, b, f, a, q, cp, qp] := ps | throw (IO.userError "seven parameters")
   let file := s!"babybear_{name}_{"_".intercalate (ps.map toString)}"
   let rust : Proof F EF ← IO.ofExcept (Json.parse (← IO.FS.readFile s!"tests/data/{file}.json"))

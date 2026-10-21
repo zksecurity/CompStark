@@ -130,8 +130,8 @@ theorem readRow_rel {pm : PMat} {m : Mat F} (h : RM pm m) (r : Nat) :
     exact extract_getD _ _ _ _ h1
 
 omit [Mont32BaseField p] in
-theorem foldl_maxHeight {ms : List PMat} {ss : List (Mat F)} (h : List.Forall₂ RM ms ss) (a : Nat) :
-    ms.foldl (fun m x ↦ max m x.height) a = ss.foldl (fun m x ↦ max m x.height) a := by
+theorem foldl_maxHeight {ms : List PMat} {ss : List (Mat F)} (h : List.Forall₂ RM ms ss)
+    (a : Nat) : ms.foldl (fun m x ↦ max m x.height) a = ss.foldl (fun m x ↦ max m x.height) a := by
   induction h generalizing a with
   | nil => rfl
   | cons hr _ ih => rw [List.foldl_cons, List.foldl_cons, hr.2.1, ih]
@@ -154,8 +154,9 @@ theorem root_rel {c : Commit} {s : Committed F} (h : RC c s) : Commit.root (p :=
   have hs : c.layers.size = s.layers.size := by rw [h.2, Array.size_map]
   rw [Commit.root, Committed.root, hb, hb, layer_rel h, hs, readDigest_encodeDigests]
 
-theorem rows_rel (g : Nat → Nat) {ms : List PMat} {ss : List (Mat F)} (h : List.Forall₂ RM ms ss) :
-    ms.map (fun m ↦ Commit.readRow (p := p) m (g m.height)) = ss.map fun m ↦ rowOf m (g m.height)
+theorem rows_rel (g : Nat → Nat) {ms : List PMat} {ss : List (Mat F)}
+    (h : List.Forall₂ RM ms ss) : ms.map
+        (fun m ↦ Commit.readRow (p := p) m (g m.height)) = ss.map fun m ↦ rowOf m (g m.height)
         := by
   induction h with
   | nil => rfl
@@ -226,8 +227,8 @@ theorem length_nextLayer_le (L : List (Digest F)) (k : Nat) (h2 : 2 ≤ L.length
 
 omit [Mont32BaseField p] in
 /-- Fuel past `log₂` of the length adds no layers. -/
-theorem upper_stable (k : Nat) : ∀ (L : List (Digest F)), L.length ≤ 2 ^ k → ∀ a, k ≤ a →
-    upper a L = upper k L := by
+theorem upper_stable (k : Nat) : ∀
+    (L : List (Digest F)), L.length ≤ 2 ^ k → ∀ a, k ≤ a → upper a L = upper k L := by
   induction k with
   | zero =>
     intro L hL a _
@@ -246,8 +247,8 @@ theorem upper_stable (k : Nat) : ∀ (L : List (Digest F)), L.length ≤ 2 ^ k �
 
 omit [Mont32BaseField p] in
 /-- The packed layer loop builds the specification's layers. -/
-theorem upperPacked_encode [PackedPoseidon2 p] (fuel : Nat) : ∀ (L : List (Digest F)) (out : Array
-    ByteArray),
+theorem upperPacked_encode [PackedPoseidon2 p] (fuel : Nat) : ∀ (L : List (Digest F))
+    (out : Array ByteArray),
     32 * L.length < USize.size →
     upperPacked p (encode (flat L)) L.length out fuel =
       out ++ ((upper fuel L).tail.map fun l ↦ encode (flat l)).toArray := by
@@ -259,8 +260,8 @@ theorem upperPacked_encode [PackedPoseidon2 p] (fuel : Nat) : ∀ (L : List (Dig
     by_cases h1 : L.length ≤ 1
     · rw [ite_eq_left_of_eq_true _ _ (eq_true h1), ite_eq_left_of_eq_true _ _ (eq_true h1)]
       exact Array.append_empty.symm
-    · rw [ite_eq_right_of_eq_false _ _ (eq_false h1), ite_eq_right_of_eq_false _ _ (eq_false h1),
-        CompStark.Merkle.Packed.nextLayer_encode L (by omega)]
+    · rw [ite_eq_right_of_eq_false _ _ (eq_false h1), ite_eq_right_of_eq_false _ _
+        (eq_false h1), CompStark.Merkle.Packed.nextLayer_encode L (by omega)]
       dsimp only
       have hl := (length_nextLayer_le L L.length (by omega)
         (Nat.lt_two_pow_self.le.trans (Nat.pow_le_pow_right (by decide) (by omega)))).2
@@ -339,8 +340,8 @@ theorem sum_div_mul (W : Nat) (cs : List (Array F)) (hc : ∀ c ∈ cs, c.size %
 omit [Mont32BaseField p] in
 /-- The packed digest layers of a matrix are the specification's layers above its padded leaf
 digests. -/
-theorem packedLayers_encode [PackedPoseidon2 p] (W H : Nat) (V : Array F) (hV : V.size = H * W) (hW
-    : 0 < W)
+theorem packedLayers_encode [PackedPoseidon2 p] (W H : Nat) (V : Array F) (hV : V.size = H * W)
+    (hW : 0 < W)
     (hu : 32 * (H * W + 1) < USize.size) :
     packedLayers p W (encode V) = ((upper 64 (Merkle.padTo 0 (Merkle.padEven H)
       ((List.range H).map fun r ↦ hashF ((⟨W, H, V⟩ : Merkle.Matrix F).row r)))).map
@@ -480,8 +481,8 @@ omit [Mont32BaseField p] in
 theorem foldl_row (H r : Nat) (hr : r < H) {ms : List PMat} {ss : List (Mat F)}
     (h : List.Forall₂ RM ms ss)
     (hf : ∀ s ∈ ss, s.values.size = s.width * s.height ∧ s.height = H) (P : Array F) (z : Nat) :
-    ms.foldl (fun b m ↦ (m.words.copySlice (4 * r * m.width) b.1 (4 * b.2) (4 * m.width),
-        b.2 + m.width)) (encode (P ++ Array.replicate z 0), P.size) =
+    ms.foldl (fun b m ↦ (m.words.copySlice (4 * r * m.width) b.1 (4 * b.2)
+        (4 * m.width), b.2 + m.width)) (encode (P ++ Array.replicate z 0), P.size) =
       (encode (P ++ (rowcat ss r).toArray ++ Array.replicate (z - (ss.map Mat.width).sum) 0),
         P.size + (ss.map Mat.width).sum) := by
   induction h generalizing P z with
@@ -616,8 +617,8 @@ theorem takeWhile_all {α : Type*} (p : α → Bool) (l : List α) (h : ∀ x �
 
 omit [Mont32BaseField p] in
 /-- The specification's layers of matrices of one height. -/
-theorem layers_eq (H : Nat) (ss : List (Mat F)) (hne : ss ≠ []) (hH : ∀ s ∈ ss, s.height = H) :
-    Merkle.layers hashF compF (ss.map Mat.toMatrix) =
+theorem layers_eq (H : Nat) (ss : List (Mat F)) (hne : ss ≠ [])
+    (hH : ∀ s ∈ ss, s.height = H) : Merkle.layers hashF compF (ss.map Mat.toMatrix) =
       upper (Merkle.firstLayer hashF (ss.map Mat.toMatrix) H).length
         (Merkle.firstLayer hashF (ss.map Mat.toMatrix) H) := by
   have hall : ∀ x ∈ ss.map Mat.toMatrix, x.height = H := by
@@ -651,8 +652,8 @@ theorem map_encodeDigests (L : List (List (Digest F))) :
   rw [Function.comp_apply, encodeDigests_eq, List.toList_toArray]
 
 /-- The packed commitment of matrices of one height has the specification's layers. -/
-theorem packedLayers_eq [PackedPoseidon2 p] (H : Nat) {ms : List PMat} {ss : List (Mat F)} (h :
-    List.Forall₂ RM ms ss)
+theorem packedLayers_eq [PackedPoseidon2 p] (H : Nat) {ms : List PMat} {ss : List (Mat F)}
+    (h : List.Forall₂ RM ms ss)
     (hne : ms ≠ []) (hf : ∀ s ∈ ss, s.values.size = s.width * s.height ∧ s.height = H)
     (hW : 0 < (ss.map Mat.width).sum)
     (hu : 32 * (H * (ss.map Mat.width).sum + 1) < USize.size) :
@@ -692,8 +693,8 @@ theorem foldl_width_mat (ss : List (Mat F)) (a : Nat) :
   | cons m ss ih => rw [List.foldl_cons, ih, List.map_cons, List.sum_cons]; omega
 
 /-- The fast commitment represents the specification's. -/
-theorem commit_rel [PackedPoseidon2 p] {ms : List PMat} {ss : List (Mat F)} (h : List.Forall₂ RM ms
-    ss)
+theorem commit_rel [PackedPoseidon2 p] {ms : List PMat} {ss : List (Mat F)}
+    (h : List.Forall₂ RM ms ss)
     (hok : CommitOk ss) : RC (commit p ms) (Committed.ofMats hashF compF ss) := by
   obtain ⟨H, hne, hall, hu⟩ := hok
   refine ⟨h, ?_⟩

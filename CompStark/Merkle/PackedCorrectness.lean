@@ -78,8 +78,8 @@ theorem store8x8_encode (S O : Array F) (i : USize) (dst : Nat → Nat)
     store8x8 (encode S) i (encode O) (dst 0).toUSize (dst 1).toUSize (dst 2).toUSize (dst 3).toUSize
       (dst 4).toUSize (dst 5).toUSize (dst 6).toUSize (dst 7).toUSize hb g0 g1 g2 g3 g4 g5 g6 g7 =
       encode (storeModel S O i.toNat dst) := by
-  have hu (l : Nat) (hl : l < 8) : (dst l).toUSize.toNat = dst l := USize.toNat_ofNat_of_lt' (hdst
-      l hl)
+  have hu (l : Nat) (hl : l < 8) : (dst l).toUSize.toNat = dst l := USize.toNat_ofNat_of_lt'
+      (hdst l hl)
   have f0 := g0; have f1 := g1; have f2 := g2; have f3 := g3
   have f4 := g4; have f5 := g5; have f6 := g6; have f7 := g7
   simp only [Fits, size_encode_fields, hu 0 (by decide), hu 1 (by decide), hu 2 (by decide),
@@ -285,8 +285,9 @@ theorem absorbBlock_encode (M A : Array F) (w rows r0 blk : Nat) (hM : M.size = 
       by_cases hj16 : j < 16
       · rw [ite_eq_left_of_eq_true _ _ (eq_true (coords16_spec.mem j hj16)),
           ite_eq_left_of_eq_true _ _ (eq_true hj16)]
-      · rw [ite_eq_right_of_eq_false _ _ (eq_false fun h ↦ hj16 (coords16_spec.lt j h)),
-          ite_eq_right_of_eq_false _ _ (eq_false hj16)]
+      · rw [ite_eq_right_of_eq_false _ _
+          (eq_false fun h ↦ hj16 (coords16_spec.lt j h)), ite_eq_right_of_eq_false _ _
+              (eq_false hj16)]
   · obtain ⟨A', e, s, wl⟩ := scatterRows_encode M A w rows r0 blk (by rw [hM]) (by omega) hu
       (by rw [hA]; have := USize.le_size; omega)
     refine ⟨A', e, by rw [s, hA], fun l hl ↦ ?_⟩
@@ -317,8 +318,8 @@ theorem absorb_eq_foldl {α : Type*} {t : Nat} (perm : Vector α t → Vector α
       · rw [Nat.sub_eq_zero_of_le h, Nat.zero_add,
           Nat.div_eq_of_lt_le (k := 1) (by omega) (by omega),
           Nat.div_eq_of_lt (show r - 1 < r by omega)]
-      · rw [show xs.length + 1 + r - 1 = (xs.length + 1 - r + r - 1) + 1 * r by omega,
-          Nat.add_mul_div_right _ _ hr]
+      · rw [show xs.length + 1 + r - 1 =
+          (xs.length + 1 - r + r - 1) + 1 * r by omega, Nat.add_mul_div_right _ _ hr]
     rw [hn, List.range_succ_eq_map, List.foldl_cons, List.foldl_map, Nat.mul_zero, List.drop_zero]
     congr 1
     funext s b
@@ -352,25 +353,25 @@ theorem lane_zero (t : Nat) (W : Array F) (l : Nat) : lane t W 0 l = Group.lane 
 
 
 /-- The packed width-24 permutation of a group of eight states, state by state. -/
-theorem permute24_lanes [Poseidon2Field (FastField p)] [PackedPoseidon2 p] (A : Array F) (hA :
-    A.size = 192) :
+theorem permute24_lanes [Poseidon2Field (FastField p)] [PackedPoseidon2 p] (A : Array F)
+    (hA : A.size = 192) :
     ∃ A', PackedPoseidon2.permute24 p (encode A) = encode A' ∧ A'.size = 192 ∧
-      ∀ l < 8, lane 24 A' 0 l = permute ((Poseidon2Field.params24 : Params (FastField p) 24)) (lane
-          24 A 0 l) :=
+      ∀ l < 8, lane 24 A' 0 l = permute ((Poseidon2Field.params24 : Params (FastField p) 24))
+          (lane 24 A 0 l) :=
   ⟨_, PackedPoseidon2.permute24_encode A hA, Group.size_map .., fun l hl ↦ by
     rw [lane_zero, lane_zero, Group.lane_map _ _ _ _ hl]⟩
 
 /-- The packed width-16 permutation of a group of eight states, state by state. -/
-theorem permute16_lanes [Poseidon2Field (FastField p)] [PackedPoseidon2 p] (A : Array F) (hA :
-    A.size = 128) :
+theorem permute16_lanes [Poseidon2Field (FastField p)] [PackedPoseidon2 p] (A : Array F)
+    (hA : A.size = 128) :
     ∃ A', PackedPoseidon2.permute16 p (encode A) = encode A' ∧ A'.size = 128 ∧
-      ∀ l < 8, lane 16 A' 0 l = permute ((Poseidon2Field.params16 : Params (FastField p) 16)) (lane
-          16 A 0 l) :=
+      ∀ l < 8, lane 16 A' 0 l = permute ((Poseidon2Field.params16 : Params (FastField p) 16))
+          (lane 16 A 0 l) :=
   ⟨_, PackedPoseidon2.permute16_encode A hA, Group.size_map .., fun l hl ↦ by
     rw [lane_zero, lane_zero, Group.lane_map _ _ _ _ hl]⟩
 
-theorem absorbRows_encode [Poseidon2Field (FastField p)] [PackedPoseidon2 p] (M : Array F) (w rows
-    r0 : Nat) (hM : M.size = rows * w)
+theorem absorbRows_encode [Poseidon2Field (FastField p)] [PackedPoseidon2 p] (M : Array F)
+    (w rows r0 : Nat) (hM : M.size = rows * w)
     (hu : 4 * M.size < USize.size) :
     ∃ A, absorbRows p (encode M) w rows r0 = encode A ∧
       A.size = 192 ∧ ∀ l < 8, r0 + l < rows → lane 24 A 0 l =
@@ -413,8 +414,9 @@ theorem storeModel_spec (S O : Array F) (r0 : Nat) (hO : 8 * r0 + 64 ≤ O.size)
     (storeModel S O 0 fun l ↦ 8 * (r0 + l)).size = O.size ∧ ∀ k,
     (storeModel S O 0 fun l ↦ 8 * (r0 + l)).getD k 0 =
       if 8 * r0 ≤ k ∧ k < 8 * r0 + 64 then word S 0 (k % 8) (k / 8 - r0) else O.getD k 0 := by
-  have key : ∀ L ≤ 8, ((List.range L).foldl (fun A l ↦ CompPoly.CPolynomial.NTTFast.Packed.splice
-      A (8 * (r0 + l)) (lit8 fun j ↦ word S 0 j l)) O).size = O.size ∧
+  have key : ∀ L ≤ 8, ((List.range L).foldl
+      (fun A l ↦ CompPoly.CPolynomial.NTTFast.Packed.splice A (8 * (r0 + l))
+          (lit8 fun j ↦ word S 0 j l)) O).size = O.size ∧
       ∀ k, ((List.range L).foldl (fun A l ↦ CompPoly.CPolynomial.NTTFast.Packed.splice
         A (8 * (r0 + l)) (lit8 fun j ↦ word S 0 j l)) O).getD k 0 =
         if 8 * r0 ≤ k ∧ k < 8 * r0 + 8 * L then word S 0 (k % 8) (k / 8 - r0) else O.getD k 0 := by
@@ -453,8 +455,9 @@ theorem storeModel_spec (S O : Array F) (r0 : Nat) (hO : 8 * r0 + 64 ≤ O.size)
 theorem writes_digest (S X : Array F) (hS : 64 ≤ S.size) (hSu : 4 * S.size < USize.size)
     (l d : Nat) (hl : l < 8)
     (hX : 8 * d + 8 ≤ X.size) (hu : 4 * X.size < USize.size) : ∀ J ≤ 8,
-    ∃ X', (List.range J).foldl (fun b j ↦ CompPoly.CPolynomial.NTTFast.Packed.Native.write b
-        (8 * d + j) (CompPoly.CPolynomial.NTTFast.Packed.Native.read (encode S) (8 * j + l)))
+    ∃ X', (List.range J).foldl
+        (fun b j ↦ CompPoly.CPolynomial.NTTFast.Packed.Native.write b (8 * d + j)
+            (CompPoly.CPolynomial.NTTFast.Packed.Native.read (encode S) (8 * j + l)))
         (encode X) = encode X' ∧ X'.size = X.size ∧
       ∀ k, X'.getD k 0 = if 8 * d ≤ k ∧ k < 8 * d + J then word S 0 (k % 8) l else X.getD k 0 := by
   intro J hJ
@@ -536,17 +539,17 @@ theorem storeRows_encode (S O : Array F) (rows r0 : Nat) (hS : 64 ≤ S.size)
     obtain ⟨O', e, s, g⟩ := key 8 le_rfl
     exact ⟨O', e, s, g⟩
 
-theorem getElem_hash [Poseidon2Field (FastField p)] [PackedPoseidon2 p] (xs : List F) (j : Nat) (hj
-    : j < 8) :
+theorem getElem_hash [Poseidon2Field (FastField p)] [PackedPoseidon2 p] (xs : List F) (j : Nat)
+    (hj : j < 8) :
     (Hash.Poseidon2.hash (FastField p) xs)[j] =
-      (CompStark.Hash.absorb (permute ((Poseidon2Field.params24 : Params (FastField p) 24))) 16 (by
-          decide)
+      (CompStark.Hash.absorb (permute ((Poseidon2Field.params24 : Params (FastField p) 24))) 16
+          (by decide)
         (Vector.replicate 24 0) xs)[j] := by
   simp only [Hash.Poseidon2.hash_eq, CompStark.Hash.sponge, Vector.getElem_cast,
     Vector.getElem_take]
 
-theorem hashChunk_encode [Poseidon2Field (FastField p)] [PackedPoseidon2 p] (M : Array F) (w rows :
-    Nat) (hM : M.size = rows * w)
+theorem hashChunk_encode [Poseidon2Field (FastField p)] [PackedPoseidon2 p] (M : Array F)
+    (w rows : Nat) (hM : M.size = rows * w)
     (hu : 4 * M.size < USize.size) (ho : 4 * (8 * rows) < USize.size) :
     ∃ D, hashChunk p (encode M) w rows = encode D ∧
       D.size = 8 * rows ∧ ∀ r < rows, ∀ j (hj : j < 8), D.getD (8 * r + j) 0 =
@@ -617,16 +620,16 @@ theorem loadPairs_encode (P : Array F) (n o : Nat) (hP : P.size = 8 * n)
       rw [Array.size_replicate]
     refine ⟨_, load16x16_encode P _ (fun l ↦ (o + l) * 16 + 16 * 0) hqu 0 _ _ _ _ _ _ _ _ _,
       ?_, fun l hl _ ↦ ?_⟩
-    · rw [USize.toNat_zero, loadModel, spliceRows, (foldl_splice_rows 16 _ 0 coords16 hL _ hW).1,
-        Array.size_replicate]
+    · rw [USize.toNat_zero, loadModel, spliceRows,
+        (foldl_splice_rows 16 _ 0 coords16 hL _ hW).1, Array.size_replicate]
     · ext j hj
       simp only [lane, Vector.getElem_ofFn, USize.toNat_zero]
       rw [word, loadModel, spliceRows, (foldl_splice_rows 16 _ 0 coords16 hL _ hW).2.1 j hj l hl,
         ite_eq_left_of_eq_true _ _ (eq_true (coords16_spec.mem j hj))]
       congr 1
       omega
-  · obtain ⟨S, e, s, wl⟩ := scatterRows_encode P (Array.replicate 128 0) 16 (n / 2) o 0
-      (by omega) (by rw [Array.size_replicate]) hu (by rw [Array.size_replicate]; exact h128)
+  · obtain ⟨S, e, s, wl⟩ := scatterRows_encode P (Array.replicate 128 0) 16 (n / 2) o 0 (by omega)
+      (by rw [Array.size_replicate]) hu (by rw [Array.size_replicate]; exact h128)
     refine ⟨S, e, by rw [s, Array.size_replicate], fun l hl hr ↦ ?_⟩
     ext j hj
     simp only [lane, Vector.getElem_ofFn]
@@ -649,8 +652,8 @@ theorem overwrite_pair (P : Array F) (i : Nat) :
       Option.getD_some]
     congr 1; omega
 
-theorem compress8_encode [Poseidon2Field (FastField p)] [PackedPoseidon2 p] (P O : Array F) (n o o0
-    count : Nat) (hP : P.size = 8 * n)
+theorem compress8_encode [Poseidon2Field (FastField p)] [PackedPoseidon2 p] (P O : Array F)
+    (n o o0 count : Nat) (hP : P.size = 8 * n)
     (hu : 4 * P.size < USize.size) (hO : O.size = 8 * count) (huO : 4 * O.size < USize.size)
     (ho : o0 ≤ o) (hc : o0 + count ≤ n / 2) :
     ∃ O', compress8 p (encode P) n o o0 count (encode O) =

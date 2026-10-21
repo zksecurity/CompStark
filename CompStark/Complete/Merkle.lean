@@ -36,8 +36,9 @@ local notation "compF" => CompStark.Hash.Poseidon2.compress F
 
 omit [BaseField F] in
 /-- A running maximum from at most `h` over matrices of height `h` is `h`. -/
-theorem foldl_max_height (ms : List (Mat F)) (h : Nat) (hms : ∀ m ∈ ms, m.height = h) :
-    ∀ acc, acc ≤ h → ms ≠ [] → ms.foldl (fun m a ↦ max m a.height) acc = h := by
+theorem foldl_max_height (ms : List (Mat F)) (h : Nat)
+    (hms : ∀ m ∈ ms, m.height = h) : ∀ acc, acc ≤ h → ms ≠ [] → ms.foldl
+        (fun m a ↦ max m a.height) acc = h := by
   induction ms with
   | nil => intro _ _ hne; exact absurd rfl hne
   | cons a t ih =>
@@ -79,8 +80,8 @@ theorem root_ofMats [Poseidon2Field F] (ms : List (Mat F)) :
       List.getElem?_toArray, List.getD_eq_getElem?_getD]
 
 /-- The opening's rows of matrices of one height `2 ^ k` are their rows at the index. -/
-theorem openAt_values [Poseidon2Field F] (ms : List (Mat F)) (k : Nat) (hms : ∀ m ∈ ms,
-    m.height = 2 ^ k) (i : Nat) :
+theorem openAt_values [Poseidon2Field F] (ms : List (Mat F)) (k : Nat)
+    (hms : ∀ m ∈ ms, m.height = 2 ^ k) (i : Nat) :
     ((Committed.ofMats hashF compF ms).openAt i).values = (ms.map fun m ↦ rowOf m i).toArray := by
   simp only [Committed.openAt]
   congr 1
@@ -148,8 +149,8 @@ theorem checkOpening_eq [Poseidon2Field F] (commit : Digest F) (heights : List N
     checkOpening (poseidon2 F) commit heights index values path =
       pure (Merkle.Poseidon2.verifyBatch F commit heights index values path) := by
   unfold checkOpening
-  rw [show Merkle.verifyBatchM (poseidon2 F).hash (poseidon2 F).compress commit heights index values
-      path
+  rw [show Merkle.verifyBatchM (poseidon2 F).hash
+      (poseidon2 F).compress commit heights index values path
     = (pure (Merkle.Poseidon2.verifyBatch F commit heights index values path) : Id Bool) from
     Merkle.verifyBatchM_pure _ _ _ _ _ _ _]
   rfl

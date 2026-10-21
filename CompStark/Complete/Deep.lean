@@ -57,8 +57,8 @@ theorem toSpec_pow (x : EF) (n : Nat) :
       rw [Ext.pow]
       have h := Nat.div_add_mod (k + 1) 2
       split_ifs with hp
-      · rw [Challenge.toSpec_mul, ih _ (by omega), Challenge.toSpec_mul, ← sq, ← pow_mul,
-          ← pow_succ']
+      · rw [Challenge.toSpec_mul, ih _
+          (by omega), Challenge.toSpec_mul, ← sq, ← pow_mul, ← pow_succ']
         exact congrArg (Challenge.toSpec x ^ ·) (by omega)
       · rw [ih _ (by omega), Challenge.toSpec_mul, ← sq, ← pow_mul]
         exact congrArg (Challenge.toSpec x ^ ·) (by omega)
@@ -80,8 +80,8 @@ theorem powers_getD (alpha : EF) (w i : Nat) (hi : i < w) :
   CompPoly.CPolynomial.NTTFast.Packed.getD_ofFn_bounded _ _ hi _
 
 /-- A point's term at a row, through `toSpec`: `∑ᵢ α ^ (cnt + i) (yᵢ - vᵢ) / (z - x)`. -/
-theorem toSpec_termStep (alpha z acc : EF) (V : Array F) (ys : Array EF) (w r cnt : Nat) (x : F) :
-    Challenge.toSpec (termStep (crow V (powers alpha w) w r) x acc
+theorem toSpec_termStep (alpha z acc : EF) (V : Array F) (ys : Array EF) (w r cnt : Nat)
+    (x : F) : Challenge.toSpec (termStep (crow V (powers alpha w) w r) x acc
       (z, yzOf (powers alpha w) w ys, Ext.pow alpha cnt)) =
       Challenge.toSpec acc + ∑ i ∈ Finset.range w, Challenge.toSpec alpha ^ (cnt + i) *
         (Challenge.toSpec (ys.getD i 0) - ι ((V.getD (r * w + i) 0))) *
@@ -168,8 +168,8 @@ theorem degree_pointPoly (a z g : K) (cnt n : Nat) (ps : List F[X])
 
 /-- One point of a matrix of width `w` at a row with batched value `comp` and point `x`: the count
 of columns so far and the running sum. -/
-def ptStep (alpha : EF) (w : Nat) (comp : EF) (x : F) (s : Nat × EF) (p : EF × Array EF) :
-    Nat × EF :=
+def ptStep (alpha : EF) (w : Nat) (comp : EF) (x : F) (s : Nat × EF)
+    (p : EF × Array EF) : Nat × EF :=
   (s.1 + w, termStep comp x s.2 (p.1, yzOf (powers alpha w) w p.2, Ext.pow alpha s.1))
 
 theorem foldl_ptStep (alpha : EF) (w : Nat) (comp : EF) (x : F) :
@@ -505,8 +505,8 @@ theorem forIn_map_eq {m : Type → Type} [Monad m] [LawfulMonad m] {α β γ δ 
 
 /-- The verifier's column loop through `toSpec`: the running power of `α` and the sum
 `∑ᵢ ap αⁱ (yᵢ - vᵢ) q`. -/
-theorem toSpec_foldl_column (alpha q : EF) (ys : Nat → EF) (vs : Nat → F) (ap acc : EF) (w : Nat) :
-    let r := (List.range w).foldl (fun s i ↦ (s.1 * alpha,
+theorem toSpec_foldl_column (alpha q : EF) (ys : Nat → EF) (vs : Nat → F) (ap acc : EF)
+    (w : Nat) : let r := (List.range w).foldl (fun s i ↦ (s.1 * alpha,
       s.2 + s.1 * (ys i - Ext.ofBase (vs i)) * q)) (ap, acc)
     Challenge.toSpec r.1 = Challenge.toSpec ap * Challenge.toSpec alpha ^ w ∧
       Challenge.toSpec r.2 = Challenge.toSpec acc + ∑ i ∈ Finset.range w, Challenge.toSpec ap *
@@ -542,15 +542,15 @@ theorem lookup_atQuery (alpha : EF) (logMax index h : Nat) :
       simp only [hb]
       exact lookup_atQuery alpha logMax index h red
 
-theorem shiftRight_lt {index logMax h : Nat} (hidx : index < 2 ^ logMax) (hh : h ≤ logMax) :
-    index >>> (logMax - h) < 2 ^ h := by
+theorem shiftRight_lt {index logMax h : Nat} (hidx : index < 2 ^ logMax)
+    (hh : h ≤ logMax) : index >>> (logMax - h) < 2 ^ h := by
   rw [Nat.shiftRight_eq_div_pow, Nat.div_lt_iff_lt_mul (Nat.two_pow_pos _), ← Nat.pow_add,
     Nat.add_sub_cancel' hh]
   exact hidx
 
 /-- At the blowup height the polynomials are constants: the batched quotient vanishes. -/
-theorem blowup_zero {b : Nat} {red : List (Nat × Nat × Array EF)} (hred : RedOk b red)
-    (alpha : EF) (logMax index : Nat) (hidx : index < 2 ^ logMax) (hb : b ≤ logMax)
+theorem blowup_zero {b : Nat} {red : List (Nat × Nat × Array EF)} (hred : RedOk b red) (alpha : EF)
+    (logMax index : Nat) (hidx : index < 2 ^ logMax) (hb : b ≤ logMax)
     {v : EF × EF} (hl : (atQuery alpha logMax index red).lookup b = some v) : v.2 = 0 := by
   rw [lookup_atQuery] at hl
   obtain ⟨u, hu, rfl⟩ := Option.map_eq_some_iff.mp hl
@@ -563,8 +563,9 @@ theorem blowup_zero {b : Nat} {red : List (Nat × Nat × Array EF)} (hred : RedO
 /-- The verifier's state for a point count and running sum. -/
 def powPair (alpha : EF) (s : Nat × EF) : EF × EF := (Ext.pow alpha s.1, s.2)
 
-theorem zip_toList (a : Array F) (b : Array EF) (w : Nat) (ha : a.size = w) (hb : b.size = w) :
-    a.toList.zip b.toList = (List.range w).map fun j ↦ (a.getD j 0, b.getD j 0) := by
+theorem zip_toList (a : Array F) (b : Array EF) (w : Nat) (ha : a.size = w)
+    (hb : b.size = w) : a.toList.zip b.toList = (List.range w).map fun j ↦
+        (a.getD j 0, b.getD j 0) := by
   apply List.ext_getElem
   · simp only [List.length_zip, Array.length_toList, ha, hb, Nat.min_self, List.length_map,
       List.length_range]

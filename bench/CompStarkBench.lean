@@ -184,8 +184,8 @@ def main (args : List String) : IO UInt32 := do
       enc (Array.ofFn (n := rowsPer * w) fun k ↦ entry (c * rowsPer * w + k.val))
     let rootWords := CompStark.Merkle.Packed.root KoalaBear.fieldSize w chunks
     let canon := (List.range 8).map fun j ↦
-      (KoalaBear.Fast.ringEquiv (CompPoly.CPolynomial.NTTFast.Packed.ofWord _ (read rootWords
-          j))).val
+      (KoalaBear.Fast.ringEquiv
+          (CompPoly.CPolynomial.NTTFast.Packed.ofWord _ (read rootWords j))).val
     IO.println s!"root {canon}"
     let m ← timeMedian 15 fun k ↦
       let input := chunks.modify 0 fun c ↦ write c 0 k.toUInt32

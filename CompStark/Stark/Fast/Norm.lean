@@ -128,8 +128,8 @@ def cubic (z : EF) (x : F) : EF :=
     (e1 z).c2 * x ^ 2 - (e2 z).c2 * x + (e3 z).c2,
     (e1 z).c3 * x ^ 2 - (e2 z).c3 * x + (e3 z).c3⟩
 
-theorem mul_cubic (hζ : 2 ≤ BaseField.twoAdicity (FastField p)) (z : EF) (x : F) : (z - Ext4.ofBase
-    x) * cubic z x = Ext4.ofBase (norm z x) := by
+theorem mul_cubic (hζ : 2 ≤ BaseField.twoAdicity (FastField p)) (z : EF) (x : F) :
+    (z - Ext4.ofBase x) * cubic z x = Ext4.ofBase (norm z x) := by
   obtain ⟨z0, z1, z2, z3⟩ := z
   apply ext <;>
     simp only [mul_c0, mul_c1, mul_c2, mul_c3, add_c0, add_c1, add_c2, add_c3, sub_c0, sub_c1,
@@ -161,8 +161,8 @@ theorem toSpec_ne_zero {a : EF} (h : a ≠ 0) : Ext4.toSpec a ≠ 0 := fun h' �
   h (Ext4.toSpec_injective (h'.trans Ext4.toSpec_zero.symm))
 
 /-- For `z` outside the base field, the norm of `z - x` is not zero. -/
-theorem norm_ne_zero (hζ : 2 ≤ BaseField.twoAdicity (FastField p)) {z : EF} (hz : z.c1 ≠ 0 ∨ z.c2 ≠
-    0 ∨ z.c3 ≠ 0) (x : F) : norm z x ≠ 0 := by
+theorem norm_ne_zero (hζ : 2 ≤ BaseField.twoAdicity (FastField p)) {z : EF}
+    (hz : z.c1 ≠ 0 ∨ z.c2 ≠ 0 ∨ z.c3 ≠ 0) (x : F) : norm z x ≠ 0 := by
   have hconj (k : Nat) (hk : k = 0 ∨ k = 1 ∨ k = 2 ∨ k = 3) : conj z k - Ext4.ofBase x ≠ 0 := by
     intro h0
     have h1 := congrArg Ext4.c1 h0
@@ -210,8 +210,8 @@ theorem smul_eq_ofBase_mul (x : F) (a : EF) : Ext4.smul x a = Ext4.ofBase x * a 
 
 /-- **The norm trick.** For `z` outside the base field, `1 / (z - x)` is the cubic over the
 norm. -/
-theorem inv_eq (hζ : 2 ≤ BaseField.twoAdicity (FastField p)) {z : EF} (hz : z.c1 ≠ 0 ∨ z.c2 ≠ 0 ∨
-    z.c3 ≠ 0) (x : F) :
+theorem inv_eq (hζ : 2 ≤ BaseField.twoAdicity (FastField p)) {z : EF}
+    (hz : z.c1 ≠ 0 ∨ z.c2 ≠ 0 ∨ z.c3 ≠ 0) (x : F) :
     (z - Ext4.ofBase x)⁻¹ = Ext4.smul (norm z x)⁻¹ (cubic z x) := by
   have hN := norm_ne_zero hζ hz x
   have hinv : Ext4.ofBase (norm z x) * Ext4.ofBase (norm z x)⁻¹ = 1 := by

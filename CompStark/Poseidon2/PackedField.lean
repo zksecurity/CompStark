@@ -13,8 +13,8 @@ A group of eight states of width `t` holds coordinate `j` of state `l` at word `
 (`Group.lane`). `PackedPoseidon2 p` gives permutations of whole groups of packed words for
 Plonky3's Poseidon2 instances over `FastField p` (`Poseidon2Field`), which permute every state by
 the specification (`permute16_encode`, `permute24_encode`). They are the fast prover's leaf hashes,
-compressions and grinding. KoalaBear's are its vectorized kernels; every other field has the
-instance state by state on its `Poseidon2Field` implementations (`PackedPoseidon2.ofLanes`).
+compressions and grinding. A field with vectorized kernels gives those; any field has them state
+by state on its `Poseidon2Field` implementations (`PackedPoseidon2.ofLanes`).
 -/
 
 @[expose] public section
@@ -39,8 +39,8 @@ def map (t : Nat) (f : Vector F t → Vector F t) (W : Array F) : Array F :=
   Array.size_ofFn
 
 /-- State `l < 8` of a mapped group is the image of state `l`. -/
-theorem lane_map (t : Nat) (f : Vector F t → Vector F t) (W : Array F) (l : Nat) (hl : l < 8) :
-    lane t (map t f W) l = f (lane t W l) := by
+theorem lane_map (t : Nat) (f : Vector F t → Vector F t) (W : Array F) (l : Nat)
+    (hl : l < 8) : lane t (map t f W) l = f (lane t W l) := by
   apply Vector.ext
   intro j hj
   have e1 : (8 * j + l) / 8 = j := by omega
@@ -71,10 +71,10 @@ class PackedPoseidon2 where
   permute16 b := encode (Group.map 16 (Poseidon2Field.perm16 (F := FastField p)).perm (decode b))
   permute24 b := encode (Group.map 24 (Poseidon2Field.perm24 (F := FastField p)).perm (decode b))
   permute16_encode W _ := by
-    rw [CompPoly.PackedRepr.decode_encode, funext (Poseidon2Field.perm16 (F := FastField
-        p)).perm_eq]
+    rw [CompPoly.PackedRepr.decode_encode, funext
+        (Poseidon2Field.perm16 (F := FastField p)).perm_eq]
   permute24_encode W _ := by
-    rw [CompPoly.PackedRepr.decode_encode, funext (Poseidon2Field.perm24 (F := FastField
-        p)).perm_eq]
+    rw [CompPoly.PackedRepr.decode_encode, funext
+        (Poseidon2Field.perm24 (F := FastField p)).perm_eq]
 
 end CompStark.Poseidon2

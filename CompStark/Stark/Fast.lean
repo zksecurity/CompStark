@@ -57,8 +57,8 @@ def word (b : ByteArray) (i : Nat) : F :=
 
 /-- The first passing candidate of batch `b`, `8 b, …, 8 b + 7`: `group` holds eight copies of the
 duplexed state as a packed group, and the candidates go into coordinate `wi`. -/
-def grindBatch (p : ℕ) [Mont32Field p] [Poseidon2Field (FastField p)] [PackedPoseidon2 p] (group :
-    @& ByteArray)
+def grindBatch (p : ℕ) [Mont32Field p] [Poseidon2Field (FastField p)] [PackedPoseidon2 p]
+    (group : @& ByteArray)
     (wi bits b : Nat) : Option Nat :=
   let W := (List.range 8).foldl (fun W l ↦ CompPoly.CPolynomial.NTTFast.Packed.Native.write W
     (8 * wi + l) ((8 * b + l : Nat) : FastField p).val)
@@ -68,8 +68,8 @@ def grindBatch (p : ℕ) [Mont32Field p] [Poseidon2Field (FastField p)] [PackedP
     FastField.toNat (word (p := p) out (8 * 15 + l)) % 2 ^ bits == 0).map (8 * b + ·)
 
 /-- The first passing candidate of the `nb` batches from `b`, if any. -/
-def grindRange (p : ℕ) [Mont32Field p] [Poseidon2Field (FastField p)] [PackedPoseidon2 p] (group :
-    @& ByteArray)
+def grindRange (p : ℕ) [Mont32Field p] [Poseidon2Field (FastField p)] [PackedPoseidon2 p]
+    (group : @& ByteArray)
     (wi bits : Nat) : Nat → Nat → Option Nat
   | 0, _ => none
   | nb + 1, b =>
@@ -79,8 +79,8 @@ def grindRange (p : ℕ) [Mont32Field p] [Poseidon2Field (FastField p)] [PackedP
 
 /-- The smallest passing candidate from wave `wave` on: each wave splits 1024 batches of eight
 candidates among 16 tasks, and the first wave with a passing candidate has the smallest. -/
-def grindWaves (p : ℕ) [Mont32Field p] [Poseidon2Field (FastField p)] [PackedPoseidon2 p] (group :
-    ByteArray) (wi bits : Nat) :
+def grindWaves (p : ℕ) [Mont32Field p] [Poseidon2Field (FastField p)] [PackedPoseidon2 p]
+    (group : ByteArray) (wi bits : Nat) :
     Nat → Nat → FastField p
   | 0, _ => 0
   | fuel + 1, wave =>
@@ -93,16 +93,16 @@ def grindWaves (p : ℕ) [Mont32Field p] [Poseidon2Field (FastField p)] [PackedP
 /-- The smallest grinding witness for `bits`, eight candidates per packed permutation as Plonky3
 grinds, in parallel waves. With a full state the candidates go to coordinate 24, past the group,
 and are dropped as `Hash.overwrite` drops them. -/
-def grind [Poseidon2Field (FastField p)] [PackedPoseidon2 p] (c : Challenger F 24) (bits : Nat) : F
-    :=
+def grind [Poseidon2Field (FastField p)] [PackedPoseidon2 p] (c : Challenger F 24)
+    (bits : Nat) : F :=
   let base := Hash.overwrite c.state c.input.toList
   let group := CompPoly.CPolynomial.NTTFast.Packed.Native.encodeFields
     (Array.ofFn (n := 192) fun k ↦ base.toArray.getD (k / 8) 0)
   grindWaves p group (min c.input.size 24) bits (p / 8192 + 1) 0
 
 /-- The fast transcript. -/
-def transcript [Mont32BaseField p] [Poseidon2Field (FastField p)] [PackedPoseidon2 p] :
-    Transcript F 24 :=
+def transcript [Mont32BaseField p] [Poseidon2Field (FastField p)]
+    [PackedPoseidon2 p] : Transcript F 24 :=
   Transcript.initWith Poseidon2.duplex grind
 
 /-- The domain of order `2 ^ k` of the base field, `k ≤ twoAdicity`. -/
@@ -142,16 +142,16 @@ def lde [Mont32BaseField p] [PackedCosetLde p] (logH bits : Nat) (shift : F) (w 
 
 /-- The extension plans of a proof of a `2 ^ logN`-row trace and `2 ^ logChunks` quotient chunks:
 the trace's extension on `g · ⟨ω_N⟩` and every chunk's. -/
-def ldePlans [Mont32BaseField p] (logN logBlowup logChunks : Nat) : List (Nat × Nat × F × LdePlan
-    p) :=
+def ldePlans [Mont32BaseField p] (logN logBlowup logChunks : Nat) : List
+    (Nat × Nat × F × LdePlan p) :=
   let qlog := logN + logChunks
   let shifts : List F := gen :: (List.range (2 ^ logChunks)).map fun c ↦
     gen * (gen * powF (twoAdicGen qlog) c)⁻¹
   shifts.filterMap fun s ↦ (plan? logN logBlowup s).map fun P ↦ (logN, logBlowup, s, P)
 
 /-- `out` followed by at most `fuel` layers above `layer` of `n` digests, up to the root. -/
-def upperPacked (p : ℕ) [Mont32Field p] [Poseidon2Field (FastField p)] [PackedPoseidon2 p] (layer :
-    ByteArray) (n : Nat)
+def upperPacked (p : ℕ) [Mont32Field p] [Poseidon2Field (FastField p)] [PackedPoseidon2 p]
+    (layer : ByteArray) (n : Nat)
     (out : Array ByteArray) : Nat → Array ByteArray
   | 0 => out
   | fuel + 1 =>
@@ -161,8 +161,8 @@ def upperPacked (p : ℕ) [Mont32Field p] [Poseidon2Field (FastField p)] [Packed
 
 /-- The packed digest layers of the Merkle tree of one matrix of width `w` given as one chunk of
 rows. -/
-def packedLayers (p : ℕ) [Mont32Field p] [Poseidon2Field (FastField p)] [PackedPoseidon2 p] (w :
-    Nat) (m : ByteArray) :
+def packedLayers (p : ℕ) [Mont32Field p] [Poseidon2Field (FastField p)] [PackedPoseidon2 p]
+    (w : Nat) (m : ByteArray) :
     Array ByteArray :=
   let h := if w = 0 then 0 else m.size / (4 * w)
   let parts := if h < 1024 then 1 else 16
@@ -199,8 +199,8 @@ structure Commit where
 
 /-- Commit to packed matrices of one height: the packed Merkle commitment on their rows side by
 side. -/
-def commit (p : ℕ) [Mont32Field p] [Poseidon2Field (FastField p)] [PackedPoseidon2 p] (ms : List
-    PMat) : Commit :=
+def commit (p : ℕ) [Mont32Field p] [Poseidon2Field (FastField p)] [PackedPoseidon2 p]
+    (ms : List PMat) : Commit :=
   ⟨ms, match ms with
     | m :: _ => packedLayers p (ms.foldl (· + ·.width) 0) (sideBySide ms m.height)
     | [] => #[]⟩
@@ -396,13 +396,13 @@ def weightedColumns [Mont32BaseField p] [Binomial4 p] (m : @& ByteArray) (w : Na
 /-- `openedAt` on packed words, at all points of a matrix: the barycentric weights `x / (z - x)` in
 the stored bit-reversed row order, as planes by the norm, and the column sums over parallel row
 ranges, each range transposed once for all points. -/
-def openedAt [Mont32BaseField p] [Binomial4 p] (logBlowup : Nat) (m : PMat) (zs : List EF) :
-    List (Array EF) :=
+def openedAt [Mont32BaseField p] [Binomial4 p] (logBlowup : Nat) (m : PMat) (zs : List EF) : List
+    (Array EF) :=
   let logH := Nat.log2 m.height - logBlowup
   let h := 2 ^ logH
   let w := m.width
-  let xs := CompPoly.CPolynomial.NTTFast.Packed.Native.encodeFields (cosetPointsBitRev (gen : F)
-      logH)
+  let xs := CompPoly.CPolynomial.NTTFast.Packed.Native.encodeFields
+      (cosetPointsBitRev (gen : F) logH)
   let parts := if h < 4096 then 1 else 16
   let size := h / parts
   let tasks := (Array.range parts).map fun k ↦ Task.spawn fun _ ↦
@@ -477,8 +477,8 @@ def reduceRange [Mont32BaseField p] [Binomial4 p]
 
 /-- `Fri.reduce` on planes, every height in parallel row ranges: rows batched by word dot
 products, `1 / (z - x)` by the norm. -/
-def reduce [Mont32BaseField p] [Binomial4 p] (alpha : EF) (items : List (PMat × List (EF × Array
-    EF))) :
+def reduce [Mont32BaseField p] [Binomial4 p] (alpha : EF)
+    (items : List (PMat × List (EF × Array EF))) :
     List (Nat × EVec p) :=
   Id.run do
   -- Per height: the matrices with their points, opened sums and powers of `α`, in order.
@@ -497,8 +497,8 @@ def reduce [Mont32BaseField p] [Binomial4 p] (alpha : EF) (items : List (PMat ×
       groups.filter (·.1 != logH)
   let out := groups.map fun (logH, _, g) ↦
     let n := 2 ^ logH
-    let xs := CompPoly.CPolynomial.NTTFast.Packed.Native.encodeFields (cosetPointsBitRev (gen : F)
-        logH)
+    let xs := CompPoly.CPolynomial.NTTFast.Packed.Native.encodeFields
+        (cosetPointsBitRev (gen : F) logH)
     let parts := if n < 4096 then 1 else 16
     let size := n / parts
     let ts := (Array.range parts).map fun k ↦ Task.spawn fun _ ↦

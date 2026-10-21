@@ -18,8 +18,7 @@ The honest prover's openings pass the verifier's constraint check at `ζ`.
 Over the spec field, let `T_j` be the trace's column polynomials (`ldeRef_isLde`) and `C_c` the
 constraint `c` evaluated on them with the selector polynomials `Z_H(X) / (X - 1)`,
 `Z_H(X) / (X - ω⁻¹)` and `X - ω⁻¹` (`polyEnv`). `Air.ConstraintsVanish` says `C_c` vanishes on the
-    trace
-domain `H = ⟨ω⟩`, so `C_c = Z_H Q_c`, and `Air.DegreeFits` bounds `Q_c` below `k n`, `k` the
+trace domain `H = ⟨ω⟩`, so `C_c = Z_H Q_c`, and `Air.DegreeFits` bounds `Q_c` below `k n`, `k` the
 number of chunks (`quotientPoly`). The folded quotient `Q = ∑_c α^(K-1-c) Q_c` is a polynomial
 of degree below `k n`.
 
@@ -40,7 +39,7 @@ holds all two-adic roots of unity.
 
 @[expose] public section
 namespace CompStark.Stark
-open CompStark.Fri Polynomial Montgomery.Native32
+open CompStark.Fri Polynomial
 
 variable {F : Type} [BaseField F]
 variable {EF : Type} [Challenge F EF]
@@ -66,8 +65,8 @@ theorem isPowerOfTwo_two_pow : ∀ k, (2 ^ k).isPowerOfTwo
 
 omit [BaseField F] in
 /-- Plonky3's chunk count for a largest degree `d + 1`, `d = 2 ^ k`. -/
-theorem logQuotientChunks_of (A : Air F) (k : Nat) (h : max A.maxDegree 2 - 1 = 2 ^ k) :
-    A.logQuotientChunks = k := by
+theorem logQuotientChunks_of (A : Air F) (k : Nat)
+    (h : max A.maxDegree 2 - 1 = 2 ^ k) : A.logQuotientChunks = k := by
   rw [Air.logQuotientChunks]
   simp only [h]
   rw [Nat.nextPowerOfTwo_eq_self (isPowerOfTwo_two_pow k), Nat.log2_two_pow]
@@ -95,8 +94,8 @@ theorem cube_degreeFits (logN : Nat) : (cube : Air F).DegreeFits logN := by
 
 omit [BaseField F] in
 /-- The largest degree of a nonempty list of degree-3 constraints. -/
-theorem foldl_max_degree (a : Nat) : ∀ l : List (Expr F), (∀ c ∈ l, c.degree = 3) → l ≠ [] →
-    l.foldl (fun m c ↦ max m c.degree) a = max a 3
+theorem foldl_max_degree (a : Nat) : ∀ l : List (Expr F), (∀ c ∈ l, c.degree = 3) → l ≠
+    [] → l.foldl (fun m c ↦ max m c.degree) a = max a 3
   | [], _, h => absurd rfl h
   | [c], hl, _ => by rw [List.foldl_cons, List.foldl_nil, hl c List.mem_cons_self]
   | c :: d :: l, hl, _ => by
@@ -155,8 +154,8 @@ theorem eval_qFold (A : Air F) (logN : Nat) (T : Nat → K[X]) (pis : List F) (a
 section QuotientValues
 
 /-- An element of given coordinates in the spec field. -/
-theorem toSpec_ofCoeffs_sum (l : List F) : Challenge.toSpec (Challenge.ofCoeffs l : EF) =
-    ∑ e ∈ Finset.range (Challenge.d EF),
+theorem toSpec_ofCoeffs_sum (l : List F) : Challenge.toSpec
+    (Challenge.ofCoeffs l : EF) = ∑ e ∈ Finset.range (Challenge.d EF),
       CompPoly.Extension.Ext.gen ^ e * algebraMap K E ((l.getD e 0)) := by
   rw [Challenge.toSpec_eq_sum]
   refine Finset.sum_congr rfl fun e he ↦ ?_
@@ -171,8 +170,8 @@ theorem getD_map_range {α : Type} (f : Nat → α) (n e : Nat) (d : α) (he : e
     List.getElem_map, List.getElem_range]
 
 /-- The accumulated weighted constraints of a row as a sum in the spec field. -/
-theorem toSpec_rowAcc (ev : Expr F → F) : ∀ (cw : List (Expr F × List F)) (x : Nat → F),
-    Challenge.toSpec (Challenge.ofCoeffs
+theorem toSpec_rowAcc (ev : Expr F → F) : ∀ (cw : List (Expr F × List F))
+    (x : Nat → F), Challenge.toSpec (Challenge.ofCoeffs
       ((List.range (Challenge.d EF)).map fun j ↦ rowAcc cw ev j (x j)) : EF) =
       Challenge.toSpec (Challenge.ofCoeffs ((List.range (Challenge.d EF)).map x) : EF) +
         (cw.map fun a ↦ algebraMap K E ((ev a.1)) *
@@ -265,8 +264,8 @@ theorem qZh_ne (d l : Nat) (h : d + l ≤ twoAdicity F) : ∀ x ∈ @qZh F _ d l
   exact genPoint_pow_ne _ _ h d (by omega)
 
 /-- No quotient point is a two-adic root of unity `y`. -/
-theorem points_sub_ne (d l : Nat) (h : d + l ≤ twoAdicity F) (y : F) (j : Nat) (hj : j ≤ twoAdicity
-    F)
+theorem points_sub_ne (d l : Nat) (h : d + l ≤ twoAdicity F) (y : F) (j : Nat)
+    (hj : j ≤ twoAdicity F)
     (hy : y ^ 2 ^ j = 1) :
     ∀ x ∈ (@qPoints F _ d l).map (· - y), x ≠ 0 := by
   intro x hx
@@ -323,8 +322,8 @@ theorem getD_qTrans (d l r : Nat) (hr : r < 2 ^ (d + l)) :
     getD_qPoints d l r hr]
 
 /-- `a ^ (n mod m) = a ^ n` for `a ^ m = 1`. -/
-theorem pow_mod_of_pow_eq_one {M : Type*} [Monoid M] (a : M) (n m : Nat) (h : a ^ m = 1) :
-    a ^ (n % m) = a ^ n := by
+theorem pow_mod_of_pow_eq_one {M : Type*} [Monoid M] (a : M) (n m : Nat) (h : a ^ m = 1) : a ^
+    (n % m) = a ^ n := by
   conv_rhs => rw [← Nat.mod_add_div n m]
   rw [pow_add, pow_mul, h, one_pow, mul_one]
 
@@ -456,8 +455,8 @@ theorem chunkValues_getD (qs : Array EF) (stride c n r e : Nat) (hr : r < n)
     Nat.add_mul_div_right _ _ (by omega), Nat.div_eq_of_lt he, Nat.zero_add]
 
 /-- An extension element is the sum of its coordinates times the basis. -/
-theorem toSpec_eq_basis (y : EF) : Challenge.toSpec y = ∑ e ∈ Finset.range (Challenge.d EF),
-    Challenge.toSpec (Ext.basis e : EF) * algebraMap K E ((coordOf e y)) := by
+theorem toSpec_eq_basis (y : EF) : Challenge.toSpec y = ∑ e ∈ Finset.range
+    (Challenge.d EF), Challenge.toSpec (Ext.basis e : EF) * algebraMap K E ((coordOf e y)) := by
   rw [Challenge.toSpec_eq_sum]
   refine Finset.sum_congr rfl fun e he ↦ ?_
   rw [Ext.toSpec_basis (Finset.mem_range.mp he)]
@@ -599,13 +598,14 @@ theorem toSpec_eval_opened (A : Air F) (logN b : Nat) (pis : List F) (m : Stark.
     envE (fun _ _ ↦ rfl) (fun _ _ ↦ rfl) (fun _ ↦ rfl) (fun _ ↦ rfl) rfl rfl rfl c hc).trans ?_
   rw [constraintPoly]
   refine (Expr.eval_hom (fun p ↦ aeval (Challenge.toSpec z) p)
-    (fun a b ↦ (aeval (Challenge.toSpec z)).map_add a b) (fun a b ↦ (aeval (Challenge.toSpec
-        z)).map_sub a b)
+    (fun a b ↦ (aeval (Challenge.toSpec z)).map_add a b)
+        (fun a b ↦ (aeval (Challenge.toSpec z)).map_sub a b)
     (fun a b ↦ (aeval (Challenge.toSpec z)).map_mul a b) A.width _ envE (fun j hj ↦ ?_)
     (fun j hj ↦ ?_) (fun j ↦ ?_) (fun x ↦ ?_) ?_ ?_ ?_ c hc).symm
   · exact (hO j (by rw [hw]; exact hj)).symm
-  · change aeval (Challenge.toSpec z) ((ps.getD j 0).comp (C ((twoAdicGen logN : F)) * X)) =
-      Challenge.toSpec ((Fri.openedAt b m (z * Ext.ofBase (twoAdicGen logN))).getD j 0)
+  · change aeval (Challenge.toSpec z)
+      ((ps.getD j 0).comp (C ((twoAdicGen logN : F)) * X)) = Challenge.toSpec
+          ((Fri.openedAt b m (z * Ext.ofBase (twoAdicGen logN))).getD j 0)
     rw [hO' j (by rw [hw]; exact hj), aeval_comp, map_mul, aeval_C, aeval_X, Challenge.toSpec_mul,
       Challenge.toSpec_ofBase, ← CompPoly.Extension.Ext.algebraMap_eq_ofBase, mul_comm]
   · change aeval (Challenge.toSpec z) (C ((pis.getD j 0))) =
@@ -711,8 +711,9 @@ theorem checkConstraints_honest (P : Params) (A : Air F) (logN : Nat) (trace : A
     · exact ⟨[], fun h ↦ absurd h hc⟩
   choose cps hcps using hch
   -- The recomposed quotient is `Q(ζ)`.
-  have hrec : Challenge.toSpec (recompose (chunkDomains logN lc) o.quotientChunks.toList zeta) =
-      Q.eval (Challenge.toSpec zeta) := by
+  have hrec : Challenge.toSpec
+      (recompose (chunkDomains logN lc) o.quotientChunks.toList zeta) = Q.eval
+          (Challenge.toSpec zeta) := by
     have hl : o.quotientChunks.toList = (List.range (2 ^ lc)).map fun c ↦
         Fri.openedAt P.logBlowup (ldeRef logN P.logBlowup
           (gen * (gen * powF (twoAdicGen (logN + lc)) c)⁻¹) (Challenge.d EF)
@@ -743,8 +744,8 @@ theorem checkConstraints_honest (P : Params) (A : Air F) (logN : Nat) (trace : A
       isLastRow := (Ext.powTwo zeta logN - 1) * (zeta - Ext.ofBase (twoAdicGen logN)⁻¹)⁻¹
       isTransition := zeta - Ext.ofBase (twoAdicGen logN)⁻¹ })) =
       (A.constraints.map fun c ↦ aeval (Challenge.toSpec zeta)
-        (quotientPoly logN (ps.getD · 0) pis c)).map (· * (Challenge.toSpec zeta ^ 2 ^ logN -
-            1)) := by
+        (quotientPoly logN (ps.getD · 0) pis c)).map
+            (· * (Challenge.toSpec zeta ^ 2 ^ logN - 1)) := by
     rw [List.map_map]
     refine List.map_congr_left fun c hc ↦ ?_
     rw [toSpec_eval_opened A logN P.logBlowup pis ext ps hlde hlen zeta hz o.traceLocal

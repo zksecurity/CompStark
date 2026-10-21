@@ -10,15 +10,18 @@ import CompStark.Merkle.Extract
 The Merkle trees' known answers run compiled (`CompStarkNativeTests`), on the packed kernels.
 -/
 
-/-- info: 'CompStark.Merkle.Packed.root_eq' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+/-- info: 'CompStark.Merkle.Packed.root_eq' depends on axioms: [propext, Classical.choice,
+Quot.sound] -/
 #guard_msgs in
 #print axioms CompStark.Merkle.Packed.root_eq
 
-/-- info: 'CompStark.Merkle.extractRow_eq_of_verifyBatch' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+/-- info: 'CompStark.Merkle.extractRow_eq_of_verifyBatch' depends on axioms: [propext,
+Classical.choice, Quot.sound] -/
 #guard_msgs in
 #print axioms CompStark.Merkle.extractRow_eq_of_verifyBatch
 
-/-- info: 'CompStark.Merkle.extractRow_eq_of_noPrediction' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+/-- info: 'CompStark.Merkle.extractRow_eq_of_noPrediction' depends on axioms: [propext,
+Classical.choice, Quot.sound] -/
 #guard_msgs in
 #print axioms CompStark.Merkle.extractRow_eq_of_noPrediction
 

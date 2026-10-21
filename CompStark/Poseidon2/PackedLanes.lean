@@ -33,11 +33,12 @@ variable {p : ℕ} [Montgomery.Native32.Mont32Field p]
 local notation "F" => Montgomery.Native32.FastField p
 
 /-- Eight field coordinates stored at word `idx` splice them in. -/
-theorem store8_encode {n : Nat} (W : Array F) (hW : (encode W).size = n) (off : USize)
-    (idx : Nat) (ho : off.toNat = 4 * idx) (hi : idx + 8 ≤ W.size)
+theorem store8_encode {n : Nat} (W : Array F) (hW : (encode W).size = n) (off : USize) (idx : Nat)
+    (ho : off.toNat = 4 * idx) (hi : idx + 8 ≤ W.size)
     (x0 x1 x2 x3 x4 x5 x6 x7 : F) (h) :
-    (⟨putWords ⟨encode W, hW⟩ off 8 x0.val x1.val x2.val x3.val x4.val x5.val x6.val x7.val
-        0 0 0 0 0 0 0 0 h, size_putWords ..⟩ : { x : ByteArray // x.size = n }) =
+    (⟨putWords ⟨encode W,
+        hW⟩ off 8 x0.val x1.val x2.val x3.val x4.val x5.val x6.val x7.val 0 0 0 0 0 0 0 0 h,
+            size_putWords ..⟩ : { x : ByteArray // x.size = n }) =
       ⟨encode (splice W idx #[x0, x1, x2, x3, x4, x5, x6, x7]), by
         rw [← hW, size_encode_fields, size_encode_fields,
           CompPoly.CPolynomial.NTTFast.Packed.size_splice _ _ _ (by exact hi)]⟩ := by
@@ -267,8 +268,8 @@ theorem concat_rows {t : Nat} (rows : List (Vector F t)) : ∀ acc : Array F,
         simp only [List.getD_eq_getElem?_getD, List.getElem?_cons_succ]
 
 /-- Row `r` of concatenated constant rows is constant vector `r`. -/
-theorem row_concat {t : Nat} (rows : List (Vector F t)) (r : Nat) (hr : r < rows.length) :
-    row t (rows.foldl (fun acc c ↦ acc ++ c.toArray) #[]) (t * r) = rows.getD r 0 := by
+theorem row_concat {t : Nat} (rows : List (Vector F t)) (r : Nat) (hr : r < rows.length) : row t
+    (rows.foldl (fun acc c ↦ acc ++ c.toArray) #[]) (t * r) = rows.getD r 0 := by
   ext j hj
   have h := (concat_rows rows #[]).2.2 r hr j hj
   simp only [Array.size_empty, Nat.zero_add] at h

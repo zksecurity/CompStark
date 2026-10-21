@@ -157,8 +157,9 @@ theorem deinterleave_encode (Y : Array F) (n : Nat) (hn : 2 * n ≤ Y.size)
     rw [Array.size_replicate]; omega
   let fe (i : Nat) : F := Y.getD (2 * i) 0
   let fo (i : Nat) : F := Y.getD (2 * i + 1) 0
-  have key : ∀ K ≤ n, (List.range K).foldl (fun b i ↦ (write b.1 i (read (encode Y) (2 * i)),
-      write b.2 i (read (encode Y) (2 * i + 1)))) (zeroWords n, zeroWords n) =
+  have key : ∀ K ≤ n, (List.range K).foldl
+      (fun b i ↦ (write b.1 i (read (encode Y) (2 * i)), write b.2 i
+          (read (encode Y) (2 * i + 1)))) (zeroWords n, zeroWords n) =
       (encode (upto (Array.replicate n 0) fe K), encode (upto (Array.replicate n 0) fo K)) := by
     intro K hK
     induction K with
@@ -255,8 +256,8 @@ theorem size_bound {n : Nat} (hA : 16 * 2 ^ twoAdicity F < USize.size)
 
 /-- The fast fold is the specification's: both invert every `2 x` of the pairs, which are
 nonzero within the two-adic subgroups. -/
-theorem fold2_rel (hA : 16 * 2 ^ twoAdicity F < USize.size) {v : EVec p} {a : Array EF}
-    (beta : EF) (k : Nat) (h : RV v a) (ha : a.size = 2 ^ (k + 1)) (hk : k < twoAdicity F) :
+theorem fold2_rel (hA : 16 * 2 ^ twoAdicity F < USize.size) {v : EVec p} {a : Array EF} (beta : EF)
+    (k : Nat) (h : RV v a) (ha : a.size = 2 ^ (k + 1)) (hk : k < twoAdicity F) :
     RV (fold2 v beta k) (Fri.foldPairs a beta k) := by
   unfold fold2
   have hs : 4 * a.size < USize.size := by
@@ -404,8 +405,8 @@ theorem foldl_append_flatMap {α β : Type} (g : α → Array β) (A : Nat → A
   | cons k L ih => rw [List.foldl_cons, List.foldl_cons, ← Array.flatMap_append, ih]
 
 /-- The leaves are the elements' coordinates, `k` elements per row. -/
-theorem leaves_rel (hA : 16 * 2 ^ twoAdicity F < USize.size) {v : EVec p} {a : Array EF}
-    (k : Nat) (h : RV v a) (ha : a.size ≤ 2 ^ twoAdicity F) :
+theorem leaves_rel (hA : 16 * 2 ^ twoAdicity F < USize.size) {v : EVec p} {a : Array EF} (k : Nat)
+    (h : RV v a) (ha : a.size ≤ 2 ^ twoAdicity F) :
     RM (leaves k v) (Mat.ofValues (4 * k) (a.size / k)
       (a.flatMap fun x ↦ (Ext.coeffs x).toArray)) := by
   unfold leaves

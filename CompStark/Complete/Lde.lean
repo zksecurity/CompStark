@@ -24,7 +24,7 @@ CompPoly's `aeval_eq_cosetBarycentric`. A point outside the base field is off th
 
 public section
 namespace CompStark
-open CompStark.Stark CompStark.Stark.Fast CompStark.Fri Polynomial Montgomery.Native32
+open CompStark.Stark CompStark.Stark.Fast CompStark.Fri Polynomial
 open CompPoly
 
 variable {F : Type} [BaseField F]
@@ -78,8 +78,8 @@ theorem eval_ldeCoeffs (logH w j : Nat) (m : Array F) (hlog : logH ≤ twoAdicit
   have hcol : ∀ k < 2 ^ logH, col.getD k 0 = m.getD (k * w + j) 0 := fun k hk ↦ by
     simp only [col, Array.getD_eq_getD_getElem?, Array.getElem?_ofFn, dite_eq_left_of_eq_true
       (eq_true hk), Option.getD_some]
-  have e : ldeCoeffs logH w j m = CPolynomial.NTT.Inverse.inverseSpec (specDomain logH hlog) col :=
-      by
+  have e : ldeCoeffs logH w j m = CPolynomial.NTT.Inverse.inverseSpec
+      (specDomain logH hlog) col := by
     rw [inverseSpec_twoAdic (specDomain logH hlog) logH rfl rfl, ldeCoeffs]
     refine congrArg (Array.ofFn (n := 2 ^ logH)) (funext fun k ↦
       congrArg (fun x ↦ ((2 ^ logH : Nat) : F)⁻¹ * x) (List.foldl_ext _ _ _ fun acc i hi ↦ ?_))
@@ -185,8 +185,8 @@ theorem pow_ne_of_outsideBase {z : EF} (hz : Ext.OutsideBase z)
   exact Ext.toSpec_ne_algebraMap hz _ (sub_eq_zero.mp hi)
 
 /-- A column sum of `Fri.openedAt` in the spec field. -/
-theorem toSpec_colSum (values : Array F) (perm : Array Nat) (weights : Array EF) (w j : Nat) :
-    ∀ h, Challenge.toSpec (colSum values perm weights w h j) =
+theorem toSpec_colSum (values : Array F) (perm : Array Nat) (weights : Array EF)
+    (w j : Nat) : ∀ h, Challenge.toSpec (colSum values perm weights w h j) =
       ∑ i ∈ Finset.range h, (values.getD (perm.getD i 0 * w + j) 0) •
         Challenge.toSpec (weights.getD i 0)
   | 0 => by

@@ -40,13 +40,13 @@ class Mont32BaseField (p : ℕ) [Mont32Field p] where
 
 /-- The elements of `FastField p`, enumerated only when called. Neither inlined nor specialized,
 so the compiler does not evaluate the enumeration where it builds a `BaseField` instance. -/
-@[instance_reducible, noinline, nospecialize] def lazyFintype (p : ℕ) [Mont32Field p] (_ : Unit) :
-    Fintype (FastField p) :=
+@[instance_reducible, noinline, nospecialize] def lazyFintype (p : ℕ) [Mont32Field p]
+    (_ : Unit) : Fintype (FastField p) :=
   instFintype
 
 /-- A fast Montgomery field with its domain data is a base field. -/
-instance Mont32BaseField.instBaseField (p : ℕ) [Mont32Field p] [D : Mont32BaseField p] :
-    BaseField (FastField p) where
+instance Mont32BaseField.instBaseField (p : ℕ) [Mont32Field p] [D : Mont32BaseField p] : BaseField
+    (FastField p) where
   toField := instField
   fintype := lazyFintype p
   two_ne_zero := NonBinaryField.char_neq_2

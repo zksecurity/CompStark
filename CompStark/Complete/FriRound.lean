@@ -53,10 +53,11 @@ theorem getD_filter_range (n p j : Nat) (hp : p < n) (hj : j < n - 1) :
     ((List.range n).filter (· != p)).getD j 0 = if j < p then j else j + 1 := by
   rw [filter_range n p hp, List.getD_eq_getElem?_getD]
   split
-  · rw [List.getElem?_append_left (by rw [List.length_range]; omega), List.getElem?_range (by
-      omega), Option.getD_some]
-  · rw [List.getElem?_append_right (by rw [List.length_range]; omega), List.length_range,
-      List.getElem?_range' (by omega), Option.getD_some]
+  · rw [List.getElem?_append_left (by rw [List.length_range]; omega), List.getElem?_range
+      (by omega), Option.getD_some]
+  · rw [List.getElem?_append_right
+      (by rw [List.length_range]; omega), List.length_range, List.getElem?_range'
+          (by omega), Option.getD_some]
     omega
 
 /-- Putting the running value back between the siblings recovers the group. -/
@@ -67,8 +68,9 @@ theorem evals_answer (a pos : Nat) (hpos : pos < a) (ev : List EF) (eval : EF)
       else if j = pos then eval
       else (((List.range a).filter (· != pos)).map fun j ↦ ev.getD j 0).toArray.getD (j - 1) 0) =
       (List.range a).map fun j ↦ ev.getD j 0 := by
-  have hs : ∀ i < a - 1, (((List.range a).filter (· != pos)).map fun j ↦ ev.getD j 0).toArray.getD
-      i 0 = ev.getD (if i < pos then i else i + 1) 0 := by
+  have hs : ∀ i < a - 1,
+      (((List.range a).filter (· != pos)).map fun j ↦ ev.getD j 0).toArray.getD i 0 = ev.getD
+          (if i < pos then i else i + 1) 0 := by
     intro i hi
     rw [Array.getD_eq_getD_getElem?, List.getElem?_toArray, List.getElem?_map,
       List.getElem?_eq_getElem (by rw [length_filter_range a pos hpos]; exact hi),
@@ -91,8 +93,8 @@ theorem getD_flatMap_coeffs_list : ∀ (l : List EF) (t : Nat), t < Challenge.d 
     have hl : (Ext.coeffs x).length = Challenge.d EF := Challenge.length_coeffs x
     rw [List.flatMap_cons]
     by_cases ht : t < Challenge.d EF
-    · rw [List.getD_append _ _ _ _ (by rw [hl]; exact ht), Nat.div_eq_of_lt ht, Nat.mod_eq_of_lt ht,
-        List.getD_cons_zero]
+    · rw [List.getD_append _ _ _ _
+        (by rw [hl]; exact ht), Nat.div_eq_of_lt ht, Nat.mod_eq_of_lt ht, List.getD_cons_zero]
     · rw [List.length_cons, Nat.mul_succ] at h
       have hd : 0 < Challenge.d EF := (Challenge.params EF).d_pos
       have e1 : t / Challenge.d EF = (t - Challenge.d EF) / Challenge.d EF + 1 :=
@@ -113,8 +115,8 @@ theorem getD_flatMap_coeffs (A : Array EF) (t : Nat) (ht : t < Challenge.d EF * 
     ← Array.getElem?_toList, ← List.getD_eq_getElem?_getD]
 
 /-- Row `r` of a round's leaves is the coefficients of the group of `r`. -/
-theorem rowOf_leaves [Poseidon2Field F] (f : Array EF) (la r : Nat) (hr : (r + 1) * 2 ^ la ≤
-    f.size) :
+theorem rowOf_leaves [Poseidon2Field F] (f : Array EF) (la r : Nat)
+    (hr : (r + 1) * 2 ^ la ≤ f.size) :
     (rowOf ((specBackend EF).leaves (2 ^ la) f) r).toList =
       ((List.range (2 ^ la)).map fun k ↦ f.getD (r * 2 ^ la + k) 0).flatMap Ext.coeffs := by
   have hd : 0 < Challenge.d EF := (Challenge.params EF).d_pos
@@ -143,8 +145,8 @@ theorem rowOf_leaves [Poseidon2Field F] (f : Array EF) (la r : Nat) (hr : (r + 1
 
 /-- A round's answer at `idx`: `2 ^ la - 1` siblings, which with the running value give back the
 group of `idx`, and whose opening verifies. -/
-theorem answer_round [Poseidon2Field F] (f : Array EF) (h la idx : Nat) (hs : f.size = 2 ^ h) (hla
-    : la ≤ h)
+theorem answer_round [Poseidon2Field F] (f : Array EF) (h la idx : Nat) (hs : f.size = 2 ^ h)
+    (hla : la ≤ h)
     (hidx : idx < 2 ^ h) :
     let c := Committed.ofMats hashF compF [(specBackend EF).leaves (2 ^ la) f]
     let o := c.openAt (idx >>> la)
@@ -193,8 +195,8 @@ theorem answer_round [Poseidon2Field F] (f : Array EF) (h la idx : Nat) (hs : f.
   refine ⟨?_, hevals, ?_⟩
   · show (List.map _ _).toArray.size = _
     rw [List.size_toArray, List.length_map, length_filter_range _ _ hpos]
-  · have hv := verifyBatch_openAt [(specBackend EF).leaves (2 ^ la) f] (h - la) (List.cons_ne_nil
-      _ _)
+  · have hv := verifyBatch_openAt [(specBackend EF).leaves (2 ^ la) f] (h - la)
+      (List.cons_ne_nil _ _)
       (fun m hm' ↦ by
         rw [List.mem_singleton.mp hm']
         refine ⟨hm, ?_⟩
