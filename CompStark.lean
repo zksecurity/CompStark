@@ -163,4 +163,5 @@ public import CompStark.Ni.BatchDeep
 public import CompStark.Ni.BatchBcs
 public import CompStark.Ni.BatchNatural
 public import CompStark.Ni.BatchQueryBound
+public import CompStark.Ni.BatchParse
 public import CompStark.NonInteractive

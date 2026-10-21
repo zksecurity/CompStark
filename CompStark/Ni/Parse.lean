@@ -681,20 +681,20 @@ theorem friSeed_ne_nil (arities : List Nat) (finalLen commitBits queryBits numQu
 /-- FRI's rounds: from the state after the batching challenge, with the capacity of round `r`,
 the verifier queries every fold round and the query round. -/
 theorem verifyFri_logs (hK : P.numQueries + Challenge.d EF + 1 ≤ K) (blocks : List (List F))
-    (r : Nat) (proof : FriProof F EF) (rounds : List (Round F EF)) (alpha : EF) (logMax : Nat)
+    (r : Nat) (proof : FriProof F EF) (rounds : List (Round F EF)) (alpha : EF) (hs : List Nat)
     (hheights : (((rounds.flatMap (·.2)).map (·.1.logSize + P.logBlowup)).mergeSort
-      (fun a b ↦ b ≤ a)).dedup = [logMax])
+      (fun a b ↦ b ≤ a)).dedup = hs)
     (hfold : ∀ j (hj : j < (proof.commits.toList.zip proof.commitWitnesses.toList).length),
       blocks.getD (r + j) [] = seedAt (DomainSeparator.friSeed F EF
-        (foldSchedule P.maxLogArity (P.logBlowup + P.logFinalPolyLen) logMax [logMax])
-        (2 ^ P.logFinalPolyLen) P.commitPowBits P.queryPowBits P.numQueries logMax P.logBlowup
+        (foldSchedule P.maxLogArity (P.logBlowup + P.logFinalPolyLen) (hs.headD 0) hs)
+        (2 ^ P.logFinalPolyLen) P.commitPowBits P.queryPowBits P.numQueries (hs.headD 0) P.logBlowup
         P.maxLogArity) j ++
         (proof.commits.toList.zip proof.commitWitnesses.toList)[j].1.toList ++
           witnessInput P.commitPowBits (proof.commits.toList.zip proof.commitWitnesses.toList)[j].2)
     (hlast : blocks.getD (r + (proof.commits.toList.zip proof.commitWitnesses.toList).length)
       [] = seedAt (DomainSeparator.friSeed F EF
-        (foldSchedule P.maxLogArity (P.logBlowup + P.logFinalPolyLen) logMax [logMax])
-        (2 ^ P.logFinalPolyLen) P.commitPowBits P.queryPowBits P.numQueries logMax P.logBlowup
+        (foldSchedule P.maxLogArity (P.logBlowup + P.logFinalPolyLen) (hs.headD 0) hs)
+        (2 ^ P.logFinalPolyLen) P.commitPowBits P.queryPowBits P.numQueries (hs.headD 0) P.logBlowup
         P.maxLogArity) (proof.commits.toList.zip proof.commitWitnesses.toList).length ++
         coeffs proof.finalPoly.toList ++ witnessInput P.queryPowBits proof.queryWitness)
     (samples : List F) {res : Unit × Sponge F}
@@ -705,14 +705,14 @@ theorem verifyFri_logs (hK : P.numQueries + Challenge.d EF + 1 ≤ K) (blocks : 
       (out answer (verifyFri (idealLogged answer) P proof rounds alpha)
         ⟨capAt answer blocks r, [], samples⟩).2 := by
   set seed := DomainSeparator.friSeed F EF
-    (foldSchedule P.maxLogArity (P.logBlowup + P.logFinalPolyLen) logMax [logMax])
-    (2 ^ P.logFinalPolyLen) P.commitPowBits P.queryPowBits P.numQueries logMax P.logBlowup
+    (foldSchedule P.maxLogArity (P.logBlowup + P.logFinalPolyLen) (hs.headD 0) hs)
+    (2 ^ P.logFinalPolyLen) P.commitPowBits P.queryPowBits P.numQueries (hs.headD 0) P.logBlowup
     P.maxLogArity with hseed
   have hseedne : seed ≠ [] := toElems_ne_nil _
   set cws := proof.commits.toList.zip proof.commitWitnesses.toList with hcws
   unfold verifyFri at hok ⊢
   dsimp only at hok ⊢
-  simp only [hheights, List.headD_cons] at hok ⊢
+  simp only [hheights] at hok ⊢
   -- the shape checks
   obtain ⟨hpar, hok, hlog⟩ := out_ensure_bind_ok answer hok
   rw [hlog]
@@ -842,7 +842,7 @@ theorem verifyFri_logs (hK : P.numQueries + Challenge.d EF + 1 ≤ K) (blocks : 
     rw [hlog]
     refine logsRounds_left fun j hlo hhi ↦ ?_
     obtain rfl : j = r + cws.length := by omega
-    obtain ⟨v, hv⟩ := out_sampleBits_nil answer logMax (capAt answer blocks (r + cws.length))
+    obtain ⟨v, hv⟩ := out_sampleBits_nil answer (hs.headD 0) (capAt answer blocks (r + cws.length))
       (seedAt seed cws.length ++ coeffs proof.finalPoly.toList)
     rw [hv]
     simp only [keyAt, hlast, List.map_cons, List.map_nil, List.mem_singleton]
@@ -887,22 +887,22 @@ theorem foldl_coeffs_flatMap {γ : Type} (l : List γ) (f : γ → List EF) (s :
 /-- The commitment scheme: from the state after `ζ`, with the capacity of the batching round
 `r`, the verifier queries the batching round and every round of FRI. -/
 theorem verifyPcs_logs (hK : P.numQueries + Challenge.d EF + 1 ≤ K) (blocks : List (List F))
-    (r : Nat) (proof : FriProof F EF) (rounds : List (Fri.Round F EF)) (logMax : Nat)
+    (r : Nat) (proof : FriProof F EF) (rounds : List (Fri.Round F EF)) (hs : List Nat)
     (hheights : (((rounds.flatMap (·.2)).map (·.1.logSize + P.logBlowup)).mergeSort
-      (fun a b ↦ b ≤ a)).dedup = [logMax])
+      (fun a b ↦ b ≤ a)).dedup = hs)
     (hblock : blocks.getD r [] = DomainSeparator.pcsSeed F EF (claimCounts rounds) P.batchPowBits ++
       coeffs (roundValues rounds) ++ witnessInput P.batchPowBits proof.batchWitness)
     (hfold : ∀ j (hj : j < (proof.commits.toList.zip proof.commitWitnesses.toList).length),
       blocks.getD (r + 1 + j) [] = seedAt (DomainSeparator.friSeed F EF
-        (foldSchedule P.maxLogArity (P.logBlowup + P.logFinalPolyLen) logMax [logMax])
-        (2 ^ P.logFinalPolyLen) P.commitPowBits P.queryPowBits P.numQueries logMax P.logBlowup
+        (foldSchedule P.maxLogArity (P.logBlowup + P.logFinalPolyLen) (hs.headD 0) hs)
+        (2 ^ P.logFinalPolyLen) P.commitPowBits P.queryPowBits P.numQueries (hs.headD 0) P.logBlowup
         P.maxLogArity) j ++
         (proof.commits.toList.zip proof.commitWitnesses.toList)[j].1.toList ++
           witnessInput P.commitPowBits (proof.commits.toList.zip proof.commitWitnesses.toList)[j].2)
     (hlast : blocks.getD (r + 1 + (proof.commits.toList.zip proof.commitWitnesses.toList).length)
       [] = seedAt (DomainSeparator.friSeed F EF
-        (foldSchedule P.maxLogArity (P.logBlowup + P.logFinalPolyLen) logMax [logMax])
-        (2 ^ P.logFinalPolyLen) P.commitPowBits P.queryPowBits P.numQueries logMax P.logBlowup
+        (foldSchedule P.maxLogArity (P.logBlowup + P.logFinalPolyLen) (hs.headD 0) hs)
+        (2 ^ P.logFinalPolyLen) P.commitPowBits P.queryPowBits P.numQueries (hs.headD 0) P.logBlowup
         P.maxLogArity) (proof.commits.toList.zip proof.commitWitnesses.toList).length ++
         coeffs proof.finalPoly.toList ++ witnessInput P.queryPowBits proof.queryWitness)
     (samples : List F) {res : Unit × Sponge F}
@@ -991,7 +991,7 @@ theorem verifyPcs_logs (hK : P.numQueries + Challenge.d EF + 1 ≤ K) (blocks : 
       List.mem_singleton]) ?_
     rw [show (answer (.duplex (capAt answer blocks r) (pseed ++ coeffs (roundValues rounds)))).1 =
       capAt answer blocks (r + 1) by rw [capAt, hblock]] at hok ⊢
-    have := verifyFri_logs hK blocks (r + 1) proof rounds _ logMax hheights hfold hlast _ hok
+    have := verifyFri_logs hK blocks (r + 1) proof rounds _ hs hheights hfold hlast _ hok
     rwa [show r + 1 + 1 = r + 2 by omega] at this
   · simp only [witnessInput, hbits, ↓reduceIte] at hblock
     obtain ⟨v, hv⟩ := out_checkWitness_pos answer _ hbits proof.batchWitness
@@ -1016,7 +1016,7 @@ theorem verifyPcs_logs (hK : P.numQueries + Challenge.d EF + 1 ≤ K) (blocks : 
     rw [hlog, hv₃, List.nil_append]
     rw [show (answer (.duplex (capAt answer blocks r) (pseed ++ coeffs (roundValues rounds) ++
       [proof.batchWitness]))).1 = capAt answer blocks (r + 1) by rw [capAt, hblock]] at hok ⊢
-    have := verifyFri_logs hK blocks (r + 1) proof rounds _ logMax hheights hfold hlast _ hok
+    have := verifyFri_logs hK blocks (r + 1) proof rounds _ hs hheights hfold hlast _ hok
     rwa [show r + 1 + 1 = r + 2 by omega] at this
 
 theorem inputs_getD_fri (P : Fri.Params) (A : Air F) (vk : Option (PreprocessedKey F))
@@ -1253,7 +1253,7 @@ theorem verifyWith_logs (hK : P.numQueries + Challenge.d EF + 1 ≤ K) (A : Air 
     refine logsRounds_left ?_
     rw [length_inputs]
     refine verifyPcs_logs hK (inputs P A vk pis proof) 2 proof.fri (openingRounds A vk proof zeta)
-      (proof.degreeBits + P.logBlowup) (heights_openingRounds P A vk proof zeta) ?_
+      [proof.degreeBits + P.logBlowup] (heights_openingRounds P A vk proof zeta) ?_
       (fun j hj ↦ inputs_getD_fold P A vk pis proof j hj) (inputs_getD_last P A vk pis proof) _ h₂
     simp only [Bool.and_eq_true] at hshape
     simp only [inputs, List.getD_eq_getElem?_getD, List.getElem?_cons_succ,
