@@ -249,8 +249,7 @@ theorem compress_getD (m : Mat F) (ap : Array EF) (r : Nat) (hr : r < m.height) 
     (compress m ap).getD r 0 = crow m.values ap m.width r := by
   rw [Fast.compress_eq, CompPoly.CPolynomial.NTTFast.Packed.getD_ofFn_bounded _ _ hr]
 
-omit [Challenge F EF] in
-theorem lookup_mem {red : List (Nat × Nat × Array EF)} {h : Nat} {v : Nat × Array EF}
+theorem lookup_mem {α : Type} {red : List (Nat × α)} {h : Nat} {v : α}
     (hl : red.lookup h = some v) : (h, v) ∈ red := by
   obtain ⟨l₁, l₂, e, -⟩ := List.lookup_eq_some_iff.mp hl
   rw [e]

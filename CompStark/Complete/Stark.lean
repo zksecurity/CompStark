@@ -23,19 +23,100 @@ observes the same opened values as `openPcs` and then accepts `proveFri`'s proof
 namespace CompStark.Stark
 open CompStark.Fri CompStark.Complete
 
-variable {F : Type} [BaseField F] [Poseidon2Field F]
+variable {F : Type} [BaseField F]
 local notation "hashF" => CompStark.Hash.Poseidon2.hash F
 local notation "compF" => CompStark.Hash.Poseidon2.compress F
 
 variable {EF : Type} [Challenge F EF]
 
-/-! ### The prover's run, step by step -/
+/-! ### Before hashing
+
+The trace's extension, the opened values and the out-of-domain check need no hash. -/
 
 section Honest
 variable (EF) (P : Params) (A : Air F) (logN : Nat) (trace : Array F) (pis : List F)
 
 /-- The trace's extension. -/
 def hExt : Mat F := ldeRef logN P.logBlowup gen A.width trace
+
+theorem height_hExt (hin : Fits P A logN trace) :
+    (hExt P A logN trace).height = 2 ^ (logN + P.logBlowup) := by
+  obtain ⟨ps, hl, -⟩ := trace_lde P A logN trace hin
+  exact hl.2.1
+
+end Honest
+
+theorem observeExts_append (t : Transcript F 24) (a b : List EF) :
+    t.observeExts (a ++ b) = (t.observeExts a).observeExts b := by
+  simp only [Transcript.observeExts, List.foldl_append]
+
+theorem forM_observeExts (ov : List (Array EF)) (t : Transcript F 24) :
+    (ov.forM fun ys ↦ pObserveExts ys.toList).run t =
+      ((), t.observeExts (ov.flatMap (·.toList))) := by
+  induction ov generalizing t with
+  | nil => rfl
+  | cons ys ov ih =>
+    show (pObserveExts ys.toList >>= fun _ ↦ ov.forM fun ys ↦ pObserveExts ys.toList).run t = _
+    rw [prun_bind, List.flatMap_cons, observeExts_append]
+    exact ih _
+
+/-- The values the specification opens of a matrix at its points. -/
+def openedOf (b : Nat) (x : Mat F × List EF) : List (Array EF) := x.2.map (Fri.openedAt b x.1)
+
+theorem flatMap_zip_openedOf (b : Nat) (m : Mat F) (zs : List EF) :
+    ((zs.zip (openedOf b (m, zs))).map fun y ↦ (y.1, y.2.toList)).flatMap (·.2) =
+      (openedOf b (m, zs)).flatMap (·.toList) := by
+  induction zs with
+  | nil => rfl
+  | cons z zs ih =>
+    simp only [openedOf, List.map_cons, List.zip_cons_cons, List.flatMap_cons] at ih ⊢
+    rw [ih]
+
+theorem mem_zip_map {α β : Type} (f : α → β) (zs : List α) :
+    ∀ y ∈ zs.zip (zs.map f), y.1 ∈ zs ∧ y.2 = f y.1 := by
+  induction zs with
+  | nil => intro y hy; simp only [List.map_nil, List.zip_nil_right, List.not_mem_nil] at hy
+  | cons z zs ih =>
+    intro y hy
+    rw [List.map_cons, List.zip_cons_cons, List.mem_cons] at hy
+    rcases hy with rfl | hy
+    · exact ⟨List.mem_cons_self, rfl⟩
+    · obtain ⟨h1, h2⟩ := ih y hy
+      exact ⟨List.mem_cons_of_mem _ h1, h2⟩
+
+/-- An LDE opened at points outside the base field is an honest item of the batched quotients. -/
+theorem honestItem_of (b h : Nat) (m : Mat F) (zs : List EF) (ps : List (Polynomial F))
+    (hm : CompStark.Mat.IsLde b h m ps) (hzs : ∀ z ∈ zs, Ext.OutsideBase z) :
+    Deep.HonestItem b h (m, zs.zip (openedOf b (m, zs))) := by
+  refine ⟨ps, hm, fun y hy ↦ ?_⟩
+  obtain ⟨hz, hy2⟩ := mem_zip_map (Fri.openedAt b m) zs y hy
+  obtain ⟨hs, hv⟩ := openedAt_isLde b h m ps y.1 hm (hzs _ hz)
+  exact ⟨hzs _ hz, hy2 ▸ hs, fun j hj ↦ hy2 ▸ hv j hj⟩
+
+/-- The out-of-domain check of `verify`, after the transcript. -/
+def verifyCheck (A : Air F) (proof : Proof F EF) (pis : List F)
+    (x : (EF × EF) × Transcript F 24) : ExceptT String Id Unit :=
+  unless checkConstraints A pis proof.opened proof.degreeBits x.1.2 x.1.1
+      (recompose (chunkDomains proof.degreeBits A.logQuotientChunks)
+        proof.opened.quotientChunks.toList x.1.2) do
+    throw "out-of-domain evaluation mismatch"
+
+theorem verifyCheck_ok (A : Air F) (proof : Proof F EF) (pis : List F)
+    (x : (EF × EF) × Transcript F 24)
+    (h : checkConstraints A pis proof.opened proof.degreeBits x.1.2 x.1.1
+      (recompose (chunkDomains proof.degreeBits A.logQuotientChunks)
+        proof.opened.quotientChunks.toList x.1.2) = true) :
+    verifyCheck A proof pis x = pure () := by
+  unfold verifyCheck
+  rw [h]
+  rfl
+
+variable [Poseidon2Field F]
+
+/-! ### The prover's run, step by step -/
+
+section Honest
+variable (EF) (P : Params) (A : Air F) (logN : Nat) (trace : Array F) (pis : List F)
 
 /-- The transcript after the trace commitment and the public values. -/
 def hTA : Transcript F 24 :=
@@ -75,25 +156,6 @@ theorem outOfDomainPoint_eq :
 end Honest
 
 /-! ### Opening -/
-
-omit [Poseidon2Field F] in
-theorem observeExts_append (t : Transcript F 24) (a b : List EF) :
-    t.observeExts (a ++ b) = (t.observeExts a).observeExts b := by
-  simp only [Transcript.observeExts, List.foldl_append]
-
-omit [Poseidon2Field F] in
-theorem forM_observeExts (ov : List (Array EF)) (t : Transcript F 24) :
-    (ov.forM fun ys ↦ pObserveExts ys.toList).run t =
-      ((), t.observeExts (ov.flatMap (·.toList))) := by
-  induction ov generalizing t with
-  | nil => rfl
-  | cons ys ov ih =>
-    show (pObserveExts ys.toList >>= fun _ ↦ ov.forM fun ys ↦ pObserveExts ys.toList).run t = _
-    rw [prun_bind, List.flatMap_cons, observeExts_append]
-    exact ih _
-
-/-- The values the specification opens of a matrix at its points. -/
-def openedOf (b : Nat) (x : Mat F × List EF) : List (Array EF) := x.2.map (Fri.openedAt b x.1)
 
 theorem mapM_open (b : Nat) (ms : List (Mat F × List EF)) (t : Transcript F 24) :
     (ms.mapM fun x ↦ do
@@ -206,9 +268,8 @@ theorem prove_eq : prove EF P A logN trace pis =
   | nil => rfl
   | cons m ms ih => exact congrArg (List.cons _) ih
 
-omit [Poseidon2Field F] in
 /-- The prover's final transcript is FRI's. -/
-theorem proveTranscript_eq [Poseidon2Field F] : proveTranscript EF P A logN trace pis =
+theorem proveTranscript_eq : proveTranscript EF P A logN trace pis =
     ((proveFri (specBackend EF) P (hRounds EF P A logN trace pis)
       (hInputs EF P A logN trace pis)).run
       (hT2 EF P A logN trace pis)).2 := by
@@ -323,25 +384,6 @@ def verifyRun (P : Params) (proof : Proof F EF) (pis : List F) : M (poseidon2 F)
     proof.fri
   return (alpha, zeta)
 
-/-- The out-of-domain check of `verify`, after the transcript. -/
-def verifyCheck (A : Air F) (proof : Proof F EF) (pis : List F)
-    (x : (EF × EF) × Transcript F 24) : ExceptT String Id Unit :=
-  unless checkConstraints A pis proof.opened proof.degreeBits x.1.2 x.1.1
-      (recompose (chunkDomains proof.degreeBits A.logQuotientChunks)
-        proof.opened.quotientChunks.toList x.1.2) do
-    throw "out-of-domain evaluation mismatch"
-
-omit [Poseidon2Field F] in
-theorem verifyCheck_ok (A : Air F) (proof : Proof F EF) (pis : List F)
-    (x : (EF × EF) × Transcript F 24)
-    (h : checkConstraints A pis proof.opened proof.degreeBits x.1.2 x.1.1
-      (recompose (chunkDomains proof.degreeBits A.logQuotientChunks)
-        proof.opened.quotientChunks.toList x.1.2) = true) :
-    verifyCheck A proof pis x = pure () := by
-  unfold verifyCheck
-  rw [h]
-  rfl
-
 theorem verify_eq (P : Params) (A : Air F) (proof : Proof F EF) (pis : List F) :
     verify P A proof pis = ExceptT.run (do
       let o := proof.opened
@@ -378,28 +420,6 @@ theorem verifyRun_run (P : Params) (proof : Proof F EF) (pis : List F) :
   rfl
 
 /-! ### The honest openings -/
-
-theorem mem_zip_map {α β : Type} (f : α → β) (zs : List α) :
-    ∀ y ∈ zs.zip (zs.map f), y.1 ∈ zs ∧ y.2 = f y.1 := by
-  induction zs with
-  | nil => intro y hy; simp only [List.map_nil, List.zip_nil_right, List.not_mem_nil] at hy
-  | cons z zs ih =>
-    intro y hy
-    rw [List.map_cons, List.zip_cons_cons, List.mem_cons] at hy
-    rcases hy with rfl | hy
-    · exact ⟨List.mem_cons_self, rfl⟩
-    · obtain ⟨h1, h2⟩ := ih y hy
-      exact ⟨List.mem_cons_of_mem _ h1, h2⟩
-
-omit [Poseidon2Field F] in
-/-- An LDE opened at points outside the base field is an honest item of the batched quotients. -/
-theorem honestItem_of (b h : Nat) (m : Mat F) (zs : List EF) (ps : List (Polynomial F))
-    (hm : CompStark.Mat.IsLde b h m ps) (hzs : ∀ z ∈ zs, Ext.OutsideBase z) :
-    Deep.HonestItem b h (m, zs.zip (openedOf b (m, zs))) := by
-  refine ⟨ps, hm, fun y hy ↦ ?_⟩
-  obtain ⟨hz, hy2⟩ := mem_zip_map (Fri.openedAt b m) zs y hy
-  obtain ⟨hs, hv⟩ := openedAt_isLde b h m ps y.1 hm (hzs _ hz)
-  exact ⟨hzs _ hz, hy2 ▸ hs, fun j hj ↦ hy2 ▸ hv j hj⟩
 
 section Honest
 variable (EF) (P : Params) (A : Air F) (logN : Nat) (trace : Array F) (pis : List F)
@@ -524,12 +544,6 @@ end Honest
 section Honest
 variable (EF) (P : Params) (A : Air F) (logN : Nat) (trace : Array F) (pis : List F)
 
-omit [Poseidon2Field F] in
-theorem height_hExt (hin : Fits P A logN trace) :
-    (hExt P A logN trace).height = 2 ^ (logN + P.logBlowup) := by
-  obtain ⟨ps, hl, -⟩ := trace_lde P A logN trace hin
-  exact hl.2.1
-
 theorem height_hChunks (hin : Fits P A logN trace) :
     ∀ m ∈ hChunks EF P A logN trace pis, m.height = 2 ^ (logN + P.logBlowup) := by
   intro m hm
@@ -628,16 +642,6 @@ theorem hopen (hin : Fits P A logN trace)
   exact hD
 
 end Honest
-
-omit [Poseidon2Field F] in
-theorem flatMap_zip_openedOf (b : Nat) (m : Mat F) (zs : List EF) :
-    ((zs.zip (openedOf b (m, zs))).map fun y ↦ (y.1, y.2.toList)).flatMap (·.2) =
-      (openedOf b (m, zs)).flatMap (·.toList) := by
-  induction zs with
-  | nil => rfl
-  | cons z zs ih =>
-    simp only [openedOf, List.map_cons, List.zip_cons_cons, List.flatMap_cons] at ih ⊢
-    rw [ih]
 
 section Honest
 variable (EF) (P : Params) (A : Air F) (logN : Nat) (trace : Array F) (pis : List F)

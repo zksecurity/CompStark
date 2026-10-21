@@ -24,10 +24,35 @@ polynomial evaluates to the last entry.
 namespace CompStark.Complete
 open CompStark.Stark CompStark.Fri
 
-variable {F : Type} [BaseField F]
+variable {F : Type}
 local notation "hashF" => CompStark.Hash.Poseidon2.hash F
 local notation "compF" => CompStark.Hash.Poseidon2.compress F
-variable {EF : Type} [Challenge F EF]
+
+/-! ### Observing on any field -/
+
+theorem duplex_observe (t : Transcript F 24) (x : F) : (t.observe x).duplex = t.duplex := rfl
+
+theorem foldl_observe (t : Transcript F 24) (xs : List F) :
+    xs.foldl Transcript.observe t = t.observeList xs := by
+  unfold Transcript.observeList Challenger.observeList
+  induction xs generalizing t with
+  | nil => rfl
+  | cons x xs ih => rw [List.foldl_cons, ih]; rfl
+
+theorem prun_bind {α β : Type} (x : PM F 24 α) (f : α → PM F 24 β) (t : Transcript F 24) :
+    (x >>= f).run t = (f (x.run t).1).run (x.run t).2 := rfl
+
+theorem flag_observeList (t : Transcript F 24) (xs : List F) :
+    (t.observeList xs).grindFailed = t.grindFailed := by
+  unfold Transcript.observeList; dsimp only
+
+theorem flag_observe (t : Transcript F 24) (x : F) : (t.observe x).grindFailed = t.grindFailed := by
+  unfold Transcript.observe; dsimp only
+
+theorem duplex_observeList (t : Transcript F 24) (xs : List F) :
+    (t.observeList xs).duplex = t.duplex := rfl
+
+variable [BaseField F] {EF : Type} [Challenge F EF]
 
 /-! ### The verifier's monad on Poseidon2
 
@@ -67,8 +92,6 @@ theorem sampleBits_run [Poseidon2Field F] (t : Transcript F 24) (bits : Nat)
   generalize Challenger.sample Poseidon2.duplex t.state = p
   obtain ⟨x, c⟩ := p
   rfl
-omit [BaseField F] in
-theorem duplex_observe (t : Transcript F 24) (x : F) : (t.observe x).duplex = t.duplex := rfl
 theorem checkWitness_run [Poseidon2Field F] (t : Transcript F 24) (bits : Nat) (w : F)
     (hd : t.duplex = Poseidon2.duplex) :
     checkWitness (poseidon2 F) bits w t = .ok (t.checkWitness bits w) := by
@@ -82,13 +105,6 @@ theorem checkWitness_run [Poseidon2Field F] (t : Transcript F 24) (bits : Nat) (
     generalize Challenger.sampleBits t.duplex (Challenger.observe t.duplex t.state w) bits = p
     obtain ⟨b, c⟩ := p
     rfl
-omit [BaseField F] in
-theorem foldl_observe (t : Transcript F 24) (xs : List F) :
-    xs.foldl Transcript.observe t = t.observeList xs := by
-  unfold Transcript.observeList Challenger.observeList
-  induction xs generalizing t with
-  | nil => rfl
-  | cons x xs ih => rw [List.foldl_cons, ih]; rfl
 theorem observeList_run [Poseidon2Field F] (t : Transcript F 24) (xs : List F) :
     observeList (poseidon2 F) xs t = .ok ((), t.observeList xs) := by
   rw [← foldl_observe]; rfl
@@ -98,10 +114,6 @@ theorem observeExts_run [Poseidon2Field F] (t : Transcript F 24) (xs : List EF) 
   show Except.ok ((), xs.foldl (fun s x ↦ (Ext.coeffs x).foldl Transcript.observe s) t) = _
   simp only [foldl_observe]
   rfl
-
-omit [BaseField F] in
-theorem prun_bind {α β : Type} (x : PM F 24 α) (f : α → PM F 24 β) (t : Transcript F 24) :
-    (x >>= f).run t = (f (x.run t).1).run (x.run t).2 := rfl
 
 theorem ensure_true [Poseidon2Field F] (msg : String) : ensure (H := (poseidon2 F)) true msg = pure
     () := rfl
@@ -396,15 +408,6 @@ theorem chain_arities [Poseidon2Field F] (P : Params) (hP : 0 < P.maxLogArity) (
 Observing and sampling keep the flag, and grinding only sets it, so a final transcript without
 the flag had every grind of the run check. -/
 
-omit [BaseField F] in
-theorem flag_observeList (t : Transcript F 24) (xs : List F) :
-    (t.observeList xs).grindFailed = t.grindFailed := by
-  unfold Transcript.observeList; dsimp only
-
-omit [BaseField F] in
-theorem flag_observe (t : Transcript F 24) (x : F) : (t.observe x).grindFailed = t.grindFailed := by
-  unfold Transcript.observe; dsimp only
-
 theorem flag_observeExts (t : Transcript F 24) (xs : List EF) :
     (t.observeExts xs).grindFailed = t.grindFailed := by
   unfold Transcript.observeExts
@@ -472,10 +475,6 @@ theorem checkWitness_grind (t : Transcript F 24) (bits : Nat)
 
 Every step keeps the transcript's duplex, so a run from `Transcript.init` stays on Plonky3's,
 as the verifier's `sampleBits` and `checkWitness` need. -/
-
-omit [BaseField F] in
-theorem duplex_observeList (t : Transcript F 24) (xs : List F) :
-    (t.observeList xs).duplex = t.duplex := rfl
 
 theorem duplex_observeExts (t : Transcript F 24) (xs : List EF) :
     (t.observeExts xs).duplex = t.duplex := by
@@ -929,11 +928,10 @@ theorem mapM_queries {α β : Type} (logMax : Nat) (mk : Nat → β) (g : α →
     rw [List.mapM_cons, prun_bind, hg, prun_bind, mapM_queries logMax mk g hg l]
     rfl
 
-omit [Challenge F EF] in
 /-- The verifier's queries sample the prover's indices. -/
-theorem query_loop [Poseidon2Field F] (logMax : Nat) (mk : Nat → QueryProof F EF)
-    (body : QueryProof F EF → PUnit → M (poseidon2 F) (ForInStep PUnit))
-    (qb : QueryProof F EF → M (poseidon2 F) (ForInStep PUnit))
+theorem query_loop [Poseidon2Field F] {Q : Type} (logMax : Nat) (mk : Nat → Q)
+    (body : Q → PUnit → M (poseidon2 F) (ForInStep PUnit))
+    (qb : Q → M (poseidon2 F) (ForInStep PUnit))
     (hbody : ∀ q, body q () = qb q)
     (hstep : ∀ t : Transcript F 24, t.duplex = Poseidon2.duplex →
       qb (mk (t.sampleBits logMax).1) t = .ok (.yield (), (t.sampleBits logMax).2)) :

@@ -66,7 +66,17 @@ theorem imp {x : PM F 24 α} {y : PM F 24 β} {R' : α → β → Prop} (h : ∀
 
 end RelM
 
-variable [BaseField F] [Poseidon2Field F] {EF : Type} [Challenge F EF]
+variable [BaseField F] {EF : Type}
+
+/-- A vector of the commit phase: empty, or `2 ^ s` values within the two-adic subgroups. -/
+def ShapeOk (a : Array EF) : Prop := a.size = 0 ∨ ∃ s ≤ twoAdicity F, a.size = 2 ^ s
+
+theorem shapeOk_le {a : Array EF} (h : ShapeOk (F := F) a) : a.size ≤ 2 ^ twoAdicity F := by
+  rcases h with h | ⟨s, hs, h⟩
+  · rw [h]; exact Nat.zero_le _
+  · rw [h]; exact Nat.pow_le_pow_right (by decide) hs
+
+variable [Poseidon2Field F] [Challenge F EF]
 
 /-- The backend `B` computes the specification's functions on the inputs the prover gives them,
 through relations `RM`, `RC`, `RV` between its matrices, commitments and vectors and the
@@ -127,15 +137,6 @@ structure CPRel {C D : Type} (RC : C → D → Prop) (cp : CommitPhase F EF C)
   finalPoly : cp.finalPoly = cs.finalPoly
 
 variable {B : Backend F EF 24}
-
-/-- A vector of the commit phase: empty, or `2 ^ s` values within the two-adic subgroups. -/
-def ShapeOk (a : Array EF) : Prop := a.size = 0 ∨ ∃ s ≤ twoAdicity F, a.size = 2 ^ s
-
-omit [Poseidon2Field F] [Challenge F EF] in
-theorem shapeOk_le {a : Array EF} (h : ShapeOk (F := F) a) : a.size ≤ 2 ^ twoAdicity F := by
-  rcases h with h | ⟨s, hs, h⟩
-  · rw [h]; exact Nat.zero_le _
-  · rw [h]; exact Nat.pow_le_pow_right (by decide) hs
 
 /-- The leaves of a commit-phase round are a matrix of the prover's shape. -/
 theorem commitOk_leaves (hA : DomainsAddressable F EF) (a : Array EF) (s la : Nat)

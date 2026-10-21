@@ -41,19 +41,13 @@ holds all two-adic roots of unity.
 namespace CompStark.Stark
 open CompStark.Fri Polynomial
 
-variable {F : Type} [BaseField F]
-variable {EF : Type} [Challenge F EF]
-local notation "K" => F
-local notation "E" => Challenge.Spec EF
+variable {F : Type}
 
 /-! ### The example AIRs fit -/
 
-omit [BaseField F] in
 /-- The expression operators are the constructors. -/
 theorem Expr.mul_eq (a b : Expr F) : a * b = .mul a b := rfl
-omit [BaseField F] in
 theorem Expr.sub_eq (a b : Expr F) : a - b = .sub a b := rfl
-omit [BaseField F] in
 theorem Expr.add_eq (a b : Expr F) : a + b = .add a b := rfl
 
 /-- Powers of two are powers of two. -/
@@ -63,7 +57,6 @@ theorem isPowerOfTwo_two_pow : ∀ k, (2 ^ k).isPowerOfTwo
     rw [Nat.pow_succ]
     exact Nat.isPowerOfTwo_mul_two_of_isPowerOfTwo (isPowerOfTwo_two_pow k)
 
-omit [BaseField F] in
 /-- Plonky3's chunk count for a largest degree `d + 1`, `d = 2 ^ k`. -/
 theorem logQuotientChunks_of (A : Air F) (k : Nat)
     (h : max A.maxDegree 2 - 1 = 2 ^ k) : A.logQuotientChunks = k := by
@@ -71,7 +64,6 @@ theorem logQuotientChunks_of (A : Air F) (k : Nat)
   simp only [h]
   rw [Nat.nextPowerOfTwo_eq_self (isPowerOfTwo_two_pow k), Nat.log2_two_pow]
 
-omit [BaseField F] in
 /-- The Fibonacci AIR fits its single chunk for every trace length. -/
 theorem fibonacci_degreeFits (logN : Nat) : (fibonacci : Air F).DegreeFits logN := by
   have hlc : (fibonacci : Air F).logQuotientChunks = 0 := logQuotientChunks_of _ 0 rfl
@@ -83,7 +75,7 @@ theorem fibonacci_degreeFits (logN : Nat) : (fibonacci : Air F).DegreeFits logN 
     simp only [Expr.sub_eq, Expr.add_eq, Expr.degBound] <;> omega
 
 /-- The cube AIR's degree-3 transition fits its two chunks for every trace length. -/
-theorem cube_degreeFits (logN : Nat) : (cube : Air F).DegreeFits logN := by
+theorem cube_degreeFits [One F] (logN : Nat) : (cube : Air F).DegreeFits logN := by
   have hlc : (cube : Air F).logQuotientChunks = 1 := logQuotientChunks_of _ 1 rfl
   have := Nat.two_pow_pos logN
   intro c hc
@@ -92,7 +84,6 @@ theorem cube_degreeFits (logN : Nat) : (cube : Air F).DegreeFits logN := by
   rcases hc with rfl | rfl | rfl | rfl | rfl <;>
     simp only [Expr.sub_eq, Expr.add_eq, Expr.degBound] <;> omega
 
-omit [BaseField F] in
 /-- The largest degree of a nonempty list of degree-3 constraints. -/
 theorem foldl_max_degree (a : Nat) : ∀ l : List (Expr F), (∀ c ∈ l, c.degree = 3) → l ≠
     [] → l.foldl (fun m c ↦ max m c.degree) a = max a 3
@@ -102,7 +93,6 @@ theorem foldl_max_degree (a : Nat) : ∀ l : List (Expr F), (∀ c ∈ l, c.degr
     rw [List.foldl_cons, foldl_max_degree _ (d :: l) (fun e he ↦ hl e (List.mem_cons_of_mem _ he))
       (List.cons_ne_nil _ _), hl c List.mem_cons_self, Nat.max_assoc, Nat.max_self]
 
-omit [BaseField F] in
 /-- The wide AIR's quotient has two chunks. -/
 theorem wide_logQuotientChunks (w : Nat) (hw : 0 < w) : (wide w : Air F).logQuotientChunks = 1 := by
   have hmax : (wide w : Air F).maxDegree = 3 := by
@@ -114,7 +104,6 @@ theorem wide_logQuotientChunks (w : Nat) (hw : 0 < w) : (wide w : Air F).logQuot
       rfl
   exact logQuotientChunks_of _ 1 (by rw [hmax]; rfl)
 
-omit [BaseField F] in
 /-- The wide AIR fits its two chunks for every width and trace length. -/
 theorem wide_degreeFits (w logN : Nat) : (wide w : Air F).DegreeFits logN := by
   have := Nat.two_pow_pos logN
@@ -124,6 +113,10 @@ theorem wide_degreeFits (w logN : Nat) : (wide w : Air F).DegreeFits logN := by
   rw [wide_logQuotientChunks w (by omega), Nat.pow_succ]
   simp only [Expr.mul_eq, Expr.sub_eq, Expr.add_eq, Expr.degBound]
   omega
+
+variable [BaseField F] {EF : Type} [Challenge F EF]
+local notation "K" => F
+local notation "E" => Challenge.Spec EF
 
 /-! ### The folded quotient -/
 

@@ -30,11 +30,10 @@ by `Merkle.verifyBatchM_pure`: with pure hashes the monadic opening check is the
 namespace CompStark.Fri
 open CompStark.Stark CompStark.Merkle
 
-variable {F : Type} [BaseField F]
+variable {F : Type}
 local notation "hashF" => CompStark.Hash.Poseidon2.hash F
 local notation "compF" => CompStark.Hash.Poseidon2.compress F
 
-omit [BaseField F] in
 /-- A running maximum from at most `h` over matrices of height `h` is `h`. -/
 theorem foldl_max_height (ms : List (Mat F)) (h : Nat)
     (hms : ∀ m ∈ ms, m.height = h) : ∀ acc, acc ≤ h → ms ≠ [] → ms.foldl
@@ -49,6 +48,8 @@ theorem foldl_max_height (ms : List (Mat F)) (h : Nat)
     | cons b t =>
       exact ih (fun m hm ↦ hms m (List.mem_cons_of_mem a hm)) h (Nat.le_refl h)
         (List.cons_ne_nil b t)
+
+variable [BaseField F]
 
 /-- The largest height of matrices of one height `h` is `h`. -/
 theorem maxHeight_ofMats [Poseidon2Field F] (ms : List (Mat F)) (h : Nat) (hne : ms ≠ [])

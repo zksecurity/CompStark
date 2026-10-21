@@ -191,7 +191,7 @@ theorem evalX_polyOf_coeff (dy dx : ℕ) (a : Matrix (Fin dy) (Fin dx) F) (x : F
   rw [evalX_eq_map, coeff_map, polyOf_coeff]
   split_ifs <;> simp only [coe_evalRingHom, eval_zero]
 
-variable {ι : Type} [Fintype ι]
+variable {ι : Type}
 
 /-- The interpolation constraints `B(xᵢ, Z) = u(xᵢ, Z) A(xᵢ, Z)`, coefficientwise in `Z`. -/
 noncomputable def constraintMap (domain : ι → F) {M : ℕ} (u : Fin (M + 1) → ι → F)
@@ -215,7 +215,6 @@ noncomputable def constraintMap (domain : ι → F) {M : ℕ} (u : Fin (M + 1) �
     rw [show ∀ p q : Polynomial F, C c * p - colPoly u i * (C c * q) =
       C c * (p - colPoly u i * q) from fun p q => by ring, coeff_C_mul]
 
-omit [Fintype ι] in
 /-- A kernel element gives the column identities `B(xᵢ, Z) = u(xᵢ, Z) A(xᵢ, Z)`. -/
 theorem identity_of_mem_ker (domain : ι → F) {M : ℕ} (u : Fin (M + 1) → ι → F)
     (ax bx dA : ℕ) (ab : Matrix (Fin (dA + 1)) (Fin (ax + 1)) F ×
@@ -235,6 +234,8 @@ theorem identity_of_mem_ker (domain : ι → F) {M : ℕ} (u : Fin (M + 1) → �
     have hprod : (colPoly u i * evalX (domain i) (polyOf _ _ ab.1)).natDegree ≤ dA + M :=
       natDegree_mul_le.trans (by have := colPoly_natDegree_le u i; omega)
     rw [coeff_eq_zero_of_natDegree_lt (by omega), coeff_eq_zero_of_natDegree_lt (by omega)]
+
+variable [Fintype ι]
 
 /-- A nonzero kernel element has `A ≠ 0`, as `B` of `X`-degree `< n` cannot vanish on `n` points. -/
 theorem polyOf_fst_ne_zero (domain : ι ↪ F) {M : ℕ} (u : Fin (M + 1) → ι → F)
@@ -287,9 +288,31 @@ section Decoding
 
 open Polynomial Polynomial.Bivariate
 
-variable {ι : Type} [Fintype ι] {F : Type} [Field F] [DecidableEq F]
+variable {ι : Type} [Fintype ι] {F : Type}
 
-omit [DecidableEq F] in
+/-- The coordinates at which the words `u` and `p` differ in some row. -/
+noncomputable def disagree [DecidableEq F] {M : ℕ} (u p : Fin (M + 1) → ι → F) : Finset ι :=
+  Finset.univ.filter fun i => ∃ j, u j i ≠ p j i
+
+/-- Codewords `p` within `⌊δ n⌋` disagreements make `u` jointly `δ`-close. -/
+theorem jointProximity_of_disagree_card_le [DecidableEq F] [Nonempty ι] (C : Set (ι → F)) {M : ℕ}
+    (u p : Fin (M + 1) → ι → F) (δ : ℝ≥0) (hp : ∀ j, p j ∈ C)
+    (hD : (disagree u p).card ≤ Nat.floor (δ * Fintype.card ι)) :
+    Code.jointProximity (C := C) (u := u) δ := by
+  classical
+  rw [← Code.jointAgreement_iff_jointProximity]
+  refine ⟨(disagree u p)ᶜ, (Code.relDist_floor_bound_iff_complement_bound _ _ _).mp ?_, p,
+    fun j => ⟨hp j, fun i hi => ?_⟩⟩
+  · rw [Finset.card_compl]
+    exact Nat.sub_le_sub_left hD _
+  · rw [Finset.mem_filter]
+    refine ⟨Finset.mem_univ _, ?_⟩
+    by_contra h
+    exact Finset.mem_compl.mp hi
+      (Finset.mem_filter.mpr ⟨Finset.mem_univ _, j, Ne.symm h⟩)
+
+variable [Field F]
+
 /-- Evaluating in `X` then `Z` is evaluating in `Z` then `X`. -/
 theorem evalX_eval_eq_evalY_eval (x z : F) (f : Polynomial (Polynomial F)) :
     (evalX x f).eval z = (evalY z f).eval x := by
@@ -298,7 +321,6 @@ theorem evalX_eval_eq_evalY_eval (x z : F) (f : Polynomial (Polynomial F)) :
   rw [evalX_eq_map, eval_map, h]
   rfl
 
-omit [DecidableEq F] in
 /-- Fixing `Z` keeps the `X`-degree. -/
 theorem evalY_natDegree_le (z : F) (f : Polynomial (Polynomial F)) :
     (evalY z f).natDegree ≤ degreeX f := by
@@ -306,6 +328,8 @@ theorem evalY_natDegree_le (z : F) (f : Polynomial (Polynomial F)) :
   refine natDegree_sum_le_of_forall_le _ _ fun j _ => ?_
   rw [← C_pow]
   exact le_trans (natDegree_mul_C_le _ _) (coeff_natDegree_le_degreeX f j)
+
+variable [DecidableEq F]
 
 /-- **Rows.** At a good parameter `z`, with `Pz` the codeword close to the curve point,
 `B(X, z) = Pz(X) A(X, z)`. -/
@@ -328,10 +352,6 @@ theorem row_identity (domain : ι ↪ F) {M : ℕ} (u : Fin (M + 1) → ι → F
       natDegree_mul_le.trans (by have := evalY_natDegree_le z A; omega)
     have := evalY_natDegree_le z B
     exact (natDegree_sub_le _ _).trans_lt (by omega)
-
-/-- The coordinates at which the words `u` and `p` differ in some row. -/
-noncomputable def disagree {M : ℕ} (u p : Fin (M + 1) → ι → F) : Finset ι :=
-  Finset.univ.filter fun i => ∃ j, u j i ≠ p j i
 
 /-- Curve points of `u` and `p` differ only on `disagree u p`. -/
 theorem hammingDist_curveWord_le {M : ℕ} (u p : Fin (M + 1) → ι → F) (z : F) :
@@ -448,24 +468,6 @@ theorem double_count (good : Finset F) {M : ℕ} (u p : Fin (M + 1) → ι → F
     _ = ∑ z ∈ good, Δ₀(curveWord u z, curveWord p z) := hsum.symm
     _ ≤ ∑ _z ∈ good, e := Finset.sum_le_sum hclose
     _ = good.card * e := by rw [Finset.sum_const, smul_eq_mul]
-
-omit [Field F] in
-/-- Codewords `p` within `⌊δ n⌋` disagreements make `u` jointly `δ`-close. -/
-theorem jointProximity_of_disagree_card_le [Nonempty ι] (C : Set (ι → F)) {M : ℕ}
-    (u p : Fin (M + 1) → ι → F) (δ : ℝ≥0) (hp : ∀ j, p j ∈ C)
-    (hD : (disagree u p).card ≤ Nat.floor (δ * Fintype.card ι)) :
-    Code.jointProximity (C := C) (u := u) δ := by
-  classical
-  rw [← Code.jointAgreement_iff_jointProximity]
-  refine ⟨(disagree u p)ᶜ, (Code.relDist_floor_bound_iff_complement_bound _ _ _).mp ?_, p,
-    fun j => ⟨hp j, fun i hi => ?_⟩⟩
-  · rw [Finset.card_compl]
-    exact Nat.sub_le_sub_left hD _
-  · rw [Finset.mem_filter]
-    refine ⟨Finset.mem_univ _, ?_⟩
-    by_contra h
-    exact Finset.mem_compl.mp hi
-      (Finset.mem_filter.mpr ⟨Finset.mem_univ _, j, Ne.symm h⟩)
 
 /-- A word `δ`-close to the code is within `⌊δ n⌋` of a codeword. -/
 theorem exists_close_codeword [Nonempty ι] (domain : ι ↪ F) (k : ℕ) {w : ι → F} {δ : ℝ≥0}

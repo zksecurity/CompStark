@@ -48,17 +48,17 @@ noncomputable def lossyBound (k n : ℕ) (δ_fld δ_int : ℝ≥0) (loss : ℝ) 
   max (max ((1 - (k : ℝ) / n - δ_fld) / ((δ_fld : ℝ) * (1 - (k : ℝ) / n - 2 * δ_fld)))
     ((δ_int : ℝ) / (δ_int - δ_fld))) ((δ_int : ℝ) / loss)
 
-variable {ι : Type} [Fintype ι] {F : Type} [Field F] [Fintype F] [DecidableEq F]
+variable {ι : Type} {F : Type} [Field F]
 
-omit [Fintype ι] [Fintype F] [DecidableEq F] in
 /-- The powers generator's word at `z` is the curve point. -/
 theorem powers_sum_eq_curveWord {M : ℕ} (u : Fin (M + 1) → ι → F) (z : F) :
     (fun i => ∑ j, univariatePowersGenerator F M z j • u j i) = curveWord u z :=
   funext fun i => by simp only [curveWord_apply, smul_eq_mul]
 
-omit [Fintype F] in
+variable [Fintype ι]
+
 /-- Two Reed–Solomon codewords at distance at most `n - k` are equal. -/
-theorem eq_of_hammingDist_le (domain : ι ↪ F) {k : ℕ} (hk : k ≤ Fintype.card ι)
+theorem eq_of_hammingDist_le [DecidableEq F] (domain : ι ↪ F) {k : ℕ} (hk : k ≤ Fintype.card ι)
     {c c' : ι → F} (hc : c ∈ ReedSolomon.code domain k) (hc' : c' ∈ ReedSolomon.code domain k)
     (hd : Δ₀(c, c') ≤ Fintype.card ι - k) : c = c' := by
   rcases Nat.eq_zero_or_pos k with rfl | hk0
@@ -70,7 +70,8 @@ theorem eq_of_hammingDist_le (domain : ι ↪ F) {k : ℕ} (hk : k ≤ Fintype.c
     rw [ReedSolomon.minDist_of_le hk] at hmd
     omega
 
-omit [DecidableEq F] in
+variable [Fintype F]
+
 /-- A lossy MCA event of the powers generator: the curve point agrees with a codeword `c` on a
 set `T` of at least `n - ⌊δ n⌋` points, and no subset of `T` missing at most `loss · n` points
 carries codewords for all the `uⱼ`. -/
@@ -97,7 +98,7 @@ theorem isLossyMCA_elim (domain : ι ↪ F) {k M : ℕ} {u : Fin (M + 1) → ι 
     rw [← powers_sum_eq_curveWord]
     exact h.symm
 
-variable [Nonempty ι]
+variable [DecidableEq F] [Nonempty ι]
 
 /-- **Lossy curve MCA, count.** At most `M · max(T₁, T₂, δ_int / loss)` seeds of the powers
 generator give a lossy MCA event at radius `δ_fld`. -/
