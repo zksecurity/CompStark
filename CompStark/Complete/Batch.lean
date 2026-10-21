@@ -5,6 +5,7 @@ Released under Apache 2.0 license as described in the file LICENSE.
 module
 
 public import CompStark.Complete.Pcs
+public import CompStark.Complete.Quotient
 public import CompStark.Plonky3.Batch
 
 /-! # The specification prover's batch proofs verify

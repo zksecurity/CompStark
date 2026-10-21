@@ -4,7 +4,10 @@ Released under Apache 2.0 license as described in the file LICENSE.
 -/
 module
 
-public import CompStark.Complete.Stark
+public import CompStark.Complete.Fri
+public import CompStark.Complete.Deep
+public import CompStark.Stark.Verifier
+public import CompStark.Stark.Prover
 
 /-! # Honest openings of any heights verify
 
@@ -16,6 +19,10 @@ inputs, one per distinct height, tallest first (`Fri.reduce`); FRI rolls each in
 (`verifyFri_proveFri`), the input openings are honest multi-openings of mixed heights
 (`verifyInputs_honest`), and the verifier's batched quotients at a query are the prover's
 (`reduceQuery_honest`).
+
+The run lemmas both STARK layers share live here too: the prover's `openPcs` (`openPcs_run`) and
+the verifier's `verifyPcs` up to the batching challenge (`verifyPcs_run`), the opened values
+(`openedOf`, `honestItem_of`), and the transcript and grinding steps.
 -/
 
 @[expose] public section
@@ -86,6 +93,53 @@ theorem exists_max {α : Type} (key : α → Nat) : ∀ l : List α, l ≠ [] �
         · exact le_rfl
         · have := hmax y hy; omega⟩
 
+theorem observeExts_append (t : Transcript F 24) (a b : List EF) :
+    t.observeExts (a ++ b) = (t.observeExts a).observeExts b := by
+  simp only [Transcript.observeExts, List.foldl_append]
+
+theorem forM_observeExts (ov : List (Array EF)) (t : Transcript F 24) :
+    (ov.forM fun ys ↦ pObserveExts ys.toList).run t =
+      ((), t.observeExts (ov.flatMap (·.toList))) := by
+  induction ov generalizing t with
+  | nil => rfl
+  | cons ys ov ih =>
+    show (pObserveExts ys.toList >>= fun _ ↦ ov.forM fun ys ↦ pObserveExts ys.toList).run t = _
+    rw [prun_bind, List.flatMap_cons, observeExts_append]
+    exact ih _
+
+/-- The values the specification opens of a matrix at its points. -/
+def openedOf (b : Nat) (x : Mat F × List EF) : List (Array EF) := x.2.map (Fri.openedAt b x.1)
+
+theorem flatMap_zip_openedOf (b : Nat) (m : Mat F) (zs : List EF) :
+    ((zs.zip (openedOf b (m, zs))).map fun y ↦ (y.1, y.2.toList)).flatMap (·.2) =
+      (openedOf b (m, zs)).flatMap (·.toList) := by
+  induction zs with
+  | nil => rfl
+  | cons z zs ih =>
+    simp only [openedOf, List.map_cons, List.zip_cons_cons, List.flatMap_cons] at ih ⊢
+    rw [ih]
+
+theorem mem_zip_map {α β : Type} (f : α → β) (zs : List α) :
+    ∀ y ∈ zs.zip (zs.map f), y.1 ∈ zs ∧ y.2 = f y.1 := by
+  induction zs with
+  | nil => intro y hy; simp only [List.map_nil, List.zip_nil_right, List.not_mem_nil] at hy
+  | cons z zs ih =>
+    intro y hy
+    rw [List.map_cons, List.zip_cons_cons, List.mem_cons] at hy
+    rcases hy with rfl | hy
+    · exact ⟨List.mem_cons_self, rfl⟩
+    · obtain ⟨h1, h2⟩ := ih y hy
+      exact ⟨List.mem_cons_of_mem _ h1, h2⟩
+
+/-- An LDE opened at points outside the base field is an honest item of the batched quotients. -/
+theorem honestItem_of (b h : Nat) (m : Mat F) (zs : List EF) (ps : List (Polynomial F))
+    (hm : CompStark.Mat.IsLde b h m ps) (hzs : ∀ z ∈ zs, Ext.OutsideBase z) :
+    Deep.HonestItem b h (m, zs.zip (openedOf b (m, zs))) := by
+  refine ⟨ps, hm, fun y hy ↦ ?_⟩
+  obtain ⟨hz, hy2⟩ := mem_zip_map (Fri.openedAt b m) zs y hy
+  obtain ⟨hs, hv⟩ := openedAt_isLde b h m ps y.1 hm (hzs _ hz)
+  exact ⟨hzs _ hz, hy2 ▸ hs, fun j hj ↦ hy2 ▸ hv j hj⟩
+
 theorem length_zip_openedOf (b : Nat) (m : Mat F) (zs : List EF) :
     ((zs.zip (openedOf b (m, zs))).map fun y ↦ (y.1, y.2.toList)).map (·.2.length) =
       (openedOf b (m, zs)).map (·.size) := by
@@ -95,7 +149,293 @@ theorem length_zip_openedOf (b : Nat) (m : Mat F) (zs : List EF) :
     simp only [openedOf, List.map_cons, List.zip_cons_cons, Array.length_toList] at ih ⊢
     rw [ih]
 
+theorem forM_mats (b : Nat) (ms : List (Mat F × List EF)) (t : Transcript F 24) :
+    ((ms.map fun x ↦ (openedOf b x, x.1, x.2.zip (openedOf b x))).forM
+        fun x ↦ x.1.forM fun ys ↦ pObserveExts ys.toList : PM F 24 Unit).run t =
+      ((), t.observeExts ((ms.flatMap (openedOf b)).flatMap (·.toList))) := by
+  induction ms generalizing t with
+  | nil => rfl
+  | cons x ms ih =>
+    simp only [List.map_cons, List.forM]
+    rw [prun_bind, forM_observeExts, ih, List.flatMap_cons,
+      List.flatMap_append, observeExts_append]
+
+theorem powTwo_ne_one {zeta : EF} (hz : Ext.OutsideBase zeta) {n : Nat} (hn : n ≤ twoAdicity F) :
+    (Ext.powTwo zeta n - 1 != 0) = true := by
+  rw [bne_iff_ne, ne_eq]
+  intro he
+  have hne := pow_ne_of_outsideBase hz (specDomain n hn) one_ne_zero
+  rw [map_one, one_pow] at hne
+  apply hne
+  have h2 := congrArg Challenge.toSpec he
+  rw [Challenge.toSpec_sub, Ext.toSpec_powTwo, Challenge.toSpec_one, Challenge.toSpec_zero,
+    sub_eq_zero] at h2
+  exact h2
+
+theorem grind_canonical (t : Transcript F 24) (bits : Nat) :
+    (bits != 0 || (t.grind bits).1 == 0) = true := by
+  by_cases h : bits = 0
+  · subst h
+    simp only [Transcript.grind, ↓reduceIte, beq_self_eq_true, Bool.or_true]
+  · rw [bne_iff_ne.mpr h, Bool.true_or]
+
+/-- Maps of the commitments of rounds with the same commitments agree. -/
+theorem map_fst_congr {C X Y β : Type} (g : C → β) :
+    ∀ (rs : List (C × X)) (rs' : List (C × Y)),
+      rs.map (·.1) = rs'.map (·.1) → (rs.map fun (c, _) ↦ g c) = rs'.map fun r ↦ g r.1
+  | [], [], _ => rfl
+  | [], _ :: _, h => absurd h (List.cons_ne_nil _ _).symm
+  | _ :: _, [], h => absurd h (List.cons_ne_nil _ _)
+  | (c, x) :: rs, (c', y) :: rs', h => by
+    simp only [List.map_cons, List.cons.injEq] at h
+    simp only [List.map_cons]
+    rw [h.1, map_fst_congr g rs rs' h.2]
+
+/-- A running maximum from at most `a` over values at most `a`, one of them `a`, is `a`. -/
+theorem foldl_max_of_mem (a : Nat) : ∀ (l : List Nat) (acc : Nat), (∀ x ∈ l, x ≤ a) →
+    (acc = a ∨ a ∈ l) → acc ≤ a → l.foldl max acc = a
+  | [], _, _, h, _ => by
+    rcases h with h | h
+    · exact h
+    · exact absurd h List.not_mem_nil
+  | x :: l, acc, hle, h, hacc => by
+    rw [List.foldl_cons]
+    refine foldl_max_of_mem a l _ (fun y hy ↦ hle y (List.mem_cons_of_mem _ hy)) ?_
+      (Nat.max_le.mpr ⟨hacc, hle x List.mem_cons_self⟩)
+    rcases h with h | h
+    · left; rw [h]; exact Nat.max_eq_left (hle x List.mem_cons_self)
+    · rcases List.mem_cons.mp h with rfl | h
+      · left; exact Nat.max_eq_right hacc
+      · right; exact h
+
 variable [Poseidon2Field F]
+
+/-! ### Opening -/
+
+theorem forM_rounds (b : Nat) (rounds : List (OpenRound (specBackend EF))) (t : Transcript F 24) :
+    ((rounds.map fun r ↦ r.2.map fun x ↦ (openedOf b x, x.1, x.2.zip (openedOf b x))).forM
+        fun os ↦ os.forM fun x ↦ x.1.forM fun ys ↦ pObserveExts ys.toList : PM F 24 Unit).run t =
+      ((), t.observeExts
+        ((rounds.flatMap fun r ↦ r.2.flatMap (openedOf b)).flatMap (·.toList))) := by
+  induction rounds generalizing t with
+  | nil => rfl
+  | cons r rounds ih =>
+    simp only [List.map_cons, List.forM]
+    rw [prun_bind]
+    erw [forM_mats]
+    rw [ih, List.flatMap_cons,
+      List.flatMap_append, observeExts_append]
+
+/-- The claimed evaluation counts of opened values: per round, per matrix, per point. -/
+def countsOf (opened : List (List (List (Array EF) × Mat F × List (EF × Array EF)))) :
+    List (List (List Nat)) :=
+  opened.map (·.map fun x ↦ x.1.map (·.size))
+
+theorem openPcs_run (P : Params) (rounds : List (OpenRound (specBackend EF)))
+    (t : Transcript F 24) :
+    (openPcs (specBackend EF) P rounds).run t =
+      let opened := rounds.map fun r ↦ r.2.map fun x ↦
+        (openedOf P.logBlowup x, x.1, x.2.zip (openedOf P.logBlowup x))
+      let t1 := (t.observeList (DomainSeparator.pcsSeed F EF (countsOf opened)
+        P.batchPowBits)).observeExts
+          ((rounds.flatMap fun r ↦ r.2.flatMap (openedOf P.logBlowup)).flatMap (·.toList))
+      let g := t1.grind P.batchPowBits
+      let fri := proveFri (specBackend EF) P rounds
+        ((Fri.reduce (g.2.sampleExtValue : EF) (opened.flatten.map (·.2))).map (·.2)) g.1
+      ((opened.map (·.map (·.1)), (fri.run (Transcript.sampleExtState EF g.2)).1),
+        (fri.run (Transcript.sampleExtState EF g.2)).2) := by
+  unfold openPcs
+  simp only [prun_bind]
+  erw [forM_rounds]
+  rfl
+
+/-! ### The verifier's observations -/
+
+/-- The innermost body of `verifyPcs`'s observation loop. -/
+def obsPts (p : EF × List EF) (_ : PUnit) : M (poseidon2 F) (ForInStep PUnit) := do
+  observeExts (poseidon2 F) p.2
+  pure (ForInStep.yield PUnit.unit)
+
+/-- The middle body of `verifyPcs`'s observation loop. -/
+def obsMats (x : Domain F × List (EF × List EF)) (_ : PUnit) : M (poseidon2 F) (ForInStep PUnit) :=
+  do
+  forIn x.2 PUnit.unit obsPts
+  pure (ForInStep.yield PUnit.unit)
+
+/-- The outer body of `verifyPcs`'s observation loop. -/
+def obsRounds (r : Round F EF) (_ : PUnit) : M (poseidon2 F) (ForInStep PUnit) := do
+  forIn r.2 PUnit.unit obsMats
+  pure (ForInStep.yield PUnit.unit)
+
+theorem verifyPcs_eq (P : Params) (rounds : List (Round F EF)) (proof : FriProof F EF) : verifyPcs
+    (poseidon2 F) P rounds proof = (do
+      ensure (P.batchPowBits != 0 || proof.batchWitness == 0) "batch witness"
+      observeList (poseidon2 F) (DomainSeparator.pcsSeed F EF (claimCounts rounds) P.batchPowBits)
+      forIn rounds PUnit.unit obsRounds
+      ensure (← checkWitness (poseidon2 F) P.batchPowBits proof.batchWitness) "batch witness"
+      let alpha ← (sampleExt (poseidon2 F) : M (poseidon2 F) EF)
+      verifyFri (poseidon2 F) P proof rounds alpha) :=
+  rfl
+
+theorem forIn_obsPts (pts : List (EF × List EF)) (t : Transcript F 24) :
+    forIn pts PUnit.unit obsPts t = .ok (PUnit.unit, t.observeExts (pts.flatMap (·.2))) := by
+  induction pts generalizing t with
+  | nil => rfl
+  | cons p pts ih =>
+    rw [forIn_cons_ok p pts _ PUnit.unit obsPts t (t.observeExts p.2)
+      (bind_ok (observeExts_run t p.2)), ih,
+      List.flatMap_cons, observeExts_append]
+
+theorem forIn_obsMats (mats : List (Domain F × List (EF × List EF)))
+    (t : Transcript F 24) : forIn mats PUnit.unit obsMats t =
+      .ok (PUnit.unit, t.observeExts (mats.flatMap fun x ↦ x.2.flatMap (·.2))) := by
+  induction mats generalizing t with
+  | nil => rfl
+  | cons x mats ih =>
+    have h : obsMats x PUnit.unit t =
+        .ok (.yield PUnit.unit, t.observeExts (x.2.flatMap (·.2))) := by
+      unfold obsMats
+      rw [bind_ok (forIn_obsPts x.2 t)]
+      rfl
+    rw [forIn_cons_ok x mats _ PUnit.unit obsMats t _ h, ih, List.flatMap_cons,
+      observeExts_append]
+
+theorem forIn_obsRounds (rounds : List (Round F EF)) (t : Transcript F 24) :
+    forIn rounds PUnit.unit obsRounds t =
+      .ok (PUnit.unit,
+        t.observeExts (rounds.flatMap fun r ↦ r.2.flatMap fun x ↦ x.2.flatMap (·.2))) := by
+  induction rounds generalizing t with
+  | nil => rfl
+  | cons r rounds ih =>
+    have h : obsRounds r PUnit.unit t =
+        .ok (.yield PUnit.unit, t.observeExts (r.2.flatMap fun x ↦ x.2.flatMap (·.2))) := by
+      unfold obsRounds
+      rw [bind_ok (forIn_obsMats r.2 t)]
+      rfl
+    rw [forIn_cons_ok r rounds _ PUnit.unit obsRounds t _ h, ih, List.flatMap_cons,
+      observeExts_append]
+
+theorem verifyPcs_run (P : Params) (rounds : List (Round F EF)) (proof : FriProof F EF)
+    (t : Transcript F 24) (hbw : (P.batchPowBits != 0 || proof.batchWitness == 0) = true) :
+    verifyPcs (poseidon2 F) P rounds proof t = (do
+      ensure (← checkWitness (poseidon2 F) P.batchPowBits proof.batchWitness) "batch witness"
+      let alpha ← (sampleExt (poseidon2 F) : M (poseidon2 F) EF)
+      verifyFri (poseidon2 F) P proof rounds alpha)
+      ((t.observeList (DomainSeparator.pcsSeed F EF (claimCounts rounds)
+        P.batchPowBits)).observeExts (rounds.flatMap fun (r : Round F EF) ↦
+          r.2.flatMap fun (x : Domain F × List (EF × List EF)) ↦
+            x.2.flatMap fun (y : EF × List EF) ↦ y.2)) := by
+  rw [verifyPcs_eq, hbw, ensure_true, pure_bind, bind_ok (observeList_run _ _),
+    bind_ok (forIn_obsRounds rounds _)]
+
+theorem observeList_bind {β : Type} (xs : List F) (f : Unit → M (poseidon2 F) β)
+    (t : Transcript F 24) :
+    (observeList (poseidon2 F) xs >>= f) t = f () (t.observeList xs) :=
+  bind_ok (observeList_run t xs)
+
+theorem sampleExt_bind {β : Type} (f : EF → M (poseidon2 F) β) (t : Transcript F 24) :
+    ((sampleExt (poseidon2 F) : M (poseidon2 F) EF) >>= f) t = f (t.sampleExtValue : EF)
+        (Transcript.sampleExtState EF t) := bind_ok (sampleExt_run t)
+
+/-- The verifier's input checks accept the honest multi-openings of rounds of matrices of heights
+`2 ^ h ≤ 2 ^ H ≤ 2 ^ logMax`, some of height `2 ^ H`. -/
+theorem verifyInputs_honest (P : Params) (logMax : Nat) (indices : List Nat)
+    (rounds : List (Committed F × List (Mat F × List (EF × Array EF))))
+    (hidx : ∀ i ∈ indices, i < 2 ^ logMax)
+    (hrounds : ∀ r ∈ rounds, r.2 ≠ [] ∧ r.1 = Committed.ofMats hashF compF (r.2.map (·.1)) ∧
+      ∃ H ≤ logMax, (∃ x ∈ r.2, x.1.height = 2 ^ H) ∧
+        ∀ x ∈ r.2, x.2 ≠ [] ∧ ∃ h ≤ H, Deep.HonestItem P.logBlowup h x)
+    (t : Transcript F 24) :
+    verifyInputs (poseidon2 F) P logMax indices
+      (rounds.map fun r ↦ openMulti (specBackend EF) r.1
+        (indices.map (· >>> (logMax - (specBackend EF).logHeight r.1))))
+      (rounds.map fun r ↦ (r.1.root, r.2.map fun x ↦
+        ((⟨1, Nat.log2 x.1.height - P.logBlowup⟩ : Domain F), x.2.map fun y ↦ (y.1, y.2.toList))))
+      t = .ok ((), t) := by
+  unfold verifyInputs
+  simp only [List.length_map, beq_self_eq_true, ensure_true, pure_bind, List.zip_map']
+  refine (bind_ok (a := PUnit.unit) (t' := t) ?_).trans rfl
+  induction rounds with
+  | nil => rfl
+  | cons r rounds ih =>
+    obtain ⟨hne, hc, H, hH, htop, hits⟩ := hrounds r List.mem_cons_self
+    rw [List.map_cons]
+    refine (forIn_cons_ok _ _ _ PUnit.unit _ t t ?_).trans
+      (ih fun r' hr' ↦ hrounds r' (List.mem_cons_of_mem _ hr'))
+    obtain ⟨c, its⟩ := r
+    dsimp only at hne hc hits htop ⊢
+    subst hc
+    have hmix : Fri.MixedHeights H (its.map (·.1)) := by
+      refine ⟨fun m hm ↦ ?_, ?_⟩
+      · obtain ⟨x, hx, rfl⟩ := List.mem_map.mp hm
+        obtain ⟨-, h, hh, ps, hl, -⟩ := hits x hx
+        exact ⟨h, hh, hl.2.1⟩
+      · obtain ⟨x, hx, hxH⟩ := htop
+        exact ⟨x.1, List.mem_map_of_mem hx, hxH⟩
+    have hmx : Nat.log2 (Committed.ofMats hashF compF (its.map (·.1))).maxHeight = H := by
+      rw [Fri.maxHeight_mixed hmix, Nat.log2_two_pow]
+    have hdims : ((its.map fun x ↦ ((⟨1, Nat.log2 x.1.height - P.logBlowup⟩ : Domain F),
+        x.2.map fun y ↦ (y.1, y.2.toList))).map fun x ↦
+          (2 ^ (x.1.logSize + P.logBlowup), (x.2.headD default).2.length)) =
+        (its.map (·.1)).map fun m ↦ (m.height, m.width) := by
+      rw [List.map_map, List.map_map]
+      refine List.map_congr_left fun x hx ↦ ?_
+      obtain ⟨hpne, h, -, ps, hl, hpts⟩ := hits x hx
+      obtain ⟨y, ys, hy⟩ := List.exists_cons_of_ne_nil hpne
+      have hys := (hpts y (by rw [hy]; exact List.mem_cons_self)).2.1
+      simp only [Function.comp_apply, hy, List.map_cons, List.headD_cons, Array.length_toList]
+      rw [hys, ← hl.1, hl.2.1, Nat.log2_two_pow, Nat.sub_add_cancel hl.2.2.2.1]
+    have hbatch : ((its.map fun x ↦ ((⟨1, Nat.log2 x.1.height - P.logBlowup⟩ : Domain F),
+        x.2.map fun y ↦ (y.1, y.2.toList))).map fun x ↦ x.1.logSize + P.logBlowup).foldl max 0 =
+          H := by
+      have hlog : ∀ x ∈ its, Nat.log2 x.1.height - P.logBlowup + P.logBlowup =
+          Nat.log2 x.1.height := fun x hx ↦ by
+        obtain ⟨-, h, -, ps, hl, -⟩ := hits x hx
+        rw [hl.2.1, Nat.log2_two_pow, Nat.sub_add_cancel hl.2.2.2.1]
+      refine foldl_max_of_mem H _ 0 (fun z hz ↦ ?_) (Or.inr ?_) (Nat.zero_le _)
+      · obtain ⟨d, hd, rfl⟩ := List.mem_map.mp hz
+        obtain ⟨x, hx, rfl⟩ := List.mem_map.mp hd
+        obtain ⟨-, h, hh, ps, hl, -⟩ := hits x hx
+        dsimp only
+        rw [hlog x hx, hl.2.1, Nat.log2_two_pow]; exact hh
+      · obtain ⟨x, hx, hxH⟩ := htop
+        refine List.mem_map.mpr ⟨_, List.mem_map_of_mem hx, ?_⟩
+        dsimp only
+        rw [hlog x hx, hxH, Nat.log2_two_pow]
+    have hrows : ∀ i, ((Committed.ofMats hashF compF (its.map (·.1))).openAt i).values.size =
+        its.length := fun i ↦ by
+      rw [Fri.openAt_values_mixed hmix, List.size_toArray, List.length_map, List.length_map]
+    have hpts : (its.map fun x ↦ ((⟨1, Nat.log2 x.1.height - P.logBlowup⟩ : Domain F),
+        x.2.map fun y ↦ (y.1, y.2.toList))).all (fun x ↦ !x.2.isEmpty) = true := by
+      simp only [List.all_map, List.all_eq_true, Function.comp_apply, Bool.not_eq_eq_eq_not,
+        Bool.not_true, List.isEmpty_eq_false_iff, ne_eq, List.map_eq_nil_iff]
+      exact fun x hx ↦ (hits x hx).1
+    simp only [hmx, openMulti, List.size_toArray, List.length_map, beq_self_eq_true, ensure_true,
+      pure_bind, hdims, hbatch, hpts]
+    set idx' := indices.map (· >>> (logMax - H)) with hidx'
+    have hall : ((idx'.map
+        (Committed.ofMats hashF compF (its.map (·.1))).openAt).map (·.values)).toArray.all
+          (fun a ↦ a.size == its.length) 0 indices.length = true := by
+      rw [show indices.length = ((idx'.map
+        (Committed.ofMats hashF compF (its.map (·.1))).openAt).map (·.values)).toArray.size by
+          simp only [hidx', List.size_toArray, List.length_map], List.all_toArray]
+      simp only [List.all_map, List.all_eq_true, Function.comp_apply, beq_iff_eq]
+      exact fun i _ ↦ hrows i
+    rw [hall, ensure_true, pure_bind]
+    have hv := Fri.verifyMulti_openMulti hmix idx' fun i hi ↦ by
+      obtain ⟨j, hj, rfl⟩ := List.mem_map.mp hi
+      exact Deep.shiftRight_lt (hidx j hj) hH
+    set C := Committed.ofMats hashF compF (its.map (·.1))
+    have e1 : (((idx'.map ((specBackend EF).openAt C)).map (·.values)).map fun r ↦
+        r.toList.map (·.toList)) =
+        idx'.map fun i ↦ (C.openAt i).values.toList.map (·.toList) := by
+      rw [List.map_map, List.map_map]; rfl
+    have e2 : (idx'.map ((specBackend EF).openAt C)).map (·.path.toList) =
+        idx'.map fun i ↦ (C.openAt i).path.toList := by
+      rw [List.map_map]; rfl
+    rw [bind_ok (checkMulti_eq _ _ _ _ _ t), e1, e2, hv]
+    rfl
+
 
 /-- The committed matrices with their points and opened values. -/
 def honestRounds (b : Nat) (rounds : List (OpenRound (specBackend EF))) :
