@@ -857,17 +857,18 @@ def finalPolyOf (P : Params) (fin : Array EF) : Array EF :=
   idft P.logFinalPolyLen (Array.ofFn (n := 2 ^ P.logFinalPolyLen) fun i ↦
     fin.getD (reverseBits i P.logFinalPolyLen) 0)
 
-theorem commitPhase_run [Poseidon2Field F] (P : Params) (las : List Nat) (f0 : Array EF)
-    (rest : List (Array EF)) (t : Transcript F 24) :
-    (commitPhase (specBackend EF) P las (f0 :: rest : List (Array EF))).run t =
-      ({ (chain P las f0 rest t).1.foldl pushRd ⟨#[], [], #[], #[], #[]⟩ with
-          finalPoly := finalPolyOf P (chain P las f0 rest t).2.1 },
-        (chain P las f0 rest t).2.2.observeExts
-          (finalPolyOf P (chain P las f0 rest t).2.1).toList) := by
+theorem commitPhase_run [Poseidon2Field F] (P : Params) (las : List Nat)
+    (inputs : List (Array EF)) (t : Transcript F 24) :
+    (commitPhase (specBackend EF) P las inputs).run t =
+      ({ (chain P las (inputs.headD #[]) inputs.tail t).1.foldl pushRd ⟨#[], [], #[], #[], #[]⟩
+          with finalPoly := finalPolyOf P (chain P las (inputs.headD #[]) inputs.tail t).2.1 },
+        (chain P las (inputs.headD #[]) inputs.tail t).2.2.observeExts
+          (finalPolyOf P (chain P las (inputs.headD #[]) inputs.tail t).2.1).toList) := by
   unfold commitPhase
-  rw [prun_bind]
-  erw [commitRounds_run]
-  rfl
+  rcases inputs with _ | ⟨f0, rest⟩ <;>
+  · rw [prun_bind]
+    erw [commitRounds_run]
+    rfl
 
 /-- The verifier's queries sample the prover's indices. -/
 theorem sampleIndices_mapM [Poseidon2Field F] (logMax : Nat) :
@@ -907,20 +908,20 @@ theorem sampleIndices_lt (logMax : Nat) :
     · exact sampleBits_lt _ _
     · exact sampleIndices_lt logMax n _ i h
 
-/-- The prover's FRI proof on the inputs `f0 :: rest`, `f0` of height `2 ^ h0`, after the batching
-grinding witness `bw`. -/
+/-- The prover's FRI proof on the inputs `inputs`, tallest first, after the batching grinding
+witness `bw`. -/
 theorem proveFri_run [Poseidon2Field F] (P : Params) (rounds : List (OpenRound (specBackend EF)))
-    (f0 : Array EF) (rest : List (Array EF)) (bw : F) (t : Transcript F 24) :
-    let h0 := Nat.log2 f0.size
+    (inputs : List (Array EF)) (bw : F) (t : Transcript F 24) :
+    let h0 := (inputs.map (Nat.log2 ·.size)).headD 0
     let las := foldSchedule P.maxLogArity (P.logBlowup + P.logFinalPolyLen) h0
-      ((f0 :: rest).map (Nat.log2 ·.size))
+      (inputs.map (Nat.log2 ·.size))
     let t1 := t.observeList (DomainSeparator.friSeed F EF las (2 ^ P.logFinalPolyLen)
       P.commitPowBits P.queryPowBits P.numQueries h0 P.logBlowup P.maxLogArity)
-    let r := chain P las f0 rest t1
+    let r := chain P las (inputs.headD #[]) inputs.tail t1
     let cp := { r.1.foldl pushRd ⟨#[], [], #[], #[], #[]⟩ with finalPoly := finalPolyOf P r.2.1 }
     let t3 := r.2.2.observeExts (finalPolyOf P r.2.1).toList
     let qs := sampleIndices h0 P.numQueries (t3.grind P.queryPowBits).2
-    (proveFri (specBackend EF) P rounds (f0 :: rest : List (Array EF)) bw).run t =
+    (proveFri (specBackend EF) P rounds inputs bw).run t =
       (⟨bw, cp.commits, cp.witnesses, (rounds.map fun (c, _) ↦ openMulti (specBackend EF) c
           (qs.1.map (· >>> (h0 - (specBackend EF).logHeight c)))).toArray,
         (answerFolds (specBackend EF) cp.data cp.arities.toList qs.1).toArray,
@@ -1165,9 +1166,8 @@ theorem length_chain [Poseidon2Field F] (P : Params) (las : List Nat) (f : Array
 
 /-- Without the flag after `proveFri`, there was none before it. -/
 theorem flag_proveFri [Poseidon2Field F] (P : Params) (rounds : List (OpenRound (specBackend EF)))
-    (f0 : Array EF) (rest : List (Array EF)) (bw : F) (t : Transcript F 24)
-    (h : ((proveFri (specBackend EF) P rounds (f0 :: rest : List (Array EF)) bw).run
-      t).2.grindFailed = false) :
+    (inputs : List (Array EF)) (bw : F) (t : Transcript F 24)
+    (h : ((proveFri (specBackend EF) P rounds inputs bw).run t).2.grindFailed = false) :
     t.grindFailed = false := by
   rw [proveFri_run] at h
   dsimp only at h
@@ -1209,7 +1209,7 @@ theorem verifyFri_proveFri [Poseidon2Field F] (P : Params)
       .ok ((),
         ((proveFri (specBackend EF) P rounds (f0 :: rest : List (Array EF)) bw).run t).2) := by
   rw [proveFri_run] at hgrind ⊢
-  dsimp only at hgrind ⊢
+  simp only [List.map_cons, List.headD_cons, List.tail_cons] at hgrind ⊢
   unfold verifyFri
   rw [hheights]
   simp only [List.map_cons, List.headD_cons]

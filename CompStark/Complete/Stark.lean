@@ -1196,7 +1196,7 @@ theorem verifyRun_honest (hin : Fits P A logN trace)
   have hgF : ((proveFri (specBackend EF) P (hRounds EF P A logN trace pis) [v]
       (hBatch EF P A logN trace pis).1).run (hT2 EF P A logN trace pis)).2.grindFailed = false := by
     rw [← hrun, ← proveTranscript_eq]; exact hgrind
-  have hg2 := flag_proveFri P _ v [] _ _ hgF
+  have hg2 := flag_proveFri P _ [v] _ _ hgF
   have hgB : (hBatch EF P A logN trace pis).2.grindFailed = false := by
     rwa [hT2, flag_sampleExt] at hg2
   have hgO : (hOod EF P A logN trace pis).2.grindFailed = false := by

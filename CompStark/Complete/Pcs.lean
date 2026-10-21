@@ -179,6 +179,18 @@ theorem honestRounds_ok {P : Params} {rounds : List (OpenRound (specBackend EF))
   have := hmaxr x hx
   rwa [hl.2.1, Nat.log2_two_pow] at this
 
+/-- Without the flag after `openPcs`, there was none before it. -/
+theorem flag_openPcs (P : Params) (rounds : List (OpenRound (specBackend EF)))
+    (t : Transcript F 24)
+    (h : ((openPcs (specBackend EF) P rounds).run t).2.grindFailed = false) :
+    t.grindFailed = false := by
+  rw [openPcs_run] at h
+  dsimp only at h
+  have h1 := flag_proveFri P rounds _ _ _ h
+  rw [flag_sampleExt] at h1
+  have h2 := flag_grind _ _ h1
+  rwa [flag_observeExts, flag_observeList] at h2
+
 /-- **Honest openings verify.** For rounds the specification prover opens honestly, the
 verifier's `verifyPcs` on the opened values accepts `openPcs`'s proof from a transcript on
 Plonky3's duplex, when the prover's grinder found its witnesses. -/
@@ -274,7 +286,7 @@ theorem verifyPcs_openPcs (P : Params) (rounds : List (OpenRound (specBackend EF
   simp only [List.map_cons] at hgrind ⊢
   -- the grinding flags and the duplexes
   have hgB : g.2.grindFailed = false := by
-    have h1 := flag_proveFri P rounds f0 (L.map (·.2)) g.1 (Transcript.sampleExtState EF g.2)
+    have h1 := flag_proveFri P rounds (f0 :: L.map (·.2)) g.1 (Transcript.sampleExtState EF g.2)
     have h2 := h1 hgrind
     rwa [flag_sampleExt] at h2
   have hd1 : t1.duplex = Poseidon2.duplex := by

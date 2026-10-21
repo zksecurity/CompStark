@@ -91,9 +91,11 @@ public import CompStark.Complete.Lde
 public import CompStark.Complete.Quotient
 public import CompStark.Complete.Stark
 public import CompStark.Complete.Pcs
+public import CompStark.Complete.Batch
 public import CompStark.Stark.Satisfied
 public import CompStark.Stark.Setup
 public import CompStark.Completeness
+public import CompStark.BatchCompleteness
 public import CompStark.KoalaBear.Completeness
 public import CompStark.Sound.Defs
 public import CompStark.Iop
