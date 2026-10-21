@@ -33,7 +33,8 @@ local notation "EF" => Ext4 p
 
 /-- The fast backend refines the specification. -/
 def backendFor_refines (hζ : 2 ≤ twoAdicity F) (hA : DomainsAddressable F EF)
-    (logN logBlowup logChunks : Nat) : Refines (backendFor (p := p) logN logBlowup logChunks) :=
+    (logBlowup : Nat) (shapes : List (Nat × Nat)) :
+    Refines (backendFor (p := p) logBlowup shapes) :=
   have h16 : 16 * 2 ^ twoAdicity F < USize.size := by
     unfold DomainsAddressable Addressable at hA
     rw [Mont32.d_ext4] at hA
@@ -42,18 +43,24 @@ def backendFor_refines (hζ : 2 ≤ twoAdicity F) (hA : DomainsAddressable F EF)
     RC := RC
     RV := RV
     transcript := transcript_eq
-    lde := ldeWith_rel _ (ldePlans_valid logN logBlowup logChunks)
+    lde := ldeWith_rel _ fun e he ↦ by
+      obtain ⟨⟨n, c⟩, -, he⟩ := List.mem_flatMap.mp he
+      exact ldePlans_valid n logBlowup c e he
     commit := commit_rel
     root := root_rel
     openAt := openAt_rel
     logHeight := fun h ↦ congrArg Nat.log2 (maxHeight_rel h)
     quotient := fun A pis d l _ _ _ _ alpha h hs hh hp hps hc ↦ by
-      show (if d == logN && l == logChunks then _ else _) = _
+      dsimp only [backendFor]
       split
-      · rename_i hd
+      · rename_i n c T hfind
+        have hmem := List.mem_of_find?_eq_some hfind
+        have hd := List.find?_some hfind
         simp only [Bool.and_eq_true, beq_iff_eq] at hd
-        rw [hd.1, hd.2]
-        rw [hd.1, hd.2] at hh
+        obtain ⟨⟨n', c'⟩, -, he⟩ := List.mem_map.mp hmem
+        simp only [Prod.mk.injEq] at he
+        obtain ⟨rfl, rfl, rfl⟩ := he
+        obtain ⟨rfl, rfl⟩ := hd
         exact quotientWith_rel A pis _ _ alpha h hs hh hp hps hc
       · exact quotientWith_rel A pis _ _ alpha h hs hh hp hps hc
     openedAt := fun b zs _ _ h hs hz ↦ openedAt_rel hζ b zs h hs hz
@@ -72,9 +79,9 @@ theorem prove_fast (hζ : 2 ≤ twoAdicity F) (hA : DomainsAddressable F EF) {pa
     {air : Air F} {logN : Nat} {trace : Array F} (publicValues : List F)
     (input : InputOk EF params air logN trace)
     (outOfDomain : Ext.OutsideBase (outOfDomainPoint EF params air logN trace publicValues)) :
-    proveWith (backendFor logN params.logBlowup (air.logQuotientChunks logN)) params air logN trace
-        publicValues =
+    proveWith (backendFor params.logBlowup [(logN, air.logQuotientChunks logN)]) params air logN
+        trace publicValues =
       prove EF params air logN trace publicValues :=
-  proveWith_refines hA (backendFor_refines hζ hA _ _ _) publicValues input outOfDomain
+  proveWith_refines hA (backendFor_refines hζ hA _ _) publicValues input outOfDomain
 
 end CompStark.Stark.Fast

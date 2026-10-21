@@ -109,6 +109,14 @@ fn main() {
         let nums: Vec<usize> = args[3..].iter().map(|a| a.parse().unwrap()).collect();
         return stark::stark(&args[2], &nums);
     }
+    if args.len() >= 3 && args[1] == "batch-babybear" {
+        let nums: Vec<usize> = args[3..].iter().map(|a| a.parse().unwrap()).collect();
+        return batch::batch_babybear(&args[2], &nums);
+    }
+    if args.len() >= 3 && args[1] == "batch-bench" {
+        let nums: Vec<usize> = args[3..].iter().map(|a| a.parse().unwrap()).collect();
+        return batch::batch_bench(&args[2], &nums);
+    }
     if args.len() >= 3 && args[1] == "batch" {
         let nums: Vec<usize> = args[3..].iter().map(|a| a.parse().unwrap()).collect();
         return batch::batch(&args[2], &nums);

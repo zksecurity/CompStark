@@ -3,13 +3,17 @@
 //! `MulAir`, `PeriodicAir` and `PreprocessedMulAir`), batched at mixed heights.
 use p3_air::{Air, AirBuilder, BaseAir, WindowAccess};
 use p3_batch_stark::{prove_batch, verify_batch, ProverData, StarkInstance};
-use p3_field::{PrimeCharacteristicRing, PrimeField64};
-use p3_koala_bear::{default_koalabear_poseidon2_16, default_koalabear_poseidon2_24, KoalaBear};
+use p3_baby_bear::{default_babybear_poseidon2_16, default_babybear_poseidon2_24};
+use p3_field::extension::BinomiallyExtendable;
+use p3_field::{Field, PrimeCharacteristicRing, PrimeField64, TwoAdicField};
+use p3_koala_bear::{default_koalabear_poseidon2_16, default_koalabear_poseidon2_24};
 use p3_matrix::dense::RowMajorMatrix;
+use p3_symmetric::CryptographicPermutation;
 
-use crate::stark::{config, square_trace, trace, FibonacciAir, PeriodicAir, SquareAir};
-
-type F = KoalaBear;
+use crate::stark::{
+    config, square_trace, trace, wide_trace, Config, FibonacciAir, PeriodicAir, SquareAir, WideAir,
+    WIDE,
+};
 
 /// The AIRs of a batch, as Plonky3's `DemoAir`.
 #[derive(Clone)]
@@ -27,6 +31,8 @@ pub enum BatchAir<F> {
     PrepMul { log_height: usize, multiplier: u64 },
     /// `SquareAir`, which never reads the next row.
     Square,
+    /// `WideAir`, the benchmarks' wide table.
+    Wide,
 }
 
 impl<F: PrimeField64> BaseAir<F> for BatchAir<F> {
@@ -35,6 +41,7 @@ impl<F: PrimeField64> BaseAir<F> for BatchAir<F> {
             Self::Fib { .. } | Self::Periodic(_) | Self::Square => 2,
             Self::Mul { reps } => 3 * reps + 1,
             Self::PrepMul { .. } => 1,
+            Self::Wide => WIDE,
         }
     }
 
@@ -89,6 +96,7 @@ where
         match self {
             Self::Fib { .. } => FibonacciAir.eval(builder),
             Self::Square => SquareAir.eval(builder),
+            Self::Wide => WideAir.eval(builder),
             Self::Periodic(a) => a.eval(builder),
             Self::Mul { reps } => {
                 let main = builder.main();
@@ -113,7 +121,7 @@ where
 }
 
 /// `mul_trace` of `simple.rs`: `rows` rows of `MulAir` with `reps` repetitions.
-fn mul_trace(rows: usize, reps: usize) -> RowMajorMatrix<F> {
+fn mul_trace<F: Field>(rows: usize, reps: usize) -> RowMajorMatrix<F> {
     let w = 3 * reps + 1;
     let mut v = F::zero_vec(rows * w);
     for rep in 0..reps {
@@ -133,7 +141,8 @@ fn mul_trace(rows: usize, reps: usize) -> RowMajorMatrix<F> {
 }
 
 /// An instance of `air` on `2^log_n` rows: the AIR, its trace and its public values.
-fn instance(air: BatchAir<F>, log_n: usize) -> (BatchAir<F>, RowMajorMatrix<F>, Vec<F>) {
+fn instance<F: PrimeField64>(air: BatchAir<F>, log_n: usize)
+    -> (BatchAir<F>, RowMajorMatrix<F>, Vec<F>) {
     let n = 1 << log_n;
     match &air {
         BatchAir::Fib { .. } => {
@@ -152,6 +161,10 @@ fn instance(air: BatchAir<F>, log_n: usize) -> (BatchAir<F>, RowMajorMatrix<F>, 
             let t = square_trace(n);
             (air, t, vec![])
         }
+        BatchAir::Wide => {
+            let t = wide_trace(n);
+            (air, t, vec![])
+        }
         BatchAir::PrepMul { multiplier, .. } => {
             let m = *multiplier;
             let t = RowMajorMatrix::new((0..n as u64).map(|i| F::from_u64(i * m)).collect(), 1);
@@ -163,8 +176,9 @@ fn instance(air: BatchAir<F>, log_n: usize) -> (BatchAir<F>, RowMajorMatrix<F>, 
 /// The instances of a batch: `three` (`test_three_instances_mixed_sizes`), `mixed`
 /// (`test_mixed_preprocessed`), `periodic` (`test_periodic_air`), `single` (`test_single_instance`)
 /// `prepmul`, preprocessed traces at mixed heights with and without next-row reads, and `square`,
-/// an AIR that does not read the next row beside one that does.
-pub fn case(name: &str) -> Vec<(BatchAir<F>, RowMajorMatrix<F>, Vec<F>)> {
+/// an AIR that does not read the next row beside one that does; and the benchmark `wide`, three
+/// `WideAir` tables of `2^20`, `2^19` and `2^16` rows.
+pub fn case<F: PrimeField64>(name: &str) -> Vec<(BatchAir<F>, RowMajorMatrix<F>, Vec<F>)> {
     match name {
         "three" => vec![instance(BatchAir::Fib { log_height: 4 }, 4),
             instance(BatchAir::Mul { reps: 2 }, 3), instance(BatchAir::Fib { log_height: 3 }, 3)],
@@ -175,25 +189,65 @@ pub fn case(name: &str) -> Vec<(BatchAir<F>, RowMajorMatrix<F>, Vec<F>)> {
         "prepmul" => vec![instance(BatchAir::PrepMul { log_height: 4, multiplier: 2 }, 4),
             instance(BatchAir::Fib { log_height: 5 }, 5), instance(BatchAir::Mul { reps: 1 }, 3)],
         "square" => vec![instance(BatchAir::Square, 4), instance(BatchAir::Fib { log_height: 3 }, 3)],
+        "wide" => vec![instance(BatchAir::Wide, 20), instance(BatchAir::Wide, 19),
+            instance(BatchAir::Wide, 16)],
         _ => panic!("unknown batch {name}"),
     }
 }
 
-/// `batch CASE LOG_BLOWUP LOG_FINAL MAX_LOG_ARITY QUERIES COMMIT_POW QUERY_POW [BATCH_POW
-/// OOD_POW]`: the batch proof of `case` as JSON, after Plonky3 verified it. Run with
-/// `RAYON_NUM_THREADS=1` for the smallest grinding witnesses.
-pub fn batch(name: &str, args: &[usize]) {
-    let config = config(default_koalabear_poseidon2_16(), default_koalabear_poseidon2_24(), args);
-    let insts = case(name);
+/// The batch proof of `name` on `config`, after Plonky3 verified it.
+fn prove_case<F, P16, P24>(config: &Config<F, P16, P24>, name: &str) -> String
+where
+    F: TwoAdicField + PrimeField64 + BinomiallyExtendable<4>,
+    P16: CryptographicPermutation<[F; 16]> + CryptographicPermutation<[F::Packing; 16]>,
+    P24: CryptographicPermutation<[F; 24]> + CryptographicPermutation<[F::Packing; 24]>,
+{
+    let insts = case::<F>(name);
     let instances: Vec<StarkInstance<'_, _, BatchAir<F>>> = insts.iter()
         .map(|(air, trace, pis)| StarkInstance { air, trace, public_values: pis.clone() })
         .collect();
     let prover_data =
-        ProverData::from_instances(&config, &instances).expect("Plonky3 cannot commit");
-    let proof = prove_batch(&config, &instances, &prover_data).expect("Plonky3 cannot prove");
+        ProverData::from_instances(config, &instances).expect("Plonky3 cannot commit");
+    let proof = prove_batch(config, &instances, &prover_data).expect("Plonky3 cannot prove");
     let airs: Vec<BatchAir<F>> = insts.iter().map(|(a, _, _)| a.clone()).collect();
     let pvs: Vec<Vec<F>> = insts.iter().map(|(_, _, p)| p.clone()).collect();
-    verify_batch(&config, &airs, &proof, &pvs, &prover_data.common)
+    verify_batch(config, &airs, &proof, &pvs, &prover_data.common)
         .expect("Plonky3 rejects its own proof");
-    println!("{}", serde_json::to_string(&proof).unwrap());
+    serde_json::to_string(&proof).unwrap()
+}
+
+/// `batch CASE LOG_BLOWUP LOG_FINAL MAX_LOG_ARITY QUERIES COMMIT_POW QUERY_POW [BATCH_POW
+/// OOD_POW]`: the batch proof of `case` over KoalaBear as JSON, after Plonky3 verified it. Run
+/// with `RAYON_NUM_THREADS=1` for the smallest grinding witnesses.
+pub fn batch(name: &str, args: &[usize]) {
+    let config = config(default_koalabear_poseidon2_16(), default_koalabear_poseidon2_24(), args);
+    println!("{}", prove_case(&config, name));
+}
+
+/// `batch-babybear CASE …`: the same over BabyBear.
+pub fn batch_babybear(name: &str, args: &[usize]) {
+    let config = config(default_babybear_poseidon2_16(), default_babybear_poseidon2_24(), args);
+    println!("{}", prove_case(&config, name));
+}
+
+/// `batch-bench CASE …`: the median milliseconds of seven `prove_batch` calls over KoalaBear,
+/// without the common data's setup.
+pub fn batch_bench(name: &str, args: &[usize]) {
+    use std::time::Instant;
+    let config = config(default_koalabear_poseidon2_16(), default_koalabear_poseidon2_24(), args);
+    let insts = case::<p3_koala_bear::KoalaBear>(name);
+    let instances: Vec<StarkInstance<'_, _, _>> = insts.iter()
+        .map(|(air, trace, pis)| StarkInstance { air, trace, public_values: pis.clone() })
+        .collect();
+    let prover_data =
+        ProverData::from_instances(&config, &instances).expect("Plonky3 cannot commit");
+    let mut samples = vec![];
+    for _ in 0..7 {
+        let t = Instant::now();
+        let proof = prove_batch(&config, &instances, &prover_data).expect("Plonky3 cannot prove");
+        samples.push(t.elapsed().as_secs_f64() * 1000.0);
+        std::hint::black_box(proof);
+    }
+    samples.sort_by(|a, b| a.partial_cmp(b).unwrap());
+    println!("plonky3 prove_batch {name} ms median {:.2}", samples[3]);
 }

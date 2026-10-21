@@ -29,9 +29,10 @@ def MatOk (m : Mat F) : Prop :=
   0 < m.width ∧ (∃ k ≤ twoAdicity F, m.height = 2 ^ k) ∧ m.values.size = m.width * m.height ∧
     Addressable (m.width * m.height)
 
-/-- Matrices committed together: at least one, all of one height, addressable side by side. -/
+/-- Matrices committed together: at least one, each of the prover's shape and at most `h` rows,
+addressable side by side at height `h`. -/
 def CommitOk (ms : List (Mat F)) : Prop :=
-  ∃ h, ms ≠ [] ∧ (∀ m ∈ ms, MatOk m ∧ m.height = h) ∧
+  ∃ h, ms ≠ [] ∧ (∀ m ∈ ms, MatOk m ∧ m.height ≤ h) ∧
     Addressable (h * ms.foldl (· + ·.width) 0)
 
 /-- The extension's vectors on the largest two-adic subgroup, `d · 2 ^ twoAdicity` words, are

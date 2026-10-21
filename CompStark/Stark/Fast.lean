@@ -23,8 +23,9 @@ domains (`Mont32BaseField`), the quartic extension `Ext4 p` (`Binomial4`), Plonk
   tries eight candidates per packed permutation, as Plonky3 does, and returns the smallest that
   passes.
 * Low-degree extension is CompPoly's batched coset LDE.
-* The Merkle digest layers of matrices of one height come from the packed Merkle commitment, on
-  their rows side by side.
+* The Merkle digest layers come from the packed Merkle commitment: the tallest matrices' rows side
+  by side are hashed, and the matrices of each smaller height are hashed likewise and injected
+  into the layer of their height by one more packed compression.
 
 The kernels compute the specification's functions on the shapes the prover gives them
 (`Fri.Refines`): matrices of `2 ^ k` rows within the two-adic subgroups, addressable by machine
@@ -153,21 +154,10 @@ def ldePlans [Mont32BaseField p] (logN logBlowup logChunks : Nat) : List
     gen * (gen * powF (twoAdicGen qlog) c)⁻¹
   shifts.filterMap fun s ↦ (plan? logN logBlowup s).map fun P ↦ (logN, logBlowup, s, P)
 
-/-- `out` followed by at most `fuel` layers above `layer` of `n` digests, up to the root. -/
-def upperPacked (p : ℕ) [Mont32Field p] [Poseidon2Field (FastField p)] [PackedPoseidon2 p]
-    (layer : ByteArray) (n : Nat)
-    (out : Array ByteArray) : Nat → Array ByteArray
-  | 0 => out
-  | fuel + 1 =>
-    if n ≤ 1 then out else
-    let (l, n') := Merkle.Packed.nextLayer p layer n
-    upperPacked p l n' (out.push l) fuel
-
-/-- The packed digest layers of the Merkle tree of one matrix of width `w` given as one chunk of
-rows. -/
-def packedLayers (p : ℕ) [Mont32Field p] [Poseidon2Field (FastField p)] [PackedPoseidon2 p]
-    (w : Nat) (m : ByteArray) :
-    Array ByteArray :=
+/-- The padded leaf digests of a matrix of width `w` given as one chunk of rows, hashed by
+parallel tasks over pieces of the rows, and their number. -/
+def leafLayer (p : ℕ) [Mont32Field p] [Poseidon2Field (FastField p)] [PackedPoseidon2 p]
+    (w : Nat) (m : ByteArray) : ByteArray × Nat :=
   let h := if w = 0 then 0 else m.size / (4 * w)
   let parts := if h < 1024 then 1 else 16
   let rows := h / parts
@@ -175,8 +165,7 @@ def packedLayers (p : ℕ) [Mont32Field p] [Poseidon2Field (FastField p)] [Packe
     m.extract (4 * w * (k * rows)) (if k + 1 = parts then m.size else 4 * w * ((k + 1) * rows))
   let (first, h) := Merkle.Packed.leaves p w chunks
   let padded := if h = 1 then 1 else h + h % 2
-  let layer := Merkle.Packed.padDigests first h padded
-  upperPacked p layer padded #[layer] 64
+  (Merkle.Packed.padDigests first h padded, padded)
 
 /-- The rows of matrices of one height side by side, packed. -/
 def sideBySide (ms : List PMat) (h : Nat) : ByteArray :=
@@ -196,18 +185,50 @@ def sideBySide (ms : List PMat) (h : Nat) : ByteArray :=
 def encodeDigests (ds : Array (Digest F)) : ByteArray :=
   CompPoly.CPolynomial.NTTFast.Packed.Native.encodeFields (ds.flatMap (·.toArray))
 
+/-- The layer above a layer of `n` digests with the matrices `inj` of height `n` injected:
+digest `i` becomes the compression of digest `i` and the leaf digest of row `i` of `inj` side by
+side, by the packed compression of the two layers interleaved. -/
+def injectLayer (p : ℕ) [Mont32Field p] [Poseidon2Field (FastField p)] [PackedPoseidon2 p]
+    (layer : ByteArray) (n : Nat) (inj : List PMat) : ByteArray :=
+  if inj.isEmpty then layer else
+    let (hs, _) := leafLayer p (inj.foldl (· + ·.width) 0) (sideBySide inj n)
+    (Merkle.Packed.nextLayer p (sideBySide [⟨8, n, layer⟩, ⟨8, n, hs⟩] n) (2 * n)).1
+
+/-- `out` followed by at most `fuel` layers above `layer` of `n` digests, up to the root, with the
+matrices of `rest`, tallest first, injected where their height is the layer's. -/
+def upperMixed (p : ℕ) [Mont32Field p] [Poseidon2Field (FastField p)] [PackedPoseidon2 p]
+    (rest : List PMat) (layer : ByteArray) (n : Nat) (out : Array ByteArray) :
+    Nat → Array ByteArray
+  | 0 => out
+  | fuel + 1 =>
+    if n ≤ 1 then out else
+    let (l, n') := Merkle.Packed.nextLayer p layer n
+    let inj := rest.takeWhile (·.height == n')
+    let l := injectLayer p l n' inj
+    upperMixed p (rest.drop inj.length) l n' (out.push l) fuel
+
+/-- The packed digest layers of the Merkle tree of matrices of heights powers of two, leaves
+first: the tallest matrices' rows side by side hashed, then every layer compressed, with the
+matrices of its height injected (Plonky3's `MerkleTree::new`). -/
+def commitLayers (p : ℕ) [Mont32Field p] [Poseidon2Field (FastField p)] [PackedPoseidon2 p]
+    (ms : List PMat) : Array ByteArray :=
+  let sorted := ms.mergeSort fun a b ↦ b.height ≤ a.height
+  match sorted with
+  | [] => #[]
+  | m :: _ =>
+    let tallest := sorted.takeWhile (·.height == m.height)
+    let (first, n) := leafLayer p (tallest.foldl (· + ·.width) 0) (sideBySide tallest m.height)
+    upperMixed p (sorted.drop tallest.length) first n #[first] n
+
 /-- Packed matrices under one Merkle tree, with the packed digest layers, leaves first. -/
 structure Commit where
   mats : List PMat
   layers : Array ByteArray
 
-/-- Commit to packed matrices of one height: the packed Merkle commitment on their rows side by
-side. -/
+/-- Commit to packed matrices (`commitLayers`). -/
 def commit (p : ℕ) [Mont32Field p] [Poseidon2Field (FastField p)] [PackedPoseidon2 p]
     (ms : List PMat) : Commit :=
-  ⟨ms, match ms with
-    | m :: _ => packedLayers p (ms.foldl (· + ·.width) 0) (sideBySide ms m.height)
-    | [] => #[]⟩
+  ⟨ms, commitLayers p ms⟩
 
 namespace Commit
 
@@ -625,15 +646,18 @@ def backend : Backend F EF 24 where
   addScaled := addScaled
   leaves := leaves
 
-/-- The fast backend with the extension plans and quotient tables of a proof of a `2 ^ logN`-row
-trace and `2 ^ logChunks` quotient chunks prepared: the trace's extension on `g · ⟨ω_N⟩` and every
-chunk's. -/
-def backendFor (logN logBlowup logChunks : Nat) : Backend F EF 24 :=
-  let T := quotientTables logN logChunks
+/-- The fast backend with the extension plans and quotient tables of proofs of instances of the
+shapes `shapes` prepared: for every `(logN, logChunks)`, a `2 ^ logN`-row trace with
+`2 ^ logChunks` quotient chunks, the trace's extension on `g · ⟨ω_N⟩`, every chunk's and the
+quotient's tables. -/
+def backendFor (logBlowup : Nat) (shapes : List (Nat × Nat)) : Backend F EF 24 :=
+  let shapes := shapes.eraseDups
+  let tables := shapes.map fun (n, c) ↦ (n, c, quotientTables n c)
   { backend with
-    lde := ldeWith (ldePlans logN logBlowup logChunks)
+    lde := ldeWith (shapes.flatMap fun (n, c) ↦ ldePlans n logBlowup c)
     quotient := fun A pis db lc ext prep alpha ↦
-      if db == logN && lc == logChunks then quotientWith T A pis ext prep alpha
-      else quotient A pis db lc ext prep alpha }
+      match tables.find? fun (n, c, _) ↦ n == db && c == lc with
+      | some (_, _, T) => quotientWith T A pis ext prep alpha
+      | none => quotient A pis db lc ext prep alpha }
 
 end CompStark.Stark.Fast

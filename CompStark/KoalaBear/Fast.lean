@@ -24,10 +24,11 @@ open CompStark.Fri CompStark.Stark
 local notation "F" => _root_.KoalaBear.Fast.Field
 local notation "EF" => _root_.KoalaBear.Fast.Ext4
 
-/-- The fast backend over KoalaBear, with the extension plans and quotient tables of a proof of a
-`2 ^ logN`-row trace and `2 ^ logChunks` quotient chunks prepared. -/
-def backendFor (logN logBlowup logChunks : Nat) : Backend F EF 24 :=
-  Stark.Fast.backendFor logN logBlowup logChunks
+/-- The fast backend over KoalaBear, with the extension plans and quotient tables of instances of
+the shapes `shapes` prepared: `(logN, logChunks)` for a `2 ^ logN`-row trace with `2 ^ logChunks`
+quotient chunks. -/
+def backendFor (logBlowup : Nat) (shapes : List (Nat × Nat)) : Backend F EF 24 :=
+  Stark.Fast.backendFor logBlowup shapes
 
 /-- KoalaBear's domains of extension elements, up to `4 · 2 ^ 24` words, are addressable. -/
 theorem domainsAddressable : DomainsAddressable F EF := by
@@ -42,8 +43,8 @@ the base field (probability about `2 ^ -93`). -/
 theorem prove_fast {params : Params} {air : Air F} {logN : Nat} {trace : Array F}
     (publicValues : List F) (input : InputOk EF params air logN trace)
     (outOfDomain : Ext.OutsideBase (outOfDomainPoint EF params air logN trace publicValues)) :
-    proveWith (backendFor logN params.logBlowup (air.logQuotientChunks logN)) params air logN trace
-        publicValues =
+    proveWith (backendFor params.logBlowup [(logN, air.logQuotientChunks logN)]) params air logN
+        trace publicValues =
       prove EF params air logN trace publicValues :=
   Stark.Fast.prove_fast (by rw [twoAdicity_eq]; decide) domainsAddressable publicValues input
     outOfDomain

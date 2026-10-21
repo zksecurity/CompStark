@@ -91,7 +91,7 @@ theorem setupWith_refines (h : Refines B) {P : Params} {A : Air F} {logN : Nat}
     have hext := h.lde logN P.logBlowup gen A.preprocessedWidth A.preprocessed hin.preprocessed
       hin.twoAdic hm
     have hct := h.commit (.cons hext .nil) ⟨_, List.cons_ne_nil _ _,
-      fun m hm' ↦ by obtain rfl := List.mem_singleton.mp hm'; exact ⟨hextOk, heh⟩,
+      fun m hm' ↦ by obtain rfl := List.mem_singleton.mp hm'; exact ⟨hextOk, heh.le⟩,
       by show Addressable (_ * (0 + A.preprocessedWidth)); rw [Nat.zero_add]; exact hm⟩
     refine ⟨.some ⟨hext, hct⟩, fun y hy ↦ ?_⟩
     obtain rfl := Option.some_injective _ hy
@@ -131,7 +131,7 @@ theorem commitAndSample_refines (h : Refines B) {P : Params} {A : Air F} {logN :
       by rw [hew, heh, Nat.mul_comm]; exact hmw⟩
   have hext := h.lde logN P.logBlowup gen A.width trace htrace hlog hmw
   have hct := h.commit (.cons hext .nil) ⟨_, List.cons_ne_nil _ _,
-    fun m hm ↦ by obtain rfl := List.mem_singleton.mp hm; exact ⟨hextOk, heh⟩,
+    fun m hm ↦ by obtain rfl := List.mem_singleton.mp hm; exact ⟨hextOk, heh.le⟩,
     by show Addressable (_ * (0 + A.width)); rw [Nat.zero_add]; exact hmw⟩
   -- The preprocessed trace's root and extension.
   have hroots : ((setupWith B P A logN).map fun x ↦ (B.root x.2).toList).getD [] =
@@ -215,7 +215,8 @@ theorem commitAndSample_refines (h : Refines B) {P : Params} {A : Air F} {logN :
       rw [Nat.mul_succ]
       omega
   have hqc := h.commit hch ⟨_, List.ne_nil_of_length_pos (by
-    rw [List.length_map, List.length_range]; exact Nat.two_pow_pos _), hall, by
+    rw [List.length_map, List.length_range]; exact Nat.two_pow_pos _),
+    fun m hm ↦ ⟨(hall m hm).1, (hall m hm).2.le⟩, by
     have e := hwsum (List.range (2 ^ A.logQuotientChunks logN)) 0
     rw [List.length_range, Nat.zero_add] at e
     exact e.symm ▸ hmq⟩

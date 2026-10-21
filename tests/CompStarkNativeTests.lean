@@ -29,13 +29,14 @@ and runs it.
   specification prover and the fast prover reproduce it from the same trace. Over the quintic
   extension, the specification prover's proofs verify.
 * The fast prover over BabyBear reproduces Plonky3's BabyBear proofs
-  (`tests/data/babybear_AIR_*.json`).
+  (`tests/data/babybear_AIR_*.json`), and its batch proofs (`tests/data/babybear_batch_CASE_*.json`,
+  from `compstark-bench batch-babybear CASE …`) verify and both provers reproduce them.
 * Plonky3 `batch-stark` proofs over KoalaBear (`tests/data/batch_CASE_*.json`, from
   `RAYON_NUM_THREADS=1 compstark-bench batch CASE LOG_BLOWUP LOG_FINAL MAX_LOG_ARITY QUERIES
   COMMIT_POW QUERY_POW`), of instances of mixed heights with and without preprocessed and
   periodic columns: each verifies against the batch's common data and is rejected tampered, with
   other degree bits or public values, with reordered instances, or against other preprocessed
-  traces; and the specification prover reproduces it.
+  traces; and the specification prover and the fast prover reproduce it.
 -/
 
 namespace CompStarkTests.Native
@@ -44,6 +45,102 @@ open CompStark CompStark.Stark
 /-- Fail with `label` unless `ok`. -/
 def check (label : String) (ok : Bool) : IO Unit :=
   unless ok do throw (IO.userError s!"check failed: {label}")
+
+section Instances
+variable {F : Type} [Field F]
+
+/-- The Fibonacci trace of `n` rows from `(0, 1)` and its public values. -/
+def fibInstance (n : Nat) : Array F × List F :=
+  let (t, _, r) := (List.range n).foldl (fun ((t, l, r) : Array F × F × F) _ ↦
+    (t.push l |>.push r, r, l + r)) (#[], 0, 1)
+  (t, [0, 1, t.getD (2 * n - 1) r])
+
+/-- The `cube` trace of `n` rows from `(2, 0)` and its public values. -/
+def cubeInstance (n : Nat) : Array F × List F :=
+  let (t, _, _) := (List.range n).foldl (fun ((t, x, y) : Array F × F × F) _ ↦
+    (t.push x |>.push y, x * x * x + y, y + 1)) (#[], 2, 0)
+  (t, [2, 0, t.getD (2 * n - 2) 0])
+
+/-- The `mulFib` trace of `n` rows from `(1, 2)` and its public values. -/
+def prepInstance (n : Nat) : Array F × List F :=
+  let (t, _, _) := (List.range n).foldl (fun ((t, a, b) : Array F × F × F) i ↦
+    let p : F := ((i % 2 : Nat) : F)
+    let s : F := (((i + 1) % 6 : Nat) : F)
+    (t.push a |>.push b, b, p * a * b + s * (a + b))) (#[], 1, 2)
+  (t, [1, 2])
+
+/-- The trace of `n` rows of `wide 64` from `xⱼ = j`. -/
+def wideTrace (n : Nat) : Array F := Id.run do
+  let mut out := Array.emptyWithCapacity (64 * n)
+  let mut row : Array F := Array.ofFn (n := 64) fun j ↦ (j.val : _)
+  for _ in [0:n] do
+    out := out ++ row
+    row := Array.ofFn (n := 64) fun j ↦
+      let x := row.getD j 0
+      x * x * x + row.getD ((j.val + 1) % 64) 0
+  return out
+
+/-- The trace of `n` rows of `periodicAir cols`: each column its periodic column. -/
+def periodicInstance (cols : List (List F)) (n : Nat) : Array F × List F :=
+  (Array.ofFn (n := n * 2) fun k ↦
+    let c := cols.getD (k.val % 2) []
+    c.getD (k.val / 2 % c.length) 0, [])
+
+/-- The `periodicCube` trace of `n` rows from `(2, 0)` and its public values. -/
+def pcubeInstance (n : Nat) : Array F × List F :=
+  let (t, _, _) := (List.range n).foldl (fun ((t, x, y) : Array F × F × F) i ↦
+    let s : F := ((i % 4 + 1 : Nat) : F)
+    (t.push x |>.push y, 3 * x * x * x + s * y, y + s)) (#[], 2, 0)
+  (t, [2, t.getD (2 * n - 2) 0])
+
+/-- The `square` trace of `n` rows: `a = i + 1`, `b = a²` on row `i`. -/
+def squareInstance (n : Nat) : Array F × List F :=
+  (Array.ofFn (n := n * 2) fun k ↦
+    let a : F := ((k.val / 2 + 1 : Nat) : F)
+    if k.val % 2 = 0 then a else a * a, [])
+
+/-- Plonky3's periods of `PeriodicAir`: the default, the wide range and the tiny quotient. -/
+def periodicCols : List (List F) := [[1, 2, 3, 4], [10, 20]]
+def periodicWideCols : List (List F) := [[7], (List.range 32).map Nat.cast]
+def periodicTinyCols : List (List F) := [[9], [1, 2]]
+
+/-- The Fibonacci numbers `F_0, …, F_n`. -/
+def fibs (n : Nat) : Array F :=
+  ((List.range n).foldl (fun ((a, b, out) : F × F × Array F) _ ↦ (b, a + b, out.push b))
+    (0, 1, #[0])).2.2
+
+/-- `mul_trace` of `batch-stark/tests/simple.rs`: `rows` rows of `mulAir reps`. -/
+def mulTrace (rows reps : Nat) : Array F :=
+  let w := 3 * reps + 1
+  let f := fibs rows
+  Array.ofFn (n := rows * w) fun k ↦
+    let i := k.val / w
+    let j := k.val % w
+    if j + 1 = w then (if i + 1 = rows then 0 else f.getD (i + 1) 0)
+    else if j % 3 = 0 then f.getD i 0
+    else if j % 3 = 1 then f.getD (i + 1) 0
+    else f.getD i 0 * f.getD (i + 1) 0
+
+/-- An instance of the batch KATs with its trace and public values. -/
+abbrev BatchInstance (F : Type) := Batch.Instance F × Array F × List F
+
+def fibIndexed (logN : Nat) : BatchInstance F :=
+  (⟨fibonacciIndexed logN, logN⟩, fibInstance (2 ^ logN))
+def mulInstance (logN reps : Nat) : BatchInstance F :=
+  (⟨mulAir reps, logN⟩, mulTrace (2 ^ logN) reps, [])
+
+/-- The batches of `compstark-bench batch CASE`. -/
+def batchCase : String → List (BatchInstance F)
+  | "three" => [fibIndexed 4, mulInstance 3 2, fibIndexed 3]
+  | "mixed" => [fibIndexed 4, mulInstance 4 2]
+  | "periodic" => [(⟨periodicAir periodicCols, 6⟩, periodicInstance periodicCols 64)]
+  | "single" => [fibIndexed 5]
+  | "prepmul" => [(⟨preprocessedMul 4 2, 4⟩, Array.ofFn (n := 16) fun i ↦ ((2 * i.val : Nat) : F),
+      []), fibIndexed 5, mulInstance 3 1]
+  | "square" => [(⟨square, 4⟩, squareInstance 16), fibIndexed 3]
+  | _ => []
+
+end Instances
 
 namespace KoalaBear
 
@@ -130,62 +227,8 @@ def challenger : IO Unit := do
     759660911]
   check "challenger" (challengerRun Poseidon2.initTranscript == expected)
   check "fast challenger"
-      (challengerRun (CompStark.KoalaBear.backendFor 0 0 0).transcript == expected)
+      (challengerRun (CompStark.KoalaBear.backendFor 0 []).transcript == expected)
 
-/-- The Fibonacci trace of `n` rows from `(0, 1)` and its public values. -/
-def fibInstance (n : Nat) : Array F × List F :=
-  let (t, _, r) := (List.range n).foldl (fun ((t, l, r) : Array F × F × F) _ ↦
-    (t.push l |>.push r, r, l + r)) (#[], 0, 1)
-  (t, [0, 1, t.getD (2 * n - 1) r])
-
-/-- The `cube` trace of `n` rows from `(2, 0)` and its public values. -/
-def cubeInstance (n : Nat) : Array F × List F :=
-  let (t, _, _) := (List.range n).foldl (fun ((t, x, y) : Array F × F × F) _ ↦
-    (t.push x |>.push y, x * x * x + y, y + 1)) (#[], 2, 0)
-  (t, [2, 0, t.getD (2 * n - 2) 0])
-
-/-- The `mulFib` trace of `n` rows from `(1, 2)` and its public values. -/
-def prepInstance (n : Nat) : Array F × List F :=
-  let (t, _, _) := (List.range n).foldl (fun ((t, a, b) : Array F × F × F) i ↦
-    let p : F := ((i % 2 : Nat) : F)
-    let s : F := (((i + 1) % 6 : Nat) : F)
-    (t.push a |>.push b, b, p * a * b + s * (a + b))) (#[], 1, 2)
-  (t, [1, 2])
-
-/-- The trace of `n` rows of `wide 64` from `xⱼ = j`. -/
-def wideTrace (n : Nat) : Array F := Id.run do
-  let mut out := Array.emptyWithCapacity (64 * n)
-  let mut row : Array F := Array.ofFn (n := 64) fun j ↦ (j.val : _)
-  for _ in [0:n] do
-    out := out ++ row
-    row := Array.ofFn (n := 64) fun j ↦
-      let x := row.getD j 0
-      x * x * x + row.getD ((j.val + 1) % 64) 0
-  return out
-
-/-- The trace of `n` rows of `periodicAir cols`: each column its periodic column. -/
-def periodicInstance (cols : List (List F)) (n : Nat) : Array F × List F :=
-  (Array.ofFn (n := n * 2) fun k ↦
-    let c := cols.getD (k.val % 2) []
-    c.getD (k.val / 2 % c.length) 0, [])
-
-/-- The `periodicCube` trace of `n` rows from `(2, 0)` and its public values. -/
-def pcubeInstance (n : Nat) : Array F × List F :=
-  let (t, _, _) := (List.range n).foldl (fun ((t, x, y) : Array F × F × F) i ↦
-    let s : F := ((i % 4 + 1 : Nat) : F)
-    (t.push x |>.push y, 3 * x * x * x + s * y, y + s)) (#[], 2, 0)
-  (t, [2, t.getD (2 * n - 2) 0])
-
-/-- The `square` trace of `n` rows: `a = i + 1`, `b = a²` on row `i`. -/
-def squareInstance (n : Nat) : Array F × List F :=
-  (Array.ofFn (n := n * 2) fun k ↦
-    let a : F := ((k.val / 2 + 1 : Nat) : F)
-    if k.val % 2 = 0 then a else a * a, [])
-
-/-- Plonky3's periods of `PeriodicAir`: the default, the wide range and the tiny quotient. -/
-def periodicCols : List (List F) := [[1, 2, 3, 4], [10, 20]]
-def periodicWideCols : List (List F) := [[7], (List.range 32).map Nat.cast]
-def periodicTinyCols : List (List F) := [[9], [1, 2]]
 
 /-- The parameters `logN logBlowup logFinal maxLogArity queries commitPow queryPow [batchPow
 oodPow]`. -/
@@ -232,8 +275,8 @@ def proof (name : String) (air : Nat → Air F) (inst : Nat → Array F × List 
     check s!"{file}: rejects another verifying key" (verify P A other rust pis matches .error _)
   check s!"{file}: specification prover" (prove EF P A logN trace pis == rust)
   check s!"{file}: fast prover"
-    (proveWith (CompStark.KoalaBear.backendFor logN P.logBlowup (A.logQuotientChunks logN)) P A
-      logN trace pis == rust)
+    (proveWith (CompStark.KoalaBear.backendFor P.logBlowup [(logN, A.logQuotientChunks logN)]) P
+      A logN trace pis == rust)
 
 /-- Over the quintic extension, the specification prover's proof verifies, and is rejected for
 other public values. -/
@@ -247,42 +290,6 @@ def proofExt5 (air : Nat → Air F) (inst : Nat → Array F × List F) (ps : Lis
   check s!"Ext5 {ps}: rejects other public values"
     (verify P A (setup P A logN) pf (pis.map (· + 1)) matches .error _)
 
-/-- The Fibonacci numbers `F_0, …, F_n`. -/
-def fibs (n : Nat) : Array F :=
-  ((List.range n).foldl (fun ((a, b, out) : F × F × Array F) _ ↦ (b, a + b, out.push b))
-    (0, 1, #[0])).2.2
-
-/-- `mul_trace` of `batch-stark/tests/simple.rs`: `rows` rows of `mulAir reps`. -/
-def mulTrace (rows reps : Nat) : Array F :=
-  let w := 3 * reps + 1
-  let f := fibs rows
-  Array.ofFn (n := rows * w) fun k ↦
-    let i := k.val / w
-    let j := k.val % w
-    if j + 1 = w then (if i + 1 = rows then 0 else f.getD (i + 1) 0)
-    else if j % 3 = 0 then f.getD i 0
-    else if j % 3 = 1 then f.getD (i + 1) 0
-    else f.getD i 0 * f.getD (i + 1) 0
-
-/-- An instance of the batch KATs with its trace and public values. -/
-abbrev BatchInstance := Batch.Instance F × Array F × List F
-
-def fibIndexed (logN : Nat) : BatchInstance :=
-  (⟨fibonacciIndexed logN, logN⟩, fibInstance (2 ^ logN))
-def mulInstance (logN reps : Nat) : BatchInstance :=
-  (⟨mulAir reps, logN⟩, mulTrace (2 ^ logN) reps, [])
-
-/-- The batches of `compstark-bench batch CASE`. -/
-def batchCase : String → List BatchInstance
-  | "three" => [fibIndexed 4, mulInstance 3 2, fibIndexed 3]
-  | "mixed" => [fibIndexed 4, mulInstance 4 2]
-  | "periodic" => [(⟨periodicAir periodicCols, 6⟩, periodicInstance periodicCols 64)]
-  | "single" => [fibIndexed 5]
-  | "prepmul" => [(⟨preprocessedMul 4 2, 4⟩, Array.ofFn (n := 16) fun i ↦ ((2 * i.val : Nat) : F),
-      []), fibIndexed 5, mulInstance 3 1]
-  | "square" => [(⟨square, 4⟩, squareInstance 16), fibIndexed 3]
-  | _ => []
-
 /-- The saved batch proof of `name` for the parameters `logBlowup logFinal maxLogArity queries
 commitPow queryPow [batchPow oodPow]` verifies against the batch's common data; is rejected when
 tampered, with a next row opened for an AIR that does not read it, with reordered instances, with
@@ -290,7 +297,7 @@ other degree bits, against the commitment to other preprocessed traces, and with
 public values changed; and the specification prover reproduces it. -/
 def batchProof (name : String) (ps : List Nat) : IO Unit := do
   let (_, P) ← params (0 :: ps)
-  let insts := batchCase name
+  let insts : List (BatchInstance F) := batchCase name
   let instances := insts.map (·.1)
   let traces := insts.map (·.2.1)
   let pis := insts.map (·.2.2)
@@ -326,6 +333,9 @@ def batchProof (name : String) (ps : List Nat) : IO Unit := do
     check s!"{file}: rejects other preprocessed traces"
       (Batch.verifyBatch P instances (Batch.setupBatch P other) rust pis matches .error _)
   check s!"{file}: specification prover" (Batch.proveBatch EF P instances traces pis == rust)
+  check s!"{file}: fast prover" (Batch.proveBatchWith
+    (CompStark.KoalaBear.backendFor P.logBlowup (Batch.shapes instances)) P instances traces pis ==
+      rust)
 
 def batchProofs : IO Unit := do
   for ps in [[2, 0, 1, 4, 0, 0], [1, 1, 2, 6, 1, 2, 2, 3]] do
@@ -379,8 +389,8 @@ def proof (name : String) (air : Nat → Air F) (inst : Nat → Array F × List 
   let rust : Proof F EF ← IO.ofExcept (Json.parse (← IO.FS.readFile s!"tests/data/{file}.json"))
   let (trace, pis) := inst (2 ^ logN)
   check s!"{file}: fast prover"
-    (proveWith (CompStark.BabyBear.backendFor logN P.logBlowup (A.logQuotientChunks logN)) P A
-      logN trace pis == rust)
+    (proveWith (CompStark.BabyBear.backendFor P.logBlowup [(logN, A.logQuotientChunks logN)]) P
+      A logN trace pis == rust)
 
 def proofs : IO Unit := do
   for ps in [[3, 2, 2, 1, 2, 0, 0], [6, 1, 1, 3, 8, 2, 4], [4, 1, 1, 2, 5, 1, 1, 3, 2]] do
@@ -398,6 +408,34 @@ def proofs : IO Unit := do
     [4, 1, 1, 2, 6, 1, 2, 2, 3]
   proof "square" (fun _ ↦ square) CompStarkTests.BabyBear.squareInstance [4, 1, 1, 2, 6, 1, 2, 2, 3]
 
+/-- Plonky3's saved BabyBear batch proof of `name` for the parameters `logBlowup logFinal
+maxLogArity queries commitPow queryPow [batchPow oodPow]` verifies, and the specification prover
+and the fast prover reproduce it. -/
+def batchProof (name : String) (ps : List Nat) : IO Unit := do
+  let (_, P) ← KoalaBear.params (0 :: ps)
+  let insts : List (BatchInstance F) := batchCase name
+  let instances := insts.map (·.1)
+  let traces := insts.map (·.2.1)
+  let pis := insts.map (·.2.2)
+  let file := s!"babybear_batch_{name}_{"_".intercalate (ps.map toString)}"
+  let rust : Batch.BatchProof F EF ←
+    IO.ofExcept (Json.parseBatch (← IO.FS.readFile s!"tests/data/{file}.json"))
+  if let .error e := Batch.verifyBatch P instances (Batch.setupBatch P instances) rust pis then
+    throw (IO.userError s!"{file}: {e}")
+  check s!"{file}: specification prover" (Batch.proveBatch EF P instances traces pis == rust)
+  check s!"{file}: fast prover" (Batch.proveBatchWith
+    (CompStark.BabyBear.backendFor P.logBlowup (Batch.shapes instances)) P instances traces pis ==
+      rust)
+
+def batchProofs : IO Unit := do
+  for ps in [[2, 0, 1, 4, 0, 0], [1, 1, 2, 6, 1, 2, 2, 3]] do
+    batchProof "three" ps
+  batchProof "mixed" [2, 0, 2, 5, 0, 0]
+  batchProof "periodic" [2, 3, 2, 8, 0, 8]
+  batchProof "single" [1, 0, 1, 5, 0, 2]
+  batchProof "prepmul" [1, 1, 2, 6, 1, 2, 2, 3]
+  batchProof "square" [1, 1, 2, 6, 1, 2, 2, 3]
+
 end BabyBear
 
 end CompStarkTests.Native
@@ -411,6 +449,7 @@ def main : IO UInt32 := do
     KoalaBear.proofs
     KoalaBear.batchProofs
     BabyBear.proofs
+    BabyBear.batchProofs
     IO.println "native tests passed"
     return 0
   catch e =>

@@ -30,9 +30,10 @@ local notation "EF" => _root_.BabyBear.Fast.Ext4
 instance instPackedPoseidon2 : Poseidon2.PackedPoseidon2 _root_.BabyBear.fieldSize :=
   .ofLanes _
 
-/-- The fast backend over BabyBear, with the extension plans and quotient tables of a proof of a
-`2 ^ logN`-row trace and `2 ^ logChunks` quotient chunks prepared. -/
-def backendFor (logN logBlowup logChunks : Nat) : Backend F EF 24 :=
-  Stark.Fast.backendFor logN logBlowup logChunks
+/-- The fast backend over BabyBear, with the extension plans and quotient tables of instances of
+the shapes `shapes` prepared: `(logN, logChunks)` for a `2 ^ logN`-row trace with `2 ^ logChunks`
+quotient chunks. -/
+def backendFor (logBlowup : Nat) (shapes : List (Nat × Nat)) : Backend F EF 24 :=
+  Stark.Fast.backendFor logBlowup shapes
 
 end CompStark.BabyBear

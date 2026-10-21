@@ -5,6 +5,7 @@ import CompStark.Merkle.Tree
 import CompStark.Stark.Prover
 import CompStark.KoalaBear.Fast
 import CompStark.Mont32.Json
+import CompStark.Batch.Prover
 
 /-! # CompStark micro-benchmarks
 
@@ -62,7 +63,7 @@ def wideTrace (w n : Nat) : Array KoalaBear.Fast.Field := Id.run do
 open CompStark CompStark.Stark CompStark.Fri in
 /-- The wall time of each phase of the fast prover on `wide 64`, `2 ^ logN` rows, blowup 2. -/
 def phases (logN : Nat) : IO UInt32 := do
-  let B := CompStark.KoalaBear.backendFor logN 1 1
+  let B := CompStark.KoalaBear.backendFor 1 [(logN, 1)]
   let P : Params := ⟨1, 0, 1, 100, 0, 16, 0, 0⟩
   let A := wide 64
   let trace := wideTrace 64 (2 ^ logN)
@@ -258,7 +259,7 @@ def main (args : List String) : IO UInt32 := do
       if air == "wide" then (wideTrace 64 (2 ^ logN), []) else fibInstance (2 ^ logN)
     -- The fast backend's extension plans are built once, outside timing, as Plonky3's twiddles.
     let B := if backend == "fast" then
-      CompStark.KoalaBear.backendFor logN P.logBlowup (A.logQuotientChunks logN) else B
+      CompStark.KoalaBear.backendFor P.logBlowup [(logN, A.logQuotientChunks logN)] else B
     if let path :: _ := rest.drop ps.length then
       let rust ← IO.ofExcept
         (CompStark.Stark.Json.parse (p := KoalaBear.fieldSize) (EF := KoalaBear.Fast.Ext4)
@@ -275,5 +276,31 @@ def main (args : List String) : IO UInt32 := do
       if pf.degreeBits == 12345 then IO.println ""
     let m := (samples.qsort (· < ·))[1]!
     IO.println s!"lean {backend} prove {air} 2^{logN} ms median {m / 1000000}.{m / 1000 % 1000}"
+    return 0
+  | "prove-batch" :: rest =>
+    -- `prove-batch LOG_BLOWUP LOG_FINAL MAX_LOG_ARITY QUERIES COMMIT_POW QUERY_POW [BATCH_POW
+    -- OOD_POW]`: the fast batch prover's median time on three `wide 64` tables of `2 ^ 20`,
+    -- `2 ^ 19` and `2 ^ 16` rows (`compstark-bench batch-bench wide …`).
+    let P : CompStark.Fri.Params ← match rest.map String.toNat! with
+      | [b, f, a, q, cp, qp] => pure ⟨b, f, a, q, cp, qp, 0, 0⟩
+      | [b, f, a, q, cp, qp, bp, op] => pure ⟨b, f, a, q, cp, qp, bp, op⟩
+      | _ => IO.eprintln "six or eight parameters"; return 1
+    let logNs := [20, 19, 16]
+    let instances : List (CompStark.Batch.Instance KoalaBear.Fast.Field) :=
+      logNs.map fun logN ↦ ⟨CompStark.Stark.wide 64, logN⟩
+    let traces := logNs.map fun logN ↦ wideTrace 64 (2 ^ logN)
+    let pis := logNs.map fun _ ↦ []
+    -- The fast backend's extension plans are built once, outside timing, as Plonky3's twiddles.
+    let B := CompStark.KoalaBear.backendFor P.logBlowup (CompStark.Batch.shapes instances)
+    let mut samples := #[]
+    for k in [0:3] do
+      let (ns, pf) ← timeNs fun _ ↦ do
+        return CompStark.Batch.proveBatchWith (EF := KoalaBear.Fast.Ext4) B P instances
+          (traces.map (·.set! 0 (k : _))) pis
+      samples := samples.push ns
+      if pf.oodWitness == 12345 then IO.println ""
+    let m := (samples.qsort (· < ·))[1]!
+    IO.println
+      s!"lean fast prove-batch wide 2^20+2^19+2^16 ms median {m / 1000000}.{m / 1000 % 1000}"
     return 0
   | _ => IO.eprintln "usage: CompStarkBench poseidon2-spec LOG_N"; return 1

@@ -158,7 +158,7 @@ theorem commitOk_leaves (hA : DomainsAddressable F EF) (a : Array EF) (s la : Na
   · obtain rfl := List.mem_singleton.mp hm
     refine ⟨⟨Nat.mul_pos (Challenge.params EF).d_pos (by positivity),
         ⟨s - la, by omega, hd⟩,
-      ?_, ?_⟩, hd⟩
+      ?_, ?_⟩, hd.le⟩
     · show (a.flatMap fun x ↦ (Ext.coeffs x).toArray).size =
         Challenge.d EF * 2 ^ la * (a.size / 2 ^ la)
       rw [size_flatMap_coeffs, hd, Nat.mul_assoc, hsz, ha]

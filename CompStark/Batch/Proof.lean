@@ -27,6 +27,11 @@ structure Instance (F : Type) where
   air : Air F
   logN : Nat
 
+/-- The instances' shapes: every instance's log trace height and log number of quotient
+chunks. -/
+def shapes {F : Type} (instances : List (Instance F)) : List (Nat × Nat) :=
+  instances.map fun I ↦ (I.logN, I.air.logQuotientChunks I.logN)
+
 /-- What the verifier shares with the prover (Plonky3's `CommonData` without lookups): the root of
 the commitment to the preprocessed traces of the instances that have one, in instance order, if
 any has one. -/
