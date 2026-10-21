@@ -207,9 +207,11 @@ theorem decodingStep (S : Setup EF) : DecodingStep S := by
   have htr (j : Fin S.air.width) := exists_basePoly S T hT (prover.trace j) ζ _ hζ
     (hmem (prover.trace j, ζ, _) (hl2 (List.mem_append_left _ (List.mem_append_left _
       (List.mem_map.mpr ⟨j, List.mem_finRange j, rfl⟩))) _ _))
-  have hnx (j : Fin S.air.width) := exists_basePoly S T hT (prover.trace j) _ _ hζω
-    (hmem (prover.trace j, ζ * rootOfUnity S.logN, _) (hl2 (List.mem_append_left _
-      (List.mem_append_right _ (List.mem_map.mpr ⟨j, List.mem_finRange j, rfl⟩))) _ _))
+  have hnx (j : Fin S.air.mainNextWidth) := exists_basePoly S T hT
+    (prover.trace (Fin.castLE S.air.mainNextWidth_le j)) _ _ hζω
+    (hmem (prover.trace (Fin.castLE S.air.mainNextWidth_le j), ζ * rootOfUnity S.logN, _)
+      (hl2 (List.mem_append_left _
+        (List.mem_append_right _ (List.mem_map.mpr ⟨j, List.mem_finRange j, rfl⟩))) _ _))
   have hqu (c : Fin S.chunks) (e : Fin (Challenge.d EF)) := exists_basePoly S T hT
     (prover.quotient α c e) ζ _
     hζ (hmem (prover.quotient α c e, ζ, _) (hl2 (List.mem_append_right _ (List.mem_flatMap.mpr
@@ -234,15 +236,16 @@ theorem decodingStep (S : Setup EF) : DecodingStep S := by
     rw [domain_eq, eval_map_algebraMap, eval_map_algebraMap, aeval_algebraMap_apply,
       aeval_algebraMap_apply, coe_aeval_eq_eval, ← hQT i hi]
     rfl
-  have hnext (j : Fin S.air.width) : next j = trace j := by
+  have hnext (j : Fin S.air.mainNextWidth) :
+      next j = trace (Fin.castLE S.air.mainNextWidth_le j) := by
     refine map_injective (algebraMap F 𝕂) (algebraMap F 𝕂).injective
       (eq_of_agree S T hT _ _ (natDegree_map_le.trans (hndeg j))
-        (natDegree_map_le.trans (htdeg j)) fun i hi ↦ ?_)
+        (natDegree_map_le.trans (htdeg _)) fun i hi ↦ ?_)
     rw [domain_eq, eval_map_algebraMap, eval_map_algebraMap, aeval_algebraMap_apply,
-      aeval_algebraMap_apply, coe_aeval_eq_eval, ← hnT j i hi, ← htT j i hi]
+      aeval_algebraMap_apply, coe_aeval_eq_eval, ← hnT j i hi, ← htT _ i hi]
   refine ⟨trace, quotient, htdeg, ⟨T, hTcard, fun i hi j ↦ htT j i hi⟩, hqdeg,
     ⟨T, hTcard, fun i hi ce ↦ hqT ce.1 ce.2 i hi⟩, ?_⟩
-  have hnz' (j : Fin S.air.width) := hnext j ▸ hnz j
+  have hnz' (j : Fin S.air.mainNextWidth) := hnext j ▸ hnz j
   have hpz' (j : Fin S.air.preprocessedWidth) := hprep j _ (hpdeg j) (hpT j) ▸ hpz j
   have hpnz' (j : Fin S.air.preprocessedNextWidth) :=
     hprep j _ (hpndeg j) (hpnT j) ▸ hpnz j

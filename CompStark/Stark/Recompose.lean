@@ -25,6 +25,39 @@ there (`recompose`, `checkConstraints`). In the spec field:
 namespace CompStark.Stark
 open CompStark.Fri Polynomial
 
+/-- The trace's openings in the verifier's shape: at `ζ`, and at `ζ ω` exactly when opened. -/
+theorem traceOpenings_eq {F EF : Type} {A : Air F} {o : OpenedValues EF}
+    (h : traceNextOk A o = true) (zeta zetaNext : EF) :
+    traceOpenings A o zeta zetaNext =
+      (zeta, o.traceLocal.toList) :: (o.traceNext.map fun r ↦ (zetaNext, r.toList)).toList := by
+  rcases o with ⟨tl, tn, pl, pn, qc⟩
+  cases tn with
+  | none =>
+    simp only [traceNextOk, Bool.not_eq_eq_eq_not, Bool.not_true] at h
+    simp only [traceOpenings, h, Bool.false_eq_true, ↓reduceIte, Option.map_none,
+      Option.toList_none]
+  | some r =>
+    simp only [traceNextOk, Bool.and_eq_true] at h
+    simp only [traceOpenings, h.1, ↓reduceIte, Option.getD_some, Option.map_some,
+      Option.toList_some]
+
+/-- An opening in the verifier's trace shape holds a next row of the opened width, and its claim
+counts are the AIR's. -/
+theorem traceNext_of_ok {F EF : Type} {A : Air F} {o : OpenedValues EF}
+    (h : traceNextOk A o = true) :
+    (o.traceNext.getD #[]).size = A.mainNextWidth ∧
+      (o.traceNext.map (·.size)).toList = if A.mainNextRow then [A.width] else [] := by
+  rcases o with ⟨tl, tn, pl, pn, qc⟩
+  cases tn with
+  | none =>
+    simp only [traceNextOk, Bool.not_eq_eq_eq_not, Bool.not_true] at h
+    simp only [Option.getD_none, Array.size_empty, Air.mainNextWidth, h, Bool.false_eq_true,
+      ↓reduceIte, Option.map_none, Option.toList_none, and_self]
+  | some r =>
+    simp only [traceNextOk, Bool.and_eq_true, beq_iff_eq] at h
+    simp only [Option.getD_some, Air.mainNextWidth, h.1, h.2, ↓reduceIte, Option.map_some,
+      Option.toList_some, and_self]
+
 variable {F : Type} [BaseField F] {EF : Type} [Challenge F EF]
 
 local notation "E" => Challenge.Spec EF
@@ -371,7 +404,7 @@ theorem checkConstraints_eq_fun : checkConstraints = fun (A : Air F) (pis : List
   let zh := Ext.powTwo zeta degreeBits - 1
   let env : Expr.Env F EF := {
     cur := fun i ↦ opened.traceLocal.getD i 0
-    next := fun i ↦ opened.traceNext.getD i 0
+    next := fun i ↦ (opened.traceNext.getD #[]).getD i 0
     prepCur := fun i ↦ (opened.preprocessedLocal.getD #[]).getD i 0
     prepNext := fun i ↦ (opened.preprocessedNext.getD #[]).getD i 0
     periodic := fun i ↦ periodicAt (A.periodicColumn i) degreeBits zeta

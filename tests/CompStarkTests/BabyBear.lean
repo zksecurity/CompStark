@@ -17,7 +17,7 @@ quartic extension (`compstark-bench stark-babybear AIR LOG_N LOG_BLOWUP LOG_FINA
 QUERIES COMMIT_POW QUERY_POW`), saved as `tests/data/babybear_AIR_*.json`: each must verify, with
 the verifying key of its preprocessed trace for `prep` and `prep0`, the Lean prover must reproduce
 it exactly, and the verifier must reject it with a changed opened value. `periodic`,
-`periodic-tiny` and `pcube` have periodic columns.
+`periodic-tiny` and `pcube` have periodic columns; `square` does not read the next row.
 -/
 
 namespace CompStarkTests.BabyBear
@@ -120,6 +120,12 @@ def pcubeInstance (n : Nat) : Array F × List F :=
     (t.push x |>.push y, 3 * x * x * x + s * y, y + s)) (#[], 2, 0)
   (t, [2, t.getD (2 * n - 2) 0])
 
+/-- The `square` trace of `n` rows: `a = i + 1`, `b = a²` on row `i`. -/
+def squareInstance (n : Nat) : Array F × List F :=
+  (Array.ofFn (n := n * 2) fun k ↦
+    let a : F := ((k.val / 2 + 1 : Nat) : F)
+    if k.val % 2 = 0 then a else a * a, [])
+
 /-- Plonky3's periods of `PeriodicAir`, and those of its tiny-quotient test. -/
 def periodicCols : List (List F) := [[1, 2, 3, 4], [10, 20]]
 def periodicTinyCols : List (List F) := [[9], [1, 2]]
@@ -159,5 +165,6 @@ def check (name : String) (air : Nat → Air F) (inst : Nat → Array F × List 
   check "periodic-tiny" (fun _ ↦ periodicAir periodicTinyCols) (periodicInstance periodicTinyCols)
     [1, 1, 0, 1, 6, 0, 2]
   check "pcube" (fun _ ↦ periodicCube) pcubeInstance [4, 1, 1, 2, 6, 1, 2, 2, 3]
+  check "square" (fun _ ↦ square) squareInstance [4, 1, 1, 2, 6, 1, 2, 2, 3]
 
 end CompStarkTests.BabyBear

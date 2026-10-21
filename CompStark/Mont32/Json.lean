@@ -94,7 +94,8 @@ def optional {α : Type} (f : Json → Except String α) : Json → Except Strin
 /-- Opened values, rejecting randomization. -/
 def openedValues (ov : Json) : Except String (OpenedValues EF) := do
   absent ov "random"
-  return ⟨← array ext (← ov.getObjVal? "trace_local"), ← array ext (← ov.getObjVal? "trace_next"),
+  return ⟨← array ext (← ov.getObjVal? "trace_local"),
+    ← optional (array ext) (← ov.getObjVal? "trace_next"),
     ← optional (array ext) (← ov.getObjVal? "preprocessed_local"),
     ← optional (array ext) (← ov.getObjVal? "preprocessed_next"),
     ← array (array ext) (← ov.getObjVal? "quotient_chunks")⟩

@@ -25,9 +25,9 @@ and Merkle hashes (`Primitives`). Each instance is checked as `uni-stark` checks
   any, samples the constraint-folding challenge `α`, observes the quotient commitment, checks the
   out-of-domain grinding witness and samples the out-of-domain point `ζ`, which must lie outside
   every instance's trace domain.
-* The commitment scheme verifies every instance's trace at `ζ` and `ζ ω`, every quotient chunk at
-  `ζ`, and every preprocessed trace at `ζ` and, if its AIR reads its next row, at `ζ ω`, `ω` the
-  instance's generator: one opening argument over matrices of mixed heights (`batchRounds`).
+* The commitment scheme verifies every instance's trace and preprocessed trace at `ζ` and, if its
+  AIR reads their next rows, at `ζ ω`, `ω` the instance's generator, and every quotient chunk at
+  `ζ`: one opening argument over matrices of mixed heights (`batchRounds`).
 * Every instance's quotient at `ζ`, recomposed from its chunks, must equal its constraints folded
   by `α` and divided by its trace domain's vanishing polynomial.
 -/
@@ -39,10 +39,11 @@ open CompStark.Fri CompStark.Stark
 variable {F : Type} [BaseField F] {EF : Type} [Challenge F EF]
 
 /-- The opened values have `A`'s shape on `2 ^ logN` rows: the trace's rows of `A`'s width, the
-quotient's chunks of `d` coordinates each, and the preprocessed trace's rows of its width exactly
-when `A` has preprocessed columns, the next row exactly when `A` reads it. -/
+next row exactly when `A` reads it, the quotient's chunks of `d` coordinates each, and the
+preprocessed trace's rows of its width exactly when `A` has preprocessed columns, the next row
+exactly when `A` reads it. -/
 def openedShapeOk (A : Air F) (o : OpenedValues EF) (logN : Nat) : Bool :=
-  o.traceLocal.size == A.width && o.traceNext.size == A.width &&
+  o.traceLocal.size == A.width && traceNextOk A o &&
     o.quotientChunks.size == 2 ^ A.logQuotientChunks logN &&
     o.quotientChunks.all (·.size == Challenge.d EF) &&
     match o.preprocessedLocal, o.preprocessedNext with
@@ -55,7 +56,7 @@ def openedShapeOk (A : Air F) (o : OpenedValues EF) (logN : Nat) : Bool :=
     | none, some _ => false
 
 /-- The commitment scheme's rounds of a proof at `ζ`, on every instance's trace domain: the main
-traces at `ζ` and `ζ ω`, every quotient chunk at `ζ`, instance by instance, and the preprocessed
+traces' `traceOpenings`, every quotient chunk at `ζ`, instance by instance, and the preprocessed
 traces at `ζ` and, if their AIRs read their next rows, at `ζ ω`. -/
 def batchRounds (instances : List (Instance F)) (common : Common F) (proof : BatchProof F EF)
     (zeta : EF) : List (Round F EF) :=
@@ -63,7 +64,7 @@ def batchRounds (instances : List (Instance F)) (common : Common F) (proof : Bat
   let domain (I : Instance F) : Domain F := ⟨1, I.logN⟩
   let zetaNext (I : Instance F) := zeta * Ext.ofBase (twoAdicGen I.logN)
   [(proof.mainCommit, insts.map fun (I, o) ↦
-      (domain I, [(zeta, o.traceLocal.toList), (zetaNext I, o.traceNext.toList)])),
+      (domain I, traceOpenings I.air o zeta (zetaNext I))),
     (proof.quotientCommit, insts.flatMap fun (I, o) ↦
       o.quotientChunks.toList.map fun ch ↦ (domain I, [(zeta, ch.toList)]))] ++
     match common.preprocessed with

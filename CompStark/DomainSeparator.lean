@@ -149,11 +149,12 @@ def bracket (label : String) : List Step :=
   [⟨.begin, .protocol, label, .none, .marker⟩, ⟨.close, .protocol, label, .none, .marker⟩]
 
 /-- The seed of `p3-uni-stark` for a trace of `2 ^ logDegree` rows and `width` columns, a
-preprocessed trace of `prepWidth` columns, committed if there are any and opened at the next row
-if `prepNext`, `numPeriodic` periodic columns, `numPublic` public values, `chunks` quotient
-chunks and `oodBits` bits of out-of-domain grinding. The trace is opened at the next row. -/
+preprocessed trace of `prepWidth` columns, committed if there are any, `numPeriodic` periodic
+columns, `numPublic` public values, `chunks` quotient chunks and `oodBits` bits of out-of-domain
+grinding; the trace is opened at the next row if `mainNext`, the preprocessed trace if
+`prepNext`. -/
 def starkSeed (logDegree width prepWidth numPeriodic numPublic chunks oodBits : Nat)
-    (prepNext : Bool) : List F :=
+    (mainNext prepNext : Bool) : List F :=
   toElems F <| seedBytes 1 "p3-uni-stark"
     ([commitment "trace_commitment"] ++
       (if prepWidth = 0 then [] else [commitment "preprocessed_commitment"]) ++
@@ -161,7 +162,8 @@ def starkSeed (logDegree width prepWidth numPeriodic numPublic chunks oodBits : 
       challenge F EF "alpha",
       commitment "quotient_commitment"] ++ pow F "ood_pow" oodBits ++
       [challenge F EF "zeta"] ++ bracket "opening_argument")
-    [logDegree, logDegree, width, prepWidth, numPeriodic, chunks, 1, if prepNext then 1 else 0]
+    [logDegree, logDegree, width, prepWidth, numPeriodic, chunks, if mainNext then 1 else 0,
+      if prepNext then 1 else 0]
 
 /-- The seed of `p3-fri-pcs` for claimed evaluations of `counts[c][m][k]` elements at the `k`-th
 point of matrix `m` of commitment `c`, and `batchBits` bits of grinding before the batching

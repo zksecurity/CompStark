@@ -144,7 +144,7 @@ theorem commitWitness_idealOf (hK : P.numQueries + Challenge.d EF + 1 ≤ K)
     (rounds : List (Round F EF))
     (hheights : (((rounds.flatMap (·.2)).map (·.1.logSize + P.logBlowup)).mergeSort
       (fun a b ↦ b ≤ a)).dedup = [friLogMax P proof])
-    (st : Sponge F)
+    (st : Sponge F) (htn : traceNextOk A proof.opened = true)
     (hshape : preprocessedShapeOk A vk proof.opened proof.degreeBits = true)
     (hfri : verifyFri (idealOf answer) P proof.fri rounds
       (batchOf (idealOf answer) P A vk proof pis) (stateFri (idealOf answer) P A vk proof pis) =
@@ -172,7 +172,7 @@ theorem commitWitness_idealOf (hK : P.numQueries + Challenge.d EF + 1 ≤ K)
   have hwit := commitLoop_wit H P _ (fun _ _ ↦ rfl) cws #[] _ _ hloop i hi
   have hstart : obsList H (stateFri H P A vk proof pis) (friSeedOf P proof) =
       ⟨capAt answer blocks 3, friSeedOf P proof, []⟩ := by
-    obtain ⟨-, l₀, hl₀⟩ := batch_idealOf answer P A vk proof pis (by omega) hshape
+    obtain ⟨-, l₀, hl₀⟩ := batch_idealOf answer P A vk proof pis (by omega) htn hshape
     rw [hl₀, obsList_idealOf_ne answer _ _ (friSeed_ne_nil _ _ _ _ _ _ _ _)]
     rfl
   erw [hstart] at hwit
@@ -240,6 +240,7 @@ theorem oodWitness_idealOf (hK : Challenge.d EF ≤ K)
 primitives of an answer table, then with grinding the first sample of round `2`'s answer has
 `batchPowBits` vanishing low bits. -/
 theorem batchWitness_idealOf (hK : Challenge.d EF + 1 ≤ K)
+    (htn : traceNextOk A proof.opened = true)
     (hshape : preprocessedShapeOk A vk proof.opened proof.degreeBits = true)
     (hbc : (batchCheck (idealOf answer) P A vk proof pis).1 = true)
     (hbits : P.batchPowBits ≠ 0) :
@@ -252,8 +253,8 @@ theorem batchWitness_idealOf (hK : Challenge.d EF + 1 ≤ K)
         proof pis).2).2 =
       ⟨capAt answer (inputs P A vk pis proof) 2, DomainSeparator.pcsSeed F EF
         (pcsCounts proof.opened) P.batchPowBits ++ coeffs (openedValues proof.opened), []⟩ := by
-    rw [hl, pcsState, obsOpened_eq, roundValues_openingRounds A vk proof _ hshape,
-      claimCounts_openingRounds A vk proof _ hshape,
+    rw [hl, pcsState, obsOpened_eq, roundValues_openingRounds A vk proof _ htn hshape,
+      claimCounts_openingRounds A vk proof _ htn hshape,
       obsList_idealOf_ne answer _ _ (pcsSeed_ne_nil _ _), obsList_idealOf answer _ rfl]
     rfl
   rw [batchCheck, hst] at hbc

@@ -167,31 +167,39 @@ variable [BaseField F] {EF : Type} [Challenge F EF]
 /-- Extension elements as base elements, lowest coefficient first. -/
 def coeffs (xs : List EF) : List F := xs.flatMap Ext.coeffs
 
-/-- The opened values in the order the verifier observes them: the trace at `ζ`, the trace at
-`ζ ω`, every quotient chunk, and the preprocessed trace at `ζ` and `ζ ω` if opened. -/
+/-- The opened values in the order the verifier observes them: the trace at `ζ` and `ζ ω` if
+opened, every quotient chunk, and the preprocessed trace at `ζ` and `ζ ω` if opened. -/
 def openedValues (o : OpenedValues EF) : List EF :=
-  o.traceLocal.toList ++ o.traceNext.toList ++ o.quotientChunks.toList.flatMap (·.toList) ++
+  o.traceLocal.toList ++ (o.traceNext.getD #[]).toList ++
+    o.quotientChunks.toList.flatMap (·.toList) ++
     (o.preprocessedLocal.getD #[]).toList ++ (o.preprocessedNext.getD #[]).toList
 
-/-- The claimed evaluation counts of a proof's openings: the trace at two points, every quotient
-chunk at one, and the preprocessed trace, if opened, at one or two. -/
+/-- The claimed evaluation counts of a proof's openings: the trace at one or two points, every
+quotient chunk at one, and the preprocessed trace, if opened, at one or two. -/
 def pcsCounts (o : OpenedValues EF) : List (List (List Nat)) :=
-  [[[o.traceLocal.size, o.traceNext.size]], o.quotientChunks.toList.map fun ch ↦ [ch.size]] ++
+  [[o.traceLocal.size :: (o.traceNext.map (·.size)).toList],
+    o.quotientChunks.toList.map fun ch ↦ [ch.size]] ++
     (o.preprocessedLocal.map fun l ↦ [l.size :: (o.preprocessedNext.map (·.size)).toList]).toList
 
 theorem claimCounts_openingRounds (A : Air F) (vk : Option (PreprocessedKey F))
-    (proof : Proof F EF) (zeta : EF)
+    (proof : Proof F EF) (zeta : EF) (htn : traceNextOk A proof.opened = true)
     (hshape : preprocessedShapeOk A vk proof.opened proof.degreeBits = true) :
     Fri.claimCounts (openingRounds A vk proof zeta) = pcsCounts proof.opened := by
   unfold openingRounds
+  dsimp only
+  rw [traceOpenings_eq htn]
+  have htc : ((proof.opened.traceNext.map fun r ↦
+      (zeta * Ext.ofBase (twoAdicGen proof.degreeBits), r.toList)).toList.map
+        fun x ↦ x.2.length) = (proof.opened.traceNext.map (·.size)).toList := by
+    cases proof.opened.traceNext <;> rfl
   rcases preprocessedRound_cases A vk proof.opened _ hshape ⟨1, proof.degreeBits⟩ zeta
     (zeta * Ext.ofBase (twoAdicGen proof.degreeBits)) with ⟨-, hl, hn, hr⟩ | ⟨k, l, -, hl, hr⟩
   · simp only [Fri.claimCounts, pcsCounts, hr, hl, List.map_cons, List.map_nil, List.map_map,
-      Array.length_toList, Option.map_none, Option.toList_none, List.append_nil]
+      Array.length_toList, Option.map_none, Option.toList_none, List.append_nil, htc]
     rfl
   · simp only [Fri.claimCounts, pcsCounts, hr, hl, List.map_cons, List.map_nil, List.map_map,
       Array.length_toList, Option.map_some, Option.toList_some, List.cons_append,
-      List.nil_append]
+      List.nil_append, htc]
     refine congrArg (List.cons _) (congrArg₂ (fun a b ↦ a :: b) rfl ?_)
     cases proof.opened.preprocessedNext <;> rfl
 
@@ -1102,17 +1110,27 @@ theorem heights_openingRounds (P : Fri.Params) (A : Air F) (vk : Option (Preproc
       List.cons_append, reduceCtorEq, not_false_eq_true]
 
 theorem roundValues_openingRounds (A : Air F) (vk : Option (PreprocessedKey F))
-    (proof : Proof F EF) (zeta : EF)
+    (proof : Proof F EF) (zeta : EF) (htn : traceNextOk A proof.opened = true)
     (hshape : preprocessedShapeOk A vk proof.opened proof.degreeBits = true) :
     roundValues (openingRounds A vk proof zeta) = openedValues proof.opened := by
   unfold openingRounds
+  dsimp only
+  rw [traceOpenings_eq htn]
+  have htv : ((proof.opened.traceNext.map fun r ↦
+      (zeta * Ext.ofBase (twoAdicGen proof.degreeBits), r.toList)).toList.flatMap (·.2)) =
+        (proof.opened.traceNext.getD #[]).toList := by
+    cases proof.opened.traceNext <;>
+      simp only [Option.map_none, Option.map_some, Option.toList_none, Option.toList_some,
+        List.flatMap_nil, List.flatMap_cons, List.append_nil, Option.getD_none, Option.getD_some,
+        Array.toList_empty]
   rcases preprocessedRound_cases A vk proof.opened _ hshape ⟨1, proof.degreeBits⟩ zeta
     (zeta * Ext.ofBase (twoAdicGen proof.degreeBits)) with ⟨-, hl, hn, hr⟩ | ⟨k, l, -, hl, hr⟩
   · simp only [roundValues, openedValues, hr, hl, hn, List.flatMap_cons, List.flatMap_nil,
-      List.flatMap_map, List.append_nil, List.append_assoc, Option.getD_none, Array.toList_empty]
+      List.flatMap_map, List.append_nil, List.append_assoc, Option.getD_none, Array.toList_empty,
+      htv]
   · simp only [roundValues, openedValues, hr, hl, List.flatMap_cons, List.flatMap_nil,
       List.flatMap_map, List.append_nil, List.append_assoc, List.cons_append, List.nil_append,
-      Option.getD_some]
+      Option.getD_some, htv]
     cases proof.opened.preprocessedNext <;>
       simp only [Option.map_none, Option.map_some, Option.toList_none, Option.toList_some,
         List.flatMap_nil, List.flatMap_cons, List.append_nil, Option.getD_none, Option.getD_some,
@@ -1237,12 +1255,11 @@ theorem verifyWith_logs (hK : P.numQueries + Challenge.d EF + 1 ≤ K) (A : Air 
     refine verifyPcs_logs hK (inputs P A vk pis proof) 2 proof.fri (openingRounds A vk proof zeta)
       (proof.degreeBits + P.logBlowup) (heights_openingRounds P A vk proof zeta) ?_
       (fun j hj ↦ inputs_getD_fold P A vk pis proof j hj) (inputs_getD_last P A vk pis proof) _ h₂
-    have hshape' : preprocessedShapeOk A vk proof.opened proof.degreeBits = true := by
-      simp only [Bool.and_eq_true] at hshape
-      exact hshape.2
+    simp only [Bool.and_eq_true] at hshape
     simp only [inputs, List.getD_eq_getElem?_getD, List.getElem?_cons_succ,
-      List.getElem?_cons_zero, Option.getD_some, claimCounts_openingRounds A vk proof zeta hshape',
-      roundValues_openingRounds A vk proof zeta hshape']
+      List.getElem?_cons_zero, Option.getD_some,
+      claimCounts_openingRounds A vk proof zeta hshape.1.1.1.2 hshape.2,
+      roundValues_openingRounds A vk proof zeta hshape.1.1.1.2 hshape.2]
   by_cases hbits : P.oodPowBits = 0
   · simp only [witnessInput, hbits, ↓reduceIte, List.append_nil] at hin₁
     obtain ⟨_, s₂, h₂, hrun1, hlog⟩ := out_bind_ok answer hrun1
