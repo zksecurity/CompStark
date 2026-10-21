@@ -454,7 +454,8 @@ theorem claimCounts_batchRounds_eq (common : CompStark.Batch.Common F)
     (hshape : ∀ i : Fin S.k, CompStark.Batch.openedShapeOk (S.air i)
       (proof.opened.toList.getD i noOpenings) (S.logN i) = true)
     (hprep : common.preprocessed.isSome = S.instances.any (0 < ·.air.preprocessedWidth))
-    (z : EF) : claimCounts (CompStark.Batch.batchRounds S.instances common proof z) = countsB S := by
+    (z : EF) :
+    claimCounts (CompStark.Batch.batchRounds S.instances common proof z) = countsB S := by
   have hos : proof.opened.toList.length = S.k := by rw [Array.length_toList, hsize]
   have hsh := fun i ↦ openedShapeOk_spec (hshape i)
   have hM : ((S.instances.zip proof.opened.toList).map fun x ↦

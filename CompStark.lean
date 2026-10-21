@@ -165,4 +165,6 @@ public import CompStark.Ni.BatchNatural
 public import CompStark.Ni.BatchQueryBound
 public import CompStark.Ni.BatchParse
 public import CompStark.Ni.BatchChallenges
+public import CompStark.Ni.BatchRounds
+public import CompStark.Ni.BatchRoundBounds
 public import CompStark.NonInteractive
