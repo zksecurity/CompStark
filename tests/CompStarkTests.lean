@@ -1,7 +1,5 @@
 import CompStarkTests.Poseidon2
-import CompStarkTests.Hash
 import CompStarkTests.Merkle
-import CompStarkTests.Challenger
 import CompStarkTests.BabyBear
 import CompStarkTests.Stark
 import CompStarkTests.FreshQuery

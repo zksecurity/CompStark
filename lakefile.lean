@@ -4,7 +4,7 @@ open System Lake DSL
 
 package CompStark where
   version := v!"0.1.0"
-  testDriver := "CompStarkTests"
+  testDriver := "CompStarkNativeTests"
 
 -- Pinned to a CompPoly commit with the packed NTT, the batched coset LDE and coset interpolation
 -- generic over 32-bit Montgomery fields, fast KoalaBear⁵ and spec fields over the fast base field.
@@ -29,12 +29,19 @@ lean_lib CompStark where
 lean_lib CompStarkPackedNative where
   roots := #[`CompStark.Poseidon2.Packed, `CompStark.Poseidon2.Packed24,
     `CompStark.Merkle.Packed, `CompStark.Stark.Words, `CompStark.Stark.ExtWords,
-    `CompStark.Stark.Fast, `CompStark.KoalaBear.Fast]
+    `CompStark.Stark.Fast, `CompStark.KoalaBear.Fast,
+    `CompStark.BabyBear.Fast]
   platformIndependent := true
   moreLeancArgs := #["-march=native", "-mstackrealign"]
 
 lean_lib CompStarkTests where
   srcDir := "tests"
+
+/-- The test driver: builds the `#guard` library `CompStarkTests`, which it imports, and runs the
+known-answer checks on the packed kernels compiled. -/
+lean_exe CompStarkNativeTests where
+  srcDir := "tests"
+  moreLeancArgs := #["-march=native"]
 
 lean_exe CompStarkBench where
   srcDir := "bench"

@@ -67,6 +67,7 @@ public import CompStark.Stark.Fast.Openings
 public import CompStark.Stark.Fast.Quotient
 public import CompStark.Stark.Fast.Refines
 public import CompStark.KoalaBear.Fast
+public import CompStark.BabyBear.Fast
 public import CompStark.Stark.Words
 public import CompStark.Stark.Quotient
 public import CompStark.Stark.ExtWords
