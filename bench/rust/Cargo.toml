@@ -5,23 +5,23 @@ edition = "2021"
 publish = false
 
 [dependencies]
-p3-field = { git = "https://github.com/Plonky3/Plonky3", rev = "47e442f" }
-p3-koala-bear = { git = "https://github.com/Plonky3/Plonky3", rev = "47e442f" }
-p3-baby-bear = { git = "https://github.com/Plonky3/Plonky3", rev = "47e442f" }
-p3-poseidon2 = { git = "https://github.com/Plonky3/Plonky3", rev = "47e442f" }
-p3-symmetric = { git = "https://github.com/Plonky3/Plonky3", rev = "47e442f" }
-p3-merkle-tree = { git = "https://github.com/Plonky3/Plonky3", rev = "47e442f" }
-p3-matrix = { git = "https://github.com/Plonky3/Plonky3", rev = "47e442f" }
-p3-commit = { git = "https://github.com/Plonky3/Plonky3", rev = "47e442f" }
-p3-uni-stark = { git = "https://github.com/Plonky3/Plonky3", rev = "47e442f" }
-p3-fri = { git = "https://github.com/Plonky3/Plonky3", rev = "47e442f" }
-p3-challenger = { git = "https://github.com/Plonky3/Plonky3", rev = "47e442f" }
-p3-air = { git = "https://github.com/Plonky3/Plonky3", rev = "47e442f" }
-p3-dft = { git = "https://github.com/Plonky3/Plonky3", rev = "47e442f" }
+p3-field = { git = "https://github.com/Plonky3/Plonky3", rev = "a4982ec" }
+p3-koala-bear = { git = "https://github.com/Plonky3/Plonky3", rev = "a4982ec" }
+p3-baby-bear = { git = "https://github.com/Plonky3/Plonky3", rev = "a4982ec" }
+p3-poseidon2 = { git = "https://github.com/Plonky3/Plonky3", rev = "a4982ec" }
+p3-symmetric = { git = "https://github.com/Plonky3/Plonky3", rev = "a4982ec" }
+p3-merkle-tree = { git = "https://github.com/Plonky3/Plonky3", rev = "a4982ec" }
+p3-matrix = { git = "https://github.com/Plonky3/Plonky3", rev = "a4982ec" }
+p3-commit = { git = "https://github.com/Plonky3/Plonky3", rev = "a4982ec" }
+p3-uni-stark = { git = "https://github.com/Plonky3/Plonky3", rev = "a4982ec" }
+p3-fri = { git = "https://github.com/Plonky3/Plonky3", rev = "a4982ec" }
+p3-challenger = { git = "https://github.com/Plonky3/Plonky3", rev = "a4982ec" }
+p3-air = { git = "https://github.com/Plonky3/Plonky3", rev = "a4982ec" }
+p3-dft = { git = "https://github.com/Plonky3/Plonky3", rev = "a4982ec" }
 serde_json = "1"
 tracing-forest = { version = "0.3.1", features = ["ansi", "smallvec"] }
 tracing-subscriber = { version = "0.3", features = ["std", "env-filter"] }
-p3-maybe-rayon = { git = "https://github.com/Plonky3/Plonky3", rev = "47e442f", features = ["parallel"] }
+p3-maybe-rayon = { git = "https://github.com/Plonky3/Plonky3", rev = "a4982ec", features = ["parallel"] }
 
 [profile.release]
 lto = true

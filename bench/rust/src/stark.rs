@@ -1,33 +1,66 @@
-//! Plonky3 `uni-stark` proofs over KoalaBear for known-answer tests: the Poseidon2 Merkle
-//! commitment of `examples/src/types.rs`, a width-24 duplex challenger, and a Fibonacci AIR.
-use core::borrow::Borrow;
-use p3_air::{Air, AirBuilder, AirBuilderWithPublicValues, BaseAir};
+//! Plonky3 `uni-stark` proofs for known-answer tests: the Poseidon2 Merkle commitment of
+//! `examples/src/types.rs` (binary, cap height 0), a width-24 duplex challenger, and three AIRs.
+use p3_air::{Air, AirBuilder, BaseAir, WindowAccess};
 use p3_challenger::DuplexChallenger;
 use p3_commit::ExtensionMmcs;
 use p3_dft::Radix2DitParallel;
 use p3_field::extension::BinomialExtensionField;
-use p3_field::{Field, PrimeCharacteristicRing};
+use p3_field::extension::BinomiallyExtendable;
+use p3_field::{Field, PrimeCharacteristicRing, PrimeField64, TwoAdicField};
 use p3_fri::{FriParameters, TwoAdicFriPcs};
 use p3_koala_bear::{
-    default_koalabear_poseidon2_16, default_koalabear_poseidon2_24, KoalaBear as F,
-    Poseidon2KoalaBear,
+    default_koalabear_poseidon2_16, default_koalabear_poseidon2_24, KoalaBear,
 };
 use p3_matrix::dense::RowMajorMatrix;
-use p3_matrix::Matrix;
 use p3_merkle_tree::MerkleTreeMmcs;
-use p3_symmetric::{PaddingFreeSponge, TruncatedPermutation};
-use p3_uni_stark::{prove, verify, StarkConfig};
+use p3_symmetric::{CryptographicPermutation, PaddingFreeSponge, TruncatedPermutation};
+use p3_uni_stark::{prove, verify, Proof, StarkConfig};
 
-type Perm16 = Poseidon2KoalaBear<16>;
-type Perm24 = Poseidon2KoalaBear<24>;
-type Hash = PaddingFreeSponge<Perm24, 24, 16, 8>;
-type Compress = TruncatedPermutation<Perm16, 2, 8, 16>;
-type ValMmcs = MerkleTreeMmcs<<F as Field>::Packing, <F as Field>::Packing, Hash, Compress, 8>;
-type Challenge = BinomialExtensionField<F, 4>;
-type ChallengeMmcs = ExtensionMmcs<F, Challenge, ValMmcs>;
-type Challenger = DuplexChallenger<F, Perm24, 24, 16>;
-type Pcs = TwoAdicFriPcs<F, Radix2DitParallel<F>, ValMmcs, ChallengeMmcs>;
-type Config = StarkConfig<Pcs, Challenge, Challenger>;
+type F = KoalaBear;
+
+pub type Hash<P24> = PaddingFreeSponge<P24, 24, 16, 8>;
+pub type Compress<P16> = TruncatedPermutation<P16, 2, 8, 16>;
+pub type ValMmcs<F, P16, P24> =
+    MerkleTreeMmcs<<F as Field>::Packing, <F as Field>::Packing, Hash<P24>, Compress<P16>, 2, 8>;
+pub type Challenge<F> = BinomialExtensionField<F, 4>;
+pub type ChallengeMmcs<F, P16, P24> = ExtensionMmcs<F, Challenge<F>, ValMmcs<F, P16, P24>>;
+pub type Challenger<F, P24> = DuplexChallenger<F, P24, 24, 16>;
+pub type Pcs<F, P16, P24> =
+    TwoAdicFriPcs<F, Radix2DitParallel<F>, ValMmcs<F, P16, P24>, ChallengeMmcs<F, P16, P24>>;
+pub type Config<F, P16, P24> = StarkConfig<Pcs<F, P16, P24>, Challenge<F>, Challenger<F, P24>>;
+
+/// The configuration from the parameters `LOG_BLOWUP LOG_FINAL MAX_LOG_ARITY QUERIES COMMIT_POW
+/// QUERY_POW [BATCH_POW OOD_POW]` (the last two default to 0).
+pub fn config<F, P16, P24>(p16: P16, p24: P24, args: &[usize]) -> Config<F, P16, P24>
+where
+    F: TwoAdicField + PrimeField64 + BinomiallyExtendable<4>,
+    P16: CryptographicPermutation<[F; 16]> + CryptographicPermutation<[F::Packing; 16]>,
+    P24: CryptographicPermutation<[F; 24]> + CryptographicPermutation<[F::Packing; 24]>,
+{
+    let (fri_args, pow) = match args.len() {
+        6 => (args, [0, 0]),
+        8 => (&args[..6], [args[6], args[7]]),
+        _ => panic!("LOG_BLOWUP LOG_FINAL MAX_LOG_ARITY QUERIES COMMIT_POW QUERY_POW [BATCH_POW OOD_POW]"),
+    };
+    let [log_blowup, log_final_poly_len, max_log_arity, num_queries, commit_pow, query_pow] =
+        fri_args[..]
+    else {
+        unreachable!()
+    };
+    let val_mmcs = ValMmcs::<F, P16, P24>::new(Hash::new(p24.clone()), Compress::new(p16), 0);
+    let fri = FriParameters {
+        log_blowup,
+        log_final_poly_len,
+        max_log_arity,
+        num_queries,
+        batch_proof_of_work_bits: pow[0],
+        commit_proof_of_work_bits: commit_pow,
+        query_proof_of_work_bits: query_pow,
+        mmcs: ChallengeMmcs::new(val_mmcs.clone()),
+    };
+    let pcs = Pcs::new(Radix2DitParallel::default(), val_mmcs, fri);
+    Config::new(pcs, Challenger::new(p24)).with_ood_proof_of_work_bits(pow[1])
+}
 
 /// Two columns `left, right`: rows `(a, b)` first, `(right, left + right)` next, and `right = x` last.
 pub struct FibonacciAir;
@@ -36,24 +69,26 @@ impl<T> BaseAir<T> for FibonacciAir {
     fn width(&self) -> usize {
         2
     }
+
+    fn num_public_values(&self) -> usize {
+        3
+    }
 }
 
-impl<AB: AirBuilderWithPublicValues> Air<AB> for FibonacciAir {
+impl<AB: AirBuilder> Air<AB> for FibonacciAir {
     fn eval(&self, builder: &mut AB) {
         let main = builder.main();
         let pis = builder.public_values();
         let (a, b, x) = (pis[0], pis[1], pis[2]);
-        let local = main.row_slice(0).unwrap();
-        let next = main.row_slice(1).unwrap();
-        let local: &[AB::Var] = (*local).borrow();
-        let next: &[AB::Var] = (*next).borrow();
+        let local: &[AB::Var] = main.current_slice();
+        let next: &[AB::Var] = main.next_slice();
         let mut first = builder.when_first_row();
-        first.assert_eq(local[0].clone(), a);
-        first.assert_eq(local[1].clone(), b);
+        first.assert_eq(local[0], a);
+        first.assert_eq(local[1], b);
         let mut transition = builder.when_transition();
-        transition.assert_eq(local[1].clone(), next[0].clone());
-        transition.assert_eq(local[0].clone() + local[1].clone(), next[1].clone());
-        builder.when_last_row().assert_eq(local[1].clone(), x);
+        transition.assert_eq(local[1], next[0]);
+        transition.assert_eq(local[0] + local[1], next[1]);
+        builder.when_last_row().assert_eq(local[1], x);
     }
 }
 
@@ -66,25 +101,27 @@ impl<T> BaseAir<T> for CubeAir {
     fn width(&self) -> usize {
         2
     }
+
+    fn num_public_values(&self) -> usize {
+        3
+    }
 }
 
-impl<AB: AirBuilderWithPublicValues> Air<AB> for CubeAir {
+impl<AB: AirBuilder> Air<AB> for CubeAir {
     fn eval(&self, builder: &mut AB) {
         let main = builder.main();
         let pis = builder.public_values();
         let (a, b, c) = (pis[0], pis[1], pis[2]);
-        let local = main.row_slice(0).unwrap();
-        let next = main.row_slice(1).unwrap();
-        let local: &[AB::Var] = (*local).borrow();
-        let next: &[AB::Var] = (*next).borrow();
+        let local: &[AB::Var] = main.current_slice();
+        let next: &[AB::Var] = main.next_slice();
         let mut first = builder.when_first_row();
-        first.assert_eq(local[0].clone(), a);
-        first.assert_eq(local[1].clone(), b);
-        let x: AB::Expr = local[0].clone().into();
+        first.assert_eq(local[0], a);
+        first.assert_eq(local[1], b);
+        let x: AB::Expr = local[0].into();
         let mut transition = builder.when_transition();
-        transition.assert_eq(x.clone() * x.clone() * x + local[1].clone(), next[0].clone());
-        transition.assert_eq(local[1].clone() + AB::Expr::ONE, next[1].clone());
-        builder.when_last_row().assert_eq(local[0].clone(), c);
+        transition.assert_eq(x.clone() * x.clone() * x + local[1], next[0]);
+        transition.assert_eq(local[1] + AB::Expr::ONE, next[1]);
+        builder.when_last_row().assert_eq(local[0], c);
     }
 }
 
@@ -114,24 +151,21 @@ impl<T> BaseAir<T> for WideAir {
     }
 }
 
-impl<AB: AirBuilderWithPublicValues> Air<AB> for WideAir {
+impl<AB: AirBuilder> Air<AB> for WideAir {
     fn eval(&self, builder: &mut AB) {
         let main = builder.main();
-        let local = main.row_slice(0).unwrap();
-        let next = main.row_slice(1).unwrap();
-        let local: &[AB::Var] = (*local).borrow();
-        let next: &[AB::Var] = (*next).borrow();
+        let local: &[AB::Var] = main.current_slice();
+        let next: &[AB::Var] = main.next_slice();
         let mut transition = builder.when_transition();
         for j in 0..WIDE {
-            let x: AB::Expr = local[j].clone().into();
-            transition.assert_eq(x.clone() * x.clone() * x + local[(j + 1) % WIDE].clone(),
-                next[j].clone());
+            let x: AB::Expr = local[j].into();
+            transition.assert_eq(x.clone() * x.clone() * x + local[(j + 1) % WIDE], next[j]);
         }
     }
 }
 
 /// The trace of `n` rows of `WideAir` from `xⱼ = j`.
-fn wide_trace(n: usize) -> RowMajorMatrix<F> {
+pub fn wide_trace<F: Field>(n: usize) -> RowMajorMatrix<F> {
     let mut values = Vec::with_capacity(WIDE * n);
     let mut row: Vec<F> = (0..WIDE).map(|j| F::from_u32(j as u32)).collect();
     for _ in 0..n {
@@ -154,52 +188,50 @@ pub fn trace<F: Field>(n: usize) -> (RowMajorMatrix<F>, F) {
     (RowMajorMatrix::new(values, 2), last)
 }
 
-/// `stark AIR LOG_N LOG_BLOWUP LOG_FINAL MAX_LOG_ARITY QUERIES COMMIT_POW QUERY_POW`, `AIR` one
-/// of `fib`, `cube`: the proof as JSON, after Plonky3 verified it. Run with
-/// `RAYON_NUM_THREADS=1` for the smallest grinding witnesses.
-pub fn stark(air: &str, args: &[usize]) {
-    let [log_n, log_blowup, log_final_poly_len, max_log_arity, num_queries, commit_pow, query_pow] =
-        args[..]
-    else {
-        panic!("usage: stark LOG_N LOG_BLOWUP LOG_FINAL MAX_LOG_ARITY QUERIES COMMIT_POW QUERY_POW")
-    };
-    let hash = Hash::new(default_koalabear_poseidon2_24());
-    let compress = Compress::new(default_koalabear_poseidon2_16());
-    let val_mmcs = ValMmcs::new(hash, compress);
-    let fri = FriParameters {
-        log_blowup,
-        log_final_poly_len,
-        max_log_arity,
-        num_queries,
-        commit_proof_of_work_bits: commit_pow,
-        query_proof_of_work_bits: query_pow,
-        mmcs: ChallengeMmcs::new(val_mmcs.clone()),
-    };
-    let pcs = Pcs::new(Radix2DitParallel::default(), val_mmcs, fri);
-    let config = Config::new(pcs, Challenger::new(default_koalabear_poseidon2_24()));
-    let proof = match air {
+/// A proof of `air` (`fib`, `cube` or `wide`) on `2^log_n` rows, checked by Plonky3's verifier.
+pub fn prove_air<F, P16, P24>(config: &Config<F, P16, P24>, air: &str, log_n: usize)
+    -> Proof<Config<F, P16, P24>>
+where
+    F: TwoAdicField + PrimeField64 + BinomiallyExtendable<4>,
+    P16: CryptographicPermutation<[F; 16]> + CryptographicPermutation<[F::Packing; 16]>,
+    P24: CryptographicPermutation<[F; 24]> + CryptographicPermutation<[F::Packing; 24]>,
+{
+    let n = 1 << log_n;
+    match air {
         "fib" => {
-            let (trace, x) = trace(1 << log_n);
+            let (trace, x) = trace::<F>(n);
             let pis = vec![F::ZERO, F::ONE, x];
-            let proof = prove(&config, &FibonacciAir, trace, &pis);
-            verify(&config, &FibonacciAir, &proof, &pis).expect("Plonky3 rejects its own proof");
+            let proof = prove(config, &FibonacciAir, trace, &pis).expect("Plonky3 cannot prove");
+            verify(config, &FibonacciAir, &proof, &pis).expect("Plonky3 rejects its own proof");
             proof
         }
         "cube" => {
-            let (trace, x) = cube_trace(1 << log_n);
+            let (trace, x) = cube_trace::<F>(n);
             let pis = vec![F::TWO, F::ZERO, x];
-            let proof = prove(&config, &CubeAir, trace, &pis);
-            verify(&config, &CubeAir, &proof, &pis).expect("Plonky3 rejects its own proof");
+            let proof = prove(config, &CubeAir, trace, &pis).expect("Plonky3 cannot prove");
+            verify(config, &CubeAir, &proof, &pis).expect("Plonky3 rejects its own proof");
             proof
         }
         "wide" => {
-            let trace = wide_trace(1 << log_n);
-            let proof = prove(&config, &WideAir, trace, &[]);
-            verify(&config, &WideAir, &proof, &[]).expect("Plonky3 rejects its own proof");
+            let proof = prove(config, &WideAir, wide_trace::<F>(n), &[]).expect("Plonky3 cannot prove");
+            verify(config, &WideAir, &proof, &[]).expect("Plonky3 rejects its own proof");
             proof
         }
         _ => panic!("unknown AIR {air}"),
-    };
+    }
+}
+
+fn koalabear_config(args: &[usize]) -> Config<F, p3_koala_bear::Poseidon2KoalaBear<16>,
+    p3_koala_bear::Poseidon2KoalaBear<24>> {
+    config(default_koalabear_poseidon2_16(), default_koalabear_poseidon2_24(), args)
+}
+
+/// `stark AIR LOG_N LOG_BLOWUP LOG_FINAL MAX_LOG_ARITY QUERIES COMMIT_POW QUERY_POW [BATCH_POW
+/// OOD_POW]`, `AIR` one of `fib`, `cube`, `wide`: the proof as JSON, after Plonky3 verified it. Run
+/// with `RAYON_NUM_THREADS=1` for the smallest grinding witnesses.
+pub fn stark(air: &str, args: &[usize]) {
+    let config = koalabear_config(&args[1..]);
+    let proof = prove_air(&config, air, args[0]);
     println!("{}", serde_json::to_string(&proof).unwrap());
 }
 
@@ -209,15 +241,15 @@ pub fn stark(air: &str, args: &[usize]) {
 pub fn challenger() {
     use p3_challenger::{CanObserve, CanSample, CanSampleBits, FieldChallenger, GrindingChallenger};
     use p3_field::{BasedVectorSpace, PrimeField32};
-    let mut c = Challenger::new(default_koalabear_poseidon2_24());
+    let mut c = Challenger::<F, _>::new(default_koalabear_poseidon2_24());
     for i in 0..20u32 {
         c.observe(F::from_u32(i));
     }
     let a: F = c.sample();
     let b: F = c.sample();
-    let e: Challenge = c.sample_algebra_element();
+    let e: Challenge<F> = c.sample_algebra_element();
     c.observe(F::from_u32(7));
-    c.observe_algebra_element(Challenge::from_basis_coefficients_fn(|i| F::from_u32(100 + i as u32)));
+    c.observe_algebra_element(Challenge::<F>::from_basis_coefficients_fn(|i| F::from_u32(100 + i as u32)));
     let bits = c.sample_bits(10);
     let w = c.grind(6);
     let z: F = c.sample();
@@ -230,25 +262,8 @@ pub fn challenger() {
 /// median milliseconds of seven proofs.
 pub fn prove_bench(air: &str, args: &[usize]) {
     use std::time::Instant;
-    let [log_n, log_blowup, log_final_poly_len, max_log_arity, num_queries, commit_pow, query_pow] =
-        args[..]
-    else {
-        panic!("seven parameters")
-    };
-    let hash = Hash::new(default_koalabear_poseidon2_24());
-    let compress = Compress::new(default_koalabear_poseidon2_16());
-    let val_mmcs = ValMmcs::new(hash, compress);
-    let fri = FriParameters {
-        log_blowup,
-        log_final_poly_len,
-        max_log_arity,
-        num_queries,
-        commit_proof_of_work_bits: commit_pow,
-        query_proof_of_work_bits: query_pow,
-        mmcs: ChallengeMmcs::new(val_mmcs.clone()),
-    };
-    let pcs = Pcs::new(Radix2DitParallel::default(), val_mmcs, fri);
-    let config = Config::new(pcs, Challenger::new(default_koalabear_poseidon2_24()));
+    let log_n = args[0];
+    let config = koalabear_config(&args[1..]);
     let mut samples = vec![];
     for _ in 0..7 {
         let (trace, pis) = match air {
@@ -264,7 +279,7 @@ pub fn prove_bench(air: &str, args: &[usize]) {
             _ => prove(&config, &CubeAir, trace, &pis),
         };
         samples.push(t.elapsed().as_secs_f64() * 1000.0);
-        std::hint::black_box(proof);
+        std::hint::black_box(proof.expect("Plonky3 cannot prove"));
     }
     samples.sort_by(|a, b| a.partial_cmp(b).unwrap());
     println!("plonky3 prove {air} 2^{log_n} ms median {:.2}", samples[3]);

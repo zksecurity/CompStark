@@ -26,12 +26,12 @@ fn bench(log_n: u32) {
         let mut s: [F; 16] = core::array::from_fn(|i| F::from_u32(i as u32));
         let t = Instant::now();
         for _ in 0..n { perm.permute_mut(&mut s); }
-        black_box(s);
+        let _ = black_box(s);
         scalar.push(t.elapsed().as_nanos() as f64 / n as f64);
         let mut s: [P; 16] = core::array::from_fn(|i| P::from(F::from_u32(i as u32)));
         let t = Instant::now();
         for _ in 0..n / P::WIDTH { perm.permute_mut(&mut s); }
-        black_box(s);
+        let _ = black_box(s);
         packed.push(t.elapsed().as_nanos() as f64 / n as f64);
     }
     println!("plonky3 width16 ns/perm scalar {:.1} packed({} lanes) {:.1}", median(scalar), P::WIDTH, median(packed));
@@ -41,7 +41,7 @@ fn bench(log_n: u32) {
         let mut s: [P; 24] = core::array::from_fn(|i| P::from(F::from_u32(i as u32)));
         let t = Instant::now();
         for _ in 0..n / P::WIDTH { perm24.permute_mut(&mut s); }
-        black_box(s);
+        let _ = black_box(s);
         packed24.push(t.elapsed().as_nanos() as f64 / n as f64);
     }
     println!("plonky3 width24 ns/perm packed {:.1}", median(packed24));
@@ -58,12 +58,12 @@ fn merkle(log_h: u32, width: usize) {
     type P = <F as Field>::Packing;
     let hash = PaddingFreeSponge::<_, 24, 16, 8>::new(default_koalabear_poseidon2_24());
     let compress = TruncatedPermutation::<_, 2, 8, 16>::new(default_koalabear_poseidon2_16());
-    let mmcs = p3_merkle_tree::MerkleTreeMmcs::<P, P, _, _, 8>::new(hash, compress);
+    let mmcs = p3_merkle_tree::MerkleTreeMmcs::<P, P, _, _, 2, 8>::new(hash, compress, 0);
     let h = 1usize << log_h;
     let values: Vec<F> = (0..h * width).map(|k| F::from_u32(((7 * k as u64 + 1) % 2130706433) as u32)).collect();
     let m = RowMajorMatrix::new(values, width);
     let (root, _) = mmcs.commit(vec![m.clone()]);
-    let root: Vec<u32> = root.into_iter().map(|x: F| x.as_canonical_u32()).collect();
+    let root: Vec<u32> = root.into_iter().flatten().map(|x: F| x.as_canonical_u32()).collect();
     println!("root {:?}", root);
     let warm = Instant::now();
     while warm.elapsed().as_millis() < 200 {
@@ -82,12 +82,16 @@ fn merkle(log_h: u32, width: usize) {
 }
 
 mod babybear;
+mod seeds;
 mod stark;
 
 fn main() {
     let args: Vec<String> = std::env::args().collect();
     if args.len() == 4 && args[1] == "merkle" {
         return merkle(args[2].parse().unwrap(), args[3].parse().unwrap());
+    }
+    if args.len() == 2 && args[1] == "seeds" {
+        return seeds::seeds();
     }
     if args.len() == 2 && args[1] == "challenger" {
         return stark::challenger();
@@ -142,7 +146,7 @@ fn main() {
     use p3_field::Field;
     use p3_matrix::dense::RowMajorMatrix;
     type P = <F as Field>::Packing;
-    let mmcs = p3_merkle_tree::MerkleTreeMmcs::<P, P, _, _, 8>::new(hash, compress);
+    let mmcs = p3_merkle_tree::MerkleTreeMmcs::<P, P, _, _, 2, 8>::new(hash, compress, 0);
     let mat = |base: u32, height: usize, width: usize| {
         RowMajorMatrix::new((0..(height * width) as u32).map(|k| F::from_u32(base + k)).collect(), width)
     };
@@ -156,7 +160,7 @@ fn main() {
     for (name, specs) in cases {
         let ms: Vec<_> = specs.iter().map(|&(b, h, w)| mat(b, h, w)).collect();
         let (root, _) = mmcs.commit(ms);
-        let root: Vec<u32> = root.into_iter().map(|x: F| x.as_canonical_u32()).collect();
+        let root: Vec<u32> = root.into_iter().flatten().map(|x: F| x.as_canonical_u32()).collect();
         println!("merkle {name} -> {:?}", root);
     }
 }
