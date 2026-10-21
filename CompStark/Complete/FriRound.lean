@@ -20,7 +20,7 @@ the committed row (`row_leaves`), so the opening verifies (`verifyBatch_answer`)
 namespace CompStark.Complete
 open CompStark.Stark CompStark.Fri
 
-local notation "F" => _root_.KoalaBear.Fast.Field
+variable {F : Type} [BaseField F]
 local notation "hashF" => CompStark.Hash.Poseidon2.hash F
 local notation "compF" => CompStark.Hash.Poseidon2.compress F
 
@@ -56,7 +56,7 @@ theorem getD_filter_range (n p j : Nat) (hp : p < n) (hj : j < n - 1) :
   · rw [List.getElem?_append_left (by rw [List.length_range]; omega), List.getElem?_range (by
       omega), Option.getD_some]
   · rw [List.getElem?_append_right (by rw [List.length_range]; omega), List.length_range,
-      List.getElem?_range' (by omega24), Option.getD_some]
+      List.getElem?_range' (by omega), Option.getD_some]
     omega
 
 /-- Putting the running value back between the siblings recovers the group. -/
@@ -77,10 +77,10 @@ theorem evals_answer (a pos : Nat) (hpos : pos < a) (ev : List EF) (eval : EF)
   refine List.map_congr_left fun j hj ↦ ?_
   have hj := List.mem_range.mp hj
   split
-  · rw [hs j (by omega24), ite_eq_left (by assumption)]
+  · rw [hs j (by omega), ite_eq_left (by assumption)]
   · split
     · subst_vars; rfl
-    · rw [hs (j - 1) (by omega24), ite_eq_right (by omega24), Nat.sub_add_cancel (by omega24)]
+    · rw [hs (j - 1) (by omega), ite_eq_right (by omega), Nat.sub_add_cancel (by omega)]
 
 /-- Entry `t` of flattened coordinates is coordinate `t % d` of element `t / d`. -/
 theorem getD_flatMap_coeffs_list : ∀ (l : List EF) (t : Nat), t < Challenge.d EF * l.length →
@@ -96,11 +96,11 @@ theorem getD_flatMap_coeffs_list : ∀ (l : List EF) (t : Nat), t < Challenge.d 
     · rw [List.length_cons, Nat.mul_succ] at h
       have hd : 0 < Challenge.d EF := (Challenge.params EF).d_pos
       have e1 : t / Challenge.d EF = (t - Challenge.d EF) / Challenge.d EF + 1 :=
-        Nat.div_eq_sub_div (by omega24) (by omega24)
+        Nat.div_eq_sub_div (by omega) (by omega)
       have e2 : t % Challenge.d EF = (t - Challenge.d EF) % Challenge.d EF :=
-        Nat.mod_eq_sub_mod (by omega24)
+        Nat.mod_eq_sub_mod (by omega)
       rw [List.getD_append_right _ _ _ _ (by rw [hl]; omega), hl,
-        getD_flatMap_coeffs_list l _ (by omega24), e1, e2, List.getD_cons_succ]
+        getD_flatMap_coeffs_list l _ (by omega), e1, e2, List.getD_cons_succ]
 
 theorem getD_flatMap_coeffs (A : Array EF) (t : Nat) (ht : t < Challenge.d EF * A.size) :
     (A.flatMap fun x ↦ (Ext.coeffs x).toArray).getD t 0 =
@@ -113,7 +113,8 @@ theorem getD_flatMap_coeffs (A : Array EF) (t : Nat) (ht : t < Challenge.d EF * 
     ← Array.getElem?_toList, ← List.getD_eq_getElem?_getD]
 
 /-- Row `r` of a round's leaves is the coefficients of the group of `r`. -/
-theorem rowOf_leaves (f : Array EF) (la r : Nat) (hr : (r + 1) * 2 ^ la ≤ f.size) :
+theorem rowOf_leaves [Poseidon2Field F] (f : Array EF) (la r : Nat) (hr : (r + 1) * 2 ^ la ≤
+    f.size) :
     (rowOf ((specBackend EF).leaves (2 ^ la) f) r).toList =
       ((List.range (2 ^ la)).map fun k ↦ f.getD (r * 2 ^ la + k) 0).flatMap Ext.coeffs := by
   have hd : 0 < Challenge.d EF := (Challenge.params EF).d_pos
@@ -142,7 +143,8 @@ theorem rowOf_leaves (f : Array EF) (la r : Nat) (hr : (r + 1) * 2 ^ la ≤ f.si
 
 /-- A round's answer at `idx`: `2 ^ la - 1` siblings, which with the running value give back the
 group of `idx`, and whose opening verifies. -/
-theorem answer_round (f : Array EF) (h la idx : Nat) (hs : f.size = 2 ^ h) (hla : la ≤ h)
+theorem answer_round [Poseidon2Field F] (f : Array EF) (h la idx : Nat) (hs : f.size = 2 ^ h) (hla
+    : la ≤ h)
     (hidx : idx < 2 ^ h) :
     let c := Committed.ofMats hashF compF [(specBackend EF).leaves (2 ^ la) f]
     let o := c.openAt (idx >>> la)

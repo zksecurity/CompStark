@@ -26,8 +26,11 @@ open CompPoly.CPolynomial.NTTFast.Packed (add sub mul add_val sub_val mul_val of
   array_eq_of_getD getD_ofFn_bounded getD_setIfInBounds)
 open CompPoly.CPolynomial.NTTFast.Packed.Native (read write write16U zeroWords readUOffset)
 open CompStark.Poseidon2.Packed (Fits)
+open Montgomery.Native32
 
-local notation "F" => _root_.KoalaBear.Fast.Field
+variable {p : ℕ} [Mont32Field p]
+
+local notation "F" => FastField p
 
 /-! ### Words of encoded arrays -/
 
@@ -181,7 +184,7 @@ theorem zipWords_encode
   have hsa' : (encode a).size = 4 * a.size := size_encode_fields a
   have hsb' : (encode b).size = 4 * b.size := size_encode_fields b
   let f (j : Nat) : F := g (a.getD j 0) (b.getD j 0)
-  rw [zeroWords_eq, foldl_blocks (Array.replicate n 0) f (n / 16) _ (fun m hm ↦ by
+  rw [zeroWords_eq (p := p), foldl_blocks (Array.replicate n 0) f (n / 16) _ (fun m hm ↦ by
     have h16 : 16 * m + 16 ≤ n := by omega
     rw [dite_eq_left_of_eq_true (eq_true ⟨by omega, by omega, by omega, by omega⟩),
       hk _ _ _ _ _ _ (by simp only [USize.toNat_ofNatLT, size_upto, Array.size_replicate]; omega)
@@ -197,7 +200,7 @@ theorem zipWords_encode
 /-- `add16` splices sums. -/
 theorem add16_encode (a b o : Array F) (i : USize) (ha hb) (hi : i.toNat + 16 ≤ o.size)
     (ho : 4 * o.size < USize.size) :
-    add16 (encode a) (encode b) i (encode o) ha hb = encode (splice o i.toNat
+    add16 p (encode a) (encode b) i (encode o) ha hb = encode (splice o i.toNat
       (lit16 fun t ↦ a.getD (i.toNat + t) 0 + b.getD (i.toNat + t) 0)) := by
   unfold add16
   simp only [rd_encode, add_val]
@@ -208,7 +211,7 @@ theorem add16_encode (a b o : Array F) (i : USize) (ha hb) (hi : i.toNat + 16 �
 /-- `sub16` splices differences. -/
 theorem sub16_encode (a b o : Array F) (i : USize) (ha hb) (hi : i.toNat + 16 ≤ o.size)
     (ho : 4 * o.size < USize.size) :
-    sub16 (encode a) (encode b) i (encode o) ha hb = encode (splice o i.toNat
+    sub16 p (encode a) (encode b) i (encode o) ha hb = encode (splice o i.toNat
       (lit16 fun t ↦ a.getD (i.toNat + t) 0 - b.getD (i.toNat + t) 0)) := by
   unfold sub16
   simp only [rd_encode, sub_val]
@@ -219,7 +222,7 @@ theorem sub16_encode (a b o : Array F) (i : USize) (ha hb) (hi : i.toNat + 16 �
 /-- `mul16` splices products. -/
 theorem mul16_encode (a b o : Array F) (i : USize) (ha hb) (hi : i.toNat + 16 ≤ o.size)
     (ho : 4 * o.size < USize.size) :
-    mul16 (encode a) (encode b) i (encode o) ha hb = encode (splice o i.toNat
+    mul16 p (encode a) (encode b) i (encode o) ha hb = encode (splice o i.toNat
       (lit16 fun t ↦ a.getD (i.toNat + t) 0 * b.getD (i.toNat + t) 0)) := by
   unfold mul16
   simp only [rd_encode, mul_val]
@@ -230,7 +233,7 @@ theorem mul16_encode (a b o : Array F) (i : USize) (ha hb) (hi : i.toNat + 16 �
 /-- `mulAdd16` splices multiply-adds. -/
 theorem mulAdd16_encode (a b o : Array F) (c : F) (i : USize) (ha hb)
     (hi : i.toNat + 16 ≤ o.size) (ho : 4 * o.size < USize.size) :
-    mulAdd16 (encode a) (encode b) c.val i (encode o) ha hb = encode (splice o i.toNat
+    mulAdd16 p (encode a) (encode b) c.val i (encode o) ha hb = encode (splice o i.toNat
       (lit16 fun t ↦ a.getD (i.toNat + t) 0 + b.getD (i.toNat + t) 0 * c)) := by
   unfold mulAdd16
   simp only [rd_encode, add_val, mul_val]
@@ -241,7 +244,7 @@ theorem mulAdd16_encode (a b o : Array F) (c : F) (i : USize) (ha hb)
 /-- `a + b` on `n` words. -/
 theorem addWords_encode (a b : Array F) (n : Nat) (ha : n ≤ a.size) (hb : n ≤ b.size)
     (hsa : 4 * a.size < USize.size) (hsb : 4 * b.size < USize.size) :
-    addWords (encode a) (encode b) n =
+    addWords p (encode a) (encode b) n =
       encode (Array.ofFn (n := n) fun i ↦ a.getD i.val 0 + b.getD i.val 0) :=
   zipWords_encode _ _ (· + ·) add_val (fun a b o i ha hb hi ho ↦ add16_encode a b o i ha hb hi ho)
     a b n ha hb hsa hsb
@@ -249,7 +252,7 @@ theorem addWords_encode (a b : Array F) (n : Nat) (ha : n ≤ a.size) (hb : n �
 /-- `a - b` on `n` words. -/
 theorem subWords_encode (a b : Array F) (n : Nat) (ha : n ≤ a.size) (hb : n ≤ b.size)
     (hsa : 4 * a.size < USize.size) (hsb : 4 * b.size < USize.size) :
-    subWords (encode a) (encode b) n =
+    subWords p (encode a) (encode b) n =
       encode (Array.ofFn (n := n) fun i ↦ a.getD i.val 0 - b.getD i.val 0) :=
   zipWords_encode _ _ (· - ·) sub_val (fun a b o i ha hb hi ho ↦ sub16_encode a b o i ha hb hi ho)
     a b n ha hb hsa hsb
@@ -257,7 +260,7 @@ theorem subWords_encode (a b : Array F) (n : Nat) (ha : n ≤ a.size) (hb : n �
 /-- `a · b` on `n` words. -/
 theorem mulWords_encode (a b : Array F) (n : Nat) (ha : n ≤ a.size) (hb : n ≤ b.size)
     (hsa : 4 * a.size < USize.size) (hsb : 4 * b.size < USize.size) :
-    mulWords (encode a) (encode b) n =
+    mulWords p (encode a) (encode b) n =
       encode (Array.ofFn (n := n) fun i ↦ a.getD i.val 0 * b.getD i.val 0) :=
   zipWords_encode _ _ (· * ·) mul_val (fun a b o i ha hb hi ho ↦ mul16_encode a b o i ha hb hi ho)
     a b n ha hb hsa hsb
@@ -265,7 +268,7 @@ theorem mulWords_encode (a b : Array F) (n : Nat) (ha : n ≤ a.size) (hb : n �
 /-- `a + b · c` on `n` words. -/
 theorem mulAddWords_encode (a b : Array F) (c : F) (n : Nat) (ha : n ≤ a.size)
     (hb : n ≤ b.size) (hsa : 4 * a.size < USize.size) (hsb : 4 * b.size < USize.size) :
-    mulAddWords (encode a) (encode b) c.val n =
+    mulAddWords p (encode a) (encode b) c.val n =
       encode (Array.ofFn (n := n) fun i ↦ a.getD i.val 0 + b.getD i.val 0 * c) :=
   zipWords_encode _ _ (fun x y ↦ x + y * c) (fun x y ↦ by rw [mul_val, add_val])
     (fun a b o i ha hb hi ho ↦ mulAdd16_encode a b o c i ha hb hi ho) a b n ha hb hsa hsb
@@ -277,7 +280,7 @@ theorem replicateWord_encode (c : F) (n : Nat) (hn : 4 * n < USize.size) :
   simp only [Std.Legacy.Range.forIn_eq_forIn_range', Std.Legacy.Range.size,
     Nat.sub_zero, Nat.add_sub_cancel, Nat.div_one, ← List.range_eq_range',
     bind_pure, List.forIn_pure_yield_eq_foldl, Id.run_pure]
-  rw [zeroWords_eq, ← upto_zero (Array.replicate n 0) fun _ ↦ c, List.range_eq_range',
+  rw [zeroWords_eq (p := p), ← upto_zero (Array.replicate n 0) fun _ ↦ c, List.range_eq_range',
     foldl_tail _ _ _ _ _ (fun k _ hk ↦ write_upto _ (fun _ ↦ c) k
       (by rw [Array.size_replicate]; omega) (by rw [Array.size_replicate]; omega)),
     Nat.zero_add, upto_full _ _ _ (Array.size_replicate ..)]
@@ -289,7 +292,7 @@ theorem replicateWord_encode (c : F) (n : Nat) (hn : 4 * n < USize.size) :
 /-- `mulAddInto16` splices multiply-adds in place. -/
 theorem mulAddInto16_encode (o b : Array F) (io ib : USize) (c : F) (hout hb)
     (hi : io.toNat + 16 ≤ o.size) (ho : 4 * o.size < USize.size) :
-    mulAddInto16 (encode o) io (encode b) ib c.val hout hb = encode (splice o io.toNat
+    mulAddInto16 p (encode o) io (encode b) ib c.val hout hb = encode (splice o io.toNat
       (lit16 fun t ↦ o.getD (io.toNat + t) 0 + b.getD (ib.toNat + t) 0 * c)) := by
   unfold mulAddInto16
   simp only [rd_encode, add_val, mul_val]
@@ -308,7 +311,7 @@ theorem getD_upto_of_le (o : Array F) (f : Nat → F) (k j : Nat) (hj : k ≤ j)
 /-- `out[k] += c · b[bo + k]` for `k < n`, in place. -/
 theorem mulAddInto_upto (o b : Array F) (bo : Nat) (c : F) (n : Nat) (hn : n ≤ o.size)
     (hb : bo + n ≤ b.size) (hso : 4 * o.size < USize.size) (hsb : 4 * b.size < USize.size) :
-    mulAddInto (encode o) (encode b) bo c.val n =
+    mulAddInto p (encode o) (encode b) bo c.val n =
       encode (upto o (fun k ↦ o.getD k 0 + b.getD (bo + k) 0 * c) n) := by
   unfold mulAddInto
   simp only [Std.Legacy.Range.forIn_eq_forIn_range', Std.Legacy.Range.size,
@@ -338,14 +341,14 @@ theorem mulAddInto_upto (o b : Array F) (bo : Nat) (c : F) (n : Nat) (hn : n ≤
 /-- `out[k] += c · b[bo + k]` for all `n` words of `out`. -/
 theorem mulAddInto_encode (o b : Array F) (bo : Nat) (c : F) (hb : bo + o.size ≤ b.size)
     (hso : 4 * o.size < USize.size) (hsb : 4 * b.size < USize.size) :
-    mulAddInto (encode o) (encode b) bo c.val o.size =
+    mulAddInto p (encode o) (encode b) bo c.val o.size =
       encode (Array.ofFn (n := o.size) fun k ↦ o.getD k.val 0 + b.getD (bo + k.val) 0 * c) := by
   rw [mulAddInto_upto o b bo c o.size (Nat.le_refl _) hb hso hsb, upto_full _ _ _ rfl]
 
 /-- `dotInto16` splices running dot products in place. -/
 theorem dotInto16_encode (o b c : Array F) (io ib ic : USize) (hout hb hc)
     (hi : io.toNat + 16 ≤ o.size) (ho : 4 * o.size < USize.size) :
-    dotInto16 (encode o) io (encode b) ib (encode c) ic hout hb hc = encode (splice o io.toNat
+    dotInto16 p (encode o) io (encode b) ib (encode c) ic hout hb hc = encode (splice o io.toNat
       (lit16 fun t ↦ o.getD (io.toNat + t) 0 + b.getD (ib.toNat + t) 0 * c.getD (ic.toNat + t) 0))
     := by
   unfold dotInto16
@@ -357,7 +360,7 @@ theorem dotInto16_encode (o b c : Array F) (io ib ic : USize) (hout hb hc)
 /-- A running sum of words of field elements. -/
 theorem foldl_add (g : Nat → F) (r : Nat → UInt32) (k0 K : Nat)
     (hr : ∀ k, k0 ≤ k → k < k0 + K → r k = (g k).val) (s : F) :
-    (List.range' k0 K).foldl (fun acc k ↦ add acc (r k)) s.val =
+    (List.range' k0 K).foldl (fun acc k ↦ add p acc (r k)) s.val =
       (s + ∑ k ∈ Finset.range K, g (k0 + k)).val := by
   induction K generalizing k0 s with
   | zero => rw [List.range'_zero, List.foldl_nil, Finset.sum_range_zero, add_zero]
@@ -380,7 +383,7 @@ theorem sum_interleave (x : Nat → F) (M : Nat) :
 /-- `∑ₖ b[bo + k] · c[k]` for `k < n`. -/
 theorem dotAt_encode (b c : Array F) (bo n : Nat) (hb : bo + n ≤ b.size) (hc : n ≤ c.size)
     (hsb : 4 * b.size < USize.size) (hsc : 4 * c.size < USize.size) :
-    dotAt (encode b) bo (encode c) n =
+    dotAt p (encode b) bo (encode c) n =
       (∑ k ∈ Finset.range n, b.getD (bo + k) 0 * c.getD k 0).val := by
   unfold dotAt
   simp only [Std.Legacy.Range.forIn_eq_forIn_range', Std.Legacy.Range.size,
@@ -394,7 +397,7 @@ theorem dotAt_encode (b c : Array F) (bo n : Nat) (hb : bo + n ≤ b.size) (hc :
       if h : 4 * 15 + 3 < acc.size ∧ 4 * (bo + 16 * a + 15) + 3 < (encode b).size ∧
           4 * (16 * a + 15) + 3 < (encode c).size ∧ acc.size < USize.size ∧
           (encode b).size < USize.size ∧ (encode c).size < USize.size then
-        dotInto16 acc 0 (encode b) (USize.ofNatLT (bo + 16 * a) (by omega)) (encode c)
+        dotInto16 p acc 0 (encode b) (USize.ofNatLT (bo + 16 * a) (by omega)) (encode c)
           (USize.ofNatLT (16 * a) (by omega))
           (by simp only [Fits, USize.toNat_zero, Nat.zero_add]; exact ⟨h.1, h.2.2.2.1⟩)
           (by simp only [Fits, USize.toNat_ofNatLT]; exact ⟨h.2.1, h.2.2.2.2.1⟩)
@@ -403,7 +406,7 @@ theorem dotAt_encode (b c : Array F) (bo n : Nat) (hb : bo + n ≤ b.size) (hc :
     intro M hM
     induction M with
     | zero =>
-      rw [List.range_zero, List.foldl_nil, zeroWords_eq]
+      rw [List.range_zero, List.foldl_nil, zeroWords_eq (p := p)]
       rfl
     | succ M ih =>
       rw [List.range_succ, List.foldl_append, ih (by omega), List.foldl_cons, List.foldl_nil]
@@ -432,7 +435,7 @@ theorem dotAt_encode (b c : Array F) (bo n : Nat) (hb : bo + n ≤ b.size) (hc :
       · rfl
   have hA : 4 * (Array.ofFn (n := 16) fun t ↦ S (n / 16) t.val).size < USize.size := by
     rw [Array.size_ofFn]; have := USize.le_size; omega
-  rw [hacc (n / 16) (Nat.le_refl _), List.range_eq_range', ← zero_val,
+  rw [hacc (n / 16) (Nat.le_refl _), List.range_eq_range', ← zero_val (p := p),
     foldl_add (S (n / 16)) _ 0 16 (fun k _ hk ↦ by
       rw [read_encode _ k hA (by rw [Array.size_ofFn]; omega), getD_ofFn,
         ite_eq_left_of_eq_true _ _ (eq_true (by omega))]),
@@ -440,18 +443,6 @@ theorem dotAt_encode (b c : Array F) (bo n : Nat) (hb : bo + n ≤ b.size) (hc :
       rw [read_encode b _ hsb (by omega), read_encode c _ hsc (by omega), mul_val])]
   simp only [S, zero_add]
   rw [sum_interleave, ← Finset.sum_range_add, Nat.add_sub_cancel' (Nat.mul_div_le n 16)]
-
-/-- `3 x`. -/
-theorem triple_encode (x : Array F) (n : Nat) (hx : n ≤ x.size) (hs : 4 * x.size < USize.size) :
-    CompStark.Stark.EVec.triple (encode x) n =
-      encode (Array.ofFn (n := n) fun i ↦ x.getD i.val 0 + x.getD i.val 0 + x.getD i.val 0) := by
-  rw [CompStark.Stark.EVec.triple, addWords_encode x x n hx hx hs hs,
-    addWords_encode _ x n (by rw [Array.size_ofFn]) hx (by rw [Array.size_ofFn]; omega) hs]
-  congr 1
-  apply Array.ext (by rw [Array.size_ofFn, Array.size_ofFn])
-  intro i h1 h2
-  rw [Array.size_ofFn] at h1
-  simp only [Array.getElem_ofFn, getD_ofFn_bounded _ _ h1]
 
 end CompStark.Words
 
@@ -463,8 +454,13 @@ open CompPoly.CPolynomial.NTTFast.Packed (size_encode_fields getD_ofFn_bounded o
 open CompPoly.CPolynomial.NTTFast.Packed.Native (zeroWords)
 open CompPoly.CPolynomial.NTTFast.Packed (Native.encodeFields_eq)
 
-local notation "F" => _root_.KoalaBear.Fast.Field
-local notation "EF" => _root_.KoalaBear.Fast.Ext4
+open Montgomery.Native32
+
+variable {p : ℕ} [Mont32Field p]
+
+local notation "F" => FastField p
+local notation "EF" => Ext4 p
+local notation "W" => (Binomial4.W : FastField p)
 
 /-- The fused sum of four products. -/
 theorem mulAdd4_eq (a b c d e f g k : F) :
@@ -473,19 +469,19 @@ theorem mulAdd4_eq (a b c d e f g k : F) :
   simp only [Montgomery.Native32.toField_mulAdd4, Montgomery.Native32.toField_add,
     Montgomery.Native32.toField_mul]
 
-/-- The coordinates of the products in `F[X] / (X⁴ - 3)`. -/
-theorem mul_coords (x y : EF) : x * y =
-    ⟨x.c0 * y.c0 + 3 * (x.c1 * y.c3 + x.c2 * y.c2 + x.c3 * y.c1),
-      x.c0 * y.c1 + x.c1 * y.c0 + 3 * (x.c2 * y.c3 + x.c3 * y.c2),
-      x.c0 * y.c2 + x.c1 * y.c1 + x.c2 * y.c0 + 3 * (x.c3 * y.c3),
+/-- The coordinates of the products in `F[X] / (X⁴ - W)`. -/
+theorem mul_coords [Binomial4 p] (x y : EF) : x * y =
+    ⟨x.c0 * y.c0 + W * (x.c1 * y.c3 + x.c2 * y.c2 + x.c3 * y.c1),
+      x.c0 * y.c1 + x.c1 * y.c0 + W * (x.c2 * y.c3 + x.c3 * y.c2),
+      x.c0 * y.c2 + x.c1 * y.c1 + x.c2 * y.c0 + W * (x.c3 * y.c3),
       x.c0 * y.c3 + x.c1 * y.c2 + x.c2 * y.c1 + x.c3 * y.c0⟩ := by
   apply Montgomery.Native32.Ext4.ext' <;>
     simp only [show x * y = Montgomery.Native32.Ext4.mul x y from rfl, Montgomery.Native32.Ext4.mul,
-      KoalaBear.mulW_eq, mulAdd4_eq] <;> ring
+      Binomial4.mulW_eq, mulAdd4_eq] <;> ring
 
 /-- An in-range coordinate of an array of extension elements. -/
-theorem getD_map (a : Array EF) (p : EF → F) (i : Nat) (h : i < a.size) :
-    (a.map p).getD i 0 = p a[i] := by
+theorem getD_map (a : Array EF) (pr : EF → F) (i : Nat) (h : i < a.size) :
+    (a.map pr).getD i 0 = pr a[i] := by
   rw [Array.getD_eq_getD_getElem?, Array.getElem?_map, Array.getElem?_eq_getElem h]
   rfl
 
@@ -508,24 +504,24 @@ theorem rv_mk {n : Nat} {P0 P1 P2 P3 : ByteArray} (c : Array EF) (hn : c.size = 
     simp only [Array.getElem_ofFn, Array.getElem_map, hc i hi]
 
 /-- A plane is its tabulated coordinates. -/
-theorem encode_map (a : Array EF) (p : EF → F) :
-    encode (a.map p) = encode (Array.ofFn (n := a.size) fun i ↦ (a.map p).getD i.val 0) := by
+theorem encode_map (a : Array EF) (pr : EF → F) :
+    encode (a.map pr) = encode (Array.ofFn (n := a.size) fun i ↦ (a.map pr).getD i.val 0) := by
   congr 1
   apply Array.ext (by rw [Array.size_ofFn, Array.size_map])
   intro i hi _
   rw [Array.size_map] at hi
-  simp only [Array.getElem_ofFn, getD_map a p i hi, Array.getElem_map]
+  simp only [Array.getElem_ofFn, getD_map a pr i hi, Array.getElem_map]
 
 /-- Represented, indexable planes read back their elements. -/
-theorem toArray_eq {v : EVec} {a : Array EF} (hv : RV v a) (hs : 4 * a.size < USize.size) :
+theorem toArray_eq {v : EVec p} {a : Array EF} (hv : RV v a) (hs : 4 * a.size < USize.size) :
     v.toArray = a := by
   obtain ⟨hvn, h0, h1, h2, h3⟩ := hv
-  have hm : ∀ p : EF → F, 4 * (a.map p).size < USize.size := fun p ↦ by
+  have hm : ∀ pr : EF → F, 4 * (a.map pr).size < USize.size := fun pr ↦ by
     rw [Array.size_map]; exact hs
   apply Array.ext (by rw [EVec.toArray, Array.size_ofFn, hvn])
   intro i hi _
   rw [EVec.toArray, Array.size_ofFn, hvn] at hi
-  have hm' : ∀ p : EF → F, i < (a.map p).size := fun p ↦ by rw [Array.size_map]; exact hi
+  have hm' : ∀ pr : EF → F, i < (a.map pr).size := fun pr ↦ by rw [Array.size_map]; exact hi
   simp only [EVec.toArray, Array.getElem_ofFn, EVec.get, h0, h1, h2, h3,
     read_encode _ _ (hm _) (hm' _), EVec.ofW, ofWord_val, getD_map a _ i hi]
 
@@ -534,13 +530,13 @@ theorem ofArray_rel (a : Array EF) : RV (EVec.ofArray a) a := by
   refine ⟨rfl, ?_, ?_, ?_, ?_⟩ <;> exact Native.encodeFields_eq _
 
 /-- Zero planes represent zeros. -/
-theorem zeros_rel (n : Nat) : RV (zeros n) (Array.replicate n 0) := by
+theorem zeros_rel (n : Nat) : RV (zeros (p := p) n) (Array.replicate n 0) := by
   refine ⟨(Array.size_replicate ..).symm, ?_, ?_, ?_, ?_⟩ <;>
-  · simp only [zeros, zeroWords_eq, Array.map_replicate]
+  · simp only [zeros, zeroWords_eq (p := p), Array.map_replicate]
     rfl
 
 /-- Elementwise sums. -/
-theorem add_rel {v w : EVec} {a b : Array EF} (hv : RV v a) (hw : RV w b) (hn : v.n = w.n)
+theorem add_rel {v w : EVec p} {a b : Array EF} (hv : RV v a) (hw : RV w b) (hn : v.n = w.n)
     (hs : 4 * a.size < USize.size) : RV (v.add w) (Array.zipWith (· + ·) a b) := by
   obtain ⟨hvn, h0, h1, h2, h3⟩ := hv
   obtain ⟨hwn, g0, g1, g2, g3⟩ := hw
@@ -560,7 +556,7 @@ theorem add_rel {v w : EVec} {a b : Array EF} (hv : RV v a) (hw : RV w b) (hn : 
   rfl
 
 /-- Elementwise differences. -/
-theorem sub_rel {v w : EVec} {a b : Array EF} (hv : RV v a) (hw : RV w b) (hn : v.n = w.n)
+theorem sub_rel {v w : EVec p} {a b : Array EF} (hv : RV v a) (hw : RV w b) (hn : v.n = w.n)
     (hs : 4 * a.size < USize.size) : RV (v.sub w) (Array.zipWith (· - ·) a b) := by
   obtain ⟨hvn, h0, h1, h2, h3⟩ := hv
   obtain ⟨hwn, g0, g1, g2, g3⟩ := hw
@@ -586,7 +582,7 @@ theorem getD_replicate (n : Nat) (x : F) (i : Nat) (h : i < n) :
     (eq_true h), Option.getD_some]
 
 /-- A scalar minus every element. -/
-theorem rsub_rel {v : EVec} {a : Array EF} (s : EF) (hv : RV v a)
+theorem rsub_rel {v : EVec p} {a : Array EF} (s : EF) (hv : RV v a)
     (hs : 4 * a.size < USize.size) : RV (rsub s v) (a.map (s - ·)) := by
   obtain ⟨hvn, h0, h1, h2, h3⟩ := hv
   unfold EVec.rsub
@@ -606,7 +602,8 @@ theorem rsub_rel {v : EVec} {a : Array EF} (s : EF) (hv : RV v a)
   rfl
 
 /-- Every element times a base element. -/
-theorem mulBase_rel {v : EVec} {a : Array EF} (bs : Array F) (hv : RV v a)
+theorem mulBase_rel [Mont32BaseField p] [Binomial4 p] {v : EVec p} {a : Array EF} (bs : Array F)
+    (hv : RV v a)
     (hb : a.size ≤ bs.size) (hs : 4 * bs.size < USize.size) :
     RV (v.mulBase (encode bs)) (Array.zipWith (fun x y ↦ x * Ext.ofBase y) a bs) := by
   obtain ⟨hvn, h0, h1, h2, h3⟩ := hv
@@ -631,11 +628,11 @@ theorem combine4_encode (n : Nat) (X0 X1 X2 X3 : Array F) (s0 s1 s2 s3 : F)
     (h0 : n ≤ X0.size) (h1 : n ≤ X1.size) (h2 : n ≤ X2.size) (h3 : n ≤ X3.size)
     (g0 : 4 * X0.size < USize.size) (g1 : 4 * X1.size < USize.size)
     (g2 : 4 * X2.size < USize.size) (g3 : 4 * X3.size < USize.size) :
-    combine n [(encode X0, s0.val), (encode X1, s1.val), (encode X2, s2.val),
+    combine p n [(encode X0, s0.val), (encode X1, s1.val), (encode X2, s2.val),
       (encode X3, s3.val)] = encode (Array.ofFn (n := n) fun i ↦ X0.getD i.val 0 * s0 +
         X1.getD i.val 0 * s1 + X2.getD i.val 0 * s2 + X3.getD i.val 0 * s3) := by
   have hn : 4 * n < USize.size := by omega
-  simp only [combine, List.foldl_cons, List.foldl_nil, zeroWords_eq]
+  simp only [combine, List.foldl_cons, List.foldl_nil, zeroWords_eq (p := p)]
   rw [mulAddWords_encode _ _ _ _ (by rw [Array.size_replicate]) h0
       (by rw [Array.size_replicate]; exact hn) g0,
     mulAddWords_encode _ _ _ _ (by rw [Array.size_ofFn]) h1 (by rw [Array.size_ofFn]; exact hn) g1,
@@ -645,36 +642,37 @@ theorem combine4_encode (n : Nat) (X0 X1 X2 X3 : Array F) (s0 s1 s2 s3 : F)
   simp only [getD_ofFn_bounded _ _ i.isLt, getD_replicate _ _ _ i.isLt, zero_add]
 
 /-- Every element times an extension scalar. -/
-theorem smul_rel {v : EVec} {a : Array EF} (s : EF) (hv : RV v a)
+theorem smul_rel [Binomial4 p] {v : EVec p} {a : Array EF} (s : EF) (hv : RV v a)
     (hs : 4 * a.size < USize.size) : RV (v.smul s) (a.map (· * s)) := by
   obtain ⟨hvn, h0, h1, h2, h3⟩ := hv
   unfold EVec.smul
   simp only [h0, h1, h2, h3, hvn]
-  have hm : ∀ p : EF → F, a.size ≤ (a.map p).size := fun p ↦ by rw [Array.size_map]
-  have hm' : ∀ p : EF → F, 4 * (a.map p).size < USize.size := fun p ↦ by
+  have hm : ∀ pr : EF → F, a.size ≤ (a.map pr).size := fun pr ↦ by rw [Array.size_map]
+  have hm' : ∀ pr : EF → F, 4 * (a.map pr).size < USize.size := fun pr ↦ by
     rw [Array.size_map]; exact hs
   rw [combine4_encode _ _ _ _ _ _ _ _ _ (hm _) (hm _) (hm _) (hm _) (hm' _) (hm' _) (hm' _)
       (hm' _), combine4_encode _ _ _ _ _ _ _ _ _ (hm _) (hm _) (hm _) (hm _) (hm' _) (hm' _)
       (hm' _) (hm' _), combine4_encode _ _ _ _ _ _ _ _ _ (hm _) (hm _) (hm _) (hm _) (hm' _)
       (hm' _) (hm' _) (hm' _), combine4_encode _ _ _ _ _ _ _ _ _ (hm _) (hm _) (hm _) (hm _)
       (hm' _) (hm' _) (hm' _) (hm' _)]
-  let A (p : EF → F) (i : Nat) : F := (a.map p).getD i 0
+  let A (pr : EF → F) (i : Nat) : F := (a.map pr).getD i 0
   refine rv_mk _ (Array.size_map ..)
-    (fun i ↦ A (·.c0) i * s.c0 + A (·.c1) i * (3 * s.c3) + A (·.c2) i * (3 * s.c2) +
-      A (·.c3) i * (3 * s.c1))
-    (fun i ↦ A (·.c0) i * s.c1 + A (·.c1) i * s.c0 + A (·.c2) i * (3 * s.c3) +
-      A (·.c3) i * (3 * s.c2))
+    (fun i ↦ A (·.c0) i * s.c0 + A (·.c1) i * (Binomial4.mulW s.c3) + A (·.c2) i * (Binomial4.mulW
+        s.c2) +
+      A (·.c3) i * (Binomial4.mulW s.c1))
+    (fun i ↦ A (·.c0) i * s.c1 + A (·.c1) i * s.c0 + A (·.c2) i * (Binomial4.mulW s.c3) +
+      A (·.c3) i * (Binomial4.mulW s.c2))
     (fun i ↦ A (·.c0) i * s.c2 + A (·.c1) i * s.c1 + A (·.c2) i * s.c0 +
-      A (·.c3) i * (3 * s.c3))
+      A (·.c3) i * (Binomial4.mulW s.c3))
     (fun i ↦ A (·.c0) i * s.c3 + A (·.c1) i * s.c2 + A (·.c2) i * s.c1 + A (·.c3) i * s.c0)
     rfl rfl rfl rfl fun i hi ↦ ?_
   rw [Array.size_map] at hi
-  simp only [A, Array.getElem_map, getD_map a _ i hi, mul_coords]
+  simp only [A, Array.getElem_map, getD_map a _ i hi, mul_coords, Binomial4.mulW_eq]
   congr 1 <;> ring
 
 /-- A plane as tabulated coordinates. -/
-theorem encode_map_eq (a : Array EF) (p : EF → F) (n : Nat) (h : a.size = n) :
-    encode (a.map p) = encode (Array.ofFn (n := n) fun i ↦ p (a[i.val]'(by omega))) := by
+theorem encode_map_eq (a : Array EF) (pr : EF → F) (n : Nat) (h : a.size = n) :
+    encode (a.map pr) = encode (Array.ofFn (n := n) fun i ↦ pr (a[i.val]'(by omega))) := by
   subst h
   congr 1
   apply Array.ext (by rw [Array.size_ofFn, Array.size_map])
@@ -683,14 +681,14 @@ theorem encode_map_eq (a : Array EF) (p : EF → F) (n : Nat) (h : a.size = n) :
 
 /-- `n` zero words as a tabulated array. -/
 theorem zeroWords_ofFn (n : Nat) : zeroWords n = encode (Array.ofFn (n := n) fun _ ↦ (0 : F)) := by
-  rw [zeroWords_eq]
+  rw [zeroWords_eq (p := p)]
   refine congrArg encode (Array.ext (by rw [Array.size_ofFn, Array.size_replicate]) ?_)
   intro i _ _
   simp only [Array.getElem_ofFn, Array.getElem_replicate]
 
 /-- Sums of tabulated arrays. -/
 theorem addWords_ofFn {n : Nat} (hn : 4 * n < USize.size) (f g : Fin n → F) :
-    addWords (encode (Array.ofFn f)) (encode (Array.ofFn g)) n =
+    addWords p (encode (Array.ofFn f)) (encode (Array.ofFn g)) n =
       encode (Array.ofFn fun i ↦ f i + g i) := by
   rw [addWords_encode _ _ _ (by rw [Array.size_ofFn]) (by rw [Array.size_ofFn])
     (by rw [Array.size_ofFn]; exact hn) (by rw [Array.size_ofFn]; exact hn)]
@@ -699,17 +697,21 @@ theorem addWords_ofFn {n : Nat} (hn : 4 * n < USize.size) (f g : Fin n → F) :
 
 /-- Products of tabulated arrays. -/
 theorem mulWords_ofFn {n : Nat} (hn : 4 * n < USize.size) (f g : Fin n → F) :
-    mulWords (encode (Array.ofFn f)) (encode (Array.ofFn g)) n =
+    mulWords p (encode (Array.ofFn f)) (encode (Array.ofFn g)) n =
       encode (Array.ofFn fun i ↦ f i * g i) := by
   rw [mulWords_encode _ _ _ (by rw [Array.size_ofFn]) (by rw [Array.size_ofFn])
     (by rw [Array.size_ofFn]; exact hn) (by rw [Array.size_ofFn]; exact hn)]
   refine congrArg encode (congrArg Array.ofFn (funext fun i ↦ ?_))
   rw [getD_ofFn_bounded _ _ i.isLt, getD_ofFn_bounded _ _ i.isLt]
 
-/-- Triples of a tabulated array. -/
-theorem triple_ofFn {n : Nat} (hn : 4 * n < USize.size) (f : Fin n → F) :
-    triple (encode (Array.ofFn f)) n = encode (Array.ofFn fun i ↦ f i + f i + f i) := by
-  rw [triple, addWords_ofFn hn, addWords_ofFn hn]
+/-- Multiply-adds of tabulated arrays. -/
+theorem mulAddWords_ofFn {n : Nat} (hn : 4 * n < USize.size) (f g : Fin n → F) (c : F) :
+    mulAddWords p (encode (Array.ofFn f)) (encode (Array.ofFn g)) c.val n =
+      encode (Array.ofFn fun i ↦ f i + g i * c) := by
+  rw [mulAddWords_encode _ _ _ _ (by rw [Array.size_ofFn]) (by rw [Array.size_ofFn])
+    (by rw [Array.size_ofFn]; exact hn) (by rw [Array.size_ofFn]; exact hn)]
+  refine congrArg encode (congrArg Array.ofFn (funext fun i ↦ ?_))
+  rw [getD_ofFn_bounded _ _ i.isLt, getD_ofFn_bounded _ _ i.isLt]
 
 /-- Planes of tabulated coordinates represent the elements with those coordinates. -/
 theorem rv_ofFn {n : Nat} (c : Array EF) (hn : c.size = n) (f0 f1 f2 f3 : Fin n → F)
@@ -725,17 +727,17 @@ theorem rv_ofFn {n : Nat} (c : Array EF) (hn : c.size = n) (f0 f1 f2 f3 : Fin n 
     simp only [Array.getElem_ofFn, Array.getElem_map, hc ⟨i, hi⟩]
 
 /-- Elementwise products. -/
-theorem mul_rel {v w : EVec} {a b : Array EF} (hv : RV v a) (hw : RV w b) (hn : v.n = w.n)
+theorem mul_rel [Binomial4 p] {v w : EVec p} {a b : Array EF} (hv : RV v a) (hw : RV w b) (hn : v.n
+    = w.n)
     (hs : 4 * a.size < USize.size) : RV (v.mul w) (Array.zipWith (· * ·) a b) := by
   obtain ⟨hvn, h0, h1, h2, h3⟩ := hv
   obtain ⟨hwn, g0, g1, g2, g3⟩ := hw
   have hab : b.size = a.size := by omega
   simp only [EVec.mul, h0, h1, h2, h3, g0, g1, g2, g3, hvn, List.foldl_cons, List.foldl_nil]
-  simp only [zeroWords_ofFn, encode_map_eq a _ a.size rfl, encode_map_eq b _ a.size hab]
+  simp only [zeroWords_ofFn (p := p), encode_map_eq a _ a.size rfl, encode_map_eq b _ a.size hab]
   simp only [mulWords_ofFn hs]
   simp only [addWords_ofFn hs]
-  simp only [triple_ofFn hs]
-  simp only [addWords_ofFn hs]
+  simp only [mulAddWords_ofFn hs]
   refine rv_ofFn (n := a.size) (Array.zipWith (· * ·) a b) ?_ _ _ _ _ ?_
   · rw [Array.size_zipWith, hab, Nat.min_self]
   intro i
@@ -754,7 +756,11 @@ open CompPoly.CPolynomial.NTTFast.Packed (size_encode_fields getD_ofFn_bounded a
   ofWord_val mul array_eq_of_getD getD_setIfInBounds)
 open CompPoly.CPolynomial.NTTFast.Packed.Native (zeroWords read write)
 
-local notation "F" => _root_.KoalaBear.Fast.Field
+open Montgomery.Native32
+
+variable {p : ℕ} [Mont32Field p]
+
+local notation "F" => FastField p
 
 /-- An entry of a tabulated array. -/
 theorem getD_ofFn' {n : Nat} (f : Fin n → F) (i : Nat) :
@@ -766,7 +772,7 @@ theorem getD_ofFn' {n : Nat} (f : Fin n → F) (i : Nat) :
 /-- The inverses of words `i0, …, i0 + len - 1`, none of them zero. -/
 theorem batchInvRange_encode (a : Array F) (i0 len : Nat) (ha : i0 + len ≤ a.size)
     (hs : 4 * a.size < USize.size) (hnz : ∀ k < len, a.getD (i0 + k) 0 ≠ 0) :
-    batchInvRange (encode a) i0 len =
+    batchInvRange p (encode a) i0 len =
       encode (Array.ofFn (n := len) fun k ↦ (a.getD (i0 + k.val) 0)⁻¹) := by
   unfold batchInvRange
   simp only [Std.Legacy.Range.forIn_eq_forIn_range', Std.Legacy.Range.size,
@@ -778,11 +784,11 @@ theorem batchInvRange_encode (a : Array F) (i0 len : Nat) (ha : i0 + len ≤ a.s
   have hP : ∀ k ≤ len, P k ≠ 0 := fun k hk ↦
     Finset.prod_ne_zero_iff.mpr fun j hj ↦ hnz j (by rw [Finset.mem_range] at hj; omega)
   have h1 : ∀ K ≤ len, (List.range K).foldl (fun b k ↦ (write b.1 k b.2,
-      mul b.2 (read (encode a) (i0 + k)))) (zeroWords len, (1 : F).val) =
+      mul p b.2 (read (encode a) (i0 + k)))) (zeroWords len, (1 : F).val) =
       (encode (upto (Array.replicate len 0) P K), (P K).val) := by
     intro K hK
     induction K with
-    | zero => rw [List.range_zero, List.foldl_nil, zeroWords_eq, upto_zero]; rfl
+    | zero => rw [List.range_zero, List.foldl_nil, zeroWords_eq (p := p), upto_zero]; rfl
     | succ K ih =>
       rw [List.range_succ, List.foldl_append, ih (by omega), List.foldl_cons, List.foldl_nil]
       simp only
@@ -793,14 +799,14 @@ theorem batchInvRange_encode (a : Array F) (i0 len : Nat) (ha : i0 + len ≤ a.s
     rw [size_upto, Array.size_replicate]; exact hl
   let o (K : Nat) : Array F := Array.ofFn (n := len) fun j ↦ if len - K ≤ j.val then (x j)⁻¹ else 0
   have h2 : ∀ K ≤ len, (List.range K).foldl (fun b k ↦
-      (mul b.1 (read (encode a) (i0 + (len - 1 - k))),
-        write b.2 (len - 1 - k) (mul b.1 (read (encode (upto (Array.replicate len 0) P len))
+      (mul p b.1 (read (encode a) (i0 + (len - 1 - k))),
+        write b.2 (len - 1 - k) (mul p b.1 (read (encode (upto (Array.replicate len 0) P len))
           (len - 1 - k))))) (((P len)⁻¹).val, zeroWords len) =
       (((P (len - K))⁻¹).val, encode (o K)) := by
     intro K hK
     induction K with
     | zero =>
-      rw [List.range_zero, List.foldl_nil, Nat.sub_zero, zeroWords_eq]
+      rw [List.range_zero, List.foldl_nil, Nat.sub_zero, zeroWords_eq (p := p)]
       refine Prod.ext rfl (congrArg encode ?_)
       apply Array.ext (by rw [Array.size_ofFn, Array.size_replicate])
       intro j h _
@@ -925,10 +931,10 @@ theorem foldl_tasks (parts : Nat) (B : Nat → ByteArray) (A : Nat → Array F)
   exact foldl_bytes parts B A hB
 
 /-- Mapping commutes with concatenation. -/
-theorem foldl_append_map {α β : Type} (p : α → β) (A : Nat → Array α) (L : List Nat)
+theorem foldl_append_map {α β : Type} (pr : α → β) (A : Nat → Array α) (L : List Nat)
     (acc : Array α) :
-    L.foldl (fun acc k ↦ acc ++ (A k).map p) (acc.map p) =
-      (L.foldl (fun acc k ↦ acc ++ A k) acc).map p := by
+    L.foldl (fun acc k ↦ acc ++ (A k).map pr) (acc.map pr) =
+      (L.foldl (fun acc k ↦ acc ++ A k) acc).map pr := by
   induction L generalizing acc with
   | nil => rfl
   | cons k L ih => rw [List.foldl_cons, List.foldl_cons, ← Array.map_append, ih]
@@ -949,7 +955,7 @@ theorem ranges_cover (n parts : Nat) : (parts - 1) * (n / parts) ≤ n :=
 /-- The inverses of the first `n` words, none of them zero. -/
 theorem batchInvWords_encode (a : Array F) (n : Nat) (ha : n ≤ a.size)
     (hs : 4 * a.size < USize.size) (hnz : ∀ k < n, a.getD k 0 ≠ 0) :
-    batchInvWords (encode a) n = encode (Array.ofFn (n := n) fun k ↦ (a.getD k.val 0)⁻¹) := by
+    batchInvWords p (encode a) n = encode (Array.ofFn (n := n) fun k ↦ (a.getD k.val 0)⁻¹) := by
   unfold batchInvWords
   have hp : 0 < (if n < 4096 then 1 else 16) := by split <;> decide
   generalize (if n < 4096 then 1 else 16) = parts at hp ⊢
@@ -964,13 +970,17 @@ end CompStark.Stark
 namespace CompStark.Stark.Fast
 open CompPoly.PackedRepr (encode)
 
-local notation "EF" => _root_.KoalaBear.Fast.Ext4
+open Montgomery.Native32
+
+variable {p : ℕ} [Mont32Field p]
+
+local notation "EF" => Ext4 p
 
 /-- Planes of parallel pieces, concatenated. -/
-theorem joinPlanes_rel (n parts : Nat) (V : Nat → EVec) (A : Nat → Array EF)
+theorem joinPlanes_rel (n parts : Nat) (V : Nat → EVec p) (A : Nat → Array EF)
     (hV : ∀ k < parts, RV (V k) (A k))
     (hn : n = ((List.range parts).foldl (fun acc k ↦ acc ++ A k) #[]).size) :
-    RV (joinPlanes n ((Array.range parts).map fun k ↦ Task.spawn fun _ ↦ #[(V k).c0, (V k).c1,
+    RV (joinPlanes p n ((Array.range parts).map fun k ↦ Task.spawn fun _ ↦ #[(V k).c0, (V k).c1,
       (V k).c2, (V k).c3])) ((List.range parts).foldl (fun acc k ↦ acc ++ A k) #[]) := by
   unfold joinPlanes
   simp only [← Array.foldl_toList, Array.toList_map, List.foldl_map, Array.toList_range,

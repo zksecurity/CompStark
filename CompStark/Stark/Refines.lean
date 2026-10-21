@@ -6,22 +6,20 @@ module
 
 public import CompStark.Fri.Refines
 public import CompStark.Stark.Prover
-public import CompStark.Stark.Fast.Norm
 
 /-! # Provers on refining backends
 
 A backend that refines the specification (`Fri.Refines`) proves what the specification proves
-(`proveWith_refines`), for a trace of the AIR's shape within KoalaBear's two-adic subgroups whose
-buffers are addressable, when the opening point `ζ` of the specification's proof lies outside the
-base field.
+(`proveWith_refines`), for a trace of the AIR's shape within the base field's two-adic subgroups
+whose buffers are addressable, when the opening point `ζ` of the specification's proof lies outside
+the base field.
 -/
 
 @[expose] public section
 namespace CompStark.Stark
-open CompStark.Fri CompStark.KoalaBear
+open CompStark.Fri
 
-local notation "F" => _root_.KoalaBear.Fast.Field
-local notation "EF" => _root_.KoalaBear.Fast.Ext4
+variable {F : Type} [BaseField F]
 
 theorem size_chunkValues {K : Type} [Challenge F K] (qs : Array K) (stride c n : Nat) :
     (chunkValues qs stride c n).size = Challenge.d K * n := by
@@ -48,39 +46,40 @@ theorem size_chunkValues {K : Type} [Challenge F K] (qs : Array K) (stride c n :
 theorem addressable_mono {m n : Nat} (h : m ≤ n) (hn : Addressable n) : Addressable m := by
   unfold Addressable at *; omega
 
-/-- The shapes the fast prover supports: a trace and an AIR within KoalaBear's two-adic subgroups
-whose extension fits machine-word indices. -/
-structure InputOk (P : Params) (A : Air F) (logN : Nat) (trace : Array F) : Prop where
+/-- The shapes the fast prover supports: a trace and an AIR within the base field's two-adic
+subgroups whose extension over `EF` fits machine-word indices. -/
+structure InputOk (EF : Type) [Challenge F EF] (P : Params) (A : Air F) (logN : Nat)
+    (trace : Array F) : Prop where
   /-- The trace has `2 ^ logN` rows of the AIR's width. -/
   trace : trace.size = 2 ^ logN * A.width
   /-- The AIR has a column. -/
   width : 0 < A.width
   /-- The constraints read only the AIR's columns. -/
   cols : A.ColsInWidth
-  /-- The extended trace domain is a subgroup of KoalaBear, whose two-adicity is 24. -/
-  twoAdic : logN + P.logBlowup ≤ 24
+  /-- The extended trace domain is a two-adic subgroup of the base field. -/
+  twoAdic : logN + P.logBlowup ≤ twoAdicity F
   /-- The quotient's chunks fit the blowup. -/
   chunks : A.logQuotientChunks ≤ P.logBlowup
   /-- The extended trace and quotient are addressable by `USize` word indices. -/
-  mem : Addressable (2 ^ (logN + P.logBlowup) * (A.width + 4 * 2 ^ A.logQuotientChunks))
+  mem : Addressable (2 ^ (logN + P.logBlowup) *
+    (A.width + Challenge.d EF * 2 ^ A.logQuotientChunks))
 
-variable {B : Backend F EF 24}
+variable [Poseidon2Field F] {EF : Type} [Challenge F EF] {B : Backend F EF 24}
 
 theorem commitAndSample_refines (h : Refines B) {P : Params} {A : Air F} {logN : Nat}
-    {trace : Array F} (pis : List F) (hin : InputOk P A logN trace) :
+    {trace : Array F} (pis : List F) (hin : InputOk EF P A logN trace) :
     RelM (fun x y ↦ h.RM x.1 y.1 ∧ h.RC x.2.1 y.2.1 ∧ List.Forall₂ h.RM x.2.2.1 y.2.2.1 ∧
         h.RC x.2.2.2.1 y.2.2.2.1 ∧ x.2.2.2.2 = y.2.2.2.2 ∧ MatOk y.1 ∧ ∀ m ∈ y.2.2.1, MatOk m)
       (commitAndSample B P A logN trace pis) (commitAndSample (specBackend EF) P A logN trace
           pis) := by
   obtain ⟨htrace, hw, hcols, hlog, hchunks, hmem⟩ := hin
-  have hH : 2 ^ (logN + P.logBlowup) ≤ 2 ^ 24 := Nat.pow_le_pow_right (by decide) hlog
   have hmw : Addressable (2 ^ (logN + P.logBlowup) * A.width) :=
     addressable_mono (Nat.mul_le_mul_left _ (Nat.le_add_right _ _)) hmem
-  have hmq : Addressable (2 ^ (logN + P.logBlowup) * (4 * 2 ^ A.logQuotientChunks)) :=
+  have hmq : Addressable (2 ^ (logN + P.logBlowup) * (Challenge.d EF * 2 ^ A.logQuotientChunks)) :=
     addressable_mono (Nat.mul_le_mul_left _ (Nat.le_add_left _ _)) hmem
   have h1 : 1 ≤ 2 ^ A.logQuotientChunks := Nat.one_le_two_pow
-  have hm4 : Addressable (2 ^ (logN + P.logBlowup) * 4) :=
-    addressable_mono (Nat.mul_le_mul_left _ (show 4 ≤ 4 * 2 ^ A.logQuotientChunks by omega)) hmq
+  have hm4 : Addressable (2 ^ (logN + P.logBlowup) * Challenge.d EF) :=
+    addressable_mono (Nat.mul_le_mul_left _ (Nat.le_mul_of_pos_right _ h1)) hmq
   -- The extended trace.
   obtain ⟨hew, heh, hev⟩ := shape_ldeRef logN P.logBlowup gen A.width trace
   have hextOk : MatOk (ldeRef logN P.logBlowup gen A.width trace) :=
@@ -106,7 +105,7 @@ theorem commitAndSample_refines (h : Refines B) {P : Params} {A : Air F} {logN :
     obtain ⟨h1, h2, h3⟩ := shape_ldeRef logN P.logBlowup
       (gen * (gen * powF (twoAdicGen (logN + A.logQuotientChunks)) c)⁻¹) (Challenge.d EF)
       (chunkValues qs (2 ^ A.logQuotientChunks) c (2 ^ logN))
-    exact ⟨by rw [h1]; decide, ⟨_, hlog, h2⟩, by rw [h3, h1, h2],
+    exact ⟨by rw [h1]; exact (Challenge.params EF).d_pos, ⟨_, hlog, h2⟩, by rw [h3, h1, h2],
       by rw [h1, h2, Nat.mul_comm]; exact hm4⟩
   have hch : List.Forall₂ h.RM
       ((List.range (2 ^ A.logQuotientChunks)).map fun c ↦
@@ -129,14 +128,15 @@ theorem commitAndSample_refines (h : Refines B) {P : Params} {A : Air F} {logN :
   have hwsum : ∀ (l : List Nat) (acc : Nat), (l.map fun c ↦ (specBackend EF).lde logN P.logBlowup
       (gen * (gen * powF (twoAdicGen (logN + A.logQuotientChunks)) c)⁻¹) (Challenge.d EF)
       (chunkValues qs (2 ^ A.logQuotientChunks) c (2 ^ logN))).foldl (· + ·.width) acc =
-      acc + 4 * l.length := by
+      acc + Challenge.d EF * l.length := by
     intro l
     induction l with
     | nil => intro acc; rfl
     | cons c l ih =>
       intro acc
       rw [List.map_cons, List.foldl_cons, ih, List.length_cons]
-      show acc + 4 + 4 * l.length = _
+      show acc + Challenge.d EF + Challenge.d EF * l.length = _
+      rw [Nat.mul_succ]
       omega
   have hqc := h.commit hch ⟨_, List.ne_nil_of_length_pos (by
     rw [List.length_map, List.length_range]; exact Nat.two_pow_pos _), hall, by
@@ -149,8 +149,8 @@ theorem commitAndSample_refines (h : Refines B) {P : Params} {A : Air F} {logN :
 
 /-- The openings of related commitments at an opening point outside the base field are the
 specification's. -/
-theorem openAndAssemble_refines (h : Refines B) (P : Params) {logN : Nat}
-    (hlog : logN ≤ 24) {x : B.M × B.C × List B.M × B.C × EF}
+theorem openAndAssemble_refines (hA : DomainsAddressable F EF) (h : Refines B) (P : Params)
+    {logN : Nat} (hlog : logN ≤ twoAdicity F) {x : B.M × B.C × List B.M × B.C × EF}
     {y : (specBackend EF).M × (specBackend EF).C × List (specBackend EF).M × (specBackend EF).C
         × EF}
     (hR : h.RM x.1 y.1 ∧ h.RC x.2.1 y.2.1 ∧ List.Forall₂ h.RM x.2.2.1 y.2.2.1 ∧
@@ -163,7 +163,7 @@ theorem openAndAssemble_refines (h : Refines B) (P : Params) {logN : Nat}
   dsimp only at hext hct hch hqc hzz hextOk hchOk hz
   subst hzz
   unfold openAndAssemble
-  refine RelM.bind (openPcs_refines h P ?_ ?_) fun _ _ hx ↦ hx ▸ ?_
+  refine RelM.bind (openPcs_refines hA h P ?_ ?_) fun _ _ hx ↦ hx ▸ ?_
   · exact .cons ⟨hct, .cons ⟨hext, rfl⟩ .nil⟩
       (.cons ⟨hqc, forall₂_map (fun _ _ hm ↦ ⟨hm, rfl⟩) hch⟩ .nil)
   · have hw := Ext.outsideBase_mul_ofBase hz (BaseField.twoAdicGen_ne_zero logN hlog)
@@ -186,14 +186,14 @@ theorem openAndAssemble_refines (h : Refines B) (P : Params) {logN : Nat}
 
 /-- **A refining backend proves what the specification proves**, for inputs of the prover's
 shapes, when the specification's opening point `ζ` lies outside the base field. -/
-theorem proveWith_refines (h : Refines B) {P : Params} {A : Air F} {logN : Nat} {trace : Array F}
-    (pis : List F) (hin : InputOk P A logN trace)
+theorem proveWith_refines (hA : DomainsAddressable F EF) (h : Refines B) {P : Params} {A : Air F}
+    {logN : Nat} {trace : Array F} (pis : List F) (hin : InputOk EF P A logN trace)
     (hz : Ext.OutsideBase (outOfDomainPoint EF P A logN trace pis)) :
     proveWith B P A logN trace pis = prove EF P A logN trace pis := by
   unfold prove proveWith
   rw [h.transcript, RelM.run_bind, RelM.run_bind]
   obtain ⟨hR, ht⟩ := commitAndSample_refines h pis hin (specBackend EF).transcript
   rw [ht]
-  exact (openAndAssemble_refines h P (by have := hin.twoAdic; omega) hR hz _).1
+  exact (openAndAssemble_refines hA h P (by have := hin.twoAdic; omega) hR hz _).1
 
 end CompStark.Stark

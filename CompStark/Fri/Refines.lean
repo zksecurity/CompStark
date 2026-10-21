@@ -6,8 +6,6 @@ module
 
 public import CompStark.Fri.Shapes
 public import CompStark.Plonky3.Prover
-public import CompStark.KoalaBear.Poseidon2
-public import CompStark.KoalaBear.Challenge
 public import Mathlib.Data.List.Forall2
 
 /-! # Backends that refine the specification
@@ -20,45 +18,9 @@ the FRI opening `openPcs` of related rounds gives the specification's opened val
 
 @[expose] public section
 namespace CompStark.Fri
-open CompStark.Stark CompStark.KoalaBear
+open CompStark.Stark
 
-local notation "F" => _root_.KoalaBear.Fast.Field
-local notation "EF" => _root_.KoalaBear.Fast.Ext4
-
-/-- The backend `B` computes the specification's functions on the inputs the prover gives them,
-through relations `RM`, `RC`, `RV` between its matrices, commitments and vectors and the
-specification's. -/
-structure Refines (B : Backend F EF 24) where
-  RM : B.M → (specBackend EF).M → Prop
-  RC : B.C → (specBackend EF).C → Prop
-  RV : B.V → (specBackend EF).V → Prop
-  transcript : B.transcript = (specBackend EF).transcript
-  lde : ∀ logH bits shift w m, m.size = 2 ^ logH * w → logH + bits ≤ 24 →
-    Addressable (2 ^ (logH + bits) * w) →
-    RM (B.lde logH bits shift w m) ((specBackend EF).lde logH bits shift w m)
-  commit : ∀ {ms ss}, List.Forall₂ RM ms ss → CommitOk ss →
-    RC (B.commit ms) ((specBackend EF).commit ss)
-  root : ∀ {c s}, RC c s → B.root c = (specBackend EF).root s
-  openAt : ∀ {c s} i, RC c s → B.openAt c i = (specBackend EF).openAt s i
-  logHeight : ∀ {c s}, RC c s → B.logHeight c = (specBackend EF).logHeight s
-  quotient : ∀ A pis d l {m s} alpha, RM m s → MatOk s → 2 ^ (d + l) ≤ s.height →
-    (∀ c ∈ A.constraints, c.colsBelow s.width) →
-    B.quotient A pis d l m alpha = (specBackend EF).quotient A pis d l s alpha
-  openedAt : ∀ b zs {m s}, RM m s → MatOk s → (∀ z ∈ zs, Ext.OutsideBase z) →
-    B.openedAt b m zs = (specBackend EF).openedAt b s zs
-  toArray : ∀ {v a}, RV v a → a.size ≤ 2 ^ 24 → B.toArray v = (specBackend EF).toArray a
-  ofArray : ∀ a, RV (B.ofArray a) ((specBackend EF).ofArray a)
-  size : ∀ {v a}, RV v a → B.size v = (specBackend EF).size a
-  reduce : ∀ alpha {items sitems},
-    List.Forall₂ (fun x y ↦ RM x.1 y.1 ∧ x.2 = y.2) items sitems →
-    (∀ x ∈ sitems, MatOk x.1 ∧ ∀ p ∈ x.2, Ext.OutsideBase p.1) →
-    List.Forall₂ (fun x y ↦ x.1 = y.1 ∧ RV x.2 y.2) (B.reduce alpha items)
-      ((specBackend EF).reduce alpha sitems)
-  fold2 : ∀ beta k {v a}, RV v a → a.size = 2 ^ (k + 1) → k < 24 →
-    RV (B.fold2 v beta k) ((specBackend EF).fold2 a beta k)
-  addScaled : ∀ x {v a w b}, RV v a → RV w b → a.size = b.size → a.size ≤ 2 ^ 24 →
-    RV (B.addScaled v w x) ((specBackend EF).addScaled a b x)
-  leaves : ∀ k {v a}, RV v a → a.size ≤ 2 ^ 24 → RM (B.leaves k v) ((specBackend EF).leaves k a)
+variable {F : Type}
 
 /-- Prover computations that, from every transcript, return related results and the same
 transcript. -/
@@ -72,7 +34,7 @@ variable {α β γ δ : Type} {R : α → β → Prop} {S : γ → δ → Prop}
 theorem run_bind {x : PM F 24 α} {f : α → PM F 24 γ} (t : Transcript F 24) :
     (x >>= f).run t = (f (x.run t).1).run (x.run t).2 := rfl
 
-theorem pure {a : α} {b : β} (h : R a b) : RelM R (Pure.pure a) (Pure.pure b) :=
+theorem pure {a : α} {b : β} (h : R a b) : RelM (F := F) R (Pure.pure a) (Pure.pure b) :=
   fun _ ↦ ⟨h, rfl⟩
 
 theorem refl (x : PM F 24 α) : RelM Eq x x := fun _ ↦ ⟨rfl, rfl⟩
@@ -104,6 +66,44 @@ theorem imp {x : PM F 24 α} {y : PM F 24 β} {R' : α → β → Prop} (h : ∀
 
 end RelM
 
+variable [BaseField F] [Poseidon2Field F] {EF : Type} [Challenge F EF]
+
+/-- The backend `B` computes the specification's functions on the inputs the prover gives them,
+through relations `RM`, `RC`, `RV` between its matrices, commitments and vectors and the
+specification's. -/
+structure Refines (B : Backend F EF 24) where
+  RM : B.M → (specBackend EF).M → Prop
+  RC : B.C → (specBackend EF).C → Prop
+  RV : B.V → (specBackend EF).V → Prop
+  transcript : B.transcript = (specBackend EF).transcript
+  lde : ∀ logH bits shift w m, m.size = 2 ^ logH * w → logH + bits ≤ twoAdicity F →
+    Addressable (2 ^ (logH + bits) * w) →
+    RM (B.lde logH bits shift w m) ((specBackend EF).lde logH bits shift w m)
+  commit : ∀ {ms ss}, List.Forall₂ RM ms ss → CommitOk ss →
+    RC (B.commit ms) ((specBackend EF).commit ss)
+  root : ∀ {c s}, RC c s → B.root c = (specBackend EF).root s
+  openAt : ∀ {c s} i, RC c s → B.openAt c i = (specBackend EF).openAt s i
+  logHeight : ∀ {c s}, RC c s → B.logHeight c = (specBackend EF).logHeight s
+  quotient : ∀ A pis d l {m s} alpha, RM m s → MatOk s → 2 ^ (d + l) ≤ s.height →
+    (∀ c ∈ A.constraints, c.colsBelow s.width) →
+    B.quotient A pis d l m alpha = (specBackend EF).quotient A pis d l s alpha
+  openedAt : ∀ b zs {m s}, RM m s → MatOk s → (∀ z ∈ zs, Ext.OutsideBase z) →
+    B.openedAt b m zs = (specBackend EF).openedAt b s zs
+  toArray : ∀ {v a}, RV v a → a.size ≤ 2 ^ twoAdicity F → B.toArray v = (specBackend EF).toArray a
+  ofArray : ∀ a, RV (B.ofArray a) ((specBackend EF).ofArray a)
+  size : ∀ {v a}, RV v a → B.size v = (specBackend EF).size a
+  reduce : ∀ alpha {items sitems},
+    List.Forall₂ (fun x y ↦ RM x.1 y.1 ∧ x.2 = y.2) items sitems →
+    (∀ x ∈ sitems, MatOk x.1 ∧ ∀ p ∈ x.2, Ext.OutsideBase p.1) →
+    List.Forall₂ (fun x y ↦ x.1 = y.1 ∧ RV x.2 y.2) (B.reduce alpha items)
+      ((specBackend EF).reduce alpha sitems)
+  fold2 : ∀ beta k {v a}, RV v a → a.size = 2 ^ (k + 1) → k < twoAdicity F →
+    RV (B.fold2 v beta k) ((specBackend EF).fold2 a beta k)
+  addScaled : ∀ x {v a w b}, RV v a → RV w b → a.size = b.size → a.size ≤ 2 ^ twoAdicity F →
+    RV (B.addScaled v w x) ((specBackend EF).addScaled a b x)
+  leaves : ∀ k {v a}, RV v a → a.size ≤ 2 ^ twoAdicity F → RM (B.leaves k v) ((specBackend
+      EF).leaves k a)
+
 theorem forall₂_map_eq {α β γ : Type} {R : α → β → Prop} {f : α → γ} {g : β → γ}
     (hfg : ∀ a b, R a b → f a = g b) : ∀ {xs ys}, List.Forall₂ R xs ys → xs.map f = ys.map g
   | [], [], .nil => rfl
@@ -129,39 +129,47 @@ structure CPRel {C D : Type} (RC : C → D → Prop) (cp : CommitPhase F EF C)
 variable {B : Backend F EF 24}
 
 /-- A vector of the commit phase: empty, or `2 ^ s` values within the two-adic subgroups. -/
-def ShapeOk (a : Array EF) : Prop := a.size = 0 ∨ ∃ s ≤ 24, a.size = 2 ^ s
+def ShapeOk (a : Array EF) : Prop := a.size = 0 ∨ ∃ s ≤ twoAdicity F, a.size = 2 ^ s
 
-theorem shapeOk_le {a : Array EF} (h : ShapeOk a) : a.size ≤ 2 ^ 24 := by
+omit [Poseidon2Field F] [Challenge F EF] in
+theorem shapeOk_le {a : Array EF} (h : ShapeOk (F := F) a) : a.size ≤ 2 ^ twoAdicity F := by
   rcases h with h | ⟨s, hs, h⟩
-  · omega
+  · rw [h]; exact Nat.zero_le _
   · rw [h]; exact Nat.pow_le_pow_right (by decide) hs
 
 /-- The leaves of a commit-phase round are a matrix of the prover's shape. -/
-theorem commitOk_leaves (a : Array EF) (s la : Nat) (hs : s ≤ 24) (ha : a.size = 2 ^ s)
-    (hla : la ≤ s) : CommitOk [(specBackend EF).leaves (2 ^ la) a] := by
+theorem commitOk_leaves (hA : DomainsAddressable F EF) (a : Array EF) (s la : Nat)
+    (hs : s ≤ twoAdicity F) (ha : a.size = 2 ^ s) (hla : la ≤ s) :
+    CommitOk [(specBackend EF).leaves (2 ^ la) a] := by
   have hd : a.size / 2 ^ la = 2 ^ (s - la) := by
     rw [ha, Nat.pow_div hla (by decide)]
   have hsz : 2 ^ la * 2 ^ (s - la) = 2 ^ s := by rw [← Nat.pow_add, Nat.add_sub_cancel' hla]
-  have hadd : Addressable (4 * 2 ^ la * 2 ^ (s - la)) := addressable_of_le (by
+  have hadd : Addressable (Challenge.d EF * 2 ^ la * 2 ^ (s - la)) := by
     rw [Nat.mul_assoc, hsz]
-    have : 2 ^ s ≤ 2 ^ 24 := Nat.pow_le_pow_right (by decide) hs
-    omega)
+    have : 2 ^ s ≤ 2 ^ twoAdicity F := Nat.pow_le_pow_right (by decide) hs
+    unfold DomainsAddressable Addressable at hA
+    unfold Addressable
+    have := Nat.mul_le_mul_left (Challenge.d EF) this
+    omega
   refine ⟨2 ^ (s - la), List.cons_ne_nil _ _, fun m hm ↦ ?_, ?_⟩
   · obtain rfl := List.mem_singleton.mp hm
-    refine ⟨⟨by show 0 < 4 * 2 ^ la; positivity,
-        ⟨s - la, by rw [KoalaBear.twoAdicity_eq]; omega, hd⟩,
+    refine ⟨⟨by show 0 < Challenge.d EF * 2 ^ la; exact Nat.mul_pos (Challenge.params EF).d_pos (by
+        positivity),
+        ⟨s - la, by omega, hd⟩,
       ?_, ?_⟩, hd⟩
-    · show (a.flatMap fun x ↦ (Ext.coeffs x).toArray).size = 4 * 2 ^ la * (a.size / 2 ^ la)
-      rw [size_flatMap_coeffs, Mont32.d_ext4, hd, Nat.mul_assoc, hsz, ha]
-    · show Addressable (4 * 2 ^ la * (a.size / 2 ^ la))
+    · show (a.flatMap fun x ↦ (Ext.coeffs x).toArray).size =
+        Challenge.d EF * 2 ^ la * (a.size / 2 ^ la)
+      rw [size_flatMap_coeffs, hd, Nat.mul_assoc, hsz, ha]
+    · show Addressable (Challenge.d EF * 2 ^ la * (a.size / 2 ^ la))
       rw [hd]; exact hadd
-  · show Addressable (2 ^ (s - la) * (0 + 4 * 2 ^ la))
+  · show Addressable (2 ^ (s - la) * (0 + Challenge.d EF * 2 ^ la))
     rw [Nat.zero_add, Nat.mul_comm]; exact hadd
 
-theorem commitRounds_refines (h : Refines B) (P : Params) (fuel : Nat) :
-    ∀ {folded a rest as cp cs}, h.RV folded a → ShapeOk a → List.Forall₂ h.RV rest as →
-      (∀ x ∈ as, ShapeOk x) → CPRel h.RC cp cs →
-      RelM (fun p q ↦ h.RV p.1 q.1 ∧ ShapeOk q.1 ∧ CPRel h.RC p.2 q.2)
+theorem commitRounds_refines (hA : DomainsAddressable F EF) (h : Refines B) (P : Params) (fuel :
+    Nat) :
+    ∀ {folded a rest as cp cs}, h.RV folded a → ShapeOk (F := F) a → List.Forall₂ h.RV rest as →
+      (∀ x ∈ as, ShapeOk (F := F) x) → CPRel h.RC cp cs →
+      RelM (fun p q ↦ h.RV p.1 q.1 ∧ ShapeOk (F := F) q.1 ∧ CPRel h.RC p.2 q.2)
         (commitRounds B P fuel folded rest cp) (commitRounds (specBackend EF) P fuel a as cs) := by
   induction fuel with
   | zero => intro _ _ _ _ _ _ hf hfs _ _ hc; exact RelM.pure ⟨hf, hfs, hc⟩
@@ -171,7 +179,7 @@ theorem commitRounds_refines (h : Refines B) (P : Params) (fuel : Nat) :
     split
     · exact RelM.pure ⟨hf, hfs, hc⟩
     rename_i hgt
-    obtain ⟨s, hs, ha⟩ : ∃ s ≤ 24, a.size = 2 ^ s := by
+    obtain ⟨s, hs, ha⟩ : ∃ s ≤ twoAdicity F, a.size = 2 ^ s := by
       rcases hfs with h0 | h0
       · exact absurd (by show a.size ≤ _; rw [h0]; exact Nat.zero_le _) hgt
       · exact h0
@@ -190,16 +198,16 @@ theorem commitRounds_refines (h : Refines B) (P : Params) (fuel : Nat) :
     have hlog : ((specBackend EF).size a).log2 = s := by
       show a.size.log2 = s; rw [ha, Nat.log2_two_pow]
     rw [hlog] at hla
-    have ha24 : a.size ≤ 2 ^ 24 := shapeOk_le (Or.inr ⟨s, hs, ha⟩)
+    have ha24 : a.size ≤ 2 ^ twoAdicity F := shapeOk_le (Or.inr ⟨s, hs, ha⟩)
     have hcm := h.commit (.cons (h.leaves (2 ^ la) hf ha24) .nil)
-      (commitOk_leaves a s la hs ha hla)
+      (commitOk_leaves hA a s la hs ha hla)
     rw [h.root hcm]
     refine RelM.bind_eq fun _ ↦ RelM.bind_eq fun w ↦ RelM.bind_eq fun beta ↦ ?_
     have hrows : (specBackend EF).size a / 2 ^ la = 2 ^ (s - la) := by
       show a.size / 2 ^ la = _; rw [ha, Nat.pow_div hla (by decide)]
     generalize hfB : (if la = 1 then _ else _ : B.V) = fB
     generalize hfS : (if la = 1 then _ else _ : (specBackend EF).V) = fS
-    have hfold : h.RV fB fS ∧ ShapeOk fS := by
+    have hfold : h.RV fB fS ∧ ShapeOk (F := F) fS := by
       subst hfB hfS
       split
       · rename_i h1
@@ -238,19 +246,20 @@ theorem commitRounds_refines (h : Refines B) (P : Params) (fuel : Nat) :
         have hz : Array.size ((specBackend EF).addScaled fS x (Ext.powTwo beta la) : Array EF) =
             Array.size (fS : Array EF) := by
           exact (Array.size_zipWith ..).trans (Nat.min_eq_left (Nat.le_of_eq he))
-        show ShapeOk ((specBackend EF).addScaled fS x (Ext.powTwo beta la))
+        show ShapeOk (F := F) ((specBackend EF).addScaled fS x (Ext.powTwo beta la))
         unfold ShapeOk
         rw [hz]
         exact hfold.2
       · exact ih hfold.1 hfold.2 (.cons hv hvs) hrs hc'
 
-theorem commitPhase_refines (h : Refines B) (P : Params) {inputs sinputs}
-    (hi : List.Forall₂ h.RV inputs sinputs) (hs : ∀ x ∈ sinputs, ShapeOk x) :
+theorem commitPhase_refines (hA : DomainsAddressable F EF) (h : Refines B) (P : Params) {inputs
+    sinputs}
+    (hi : List.Forall₂ h.RV inputs sinputs) (hs : ∀ x ∈ sinputs, ShapeOk (F := F) x) :
     RelM (CPRel h.RC) (commitPhase B P inputs) (commitPhase (specBackend EF) P sinputs) := by
   have h0 : CPRel h.RC (⟨#[], [], #[], #[], #[]⟩ : CommitPhase F EF B.C) ⟨#[], [], #[], #[], #[]⟩ :=
     ⟨rfl, .nil, rfl, rfl, rfl⟩
-  have tail : ∀ {f a rest as}, h.RV f a → ShapeOk a → List.Forall₂ h.RV rest as →
-      (∀ x ∈ as, ShapeOk x) →
+  have tail : ∀ {f a rest as}, h.RV f a → ShapeOk (F := F) a → List.Forall₂ h.RV rest as →
+      (∀ x ∈ as, ShapeOk (F := F) x) →
       RelM (CPRel h.RC)
         (do
           let (folded, cp) ← commitRounds B P (B.size f) f rest ⟨#[], [], #[], #[], #[]⟩
@@ -271,7 +280,7 @@ theorem commitPhase_refines (h : Refines B) (P : Params) {inputs sinputs}
           return { cp with finalPoly := finalPoly }) := by
     intro f a rest as hf hfs hr hrs
     rw [h.size hf]
-    refine RelM.bind (commitRounds_refines h P _ hf hfs hr hrs h0) ?_
+    refine RelM.bind (commitRounds_refines hA h P _ hf hfs hr hrs h0) ?_
     rintro ⟨f1, c1⟩ ⟨f2, c2⟩ ⟨hv, hvs, hc⟩
     dsimp only
     rw [h.toArray hv (shapeOk_le hvs)]
@@ -302,7 +311,8 @@ theorem forall₂_and_mem {α β : Type} {R : α → β → Prop} {P : β → Pr
       List.Forall₂ (fun a b ↦ R a b ∧ P b) xs ys
   | [], [], .nil, _ => .nil
   | _ :: _, _ :: _, .cons h hs, hp =>
-    .cons ⟨h, hp _ List.mem_cons_self⟩ (forall₂_and_mem hs fun y hy ↦ hp y (List.mem_cons_of_mem _ hy))
+    .cons ⟨h, hp _ List.mem_cons_self⟩ (forall₂_and_mem hs fun y hy ↦ hp y (List.mem_cons_of_mem _
+        hy))
 
 theorem forall₂_mem_right {α β : Type} {R : α → β → Prop} {P : β → Prop}
     (hRP : ∀ a b, R a b → P b) : ∀ {xs ys}, List.Forall₂ R xs ys → ∀ y ∈ ys, P y
@@ -319,11 +329,12 @@ def RoundsOk (rounds : List (OpenRound (specBackend EF))) : Prop :=
 
 /-- `proveFri` of related rounds and related inputs of the prover's shapes is the
 specification's. -/
-theorem proveFri_refines (h : Refines B) (P : Params) {rounds srounds}
+theorem proveFri_refines (hA : DomainsAddressable F EF) (h : Refines B) (P : Params) {rounds
+    srounds}
     (hr : List.Forall₂ (RoundRel h) rounds srounds) {inputsOf : EF → List B.V}
     {sinputsOf : EF → List (specBackend EF).V}
     (hin : ∀ alpha, List.Forall₂ h.RV (inputsOf alpha) (sinputsOf alpha))
-    (hshape : ∀ alpha, ∀ x ∈ sinputsOf alpha, ShapeOk x) :
+    (hshape : ∀ alpha, ∀ x ∈ sinputsOf alpha, ShapeOk (F := F) x) :
     RelM Eq (proveFri B P rounds inputsOf) (proveFri (specBackend EF) P srounds sinputsOf) := by
   rw [proveFri, proveFri]
   refine RelM.bind_eq fun alpha ↦ ?_
@@ -334,7 +345,7 @@ theorem proveFri_refines (h : Refines B) (P : Params) {rounds srounds}
   dsimp only
   rw [forall₂_map_eq (fun _ _ hv ↦ h.size hv) hin]
   generalize ((sinputs.map (specBackend EF).size).headD 0).log2 = logMax
-  refine RelM.bind (commitPhase_refines h P hin hshape) fun cp cs hc ↦ ?_
+  refine RelM.bind (commitPhase_refines hA h P hin hshape) fun cp cs hc ↦ ?_
   rw [hc.arities]
   refine RelM.bind_eq fun _ ↦ RelM.bind_eq fun qw ↦ ?_
   have hq : ∀ index, answerQuery B cp index = answerQuery (specBackend EF) cs index := by
@@ -352,7 +363,7 @@ theorem proveFri_refines (h : Refines B) (P : Params) {rounds srounds}
   exact RelM.pure rfl
 
 /-- `openPcs` of related rounds is the specification's. -/
-theorem openPcs_refines (h : Refines B) (P : Params) {rounds srounds}
+theorem openPcs_refines (hA : DomainsAddressable F EF) (h : Refines B) (P : Params) {rounds srounds}
     (hr : List.Forall₂ (RoundRel h) rounds srounds) (hok : RoundsOk srounds) :
     RelM Eq (openPcs B P rounds) (openPcs (specBackend EF) P srounds) := by
   rw [openPcs, openPcs]
@@ -402,10 +413,10 @@ theorem openPcs_refines (h : Refines B) (P : Params) {rounds srounds}
     fun alpha ↦ forall₂_map (fun _ _ hs ↦ hs.2) (h.reduce alpha hitems hsok)
   have hshape : ∀ alpha,
       ∀ x ∈ ((specBackend EF).reduce alpha (sopened.flatten.map (·.2))).map (·.2),
-      ShapeOk x := fun alpha x hx ↦ by
+      ShapeOk (F := F) x := fun alpha x hx ↦ by
     obtain ⟨y, hy, rfl⟩ := List.mem_map.mp hx
     exact Or.inr (reduce_shape alpha _ (fun x hx ↦ (hsok x hx).1) y hy)
-  refine RelM.bind (proveFri_refines h P hr hin hshape) fun fri _ hf ↦ hf ▸ ?_
+  refine RelM.bind (proveFri_refines hA h P hr hin hshape) fun fri _ hf ↦ hf ▸ ?_
   rw [forall₂_map_eq (fun a b hab ↦ forall₂_map_eq (fun x y hxy ↦ hxy.1) hab) hos]
   exact RelM.pure rfl
 

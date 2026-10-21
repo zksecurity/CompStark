@@ -11,6 +11,7 @@ public import CompStark.Fri.Prover
 The assumptions under which a backend's kernels compute the specification's functions: matrices
 the prover commits to have a positive width and `2 ^ k` rows within the two-adic
 subgroups of the base field, their values fill them, and they are addressable by machine indices.
+`DomainsAddressable` bounds the field's largest domains of extension elements likewise.
 -/
 
 @[expose] public section
@@ -32,5 +33,10 @@ def MatOk (m : Mat F) : Prop :=
 def CommitOk (ms : List (Mat F)) : Prop :=
   ∃ h, ms ≠ [] ∧ (∀ m ∈ ms, MatOk m ∧ m.height = h) ∧
     Addressable (h * ms.foldl (· + ·.width) 0)
+
+/-- The extension's vectors on the largest two-adic subgroup, `d · 2 ^ twoAdicity` words, are
+addressable: a bound on the field's shape that every vector the prover builds respects. -/
+def DomainsAddressable (F EF : Type) [BaseField F] [Challenge F EF] : Prop :=
+  Addressable (Challenge.d EF * 2 ^ twoAdicity F)
 
 end CompStark.Fri

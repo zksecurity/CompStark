@@ -5,7 +5,7 @@ Released under Apache 2.0 license as described in the file LICENSE.
 module
 
 public import CompStark.Stark.Fast
-public import CompStark.Poseidon2.PackedCorrectness24
+public import CompStark.Merkle.PackedCorrectness
 
 /-! # The fast transcript is the specification's
 
@@ -18,9 +18,11 @@ specification's smallest witness (`grind_eq`), so the fast transcript is the spe
 namespace CompStark.Stark.Fast
 open CompPoly.PackedRepr (encode)
 open CompPoly.CPolynomial.NTTFast.Packed (size_encode_fields Native.encodeFields_eq ofWord_val)
-open CompStark.Poseidon2.Packed
+open CompStark.Poseidon2 CompStark.Poseidon2.Packed Montgomery.Native32
 
-local notation "F" => _root_.KoalaBear.Fast.Field
+variable {p : ℕ} [Mont32Field p]
+
+local notation "F" => FastField p
 
 /-- A word of an encoded array is its element. -/
 theorem word_encode (a : Array F) (i : Nat) (hs : (encode a).size < USize.size)
@@ -29,7 +31,8 @@ theorem word_encode (a : Array F) (i : Nat) (hs : (encode a).size < USize.size)
 
 /-- A witness check permutes the state overwritten by the input and the witness, and tests
 coordinate 15; with `bits = 0` both accept. -/
-theorem checkWitness_fst (D : Duplex F 24) (hr : D.rate = 16) (c : Challenger F 24)
+theorem checkWitness_fst [Mont32BaseField p] (D : Duplex F 24) (hr : D.rate = 16) (c : Challenger F
+    24)
     (bits : Nat) (w : F) :
     (Challenger.checkWitness D c bits w).1 =
       (D.canon (D.perm (Hash.overwrite c.state (c.input.push w).toList))[15] % 2 ^ bits == 0) := by
@@ -96,7 +99,8 @@ theorem find?_range_map (P Q : Nat → Bool) : ∀ k n, (∀ l < k, Q l = P (n +
       rw [e2]
 
 /-- The specification's grinding is a search for the first passing candidate. -/
-theorem grindFrom_eq (D : Duplex F 24) (c : Challenger F 24) (bits : Nat) : ∀ fuel n,
+theorem grindFrom_eq [Mont32BaseField p] (D : Duplex F 24) (c : Challenger F 24) (bits : Nat) : ∀
+    fuel n,
     grindFrom D c bits fuel n =
       ((firstFrom (fun m ↦ (Challenger.checkWitness D c bits (m : F)).1) fuel n).map
         (fun m : Nat ↦ (m : F))).getD 0
@@ -180,7 +184,7 @@ theorem writes_encode (base : Vector F 24) (wi b : Nat) (hw : wi ≤ 24) : ∀ n
 
 /-- Lane `l` of the group of batch `b` is the state overwritten by the input and candidate
 `8 b + l`; a candidate past coordinate 23 is dropped on both sides. -/
-theorem lane_batchGroup (c : Challenger F 24) (b l : Nat) (hl : l < 8) :
+theorem lane_batchGroup [Mont32BaseField p] (c : Challenger F 24) (b l : Nat) (hl : l < 8) :
     lane 24 (batchGroup (Hash.overwrite c.state c.input.toList) (min c.input.size 24) b 8) 0 l =
       Hash.overwrite c.state (c.input.push ((8 * b + l : Nat) : F)).toList := by
   apply Vector.ext
@@ -208,10 +212,12 @@ theorem lane_batchGroup (c : Challenger F 24) (b l : Nat) (hl : l < 8) :
         Array.getElem?_eq_none (show c.input.size ≤ j by omega), Array.length_toList,
         List.getElem?_eq_none (by simp only [List.length_singleton]; omega)]
 
+variable [Mont32BaseField p] [Poseidon2Field (FastField p)] [PackedPoseidon2 p]
+
 /-- Whether candidate `m` is a grinding witness for `bits`, below the field size. -/
 def passes (c : Challenger F 24) (bits m : Nat) : Bool :=
-  m < _root_.KoalaBear.fieldSize && Montgomery.Native32.FastField.toNat
-    (Poseidon2.permute (Poseidon2.KoalaBear.width24 F)
+  m < p && FastField.toNat
+    (permute (Poseidon2Field.params24 : Params (FastField p) 24)
       (Hash.overwrite c.state (c.input.push (m : F)).toList))[15] % 2 ^ bits == 0
 
 /-- The packed group of eight copies of the duplexed state. -/
@@ -220,7 +226,7 @@ abbrev baseGroup (c : Challenger F 24) : ByteArray :=
     (Array.ofFn (n := 192) fun k ↦ (Hash.overwrite c.state c.input.toList).toArray.getD (k / 8) 0)
 
 theorem grindBatch_eq (c : Challenger F 24) (bits b : Nat) :
-    grindBatch (baseGroup c) (min c.input.size 24) bits b =
+    grindBatch p (baseGroup c) (min c.input.size 24) bits b =
       firstFrom (passes c bits) 8 (8 * b) := by
   have h0 : (Array.ofFn (n := 192) fun k ↦
       (Hash.overwrite c.state c.input.toList).toArray.getD (k / 8) 0) =
@@ -229,26 +235,23 @@ theorem grindBatch_eq (c : Challenger F 24) (bits b : Nat) :
     · rw [Array.size_ofFn, size_batchGroup]
     · intro k h1 _
       simp only [batchGroup, Array.getElem_ofFn, Nat.not_lt_zero, and_false, ite_false]
-  obtain ⟨W', e, hsz, hl, -⟩ := permute24_spec (Poseidon2.KoalaBear.width24 F) rfl rfl rfl rfl
-    (batchGroup (Hash.overwrite c.state c.input.toList) (min c.input.size 24) b 8) 0
-    (by
-      simp only [GroupFits24, Fits, size_encode_fields, size_batchGroup, USize.toNat_zero]
-      have := USize.le_size
-      omega)
+  obtain ⟨W', e, hsz, hl⟩ := Merkle.Packed.permute24_lanes
+    (batchGroup (Hash.overwrite c.state c.input.toList) (min c.input.size 24) b 8)
+    (size_batchGroup _ _ _ _)
   have hs' : (encode W').size < USize.size := by
-    rw [size_encode_fields, hsz, size_batchGroup]; have := USize.le_size; omega
+    rw [size_encode_fields, hsz]; have := USize.le_size; omega
   rw [grindBatch, baseGroup, Native.encodeFields_eq, copy_encode, h0,
-    writes_encode _ _ _ (by omega) 8 (Nat.le_refl 8), KoalaBear.K24, e]
+    writes_encode _ _ _ (by omega) 8 (Nat.le_refl 8), e]
   refine find?_range_map _ _ 8 (8 * b) fun l hl8 ↦ ?_
-  rw [word_encode _ _ hs' (by rw [hsz, size_batchGroup]; omega), passes]
+  rw [word_encode _ _ hs' (by rw [hsz]; omega), passes]
   have h15 := hl l hl8
-  rw [USize.toNat_zero, lane_batchGroup c b l hl8] at h15
+  rw [lane_batchGroup c b l hl8] at h15
   have hw : W'.getD (8 * 15 + l) 0 = (lane 24 W' 0 l)[15]'(by decide) := by
     simp only [lane, Vector.getElem_ofFn, Poseidon2.Packed.word, Nat.zero_add]
   rw [hw, h15]
 
 theorem grindRange_eq (c : Challenger F 24) (bits : Nat) :
-    ∀ nb b, grindRange (baseGroup c) (min c.input.size 24) bits nb b =
+    ∀ nb b, grindRange p (baseGroup c) (min c.input.size 24) bits nb b =
       firstFrom (passes c bits) (8 * nb) (8 * b)
   | 0, _ => rfl
   | nb + 1, b => by
@@ -267,12 +270,12 @@ theorem findSome?_ranges (P : Nat → Bool) (L a : Nat) : ∀ n,
     cases firstFrom P L (a + L * n) <;> rfl
 
 theorem grindWaves_eq (c : Challenger F 24) (bits : Nat) :
-    ∀ fuel wave, grindWaves (baseGroup c) (min c.input.size 24) bits fuel wave =
+    ∀ fuel wave, grindWaves p (baseGroup c) (min c.input.size 24) bits fuel wave =
       ((firstFrom (passes c bits) (8192 * fuel) (8192 * wave)).map fun m : Nat ↦ (m : F)).getD 0
   | 0, _ => rfl
   | fuel + 1, wave => by
     have hw : ((Array.range 16).map fun k ↦ Task.spawn fun _ ↦
-        grindRange (baseGroup c) (min c.input.size 24) bits 64 (1024 * wave + 64 * k)).map
+        grindRange p (baseGroup c) (min c.input.size 24) bits 64 (1024 * wave + 64 * k)).map
           Task.get =
         ((List.range 16).map fun k ↦
           firstFrom (passes c bits) 512 (8192 * wave + 512 * k)).toArray := by
@@ -290,29 +293,33 @@ theorem grindWaves_eq (c : Challenger F 24) (bits : Nat) :
 
 /-- The fast grinder finds the specification's witness. -/
 theorem grind_eq (c : Challenger F 24) (bits : Nat) :
-    grind c bits = grindFrom Poseidon2.duplex c bits _root_.KoalaBear.fieldSize 0 := by
+    grind c bits = grindFrom Poseidon2.duplex c bits p 0 := by
   rw [grind]
   refine (grindWaves_eq c bits _ 0).trans ?_
   rw [grindFrom_eq, Nat.mul_zero]
-  have hp : 8192 * (_root_.KoalaBear.fieldSize / 8192 + 1) =
-      _root_.KoalaBear.fieldSize + (8192 * (_root_.KoalaBear.fieldSize / 8192 + 1) -
-        _root_.KoalaBear.fieldSize) := by omega
+  have hp : 8192 * (p / 8192 + 1) =
+      p + (8192 * (p / 8192 + 1) -
+        p) := by omega
   rw [hp, firstFrom_add, firstFrom_none (P := passes c bits)
-    (8192 * (_root_.KoalaBear.fieldSize / 8192 + 1) - _root_.KoalaBear.fieldSize)
-    (0 + _root_.KoalaBear.fieldSize) fun m h1 _ ↦ by
-    simp only [passes, show ¬ m < _root_.KoalaBear.fieldSize by omega,
+    (8192 * (p / 8192 + 1) - p)
+    (0 + p) fun m h1 _ ↦ by
+    simp only [passes, show ¬ m < p by omega,
       decide_false, Bool.false_and]]
   rw [Option.or_none, firstFrom_congr
     (Q := fun m ↦ (Challenger.checkWitness Poseidon2.duplex c bits (m : F)).1) _ 0
     fun m _ h2 ↦ by
       rw [checkWitness_fst Poseidon2.duplex rfl c bits _, passes,
-        decide_eq_true (show m < _root_.KoalaBear.fieldSize by omega), Bool.true_and,
-        show (Poseidon2.duplex : Duplex F 24).perm = _ from funext KoalaBear.perm24_eq]
+        decide_eq_true (show m < p by omega), Bool.true_and,
+        show (Poseidon2.duplex : Duplex F 24).perm = _ from
+          funext (@Poseidon2Field.perm24 (FastField p) _ _).perm_eq]
       rfl]
 
 /-- The fast transcript is the specification's. -/
-theorem transcript_eq : transcript = Poseidon2.initTranscript := by
-  rw [transcript, Poseidon2.initTranscript, funext fun c ↦ funext (grind_eq c)]
+theorem transcript_eq : transcript (p := p) = Poseidon2.initTranscript := by
+  rw [transcript, Poseidon2.initTranscript]
+  congr 1
+  funext c bits
+  rw [grind_eq]
   rfl
 
 end CompStark.Stark.Fast

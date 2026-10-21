@@ -22,22 +22,63 @@ namespace CompStark.Stark.Fast
 open CompStark.Fri
 open CompPoly.PackedRepr (encode)
 open CompPoly.CPolynomial
-open CompPoly.CPolynomial.NTTFast.Packed (LdePlan ldeSpec column powDomain)
+open CompPoly.CPolynomial.NTTFast.Packed (LdePlan PackedCosetLde ldeSpec column powDomain)
+open Montgomery.Native32
 
-local notation "F" => _root_.KoalaBear.Fast.Field
+variable {p : ℕ} [Mont32Field p] [Mont32BaseField p]
+
+local notation "F" => FastField p
 
 /-- A plan `plan?` returns extends onto `shift · ⟨ω_N⟩`, `ω_N = twoAdicGen (logH + bits)`. -/
-theorem plan?_some {logH bits : Nat} {shift : F} {P : LdePlan}
+theorem plan?_some {logH bits : Nat} {shift : F} {P : LdePlan p}
     (h : plan? logH bits shift = some P) :
-    logH + bits ≤ 24 ∧ P.domain.logN = logH + bits ∧ P.bits = bits ∧ P.shift = shift ∧
+    logH + bits ≤ twoAdicity F ∧ P.domain.logN = logH + bits ∧ P.bits = bits ∧ P.shift = shift ∧
       P.domain.omega = twoAdicGen (logH + bits) := by
   unfold plan? at h
   split at h
   · rename_i h24
     cases Option.some.inj h
-    exact ⟨h24, rfl, rfl, rfl, (KoalaBear.twoAdicGen_eq_table ⟨logH + bits, by omega⟩).symm⟩
+    exact ⟨h24, rfl, rfl, rfl, rfl⟩
   · cases h
 
+section
+variable {K : Type} [BaseField K]
+
+/-- A left fold of additions is a sum. -/
+theorem foldl_range_add (f : Nat → K) (n : Nat) (a : K) :
+    (List.range n).foldl (fun acc i ↦ acc + f i) a = a + ∑ i ∈ Finset.range n, f i := by
+  induction n with
+  | zero => rw [List.range_zero, List.foldl_nil, Finset.sum_range_zero, add_zero]
+  | succ n ih =>
+    rw [List.range_succ, List.foldl_append, ih, List.foldl_cons, List.foldl_nil,
+      Finset.sum_range_succ, add_assoc]
+
+/-- The inverse transform on the two-adic subgroup of order `2 ^ logH`, as sums. -/
+theorem inverseSpec_twoAdic (D : NTT.Domain K) (logH : Nat) (hn : D.n = 2 ^ logH)
+    (hω : D.omega = twoAdicGen logH) (col : Array K) :
+    NTT.Inverse.inverseSpec D col =
+      Array.ofFn (n := 2 ^ logH) fun k ↦ ((2 ^ logH : Nat) : K)⁻¹ *
+        (List.range (2 ^ logH)).foldl (fun acc i ↦
+          acc + col.getD i 0 * powF (twoAdicGen logH)⁻¹ (i * k.val % 2 ^ logH)) 0 := by
+  have h1 : (twoAdicGen logH : K)⁻¹ ^ 2 ^ logH = 1 := by
+    rw [inv_pow, ← hω, ← hn, inv_eq_one]
+    exact D.primitive.pow_eq_one
+  have hmod (a : Nat) :
+      (twoAdicGen logH : K)⁻¹ ^ (a % 2 ^ logH) = (twoAdicGen logH)⁻¹ ^ a := by
+    conv_rhs => rw [← Nat.mod_add_div a (2 ^ logH), pow_add, pow_mul, h1, one_pow, mul_one]
+  apply Array.ext
+  · rw [NTT.Inverse.size_inverseSpec, Array.size_ofFn, hn]
+  · intro k hk1 hk2
+    simp only [NTT.Inverse.inverseSpec, Array.getElem_ofFn, NTT.Inverse.inttAt,
+      NTT.Domain.nInv, NTT.Domain.omegaInv]
+    rw [Fin.sum_univ_eq_sum_range (fun i ↦ col.getD i 0 * D.omega⁻¹ ^ (k * i)), hn, hω,
+      foldl_range_add, zero_add]
+    refine congrArg (_ * ·) (Finset.sum_congr rfl fun i _ ↦ ?_)
+    rw [powF_eq, hmod, Nat.mul_comm i k]
+
+end
+
+omit [Mont32BaseField p] in
 /-- Polynomial evaluation of the inverse transform is the interpolant's. -/
 theorem eval_interpolatePow (D : NTT.Domain F) (col : Vector F D.n) (y : F) :
     (CLagrange.interpolatePow D.omega col).eval y =
@@ -48,15 +89,7 @@ theorem eval_interpolatePow (D : NTT.Domain F) (col : Vector F D.n) (y : F) :
     ← Raw.eval₂Horner_eq_eval₂]
   rfl
 
-/-- A left fold of additions is a sum. -/
-theorem foldl_range_add (f : Nat → F) (n : Nat) (a : F) :
-    (List.range n).foldl (fun acc i ↦ acc + f i) a = a + ∑ i ∈ Finset.range n, f i := by
-  induction n with
-  | zero => rw [List.range_zero, List.foldl_nil, Finset.sum_range_zero, add_zero]
-  | succ n ih =>
-    rw [List.range_succ, List.foldl_append, ih, List.foldl_cons, List.foldl_nil,
-      Finset.sum_range_succ, add_assoc]
-
+omit [Mont32BaseField p] in
 /-- Entry `i` of a column. -/
 theorem getD_column (m : Array F) (w h j i : Nat) (hi : i < h) :
     (column m w h j).toArray.getD i 0 = m.getD (i * w + j) 0 := by
@@ -64,9 +97,9 @@ theorem getD_column (m : Array F) (w h j i : Nat) (hi : i < h) :
   rw [dite_eq_left_of_eq_true (eq_true hi), Option.getD_some]
 
 /-- The coefficients `ldeRef` computes are the inverse transform of the column. -/
-theorem inverseSpec_column (P : LdePlan) (logH bits w j : Nat) (m : Array F)
+theorem inverseSpec_column (P : LdePlan p) (logH bits w j : Nat) (m : Array F)
     (hlog : P.domain.logN = logH + bits) (hb : P.bits = bits)
-    (hω : P.domain.omega = twoAdicGen (logH + bits)) (h24 : logH + bits ≤ 24) :
+    (hω : P.domain.omega = twoAdicGen (logH + bits)) (h24 : logH + bits ≤ twoAdicity F) :
     NTT.Inverse.inverseSpec (powDomain P.domain P.bits P.bits_le)
         (column m w (2 ^ P.logH) j).toArray =
       Array.ofFn (n := 2 ^ logH) fun k ↦ ((2 ^ logH : Nat) : F)⁻¹ *
@@ -81,23 +114,10 @@ theorem inverseSpec_column (P : LdePlan) (logH bits w j : Nat) (m : Array F)
   have hDω : (powDomain P.domain P.bits P.bits_le).omega = twoAdicGen logH := by
     change P.domain.omega ^ 2 ^ P.bits = _
     rw [hω, hb, BaseField.twoAdicGen_pow _ _ h24]
-  have h1 : (twoAdicGen logH : F)⁻¹ ^ 2 ^ logH = 1 := by
-    rw [inv_pow, ← hDω, ← hn, inv_eq_one]
-    exact (powDomain P.domain P.bits P.bits_le).primitive.pow_eq_one
-  have hmod (a : Nat) :
-      (twoAdicGen logH : F)⁻¹ ^ (a % 2 ^ logH) = (twoAdicGen logH)⁻¹ ^ a := by
-    conv_rhs => rw [← Nat.mod_add_div a (2 ^ logH), pow_add, pow_mul, h1, one_pow, mul_one]
-  apply Array.ext
-  · rw [NTT.Inverse.size_inverseSpec, Array.size_ofFn, hn]
-  · intro k hk1 hk2
-    simp only [NTT.Inverse.inverseSpec, Array.getElem_ofFn, NTT.Inverse.inttAt,
-      NTT.Domain.nInv, NTT.Domain.omegaInv]
-    rw [Fin.sum_univ_eq_sum_range (fun i ↦ (column m w (2 ^ P.logH) j).toArray.getD i 0 *
-      (powDomain P.domain P.bits P.bits_le).omega⁻¹ ^ (k * i)), hn, hDω, foldl_range_add,
-      zero_add]
-    refine congrArg (_ * ·) (Finset.sum_congr rfl fun i hi ↦ ?_)
-    have hi := Finset.mem_range.mp hi
-    rw [getD_column _ _ _ _ _ (by rw [hlogH]; exact hi), powF_eq, hmod, Nat.mul_comm i k]
+  rw [inverseSpec_twoAdic _ logH hn hDω]
+  refine congrArg (Array.ofFn (n := 2 ^ logH)) (funext fun k ↦
+    congrArg (fun x ↦ ((2 ^ logH : Nat) : F)⁻¹ * x) (List.foldl_ext _ _ _ fun acc i hi ↦ ?_))
+  rw [getD_column _ _ _ _ _ (by rw [hlogH]; exact List.mem_range.mp hi)]
 
 /-- Rows of width `w` flatten in row-major order. -/
 theorem flatten_ofFn {α : Type} (N w : Nat) (g : Fin N → Array α) (G : Nat → Nat → α)
@@ -115,9 +135,9 @@ theorem flatten_ofFn {α : Type} (N w : Nat) (g : Fin N → Array α) (G : Nat �
     rw [Array.getElem_ofFn, Array.getElem_map, Array.getElem_range]
 
 /-- **The coset LDE's specification is `ldeRef`** on the plan's coset. -/
-theorem ldeSpec_eq (P : LdePlan) (logH bits : Nat) (shift : F) (w : Nat) (m : Array F)
+theorem ldeSpec_eq (P : LdePlan p) (logH bits : Nat) (shift : F) (w : Nat) (m : Array F)
     (hlog : P.domain.logN = logH + bits) (hb : P.bits = bits) (hs : P.shift = shift)
-    (hω : P.domain.omega = twoAdicGen (logH + bits)) (h24 : logH + bits ≤ 24) :
+    (hω : P.domain.omega = twoAdicGen (logH + bits)) (h24 : logH + bits ≤ twoAdicity F) :
     ldeSpec P w m = (ldeRef logH bits shift w m).values := by
   simp only [ldeRef, Mat.ofValues]
   rw [flatten_ofFn _ w _ fun r j ↦ (Array.ofFn (n := 2 ^ logH) fun k ↦
@@ -141,9 +161,9 @@ theorem ldeSpec_eq (P : LdePlan) (logH bits : Nat) (shift : F) (w : Nat) (m : Ar
         Array.getElem_range]
 
 /-- The plan `ldeWith` uses is `plan?`'s. -/
-theorem ldeWith_plan (plans : List (Nat × Nat × F × LdePlan))
+theorem ldeWith_plan (plans : List (Nat × Nat × F × LdePlan p))
     (hplans : ∀ e ∈ plans, plan? e.1 e.2.1 e.2.2.1 = some e.2.2.2)
-    (logH bits : Nat) (shift : F) (P : LdePlan)
+    (logH bits : Nat) (shift : F) (P : LdePlan p)
     (h : ((plans.find? fun (h, b, s, _) ↦ h == logH && b == bits && s == shift).map (·.2.2.2)
       <|> plan? logH bits shift) = some P) :
     plan? logH bits shift = some P := by
@@ -163,10 +183,10 @@ theorem ldeWith_plan (plans : List (Nat × Nat × F × LdePlan))
 
 /-- **The fast low-degree extension is `ldeRef`**, with plans `plan?` built, on a matrix of
 `2 ^ logH` rows within the two-adic subgroups whose extension is addressable. -/
-theorem ldeWith_rel (plans : List (Nat × Nat × F × LdePlan))
+theorem ldeWith_rel [PackedCosetLde p] (plans : List (Nat × Nat × F × LdePlan p))
     (hplans : ∀ e ∈ plans, plan? e.1 e.2.1 e.2.2.1 = some e.2.2.2)
     (logH bits : Nat) (shift : F) (w : Nat) (m : Array F) (hm : m.size = 2 ^ logH * w)
-    (hb : logH + bits ≤ 24) (ha : Addressable (2 ^ (logH + bits) * w)) :
+    (hb : logH + bits ≤ twoAdicity F) (ha : Addressable (2 ^ (logH + bits) * w)) :
     RM (ldeWith plans logH bits shift w m) (ldeRef logH bits shift w m) := by
   unfold ldeWith
   dsimp only
@@ -185,10 +205,10 @@ theorem ldeWith_rel (plans : List (Nat × Nat × F × LdePlan))
       unfold Addressable at ha
       omega
     refine ⟨rfl, rfl, ?_⟩
-    change NTTFast.Packed.Native.joinRows (NTTFast.Packed.Native.cosetLde P w
+    change NTTFast.Packed.Native.joinRows (P.cosetLde w
       (NTTFast.Packed.Native.encodeFields m)) = encode (ldeRef logH bits shift w m).values
     rw [NTTFast.Packed.Native.encodeFields_eq,
-      NTTFast.Packed.Native.joinRows_cosetLde P w m hM hu,
+      NTTFast.Packed.LdePlan.joinRows_cosetLde P w m hM hu,
       ldeSpec_eq P logH bits shift w m hlog hbits hs hω h24]
   · rename_i hnone
     have hp : plan? logH bits shift ≠ none := by
@@ -201,7 +221,7 @@ theorem ldeWith_rel (plans : List (Nat × Nat × F × LdePlan))
 
 /-- Every plan `ldePlans` prepares is `plan?`'s. -/
 theorem ldePlans_valid (logN logBlowup logChunks : Nat) :
-    ∀ e ∈ ldePlans logN logBlowup logChunks, plan? e.1 e.2.1 e.2.2.1 = some e.2.2.2 := by
+    ∀ e ∈ ldePlans (p := p) logN logBlowup logChunks, plan? e.1 e.2.1 e.2.2.1 = some e.2.2.2 := by
   intro e he
   simp only [ldePlans, List.mem_filterMap, Option.map_eq_some_iff] at he
   obtain ⟨s, -, P, hP, rfl⟩ := he

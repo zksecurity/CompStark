@@ -9,7 +9,8 @@ public import CompStark.Stark.Config
 
 /-! # Completeness of the STARK verifier
 
-If a trace satisfies an AIR, the honest prover's proof of it verifies (`completeness`). Besides
+Over any base field with Plonky3's Poseidon2 instances and any challenge field, if a trace
+satisfies an AIR, the honest prover's proof of it verifies (`completeness`). Besides
 that premise, the theorem assumes two things, each a structure with one documented field per
 condition:
 
@@ -25,23 +26,20 @@ The proof is in `CompStark/Complete/`.
 namespace CompStark.Stark
 open CompStark.Fri
 
-local notation "F" => _root_.KoalaBear.Fast.Field
-
-variable {EF : Type} [Challenge F EF]
+variable {F : Type} [BaseField F] [Poseidon2Field F] {EF : Type} [Challenge F EF]
 
 variable (EF) in
 /-- The honest run over the extension `EF` avoids two unlikely events in which it fails. -/
 structure NoBadLuck (params : Params) (air : Air F) (logN : Nat) (trace : Array F)
     (publicValues : List F) : Prop where
   /-- The out-of-domain point `ζ` (`outOfDomainPoint`), a random element of the extension of
-  degree `d`, does not lie in the base field. It does with probability `fieldSize ^ (1 - d)`, about
-  `2 ^ -93` for `d = 4` and `2 ^ -124` for `d = 5`; then `ζ - x` vanishes for some point `x` of the
-  domains and the openings divide by zero. -/
+  degree `d`, does not lie in the base field. It does with probability `|F| ^ (1 - d)`; then
+  `ζ - x` vanishes for some point `x` of the domains and the openings divide by zero. -/
   outOfDomain : Ext.OutsideBase (outOfDomainPoint EF params air logN trace publicValues)
   /-- Every proof-of-work search of the honest run finds a witness (`proveTranscript` records a
   failed search, where Plonky3's grinder would panic). A search for `b` bits tries every field
   element, each a witness with probability `2 ^ -b`, so it fails with probability about
-  `exp (-2 ^ (31 - b))`. -/
+  `exp (-|F| / 2 ^ b)`. -/
   grinding : (proveTranscript EF params air logN trace publicValues).grindFailed = false
 
 /-- **Completeness.** For a valid configuration and an honest run over any challenge field `EF`

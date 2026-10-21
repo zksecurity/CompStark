@@ -26,6 +26,7 @@ public import CompStark.Merkle.Packed
 public import CompStark.Merkle.PackedCorrectness
 public import CompStark.Merkle.RootCorrectness
 public import CompStark.Poseidon2.Impl
+public import CompStark.Poseidon2.PackedField
 public import CompStark.KoalaBear.Poseidon2
 public import CompStark.Plonky3.Hash
 public import CompStark.Challenger
@@ -65,6 +66,7 @@ public import CompStark.Stark.Fast.Vectors
 public import CompStark.Stark.Fast.Openings
 public import CompStark.Stark.Fast.Quotient
 public import CompStark.Stark.Fast.Refines
+public import CompStark.KoalaBear.Fast
 public import CompStark.Stark.Words
 public import CompStark.Stark.Quotient
 public import CompStark.Stark.ExtWords
@@ -82,6 +84,7 @@ public import CompStark.Complete.Quotient
 public import CompStark.Complete.Stark
 public import CompStark.Stark.Satisfied
 public import CompStark.Completeness
+public import CompStark.KoalaBear.Completeness
 public import CompStark.Sound.Defs
 public import CompStark.Iop
 public import CompStark.SoundnessError

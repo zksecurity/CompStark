@@ -26,11 +26,14 @@ meta def read (arr idx hb : Term) (k : Nat) : MacroM Term :=
   `($(name "readUOffset") $arr $idx $(lit k)
     ($(name "inBounds") $hb $(lit k) (by simp only [USize.reduceToNat]; decide)))
 
-meta def add (x y : Term) : MacroM Term := `($(name "add") $x $y)
+/-- The modulus of the word arithmetic, KoalaBear's. -/
+meta def modulus : Ident := mkIdent `KoalaBear.fieldSize
 
-meta def mul (x y : Term) : MacroM Term := `($(name "mul") $x $y)
+meta def add (x y : Term) : MacroM Term := `($(name "add") $modulus $x $y)
 
-meta def sub (x y : Term) : MacroM Term := `($(name "sub") $x $y)
+meta def mul (x y : Term) : MacroM Term := `($(name "mul") $modulus $x $y)
+
+meta def sub (x y : Term) : MacroM Term := `($(name "sub") $modulus $x $y)
 
 meta def halve (x : Term) : MacroM Term := `($(name "halve") $x)
 

@@ -5,9 +5,9 @@ Released under Apache 2.0 license as described in the file LICENSE.
 module
 
 public import CompStark.Merkle.Packed
+public import CompStark.Merkle.Tree
 public import CompStark.Plonky3.Hash
-public import CompStark.KoalaBear.Poseidon2
-public import CompStark.Poseidon2.PackedCorrectness24
+public import CompStark.Poseidon2.PackedCorrectness
 import all CompStark.Merkle.Packed
 import all CompPoly.Univariate.NTTFast.Packed.Native
 import CompPoly.Univariate.NTTFast.Packed.ArrayLemmas
@@ -16,21 +16,23 @@ import CompPoly.Univariate.NTTFast.Packed.ArrayLemmas
 
 @[expose] public section
 namespace CompStark.Merkle.Packed
-open CompStark.Poseidon2 CompStark.Poseidon2.Packed
+open CompStark.Poseidon2 CompStark.Poseidon2.Packed Montgomery.Native32
 open CompPoly.PackedRepr (encode)
 open CompPoly.CPolynomial.NTTFast.Packed (size_encode_fields array_eq_of_getD getD_ofFn_bounded)
 open CompPoly.CPolynomial.NTTFast.Packed.Native (readUOffset_encode)
 
-local notation "F" => KoalaBear.Fast.Field
+variable {p : ℕ} [Mont32Field p]
+
+local notation "F" => FastField p
 
 /-- Lines `q 0, …, q 7` of sixteen coordinates of `M` as rows `0, …, 15` of the group at `i`. -/
 def loadModel (M W : Array F) (q : Nat → Nat) (i : Nat) : Array F :=
   spliceRows coords16 W i fun j l ↦ M.getD (q l + j) 0
 
 /-- The digests in coordinates `0, …, 7` of the lanes of the group at `i` of `S`, as digests at
-words `p 0, …, p 7` of `O`. -/
-def storeModel (S O : Array F) (i : Nat) (p : Nat → Nat) : Array F :=
-  [0, 1, 2, 3, 4, 5, 6, 7].foldl (fun A l ↦ CompPoly.CPolynomial.NTTFast.Packed.splice A (p l)
+words `dst 0, …, dst 7` of `O`. -/
+def storeModel (S O : Array F) (i : Nat) (dst : Nat → Nat) : Array F :=
+  [0, 1, 2, 3, 4, 5, 6, 7].foldl (fun A l ↦ CompPoly.CPolynomial.NTTFast.Packed.splice A (dst l)
     (lit8 fun j ↦ word S i j l)) O
 
 set_option maxRecDepth 65536 in
@@ -71,12 +73,13 @@ theorem load16x16_encode (M W : Array F) (q : Nat → Nat) (hq : ∀ l < 8, q l 
 
 set_option maxRecDepth 65536 in
 set_option maxHeartbeats 4000000 in
-theorem store8x8_encode (S O : Array F) (i : USize) (p : Nat → Nat)
-    (hp : ∀ l < 8, p l < USize.size) (hb g0 g1 g2 g3 g4 g5 g6 g7) :
-    store8x8 (encode S) i (encode O) (p 0).toUSize (p 1).toUSize (p 2).toUSize (p 3).toUSize
-      (p 4).toUSize (p 5).toUSize (p 6).toUSize (p 7).toUSize hb g0 g1 g2 g3 g4 g5 g6 g7 =
-      encode (storeModel S O i.toNat p) := by
-  have hu (l : Nat) (hl : l < 8) : (p l).toUSize.toNat = p l := USize.toNat_ofNat_of_lt' (hp l hl)
+theorem store8x8_encode (S O : Array F) (i : USize) (dst : Nat → Nat)
+    (hdst : ∀ l < 8, dst l < USize.size) (hb g0 g1 g2 g3 g4 g5 g6 g7) :
+    store8x8 (encode S) i (encode O) (dst 0).toUSize (dst 1).toUSize (dst 2).toUSize (dst 3).toUSize
+      (dst 4).toUSize (dst 5).toUSize (dst 6).toUSize (dst 7).toUSize hb g0 g1 g2 g3 g4 g5 g6 g7 =
+      encode (storeModel S O i.toNat dst) := by
+  have hu (l : Nat) (hl : l < 8) : (dst l).toUSize.toNat = dst l := USize.toNat_ofNat_of_lt' (hdst
+      l hl)
   have f0 := g0; have f1 := g1; have f2 := g2; have f3 := g3
   have f4 := g4; have f5 := g5; have f6 := g6; have f7 := g7
   simp only [Fits, size_encode_fields, hu 0 (by decide), hu 1 (by decide), hu 2 (by decide),
@@ -344,18 +347,41 @@ theorem groupFits24_zero (A : Array F) (hA : A.size = 192) : GroupFits24 (encode
   simp only [GroupFits24, Fits, size_encode_fields, hA, USize.reduceToNat]
   have := USize.le_size; omega
 
-theorem absorbRows_encode (M : Array F) (w rows r0 : Nat) (hM : M.size = rows * w)
+theorem lane_zero (t : Nat) (W : Array F) (l : Nat) : lane t W 0 l = Group.lane t W l := by
+  simp only [lane, Group.lane, word, Nat.zero_add]
+
+
+/-- The packed width-24 permutation of a group of eight states, state by state. -/
+theorem permute24_lanes [Poseidon2Field (FastField p)] [PackedPoseidon2 p] (A : Array F) (hA :
+    A.size = 192) :
+    ∃ A', PackedPoseidon2.permute24 p (encode A) = encode A' ∧ A'.size = 192 ∧
+      ∀ l < 8, lane 24 A' 0 l = permute ((Poseidon2Field.params24 : Params (FastField p) 24)) (lane
+          24 A 0 l) :=
+  ⟨_, PackedPoseidon2.permute24_encode A hA, Group.size_map .., fun l hl ↦ by
+    rw [lane_zero, lane_zero, Group.lane_map _ _ _ _ hl]⟩
+
+/-- The packed width-16 permutation of a group of eight states, state by state. -/
+theorem permute16_lanes [Poseidon2Field (FastField p)] [PackedPoseidon2 p] (A : Array F) (hA :
+    A.size = 128) :
+    ∃ A', PackedPoseidon2.permute16 p (encode A) = encode A' ∧ A'.size = 128 ∧
+      ∀ l < 8, lane 16 A' 0 l = permute ((Poseidon2Field.params16 : Params (FastField p) 16)) (lane
+          16 A 0 l) :=
+  ⟨_, PackedPoseidon2.permute16_encode A hA, Group.size_map .., fun l hl ↦ by
+    rw [lane_zero, lane_zero, Group.lane_map _ _ _ _ hl]⟩
+
+theorem absorbRows_encode [Poseidon2Field (FastField p)] [PackedPoseidon2 p] (M : Array F) (w rows
+    r0 : Nat) (hM : M.size = rows * w)
     (hu : 4 * M.size < USize.size) :
-    ∃ A, absorbRows (Packed24.ofParams (KoalaBear.width24 F)) (encode M) w rows r0 = encode A ∧
+    ∃ A, absorbRows p (encode M) w rows r0 = encode A ∧
       A.size = 192 ∧ ∀ l < 8, r0 + l < rows → lane 24 A 0 l =
-        CompStark.Hash.absorb (permute (KoalaBear.width24 F)) 16 (by decide)
+        CompStark.Hash.absorb (permute ((Poseidon2Field.params24 : Params (FastField p) 24))) 16
+            (by decide)
           (Vector.replicate 24 0) ((⟨w, rows, M⟩ : CompStark.Merkle.Matrix F).row (r0 + l)) := by
   have key : ∀ b, ∃ A, (List.range b).foldl (fun st blk ↦
-      permute24 (Packed24.ofParams (KoalaBear.width24 F))
-        (absorbBlock (encode M) w rows r0 blk st) 0)
+      PackedPoseidon2.permute24 p (absorbBlock (encode M) w rows r0 blk st))
       (encode (Array.replicate 192 (0 : F))) = encode A ∧ A.size = 192 ∧
       ∀ l < 8, r0 + l < rows → lane 24 A 0 l = (List.range b).foldl (fun s blk ↦
-        permute (KoalaBear.width24 F) (CompStark.Hash.overwrite s
+        permute ((Poseidon2Field.params24 : Params (FastField p) 24)) (CompStark.Hash.overwrite s
           ((((⟨w, rows, M⟩ : CompStark.Merkle.Matrix F).row (r0 + l)).drop (16 * blk)).take 16)))
         (Vector.replicate 24 0) := by
     intro b
@@ -372,14 +398,12 @@ theorem absorbRows_encode (M : Array F) (w rows r0 : Nat) (hM : M.size = rows * 
       rw [e]
       obtain ⟨A1, e1, s1, l1⟩ := absorbBlock_encode M A w rows r0 b hM hs hu
       rw [e1]
-      obtain ⟨A2, e2, s2, l2, -⟩ := permute24_spec (KoalaBear.width24 F) rfl rfl rfl rfl A1 0
-        (groupFits24_zero A1 s1)
-      simp only [USize.toNat_zero] at l2
-      refine ⟨A2, e2, by rw [s2, s1], fun l hl hr ↦ ?_⟩
+      obtain ⟨A2, e2, s2, l2⟩ := permute24_lanes A1 s1
+      refine ⟨A2, e2, s2, fun l hl hr ↦ ?_⟩
       rw [l2 l hl, l1 l hl, ite_eq_left_of_eq_true _ _ (eq_true hr), hprev l hl hr,
         block_eq _ _ rows]
   obtain ⟨A, e, hs, hl⟩ := key ((w + 15) / 16)
-  refine ⟨A, by rw [absorbRows, zeroWords_fields, e], hs, fun l h8 hr ↦ ?_⟩
+  refine ⟨A, by rw [absorbRows, zeroWords_fields (p := p), e], hs, fun l h8 hr ↦ ?_⟩
   rw [hl l h8 hr, absorb_eq_foldl]
   simp only [CompStark.Merkle.Matrix.row, List.length_map, List.length_range,
     show w + 16 - 1 = w + 15 by omega]
@@ -512,24 +536,27 @@ theorem storeRows_encode (S O : Array F) (rows r0 : Nat) (hS : 64 ≤ S.size)
     obtain ⟨O', e, s, g⟩ := key 8 le_rfl
     exact ⟨O', e, s, g⟩
 
-theorem getElem_hash (xs : List F) (j : Nat) (hj : j < 8) :
-    (CompStark.Hash.Poseidon2.hash F xs)[j] =
-      (CompStark.Hash.absorb (permute (KoalaBear.width24 F)) 16 (by decide)
+theorem getElem_hash [Poseidon2Field (FastField p)] [PackedPoseidon2 p] (xs : List F) (j : Nat) (hj
+    : j < 8) :
+    (Hash.Poseidon2.hash (FastField p) xs)[j] =
+      (CompStark.Hash.absorb (permute ((Poseidon2Field.params24 : Params (FastField p) 24))) 16 (by
+          decide)
         (Vector.replicate 24 0) xs)[j] := by
-  simp only [CompStark.Hash.Poseidon2.hash_eq, CompStark.KoalaBear.params24_eq,
-    CompStark.Hash.sponge, Vector.getElem_cast, Vector.getElem_take]
+  simp only [Hash.Poseidon2.hash_eq, CompStark.Hash.sponge, Vector.getElem_cast,
+    Vector.getElem_take]
 
-theorem hashChunk_encode (M : Array F) (w rows : Nat) (hM : M.size = rows * w)
+theorem hashChunk_encode [Poseidon2Field (FastField p)] [PackedPoseidon2 p] (M : Array F) (w rows :
+    Nat) (hM : M.size = rows * w)
     (hu : 4 * M.size < USize.size) (ho : 4 * (8 * rows) < USize.size) :
-    ∃ D, hashChunk (Packed24.ofParams (KoalaBear.width24 F)) (encode M) w rows = encode D ∧
+    ∃ D, hashChunk p (encode M) w rows = encode D ∧
       D.size = 8 * rows ∧ ∀ r < rows, ∀ j (hj : j < 8), D.getD (8 * r + j) 0 =
-        (CompStark.Hash.Poseidon2.hash F
+        (Hash.Poseidon2.hash (FastField p)
           ((⟨w, rows, M⟩ : CompStark.Merkle.Matrix F).row r))[j]'hj := by
   have key : ∀ G, ∃ D, (List.range G).foldl (fun out g ↦
-      hashRows8 (Packed24.ofParams (KoalaBear.width24 F)) (encode M) w rows (8 * g) out)
+      hashRows8 p (encode M) w rows (8 * g) out)
       (encode (Array.replicate (8 * rows) (0 : F))) = encode D ∧ D.size = 8 * rows ∧
       ∀ r < rows, ∀ j (hj : j < 8), D.getD (8 * r + j) 0 = if r < 8 * G then
-        (CompStark.Hash.Poseidon2.hash F ((⟨w, rows, M⟩ : CompStark.Merkle.Matrix F).row r))[j]'hj
+        (Hash.Poseidon2.hash (FastField p) ((⟨w, rows, M⟩ : CompStark.Merkle.Matrix F).row r))[j]'hj
         else 0 := by
     intro G
     induction G with
@@ -556,7 +583,7 @@ theorem hashChunk_encode (M : Array F) (w rows : Nat) (hM : M.size = rows * w)
       · rw [ite_eq_right (by omega), g r hr j hj]
         split_ifs <;> first | rfl | omega
   obtain ⟨D, e, s, g⟩ := key ((rows + 7) / 8)
-  refine ⟨D, by rw [hashChunk, zeroWords_fields, e], s, fun r hr j hj ↦ ?_⟩
+  refine ⟨D, by rw [hashChunk, zeroWords_fields (p := p), e], s, fun r hr j hj ↦ ?_⟩
   rw [g r hr j hj, ite_eq_left (by omega)]
 
 /-- Digest `k` of a layer stored as consecutive words. -/
@@ -568,7 +595,7 @@ theorem loadPairs_encode (P : Array F) (n o : Nat) (hP : P.size = 8 * n)
       lane 16 S 0 l = Vector.ofFn fun j ↦ P.getD (16 * (o + l) + j) 0 := by
   have h128 : 4 * 128 < USize.size := by have := USize.le_size; omega
   unfold loadPairs
-  rw [zeroWords_fields]
+  rw [zeroWords_fields (p := p)]
   split
   · rename_i hfull
     have hq : ∀ l < 8, (o + l) * 16 + 16 * 0 + 16 ≤ P.size := fun l hl ↦ by omega
@@ -622,30 +649,27 @@ theorem overwrite_pair (P : Array F) (i : Nat) :
       Option.getD_some]
     congr 1; omega
 
-theorem compress8_encode (P O : Array F) (n o o0 count : Nat) (hP : P.size = 8 * n)
+theorem compress8_encode [Poseidon2Field (FastField p)] [PackedPoseidon2 p] (P O : Array F) (n o o0
+    count : Nat) (hP : P.size = 8 * n)
     (hu : 4 * P.size < USize.size) (hO : O.size = 8 * count) (huO : 4 * O.size < USize.size)
     (ho : o0 ≤ o) (hc : o0 + count ≤ n / 2) :
-    ∃ O', compress8 (Packed16.ofParams (KoalaBear.width16 F)) (encode P) n o o0 count (encode O) =
+    ∃ O', compress8 p (encode P) n o o0 count (encode O) =
       encode O' ∧ O'.size = 8 * count ∧ ∀ k, O'.getD k 0 =
         if 8 * (o - o0) ≤ k ∧ k < 8 * count ∧ k < 8 * (o - o0) + 64 then
-          (CompStark.Hash.Poseidon2.compress F (dig P (2 * (o0 + k / 8)))
+          (Hash.Poseidon2.compress (FastField p) (dig P (2 * (o0 + k / 8)))
             (dig P (2 * (o0 + k / 8) + 1)))[k % 8]'(Nat.mod_lt _ (by decide))
         else O.getD k 0 := by
   obtain ⟨S, e, s, ls⟩ := loadPairs_encode P n o hP hu
-  obtain ⟨S2, e2, s2, l2, -⟩ := permute16_spec (KoalaBear.width16 F) rfl rfl rfl rfl S 0
-    (by simp only [GroupFits, Fits, size_encode_fields, s, USize.reduceToNat]
-        have := USize.le_size; omega)
-  simp only [USize.toNat_zero] at l2
+  obtain ⟨S2, e2, s2, l2⟩ := permute16_lanes S s
   obtain ⟨O', e3, s3, g3⟩ := storeRows_encode S2 O count (o - o0) (by omega)
-    (by rw [s2, s]; have := USize.le_size; omega) hO huO
+    (by rw [s2]; have := USize.le_size; omega) hO huO
   refine ⟨O', by rw [compress8, e, e2, e3], s3, fun k ↦ ?_⟩
   rw [g3]
   split_ifs with hk
   · have hl : k / 8 - (o - o0) < 8 := by omega
     have hpl := l2 _ hl
     rw [ls _ hl (by omega), show o + (k / 8 - (o - o0)) = o0 + k / 8 by omega] at hpl
-    simp only [CompStark.Hash.Poseidon2.compress_eq, CompStark.KoalaBear.params16_eq,
-      CompStark.Hash.compress, overwrite_pair,
+    simp only [Hash.Poseidon2.compress_eq, CompStark.Hash.compress, overwrite_pair,
       ← hpl, Vector.getElem_cast, Vector.getElem_take, lane, Vector.getElem_ofFn]
   · rfl
 

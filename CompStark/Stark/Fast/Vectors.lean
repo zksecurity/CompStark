@@ -19,9 +19,7 @@ namespace CompStark.Stark
 open CompPoly.PackedRepr (encode)
 open CompPoly.CPolynomial.NTTFast.Packed (getD_ofFn_bounded)
 
-local notation "F" => _root_.KoalaBear.Fast.Field
-
-variable {EF : Type} [Challenge F EF]
+variable {F : Type} [BaseField F] {EF : Type} [Challenge F EF]
 
 /-- The bit-reversal permutation of `2 ^ bits` indices below `2 ^ bits`. -/
 theorem bitRevPerm_spec (bits : Nat) :
@@ -99,19 +97,19 @@ theorem foldRange_eq (vs : Array EF) (pw : Array F) (perm : Array Nat) (beta hal
   simp only [Array.getElem_map, Array.getElem_ofFn]
 
 /-- The `2 x` of the fold's pairs are nonzero. -/
-theorem twoX_ne_zero (L : Nat) (hL : L < 24) (i : Nat) (hi : i < 2 ^ L) :
+theorem twoX_ne_zero (L : Nat) (hL : L < twoAdicity F) (i : Nat) (hi : i < 2 ^ L) :
     twoX (cosetPoints (1 : F) (L + 1)) (bitRevPerm L) i ≠ 0 := by
   obtain ⟨hs, hb⟩ := bitRevPerm_spec L
   have hp : (bitRevPerm L).getD i 0 < 2 ^ L := by
     rw [getD_lt _ i (by omega)]
     exact hb _ (Array.getElem_mem _)
   have hw : (twoAdicGen (L + 1) : F) ≠ 0 :=
-    BaseField.twoAdicGen_ne_zero _ (by rw [KoalaBear.twoAdicity_eq]; omega)
+    BaseField.twoAdicGen_ne_zero _ (by omega)
   rw [twoX, cosetPoints_eq, getD_ofFn_bounded _ _ (by rw [Nat.pow_succ]; omega)]
-  exact mul_ne_zero NonBinaryField.char_neq_2 (mul_ne_zero one_ne_zero (pow_ne_zero _ hw))
+  exact mul_ne_zero BaseField.two_ne_zero (mul_ne_zero one_ne_zero (pow_ne_zero _ hw))
 
 /-- The fold, pair by pair. -/
-theorem foldPairs_eq (vs : Array EF) (beta : EF) (L : Nat) (hL : L < 24) :
+theorem foldPairs_eq (vs : Array EF) (beta : EF) (L : Nat) (hL : L < twoAdicity F) :
     Fri.foldPairs vs beta L = Array.ofFn (n := 2 ^ L) fun i ↦
       foldAt vs (cosetPoints (1 : F) (L + 1)) (bitRevPerm L) beta (Ext.ofBase (2 : F)⁻¹) i.val := by
   unfold Fri.foldPairs
@@ -126,13 +124,18 @@ open CompPoly.PackedRepr (encode)
 open CompStark.Words
 open CompPoly.CPolynomial.NTTFast.Packed (getD_ofFn_bounded size_encode_fields)
 open CompPoly.CPolynomial.NTTFast.Packed.Native (zeroWords read write)
+open Montgomery.Native32
 
-local notation "F" => _root_.KoalaBear.Fast.Field
-local notation "EF" => _root_.KoalaBear.Fast.Ext4
+variable {p : ℕ} [Mont32Field p] [Mont32BaseField p] [Binomial4 p]
 
+local notation "F" => FastField p
+local notation "EF" => Ext4 p
+
+omit [Mont32BaseField p] [Binomial4 p] in
 /-- Representation transfers along equal arrays. -/
-theorem RV_congr {v : EVec} {a b : Array EF} (h : RV v a) (e : a = b) : RV v b := e ▸ h
+theorem RV_congr {v : EVec p} {a b : Array EF} (h : RV v a) (e : a = b) : RV v b := e ▸ h
 
+omit [Mont32BaseField p] [Binomial4 p] in
 /-- A slice of words is the encoded range. -/
 theorem slice_encode (X : Array F) (i B : Nat) :
     slice (encode X) i B = encode (X.extract i (i + B)) := by
@@ -140,6 +143,7 @@ theorem slice_encode (X : Array F) (i B : Nat) :
   rw [slice, ByteArray.data_extract]
   exact CompPoly.PackedRepr.encode_extract X i (i + B)
 
+omit [Mont32BaseField p] [Binomial4 p] in
 /-- The even and odd words. -/
 theorem deinterleave_encode (Y : Array F) (n : Nat) (hn : 2 * n ≤ Y.size)
     (hs : 4 * Y.size < USize.size) :
@@ -158,7 +162,7 @@ theorem deinterleave_encode (Y : Array F) (n : Nat) (hn : 2 * n ≤ Y.size)
       (encode (upto (Array.replicate n 0) fe K), encode (upto (Array.replicate n 0) fo K)) := by
     intro K hK
     induction K with
-    | zero => rw [List.range_zero, List.foldl_nil, zeroWords_eq, upto_zero, upto_zero]
+    | zero => rw [List.range_zero, List.foldl_nil, zeroWords_eq (p := p), upto_zero, upto_zero]
     | succ K ih =>
       rw [List.range_succ, List.foldl_append, ih (by omega), List.foldl_cons, List.foldl_nil]
       simp only
@@ -168,8 +172,9 @@ theorem deinterleave_encode (Y : Array F) (n : Nat) (hn : 2 * n ≤ Y.size)
   rw [key n (Nat.le_refl _), upto_full _ _ _ (Array.size_replicate ..),
     upto_full _ _ _ (Array.size_replicate ..)]
 
+omit [Mont32BaseField p] [Binomial4 p] in
 /-- The even and odd elements of pairs `r0, …, r0 + len - 1`. -/
-theorem split_rel {v : EVec} {a : Array EF} (hv : RV v a) (r0 len : Nat)
+theorem split_rel {v : EVec p} {a : Array EF} (hv : RV v a) (r0 len : Nat)
     (hr : 2 * (r0 + len) ≤ a.size) (hs : 4 * a.size < USize.size) :
     RV ⟨len, (deinterleave (slice v.c0 (2 * r0) (2 * len)) len).1,
       (deinterleave (slice v.c1 (2 * r0) (2 * len)) len).1,
@@ -209,7 +214,7 @@ theorem split_rel {v : EVec} {a : Array EF} (hv : RV v a) (r0 len : Nat)
       Nat.add_assoc]
 
 /-- Pairs `r0, …, r0 + len - 1` of the fold, given the encoded `2 x` of all pairs. -/
-theorem fold2Range_rel {v : EVec} {a : Array EF} (hv : RV v a) (T : Array F) (beta : EF)
+theorem fold2Range_rel {v : EVec p} {a : Array EF} (hv : RV v a) (T : Array F) (beta : EF)
     (r0 len : Nat) (hr : 2 * (r0 + len) ≤ a.size) (hs : 4 * a.size < USize.size)
     (hT : r0 + len ≤ T.size) (hsT : 4 * T.size < USize.size)
     (hnz : ∀ k < len, T.getD (r0 + k) 0 ≠ 0) :
@@ -241,18 +246,21 @@ theorem fold2Range_rel {v : EVec} {a : Array EF} (hv : RV v a) (T : Array F) (be
       Montgomery.Native32.Ext4.toSpec_sub]
     ring
 
-/-- Vectors of at most `2 ^ 24` elements have indexable coordinates. -/
-theorem size_bound {n : Nat} (h : n ≤ 2 ^ 24) : 16 * n < USize.size := by
-  have := USize.le_size
+omit [Binomial4 p] in
+/-- Vectors within the two-adic subgroups have indexable coordinates when the largest
+subgroup's do. -/
+theorem size_bound {n : Nat} (hA : 16 * 2 ^ twoAdicity F < USize.size)
+    (h : n ≤ 2 ^ twoAdicity F) : 16 * n < USize.size := by
   omega
 
 /-- The fast fold is the specification's: both invert every `2 x` of the pairs, which are
-nonzero below order `2 ^ 24`. -/
-theorem fold2_rel {v : EVec} {a : Array EF} (beta : EF) (k : Nat) (h : RV v a)
-    (ha : a.size = 2 ^ (k + 1)) (hk : k < 24) : RV (fold2 v beta k) (Fri.foldPairs a beta k) := by
+nonzero within the two-adic subgroups. -/
+theorem fold2_rel (hA : 16 * 2 ^ twoAdicity F < USize.size) {v : EVec p} {a : Array EF}
+    (beta : EF) (k : Nat) (h : RV v a) (ha : a.size = 2 ^ (k + 1)) (hk : k < twoAdicity F) :
+    RV (fold2 v beta k) (Fri.foldPairs a beta k) := by
   unfold fold2
   have hs : 4 * a.size < USize.size := by
-    have := size_bound (n := a.size) (by rw [ha]; exact Nat.pow_le_pow_right (by decide) hk)
+    have := size_bound (n := a.size) hA (by rw [ha]; exact Nat.pow_le_pow_right (by decide) hk)
     omega
   rw [Nat.pow_succ, Nat.mul_comm] at ha
   simp only [CompPoly.CPolynomial.NTTFast.Packed.Native.encodeFields_eq]
@@ -287,19 +295,21 @@ theorem fold2_rel {v : EVec} {a : Array EF} (beta : EF) (k : Nat) (h : RV v a)
   simp only [E, hTx i.val i.isLt]
   rfl
 
+omit [Binomial4 p] in
 /-- Represented planes read back their elements. -/
-theorem toArray_rel {v : EVec} {a : Array EF} (h : RV v a) (ha : a.size ≤ 2 ^ 24) :
-    v.toArray = a :=
-  EVec.toArray_eq h (by have := size_bound ha; omega)
+theorem toArray_rel (hA : 16 * 2 ^ twoAdicity F < USize.size) {v : EVec p} {a : Array EF}
+    (h : RV v a) (ha : a.size ≤ 2 ^ twoAdicity F) : v.toArray = a :=
+  EVec.toArray_eq h (by have := size_bound hA ha; omega)
 
+omit [Mont32BaseField p] [Binomial4 p] in
 /-- The planes of an array represent it. -/
 theorem ofArray_rel (a : Array EF) : RV (EVec.ofArray a) a := EVec.ofArray_rel a
 
 /-- `a + x · b` on planes. -/
-theorem addScaled_rel {v w : EVec} {a b : Array EF} (x : EF) (hv : RV v a) (hw : RV w b)
-    (hab : a.size = b.size) (ha : a.size ≤ 2 ^ 24) :
+theorem addScaled_rel (hA : 16 * 2 ^ twoAdicity F < USize.size) {v w : EVec p} {a b : Array EF}
+    (x : EF) (hv : RV v a) (hw : RV w b) (hab : a.size = b.size) (ha : a.size ≤ 2 ^ twoAdicity F) :
     RV (addScaled v w x) (Array.zipWith (fun u v ↦ u + x * v) a b) := by
-  have hs : 4 * a.size < USize.size := by have := size_bound ha; omega
+  have hs : 4 * a.size < USize.size := by have := size_bound hA ha; omega
   unfold addScaled
   have h := EVec.add_rel hv (EVec.smul_rel x hw (by omega))
     (by simp only [EVec.smul]; rw [hv.1, hw.1, hab]) hs
@@ -340,7 +350,7 @@ theorem flatMap_coeffs (n : Nat) (g : Nat → EF) :
     interval_cases t <;> rfl
 
 /-- The coordinates of elements `i0, …, i0 + len - 1`, interleaved. -/
-theorem interleaveRange_encode {v : EVec} {a : Array EF} (hv : RV v a) (i0 len : Nat)
+theorem interleaveRange_encode {v : EVec p} {a : Array EF} (hv : RV v a) (i0 len : Nat)
     (hi : i0 + len ≤ a.size) (hs : 16 * a.size < USize.size) :
     interleaveRange v.c0 v.c1 v.c2 v.c3 i0 len = encode ((Array.ofFn (n := len) fun j ↦
       a.getD (i0 + j.val) 0).flatMap fun x ↦ (Ext.coeffs x).toArray) := by
@@ -369,7 +379,7 @@ theorem interleaveRange_encode {v : EVec} {a : Array EF} (hv : RV v a) (i0 len :
       (zeroWords (4 * len)) = encode (upto (Array.replicate (4 * len) 0) f (4 * K)) := by
     intro K hK
     induction K with
-    | zero => rw [List.range_zero, List.foldl_nil, zeroWords_eq, Nat.mul_zero, upto_zero]
+    | zero => rw [List.range_zero, List.foldl_nil, zeroWords_eq (p := p), Nat.mul_zero, upto_zero]
     | succ K ih =>
       rw [List.range_succ, List.foldl_append, ih (by omega), List.foldl_cons, List.foldl_nil]
       have hK : K < len := by omega
@@ -394,11 +404,12 @@ theorem foldl_append_flatMap {α β : Type} (g : α → Array β) (A : Nat → A
   | cons k L ih => rw [List.foldl_cons, List.foldl_cons, ← Array.flatMap_append, ih]
 
 /-- The leaves are the elements' coordinates, `k` elements per row. -/
-theorem leaves_rel {v : EVec} {a : Array EF} (k : Nat) (h : RV v a) (ha : a.size ≤ 2 ^ 24) :
+theorem leaves_rel (hA : 16 * 2 ^ twoAdicity F < USize.size) {v : EVec p} {a : Array EF}
+    (k : Nat) (h : RV v a) (ha : a.size ≤ 2 ^ twoAdicity F) :
     RM (leaves k v) (Mat.ofValues (4 * k) (a.size / k)
       (a.flatMap fun x ↦ (Ext.coeffs x).toArray)) := by
   unfold leaves
-  have hs := size_bound ha
+  have hs := size_bound hA ha
   rw [h.1]
   refine ⟨rfl, rfl, ?_⟩
   simp only [Mat.ofValues]

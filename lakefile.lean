@@ -6,10 +6,10 @@ package CompStark where
   version := v!"0.1.0"
   testDriver := "CompStarkTests"
 
--- Pinned to a CompPoly commit with the packed NTT, the batched coset LDE, fast KoalaBear⁵ and
--- spec fields over the fast base field.
+-- Pinned to a CompPoly commit with the packed NTT, the batched coset LDE and coset interpolation
+-- generic over 32-bit Montgomery fields, fast KoalaBear⁵ and spec fields over the fast base field.
 require CompPoly from git "https://github.com/mitschabaude-bot/CompPoly.git" @
-    "b89ea8e27f32ea3ecb6925d06f5a06c3f71e417f"
+    "ea043f53a48ed44cbd7e301db55f651af45ad9d2"
 
 -- ArkLib with FRI round-by-round soundness on Lean v4.35 (Verified-zkEVM/ArkLib#1317, stacked on
 -- #992 and #1251) and lossy mutual correlated agreement (branch `fri-lossy`).
@@ -29,7 +29,7 @@ lean_lib CompStark where
 lean_lib CompStarkPackedNative where
   roots := #[`CompStark.Poseidon2.Packed, `CompStark.Poseidon2.Packed24,
     `CompStark.Merkle.Packed, `CompStark.Stark.Words, `CompStark.Stark.ExtWords,
-    `CompStark.Stark.Fast]
+    `CompStark.Stark.Fast, `CompStark.KoalaBear.Fast]
   platformIndependent := true
   moreLeancArgs := #["-march=native", "-mstackrealign"]
 

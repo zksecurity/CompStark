@@ -36,7 +36,7 @@ namespace CompStark
 open CompStark.Stark CompStark.Fri Polynomial Montgomery.Native32
 open CompStark.Stark.Fast (crow termStep termsStep yzOf powers)
 
-local notation "F" => _root_.KoalaBear.Fast.Field
+variable {F : Type} [BaseField F]
 variable {EF : Type} [Challenge F EF]
 local notation "hashF" => CompStark.Hash.Poseidon2.hash F
 local notation "compF" => CompStark.Hash.Poseidon2.compress F
@@ -57,11 +57,11 @@ theorem toSpec_pow (x : EF) (n : Nat) :
       rw [Ext.pow]
       have h := Nat.div_add_mod (k + 1) 2
       split_ifs with hp
-      · rw [Challenge.toSpec_mul, ih _ (by omega24), Challenge.toSpec_mul, ← sq, ← pow_mul,
+      · rw [Challenge.toSpec_mul, ih _ (by omega), Challenge.toSpec_mul, ← sq, ← pow_mul,
           ← pow_succ']
-        exact congrArg (Challenge.toSpec x ^ ·) (by omega24)
-      · rw [ih _ (by omega24), Challenge.toSpec_mul, ← sq, ← pow_mul]
-        exact congrArg (Challenge.toSpec x ^ ·) (by omega24)
+        exact congrArg (Challenge.toSpec x ^ ·) (by omega)
+      · rw [ih _ (by omega), Challenge.toSpec_mul, ← sq, ← pow_mul]
+        exact congrArg (Challenge.toSpec x ^ ·) (by omega)
 
 theorem toSpec_ofBase (x : F) : Challenge.toSpec (Ext.ofBase x : EF) = ι (x) :=
   Challenge.toSpec_ofBase x
@@ -236,7 +236,7 @@ def LowDeg (b h : Nat) (v : Array EF) : Prop :=
 
 /-- The running sums of `reduceStep`: distinct heights, each low degree. -/
 def RedOk (b : Nat) (red : List (Nat × Nat × Array EF)) : Prop :=
-  (red.map (·.1)).Nodup ∧ ∀ e ∈ red, b ≤ e.1 ∧ e.1 ≤ 24 ∧ LowDeg b e.1 e.2.2
+  (red.map (·.1)).Nodup ∧ ∀ e ∈ red, b ≤ e.1 ∧ e.1 ≤ twoAdicity F ∧ LowDeg b e.1 e.2.2
 
 /-- Stored row `r` of the coset `g · ⟨ω⟩` is `g ω ^ bitrev r`. -/
 theorem cosetPointsBitRev_getD (h r : Nat) (hr : r < 2 ^ h) :
@@ -624,14 +624,14 @@ end Deep
 round commits matrices of one height `2 ^ h` that are honest LDEs with true openings, the verifier's
 rounds are built as the STARK verifier builds them, and the openings are the prover's at the
 query's row. -/
-theorem openInput_honest_of (P : Params) (logMax index : Nat) (alpha : EF)
+theorem openInput_honest_of [Poseidon2Field F] (P : Params) (logMax index : Nat) (alpha : EF)
     (rounds : List (Committed F × List (Mat F × List (EF × Array EF))))
     (hidx : index < 2 ^ logMax)
     (hrounds : ∀ r ∈ rounds, r.2 ≠ [] ∧ r.1 = Committed.ofMats hashF compF (r.2.map (·.1)) ∧
       ∃ h ≤ logMax, ∀ x ∈ r.2, Deep.HonestItem P.logBlowup h x)
     (hmerkle : ∀ (ms : List (Mat F)) (k : Nat), ms ≠ [] →
       (∀ m ∈ ms, m.height = 2 ^ k ∧ m.values.size = m.width * m.height) → ∀ i < 2 ^ k,
-      Merkle.Poseidon2.verifyBatch KoalaBear.Fast.Field (Committed.ofMats hashF compF ms).root
+      Merkle.Poseidon2.verifyBatch F (Committed.ofMats hashF compF ms).root
         (ms.map (·.height)) i
             (((Committed.ofMats hashF compF ms).openAt i).values.toList.map (·.toList))
         ((Committed.ofMats hashF compF ms).openAt i).path.toList = true)
@@ -757,7 +757,7 @@ theorem openInput_honest_of (P : Params) (logMax index : Nat) (alpha : EF)
 /-- The verifier's batched quotients at a query are the prover's: every round commits matrices of
 one height `2 ^ h` that are honest LDEs with true openings, the verifier's rounds are built as the
 STARK verifier builds them, and the openings are the prover's at the query's row. -/
-theorem openInput_honest (P : Params) (logMax index : Nat) (alpha : EF)
+theorem openInput_honest [Poseidon2Field F] (P : Params) (logMax index : Nat) (alpha : EF)
     (rounds : List (Committed F × List (Mat F × List (EF × Array EF))))
     (hidx : index < 2 ^ logMax)
     (hrounds : ∀ r ∈ rounds, r.2 ≠ [] ∧ r.1 = Committed.ofMats hashF compF (r.2.map (·.1)) ∧

@@ -28,7 +28,9 @@ open CompPoly.CPolynomial.NTTFast.Packed.Native (putWords size_putWords putWords
   readUOffset_encode wordOffset_toNat)
 open CompPoly.CPolynomial.NTTFast.Packed (Native.encodeFields_eq)
 
-local notation "F" => KoalaBear.Fast.Field
+variable {p : ℕ} [Montgomery.Native32.Mont32Field p]
+
+local notation "F" => Montgomery.Native32.FastField p
 
 /-- Eight field coordinates stored at word `idx` splice them in. -/
 theorem store8_encode {n : Nat} (W : Array F) (hW : (encode W).size = n) (off : USize)

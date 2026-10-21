@@ -6,8 +6,6 @@ module
 
 public import CompStark.Fri.Prover
 public import CompStark.Plonky3.Prover
-public import CompStark.KoalaBear.Poseidon2
-public import CompStark.KoalaBear.Challenge
 public import CompStark.Stark.Points
 public import CompStark.Fri.Verifier
 public import CompStark.Merkle.VCVio
@@ -32,10 +30,11 @@ by `Merkle.verifyBatchM_pure`: with pure hashes the monadic opening check is the
 namespace CompStark.Fri
 open CompStark.Stark CompStark.Merkle
 
-local notation "F" => _root_.KoalaBear.Fast.Field
+variable {F : Type} [BaseField F]
 local notation "hashF" => CompStark.Hash.Poseidon2.hash F
 local notation "compF" => CompStark.Hash.Poseidon2.compress F
 
+omit [BaseField F] in
 /-- A running maximum from at most `h` over matrices of height `h` is `h`. -/
 theorem foldl_max_height (ms : List (Mat F)) (h : Nat) (hms : ∀ m ∈ ms, m.height = h) :
     ∀ acc, acc ≤ h → ms ≠ [] → ms.foldl (fun m a ↦ max m a.height) acc = h := by
@@ -51,7 +50,7 @@ theorem foldl_max_height (ms : List (Mat F)) (h : Nat) (hms : ∀ m ∈ ms, m.he
         (List.cons_ne_nil b t)
 
 /-- The largest height of matrices of one height `h` is `h`. -/
-theorem maxHeight_ofMats (ms : List (Mat F)) (h : Nat) (hne : ms ≠ [])
+theorem maxHeight_ofMats [Poseidon2Field F] (ms : List (Mat F)) (h : Nat) (hne : ms ≠ [])
     (hms : ∀ m ∈ ms, m.height = h) : (Committed.ofMats hashF compF ms).maxHeight = h :=
   foldl_max_height ms h hms 0 (Nat.zero_le h) hne
 
@@ -65,7 +64,7 @@ theorem rowOf_toList (m : Mat F) (i : Nat) : (rowOf m i).toList = m.toMatrix.row
       List.getElem_map, List.getElem_range]
 
 /-- The committed root is the Merkle root. -/
-theorem root_ofMats (ms : List (Mat F)) :
+theorem root_ofMats [Poseidon2Field F] (ms : List (Mat F)) :
     (Committed.ofMats hashF compF ms).root =
       Merkle.root (Hash.Poseidon2.hash F) (Hash.Poseidon2.compress F) (ms.map Mat.toMatrix) := by
   rw [Merkle.root_eq_layers]
@@ -80,7 +79,8 @@ theorem root_ofMats (ms : List (Mat F)) :
       List.getElem?_toArray, List.getD_eq_getElem?_getD]
 
 /-- The opening's rows of matrices of one height `2 ^ k` are their rows at the index. -/
-theorem openAt_values (ms : List (Mat F)) (k : Nat) (hms : ∀ m ∈ ms, m.height = 2 ^ k) (i : Nat) :
+theorem openAt_values [Poseidon2Field F] (ms : List (Mat F)) (k : Nat) (hms : ∀ m ∈ ms,
+    m.height = 2 ^ k) (i : Nat) :
     ((Committed.ofMats hashF compF ms).openAt i).values = (ms.map fun m ↦ rowOf m i).toArray := by
   simp only [Committed.openAt]
   congr 1
@@ -97,7 +97,7 @@ theorem getD_toArrays {α : Type*} [Zero α] (ls : List (List α)) (j x : Nat) :
     Option.getD_none, List.getElem?_toArray, List.getElem?_nil]
 
 /-- The opening's path of matrices of one height `2 ^ k` is `Merkle.openBatch`'s. -/
-theorem openAt_path (ms : List (Mat F)) (k : Nat) (hne : ms ≠ [])
+theorem openAt_path [Poseidon2Field F] (ms : List (Mat F)) (k : Nat) (hne : ms ≠ [])
     (hms : ∀ m ∈ ms, m.height = 2 ^ k) (i : Nat) :
     ((Committed.ofMats hashF compF ms).openAt i).path.toList =
       (Merkle.openBatch (Hash.Poseidon2.hash F) (Hash.Poseidon2.compress F)
@@ -119,10 +119,10 @@ theorem openAt_path (ms : List (Mat F)) (k : Nat) (hne : ms ≠ [])
 
 /-- The specification's opening at row `i` of a batch of matrices of one height `2 ^ k`
 verifies against its root. -/
-theorem verifyBatch_openAt (ms : List (Mat F)) (k : Nat) (hne : ms ≠ [])
+theorem verifyBatch_openAt [Poseidon2Field F] (ms : List (Mat F)) (k : Nat) (hne : ms ≠ [])
     (hms : ∀ m ∈ ms, m.height = 2 ^ k ∧ m.values.size = m.width * m.height)
     (i : Nat) (hi : i < 2 ^ k) :
-    Merkle.Poseidon2.verifyBatch KoalaBear.Fast.Field (Committed.ofMats hashF compF ms).root
+    Merkle.Poseidon2.verifyBatch F (Committed.ofMats hashF compF ms).root
       (ms.map (·.height)) i
           (((Committed.ofMats hashF compF ms).openAt i).values.toList.map (·.toList))
       ((Committed.ofMats hashF compF ms).openAt i).path.toList = true := by
@@ -143,7 +143,7 @@ theorem verifyBatch_openAt (ms : List (Mat F)) (k : Nat) (hne : ms ≠ [])
   exact Merkle.verifyBatch_openBatch _ _ _ k i hne' hh' hi
 
 /-- On Poseidon2, the verifier's opening check is `Merkle.Poseidon2.verifyBatch`. -/
-theorem checkOpening_eq (commit : Digest F) (heights : List Nat) (index : Nat)
+theorem checkOpening_eq [Poseidon2Field F] (commit : Digest F) (heights : List Nat) (index : Nat)
     (values : List (List F)) (path : List (Digest F)) :
     checkOpening (poseidon2 F) commit heights index values path =
       pure (Merkle.Poseidon2.verifyBatch F commit heights index values path) := by

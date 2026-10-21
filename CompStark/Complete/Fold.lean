@@ -29,7 +29,7 @@ The pure facts behind FRI's completeness, over the Mathlib fields the Montgomery
 namespace CompStark.Complete
 open CompStark.Stark CompStark.Fri Polynomial Montgomery.Native32
 
-local notation "F" => _root_.KoalaBear.Fast.Field
+variable {F : Type} [BaseField F]
 variable {EF : Type} [Challenge F EF]
 local notation "K" => F
 local notation "L" => Challenge.Spec EF
@@ -107,7 +107,7 @@ theorem degree_foldPoly (la : Nat) (beta : L) (N : Nat) (p : L[X]) :
 domain of order `2 ^ (m + la)` in bit-reversed order, is the fold's value at entry `i` of the
 folded domain. -/
 theorem toSpec_foldRow (vs : Array EF) (m la d : Nat) (beta : EF) (p : L[X])
-    (hml : m + la ≤ 24) (hla : la ≤ d) (hd : p.degree < ((2 ^ d : Nat) : WithBot Nat))
+    (hml : m + la ≤ twoAdicity F) (hla : la ≤ d) (hd : p.degree < ((2 ^ d : Nat) : WithBot Nat))
     (hv : ∀ r < 2 ^ (m + la), Challenge.toSpec (vs.getD r 0) =
       p.eval (emb (twoAdicGen (m + la)) ^ reverseBits r (m + la)))
     (i : Nat) (hi : i < 2 ^ m) :
@@ -116,7 +116,7 @@ theorem toSpec_foldRow (vs : Array EF) (m la d : Nat) (beta : EF) (p : L[X])
       (foldPoly la (Challenge.toSpec beta) (2 ^ (d - la)) p).eval
         (emb (twoAdicGen m) ^ reverseBits i m) := by
   have hg : IsPrimitiveRoot (twoAdicGen la : F) (2 ^ la) :=
-    BaseField.isPrimitiveRoot_twoAdicGen la (by omega24)
+    BaseField.isPrimitiveRoot_twoAdicGen la (by omega)
   have hN : p.natDegree < 2 ^ (d - la) * 2 ^ la := by
     rw [← pow_add, Nat.sub_add_cancel hla]
     exact natDegree_lt_of_degree hd (by positivity)
@@ -131,7 +131,7 @@ theorem toSpec_foldRow (vs : Array EF) (m la d : Nat) (beta : EF) (p : L[X])
     (fun k ↦ vs.getD (i * 2 ^ la + k) 0) beta
     (groupPoly (2 ^ la) (2 ^ (d - la)) (emb start ^ 2 ^ la) p)]
   · rw [eval_groupPoly_beta, ← emb_pow, hstart, twoAdicGen_pow_pow la m _ hml, emb_pow]
-  · exact groupPoints_injective la _ (by omega24) (twoAdicGen_pow_ne_zero _ (by omega24) _)
+  · exact groupPoints_injective la _ (by omega) (twoAdicGen_pow_ne_zero _ (by omega) _)
   · exact degree_sum_C_mul_X_pow_lt _ _
   · intro k hk
     have hr : i * 2 ^ la + k < 2 ^ (m + la) := by
@@ -152,19 +152,20 @@ theorem lowDegree_foldRows (vs : Array EF) (m la d : Nat) (beta : EF)
   refine ⟨Array.size_ofFn, by omega, foldPoly la (Challenge.toSpec beta) (2 ^ d) p,
     degree_foldPoly _ _ _ _, fun i hi ↦ ?_⟩
   rw [CompPoly.CPolynomial.NTTFast.Packed.getD_ofFn_bounded _ _ hi]
-  have := toSpec_foldRow vs m la (d + la) beta p hml (by omega24) hp hpv i hi
+  have := toSpec_foldRow vs m la (d + la) beta p hml (by omega) hp hpv i hi
   rw [Nat.add_sub_cancel] at this
   exact this
 
-theorem twoAdicGen_one : (twoAdicGen 1 : F) = -1 := by decide
+theorem twoAdicGen_one (h : 1 ≤ twoAdicity F) : (twoAdicGen 1 : F) = -1 :=
+  (BaseField.isPrimitiveRoot_twoAdicGen 1 h).eq_neg_one_of_two_right
 
 /-- The arity-2 fold is `foldRow` with arity 2. -/
-theorem foldPairs_getD (vs : Array EF) (beta : EF) (m : Nat) (hm : m < 24) (i : Nat)
+theorem foldPairs_getD (vs : Array EF) (beta : EF) (m : Nat) (hm : m < twoAdicity F) (i : Nat)
     (hi : i < 2 ^ m) :
     (foldPairs vs beta m).getD i 0 =
       foldRow i m 1 beta ((List.range (2 ^ 1)).map fun k ↦ vs.getD (i * 2 ^ 1 + k) 0) := by
   set start := (twoAdicGen (m + 1) : F) ^ reverseBits i m with hstart
-  have hs : start ≠ 0 := twoAdicGen_pow_ne_zero _ (by omega24) _
+  have hs : start ≠ 0 := twoAdicGen_pow_ne_zero _ (by omega) _
   have hs' : (emb start : L) ≠ 0 := fun h ↦ hs (emb_injective (h.trans (map_zero _).symm))
   set lo := Challenge.toSpec (vs.getD (2 * i) 0)
   set hi' := Challenge.toSpec (vs.getD (2 * i + 1) 0)
@@ -191,10 +192,10 @@ theorem foldPairs_getD (vs : Array EF) (beta : EF) (m : Nat) (hm : m < 24) (i : 
     rw [e2, ← hstart]
     field_simp
     ring
-  · exact groupPoints_injective 1 _ (by omega24) hs
+  · exact groupPoints_injective 1 _ (by omega) hs
   · rw [pow_one, add_comm]; exact_mod_cast degree_linear_lt
   · intro k hk
-    have e1 : powF (twoAdicGen 1 : F) 1 = -1 := by rw [powF_eq, pow_one, twoAdicGen_one]
+    have e1 : powF (twoAdicGen 1 : F) 1 = -1 := by rw [powF_eq, pow_one, twoAdicGen_one (by omega)]
     have hs'' : (algebraMap K L) (start) ≠ 0 := hs'
     interval_cases k
     · rw [show i * 2 ^ 1 + 0 = 2 * i by ring, show reverseBits 0 1 = 0 from rfl, powF_eq,
@@ -220,8 +221,8 @@ theorem lowDegree_addScaled (H D : Nat) (a b : Array EF) (x : EF) (ha : LowDegre
   · refine lt_of_le_of_lt (degree_add_le _ _) (max_lt hp (lt_of_le_of_lt (degree_mul_le _ _) ?_))
     refine lt_of_le_of_lt (add_le_add_left degree_C_le _) ?_
     rwa [zero_add]
-  · rw [getD_lt _ r (by rw [hs]; exact hr), Array.getElem_zipWith, ← getD_lt a r (by omega24),
-      ← getD_lt b r (by omega24), Challenge.toSpec_add, Challenge.toSpec_mul, hpa r hr, hqb r hr,
+  · rw [getD_lt _ r (by rw [hs]; exact hr), Array.getElem_zipWith, ← getD_lt a r (by omega),
+      ← getD_lt b r (by omega), Challenge.toSpec_add, Challenge.toSpec_mul, hpa r hr, hqb r hr,
           eval_add,
       eval_mul, eval_C]
 
@@ -230,7 +231,7 @@ theorem lowDegree_addScaled (H D : Nat) (a b : Array EF) (x : EF) (ha : LowDegre
 theorem sum_roots (ζ : L) (n : Nat) (hζ : IsPrimitiveRoot ζ n) (m k : Nat) (hm : m < n)
     (hk : k < n) :
     ∑ j ∈ Finset.range n, (ζ ^ m * ζ⁻¹ ^ k) ^ j = if m = k then (n : L) else 0 := by
-  have h0 : ζ ≠ 0 := hζ.ne_zero (by omega24)
+  have h0 : ζ ≠ 0 := hζ.ne_zero (by omega)
   split_ifs with h
   · subst h
     rw [inv_pow, mul_inv_cancel₀ (pow_ne_zero _ h0)]
@@ -242,7 +243,7 @@ theorem sum_roots (ζ : L) (n : Nat) (hζ : IsPrimitiveRoot ζ n) (m k : Nat) (h
     rw [geom_sum_eq hw, mul_pow, ← pow_mul, ← pow_mul, Nat.mul_comm m, Nat.mul_comm k, pow_mul,
       pow_mul, inv_pow, hζ.pow_eq_one, inv_one, one_pow, one_pow, mul_one, sub_self, zero_div]
 
-theorem isPrimitiveRoot_emb (n : Nat) (hn : n ≤ 24) :
+theorem isPrimitiveRoot_emb (n : Nat) (hn : n ≤ twoAdicity F) :
     IsPrimitiveRoot (emb (twoAdicGen n) : L) (2 ^ n) :=
   (BaseField.isPrimitiveRoot_twoAdicGen n hn).map_of_injective (algebraMap K L).injective
 
@@ -253,7 +254,7 @@ theorem two_pow_ne_zero (n : Nat) : ((2 ^ n : Nat) : L) ≠ 0 := by
 
 /-- The inverse transform of the values of `p`, degree below `n = 2 ^ lf`, at the powers of the
 generator of order `n` gives `p`'s coefficients. -/
-theorem toSpec_idft (lf : Nat) (hlf : lf ≤ 24) (vs : Array EF) (p : L[X])
+theorem toSpec_idft (lf : Nat) (hlf : lf ≤ twoAdicity F) (vs : Array EF) (p : L[X])
     (hp : p.degree < ((2 ^ lf : Nat) : WithBot Nat))
     (hv : ∀ j < 2 ^ lf, Challenge.toSpec (vs.getD j 0) = p.eval (emb (twoAdicGen lf) ^ j))
     (k : Nat) (hk : k < 2 ^ lf) : Challenge.toSpec ((idft lf vs).getD k 0) = p.coeff k := by
@@ -292,7 +293,7 @@ theorem toSpec_idft (lf : Nat) (hlf : lf ≤ 24) (vs : Array EF) (p : L[X])
 `2 ^ lf` on the domain of order `2 ^ (lb + lf)`, evaluates by Horner's rule at entry `idx`'s point
 to the entry. -/
 theorem horner_idft (fa : Array EF) (lb lf M idx : Nat) (hfa : LowDegree (lb + lf) lf fa)
-    (hM : lb + lf ≤ M) (hM24 : M ≤ 24) (hidx : idx < 2 ^ (lb + lf)) :
+    (hM : lb + lf ≤ M) (hM24 : M ≤ twoAdicity F) (hidx : idx < 2 ^ (lb + lf)) :
     (idft lf (Array.ofFn (n := 2 ^ lf) fun i ↦ fa.getD (reverseBits i lf) 0)).foldr
       (fun c acc ↦ acc * Ext.ofBase (powF (twoAdicGen M) (reverseBits idx M)) + c) 0 =
       fa.getD idx 0 := by
@@ -303,15 +304,15 @@ theorem horner_idft (fa : Array EF) (lb lf M idx : Nat) (hfa : LowDegree (lb + l
     show (idft lf _).size = 2 ^ lf from Array.size_ofFn, hpv idx hidx, eval_eq_sum_range' hN]
   refine Finset.sum_congr rfl fun k hk ↦ ?_
   have hk := Finset.mem_range.mp hk
-  rw [toList_getD, toSpec_idft lf (by omega24) _ p hp (fun j hj ↦ ?_) k hk]
+  rw [toList_getD, toSpec_idft lf (by omega) _ p hp (fun j hj ↦ ?_) k hk]
   · congr 1
     rw [toSpec_ofBase, powF_eq, emb_pow, ← emb_pow,
       show M = (M - (lb + lf)) + (lb + lf) by omega,
-      twoAdicGen_pow_low (lb + lf) (M - (lb + lf)) idx (by omega24) hidx]
+      twoAdicGen_pow_low (lb + lf) (M - (lb + lf)) idx (by omega) hidx]
     exact (emb_pow (EF := EF) _ _).symm ▸ rfl
   · have hr := reverseBits_lt j lf
     rw [CompPoly.CPolynomial.NTTFast.Packed.getD_ofFn_bounded _ _ hj,
-      hpv _ (lt_of_lt_of_le hr (Nat.pow_le_pow_right (by decide) (by omega24))), ← emb_pow,
+      hpv _ (lt_of_lt_of_le hr (Nat.pow_le_pow_right (by decide) (by omega))), ← emb_pow,
       twoAdicGen_pow_low lf lb _ hL hr, reverseBits_reverseBits hj, emb_pow]
 
 end CompStark.Complete

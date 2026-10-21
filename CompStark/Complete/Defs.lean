@@ -6,10 +6,8 @@ module
 
 public import CompStark.Fri.Prover
 public import CompStark.Plonky3.Prover
-public import CompStark.KoalaBear.Poseidon2
-public import CompStark.KoalaBear.Challenge
 public import CompStark.Stark.Points
-public import CompPoly.Fields.KoalaBear.InterpolateCoset
+public import CompPoly.Univariate.NTT.CosetBarycentric
 
 /-! # Low-degree vectors and matrices
 
@@ -25,16 +23,16 @@ The predicates the completeness proof passes between the prover's layers, over t
 
 @[expose] public section
 namespace CompStark
-open CompStark.Stark CompStark.Fri Polynomial Montgomery.Native32
+open CompStark.Stark CompStark.Fri Polynomial
 
-local notation "F" => _root_.KoalaBear.Fast.Field
+variable {F : Type} [BaseField F]
 
 /-- The columns of `m`, of height `2 ^ logH`, are the values on the coset `g · ⟨ω⟩`, `ω` of order
 `2 ^ logH`, rows in bit-reversed order, of the polynomials `ps` of degree below
 `2 ^ (logH - logBlowup)`. -/
 def Mat.IsLde (logBlowup logH : Nat) (m : Mat F) (ps : List F[X]) : Prop :=
   m.width = ps.length ∧ m.height = 2 ^ logH ∧ m.values.size = m.width * m.height ∧
-    logBlowup ≤ logH ∧ logH ≤ 24 ∧
+    logBlowup ≤ logH ∧ logH ≤ twoAdicity F ∧
     (∀ p ∈ ps, p.degree < ((2 ^ (logH - logBlowup) : Nat) : WithBot Nat)) ∧
     ∀ r < 2 ^ logH, ∀ j < ps.length,
       (m.values.getD (r * m.width + j) 0) =
@@ -44,7 +42,7 @@ def Mat.IsLde (logBlowup logH : Nat) (m : Mat F) (ps : List F[X]) : Prop :=
 /-- `v` holds the values on the subgroup `⟨ω⟩`, `ω` of order `2 ^ logH`, in bit-reversed order, of
 a polynomial over the extension of degree below `2 ^ logD`. -/
 def LowDegree {EF : Type} [Challenge F EF] (logH logD : Nat) (v : Array EF) : Prop :=
-  v.size = 2 ^ logH ∧ logH ≤ 24 ∧ ∃ p : (Challenge.Spec EF)[X],
+  v.size = 2 ^ logH ∧ logH ≤ twoAdicity F ∧ ∃ p : (Challenge.Spec EF)[X],
     p.degree < ((2 ^ logD : Nat) : WithBot Nat) ∧ ∀ r < 2 ^ logH,
       Challenge.toSpec (v.getD r 0) =
         p.eval (algebraMap F (Challenge.Spec EF)
@@ -56,7 +54,7 @@ chunks that fit the blowup. -/
 structure Fits (P : Params) (A : Air F) (logN : Nat) (trace : Array F) : Prop where
   trace : trace.size = 2 ^ logN * A.width
   cols : A.ColsInWidth
-  twoAdic : logN + P.logBlowup ≤ 24
+  twoAdic : logN + P.logBlowup ≤ twoAdicity F
   chunks : A.logQuotientChunks ≤ P.logBlowup
 
 end CompStark

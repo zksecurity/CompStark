@@ -3,7 +3,7 @@ import CompStark.Poseidon2.Packed
 import CompStark.Merkle.Packed
 import CompStark.Merkle.Tree
 import CompStark.Stark.Prover
-import CompStark.Stark.Fast
+import CompStark.KoalaBear.Fast
 import CompStark.Mont32.Json
 
 /-! # CompStark micro-benchmarks
@@ -62,7 +62,7 @@ def wideTrace (w n : Nat) : Array KoalaBear.Fast.Field := Id.run do
 open CompStark CompStark.Stark CompStark.Fri in
 /-- The wall time of each phase of the fast prover on `wide 64`, `2 ^ logN` rows, blowup 2. -/
 def phases (logN : Nat) : IO UInt32 := do
-  let B := CompStark.Stark.Fast.backendFor logN 1 1
+  let B := CompStark.KoalaBear.backendFor logN 1 1
   let P : Params := ⟨1, 0, 1, 100, 0, 16⟩
   let A := wide 64
   let trace := wideTrace 64 (2 ^ logN)
@@ -74,7 +74,7 @@ def phases (logN : Nat) : IO UInt32 := do
   IO.println s!"trace commit {(← IO.monoMsNow) - t1} ms {((B.root tc).toArray.getD 0 0).val}"
   let qlog := logN + 1
   let t3 ← IO.monoMsNow
-  let alpha : KoalaBear.Fast.Ext4 := ⟨5, 7, 11, 13⟩
+  let alpha : _root_.KoalaBear.Fast.Ext4 := ⟨5, 7, 11, 13⟩
   let qs := B.quotient A [] logN 1 lde alpha
   let t4 ← IO.monoMsNow
   IO.println s!"quotient {t4 - t3} ms {qs.size}"
@@ -87,7 +87,7 @@ def phases (logN : Nat) : IO UInt32 := do
   let qc := B.commit chunks
   let t6 ← IO.monoMsNow
   IO.println s!"quotient commit {t6 - t5} ms {((B.root qc).toArray.getD 0 0).val}"
-  let zeta : KoalaBear.Fast.Ext4 := ⟨17, 19, 23, 29⟩
+  let zeta : _root_.KoalaBear.Fast.Ext4 := ⟨17, 19, 23, 29⟩
   let rounds : List (OpenRound B) :=
     [(tc, [(lde, [zeta, zeta * zeta])]), (qc, chunks.map fun m ↦ (m, [zeta]))]
   let t6 ← IO.monoMsNow
@@ -167,8 +167,6 @@ def main (args : List String) : IO UInt32 := do
     let h := 2 ^ logH.toNat!
     let w := widthArg.toNat!
     let C := chunksArg.toNat!
-    let K24 := Packed.Packed24.ofParams (KoalaBear.width24 KoalaBear.Fast.Field)
-    let K16 := Packed.Packed16.ofParams (KoalaBear.width16 KoalaBear.Fast.Field)
     let enc := encodeFields
     let entry (k : Nat) : KoalaBear.Fast.Field :=
       KoalaBear.Fast.ofUInt32 ((7 * k + 1) % 2130706433).toUInt32
@@ -177,26 +175,26 @@ def main (args : List String) : IO UInt32 := do
       let vals := Array.ofFn (n := sh * sw) fun k ↦ entry k.val
       let spec := @CompStark.Merkle.Poseidon2.root KoalaBear.Fast.Field _
         (.ofSpec (KoalaBear.width16 _) (KoalaBear.width24 _)) [⟨sw, sh, vals⟩]
-      let got := CompStark.Merkle.Packed.root K24 K16 sw #[enc vals]
+      let got := CompStark.Merkle.Packed.root KoalaBear.fieldSize sw #[enc vals]
       for j in [0:8] do
         if read got j != (spec.toArray.getD j 0).val then
           IO.eprintln s!"merkle mismatch at {sh} × {sw}, word {j}"; return 1
     let rowsPer := h / C
     let chunks := (Array.range C).map fun c ↦
       enc (Array.ofFn (n := rowsPer * w) fun k ↦ entry (c * rowsPer * w + k.val))
-    let rootWords := CompStark.Merkle.Packed.root K24 K16 w chunks
+    let rootWords := CompStark.Merkle.Packed.root KoalaBear.fieldSize w chunks
     let canon := (List.range 8).map fun j ↦
-      (KoalaBear.Fast.ringEquiv (CompPoly.CPolynomial.NTTFast.Packed.ofWord (read rootWords j))).val
+      (KoalaBear.Fast.ringEquiv (CompPoly.CPolynomial.NTTFast.Packed.ofWord _ (read rootWords
+          j))).val
     IO.println s!"root {canon}"
     let m ← timeMedian 15 fun k ↦
       let input := chunks.modify 0 fun c ↦ write c 0 k.toUInt32
-      (read (CompStark.Merkle.Packed.root K24 K16 w input) 0).toUInt64
+      (read (CompStark.Merkle.Packed.root KoalaBear.fieldSize w input) 0).toUInt64
     IO.println s!"merkle 2^{logH} x {w} ms median {m / 1000000}.{m / 1000 % 1000}"
     return 0
   | ["leaves", rowsArg, widthArg] =>
     let rows := rowsArg.toNat!
     let w := widthArg.toNat!
-    let K24 := Packed.Packed24.ofParams (KoalaBear.width24 KoalaBear.Fast.Field)
     let m := encodeFields
       (Array.ofFn (n := rows * w) fun k ↦ KoalaBear.Fast.ofUInt32 k.val.toUInt32)
     let mut samples := #[]
@@ -204,7 +202,7 @@ def main (args : List String) : IO UInt32 := do
       let input := write m 0 k.toUInt32
       let (ns, r) ← timeNs fun _ ↦ do
         return (read
-          (CompStark.Merkle.Packed.hashChunk K24 input w rows) 0).toUInt64
+          (CompStark.Merkle.Packed.hashChunk KoalaBear.fieldSize input w rows) 0).toUInt64
       samples := samples.push ns
       if r == 12345 then IO.println ""
     let med := (samples.qsort (· < ·))[3]!
@@ -214,7 +212,6 @@ def main (args : List String) : IO UInt32 := do
     let rows := rowsArg.toNat!
     let w := widthArg.toNat!
     let C := chunksArg.toNat!
-    let K24 := Packed.Packed24.ofParams (KoalaBear.width24 KoalaBear.Fast.Field)
     let chunks := (Array.range C).map fun c ↦ encodeFields
       (Array.ofFn (n := rows / C * w) fun k ↦ KoalaBear.Fast.ofUInt32 (k.val + c).toUInt32)
     let mut samples := #[]
@@ -222,7 +219,7 @@ def main (args : List String) : IO UInt32 := do
       let input := chunks.modify 0 fun c ↦ write c 0 k.toUInt32
       let (ns, r) ← timeNs fun _ ↦ do
         let ts := input.map fun c ↦ Task.spawn fun _ ↦
-          CompStark.Merkle.Packed.hashChunk K24 c w (rows / C)
+          CompStark.Merkle.Packed.hashChunk KoalaBear.fieldSize c w (rows / C)
         let j := CompPoly.Tasks.join ts
         return j.get.foldl (fun acc t ↦ acc + (read t 0).toUInt64) 0
       samples := samples.push ns
@@ -247,8 +244,7 @@ def main (args : List String) : IO UInt32 := do
     -- `prove (spec|fast) (fib|wide) LOG_N LOG_BLOWUP LOG_FINAL MAX_LOG_ARITY QUERIES COMMIT_POW
     -- QUERY_POW [JSON]`: the proof's median time, checked against Plonky3's proof in `JSON` if
     -- given.
-    let B := if backend == "fast" then CompStark.Stark.Fast.backend else
-      CompStark.Stark.specBackend KoalaBear.Fast.Ext4
+    let B := CompStark.Stark.specBackend KoalaBear.Fast.Ext4
     let ps := (rest.take 7).map String.toNat!
     let [logN, b, f, a, q, cp, qp] := ps | IO.eprintln "seven parameters"; return 1
     let P : CompStark.Fri.Params := ⟨b, f, a, q, cp, qp⟩
@@ -257,7 +253,7 @@ def main (args : List String) : IO UInt32 := do
       if air == "wide" then (wideTrace 64 (2 ^ logN), []) else fibInstance (2 ^ logN)
     -- The fast backend's extension plans are built once, outside timing, as Plonky3's twiddles.
     let B := if backend == "fast" then
-      CompStark.Stark.Fast.backendFor logN b A.logQuotientChunks else B
+      CompStark.KoalaBear.backendFor logN b A.logQuotientChunks else B
     if let path :: _ := rest.drop 7 then
       let rust ← IO.ofExcept
         (CompStark.Stark.Json.parse (p := KoalaBear.fieldSize) (EF := KoalaBear.Fast.Ext4)
