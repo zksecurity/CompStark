@@ -8,7 +8,7 @@ public import CompStark.Fri.Prover
 public import CompStark.Plonky3.Prover
 public import CompStark.Stark.Points
 public import CompStark.Fri.Verifier
-public import CompStark.Merkle.Multi
+public import CompStark.Merkle.Mixed
 
 /-! # Honest Merkle openings verify
 
@@ -22,8 +22,9 @@ specification's opening `Committed.openAt` at any row verifies against `Committe
 index unshifted, which are `Merkle.openBatch`'s rows.
 
 The verifier checks openings at all queries at once (`checkMulti`): the specification's
-multi-opening `openMulti` of such a batch at indices within its height verifies against its root
-(`verifyMulti_openMulti`), by `Merkle.verifyMulti_prune` on the tree's nodes.
+multi-opening `openMulti` of matrices of heights `2 ^ j ≤ 2 ^ k`, as the batch STARK commits them,
+at indices below `2 ^ k` verifies against its root (`verifyMulti_openMulti`), by
+`Merkle.verifyMulti_prune_mixed` on the tree's nodes with injected matrices (`injNode`).
 -/
 
 @[expose] public section
@@ -49,6 +50,37 @@ theorem foldl_max_height (ms : List (Mat F)) (h : Nat)
     | cons b t =>
       exact ih (fun m hm ↦ hms m (List.mem_cons_of_mem a hm)) h (Nat.le_refl h)
         (List.cons_ne_nil b t)
+
+/-! ### Mixed heights -/
+
+/-- Matrices of heights `2 ^ j ≤ 2 ^ k`, some of height `2 ^ k`. -/
+def MixedHeights (k : Nat) (ms : List (Mat F)) : Prop :=
+  (∀ m ∈ ms, ∃ j ≤ k, m.height = 2 ^ j) ∧ ∃ m ∈ ms, m.height = 2 ^ k
+
+theorem MixedHeights.toMatrix {k : Nat} {ms : List (Mat F)} (h : MixedHeights k ms) :
+    (∀ m ∈ ms.map Mat.toMatrix, ∃ j ≤ k, m.height = 2 ^ j) ∧
+      ∃ m ∈ ms.map Mat.toMatrix, m.height = 2 ^ k := by
+  refine ⟨fun m hm ↦ ?_, ?_⟩
+  · obtain ⟨a, ha, rfl⟩ := List.mem_map.mp hm; exact h.1 a ha
+  · obtain ⟨a, ha, hk⟩ := h.2; exact ⟨a.toMatrix, List.mem_map_of_mem ha, hk⟩
+
+/-- A running maximum of heights at most `2 ^ k`, one of them `2 ^ k`, is `2 ^ k`. -/
+theorem foldl_max_mixed (k : Nat) : ∀ (ms : List (Mat F)) (acc : Nat), acc ≤ 2 ^ k →
+    (∀ m ∈ ms, m.height ≤ 2 ^ k) → (acc = 2 ^ k ∨ ∃ m ∈ ms, m.height = 2 ^ k) →
+    ms.foldl (fun a m ↦ max a m.height) acc = 2 ^ k
+  | [], acc, _, _, h => by
+    rcases h with h | ⟨m, hm, -⟩
+    · exact h
+    · exact absurd hm List.not_mem_nil
+  | m :: ms, acc, hacc, hle, h => by
+    rw [List.foldl_cons]
+    refine foldl_max_mixed k ms _ (Nat.max_le.mpr ⟨hacc, hle m List.mem_cons_self⟩)
+      (fun x hx ↦ hle x (List.mem_cons_of_mem _ hx)) ?_
+    rcases h with h | ⟨x, hx, hxk⟩
+    · left; rw [h]; exact Nat.max_eq_left (hle m List.mem_cons_self)
+    · rcases List.mem_cons.mp hx with rfl | hx
+      · left; rw [hxk]; exact Nat.max_eq_right hacc
+      · right; exact ⟨x, hx, hxk⟩
 
 variable [BaseField F]
 
@@ -145,78 +177,90 @@ theorem verifyBatch_openAt [Poseidon2Field F] (ms : List (Mat F)) (k : Nat) (hne
   rw [root_ofMats, hv, openAt_path ms k hne hh, hH]
   exact Merkle.verifyBatch_openBatch _ _ _ k i hne' hh' hi
 
-/-- Concatenating a list of `n` lists by index. -/
-theorem flatMap_range_getD {β : Type*} (l : List (List β)) :
-    (List.range l.length).flatMap (l.getD · []) = l.flatten := by
-  induction l with
-  | nil => rfl
-  | cons a l ih =>
-    simp only [List.length_cons, List.range_succ_eq_map, List.flatMap_cons, List.getD_cons_zero,
-      List.flatMap_map, Nat.succ_eq_add_one, List.getD_cons_succ, ih, List.flatten_cons]
+theorem maxHeight_mixed [Poseidon2Field F] {k : Nat} {ms : List (Mat F)}
+    (h : MixedHeights k ms) : (Committed.ofMats hashF compF ms).maxHeight = 2 ^ k :=
+  foldl_max_mixed k ms 0 (Nat.zero_le _) (fun m hm ↦ by
+    obtain ⟨j, hj, hj'⟩ := h.1 m hm
+    rw [hj']; exact Nat.pow_le_pow_right (by decide) hj) (Or.inr h.2)
 
-/-- The root of a batch of matrices of one height `2 ^ k` is the tree's top node. -/
-theorem root_eq_nodeValue [Poseidon2Field F] (ms : List (Mat F)) (k : Nat) (hne : ms ≠ [])
-    (hms : ∀ m ∈ ms, m.height = 2 ^ k) :
+/-- The opening's rows of matrices of mixed heights are their rows at the index shifted to their
+heights. -/
+theorem openAt_values_mixed [Poseidon2Field F] {k : Nat} {ms : List (Mat F)}
+    (h : MixedHeights k ms) (i : Nat) :
+    ((Committed.ofMats hashF compF ms).openAt i).values =
+      (ms.map fun m ↦ rowOf m (i >>> (k - Nat.log2 m.height))).toArray := by
+  simp only [Committed.openAt, maxHeight_mixed h, log2Ceil_two_pow]
+  congr 1
+  refine List.map_congr_left fun m hm ↦ ?_
+  obtain ⟨j, -, hj⟩ := h.1 m hm
+  rw [hj, log2Ceil_two_pow, Nat.log2_two_pow]
+
+/-- The root of matrices of mixed heights is the tree's top node. -/
+theorem root_eq_injNode [Poseidon2Field F] {k : Nat} {ms : List (Mat F)}
+    (h : MixedHeights k ms) :
     (Committed.ofMats hashF compF ms).root =
-      nodeValue compF (leafHashes hashF (ms.map Mat.toMatrix)) k 0 := by
-  have hms' : ∀ m ∈ ms.map Mat.toMatrix, m.height = 2 ^ k := fun m hm ↦ by
-    obtain ⟨a, ha, rfl⟩ := List.mem_map.mp hm; exact hms a ha
-  have hne' : ms.map Mat.toMatrix ≠ [] := by rwa [Ne, List.map_eq_nil_iff]
-  rw [root_ofMats, root_eq_layers, layers_eq_nodeValue _ _ _ k hne' hms', List.range_succ,
+      injNode hashF compF (ms.map Mat.toMatrix) k k 0 := by
+  obtain ⟨h1, h2⟩ := h.toMatrix
+  rw [root_ofMats, root_eq_layers, layers_eq_injNode _ _ _ k h1 h2, List.range_succ,
     List.map_append, List.getLastD_eq_getLast?, List.getLast?_append, List.map_cons,
     List.map_nil, List.getLast?_singleton]
   simp only [Option.some_or, Option.getD_some, Nat.sub_self, Nat.pow_zero, List.range_one,
     List.map_cons, List.map_nil, List.headD_cons]
 
-/-- **Honest multi-openings verify.** The specification's multi-opening at indices below the
-height of a batch of matrices of one height `2 ^ k` verifies against its root. -/
-theorem verifyMulti_openMulti [Poseidon2Field F] (ms : List (Mat F)) (k : Nat) (hne : ms ≠ [])
-    (hms : ∀ m ∈ ms, m.height = 2 ^ k ∧ m.values.size = m.width * m.height)
-    (indices : List Nat) (hidx : ∀ i ∈ indices, i < 2 ^ k) :
+/-- The opening's path at `i < 2 ^ k` of matrices of mixed heights: the sibling
+`(i >>> j) ^^^ 1` of every level `j < k`. -/
+theorem openAt_path_mixed [Poseidon2Field F] {k : Nat} {ms : List (Mat F)}
+    (h : MixedHeights k ms) (i : Nat) (hi : i < 2 ^ k) :
+    ((Committed.ofMats hashF compF ms).openAt i).path.toList =
+      (List.range k).map fun j ↦
+        injNode hashF compF (ms.map Mat.toMatrix) k j ((i >>> j) ^^^ 1) := by
+  obtain ⟨h1, h2⟩ := h.toMatrix
+  have hk : log2Ceil (Committed.ofMats hashF compF ms).maxHeight = k := by
+    rw [maxHeight_mixed h, log2Ceil_two_pow]
+  simp only [Committed.openAt, Array.toList_ofFn]
+  apply List.ext_getElem (by simp only [List.length_ofFn, List.length_map, List.length_range, hk])
+  intro j hj1 hj2
+  rw [List.length_ofFn, hk] at hj1
+  simp only [List.getElem_ofFn, List.getElem_map, List.getElem_range, Committed.ofMats,
+    getD_toArrays]
+  have hx : (i >>> j) ^^^ 1 < 2 ^ (k - j) := by
+    rw [xor_one_eq, Nat.shiftRight_eq_div_pow]
+    obtain ⟨e, he⟩ : ∃ e, k - j = e + 1 := ⟨k - j - 1, by omega⟩
+    have h1 : i / 2 ^ j < 2 ^ (e + 1) := by
+      rw [Nat.div_lt_iff_lt_mul (Nat.two_pow_pos j), ← Nat.pow_add]
+      exact lt_of_lt_of_le hi (Nat.pow_le_pow_right (by decide) (by omega))
+    rw [he, Nat.pow_succ] at *
+    have := Nat.mod_lt (i / 2 ^ j + 1) (show 2 > 0 by decide)
+    omega
+  rw [layers_eq_injNode _ _ _ k h1 h2, getD_map_range' _ _ _ _ (by omega),
+    getD_map_range' _ _ _ _ hx]
+
+/-- **Honest multi-openings verify.** The specification's multi-opening at indices below
+`2 ^ k` of matrices of heights `2 ^ j ≤ 2 ^ k`, some of height `2 ^ k`, verifies against its
+root. -/
+theorem verifyMulti_openMulti [Poseidon2Field F] {k : Nat} {ms : List (Mat F)}
+    (h : MixedHeights k ms) (indices : List Nat) (hidx : ∀ i ∈ indices, i < 2 ^ k) :
     Merkle.verifyMultiM (m := Id) hashF compF (Committed.ofMats hashF compF ms).root
       (ms.map fun m ↦ (m.height, m.width)) indices
       (indices.map fun i ↦ ((Committed.ofMats hashF compF ms).openAt i).values.toList.map
         (·.toList))
       (Merkle.prune k indices
         (indices.map fun i ↦ ((Committed.ofMats hashF compF ms).openAt i).path.toList)) = true := by
-  have hh : ∀ m ∈ ms, m.height = 2 ^ k := fun m hm ↦ (hms m hm).1
-  have hms' : ∀ m ∈ ms.map Mat.toMatrix, m.height = 2 ^ k := fun m hm ↦ by
-    obtain ⟨a, ha, rfl⟩ := List.mem_map.mp hm; exact hh a ha
-  have hne' : ms.map Mat.toMatrix ≠ [] := by rwa [Ne, List.map_eq_nil_iff]
+  obtain ⟨h1, h2⟩ := h.toMatrix
   have hrows : ∀ i, ((Committed.ofMats hashF compF ms).openAt i).values.toList.map (·.toList) =
-      (ms.map Mat.toMatrix).map (·.row i) := fun i ↦ by
-    rw [openAt_values ms k hh, List.toList_toArray, List.map_map, List.map_map]
-    exact List.map_congr_left fun m _ ↦ rowOf_toList m i
-  rw [root_eq_nodeValue ms k hne hh]
-  have hrows' : (indices.map fun i ↦ ((Committed.ofMats hashF compF ms).openAt i).values.toList.map
-      (·.toList)) = indices.map fun i ↦ (ms.map Mat.toMatrix).map (·.row i) :=
-    List.map_congr_left fun i _ ↦ hrows i
-  rw [hrows']
-  refine Merkle.verifyMulti_prune hashF compF (leafHashes hashF (ms.map Mat.toMatrix)) ms.length k
-    (List.length_pos_iff.mpr hne) (ms.map fun m ↦ (m.height, m.width)) ?_
-    (fun i ↦ (ms.map Mat.toMatrix).map (·.row i)) ?_ ?_ indices hidx
-    (indices.map fun i ↦ ((Committed.ofMats hashF compF ms).openAt i).path.toList) ?_
-  · rw [List.map_map]
-    exact List.eq_replicate_iff.mpr ⟨by rw [List.length_map], fun b hb ↦ by
-      obtain ⟨m, hm, rfl⟩ := List.mem_map.mp hb; exact hh m hm⟩
-  · intro i
-    simp only [List.map_map]
-    refine List.map_congr_left fun m _ ↦ ?_
-    simp only [Function.comp_apply, Merkle.Matrix.row, List.length_map, List.length_range,
-      Mat.toMatrix]
-  · intro i
-    have e := flatMap_range_getD ((ms.map Mat.toMatrix).map (·.row i))
-    rw [List.length_map, List.length_map] at e
-    rw [leafHashes, e, List.flatMap_def]
-  · intro q hq j hj
-    have hp : (indices.map fun i ↦ ((Committed.ofMats hashF compF ms).openAt i).path.toList).getD
-        q [] = ((Committed.ofMats hashF compF ms).openAt indices[q]).path.toList := by
-      rw [List.getD_eq_getElem?_getD, List.getElem?_map, List.getElem?_eq_getElem hq]
-      rfl
-    rw [hp, openAt_path ms k hne hh,
-      Merkle.openBatch_snd_eq_nodeValue _ _ _ k _ hne' hms' (hidx _ (List.getElem_mem hq)),
-      List.getD_eq_getElem?_getD, List.getElem?_map, List.getElem?_range hj]
-    rfl
+      (ms.map Mat.toMatrix).map fun m ↦ m.row (i >>> (k - Nat.log2 m.height)) := fun i ↦ by
+    rw [openAt_values_mixed h, List.toList_toArray, List.map_map, List.map_map]
+    exact List.map_congr_left fun m _ ↦ rowOf_toList m _
+  have hdims : (ms.map fun m ↦ (m.height, m.width)) =
+      (ms.map Mat.toMatrix).map fun m ↦ (m.height, m.width) := by
+    rw [List.map_map]; rfl
+  rw [root_eq_injNode h, hdims, List.map_congr_left fun i _ ↦ hrows i]
+  refine Merkle.verifyMulti_prune_mixed hashF compF (ms.map Mat.toMatrix) k h1 h2 indices hidx _
+    fun q hq j hj ↦ ?_
+  simp only [List.getD_eq_getElem?_getD, List.getElem?_map, List.getElem?_eq_getElem hq,
+    Option.map_some, Option.getD_some]
+  rw [openAt_path_mixed h _ (hidx _ (List.getElem_mem hq))]
+  simp only [List.getElem?_map, List.getElem?_range hj, Option.map_some, Option.getD_some]
 
 /-- On Poseidon2, the verifier's multi-opening check is `Merkle.verifyMultiM` on Poseidon2's
 hashes. -/

@@ -34,6 +34,7 @@ public import CompStark.Primitives
 public import CompStark.Stark.Proof
 public import CompStark.Merkle.Mmcs
 public import CompStark.Merkle.Multi
+public import CompStark.Merkle.Mixed
 public import CompStark.Stark.Challenge
 public import CompStark.DomainSeparator
 public import CompStark.KoalaBear.Challenge
@@ -90,9 +91,12 @@ public import CompStark.Complete.Fri
 public import CompStark.Complete.Lde
 public import CompStark.Complete.Quotient
 public import CompStark.Complete.Stark
+public import CompStark.Complete.Pcs
+public import CompStark.Complete.Batch
 public import CompStark.Stark.Satisfied
 public import CompStark.Stark.Setup
 public import CompStark.Completeness
+public import CompStark.BatchCompleteness
 public import CompStark.KoalaBear.Completeness
 public import CompStark.Sound.Defs
 public import CompStark.Iop

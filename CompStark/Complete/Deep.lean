@@ -622,14 +622,15 @@ theorem column_loop (alpha : EF) (m : Mat F) (i : Nat) (hi : i < m.height) (xv :
 end Deep
 
 /-- **The verifier's batched quotients at a query are the prover's**: every round commits matrices
-of one height `2 ^ h` that are honest LDEs with true openings at points outside the base field, the
-verifier's rounds are built as the STARK verifier builds them, and the rows are the prover's at the
-query's row. -/
+of heights `2 ^ h ≤ 2 ^ H`, some of height `2 ^ H`, that are honest LDEs with true openings at
+points outside the base field, the verifier's rounds are built as the STARK verifier builds them,
+and the rows are the prover's at the query's row shifted to each matrix's height. -/
 theorem reduceQuery_honest [Poseidon2Field F] (P : Params) (logMax index : Nat) (alpha : EF)
     (rounds : List (Committed F × List (Mat F × List (EF × Array EF))))
     (hidx : index < 2 ^ logMax)
     (hrounds : ∀ r ∈ rounds, r.2 ≠ [] ∧ r.1 = Committed.ofMats hashF compF (r.2.map (·.1)) ∧
-      ∃ h ≤ logMax, ∀ x ∈ r.2, Deep.HonestItem P.logBlowup h x) :
+      ∃ H ≤ logMax, (∃ x ∈ r.2, x.1.height = 2 ^ H) ∧
+        ∀ x ∈ r.2, ∃ h ≤ H, Deep.HonestItem P.logBlowup h x) :
     reduceQuery (poseidon2 F) P logMax index alpha
       (rounds.map fun r ↦ (r.1.openAt (index >>> (logMax - Nat.log2 r.1.maxHeight))).values.toList)
       (rounds.map fun r ↦ (r.1.root, r.2.map fun x ↦
@@ -638,10 +639,10 @@ theorem reduceQuery_honest [Poseidon2Field F] (P : Params) (logMax index : Nat) 
         (y.1, y.2.getD (index >>> (logMax - y.1)) 0)) := by
   have hb : rounds ≠ [] → P.logBlowup ≤ logMax := fun hne ↦ by
     obtain ⟨r, hr⟩ := List.exists_mem_of_ne_nil _ hne
-    obtain ⟨hne', -, h, hh, hits⟩ := hrounds r hr
+    obtain ⟨hne', -, H, hH, -, hits⟩ := hrounds r hr
     obtain ⟨x, hx⟩ := List.exists_mem_of_ne_nil _ hne'
-    obtain ⟨ps, hm, -⟩ := hits x hx
-    exact hm.2.2.2.1.trans hh
+    obtain ⟨h, hh, ps, hm, -⟩ := hits x hx
+    exact (hm.2.2.2.1.trans hh).trans hH
   unfold reduceQuery
   rw [List.zip_map']
   simp only [List.forIn_pure_yield_eq_foldl]
@@ -651,43 +652,44 @@ theorem reduceQuery_honest [Poseidon2Field F] (P : Params) (logMax index : Nat) 
     ⟨List.nodup_nil, fun _ h ↦ absurd h List.not_mem_nil⟩, pure_bind]
   case hf =>
     intro r hr red hred
-    obtain ⟨hne, hc, h, hh, hits⟩ := hrounds r hr
+    obtain ⟨hne, hc, H, hH, htop, hits⟩ := hrounds r hr
     obtain ⟨c, its⟩ := r
-    dsimp only at hne hc hits ⊢
+    dsimp only at hne hc hits htop ⊢
     subst hc
-    have hH : ∀ x ∈ its, x.1.height = 2 ^ h ∧ x.1.values.size = x.1.width * x.1.height := by
-      intro x hx
-      obtain ⟨ps, hm, -⟩ := hits x hx
-      exact ⟨hm.2.1, hm.2.2.1⟩
-    have hlog : ∀ x ∈ its, Nat.log2 x.1.height - P.logBlowup + P.logBlowup = h := by
-      intro x hx
-      obtain ⟨ps, hm, -⟩ := hits x hx
-      rw [hm.2.1, Nat.log2_two_pow, Nat.sub_add_cancel hm.2.2.2.1]
-    have hne' : its.map (·.1) ≠ [] := by rwa [Ne, List.map_eq_nil_iff]
-    have hms : ∀ m ∈ its.map (·.1), m.height = 2 ^ h ∧ m.values.size = m.width * m.height := by
-      intro m hm
-      obtain ⟨x, hx, rfl⟩ := List.mem_map.mp hm
-      exact hH x hx
-    have hmx : (Committed.ofMats hashF compF (its.map (·.1))).maxHeight = 2 ^ h :=
-      Fri.maxHeight_ofMats _ _ hne' fun m hm ↦ (hms m hm).1
-    have hok := Deep.foldl_reduceStep_ok P.logBlowup alpha its (fun x hx ↦ ⟨h, hits x hx⟩) red
-      hred
+    have hmix : Fri.MixedHeights H (its.map (·.1)) := by
+      refine ⟨fun m hm ↦ ?_, ?_⟩
+      · obtain ⟨x, hx, rfl⟩ := List.mem_map.mp hm
+        obtain ⟨h, hh, ps, hm, -⟩ := hits x hx
+        exact ⟨h, hh, hm.2.1⟩
+      · obtain ⟨x, hx, hxH⟩ := htop
+        exact ⟨x.1, List.mem_map_of_mem hx, hxH⟩
+    have hmx : (Committed.ofMats hashF compF (its.map (·.1))).maxHeight = 2 ^ H :=
+      Fri.maxHeight_mixed hmix
+    have hok := Deep.foldl_reduceStep_ok P.logBlowup alpha its (fun x hx ↦ by
+      obtain ⟨h, -, hit⟩ := hits x hx; exact ⟨h, hit⟩) red hred
     refine ⟨?_, hok⟩
     rw [hmx]
-    simp only [Nat.log2_two_pow, Fri.openAt_values _ h (fun m hm ↦ (hms m hm).1),
-      List.toList_toArray, List.map_map, List.zip_map']
+    simp only [Nat.log2_two_pow, Fri.openAt_values_mixed hmix, List.toList_toArray, List.map_map,
+      List.zip_map']
     rw [Deep.forIn_map_eq _ (Deep.atQuery alpha logMax index) (reduceStep alpha)
       (Deep.RedOk P.logBlowup) _ its ?hf2 red hred, pure_bind]
     case hf2 =>
       intro x hx red' hred'
-      refine ⟨?_, Deep.reduceStep_ok alpha hred' (hits x hx)⟩
-      have hl := hlog x hx
-      obtain ⟨ps, hm, hpts⟩ := hits x hx
+      obtain ⟨h, hhH, hit⟩ := hits x hx
+      refine ⟨?_, Deep.reduceStep_ok alpha hred' hit⟩
+      obtain ⟨ps, hm, hpts⟩ := hit
+      have hh : h ≤ logMax := hhH.trans hH
+      have hl : Nat.log2 x.1.height - P.logBlowup + P.logBlowup = h := by
+        rw [hm.2.1, Nat.log2_two_pow, Nat.sub_add_cancel hm.2.2.2.1]
+      have hshift : index >>> (logMax - H) >>> (H - Nat.log2 x.1.height) =
+          index >>> (logMax - h) := by
+        rw [hm.2.1, Nat.log2_two_pow, ← Nat.shiftRight_add]
+        congr 1; omega
       obtain ⟨m, pts⟩ := x
-      dsimp only at hl hm hpts ⊢
+      dsimp only at hl hm hpts hshift ⊢
       have hlog2 : Nat.log2 m.height = h := by rw [hm.2.1, Nat.log2_two_pow]
       have hrow : (rowOf m (index >>> (logMax - h))).size = m.width := Array.size_ofFn
-      simp only [Function.comp_apply, hl]
+      simp only [Function.comp_apply, hl, hshift]
       rw [Deep.lookup_start alpha logMax index h red' m hlog2]
       have hi : index >>> (logMax - h) < m.height := by
         rw [hm.2.1]; exact Deep.shiftRight_lt hidx hh
@@ -721,8 +723,9 @@ theorem reduceQuery_honest [Poseidon2Field F] (P : Params) (logMax index : Nat) 
   rw [← List.foldl_flatMap]
   have hok := Deep.foldl_reduceStep_ok P.logBlowup alpha (rounds.flatMap (·.2)) (fun x hx ↦ by
       obtain ⟨r, hr, hx⟩ := List.mem_flatMap.mp hx
-      obtain ⟨-, -, h, -, hits⟩ := hrounds r hr
-      exact ⟨h, hits x hx⟩) [] ⟨List.nodup_nil, fun _ h ↦ absurd h List.not_mem_nil⟩
+      obtain ⟨-, -, H, -, -, hits⟩ := hrounds r hr
+      obtain ⟨h, -, hit⟩ := hits x hx
+      exact ⟨h, hit⟩) [] ⟨List.nodup_nil, fun _ h ↦ absurd h List.not_mem_nil⟩
   have htail : ((Deep.atQuery alpha logMax index ((rounds.flatMap (·.2)).foldl (reduceStep alpha)
       [])).mergeSort (fun a b ↦ decide (b.1 ≤ a.1))).map (fun x ↦ (x.1, x.2.2)) =
       (Fri.reduce alpha (rounds.flatMap (·.2))).map fun y ↦

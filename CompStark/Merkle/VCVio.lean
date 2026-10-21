@@ -131,7 +131,7 @@ theorem upperLayersAll_range [Zero F] (hash : List F → Vector F d)
     rw [nodeValue_succ_pairUp]
 
 /-- `x ^^^ 1` flips the low bit. -/
-private theorem xor_one_eq (x : Nat) : x ^^^ 1 = 2 * (x / 2) + (x + 1) % 2 := by
+theorem xor_one_eq (x : Nat) : x ^^^ 1 = 2 * (x / 2) + (x + 1) % 2 := by
   have h1 : (x ^^^ 1) / 2 = x / 2 := by
     rw [Nat.xor_div_two]; simp only [Nat.reduceDiv, Nat.xor_zero]
   have h2 : (x ^^^ 1) % 2 = (x + 1) % 2 := by

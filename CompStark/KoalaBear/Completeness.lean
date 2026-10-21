@@ -5,13 +5,15 @@ Released under Apache 2.0 license as described in the file LICENSE.
 module
 
 public import CompStark.Completeness
+public import CompStark.BatchCompleteness
 public import CompStark.KoalaBear.Poseidon2
 
 /-! # Completeness over KoalaBear
 
 `completeness` for Plonky3's KoalaBear configuration: the honest prover's proof of a satisfied
 AIR verifies against the verifying key of its preprocessed trace, over any challenge field, for
-example KoalaBear's quartic or quintic extension. The bad luck it excludes (`NoBadLuck`) has
+example KoalaBear's quartic or quintic extension; and `batchCompleteness`, the same for a batch
+of AIR instances against the batch's common data. The bad luck it excludes (`NoBadLuck`) has
 probability about `2 ^ -93` for the quartic extension and `2 ^ -124` for the quintic one (the
 out-of-domain point in the base field), and about `exp (-2 ^ (31 - b))` for a proof-of-work search
 of `b` bits finding no witness.
@@ -34,5 +36,17 @@ theorem completeness {EF : Type} [Challenge F EF] {params : Params} {air : Air F
       verify params air (setup params air logN) (prove EF params air logN trace publicValues)
         publicValues = .ok () :=
   Stark.completeness config luck
+
+/-- **Batch completeness over KoalaBear.** For a valid batch and an honest run over any challenge
+field `EF` without bad luck, if every instance's trace satisfies its AIR with its public values,
+the honest prover's batch proof verifies against the batch's common data. -/
+theorem batchCompleteness {EF : Type} [Challenge F EF] {params : Params}
+    {instances : List (Batch.Instance F)} {traces : List (Array F)}
+    {publicValues : List (List F)} (config : Batch.ValidConfig params instances)
+    (luck : Batch.NoBadLuck EF params instances traces publicValues) :
+    Batch.Satisfied instances traces publicValues →
+      Batch.verifyBatch params instances (Batch.setupBatch params instances)
+        (Batch.proveBatch EF params instances traces publicValues) publicValues = .ok () :=
+  Batch.completeness config luck
 
 end CompStark.KoalaBear

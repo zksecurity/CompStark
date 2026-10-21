@@ -93,7 +93,7 @@ theorem proveBatch_fast (hζ : 2 ≤ twoAdicity F) (hA : DomainsAddressable F EF
     (input : Batch.InputOk EF params instances traces)
     (publicValuesLength : publicValues.length = instances.length)
     (outOfDomain :
-      Ext.OutsideBase (Batch.outOfDomainPoint EF params instances traces publicValues)) :
+      Ext.OutsideBase (Batch.batchOutOfDomainPoint EF params instances traces publicValues)) :
     Batch.proveBatchWith (backendFor params.logBlowup (Batch.shapes instances)) params instances
         traces publicValues =
       Batch.proveBatch EF params instances traces publicValues :=

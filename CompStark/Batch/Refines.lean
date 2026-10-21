@@ -486,7 +486,7 @@ outside the base field. -/
 theorem proveBatchWith_refines (hA : DomainsAddressable F EF) (h : Refines B) {P : Params}
     {instances : List (Instance F)} {traces : List (Array F)} {pis : List (List F)}
     (hin : InputOk EF P instances traces) (hpis : pis.length = instances.length)
-    (hz : Ext.OutsideBase (outOfDomainPoint EF P instances traces pis)) :
+    (hz : Ext.OutsideBase (batchOutOfDomainPoint EF P instances traces pis)) :
     proveBatchWith B P instances traces pis = proveBatch EF P instances traces pis := by
   unfold proveBatch proveBatchWith
   dsimp only

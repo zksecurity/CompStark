@@ -24,6 +24,16 @@ Quot.sound] -/
 #guard_msgs in
 #print axioms CompStark.KoalaBear.completeness
 
+/-- info: 'CompStark.Batch.completeness' depends on axioms: [propext, Classical.choice, Quot.sound]
+-/
+#guard_msgs in
+#print axioms CompStark.Batch.completeness
+
+/-- info: 'CompStark.KoalaBear.batchCompleteness' depends on axioms: [propext, Classical.choice,
+Quot.sound] -/
+#guard_msgs in
+#print axioms CompStark.KoalaBear.batchCompleteness
+
 /-- info: 'CompStark.Stark.Fast.prove_fast' depends on axioms: [propext, Classical.choice,
 Quot.sound] -/
 #guard_msgs in

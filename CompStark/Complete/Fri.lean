@@ -8,18 +8,19 @@ public import CompStark.Complete.FriRound
 
 /-! # FRI completeness
 
-The verifier's FRI accepts the specification prover's proof of one low-degree input
-(`verifyFri_proveFri`).
+The verifier's FRI accepts the specification prover's proof of low-degree inputs of strictly
+decreasing heights (`verifyFri_proveFri`).
 
-The prover's commit rounds are a pure chain over the fold schedule (`chain`,
-`commitRounds_run`): each round commits to the groups of the folded vector, grinds, samples `β`
-and folds. The verifier replays the transcript: it observes the same domain separator and
-commitments, the grinding witnesses check, and it samples the same `β`s and query indices. Each
-query's folds walk the chain at the query's index: the verifier puts the running value back
-between the siblings and recovers the opened group, whose `foldRow` is the next folded vector's
-entry. The last folded vector has low degree, so the final polynomial evaluates to the last
-entry. Every round's groups at the queries are an honest multi-opening of its commitment
-(`verifyMulti_openMulti`).
+The prover's commit rounds are a pure chain over the fold schedule (`chain`, `commitRounds_run`):
+each round commits to the groups of the folded vector, grinds, samples `β`, folds, and adds the next
+input when the folded vector has its height (`inject`). Plonky3's fold schedule reaches every
+input's height and ends at the final height (`Sched`, `foldSchedule_sched`). The verifier replays
+the transcript: it observes the same domain separator and commitments, the grinding witnesses check,
+and it samples the same `β`s and query indices. Each query's folds walk the chain at the query's
+index: the verifier puts the running value back between the siblings and recovers the opened group,
+whose `foldRow` is the next folded vector's entry, plus the added input's entry. The last folded
+vector has low degree, so the final polynomial evaluates to the last entry. Every round's groups at
+the queries are an honest multi-opening of its commitment (`verifyMulti_openMulti`).
 -/
 
 @[expose] public section
@@ -144,17 +145,26 @@ structure Rd (EF : Type) [Challenge F EF] where
 def Rd.c [Poseidon2Field F] (r : Rd EF) : Committed F := Committed.ofMats hashF compF
     [(specBackend EF).leaves (2 ^ r.la) r.folded]
 
-/-- The commit rounds of the specification prover with log arities `las` on one input, the final
-vector and transcript. -/
+/-- The folded vector `g` after a fold at `β` by `2 ^ la`, with the next input `rest` added times
+`β ^ (2 ^ la)` if it has `g`'s length, and the inputs left. -/
+def inject (beta : EF) (la : Nat) (g : Array EF) : List (Array EF) → Array EF × List (Array EF)
+  | v :: vs => if v.size == g.size then
+      (Array.zipWith (fun u w ↦ u + Ext.powTwo beta la * w) g v, vs) else (g, v :: vs)
+  | [] => (g, [])
+
+/-- The commit rounds of the specification prover with log arities `las` on the folded vector `f`
+and the shorter inputs `rest`, tallest first, the final vector and transcript. -/
 def chain [Poseidon2Field F] (P : Params) :
-    List Nat → Array EF → Transcript F 24 → List (Rd EF) × Array EF × Transcript F 24
-  | [], f, t => ([], f, t)
-  | la :: las, f, t =>
+    List Nat → Array EF → List (Array EF) → Transcript F 24 →
+      List (Rd EF) × Array EF × Transcript F 24
+  | [], f, _, t => ([], f, t)
+  | la :: las, f, rest, t =>
     let t1 := t.observeList
         (Committed.ofMats hashF compF [(specBackend EF).leaves (2 ^ la) f]).root.toList
     let t2 := (t1.grind P.commitPowBits).2
     let beta := (t2.sampleExtValue : EF)
-    let r := chain P las (foldOnce la beta f) (Transcript.sampleExtState EF t2)
+    let nx := inject beta la (foldOnce la beta f) rest
+    let r := chain P las nx.1 nx.2 (Transcript.sampleExtState EF t2)
     (⟨la, f, t, (t1.grind P.commitPowBits).1, beta⟩ :: r.1, r.2)
 
 /-- Record a round in the commit phase's result. -/
@@ -164,17 +174,20 @@ def pushRd [Poseidon2Field F] (cp : CommitPhase F EF (Committed F)) (r : Rd EF) 
     cp.finalPoly⟩
 
 theorem commitRounds_run [Poseidon2Field F] (P : Params) :
-    ∀ (las : List Nat) (f : Array EF) (cp : CommitPhase F EF (Committed F))
-        (t : Transcript F 24),
-      (commitRounds (specBackend EF) P las f [] cp).run t =
-        let r := chain P las f t
+    ∀ (las : List Nat) (f : Array EF) (rest : List (Array EF))
+        (cp : CommitPhase F EF (Committed F)) (t : Transcript F 24),
+      (commitRounds (specBackend EF) P las f rest cp).run t =
+        let r := chain P las f rest t
         ((r.2.1, r.1.foldl pushRd cp), r.2.2)
-  | [], f, cp, t => rfl
-  | la :: las, f, cp, t => by
+  | [], f, rest, cp, t => rfl
+  | la :: las, f, rest, cp, t => by
     simp only [commitRounds, chain]
     rw [prun_bind, prun_bind, prun_bind]
     dsimp only [foldOnce, specBackend, Backend.spec, id]
-    exact commitRounds_run P las _ _ _
+    rcases rest with _ | ⟨v, vs⟩
+    · exact commitRounds_run P las _ _ _ _
+    · dsimp only [inject]
+      split <;> exact commitRounds_run P las _ _ _ _
 
 /-! ### The low-degree invariant of the commit rounds -/
 
@@ -222,37 +235,146 @@ theorem good_step (P : Params) {h : Nat} {f : Array EF} (hg : Good P h f) (la : 
     Good P (h - la) (foldOnce la beta f) :=
   ⟨by have := hg.1; omega, lowDegree_foldOnce P la h beta f hg.2 (by omega) h1⟩
 
-/-- The chain by arities of at least one bit adding up to the excess over the final height ends at
-the final height with a low-degree vector. -/
+/-- The fold schedule `las` from the height `h` reaches the heights `hs` of the inputs still to be
+added, tallest first, each when the folded vector has its height, and ends at the final height
+`fin` with every input added. -/
+def Sched (fin : Nat) : List Nat → Nat → List Nat → Prop
+  | [], h, hs => h = fin ∧ hs = []
+  | la :: las, h, hs => 1 ≤ la ∧ la + fin ≤ h ∧ la + hs.headD 0 ≤ h ∧
+      Sched fin las (h - la) (if hs.head? = some (h - la) then hs.tail else hs)
+
+/-- The inputs still to be added: tallest first, each low degree. -/
+def Pending (P : Params) (rest : List (Array EF)) : Prop :=
+  (rest.map (Nat.log2 ·.size)).Pairwise (· > ·) ∧ ∀ v ∈ rest, Good P (Nat.log2 v.size) v
+
+/-- Plonky3's fold schedule for inputs of strictly decreasing heights, not below the final
+height, is a schedule. -/
+theorem foldSchedule_sched (m fin : Nat) (hm : 0 < m) : ∀ (fuel h : Nat) (hs : List Nat),
+    (h :: hs).Pairwise (· > ·) → (∀ x ∈ h :: hs, fin ≤ x) → h - fin ≤ fuel →
+    Sched fin (foldSchedule m fin fuel (h :: hs)) h hs
+  | 0, h, hs, hp, hfin, hf => by
+    have hh : h = fin := by have := hfin h List.mem_cons_self; omega
+    refine ⟨hh, ?_⟩
+    rcases hs with _ | ⟨x, hs⟩
+    · rfl
+    · have := List.rel_of_pairwise_cons hp List.mem_cons_self
+      have := hfin x (List.mem_cons_of_mem _ List.mem_cons_self)
+      omega
+  | fuel + 1, h, hs, hp, hfin, hf => by
+    rw [foldSchedule]
+    split
+    · rename_i hle
+      have hh : h = fin := by have := hfin h List.mem_cons_self; omega
+      refine ⟨hh, ?_⟩
+      rcases hs with _ | ⟨x, hs⟩
+      · rfl
+      · have := List.rel_of_pairwise_cons hp List.mem_cons_self
+        have := hfin x (List.mem_cons_of_mem _ List.mem_cons_self)
+        omega
+    · rename_i hlt
+      have hhead : ∀ x ∈ hs.head?, x < h ∧ fin ≤ x := fun x hx ↦ by
+        have hx' : x ∈ hs := List.mem_of_mem_head? hx
+        exact ⟨List.rel_of_pairwise_cons hp hx', hfin x (List.mem_cons_of_mem _ hx')⟩
+      have hla1 : 1 ≤ min (min (h - hs.headD fin) (h - fin)) m := by
+        rcases hs with _ | ⟨x, hs⟩
+        · simp only [List.headD_nil]; omega
+        · have := hhead x rfl; simp only [List.headD_cons]; omega
+      set la := min (min (h - hs.headD fin) (h - fin)) m with hla
+      have hhd : la + hs.headD 0 ≤ h := by
+        rcases hs with _ | ⟨x, hs⟩
+        · simp only [List.headD_nil]; omega
+        · have := hhead x rfl; simp only [List.headD_cons] at hla ⊢; omega
+      refine ⟨hla1, by omega, hhd, ?_⟩
+      have hrest : ∀ x ∈ hs, x < h := fun x hx ↦ List.rel_of_pairwise_cons hp hx
+      rcases hs with _ | ⟨x, hs⟩
+      · simp only [List.head?_nil, reduceCtorEq, ↓reduceIte]
+        exact foldSchedule_sched m fin hm fuel (h - la) [] (List.pairwise_singleton _ _)
+          (fun y hy ↦ by rw [List.mem_singleton.mp hy]; omega) (by omega)
+      · have hx := hhead x rfl
+        have hxs : (x :: hs).Pairwise (· > ·) := hp.of_cons
+        by_cases hxe : x = h - la
+        · simp only [List.head?_cons, hxe, ↓reduceIte, List.tail_cons]
+          rw [← hxe]
+          exact foldSchedule_sched m fin hm fuel x hs hxs
+            (fun y hy ↦ hfin y (List.mem_cons_of_mem _ hy)) (by omega)
+        · have hxlt : x < h - la := by simp only [List.headD_cons] at hhd; omega
+          simp only [List.head?_cons, Option.some.injEq, hxe, ↓reduceIte]
+          refine foldSchedule_sched m fin hm fuel (h - la) (x :: hs)
+            (List.Pairwise.cons (fun y hy ↦ ?_) hxs) (fun y hy ↦ ?_) (by omega)
+          · rcases List.mem_cons.mp hy with rfl | hy
+            · exact hxlt
+            · exact lt_trans (List.rel_of_pairwise_cons hxs hy) hxlt
+          · rcases List.mem_cons.mp hy with rfl | hy
+            · omega
+            · exact hfin y (List.mem_cons_of_mem _ hy)
+
+/-- A schedule's arities add up to at most the excess over the final height. -/
+theorem sum_le_of_sched (fin : Nat) : ∀ (las : List Nat) (h : Nat) (hs : List Nat),
+    Sched fin las h hs → las.sum ≤ h - fin
+  | [], _, _, _ => Nat.zero_le _
+  | la :: las, h, hs, ⟨h1, h2, _, hs'⟩ => by
+    have := sum_le_of_sched fin las _ _ hs'
+    rw [List.sum_cons]; omega
+
+/-- A schedule ends at the final height. -/
+theorem sub_sum_of_sched (fin : Nat) : ∀ (las : List Nat) (h : Nat) (hs : List Nat),
+    Sched fin las h hs → h - las.sum = fin
+  | [], _, _, ⟨hh, _⟩ => by rw [List.sum_nil, Nat.sub_zero, hh]
+  | la :: las, h, hs, ⟨h1, h2, _, hs'⟩ => by
+    have := sub_sum_of_sched fin las _ _ hs'
+    have := sum_le_of_sched fin las _ _ hs'
+    rw [List.sum_cons]; omega
+
+/-- Adding the next input of the folded vector's height keeps the invariants. -/
+theorem inject_good (P : Params) {h : Nat} {g : Array EF} (hg : Good P h g) (beta : EF)
+    (la : Nat) : ∀ rest : List (Array EF), Pending P rest →
+      (∀ v ∈ rest.head?, Nat.log2 v.size ≤ h) →
+      Good P h (inject beta la g rest).1 ∧ Pending P (inject beta la g rest).2 ∧
+        (inject beta la g rest).2.map (Nat.log2 ·.size) =
+          if (rest.map (Nat.log2 ·.size)).head? = some h then (rest.map (Nat.log2 ·.size)).tail
+          else rest.map (Nat.log2 ·.size)
+  | [], _, _ => ⟨hg, ⟨List.Pairwise.nil, fun _ h ↦ absurd h List.not_mem_nil⟩, rfl⟩
+  | v :: vs, hp, hle => by
+    have hv := hp.2 v List.mem_cons_self
+    have hsz : v.size = 2 ^ Nat.log2 v.size := hv.2.1
+    by_cases he : Nat.log2 v.size = h
+    · have hs : (v.size == g.size) = true := by rw [hsz, he, hg.2.1, beq_self_eq_true]
+      simp only [inject, hs, ↓reduceIte, List.map_cons, List.head?_cons, he, List.tail_cons]
+      refine ⟨⟨hg.1, lowDegree_addScaled _ _ g v _ hg.2 (by rw [← he]; exact hv.2)⟩,
+        ⟨(List.pairwise_cons.mp hp.1).2, fun w hw ↦ hp.2 w (List.mem_cons_of_mem _ hw)⟩, trivial⟩
+    · have hs : (v.size == g.size) = false := by
+        rw [beq_eq_false_iff_ne, hsz, hg.2.1]
+        exact fun h2 ↦ he (Nat.pow_right_injective (le_refl 2) h2)
+      simp only [inject, hs, Bool.false_eq_true, ↓reduceIte, List.map_cons, List.head?_cons,
+        Option.some.injEq, he]
+      exact ⟨hg, hp, trivial⟩
+
+/-- A schedule from a low-degree vector with low-degree pending inputs ends at the final height
+with a low-degree vector. -/
 theorem chain_final [Poseidon2Field F] (P : Params) : ∀ (las : List Nat) (h : Nat)
-    (f : Array EF) (t : Transcript F 24), Good P h f →
-      las.sum = h - (P.logBlowup + P.logFinalPolyLen) → (∀ la ∈ las, 1 ≤ la) →
-      LowDegree (P.logBlowup + P.logFinalPolyLen) P.logFinalPolyLen (chain P las f t).2.1
-  | [], h, f, t, hg, hsum, _ => by
-    have hh : h = P.logBlowup + P.logFinalPolyLen := by have := hg.1; simp at hsum; omega
+    (f : Array EF) (rest : List (Array EF)) (t : Transcript F 24), Good P h f → Pending P rest →
+      Sched (P.logBlowup + P.logFinalPolyLen) las h (rest.map (Nat.log2 ·.size)) →
+      LowDegree (P.logBlowup + P.logFinalPolyLen) P.logFinalPolyLen (chain P las f rest t).2.1
+  | [], h, f, rest, t, hg, _, hs => by
+    obtain ⟨hh, -⟩ := hs
     subst hh
     have := hg.2
     rwa [show P.logBlowup + P.logFinalPolyLen - P.logBlowup = P.logFinalPolyLen by omega] at this
-  | la :: las, h, f, t, hg, hsum, hpos => by
-    rw [List.sum_cons] at hsum
-    have h1 := hpos la List.mem_cons_self
-    exact chain_final P las (h - la) _ _ (good_step P hg la h1 (by omega) _) (by omega)
-      fun x hx ↦ hpos x (List.mem_cons_of_mem _ hx)
-
-/-- Plonky3's schedule for one input folds by at least one bit per round, down to the final
-height. -/
-theorem foldArities_spec (m r : Nat) (hm : 0 < m) :
-    (foldArities m r).sum = r ∧ ∀ la ∈ foldArities m r, 1 ≤ la ∧ la ≤ r := by
-  induction r using Nat.strong_induction_on with
-  | _ r ih =>
-    rcases r with _ | r
-    · rw [foldArities]; exact ⟨rfl, fun _ h ↦ absurd h List.not_mem_nil⟩
-    · rw [foldArities]
-      obtain ⟨h1, h2⟩ := ih (r + 1 - max 1 (min m (r + 1))) (by omega)
-      refine ⟨by rw [List.sum_cons, h1]; omega, fun la hla ↦ ?_⟩
-      rcases List.mem_cons.mp hla with rfl | hla
-      · omega
-      · have := h2 la hla; omega
+  | la :: las, h, f, rest, t, hg, hp, hs => by
+    obtain ⟨h1, h2, h3, hs⟩ := hs
+    have hg' := good_step P hg la h1 (by omega)
+    rw [chain]
+    dsimp only
+    generalize ((((t.observeList _).grind P.commitPowBits).2.sampleExtValue : EF)) = beta
+    obtain ⟨hg2, hp2, hm2⟩ := inject_good P (hg' beta) beta la rest hp fun v hv ↦ by
+      rcases rest with _ | ⟨w, ws⟩
+      · exact absurd hv (by simp only [List.head?_nil, Option.mem_def, reduceCtorEq,
+          not_false_eq_true])
+      · simp only [List.head?_cons, Option.mem_def, Option.some.injEq] at hv
+        subst hv
+        simp only [List.map_cons, List.headD_cons] at h3
+        omega
+    exact chain_final P las (h - la) _ _ _ hg2 hp2 (by rw [hm2]; exact hs)
 
 /-! ### The transcript's failure flag
 
@@ -363,10 +485,10 @@ theorem duplex_foldl_observe (l : List Nat) :
   | cons a l ih => intro t; rw [List.foldl_cons, ih]; rfl
 
 theorem duplex_chain [Poseidon2Field F] (P : Params) :
-    ∀ (las : List Nat) (f : Array EF) (t : Transcript F 24),
-      (chain P las f t).2.2.duplex = t.duplex
-  | [], _, _ => rfl
-  | la :: las, f, t => by
+    ∀ (las : List Nat) (f : Array EF) (rest : List (Array EF)) (t : Transcript F 24),
+      (chain P las f rest t).2.2.duplex = t.duplex
+  | [], _, _, _ => rfl
+  | la :: las, f, rest, t => by
     rw [chain]
     dsimp only
     rw [duplex_chain, duplex_sampleExt, duplex_grind, duplex_observeList]
@@ -378,12 +500,12 @@ theorem forIn_cons_ok [Poseidon2Field F] {α σ : Type} (a : α) (l : List α) (
 
 /-- Without the flag after the commit rounds, there was none before them. -/
 theorem flag_chain [Poseidon2Field F] (P : Params) :
-    ∀ (las : List Nat) (f : Array EF) (t : Transcript F 24),
-      (chain P las f t).2.2.grindFailed = false → t.grindFailed = false
-  | [], _, _, h => h
-  | la :: las, f, t, h => by
+    ∀ (las : List Nat) (f : Array EF) (rest : List (Array EF)) (t : Transcript F 24),
+      (chain P las f rest t).2.2.grindFailed = false → t.grindFailed = false
+  | [], _, _, _, h => h
+  | la :: las, f, rest, t, h => by
     rw [chain] at h
-    have := flag_chain P las _ _ h
+    have := flag_chain P las _ _ _ h
     rw [flag_sampleExt] at this
     rw [← flag_observeList t _]
     exact flag_grind _ _ this
@@ -418,15 +540,15 @@ prover's folding challenges. -/
 theorem commit_loop [Poseidon2Field F] (P : Params)
     (body : Digest F × F → Array EF → M (poseidon2 F) (ForInStep (Array EF)))
     (hbody : ∀ c w b, body (c, w) b = commitBody P c w b) :
-    ∀ las f t betas, t.duplex = Poseidon2.duplex →
-      (chain P las f t).2.2.grindFailed = false →
-      forIn (((chain P las f t).1.map (·.c.root)).zip ((chain P las f t).1.map (·.w)))
+    ∀ las f rest t betas, t.duplex = Poseidon2.duplex →
+      (chain P las f rest t).2.2.grindFailed = false →
+      forIn (((chain P las f rest t).1.map (·.c.root)).zip ((chain P las f rest t).1.map (·.w)))
         betas body t =
-        .ok (betas ++ ((chain P las f t).1.map (·.beta)).toArray, (chain P las f t).2.2)
-  | [], f, t, betas, _, _ => by
+        .ok (betas ++ ((chain P las f rest t).1.map (·.beta)).toArray, (chain P las f rest t).2.2)
+  | [], f, rest, t, betas, _, _ => by
     simp only [chain, List.map_nil, List.zip_nil_left, List.forIn_nil, Array.append_empty]
     rfl
-  | la :: las, f, t, betas, hd, ht => by
+  | la :: las, f, rest, t, betas, hd, ht => by
     rw [chain] at ht ⊢
     dsimp only at ht ⊢
     rw [List.map_cons, List.map_cons, List.zip_cons_cons, List.map_cons]
@@ -435,7 +557,7 @@ theorem commit_loop [Poseidon2Field F] (P : Params)
         ((t1.grind P.commitPowBits).2)).duplex = Poseidon2.duplex := by
       rw [duplex_sampleExt, duplex_grind, ← ht1, duplex_observeList, hd]
     have hg1 : (t1.grind P.commitPowBits).2.grindFailed = false := by
-      have := flag_chain P las _ _ ht
+      have := flag_chain P las _ _ _ ht
       rwa [flag_sampleExt] at this
     rw [forIn_cons_ok _ _ _ _ _ _ _ (by
       rw [hbody]
@@ -444,7 +566,7 @@ theorem commit_loop [Poseidon2Field F] (P : Params)
             (Committed.ofMats hashF compF [(specBackend EF).leaves (2 ^ la) f]).root.toList
           ).checkWitness P.commitPowBits (t1.grind P.commitPowBits).1 = _
         rw [ht1]; exact checkWitness_grind _ _ hg1)),
-      commit_loop P body hbody las _ _ _ hd1 ht]
+      commit_loop P body hbody las _ _ _ _ hd1 ht]
     refine congrArg Except.ok (Prod.ext (Array.toList_inj.mp ?_) rfl)
     simp only [Array.toList_append, Array.toList_push, List.append_assoc,
       List.singleton_append]
@@ -507,18 +629,33 @@ theorem answerFolds_cons [Poseidon2Field F] (r : Rd EF) (rs : List (Rd EF)) (las
   rw [← siblings_answerFolds]
   rfl
 
+/-- The verifier's reduced openings of the inputs `rest` still to be added, at the index `idx` into
+the height `h`: every input's height and its entry at the index shifted to its height. -/
+def roOf (rest : List (Array EF)) (idx h : Nat) : List (Nat × EF) :=
+  rest.map fun v ↦ (Nat.log2 v.size, v.getD (idx >>> (h - Nat.log2 v.size)) 0)
+
+/-- Folding the index and the height keeps the pending inputs' entries. -/
+theorem roOf_shift (rest : List (Array EF)) (idx h la : Nat)
+    (hle : ∀ v ∈ rest, Nat.log2 v.size ≤ h - la) (hla : la ≤ h) :
+    roOf rest idx h = roOf rest (idx >>> la) (h - la) := by
+  refine List.map_congr_left fun v hv ↦ ?_
+  have := hle v hv
+  rw [← Nat.shiftRight_add, show la + (h - la - Nat.log2 v.size) = h - Nat.log2 v.size by omega]
+
 /-- One fold of a query at `idx`: the verifier recovers the group of `idx` from the siblings, folds
-it to the next vector's entry, and records the group. -/
+it, adds the next input's entry if it has the folded height, and records the group. -/
 theorem fold_round [Poseidon2Field F] (P : Params) {h : Nat} {f : Array EF} (hg : Good P h f)
     (r : Rd EF) (hr : r.folded = f) (h1 : 1 ≤ r.la)
-    (h2 : r.la ≤ h - (P.logBlowup + P.logFinalPolyLen)) (idx q : Nat) (hidx : idx < 2 ^ h)
-    (o : CommitOpening F EF) (ho : o.siblings.getD q #[] = sibsAt r idx)
+    (h2 : r.la ≤ h - (P.logBlowup + P.logFinalPolyLen)) (rest : List (Array EF))
+    (hp : Pending P rest) (hle : ∀ v ∈ rest, Nat.log2 v.size ≤ h - r.la) (idx q : Nat)
+    (hidx : idx < 2 ^ h) (o : CommitOpening F EF) (ho : o.siblings.getD q #[] = sibsAt r idx)
     (gs : List (Nat × List EF)) (t : Transcript F 24) :
-    foldBody q r.beta r.la o [] (f.getD idx 0) idx h gs t =
-      .ok (.yield ([], (foldOnce r.la r.beta f).getD (idx >>> r.la) 0, idx >>> r.la, h - r.la,
-        gs ++ [groupAt r.la f idx]), t) := by
+    foldBody q r.beta r.la o (roOf rest idx h) (f.getD idx 0) idx h gs t =
+      .ok (.yield (roOf (inject r.beta r.la (foldOnce r.la r.beta f) rest).2 (idx >>> r.la)
+          (h - r.la), (inject r.beta r.la (foldOnce r.la r.beta f) rest).1.getD (idx >>> r.la) 0,
+        idx >>> r.la, h - r.la, gs ++ [groupAt r.la f idx]), t) := by
   obtain ⟨la, f', t0, w, beta⟩ := r
-  dsimp only at hr h1 h2 ho ⊢
+  dsimp only at hr h1 h2 ho hle ⊢
   subst hr
   have hsz := hg.2.1
   have h24 := hg.2.2.1
@@ -532,11 +669,44 @@ theorem fold_round [Poseidon2Field F] (P : Params) {h : Nat} {f : Array EF} (hg 
       (foldOnce la beta f').getD (idx >>> la) 0 := by
     rw [foldOnce_eq la h beta f' hsz (by omega) h24 h1,
       CompPoly.CPolynomial.NTTFast.Packed.getD_ofFn_bounded _ _ hr']
+  have hgsz : (foldOnce la beta f').size = 2 ^ (h - la) :=
+    size_foldOnce la h beta f' hsz (by omega) h24 h1
   unfold foldBody
   rw [ho]
   simp only [sibsAt, Rd.c] at hs1 hs2 ⊢
   rw [hs1, beq_self_eq_true, ensure_true, pure_bind, hs2, hfold]
-  rfl
+  rcases rest with _ | ⟨v, vs⟩
+  · rfl
+  · have hv := hp.2 v List.mem_cons_self
+    have hvs := hv.2.1
+    have hvle := hle v List.mem_cons_self
+    have hvs' : ∀ u ∈ vs, Nat.log2 u.size ≤ h - la := fun u hu ↦ hle u (List.mem_cons_of_mem _ hu)
+    simp only [roOf, List.map_cons]
+    by_cases he : Nat.log2 v.size = h - la
+    · have hs : (v.size == (foldOnce la beta f').size) = true := by
+        rw [hvs, hgsz, he, beq_self_eq_true]
+      have hvlt : idx >>> la < v.size := by rw [hvs, he]; exact hr'
+      simp only [he, beq_self_eq_true, ↓reduceIte, inject, hs]
+      rw [show h - (h - la) = la by omega]
+      refine congrArg (fun x ↦ Except.ok (ForInStep.yield x, t)) ?_
+      refine Prod.ext ?_ (Prod.ext ?_ rfl)
+      · exact (roOf_shift vs idx h la (fun u hu ↦ by
+          have := List.rel_of_pairwise_cons hp.1 (List.mem_map_of_mem hu)
+          dsimp only at this; omega)
+          (by omega))
+      · rw [getD_lt (Array.zipWith _ (foldOnce la beta f') v) _
+          (by rw [Array.size_zipWith, hgsz, hvs, he, Nat.min_self]; exact hr'),
+          Array.getElem_zipWith, ← getD_lt (foldOnce la beta f') _ (by rw [hgsz]; exact hr'),
+          ← getD_lt v _ hvlt]
+    · have hs : (v.size == (foldOnce la beta f').size) = false := by
+        rw [beq_eq_false_iff_ne, hvs, hgsz]
+        exact fun h3 ↦ he (Nat.pow_right_injective (le_refl 2) h3)
+      have hne : (Nat.log2 v.size == h - la) = false := beq_eq_false_iff_ne.mpr he
+      simp only [hne, Bool.false_eq_true, ↓reduceIte, inject, hs]
+      have := roOf_shift (v :: vs) idx h la hle (by omega)
+      simp only [roOf, List.map_cons] at this
+      rw [this]
+      rfl
 
 /-- A query's folds walk the chain at the query's index: they end at the final vector's entry and
 record the groups the query opens. -/
@@ -547,22 +717,34 @@ theorem fold_loop [Poseidon2Field F] (P : Params) (q : Nat)
     (hbody : ∀ beta la o ro eval index logH groups,
       body ((beta, la), o) (ro, eval, index, logH, groups) =
         foldBody q beta la o ro eval index logH groups) :
-    ∀ (las : List Nat) (h : Nat) (f : Array EF) (t : Transcript F 24) (cur : List Nat)
-      (hq : q < cur.length) (t' : Transcript F 24) (gs : List (Nat × List EF)),
-      Good P h f → las.sum ≤ h - (P.logBlowup + P.logFinalPolyLen) → (∀ la ∈ las, 1 ≤ la) →
+    ∀ (las : List Nat) (h : Nat) (f : Array EF) (rest : List (Array EF)) (t : Transcript F 24)
+      (cur : List Nat) (hq : q < cur.length) (t' : Transcript F 24) (gs : List (Nat × List EF)),
+      Good P h f → Pending P rest →
+      Sched (P.logBlowup + P.logFinalPolyLen) las h (rest.map (Nat.log2 ·.size)) →
       cur[q] < 2 ^ h →
-      forIn ((((chain P las f t).1.map (·.beta)).zip las).zip
-          (answerFolds (specBackend EF) ((chain P las f t).1.map (·.c)) las cur))
-        ([], f.getD cur[q] 0, cur[q], h, gs) body t' =
-        .ok (([], (chain P las f t).2.1.getD (cur[q] >>> las.sum) 0, cur[q] >>> las.sum,
-          h - las.sum, gs ++ qGroups (chain P las f t).1 cur[q]), t')
-  | [], h, f, t, cur, hq, t', gs, _, _, _, _ => by
+      forIn ((((chain P las f rest t).1.map (·.beta)).zip las).zip
+          (answerFolds (specBackend EF) ((chain P las f rest t).1.map (·.c)) las cur))
+        (roOf rest cur[q] h, f.getD cur[q] 0, cur[q], h, gs) body t' =
+        .ok (([], (chain P las f rest t).2.1.getD (cur[q] >>> las.sum) 0, cur[q] >>> las.sum,
+          h - las.sum, gs ++ qGroups (chain P las f rest t).1 cur[q]), t')
+  | [], h, f, rest, t, cur, hq, t', gs, _, _, hs, _ => by
+    obtain ⟨-, hr⟩ := hs
+    rw [List.map_eq_nil_iff] at hr
+    subst hr
     simp only [chain, List.map_nil, List.zip_nil_left, List.forIn_nil, List.sum_nil,
       Nat.shiftRight_zero, Nat.sub_zero, qGroups, List.append_nil]
     rfl
-  | la :: las, h, f, t, cur, hq, t', gs, hg, hsum, hpos, hidx => by
-    rw [List.sum_cons] at hsum
-    have h1 := hpos la List.mem_cons_self
+  | la :: las, h, f, rest, t, cur, hq, t', gs, hg, hp, hs, hidx => by
+    obtain ⟨h1, h2, h3, hs⟩ := hs
+    have hle : ∀ v ∈ rest, Nat.log2 v.size ≤ h - la := by
+      intro v hv
+      rcases rest with _ | ⟨w, ws⟩
+      · exact absurd hv List.not_mem_nil
+      · simp only [List.map_cons, List.headD_cons] at h3
+        rcases List.mem_cons.mp hv with rfl | hv
+        · omega
+        · have := List.rel_of_pairwise_cons hp.1 (List.mem_map_of_mem hv)
+          dsimp only at this; omega
     rw [chain]
     dsimp only
     generalize ht2 : ((t.observeList _).grind P.commitPowBits) = g2
@@ -573,7 +755,7 @@ theorem fold_loop [Poseidon2Field F] (P : Params) (q : Nat)
       List.zip_cons_cons, List.zip_cons_cons,
       forIn_cons_ok _ _ _ _ _ _ _ (by
         rw [hbody]
-        exact fold_round P hg r rfl h1 (by show la ≤ _; omega) cur[q] q hidx _ (by
+        exact fold_round P hg r rfl h1 (by show la ≤ _; omega) rest hp hle cur[q] q hidx _ (by
           simp only [Array.getD_eq_getD_getElem?, List.getElem?_toArray, List.getElem?_map,
             List.getElem?_eq_getElem hq, Option.map_some, Option.getD_some]) gs t')]
     have hq' : q < (cur.map (· >>> la)).length := by rw [List.length_map]; exact hq
@@ -581,32 +763,40 @@ theorem fold_loop [Poseidon2Field F] (P : Params) (q : Nat)
       rw [List.getElem_map, Nat.shiftRight_eq_div_pow]
       refine Nat.div_lt_of_lt_mul ?_
       rw [← pow_add, Nat.add_sub_cancel' (by omega : la ≤ h)]; exact hidx
-    have ih := fold_loop P q body hbody las (h - la) (foldOnce la (t2.sampleExtValue : EF) f)
-      (Transcript.sampleExtState EF t2) (cur.map (· >>> la)) hq' t' (gs ++ [groupAt la f cur[q]])
-      (good_step P hg la h1 (by omega) _) (by omega)
-      (fun x hx ↦ hpos x (List.mem_cons_of_mem _ hx)) hidx'
+    obtain ⟨hg2, hp2, hm2⟩ := inject_good P (good_step P hg la h1 (by omega)
+      (t2.sampleExtValue : EF)) (t2.sampleExtValue : EF) la rest hp fun v hv ↦
+        hle v (List.mem_of_mem_head? hv)
+    have hs2 : Sched (P.logBlowup + P.logFinalPolyLen) las (h - la)
+        ((inject (t2.sampleExtValue : EF) la (foldOnce la (t2.sampleExtValue : EF) f) rest).2.map
+          (Nat.log2 ·.size)) := by rw [hm2]; exact hs
+    have ih := fold_loop P q body hbody las (h - la) _ _ (Transcript.sampleExtState EF t2)
+      (cur.map (· >>> la)) hq' t' (gs ++ [groupAt la f cur[q]]) hg2 hp2 hs2 hidx'
     rw [List.getElem_map] at ih
-    rw [ih, ← Nat.shiftRight_add, show h - la - las.sum = h - (la + las.sum) by omega,
-      List.append_assoc, List.singleton_append]
+    have hsum : las.sum ≤ h - la - (P.logBlowup + P.logFinalPolyLen) :=
+      sum_le_of_sched (P.logBlowup + P.logFinalPolyLen) las (h - la) _ hs2
+    rw [ih, List.sum_cons, ← Nat.shiftRight_add,
+      show h - la - las.sum = h - (la + las.sum) by omega, List.append_assoc,
+      List.singleton_append]
     rfl
 
-/-- A query's folds from its one reduced opening end at the final vector's entry, with the groups
+/-- A query's folds from its reduced openings end at the final vector's entry, with the groups
 the query opens. -/
-theorem foldQuery_run [Poseidon2Field F] (P : Params) (h0 : Nat) (f0 : Array EF) (hg : Good P h0 f0)
-    (las : List Nat) (hsum : las.sum = h0 - (P.logBlowup + P.logFinalPolyLen))
-    (hpos : ∀ la ∈ las, 1 ≤ la) (t : Transcript F 24) (cur : List Nat) (q : Nat)
+theorem foldQuery_run [Poseidon2Field F] (P : Params) (h0 : Nat) (f0 : Array EF)
+    (rest : List (Array EF)) (hg : Good P h0 f0) (hp : Pending P rest) (las : List Nat)
+    (hs : Sched (P.logBlowup + P.logFinalPolyLen) las h0 (rest.map (Nat.log2 ·.size)))
+    (t : Transcript F 24) (cur : List Nat) (q : Nat)
     (hq : q < cur.length) (hidx : cur[q] < 2 ^ h0) (t' : Transcript F 24) :
-    foldQuery (poseidon2 F) P h0 cur[q] q ((chain P las f0 t).1.map (·.beta)) las
-      (answerFolds (specBackend EF) ((chain P las f0 t).1.map (·.c)) las cur)
-      [(h0, f0.getD cur[q] 0)] t' =
-      .ok (((chain P las f0 t).2.1.getD (cur[q] >>> las.sum) 0, cur[q] >>> las.sum,
-        qGroups (chain P las f0 t).1 cur[q]), t') := by
+    foldQuery (poseidon2 F) P h0 cur[q] q ((chain P las f0 rest t).1.map (·.beta)) las
+      (answerFolds (specBackend EF) ((chain P las f0 rest t).1.map (·.c)) las cur)
+      ((h0, f0.getD cur[q] 0) :: roOf rest cur[q] h0) t' =
+      .ok (((chain P las f0 rest t).2.1.getD (cur[q] >>> las.sum) 0, cur[q] >>> las.sum,
+        qGroups (chain P las f0 rest t).1 cur[q]), t') := by
   unfold foldQuery
   simp only [pure_bind, beq_self_eq_true, ensure_true, List.tail_cons]
-  rw [bind_ok (fold_loop P q _ (fun _ _ _ _ _ _ _ _ ↦ rfl) las h0 f0 t cur hq t' [] hg
-    (le_of_eq hsum) hpos hidx)]
-  have hfin : h0 - las.sum = P.logBlowup + P.logFinalPolyLen := by
-    have := hg.1; omega
+  rw [bind_ok (fold_loop P q _ (fun _ _ _ _ _ _ _ _ ↦ rfl) las h0 f0 rest t cur hq t' [] hg
+    hp hs hidx)]
+  have hfin : h0 - las.sum = P.logBlowup + P.logFinalPolyLen :=
+    sub_sum_of_sched _ las h0 _ hs
   simp only [hfin, beq_self_eq_true, ensure_true, pure_bind, List.isEmpty_nil, List.nil_append]
   rfl
 
@@ -667,16 +857,18 @@ def finalPolyOf (P : Params) (fin : Array EF) : Array EF :=
   idft P.logFinalPolyLen (Array.ofFn (n := 2 ^ P.logFinalPolyLen) fun i ↦
     fin.getD (reverseBits i P.logFinalPolyLen) 0)
 
-theorem commitPhase_run [Poseidon2Field F] (P : Params) (las : List Nat) (f0 : Array EF)
-    (t : Transcript F 24) :
-    (commitPhase (specBackend EF) P las [f0]).run t =
-      ({ (chain P las f0 t).1.foldl pushRd ⟨#[], [], #[], #[], #[]⟩ with
-          finalPoly := finalPolyOf P (chain P las f0 t).2.1 },
-        (chain P las f0 t).2.2.observeExts (finalPolyOf P (chain P las f0 t).2.1).toList) := by
+theorem commitPhase_run [Poseidon2Field F] (P : Params) (las : List Nat)
+    (inputs : List (Array EF)) (t : Transcript F 24) :
+    (commitPhase (specBackend EF) P las inputs).run t =
+      ({ (chain P las (inputs.headD #[]) inputs.tail t).1.foldl pushRd ⟨#[], [], #[], #[], #[]⟩
+          with finalPoly := finalPolyOf P (chain P las (inputs.headD #[]) inputs.tail t).2.1 },
+        (chain P las (inputs.headD #[]) inputs.tail t).2.2.observeExts
+          (finalPolyOf P (chain P las (inputs.headD #[]) inputs.tail t).2.1).toList) := by
   unfold commitPhase
-  rw [prun_bind]
-  erw [commitRounds_run]
-  rfl
+  rcases inputs with _ | ⟨f0, rest⟩ <;>
+  · rw [prun_bind]
+    erw [commitRounds_run]
+    rfl
 
 /-- The verifier's queries sample the prover's indices. -/
 theorem sampleIndices_mapM [Poseidon2Field F] (logMax : Nat) :
@@ -716,19 +908,20 @@ theorem sampleIndices_lt (logMax : Nat) :
     · exact sampleBits_lt _ _
     · exact sampleIndices_lt logMax n _ i h
 
-/-- The prover's FRI proof on one input `f0` of height `2 ^ h0`, after the batching grinding
+/-- The prover's FRI proof on the inputs `inputs`, tallest first, after the batching grinding
 witness `bw`. -/
 theorem proveFri_run [Poseidon2Field F] (P : Params) (rounds : List (OpenRound (specBackend EF)))
-    (f0 : Array EF) (bw : F) (t : Transcript F 24) :
-    let h0 := Nat.log2 f0.size
-    let las := foldSchedule P.maxLogArity (P.logBlowup + P.logFinalPolyLen) h0 [h0]
+    (inputs : List (Array EF)) (bw : F) (t : Transcript F 24) :
+    let h0 := (inputs.map (Nat.log2 ·.size)).headD 0
+    let las := foldSchedule P.maxLogArity (P.logBlowup + P.logFinalPolyLen) h0
+      (inputs.map (Nat.log2 ·.size))
     let t1 := t.observeList (DomainSeparator.friSeed F EF las (2 ^ P.logFinalPolyLen)
       P.commitPowBits P.queryPowBits P.numQueries h0 P.logBlowup P.maxLogArity)
-    let r := chain P las f0 t1
+    let r := chain P las (inputs.headD #[]) inputs.tail t1
     let cp := { r.1.foldl pushRd ⟨#[], [], #[], #[], #[]⟩ with finalPoly := finalPolyOf P r.2.1 }
     let t3 := r.2.2.observeExts (finalPolyOf P r.2.1).toList
     let qs := sampleIndices h0 P.numQueries (t3.grind P.queryPowBits).2
-    (proveFri (specBackend EF) P rounds [f0] bw).run t =
+    (proveFri (specBackend EF) P rounds inputs bw).run t =
       (⟨bw, cp.commits, cp.witnesses, (rounds.map fun (c, _) ↦ openMulti (specBackend EF) c
           (qs.1.map (· >>> (h0 - (specBackend EF).logHeight c)))).toArray,
         (answerFolds (specBackend EF) cp.data cp.arities.toList qs.1).toArray,
@@ -742,11 +935,12 @@ theorem proveFri_run [Poseidon2Field F] (P : Params) (rounds : List (OpenRound (
   rfl
 
 theorem la_chain [Poseidon2Field F] (P : Params) :
-    ∀ (las : List Nat) (f : Array EF) (t : Transcript F 24), (chain P las f t).1.map (·.la) = las
-  | [], _, _ => rfl
-  | la :: las, f, t => by
+    ∀ (las : List Nat) (f : Array EF) (rest : List (Array EF)) (t : Transcript F 24),
+      (chain P las f rest t).1.map (·.la) = las
+  | [], _, _, _ => rfl
+  | la :: las, f, rest, t => by
     rw [chain]
-    exact congrArg (List.cons la) (la_chain P las _ _)
+    exact congrArg (List.cons la) (la_chain P las _ _ _)
 
 theorem length_answerFolds [Poseidon2Field F] :
     ∀ (rs : List (Rd EF)) (cur : List Nat),
@@ -817,14 +1011,9 @@ theorem multiBody_run [Poseidon2Field F] (P : Params) {h : Nat} {f : Array EF} (
     obtain ⟨j, hj, rfl⟩ := List.mem_map.mp hi
     rw [Nat.shiftRight_eq_div_pow]
     exact Nat.div_lt_of_lt_mul (by rw [Nat.mul_comm, ← hhl]; exact hcur j hj)
-  have hv := verifyMulti_openMulti [(specBackend EF).leaves (2 ^ la) f'] (h - la)
-    (List.cons_ne_nil _ _) (fun m hm' ↦ by
-      rw [List.mem_singleton.mp hm']
-      refine ⟨hm, ?_⟩
-      show (f'.flatMap fun x ↦ (Ext.coeffs x).toArray).size =
-        Challenge.d EF * 2 ^ la * (f'.size / 2 ^ la)
-      rw [size_flatMap_coeffs, hsz, hhl, Nat.mul_div_cancel _ hapos]
-      ring) (cur.map (· >>> la)) hlt
+  have hv := verifyMulti_openMulti (k := h - la) (ms := [(specBackend EF).leaves (2 ^ la) f'])
+    ⟨fun m hm' ↦ ⟨h - la, le_rfl, (List.mem_singleton.mp hm') ▸ hm⟩,
+      ⟨_, List.mem_singleton_self _, hm⟩⟩ (cur.map (· >>> la)) hlt
   have hmax : Nat.log2 (Committed.ofMats hashF compF
       [(specBackend EF).leaves (2 ^ la) f']).maxHeight = h - la := by
     have := maxHeight_ofMats (F := F) [((specBackend EF).leaves (2 ^ la) f' : Mat F)] _
@@ -875,22 +1064,31 @@ theorem multiBody_run [Poseidon2Field F] (P : Params) {h : Nat} {f : Array EF} (
 theorem multi_loop [Poseidon2Field F] (P : Params) (groups : List (List (Nat × List EF)))
     (body : (Digest F × CommitOpening F EF) × Nat × Nat → Nat → M (poseidon2 F) (ForInStep Nat))
     (hbody : ∀ c o la i logH, body ((c, o), (la, i)) logH = multiBody groups c o la i logH) :
-    ∀ (las : List Nat) (h : Nat) (f : Array EF) (t : Transcript F 24) (cur : List Nat) (n : Nat)
-      (t' : Transcript F 24),
-      Good P h f → las.sum ≤ h - (P.logBlowup + P.logFinalPolyLen) → (∀ la ∈ las, 1 ≤ la) →
+    ∀ (las : List Nat) (h : Nat) (f : Array EF) (rest : List (Array EF)) (t : Transcript F 24)
+      (cur : List Nat) (n : Nat) (t' : Transcript F 24),
+      Good P h f → Pending P rest →
+      Sched (P.logBlowup + P.logFinalPolyLen) las h (rest.map (Nat.log2 ·.size)) →
       (∀ i ∈ cur, i < 2 ^ h) →
       (∀ j, groups.map (fun g ↦ g.getD (n + j) (0, [])) =
-        cur.map fun i ↦ (qGroups (chain P las f t).1 i).getD j (0, [])) →
-      forIn ((((chain P las f t).1.map (·.c.root)).zip
-          (answerFolds (specBackend EF) ((chain P las f t).1.map (·.c)) las cur)).zip
+        cur.map fun i ↦ (qGroups (chain P las f rest t).1 i).getD j (0, [])) →
+      forIn ((((chain P las f rest t).1.map (·.c.root)).zip
+          (answerFolds (specBackend EF) ((chain P las f rest t).1.map (·.c)) las cur)).zip
           (las.zipIdx n)) h body t' = .ok (h - las.sum, t')
-  | [], h, _, _, _, _, _, _, _, _, _, _ => by
+  | [], h, _, _, _, _, _, _, _, _, _, _, _ => by
     simp only [chain, List.map_nil, List.zip_nil_left, List.forIn_nil, List.sum_nil,
       Nat.sub_zero]
     rfl
-  | la :: las, h, f, t, cur, n, t', hg, hsum, hpos, hcur, hgroups => by
-    rw [List.sum_cons] at hsum
-    have h1 := hpos la List.mem_cons_self
+  | la :: las, h, f, rest, t, cur, n, t', hg, hp, hs, hcur, hgroups => by
+    obtain ⟨h1, h2, h3, hs⟩ := hs
+    have hle : ∀ v ∈ rest.head?, Nat.log2 v.size ≤ h - la := by
+      intro v hv
+      rcases rest with _ | ⟨w, ws⟩
+      · exact absurd hv (by simp only [List.head?_nil, Option.mem_def, reduceCtorEq,
+          not_false_eq_true])
+      · simp only [List.head?_cons, Option.mem_def, Option.some.injEq] at hv
+        subst hv
+        simp only [List.map_cons, List.headD_cons] at h3
+        omega
     rw [chain] at hgroups ⊢
     dsimp only at hgroups ⊢
     set g2 := (t.observeList (Committed.ofMats hashF compF
@@ -908,15 +1106,19 @@ theorem multi_loop [Poseidon2Field F] (P : Params) (groups : List (List (Nat × 
       obtain ⟨j, hj, rfl⟩ := List.mem_map.mp hi
       rw [Nat.shiftRight_eq_div_pow]
       exact Nat.div_lt_of_lt_mul (by rw [Nat.mul_comm, ← hhl]; exact hcur j hj)
-    rw [multi_loop P groups body hbody las (h - la) _ _ (cur.map (· >>> la)) (n + 1) t'
-      (good_step P hg la h1 (by omega) _) (by omega)
-      (fun x hx ↦ hpos x (List.mem_cons_of_mem _ hx)) hcur' fun j ↦ by
+    obtain ⟨hg', hp', hm'⟩ := inject_good P (good_step P hg la h1 (by omega)
+      (g2.2.sampleExtValue : EF)) (g2.2.sampleExtValue : EF) la rest hp hle
+    have hs' : Sched (P.logBlowup + P.logFinalPolyLen) las (h - la)
+        ((inject (g2.2.sampleExtValue : EF) la (foldOnce la (g2.2.sampleExtValue : EF) f)
+          rest).2.map (Nat.log2 ·.size)) := by rw [hm']; exact hs
+    have hsum := sum_le_of_sched _ las (h - la) _ hs'
+    rw [multi_loop P groups body hbody las (h - la) _ _ _ (cur.map (· >>> la)) (n + 1) t'
+      hg' hp' hs' hcur' fun j ↦ by
         have := hgroups (j + 1)
         rw [show n + (j + 1) = n + 1 + j by omega] at this
         rw [this, List.map_map]
         rfl,
-      show h - la - las.sum = h - (la + las.sum) by omega]
-    rfl
+      List.sum_cons, show h - la - las.sum = h - (la + las.sum) by omega]
 
 /-! ### The queries -/
 
@@ -944,47 +1146,52 @@ theorem values_openMulti [Poseidon2Field F] (c : (specBackend EF).C) (idxs : Lis
     List.getElem?_eq_getElem hk, Option.map_some, Option.getD_some]
 
 theorem w_chain_zero [Poseidon2Field F] (P : Params) (h0 : P.commitPowBits = 0) :
-    ∀ (las : List Nat) (f : Array EF) (t : Transcript F 24), ∀ r ∈ (chain P las f t).1, r.w = 0
-  | [], _, _, _, hr => absurd hr List.not_mem_nil
-  | la :: las, f, t, r, hr => by
+    ∀ (las : List Nat) (f : Array EF) (rest : List (Array EF)) (t : Transcript F 24),
+      ∀ r ∈ (chain P las f rest t).1, r.w = 0
+  | [], _, _, _, _, hr => absurd hr List.not_mem_nil
+  | la :: las, f, rest, t, r, hr => by
     rw [chain] at hr
     rcases List.mem_cons.mp hr with rfl | hr
     · show ((Transcript.observeList t _).grind P.commitPowBits).1 = 0
       rw [h0]; rfl
-    · exact w_chain_zero P h0 las _ _ r hr
+    · exact w_chain_zero P h0 las _ _ _ r hr
 
 theorem length_chain [Poseidon2Field F] (P : Params) (las : List Nat) (f : Array EF)
-    (t : Transcript F 24) : (chain P las f t).1.length = las.length := by
-  conv_rhs => rw [← la_chain P las f t]
+    (rest : List (Array EF)) (t : Transcript F 24) :
+    (chain P las f rest t).1.length = las.length := by
+  conv_rhs => rw [← la_chain P las f rest t]
   rw [List.length_map]
 
 /-! ### FRI completeness -/
 
 /-- Without the flag after `proveFri`, there was none before it. -/
 theorem flag_proveFri [Poseidon2Field F] (P : Params) (rounds : List (OpenRound (specBackend EF)))
-    (f0 : Array EF) (bw : F) (t : Transcript F 24)
-    (h : ((proveFri (specBackend EF) P rounds [f0] bw).run t).2.grindFailed = false) :
+    (inputs : List (Array EF)) (bw : F) (t : Transcript F 24)
+    (h : ((proveFri (specBackend EF) P rounds inputs bw).run t).2.grindFailed = false) :
     t.grindFailed = false := by
   rw [proveFri_run] at h
   dsimp only at h
   rw [flag_sampleIndices] at h
   have h1 := flag_grind _ _ h
   rw [flag_observeExts] at h1
-  have h2 := flag_chain P _ _ _ h1
+  have h2 := flag_chain P _ _ _ _ h1
   rwa [flag_observeList] at h2
 
-/-- **FRI completeness**: the verifier's FRI accepts the specification prover's proof of one
-low-degree input `f0`, when the prover's grinder found its witnesses, the verifier's rounds have
-the input's height, and the input openings verify and give the input's entries. -/
+/-- **FRI completeness**: the verifier's FRI accepts the specification prover's proof of the
+low-degree inputs `f0 :: rest` of strictly decreasing heights, when the prover's grinder found its
+witnesses, the verifier's rounds have the inputs' heights, and the input openings verify and give
+the inputs' entries. -/
 theorem verifyFri_proveFri [Poseidon2Field F] (P : Params)
-    (rounds : List (OpenRound (specBackend EF))) (f0 : Array EF) (bw : F)
-    (vrounds : List (Round F EF)) (alpha : EF) (t : Transcript F 24)
+    (rounds : List (OpenRound (specBackend EF))) (f0 : Array EF) (rest : List (Array EF))
+    (bw : F) (vrounds : List (Round F EF)) (alpha : EF) (t : Transcript F 24)
     (hd : t.duplex = Poseidon2.duplex) (hg : Good P (Nat.log2 f0.size) f0)
+    (hp : Pending P rest) (hlt : ∀ v ∈ rest, Nat.log2 v.size < Nat.log2 f0.size)
     (hP : 0 < P.maxLogArity) (hq : 0 < P.numQueries) (hb : 0 < P.logBlowup)
-    (hgrind : ((proveFri (specBackend EF) P rounds [f0] bw).run t).2.grindFailed = false)
+    (hgrind : ((proveFri (specBackend EF) P rounds (f0 :: rest : List (Array EF)) bw).run
+      t).2.grindFailed = false)
     (hv : vrounds.any (!·.2.isEmpty) = true)
     (hheights : (((vrounds.flatMap (·.2)).map (·.1.logSize + P.logBlowup)).mergeSort
-      (fun a b ↦ b ≤ a)).dedup = [Nat.log2 f0.size])
+      (fun a b ↦ b ≤ a)).dedup = (f0 :: rest).map (Nat.log2 ·.size))
     (hinputs : ∀ (indices : List Nat) (t' : Transcript F 24),
       (∀ i ∈ indices, i < 2 ^ Nat.log2 f0.size) →
       verifyInputs (poseidon2 F) P (Nat.log2 f0.size) indices
@@ -995,34 +1202,45 @@ theorem verifyFri_proveFri [Poseidon2Field F] (P : Params)
       reduceQuery (poseidon2 F) P (Nat.log2 f0.size) index alpha
         (rounds.map fun (c, _) ↦ ((specBackend EF).openAt c
           (index >>> (Nat.log2 f0.size - (specBackend EF).logHeight c))).values.toList) vrounds t' =
-        .ok ([(Nat.log2 f0.size, f0.getD index 0)], t')) :
-    verifyFri (poseidon2 F) P ((proveFri (specBackend EF) P rounds [f0] bw).run t).1 vrounds
-      alpha t = .ok ((), ((proveFri (specBackend EF) P rounds [f0] bw).run t).2) := by
+        .ok ((Nat.log2 f0.size, f0.getD index 0) :: roOf rest index (Nat.log2 f0.size), t')) :
+    verifyFri (poseidon2 F) P
+      ((proveFri (specBackend EF) P rounds (f0 :: rest : List (Array EF)) bw).run t).1
+      vrounds alpha t =
+      .ok ((),
+        ((proveFri (specBackend EF) P rounds (f0 :: rest : List (Array EF)) bw).run t).2) := by
   rw [proveFri_run] at hgrind ⊢
-  dsimp only at hgrind ⊢
+  simp only [List.map_cons, List.headD_cons, List.tail_cons] at hgrind ⊢
   unfold verifyFri
   rw [hheights]
-  simp only [List.headD_cons]
+  simp only [List.map_cons, List.headD_cons]
   set h0 := Nat.log2 f0.size with hh0
   have hL := hg.1
   have h24 : h0 ≤ twoAdicity F := hg.2.2.1
-  set las := foldSchedule P.maxLogArity (P.logBlowup + P.logFinalPolyLen) h0 [h0] with hlas
-  have hlas' : las = foldArities P.maxLogArity (h0 - (P.logBlowup + P.logFinalPolyLen)) :=
-    foldSchedule_single _ _ hP _ _ (Nat.sub_le _ _)
-  obtain ⟨hsum, hpos⟩ := foldArities_spec P.maxLogArity
-    (h0 - (P.logBlowup + P.logFinalPolyLen)) hP
-  rw [← hlas'] at hsum hpos
+  set las := foldSchedule P.maxLogArity (P.logBlowup + P.logFinalPolyLen) h0
+    (h0 :: rest.map (Nat.log2 ·.size)) with hlas
+  have hsched : Sched (P.logBlowup + P.logFinalPolyLen) las h0 (rest.map (Nat.log2 ·.size)) :=
+    foldSchedule_sched _ _ hP _ _ _
+      (List.Pairwise.cons (fun x hx ↦ by
+        obtain ⟨v, hv, rfl⟩ := List.mem_map.mp hx; exact hlt v hv) hp.1)
+      (fun x hx ↦ by
+        rcases List.mem_cons.mp hx with rfl | hx
+        · exact hL
+        · obtain ⟨v, hv, rfl⟩ := List.mem_map.mp hx; exact (hp.2 v hv).1) (Nat.sub_le _ _)
+  have hsum : las.sum = h0 - (P.logBlowup + P.logFinalPolyLen) := by
+    have := sub_sum_of_sched _ las h0 _ hsched
+    have := sum_le_of_sched _ las h0 _ hsched
+    omega
   set seed := DomainSeparator.friSeed F EF las (2 ^ P.logFinalPolyLen) P.commitPowBits
     P.queryPowBits P.numQueries h0 P.logBlowup P.maxLogArity with hseed
   set t1 := t.observeList seed with ht1
-  set r := chain P las f0 t1 with hr
+  set r := chain P las f0 rest t1 with hr
   set fp := finalPolyOf P r.2.1 with hfp
   set t3 := r.2.2.observeExts fp.toList with ht3
   set g4 := t3.grind P.queryPowBits with hg4
   set qs := sampleIndices h0 P.numQueries g4.2 with hqs
   obtain ⟨hcom, hdata, hwit, hari, -⟩ := foldl_pushRd r.1 ⟨#[], [], #[], #[], #[]⟩
   simp only [List.nil_append] at hcom hdata hwit hari
-  have hrl : r.1.map (·.la) = las := la_chain P las f0 t1
+  have hrl : r.1.map (·.la) = las := la_chain P las f0 rest t1
   -- flags and duplexes
   have hq4 : g4.2.grindFailed = false := by
     rw [← flag_sampleIndices h0 P.numQueries]; exact hgrind
@@ -1058,7 +1276,7 @@ theorem verifyFri_proveFri [Poseidon2Field F] (P : Params)
     · rw [h0, bne_self_eq_false, Bool.false_or, ← Array.all_toList, hwit, List.all_eq_true]
       intro x hx
       obtain ⟨rd, hrd, rfl⟩ := List.mem_map.mp hx
-      rw [w_chain_zero P h0 las f0 t1 rd hrd, beq_self_eq_true]
+      rw [w_chain_zero P h0 las f0 rest t1 rd hrd, beq_self_eq_true]
     · rw [bne_iff_ne.mpr h0, Bool.true_or]
   have hqw0 : (P.queryPowBits != 0 || g4.1 == 0) = true := by
     by_cases h0 : P.queryPowBits = 0
@@ -1073,14 +1291,15 @@ theorem verifyFri_proveFri [Poseidon2Field F] (P : Params)
   rw [hfold1, ensure_true, pure_bind, hfold2, ensure_true, pure_bind, hwit0, ensure_true,
     pure_bind, hqw0, ensure_true, pure_bind, hfps, ensure_true, pure_bind,
     bind_ok (observeList_run t seed), ← ht1, hcsz, ensure_true, pure_bind, hcom, hwit]
-  rw [bind_ok (commit_loop P _ (fun _ _ _ ↦ rfl) las f0 t1 #[] hd1 hf)]
+  rw [bind_ok (commit_loop P _ (fun _ _ _ ↦ rfl) las f0 rest t1 #[] hd1 hf)]
   rw [bind_ok (observeExts_run r.2.2 fp.toList), ← ht3,
     bind_ok (a := true) (t' := g4.2) (by rw [checkWitness_run _ _ _ hd3, checkWitness_grind _ _
       hq4]), ensure_true, pure_bind,
     bind_ok (sampleIndices_mapM h0 P.numQueries g4.2 ((duplex_grind t3 _).trans hd3)), ← hqs,
     bind_ok (hinputs qs.1 qs.2 (sampleIndices_lt h0 _ _))]
   rw [hdata', hari']
-  have hbetas : (#[] ++ (List.map (fun x : Rd EF ↦ x.beta) (chain P las f0 t1).1).toArray).toList =
+  have hbetas :
+      (#[] ++ (List.map (fun x : Rd EF ↦ x.beta) (chain P las f0 rest t1).1).toArray).toList =
       r.1.map (·.beta) := by
     rw [Array.toList_append, List.toList_toArray]; rfl
   rw [hbetas]
@@ -1098,12 +1317,12 @@ theorem verifyFri_proveFri [Poseidon2Field F] (P : Params)
       simp only [Function.comp_apply]
       rw [values_openMulti _ _ _ (by rw [List.length_map]; exact hk), List.getElem_map]
     simp only [hrows]
-    have hfq := foldQuery_run P h0 f0 hg las hsum (fun x hx ↦ (hpos x hx).1) t1 qs.1 k hk hk' qs.2
+    have hfq := foldQuery_run P h0 f0 rest hg hp las hsched t1 qs.1 k hk hk' qs.2
     rw [← hr] at hfq
     rw [bind_ok (hreduce qs.1[k] qs.2 hk')]
     erw [bind_ok hfq]
     have hfin := horner_idft r.2.1 P.logBlowup P.logFinalPolyLen h0 (qs.1[k] >>> las.sum)
-      (chain_final P las h0 f0 t1 hg hsum fun x hx ↦ (hpos x hx).1) hL h24 (by
+      (chain_final P las h0 f0 rest t1 hg hp hsched) hL h24 (by
         rw [Nat.shiftRight_eq_div_pow, hsum]
         refine Nat.div_lt_of_lt_mul ?_
         rw [← pow_add, Nat.sub_add_cancel hL]; exact hk')
@@ -1111,8 +1330,9 @@ theorem verifyFri_proveFri [Poseidon2Field F] (P : Params)
     simp only [hfp] at ⊢
     rw [hfin, beq_self_eq_true, ensure_true, pure_bind]
     rfl)]
-  erw [bind_ok (multi_loop P (qs.1.map (qGroups r.1)) _ (fun _ _ _ _ _ ↦ rfl) las h0 f0 t1 qs.1 0
-    qs.2 hg (le_of_eq hsum) (fun x hx ↦ (hpos x hx).1) hidx fun j ↦ by
+  erw [bind_ok (multi_loop P (qs.1.map (qGroups r.1)) _ (fun _ _ _ _ _ ↦ rfl) las h0 f0 rest t1
+    qs.1 0
+    qs.2 hg hp hsched hidx fun j ↦ by
       rw [List.map_map, Nat.zero_add]
       rfl)]
   rfl
