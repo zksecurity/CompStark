@@ -9,6 +9,7 @@ public import CompStark.Sound.Johnson
 public import CompStark.Sound.Fri
 public import CompStark.Sound.Batching
 public import CompStark.Sound.LossyMca
+public import CompStark.BatchSoundnessError
 
 /-! # Bounds on the knowledge error's terms below the unique-decoding radius
 
@@ -32,8 +33,9 @@ bounds on batching and FRI's large folds:
   contribute `(1 - δ + #folds · loss) ^ numQueries`.
 
 `knowledgeError_le_of_le` (the MCA bound) and `knowledgeError_le_curve` (the curve bound) collect
-the terms other than FRI's; `numbers_le` and `numbers_curve_le` close the arithmetic for
-`CompStark/Security.lean`.
+the terms other than FRI's, and `batchKnowledgeError_le_curve` those of a batch, whose constraint
+folding and out-of-domain terms are the worst instance's; `numbers_le` and `numbers_curve_le` close
+the arithmetic for `CompStark/Security.lean`.
 -/
 
 @[expose] public section
@@ -354,7 +356,7 @@ theorem batchingError_le_of_le (S : Setup EF) (δ : ℝ≥0) (hδ : (δ : ℝ) �
     rw [Setup.n, Setup.size, pow_add, mul_comm]
   have hb := S.valid.blowup
   have : NeZero S.n := ⟨(Nat.two_pow_pos _).ne'⟩
-  refine (batchingError_le_mcaError S δ).trans ?_
+  refine (batchingError_le_mcaError S S.numOpened δ).trans ?_
   exact mcaError_powers_le (Nat.two_pow_pos _)
     ((Nat.le_mul_of_pos_left _ (Nat.two_pow_pos _)).trans hN) _
     (le_relUDR _ (by rw [Fintype.card_fin]; exact hN) δ (mul_le_of_le_udr S δ hδ))
@@ -399,7 +401,7 @@ theorem knowledgeError_le_of_le (S : Setup EF) (δ δ' : ℝ≥0) (hδ : (δ : �
           (S.identityDegree + S.n : ℕ) / (Fintype.card 𝕂 : ENNReal) +
           ((S.numOpened - 1) * S.size : ℕ) / (Fintype.card 𝕂 : ENNReal) + friError S δ :=
         add_le_add (add_le_add (add_le_add (foldingError_le_of_le S δ' hδ')
-          (outOfDomainError_le_of_le S δ' hδ')) ((batchingError_anti S δ hδ).trans
+          (outOfDomainError_le_of_le S δ' hδ')) ((batchingError_anti S S.numOpened δ hδ).trans
             (batchingError_le_of_le S δ hδu))) le_rfl
     _ = _ := by
         simp only [ENNReal.div_add_div_same, Nat.cast_add]
@@ -427,9 +429,32 @@ theorem knowledgeError_le_curve (S : Setup EF) (δ δ' : ℝ≥0)
             Fintype.card 𝕂 + friError S δ :=
         add_le_add (add_le_add (add_le_add (foldingError_le_of_le S δ' hδ')
           (outOfDomainError_le_of_le S δ' hδ'))
-            (batchingError_le_curve S δ _ h_ud h_pos h_lt)) le_rfl
+            (batchingError_le_curve S S.numOpened δ _ h_ud h_pos h_lt)) le_rfl
     _ = _ := by
         simp only [Nat.cast_add, ENNReal.div_add_div_same]
+
+/-- The knowledge error of a batch with FRI at `δ` and the extractor at `δ'` below the
+unique-decoding radius, `δ < δ' - 2/N`: every instance's constraint-folding and out-of-domain
+integers at most `A`, the curve bound for batching all opened words at `δ' - 2/N`, and FRI's
+error. -/
+theorem batchKnowledgeError_le_curve (S : Batch.Setup EF) (δ δ' : ℝ≥0) (A : ℕ)
+    (hA : ∀ i, ((S.air i).constraints.length - 1) + ((S.instanceSetup i).identityDegree +
+      2 ^ S.logN) ≤ A)
+    (h_ud : (δ : ℝ) ≤ (1 - S.rate) / 2 - 1 / S.size) (h_pos : 0 < δ)
+    (h_lt : (δ : ℝ) < δ' - 2 / S.size) (hδ' : (δ' : ℝ) < (1 - S.rate) / 2) :
+    Batch.knowledgeError S δ δ' ≤
+      (A : ENNReal) / (Fintype.card 𝕂 : ENNReal) +
+        ENNReal.ofReal ((S.numOpened - 1 : ℕ) *
+          max ((1 - S.rate - δ) / (δ * (1 - S.rate - 2 * δ)))
+            ((δ' - 2 / S.size) / (δ' - 2 / S.size - δ))) /
+          Fintype.card 𝕂 +
+        friError S.domainSetup δ := by
+  refine add_le_add (add_le_add (iSup_le fun i ↦ ?_)
+    (batchingError_le_curve S.domainSetup S.numOpened δ _ h_ud h_pos h_lt)) le_rfl
+  refine (add_le_add (foldingError_le_of_le (S.instanceSetup i) δ' hδ')
+    (outOfDomainError_le_of_le (S.instanceSetup i) δ' hδ')).trans ?_
+  rw [ENNReal.div_add_div_same, ← Nat.cast_add]
+  exact ENNReal.div_le_div_right (Nat.cast_le.mpr (hA i)) _
 
 /-! ### The numbers -/
 

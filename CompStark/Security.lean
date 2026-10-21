@@ -153,6 +153,23 @@ rows over `KoalaBear.Fast.Ext5`, blowup `4` and `190` queries (`wide5iParams`), 
 
 The total is at most `2 ^ (-128)` (`wide5i_knowledgeError_le`, `wide5i_knowledgeSoundness`), about
 `2 ^ (-128.59)` exactly; `189` queries do not reach it at these radii.
+
+`wideBatchSetup`: a batch of three `wide 64` instances on `2 ^ 20` rows each over
+`KoalaBear.Fast.Ext5`, with `wide5iParams` (blowup `4`, `190` queries), FRI at
+`δ = 3/8 - 2 ^ (-14)`, the extractor at `δ' = 3/8 - 2 ^ (-17)`, `loss = 2 ^ (-18)` and `t = 14`
+(`batchKnowledgeError_le_curve`):
+
+* constraint folding and out of domain, the worst instance's: at most `4 · 2 ^ 20 + 64`, about
+  `2 ^ (-132.94)`;
+* batching all `3 · 138 = 414` opened words: `413 · max(T₁, T₂) ≤ 3384398`, `T₁ ≈ 8194.67`,
+  `T₂ ≈ 7084.82`, about `2 ^ (-133.25)`;
+* FRI's folds: the `8` onto at least `2 ^ 14` points `98289` each, the `12` smaller ones `2 ^ 14`,
+  about `2 ^ (-135.33)`;
+* FRI's queries `(5/8 + 2 ^ (-14) + 20 · 2 ^ (-18)) ^ 190`, about `2 ^ (-128.77)`.
+
+The total is at most `2 ^ (-128)` (`wideBatch_knowledgeError_le`, `wideBatch_knowledgeSoundness`),
+about `2 ^ (-128.62)` exactly. The batch pays for `α` and `ζ` once, as its failing instance would
+alone; only batching grows with the instances, by their opened words.
 -/
 
 @[expose] public section
@@ -808,5 +825,91 @@ theorem wide5i_knowledgeSoundness (publicValues : List F) (prover : Prover wide5
     h).trans wide5i_knowledgeError_le
   rw [rate_eq]
   norm_num [wide5iSetup, wide5iParams]
+
+
+/-- Three instances of `wide 64` on `2 ^ 20` rows each over the quintic extension with
+`wide5iParams`. -/
+def wideBatchSetup : Batch.Setup KoalaBear.Fast.Ext5 where
+  params := wide5iParams
+  logN := 20
+  k := 3
+  air _ := wide 64
+  valid _ :=
+    { colsInWidth := wide_colsInWidth 64
+      preprocessedSize := rfl
+      periodicFits := rfl
+      degreeFits := wide_degreeFits 64 20
+      twoAdic := by decide
+      chunksFit := by
+        rw [wide_logQuotientChunks 64 _ (by decide)]
+        decide
+      folds := by decide
+      finalPolyFits := by decide
+      queries := by decide
+      blowup := by decide }
+  folds := by decide
+  nonempty := by decide
+
+/-- The batch of three `wide 64` instances opens `3 (128 + 2 · 5) = 414` words. -/
+theorem wideBatch_numOpened : wideBatchSetup.numOpened - 1 = 413 := by
+  have h (i : Fin 3) : (wideBatchSetup.instanceSetup i).numOpened = 138 := by
+    have := wide_numOpened (wideBatchSetup.instanceSetup i) rfl
+    have hd : Challenge.d KoalaBear.Fast.Ext5 = 5 := rfl
+    have hpos : 2 * 64 ≤ (wideBatchSetup.instanceSetup i).numOpened := by
+      rw [Setup.numOpened]
+      change 2 * 64 ≤ 2 * 64 + _ + _ + _
+      omega
+    omega
+  rw [Batch.Setup.numOpened]
+  change ∑ i : Fin 3, (wideBatchSetup.instanceSetup i).numOpened - 1 = 413
+  rw [Fin.sum_univ_three, h, h, h]
+  norm_num
+
+/-- **128 bits, interactively, for a batch of three tables of `2 ^ 20` rows.** The knowledge error
+of `wideBatchSetup`, FRI at `δ = 6143/16384 = 3/8 - 2 ^ (-14)` and the extractor at
+`δ' = 49151/131072 = 3/8 - 2 ^ (-17)`, is at most `2 ^ (-128)`. -/
+theorem wideBatch_knowledgeError_le :
+    Batch.knowledgeError wideBatchSetup (6143 / 16384) (49151 / 131072) ≤ (2 ^ 128)⁻¹ := by
+  set D := wideBatchSetup.domainSetup
+  have ha : D.params.maxLogArity = 1 := rfl
+  have hrate : wideBatchSetup.rate = 1 / 2 ^ 2 := rate_eq D
+  have hsize : (wideBatchSetup.size : ℝ) = 2 ^ 22 := by
+    norm_num [Batch.Setup.size, wideBatchSetup, wide5iParams]
+  have h1 := batchKnowledgeError_le_curve wideBatchSetup (6143 / 16384) (49151 / 131072)
+    (2 ^ 22 + 64) (fun i ↦ (wide_integers_le (wideBatchSetup.instanceSetup i) rfl).trans
+      (by change 4 * 2 ^ 20 + 64 ≤ 2 ^ 22 + 64; norm_num)) (by rw [hrate, hsize]; norm_num)
+    (by norm_num) (by rw [hsize]; norm_num) (by rw [hrate]; norm_num)
+  have h2 := friError_le_lossy D ha 14 (6143 / 16384) (6143 / 16384 + 1 / 2 ^ 18)
+    (1 / 2 ^ 18) (by rw [show D.rate = 1 / 2 ^ 2 from hrate]; norm_num) (by norm_num)
+    (lt_add_of_pos_right _ (by positivity)) (by positivity)
+  have hq : D.params.numQueries = 190 := rfl
+  have hlarge : D.logN + D.params.logBlowup - 14 = 8 := rfl
+  have hfolds : D.logN - D.params.logFinalPolyLen = 20 := rfl
+  have hb : D.params.logBlowup = 2 := rfl
+  rw [hq, hlarge, hfolds, hb] at h2
+  refine h1.trans ((add_le_add le_rfl h2).trans
+    (numbers_curve_le _ (2 ^ 22 + 64) _ _ _ _ 3384398 _ 786312 _ (10241 / 16384 + 20 / 2 ^ 18)
+      le_rfl ?_ ?_ le_rfl ?_ (by norm_num) (by norm_num) (by norm_num) ?_))
+  · rw [wideBatch_numOpened, hrate, hsize]
+    norm_num
+  · simp only [LossyMca.lossyBound]
+    norm_num
+  · norm_num
+  · norm_num
+
+/-- Knowledge soundness of `wideBatchSetup` with error `2 ^ (-128)`, FRI at `6143/16384` and the
+extractor at `49151/131072`: if no three traces, each within `49151/131072` of its instance's
+committed trace, all satisfy `wide 64`, the verifier accepts with probability at most
+`2 ^ (-128)`. -/
+theorem wideBatch_knowledgeSoundness (publicValues : Fin 3 → List F)
+    (prover : Batch.Prover wideBatchSetup) :
+    (∀ traces ∈ Batch.closeTraces wideBatchSetup (49151 / 131072 : NNReal) prover.trace,
+      ¬ ∀ i, (wide 64).Satisfied 20 (traces i) (publicValues i)) →
+      Batch.acceptance publicValues prover ≤ (2 ^ 128)⁻¹ := by
+  intro h
+  refine (batchKnowledgeSoundness wideBatchSetup publicValues prover (6143 / 16384)
+    (49151 / 131072) ?_ h).trans wideBatch_knowledgeError_le
+  rw [show wideBatchSetup.rate = 1 / 2 ^ 2 from rate_eq wideBatchSetup.domainSetup]
+  norm_num
 
 end CompStark.Iop

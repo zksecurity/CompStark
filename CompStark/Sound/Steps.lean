@@ -8,8 +8,8 @@ public import CompStark.SoundnessError
 
 /-! # The steps of the soundness proof
 
-`knowledgeSoundness` follows from four facts, stated here as propositions and proved in their
-own files:
+`knowledgeSoundness` and `batchKnowledgeSoundness` follow from four facts about a STARK, stated
+here as propositions and proved in their own files:
 
 * `FriStep`: FRI rejects words far from the code (ArkLib's FRI soundness).
 * `BatchingStep`: batching by powers keeps summands that are not `δ'`-near on a common set
@@ -44,13 +44,13 @@ def FriStep (S : Setup EF) : Prop :=
 def FriAtMostOne (S : Setup EF) : Prop := ∀ w : S.Point → 𝕂, friAcceptance S w ≤ 1
 
 open Classical in
-/-- If `numOpened` words are not near the code on a common set at radius `δ'`, their combination
-by the powers of a uniform `a` is `δ`-near the code with probability at most `batchingError`. -/
+/-- If `m` words are not near the code on a common set at radius `δ'`, their combination by the
+powers of a uniform `a` is `δ`-near the code with probability at most `batchingErrorOf`. -/
 def BatchingStep (S : Setup EF) : Prop :=
-  ∀ (δ : NNReal) (δ' : ℝ) (ws : Fin S.numOpened → S.Point → 𝕂), ¬ NearTogether S δ' ws →
+  ∀ (m : Nat) (δ : NNReal) (δ' : ℝ) (ws : Fin m → S.Point → 𝕂), ¬ NearTogether S δ' ws →
     ((Finset.univ.filter fun a : 𝕂 ↦
-        Near S δ fun i ↦ ∑ k : Fin S.numOpened, a ^ (k : Nat) * ws k i).card : ENNReal)
-      / Fintype.card 𝕂 ≤ batchingError S δ δ'
+        Near S δ fun i ↦ ∑ k : Fin m, a ^ (k : Nat) * ws k i).card : ENNReal)
+      / Fintype.card 𝕂 ≤ batchingErrorOf S m δ δ'
 
 /-- The preprocessed trace's polynomials have degree below `n`. -/
 theorem natDegree_preprocessedPoly_le (S : Setup EF) (j : Nat) :

@@ -156,7 +156,7 @@ theorem roundError_le (S : Setup EF) (harity : S.params.maxLogArity = 1) (t : �
   gcongr
   · exact foldingError_le_of_le S δ' hδ'
   · exact outOfDomainError_le_of_le S δ' hδ'
-  · exact batchingError_le_curve S δ _ h_ud h_pos h_lt
+  · exact batchingError_le_curve S S.numOpened δ _ h_ud h_pos h_lt
   · exact friFoldError_le S harity t δ (δ + loss) loss h_udt h_pos
       (lt_add_of_pos_right _ h_loss) h_loss
 

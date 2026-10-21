@@ -79,6 +79,21 @@ Quot.sound] -/
 #guard_msgs in
 #print axioms CompStark.Iop.wide5i_knowledgeSoundness
 
+/-- info: 'CompStark.Iop.batchKnowledgeSoundness' depends on axioms: [propext, Classical.choice,
+Quot.sound] -/
+#guard_msgs in
+#print axioms CompStark.Iop.batchKnowledgeSoundness
+
+/-- info: 'CompStark.Iop.wideBatch_knowledgeError_le' depends on axioms: [propext,
+Classical.choice, Quot.sound] -/
+#guard_msgs in
+#print axioms CompStark.Iop.wideBatch_knowledgeError_le
+
+/-- info: 'CompStark.Iop.wideBatch_knowledgeSoundness' depends on axioms: [propext,
+Classical.choice, Quot.sound] -/
+#guard_msgs in
+#print axioms CompStark.Iop.wideBatch_knowledgeSoundness
+
 /-- info: 'CompStark.Sound.exists_satisfied_of_safe' depends on axioms: [propext, Classical.choice,
 Quot.sound] -/
 #guard_msgs in

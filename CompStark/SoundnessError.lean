@@ -89,14 +89,18 @@ noncomputable def outOfDomainError (S : Setup EF) (δ : NNReal) : ENNReal :=
     S.identityDegree + S.n : Nat) / (Fintype.card 𝕂 : ENNReal)
 
 open Classical in
-/-- The correlated-agreement error of the powers `1, a, a², …` over the opened words: the largest
+/-- The correlated-agreement error of the powers `1, a, a², …` over `m` words on `L`: the largest
 probability, over the words, that their combination by the powers of a uniform `a` is `δ`-near
 the code although the words are not near on a common set at radius `δ'`. -/
-noncomputable def batchingError (S : Setup EF) (δ : NNReal) (δ' : ℝ) : ENNReal :=
-  ⨆ ws : Fin S.numOpened → S.Point → 𝕂,
+noncomputable def batchingErrorOf (S : Setup EF) (m : Nat) (δ : NNReal) (δ' : ℝ) : ENNReal :=
+  ⨆ ws : Fin m → S.Point → 𝕂,
     ((Finset.univ.filter fun a : 𝕂 ↦
-      Near S δ (fun i ↦ ∑ k : Fin S.numOpened, a ^ (k : Nat) * ws k i) ∧
+      Near S δ (fun i ↦ ∑ k : Fin m, a ^ (k : Nat) * ws k i) ∧
       ¬ NearTogether S δ' ws).card : ENNReal) / Fintype.card 𝕂
+
+/-- The correlated-agreement error of the powers `1, a, a², …` over the opened words. -/
+noncomputable def batchingError (S : Setup EF) (δ : NNReal) (δ' : ℝ) : ENNReal :=
+  batchingErrorOf S S.numOpened δ δ'
 
 /-- FRI's soundness error at proximity `δ` (ArkLib's `Fri.Spec.soundnessErrorLossy`): the lossy
 correlated-agreement error of each fold, and `(1 - δ + #folds · loss) ^ numQueries` for the

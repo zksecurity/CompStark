@@ -352,7 +352,7 @@ theorem prob_batchBad_le (δ : NNReal) (δ' : ℝ) (trace : Fin S.air.width → 
       rw [BatchBad, ← deepWord_eq]
       exact and_iff_right hfar
   rw [hset]
-  exact batchingStep S δ _ _ hfar
+  exact batchingStep S S.numOpened δ _ _ hfar
 
 /-- FRI fold `i`: a uniform `β` is bad with probability at most `friFoldError`, for every
 committed word. -/

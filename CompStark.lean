@@ -102,6 +102,11 @@ public import CompStark.Sound.Algebra
 public import CompStark.Sound.Batching
 public import CompStark.Sound.Decoding
 public import CompStark.Sound.Assembly
+public import CompStark.BatchIop
+public import CompStark.BatchSoundnessError
+public import CompStark.Sound.BatchAssembly
+public import CompStark.BatchSoundness
+public import CompStark.Sound.Single
 public import CompStark.Soundness
 public import CompStark.Sound.Johnson
 public import CompStark.Sound.CurveBW
