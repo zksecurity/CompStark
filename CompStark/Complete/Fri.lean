@@ -11,17 +11,16 @@ public import CompStark.Complete.FriRound
 The verifier's FRI accepts the specification prover's proof of low-degree inputs of strictly
 decreasing heights (`verifyFri_proveFri`).
 
-The prover's commit rounds are a pure chain over the fold schedule (`chain`,
-`commitRounds_run`): each round commits to the groups of the folded vector, grinds, samples `β`,
-folds, and adds the next input when the folded vector has its height (`inject`). Plonky3's fold
-schedule reaches every input's height and ends at the final height (`Sched`,
-`foldSchedule_sched`). The verifier replays the transcript: it observes the same domain separator and
-commitments, the grinding witnesses check, and it samples the same `β`s and query indices. Each
-query's folds walk the chain at the query's index: the verifier puts the running value back
-between the siblings and recovers the opened group, whose `foldRow` is the next folded vector's
-entry, plus the added input's entry. The last folded vector has low degree, so the final polynomial evaluates to the last
-entry. Every round's groups at the queries are an honest multi-opening of its commitment
-(`verifyMulti_openMulti`).
+The prover's commit rounds are a pure chain over the fold schedule (`chain`, `commitRounds_run`):
+each round commits to the groups of the folded vector, grinds, samples `β`, folds, and adds the next
+input when the folded vector has its height (`inject`). Plonky3's fold schedule reaches every
+input's height and ends at the final height (`Sched`, `foldSchedule_sched`). The verifier replays
+the transcript: it observes the same domain separator and commitments, the grinding witnesses check,
+and it samples the same `β`s and query indices. Each query's folds walk the chain at the query's
+index: the verifier puts the running value back between the siblings and recovers the opened group,
+whose `foldRow` is the next folded vector's entry, plus the added input's entry. The last folded
+vector has low degree, so the final polynomial evaluates to the last entry. Every round's groups at
+the queries are an honest multi-opening of its commitment (`verifyMulti_openMulti`).
 -/
 
 @[expose] public section
@@ -860,7 +859,7 @@ def finalPolyOf (P : Params) (fin : Array EF) : Array EF :=
 
 theorem commitPhase_run [Poseidon2Field F] (P : Params) (las : List Nat) (f0 : Array EF)
     (rest : List (Array EF)) (t : Transcript F 24) :
-    (commitPhase (specBackend EF) P las (f0 :: rest)).run t =
+    (commitPhase (specBackend EF) P las (f0 :: rest : List (Array EF))).run t =
       ({ (chain P las f0 rest t).1.foldl pushRd ⟨#[], [], #[], #[], #[]⟩ with
           finalPoly := finalPolyOf P (chain P las f0 rest t).2.1 },
         (chain P las f0 rest t).2.2.observeExts
@@ -921,7 +920,7 @@ theorem proveFri_run [Poseidon2Field F] (P : Params) (rounds : List (OpenRound (
     let cp := { r.1.foldl pushRd ⟨#[], [], #[], #[], #[]⟩ with finalPoly := finalPolyOf P r.2.1 }
     let t3 := r.2.2.observeExts (finalPolyOf P r.2.1).toList
     let qs := sampleIndices h0 P.numQueries (t3.grind P.queryPowBits).2
-    (proveFri (specBackend EF) P rounds (f0 :: rest) bw).run t =
+    (proveFri (specBackend EF) P rounds (f0 :: rest : List (Array EF)) bw).run t =
       (⟨bw, cp.commits, cp.witnesses, (rounds.map fun (c, _) ↦ openMulti (specBackend EF) c
           (qs.1.map (· >>> (h0 - (specBackend EF).logHeight c)))).toArray,
         (answerFolds (specBackend EF) cp.data cp.arities.toList qs.1).toArray,
@@ -1167,7 +1166,8 @@ theorem length_chain [Poseidon2Field F] (P : Params) (las : List Nat) (f : Array
 /-- Without the flag after `proveFri`, there was none before it. -/
 theorem flag_proveFri [Poseidon2Field F] (P : Params) (rounds : List (OpenRound (specBackend EF)))
     (f0 : Array EF) (rest : List (Array EF)) (bw : F) (t : Transcript F 24)
-    (h : ((proveFri (specBackend EF) P rounds (f0 :: rest) bw).run t).2.grindFailed = false) :
+    (h : ((proveFri (specBackend EF) P rounds (f0 :: rest : List (Array EF)) bw).run
+      t).2.grindFailed = false) :
     t.grindFailed = false := by
   rw [proveFri_run] at h
   dsimp only at h
@@ -1187,7 +1187,8 @@ theorem verifyFri_proveFri [Poseidon2Field F] (P : Params)
     (hd : t.duplex = Poseidon2.duplex) (hg : Good P (Nat.log2 f0.size) f0)
     (hp : Pending P rest) (hlt : ∀ v ∈ rest, Nat.log2 v.size < Nat.log2 f0.size)
     (hP : 0 < P.maxLogArity) (hq : 0 < P.numQueries) (hb : 0 < P.logBlowup)
-    (hgrind : ((proveFri (specBackend EF) P rounds (f0 :: rest) bw).run t).2.grindFailed = false)
+    (hgrind : ((proveFri (specBackend EF) P rounds (f0 :: rest : List (Array EF)) bw).run
+      t).2.grindFailed = false)
     (hv : vrounds.any (!·.2.isEmpty) = true)
     (hheights : (((vrounds.flatMap (·.2)).map (·.1.logSize + P.logBlowup)).mergeSort
       (fun a b ↦ b ≤ a)).dedup = (f0 :: rest).map (Nat.log2 ·.size))
@@ -1202,9 +1203,11 @@ theorem verifyFri_proveFri [Poseidon2Field F] (P : Params)
         (rounds.map fun (c, _) ↦ ((specBackend EF).openAt c
           (index >>> (Nat.log2 f0.size - (specBackend EF).logHeight c))).values.toList) vrounds t' =
         .ok ((Nat.log2 f0.size, f0.getD index 0) :: roOf rest index (Nat.log2 f0.size), t')) :
-    verifyFri (poseidon2 F) P ((proveFri (specBackend EF) P rounds (f0 :: rest) bw).run t).1
+    verifyFri (poseidon2 F) P
+      ((proveFri (specBackend EF) P rounds (f0 :: rest : List (Array EF)) bw).run t).1
       vrounds alpha t =
-      .ok ((), ((proveFri (specBackend EF) P rounds (f0 :: rest) bw).run t).2) := by
+      .ok ((),
+        ((proveFri (specBackend EF) P rounds (f0 :: rest : List (Array EF)) bw).run t).2) := by
   rw [proveFri_run] at hgrind ⊢
   dsimp only at hgrind ⊢
   unfold verifyFri
@@ -1295,7 +1298,8 @@ theorem verifyFri_proveFri [Poseidon2Field F] (P : Params)
     bind_ok (sampleIndices_mapM h0 P.numQueries g4.2 ((duplex_grind t3 _).trans hd3)), ← hqs,
     bind_ok (hinputs qs.1 qs.2 (sampleIndices_lt h0 _ _))]
   rw [hdata', hari']
-  have hbetas : (#[] ++ (List.map (fun x : Rd EF ↦ x.beta) (chain P las f0 rest t1).1).toArray).toList =
+  have hbetas :
+      (#[] ++ (List.map (fun x : Rd EF ↦ x.beta) (chain P las f0 rest t1).1).toArray).toList =
       r.1.map (·.beta) := by
     rw [Array.toList_append, List.toList_toArray]; rfl
   rw [hbetas]
@@ -1326,7 +1330,8 @@ theorem verifyFri_proveFri [Poseidon2Field F] (P : Params)
     simp only [hfp] at ⊢
     rw [hfin, beq_self_eq_true, ensure_true, pure_bind]
     rfl)]
-  erw [bind_ok (multi_loop P (qs.1.map (qGroups r.1)) _ (fun _ _ _ _ _ ↦ rfl) las h0 f0 rest t1 qs.1 0
+  erw [bind_ok (multi_loop P (qs.1.map (qGroups r.1)) _ (fun _ _ _ _ _ ↦ rfl) las h0 f0 rest t1
+    qs.1 0
     qs.2 hg hp hsched hidx fun j ↦ by
       rw [List.map_map, Nat.zero_add]
       rfl)]
