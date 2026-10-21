@@ -11,7 +11,8 @@ public import CompStark.Ni.BcsChallenges
 * `verifyWith_log_head`: the verifier's first oracle call is the duplex call of `α`'s round, so
   it queries no hash before the call that binds the trace commitment.
 * `commitWitness_idealOf`: every fold round's grinding check passes, so on an answer table the
-  first sample of the round's answer has `commitPowBits` vanishing low bits.
+  first sample of the round's answer has `commitPowBits` vanishing low bits; and likewise for the
+  out-of-domain and batching rounds (`oodWitness_idealOf`, `batchWitness_idealOf`).
 -/
 
 @[expose] public section
@@ -186,5 +187,63 @@ theorem commitWitness_idealOf (hK : P.numQueries + Challenge.d EF + 1 ≤ K)
   rw [sample_idealOf_nil, ← hblock] at hwit
   rw [← List.headD_eq_getD]
   exact hwit
+
+/-! ### The out-of-domain and batching rounds' grinding -/
+
+/-- A round's grinding check passes after observing `input` on a fresh duplex state: with
+grinding, the first sample of the round's answer has `bits` vanishing low bits. -/
+theorem grindWitness_idealOf (blocks : List (List F)) (r : Nat) (input : List F) (bits : Nat)
+    (w : F) (hr : blocks.getD r [] = input ++ witnessInput bits w) (hbits : bits ≠ 0)
+    (h : (chkWit (idealOf answer) bits w ⟨capAt answer blocks r, input, []⟩).1 = true) :
+    CompPoly.CanonicalNat.toNat ((answer (keyAt answer blocks r)).2.toList.getD 0 0) %
+      2 ^ bits = 0 := by
+  simp only [witnessInput, hbits, ↓reduceIte] at hr
+  simp only [chkWit, hbits, ↓reduceIte, smpBits, beq_iff_eq] at h
+  change CompPoly.CanonicalNat.toNat ((idealOf answer).sample
+    ⟨capAt answer blocks r, input ++ [w], []⟩).1 % 2 ^ bits = 0 at h
+  rw [sample_idealOf_nil, ← hr] at h
+  rw [← List.headD_eq_getD]
+  exact h
+
+/-- **The out-of-domain round's grinding.** If the out-of-domain grinding check passes on the
+ideal primitives of an answer table, then with grinding the first sample of round `1`'s answer
+has `oodPowBits` vanishing low bits. -/
+theorem oodWitness_idealOf (hK : Challenge.d EF ≤ K)
+    (hood : (oodCheck (EF := EF) (idealOf answer) P A proof pis).1 = true)
+    (hbits : P.oodPowBits ≠ 0) :
+    CompPoly.CanonicalNat.toNat ((answer (keyAt answer (inputs P A pis proof) 1)).2.toList.getD
+      0 0) % 2 ^ P.oodPowBits = 0 := by
+  have hst : obsList (idealOf answer) (smpExt (EF := EF) (idealOf answer)
+      (stateAlpha (idealOf answer) P A proof pis)).2 proof.quotientCommit.toList =
+      ⟨capAt answer (inputs P A pis proof) 1, proof.quotientCommit.toList, []⟩ := by
+    rw [(alpha_idealOf answer P A proof pis hK).2,
+      obsList_idealOf_ne answer _ _ (digest_toList_ne_nil _)]
+    rfl
+  rw [oodCheck, hst] at hood
+  exact grindWitness_idealOf answer _ 1 _ _ _ (by
+    simp only [inputs, List.getD_eq_getElem?_getD, List.getElem?_cons_succ,
+      List.getElem?_cons_zero, Option.getD_some]) hbits hood
+
+/-- **The batching round's grinding.** If the batching grinding check passes on the ideal
+primitives of an answer table, then with grinding the first sample of round `2`'s answer has
+`batchPowBits` vanishing low bits. -/
+theorem batchWitness_idealOf (hK : Challenge.d EF + 1 ≤ K)
+    (hbc : (batchCheck (idealOf answer) P A proof pis).1 = true)
+    (hbits : P.batchPowBits ≠ 0) :
+    CompPoly.CanonicalNat.toNat ((answer (keyAt answer (inputs P A pis proof) 2)).2.toList.getD
+      0 0) % 2 ^ P.batchPowBits = 0 := by
+  obtain ⟨-, l, hl⟩ := zeta_idealOf answer P A proof pis hK
+  have hst : pcsState (idealOf answer) P (vRounds proof (zetaOf (idealOf answer) P A proof pis))
+      (smpExt (EF := EF) (idealOf answer) (oodCheck (EF := EF) (idealOf answer) P A proof
+        pis).2).2 =
+      ⟨capAt answer (inputs P A pis proof) 2, DomainSeparator.pcsSeed F EF
+        (pcsCounts proof.opened) P.batchPowBits ++ coeffs (openedValues proof.opened), []⟩ := by
+    rw [hl, pcsState, obsOpened_eq, roundValues_vRounds', claimCounts_vRounds,
+      obsList_idealOf_ne answer _ _ (pcsSeed_ne_nil _ _), obsList_idealOf answer _ rfl]
+    rfl
+  rw [batchCheck, hst] at hbc
+  exact grindWitness_idealOf answer _ 2 _ _ _ (by
+    simp only [inputs, List.getD_eq_getElem?_getD, List.getElem?_cons_succ,
+      List.getElem?_cons_zero, Option.getD_some]) hbits hbc
 
 end CompStark.Ni

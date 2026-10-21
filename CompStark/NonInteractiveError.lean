@@ -20,9 +20,9 @@ round has an error, the probability that a fresh answer makes it bad:
   `1 - min (δ - k loss, δ - (k + 1) loss)` after `k + 1` safe folds, plus `1/p` per query for the
   bias of `sampleBits` (a residue of a uniform base element is not quite uniform).
 
-A round with grinding (`commitPowBits` for the folds, `queryPowBits` for the queries) also needs
-its proof-of-work sample to vanish on its low bits, in the same answer: its error is multiplied by
-`powFraction`. `roundError` is the largest round error, at the best proximity loss. `hashError`
+A round with grinding (`oodPowBits` for `ζ`, `batchPowBits` for `a`, `commitPowBits` for the
+folds, `queryPowBits` for the queries) also needs its proof-of-work sample to vanish on its low
+bits, in the same answer: its error is multiplied by `powFraction`. `roundError` is the largest round error, at the best proximity loss. `hashError`
 bounds collisions and predictions among the digests of `q` queries.
 -/
 
@@ -67,12 +67,13 @@ noncomputable def friQueryError (S : Setup EF) (δ loss : NNReal) : ENNReal :=
   ENNReal.ofReal (1 - min ((δ : ℝ) - S.lastFold * loss) ((δ : ℝ) - (S.lastFold + 1) * loss) +
     1 / Nat.card F) ^ S.params.numQueries
 
-/-- The error of one random-oracle answer: the IOP's round-by-round errors, the FRI rounds
-credited with their grinding. FRI's folds and queries share one proximity loss. -/
+/-- The error of one random-oracle answer: the IOP's round-by-round errors, every round after
+`α` credited with its grinding. FRI's folds and queries share one proximity loss. -/
 noncomputable def roundError (S : Setup EF) (δ δ' : NNReal) : ENNReal :=
   ⨅ loss : NNReal,
-    (max (foldingError S δ') <| max (outOfDomainError S δ') <|
-      max (batchingError S δ ((δ' : ℝ) - 2 / S.size)) <|
+    (max (foldingError S δ') <|
+      max (powFraction F S.params.oodPowBits * outOfDomainError S δ') <|
+      max (powFraction F S.params.batchPowBits * batchingError S δ ((δ' : ℝ) - 2 / S.size)) <|
       max (powFraction F S.params.commitPowBits * ⨆ i, friFoldError S δ loss i)
         (powFraction F S.params.queryPowBits * friQueryError S δ loss))
 

@@ -124,6 +124,35 @@ theorem prob_extAt (K o : Nat) (ho : o + Challenge.d EF ≤ K) (P : 𝕂 → Pro
         exact SampleableType.prEvent_uniformSample_fst (fun z ↦ P (extEquiv z))
     _ = _ := SampleableType.prEvent_uniformSample_equiv extEquiv P
 
+/-- A grinding sample, an answer's first sample, with `bits` vanishing low bits, and an event on
+the extension element read after it: at most `powFraction bits` times the event's probability. -/
+theorem prob_grindExt_le (K bits : Nat) (hK : Challenge.d EF + 1 ≤ K) (P : 𝕂 → Prop) :
+    Pr{let u ← $ᵗ (Digest F × Vector F K)}[(bits ≠ 0 →
+      CompPoly.CanonicalNat.toNat (u.2.toList.getD 0 0) % 2 ^ bits = 0) ∧
+        P (extAt u.2 (challengeOffset bits))] ≤ powFraction F bits * Pr{let a ← $ᵗ 𝕂}[P a] := by
+  classical
+  by_cases hb : bits = 0
+  · calc _ = Pr{let u ← $ᵗ (Digest F × Vector F K)}[P (extAt u.2 0)] :=
+          prEvent_congr_iff _ fun u ↦ by
+            simp only [hb, ne_eq, not_true_eq_false, IsEmpty.forall_iff, true_and,
+              challengeOffset, ↓reduceIte]
+      _ = Pr{let a ← $ᵗ 𝕂}[P a] := prob_extAt K 0 (by omega) P
+      _ ≤ _ := by rw [hb, powFraction_zero, one_mul]
+  · calc _ = Pr{let u ← $ᵗ (Digest F × Vector F K)}[(fun x ↦
+          CompPoly.CanonicalNat.toNat (powExtEquiv x).1 % 2 ^ bits = 0 ∧ P (powExtEquiv x).2)
+            fun j ↦ u.2.toList.getD j.val 0] :=
+          prEvent_congr_iff _ fun u ↦ by
+            simp only [hb, ne_eq, not_false_eq_true, forall_const, challengeOffset,
+              ↓reduceIte, extAt_eq, powExtEquiv_apply, Fin.val_zero, Fin.val_succ]
+            simp only [Nat.add_comm 1]
+      _ = Pr{let z ← $ᵗ (F × 𝕂)}[CompPoly.CanonicalNat.toNat z.1 % 2 ^ bits = 0 ∧ P z.2] :=
+          (prob_answer_prefix K (Challenge.d EF + 1) hK (fun x ↦
+            CompPoly.CanonicalNat.toNat (powExtEquiv x).1 % 2 ^ bits = 0 ∧
+              P (powExtEquiv x).2)).trans
+            (SampleableType.prEvent_uniformSample_equiv powExtEquiv
+              (fun z ↦ CompPoly.CanonicalNat.toNat z.1 % 2 ^ bits = 0 ∧ P z.2))
+      _ ≤ _ := prob_pow_and_le bits P
+
 theorem challengeOffset_le_one (bits : Nat) : challengeOffset bits ≤ 1 := by
   unfold challengeOffset; split <;> omega
 
@@ -154,8 +183,8 @@ variable (S : Iop.Setup EF) (publicValues : List F) (δ δ' loss : NNReal)
 
 /-- The largest round error at proximity loss `loss`; `roundError` is its infimum. -/
 noncomputable def roundBound : ENNReal :=
-  max (foldingError S δ') <| max (outOfDomainError S δ') <|
-    max (batchingError S δ ((δ' : ℝ) - 2 / S.size)) <|
+  max (foldingError S δ') <| max (powFraction F S.params.oodPowBits * outOfDomainError S δ') <|
+    max (powFraction F S.params.batchPowBits * batchingError S δ ((δ' : ℝ) - 2 / S.size)) <|
     max (powFraction F S.params.commitPowBits * ⨆ i, friFoldError S δ loss i)
       (powFraction F S.params.queryPowBits * friQueryError S δ loss)
 
@@ -191,28 +220,30 @@ theorem prob_roundBadAt_le (cache : Merkle.Cache F (Digest F)) (block : Nat → 
       _ ≤ _ := le_max_left _ _
   · -- `ζ`
     set T := prefixTranscript S cache block fun j ↦ samples.getD j d
-    have ho := challengeOffset_le_one S.params.oodPowBits
-    calc _ = Pr{let u ← $ᵗ (Digest F × Vector F S.streamLen)}[ZetaBad S publicValues δ' T.trace
-          T.alpha T.quotient (extAt u.2 (challengeOffset S.params.oodPowBits))] :=
+    calc _ = Pr{let u ← $ᵗ (Digest F × Vector F S.streamLen)}[(S.params.oodPowBits ≠ 0 →
+          CompPoly.CanonicalNat.toNat (u.2.toList.getD 0 0) % 2 ^ S.params.oodPowBits = 0) ∧
+          ZetaBad S publicValues δ' T.trace T.alpha T.quotient
+            (extAt u.2 (challengeOffset S.params.oodPowBits))] :=
           prEvent_congr_iff _ fun u ↦ by
             simp only [prefixTranscript, T, getD_append_singleton samples u.2 d 1 h1.symm,
               getD_append_singleton_lt samples u.2 d 0 (by omega)]
-      _ = Pr{let a ← $ᵗ 𝕂}[ZetaBad S publicValues δ' T.trace T.alpha T.quotient a] :=
-          prob_extAt S.streamLen _ (by omega) _
-      _ ≤ outOfDomainError S δ' := prob_zetaBad_le S publicValues δ' _ _ _
+      _ ≤ powFraction F S.params.oodPowBits * outOfDomainError S δ' :=
+          (prob_grindExt_le S.streamLen _ (by omega) _).trans
+            (mul_le_mul_right (prob_zetaBad_le S publicValues δ' _ _ _) _)
       _ ≤ _ := (le_max_left _ _).trans (le_max_right _ _)
   · -- batching
     set T := prefixTranscript S cache block fun j ↦ samples.getD j d
-    have ho := challengeOffset_le_one S.params.batchPowBits
-    calc _ = Pr{let u ← $ᵗ (Digest F × Vector F S.streamLen)}[BatchBad S δ δ' T.trace T.alpha
-          T.quotient T.zeta T.openings (extAt u.2 (challengeOffset S.params.batchPowBits))] :=
+    calc _ = Pr{let u ← $ᵗ (Digest F × Vector F S.streamLen)}[(S.params.batchPowBits ≠ 0 →
+          CompPoly.CanonicalNat.toNat (u.2.toList.getD 0 0) % 2 ^ S.params.batchPowBits = 0) ∧
+          BatchBad S δ δ' T.trace T.alpha T.quotient T.zeta T.openings
+            (extAt u.2 (challengeOffset S.params.batchPowBits))] :=
           prEvent_congr_iff _ fun u ↦ by
             simp only [prefixTranscript, T, getD_append_singleton samples u.2 d 2 h2.symm,
               getD_append_singleton_lt samples u.2 d 0 (by omega),
               getD_append_singleton_lt samples u.2 d 1 (by omega)]
-      _ = Pr{let a ← $ᵗ 𝕂}[BatchBad S δ δ' T.trace T.alpha T.quotient T.zeta T.openings a] :=
-          prob_extAt S.streamLen _ (by omega) _
-      _ ≤ batchingError S δ ((δ' : ℝ) - 2 / S.size) := prob_batchBad_le S δ δ' _ _ _ _ _
+      _ ≤ powFraction F S.params.batchPowBits * batchingError S δ ((δ' : ℝ) - 2 / S.size) :=
+          (prob_grindExt_le S.streamLen _ (by omega) _).trans
+            (mul_le_mul_right (prob_batchBad_le S δ δ' _ _ _ _ _) _)
       _ ≤ _ := (le_max_left _ _).trans ((le_max_right _ _).trans (le_max_right _ _))
   · -- fold `i - 3`
     obtain ⟨f, hfeq⟩ : ∃ f : Fin (S.lastFold + 1), f = ⟨i - 3, hf⟩ := ⟨_, rfl⟩

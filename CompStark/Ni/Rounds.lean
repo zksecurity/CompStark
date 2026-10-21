@@ -251,11 +251,18 @@ def queriesAt (u : Vector F S.streamLen) (j : Fin S.params.numQueries) : F :=
 variable (publicValues : List F) (δ δ' loss : NNReal)
 
 /-- Round `i`'s bad event (`Sound/Rbr.lean`) on the transcript `t`, whose round `i` was answered
-`u`: `α`, `ζ`, batching, fold `i - 3` with its grinding sample, and the queries. -/
+`u`: `α`; `ζ`, batching and fold `i - 3`, each with its grinding sample, the answer's first; and
+the queries. -/
 def roundBadAt (i : Nat) (t : Sound.Transcript S) (u : Vector F S.streamLen) : Prop :=
   if i = 0 then AlphaBad S publicValues δ' t.trace t.alpha
-  else if i = 1 then ZetaBad S publicValues δ' t.trace t.alpha t.quotient t.zeta
-  else if i = 2 then BatchBad S δ δ' t.trace t.alpha t.quotient t.zeta t.openings t.batch
+  else if i = 1 then
+    (S.params.oodPowBits ≠ 0 →
+      CompPoly.CanonicalNat.toNat ((u.toList.getD 0 0)) % 2 ^ S.params.oodPowBits = 0) ∧
+      ZetaBad S publicValues δ' t.trace t.alpha t.quotient t.zeta
+  else if i = 2 then
+    (S.params.batchPowBits ≠ 0 →
+      CompPoly.CanonicalNat.toNat ((u.toList.getD 0 0)) % 2 ^ S.params.batchPowBits = 0) ∧
+      BatchBad S δ δ' t.trace t.alpha t.quotient t.zeta t.openings t.batch
   else if h : i - 3 < S.lastFold + 1 then
     (S.params.commitPowBits ≠ 0 →
       CompPoly.CanonicalNat.toNat ((u.toList.getD 0 0)) % 2 ^ S.params.commitPowBits = 0) ∧

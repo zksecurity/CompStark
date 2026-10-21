@@ -32,7 +32,8 @@ where every round is one random-oracle answer:
   (`Transcript.consistentQueries`); `friQueryError`.
 
 The grinding samples of the FRI rounds come in the same answer as their challenges and multiply
-the bounds by `powFraction` (`prob_foldRound_le`, `prob_queryBad_le`).
+the bounds by `powFraction` (`prob_foldRound_le`, `prob_queryBad_le`); so do those of `ζ` and `a`
+(`Ni/RoundBounds.lean`).
 
 The terminal lemma `exists_satisfied_of_safe` is deterministic: if the verifier's checks pass on a
 transcript whose rounds are all safe, some candidate trace satisfies the AIR. Safe `α` and `ζ`

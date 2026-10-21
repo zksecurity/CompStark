@@ -292,9 +292,17 @@ theorem exists_badAt (hδ' : (δ' : ℝ) < 1 - S.rate) (answer : (q : Query F) �
     rw [roundBadAt, ite_eq_left rfl, prefixTranscript_trace S (hBk 0 0 le_rfl)
       (htraceS 0 (by omega)), hαeq, ← hT] at h
     exact h
+  -- the grinding checks and the run of FRI
+  obtain ⟨-, -, -, -, -, -, hood, -, hbc, ⟨st, hfriOk⟩, -⟩ := verifyWith_ok (idealOf answer)
+    S.params S.air proof publicValues hok
+  have hK : Challenge.d EF + 1 ≤ S.streamLen := by unfold Iop.Setup.streamLen; omega
   -- round `ζ`
   have hζ : ¬ ZetaBad S publicValues δ' T.trace T.alpha T.quotient T.zeta := by
     have h := hbad 1 (by omega)
+    have hpow : S.params.oodPowBits ≠ 0 → CompPoly.CanonicalNat.toNat
+        ((smp 1).toList.getD 0 0) % 2 ^ S.params.oodPowBits = 0 := fun hb ↦ by
+      rw [hsmp]
+      exact oodWitness_idealOf answer S.params S.air proof publicValues (by omega) hood hb
     have hz : (prefixTranscript S (C 1) (B 1) (Sm 1)).zeta = T.zeta := by
       rw [hT]
       show extAt (Sm 1 1) (challengeOffset S.params.oodPowBits) =
@@ -304,10 +312,14 @@ theorem exists_badAt (hδ' : (δ' : ℝ) < 1 - S.rate) (answer : (q : Query F) �
       prefixTranscript_trace S (hBk 1 0 (by omega)) (htraceS 1 (by omega)),
       prefixTranscript_quotient S (hBk 1 1 le_rfl) (hquotS 1 le_rfl (by omega)), hαeq, hz,
       ← hT] at h
-    exact h
+    exact fun hzb ↦ h ⟨hpow, hzb⟩
   -- the batching round
   have ha : ¬ BatchBad S δ δ' T.trace T.alpha T.quotient T.zeta T.openings T.batch := by
     have h := hbad 2 (by omega)
+    have hpow : S.params.batchPowBits ≠ 0 → CompPoly.CanonicalNat.toNat
+        ((smp 2).toList.getD 0 0) % 2 ^ S.params.batchPowBits = 0 := fun hb ↦ by
+      rw [hsmp]
+      exact batchWitness_idealOf answer S.params S.air proof publicValues hK hbc hb
     have hz : (prefixTranscript S (C 2) (B 2) (Sm 2)).zeta = T.zeta := by
       rw [hT]
       show extAt (Sm 2 1) (challengeOffset S.params.oodPowBits) =
@@ -327,10 +339,7 @@ theorem exists_badAt (hδ' : (δ' : ℝ) < 1 - S.rate) (answer : (q : Query F) �
       prefixTranscript_trace S (hBk 2 0 (by omega)) (htraceS 2 (by omega)),
       prefixTranscript_quotient S (hBk 2 1 (by omega)) (hquotS 2 (by omega) (by omega)), hαeq,
       hz, hb, ho, ← hT] at h
-    exact h
-  -- the shapes and the run of FRI
-  obtain ⟨-, -, -, -, -, -, -, -, -, ⟨st, hfriOk⟩, -⟩ := verifyWith_ok (idealOf answer) S.params
-    S.air proof publicValues hok
+    exact fun hbb ↦ h ⟨hpow, hbb⟩
   obtain ⟨-, hfp⟩ := nonempty_of_verify S (idealOf answer) proof publicValues hdb hok
   -- the folds
   have hfolds : ∀ f : Fin (S.lastFold + 1), ¬ FoldBad S δ loss f T.fri (T.betas f) := by
