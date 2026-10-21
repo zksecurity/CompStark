@@ -298,7 +298,8 @@ theorem upperLayersAll_inj (ms : List (Matrix F)) (k : Nat) :
     ∀ (e l fuel : Nat) (R : List (Matrix F)), l + e = k → e ≤ fuel →
       R.Pairwise (fun a b ↦ b.height ≤ a.height) → (∀ m ∈ R, ∃ j < e, m.height = 2 ^ j) →
       (∀ j < e, R.filter (·.height == 2 ^ j) = ms.filter (·.height == 2 ^ j)) →
-      upperLayersAll hash compress fuel R ((List.range (2 ^ e)).map (injNode hash compress ms k l)) =
+      upperLayersAll hash compress fuel R
+          ((List.range (2 ^ e)).map (injNode hash compress ms k l)) =
         (List.range (e + 1)).map fun j ↦
           (List.range (2 ^ (e - j))).map (injNode hash compress ms k (l + j))
   | 0, l, fuel, R, _, _, _, _, _ => by

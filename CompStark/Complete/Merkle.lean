@@ -22,8 +22,9 @@ specification's opening `Committed.openAt` at any row verifies against `Committe
 index unshifted, which are `Merkle.openBatch`'s rows.
 
 The verifier checks openings at all queries at once (`checkMulti`): the specification's
-multi-opening `openMulti` of such a batch at indices within its height verifies against its root
-(`verifyMulti_openMulti`), by `Merkle.verifyMulti_prune` on the tree's nodes.
+multi-opening `openMulti` of matrices of heights `2 ^ j ≤ 2 ^ k`, as the batch STARK commits them,
+at indices below `2 ^ k` verifies against its root (`verifyMulti_openMulti`), by
+`Merkle.verifyMulti_prune_mixed` on the tree's nodes with injected matrices (`injNode`).
 -/
 
 @[expose] public section
@@ -231,7 +232,8 @@ theorem openAt_path_mixed [Poseidon2Field F] {k : Nat} {ms : List (Mat F)}
     rw [he, Nat.pow_succ] at *
     have := Nat.mod_lt (i / 2 ^ j + 1) (show 2 > 0 by decide)
     omega
-  rw [layers_eq_injNode _ _ _ k h1 h2, getD_map_range' _ _ _ _ (by omega), getD_map_range' _ _ _ _ hx]
+  rw [layers_eq_injNode _ _ _ k h1 h2, getD_map_range' _ _ _ _ (by omega),
+    getD_map_range' _ _ _ _ hx]
 
 /-- **Honest multi-openings verify.** The specification's multi-opening at indices below
 `2 ^ k` of matrices of heights `2 ^ j ≤ 2 ^ k`, some of height `2 ^ k`, verifies against its

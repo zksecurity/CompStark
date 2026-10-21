@@ -715,7 +715,8 @@ the public values and the preprocessed commitment. -/
 def bVTA (P : Params) (Is : List (Instance F)) (common : Common F) (proof : BatchProof F EF)
     (pis : List (List F)) : Transcript F 24 :=
   ((((Poseidon2.initTranscript.observeList (batchSeedOf EF P Is common)).observeExts
-    (Is.map fun I ↦ (Ext.ofBase (I.logN : F) : EF))).observeList proof.mainCommit.toList).observeList
+    (Is.map fun I ↦ (Ext.ofBase (I.logN : F) : EF))).observeList
+      proof.mainCommit.toList).observeList
     pis.flatten).observeList ((common.preprocessed.map (·.toList)).getD [])
 
 /-- The verifier's transcript after the quotient commitment. -/

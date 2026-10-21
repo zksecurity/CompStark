@@ -80,7 +80,8 @@ theorem completeness {params : Params} {instances : List (Instance F)} {traces :
         (proveBatch EF params instances traces publicValues) publicValues = .ok () := by
   intro sat
   have hmem : ∀ i (hi : i < instances.length),
-      (instances[i], (traces[i]'(sat.tracesLength ▸ hi), publicValues[i]'(sat.publicValuesLength ▸ hi))) ∈
+      (instances[i], (traces[i]'(sat.tracesLength ▸ hi),
+        publicValues[i]'(sat.publicValuesLength ▸ hi))) ∈
         instances.zip (traces.zip publicValues) := fun i hi ↦ by
     have h := List.getElem_mem (l := instances.zip (traces.zip publicValues)) (n := i) (by
       simp only [List.length_zip, sat.tracesLength, sat.publicValuesLength, Nat.min_self]; exact hi)
@@ -88,7 +89,8 @@ theorem completeness {params : Params} {instances : List (Instance F)} {traces :
   obtain ⟨I0, hI0⟩ := List.exists_mem_of_ne_nil _ config.nonempty
   have v0 := config.valid I0 hI0
   refine verifyBatch_proveBatch_of EF params instances traces publicValues config.nonempty
-    sat.tracesLength sat.publicValuesLength (fun i hi ↦ ?_) (fun i hi ↦ (sat.satisfied _ (hmem i hi)).vanish)
+    sat.tracesLength sat.publicValuesLength (fun i hi ↦ ?_)
+    (fun i hi ↦ (sat.satisfied _ (hmem i hi)).vanish)
     (fun i hi ↦ ?_) (fun I hI ↦ (config.valid I hI).degreeFits) v0.folds v0.queries v0.blowup
     (fun I hI ↦ (config.valid I hI).finalPolyFits) luck.grinding luck.outOfDomain
   · have v := config.valid _ (List.getElem_mem hi)

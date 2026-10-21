@@ -122,7 +122,8 @@ structure HonestRounds (P : Params) (rounds : List (OpenRound (specBackend EF)))
 /-- The verifier's claimed evaluation counts are the prover's. -/
 theorem claimCounts_verifierRounds (b : Nat) (rounds : List (OpenRound (specBackend EF))) :
     claimCounts (verifierRounds b (honestRounds b rounds)) =
-      countsOf (rounds.map fun r ↦ r.2.map fun x ↦ (openedOf b x, x.1, x.2.zip (openedOf b x))) := by
+      countsOf (rounds.map fun r ↦ r.2.map fun x ↦
+        (openedOf b x, x.1, x.2.zip (openedOf b x))) := by
   simp only [claimCounts, verifierRounds, honestRounds, countsOf, List.map_map]
   refine List.map_congr_left fun r _ ↦ ?_
   simp only [Function.comp_apply, List.map_map]

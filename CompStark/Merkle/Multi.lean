@@ -6,14 +6,13 @@ module
 
 public import CompStark.Merkle.VCVio
 
-/-! # Multi-openings of one height
+/-! # Multi-openings
 
-The pruned multi-openings of `verifyMultiM`, for batches of matrices of one height `2 ^ k`, with
-pure hashes:
+The pruned multi-openings of `verifyMultiM`, with pure hashes:
 
-* `verifyBatch_of_verifyMulti`: an accepted multi-opening gives every query an accepted single
-  opening (`verifyBatch`): the walk restores each query's path, every sibling a node of the
-  frontier or a sibling of the list.
+* `verifyBatch_of_verifyMulti`: an accepted multi-opening of matrices of one height `2 ^ k`
+  gives every query an accepted single opening (`verifyBatch`): the walk restores each query's
+  path, every sibling a node of the frontier or a sibling of the list.
 * `pruneLevel_parents`, `length_pruneWalk`: the parents and the sibling count of `prune`, which
   collects the siblings a walk takes from the queries' full paths. That honest multi-openings,
   of any heights, are accepted is `verifyMulti_prune_mixed` (`CompStark/Merkle/Mixed.lean`).
