@@ -13,7 +13,8 @@ public import Mathlib.RingTheory.RootsOfUnity.PrimitiveRoots
 The STARK runs over a finite field `F` of odd characteristic, the base field. `BaseField F` is what
 the verifier and its analysis use of it, on the executable type itself:
 
-* the field operations, finitely many elements, decidable equality;
+* the field operations, finitely many elements, decidable equality; the elements are behind a
+  thunk (`fintype`), so that an executable instance never enumerates them;
 * the canonical value `CanonicalNat.toNat : F → ℕ`, a bijection onto `[0, p)` for `p = |F|`, of
   which `sampleBits` keeps the low bits;
 * the shift `gen` of the evaluation domains, a nonzero element outside the two-adic subgroup;
@@ -29,7 +30,9 @@ namespace CompStark
 
 /-- A finite field of odd characteristic with a canonical value per element, a coset shift and
 two-adic generators: the base field of the STARK. -/
-class BaseField (F : Type) extends Field F, Fintype F where
+class BaseField (F : Type) extends Field F where
+  /-- The elements, enumerated only when called. -/
+  fintype : Unit → Fintype F
   [decEq : DecidableEq F]
   [canonicalNat : CompPoly.CanonicalNat F]
   /-- The characteristic is odd. -/
@@ -50,6 +53,9 @@ class BaseField (F : Type) extends Field F, Fintype F where
 namespace BaseField
 
 attribute [instance_reducible, instance] decEq canonicalNat
+
+/-- The finitely many elements. -/
+instance toFintype {F : Type} [BaseField F] : Fintype F := fintype ()
 
 variable {F : Type} [BaseField F]
 
