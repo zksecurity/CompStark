@@ -26,12 +26,6 @@ open CompPoly.CPolynomial.NTTFast.Packed.Native (readUOffset_encode)
 
 local notation "F" => KoalaBear.Fast.Field
 
-/-- The coordinates of a width-16 state. -/
-def coords16 : List Nat := [0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15]
-
-theorem coords16_spec : Coords 16 coords16 :=
-  ⟨by decide, fun j hj ↦ by interval_cases j <;> decide⟩
-
 /-- The rows of a width-16 partial round: `V_j · x + sum` for the width-16 diagonal `V`, as
 `partial16` computes them. -/
 def partialRows16 (c : F) (W : Array F) (i : Nat) : List (Nat → F) :=

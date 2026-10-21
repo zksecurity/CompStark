@@ -90,6 +90,12 @@ structure Coords (t : Nat) (cs : List Nat) : Prop where
   lt : ∀ j ∈ cs, j < t
   mem : ∀ j < t, j ∈ cs
 
+/-- The coordinates of a width-16 state. -/
+def coords16 : List Nat := [0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15]
+
+theorem coords16_spec : Coords 16 coords16 :=
+  ⟨by decide, fun j hj ↦ by interval_cases j <;> decide⟩
+
 /-- A fold of row splices: word `(j, l)` holds `g j l` once row `j` is spliced, and the words
 outside the group are unchanged. -/
 theorem foldl_splice_rows (t : Nat) (g : Nat → Nat → F) (i : Nat) (L : List Nat)

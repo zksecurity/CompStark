@@ -7,7 +7,7 @@ module
 public import CompStark.Merkle.Packed
 public import CompStark.Merkle.Tree
 public import CompStark.Plonky3.Hash
-public import CompStark.Poseidon2.PackedCorrectness
+public import CompStark.Poseidon2.PackedLanes
 import all CompStark.Merkle.Packed
 import all CompPoly.Univariate.NTTFast.Packed.Native
 import CompPoly.Univariate.NTTFast.Packed.ArrayLemmas
