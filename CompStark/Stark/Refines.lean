@@ -166,9 +166,11 @@ theorem commitAndSample_refines (h : Refines B) {P : Params} {A : Air F} {logN :
       2 ^ (logN + A.logQuotientChunks logN) ≤ (ldeRef logN P.logBlowup gen A.width trace).height :=
     heh ▸ Nat.pow_le_pow_right (by decide) (by omega)
   rw [h.quotient _ _ _ _ _ hext hextOk hq hprepQ hprepQok (fun c hc ↦ by
-    change Expr.colsBelow (ldeRef logN P.logBlowup gen A.width trace).width _ _ c = true
+    change Expr.colsBelow (ldeRef logN P.logBlowup gen A.width trace).width
+      (ldeRef logN P.logBlowup gen A.width trace).width _ _ c = true
     rw [hew, width_setupWith]
-    exact Expr.colsBelow_mono le_rfl A.preprocessedNextWidth_le c (hcols c hc))]
+    exact Expr.colsBelow_mono A.mainNextWidth_le le_rfl A.preprocessedNextWidth_le c
+      (hcols c hc))]
   dsimp only
   generalize quotientOfLde A pis logN (A.logQuotientChunks logN) _ _ alpha = qs
   -- The quotient's chunks.
@@ -252,6 +254,16 @@ theorem openAndAssemble_refines (hA : DomainsAddressable F EF) (h : Refines B) (
       · exact hz
       · exact hw
     · rw [List.mem_singleton.mp hz']; exact hz
+  have htpts : ∀ z ∈ tracePoints A zeta (zeta * Ext.ofBase (twoAdicGen logN)),
+      Ext.OutsideBase z := by
+    intro z hz'
+    unfold tracePoints at hz'
+    split at hz'
+    · simp only [List.mem_cons, List.not_mem_nil, or_false] at hz'
+      rcases hz' with rfl | rfl
+      · exact hz
+      · exact hw
+    · rw [List.mem_singleton.mp hz']; exact hz
   have hprepRounds : List.Forall₂ (RoundRel h)
       (xprep.map fun (pext, pc) ↦
         (pc, [(pext, preprocessedPoints A zeta (zeta * Ext.ofBase (twoAdicGen logN)))])).toList
@@ -274,11 +286,7 @@ theorem openAndAssemble_refines (hA : DomainsAddressable F EF) (h : Refines B) (
     rcases hr with rfl | rfl | hr
     · simp only [List.mem_singleton] at hx
       subst hx
-      refine ⟨hextOk, fun z hz' ↦ ?_⟩
-      simp only [List.mem_cons, List.not_mem_nil, or_false] at hz'
-      rcases hz' with rfl | rfl
-      · exact hz
-      · exact hw
+      exact ⟨hextOk, htpts⟩
     · obtain ⟨m, hm, rfl⟩ := List.mem_map.mp hx
       refine ⟨hchOk m hm, fun z hz' ↦ ?_⟩
       simp only [List.mem_singleton] at hz'

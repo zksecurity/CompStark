@@ -105,38 +105,39 @@ def eval {K : Type*} [Add K] [Sub K] [Mul K] (env : Env F K) : Expr F → K
   | sub a b => eval env a - eval env b
   | mul a b => eval env a * eval env b
 
-/-- Every column `e` reads is below `w`, every current preprocessed column below `pw` and every
-next preprocessed column below `pwNext`. -/
-def colsBelow (w pw pwNext : Nat) : Expr F → Bool
-  | cur c | next c => c < w
+/-- Every current column `e` reads is below `w`, every next column below `wNext`, every current
+preprocessed column below `pw` and every next preprocessed column below `pwNext`. -/
+def colsBelow (w wNext pw pwNext : Nat) : Expr F → Bool
+  | cur c => c < w
+  | next c => c < wNext
   | prepCur c => c < pw
   | prepNext c => c < pwNext
   | periodic _ | pub _ | const _ | isFirstRow | isLastRow | isTransition => true
-  | add a b | sub a b | mul a b => colsBelow w pw pwNext a && colsBelow w pw pwNext b
+  | add a b | sub a b | mul a b => colsBelow w wNext pw pwNext a && colsBelow w wNext pw pwNext b
 
-theorem colsBelow_mono {w pw pwNext pw' pwNext' : Nat} (h1 : pw ≤ pw') (h2 : pwNext ≤ pwNext') :
-    ∀ e : Expr F, e.colsBelow w pw pwNext = true → e.colsBelow w pw' pwNext' = true
-  | cur _, h | next _, h | periodic _, h | pub _, h | const _, h | isFirstRow, h | isLastRow, h
+theorem colsBelow_mono {w wNext pw pwNext wNext' pw' pwNext' : Nat} (h0 : wNext ≤ wNext')
+    (h1 : pw ≤ pw') (h2 : pwNext ≤ pwNext') :
+    ∀ e : Expr F, e.colsBelow w wNext pw pwNext = true → e.colsBelow w wNext' pw' pwNext' = true
+  | cur _, h | periodic _, h | pub _, h | const _, h | isFirstRow, h | isLastRow, h
   | isTransition, h => h
-  | prepCur c, h => by
-    simp only [colsBelow, decide_eq_true_eq] at h ⊢
-    omega
-  | prepNext c, h => by
+  | next c, h | prepCur c, h | prepNext c, h => by
     simp only [colsBelow, decide_eq_true_eq] at h ⊢
     omega
   | add a b, h | sub a b, h | mul a b, h => by
     simp only [colsBelow, Bool.and_eq_true] at h ⊢
-    exact ⟨colsBelow_mono h1 h2 a h.1, colsBelow_mono h1 h2 b h.2⟩
+    exact ⟨colsBelow_mono h0 h1 h2 a h.1, colsBelow_mono h0 h1 h2 b h.2⟩
 
 end Expr
 
 /-- An AIR over the field `F`: the trace's width, the number of public values, the constraints,
-the preprocessed trace, row-major, of `preprocessedWidth` columns, opened at the next row if
-`preprocessedNextRow`, and the periodic columns, one period each. -/
+the trace opened at the next row if `mainNextRow`, the preprocessed trace, row-major, of
+`preprocessedWidth` columns, opened at the next row if `preprocessedNextRow`, and the periodic
+columns, one period each. -/
 structure Air (F : Type) where
   width : Nat
   numPublicValues : Nat
   constraints : List (Expr F)
+  mainNextRow : Bool := true
   preprocessedWidth : Nat := 0
   preprocessed : Array F := #[]
   preprocessedNextRow : Bool := true
@@ -146,6 +147,10 @@ namespace Air
 
 variable {F : Type}
 
+/-- The width of the trace's next row as opened: `0` unless the AIR reads it (Plonky3's
+`main_next_row_columns` is not empty). -/
+def mainNextWidth (A : Air F) : Nat := if A.mainNextRow then A.width else 0
+
 /-- The proof opens the preprocessed trace at the next row: it has columns and the AIR reads its
 next row (Plonky3's `preprocessed_next_row_columns` is not empty). -/
 def opensPreprocessedNext (A : Air F) : Bool := 0 < A.preprocessedWidth && A.preprocessedNextRow
@@ -154,10 +159,15 @@ def opensPreprocessedNext (A : Air F) : Bool := 0 < A.preprocessedWidth && A.pre
 def preprocessedNextWidth (A : Air F) : Nat :=
   if A.opensPreprocessedNext then A.preprocessedWidth else 0
 
-/-- Every constraint reads columns below the widths, and the next preprocessed row only when it
-is opened. -/
+/-- Every constraint reads columns below the widths, and the next rows only when they are
+opened. -/
 def ColsInWidth (A : Air F) : Prop :=
-  ∀ c ∈ A.constraints, c.colsBelow A.width A.preprocessedWidth A.preprocessedNextWidth
+  ∀ c ∈ A.constraints,
+    c.colsBelow A.width A.mainNextWidth A.preprocessedWidth A.preprocessedNextWidth
+
+theorem mainNextWidth_le (A : Air F) : A.mainNextWidth ≤ A.width := by
+  unfold mainNextWidth
+  split <;> omega
 
 theorem preprocessedNextWidth_le (A : Air F) : A.preprocessedNextWidth ≤ A.preprocessedWidth := by
   unfold preprocessedNextWidth
@@ -318,5 +328,13 @@ def preprocessedMul {F : Type} [NatCast F] (logN multiplier : Nat) : Air F where
   preprocessedWidth := 1
   preprocessed := Array.ofFn (n := 2 ^ logN) fun i ↦ (i.val : F)
   preprocessedNextRow := false
+
+/-- Two columns `a, b` with `a² = b` on every row, never reading the next row (Plonky3's
+`SquareAir` of `uni-stark/tests/no_next_row.rs`). -/
+def square {F : Type} : Air F where
+  width := 2
+  numPublicValues := 0
+  constraints := [.cur 0 * .cur 0 - .cur 1]
+  mainNextRow := false
 
 end CompStark.Stark

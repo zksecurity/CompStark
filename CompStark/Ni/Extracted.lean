@@ -161,20 +161,21 @@ theorem quotientRoot_eq : digestAt ((inputs S.params S.air vk pis proof).getD 1 
 
 /-- On a proof of `S`'s shape, the PCS's domain separator is `S`'s. -/
 theorem pcsCounts_eq (htl : proof.opened.traceLocal.size = S.air.width)
-    (htn : proof.opened.traceNext.size = S.air.width)
+    (htn : traceNextOk S.air proof.opened = true)
     (hqc : proof.opened.quotientChunks.size = S.chunks)
     (hq4 : ∀ ch ∈ proof.opened.quotientChunks, ch.size = Challenge.d EF)
     (hshape : preprocessedShapeOk S.air vk proof.opened S.logN = true) :
     pcsCounts proof.opened = pcsCountsS S := by
   rw [pcsCounts, pcsCountsS, (prep_of_shapeOk hshape).2.2]
-  simp only [htl, htn, List.cons_append, List.cons.injEq, List.nil_append, and_true, true_and]
+  simp only [htl, (traceNext_of_ok htn).2, List.cons_append, List.cons.injEq, List.nil_append,
+    and_true, true_and]
   rw [List.eq_replicate_iff, List.length_map, Array.length_toList, hqc]
   refine ⟨rfl, fun b hb ↦ ?_⟩
   obtain ⟨ch, hch, rfl⟩ := List.mem_map.mp hb
   rw [hq4 ch (Array.mem_toList_iff.mp hch)]
 
 theorem openings_eq (htl : proof.opened.traceLocal.size = S.air.width)
-    (htn : proof.opened.traceNext.size = S.air.width)
+    (htn : traceNextOk S.air proof.opened = true)
     (hqc : proof.opened.quotientChunks.size = S.chunks)
     (hq4 : ∀ ch ∈ proof.opened.quotientChunks, ch.size = Challenge.d EF)
     (hshape : preprocessedShapeOk S.air vk proof.opened S.logN = true) :
@@ -182,7 +183,7 @@ theorem openings_eq (htl : proof.opened.traceLocal.size = S.air.width)
       openingsOf S proof.opened := by
   rw [inputs_getD_two, pcsCounts_eq S vk proof htl htn hqc hq4 hshape, ← pcsSeedS,
     List.append_assoc, List.drop_left]
-  exact openingsAt_coeffs S _ _ htl htn hqc hq4 (prep_of_shapeOk hshape).1
+  exact openingsAt_coeffs S _ _ htl (traceNext_of_ok htn).1 hqc hq4 (prep_of_shapeOk hshape).1
     (prep_of_shapeOk hshape).2.1
 
 /-- On a proof for `2 ^ logN` rows, FRI's domain separator is `S`'s. -/
@@ -274,7 +275,7 @@ theorem extract_eq_prefixTranscript (cache : Merkle.Cache F (Digest F))
   obtain ⟨-, hfp⟩ := nonempty_of_verify S (idealOf answer) vk proof pis hdb hok
   have hz := length_zip_commits S answer hdb hok
   obtain ⟨hα, hζ, hbatch, -, hβ, -, -⟩ := challenges_idealOf answer S.params S.air vk proof pis
-    (le_refl _) hshape hfp
+    (le_refl _) htn hshape hfp
   have hbetas : foldChallenges S (betasOf (idealOf answer) S.params S.air vk proof pis) =
       betasAt S (fun k ↦ (answer (keyAt answer (inputs S.params S.air vk pis proof) k)).2) := by
     funext j

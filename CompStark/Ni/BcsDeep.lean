@@ -89,6 +89,15 @@ theorem flatMap_zip_eq_range {α β γ : Type*} (a : List α) (b : List β) (w :
     (a.zip b).flatMap f = (List.range w).flatMap fun j ↦ f (a.getD j da, b.getD j db) := by
   rw [List.flatMap_def, List.flatMap_def, map_zip_eq_range a b w ha hb f da db]
 
+theorem map_zip_eq_range_le {α β γ : Type*} (a : List α) (b : List β) (w : Nat)
+    (ha : w ≤ a.length) (hb : b.length = w) (f : α × β → γ) (da : α) (db : β) :
+    (a.zip b).map f = (List.range w).map fun j ↦ f (a.getD j da, b.getD j db) := by
+  refine List.ext_getElem (by rw [List.length_map, List.length_zip, List.length_map,
+    List.length_range, hb, Nat.min_eq_right ha]) fun i h1 h2 ↦ ?_
+  have hi : i < w := by rw [List.length_map, List.length_range] at h2; exact h2
+  rw [List.getElem_map, List.getElem_zip, List.getElem_map, List.getElem_range,
+    List.getD_eq_getElem _ _ (by omega), List.getD_eq_getElem _ _ (by omega)]
+
 theorem map_finRange_eq_range {γ : Type*} (w : Nat) (f : Nat → γ) :
     (List.finRange w).map (fun j ↦ f j.val) = (List.range w).map f := by
   refine List.ext_getElem (by rw [List.length_map, List.length_map, List.length_finRange,
@@ -255,7 +264,7 @@ extracted trace and quotient words and the opened values at `rev index`. -/
 theorem deepWord_eq (H : Primitives F Id) (vk : Option (PreprocessedKey F)) (proof : Proof F EF)
     (zeta a : EF) (α : 𝕂) (hdb : proof.degreeBits = S.logN)
     (htl : proof.opened.traceLocal.size = S.air.width)
-    (htn : proof.opened.traceNext.size = S.air.width)
+    (htn : traceNextOk S.air proof.opened = true)
     (hqc : proof.opened.quotientChunks.size = S.chunks)
     (hq4 : ∀ ch ∈ proof.opened.quotientChunks, ch.size = Challenge.d EF)
     (hprep : preprocessedShapeOk S.air vk proof.opened S.logN = true)
@@ -276,8 +285,8 @@ theorem deepWord_eq (H : Primitives F Id) (vk : Option (PreprocessedKey F)) (pro
   set z0 : S.Point := finMod n (reverseBits index n)
   set o := proof.opened
   set td : Domain F := ⟨1, proof.degreeBits⟩
-  set mT : List (Domain F × List (EF × List EF)) := [(td, [(zeta, o.traceLocal.toList),
-    (zeta * Ext.ofBase (twoAdicGen proof.degreeBits), o.traceNext.toList)])] with hmT
+  set mT : List (Domain F × List (EF × List EF)) := [(td, traceOpenings S.air o zeta
+    (zeta * Ext.ofBase (twoAdicGen proof.degreeBits)))] with hmT
   set mQ : List (Domain F × List (EF × List EF)) :=
     o.quotientChunks.toList.map fun ch ↦ (td, [(zeta, ch.toList)]) with hmQ
   set mP := preprocessedRound S.air vk o td zeta (zeta * Ext.ofBase (twoAdicGen proof.degreeBits))
@@ -364,11 +373,18 @@ theorem deepWord_eq (H : Primitives F Id) (vk : Option (PreprocessedKey F)) (pro
   have hterms : inputTerms ((bT, (proof.traceCommit, mT)) :: (bQ, (proof.quotientCommit, mQ)) ::
       bP.zip mP) =
       ((rowT.toList.zip o.traceLocal.toList).map fun pp ↦ (pp, zeta)) ++
-      ((rowT.toList.zip o.traceNext.toList).map fun pp ↦
+      ((rowT.toList.zip (o.traceNext.getD #[]).toList).map fun pp ↦
         (pp, zeta * Ext.ofBase (twoAdicGen proof.degreeBits))) ++
       batchTerms (bQ.zip mQ) ++ inputTerms (bP.zip mP) := by
-    simp only [inputTerms, batchTerms, hrowT, hmT, List.zip_cons_cons, List.zip_nil_right,
-      List.flatMap_cons, List.flatMap_nil, List.append_nil, List.append_assoc]
+    simp only [inputTerms, batchTerms, hrowT, hmT, traceOpenings_eq htn, List.zip_cons_cons,
+      List.zip_nil_right, List.flatMap_cons, List.flatMap_nil, List.append_nil, List.append_assoc]
+    cases o.traceNext with
+    | none =>
+      simp only [Option.map_none, Option.toList_none, List.flatMap_nil, Option.getD_none,
+        Array.toList_empty, List.zip_nil_right, List.map_nil, List.nil_append]
+    | some r =>
+      simp only [Option.map_some, Option.toList_some, List.flatMap_cons, List.flatMap_nil,
+        List.append_nil, Option.getD_some]
   rw [hterms, openedWords]
   simp only [List.map_append]
   have hw1 : rowT.toList.length = S.air.width := by rw [Array.length_toList, hwidth]
@@ -384,12 +400,13 @@ theorem deepWord_eq (H : Primitives F Id) (vk : Option (PreprocessedKey F)) (pro
     refine List.map_congr_left fun j _ ↦ ?_
     simp only [Function.comp_apply, fixedProver, openingsOf, hTw, toList_getD, hD,
       div_eq_mul_inv]
-  · rw [List.map_map, List.map_map, map_zip_eq_range _ _ S.air.width hw1
-      (by rw [Array.length_toList, htn]) _ 0 0,
+  · obtain ⟨hns, -⟩ := traceNext_of_ok htn
+    rw [List.map_map, List.map_map, map_zip_eq_range_le _ _ S.air.mainNextWidth
+      (by rw [hw1]; exact S.air.mainNextWidth_le) (by rw [Array.length_toList, hns]) _ 0 0,
       ← map_finRange_eq_range]
     refine List.map_congr_left fun j _ ↦ ?_
     simp only [Function.comp_apply, fixedProver, openingsOf, hTw, toList_getD, hD,
-      div_eq_mul_inv, Challenge.toSpec_mul, Challenge.toSpec_ofBase', hdb]
+      div_eq_mul_inv, Challenge.toSpec_mul, Challenge.toSpec_ofBase', hdb, Fin.val_castLE]
     rfl
   · rw [List.map_flatMap, batchTerms, List.map_flatMap,
       flatMap_zip_eq_range _ _ S.chunks hlenQ

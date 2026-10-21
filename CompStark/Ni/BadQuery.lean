@@ -298,7 +298,7 @@ theorem exists_badAt (hδ' : (δ' : ℝ) < 1 - S.rate) (answer : (q : Query F) �
       (htraceS 0 (by omega)), hαeq, ← hT] at h
     exact h
   -- the grinding checks and the run of FRI
-  obtain ⟨-, -, -, -, hshape, -, -, hood, -, hbc, ⟨st, hfriOk⟩, -⟩ := verifyWith_ok
+  obtain ⟨-, htn, -, -, hshape, -, -, hood, -, hbc, ⟨st, hfriOk⟩, -⟩ := verifyWith_ok
     (idealOf answer) S.params S.air vk proof publicValues hok
   have hK : Challenge.d EF + 1 ≤ S.streamLen := by unfold Iop.Setup.streamLen; omega
   -- round `ζ`
@@ -324,7 +324,7 @@ theorem exists_badAt (hδ' : (δ' : ℝ) < 1 - S.rate) (answer : (q : Query F) �
     have hpow : S.params.batchPowBits ≠ 0 → CompPoly.CanonicalNat.toNat
         ((smp 2).toList.getD 0 0) % 2 ^ S.params.batchPowBits = 0 := fun hb ↦ by
       rw [hsmp]
-      exact batchWitness_idealOf answer S.params S.air vk proof publicValues hK hshape hbc hb
+      exact batchWitness_idealOf answer S.params S.air vk proof publicValues hK htn hshape hbc hb
     have hz : (prefixTranscript S (C 2) (B 2) (Sm 2)).zeta = T.zeta := by
       rw [hT]
       show extAt (Sm 2 1) (challengeOffset S.params.oodPowBits) =
@@ -359,7 +359,7 @@ theorem exists_badAt (hδ' : (δ' : ℝ) < 1 - S.rate) (answer : (q : Query F) �
         ((smp (3 + f.val)).toList.getD 0 0) % 2 ^ S.params.commitPowBits = 0 := fun hb ↦ by
       rw [hsmp]
       exact commitWitness_idealOf answer S.params S.air vk proof publicValues (le_refl _) _
-        (heights_openingRounds S.params S.air vk proof _) st hshape hfriOk f.val (by omega) hb
+        (heights_openingRounds S.params S.air vk proof _) st htn hshape hfriOk f.val (by omega) hb
     have h' := fun hfb ↦ h ⟨hpow, hfb⟩
     rw [foldBad_congr S δ loss f (prefixTranscript_committedWord S f
         (hBk _ _ le_rfl) (hfoldS _ f.val le_rfl (by omega) hf)),
@@ -424,7 +424,7 @@ theorem exists_badAt (hδ' : (δ' : ℝ) < 1 - S.rate) (answer : (q : Query F) �
   rw [hext] at hbcs
   obtain ⟨hcheck, hdeg, hpow, hqueries⟩ := hbcs
   obtain ⟨-, -, -, -, -, hpowEq, hqEq⟩ := challenges_idealOf g' S.params S.air vk proof
-    publicValues (le_refl _) hshape hfp
+    publicValues (le_refl _) htn hshape hfp
   have h4 : 3 + (proof.fri.commits.toList.zip proof.fri.commitWitnesses.toList).length =
       4 + S.lastFold := by rw [hz]; omega
   rw [h4, hg'] at hpowEq hqEq

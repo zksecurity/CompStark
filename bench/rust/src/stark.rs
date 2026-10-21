@@ -142,6 +142,40 @@ pub fn cube_trace<F: Field>(n: usize) -> (RowMajorMatrix<F>, F) {
     (RowMajorMatrix::new(values, 2), last)
 }
 
+/// Two columns `a, b` with `a² = b` on every row, never reading the next row (Plonky3's
+/// `SquareAir` of `uni-stark/tests/no_next_row.rs`): the proof does not open the trace at `ζ ω`.
+pub struct SquareAir;
+
+impl<T> BaseAir<T> for SquareAir {
+    fn width(&self) -> usize {
+        2
+    }
+
+    fn main_next_row_columns(&self) -> Vec<usize> {
+        vec![]
+    }
+}
+
+impl<AB: AirBuilder> Air<AB> for SquareAir {
+    fn eval(&self, builder: &mut AB) {
+        let main = builder.main();
+        let a = main.current(0).unwrap();
+        let b = main.current(1).unwrap();
+        builder.assert_eq(a * a, b);
+    }
+}
+
+/// The trace of `n` rows of `SquareAir`: `a = i + 1`, `b = a²` on row `i`.
+pub fn square_trace<F: Field>(n: usize) -> RowMajorMatrix<F> {
+    let values = (0..n)
+        .flat_map(|i| {
+            let a = F::from_u32(i as u32 + 1);
+            [a, a * a]
+        })
+        .collect();
+    RowMajorMatrix::new(values, 2)
+}
+
 /// The width of `WideAir`.
 pub const WIDE: usize = 64;
 
@@ -393,7 +427,7 @@ pub fn trace<F: Field>(n: usize) -> (RowMajorMatrix<F>, F) {
     (RowMajorMatrix::new(values, 2), last)
 }
 
-/// A proof of `air` (`fib`, `cube`, `wide`, `prep` and `prep0`, `PrepAir` with and without its
+/// A proof of `air` (`fib`, `cube`, `square`, `wide`, `prep` and `prep0`, `PrepAir` with and without its
 /// next preprocessed row, `periodic`, `periodic-wide` and `periodic-tiny`, `PeriodicAir` with
 /// Plonky3's periods, or `pcube`, `PeriodicCubeAir`) on `2^log_n` rows, checked by Plonky3's
 /// verifier.
@@ -418,6 +452,12 @@ where
             let pis = vec![F::TWO, F::ZERO, x];
             let proof = prove(config, &CubeAir, trace, &pis).expect("Plonky3 cannot prove");
             verify(config, &CubeAir, &proof, &pis).expect("Plonky3 rejects its own proof");
+            proof
+        }
+        "square" => {
+            let proof =
+                prove(config, &SquareAir, square_trace::<F>(n), &[]).expect("Plonky3 cannot prove");
+            verify(config, &SquareAir, &proof, &[]).expect("Plonky3 rejects its own proof");
             proof
         }
         "wide" => {
@@ -464,7 +504,7 @@ fn koalabear_config(args: &[usize]) -> Config<F, p3_koala_bear::Poseidon2KoalaBe
 }
 
 /// `stark AIR LOG_N LOG_BLOWUP LOG_FINAL MAX_LOG_ARITY QUERIES COMMIT_POW QUERY_POW [BATCH_POW
-/// OOD_POW]`, `AIR` one of `fib`, `cube`, `wide`, `prep`, `prep0`, `periodic`, `periodic-wide`,
+/// OOD_POW]`, `AIR` one of `fib`, `cube`, `square`, `wide`, `prep`, `prep0`, `periodic`, `periodic-wide`,
 /// `periodic-tiny`, `pcube`: the proof as JSON, after Plonky3 verified it. Run with
 /// `RAYON_NUM_THREADS=1` for the smallest grinding witnesses.
 pub fn stark(air: &str, args: &[usize]) {

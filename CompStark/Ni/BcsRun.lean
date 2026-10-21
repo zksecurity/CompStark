@@ -1231,7 +1231,7 @@ theorem verifyWith_ok (P : Params) (A : Air F) (vk : Option (PreprocessedKey F))
     (proof : Proof F EF) (pis : List F) (h : verifyWith H P A vk proof pis = .ok ()) :
     let o := proof.opened
     let zeta := zetaOf H P A vk proof pis
-    o.traceLocal.size = A.width ∧ o.traceNext.size = A.width ∧
+    o.traceLocal.size = A.width ∧ traceNextOk A o = true ∧
       o.quotientChunks.size = 2 ^ A.logQuotientChunks proof.degreeBits ∧
       (∀ ch ∈ o.quotientChunks, ch.size = Challenge.d EF) ∧
       preprocessedShapeOk A vk o proof.degreeBits = true ∧

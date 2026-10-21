@@ -27,7 +27,7 @@ local notation "𝕂" => Challenge.Spec EF
 noncomputable def openingsOf (S : Iop.Setup EF) (o : OpenedValues EF) :
     Openings S where
   traceAt j := Challenge.toSpec (o.traceLocal.getD j 0)
-  traceNext j := Challenge.toSpec (o.traceNext.getD j 0)
+  traceNext j := Challenge.toSpec ((o.traceNext.getD #[]).getD j 0)
   quotientAt c e := Challenge.toSpec ((o.quotientChunks.getD c #[]).getD e 0)
   preprocessedAt j := Challenge.toSpec ((o.preprocessedLocal.getD #[]).getD j 0)
   preprocessedNext j := Challenge.toSpec ((o.preprocessedNext.getD #[]).getD j 0)
@@ -91,7 +91,7 @@ theorem constraintsHoldAt_of_check (S : Iop.Setup EF) (pis : List F)
     rw [vanishing, div_one]
   have henv : (S.air.constraints.map fun c ↦ Challenge.toSpec (c.eval {
       cur := fun i ↦ o.traceLocal.getD i 0
-      next := fun i ↦ o.traceNext.getD i 0
+      next := fun i ↦ (o.traceNext.getD #[]).getD i 0
       prepCur := fun i ↦ (o.preprocessedLocal.getD #[]).getD i 0
       prepNext := fun i ↦ (o.preprocessedNext.getD #[]).getD i 0
       periodic := fun i ↦ periodicAt (S.air.periodicColumn i) S.logN zeta
@@ -109,9 +109,10 @@ theorem constraintsHoldAt_of_check (S : Iop.Setup EF) (pis : List F)
         map_inv₀]
       rfl
     refine Expr.eval_hom Challenge.toSpec Challenge.toSpec_add Challenge.toSpec_sub
-      Challenge.toSpec_mul S.air.width S.air.preprocessedWidth S.air.preprocessedNextWidth
-      _ _ (fun j hj ↦ ?_) (fun j hj ↦ ?_) (fun j hj ↦ ?_) (fun j hj ↦ ?_) (fun j ↦ ?_)
-      (fun j ↦ ?_) (fun x ↦ ?_) ?_ ?_ ?_ c (S.valid.colsInWidth c hc)
+      Challenge.toSpec_mul S.air.width S.air.mainNextWidth S.air.preprocessedWidth
+      S.air.preprocessedNextWidth _ _ (fun j hj ↦ ?_) (fun j hj ↦ ?_) (fun j hj ↦ ?_)
+      (fun j hj ↦ ?_) (fun j ↦ ?_) (fun j ↦ ?_) (fun x ↦ ?_) ?_ ?_ ?_ c
+      (S.valid.colsInWidth c hc)
     · simp only [envAt, hj, ↓reduceDIte]; rfl
     · simp only [envAt, hj, ↓reduceDIte]; rfl
     · simp only [envAt, hj, ↓reduceDIte]; rfl

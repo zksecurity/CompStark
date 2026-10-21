@@ -22,8 +22,8 @@ thread:
   extensions and the periodic columns from the extensions of their periods
   (`periodicOnQuotient`), fold the constraints by `α` and divide by `Z_H`. Split the quotient's values into
   chunks on the cosets `g ω_qⁱ · ⟨ω_q^k⟩`, commit to their extensions, grind, and sample `ζ`.
-* Open the trace at `ζ` and `ζ ω`, every chunk at `ζ`, and the preprocessed trace at `ζ` and, if
-  the AIR reads its next row, at `ζ ω`.
+* Open the trace and the preprocessed trace at `ζ` and, if the AIR reads their next rows, at
+  `ζ ω`, and every chunk at `ζ`.
 -/
 @[expose] public section
 namespace CompStark.Stark
@@ -82,12 +82,16 @@ def commitAndSample (B : Backend F EF width) (P : Params) (A : Air F) (logN : Na
   let zeta : EF ← pSampleExt
   return (ext, traceC, chunks, quotC, zeta, ow)
 
+/-- The points the trace is opened at: `ζ`, and `ζ ω` if the AIR reads its next row. -/
+def tracePoints (A : Air F) (zeta zetaNext : EF) : List EF :=
+  if A.mainNextRow then [zeta, zetaNext] else [zeta]
+
 /-- The points the preprocessed trace is opened at: `ζ`, and `ζ ω` if the AIR reads its next
 row. -/
 def preprocessedPoints (A : Air F) (zeta zetaNext : EF) : List EF :=
   if A.opensPreprocessedNext then [zeta, zetaNext] else [zeta]
 
-/-- The openings at `ζ` and `ζ ω` of the trace, at `ζ` of the quotient's chunks and at the
+/-- The openings at the `tracePoints` of the trace, at `ζ` of the quotient's chunks and at the
 `preprocessedPoints` of the preprocessed trace, and the proof assembled from them and the
 commitments. -/
 def openAndAssemble (B : Backend F EF width) (P : Params) (A : Air F) (logN : Nat)
@@ -96,14 +100,15 @@ def openAndAssemble (B : Backend F EF width) (P : Params) (A : Air F) (logN : Na
   | (ext, traceC, chunks, quotC, zeta, ow) => do
     let zetaNext := zeta * Ext.ofBase (twoAdicGen logN)
     let (opened, fri) ← openPcs B P
-      ([(traceC, [(ext, [zeta, zetaNext])]), (quotC, chunks.map fun m ↦ (m, [zeta]))] ++
+      ([(traceC, [(ext, tracePoints A zeta zetaNext)]), (quotC, chunks.map fun m ↦ (m, [zeta]))] ++
         (prep.map fun (pext, pc) ↦ (pc, [(pext, preprocessedPoints A zeta zetaNext)])).toList)
     let traceOpened := (opened.headD []).headD []
     let prepOpened := (opened.getD 2 []).headD []
     return {
       traceCommit := B.root traceC
       quotientCommit := B.root quotC
-      opened := ⟨traceOpened.headD #[], traceOpened.getD 1 #[],
+      opened := ⟨traceOpened.headD #[],
+        if A.mainNextRow then some (traceOpened.getD 1 #[]) else none,
         prep.map fun _ ↦ prepOpened.headD #[],
         if A.opensPreprocessedNext then some (prepOpened.getD 1 #[]) else none,
         ((opened.getD 1 []).map fun pts ↦ pts.headD #[]).toArray⟩

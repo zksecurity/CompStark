@@ -20,8 +20,9 @@ and runs it.
   root of single matrices against them.
 * Plonky3 `uni-stark` proofs over KoalaBear (`tests/data/AIR_*.json`, from `RAYON_NUM_THREADS=1
   compstark-bench stark AIR LOG_N LOG_BLOWUP LOG_FINAL MAX_LOG_ARITY QUERIES COMMIT_POW
-  QUERY_POW`), with preprocessed columns for `prep` and `prep0` (`mulFib`) and periodic columns
-  for `periodic`, `periodic-wide`, `periodic-tiny` (`periodicAir`) and `pcube` (`periodicCube`):
+  QUERY_POW`), with preprocessed columns for `prep` and `prep0` (`mulFib`), periodic columns
+  for `periodic`, `periodic-wide`, `periodic-tiny` (`periodicAir`) and `pcube` (`periodicCube`),
+  and no next row read for `square`:
   each verifies against
   the verifying key of its preprocessed trace, the verifier rejects it with a changed opened
   value, a changed preprocessed opening, or a missing or wrong verifying key, and the
@@ -175,6 +176,12 @@ def pcubeInstance (n : Nat) : Array F × List F :=
     (t.push x |>.push y, 3 * x * x * x + s * y, y + s)) (#[], 2, 0)
   (t, [2, t.getD (2 * n - 2) 0])
 
+/-- The `square` trace of `n` rows: `a = i + 1`, `b = a²` on row `i`. -/
+def squareInstance (n : Nat) : Array F × List F :=
+  (Array.ofFn (n := n * 2) fun k ↦
+    let a : F := ((k.val / 2 + 1 : Nat) : F)
+    if k.val % 2 = 0 then a else a * a, [])
+
 /-- Plonky3's periods of `PeriodicAir`: the default, the wide range and the tiny quotient. -/
 def periodicCols : List (List F) := [[1, 2, 3, 4], [10, 20]]
 def periodicWideCols : List (List F) := [[7], (List.range 32).map Nat.cast]
@@ -201,7 +208,8 @@ def tamperPreprocessed (proof : Proof F EF) : Proof F EF :=
 commitPow queryPow [batchPow oodPow]` verifies against the verifying key of its preprocessed
 trace, is rejected when tampered, and both provers reproduce it. With preprocessed columns, it is
 also rejected with a changed preprocessed opening, without a verifying key, and against the key
-of another preprocessed trace. -/
+of another preprocessed trace. If the AIR does not read the next row, it is rejected with a next
+row opened. -/
 def proof (name : String) (air : Nat → Air F) (inst : Nat → Array F × List F)
     (ps : List Nat) : IO Unit := do
   let (logN, P) ← params ps
@@ -212,6 +220,10 @@ def proof (name : String) (air : Nat → Air F) (inst : Nat → Array F × List 
   let (trace, pis) := inst (2 ^ logN)
   if let .error e := verify P A vk rust pis then throw (IO.userError s!"{file}: {e}")
   check s!"{file}: rejects a tampered proof" (verify P A vk (tamper rust) pis matches .error _)
+  unless A.mainNextRow do
+    let withNext := { rust with opened := { rust.opened with
+      traceNext := some (Array.replicate A.width 0) } }
+    check s!"{file}: rejects an opened next row" (verify P A vk withNext pis matches .error _)
   if 0 < A.preprocessedWidth then
     check s!"{file}: rejects a tampered preprocessed opening"
       (verify P A vk (tamperPreprocessed rust) pis matches .error _)
@@ -268,13 +280,14 @@ def batchCase : String → List BatchInstance
   | "single" => [fibIndexed 5]
   | "prepmul" => [(⟨preprocessedMul 4 2, 4⟩, Array.ofFn (n := 16) fun i ↦ ((2 * i.val : Nat) : F),
       []), fibIndexed 5, mulInstance 3 1]
+  | "square" => [(⟨square, 4⟩, squareInstance 16), fibIndexed 3]
   | _ => []
 
 /-- The saved batch proof of `name` for the parameters `logBlowup logFinal maxLogArity queries
 commitPow queryPow [batchPow oodPow]` verifies against the batch's common data; is rejected when
-tampered, with reordered instances, with other degree bits, against the commitment to other
-preprocessed traces, and with an instance's public values changed; and the specification prover
-reproduces it. -/
+tampered, with a next row opened for an AIR that does not read it, with reordered instances, with
+other degree bits, against the commitment to other preprocessed traces, and with an instance's
+public values changed; and the specification prover reproduces it. -/
 def batchProof (name : String) (ps : List Nat) : IO Unit := do
   let (_, P) ← params (0 :: ps)
   let insts := batchCase name
@@ -291,6 +304,12 @@ def batchProof (name : String) (ps : List Nat) : IO Unit := do
     { o with traceLocal := o.traceLocal.modify 0 (· + 1) } }
   check s!"{file}: rejects a tampered proof"
     (Batch.verifyBatch P instances common tampered pis matches .error _)
+  for (I, i) in instances.zipIdx do
+    unless I.air.mainNextRow do
+      let withNext := { rust with opened := rust.opened.modify i fun o ↦
+        { o with traceNext := some (Array.replicate I.air.width 0) } }
+      check s!"{file}: rejects an opened next row"
+        (Batch.verifyBatch P instances common withNext pis matches .error _)
   check s!"{file}: rejects other degree bits"
     (Batch.verifyBatch P instances common
       { rust with degreeBits := rust.degreeBits.modify 0 (· + 1) } pis matches .error _)
@@ -315,6 +334,7 @@ def batchProofs : IO Unit := do
   batchProof "periodic" [2, 3, 2, 8, 0, 8]
   batchProof "single" [1, 0, 1, 5, 0, 2]
   batchProof "prepmul" [1, 1, 2, 6, 1, 2, 2, 3]
+  batchProof "square" [1, 1, 2, 6, 1, 2, 2, 3]
 
 def proofs : IO Unit := do
   for ps in [[3, 2, 2, 1, 2, 0, 0], [3, 2, 2, 1, 2, 1, 1], [6, 1, 0, 1, 10, 0, 8],
@@ -335,6 +355,8 @@ def proofs : IO Unit := do
     proof "prep" (mulFib · true) prepInstance ps
   for ps in [[4, 2, 0, 1, 4, 0, 0], [5, 3, 1, 2, 6, 1, 3]] do
     proof "prep0" (mulFib · false) prepInstance ps
+  for ps in [[4, 2, 0, 1, 4, 0, 0], [5, 1, 1, 2, 6, 1, 2, 2, 3]] do
+    proof "square" (fun _ ↦ square) squareInstance ps
   for ps in [[3, 2, 2, 1, 2, 0, 0], [5, 2, 0, 2, 5, 0, 3], [4, 1, 0, 1, 3, 1, 1, 2, 2]] do
     proofExt5 (fun _ ↦ fibonacci) fibInstance ps
   proofExt5 (fun _ ↦ cube) cubeInstance [4, 2, 0, 1, 4, 1, 2]
@@ -374,6 +396,7 @@ def proofs : IO Unit := do
     [1, 1, 0, 1, 6, 0, 2]
   proof "pcube" (fun _ ↦ periodicCube) CompStarkTests.BabyBear.pcubeInstance
     [4, 1, 1, 2, 6, 1, 2, 2, 3]
+  proof "square" (fun _ ↦ square) CompStarkTests.BabyBear.squareInstance [4, 1, 1, 2, 6, 1, 2, 2, 3]
 
 end BabyBear
 

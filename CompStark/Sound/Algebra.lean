@@ -231,7 +231,7 @@ theorem natDegree_identityPoly (S : Setup EF) (publicValues : List F)
 noncomputable def envAt (S : Setup EF) (publicValues : List F) (ζ : 𝕂) (o : Openings S) :
     Expr.Env F 𝕂 :=
   { cur := fun j ↦ if h : j < S.air.width then o.traceAt ⟨j, h⟩ else 0
-    next := fun j ↦ if h : j < S.air.width then o.traceNext ⟨j, h⟩ else 0
+    next := fun j ↦ if h : j < S.air.mainNextWidth then o.traceNext ⟨j, h⟩ else 0
     prepCur := fun j ↦ if h : j < S.air.preprocessedWidth then o.preprocessedAt ⟨j, h⟩ else 0
     prepNext := fun j ↦
       if h : j < S.air.preprocessedNextWidth then o.preprocessedNext ⟨j, h⟩ else 0
@@ -302,7 +302,8 @@ theorem eval_foldedPoly (S : Setup EF) (publicValues : List F) (trace : Fin S.ai
 theorem eval_envAt (S : Setup EF) (publicValues : List F) (trace : Fin S.air.width → F[X])
     (quotient : Fin S.chunks → Fin (Challenge.d EF) → F[X]) (ζ : 𝕂) (h1 : ζ - 1 ≠ 0)
     (hω : ζ - (rootOfUnity S.logN)⁻¹ ≠ 0) (c : Expr F)
-    (hc : c.colsBelow S.air.width S.air.preprocessedWidth S.air.preprocessedNextWidth = true) :
+    (hc : c.colsBelow S.air.width S.air.mainNextWidth S.air.preprocessedWidth
+      S.air.preprocessedNextWidth = true) :
     c.eval (envAt S publicValues ζ (trueOpenings S trace quotient ζ)) =
       aeval ζ (constraintPoly S.n (twoAdicGen S.logN) (traceCol S trace) S.preprocessedPoly
         (S.air.periodicPolys S.logN) publicValues c) := by
@@ -310,12 +311,15 @@ theorem eval_envAt (S : Setup EF) (publicValues : List F) (trace : Fin S.air.wid
   have hinv : (rootOfUnity S.logN)⁻¹ = algebraMap F 𝕂 (twoAdicGen S.logN)⁻¹ := by
     rw [rootOfUnity_eq, map_inv₀]
   refine (Expr.eval_hom (fun p : F[X] ↦ aeval ζ p) (fun a b ↦ map_add _ a b)
-    (fun a b ↦ map_sub _ a b) (fun a b ↦ map_mul _ a b) S.air.width S.air.preprocessedWidth
-    S.air.preprocessedNextWidth _ _ (fun j hj ↦ ?_) (fun j hj ↦ ?_) (fun j hj ↦ ?_)
-    (fun j hj ↦ ?_) (fun _ ↦ rfl) (fun _ ↦ aeval_C _ _) (fun _ ↦ aeval_C _ _) ?_ ?_ ?_ c hc).symm
+    (fun a b ↦ map_sub _ a b) (fun a b ↦ map_mul _ a b) S.air.width S.air.mainNextWidth
+    S.air.preprocessedWidth S.air.preprocessedNextWidth _ _ (fun j hj ↦ ?_) (fun j hj ↦ ?_)
+    (fun j hj ↦ ?_) (fun j hj ↦ ?_) (fun _ ↦ rfl) (fun _ ↦ aeval_C _ _) (fun _ ↦ aeval_C _ _) ?_ ?_
+    ?_ c hc).symm
   · simp only [polyEnv, envAt, traceCol, trueOpenings, dite_eq_left hj]
-  · simp only [polyEnv, envAt, traceCol, trueOpenings, dite_eq_left hj]
+  · have hj' : j < S.air.width := lt_of_lt_of_le hj S.air.mainNextWidth_le
+    simp only [polyEnv, envAt, traceCol, trueOpenings, dite_eq_left hj, dite_eq_left hj']
     rw [aeval_comp, map_mul, aeval_C, aeval_X, mul_comm, rootOfUnity_eq]
+    rfl
   · simp only [polyEnv, envAt, trueOpenings, dite_eq_left hj]
   · simp only [polyEnv, envAt, trueOpenings, dite_eq_left hj]
     rw [aeval_comp, map_mul, aeval_C, aeval_X, mul_comm, rootOfUnity_eq]

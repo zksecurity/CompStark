@@ -19,8 +19,8 @@ the STARK's, every instance in each:
 2. The verifier samples one constraint-folding challenge `α`.
 3. The prover sends every instance's quotient chunks (`Prover.quotient`).
 4. The verifier samples one out-of-domain point `ζ`.
-5. The prover sends every instance's claimed values at `ζ` and `ζ ω_n` (`Prover.openings`). The
-   verifier checks every instance's constraints at `ζ` (`ConstraintsHoldAt`).
+5. The prover sends every instance's claimed values (`Prover.openings`). The verifier checks
+   every instance's constraints at `ζ` (`ConstraintsHoldAt`).
 6. The verifier samples the batching challenge `a`.
 7. The prover shows with FRI that the batched DEEP word over all opened words, in Plonky3's order
    (`openedWords`: the main traces, the quotients, the preprocessed traces), is close to a
@@ -91,12 +91,13 @@ def Prover.instanceProver {S : Setup EF} (p : Prover S) (i : Fin S.k) :
 
 /-! ### The verifier -/
 
-/-- A STARK's opened trace words: the columns at `ζ`, then at `ζ ω_n`. -/
+/-- A STARK's opened trace words: the columns at `ζ`, then, if opened, at `ζ ω_n`. -/
 noncomputable def mainOpened {S : Iop.Setup EF} (p : Iop.Prover S) (α ζ : 𝕂) :
     List ((S.Point → F) × 𝕂 × 𝕂) :=
   let o := p.openings α ζ
   (List.finRange S.air.width).map (fun j ↦ (p.trace j, ζ, o.traceAt j)) ++
-  (List.finRange S.air.width).map (fun j ↦ (p.trace j, ζ * rootOfUnity S.logN, o.traceNext j))
+  (List.finRange S.air.mainNextWidth).map (fun j ↦
+    (p.trace (Fin.castLE S.air.mainNextWidth_le j), ζ * rootOfUnity S.logN, o.traceNext j))
 
 /-- A STARK's opened quotient words: each chunk's coordinates at `ζ`. -/
 noncomputable def quotientOpened {S : Iop.Setup EF} (p : Iop.Prover S) (α ζ : 𝕂) :

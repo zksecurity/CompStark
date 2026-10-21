@@ -19,14 +19,14 @@ against the verifying key of its preprocessed trace (`PreprocessedKey`).
   subgroups, the periodic columns fit the trace, the public values are as many as the AIR
   declares, the verifying key is present
   exactly when the AIR has preprocessed columns and matches their width and the trace's height,
-  and the opened values' sizes, the preprocessed trace's next row present exactly when the AIR
-  reads it (`preprocessedShapeOk`).
+  and the opened values' sizes, each next row present exactly when the AIR reads it
+  (`traceNextOk`, `preprocessedShapeOk`).
 * The transcript observes the STARK's domain separator (`starkSeed`), the trace commitment, the
   preprocessed commitment if any and the public values, samples the constraint-folding challenge
   `α`, observes the quotient commitment, checks the out-of-domain grinding witness and samples
   the out-of-domain point `ζ`, which must lie outside the trace domain.
-* The commitment scheme verifies the trace's openings at `ζ` and `ζ ω`, every quotient chunk's at
-  `ζ`, and the preprocessed trace's at `ζ` and, if the AIR reads its next row, at `ζ ω`.
+* The commitment scheme verifies the trace's and the preprocessed trace's openings at `ζ` and, if
+  the AIR reads their next rows, at `ζ ω`, and every quotient chunk's at `ζ`.
 * The quotient at `ζ` is recomposed from its chunks, which live on the cosets of the quotient
   domain, and must equal the constraints folded by `α` and divided by the trace domain's vanishing
   polynomial. The periodic columns at `ζ` are interpolated from their periods (`periodicAt`).
@@ -68,15 +68,15 @@ def periodicAt (col : List F) (logN : Nat) (zeta : EF) : EF :=
 def foldedConstraints (A : Air F) (env : Expr.Env F EF) (alpha : EF) : EF :=
   A.constraints.foldl (fun acc c ↦ acc * alpha + c.eval env) 0
 
-/-- The constraint check at `ζ` on the trace domain of size `2 ^ degreeBits`. An unopened
-preprocessed row reads as zeros, the periodic columns as their values at `ζ`. -/
+/-- The constraint check at `ζ` on the trace domain of size `2 ^ degreeBits`. An unopened next
+row reads as zeros, the periodic columns as their values at `ζ`. -/
 def checkConstraints (A : Air F) (pis : List F) (opened : OpenedValues EF) (degreeBits : Nat)
     (zeta alpha quotient : EF) : Bool :=
   let gInv := Ext.ofBase (twoAdicGen degreeBits)⁻¹
   let zh := Ext.powTwo zeta degreeBits - 1
   let env : Expr.Env F EF := {
     cur := fun i ↦ opened.traceLocal.getD i 0
-    next := fun i ↦ opened.traceNext.getD i 0
+    next := fun i ↦ (opened.traceNext.getD #[]).getD i 0
     prepCur := fun i ↦ (opened.preprocessedLocal.getD #[]).getD i 0
     prepNext := fun i ↦ (opened.preprocessedNext.getD #[]).getD i 0
     periodic := fun i ↦ periodicAt (A.periodicColumn i) degreeBits zeta
@@ -86,6 +86,12 @@ def checkConstraints (A : Air F) (pis : List F) (opened : OpenedValues EF) (degr
     isLastRow := zh * (zeta - gInv)⁻¹
     isTransition := zeta - gInv }
   foldedConstraints A env alpha * zh⁻¹ == quotient
+
+/-- The proof opens the trace's next row exactly when the AIR reads it, of the AIR's width. -/
+def traceNextOk (A : Air F) (o : OpenedValues EF) : Bool :=
+  match o.traceNext with
+  | some r => A.mainNextRow && r.size == A.width
+  | none => !A.mainNextRow
 
 /-- The verifying key matches the AIR's preprocessed trace for `2 ^ degreeBits` rows, and the
 proof opens it in the AIR's shape: no key and no opening without preprocessed columns; otherwise
@@ -119,15 +125,20 @@ def preprocessedRound (A : Air F) (vk : Option (PreprocessedKey F)) (o : OpenedV
       else [])])]
   | none => []
 
-/-- The commitment scheme's rounds of a proof at `ζ`: the trace opened at `ζ` and `ζ ω`, every
-quotient chunk at `ζ`, and the preprocessed trace (`preprocessedRound`), all on the trace domain. -/
+/-- The trace's points and values: at `ζ`, and at `ζ ω` if the AIR reads its next row. -/
+def traceOpenings (A : Air F) (o : OpenedValues EF) (zeta zetaNext : EF) :
+    List (EF × List EF) :=
+  (zeta, o.traceLocal.toList) ::
+    if A.mainNextRow then [(zetaNext, (o.traceNext.getD #[]).toList)] else []
+
+/-- The commitment scheme's rounds of a proof at `ζ`: the trace's `traceOpenings`, every quotient
+chunk at `ζ`, and the preprocessed trace (`preprocessedRound`), all on the trace domain. -/
 def openingRounds (A : Air F) (vk : Option (PreprocessedKey F)) (proof : Proof F EF)
     (zeta : EF) : List (Round F EF) :=
   let o := proof.opened
   let traceDomain : Domain F := ⟨1, proof.degreeBits⟩
   let zetaNext := zeta * Ext.ofBase (twoAdicGen proof.degreeBits)
-  [(proof.traceCommit, [(traceDomain, [(zeta, o.traceLocal.toList),
-      (zetaNext, o.traceNext.toList)])]),
+  [(proof.traceCommit, [(traceDomain, traceOpenings A o zeta zetaNext)]),
     (proof.quotientCommit, o.quotientChunks.toList.map fun ch ↦
       (traceDomain, [(zeta, ch.toList)]))] ++
     preprocessedRound A vk o traceDomain zeta zetaNext
@@ -136,7 +147,8 @@ def openingRounds (A : Air F) (vk : Option (PreprocessedKey F)) (proof : Proof F
 def starkSeedOf (EF : Type) [Challenge F EF] (P : Params) (A : Air F) (degreeBits : Nat) :
     List F :=
   DomainSeparator.starkSeed F EF degreeBits A.width A.preprocessedWidth A.periodic.length
-    A.numPublicValues (2 ^ A.logQuotientChunks degreeBits) P.oodPowBits A.opensPreprocessedNext
+    A.numPublicValues (2 ^ A.logQuotientChunks degreeBits) P.oodPowBits A.mainNextRow
+    A.opensPreprocessedNext
 
 /-- Verify a proof of `A` with public values `pis` on the primitives `H`, against the verifying key
 `vk` of `A`'s preprocessed trace if it has one. -/
@@ -153,7 +165,7 @@ def verifyWith {m : Type → Type} [Monad m] (H : Primitives F m) (P : Params) (
     throw "periodic columns"
   unless pis.length == A.numPublicValues do
     throw "public values"
-  unless o.traceLocal.size == A.width && o.traceNext.size == A.width &&
+  unless o.traceLocal.size == A.width && traceNextOk A o &&
       o.quotientChunks.size == 2 ^ logChunks &&
       o.quotientChunks.all (·.size == Challenge.d EF) && preprocessedShapeOk A vk o db do
     throw "invalid proof shape"

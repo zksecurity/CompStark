@@ -54,11 +54,12 @@ structure FriProof (F EF : Type) where
   queryWitness : F
 deriving BEq
 
-/-- The values a STARK proof opens at `ζ` and `ζ ω`: the trace's, the preprocessed trace's if the
-AIR has one (at `ζ ω` only if the AIR reads its next row), and the quotient chunks'. -/
+/-- The values a STARK proof opens at `ζ` and `ζ ω`: the trace's (at `ζ ω` only if the AIR reads
+its next row), the preprocessed trace's if the AIR has one (at `ζ ω` only if the AIR reads its next
+row), and the quotient chunks'. -/
 structure OpenedValues (EF : Type) where
   traceLocal : Array EF
-  traceNext : Array EF
+  traceNext : Option (Array EF)
   preprocessedLocal : Option (Array EF)
   preprocessedNext : Option (Array EF)
   quotientChunks : Array (Array EF)
