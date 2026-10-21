@@ -24,9 +24,9 @@ known polynomials, itself.
 3. The prover sends the quotient's chunks, each as the `d` coordinates of a word over `𝕂`
    (`Prover.quotient`).
 4. The verifier samples the out-of-domain point `ζ`.
-5. The prover sends the claimed values of the trace's columns at `ζ` and `ζ ω_n`, of the chunks
-   at `ζ`, and of the preprocessed trace's columns at `ζ` and, if the AIR reads its next row, at
-   `ζ ω_n` (`Prover.openings`). The verifier checks the constraints at `ζ` (`ConstraintsHoldAt`).
+5. The prover sends the claimed values of the trace's and the preprocessed trace's columns at `ζ`
+   and, if the AIR reads their next rows, at `ζ ω_n`, and of the chunks at `ζ`
+   (`Prover.openings`). The verifier checks the constraints at `ζ` (`ConstraintsHoldAt`).
 6. The verifier samples the batching challenge `a`.
 7. The prover shows with FRI that the batched DEEP word `∑ᵢ aⁱ (yᵢ - fᵢ(x)) / (zᵢ - x)` over
    the opened words `fᵢ`, points `zᵢ` and values `yᵢ` is close to a polynomial of degree below
@@ -95,8 +95,8 @@ noncomputable def rootOfUnity (k : Nat) : 𝕂 := lift (twoAdicGen k)
 structure Openings (S : Setup EF) where
   /-- Each trace column at `ζ`. -/
   traceAt : Fin S.air.width → 𝕂
-  /-- Each trace column at `ζ ω_n`, the next row. -/
-  traceNext : Fin S.air.width → 𝕂
+  /-- Each trace column at `ζ ω_n`, if the AIR reads the next row. -/
+  traceNext : Fin S.air.mainNextWidth → 𝕂
   /-- Each coordinate of each quotient chunk at `ζ`. -/
   quotientAt : Fin S.chunks → Fin (Challenge.d EF) → 𝕂
   /-- Each preprocessed column at `ζ`. -/
@@ -132,7 +132,7 @@ def ConstraintsHoldAt (S : Setup EF) (publicValues : List F) (α ζ : 𝕂) (o :
   let zh := vanishing 1 S.n ζ
   let env : Expr.Env F 𝕂 :=
     { cur := fun j ↦ if h : j < S.air.width then o.traceAt ⟨j, h⟩ else 0
-      next := fun j ↦ if h : j < S.air.width then o.traceNext ⟨j, h⟩ else 0
+      next := fun j ↦ if h : j < S.air.mainNextWidth then o.traceNext ⟨j, h⟩ else 0
       prepCur := fun j ↦
         if h : j < S.air.preprocessedWidth then o.preprocessedAt ⟨j, h⟩ else 0
       prepNext := fun j ↦
@@ -151,13 +151,14 @@ def ConstraintsHoldAt (S : Setup EF) (publicValues : List F) (α ζ : 𝕂) (o :
   folded / zh = ∑ c, selector c * chunk c
 
 /-- The opened words with their points and claimed values, in Plonky3's batching order: the trace
-columns at `ζ`, the trace columns at `ζ ω_n`, each chunk's coordinates at `ζ`, the preprocessed
+columns at `ζ` and, if opened, at `ζ ω_n`, each chunk's coordinates at `ζ`, the preprocessed
 columns at `ζ` and, if opened, at `ζ ω_n`. -/
 noncomputable def openedWords {S : Setup EF} (p : Prover S) (α ζ : 𝕂) :
     List ((S.Point → F) × 𝕂 × 𝕂) :=
   let o := p.openings α ζ
   (List.finRange S.air.width).map (fun j ↦ (p.trace j, ζ, o.traceAt j)) ++
-  (List.finRange S.air.width).map (fun j ↦ (p.trace j, ζ * rootOfUnity S.logN, o.traceNext j)) ++
+  (List.finRange S.air.mainNextWidth).map (fun j ↦
+    (p.trace (Fin.castLE S.air.mainNextWidth_le j), ζ * rootOfUnity S.logN, o.traceNext j)) ++
   ((List.finRange S.chunks).flatMap fun c ↦ (List.finRange (Challenge.d EF)).map fun e ↦
     (p.quotient α c e, ζ, o.quotientAt c e)) ++
   (List.finRange S.air.preprocessedWidth).map

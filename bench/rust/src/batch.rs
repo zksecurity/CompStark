@@ -7,7 +7,7 @@ use p3_field::{PrimeCharacteristicRing, PrimeField64};
 use p3_koala_bear::{default_koalabear_poseidon2_16, default_koalabear_poseidon2_24, KoalaBear};
 use p3_matrix::dense::RowMajorMatrix;
 
-use crate::stark::{config, trace, FibonacciAir, PeriodicAir};
+use crate::stark::{config, square_trace, trace, FibonacciAir, PeriodicAir, SquareAir};
 
 type F = KoalaBear;
 
@@ -25,12 +25,14 @@ pub enum BatchAir<F> {
     /// `PreprocessedMulAir`: `main = multiplier · prep`, the preprocessed column the row index,
     /// not read at the next row.
     PrepMul { log_height: usize, multiplier: u64 },
+    /// `SquareAir`, which never reads the next row.
+    Square,
 }
 
 impl<F: PrimeField64> BaseAir<F> for BatchAir<F> {
     fn width(&self) -> usize {
         match self {
-            Self::Fib { .. } | Self::Periodic(_) => 2,
+            Self::Fib { .. } | Self::Periodic(_) | Self::Square => 2,
             Self::Mul { reps } => 3 * reps + 1,
             Self::PrepMul { .. } => 1,
         }
@@ -63,6 +65,10 @@ impl<F: PrimeField64> BaseAir<F> for BatchAir<F> {
         }
     }
 
+    fn main_next_row_columns(&self) -> Vec<usize> {
+        if let Self::Square = self { vec![] } else { (0..BaseAir::<F>::width(self)).collect() }
+    }
+
     fn num_periodic_columns(&self) -> usize {
         if let Self::Periodic(a) = self { a.periodic.len() } else { 0 }
     }
@@ -82,6 +88,7 @@ where
     fn eval(&self, builder: &mut AB) {
         match self {
             Self::Fib { .. } => FibonacciAir.eval(builder),
+            Self::Square => SquareAir.eval(builder),
             Self::Periodic(a) => a.eval(builder),
             Self::Mul { reps } => {
                 let main = builder.main();
@@ -141,6 +148,10 @@ fn instance(air: BatchAir<F>, log_n: usize) -> (BatchAir<F>, RowMajorMatrix<F>, 
             let t = a.trace(n);
             (air, t, vec![])
         }
+        BatchAir::Square => {
+            let t = square_trace(n);
+            (air, t, vec![])
+        }
         BatchAir::PrepMul { multiplier, .. } => {
             let m = *multiplier;
             let t = RowMajorMatrix::new((0..n as u64).map(|i| F::from_u64(i * m)).collect(), 1);
@@ -151,7 +162,8 @@ fn instance(air: BatchAir<F>, log_n: usize) -> (BatchAir<F>, RowMajorMatrix<F>, 
 
 /// The instances of a batch: `three` (`test_three_instances_mixed_sizes`), `mixed`
 /// (`test_mixed_preprocessed`), `periodic` (`test_periodic_air`), `single` (`test_single_instance`)
-/// and `prepmul`, preprocessed traces at mixed heights with and without next-row reads.
+/// `prepmul`, preprocessed traces at mixed heights with and without next-row reads, and `square`,
+/// an AIR that does not read the next row beside one that does.
 pub fn case(name: &str) -> Vec<(BatchAir<F>, RowMajorMatrix<F>, Vec<F>)> {
     match name {
         "three" => vec![instance(BatchAir::Fib { log_height: 4 }, 4),
@@ -162,6 +174,7 @@ pub fn case(name: &str) -> Vec<(BatchAir<F>, RowMajorMatrix<F>, Vec<F>)> {
         "single" => vec![instance(BatchAir::Fib { log_height: 5 }, 5)],
         "prepmul" => vec![instance(BatchAir::PrepMul { log_height: 4, multiplier: 2 }, 4),
             instance(BatchAir::Fib { log_height: 5 }, 5), instance(BatchAir::Mul { reps: 1 }, 3)],
+        "square" => vec![instance(BatchAir::Square, 4), instance(BatchAir::Fib { log_height: 3 }, 3)],
         _ => panic!("unknown batch {name}"),
     }
 }

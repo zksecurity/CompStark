@@ -413,19 +413,20 @@ theorem eval_rowEnv (A : Air F) (d l : Nat) (h : d + l ≤ twoAdicity F) (tq pq 
     (hpq : ∀ j < A.preprocessedWidth, ∀ r < 2 ^ (d + l),
       pq.values.getD (r * pq.width + j) 0 = (Tp j).eval (qpt (d + l) r))
     (hper : ∀ j r, periodicRow (per.getD j #[]) r = (P j).eval (qpt (d + l) r)) (c : Expr F)
-    (hc : c.colsBelow A.width A.preprocessedWidth A.preprocessedNextWidth = true) (r : Nat)
-    (hr : r < 2 ^ (d + l)) :
+    (hc : c.colsBelow A.width A.mainNextWidth A.preprocessedWidth A.preprocessedNextWidth = true)
+    (r : Nat) (hr : r < 2 ^ (d + l)) :
     c.eval (rowEnv tq pq per (2 ^ (d + l)) (2 ^ l) pis (qFirst d l) (qLast d l) (qTrans d l) r) =
       (constraintPoly (2 ^ d) (twoAdicGen d) T Tp P pis c).eval (qpt (d + l) r) := by
   have hnw := A.preprocessedNextWidth_le
+  have hmw := A.mainNextWidth_le
   rw [constraintPoly]
   refine (Expr.eval_hom (eval (qpt (d + l) r)) (fun _ _ ↦ eval_add) (fun a b ↦ eval_sub a b _)
-    (fun _ _ ↦ eval_mul) A.width A.preprocessedWidth A.preprocessedNextWidth _ _
+    (fun _ _ ↦ eval_mul) A.width A.mainNextWidth A.preprocessedWidth A.preprocessedNextWidth _ _
     (fun j hj ↦ ?_) (fun j hj ↦ ?_) (fun j hj ↦ ?_) (fun j hj ↦ ?_) (fun j ↦ (hper j r).symm)
     (fun _ ↦ eval_C) (fun _ ↦ eval_C) ?_ ?_ ?_ c hc).symm
   · change (T j).eval (qpt (d + l) r) = tq.values.getD (r * tq.width + j) 0
     rw [hq j hj r hr]
-  · exact eval_next_qpt d l h tq (T j) j (hq j hj) r
+  · exact eval_next_qpt d l h tq (T j) j (hq j (by omega)) r
   · change (Tp j).eval (qpt (d + l) r) = pq.values.getD (r * pq.width + j) 0
     rw [hpq j hj r hr]
   · exact eval_next_qpt d l h pq (Tp j) j (hpq j (by omega)) r
@@ -683,12 +684,14 @@ theorem toSpec_eval_opened (A : Air F) (logN b : Nat) (pis : List F) (m pm : Sta
     (hpm : CompStark.Mat.IsLde b (logN + b) pm pps)
     (hw : ps.length = A.width) (hpw : pps.length = A.preprocessedWidth) (z : EF)
     (hz : Ext.OutsideBase z) (tl tn pl pn : Array EF)
-    (htl : tl = Fri.openedAt b m z) (htn : tn = Fri.openedAt b m (z * Ext.ofBase (twoAdicGen logN)))
+    (htl : tl = Fri.openedAt b m z)
+    (htn : ∀ i < A.mainNextWidth,
+      tn.getD i 0 = (Fri.openedAt b m (z * Ext.ofBase (twoAdicGen logN))).getD i 0)
     (hpl : ∀ i < A.preprocessedWidth, pl.getD i 0 = (Fri.openedAt b pm z).getD i 0)
     (hpn : ∀ i < A.preprocessedNextWidth,
       pn.getD i 0 = (Fri.openedAt b pm (z * Ext.ofBase (twoAdicGen logN))).getD i 0)
     (hfits : A.periodicFits logN = true) (c : Expr F)
-    (hc : c.colsBelow A.width A.preprocessedWidth A.preprocessedNextWidth = true) :
+    (hc : c.colsBelow A.width A.mainNextWidth A.preprocessedWidth A.preprocessedNextWidth = true) :
     Challenge.toSpec (c.eval {
       cur := fun i ↦ tl.getD i 0
       next := fun i ↦ tn.getD i 0
@@ -717,10 +720,11 @@ theorem toSpec_eval_opened (A : Air F) (logN b : Nat) (pis : List F) (m pm : Sta
   have hlast : Challenge.toSpec z - algebraMap K E ((twoAdicGen logN : F))⁻¹ ≠ 0 := by
     have := toSpec_ne_ofBase hz ((twoAdicGen logN : F))⁻¹
     rwa [← CompPoly.Extension.Ext.algebraMap_eq_ofBase, ← sub_ne_zero] at this
-  subst htl htn
+  have hmw := A.mainNextWidth_le
+  subst htl
   set env : Expr.Env F EF := {
       cur := fun i ↦ (Fri.openedAt b m z).getD i 0
-      next := fun i ↦ (Fri.openedAt b m (z * Ext.ofBase (twoAdicGen logN))).getD i 0
+      next := fun i ↦ tn.getD i 0
       prepCur := fun i ↦ pl.getD i 0
       prepNext := fun i ↦ pn.getD i 0
       periodic := fun i ↦ periodicAt (A.periodicColumn i) logN z
@@ -741,21 +745,21 @@ theorem toSpec_eval_opened (A : Air F) (logN b : Nat) (pis : List F) (m pm : Sta
     isLastRow := Challenge.toSpec env.isLastRow
     isTransition := Challenge.toSpec env.isTransition }
   refine (Expr.eval_hom Challenge.toSpec Challenge.toSpec_add Challenge.toSpec_sub
-      Challenge.toSpec_mul A.width A.preprocessedWidth A.preprocessedNextWidth env
+      Challenge.toSpec_mul A.width A.mainNextWidth A.preprocessedWidth A.preprocessedNextWidth env
     envE (fun _ _ ↦ rfl) (fun _ _ ↦ rfl) (fun _ _ ↦ rfl) (fun _ _ ↦ rfl) (fun _ ↦ rfl)
     (fun _ ↦ rfl) (fun _ ↦ rfl) rfl rfl rfl c hc).trans ?_
   rw [constraintPoly]
   refine (Expr.eval_hom (fun p ↦ aeval (Challenge.toSpec z) p)
     (fun a b ↦ (aeval (Challenge.toSpec z)).map_add a b)
         (fun a b ↦ (aeval (Challenge.toSpec z)).map_sub a b)
-    (fun a b ↦ (aeval (Challenge.toSpec z)).map_mul a b) A.width A.preprocessedWidth
-    A.preprocessedNextWidth _ envE (fun j hj ↦ ?_) (fun j hj ↦ ?_) (fun j hj ↦ ?_)
-    (fun j hj ↦ ?_) (fun j ↦ ?_) (fun j ↦ ?_) (fun x ↦ ?_) ?_ ?_ ?_ c hc).symm
+    (fun a b ↦ (aeval (Challenge.toSpec z)).map_mul a b) A.width A.mainNextWidth
+    A.preprocessedWidth A.preprocessedNextWidth _ envE (fun j hj ↦ ?_) (fun j hj ↦ ?_)
+    (fun j hj ↦ ?_) (fun j hj ↦ ?_) (fun j ↦ ?_) (fun j ↦ ?_) (fun x ↦ ?_) ?_ ?_ ?_ c hc).symm
   · exact (hO j (by rw [hw]; exact hj)).symm
   · change aeval (Challenge.toSpec z)
-      ((ps.getD j 0).comp (C ((twoAdicGen logN : F)) * X)) = Challenge.toSpec
-          ((Fri.openedAt b m (z * Ext.ofBase (twoAdicGen logN))).getD j 0)
-    rw [hO' j (by rw [hw]; exact hj), aeval_comp, map_mul, aeval_C, aeval_X, Challenge.toSpec_mul,
+      ((ps.getD j 0).comp (C ((twoAdicGen logN : F)) * X)) = Challenge.toSpec (tn.getD j 0)
+    rw [htn j hj, hO' j (by rw [hw]; omega), aeval_comp, map_mul, aeval_C, aeval_X,
+      Challenge.toSpec_mul,
       Challenge.toSpec_ofBase, ← CompPoly.Extension.Ext.algebraMap_eq_ofBase, mul_comm]
   · change aeval (Challenge.toSpec z) (pps.getD j 0) = Challenge.toSpec (pl.getD j 0)
     rw [hpl j hj]
@@ -833,7 +837,7 @@ theorem checkConstraints_of (A : Air F) (pis : List F) (o : OpenedValues EF) (lo
     (zeta alpha quotient : EF)
     (h : Challenge.toSpec (foldedConstraints A {
       cur := fun i ↦ o.traceLocal.getD i 0
-      next := fun i ↦ o.traceNext.getD i 0
+      next := fun i ↦ (o.traceNext.getD #[]).getD i 0
       prepCur := fun i ↦ (o.preprocessedLocal.getD #[]).getD i 0
       prepNext := fun i ↦ (o.preprocessedNext.getD #[]).getD i 0
       periodic := fun i ↦ periodicAt (A.periodicColumn i) logN zeta
@@ -847,14 +851,13 @@ theorem checkConstraints_of (A : Air F) (pis : List F) (o : OpenedValues EF) (lo
   rw [checkConstraints_eq_fun]
   exact beq_iff_eq.mpr (Challenge.toSpec_injective h)
 
-/-- The honest proof's opened values: the trace's extension `ext` at `ζ` and `ζ ω`, the
-preprocessed trace's extension at `ζ` and, if the AIR reads its next row, at `ζ ω`, and the
-chunks `chunks` at `ζ`. -/
+/-- The honest proof's opened values: the trace's extension `ext` and the preprocessed trace's at
+`ζ` and, if the AIR reads their next rows, at `ζ ω`, and the chunks `chunks` at `ζ`. -/
 def honestOpened (b : Nat) (A : Air F) (logN : Nat) (ext : Mat F) (chunks : List (Mat F))
     (zeta : EF) : OpenedValues EF :=
   let pext := ldeRef logN b gen A.preprocessedWidth A.preprocessed
   let zetaNext := zeta * Ext.ofBase (twoAdicGen logN)
-  ⟨Fri.openedAt b ext zeta, Fri.openedAt b ext zetaNext,
+  ⟨Fri.openedAt b ext zeta, if A.mainNextRow then some (Fri.openedAt b ext zetaNext) else none,
     if A.preprocessedWidth = 0 then none else some (Fri.openedAt b pext zeta),
     if A.opensPreprocessedNext then some (Fri.openedAt b pext zetaNext) else none,
     (chunks.map fun m ↦ Fri.openedAt b m zeta).toArray⟩
@@ -942,9 +945,17 @@ theorem checkConstraints_honest (P : Params) (A : Air F) (logN : Nat) (trace : A
       · assumption
       · omega
     simp only [o, honestOpened, hn, ↓reduceIte, Option.getD_some]
+  have htn : ∀ i < A.mainNextWidth, (o.traceNext.getD #[]).getD i 0 =
+      (Fri.openedAt P.logBlowup ext (zeta * Ext.ofBase (twoAdicGen logN))).getD i 0 := by
+    intro i hi
+    have hn : A.mainNextRow = true := by
+      unfold Air.mainNextWidth at hi; split at hi
+      · assumption
+      · omega
+    simp only [o, honestOpened, hn, ↓reduceIte, Option.getD_some]
   have hmap : (A.constraints.map fun c ↦ Challenge.toSpec (c.eval {
       cur := fun i ↦ o.traceLocal.getD i 0
-      next := fun i ↦ o.traceNext.getD i 0
+      next := fun i ↦ (o.traceNext.getD #[]).getD i 0
       prepCur := fun i ↦ (o.preprocessedLocal.getD #[]).getD i 0
       prepNext := fun i ↦ (o.preprocessedNext.getD #[]).getD i 0
       periodic := fun i ↦ periodicAt (A.periodicColumn i) logN zeta
@@ -959,7 +970,7 @@ theorem checkConstraints_honest (P : Params) (A : Air F) (logN : Nat) (trace : A
     rw [List.map_map]
     refine List.map_congr_left fun c hc ↦ ?_
     rw [toSpec_eval_opened A logN P.logBlowup pis ext _ ps pps hlde hplde hlen hplen zeta hz
-      o.traceLocal o.traceNext _ _ rfl rfl hpl hpn hin.periodic c (hin.cols c hc),
+      o.traceLocal _ _ _ rfl htn hpl hpn hin.periodic c (hin.cols c hc),
       constraintPoly_eq A logN (by omega) trace pis _ _ _ hT hTp
         (periodicOn_periodicPolys A logN hin.periodic (by omega)) hsat hin.cols c hc, map_mul]
     simp only [Function.comp_apply, zH, map_sub, map_pow, aeval_X, map_one]
@@ -997,14 +1008,19 @@ theorem honest_shape (P : Params) (A : Air F) (logN : Nat) (trace : Array F) (pi
     let o : OpenedValues EF := honestOpened P.logBlowup A logN ext chunks zeta
     let vk : Option (PreprocessedKey F) :=
       if A.preprocessedWidth = 0 then none else some ⟨A.preprocessedWidth, logN, r⟩
-    (o.traceLocal.size == A.width && o.traceNext.size == A.width &&
+    (o.traceLocal.size == A.width && traceNextOk A o &&
       o.quotientChunks.size == 2 ^ lc && o.quotientChunks.all (·.size == Challenge.d EF) &&
       preprocessedShapeOk A vk o logN) = true := by
   intro ext qs lc chunks o vk
   have hs (m : Stark.Mat F) (z : EF) : (Fri.openedAt P.logBlowup m z).size = m.width := by
     rw [openedAt_eq, Array.size_ofFn]
   simp only [Bool.and_eq_true, beq_iff_eq]
-  refine ⟨⟨⟨⟨hs ext zeta, hs ext _⟩, ?_⟩, ?_⟩, ?_⟩
+  refine ⟨⟨⟨⟨hs ext zeta, ?_⟩, ?_⟩, ?_⟩, ?_⟩
+  · have hw : ext.width = A.width := rfl
+    simp only [o, honestOpened, traceNextOk]
+    cases hn : A.mainNextRow <;>
+      simp only [hs, hw, beq_self_eq_true, Bool.and_true, Bool.not_false, Bool.false_eq_true,
+        ↓reduceIte]
   · show (chunks.map fun m ↦ Fri.openedAt P.logBlowup m zeta).toArray.size = 2 ^ lc
     rw [List.size_toArray, List.length_map, List.length_map, List.length_range]
   · rw [Array.all_eq_true]

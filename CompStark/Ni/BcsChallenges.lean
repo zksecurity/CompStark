@@ -274,7 +274,7 @@ theorem zeta_idealOf (hK : Challenge.d EF + 1 ≤ K) :
   rw [← hst] at h
   exact h
 
-theorem batch_idealOf (hK : Challenge.d EF + 1 ≤ K)
+theorem batch_idealOf (hK : Challenge.d EF + 1 ≤ K) (htn : traceNextOk A proof.opened = true)
     (hshape : preprocessedShapeOk A vk proof.opened proof.degreeBits = true) :
     Challenge.toSpec (batchOf (idealOf answer) P A vk proof pis) =
       extAt (answer (keyAt answer (inputs P A vk pis proof) 2)).2 (challengeOffset P.batchPowBits) ∧
@@ -287,8 +287,8 @@ theorem batch_idealOf (hK : Challenge.d EF + 1 ≤ K)
         pis).2).2 =
       ⟨capAt answer (inputs P A vk pis proof) 2, DomainSeparator.pcsSeed F EF
         (pcsCounts proof.opened) P.batchPowBits ++ coeffs (openedValues proof.opened), []⟩ := by
-    rw [hl, pcsState, obsOpened_eq, roundValues_openingRounds A vk proof _ hshape,
-      claimCounts_openingRounds A vk proof _ hshape,
+    rw [hl, pcsState, obsOpened_eq, roundValues_openingRounds A vk proof _ htn hshape,
+      claimCounts_openingRounds A vk proof _ htn hshape,
       obsList_idealOf_ne answer _ _ (pcsSeed_ne_nil _ _), obsList_idealOf answer _ rfl]
     rfl
   have h := grindRound_idealOf (EF := EF) answer hK (inputs P A vk pis proof) 2
@@ -429,6 +429,7 @@ the first `d` samples of round `0`; `ζ`, the batching challenge and `β_i` are 
 offsets of rounds `1`, `2` and `3 + i`; and the query round's grinding sample and query samples
 are its samples from `0` and from the grinding offset. -/
 theorem challenges_idealOf (hK : P.numQueries + Challenge.d EF + 1 ≤ K)
+    (htn : traceNextOk A proof.opened = true)
     (hshape : preprocessedShapeOk A vk proof.opened proof.degreeBits = true)
     (hfp : proof.fri.finalPoly.toList ≠ []) :
     let u := fun j ↦ (answer (keyAt answer (inputs P A vk pis proof) j)).2
@@ -446,7 +447,7 @@ theorem challenges_idealOf (hK : P.numQueries + Challenge.d EF + 1 ≤ K)
       ∀ j < P.numQueries, querySampleOf (idealOf answer) P A vk proof pis j =
         ((u (3 + n)).toList.getD (challengeOffset P.queryPowBits + j) 0) := by
   intro u n
-  obtain ⟨hb1, l₀, hl₀⟩ := batch_idealOf answer P A vk proof pis (by omega) hshape
+  obtain ⟨hb1, l₀, hl₀⟩ := batch_idealOf answer P A vk proof pis (by omega) htn hshape
   have hstart : friStart (idealOf answer) P A vk proof pis =
       ⟨capAt answer (inputs P A vk pis proof) 3, friSeedOf P proof, []⟩ := by
     rw [friStart, hl₀, obsList_idealOf_ne answer _ _ (friSeed_ne_nil _ _ _ _ _ _ _ _)]

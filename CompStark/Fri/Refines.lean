@@ -96,7 +96,7 @@ structure Refines (B : Backend F EF 24) where
   logHeight : ∀ {c s}, RC c s → B.logHeight c = (specBackend EF).logHeight s
   quotient : ∀ A pis d l {m s pm ps} alpha, RM m s → MatOk s → 2 ^ (d + l) ≤ s.height →
     Option.Rel RM pm ps → (∀ p ∈ ps, MatOk p ∧ p.height = s.height) →
-    (∀ c ∈ A.constraints, c.colsBelow s.width ((ps.map (·.width)).getD 0)
+    (∀ c ∈ A.constraints, c.colsBelow s.width s.width ((ps.map (·.width)).getD 0)
       ((ps.map (·.width)).getD 0)) →
     B.quotient A pis d l m pm alpha = (specBackend EF).quotient A pis d l s ps alpha
   openedAt : ∀ b zs {m s}, RM m s → MatOk s → (∀ z ∈ zs, Ext.OutsideBase z) →

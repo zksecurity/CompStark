@@ -67,18 +67,18 @@ theorem extFrom_coeffs (rest : List F) :
       ← List.drop_drop, List.drop_left' (Challenge.length_coeffs x), List.getElem_cons_succ, ← ih]
     rfl
 
-/-- The openings of the extension elements in `xs`: the trace at `ζ`, at `ζ ω`, the quotient
-chunks' coordinates, and the preprocessed trace at `ζ` and, if opened, at `ζ ω`, in the order the
-verifier observes them. -/
+/-- The openings of the extension elements in `xs`: the trace at `ζ` and, if opened, at `ζ ω`,
+the quotient chunks' coordinates, and the preprocessed trace at `ζ` and, if opened, at `ζ ω`, in
+the order the verifier observes them. -/
 noncomputable def openingsAt (S : Iop.Setup EF) (xs : List F) : Openings S where
   traceAt j := Challenge.toSpec (extFrom (EF := EF) xs j)
   traceNext j := Challenge.toSpec (extFrom (EF := EF) xs (S.air.width + j))
-  quotientAt c e :=
-    Challenge.toSpec (extFrom (EF := EF) xs (2 * S.air.width + (Challenge.d EF * c.val + e.val)))
-  preprocessedAt j :=
-    Challenge.toSpec (extFrom (EF := EF) xs (2 * S.air.width + Challenge.d EF * S.chunks + j))
+  quotientAt c e := Challenge.toSpec (extFrom (EF := EF) xs
+    (S.air.width + S.air.mainNextWidth + (Challenge.d EF * c.val + e.val)))
+  preprocessedAt j := Challenge.toSpec (extFrom (EF := EF) xs
+    (S.air.width + S.air.mainNextWidth + Challenge.d EF * S.chunks + j))
   preprocessedNext j := Challenge.toSpec (extFrom (EF := EF) xs
-    (2 * S.air.width + Challenge.d EF * S.chunks + S.air.preprocessedWidth + j))
+    (S.air.width + S.air.mainNextWidth + Challenge.d EF * S.chunks + S.air.preprocessedWidth + j))
 
 theorem getElem_flatMap_of_length {α : Type} (w : Nat) (L : List (List α))
     (hL : ∀ l ∈ L, l.length = w) (c e : Nat) (hc : c < L.length) (he : e < w)
@@ -102,7 +102,8 @@ theorem getElem_flatMap_of_length {α : Type} (w : Nat) (L : List (List α))
         List.getElem_cons_succ]
 
 theorem openingsAt_coeffs (S : Iop.Setup EF) (o : OpenedValues EF) (rest : List F)
-    (htl : o.traceLocal.size = S.air.width) (htn : o.traceNext.size = S.air.width)
+    (htl : o.traceLocal.size = S.air.width)
+    (htn : (o.traceNext.getD #[]).size = S.air.mainNextWidth)
     (hqc : o.quotientChunks.size = S.chunks)
     (hq4 : ∀ ch ∈ o.quotientChunks, ch.size = Challenge.d EF)
     (hpl : (o.preprocessedLocal.getD #[]).size = S.air.preprocessedWidth)
@@ -115,10 +116,9 @@ theorem openingsAt_coeffs (S : Iop.Setup EF) (o : OpenedValues EF) (rest : List 
       obtain ⟨ch, hch, rfl⟩ := List.mem_map.mp hn
       exact hq4 ch (Array.mem_toList_iff.mp hch)), List.length_map, Array.length_toList, hqc,
       smul_eq_mul, Nat.mul_comm]
-  have hlen : (openedValues o).length = 2 * S.air.width + Challenge.d EF * S.chunks +
-      S.air.preprocessedWidth + S.air.preprocessedNextWidth := by
+  have hlen : (openedValues o).length = S.air.width + S.air.mainNextWidth +
+      Challenge.d EF * S.chunks + S.air.preprocessedWidth + S.air.preprocessedNextWidth := by
     simp only [openedValues, List.length_append, Array.length_toList, htl, htn, hq, hpl, hpn]
-    ring
   have hx (k : Nat) (hk : k < (openedValues o).length) :
       extFrom (coeffs (openedValues o) ++ rest) k = (openedValues o)[k] :=
     extFrom_coeffs rest (openedValues o) k hk
@@ -162,7 +162,8 @@ theorem openingsAt_coeffs (S : Iop.Setup EF) (o : OpenedValues EF) (rest : List 
     have hfm : o.quotientChunks.toList.flatMap (·.toList) =
         (o.quotientChunks.toList.map (·.toList)).flatMap id := by
       rw [List.flatMap_map]; rfl
-    have hidx : 2 * S.air.width + (Challenge.d EF * c.val + e.val) - S.air.width - S.air.width =
+    have hidx : S.air.width + S.air.mainNextWidth + (Challenge.d EF * c.val + e.val) -
+        S.air.width - S.air.mainNextWidth =
         Challenge.d EF * c.val + e.val := by omega
     simp only [Array.length_toList, htl, htn, hfm]
     have := getElem_flatMap_of_length _ _ hL c.val e.val
@@ -223,7 +224,8 @@ def starkSeedS : List F := starkSeedOf EF S.params S.air S.logN
 
 /-- The claimed evaluation counts of a proof for `S`. -/
 def pcsCountsS : List (List (List Nat)) :=
-  [[[S.air.width, S.air.width]], List.replicate S.chunks [Challenge.d EF]] ++
+  [[S.air.width :: if S.air.mainNextRow then [S.air.width] else []],
+    List.replicate S.chunks [Challenge.d EF]] ++
     if S.air.preprocessedWidth = 0 then [] else
       [[S.air.preprocessedWidth ::
         if S.air.opensPreprocessedNext then [S.air.preprocessedWidth] else []]]

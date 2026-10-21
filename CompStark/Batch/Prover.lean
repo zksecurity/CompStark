@@ -20,8 +20,8 @@ Plonky3's proof, grinding witnesses included when Plonky3 grinds on one thread:
   preprocessed commitment; sample `α`.
 * Compute every instance's quotient chunks as `uni-stark` does (`quotientChunks`), commit to all
   of them, instance by instance, under one tree, grind, and sample `ζ`.
-* Open every trace at `ζ` and `ζ ω`, every chunk at `ζ`, and every preprocessed trace at `ζ` and,
-  if its AIR reads its next row, at `ζ ω`, `ω` the instance's generator, in one opening argument.
+* Open every trace and preprocessed trace at `ζ` and, if its AIR reads their next rows, at `ζ ω`,
+  `ω` the instance's generator, and every chunk at `ζ`, in one opening argument.
 -/
 
 @[expose] public section
@@ -71,14 +71,14 @@ def instanceOpened (A : Air F) (opened : List (List (List (Array EF)))) (i chunk
     prepBefore : Nat) : OpenedValues EF :=
   let trace := (opened.headD []).getD i []
   let prep := (opened.getD 2 []).getD prepBefore []
-  ⟨trace.headD #[], trace.getD 1 #[],
+  ⟨trace.headD #[], if A.mainNextRow then some (trace.getD 1 #[]) else none,
     if A.preprocessedWidth = 0 then none else some (prep.headD #[]),
     if A.opensPreprocessedNext then some (prep.getD 1 #[]) else none,
     ((List.range chunks).map fun c ↦ ((opened.getD 1 []).getD (chunksBefore + c) []).headD #[])
       |>.toArray⟩
 
-/-- The openings of every trace at `ζ` and `ζ ω`, every chunk at `ζ` and every preprocessed trace
-at its `preprocessedPoints`, and the proof assembled from them and the commitments. -/
+/-- The openings of every trace at its `tracePoints`, every chunk at `ζ` and every preprocessed
+trace at its `preprocessedPoints`, and the proof assembled from them and the commitments. -/
 def batchOpenAndAssemble (B : Backend F EF width) (P : Params) (instances : List (Instance F))
     (prep : List (Option B.M) × Option B.C) :
     List B.M × B.C × List (List B.M) × B.C × EF × F → PM F width (BatchProof F EF)
@@ -87,7 +87,7 @@ def batchOpenAndAssemble (B : Backend F EF width) (P : Params) (instances : List
     let prepRound := prep.2.map fun pc ↦ (pc, (instances.zip prep.1).filterMap fun (I, pext) ↦
       pext.map fun e ↦ (e, preprocessedPoints I.air zeta (zetaNext I)))
     let (opened, fri) ← openPcs B P
-      ([(mainC, (instances.zip exts).map fun (I, e) ↦ (e, [zeta, zetaNext I])),
+      ([(mainC, (instances.zip exts).map fun (I, e) ↦ (e, tracePoints I.air zeta (zetaNext I))),
         (quotC, chunks.flatten.map fun m ↦ (m, [zeta]))] ++ prepRound.toList)
     let counts := chunks.map List.length
     let prepCounts := instances.map fun I ↦ if I.air.preprocessedWidth = 0 then 0 else 1

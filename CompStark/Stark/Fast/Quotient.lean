@@ -358,7 +358,7 @@ theorem evalWords_eq (vals pvals perVals : Array F) (w pw np n parts R B : Nat)
     (hEf : ∀ j < parts * R, (E j).isFirstRow = fA.getD j 0)
     (hEl : ∀ j < parts * R, (E j).isLastRow = lA.getD j 0)
     (hEt : ∀ j < parts * R, (E j).isTransition = tA.getD j 0) :
-    ∀ e : Expr F, e.colsBelow w pw pw = true →
+    ∀ e : Expr F, e.colsBelow w w pw pw = true →
       evalWords (encode (colsOf vals w parts R)) (encode (colsOf pvals pw parts R))
         (encode perVals) w pw np n R B next contiguous pis (encode fA) (encode lA) (encode tA) r0
         e =
@@ -602,7 +602,7 @@ theorem quotientWith_rel [Mont32BaseField p] [Binomial4 p] (A : Air F) (pis : Li
     (alpha : EF) {ext : PMat} {s : Mat F} {prep : Option PMat} {ps : Option (Mat F)}
     (h : RM ext s) (hs : MatOk s) (hh : 2 ^ (d + l) ≤ s.height) (hp : Option.Rel RM prep ps)
     (hps : ∀ q ∈ ps, MatOk q ∧ q.height = s.height)
-    (hc : ∀ c ∈ A.constraints, c.colsBelow s.width ((ps.map (·.width)).getD 0)
+    (hc : ∀ c ∈ A.constraints, c.colsBelow s.width s.width ((ps.map (·.width)).getD 0)
       ((ps.map (·.width)).getD 0)) :
     quotientWith (quotientTables
         (p := p) d l) A pis ext prep alpha = quotientOfLde A pis d l s ps alpha := by

@@ -81,7 +81,7 @@ true ones at `ζ`. -/
 noncomputable def trueOpenings (S : Setup EF) (trace : Fin S.air.width → F[X])
     (quotient : Fin S.chunks → Fin (Challenge.d EF) → F[X]) (ζ : 𝕂) : Openings S where
   traceAt j := aeval ζ (trace j)
-  traceNext j := aeval (ζ * rootOfUnity S.logN) (trace j)
+  traceNext j := aeval (ζ * rootOfUnity S.logN) (trace (Fin.castLE S.air.mainNextWidth_le j))
   quotientAt c e := aeval ζ (quotient c e)
   preprocessedAt j := aeval ζ (S.preprocessedPoly j)
   preprocessedNext j := aeval (ζ * rootOfUnity S.logN) (S.preprocessedPoly j)

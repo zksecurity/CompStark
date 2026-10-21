@@ -91,12 +91,13 @@ def Prover.instanceProver {S : Setup EF} (p : Prover S) (i : Fin S.k) :
 
 /-! ### The verifier -/
 
-/-- A STARK's opened trace words: the columns at `ζ`, then at `ζ ω_n`. -/
+/-- A STARK's opened trace words: the columns at `ζ`, then, if opened, at `ζ ω_n`. -/
 noncomputable def mainOpened {S : Iop.Setup EF} (p : Iop.Prover S) (α ζ : 𝕂) :
     List ((S.Point → F) × 𝕂 × 𝕂) :=
   let o := p.openings α ζ
   (List.finRange S.air.width).map (fun j ↦ (p.trace j, ζ, o.traceAt j)) ++
-  (List.finRange S.air.width).map (fun j ↦ (p.trace j, ζ * rootOfUnity S.logN, o.traceNext j))
+  (List.finRange S.air.mainNextWidth).map (fun j ↦
+    (p.trace (Fin.castLE S.air.mainNextWidth_le j), ζ * rootOfUnity S.logN, o.traceNext j))
 
 /-- A STARK's opened quotient words: each chunk's coordinates at `ζ`. -/
 noncomputable def quotientOpened {S : Iop.Setup EF} (p : Iop.Prover S) (α ζ : 𝕂) :
