@@ -11,7 +11,7 @@ public import CompStark.Sound.Numbers
 public import CompStark.Sound.NumbersNi
 public import CompStark.Complete.Quotient
 
-/-! # Concrete security: 100 bits over the quartic extension, 128 bits over the quintic
+/-! # Concrete security: 100 bits over the quartic extension, 117 with grinding, 128 over quintic
 
 All configurations fold FRI by arity `2` down to a constant, and pick FRI's radius `δ` and the
 extractor's `δ'` below the unique-decoding radius `(1 - rate) / 2`, where the candidate lists have
@@ -32,7 +32,9 @@ at most one element (`listSize_le_one`). The terms of `knowledgeError` are bound
 
 all but the queries over `|𝕂|`: `p ^ 4 ≈ 2 ^ 123.95` for `KoalaBear.Fast.Ext4`, which caps every
 configuration below `2 ^ (-123.95)` (constraint folding alone is about `2 ^ (-117.98)`), and
-`p ^ 5 ≈ 2 ^ 154.94` for `KoalaBear.Fast.Ext5`.
+`p ^ 5 ≈ 2 ^ 154.94` for `KoalaBear.Fast.Ext5`. In the random-oracle model, grinding divides every
+round's error after `α` by about `2 ^ bits`; only constraint folding, which Plonky3 does not grind,
+stays an integer over `|𝕂|`, so the quartic extension is capped near `2 ^ (-117.98)` instead.
 
 `fibonacciSetup`: the Fibonacci AIR (2 columns, 5 constraints, 1 quotient chunk) on `2 ^ 10`
 rows, blowup `16` (`N = 2 ^ 14`, rate `1/16`) and `110` queries, with FRI at
@@ -94,6 +96,30 @@ a prover making `Q` oracle calls gets a proof accepted that the extractor cannot
 probability at most `q · 2 ^ (-100) + 3 q² / |𝔽| ^ 8`, `q = Q + verifierQueries`,
 `verifierQueries = 15 + 5 · 21 + 124 · 553 = 68692` (`wideSp1Setup_verifierQueries`,
 `wideSp1_knowledgeSoundness_ro`).
+
+`wideGrindSetup`: `wide 64` on `2 ^ 21` rows over the quartic extension, blowup `4`, `21` folds of
+arity `2` down to a constant and `144` queries, grinding `20` bits before `ζ`, `12` before the
+batching challenge, `8` per fold and `20` before the queries (`wideGrindParams`). In the
+random-oracle model, with FRI at `δ = 3/8 - 2 ^ (-10)`, the extractor at `δ' = 3/8 - 2 ^ (-11)`,
+`loss = 2 ^ (-15)`, `δ_int = δ + loss` and `t = 10`:
+
+* constraint folding `63`, about `2 ^ (-117.98)`;
+* out of domain `powFraction 20 · (2 ^ 23 + 64)`, `powFraction 20 = 2033 / p`, about
+  `2 ^ (-120.95)`;
+* batching `powFraction 12 · 135 · max(T₁, T₂)`, `T₁ ≈ 514.67`, `T₂ ≈ 767.37`, about
+  `2 ^ (-119.29)`;
+* FRI's folds: `powFraction 8 · max(T₁, δ_int / loss, 2 ^ t) = powFraction 8 · 12257`, about
+  `2 ^ (-118.37)`;
+* FRI's queries `powFraction 20 · (5/8 + 2 ^ (-10) + 21 · 2 ^ (-15) + 1/p) ^ 144`, about
+  `2 ^ (-117.10)`.
+
+Every round error is at most `2 ^ (-117)` (`wideGrind_roundError_le`); the queries dominate, and
+constraint folding, without grinding, keeps any configuration above `2 ^ (-117.98)`. `143` queries
+do not reach `2 ^ (-117)` at any radius: `(5/8) ^ 143 · powFraction 20` alone is about
+`2 ^ (-116.96)`. By `knowledgeSoundness_ro`, a prover making `Q` oracle calls gets a proof accepted
+that the extractor cannot open with probability at most `q · 2 ^ (-117) + 3 q² / |𝔽| ^ 8`,
+`q = Q + verifierQueries`, `verifierQueries = 15 + 5 · 21 + 144 · 553 = 79752`
+(`wideGrindSetup_verifierQueries`, `wideGrind_knowledgeSoundness_ro`).
 
 `wide5Setup`: `wide 64` on `2 ^ 21` rows over the quintic extension `KoalaBear.Fast.Ext5` with
 zkDTVM's FRI (soundcalc's `zkdtvm_v080.toml`, `wide5Params`): blowup `4` (`N = 2 ^ 23`), `21` folds
@@ -454,12 +480,15 @@ theorem wideSp1_roundError_le :
   rw [hn] at hints
   have h1 := (Nat.le_add_right _ _).trans hints
   have h2 := (Nat.le_add_left _ _).trans hints
+  have hood : wideSp1Setup.params.oodPowBits = 0 := rfl
+  have hbatch : wideSp1Setup.params.batchPowBits = 0 := rfl
   have hcommit : wideSp1Setup.params.commitPowBits = 0 := rfl
   have hquery : wideSp1Setup.params.queryPowBits = 16 := rfl
   have hq : wideSp1Setup.params.numQueries = 124 := rfl
   have hfolds : wideSp1Setup.logN - wideSp1Setup.params.logFinalPolyLen = 21 := rfl
   have hb : wideSp1Setup.params.logBlowup = 2 := rfl
-  rw [hcommit, hquery, hq, hfolds, hb, powFraction_zero, one_mul] at h
+  rw [hood, hbatch, hcommit, hquery, hq, hfolds, hb] at h
+  simp only [powFraction_zero, one_mul] at h
   refine h.trans (max_le ?_ (max_le ?_ (max_le ?_ (max_le ?_ ?_))))
   · refine nat_div_card_le _ ((div_le_div_of_nonneg_right (Nat.cast_le.mpr h1)
       (by positivity)).trans ?_)
@@ -497,6 +526,110 @@ theorem wideSp1_knowledgeSoundness_ro (publicValues : List F) (Q : Nat)
     norm_num [wideSp1Setup, sp1Params]
   · gcongr
     exact wideSp1_roundError_le
+
+/-- FRI with blowup `4`, folding by arity `2` down to a constant, and `144` queries, with grinding
+in every round after `α`: `20` bits before `ζ`, `12` before the batching challenge, `8` per fold
+and `20` before the queries. -/
+def wideGrindParams : Fri.Params where
+  logBlowup := 2
+  logFinalPolyLen := 0
+  maxLogArity := 1
+  numQueries := 144
+  commitPowBits := 8
+  queryPowBits := 20
+  batchPowBits := 12
+  oodPowBits := 20
+
+/-- `wide 64` on `2 ^ 21` rows over the quartic extension with `wideGrindParams`. -/
+def wideGrindSetup : Setup KoalaBear.Fast.Ext4 where
+  params := wideGrindParams
+  air := wide 64
+  logN := 21
+  valid :=
+    { colsInWidth := wide_colsInWidth 64
+      preprocessedSize := rfl
+      degreeFits := wide_degreeFits 64 21
+      twoAdic := by decide
+      chunksFit := by
+        rw [wide_logQuotientChunks 64 (by decide)]
+        decide
+      folds := by decide
+      finalPolyFits := by decide
+      queries := by decide
+      blowup := by decide }
+  folds := by decide
+
+/-- The verifier's oracle calls on a proof for `wideGrindSetup`: `15 + 5 · 21 + 144 · 553`. -/
+theorem wideGrindSetup_verifierQueries : wideGrindSetup.verifierQueries = 79752 := by
+  decide +kernel
+
+/-- **117 bits per oracle answer on `2 ^ 21` rows over the quartic extension.** Every round error
+of `wideGrindSetup`, FRI at `δ = 3/8 - 2 ^ (-10)` and the extractor at `δ' = 3/8 - 2 ^ (-11)`, is
+at most `2 ^ (-117)`. -/
+theorem wideGrind_roundError_le :
+    roundError wideGrindSetup (3 / 8 - 2 ^ (-10 : ℤ)) (3 / 8 - 2 ^ (-11 : ℤ)) ≤ (2 ^ 117)⁻¹ := by
+  have hδ := coe_three_eighths_sub (-10) 10 rfl (by norm_num)
+  have hδ' := coe_three_eighths_sub (-11) 11 rfl (by norm_num)
+  have hrate : wideGrindSetup.rate = 1 / 2 ^ 2 := rate_eq _
+  have hsize : (wideGrindSetup.size : ℝ) = 2 ^ 23 := by
+    norm_num [Setup.size, wideGrindSetup, wideGrindParams]
+  have h := roundError_le wideGrindSetup rfl 10 (3 / 8 - 2 ^ (-10 : ℤ)) (3 / 8 - 2 ^ (-11 : ℤ))
+    (1 / 2 ^ 15) (by rw [hδ, hrate, hsize]; norm_num)
+    (by rw [hδ, hrate]; norm_num) (by rw [← NNReal.coe_pos, hδ]; norm_num)
+    (by rw [hδ, hδ', hsize]; norm_num) (by rw [hδ', hrate]; norm_num) (by positivity)
+  have hints := wide_integers_le wideGrindSetup rfl
+  have hn : wideGrindSetup.n = 2097152 := rfl
+  rw [hn] at hints
+  have h2 := (Nat.le_add_left _ _).trans hints
+  have hood : wideGrindSetup.params.oodPowBits = 20 := rfl
+  have hbatch : wideGrindSetup.params.batchPowBits = 12 := rfl
+  have hcommit : wideGrindSetup.params.commitPowBits = 8 := rfl
+  have hquery : wideGrindSetup.params.queryPowBits = 20 := rfl
+  have hq : wideGrindSetup.params.numQueries = 144 := rfl
+  have hfolds : wideGrindSetup.logN - wideGrindSetup.params.logFinalPolyLen = 21 := rfl
+  have hb : wideGrindSetup.params.logBlowup = 2 := rfl
+  have hc : wideGrindSetup.air.constraints.length - 1 = 63 := by
+    simp only [wideGrindSetup, wide, List.length_map, List.length_range]
+  rw [hood, hbatch, hcommit, hquery, hq, hfolds, hb, hc] at h
+  refine h.trans (max_le ?_ (max_le ?_ (max_le ?_ (max_le ?_ ?_))))
+  · refine nat_div_card_le _ ?_
+    norm_num
+  · rw [hn]
+    refine (mul_le_mul_right (ENNReal.div_le_div_right (Nat.cast_le.mpr h2) _) _).trans ?_
+    rw [← ENNReal.ofReal_natCast]
+    refine powFraction_mul_div_card_le _ _ ?_
+    rw [KoalaBear.card_eq]
+    norm_num
+  · refine powFraction_mul_div_card_le _ _ ?_
+    rw [wide_numOpened wideGrindSetup rfl, hrate, hsize, hδ, hδ', KoalaBear.card_eq]
+    norm_num
+  · refine powFraction_mul_div_card_le _ _ ?_
+    simp only [LossyMca.lossyBound]
+    rw [NNReal.coe_add, hδ, KoalaBear.card_eq]
+    norm_num
+  · refine powFraction_mul_le _ _ _ (by rw [hδ]; norm_num) ?_
+    rw [hδ, KoalaBear.card_eq]
+    norm_num
+
+/-- **117 bits per oracle call on `2 ^ 21` rows over the quartic extension.** A prover for
+`wideGrindSetup` making at most `Q` oracle calls gets a proof accepted while no trace close to the
+one it committed to satisfies the AIR with probability at most
+`q · 2 ^ (-117) + hashError q`, `q = Q + verifierQueries`. -/
+theorem wideGrind_knowledgeSoundness_ro (publicValues : List F) (Q : Nat)
+    (prover : NIProver wideGrindSetup) (hQ : prover.IsTotalQueryBound Q) :
+    Pr{let (proof, log, verdict) ← run wideGrindSetup publicValues prover}[
+      verdict = .ok () ∧ proof.degreeBits = wideGrindSetup.logN ∧
+        ∀ trace ∈ closeTraces wideGrindSetup (3 / 8 - 2 ^ (-11 : ℤ) : NNReal)
+            (committedTrace wideGrindSetup log proof),
+          ¬ wideGrindSetup.air.Satisfied wideGrindSetup.logN trace publicValues] ≤
+      (Q + wideGrindSetup.verifierQueries) * (2 ^ 117)⁻¹ +
+        hashError F (Q + wideGrindSetup.verifierQueries) := by
+  refine (knowledgeSoundness_ro wideGrindSetup publicValues (3 / 8 - 2 ^ (-10 : ℤ))
+    (3 / 8 - 2 ^ (-11 : ℤ)) ?_ Q prover hQ).trans ?_
+  · rw [coe_three_eighths_sub (-11) 11 rfl (by norm_num), rate_eq]
+    norm_num [wideGrindSetup, wideGrindParams]
+  · gcongr
+    exact wideGrind_roundError_le
 
 /-- zkDTVM's FRI parameters (soundcalc's `zkdtvm_v080.toml`, compress circuit): blowup `4`, folding
 by arity `2` down to a constant, `160` queries with `20` bits of query grinding. -/
@@ -548,12 +681,15 @@ theorem wide5_roundError_le :
   rw [hn] at hints
   have h1 := (Nat.le_add_right _ _).trans hints
   have h2 := (Nat.le_add_left _ _).trans hints
+  have hood : wide5Setup.params.oodPowBits = 0 := rfl
+  have hbatch : wide5Setup.params.batchPowBits = 0 := rfl
   have hcommit : wide5Setup.params.commitPowBits = 0 := rfl
   have hquery : wide5Setup.params.queryPowBits = 20 := rfl
   have hq : wide5Setup.params.numQueries = 160 := rfl
   have hfolds : wide5Setup.logN - wide5Setup.params.logFinalPolyLen = 21 := rfl
   have hb : wide5Setup.params.logBlowup = 2 := rfl
-  rw [hcommit, hquery, hq, hfolds, hb, powFraction_zero, one_mul] at h
+  rw [hood, hbatch, hcommit, hquery, hq, hfolds, hb] at h
+  simp only [powFraction_zero, one_mul] at h
   refine h.trans (max_le ?_ (max_le ?_ (max_le ?_ (max_le ?_ ?_))))
   · refine nat_div_card_le _ ((div_le_div_of_nonneg_right (Nat.cast_le.mpr h1)
       (by positivity)).trans ?_)
