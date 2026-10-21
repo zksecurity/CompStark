@@ -42,9 +42,13 @@ where
     P24: CryptographicPermutation<[F; 24]> + CryptographicPermutation<[F::Packing; 24]>,
 {
     let (fri_args, pow) = match args.len() {
-        6 => (args, [0, 0]),
-        8 => (&args[..6], [args[6], args[7]]),
-        _ => panic!("LOG_BLOWUP LOG_FINAL MAX_LOG_ARITY QUERIES COMMIT_POW QUERY_POW [BATCH_POW OOD_POW]"),
+        6 => (args, [0, 0, 0]),
+        8 => (&args[..6], [args[6], args[7], 0]),
+        9 => (&args[..6], [args[6], args[7], args[8]]),
+        _ => panic!(
+            "LOG_BLOWUP LOG_FINAL MAX_LOG_ARITY QUERIES COMMIT_POW QUERY_POW [BATCH_POW OOD_POW \
+             [LOOKUP_POW]]"
+        ),
     };
     let [log_blowup, log_final_poly_len, max_log_arity, num_queries, commit_pow, query_pow] =
         fri_args[..]
@@ -63,7 +67,9 @@ where
         mmcs: ChallengeMmcs::new(val_mmcs.clone()),
     };
     let pcs = Pcs::new(Radix2DitParallel::default(), val_mmcs, fri);
-    Config::new(pcs, Challenger::new(p24)).with_ood_proof_of_work_bits(pow[1])
+    Config::new(pcs, Challenger::new(p24))
+        .with_ood_proof_of_work_bits(pow[1])
+        .with_lookup_proof_of_work_bits(pow[2])
 }
 
 /// Two columns `left, right`: rows `(a, b)` first, `(right, left + right)` next, and `right = x` last.

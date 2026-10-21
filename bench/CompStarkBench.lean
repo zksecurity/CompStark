@@ -64,7 +64,7 @@ open CompStark CompStark.Stark CompStark.Fri in
 /-- The wall time of each phase of the fast prover on `wide 64`, `2 ^ logN` rows, blowup 2. -/
 def phases (logN : Nat) : IO UInt32 := do
   let B := CompStark.KoalaBear.backendFor 1 [(logN, 1)]
-  let P : Params := ⟨1, 0, 1, 100, 0, 16, 0, 0⟩
+  let P : Params := ⟨1, 0, 1, 100, 0, 16, 0, 0, 0⟩
   let A := wide 64
   let trace := wideTrace 64 (2 ^ logN)
   let t ← IO.monoMsNow
@@ -250,8 +250,8 @@ def main (args : List String) : IO UInt32 := do
     let B := CompStark.Stark.specBackend KoalaBear.Fast.Ext4
     let ps := (rest.takeWhile String.isNat).map String.toNat!
     let P : CompStark.Fri.Params ← match ps.drop 1 with
-      | [b, f, a, q, cp, qp] => pure ⟨b, f, a, q, cp, qp, 0, 0⟩
-      | [b, f, a, q, cp, qp, bp, op] => pure ⟨b, f, a, q, cp, qp, bp, op⟩
+      | [b, f, a, q, cp, qp] => pure ⟨b, f, a, q, cp, qp, 0, 0, 0⟩
+      | [b, f, a, q, cp, qp, bp, op] => pure ⟨b, f, a, q, cp, qp, bp, op, 0⟩
       | _ => IO.eprintln "seven or nine parameters"; return 1
     let logN := ps.headD 0
     let A := if air == "wide" then CompStark.Stark.wide 64 else CompStark.Stark.fibonacci
@@ -282,8 +282,8 @@ def main (args : List String) : IO UInt32 := do
     -- OOD_POW]`: the fast batch prover's median time on three `wide 64` tables of `2 ^ 20`,
     -- `2 ^ 19` and `2 ^ 16` rows (`compstark-bench batch-bench wide …`).
     let P : CompStark.Fri.Params ← match rest.map String.toNat! with
-      | [b, f, a, q, cp, qp] => pure ⟨b, f, a, q, cp, qp, 0, 0⟩
-      | [b, f, a, q, cp, qp, bp, op] => pure ⟨b, f, a, q, cp, qp, bp, op⟩
+      | [b, f, a, q, cp, qp] => pure ⟨b, f, a, q, cp, qp, 0, 0, 0⟩
+      | [b, f, a, q, cp, qp, bp, op] => pure ⟨b, f, a, q, cp, qp, bp, op, 0⟩
       | _ => IO.eprintln "six or eight parameters"; return 1
     let logNs := [20, 19, 16]
     let instances : List (CompStark.Batch.Instance KoalaBear.Fast.Field) :=

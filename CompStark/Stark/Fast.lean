@@ -425,6 +425,16 @@ def quotient [Mont32BaseField p] [Binomial4 p] (A : Air F) (pis : List F)
     (degreeBits logChunks : Nat) (ext : PMat) (prep : Option PMat) (alpha : EF) : Array EF :=
   quotientWith (quotientTables degreeBits logChunks) A pis ext prep alpha
 
+/-- The matrix of a packed matrix's words. -/
+def PMat.toMat (m : PMat) : Mat F := ⟨m.width, m.height, CompPoly.PackedRepr.decode m.words⟩
+
+/-- `lookupQuotientOfLde` on the matrices of the packed words. -/
+def lookupQuotient [Mont32BaseField p] [Binomial4 p] (A : Air F) (ext : List (Lookup.ExtExpr F))
+    (pis : List F) (degreeBits logChunks : Nat) (tr : PMat) (prep : Option PMat) (perm : PMat)
+    (chs : List EF) (terminal alpha : EF) : Array EF :=
+  lookupQuotientOfLde A ext pis degreeBits logChunks tr.toMat (prep.map PMat.toMat) perm.toMat chs
+    terminal alpha
+
 /-- The column sums `∑_r m[r][j] · x_r / (z - x_r)` over the stored rows `r0, …, r0 + len - 1` of a
 packed matrix of width `w`, for every point `z` of `zs`: per point four planes of `w` words. The
 range is transposed once; each column is a dot product with each weight plane. -/
@@ -636,6 +646,7 @@ def backend : Backend F EF 24 where
   openAt := Commit.openAt
   logHeight c := Nat.log2 c.maxHeight
   quotient := quotient
+  lookupQuotient := lookupQuotient
   openedAt := openedAt
   V := EVec p
   toArray := EVec.toArray

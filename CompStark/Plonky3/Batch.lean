@@ -37,7 +37,15 @@ chunks and the verifier checks every instance's constraints. -/
 def batchOutOfDomainPoint (EF : Type) [Challenge F EF] (P : Params) (instances : List (Instance F))
     (traces : List (Array F)) (pis : List (List F)) : EF :=
   ((batchCommitAndSample (specBackend EF) P instances (setupBatchWith (specBackend EF) P instances)
-    traces pis).run (specBackend EF).transcript).1.2.2.2.2.1
+    traces pis).run (specBackend EF).transcript).1.zeta
+
+/-- The lookup challenges of the specification's batch proof: for every instance, its lookups'
+denominator bases and combiners laid out from the pair `(α_L, β_L)` the prover samples after the
+main and preprocessed commitments (`challengeLayout`). -/
+def batchLookupChallenges (EF : Type) [Challenge F EF] (P : Params) (instances : List (Instance F))
+    (traces : List (Array F)) (pis : List (List F)) : List (List EF) :=
+  ((batchCommitAndSample (specBackend EF) P instances (setupBatchWith (specBackend EF) P instances)
+    traces pis).run (specBackend EF).transcript).1.challenges
 
 /-- The specification prover's transcript at the end of `proveBatch`. Its `grindFailed` flag
 records whether a grinding search found no witness. -/

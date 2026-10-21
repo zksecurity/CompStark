@@ -1,7 +1,9 @@
 //! Plonky3 `batch-stark` proofs for known-answer tests, on the configuration of `stark.rs`: the
 //! test AIRs of `batch-stark/tests/simple.rs` (a Fibonacci AIR with a preprocessed index column,
-//! `MulAir`, `PeriodicAir` and `PreprocessedMulAir`), batched at mixed heights.
-use p3_air::{Air, AirBuilder, BaseAir, WindowAccess};
+//! `MulAir`, `PeriodicAir`, `PreprocessedMulAir`, and the lookup AIRs `MulAirLookups`,
+//! `FibAirLookups` and `SingleTableLocalLookupAir`), batched at mixed heights.
+use p3_air::{Air, AirBuilder, BaseAir, PermutationAirBuilder, WindowAccess};
+use p3_lookup::{Count, InteractionBuilder};
 use p3_batch_stark::{prove_batch, verify_batch, ProverData, StarkInstance};
 use p3_baby_bear::{default_babybear_poseidon2_16, default_babybear_poseidon2_24};
 use p3_field::extension::BinomiallyExtendable;
@@ -33,25 +35,37 @@ pub enum BatchAir<F> {
     Square,
     /// `WideAir`, the benchmarks' wide table.
     Wide,
+    /// `MulAirLookups`: `MulAir` with `reps` repetitions, with a local lookup of each `a` against
+    /// the last column if `local`, and sending `(a, b)` of repetition `i` on bus `global[i]` with
+    /// multiplicity `-1` if `global` is not empty.
+    MulL { reps: usize, local: bool, global: Vec<String> },
+    /// `FibAirLookups`: `Fib`, receiving `(left, right)` on `bus` with the multiplicity `count`
+    /// (`FibAirLookups` with `name_and_mult`, here signed) if any.
+    FibL { log_height: usize, bus: Option<(String, i64)> },
+    /// `SingleTableLocalLookupAir`: three local lookups with selector multiplicities.
+    SingleLocal,
 }
 
 impl<F: PrimeField64> BaseAir<F> for BatchAir<F> {
     fn width(&self) -> usize {
         match self {
-            Self::Fib { .. } | Self::Periodic(_) | Self::Square => 2,
-            Self::Mul { reps } => 3 * reps + 1,
+            Self::Fib { .. } | Self::FibL { .. } | Self::Periodic(_) | Self::Square => 2,
+            Self::Mul { reps } | Self::MulL { reps, .. } => 3 * reps + 1,
+            Self::SingleLocal => 7,
             Self::PrepMul { .. } => 1,
             Self::Wide => WIDE,
         }
     }
 
     fn num_public_values(&self) -> usize {
-        if let Self::Fib { .. } = self { 3 } else { 0 }
+        if let Self::Fib { .. } | Self::FibL { .. } = self { 3 } else { 0 }
     }
 
     fn preprocessed_trace(&self) -> Option<RowMajorMatrix<F>> {
         match self {
-            Self::Fib { log_height } | Self::PrepMul { log_height, .. } => {
+            Self::Fib { log_height }
+            | Self::FibL { log_height, .. }
+            | Self::PrepMul { log_height, .. } => {
                 Some(RowMajorMatrix::new((0..1u64 << log_height).map(F::from_u64).collect(), 1))
             }
             _ => None,
@@ -60,14 +74,14 @@ impl<F: PrimeField64> BaseAir<F> for BatchAir<F> {
 
     fn preprocessed_width(&self) -> usize {
         match self {
-            Self::Fib { .. } | Self::PrepMul { .. } => 1,
+            Self::Fib { .. } | Self::FibL { .. } | Self::PrepMul { .. } => 1,
             _ => 0,
         }
     }
 
     fn preprocessed_next_row_columns(&self) -> Vec<usize> {
         match self {
-            Self::Fib { .. } => vec![0],
+            Self::Fib { .. } | Self::FibL { .. } => vec![0],
             _ => vec![],
         }
     }
@@ -88,13 +102,66 @@ impl<F: PrimeField64> BaseAir<F> for BatchAir<F> {
     }
 }
 
-impl<AB: AirBuilder> Air<AB> for BatchAir<AB::F>
+impl<AB: PermutationAirBuilder + InteractionBuilder> Air<AB> for BatchAir<AB::F>
 where
     AB::F: PrimeField64,
 {
     fn eval(&self, builder: &mut AB) {
         match self {
             Self::Fib { .. } => FibonacciAir.eval(builder),
+            Self::FibL { bus, .. } => {
+                FibonacciAir.eval(builder);
+                if let Some((name, count)) = bus {
+                    let main = builder.main();
+                    let (left, right) = (main.current(0).unwrap(), main.current(1).unwrap());
+                    let c = if *count < 0 {
+                        -AB::Expr::from_u64(count.unsigned_abs())
+                    } else {
+                        AB::Expr::from_u64(*count as u64)
+                    };
+                    builder.push_interaction(name, [left.into(), right.into()],
+                        Count::bounded(c, count.unsigned_abs() as u32));
+                }
+            }
+            Self::MulL { reps, local, global } => {
+                Self::Mul { reps: *reps }.eval(builder);
+                let main = builder.main();
+                let row = main.current_slice();
+                let lut = row[3 * reps];
+                for rep in 0..*reps {
+                    let (a, b) = (row[3 * rep], row[3 * rep + 1]);
+                    if *local {
+                        builder.push_local_interaction(vec![
+                            (vec![a.into()], Count::bounded(AB::Expr::ONE, 1)),
+                            (vec![lut.into()], Count::provided(-AB::Expr::ONE)),
+                        ]);
+                    }
+                    if !global.is_empty() {
+                        builder.push_interaction(&global[rep], [a.into(), b.into()], -1);
+                    }
+                }
+            }
+            Self::SingleLocal => {
+                let main = builder.main();
+                let local = main.current_slice();
+                let (s1, s2, s3, table) = (local[0], local[1], local[2], local[3]);
+                let (m1, m2, m3) = (local[4], local[5], local[6]);
+                let is_first = builder.is_first_row();
+                let is_trans = builder.is_transition();
+                let is_last = builder.is_last_row();
+                builder.push_local_interaction(vec![
+                    (vec![s1.into()], Count::bounded(is_first.clone(), 1)),
+                    (vec![table.into()], Count::provided(-(is_first * m1.into()))),
+                ]);
+                builder.push_local_interaction(vec![
+                    (vec![s2.into()], Count::bounded(is_trans.clone(), 1)),
+                    (vec![table.into()], Count::provided(-(is_trans * m2.into()))),
+                ]);
+                builder.push_local_interaction(vec![
+                    (vec![s3.into()], Count::bounded(is_last.clone(), 1)),
+                    (vec![table.into()], Count::provided(-(is_last * m3.into()))),
+                ]);
+            }
             Self::Square => SquareAir.eval(builder),
             Self::Wide => WideAir.eval(builder),
             Self::Periodic(a) => a.eval(builder),
@@ -140,6 +207,43 @@ fn mul_trace<F: Field>(rows: usize, reps: usize) -> RowMajorMatrix<F> {
     RowMajorMatrix::new(v, w)
 }
 
+/// `single_table_local_lookup_trace` of `simple.rs`.
+fn single_local_trace<F: Field>(n: usize) -> RowMajorMatrix<F> {
+    let w = 7;
+    let mut v = F::zero_vec(n * w);
+    for i in 0..n {
+        v[i * w] = F::from_u64((n - 1) as u64);
+        v[i * w + 1] = F::from_u64(if i < n - 1 { (n - i - 1) as u64 } else { 11 });
+        if i != n - 1 {
+            v[i * w + 2] = F::from_u64(11);
+        }
+        v[i * w + 3] = F::from_u64((n - i - 1) as u64);
+        v[i * w + 4] = F::from_bool(i == 0);
+        v[i * w + 5] = F::from_bool(i < n - 1);
+        v[i * w + 6] = F::from_bool(i == n - 1);
+    }
+    RowMajorMatrix::new(v, w)
+}
+
+/// An instance of `FibL` on `2^log_n` rows starting at the Fibonacci pair `(F_k, F_{k+1})`.
+fn fib_from<F: PrimeField64>(log_n: usize, k: usize, bus: &str, count: i64)
+    -> (BatchAir<F>, RowMajorMatrix<F>, Vec<F>) {
+    let n = 1 << log_n;
+    let (mut a, mut b) = (F::ZERO, F::ONE);
+    for _ in 0..k {
+        (a, b) = (b, a + b);
+    }
+    let (a0, b0) = (a, b);
+    let mut v = Vec::with_capacity(2 * n);
+    for _ in 0..n {
+        v.extend([a, b]);
+        (a, b) = (b, a + b);
+    }
+    let air = BatchAir::FibL { log_height: log_n, bus: Some((bus.to_string(), count)) };
+    let x = v[2 * n - 1];
+    (air, RowMajorMatrix::new(v, 2), vec![a0, b0, x])
+}
+
 /// An instance of `air` on `2^log_n` rows: the AIR, its trace and its public values.
 fn instance<F: PrimeField64>(air: BatchAir<F>, log_n: usize)
     -> (BatchAir<F>, RowMajorMatrix<F>, Vec<F>) {
@@ -149,10 +253,15 @@ fn instance<F: PrimeField64>(air: BatchAir<F>, log_n: usize)
             let (t, x) = trace::<F>(n);
             (air, t, vec![F::ZERO, F::ONE, x])
         }
-        BatchAir::Mul { reps } => {
+        BatchAir::Mul { reps } | BatchAir::MulL { reps, .. } => {
             let t = mul_trace(n, *reps);
             (air, t, vec![])
         }
+        BatchAir::FibL { .. } => {
+            let (t, x) = trace::<F>(n);
+            (air, t, vec![F::ZERO, F::ONE, x])
+        }
+        BatchAir::SingleLocal => (air, single_local_trace(n), vec![]),
         BatchAir::Periodic(a) => {
             let t = a.trace(n);
             (air, t, vec![])
@@ -191,8 +300,39 @@ pub fn case<F: PrimeField64>(name: &str) -> Vec<(BatchAir<F>, RowMajorMatrix<F>,
         "square" => vec![instance(BatchAir::Square, 4), instance(BatchAir::Fib { log_height: 3 }, 3)],
         "wide" => vec![instance(BatchAir::Wide, 20), instance(BatchAir::Wide, 19),
             instance(BatchAir::Wide, 16)],
+        "local1" => vec![instance(mul_l(1, true, &[]), 3)],
+        "local" => vec![instance(mul_l(2, true, &[]), 4),
+            instance(BatchAir::FibL { log_height: 4, bus: None }, 4)],
+        "global" => vec![instance(mul_l(2, false, &["MulFib", "MulFib"]), 3), fib_l(3, "MulFib", 2)],
+        "both" => vec![instance(mul_l(2, true, &["MulFib", "MulFib"]), 4), fib_l(4, "MulFib", 2)],
+        "lookups" => vec![instance(mul_l(2, true, &["MulFib1", "MulFib2"]), 4),
+            instance(BatchAir::FibL { log_height: 3, bus: None }, 3), fib_l(4, "MulFib1", 1),
+            instance(mul_l(2, false, &[]), 3), fib_l(4, "MulFib2", 1),
+            instance(mul_l(2, true, &[]), 4)],
+        "single-local" => vec![instance(BatchAir::SingleLocal, 3)],
+        "heights" => vec![fib_from(3, 0, "Fib", -1), instance(mul_l(1, true, &[]), 2),
+            fib_from(4, 0, "Fib", 1), fib_from(3, 8, "Fib", -1)],
+        "failed-global" => vec![instance(mul_l(2, false, &["MulFib1", "MulFib2"]), 3),
+            fib_l(3, "MulFib1", 1)],
+        "failed-local" => {
+            let (air, mut t, pis) = instance(mul_l(2, true, &[]), 3);
+            t.values[6] = F::from_u64(9999);
+            vec![(air, t, pis)]
+        }
         _ => panic!("unknown batch {name}"),
     }
+}
+
+/// `MulAirLookups` with `reps` repetitions, local lookups if `local`, and the global buses
+/// `global`.
+fn mul_l<F>(reps: usize, local: bool, global: &[&str]) -> BatchAir<F> {
+    BatchAir::MulL { reps, local, global: global.iter().map(|s| s.to_string()).collect() }
+}
+
+/// `FibAirLookups` on `2^log_n` rows receiving on `bus` with multiplicity `count`.
+fn fib_l<F: PrimeField64>(log_n: usize, bus: &str, count: i64)
+    -> (BatchAir<F>, RowMajorMatrix<F>, Vec<F>) {
+    instance(BatchAir::FibL { log_height: log_n, bus: Some((bus.to_string(), count)) }, log_n)
 }
 
 /// The batch proof of `name` on `config`, after Plonky3 verified it.
@@ -211,8 +351,12 @@ where
     let proof = prove_batch(config, &instances, &prover_data).expect("Plonky3 cannot prove");
     let airs: Vec<BatchAir<F>> = insts.iter().map(|(a, _, _)| a.clone()).collect();
     let pvs: Vec<Vec<F>> = insts.iter().map(|(_, _, p)| p.clone()).collect();
-    verify_batch(config, &airs, &proof, &pvs, &prover_data.common)
-        .expect("Plonky3 rejects its own proof");
+    let verdict = verify_batch(config, &airs, &proof, &pvs, &prover_data.common);
+    if name.starts_with("failed") {
+        verdict.expect_err("Plonky3 accepts an unbalanced batch");
+    } else {
+        verdict.expect("Plonky3 rejects its own proof");
+    }
     serde_json::to_string(&proof).unwrap()
 }
 

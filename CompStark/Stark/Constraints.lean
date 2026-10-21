@@ -355,17 +355,17 @@ theorem constraintPoly_eq (A : Air F) (logN : Nat) (h : logN ≤ twoAdicity F) (
     rw [eval_constraintPoly_root A logN h trace pis T Tp P hT hTp hP c (hcols c hc) i hi,
       hsat c hc i hi]
 
-/-- A constraint's quotient has degree below `k n`. -/
-theorem natDegree_quotientPoly (A : Air F) (logN : Nat) (pis : List F) (T Tp P : Nat → F[X])
+/-- A constraint's quotient has degree below `k n`, `k = 2 ^ lc` chunks. -/
+theorem natDegree_quotientPoly (A : Air F) (logN lc : Nat) (pis : List F) (T Tp P : Nat → F[X])
     (hTd : TraceDeg logN T) (hTpd : TraceDeg logN Tp)
-    (hPd : ∀ j, (P j).natDegree ≤ A.periodicDegree (2 ^ logN) j) (hdeg : A.DegreeFits logN)
+    (hPd : ∀ j, (P j).natDegree ≤ A.periodicDegree (2 ^ logN) j) (hdeg : A.DegreeFitsAt logN lc)
     (c : Expr F) (hc : c ∈ A.constraints) :
-    (quotientPoly logN T Tp P pis c).natDegree < 2 ^ (logN + A.logQuotientChunks logN) := by
+    (quotientPoly logN T Tp P pis c).natDegree < 2 ^ (logN + lc) := by
   rw [quotientPoly, natDegree_divByMonic _ (zH_monic logN), natDegree_X_pow_sub_C]
   have h1 := natDegree_constraintPoly (2 ^ logN) (twoAdicGen logN) T Tp P
     (A.periodicDegree (2 ^ logN)) pis c hTd hTpd hPd
   have h2 := hdeg c hc
-  have h3 := Nat.two_pow_pos (logN + A.logQuotientChunks logN)
+  have h3 := Nat.two_pow_pos (logN + lc)
   omega
 
 /-! ### Periodic columns -/

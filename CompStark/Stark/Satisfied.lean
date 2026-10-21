@@ -46,13 +46,18 @@ def Air.ConstraintsVanish (air : Air F) (logN : Nat) (trace : Array F) (publicVa
     Prop :=
   ∀ c ∈ air.constraints, ∀ i < 2 ^ logN, c.eval (air.traceRow logN trace publicValues i) = 0
 
+/-- The constraints' degrees fit `2 ^ logChunks` quotient chunks: every constraint, of degree at
+most `degBound n`, is below `(k + 1) n` for `k = 2 ^ logChunks` and `n = 2 ^ logN`. -/
+def Air.DegreeFitsAt (air : Air F) (logN logChunks : Nat) : Prop :=
+  ∀ c ∈ air.constraints, c.degBound (2 ^ logN) (air.periodicDegree (2 ^ logN)) <
+    2 ^ (logN + logChunks) + 2 ^ logN
+
 /-- The constraints' degrees fit the quotient's chunks: every constraint, of degree at most
 `degBound n`, is below `(k + 1) n` for `k = 2 ^ logQuotientChunks` chunks of size `n = 2 ^ logN`,
 so that it divided by `Z_H` has degree below `k n`. Unlike Plonky3's `degree_multiple`, the
 transition selector counts as degree `1`. -/
 def Air.DegreeFits (air : Air F) (logN : Nat) : Prop :=
-  ∀ c ∈ air.constraints, c.degBound (2 ^ logN) (air.periodicDegree (2 ^ logN)) <
-    2 ^ (logN + air.logQuotientChunks logN) + 2 ^ logN
+  air.DegreeFitsAt logN (air.logQuotientChunks logN)
 
 /-- The trace is a `2 ^ logN × width` row-major matrix on whose rows every constraint of the AIR
 vanishes, with the public values `publicValues`. -/

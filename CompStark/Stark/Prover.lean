@@ -20,8 +20,9 @@ thread:
   commitment, the preprocessed commitment and the public values; sample `α`.
 * On the quotient domain `g · ⟨ω_q⟩` of size `|H| · 2 ^ logChunks`, read the traces from their
   extensions and the periodic columns from the extensions of their periods
-  (`periodicOnQuotient`), fold the constraints by `α` and divide by `Z_H`. Split the quotient's values into
-  chunks on the cosets `g ω_qⁱ · ⟨ω_q^k⟩`, commit to their extensions, grind, and sample `ζ`.
+  (`periodicOnQuotient`), fold the constraints by `α` and divide by `Z_H`. Split the quotient's
+  values into chunks on the cosets `g ω_qⁱ · ⟨ω_q^k⟩`, commit to their extensions, grind, and
+  sample `ζ`.
 * Open the trace and the preprocessed trace at `ζ` and, if the AIR reads their next rows, at
   `ζ ω`, and every chunk at `ζ`.
 -/
@@ -47,20 +48,24 @@ def setupWith (B : Backend F EF width) (P : Params) (A : Air F) (logN : Nat) :
     let ext := B.lde logN P.logBlowup gen A.preprocessedWidth A.preprocessed
     some (ext, B.commit [ext])
 
-/-- The extensions of the quotient's chunks for `A` on `2 ^ logN` rows, from the extensions `ext`
-of the trace and `prep` of the preprocessed trace, if any: the quotient's values on the quotient
-domain of `2 ^ logChunks` cosets, chunk `c` the values on coset `c`, extended by the backend `B`
-onto `L`. -/
-def quotientChunks (B : Backend F EF width) (P : Params) (A : Air F) (logN : Nat) (ext : B.M)
-    (prep : Option B.M) (pis : List F) (alpha : EF) : List B.M :=
-  let logChunks := A.logQuotientChunks logN
+/-- The extensions of the chunks of the quotient's values `qs` on the quotient domain of
+`2 ^ logChunks` cosets of the trace domain of size `2 ^ logN`: chunk `c` the values on coset `c`,
+extended by the backend `B` onto `L`. -/
+def chunksOf (B : Backend F EF width) (P : Params) (logN logChunks : Nat) (qs : Array EF) :
+    List B.M :=
   let qlog := logN + logChunks
-  let qs := B.quotient A pis logN logChunks ext prep alpha
   let stride := 2 ^ logChunks
   (List.range stride).map fun c ↦
     let shift := gen * powF (twoAdicGen qlog) c
     let vals := chunkValues qs stride c (2 ^ logN)
     B.lde logN P.logBlowup (gen * shift⁻¹) (Challenge.d EF) vals
+
+/-- The extensions of the quotient's chunks for `A` on `2 ^ logN` rows (`chunksOf`), from the
+extensions `ext` of the trace and `prep` of the preprocessed trace, if any. -/
+def quotientChunks (B : Backend F EF width) (P : Params) (A : Air F) (logN : Nat) (ext : B.M)
+    (prep : Option B.M) (pis : List F) (alpha : EF) : List B.M :=
+  chunksOf B P logN (A.logQuotientChunks logN)
+    (B.quotient A pis logN (A.logQuotientChunks logN) ext prep alpha)
 
 /-- The trace's extension and commitment, the quotient's chunks and commitment, the opening point
 `ζ` sampled after them, and the out-of-domain grinding witness before it, by the backend `B`, with

@@ -33,10 +33,16 @@ and runs it.
   from `compstark-bench batch-babybear CASE …`) verify and both provers reproduce them.
 * Plonky3 `batch-stark` proofs over KoalaBear (`tests/data/batch_CASE_*.json`, from
   `RAYON_NUM_THREADS=1 compstark-bench batch CASE LOG_BLOWUP LOG_FINAL MAX_LOG_ARITY QUERIES
-  COMMIT_POW QUERY_POW`), of instances of mixed heights with and without preprocessed and
-  periodic columns: each verifies against the batch's common data and is rejected tampered, with
-  other degree bits or public values, with reordered instances, or against other preprocessed
-  traces; and the specification prover and the fast prover reproduce it.
+  COMMIT_POW QUERY_POW [BATCH_POW OOD_POW [LOOKUP_POW]]`), of instances of mixed heights with
+  and without preprocessed and periodic columns and LogUp lookups (Plonky3's `MulAirLookups`,
+  `FibAirLookups` and `SingleTableLocalLookupAir`: local lookups, global buses across instances
+  of mixed heights, packed same-bus lookups, lookup grinding): each verifies against the batch's
+  common data and is rejected tampered, with other degree bits or public values, with reordered
+  instances, against other preprocessed traces, and with a tampered, missing or spurious lookup
+  terminal, a tampered permutation opening or lookup witness, or count weights past the
+  characteristic; Plonky3's proofs of unbalanced batches (`failed-global`, a wrong
+  multiplicity, and `failed-local`, a tampered table column) are rejected by the terminals' sum;
+  and the specification prover and the fast prover reproduce every proof.
 -/
 
 namespace CompStarkTests.Native
@@ -129,6 +135,31 @@ def fibIndexed (logN : Nat) : BatchInstance F :=
 def mulInstance (logN reps : Nat) : BatchInstance F :=
   (⟨mulAir reps, logN⟩, mulTrace (2 ^ logN) reps, [])
 
+/-- `n` Fibonacci rows `(F_{k+j}, F_{k+j+1})` and the public values `F_k, F_{k+1}, F_{k+n}`. -/
+def fibFrom (n k : Nat) : Array F × List F :=
+  let f := fibs (n + k + 1)
+  (Array.ofFn (n := 2 * n) fun j ↦ f.getD (k + j.val / 2 + j.val % 2) 0,
+    [f.getD k 0, f.getD (k + 1) 0, f.getD (k + n) 0])
+
+def mulLookups (logN reps : Nat) (isLocal : Bool) (global : List String) : BatchInstance F :=
+  (⟨mulAirLookups reps isLocal global, logN⟩, mulTrace (2 ^ logN) reps, [])
+def fibLookups (logN : Nat) (bus : String) (count : Int) (k : Nat := 0) : BatchInstance F :=
+  (⟨fibonacciLookups logN bus count, logN⟩, fibFrom (2 ^ logN) k)
+
+/-- The trace of `singleTableLocalLookup` on `n` rows (Plonky3's
+`single_table_local_lookup_trace`). -/
+def singleLocalTrace (n : Nat) : Array F :=
+  Array.ofFn (n := 7 * n) fun k ↦
+    let i := k.val / 7
+    match k.val % 7 with
+    | 0 => ((n - 1 : Nat) : F)
+    | 1 => if i < n - 1 then ((n - i - 1 : Nat) : F) else 11
+    | 2 => if i + 1 ≠ n then 11 else 0
+    | 3 => ((n - i - 1 : Nat) : F)
+    | 4 => if i = 0 then 1 else 0
+    | 5 => if i < n - 1 then 1 else 0
+    | _ => if i = n - 1 then 1 else 0
+
 /-- The batches of `compstark-bench batch CASE`. -/
 def batchCase : String → List (BatchInstance F)
   | "three" => [fibIndexed 4, mulInstance 3 2, fibIndexed 3]
@@ -138,6 +169,20 @@ def batchCase : String → List (BatchInstance F)
   | "prepmul" => [(⟨preprocessedMul 4 2, 4⟩, Array.ofFn (n := 16) fun i ↦ ((2 * i.val : Nat) : F),
       []), fibIndexed 5, mulInstance 3 1]
   | "square" => [(⟨square, 4⟩, squareInstance 16), fibIndexed 3]
+  | "local1" => [mulLookups 3 1 true []]
+  | "local" => [mulLookups 4 2 true [], fibIndexed 4]
+  | "global" => [mulLookups 3 2 false ["MulFib", "MulFib"], fibLookups 3 "MulFib" 2]
+  | "both" => [mulLookups 4 2 true ["MulFib", "MulFib"], fibLookups 4 "MulFib" 2]
+  | "lookups" => [mulLookups 4 2 true ["MulFib1", "MulFib2"], fibIndexed 3,
+      fibLookups 4 "MulFib1" 1, mulLookups 3 2 false [], fibLookups 4 "MulFib2" 1,
+      mulLookups 4 2 true []]
+  | "single-local" => [(⟨singleTableLocalLookup, 3⟩, singleLocalTrace 8, [])]
+  | "heights" => [fibLookups 3 "Fib" (-1), mulLookups 2 1 true [], fibLookups 4 "Fib" 1,
+      fibLookups 3 "Fib" (-1) 8]
+  | "failed-global" => [mulLookups 3 2 false ["MulFib1", "MulFib2"], fibLookups 3 "MulFib1" 1]
+  | "failed-local" =>
+    let (I, t, p) := mulLookups (F := F) 3 2 true []
+    [(I, t.set! 6 9999, p)]
   | _ => []
 
 end Instances
@@ -231,10 +276,11 @@ def challenger : IO Unit := do
 
 
 /-- The parameters `logN logBlowup logFinal maxLogArity queries commitPow queryPow [batchPow
-oodPow]`. -/
+oodPow [lookupPow]]`. -/
 def params : List Nat → IO (Nat × Fri.Params)
-  | [logN, b, f, a, q, cp, qp] => pure (logN, ⟨b, f, a, q, cp, qp, 0, 0⟩)
-  | [logN, b, f, a, q, cp, qp, bp, op] => pure (logN, ⟨b, f, a, q, cp, qp, bp, op⟩)
+  | [logN, b, f, a, q, cp, qp] => pure (logN, ⟨b, f, a, q, cp, qp, 0, 0, 0⟩)
+  | [logN, b, f, a, q, cp, qp, bp, op] => pure (logN, ⟨b, f, a, q, cp, qp, bp, op, 0⟩)
+  | [logN, b, f, a, q, cp, qp, bp, op, lp] => pure (logN, ⟨b, f, a, q, cp, qp, bp, op, lp⟩)
   | _ => throw (IO.userError "seven or nine parameters")
 
 /-- The proof with its first opened trace value changed. -/
@@ -305,8 +351,45 @@ def batchProof (name : String) (ps : List Nat) : IO Unit := do
   let file := s!"batch_{name}_{"_".intercalate (ps.map toString)}"
   let rust : Batch.BatchProof F EF ←
     IO.ofExcept (Json.parseBatch (← IO.FS.readFile s!"tests/data/{file}.json"))
+  if name.startsWith "failed" then
+    -- an unbalanced batch: Plonky3's proof of it is rejected by the terminals' sum alone
+    check s!"{file}: rejects unbalanced lookups" (Batch.verifyBatch P instances common rust pis ==
+      .error "lookup terminals do not sum to zero")
+    check s!"{file}: specification prover" (Batch.proveBatch EF P instances traces pis == rust)
+    check s!"{file}: fast prover" (Batch.proveBatchWith
+      (CompStark.KoalaBear.backendFor P.logBlowup (Batch.shapes instances)) P instances traces
+        pis == rust)
+    return
   if let .error e := Batch.verifyBatch P instances common rust pis then
     throw (IO.userError s!"{file}: {e}")
+  if Batch.hasLookups instances then
+    let rejects (label : String) (pf : Batch.BatchProof F EF) : IO Unit :=
+      check s!"{file}: rejects {label}"
+        (Batch.verifyBatch P instances common pf pis matches .error _)
+    let i := (instances.findIdx? (!·.lookups.isEmpty)).getD 0
+    rejects "a tampered terminal"
+      { rust with lookupTerminals := rust.lookupTerminals.modify i fun t ↦ t.map (· + 1) }
+    rejects "a missing terminal" { rust with lookupTerminals := rust.lookupTerminals.set! i none }
+    if let some j := instances.findIdx? (·.lookups.isEmpty) then
+      rejects "a spurious terminal"
+        { rust with lookupTerminals := rust.lookupTerminals.set! j (some 0) }
+    rejects "a tampered permutation opening"
+      { rust with permutationLocal := rust.permutationLocal.modify i fun r ↦ r.modify 0 (· + 1) }
+    rejects "a tampered next permutation opening"
+      { rust with permutationNext := rust.permutationNext.modify i fun r ↦ r.modify 1 (· + 1) }
+    rejects "a short permutation opening"
+      { rust with permutationLocal := rust.permutationLocal.modify i (·.pop) }
+    rejects "no permutation commitment" { rust with permutationCommit := none }
+    rejects "no lookup witness" { rust with lookupWitness := none }
+    rejects "another lookup witness" { rust with lookupWitness := rust.lookupWitness.map (· + 1) }
+    let unbounded := instances.modify i fun I ↦ { I with air := { I.air with
+      lookups := I.air.lookups.map fun l ↦ { l with countWeight := 2 ^ 31 } } }
+    check s!"{file}: rejects count weights past the characteristic" (Batch.verifyBatch P
+      unbounded (Batch.setupBatch P unbounded) rust pis matches .error "lookups")
+  else
+    check s!"{file}: rejects a lookup witness"
+      (Batch.verifyBatch P instances common { rust with lookupWitness := some 0 } pis
+        matches .error _)
   let tampered := { rust with opened := rust.opened.modify (rust.opened.size - 1) fun o ↦
     { o with traceLocal := o.traceLocal.modify 0 (· + 1) } }
   check s!"{file}: rejects a tampered proof"
@@ -345,6 +428,15 @@ def batchProofs : IO Unit := do
   batchProof "single" [1, 0, 1, 5, 0, 2]
   batchProof "prepmul" [1, 1, 2, 6, 1, 2, 2, 3]
   batchProof "square" [1, 1, 2, 6, 1, 2, 2, 3]
+  batchProof "local1" [1, 1, 2, 6, 1, 2, 2, 3]
+  batchProof "local" [2, 0, 1, 4, 0, 0]
+  batchProof "global" [1, 1, 2, 6, 1, 2, 2, 3]
+  batchProof "both" [1, 1, 2, 6, 1, 2, 2, 3, 8]
+  batchProof "lookups" [2, 0, 2, 5, 0, 0]
+  batchProof "single-local" [1, 1, 2, 6, 1, 2, 2, 3]
+  batchProof "heights" [1, 1, 2, 6, 1, 2, 2, 3, 4]
+  batchProof "failed-global" [1, 1, 2, 6, 1, 2, 2, 3]
+  batchProof "failed-local" [1, 1, 2, 6, 1, 2, 2, 3]
 
 def proofs : IO Unit := do
   for ps in [[3, 2, 2, 1, 2, 0, 0], [3, 2, 2, 1, 2, 1, 1], [6, 1, 0, 1, 10, 0, 8],
@@ -435,6 +527,10 @@ def batchProofs : IO Unit := do
   batchProof "single" [1, 0, 1, 5, 0, 2]
   batchProof "prepmul" [1, 1, 2, 6, 1, 2, 2, 3]
   batchProof "square" [1, 1, 2, 6, 1, 2, 2, 3]
+  batchProof "lookups" [2, 0, 2, 5, 0, 0]
+  batchProof "heights" [1, 1, 2, 6, 1, 2, 2, 3, 4]
+  batchProof "both" [1, 1, 2, 6, 1, 2, 2, 3, 8]
+  batchProof "single-local" [1, 1, 2, 6, 1, 2, 2, 3]
 
 end BabyBear
 

@@ -62,6 +62,7 @@ dependencies = [
  "p3-field",
  "p3-fri",
  "p3-koala-bear",
+ "p3-lookup",
  "p3-matrix",
  "p3-maybe-rayon",
  "p3-merkle-tree",

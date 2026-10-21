@@ -141,8 +141,8 @@ commitPow queryPow [batchPow oodPow]`. -/
 def check (name : String) (air : Nat → Air F) (inst : Nat → Array F × List F) (ps : List Nat) :
     IO Unit := do
   let (logN, P) ← match ps with
-    | [logN, b, f, a, q, cp, qp] => pure (logN, (⟨b, f, a, q, cp, qp, 0, 0⟩ : Fri.Params))
-    | [logN, b, f, a, q, cp, qp, bp, op] => pure (logN, ⟨b, f, a, q, cp, qp, bp, op⟩)
+    | [logN, b, f, a, q, cp, qp] => pure (logN, (⟨b, f, a, q, cp, qp, 0, 0, 0⟩ : Fri.Params))
+    | [logN, b, f, a, q, cp, qp, bp, op] => pure (logN, ⟨b, f, a, q, cp, qp, bp, op, 0⟩)
     | _ => throw (IO.userError "seven or nine parameters")
   let A := air logN
   let vk := setup P A logN

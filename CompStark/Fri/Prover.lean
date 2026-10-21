@@ -7,6 +7,7 @@ module
 public import CompStark.Challenger
 public import CompStark.Fri.Verifier
 public import CompStark.Stark.Quotient
+public import CompStark.Lookup.Quotient
 
 /-! # The FRI prover of the two-adic commitment scheme
 
@@ -67,6 +68,11 @@ structure Backend (F EF : Type) (width : Nat) where
   /-- `log₂` of the largest committed height. -/
   logHeight : C → Nat
   quotient : Air F → List F → Nat → Nat → M → Option M → EF → Array EF
+  /-- The extension constraints of an AIR folded by `α` on the quotient domain, divided by
+  `Z_H` (`lookupQuotientOfLde`), from the extensions of the trace, the preprocessed trace and the
+  permutation trace in base coordinates, and the challenges and the terminal. -/
+  lookupQuotient : Air F → List (Lookup.ExtExpr F) → List F → Nat → Nat → M → Option M → M →
+    List EF → EF → EF → Array EF
   openedAt : Nat → M → List EF → List (Array EF)
   toArray : V → Array EF
   ofArray : Array EF → V
@@ -321,6 +327,19 @@ def quotientOfLde (A : Air F) (pis : List F) (degreeBits logChunks : Nat) (ext :
     ((prep.map onQuotient).getD (Mat.ofValues 0 (2 ^ qlog) #[]))
     (A.periodic.map fun col ↦ periodicOnQuotient col degreeBits logChunks) alpha
 
+/-- The extension constraints `ext` of `A` folded by `α`, divided by `Z_H`, from the extensions
+`ext` of the trace, `prep` of the preprocessed trace, if any, and `perm` of the permutation trace
+in base coordinates: their first `2 ^ (degreeBits + logChunks)` rows in natural order are the
+traces on the quotient domain (`lookupQuotientValues`). -/
+def lookupQuotientOfLde (A : Air F) (ext : List (Lookup.ExtExpr F)) (pis : List F)
+    (degreeBits logChunks : Nat) (tr : Mat F) (prep : Option (Mat F)) (perm : Mat F)
+    (chs : List EF) (terminal alpha : EF) : Array EF :=
+  let qlog := degreeBits + logChunks
+  let onQuotient (m : Mat F) := Mat.ofValues m.width (2 ^ qlog) (permuteRows m (bitRevPerm qlog))
+  Lookup.lookupQuotientValues ext pis degreeBits logChunks (onQuotient tr)
+    ((prep.map onQuotient).getD (Mat.ofValues 0 (2 ^ qlog) #[])) (onQuotient perm)
+    (A.periodic.map fun col ↦ periodicOnQuotient col degreeBits logChunks) chs terminal alpha
+
 /-- The batched quotients `∑ αᵏ (p(z) - p(x)) / (z - x)` by log height, tallest first: each
 matrix's rows batched by the powers of `α` once, then every point accumulated over the rows with
 the running power of `α` of its height. -/
@@ -360,6 +379,7 @@ def Backend.spec (EF : Type) [Challenge F EF] (t : Transcript F width) (hash : L
   openAt := Committed.openAt
   logHeight c := Nat.log2 c.maxHeight
   quotient := quotientOfLde
+  lookupQuotient := lookupQuotientOfLde
   openedAt b m zs := zs.map (Fri.openedAt b m)
   toArray := id
   ofArray := id
