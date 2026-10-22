@@ -15,6 +15,7 @@ The batch verifier `verifyBatchWith` runs on the random oracles of the STARK's r
 (`CompStark/RandomOracle.lean`): the duplex challenger, the Merkle leaf hash and the compression.
 
 * `Setup.instances`: the statement the verifier checks, every instance's AIR and trace length.
+* `Setup.NoLookups`: no instance has lookups, the batches the random-oracle analysis covers.
 * `Setup.streamLen`: every challenge round takes one duplex answer, the query round's grinding
   sample and indices included.
 * `Setup.setupRo`: the batch's common data, the root of the tree of its preprocessed traces'
