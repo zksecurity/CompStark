@@ -171,9 +171,8 @@ theorem friQueryErrorB_eq (harity : S.params.maxLogArity = 1) (δ loss : ℝ≥0
   rw [Iop.Batch.friQueryError, Iop.Batch.Setup.friRounds, Iop.Setup.friRounds]
   change ENNReal.ofReal (1 - δ + ((Rounds.schedule S.params.maxLogArity _ _ _ _ _).numFolds : ℕ) *
     loss + 1 / Nat.card F) ^ _ = _
-  rw [harity, Rounds.numFolds_schedule_one _ _ _ _ (by
-    change S.params.logFinalPolyLen + S.params.logBlowup ≤ S.logN S.top + S.params.logBlowup
-    omega) (Nat.sub_le _ _) (fits_friHeights S)]
+  rw [harity, Rounds.numFolds_schedule_one _ _ _ _ (by omega) (Nat.sub_le _ _)
+    (fits_friHeights S)]
   have : S.logN S.top + S.params.logBlowup - (S.params.logFinalPolyLen + S.params.logBlowup) =
       S.logN S.top - S.params.logFinalPolyLen := by omega
   rw [this]
