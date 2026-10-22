@@ -125,6 +125,7 @@ public import CompStark.Sound.CurveBW
 public import CompStark.Sound.PowersMca
 public import CompStark.Sound.Numbers
 public import CompStark.Sound.NumbersNi
+public import CompStark.Sound.BatchNumbersNi
 public import CompStark.Security
 public import CompStark.Sound.CurveCA
 public import CompStark.Sound.LossyMca

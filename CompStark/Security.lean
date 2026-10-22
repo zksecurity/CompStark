@@ -10,6 +10,8 @@ public import CompStark.NonInteractive
 public import CompStark.Sound.Numbers
 public import CompStark.Sound.NumbersNi
 public import CompStark.Complete.Quotient
+public import CompStark.BatchNonInteractive
+public import CompStark.Sound.BatchNumbersNi
 
 /-! # Concrete security: 100 bits over the quartic extension, 117 with grinding, 128 over quintic
 
@@ -173,6 +175,41 @@ The total is at most `2 ^ (-128)` (`wideBatch_knowledgeError_le`, `wideBatch_kno
 about `2 ^ (-128.66)` exactly. The batch pays for `α`, `ζ` and batching once, as its failing
 instance would alone among the instances of its size; FRI pays one more fold error per injected
 height.
+
+In the random-oracle model the batch pays each round once, at its worst instance
+(`Batch.roundError`, `CompStark/BatchNonInteractiveError.lean`, terms bounded in
+`CompStark/Sound/BatchNumbersNi.lean`); a fold that injects a shorter instance's word costs twice
+the lossy bound (`friFoldErrorB_le`). For the same three instances (`WideBatch`), with the
+extractor at `δ'` and every domain of at least `2 ^ 18` points, so that `δ < δ' - 2/N` on each:
+
+`wideBatch5Setup`, over `KoalaBear.Fast.Ext5` with `wide5Params` (`160` queries, `20` bits of query
+grinding), FRI at `δ = 3/8 - 2 ^ (-16)`, the extractor at `δ' = 3/8 - 2 ^ (-18)`,
+`loss = 2 ^ (-26)` and `t = 16`:
+
+* constraint folding `63`, about `2 ^ (-148.97)`;
+* out of domain at most `4 · 2 ^ 20 + 1`, about `2 ^ (-132.94)`;
+* batching `137 · max(T₁, T₂) ≤ 137 · 98304`, `T₂` at most `(3/8) · 2 ^ 18` on the smallest
+  domain, about `2 ^ (-131.26)`;
+* FRI's folds `max(2 δ_int / loss, 2 ^ 16) = 2 · 25164801`, about `2 ^ (-129.36)`;
+* FRI's queries `powFraction 20 · (5/8 + 2 ^ (-16) + 20 · 2 ^ (-26) + 1/p) ^ 160`, about
+  `2 ^ (-128.49)`.
+
+Every round error is at most `2 ^ (-128)` (`wideBatch5_roundError_le`,
+`wideBatch5_knowledgeSoundness_ro`).
+
+`wideBatchGrindSetup`, over `KoalaBear.Fast.Ext4` with `wideGrindParams` (`144` queries, grinding in
+every round after `α`), FRI at `δ = 3/8 - 2 ^ (-10)`, the extractor at `δ' = 3/8 - 2 ^ (-11)`,
+`loss = 2 ^ (-15)` and `t = 10`:
+
+* constraint folding `63`, about `2 ^ (-117.98)`;
+* out of domain `powFraction 20 · (4 · 2 ^ 20 + 1)`, about `2 ^ (-121.95)`;
+* batching `powFraction 12 · 135 · 781`, about `2 ^ (-119.27)`;
+* FRI's folds `powFraction 8 · 2 · 12257`, about `2 ^ (-117.37)`;
+* FRI's queries `powFraction 20 · (5/8 + 2 ^ (-10) + 20 · 2 ^ (-15) + 1/p) ^ 144`, about
+  `2 ^ (-117.11)`.
+
+Every round error is at most `2 ^ (-117)` (`wideBatchGrind_roundError_le`,
+`wideBatchGrind_knowledgeSoundness_ro`).
 -/
 
 @[expose] public section
@@ -830,23 +867,26 @@ theorem wide5i_knowledgeSoundness (publicValues : List F) (prover : Prover wide5
   norm_num [wide5iSetup, wide5iParams]
 
 
-/-- `wide 64` on `2 ^ logN` rows with `wide5iParams`, for `logN ≤ 22`. -/
-theorem wide_valid (logN : ℕ) (h : logN ≤ 22) :
-    ValidConfig wide5iParams (wide 64 : Air F) logN where
+/-- `wide 64` on `2 ^ logN` rows with FRI parameters of blowup `4` and a constant final
+polynomial, for `logN ≤ 22`. -/
+theorem wide_valid (P : Fri.Params) (hb : P.logBlowup = 2) (ha : 0 < P.maxLogArity)
+    (hf : P.logFinalPolyLen = 0) (hq : 0 < P.numQueries) (logN : ℕ) (h : logN ≤ 22) :
+    ValidConfig P (wide 64 : Air F) logN where
   colsInWidth := wide_colsInWidth 64
   preprocessedSize := by simp only [wide, Array.size_empty, Nat.mul_zero]
   periodicFits := rfl
   degreeFits := wide_degreeFits 64 logN
   twoAdic := by
+    rw [hb]
     change logN + 2 ≤ 24
     omega
   chunksFit := by
-    rw [wide_logQuotientChunks 64 _ (by decide)]
+    rw [wide_logQuotientChunks 64 _ (by decide), hb]
     decide
-  folds := by decide
-  finalPolyFits := Nat.zero_le _
-  queries := by decide
-  blowup := by decide
+  folds := ha
+  finalPolyFits := by rw [hf]; exact Nat.zero_le _
+  queries := hq
+  blowup := by rw [hb]; decide
 
 /-- Three instances of `wide 64` on `2 ^ 20`, `2 ^ 19` and `2 ^ 16` rows over the quintic
 extension with `wide5iParams`. -/
@@ -855,7 +895,8 @@ def wideBatchSetup : Batch.Setup KoalaBear.Fast.Ext5 where
   k := 3
   air _ := wide 64
   logN := ![20, 19, 16]
-  valid i := wide_valid _ (by fin_cases i <;> decide)
+  valid i := wide_valid wide5iParams rfl (by decide) rfl (by decide) _
+    (by fin_cases i <;> decide)
   folds i := by fin_cases i <;> decide
   nonempty := by decide
 
@@ -1006,5 +1047,311 @@ theorem wideBatch_knowledgeSoundness (publicValues : Fin 3 → List F)
     (49151 / 131072) ?_ h).trans wideBatch_knowledgeError_le
   rw [show wideBatchSetup.rate = 1 / 2 ^ 2 from rfl]
   norm_num
+
+/-! ### The batch in the random-oracle model -/
+
+/-- The three instances `wide 64` on `2 ^ 20`, `2 ^ 19` and `2 ^ 16` rows over the quintic
+extension with `wide5Params` (`160` queries, `20` bits of query grinding). -/
+def wideBatch5Setup : Batch.Setup KoalaBear.Fast.Ext5 where
+  params := wide5Params
+  k := 3
+  air _ := wide 64
+  logN := ![20, 19, 16]
+  valid i := wide_valid wide5Params rfl (by decide) rfl (by decide) _ (by fin_cases i <;> decide)
+  folds i := by fin_cases i <;> decide
+  nonempty := by decide
+
+/-- The three instances over the quartic extension with `wideGrindParams` (`144` queries,
+grinding in every round after `α`). -/
+def wideBatchGrindSetup : Batch.Setup KoalaBear.Fast.Ext4 where
+  params := wideGrindParams
+  k := 3
+  air _ := wide 64
+  logN := ![20, 19, 16]
+  valid i := wide_valid wideGrindParams rfl (by decide) rfl (by decide) _
+    (by fin_cases i <;> decide)
+  folds i := by fin_cases i <;> decide
+  nonempty := by decide
+
+section WideBatch
+variable {EF : Type} [Challenge F EF]
+
+/-- A batch of `wide 64` instances on `2 ^ 20`, `2 ^ 19` and `2 ^ 16` rows. -/
+structure WideBatch (S : Batch.Setup EF) : Prop where
+  air : ∀ i, S.air i = wide 64
+  k : S.k = 3
+  logN : ∀ i, S.logN i = (![20, 19, 16] : Fin 3 → ℕ) (Fin.cast k i)
+  blowup : S.params.logBlowup = 2
+
+variable (S : Batch.Setup EF) (hS : WideBatch S)
+include hS
+
+theorem WideBatch.logN_le (i : Fin S.k) : 16 ≤ S.logN i ∧ S.logN i ≤ 20 := by
+  rw [hS.logN]
+  generalize Fin.cast hS.k i = j
+  fin_cases j <;> decide
+
+theorem WideBatch.top : S.logN S.top = 20 := by
+  refine le_antisymm (WideBatch.logN_le S hS S.top).2 ?_
+  have h := S.logN_le_top (Fin.cast hS.k.symm ⟨0, by decide⟩)
+  rw [hS.logN] at h
+  simpa using h
+
+/-- Every instance's domain size has its instance alone, which opens `128 + 2 d` words. -/
+theorem WideBatch.groupNumOpened (i : Fin S.k) :
+    S.groupNumOpened (S.logN i + S.params.logBlowup) - 1 = 127 + 2 * Challenge.d EF := by
+  have hfilter : (Finset.univ.filter fun j : Fin S.k ↦
+      S.logN j + S.params.logBlowup = S.logN i + S.params.logBlowup) = {i} := by
+    ext j
+    simp only [Finset.mem_filter, Finset.mem_univ, true_and, Finset.mem_singleton,
+      Nat.add_right_cancel_iff]
+    constructor
+    · intro h
+      rw [hS.logN, hS.logN] at h
+      have hj := Fin.cast_injective hS.k (a₁ := j) (a₂ := i)
+      refine hj ?_
+      generalize Fin.cast hS.k j = a at h
+      generalize Fin.cast hS.k i = b at h
+      fin_cases a <;> fin_cases b <;> first | rfl | (simp at h)
+    · rintro rfl
+      rfl
+  rw [Batch.Setup.groupNumOpened, hfilter, Finset.sum_singleton]
+  exact wide_numOpened (S.instanceSetup i) (hS.air i)
+
+/-- FRI injects the shorter instances' words at heights of at least `2 ^ 18`. -/
+theorem WideBatch.friHeights_ge (m : ℕ) (hm : m ∈ S.friHeights) : 18 ≤ m := by
+  obtain ⟨i, rfl, -⟩ := (Sound.mem_friHeights S m).mp hm
+  rw [hS.blowup]
+  have := (WideBatch.logN_le S hS i).1
+  omega
+
+theorem WideBatch.integers_le (i : Fin S.k) :
+    (S.air i).constraints.length - 1 + ((S.instanceSetup i).identityDegree +
+      (S.instanceSetup i).n) ≤ 4 * 2 ^ 20 + 64 := by
+  have h := wide_integers_le (S.instanceSetup i) (hS.air i)
+  have : (S.instanceSetup i).n ≤ 2 ^ 20 :=
+    Nat.pow_le_pow_right two_pos (WideBatch.logN_le S hS i).2
+  change (S.air i).constraints.length - 1 + _ ≤ 4 * (S.instanceSetup i).n + 64 at h
+  omega
+
+end WideBatch
+
+/-- **128 bits per oracle answer for a batch of three tables of mixed heights.** Every round
+error of `wideBatch5Setup`, FRI at `δ = 3/8 - 2 ^ (-16)` and the extractor at
+`δ' = 3/8 - 2 ^ (-18)`, is at most `2 ^ (-128)`. -/
+theorem wideBatch5_roundError_le :
+    Batch.roundError wideBatch5Setup (3 / 8 - 2 ^ (-16 : ℤ)) (3 / 8 - 2 ^ (-18 : ℤ)) ≤
+      (2 ^ 128)⁻¹ := by
+  set S := wideBatch5Setup
+  have hS : WideBatch S := ⟨fun _ ↦ rfl, rfl, fun _ ↦ rfl, rfl⟩
+  have hδ := coe_three_eighths_sub (-16) 16 rfl (by norm_num)
+  have hδ' := coe_three_eighths_sub (-18) 18 rfl (by norm_num)
+  have hrate : S.rate = 1 / 2 ^ 2 := rfl
+  have hsize (i : Fin S.k) : ((S.instanceSetup i).size : ℝ) = 2 ^ (S.logN i + 2) := by
+    rw [Setup.size]
+    push_cast
+    rfl
+  have hpow (i : Fin S.k) : (2 : ℝ) ^ 18 ≤ 2 ^ (S.logN i + 2) :=
+    pow_le_pow_right₀ (by norm_num) (by have := (WideBatch.logN_le S hS i).1; omega)
+  have hinv (i : Fin S.k) : (1 : ℝ) / 2 ^ (S.logN i + 2) ≤ 1 / 2 ^ 18 :=
+    one_div_le_one_div_of_le (by positivity) (hpow i)
+  have hc (i : Fin S.k) : (S.air i).constraints.length - 1 = 63 := by
+    rw [hS.air i]
+    simp only [wide, List.length_map, List.length_range]
+  have h := Batch.batchRoundError_le S rfl 16
+    (fun m hm ↦ le_trans (by norm_num) (WideBatch.friHeights_ge S hS m hm))
+    (3 / 8 - 2 ^ (-16 : ℤ)) (3 / 8 - 2 ^ (-18 : ℤ)) (1 / 2 ^ 26) 63 (4 * 2 ^ 20 + 1)
+    (137 * 98304) (fun i ↦ (hc i).le)
+    (fun i ↦ by have := WideBatch.integers_le S hS i; rw [hc i] at this; omega)
+    (fun i ↦ by
+      rw [WideBatch.groupNumOpened S hS i, hrate, hsize i, hδ, hδ']
+      have hd : Challenge.d KoalaBear.Fast.Ext5 = 5 := rfl
+      rw [hd]
+      have hN := hinv i
+      have hgap : (1 : ℝ) / 2 ^ 18 ≤ ((3 : ℝ) / 8 - 1 / 2 ^ 18) - 2 / 2 ^ (S.logN i + 2) -
+          (3 / 8 - 1 / 2 ^ 16) := by
+        have : (2 : ℝ) / 2 ^ (S.logN i + 2) = 2 * (1 / 2 ^ (S.logN i + 2)) := by ring
+        rw [this]
+        norm_num at hN ⊢
+        linarith
+      have hT2 : (((3 : ℝ) / 8 - 1 / 2 ^ 18) - 2 / 2 ^ (S.logN i + 2)) /
+          (((3 : ℝ) / 8 - 1 / 2 ^ 18) - 2 / 2 ^ (S.logN i + 2) - (3 / 8 - 1 / 2 ^ 16)) ≤ 98304 := by
+        have hpos : (0 : ℝ) < ((3 : ℝ) / 8 - 1 / 2 ^ 18) - 2 / 2 ^ (S.logN i + 2) -
+            (3 / 8 - 1 / 2 ^ 16) := lt_of_lt_of_le (by norm_num) hgap
+        rw [div_le_iff₀ hpos]
+        have : (0 : ℝ) ≤ 2 / 2 ^ (S.logN i + 2) := by positivity
+        nlinarith
+      have hT1 : (1 - 1 / 2 ^ 2 - (3 / 8 - 1 / 2 ^ 16 : ℝ)) /
+          ((3 / 8 - 1 / 2 ^ 16) * (1 - 1 / 2 ^ 2 - 2 * (3 / 8 - 1 / 2 ^ 16))) ≤ 98304 := by
+        norm_num
+      rw [show ((127 + 2 * 5 : ℕ) : ℝ) = 137 by norm_num]
+      exact mul_le_mul_of_nonneg_left (max_le hT1 hT2) (by norm_num))
+    (fun i ↦ by rw [hδ, hrate, hsize i]; have := hinv i; norm_num at this ⊢; linarith)
+    (by rw [hδ, hrate]; norm_num) (by rw [← NNReal.coe_pos, hδ]; norm_num)
+    (fun i ↦ by
+      rw [hδ, hδ', hsize i]
+      have hN := hinv i
+      have : (2 : ℝ) / 2 ^ (S.logN i + 2) = 2 * (1 / 2 ^ (S.logN i + 2)) := by ring
+      rw [this]
+      norm_num at hN ⊢
+      linarith)
+    (by rw [hδ', hrate]; norm_num) (by positivity)
+  have hood : S.params.oodPowBits = 0 := rfl
+  have hbatch : S.params.batchPowBits = 0 := rfl
+  have hcommit : S.params.commitPowBits = 0 := rfl
+  have hquery : S.params.queryPowBits = 20 := rfl
+  have hq : S.params.numQueries = 160 := rfl
+  have hfolds : S.logN S.top - S.params.logFinalPolyLen = 20 := by
+    rw [WideBatch.top S hS]
+    rfl
+  have hb : S.params.logBlowup = 2 := rfl
+  rw [hood, hbatch, hcommit, hquery, hq, hfolds, hb] at h
+  simp only [powFraction_zero, one_mul] at h
+  refine h.trans (max_le ?_ (max_le ?_ (max_le ?_ (max_le ?_ ?_))))
+  · refine nat_div_card_le _ ?_
+    norm_num
+  · refine nat_div_card_le _ ?_
+    norm_num
+  · refine ofReal_div_card_le _ ?_
+    norm_num
+  · refine ofReal_div_card_le _ ?_
+    simp only [LossyMca.lossyBound]
+    rw [NNReal.coe_add, hδ]
+    norm_num
+  · refine powFraction_mul_le _ _ _ (by rw [hδ]; norm_num) ?_
+    rw [hδ, KoalaBear.card_eq]
+    norm_num
+
+/-- **117 bits per oracle answer for a batch of three tables of mixed heights over the quartic
+extension.** Every round error of `wideBatchGrindSetup`, FRI at `δ = 3/8 - 2 ^ (-10)` and the
+extractor at `δ' = 3/8 - 2 ^ (-11)`, is at most `2 ^ (-117)`. -/
+theorem wideBatchGrind_roundError_le :
+    Batch.roundError wideBatchGrindSetup (3 / 8 - 2 ^ (-10 : ℤ)) (3 / 8 - 2 ^ (-11 : ℤ)) ≤
+      (2 ^ 117)⁻¹ := by
+  set S := wideBatchGrindSetup
+  have hS : WideBatch S := ⟨fun _ ↦ rfl, rfl, fun _ ↦ rfl, rfl⟩
+  have hδ := coe_three_eighths_sub (-10) 10 rfl (by norm_num)
+  have hδ' := coe_three_eighths_sub (-11) 11 rfl (by norm_num)
+  have hrate : S.rate = 1 / 2 ^ 2 := rfl
+  have hsize (i : Fin S.k) : ((S.instanceSetup i).size : ℝ) = 2 ^ (S.logN i + 2) := by
+    rw [Setup.size]
+    push_cast
+    rfl
+  have hpow (i : Fin S.k) : (2 : ℝ) ^ 18 ≤ 2 ^ (S.logN i + 2) :=
+    pow_le_pow_right₀ (by norm_num) (by have := (WideBatch.logN_le S hS i).1; omega)
+  have hinv (i : Fin S.k) : (1 : ℝ) / 2 ^ (S.logN i + 2) ≤ 1 / 2 ^ 18 :=
+    one_div_le_one_div_of_le (by positivity) (hpow i)
+  have hc (i : Fin S.k) : (S.air i).constraints.length - 1 = 63 := by
+    rw [hS.air i]
+    simp only [wide, List.length_map, List.length_range]
+  have h := Batch.batchRoundError_le S rfl 10
+    (fun m hm ↦ le_trans (by norm_num) (WideBatch.friHeights_ge S hS m hm))
+    (3 / 8 - 2 ^ (-10 : ℤ)) (3 / 8 - 2 ^ (-11 : ℤ)) (1 / 2 ^ 15) 63 (4 * 2 ^ 20 + 1)
+    (135 * 781) (fun i ↦ (hc i).le)
+    (fun i ↦ by have := WideBatch.integers_le S hS i; rw [hc i] at this; omega)
+    (fun i ↦ by
+      rw [WideBatch.groupNumOpened S hS i, hrate, hsize i, hδ, hδ']
+      have hd : Challenge.d KoalaBear.Fast.Ext4 = 4 := rfl
+      rw [hd]
+      have hN := hinv i
+      have hgap : (63 : ℝ) / 2 ^ 17 ≤ ((3 : ℝ) / 8 - 1 / 2 ^ 11) - 2 / 2 ^ (S.logN i + 2) -
+          (3 / 8 - 1 / 2 ^ 10) := by
+        have : (2 : ℝ) / 2 ^ (S.logN i + 2) = 2 * (1 / 2 ^ (S.logN i + 2)) := by ring
+        rw [this]
+        norm_num at hN ⊢
+        linarith
+      have hT2 : (((3 : ℝ) / 8 - 1 / 2 ^ 11) - 2 / 2 ^ (S.logN i + 2)) /
+          (((3 : ℝ) / 8 - 1 / 2 ^ 11) - 2 / 2 ^ (S.logN i + 2) - (3 / 8 - 1 / 2 ^ 10)) ≤ 781 := by
+        have hpos : (0 : ℝ) < ((3 : ℝ) / 8 - 1 / 2 ^ 11) - 2 / 2 ^ (S.logN i + 2) -
+            (3 / 8 - 1 / 2 ^ 10) := lt_of_lt_of_le (by norm_num) hgap
+        rw [div_le_iff₀ hpos]
+        have : (0 : ℝ) ≤ 2 / 2 ^ (S.logN i + 2) := by positivity
+        nlinarith
+      have hT1 : (1 - 1 / 2 ^ 2 - (3 / 8 - 1 / 2 ^ 10 : ℝ)) /
+          ((3 / 8 - 1 / 2 ^ 10) * (1 - 1 / 2 ^ 2 - 2 * (3 / 8 - 1 / 2 ^ 10))) ≤ 781 := by
+        norm_num
+      rw [show ((127 + 2 * 4 : ℕ) : ℝ) = 135 by norm_num]
+      exact mul_le_mul_of_nonneg_left (max_le hT1 hT2) (by norm_num))
+    (fun i ↦ by rw [hδ, hrate, hsize i]; have := hinv i; norm_num at this ⊢; linarith)
+    (by rw [hδ, hrate]; norm_num) (by rw [← NNReal.coe_pos, hδ]; norm_num)
+    (fun i ↦ by
+      rw [hδ, hδ', hsize i]
+      have hN := hinv i
+      have : (2 : ℝ) / 2 ^ (S.logN i + 2) = 2 * (1 / 2 ^ (S.logN i + 2)) := by ring
+      rw [this]
+      norm_num at hN ⊢
+      linarith)
+    (by rw [hδ', hrate]; norm_num) (by positivity)
+  have hood : S.params.oodPowBits = 20 := rfl
+  have hbatch : S.params.batchPowBits = 12 := rfl
+  have hcommit : S.params.commitPowBits = 8 := rfl
+  have hquery : S.params.queryPowBits = 20 := rfl
+  have hq : S.params.numQueries = 144 := rfl
+  have hfolds : S.logN S.top - S.params.logFinalPolyLen = 20 := by
+    rw [WideBatch.top S hS]
+    rfl
+  have hb : S.params.logBlowup = 2 := rfl
+  rw [hood, hbatch, hcommit, hquery, hq, hfolds, hb] at h
+  refine h.trans (max_le ?_ (max_le ?_ (max_le ?_ (max_le ?_ ?_))))
+  · refine nat_div_card_le _ ?_
+    norm_num
+  · rw [← ENNReal.ofReal_natCast]
+    refine powFraction_mul_div_card_le _ _ ?_
+    rw [KoalaBear.card_eq]
+    norm_num
+  · refine powFraction_mul_div_card_le _ _ ?_
+    rw [KoalaBear.card_eq]
+    norm_num
+  · refine powFraction_mul_div_card_le _ _ ?_
+    simp only [LossyMca.lossyBound]
+    rw [NNReal.coe_add, hδ, KoalaBear.card_eq]
+    norm_num
+  · refine powFraction_mul_le _ _ _ (by rw [hδ]; norm_num) ?_
+    rw [hδ, KoalaBear.card_eq]
+    norm_num
+
+/-- **128 bits per oracle call for a batch of three tables of mixed heights.** A prover for
+`wideBatch5Setup` making at most `Q` oracle calls gets a proof accepted while no tuple of traces
+close to the ones it committed to satisfies every AIR with probability at most
+`q · 2 ^ (-128) + hashError q`, `q = Q + verifierQueries`. -/
+theorem wideBatch5_knowledgeSoundness_ro (publicValues : Fin wideBatch5Setup.k → List F) (Q : Nat)
+    (prover : Batch.NIProver wideBatch5Setup) (hQ : prover.IsTotalQueryBound Q) :
+    Pr{let (proof, log, verdict) ← Batch.run wideBatch5Setup publicValues prover}[
+      verdict = .ok () ∧ proof.degreeBits.toList = List.ofFn wideBatch5Setup.logN ∧
+        ∀ traces ∈ Batch.closeTraces wideBatch5Setup (3 / 8 - 2 ^ (-18 : ℤ) : NNReal)
+            (Batch.committedTraces wideBatch5Setup log proof),
+          ¬ ∀ i, (wideBatch5Setup.air i).Satisfied (wideBatch5Setup.logN i) (traces i)
+            (publicValues i)] ≤
+      (Q + wideBatch5Setup.verifierQueries) * (2 ^ 128)⁻¹ +
+        hashError F (Q + wideBatch5Setup.verifierQueries) := by
+  refine (Batch.batchKnowledgeSoundness_ro wideBatch5Setup (fun _ ↦ rfl) publicValues
+    (3 / 8 - 2 ^ (-16 : ℤ)) (3 / 8 - 2 ^ (-18 : ℤ)) ?_ Q prover hQ).trans ?_
+  · rw [coe_three_eighths_sub (-18) 18 rfl (by norm_num),
+      show wideBatch5Setup.rate = 1 / 2 ^ 2 from rfl]
+    norm_num
+  · gcongr
+    exact wideBatch5_roundError_le
+
+/-- **117 bits per oracle call for a batch of three tables over the quartic extension.** A prover
+for `wideBatchGrindSetup` making at most `Q` oracle calls gets a proof accepted while no tuple of
+traces close to the ones it committed to satisfies every AIR with probability at most
+`q · 2 ^ (-117) + hashError q`, `q = Q + verifierQueries`. -/
+theorem wideBatchGrind_knowledgeSoundness_ro (publicValues : Fin wideBatchGrindSetup.k → List F)
+    (Q : Nat) (prover : Batch.NIProver wideBatchGrindSetup) (hQ : prover.IsTotalQueryBound Q) :
+    Pr{let (proof, log, verdict) ← Batch.run wideBatchGrindSetup publicValues prover}[
+      verdict = .ok () ∧ proof.degreeBits.toList = List.ofFn wideBatchGrindSetup.logN ∧
+        ∀ traces ∈ Batch.closeTraces wideBatchGrindSetup (3 / 8 - 2 ^ (-11 : ℤ) : NNReal)
+            (Batch.committedTraces wideBatchGrindSetup log proof),
+          ¬ ∀ i, (wideBatchGrindSetup.air i).Satisfied (wideBatchGrindSetup.logN i) (traces i)
+            (publicValues i)] ≤
+      (Q + wideBatchGrindSetup.verifierQueries) * (2 ^ 117)⁻¹ +
+        hashError F (Q + wideBatchGrindSetup.verifierQueries) := by
+  refine (Batch.batchKnowledgeSoundness_ro wideBatchGrindSetup (fun _ ↦ rfl) publicValues
+    (3 / 8 - 2 ^ (-10 : ℤ)) (3 / 8 - 2 ^ (-11 : ℤ)) ?_ Q prover hQ).trans ?_
+  · rw [coe_three_eighths_sub (-11) 11 rfl (by norm_num),
+      show wideBatchGrindSetup.rate = 1 / 2 ^ 2 from rfl]
+    norm_num
+  · gcongr
+    exact wideBatchGrind_roundError_le
 
 end CompStark.Iop
