@@ -72,9 +72,9 @@ def quotientChunks (B : Backend F EF width) (P : Params) (A : Air F) (logN : Nat
 `ζ` sampled after them, and the out-of-domain grinding witness before it, by the backend `B`, with
 the preprocessed trace's extension and commitment `prep`. -/
 def commitAndSample (B : Backend F EF width) (P : Params) (A : Air F) (logN : Nat)
-    (prep : Option (B.M × B.C)) (trace : Array F) (pis : List F) :
+    (prep : Option (B.M × B.C)) (trace : B.Trace) (pis : List F) :
     PM F width (B.M × B.C × List B.M × B.C × EF × F) := do
-  let ext := B.lde logN P.logBlowup gen A.width trace
+  let ext := B.ldeTrace logN P.logBlowup gen A.width trace
   let traceC := B.commit [ext]
   pObserveList (starkSeedOf EF P A logN)
   pObserveList (B.root traceC).toList
@@ -124,7 +124,7 @@ def openAndAssemble (B : Backend F EF width) (P : Params) (A : Air F) (logN : Na
 
 /-- A proof of `A` for the row-major trace of `2 ^ logN` rows and public values `pis`, by the
 backend `B`. -/
-def proveWith (B : Backend F EF width) (P : Params) (A : Air F) (logN : Nat) (trace : Array F)
+def proveWith (B : Backend F EF width) (P : Params) (A : Air F) (logN : Nat) (trace : B.Trace)
     (pis : List F) : Proof F EF :=
   let prep := setupWith B P A logN
   ((commitAndSample B P A logN prep trace pis >>= openAndAssemble B P A logN prep).run

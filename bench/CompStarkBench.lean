@@ -192,8 +192,9 @@ def phasesBatch : IO UInt32 := do
       B.transcript) fun cp ↦ s!"{cp.1.commits.size}"
     let _ ← timed "openPcs" (fun _ ↦ (openPcs B P rounds).run B.transcript)
       fun r ↦ s!"{r.1.2.folds.size}"
-    let _ ← timed "whole proof" (fun _ ↦ Batch.proveBatchWith B P instances traces
-      (logNs.map fun _ ↦ [])) fun pf ↦ s!"{pf.oodWitness.val}"
+    let _ ← timed "whole proof" (fun _ ↦ Batch.proveBatchWith B P instances
+      (traces.map fun t ↦ #[encodeFields t]) (logNs.map fun _ ↦ [])) fun pf ↦
+        s!"{pf.oodWitness.val}"
   return 0
 
 open CompStark CompStark.Stark CompStark.Fri in
@@ -227,7 +228,30 @@ def keccak (logN : Nat) (prove : Bool) : IO UInt32 := do
     if tc.mats.length == 12345 then IO.println ""
     if prove then
       let P : Params := ⟨1, 0, 3, 87, 0, 16, 10, 0, 0⟩
-      let _ ← timed "whole proof" (fun _ ↦ proveWith B P A logN trace []) (s!"{·.degreeBits}")
+      let _ ← timed "whole proof" (fun _ ↦ proveWith B P A logN chunks []) (s!"{·.degreeBits}")
+  return 0
+
+
+/-- The median time of three proofs by `B` of `A` on the traces `trace 0, trace 1, trace 2`,
+checked against the proof `rust?` on the first if given. -/
+def proveTimed (label : String)
+    (B : CompStark.Fri.Backend KoalaBear.Fast.Field KoalaBear.Fast.Ext4 24)
+    (P : CompStark.Fri.Params) (A : CompStark.Stark.Air KoalaBear.Fast.Field) (logN : Nat)
+    (trace : Nat → B.Trace) (pis : List KoalaBear.Fast.Field)
+    (rust? : Option (CompStark.Stark.Proof KoalaBear.Fast.Field KoalaBear.Fast.Ext4)) :
+    IO UInt32 := do
+  if let some rust := rust? then
+    unless CompStark.Stark.proveWith B P A logN (trace 0) pis == rust do
+      IO.eprintln "proof differs from Plonky3's"; return 1
+    IO.println "proof matches Plonky3's"
+  let mut samples := #[]
+  for k in [0:3] do
+    let t ← IO.lazyPure fun _ ↦ trace k
+    let (ns, pf) ← timeNs fun _ ↦ do return CompStark.Stark.proveWith B P A logN t pis
+    samples := samples.push ns
+    if pf.degreeBits == 12345 then IO.println ""
+  let m := (samples.qsort (· < ·))[1]!
+  IO.println s!"lean {label} ms median {m / 1000000}.{m / 1000 % 1000}"
   return 0
 
 
@@ -394,26 +418,17 @@ def main (args : List String) : IO UInt32 := do
     let A := if air == "wide" then CompStark.Stark.wide 64 else CompStark.Stark.fibonacci
     let (trace, pis) :=
       if air == "wide" then (wideTrace 64 (2 ^ logN), []) else fibInstance (2 ^ logN)
-    -- The fast backend's extension plans are built once, outside timing, as Plonky3's twiddles.
-    let B := if backend == "fast" then
-      CompStark.KoalaBear.backendFor P.logBlowup [(logN, A.logQuotientChunks logN)] else B
-    if let path :: _ := rest.drop ps.length then
-      let rust ← IO.ofExcept
-        (CompStark.Stark.Json.parse (p := KoalaBear.fieldSize) (EF := KoalaBear.Fast.Ext4)
-          (← IO.FS.readFile path))
-      unless CompStark.Stark.proveWith B P A logN trace pis == rust do
-        IO.eprintln "proof differs from Plonky3's"; return 1
-      IO.println "proof matches Plonky3's"
-    let mut samples := #[]
-    for k in [0:3] do
-      let (ns, pf) ← timeNs fun _ ↦ do
-        return CompStark.Stark.proveWith B P A logN (trace.set! 0 (k : _))
-          pis
-      samples := samples.push ns
-      if pf.degreeBits == 12345 then IO.println ""
-    let m := (samples.qsort (· < ·))[1]!
-    IO.println s!"lean {backend} prove {air} 2^{logN} ms median {m / 1000000}.{m / 1000 % 1000}"
-    return 0
+    let rust? ← (rest.drop ps.length).head?.mapM fun path ↦ do
+      IO.ofExcept (CompStark.Stark.Json.parse (p := KoalaBear.fieldSize)
+        (EF := KoalaBear.Fast.Ext4) (← IO.FS.readFile path))
+    if backend == "fast" then
+      -- The fast backend's extension plans are built once, outside timing, as Plonky3's twiddles.
+      proveTimed s!"fast prove {air} 2^{logN}"
+        (CompStark.KoalaBear.backendFor P.logBlowup [(logN, A.logQuotientChunks logN)]) P A logN
+        (fun k ↦ #[encodeFields (trace.set! 0 (k : _))]) pis rust?
+    else
+      proveTimed s!"spec prove {air} 2^{logN}" B P A logN (fun k ↦ trace.set! 0 (k : _)) pis
+        rust?
   | "prove-batch" :: rest =>
     -- `prove-batch LOG_BLOWUP LOG_FINAL MAX_LOG_ARITY QUERIES COMMIT_POW QUERY_POW [BATCH_POW
     -- OOD_POW]`: the fast batch prover's median time on three `wide 64` tables of `2 ^ 20`,
@@ -431,9 +446,9 @@ def main (args : List String) : IO UInt32 := do
     let B := CompStark.KoalaBear.backendFor P.logBlowup (CompStark.Batch.shapes instances)
     let mut samples := #[]
     for k in [0:3] do
+      let ws ← IO.lazyPure fun _ ↦ traces.map fun t ↦ #[encodeFields (t.set! 0 (k : _))]
       let (ns, pf) ← timeNs fun _ ↦ do
-        return CompStark.Batch.proveBatchWith (EF := KoalaBear.Fast.Ext4) B P instances
-          (traces.map (·.set! 0 (k : _))) pis
+        return CompStark.Batch.proveBatchWith (EF := KoalaBear.Fast.Ext4) B P instances ws pis
       samples := samples.push ns
       if pf.oodWitness == 12345 then IO.println ""
     let m := (samples.qsort (· < ·))[1]!
@@ -449,17 +464,18 @@ def main (args : List String) : IO UInt32 := do
       | [b, f, a, q, cp, qp] => pure ⟨b, f, a, q, cp, qp, 0, 0, 0⟩
       | _ => IO.eprintln "six parameters"; return 1
     let (instances, traces, pis) := lookupBatch
+    let words := traces.map fun t ↦ #[encodeFields t]
     let B := CompStark.KoalaBear.backendFor P.logBlowup (CompStark.Batch.shapes instances)
     if let path :: _ := rest.drop ps.length then
       let rust ← IO.ofExcept (CompStark.Stark.Json.parseBatch (p := KoalaBear.fieldSize)
         (EF := KoalaBear.Fast.Ext4) (← IO.FS.readFile path))
-      unless CompStark.Batch.proveBatchWith B P instances traces pis == rust do
+      unless CompStark.Batch.proveBatchWith B P instances words pis == rust do
         IO.eprintln "proof differs from Plonky3's"; return 1
       IO.println "proof matches Plonky3's"
     let mut samples := #[]
     for k in [0:3] do
       let (ns, pf) ← timeNs fun _ ↦ do
-        return CompStark.Batch.proveBatchWith (EF := KoalaBear.Fast.Ext4) B P instances traces
+        return CompStark.Batch.proveBatchWith (EF := KoalaBear.Fast.Ext4) B P instances words
           (pis.map (·.map (· + (k : KoalaBear.Fast.Field) - k)))
       samples := samples.push ns
       if pf.oodWitness == 12345 then IO.println ""

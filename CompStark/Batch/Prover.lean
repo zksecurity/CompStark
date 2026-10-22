@@ -139,17 +139,18 @@ def allQuotientChunks (B : Backend F EF width) (P : Params) (instances : List (I
 /-- The commitments and the out-of-domain point `ζ` by the backend `B`, with the preprocessed
 traces' extensions and commitment `prep`. -/
 def batchCommitAndSample (B : Backend F EF width) (P : Params) (instances : List (Instance F))
-    (prep : List (Option B.M) × Option B.C) (traces : List (Array F)) (pis : List (List F)) :
+    (prep : List (Option B.M) × Option B.C) (traces : List B.Trace) (pis : List (List F)) :
     PM F width (Commitments B) := do
   pObserveList (batchSeedOf EF P instances ⟨prep.2.map B.root⟩)
   pObserveExts (instances.map fun I ↦ (Ext.ofBase (I.logN : F) : EF))
-  let exts := (instances.zip traces).map fun (I, t) ↦ B.lde I.logN P.logBlowup gen I.air.width t
+  let exts := (instances.zip traces).map fun (I, t) ↦
+    B.ldeTrace I.logN P.logBlowup gen I.air.width t
   let mainC := B.commit exts
   pObserveList (B.root mainC).toList
   pObserveList pis.flatten
   pObserveList ((prep.2.map fun c ↦ (B.root c).toList).getD [])
   let (lw, chs) ← lookupChallenges P instances
-  let perms := permutationsWith B P instances traces pis chs
+  let perms := permutationsWith B P instances (traces.map B.traceValues) pis chs
   let (permExts, permC) := commitPermutations B instances perms
   pObserveList ((permC.map fun c ↦ (B.root c).toList).getD [])
   let terminals := perms.map (·.map (·.2))
@@ -216,7 +217,7 @@ def batchOpenAndAssemble (B : Backend F EF width) (P : Params) (instances : List
 /-- A batch proof of the instances `instances` for their row-major traces `traces` and public
 values `pis`, by the backend `B`. -/
 def proveBatchWith (B : Backend F EF width) (P : Params) (instances : List (Instance F))
-    (traces : List (Array F)) (pis : List (List F)) : BatchProof F EF :=
+    (traces : List B.Trace) (pis : List (List F)) : BatchProof F EF :=
   let prep := setupBatchWith B P instances
   ((batchCommitAndSample B P instances prep traces pis >>=
     batchOpenAndAssemble B P instances prep).run B.transcript).1

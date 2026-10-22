@@ -201,10 +201,11 @@ theorem foldl_width_const {K : Type} (l : List (Mat K)) (w : Nat) (hl : ∀ m �
     omega
 
 theorem commitAndSample_refines (h : Refines B) {P : Params} {A : Air F} {logN : Nat}
-    {trace : Array F} (pis : List F) (hin : InputOk EF P A logN trace) :
+    {t : B.Trace} {trace : Array F} (pis : List F) (ht : h.RT t trace)
+    (hin : InputOk EF P A logN trace) :
     RelM (fun x y ↦ h.RM x.1 y.1 ∧ h.RC x.2.1 y.2.1 ∧ List.Forall₂ h.RM x.2.2.1 y.2.2.1 ∧
         h.RC x.2.2.2.1 y.2.2.2.1 ∧ x.2.2.2.2 = y.2.2.2.2 ∧ MatOk y.1 ∧ ∀ m ∈ y.2.2.1, MatOk m)
-      (commitAndSample B P A logN (setupWith B P A logN) trace pis)
+      (commitAndSample B P A logN (setupWith B P A logN) t pis)
           (commitAndSample (specBackend EF) P A logN (setupWith (specBackend EF) P A logN)
             trace pis) := by
   obtain ⟨hprep, hprepOk⟩ := setupWith_refines h hin
@@ -220,7 +221,7 @@ theorem commitAndSample_refines (h : Refines B) {P : Params} {A : Air F} {logN :
   have hextOk : MatOk (ldeRef logN P.logBlowup gen A.width trace) :=
     ⟨by rw [hew]; exact hw, ⟨_, hlog, heh⟩, by rw [hev, hew, heh],
       by rw [hew, heh, Nat.mul_comm]; exact hmw⟩
-  have hext := h.lde logN P.logBlowup gen A.width trace htrace hlog hmw
+  have hext := h.ldeTrace logN P.logBlowup gen A.width ht htrace hlog hmw
   have hct := h.commit (.cons hext .nil) ⟨_, List.cons_ne_nil _ _,
     fun m hm ↦ by obtain rfl := List.mem_singleton.mp hm; exact ⟨hextOk, heh.le⟩,
     by show Addressable (_ * (0 + A.width)); rw [Nat.zero_add]; exact hmw⟩
@@ -341,14 +342,15 @@ theorem openAndAssemble_refines (hA : DomainsAddressable F EF) (h : Refines B) (
 /-- **A refining backend proves what the specification proves**, for inputs of the prover's
 shapes, when the specification's opening point `ζ` lies outside the base field. -/
 theorem proveWith_refines (hA : DomainsAddressable F EF) (h : Refines B) {P : Params} {A : Air F}
-    {logN : Nat} {trace : Array F} (pis : List F) (hin : InputOk EF P A logN trace)
+    {logN : Nat} {t : B.Trace} {trace : Array F} (pis : List F) (ht : h.RT t trace)
+    (hin : InputOk EF P A logN trace)
     (hz : Ext.OutsideBase (outOfDomainPoint EF P A logN trace pis)) :
-    proveWith B P A logN trace pis = prove EF P A logN trace pis := by
+    proveWith B P A logN t pis = prove EF P A logN trace pis := by
   unfold prove proveWith
   dsimp only
   rw [h.transcript, RelM.run_bind, RelM.run_bind]
-  obtain ⟨hR, ht⟩ := commitAndSample_refines h pis hin (specBackend EF).transcript
-  rw [ht]
+  obtain ⟨hR, he⟩ := commitAndSample_refines h pis ht hin (specBackend EF).transcript
+  rw [he]
   obtain ⟨hprep, hprepOk⟩ := setupWith_refines h hin
   exact (openAndAssemble_refines hA h P (by have := hin.twoAdic; omega) hprep
     (fun y hy ↦ (hprepOk y hy).1) hR hz _).1

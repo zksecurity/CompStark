@@ -972,11 +972,16 @@ def addScaled [Binomial4 p] (a b : EVec p) (x : EF) : EVec p := a.add (b.smul x)
 variable [Mont32BaseField p] [Binomial4 p] [Poseidon2Field (FastField p)] [PackedPoseidon2 p]
     [PackedCosetLde p]
 
-/-- The fast backend. -/
+/-- The fast backend. A trace is packed words in chunks of consecutive rows. -/
 def backend : Backend F EF 24 where
   transcript := transcript
+  Trace := Array ByteArray
   M := PMat
   C := Commit
+  ldeTrace logH bits shift w t :=
+    ldeWordsWith [] logH bits shift w (CompPoly.CPolynomial.NTTFast.Packed.Native.joinRows t)
+  traceValues t :=
+    CompPoly.PackedRepr.decode (CompPoly.CPolynomial.NTTFast.Packed.Native.joinRows t)
   lde := lde
   commit := commit p
   root := Commit.root
@@ -1004,6 +1009,8 @@ def backendFor (logBlowup : Nat) (shapes : List (Nat × Nat)) : Backend F EF 24 
   let tables := shapes.map fun (n, c) ↦ (n, c, quotientTables n c)
   let plans := shapes.flatMap fun (n, c) ↦ ldePlans n logBlowup c
   { backend with
+    ldeTrace := fun logH bits shift w t ↦ ldeWordsWith plans logH bits shift w
+      (CompPoly.CPolynomial.NTTFast.Packed.Native.joinRows t)
     lde := ldeWith plans
     permutation := permutationLdeWith plans
     quotient := fun A pis db lc ext prep alpha ↦

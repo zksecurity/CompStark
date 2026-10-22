@@ -79,13 +79,18 @@ theorem shapeOk_le {a : Array EF} (h : ShapeOk (F := F) a) : a.size ≤ 2 ^ twoA
 variable [Poseidon2Field F] [Challenge F EF]
 
 /-- The backend `B` computes the specification's functions on the inputs the prover gives them,
-through relations `RM`, `RC`, `RV` between its matrices, commitments and vectors and the
-specification's. -/
+through relations `RT`, `RM`, `RC`, `RV` between its traces, matrices, commitments and vectors and
+the specification's. -/
 structure Refines (B : Backend F EF 24) where
+  RT : B.Trace → Array F → Prop
   RM : B.M → (specBackend EF).M → Prop
   RC : B.C → (specBackend EF).C → Prop
   RV : B.V → (specBackend EF).V → Prop
   transcript : B.transcript = (specBackend EF).transcript
+  ldeTrace : ∀ logH bits shift w {t m}, RT t m → m.size = 2 ^ logH * w →
+    logH + bits ≤ twoAdicity F → Addressable (2 ^ (logH + bits) * w) →
+    RM (B.ldeTrace logH bits shift w t) ((specBackend EF).lde logH bits shift w m)
+  traceValues : ∀ {t m}, RT t m → B.traceValues t = m
   lde : ∀ logH bits shift w m, m.size = 2 ^ logH * w → logH + bits ≤ twoAdicity F →
     Addressable (2 ^ (logH + bits) * w) →
     RM (B.lde logH bits shift w m) ((specBackend EF).lde logH bits shift w m)
@@ -127,6 +132,13 @@ structure Refines (B : Backend F EF 24) where
     RV (B.addScaled v w x) ((specBackend EF).addScaled a b x)
   leaves : ∀ k {v a}, RV v a → a.size ≤ 2 ^ twoAdicity F → RM (B.leaves k v)
       ((specBackend EF).leaves k a)
+
+/-- Related traces have the specification's values. -/
+theorem Refines.map_traceValues {B : Backend F EF 24} (h : Refines B) {ts : List B.Trace}
+    {ms : List (Array F)} (hts : List.Forall₂ h.RT ts ms) : ts.map B.traceValues = ms := by
+  induction hts with
+  | nil => rfl
+  | cons hr _ ih => rw [List.map_cons, h.traceValues hr, ih]
 
 theorem forall₂_map_eq {α β γ : Type} {R : α → β → Prop} {f : α → γ} {g : β → γ}
     (hfg : ∀ a b, R a b → f a = g b) : ∀ {xs ys}, List.Forall₂ R xs ys → xs.map f = ys.map g

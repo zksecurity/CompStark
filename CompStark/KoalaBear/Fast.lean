@@ -37,31 +37,35 @@ theorem domainsAddressable : DomainsAddressable F EF := by
   have := USize.le_size
   omega
 
-/-- **The fast prover over KoalaBear is correct**: for an input of the shapes the prover supports
-(`InputOk`), it produces the specification's proof, unless the out-of-domain point `ζ` lands in
-the base field (probability about `2 ^ -93`). -/
-theorem prove_fast {params : Params} {air : Air F} {logN : Nat} {trace : Array F}
-    (publicValues : List F) (input : InputOk EF params air logN trace)
+/-- **The fast prover over KoalaBear is correct**: for a trace given as chunks of packed rows
+(`Stark.Fast.RT`) of the shapes the prover supports (`InputOk`), it produces the specification's
+proof, unless the out-of-domain point `ζ` lands in the base field (probability about
+`2 ^ -93`). -/
+theorem prove_fast {params : Params} {air : Air F} {logN : Nat} {words : Array ByteArray}
+    {trace : Array F} (publicValues : List F) (encoded : Stark.Fast.RT words trace)
+    (input : InputOk EF params air logN trace)
     (outOfDomain : Ext.OutsideBase (outOfDomainPoint EF params air logN trace publicValues)) :
     proveWith (backendFor params.logBlowup [(logN, air.logQuotientChunks logN)]) params air logN
-        trace publicValues =
+        words publicValues =
       prove EF params air logN trace publicValues :=
-  Stark.Fast.prove_fast (by rw [twoAdicity_eq]; decide) domainsAddressable publicValues input
-    outOfDomain
+  Stark.Fast.prove_fast (by rw [twoAdicity_eq]; decide) domainsAddressable publicValues encoded
+    input outOfDomain
 
-/-- **The fast batch prover over KoalaBear is correct**: for a batch of the shapes the prover
-supports (`Batch.InputOk`) with a list of public values per instance, it produces the
-specification's proof, unless the out-of-domain point `ζ` lands in the base field. -/
+/-- **The fast batch prover over KoalaBear is correct**: for traces given as chunks of packed rows
+of a batch of the shapes the prover supports (`Batch.InputOk`) with a list of public values per
+instance, it produces the specification's proof, unless the out-of-domain point `ζ` lands in the
+base field. -/
 theorem proveBatch_fast {params : Params} {instances : List (Batch.Instance F)}
-    {traces : List (Array F)} {publicValues : List (List F)}
+    {words : List (Array ByteArray)} {traces : List (Array F)} {publicValues : List (List F)}
+    (encoded : List.Forall₂ Stark.Fast.RT words traces)
     (input : Batch.InputOk EF params instances traces)
     (publicValuesLength : publicValues.length = instances.length)
     (outOfDomain :
       Ext.OutsideBase (Batch.batchOutOfDomainPoint EF params instances traces publicValues)) :
     Batch.proveBatchWith (backendFor params.logBlowup (Batch.shapes instances)) params instances
-        traces publicValues =
+        words publicValues =
       Batch.proveBatch EF params instances traces publicValues :=
-  Stark.Fast.proveBatch_fast (by rw [twoAdicity_eq]; decide) domainsAddressable input
+  Stark.Fast.proveBatch_fast (by rw [twoAdicity_eq]; decide) domainsAddressable encoded input
     publicValuesLength outOfDomain
 
 end CompStark.KoalaBear

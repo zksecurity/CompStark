@@ -75,7 +75,8 @@ def bChs : List (List EF) :=
 
 /-- The permutation traces and terminals. -/
 def bPerms : List (Option (Mat F × EF)) :=
-  permutationsWith (specBackend EF) P Is ts ps (bChs EF P Is ts ps)
+  permutationsWith (specBackend EF) P Is (ts.map (specBackend EF).traceValues) ps
+    (bChs EF P Is ts ps)
 
 /-- The permutation traces' extensions and commitment. -/
 def bPermCP : List (Option (Mat F)) × Option (Committed F) :=
@@ -276,10 +277,14 @@ theorem terminals_permutationsWith (chs : List (List EF)) :
 theorem length_bChs : (bChs EF P Is ts ps).length = Is.length := by
   rw [bChs, length_challengeLayout, List.length_map]
 
+theorem bPerms_eq :
+    bPerms EF P Is ts ps = permutationsWith (specBackend EF) P Is ts ps (bChs EF P Is ts ps) :=
+  congrArg (permutationsWith (specBackend EF) P Is · ps _) (List.map_id ts)
+
 theorem length_bPerms (hts : ts.length = Is.length) (hps : ps.length = Is.length) :
     (bPerms EF P Is ts ps).length = Is.length := by
-  rw [bPerms, permutationsWith, List.length_map, List.length_zip, List.length_zip, List.length_zip,
-    hts, hps, length_bChs]
+  rw [bPerms_eq, permutationsWith, List.length_map, List.length_zip, List.length_zip,
+    List.length_zip, hts, hps, length_bChs]
   simp only [Nat.min_self]
 
 theorem getElem_bPerms (hts : ts.length = Is.length) (hps : ps.length = Is.length) (i : Nat)
@@ -288,7 +293,7 @@ theorem getElem_bPerms (hts : ts.length = Is.length) (hps : ps.length = Is.lengt
       if Is[i].lookups.isEmpty then none else some (permutationLdeOf P.logBlowup Is[i].air
         Is[i].lookups Is[i].logN (ts[i]'(by rw [hts]; exact hi)) (ps[i]'(by rw [hps]; exact hi))
         ((bChs EF P Is ts ps)[i]'(by rw [length_bChs]; exact hi))) := by
-  simp only [bPerms, permutationsWith, List.getElem_map, List.getElem_zip]
+  simp only [bPerms_eq, permutationsWith, List.getElem_map, List.getElem_zip]
 
 theorem length_bPermExts (hts : ts.length = Is.length) (hps : ps.length = Is.length) :
     (bPermCP EF P Is ts ps).1.length = Is.length := by
@@ -1514,7 +1519,7 @@ theorem verifyBatch_proveBatch_of (EF : Type) [Challenge F EF] (P : Params)
   have hlk := lookupShapeOk_honest EF P Is ts ps hts hps hwidths hbound
   have hterm : (((proveBatch EF P Is ts ps).lookupTerminals.toList.filterMap id).foldl (· + ·) 0
       == 0) = true := by
-    rw [hp, List.toList_toArray, bTerms, bPerms, bChs, terminals_permutationsWith]
+    rw [hp, List.toList_toArray, bTerms, bPerms_eq, bChs, terminals_permutationsWith]
     exact beq_iff_eq.mpr (terminals_sum_eq_zero Is ts ps hts hps hbal _ _)
   rw [verifyBatch_eq]
   simp only [hcount, hdb, hqd, hper, hpv, hshape, hprepOk, hlk, hood, ↓reduceIte]

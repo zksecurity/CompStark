@@ -41,10 +41,20 @@ def backendFor_refines (hζ : 2 ≤ twoAdicity F) (hA : DomainsAddressable F EF)
     unfold DomainsAddressable Addressable at hA
     rw [Mont32.d_ext4] at hA
     omega
-  { RM := RM
+  { RT := RT
+    RM := RM
     RC := RC
     RV := RV
     transcript := transcript_eq
+    ldeTrace := fun logH bits shift w t m ht hm hb ha ↦ by
+      change RM (ldeWordsWith _ logH bits shift w _) _
+      rw [ht]
+      exact ldeWordsWith_rel _ (fun e he ↦ by
+        obtain ⟨⟨n, c⟩, -, he⟩ := List.mem_flatMap.mp he
+        exact ldePlans_valid n logBlowup c e he) logH bits shift w m hm hb ha
+    traceValues := fun ht ↦ by
+      change CompPoly.PackedRepr.decode _ = _
+      rw [ht, CompPoly.PackedRepr.decode_encode]
     lde := ldeWith_rel _ fun e he ↦ by
       obtain ⟨⟨n, c⟩, -, he⟩ := List.mem_flatMap.mp he
       exact ldePlans_valid n logBlowup c e he
@@ -96,27 +106,28 @@ def backendFor_refines (hζ : 2 ≤ twoAdicity F) (hA : DomainsAddressable F EF)
 it produces the specification's proof, unless the out-of-domain point `ζ` lands in the base field,
 where both provers divide by zero and compute different garbage. -/
 theorem prove_fast (hζ : 2 ≤ twoAdicity F) (hA : DomainsAddressable F EF) {params : Params}
-    {air : Air F} {logN : Nat} {trace : Array F} (publicValues : List F)
-    (input : InputOk EF params air logN trace)
+    {air : Air F} {logN : Nat} {words : Array ByteArray} {trace : Array F}
+    (publicValues : List F) (encoded : RT words trace) (input : InputOk EF params air logN trace)
     (outOfDomain : Ext.OutsideBase (outOfDomainPoint EF params air logN trace publicValues)) :
     proveWith (backendFor params.logBlowup [(logN, air.logQuotientChunks logN)]) params air logN
-        trace publicValues =
+        words publicValues =
       prove EF params air logN trace publicValues :=
-  proveWith_refines hA (backendFor_refines hζ hA _ _) publicValues input outOfDomain
+  proveWith_refines hA (backendFor_refines hζ hA _ _) publicValues encoded input outOfDomain
 
 /-- **The fast batch prover is correct.** For a batch of the shapes the prover supports
 (`Batch.InputOk`) with a list of public values per instance, it produces the specification's
 proof, unless the out-of-domain point `ζ` lands in the base field. -/
 theorem proveBatch_fast (hζ : 2 ≤ twoAdicity F) (hA : DomainsAddressable F EF) {params : Params}
-    {instances : List (Batch.Instance F)} {traces : List (Array F)} {publicValues : List (List F)}
-    (input : Batch.InputOk EF params instances traces)
+    {instances : List (Batch.Instance F)} {words : List (Array ByteArray)}
+    {traces : List (Array F)} {publicValues : List (List F)}
+    (encoded : List.Forall₂ RT words traces) (input : Batch.InputOk EF params instances traces)
     (publicValuesLength : publicValues.length = instances.length)
     (outOfDomain :
       Ext.OutsideBase (Batch.batchOutOfDomainPoint EF params instances traces publicValues)) :
     Batch.proveBatchWith (backendFor params.logBlowup (Batch.shapes instances)) params instances
-        traces publicValues =
+        words publicValues =
       Batch.proveBatch EF params instances traces publicValues :=
-  Batch.proveBatchWith_refines hA (backendFor_refines hζ hA _ _) input publicValuesLength
+  Batch.proveBatchWith_refines hA (backendFor_refines hζ hA _ _) encoded input publicValuesLength
     outOfDomain
 
 end CompStark.Stark.Fast

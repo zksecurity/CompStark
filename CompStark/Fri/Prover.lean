@@ -51,16 +51,22 @@ def ldeRef (logH bits : Nat) (shift : F) (w : Nat) (m : Array F) : Mat F :=
     coeffs.toArray.map fun c ↦ c.foldr (fun a acc ↦ acc * y + a) 0
   Mat.ofValues w (2 ^ logN) rows.flatten
 
-/-- The kernels the prover runs, on the backend's own matrices `M`, commitments `C` and vectors
-of extension elements `V`: the transcript, low-degree extension, commitments with their roots,
+/-- The kernels the prover runs, on the backend's own traces `Trace`, matrices `M`, commitments
+`C` and vectors of extension elements `V`: the transcript, low-degree extension of traces and of
+matrices of values, a trace's values, commitments with their roots,
 openings and heights, the quotient values from the extensions of the trace and the preprocessed
 trace, if any, the values of a matrix's columns at points, and the FRI inputs and folds. Every
 backend computes the same functions (`Refines`); `spec` runs the specifications. -/
 structure Backend (F EF : Type) (width : Nat) where
   transcript : Transcript F width
+  Trace : Type
   M : Type
   C : Type
   V : Type
+  /-- The extension of a trace, as `lde` of its values. -/
+  ldeTrace : Nat → Nat → F → Nat → Trace → M
+  /-- A trace's values, row-major. -/
+  traceValues : Trace → Array F
   lde : Nat → Nat → F → Nat → Array F → M
   commit : List M → C
   root : C → Digest F
@@ -388,9 +394,12 @@ def reduce (alpha : EF) (items : List (Mat F × List (EF × Array EF))) : List (
 def Backend.spec (EF : Type) [Challenge F EF] (t : Transcript F width) (hash : List F → Digest F)
     (compress : Digest F → Digest F → Digest F) : Backend F EF width where
   transcript := t
+  Trace := Array F
   M := Mat F
   C := Committed F
   V := Array EF
+  ldeTrace := ldeRef
+  traceValues := id
   lde := ldeRef
   commit := Committed.ofMats hash compress
   root := Committed.root
