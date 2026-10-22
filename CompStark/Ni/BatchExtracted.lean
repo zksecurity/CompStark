@@ -165,7 +165,8 @@ theorem batchSeedOf_eq (hnl : S.NoLookups)
 theorem mainRoot_eq (hnl : S.NoLookups)
     (hprep : common.preprocessed.isSome = S.instances.any (0 < ·.air.preprocessedWidth)) :
     digestAt ((inputsB S common pis proof).getD 0 []) (mainOffsetB S) = proof.mainCommit := by
-  rw [inputsB_getD_zero, List.append_assoc _ _ (coeffs _), List.append_assoc _ _ (permDigest _ ++ _),
+  rw [inputsB_getD_zero, List.append_assoc _ _ (coeffs _),
+    List.append_assoc _ _ (permDigest _ ++ _),
     List.append_assoc _ pis.flatten, batchSeedOf_eq S common hnl hprep]
   have hlen : mainOffsetB S = (batchSeedS S ++
       coeffs (S.instances.map fun I ↦ (Ext.ofBase (I.logN : F) : EF))).length := by
@@ -185,7 +186,8 @@ theorem openings_eqB (hnl : S.NoLookups) (hsize : proof.opened.size = S.k)
     (hperm : proof.permutationCommit = none) :
     openingsAtB S (((inputsB S common pis proof).getD 2 []).drop (pcsSeedB S).length) =
       fun i ↦ openingsOf (S.instanceSetup i) (proof.opened.toList.getD i noOpenings) := by
-  rw [inputsB_getD_two, claimCounts_batchRounds_eq S hnl common proof hsize hshape hprep hperm, ← pcsSeedB,
+  rw [inputsB_getD_two, claimCounts_batchRounds_eq S hnl common proof hsize hshape hprep hperm,
+    ← pcsSeedB,
     List.append_assoc, List.drop_left]
   funext i
   exact openingsAtB_coeffs S hnl common proof hsize hshape hprep hperm 0 _ i
@@ -224,7 +226,8 @@ theorem finalPoly_eqB (hnl : S.NoLookups)
     finalPolyAt S.domainSetup ((inputsB S common pis proof).getD (3 + (friAritiesB S).length) []) =
       proof.fri.finalPoly := by
   have hz := length_zip_commitsB S (idealOf answer) common proof pis hnl hok
-  obtain ⟨-, -, -, -, -, hfp, -⟩ := shape_of_verifyBatchWith S (idealOf answer) common proof pis hnl hok
+  obtain ⟨-, -, -, -, -, hfp,
+    -⟩ := shape_of_verifyBatchWith S (idealOf answer) common proof pis hnl hok
   have hlast := inputsB_getD_last S common pis proof
   rw [hz] at hlast
   have hseed : seedAt (friSeedB S) (friAritiesB S).length = [] := by

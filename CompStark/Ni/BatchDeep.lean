@@ -56,7 +56,8 @@ theorem hasLookups_instances (S : Iop.Batch.Setup EF) (h : S.NoLookups) :
   rw [CompStark.Batch.hasLookups, List.any_eq_false]
   intro I hI
   obtain ⟨i, rfl⟩ := List.mem_ofFn.mp hI
-  simp only [lookups_eq_nil ⟨S.air i, S.logN i⟩ (h i), List.isEmpty_nil, Bool.not_true, Bool.false_eq_true,
+  simp only [lookups_eq_nil ⟨S.air i, S.logN i⟩ (h i), List.isEmpty_nil, Bool.not_true,
+    Bool.false_eq_true,
     not_false_eq_true]
 
 end NoLookups

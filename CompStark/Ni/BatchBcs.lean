@@ -62,7 +62,8 @@ theorem mem_matHeights (hsize : proof.opened.size = S.k) (hperm : proof.permutat
     exact ⟨i, hi.symm⟩
   constructor
   · intro ha
-    simp only [matHeights, batchRounds_cases (hperm := hperm), List.mem_map, List.mem_flatMap, List.mem_append,
+    simp only [matHeights, batchRounds_cases (hperm := hperm), List.mem_map, List.mem_flatMap,
+      List.mem_append,
       List.mem_cons, List.not_mem_nil, or_false] at ha
     obtain ⟨d, ⟨r, hr, hd⟩, rfl⟩ := ha
     rcases hr with (rfl | rfl) | hr
@@ -81,7 +82,8 @@ theorem mem_matHeights (hsize : proof.opened.size = S.k) (hperm : proof.permutat
         exact ⟨i, by rw [hi]⟩
       · exact absurd hr List.not_mem_nil
   · rintro ⟨i, rfl⟩
-    simp only [matHeights, batchRounds_cases (hperm := hperm), List.mem_map, List.mem_flatMap, List.mem_append,
+    simp only [matHeights, batchRounds_cases (hperm := hperm), List.mem_map, List.mem_flatMap,
+      List.mem_append,
       List.mem_cons, List.not_mem_nil, or_false]
     refine ⟨((⟨1, S.logN i⟩ : Domain F), traceOpenings (S.air i)
       (proof.opened.toList.getD i noOpenings) zeta (zeta * Ext.ofBase (twoAdicGen (S.logN i)))),
@@ -105,7 +107,8 @@ theorem descHeights_batchRounds (hsize : proof.opened.size = S.k)
   have hfit := fits_friHeights S
   refine List.Pairwise.eq_of_mem_iff (r := (· > ·)) (pairwise_descHeights _)
     (List.pairwise_cons.mpr ⟨fun m hm ↦ (hfit.2 m hm).2, hfit.1⟩) fun a ↦ ?_
-  rw [mem_descHeights, mem_matHeights S common proof zeta hsize hperm, List.mem_cons, mem_friHeights]
+  rw [mem_descHeights, mem_matHeights S common proof zeta hsize hperm, List.mem_cons,
+    mem_friHeights]
   constructor
   · rintro ⟨i, rfl⟩
     by_cases h : S.logN i + S.params.logBlowup = S.logTop

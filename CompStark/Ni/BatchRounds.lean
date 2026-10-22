@@ -480,7 +480,8 @@ theorem claimCounts_batchRounds_eq (hnl : S.NoLookups) (common : CompStark.Batch
     obtain ⟨ch, hch, rfl⟩ := List.mem_map.mp hl
     simp only [Function.comp_apply, List.map_cons, List.map_nil, Array.length_toList,
       (hsh i).2.2.2.1 ch (Array.mem_toList_iff.mp hch)]
-  rw [batchRounds_cases (hperm := hperm), claimCounts, List.map_append, List.map_cons, List.map_cons,
+  rw [batchRounds_cases (hperm := hperm), claimCounts, List.map_append, List.map_cons,
+    List.map_cons,
     List.map_nil]
   dsimp only
   rw [hM, hQ, countsB, hasPreprocessed_eq, ← hprep]
