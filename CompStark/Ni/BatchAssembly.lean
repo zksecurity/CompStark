@@ -12,7 +12,7 @@ public import CompStark.Sound.BalancedInt
 
 As for the STARK (`Ni/Assembly.lean`): the game of `Iop.Batch.run` (`gameB`) makes at most
 `Q + verifierQueries` oracle calls, the setup's, the prover's and the verifier's. A fresh answer
-is bad if its digest clashes (`prob_clash_le`: `4 q / |F|^8`) or it makes its batch round bad
+is bad if its digest clashes (`prob_clash_le`: `3 q / |F|^8`) or it makes its batch round bad
 (`prob_roundBadB_le`: the largest batch round error at the proximity loss), and an accepted proof
 the extractor cannot open forces such a query (`exists_badAtB`). The bound holds at every loss,
 so at the infimum: `q · roundError + hashError F q`.
@@ -136,29 +136,29 @@ theorem prob_le_of_unopenedB (hδ' : (δ' : ℝ) < 1 - S.rate) (Q : Nat)
   set n := Q + S.verifierQueries
   have hn0 : 0 < n := by
     unfold n Iop.Batch.Setup.verifierQueries Iop.Batch.Setup.verifierCalls; omega
-  by_cases hbig : Fintype.card (Digest F) ≤ 4 * n
+  by_cases hbig : Fintype.card (Digest F) ≤ 3 * n
   · refine (prEvent_le_one _).trans (le_add_left ?_)
     rw [hashError_eq]
     have hcard : (Fintype.card (Digest F) : ℝ≥0∞) ≠ 0 := by
       simp only [ne_eq, Nat.cast_eq_zero, Fintype.card_ne_zero, not_false_eq_true]
-    calc (1 : ℝ≥0∞) ≤ ((4 * n : Nat) : ℝ≥0∞) * (Fintype.card (Digest F) : ℝ≥0∞)⁻¹ := by
+    calc (1 : ℝ≥0∞) ≤ ((3 * n : Nat) : ℝ≥0∞) * (Fintype.card (Digest F) : ℝ≥0∞)⁻¹ := by
           rw [← div_eq_mul_inv, ENNReal.le_div_iff_mul_le (Or.inl hcard)
             (Or.inl (ENNReal.natCast_ne_top _)), one_mul]
           exact_mod_cast hbig
       _ ≤ _ := le_mul_of_one_le_left (by positivity)
         (by exact_mod_cast Nat.one_le_iff_ne_zero.mpr hn0.ne')
-  have hsmall : 4 * n < Fintype.card (Digest F) := by omega
+  have hsmall : 3 * n < Fintype.card (Digest F) := by omega
   have hloss : ∀ loss, Pr{let result ← Iop.Batch.run S publicValues prover}[E result] ≤
       n * roundBoundB S δ δ' loss + hashError F n := by
     intro loss
     rw [run_eqB]
     refine (prEvent_exists_fresh_bad_le (gameB S publicValues prover) n
       (isTotalQueryBound_gameB S publicValues prover Q hQ) E
-      (fun pre t u ↦ Clash (boundDigestB S) pre t u ∨
+      (fun pre t u ↦ Clash (boundDigestB S (initAnswers pre)) pre t u ∨
         RoundBadB S publicValues δ δ' loss pre t u)
-      (((4 * n : Nat) : ℝ≥0∞) * (Fintype.card (Digest F) : ℝ≥0∞)⁻¹ + roundBoundB S δ δ' loss)
+      (((3 * n : Nat) : ℝ≥0∞) * (Fintype.card (Digest F) : ℝ≥0∞)⁻¹ + roundBoundB S δ δ' loss)
       (fun pre t hlen _ ↦ (prEvent_or_le _ _ _).trans
-        (add_le_add (prob_clash_le (boundDigestB S) _ n pre hlen t)
+        (add_le_add (prob_clash_le (boundDigestB S (initAnswers pre)) _ n pre hlen t)
           (prob_roundBadB_le S publicValues δ δ' loss pre t)))
       fun answer hev ↦ ?_).trans ?_
     · replace hev := hE answer hev

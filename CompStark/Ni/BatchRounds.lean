@@ -677,12 +677,22 @@ end Static
 section Prefix
 variable [BaseField F] [Challenge F EF] (S : Iop.Batch.Setup EF)
 
-/-- The digest a duplex call's input binds besides its first: the main commitment after the
-batch's domain separator and the degree bits in the first round (initial capacity), and FRI's
-first commitment after its domain separator otherwise. The other commitments, the permutation and
-quotient commitments and FRI's later ones, come first in their rounds' inputs (`keyDigests`). -/
-noncomputable def boundDigestB (cap : Digest F) (input : List F) : Digest F :=
-  digestAt input (if cap = initCap then mainOffsetB S else (friSeedB S).length)
+/-- The digest a duplex call's input binds: the main commitment after the batch's domain separator
+and the degree bits in the first round (initial capacity); the first digest in the second round,
+whose capacity is an answer to a call on the initial capacity (in `firsts`), as the permutation
+commitment opens it with lookups; FRI's first commitment after its domain separator in an input of
+FRI's first fold round's length otherwise; and the first digest, as the quotient commitment and
+FRI's later ones open their rounds, otherwise. The second round has to be told apart by its
+capacity: the permutation commitment and the terminals may have FRI's first fold round's length. -/
+noncomputable def boundDigestB (firsts : List (Digest F)) (cap : Digest F) (input : List F) :
+    Digest F :=
+  digestAt input (if cap = initCap then mainOffsetB S else if cap ∈ firsts then 0
+    else if input.length = (friSeedB S).length + 8 + challengeOffset S.params.commitPowBits
+      then (friSeedB S).length else 0)
+
+theorem boundDigestB_congr (r r' : List (Digest F)) (cap : Digest F) (input : List F)
+    (h : cap ∈ r ↔ cap ∈ r') : boundDigestB S r cap input = boundDigestB S r' cap input := by
+  simp only [boundDigestB, h]
 
 /-- FRI's folding challenges in ArkLib's coordinate, from the answers `sample` of the fold rounds:
 `s_j β_j`, `s_j` the shift of word `j`'s domain; none past the last fold. -/

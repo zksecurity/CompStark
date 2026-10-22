@@ -95,7 +95,7 @@ the largest round error (`roundError`, `CompStark/NonInteractiveError.lean`, ter
 Every round error is at most `2 ^ (-100)` (`wideSp1_roundError_le`). `123` queries do not reach it
 at any radius: `(5/8) ^ 123 · 2 ^ (-16)` alone is about `2 ^ (-99.40)`. By `knowledgeSoundness_ro`,
 a prover making `Q` oracle calls gets a proof accepted that the extractor cannot open with
-probability at most `q · 2 ^ (-100) + 4 q² / |𝔽| ^ 8`, `q = Q + verifierQueries`,
+probability at most `q · 2 ^ (-100) + 3 q² / |𝔽| ^ 8`, `q = Q + verifierQueries`,
 `verifierQueries = 15 + 5 · 21 + 124 · 553 = 68692` (`wideSp1Setup_verifierQueries`,
 `wideSp1_knowledgeSoundness_ro`).
 
@@ -119,7 +119,7 @@ Every round error is at most `2 ^ (-117)` (`wideGrind_roundError_le`); the queri
 constraint folding, without grinding, keeps any configuration above `2 ^ (-117.98)`. `143` queries
 do not reach `2 ^ (-117)` at any radius: `(5/8) ^ 143 · powFraction 20` alone is about
 `2 ^ (-116.96)`. By `knowledgeSoundness_ro`, a prover making `Q` oracle calls gets a proof accepted
-that the extractor cannot open with probability at most `q · 2 ^ (-117) + 4 q² / |𝔽| ^ 8`,
+that the extractor cannot open with probability at most `q · 2 ^ (-117) + 3 q² / |𝔽| ^ 8`,
 `q = Q + verifierQueries`, `verifierQueries = 15 + 5 · 21 + 144 · 553 = 79752`
 (`wideGrindSetup_verifierQueries`, `wideGrind_knowledgeSoundness_ro`).
 
@@ -139,7 +139,7 @@ model, with FRI at `δ = 3/8 - 2 ^ (-18)`, the extractor at `δ' = 3/8 - 2 ^ (-2
 Every round error is at most `2 ^ (-128)` (`wide5_roundError_le`). `159` queries do not reach it at
 any radius: `(5/8) ^ 159 · powFraction 20` alone is about `2 ^ (-127.81)`.
 By `knowledgeSoundness_ro`, a prover making `Q` oracle calls gets a proof accepted that the
-extractor cannot open with probability at most `q · 2 ^ (-128) + 4 q² / |𝔽| ^ 8`,
+extractor cannot open with probability at most `q · 2 ^ (-128) + 3 q² / |𝔽| ^ 8`,
 `q = Q + verifierQueries`, `verifierQueries = 18 + 6 · 21 + 160 · 553 = 88624`
 (`wide5Setup_verifierQueries`, `wide5_knowledgeSoundness_ro`).
 
