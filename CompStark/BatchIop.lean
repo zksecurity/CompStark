@@ -95,18 +95,6 @@ structure Setup (EF : Type) [Challenge F EF] (withLookups : Bool := true) where
   /-- The instances' lookups are valid together (`BusesValid`). -/
   buses : BusesValid (List.ofFn fun i ↦ instanceLookups withLookups (air i) (logN i))
 
-/-- Instances without lookups are valid together. -/
-theorem BusesValid.of_nil {ls : List (List (Stark.Lookup F))} (h : ∀ L ∈ ls, L = []) :
-    BusesValid ls := by
-  have hb : busLookups ls = [] := List.flatMap_eq_nil_iff.mpr fun ⟨L, ids⟩ hx ↦ by
-    rw [h L (List.of_mem_zip hx).1]
-    exact List.zip_nil_right
-  refine ⟨fun l hl ↦ ?_, fun x hx ↦ ?_, fun x hx ↦ ?_⟩
-  · obtain ⟨L, hL, hl⟩ := List.mem_flatten.mp hl
-    rw [h L hL] at hl
-    exact absurd hl List.not_mem_nil
-  all_goals rw [hb] at hx; exact absurd hx List.not_mem_nil
-
 namespace Setup
 variable {withLookups : Bool} (S : Setup EF withLookups)
 
