@@ -968,8 +968,8 @@ theorem wideBus_identityDegree (T : Setup EF ls) (hls : ls = [wideBusLookup])
     rw [wideBus_logUpConstraints] at hg
     simp only [List.mem_cons, List.not_mem_nil, or_false] at hg
     rcases hg with rfl | rfl | rfl | rfl <;>
-      simp only [fractionPin, foldFractions, denominator, wideBusLookup, rowSum, List.map,
-        List.foldl, List.range, List.range.loop, extMul_eq, extSub_eq, extAdd_eq,
+      simp only [fractionPin, foldFractions, denominator, wideBusLookup, Stark.Lookup.tuples,
+        rowSum, List.map, List.foldl, List.range, List.range.loop, extMul_eq, extSub_eq, extAdd_eq,
         ExtExpr.degBound, Expr.degBound] <;> omega
 
 end WideBusSetup

@@ -6,7 +6,7 @@ module
 
 public import CompStark.Ni.BatchBadQuery
 public import CompStark.Ni.Assembly
-public import CompStark.Sound.BalancedInt
+public import CompStark.Sound.Inclusion
 
 /-! # Knowledge soundness of the batch STARK in the random-oracle model, assembled
 
@@ -205,32 +205,33 @@ theorem heightBounded_of_ok (answer : (q : Query F) → Answer S.streamLen q)
   have h := hlk.1.1.1.2
   rwa [Iop.Batch.Setup.instances, List.map_ofFn] at h
 
-/-- The event of knowledge soundness over the integers: an accepted proof for the instances'
-trace lengths, no tuple of traces close to the committed ones satisfying the batch over the
-integers. -/
-def UnopenedIntB
+/-- The event of knowledge soundness with lookup inclusion: an accepted proof for the instances'
+trace lengths, no tuple of traces close to the committed ones satisfying the batch with lookup
+inclusion. -/
+def UnopenedInclusionB
     (result : CompStark.Batch.BatchProof F EF × QueryLog (spec F S.streamLen) ×
       Except String Unit) : Prop :=
   result.2.2 = .ok () ∧ result.1.degreeBits.toList = List.ofFn S.logN ∧
     ∀ traces ∈ Iop.Batch.closeTraces S δ' (Iop.Batch.committedTraces S result.2.1 result.1),
-      ¬ S.SatisfiedInt traces publicValues
+      ¬ S.SatisfiedWithInclusion traces publicValues
 
-/-- **Knowledge soundness of the batch STARK in the random-oracle model, over the integers**, with
-the event spelled out: an accepting verifier checked the multiplicity bound, so with AIRs bounding
-their multiplicities, traces satisfying the batch satisfy it over the integers. -/
-theorem prob_unopenedIntB_le (hδ' : (δ' : ℝ) < 1 - S.rate) (Q : Nat)
+/-- **Knowledge soundness of the batch STARK in the random-oracle model, with lookup inclusion**,
+with the event spelled out: an accepting verifier checked the multiplicity bound, so with AIRs
+bounding their queries' multiplicities, traces satisfying the batch satisfy it with lookup
+inclusion. -/
+theorem prob_unopenedInclusionB_le (hδ' : (δ' : ℝ) < 1 - S.rate) (Q : Nat)
     (prover : Iop.Batch.NIProver S) (hQ : prover.IsTotalQueryBound Q)
-    (hcounts : ∀ traces, (∀ i, (S.air i).Satisfied (S.logN i) (traces i) (publicValues i)) →
-      S.CountsBounded traces publicValues) :
-    Pr{let result ← Iop.Batch.run S publicValues prover}[UnopenedIntB S publicValues δ' result] ≤
+    (hcounts : ∀ i, (S.air i).CountsBounded (S.logN i)) :
+    Pr{let result ← Iop.Batch.run S publicValues prover}[
+      UnopenedInclusionB S publicValues δ' result] ≤
       (Q + S.verifierQueries) * Iop.Batch.roundError S δ δ' +
         hashError F (Q + S.verifierQueries) := by
   refine prob_le_of_unopenedB S publicValues δ δ' hδ' Q prover hQ _ fun answer h ↦ ?_
   obtain ⟨hok, hdb, hfail⟩ := h
   refine ⟨hok, hdb, fun traces ht hsat ↦ hfail traces ht ?_⟩
   rw [evalWithAnswerFn_gameB] at hok
-  exact Sound.Batch.satisfiedInt_of_satisfied S traces publicValues
-    (heightBounded_of_ok S publicValues answer _ _ hok) (hcounts traces hsat.air) hsat
+  exact Sound.Batch.satisfiedWithInclusion_of_satisfied S traces publicValues
+    (heightBounded_of_ok S publicValues answer _ _ hok) hcounts hsat
 
 end Bound
 

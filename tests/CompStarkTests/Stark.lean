@@ -5,6 +5,7 @@ Released under Apache 2.0 license as described in the file LICENSE.
 import CompStark.Completeness
 import CompStark.Soundness
 import CompStark.Security
+import CompStark.LookupInclusion
 import CompStark.Sound.Rbr
 import CompStark.KoalaBear.Fast
 import CompStark.KoalaBear.Completeness
@@ -119,15 +120,30 @@ Quot.sound] -/
 #guard_msgs in
 #print axioms CompStark.Iop.batchKnowledgeSoundness
 
-/-- info: 'CompStark.Sound.Batch.balanced_int' depends on axioms: [propext, Classical.choice,
-Quot.sound] -/
-#guard_msgs in
-#print axioms CompStark.Sound.Batch.balanced_int
-
-/-- info: 'CompStark.Iop.batchKnowledgeSoundness_int' depends on axioms: [propext,
+/-- info: 'CompStark.Sound.Batch.included_of_balanced' depends on axioms: [propext,
 Classical.choice, Quot.sound] -/
 #guard_msgs in
-#print axioms CompStark.Iop.batchKnowledgeSoundness_int
+#print axioms CompStark.Sound.Batch.included_of_balanced
+
+/-- info: 'CompStark.Iop.batchKnowledgeSoundness_inclusion' depends on axioms: [propext,
+Classical.choice, Quot.sound] -/
+#guard_msgs in
+#print axioms CompStark.Iop.batchKnowledgeSoundness_inclusion
+
+/-- info: 'CompStark.Sound.Batch.countsBounded_of_countsChecked' depends on axioms: [propext,
+Classical.choice, Quot.sound] -/
+#guard_msgs in
+#print axioms CompStark.Sound.Batch.countsBounded_of_countsChecked
+
+/-- info: 'CompStark.Iop.wideBus_countsChecked' depends on axioms: [propext, Classical.choice,
+Quot.sound] -/
+#guard_msgs in
+#print axioms CompStark.Iop.wideBus_countsChecked
+
+/-- info: 'CompStark.Iop.rangeKnowledgeSoundness' depends on axioms: [propext, Classical.choice,
+Quot.sound] -/
+#guard_msgs in
+#print axioms CompStark.Iop.rangeKnowledgeSoundness
 
 /-- info: 'CompStark.Iop.wideBatch_knowledgeError_le' depends on axioms: [propext,
 Classical.choice, Quot.sound] -/

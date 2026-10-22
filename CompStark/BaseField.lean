@@ -8,6 +8,7 @@ public import CompPoly.Data.Classes.CanonicalNat
 public import Mathlib.Algebra.Field.Defs
 public import Mathlib.FieldTheory.Finite.Basic
 public import Mathlib.RingTheory.RootsOfUnity.PrimitiveRoots
+public import Mathlib.Data.ZMod.ValMinAbs
 
 /-! # The base field
 
@@ -25,7 +26,8 @@ the verifier and its analysis use of it, on the executable type itself:
   the next.
 
 Domains of size `2 ^ k` exist for `k ≤ twoAdicity`, so `2 ^ twoAdicity` divides `p - 1`
-(`two_pow_dvd_card_sub_one`).
+(`two_pow_dvd_card_sub_one`). An element stands for an integer of magnitude below `p / 2`
+(`intValue`).
 -/
 
 @[expose] public section
@@ -73,6 +75,11 @@ theorem ringChar_eq_card : ringChar F = Nat.card F := by
   rw [hcard] at h
   rw [hcard, ((Nat.Prime.pow_eq_iff h).mp rfl).2, pow_one]
 
+/-- The integer of magnitude below `p / 2` that `x` stands for, `p = |F|`. -/
+noncomputable def intValue (x : F) : ℤ :=
+  ((ZMod.ringEquiv F (n := ringChar F)
+    (by rw [← Nat.card_eq_fintype_card, ringChar_eq_card])).symm x).valMinAbs
+
 /-- `ω_(n + b) ^ 2 ^ b = ω_n`. -/
 theorem twoAdicGen_pow (n b : ℕ) (h : n + b ≤ twoAdicity F) :
     twoAdicGen (F := F) (n + b) ^ 2 ^ b = twoAdicGen n := by
@@ -98,6 +105,6 @@ theorem two_pow_dvd_card_sub_one_of_le {k : ℕ} (hk : k ≤ twoAdicity F) :
 
 end BaseField
 
-export BaseField (twoAdicity twoAdicGen gen)
+export BaseField (twoAdicity twoAdicGen gen intValue)
 
 end CompStark

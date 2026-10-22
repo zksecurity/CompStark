@@ -29,6 +29,7 @@ How Plonky3's batch STARK (revision `a4982ec`) lays out the lookups of a batch's
 @[expose] public section
 namespace CompStark.Lookup
 open CompStark.Stark
+open scoped List
 
 variable {F : Type}
 
@@ -50,24 +51,29 @@ def _root_.CompStark.Stark.Air.logQuotientChunksWith (A : Air F) (logN : Nat)
   let d := max (max (A.constraintDegree logN) (extDegree A logN ext)) 2 - 1
   Nat.log2 d.nextPowerOfTwo
 
-/-- One bus's lookups packed greedily in order: each joins the open column while the column's
-fraction pin stays within the degree `budget`, adding its count weight; otherwise the column is
-sealed and it opens the next. -/
+/-- The step of `packBus`: the lookup `m` joins the open column `cur` while the column's fraction
+pin stays within the degree `budget`; otherwise the column is sealed and `m` opens the next. -/
+def packStep (budget : Nat) (s : List (Lookup F) × Lookup F) (m : Lookup F) :
+    List (Lookup F) × Lookup F :=
+  let trial : Lookup F := { s.2 with entries := s.2.entries ++ m.entries }
+  if lookupDegree trial ≤ budget then (s.1, trial) else (s.1 ++ [s.2], m)
+
+/-- One bus's lookups packed greedily in order (`packStep`), each packed column holding its
+lookups' tuples and so the sum of their count weights. -/
 def packBus (budget : Nat) : List (Lookup F) → List (Lookup F)
   | [] => []
   | l :: ls =>
-    let (cols, cur) := ls.foldl (fun (cols, cur) m ↦
-      let trial : Lookup F := { cur with tuples := cur.tuples ++ m.tuples }
-      if lookupDegree trial ≤ budget then (cols, { trial with
-        countWeight := cur.countWeight + m.countWeight })
-      else (cols ++ [cur], m)) ([], l)
+    let (cols, cur) := ls.foldl (packStep budget) ([], l)
     cols ++ [cur]
 
+/-- The step of `buses`: the lookup's global bus joins the names unless it is there. -/
+def busesStep (bs : List String) (l : Lookup F) : List String :=
+  match l.bus with
+  | some b => if bs.contains b then bs else bs ++ [b]
+  | none => bs
+
 /-- The global buses of the lookups, in order of first appearance. -/
-def buses (ls : List (Lookup F)) : List String :=
-  ls.foldl (fun bs l ↦ match l.bus with
-    | some b => if bs.contains b then bs else bs ++ [b]
-    | none => bs) []
+def buses (ls : List (Lookup F)) : List String := ls.foldl busesStep []
 
 /-- Plonky3's `pack_same_bus_with_degree`: the local lookups in order, then every bus's global
 lookups packed (`packBus`), the buses in order of first appearance. -/
@@ -75,58 +81,154 @@ def packSameBus (budget : Nat) (ls : List (Lookup F)) : List (Lookup F) :=
   ls.filter (·.bus.isNone) ++
     (buses ls).flatMap fun b ↦ packBus budget (ls.filter (·.bus == some b))
 
-/-- Every tuple of a bus's packed lookups is a tuple of one of its lookups. -/
-theorem packBus_tuples (budget : Nat) (S : List (Lookup F)) :
-    ∀ ms : List (Lookup F), (∀ m ∈ ms, m ∈ S) →
-      ∀ l ∈ packBus budget ms, ∀ x ∈ l.tuples, ∃ m ∈ S, x ∈ m.tuples
-  | [], _ => fun _ hl ↦ nomatch hl
-  | l :: ls, hS => by
-    let Q (r : List (Lookup F) × Lookup F) : Prop :=
-      ∀ c ∈ r.1 ++ [r.2], ∀ x ∈ c.tuples, ∃ m ∈ S, x ∈ m.tuples
-    suffices h : ∀ (ms : List (Lookup F)) (r : List (Lookup F) × Lookup F), (∀ m ∈ ms, m ∈ S) →
-        Q r → Q (ms.foldl (fun (cols, cur) m ↦
-          let trial : Lookup F := { cur with tuples := cur.tuples ++ m.tuples }
-          if lookupDegree trial ≤ budget then (cols, { trial with
-            countWeight := cur.countWeight + m.countWeight })
-          else (cols ++ [cur], m)) r) by
-      exact h ls ([], l) (fun m hm ↦ hS m (List.mem_cons_of_mem _ hm)) (fun c hc x hx ↦ by
-        simp only [List.nil_append, List.mem_singleton] at hc
-        exact ⟨l, hS l List.mem_cons_self, hc ▸ hx⟩)
+/-- Packing a bus keeps its tuples, in order. -/
+theorem flatMap_packBus (budget : Nat) :
+    ∀ ms : List (Lookup F), (packBus budget ms).flatMap (·.entries) = ms.flatMap (·.entries)
+  | [] => rfl
+  | l :: ls => by
+    suffices h : ∀ (ms : List (Lookup F)) (r : List (Lookup F) × Lookup F),
+        ((ms.foldl (packStep budget) r).1 ++ [(ms.foldl (packStep budget) r).2]).flatMap
+          (·.entries) = (r.1 ++ [r.2]).flatMap (·.entries) ++ ms.flatMap (·.entries) by
+      have := h ls ([], l)
+      simp only [packBus, List.nil_append, List.flatMap_cons, List.flatMap_nil,
+        List.append_nil] at this ⊢
+      exact this
     intro ms
     induction ms with
-    | nil => exact fun _ _ hr ↦ hr
+    | nil => exact fun r ↦ by rw [List.flatMap_nil, List.append_nil, List.foldl_nil]
     | cons m ms ih =>
-      intro r hms hr
-      rw [List.foldl_cons]
-      refine ih _ (fun m' hm' ↦ hms m' (List.mem_cons_of_mem _ hm')) ?_
-      have hm := hms m List.mem_cons_self
-      obtain ⟨cols, cur⟩ := r
+      intro r
+      rw [List.foldl_cons, ih, List.flatMap_cons, ← List.append_assoc]
+      congr 1
+      unfold packStep
       dsimp only
       split
-      · intro c hc x hx
-        rcases List.mem_append.mp hc with hc | hc
-        · exact hr c (List.mem_append_left _ hc) x hx
-        · rw [List.mem_singleton] at hc
-          subst hc
-          rcases List.mem_append.mp hx with hx | hx
-          · exact hr cur (List.mem_append_right _ (List.mem_singleton_self _)) x hx
-          · exact ⟨m, hm, hx⟩
-      · intro c hc x hx
-        rcases List.mem_append.mp hc with hc | hc
-        · exact hr c hc x hx
-        · rw [List.mem_singleton] at hc
-          dsimp only at hc
-          subst hc
-          exact ⟨_, hm, hx⟩
+      · simp only [List.flatMap_append, List.flatMap_cons, List.flatMap_nil, List.append_nil,
+          List.append_assoc]
+      · simp only [List.flatMap_append, List.flatMap_cons, List.flatMap_nil, List.append_nil,
+          List.append_assoc]
+
+/-- A flat map over keys without repeats, one of whose lists `f c` gains the prefix `e`, permutes
+`e` before the flat map without it. -/
+theorem perm_flatMap_of_eq_append {α : Type*} (c : String) (e : List α) (f g : String → List α)
+    (hc : f c = e ++ g c) (hne : ∀ b, b ≠ c → f b = g b) :
+    ∀ bs : List String, bs.Nodup → c ∈ bs → bs.flatMap f ~ e ++ bs.flatMap g
+  | [], _, h => absurd h List.not_mem_nil
+  | b :: bs, hnd, h => by
+    rw [List.nodup_cons] at hnd
+    rw [List.flatMap_cons, List.flatMap_cons]
+    by_cases hb : b = c
+    · subst hb
+      have hrest : bs.flatMap f = bs.flatMap g :=
+        List.flatMap_congr fun x hx ↦ hne x fun h ↦ hnd.1 (h ▸ hx)
+      rw [hc, hrest, List.append_assoc]
+    · rw [hne b hb]
+      have hc' : c ∈ bs := (List.mem_cons.mp h).resolve_left (Ne.symm hb)
+      exact ((perm_flatMap_of_eq_append c e f g hc hne bs hnd.2 hc').append_left _).trans
+        (List.perm_append_comm_assoc _ _ _)
+
+/-- Splitting the lookups by bus, over a list of bus names without repeats that holds every
+global bus, permutes their tuples. -/
+theorem perm_flatMap_filter_bus (bs : List String) (hbs : bs.Nodup) :
+    ∀ ls : List (Lookup F), (∀ l ∈ ls, ∀ b, l.bus = some b → b ∈ bs) →
+      (ls.filter (·.bus.isNone)).flatMap (·.entries) ++
+        bs.flatMap (fun b ↦ (ls.filter (·.bus == some b)).flatMap (·.entries)) ~
+      ls.flatMap (·.entries)
+  | [], _ => by
+    simp only [List.filter_nil, List.flatMap_nil, List.nil_append]
+    rw [List.flatMap_eq_nil_iff.mpr fun _ _ ↦ rfl]
+  | l :: ls, h => by
+    have ih := perm_flatMap_filter_bus bs hbs ls fun m hm ↦ h m (List.mem_cons_of_mem _ hm)
+    rw [List.flatMap_cons]
+    cases hl : l.bus with
+    | none =>
+      have hf : ∀ b, (l :: ls).filter (·.bus == some b) = ls.filter (·.bus == some b) := by
+        intro b
+        rw [List.filter_cons_of_neg (by rw [hl]; exact Bool.false_ne_true)]
+      have hp : l.bus.isNone = true := by rw [hl]; rfl
+      simp only [hf]
+      rw [List.filter_cons_of_pos (p := fun x : Lookup F ↦ x.bus.isNone) hp, List.flatMap_cons,
+        List.append_assoc]
+      exact ih.append_left _
+    | some c =>
+      have hc : c ∈ bs := h l List.mem_cons_self c hl
+      rw [List.filter_cons_of_neg (by rw [hl]; exact Bool.false_ne_true)]
+      have hg := perm_flatMap_of_eq_append c l.entries
+        (fun b ↦ ((l :: ls).filter (·.bus == some b)).flatMap (·.entries))
+        (fun b ↦ (ls.filter (·.bus == some b)).flatMap (·.entries))
+        (by
+          rw [List.filter_cons_of_pos (by rw [hl]; exact beq_self_eq_true _), List.flatMap_cons])
+        (fun b hb ↦ by
+          rw [List.filter_cons_of_neg (by
+            rw [hl]; simp only [beq_iff_eq, Option.some.injEq]; exact fun h ↦ hb h.symm)])
+        bs hbs hc
+      exact (hg.append_left _).trans ((List.perm_append_comm_assoc _ _ _).trans (ih.append_left _))
+
+/-- Folding `busesStep` keeps the names without repeats and adds every lookup's bus. -/
+theorem foldl_busesStep : ∀ (ls : List (Lookup F)) (bs : List String), bs.Nodup →
+    (ls.foldl busesStep bs).Nodup ∧ (∀ b ∈ bs, b ∈ ls.foldl busesStep bs) ∧
+      ∀ l ∈ ls, ∀ b, l.bus = some b → b ∈ ls.foldl busesStep bs
+  | [], bs, h => ⟨h, fun _ hb ↦ hb, fun _ hl ↦ absurd hl List.not_mem_nil⟩
+  | l :: ls, bs, h => by
+    rw [List.foldl_cons]
+    have h' : (busesStep bs l).Nodup ∧ (∀ b ∈ bs, b ∈ busesStep bs l) ∧
+        ∀ b, l.bus = some b → b ∈ busesStep bs l := by
+      unfold busesStep
+      cases hl : l.bus with
+      | none => exact ⟨h, fun _ hb ↦ hb, fun _ hb ↦ nomatch hb⟩
+      | some c =>
+        dsimp only
+        split
+        · rename_i hcon
+          refine ⟨h, fun _ hb ↦ hb, fun b hb ↦ ?_⟩
+          rw [Option.some.injEq] at hb
+          subst hb
+          exact List.contains_iff_mem.mp hcon
+        · rename_i hcon
+          refine ⟨List.nodup_append.mpr ⟨h, List.nodup_singleton c, fun a ha b hb ↦ ?_⟩,
+            fun b hb ↦ List.mem_append_left _ hb, fun b hb ↦ ?_⟩
+          · rw [List.mem_singleton] at hb
+            subst hb
+            rintro rfl
+            exact hcon (List.contains_iff_mem.mpr ha)
+          · rw [Option.some.injEq] at hb
+            subst hb
+            exact List.mem_append_right _ (List.mem_singleton_self _)
+    obtain ⟨h1, h2, h3⟩ := foldl_busesStep ls _ h'.1
+    refine ⟨h1, fun b hb ↦ h2 b (h'.2.1 b hb), fun m hm b hb ↦ ?_⟩
+    rcases List.mem_cons.mp hm with rfl | hm
+    · exact h2 b (h'.2.2 b hb)
+    · exact h3 m hm b hb
+
+/-- Packing permutes the lookups' tuples. -/
+theorem perm_packSameBus (budget : Nat) (ls : List (Lookup F)) :
+    (packSameBus budget ls).flatMap (·.entries) ~ ls.flatMap (·.entries) := by
+  obtain ⟨hnd, -, hall⟩ := foldl_busesStep ls [] List.nodup_nil
+  rw [packSameBus, List.flatMap_append, List.flatMap_assoc]
+  simp only [flatMap_packBus]
+  exact perm_flatMap_filter_bus _ hnd ls hall
+
+/-- The sum of the lookups' count weights is the sum of their tuples' weights. -/
+theorem sum_countWeight (ls : List (Lookup F)) :
+    (ls.map (·.countWeight)).sum = ((ls.flatMap (·.entries)).map (·.2.weight)).sum := by
+  induction ls with
+  | nil => rfl
+  | cons l ls ih =>
+    rw [List.map_cons, List.sum_cons, ih, List.flatMap_cons, List.map_append, List.sum_append]
+    rfl
 
 /-- Every tuple of a packed lookup is a tuple of one of the lookups. -/
+theorem packSameBus_entries (budget : Nat) (ls : List (Lookup F)) :
+    ∀ l ∈ packSameBus budget ls, ∀ x ∈ l.entries, ∃ m ∈ ls, x ∈ m.entries := fun l hl _ hx ↦
+  List.mem_flatMap.mp ((perm_packSameBus budget ls).subset (List.mem_flatMap.mpr ⟨l, hl, hx⟩))
+
+/-- Every tuple of a packed lookup is a tuple of one of the lookups, as LogUp reads them. -/
 theorem packSameBus_tuples (budget : Nat) (ls : List (Lookup F)) :
     ∀ l ∈ packSameBus budget ls, ∀ x ∈ l.tuples, ∃ m ∈ ls, x ∈ m.tuples := by
   intro l hl x hx
-  rcases List.mem_append.mp hl with hl | hl
-  · exact ⟨l, (List.mem_filter.mp hl).1, hx⟩
-  · obtain ⟨b, -, hl⟩ := List.mem_flatMap.mp hl
-    exact packBus_tuples budget ls _ (fun m hm ↦ (List.mem_filter.mp hm).1) l hl x hx
+  obtain ⟨y, hy, rfl⟩ := List.mem_map.mp hx
+  obtain ⟨m, hm, hym⟩ := packSameBus_entries budget ls l hl y hy
+  exact ⟨m, hm, List.mem_map.mpr ⟨y, hym, rfl⟩⟩
 
 /-- One lookup's bus in the numbering state `(ids, names, next)`: a global bus's number, given at
 its first appearance; a fresh number for a local lookup. -/
