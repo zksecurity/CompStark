@@ -631,10 +631,10 @@ theorem allQuotientChunks_refines (h : Refines B) {P : Params} {instances : List
         (specBackend EF).lde I.logN P.logBlowup gen I.air.width t) prepS permS pis chs
           terminals alpha)[i].length = 2 ^ instances[i].logQuotientChunks := by
     intro i h1 h2
-    simp only [allQuotientChunks, List.length_map, List.length_zip] at h1 h2
+    simp only [allQuotientChunks, parMap_eq, List.length_map, List.length_zip] at h1 h2
     have hi : i < instances.length := by omega
     refine ⟨hi, ?_⟩
-    simp only [allQuotientChunks, List.getElem_map, List.getElem_zip]
+    simp only [allQuotientChunks, parMap_eq, List.getElem_map, List.getElem_zip]
     have hI := hT i hi (by omega)
     have hS := getElem_of_forall₂ hprepS i hi (by omega)
     exact batchQuotientChunks_refines h _ hI (hin.chunks _ (List.getElem_mem hi)) (hm4 i hi)
@@ -649,7 +649,7 @@ theorem allQuotientChunks_refines (h : Refines B) {P : Params} {instances : List
       (allQuotientChunks (specBackend EF) P instances ((instances.zip traces).map fun (I, t) ↦
         (specBackend EF).lde I.logN P.logBlowup gen I.air.width t) prepS permS pis chs
           terminals alpha).length := by
-    simp only [allQuotientChunks, List.length_map, List.length_zip, hpBl, hrBl]
+    simp only [allQuotientChunks, parMap_eq, List.length_map, List.length_zip, hpBl, hrBl]
   refine ⟨forall₂_of_getElem hlen fun i h1 h2 ↦ (hq i h1 h2).2.1, fun i hi ↦ ?_⟩
   obtain ⟨hi', -, h2, h3⟩ := hq i (by rw [hlen]; exact hi) hi
   exact ⟨hi', h2, h3⟩
@@ -793,7 +793,7 @@ theorem batchCommitAndSample_refines (h : Refines B) {P : Params}
         (setupBatchWith (specBackend EF) P instances).1 peS pis chs (perms.map (·.map (·.2)))
           alpha).length = instances.length := by
     have := hprepS.length_eq
-    simp only [allQuotientChunks, List.length_map, List.length_zip, htl, hpis, hchs, hpl,
+    simp only [allQuotientChunks, parMap_eq, List.length_map, List.length_zip, htl, hpis, hchs, hpl,
       hpeSl, ← this, Nat.min_self]
   generalize allQuotientChunks B P instances _ _ peB pis chs _ alpha = chB at hch
   generalize allQuotientChunks (specBackend EF) P instances _ _ peS pis chs _ alpha = chS

@@ -93,4 +93,12 @@ def parChunks {α : Type} (n parts : Nat) (f : Nat → Nat → Array α) : Array
     Task.spawn fun _ ↦ f (k * size) (min size (n - min n (k * size)))
   ts.foldl (fun acc t ↦ acc ++ t.get) #[]
 
+/-- `f` on every element, as parallel tasks. -/
+def parMap {α β : Type} (f : α → β) (xs : List α) : List β :=
+  (xs.map fun x ↦ Task.spawn fun _ ↦ f x).map Task.get
+
+theorem parMap_eq {α β : Type} (f : α → β) (xs : List α) : parMap f xs = xs.map f := by
+  rw [parMap, List.map_map]
+  rfl
+
 end CompStark.Stark

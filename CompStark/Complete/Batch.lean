@@ -310,7 +310,7 @@ theorem length_bTerms (hts : ts.length = Is.length) (hps : ps.length = Is.length
 
 theorem length_bChunks (hts : ts.length = Is.length) (hps : ps.length = Is.length) :
     (bChunks EF P Is ts ps).length = Is.length := by
-  rw [bChunks, allQuotientChunks, List.length_map, List.length_zip, List.length_zip,
+  rw [bChunks, allQuotientChunks, parMap_eq, List.length_map, List.length_zip, List.length_zip,
     List.length_zip, List.length_zip, List.length_zip, List.length_zip,
     length_bExts P Is ts hts, bPrep_fst, List.length_map, hps,
     length_bPermExts EF P Is ts ps hts hps,
@@ -330,7 +330,7 @@ theorem getElem_bChunks (hts : ts.length = Is.length) (hps : ps.length = Is.leng
         (ps[i]'(by rw [hps]; exact hi)) ((bChs EF P Is ts ps)[i]'(by rw [length_bChs]; exact hi))
         (((bTerms EF P Is ts ps)[i]'(by rw [length_bTerms EF P Is ts ps hts hps]; exact hi)).getD 0)
         (bAlpha EF P Is ts ps) := by
-    simp only [bChunks, allQuotientChunks, List.getElem_map, List.getElem_zip]
+    simp only [bChunks, allQuotientChunks, parMap_eq, List.getElem_map, List.getElem_zip]
   rw [e, getElem_bExts P Is ts hts i hi, getElem_bPermExts EF P Is ts ps hts hps i hi]
   have hp : ((bPrep EF P Is).1)[i]'(by rw [bPrep_fst, List.length_map]; exact hi) =
       prepLde P.logBlowup Is[i].air Is[i].logN := by

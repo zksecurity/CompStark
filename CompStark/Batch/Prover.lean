@@ -127,13 +127,14 @@ def commitPermutations (B : Backend F EF width) (instances : List (Instance F))
   (permExts, if hasLookups instances then some (B.commit (permExts.filterMap id)) else none)
 
 /-- Every instance's quotient chunks (`batchQuotientChunks`) from the extensions of its trace,
-preprocessed trace and permutation trace, its public values, challenges and terminal. -/
+preprocessed trace and permutation trace, its public values, challenges and terminal, the
+instances in parallel tasks. -/
 def allQuotientChunks (B : Backend F EF width) (P : Params) (instances : List (Instance F))
     (exts : List B.M) (prepExts permExts : List (Option B.M)) (pis : List (List F))
     (chs : List (List EF)) (terminals : List (Option EF)) (alpha : EF) : List (List B.M) :=
-  ((instances.zip exts).zip ((prepExts.zip permExts).zip (pis.zip (chs.zip terminals)))).map
-    fun ((I, ext), (pext, rext), p, c, t) ↦
-      batchQuotientChunks B P I ext pext rext p c (t.getD 0) alpha
+  parMap (fun ((I, ext), (pext, rext), p, c, t) ↦
+      batchQuotientChunks B P I ext pext rext p c (t.getD 0) alpha)
+    ((instances.zip exts).zip ((prepExts.zip permExts).zip (pis.zip (chs.zip terminals))))
 
 /-- The commitments and the out-of-domain point `ζ` by the backend `B`, with the preprocessed
 traces' extensions and commitment `prep`. -/
