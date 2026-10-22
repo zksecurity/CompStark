@@ -741,16 +741,10 @@ variable [BaseField F] [Challenge F EF] (H : Primitives F Id) (S : Iop.Batch.Set
   (common : CompStark.Batch.Common F) (proof : CompStark.Batch.BatchProof F EF)
   (pis : List (List F))
 
-/-- FRI's fold arities on the batch: Plonky3's schedule from the tallest domain, through the
-shorter domains' sizes. -/
-noncomputable def friAritiesB : List ℕ :=
-  foldSchedule S.params.maxLogArity (S.params.logBlowup + S.params.logFinalPolyLen) S.logTop
-    (S.logTop :: S.friHeights)
-
 /-- The challenger when FRI's commit loop starts, after FRI's domain separator. -/
 noncomputable def friStartB : H.State :=
   obsList H (stateFriB H S.params S.instances common proof pis)
-    (DomainSeparator.friSeed F EF (friAritiesB S) (2 ^ S.params.logFinalPolyLen)
+    (DomainSeparator.friSeed F EF S.friArities (2 ^ S.params.logFinalPolyLen)
       S.params.commitPowBits S.params.queryPowBits S.params.numQueries S.logTop
       S.params.logBlowup S.params.maxLogArity)
 
@@ -805,11 +799,11 @@ noncomputable def extractB [BaseField F] [Challenge F EF] (S : Iop.Batch.Setup E
   openings i := openingsOf (S.instanceSetup i) (proof.opened.toList.getD i noOpenings)
     (proof.permutationLocal.getD i #[]) (proof.permutationNext.getD i #[])
   batch := Challenge.toSpec (batchOfB H S.params S.instances common proof pis)
-  words j m z := if j < (friAritiesB S).length then
-      friWordAt cache (proof.fri.commits.toList.getD j 0) m ((friAritiesB S).getD j 0) z.val
+  words j m z := if j < S.friArities.length then
+      friWordAt cache (proof.fri.commits.toList.getD j 0) m (S.friArities.getD j 0) z.val
     else 0
   finalPoly := finalPoly S.domainSetup proof.fri.finalPoly
-  betas j := lift gen ^ 2 ^ ((friAritiesB S).take j).sum *
+  betas j := lift gen ^ 2 ^ (S.friArities.take j).sum *
     Challenge.toSpec ((commitReplayB H S common proof pis).1.getD j 0)
 
 /-! ### BCS consistency -/
@@ -1024,7 +1018,7 @@ theorem bcsB (S : Iop.Batch.Setup EF) (cache : Merkle.Cache F (Digest F)) (H : P
   set index := (smpBits H S.logTop (sampleStates H (chkWit H S.params.queryPowBits
     proof.fri.queryWitness (queryStateB H S common proof pis)).2 j.val)).1 with hindex
   have hqj : QueryOkR H S.params S.logTop alpha rounds (commitReplayB H S common proof pis).1
-      proof.fri.commits.toList (friAritiesB S) proof.fri.folds.toList proof.fri.inputs.toList
+      proof.fri.commits.toList S.friArities proof.fri.folds.toList proof.fri.inputs.toList
       proof.fri.finalPoly j index := hq j.val j.isLt
   have hidx : index < 2 ^ S.logTop := Nat.mod_lt _ (Nat.two_pow_pos _)
   have hpt : queryPoint S.domainSetup (querySampleOfB H S common proof pis j) =
@@ -1152,30 +1146,30 @@ theorem bcsB (S : Iop.Batch.Setup EF) (cache : Merkle.Cache F (Digest F)) (H : P
           (reverseBits (instPoint S S.logTop index i).val _)
         rw [reverseBits_instPoint S index hidx i, permRoot, hc, Option.getD_some]
   set cr := commitReplayB H S common proof pis with hcr
-  set l := cr.1.zip (querySteps j.val (friAritiesB S) proof.fri.folds.toList) with hl
+  set l := cr.1.zip (querySteps j.val S.friArities proof.fri.folds.toList) with hl
   set ro := S.friHeights.map fun h ↦
     (h, (reducedAt S.params S.logTop index alpha (queryMats (rows.zip rounds)) h).2) with hro
   set e0 := (reducedAt S.params S.logTop index alpha (queryMats (rows.zip rounds)) S.logTop).2
     with he0
-  have hfl : proof.fri.folds.toList.length = (friAritiesB S).length := by
+  have hfl : proof.fri.folds.toList.length = S.friArities.length := by
     rw [Array.length_toList, hfolds]
     rfl
-  have hqs := length_querySteps j.val (friAritiesB S) _ hfl
-  have hlar : l.map (·.2.logArity) = friAritiesB S := by
+  have hqs := length_querySteps j.val S.friArities _ hfl
+  have hlar : l.map (·.2.logArity) = S.friArities := by
     show List.map ((fun x : QueryFold EF ↦ x.logArity) ∘ Prod.snd) _ = _
     rw [← List.map_map, List.map_snd_zip (by rw [hqs]; exact hcrlen.ge),
       map_logArity_querySteps _ _ _ hfl]
-  have hll : l.length = (friAritiesB S).length := by rw [← hlar, List.length_map]
-  have hsum : (friAritiesB S).sum ≤ S.logTop := by
+  have hll : l.length = S.friArities.length := by rw [← hlar, List.length_map]
+  have hsum : S.friArities.sum ≤ S.logTop := by
     have := sum_foldSchedule_le S.params.maxLogArity (S.params.logBlowup + S.params.logFinalPolyLen)
       S.logTop (S.logTop :: S.friHeights)
     rw [List.headD_cons] at this
     exact this
-  have hpre : ∀ j', ((l.take j').map (·.2.logArity)).sum = ((friAritiesB S).take j').sum := by
+  have hpre : ∀ j', ((l.take j').map (·.2.logArity)).sum = (S.friArities.take j').sum := by
     intro j'
     rw [List.map_take, hlar]
-  have hpre_le : ∀ j', ((friAritiesB S).take j').sum ≤ S.logTop := fun j' ↦ by
-    have := List.sum_take_add_sum_drop (friAritiesB S) j'
+  have hpre_le : ∀ j', (S.friArities.take j').sum ≤ S.logTop := fun j' ↦ by
+    have := List.sum_take_add_sum_drop S.friArities j'
     omega
   have hI0 : index >>> (S.logTop - S.logTop) = index := by
     rw [Nat.sub_self, Nat.shiftRight_zero]
@@ -1199,7 +1193,7 @@ theorem bcsB (S : Iop.Batch.Setup EF) (cache : Merkle.Cache F (Digest F)) (H : P
     exact (hdeep h').symm
   have hsched : l.map (·.2.logArity) = foldSchedule S.params.maxLogArity
       (S.params.logFinalPolyLen + S.params.logBlowup) S.logTop (S.logTop :: S.friHeights) := by
-    rw [hlar, friAritiesB, Nat.add_comm S.params.logFinalPolyLen]
+    rw [hlar, Iop.Batch.Setup.friArities, Nat.add_comm S.params.logFinalPolyLen]
   have hbind : ∀ j' < l.length, Binding cache H (proof.fri.commits.toList.getD j' 0) := by
     intro j' hj'
     have hlt : j' < proof.fri.commits.toList.length := by
@@ -1210,14 +1204,14 @@ theorem bcsB (S : Iop.Batch.Setup EF) (cache : Merkle.Cache F (Digest F)) (H : P
   have hfw : ∀ j' (hj' : j' < l.length), t.words j' = fun m z ↦
       friWordAt cache (proof.fri.commits.toList.getD j' 0) m l[j'].2.logArity z.val := by
     intro j' hj'
-    have hget : l[j'].2.logArity = (friAritiesB S).getD j' 0 := by
+    have hget : l[j'].2.logArity = S.friArities.getD j' 0 := by
       have := congrArg (fun L : List ℕ ↦ L.getD j' 0) hlar
       rw [List.getD_eq_getElem (l.map (·.2.logArity)) 0 (by rw [List.length_map]; exact hj'),
         List.getElem_map] at this
       exact this
     funext m z
-    show (if j' < (friAritiesB S).length then friWordAt cache (proof.fri.commits.toList.getD j' 0)
-      m ((friAritiesB S).getD j' 0) z.val else 0) = _
+    show (if j' < S.friArities.length then friWordAt cache (proof.fri.commits.toList.getD j' 0)
+      m (S.friArities.getD j' 0) z.val else 0) = _
     rw [ite_eq_left_of_eq_true _ _ (eq_true (hll ▸ hj')), hget]
   have hβ : ∀ j' (hj' : j' < l.length), t.betas j' = (lift gen : 𝕂) ^ 2 ^ (S.logTop -
       (foldStateR l (ro, e0, index >>> (S.logTop - S.logTop), S.logTop) j').2.2.2) *
@@ -1228,7 +1222,7 @@ theorem bcsB (S : Iop.Batch.Setup EF) (cache : Merkle.Cache F (Digest F)) (H : P
     rw [hpre j', Nat.sub_sub_self (hpre_le j')]
     have hj1 : j' < cr.1.length := lt_of_lt_of_le hj'
       (by rw [List.length_zip]; exact Nat.min_le_left _ _)
-    show (lift gen : 𝕂) ^ 2 ^ ((friAritiesB S).take j').sum * Challenge.toSpec (cr.1.getD j' 0) = _
+    show (lift gen : 𝕂) ^ 2 ^ (S.friArities.take j').sum * Challenge.toSpec (cr.1.getD j' 0) = _
     rw [List.getD_eq_getElem _ _ hj1, List.getElem_zip]
   have hfinal' : t.finalPoly.eval ((lift gen : 𝕂) ^ 2 ^ (S.logTop -
       (foldStateR l (ro, e0, index >>> (S.logTop - S.logTop), S.logTop) l.length).2.2.2) *
@@ -1246,7 +1240,7 @@ theorem bcsB (S : Iop.Batch.Setup EF) (cache : Merkle.Cache F (Digest F)) (H : P
         2 ^ (S.params.logBlowup + S.params.logFinalPolyLen) := by
       rw [← hfin, h2]
       dsimp only
-      have := shiftRight_lt hidx (S.logTop - (friAritiesB S).sum) (Nat.sub_le _ _)
+      have := shiftRight_lt hidx (S.logTop - S.friArities.sum) (Nat.sub_le _ _)
       rwa [Nat.sub_sub_self hsum] at this
     rw [hfin]
     have hsub : S.logTop - (S.params.logBlowup + S.params.logFinalPolyLen) =

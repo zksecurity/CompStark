@@ -44,7 +44,7 @@ namespace Setup
 variable {withLookups : Bool} (S : Setup EF withLookups)
 
 /-- The log size of the tallest domain, where FRI starts. -/
-noncomputable abbrev logTop : ℕ := S.logN S.top + S.params.logBlowup
+abbrev logTop : ℕ := S.logN S.top + S.params.logBlowup
 
 /-- FRI's rounds: Plonky3's folding schedule from the tallest domain, injecting at the sizes of
 the shorter instances' domains. Their errors depend on the sizes only. -/

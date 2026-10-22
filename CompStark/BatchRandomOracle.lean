@@ -56,9 +56,15 @@ preprocessed traces if some instance has them, and the permutation traces if som
 lookups. -/
 def inputRounds : Nat := 2 + (if S.hasPreprocessed then 1 else 0) + if S.hasLookups then 1 else 0
 
+/-- FRI's fold arities: Plonky3's schedule from the tallest domain, through the shorter domains'
+sizes. -/
+def friArities : List ℕ :=
+  Fri.foldSchedule S.params.maxLogArity (S.params.logBlowup + S.params.logFinalPolyLen) S.logTop
+    (S.logTop :: S.friHeights)
+
 /-- The oracle calls of one Merkle opening of a round: the leaf hash, a compression per level of
 the tallest domain, and a hash and a compression where a shorter domain's matrices are injected. -/
-noncomputable def openingQueries : Nat := 1 + S.logTop + 2 * S.friHeights.length
+def openingQueries : Nat := 1 + S.logTop + 2 * S.friHeights.length
 
 /-- The oracle calls of the lookup round, with lookups: its grinding sample and `d` samples each
 for `α_L` and `β_L`. -/
@@ -69,9 +75,9 @@ def lookupCalls : Nat := if S.hasLookups then 2 * Challenge.d EF + 1 else 0
 batching grinding one each, every fold a grinding sample and `d` for `β`, the query round a
 grinding sample), and per query its index and its openings of the committed rounds and every
 fold. -/
-noncomputable def verifierCalls : Nat :=
-  S.lookupCalls + 3 * Challenge.d EF + 3 + (Challenge.d EF + 1) * S.friRounds.numFolds +
-    S.params.numQueries * (1 + (S.friRounds.numFolds + S.inputRounds) * S.openingQueries)
+def verifierCalls : Nat :=
+  S.lookupCalls + 3 * Challenge.d EF + 3 + (Challenge.d EF + 1) * S.friArities.length +
+    S.params.numQueries * (1 + (S.friArities.length + S.inputRounds) * S.openingQueries)
 
 /-- The oracle calls of the common data's computation: at most four per leaf of the preprocessed
 traces' tree, none without preprocessed columns. -/
@@ -80,7 +86,7 @@ def setupQueries : Nat :=
   else 0
 
 /-- The oracle calls of the common data's computation and of the verifier. -/
-noncomputable def verifierQueries : Nat := S.setupQueries + S.verifierCalls
+def verifierQueries : Nat := S.setupQueries + S.verifierCalls
 
 /-- The common data on the random oracles. -/
 def setupRo : OracleComp (spec F S.streamLen) (CompStark.Batch.Common F) :=

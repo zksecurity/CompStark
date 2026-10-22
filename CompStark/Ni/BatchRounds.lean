@@ -687,8 +687,8 @@ noncomputable def boundDigestB (cap : Digest F) (input : List F) : Digest F :=
 /-- FRI's folding challenges in ArkLib's coordinate, from the answers `sample` of the fold rounds:
 `s_j β_j`, `s_j` the shift of word `j`'s domain; none past the last fold. -/
 noncomputable def betasAtB (sample : ℕ → Vector F S.streamLen) (j : ℕ) : 𝕂 :=
-  if j < (friAritiesB S).length then
-    lift gen ^ 2 ^ ((friAritiesB S).take j).sum *
+  if j < S.friArities.length then
+    lift gen ^ 2 ^ (S.friArities.take j).sum *
       extAt (sample (lookupRounds S + 3 + j)) (challengeOffset S.params.commitPowBits)
   else 0
 
@@ -726,12 +726,12 @@ noncomputable def prefixTranscriptB (cache : Merkle.Cache F (Digest F)) (block :
   zeta := extAt (sample (lookupRounds S + 1)) (challengeOffset S.params.oodPowBits)
   openings := openingsAtB S ((block (lookupRounds S + 2)).drop (pcsSeedB S).length)
   batch := extAt (sample (lookupRounds S + 2)) (challengeOffset S.params.batchPowBits)
-  words j m z := if j < (friAritiesB S).length then
+  words j m z := if j < S.friArities.length then
       friWordAt cache (digestAt (block (lookupRounds S + 3 + j)) (friOffsetB S j)) m
-        ((friAritiesB S).getD j 0) z.val
+        (S.friArities.getD j 0) z.val
     else 0
   finalPoly := finalPoly S.domainSetup
-    (finalPolyAt S.domainSetup (block (lookupRounds S + 3 + (friAritiesB S).length)))
+    (finalPolyAt S.domainSetup (block (lookupRounds S + 3 + S.friArities.length)))
   betas := betasAtB S sample
 
 /-- The query round's grinding sample: the answer's first sample, `0` without grinding. -/
@@ -766,12 +766,12 @@ def roundBadAtB (i : ℕ) (t : Sound.Batch.Transcript S) (u : Vector F S.streamL
       CompPoly.CanonicalNat.toNat (u.toList.getD 0 0) % 2 ^ S.params.batchPowBits = 0) ∧
       Sound.Batch.BatchBad S publicValues δ δ' t.trace t.perm t.terminal t.lookupAlpha
         t.lookupBeta t.alpha t.quotient t.zeta t.openings t.batch
-  else if i - lookupRounds S - 3 < (friAritiesB S).length then
+  else if i - lookupRounds S - 3 < S.friArities.length then
     (S.params.commitPowBits ≠ 0 →
       CompPoly.CanonicalNat.toNat (u.toList.getD 0 0) % 2 ^ S.params.commitPowBits = 0) ∧
       Sound.Batch.FoldBad S δ loss t.rounds t.words (i - lookupRounds S - 3)
         (t.betas (i - lookupRounds S - 3))
-  else if i - lookupRounds S = 3 + (friAritiesB S).length then
+  else if i - lookupRounds S = 3 + S.friArities.length then
     Sound.Batch.QueryBad S δ loss t (powAtB S u) (queriesAtB S u)
   else False
 

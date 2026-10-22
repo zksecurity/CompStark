@@ -50,9 +50,9 @@ theorem foldFails_of_le {K : Type} [Field K] [DecidableEq K] (d : ℕ) (θ loss 
   | words, j + 1, _, ω, .fold k _ (some _) rest, h => by
     exact foldFails_of_le d θ loss β _ j _ rest (by simp only [Rounds.numFolds] at h; omega)
 
-theorem length_friAritiesB (S : Iop.Batch.Setup EF) :
-    (friAritiesB S).length = S.friRounds.numFolds := by
-  rw [friAritiesB, Nat.add_comm S.params.logBlowup, ← FriRounds.arities_schedule _ _
+theorem length_friArities (S : Iop.Batch.Setup EF) :
+    S.friArities.length = S.friRounds.numFolds := by
+  rw [Iop.Batch.Setup.friArities, Nat.add_comm S.params.logBlowup, ← FriRounds.arities_schedule _ _
     (fun _ _ ↦ (0 : 𝕂)), FriRounds.length_arities]
   rfl
 
@@ -65,12 +65,12 @@ variable (S : Iop.Batch.Setup EF) {cache cache' : Merkle.Cache F (Digest F)}
 /-- The prefix transcript of all rounds depends on their inputs and answers, and on the rows
 extracted under the observed digests. -/
 theorem prefixTranscriptB_congr
-    (hb : ∀ k ≤ lookupRounds S + 3 + (friAritiesB S).length, block k = block' k)
-    (hs : ∀ k < lookupRounds S + 3 + (friAritiesB S).length, sample k = sample' k)
+    (hb : ∀ k ≤ lookupRounds S + 3 + S.friArities.length, block k = block' k)
+    (hs : ∀ k < lookupRounds S + 3 + S.friArities.length, sample k = sample' k)
     (htrace : SameUnderM cache cache' (digestAt (block' 0) (mainOffsetB S)))
     (hperm : SameUnderM cache cache' (digestAt (block' (lookupRounds S)) 0))
     (hquot : SameUnderM cache cache' (digestAt (block' (lookupRounds S + 1)) 0))
-    (hfri : ∀ f < (friAritiesB S).length,
+    (hfri : ∀ f < S.friArities.length,
       SameUnder cache cache' (digestAt (block' (lookupRounds S + 3 + f)) (friOffsetB S f))) :
     prefixTranscriptB S cache block sample = prefixTranscriptB S cache' block' sample' := by
   rw [prefixTranscriptB_sample_congr S cache block hs]
@@ -87,16 +87,16 @@ theorem prefixTranscriptB_congr
       openingsAtB S ((block' (lookupRounds S + 2)).drop (pcsSeedB S).length)
     rw [hb _ (by omega)]
   · funext f
-    by_cases hf : f < (friAritiesB S).length
+    by_cases hf : f < S.friArities.length
     · exact prefixTranscriptB_words S f (hb _ (by omega)) (hfri f hf)
     · funext m z
-      show (if f < (friAritiesB S).length then _ else 0) =
-        (if f < (friAritiesB S).length then _ else 0)
+      show (if f < S.friArities.length then _ else 0) =
+        (if f < S.friArities.length then _ else 0)
       rw [ite_eq_right_of_eq_false _ _ (eq_false hf), ite_eq_right_of_eq_false _ _ (eq_false hf)]
   · show finalPoly S.domainSetup (finalPolyAt S.domainSetup
-        (block (lookupRounds S + 3 + (friAritiesB S).length))) =
+        (block (lookupRounds S + 3 + S.friArities.length))) =
       finalPoly S.domainSetup (finalPolyAt S.domainSetup
-        (block' (lookupRounds S + 3 + (friAritiesB S).length)))
+        (block' (lookupRounds S + 3 + S.friArities.length)))
     rw [hb _ le_rfl]
 
 end Congr
@@ -158,7 +158,7 @@ theorem exists_badAtB (hδ' : (δ' : ℝ) < 1 - S.rate)
       ¬ RoundBadB S publicValues δ δ' loss (L.take (idx L t)) t (answer t) :=
     fun t ht ↦ of_first hconsL (fun pre t u ↦ ¬ RoundBadB S publicValues δ δ' loss pre t u)
       (fun p hp hfresh hr ↦ hno ⟨p, hp, hfresh, Or.inr hr⟩) ht
-  set nf := (friAritiesB S).length with hnf
+  set nf := S.friArities.length with hnf
   set blocks := inputsB S common pis proof with hblocks
   have hz := length_zip_commitsB S (idealOf answer) common proof pis hok
   have hlen : blocks.length = lookupRounds S + 4 + nf := by
@@ -405,7 +405,7 @@ theorem exists_badAtB (hδ' : (δ' : ℝ) < 1 - S.rate)
       rw [hβ]
       exact (Rounds.foldFails_congr _ _ _ _ _ _ f hw _ _).mpr hfb
     · refine foldFails_of_le _ _ _ _ _ f _ _ ?_
-      rw [Sound.Batch.numFolds_rounds, ← length_friAritiesB]
+      rw [Sound.Batch.numFolds_rounds, ← length_friArities]
       omega
   -- the query round
   have hq : ¬ Sound.Batch.QueryBad S δ loss T (powAtB S (smp (lookupRounds S + 3 + nf)))

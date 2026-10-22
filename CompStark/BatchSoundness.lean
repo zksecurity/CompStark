@@ -5,6 +5,7 @@ Released under Apache 2.0 license as described in the file LICENSE.
 module
 
 public import CompStark.Sound.BatchAssembly
+public import CompStark.Sound.BalancedInt
 
 /-! # Knowledge soundness of the batch STARK
 
@@ -26,10 +27,11 @@ of that size near on a common set make the instance's near too, which forces its
 to be those of a candidate trace, permutation trace and quotient; and its constraint check at `ζ`
 is a polynomial identity that a failing candidate satisfies at few points.
 
-Balance in the field is balance over the integers when the multiplicities are small:
-`balanced_int` turns it into the multiset statement, every bus's sends matching its receives, for
-AIRs that keep every row's multiplicities within their count weights (`CountsBounded`), under the
-verifier's multiplicity bound `∑ᵢ wᵢ 2 ^ logNᵢ < p`.
+Over a prime field, balance in the field is balance over the integers when the multiplicities are
+small: `Sound.Batch.balanced_int` turns it into the multiset statement, every bus's messages with
+integer multiplicities summing to zero, for AIRs that keep every row's multiplicities within their
+count weights (`Setup.CountsBounded`), under the verifier's multiplicity bound
+`∑ᵢ wᵢ 2 ^ logNᵢ < p` (`heightBoundOk`).
 -/
 
 @[expose] public section

@@ -149,21 +149,23 @@ variable {withLookups : Bool} (S : Batch.Setup EF withLookups)
 theorem mem_friHeights (m : ℕ) :
     m ∈ S.friHeights ↔ ∃ i, S.logN i + S.params.logBlowup = m ∧
       m ≠ S.logN S.top + S.params.logBlowup := by
-  simp only [Batch.Setup.friHeights, Finset.mem_sort, Finset.mem_erase, Finset.mem_image,
-    Finset.mem_univ, true_and]
+  simp only [Batch.Setup.friHeights, List.mem_filter, List.mem_reverse, List.mem_range,
+    List.any_eq_true, List.mem_finRange, true_and, beq_iff_eq]
   constructor
-  · rintro ⟨hne, i, hi⟩
-    exact ⟨i, hi, hne⟩
+  · rintro ⟨hlt, i, hi⟩
+    exact ⟨i, hi, hlt.ne⟩
   · rintro ⟨i, hi, hne⟩
-    exact ⟨hne, i, hi⟩
+    have := S.logN_le_top i
+    exact ⟨lt_of_le_of_ne (by omega) hne, i, hi⟩
 
 /-- The sizes where FRI injects fit below the tallest domain and above the final one. -/
 theorem fits_friHeights :
     Rounds.Fits (S.params.logFinalPolyLen + S.params.logBlowup)
       (S.logN S.top + S.params.logBlowup) S.friHeights := by
   refine ⟨?_, fun m hm ↦ ?_⟩
-  · refine ((Finset.pairwise_sort _ _).and (Finset.sort_nodup _ _)).imp fun h ↦ ?_
-    exact lt_of_le_of_ne h.1 (Ne.symm h.2)
+  · refine (List.Pairwise.filter _ ?_)
+    rw [List.pairwise_reverse]
+    exact List.pairwise_lt_range
   · obtain ⟨i, rfl, hne⟩ := (mem_friHeights S m).mp hm
     have := S.logN_le_top i
     have := S.folds i

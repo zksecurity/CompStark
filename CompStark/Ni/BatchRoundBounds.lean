@@ -182,7 +182,7 @@ theorem prefixTranscriptB_rounds_congr (cache : Merkle.Cache F (Digest F)) (bloc
 /-- The prefix transcript reads the answers of the rounds before the query round only. -/
 theorem prefixTranscriptB_sample_congr (cache : Merkle.Cache F (Digest F)) (block : ℕ → List F)
     {sample sample' : ℕ → Vector F S.streamLen}
-    (h : ∀ j, j < lookupRounds S + 3 + (friAritiesB S).length → sample j = sample' j) :
+    (h : ∀ j, j < lookupRounds S + 3 + S.friArities.length → sample j = sample' j) :
     prefixTranscriptB S cache block sample = prefixTranscriptB S cache block sample' := by
   have hβ : betasAtB S sample = betasAtB S sample' := by
     funext j
@@ -314,7 +314,7 @@ theorem prob_roundBadAtB_le (cache : Merkle.Cache F (Digest F)) (block : ℕ →
   · -- fold `i - lookupRounds S - 3`
     set f := i - lookupRounds S - 3 with hfdef
     have hi3 : lookupRounds S + 3 + f = samples.length := by omega
-    obtain ⟨c, hc_def⟩ : ∃ c : 𝕂, c = lift gen ^ 2 ^ ((friAritiesB S).take f).sum := ⟨_, rfl⟩
+    obtain ⟨c, hc_def⟩ : ∃ c : 𝕂, c = lift gen ^ 2 ^ (S.friArities.take f).sum := ⟨_, rfl⟩
     have hc : c ≠ 0 := by rw [hc_def]; exact pow_ne_zero _ lift_gen_ne_zero
     have hβ (v : Vector F S.streamLen) :
         (prefixTranscriptB S cache block

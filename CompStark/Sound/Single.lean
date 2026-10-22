@@ -32,8 +32,9 @@ theorem rate_toBatch (S : Iop.Setup EF) : S.toBatch.rate = S.rate := by
 
 /-- The batch of one instance injects nothing into FRI. -/
 theorem friHeights_toBatch (S : Iop.Setup EF) : S.toBatch.friHeights = [] := by
-  simp only [Batch.Setup.friHeights, Finset.univ_unique, Finset.image_singleton,
-    Finset.erase_singleton, Finset.sort_empty]
+  refine List.eq_nil_iff_forall_not_mem.mpr fun m hm ↦ ?_
+  obtain ⟨i, rfl, hne⟩ := (mem_friHeights _ m).mp hm
+  exact hne rfl
 
 /-- The batch of one instance opens the STARK's words. -/
 theorem groupOpened_toBatch {S : Iop.Setup EF} (p : Iop.Prover S) (lα lβ α ζ : 𝕂) :

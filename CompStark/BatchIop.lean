@@ -149,8 +149,8 @@ abbrev domainSetup : Iop.Setup EF (S.lookups S.top) := S.instanceSetup S.top
 /-- The log sizes of the domains below the tallest, tallest first: where FRI injects the
 batched DEEP words of the shorter instances. -/
 def friHeights : List ℕ :=
-  ((Finset.univ.image fun i ↦ S.logN i + S.params.logBlowup).erase
-    (S.logN S.top + S.params.logBlowup)).sort (· ≥ ·)
+  (List.range (S.logN S.top + S.params.logBlowup)).reverse.filter fun h ↦
+    (List.finRange S.k).any fun i ↦ S.logN i + S.params.logBlowup == h
 
 /-- The lookup challenges of instance `i` from the batch's pair `(α_L, β_L)`: for each of its
 lookups, its bus `b`'s denominator base `α_L + (b + 1) β_Lᵂ` and the combiner `β_L`, `W` the
@@ -296,6 +296,16 @@ def Setup.Balanced (S : Setup EF withLookups) (traces : Fin S.k → Array F)
     (publicValues : Fin S.k → List F) : Prop :=
   ∀ key : Nat × List F,
     (((S.messages traces publicValues).filter (·.1 = key)).map (·.2)).sum = 0
+
+/-- Every lookup's multiplicities on every row have integer representatives whose magnitudes sum
+to at most its count weight (Plonky3's `count_weight`). The verifier does not check it: an AIR
+whose count weights are claimed for its lookups enforces it. -/
+def Setup.CountsBounded (S : Setup EF withLookups) (traces : Fin S.k → Array F)
+    (publicValues : Fin S.k → List F) : Prop :=
+  ∀ i, ∀ r < 2 ^ S.logN i, ∀ l ∈ S.lookups i, ∃ cs : List ℤ,
+    cs.map (Int.cast : ℤ → F) = l.tuples.map (fun t ↦
+      t.2.eval (generationRow (S.air i) (S.logN i) (traces i) (publicValues i) r)) ∧
+    (cs.map Int.natAbs).sum ≤ l.countWeight
 
 /-- The traces satisfy the batch: every instance's trace satisfies its AIR, and every bus of the
 batch's lookups balances. -/

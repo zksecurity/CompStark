@@ -330,8 +330,8 @@ theorem isTotalQueryBound_verifyBatchWith (common : CompStark.Batch.Common F)
       · trivial
   set G := S.friHeights.length
   set c := 1 + S.logTop + 2 * G
-  set V := Challenge.d EF + 2 + (Challenge.d EF + 1) * S.friRounds.numFolds +
-    S.params.numQueries * (1 + (S.inputRounds + S.friRounds.numFolds) * c)
+  set V := Challenge.d EF + 2 + (Challenge.d EF + 1) * S.friArities.length +
+    S.params.numQueries * (1 + (S.inputRounds + S.friArities.length) * c)
   have hpcs : ∀ zeta : EF, Costs (H := ideal F S.streamLen) (verifyPcs (ideal F S.streamLen)
       S.params (CompStark.Batch.batchRounds S.instances common proof zeta) proof.fri) V
       fun _ ↦ True := by
@@ -347,10 +347,7 @@ theorem isTotalQueryBound_verifyBatchWith (common : CompStark.Batch.Common F)
       exact (hmem _).mpr ⟨i, rfl⟩
     · rw [hD, List.headD_cons]
       have hA : (foldSchedule S.params.maxLogArity (S.params.logBlowup + S.params.logFinalPolyLen)
-          S.logTop (S.logTop :: S.friHeights)).length = S.friRounds.numFolds := by
-        rw [Nat.add_comm S.params.logBlowup, ← FriRounds.arities_schedule _ _
-          (fun _ _ ↦ (0 : Challenge.Spec EF)), FriRounds.length_arities]
-        rfl
+          S.logTop (S.logTop :: S.friHeights)).length = S.friArities.length := rfl
       have hlen : (CompStark.Batch.batchRounds S.instances common proof zeta).length ≤
           S.inputRounds := by
         have hpl : (prepRounds S proof zeta common).length ≤

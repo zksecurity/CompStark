@@ -132,6 +132,7 @@ public import CompStark.Sound.CurveCA
 public import CompStark.Sound.LogUp
 public import CompStark.Sound.Telescope
 public import CompStark.Sound.BatchLogUp
+public import CompStark.Sound.BalancedInt
 public import CompStark.Sound.LossyMca
 public import CompStark.Fs.FreshQuery
 public import CompStark.Fs.DigestClash

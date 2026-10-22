@@ -82,7 +82,7 @@ def permDigest (proof : CompStark.Batch.BatchProof F EF) : List F :=
 
 /-- FRI's domain separator on a batch proof for `S`. -/
 noncomputable def friSeedB (S : Iop.Batch.Setup EF) : List F :=
-  DomainSeparator.friSeed F EF (friAritiesB S) (2 ^ S.params.logFinalPolyLen)
+  DomainSeparator.friSeed F EF S.friArities (2 ^ S.params.logFinalPolyLen)
     S.params.commitPowBits S.params.queryPowBits S.params.numQueries S.logTop S.params.logBlowup
     S.params.maxLogArity
 
