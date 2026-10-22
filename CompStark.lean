@@ -135,6 +135,7 @@ public import CompStark.Sound.FriRun
 public import CompStark.BatchNonInteractiveError
 public import CompStark.Batch.Setup
 public import CompStark.BatchRandomOracle
+public import CompStark.BatchNonInteractive
 public import CompStark.Sound.BatchRbr
 public import CompStark.Sound.Sampling
 public import CompStark.Sound.ConsistentQueries
@@ -176,4 +177,5 @@ public import CompStark.Ni.BatchExtracted
 public import CompStark.Ni.BatchAccepted
 public import CompStark.Ni.BatchSetup
 public import CompStark.Ni.BatchBadQuery
+public import CompStark.Ni.BatchAssembly
 public import CompStark.NonInteractive
