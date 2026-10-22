@@ -21,9 +21,10 @@ whose DEEP component `(y - f(x)) / (z - x)` agrees on `T` with a codeword `h` (d
    `f` on `T` (`exists_baseAgree`); `P` and `Q` agree on `|T| > n` points, so `P = Q` and
    `Q(z) = y` (`exists_basePoly`).
 
-A trace column is opened at `ζ` and `ζ ω_n`; both polynomials agree with it on `T`, so they are
-equal (`eq_of_agree`). A preprocessed column's word is the verifier's, the values of a polynomial
-of degree below `n`, so the polynomial is that one. No unique decoding is needed.
+A trace column, or a coordinate of a permutation column, is opened at `ζ` and `ζ ω_n`; both
+polynomials agree with it on `T`, so they are equal (`eq_of_agree`). A preprocessed column's word is
+the verifier's, the values of a polynomial of degree below `n`, so the polynomial is that one. No
+unique decoding is needed.
 -/
 
 @[expose] public section
@@ -33,6 +34,8 @@ open CompStark.Stark CompStark.Iop Polynomial
 variable {F : Type} [BaseField F] {EF : Type} [Challenge F EF]
 
 local notation "𝕂" => Challenge.Spec EF
+
+variable {lookups : List (Lookup F)}
 
 /-! ### Polynomials over `𝕂` that take base values -/
 
@@ -60,7 +63,7 @@ theorem exists_baseAgree {ι : Type} (pts : ι → F) (f : ι → F) (T : Finset
 /-! ### One opened word -/
 
 /-- `L`'s points are those of `basePoint` in `𝕂`. -/
-theorem domain_eq (S : Setup EF) (i : S.Point) :
+theorem domain_eq (S : Setup EF lookups) (i : S.Point) :
     S.domain i = algebraMap F 𝕂 (basePoint (S.logN + S.params.logBlowup) i) := by
   simp only [Setup.domain, cosetDomain,
     Domain.CosetFftDomain.eval_coset_fft_domain_eq_eval_generator_mul_domain,
@@ -92,7 +95,7 @@ theorem natDegree_deepPoly_le (z y : 𝕂) (h : 𝕂[X]) (n : Nat) (hn : 1 ≤ n
 
 /-- Two polynomials over `𝕂` of degree at most `n` that agree at the points of `T`, `|T| > n`,
 are equal. -/
-theorem eq_of_agree (S : Setup EF) (T : Finset S.Point) (hT : S.n < T.card) (P Q : 𝕂[X])
+theorem eq_of_agree (S : Setup EF lookups) (T : Finset S.Point) (hT : S.n < T.card) (P Q : 𝕂[X])
     (hP : P.natDegree ≤ S.n) (hQ : Q.natDegree ≤ S.n)
     (h : ∀ i ∈ T, P.eval (S.domain i) = Q.eval (S.domain i)) : P = Q := by
   classical
@@ -108,7 +111,7 @@ theorem eq_of_agree (S : Setup EF) (T : Finset S.Point) (hT : S.n < T.card) (P Q
 /-- A word whose DEEP component at `z` with claimed value `y` agrees with a codeword on `T`,
 `|T| > n` and `z` off `T`, agrees on `T` with a polynomial over `F` of degree at most `n` whose
 value at `z` is `y`. -/
-theorem exists_basePoly (S : Setup EF) (T : Finset S.Point) (hT : S.n < T.card)
+theorem exists_basePoly (S : Setup EF lookups) (T : Finset S.Point) (hT : S.n < T.card)
     (f : S.Point → F) (z y : 𝕂) (hz : ∀ i ∈ T, z ≠ S.domain i)
     (hnear : ∃ u ∈ S.code, ∀ i ∈ T, deepComponent S f z y i = u i) :
     ∃ Q : F[X], Q.natDegree ≤ S.n ∧
@@ -139,8 +142,54 @@ theorem exists_basePoly (S : Setup EF) (T : Finset S.Point) (hT : S.n < T.card)
 
 /-! ### The opened words -/
 
+section Mem
+variable {S : Setup EF lookups} (p : Prover S)
+
+theorem mem_openedWords_trace (α ζ : 𝕂) (j : Fin S.air.width) :
+    (p.trace j, ζ, (p.openings α ζ).traceAt j) ∈ openedWords p α ζ :=
+  List.mem_append_left _ (List.mem_append_left _ (List.mem_append_left _
+    (List.mem_append_left _ (List.mem_append_left _ (List.mem_append_left _
+      (List.mem_map.mpr ⟨j, List.mem_finRange j, rfl⟩))))))
+
+theorem mem_openedWords_traceNext (α ζ : 𝕂) (j : Fin S.air.mainNextWidth) :
+    (p.trace (Fin.castLE S.air.mainNextWidth_le j), ζ * rootOfUnity (EF := EF) S.logN,
+      (p.openings α ζ).traceNext j) ∈ openedWords p α ζ :=
+  List.mem_append_left _ (List.mem_append_left _ (List.mem_append_left _
+    (List.mem_append_left _ (List.mem_append_left _ (List.mem_append_right _
+      (List.mem_map.mpr ⟨j, List.mem_finRange j, rfl⟩))))))
+
+theorem mem_openedWords_quotient (α ζ : 𝕂) (c : Fin S.chunks) (e : Fin (Challenge.d EF)) :
+    (p.quotient α c e, ζ, (p.openings α ζ).quotientAt c e) ∈ openedWords p α ζ :=
+  List.mem_append_left _ (List.mem_append_left _ (List.mem_append_left _
+    (List.mem_append_left _ (List.mem_append_right _ (List.mem_flatMap.mpr
+      ⟨c, List.mem_finRange c, List.mem_map.mpr ⟨e, List.mem_finRange e, rfl⟩⟩)))))
+
+theorem mem_openedWords_prep (α ζ : 𝕂) (j : Fin S.air.preprocessedWidth) :
+    (S.preprocessedWord j, ζ, (p.openings α ζ).preprocessedAt j) ∈ openedWords p α ζ :=
+  List.mem_append_left _ (List.mem_append_left _ (List.mem_append_left _
+    (List.mem_append_right _ (List.mem_map.mpr ⟨j, List.mem_finRange j, rfl⟩))))
+
+theorem mem_openedWords_prepNext (α ζ : 𝕂) (j : Fin S.air.preprocessedNextWidth) :
+    (S.preprocessedWord j, ζ * rootOfUnity (EF := EF) S.logN,
+      (p.openings α ζ).preprocessedNext j) ∈ openedWords p α ζ :=
+  List.mem_append_left _ (List.mem_append_left _ (List.mem_append_right _
+    (List.mem_map.mpr ⟨j, List.mem_finRange j, rfl⟩)))
+
+theorem mem_openedWords_perm (α ζ : 𝕂) (c : Fin S.permWidth) (e : Fin (Challenge.d EF)) :
+    (p.perm c e, ζ, (p.openings α ζ).permAt c e) ∈ openedWords p α ζ :=
+  List.mem_append_left _ (List.mem_append_right _ (List.mem_flatMap.mpr
+    ⟨c, List.mem_finRange c, List.mem_map.mpr ⟨e, List.mem_finRange e, rfl⟩⟩))
+
+theorem mem_openedWords_permNext (α ζ : 𝕂) (c : Fin S.permWidth) (e : Fin (Challenge.d EF)) :
+    (p.perm c e, ζ * rootOfUnity (EF := EF) S.logN, (p.openings α ζ).permNext c e) ∈
+      openedWords p α ζ :=
+  List.mem_append_right _ (List.mem_flatMap.mpr
+    ⟨c, List.mem_finRange c, List.mem_map.mpr ⟨e, List.mem_finRange e, rfl⟩⟩)
+
+end Mem
+
 /-- Dropping the points of `T` where `L` meets `z` or `z'` loses at most two points. -/
-theorem card_le_card_filter_add_two (S : Setup EF) (T : Finset S.Point) (z z' : 𝕂) :
+theorem card_le_card_filter_add_two (S : Setup EF lookups) (T : Finset S.Point) (z z' : 𝕂) :
     T.card ≤ (T.filter fun i ↦ S.domain i ≠ z ∧ S.domain i ≠ z').card + 2 := by
   classical
   have hone (w : 𝕂) : (Finset.univ.filter fun i : S.Point ↦ S.domain i = w).card ≤ 1 :=
@@ -160,7 +209,7 @@ theorem card_le_card_filter_add_two (S : Setup EF) (T : Finset S.Point) (z z' : 
   omega
 
 /-- A set of at least `(1 - δ) N` points, `δ < 1 - rate`, has more than `n` points. -/
-theorem lt_card_of_rate (S : Setup EF) (δ : ℝ) (hδ : δ < 1 - S.rate) (t : Nat)
+theorem lt_card_of_rate (S : Setup EF lookups) (δ : ℝ) (hδ : δ < 1 - S.rate) (t : Nat)
     (ht : (t : ℝ) ≥ S.size * (1 - δ)) : S.n < t := by
   have hNpos : (0 : ℝ) < S.size := by exact_mod_cast Nat.two_pow_pos _
   have hn : (S.n : ℝ) = S.size * S.rate := by
@@ -171,19 +220,15 @@ theorem lt_card_of_rate (S : Setup EF) (δ : ℝ) (hδ : δ < 1 - S.rate) (t : N
   exact_mod_cast this
 
 /-- Each opened word's DEEP component is one of the components. -/
-theorem near_of_mem {S : Setup EF} (p : Prover S) (α ζ : 𝕂) (T : Finset S.Point)
+theorem near_of_mem {S : Setup EF lookups} (p : Prover S) (α ζ : 𝕂) (T : Finset S.Point)
     (hnear : ∀ k, ∃ u ∈ S.code, ∀ i ∈ T, components p α ζ k i = u i)
     (w : (S.Point → F) × 𝕂 × 𝕂) (hw : w ∈ openedWords p α ζ) :
     ∃ u ∈ S.code, ∀ i ∈ T, deepComponent S w.1 w.2.1 w.2.2 i = u i := by
   obtain ⟨k, hk, rfl⟩ := List.mem_iff_getElem.mp hw
-  have hlen : (openedWords p α ζ).length = S.numOpened := by
-    simp only [openedWords, List.length_append, List.length_map, List.length_finRange,
-      List.length_flatMap, List.map_const', List.sum_replicate, smul_eq_mul, Setup.numOpened]
-    ring
-  exact hnear ⟨k, hlen ▸ hk⟩
+  exact hnear ⟨k, length_openedWords p α ζ ▸ hk⟩
 
 /-- **The decoding step.** -/
-theorem decodingStep (S : Setup EF) : DecodingStep S := by
+theorem decodingStep (S : Setup EF lookups) : DecodingStep S := by
   intro δ hδ prover α ζ _ hnear
   obtain ⟨T₀, hT₀card, hT₀near⟩ := hnear
   set T := T₀.filter fun i ↦ S.domain i ≠ ζ ∧ S.domain i ≠ ζ * rootOfUnity S.logN
@@ -202,31 +247,33 @@ theorem decodingStep (S : Setup EF) : DecodingStep S := by
   have hζ (i) (hi : i ∈ T) : ζ ≠ S.domain i := ((Finset.mem_filter.mp hi).2.1).symm
   have hζω (i) (hi : i ∈ T) : ζ * rootOfUnity S.logN ≠ S.domain i :=
     ((Finset.mem_filter.mp hi).2.2).symm
-  have hl2 {w : (S.Point → F) × 𝕂 × 𝕂} {l : List _} (h : w ∈ l) (l₁ l₂) :
-      w ∈ l ++ l₁ ++ l₂ := List.mem_append_left _ (List.mem_append_left _ h)
-  have htr (j : Fin S.air.width) := exists_basePoly S T hT (prover.trace j) ζ _ hζ
-    (hmem (prover.trace j, ζ, _) (hl2 (List.mem_append_left _ (List.mem_append_left _
-      (List.mem_map.mpr ⟨j, List.mem_finRange j, rfl⟩))) _ _))
+  have mtr := fun j ↦ hmem _ (mem_openedWords_trace prover α ζ j)
+  have mnx := fun j ↦ hmem _ (mem_openedWords_traceNext prover α ζ j)
+  have mqu := fun c e ↦ hmem _ (mem_openedWords_quotient prover α ζ c e)
+  have mpr := fun j ↦ hmem _ (mem_openedWords_prep prover α ζ j)
+  have mpn := fun j ↦ hmem _ (mem_openedWords_prepNext prover α ζ j)
+  have mpm := fun c e ↦ hmem _ (mem_openedWords_perm prover α ζ c e)
+  have mpmn := fun c e ↦ hmem _ (mem_openedWords_permNext prover α ζ c e)
+  have htr (j : Fin S.air.width) := exists_basePoly S T hT (prover.trace j) ζ _ hζ (mtr j)
   have hnx (j : Fin S.air.mainNextWidth) := exists_basePoly S T hT
-    (prover.trace (Fin.castLE S.air.mainNextWidth_le j)) _ _ hζω
-    (hmem (prover.trace (Fin.castLE S.air.mainNextWidth_le j), ζ * rootOfUnity S.logN, _)
-      (hl2 (List.mem_append_left _
-        (List.mem_append_right _ (List.mem_map.mpr ⟨j, List.mem_finRange j, rfl⟩))) _ _))
+    (prover.trace (Fin.castLE S.air.mainNextWidth_le j)) _ _ hζω (mnx j)
   have hqu (c : Fin S.chunks) (e : Fin (Challenge.d EF)) := exists_basePoly S T hT
-    (prover.quotient α c e) ζ _
-    hζ (hmem (prover.quotient α c e, ζ, _) (hl2 (List.mem_append_right _ (List.mem_flatMap.mpr
-      ⟨c, List.mem_finRange c, List.mem_map.mpr ⟨e, List.mem_finRange e, rfl⟩⟩)) _ _))
+    (prover.quotient α c e) ζ _ hζ (mqu c e)
   have hpr (j : Fin S.air.preprocessedWidth) := exists_basePoly S T hT (S.preprocessedWord j) ζ _
-    hζ (hmem (S.preprocessedWord j, ζ, _) (List.mem_append_left _ (List.mem_append_right _
-      (List.mem_map.mpr ⟨j, List.mem_finRange j, rfl⟩))))
+    hζ (mpr j)
   have hpn (j : Fin S.air.preprocessedNextWidth) := exists_basePoly S T hT
-    (S.preprocessedWord j) _ _ hζω (hmem (S.preprocessedWord j, ζ * rootOfUnity S.logN, _)
-      (List.mem_append_right _ (List.mem_map.mpr ⟨j, List.mem_finRange j, rfl⟩)))
+    (S.preprocessedWord j) _ _ hζω (mpn j)
+  have hpm (c : Fin S.permWidth) (e : Fin (Challenge.d EF)) := exists_basePoly S T hT
+    (prover.perm c e) ζ _ hζ (mpm c e)
+  have hpmn (c : Fin S.permWidth) (e : Fin (Challenge.d EF)) := exists_basePoly S T hT
+    (prover.perm c e) _ _ hζω (mpmn c e)
   choose trace htdeg htT htz using htr
   choose next hndeg hnT hnz using hnx
   choose quotient hqdeg hqT hqz using hqu
   choose prep hpdeg hpT hpz using hpr
   choose prepNext hpndeg hpnT hpnz using hpn
+  choose perm hmdeg hmT hmz using hpm
+  choose permNext hmndeg hmnT hmnz using hpmn
   have hprep (j : Nat) (Q : F[X]) (hQ : Q.natDegree ≤ S.n)
       (hQT : ∀ i ∈ T, S.preprocessedWord j i = Q.eval (basePoint (S.logN + S.params.logBlowup) i)) :
       Q = S.preprocessedPoly j := by
@@ -236,24 +283,33 @@ theorem decodingStep (S : Setup EF) : DecodingStep S := by
     rw [domain_eq, eval_map_algebraMap, eval_map_algebraMap, aeval_algebraMap_apply,
       aeval_algebraMap_apply, coe_aeval_eq_eval, ← hQT i hi]
     rfl
-  have hnext (j : Fin S.air.mainNextWidth) :
-      next j = trace (Fin.castLE S.air.mainNextWidth_le j) := by
+  have hsame {f : S.Point → F} {P Q : F[X]} (hP : P.natDegree ≤ S.n) (hQ : Q.natDegree ≤ S.n)
+      (hPT : ∀ i ∈ T, f i = P.eval (basePoint (S.logN + S.params.logBlowup) i))
+      (hQT : ∀ i ∈ T, f i = Q.eval (basePoint (S.logN + S.params.logBlowup) i)) : P = Q := by
     refine map_injective (algebraMap F 𝕂) (algebraMap F 𝕂).injective
-      (eq_of_agree S T hT _ _ (natDegree_map_le.trans (hndeg j))
-        (natDegree_map_le.trans (htdeg _)) fun i hi ↦ ?_)
+      (eq_of_agree S T hT _ _ (natDegree_map_le.trans hP)
+        (natDegree_map_le.trans hQ) fun i hi ↦ ?_)
     rw [domain_eq, eval_map_algebraMap, eval_map_algebraMap, aeval_algebraMap_apply,
-      aeval_algebraMap_apply, coe_aeval_eq_eval, ← hnT j i hi, ← htT _ i hi]
-  refine ⟨trace, quotient, htdeg, ⟨T, hTcard, fun i hi j ↦ htT j i hi⟩, hqdeg,
-    ⟨T, hTcard, fun i hi ce ↦ hqT ce.1 ce.2 i hi⟩, ?_⟩
+      aeval_algebraMap_apply, coe_aeval_eq_eval, ← hPT i hi, ← hQT i hi]
+  have hnext (j : Fin S.air.mainNextWidth) :
+      next j = trace (Fin.castLE S.air.mainNextWidth_le j) :=
+    hsame (hndeg j) (htdeg _) (hnT j) (htT _)
+  have hpermNext (c : Fin S.permWidth) (e : Fin (Challenge.d EF)) : permNext c e = perm c e :=
+    hsame (hmndeg c e) (hmdeg c e) (hmnT c e) (hmT c e)
+  refine ⟨trace, quotient, perm, htdeg, ⟨T, hTcard, fun i hi j ↦ htT j i hi⟩, hqdeg,
+    ⟨T, hTcard, fun i hi ce ↦ hqT ce.1 ce.2 i hi⟩, hmdeg,
+    ⟨T, hTcard, fun i hi ce ↦ hmT ce.1 ce.2 i hi⟩, ?_⟩
   have hnz' (j : Fin S.air.mainNextWidth) := hnext j ▸ hnz j
   have hpz' (j : Fin S.air.preprocessedWidth) := hprep j _ (hpdeg j) (hpT j) ▸ hpz j
   have hpnz' (j : Fin S.air.preprocessedNextWidth) :=
     hprep j _ (hpndeg j) (hpnT j) ▸ hpnz j
-  generalize prover.openings α ζ = o at htz hnz' hqz hpz' hpnz'
+  have hmnz' (c : Fin S.permWidth) (e : Fin (Challenge.d EF)) := hpermNext c e ▸ hmnz c e
+  generalize prover.openings α ζ = o at htz hnz' hqz hpz' hpnz' hmz hmnz'
   cases o
   simp only [trueOpenings, Openings.mk.injEq]
   exact ⟨funext fun j ↦ (htz j).symm, funext fun j ↦ (hnz' j).symm,
     funext fun c ↦ funext fun e ↦ (hqz c e).symm, funext fun j ↦ (hpz' j).symm,
-    funext fun j ↦ (hpnz' j).symm⟩
+    funext fun j ↦ (hpnz' j).symm, funext fun c ↦ funext fun e ↦ (hmz c e).symm,
+    funext fun c ↦ funext fun e ↦ (hmnz' c e).symm⟩
 
 end CompStark.Sound

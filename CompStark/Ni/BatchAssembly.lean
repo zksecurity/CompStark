@@ -11,7 +11,7 @@ public import CompStark.Ni.Assembly
 
 As for the STARK (`Ni/Assembly.lean`): the game of `Iop.Batch.run` (`gameB`) makes at most
 `Q + verifierQueries` oracle calls, the setup's, the prover's and the verifier's. A fresh answer
-is bad if its digest clashes (`prob_clash_le`: `3 q / |F|^8`) or it makes its batch round bad
+is bad if its digest clashes (`prob_clash_le`: `4 q / |F|^8`) or it makes its batch round bad
 (`prob_roundBadB_le`: the largest batch round error at the proximity loss), and an accepted proof
 the extractor cannot open forces such a query (`exists_badAtB`). The bound holds at every loss,
 so at the infimum: `q · roundError + hashError F q`.
@@ -50,7 +50,7 @@ theorem run_eqB (prover : Iop.Batch.NIProver S) :
       (simulateQ randomOracle (gameB S publicValues prover)).run' ∅ :=
   rfl
 
-theorem isTotalQueryBound_gameB (hnl : S.NoLookups) (prover : Iop.Batch.NIProver S) (Q : Nat)
+theorem isTotalQueryBound_gameB (prover : Iop.Batch.NIProver S) (Q : Nat)
     (hQ : prover.IsTotalQueryBound Q) :
     (gameB S publicValues prover).IsTotalQueryBound (Q + S.verifierQueries) := by
   have hsp : (setupAndProveB S prover).IsTotalQueryBound (S.setupQueries + Q) :=
@@ -63,7 +63,7 @@ theorem isTotalQueryBound_gameB (hnl : S.NoLookups) (prover : Iop.Batch.NIProver
     (by unfold Iop.Batch.Setup.verifierQueries; omega)
   obtain ⟨⟨common, proof⟩, log⟩ := x
   exact (isTotalQueryBound_bind (n₂ := 0)
-    (S.isTotalQueryBound_verifyBatchWith hnl common proof (List.ofFn publicValues))
+    (S.isTotalQueryBound_verifyBatchWith common proof (List.ofFn publicValues))
     fun v ↦ (show IsTotalQueryBound (pure (proof, log, v) :
       OracleComp (spec F S.streamLen) _) 0 from trivial)).mono (by omega)
 
@@ -112,17 +112,17 @@ section Bound
 variable (S : Iop.Batch.Setup EF) (publicValues : Fin S.k → List F) (δ δ' : NNReal)
 
 /-- The event of knowledge soundness: an accepted proof for the instances' trace lengths, no
-tuple of traces close to the committed ones satisfying every AIR. -/
+tuple of traces close to the committed ones satisfying the batch. -/
 def UnopenedB
     (result : CompStark.Batch.BatchProof F EF × QueryLog (spec F S.streamLen) ×
       Except String Unit) : Prop :=
   result.2.2 = .ok () ∧ result.1.degreeBits.toList = List.ofFn S.logN ∧
     ∀ traces ∈ Iop.Batch.closeTraces S δ' (Iop.Batch.committedTraces S result.2.1 result.1),
-      ¬ ∀ i, (S.air i).Satisfied (S.logN i) (traces i) (publicValues i)
+      ¬ S.Satisfied traces publicValues
 
 /-- **Knowledge soundness of the batch STARK in the random-oracle model**, with the event spelled
 out. -/
-theorem prob_unopenedB_le (hδ' : (δ' : ℝ) < 1 - S.rate) (hnl : S.NoLookups) (Q : Nat)
+theorem prob_unopenedB_le (hδ' : (δ' : ℝ) < 1 - S.rate) (Q : Nat)
     (prover : Iop.Batch.NIProver S) (hQ : prover.IsTotalQueryBound Q) :
     Pr{let result ← Iop.Batch.run S publicValues prover}[UnopenedB S publicValues δ' result] ≤
       (Q + S.verifierQueries) * Iop.Batch.roundError S δ δ' +
@@ -130,27 +130,27 @@ theorem prob_unopenedB_le (hδ' : (δ' : ℝ) < 1 - S.rate) (hnl : S.NoLookups) 
   set n := Q + S.verifierQueries
   have hn0 : 0 < n := by
     unfold n Iop.Batch.Setup.verifierQueries Iop.Batch.Setup.verifierCalls; omega
-  by_cases hbig : Fintype.card (Digest F) ≤ 3 * n
+  by_cases hbig : Fintype.card (Digest F) ≤ 4 * n
   · refine (prEvent_le_one _).trans (le_add_left ?_)
     rw [hashError_eq]
     have hcard : (Fintype.card (Digest F) : ℝ≥0∞) ≠ 0 := by
       simp only [ne_eq, Nat.cast_eq_zero, Fintype.card_ne_zero, not_false_eq_true]
-    calc (1 : ℝ≥0∞) ≤ ((3 * n : Nat) : ℝ≥0∞) * (Fintype.card (Digest F) : ℝ≥0∞)⁻¹ := by
+    calc (1 : ℝ≥0∞) ≤ ((4 * n : Nat) : ℝ≥0∞) * (Fintype.card (Digest F) : ℝ≥0∞)⁻¹ := by
           rw [← div_eq_mul_inv, ENNReal.le_div_iff_mul_le (Or.inl hcard)
             (Or.inl (ENNReal.natCast_ne_top _)), one_mul]
           exact_mod_cast hbig
       _ ≤ _ := le_mul_of_one_le_left (by positivity)
         (by exact_mod_cast Nat.one_le_iff_ne_zero.mpr hn0.ne')
-  have hsmall : 3 * n < Fintype.card (Digest F) := by omega
+  have hsmall : 4 * n < Fintype.card (Digest F) := by omega
   have hloss : ∀ loss, Pr{let result ← Iop.Batch.run S publicValues prover}[
       UnopenedB S publicValues δ' result] ≤ n * roundBoundB S δ δ' loss + hashError F n := by
     intro loss
     rw [run_eqB]
     refine (prEvent_exists_fresh_bad_le (gameB S publicValues prover) n
-      (isTotalQueryBound_gameB S publicValues hnl prover Q hQ) (UnopenedB S publicValues δ')
+      (isTotalQueryBound_gameB S publicValues prover Q hQ) (UnopenedB S publicValues δ')
       (fun pre t u ↦ Clash (boundDigestB S) pre t u ∨
         RoundBadB S publicValues δ δ' loss pre t u)
-      (((3 * n : Nat) : ℝ≥0∞) * (Fintype.card (Digest F) : ℝ≥0∞)⁻¹ + roundBoundB S δ δ' loss)
+      (((4 * n : Nat) : ℝ≥0∞) * (Fintype.card (Digest F) : ℝ≥0∞)⁻¹ + roundBoundB S δ δ' loss)
       (fun pre t hlen _ ↦ (prEvent_or_le _ _ _).trans
         (add_le_add (prob_clash_le (boundDigestB S) _ n pre hlen t)
           (prob_roundBadB_le S publicValues δ δ' loss pre t)))
@@ -160,10 +160,10 @@ theorem prob_unopenedB_le (hδ' : (δ' : ℝ) < 1 - S.rate) (hnl : S.NoLookups) 
       dsimp only at hok hfail
       have hlog := tableQueryLog_gameB S publicValues answer prover
       have hlen := length_tableQueryLog_le answer _ n
-        (isTotalQueryBound_gameB S publicValues hnl prover Q hQ)
+        (isTotalQueryBound_gameB S publicValues prover Q hQ)
       rw [hlog] at hlen
       set proof := evalWithAnswerFn (QueryImpl.ofFn answer) prover
-      obtain ⟨p, hp, hfresh, hbad⟩ := exists_badAtB S publicValues δ δ' loss hδ' hnl answer _
+      obtain ⟨p, hp, hfresh, hbad⟩ := exists_badAtB S publicValues δ δ' loss hδ' answer _
         proof (tableQueryLog (setupAndProveB S prover) answer) (consistent_tableQueryLog _) rfl
         (fun e he ↦ by
           rw [tableQueryLog_setupAndProveB]; exact List.mem_append_left _ he)

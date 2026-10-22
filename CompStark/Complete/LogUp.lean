@@ -589,15 +589,8 @@ theorem busIdsFrom_lengths {F : Type} (names : List (String × Nat)) (next : Nat
     exact .cons (by rw [foldl_busStep_length, List.length_nil, Nat.zero_add])
       (busIdsFrom_lengths _ _ ls)
 
-section Terminals
-variable {F : Type} [BaseField F] {EF : Type} [Challenge F EF]
-local notation "E" => Challenge.Spec EF
-
-/-- The denominator base of bus `b` for the pair `(α, β)` and the widest tuple `W`. -/
-def busPrefix (alpha beta : EF) (W b : Nat) : EF := alpha + Ext.ofBase ((b + 1 : Nat) : F) *
-  Ext.pow beta W
-
-theorem getD_flatMap_pair (pre : Nat → EF) (beta : EF) (ids : List Nat) (c : Nat)
+theorem getD_flatMap_pair {K : Type*} [Zero K] (pre : Nat → K) (beta : K) (ids : List Nat)
+    (c : Nat)
     (hc : c < ids.length) :
     (ids.flatMap fun b ↦ [pre b, beta]).getD (2 * c) 0 = pre (ids[c]) ∧
       (ids.flatMap fun b ↦ [pre b, beta]).getD (2 * c + 1) 0 = beta := by
@@ -614,6 +607,14 @@ theorem getD_flatMap_pair (pre : Nat → EF) (beta : EF) (ids : List Nat) (c : N
         show 2 * c + 1 + 1 + 1 = 2 * c + 1 + 1 + 1 from rfl, List.getD_cons_succ,
         List.getD_cons_succ, List.nil_append]
       exact this
+
+section Terminals
+variable {F : Type} [BaseField F] {EF : Type} [Challenge F EF]
+local notation "E" => Challenge.Spec EF
+
+/-- The denominator base of bus `b` for the pair `(α, β)` and the widest tuple `W`. -/
+def busPrefix (alpha beta : EF) (W b : Nat) : EF := alpha + Ext.ofBase ((b + 1 : Nat) : F) *
+  Ext.pow beta W
 
 theorem sum_flatMap {α β : Type*} [AddCommMonoid β] (L : List α) (f : α → List β) :
     (L.flatMap f).sum = (L.map fun a ↦ (f a).sum).sum := by

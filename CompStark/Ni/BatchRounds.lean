@@ -90,6 +90,10 @@ def prepVals (A : Air F) (o : OpenedValues EF) : List EF :=
       if A.opensPreprocessedNext then (o.preprocessedNext.getD #[]).toList else []
   else []
 
+/-- An instance's opened permutation values, at `ζ` and `ζ ω`, if it has lookups. -/
+def permVals (lookups : List (Lookup F)) (cur next : Array EF) : List EF :=
+  if lookups.isEmpty then [] else cur.toList ++ next.toList
+
 theorem flatMap_filter_ite {α β : Type} (p : α → Bool) (f : α → List β) :
     ∀ L : List α, (L.filter p).flatMap f = L.flatMap fun a ↦ if p a then f a else []
   | [] => rfl
@@ -164,6 +168,15 @@ theorem traceOpenings_counts (A : Air F) (o : OpenedValues EF) (z zn : EF)
     simp only [htn.1, ↓reduceIte, List.map_cons, List.map_nil, Array.length_toList, htl,
       Option.getD_some, htn.2]
 
+theorem length_permVals (lookups : List (Lookup F)) (cur next : Array EF) (n : ℕ)
+    (hcur : cur.size = n) (hnext : next.size = n) (hn : lookups.isEmpty = true → n = 0) :
+    (permVals lookups cur next).length = 2 * n := by
+  unfold permVals
+  split
+  · rename_i h
+    rw [hn h, List.length_nil]
+  · rw [List.length_append, Array.length_toList, Array.length_toList, hcur, hnext, Nat.two_mul]
+
 end Values
 
 section Layout
@@ -179,9 +192,13 @@ def quotLenB (i : Fin S.k) : ℕ := Challenge.d EF * (S.instanceSetup i).chunks
 def prepLenB (i : Fin S.k) : ℕ :=
   (S.air i).preprocessedWidth + (S.air i).preprocessedNextWidth
 
+/-- Instance `i`'s number of opened permutation values: its permutation trace's `d` coordinates
+per column, at two points. -/
+def permLenB (i : Fin S.k) : ℕ := 2 * (Challenge.d EF * (S.instanceSetup i).permWidth)
+
 /-- Every instance's openings, decoded from the extension elements in `xs` in the order the batch
 verifier observes them: every instance's trace values, then every instance's quotient chunks,
-then every instance's preprocessed values. -/
+every instance's preprocessed values and every instance's permutation values. -/
 noncomputable def openingsAtB (xs : List F) (i : Fin S.k) : Openings (S.instanceSetup i) where
   traceAt j := Challenge.toSpec (extFrom (EF := EF) xs (blockOff (mainLenB S) i + j))
   traceNext j := Challenge.toSpec (extFrom (EF := EF) xs
@@ -193,11 +210,19 @@ noncomputable def openingsAtB (xs : List F) (i : Fin S.k) : Openings (S.instance
   preprocessedNext j := Challenge.toSpec (extFrom (EF := EF) xs
     (blockSum (mainLenB S) + blockSum (quotLenB S) + blockOff (prepLenB S) i +
       (S.air i).preprocessedWidth + j))
+  permAt c e := Challenge.toSpec (extFrom (EF := EF) xs
+    (blockSum (mainLenB S) + blockSum (quotLenB S) + blockSum (prepLenB S) +
+      blockOff (permLenB S) i + (c.val * Challenge.d EF + e.val)))
+  permNext c e := Challenge.toSpec (extFrom (EF := EF) xs
+    (blockSum (mainLenB S) + blockSum (quotLenB S) + blockSum (prepLenB S) +
+      blockOff (permLenB S) i + Challenge.d EF * (S.instanceSetup i).permWidth +
+        (c.val * Challenge.d EF + e.val)))
 
 /-- The values the PCS observes, laid out by instance. -/
 theorem roundValues_batchRounds_eq (common : CompStark.Batch.Common F)
     (proof : CompStark.Batch.BatchProof F EF) (hsize : proof.opened.size = S.k)
-    (hperm : proof.permutationCommit = none) (z : EF) :
+    (hlsize : proof.permutationLocal.size = S.k) (hnsize : proof.permutationNext.size = S.k)
+    (z : EF) :
     roundValues (CompStark.Batch.batchRounds S.instances common proof z) =
       (List.finRange S.k).flatMap (fun i ↦ mainVals (S.air i)
         (proof.opened.toList.getD i noOpenings)) ++
@@ -206,11 +231,18 @@ theorem roundValues_batchRounds_eq (common : CompStark.Batch.Common F)
       (match common.preprocessed with
         | some _ => (List.finRange S.k).flatMap fun i ↦ prepVals (S.air i)
             (proof.opened.toList.getD i noOpenings)
+        | none => []) ++
+      (match proof.permutationCommit with
+        | some _ => (List.finRange S.k).flatMap fun i ↦ permVals (S.lookups i)
+            (proof.permutationLocal.getD i #[]) (proof.permutationNext.getD i #[])
         | none => []) := by
   have hos : proof.opened.toList.length = S.k := by rw [Array.length_toList, hsize]
   have hcons : ∀ (r : Round F EF) (rs : List (Round F EF)),
       roundValues (r :: rs) = r.2.flatMap (fun m ↦ m.2.flatMap (·.2)) ++ roundValues rs :=
     fun _ _ ↦ List.flatMap_cons
+  have happ : ∀ (rs rs' : List (Round F EF)),
+      roundValues (rs ++ rs') = roundValues rs ++ roundValues rs' :=
+    fun _ _ ↦ List.flatMap_append
   have hM : ((S.instances.zip proof.opened.toList).map fun x ↦
       ((⟨1, x.1.logN⟩ : Domain F), traceOpenings x.1.air x.2 z
         (z * Ext.ofBase (twoAdicGen x.1.logN)))).flatMap (fun m ↦ m.2.flatMap (·.2)) =
@@ -228,43 +260,65 @@ theorem roundValues_batchRounds_eq (common : CompStark.Batch.Common F)
     rw [List.flatMap_map, quotVals]
     refine List.flatMap_congr fun ch _ ↦ ?_
     simp only [List.flatMap_cons, List.flatMap_nil, List.append_nil]
-  have hP : (((S.instances.zip proof.opened.toList).filter
-      (0 < ·.1.air.preprocessedWidth)).map fun x ↦ ((⟨1, x.1.logN⟩ : Domain F),
-        (z, (x.2.preprocessedLocal.getD #[]).toList) ::
-          if x.1.air.opensPreprocessedNext then
-            [(z * Ext.ofBase (twoAdicGen x.1.logN), (x.2.preprocessedNext.getD #[]).toList)]
-          else [])).flatMap (fun m ↦ m.2.flatMap (·.2)) =
-      (List.finRange S.k).flatMap fun i ↦ prepVals (S.air i)
-        (proof.opened.toList.getD i noOpenings) := by
-    rw [zip_instances S _ hos, List.flatMap_map, List.filter_map, List.flatMap_map,
-      flatMap_filter_ite]
-    refine List.flatMap_congr fun i _ ↦ ?_
-    by_cases hp : 0 < (S.air i).preprocessedWidth
-    · by_cases h : (S.air i).opensPreprocessedNext = true <;>
-        simp only [Function.comp_apply, prepVals, hp, decide_true, h, ↓reduceIte,
-          Bool.false_eq_true, List.flatMap_cons, List.flatMap_nil, List.append_nil]
-    · simp only [Function.comp_apply, prepVals, hp, decide_false, ↓reduceIte,
-        Bool.false_eq_true]
-  rw [batchRounds_cases (hperm := hperm)]
-  cases common.preprocessed with
-  | none =>
-    rw [List.append_nil, hcons, hcons, hM, hQ]
-    simp only [roundValues, List.flatMap_nil, List.append_nil]
-  | some root =>
-    rw [List.cons_append, List.cons_append, List.nil_append, hcons, hcons, hcons, hM, hQ, hP]
-    simp only [roundValues, List.flatMap_nil, List.append_nil, List.append_assoc]
+  have hP : roundValues (prepRounds S proof z common) =
+      (match common.preprocessed with
+        | some _ => (List.finRange S.k).flatMap fun i ↦ prepVals (S.air i)
+            (proof.opened.toList.getD i noOpenings)
+        | none => []) := by
+    rw [prepRounds]
+    cases common.preprocessed with
+    | none => rfl
+    | some root =>
+      dsimp only
+      rw [hcons]
+      simp only [roundValues, List.flatMap_nil, List.append_nil]
+      rw [zip_instances S _ hos, List.flatMap_map, List.filter_map, List.flatMap_map,
+        flatMap_filter_ite]
+      refine List.flatMap_congr fun i _ ↦ ?_
+      by_cases hp : 0 < (S.air i).preprocessedWidth
+      · by_cases h : (S.air i).opensPreprocessedNext = true <;>
+          simp only [Function.comp_apply, prepVals, hp, decide_true, h, ↓reduceIte,
+            Bool.false_eq_true, List.flatMap_cons, List.flatMap_nil, List.append_nil]
+      · simp only [Function.comp_apply, prepVals, hp, decide_false, ↓reduceIte,
+          Bool.false_eq_true]
+  have hR : roundValues (permRounds S proof z) =
+      (match proof.permutationCommit with
+        | some _ => (List.finRange S.k).flatMap fun i ↦ permVals (S.lookups i)
+            (proof.permutationLocal.getD i #[]) (proof.permutationNext.getD i #[])
+        | none => []) := by
+    rw [permRounds]
+    cases proof.permutationCommit with
+    | none => rfl
+    | some root =>
+      dsimp only
+      rw [hcons]
+      simp only [roundValues, List.flatMap_nil, List.append_nil]
+      rw [permMats_eq S proof z hlsize hnsize, permInsts, List.flatMap_map, flatMap_filter_ite]
+      refine List.flatMap_congr fun i _ ↦ ?_
+      by_cases hl : (S.lookups i).isEmpty = true
+      · simp only [hl, Bool.not_true, Bool.false_eq_true, ↓reduceIte, permVals]
+      · simp only [hl, Bool.not_false, Bool.false_eq_true, ↓reduceIte, permVals,
+          List.flatMap_cons, List.flatMap_nil, List.append_nil]
+  rw [batchRounds_cases, happ, happ, hcons, hcons, hM, hQ, hP, hR]
+  simp only [roundValues, List.flatMap_nil, List.append_nil, List.append_assoc]
 
 /-- **Decoding the opened values.** On opened values in the instances' shapes, the decoder reads
 every instance's openings back from the values the PCS observes. -/
-theorem openingsAtB_coeffs (hnl : S.NoLookups) (common : CompStark.Batch.Common F)
+theorem openingsAtB_coeffs (common : CompStark.Batch.Common F)
     (proof : CompStark.Batch.BatchProof F EF) (hsize : proof.opened.size = S.k)
+    (hlsize : proof.permutationLocal.size = S.k) (hnsize : proof.permutationNext.size = S.k)
     (hshape : ∀ i : Fin S.k, CompStark.Batch.openedShapeOk ⟨S.air i, S.logN i⟩
       (proof.opened.toList.getD i noOpenings) = true)
     (hprep : common.preprocessed.isSome = S.instances.any (0 < ·.air.preprocessedWidth))
-    (hperm : proof.permutationCommit = none) (z : EF) (rest : List F) (i : Fin S.k) :
+    (hpw : ∀ i : Fin S.k,
+      (proof.permutationLocal.getD i #[]).size = Challenge.d EF * (S.instanceSetup i).permWidth ∧
+      (proof.permutationNext.getD i #[]).size = Challenge.d EF * (S.instanceSetup i).permWidth)
+    (hperm : proof.permutationCommit.isSome = S.hasLookups) (z : EF) (rest : List F)
+    (i : Fin S.k) :
     openingsAtB S (coeffs (roundValues (CompStark.Batch.batchRounds S.instances common proof z)) ++
-      rest) i = openingsOf (S.instanceSetup i) (proof.opened.toList.getD i noOpenings) := by
-  have hsh := fun i ↦ openedShapeOk_spec (hnl i) (hshape i)
+      rest) i = openingsOf (S.instanceSetup i) (proof.opened.toList.getD i noOpenings)
+        (proof.permutationLocal.getD i #[]) (proof.permutationNext.getD i #[]) := by
+  have hsh := fun i ↦ openedShapeOk_spec (hshape i)
   dsimp only at hsh
   set A := (List.finRange S.k).flatMap fun i ↦ mainVals (S.air i)
     (proof.opened.toList.getD i noOpenings) with hAdef
@@ -272,15 +326,23 @@ theorem openingsAtB_coeffs (hnl : S.NoLookups) (common : CompStark.Batch.Common 
     quotVals (proof.opened.toList.getD i noOpenings) with hBdef
   set P := (List.finRange S.k).flatMap fun i ↦ prepVals (S.air i)
     (proof.opened.toList.getD i noOpenings) with hPdef
+  set R := (List.finRange S.k).flatMap fun i ↦ permVals (S.lookups i)
+    (proof.permutationLocal.getD i #[]) (proof.permutationNext.getD i #[]) with hRdef
   have hmL : ∀ i : Fin S.k, (mainVals (S.air i) (proof.opened.toList.getD i noOpenings)).length =
       mainLenB S i := fun i ↦ length_mainVals _ _ (hsh i).1 (hsh i).2.1
   have hqL : ∀ i : Fin S.k, (quotVals (proof.opened.toList.getD i noOpenings)).length =
-      quotLenB S i := fun i ↦ length_quotVals _ _ (hsh i).2.2.1 (hsh i).2.2.2.1
+      quotLenB S i := fun i ↦ length_quotVals _ _ ((hsh i).2.2.1.trans
+        (congrArg (2 ^ ·) (logChunks_eq S i).symm)) (hsh i).2.2.2.1
   have hpL : ∀ i : Fin S.k, (prepVals (S.air i) (proof.opened.toList.getD i noOpenings)).length =
       prepLenB S i := fun i ↦ length_prepVals _ _ (hsh i).2.2.2.2.1 (hsh i).2.2.2.2.2
+  have hrL : ∀ i : Fin S.k, (permVals (S.lookups i) (proof.permutationLocal.getD i #[])
+      (proof.permutationNext.getD i #[])).length = permLenB S i := fun i ↦
+    length_permVals _ _ _ _ (hpw i).1 (hpw i).2 fun h ↦ by
+      simp only [permWidth_eq, h, ↓reduceIte, Nat.mul_zero]
   have hA : A.length = blockSum (mainLenB S) := length_flatMap_finRange _ _ hmL
   have hB : B.length = blockSum (quotLenB S) := length_flatMap_finRange _ _ hqL
   have hP : P.length = blockSum (prepLenB S) := length_flatMap_finRange _ _ hpL
+  have hR : R.length = blockSum (permLenB S) := length_flatMap_finRange _ _ hrL
   have hC : (match common.preprocessed with
       | some _ => P
       | none => []) = P := by
@@ -296,13 +358,40 @@ theorem openingsAtB_coeffs (hnl : S.NoLookups) (common : CompStark.Batch.Common 
         rw [this] at hprep
         exact Bool.false_ne_true hprep
       simp only [prepVals, hpw, ↓reduceIte]
-  rw [roundValues_batchRounds_eq S common proof hsize hperm z, hC]
-  have hx : ∀ k < (A ++ B ++ P).length,
-      extFrom (EF := EF) (coeffs (A ++ B ++ P) ++ rest) k = (A ++ B ++ P).getD k 0 :=
+  have hD : (match proof.permutationCommit with
+      | some _ => R
+      | none => []) = R := by
+    cases hc : proof.permutationCommit with
+    | some _ => rfl
+    | none =>
+      refine (List.flatMap_eq_nil_iff.mpr fun i _ ↦ ?_).symm
+      have hl : (S.lookups i).isEmpty = true := by
+        rw [hc, Option.isSome_none] at hperm
+        by_contra hne
+        have : S.hasLookups = true :=
+          List.any_eq_true.mpr ⟨⟨S.air i, S.logN i⟩, List.mem_ofFn.mpr ⟨i, rfl⟩, by
+            rw [← lookups_eq]
+            simpa only [Bool.not_eq_eq_eq_not, Bool.not_true, Bool.not_eq_true] using hne⟩
+        rw [this] at hperm
+        exact Bool.false_ne_true hperm
+      simp only [permVals, hl, ↓reduceIte]
+  rw [roundValues_batchRounds_eq S common proof hsize hlsize hnsize z, hC, hD]
+  have hx : ∀ k < (A ++ B ++ P ++ R).length,
+      extFrom (EF := EF) (coeffs (A ++ B ++ P ++ R) ++ rest) k = (A ++ B ++ P ++ R).getD k 0 :=
     fun k hk ↦ by rw [extFrom_coeffs rest _ k hk, List.getD_eq_getElem _ _ hk]
-  have hlen : (A ++ B ++ P).length =
-      blockSum (mainLenB S) + blockSum (quotLenB S) + blockSum (prepLenB S) := by
-    rw [List.length_append, List.length_append, hA, hB, hP]
+  have hlen : (A ++ B ++ P ++ R).length = blockSum (mainLenB S) + blockSum (quotLenB S) +
+      blockSum (prepLenB S) + blockSum (permLenB S) := by
+    rw [List.length_append, List.length_append, List.length_append, hA, hB, hP, hR]
+  have hgABP : ∀ k < blockSum (mainLenB S) + blockSum (quotLenB S) + blockSum (prepLenB S),
+      (A ++ B ++ P ++ R).getD k 0 = (A ++ B ++ P).getD k 0 := fun k hk ↦ by
+    rw [List.getD_append _ _ _ _ (by
+      rw [List.length_append, List.length_append, hA, hB, hP]; exact hk)]
+  have hgR : ∀ k < blockSum (permLenB S), (A ++ B ++ P ++ R).getD
+      (blockSum (mainLenB S) + blockSum (quotLenB S) + blockSum (prepLenB S) + k) 0 =
+        R.getD k 0 := fun k hk ↦ by
+    rw [List.getD_append_right _ _ _ _ (by
+        rw [List.length_append, List.length_append, hA, hB, hP]; omega),
+      List.length_append, List.length_append, hA, hB, hP, Nat.add_sub_cancel_left]
   have hgA : ∀ k < blockSum (mainLenB S), (A ++ B ++ P).getD k 0 = A.getD k 0 := fun k hk ↦ by
     rw [List.append_assoc, List.getD_append _ _ _ _ (by omega)]
   have hgB : ∀ k < blockSum (quotLenB S),
@@ -317,23 +406,31 @@ theorem openingsAtB_coeffs (hnl : S.NoLookups) (common : CompStark.Batch.Common 
   have hmi := blockOff_add_le (mainLenB S) i
   have hqi := blockOff_add_le (quotLenB S) i
   have hpi := blockOff_add_le (prepLenB S) i
+  have hri := blockOff_add_le (permLenB S) i
   obtain ⟨htl, htn, hqc, hq4, hpl, hpn⟩ := hsh i
+  replace hqc := hqc.trans (congrArg (2 ^ ·) (logChunks_eq S i).symm)
   set o := proof.opened.toList.getD i noOpenings with ho
-  cases hS : openingsOf (S.instanceSetup i) o with
-  | mk ta tn qa pa pn =>
-  have hta : ta = (openingsOf (S.instanceSetup i) o).traceAt := by rw [hS]
-  have htn' : tn = (openingsOf (S.instanceSetup i) o).traceNext := by rw [hS]
-  have hqa : qa = (openingsOf (S.instanceSetup i) o).quotientAt := by rw [hS]
-  have hpa : pa = (openingsOf (S.instanceSetup i) o).preprocessedAt := by rw [hS]
-  have hpn' : pn = (openingsOf (S.instanceSetup i) o).preprocessedNext := by rw [hS]
-  subst hta htn' hqa hpa hpn'
+  set cur := proof.permutationLocal.getD i #[] with hcur
+  set next := proof.permutationNext.getD i #[] with hnext
+  cases hS : openingsOf (S.instanceSetup i) o cur next with
+  | mk ta tn qa pa pn ra rn =>
+  have hta : ta = (openingsOf (S.instanceSetup i) o cur next).traceAt := by rw [hS]
+  have htn' : tn = (openingsOf (S.instanceSetup i) o cur next).traceNext := by rw [hS]
+  have hqa : qa = (openingsOf (S.instanceSetup i) o cur next).quotientAt := by rw [hS]
+  have hpa : pa = (openingsOf (S.instanceSetup i) o cur next).preprocessedAt := by rw [hS]
+  have hpn' : pn = (openingsOf (S.instanceSetup i) o cur next).preprocessedNext := by rw [hS]
+  have hra : ra = (openingsOf (S.instanceSetup i) o cur next).permAt := by rw [hS]
+  have hrn : rn = (openingsOf (S.instanceSetup i) o cur next).permNext := by rw [hS]
+  subst hta htn' hqa hpa hpn' hra hrn
   simp only [openingsAtB, Openings.mk.injEq]
   have hmw : mainLenB S i = (S.air i).width + (S.air i).mainNextWidth := rfl
-  have hpw : prepLenB S i = (S.air i).preprocessedWidth + (S.air i).preprocessedNextWidth := rfl
+  have hpwP : prepLenB S i = (S.air i).preprocessedWidth + (S.air i).preprocessedNextWidth := rfl
   refine ⟨funext fun j ↦ ?_, funext fun j ↦ ?_, funext fun c ↦ funext fun e ↦ ?_,
-    funext fun j ↦ ?_, funext fun j ↦ ?_⟩
+    funext fun j ↦ ?_, funext fun j ↦ ?_, funext fun c ↦ funext fun e ↦ ?_,
+    funext fun c ↦ funext fun e ↦ ?_⟩
   · have hj := j.isLt
-    rw [hx _ (by omega), hgA _ (by omega), getD_flatMap_finRange _ _ hmL _ i j (by
+    rw [hx _ (by omega), hgABP _ (by omega), hgA _ (by omega),
+      getD_flatMap_finRange _ _ hmL _ i j (by
       change j.val < (S.air i).width + _; omega), mainVals,
       List.getD_append _ _ _ _ (by rw [Array.length_toList, htl]; exact hj), toList_getD]
     rfl
@@ -347,6 +444,7 @@ theorem openingsAtB_coeffs (hnl : S.NoLookups) (common : CompStark.Batch.Common 
     have hjw : j.val < (S.air i).width := by
       have := (S.air i).mainNextWidth_le; change j.val < (S.air i).mainNextWidth at hj; omega
     rw [hx _ (by change j.val < (S.air i).mainNextWidth at hj; omega),
+      hgABP _ (by change j.val < (S.air i).mainNextWidth at hj; omega),
       hgA _ (by change j.val < (S.air i).mainNextWidth at hj; omega), Nat.add_assoc,
       getD_flatMap_finRange _ _ hmL _ i _ (by change j.val < (S.air i).mainNextWidth at hj; omega),
       mainVals, List.getD_append_right _ _ _ _ (by rw [Array.length_toList, htl]; omega),
@@ -357,7 +455,7 @@ theorem openingsAtB_coeffs (hnl : S.NoLookups) (common : CompStark.Batch.Common 
     have he := e.isLt
     have hce : Challenge.d EF * c.val + e.val < quotLenB S i :=
       (Nat.add_lt_add_left he _).trans_le (Nat.mul_le_mul_left _ hc)
-    rw [hx _ (by omega), Nat.add_assoc, hgB _ (by omega),
+    rw [hx _ (by omega), hgABP _ (by omega), Nat.add_assoc, hgB _ (by omega),
       getD_flatMap_finRange _ _ hqL _ i _ hce, quotVals]
     have hL : ∀ l ∈ o.quotientChunks.toList.map (·.toList), l.length = Challenge.d EF := by
       intro l hl
@@ -387,7 +485,7 @@ theorem openingsAtB_coeffs (hnl : S.NoLookups) (common : CompStark.Batch.Common 
     rw [hch, Array.getD_eq_getD_getElem?, Array.getElem?_eq_getElem he', Option.getD_some]
   · have hj : j.val < (S.air i).preprocessedWidth := j.isLt
     have hp : 0 < (S.air i).preprocessedWidth := by omega
-    rw [hx _ (by omega), Nat.add_assoc, hgP _ (by omega),
+    rw [hx _ (by omega), hgABP _ (by omega), Nat.add_assoc, hgP _ (by omega),
       getD_flatMap_finRange _ _ hpL _ i j (by omega), prepVals,
       ite_eq_left_of_eq_true _ _ (eq_true hp),
       List.getD_append _ _ _ _ (by rw [Array.length_toList, hpl]; exact hj), toList_getD]
@@ -401,13 +499,54 @@ theorem openingsAtB_coeffs (hnl : S.NoLookups) (common : CompStark.Batch.Common 
       have : (S.air i).preprocessedNextWidth = 0 := by
         simp only [Air.preprocessedNextWidth, h, ↓reduceIte]
       omega
-    rw [hx _ (by omega), Nat.add_assoc (blockSum (mainLenB S) + blockSum (quotLenB S)),
+    rw [hx _ (by omega), hgABP _ (by omega),
+      Nat.add_assoc (blockSum (mainLenB S) + blockSum (quotLenB S)),
       Nat.add_assoc, hgP _ (by omega), Nat.add_assoc,
       getD_flatMap_finRange _ _ hpL _ i _ (by omega), prepVals,
       ite_eq_left_of_eq_true _ _ (eq_true hp),
       List.getD_append_right _ _ _ _ (by rw [Array.length_toList, hpl]; omega),
       Array.length_toList, hpl, Nat.add_sub_cancel_left,
       ite_eq_left_of_eq_true _ _ (eq_true hnr), toList_getD]
+    rfl
+  · have hc := c.isLt
+    have he := e.isLt
+    have hpw' := hpw i
+    have hce : c.val * Challenge.d EF + e.val < Challenge.d EF * (S.instanceSetup i).permWidth := by
+      rw [Nat.mul_comm (Challenge.d EF)]
+      calc c.val * Challenge.d EF + e.val < c.val * Challenge.d EF + Challenge.d EF := by omega
+        _ = (c.val + 1) * Challenge.d EF := (Nat.succ_mul _ _).symm
+        _ ≤ _ := Nat.mul_le_mul_right _ hc
+    have hne : (S.lookups i).isEmpty = false := by
+      by_contra h
+      rw [Bool.not_eq_false] at h
+      have : (S.instanceSetup i).permWidth = 0 := by simp only [permWidth_eq, h, ↓reduceIte]
+      omega
+    have hrw : permLenB S i = 2 * (Challenge.d EF * (S.instanceSetup i).permWidth) := rfl
+    rw [hx _ (by omega), Nat.add_assoc _ (blockOff (permLenB S) i), hgR _ (by omega),
+      getD_flatMap_finRange _ _ hrL _ i _ (by omega), permVals, hne,
+      ite_eq_right_of_eq_false _ _ (eq_false Bool.false_ne_true),
+      List.getD_append _ _ _ _ (by rw [Array.length_toList, hpw'.1]; exact hce), toList_getD]
+    rfl
+  · have hc := c.isLt
+    have he := e.isLt
+    have hpw' := hpw i
+    have hce : c.val * Challenge.d EF + e.val < Challenge.d EF * (S.instanceSetup i).permWidth := by
+      rw [Nat.mul_comm (Challenge.d EF)]
+      calc c.val * Challenge.d EF + e.val < c.val * Challenge.d EF + Challenge.d EF := by omega
+        _ = (c.val + 1) * Challenge.d EF := (Nat.succ_mul _ _).symm
+        _ ≤ _ := Nat.mul_le_mul_right _ hc
+    have hne : (S.lookups i).isEmpty = false := by
+      by_contra h
+      rw [Bool.not_eq_false] at h
+      have : (S.instanceSetup i).permWidth = 0 := by simp only [permWidth_eq, h, ↓reduceIte]
+      omega
+    have hrw : permLenB S i = 2 * (Challenge.d EF * (S.instanceSetup i).permWidth) := rfl
+    rw [hx _ (by omega), show ∀ a o p q : ℕ, a + o + p + q = a + (o + (p + q)) from
+        fun _ _ _ _ ↦ by omega, hgR _ (by omega),
+      getD_flatMap_finRange _ _ hrL _ i _ (by omega), permVals, hne,
+      ite_eq_right_of_eq_false _ _ (eq_false Bool.false_ne_true),
+      List.getD_append_right _ _ _ _ (by rw [Array.length_toList, hpw'.1]; omega),
+      Array.length_toList, hpw'.1, Nat.add_sub_cancel_left, toList_getD]
     rfl
 
 end Layout
@@ -424,16 +563,22 @@ theorem hasPreprocessed_eq :
   rfl
 
 /-- The claimed evaluation counts of a batch proof for `S`: every instance's trace at one or two
-points, every quotient chunk at one, and every preprocessed trace at one or two. -/
+points, every quotient chunk at one, every preprocessed trace at one or two, and every permutation
+trace at two. -/
 def countsB : List (List (List Nat)) :=
   [(List.finRange S.k).map (fun i ↦
       (S.air i).width :: if (S.air i).mainNextRow then [(S.air i).width] else []),
     (List.finRange S.k).flatMap fun i ↦
       List.replicate (S.instanceSetup i).chunks [Challenge.d EF]] ++
-    if S.hasPreprocessed then
+    (if S.hasPreprocessed then
       [((List.finRange S.k).filter fun i ↦ 0 < (S.air i).preprocessedWidth).map fun i ↦
         (S.air i).preprocessedWidth ::
           if (S.air i).opensPreprocessedNext then [(S.air i).preprocessedWidth] else []]
+    else []) ++
+    if S.hasLookups then
+      [((List.finRange S.k).filter fun i ↦ !(S.lookups i).isEmpty).map fun i ↦
+        [Challenge.d EF * (S.instanceSetup i).permWidth,
+          Challenge.d EF * (S.instanceSetup i).permWidth]]
     else []
 
 /-- The PCS's domain separator on a batch proof for `S`. -/
@@ -443,7 +588,8 @@ def pcsSeedB : List F := DomainSeparator.pcsSeed F EF (countsB S) S.params.batch
 def batchSeedS : List F :=
   DomainSeparator.batchSeed F EF (S.instances.map (·.air.width))
     (S.instances.map (·.air.preprocessedWidth)) (S.instances.map (·.air.numPublicValues))
-    S.hasPreprocessed 0 S.params.lookupPowBits S.params.oodPowBits
+    S.hasPreprocessed (S.instances.countP (!·.lookups.isEmpty)) S.params.lookupPowBits
+    S.params.oodPowBits
 
 /-- Where the main commitment sits in the first round's input: after the batch's domain separator
 and every instance's degree bits. -/
@@ -451,15 +597,19 @@ def mainOffsetB : Nat := (batchSeedS S).length + Challenge.d EF * S.k
 
 /-- **The PCS's counts are static.** On opened values in the instances' shapes, the PCS observes
 the counts `countsB`. -/
-theorem claimCounts_batchRounds_eq (hnl : S.NoLookups) (common : CompStark.Batch.Common F)
+theorem claimCounts_batchRounds_eq (common : CompStark.Batch.Common F)
     (proof : CompStark.Batch.BatchProof F EF) (hsize : proof.opened.size = S.k)
+    (hlsize : proof.permutationLocal.size = S.k) (hnsize : proof.permutationNext.size = S.k)
     (hshape : ∀ i : Fin S.k, CompStark.Batch.openedShapeOk ⟨S.air i, S.logN i⟩
       (proof.opened.toList.getD i noOpenings) = true)
     (hprep : common.preprocessed.isSome = S.instances.any (0 < ·.air.preprocessedWidth))
-    (hperm : proof.permutationCommit = none) (z : EF) :
+    (hpw : ∀ i : Fin S.k,
+      (proof.permutationLocal.getD i #[]).size = Challenge.d EF * (S.instanceSetup i).permWidth ∧
+      (proof.permutationNext.getD i #[]).size = Challenge.d EF * (S.instanceSetup i).permWidth)
+    (hperm : proof.permutationCommit.isSome = S.hasLookups) (z : EF) :
     claimCounts (CompStark.Batch.batchRounds S.instances common proof z) = countsB S := by
   have hos : proof.opened.toList.length = S.k := by rw [Array.length_toList, hsize]
-  have hsh := fun i ↦ openedShapeOk_spec (hnl i) (hshape i)
+  have hsh := fun i ↦ openedShapeOk_spec (hshape i)
   dsimp only at hsh
   have hM : ((S.instances.zip proof.opened.toList).map fun x ↦
       ((⟨1, x.1.logN⟩ : Domain F), traceOpenings x.1.air x.2 z
@@ -476,16 +626,32 @@ theorem claimCounts_batchRounds_eq (hnl : S.NoLookups) (common : CompStark.Batch
     rw [zip_instances S _ hos, List.flatMap_map, List.map_flatMap]
     refine List.flatMap_congr fun i _ ↦ ?_
     rw [List.map_map, List.eq_replicate_iff, List.length_map, Array.length_toList]
-    refine ⟨(hsh i).2.2.1, fun l hl ↦ ?_⟩
+    refine ⟨(hsh i).2.2.1.trans (congrArg (2 ^ ·) (logChunks_eq S i).symm), fun l hl ↦ ?_⟩
     obtain ⟨ch, hch, rfl⟩ := List.mem_map.mp hl
     simp only [Function.comp_apply, List.map_cons, List.map_nil, Array.length_toList,
       (hsh i).2.2.2.1 ch (Array.mem_toList_iff.mp hch)]
-  rw [batchRounds_cases (hperm := hperm), claimCounts, List.map_append, List.map_cons,
-    List.map_cons,
-    List.map_nil]
+  have hR : (permRounds S proof z).map (fun r ↦ r.2.map fun m ↦ m.2.map (·.2.length)) =
+      if S.hasLookups then
+        [((List.finRange S.k).filter fun i ↦ !(S.lookups i).isEmpty).map fun i ↦
+          [Challenge.d EF * (S.instanceSetup i).permWidth,
+            Challenge.d EF * (S.instanceSetup i).permWidth]]
+      else [] := by
+    rw [permRounds, ← hperm]
+    cases proof.permutationCommit with
+    | none => rfl
+    | some root =>
+      simp only [Option.isSome_some, ↓reduceIte, List.map_cons, List.map_nil, List.cons.injEq,
+        and_true]
+      rw [permMats_eq S proof z hlsize hnsize, permInsts, List.map_map]
+      refine List.map_congr_left fun i _ ↦ ?_
+      simp only [Function.comp_apply, List.map_cons, List.map_nil, Array.length_toList,
+        (hpw i).1, (hpw i).2]
+  rw [batchRounds_cases, claimCounts, List.map_append, List.map_append, List.map_cons,
+    List.map_cons, List.map_nil, hR]
   dsimp only
   rw [hM, hQ, countsB, hasPreprocessed_eq, ← hprep]
-  congr 1
+  congr 2
+  rw [prepRounds]
   cases common.preprocessed with
   | none => rfl
   | some root =>
@@ -511,48 +677,61 @@ end Static
 section Prefix
 variable [BaseField F] [Challenge F EF] (S : Iop.Batch.Setup EF)
 
-/-- The digest observed in a duplex call's input, the one a commitment round binds: the main
-commitment after the batch's domain separator and the degree bits in the first round (initial
-capacity), after FRI's domain separator in the first fold round (an input of its length), first
-otherwise. -/
+/-- The digest a duplex call's input binds besides its first: the main commitment after the
+batch's domain separator and the degree bits in the first round (initial capacity), and FRI's
+first commitment after its domain separator otherwise. The other commitments, the permutation and
+quotient commitments and FRI's later ones, come first in their rounds' inputs (`keyDigests`). -/
 noncomputable def boundDigestB (cap : Digest F) (input : List F) : Digest F :=
-  digestAt input (if cap = initCap then mainOffsetB S
-    else if input.length = (friSeedB S).length + 8 + challengeOffset S.params.commitPowBits
-      then (friSeedB S).length else 0)
+  digestAt input (if cap = initCap then mainOffsetB S else (friSeedB S).length)
 
 /-- FRI's folding challenges in ArkLib's coordinate, from the answers `sample` of the fold rounds:
 `s_j β_j`, `s_j` the shift of word `j`'s domain; none past the last fold. -/
 noncomputable def betasAtB (sample : ℕ → Vector F S.streamLen) (j : ℕ) : 𝕂 :=
   if j < (friAritiesB S).length then
     lift gen ^ 2 ^ ((friAritiesB S).take j).sum *
-      extAt (sample (3 + j)) (challengeOffset S.params.commitPowBits)
+      extAt (sample (lookupRounds S + 3 + j)) (challengeOffset S.params.commitPowBits)
   else 0
 
 /-- Where fold round `j`'s commitment sits in its input: after FRI's domain separator in the
 first fold round. -/
 noncomputable def friOffsetB (j : ℕ) : ℕ := if j = 0 then (friSeedB S).length else 0
 
+/-- Where instance `i`'s terminal sits among the observed terminals, one per instance with
+lookups. -/
+def terminalIndex (i : Fin S.k) : ℕ :=
+  blockOff (fun j : Fin S.k ↦ if (S.lookups j).isEmpty then 0 else 1) i
+
 /-- The batch transcript read off the inputs `block j` and answers `sample j` of the rounds `j`
-and the hash queries `cache`: the words extracted under the observed digests, the observed
-openings and final polynomial, and the challenges of the answers. -/
+and the hash queries `cache`, after the `L` lookup rounds (`lookupRounds`): the words extracted
+under the observed digests, the observed terminals, openings and final polynomial, and the
+challenges of the answers. -/
 noncomputable def prefixTranscriptB (cache : Merkle.Cache F (Digest F)) (block : ℕ → List F)
     (sample : ℕ → Vector F S.streamLen) : Sound.Batch.Transcript S where
   trace i c x := Merkle.matColumn cache (digestAt (block 0) (mainOffsetB S)) S.logTop
     S.mainHeights S.mainWidths i c (S.logN i + S.params.logBlowup)
     (reverseBits x (S.logN i + S.params.logBlowup))
-  alpha := extAt (sample 0) 0
-  quotient i c e x := Merkle.matColumn cache (digestAt (block 1) 0) S.logTop (quotHeights S)
-    (quotWidths S) (quotOffset S i + c) e (S.logN i + S.params.logBlowup)
+  lookupAlpha := if S.hasLookups then
+    extAt (sample 0) (challengeOffset S.params.lookupPowBits) else 0
+  lookupBeta := if S.hasLookups then
+    extAt (sample 0) (challengeOffset S.params.lookupPowBits + Challenge.d EF) else 0
+  perm i c e x := Merkle.matColumn cache (digestAt (block (lookupRounds S)) 0) (permLog S)
+    (permHeights S) (permWidths S) (permIndex S i) (c.val * Challenge.d EF + e.val)
+    (S.logN i + S.params.logBlowup) (reverseBits x (S.logN i + S.params.logBlowup))
+  terminal i := if (S.lookups i).isEmpty then 0 else
+    Challenge.toSpec (extFrom (EF := EF) ((block (lookupRounds S)).drop 8) (terminalIndex S i))
+  alpha := extAt (sample (lookupRounds S)) 0
+  quotient i c e x := Merkle.matColumn cache (digestAt (block (lookupRounds S + 1)) 0) S.logTop
+    (quotHeights S) (quotWidths S) (quotOffset S i + c) e (S.logN i + S.params.logBlowup)
     (reverseBits x (S.logN i + S.params.logBlowup))
-  zeta := extAt (sample 1) (challengeOffset S.params.oodPowBits)
-  openings := openingsAtB S ((block 2).drop (pcsSeedB S).length)
-  batch := extAt (sample 2) (challengeOffset S.params.batchPowBits)
+  zeta := extAt (sample (lookupRounds S + 1)) (challengeOffset S.params.oodPowBits)
+  openings := openingsAtB S ((block (lookupRounds S + 2)).drop (pcsSeedB S).length)
+  batch := extAt (sample (lookupRounds S + 2)) (challengeOffset S.params.batchPowBits)
   words j m z := if j < (friAritiesB S).length then
-      friWordAt cache (digestAt (block (3 + j)) (friOffsetB S j)) m ((friAritiesB S).getD j 0)
-        z.val
+      friWordAt cache (digestAt (block (lookupRounds S + 3 + j)) (friOffsetB S j)) m
+        ((friAritiesB S).getD j 0) z.val
     else 0
   finalPoly := finalPoly S.domainSetup
-    (finalPolyAt S.domainSetup (block (3 + (friAritiesB S).length)))
+    (finalPolyAt S.domainSetup (block (lookupRounds S + 3 + (friAritiesB S).length)))
   betas := betasAtB S sample
 
 /-- The query round's grinding sample: the answer's first sample, `0` without grinding. -/
@@ -566,24 +745,33 @@ def queriesAtB (u : Vector F S.streamLen) (j : Fin S.params.numQueries) : F :=
 variable (publicValues : Fin S.k → List F) (δ δ' loss : NNReal)
 
 /-- Round `i`'s bad event (`Sound/BatchRbr.lean`) on the transcript `t`, whose round `i` was
-answered `u`: `α`; `ζ`, batching and fold `i - 3`, each with its grinding sample, the answer's
-first; and the queries. -/
+answered `u`: with lookups, the lookup challenges with their grinding sample, the answer's first;
+then, after the `L` lookup rounds, `α`; `ζ`, batching and fold `i - L - 3`, each with its grinding
+sample; and the queries. -/
 def roundBadAtB (i : ℕ) (t : Sound.Batch.Transcript S) (u : Vector F S.streamLen) : Prop :=
-  if i = 0 then Sound.Batch.AlphaBad S publicValues δ' t.trace t.alpha
-  else if i = 1 then
+  if i < lookupRounds S then
+    (S.params.lookupPowBits ≠ 0 →
+      CompPoly.CanonicalNat.toNat (u.toList.getD 0 0) % 2 ^ S.params.lookupPowBits = 0) ∧
+      Sound.Batch.LookupBad S publicValues δ' t.trace t.lookupAlpha t.lookupBeta
+  else if i - lookupRounds S = 0 then
+    Sound.Batch.AlphaBad S publicValues δ' t.trace t.perm t.terminal t.lookupAlpha t.lookupBeta
+      t.alpha
+  else if i - lookupRounds S = 1 then
     (S.params.oodPowBits ≠ 0 →
       CompPoly.CanonicalNat.toNat (u.toList.getD 0 0) % 2 ^ S.params.oodPowBits = 0) ∧
-      Sound.Batch.ZetaBad S publicValues δ' t.trace t.alpha t.quotient t.zeta
-  else if i = 2 then
+      Sound.Batch.ZetaBad S publicValues δ' t.trace t.perm t.terminal t.lookupAlpha t.lookupBeta
+        t.alpha t.quotient t.zeta
+  else if i - lookupRounds S = 2 then
     (S.params.batchPowBits ≠ 0 →
       CompPoly.CanonicalNat.toNat (u.toList.getD 0 0) % 2 ^ S.params.batchPowBits = 0) ∧
-      Sound.Batch.BatchBad S publicValues δ δ' t.trace t.alpha t.quotient t.zeta t.openings
-        t.batch
-  else if i - 3 < (friAritiesB S).length then
+      Sound.Batch.BatchBad S publicValues δ δ' t.trace t.perm t.terminal t.lookupAlpha
+        t.lookupBeta t.alpha t.quotient t.zeta t.openings t.batch
+  else if i - lookupRounds S - 3 < (friAritiesB S).length then
     (S.params.commitPowBits ≠ 0 →
       CompPoly.CanonicalNat.toNat (u.toList.getD 0 0) % 2 ^ S.params.commitPowBits = 0) ∧
-      Sound.Batch.FoldBad S δ loss t.rounds t.words (i - 3) (t.betas (i - 3))
-  else if i = 3 + (friAritiesB S).length then
+      Sound.Batch.FoldBad S δ loss t.rounds t.words (i - lookupRounds S - 3)
+        (t.betas (i - lookupRounds S - 3))
+  else if i - lookupRounds S = 3 + (friAritiesB S).length then
     Sound.Batch.QueryBad S δ loss t (powAtB S u) (queriesAtB S u)
   else False
 

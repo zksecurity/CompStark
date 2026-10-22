@@ -280,7 +280,7 @@ theorem bound_unless {ι : Type} {spec : OracleSpec ι} {α : Type} (b : Bool) (
     trivial
   · exact h rfl
 
-theorem isTotalQueryBound_verifyBatchWith (hnl : S.NoLookups) (common : CompStark.Batch.Common F)
+theorem isTotalQueryBound_verifyBatchWith (common : CompStark.Batch.Common F)
     (proof : CompStark.Batch.BatchProof F EF) (pis : List (List F)) :
     IsTotalQueryBound (CompStark.Batch.verifyBatchWith (ideal F S.streamLen) S.params S.instances
       common proof pis) S.verifierCalls := by
@@ -294,18 +294,27 @@ theorem isTotalQueryBound_verifyBatchWith (hnl : S.NoLookups) (common : CompStar
   refine bound_unless _ _ _ _ fun hprep ↦ ?_
   refine bound_unless _ _ _ _ fun hlk ↦ ?_
   refine bound_unless _ _ _ _ fun _ ↦ ?_
-  have hperm := permutationCommit_eq_none S.params S.instances proof
-    (hasLookups_instances S hnl) hlk
+  have hperm := (lookupShapeOk_spec S.params S.instances proof hlk).2
   simp only [Bool.and_eq_true, beq_iff_eq] at hcount hprep
   have hsize : proof.opened.size = S.k := by rw [hcount.1.1.1.1, length_instances]
   have hlp : Costs (H := ideal F S.streamLen)
-      (CompStark.Batch.lookupPhase S.params S.instances proof : M _ (EF × EF)) 0
+      (CompStark.Batch.lookupPhase S.params S.instances proof : M _ (EF × EF)) S.lookupCalls
       fun _ ↦ True := by
-    unfold CompStark.Batch.lookupPhase
-    rw [hasLookups_instances S hnl]
-    refine costs_free_bind (costs_pure _ (fun _ ↦ True) trivial) fun _ _ ↦
-      costs_free_bind (costs_observeList _) fun _ _ ↦
-      costs_free_bind (costs_observeExts _) fun _ _ ↦ costs_pure _ (fun _ ↦ True) trivial
+    unfold CompStark.Batch.lookupPhase lookupCalls
+    rw [← hasLookups]
+    cases S.hasLookups
+    · exact costs_free_bind (costs_pure _ (fun _ ↦ True) trivial) fun _ _ ↦
+        costs_free_bind (costs_observeList _) fun _ _ ↦
+        costs_free_bind (costs_observeExts _) fun _ _ ↦ costs_pure _ (fun _ ↦ True) trivial
+    · simp only [↓reduceIte]
+      exact costs_bind_le (costs_checkWitness _ _) (b := 2 * Challenge.d EF)
+        (fun _ _ ↦ costs_ensure_bind fun _ ↦ costs_bind_le (b := Challenge.d EF)
+          (costs_sampleExt (EF := EF)) (fun _ _ ↦
+          costs_bind_le (b := 0) (costs_sampleExt (EF := EF)) (fun _ _ ↦
+            costs_free_bind (costs_pure _ (fun _ ↦ True) trivial) fun _ _ ↦
+            costs_free_bind (costs_observeList _) fun _ _ ↦
+            costs_free_bind (costs_observeExts _) fun _ _ ↦ costs_pure _ (fun _ ↦ True) trivial)
+            (by omega)) (by omega)) (by omega)
   dsimp only
   rw [ExceptT.run_bind]
   refine (isTotalQueryBound_bind (n₂ := 0) ((?_ : Costs (H := ideal F S.streamLen) _
@@ -327,8 +336,8 @@ theorem isTotalQueryBound_verifyBatchWith (hnl : S.NoLookups) (common : CompStar
       S.params (CompStark.Batch.batchRounds S.instances common proof zeta) proof.fri) V
       fun _ ↦ True := by
     intro zeta
-    have hD := descHeights_batchRounds S common proof zeta hsize hperm
-    have hmem := mem_matHeights S common proof zeta hsize hperm
+    have hD := descHeights_batchRounds S common proof zeta hsize
+    have hmem := mem_matHeights S common proof zeta hsize
     refine costs_mono (costs_verifyPcs_mixed S.params _ proof.fri S.logTop G
       (fun h hh ↦ ?_) (S.logTop :: S.friHeights) (fun h hh ↦ ?_) le_rfl) ?_ fun _ h ↦ h
     · obtain ⟨i, rfl⟩ := (hmem h).mp hh
@@ -344,30 +353,37 @@ theorem isTotalQueryBound_verifyBatchWith (hnl : S.NoLookups) (common : CompStar
         rfl
       have hlen : (CompStark.Batch.batchRounds S.instances common proof zeta).length ≤
           S.inputRounds := by
-        rw [batchRounds_cases (hperm := hperm), inputRounds]
-        cases hc : common.preprocessed with
-        | none => simp only [List.length_append, List.length_cons, List.length_nil]; split <;> omega
-        | some root =>
-          have hhas : S.hasPreprocessed = true := by
-            rw [hc] at hprep
-            rw [hasPreprocessed, List.ofFn_eq_map, List.any_map]
-            rw [Iop.Batch.Setup.instances, List.ofFn_eq_map, List.any_map] at hprep
-            exact hprep.symm
-          simp only [hhas, ↓reduceIte, List.length_append, List.length_cons, List.length_nil]
-          omega
+        have hpl : (prepRounds S proof zeta common).length ≤
+            if S.hasPreprocessed then 1 else 0 := by
+          rw [prepRounds]
+          cases hc : common.preprocessed with
+          | none => exact Nat.zero_le _
+          | some root =>
+            have hhas : S.hasPreprocessed = true := by
+              rw [hc] at hprep
+              rw [hasPreprocessed, List.ofFn_eq_map, List.any_map]
+              rw [Iop.Batch.Setup.instances, List.ofFn_eq_map, List.any_map] at hprep
+              exact hprep.symm
+            simp only [hhas, ↓reduceIte, List.length_cons, List.length_nil, le_refl]
+        have hrl : (permRounds S proof zeta).length ≤ if S.hasLookups then 1 else 0 := by
+          rw [permRounds, hasLookups, ← hperm]
+          cases proof.permutationCommit <;> rfl
+        rw [batchRounds_cases, inputRounds]
+        simp only [List.length_append, List.length_cons, List.length_nil]
+        omega
       rw [hA]
       exact Nat.add_le_add_left (Nat.mul_le_mul_left _ (Nat.add_le_add_left
         (Nat.mul_le_mul_right _ (Nat.add_le_add_right hlen _)) 1)) _
   refine costs_free_bind (costs_observeList _) fun _ _ ↦ costs_free_bind (costs_observeExts _)
     fun _ _ ↦ costs_free_bind (costs_observeList _) fun _ _ ↦
     costs_free_bind (costs_observeList _) fun _ _ ↦ costs_free_bind (costs_observeList _)
-    fun _ _ ↦ costs_free_bind hlp fun _ _ ↦
+    fun _ _ ↦ costs_bind_le (b := Challenge.d EF + 1 + Challenge.d EF + V) hlp (fun _ _ ↦
     costs_bind_le (b := 1 + Challenge.d EF + V) costs_sampleExt (fun alpha _ ↦
       costs_free_bind (costs_observeList _) fun _ _ ↦ costs_bind_le (b := Challenge.d EF + V)
       (costs_checkWitness _ _) (fun _ _ ↦ costs_ensure_bind fun _ ↦ costs_bind_le (b := V)
         costs_sampleExt (fun zeta _ ↦ costs_ensure_bind fun _ ↦ costs_bind_le (a := V) (b := 0)
           (hpcs zeta) (fun _ _ ↦ costs_pure _ (fun _ ↦ True) trivial) le_rfl) le_rfl)
-      (by omega)) ?_
+      (by omega)) (by omega)) ?_
   simp only [V, c, G, verifierCalls, openingQueries]
   exact le_of_eq (by ring)
 

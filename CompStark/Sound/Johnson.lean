@@ -26,9 +26,10 @@ namespace CompStark.Sound
 open CompStark.Stark CompStark.Iop Polynomial
 
 variable {F : Type} [BaseField F] {EF : Type} [Challenge F EF]
+variable {lookups : List (Lookup F)}
 
 /-- The points of `L` in `F` are distinct. -/
-theorem basePoint_injective (S : Setup EF) :
+theorem basePoint_injective (S : Setup EF lookups) :
     Function.Injective fun i : S.Point ↦ basePoint (F := F) (S.logN + S.params.logBlowup) i := by
   intro i j h
   apply S.domain.injective
@@ -36,7 +37,7 @@ theorem basePoint_injective (S : Setup EF) :
   exact congrArg (algebraMap F (Challenge.Spec EF)) h
 
 /-- Distinct tuples of polynomials of degree at most `n` agree on at most `n` points of `L`. -/
-theorem card_le_of_eqOn (S : Setup EF) {ι : Type} (p q : ι → F[X])
+theorem card_le_of_eqOn (S : Setup EF lookups) {ι : Type} (p q : ι → F[X])
     (hp : ∀ k, (p k).natDegree ≤ S.n) (hq : ∀ k, (q k).natDegree ≤ S.n) (hpq : p ≠ q)
     (U : Finset S.Point)
     (hU : ∀ i ∈ U, ∀ k, (p k).eval (basePoint (S.logN + S.params.logBlowup) i) =
@@ -94,12 +95,12 @@ theorem lt_of_johnson (N n A x c ℓ : ℝ) (hn : 0 ≤ n) (hnN : n ≤ N) (hx :
   nlinarith [mul_le_mul_of_nonneg_right hge hgapA.le]
 
 /-- Each tuple in the list, with an agreement set. -/
-noncomputable def agreeSet (S : Setup EF) {ι : Type} (δ : ℝ) (words : ι → S.Point → F)
+noncomputable def agreeSet (S : Setup EF lookups) {ι : Type} (δ : ℝ) (words : ι → S.Point → F)
     (p : ι → F[X]) : Finset S.Point :=
   open Classical in if h : Agree S δ words p then h.choose else ∅
 
 /-- The agreement set of a tuple in the list is large and the tuple agrees with the words on it. -/
-theorem agreeSet_spec (S : Setup EF) {ι : Type} (δ : ℝ) (words : ι → S.Point → F)
+theorem agreeSet_spec (S : Setup EF lookups) {ι : Type} (δ : ℝ) (words : ι → S.Point → F)
     (p : ι → F[X]) (h : Agree S δ words p) :
     ((agreeSet S δ words p).card : ℝ) ≥ S.size * (1 - δ) ∧
       ∀ i ∈ agreeSet S δ words p, ∀ k,
@@ -108,7 +109,7 @@ theorem agreeSet_spec (S : Setup EF) {ι : Type} (δ : ℝ) (words : ι → S.Po
   exact h.choose_spec
 
 /-- The agreement sets of two distinct tuples in the list meet in at most `n` points. -/
-theorem card_inter_agreeSet_le (S : Setup EF) {ι : Type} (δ : ℝ) (words : ι → S.Point → F)
+theorem card_inter_agreeSet_le (S : Setup EF lookups) {ι : Type} (δ : ℝ) (words : ι → S.Point → F)
     (p q : ι → F[X]) (hp : (∀ k, (p k).natDegree ≤ S.n) ∧ Agree S δ words p)
     (hq : (∀ k, (q k).natDegree ≤ S.n) ∧ Agree S δ words q) (hpq : p ≠ q) :
     (agreeSet S δ words p ∩ agreeSet S δ words q).card ≤ S.n := by
@@ -118,7 +119,7 @@ theorem card_inter_agreeSet_le (S : Setup EF) {ι : Type} (δ : ℝ) (words : ι
 
 /-- The Johnson bound: for `δ < 1 - √rate`, the list has at most `ℓ` tuples once
 `(1 - δ - rate) / ((1 - δ)² - rate) < ℓ + 1`. -/
-theorem listSize_le_johnson (S : Setup EF) (ι : Type) [Fintype ι] [DecidableEq ι] (δ : ℝ)
+theorem listSize_le_johnson (S : Setup EF lookups) (ι : Type) [Fintype ι] [DecidableEq ι] (δ : ℝ)
     (hδ : δ < 1 - √S.rate) (ℓ : Nat)
     (hℓ : 1 - δ - S.rate < (ℓ + 1) * ((1 - δ) ^ 2 - S.rate)) :
     S.listSize ι δ ≤ ℓ := by
@@ -169,7 +170,7 @@ theorem listSize_le_johnson (S : Setup EF) (ι : Type) [Fintype ι] [DecidableEq
   exact Nat.lt_succ_iff.mp (by exact_mod_cast this)
 
 /-- Below the unique-decoding radius `(1 - rate) / 2` the list has at most one tuple. -/
-theorem listSize_le_one (S : Setup EF) (ι : Type) [Fintype ι] [DecidableEq ι] (δ : ℝ)
+theorem listSize_le_one (S : Setup EF lookups) (ι : Type) [Fintype ι] [DecidableEq ι] (δ : ℝ)
     (hδ : δ < (1 - S.rate) / 2) : S.listSize ι δ ≤ 1 := by
   classical
   refine Finset.sup_le fun words _ ↦ ncard_le_of_finset _ 1 fun Fs hFs ↦ ?_

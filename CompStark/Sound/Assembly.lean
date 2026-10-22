@@ -18,12 +18,12 @@ pieces are here:
 * the batched DEEP word over a list of opened words is the combination of their DEEP components
   by the powers of `a` (`sum_zipIdx_deep`);
 * list decoding has at most `listSize` candidates (`card_candidates_le`);
-* for a STARK whose candidate traces all fail the AIR, all but few `α` leave few `ζ` at which the
-  DEEP components are `(δ' - 2/N)`-near the code on a common set and the check passes
-  (`exists_bad_alphas`): for `ζ` off the trace domain, the claimed values are those of a candidate
-  trace and quotient at `δ'` (`decodingStep`), polynomials close to the committed words, and the
-  check holds for few `ζ` per pair of candidates unless `α` is one of few bad values per
-  candidate trace (`algebraStep`).
+* for a STARK whose candidate traces and permutation traces all fail some constraint, all but few
+  `α` leave few `ζ` at which the DEEP components are `(δ' - 2/N)`-near the code on a common set
+  and the check passes (`exists_bad_alphas`): for `ζ` off the trace domain, the claimed values
+  are those of a candidate trace, permutation trace and quotient at `δ'` (`decodingStep`),
+  polynomials close to the committed words, and the check holds for few `ζ` per triple of
+  candidates unless `α` is one of few bad values per candidate pair (`algebraStep`).
 -/
 
 @[expose] public section
@@ -33,6 +33,8 @@ open CompStark.Stark CompStark.Iop Polynomial
 variable {F : Type} [BaseField F] {EF : Type} [Challenge F EF]
 
 local notation "𝕂" => Challenge.Spec EF
+
+variable {lookups : List (Lookup F)}
 
 /-! ### The batched DEEP word -/
 
@@ -49,7 +51,7 @@ theorem sum_zipIdx_map {β M : Type} [AddCommMonoid M] (g : β → Nat → M) :
 
 /-- The batched DEEP word over a list of `m` opened words is the combination of their DEEP
 components by the powers of `a`, by position. -/
-theorem sum_zipIdx_deep (S : Setup EF) (l : List ((S.Point → F) × 𝕂 × 𝕂)) {m : Nat}
+theorem sum_zipIdx_deep (S : Setup EF lookups) (l : List ((S.Point → F) × 𝕂 × 𝕂)) {m : Nat}
     (hl : l.length = m) (a : 𝕂) (i : S.Point) :
     (l.zipIdx.map fun ((f, z, y), k) ↦ a ^ k * (y - algebraMap F 𝕂 (f i)) / (z - S.domain i)).sum =
       ∑ k : Fin m, a ^ (k : Nat) * (let w := l[k.val]'(hl ▸ k.isLt)
@@ -66,14 +68,8 @@ theorem sum_zipIdx_deep (S : Setup EF) (l : List ((S.Point → F) × 𝕂 × �
   simp only [Nat.zero_add, deepComponent, finCongr_apply, Fin.val_cast, mul_div_assoc]
   rfl
 
-theorem length_openedWords {S : Setup EF} (p : Prover S) (α ζ : 𝕂) :
-    (openedWords p α ζ).length = S.numOpened := by
-  simp only [openedWords, List.length_append, List.length_map, List.length_finRange,
-    List.length_flatMap, List.map_const', List.sum_replicate, smul_eq_mul, Setup.numOpened]
-  ring
-
 /-- The batched DEEP word is the combination of the components by the powers of `a`. -/
-theorem deepWord_eq {S : Setup EF} (p : Prover S) (α ζ a : 𝕂) :
+theorem deepWord_eq {S : Setup EF lookups} (p : Prover S) (α ζ a : 𝕂) :
     deepWord p α ζ a = fun i ↦ ∑ k : Fin S.numOpened, a ^ (k : Nat) * components p α ζ k i :=
   funext fun i ↦ sum_zipIdx_deep S _ (length_openedWords p α ζ) a i
 
@@ -107,10 +103,11 @@ theorem inv_cube_mul (u v : ENNReal) :
 
 /-- The candidate polynomials of words `words` at proximity `δ`: degree at most `n`, agreeing with
 the words on a common set of `(1 - δ) N` points. -/
-def candidates (S : Setup EF) {ι : Type} (δ : ℝ) (words : ι → S.Point → F) : Set (ι → F[X]) :=
+def candidates (S : Setup EF lookups) {ι : Type} (δ : ℝ) (words : ι → S.Point → F) :
+    Set (ι → F[X]) :=
   {polys | (∀ k, (polys k).natDegree ≤ S.n) ∧ Agree S δ words polys}
 
-theorem candidates_finite (S : Setup EF) {ι : Type} [Fintype ι] (δ : ℝ)
+theorem candidates_finite (S : Setup EF lookups) {ι : Type} [Fintype ι] (δ : ℝ)
     (words : ι → S.Point → F) : (candidates S δ words).Finite := by
   classical
   refine Set.Finite.of_finite_image (f := fun polys k (i : Fin (S.n + 1)) ↦ (polys k).coeff i)
@@ -120,7 +117,7 @@ theorem candidates_finite (S : Setup EF) {ι : Type} [Fintype ι] (δ : ℝ)
   · rw [coeff_eq_zero_of_natDegree_lt (lt_of_le_of_lt (hP.1 k) (Nat.lt_of_not_le hm)),
       coeff_eq_zero_of_natDegree_lt (lt_of_le_of_lt (hQ.1 k) (Nat.lt_of_not_le hm))]
 
-theorem card_candidates_le (S : Setup EF) {ι : Type} [Fintype ι] [DecidableEq ι] (δ : ℝ)
+theorem card_candidates_le (S : Setup EF lookups) {ι : Type} [Fintype ι] [DecidableEq ι] (δ : ℝ)
     (words : ι → S.Point → F) :
     (candidates_finite S δ words).toFinset.card ≤ S.listSize ι δ := by
   rw [← Set.ncard_eq_toFinset_card _ (candidates_finite S δ words)]
@@ -128,17 +125,30 @@ theorem card_candidates_le (S : Setup EF) {ι : Type} [Fintype ι] [DecidableEq 
     {polys : ι → F[X] | (∀ k, (polys k).natDegree ≤ S.n) ∧ Agree S δ words polys}.ncard)
     (Finset.mem_univ words)
 
+/-- The candidate permutation traces number at most `permListSize`: without lookups, the one
+empty tuple. -/
+theorem card_permCandidates_le (S : Setup EF lookups) (δ : ℝ)
+    (words : Fin S.permWidth × Fin (Challenge.d EF) → S.Point → F) :
+    (candidates_finite S δ words).toFinset.card ≤ S.permListSize δ := by
+  cases lookups with
+  | nil =>
+    refine Finset.card_le_one.mpr fun P _ Q _ ↦ funext fun ce ↦ ?_
+    exact absurd ce.1.isLt (Nat.not_lt_zero _)
+  | cons l ls => exact card_candidates_le S δ words
+
 /-! ### Few `ζ` pass with near components -/
 
 section Counting
-variable {S : Setup EF} (publicValues : List F) (p : Prover S)
+variable {S : Setup EF lookups} (publicValues : List F) (challenges : List (Challenge.Spec EF))
+  (terminal : Challenge.Spec EF)
+  (p : Prover S)
 
 open Classical
 
 -- The constructor-name linter exhausts its recursion budget on this proof's locals.
 set_option linter.constructorNameAsVariable false in
 /-- The points on the trace domain number at most `n`. -/
-theorem card_not_offTraceDomain (S : Setup EF) :
+theorem card_not_offTraceDomain (S : Setup EF lookups) :
     (Finset.univ.filter fun ζ : 𝕂 ↦ ¬ OffTraceDomain S ζ).card ≤ S.n := by
   classical
   have hsub : (Finset.univ.filter fun ζ : 𝕂 ↦ ¬ OffTraceDomain S ζ) ⊆
@@ -149,94 +159,118 @@ theorem card_not_offTraceDomain (S : Setup EF) :
     exact hζ
   exact (Finset.card_le_card hsub).trans ((Multiset.toFinset_card_le _).trans (card_nthRoots _ _))
 
+/-- The candidate triples of trace, permutation trace and quotient polynomials of the prover's
+words at `δ` after `α`. -/
+noncomputable def candidateTriples (δ : ℝ) (α : 𝕂) :
+    Finset ((Fin S.air.width → F[X]) × (Fin S.permWidth × Fin (Challenge.d EF) → F[X]) ×
+      (Fin S.chunks × Fin (Challenge.d EF) → F[X])) :=
+  (candidates_finite S δ p.trace).toFinset ×ˢ
+    ((candidates_finite S δ fun ce : Fin S.permWidth × Fin (Challenge.d EF) ↦
+      p.perm ce.1 ce.2).toFinset ×ˢ
+    (candidates_finite S δ fun ce : Fin S.chunks × Fin (Challenge.d EF) ↦
+      p.quotient α ce.1 ce.2).toFinset)
+
 -- The constructor-name linter exhausts its recursion budget on this proof's locals.
 set_option linter.constructorNameAsVariable false in
 /-- The `ζ` where the components are near on a common set at `δ - 2/N` and the check passes: on
-the trace domain, or the check passes with the true values of a candidate trace and quotient at
-`δ`. -/
+the trace domain, or the check passes with the true values of a candidate trace, permutation
+trace and quotient at `δ`. -/
 theorem card_near_check_le (δ : NNReal) (hδ : (δ : ℝ) < 1 - S.rate) (α : 𝕂) :
     (Finset.univ.filter fun ζ : 𝕂 ↦ NearTogether S ((δ : ℝ) - 2 / S.size) (components p α ζ) ∧
-        ConstraintsHoldAt S publicValues α ζ (p.openings α ζ)).card ≤
-      S.n + ∑ P ∈ (candidates_finite S δ p.trace).toFinset,
-        ∑ Q ∈ (candidates_finite S δ fun ce : Fin S.chunks × Fin (Challenge.d EF) ↦
-          p.quotient α ce.1 ce.2).toFinset,
+        ConstraintsHoldAt S publicValues α ζ (p.openings α ζ) challenges terminal).card ≤
+      S.n + ∑ PRQ ∈ candidateTriples p δ α,
         (Finset.univ.filter fun ζ : 𝕂 ↦ OffTraceDomain S ζ ∧
           ConstraintsHoldAt S publicValues α ζ
-            (trueOpenings S P (fun c e ↦ Q (c, e)) ζ)).card := by
-  set C1 := (candidates_finite S δ p.trace).toFinset
-  set C2 := (candidates_finite S δ fun ce : Fin S.chunks × Fin (Challenge.d EF) ↦
-    p.quotient α ce.1 ce.2).toFinset
-  set check : (Fin S.air.width → F[X]) → (Fin S.chunks × Fin (Challenge.d EF) → F[X]) → Finset 𝕂 :=
-    fun P Q ↦ Finset.univ.filter fun ζ : 𝕂 ↦ OffTraceDomain S ζ ∧
-      ConstraintsHoldAt S publicValues α ζ (trueOpenings S P (fun c e ↦ Q (c, e)) ζ)
+            (trueOpenings S PRQ.1 (fun c e ↦ PRQ.2.2 (c, e)) ζ (fun c e ↦ PRQ.2.1 (c, e)))
+            challenges terminal).card := by
+  set check : (Fin S.air.width → F[X]) × (Fin S.permWidth × Fin (Challenge.d EF) → F[X]) ×
+      (Fin S.chunks × Fin (Challenge.d EF) → F[X]) → Finset 𝕂 :=
+    fun PRQ ↦ Finset.univ.filter fun ζ : 𝕂 ↦ OffTraceDomain S ζ ∧
+      ConstraintsHoldAt S publicValues α ζ
+        (trueOpenings S PRQ.1 (fun c e ↦ PRQ.2.2 (c, e)) ζ (fun c e ↦ PRQ.2.1 (c, e)))
+        challenges terminal
   have hsub : (Finset.univ.filter fun ζ : 𝕂 ↦
         NearTogether S ((δ : ℝ) - 2 / S.size) (components p α ζ) ∧
-        ConstraintsHoldAt S publicValues α ζ (p.openings α ζ)) ⊆
+        ConstraintsHoldAt S publicValues α ζ (p.openings α ζ) challenges terminal) ⊆
       (Finset.univ.filter fun ζ : 𝕂 ↦ ¬ OffTraceDomain S ζ) ∪
-        C1.biUnion fun P ↦ C2.biUnion fun Q ↦ check P Q := by
+        (candidateTriples p δ α).biUnion check := by
     intro ζ hζ
     simp only [Finset.mem_filter, Finset.mem_univ, true_and] at hζ
     simp only [Finset.mem_union, Finset.mem_filter, Finset.mem_univ, true_and,
       Finset.mem_biUnion]
     by_cases hb : OffTraceDomain S ζ
     · right
-      obtain ⟨tr, qu, htd, hta, hqd, hqa, ho⟩ := decodingStep S δ hδ p α ζ hb hζ.1
-      refine ⟨tr, (Set.Finite.mem_toFinset _).mpr ⟨htd, hta⟩, fun ce ↦ qu ce.1 ce.2,
-        (Set.Finite.mem_toFinset _).mpr ⟨fun ce ↦ hqd ce.1 ce.2, hqa⟩, ?_⟩
-      simp only [check, Finset.mem_filter, Finset.mem_univ, true_and]
-      have h := hζ.2
-      rw [ho] at h
-      exact ⟨hb, h⟩
+      obtain ⟨tr, qu, pm, htd, hta, hqd, hqa, hpd, hpa, ho⟩ := decodingStep S δ hδ p α ζ hb hζ.1
+      refine ⟨(tr, fun ce ↦ pm ce.1 ce.2, fun ce ↦ qu ce.1 ce.2), ?_, ?_⟩
+      · simp only [candidateTriples, Finset.mem_product, Set.Finite.mem_toFinset]
+        exact ⟨⟨htd, hta⟩, ⟨fun ce ↦ hpd ce.1 ce.2, hpa⟩, ⟨fun ce ↦ hqd ce.1 ce.2, hqa⟩⟩
+      · simp only [check, Finset.mem_filter, Finset.mem_univ, true_and]
+        have h := hζ.2
+        rw [ho] at h
+        exact ⟨hb, h⟩
     · exact Or.inl hb
   refine (Finset.card_le_card hsub).trans ((Finset.card_union_le _ _).trans ?_)
-  exact Nat.add_le_add (card_not_offTraceDomain S) (Finset.card_biUnion_le.trans
-    (Finset.sum_le_sum fun P _ ↦ Finset.card_biUnion_le))
+  exact Nat.add_le_add (card_not_offTraceDomain S) Finset.card_biUnion_le
 
 -- The constructor-name linter exhausts its recursion budget on this proof's locals.
 set_option linter.constructorNameAsVariable false in
-/-- If every candidate trace at `δ'` fails the AIR, then for all but `ℓT (#constraints - 1)`
-values of `α`, the components are near on a common set at `δ' - 2/N` and the check passes for at
-most `n + ℓT ℓQ identityDegree` values of `ζ`. -/
+/-- If every candidate trace and permutation trace at `δ'` fail some constraint (`Holds`), then
+for all but `ℓT ℓP (#constraints - 1)` values of `α`, the components are near on a common set at
+`δ' - 2/N` and the check passes for at most `n + ℓT ℓP ℓQ identityDegree` values of `ζ`. -/
 theorem exists_bad_alphas (δ' : NNReal) (hδ' : (δ' : ℝ) < 1 - S.rate)
-    (hfail : ∀ P ∈ candidates S δ' p.trace,
-      ¬ S.air.Satisfied S.logN (traceOf S P) publicValues) :
+    (hfail : ∀ P ∈ candidates S δ' p.trace, ∀ R ∈ candidates S δ'
+      (fun ce : Fin S.permWidth × Fin (Challenge.d EF) ↦ p.perm ce.1 ce.2),
+      ¬ Holds S publicValues challenges terminal (traceOf S P) fun c e ↦ R (c, e)) :
     ∃ bad : Finset 𝕂,
-      bad.card ≤ S.listSize (Fin S.air.width) δ' * (S.air.constraints.length - 1) ∧
+      bad.card ≤ S.listSize (Fin S.air.width) δ' * S.permListSize δ' * (S.numConstraints - 1) ∧
       ∀ α ∉ bad, (Finset.univ.filter fun ζ : 𝕂 ↦
         NearTogether S ((δ' : ℝ) - 2 / S.size) (components p α ζ) ∧
-          ConstraintsHoldAt S publicValues α ζ (p.openings α ζ)).card ≤
-        S.n + S.listSize (Fin S.air.width) δ' *
+          ConstraintsHoldAt S publicValues α ζ (p.openings α ζ) challenges terminal).card ≤
+        S.n + S.listSize (Fin S.air.width) δ' * S.permListSize δ' *
           S.listSize (Fin S.chunks × Fin (Challenge.d EF)) δ' * S.identityDegree := by
   set C1 := (candidates_finite S δ' p.trace).toFinset
+  set C2 := (candidates_finite S δ' fun ce : Fin S.permWidth × Fin (Challenge.d EF) ↦
+    p.perm ce.1 ce.2).toFinset
   set D := S.identityDegree
-  -- Every candidate trace fails the AIR, so it has few bad `α`.
-  have hbadP : ∀ P ∈ C1, ∃ bad : Finset 𝕂, bad.card ≤ S.air.constraints.length - 1 ∧
+  -- Every candidate pair fails a constraint, so it has few bad `α`.
+  have hbadP : ∀ PR ∈ C1 ×ˢ C2, ∃ bad : Finset 𝕂, bad.card ≤ S.numConstraints - 1 ∧
       ∀ α ∉ bad, ∀ quotient : Fin S.chunks → Fin (Challenge.d EF) → F[X],
         (∀ c e, (quotient c e).natDegree ≤ S.n) →
         (Finset.univ.filter fun ζ : 𝕂 ↦ OffTraceDomain S ζ ∧
-          ConstraintsHoldAt S publicValues α ζ (trueOpenings S P quotient ζ)).card ≤ D := by
-    intro P hP
-    rw [Set.Finite.mem_toFinset] at hP
-    exact algebraStep S publicValues P hP.1 (hfail P hP)
+          ConstraintsHoldAt S publicValues α ζ (trueOpenings S PR.1 quotient ζ
+            fun c e ↦ PR.2 (c, e)) challenges terminal).card ≤ D := by
+    intro PR hPR
+    rw [Finset.mem_product, Set.Finite.mem_toFinset, Set.Finite.mem_toFinset] at hPR
+    exact algebraStep S publicValues challenges terminal PR.1 (fun c e ↦ PR.2 (c, e)) hPR.1.1
+      (fun c e ↦ hPR.2.1 (c, e)) (hfail PR.1 hPR.1 PR.2 hPR.2)
   choose! badOf hbadOf hgoodOf using hbadP
-  refine ⟨C1.biUnion badOf, Finset.card_biUnion_le.trans ((Finset.sum_le_sum fun P hP ↦
-    hbadOf P hP).trans ?_), fun α hα ↦ (card_near_check_le publicValues p δ' hδ' α).trans
-      (Nat.add_le_add_left ?_ _)⟩
-  · rw [Finset.sum_const, smul_eq_mul]
-    exact Nat.mul_le_mul_right _ (card_candidates_le S δ' p.trace)
-  set C2 := (candidates_finite S δ' fun ce : Fin S.chunks × Fin (Challenge.d EF) ↦
+  refine ⟨(C1 ×ˢ C2).biUnion badOf, Finset.card_biUnion_le.trans ((Finset.sum_le_sum fun PR hPR ↦
+    hbadOf PR hPR).trans ?_), fun α hα ↦ (card_near_check_le publicValues challenges terminal p δ'
+      hδ' α).trans (Nat.add_le_add_left ?_ _)⟩
+  · rw [Finset.sum_const, smul_eq_mul, Finset.card_product]
+    exact Nat.mul_le_mul_right _ (Nat.mul_le_mul (card_candidates_le S δ' p.trace)
+      (card_permCandidates_le S δ' _))
+  set C3 := (candidates_finite S δ' fun ce : Fin S.chunks × Fin (Challenge.d EF) ↦
     p.quotient α ce.1 ce.2).toFinset
-  calc ∑ P ∈ C1, ∑ Q ∈ C2, (Finset.univ.filter fun ζ : 𝕂 ↦ OffTraceDomain S ζ ∧
-        ConstraintsHoldAt S publicValues α ζ (trueOpenings S P (fun c e ↦ Q (c, e)) ζ)).card
-      ≤ ∑ P ∈ C1, ∑ Q ∈ C2, D := by
-        refine Finset.sum_le_sum fun P hP ↦ Finset.sum_le_sum fun Q hQ ↦ ?_
-        have hαP : α ∉ badOf P := fun h ↦ hα (Finset.mem_biUnion.mpr ⟨P, hP, h⟩)
+  calc ∑ PRQ ∈ candidateTriples p δ' α, (Finset.univ.filter fun ζ : 𝕂 ↦ OffTraceDomain S ζ ∧
+        ConstraintsHoldAt S publicValues α ζ
+          (trueOpenings S PRQ.1 (fun c e ↦ PRQ.2.2 (c, e)) ζ (fun c e ↦ PRQ.2.1 (c, e)))
+          challenges terminal).card
+      ≤ ∑ PRQ ∈ candidateTriples p δ' α, D := by
+        refine Finset.sum_le_sum fun PRQ hPRQ ↦ ?_
+        simp only [candidateTriples, Finset.mem_product] at hPRQ
+        have hαP : α ∉ badOf (PRQ.1, PRQ.2.1) := fun h ↦ hα (Finset.mem_biUnion.mpr
+          ⟨(PRQ.1, PRQ.2.1), Finset.mem_product.mpr ⟨hPRQ.1, hPRQ.2.1⟩, h⟩)
+        have hQ := hPRQ.2.2
         rw [Set.Finite.mem_toFinset] at hQ
-        exact hgoodOf P hP α hαP _ fun c e ↦ hQ.1 (c, e)
-    _ = C1.card * C2.card * D := by
-        rw [Finset.sum_const, Finset.sum_const, smul_eq_mul, smul_eq_mul, mul_assoc]
-    _ ≤ _ := Nat.mul_le_mul_right _ (Nat.mul_le_mul (card_candidates_le S δ' _)
-        (card_candidates_le S δ' _))
+        exact hgoodOf (PRQ.1, PRQ.2.1) (Finset.mem_product.mpr ⟨hPRQ.1, hPRQ.2.1⟩) α hαP _
+          fun c e ↦ hQ.1 (c, e)
+    _ = C1.card * C2.card * C3.card * D := by
+        rw [Finset.sum_const, smul_eq_mul, candidateTriples, Finset.card_product,
+          Finset.card_product]
+        ring
+    _ ≤ _ := Nat.mul_le_mul_right _ (Nat.mul_le_mul (Nat.mul_le_mul
+        (card_candidates_le S δ' _) (card_permCandidates_le S δ' _)) (card_candidates_le S δ' _))
 
 end Counting
 

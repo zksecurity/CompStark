@@ -10,10 +10,11 @@ public import CompStark.Fs.DigestClash
 /-! # Logs without digest clashes
 
 The digest of an answer (`digestOf`) is a hash, or a duplex call's new capacity; the digests of a
-key (`keyDigests`) are a compression's children, a duplex call's capacity and the digest its input
-binds (`boundDigest`). A log is `NoClash` when no query, at its first occurrence, gets an answer
-whose digest is the initial capacity, an earlier answer's or one in an earlier or its own key
-(B's `DigestClash`). Then, with every query answered by one table `answer`:
+key (`keyDigests`) are a compression's children, and a duplex call's capacity, the digest at the
+start of its input and the digest its input binds (`boundDigest`). A log is `NoClash` when no query,
+at its first occurrence, gets an answer whose digest is the initial capacity, an earlier answer's or
+one in an earlier or its own key (B's `DigestClash`). Then, with every query answered by one table
+`answer`:
 
 * digests are unique (`eq_of_digestOf_eq`), so the duplex calls' capacities are injective
   (`capsInjective`) and so are the hash queries (`logCache_injective`);
@@ -62,19 +63,17 @@ def digestOf : (t : Query F) → Answer K t → Digest F
   | .leaf _, u => u
   | .node .., u => u
 
-variable (bd : Digest F → List F → Digest F)
+variable [BaseField F] (bd : Digest F → List F → Digest F)
 
-/-- The digests in a key: a compression's children, and a duplex call's capacity and the digest
-`bd` its input binds. -/
+/-- The digests in a key: a compression's children, and a duplex call's capacity, the digest at
+the start of its input and the digest `bd` its input binds. -/
 def keyDigests : Query F → List (Digest F)
-  | .duplex cap input => [cap, bd cap input]
+  | .duplex cap input => [cap, digestAt input 0, bd cap input]
   | .leaf _ => []
   | .node left right => [left, right]
 
-theorem length_keyDigests_le (t : Query F) : (keyDigests bd t).length ≤ 2 := by
+theorem length_keyDigests_le (t : Query F) : (keyDigests bd t).length ≤ 3 := by
   cases t <;> simp only [keyDigests, List.length_cons, List.length_nil] <;> omega
-
-variable [BaseField F]
 
 /-- The answer `u` to `t` after the queries `pre` has a digest known before: the initial capacity,
 an earlier answer's, or one in an earlier key or in `t`. -/

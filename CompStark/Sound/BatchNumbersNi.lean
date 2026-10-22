@@ -134,7 +134,7 @@ theorem foldErrorAt_schedule_one_le (c t : ℕ) (hc : 0 < c) (d logFinal : ℕ)
             words fuel (n - 1) _ _ j (by omega) (by omega) hfr ht
 
 namespace Batch
-variable (S : Iop.Batch.Setup EF)
+variable {withLookups : Bool} (S : Iop.Batch.Setup EF withLookups)
 
 /-- The largest error of FRI's folds on the batch at arity `2`, at a proximity loss `loss > 0`
 and a radius `δ ≤ (1 - rate) / 2 - 1 / 2 ^ t`, the shorter instances' domains of at least `2 ^ t`
@@ -182,10 +182,12 @@ unique-decoding radius, `δ < δ' - 2/N` on every domain, at one proximity loss 
 threshold `2 ^ t` below the shorter domains: every instance's constraint-folding integer at most
 `A₁` and out-of-domain integer at most `A₂`, the curve bound on batching every instance's domain
 size at most `b`, FRI's folds (`friFoldErrorB_le`, `δ_int = δ + loss`) and queries
-(`friQueryErrorB_eq`), all but the first credited with their grinding. -/
+(`friQueryErrorB_eq`), and LogUp's integer at most `L`, all but constraint folding credited with
+their grinding. -/
 theorem batchRoundError_le (harity : S.params.maxLogArity = 1) (t : ℕ)
-    (ht : ∀ m ∈ S.friHeights, t ≤ m) (δ δ' loss : ℝ≥0) (A₁ A₂ : ℕ) (b : ℝ)
-    (hA₁ : ∀ i, (S.air i).constraints.length - 1 ≤ A₁)
+    (ht : ∀ m ∈ S.friHeights, t ≤ m) (δ δ' loss : ℝ≥0) (L A₁ A₂ : ℕ) (b : ℝ)
+    (hL : S.numInteractions + (S.numInteractions - 1) * S.lookupWidth ≤ L)
+    (hA₁ : ∀ i, (S.instanceSetup i).numConstraints - 1 ≤ A₁)
     (hA₂ : ∀ i, (S.instanceSetup i).identityDegree + (S.instanceSetup i).n ≤ A₂)
     (hb : ∀ i, ((S.groupNumOpened (S.logN i + S.params.logBlowup) - 1 : ℕ) *
       max ((1 - S.rate - δ) / (δ * (1 - S.rate - 2 * δ)))
@@ -195,7 +197,8 @@ theorem batchRoundError_le (harity : S.params.maxLogArity = 1) (t : ℕ)
     (h_lt : ∀ i, (δ : ℝ) < δ' - 2 / (S.instanceSetup i).size)
     (hδ' : (δ' : ℝ) < (1 - S.rate) / 2) (h_loss : 0 < loss) :
     Iop.Batch.roundError S δ δ' ≤
-      (max ((A₁ : ENNReal) / (Fintype.card 𝕂 : ENNReal)) <|
+      (max (powFraction F S.params.lookupPowBits * ((L : ENNReal) / (Fintype.card 𝕂 : ENNReal))) <|
+      max ((A₁ : ENNReal) / (Fintype.card 𝕂 : ENNReal)) <|
       max (powFraction F S.params.oodPowBits * ((A₂ : ENNReal) / (Fintype.card 𝕂 : ENNReal))) <|
       max (powFraction F S.params.batchPowBits * (ENNReal.ofReal b / Fintype.card 𝕂)) <|
       max (powFraction F S.params.commitPowBits * (ENNReal.ofReal
@@ -208,6 +211,10 @@ theorem batchRoundError_le (harity : S.params.maxLogArity = 1) (t : ℕ)
   rw [← friQueryErrorB_eq S harity]
   have hrate (i : Fin S.k) : (S.instanceSetup i).rate = S.rate := rate_instanceSetup S i
   gcongr
+  · rw [Iop.Batch.Setup.lookupError]
+    refine ENNReal.div_le_div_right (Nat.cast_le.mpr ?_) _
+    refine (Nat.mul_le_mul_right _ (Finset.prod_le_one fun i _ ↦ listSize_le_one
+      (S.instanceSetup i) _ δ' (by rw [hrate]; exact hδ'))).trans (by rw [one_mul]; exact hL)
   · refine iSup_le fun i ↦ (foldingError_le_of_le _ δ' (by rw [hrate]; exact hδ')).trans ?_
     exact ENNReal.div_le_div_right (Nat.cast_le.mpr (hA₁ i)) _
   · refine iSup_le fun i ↦ (outOfDomainError_le_of_le _ δ' (by rw [hrate]; exact hδ')).trans ?_

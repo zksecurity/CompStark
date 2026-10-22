@@ -15,9 +15,8 @@ The batch verifier `verifyBatchWith` runs on the random oracles of the STARK's r
 (`CompStark/RandomOracle.lean`): the duplex challenger, the Merkle leaf hash and the compression.
 
 * `Setup.instances`: the statement the verifier checks, every instance's AIR and trace length.
-* `Setup.NoLookups`: no instance has lookups, the batches the random-oracle analysis covers.
-* `Setup.streamLen`: every challenge round takes one duplex answer, the query round's grinding
-  sample and indices included.
+* `Setup.streamLen`: every challenge round takes one duplex answer, the lookup round's grinding
+  sample and two challenges and the query round's grinding sample and indices included.
 * `Setup.setupRo`: the batch's common data, the root of the tree of its preprocessed traces'
   extensions, computed on the oracles (`Batch.commonWith`, Plonky3's setup).
 * `NIProver`, `run`: a prover is an oracle computation that outputs a batch proof. The game
@@ -43,29 +42,35 @@ variable (S : Setup EF)
 /-- The statement the verifier checks: every instance's AIR and trace length, in order. -/
 def instances : List (CompStark.Batch.Instance F) := List.ofFn fun i ↦ ⟨S.air i, S.logN i⟩
 
-/-- No instance has lookups (`Air.lookups`): the batch verifier's lookup phase is idle. -/
-def NoLookups : Prop := ∀ i, (S.air i).lookups = []
+/-- Some instance has lookups: the batch verifier runs its lookup round. -/
+def hasLookups : Bool := CompStark.Batch.hasLookups S.instances
 
 /-- The samples in one duplex answer, enough for every round (`Iop.Setup.streamLen`). -/
-def streamLen : Nat := S.params.numQueries + Challenge.d EF + 1
+def streamLen : Nat := S.params.numQueries + 2 * Challenge.d EF + 1
 
 /-- Some instance has preprocessed columns. -/
 def hasPreprocessed : Bool := (List.ofFn fun i ↦ (S.air i).preprocessedWidth).any (0 < ·)
 
-/-- The committed rounds the verifier opens at every query: the main traces, the quotients, and
-the preprocessed traces if some instance has them. -/
-def inputRounds : Nat := if S.hasPreprocessed then 3 else 2
+/-- The committed rounds the verifier opens at every query: the main traces, the quotients, the
+preprocessed traces if some instance has them, and the permutation traces if some instance has
+lookups. -/
+def inputRounds : Nat := 2 + (if S.hasPreprocessed then 1 else 0) + if S.hasLookups then 1 else 0
 
 /-- The oracle calls of one Merkle opening of a round: the leaf hash, a compression per level of
 the tallest domain, and a hash and a compression where a shorter domain's matrices are injected. -/
 noncomputable def openingQueries : Nat := 1 + S.logTop + 2 * S.friHeights.length
 
-/-- The verifier's oracle calls on a proof, at most one per sample (`α`, `ζ` and the batching
-challenge take `d` samples each, the out-of-domain and batching grinding one each, every fold a
-grinding sample and `d` for `β`, the query round a grinding sample), and per query its index and
-its openings of the committed rounds and every fold. -/
+/-- The oracle calls of the lookup round, with lookups: its grinding sample and `d` samples each
+for `α_L` and `β_L`. -/
+def lookupCalls : Nat := if S.hasLookups then 2 * Challenge.d EF + 1 else 0
+
+/-- The verifier's oracle calls on a proof, at most one per sample (the lookup round's,
+`lookupCalls`; `α`, `ζ` and the batching challenge take `d` samples each, the out-of-domain and
+batching grinding one each, every fold a grinding sample and `d` for `β`, the query round a
+grinding sample), and per query its index and its openings of the committed rounds and every
+fold. -/
 noncomputable def verifierCalls : Nat :=
-  3 * Challenge.d EF + 3 + (Challenge.d EF + 1) * S.friRounds.numFolds +
+  S.lookupCalls + 3 * Challenge.d EF + 3 + (Challenge.d EF + 1) * S.friRounds.numFolds +
     S.params.numQueries * (1 + (S.friRounds.numFolds + S.inputRounds) * S.openingQueries)
 
 /-- The oracle calls of the common data's computation: at most four per leaf of the preprocessed

@@ -23,14 +23,17 @@ variable {F : Type} [BaseField F] {EF : Type} [Challenge F EF]
 
 local notation "𝕂" => Challenge.Spec EF
 
-/-- The opened values of a proof as the interactive oracle proof's openings, in the spec field. -/
-noncomputable def openingsOf (S : Iop.Setup EF) (o : OpenedValues EF) :
-    Openings S where
+/-- The opened values of a proof as the interactive oracle proof's openings, in the spec field:
+`o`, and the permutation trace's rows `cur` and `next` in base coordinates, `d` per column. -/
+noncomputable def openingsOf {lookups : List (Lookup F)} (S : Iop.Setup EF lookups)
+    (o : OpenedValues EF) (cur next : Array EF := #[]) : Openings S where
   traceAt j := Challenge.toSpec (o.traceLocal.getD j 0)
   traceNext j := Challenge.toSpec ((o.traceNext.getD #[]).getD j 0)
   quotientAt c e := Challenge.toSpec ((o.quotientChunks.getD c #[]).getD e 0)
   preprocessedAt j := Challenge.toSpec ((o.preprocessedLocal.getD #[]).getD j 0)
   preprocessedNext j := Challenge.toSpec ((o.preprocessedNext.getD #[]).getD j 0)
+  permAt c e := Challenge.toSpec (cur.getD (c * Challenge.d EF + e) 0)
+  permNext c e := Challenge.toSpec (next.getD (c * Challenge.d EF + e) 0)
 
 /-- A product over the chunks other than `c`, as a product over the range. -/
 theorem prod_fin_ne {M : Type*} [CommMonoid M] (n : Nat) (f : Nat → M) (c : Fin n) :
@@ -41,13 +44,12 @@ theorem prod_fin_ne {M : Type*} [CommMonoid M] (n : Nat) (f : Nat → M) (c : Fi
   simp only [ne_eq, Fin.val_eq_val]
 
 /-- The spec selector of chunk `c` is the verifier's (`chunkSel`). -/
-theorem selectorAt_eq (S : Iop.Setup EF) (ζ : 𝕂) (c : Fin S.chunks) :
-    selectorAt S ζ c = chunkSel S.logN (S.air.logQuotientChunks S.logN) c.val ζ := by
-  have hs : ∀ d : Nat, chunkShift S d =
-      algebraMap F 𝕂 (qpt (S.logN + (S.air.logQuotientChunks S.logN)) d) := fun d ↦ by
-    rw [chunkShift, rootOfUnity, lift, lift, qpt, map_mul, map_pow]
+theorem selectorAt_eq {lookups : List (Lookup F)} (S : Iop.Setup EF lookups) (ζ : 𝕂)
+    (c : Fin S.chunks) : selectorAt S ζ c = chunkSel S.logN S.logChunks c.val ζ := by
+  have hs : ∀ d : Nat, chunkShift S d = algebraMap F 𝕂 (qpt (S.logN + S.logChunks) d) :=
+    fun d ↦ by rw [chunkShift, rootOfUnity, lift, lift, qpt, map_mul, map_pow]
   have hv : ∀ (d : Nat) (x : 𝕂), vanishing (chunkShift S d) S.n x =
-      vanish S.logN (qpt (S.logN + (S.air.logQuotientChunks S.logN)) d) x := fun d x ↦ by
+      vanish S.logN (qpt (S.logN + S.logChunks) d) x := fun d x ↦ by
     rw [vanishing, vanish, hs, div_eq_mul_inv, map_inv₀]
   unfold selectorAt chunkSel
   rw [← prod_fin_ne]
@@ -55,9 +57,10 @@ theorem selectorAt_eq (S : Iop.Setup EF) (ζ : 𝕂) (c : Fin S.chunks) :
   rw [hv, hv, hs, div_eq_mul_inv]
 
 /-- The spec value of chunk `c` is the verifier's (`chunkInner`). -/
-theorem chunkAt_openingsOf (S : Iop.Setup EF) (o : OpenedValues EF)
-    (c : Fin S.chunks) :
-    chunkAt (openingsOf S o) c = Challenge.toSpec (chunkInner (o.quotientChunks.getD c #[])) := by
+theorem chunkAt_openingsOf {lookups : List (Lookup F)} (S : Iop.Setup EF lookups)
+    (o : OpenedValues EF) (cur next : Array EF) (c : Fin S.chunks) :
+    chunkAt (openingsOf S o cur next) c =
+      Challenge.toSpec (chunkInner (o.quotientChunks.getD c #[])) := by
   rw [toSpec_chunkInner, chunkAt, ← Fin.sum_univ_eq_sum_range]
   refine Finset.sum_congr rfl fun e _ ↦ ?_
   rw [Ext.toSpec_basis e.isLt]
@@ -84,7 +87,7 @@ theorem constraintsHoldAt_of_check (S : Iop.Setup EF) (pis : List F)
   have h24 : S.logN + (S.air.logQuotientChunks S.logN) ≤ twoAdicity F := by
     have := S.valid.twoAdic; have := S.valid.chunksFit; omega
   rw [hlist, toSpec_recompose S.logN _ h24] at h'
-  rw [constraintsHoldAt_iff, ← Fin.sum_univ_eq_sum_range] at *
+  rw [constraintsHoldAt_iff, extConstraints_nil, List.foldl_nil, ← Fin.sum_univ_eq_sum_range] at *
   rw [Challenge.toSpec_mul, toSpec_foldedConstraints, Challenge.toSpec_inv, Challenge.toSpec_sub,
     toSpec_extPowTwo, Challenge.toSpec_one] at h'
   have hzh : vanishing 1 S.n (Challenge.toSpec zeta) = Challenge.toSpec zeta ^ 2 ^ S.logN - 1 := by
