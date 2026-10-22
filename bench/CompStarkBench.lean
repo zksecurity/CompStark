@@ -144,6 +144,56 @@ def phases (logN : Nat) : IO UInt32 := do
     witness {Montgomery.Native32.FastField.toNat w}"
   return 0
 
+/-- Run `f` and print its wall time and a summary of its result. -/
+def timed {α : Type} (label : String) (f : Unit → α) (summary : α → String) : IO α := do
+  let t ← IO.monoMsNow
+  let r ← IO.lazyPure f
+  IO.println s!"{label} {(← IO.monoMsNow) - t} ms {summary r}"
+  return r
+
+open CompStark CompStark.Stark CompStark.Fri in
+/-- The wall time of each phase of the fast batch prover on the benchmark's three `wide 64`
+tables of `2 ^ 20`, `2 ^ 19` and `2 ^ 16` rows, blowup 2, 100 queries. -/
+def phasesBatch : IO UInt32 := do
+  let P : Params := ⟨1, 0, 1, 100, 0, 16, 0, 0, 0⟩
+  let logNs := [20, 19, 16]
+  let instances : List (Batch.Instance KoalaBear.Fast.Field) :=
+    logNs.map fun logN ↦ ⟨wide 64, logN⟩
+  let B := CompStark.KoalaBear.backendFor P.logBlowup (Batch.shapes instances)
+  for k in [0:2] do
+    let traces := logNs.map fun logN ↦ (wideTrace 64 (2 ^ logN)).set! 0 (k : _)
+    let exts ← timed "trace lde" (fun _ ↦ (instances.zip traces).map fun (I, t) ↦
+      B.lde I.logN 1 BaseField.gen 64 t) fun e ↦ s!"{(e.map (·.height)).sum}"
+    let mainC ← timed "trace commit" (fun _ ↦ B.commit exts)
+      fun c ↦ s!"{((B.root c).toArray.getD 0 0).val}"
+    let alpha : _root_.KoalaBear.Fast.Ext4 := ⟨5, 7, 11, k⟩
+    let qs ← timed "quotient" (fun _ ↦ (instances.zip exts).map fun (I, e) ↦
+      B.quotient I.air [] I.logN I.logQuotientChunks e none alpha) fun q ↦ s!"{(q.map (·.size)).sum}"
+    let chunks ← timed "quotient chunks lde" (fun _ ↦ (instances.zip qs).map fun (I, q) ↦
+      chunksOf B P I.logN I.logQuotientChunks q) fun c ↦ s!"{(c.map (·.length)).sum}"
+    let quotC ← timed "quotient commit" (fun _ ↦ B.commit chunks.flatten)
+      fun c ↦ s!"{((B.root c).toArray.getD 0 0).val}"
+    let zeta : _root_.KoalaBear.Fast.Ext4 := ⟨17, 19, 23, k⟩
+    let rounds : List (OpenRound B) :=
+      [(mainC, (instances.zip exts).map fun (I, e) ↦
+          (e, [zeta, zeta * Ext.ofBase (twoAdicGen I.logN)])),
+        (quotC, chunks.flatten.map fun m ↦ (m, [zeta]))]
+    let opened ← timed "opened values" (fun _ ↦ rounds.map fun (_, ms) ↦ ms.map fun (m, zs) ↦
+      B.openedAt 1 m zs) fun o ↦ s!"{o.length}"
+    let items := ((rounds.zip opened).map fun ((_, ms), orow) ↦
+      (ms.zip orow).map fun ((m, zs), ovs) ↦ (m, zs.zip ovs)).flatten
+    let red ← timed "reduce" (fun _ ↦ B.reduce alpha items) fun r ↦ s!"{r.length}"
+    let heights := red.map fun (h, _) ↦ h
+    let arities := foldSchedule P.maxLogArity (P.logBlowup + P.logFinalPolyLen) (heights.headD 0)
+      heights
+    let _ ← timed "commit phase" (fun _ ↦ (commitPhase B P arities (red.map (·.2))).run
+      B.transcript) fun cp ↦ s!"{cp.1.commits.size}"
+    let _ ← timed "openPcs" (fun _ ↦ (openPcs B P rounds).run B.transcript)
+      fun r ↦ s!"{r.1.2.folds.size}"
+    let _ ← timed "whole proof" (fun _ ↦ Batch.proveBatchWith B P instances traces
+      (logNs.map fun _ ↦ [])) fun pf ↦ s!"{pf.oodWitness.val}"
+  return 0
+
 def main (args : List String) : IO UInt32 := do
   match args with
   | ["poseidon2-spec", logN] =>
@@ -274,6 +324,7 @@ def main (args : List String) : IO UInt32 := do
     IO.println s!"perm24 ns/perm {m * 10 / (8 * groups) / 10}.{m * 10 / (8 * groups) % 10}"
     return 0
   | ["phases", logN] => phases logN.toNat!
+  | ["phases-batch"] => phasesBatch
   | "prove" :: backend :: air :: rest =>
     -- `prove (spec|fast) (fib|wide) LOG_N LOG_BLOWUP LOG_FINAL MAX_LOG_ARITY QUERIES COMMIT_POW
     -- QUERY_POW [BATCH_POW OOD_POW] [JSON]`: the proof's median time, checked against Plonky3's

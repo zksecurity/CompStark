@@ -551,33 +551,6 @@ end QuotientValues
 
 section Recompose
 
-/-- Coordinate `e` of an extension element. -/
-abbrev coordOf (e : Nat) (y : EF) : F := (Ext.coeffs y).getD e 0
-
-/-- A chunk's coordinates, tabulated. -/
-theorem chunkValues_eq (qs : Array EF) (stride c n : Nat) :
-    chunkValues qs stride c n = Array.ofFn (n := n * Challenge.d EF) fun k ↦
-      coordOf (k.val % Challenge.d EF) (qs.getD (k.val / Challenge.d EF * stride + c) 0) := by
-  simp only [chunkValues, Id.run, Std.Legacy.Range.forIn_eq_forIn_range',
-    List.forIn_pure_yield_eq_foldl, pure_bind, Std.Legacy.Range.size, Nat.sub_zero,
-    Nat.add_sub_cancel, Nat.div_one]
-  show List.foldl _ _ _ = _
-  have hbody : (fun (out : Array F) (r : Nat) ↦
-      out ++ (Ext.coeffs (qs.getD (r * stride + c) 0)).toArray) =
-      fun out r ↦ (List.range' 0 (Challenge.d EF)).foldl
-        (fun o i ↦ o.push (coordOf i (qs.getD (r * stride + c) 0))) out := by
-    funext out r
-    have hl : (Ext.coeffs (qs.getD (r * stride + c) 0)).length = Challenge.d EF :=
-      Challenge.length_coeffs _
-    rw [foldl_push_range']
-    congr 1
-    refine Array.ext (by rw [List.size_toArray, Array.size_ofFn, hl]) fun i h1 _ ↦ ?_
-    rw [Array.getElem_ofFn, List.getElem_toArray, coordOf, Nat.zero_add,
-      List.getD_eq_getElem _ _ (by rw [List.size_toArray] at h1; exact h1)]
-  rw [hbody, foldl_blocks (fun r i ↦ coordOf i (qs.getD (r * stride + c) 0)) (Challenge.d EF) n 0,
-    Array.emptyWithCapacity_eq, Array.empty_append]
-  simp only [Nat.zero_add]
-
 /-- Coordinate `e` of chunk row `r`. -/
 theorem chunkValues_getD (qs : Array EF) (stride c n r e : Nat) (hr : r < n)
     (he : e < Challenge.d EF) :

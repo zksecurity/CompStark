@@ -33,12 +33,13 @@ open CompStark.Fri
 variable {F : Type} [BaseField F] {EF : Type} [Challenge F EF] {width : Nat}
 
 /-- The coordinates of every `stride`-th quotient value from `c`, `n` of them: chunk `c`'s values,
-as rows of `d` base elements. -/
-def chunkValues (qs : @& Array EF) (stride c n : Nat) : Array F := Id.run do
-  let mut out := Array.emptyWithCapacity (Challenge.d EF * n)
-  for r in [0:n] do
-    out := out ++ (Ext.coeffs (qs.getD (r * stride + c) 0)).toArray
-  return out
+as rows of `d` base elements, in parallel row ranges. -/
+def chunkValues (qs : @& Array EF) (stride c n : Nat) : Array F :=
+  parChunks n (if n < 4096 then 1 else 16) fun r0 len ↦ Id.run do
+    let mut out := Array.emptyWithCapacity (Challenge.d EF * len)
+    for r in [r0:r0 + len] do
+      out := out ++ (Ext.coeffs (qs.getD (r * stride + c) 0)).toArray
+    return out
 
 /-- The preprocessed trace's extension and commitment by the backend `B`, if the AIR has
 preprocessed columns (Plonky3's `setup_preprocessed`). -/

@@ -400,3 +400,25 @@ pub fn batch_bench(name: &str, args: &[usize]) {
     samples.sort_by(|a, b| a.partial_cmp(b).unwrap());
     println!("plonky3 prove_batch {name} ms median {:.2}", samples[3]);
 }
+
+/// `batch-trace CASE …`: one `prove_batch` over KoalaBear, after one untraced warmup, with
+/// Plonky3's tracing spans printed.
+pub fn batch_trace(name: &str, args: &[usize]) {
+    use tracing_forest::util::LevelFilter;
+    use tracing_forest::ForestLayer;
+    use tracing_subscriber::layer::SubscriberExt;
+    use tracing_subscriber::util::SubscriberInitExt;
+    use tracing_subscriber::{EnvFilter, Registry};
+    let config = config(default_koalabear_poseidon2_16(), default_koalabear_poseidon2_24(), args);
+    let insts = case::<p3_koala_bear::KoalaBear>(name);
+    let instances: Vec<StarkInstance<'_, _, _>> = insts.iter()
+        .map(|(air, trace, pis)| StarkInstance { air, trace, public_values: pis.clone() })
+        .collect();
+    let prover_data =
+        ProverData::from_instances(&config, &instances).expect("Plonky3 cannot commit");
+    std::hint::black_box(prove_batch(&config, &instances, &prover_data).expect("cannot prove"));
+    let env_filter =
+        EnvFilter::builder().with_default_directive(LevelFilter::INFO.into()).from_env_lossy();
+    Registry::default().with(env_filter).with(ForestLayer::default()).init();
+    std::hint::black_box(prove_batch(&config, &instances, &prover_data).expect("cannot prove"));
+}

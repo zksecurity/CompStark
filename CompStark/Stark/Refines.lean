@@ -6,6 +6,7 @@ module
 
 public import CompStark.Fri.Refines
 public import CompStark.Stark.Prover
+public import CompStark.Stark.Fast.OpeningsSpec
 
 /-! # Provers on refining backends
 
@@ -21,27 +22,46 @@ open CompStark.Fri
 
 variable {F : Type} [BaseField F]
 
+/-- Coordinate `e` of an extension element. -/
+abbrev coordOf {K : Type} [Challenge F K] (e : Nat) (y : K) : F := (Ext.coeffs y).getD e 0
+
+/-- A chunk's coordinates, tabulated. -/
+theorem chunkValues_eq {K : Type} [Challenge F K] (qs : Array K) (stride c n : Nat) :
+    chunkValues qs stride c n = Array.ofFn (n := n * Challenge.d K) fun k ↦
+      coordOf (k.val % Challenge.d K) (qs.getD (k.val / Challenge.d K * stride + c) 0) := by
+  unfold chunkValues
+  refine parChunks_eq_blocks n _ (Challenge.d K) _
+    (fun k ↦ coordOf (k % Challenge.d K) (qs.getD (k / Challenge.d K * stride + c) 0))
+    (fun s len _ ↦ ?_) (by left; split <;> omega)
+  simp only [Id.run, Std.Legacy.Range.forIn_eq_forIn_range',
+    List.forIn_pure_yield_eq_foldl, pure_bind, Std.Legacy.Range.size, Nat.add_sub_cancel_left,
+    Nat.add_sub_cancel, Nat.div_one]
+  show List.foldl _ _ _ = _
+  have hbody : (fun (out : Array F) (r : Nat) ↦
+      out ++ (Ext.coeffs (qs.getD (r * stride + c) 0)).toArray) =
+      fun out r ↦ (List.range' 0 (Challenge.d K)).foldl
+        (fun o i ↦ o.push (coordOf i (qs.getD (r * stride + c) 0))) out := by
+    funext out r
+    have hl : (Ext.coeffs (qs.getD (r * stride + c) 0)).length = Challenge.d K :=
+      Challenge.length_coeffs _
+    rw [foldl_push_range']
+    congr 1
+    refine Array.ext (by rw [List.size_toArray, Array.size_ofFn, hl]) fun i h1 _ ↦ ?_
+    rw [Array.getElem_ofFn, List.getElem_toArray, coordOf, Nat.zero_add,
+      List.getD_eq_getElem _ _ (by rw [List.size_toArray] at h1; exact h1)]
+  rw [hbody, foldl_blocks (fun r i ↦ coordOf i (qs.getD (r * stride + c) 0)) (Challenge.d K) len s,
+    Array.emptyWithCapacity_eq, Array.empty_append]
+  refine congrArg Array.ofFn (funext fun k ↦ ?_)
+  have hd : 0 < Challenge.d K := (Challenge.params K).d_pos
+  have e1 : (s * Challenge.d K + k.val) / Challenge.d K = s + k.val / Challenge.d K := by
+    rw [Nat.add_comm, Nat.add_mul_div_right _ _ hd, Nat.add_comm]
+  have e2 : (s * Challenge.d K + k.val) % Challenge.d K = k.val % Challenge.d K := by
+    rw [Nat.add_comm, Nat.add_mul_mod_self_right]
+  rw [e1, e2]
+
 theorem size_chunkValues {K : Type} [Challenge F K] (qs : Array K) (stride c n : Nat) :
     (chunkValues qs stride c n).size = Challenge.d K * n := by
-  simp only [chunkValues, Id.run, Std.Legacy.Range.forIn_eq_forIn_range',
-    List.forIn_pure_yield_eq_foldl, pure_bind, Std.Legacy.Range.size, Nat.sub_zero,
-    Nat.add_sub_cancel, Nat.div_one]
-  show Array.size (List.foldl _ _ _) = _
-  suffices h : ∀ (l : List Nat) (init : Array F), (l.foldl (fun out r ↦
-      out ++ (Ext.coeffs (qs.getD (r * stride + c) 0)).toArray) init).size =
-      init.size + Challenge.d K * l.length by
-    rw [h, List.length_range', Array.emptyWithCapacity_eq, Array.size_empty, Nat.zero_add]
-  intro l
-  induction l with
-  | nil => intro _; rfl
-  | cons r l ih =>
-    intro init
-    have h4 : (Ext.coeffs (qs.getD (r * stride + c) 0)).length = Challenge.d K :=
-      Challenge.length_coeffs _
-    rw [List.foldl_cons, ih]
-    simp only [Array.size_append, List.size_toArray, h4, List.length_cons]
-    rw [Nat.mul_succ]
-    omega
+  rw [chunkValues_eq, Array.size_ofFn, Nat.mul_comm]
 
 theorem addressable_mono {m n : Nat} (h : m ≤ n) (hn : Addressable n) : Addressable m := by
   unfold Addressable at *; omega

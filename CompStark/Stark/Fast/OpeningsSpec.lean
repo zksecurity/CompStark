@@ -33,6 +33,44 @@ theorem toList_ofFn_eq_map {α : Type} (g : Nat → α) (m : Nat) :
   · intro i h1 h2
     rw [Array.getElem_toList, Array.getElem_ofFn, List.getElem_map, List.getElem_range]
 
+/-- Ranges of blocks of `B` entries, concatenated in order, give the whole. -/
+theorem parChunks_eq_blocks {α : Type} (n parts B : Nat) (f : Nat → Nat → Array α) (g : Nat → α)
+    (hf : ∀ s len, s + len ≤ n ∨ len = 0 →
+      f s len = Array.ofFn (n := len * B) fun k ↦ g (s * B + k.val))
+    (hp : 0 < parts ∨ n = 0) :
+    parChunks n parts f = Array.ofFn (n := n * B) fun i ↦ g i.val := by
+  unfold parChunks
+  generalize hsz : (n + parts - 1) / parts = size
+  have hstep : ∀ k, ((List.range k).foldl (fun acc i ↦ acc ++
+      f (i * size) (min size (n - min n (i * size)))) #[]).toList =
+      (List.range (min n (k * size) * B)).map g := by
+    intro k
+    induction k with
+    | zero => rw [List.range_zero, List.foldl_nil, Nat.zero_mul, Nat.min_zero, Nat.zero_mul]; rfl
+    | succ k ih =>
+      rw [List.range_succ, List.foldl_append, List.foldl_cons, List.foldl_nil, Array.toList_append,
+        ih, hf _ _ (by omega), toList_ofFn_eq_map (fun x ↦ g (k * size * B + x))]
+      by_cases hk : k * size ≤ n
+      · rw [show min n ((k + 1) * size) * B = min n (k * size) * B +
+            min size (n - min n (k * size)) * B by
+            rw [← Nat.add_mul]; congr 1; rw [Nat.succ_mul]; omega,
+          List.range_add, List.map_append, List.map_map, Nat.min_eq_right hk]
+        rfl
+      · rw [show min size (n - min n (k * size)) = 0 by omega,
+          show min n ((k + 1) * size) = min n (k * size) by rw [Nat.succ_mul]; omega,
+          Nat.zero_mul, List.range_zero, List.map_nil, List.append_nil]
+  have hn : min n (parts * size) = n := by
+    rcases hp with hp | hp
+    · have := Nat.lt_div_mul_add (a := n + parts - 1) hp
+      rw [hsz] at this
+      rw [Nat.min_eq_left (by rw [Nat.mul_comm]; omega)]
+    · rw [hp, Nat.zero_min]
+  apply Array.toList_inj.mp
+  rw [toList_ofFn_eq_map, Array.foldl_map, ← Array.foldl_toList, Array.toList_range]
+  have := hstep parts
+  rw [hn] at this
+  exact this
+
 /-- Ranges of `f` concatenated in order give the whole. -/
 theorem parChunks_eq {α : Type} (n parts : Nat) (f : Nat → Nat → Array α) (g : Nat → α)
     (hf : ∀ s len, s + len ≤ n ∨ len = 0 → f s len = Array.ofFn (n := len) fun k ↦ g (s + k.val))
