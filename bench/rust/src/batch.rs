@@ -1,7 +1,8 @@
 //! Plonky3 `batch-stark` proofs for known-answer tests, on the configuration of `stark.rs`: the
 //! test AIRs of `batch-stark/tests/simple.rs` (a Fibonacci AIR with a preprocessed index column,
 //! `MulAir`, `PeriodicAir`, `PreprocessedMulAir`, and the lookup AIRs `MulAirLookups`,
-//! `FibAirLookups` and `SingleTableLocalLookupAir`), batched at mixed heights.
+//! `FibAirLookups` and `SingleTableLocalLookupAir`), batched at mixed heights, and a range table
+//! with its queries.
 use p3_air::{Air, AirBuilder, BaseAir, PermutationAirBuilder, WindowAccess};
 use p3_lookup::{Count, InteractionBuilder};
 use p3_batch_stark::{prove_batch, verify_batch, ProverData, StarkInstance};
@@ -44,6 +45,13 @@ pub enum BatchAir<F> {
     FibL { log_height: usize, bus: Option<(String, i64)> },
     /// `SingleTableLocalLookupAir`: three local lookups with selector multiplicities.
     SingleLocal,
+    /// A table of the values `0, …, 2^log_height - 1`, a preprocessed column holding the row
+    /// index, providing each on the bus `range` with the multiplicity of its column
+    /// (`Count::provided`).
+    RangeTable { log_height: usize },
+    /// Columns `v, s`, `s` boolean, querying `v` on the bus `range` when `s = 1`
+    /// (`Count::bounded(s, 1)`).
+    RangeQuery,
 }
 
 impl<F: PrimeField64> BaseAir<F> for BatchAir<F> {
@@ -52,7 +60,8 @@ impl<F: PrimeField64> BaseAir<F> for BatchAir<F> {
             Self::Fib { .. } | Self::FibL { .. } | Self::Periodic(_) | Self::Square => 2,
             Self::Mul { reps } | Self::MulL { reps, .. } => 3 * reps + 1,
             Self::SingleLocal => 7,
-            Self::PrepMul { .. } => 1,
+            Self::PrepMul { .. } | Self::RangeTable { .. } => 1,
+            Self::RangeQuery => 2,
             Self::Wide => WIDE,
         }
     }
@@ -65,7 +74,8 @@ impl<F: PrimeField64> BaseAir<F> for BatchAir<F> {
         match self {
             Self::Fib { log_height }
             | Self::FibL { log_height, .. }
-            | Self::PrepMul { log_height, .. } => {
+            | Self::PrepMul { log_height, .. }
+            | Self::RangeTable { log_height } => {
                 Some(RowMajorMatrix::new((0..1u64 << log_height).map(F::from_u64).collect(), 1))
             }
             _ => None,
@@ -74,7 +84,7 @@ impl<F: PrimeField64> BaseAir<F> for BatchAir<F> {
 
     fn preprocessed_width(&self) -> usize {
         match self {
-            Self::Fib { .. } | Self::FibL { .. } | Self::PrepMul { .. } => 1,
+            Self::Fib { .. } | Self::FibL { .. } | Self::PrepMul { .. } | Self::RangeTable { .. } => 1,
             _ => 0,
         }
     }
@@ -161,6 +171,17 @@ where
                     (vec![s3.into()], Count::bounded(is_last.clone(), 1)),
                     (vec![table.into()], Count::provided(-(is_last * m3.into()))),
                 ]);
+            }
+            Self::RangeTable { .. } => {
+                let value = builder.preprocessed().current(0).unwrap();
+                let mult = builder.main().current(0).unwrap();
+                builder.push_interaction("range", [value.into()], Count::provided(-mult.into()));
+            }
+            Self::RangeQuery => {
+                let main = builder.main();
+                let (v, s) = (main.current(0).unwrap(), main.current(1).unwrap());
+                builder.assert_bool(s);
+                builder.push_interaction("range", [v.into()], Count::bounded(s.into(), 1));
             }
             Self::Square => SquareAir.eval(builder),
             Self::Wide => WideAir.eval(builder),
@@ -262,6 +283,7 @@ fn instance<F: PrimeField64>(air: BatchAir<F>, log_n: usize)
             (air, t, vec![F::ZERO, F::ONE, x])
         }
         BatchAir::SingleLocal => (air, single_local_trace(n), vec![]),
+        BatchAir::RangeTable { .. } | BatchAir::RangeQuery => panic!("built by range_case"),
         BatchAir::Periodic(a) => {
             let t = a.trace(n);
             (air, t, vec![])
@@ -289,7 +311,7 @@ fn instance<F: PrimeField64>(air: BatchAir<F>, log_n: usize)
 /// `WideAir` tables of `2^20`, `2^19` and `2^16` rows, and `lookup-bench`, `MulAirLookups` with
 /// eight repetitions on `2^18` rows, each with a local lookup and sending on one bus, the
 /// `FibAirLookups` receiving it eight times on `2^18` rows, and `MulAirLookups` with eight local
-/// lookups on `2^16` rows.
+/// lookups on `2^16` rows; and `range`, a range table with its queries (`range_case`).
 pub fn case<F: PrimeField64>(name: &str) -> Vec<(BatchAir<F>, RowMajorMatrix<F>, Vec<F>)> {
     match name {
         "three" => vec![instance(BatchAir::Fib { log_height: 4 }, 4),
@@ -317,6 +339,7 @@ pub fn case<F: PrimeField64>(name: &str) -> Vec<(BatchAir<F>, RowMajorMatrix<F>,
         "single-local" => vec![instance(BatchAir::SingleLocal, 3)],
         "heights" => vec![fib_from(3, 0, "Fib", -1), instance(mul_l(1, true, &[]), 2),
             fib_from(4, 0, "Fib", 1), fib_from(3, 8, "Fib", -1)],
+        "range" => range_case(4, 3),
         "failed-global" => vec![instance(mul_l(2, false, &["MulFib1", "MulFib2"]), 3),
             fib_l(3, "MulFib1", 1)],
         "failed-local" => {
@@ -326,6 +349,28 @@ pub fn case<F: PrimeField64>(name: &str) -> Vec<(BatchAir<F>, RowMajorMatrix<F>,
         }
         _ => panic!("unknown batch {name}"),
     }
+}
+
+/// `RangeTable` on `2^log_table` rows and `RangeQuery` on `2^log_query` rows: row `r` of the queries
+/// is `((5 r + 3) mod 2^log_table, 1)`, or `(1000, 0)` when `r mod 3 = 2`, and the table's
+/// multiplicities count the real queries of each value.
+fn range_case<F: PrimeField64>(log_table: usize, log_query: usize)
+    -> Vec<(BatchAir<F>, RowMajorMatrix<F>, Vec<F>)> {
+    let (nt, nq) = (1usize << log_table, 1usize << log_query);
+    let mut mult = vec![0u64; nt];
+    let mut q = Vec::with_capacity(2 * nq);
+    for r in 0..nq {
+        if r % 3 == 2 {
+            q.extend([F::from_u64(1000), F::ZERO]);
+        } else {
+            let v = (5 * r + 3) % nt;
+            mult[v] += 1;
+            q.extend([F::from_u64(v as u64), F::ONE]);
+        }
+    }
+    let t = mult.into_iter().map(F::from_u64).collect();
+    vec![(BatchAir::RangeTable { log_height: log_table }, RowMajorMatrix::new(t, 1), vec![]),
+        (BatchAir::RangeQuery, RowMajorMatrix::new(q, 2), vec![])]
 }
 
 /// `MulAirLookups` with `reps` repetitions, local lookups if `local`, and the global buses

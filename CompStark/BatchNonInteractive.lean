@@ -32,12 +32,12 @@ for the extracted transcript (`Ni/BatchBcs.lean`), whose commitments bind the tr
 the prover committed to, and safe rounds then give satisfying traces (`Sound/BatchRbr.lean`).
 `Ni/BatchAssembly.lean` sums the bounds.
 
-Over the integers (`batchKnowledgeSoundness_ro_int`), as for the interactive batch
+With lookup inclusion (`batchKnowledgeSoundness_ro_inclusion`), as for the interactive batch
 (`CompStark/BatchSoundness.lean`): an accepting verifier checked the multiplicity bound
-`∑ᵢ wᵢ 2 ^ logNᵢ < p`, so for AIRs that keep every row's multiplicities within their count weights
-(`Setup.CountsBounded`), traces satisfying the batch satisfy it with every bus balanced as a
-multiset (`Sound.Batch.balanced_int`), and the same bound holds for the event that no tuple of
-close traces satisfies the batch over the integers (`Setup.SatisfiedInt`).
+`∑ᵢ wᵢ 2 ^ logNᵢ < p`, so for AIRs that keep their queries' multiplicities within their weights
+(`Air.CountsBounded`), traces satisfying the batch have every bus's queries included in what is
+provided (`Sound.Batch.included_of_balanced`), and the same bound holds for the event that no
+tuple of close traces satisfies the batch with lookup inclusion (`Setup.SatisfiedWithInclusion`).
 -/
 
 @[expose] public section
@@ -61,21 +61,20 @@ theorem batchKnowledgeSoundness_ro (S : Setup EF) (publicValues : Fin S.k → Li
       (Q + S.verifierQueries) * roundError S δ δ' + hashError F (Q + S.verifierQueries) :=
   prob_unopenedB_le S publicValues δ δ' hδ' Q prover hQ
 
-/-- **Knowledge soundness of the batch STARK in the random-oracle model, over the integers.** For
-AIRs that keep every row's multiplicities within their count weights: a prover making at most `Q`
-oracle calls gets a proof for the instances' trace lengths accepted, while no tuple of traces
-close to the ones it committed to satisfies every AIR with every bus balanced as a multiset, with
-probability at most `q · roundError + hashError F q`, `q = Q + verifierQueries`. -/
-theorem batchKnowledgeSoundness_ro_int (S : Setup EF) (publicValues : Fin S.k → List F)
+/-- **Knowledge soundness of the batch STARK in the random-oracle model, with lookup
+inclusion.** For AIRs that keep their queries' multiplicities within their weights: a prover
+making at most `Q` oracle calls gets a proof for the instances' trace lengths accepted, while no
+tuple of traces close to the ones it committed to satisfies every AIR with every bus's queries
+included in what is provided, with probability at most `q · roundError + hashError F q`,
+`q = Q + verifierQueries`. -/
+theorem batchKnowledgeSoundness_ro_inclusion (S : Setup EF) (publicValues : Fin S.k → List F)
     (δ δ' : NNReal) (hδ' : (δ' : ℝ) < 1 - S.rate) (Q : Nat) (prover : NIProver S)
-    (hQ : prover.IsTotalQueryBound Q)
-    (hcounts : ∀ traces, (∀ i, (S.air i).Satisfied (S.logN i) (traces i) (publicValues i)) →
-      S.CountsBounded traces publicValues) :
+    (hQ : prover.IsTotalQueryBound Q) (hcounts : ∀ i, (S.air i).CountsBounded (S.logN i)) :
     Pr{let (proof, log, verdict) ← run S publicValues prover}[
       verdict = .ok () ∧ proof.degreeBits.toList = List.ofFn S.logN ∧
         ∀ traces ∈ closeTraces S δ' (committedTraces S log proof),
-          ¬ S.SatisfiedInt traces publicValues] ≤
+          ¬ S.SatisfiedWithInclusion traces publicValues] ≤
       (Q + S.verifierQueries) * roundError S δ δ' + hashError F (Q + S.verifierQueries) :=
-  prob_unopenedIntB_le S publicValues δ δ' hδ' Q prover hQ hcounts
+  prob_unopenedInclusionB_le S publicValues δ δ' hδ' Q prover hQ hcounts
 
 end CompStark.Iop.Batch

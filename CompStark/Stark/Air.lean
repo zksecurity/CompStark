@@ -25,8 +25,10 @@ of the AIR, neither committed nor opened: as a polynomial it is `f(Xⁿᐟᵖ)`,
 through the period's values on the subgroup of order `p`, of degree `n - n / p`.
 
 An AIR may declare lookups (`Lookup`, Plonky3's LogUp lookups): tuples of expressions with signed
-multiplicities, balanced inside the AIR or across the AIRs of a batch on a named bus. Only the
-batch STARK proves them (`CompStark/Lookup/`); `uni-stark` ignores them, as Plonky3's does.
+multiplicities, balanced inside the AIR or across the AIRs of a batch on a named bus. Each
+multiplicity carries a weight (`Count`): a query's bounds its magnitude on every row, a provided
+table entry has weight `0`. Only the batch STARK proves them (`CompStark/Lookup/`); `uni-stark`
+ignores them, as Plonky3's does.
 
 `Expr.degree` is Plonky3's `degree_multiple`: columns and the first- and last-row selectors have
 degree 1, the transition selector, constants and public values 0. `Expr.degBound` is Plonky3's
@@ -133,15 +135,34 @@ theorem colsBelow_mono {w wNext pw pwNext wNext' pw' pwNext' : Nat} (h0 : wNext 
 
 end Expr
 
+/-- A tuple's signed multiplicity with a bound on its magnitude on every row (Plonky3's `Count`):
+a query's `weight` bounds it, which the AIR enforces and the verifier's multiplicity bound
+trusts; a provided table entry has weight `0` and any multiplicity. -/
+structure Count (F : Type) where
+  expr : Expr F
+  weight : Nat
+
+/-- A query's multiplicity `e`, of magnitude at most `w` on every row. -/
+abbrev Count.bounded {F : Type} (e : Expr F) (w : Nat) : Count F := ⟨e, w⟩
+
+/-- A provided table entry's multiplicity `e`, of weight `0`. -/
+abbrev Count.provided {F : Type} (e : Expr F) : Count F := ⟨e, 0⟩
+
 /-- A lookup of an AIR (Plonky3's `Lookup` without exclusive flags): tuples of expressions, each
-with a signed multiplicity, positive for a receive and negative for a send. A local lookup
-(`bus = none`) balances inside its AIR; a global one balances with every lookup of the batch on
-the bus of its name. `countWeight` bounds the magnitude of its multiplicities on a row (Plonky3's
-`count_weight`), which the verifier's multiplicity bound trusts the AIR to enforce. -/
+with a signed multiplicity and its weight (`Count`), positive for a receive and negative for a
+send. A local lookup (`bus = none`) balances inside its AIR; a global one balances with every
+lookup of the batch on the bus of its name. -/
 structure Lookup (F : Type) where
   bus : Option String
-  tuples : List (List (Expr F) × Expr F)
-  countWeight : Nat
+  entries : List (List (Expr F) × Count F)
+
+/-- The lookup's tuples with their multiplicities, as LogUp reads them. -/
+def Lookup.tuples {F : Type} (l : Lookup F) : List (List (Expr F) × Expr F) :=
+  l.entries.map fun (es, c) ↦ (es, c.expr)
+
+/-- The bound on the magnitudes of the lookup's multiplicities on a row (Plonky3's
+`count_weight`): the sum of its tuples' weights. -/
+def Lookup.countWeight {F : Type} (l : Lookup F) : Nat := (l.entries.map (·.2.weight)).sum
 
 /-- Every element and multiplicity of the lookup reads only columns below `w` of the trace and
 `pw` of the preprocessed trace, at either row. -/
@@ -284,8 +305,8 @@ def wide {F : Type} (w : Nat) : Air F where
 /-- The lookup of `wideBus`: on the global bus `wide`, every row receives its columns `0..3` and
 sends its columns `4..7`, each tuple with multiplicity `±1`. -/
 def wideBusLookup {F : Type} [One F] [Neg F] : Lookup F :=
-  ⟨some "wide", [([.cur 0, .cur 1, .cur 2, .cur 3], .const 1),
-    ([.cur 4, .cur 5, .cur 6, .cur 7], .const (-1))], 2⟩
+  ⟨some "wide", [([.cur 0, .cur 1, .cur 2, .cur 3], .bounded (.const 1) 1),
+    ([.cur 4, .cur 5, .cur 6, .cur 7], .bounded (.const (-1)) 1)]⟩
 
 /-- `wide w` exchanging tuples of four columns on a global bus (`wideBusLookup`): two interactions
 of width `4` per row. -/
@@ -370,9 +391,11 @@ def mulAirLookups {F : Type} [One F] [Neg F] (reps : Nat) (isLocal : Bool) (glob
   { mulAir reps with
     lookups :=
       (if isLocal then (List.range reps).map fun i ↦
-        ⟨none, [([.cur (3 * i)], .const 1), ([.cur (3 * reps)], .const (-1))], 1⟩ else []) ++
+        ⟨none, [([.cur (3 * i)], .bounded (.const 1) 1),
+          ([.cur (3 * reps)], .provided (.const (-1)))]⟩ else []) ++
       (if global.isEmpty then [] else (List.range reps).map fun i ↦
-        ⟨some (global.getD i ""), [([.cur (3 * i), .cur (3 * i + 1)], .const (-1))], 1⟩) }
+        ⟨some (global.getD i ""),
+          [([.cur (3 * i), .cur (3 * i + 1)], .bounded (.const (-1)) 1)]⟩) }
 
 /-- `fibonacciIndexed logN` receiving its rows `(left, right)` on the bus `bus` with the
 multiplicity `count`, bounded by `|count|` (Plonky3's `FibAirLookups` of
@@ -380,7 +403,7 @@ multiplicity `count`, bounded by `|count|` (Plonky3's `FibAirLookups` of
 def fibonacciLookups {F : Type} [NatCast F] [IntCast F] (logN : Nat) (bus : String) (count : Int) :
     Air F :=
   { fibonacciIndexed logN with
-    lookups := [⟨some bus, [([.cur 0, .cur 1], .const (count : F))], count.natAbs⟩] }
+    lookups := [⟨some bus, [([.cur 0, .cur 1], .bounded (.const (count : F)) count.natAbs)]⟩] }
 
 /-- Three local lookups of the columns `s₁, s₂, s₃` against the table column `t` on the first row,
 on transitions and on the last row, with the multiplicity columns `m₁, m₂, m₃`, the selectors in
@@ -390,7 +413,27 @@ def singleTableLocalLookup {F : Type} [Zero F] : Air F where
   numPublicValues := 0
   constraints := []
   lookups := [(0, Expr.isFirstRow), (1, .isTransition), (2, .isLastRow)].map fun (j, sel) ↦
-    ⟨none, [([.cur j], sel), ([.cur 3], .const 0 - sel * .cur (4 + j))], 1⟩
+    ⟨none, [([.cur j], .bounded sel 1), ([.cur 3], .provided (.const 0 - sel * .cur (4 + j)))]⟩
+
+/-- A table of the values `0, …, 2 ^ logN - 1`, a preprocessed column holding the row index,
+providing each on the bus `range` with the multiplicity of its one column, unconstrained
+(Plonky3's `Count::provided`). -/
+def rangeTable {F : Type} [Zero F] [NatCast F] (logN : Nat) : Air F where
+  width := 1
+  numPublicValues := 0
+  constraints := []
+  preprocessedWidth := 1
+  preprocessed := Array.ofFn (n := 2 ^ logN) fun i ↦ (i.val : F)
+  preprocessedNextRow := false
+  lookups := [⟨some "range", [([.prepCur 0], .provided (.const 0 - .cur 0))]⟩]
+
+/-- Two columns `v, s`, `s` boolean (Plonky3's `assert_bool`), querying `v` on the bus `range`
+when `s = 1` (Plonky3's `Count::bounded(s, 1)`). -/
+def rangeQuery {F : Type} [One F] : Air F where
+  width := 2
+  numPublicValues := 0
+  constraints := [.cur 1 * (.cur 1 - .const 1)]
+  lookups := [⟨some "range", [([.cur 0], .bounded (.cur 1) 1)]⟩]
 
 /-- Two columns `a, b` with `a² = b` on every row, never reading the next row (Plonky3's
 `SquareAir` of `uni-stark/tests/no_next_row.rs`). -/

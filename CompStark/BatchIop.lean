@@ -285,16 +285,6 @@ def Setup.Balanced (S : Setup EF withLookups) (traces : Fin S.k → Array F)
   ∀ key : Nat × List F,
     (((S.messages traces publicValues).filter (·.1 = key)).map (·.2)).sum = 0
 
-/-- Every lookup's multiplicities on every row have integer representatives whose magnitudes sum
-to at most its count weight (Plonky3's `count_weight`). The verifier does not check it: an AIR
-whose count weights are claimed for its lookups enforces it. -/
-def Setup.CountsBounded (S : Setup EF withLookups) (traces : Fin S.k → Array F)
-    (publicValues : Fin S.k → List F) : Prop :=
-  ∀ i, ∀ r < 2 ^ S.logN i, ∀ l ∈ S.lookups i, ∃ cs : List ℤ,
-    cs.map (Int.cast : ℤ → F) = l.tuples.map (fun t ↦
-      t.2.eval (generationRow (S.air i) (S.logN i) (traces i) (publicValues i) r)) ∧
-    (cs.map Int.natAbs).sum ≤ l.countWeight
-
 /-- The traces satisfy the batch: every instance's trace satisfies its AIR, and every bus of the
 batch's lookups balances. -/
 structure Setup.Satisfied (S : Setup EF withLookups) (traces : Fin S.k → Array F)
@@ -307,21 +297,52 @@ instance `i`'s count weights: the verifier rejects every proof for a batch that 
 def Setup.HeightBounded (S : Setup EF withLookups) : Prop :=
   heightBoundOk (CompPoly.CanonicalNat.bound F) (List.ofFn fun i ↦ (S.lookups i, S.logN i)) = true
 
-/-- Every bus balances as a multiset: read as the integers of magnitude below `p / 2` they stand
-for, the multiplicities of every bus and tuple of values sum to zero over `ℤ`. -/
-def Setup.BalancedInt (S : Setup EF withLookups) (traces : Fin S.k → Array F)
-    (publicValues : Fin S.k → List F) : Prop :=
-  ∃ zs : List ((Nat × List F) × ℤ),
-    zs.map (fun x ↦ (x.1, (x.2 : F))) = S.messages traces publicValues ∧
-      (∀ x ∈ zs, 2 * x.2.natAbs < Nat.card F) ∧
-      ∀ key, ((zs.filter (·.1 = key)).map (·.2)).sum = 0
+/-- The batch's queries: its messages (`messages`) of the tuples of positive weight. -/
+def Setup.queries (S : Setup EF withLookups) (traces : Fin S.k → Array F)
+    (publicValues : Fin S.k → List F) : List ((Nat × List F) × F) :=
+  ((List.finRange S.k).zip (busIds (List.ofFn S.lookups))).flatMap fun (i, ids) ↦
+    (List.range (2 ^ S.logN i)).flatMap fun r ↦
+      ((S.lookups i).zip ids).flatMap fun (l, b) ↦
+        (l.entries.filter (0 < ·.2.weight)).map fun (es, c) ↦
+          ((b, es.map (·.eval (generationRow (S.air i) (S.logN i) (traces i) (publicValues i) r))),
+            c.expr.eval (generationRow (S.air i) (S.logN i) (traces i) (publicValues i) r))
 
-/-- The traces satisfy the batch over the integers: every instance's trace satisfies its AIR, and
-every bus balances as a multiset. -/
-structure Setup.SatisfiedInt (S : Setup EF withLookups) (traces : Fin S.k → Array F)
+/-- Row `r` of instance `i` provides the tuple of values `key.2` on the bus `key.1`: a tuple of
+weight `0` of one of the instance's lookups on that bus has these values on the row and a
+nonzero multiplicity there. -/
+def Setup.Provides (S : Setup EF withLookups) (traces : Fin S.k → Array F)
+    (publicValues : Fin S.k → List F) (key : Nat × List F) (i : Fin S.k) (r : Nat) : Prop :=
+  r < 2 ^ S.logN i ∧
+    ∃ lb ∈ (S.lookups i).zip ((busIds (List.ofFn S.lookups)).getD i []), lb.2 = key.1 ∧
+      ∃ t ∈ lb.1.entries, t.2.weight = 0 ∧
+        t.1.map (·.eval (generationRow (S.air i) (S.logN i) (traces i) (publicValues i) r)) =
+          key.2 ∧
+        t.2.expr.eval (generationRow (S.air i) (S.logN i) (traces i) (publicValues i) r) ≠ 0
+
+/-- Every bus's queries are included in what is provided: for every bus and tuple of values,
+some row of some instance provides it (`Provides`), or the multiplicities of its queries, read as
+the integers of magnitude below `p / 2` they stand for (`intValue`), sum to zero. -/
+def Setup.Included (S : Setup EF withLookups) (traces : Fin S.k → Array F)
+    (publicValues : Fin S.k → List F) : Prop :=
+  ∀ key : Nat × List F, (∃ i r, S.Provides traces publicValues key i r) ∨
+    (((S.queries traces publicValues).filter (·.1 = key)).map (intValue ·.2)).sum = 0
+
+/-- The traces satisfy the batch with lookup inclusion: every instance's trace satisfies its AIR,
+and every bus's queries are included in what is provided (`Included`). -/
+structure Setup.SatisfiedWithInclusion (S : Setup EF withLookups) (traces : Fin S.k → Array F)
     (publicValues : Fin S.k → List F) : Prop where
   air : ∀ i, (S.air i).Satisfied (S.logN i) (traces i) (publicValues i)
-  balanced : S.BalancedInt traces publicValues
+  included : S.Included traces publicValues
+
+/-- The AIR keeps its queries' multiplicities within their weights on traces of `2 ^ logN` rows:
+on every row of every trace satisfying it, its multiplicities of positive weight, read as the
+integers of magnitude below `p / 2` they stand for, have magnitudes summing to at most its
+lookups' count weights. The verifier does not check it: it trusts the weights. -/
+def _root_.CompStark.Stark.Air.CountsBounded (A : Air F) (logN : Nat) : Prop :=
+  ∀ trace publicValues, A.Satisfied logN trace publicValues → ∀ r < 2 ^ logN,
+    (((A.lookups.flatMap (·.entries)).filter (0 < ·.2.weight)).map fun t ↦
+      (intValue (t.2.expr.eval (generationRow A logN trace publicValues r))).natAbs).sum ≤
+    (A.lookups.map (·.countWeight)).sum
 
 /-! ### The extractor: list decoding -/
 

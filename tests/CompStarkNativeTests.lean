@@ -160,6 +160,19 @@ def singleLocalTrace (n : Nat) : Array F :=
     | 5 => if i < n - 1 then 1 else 0
     | _ => if i = n - 1 then 1 else 0
 
+/-- `rangeTable logT` and `rangeQuery` on `2 ^ logQ` rows (`range_case` of `bench/rust`): row `r`
+of the queries is `((5 r + 3) mod 2 ^ logT, 1)`, or `(1000, 0)` when `r mod 3 = 2`, and the
+table's multiplicities count the real queries of each value. -/
+def rangeCase (logT logQ : Nat) : List (BatchInstance F) :=
+  let real (r : Nat) : Bool := r % 3 != 2
+  let value (r : Nat) : Nat := (5 * r + 3) % 2 ^ logT
+  let mult (v : Nat) : Nat := ((List.range (2 ^ logQ)).filter fun r ↦ real r && value r == v).length
+  [(⟨rangeTable logT, logT⟩, Array.ofFn (n := 2 ^ logT) fun v ↦ (mult v.val : F), []),
+    (⟨rangeQuery, logQ⟩, Array.ofFn (n := 2 ^ logQ * 2) fun k ↦
+      let r := k.val / 2
+      if k.val % 2 = 0 then (if real r then (value r : F) else 1000)
+      else if real r then 1 else 0, [])]
+
 /-- The batches of `compstark-bench batch CASE`. -/
 def batchCase : String → List (BatchInstance F)
   | "three" => [fibIndexed 4, mulInstance 3 2, fibIndexed 3]
@@ -179,6 +192,7 @@ def batchCase : String → List (BatchInstance F)
   | "single-local" => [(⟨singleTableLocalLookup, 3⟩, singleLocalTrace 8, [])]
   | "heights" => [fibLookups 3 "Fib" (-1), mulLookups 2 1 true [], fibLookups 4 "Fib" 1,
       fibLookups 3 "Fib" (-1) 8]
+  | "range" => rangeCase 4 3
   | "failed-global" => [mulLookups 3 2 false ["MulFib1", "MulFib2"], fibLookups 3 "MulFib1" 1]
   | "failed-local" =>
     let (I, t, p) := mulLookups (F := F) 3 2 true []
@@ -383,7 +397,8 @@ def batchProof (name : String) (ps : List Nat) : IO Unit := do
     rejects "no lookup witness" { rust with lookupWitness := none }
     rejects "another lookup witness" { rust with lookupWitness := rust.lookupWitness.map (· + 1) }
     let unbounded := instances.modify i fun I ↦ { I with air := { I.air with
-      lookups := I.air.lookups.map fun l ↦ { l with countWeight := 2 ^ 31 } } }
+      lookups := I.air.lookups.map fun l ↦
+        { l with entries := l.entries.map fun (es, c) ↦ (es, { c with weight := 2 ^ 31 }) } } }
     check s!"{file}: rejects count weights past the characteristic" (Batch.verifyBatch P
       unbounded (Batch.setupBatch P unbounded) rust pis matches .error "lookups")
   else
@@ -435,6 +450,7 @@ def batchProofs : IO Unit := do
   batchProof "lookups" [2, 0, 2, 5, 0, 0]
   batchProof "single-local" [1, 1, 2, 6, 1, 2, 2, 3]
   batchProof "heights" [1, 1, 2, 6, 1, 2, 2, 3, 4]
+  batchProof "range" [1, 1, 2, 6, 1, 2, 2, 3]
   batchProof "failed-global" [1, 1, 2, 6, 1, 2, 2, 3]
   batchProof "failed-local" [1, 1, 2, 6, 1, 2, 2, 3]
 

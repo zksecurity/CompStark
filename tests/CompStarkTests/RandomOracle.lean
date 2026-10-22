@@ -6,6 +6,7 @@ import CompStark.Ni.Parse
 import CompStark.Ni.Setup
 import CompStark.Security
 import CompStark.BatchNonInteractive
+import CompStark.LookupInclusion
 
 /-! Axiom guards for the random-oracle model: the verifier's query bound, the verifier on answer
 tables, parsing its rounds, the setup on answer tables, and knowledge soundness, of the STARK and
@@ -117,9 +118,13 @@ namespace CompStarkTests.RandomOracle
 #guard_msgs in
 #print axioms CompStark.Iop.Batch.batchKnowledgeSoundness_ro
 
-/-- info: 'CompStark.Iop.Batch.batchKnowledgeSoundness_ro_int' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+/-- info: 'CompStark.Iop.Batch.batchKnowledgeSoundness_ro_inclusion' depends on axioms: [propext, Classical.choice, Quot.sound] -/
 #guard_msgs in
-#print axioms CompStark.Iop.Batch.batchKnowledgeSoundness_ro_int
+#print axioms CompStark.Iop.Batch.batchKnowledgeSoundness_ro_inclusion
+
+/-- info: 'CompStark.Iop.rangeKnowledgeSoundness_ro' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in
+#print axioms CompStark.Iop.rangeKnowledgeSoundness_ro
 
 /-- info: 'CompStark.Iop.wideBatch5_knowledgeSoundness_ro' depends on axioms: [propext, Classical.choice, Quot.sound] -/
 #guard_msgs in
