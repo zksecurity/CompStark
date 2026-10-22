@@ -931,10 +931,10 @@ theorem foldl_bytes (parts : Nat) (B : Nat → ByteArray) (A : Nat → Array F)
       CompPoly.PackedRepr.encode_append]
 
 /-- Encoded pieces of parallel tasks, concatenated. -/
-theorem foldl_tasks (parts : Nat) (B : Nat → ByteArray) (A : Nat → Array F)
+theorem foldl_tasks (parts : Nat) (B : Nat → ByteArray) (A : Nat → Array F) {c : Nat}
     (hB : ∀ k < parts, B k = encode (A k)) :
     ((Array.range parts).map fun k ↦ Task.spawn fun _ ↦ B k).foldl
-      (fun acc t ↦ acc ++ t.get) ByteArray.empty =
+      (fun acc t ↦ acc ++ t.get) (ByteArray.emptyWithCapacity c) =
       encode ((List.range parts).foldl (fun acc k ↦ acc ++ A k) #[]) := by
   rw [Array.foldl_map, ← Array.foldl_toList, Array.toList_range]
   exact foldl_bytes parts B A hB

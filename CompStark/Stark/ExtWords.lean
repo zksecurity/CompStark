@@ -129,7 +129,7 @@ def batchInvWords (p : ℕ) [Mont32Field p] (a : ByteArray) (n : Nat) : ByteArra
   let size := n / parts
   let ts := (Array.range parts).map fun k ↦ Task.spawn fun _ ↦
     batchInvRange p a (k * size) (if k + 1 = parts then n - k * size else size)
-  ts.foldl (fun acc t ↦ acc ++ t.get) ByteArray.empty
+  ts.foldl (fun acc t ↦ acc ++ t.get) (ByteArray.emptyWithCapacity (4 * n))
 
 /-- `1 / (z - x)` for the `n` base points `xs`, by the norm (see the module docs). -/
 def invDenoms {p : ℕ} [Mont32Field p] [Mont32BaseField p] [Binomial4 p] (z : Ext4 p)

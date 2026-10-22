@@ -342,7 +342,7 @@ def permuteWords (m : ByteArray) (w : Nat) (perm : Array Nat) : ByteArray :=
   let size := n / parts
   let ts := (Array.range parts).map fun k ↦ Task.spawn fun _ ↦
     permuteRange m w perm (k * size) (if k + 1 = parts then n - k * size else size)
-  ts.foldl (fun acc t ↦ acc ++ t.get) ByteArray.empty
+  ts.foldl (fun acc t ↦ acc ++ t.get) (ByteArray.emptyWithCapacity (4 * n * w))
 
 /-- The tables of the quotient on the quotient domain of a `2 ^ degreeBits`-row trace with
 `2 ^ logChunks` chunks, rows in the extension's bit-reversed order: the order, the selectors, the
@@ -391,7 +391,7 @@ column-major, the pieces one after another. -/
 def transposePieces (m : PMat) (parts R : Nat) : ByteArray :=
   let pieces := (Array.range parts).map fun k ↦ Task.spawn fun _ ↦
     CompPoly.CPolynomial.NTTFast.Packed.Native.transposeRows m.words m.width (k * R) R
-  pieces.foldl (fun acc t ↦ acc ++ t.get) ByteArray.empty
+  pieces.foldl (fun acc t ↦ acc ++ t.get) (ByteArray.emptyWithCapacity (4 * parts * R * m.width))
 
 /-- `quotientOfLde` on packed words with the shape's tables `T`. The traces on the quotient
 domain are their extensions' first rows, transposed in parallel pieces; constraints are evaluated
@@ -732,7 +732,8 @@ def assembleRanges [Binomial4 p] (ev : Nat → Expr F → ByteArray) (ls : List 
     (#[], 0)
   let words := ((Array.range tasks).map fun k ↦ Task.spawn fun _ ↦
       shiftAccumulator ((ranges.getD k (Task.pure (.empty, 0))).get.1) (count k * B) W
-        (starts.1.getD k 0)).foldl (fun acc t ↦ acc ++ t.get) ByteArray.empty
+        (starts.1.getD k 0)).foldl (fun acc t ↦ acc ++ t.get)
+      (ByteArray.emptyWithCapacity (4 * blocks * B * W))
   (words, starts.2)
 
 /-- The permutation trace of `A`'s lookups `ls` in base coordinates as packed words, and its
@@ -832,7 +833,8 @@ def compressRange (p : ℕ) [Mont32Field p] (m : @& ByteArray) (w : Nat)
 
 /-- Concatenate parallel pieces of planes. -/
 def joinPlanes (p : ℕ) (n : Nat) (pieces : Array (Task (Array ByteArray))) : EVec p :=
-  let cat (j : Nat) := pieces.foldl (fun acc t ↦ acc ++ t.get.getD j .empty) ByteArray.empty
+  let cat (j : Nat) := pieces.foldl (fun acc t ↦ acc ++ t.get.getD j .empty)
+    (ByteArray.emptyWithCapacity (4 * n))
   ⟨n, cat 0, cat 1, cat 2, cat 3⟩
 
 /-- Every row of a packed matrix batched by the powers `ap` of `α`, in parallel row ranges. -/
@@ -961,7 +963,8 @@ def leaves (k : Nat) (v : EVec p) : PMat :=
   let size := n / parts
   let ts := (Array.range parts).map fun p ↦ Task.spawn fun _ ↦
     interleaveRange v.c0 v.c1 v.c2 v.c3 (p * size) (if p + 1 = parts then n - p * size else size)
-  { width := 4 * k, height := n / k, words := ts.foldl (fun acc t ↦ acc ++ t.get) .empty }
+  { width := 4 * k, height := n / k,
+    words := ts.foldl (fun acc t ↦ acc ++ t.get) (ByteArray.emptyWithCapacity (16 * n)) }
 
 /-- `a + x · b`. -/
 def addScaled [Binomial4 p] (a b : EVec p) (x : EF) : EVec p := a.add (b.smul x)

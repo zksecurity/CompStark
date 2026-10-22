@@ -101,12 +101,14 @@ def colsOf (vals : Array F) (w parts R : Nat) : Array F :=
     vals.getD ((m.val / (w * R) * R + m.val % (w * R) % R) * w + m.val % (w * R) / R) 0
 
 /-- The pieces `quotientWith` transposes, concatenated, are `colsOf`. -/
-theorem pieces_eq (vals : Array F) (w parts R : Nat) (hM : parts * R * w ≤ vals.size)
+theorem pieces_eq (vals : Array F) (w parts R : Nat) {c : Nat} (hM : parts * R * w ≤ vals.size)
     (hs : 4 * vals.size < USize.size) :
     ((Array.range parts).map fun k ↦ Task.spawn fun _ ↦
         NTTFast.Packed.Native.transposeRows (encode vals) w (k * R) R).foldl
-      (fun acc t ↦ acc ++ t.get) ByteArray.empty = encode (colsOf vals w parts R) := by
-  rw [Array.foldl_map, ← Array.foldl_toList, Array.toList_range]
+      (fun acc t ↦ acc ++ t.get) (ByteArray.emptyWithCapacity c) =
+      encode (colsOf vals w parts R) := by
+  rw [Array.foldl_map, ← Array.foldl_toList, Array.toList_range,
+    show ByteArray.emptyWithCapacity c = ByteArray.empty from rfl]
   let g (m : Nat) : F := vals.getD ((m / (w * R) * R + m % (w * R) % R) * w + m % (w * R) / R) 0
   suffices h : ∀ pr ≤ parts, (List.range pr).foldl (fun acc k ↦ acc ++
       (Task.spawn fun _ ↦ NTTFast.Packed.Native.transposeRows (encode vals) w (k * R) R).get)
