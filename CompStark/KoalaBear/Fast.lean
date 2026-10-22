@@ -42,7 +42,7 @@ theorem domainsAddressable : DomainsAddressable F EF := by
 proof, unless the out-of-domain point `ζ` lands in the base field (probability about
 `2 ^ -93`). -/
 theorem prove_fast {params : Params} {air : Air F} {logN : Nat} {words : Array ByteArray}
-    {trace : Array F} (publicValues : List F) (encoded : Stark.Fast.RT words trace)
+    {trace : Array F} (publicValues : List F) (encoded : Stark.Fast.RT logN air.width words trace)
     (input : InputOk EF params air logN trace)
     (outOfDomain : Ext.OutsideBase (outOfDomainPoint EF params air logN trace publicValues)) :
     proveWith (backendFor params.logBlowup [(logN, air.logQuotientChunks logN)]) params air logN
@@ -57,7 +57,8 @@ instance, it produces the specification's proof, unless the out-of-domain point 
 base field. -/
 theorem proveBatch_fast {params : Params} {instances : List (Batch.Instance F)}
     {words : List (Array ByteArray)} {traces : List (Array F)} {publicValues : List (List F)}
-    (encoded : List.Forall₂ Stark.Fast.RT words traces)
+    (encoded : List.Forall₂ (fun t (m : Batch.Instance F × Array F) ↦
+      Stark.Fast.RT m.1.logN m.1.air.width t m.2) words (instances.zip traces))
     (input : Batch.InputOk EF params instances traces)
     (publicValuesLength : publicValues.length = instances.length)
     (outOfDomain :

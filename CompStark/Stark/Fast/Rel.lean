@@ -25,9 +25,12 @@ variable {p : ℕ} [Mont32Field p]
 local notation "F" => FastField p
 local notation "EF" => Ext4 p
 
-/-- A trace in chunks of packed rows represents the values of its joined words. -/
-def RT (t : Array ByteArray) (m : Array F) : Prop :=
-  CompPoly.CPolynomial.NTTFast.Packed.Native.joinRows t = encode m
+/-- A trace of `2 ^ logH` rows and `w` columns in chunks of packed rows represents its values: they
+are `2 ^ logH` rows of `w` values, and the trace is their `2 ^ k` chunks of `2 ^ (logH - k)` rows,
+for some `k ≤ logH`. -/
+def RT (logH w : Nat) (t : Array ByteArray) (m : Array F) : Prop :=
+  m.size = 2 ^ logH * w ∧
+    ∃ k ≤ logH, t = CompPoly.CPolynomial.NTTFast.Packed.Native.rowChunks m w logH k
 
 /-- A packed matrix represents the matrix of its encoded values. -/
 def RM (pm : PMat) (m : Mat F) : Prop :=

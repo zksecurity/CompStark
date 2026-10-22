@@ -1130,7 +1130,7 @@ theorem permutationLdeWith_rel [Mont32BaseField p] [Binomial4 p] [PackedCosetLde
   unfold permutationLdeWith permutationLdeOf
   rw [hw]
   dsimp only
-  refine ⟨ldeWordsWith_rel plans hplans logN bits gen _ _ hsize hok.twoAdic ?_, rfl⟩
+  refine ⟨ldeWordsWith_one_rel plans hplans logN bits gen _ _ hsize hok.twoAdic ?_, rfl⟩
   have := hok.mem
   unfold Addressable at this ⊢
   rw [Mont32.d_ext4] at this

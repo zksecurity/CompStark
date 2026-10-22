@@ -136,21 +136,22 @@ def plan? [Mont32BaseField p] (logH bits : Nat) (shift : F) : Option (LdePlan p)
         omega))
   else none
 
-/-- CompPoly's batched coset LDE, bit-reversed rows, of a matrix given as packed words. Plans come
-from `plans` when one matches, else are built; there is none beyond the two-adic subgroups. -/
+/-- CompPoly's batched coset LDE, bit-reversed rows, of a matrix given as chunks of packed rows.
+Plans come from `plans` when one matches, else are built; there is none beyond the two-adic
+subgroups. -/
 def ldeWordsWith [Mont32BaseField p] [PackedCosetLde p] (plans : List (Nat × Nat × F × LdePlan p))
-    (logH bits : Nat) (shift : F) (w : Nat) (m : ByteArray) : PMat :=
+    (logH bits : Nat) (shift : F) (w : Nat) (ms : Array ByteArray) : PMat :=
   let found := plans.find? fun (h, b, s, _) ↦ h == logH && b == bits && s == shift
   match found.map (·.2.2.2) <|> plan? logH bits shift with
   | some P =>
-    let out := CompPoly.CPolynomial.NTTFast.Packed.Native.joinRows (P.cosetLde w m)
+    let out := CompPoly.CPolynomial.NTTFast.Packed.Native.joinRows (P.cosetLde w ms)
     { width := w, height := 2 ^ (logH + bits), words := out }
   | none => { width := w, height := 0, words := .empty }
 
 /-- CompPoly's batched coset LDE, bit-reversed rows, packed: `ldeRef` on words. -/
 def ldeWith [Mont32BaseField p] [PackedCosetLde p] (plans : List (Nat × Nat × F × LdePlan p))
     (logH bits : Nat) (shift : F) (w : Nat) (m : Array F) : PMat :=
-  ldeWordsWith plans logH bits shift w (CompPoly.CPolynomial.NTTFast.Packed.Native.encodeFields m)
+  ldeWordsWith plans logH bits shift w #[CompPoly.CPolynomial.NTTFast.Packed.Native.encodeFields m]
 
 /-- The extension without cached plans. -/
 def lde [Mont32BaseField p] [PackedCosetLde p] (logH bits : Nat) (shift : F) (w : Nat)
@@ -768,7 +769,7 @@ def permutationLdeWith [Mont32BaseField p] [Binomial4 p] [PackedCosetLde p]
     (ls : List (Stark.Lookup F)) (logN : Nat) (trace : Array F) (pis : List F) (chs : List EF) :
     PMat × EF :=
   let (words, t) := permutationWords A ls logN trace pis chs
-  (ldeWordsWith plans logN bits gen ((ls.length + 1) * 4) words, t)
+  (ldeWordsWith plans logN bits gen ((ls.length + 1) * 4) #[words], t)
 
 /-- The column sums `∑_r m[r][j] · x_r / (z - x_r)` over the stored rows `r0, …, r0 + len - 1` of a
 packed matrix of width `w`, for every point `z` of `zs`: per point four planes of `w` words. The
@@ -972,14 +973,13 @@ def addScaled [Binomial4 p] (a b : EVec p) (x : EF) : EVec p := a.add (b.smul x)
 variable [Mont32BaseField p] [Binomial4 p] [Poseidon2Field (FastField p)] [PackedPoseidon2 p]
     [PackedCosetLde p]
 
-/-- The fast backend. A trace is packed words in chunks of consecutive rows. -/
+/-- The fast backend. A trace is packed words in chunks of consecutive rows (`rowChunks`). -/
 def backend : Backend F EF 24 where
   transcript := transcript
   Trace := Array ByteArray
   M := PMat
   C := Commit
-  ldeTrace logH bits shift w t :=
-    ldeWordsWith [] logH bits shift w (CompPoly.CPolynomial.NTTFast.Packed.Native.joinRows t)
+  ldeTrace := ldeWordsWith []
   traceValues t :=
     CompPoly.PackedRepr.decode (CompPoly.CPolynomial.NTTFast.Packed.Native.joinRows t)
   lde := lde
@@ -1009,8 +1009,7 @@ def backendFor (logBlowup : Nat) (shapes : List (Nat × Nat)) : Backend F EF 24 
   let tables := shapes.map fun (n, c) ↦ (n, c, quotientTables n c)
   let plans := shapes.flatMap fun (n, c) ↦ ldePlans n logBlowup c
   { backend with
-    ldeTrace := fun logH bits shift w t ↦ ldeWordsWith plans logH bits shift w
-      (CompPoly.CPolynomial.NTTFast.Packed.Native.joinRows t)
+    ldeTrace := ldeWordsWith plans
     lde := ldeWith plans
     permutation := permutationLdeWith plans
     quotient := fun A pis db lc ext prep alpha ↦

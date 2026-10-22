@@ -217,8 +217,11 @@ def keccak (logN : Nat) (prove : Bool) : IO UInt32 := do
     let trace : Array KoalaBear.Fast.Field := CompPoly.PackedRepr.decode words
     let lde ← timed "trace lde (field elements)" (fun _ ↦ B.lde logN 1 gen w trace)
       (s!"{·.height} rows")
-    let _ ← timed "trace lde (words)"
-      (fun _ ↦ CompStark.Stark.Fast.ldeWordsWith (p := p) [] logN 1 gen w words)
+    let _ ← timed "trace lde (joined words)"
+      (fun _ ↦ CompStark.Stark.Fast.ldeWordsWith (p := p) [] logN 1 gen w #[words])
+      (s!"{·.height} rows")
+    let _ ← timed "trace lde (chunks)"
+      (fun _ ↦ CompStark.Stark.Fast.ldeWordsWith (p := p) [] logN 1 gen w chunks)
       (s!"{·.height} rows")
     let tc ← timed "trace commit" (fun _ ↦ B.commit [lde]) fun c ↦
       s!"{((B.root c).toArray.getD 0 0).val}"
@@ -393,13 +396,12 @@ def main (args : List String) : IO UInt32 := do
     let w := CompStark.Fixtures.Keccak.width
     let inputs := (Array.range (2 ^ logN / 24)).map fun k ↦ (Array.range 25).map fun i ↦
       (CompStark.Stark.splitMix (25 * k + i).toUInt64).2
-    let words := CompPoly.CPolynomial.NTTFast.Packed.Native.joinRows
-      (CompStark.Fixtures.Keccak.trace _root_.KoalaBear.fieldSize inputs 16)
+    let trace := CompStark.Fixtures.Keccak.trace _root_.KoalaBear.fieldSize inputs 16
     let some P := CompStark.Stark.Fast.plan? (p := _root_.KoalaBear.fieldSize) logN 1
       CompStark.gen | return 1
     for k in [0:5] do
-      let chunks ← timed "coset lde chunks" (fun _ ↦ P.cosetLde w (write words 0 k.toUInt32))
-        (s!"{·.size} chunks")
+      let chunks ← timed "coset lde chunks" (fun _ ↦ P.cosetLde w (trace.modify 0 (write · 0
+        k.toUInt32))) (s!"{·.size} chunks")
       let _ ← timed "join" (fun _ ↦ CompPoly.CPolynomial.NTTFast.Packed.Native.joinRows chunks)
         (s!"{·.size} bytes")
     return 0

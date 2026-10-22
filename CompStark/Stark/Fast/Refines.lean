@@ -46,15 +46,15 @@ def backendFor_refines (hζ : 2 ≤ twoAdicity F) (hA : DomainsAddressable F EF)
     RC := RC
     RV := RV
     transcript := transcript_eq
-    ldeTrace := fun logH bits shift w t m ht hm hb ha ↦ by
-      change RM (ldeWordsWith _ logH bits shift w _) _
+    ldeTrace := fun logH bits shift w t m ⟨_, k, hk, ht⟩ hm hb ha ↦ by
+      change RM (ldeWordsWith _ logH bits shift w t) _
       rw [ht]
       exact ldeWordsWith_rel _ (fun e he ↦ by
         obtain ⟨⟨n, c⟩, -, he⟩ := List.mem_flatMap.mp he
-        exact ldePlans_valid n logBlowup c e he) logH bits shift w m hm hb ha
-    traceValues := fun ht ↦ by
+        exact ldePlans_valid n logBlowup c e he) logH bits shift w m k hk hm hb ha
+    traceValues := fun ⟨hm, k, hk, ht⟩ ↦ by
       change CompPoly.PackedRepr.decode _ = _
-      rw [ht, CompPoly.PackedRepr.decode_encode]
+      rw [ht, joinRows_rowChunks _ _ _ k hk hm, CompPoly.PackedRepr.decode_encode]
     lde := ldeWith_rel _ fun e he ↦ by
       obtain ⟨⟨n, c⟩, -, he⟩ := List.mem_flatMap.mp he
       exact ldePlans_valid n logBlowup c e he
@@ -107,7 +107,8 @@ it produces the specification's proof, unless the out-of-domain point `ζ` lands
 where both provers divide by zero and compute different garbage. -/
 theorem prove_fast (hζ : 2 ≤ twoAdicity F) (hA : DomainsAddressable F EF) {params : Params}
     {air : Air F} {logN : Nat} {words : Array ByteArray} {trace : Array F}
-    (publicValues : List F) (encoded : RT words trace) (input : InputOk EF params air logN trace)
+    (publicValues : List F) (encoded : RT logN air.width words trace)
+    (input : InputOk EF params air logN trace)
     (outOfDomain : Ext.OutsideBase (outOfDomainPoint EF params air logN trace publicValues)) :
     proveWith (backendFor params.logBlowup [(logN, air.logQuotientChunks logN)]) params air logN
         words publicValues =
@@ -120,7 +121,9 @@ proof, unless the out-of-domain point `ζ` lands in the base field. -/
 theorem proveBatch_fast (hζ : 2 ≤ twoAdicity F) (hA : DomainsAddressable F EF) {params : Params}
     {instances : List (Batch.Instance F)} {words : List (Array ByteArray)}
     {traces : List (Array F)} {publicValues : List (List F)}
-    (encoded : List.Forall₂ RT words traces) (input : Batch.InputOk EF params instances traces)
+    (encoded : List.Forall₂ (fun t (m : Batch.Instance F × Array F) ↦
+      RT m.1.logN m.1.air.width t m.2) words (instances.zip traces))
+    (input : Batch.InputOk EF params instances traces)
     (publicValuesLength : publicValues.length = instances.length)
     (outOfDomain :
       Ext.OutsideBase (Batch.batchOutOfDomainPoint EF params instances traces publicValues)) :

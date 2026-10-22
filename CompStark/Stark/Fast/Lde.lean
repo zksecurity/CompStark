@@ -182,33 +182,36 @@ theorem ldeWith_plan (plans : List (Nat × Nat × F × LdePlan p))
     exact he
 
 /-- **The fast low-degree extension of packed words is `ldeRef`**, with plans `plan?` built, on a
-matrix of `2 ^ logH` rows within the two-adic subgroups whose extension is addressable. -/
+matrix of `2 ^ logH` rows in `2 ^ k` chunks of rows within the two-adic subgroups whose extension
+is addressable. -/
 theorem ldeWordsWith_rel [PackedCosetLde p] (plans : List (Nat × Nat × F × LdePlan p))
     (hplans : ∀ e ∈ plans, plan? e.1 e.2.1 e.2.2.1 = some e.2.2.2)
-    (logH bits : Nat) (shift : F) (w : Nat) (m : Array F) (hm : m.size = 2 ^ logH * w)
-    (hb : logH + bits ≤ twoAdicity F) (ha : Addressable (2 ^ (logH + bits) * w)) :
-    RM (ldeWordsWith plans logH bits shift w (encode m)) (ldeRef logH bits shift w m) := by
+    (logH bits : Nat) (shift : F) (w : Nat) (m : Array F) (k : Nat) (hk : k ≤ logH)
+    (hm : m.size = 2 ^ logH * w) (hb : logH + bits ≤ twoAdicity F)
+    (ha : Addressable (2 ^ (logH + bits) * w)) :
+    RM (ldeWordsWith plans logH bits shift w (NTTFast.Packed.Native.rowChunks m w logH k))
+      (ldeRef logH bits shift w m) := by
   unfold ldeWordsWith
   dsimp only
   split
   · rename_i P hfound
     obtain ⟨h24, hlog, hbits, hs, hω⟩ :=
       plan?_some (ldeWith_plan plans hplans logH bits shift P hfound)
-    have hM : m.size = 2 ^ P.logH * w := by
-      have hlogH : P.logH = logH := by
-        change P.domain.logN - P.bits = logH
-        omega
-      rw [hlogH]
-      exact hm
+    have hlogH : P.logH = logH := by
+      change P.domain.logN - P.bits = logH
+      omega
+    have hM : m.size = 2 ^ P.logH * w := by rw [hlogH]; exact hm
     have hu : 4 * (2 ^ P.domain.logN * w) < USize.size := by
       rw [hlog]
       unfold Addressable at ha
       omega
     refine ⟨rfl, rfl, ?_⟩
-    change NTTFast.Packed.Native.joinRows (P.cosetLde w (encode m)) =
+    change NTTFast.Packed.Native.joinRows
+        (P.cosetLde w (NTTFast.Packed.Native.rowChunks m w logH k)) =
       encode (ldeRef logH bits shift w m).values
-    rw [NTTFast.Packed.LdePlan.joinRows_cosetLde P w m hM hu,
-      ldeSpec_eq P logH bits shift w m hlog hbits hs hω h24]
+    have he := NTTFast.Packed.LdePlan.joinRows_cosetLde P w m k (by omega) hM hu
+    rw [hlogH] at he
+    rw [he, ldeSpec_eq P logH bits shift w m hlog hbits hs hω h24]
   · rename_i hnone
     have hp : plan? logH bits shift ≠ none := by
       rw [plan?, dite_eq_left_of_eq_true (eq_true hb)]
@@ -217,6 +220,29 @@ theorem ldeWordsWith_rel [PackedCosetLde p] (plans : List (Nat × Nat × F × Ld
       (·.2.2.2) with
     | none => rw [hf] at hnone; exact absurd hnone hp
     | some _ => rw [hf] at hnone; exact absurd hnone (Option.some_ne_none _)
+
+/-- Joined, the chunks of rows of a matrix are its words. -/
+theorem joinRows_rowChunks (m : Array F) (w logH k : Nat) (hk : k ≤ logH)
+    (hm : m.size = 2 ^ logH * w) :
+    NTTFast.Packed.Native.joinRows (NTTFast.Packed.Native.rowChunks m w logH k) = encode m :=
+  NTTFast.Packed.joinRows_extract m (2 ^ k) (2 ^ (logH - k) * w) (by
+    rw [hm, ← Nat.mul_assoc, ← Nat.pow_add, Nat.add_sub_cancel' hk])
+
+/-- A matrix of `2 ^ logH` rows in one chunk. -/
+theorem rowChunks_zero (m : Array F) (w logH : Nat) (hm : m.size = 2 ^ logH * w) :
+    NTTFast.Packed.Native.rowChunks m w logH 0 = #[encode m] := by
+  simp only [NTTFast.Packed.Native.rowChunks, Nat.pow_zero, Nat.sub_zero]
+  rw [show Array.range 1 = #[0] by rw [Array.range_eq_range', Array.range'_one],
+    Array.map_singleton, Nat.zero_mul, Nat.zero_add, ← hm, Array.extract_size]
+
+/-- `ldeWordsWith_rel` on one chunk. -/
+theorem ldeWordsWith_one_rel [PackedCosetLde p] (plans : List (Nat × Nat × F × LdePlan p))
+    (hplans : ∀ e ∈ plans, plan? e.1 e.2.1 e.2.2.1 = some e.2.2.2)
+    (logH bits : Nat) (shift : F) (w : Nat) (m : Array F) (hm : m.size = 2 ^ logH * w)
+    (hb : logH + bits ≤ twoAdicity F) (ha : Addressable (2 ^ (logH + bits) * w)) :
+    RM (ldeWordsWith plans logH bits shift w #[encode m]) (ldeRef logH bits shift w m) := by
+  rw [← rowChunks_zero m w logH hm]
+  exact ldeWordsWith_rel plans hplans logH bits shift w m 0 (Nat.zero_le _) hm hb ha
 
 /-- **The fast low-degree extension is `ldeRef`**, with plans `plan?` built, on a matrix of
 `2 ^ logH` rows within the two-adic subgroups whose extension is addressable. -/
@@ -227,7 +253,7 @@ theorem ldeWith_rel [PackedCosetLde p] (plans : List (Nat × Nat × F × LdePlan
     RM (ldeWith plans logH bits shift w m) (ldeRef logH bits shift w m) := by
   unfold ldeWith
   rw [NTTFast.Packed.Native.encodeFields_eq]
-  exact ldeWordsWith_rel plans hplans logH bits shift w m hm hb ha
+  exact ldeWordsWith_one_rel plans hplans logH bits shift w m hm hb ha
 
 /-- Every plan `ldePlans` prepares is `plan?`'s. -/
 theorem ldePlans_valid (logN logBlowup logChunks : Nat) :

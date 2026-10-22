@@ -201,7 +201,7 @@ theorem foldl_width_const {K : Type} (l : List (Mat K)) (w : Nat) (hl : ∀ m �
     omega
 
 theorem commitAndSample_refines (h : Refines B) {P : Params} {A : Air F} {logN : Nat}
-    {t : B.Trace} {trace : Array F} (pis : List F) (ht : h.RT t trace)
+    {t : B.Trace} {trace : Array F} (pis : List F) (ht : h.RT logN A.width t trace)
     (hin : InputOk EF P A logN trace) :
     RelM (fun x y ↦ h.RM x.1 y.1 ∧ h.RC x.2.1 y.2.1 ∧ List.Forall₂ h.RM x.2.2.1 y.2.2.1 ∧
         h.RC x.2.2.2.1 y.2.2.2.1 ∧ x.2.2.2.2 = y.2.2.2.2 ∧ MatOk y.1 ∧ ∀ m ∈ y.2.2.1, MatOk m)
@@ -342,7 +342,7 @@ theorem openAndAssemble_refines (hA : DomainsAddressable F EF) (h : Refines B) (
 /-- **A refining backend proves what the specification proves**, for inputs of the prover's
 shapes, when the specification's opening point `ζ` lies outside the base field. -/
 theorem proveWith_refines (hA : DomainsAddressable F EF) (h : Refines B) {P : Params} {A : Air F}
-    {logN : Nat} {t : B.Trace} {trace : Array F} (pis : List F) (ht : h.RT t trace)
+    {logN : Nat} {t : B.Trace} {trace : Array F} (pis : List F) (ht : h.RT logN A.width t trace)
     (hin : InputOk EF P A logN trace)
     (hz : Ext.OutsideBase (outOfDomainPoint EF P A logN trace pis)) :
     proveWith B P A logN t pis = prove EF P A logN trace pis := by

@@ -558,11 +558,36 @@ theorem forall₂_filterMap {α β γ δ : Type} {R : α → β → Prop} {S : �
     · cases hr with
       | some hr => exact .cons hr (forall₂_filterMap hfg hs)
 
+/-- The backend's traces `ts` represent the instances' traces `traces`, each of its instance's
+shape. -/
+abbrev TracesRel (h : Refines B) (instances : List (Instance F)) (ts : List B.Trace)
+    (traces : List (Array F)) : Prop :=
+  List.Forall₂ (fun t (m : Instance F × Array F) ↦ h.RT m.1.logN m.1.air.width t m.2) ts
+    (instances.zip traces)
+
+theorem TracesRel.getElem {h : Refines B} {instances : List (Instance F)} {ts : List B.Trace}
+    {traces : List (Array F)} (hts : TracesRel h instances ts traces) (i : Nat)
+    (h1 : i < ts.length) (h2 : i < instances.length) (h3 : i < traces.length) :
+    h.RT instances[i].logN instances[i].air.width ts[i] traces[i] := by
+  have := getElem_of_forall₂ hts i h1 (by rw [List.length_zip]; omega)
+  simpa only [List.getElem_zip] using this
+
+theorem TracesRel.length_eq {h : Refines B} {instances : List (Instance F)} {ts : List B.Trace}
+    {traces : List (Array F)} (hts : TracesRel h instances ts traces)
+    (hl : traces.length = instances.length) : ts.length = instances.length := by
+  rw [List.Forall₂.length_eq hts, List.length_zip, hl, Nat.min_self]
+
+theorem TracesRel.map_traceValues {h : Refines B} {instances : List (Instance F)}
+    {ts : List B.Trace} {traces : List (Array F)} (hts : TracesRel h instances ts traces)
+    (hl : traces.length = instances.length) : ts.map B.traceValues = traces := by
+  rw [h.map_traceValues (fun I : Instance F ↦ (I.logN, I.air.width)) hts,
+    List.map_snd_zip (by omega)]
+
 /-- Every instance's quotient chunks by a refining backend and by the specification, from related
 extensions, are related, of the prover's shapes, and as many as each instance's chunks. -/
 theorem allQuotientChunks_refines (h : Refines B) {P : Params} {instances : List (Instance F)}
     {traces : List (Array F)} (hin : InputOk EF P instances traces) {ts : List B.Trace}
-    (hts : List.Forall₂ h.RT ts traces) {pis : List (List F)}
+    (hts : TracesRel h instances ts traces) {pis : List (List F)}
     (hpis : pis.length = instances.length) (chs : List (List EF)) (terminals : List (Option EF))
     {prepB : List (Option B.M)} {prepS : List (Option (Mat F))}
     (hprep : List.Forall₂ (Option.Rel h.RM) prepB prepS)
@@ -595,7 +620,7 @@ theorem allQuotientChunks_refines (h : Refines B) {P : Params} {instances : List
             terminals alpha)[i].length = 2 ^ instances[i].logQuotientChunks := by
   obtain ⟨logH, hlogH, hmem⟩ := hin.mem
   have htl := hin.traces.length_eq
-  have htsl := hts.length_eq
+  have htsl := hts.length_eq htl.symm
   have hpBl := hprep.length_eq
   have hpSl : prepS.length = instances.length := hprepS.length_eq.symm
   have hrBl := hperm.length_eq
@@ -640,7 +665,7 @@ theorem allQuotientChunks_refines (h : Refines B) {P : Params} {instances : List
     have hI := hT i hi (by omega)
     have hS := getElem_of_forall₂ hprepS i hi (by omega)
     exact batchQuotientChunks_refines h _ hI (hin.chunks _ (List.getElem_mem hi)) (hm4 i hi)
-      (h.ldeTrace _ _ _ _ (getElem_of_forall₂ hts i (by omega) (by omega)) hI.trace hI.twoAdic
+      (h.ldeTrace _ _ _ _ (hts.getElem i (by omega) hi (by omega)) hI.trace hI.twoAdic
         (addressable_le (Nat.mul_le_mul_left _ (by omega)) hI.mem))
       (getElem_of_forall₂ hprep i (by omega) (by omega)) hS.1 hS.2
       (getElem_of_forall₂ hperm i (by omega) (by omega))
@@ -651,7 +676,8 @@ theorem allQuotientChunks_refines (h : Refines B) {P : Params} {instances : List
       (allQuotientChunks (specBackend EF) P instances ((instances.zip traces).map fun (I, t) ↦
         (specBackend EF).lde I.logN P.logBlowup gen I.air.width t) prepS permS pis chs
           terminals alpha).length := by
-    simp only [allQuotientChunks, parMap_eq, List.length_map, List.length_zip, hpBl, hrBl, htsl]
+    simp only [allQuotientChunks, parMap_eq, List.length_map, List.length_zip, hpBl, hrBl, htsl,
+      ← htl]
   refine ⟨forall₂_of_getElem hlen fun i h1 h2 ↦ (hq i h1 h2).2.1, fun i hi ↦ ?_⟩
   obtain ⟨hi', -, h2, h3⟩ := hq i (by rw [hlen]; exact hi) hi
   exact ⟨hi', h2, h3⟩
@@ -681,8 +707,8 @@ structure CommitmentsRel (h : Refines B) (x : Commitments B)
 related, the specification's matrices of the prover's shapes. -/
 theorem batchCommitAndSample_refines (h : Refines B) {P : Params}
     {instances : List (Instance F)} {traces : List (Array F)} {pis : List (List F)}
-    (hin : InputOk EF P instances traces) {ts : List B.Trace} (hts : List.Forall₂ h.RT ts traces)
-    (hpis : pis.length = instances.length) :
+    (hin : InputOk EF P instances traces) {ts : List B.Trace}
+    (hts : TracesRel h instances ts traces) (hpis : pis.length = instances.length) :
     RelM (CommitmentsRel h)
       (batchCommitAndSample B P instances (setupBatchWith B P instances) ts pis)
       (batchCommitAndSample (specBackend EF) P instances
@@ -691,19 +717,19 @@ theorem batchCommitAndSample_refines (h : Refines B) {P : Params}
   obtain ⟨logH, hlogH, hmem⟩ := hin.mem
   have hne := hin.nonempty
   have htl := hin.traces.length_eq
-  have htsl := hts.length_eq
+  have htsl := hts.length_eq htl.symm
   -- The main traces' extensions.
   have hext : List.Forall₂ h.RM
       ((instances.zip ts).map fun (I, t) ↦ B.ldeTrace I.logN P.logBlowup gen I.air.width t)
       ((instances.zip traces).map fun (I, t) ↦
         (specBackend EF).lde I.logN P.logBlowup gen I.air.width t) := by
-    refine forall₂_of_getElem (by simp only [List.length_map, List.length_zip, htsl])
+    refine forall₂_of_getElem (by simp only [List.length_map, List.length_zip, htsl, ← htl])
       fun i h1 h2 ↦ ?_
     simp only [List.length_map, List.length_zip] at h1
     have hI : Stark.InputOk EF P instances[i].air instances[i].logN traces[i] :=
       getElem_of_forall₂ hin.traces i (by omega) (by omega)
     simp only [List.getElem_map, List.getElem_zip]
-    exact h.ldeTrace _ _ _ _ (getElem_of_forall₂ hts i (by omega) (by omega)) hI.trace hI.twoAdic
+    exact h.ldeTrace _ _ _ _ (hts.getElem i (by omega) (by omega) (by omega)) hI.trace hI.twoAdic
       (addressable_le (Nat.mul_le_mul_left _ (by omega)) hI.mem)
   have hextOk : ∀ m ∈ (instances.zip traces).map (fun (I, t) ↦
       (specBackend EF).lde I.logN P.logBlowup gen I.air.width t), MatOk m ∧
@@ -753,7 +779,7 @@ theorem batchCommitAndSample_refines (h : Refines B) {P : Params}
     | some hr => exact congrArg Vector.toList (h.root hr)
   unfold batchCommitAndSample
   dsimp only
-  rw [hroot, h.root hct, hroots, h.map_traceValues hts,
+  rw [hroot, h.root hct, hroots, hts.map_traceValues htl.symm,
     show traces.map (specBackend EF).traceValues = traces from List.map_id traces]
   refine RelM.bind_eq fun _ ↦ RelM.bind_eq fun _ ↦ RelM.bind_eq fun _ ↦
     RelM.bind_eq fun _ ↦ RelM.bind_eq fun _ ↦ ?_
@@ -966,7 +992,7 @@ shapes with a list of public values per instance, when the specification's openi
 outside the base field. -/
 theorem proveBatchWith_refines (hA : DomainsAddressable F EF) (h : Refines B) {P : Params}
     {instances : List (Instance F)} {ts : List B.Trace} {traces : List (Array F)}
-    {pis : List (List F)} (hts : List.Forall₂ h.RT ts traces)
+    {pis : List (List F)} (hts : TracesRel h instances ts traces)
     (hin : InputOk EF P instances traces) (hpis : pis.length = instances.length)
     (hz : Ext.OutsideBase (batchOutOfDomainPoint EF P instances traces pis)) :
     proveBatchWith B P instances ts pis = proveBatch EF P instances traces pis := by
