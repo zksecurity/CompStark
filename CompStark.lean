@@ -174,4 +174,5 @@ public import CompStark.Ni.BatchRounds
 public import CompStark.Ni.BatchRoundBounds
 public import CompStark.Ni.BatchExtracted
 public import CompStark.Ni.BatchAccepted
+public import CompStark.Ni.BatchSetup
 public import CompStark.NonInteractive
