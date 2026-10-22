@@ -5,9 +5,11 @@ Released under Apache 2.0 license as described in the file LICENSE.
 import CompStark.Ni.Parse
 import CompStark.Ni.Setup
 import CompStark.Security
+import CompStark.BatchNonInteractive
 
 /-! Axiom guards for the random-oracle model: the verifier's query bound, the verifier on answer
-tables, parsing its rounds, the setup on answer tables, and knowledge soundness. -/
+tables, parsing its rounds, the setup on answer tables, and knowledge soundness, of the STARK and
+of the batch STARK. -/
 
 namespace CompStarkTests.RandomOracle
 
@@ -78,5 +80,49 @@ namespace CompStarkTests.RandomOracle
 /-- info: 'CompStark.Iop.wideGrindSetup_verifierQueries' depends on axioms: [propext, Classical.choice, Quot.sound] -/
 #guard_msgs in
 #print axioms CompStark.Iop.wideGrindSetup_verifierQueries
+
+/-- info: 'CompStark.Batch.verifyBatchWith_map' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in
+#print axioms CompStark.Batch.verifyBatchWith_map
+
+/-- info: 'CompStark.RandomOracle.evalWithAnswerFn_verifyBatchWith' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in
+#print axioms CompStark.RandomOracle.evalWithAnswerFn_verifyBatchWith
+
+/-- info: 'CompStark.Iop.Batch.Setup.isTotalQueryBound_verifyBatchWith' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in
+#print axioms CompStark.Iop.Batch.Setup.isTotalQueryBound_verifyBatchWith
+
+/-- info: 'CompStark.Iop.Batch.Setup.isTotalQueryBound_setupRo' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in
+#print axioms CompStark.Iop.Batch.Setup.isTotalQueryBound_setupRo
+
+/-- info: 'CompStark.Ni.hasRounds_verifyBatchWith' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in
+#print axioms CompStark.Ni.hasRounds_verifyBatchWith
+
+/-- info: 'CompStark.Ni.bcsB' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in
+#print axioms CompStark.Ni.bcsB
+
+/-- info: 'CompStark.Ni.matColumn_setup' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in
+#print axioms CompStark.Ni.matColumn_setup
+
+/-- info: 'CompStark.Ni.exists_badAtB' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in
+#print axioms CompStark.Ni.exists_badAtB
+
+/-- info: 'CompStark.Iop.Batch.batchKnowledgeSoundness_ro' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in
+#print axioms CompStark.Iop.Batch.batchKnowledgeSoundness_ro
+
+/-- info: 'CompStark.Iop.wideBatch5_knowledgeSoundness_ro' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in
+#print axioms CompStark.Iop.wideBatch5_knowledgeSoundness_ro
+
+/-- info: 'CompStark.Iop.wideBatchGrind_knowledgeSoundness_ro' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in
+#print axioms CompStark.Iop.wideBatchGrind_knowledgeSoundness_ro
 
 end CompStarkTests.RandomOracle
