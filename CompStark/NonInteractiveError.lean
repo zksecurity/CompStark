@@ -80,6 +80,6 @@ noncomputable def roundError (S : Setup EF) (δ δ' : NNReal) : ENNReal :=
 
 /-- Digest collisions and predictions among `q` queries, digests of eight elements of `F`. -/
 noncomputable def hashError (F : Type) (q : Nat) : ENNReal :=
-  4 * q ^ 2 / (Nat.card F : ENNReal) ^ 8
+  3 * q ^ 2 / (Nat.card F : ENNReal) ^ 8
 
 end CompStark.Iop

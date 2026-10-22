@@ -117,6 +117,10 @@ namespace CompStarkTests.RandomOracle
 #guard_msgs in
 #print axioms CompStark.Iop.Batch.batchKnowledgeSoundness_ro
 
+/-- info: 'CompStark.Iop.Batch.batchKnowledgeSoundness_ro_int' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in
+#print axioms CompStark.Iop.Batch.batchKnowledgeSoundness_ro_int
+
 /-- info: 'CompStark.Iop.wideBatch5_knowledgeSoundness_ro' depends on axioms: [propext, Classical.choice, Quot.sound] -/
 #guard_msgs in
 #print axioms CompStark.Iop.wideBatch5_knowledgeSoundness_ro

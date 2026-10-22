@@ -124,6 +124,11 @@ Quot.sound] -/
 #guard_msgs in
 #print axioms CompStark.Sound.Batch.balanced_int
 
+/-- info: 'CompStark.Iop.batchKnowledgeSoundness_int' depends on axioms: [propext,
+Classical.choice, Quot.sound] -/
+#guard_msgs in
+#print axioms CompStark.Iop.batchKnowledgeSoundness_int
+
 /-- info: 'CompStark.Iop.wideBatch_knowledgeError_le' depends on axioms: [propext,
 Classical.choice, Quot.sound] -/
 #guard_msgs in

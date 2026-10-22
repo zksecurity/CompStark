@@ -44,20 +44,22 @@ theorem evalWithAnswerFn_congr {α : Type} (answer answer' : (q : Query F) → A
     exact ih _ fun e he ↦ h e (List.mem_cons_of_mem _ he)
 
 section
-variable [BaseField F] (bd : Digest F → List F → Digest F)
+variable (bd : Digest F → List F → Digest F)
 
 /-- The digests of a log: its answers' and its keys'. -/
 def logDigests (log : QueryLog (spec F K)) : List (Digest F) :=
   log.flatMap fun e ↦ digestOf e.1 e.2 :: keyDigests bd e.1
 
 theorem length_logDigests_le (log : QueryLog (spec F K)) :
-    (logDigests bd log).length ≤ 4 * log.length := by
+    (logDigests bd log).length ≤ 3 * log.length := by
   induction log with
   | nil => simp only [logDigests, List.flatMap_nil, List.length_nil, Nat.zero_le]
   | cons e log ih =>
     simp only [logDigests, List.flatMap_cons, List.length_append, List.length_cons] at ih ⊢
     have := length_keyDigests_le bd e.1
     omega
+
+variable [BaseField F]
 
 /-- A digest outside a list shorter than the digests. -/
 theorem exists_not_mem (l : List (Digest F)) (h : l.length < Fintype.card (Digest F)) :

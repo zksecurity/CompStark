@@ -42,6 +42,7 @@ class Mont32BaseField (p : ℕ) [Mont32Field p] where
 instance Mont32BaseField.instBaseField (p : ℕ) [Mont32Field p] [D : Mont32BaseField p] :
     BaseField (FastField p) where
   toField := instField
+  card_prime := by rw [natCard_fastField]; exact Mont32Field.prime
   two_ne_zero := NonBinaryField.char_neq_2
   twoAdicity := D.twoAdicity
   twoAdicGen := D.twoAdicGen

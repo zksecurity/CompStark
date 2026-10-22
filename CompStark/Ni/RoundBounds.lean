@@ -17,9 +17,9 @@ bijections (`prob_answer_prefix`, `extEquiv`). The fold rounds' challenges are P
 a nonzero shift to ArkLib's coordinate, another bijection.
 
 The answer's digest (a hash, or the duplex's new capacity) clashes with the known digests with
-probability at most `4 q / |F|^8` after fewer than `q` queries (`prob_digestClash_le`), for the
-digests of the keys: a compression's two children, a duplex call's capacity, the digest at its
-input's start and the digest a commitment round observes (`keyDigests`).
+probability at most `3 q / |F|^8` after fewer than `q` queries (`prob_digestClash_le`), for the
+digests of the keys: a compression's two children, a duplex call's capacity and the digest a
+commitment round observes (`keyDigests`).
 -/
 
 @[expose] public section
@@ -417,12 +417,12 @@ theorem prob_digestOf_eq_le (K : Nat) (t : Query F) (x : Digest F) :
   | node left right => exact (SampleableType.prEvent_uniformSample_eq_singleton x).le
 
 /-- A fresh answer after fewer than `n` queries clashes with probability at most
-`4 n / |Digest|`. -/
+`3 n / |Digest|`. -/
 theorem prob_clash_le (bd : Digest F → List F → Digest F) (K n : Nat)
     (pre : QueryLog (spec F K)) (hpre : pre.length < n) (t : Query F) :
     Pr{let u ← $ᵗ (Answer K t)}[Clash bd pre t u] ≤
-      (4 * n : ℕ) * (Fintype.card (Digest F) : ℝ≥0∞)⁻¹ := by
-  refine (prEvent_digestClash_le digestOf (prob_digestOf_eq_le K) (keyDigests bd) 3
+      (3 * n : ℕ) * (Fintype.card (Digest F) : ℝ≥0∞)⁻¹ := by
+  refine (prEvent_digestClash_le digestOf (prob_digestOf_eq_le K) (keyDigests bd) 2
     (length_keyDigests_le bd) [initCap] pre t).trans ?_
   gcongr
   simp only [List.length_cons, List.length_nil]

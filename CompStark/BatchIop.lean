@@ -302,6 +302,27 @@ structure Setup.Satisfied (S : Setup EF withLookups) (traces : Fin S.k → Array
   air : ∀ i, (S.air i).Satisfied (S.logN i) (traces i) (publicValues i)
   balanced : S.Balanced traces publicValues
 
+/-- The verifier's multiplicity bound `∑ᵢ wᵢ 2 ^ logNᵢ < p` (`heightBoundOk`), `wᵢ` the sum of
+instance `i`'s count weights: the verifier rejects every proof for a batch that fails it. -/
+def Setup.HeightBounded (S : Setup EF withLookups) : Prop :=
+  heightBoundOk (CompPoly.CanonicalNat.bound F) (List.ofFn fun i ↦ (S.lookups i, S.logN i)) = true
+
+/-- Every bus balances as a multiset: read as the integers of magnitude below `p / 2` they stand
+for, the multiplicities of every bus and tuple of values sum to zero over `ℤ`. -/
+def Setup.BalancedInt (S : Setup EF withLookups) (traces : Fin S.k → Array F)
+    (publicValues : Fin S.k → List F) : Prop :=
+  ∃ zs : List ((Nat × List F) × ℤ),
+    zs.map (fun x ↦ (x.1, (x.2 : F))) = S.messages traces publicValues ∧
+      (∀ x ∈ zs, 2 * x.2.natAbs < Nat.card F) ∧
+      ∀ key, ((zs.filter (·.1 = key)).map (·.2)).sum = 0
+
+/-- The traces satisfy the batch over the integers: every instance's trace satisfies its AIR, and
+every bus balances as a multiset. -/
+structure Setup.SatisfiedInt (S : Setup EF withLookups) (traces : Fin S.k → Array F)
+    (publicValues : Fin S.k → List F) : Prop where
+  air : ∀ i, (S.air i).Satisfied (S.logN i) (traces i) (publicValues i)
+  balanced : S.BalancedInt traces publicValues
+
 /-! ### The extractor: list decoding -/
 
 /-- The tuples of traces the extractor reads off the committed trace words at proximity `δ`: one

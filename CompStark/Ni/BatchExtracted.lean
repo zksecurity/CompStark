@@ -92,6 +92,16 @@ section Congr
 variable (S : Iop.Batch.Setup EF) {cache cache' : Merkle.Cache F (Digest F)}
   {block block' : ℕ → List F} {sample sample' : ℕ → Vector F S.streamLen}
 
+/-- Without lookups, no instance has lookups. -/
+theorem lookups_eq_nil_of (hl : S.hasLookups = false) (i : Fin S.k) : S.lookups i = [] := by
+  by_contra hne
+  have : S.hasLookups = true :=
+    List.any_eq_true.mpr ⟨⟨S.air i, S.logN i⟩, List.mem_ofFn.mpr ⟨i, rfl⟩, by
+      rw [show (⟨S.air i, S.logN i⟩ : CompStark.Batch.Instance F).lookups = S.lookups i from rfl]
+      simpa only [Bool.not_eq_eq_eq_not, Bool.not_true, List.isEmpty_eq_false_iff] using hne⟩
+  rw [hl] at this
+  exact Bool.false_ne_true this
+
 theorem prefixTranscriptB_trace (hb : block 0 = block' 0)
     (h : SameUnderM cache cache' (digestAt (block' 0) (mainOffsetB S))) :
     (prefixTranscriptB S cache block sample).trace =
@@ -101,11 +111,21 @@ theorem prefixTranscriptB_trace (hb : block 0 = block' 0)
     Merkle.matColumn cache' (digestAt (block' 0) (mainOffsetB S)) _ _ _ _ _ _ _
   rw [hb, matColumn_congr h]
 
+/-- The permutation traces read under the permutation commitment; without lookups, there are
+none. -/
 theorem prefixTranscriptB_perm (hb : block (lookupRounds S) = block' (lookupRounds S))
-    (h : SameUnderM cache cache' (digestAt (block' (lookupRounds S)) 0)) :
+    (h : S.hasLookups = true → SameUnderM cache cache' (digestAt (block' (lookupRounds S)) 0)) :
     (prefixTranscriptB S cache block sample).perm =
       (prefixTranscriptB S cache' block' sample').perm := by
   funext i c e x
+  cases hl : S.hasLookups
+  · have h0 : ∀ (ls : List (Lookup F)) (T : Iop.Setup EF ls), ls = [] → T.permWidth = 0 := by
+      rintro ls T rfl; rfl
+    have hc := c.isLt
+    generalize (c : ℕ) = n at hc
+    rw [h0 _ _ (lookups_eq_nil_of S hl i)] at hc
+    exact absurd hc (Nat.not_lt_zero _)
+  replace h := h hl
   show Merkle.matColumn cache (digestAt (block (lookupRounds S)) 0) _ _ _ _ _ _ _ =
     Merkle.matColumn cache' (digestAt (block' (lookupRounds S)) 0) _ _ _ _ _ _ _
   rw [hb, matColumn_congr h]
