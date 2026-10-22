@@ -36,6 +36,9 @@ pub enum BatchAir<F> {
     Square,
     /// `WideAir`, the benchmarks' wide table.
     Wide,
+    /// `WideAir` on the bus `wide`, receiving its columns `0..3` and sending its columns `4..7`
+    /// with multiplicities `±1`.
+    WideBus,
     /// `MulAirLookups`: `MulAir` with `reps` repetitions, with a local lookup of each `a` against
     /// the last column if `local`, and sending `(a, b)` of repetition `i` on bus `global[i]` with
     /// multiplicity `-1` if `global` is not empty.
@@ -62,7 +65,7 @@ impl<F: PrimeField64> BaseAir<F> for BatchAir<F> {
             Self::SingleLocal => 7,
             Self::PrepMul { .. } | Self::RangeTable { .. } => 1,
             Self::RangeQuery => 2,
-            Self::Wide => WIDE,
+            Self::Wide | Self::WideBus => WIDE,
         }
     }
 
@@ -185,6 +188,15 @@ where
             }
             Self::Square => SquareAir.eval(builder),
             Self::Wide => WideAir.eval(builder),
+            Self::WideBus => {
+                WideAir.eval(builder);
+                let main = builder.main();
+                let row = main.current_slice();
+                let (a, b): (Vec<AB::Expr>, Vec<AB::Expr>) =
+                    ((0..4).map(|j| row[j].into()).collect(), (4..8).map(|j| row[j].into()).collect());
+                builder.push_interaction("wide", a, Count::bounded(AB::Expr::ONE, 1));
+                builder.push_interaction("wide", b, Count::bounded(-AB::Expr::ONE, 1));
+            }
             Self::Periodic(a) => a.eval(builder),
             Self::Mul { reps } => {
                 let main = builder.main();
@@ -292,7 +304,7 @@ fn instance<F: PrimeField64>(air: BatchAir<F>, log_n: usize)
             let t = square_trace(n);
             (air, t, vec![])
         }
-        BatchAir::Wide => {
+        BatchAir::Wide | BatchAir::WideBus => {
             let t = wide_trace(n);
             (air, t, vec![])
         }

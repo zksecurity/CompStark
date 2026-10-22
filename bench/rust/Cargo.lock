@@ -61,6 +61,7 @@ dependencies = [
  "p3-dft",
  "p3-field",
  "p3-fri",
+ "p3-keccak-air",
  "p3-koala-bear",
  "p3-lookup",
  "p3-matrix",
@@ -69,6 +70,8 @@ dependencies = [
  "p3-poseidon2",
  "p3-symmetric",
  "p3-uni-stark",
+ "p3-util",
+ "rand",
  "serde_json",
  "tracing-forest",
  "tracing-subscriber",
@@ -383,6 +386,20 @@ dependencies = [
  "p3-symmetric",
  "p3-util",
  "tiny-keccak",
+]
+
+[[package]]
+name = "p3-keccak-air"
+version = "0.8.0"
+source = "git+https://github.com/Plonky3/Plonky3?rev=a4982ec#a4982ec0f2842a0bf3a35ab2f961ddeb2e6d418c"
+dependencies = [
+ "p3-air",
+ "p3-field",
+ "p3-matrix",
+ "p3-maybe-rayon",
+ "p3-util",
+ "rand",
+ "tracing",
 ]
 
 [[package]]

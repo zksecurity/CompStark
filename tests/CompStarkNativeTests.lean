@@ -18,6 +18,8 @@ and runs it.
   implementation (`KoalaBear.instPoseidon2Field`), against Plonky3 (`bench/rust`,
   `cargo run --release` and `RAYON_NUM_THREADS=1 compstark-bench challenger`); the packed Merkle
   root of single matrices against them.
+* The fingerprints of the example AIRs and of Plonky3's `KeccakAir`, and the Keccak trace
+  generator, against Plonky3 (`tests/CompStarkTests/Keccak.lean`).
 * Plonky3 `uni-stark` proofs over KoalaBear (`tests/data/AIR_*.json`, from `RAYON_NUM_THREADS=1
   compstark-bench stark AIR LOG_N LOG_BLOWUP LOG_FINAL MAX_LOG_ARITY QUERIES COMMIT_POW
   QUERY_POW`), with preprocessed columns for `prep` and `prep0` (`mulFib`), periodic columns
@@ -558,6 +560,8 @@ def main : IO UInt32 := do
     KoalaBear.hashes
     KoalaBear.merkle
     KoalaBear.challenger
+    CompStarkTests.Keccak.fingerprints
+    CompStarkTests.Keccak.trace
     KoalaBear.proofs
     KoalaBear.batchProofs
     BabyBear.proofs

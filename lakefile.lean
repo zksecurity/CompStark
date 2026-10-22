@@ -37,6 +37,12 @@ lean_lib CompStarkPackedNative where
 lean_lib CompStarkTests where
   srcDir := "tests"
 
+/-- AIRs and trace generators of the tests and benchmarks that are not part of the library, such
+as Plonky3's Keccak AIR. -/
+lean_lib CompStarkFixtures where
+  srcDir := "fixtures"
+  moreLeancArgs := #["-march=native"]
+
 /-- The test driver: builds the `#guard` library `CompStarkTests`, which it imports, and runs the
 known-answer checks on the packed kernels compiled. -/
 lean_exe CompStarkNativeTests where

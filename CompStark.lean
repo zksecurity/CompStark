@@ -42,6 +42,7 @@ public import CompStark.KoalaBear.Challenge
 public import CompStark.Stark.Field
 public import CompStark.Fri.Verifier
 public import CompStark.Stark.Air
+public import CompStark.Stark.Fingerprint
 public import CompStark.Lookup.LogUp
 public import CompStark.Lookup.Poly
 public import CompStark.Lookup.Lookup
