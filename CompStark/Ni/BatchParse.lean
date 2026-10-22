@@ -364,6 +364,101 @@ theorem verifyBatchWith_logs (S : Iop.Batch.Setup EF) (hnl : S.NoLookups)
     rw [hlog, hv₁, List.nil_append]
     exact hzeta _ _ _ _ _ hrun1
 
+
+/-- **The first call.** If the batch verifier on logged answers accepts, its log starts with
+the duplex call of the first round. -/
+theorem verifyBatchWith_log_head (S : Iop.Batch.Setup EF) (hnl : S.NoLookups)
+    (hK : S.params.numQueries + Challenge.d EF + 1 ≤ K)
+    (common : CompStark.Batch.Common F) (proof : CompStark.Batch.BatchProof F EF)
+    (pis : List (List F))
+    (hok : (CompStark.Batch.verifyBatchWith (idealLogged answer) S.params S.instances common
+      proof pis).run.1 = .ok ()) :
+    ∃ rest, (CompStark.Batch.verifyBatchWith (idealLogged answer) S.params S.instances common
+      proof pis).run.2 = ⟨keyAt answer (inputsB S common pis proof) 0,
+        answer (keyAt answer (inputsB S common pis proof) 0)⟩ :: rest := by
+  unfold CompStark.Batch.verifyBatchWith at hok ⊢
+  obtain ⟨hcount, hrw⟩ := unless_logged _ _ _ _ hok
+  rw [hrw] at hok ⊢
+  obtain ⟨-, hrw⟩ := unless_logged _ _ _ _ hok
+  rw [hrw] at hok ⊢
+  obtain ⟨-, hrw⟩ := unless_logged _ _ _ _ hok
+  rw [hrw] at hok ⊢
+  obtain ⟨-, hrw⟩ := unless_logged _ _ _ _ hok
+  rw [hrw] at hok ⊢
+  obtain ⟨-, hrw⟩ := unless_logged _ _ _ _ hok
+  rw [hrw] at hok ⊢
+  obtain ⟨-, hrw⟩ := unless_logged _ _ _ _ hok
+  rw [hrw] at hok ⊢
+  obtain ⟨-, hrw⟩ := unless_logged _ _ _ _ hok
+  rw [hrw] at hok ⊢
+  obtain ⟨hlk, hrw⟩ := unless_logged _ _ _ _ hok
+  rw [hrw] at hok ⊢
+  obtain ⟨-, hrw⟩ := unless_logged _ _ _ _ hok
+  rw [hrw] at hok ⊢
+  clear hrw
+  have hperm := permutationCommit_eq_none S.params S.instances proof
+    (hasLookups_instances S hnl) hlk
+  dsimp only at hok ⊢
+  rw [run_stateT_bind _ _ _ (fun a ↦ by
+    rcases a with ⟨⟨_, _, _, _⟩, _⟩
+    dsimp only
+    split
+    · split <;> rfl
+    · rfl)] at hok ⊢
+  simp only [Bool.and_eq_true, beq_iff_eq] at hcount
+  have hsize : proof.opened.size = S.k := by rw [hcount.1.1.1.1, length_instances]
+  rcases hrun : out answer _ { cap := initCap, input := [], samples := [] } with ⟨_ | a, w⟩
+  · rw [hrun] at hok
+    cases hok
+  rw [hrun] at hok
+  dsimp only
+  have hrun1 := congrArg Prod.fst hrun
+  have hrun2 := congrArg Prod.snd hrun
+  dsimp only at hrun1 hrun2
+  rw [← hrun2]
+  clear hrun hrun2 hok
+  set blocks := inputsB S common pis proof with hblocks
+  -- the observations of the first round
+  obtain ⟨_, s₁, h₁, hrun1, hlog⟩ := out_bind_ok answer hrun1
+  rw [out_observeList_nil] at h₁
+  obtain ⟨-, rfl⟩ := Prod.mk.inj (Except.ok.inj h₁)
+  rw [hlog, out_observeList_nil, List.nil_append]
+  obtain ⟨_, s₁, h₁, hrun1, hlog⟩ := out_bind_ok answer hrun1
+  rw [out_observeExts_nil] at h₁
+  obtain ⟨-, rfl⟩ := Prod.mk.inj (Except.ok.inj h₁)
+  rw [hlog, out_observeExts_nil, List.nil_append]
+  obtain ⟨_, s₁, h₁, hrun1, hlog⟩ := out_bind_ok answer hrun1
+  rw [out_observeList_nil] at h₁
+  obtain ⟨-, rfl⟩ := Prod.mk.inj (Except.ok.inj h₁)
+  rw [hlog, out_observeList_nil, List.nil_append]
+  obtain ⟨_, s₁, h₁, hrun1, hlog⟩ := out_bind_ok answer hrun1
+  rw [out_observeList_nil] at h₁
+  obtain ⟨-, rfl⟩ := Prod.mk.inj (Except.ok.inj h₁)
+  rw [hlog, out_observeList_nil, List.nil_append]
+  obtain ⟨_, s₁, h₁, hrun1, hlog⟩ := out_bind_ok answer hrun1
+  rw [out_observeList_nil] at h₁
+  obtain ⟨-, rfl⟩ := Prod.mk.inj (Except.ok.inj h₁)
+  rw [hlog, out_observeList_nil, List.nil_append]
+  obtain ⟨_, s₁, h₁, hrun1, hlog⟩ := out_bind_ok answer hrun1
+  rw [out_lookupPhase answer S hnl] at h₁
+  obtain ⟨-, rfl⟩ := Prod.mk.inj (Except.ok.inj h₁)
+  rw [hlog, out_lookupPhase answer S hnl, List.nil_append]
+  have hin₀ : [] ++ CompStark.Batch.batchSeedOf EF S.params S.instances common ++
+      coeffs (S.instances.map fun I ↦ (Ext.ofBase (I.logN : F) : EF)) ++ proof.mainCommit.toList ++
+      pis.flatten ++ ((common.preprocessed.map (·.toList)).getD []) ++ permDigest proof ++
+      coeffs (proof.lookupTerminals.toList.filterMap id) = blocks.getD 0 [] := by
+    simp only [hblocks, inputsB, prepDigest, List.nil_append, List.getD_eq_getElem?_getD,
+      List.getElem?_cons_zero, Option.getD_some]
+  rw [hin₀, show initCap = capAt answer blocks 0 from rfl] at hrun1 ⊢
+  -- the round of `α`
+  have hv₀ := out_sampleExt_nil (EF := EF) answer (by omega) (capAt answer blocks 0)
+    (blocks.getD 0 [])
+  obtain ⟨_, s₁, h₁, hrun1, hlog⟩ := out_bind_ok answer hrun1
+  rw [hv₀] at h₁
+  obtain ⟨rfl, rfl⟩ := Prod.mk.inj (Except.ok.inj h₁)
+  rw [hlog, hv₀]
+  exact ⟨_, rfl⟩
+
 end Run
 
 /-- The batch verifier on logged answers gives the batch verifier on the answers, and its log. -/
