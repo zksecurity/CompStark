@@ -74,11 +74,12 @@ def bChs : List (List EF) :=
   challengeLayout (Is.map (·.lookups)) (bLP EF P Is ts ps).1.2.1 (bLP EF P Is ts ps).1.2.2
 
 /-- The permutation traces and terminals. -/
-def bPerms : List (Option (Array EF × EF)) := permutations Is ts ps (bChs EF P Is ts ps)
+def bPerms : List (Option (Mat F × EF)) :=
+  permutationsWith (specBackend EF) P Is ts ps (bChs EF P Is ts ps)
 
 /-- The permutation traces' extensions and commitment. -/
 def bPermCP : List (Option (Mat F)) × Option (Committed F) :=
-  commitPermutations (specBackend EF) P Is (bPerms EF P Is ts ps)
+  commitPermutations (specBackend EF) Is (bPerms EF P Is ts ps)
 
 /-- Every instance's terminal, if it has lookups. -/
 def bTerms : List (Option EF) := (bPerms EF P Is ts ps).map (·.map (·.2))
@@ -263,34 +264,42 @@ theorem bPrep_snd : (bPrep EF P Is).2 =
   simp only [List.filterMap_map, Function.comp_def, id]
   rfl
 
+/-- The specification's terminals are the permutation traces'. -/
+theorem terminals_permutationsWith (chs : List (List EF)) :
+    (permutationsWith (specBackend EF) P Is ts ps chs).map (·.map (·.2)) =
+      (permutations Is ts ps chs).map (·.map (·.2)) := by
+  simp only [permutationsWith, permutations, List.map_map]
+  refine List.map_congr_left fun x _ ↦ ?_
+  simp only [Function.comp_apply]
+  split <;> rfl
+
 theorem length_bChs : (bChs EF P Is ts ps).length = Is.length := by
   rw [bChs, length_challengeLayout, List.length_map]
 
 theorem length_bPerms (hts : ts.length = Is.length) (hps : ps.length = Is.length) :
     (bPerms EF P Is ts ps).length = Is.length := by
-  rw [bPerms, permutations, List.length_map, List.length_zip, List.length_zip, List.length_zip,
+  rw [bPerms, permutationsWith, List.length_map, List.length_zip, List.length_zip, List.length_zip,
     hts, hps, length_bChs]
   simp only [Nat.min_self]
 
 theorem getElem_bPerms (hts : ts.length = Is.length) (hps : ps.length = Is.length) (i : Nat)
     (hi : i < Is.length) :
     (bPerms EF P Is ts ps)[i]'(by rw [length_bPerms EF P Is ts ps hts hps]; exact hi) =
-      if Is[i].lookups.isEmpty then none else some (permutationTrace Is[i].air Is[i].lookups
-        Is[i].logN (ts[i]'(by rw [hts]; exact hi)) (ps[i]'(by rw [hps]; exact hi))
+      if Is[i].lookups.isEmpty then none else some (permutationLdeOf P.logBlowup Is[i].air
+        Is[i].lookups Is[i].logN (ts[i]'(by rw [hts]; exact hi)) (ps[i]'(by rw [hps]; exact hi))
         ((bChs EF P Is ts ps)[i]'(by rw [length_bChs]; exact hi))) := by
-  simp only [bPerms, permutations, List.getElem_map, List.getElem_zip]
+  simp only [bPerms, permutationsWith, List.getElem_map, List.getElem_zip]
 
 theorem length_bPermExts (hts : ts.length = Is.length) (hps : ps.length = Is.length) :
     (bPermCP EF P Is ts ps).1.length = Is.length := by
-  rw [bPermCP, commitPermutations, List.length_map, List.length_zip,
-    length_bPerms EF P Is ts ps hts hps, Nat.min_self]
+  rw [bPermCP, commitPermutations, List.length_map, length_bPerms EF P Is ts ps hts hps]
 
 theorem getElem_bPermExts (hts : ts.length = Is.length) (hps : ps.length = Is.length) (i : Nat)
     (hi : i < Is.length) :
     (bPermCP EF P Is ts ps).1[i]'(by rw [length_bPermExts EF P Is ts ps hts hps]; exact hi) =
       permLde P.logBlowup Is[i] (ts[i]'(by rw [hts]; exact hi)) (ps[i]'(by rw [hps]; exact hi))
         ((bChs EF P Is ts ps)[i]'(by rw [length_bChs]; exact hi)) := by
-  simp only [bPermCP, commitPermutations, List.getElem_map, List.getElem_zip]
+  simp only [bPermCP, commitPermutations, List.getElem_map]
   rw [getElem_bPerms EF P Is ts ps hts hps i hi]
   unfold permLde
   split <;> rfl
@@ -335,6 +344,7 @@ theorem getElem_bChunks (hts : ts.length = Is.length) (hps : ps.length = Is.leng
   by_cases he : Is[i].lookups.isEmpty = true
   · simp only [he, ↓reduceIte]
   · simp only [he, Bool.false_eq_true, ↓reduceIte, Option.map_some, Option.getD_some]
+    rfl
 
 theorem bPcs_opened : (bPcs EF P Is ts ps).1.1 =
     (bRounds EF P Is ts ps).map fun r ↦ r.2.map (openedOf P.logBlowup) := by
@@ -1445,6 +1455,7 @@ theorem verifyBatch_proveBatch_of (EF : Type) [Challenge F EF] (P : Params)
         simp only [bTerms, List.getElem_map, Option.getD_some]
         rw [getElem_bPerms EF P Is ts ps hts hps i hiI]
         simp only [he, Bool.false_eq_true, ↓reduceIte, Option.map_some, Option.getD_some]
+        rfl
   have hprepOk : ((setupBatch P Is).preprocessed.isSome ==
       Is.any (0 < ·.air.preprocessedWidth)) = true := by
     simp only [hcommon, beq_iff_eq, Option.isSome_map, bPrep_snd]
@@ -1503,7 +1514,7 @@ theorem verifyBatch_proveBatch_of (EF : Type) [Challenge F EF] (P : Params)
   have hlk := lookupShapeOk_honest EF P Is ts ps hts hps hwidths hbound
   have hterm : (((proveBatch EF P Is ts ps).lookupTerminals.toList.filterMap id).foldl (· + ·) 0
       == 0) = true := by
-    rw [hp, List.toList_toArray, bTerms, bPerms, bChs]
+    rw [hp, List.toList_toArray, bTerms, bPerms, bChs, terminals_permutationsWith]
     exact beq_iff_eq.mpr (terminals_sum_eq_zero Is ts ps hts hps hbal _ _)
   rw [verifyBatch_eq]
   simp only [hcount, hdb, hqd, hper, hpv, hshape, hprepOk, hlk, hood, ↓reduceIte]

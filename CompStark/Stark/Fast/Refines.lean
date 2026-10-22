@@ -12,6 +12,7 @@ public import CompStark.Stark.Fast.Commit
 public import CompStark.Stark.Fast.Vectors
 public import CompStark.Stark.Fast.Quotient
 public import CompStark.Stark.Fast.Openings
+public import CompStark.Stark.Fast.Permutation
 
 /-! # The fast prover proves what the specification proves
 
@@ -64,8 +65,24 @@ def backendFor_refines (hζ : 2 ≤ twoAdicity F) (hA : DomainsAddressable F EF)
         obtain ⟨rfl, rfl⟩ := hd
         exact quotientWith_rel A pis _ _ alpha h hs hh hp hps hc
       · exact quotientWith_rel A pis _ _ alpha h hs hh hp hps hc
-    lookupQuotient := fun A ext pis d l _ _ _ _ _ _ chs t alpha h hp hr ↦
-      lookupQuotient_rel A ext pis d l chs t alpha h hp hr
+    lookupQuotient := fun A ext pis d l _ _ _ _ _ _ chs t alpha k h hs hh hp hps hr hrs hrh hk hc ↦
+      by
+      dsimp only [backendFor]
+      split
+      · rename_i n c T hfind
+        have hmem := List.mem_of_find?_eq_some hfind
+        have hd := List.find?_some hfind
+        simp only [Bool.and_eq_true, beq_iff_eq] at hd
+        obtain ⟨⟨n', c'⟩, -, he⟩ := List.mem_map.mp hmem
+        simp only [Prod.mk.injEq] at he
+        obtain ⟨rfl, rfl, rfl⟩ := he
+        obtain ⟨rfl, rfl⟩ := hd
+        exact lookupQuotientWith_rel A ext pis _ _ chs t alpha k h hs hh hp hps hr hrs hrh hk hc
+      · exact lookupQuotientWith_rel A ext pis _ _ chs t alpha k h hs hh hp hps hr hrs hrh hk hc
+    permutation := fun bits A ls logN t pis chs hok ↦
+      permutationLdeWith_rel _ (fun e he ↦ by
+        obtain ⟨⟨n, c⟩, -, he⟩ := List.mem_flatMap.mp he
+        exact ldePlans_valid n logBlowup c e he) bits A ls logN t pis chs hok
     openedAt := fun b zs _ _ h hs hz ↦ openedAt_rel hζ b zs h hs hz
     toArray := toArray_rel h16
     ofArray := ofArray_rel

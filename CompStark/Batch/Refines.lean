@@ -45,6 +45,8 @@ structure InputOk (EF : Type) [Challenge F EF] (P : Params) (instances : List (I
   traces : List.Forall₂ (fun I t ↦ Stark.InputOk EF P I.air I.logN t) instances traces
   /-- Every instance's quotient's chunks fit the blowup. -/
   chunks : ∀ I ∈ instances, I.logQuotientChunks ≤ P.logBlowup
+  /-- Every instance's lookups read only its AIR's columns. -/
+  lookups : ∀ I ∈ instances, ∀ l ∈ I.air.lookups, l.ColsBelow I.air.width I.air.preprocessedWidth
   /-- The extensions side by side are addressable. -/
   mem : ∃ logH, (∀ I ∈ instances, I.logN ≤ logH) ∧
     Addressable (2 ^ (logH + P.logBlowup) * (instances.map (·.columns EF)).sum)
@@ -136,6 +138,12 @@ theorem size_flatten {EF : Type} [Challenge F EF] (vs : Array EF) :
   simp only [List.size_toArray, Challenge.length_coeffs]
   rw [List.map_const', List.sum_replicate, smul_eq_mul, Array.length_toList, Nat.mul_comm]
 
+theorem size_permutationOf {EF : Type} [Challenge F EF] (A : Air F)
+    (ls : List (Stark.Lookup F)) (logN : Nat) (t : Array F) (pis : List F) (chs : List EF) :
+    (permutationOf A ls logN t pis chs).1.size =
+      2 ^ logN * ((ls.length + 1) * Challenge.d EF) := by
+  rw [permutationOf, size_flatten, size_permutationTrace, Nat.mul_comm, Nat.mul_assoc]
+
 theorem sum_filterMap_width_le {α K : Type} (L : List α) (g : α → Option (Mat K)) (w : α → Nat)
     (h : ∀ x ∈ L, ∀ m ∈ g x, m.width ≤ w x) :
     (((L.map g).filterMap id).map Mat.width).sum ≤ (L.map w).sum := by
@@ -176,12 +184,13 @@ theorem forall_mem_zip_map_zip {α β γ : Type} (P : α → γ → Prop) (g : �
     · exact hg a b
     · exact forall_mem_zip_map_zip P g hg l r x hx
 
-theorem length_permutations {EF : Type} [Challenge F EF] (instances : List (Instance F))
+theorem length_permutationsWith {EF : Type} [Challenge F EF] {width : Nat}
+    (B : Backend F EF width) (P : Params) (instances : List (Instance F))
     (traces : List (Array F)) (pis : List (List F)) (chs : List (List EF))
     (ht : traces.length = instances.length) (hp : pis.length = instances.length)
     (hc : chs.length = instances.length) :
-    (permutations instances traces pis chs).length = instances.length := by
-  simp only [permutations, List.length_map, List.length_zip, ht, hp, hc, Nat.min_self]
+    (permutationsWith B P instances traces pis chs).length = instances.length := by
+  simp only [permutationsWith, List.length_map, List.length_zip, ht, hp, hc, Nat.min_self]
 
 /-- The lookup phase returns a list of challenges per instance. -/
 theorem lookupChallenges_rel {EF : Type} [Challenge F EF] (P : Params)
@@ -193,6 +202,52 @@ theorem lookupChallenges_rel {EF : Type} [Challenge F EF] (P : Params)
   refine ⟨⟨rfl, ?_⟩, rfl⟩
   show (challengeLayout _ _ _).length = _
   rw [length_challengeLayout, List.length_map]
+
+/-- An instance with lookups of a batch of the prover's shapes generates and extends its
+permutation trace from an input of the generation's shape. -/
+theorem permutationOk {EF : Type} [Challenge F EF] {P : Params} {instances : List (Instance F)}
+    {traces : List (Array F)} (hin : InputOk EF P instances traces) {I : Instance F}
+    (hI : I ∈ instances) {t : Array F} (ht : Stark.InputOk EF P I.air I.logN t)
+    (hne : I.lookups.isEmpty = false) :
+    PermutationOk EF I.air I.lookups I.logN P.logBlowup t := by
+  obtain ⟨logH, hlogH, hmem⟩ := hin.mem
+  refine ⟨ht.trace, ht.preprocessed, ht.width,
+    Air.packedLookups_colsBelow _ _ _ _ (hin.lookups I hI), ht.twoAdic, ?_⟩
+  refine addressable_le (Nat.mul_le_mul (Nat.pow_le_pow_right (by decide)
+    (by have := hlogH I hI; omega)) ((?_ : _ ≤ I.columns EF).trans
+      (List.le_sum_of_mem (List.mem_map_of_mem hI)))) hmem
+  unfold Instance.columns Instance.permWidth
+  simp only [hne, Bool.false_eq_true, ↓reduceIte]
+  omega
+
+/-- The shape of an instance's permutation trace's extension and terminal by the specification:
+present exactly with lookups, of the prover's shapes, the accumulator and a column per lookup
+wide. -/
+def PermShape (EF : Type) [Challenge F EF] (P : Params) (I : Instance F)
+    (y : Option (Mat F × EF)) : Prop :=
+  y.isSome = !I.lookups.isEmpty ∧ ∀ q ∈ y, MatOk q.1 ∧
+    q.1.height = 2 ^ (I.logN + P.logBlowup) ∧ q.1.width = (I.lookups.length + 1) * Challenge.d EF
+
+/-- The widths of the specification's permutation traces' extensions sum to the instances'
+permutation widths at most. -/
+theorem sum_permWidths {EF : Type} [Challenge F EF] {P : Params} :
+    ∀ {instances : List (Instance F)} {perms : List (Option (Mat F × EF))},
+      List.Forall₂ (PermShape EF P) instances perms →
+      (((perms.map (·.map (·.1))).filterMap id).map Mat.width).sum ≤
+        (instances.map (·.permWidth EF)).sum
+  | [], [], .nil => le_rfl
+  | I :: _, y :: _, .cons hy hs => by
+    have ih := sum_permWidths hs
+    rw [List.map_cons, List.filterMap_cons, List.map_cons, List.sum_cons]
+    rcases y with _ | q
+    · simp only [Option.map_none, id]; exact le_trans ih (Nat.le_add_left _ _)
+    · have hne : I.lookups.isEmpty = false := by
+        have := hy.1
+        simp only [Option.isSome_some] at this
+        cases he : I.lookups.isEmpty <;> simp only [he, Bool.not_true, Bool.true_eq_false] at this ⊢
+      simp only [Option.map_some, id, List.map_cons, List.sum_cons, Instance.permWidth, hne,
+        Bool.false_eq_true, ↓reduceIte, (hy.2 q rfl).2.2]
+      exact Nat.add_le_add_left ih _
 
 variable [Poseidon2Field F] {EF : Type} [Challenge F EF] {B : Backend F EF 24}
 
@@ -324,7 +379,10 @@ theorem batchQuotientChunks_refines (h : Refines B) {P : Params} {I : Instance F
     {spext : Option (Mat F)} (hp : Option.Rel h.RM pext spext)
     (hpok : ∀ q ∈ spext, MatOk q ∧ q.height = 2 ^ (I.logN + P.logBlowup))
     (hpw : (spext.map (·.width)).getD 0 = I.air.preprocessedWidth) {rext : Option B.M}
-    {srext : Option (Mat F)} (hr : Option.Rel h.RM rext srext) (chs : List EF)
+    {srext : Option (Mat F)} (hr : Option.Rel h.RM rext srext)
+    (hrS : ∀ q ∈ srext, MatOk q ∧ q.height = 2 ^ (I.logN + P.logBlowup) ∧
+      q.width = (I.lookups.length + 1) * Challenge.d EF)
+    (hlk : ∀ l ∈ I.lookups, l.ColsBelow I.air.width I.air.preprocessedWidth) (chs : List EF)
     (terminal alpha : EF) :
     List.Forall₂ h.RM (batchQuotientChunks B P I ext pext rext pis chs terminal alpha)
         (batchQuotientChunks (specBackend EF) P I (ldeRef I.logN P.logBlowup gen I.air.width trace)
@@ -353,153 +411,128 @@ theorem batchQuotientChunks_refines (h : Refines B) {P : Params} {I : Instance F
   rw [hquot]
   cases hr with
   | none => exact chunksOf_refines h P _ _ hlog hm4
-  | some hr =>
+  | @some _ rs hr =>
     dsimp only
-    rw [h.lookupQuotient _ _ _ _ _ chs terminal alpha hext hp hr]
+    obtain ⟨hrok, hrh, hrw⟩ := hrS rs rfl
+    rw [h.lookupQuotient _ _ _ _ _ chs terminal alpha (I.lookups.length + 1) hext hextOk hq hp
+      (fun q hq' ↦ ⟨(hpok q hq').1, by rw [(hpok q hq').2, heh]⟩) hr hrok (by rw [hrh, heh])
+      (by rw [hrw]) (fun c hc ↦ by
+        rw [hew, hpw]
+        exact colsBelow_logUpConstraints _ hlk c hc)]
     exact chunksOf_refines h P _ _ hlog hm4
 
-/-- The permutation traces' extensions and commitment by a refining backend and by the
-specification are related, of the prover's shapes. -/
-theorem commitPermutations_refines (h : Refines B) {P : Params} {instances : List (Instance F)}
+/-- The permutation traces' extensions and terminals by a refining backend and by the
+specification are related, the specification's of the prover's shapes. -/
+theorem permutationsWith_refines (h : Refines B) {P : Params} {instances : List (Instance F)}
     {traces : List (Array F)} (hin : InputOk EF P instances traces) {pis : List (List F)}
     {chs : List (List EF)} (hpis : pis.length = instances.length)
     (hchs : chs.length = instances.length) :
-    List.Forall₂ (Option.Rel h.RM)
-        (commitPermutations B P instances (permutations instances traces pis chs)).1
-        (commitPermutations (specBackend EF) P instances
-          (permutations instances traces pis chs)).1 ∧
-      Option.Rel h.RC (commitPermutations B P instances (permutations instances traces pis chs)).2
-        (commitPermutations (specBackend EF) P instances
-          (permutations instances traces pis chs)).2 ∧
-      ∀ e ∈ (commitPermutations (specBackend EF) P instances
-        (permutations instances traces pis chs)).1, ∀ m ∈ e, MatOk m := by
-  obtain ⟨logH, hlogH, hmem⟩ := hin.mem
+    List.Forall₂ (Option.Rel fun x y ↦ h.RM x.1 y.1 ∧ x.2 = y.2)
+        (permutationsWith B P instances traces pis chs)
+        (permutationsWith (specBackend EF) P instances traces pis chs) ∧
+      List.Forall₂ (PermShape EF P) instances
+        (permutationsWith (specBackend EF) P instances traces pis chs) := by
   have htl := hin.traces.length_eq
-  have hlog : ∀ I ∈ instances, I.logN + P.logBlowup ≤ twoAdicity F := fun I hI ↦ by
-    obtain ⟨t, ht⟩ := exists_of_forall₂ hin.traces I hI
-    exact ht.twoAdic
-  have hpl := length_permutations instances traces pis chs htl.symm hpis hchs
-  -- Every permutation trace is its instance's, of `2 ^ logN` rows of its lookups and the
-  -- accumulator.
-  have hsz : ∀ x ∈ instances.zip (permutations instances traces pis chs), x.1 ∈ instances ∧
-      (x.2.isSome = !x.1.lookups.isEmpty) ∧
-      ∀ y ∈ x.2, y.1.size = 2 ^ x.1.logN * (x.1.lookups.length + 1) := by
-    intro x hx
-    refine ⟨(List.of_mem_zip hx).1, ?_⟩
-    revert x
-    unfold permutations
-    refine forall_mem_zip_map_zip (fun (I : Instance F) (y : Option (Array EF × EF)) ↦
-      (y.isSome = !I.lookups.isEmpty) ∧
-        ∀ z ∈ y, z.1.size = 2 ^ I.logN * (I.lookups.length + 1)) _ (fun I r ↦ ?_) _ _
-    dsimp only
+  have hlB := length_permutationsWith B P instances traces pis chs htl.symm hpis hchs
+  have hlS := length_permutationsWith (specBackend EF) P instances traces pis chs htl.symm hpis
+    hchs
+  have hi : ∀ i, i < (instances.zip (traces.zip (pis.zip chs))).length → i < instances.length ∧
+      i < traces.length := fun i hi ↦ by
+    simp only [List.length_zip] at hi; omega
+  refine ⟨forall₂_of_getElem (by rw [hlB, hlS]) fun i h1 h2 ↦ ?_,
+    forall₂_of_getElem (by rw [hlS]) fun i h1 h2 ↦ ?_⟩
+  · simp only [permutationsWith, List.length_map] at h1 h2
+    obtain ⟨hiI, hiT⟩ := hi i h1
+    simp only [permutationsWith, List.getElem_map, List.getElem_zip]
     split
-    · rename_i he; simp only [Option.isSome_none, he, Bool.not_true, true_and]
-      exact fun z hz ↦ nomatch hz
+    · exact .none
+    · rename_i hne
+      exact .some (h.permutation _ _ _ _ _ _ _ (permutationOk hin (List.getElem_mem hiI)
+        (getElem_of_forall₂ hin.traces i hiI hiT) (Bool.eq_false_iff.mpr hne)))
+  · simp only [permutationsWith, List.length_map] at h2
+    obtain ⟨hiI, hiT⟩ := hi i h2
+    simp only [permutationsWith, List.getElem_map, List.getElem_zip]
+    split
     · rename_i he
-      simp only [Option.isSome_some, Bool.eq_false_iff.mpr he, Bool.not_false, true_and]
-      intro z hz
-      obtain rfl := Option.some_injective _ hz
-      exact size_permutationTrace ..
-  -- The widths, addressable at each instance's height.
-  have hw : ∀ I ∈ instances, Addressable (2 ^ (I.logN + P.logBlowup) * I.permWidth EF) := by
-    intro I hI
-    refine addressable_le (Nat.mul_le_mul (Nat.pow_le_pow_right (by decide)
-      (by have := hlogH I hI; omega)) ((?_ : I.permWidth EF ≤ I.columns EF).trans
-        (List.le_sum_of_mem (List.mem_map_of_mem hI)))) hmem
-    unfold Instance.columns; omega
-  have hrel : ∀ x ∈ instances.zip (permutations instances traces pis chs),
-      Option.Rel h.RM (x.2.map fun (vs, _) ↦ B.lde x.1.logN P.logBlowup gen
-          ((x.1.lookups.length + 1) * Challenge.d EF) (flatten vs))
-        (x.2.map fun (vs, _) ↦ (specBackend EF).lde x.1.logN P.logBlowup gen
-          ((x.1.lookups.length + 1) * Challenge.d EF) (flatten vs)) ∧
-      ∀ m ∈ x.2.map (fun (vs, _) ↦ (specBackend EF).lde x.1.logN P.logBlowup gen
-          ((x.1.lookups.length + 1) * Challenge.d EF) (flatten vs)),
-        MatOk m ∧ m.height = 2 ^ (x.1.logN + P.logBlowup) ∧
-          m.width = (x.1.lookups.length + 1) * Challenge.d EF := by
-    intro x hx
-    obtain ⟨hI, hsome, hs⟩ := hsz x hx
-    rcases hx2 : x.2 with _ | ⟨vs, t⟩
-    · exact ⟨.none, fun m hm ↦ nomatch hm⟩
-    · have hne : x.1.lookups.isEmpty = false := by
-        rw [hx2, Option.isSome_some] at hsome
-        cases he : x.1.lookups.isEmpty <;> simp only [he, Bool.not_true, Bool.not_false,
-          Bool.true_eq_false] at hsome ⊢
-      have hpw : x.1.permWidth EF = (x.1.lookups.length + 1) * Challenge.d EF := by
-        simp only [Instance.permWidth, hne, Bool.false_eq_true, ↓reduceIte]
-      have hvs : vs.size = 2 ^ x.1.logN * (x.1.lookups.length + 1) := hs (vs, t) (by rw [hx2]; rfl)
-      have hfs : (flatten vs).size =
-          2 ^ x.1.logN * ((x.1.lookups.length + 1) * Challenge.d EF) := by
-        rw [size_flatten, hvs]; ring
-      have hmw := hw x.1 hI
-      rw [hpw] at hmw
-      obtain ⟨hew, heh, hev⟩ := shape_ldeRef x.1.logN P.logBlowup gen
-        ((x.1.lookups.length + 1) * Challenge.d EF) (flatten vs)
-      refine ⟨.some (h.lde _ _ _ _ _ hfs (hlog x.1 hI) hmw), fun m hm ↦ ?_⟩
-      obtain rfl := Option.some_injective _ hm
-      exact ⟨⟨by rw [hew]; exact Nat.mul_pos (Nat.succ_pos _) (Challenge.params EF).d_pos,
-        ⟨_, hlog x.1 hI, heh⟩, by rw [hev, hew, heh], by rw [hew, heh, Nat.mul_comm]; exact hmw⟩,
-        heh, hew⟩
-  have hR : List.Forall₂ (Option.Rel h.RM)
-      (commitPermutations B P instances (permutations instances traces pis chs)).1
-      (commitPermutations (specBackend EF) P instances (permutations instances traces pis chs)).1 :=
-    by
-    unfold commitPermutations
-    rw [List.forall₂_map_left_iff, List.forall₂_map_right_iff]
-    exact List.forall₂_same.mpr fun x hx ↦ (hrel x hx).1
-  have hok : ∀ e ∈ (commitPermutations (specBackend EF) P instances
-      (permutations instances traces pis chs)).1, ∀ m ∈ e,
-        MatOk m ∧ m.height ≤ 2 ^ (logH + P.logBlowup) := by
+      exact ⟨by simp only [Option.isSome_none, he, Bool.not_true], fun q hq ↦ nomatch hq⟩
+    · rename_i hne
+      refine ⟨by simp only [Option.isSome_some, Bool.eq_false_iff.mpr hne, Bool.not_false],
+        fun q hq ↦ ?_⟩
+      obtain rfl := Option.some_injective _ hq
+      have hok := permutationOk hin (List.getElem_mem hiI)
+        (getElem_of_forall₂ hin.traces i hiI hiT) (Bool.eq_false_iff.mpr hne)
+      obtain ⟨hew, heh, hev⟩ := shape_ldeRef instances[i].logN P.logBlowup gen
+        ((instances[i].lookups.length + 1) * Challenge.d EF)
+        (permutationOf instances[i].air instances[i].lookups instances[i].logN traces[i] pis[i]
+          chs[i]).1
+      have hw : 0 < (instances[i].lookups.length + 1) * Challenge.d EF :=
+        Nat.mul_pos (Nat.succ_pos _) (Challenge.params EF).d_pos
+      show MatOk (ldeRef _ _ _ _ _) ∧ _
+      exact ⟨⟨by rw [hew]; exact hw, ⟨_, hok.twoAdic, heh⟩, by rw [hev, hew, heh],
+        by rw [hew, heh, Nat.mul_comm]
+           exact addressable_le (Nat.mul_le_mul_left _ (by omega)) hok.mem⟩, heh, hew⟩
+
+/-- The permutation traces' extensions and commitment by a refining backend and by the
+specification, from related extensions, are related, of the prover's shapes. -/
+theorem commitPermutations_refines (h : Refines B) {P : Params} {instances : List (Instance F)}
+    {traces : List (Array F)} (hin : InputOk EF P instances traces)
+    {pB : List (Option (B.M × EF))} {pS : List (Option (Mat F × EF))}
+    (hrel : List.Forall₂ (Option.Rel fun x y ↦ h.RM x.1 y.1 ∧ x.2 = y.2) pB pS)
+    (hS : List.Forall₂ (PermShape EF P) instances pS) :
+    List.Forall₂ (Option.Rel h.RM) (commitPermutations B instances pB).1
+        (commitPermutations (specBackend EF) instances pS).1 ∧
+      Option.Rel h.RC (commitPermutations B instances pB).2
+        (commitPermutations (specBackend EF) instances pS).2 ∧
+      (∀ e ∈ (commitPermutations (specBackend EF) instances pS).1, ∀ m ∈ e, MatOk m) ∧
+      List.Forall₂ (fun I (y : Option (Mat F)) ↦ ∀ q ∈ y, MatOk q ∧
+        q.height = 2 ^ (I.logN + P.logBlowup) ∧
+          q.width = (I.lookups.length + 1) * Challenge.d EF) instances
+        (commitPermutations (specBackend EF) instances pS).1 := by
+  obtain ⟨logH, hlogH, hmem⟩ := hin.mem
+  have hR : List.Forall₂ (Option.Rel h.RM) (pB.map (·.map (·.1))) (pS.map (·.map (·.1))) :=
+    forall₂_map (fun _ _ hab ↦ by
+      cases hab with
+      | none => exact .none
+      | some hab => exact .some hab.1) hrel
+  have hS' : List.Forall₂ (fun I (y : Option (Mat F)) ↦ ∀ q ∈ y, MatOk q ∧
+      q.height = 2 ^ (I.logN + P.logBlowup) ∧
+        q.width = (I.lookups.length + 1) * Challenge.d EF) instances (pS.map (·.map (·.1))) := by
+    rw [List.forall₂_map_right_iff]
+    exact hS.imp fun I y hy q hq ↦ by
+      obtain ⟨q', hq', rfl⟩ := Option.map_eq_some_iff.mp hq
+      exact hy.2 q' hq'
+  have hok : ∀ e ∈ pS.map (·.map (·.1)), ∀ m ∈ e,
+      MatOk m ∧ m.height ≤ 2 ^ (logH + P.logBlowup) := by
     intro e he m hm
-    unfold commitPermutations at he
-    obtain ⟨x, hx, rfl⟩ := List.mem_map.mp he
-    obtain ⟨hmok, hmh, -⟩ := (hrel x hx).2 m hm
+    obtain ⟨i, hi, rfl⟩ := List.getElem_of_mem he
+    have hiI : i < instances.length := by rw [hS'.length_eq]; exact hi
+    obtain ⟨hmok, hmh, -⟩ := getElem_of_forall₂ hS' i hiI hi m hm
     exact ⟨hmok, by
-      rw [hmh]; exact Nat.pow_le_pow_right (by decide) (by have := hlogH _ (hsz x hx).1; omega)⟩
-  refine ⟨hR, ?_, fun e he m hm ↦ (hok e he m hm).1⟩
+      rw [hmh]
+      exact Nat.pow_le_pow_right (by decide) (by have := hlogH _ (List.getElem_mem hiI); omega)⟩
+  refine ⟨hR, ?_, fun e he m hm ↦ (hok e he m hm).1, hS'⟩
   have hf := forall₂_filterMap_id hR
-  unfold commitPermutations at hf ⊢
-  dsimp only at hf ⊢
+  unfold commitPermutations
+  dsimp only
   split
   · rename_i hl
     refine .some (h.commit hf ⟨2 ^ (logH + P.logBlowup), ?_, fun m hm ↦ ?_, ?_⟩)
     · -- an instance has lookups, so its permutation trace is committed
       obtain ⟨I, hI, hlk⟩ := List.any_eq_true.mp hl
       obtain ⟨i, hi, rfl⟩ := List.getElem_of_mem hI
-      have hiz : i < (instances.zip (permutations instances traces pis chs)).length := by
-        rw [List.length_zip, hpl, Nat.min_self]; exact hi
-      have hx := List.getElem_mem hiz
-      have hsome := (hsz _ hx).2.1
-      simp only [List.getElem_zip] at hsome
+      have hiS : i < pS.length := by rw [← hS.length_eq]; exact hi
+      have hsome := (getElem_of_forall₂ hS i hi hiS).1
       rw [hlk] at hsome
       obtain ⟨y, hy⟩ := Option.isSome_iff_exists.mp hsome
       rw [Ne, List.filterMap_eq_nil_iff]
       intro h0
-      have := h0 _ (List.mem_map_of_mem hx)
-      simp only [List.getElem_zip, hy, Option.map_some, id, reduceCtorEq] at this
+      have := h0 _ (List.mem_map_of_mem (List.getElem_mem hiS))
+      simp only [hy, Option.map_some, id, reduceCtorEq] at this
     · obtain ⟨e, he, hm⟩ := List.mem_filterMap.mp hm
       exact hok e he m (by rw [id] at hm; rw [hm]; rfl)
     · rw [foldl_width_sum, Nat.zero_add]
-      refine addressable_le (Nat.mul_le_mul_left _ ((sum_filterMap_width_le _ _
-        (fun x ↦ x.1.permWidth EF) fun x hx m hm ↦ ?_).trans ?_)) hmem
-      · obtain ⟨-, -, hmw⟩ := (hrel x hx).2 m hm
-        have hne : x.1.lookups.isEmpty = false := by
-          have hsome := (hsz x hx).2.1
-          cases hx2 : x.2 with
-          | none => rw [hx2] at hm; exact nomatch hm
-          | some _ =>
-            rw [hx2, Option.isSome_some] at hsome
-            cases he : x.1.lookups.isEmpty <;> simp only [he, Bool.not_true,
-              Bool.true_eq_false] at hsome ⊢
-        simp only [Instance.permWidth, hne, Bool.false_eq_true, ↓reduceIte, hmw, le_refl]
-      · have hfst : (instances.zip (permutations instances traces pis chs)).map
-            (fun x ↦ x.1.permWidth EF) = instances.map (·.permWidth EF) := by
-          have := congrArg (List.map fun I ↦ I.permWidth EF)
-            (List.map_fst_zip (l₁ := instances) (l₂ := permutations instances traces pis chs)
-              (by rw [hpl]))
-          rw [List.map_map] at this
-          exact this
-        rw [hfst]
-        exact sum_le_sum_map _ _ _ fun I _ ↦ by unfold Instance.columns; omega
+      refine addressable_le (Nat.mul_le_mul_left _ ((sum_permWidths hS).trans ?_)) hmem
+      exact sum_le_sum_map _ _ _ fun I _ ↦ by unfold Instance.columns; omega
   · exact .none
 
 theorem forall₂_zip_right {α β γ : Type} {R : β → γ → Prop} (l : List α) :
@@ -536,7 +569,10 @@ theorem allQuotientChunks_refines (h : Refines B) {P : Params} {instances : List
           (∀ q ∈ y, MatOk q ∧ q.height = 2 ^ (I.logN + P.logBlowup)) ∧
             (y.map (·.width)).getD 0 = I.air.preprocessedWidth) instances prepS)
     {permB : List (Option B.M)} {permS : List (Option (Mat F))}
-    (hperm : List.Forall₂ (Option.Rel h.RM) permB permS) (alpha : EF) :
+    (hperm : List.Forall₂ (Option.Rel h.RM) permB permS)
+    (hpermS : List.Forall₂ (fun I (y : Option (Mat F)) ↦ ∀ q ∈ y, MatOk q ∧
+      q.height = 2 ^ (I.logN + P.logBlowup) ∧
+        q.width = (I.lookups.length + 1) * Challenge.d EF) instances permS) (alpha : EF) :
     List.Forall₂ (List.Forall₂ h.RM)
         (allQuotientChunks B P instances ((instances.zip traces).map fun (I, t) ↦
           B.lde I.logN P.logBlowup gen I.air.width t) prepB permB pis chs terminals alpha)
@@ -605,7 +641,9 @@ theorem allQuotientChunks_refines (h : Refines B) {P : Params} {instances : List
       (h.lde _ _ _ _ _ hI.trace hI.twoAdic
         (addressable_le (Nat.mul_le_mul_left _ (by omega)) hI.mem))
       (getElem_of_forall₂ hprep i (by omega) (by omega)) hS.1 hS.2
-      (getElem_of_forall₂ hperm i (by omega) (by omega)) _ _ _
+      (getElem_of_forall₂ hperm i (by omega) (by omega))
+      (getElem_of_forall₂ hpermS i hi (by have := hpermS.length_eq; omega))
+      (Air.packedLookups_colsBelow _ _ _ _ (hin.lookups _ (List.getElem_mem hi))) _ _ _
   have hlen : (allQuotientChunks B P instances ((instances.zip traces).map fun (I, t) ↦
       B.lde I.logN P.logBlowup gen I.air.width t) prepB permB pis chs terminals alpha).length =
       (allQuotientChunks (specBackend EF) P instances ((instances.zip traces).map fun (I, t) ↦
@@ -717,17 +755,29 @@ theorem batchCommitAndSample_refines (h : Refines B) {P : Params}
   obtain ⟨lw, chs⟩ := lc
   dsimp only at hchs ⊢
   -- The permutation traces.
-  obtain ⟨hpe, hpc, hpeOk⟩ := commitPermutations_refines h hin (traces := traces) hpis hchs
-  have hpl := length_permutations instances traces pis chs htl.symm hpis hchs
-  generalize hperms : permutations instances traces pis chs = perms at hpe hpc hpeOk hpl
-  have hpeSl : (commitPermutations (specBackend EF) P instances perms).1.length =
+  obtain ⟨hpr, hpS⟩ := permutationsWith_refines h hin (traces := traces) hpis hchs
+  have hpl := length_permutationsWith (specBackend EF) P instances traces pis chs htl.symm hpis
+    hchs
+  have hterm : (permutationsWith B P instances traces pis chs).map (·.map (·.2)) =
+      (permutationsWith (specBackend EF) P instances traces pis chs).map (·.map (·.2)) :=
+    forall₂_map_eq (fun _ _ hab ↦ by
+      cases hab with
+      | none => rfl
+      | some hab => exact congrArg some hab.2) hpr
+  obtain ⟨hpe, hpc, hpeOk, hpeS⟩ := commitPermutations_refines h hin hpr hpS
+  rw [hterm]
+  generalize permutationsWith (specBackend EF) P instances traces pis chs = perms
+    at hpe hpc hpeOk hpeS hpl
+  have hpeSl : (commitPermutations (specBackend EF) instances perms).1.length =
       instances.length := by
-    simp only [commitPermutations, List.length_map, List.length_zip, hpl, Nat.min_self]
-  generalize commitPermutations B P instances perms = cpB at hpe hpc
-  generalize commitPermutations (specBackend EF) P instances perms = cpS at hpe hpc hpeOk hpeSl
+    simp only [commitPermutations, List.length_map, hpl]
+  generalize commitPermutations B instances (permutationsWith B P instances traces pis chs) = cpB
+    at hpe hpc
+  generalize commitPermutations (specBackend EF) instances perms = cpS
+    at hpe hpc hpeOk hpeS hpeSl
   obtain ⟨peB, pcB⟩ := cpB
   obtain ⟨peS, pcS⟩ := cpS
-  dsimp only at hpe hpc hpeOk ⊢
+  dsimp only at hpe hpc hpeOk hpeS ⊢
   have hproot : (pcB.map fun c ↦ (B.root c).toList).getD [] =
       (pcS.map fun c ↦ ((specBackend EF).root c).toList).getD [] := by
     cases hpc with
@@ -737,7 +787,7 @@ theorem batchCommitAndSample_refines (h : Refines B) {P : Params}
   refine RelM.bind_eq fun _ ↦ RelM.bind_eq fun _ ↦ RelM.bind_eq fun alpha ↦ ?_
   -- Every instance's quotient chunks.
   obtain ⟨hch, hchS⟩ := allQuotientChunks_refines h hin hpis chs (perms.map (·.map (·.2)))
-    hprep hprepS hpe alpha
+    hprep hprepS hpe hpeS alpha
   have hchSl : (allQuotientChunks (specBackend EF) P instances ((instances.zip traces).map
       fun (I, t) ↦ (specBackend EF).lde I.logN P.logBlowup gen I.air.width t)
         (setupBatchWith (specBackend EF) P instances).1 peS pis chs (perms.map (·.map (·.2)))

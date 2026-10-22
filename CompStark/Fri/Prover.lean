@@ -73,6 +73,10 @@ structure Backend (F EF : Type) (width : Nat) where
   permutation trace in base coordinates, and the challenges and the terminal. -/
   lookupQuotient : Air F → List (Lookup.ExtExpr F) → List F → Nat → Nat → M → Option M → M →
     List EF → EF → EF → Array EF
+  /-- The extension by `2 ^ bits` of an AIR's permutation trace for its lookups in base
+  coordinates and its terminal (`permutationLdeOf`), from its trace of `2 ^ logN` rows, its public
+  values and its challenges. -/
+  permutation : Nat → Air F → List (Stark.Lookup F) → Nat → Array F → List F → List EF → M × EF
   openedAt : Nat → M → List EF → List (Array EF)
   toArray : V → Array EF
   ofArray : Array EF → V
@@ -340,6 +344,20 @@ def lookupQuotientOfLde (A : Air F) (ext : List (Lookup.ExtExpr F)) (pis : List 
     ((prep.map onQuotient).getD (Mat.ofValues 0 (2 ^ qlog) #[])) (onQuotient perm)
     (A.periodic.map fun col ↦ periodicOnQuotient col degreeBits logChunks) chs terminal alpha
 
+/-- The permutation trace (`permutationTrace`) in base coordinates (`flatten`), and the
+terminal. -/
+def permutationOf (A : Air F) (ls : List (Stark.Lookup F)) (logN : Nat) (trace : Array F)
+    (pis : List F) (chs : List EF) : Array F × EF :=
+  let pt := Lookup.permutationTrace A ls logN trace pis chs
+  (Lookup.flatten pt.1, pt.2)
+
+/-- The extension by `2 ^ bits` onto `g · ⟨ω⟩` of the permutation trace in base coordinates
+(`permutationOf`), and the terminal. -/
+def permutationLdeOf (bits : Nat) (A : Air F) (ls : List (Stark.Lookup F)) (logN : Nat)
+    (trace : Array F) (pis : List F) (chs : List EF) : Mat F × EF :=
+  let pt := permutationOf A ls logN trace pis chs
+  (ldeRef logN bits gen ((ls.length + 1) * Challenge.d EF) pt.1, pt.2)
+
 /-- The batched quotients `∑ αᵏ (p(z) - p(x)) / (z - x)` by log height, tallest first: each
 matrix's rows batched by the powers of `α` once, then every point accumulated over the rows with
 the running power of `α` of its height. -/
@@ -380,6 +398,7 @@ def Backend.spec (EF : Type) [Challenge F EF] (t : Transcript F width) (hash : L
   logHeight c := Nat.log2 c.maxHeight
   quotient := quotientOfLde
   lookupQuotient := lookupQuotientOfLde
+  permutation := permutationLdeOf
   openedAt b m zs := zs.map (Fri.openedAt b m)
   toArray := id
   ofArray := id

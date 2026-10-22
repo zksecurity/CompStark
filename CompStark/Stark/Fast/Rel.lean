@@ -39,22 +39,4 @@ encoded digest layers. -/
 def RC (c : Commit) (s : Committed F) : Prop :=
   List.Forall₂ RM c.mats s.mats ∧ c.layers = s.layers.map encodeDigests
 
-/-- A packed matrix's matrix is the matrix it represents. -/
-theorem toMat_of_RM {pm : PMat} {m : Mat F} (h : RM pm m) : pm.toMat = m := by
-  obtain ⟨hw, hh, hv⟩ := h
-  rw [PMat.toMat, hw, hh, hv, CompPoly.PackedRepr.decode_encode]
-
-variable [Mont32BaseField p] [Binomial4 p] in
-/-- The fast backend's LogUp quotient is the specification's. -/
-theorem lookupQuotient_rel (A : Air F) (ext : List (Lookup.ExtExpr F)) (pis : List F)
-    (d l : Nat) (chs : List EF) (t alpha : EF) {m : PMat} {s : Mat F} {pm : Option PMat}
-    {ps : Option (Mat F)} {rm : PMat} {rs : Mat F} (h : RM m s) (hp : Option.Rel RM pm ps)
-    (hr : RM rm rs) :
-    lookupQuotient A ext pis d l m pm rm chs t alpha =
-      lookupQuotientOfLde A ext pis d l s ps rs chs t alpha := by
-  rw [lookupQuotient, toMat_of_RM h, toMat_of_RM hr]
-  cases hp with
-  | none => rfl
-  | some hp => rw [Option.map_some, toMat_of_RM hp]
-
 end CompStark.Stark.Fast

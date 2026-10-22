@@ -143,6 +143,11 @@ structure Lookup (F : Type) where
   tuples : List (List (Expr F) × Expr F)
   countWeight : Nat
 
+/-- Every element and multiplicity of the lookup reads only columns below `w` of the trace and
+`pw` of the preprocessed trace, at either row. -/
+def Lookup.ColsBelow (l : Lookup F) (w pw : Nat) : Prop :=
+  ∀ x ∈ l.tuples, (∀ e ∈ x.1, e.colsBelow w w pw pw) ∧ x.2.colsBelow w w pw pw
+
 /-- An AIR over the field `F`: the trace's width, the number of public values, the constraints,
 the trace opened at the next row if `mainNextRow`, the preprocessed trace, row-major, of
 `preprocessedWidth` columns, opened at the next row if `preprocessedNextRow`, the periodic

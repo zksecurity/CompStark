@@ -285,8 +285,11 @@ fn instance<F: PrimeField64>(air: BatchAir<F>, log_n: usize)
 /// The instances of a batch: `three` (`test_three_instances_mixed_sizes`), `mixed`
 /// (`test_mixed_preprocessed`), `periodic` (`test_periodic_air`), `single` (`test_single_instance`)
 /// `prepmul`, preprocessed traces at mixed heights with and without next-row reads, and `square`,
-/// an AIR that does not read the next row beside one that does; and the benchmark `wide`, three
-/// `WideAir` tables of `2^20`, `2^19` and `2^16` rows.
+/// an AIR that does not read the next row beside one that does; and the benchmarks `wide`, three
+/// `WideAir` tables of `2^20`, `2^19` and `2^16` rows, and `lookup-bench`, `MulAirLookups` with
+/// eight repetitions on `2^18` rows, each with a local lookup and sending on one bus, the
+/// `FibAirLookups` receiving it eight times on `2^18` rows, and `MulAirLookups` with eight local
+/// lookups on `2^16` rows.
 pub fn case<F: PrimeField64>(name: &str) -> Vec<(BatchAir<F>, RowMajorMatrix<F>, Vec<F>)> {
     match name {
         "three" => vec![instance(BatchAir::Fib { log_height: 4 }, 4),
@@ -300,6 +303,8 @@ pub fn case<F: PrimeField64>(name: &str) -> Vec<(BatchAir<F>, RowMajorMatrix<F>,
         "square" => vec![instance(BatchAir::Square, 4), instance(BatchAir::Fib { log_height: 3 }, 3)],
         "wide" => vec![instance(BatchAir::Wide, 20), instance(BatchAir::Wide, 19),
             instance(BatchAir::Wide, 16)],
+        "lookup-bench" => vec![instance(mul_l(8, true, &["MulFib"; 8]), 18),
+            fib_l(18, "MulFib", 8), instance(mul_l(8, true, &[]), 16)],
         "local1" => vec![instance(mul_l(1, true, &[]), 3)],
         "local" => vec![instance(mul_l(2, true, &[]), 4),
             instance(BatchAir::FibL { log_height: 4, bus: None }, 4)],

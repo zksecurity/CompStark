@@ -75,6 +75,59 @@ def packSameBus (budget : Nat) (ls : List (Lookup F)) : List (Lookup F) :=
   ls.filter (·.bus.isNone) ++
     (buses ls).flatMap fun b ↦ packBus budget (ls.filter (·.bus == some b))
 
+/-- Every tuple of a bus's packed lookups is a tuple of one of its lookups. -/
+theorem packBus_tuples (budget : Nat) (S : List (Lookup F)) :
+    ∀ ms : List (Lookup F), (∀ m ∈ ms, m ∈ S) →
+      ∀ l ∈ packBus budget ms, ∀ x ∈ l.tuples, ∃ m ∈ S, x ∈ m.tuples
+  | [], _ => fun _ hl ↦ nomatch hl
+  | l :: ls, hS => by
+    let Q (r : List (Lookup F) × Lookup F) : Prop :=
+      ∀ c ∈ r.1 ++ [r.2], ∀ x ∈ c.tuples, ∃ m ∈ S, x ∈ m.tuples
+    suffices h : ∀ (ms : List (Lookup F)) (r : List (Lookup F) × Lookup F), (∀ m ∈ ms, m ∈ S) →
+        Q r → Q (ms.foldl (fun (cols, cur) m ↦
+          let trial : Lookup F := { cur with tuples := cur.tuples ++ m.tuples }
+          if lookupDegree trial ≤ budget then (cols, { trial with
+            countWeight := cur.countWeight + m.countWeight })
+          else (cols ++ [cur], m)) r) by
+      exact h ls ([], l) (fun m hm ↦ hS m (List.mem_cons_of_mem _ hm)) (fun c hc x hx ↦ by
+        simp only [List.nil_append, List.mem_singleton] at hc
+        exact ⟨l, hS l List.mem_cons_self, hc ▸ hx⟩)
+    intro ms
+    induction ms with
+    | nil => exact fun _ _ hr ↦ hr
+    | cons m ms ih =>
+      intro r hms hr
+      rw [List.foldl_cons]
+      refine ih _ (fun m' hm' ↦ hms m' (List.mem_cons_of_mem _ hm')) ?_
+      have hm := hms m List.mem_cons_self
+      obtain ⟨cols, cur⟩ := r
+      dsimp only
+      split
+      · intro c hc x hx
+        rcases List.mem_append.mp hc with hc | hc
+        · exact hr c (List.mem_append_left _ hc) x hx
+        · rw [List.mem_singleton] at hc
+          subst hc
+          rcases List.mem_append.mp hx with hx | hx
+          · exact hr cur (List.mem_append_right _ (List.mem_singleton_self _)) x hx
+          · exact ⟨m, hm, hx⟩
+      · intro c hc x hx
+        rcases List.mem_append.mp hc with hc | hc
+        · exact hr c hc x hx
+        · rw [List.mem_singleton] at hc
+          dsimp only at hc
+          subst hc
+          exact ⟨_, hm, hx⟩
+
+/-- Every tuple of a packed lookup is a tuple of one of the lookups. -/
+theorem packSameBus_tuples (budget : Nat) (ls : List (Lookup F)) :
+    ∀ l ∈ packSameBus budget ls, ∀ x ∈ l.tuples, ∃ m ∈ ls, x ∈ m.tuples := by
+  intro l hl x hx
+  rcases List.mem_append.mp hl with hl | hl
+  · exact ⟨l, (List.mem_filter.mp hl).1, hx⟩
+  · obtain ⟨b, -, hl⟩ := List.mem_flatMap.mp hl
+    exact packBus_tuples budget ls _ (fun m hm ↦ (List.mem_filter.mp hm).1) l hl x hx
+
 /-- One lookup's bus in the numbering state `(ids, names, next)`: a global bus's number, given at
 its first appearance; a fresh number for a local lookup. -/
 def busStep (s : List Nat × List (String × Nat) × Nat) (l : Lookup F) :
@@ -116,6 +169,13 @@ def _root_.CompStark.Stark.Air.packedLookups (A : Air F) (logN : Nat) : List (Lo
 /-- The LogUp constraints of `A`'s packed lookups on a trace of `2 ^ logN` rows. -/
 def _root_.CompStark.Stark.Air.lookupConstraints (A : Air F) (logN : Nat) : List (ExtExpr F) :=
   logUpConstraints (A.packedLookups logN)
+
+/-- `A`'s packed lookups read the columns its lookups read. -/
+theorem _root_.CompStark.Stark.Air.packedLookups_colsBelow (A : Air F) (logN w pw : Nat)
+    (h : ∀ l ∈ A.lookups, l.ColsBelow w pw) : ∀ l ∈ A.packedLookups logN, l.ColsBelow w pw :=
+  fun l hl x hx ↦ by
+    obtain ⟨m, hm, hx'⟩ := packSameBus_tuples _ A.lookups l hl x hx
+    exact h m hm x hx'
 
 /-! ### Row-local lookups -/
 

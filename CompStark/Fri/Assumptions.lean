@@ -40,4 +40,18 @@ addressable: a bound on the field's shape that every vector the prover builds re
 def DomainsAddressable (F EF : Type) [BaseField F] [Challenge F EF] : Prop :=
   Addressable (Challenge.d EF * 2 ^ twoAdicity F)
 
+/-- The input of a permutation trace's generation and extension by `2 ^ bits`: `A`'s trace and
+preprocessed trace of `2 ^ logN` rows, a positive width, the lookups `ls` reading only the AIR's
+columns, the extended domain within the two-adic subgroups, and the extensions of the traces and
+of the permutation trace addressable side by side. -/
+structure PermutationOk (EF : Type) [Challenge F EF] (A : Air F) (ls : List (Lookup F))
+    (logN bits : Nat) (trace : Array F) : Prop where
+  trace : trace.size = 2 ^ logN * A.width
+  preprocessed : A.preprocessed.size = 2 ^ logN * A.preprocessedWidth
+  width : 0 < A.width
+  lookups : ∀ l ∈ ls, l.ColsBelow A.width A.preprocessedWidth
+  twoAdic : logN + bits ≤ twoAdicity F
+  mem : Addressable (2 ^ (logN + bits) *
+    (A.width + A.preprocessedWidth + (ls.length + 1) * Challenge.d EF))
+
 end CompStark.Fri

@@ -140,6 +140,182 @@ def lookupDegree (l : Lookup F) : Nat :=
   let num := (l.tuples.zip degs).foldl (fun m ((_, mult), d) ↦ max m (mult.degree + sum - d)) 0
   max (1 + sum) num
 
+/-! ### The columns the constraints read -/
+
+/-- Every base expression reads columns below `w`, `wNext`, `pw` and `pwNext` (`Expr.colsBelow`)
+and every permutation column is below `pmw`. -/
+def ExtExpr.colsBelow (w wNext pw pwNext pmw : Nat) : ExtExpr F → Bool
+  | .base e => e.colsBelow w wNext pw pwNext
+  | .perm c | .permNext c => c < pmw
+  | .challenge _ | .terminal => true
+  | .add a b | .sub a b | .mul a b =>
+    a.colsBelow w wNext pw pwNext pmw && b.colsBelow w wNext pw pwNext pmw
+
+/-- Evaluation commutes with a map that respects `+`, `-` and `*`, for expressions reading columns
+below the widths (`ExtExpr.colsBelow`) of environments that agree there. -/
+theorem ExtExpr.eval_hom {R S : Type*} [Add R] [Sub R] [Mul R] [Add S] [Sub S] [Mul S]
+    (f : R → S) (hadd : ∀ a b, f (a + b) = f a + f b) (hsub : ∀ a b, f (a - b) = f a - f b)
+    (hmul : ∀ a b, f (a * b) = f a * f b) (w wNext pw pwNext pmw : Nat) (env : Expr.Env F R)
+    (env' : Expr.Env F S) (aux : ExtExpr.Env R) (aux' : ExtExpr.Env S)
+    (hbase : ∀ e : Expr F, e.colsBelow w wNext pw pwNext = true → f (e.eval env) = e.eval env')
+    (hperm : ∀ c < pmw, f (aux.perm c) = aux'.perm c)
+    (hnext : ∀ c < pmw, f (aux.permNext c) = aux'.permNext c)
+    (hch : ∀ j, f (aux.challenge j) = aux'.challenge j) (hterm : f aux.terminal = aux'.terminal) :
+    ∀ g : ExtExpr F, g.colsBelow w wNext pw pwNext pmw = true →
+      f (g.eval env aux) = g.eval env' aux'
+  | .base e, h => hbase e h
+  | .perm c, h => hperm c (of_decide_eq_true h)
+  | .permNext c, h => hnext c (of_decide_eq_true h)
+  | .challenge j, _ => hch j
+  | .terminal, _ => hterm
+  | .add a b, h => by
+    simp only [ExtExpr.colsBelow, Bool.and_eq_true] at h
+    simp only [ExtExpr.eval]
+    rw [hadd, ExtExpr.eval_hom f hadd hsub hmul w wNext pw pwNext pmw env env' aux aux' hbase
+      hperm hnext hch hterm a h.1, ExtExpr.eval_hom f hadd hsub hmul w wNext pw pwNext pmw env env'
+      aux aux' hbase hperm hnext hch hterm b h.2]
+  | .sub a b, h => by
+    simp only [ExtExpr.colsBelow, Bool.and_eq_true] at h
+    simp only [ExtExpr.eval]
+    rw [hsub, ExtExpr.eval_hom f hadd hsub hmul w wNext pw pwNext pmw env env' aux aux' hbase
+      hperm hnext hch hterm a h.1, ExtExpr.eval_hom f hadd hsub hmul w wNext pw pwNext pmw env env'
+      aux aux' hbase hperm hnext hch hterm b h.2]
+  | .mul a b, h => by
+    simp only [ExtExpr.colsBelow, Bool.and_eq_true] at h
+    simp only [ExtExpr.eval]
+    rw [hmul, ExtExpr.eval_hom f hadd hsub hmul w wNext pw pwNext pmw env env' aux aux' hbase
+      hperm hnext hch hterm a h.1, ExtExpr.eval_hom f hadd hsub hmul w wNext pw pwNext pmw env env'
+      aux aux' hbase hperm hnext hch hterm b h.2]
+
+/-! ### The LogUp constraints read the lookups' columns -/
+
+section Cols
+variable {w wNext pw pwNext pmw : Nat}
+
+theorem colsBelow_denominator [Zero F] (a b : ExtExpr F) (t : List (Expr F))
+    (ha : a.colsBelow w wNext pw pwNext pmw) (hb : b.colsBelow w wNext pw pwNext pmw)
+    (ht : ∀ e ∈ t, e.colsBelow w wNext pw pwNext) :
+    (denominator a b t).colsBelow w wNext pw pwNext pmw := by
+  unfold denominator
+  cases t with
+  | nil =>
+    show (a.colsBelow w wNext pw pwNext pmw && (ExtExpr.base (.const 0)).colsBelow w wNext pw
+      pwNext pmw) = true
+    rw [ha]; rfl
+  | cons x xs =>
+    show (a.colsBelow w wNext pw pwNext pmw && _) = true
+    rw [ha, Bool.true_and]
+    suffices h : ∀ (acc : ExtExpr F), acc.colsBelow w wNext pw pwNext pmw →
+        (xs.foldl (fun acc y ↦ .base y + acc * b) acc).colsBelow w wNext pw pwNext pmw from
+      h _ (ht x List.mem_cons_self)
+    intro acc hacc
+    induction xs generalizing acc with
+    | nil => exact hacc
+    | cons y ys ih =>
+      rw [List.foldl_cons]
+      refine ih (fun e he ↦ ht e (by
+        rcases List.mem_cons.mp he with rfl | he
+        · exact List.mem_cons_self
+        · exact List.mem_cons_of_mem _ (List.mem_cons_of_mem _ he))) _ ?_
+      show ((ExtExpr.base y).colsBelow w wNext pw pwNext pmw &&
+        (acc.colsBelow w wNext pw pwNext pmw && b.colsBelow w wNext pw pwNext pmw)) = true
+      rw [hacc, hb]
+      simpa only [ExtExpr.colsBelow, Bool.and_true] using
+        ht y (List.mem_cons_of_mem _ List.mem_cons_self)
+
+theorem colsBelow_foldFractions [Zero F] [One F] (ps : List (ExtExpr F × ExtExpr F))
+    (h : ∀ p ∈ ps, p.1.colsBelow w wNext pw pwNext pmw ∧ p.2.colsBelow w wNext pw pwNext pmw) :
+    (foldFractions ps).1.colsBelow w wNext pw pwNext pmw ∧
+      (foldFractions ps).2.colsBelow w wNext pw pwNext pmw := by
+  cases ps with
+  | nil => simp only [foldFractions, ExtExpr.const, ExtExpr.colsBelow, Expr.colsBelow, and_self]
+  | cons p ps =>
+    obtain ⟨d, m⟩ := p
+    simp only [foldFractions]
+    suffices hs : ∀ (acc : ExtExpr F × ExtExpr F), acc.1.colsBelow w wNext pw pwNext pmw →
+        acc.2.colsBelow w wNext pw pwNext pmw →
+        (ps.foldl (fun (v, u) (d, m) ↦ (v * d + m * u, u * d)) acc).1.colsBelow w wNext pw pwNext
+          pmw ∧
+        (ps.foldl (fun (v, u) (d, m) ↦ (v * d + m * u, u * d)) acc).2.colsBelow w wNext pw pwNext
+          pmw from
+      hs _ (h _ List.mem_cons_self).2 (h _ List.mem_cons_self).1
+    intro acc h1 h2
+    induction ps generalizing acc with
+    | nil => exact ⟨h1, h2⟩
+    | cons q qs ih =>
+      rw [List.foldl_cons]
+      have hq := h q (List.mem_cons_of_mem _ List.mem_cons_self)
+      refine ih (fun p hp ↦ h p (by
+        rcases List.mem_cons.mp hp with rfl | hp
+        · exact List.mem_cons_self
+        · exact List.mem_cons_of_mem _ (List.mem_cons_of_mem _ hp))) _ ?_ ?_
+      · show ((acc.1.colsBelow w wNext pw pwNext pmw && q.1.colsBelow w wNext pw pwNext pmw) &&
+          (q.2.colsBelow w wNext pw pwNext pmw && acc.2.colsBelow w wNext pw pwNext pmw)) = true
+        rw [h1, h2, hq.1, hq.2]; rfl
+      · show (acc.2.colsBelow w wNext pw pwNext pmw && q.1.colsBelow w wNext pw pwNext pmw) = true
+        rw [h2, hq.1]; rfl
+
+theorem colsBelow_rowSum [Zero F] (k : Nat) (hk : k < pmw) :
+    (rowSum (F := F) k).colsBelow w wNext pw pwNext pmw := by
+  unfold rowSum
+  suffices h : ∀ (l : List Nat) (acc : ExtExpr F), (∀ c ∈ l, c + 1 < pmw) →
+      acc.colsBelow w wNext pw pwNext pmw →
+      (l.foldl (fun s c ↦ s + .perm (c + 1)) acc).colsBelow w wNext pw pwNext pmw from
+    h (List.range k) (ExtExpr.const (0 : F)) (fun c hc ↦ by have := List.mem_range.mp hc; omega)
+      rfl
+  intro l
+  induction l with
+  | nil => intro _ _ h; exact h
+  | cons c l ih =>
+    intro acc hl hacc
+    rw [List.foldl_cons]
+    refine ih _ (fun c' hc' ↦ hl c' (List.mem_cons_of_mem _ hc')) ?_
+    show (acc.colsBelow w wNext pw pwNext pmw && decide (c + 1 < pmw)) = true
+    rw [hacc, decide_eq_true (hl c List.mem_cons_self)]; rfl
+
+/-- The LogUp constraints of lookups reading the columns below the widths read them, and the
+permutation trace's accumulator and fraction columns. -/
+theorem colsBelow_logUpConstraints [Zero F] [One F] (ls : List (Lookup F))
+    (hls : ∀ l ∈ ls, ∀ x ∈ l.tuples, (∀ e ∈ x.1, e.colsBelow w wNext pw pwNext) ∧
+      x.2.colsBelow w wNext pw pwNext) :
+    ∀ g ∈ logUpConstraints ls, g.colsBelow w wNext pw pwNext (ls.length + 1) := by
+  intro g hg
+  unfold logUpConstraints at hg
+  split at hg
+  · exact absurd hg List.not_mem_nil
+  rcases List.mem_append.mp hg with hg | hg
+  · obtain ⟨⟨l, c⟩, hlc, rfl⟩ := List.mem_map.mp hg
+    have hc : c < ls.length := by have := (List.mem_zipIdx hlc).2.1; omega
+    have hl : l ∈ ls := by
+      have := (List.mem_zipIdx hlc).2.2
+      rw [this]; exact List.getElem_mem _
+    dsimp only
+    unfold fractionPin
+    have hf := colsBelow_foldFractions (w := w) (wNext := wNext) (pw := pw) (pwNext := pwNext)
+      (pmw := ls.length + 1) (l.tuples.map fun (t, m) ↦
+      (denominator (.challenge (2 * c)) (.challenge (2 * c + 1)) t, .base m)) fun p hp ↦ by
+        obtain ⟨x, hx, rfl⟩ := List.mem_map.mp hp
+        obtain ⟨t, m⟩ := x
+        exact ⟨colsBelow_denominator _ _ _ rfl rfl (hls l hl _ hx).1, (hls l hl _ hx).2⟩
+    show (((foldFractions _).2.colsBelow w wNext pw pwNext (ls.length + 1) &&
+      decide (c + 1 < ls.length + 1)) && (foldFractions _).1.colsBelow w wNext pw pwNext
+        (ls.length + 1)) = true
+    rw [hf.1, hf.2, decide_eq_true (by omega)]; rfl
+  · have hr := colsBelow_rowSum (F := F) (w := w) (wNext := wNext) (pw := pw) (pwNext := pwNext)
+      ls.length (Nat.lt_succ_self _)
+    simp only [List.mem_cons, List.not_mem_nil, or_false] at hg
+    rcases hg with rfl | rfl | rfl
+    · show (true && decide (0 < ls.length + 1)) = true
+      rw [decide_eq_true (Nat.succ_pos _)]; rfl
+    · show (true && ((decide (0 < ls.length + 1) && decide (0 < ls.length + 1)) &&
+        (rowSum ls.length).colsBelow w wNext pw pwNext (ls.length + 1))) = true
+      rw [decide_eq_true (Nat.succ_pos _), hr]; rfl
+    · show (true && ((true && decide (0 < ls.length + 1)) &&
+        (rowSum ls.length).colsBelow w wNext pw pwNext (ls.length + 1))) = true
+      rw [decide_eq_true (Nat.succ_pos _), hr]; rfl
+
+end Cols
+
 /-! ### The permutation trace -/
 
 section Permutation

@@ -79,6 +79,8 @@ public import CompStark.Stark.Fast.WordsLemmas
 public import CompStark.Stark.Fast.Vectors
 public import CompStark.Stark.Fast.Openings
 public import CompStark.Stark.Fast.Quotient
+public import CompStark.Stark.Fast.LookupQuotient
+public import CompStark.Stark.Fast.Permutation
 public import CompStark.Stark.Fast.Refines
 public import CompStark.KoalaBear.Fast
 public import CompStark.BabyBear.Fast

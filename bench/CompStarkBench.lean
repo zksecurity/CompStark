@@ -60,6 +60,37 @@ def wideTrace (w n : Nat) : Array KoalaBear.Fast.Field := Id.run do
       x * x * x + row.getD ((j.val + 1) % w) 0
   return out
 
+/-- The Fibonacci numbers `F_0, …, F_n`. -/
+def fibs (n : Nat) : Array KoalaBear.Fast.Field :=
+  ((List.range n).foldl (fun ((a, b, out) : KoalaBear.Fast.Field × KoalaBear.Fast.Field ×
+    Array KoalaBear.Fast.Field) _ ↦ (b, a + b, out.push b)) (0, 1, #[0])).2.2
+
+/-- Plonky3's `mul_trace` of `batch-stark/tests/simple.rs`: `rows` rows of `mulAir reps`. -/
+def mulTrace (rows reps : Nat) : Array KoalaBear.Fast.Field :=
+  let w := 3 * reps + 1
+  let f := fibs rows
+  Array.ofFn (n := rows * w) fun k ↦
+    let i := k.val / w
+    let j := k.val % w
+    if j + 1 = w then (if i + 1 = rows then 0 else f.getD (i + 1) 0)
+    else if j % 3 = 0 then f.getD i 0
+    else if j % 3 = 1 then f.getD (i + 1) 0
+    else f.getD i 0 * f.getD (i + 1) 0
+
+/-- The batch `lookup-bench` of `compstark-bench`: `mulAirLookups 8` on `2 ^ 18` rows with local
+lookups and sending on the bus `MulFib`, `fibonacciLookups` receiving eight times on `2 ^ 18`
+rows, and `mulAirLookups 8` with local lookups on `2 ^ 16` rows; with traces and public values. -/
+def lookupBatch : List (CompStark.Batch.Instance KoalaBear.Fast.Field) ×
+    List (Array KoalaBear.Fast.Field) × List (List KoalaBear.Fast.Field) :=
+  let n := 2 ^ 18
+  let f := fibs n
+  ([⟨CompStark.Stark.mulAirLookups 8 true (List.replicate 8 "MulFib"), 18⟩,
+      ⟨CompStark.Stark.fibonacciLookups 18 "MulFib" 8, 18⟩,
+      ⟨CompStark.Stark.mulAirLookups 8 true [], 16⟩],
+    [mulTrace n 8, Array.ofFn (n := 2 * n) fun j ↦ f.getD (j.val / 2 + j.val % 2) 0,
+      mulTrace (2 ^ 16) 8],
+    [[], [0, 1, f.getD n 0], []])
+
 open CompStark CompStark.Stark CompStark.Fri in
 /-- The wall time of each phase of the fast prover on `wide 64`, `2 ^ logN` rows, blowup 2. -/
 def phases (logN : Nat) : IO UInt32 := do
@@ -302,5 +333,31 @@ def main (args : List String) : IO UInt32 := do
     let m := (samples.qsort (· < ·))[1]!
     IO.println
       s!"lean fast prove-batch wide 2^20+2^19+2^16 ms median {m / 1000000}.{m / 1000 % 1000}"
+    return 0
+  | "prove-batch-lookup" :: rest =>
+    -- `prove-batch-lookup LOG_BLOWUP LOG_FINAL MAX_LOG_ARITY QUERIES COMMIT_POW QUERY_POW [JSON]`:
+    -- the fast batch prover's median time on `lookupBatch` (`compstark-bench batch-bench
+    -- lookup-bench …`), checked against Plonky3's proof in `JSON` if given.
+    let ps := (rest.takeWhile String.isNat).map String.toNat!
+    let P : CompStark.Fri.Params ← match ps with
+      | [b, f, a, q, cp, qp] => pure ⟨b, f, a, q, cp, qp, 0, 0, 0⟩
+      | _ => IO.eprintln "six parameters"; return 1
+    let (instances, traces, pis) := lookupBatch
+    let B := CompStark.KoalaBear.backendFor P.logBlowup (CompStark.Batch.shapes instances)
+    if let path :: _ := rest.drop ps.length then
+      let rust ← IO.ofExcept (CompStark.Stark.Json.parseBatch (p := KoalaBear.fieldSize)
+        (EF := KoalaBear.Fast.Ext4) (← IO.FS.readFile path))
+      unless CompStark.Batch.proveBatchWith B P instances traces pis == rust do
+        IO.eprintln "proof differs from Plonky3's"; return 1
+      IO.println "proof matches Plonky3's"
+    let mut samples := #[]
+    for k in [0:3] do
+      let (ns, pf) ← timeNs fun _ ↦ do
+        return CompStark.Batch.proveBatchWith (EF := KoalaBear.Fast.Ext4) B P instances traces
+          (pis.map (·.map (· + (k : KoalaBear.Fast.Field) - k)))
+      samples := samples.push ns
+      if pf.oodWitness == 12345 then IO.println ""
+    let m := (samples.qsort (· < ·))[1]!
+    IO.println s!"lean fast prove-batch lookup-bench ms median {m / 1000000}.{m / 1000 % 1000}"
     return 0
   | _ => IO.eprintln "usage: CompStarkBench poseidon2-spec LOG_N"; return 1

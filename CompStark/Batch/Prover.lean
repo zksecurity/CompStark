@@ -18,9 +18,10 @@ proof, grinding witnesses included when Plonky3 grinds on one thread:
 * Observe the batch's domain separator and every instance's degree bits; commit to every
   instance's trace extension under one tree; observe the commitment, the public values and the
   preprocessed commitment.
-* With lookups, grind and sample the lookup challenges `(α_L, β_L)`; compute the permutation trace
-  and terminal of every instance with lookups (`permutationTrace`), commit to their extensions in
-  base coordinates under one tree, and observe the commitment and the terminals.
+* With lookups, grind and sample the lookup challenges `(α_L, β_L)`; compute the extension of the
+  permutation trace in base coordinates and the terminal of every instance with lookups
+  (`Backend.permutation`, `permutationTrace`), commit to the extensions under one tree, and observe
+  the commitment and the terminals.
 * Sample `α`. Compute every instance's quotient as `uni-stark` does, its LogUp constraints
   following its constraints in Horner's order (`batchQuotientChunks`), commit to all chunks,
   instance by instance, under one tree, grind, and sample `ζ`.
@@ -109,12 +110,20 @@ def permutations (instances : List (Instance F)) (traces : List (Array F)) (pis 
   (instances.zip (traces.zip (pis.zip chs))).map fun (I, t, p, c) ↦
     if I.lookups.isEmpty then none else some (permutationTrace I.air I.lookups I.logN t p c)
 
-/-- The extensions by the backend `B` of the permutation traces `perms` in base coordinates, and
-their commitment if the batch has lookups. -/
-def commitPermutations (B : Backend F EF width) (P : Params) (instances : List (Instance F))
-    (perms : List (Option (Array EF × EF))) : List (Option B.M) × Option B.C :=
-  let permExts := (instances.zip perms).map fun (I, pt) ↦ pt.map fun (vs, _) ↦
-    B.lde I.logN P.logBlowup gen ((I.lookups.length + 1) * Challenge.d EF) (flatten vs)
+/-- The extension of the permutation trace in base coordinates and the terminal of every instance
+with lookups, by the backend `B` (`Backend.permutation`). -/
+def permutationsWith (B : Backend F EF width) (P : Params) (instances : List (Instance F))
+    (traces : List (Array F)) (pis : List (List F)) (chs : List (List EF)) :
+    List (Option (B.M × EF)) :=
+  (instances.zip (traces.zip (pis.zip chs))).map fun (I, t, p, c) ↦
+    if I.lookups.isEmpty then none
+    else some (B.permutation P.logBlowup I.air I.lookups I.logN t p c)
+
+/-- The extensions of the permutation traces `perms`, and their commitment by the backend `B` if
+the batch has lookups. -/
+def commitPermutations (B : Backend F EF width) (instances : List (Instance F))
+    (perms : List (Option (B.M × EF))) : List (Option B.M) × Option B.C :=
+  let permExts := perms.map (·.map (·.1))
   (permExts, if hasLookups instances then some (B.commit (permExts.filterMap id)) else none)
 
 /-- Every instance's quotient chunks (`batchQuotientChunks`) from the extensions of its trace,
@@ -139,8 +148,8 @@ def batchCommitAndSample (B : Backend F EF width) (P : Params) (instances : List
   pObserveList pis.flatten
   pObserveList ((prep.2.map fun c ↦ (B.root c).toList).getD [])
   let (lw, chs) ← lookupChallenges P instances
-  let perms := permutations instances traces pis chs
-  let (permExts, permC) := commitPermutations B P instances perms
+  let perms := permutationsWith B P instances traces pis chs
+  let (permExts, permC) := commitPermutations B instances perms
   pObserveList ((permC.map fun c ↦ (B.root c).toList).getD [])
   let terminals := perms.map (·.map (·.2))
   pObserveExts (terminals.filterMap id)

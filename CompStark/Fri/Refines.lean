@@ -99,10 +99,18 @@ structure Refines (B : Backend F EF 24) where
     (∀ c ∈ A.constraints, c.colsBelow s.width s.width ((ps.map (·.width)).getD 0)
       ((ps.map (·.width)).getD 0)) →
     B.quotient A pis d l m pm alpha = (specBackend EF).quotient A pis d l s ps alpha
-  lookupQuotient : ∀ A ext pis d l {m s pm ps rm rs} chs t alpha, RM m s →
-    Option.Rel RM pm ps → RM rm rs →
+  lookupQuotient : ∀ A ext pis d l {m s pm ps rm rs} chs t alpha k, RM m s → MatOk s →
+    2 ^ (d + l) ≤ s.height → Option.Rel RM pm ps → (∀ p ∈ ps, MatOk p ∧ p.height = s.height) →
+    RM rm rs → MatOk rs → rs.height = s.height → k * Challenge.d EF ≤ rs.width →
+    (∀ c ∈ ext, c.colsBelow s.width s.width ((ps.map (·.width)).getD 0)
+      ((ps.map (·.width)).getD 0) k) →
     B.lookupQuotient A ext pis d l m pm rm chs t alpha =
       (specBackend EF).lookupQuotient A ext pis d l s ps rs chs t alpha
+  permutation : ∀ bits A ls logN t pis chs, PermutationOk EF A ls logN bits t →
+    RM (B.permutation bits A ls logN t pis chs).1
+        ((specBackend EF).permutation bits A ls logN t pis chs).1 ∧
+      (B.permutation bits A ls logN t pis chs).2 =
+        ((specBackend EF).permutation bits A ls logN t pis chs).2
   openedAt : ∀ b zs {m s}, RM m s → MatOk s → (∀ z ∈ zs, Ext.OutsideBase z) →
     B.openedAt b m zs = (specBackend EF).openedAt b s zs
   toArray : ∀ {v a}, RV v a → a.size ≤ 2 ^ twoAdicity F → B.toArray v = (specBackend EF).toArray a

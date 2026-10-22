@@ -695,6 +695,15 @@ theorem addWords_ofFn {n : Nat} (hn : 4 * n < USize.size) (f g : Fin n → F) :
   refine congrArg encode (congrArg Array.ofFn (funext fun i ↦ ?_))
   rw [getD_ofFn_bounded _ _ i.isLt, getD_ofFn_bounded _ _ i.isLt]
 
+/-- Differences of tabulated arrays. -/
+theorem subWords_ofFn {n : Nat} (hn : 4 * n < USize.size) (f g : Fin n → F) :
+    subWords p (encode (Array.ofFn f)) (encode (Array.ofFn g)) n =
+      encode (Array.ofFn fun i ↦ f i - g i) := by
+  rw [subWords_encode _ _ _ (by rw [Array.size_ofFn]) (by rw [Array.size_ofFn])
+    (by rw [Array.size_ofFn]; exact hn) (by rw [Array.size_ofFn]; exact hn)]
+  refine congrArg encode (congrArg Array.ofFn (funext fun i ↦ ?_))
+  rw [getD_ofFn_bounded _ _ i.isLt, getD_ofFn_bounded _ _ i.isLt]
+
 /-- Products of tabulated arrays. -/
 theorem mulWords_ofFn {n : Nat} (hn : 4 * n < USize.size) (f g : Fin n → F) :
     mulWords p (encode (Array.ofFn f)) (encode (Array.ofFn g)) n =
