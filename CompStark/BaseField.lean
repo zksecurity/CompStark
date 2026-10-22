@@ -6,15 +6,18 @@ module
 
 public import CompPoly.Data.Classes.CanonicalNat
 public import Mathlib.Algebra.Field.Defs
+public import Mathlib.FieldTheory.Finite.Basic
 public import Mathlib.RingTheory.RootsOfUnity.PrimitiveRoots
 
 /-! # The base field
 
-The STARK runs over a finite field `F` of odd characteristic, the base field. `BaseField F` is what
+The STARK runs over a prime field `F` of odd characteristic, the base field. `BaseField F` is what
 the verifier and its analysis use of it, on the executable type itself:
 
 * the field operations, decidable equality, and finiteness as a proposition: no executable code
   enumerates the elements, and the analysis counts them by `Nat.card F`;
+* a prime number `p = |F|` of elements, so `F` is `ℤ/p` and its characteristic is `p`
+  (`ringChar_eq_card`);
 * the canonical value `CanonicalNat.toNat : F → ℕ`, a bijection onto `[0, p)` for `p = |F|`, of
   which `sampleBits` keeps the low bits;
 * the shift `gen` of the evaluation domains, a nonzero element outside the two-adic subgroup;
@@ -28,12 +31,14 @@ Domains of size `2 ^ k` exist for `k ≤ twoAdicity`, so `2 ^ twoAdicity` divide
 @[expose] public section
 namespace CompStark
 
-/-- A finite field of odd characteristic with a canonical value per element, a coset shift and
+/-- A prime field of odd characteristic with a canonical value per element, a coset shift and
 two-adic generators: the base field of the STARK. -/
 class BaseField (F : Type) extends Field F where
   [finite : Finite F]
   [decEq : DecidableEq F]
   [canonicalNat : CompPoly.CanonicalNat F]
+  /-- The number of elements is prime: `F` is a prime field. -/
+  card_prime : (Nat.card F).Prime
   /-- The characteristic is odd. -/
   two_ne_zero : (2 : F) ≠ 0
   /-- The two-adicity: subgroups of order `2 ^ k` for `k ≤ twoAdicity`. -/
@@ -59,6 +64,14 @@ noncomputable instance (priority := low) toFintype {F : Type} [BaseField F] : Fi
   Fintype.ofFinite F
 
 variable {F : Type} [BaseField F]
+
+/-- The characteristic is the number of elements `p`. -/
+theorem ringChar_eq_card : ringChar F = Nat.card F := by
+  obtain ⟨n, hp, hcard⟩ := FiniteField.card F (ringChar F)
+  rw [← Nat.card_eq_fintype_card] at hcard
+  have h := card_prime (F := F)
+  rw [hcard] at h
+  rw [hcard, ((Nat.Prime.pow_eq_iff h).mp rfl).2, pow_one]
 
 /-- `ω_(n + b) ^ 2 ^ b = ω_n`. -/
 theorem twoAdicGen_pow (n b : ℕ) (h : n + b ≤ twoAdicity F) :

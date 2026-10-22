@@ -31,6 +31,13 @@ the extractor cannot open forces such a query (`Ni/BatchBadQuery.lean`): the ver
 for the extracted transcript (`Ni/BatchBcs.lean`), whose commitments bind the trees of mixed heights
 the prover committed to, and safe rounds then give satisfying traces (`Sound/BatchRbr.lean`).
 `Ni/BatchAssembly.lean` sums the bounds.
+
+Over the integers (`batchKnowledgeSoundness_ro_int`), as for the interactive batch
+(`CompStark/BatchSoundness.lean`): an accepting verifier checked the multiplicity bound
+`∑ᵢ wᵢ 2 ^ logNᵢ < p`, so for AIRs that keep every row's multiplicities within their count weights
+(`Setup.CountsBounded`), traces satisfying the batch satisfy it with every bus balanced as a
+multiset (`Sound.Batch.balanced_int`), and the same bound holds for the event that no tuple of
+close traces satisfies the batch over the integers (`Setup.SatisfiedInt`).
 -/
 
 @[expose] public section
@@ -53,5 +60,22 @@ theorem batchKnowledgeSoundness_ro (S : Setup EF) (publicValues : Fin S.k → Li
           ¬ S.Satisfied traces publicValues] ≤
       (Q + S.verifierQueries) * roundError S δ δ' + hashError F (Q + S.verifierQueries) :=
   prob_unopenedB_le S publicValues δ δ' hδ' Q prover hQ
+
+/-- **Knowledge soundness of the batch STARK in the random-oracle model, over the integers.** For
+AIRs that keep every row's multiplicities within their count weights: a prover making at most `Q`
+oracle calls gets a proof for the instances' trace lengths accepted, while no tuple of traces
+close to the ones it committed to satisfies every AIR with every bus balanced as a multiset, with
+probability at most `q · roundError + hashError F q`, `q = Q + verifierQueries`. -/
+theorem batchKnowledgeSoundness_ro_int (S : Setup EF) (publicValues : Fin S.k → List F)
+    (δ δ' : NNReal) (hδ' : (δ' : ℝ) < 1 - S.rate) (Q : Nat) (prover : NIProver S)
+    (hQ : prover.IsTotalQueryBound Q)
+    (hcounts : ∀ traces, (∀ i, (S.air i).Satisfied (S.logN i) (traces i) (publicValues i)) →
+      S.CountsBounded traces publicValues) :
+    Pr{let (proof, log, verdict) ← run S publicValues prover}[
+      verdict = .ok () ∧ proof.degreeBits.toList = List.ofFn S.logN ∧
+        ∀ traces ∈ closeTraces S δ' (committedTraces S log proof),
+          ¬ S.SatisfiedInt traces publicValues] ≤
+      (Q + S.verifierQueries) * roundError S δ δ' + hashError F (Q + S.verifierQueries) :=
+  prob_unopenedIntB_le S publicValues δ δ' hδ' Q prover hQ hcounts
 
 end CompStark.Iop.Batch
