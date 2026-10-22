@@ -11,8 +11,8 @@ import all CompPoly.Univariate.NTTFast.Packed.Native
 /-! # The fast commitments are the specification's
 
 Rows and digests read from encoded matrices and digest layers are the specification's reads, in
-range and out of it (`readRow_rel`, `readDigest_encodeDigests`), so roots, openings and heights
-agree (`root_rel`, `openAt_rel`, `maxHeight_rel`). The packed Merkle commitment has the
+range and out of it (`readRow_rel`, `readDigest_encodeDigests`), so caps, openings and heights
+agree (`cap_rel`, `openAt_rel`, `maxHeight_rel`). The packed Merkle commitment has the
 specification's digest layers (`commitLayers_eq`), so `commit_rel` for matrices the prover commits
 to (`CommitOk`), of mixed heights: the leaf layer of matrices side by side is the specification's
 (`leafLayer_encode`), and so is every layer above, where the matrices of the layer's height are
@@ -146,13 +146,53 @@ theorem layer_rel {c : Commit} {s : Committed F} (h : RC c s) (i : Nat) :
   rw [h.2, Array.getD_eq_getD_getElem?, Array.getD_eq_getD_getElem?, Array.getElem?_map,
     ← encodeDigests_empty (p := p), Option.getD_map]
 
-/-- The packed root is the specification's. -/
-theorem root_rel [Mont32BaseField p] {c : Commit} {s : Committed F} (h : RC c s) :
-    Commit.root (p := p) c = s.root := by
-  have hb : ∀ {α : Type} (xs : Array α) (d : α), xs.back?.getD d = xs.getD (xs.size - 1) d :=
-    fun xs d ↦ by rw [Array.back?_eq_getElem?, Array.getD_eq_getD_getElem?]
-  have hs : c.layers.size = s.layers.size := by rw [h.2, Array.size_map]
-  rw [Commit.root, Committed.root, hb, hb, layer_rel h, hs, readDigest_encodeDigests]
+/-- Entry `t < n` of a list's first `n` entries padded to `n`. -/
+theorem getD_padTo_take {α : Type} (x : α) (n : Nat) (l : List α) (t : Nat) (ht : t < n) :
+    (CompStark.Merkle.padTo x n (l.take n)).getD t x = l.getD t x := by
+  rw [CompStark.Merkle.padTo, List.getD_eq_getElem?_getD, List.getD_eq_getElem?_getD]
+  by_cases hl : t < l.length
+  · rw [List.getElem?_append_left (by rw [List.length_take]; omega), List.getElem?_take_of_lt ht]
+  · have hlt : (l.take n).length ≤ t := by rw [List.length_take]; omega
+    rw [List.getElem?_append_right hlt, List.getElem?_replicate, List.getElem?_eq_none (by omega),
+      ite_eq_left_of_eq_true _ _ (eq_true (by rw [List.length_take] at hlt ⊢; omega))]
+    rfl
+
+/-- The first `n` digests of a layer, padded with zero digests. -/
+theorem ofFn_getD_eq_padTo (layer : Array (Digest F)) (n : Nat) :
+    Array.ofFn (n := n) (fun t ↦ layer.getD t.val 0) =
+      (CompStark.Merkle.padTo 0 n (layer.toList.take n)).toArray := by
+  apply Array.ext
+  · rw [Array.size_ofFn, List.size_toArray, CompStark.Merkle.padTo, List.length_append,
+      List.length_replicate, List.length_take]
+    omega
+  · intro t h1 _
+    rw [Array.size_ofFn] at h1
+    rw [Array.getElem_ofFn, List.getElem_toArray, ← List.getD_eq_getElem _ 0,
+      getD_padTo_take _ _ _ _ h1, Array.getD_eq_getD_getElem?, List.getD_eq_getElem?_getD,
+      Array.getElem?_toList]
+
+/-- The packed cap is the specification's. -/
+theorem cap_rel [Mont32BaseField p] {c : Commit} {s : Committed F} (hc : RC c s) (h : Nat) :
+    Commit.cap (p := p) c h = s.cap h := by
+  have hs : c.layers.size = s.layers.size := by rw [hc.2, Array.size_map]
+  have hlen : (s.layers.toList.map Array.toList).length = s.layers.size := by
+    rw [List.length_map, Array.length_toList]
+  set k := s.layers.size - 1 - min h (s.layers.size - 1)
+  have hl : (s.layers.toList.map Array.toList).getD k [] = (s.layers.getD k #[]).toList := by
+    rw [List.getD_eq_getElem?_getD, List.getElem?_map, Array.getD_eq_getD_getElem?,
+      Array.getElem?_toList]
+    cases s.layers[k]? <;> rfl
+  show Array.ofFn (n := 2 ^ min h (c.layers.size - 1)) (fun t ↦
+      Commit.readDigest (p := p) (c.layers.getD (c.layers.size - 1 - min h (c.layers.size - 1))
+        .empty) t) =
+    (CompStark.Merkle.padTo 0 (2 ^ min h ((s.layers.toList.map Array.toList).length - 1))
+      (((s.layers.toList.map Array.toList).getD ((s.layers.toList.map Array.toList).length - 1 -
+        min h ((s.layers.toList.map Array.toList).length - 1)) []).take
+        (2 ^ min h ((s.layers.toList.map Array.toList).length - 1)))).toArray
+  rw [hlen, hs, hl, ← ofFn_getD_eq_padTo]
+  congr 1
+  funext t
+  rw [layer_rel hc, readDigest_encodeDigests]
 
 theorem rows_rel [Mont32BaseField p] (g : Nat → Nat) {ms : List PMat} {ss : List (Mat F)}
     (h : List.Forall₂ RM ms ss) : ms.map

@@ -20,6 +20,8 @@ two-to-one compression `compress` on digests of `d` field elements:
   injected matrices' height.
 * Every layer but the root is padded with zero digests to even length, except a single first
   digest. The root is the last digest.
+* The cap of height `h` (`capOf`, Plonky3's `MerkleTree::cap`) is the layer `h` levels below the
+  root, `h` capped at the tree's levels, as `2 ^ h` digests padded with zero digests.
 -/
 
 @[expose] public section
@@ -107,6 +109,19 @@ def layers (hash : List F → Vector F d) (compress : Vector F d → Vector F d 
   let tallest := sorted.takeWhile (·.height == h)
   let first := firstLayer hash tallest h
   upperLayersAll hash compress first.length (sorted.drop tallest.length) first
+
+/-- The cap of height `h` of the tree with the digest layers `ls`, leaves first: the first
+`2 ^ h` digests of the layer `h` levels below the root, padded with zero digests, `h` capped at
+the tree's levels (Plonky3's `MerkleTree::cap`). -/
+def capOf (ls : List (List (Vector F d))) (h : Nat) : List (Vector F d) :=
+  let levels := ls.length - 1
+  let h := min h levels
+  padTo 0 (2 ^ h) ((ls.getD (levels - h) []).take (2 ^ h))
+
+theorem length_capOf (ls : List (List (Vector F d))) (h : Nat) :
+    (capOf ls h).length = 2 ^ min h (ls.length - 1) := by
+  simp only [capOf, padTo, List.length_append, List.length_replicate, List.length_take]
+  omega
 
 theorem getLastD_upperLayersAll (hash : List F → Vector F d)
     (compress : Vector F d → Vector F d → Vector F d) (fuel : Nat) (rest : List (Matrix F))

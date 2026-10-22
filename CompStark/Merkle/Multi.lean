@@ -330,10 +330,10 @@ theorem eq_of_zip_all {α : Type} [BEq α] [LawfulBEq α] :
 
 /-- The shape checks of a multi-opening of matrices of one height `2 ^ k`: as many rows as
 indices, `n` rows per query, indices below the height, and equal rows at equal indices. -/
-theorem multiShapeOk_spec [DecidableEq F] {n k : Nat} {dims : List (Nat × Nat)}
+theorem multiShapeOk_spec [DecidableEq F] {n k levels : Nat} {dims : List (Nat × Nat)}
     (hdims : dims.map (·.1) = List.replicate n (2 ^ k)) {indices : List Nat}
     {rows : List (List (List F))} {sibs : List (Vector F d)}
-    (h : multiShapeOk dims (2 ^ k) k indices rows sibs = true) :
+    (h : multiShapeOk dims (2 ^ k) levels indices rows sibs = true) :
     rows.length = indices.length ∧ (∀ r < rows.length, (rows.getD r []).length = n) ∧
       (∀ r (hr : r < indices.length), indices[r] < 2 ^ k) ∧
       ∀ r q (hr : r < indices.length) (hq : q < indices.length), indices[r] = indices[q] →
@@ -393,31 +393,92 @@ theorem climb_nil_padded (values : List (List F)) :
     simp only [climb]
     exact climb_nil_padded values path _ _ _ _
 
+/-- A climb without shorter matrices reads only the low bits of the index, one per sibling. -/
+theorem climb_mod (values : List (List F)) :
+    ∀ (path : List (Vector F d)) (i padded : Nat) (r : Vector F d),
+      climb hash compress values path [] i padded r =
+        climb hash compress values path [] (i % 2 ^ path.length) padded r
+  | [], _, _, _ => rfl
+  | _ :: path, i, padded, r => by
+    have h2 : i % 2 ^ (path.length + 1) % 2 = i % 2 :=
+      Nat.mod_mod_of_dvd i (Nat.dvd_of_mod_eq_zero (by rw [Nat.pow_succ, Nat.mul_mod_left]))
+    have hd : i % 2 ^ (path.length + 1) / 2 = i / 2 % 2 ^ path.length := by
+      rw [Nat.pow_succ, Nat.mul_comm, Nat.mod_mul_right_div_self]
+    simp only [climb, List.length_cons, h2, hd]
+    rw [climb_mod values path (i / 2), climb_mod values path (i / 2 % 2 ^ path.length),
+      Nat.mod_mod]
+
+/-- The levels below the cap of a tree of `2 ^ k` rows and cap height `capHeight`. -/
+theorem capLevels_two_pow (k capHeight : Nat) :
+    capLevels (2 ^ k) capHeight = (k - min capHeight k, min capHeight k) := by
+  rw [capLevels, nextPowerOfTwo_two_pow, Nat.log2_two_pow]
+
 variable [Zero F]
 
+/-- An accepted multi-opening's cap has an entry per node of the cap layer of the tree of its
+tallest matrices. -/
+theorem length_cap_of_verifyMulti [DecidableEq F] (cap : List (Vector F d)) (capHeight : Nat)
+    (dims : List (Nat × Nat)) (indices : List Nat) (rows : List (List (List F)))
+    (sibs : List (Vector F d))
+    (h : verifyMultiM (m := Id) hash compress cap capHeight dims indices rows sibs = true)
+    (g : Nat × List Nat) (rest : List (Nat × List Nat))
+    (hg : heightGroups (dims.map (·.1)) = g :: rest) :
+    cap.length = 2 ^ (capLevels g.1 capHeight).2 := by
+  unfold verifyMultiM at h
+  rw [hg] at h
+  obtain ⟨maxH, tallest⟩ := g
+  dsimp only at h ⊢
+  generalize capLevels maxH capHeight = lc at h ⊢
+  obtain ⟨levels, c⟩ := lc
+  dsimp only at h ⊢
+  split at h
+  · rename_i hcond
+    simp only [Bool.and_eq_true, beq_iff_eq] at hcond
+    exact hcond.1.2
+  · exact absurd h Bool.false_ne_true
+
+/-- An accepted multi-opening of `n > 0` matrices of height `2 ^ k` has a cap of `2 ^ c`
+entries, `c` the cap height capped at `k`. -/
+theorem length_cap_of_verifyMulti_replicate [DecidableEq F] (cap : List (Vector F d))
+    (capHeight n k : Nat) (hn : 0 < n) (dims : List (Nat × Nat))
+    (hdims : dims.map (·.1) = List.replicate n (2 ^ k)) (indices : List Nat)
+    (rows : List (List (List F))) (sibs : List (Vector F d))
+    (h : verifyMultiM (m := Id) hash compress cap capHeight dims indices rows sibs = true) :
+    cap.length = 2 ^ min capHeight k := by
+  have := length_cap_of_verifyMulti hash compress cap capHeight dims indices rows sibs h _ []
+    (by rw [hdims, heightGroups_replicate n _ hn])
+  rwa [capLevels_two_pow] at this
+
 /-- **Restoring the paths.** An accepted multi-opening of `n > 0` matrices of one height `2 ^ k`
-gives every query an accepted single opening of its rows. -/
-theorem verifyBatch_of_verifyMulti [DecidableEq F] (commit : Vector F d) (n k : Nat) (hn : 0 < n)
+against a cap gives every query an accepted single opening of its rows in the subtree under its
+cap entry: the tree of `2 ^ l` rows, `l` the levels below the cap, at its index's low `l` bits. -/
+theorem verifyBatch_of_verifyMulti [DecidableEq F] (cap : List (Vector F d))
+    (capHeight n k : Nat) (hn : 0 < n)
     (dims : List (Nat × Nat)) (hdims : dims.map (·.1) = List.replicate n (2 ^ k))
     (indices : List Nat) (rows : List (List (List F))) (sibs : List (Vector F d))
-    (h : verifyMultiM (m := Id) hash compress commit dims indices rows sibs = true)
+    (h : verifyMultiM (m := Id) hash compress cap capHeight dims indices rows sibs = true)
     (r : Nat) (hr : r < indices.length) :
-    ∃ path, verifyBatch hash compress commit (List.replicate n (2 ^ k)) indices[r]
+    ∃ path, verifyBatch hash compress (cap.getD (indices[r] >>> (k - min capHeight k)) 0)
+      (List.replicate n (2 ^ (k - min capHeight k))) (indices[r] % 2 ^ (k - min capHeight k))
       (rows.getD r []) path = true := by
   have hpad : (2 ^ k).nextPowerOfTwo = 2 ^ k := nextPowerOfTwo_two_pow k
   unfold verifyMultiM at h
   rw [hdims, heightGroups_replicate n _ hn] at h
   dsimp only at h
-  rw [hpad, Nat.log2_two_pow] at h
+  rw [capLevels_two_pow, hpad] at h
+  dsimp only at h
+  set l := k - min capHeight k with hl
   split at h
   swap
   · exact absurd h Bool.false_ne_true
-  rename_i hshape
+  rename_i hcond
+  simp only [Bool.and_eq_true] at hcond
+  obtain ⟨⟨hshape, -⟩, -⟩ := hcond
   obtain ⟨hrl, hrow, hidx, hcons⟩ := multiShapeOk_spec hdims hshape
   -- The leaves: the initial frontier.
   set leaves := (frontier indices).map fun (e : Nat × Nat) ↦
     (e.1, e.2, leafOf hash rows n e.2) with hleaves
-  have hl : ((frontier indices).mapM (m := Id) fun (x : Nat × Nat) ↦ match x with
+  have hl0 : ((frontier indices).mapM (m := Id) fun (x : Nat × Nat) ↦ match x with
       | (i, q) => do
         return (i, q, ← hash ((List.range n).flatMap fun k ↦ (rows.getD q []).getD k []))) =
       leaves := by
@@ -444,22 +505,25 @@ theorem verifyBatch_of_verifyMulti [DecidableEq F] (commit : Vector F d) (n k : 
       rw [show climb hash compress (rows.getD r' []) [] [] indices[r'] 0 (leafOf hash rows n r') =
         leafOf hash rows n r' from rfl, leafOf, leafOf,
         hcons r' (indices.idxOf i) hr' hq (by rw [hre, hqi])]
-  rw [hl] at h
-  have hk := frontier_walk (hash := hash) (compress := compress) k 0 (2 ^ k) leaves sibs h0
+  rw [hl0] at h
+  have hk := frontier_walk (hash := hash) (compress := compress) l 0 (2 ^ k) leaves sibs h0
   rw [Nat.zero_add] at hk
-  change (walk hash compress rows k (2 ^ k) leaves sibs).1.all
-    (fun (x : Nat × Nat × Vector F d) ↦ x.2.2 == commit) = true at h
+  change (walk hash compress rows l (2 ^ k) leaves sibs).1.all
+    (fun (x : Nat × Nat × Vector F d) ↦ x.2.2 == cap.getD x.1 0) = true at h
   obtain ⟨e, he, hei⟩ := hk.covers r hr
   obtain ⟨p, hp, hc⟩ := hk.climbs e he r hr hei.symm
-  have hcommit : e.2.2 = commit := by
+  have hcap : e.2.2 = cap.getD (indices[r] >>> l) 0 := by
     rw [List.all_eq_true] at h
+    rw [← hei]
     exact beq_iff_eq.mp (h e he)
   refine ⟨p, ?_⟩
   have hr' : r < rows.length := hrl ▸ hr
+  have hlt : indices[r] % 2 ^ l < 2 ^ l := Nat.mod_lt _ (Nat.two_pow_pos l)
   simp only [verifyBatch, heightGroups_replicate n _ hn, List.tail_cons, List.zip_nil_right,
     List.all_nil, Bool.true_and, List.length_replicate, Bool.and_eq_true, beq_iff_eq,
-    decide_eq_true_eq, hpad, Nat.log2_two_pow, hp, hrow r hr', hidx r hr, true_and]
-  rw [hashRows, ← hcommit, ← hc, climb_nil_padded hash compress _ p _ _ 0]
+    decide_eq_true_eq, nextPowerOfTwo_two_pow, Nat.log2_two_pow, hp, hrow r hr', hlt, true_and]
+  rw [hashRows, ← hcap, ← hc, climb_nil_padded hash compress _ p _ _ 0,
+    climb_mod hash compress _ p indices[r], hp]
   rfl
 
 end Accept

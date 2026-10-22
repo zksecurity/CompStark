@@ -29,27 +29,32 @@ local notation "𝕂" => Challenge.Spec EF
 def SameUnder (cache cache' : Merkle.Cache F (Digest F)) (root : Digest F) : Prop :=
   ∀ k i, Merkle.extractRow cache k i root = Merkle.extractRow cache' k i root
 
+/-- Two caches extract the same rows under every entry of the cap `cap`, and under the zero
+digest an index past it reads. -/
+def CapSameUnder (cache cache' : Merkle.Cache F (Digest F)) (cap : Cap F) : Prop :=
+  ∀ j, SameUnder cache cache' (cap.toList.getD j 0)
+
 variable (S : Iop.Setup EF)
 
 /-! ### Congruences -/
 
 section Congr
-variable {cache cache' : Merkle.Cache F (Digest F)} {root : Digest F}
+variable {cache cache' : Merkle.Cache F (Digest F)} {root : Cap F}
 
-theorem committedColumn_congr (h : SameUnder cache cache' root) :
+theorem committedColumn_congr (h : CapSameUnder cache cache' root) :
     committedColumn S cache root = committedColumn S cache' root := by
   funext j z
-  unfold SameUnder at h
-  simp only [committedColumn, leafRow, h]
+  unfold CapSameUnder SameUnder at h
+  simp only [committedColumn, leafRow, Merkle.extractCapRow, h]
 
-theorem friWordAt_congr (h : SameUnder cache cache' root) :
+theorem friWordAt_congr (h : CapSameUnder cache cache' root) :
     friWordAt (EF := EF) cache root = friWordAt cache' root := by
-  funext m a z
-  unfold SameUnder at h
-  simp only [friWordAt, leafRow, h]
+  funext c m a z
+  unfold CapSameUnder SameUnder at h
+  simp only [friWordAt, leafRow, Merkle.extractCapRow, h]
 
-theorem friOracles_congr (commits : List (Digest F)) (coeffs : Array EF)
-    (h : ∀ i < S.lastFold + 1, SameUnder cache cache' (commits.getD i 0)) :
+theorem friOracles_congr (commits : List (Cap F)) (coeffs : Array EF)
+    (h : ∀ i < S.lastFold + 1, CapSameUnder cache cache' (commits.getD i #[])) :
     friOracles S cache commits coeffs = friOracles S cache' commits coeffs := by
   funext j
   unfold friOracles
@@ -64,8 +69,9 @@ def friOffset (i : Nat) : Nat := if i = 0 then (friSeedS S).length else 0
 
 theorem getD_commits (block : Nat → List F) (i : Nat) (hi : i < S.lastFold + 1) :
     ((List.range (S.lastFold + 1)).map fun i ↦
-      digestAt (block (3 + i)) (if i = 0 then (friSeedS S).length else 0)).getD i 0 =
-      digestAt (block (3 + i)) (friOffset S i) := by
+      capFrom (block (3 + i)) (if i = 0 then (friSeedS S).length else 0)
+        (capSize S (friDepth S i))).getD i #[] =
+      capFrom (block (3 + i)) (friOffset S i) (capSize S (friDepth S i)) := by
   rw [List.getD_eq_getElem _ _ (by simp only [List.length_map, List.length_range]; exact hi),
     List.getElem_map, List.getElem_range]
   rfl
@@ -73,20 +79,22 @@ theorem getD_commits (block : Nat → List F) (i : Nat) (hi : i < S.lastFold + 1
 variable {block block' : Nat → List F} {sample sample' : Nat → Vector F S.streamLen}
 
 theorem prefixTranscript_trace (hb : block 0 = block' 0)
-    (h : SameUnder cache cache' (digestAt (block' 0) (starkSeedS S).length)) :
+    (h : CapSameUnder cache cache'
+      (capFrom (block' 0) (starkSeedS S).length (capSize S S.logSize))) :
     (prefixTranscript S cache block sample).trace =
       (prefixTranscript S cache' block' sample').trace := by
   simp only [prefixTranscript, hb, committedColumn_congr S h]
 
 theorem prefixTranscript_quotient (hb : block 1 = block' 1)
-    (h : SameUnder cache cache' (digestAt (block' 1) 0)) :
+    (h : CapSameUnder cache cache' (capFrom (block' 1) 0 (capSize S S.logSize))) :
     (prefixTranscript S cache block sample).quotient =
       (prefixTranscript S cache' block' sample').quotient := by
   simp only [prefixTranscript, hb, committedColumn_congr S h]
 
 theorem prefixTranscript_committedWord (f : Fin (S.lastFold + 1))
     (hb : block (3 + f.val) = block' (3 + f.val))
-    (h : SameUnder cache cache' (digestAt (block' (3 + f.val)) (friOffset S f.val))) :
+    (h : CapSameUnder cache cache'
+      (capFrom (block' (3 + f.val)) (friOffset S f.val) (capSize S (friDepth S f.val)))) :
     committedWord S.schedule (prefixTranscript S cache block sample).fri f =
       committedWord S.schedule (prefixTranscript S cache' block' sample').fri f := by
   funext x
@@ -104,16 +112,19 @@ theorem prefixTranscript_betas (f : Fin (S.lastFold + 1))
 extracted under the observed digests. -/
 theorem prefixTranscript_congr (hb : ∀ k ≤ 4 + S.lastFold, block k = block' k)
     (hs : ∀ k ≤ 3 + S.lastFold, sample k = sample' k)
-    (htrace : SameUnder cache cache' (digestAt (block' 0) (starkSeedS S).length))
-    (hquot : SameUnder cache cache' (digestAt (block' 1) 0))
-    (hfri : ∀ i < S.lastFold + 1,
-      SameUnder cache cache' (digestAt (block' (3 + i)) (friOffset S i))) :
+    (htrace : CapSameUnder cache cache'
+      (capFrom (block' 0) (starkSeedS S).length (capSize S S.logSize)))
+    (hquot : CapSameUnder cache cache' (capFrom (block' 1) 0 (capSize S S.logSize)))
+    (hfri : ∀ i < S.lastFold + 1, CapSameUnder cache cache'
+      (capFrom (block' (3 + i)) (friOffset S i) (capSize S (friDepth S i)))) :
     prefixTranscript S cache block sample = prefixTranscript S cache' block' sample' := by
   rw [prefixTranscript_sample_congr S cache block hs]
   have hcommits : ((List.range (S.lastFold + 1)).map fun i ↦
-      digestAt (block (3 + i)) (if i = 0 then (friSeedS S).length else 0)) =
+      capFrom (block (3 + i)) (if i = 0 then (friSeedS S).length else 0)
+        (capSize S (friDepth S i))) =
       (List.range (S.lastFold + 1)).map fun i ↦
-        digestAt (block' (3 + i)) (if i = 0 then (friSeedS S).length else 0) :=
+        capFrom (block' (3 + i)) (if i = 0 then (friSeedS S).length else 0)
+          (capSize S (friDepth S i)) :=
     List.map_congr_left fun i hi ↦ by
       rw [hb (3 + i) (by rw [List.mem_range] at hi; omega)]
   simp only [prefixTranscript, hb 0 (by omega), hb 1 (by omega), hb 2 (by omega),
@@ -133,12 +144,12 @@ theorem digestAt_toList (d : Digest F) : digestAt d.toList 0 = d := by
 
 theorem inputs_getD_zero :
     (inputs S.params S.air vk pis proof).getD 0 [] =
-      starkSeedOf EF S.params S.air proof.degreeBits ++ proof.traceCommit.toList ++
+      starkSeedOf EF S.params S.air proof.degreeBits ++ capElems proof.traceCommit ++
         preprocessedDigest vk ++ pis := by
   simp only [inputs, List.getD_eq_getElem?_getD, List.getElem?_cons_zero, Option.getD_some]
 
 theorem inputs_getD_one : (inputs S.params S.air vk pis proof).getD 1 [] =
-    proof.quotientCommit.toList ++ witnessInput S.params.oodPowBits proof.oodWitness := by
+    capElems proof.quotientCommit ++ witnessInput S.params.oodPowBits proof.oodWitness := by
   simp only [inputs, List.getD_eq_getElem?_getD, List.getElem?_cons_succ,
     List.getElem?_cons_zero, Option.getD_some]
 
@@ -148,16 +159,6 @@ theorem inputs_getD_two : (inputs S.params S.air vk pis proof).getD 2 [] =
       witnessInput S.params.batchPowBits proof.fri.batchWitness := by
   simp only [inputs, List.getD_eq_getElem?_getD, List.getElem?_cons_succ,
     List.getElem?_cons_zero, Option.getD_some]
-
-theorem traceRoot_eq (hdb : proof.degreeBits = S.logN) :
-    digestAt ((inputs S.params S.air vk pis proof).getD 0 []) (starkSeedS S).length =
-      proof.traceCommit := by
-  rw [inputs_getD_zero, starkSeedS, hdb, List.append_assoc]
-  exact digestAt_append _ _ _
-
-theorem quotientRoot_eq : digestAt ((inputs S.params S.air vk pis proof).getD 1 []) 0 =
-    proof.quotientCommit := by
-  rw [inputs_getD_one, digestAt_append_zero]
 
 /-- On a proof of `S`'s shape, the PCS's domain separator is `S`'s. -/
 theorem pcsCounts_eq (htl : proof.opened.traceLocal.size = S.air.width)
@@ -220,23 +221,70 @@ theorem length_zip_commits (hdb : proof.degreeBits = S.logN)
   obtain ⟨hwit, hsize⟩ := length_commits S answer hdb hok
   rw [List.length_zip, Array.length_toList, Array.length_toList, hwit, Nat.min_self, hsize]
 
+/-- An accepted proof for `2 ^ logN` rows has caps of the sizes of `S`'s trees. -/
+theorem size_caps (hdb : proof.degreeBits = S.logN)
+    (hok : verifyWith (idealOf answer) S.params S.air vk proof pis = .ok ()) :
+    proof.traceCommit.size = capSize S S.logSize ∧
+      proof.quotientCommit.size = capSize S S.logSize ∧
+      ∀ i (hi : i < proof.fri.commits.size), proof.fri.commits[i].size =
+        capSize S (friDepth S i) := by
+  obtain ⟨-, -, -, -, -, -, -, -, -, -, ⟨st, hfriOk⟩, -⟩ := verifyWith_ok (idealOf answer)
+    S.params S.air vk proof pis hok
+  obtain ⟨hL, hb, hh, hsched⟩ := friHyps S vk proof
+    (zetaOf (idealOf answer) S.params S.air vk proof pis) hdb
+  obtain ⟨-, hfolds, hcs, -, -, -, hcrlen, hq⟩ := verifyFri_ok (idealOf answer) S.params
+    proof.fri _ _ _ hb hh _ _ hfriOk
+  have hsched' : foldSchedule S.params.maxLogArity
+      (S.params.logBlowup + S.params.logFinalPolyLen) S.logSize [S.logSize] =
+      S.foldArities.map PNat.val := by
+    rw [← hsched, friSchedule, hL]
+  obtain ⟨hround, hfold⟩ := size_caps_of_queryOk _ _ _ _ _ _ _ _ _ _ _ _ _
+    hcrlen (by rw [Array.length_toList]; exact hfolds) (hq 0 S.valid.queries)
+  have hc : capSize S S.logSize = 2 ^ min S.params.capHeight S.logSize := rfl
+  refine ⟨hround 0 (by simp only [openingRounds, List.cons_append, List.length_cons]; omega),
+    hround 1 (by simp only [openingRounds, List.cons_append, List.length_cons]; omega),
+    fun i hi ↦ ?_⟩
+  have := hfold i (by rw [← hcs]; exact hi)
+  rw [List.getD_eq_getElem _ _ (by rw [Array.length_toList]; exact hi), Array.getElem_toList,
+    hsched'] at this
+  rw [this, friDepth]
+
+theorem traceRoot_eq (hdb : proof.degreeBits = S.logN)
+    (hok : verifyWith (idealOf answer) S.params S.air vk proof pis = .ok ()) :
+    capFrom ((inputs S.params S.air vk pis proof).getD 0 []) (starkSeedS S).length
+      (capSize S S.logSize) = proof.traceCommit := by
+  rw [inputs_getD_zero, starkSeedS, hdb, List.append_assoc, ← (size_caps S answer hdb hok).1]
+  exact capFrom_append _ _ _
+
+theorem quotientRoot_eq (hdb : proof.degreeBits = S.logN)
+    (hok : verifyWith (idealOf answer) S.params S.air vk proof pis = .ok ()) :
+    capFrom ((inputs S.params S.air vk pis proof).getD 1 []) 0 (capSize S S.logSize) =
+      proof.quotientCommit := by
+  rw [inputs_getD_one, ← (size_caps S answer hdb hok).2.1]
+  exact capFrom_append _ [] _
+
 theorem foldRoot_eq (hdb : proof.degreeBits = S.logN)
     (hok : verifyWith (idealOf answer) S.params S.air vk proof pis = .ok ()) (i : Nat)
     (hi : i < S.lastFold + 1) :
-    digestAt ((inputs S.params S.air vk pis proof).getD (3 + i) []) (friOffset S i) =
+    capFrom ((inputs S.params S.air vk pis proof).getD (3 + i) []) (friOffset S i)
+      (capSize S (friDepth S i)) =
       proof.fri.commits[i]'(by rw [(length_commits S answer hdb hok).2]; exact hi) := by
   have hz := length_zip_commits S answer hdb hok
+  have hsz := (size_caps S answer hdb hok).2.2 i
+    (by rw [(length_commits S answer hdb hok).2]; exact hi)
   rw [inputs_getD_fold _ _ _ _ _ i (by omega), friSeedOf_eq S proof hdb]
   have hpre : (friOffset S i) = (seedAt (friSeedS S) i).length := by
     simp only [friOffset, seedAt]
     split <;> rfl
-  rw [hpre, digestAt_append, List.getElem_zip, Array.getElem_toList]
+  rw [hpre, List.getElem_zip, Array.getElem_toList, ← hsz]
+  exact capFrom_append _ _ _
 
 theorem commits_eq (hdb : proof.degreeBits = S.logN)
     (hok : verifyWith (idealOf answer) S.params S.air vk proof pis = .ok ()) :
     ((List.range (S.lastFold + 1)).map fun i ↦
-      digestAt ((inputs S.params S.air vk pis proof).getD (3 + i) [])
-        (if i = 0 then (friSeedS S).length else 0)) = proof.fri.commits.toList := by
+      capFrom ((inputs S.params S.air vk pis proof).getD (3 + i) [])
+        (if i = 0 then (friSeedS S).length else 0) (capSize S (friDepth S i))) =
+      proof.fri.commits.toList := by
   have hsize := (length_commits S answer hdb hok).2
   refine List.ext_getElem (by rw [List.length_map, List.length_range, Array.length_toList,
     hsize]) fun i h₁ h₂ ↦ ?_
@@ -270,18 +318,20 @@ theorem extract_eq_prefixTranscript (cache : Merkle.Cache F (Digest F))
     extract S cache (idealOf answer) vk proof pis =
       prefixTranscript S cache (fun k ↦ (inputs S.params S.air vk pis proof).getD k [])
         (fun k ↦ (answer (keyAt answer (inputs S.params S.air vk pis proof) k)).2) := by
-  obtain ⟨htl, htn, hqc, hq4, hshape, -⟩ := verifyWith_ok (idealOf answer) S.params S.air vk
-    proof pis hok
+  obtain ⟨htl, htn, hqc, hq4, hshape, -, -, -, -, -, ⟨st, hfriOk⟩, -⟩ :=
+    verifyWith_ok (idealOf answer) S.params S.air vk proof pis hok
   obtain ⟨-, hfp⟩ := nonempty_of_verify S (idealOf answer) vk proof pis hdb hok
   have hz := length_zip_commits S answer hdb hok
   obtain ⟨hα, hζ, hbatch, -, hβ, -, -⟩ := challenges_idealOf answer S.params S.air vk proof pis
-    (le_refl _) htn hshape hfp
+    (le_refl _) htn hshape hfp (size_quotientCommit_ne _ _ _ _ _ _ hok)
+    (size_commits_ne _ _ _ _ _ _ _ hfriOk)
   have hbetas : foldChallenges S (betasOf (idealOf answer) S.params S.air vk proof pis) =
       betasAt S (fun k ↦ (answer (keyAt answer (inputs S.params S.air vk pis proof) k)).2) := by
     funext j
     simp only [foldChallenges, betasAt]
     rw [hβ j.val (by rw [hz]; exact j.isLt)]
-  simp only [extract, prefixTranscript, traceRoot_eq S vk proof pis hdb, quotientRoot_eq,
+  simp only [extract, prefixTranscript, traceRoot_eq S answer hdb hok,
+    quotientRoot_eq S answer hdb hok,
     openings_eq S vk proof pis htl htn (by rw [hqc, hdb]) hq4 (hdb ▸ hshape), hα, hζ, hbatch,
     commits_eq S answer hdb hok, finalPoly_eq S answer hdb hok, hbetas]
   rfl

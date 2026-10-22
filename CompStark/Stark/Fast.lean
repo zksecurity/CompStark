@@ -260,8 +260,11 @@ def readDigest (b : ByteArray) (k : Nat) : Digest F :=
   let d := b.extract (32 * k) (32 * k + 32)
   Vector.ofFn fun j ↦ word d j.val
 
-/-- The Merkle root. -/
-def root (c : Commit) : Digest F := readDigest (c.layers.back?.getD .empty) 0
+/-- The Merkle cap of height `h` (`Committed.cap`). -/
+def cap (c : Commit) (h : Nat) : Cap F :=
+  let levels := c.layers.size - 1
+  let h := min h levels
+  Array.ofFn (n := 2 ^ h) fun t ↦ readDigest (c.layers.getD (levels - h) .empty) t
 
 /-- `Committed.openAt` on packed rows and layers. -/
 def openAt (c : Commit) (index : Nat) : BatchOpening F :=
@@ -984,7 +987,7 @@ def backend : Backend F EF 24 where
     CompPoly.PackedRepr.decode (CompPoly.CPolynomial.NTTFast.Packed.Native.joinRows t)
   lde := lde
   commit := commit p
-  root := Commit.root
+  cap := Commit.cap
   openAt := Commit.openAt
   logHeight c := Nat.log2 c.maxHeight
   quotient := quotient

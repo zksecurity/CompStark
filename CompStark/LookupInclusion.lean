@@ -75,7 +75,7 @@ theorem rangeKnowledgeSoundness (S : Batch.Setup EF) (hS : S.IsRangeBatch)
 tables and range queries: a prover making at most `Q` oracle calls gets a proof for the
 instances' trace lengths accepted, while no tuple of traces close to the ones it committed to
 satisfies every AIR with every real query in range, with probability at most
-`q · roundError + hashError F q`, `q = Q + verifierQueries`. -/
+`q · roundError + hashError F h q`, `q = Q + verifierQueries`. -/
 theorem rangeKnowledgeSoundness_ro (S : Batch.Setup EF) (hS : S.IsRangeBatch)
     (publicValues : Fin S.k → List F) (δ δ' : NNReal) (hδ' : (δ' : ℝ) < 1 - S.rate) (Q : Nat)
     (prover : Batch.NIProver S) (hQ : prover.IsTotalQueryBound Q) :
@@ -84,7 +84,8 @@ theorem rangeKnowledgeSoundness_ro (S : Batch.Setup EF) (hS : S.IsRangeBatch)
         ∀ traces ∈ Batch.closeTraces S δ' (Batch.committedTraces S log proof),
           ¬ ((∀ i, (S.air i).Satisfied (S.logN i) (traces i) (publicValues i)) ∧
             S.RangeChecked traces)] ≤
-      (Q + S.verifierQueries) * Batch.roundError S δ δ' + hashError F (Q + S.verifierQueries) :=
+      (Q + S.verifierQueries) * Batch.roundError S δ δ' +
+        hashError F S.params.capHeight (Q + S.verifierQueries) :=
   (prEvent_mono _ _ _ fun ⟨_, _, _⟩ h ↦ ⟨h.1, h.2.1, fun traces ht hsat ↦ h.2.2 traces ht
     ⟨hsat.air, Batch.rangeChecked_of_satisfiedWithInclusion S hS traces publicValues hsat⟩⟩).trans
     (Batch.batchKnowledgeSoundness_ro_inclusion S publicValues δ δ' hδ' Q prover hQ

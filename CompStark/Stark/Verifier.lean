@@ -20,7 +20,9 @@ against the verifying key of its preprocessed trace (`PreprocessedKey`).
   declares, the verifying key is present
   exactly when the AIR has preprocessed columns and matches their width and the trace's height,
   and the opened values' sizes, each next row present exactly when the AIR reads it
-  (`traceNextOk`, `preprocessedShapeOk`).
+  (`traceNextOk`, `preprocessedShapeOk`), and the quotient commitment's cap is not empty, so that
+  observing it starts a new duplexing round of the challenger. Plonky3 rejects an empty cap when
+  it checks the openings against it.
 * The transcript observes the STARK's domain separator (`starkSeed`), the trace commitment, the
   preprocessed commitment if any and the public values, samples the constraint-folding challenge
   `α`, observes the quotient commitment, checks the out-of-domain grinding witness and samples
@@ -114,10 +116,10 @@ def preprocessedShapeOk (A : Air F) (vk : Option (PreprocessedKey F)) (o : Opene
       | none => !A.opensPreprocessedNext
   | _, _, _ => false
 
-/-- The elements the transcript observes for the preprocessed commitment: its digest, if any. -/
+/-- The elements the transcript observes for the preprocessed commitment: its cap's, if any. -/
 def preprocessedDigest (vk : Option (PreprocessedKey F)) : List F :=
   match vk with
-  | some k => k.commit.toList
+  | some k => capElems k.commit
   | none => []
 
 /-- The preprocessed trace's round of the commitment scheme, if any: on the trace domain, opened
@@ -176,13 +178,15 @@ def verifyWith {m : Type → Type} [Monad m] (H : Primitives F m) (P : Params) (
     throw "invalid proof shape"
   unless P.oodPowBits != 0 || proof.oodWitness == 0 do
     throw "out-of-domain witness"
+  unless proof.quotientCommit.size != 0 do
+    throw "empty quotient commitment"
   let run : M H (EF × EF) := do
     observeList H (starkSeedOf EF P A db)
-    observeList H proof.traceCommit.toList
+    observeCap H proof.traceCommit
     observeList H (preprocessedDigest vk)
     observeList H pis
     let alpha ← sampleExt H
-    observeList H proof.quotientCommit.toList
+    observeCap H proof.quotientCommit
     ensure (← checkWitness H P.oodPowBits proof.oodWitness) "out-of-domain witness"
     let zeta ← sampleExt H
     ensure (Ext.powTwo zeta db - 1 != 0) "out-of-domain point in the trace domain"

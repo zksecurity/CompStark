@@ -69,12 +69,12 @@ theorem walkM_map [Zero F] [LawfulMonad m] [LawfulMonad n] (hash : List F → m 
 
 theorem verifyMultiM_map [Zero F] [DecidableEq F] [LawfulMonad m] [LawfulMonad n]
     (hash : List F → m (Vector F d))
-    (compress : Vector F d → Vector F d → m (Vector F d)) (commit : Vector F d)
-    (dims : List (Nat × Nat)) (indices : List Nat) (rows : List (List (List F)))
-    (sibs : List (Vector F d)) :
-    φ (verifyMultiM hash compress commit dims indices rows sibs) =
-      verifyMultiM (fun xs ↦ φ (hash xs)) (fun a b ↦ φ (compress a b)) commit dims indices rows
-        sibs := by
+    (compress : Vector F d → Vector F d → m (Vector F d)) (cap : List (Vector F d))
+    (capHeight : Nat) (dims : List (Nat × Nat)) (indices : List Nat)
+    (rows : List (List (List F))) (sibs : List (Vector F d)) :
+    φ (verifyMultiM hash compress cap capHeight dims indices rows sibs) =
+      verifyMultiM (fun xs ↦ φ (hash xs)) (fun a b ↦ φ (compress a b)) cap capHeight dims indices
+        rows sibs := by
   unfold verifyMultiM
   split
   · simp only [MonadHom.mmap_pure]
@@ -103,6 +103,9 @@ theorem mapM_observe (x : F) : mapM φ H (observe H x) = observe (H.map φ) x :=
 
 theorem mapM_observeList (xs : List F) :
     mapM φ H (observeList H xs) = observeList (H.map φ) xs :=
+  mapM_modify φ H _
+
+theorem mapM_observeCap (c : Cap F) : mapM φ H (observeCap H c) = observeCap (H.map φ) c :=
   mapM_modify φ H _
 
 theorem mapM_observeExts [BaseField F] {EF : Type} [Challenge F EF] (xs : List EF) :
@@ -149,17 +152,17 @@ theorem mapM_checkWitness (bits : Nat) (w : F) :
   simp only [checkWitness, MonadHom.mmap_ite, MonadHom.mmap_bind, MonadHom.mmap_pure,
     mapM_sampleBits, mapM_observe]
 
-theorem mapM_checkMulti (commit : Digest F) (dims : List (Nat × Nat)) (indices : List Nat)
-    (rows : List (List (List F))) (sibs : List (Digest F)) :
-    mapM φ H (checkMulti H commit dims indices rows sibs) =
-      checkMulti (H.map φ) commit dims indices rows sibs := by
+theorem mapM_checkMulti (capHeight : Nat) (commit : Cap F) (dims : List (Nat × Nat))
+    (indices : List Nat) (rows : List (List (List F))) (sibs : List (Digest F)) :
+    mapM φ H (checkMulti H capHeight commit dims indices rows sibs) =
+      checkMulti (H.map φ) capHeight commit dims indices rows sibs := by
   apply StateT.ext
   intro s
   apply ExceptT.ext
-  change φ ((ExceptT.lift (Merkle.verifyMultiM H.hash H.compress commit dims indices rows
-    sibs) >>= fun a ↦ pure (a, s) : ExceptT String m _).run) =
-    (ExceptT.lift (Merkle.verifyMultiM (H.map φ).hash (H.map φ).compress commit dims indices rows
-      sibs) >>= fun a ↦ pure (a, s) : ExceptT String n _).run
+  change φ ((ExceptT.lift (Merkle.verifyMultiM H.hash H.compress commit.toList capHeight dims
+    indices rows sibs) >>= fun a ↦ pure (a, s) : ExceptT String m _).run) =
+    (ExceptT.lift (Merkle.verifyMultiM (H.map φ).hash (H.map φ).compress commit.toList capHeight
+      dims indices rows sibs) >>= fun a ↦ pure (a, s) : ExceptT String n _).run
   simp only [ExceptT.run_bind, ExceptT.run_lift, bind_map_left, ExceptT.run_pure,
     MonadHom.mmap_bind, MonadHom.mmap_pure, Merkle.verifyMultiM_map]
   rfl
@@ -196,7 +199,8 @@ theorem mapM_verifyFri (P : Params) (proof : FriProof F EF) (rounds : List (Roun
   simp only [verifyFri, MonadHom.mmap_bind, MonadHom.mmap_pure,
     MonadHom.mmap_forIn, MonadHom.mmap_mapM,
     mapM_ensure, mapM_sampleExt, mapM_sampleBits, mapM_checkWitness, mapM_checkMulti,
-    mapM_observeList, mapM_observeExts, mapM_verifyInputs, mapM_reduceQuery, mapM_foldQuery]
+    mapM_observeList, mapM_observeCap, mapM_observeExts, mapM_verifyInputs, mapM_reduceQuery,
+    mapM_foldQuery]
 
 theorem mapM_verifyPcs (P : Params) (rounds : List (Round F EF)) (proof : FriProof F EF) :
     mapM φ H (verifyPcs H P rounds proof) = verifyPcs (H.map φ) P rounds proof := by
@@ -226,7 +230,8 @@ theorem verifyWith_map (H : Primitives F m) (P : Params) (A : Air F)
     φ (verifyWith H P A vk proof pis) = verifyWith (H.map φ) P A vk proof pis := by
   change (ExceptT.mapHom φ _).run = _
   simp only [verifyWith, MonadHom.mmap_bind, MonadHom.mmap_pure, MonadHom.mmap_ite,
-    exceptT_mapHom_throw, exceptT_mapHom_run, mapM_observeList, mapM_sampleExt, mapM_ensure,
+    exceptT_mapHom_throw, exceptT_mapHom_run, mapM_observeList, mapM_observeCap, mapM_sampleExt,
+    mapM_ensure,
     mapM_checkWitness, mapM_verifyPcs, Primitives.map_init]
   rfl
 

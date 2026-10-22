@@ -10,7 +10,7 @@ public import CompStark.Merkle.Mixed
 
 /-! # The batch's common data on any primitives
 
-Plonky3's `ProverData::from_airs_and_degrees`: the common data of a batch is the Merkle root of
+Plonky3's `ProverData::from_airs_and_degrees`: the common data of a batch is the Merkle cap of
 the extensions of its instances' preprocessed traces, in instance order, those of mixed heights
 injected into the tree of the tallest (`setupBatch`). `commonWith` computes it on any primitives
 `H` (`Primitives`), node by node from the leaves (`injNodeWith`, the nodes `Merkle.injNode` on
@@ -52,11 +52,15 @@ def preprocessedMats (P : Params) (instances : List (Instance F)) : List (Mat F)
 def preprocessedLogHeight (P : Params) (instances : List (Instance F)) : Nat :=
   ((instances.filter (0 < ·.air.preprocessedWidth)).map (·.logN + P.logBlowup)).foldl max 0
 
-/-- The common data of the instances on the primitives `H`: the root of the tree of their
-preprocessed traces' extensions, if any has preprocessed columns. -/
+/-- The common data of the instances on the primitives `H`: the cap of height `P.capHeight`
+(capped at the tree's levels) of the tree of their preprocessed traces' extensions, if any has
+preprocessed columns. -/
 def commonWith (H : Primitives F m) (P : Params) (instances : List (Instance F)) : m (Common F) :=
   if (preprocessedMats P instances).isEmpty then pure ⟨none⟩ else do
     let k := preprocessedLogHeight P instances
-    return ⟨some (← injNodeWith H ((preprocessedMats P instances).map Mat.toMatrix) k k 0)⟩
+    let h := min P.capHeight k
+    let cap ← (List.range (2 ^ h)).mapM
+      (injNodeWith H ((preprocessedMats P instances).map Mat.toMatrix) k (k - h))
+    return ⟨some cap.toArray⟩
 
 end CompStark.Batch

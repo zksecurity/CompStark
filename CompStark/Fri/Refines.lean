@@ -96,7 +96,7 @@ structure Refines (B : Backend F EF 24) where
     RM (B.lde logH bits shift w m) ((specBackend EF).lde logH bits shift w m)
   commit : ∀ {ms ss}, List.Forall₂ RM ms ss → CommitOk ss →
     RC (B.commit ms) ((specBackend EF).commit ss)
-  root : ∀ {c s}, RC c s → B.root c = (specBackend EF).root s
+  cap : ∀ {c s} h, RC c s → B.cap c h = (specBackend EF).cap s h
   openAt : ∀ {c s} i, RC c s → B.openAt c i = (specBackend EF).openAt s i
   logHeight : ∀ {c s}, RC c s → B.logHeight c = (specBackend EF).logHeight s
   quotient : ∀ A pis d l {m s pm ps} alpha, RM m s → MatOk s → 2 ^ (d + l) ≤ s.height →
@@ -216,7 +216,7 @@ theorem commitRounds_refines (hA : DomainsAddressable F EF) (h : Refines B) (P :
     have ha24 : a.size ≤ 2 ^ twoAdicity F := shapeOk_le (Or.inr ⟨s, hs, ha⟩)
     have hcm := h.commit (.cons (h.leaves (2 ^ la) hf ha24) .nil)
       (commitOk_leaves hA a s la hs ha hla)
-    rw [h.root hcm, h.size hf]
+    rw [h.cap _ hcm, h.size hf]
     dsimp only
     refine RelM.bind_eq fun _ ↦ RelM.bind_eq fun w ↦ RelM.bind_eq fun beta ↦ ?_
     have hrows : (specBackend EF).size a / 2 ^ la = 2 ^ (s - la) := by
@@ -240,11 +240,13 @@ theorem commitRounds_refines (hA : DomainsAddressable F EF) (h : Refines B) (P :
     have hshape' : ShapeOk (F := F) fS := Or.inr ⟨s - la, by omega, hfold.2⟩
     have hc' : CPRel h.RC
         ⟨cp.commits.push
-            ((specBackend EF).root ((specBackend EF).commit [(specBackend EF).leaves (2 ^ la) a])),
+            ((specBackend EF).cap ((specBackend EF).commit [(specBackend EF).leaves (2 ^ la) a])
+              P.capHeight),
           cp.data ++ [B.commit [B.leaves (2 ^ la) folded]], cp.witnesses.push w,
           cp.arities.push la, cp.finalPoly⟩
         ⟨cs.commits.push
-            ((specBackend EF).root ((specBackend EF).commit [(specBackend EF).leaves (2 ^ la) a])),
+            ((specBackend EF).cap ((specBackend EF).commit [(specBackend EF).leaves (2 ^ la) a])
+              P.capHeight),
           cs.data ++ [(specBackend EF).commit [(specBackend EF).leaves (2 ^ la) a]],
               cs.witnesses.push w,
           cs.arities.push la, cs.finalPoly⟩ :=
@@ -316,20 +318,23 @@ theorem commitPhase_refines (hA : DomainsAddressable F EF) (h : Refines B) (P : 
   | cons hv hvs =>
     exact tail hv (hs _ List.mem_cons_self) hfit hvs fun x hx ↦ hs x (List.mem_cons_of_mem _ hx)
 
-theorem openMulti_refines (h : Refines B) {c s} (hc : h.RC c s) (indices : List Nat) :
-    openMulti B c indices = openMulti (specBackend EF) s indices := by
+theorem openMulti_refines (h : Refines B) (capHeight : Nat) {c s} (hc : h.RC c s)
+    (indices : List Nat) :
+    openMulti B capHeight c indices = openMulti (specBackend EF) capHeight s indices := by
   have ho : B.openAt c = (specBackend EF).openAt s := funext fun i ↦ h.openAt i hc
   simp only [openMulti, ho, h.logHeight hc]
 
-theorem answerFolds_refines (h : Refines B) {cs ss} (hcs : List.Forall₂ h.RC cs ss) :
-    ∀ las cur, answerFolds B cs las cur = answerFolds (specBackend EF) ss las cur := by
+theorem answerFolds_refines (h : Refines B) (capHeight : Nat) {cs ss}
+    (hcs : List.Forall₂ h.RC cs ss) :
+    ∀ las cur, answerFolds B capHeight cs las cur =
+      answerFolds (specBackend EF) capHeight ss las cur := by
   induction hcs with
   | nil => intro las cur; simp only [answerFolds]
   | cons hc _ ih =>
     intro las cur
     cases las with
     | nil => simp only [answerFolds]
-    | cons la las => simp only [answerFolds, openMulti_refines h hc, ih]
+    | cons la las => simp only [answerFolds, openMulti_refines h capHeight hc, ih]
 
 /-- Rounds with related commitments and matrices and the same points. -/
 abbrev RoundRel (h : Refines B) (r : OpenRound B) (s : OpenRound (specBackend EF)) : Prop :=
@@ -393,13 +398,14 @@ theorem proveFri_refines (hA : DomainsAddressable F EF) (h : Refines B) (P : Par
   refine RelM.bind (commitPhase_refines hA h P _ hin hshape hfit) fun cp cs hc ↦ ?_
   refine RelM.bind_eq fun qw ↦ RelM.bind_eq fun indices ↦ ?_
   have hins : (rounds.map fun (x : OpenRound B) ↦ match x with
-      | (c, _) => openMulti B c (indices.map (· >>> (logMax - B.logHeight c)))) =
+      | (c, _) => openMulti B P.capHeight c (indices.map (· >>> (logMax - B.logHeight c)))) =
       srounds.map fun (x : OpenRound (specBackend EF)) ↦ match x with
-      | (c, _) => openMulti (specBackend EF) c
+      | (c, _) => openMulti (specBackend EF) P.capHeight c
           (indices.map (· >>> (logMax - (specBackend EF).logHeight c))) :=
     forall₂_map_eq (fun r s hrs ↦ by
-      simp only [h.logHeight hrs.1, openMulti_refines h hrs.1]) hr
-  rw [hins, hc.arities, answerFolds_refines h hc.data, hc.commits, hc.witnesses, hc.finalPoly]
+      simp only [h.logHeight hrs.1, openMulti_refines h P.capHeight hrs.1]) hr
+  rw [hins, hc.arities, answerFolds_refines h P.capHeight hc.data, hc.commits, hc.witnesses,
+    hc.finalPoly]
   exact RelM.pure rfl
 
 /-- `openPcs` of related rounds is the specification's. -/

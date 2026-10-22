@@ -12,10 +12,10 @@ public import CompStark.Sound.Inclusion
 
 As for the STARK (`Ni/Assembly.lean`): the game of `Iop.Batch.run` (`gameB`) makes at most
 `Q + verifierQueries` oracle calls, the setup's, the prover's and the verifier's. A fresh answer
-is bad if its digest clashes (`prob_clash_le`: `3 q / |F|^8`) or it makes its batch round bad
-(`prob_roundBadB_le`: the largest batch round error at the proximity loss), and an accepted proof
-the extractor cannot open forces such a query (`exists_badAtB`). The bound holds at every loss,
-so at the infimum: `q · roundError + hashError F q`.
+is bad if its digest clashes (`prob_clash_le`: `(2 ^ h + 2) q / |F|^8` for caps of height `h`) or
+it makes its batch round bad (`prob_roundBadB_le`: the largest batch round error at the proximity
+loss), and an accepted proof the extractor cannot open forces such a query (`exists_badAtB`). The
+bound holds at every loss, so at the infimum: `q · roundError + hashError F h q`.
 -/
 
 @[expose] public section
@@ -132,33 +132,35 @@ theorem prob_le_of_unopenedB (hδ' : (δ' : ℝ) < 1 - S.rate) (Q : Nat)
         (gameB S publicValues prover))) :
     Pr{let result ← Iop.Batch.run S publicValues prover}[E result] ≤
       (Q + S.verifierQueries) * Iop.Batch.roundError S δ δ' +
-        hashError F (Q + S.verifierQueries) := by
+        hashError F S.params.capHeight (Q + S.verifierQueries) := by
   set n := Q + S.verifierQueries
+  set c := 2 ^ S.params.capHeight + 2
   have hn0 : 0 < n := by
     unfold n Iop.Batch.Setup.verifierQueries Iop.Batch.Setup.verifierCalls; omega
-  by_cases hbig : Fintype.card (Digest F) ≤ 3 * n
+  by_cases hbig : Fintype.card (Digest F) ≤ c * n
   · refine (prEvent_le_one _).trans (le_add_left ?_)
     rw [hashError_eq]
     have hcard : (Fintype.card (Digest F) : ℝ≥0∞) ≠ 0 := by
       simp only [ne_eq, Nat.cast_eq_zero, Fintype.card_ne_zero, not_false_eq_true]
-    calc (1 : ℝ≥0∞) ≤ ((3 * n : Nat) : ℝ≥0∞) * (Fintype.card (Digest F) : ℝ≥0∞)⁻¹ := by
+    calc (1 : ℝ≥0∞) ≤ ((c * n : Nat) : ℝ≥0∞) * (Fintype.card (Digest F) : ℝ≥0∞)⁻¹ := by
           rw [← div_eq_mul_inv, ENNReal.le_div_iff_mul_le (Or.inl hcard)
             (Or.inl (ENNReal.natCast_ne_top _)), one_mul]
           exact_mod_cast hbig
       _ ≤ _ := le_mul_of_one_le_left (by positivity)
         (by exact_mod_cast Nat.one_le_iff_ne_zero.mpr hn0.ne')
-  have hsmall : 3 * n < Fintype.card (Digest F) := by omega
+  have hsmall : c * n < Fintype.card (Digest F) := by omega
   have hloss : ∀ loss, Pr{let result ← Iop.Batch.run S publicValues prover}[E result] ≤
-      n * roundBoundB S δ δ' loss + hashError F n := by
+      n * roundBoundB S δ δ' loss + hashError F S.params.capHeight n := by
     intro loss
     rw [run_eqB]
     refine (prEvent_exists_fresh_bad_le (gameB S publicValues prover) n
       (isTotalQueryBound_gameB S publicValues prover Q hQ) E
-      (fun pre t u ↦ Clash (boundDigestB S (initAnswers pre)) pre t u ∨
+      (fun pre t u ↦ Clash (boundDigestsB S (initAnswers pre)) pre t u ∨
         RoundBadB S publicValues δ δ' loss pre t u)
-      (((3 * n : Nat) : ℝ≥0∞) * (Fintype.card (Digest F) : ℝ≥0∞)⁻¹ + roundBoundB S δ δ' loss)
+      (((c * n : Nat) : ℝ≥0∞) * (Fintype.card (Digest F) : ℝ≥0∞)⁻¹ + roundBoundB S δ δ' loss)
       (fun pre t hlen _ ↦ (prEvent_or_le _ _ _).trans
-        (add_le_add (prob_clash_le (boundDigestB S (initAnswers pre)) _ n pre hlen t)
+        (add_le_add (prob_clash_le (boundDigestsB S (initAnswers pre)) _ Nat.one_le_two_pow
+          (fun c i ↦ (length_boundDigestsB S _ c i).le) _ n pre hlen t)
           (prob_roundBadB_le S publicValues δ δ' loss pre t)))
       fun answer hev ↦ ?_).trans ?_
     · replace hev := hE answer hev
@@ -174,13 +176,14 @@ theorem prob_le_of_unopenedB (hδ' : (δ' : ℝ) < 1 - S.rate) (Q : Nat)
         proof (tableQueryLog (setupAndProveB S prover) answer) (consistent_tableQueryLog _) rfl
         (fun e he ↦ by
           rw [tableQueryLog_setupAndProveB]; exact List.mem_append_left _ he)
-        hok (by omega) hfail
+        hok (lt_of_le_of_lt (Nat.mul_le_mul_left _ hlen) hsmall) hfail
       rw [hlog]
       exact ⟨_, _, _, (List.take_append_drop p _).symm.trans
         (by rw [List.drop_eq_getElem_cons hp]), hfresh, hbad⟩
     · rw [mul_add, add_comm, hashError_eq]
-  calc _ ≤ ⨅ loss, (n * roundBoundB S δ δ' loss + hashError F n) := le_iInf hloss
-    _ = n * Iop.Batch.roundError S δ δ' + hashError F n := by
+  calc _ ≤ ⨅ loss, (n * roundBoundB S δ δ' loss + hashError F S.params.capHeight n) :=
+        le_iInf hloss
+    _ = n * Iop.Batch.roundError S δ δ' + hashError F S.params.capHeight n := by
       rw [roundError_eqB, ENNReal.mul_iInf_of_ne (by exact_mod_cast hn0.ne')
         (ENNReal.natCast_ne_top _), ENNReal.iInf_add]
     _ = _ := by simp only [n, Nat.cast_add]
@@ -191,7 +194,7 @@ theorem prob_unopenedB_le (hδ' : (δ' : ℝ) < 1 - S.rate) (Q : Nat)
     (prover : Iop.Batch.NIProver S) (hQ : prover.IsTotalQueryBound Q) :
     Pr{let result ← Iop.Batch.run S publicValues prover}[UnopenedB S publicValues δ' result] ≤
       (Q + S.verifierQueries) * Iop.Batch.roundError S δ δ' +
-        hashError F (Q + S.verifierQueries) :=
+        hashError F S.params.capHeight (Q + S.verifierQueries) :=
   prob_le_of_unopenedB S publicValues δ δ' hδ' Q prover hQ _ fun _ h ↦ h
 
 /-- An accepting batch verifier checked the multiplicity bound. -/
@@ -202,7 +205,7 @@ theorem heightBounded_of_ok (answer : (q : Query F) → Answer S.streamLen q)
   obtain ⟨-, -, -, -, -, -, -, -, -, -, hlk, -⟩ :=
     verifyBatchWith_ok (idealOf answer) S.params S.instances common proof _ hok
   simp only [CompStark.Batch.lookupShapeOk, Bool.and_eq_true] at hlk
-  have h := hlk.1.1.1.2
+  have h := hlk.1.1.1.1.2
   rwa [Iop.Batch.Setup.instances, List.map_ofFn] at h
 
 /-- The event of knowledge soundness with lookup inclusion: an accepted proof for the instances'
@@ -225,7 +228,7 @@ theorem prob_unopenedInclusionB_le (hδ' : (δ' : ℝ) < 1 - S.rate) (Q : Nat)
     Pr{let result ← Iop.Batch.run S publicValues prover}[
       UnopenedInclusionB S publicValues δ' result] ≤
       (Q + S.verifierQueries) * Iop.Batch.roundError S δ δ' +
-        hashError F (Q + S.verifierQueries) := by
+        hashError F S.params.capHeight (Q + S.verifierQueries) := by
   refine prob_le_of_unopenedB S publicValues δ δ' hδ' Q prover hQ _ fun answer h ↦ ?_
   obtain ⟨hok, hdb, hfail⟩ := h
   refine ⟨hok, hdb, fun traces ht hsat ↦ hfail traces ht ?_⟩

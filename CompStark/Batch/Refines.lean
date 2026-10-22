@@ -761,25 +761,26 @@ theorem batchCommitAndSample_refines (h : Refines B) {P : Params}
         _ = (instances.map (·.columns EF)).sum := by
             conv_rhs => rw [← hzl]
             rw [List.map_map]; rfl⟩
-  -- The preprocessed commitment's root.
-  have hroot : (setupBatchWith B P instances).2.map B.root =
-      (setupBatchWith (specBackend EF) P instances).2.map (specBackend EF).root := by
+  -- The preprocessed commitment's cap.
+  have hroot : (setupBatchWith B P instances).2.map (B.cap · P.capHeight) =
+      (setupBatchWith (specBackend EF) P instances).2.map ((specBackend EF).cap · P.capHeight) := by
     generalize (setupBatchWith B P instances).2 = cB at hprepC
     generalize (setupBatchWith (specBackend EF) P instances).2 = cS at hprepC
     cases hprepC with
     | none => rfl
-    | some hr => exact congrArg some (h.root hr)
-  have hroots : ((setupBatchWith B P instances).2.map fun c ↦ (B.root c).toList).getD [] =
+    | some hr => exact congrArg some (h.cap _ hr)
+  have hroots : ((setupBatchWith B P instances).2.map fun c ↦
+      capElems (B.cap c P.capHeight)).getD [] =
       ((setupBatchWith (specBackend EF) P instances).2.map fun c ↦
-        ((specBackend EF).root c).toList).getD [] := by
+        capElems ((specBackend EF).cap c P.capHeight)).getD [] := by
     generalize (setupBatchWith B P instances).2 = cB at hprepC
     generalize (setupBatchWith (specBackend EF) P instances).2 = cS at hprepC
     cases hprepC with
     | none => rfl
-    | some hr => exact congrArg Vector.toList (h.root hr)
+    | some hr => exact congrArg capElems (h.cap _ hr)
   unfold batchCommitAndSample
   dsimp only
-  rw [hroot, h.root hct, hroots, hts.map_traceValues htl.symm,
+  rw [hroot, h.cap _ hct, hroots, hts.map_traceValues htl.symm,
     show traces.map (specBackend EF).traceValues = traces from List.map_id traces]
   refine RelM.bind_eq fun _ ↦ RelM.bind_eq fun _ ↦ RelM.bind_eq fun _ ↦
     RelM.bind_eq fun _ ↦ RelM.bind_eq fun _ ↦ ?_
@@ -810,11 +811,11 @@ theorem batchCommitAndSample_refines (h : Refines B) {P : Params}
   obtain ⟨peB, pcB⟩ := cpB
   obtain ⟨peS, pcS⟩ := cpS
   dsimp only at hpe hpc hpeOk hpeS ⊢
-  have hproot : (pcB.map fun c ↦ (B.root c).toList).getD [] =
-      (pcS.map fun c ↦ ((specBackend EF).root c).toList).getD [] := by
+  have hproot : (pcB.map fun c ↦ capElems (B.cap c P.capHeight)).getD [] =
+      (pcS.map fun c ↦ capElems ((specBackend EF).cap c P.capHeight)).getD [] := by
     cases hpc with
     | none => rfl
-    | some hr => exact congrArg Vector.toList (h.root hr)
+    | some hr => exact congrArg capElems (h.cap _ hr)
   rw [hproot]
   refine RelM.bind_eq fun _ ↦ RelM.bind_eq fun _ ↦ RelM.bind_eq fun alpha ↦ ?_
   -- Every instance's quotient chunks.
@@ -859,7 +860,7 @@ theorem batchCommitAndSample_refines (h : Refines B) {P : Params}
       exact ⟨(hSmem c hc m hm).1, (hSmem c hc m hm).2.1⟩, by
       rw [foldl_width_sum, Nat.zero_add, List.map_flatten, List.sum_flatten, List.map_map]
       exact addressable_le (Nat.mul_le_mul_left _ hsum) hmem⟩
-  rw [h.root hqc]
+  rw [h.cap _ hqc]
   refine RelM.bind_eq fun _ ↦ RelM.bind_eq fun _ ↦ RelM.bind_eq fun _ ↦ ?_
   exact RelM.pure ⟨hext, hct, rfl, hpe, hpc, rfl, rfl, hch, hqc, rfl, rfl,
     fun m hm ↦ (hextOk m hm).1, hpeOk, fun c hc m hm ↦ (hSmem c hc m hm).1⟩
@@ -968,13 +969,14 @@ theorem batchOpenAndAssemble_refines (hA : DomainsAddressable F EF) (h : Refines
       rcases hz' with rfl | rfl
       · exact hz
       · exact hw
-  · have hpc : x.permC.map B.root = y.permC.map (specBackend EF).root := by
+  · have hpc : x.permC.map (B.cap · P.capHeight) =
+        y.permC.map ((specBackend EF).cap · P.capHeight) := by
       have hpc0 := hR.permC
       generalize x.permC = cB at hpc0 ⊢
       generalize y.permC = cS at hpc0 ⊢
       cases hpc0 with
       | none => rfl
-      | some hr => exact congrArg some (h.root hr)
+      | some hr => exact congrArg some (h.cap _ hr)
     have hprepSome : (setupBatchWith B P instances).2.isSome =
         (setupBatchWith (specBackend EF) P instances).2.isSome := by
       generalize (setupBatchWith B P instances).2 = cB at hprepC ⊢
@@ -982,7 +984,7 @@ theorem batchOpenAndAssemble_refines (hA : DomainsAddressable F EF) (h : Refines
       cases hprepC with
       | none => rfl
       | some => rfl
-    rw [h.root hR.mainC, h.root hR.quotC, hpc, hprepSome, hR.terminals, hR.lookupWitness,
+    rw [h.cap _ hR.mainC, h.cap _ hR.quotC, hpc, hprepSome, hR.terminals, hR.lookupWitness,
       hR.oodWitness, forall₂_map_eq (f := List.length) (g := List.length)
         (fun _ _ hab ↦ hab.length_eq) hR.chunks]
     exact RelM.pure rfl

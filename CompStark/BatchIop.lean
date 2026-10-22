@@ -87,6 +87,9 @@ structure Setup (EF : Type) [Challenge F EF] (withLookups : Bool := true) where
   valid : ∀ i, ValidConfig params (air i) (logN i)
   /-- FRI's final polynomial is shorter than every trace, so FRI folds at least once. -/
   folds : ∀ i, params.logFinalPolyLen < logN i
+  /-- The Merkle cap fits below the commit-phase tree FRI's first fold would make of every
+  instance. -/
+  capFits : ∀ i, params.capHeight ≤ logN i + params.logBlowup - params.maxLogArity
   /-- The batch has an instance. -/
   nonempty : 0 < k
   /-- Every instance's lookups are valid on it (`LookupsValid`). -/
@@ -104,7 +107,7 @@ abbrev lookups (i : Fin S.k) : List (Stark.Lookup F) :=
 
 /-- Instance `i` as a STARK of its own with its lookups. -/
 abbrev instanceSetup (i : Fin S.k) : Iop.Setup EF (S.lookups i) :=
-  ⟨S.params, S.air i, S.logN i, S.valid i, S.folds i, S.lookupsValid i⟩
+  ⟨S.params, S.air i, S.logN i, S.valid i, S.folds i, S.capFits i, S.lookupsValid i⟩
 
 /-- An instance of the largest trace length: the last of the largest. -/
 def top : Fin S.k :=
@@ -359,7 +362,8 @@ end Batch
 
 /-- A STARK as a batch of one instance, without lookups. -/
 abbrev Setup.toBatch (S : Iop.Setup EF) : Batch.Setup EF false :=
-  ⟨S.params, 1, fun _ ↦ S.air, fun _ ↦ S.logN, fun _ ↦ S.valid, fun _ ↦ S.folds, Nat.one_pos,
+  ⟨S.params, 1, fun _ ↦ S.air, fun _ ↦ S.logN, fun _ ↦ S.valid, fun _ ↦ S.folds,
+    fun _ ↦ S.capFits, Nat.one_pos,
     fun _ ↦ trivial, ⟨fun _ hl ↦ absurd hl List.not_mem_nil, fun _ hx ↦ absurd hx List.not_mem_nil,
       fun _ hx ↦ absurd hx List.not_mem_nil⟩⟩
 

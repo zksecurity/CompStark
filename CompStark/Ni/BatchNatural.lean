@@ -33,12 +33,13 @@ theorem injNodeWith_map [Zero F] (H : Primitives F m) (ms : List (Merkle.Matrix 
 variable [BaseField F]
 
 /-- **The batch setup is natural in its primitives.** -/
-theorem commonWith_map (H : Primitives F m) (P : Params) (instances : List (Instance F)) :
+theorem commonWith_map [LawfulMonad m] [LawfulMonad n] (H : Primitives F m) (P : Params)
+    (instances : List (Instance F)) :
     φ (commonWith H P instances) = commonWith (H.map φ) P instances := by
   unfold commonWith
   split
   · simp only [MonadHom.mmap_pure]
-  · simp only [MonadHom.mmap_bind, MonadHom.mmap_pure, injNodeWith_map]
+  · simp only [MonadHom.mmap_bind, MonadHom.mmap_pure, MonadHom.mmap_mapM, injNodeWith_map]
 
 variable [LawfulMonad m] [LawfulMonad n] {EF : Type} [Challenge F EF]
 
@@ -56,7 +57,8 @@ theorem verifyBatchWith_map (H : Primitives F m) (P : Params) (instances : List 
       verifyBatchWith (H.map φ) P instances common proof pis := by
   change (ExceptT.mapHom φ _).run = _
   simp only [verifyBatchWith, MonadHom.mmap_bind, MonadHom.mmap_pure, MonadHom.mmap_ite,
-    exceptT_mapHom_throw, exceptT_mapHom_run, mapM_observeList, mapM_observeExts, mapM_sampleExt,
+    exceptT_mapHom_throw, exceptT_mapHom_run, mapM_observeList, mapM_observeCap,
+    mapM_observeExts, mapM_sampleExt,
     mapM_ensure, mapM_checkWitness, mapM_verifyPcs, mapM_lookupPhase, Primitives.map_init]
   rfl
 

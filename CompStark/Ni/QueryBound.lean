@@ -285,11 +285,12 @@ theorem isTotalQueryBound_verifyMultiM [DecidableEq F]
     (hash : List F → OracleComp spec (Vector F d))
     (compress : Vector F d → Vector F d → OracleComp spec (Vector F d))
     (hhash : ∀ xs, IsTotalQueryBound (hash xs) 1)
-    (hcompress : ∀ a b, IsTotalQueryBound (compress a b) 1) (commit : Vector F d)
-    (dims : List (Nat × Nat)) (L G : Nat) (hpow : ∀ x ∈ dims, ∃ j ≤ L, x.1 = 2 ^ j)
+    (hcompress : ∀ a b, IsTotalQueryBound (compress a b) 1) (cap : List (Vector F d))
+    (capHeight : Nat) (dims : List (Nat × Nat)) (L G : Nat)
+    (hpow : ∀ x ∈ dims, ∃ j ≤ L, x.1 = 2 ^ j)
     (hs : List Nat) (hhs : ∀ x ∈ dims, x.1 ∈ hs) (hG : hs.length ≤ G + 1)
     (indices : List Nat) (rows : List (List (List F))) (sibs : List (Vector F d)) :
-    IsTotalQueryBound (verifyMultiM hash compress commit dims indices rows sibs)
+    IsTotalQueryBound (verifyMultiM hash compress cap capHeight dims indices rows sibs)
       (indices.length * (1 + L + 2 * G)) := by
   obtain ⟨keys, hk, hmem, hGeq⟩ := heightGroups_eq (dims.map (·.1))
   have hsub : keys ⊆ hs := fun h hh ↦ by
@@ -306,7 +307,8 @@ theorem isTotalQueryBound_verifyMultiM [DecidableEq F]
   obtain ⟨j, hj, hxj⟩ := hpow x hx
   rw [← hxe, hxj] at *
   simp only [List.map_cons]
-  rw [nextPowerOfTwo_two_pow, Nat.log2_two_pow]
+  rw [capLevels_two_pow, nextPowerOfTwo_two_pow]
+  dsimp only
   split
   · have hleaves := mapM_bound (spec := spec) (fun (iq : Nat × Nat) ↦ do
       return (iq.1, iq.2, ← hash (((List.range (dims.map (·.1)).length).filter
@@ -318,8 +320,8 @@ theorem isTotalQueryBound_verifyMultiM [DecidableEq F]
     refine (isTotalQueryBound_bind_of_mem_support hleaves.1
       (suffixBound := indices.length * (L + 2 * G)) fun leaves hl ↦ ?_).mono
       (by rw [Nat.mul_one]; nlinarith)
-    refine (isTotalQueryBound_bind (walkM_bound hash compress hhash hcompress rows j _ _
-      leaves sibs) fun _ ↦ isTotalQueryBound_pure _).mono ?_
+    refine (isTotalQueryBound_bind (walkM_bound hash compress hhash hcompress rows
+      (j - min capHeight j) _ _ leaves sibs) fun _ ↦ isTotalQueryBound_pure _).mono ?_
     rw [hleaves.2 _ hl, Nat.add_zero, List.length_map]
     exact Nat.mul_le_mul hf (by omega)
   · trivial
@@ -355,6 +357,9 @@ theorem costs_observe (x : F) : Costs (observe (ideal F K) x) 0 fun _ ↦ True :
 theorem costs_observeList (xs : List F) : Costs (observeList (ideal F K) xs) 0 fun _ ↦ True :=
   costs_modify _
 
+theorem costs_observeCap (c : Cap F) : Costs (observeCap (ideal F K) c) 0 fun _ ↦ True :=
+  costs_modify _
+
 theorem costs_observeExts (xs : List EF) : Costs (observeExts (ideal F K) xs) 0 fun _ ↦ True :=
   costs_modify _
 
@@ -378,21 +383,23 @@ theorem costs_checkWitness (bits : Nat) (w : F) :
       costs_bind (costs_sampleBits bits) fun _ _ ↦ costs_pure _ (fun _ ↦ True) trivial
 
 /-- A multi-opening of mixed heights costs at most `n (1 + L + 2 G)` calls. -/
-theorem costs_checkMulti (commit : Digest F) (dims : List (Nat × Nat)) (L G : Nat)
+theorem costs_checkMulti (capHeight : Nat) (commit : Cap F) (dims : List (Nat × Nat)) (L G : Nat)
     (hpow : ∀ x ∈ dims, ∃ j ≤ L, x.1 = 2 ^ j) (hs : List Nat) (hhs : ∀ x ∈ dims, x.1 ∈ hs)
     (hG : hs.length ≤ G + 1) (indices : List Nat) (rows : List (List (List F)))
     (sibs : List (Digest F)) :
-    Costs (checkMulti (ideal F K) commit dims indices rows sibs) (indices.length * (1 + L + 2 * G))
+    Costs (checkMulti (ideal F K) capHeight commit dims indices rows sibs)
+      (indices.length * (1 + L + 2 * G))
       fun _ ↦ True := fun s ↦ by
   refine ⟨?_, fun _ _ _ ↦ trivial⟩
   change IsTotalQueryBound ((ExceptT.lift (Merkle.verifyMultiM (ideal F K).hash
-    (ideal F K).compress commit dims indices rows sibs) >>=
+    (ideal F K).compress commit.toList capHeight dims indices rows sibs) >>=
       fun a ↦ pure (a, s) : ExceptT String (OracleComp (spec F K)) _).run)
     (indices.length * (1 + L + 2 * G))
   simp only [ExceptT.run_bind, ExceptT.run_lift, bind_map_left, ExceptT.run_pure]
   simpa only [Nat.add_zero] using isTotalQueryBound_bind
     (Merkle.isTotalQueryBound_verifyMultiM _ _ (fun _ ↦ isTotalQueryBound_query _)
-      (fun _ _ ↦ isTotalQueryBound_query _) commit dims L G hpow hs hhs hG indices rows sibs)
+      (fun _ _ ↦ isTotalQueryBound_query _) commit.toList capHeight dims L G hpow hs hhs hG
+      indices rows sibs)
     fun x ↦ (show IsTotalQueryBound (pure (Except.ok (x, s)) : OracleComp (spec F K) _) 0
       from trivial)
 
@@ -418,7 +425,7 @@ theorem costs_verifyInputs (P : Params) (logMax : Nat) (indices : List Nat)
     dsimp only
     refine costs_mono (P := fun _ ↦ True) (costs_bind (costs_ensure _ _) fun _ _ ↦
       costs_bind (costs_ensure _ _) fun _ _ ↦ costs_bind (costs_ensure _ _) fun _ _ ↦
-      costs_bind (costs_checkMulti _ _ L G ?_ (hs.map (2 ^ ·)) ?_
+      costs_bind (costs_checkMulti _ _ _ L G ?_ (hs.map (2 ^ ·)) ?_
         (by rw [List.length_map]; exact hG) _ _ _) fun _ _ ↦
       costs_bind (costs_ensure _ _) fun _ _ ↦ costs_pure _ (fun _ ↦ True) trivial) ?_
       fun _ _ ↦ trivial
@@ -472,6 +479,7 @@ theorem costs_verifyFri (P : Params) (proof : FriProof F EF) (rounds : List (Rou
     costs_ensure_bind fun _ ↦ costs_ensure_bind fun _ ↦
     costs_free_bind (costs_observeList _) fun _ _ ↦ costs_ensure_bind fun hcs ↦ ?_
   simp only [Bool.and_eq_true, beq_iff_eq] at hcs
+  replace hcs := hcs.1
   -- the commit loop
   refine costs_bind_le (b := 1 + N * (1 + (rounds.length + A.length) * c))
     (costs_forIn_le _ _ _ A.length (Challenge.d EF + 1) ?_ (fun _ ↦ True) trivial
@@ -503,7 +511,7 @@ theorem costs_verifyFri (P : Params) (proof : FriProof F EF) (rounds : List (Rou
   · rw [List.length_zip, List.length_zipIdx]; exact Nat.min_le_right _ _
   obtain ⟨⟨cm, o⟩, la, i⟩ := x
   dsimp only
-  refine costs_bind_le (costs_checkMulti _ _ (logH - la) 0
+  refine costs_bind_le (costs_checkMulti _ _ _ (logH - la) 0
     (fun y hy ↦ ⟨logH - la, le_rfl, by rw [List.mem_singleton.mp hy]⟩) [2 ^ (logH - la)]
     (fun y hy ↦ by rw [List.mem_singleton.mp hy]; exact List.mem_singleton_self _) le_rfl _ _ _)
     (b := 0)
@@ -573,11 +581,11 @@ theorem isTotalQueryBound_verifyWith (vk : Option (PreprocessedKey F)) (proof : 
   have hrun (hshape : preprocessedShapeOk S.air vk proof.opened proof.degreeBits = true) :
       Costs (H := ideal F S.streamLen) (do
       observeList (ideal F S.streamLen) (starkSeedOf EF S.params S.air proof.degreeBits)
-      observeList (ideal F S.streamLen) proof.traceCommit.toList
+      observeCap (ideal F S.streamLen) proof.traceCommit
       observeList (ideal F S.streamLen) (preprocessedDigest vk)
       observeList (ideal F S.streamLen) publicValues
       let alpha ← (sampleExt (ideal F S.streamLen) : M _ EF)
-      observeList (ideal F S.streamLen) proof.quotientCommit.toList
+      observeCap (ideal F S.streamLen) proof.quotientCommit
       ensure (← checkWitness (ideal F S.streamLen) S.params.oodPowBits proof.oodWitness)
         "out-of-domain witness"
       let zeta ← (sampleExt (ideal F S.streamLen) : M _ EF)
@@ -627,11 +635,11 @@ theorem isTotalQueryBound_verifyWith (vk : Option (PreprocessedKey F)) (proof : 
       exact Nat.add_le_add_left (Nat.mul_le_mul_left _ (Nat.add_le_add_left
         (Nat.mul_le_mul_right _ (Nat.add_le_add_right
           (length_openingRounds_le S vk proof zeta hshape) _)) 1)) _
-    refine costs_free_bind (costs_observeList _) fun _ _ ↦ costs_free_bind (costs_observeList _)
+    refine costs_free_bind (costs_observeList _) fun _ _ ↦ costs_free_bind (costs_observeCap _)
       fun _ _ ↦ costs_free_bind (costs_observeList _) fun _ _ ↦
       costs_free_bind (costs_observeList _) fun _ _ ↦ costs_bind_le
       (b := 1 + Challenge.d EF + V) costs_sampleExt (fun alpha _ ↦ costs_free_bind
-        (costs_observeList _) fun _ _ ↦ costs_bind_le (b := Challenge.d EF + V)
+        (costs_observeCap _) fun _ _ ↦ costs_bind_le (b := Challenge.d EF + V)
         (costs_checkWitness _ _) (fun _ _ ↦ costs_ensure_bind fun _ ↦ costs_bind_le (b := V)
           costs_sampleExt (fun zeta _ ↦ costs_ensure_bind fun _ ↦ costs_bind_le (a := V) (b := 0)
             (hpcs zeta) (fun _ _ ↦ costs_pure _ (fun _ ↦ True) trivial) le_rfl) le_rfl)
@@ -648,7 +656,10 @@ theorem isTotalQueryBound_verifyWith (vk : Option (PreprocessedKey F)) (proof : 
       · split
         · rename_i hshape
           split
-          · rw [ExceptT.run_bind]
+          · split
+            swap
+            · trivial
+            rw [ExceptT.run_bind]
             apply IsTotalQueryBound.mono (n₁ := S.verifierCalls + 0) _ (Nat.add_zero _).le
             refine isTotalQueryBound_bind (hrun (by
               simp only [Bool.and_eq_true] at hshape
@@ -698,10 +709,18 @@ theorem isTotalQueryBound_setupRo : IsTotalQueryBound S.setupRo S.setupQueries :
   unfold setupRo preprocessedKeyWith setupQueries
   split
   · trivial
-  · refine (isTotalQueryBound_bind (hnode _ (fun _ ↦ isTotalQueryBound_query _) _ 0)
-      fun _ ↦ Merkle.isTotalQueryBound_pure _).mono ?_
-    rw [Nat.add_zero, Nat.pow_succ]
+  · unfold merkleCapWith
+    refine (isTotalQueryBound_bind (isTotalQueryBound_bind (Merkle.mapM_bound _ _
+      (hnode _ (fun _ ↦ isTotalQueryBound_query _) _) _).1
+      fun _ ↦ Merkle.isTotalQueryBound_pure _) fun _ ↦ Merkle.isTotalQueryBound_pure _).mono ?_
+    rw [List.length_range, Nat.add_zero, Nat.add_zero]
     unfold size
+    have hc := Nat.min_le_right S.params.capHeight (S.logN + S.params.logBlowup)
+    generalize min S.params.capHeight (S.logN + S.params.logBlowup) = c at hc ⊢
+    rw [Nat.mul_sub, Nat.mul_one, ← Nat.pow_add,
+      show c + (S.logN + S.params.logBlowup - c + 1) = S.logN + S.params.logBlowup + 1 by omega,
+      Nat.pow_succ]
+    have := Nat.one_le_two_pow (n := c)
     omega
 
 end CompStark.Iop.Setup

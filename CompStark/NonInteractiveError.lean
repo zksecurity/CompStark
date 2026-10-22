@@ -24,7 +24,8 @@ A round with grinding (`oodPowBits` for `ζ`, `batchPowBits` for `a`, `commitPow
 folds, `queryPowBits` for the queries) also needs its proof-of-work sample to vanish on its low
 bits, in the same answer: its error is multiplied by `powFraction`. `roundError` is the largest
 round error, at the best proximity loss. `hashError` bounds collisions and predictions among the
-digests of `q` queries.
+digests of `q` queries, `(2 + 2 ^ h) q² / |F|⁸` for commitments to Merkle caps of height `h`
+(`3 q² / |F|⁸` for roots).
 -/
 
 @[expose] public section
@@ -78,8 +79,9 @@ noncomputable def roundError (S : Setup EF) (δ δ' : NNReal) : ENNReal :=
       max (powFraction F S.params.commitPowBits * ⨆ i, friFoldError S δ loss i)
         (powFraction F S.params.queryPowBits * friQueryError S δ loss))
 
-/-- Digest collisions and predictions among `q` queries, digests of eight elements of `F`. -/
-noncomputable def hashError (F : Type) (q : Nat) : ENNReal :=
-  3 * q ^ 2 / (Nat.card F : ENNReal) ^ 8
+/-- Digest collisions and predictions among `q` queries, digests of eight elements of `F`, each
+commitment round binding the `2 ^ capHeight` digests of a Merkle cap. -/
+noncomputable def hashError (F : Type) (capHeight q : Nat) : ENNReal :=
+  (2 + 2 ^ capHeight) * q ^ 2 / (Nat.card F : ENNReal) ^ 8
 
 end CompStark.Iop

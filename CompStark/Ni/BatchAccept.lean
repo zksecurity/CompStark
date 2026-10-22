@@ -32,8 +32,8 @@ degree bits, the main commitment, the public values and the preprocessed commitm
 abbrev stateLookupB : H.State :=
   obsList H (obsList H (obsList H (obsExts H
     (obsList H H.init (batchSeedOf EF P instances common))
-    (instances.map fun I ↦ (Ext.ofBase (I.logN : F) : EF))) proof.mainCommit.toList) pis.flatten)
-    ((common.preprocessed.map (·.toList)).getD [])
+    (instances.map fun I ↦ (Ext.ofBase (I.logN : F) : EF))) (capElems proof.mainCommit))
+    pis.flatten) ((common.preprocessed.map capElems).getD [])
 
 /-- The lookup phase's challenges `(α_L, β_L)` from the state `s`, after the lookup grinding
 check, and the challenger after them; `(0, 0)` and no change without lookups. -/
@@ -58,7 +58,7 @@ terminals. -/
 abbrev stateAlphaB : H.State :=
   obsExts H (obsList H (lookupRun H P instances proof
     (stateLookupB H P instances common proof pis)).2
-    ((proof.permutationCommit.map (·.toList)).getD [])) (proof.lookupTerminals.toList.filterMap id)
+    ((proof.permutationCommit.map capElems).getD [])) (proof.lookupTerminals.toList.filterMap id)
 
 /-- The constraint-folding challenge `α`. -/
 def alphaOfB : EF := (smpExt H (stateAlphaB H P instances common proof pis)).1
@@ -67,7 +67,7 @@ def alphaOfB : EF := (smpExt H (stateAlphaB H P instances common proof pis)).1
 abbrev oodCheckB : Bool × H.State :=
   chkWit H P.oodPowBits proof.oodWitness
     (obsList H (smpExt (EF := EF) H (stateAlphaB H P instances common proof pis)).2
-      proof.quotientCommit.toList)
+      (capElems proof.quotientCommit))
 
 /-- The out-of-domain point `ζ`. -/
 def zetaOfB : EF := (smpExt H (oodCheckB (EF := EF) H P instances common proof pis).2).1
@@ -105,14 +105,14 @@ theorem lookupPhase_ok (P : Params) (instances : List (Instance F)) (proof : Bat
     (hasLookups instances = true →
       (chkWit H P.lookupPowBits (proof.lookupWitness.getD 0) s).1 = true) ∧
     r = ((lookupRun H P instances proof s).1, obsExts H (obsList H
-      (lookupRun H P instances proof s).2 ((proof.permutationCommit.map (·.toList)).getD []))
+      (lookupRun H P instances proof s).2 ((proof.permutationCommit.map capElems).getD []))
       (proof.lookupTerminals.toList.filterMap id)) := by
   unfold lookupPhase at h
   cases hl : hasLookups instances with
   | false =>
     rw [hl, ite_eq_right Bool.false_ne_true] at h
     refine ⟨fun h' ↦ absurd h' Bool.false_ne_true, ?_⟩
-    have h' : r = ((0, 0), obsExts H (obsList H s ((proof.permutationCommit.map (·.toList)).getD
+    have h' : r = ((0, 0), obsExts H (obsList H s ((proof.permutationCommit.map capElems).getD
         [])) (proof.lookupTerminals.toList.filterMap id)) := by
       have := h
       exact (Except.ok.inj this).symm
@@ -136,9 +136,13 @@ theorem lookupShapeOk_spec (P : Params) (instances : List (Instance F)) (proof :
     (hlk : lookupShapeOk P instances proof = true) :
     (∀ x ∈ instances.zip (proof.permutationLocal.toList.zip (proof.permutationNext.toList.zip
       proof.lookupTerminals.toList)), permutationShapeOk x.1 x.2.1 x.2.2.1 x.2.2.2 = true) ∧
-    proof.permutationCommit.isSome = hasLookups instances := by
-  simp only [lookupShapeOk, Bool.and_eq_true, beq_iff_eq, List.all_eq_true] at hlk
-  exact ⟨fun x hx ↦ hlk.1.1.2 x hx, hlk.1.2⟩
+    proof.permutationCommit.isSome = hasLookups instances ∧
+    ∀ c ∈ proof.permutationCommit, c.size ≠ 0 := by
+  simp only [lookupShapeOk, Bool.and_eq_true, beq_iff_eq, List.all_eq_true,
+    Option.all_eq_true_iff_get, bne_iff_ne, ne_eq] at hlk
+  refine ⟨fun x hx ↦ hlk.1.1.1.2 x hx, hlk.1.1.2, fun c hc ↦ ?_⟩
+  have := hlk.1.2 (Option.isSome_of_mem hc)
+  rwa [Option.get_of_mem _ hc] at this
 
 /-- The rest of an accepted run after a computation. -/
 theorem except_bind_ok' {α : Type} (R : ExceptT String Id α) (k : α → ExceptT String Id Unit)
@@ -193,8 +197,9 @@ theorem verifyBatchWith_ok (P : Params) (instances : List (Instance F)) (common 
   obtain ⟨hprep, h⟩ := unless_ok _ _ _ _ h
   obtain ⟨hlk, h⟩ := unless_ok _ _ _ _ h
   obtain ⟨-, h⟩ := unless_ok _ _ _ _ h
+  obtain ⟨-, h⟩ := unless_ok _ _ _ _ h
   obtain ⟨x, hx, hc⟩ := except_bind_ok' _ _ h
-  unfold StateT.run at hx
+  unfold StateT.run observeCap at hx
   rw [bind_ok_of H (observeList_eq H _ _), bind_ok_of H (observeExts_eq H _ _),
     bind_ok_of H (observeList_eq H _ _), bind_ok_of H (observeList_eq H _ _),
     bind_ok_of H (observeList_eq H _ _)] at hx
@@ -226,5 +231,23 @@ theorem verifyBatchWith_ok (P : Params) (instances : List (Instance F)) (common 
   simp only [beq_iff_eq, List.all_eq_true] at hprep hz hc hsum
   exact ⟨hcount.1.1.1.1, hcount.1.1.1.2, hcount.1.1.2, hcount.1.2, hcount.2, hdb, hq,
     fun x hx ↦ hpub x hx, hshape, hprep, hlk, hlw, hood, hz, hbc, ⟨_, hfri⟩, hc, hsum⟩
+
+/-- An accepted batch proof's quotient cap is not empty. -/
+theorem size_quotientCommit_neB (P : Params) (instances : List (Instance F)) (common : Common F)
+    (proof : BatchProof F EF) (pis : List (List F))
+    (h : verifyBatchWith H P instances common proof pis = .ok ()) :
+    proof.quotientCommit.size ≠ 0 := by
+  unfold verifyBatchWith at h
+  obtain ⟨-, h⟩ := unless_ok _ _ _ _ h
+  obtain ⟨-, h⟩ := unless_ok _ _ _ _ h
+  obtain ⟨-, h⟩ := unless_ok _ _ _ _ h
+  obtain ⟨-, h⟩ := unless_ok _ _ _ _ h
+  obtain ⟨-, h⟩ := unless_ok _ _ _ _ h
+  obtain ⟨-, h⟩ := unless_ok _ _ _ _ h
+  obtain ⟨-, h⟩ := unless_ok _ _ _ _ h
+  obtain ⟨-, h⟩ := unless_ok _ _ _ _ h
+  obtain ⟨-, h⟩ := unless_ok _ _ _ _ h
+  obtain ⟨hq, -⟩ := unless_ok _ _ _ _ h
+  simpa only [bne_iff_ne, ne_eq] using hq
 
 end CompStark.Ni

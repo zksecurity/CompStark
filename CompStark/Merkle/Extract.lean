@@ -15,7 +15,8 @@ single-height Plonky3 tree back from those queries, generically over the digest 
   digest, and which pairs `compress` sent to which digest. A random oracle's query cache and a
   query log are both caches.
 * `extractRow cache k i root`: the row at index `i` of the depth-`k` tree under `root`, walking
-  down from `root` through cached compressions and inverting the leaf hash at the bottom.
+  down from `root` through cached compressions and inverting the leaf hash at the bottom; under a
+  Merkle cap, in the subtree under the index's cap entry (`extractCapRow`).
 * `extractRow_eq_of_verifyBatch`: if no two cached queries share an answer, an accepted
   `verifyBatch` opening whose hashes are all cached opens the extracted row.
 * `extractRow_eq_of_noPrediction`: extraction does not change when the cache grows by entries
@@ -86,6 +87,13 @@ noncomputable def nodeAt (cache : Cache F D) : (k : Nat) → (i : Nat) → (root
 preimage of the leaf digest. -/
 noncomputable def extractRow (cache : Cache F D) (k i : Nat) (root : D) : Option (List F) :=
   (nodeAt cache k i root).bind fun leaf ↦ pick fun row ↦ cache.leaf row leaf
+
+/-- The row committed at index `i` of the depth-`k` tree under the cap `cap` of height `h`, capped
+at `k`: the row at the index's low `l` bits of the depth-`l` subtree under the index's cap entry,
+for the `l` levels below the cap. -/
+noncomputable def extractCapRow [Zero D] (cache : Cache F D) (k h i : Nat) (cap : List D) :
+    Option (List F) :=
+  extractRow cache (k - min h k) (i % 2 ^ (k - min h k)) (cap.getD (i >>> (k - min h k)) 0)
 
 /-- `parent` is reached from `leaf` at index `i` by compressing with the siblings `path`, each
 compression cached. -/

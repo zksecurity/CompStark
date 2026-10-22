@@ -527,13 +527,21 @@ theorem foldl_max_mem : ∀ (l : List Nat) (acc : Nat), l.foldl max acc = acc �
       · exact Or.inl (Nat.max_eq_left hy)
     · exact Or.inr (List.mem_cons_of_mem _ h)
 
+/-- The pure Merkle check of `H` of an opening at `index` of matrices of heights `heights`, the
+tallest `2 ^ k`, against the cap `cap` of height `capHeight`: an accepted opening of the subtree
+under the index's cap entry, the heights divided by the cap's width, at the index's low bits. -/
+abbrev verifyCapMixedH (cap : Cap F) (capHeight : Nat) (heights : List Nat) (k index : Nat)
+    (values : List (List F)) (path : List (Digest F)) : Bool :=
+  verifyBatchH H (cap.toList.getD (index >>> (k - min capHeight k)) 0)
+    (heights.map (· / 2 ^ min capHeight k)) (index % 2 ^ (k - min capHeight k)) values path
+
 /-- One batch of a query's input rows passes its checks at `index` into the largest domain, of
 log size `logMax`: its matrices are some, with an accepted opening of their rows at the index
-shifted to the batch's tallest height, one row per matrix, and every opened point has a value per
-column. -/
+shifted to the batch's tallest height against the batch's cap, one row per matrix, and every
+opened point has a value per column. -/
 def BatchOkR (P : Params) (logMax index : Nat) (x : List (Array F) × Round F EF) : Prop :=
-  x.2.2 ≠ [] ∧
-    (∃ path, verifyBatchH H x.2.1 (roundHeights P x.2.2)
+  x.2.2 ≠ [] ∧ x.2.1.size = 2 ^ min P.capHeight (logBatch P x.2.2) ∧
+    (∃ path, verifyCapMixedH H x.2.1 P.capHeight (roundHeights P x.2.2) (logBatch P x.2.2)
       (index >>> (logMax - logBatch P x.2.2)) (x.1.map (·.toList)) path = true) ∧
     x.1.length = x.2.2.length ∧
     ∀ y ∈ x.1.zip x.2.2, ∀ zy ∈ y.2.2, zy.2.length = y.1.size
@@ -542,10 +550,10 @@ def BatchOkR (P : Params) (logMax index : Nat) (x : List (Array F) × Round F EF
 opens a row per matrix, and every query's rows have an accepted single opening. -/
 def InputOkR (P : Params) (logMax : Nat) (indices : List Nat) (x : MultiOpening F × Round F EF) :
     Prop :=
-  x.2.2 ≠ [] ∧ x.1.values.size = indices.length ∧
-    (∀ v ∈ x.1.values, v.size = x.2.2.length) ∧
-    ∀ j (hj : j < indices.length), ∃ path, verifyBatchH H x.2.1 (roundHeights P x.2.2)
-      (indices[j] >>> (logMax - logBatch P x.2.2))
+  x.2.2 ≠ [] ∧ x.2.1.size = 2 ^ min P.capHeight (logBatch P x.2.2) ∧
+    x.1.values.size = indices.length ∧ (∀ v ∈ x.1.values, v.size = x.2.2.length) ∧
+    ∀ j (hj : j < indices.length), ∃ path, verifyCapMixedH H x.2.1 P.capHeight
+      (roundHeights P x.2.2) (logBatch P x.2.2) (indices[j] >>> (logMax - logBatch P x.2.2))
         ((x.1.values.getD j #[]).toList.map (·.toList)) path = true
 
 theorem inputBody_okR (P : Params) (logMax : Nat) (indices : List Nat)
@@ -556,7 +564,7 @@ theorem inputBody_okR (P : Params) (logMax : Nat) (indices : List Nat)
   obtain ⟨hq, h⟩ := ensure_bind_eq_ok H h
   obtain ⟨hrows, h⟩ := ensure_bind_eq_ok H h
   obtain ⟨-, h⟩ := ensure_bind_eq_ok H h
-  rw [bind_ok_of H (checkMulti_eq H _ _ _ _ _ st)] at h
+  rw [bind_ok_of H (checkMulti_eq H _ _ _ _ _ _ st)] at h
   obtain ⟨hv, h⟩ := ensure_bind_eq_ok H h
   have hne : x.2.2 ≠ [] := by
     intro he
@@ -568,33 +576,44 @@ theorem inputBody_okR (P : Params) (logMax : Nat) (indices : List Nat)
       (2 ^ (dp.1.logSize + P.logBlowup), (dp.2.headD default).2.length)).map (·.1) =
       roundHeights P x.2.2 := by
     rw [List.map_map]; rfl
-  refine ⟨⟨hne, beq_iff_eq.mp hq, fun v hv' ↦ ?_, fun j hj ↦ ?_⟩, pure_eq_ok H h⟩
+  have hpowD : ∀ y ∈ (x.2.2.map fun (dp : Domain F × List (EF × List EF)) ↦
+      (2 ^ (dp.1.logSize + P.logBlowup), (dp.2.headD default).2.length)), ∃ j ≤ k, y.1 = 2 ^ j := by
+    intro y hy
+    obtain ⟨⟨d, pts⟩, hdp, rfl⟩ := List.mem_map.mp hy
+    exact ⟨_, (le_foldl_max _ 0).2 _
+      (List.mem_map_of_mem (f := fun y : Domain F × List (EF × List EF) ↦
+        y.1.logSize + P.logBlowup) hdp), rfl⟩
+  have htopD : ∃ y ∈ (x.2.2.map fun (dp : Domain F × List (EF × List EF)) ↦
+      (2 ^ (dp.1.logSize + P.logBlowup), (dp.2.headD default).2.length)), y.1 = 2 ^ k := by
+    rcases foldl_max_mem (x.2.2.map (·.1.logSize + P.logBlowup)) 0 with h0 | h0
+    · obtain ⟨⟨d, pts⟩, hdp⟩ := List.exists_mem_of_ne_nil _ hne
+      have hle := (le_foldl_max _ 0).2 _ (List.mem_map_of_mem
+        (f := fun y : Domain F × List (EF × List EF) ↦ y.1.logSize + P.logBlowup) hdp)
+      have hk0 : k = 0 := h0
+      refine ⟨_, List.mem_map_of_mem hdp, ?_⟩
+      change 2 ^ (d.logSize + P.logBlowup) = 2 ^ k
+      change d.logSize + P.logBlowup ≤ k at hle
+      congr 1
+      omega
+    · obtain ⟨⟨d, pts⟩, hdp, he⟩ := List.mem_map.mp h0
+      refine ⟨_, List.mem_map_of_mem hdp, ?_⟩
+      change 2 ^ (d.logSize + P.logBlowup) = 2 ^ k
+      rw [he]; rfl
+  have hcap := Merkle.length_cap_of_verifyMulti_mixed H.hash H.compress x.2.1.toList P.capHeight k
+    _ hpowD htopD _ _ _ hv
+  rw [Array.length_toList] at hcap
+  refine ⟨⟨hne, hcap, beq_iff_eq.mp hq, fun v hv' ↦ ?_, fun j hj ↦ ?_⟩, pure_eq_ok H h⟩
   · rw [Array.all_eq_true_iff_forall_mem] at hrows
     exact beq_iff_eq.mp (hrows v hv')
-  · obtain ⟨path, hp⟩ := Merkle.verifyBatch_of_verifyMulti_mixed H.hash H.compress x.2.1 k _
-      (fun y hy ↦ by
-        obtain ⟨⟨d, pts⟩, hdp, rfl⟩ := List.mem_map.mp hy
-        exact ⟨_, (le_foldl_max _ 0).2 _
-          (List.mem_map_of_mem (f := fun y : Domain F × List (EF × List EF) ↦
-            y.1.logSize + P.logBlowup) hdp), rfl⟩)
-      (by
-        rcases foldl_max_mem (x.2.2.map (·.1.logSize + P.logBlowup)) 0 with h0 | h0
-        · obtain ⟨⟨d, pts⟩, hdp⟩ := List.exists_mem_of_ne_nil _ hne
-          have hle := (le_foldl_max _ 0).2 _ (List.mem_map_of_mem
-            (f := fun y : Domain F × List (EF × List EF) ↦ y.1.logSize + P.logBlowup) hdp)
-          have hk0 : k = 0 := h0
-          refine ⟨_, List.mem_map_of_mem hdp, ?_⟩
-          change 2 ^ (d.logSize + P.logBlowup) = 2 ^ k
-          change d.logSize + P.logBlowup ≤ k at hle
-          congr 1
-          omega
-        · obtain ⟨⟨d, pts⟩, hdp, he⟩ := List.mem_map.mp h0
-          refine ⟨_, List.mem_map_of_mem hdp, ?_⟩
-          change 2 ^ (d.logSize + P.logBlowup) = 2 ^ k
-          rw [he]; rfl)
+  · obtain ⟨path, hp⟩ := Merkle.verifyBatch_of_verifyMulti_mixed H.hash H.compress x.2.1.toList
+      P.capHeight k _ hpowD htopD
       _ _ _ hv j (by rw [List.length_map]; exact hj)
     refine ⟨path, ?_⟩
-    rw [hdims] at hp
+    rw [show ∀ c, (x.2.2.map fun (dp : Domain F × List (EF × List EF)) ↦
+        (2 ^ (dp.1.logSize + P.logBlowup), (dp.2.headD default).2.length)).map (·.1 / 2 ^ c) =
+        (roundHeights P x.2.2).map (· / 2 ^ c) from fun c ↦ by
+        rw [← hdims]; simp only [List.map_map, Function.comp_def]]
+      at hp
     rw [← hp, List.getElem_map]
     congr 1
     rw [List.getD_eq_getElem?_getD, List.getElem?_map, Array.getD_eq_getD_getElem?,
@@ -677,7 +696,7 @@ variable [BaseField F] {EF : Type} [Challenge F EF]
 open at `index`, its folds from the reduced opening of the largest height pass, adding every
 shorter height's when they reach it, end at the final height, and match the final polynomial. -/
 def QueryOkR (P : Params) (logMax : Nat) (alpha : EF) (rounds : List (Round F EF))
-    (betas : List EF) (commits : List (Digest F)) (arities : List Nat)
+    (betas : List EF) (commits : List (Cap F)) (arities : List Nat)
     (folds : List (CommitOpening F EF)) (inputs : List (MultiOpening F)) (finalPoly : Array EF)
     (q index : Nat) : Prop :=
   let rows := inputs.map fun b ↦ (b.values.getD q #[]).toList
@@ -689,10 +708,43 @@ def QueryOkR (P : Params) (logMax : Nat) (alpha : EF) (rounds : List (Round F EF
   let fin := foldStateR l (ro, e0, index, logMax) l.length
   rows.length = rounds.length ∧ (∀ x ∈ rows.zip rounds, BatchOkR H P logMax index x) ∧
     (∀ (j : Nat) (x : EF × QueryFold EF), l[j]? = some x →
-      StepOk H (commits.getD j 0) x (foldStateR l (ro, e0, index, logMax) j).2) ∧
+      StepOk H P.capHeight (commits.getD j #[]) x (foldStateR l (ro, e0, index, logMax) j).2) ∧
     fin.2.2.2 = P.logBlowup + P.logFinalPolyLen ∧ fin.1 = [] ∧
     finalPoly.foldr (fun c acc ↦
       acc * Ext.ofBase (powF (twoAdicGen logMax) (reverseBits fin.2.2.1 logMax)) + c) 0 = fin.2.1
+
+/-- A query that passes its checks opens every round's cap and every fold's at its size. -/
+theorem size_caps_of_queryOkR (P : Params) (logMax : Nat) (alpha : EF)
+    (rounds : List (Round F EF)) (betas : List EF) (commits : List (Cap F)) (arities : List Nat)
+    (folds : List (CommitOpening F EF)) (inputs : List (MultiOpening F)) (finalPoly : Array EF)
+    (q index : Nat) (hb : betas.length = arities.length) (hf : folds.length = arities.length)
+    (h : QueryOkR H P logMax alpha rounds betas commits arities folds inputs finalPoly q index) :
+    (∀ x ∈ rounds, x.2 ≠ [] ∧ x.1.size = 2 ^ min P.capHeight (logBatch P x.2)) ∧
+      ∀ i < arities.length, (commits.getD i #[]).size =
+        2 ^ min P.capHeight (logMax - (arities.take (i + 1)).sum) := by
+  obtain ⟨hrl, hbatch, hsteps, -⟩ := h
+  refine ⟨fun x hx ↦ ?_, fun i hi ↦ ?_⟩
+  · obtain ⟨k, hk, rfl⟩ := List.getElem_of_mem hx
+    have hk' : k < ((inputs.map fun b ↦ (b.values.getD q #[]).toList).zip rounds).length := by
+      rw [List.length_zip, hrl, Nat.min_self]; exact hk
+    have := hbatch _ (List.getElem_mem hk')
+    rw [List.getElem_zip] at this
+    exact ⟨this.1, this.2.1⟩
+  · set l := betas.zip (querySteps q arities folds) with hl
+    have hll : l.length = arities.length := by
+      rw [hl, List.length_zip, hb, length_querySteps _ _ _ hf, Nat.min_self]
+    have hli : i < l.length := by omega
+    have hlar : l.map (·.2.logArity) = arities := by
+      have hsnd : l.map Prod.snd = querySteps q arities folds :=
+        List.map_snd_zip (by rw [hb, length_querySteps _ _ _ hf])
+      rw [show (l.map fun x : EF × QueryFold EF ↦ x.2.logArity) =
+        (l.map Prod.snd).map (·.logArity) by rw [List.map_map]; rfl, hsnd,
+        map_logArity_querySteps _ _ _ hf]
+    have hst := (hsteps i l[i] (List.getElem?_eq_getElem hli)).2.1
+    rw [foldStateR_snd] at hst
+    dsimp only at hst
+    rw [hst, ← hlar, List.sum_take_succ _ _ (by rw [List.length_map]; exact hli),
+      List.getElem_map, Nat.sub_sub, List.map_take]
 
 theorem queryBody_okR (P : Params) (alpha : EF) (rounds : List (Round F EF))
     (betas : List EF) (arities : List Nat) (folds : List (CommitOpening F EF))
@@ -792,6 +844,7 @@ theorem verifyFri_okR (P : Params) (proof : FriProof F EF) (rounds : List (Round
   rw [bind_ok_of H (observeList_eq H _ s)] at h
   obtain ⟨hcs, h⟩ := ensure_bind_eq_ok H h
   simp only [Bool.and_eq_true, beq_iff_eq] at hcs
+  replace hcs := hcs.1
   change proof.commits.size = ar.length ∧ proof.commitWitnesses.size = ar.length at hcs
   obtain ⟨betas, st1, h1, h⟩ := bind_eq_ok H h
   obtain ⟨hb1, hb2⟩ := commitLoop_ok H P _ (fun _ _ ↦ rfl) _ _ _ _ h1
@@ -819,7 +872,7 @@ theorem verifyFri_okR (P : Params) (proof : FriProof F EF) (rounds : List (Round
     intro q hq y hy
     rw [List.zip_map_left] at hy
     obtain ⟨⟨b, rd⟩, hbr, rfl⟩ := List.mem_map.mp hy
-    obtain ⟨-, hsz, hall, -⟩ := hinok _ hbr
+    obtain ⟨-, -, hsz, hall, -⟩ := hinok _ hbr
     simp only [Prod.map, id, Array.length_toList]
     rw [Array.getD_eq_getD_getElem?, Array.getElem?_eq_getElem (by rw [hsz, hidxlen]; exact hq),
       Option.getD_some]
@@ -841,7 +894,7 @@ theorem verifyFri_okR (P : Params) (proof : FriProof F EF) (rounds : List (Round
   subst hst4
   rw [List.length_zipIdx] at hglen
   obtain ⟨lh, st5, h5, h6⟩ := bind_eq_ok H h
-  have hphase := phaseLoop_ok H groups _ (fun _ _ ↦ rfl) _ _ _ _ h5
+  have hphase := phaseLoop_ok H P.capHeight groups _ (fun _ _ ↦ rfl) _ _ _ _ h5
   simp only [beq_iff_eq] at hfolds hfp
   change proof.folds.size = ar.length at hfolds
   have hcrlen : cr.1.length = ar.length := by
@@ -877,10 +930,10 @@ theorem verifyFri_okR (P : Params) (proof : FriProof F EF) (rounds : List (Round
     have hx' := hx
     rw [List.zip_map_left] at hx'
     obtain ⟨⟨b, rd⟩, hbr, rfl⟩ := List.mem_map.mp hx'
-    obtain ⟨hne', hsz, hall, hpath⟩ := hinok _ hbr
+    obtain ⟨hne', hcsz, hsz, hall, hpath⟩ := hinok _ hbr
     have hlen := hrowsq j hj _ hx
     obtain ⟨path, hp⟩ := hpath j (by rw [hidxlen]; exact hj)
-    refine ⟨hne', ⟨path, ?_⟩, hlen, hwid _ hx⟩
+    refine ⟨hne', hcsz, ⟨path, ?_⟩, hlen, hwid _ hx⟩
     rw [← hidxj]
     simpa only [Prod.map, id, List.map_map, Function.comp_def] using hp
   · -- the folds
@@ -897,7 +950,7 @@ theorem verifyFri_okR (P : Params) (proof : FriProof F EF) (rounds : List (Round
         proof.folds.toList[i]'(hflen ▸ hiar)), (ar[i], i)) := by
       simp only [hxs, List.getElem_zip, List.getElem_zipIdx, Nat.zero_add]
     have hxsar : xs.map (·.2.1) = ar := by
-      rw [hxs, show (fun x : (Digest F × CommitOpening F EF) × Nat × Nat ↦ x.2.1) =
+      rw [hxs, show (fun x : (Cap F × CommitOpening F EF) × Nat × Nat ↦ x.2.1) =
         Prod.fst ∘ Prod.snd from rfl, ← List.map_map, List.map_snd_zip (by
           rw [List.length_zip, List.length_zipIdx, hcl, hflen, Nat.min_self]),
         List.zipIdx_map_fst]
@@ -909,15 +962,18 @@ theorem verifyFri_okR (P : Params) (proof : FriProof F EF) (rounds : List (Round
       rwa [List.getElem_map] at h1
     have hv : let lh := logMax - ((xs.take i).map (·.2.1)).sum
         let gs := groups.map fun g ↦ g.getD xs[i].2.2 (0, [])
-        verifyMultiH H xs[i].1.1 [(2 ^ (lh - xs[i].2.1), Challenge.d EF * 2 ^ xs[i].2.1)]
+        verifyMultiH H xs[i].1.1 P.capHeight
+          [(2 ^ (lh - xs[i].2.1), Challenge.d EF * 2 ^ xs[i].2.1)]
           (gs.map (·.1)) (gs.map fun (_, evals) ↦ [evals.flatMap Ext.coeffs])
           xs[i].1.2.path.toList = true := hphase i hxi
     rw [hxsi] at hv
     dsimp only at hv
     rw [← hsum, ← hla] at hv
-    obtain ⟨path, hp⟩ := Merkle.verifyBatch_of_verifyMulti H.hash H.compress _ 1 _ Nat.one_pos _
-      rfl _ _ _ hv j (by rw [List.length_map, List.length_map]; exact hjg)
-    refine ⟨path, ?_⟩
+    obtain ⟨path, hp⟩ := Merkle.verifyBatch_of_verifyMulti H.hash H.compress _ P.capHeight 1 _
+      Nat.one_pos _ rfl _ _ _ hv j (by rw [List.length_map, List.length_map]; exact hjg)
+    have hcap := Merkle.length_cap_of_verifyMulti_replicate H.hash H.compress _ P.capHeight 1 _
+      Nat.one_pos _ rfl _ _ _ hv
+    rw [Array.length_toList] at hcap
     set st0 := ((descHeights (matHeights P rounds)).tail.map fun h ↦
       (h, (reducedAt P logMax index alpha (queryMats ((proof.inputs.toList.map fun b ↦
         (b.values.getD j #[]).toList).zip rounds)) h).2),
@@ -929,9 +985,9 @@ theorem verifyFri_okR (P : Params) (proof : FriProof F EF) (rounds : List (Round
     have hst2 : (foldStateR l st0 i).2.2.2 = logMax - ((l.take i).map (·.2.logArity)).sum :=
       congrArg (·.2) (foldStateR_snd l _ _ _ _ i)
     rw [List.getD_eq_getElem _ _ (hcl ▸ hiar), hst2]
-    rw [List.getD_eq_getElem _ _ (by rw [List.length_map, List.length_map]; exact hjg),
+    rw [List.getD_eq_getElem _ [] (by rw [List.length_map, List.length_map]; exact hjg),
       List.getElem_map, List.getElem_map, List.getElem_map, List.getElem_map, hgi] at hp
-    exact hp
+    exact ⟨hcap, path, hp⟩
 
 end Fri
 

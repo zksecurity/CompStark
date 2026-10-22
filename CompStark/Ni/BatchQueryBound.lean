@@ -47,7 +47,8 @@ theorem isTotalQueryBound_verifyBatchWith (common : CompStark.Batch.Common F)
   refine bound_unless _ _ _ _ fun hprep ↦ ?_
   refine bound_unless _ _ _ _ fun hlk ↦ ?_
   refine bound_unless _ _ _ _ fun _ ↦ ?_
-  have hperm := (lookupShapeOk_spec S.params S.instances proof hlk).2
+  refine bound_unless _ _ _ _ fun _ ↦ ?_
+  have hperm := (lookupShapeOk_spec S.params S.instances proof hlk).2.1
   simp only [Bool.and_eq_true, beq_iff_eq] at hcount hprep
   have hsize : proof.opened.size = S.k := by rw [hcount.1.1.1.1, length_instances]
   have hlp : Costs (H := ideal F S.streamLen)
@@ -173,7 +174,17 @@ theorem isTotalQueryBound_setupRo : IsTotalQueryBound S.setupRo S.setupQueries :
         exact List.any_eq_true.mpr ⟨_, List.mem_ofFn.mpr ⟨i, rfl⟩,
           decide_eq_true (Nat.pos_of_ne_zero hpw)⟩
     rw [ite_eq_left_of_eq_true _ _ (eq_true hhas)]
-    refine (isTotalQueryBound_bind (isTotalQueryBound_injNodeWith _ _ _ 0)
-      fun _ ↦ Merkle.isTotalQueryBound_pure _).mono (by omega)
+    refine (isTotalQueryBound_bind (Merkle.mapM_bound _ _
+      (isTotalQueryBound_injNodeWith _ _ _) _).1 fun _ ↦ Merkle.isTotalQueryBound_pure _).mono ?_
+    rw [List.length_range, Nat.add_zero]
+    have hc := Nat.min_le_right S.params.capHeight
+      (CompStark.Batch.preprocessedLogHeight S.params S.instances)
+    generalize min S.params.capHeight
+      (CompStark.Batch.preprocessedLogHeight S.params S.instances) = c at hc ⊢
+    calc 2 ^ c * (4 * 2 ^ (CompStark.Batch.preprocessedLogHeight S.params S.instances - c) - 3)
+        ≤ 2 ^ c * (4 * 2 ^ (CompStark.Batch.preprocessedLogHeight S.params S.instances - c)) :=
+          Nat.mul_le_mul_left _ (Nat.sub_le _ _)
+      _ = 4 * 2 ^ CompStark.Batch.preprocessedLogHeight S.params S.instances := by
+          rw [Nat.mul_left_comm, ← Nat.pow_add, Nat.add_sub_cancel' hc]
 
 end CompStark.Iop.Batch.Setup

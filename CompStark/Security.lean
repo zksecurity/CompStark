@@ -270,7 +270,8 @@ theorem knowledgeSoundness_ro_of_secureRo (S : Setup EF) (hp : Nat.card F = p) (
       verdict = .ok () ∧ proof.degreeBits = S.logN ∧
         ∀ trace ∈ closeTraces S δ' (committedTrace S log proof),
           ¬ S.air.Satisfied S.logN trace publicValues] ≤
-      (Q + S.verifierQueries) * (2 ^ bits)⁻¹ + hashError F (Q + S.verifierQueries) := by
+      (Q + S.verifierQueries) * (2 ^ bits)⁻¹ +
+        hashError F S.params.capHeight (Q + S.verifierQueries) := by
   refine (knowledgeSoundness_ro S publicValues (Real.toNNReal A.δ) δ'
     (lt_one_sub_rate S A h.1.2.1 δ' hδ') Q prover hQ).trans ?_
   gcongr
@@ -319,7 +320,8 @@ theorem Batch.batchKnowledgeSoundness_ro_of_secureRo (S : Batch.Setup EF) (hp : 
       verdict = .ok () ∧ proof.degreeBits.toList = List.ofFn S.logN ∧
         ∀ traces ∈ Batch.closeTraces S δ' (Batch.committedTraces S log proof),
           ¬ S.Satisfied traces publicValues] ≤
-      (Q + S.verifierQueries) * (2 ^ bits)⁻¹ + hashError F (Q + S.verifierQueries) := by
+      (Q + S.verifierQueries) * (2 ^ bits)⁻¹ +
+        hashError F S.params.capHeight (Q + S.verifierQueries) := by
   refine (Batch.batchKnowledgeSoundness_ro S publicValues (Real.toNNReal A.δ) δ'
     (batch_lt_one_sub_rate S A h.1 δ' hδ') Q prover hQ).trans ?_
   gcongr
@@ -359,6 +361,7 @@ def fibonacciSetup : Setup KoalaBear.Fast.Ext4 where
       queries := by decide
       blowup := by decide }
   folds := by decide
+  capFits := Nat.zero_le _
 
 /-- FRI at `δ = 1919/4096 = 15/32 - 2 ^ (-12)`, the extractor at
 `δ' = 7679/16384 = 15/32 - 2 ^ (-14)`, `loss = 2 ^ (-20)` and `t = 14`. -/
@@ -432,6 +435,7 @@ def wideSetup : Setup KoalaBear.Fast.Ext4 where
   valid := wide_valid wideParams rfl (by decide) rfl (by decide) 64 (by decide) 20
     (by decide)
   folds := by decide
+  capFits := Nat.zero_le _
 
 /-- FRI at `δ = 1535/4096 = 3/8 - 2 ^ (-12)`, the extractor at
 `δ' = 24575/65536 = 3/8 - 2 ^ (-16)`, `loss = 2 ^ (-17)` and `t = 16`. -/
@@ -475,6 +479,7 @@ def wide21Setup : Setup KoalaBear.Fast.Ext4 where
   valid := wide_valid wide21Params rfl (by decide) rfl (by decide) 64 (by decide) 21
     (by decide)
   folds := by decide
+  capFits := Nat.zero_le _
 
 theorem wide21_secure : wide21Setup.Secure 2130706433 wideAnalysis 100 := by
   decide +kernel
@@ -516,6 +521,7 @@ def wideSp1Setup : Setup KoalaBear.Fast.Ext4 where
   valid := wide_valid sp1Params rfl (by decide) rfl (by decide) 64 (by decide) 21
     (by decide)
   folds := by decide
+  capFits := Nat.zero_le _
 
 /-- The verifier's oracle calls on a proof for `wideSp1Setup`: `15 + 5 · 21 + 124 · 553`. -/
 theorem wideSp1Setup_verifierQueries : wideSp1Setup.verifierQueries = 68692 := by decide +kernel
@@ -546,7 +552,7 @@ theorem wideSp1_knowledgeSoundness_ro (publicValues : List F) (Q : Nat)
             (committedTrace wideSp1Setup log proof),
           ¬ wideSp1Setup.air.Satisfied wideSp1Setup.logN trace publicValues] ≤
       (Q + wideSp1Setup.verifierQueries) * (2 ^ 100)⁻¹ +
-        hashError F (Q + wideSp1Setup.verifierQueries) :=
+        hashError F 0 (Q + wideSp1Setup.verifierQueries) :=
   knowledgeSoundness_ro_of_secureRo _ KoalaBear.card_eq _ wideSp1_secureRo _
     (by rw [coe_three_eighths_sub (-18) 18 rfl (by norm_num)]; norm_num [wideSp1Analysis])
     publicValues Q prover hQ
@@ -572,6 +578,7 @@ def wideGrindSetup : Setup KoalaBear.Fast.Ext4 where
   valid := wide_valid wideGrindParams rfl (by decide) rfl (by decide) 64 (by decide) 21
     (by decide)
   folds := by decide
+  capFits := Nat.zero_le _
 
 /-- The verifier's oracle calls on a proof for `wideGrindSetup`: `15 + 5 · 21 + 144 · 553`. -/
 theorem wideGrindSetup_verifierQueries : wideGrindSetup.verifierQueries = 79752 := by
@@ -605,7 +612,7 @@ theorem wideGrind_knowledgeSoundness_ro (publicValues : List F) (Q : Nat)
             (committedTrace wideGrindSetup log proof),
           ¬ wideGrindSetup.air.Satisfied wideGrindSetup.logN trace publicValues] ≤
       (Q + wideGrindSetup.verifierQueries) * (2 ^ 117)⁻¹ +
-        hashError F (Q + wideGrindSetup.verifierQueries) :=
+        hashError F 0 (Q + wideGrindSetup.verifierQueries) :=
   knowledgeSoundness_ro_of_secureRo _ KoalaBear.card_eq _ wideGrind_secureRo _
     (by rw [coe_three_eighths_sub (-11) 11 rfl (by norm_num)]; norm_num [wideGrindAnalysis])
     publicValues Q prover hQ
@@ -628,6 +635,7 @@ def wide5Setup : Setup KoalaBear.Fast.Ext5 where
   valid := wide_valid wide5Params rfl (by decide) rfl (by decide) 64 (by decide) 21
     (by decide)
   folds := by decide
+  capFits := Nat.zero_le _
 
 /-- The verifier's oracle calls on a proof for `wide5Setup`: `18 + 6 · 21 + 160 · 553`. -/
 theorem wide5Setup_verifierQueries : wide5Setup.verifierQueries = 88624 := by decide +kernel
@@ -659,7 +667,7 @@ theorem wide5_knowledgeSoundness_ro (publicValues : List F) (Q : Nat)
             (committedTrace wide5Setup log proof),
           ¬ wide5Setup.air.Satisfied wide5Setup.logN trace publicValues] ≤
       (Q + wide5Setup.verifierQueries) * (2 ^ 128)⁻¹ +
-        hashError F (Q + wide5Setup.verifierQueries) :=
+        hashError F 0 (Q + wide5Setup.verifierQueries) :=
   knowledgeSoundness_ro_of_secureRo _ KoalaBear.card_eq _ wide5_secureRo _
     (by rw [coe_three_eighths_sub (-20) 20 rfl (by norm_num)]; norm_num [wide5Analysis])
     publicValues Q prover hQ
@@ -682,6 +690,7 @@ def wide5iSetup : Setup KoalaBear.Fast.Ext5 where
   valid := wide_valid wide5iParams rfl (by decide) rfl (by decide) 64 (by decide) 21
     (by decide)
   folds := by decide
+  capFits := Nat.zero_le _
 
 /-- FRI at `δ = 6143/16384 = 3/8 - 2 ^ (-14)`, the extractor at
 `δ' = 49151/131072 = 3/8 - 2 ^ (-17)`, `loss = 2 ^ (-18)` and `t = 14`. -/
@@ -798,6 +807,7 @@ def wideBatchSetup : Batch.Setup KoalaBear.Fast.Ext5 where
   valid i := wideBus_valid wide5iParams rfl (by decide) rfl (by decide) _
     (by fin_cases i <;> decide)
   folds i := by fin_cases i <;> decide
+  capFits _ := Nat.zero_le _
   nonempty := by decide
   lookupsValid _ := wideBus_lookupsValid _ rfl _
   buses := wideBus_busesValid _
@@ -839,6 +849,7 @@ def wideBatch5Setup : Batch.Setup KoalaBear.Fast.Ext5 where
   valid i := wideBus_valid wide5Params rfl (by decide) rfl (by decide) _
     (by fin_cases i <;> decide)
   folds i := by fin_cases i <;> decide
+  capFits _ := Nat.zero_le _
   nonempty := by decide
   lookupsValid _ := wideBus_lookupsValid _ rfl _
   buses := wideBus_busesValid _
@@ -856,6 +867,7 @@ def wideBatchGrindSetup : Batch.Setup KoalaBear.Fast.Ext4 where
   valid i := wideBus_valid wideBusGrindParams rfl (by decide) rfl (by decide) _
     (by fin_cases i <;> decide)
   folds i := by fin_cases i <;> decide
+  capFits _ := Nat.zero_le _
   nonempty := by decide
   lookupsValid _ := wideBus_lookupsValid _ rfl _
   buses := wideBus_busesValid _
@@ -909,7 +921,7 @@ theorem wideBatch5_knowledgeSoundness_ro (publicValues : Fin wideBatch5Setup.k �
             (Batch.committedTraces wideBatch5Setup log proof),
           ¬ wideBatch5Setup.Satisfied traces publicValues] ≤
       (Q + wideBatch5Setup.verifierQueries) * (2 ^ 128)⁻¹ +
-        hashError F (Q + wideBatch5Setup.verifierQueries) :=
+        hashError F 0 (Q + wideBatch5Setup.verifierQueries) :=
   Batch.batchKnowledgeSoundness_ro_of_secureRo _ KoalaBear.card_eq _ wideBatch5_secureRo _
     (by rw [coe_three_eighths_sub (-18) 18 rfl (by norm_num)]; norm_num [wideBatch5Analysis])
     publicValues Q prover hQ
@@ -926,7 +938,7 @@ theorem wideBatchGrind_knowledgeSoundness_ro (publicValues : Fin wideBatchGrindS
             (Batch.committedTraces wideBatchGrindSetup log proof),
           ¬ wideBatchGrindSetup.Satisfied traces publicValues] ≤
       (Q + wideBatchGrindSetup.verifierQueries) * (2 ^ 117)⁻¹ +
-        hashError F (Q + wideBatchGrindSetup.verifierQueries) :=
+        hashError F 0 (Q + wideBatchGrindSetup.verifierQueries) :=
   Batch.batchKnowledgeSoundness_ro_of_secureRo _ KoalaBear.card_eq _ wideBatchGrind_secureRo _
     (by rw [coe_three_eighths_sub (-11) 11 rfl (by norm_num)]; norm_num [wideGrindAnalysis])
     publicValues Q prover hQ

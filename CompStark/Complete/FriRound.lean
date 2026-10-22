@@ -13,7 +13,7 @@ public import CompStark.Fri.Shapes
 The prover commits to the groups of `2 ^ la` entries of a vector as rows and answers a query at
 `idx` with the group of `idx` minus the entry at `idx`, the siblings. The verifier puts the running
 value back between the siblings and recovers the group (`evals_answer`), whose coefficients are
-the committed row (`row_leaves`), so the opening verifies (`verifyBatch_answer`).
+the committed row (`row_leaves`).
 -/
 
 @[expose] public section
@@ -144,7 +144,7 @@ theorem rowOf_leaves [Poseidon2Field F] (f : Array EF) (la r : Nat)
         List.getElem_range]
 
 /-- A round's answer at `idx`: `2 ^ la - 1` siblings, which with the running value give back the
-group of `idx`, and whose opening verifies. -/
+group of `idx`. -/
 theorem answer_round [Poseidon2Field F] (f : Array EF) (h la idx : Nat) (hs : f.size = 2 ^ h)
     (hla : la ≤ h)
     (hidx : idx < 2 ^ h) :
@@ -156,9 +156,7 @@ theorem answer_round [Poseidon2Field F] (f : Array EF) (h la idx : Nat) (hs : f.
     let evals := (List.range (2 ^ la)).map fun j ↦
       if j < pos then sib.getD j 0 else if j = pos then f.getD idx 0 else sib.getD (j - 1) 0
     sib.size = 2 ^ la - 1 ∧
-      evals = (List.range (2 ^ la)).map (fun k ↦ f.getD ((idx >>> la) * 2 ^ la + k) 0) ∧
-      Merkle.Poseidon2.verifyBatch F c.root [2 ^ (h - la)] (idx >>> la)
-        [evals.flatMap Ext.coeffs] o.path.toList = true := by
+      evals = (List.range (2 ^ la)).map (fun k ↦ f.getD ((idx >>> la) * 2 ^ la + k) 0) := by
   intro c o pos ev sib evals
   have hapos : 0 < 2 ^ la := by positivity
   have hpos : pos < 2 ^ la := Nat.mod_lt _ hapos
@@ -192,25 +190,8 @@ theorem answer_round [Poseidon2Field F] (f : Array EF) (h la idx : Nat) (hs : f.
       rw [List.getD_eq_getElem _ _ (by rw [hG]; simpa using hj),
         List.getElem_map,
         List.getElem_range]
-  refine ⟨?_, hevals, ?_⟩
-  · show (List.map _ _).toArray.size = _
-    rw [List.size_toArray, List.length_map, length_filter_range _ _ hpos]
-  · have hv := verifyBatch_openAt [(specBackend EF).leaves (2 ^ la) f] (h - la)
-      (List.cons_ne_nil _ _)
-      (fun m hm' ↦ by
-        rw [List.mem_singleton.mp hm']
-        refine ⟨hm, ?_⟩
-        show (f.flatMap fun x ↦ (Ext.coeffs x).toArray).size =
-          Challenge.d EF * 2 ^ la * (f.size / 2 ^ la)
-        rw [size_flatMap_coeffs, hs, hhl, Nat.mul_div_cancel _ hapos]
-        ring) (idx >>> la) hrlt
-    replace hv : Merkle.Poseidon2.verifyBatch F c.root [2 ^ (h - la)] (idx >>> la)
-        (o.values.toList.map (·.toList)) o.path.toList = true := by
-      rw [← hm]; exact hv
-    rw [hevals]
-    have : o.values.toList.map (·.toList) = [G.flatMap Ext.coeffs] := by
-      rw [hvals, ← rowOf_leaves f la _ hrb]; rfl
-    rw [← this]
-    exact hv
+  refine ⟨?_, hevals⟩
+  show (List.map _ _).toArray.size = _
+  rw [List.size_toArray, List.length_map, length_filter_range _ _ hpos]
 
 end CompStark.Complete

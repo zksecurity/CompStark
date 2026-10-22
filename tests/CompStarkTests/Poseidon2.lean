@@ -67,12 +67,12 @@ def sage16 : Vector Nat 16 :=
 #guard_msgs in
 #print axioms CompStark.Poseidon2.Packed.permute24_width24
 
-/-- info: 'CompStark.KoalaBear.perm16_eq' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+/-- info: 'CompStark.KoalaBear.Instances.perm16_eq' depends on axioms: [propext, Classical.choice, Quot.sound] -/
 #guard_msgs in
-#print axioms CompStark.KoalaBear.perm16_eq
+#print axioms CompStark.KoalaBear.Instances.perm16_eq
 
-/-- info: 'CompStark.KoalaBear.perm24_eq' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+/-- info: 'CompStark.KoalaBear.Instances.perm24_eq' depends on axioms: [propext, Classical.choice, Quot.sound] -/
 #guard_msgs in
-#print axioms CompStark.KoalaBear.perm24_eq
+#print axioms CompStark.KoalaBear.Instances.perm24_eq
 
 end CompStarkTests.Poseidon2

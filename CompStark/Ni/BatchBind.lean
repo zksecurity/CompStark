@@ -40,6 +40,14 @@ def BindingM (cache : Merkle.Cache F (Digest F)) (H : Primitives F Id) (root : D
       Merkle.extractGroup cache (Merkle.injLevels K hs) K l (i >>> (K - l)) root =
         some (g.2.flatMap fun m ↦ values.getD m [])
 
+/-- Accepted openings against every entry of the cap `cap` of height `capHeight` (capped at `K`,
+`c` levels), of matrices of heights `hs` at most `2 ^ K`, open the rows extracted from `cache` in
+the entry's subtree, whose matrices have the heights divided by `2 ^ c`. -/
+def CapBindingM (cache : Merkle.Cache F (Digest F)) (H : Primitives F Id) (cap : Cap F)
+    (capHeight K : ℕ) (hs : List ℕ) : Prop :=
+  ∀ e, BindingM cache H (cap.toList.getD e 0) (K - min capHeight K)
+    (hs.map (· / 2 ^ min capHeight K))
+
 /-- An accepted opening climbs from the hash of its tallest rows to the commitment. -/
 theorem climb_of_verifyBatchM {d : Nat} (hash : List F → Vector F d)
     (compress : Vector F d → Vector F d → Vector F d) (root : Vector F d) (hs : List ℕ)
@@ -58,12 +66,13 @@ theorem climb_of_verifyBatchM {d : Nat} (hash : List F → Vector F d)
 variable {K : Nat}
 
 /-- **Binding from a log, at mixed heights.** With no digest clashes in `log`, answered by
-`answer`, the primitives on `fresh log answer dstar` bind every digest of `log`, for matrices of
-heights `2 ^ j ≤ 2 ^ K`, some of height `2 ^ K`. -/
-theorem bindingM_fresh {bd : Digest F → List F → Digest F} (answer : (q : Query F) → Answer K q)
+`answer`, the primitives on `fresh log answer dstar` bind every digest other than `dstar`, for
+matrices of heights `2 ^ j ≤ 2 ^ K`, some of height `2 ^ K`. -/
+theorem bindingM_fresh {bd : Digest F → List F → List (Digest F)}
+    (answer : (q : Query F) → Answer K q)
     (log : QueryLog (spec F K)) (hcons : Consistent answer log) (hclash : NoClash bd log)
     (dstar : Digest F) (hdstar : dstar ∉ logDigests bd log) (root : Digest F)
-    (hroot : root ∈ logDigests bd log) (L : ℕ) (hs : List ℕ)
+    (hroot : root ≠ dstar) (L : ℕ) (hs : List ℕ)
     (hpow : ∀ h ∈ hs, ∃ j ≤ L, h = 2 ^ j) (htop : 2 ^ L ∈ hs) :
     BindingM (logCache log) (idealOf (fresh log answer dstar)) root L hs := by
   intro i values path hv
@@ -116,7 +125,7 @@ theorem bindingM_fresh {bd : Digest F → List F → Digest F} (answer : (q : Qu
         have := Nat.pow_le_pow_right (show 0 < 2 by decide) hj
         omega
   rw [hmax, Merkle.nextPowerOfTwo_two_pow] at hclimb
-  have hne : root ≠ dstar := fun h ↦ hdstar (h ▸ hroot)
+  have hne : root ≠ dstar := hroot
   obtain ⟨hx, hcc⟩ := Merkle.climbCached_of_fresh (logCache log) hash compress values dstar hnode
     hleaf hstuck path rest i _ _ (by rw [hclimb]; exact hne)
   refine Merkle.extractGroup_of_verifyBatch (logCache log) hash compress values
@@ -131,6 +140,23 @@ theorem bindingM_fresh {bd : Digest F → List F → Digest F} (answer : (q : Qu
     simp only [List.head?_cons, Option.mem_def, Option.some.injEq] at hg
     subst hg
     exact hcc
+
+/-- **Binding from a log, under a cap.** With no digest clashes in `log`, the primitives on
+`fresh log answer dstar` bind every entry of a cap other than `dstar`, and the zero digest, for
+matrices of heights `2 ^ j`, `c ≤ j ≤ K`, some of height `2 ^ K`, `c` the cap's levels. -/
+theorem capBindingM_fresh {bd : Digest F → List F → List (Digest F)}
+    (answer : (q : Query F) → Answer K q)
+    (log : QueryLog (spec F K)) (hcons : Consistent answer log) (hclash : NoClash bd log)
+    (dstar : Digest F) (hdstar : dstar ∉ logDigests bd log) (cap : Cap F)
+    (hcap : ∀ e, cap.toList.getD e 0 ≠ dstar) (capHeight L : ℕ) (hs : List ℕ)
+    (hpow : ∀ h ∈ hs, ∃ j, min capHeight L ≤ j ∧ j ≤ L ∧ h = 2 ^ j) (htop : 2 ^ L ∈ hs) :
+    CapBindingM (logCache log) (idealOf (fresh log answer dstar)) cap capHeight L hs := by
+  intro e
+  refine bindingM_fresh answer log hcons hclash dstar hdstar _ (hcap e) _ _ (fun h hh ↦ ?_)
+    (List.mem_map.mpr ⟨_, htop, by rw [Nat.pow_div (Nat.min_le_right _ _) (by decide)]⟩)
+  obtain ⟨h', hh', rfl⟩ := List.mem_map.mp hh
+  obtain ⟨j, hcj, hjL, rfl⟩ := hpow h' hh'
+  exact ⟨j - min capHeight L, by omega, by rw [Nat.pow_div hcj (by decide)]⟩
 
 /-! ### Matrix columns -/
 
@@ -203,5 +229,34 @@ theorem matColumn_eq (cache : Merkle.Cache F (Digest F)) (H : Primitives F Id) (
     obtain ⟨h1, -⟩ := List.mem_filter.mp ht'
     exact hw t' (List.mem_range.mp h1)
   · exact List.mem_filter.mpr ⟨List.mem_range.mpr ht, by rw [htm]; exact beq_self_eq_true _⟩
+
+theorem shiftRight_mod_two_pow (a s n : ℕ) (h : s ≤ n) :
+    (a % 2 ^ n) >>> s = (a >>> s) % 2 ^ (n - s) := by
+  rw [Nat.shiftRight_eq_div_pow, Nat.shiftRight_eq_div_pow,
+    show 2 ^ n = 2 ^ s * 2 ^ (n - s) by rw [← Nat.pow_add, Nat.add_sub_cancel' h],
+    Nat.mod_mul_right_div_self]
+
+/-- **An opening against a cap that binds opens the extracted columns.** -/
+theorem matColumnCap_eq (cache : Merkle.Cache F (Digest F)) (H : Primitives F Id) (cap : Cap F)
+    (capHeight K : ℕ) (hs ws : List ℕ) (hb : CapBindingM cache H cap capHeight K hs) (idx : ℕ)
+    (values : List (List F)) (path : List (Digest F))
+    (hv : verifyCapMixedH H cap capHeight hs K idx values path = true)
+    (hw : ∀ t < hs.length, (values.getD t []).length = ws.getD t 0)
+    (t m : ℕ) (ht : t < hs.length) (htm : hs.getD t 0 = 2 ^ m) (hcm : min capHeight K ≤ m)
+    (hmK : m ≤ K) (j : ℕ) (hj : j < ws.getD t 0) :
+    Merkle.matColumnCap cache cap.toList capHeight K hs ws t j m (idx >>> (K - m)) =
+      (values.getD t []).getD j 0 := by
+  set c := min capHeight K with hc
+  unfold Merkle.matColumnCap
+  have hmod : idx >>> (K - m) % 2 ^ (m - c) = (idx % 2 ^ (K - c)) >>> (K - c - (m - c)) := by
+    rw [shiftRight_mod_two_pow _ _ _ (by omega), show K - c - (m - c) = K - m by omega,
+      show K - c - (K - m) = m - c by omega]
+  rw [← hc, ← Nat.shiftRight_add, show K - m + (m - c) = K - c by omega, hmod]
+  refine matColumn_eq cache H _ (K - c) _ ws (hb _) _ values path hv
+    (fun t' ht' ↦ hw t' (by rwa [List.length_map] at ht')) t (m - c)
+    (by rw [List.length_map]; exact ht) ?_ j hj
+  rw [List.getD_eq_getElem?_getD, List.getElem?_map, List.getElem?_eq_getElem ht,
+    Option.map_some, Option.getD_some, ← List.getD_eq_getElem _ 0 ht, htm,
+    Nat.pow_div hcm (by decide)]
 
 end CompStark.Ni

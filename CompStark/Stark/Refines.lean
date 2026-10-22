@@ -225,17 +225,17 @@ theorem commitAndSample_refines (h : Refines B) {P : Params} {A : Air F} {logN :
   have hct := h.commit (.cons hext .nil) ⟨_, List.cons_ne_nil _ _,
     fun m hm ↦ by obtain rfl := List.mem_singleton.mp hm; exact ⟨hextOk, heh.le⟩,
     by show Addressable (_ * (0 + A.width)); rw [Nat.zero_add]; exact hmw⟩
-  -- The preprocessed trace's root and extension.
-  have hroots : ((setupWith B P A logN).map fun x ↦ (B.root x.2).toList).getD [] =
+  -- The preprocessed trace's cap and extension.
+  have hroots : ((setupWith B P A logN).map fun x ↦ capElems (B.cap x.2 P.capHeight)).getD [] =
       ((setupWith (specBackend EF) P A logN).map fun x ↦
-        ((specBackend EF).root x.2).toList).getD [] := by
+        capElems ((specBackend EF).cap x.2 P.capHeight)).getD [] := by
     generalize setupWith B P A logN = xp at hprep
     generalize setupWith (specBackend EF) P A logN = yp at hprep
     cases hprep with
     | none => rfl
     | @some a b hr =>
-      show (B.root a.2).toList = ((specBackend EF).root b.2).toList
-      rw [h.root hr.2]
+      show capElems (B.cap a.2 P.capHeight) = capElems ((specBackend EF).cap b.2 P.capHeight)
+      rw [h.cap _ hr.2]
   have hprepQ : Option.Rel h.RM ((setupWith B P A logN).map (·.1))
       ((setupWith (specBackend EF) P A logN).map (·.1)) := by
     generalize setupWith B P A logN = xp at hprep
@@ -250,7 +250,7 @@ theorem commitAndSample_refines (h : Refines B) {P : Params} {A : Air F} {logN :
     exact ⟨(hprepOk y hy).1, (hprepOk y hy).2.1⟩
   unfold commitAndSample
   dsimp only
-  rw [h.root hct, hroots]
+  rw [h.cap _ hct, hroots]
   refine RelM.bind_eq fun _ ↦ RelM.bind_eq fun _ ↦ RelM.bind_eq fun _ ↦
     RelM.bind_eq fun _ ↦ RelM.bind_eq fun alpha ↦ ?_
   obtain ⟨hch, hall, hlen⟩ := quotientChunks_refines h pis hin' hext hprepQ hprepQok
@@ -259,7 +259,7 @@ theorem commitAndSample_refines (h : Refines B) {P : Params} {A : Air F} {logN :
     fun m hm ↦ ⟨(hall m hm).1, (hall m hm).2.1.le⟩, by
       rw [foldl_width_const _ _ (fun m hm ↦ (hall m hm).2.2), hlen, Nat.zero_add]
       exact hmq⟩
-  rw [h.root hqc]
+  rw [h.cap _ hqc]
   dsimp only
   refine RelM.bind_eq fun _ ↦ RelM.bind_eq fun _ ↦ RelM.bind_eq fun _ ↦ ?_
   exact RelM.pure ⟨hext, hct, hch, hqc, rfl, hextOk, fun m hm ↦ (hall m hm).1⟩
@@ -335,7 +335,7 @@ theorem openAndAssemble_refines (hA : DomainsAddressable F EF) (h : Refines B) (
       simp only [List.mem_singleton] at hx
       subst hx
       exact ⟨hprepOk _ hy, hpts⟩
-  · rw [h.root hct, h.root hqc]
+  · rw [h.cap _ hct, h.cap _ hqc]
     simp only [hmapEq]
     exact RelM.pure rfl
 

@@ -417,15 +417,17 @@ theorem prob_digestOf_eq_le (K : Nat) (t : Query F) (x : Digest F) :
   | node left right => exact (SampleableType.prEvent_uniformSample_eq_singleton x).le
 
 /-- A fresh answer after fewer than `n` queries clashes with probability at most
-`3 n / |Digest|`. -/
-theorem prob_clash_le (bd : Digest F → List F → Digest F) (K n : Nat)
+`(m + 2) n / |Digest|`, if an input binds at most `m ≥ 1` digests. -/
+theorem prob_clash_le (bd : Digest F → List F → List (Digest F)) (m : Nat) (hm : 1 ≤ m)
+    (hbd : ∀ c i, (bd c i).length ≤ m) (K n : Nat)
     (pre : QueryLog (spec F K)) (hpre : pre.length < n) (t : Query F) :
     Pr{let u ← $ᵗ (Answer K t)}[Clash bd pre t u] ≤
-      (3 * n : ℕ) * (Fintype.card (Digest F) : ℝ≥0∞)⁻¹ := by
-  refine (prEvent_digestClash_le digestOf (prob_digestOf_eq_le K) (keyDigests bd) 2
-    (length_keyDigests_le bd) [initCap] pre t).trans ?_
+      ((m + 2) * n : ℕ) * (Fintype.card (Digest F) : ℝ≥0∞)⁻¹ := by
+  refine (prEvent_digestClash_le digestOf (prob_digestOf_eq_le K) (keyDigests bd) (m + 1)
+    (length_keyDigests_le bd m hm hbd) [initCap] pre t).trans ?_
   gcongr
   simp only [List.length_cons, List.length_nil]
-  omega
+  calc 0 + 1 + (m + 1 + 1) * pre.length + (m + 1) = (m + 2) * (pre.length + 1) := by ring
+    _ ≤ (m + 2) * n := Nat.mul_le_mul_left _ hpre
 
 end CompStark.Ni

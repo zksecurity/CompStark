@@ -13,18 +13,15 @@ public import CompStark.Merkle.Mixed
 /-! # Honest Merkle openings verify
 
 Every commitment of the uni-stark prover holds matrices of one height `2 ^ k`: the trace's
-extension, the quotient chunks' extensions, each commit-phase round. For such a batch the
-specification's opening `Committed.openAt` at any row verifies against `Committed.root`.
-
-`Merkle.verifyBatch_openBatch` proves this for `Merkle.openBatch` and `Merkle.root` over any
-`hash` and `compress`. `(Committed F)` stores the same digest layers as arrays, so its root is
-`Merkle.root`, its path is `Merkle.openBatch`'s, and, with one height, its rows are the rows at the
-index unshifted, which are `Merkle.openBatch`'s rows.
+extension, the quotient chunks' extensions, each commit-phase round. `(Committed F)` stores the
+digest layers of `Merkle.layers` as arrays; with one height, its opening's rows at an index are the
+rows at the index unshifted.
 
 The verifier checks openings at all queries at once (`checkMulti`): the specification's
 multi-opening `openMulti` of matrices of heights `2 ^ j ≤ 2 ^ k`, as the batch STARK commits them,
-at indices below `2 ^ k` verifies against its root (`verifyMulti_openMulti`), by
-`Merkle.verifyMulti_prune_mixed` on the tree's nodes with injected matrices (`injNode`).
+none below the cap, at indices below `2 ^ k` verifies against its cap (`verifyMulti_openMulti`),
+by `Merkle.verifyMulti_prune_mixed` on the tree's nodes with injected matrices (`injNode`): the cap
+is the nodes of its layer (`cap_eq_injNode`).
 -/
 
 @[expose] public section
@@ -98,20 +95,28 @@ theorem rowOf_toList (m : Mat F) (i : Nat) : (rowOf m i).toList = m.toMatrix.row
     simp only [rowOf, Array.toList_ofFn, List.getElem_ofFn, Merkle.Matrix.row, Mat.toMatrix,
       List.getElem_map, List.getElem_range]
 
-/-- The committed root is the Merkle root. -/
-theorem root_ofMats [Poseidon2Field F] (ms : List (Mat F)) :
-    (Committed.ofMats hashF compF ms).root =
-      Merkle.root (Hash.Poseidon2.hash F) (Hash.Poseidon2.compress F) (ms.map Mat.toMatrix) := by
-  rw [Merkle.root_eq_layers]
-  simp only [Committed.ofMats, Committed.root]
-  generalize Merkle.layers (Hash.Poseidon2.hash F) (Hash.Poseidon2.compress F)
-    (ms.map Mat.toMatrix) = ls
-  simp only [List.back?_toArray, List.getLast?_map, List.getLastD_eq_getLast?]
-  cases ls.getLast? with
-  | none => rfl
-  | some l =>
-    simp only [Option.map_some, Option.getD_some, List.headD_eq_getD, Array.getD_eq_getD_getElem?,
-      List.getElem?_toArray, List.getD_eq_getElem?_getD]
+/-- The cap of height `h` of matrices of one height `2 ^ k` is the tree's nodes at its level, `h`
+capped at `k`. -/
+theorem cap_eq_nodeValue [Poseidon2Field F] (ms : List (Mat F)) (k : Nat) (hne : ms ≠ [])
+    (hms : ∀ m ∈ ms, m.height = 2 ^ k) (h : Nat) :
+    (Committed.ofMats hashF compF ms).cap h =
+      ((List.range (2 ^ min h k)).map
+        (nodeValue compF (leafHashes hashF (ms.map Mat.toMatrix)) (k - min h k))).toArray := by
+  have hms' : ∀ m ∈ ms.map Mat.toMatrix, m.height = 2 ^ k := fun m hm ↦ by
+    obtain ⟨a, ha, rfl⟩ := List.mem_map.mp hm; exact hms a ha
+  have hl : ((Committed.ofMats hashF compF ms).layers.toList.map Array.toList) =
+      (List.range (k + 1)).map fun j ↦
+        (List.range (2 ^ (k - j))).map
+          (nodeValue compF (leafHashes hashF (ms.map Mat.toMatrix)) j) := by
+    simp only [Committed.ofMats, List.toList_toArray, List.map_map, Function.comp_def,
+      List.toList_toArray, List.map_id']
+    exact layers_eq_nodeValue _ _ _ k (by rwa [Ne, List.map_eq_nil_iff]) hms'
+  have hk : min h k ≤ k := Nat.min_le_right _ _
+  simp only [Committed.cap, capOf, hl, List.length_map, List.length_range, Nat.add_sub_cancel]
+  rw [List.getD_eq_getElem _ _ (by rw [List.length_map, List.length_range]; omega),
+    List.getElem_map, List.getElem_range, show k - (k - min h k) = min h k by omega,
+    List.take_of_length_le (by rw [List.length_map, List.length_range]), padTo,
+    List.length_map, List.length_range, Nat.sub_self, List.replicate_zero, List.append_nil]
 
 /-- The opening's rows of matrices of one height `2 ^ k` are their rows at the index. -/
 theorem openAt_values [Poseidon2Field F] (ms : List (Mat F)) (k : Nat)
@@ -131,52 +136,6 @@ theorem getD_toArrays {α : Type*} [Zero α] (ls : List (List α)) (j x : Nat) :
   cases ls[j]? <;> simp only [Option.map_some, Option.map_none, Option.getD_some,
     Option.getD_none, List.getElem?_toArray, List.getElem?_nil]
 
-/-- The opening's path of matrices of one height `2 ^ k` is `Merkle.openBatch`'s. -/
-theorem openAt_path [Poseidon2Field F] (ms : List (Mat F)) (k : Nat) (hne : ms ≠ [])
-    (hms : ∀ m ∈ ms, m.height = 2 ^ k) (i : Nat) :
-    ((Committed.ofMats hashF compF ms).openAt i).path.toList =
-      (Merkle.openBatch (Hash.Poseidon2.hash F) (Hash.Poseidon2.compress F)
-        (ms.map Mat.toMatrix) i).2 := by
-  have hms' : ∀ m ∈ ms.map Mat.toMatrix, m.height = 2 ^ k := fun m hm ↦ by
-    obtain ⟨a, ha, rfl⟩ := List.mem_map.mp hm; exact hms a ha
-  have hne' : ms.map Mat.toMatrix ≠ [] := by
-    rwa [Ne, List.map_eq_nil_iff]
-  have hmax : ((sortTallest (ms.map Mat.toMatrix)).headD ⟨0, 0, #[]⟩).height = 2 ^ k := by
-    rw [sortTallest_of_height _ _ hms']
-    obtain ⟨m, ms', h⟩ := List.exists_cons_of_ne_nil hne'
-    rw [h, List.headD_cons]; exact hms' m (h ▸ List.mem_cons_self)
-  simp only [Committed.openAt, maxHeight_ofMats ms _ hne hms]
-  simp only [Merkle.openBatch, openWith, hmax, Array.toList_ofFn, Committed.ofMats,
-    Committed.maxHeight, foldl_max_height ms _ hms 0 (Nat.zero_le _) hne]
-  apply List.ext_getElem (by simp only [List.length_ofFn, List.length_map, List.length_range])
-  intro j h1 h2
-  simp only [List.getElem_ofFn, List.getElem_map, List.getElem_range, getD_toArrays, Fin.val_cast]
-
-/-- The specification's opening at row `i` of a batch of matrices of one height `2 ^ k`
-verifies against its root. -/
-theorem verifyBatch_openAt [Poseidon2Field F] (ms : List (Mat F)) (k : Nat) (hne : ms ≠ [])
-    (hms : ∀ m ∈ ms, m.height = 2 ^ k ∧ m.values.size = m.width * m.height)
-    (i : Nat) (hi : i < 2 ^ k) :
-    Merkle.Poseidon2.verifyBatch F (Committed.ofMats hashF compF ms).root
-      (ms.map (·.height)) i
-          (((Committed.ofMats hashF compF ms).openAt i).values.toList.map (·.toList))
-      ((Committed.ofMats hashF compF ms).openAt i).path.toList = true := by
-  have hh : ∀ m ∈ ms, m.height = 2 ^ k := fun m hm ↦ (hms m hm).1
-  have hh' : ∀ m ∈ ms.map Mat.toMatrix, m.height = 2 ^ k := fun m hm ↦ by
-    obtain ⟨a, ha, rfl⟩ := List.mem_map.mp hm; exact hh a ha
-  have hne' : ms.map Mat.toMatrix ≠ [] := by
-    rwa [Ne, List.map_eq_nil_iff]
-  have hv : ((Committed.ofMats hashF compF ms).openAt i).values.toList.map (·.toList) =
-      (Merkle.openBatch (Hash.Poseidon2.hash F) (Hash.Poseidon2.compress F)
-        (ms.map Mat.toMatrix) i).1 := by
-    rw [openAt_values ms k hh, Merkle.openBatch_fst _ _ _ k i hh', List.toList_toArray,
-      List.map_map, List.map_map]
-    exact List.map_congr_left fun m _ ↦ rowOf_toList m i
-  have hH : ms.map (·.height) = (ms.map Mat.toMatrix).map (·.height) := by
-    rw [List.map_map]; rfl
-  rw [root_ofMats, hv, openAt_path ms k hne hh, hH]
-  exact Merkle.verifyBatch_openBatch _ _ _ k i hne' hh' hi
-
 theorem maxHeight_mixed [Poseidon2Field F] {k : Nat} {ms : List (Mat F)}
     (h : MixedHeights k ms) : (Committed.ofMats hashF compF ms).maxHeight = 2 ^ k :=
   foldl_max_mixed k ms 0 (Nat.zero_le _) (fun m hm ↦ by
@@ -195,17 +154,26 @@ theorem openAt_values_mixed [Poseidon2Field F] {k : Nat} {ms : List (Mat F)}
   obtain ⟨j, -, hj⟩ := h.1 m hm
   rw [hj, log2Ceil_two_pow, Nat.log2_two_pow]
 
-/-- The root of matrices of mixed heights is the tree's top node. -/
-theorem root_eq_injNode [Poseidon2Field F] {k : Nat} {ms : List (Mat F)}
-    (h : MixedHeights k ms) :
-    (Committed.ofMats hashF compF ms).root =
-      injNode hashF compF (ms.map Mat.toMatrix) k k 0 := by
-  obtain ⟨h1, h2⟩ := h.toMatrix
-  rw [root_ofMats, root_eq_layers, layers_eq_injNode _ _ _ k h1 h2, List.range_succ,
-    List.map_append, List.getLastD_eq_getLast?, List.getLast?_append, List.map_cons,
-    List.map_nil, List.getLast?_singleton]
-  simp only [Option.some_or, Option.getD_some, Nat.sub_self, Nat.pow_zero, List.range_one,
-    List.map_cons, List.map_nil, List.headD_cons]
+/-- The cap of height `h` of matrices of mixed heights is the tree's nodes at its level, `h`
+capped at `k`. -/
+theorem cap_eq_injNode [Poseidon2Field F] {k : Nat} {ms : List (Mat F)}
+    (hm : MixedHeights k ms) (h : Nat) :
+    (Committed.ofMats hashF compF ms).cap h =
+      ((List.range (2 ^ min h k)).map
+        (injNode hashF compF (ms.map Mat.toMatrix) k (k - min h k))).toArray := by
+  obtain ⟨h1, h2⟩ := hm.toMatrix
+  have hl : ((Committed.ofMats hashF compF ms).layers.toList.map Array.toList) =
+      (List.range (k + 1)).map fun j ↦
+        (List.range (2 ^ (k - j))).map (injNode hashF compF (ms.map Mat.toMatrix) k j) := by
+    simp only [Committed.ofMats, List.toList_toArray, List.map_map, Function.comp_def,
+      List.toList_toArray, List.map_id']
+    exact layers_eq_injNode _ _ _ k h1 h2
+  have hk : min h k ≤ k := Nat.min_le_right _ _
+  simp only [Committed.cap, capOf, hl, List.length_map, List.length_range, Nat.add_sub_cancel]
+  rw [List.getD_eq_getElem _ _ (by rw [List.length_map, List.length_range]; omega),
+    List.getElem_map, List.getElem_range, show k - (k - min h k) = min h k by omega,
+    List.take_of_length_le (by rw [List.length_map, List.length_range]), padTo,
+    List.length_map, List.length_range, Nat.sub_self, List.replicate_zero, List.append_nil]
 
 /-- The opening's path at `i < 2 ^ k` of matrices of mixed heights: the sibling
 `(i >>> j) ^^^ 1` of every level `j < k`. -/
@@ -236,15 +204,17 @@ theorem openAt_path_mixed [Poseidon2Field F] {k : Nat} {ms : List (Mat F)}
     getD_map_range' _ _ _ _ hx]
 
 /-- **Honest multi-openings verify.** The specification's multi-opening at indices below
-`2 ^ k` of matrices of heights `2 ^ j ≤ 2 ^ k`, some of height `2 ^ k`, verifies against its
-root. -/
+`2 ^ k` of matrices of heights `2 ^ j ≤ 2 ^ k`, some of height `2 ^ k` and none below the cap of
+height `min capHeight k`, verifies against its cap. -/
 theorem verifyMulti_openMulti [Poseidon2Field F] {k : Nat} {ms : List (Mat F)}
-    (h : MixedHeights k ms) (indices : List Nat) (hidx : ∀ i ∈ indices, i < 2 ^ k) :
-    Merkle.verifyMultiM (m := Id) hashF compF (Committed.ofMats hashF compF ms).root
+    (h : MixedHeights k ms) (capHeight : Nat) (hcap : ∀ m ∈ ms, 2 ^ min capHeight k ≤ m.height)
+    (indices : List Nat) (hidx : ∀ i ∈ indices, i < 2 ^ k) :
+    Merkle.verifyMultiM (m := Id) hashF compF
+      ((Committed.ofMats hashF compF ms).cap capHeight).toList capHeight
       (ms.map fun m ↦ (m.height, m.width)) indices
       (indices.map fun i ↦ ((Committed.ofMats hashF compF ms).openAt i).values.toList.map
         (·.toList))
-      (Merkle.prune k indices
+      (Merkle.prune (k - min capHeight k) indices
         (indices.map fun i ↦ ((Committed.ofMats hashF compF ms).openAt i).path.toList)) = true := by
   obtain ⟨h1, h2⟩ := h.toMatrix
   have hrows : ∀ i, ((Committed.ofMats hashF compF ms).openAt i).values.toList.map (·.toList) =
@@ -254,8 +224,9 @@ theorem verifyMulti_openMulti [Poseidon2Field F] {k : Nat} {ms : List (Mat F)}
   have hdims : (ms.map fun m ↦ (m.height, m.width)) =
       (ms.map Mat.toMatrix).map fun m ↦ (m.height, m.width) := by
     rw [List.map_map]; rfl
-  rw [root_eq_injNode h, hdims, List.map_congr_left fun i _ ↦ hrows i]
-  refine Merkle.verifyMulti_prune_mixed hashF compF (ms.map Mat.toMatrix) k h1 h2 indices hidx _
+  rw [cap_eq_injNode h, List.toList_toArray, hdims, List.map_congr_left fun i _ ↦ hrows i]
+  refine Merkle.verifyMulti_prune_mixed hashF compF (ms.map Mat.toMatrix) k capHeight h1 h2
+    (fun m hm ↦ by obtain ⟨a, ha, rfl⟩ := List.mem_map.mp hm; exact hcap a ha) indices hidx _
     fun q hq j hj ↦ ?_
   simp only [List.getD_eq_getElem?_getD, List.getElem?_map, List.getElem?_eq_getElem hq,
     Option.map_some, Option.getD_some]
@@ -264,10 +235,11 @@ theorem verifyMulti_openMulti [Poseidon2Field F] {k : Nat} {ms : List (Mat F)}
 
 /-- On Poseidon2, the verifier's multi-opening check is `Merkle.verifyMultiM` on Poseidon2's
 hashes. -/
-theorem checkMulti_eq [Poseidon2Field F] (commit : Digest F) (dims : List (Nat × Nat))
-    (indices : List Nat) (rows : List (List (List F))) (sibs : List (Digest F))
-    (t : Transcript F 24) :
-    checkMulti (poseidon2 F) commit dims indices rows sibs t =
-      .ok (Merkle.verifyMultiM (m := Id) hashF compF commit dims indices rows sibs, t) := rfl
+theorem checkMulti_eq [Poseidon2Field F] (capHeight : Nat) (commit : Cap F)
+    (dims : List (Nat × Nat)) (indices : List Nat) (rows : List (List (List F)))
+    (sibs : List (Digest F)) (t : Transcript F 24) :
+    checkMulti (poseidon2 F) capHeight commit dims indices rows sibs t =
+      .ok (Merkle.verifyMultiM (m := Id) hashF compF commit.toList capHeight dims indices rows
+        sibs, t) := rfl
 
 end CompStark.Fri

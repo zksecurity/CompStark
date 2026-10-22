@@ -13,7 +13,7 @@ public import Lean.Data.Json
 
 A proof's JSON form as Plonky3 serializes it (`serde_json`) for a base field `MontyField31`, here
 `FastField p`: field elements as Montgomery words, extension elements as
-`{"value": [c0, …, c(d-1)]}`, commitments as Merkle caps of one root `{"cap": [[eight words]]}`,
+`{"value": [c0, …, c(d-1)]}`, commitments as Merkle caps `{"cap": [[eight words], …]}`,
 Merkle multi-openings with their pruned siblings `{"sibling_hashes": [...]}`, and absent openings
 as `null`; and batch proofs (`parseBatch`), every instance's opened values in the same format with
 its permutation trace's rows, and its lookup terminal.
@@ -48,10 +48,9 @@ def vector {α : Type} (n : Nat) (f : Json → Except String α) (j : Json) :
   let a ← array f j
   if h : a.size = n then return ⟨a, h⟩ else throw s!"expected {n} elements, got {a.size}"
 
-/-- A commitment: a Merkle cap `{"cap": [root]}` of one root. -/
-def digest (j : Json) : Except String (Digest (FastField p)) := do
-  let roots ← array (vector 8 field) (← j.getObjVal? "cap")
-  if h : roots.size = 1 then return roots[0] else throw s!"expected one root, got {roots.size}"
+/-- A commitment: a Merkle cap `{"cap": [digest, …]}`. -/
+def cap (j : Json) : Except String (Cap (FastField p)) :=
+  do array (vector 8 field) (← j.getObjVal? "cap")
 
 variable [Mont32BaseField p] {EF : Type} [Challenge (FastField p) EF]
 
@@ -74,7 +73,7 @@ def commitOpening (j : Json) : Except String (CommitOpening (FastField p) EF) :=
 
 def friProof (j : Json) : Except String (FriProof (FastField p) EF) := do
   return ⟨← field (← j.getObjVal? "batch_pow_witness"),
-    ← array digest (← j.getObjVal? "commit_phase_commits"),
+    ← array cap (← j.getObjVal? "commit_phase_commits"),
     ← array field (← j.getObjVal? "commit_pow_witnesses"),
     ← array multiOpening (← j.getObjVal? "input_openings"),
     ← array commitOpening (← j.getObjVal? "commit_phase_openings"),
@@ -105,7 +104,7 @@ def openedValues (ov : Json) : Except String (OpenedValues EF) := do
 def proof (j : Json) : Except String (Proof (FastField p) EF) := do
   let cs ← j.getObjVal? "commitments"
   absent cs "random"
-  return ⟨← digest (← cs.getObjVal? "trace"), ← digest (← cs.getObjVal? "quotient_chunks"),
+  return ⟨← cap (← cs.getObjVal? "trace"), ← cap (← cs.getObjVal? "quotient_chunks"),
     ← openedValues (← j.getObjVal? "opened_values"),
     ← friProof (← j.getObjVal? "opening_proof"),
     ← (← j.getObjVal? "degree_bits").getNat?,
@@ -120,8 +119,8 @@ def batchProof (j : Json) : Except String (Batch.BatchProof (FastField p) EF) :=
   let cs ← j.getObjVal? "commitments"
   absent cs "random"
   let insts ← (← (← j.getObjVal? "opened_values").getObjVal? "instances").getArr?
-  return ⟨← digest (← cs.getObjVal? "main"), ← optional digest (← cs.getObjVal? "permutation"),
-    ← digest (← cs.getObjVal? "quotient_chunks"),
+  return ⟨← cap (← cs.getObjVal? "main"), ← optional cap (← cs.getObjVal? "permutation"),
+    ← cap (← cs.getObjVal? "quotient_chunks"),
     ← insts.mapM fun i ↦ do openedValues (← i.getObjVal? "base_opened_values"),
     ← insts.mapM fun i ↦ do array ext (← i.getObjVal? "permutation_local"),
     ← insts.mapM fun i ↦ do array ext (← i.getObjVal? "permutation_next"),

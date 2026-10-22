@@ -124,13 +124,13 @@ noncomputable def run (S : Setup EF) (publicValues : Fin S.k → List F) (prover
 
 /-- Every instance's trace words committed under `proof.mainCommit`, read off the hash queries of
 `log`: at each point, the instance's columns, at its offset among the matrices of its height, of
-the rows of that height at the point's index (Plonky3's bit-reversed order), zero where `log` holds
-no preimage. -/
+the rows of that height at the point's index (Plonky3's bit-reversed order) under the cap, zero
+where `log` holds no preimage. -/
 noncomputable def committedTraces (S : Setup EF) (log : QueryLog (spec F S.streamLen))
     (proof : CompStark.Batch.BatchProof F EF) :
     (i : Fin S.k) → Fin (S.air i).width → (S.instanceSetup i).Point → F := fun i column point ↦
   let m := S.logN i + S.params.logBlowup
-  Merkle.matColumn (logCache log) proof.mainCommit S.logTop S.mainHeights S.mainWidths i column m
-    (reverseBits point m)
+  Merkle.matColumnCap (logCache log) proof.mainCommit.toList S.params.capHeight S.logTop
+    S.mainHeights S.mainWidths i column m (reverseBits point m)
 
 end CompStark.Iop.Batch

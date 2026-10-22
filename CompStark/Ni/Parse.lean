@@ -83,6 +83,16 @@ def prependSeed (seed : List F) : List (List F) → List (List F)
 /-- `seed` before the first fold round, nothing before the others. -/
 def seedAt (seed : List F) (k : Nat) : List F := if k = 0 then seed else []
 
+/-- A cap that is not empty has elements to observe. -/
+theorem capElems_ne_nil {c : Cap F} (h : c.size ≠ 0) : capElems c ≠ [] := by
+  intro he
+  rw [capElems, List.flatMap_eq_nil_iff] at he
+  obtain ⟨d, hd⟩ := List.exists_mem_of_ne_nil c.toList
+    (List.ne_nil_of_length_pos (by rw [Array.length_toList]; omega))
+  have := congrArg List.length (he d hd)
+  rw [Vector.length_toList, List.length_nil] at this
+  omega
+
 theorem getD_prependSeed (seed : List F) (b : List F) (bs : List (List F)) (k : Nat) :
     (prependSeed seed (b :: bs)).getD k [] = seedAt seed k ++ (b :: bs).getD k [] := by
   cases k with
@@ -212,14 +222,14 @@ after FRI's domain separator; the final polynomial and the query grinding witnes
 witness is not observed without grinding. -/
 def inputs (P : Fri.Params) (A : Air F) (vk : Option (PreprocessedKey F)) (pis : List F)
     (proof : Proof F EF) : List (List F) :=
-  (starkSeedOf EF P A proof.degreeBits ++ proof.traceCommit.toList ++ preprocessedDigest vk ++
+  (starkSeedOf EF P A proof.degreeBits ++ capElems proof.traceCommit ++ preprocessedDigest vk ++
     pis) ::
-  (proof.quotientCommit.toList ++ witnessInput P.oodPowBits proof.oodWitness) ::
+  (capElems proof.quotientCommit ++ witnessInput P.oodPowBits proof.oodWitness) ::
   (DomainSeparator.pcsSeed F EF (pcsCounts proof.opened) P.batchPowBits ++
     coeffs (openedValues proof.opened) ++ witnessInput P.batchPowBits proof.fri.batchWitness) ::
   prependSeed (friSeedOf P proof)
     (((proof.fri.commits.toList.zip proof.fri.commitWitnesses.toList).map fun cw ↦
-      cw.1.toList ++ witnessInput P.commitPowBits cw.2) ++
+      capElems cw.1 ++ witnessInput P.commitPowBits cw.2) ++
     [coeffs proof.fri.finalPoly.toList ++ witnessInput P.queryPowBits proof.fri.queryWitness])
 
 /-! ### The duplex chain of a schedule -/
@@ -689,7 +699,7 @@ theorem verifyFri_logs (hK : P.numQueries + Challenge.d EF + 1 ≤ K) (blocks : 
         (foldSchedule P.maxLogArity (P.logBlowup + P.logFinalPolyLen) (hs.headD 0) hs)
         (2 ^ P.logFinalPolyLen) P.commitPowBits P.queryPowBits P.numQueries (hs.headD 0) P.logBlowup
         P.maxLogArity) j ++
-        (proof.commits.toList.zip proof.commitWitnesses.toList)[j].1.toList ++
+        capElems (proof.commits.toList.zip proof.commitWitnesses.toList)[j].1 ++
           witnessInput P.commitPowBits (proof.commits.toList.zip proof.commitWitnesses.toList)[j].2)
     (hlast : blocks.getD (r + (proof.commits.toList.zip proof.commitWitnesses.toList).length)
       [] = seedAt (DomainSeparator.friSeed F EF
@@ -738,8 +748,9 @@ theorem verifyFri_logs (hK : P.numQueries + Challenge.d EF + 1 ≤ K) (blocks : 
   rw [hlog, out_observeList, ite_eq_right_of_eq_false _ _ (eq_false hseedne), List.nil_append]
   dsimp only at hok ⊢
   rw [List.nil_append] at hok ⊢
-  obtain ⟨-, hok, hlog⟩ := out_ensure_bind_ok answer hok
+  obtain ⟨hcne, hok, hlog⟩ := out_ensure_bind_ok answer hok
   rw [hlog]
+  simp only [Bool.and_eq_true, Array.all_eq_true', bne_iff_ne, ne_eq] at hcne
   -- the fold rounds
   obtain ⟨betas, s₄, h₄, hok, hlog⟩ := out_bind_ok answer hok
   rw [hlog]
@@ -754,15 +765,16 @@ theorem verifyFri_logs (hK : P.numQueries + Challenge.d EF + 1 ≤ K) (blocks : 
     simp only at hcap hinp
     subst hcap hinp
     have hblk := hfold k hk
-    generalize cws[k] = cw at hstep hblk ⊢
+    have hc0 : cws[k].1.size ≠ 0 :=
+      hcne.2 _ (Array.mem_toList_iff.mp (List.of_mem_zip (List.getElem_mem hk)).1)
+    generalize cws[k] = cw at hstep hblk hc0 ⊢
     obtain ⟨c, w⟩ := cw
-    dsimp only at hstep hblk ⊢
-    have hc : c.toList ≠ [] :=
-      List.ne_nil_of_length_pos (by simp only [Vector.length_toList]; omega)
+    dsimp only at hstep hblk hc0 ⊢
+    have hc : capElems c ≠ [] := capElems_ne_nil hc0
     obtain ⟨_, s₁, h₁, hstep, hlog₁⟩ := out_bind_ok answer hstep
-    rw [out_observeList, ite_eq_right_of_eq_false _ _ (eq_false hc)] at h₁
+    rw [observeCap, out_observeList, ite_eq_right_of_eq_false _ _ (eq_false hc)] at h₁
     obtain ⟨-, rfl⟩ := Prod.mk.inj (Except.ok.inj h₁)
-    rw [hlog₁, out_observeList, ite_eq_right_of_eq_false _ _ (eq_false hc)]
+    rw [hlog₁, observeCap, out_observeList, ite_eq_right_of_eq_false _ _ (eq_false hc)]
     have hnext : seedAt seed (k + 1) = [] := rfl
     by_cases hbits : P.commitPowBits = 0
     · simp only [witnessInput, hbits, ↓reduceIte, List.append_nil] at hblk
@@ -771,7 +783,7 @@ theorem verifyFri_logs (hK : P.numQueries + Challenge.d EF + 1 ≤ K) (blocks : 
       obtain ⟨rfl, rfl⟩ := Prod.mk.inj (Except.ok.inj h₂)
       obtain ⟨-, hstep, hlog₃⟩ := out_ensure_bind_ok answer hstep
       have hv₄ := out_sampleExt_nil (EF := EF) answer (by omega) (capAt answer blocks (r + k))
-        (seedAt seed k ++ c.toList)
+        (seedAt seed k ++ capElems c)
       obtain ⟨β, s₄, h₄, hstep, hlog₄⟩ := out_bind_ok answer hstep
       rw [hv₄] at h₄
       obtain ⟨rfl, rfl⟩ := Prod.mk.inj (Except.ok.inj h₄)
@@ -784,15 +796,15 @@ theorem verifyFri_logs (hK : P.numQueries + Challenge.d EF + 1 ≤ K) (blocks : 
         List.mem_cons, true_or, or_true]
     · simp only [witnessInput, hbits, ↓reduceIte] at hblk
       obtain ⟨v₂, hv₂⟩ := out_checkWitness_pos answer _ hbits w (capAt answer blocks (r + k))
-        (seedAt seed k ++ c.toList) []
+        (seedAt seed k ++ capElems c) []
       obtain ⟨_, s₂, h₂, hstep, hlog₂⟩ := out_bind_ok answer hstep
       rw [hv₂] at h₂
       obtain ⟨rfl, rfl⟩ := Prod.mk.inj (Except.ok.inj h₂)
       obtain ⟨-, hstep, hlog₃⟩ := out_ensure_bind_ok answer hstep
       have hv₄ := out_sampleExt_pop (EF := EF) answer
-        (answer (.duplex (capAt answer blocks (r + k)) (seedAt seed k ++ c.toList ++ [w]))).1 []
+        (answer (.duplex (capAt answer blocks (r + k)) (seedAt seed k ++ capElems c ++ [w]))).1 []
         (answer (.duplex (capAt answer blocks (r + k))
-          (seedAt seed k ++ c.toList ++ [w]))).2.toList.tail
+          (seedAt seed k ++ capElems c ++ [w]))).2.toList.tail
         (by rw [List.length_tail, Vector.length_toList]; omega)
       obtain ⟨β, s₄, h₄, hstep, hlog₄⟩ := out_bind_ok answer hstep
       rw [hv₄] at h₄
@@ -897,7 +909,7 @@ theorem verifyPcs_logs (hK : P.numQueries + Challenge.d EF + 1 ≤ K) (blocks : 
         (foldSchedule P.maxLogArity (P.logBlowup + P.logFinalPolyLen) (hs.headD 0) hs)
         (2 ^ P.logFinalPolyLen) P.commitPowBits P.queryPowBits P.numQueries (hs.headD 0) P.logBlowup
         P.maxLogArity) j ++
-        (proof.commits.toList.zip proof.commitWitnesses.toList)[j].1.toList ++
+        capElems (proof.commits.toList.zip proof.commitWitnesses.toList)[j].1 ++
           witnessInput P.commitPowBits (proof.commits.toList.zip proof.commitWitnesses.toList)[j].2)
     (hlast : blocks.getD (r + 1 + (proof.commits.toList.zip proof.commitWitnesses.toList).length)
       [] = seedAt (DomainSeparator.friSeed F EF
@@ -1023,14 +1035,14 @@ theorem inputs_getD_fri (P : Fri.Params) (A : Air F) (vk : Option (PreprocessedK
     (pis : List F) (proof : Proof F EF)
     (k : Nat) : (inputs P A vk pis proof).getD (3 + k) [] = seedAt (friSeedOf P proof) k ++
       ((((proof.fri.commits.toList.zip proof.fri.commitWitnesses.toList).map fun cw ↦
-        cw.1.toList ++ witnessInput P.commitPowBits cw.2) ++
+        capElems cw.1 ++ witnessInput P.commitPowBits cw.2) ++
       [coeffs proof.fri.finalPoly.toList ++
         witnessInput P.queryPowBits proof.fri.queryWitness]).getD
         k []) := by
   rw [inputs, show 3 + k = k + 1 + 1 + 1 by omega, List.getD_cons_succ, List.getD_cons_succ,
     List.getD_cons_succ]
   rcases h : ((proof.fri.commits.toList.zip proof.fri.commitWitnesses.toList).map fun cw ↦
-      cw.1.toList ++ witnessInput P.commitPowBits cw.2) ++
+      capElems cw.1 ++ witnessInput P.commitPowBits cw.2) ++
       [coeffs proof.fri.finalPoly.toList ++ witnessInput P.queryPowBits proof.fri.queryWitness]
     with _ | ⟨b, bs⟩
   · simp only [List.append_eq_nil_iff, List.cons_ne_nil, and_false] at h
@@ -1040,7 +1052,7 @@ theorem inputs_getD_fold (P : Fri.Params) (A : Air F) (vk : Option (Preprocessed
     (pis : List F) (proof : Proof F EF)
     (j : Nat) (hj : j < (proof.fri.commits.toList.zip proof.fri.commitWitnesses.toList).length) :
     (inputs P A vk pis proof).getD (3 + j) [] = seedAt (friSeedOf P proof) j ++
-      (proof.fri.commits.toList.zip proof.fri.commitWitnesses.toList)[j].1.toList ++
+      capElems (proof.fri.commits.toList.zip proof.fri.commitWitnesses.toList)[j].1 ++
         witnessInput P.commitPowBits
           (proof.fri.commits.toList.zip proof.fri.commitWitnesses.toList)[j].2 := by
   rw [inputs_getD_fri, List.append_assoc, List.getD_eq_getElem?_getD,
@@ -1064,7 +1076,7 @@ theorem length_inputs (P : Fri.Params) (A : Air F) (vk : Option (PreprocessedKey
       2 + 2 + (proof.fri.commits.toList.zip proof.fri.commitWitnesses.toList).length := by
   rw [inputs]
   rcases h : ((proof.fri.commits.toList.zip proof.fri.commitWitnesses.toList).map fun cw ↦
-      cw.1.toList ++ witnessInput P.commitPowBits cw.2) ++
+      capElems cw.1 ++ witnessInput P.commitPowBits cw.2) ++
       [coeffs proof.fri.finalPoly.toList ++ witnessInput P.queryPowBits proof.fri.queryWitness]
     with _ | ⟨b, bs⟩
   · simp only [List.append_eq_nil_iff, List.cons_ne_nil, and_false] at h
@@ -1175,6 +1187,12 @@ theorem verifyWith_logs (hK : P.numQueries + Challenge.d EF + 1 ≤ K) (A : Air 
     cases hok
   rename_i hoodw
   simp only [hoodw, ↓reduceIte] at ⊢
+  split at hok
+  swap
+  · simp only [ExceptT.run_bind, ExceptT.run_throw, pure_bind] at hok
+    cases hok
+  rename_i hqne
+  simp only [hqne, ↓reduceIte] at ⊢
   rw [run_stateT_bind _ _ _ (fun a ↦ by split <;> rfl)] at hok ⊢
   rcases hrun : out answer _ { cap := initCap, input := [], samples := [] } with ⟨_ | a, w⟩
   · rw [hrun] at hok
@@ -1192,9 +1210,9 @@ theorem verifyWith_logs (hK : P.numQueries + Challenge.d EF + 1 ≤ K) (A : Air 
   obtain ⟨-, rfl⟩ := Prod.mk.inj (Except.ok.inj h₁)
   rw [hlog, out_observeList_nil, List.nil_append]
   obtain ⟨_, s₁, h₁, hrun1, hlog⟩ := out_bind_ok answer hrun1
-  rw [out_observeList_nil] at h₁
+  rw [observeCap, out_observeList_nil] at h₁
   obtain ⟨-, rfl⟩ := Prod.mk.inj (Except.ok.inj h₁)
-  rw [hlog, out_observeList_nil, List.nil_append]
+  rw [hlog, observeCap, out_observeList_nil, List.nil_append]
   obtain ⟨_, s₁, h₁, hrun1, hlog⟩ := out_bind_ok answer hrun1
   rw [out_observeList_nil] at h₁
   obtain ⟨-, rfl⟩ := Prod.mk.inj (Except.ok.inj h₁)
@@ -1203,7 +1221,7 @@ theorem verifyWith_logs (hK : P.numQueries + Challenge.d EF + 1 ≤ K) (A : Air 
   rw [out_observeList_nil] at h₁
   obtain ⟨-, rfl⟩ := Prod.mk.inj (Except.ok.inj h₁)
   rw [hlog, out_observeList_nil, List.nil_append]
-  have hin₀ : starkSeedOf EF P A proof.degreeBits ++ proof.traceCommit.toList ++
+  have hin₀ : starkSeedOf EF P A proof.degreeBits ++ capElems proof.traceCommit ++
       preprocessedDigest vk ++ pis = (inputs P A vk pis proof).getD 0 [] := by
     simp only [inputs, List.getD_eq_getElem?_getD, List.getElem?_cons_zero, Option.getD_some]
   simp only [List.nil_append] at hrun1 ⊢
@@ -1221,16 +1239,17 @@ theorem verifyWith_logs (hK : P.numQueries + Challenge.d EF + 1 ≤ K) (A : Air 
     ((inputs P A vk pis proof).getD 0 []))).1 = capAt answer (inputs P A vk pis proof) 1 from rfl]
     at hrun1 ⊢
   -- the round of `ζ`
-  have hqc : proof.quotientCommit.toList ≠ [] :=
-    List.ne_nil_of_length_pos (by simp only [Vector.length_toList]; omega)
+  have hqc : capElems proof.quotientCommit ≠ [] :=
+    capElems_ne_nil (by simpa only [bne_iff_ne, ne_eq] using hqne)
   obtain ⟨_, s₁, h₁, hrun1, hlog⟩ := out_bind_ok answer hrun1
-  rw [out_observeList, ite_eq_right_of_eq_false _ _ (eq_false hqc)] at h₁
+  rw [observeCap, out_observeList, ite_eq_right_of_eq_false _ _ (eq_false hqc)] at h₁
   obtain ⟨-, rfl⟩ := Prod.mk.inj (Except.ok.inj h₁)
-  rw [hlog, out_observeList, ite_eq_right_of_eq_false _ _ (eq_false hqc), List.nil_append]
+  rw [hlog, observeCap, out_observeList, ite_eq_right_of_eq_false _ _ (eq_false hqc),
+    List.nil_append]
   dsimp only at hrun1 ⊢
   rw [List.nil_append] at hrun1 ⊢
   have hin₁ : (inputs P A vk pis proof).getD 1 [] =
-      proof.quotientCommit.toList ++ witnessInput P.oodPowBits proof.oodWitness := by
+      capElems proof.quotientCommit ++ witnessInput P.oodPowBits proof.oodWitness := by
     simp only [inputs, List.getD_eq_getElem?_getD, List.getElem?_cons_succ,
       List.getElem?_cons_zero, Option.getD_some]
   have hzeta : ∀ (alpha zeta : EF) (smp : List F) {res : (EF × EF) × Sponge F},
@@ -1281,7 +1300,7 @@ theorem verifyWith_logs (hK : P.numQueries + Challenge.d EF + 1 ≤ K) (A : Air 
     exact hzeta _ _ _ hrun1
   · simp only [witnessInput, hbits, ↓reduceIte] at hin₁
     obtain ⟨v, hv⟩ := out_checkWitness_pos answer _ hbits proof.oodWitness
-      (capAt answer (inputs P A vk pis proof) 1) proof.quotientCommit.toList []
+      (capAt answer (inputs P A vk pis proof) 1) (capElems proof.quotientCommit) []
     obtain ⟨_, s₂, h₂, hrun1, hlog⟩ := out_bind_ok answer hrun1
     rw [hv] at h₂
     obtain ⟨rfl, rfl⟩ := Prod.mk.inj (Except.ok.inj h₂)

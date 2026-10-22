@@ -166,13 +166,14 @@ def logCache {K : Nat} (log : QueryLog (spec F K)) : Merkle.Cache F (Digest F) w
   node left right y := ⟨.node left right, y⟩ ∈ log
 
 /-- The trace words committed under `proof.traceCommit`, read off the hash queries of `log`: the
-row of the tree on `L` at the leaf of each point (Plonky3's bit-reversed order), zero where `log`
-holds no preimage. -/
+row of the tree on `L` under the cap at the leaf of each point (Plonky3's bit-reversed order), zero
+where `log` holds no preimage. -/
 noncomputable def committedTrace (S : Setup EF) (log : QueryLog (spec F S.streamLen))
     (proof : Proof F EF) :
     Fin S.air.width → S.Point → F := fun column point ↦
   let depth := S.logN + S.params.logBlowup
-  match Merkle.extractRow (logCache log) depth (reverseBits point depth) proof.traceCommit with
+  match Merkle.extractCapRow (logCache log) depth S.params.capHeight (reverseBits point depth)
+      proof.traceCommit.toList with
   | some row => row.getD column 0
   | none => 0
 

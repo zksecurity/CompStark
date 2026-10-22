@@ -64,6 +64,12 @@ theorem verifyWith_log_head (hK : Challenge.d EF ≤ K) (P : Fri.Params) (A : Ai
     cases hok
   rename_i hoodw
   simp only [hoodw, ↓reduceIte] at ⊢
+  split at hok
+  swap
+  · simp only [ExceptT.run_bind, ExceptT.run_throw, pure_bind] at hok
+    cases hok
+  rename_i hqne
+  simp only [hqne, ↓reduceIte] at ⊢
   rw [run_stateT_bind _ _ _ (fun a ↦ by split <;> rfl)] at hok ⊢
   rcases hrun : out answer _ { cap := initCap, input := [], samples := [] } with ⟨_ | a, w⟩
   · rw [hrun] at hok
@@ -80,9 +86,9 @@ theorem verifyWith_log_head (hK : Challenge.d EF ≤ K) (P : Fri.Params) (A : Ai
   obtain ⟨-, rfl⟩ := Prod.mk.inj (Except.ok.inj h₁)
   rw [hlog, out_observeList_nil, List.nil_append]
   obtain ⟨_, s₁, h₁, hrun1, hlog⟩ := out_bind_ok answer hrun1
-  rw [out_observeList_nil] at h₁
+  rw [observeCap, out_observeList_nil] at h₁
   obtain ⟨-, rfl⟩ := Prod.mk.inj (Except.ok.inj h₁)
-  rw [hlog, out_observeList_nil, List.nil_append]
+  rw [hlog, observeCap, out_observeList_nil, List.nil_append]
   obtain ⟨_, s₁, h₁, hrun1, hlog⟩ := out_bind_ok answer hrun1
   rw [out_observeList_nil] at h₁
   obtain ⟨-, rfl⟩ := Prod.mk.inj (Except.ok.inj h₁)
@@ -91,7 +97,7 @@ theorem verifyWith_log_head (hK : Challenge.d EF ≤ K) (P : Fri.Params) (A : Ai
   rw [out_observeList_nil] at h₁
   obtain ⟨-, rfl⟩ := Prod.mk.inj (Except.ok.inj h₁)
   rw [hlog, out_observeList_nil, List.nil_append]
-  have hin₀ : starkSeedOf EF P A proof.degreeBits ++ proof.traceCommit.toList ++
+  have hin₀ : starkSeedOf EF P A proof.degreeBits ++ capElems proof.traceCommit ++
       preprocessedDigest vk ++ pis = (inputs P A vk pis proof).getD 0 [] := by
     simp only [inputs, List.getD_eq_getElem?_getD, List.getElem?_cons_zero, Option.getD_some]
   simp only [List.nil_append] at hrun1 ⊢
@@ -111,18 +117,20 @@ variable (H : Primitives F Id) (P : Params)
 
 /-- An accepting commit loop passes every grinding check, from the state `commitReplay` reaches
 before each round. -/
-theorem commitLoop_wit (body : Digest F × F → Array EF → M H (ForInStep (Array EF)))
+theorem commitLoop_wit (body : Cap F × F → Array EF → M H (ForInStep (Array EF)))
     (hbody : ∀ cw betas, body cw betas = commitBody H P cw betas) :
-    ∀ (cws : List (Digest F × F)) (betas : Array EF) (s : H.State) (r : Array EF × H.State),
+    ∀ (cws : List (Cap F × F)) (betas : Array EF) (s : H.State) (r : Array EF × H.State),
       forIn (m := M H) cws betas body s = .ok r →
         ∀ i (hi : i < cws.length), (chkWit H P.commitPowBits cws[i].2
-          (obsList H (commitReplay (EF := EF) H P (cws.take i) s).2 cws[i].1.toList)).1 = true
+          (obsList H (commitReplay (EF := EF) H P (cws.take i) s).2 (capElems cws[i].1))).1 =
+            true
   | [], _, _, _, _, i, hi => absurd hi (Nat.not_lt_zero i)
   | cw :: cws, betas, s, r, h, i, hi => by
     obtain ⟨step, st', h1, h2⟩ := forIn_cons_eq_ok H _ _ _ _ _ _ h
     rw [hbody] at h1
     unfold commitBody at h1
-    rw [bind_ok_of H (observeList_eq H _ s), bind_ok_of H (checkWitness_eq H _ _ _)] at h1
+    rw [observeCap, bind_ok_of H (observeList_eq H _ s), bind_ok_of H (checkWitness_eq H _ _ _)]
+      at h1
     obtain ⟨hwit, h1⟩ := ensure_bind_eq_ok H h1
     rw [bind_ok_of H (sampleExt_eq H _)] at h1
     obtain ⟨hs1, hs2⟩ := Prod.mk.inj (pure_eq_ok H h1)
@@ -144,7 +152,8 @@ theorem commitWitness_idealOf (hK : P.numQueries + Challenge.d EF + 1 ≤ K)
     (rounds : List (Round F EF))
     (hheights : (((rounds.flatMap (·.2)).map (·.1.logSize + P.logBlowup)).mergeSort
       (fun a b ↦ b ≤ a)).dedup = [friLogMax P proof])
-    (st : Sponge F) (htn : traceNextOk A proof.opened = true)
+    (st : Sponge F) (hqne : proof.quotientCommit.size ≠ 0)
+    (htn : traceNextOk A proof.opened = true)
     (hshape : preprocessedShapeOk A vk proof.opened proof.degreeBits = true)
     (hfri : verifyFri (idealOf answer) P proof.fri rounds
       (batchOf (idealOf answer) P A vk proof pis) (stateFri (idealOf answer) P A vk proof pis) =
@@ -167,34 +176,37 @@ theorem commitWitness_idealOf (hK : P.numQueries + Challenge.d EF + 1 ≤ K)
   obtain ⟨-, hfri⟩ := ensure_bind_eq_ok H hfri
   obtain ⟨-, hfri⟩ := ensure_bind_eq_ok H hfri
   rw [bind_ok_of H (observeList_eq H _ _)] at hfri
-  obtain ⟨-, hfri⟩ := ensure_bind_eq_ok H hfri
+  obtain ⟨hcne, hfri⟩ := ensure_bind_eq_ok H hfri
+  simp only [Bool.and_eq_true, Array.all_eq_true', bne_iff_ne, ne_eq] at hcne
   obtain ⟨betas, st1, hloop, -⟩ := bind_eq_ok H hfri
   have hwit := commitLoop_wit H P _ (fun _ _ ↦ rfl) cws #[] _ _ hloop i hi
   have hstart : obsList H (stateFri H P A vk proof pis) (friSeedOf P proof) =
       ⟨capAt answer blocks 3, friSeedOf P proof, []⟩ := by
-    obtain ⟨-, l₀, hl₀⟩ := batch_idealOf answer P A vk proof pis (by omega) htn hshape
+    obtain ⟨-, l₀, hl₀⟩ := batch_idealOf answer P A vk proof pis (by omega) hqne htn hshape
     rw [hl₀, obsList_idealOf_ne answer _ _ (friSeed_ne_nil _ _ _ _ _ _ _ _)]
     rfl
   erw [hstart] at hwit
   have htake : ∀ j (hj : j < (cws.take i).length), blocks.getD (3 + j) [] =
-      seedAt (friSeedOf P proof) j ++ (cws.take i)[j].1.toList ++
+      seedAt (friSeedOf P proof) j ++ capElems (cws.take i)[j].1 ++
         witnessInput P.commitPowBits (cws.take i)[j].2 := by
     intro j hj
     rw [List.length_take] at hj
     rw [List.getElem_take]
     exact inputs_getD_fold P A vk pis proof j (Nat.lt_of_lt_of_le hj (Nat.min_le_right _ _))
-  obtain ⟨-, -, l, hl⟩ :=
-    commitReplay_idealOf (EF := EF) answer P (by omega) blocks (cws.take i) 3 _ [] htake
+  have hcws : ∀ cw ∈ cws, cw.1.size ≠ 0 :=
+    fun cw hcw ↦ hcne.2 _ (Array.mem_toList_iff.mp (List.of_mem_zip hcw).1)
+  obtain ⟨-, -, l, hl⟩ := commitReplay_idealOf (EF := EF) answer P (by omega) blocks (cws.take i)
+    3 _ [] (fun cw hcw ↦ hcws cw (List.mem_of_mem_take hcw)) htake
   rw [hl, List.length_take, Nat.min_eq_left hi.le] at hwit
-  have hblock : blocks.getD (3 + i) [] = seedAt (friSeedOf P proof) i ++ cws[i].1.toList ++
+  have hblock : blocks.getD (3 + i) [] = seedAt (friSeedOf P proof) i ++ capElems cws[i].1 ++
       [cws[i].2] := by
     rw [inputs_getD_fold P A vk pis proof i hi]
     simp only [witnessInput, hbits, ↓reduceIte]
     rfl
-  rw [obsList_idealOf_ne answer _ _ (digest_toList_ne_nil _)] at hwit
+  rw [obsList_idealOf_ne answer _ _ (capElems_ne_nil (hcws _ (List.getElem_mem hi)))] at hwit
   simp only [chkWit, hbits, ↓reduceIte, smpBits, beq_iff_eq] at hwit
   change CompPoly.CanonicalNat.toNat (H.sample ⟨capAt answer blocks (3 + i),
-    seedAt (friSeedOf P proof) i ++ cws[i].1.toList ++ [cws[i].2], []⟩).1 %
+    seedAt (friSeedOf P proof) i ++ capElems cws[i].1 ++ [cws[i].2], []⟩).1 %
       2 ^ P.commitPowBits = 0 at hwit
   rw [sample_idealOf_nil, ← hblock] at hwit
   rw [← List.headD_eq_getD]
@@ -220,16 +232,16 @@ theorem grindWitness_idealOf (blocks : List (List F)) (r : Nat) (input : List F)
 /-- **The out-of-domain round's grinding.** If the out-of-domain grinding check passes on the
 ideal primitives of an answer table, then with grinding the first sample of round `1`'s answer
 has `oodPowBits` vanishing low bits. -/
-theorem oodWitness_idealOf (hK : Challenge.d EF ≤ K)
+theorem oodWitness_idealOf (hK : Challenge.d EF ≤ K) (hqne : proof.quotientCommit.size ≠ 0)
     (hood : (oodCheck (EF := EF) (idealOf answer) P A vk proof pis).1 = true)
     (hbits : P.oodPowBits ≠ 0) :
     CompPoly.CanonicalNat.toNat ((answer (keyAt answer (inputs P A vk pis proof) 1)).2.toList.getD
       0 0) % 2 ^ P.oodPowBits = 0 := by
   have hst : obsList (idealOf answer) (smpExt (EF := EF) (idealOf answer)
-      (stateAlpha (idealOf answer) P A vk proof pis)).2 proof.quotientCommit.toList =
-      ⟨capAt answer (inputs P A vk pis proof) 1, proof.quotientCommit.toList, []⟩ := by
+      (stateAlpha (idealOf answer) P A vk proof pis)).2 (capElems proof.quotientCommit) =
+      ⟨capAt answer (inputs P A vk pis proof) 1, capElems proof.quotientCommit, []⟩ := by
     rw [(alpha_idealOf answer P A vk proof pis hK).2,
-      obsList_idealOf_ne answer _ _ (digest_toList_ne_nil _)]
+      obsList_idealOf_ne answer _ _ (capElems_ne_nil hqne)]
     rfl
   rw [oodCheck, hst] at hood
   exact grindWitness_idealOf answer _ 1 _ _ _ (by
@@ -239,14 +251,14 @@ theorem oodWitness_idealOf (hK : Challenge.d EF ≤ K)
 /-- **The batching round's grinding.** If the batching grinding check passes on the ideal
 primitives of an answer table, then with grinding the first sample of round `2`'s answer has
 `batchPowBits` vanishing low bits. -/
-theorem batchWitness_idealOf (hK : Challenge.d EF + 1 ≤ K)
+theorem batchWitness_idealOf (hK : Challenge.d EF + 1 ≤ K) (hqne : proof.quotientCommit.size ≠ 0)
     (htn : traceNextOk A proof.opened = true)
     (hshape : preprocessedShapeOk A vk proof.opened proof.degreeBits = true)
     (hbc : (batchCheck (idealOf answer) P A vk proof pis).1 = true)
     (hbits : P.batchPowBits ≠ 0) :
     CompPoly.CanonicalNat.toNat ((answer (keyAt answer (inputs P A vk pis proof) 2)).2.toList.getD
       0 0) % 2 ^ P.batchPowBits = 0 := by
-  obtain ⟨-, l, hl⟩ := zeta_idealOf answer P A vk proof pis hK
+  obtain ⟨-, l, hl⟩ := zeta_idealOf answer P A vk proof pis hK hqne
   have hst : pcsState (idealOf answer) P
       (openingRounds A vk proof (zetaOf (idealOf answer) P A vk proof pis))
       (smpExt (EF := EF) (idealOf answer) (oodCheck (EF := EF) (idealOf answer) P A vk

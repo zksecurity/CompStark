@@ -123,15 +123,23 @@ abbrev verifyBatchH (commit : Digest F) (heights : List Nat) (index : Nat) (valu
     (path : List (Digest F)) : Bool :=
   Merkle.verifyBatch H.hash H.compress commit heights index values path
 
-/-- The pure Merkle multi-opening check of `H`. -/
-abbrev verifyMultiH (commit : Digest F) (dims : List (Nat × Nat)) (indices : List Nat)
-    (rows : List (List (List F))) (sibs : List (Digest F)) : Bool :=
-  Merkle.verifyMultiM (m := Id) H.hash H.compress commit dims indices rows sibs
+/-- The pure Merkle check of `H` of an opening at `index` of `n` matrices of height `2 ^ k`
+against the cap `cap` of height `capHeight`: an accepted opening of the subtree under the index's
+cap entry, of `2 ^ l` rows for the `l` levels below the cap, at the index's low `l` bits. -/
+abbrev verifyCapH (cap : Cap F) (capHeight n k index : Nat) (values : List (List F))
+    (path : List (Digest F)) : Bool :=
+  verifyBatchH H (cap.toList.getD (index >>> (k - min capHeight k)) 0)
+    (List.replicate n (2 ^ (k - min capHeight k))) (index % 2 ^ (k - min capHeight k)) values path
 
-theorem checkMulti_eq (commit : Digest F) (dims : List (Nat × Nat)) (indices : List Nat)
-    (rows : List (List (List F))) (sibs : List (Digest F)) (s : H.State) :
-    checkMulti H commit dims indices rows sibs s =
-      .ok (verifyMultiH H commit dims indices rows sibs, s) := rfl
+/-- The pure Merkle multi-opening check of `H` against a cap of height `capHeight`. -/
+abbrev verifyMultiH (cap : Cap F) (capHeight : Nat) (dims : List (Nat × Nat))
+    (indices : List Nat) (rows : List (List (List F))) (sibs : List (Digest F)) : Bool :=
+  Merkle.verifyMultiM (m := Id) H.hash H.compress cap.toList capHeight dims indices rows sibs
+
+theorem checkMulti_eq (capHeight : Nat) (cap : Cap F) (dims : List (Nat × Nat))
+    (indices : List Nat) (rows : List (List (List F))) (sibs : List (Digest F)) (s : H.State) :
+    checkMulti H capHeight cap dims indices rows sibs s =
+      .ok (verifyMultiH H cap capHeight dims indices rows sibs, s) := rfl
 
 /-! ### A query's folds -/
 
@@ -207,11 +215,13 @@ theorem getElem_foldGroups : ∀ (l : List (EF × QueryFold EF)) (st : EF × Nat
     simp only [foldGroups, List.getElem_cons_succ, foldState_cons]
     exact getElem_foldGroups l _ j (by simp only [List.length_cons] at hj; omega)
 
-/-- Fold `x` against `commit` passes its checks in state `st`: the sibling count, and an accepted
-opening of its group. -/
-def StepOk (commit : Digest F) (x : EF × QueryFold EF) (st : EF × Nat × Nat) : Prop :=
-  x.2.siblings.size = 2 ^ x.2.logArity - 1 ∧ ∃ path,
-    verifyBatchH H commit [2 ^ (st.2.2 - x.2.logArity)] (st.2.1 >>> x.2.logArity)
+/-- Fold `x` against `commit`, a cap of height `capHeight`, passes its checks in state `st`: the
+sibling count, the cap's size, and an accepted opening of its group. -/
+def StepOk (capHeight : Nat) (commit : Cap F) (x : EF × QueryFold EF) (st : EF × Nat × Nat) :
+    Prop :=
+  x.2.siblings.size = 2 ^ x.2.logArity - 1 ∧
+    commit.size = 2 ^ min capHeight (st.2.2 - x.2.logArity) ∧ ∃ path,
+    verifyCapH H commit capHeight 1 (st.2.2 - x.2.logArity) (st.2.1 >>> x.2.logArity)
       [(groupOf x.2 st.2.1 st.1).flatMap Ext.coeffs] path = true
 
 /-- The body of `foldQuery`'s loop. -/
@@ -538,24 +548,25 @@ theorem reduceQuery_ok (P : Params) (logMax index : Nat) (alpha : EF) (rows : Li
 /-! ### The input multi-openings -/
 
 /-- One batch of a query's input rows passes its checks at `index`: its matrices, all of height
-`2 ^ logMax`, have an accepted opening of the rows at `index` against the batch's commitment, one
-row per matrix, and every opened point has a value per column. -/
-def BatchOk (logMax index : Nat) (x : List (Array F) × Round F EF) : Prop :=
-  x.2.2 ≠ [] ∧
-    (∃ path, verifyBatchH H x.2.1 (List.replicate x.2.2.length (2 ^ logMax)) index
+`2 ^ logMax`, have an accepted opening of the rows at `index` against the batch's commitment, a
+cap of height `capHeight` of its size, one row per matrix, and every opened point has a value per
+column. -/
+def BatchOk (capHeight logMax index : Nat) (x : List (Array F) × Round F EF) : Prop :=
+  x.2.2 ≠ [] ∧ x.2.1.size = 2 ^ min capHeight logMax ∧
+    (∃ path, verifyCapH H x.2.1 capHeight x.2.2.length logMax index
       (x.1.map (·.toList)) path = true) ∧
     x.1.length = x.2.2.length ∧
     ∀ y ∈ x.1.zip x.2.2, ∀ zy ∈ y.2.2, zy.2.length = y.1.size
 
-/-- An accepted input multi-opening of batch `x` at `indices`: its matrices, all of height
-`2 ^ logMax`, are some, every query opens a row per matrix, and every query's rows have an
-accepted single opening. -/
-def InputOk (logMax : Nat) (indices : List Nat) (x : MultiOpening F × Round F EF) : Prop :=
-  x.2.2 ≠ [] ∧ x.1.values.size = indices.length ∧
+/-- An accepted input multi-opening of batch `x` at `indices` against its cap of height
+`capHeight` of its size: its matrices, all of height `2 ^ logMax`, are some, every query opens a
+row per matrix, and every query's rows have an accepted single opening. -/
+def InputOk (capHeight logMax : Nat) (indices : List Nat) (x : MultiOpening F × Round F EF) :
+    Prop :=
+  x.2.2 ≠ [] ∧ x.2.1.size = 2 ^ min capHeight logMax ∧ x.1.values.size = indices.length ∧
     (∀ v ∈ x.1.values, v.size = x.2.2.length) ∧
-    ∀ j (hj : j < indices.length), ∃ path, verifyBatchH H x.2.1
-      (List.replicate x.2.2.length (2 ^ logMax)) indices[j]
-        ((x.1.values.getD j #[]).toList.map (·.toList)) path = true
+    ∀ j (hj : j < indices.length), ∃ path, verifyCapH H x.2.1 capHeight x.2.2.length logMax
+      indices[j] ((x.1.values.getD j #[]).toList.map (·.toList)) path = true
 
 /-- The body of `verifyInputs`'s loop. -/
 def inputBody (P : Params) (logMax : Nat) (indices : List Nat) (x : MultiOpening F × Round F EF)
@@ -566,7 +577,7 @@ def inputBody (P : Params) (logMax : Nat) (indices : List Nat) (x : MultiOpening
   let dims := x.2.2.map fun (d, pts) ↦
     (2 ^ (d.logSize + P.logBlowup), (pts.headD default).2.length)
   let logBatch := (x.2.2.map (·.1.logSize + P.logBlowup)).foldl max 0
-  ensure (← checkMulti H x.2.1 dims (indices.map (· >>> (logMax - logBatch)))
+  ensure (← checkMulti H P.capHeight x.2.1 dims (indices.map (· >>> (logMax - logBatch)))
     (x.1.values.toList.map fun r ↦ r.toList.map (·.toList)) x.1.siblings.toList) "input opening"
   pure (ForInStep.yield PUnit.unit)
 
@@ -574,12 +585,12 @@ theorem inputBody_ok (P : Params) (logMax : Nat) (indices : List Nat)
     (x : MultiOpening F × Round F EF) (hh : ∀ dp ∈ x.2.2, dp.1.logSize + P.logBlowup = logMax)
     (st : H.State) (r : ForInStep PUnit × H.State)
     (h : inputBody H P logMax indices x () st = .ok r) :
-    InputOk H logMax indices x ∧ r = (.yield (), st) := by
+    InputOk H P.capHeight logMax indices x ∧ r = (.yield (), st) := by
   unfold inputBody at h
   obtain ⟨hq, h⟩ := ensure_bind_eq_ok H h
   obtain ⟨hrows, h⟩ := ensure_bind_eq_ok H h
   obtain ⟨-, h⟩ := ensure_bind_eq_ok H h
-  rw [bind_ok_of H (checkMulti_eq H _ _ _ _ _ st)] at h
+  rw [bind_ok_of H (checkMulti_eq H _ _ _ _ _ _ st)] at h
   obtain ⟨hv, h⟩ := ensure_bind_eq_ok H h
   have hdims : (x.2.2.map fun (dp : Domain F × List (EF × List EF)) ↦
       (2 ^ (dp.1.logSize + P.logBlowup), (dp.2.headD default).2.length)).map (·.1) =
@@ -600,11 +611,14 @@ theorem inputBody_ok (P : Params) (logMax : Nat) (indices : List Nat)
       (by simpa only [ne_eq, List.map_eq_nil_iff] using hne) (Nat.zero_le _)
   rw [hbatch, Nat.sub_self] at hv
   simp only [Nat.shiftRight_zero, List.map_id'] at hv
-  refine ⟨⟨hne, beq_iff_eq.mp hq, fun v hv' ↦ ?_, fun j hj ↦ ?_⟩, pure_eq_ok H h⟩
+  have hcap := Merkle.length_cap_of_verifyMulti_replicate H.hash H.compress x.2.1.toList
+    P.capHeight _ logMax (List.length_pos_of_ne_nil hne) _ hdims _ _ _ hv
+  rw [Array.length_toList] at hcap
+  refine ⟨⟨hne, hcap, beq_iff_eq.mp hq, fun v hv' ↦ ?_, fun j hj ↦ ?_⟩, pure_eq_ok H h⟩
   · rw [Array.all_eq_true_iff_forall_mem] at hrows
     exact beq_iff_eq.mp (hrows v hv')
-  · obtain ⟨path, hp⟩ := Merkle.verifyBatch_of_verifyMulti H.hash H.compress x.2.1 _ logMax
-      (List.length_pos_of_ne_nil hne) _ hdims _ _ _ hv j hj
+  · obtain ⟨path, hp⟩ := Merkle.verifyBatch_of_verifyMulti H.hash H.compress x.2.1.toList
+      P.capHeight _ logMax (List.length_pos_of_ne_nil hne) _ hdims _ _ _ hv j hj
     refine ⟨path, ?_⟩
     rw [← hp]
     congr 1
@@ -618,7 +632,8 @@ theorem verifyInputs_ok (P : Params) (logMax : Nat) (indices : List Nat)
     (inputs : List (MultiOpening F)) (rounds : List (Round F EF))
     (hh : ∀ x ∈ rounds, ∀ dp ∈ x.2, dp.1.logSize + P.logBlowup = logMax) (st : H.State)
     (r : Unit × H.State) (h : verifyInputs H P logMax indices inputs rounds st = .ok r) :
-    inputs.length = rounds.length ∧ (∀ x ∈ inputs.zip rounds, InputOk H logMax indices x) ∧
+    inputs.length = rounds.length ∧
+      (∀ x ∈ inputs.zip rounds, InputOk H P.capHeight logMax indices x) ∧
       r = ((), st) := by
   unfold verifyInputs at h
   obtain ⟨hlen, h⟩ := ensure_bind_eq_ok H h
@@ -626,7 +641,7 @@ theorem verifyInputs_ok (P : Params) (logMax : Nat) (indices : List Nat)
   have hloop : ∀ (xs : List (MultiOpening F × Round F EF)) (st : H.State) (r : PUnit × H.State),
       (∀ x ∈ xs, ∀ dp ∈ x.2.2, dp.1.logSize + P.logBlowup = logMax) →
       forIn xs PUnit.unit (fun x _ ↦ inputBody H P logMax indices x ()) st = .ok r →
-        (∀ x ∈ xs, InputOk H logMax indices x) ∧ r = ((), st) := by
+        (∀ x ∈ xs, InputOk H P.capHeight logMax indices x) ∧ r = ((), st) := by
     intro xs
     induction xs with
     | nil => intro st r _ h; rw [List.forIn_nil] at h; exact ⟨nofun, pure_eq_ok H h⟩
@@ -754,30 +769,30 @@ theorem checkWitness_eq (bits : Nat) (w : F) (s : H.State) :
 /-! ### FRI's verifier -/
 
 /-- The body of `verifyFri`'s loop over the commitments. -/
-def commitBody (P : Params) (cw : Digest F × F) (betas : Array EF) :
+def commitBody (P : Params) (cw : Cap F × F) (betas : Array EF) :
     M H (ForInStep (Array EF)) := do
-  observeList H cw.1.toList
+  observeCap H cw.1
   ensure (← checkWitness H P.commitPowBits cw.2) "commit witness"
   pure (ForInStep.yield (betas.push (← sampleExt H)))
 
 /-- The folding challenges the commit loop samples, and the challenger after it. -/
-def commitReplay (P : Params) : List (Digest F × F) → H.State → List EF × H.State
+def commitReplay (P : Params) : List (Cap F × F) → H.State → List EF × H.State
   | [], s => ([], s)
   | cw :: cws, s =>
-    let b := smpExt H (chkWit H P.commitPowBits cw.2 (obsList H s cw.1.toList)).2
+    let b := smpExt H (chkWit H P.commitPowBits cw.2 (obsList H s (capElems cw.1))).2
     let r := commitReplay P cws b.2
     (b.1 :: r.1, r.2)
 
 theorem length_commitReplay (P : Params) :
-    ∀ (cws : List (Digest F × F)) (s : H.State), (commitReplay (EF := EF) H P cws s).1.length =
+    ∀ (cws : List (Cap F × F)) (s : H.State), (commitReplay (EF := EF) H P cws s).1.length =
       cws.length
   | [], _ => rfl
   | cw :: cws, s => by
     simp only [commitReplay, List.length_cons, length_commitReplay P cws]
 
-theorem commitLoop_ok (P : Params) (body : Digest F × F → Array EF → M H (ForInStep (Array EF)))
+theorem commitLoop_ok (P : Params) (body : Cap F × F → Array EF → M H (ForInStep (Array EF)))
     (hbody : ∀ cw betas, body cw betas = commitBody H P cw betas) :
-    ∀ (cws : List (Digest F × F)) (betas : Array EF) (s : H.State) (r : Array EF × H.State),
+    ∀ (cws : List (Cap F × F)) (betas : Array EF) (s : H.State) (r : Array EF × H.State),
       forIn cws betas body s = .ok r →
         r.1.toList = betas.toList ++ (commitReplay H P cws s).1 ∧
           r.2 = (commitReplay (EF := EF) H P cws s).2
@@ -789,7 +804,8 @@ theorem commitLoop_ok (P : Params) (body : Digest F × F → Array EF → M H (F
     obtain ⟨step, st', h1, h2⟩ := forIn_cons_eq_ok H _ _ _ _ _ _ h
     rw [hbody] at h1
     unfold commitBody at h1
-    rw [bind_ok_of H (observeList_eq H _ s), bind_ok_of H (checkWitness_eq H _ _ _)] at h1
+    rw [observeCap, bind_ok_of H (observeList_eq H _ s), bind_ok_of H (checkWitness_eq H _ _ _)]
+      at h1
     obtain ⟨-, h1⟩ := ensure_bind_eq_ok H h1
     rw [bind_ok_of H (sampleExt_eq H _)] at h1
     obtain ⟨hs1, hs2⟩ := Prod.mk.inj (pure_eq_ok H h1)
@@ -834,20 +850,50 @@ def queryValue (logMax : Nat) (alpha : EF) (rounds : List (Round F EF))
 /-- Query `q` at `index` passes the verifier's checks: its input rows open at `index`, its folds
 from the batched quotient pass, end at the final height, and match the final polynomial. -/
 def QueryOk (P : Params) (logMax : Nat) (alpha : EF) (rounds : List (Round F EF))
-    (betas : List EF) (commits : List (Digest F)) (arities : List Nat)
+    (betas : List EF) (commits : List (Cap F)) (arities : List Nat)
     (folds : List (CommitOpening F EF)) (inputs : List (MultiOpening F)) (finalPoly : Array EF)
     (q index : Nat) : Prop :=
   let rows := inputs.map fun b ↦ (b.values.getD q #[]).toList
   let e0 := queryValue logMax alpha rounds inputs q index
   let l := betas.zip (querySteps q arities folds)
   let fin := foldState l (e0, index, logMax) l.length
-  rows.length = rounds.length ∧ (∀ x ∈ rows.zip rounds, BatchOk H logMax index x) ∧
+  rows.length = rounds.length ∧ (∀ x ∈ rows.zip rounds, BatchOk H P.capHeight logMax index x) ∧
     (∀ (j : Nat) (x : EF × QueryFold EF), l[j]? = some x →
-      StepOk H (commits.getD j 0) x (foldState l (e0, index, logMax) j)) ∧
+      StepOk H P.capHeight (commits.getD j #[]) x (foldState l (e0, index, logMax) j)) ∧
     fin.2.2 = P.logBlowup + P.logFinalPolyLen ∧
     finalPoly.foldr (fun c acc ↦
       acc * Ext.ofBase (powF (twoAdicGen logMax) (reverseBits fin.2.1 logMax)) + c) 0 = fin.1
 
+/-- A query that passes its checks opens every round's cap and every fold's at its size. -/
+theorem size_caps_of_queryOk (P : Params) (logMax : Nat) (alpha : EF)
+    (rounds : List (Round F EF)) (betas : List EF) (commits : List (Cap F)) (arities : List Nat)
+    (folds : List (CommitOpening F EF)) (inputs : List (MultiOpening F)) (finalPoly : Array EF)
+    (q index : Nat) (hb : betas.length = arities.length) (hf : folds.length = arities.length)
+    (h : QueryOk H P logMax alpha rounds betas commits arities folds inputs finalPoly q index) :
+    (∀ k (hk : k < rounds.length), rounds[k].1.size = 2 ^ min P.capHeight logMax) ∧
+      ∀ i < arities.length, (commits.getD i #[]).size =
+        2 ^ min P.capHeight (logMax - (arities.take (i + 1)).sum) := by
+  obtain ⟨hrl, hbatch, hsteps, -⟩ := h
+  refine ⟨fun k hk ↦ ?_, fun i hi ↦ ?_⟩
+  · have hk' : k < ((inputs.map fun b ↦ (b.values.getD q #[]).toList).zip rounds).length := by
+      rw [List.length_zip, hrl, Nat.min_self]; exact hk
+    have := (hbatch _ (List.getElem_mem hk')).2.1
+    rwa [List.getElem_zip] at this
+  · set l := betas.zip (querySteps q arities folds) with hl
+    have hll : l.length = arities.length := by
+      rw [hl, List.length_zip, hb, length_querySteps _ _ _ hf, Nat.min_self]
+    have hli : i < l.length := by omega
+    have hlar : l.map (·.2.logArity) = arities := by
+      have hsnd : l.map Prod.snd = querySteps q arities folds :=
+        List.map_snd_zip (by rw [hb, length_querySteps _ _ _ hf])
+      rw [show (l.map fun x : EF × QueryFold EF ↦ x.2.logArity) =
+        (l.map Prod.snd).map (·.logArity) by rw [List.map_map]; rfl, hsnd,
+        map_logArity_querySteps _ _ _ hf]
+    have hst := (hsteps i l[i] (List.getElem?_eq_getElem hli)).2.1
+    rw [foldState_snd] at hst
+    dsimp only at hst
+    rw [hst, ← hlar, List.sum_take_succ _ _ (by rw [List.length_map]; exact hli),
+      List.getElem_map, Nat.sub_sub, List.map_take]
 
 theorem queryBody_ok (P : Params) (logMax : Nat) (alpha : EF) (rounds : List (Round F EF))
     (betas : List EF) (arities : List Nat) (folds : List (CommitOpening F EF))
@@ -882,26 +928,27 @@ theorem queryBody_ok (P : Params) (logMax : Nat) (alpha : EF) (rounds : List (Ro
   exact ⟨hw, hsib, hfin, beq_iff_eq.mp hfp, pure_eq_ok H hk3⟩
 
 /-- The body of `verifyFri`'s loop over the commit-phase multi-openings. -/
-def phaseBody (groups : List (List (Nat × List EF)))
-    (x : (Digest F × CommitOpening F EF) × Nat × Nat) (logH : Nat) : M H (ForInStep Nat) := do
+def phaseBody (capHeight : Nat) (groups : List (List (Nat × List EF)))
+    (x : (Cap F × CommitOpening F EF) × Nat × Nat) (logH : Nat) : M H (ForInStep Nat) := do
   let logFolded := logH - x.2.1
   let gs := groups.map fun g ↦ g.getD x.2.2 (0, [])
-  ensure (← checkMulti H x.1.1 [(2 ^ logFolded, Challenge.d EF * 2 ^ x.2.1)] (gs.map (·.1))
-    (gs.map fun (_, evals) ↦ [evals.flatMap Ext.coeffs]) x.1.2.path.toList)
+  ensure (← checkMulti H capHeight x.1.1 [(2 ^ logFolded, Challenge.d EF * 2 ^ x.2.1)]
+    (gs.map (·.1)) (gs.map fun (_, evals) ↦ [evals.flatMap Ext.coeffs]) x.1.2.path.toList)
     "commit-phase opening"
   pure (ForInStep.yield logFolded)
 
 /-- An accepting loop over the commit-phase multi-openings: each round's multi-opening of the
 queries' groups is accepted, at the height the earlier rounds folded down to. -/
-theorem phaseLoop_ok (groups : List (List (Nat × List EF)))
-    (body : (Digest F × CommitOpening F EF) × Nat × Nat → Nat → M H (ForInStep Nat))
-    (hbody : ∀ x logH, body x logH = phaseBody H groups x logH) :
-    ∀ (xs : List ((Digest F × CommitOpening F EF) × Nat × Nat)) (logH : Nat) (st : H.State)
+theorem phaseLoop_ok (capHeight : Nat) (groups : List (List (Nat × List EF)))
+    (body : (Cap F × CommitOpening F EF) × Nat × Nat → Nat → M H (ForInStep Nat))
+    (hbody : ∀ x logH, body x logH = phaseBody H capHeight groups x logH) :
+    ∀ (xs : List ((Cap F × CommitOpening F EF) × Nat × Nat)) (logH : Nat) (st : H.State)
       (r : Nat × H.State), forIn xs logH body st = .ok r →
       ∀ k (hk : k < xs.length),
         let lh := logH - ((xs.take k).map (·.2.1)).sum
         let gs := groups.map fun g ↦ g.getD xs[k].2.2 (0, [])
-        verifyMultiH H xs[k].1.1 [(2 ^ (lh - xs[k].2.1), Challenge.d EF * 2 ^ xs[k].2.1)]
+        verifyMultiH H xs[k].1.1 capHeight
+          [(2 ^ (lh - xs[k].2.1), Challenge.d EF * 2 ^ xs[k].2.1)]
           (gs.map (·.1)) (gs.map fun (_, evals) ↦ [evals.flatMap Ext.coeffs])
           xs[k].1.2.path.toList = true
   | [], _, _, _, _, k, hk => absurd hk (Nat.not_lt_zero _)
@@ -909,7 +956,7 @@ theorem phaseLoop_ok (groups : List (List (Nat × List EF)))
     obtain ⟨step, st', h1, h2⟩ := forIn_cons_eq_ok H _ _ _ _ _ _ h
     rw [hbody] at h1
     unfold phaseBody at h1
-    rw [bind_ok_of H (checkMulti_eq H _ _ _ _ _ st)] at h1
+    rw [bind_ok_of H (checkMulti_eq H _ _ _ _ _ _ st)] at h1
     obtain ⟨hv, h1⟩ := ensure_bind_eq_ok H h1
     obtain ⟨rfl, rfl⟩ := Prod.mk.inj (pure_eq_ok H h1)
     cases k with
@@ -918,7 +965,7 @@ theorem phaseLoop_ok (groups : List (List (Nat × List EF)))
         Nat.sub_zero]
       exact hv
     | succ k =>
-      have := phaseLoop_ok groups body hbody xs _ _ r h2 k
+      have := phaseLoop_ok capHeight groups body hbody xs _ _ r h2 k
         (by simp only [List.length_cons] at hk; omega)
       simp only [List.getElem_cons_succ, List.take_succ_cons, List.map_cons, List.sum_cons]
       rw [Nat.sub_add_eq]
@@ -975,6 +1022,7 @@ theorem verifyFri_ok (P : Params) (proof : FriProof F EF) (rounds : List (Round 
   rw [bind_ok_of H (observeList_eq H _ s)] at h
   obtain ⟨hcs, h⟩ := ensure_bind_eq_ok H h
   simp only [Bool.and_eq_true, beq_iff_eq] at hcs
+  replace hcs := hcs.1
   obtain ⟨betas, st1, h1, h⟩ := bind_eq_ok H h
   obtain ⟨hb1, hb2⟩ := commitLoop_ok H P _ (fun _ _ ↦ rfl) _ _ _ _ h1
   simp only at hb2
@@ -1001,7 +1049,7 @@ theorem verifyFri_ok (P : Params) (proof : FriProof F EF) (rounds : List (Round 
     intro q hq y hy
     rw [List.zip_map_left] at hy
     obtain ⟨⟨b, rd⟩, hbr, rfl⟩ := List.mem_map.mp hy
-    obtain ⟨hne, hsz, hall, -⟩ := hinok _ hbr
+    obtain ⟨hne, -, hsz, hall, -⟩ := hinok _ hbr
     refine ⟨?_, hne⟩
     simp only [Prod.map, id, Array.length_toList]
     rw [Array.getD_eq_getD_getElem?, Array.getElem?_eq_getElem (by rw [hsz, hidxlen]; exact hq),
@@ -1030,7 +1078,7 @@ theorem verifyFri_ok (P : Params) (proof : FriProof F EF) (rounds : List (Round 
   subst hst4
   rw [List.length_zipIdx] at hglen
   obtain ⟨lh, st5, h5, h6⟩ := bind_eq_ok H h
-  have hphase := phaseLoop_ok H groups _ (fun _ _ ↦ rfl) _ _ _ _ h5
+  have hphase := phaseLoop_ok H P.capHeight groups _ (fun _ _ ↦ rfl) _ _ _ _ h5
   simp only [beq_iff_eq] at hfolds hfp
   have hcrlen : cr.1.length = ar.length := by
     rw [length_commitReplay, List.length_zip, Array.length_toList, Array.length_toList, hcs.1,
@@ -1065,10 +1113,10 @@ theorem verifyFri_ok (P : Params) (proof : FriProof F EF) (rounds : List (Round 
     have hx' := hx
     rw [List.zip_map_left] at hx'
     obtain ⟨⟨b, rd⟩, hbr, rfl⟩ := List.mem_map.mp hx'
-    obtain ⟨hne, hsz, hall, hpath⟩ := hinok _ hbr
+    obtain ⟨hne, hcsz, hsz, hall, hpath⟩ := hinok _ hbr
     obtain ⟨hlen, -⟩ := hrowsq j hj _ hx
     obtain ⟨path, hp⟩ := hpath j (by rw [hidxlen]; exact hj)
-    refine ⟨hne, ⟨path, ?_⟩, hlen, hwid _ hx⟩
+    refine ⟨hne, hcsz, ⟨path, ?_⟩, hlen, hwid _ hx⟩
     rw [← hidxj]
     simpa only [Prod.map, id, List.map_map, Function.comp_def] using hp
   · -- the folds
@@ -1085,7 +1133,7 @@ theorem verifyFri_ok (P : Params) (proof : FriProof F EF) (rounds : List (Round 
         proof.folds.toList[i]'(hflen ▸ hiar)), (ar[i], i)) := by
       simp only [hxs, List.getElem_zip, List.getElem_zipIdx, Nat.zero_add]
     have hxsar : xs.map (·.2.1) = ar := by
-      rw [hxs, show (fun x : (Digest F × CommitOpening F EF) × Nat × Nat ↦ x.2.1) =
+      rw [hxs, show (fun x : (Cap F × CommitOpening F EF) × Nat × Nat ↦ x.2.1) =
         Prod.fst ∘ Prod.snd from rfl, ← List.map_map, List.map_snd_zip (by
           rw [List.length_zip, List.length_zipIdx, hcl, hflen, Nat.min_self]),
         List.zipIdx_map_fst]
@@ -1099,9 +1147,11 @@ theorem verifyFri_ok (P : Params) (proof : FriProof F EF) (rounds : List (Round 
     rw [hxsi] at hv
     dsimp only at hv
     rw [← hsum, ← hla] at hv
-    obtain ⟨path, hp⟩ := Merkle.verifyBatch_of_verifyMulti H.hash H.compress _ 1 _ Nat.one_pos _
-      rfl _ _ _ hv j (by rw [List.length_map, List.length_map]; exact hjg)
-    refine ⟨path, ?_⟩
+    obtain ⟨path, hp⟩ := Merkle.verifyBatch_of_verifyMulti H.hash H.compress _ P.capHeight 1 _
+      Nat.one_pos _ rfl _ _ _ hv j (by rw [List.length_map, List.length_map]; exact hjg)
+    have hcap := Merkle.length_cap_of_verifyMulti_replicate H.hash H.compress _ P.capHeight 1 _
+      Nat.one_pos _ rfl _ _ _ hv
+    rw [Array.length_toList] at hcap
     have hgi : (groups[j]'hjg).getD i (0, []) = foldGroup l[i]
         (foldState l (queryValue logMax alpha rounds proof.inputs.toList j index, index, logMax)
           i) := by
@@ -1111,9 +1161,28 @@ theorem verifyFri_ok (P : Params) (proof : FriProof F EF) (rounds : List (Round 
         logMax) i).2.2 = logMax - ((l.take i).map (·.2.logArity)).sum :=
       congrArg (·.2) (foldState_snd l _ _ _ i)
     rw [List.getD_eq_getElem _ _ (hcl ▸ hiar), hst2]
-    rw [List.getD_eq_getElem _ _ (by rw [List.length_map, List.length_map]; exact hjg),
+    rw [List.getD_eq_getElem _ [] (by rw [List.length_map, List.length_map]; exact hjg),
       List.getElem_map, List.getElem_map, List.getElem_map, List.getElem_map, hgi] at hp
-    exact hp
+    exact ⟨hcap, path, hp⟩
+
+/-- An accepting FRI verifier's commit-phase caps are not empty. -/
+theorem size_commits_ne (P : Params) (proof : FriProof F EF) (rounds : List (Round F EF))
+    (alpha : EF) (s : H.State) (r : Unit × H.State)
+    (h : verifyFri H P proof rounds alpha s = .ok r) : ∀ c ∈ proof.commits, c.size ≠ 0 := by
+  unfold verifyFri at h
+  obtain ⟨-, h⟩ := ensure_bind_eq_ok H h
+  obtain ⟨-, h⟩ := ensure_bind_eq_ok H h
+  dsimp only at h
+  obtain ⟨-, h⟩ := ensure_bind_eq_ok H h
+  obtain ⟨-, h⟩ := ensure_bind_eq_ok H h
+  obtain ⟨-, h⟩ := ensure_bind_eq_ok H h
+  obtain ⟨-, h⟩ := ensure_bind_eq_ok H h
+  obtain ⟨-, h⟩ := ensure_bind_eq_ok H h
+  obtain ⟨-, h⟩ := ensure_bind_eq_ok H h
+  rw [bind_ok_of H (observeList_eq H _ s)] at h
+  obtain ⟨hcs, -⟩ := ensure_bind_eq_ok H h
+  simp only [Bool.and_eq_true, Array.all_eq_true', bne_iff_ne, ne_eq] at hcs
+  exact hcs.2
 
 /-! ### The STARK verifier -/
 
@@ -1182,7 +1251,7 @@ abbrev friSeedOf : List F :=
 public values. -/
 abbrev stateAlpha : H.State :=
   obsList H (obsList H (obsList H (obsList H H.init (starkSeedOf EF P A proof.degreeBits))
-    proof.traceCommit.toList) (preprocessedDigest vk)) pis
+    (capElems proof.traceCommit)) (preprocessedDigest vk)) pis
 
 /-- The constraint-folding challenge `α`. -/
 def alphaOf : EF := (smpExt H (stateAlpha H P A vk proof pis)).1
@@ -1190,7 +1259,8 @@ def alphaOf : EF := (smpExt H (stateAlpha H P A vk proof pis)).1
 /-- The out-of-domain grinding check, after the quotient commitment. -/
 abbrev oodCheck : Bool × H.State :=
   chkWit H P.oodPowBits proof.oodWitness
-    (obsList H (smpExt (EF := EF) H (stateAlpha H P A vk proof pis)).2 proof.quotientCommit.toList)
+    (obsList H (smpExt (EF := EF) H (stateAlpha H P A vk proof pis)).2
+      (capElems proof.quotientCommit))
 
 /-- The out-of-domain point `ζ`. -/
 def zetaOf : EF := (smpExt H (oodCheck (EF := EF) H P A vk proof pis).2).1
@@ -1257,8 +1327,11 @@ theorem verifyWith_ok (P : Params) (A : Air F) (vk : Option (PreprocessedKey F))
         split at h
         · rename_i hshape
           split at h
-          · obtain ⟨x, hx, hc⟩ := except_bind_ok _ _ _ h
-            unfold StateT.run at hx
+          · split at h
+            swap
+            · exact absurd h (by intro h'; cases h')
+            obtain ⟨x, hx, hc⟩ := except_bind_ok _ _ _ h
+            unfold StateT.run observeCap at hx
             rw [bind_ok_of H (observeList_eq H _ _), bind_ok_of H (observeList_eq H _ _),
               bind_ok_of H (observeList_eq H _ _), bind_ok_of H (observeList_eq H _ _),
               bind_ok_of H (a := alphaOf H P A vk proof pis)
@@ -1278,6 +1351,31 @@ theorem verifyWith_ok (P : Params) (A : Air F) (vk : Option (PreprocessedKey F))
             obtain ⟨⟨⟨⟨h1a, h1b⟩, h1c⟩, h1d⟩, h1e⟩ := hshape
             exact ⟨h1a, h1b, h1c, h1d, h1e, hdeg, beq_iff_eq.mp hpis, hood, hz, hbc, ⟨_, hfri⟩,
               hc⟩
+          · exact absurd h (by intro h'; cases h')
+        · exact absurd h (by intro h'; cases h')
+      · exact absurd h (by intro h'; cases h')
+    · rw [ite_eq_right hper] at h
+      exact absurd h (by intro h'; cases h')
+  · rw [ite_eq_right hdeg] at h
+    exact absurd h (by intro h'; cases h')
+
+/-- An accepted proof's quotient cap is not empty. -/
+theorem size_quotientCommit_ne (P : Params) (A : Air F) (vk : Option (PreprocessedKey F))
+    (proof : Proof F EF) (pis : List F) (h : verifyWith H P A vk proof pis = .ok ()) :
+    proof.quotientCommit.size ≠ 0 := by
+  unfold verifyWith at h
+  dsimp only at h
+  by_cases hdeg : proof.degreeBits + A.logQuotientChunks proof.degreeBits ≤ twoAdicity F
+  · rw [ite_eq_left hdeg] at h
+    by_cases hper : A.periodicFits proof.degreeBits = true
+    · rw [ite_eq_left hper] at h
+      split at h
+      · split at h
+        · split at h
+          · split at h
+            · rename_i hq
+              simpa only [bne_iff_ne, ne_eq] using hq
+            · exact absurd h (by intro h'; cases h')
           · exact absurd h (by intro h'; cases h')
         · exact absurd h (by intro h'; cases h')
       · exact absurd h (by intro h'; cases h')

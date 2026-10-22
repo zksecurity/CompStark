@@ -36,6 +36,7 @@ def wide4096Setup : Setup KoalaBear.Fast.Ext5 where
   valid := wide_valid wide5iParams rfl (by decide) rfl (by decide) 4096 (by decide) 20
     (by decide)
   folds := by decide
+  capFits := Nat.zero_le _
 
 set_option maxRecDepth 100000 in
 /-- The kernel evaluates the `4096` constraints' degrees, about `2 ^ (-127.81)`; the lists of

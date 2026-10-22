@@ -11,10 +11,10 @@ public import CompStark.Ni.Assembly
 The non-interactive STARK, with the verifier's hashes as random oracles
 (`CompStark/RandomOracle.lean`), is knowledge sound: a prover making at most `Q` oracle calls gets
 a proof accepted while no trace close to the one it committed to satisfies the AIR with
-probability at most `q · roundError + hashError F q`, `q = Q + verifierQueries`. `roundError` is
+probability at most `q · roundError + hashError F h q`, `q = Q + verifierQueries`. `roundError` is
 the largest error of one oracle answer, every round of the interactive oracle proof credited with
-its grinding, and `hashError` bounds collisions and predictions of digests
-(`CompStark/NonInteractiveError.lean`).
+its grinding, and `hashError` bounds collisions and predictions of digests, `h` the Merkle cap
+height (`CompStark/NonInteractiveError.lean`).
 
 The preprocessed trace is part of the AIR, so of the statement: the game computes its verifying key
 on the oracles before the prover runs (`Setup.setupRo`), and `verifierQueries` counts the setup's
@@ -38,7 +38,7 @@ variable {F : Type} [BaseField F] {EF : Type} [Challenge F EF]
 
 /-- **Knowledge soundness in the random-oracle model.** A prover making at most `Q` oracle calls
 gets a proof for `2 ^ logN` rows accepted, while no trace close to the one it committed to
-satisfies the AIR, with probability at most `q · roundError + hashError F q`,
+satisfies the AIR, with probability at most `q · roundError + hashError F h q`,
 `q = Q + verifierQueries`: FRI tests proximity `δ`, and the extractor list-decodes at any `δ'`
 below `1 - rate`. -/
 theorem knowledgeSoundness_ro (S : Setup EF) (publicValues : List F)
@@ -49,7 +49,8 @@ theorem knowledgeSoundness_ro (S : Setup EF) (publicValues : List F)
       verdict = .ok () ∧ proof.degreeBits = S.logN ∧
         ∀ trace ∈ closeTraces S δ' (committedTrace S log proof),
           ¬ S.air.Satisfied S.logN trace publicValues] ≤
-      (Q + S.verifierQueries) * roundError S δ δ' + hashError F (Q + S.verifierQueries) :=
+      (Q + S.verifierQueries) * roundError S δ δ' +
+        hashError F S.params.capHeight (Q + S.verifierQueries) :=
   prob_unopened_le S publicValues δ δ' hδ' Q prover hQ
 
 end CompStark.Iop

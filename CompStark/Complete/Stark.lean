@@ -87,8 +87,9 @@ theorem hPrep_eq : hPrep EF P A logN = if A.preprocessedWidth = 0 then none else
 /-- The transcript after the trace and preprocessed commitments and the public values. -/
 def hTA : Transcript F 24 :=
   (((Poseidon2.initTranscript.observeList (starkSeedOf EF P A logN)).observeList
-    (Committed.ofMats hashF compF [hExt P A logN trace]).root.toList).observeList
-    (((hPrep EF P A logN).map fun x ↦ ((specBackend EF).root x.2).toList).getD [])).observeList
+    (capElems ((Committed.ofMats hashF compF [hExt P A logN trace]).cap P.capHeight))).observeList
+    (((hPrep EF P A logN).map fun x ↦ capElems ((specBackend EF).cap x.2 P.capHeight)).getD
+      [])).observeList
     pis
 
 /-- The constraint-folding challenge. -/
@@ -106,7 +107,7 @@ def hChunks : List (Mat F) :=
 /-- The transcript after the quotient commitment. -/
 def hTC : Transcript F 24 :=
   (Transcript.sampleExtState EF ((hTA EF P A logN trace pis))).observeList
-    (Committed.ofMats hashF compF (hChunks EF P A logN trace pis)).root.toList
+    (capElems ((Committed.ofMats hashF compF (hChunks EF P A logN trace pis)).cap P.capHeight))
 
 /-- The out-of-domain grinding: its witness and the transcript after it. -/
 def hOod : F × Transcript F 24 := (hTC EF P A logN trace pis).grind P.oodPowBits
@@ -166,8 +167,9 @@ def hPcs : (List (List (List (Array EF))) × FriProof F EF) × Transcript F 24 :
     (Transcript.sampleExtState EF (hOod EF P A logN trace pis).2)
 
 theorem prove_eq : prove EF P A logN trace pis =
-    { traceCommit := (Committed.ofMats hashF compF [hExt P A logN trace]).root
-      quotientCommit := (Committed.ofMats hashF compF (hChunks EF P A logN trace pis)).root
+    { traceCommit := (Committed.ofMats hashF compF [hExt P A logN trace]).cap P.capHeight
+      quotientCommit :=
+        (Committed.ofMats hashF compF (hChunks EF P A logN trace pis)).cap P.capHeight
       opened := honestOpened P.logBlowup A logN (hExt P A logN trace)
         (hChunks EF P A logN trace pis) (hZeta EF P A logN trace pis)
       fri := (hPcs EF P A logN trace pis).1.2
@@ -232,23 +234,24 @@ values. -/
 def vTA (P : Params) (A : Air F) (vk : Option (PreprocessedKey F)) (proof : Proof F EF)
     (pis : List F) : Transcript F 24 :=
   (((Poseidon2.initTranscript.observeList (starkSeedOf EF P A proof.degreeBits)).observeList
-    proof.traceCommit.toList).observeList (preprocessedDigest vk)).observeList pis
+    (capElems proof.traceCommit)).observeList (preprocessedDigest vk)).observeList pis
 
 /-- The verifier's transcript after the quotient commitment. -/
 def vTC (P : Params) (A : Air F) (vk : Option (PreprocessedKey F)) (proof : Proof F EF)
     (pis : List F) : Transcript F 24 :=
-  (Transcript.sampleExtState EF (vTA P A vk proof pis)).observeList proof.quotientCommit.toList
+  (Transcript.sampleExtState EF (vTA P A vk proof pis)).observeList
+    (capElems proof.quotientCommit)
 
 /-- The transcript part of `verify`. -/
 def verifyRun (P : Params) (A : Air F) (vk : Option (PreprocessedKey F)) (proof : Proof F EF)
     (pis : List F) : M (poseidon2 F) (EF × EF) := do
   let db := proof.degreeBits
   observeList (poseidon2 F) (starkSeedOf EF P A db)
-  observeList (poseidon2 F) proof.traceCommit.toList
+  observeCap (poseidon2 F) proof.traceCommit
   observeList (poseidon2 F) (preprocessedDigest vk)
   observeList (poseidon2 F) pis
   let alpha ← (sampleExt (poseidon2 F) : M (poseidon2 F) EF)
-  observeList (poseidon2 F) proof.quotientCommit.toList
+  observeCap (poseidon2 F) proof.quotientCommit
   ensure (← checkWitness (poseidon2 F) P.oodPowBits proof.oodWitness) "out-of-domain witness"
   let zeta ← (sampleExt (poseidon2 F) : M (poseidon2 F) EF)
   ensure (Ext.powTwo zeta db - 1 != 0) "out-of-domain point in the trace domain"
@@ -272,6 +275,8 @@ theorem verify_eq (P : Params) (A : Air F) (vk : Option (PreprocessedKey F)) (pr
         throw "invalid proof shape"
       unless P.oodPowBits != 0 || proof.oodWitness == 0 do
         throw "out-of-domain witness"
+      unless proof.quotientCommit.size != 0 do
+        throw "empty quotient commitment"
       (verifyRun P A vk proof pis).run Poseidon2.initTranscript >>= verifyCheck A proof pis) := by
   delta verify verifyWith verifyRun verifyCheck
   rfl
@@ -284,7 +289,7 @@ theorem verifyRun_run (P : Params) (A : Air F) (vk : Option (PreprocessedKey F))
       ensure (Ext.powTwo zeta proof.degreeBits - 1 != 0) "out-of-domain point in the trace domain"
       verifyPcs (poseidon2 F) P (openingRounds A vk proof zeta) proof.fri
       pure (((vTA P A vk proof pis).sampleExtValue : EF), zeta)) (vTC P A vk proof pis) := by
-  simp only [verifyRun, observeList_bind, sampleExt_bind]
+  simp only [verifyRun, observeCap, observeList_bind, sampleExt_bind]
   rfl
 
 /-! ### The honest openings -/
@@ -292,32 +297,40 @@ theorem verifyRun_run (P : Params) (A : Air F) (vk : Option (PreprocessedKey F))
 section Honest
 variable (EF) (P : Params) (A : Air F) (logN : Nat) (trace : Array F) (pis : List F)
 
-/-- The verifying key of the preprocessed trace, with its Poseidon2 Merkle root. -/
+/-- The verifying key of the preprocessed trace, with its Poseidon2 Merkle cap. -/
 theorem setup_eq : setup P A logN = if A.preprocessedWidth = 0 then none else
-    some ⟨A.preprocessedWidth, logN, Merkle.Poseidon2.root F [(hPrepExt P A logN).toMatrix]⟩ := by
+    some ⟨A.preprocessedWidth, logN,
+      (Committed.ofMats hashF compF [hPrepExt P A logN]).cap P.capHeight⟩ := by
   unfold setup preprocessedKeyWith
   split
   · rfl
-  · show some (⟨_, _, merkleNodeWith (poseidon2 F) _ _ 0⟩ : PreprocessedKey F) =
+  · rename_i hpw
+    have hh := (shape_ldeRef logN P.logBlowup gen A.preprocessedWidth A.preprocessed).2.1
+    show some (⟨_, _, merkleCapWith (poseidon2 F) _ _ _⟩ : PreprocessedKey F) =
       some (⟨_, _, _⟩ : PreprocessedKey F)
-    rw [merkleNodeWith_pure (poseidon2 F) hashF compF (fun _ ↦ rfl) (fun _ _ ↦ rfl),
-      Merkle.Poseidon2.root, Merkle.root_eq_nodeValue _ _ _ _
-        (shape_ldeRef logN P.logBlowup gen A.preprocessedWidth A.preprocessed).2.1]
-    simp only [rowOf_toList]
+    rw [cap_eq_nodeValue [hPrepExt P A logN] (logN + P.logBlowup) (List.cons_ne_nil _ _)
+      (fun m hm ↦ (List.mem_singleton.mp hm) ▸ hh)]
+    simp only [merkleCapWith]
+    congr 2
+    change (Id.run (List.mapM _ _)).toArray = _
+    rw [List.idRun_mapM]
+    refine congrArg List.toArray (List.map_congr_left fun t _ ↦ ?_)
+    rw [Id.run, merkleNodeWith_pure (poseidon2 F) hashF compF (fun _ ↦ rfl) (fun _ _ ↦ rfl)]
+    congr 1
+    funext r
+    simp only [Merkle.leafHashes, List.map_cons, List.map_nil, List.flatMap_cons,
+      List.flatMap_nil, List.append_nil, rowOf_toList]
     rfl
 
 /-- The preprocessed trace's commitment is the verifying key's. -/
 theorem prepDigest_eq :
-    ((hPrep EF P A logN).map fun x ↦ ((specBackend EF).root x.2).toList).getD [] =
+    ((hPrep EF P A logN).map fun x ↦ capElems ((specBackend EF).cap x.2 P.capHeight)).getD [] =
       preprocessedDigest (setup P A logN) := by
   rw [hPrep_eq]
   by_cases hpw : A.preprocessedWidth = 0
   · simp only [setup_eq, hpw, ↓reduceIte]
     rfl
   · simp only [setup_eq, hpw, ↓reduceIte, Option.map_some, Option.getD_some, preprocessedDigest]
-    show (Committed.ofMats hashF compF [_]).root.toList = _
-    rw [root_ofMats]
-    rfl
 
 end Honest
 
@@ -387,7 +400,7 @@ theorem vChunks_eq (ms : List (Mat F)) (hms : ∀ m ∈ ms, m.height = 2 ^ (logN
 
 theorem openingRounds_eq (hin : Fits P A logN trace) :
     openingRounds A (setup P A logN) (prove EF P A logN trace pis) (hZeta EF P A logN trace pis) =
-      (hDRounds EF P A logN trace pis).map fun r ↦ (r.1.root, r.2.map fun x ↦
+      (hDRounds EF P A logN trace pis).map fun r ↦ (r.1.cap P.capHeight, r.2.map fun x ↦
         ((⟨1, Nat.log2 x.1.height - P.logBlowup⟩ : Domain F),
           x.2.map fun y ↦ (y.1, y.2.toList))) := by
   rw [prove_eq]
@@ -405,7 +418,7 @@ theorem openingRounds_eq (hin : Fits P A logN trace) :
     · have hh := height_hPrepExt P A logN trace hin
       simp only [setup_eq, hpw, ↓reduceIte, List.map_cons, List.map_nil, preprocessedRound,
         honestOpened, Option.getD_some]
-      rw [root_ofMats, hh, Nat.log2_two_pow, Nat.add_sub_cancel]
+      rw [hh, Nat.log2_two_pow, Nat.add_sub_cancel]
       simp only [hPrepPts, preprocessedPoints, openedOf, hPrepExt]
       split <;> rfl
 
@@ -424,6 +437,7 @@ theorem verify_ok_of (P : Params) (A : Air F) (vk : Option (PreprocessedKey F))
       proof.opened.quotientChunks.all (·.size == Challenge.d EF) &&
       preprocessedShapeOk A vk proof.opened proof.degreeBits) = true)
     (hood : (P.oodPowBits != 0 || proof.oodWitness == 0) = true)
+    (hqne : (proof.quotientCommit.size != 0) = true)
     (hrun : verifyRun P A vk proof pis Poseidon2.initTranscript = .ok ((alpha, zeta), t))
     (hcheck : checkConstraints A pis proof.opened proof.degreeBits zeta alpha
       (recompose (chunkDomains proof.degreeBits (A.logQuotientChunks proof.degreeBits))
@@ -432,7 +446,7 @@ theorem verify_ok_of (P : Params) (A : Air F) (vk : Option (PreprocessedKey F))
   have hrun' : StateT.run (verifyRun P A vk proof pis) Poseidon2.initTranscript = pure
       ((alpha, zeta), t) := hrun
   rw [verify_eq, hrun', pure_bind, verifyCheck_ok A proof pis ((alpha, zeta), t) hcheck]
-  simp only [hdeg, hper, hpis, hshape, hood, beq_self_eq_true, ↓reduceIte]
+  simp only [hdeg, hper, hpis, hshape, hood, hqne, beq_self_eq_true, ↓reduceIte]
   rfl
 
 section Honest
@@ -469,7 +483,13 @@ theorem hRounds_honest (hin : Fits P A logN trace)
   have hpp := hpts (hPrepPts EF P A logN trace pis) (by
     simp only [hPrepPts, preprocessedPoints]; split <;> simp only [true_or, or_true])
   have hhl : P.logBlowup + P.logFinalPolyLen ≤ logN + P.logBlowup := by omega
-  refine ⟨List.cons_ne_nil _ _, fun r hr ↦ ?_, fun r hr x hx ↦ ?_, fun r hr x hx ↦ ?_⟩
+  have hfit : ∀ (x y : Mat F × List EF), x.1.height = 2 ^ (logN + P.logBlowup) →
+      y.1.height = 2 ^ (logN + P.logBlowup) →
+      2 ^ min P.capHeight (Nat.log2 y.1.height) ≤ x.1.height := fun x y hx hy ↦ by
+    rw [hy, Nat.log2_two_pow, hx]
+    exact Nat.pow_le_pow_right (by decide) (Nat.min_le_right _ _)
+  refine ⟨List.cons_ne_nil _ _, fun r hr ↦ ?_, fun r hr x hx ↦ ?_, fun r hr x hx ↦ ?_,
+    fun r hr x hx y hy ↦ ?_⟩
   all_goals
     simp only [hRounds, hBaseRounds, hPrepRounds, List.cons_append, List.mem_cons] at hr
     rcases hr with rfl | rfl | hr
@@ -509,6 +529,19 @@ theorem hRounds_honest (hin : Fits P A logN trace)
       rw [List.mem_singleton.mp hx]
       obtain ⟨ps, hl, -⟩ := prep_lde P A logN trace hin
       exact ⟨_, ps, hl, hhl⟩
+  · rw [List.mem_singleton.mp hx, List.mem_singleton.mp hy]
+    exact hfit _ _ (height_hExt P A logN trace hin) (height_hExt P A logN trace hin)
+  · obtain ⟨m, hm, rfl⟩ := List.mem_map.mp hx
+    obtain ⟨m', hm', rfl⟩ := List.mem_map.mp hy
+    exact hfit _ _ (height_hChunks EF P A logN trace pis hin m hm)
+      (height_hChunks EF P A logN trace pis hin m' hm')
+  · simp only [setupWith] at hr
+    split at hr
+    · exact absurd hr List.not_mem_nil
+    · rw [Option.map_some, Option.toList_some, List.nil_append, List.mem_singleton] at hr
+      subst hr
+      rw [List.mem_singleton.mp hx, List.mem_singleton.mp hy]
+      exact hfit _ _ (height_hPrepExt P A logN trace hin) (height_hPrepExt P A logN trace hin)
 
 theorem verifyRun_honest (hin : Fits P A logN trace)
     (hz : Ext.OutsideBase (hZeta EF P A logN trace pis))
@@ -585,15 +618,17 @@ theorem verify_prove_of (P : Params) (A : Air F) (logN : Nat) (trace : Array F) 
     · simp only [hPrep, setupWith, prepLde, hpw, ↓reduceIte, Option.map_some]
   refine verify_ok_of P A _ _ pis _ _ t
     (by rw [hdb]; have := hin.twoAdic; have := hin.chunks; omega) (by rw [hdb]; exact hin.periodic)
-    hpis ?_ ?_ hrun ?_
+    hpis ?_ ?_ ?_ hrun ?_
   · rw [prove_eq, setup_eq]
     have := honest_shape (EF := EF) P A logN trace pis (hAlpha EF P A logN trace pis)
       (hZeta EF P A logN trace pis)
-      (Merkle.Poseidon2.root F [(hPrepExt P A logN).toMatrix])
+      ((Committed.ofMats hashF compF [hPrepExt P A logN]).cap P.capHeight)
     rw [← hprep] at this
     exact this
   · rw [prove_eq]
     exact grind_canonical _ _
+  · rw [prove_eq, bne_iff_ne, Committed.size_cap]
+    exact (Nat.two_pow_pos _).ne'
   · rw [prove_eq]
     have := checkConstraints_honest P A logN trace pis (hAlpha EF P A logN trace pis)
       (hZeta EF P A logN trace pis) hin hsat hdeg hz

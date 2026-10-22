@@ -397,6 +397,25 @@ theorem layers_eq_injNode (ms : List (Matrix F)) (k : Nat)
       · rw [beq_eq_false_iff_ne.mpr hm, Bool.false_and])]
   simp only [Nat.zero_add]
 
+/-- Matrices all of height `2 ^ k` inject nowhere: the nodes up to the root are those of the
+perfect tree on the hashes of their rows. -/
+theorem injNode_uniform (ms : List (Matrix F)) (k : Nat) (hms : ∀ m ∈ ms, m.height = 2 ^ k) :
+    ∀ l ≤ k, ∀ i, injNode hash compress ms k l i = nodeValue compress (leafHashes hash ms) l i
+  | 0, _, i => by
+    rw [injNode, nodeValue_zero, leafHashes, groupRows,
+      List.filter_eq_self.mpr fun m hm ↦ by rw [hms m hm, beq_self_eq_true]]
+  | l + 1, hl, i => by
+    have hany : ms.any (·.height == 2 ^ (k - (l + 1))) = false := by
+      rw [List.any_eq_false]
+      intro m hm
+      rw [hms m hm, beq_iff_eq]
+      intro he
+      have := Nat.pow_right_injective (le_refl 2) he
+      omega
+    rw [injNode, hany, nodeValue_succ, injNode_uniform ms k hms l (by omega),
+      injNode_uniform ms k hms l (by omega)]
+    rfl
+
 end Tree
 
 /-! ### Honest multi-openings -/
@@ -657,17 +676,22 @@ section Mixed
 variable [Zero F] (hash : List F → Vector F d) (compress : Vector F d → Vector F d → Vector F d)
 
 /-- **Honest multi-openings of mixed heights verify.** The multi-opening at `indices` of matrices
-of heights `2 ^ j ≤ 2 ^ k`, some of height `2 ^ k`, with every matrix's row at the index shifted to
-its height and the pruned siblings of the tree's paths, is accepted against the tree's root. -/
-theorem verifyMulti_prune_mixed [DecidableEq F] (ms : List (Matrix F)) (k : Nat)
+of heights `2 ^ j ≤ 2 ^ k`, some of height `2 ^ k` and none below the cap of height
+`h = min capHeight k`, with every matrix's row at the index shifted to its height and the pruned
+siblings of the tree's paths below the cap, is accepted against the tree's cap: its nodes `h`
+levels below the root. -/
+theorem verifyMulti_prune_mixed [DecidableEq F] (ms : List (Matrix F)) (k capHeight : Nat)
     (hpow : ∀ m ∈ ms, ∃ j ≤ k, m.height = 2 ^ j) (htop : ∃ m ∈ ms, m.height = 2 ^ k)
+    (hcap : ∀ m ∈ ms, 2 ^ min capHeight k ≤ m.height)
     (indices : List Nat) (hidx : ∀ i ∈ indices, i < 2 ^ k) (paths : List (List (Vector F d)))
     (hpaths : ∀ q (hq : q < indices.length), ∀ j < k,
       (paths.getD q []).getD j 0 = injNode hash compress ms k j ((indices[q] >>> j) ^^^ 1)) :
-    verifyMultiM (m := Id) hash compress (injNode hash compress ms k k 0)
+    verifyMultiM (m := Id) hash compress
+      ((List.range (2 ^ min capHeight k)).map
+        (injNode hash compress ms k (k - min capHeight k))) capHeight
       (ms.map fun m ↦ (m.height, m.width)) indices
       (indices.map fun i ↦ ms.map fun m ↦ m.row (i >>> (k - Nat.log2 m.height)))
-      (prune k indices paths) = true := by
+      (prune (k - min capHeight k) indices paths) = true := by
   set N := injNode hash compress ms k with hN
   set rowsAt : Nat → List (List F) := fun i ↦ ms.map fun m ↦ m.row (i >>> (k - Nat.log2 m.height))
     with hrowsAt
@@ -738,8 +762,10 @@ theorem verifyMulti_prune_mixed [DecidableEq F] (ms : List (Matrix F)) (k : Nat)
     by_cases h : 2 ^ (k - (l + 1)) ∈ keys
     · simp only [h, decide_true, ↓reduceIte]
     · simp only [h, decide_false, Bool.false_eq_true, ↓reduceIte]
-  have hshape : multiShapeOk (ms.map fun m ↦ (m.height, m.width)) (2 ^ k) k indices
-      (indices.map rowsAt) (prune k indices paths) = true := by
+  set h := min capHeight k with hh
+  have hhk : h ≤ k := Nat.min_le_right _ _
+  have hshape : multiShapeOk (ms.map fun m ↦ (m.height, m.width)) (2 ^ k) (k - h) indices
+      (indices.map rowsAt) (prune (k - h) indices paths) = true := by
     have hshift : ∀ m ∈ ms, log2Ceil (2 ^ k) - log2Ceil m.height = k - Nat.log2 m.height :=
       fun m hm ↦ by
         obtain ⟨j, -, hj⟩ := hpow m hm
@@ -770,11 +796,31 @@ theorem verifyMulti_prune_mixed [DecidableEq F] (ms : List (Matrix F)) (k : Nat)
       · rw [he, bne_self_eq_false, Bool.false_or, beq_self_eq_true]
       · rw [bne_iff_ne.mpr he, Bool.true_or]
     · rw [prune, length_pruneWalk]
+  have hrest : ks.map (fun h ↦ (h, idx h)) =
+      (keys.filter (· < 2 ^ (k - 0))).map fun h ↦ (h, idx h) := by
+    rw [Nat.sub_zero, hks, List.filter_cons_of_neg (by simp only [Nat.lt_irrefl, decide_false,
+      Bool.false_eq_true, not_false_eq_true]), List.filter_eq_self.mpr fun h hh ↦
+        decide_eq_true (hksl h hh)]
+  have hcapRest : ((keys.filter (· < 2 ^ (k - 0))).map fun g ↦ (g, idx g)).all
+      (fun g ↦ 2 ^ h ≤ g.1.nextPowerOfTwo) = true := by
+    rw [← hrest, List.all_eq_true]
+    intro g hg
+    obtain ⟨g', hg', rfl⟩ := List.mem_map.mp hg
+    obtain ⟨m, hm, hmg⟩ := (hmem' g').mp (hks ▸ List.mem_cons_of_mem _ hg')
+    obtain ⟨j, -, hj⟩ := hpow m hm
+    have := hcap m hm
+    rw [hj] at this
+    rw [← hmg, hj, nextPowerOfTwo_two_pow]
+    exact decide_eq_true this
+  have hcapLen : ((List.range (2 ^ h)).map (N (k - h))).length == 2 ^ h := by
+    rw [List.length_map, List.length_range, beq_self_eq_true]
   unfold verifyMultiM
   rw [hheights, hG, hks, List.map_cons]
   dsimp only
-  rw [nextPowerOfTwo_two_pow, Nat.log2_two_pow]
-  simp only [hshape, ↓reduceIte]
+  rw [capLevels_two_pow, nextPowerOfTwo_two_pow]
+  dsimp only
+  rw [← hh, hrest]
+  simp only [hshape, hcapLen, hcapRest, Bool.and_self, ↓reduceIte]
   have hleaves : ((frontier indices).mapM (m := Id) fun (x : Nat × Nat) ↦ match x with
       | (i, q) => do
         return (i, q, ← hash ((idx (2 ^ k)).flatMap fun k' ↦
@@ -791,31 +837,30 @@ theorem verifyMulti_prune_mixed [DecidableEq F] (ms : List (Matrix F)) (k : Nat)
     rw [hrows q hql k le_rfl, Nat.sub_self, Nat.shiftRight_zero, hqi]
     rfl
   rw [hleaves]
-  have hrest : ks.map (fun h ↦ (h, idx h)) =
-      (keys.filter (· < 2 ^ (k - 0))).map fun h ↦ (h, idx h) := by
-    rw [Nat.sub_zero, hks, List.filter_cons_of_neg (by simp only [Nat.lt_irrefl, decide_false,
-      Bool.false_eq_true, not_false_eq_true]), List.filter_eq_self.mpr fun h hh ↦
-        decide_eq_true (hksl h hh)]
   obtain ⟨ns', hns', hwalk⟩ := walk_inj hash compress N (indices.map rowsAt) indices k keys idx hk
-    hpowK paths hpaths hNstep k 0 (frontier indices) [] (by omega) fun ⟨i, q⟩ he ↦ by
+    hpowK paths hpaths hNstep (k - h) 0 (frontier indices) [] (by omega) fun ⟨i, q⟩ he ↦ by
       obtain ⟨hi, hq⟩ := mem_frontier.mp he
       dsimp only at hi hq ⊢
       subst hq
       have hql : indices.idxOf i < indices.length := List.idxOf_lt_length_of_mem hi
       exact ⟨hql, by rw [Nat.shiftRight_zero]; exact List.getElem_idxOf hql⟩
   rw [Nat.sub_zero] at hwalk
-  rw [hrest, Nat.sub_zero, prune, ← List.append_nil (pruneWalk paths k 0 (frontier indices))]
-  change ((walkM (m := Id) hash compress _ k _ (2 ^ k) _ _).1.all
-    fun (x : Nat × Nat × Vector F d) ↦ x.2.2 == N k 0) = true
+  rw [Nat.sub_zero, prune, ← List.append_nil (pruneWalk paths (k - h) 0 (frontier indices))]
+  change ((walkM (m := Id) hash compress _ (k - h) _ (2 ^ k) _ _).1.all
+    fun (x : Nat × Nat × Vector F d) ↦ x.2.2 == ((List.range (2 ^ h)).map (N (k - h))).getD x.1 0)
+      = true
   rw [hwalk, List.all_eq_true]
   intro x hx
   obtain ⟨e, he, rfl⟩ := List.mem_map.mp hx
   obtain ⟨hq, hi⟩ := hns' e he
-  have h0 : indices[e.2] >>> (0 + k) = 0 := by
-    rw [Nat.zero_add, Nat.shiftRight_eq_div_pow]
-    exact Nat.div_eq_of_lt (hidx _ (List.getElem_mem hq))
-  rw [h0] at hi
-  simp only [← hi, Nat.zero_add, beq_self_eq_true]
+  have hlt : e.1 < 2 ^ h := by
+    rw [← hi, Nat.zero_add, Nat.shiftRight_eq_div_pow, Nat.div_lt_iff_lt_mul (Nat.two_pow_pos _),
+      ← Nat.pow_add, Nat.add_sub_cancel' hhk]
+    exact hidx _ (List.getElem_mem hq)
+  simp only [Nat.zero_add, List.getD_eq_getElem?_getD, List.getElem?_map,
+    List.getElem?_range hlt, Option.map_some, Option.getD_some, beq_self_eq_true]
+
+
 
 end Mixed
 

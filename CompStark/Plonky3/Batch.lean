@@ -29,7 +29,8 @@ def setupBatch (P : Params) (instances : List (Instance F)) : Common F :=
     if I.air.preprocessedWidth = 0 then none
     else some (ldeRef I.logN P.logBlowup gen I.air.preprocessedWidth I.air.preprocessed)
   ⟨if mats.isEmpty then none
-    else some (Committed.ofMats (Hash.Poseidon2.hash F) (Hash.Poseidon2.compress F) mats).root⟩
+    else some ((Committed.ofMats (Hash.Poseidon2.hash F) (Hash.Poseidon2.compress F) mats).cap
+      P.capHeight)⟩
 
 /-- The out-of-domain point `ζ` of the specification's batch proof: the challenge, sampled after
 the main and quotient commitments, at which the prover opens every instance's traces and quotient

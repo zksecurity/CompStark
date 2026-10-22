@@ -46,9 +46,9 @@ namespace CompStarkTests.RandomOracle
 #guard_msgs in
 #print axioms CompStark.Ni.evalWithAnswerFn_setupRo
 
-/-- info: 'CompStark.Ni.exists_root_mem' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+/-- info: 'CompStark.Ni.exists_cap_mem' depends on axioms: [propext, Classical.choice, Quot.sound] -/
 #guard_msgs in
-#print axioms CompStark.Ni.exists_root_mem
+#print axioms CompStark.Ni.exists_cap_mem
 
 /-- info: 'CompStark.Ni.committedColumn_setup' depends on axioms: [propext, Classical.choice, Quot.sound] -/
 #guard_msgs in

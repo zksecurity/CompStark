@@ -74,6 +74,9 @@ structure Setup (EF : Type) [Challenge F EF] (lookups : List (Lookup F) := []) w
   valid : ValidConfig params air logN
   /-- FRI's final polynomial is shorter than the trace, so FRI folds at least once. -/
   folds : params.logFinalPolyLen < logN
+  /-- The Merkle cap fits below FRI's first commit-phase tree, of at least
+  `logN + logBlowup - maxLogArity` levels. -/
+  capFits : params.capHeight ≤ logN + params.logBlowup - params.maxLogArity
   /-- The lookups are valid on the instance (`LookupsValid`). -/
   lookupsValid : LookupsValid params air logN lookups := by trivial
 

@@ -10,11 +10,11 @@ public import CompStark.Fs.DigestClash
 /-! # Logs without digest clashes
 
 The digest of an answer (`digestOf`) is a hash, or a duplex call's new capacity; the digests of a
-key (`keyDigests`) are a compression's children, and a duplex call's capacity and the digest its
-input binds (`bd`, the protocol's `boundDigest`). A log is `NoClash` when no query, at its first
-occurrence, gets an answer whose digest is the initial capacity, an earlier answer's or one in an
-earlier or its own key (B's `DigestClash`). Then, with every query answered by one table
-`answer`:
+key (`keyDigests`) are a compression's children, and a duplex call's capacity and the digests its
+input binds (`bd`, the protocol's `boundDigests`: a commitment's cap). A log is `NoClash` when no
+query, at its first occurrence, gets an answer whose digest is the initial capacity, an earlier
+answer's or one in an earlier or its own key (B's `DigestClash`). Then, with every query answered
+by one table `answer`:
 
 * digests are unique (`eq_of_digestOf_eq`), so the duplex calls' capacities are injective
   (`capsInjective`) and so are the hash queries (`logCache_injective`);
@@ -68,17 +68,22 @@ def digestOf : (t : Query F) → Answer K t → Digest F
   | .leaf _, u => u
   | .node .., u => u
 
-variable (bd : Digest F → List F → Digest F)
+variable (bd : Digest F → List F → List (Digest F))
 
-/-- The digests in a key: a compression's children, and a duplex call's capacity and the digest
+/-- The digests in a key: a compression's children, and a duplex call's capacity and the digests
 `bd` its input binds. -/
 def keyDigests : Query F → List (Digest F)
-  | .duplex cap input => [cap, bd cap input]
+  | .duplex cap input => cap :: bd cap input
   | .leaf _ => []
   | .node left right => [left, right]
 
-theorem length_keyDigests_le (t : Query F) : (keyDigests bd t).length ≤ 2 := by
-  cases t <;> simp only [keyDigests, List.length_cons, List.length_nil] <;> omega
+/-- A key holds at most `m + 1` digests if an input binds at most `m ≥ 1`. -/
+theorem length_keyDigests_le (m : Nat) (hm : 1 ≤ m) (hbd : ∀ c i, (bd c i).length ≤ m)
+    (t : Query F) : (keyDigests bd t).length ≤ m + 1 := by
+  cases t with
+  | duplex c i => rw [keyDigests, List.length_cons]; exact Nat.add_le_add_right (hbd c i) 1
+  | leaf => rw [keyDigests, List.length_nil]; exact Nat.zero_le _
+  | node => rw [keyDigests, List.length_cons, List.length_cons, List.length_nil]; omega
 
 variable [BaseField F]
 
@@ -303,7 +308,7 @@ variable {answer : (q : Query F) → Answer K q} {log : QueryLog (spec F K)}
 on the answers to calls on the initial capacity only through whether they hold the call's
 capacity, and no fresh query clashes for the bound digests of the queries before it, then the log
 has no clashes for the bound digests of the whole log. -/
-theorem noClash_initAnswers (G : List (Digest F) → Digest F → List F → Digest F)
+theorem noClash_initAnswers (G : List (Digest F) → Digest F → List F → List (Digest F))
     (hG : ∀ r r' cap input, (cap ∈ r ↔ cap ∈ r') → G r cap input = G r' cap input)
     (hcons : Consistent answer log)
     (h : ∀ p (hp : p < log.length), log[p].1 ∉ (log.take p).map Sigma.fst →

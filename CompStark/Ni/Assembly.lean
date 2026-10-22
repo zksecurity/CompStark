@@ -12,10 +12,10 @@ The game of `run` (`game`) makes at most `Q + verifierQueries` oracle calls: the
 prover's and the verifier's. B's
 `prEvent_exists_fresh_bad_le` bounds the probability of an event that forces a fresh bad query by
 the number of calls times the probability that one fresh answer is bad. Here a fresh answer is bad
-if its digest clashes (`prob_clash_le`: `3 q / |F|^8`) or it makes its round bad
-(`prob_roundBad_le`: the largest round error at the proximity loss), and the event, an accepted
-proof the extractor cannot open, forces such a query (`exists_badAt`). The bound holds at every
-loss, so at the infimum: `q · roundError + hashError F q`.
+if its digest clashes (`prob_clash_le`: `(2 ^ h + 2) q / |F|^8` for caps of height `h`) or it
+makes its round bad (`prob_roundBad_le`: the largest round error at the proximity loss), and the
+event, an accepted proof the extractor cannot open, forces such a query (`exists_badAt`). The
+bound holds at every loss, so at the infimum: `q · roundError + hashError F h q`.
 -/
 
 @[expose] public section
@@ -158,8 +158,9 @@ def Unopened (result : Proof F EF × QueryLog (spec F S.streamLen) × Except Str
     ∀ trace ∈ closeTraces S δ' (committedTrace S result.2.1 result.1),
       ¬ S.air.Satisfied S.logN trace publicValues
 
-theorem hashError_eq (q : Nat) :
-    hashError F q = q * (((3 * q : Nat) : ℝ≥0∞) * (Fintype.card (Digest F) : ℝ≥0∞)⁻¹) := by
+theorem hashError_eq (h q : Nat) :
+    hashError F h q =
+      q * ((((2 ^ h + 2) * q : Nat) : ℝ≥0∞) * (Fintype.card (Digest F) : ℝ≥0∞)⁻¹) := by
   rw [hashError, card_digest, Nat.cast_pow, div_eq_mul_inv]
   push_cast
   ring
@@ -168,31 +169,35 @@ theorem hashError_eq (q : Nat) :
 theorem prob_unopened_le (hδ' : (δ' : ℝ) < 1 - S.rate) (Q : Nat) (prover : NIProver S)
     (hQ : prover.IsTotalQueryBound Q) :
     Pr{let result ← run S publicValues prover}[Unopened S publicValues δ' result] ≤
-      (Q + S.verifierQueries) * roundError S δ δ' + hashError F (Q + S.verifierQueries) := by
+      (Q + S.verifierQueries) * roundError S δ δ' +
+        hashError F S.params.capHeight (Q + S.verifierQueries) := by
   set n := Q + S.verifierQueries
+  set c := 2 ^ S.params.capHeight + 2
   have hn0 : 0 < n := by unfold n Setup.verifierQueries Setup.verifierCalls; omega
-  by_cases hbig : Fintype.card (Digest F) ≤ 3 * n
+  by_cases hbig : Fintype.card (Digest F) ≤ c * n
   · refine (prEvent_le_one _).trans (le_add_left ?_)
     rw [hashError_eq]
     have hcard : (Fintype.card (Digest F) : ℝ≥0∞) ≠ 0 := by
       simp only [ne_eq, Nat.cast_eq_zero, Fintype.card_ne_zero, not_false_eq_true]
-    calc (1 : ℝ≥0∞) ≤ ((3 * n : Nat) : ℝ≥0∞) * (Fintype.card (Digest F) : ℝ≥0∞)⁻¹ := by
+    calc (1 : ℝ≥0∞) ≤ ((c * n : Nat) : ℝ≥0∞) * (Fintype.card (Digest F) : ℝ≥0∞)⁻¹ := by
           rw [← div_eq_mul_inv, ENNReal.le_div_iff_mul_le (Or.inl hcard)
             (Or.inl (ENNReal.natCast_ne_top _)), one_mul]
           exact_mod_cast hbig
       _ ≤ _ := le_mul_of_one_le_left (by positivity)
         (by exact_mod_cast Nat.one_le_iff_ne_zero.mpr hn0.ne')
-  have hsmall : 3 * n < Fintype.card (Digest F) := by omega
+  have hsmall : c * n < Fintype.card (Digest F) := by omega
   have hloss : ∀ loss, Pr{let result ← run S publicValues prover}[
-      Unopened S publicValues δ' result] ≤ n * roundBound S δ δ' loss + hashError F n := by
+      Unopened S publicValues δ' result] ≤
+        n * roundBound S δ δ' loss + hashError F S.params.capHeight n := by
     intro loss
     rw [run_eq]
     refine (prEvent_exists_fresh_bad_le (game S publicValues prover) n
       (isTotalQueryBound_game S publicValues prover Q hQ) (Unopened S publicValues δ')
-      (fun pre t u ↦ Clash (boundDigest S) pre t u ∨ RoundBad S publicValues δ δ' loss pre t u)
-      (((3 * n : Nat) : ℝ≥0∞) * (Fintype.card (Digest F) : ℝ≥0∞)⁻¹ + roundBound S δ δ' loss)
+      (fun pre t u ↦ Clash (boundDigests S) pre t u ∨ RoundBad S publicValues δ δ' loss pre t u)
+      (((c * n : Nat) : ℝ≥0∞) * (Fintype.card (Digest F) : ℝ≥0∞)⁻¹ + roundBound S δ δ' loss)
       (fun pre t hlen _ ↦ (prEvent_or_le _ _ _).trans
-        (add_le_add (prob_clash_le (boundDigest S) _ n pre hlen t)
+        (add_le_add (prob_clash_le (boundDigests S) _ Nat.one_le_two_pow
+          (fun c i ↦ (length_boundDigests S c i).le) _ n pre hlen t)
           (prob_roundBad_le S publicValues δ δ' loss pre t)))
       fun answer hev ↦ ?_).trans ?_
     · rw [evalWithAnswerFn_game] at hev
@@ -209,13 +214,14 @@ theorem prob_unopened_le (hδ' : (δ' : ℝ) < 1 - S.rate) (Q : Nat) (prover : N
         (tableQueryLog (setupAndProve S prover) answer) (consistent_tableQueryLog _) rfl
         (fun e he ↦ by
           rw [tableQueryLog_setupAndProve]; exact List.mem_append_left _ he)
-        hdb hok (by omega) hfail
+        hdb hok (lt_of_le_of_lt (Nat.mul_le_mul_left _ hlen) hsmall) hfail
       rw [hlog]
       exact ⟨_, _, _, (List.take_append_drop p _).symm.trans
         (by rw [List.drop_eq_getElem_cons hp]), hfresh, hbad⟩
     · rw [mul_add, add_comm, hashError_eq]
-  calc _ ≤ ⨅ loss, (n * roundBound S δ δ' loss + hashError F n) := le_iInf hloss
-    _ = n * roundError S δ δ' + hashError F n := by
+  calc _ ≤ ⨅ loss, (n * roundBound S δ δ' loss + hashError F S.params.capHeight n) :=
+        le_iInf hloss
+    _ = n * roundError S δ δ' + hashError F S.params.capHeight n := by
       rw [roundError_eq, ENNReal.mul_iInf_of_ne (by exact_mod_cast hn0.ne')
         (ENNReal.natCast_ne_top _), ENNReal.iInf_add]
     _ = _ := by simp only [n, Nat.cast_add]

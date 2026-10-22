@@ -86,13 +86,13 @@ def batchRounds (instances : List (Instance F)) (common : Common F) (proof : Bat
     (proof.quotientCommit, insts.flatMap fun (I, o) ↦
       o.quotientChunks.toList.map fun ch ↦ (domain I, [(zeta, ch.toList)]))] ++
     (match common.preprocessed with
-    | some root => [(root, (insts.filter (0 < ·.1.air.preprocessedWidth)).map fun (I, o) ↦
+    | some cap => [(cap, (insts.filter (0 < ·.1.air.preprocessedWidth)).map fun (I, o) ↦
         (domain I, (zeta, (o.preprocessedLocal.getD #[]).toList) ::
           if I.air.opensPreprocessedNext then [(zetaNext I, (o.preprocessedNext.getD #[]).toList)]
           else []))]
     | none => []) ++
     match proof.permutationCommit with
-    | some root => [(root, ((instances.zip (proof.permutationLocal.toList.zip
+    | some cap => [(cap, ((instances.zip (proof.permutationLocal.toList.zip
         proof.permutationNext.toList)).filter (!·.1.lookups.isEmpty)).map fun (I, l, n) ↦
           (domain I, [(zeta, l.toList), (zetaNext I, n.toList)]))]
     | none => []
@@ -118,8 +118,8 @@ def instanceCheck (I : Instance F) (o : OpenedValues EF) (pis : List F) (cur nex
     recompose (chunkDomains I.logN I.logQuotientChunks) o.quotientChunks.toList zeta
 
 /-- The lookup checks before the transcript: the lookups' widths, the multiplicity bound, every
-instance's permutation openings and terminal, the permutation commitment, and the lookup grinding
-witness, present exactly with lookups and `0` at zero difficulty. -/
+instance's permutation openings and terminal, the permutation commitment, a cap that is not empty,
+and the lookup grinding witness, present exactly with lookups and `0` at zero difficulty. -/
 def lookupShapeOk (P : Params) (instances : List (Instance F)) (proof : BatchProof F EF) :
     Bool :=
   widthsOk (instances.flatMap (·.lookups)) &&
@@ -127,6 +127,7 @@ def lookupShapeOk (P : Params) (instances : List (Instance F)) (proof : BatchPro
     (instances.zip (proof.permutationLocal.toList.zip (proof.permutationNext.toList.zip
       proof.lookupTerminals.toList))).all (fun (I, l, n, t) ↦ permutationShapeOk I l n t) &&
     proof.permutationCommit.isSome == hasLookups instances &&
+    proof.permutationCommit.all (·.size != 0) &&
     match proof.lookupWitness with
     | some w => hasLookups instances && (P.lookupPowBits != 0 || w == 0)
     | none => !hasLookups instances
@@ -141,7 +142,7 @@ def lookupPhase {m : Type → Type} [Monad m] {H : Primitives F m} (P : Params)
       let b ← sampleExt H
       pure (a, b)
     else pure (0, 0)
-  observeList H ((proof.permutationCommit.map (·.toList)).getD [])
+  observeList H ((proof.permutationCommit.map capElems).getD [])
   observeExts H (proof.lookupTerminals.toList.filterMap id)
   return pair
 
@@ -170,15 +171,17 @@ def verifyBatchWith {m : Type → Type} [Monad m] (H : Primitives F m) (P : Para
     throw "lookups"
   unless P.oodPowBits != 0 || proof.oodWitness == 0 do
     throw "out-of-domain witness"
+  unless proof.quotientCommit.size != 0 do
+    throw "empty quotient commitment"
   let run : M H (EF × EF × EF × EF) := do
     observeList H (batchSeedOf EF P instances common)
     observeExts H (instances.map fun I ↦ (Ext.ofBase (I.logN : F) : EF))
-    observeList H proof.mainCommit.toList
+    observeCap H proof.mainCommit
     observeList H pis.flatten
-    observeList H ((common.preprocessed.map (·.toList)).getD [])
+    observeList H ((common.preprocessed.map capElems).getD [])
     let (lookupAlpha, lookupBeta) ← lookupPhase P instances proof
     let alpha ← sampleExt H
-    observeList H proof.quotientCommit.toList
+    observeCap H proof.quotientCommit
     ensure (← checkWitness H P.oodPowBits proof.oodWitness) "out-of-domain witness"
     let zeta ← sampleExt H
     ensure (instances.all fun I ↦ Ext.powTwo zeta I.logN - 1 != 0)

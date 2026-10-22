@@ -28,11 +28,16 @@ variable {F : Type} [BaseField F] {EF : Type} [Challenge F EF]
 def SameUnderM (cache cache' : Merkle.Cache F (Digest F)) (root : Digest F) : Prop :=
   ∀ inj K t i, Merkle.extractGroup cache inj K t i root = Merkle.extractGroup cache' inj K t i root
 
-theorem matColumn_congr {cache cache' : Merkle.Cache F (Digest F)} {root : Digest F}
-    (h : SameUnderM cache cache' root) :
-    Merkle.matColumn cache root = Merkle.matColumn cache' root := by
-  funext K hs ws t j m r
-  simp only [Merkle.matColumn]
+/-- `cache` and `cache'` extract the same rows of every height under every entry of the cap
+`cap`, and under the zero digest an index past it reads. -/
+def CapSameUnderM (cache cache' : Merkle.Cache F (Digest F)) (cap : Cap F) : Prop :=
+  ∀ j, SameUnderM cache cache' (cap.toList.getD j 0)
+
+theorem matColumnCap_congr {cache cache' : Merkle.Cache F (Digest F)} {cap : Cap F}
+    (h : CapSameUnderM cache cache' cap) :
+    Merkle.matColumnCap cache cap.toList = Merkle.matColumnCap cache' cap.toList := by
+  funext c K hs ws t j m r
+  simp only [Merkle.matColumnCap, Merkle.matColumn]
   rw [h]
 
 /-! ### Accepted proofs -/
@@ -64,7 +69,7 @@ theorem shape_of_verifyBatchWith
       proof.permutationCommit.isSome = S.hasLookups := by
   obtain ⟨hsize, -, hlsize, hnsize, htsize, -, -, -, hshapeZ, hprepS, hlk, -, -, -, -,
     ⟨st, hfriOk⟩, -⟩ := verifyBatchWith_ok H S.params S.instances common proof pis h
-  obtain ⟨hpshapes, hperm⟩ := lookupShapeOk_spec S.params S.instances proof hlk
+  obtain ⟨hpshapes, hperm, -⟩ := lookupShapeOk_spec S.params S.instances proof hlk
   rw [length_instances] at hsize hlsize hnsize htsize
   have hos : proof.opened.toList.length = S.k := by rw [Array.length_toList, hsize]
   have hD := descHeights_batchRounds S common proof
@@ -103,18 +108,21 @@ theorem lookups_eq_nil_of (hl : S.hasLookups = false) (i : Fin S.k) : S.lookups 
   exact Bool.false_ne_true this
 
 theorem prefixTranscriptB_trace (hb : block 0 = block' 0)
-    (h : SameUnderM cache cache' (digestAt (block' 0) (mainOffsetB S))) :
+    (h : CapSameUnderM cache cache' (capFrom (block' 0) (mainOffsetB S) (2 ^ S.params.capHeight))) :
     (prefixTranscriptB S cache block sample).trace =
       (prefixTranscriptB S cache' block' sample').trace := by
   funext i c x
-  show Merkle.matColumn cache (digestAt (block 0) (mainOffsetB S)) _ _ _ _ _ _ _ =
-    Merkle.matColumn cache' (digestAt (block' 0) (mainOffsetB S)) _ _ _ _ _ _ _
-  rw [hb, matColumn_congr h]
+  show Merkle.matColumnCap cache
+      (capFrom (block 0) (mainOffsetB S) (2 ^ S.params.capHeight)).toList _ _ _ _ _ _ _ _ =
+    Merkle.matColumnCap cache'
+      (capFrom (block' 0) (mainOffsetB S) (2 ^ S.params.capHeight)).toList _ _ _ _ _ _ _ _
+  rw [hb, matColumnCap_congr h]
 
 /-- The permutation traces read under the permutation commitment; without lookups, there are
 none. -/
 theorem prefixTranscriptB_perm (hb : block (lookupRounds S) = block' (lookupRounds S))
-    (h : S.hasLookups = true → SameUnderM cache cache' (digestAt (block' (lookupRounds S)) 0)) :
+    (h : S.hasLookups = true → CapSameUnderM cache cache'
+      (capFrom (block' (lookupRounds S)) 0 (2 ^ S.params.capHeight))) :
     (prefixTranscriptB S cache block sample).perm =
       (prefixTranscriptB S cache' block' sample').perm := by
   funext i c e x
@@ -126,31 +134,39 @@ theorem prefixTranscriptB_perm (hb : block (lookupRounds S) = block' (lookupRoun
     rw [h0 _ _ (lookups_eq_nil_of S hl i)] at hc
     exact absurd hc (Nat.not_lt_zero _)
   replace h := h hl
-  show Merkle.matColumn cache (digestAt (block (lookupRounds S)) 0) _ _ _ _ _ _ _ =
-    Merkle.matColumn cache' (digestAt (block' (lookupRounds S)) 0) _ _ _ _ _ _ _
-  rw [hb, matColumn_congr h]
+  show Merkle.matColumnCap cache
+      (capFrom (block (lookupRounds S)) 0 (2 ^ S.params.capHeight)).toList _ _ _ _ _ _ _ _ =
+    Merkle.matColumnCap cache'
+      (capFrom (block' (lookupRounds S)) 0 (2 ^ S.params.capHeight)).toList _ _ _ _ _ _ _ _
+  rw [hb, matColumnCap_congr h]
 
 theorem prefixTranscriptB_quotient (hb : block (lookupRounds S + 1) = block' (lookupRounds S + 1))
-    (h : SameUnderM cache cache' (digestAt (block' (lookupRounds S + 1)) 0)) :
+    (h : CapSameUnderM cache cache'
+      (capFrom (block' (lookupRounds S + 1)) 0 (2 ^ S.params.capHeight))) :
     (prefixTranscriptB S cache block sample).quotient =
       (prefixTranscriptB S cache' block' sample').quotient := by
   funext i c e x
-  show Merkle.matColumn cache (digestAt (block (lookupRounds S + 1)) 0) _ _ _ _ _ _ _ =
-    Merkle.matColumn cache' (digestAt (block' (lookupRounds S + 1)) 0) _ _ _ _ _ _ _
-  rw [hb, matColumn_congr h]
+  show Merkle.matColumnCap cache
+      (capFrom (block (lookupRounds S + 1)) 0 (2 ^ S.params.capHeight)).toList _ _ _ _ _ _ _ _ =
+    Merkle.matColumnCap cache'
+      (capFrom (block' (lookupRounds S + 1)) 0 (2 ^ S.params.capHeight)).toList _ _ _ _ _ _ _ _
+  rw [hb, matColumnCap_congr h]
 
 theorem prefixTranscriptB_words (f : ℕ)
     (hb : block (lookupRounds S + 3 + f) = block' (lookupRounds S + 3 + f))
-    (h : SameUnder cache cache' (digestAt (block' (lookupRounds S + 3 + f)) (friOffsetB S f))) :
+    (h : CapSameUnder cache cache' (capFrom (block' (lookupRounds S + 3 + f)) (friOffsetB S f)
+      (2 ^ min S.params.capHeight (friDepthB S f)))) :
     (prefixTranscriptB S cache block sample).words f =
       (prefixTranscriptB S cache' block' sample').words f := by
   funext m z
   show (if f < S.friArities.length then friWordAt (EF := EF) cache
-      (digestAt (block (lookupRounds S + 3 + f)) (friOffsetB S f)) m (S.friArities.getD f 0)
-        z.val else 0) =
+      (capFrom (block (lookupRounds S + 3 + f)) (friOffsetB S f)
+        (2 ^ min S.params.capHeight (friDepthB S f))) S.params.capHeight m
+        (S.friArities.getD f 0) z.val else 0) =
     (if f < S.friArities.length then friWordAt (EF := EF) cache'
-      (digestAt (block' (lookupRounds S + 3 + f)) (friOffsetB S f)) m (S.friArities.getD f 0)
-        z.val else 0)
+      (capFrom (block' (lookupRounds S + 3 + f)) (friOffsetB S f)
+        (2 ^ min S.params.capHeight (friDepthB S f))) S.params.capHeight m
+        (S.friArities.getD f 0) z.val else 0)
   rw [hb, friWordAt_congr h]
 
 end Congr
@@ -188,8 +204,10 @@ theorem batchSeedOf_eq
   rw [CompStark.Batch.batchSeedOf, batchSeedS, hprep, hasPreprocessed_eq]
 
 theorem mainRoot_eq
-    (hprep : common.preprocessed.isSome = S.instances.any (0 < ·.air.preprocessedWidth)) :
-    digestAt ((inputsB S common pis proof).getD 0 []) (mainOffsetB S) = proof.mainCommit := by
+    (hprep : common.preprocessed.isSome = S.instances.any (0 < ·.air.preprocessedWidth))
+    (hsz : proof.mainCommit.size = 2 ^ S.params.capHeight) :
+    capFrom ((inputsB S common pis proof).getD 0 []) (mainOffsetB S) (2 ^ S.params.capHeight) =
+      proof.mainCommit := by
   obtain ⟨rest, hr⟩ := inputsB_getD_head S common proof pis
   rw [hr, headB, batchSeedOf_eq S common hprep]
   simp only [List.append_assoc]
@@ -197,20 +215,23 @@ theorem mainRoot_eq
   have hlen : mainOffsetB S = (batchSeedS S ++
       coeffs (S.instances.map fun I ↦ (Ext.ofBase (I.logN : F) : EF))).length := by
     rw [List.length_append, length_coeffs_map, length_instances, mainOffsetB]
-  rw [hlen]
-  exact digestAt_append _ _ _
+  rw [hlen, ← hsz]
+  exact capFrom_append _ _ _
 
-theorem permRoot_eqB (hl : S.hasLookups = true) {root : Digest F}
-    (hroot : proof.permutationCommit = some root) :
-    digestAt ((inputsB S common pis proof).getD (lookupRounds S) []) 0 = root := by
+theorem permRoot_eqB (hl : S.hasLookups = true) {root : Cap F}
+    (hroot : proof.permutationCommit = some root) (hsz : root.size = 2 ^ S.params.capHeight) :
+    capFrom ((inputsB S common pis proof).getD (lookupRounds S) []) 0 (2 ^ S.params.capHeight) =
+      root := by
   rw [inputsB_getD_alpha, hl, permDigest, hroot]
   simp only [↓reduceIte, List.nil_append, Option.map_some, Option.getD_some]
-  exact digestAt_append_zero _ _
+  rw [← hsz]
+  exact capFrom_append _ [] _
 
-theorem quotientRoot_eqB :
-    digestAt ((inputsB S common pis proof).getD (lookupRounds S + 1) []) 0 =
-      proof.quotientCommit := by
-  rw [inputsB_getD_ood, digestAt_append_zero]
+theorem quotientRoot_eqB (hsz : proof.quotientCommit.size = 2 ^ S.params.capHeight) :
+    capFrom ((inputsB S common pis proof).getD (lookupRounds S + 1) []) 0
+      (2 ^ S.params.capHeight) = proof.quotientCommit := by
+  rw [inputsB_getD_ood, ← hsz]
+  exact capFrom_append _ [] _
 
 /-- The observed terminals, read back. -/
 theorem filterMap_id_eq {k : ℕ} (ts : List (Option EF)) (hlen : ts.length = k) :
@@ -227,14 +248,16 @@ theorem terminal_eqB (hl : S.hasLookups = true)
     (hperm : proof.permutationCommit.isSome = S.hasLookups)
     (htsize : proof.lookupTerminals.size = S.k)
     (hsome : ∀ i : Fin S.k, (proof.lookupTerminals.getD i none).isSome = !(S.lookups i).isEmpty)
+    (hsz : ∀ root ∈ proof.permutationCommit, root.size = 2 ^ S.params.capHeight)
     (i : Fin S.k) (hi : (S.lookups i).isEmpty = false) :
     Challenge.toSpec (extFrom (EF := EF)
-      (((inputsB S common pis proof).getD (lookupRounds S) []).drop 8) (terminalIndex S i)) =
+      (((inputsB S common pis proof).getD (lookupRounds S) []).drop (8 * 2 ^ S.params.capHeight))
+        (terminalIndex S i)) =
       Challenge.toSpec ((proof.lookupTerminals.getD i none).getD 0) := by
   obtain ⟨root, hroot⟩ := Option.isSome_iff_exists.mp (hperm.trans hl)
   rw [inputsB_getD_alpha, hl, permDigest, hroot]
   simp only [↓reduceIte, List.nil_append, Option.map_some, Option.getD_some]
-  rw [List.drop_left' Vector.length_toList]
+  rw [List.drop_left' (by rw [length_capElems, hsz root hroot])]
   have htl : proof.lookupTerminals.toList.length = S.k := by rw [Array.length_toList, htsize]
   have hlenT : ∀ j : Fin S.k, ((proof.lookupTerminals.toList.getD j none).toList).length =
       (fun j : Fin S.k ↦ if (S.lookups j).isEmpty then 0 else 1) j := by
@@ -297,14 +320,68 @@ theorem friArities_ne_nil : S.friArities ≠ [] := by
   rw [hn, foldSchedule, ite_eq_right_of_eq_false _ _ (eq_false (by omega))]
   exact List.cons_ne_nil _ _
 
+theorem capHeight_le_friDepthB_zero : S.params.capHeight ≤ friDepthB S 0 := by
+  have hf := S.folds S.top
+  have hb := (S.valid S.top).blowup
+  have hc := S.capFits S.top
+  unfold friDepthB Iop.Batch.Setup.friArities
+  obtain ⟨n, hn⟩ : ∃ n, S.logTop = n + 1 := ⟨_, (Nat.succ_pred_eq_of_pos
+    (by unfold Iop.Batch.Setup.logTop; omega)).symm⟩
+  rw [hn, foldSchedule, ite_eq_right_of_eq_false _ _ (eq_false (by
+    unfold Iop.Batch.Setup.logTop at hn; omega))]
+  simp only [Nat.zero_add, List.take_succ_cons, List.take_zero, List.sum_cons, List.sum_nil,
+    Nat.add_zero]
+  have := Nat.min_le_right (min ((n + 1) - ((S.friHeights).headD
+    (S.params.logBlowup + S.params.logFinalPolyLen))) ((n + 1) -
+    (S.params.logBlowup + S.params.logFinalPolyLen))) S.params.maxLogArity
+  unfold Iop.Batch.Setup.logTop at hn
+  omega
+
 variable (answer : (q : Query F) → Answer S.streamLen q)
 variable {common proof pis}
 
+/-- An accepted batch proof's caps have the sizes of the setup's trees: every round's
+`2 ^ capHeight` entries, the cap fitting every instance (`Setup.capFits`), and fold `i`'s one per
+node at the cap's level of its tree. -/
+theorem size_capsB
+    (hok : CompStark.Batch.verifyBatchWith (idealOf answer) S.params S.instances common proof pis =
+      .ok ()) :
+    (∀ x ∈ CompStark.Batch.batchRounds S.instances common proof
+      (zetaOfB (idealOf answer) S.params S.instances common proof pis),
+        x.1.size = 2 ^ S.params.capHeight) ∧
+    ∀ i < S.friArities.length, (proof.fri.commits.toList.getD i #[]).size =
+      2 ^ min S.params.capHeight (friDepthB S i) := by
+  obtain ⟨hsize, -, -, -, -, -, -, -, -, -, -, -, -, -, -, ⟨st, hfriOk⟩, -⟩ :=
+    verifyBatchWith_ok (idealOf answer) S.params S.instances common proof pis hok
+  rw [length_instances] at hsize
+  have hD := descHeights_batchRounds S common proof
+    (zetaOfB (idealOf answer) S.params S.instances common proof pis) hsize
+  have hok' := verifyFri_okR (idealOf answer) S.params proof.fri _ _ _ _ hfriOk
+  dsimp only at hok'
+  rw [hD, List.headD_cons] at hok'
+  obtain ⟨hq0, -, -, -, hfolds, -, -, -, -, hcrlen, hq⟩ := hok'
+  obtain ⟨hround, hfold⟩ := size_caps_of_queryOkR _ _ _ _ _ _ _ _ _ _ _ _ _ hcrlen
+    (by rw [Array.length_toList]; exact hfolds) (hq 0 hq0)
+  refine ⟨fun x hx ↦ ?_, fun i hi ↦ hfold i hi⟩
+  obtain ⟨hne, hsz⟩ := hround x hx
+  rw [hsz, Nat.min_eq_left]
+  obtain ⟨dp, hdp⟩ := List.exists_mem_of_ne_nil _ hne
+  have hm : dp.1.logSize + S.params.logBlowup ∈ matHeights S.params
+      (CompStark.Batch.batchRounds S.instances common proof
+        (zetaOfB (idealOf answer) S.params S.instances common proof pis)) :=
+    List.mem_map.mpr ⟨dp, List.mem_flatMap.mpr ⟨x, hx, hdp⟩, rfl⟩
+  obtain ⟨j, hj⟩ := (mem_matHeights S common proof _ hsize _).mp hm
+  exact (capHeight_le_logSize S j).trans (hj ▸ (le_foldl_max _ 0).2 _
+    (List.mem_map_of_mem (f := fun y : Domain F × List (EF × List EF) ↦
+      y.1.logSize + S.params.logBlowup) hdp))
+
 theorem foldRoot_eqB
     (hok : CompStark.Batch.verifyBatchWith (idealOf answer) S.params S.instances common proof pis =
-      .ok ()) (i : ℕ) (hi : i < S.friArities.length) :
-    digestAt ((inputsB S common pis proof).getD (lookupRounds S + 3 + i) []) (friOffsetB S i) =
-      proof.fri.commits.toList.getD i 0 := by
+      .ok ()) (i : ℕ) (hi : i < S.friArities.length)
+    (hsz : (proof.fri.commits.toList.getD i #[]).size =
+      2 ^ min S.params.capHeight (friDepthB S i)) :
+    capFrom ((inputsB S common pis proof).getD (lookupRounds S + 3 + i) []) (friOffsetB S i)
+      (2 ^ min S.params.capHeight (friDepthB S i)) = proof.fri.commits.toList.getD i #[] := by
   have hz := length_zip_commitsB S (idealOf answer) common proof pis hok
   rw [inputsB_getD_fold _ _ _ _ i (by omega)]
   have hpre : friOffsetB S i = (seedAt (friSeedB S) i).length := by
@@ -314,7 +391,9 @@ theorem foldRoot_eqB
     obtain ⟨-, -, -, hcs, -⟩ := shape_of_verifyBatchWith S (idealOf answer) common proof pis hok
     rw [Array.length_toList, hcs]
     exact hi
-  rw [hpre, digestAt_append, List.getElem_zip, List.getD_eq_getElem _ _ hc]
+  rw [List.getD_eq_getElem _ _ hc] at hsz ⊢
+  rw [hpre, List.getElem_zip, ← hsz]
+  exact capFrom_append _ _ _
 
 theorem finalPoly_eqB
     (hok : CompStark.Batch.verifyBatchWith (idealOf answer) S.params S.instances common proof pis =
@@ -367,14 +446,32 @@ theorem extractB_eq_prefixTranscriptB (cache : Merkle.Cache F (Digest F))
     rw [Array.length_toList, hfp]
     exact Nat.two_pow_pos _
   have hz := length_zip_commitsB S (idealOf answer) common proof pis hok
+  obtain ⟨-, -, -, -, -, -, -, -, -, -, hlk', -, -, -, -, ⟨st, hfriOk⟩, -⟩ :=
+    verifyBatchWith_ok (idealOf answer) S.params S.instances common proof pis hok
+  obtain ⟨-, -, hpne⟩ := lookupShapeOk_spec S.params S.instances proof hlk'
+  have hqne := size_quotientCommit_neB _ _ _ _ _ _ hok
   obtain ⟨hlk, hα, hζ, hbatch, hlenβ, hβ, -, -⟩ :=
-    challengesB_idealOf answer S common proof pis (le_refl _) hfpne hperm
+    challengesB_idealOf answer S common proof pis (le_refl _) hfpne hperm hpne hqne
+      (size_commits_ne _ _ _ _ _ _ _ hfriOk)
+  obtain ⟨hrsz, hfsz⟩ := size_capsB S answer hok
+  have hrsz' := hrsz
+  rw [CompStark.Batch.batchRounds] at hrsz'
+  have hmsz : proof.mainCommit.size = 2 ^ S.params.capHeight :=
+    hrsz' _ (List.mem_append_left _ (List.mem_append_left _ List.mem_cons_self))
+  have hqsz : proof.quotientCommit.size = 2 ^ S.params.capHeight :=
+    hrsz' _ (List.mem_append_left _ (List.mem_append_left _
+      (List.mem_cons_of_mem _ List.mem_cons_self)))
+  have hpsz : ∀ root ∈ proof.permutationCommit, root.size = 2 ^ S.params.capHeight := by
+    intro root hroot
+    rw [Option.mem_def] at hroot
+    simp only [hroot] at hrsz'
+    exact hrsz' _ (List.mem_append_right _ List.mem_cons_self)
   refine transcript_ext S ?_ ?_ ?_ ?_ ?_ hα ?_ hζ ?_ hbatch ?_ ?_ ?_
   · funext i c x
-    show Merkle.matColumn cache proof.mainCommit _ _ _ _ _ _ _ =
-      Merkle.matColumn cache (digestAt ((inputsB S common pis proof).getD 0 []) (mainOffsetB S))
-        _ _ _ _ _ _ _
-    rw [mainRoot_eq S common proof pis hprep]
+    show Merkle.matColumnCap cache proof.mainCommit.toList _ _ _ _ _ _ _ _ =
+      Merkle.matColumnCap cache (capFrom ((inputsB S common pis proof).getD 0 []) (mainOffsetB S)
+        (2 ^ S.params.capHeight)).toList _ _ _ _ _ _ _ _
+    rw [mainRoot_eq S common proof pis hprep hmsz]
   · show Challenge.toSpec (lookupRunB (idealOf answer) S.params S.instances common proof pis).1 =
       if S.hasLookups then _ else 0
     cases hl : S.hasLookups
@@ -401,10 +498,11 @@ theorem extractB_eq_prefixTranscriptB (cache : Merkle.Cache F (Digest F))
         simp only [permWidth_eq, hi, ↓reduceIte]
       exact absurd c.isLt (by omega)
     · obtain ⟨root, hroot⟩ := Option.isSome_iff_exists.mp (hperm.trans hl)
-      show Merkle.matColumn cache (permRoot proof) _ _ _ _ _ _ _ =
-        Merkle.matColumn cache (digestAt ((inputsB S common pis proof).getD (lookupRounds S) [])
-          0) _ _ _ _ _ _ _
-      rw [permRoot_eqB S common proof pis hl hroot, permRoot, hroot, Option.getD_some]
+      show Merkle.matColumnCap cache (permRoot proof).toList _ _ _ _ _ _ _ _ =
+        Merkle.matColumnCap cache (capFrom ((inputsB S common pis proof).getD (lookupRounds S) [])
+          0 (2 ^ S.params.capHeight)).toList _ _ _ _ _ _ _ _
+      rw [permRoot_eqB S common proof pis hl hroot (hpsz root hroot), permRoot, hroot,
+        Option.getD_some]
   · funext i
     show Challenge.toSpec ((proof.lookupTerminals.getD i none).getD 0) =
       if (S.lookups i).isEmpty then 0 else _
@@ -412,27 +510,29 @@ theorem extractB_eq_prefixTranscriptB (cache : Merkle.Cache F (Digest F))
     · have hl : S.hasLookups = true :=
         List.any_eq_true.mpr ⟨⟨S.air i, S.logN i⟩, List.mem_ofFn.mpr ⟨i, rfl⟩, by
           rw [← lookups_eq, hi]; rfl⟩
-      exact (terminal_eqB S common proof pis hl hperm htsize (fun j ↦ (hpw j).2.2) i hi).symm
+      exact (terminal_eqB S common proof pis hl hperm htsize (fun j ↦ (hpw j).2.2) hpsz i hi).symm
     · have h := (hpw i).2.2
       rw [hi, Bool.not_true, Option.isSome_eq_false_iff, Option.isNone_iff_eq_none] at h
       rw [h, Option.getD_none, Challenge.toSpec_zero]
       rfl
   · funext i c e x
-    show Merkle.matColumn cache proof.quotientCommit _ _ _ _ _ _ _ =
-      Merkle.matColumn cache (digestAt ((inputsB S common pis proof).getD (lookupRounds S + 1) [])
-        0) _ _ _ _ _ _ _
-    rw [quotientRoot_eqB]
+    show Merkle.matColumnCap cache proof.quotientCommit.toList _ _ _ _ _ _ _ _ =
+      Merkle.matColumnCap cache (capFrom ((inputsB S common pis proof).getD (lookupRounds S + 1)
+        []) 0 (2 ^ S.params.capHeight)).toList _ _ _ _ _ _ _ _
+    rw [quotientRoot_eqB S common proof pis hqsz]
   · exact (openings_eqB S common proof pis hsize hlsize hnsize hshape hprep
       (fun i ↦ ⟨(hpw i).1, (hpw i).2.1⟩) hperm).symm
   · funext j m z
     show (if j < S.friArities.length then friWordAt (EF := EF) cache
-        (proof.fri.commits.toList.getD j 0) m (S.friArities.getD j 0) z.val else 0) =
+        (proof.fri.commits.toList.getD j #[]) S.params.capHeight m (S.friArities.getD j 0) z.val
+        else 0) =
       (if j < S.friArities.length then friWordAt (EF := EF) cache
-        (digestAt ((inputsB S common pis proof).getD (lookupRounds S + 3 + j) [])
-          (friOffsetB S j)) m (S.friArities.getD j 0) z.val else 0)
+        (capFrom ((inputsB S common pis proof).getD (lookupRounds S + 3 + j) [])
+          (friOffsetB S j) (2 ^ min S.params.capHeight (friDepthB S j))) S.params.capHeight m
+          (S.friArities.getD j 0) z.val else 0)
     split
     · rename_i hj
-      rw [foldRoot_eqB S answer hok j hj]
+      rw [foldRoot_eqB S answer hok j hj (hfsz j hj)]
     · rfl
   · show finalPoly S.domainSetup proof.fri.finalPoly = finalPoly S.domainSetup
       (finalPolyAt S.domainSetup

@@ -83,6 +83,7 @@ fn merkle(log_h: u32, width: usize) {
 
 mod babybear;
 mod batch;
+mod example;
 mod fingerprint;
 mod keccak;
 mod seeds;
@@ -95,6 +96,18 @@ fn main() {
     }
     if args.len() == 4 && args[1] == "fingerprint" {
         return fingerprint::fingerprint(&args[2], args[3].parse().unwrap());
+    }
+    if args.len() == 4 && args[1] == "keccak-example" {
+        return example::keccak_example(args[2].parse().unwrap(), &args[3]);
+    }
+    if args.len() == 2 && args[1] == "keccak-example-constants" {
+        return example::constants_module();
+    }
+    if args.len() == 3 && args[1] == "keccak-prove-trace" {
+        return example::keccak_prove_trace(args[2].parse().unwrap());
+    }
+    if args.len() == 4 && args[1] == "keccak-bench" {
+        return example::keccak_bench(args[2].parse().unwrap(), args[3].parse().unwrap());
     }
     if args.len() == 4 && args[1] == "lde" {
         return keccak::lde(args[2].parse().unwrap(), args[3].parse().unwrap());

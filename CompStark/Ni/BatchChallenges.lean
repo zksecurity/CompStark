@@ -100,7 +100,8 @@ theorem lookupB_idealOf (hK : 2 * Challenge.d EF + 1 ≤ K) (hl : S.hasLookups =
   exact h
 
 theorem stateAlphaB_idealOf (hK : 2 * Challenge.d EF + 1 ≤ K)
-    (hperm : proof.permutationCommit.isSome = S.hasLookups) :
+    (hperm : proof.permutationCommit.isSome = S.hasLookups)
+    (hpne : ∀ c ∈ proof.permutationCommit, c.size ≠ 0) :
     stateAlphaB (idealOf answer) S.params S.instances common proof pis =
       ⟨capAt answer (inputsB S common pis proof) (lookupRounds S),
         (inputsB S common pis proof).getD (lookupRounds S) [], []⟩ := by
@@ -120,10 +121,11 @@ theorem stateAlphaB_idealOf (hK : 2 * Challenge.d EF + 1 ≤ K)
     rw [hst]
     simp only [permDigest, hroot, Option.map_some, Option.getD_some, obsExts_eq, ↓reduceIte,
       lookupRounds, hl]
-    rw [obsList_idealOf_ne answer _ _ (digest_toList_ne_nil _), obsList_idealOf_mk]
+    rw [obsList_idealOf_ne answer _ _ (capElems_ne_nil (hpne root hroot)), obsList_idealOf_mk]
 
 theorem alphaB_idealOf (hK : 2 * Challenge.d EF + 1 ≤ K)
-    (hperm : proof.permutationCommit.isSome = S.hasLookups) :
+    (hperm : proof.permutationCommit.isSome = S.hasLookups)
+    (hpne : ∀ c ∈ proof.permutationCommit, c.size ≠ 0) :
     Challenge.toSpec (alphaOfB (idealOf answer) S.params S.instances common proof pis) =
       extAt (answer (keyAt answer (inputsB S common pis proof) (lookupRounds S))).2 0 ∧
     (smpExt (EF := EF) (idealOf answer)
@@ -131,11 +133,12 @@ theorem alphaB_idealOf (hK : 2 * Challenge.d EF + 1 ≤ K)
       ⟨capAt answer (inputsB S common pis proof) (lookupRounds S + 1), [],
         (answer (keyAt answer (inputsB S common pis proof) (lookupRounds S))).2.toList.drop
           (Challenge.d EF)⟩ := by
-  rw [alphaOfB, stateAlphaB_idealOf answer S common proof pis hK hperm]
+  rw [alphaOfB, stateAlphaB_idealOf answer S common proof pis hK hperm hpne]
   exact smpExt_idealOf_nil answer (by omega) _ _
 
 theorem zetaB_idealOf (hK : 2 * Challenge.d EF + 1 ≤ K)
-    (hperm : proof.permutationCommit.isSome = S.hasLookups) :
+    (hperm : proof.permutationCommit.isSome = S.hasLookups)
+    (hpne : ∀ c ∈ proof.permutationCommit, c.size ≠ 0) (hqne : proof.quotientCommit.size ≠ 0) :
     Challenge.toSpec (zetaOfB (idealOf answer) S.params S.instances common proof pis) =
       extAt (answer (keyAt answer (inputsB S common pis proof) (lookupRounds S + 1))).2
         (challengeOffset S.params.oodPowBits) ∧
@@ -144,26 +147,27 @@ theorem zetaB_idealOf (hK : 2 * Challenge.d EF + 1 ≤ K)
         ⟨capAt answer (inputsB S common pis proof) (lookupRounds S + 2), [], l⟩ := by
   have hst : obsList (idealOf answer) (smpExt (EF := EF) (idealOf answer)
       (stateAlphaB (idealOf answer) S.params S.instances common proof pis)).2
-        proof.quotientCommit.toList =
+        (capElems proof.quotientCommit) =
       ⟨capAt answer (inputsB S common pis proof) (lookupRounds S + 1),
-        proof.quotientCommit.toList, []⟩ := by
-    rw [(alphaB_idealOf answer S common proof pis hK hperm).2,
-      obsList_idealOf_ne answer _ _ (digest_toList_ne_nil _)]
+        capElems proof.quotientCommit, []⟩ := by
+    rw [(alphaB_idealOf answer S common proof pis hK hperm hpne).2,
+      obsList_idealOf_ne answer _ _ (capElems_ne_nil hqne)]
     rfl
   have h := grindRound_idealOf (EF := EF) answer (by omega) (inputsB S common pis proof)
-    (lookupRounds S + 1) proof.quotientCommit.toList S.params.oodPowBits proof.oodWitness
+    (lookupRounds S + 1) (capElems proof.quotientCommit) S.params.oodPowBits proof.oodWitness
     (inputsB_getD_ood S common pis proof)
   rw [← hst] at h
   exact h
 
 theorem batchB_idealOf (hK : 2 * Challenge.d EF + 1 ≤ K)
-    (hperm : proof.permutationCommit.isSome = S.hasLookups) :
+    (hperm : proof.permutationCommit.isSome = S.hasLookups)
+    (hpne : ∀ c ∈ proof.permutationCommit, c.size ≠ 0) (hqne : proof.quotientCommit.size ≠ 0) :
     Challenge.toSpec (batchOfB (idealOf answer) S.params S.instances common proof pis) =
       extAt (answer (keyAt answer (inputsB S common pis proof) (lookupRounds S + 2))).2
         (challengeOffset S.params.batchPowBits) ∧
     ∃ l, stateFriB (idealOf answer) S.params S.instances common proof pis =
       ⟨capAt answer (inputsB S common pis proof) (lookupRounds S + 3), [], l⟩ := by
-  obtain ⟨-, l, hl⟩ := zetaB_idealOf answer S common proof pis hK hperm
+  obtain ⟨-, l, hl⟩ := zetaB_idealOf answer S common proof pis hK hperm hpne hqne
   set zeta := zetaOfB (idealOf answer) S.params S.instances common proof pis
   have hst : pcsState (idealOf answer) S.params
       (CompStark.Batch.batchRounds S.instances common proof zeta)
@@ -196,7 +200,9 @@ round `L`; `ζ`, the batching challenge and `β_i` are read at the grinding offs
 samples from `0` and from the grinding offset. -/
 theorem challengesB_idealOf (hK : S.params.numQueries + 2 * Challenge.d EF + 1 ≤ K)
     (hfp : proof.fri.finalPoly.toList ≠ [])
-    (hperm : proof.permutationCommit.isSome = S.hasLookups) :
+    (hperm : proof.permutationCommit.isSome = S.hasLookups)
+    (hpne : ∀ c ∈ proof.permutationCommit, c.size ≠ 0) (hqne : proof.quotientCommit.size ≠ 0)
+    (hcne : ∀ c ∈ proof.fri.commits, c.size ≠ 0) :
     let u := fun j ↦ (answer (keyAt answer (inputsB S common pis proof) j)).2
     let n := (proof.fri.commits.toList.zip proof.fri.commitWitnesses.toList).length
     let L := lookupRounds S
@@ -219,14 +225,15 @@ theorem challengesB_idealOf (hK : S.params.numQueries + 2 * Challenge.d EF + 1 �
       ∀ j < S.params.numQueries, querySampleOfB (idealOf answer) S common proof pis j =
         ((u (L + 3 + n)).toList.getD (challengeOffset S.params.queryPowBits + j) 0) := by
   intro u n L
-  obtain ⟨hb1, l₀, hl₀⟩ := batchB_idealOf answer S common proof pis (by omega) hperm
+  obtain ⟨hb1, l₀, hl₀⟩ := batchB_idealOf answer S common proof pis (by omega) hperm hpne hqne
   have hstart : friStartB (idealOf answer) S common proof pis =
       ⟨capAt answer (inputsB S common pis proof) (L + 3), friSeedB S, []⟩ := by
     rw [friStartB, hl₀, obsList_idealOf_ne answer _ _ (friSeed_ne_nil _ _ _ _ _ _ _ _)]
     rfl
   obtain ⟨hc1, hc2, l, hl⟩ := commitReplay_idealOf (EF := EF) answer S.params (by omega)
     (inputsB S common pis proof) (proof.fri.commits.toList.zip proof.fri.commitWitnesses.toList)
-    (L + 3) (friSeedB S) [] (fun i hi ↦ inputsB_getD_fold S common pis proof i hi)
+    (L + 3) (friSeedB S) [] (fun cw hcw ↦ hcne _ (Array.mem_toList_iff.mp (List.of_mem_zip hcw).1))
+    (fun i hi ↦ inputsB_getD_fold S common pis proof i hi)
   rw [← hstart] at hc1 hc2 hl
   obtain ⟨hq1, hq2⟩ := queryRound_idealOf answer S.params proof.fri (by omega)
     (inputsB S common pis proof) (L + 3 + n) _ l hfp (inputsB_getD_last S common pis proof)
@@ -234,8 +241,9 @@ theorem challengesB_idealOf (hK : S.params.numQueries + 2 * Challenge.d EF + 1 �
       obsExts (idealOf answer) ⟨capAt answer (inputsB S common pis proof) (L + 3 + n),
         seedAt (friSeedB S) n, l⟩ proof.fri.finalPoly.toList := by
     rw [queryStateB, commitReplayB, hl]
-  refine ⟨fun hl ↦ ?_, (alphaB_idealOf answer S common proof pis (by omega) hperm).1,
-    (zetaB_idealOf answer S common proof pis (by omega) hperm).1, hb1, hc1, hc2, fun hb ↦ ?_,
+  refine ⟨fun hl ↦ ?_, (alphaB_idealOf answer S common proof pis (by omega) hperm hpne).1,
+    (zetaB_idealOf answer S common proof pis (by omega) hperm hpne hqne).1, hb1, hc1, hc2,
+    fun hb ↦ ?_,
     fun j hj ↦ ?_⟩
   · obtain ⟨h1, h2, -⟩ := lookupB_idealOf answer S common proof pis (by omega) hl
     exact ⟨h1, h2⟩

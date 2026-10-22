@@ -59,10 +59,11 @@ def bPrep : List (Option (Mat F)) × Option (Committed F) := setupBatchWith (spe
 values and the preprocessed commitment. -/
 def bTA0 : Transcript F 24 :=
   ((((Poseidon2.initTranscript.observeList
-    (batchSeedOf EF P Is ⟨(bPrep EF P Is).2.map Committed.root⟩)).observeExts
-      (Is.map fun I ↦ (Ext.ofBase (I.logN : F) : EF))).observeList
-    (Committed.ofMats hashF compF (bExts P Is ts)).root.toList).observeList ps.flatten).observeList
-    (((bPrep EF P Is).2.map fun c ↦ c.root.toList).getD [])
+    (batchSeedOf EF P Is ⟨(bPrep EF P Is).2.map fun c : Committed F ↦ c.cap P.capHeight⟩)
+      ).observeExts (Is.map fun I ↦ (Ext.ofBase (I.logN : F) : EF))).observeList
+    (capElems ((Committed.ofMats hashF compF (bExts P Is ts)).cap P.capHeight))).observeList
+      ps.flatten).observeList
+    (((bPrep EF P Is).2.map fun c ↦ capElems (c.cap P.capHeight)).getD [])
 
 /-- The lookup phase's run: the grinding witness and the lookup challenges' pair, and the
 transcript after them. -/
@@ -88,7 +89,7 @@ def bTerms : List (Option EF) := (bPerms EF P Is ts ps).map (·.map (·.2))
 /-- The transcript after the permutation commitment and the terminals. -/
 def bTA : Transcript F 24 :=
   ((bLP EF P Is ts ps).2.observeList
-    (((bPermCP EF P Is ts ps).2.map fun c ↦ c.root.toList).getD [])).observeExts
+    (((bPermCP EF P Is ts ps).2.map fun c ↦ capElems (c.cap P.capHeight)).getD [])).observeExts
     ((bTerms EF P Is ts ps).filterMap id)
 
 /-- The constraint-folding challenge. -/
@@ -102,7 +103,7 @@ def bChunks : List (List (Mat F)) :=
 /-- The transcript after the quotient commitment. -/
 def bTC : Transcript F 24 :=
   (Transcript.sampleExtState EF (bTA EF P Is ts ps)).observeList
-    (Committed.ofMats hashF compF (bChunks EF P Is ts ps).flatten).root.toList
+    (capElems ((Committed.ofMats hashF compF (bChunks EF P Is ts ps).flatten).cap P.capHeight))
 
 /-- The out-of-domain grinding: its witness and the transcript after it. -/
 def bOod : F × Transcript F 24 := (bTC EF P Is ts ps).grind P.oodPowBits
@@ -168,9 +169,10 @@ def bPermAt (i k : Nat) : Array EF :=
     (permCounts.take i).sum []).getD k #[]
 
 theorem proveBatch_eq : proveBatch EF P Is ts ps =
-    { mainCommit := (Committed.ofMats hashF compF (bExts P Is ts)).root
-      permutationCommit := (bPermCP EF P Is ts ps).2.map Committed.root
-      quotientCommit := (Committed.ofMats hashF compF (bChunks EF P Is ts ps).flatten).root
+    { mainCommit := (Committed.ofMats hashF compF (bExts P Is ts)).cap P.capHeight
+      permutationCommit := (bPermCP EF P Is ts ps).2.map fun c : Committed F ↦ c.cap P.capHeight
+      quotientCommit :=
+        (Committed.ofMats hashF compF (bChunks EF P Is ts ps).flatten).cap P.capHeight
       opened := (Is.zipIdx.map fun (I, i) ↦ instanceOpened I.air (bPcs EF P Is ts ps).1.1 i
         (((bChunks EF P Is ts ps).map List.length).getD i 0)
         (((bChunks EF P Is ts ps).map List.length).take i).sum
@@ -513,8 +515,9 @@ theorem opened_getElem (hts : ts.length = Is.length) (hps : ps.length = Is.lengt
   simp only [proveBatch_eq, List.toList_toArray, List.getElem_map, List.getElem_zipIdx,
     Nat.zero_add]
 
-/-- The common data is the root of the preprocessed traces' commitment. -/
-theorem setupBatch_eq : setupBatch P Is = ⟨(bPrep EF P Is).2.map Committed.root⟩ := by
+/-- The common data is the cap of the preprocessed traces' commitment. -/
+theorem setupBatch_eq :
+    setupBatch P Is = ⟨(bPrep EF P Is).2.map fun c : Committed F ↦ c.cap P.capHeight⟩ := by
   rw [bPrep_snd]
   unfold setupBatch
   simp only [prepLde]
@@ -639,7 +642,8 @@ variable (EF) (P : Params) (Is : List (Instance F)) (ts : List (Array F)) (ps : 
 openings is the honest one. -/
 theorem perm_rounds_eq (hts : ts.length = Is.length) (hps : ps.length = Is.length)
     (pf : BatchProof F EF)
-    (hpc : pf.permutationCommit = (bPermCP EF P Is ts ps).2.map Committed.root)
+    (hpc : pf.permutationCommit =
+      (bPermCP EF P Is ts ps).2.map fun c : Committed F ↦ c.cap P.capHeight)
     (hpl : pf.permutationLocal.toList = (List.range Is.length).map (bPermAt EF P Is ts ps · 0))
     (hpn : pf.permutationNext.toList = (List.range Is.length).map (bPermAt EF P Is ts ps · 1)) :
     (match pf.permutationCommit with
@@ -650,7 +654,7 @@ theorem perm_rounds_eq (hts : ts.length = Is.length) (hps : ps.length = Is.lengt
       | none => []) =
       ((bPermRound EF P Is ts ps).toList.map fun r ↦
         (r.1, r.2.map fun x ↦ (x.1, x.2.zip (openedOf P.logBlowup x)))).map fun r ↦
-        (r.1.root, r.2.map fun x ↦
+        (r.1.cap P.capHeight, r.2.map fun x ↦
           ((⟨1, Nat.log2 x.1.height - P.logBlowup⟩ : Domain F), x.2.map fun y ↦
             (y.1, y.2.toList))) := by
   rw [hpc, hpl, hpn]
@@ -727,9 +731,11 @@ variable (EF) (P : Params) (Is : List (Instance F)) (ts : List (Array F)) (ps : 
 rounds of the prover's openings. -/
 theorem batchRounds_eq_of (hts : ts.length = Is.length) (hps : ps.length = Is.length)
     (pf : BatchProof F EF) (hO : pf.opened.toList.length = Is.length)
-    (hmc : pf.mainCommit = (Committed.ofMats hashF compF (bExts P Is ts)).root)
-    (hqc : pf.quotientCommit = (Committed.ofMats hashF compF (bChunks EF P Is ts ps).flatten).root)
-    (hpc : pf.permutationCommit = (bPermCP EF P Is ts ps).2.map Committed.root)
+    (hmc : pf.mainCommit = (Committed.ofMats hashF compF (bExts P Is ts)).cap P.capHeight)
+    (hqc : pf.quotientCommit =
+      (Committed.ofMats hashF compF (bChunks EF P Is ts ps).flatten).cap P.capHeight)
+    (hpc : pf.permutationCommit =
+      (bPermCP EF P Is ts ps).2.map fun c : Committed F ↦ c.cap P.capHeight)
     (hpl : pf.permutationLocal.toList = (List.range Is.length).map (bPermAt EF P Is ts ps · 0))
     (hpn : pf.permutationNext.toList = (List.range Is.length).map (bPermAt EF P Is ts ps · 1))
     (hop : ∀ i (hi : i < pf.opened.toList.length), pf.opened.toList[i] =
@@ -739,7 +745,8 @@ theorem batchRounds_eq_of (hts : ts.length = Is.length) (hps : ps.length = Is.le
           rw [length_bChunks EF P Is ts ps hts hps]; rwa [hO] at hi))
         (bZeta EF P Is ts ps)) :
     batchRounds Is (setupBatch P Is) pf (bZeta EF P Is ts ps) =
-      verifierRounds P.logBlowup (honestRounds P.logBlowup (bRounds EF P Is ts ps)) := by
+      verifierRounds P.capHeight P.logBlowup
+        (honestRounds P.logBlowup (bRounds EF P Is ts ps)) := by
   have hE := length_bExts P Is ts hts
   have hC := length_bChunks EF P Is ts ps hts hps
   have hlog : ∀ i (hi : i < Is.length), Nat.log2 (2 ^ (Is[i].logN + P.logBlowup)) -
@@ -811,7 +818,7 @@ theorem batchRounds_eq_of (hts : ts.length = Is.length) (hps : ps.length = Is.le
 /-- The verifier's rounds of the honest proof are the honest rounds of the prover's openings. -/
 theorem batchRounds_eq (hts : ts.length = Is.length) (hps : ps.length = Is.length) :
     batchRounds Is (setupBatch P Is) (proveBatch EF P Is ts ps) (bZeta EF P Is ts ps) =
-      verifierRounds P.logBlowup (honestRounds P.logBlowup (bRounds EF P Is ts ps)) :=
+      verifierRounds P.capHeight P.logBlowup (honestRounds P.logBlowup (bRounds EF P Is ts ps)) :=
   batchRounds_eq_of EF P Is ts ps hts hps _ (length_opened EF P Is ts ps)
     (by rw [proveBatch_eq]) (by rw [proveBatch_eq]) (by rw [proveBatch_eq])
     (by rw [proveBatch_eq]) (by rw [proveBatch_eq]) (opened_getElem EF P Is ts ps hts hps)
@@ -863,6 +870,7 @@ theorem honest_bRounds (hne : Is ≠ []) (hts : ts.length = Is.length)
     (hfit : ∀ i (hi : i < Is.length), Fits P Is[i].air Is[i].logN (ts[i]'(hts ▸ hi)))
     (hlc : ∀ I ∈ Is, I.logQuotientChunks ≤ P.logBlowup)
     (hfin : ∀ I ∈ Is, P.logFinalPolyLen ≤ I.logN)
+    (hcap : ∀ I ∈ Is, ∀ J ∈ Is, min P.capHeight (J.logN + P.logBlowup) ≤ I.logN + P.logBlowup)
     (hz : Ext.OutsideBase (bZeta EF P Is ts ps)) :
     HonestRounds P (bRounds EF P Is ts ps) := by
   have hE := length_bExts P Is ts hts
@@ -948,7 +956,53 @@ theorem honest_bRounds (hne : Is ≠ []) (hts : ts.length = Is.length)
       subst hm
       obtain ⟨ps', hl, -⟩ := matrix_lde P.logBlowup Is[i].logN _ _ (hfit i hi).twoAdic
       exact ⟨Is[i].logN + P.logBlowup, ps', hl, by have := hfin _ (List.getElem_mem hi); omega⟩
-  refine ⟨List.cons_ne_nil _ _, fun r hr ↦ ?_, fun r hr x hx ↦ ?_, fun r hr x hx ↦ ?_⟩
+  -- every matrix is the extension of an instance's columns
+  have hheight : ∀ r ∈ bRounds EF P Is ts ps, ∀ x ∈ r.2, ∃ I ∈ Is,
+      x.1.height = 2 ^ (I.logN + P.logBlowup) := by
+    intro r hr x hx
+    rw [bRounds, List.mem_append, List.mem_append, List.mem_cons, List.mem_cons] at hr
+    rcases hr with ((rfl | rfl | hr) | hr) | hr
+    · obtain ⟨⟨I, e⟩, hie, rfl⟩ := List.mem_map.mp hx
+      obtain ⟨i, hi, hie'⟩ := List.getElem_of_mem hie
+      have hiI : i < Is.length := by
+        rw [List.length_zip, hE, Nat.min_self] at hi; exact hi
+      rw [List.getElem_zip, Prod.mk.injEq] at hie'
+      obtain ⟨rfl, rfl⟩ := hie'
+      obtain ⟨ps', hl, -⟩ := trace_lde P Is[i].air Is[i].logN _ (hfit i hiI)
+      refine ⟨Is[i], List.getElem_mem hiI, ?_⟩
+      rw [getElem_bExts P Is ts hts i hiI]
+      exact hl.2.1
+    · obtain ⟨m, hm, rfl⟩ := List.mem_map.mp hx
+      obtain ⟨cs, hcs, hm⟩ := List.mem_flatten.mp hm
+      obtain ⟨i, hi, rfl⟩ := List.getElem_of_mem hcs
+      have hiI : i < Is.length := by rw [hC] at hi; exact hi
+      rw [getElem_bChunks EF P Is ts ps hts hps i hiI] at hm
+      obtain ⟨c, -, rfl⟩ := mem_honestChunks EF P _ _ _ _ _ m hm
+      obtain ⟨ps', hl, -⟩ := chunk_isLde (EF := EF) P Is[i].logN _ _
+        (hfit i hiI).twoAdic (hlc _ (List.getElem_mem hiI)) c
+      exact ⟨Is[i], List.getElem_mem hiI, hl.2.1⟩
+    · exact absurd hr List.not_mem_nil
+    · obtain ⟨C, hpr, rfl⟩ := hprepR r hr
+      obtain ⟨I, hI, rfl⟩ := hprepMats x hx
+      obtain ⟨i, hi, rfl⟩ := List.getElem_of_mem hI
+      obtain ⟨ps', hl, -⟩ := prep_lde P Is[i].air Is[i].logN _ (hfit i hi)
+      exact ⟨Is[i], List.getElem_mem hi, hl.2.1⟩
+    · obtain ⟨C, hpc, rfl⟩ := hpermR r hr
+      obtain ⟨i, hi, m, hm, rfl⟩ := hpermMats x hx
+      unfold permLde at hm
+      split at hm
+      · exact absurd hm (by simp only [reduceCtorEq, not_false_eq_true])
+      · simp only [Option.some.injEq] at hm
+        subst hm
+        obtain ⟨ps', hl, -⟩ := matrix_lde P.logBlowup Is[i].logN _ _ (hfit i hi).twoAdic
+        exact ⟨Is[i], List.getElem_mem hi, hl.2.1⟩
+  refine ⟨List.cons_ne_nil _ _, fun r hr ↦ ?_, fun r hr x hx ↦ ?_, fun r hr x hx ↦ ?_,
+    fun r hr x hx y hy ↦ ?_⟩
+  rotate_left 3
+  · obtain ⟨I, hI, hxI⟩ := hheight r hr x hx
+    obtain ⟨J, hJ, hyJ⟩ := hheight r hr y hy
+    rw [hyJ, Nat.log2_two_pow, hxI]
+    exact Nat.pow_le_pow_right (by decide) (hcap I hI J hJ)
   all_goals
     rw [bRounds, List.mem_append, List.mem_append, List.mem_cons, List.mem_cons] at hr
     rcases hr with ((rfl | rfl | hr) | hr) | hr
@@ -1067,12 +1121,12 @@ def bVerifyRun (P : Params) (Is : List (Instance F)) (common : Common F)
     (proof : BatchProof F EF) (pis : List (List F)) : M (poseidon2 F) (EF × EF × EF × EF) := do
   observeList (poseidon2 F) (batchSeedOf EF P Is common)
   observeExts (poseidon2 F) (Is.map fun I ↦ (Ext.ofBase (I.logN : F) : EF))
-  observeList (poseidon2 F) proof.mainCommit.toList
+  observeCap (poseidon2 F) proof.mainCommit
   observeList (poseidon2 F) pis.flatten
-  observeList (poseidon2 F) ((common.preprocessed.map (·.toList)).getD [])
+  observeList (poseidon2 F) ((common.preprocessed.map capElems).getD [])
   let (lookupAlpha, lookupBeta) ← lookupPhase P Is proof
   let alpha ← (sampleExt (poseidon2 F) : M (poseidon2 F) EF)
-  observeList (poseidon2 F) proof.quotientCommit.toList
+  observeCap (poseidon2 F) proof.quotientCommit
   ensure (← checkWitness (poseidon2 F) P.oodPowBits proof.oodWitness) "out-of-domain witness"
   let zeta ← (sampleExt (poseidon2 F) : M (poseidon2 F) EF)
   ensure (Is.all fun I ↦ Ext.powTwo zeta I.logN - 1 != 0) "out-of-domain point in a trace domain"
@@ -1113,6 +1167,8 @@ theorem verifyBatch_eq (P : Params) (Is : List (Instance F)) (common : Common F)
         throw "lookups"
       unless P.oodPowBits != 0 || proof.oodWitness == 0 do
         throw "out-of-domain witness"
+      unless proof.quotientCommit.size != 0 do
+        throw "empty quotient commitment"
       (bVerifyRun P Is common proof pis).run Poseidon2.initTranscript >>=
         bVerifyCheck Is proof pis) := by
   delta verifyBatch verifyBatchWith bVerifyRun bVerifyCheck
@@ -1129,22 +1185,22 @@ def bVTA0 (P : Params) (Is : List (Instance F)) (common : Common F) (proof : Bat
     (pis : List (List F)) : Transcript F 24 :=
   ((((Poseidon2.initTranscript.observeList (batchSeedOf EF P Is common)).observeExts
     (Is.map fun I ↦ (Ext.ofBase (I.logN : F) : EF))).observeList
-      proof.mainCommit.toList).observeList
-    pis.flatten).observeList ((common.preprocessed.map (·.toList)).getD [])
+      (capElems proof.mainCommit)).observeList
+    pis.flatten).observeList ((common.preprocessed.map capElems).getD [])
 
 theorem bVerifyRun_run (P : Params) (Is : List (Instance F)) (common : Common F)
     (proof : BatchProof F EF) (pis : List (List F)) :
     bVerifyRun P Is common proof pis Poseidon2.initTranscript = (do
       let (lookupAlpha, lookupBeta) ← lookupPhase P Is proof
       let alpha ← (sampleExt (poseidon2 F) : M (poseidon2 F) EF)
-      observeList (poseidon2 F) proof.quotientCommit.toList
+      observeCap (poseidon2 F) proof.quotientCommit
       ensure (← checkWitness (poseidon2 F) P.oodPowBits proof.oodWitness) "out-of-domain witness"
       let zeta ← (sampleExt (poseidon2 F) : M (poseidon2 F) EF)
       ensure (Is.all fun I ↦ Ext.powTwo zeta I.logN - 1 != 0)
         "out-of-domain point in a trace domain"
       verifyPcs (poseidon2 F) P (batchRounds Is common proof zeta) proof.fri
       pure (lookupAlpha, lookupBeta, alpha, zeta)) (bVTA0 P Is common proof pis) := by
-  simp only [bVerifyRun, observeList_bind, observeExts_bind]
+  simp only [bVerifyRun, observeCap, observeList_bind, observeExts_bind]
   rfl
 
 section Honest
@@ -1165,14 +1221,15 @@ theorem bLP_eq : bLP EF P Is ts ps = if hasLookups Is then
 and terminals replays the prover's. -/
 theorem lookupPhase_honest (proof : BatchProof F EF)
     (hw : proof.lookupWitness = (bLP EF P Is ts ps).1.1)
-    (hpc : proof.permutationCommit = (bPermCP EF P Is ts ps).2.map Committed.root)
+    (hpc : proof.permutationCommit =
+      (bPermCP EF P Is ts ps).2.map fun c : Committed F ↦ c.cap P.capHeight)
     (htm : proof.lookupTerminals.toList = bTerms EF P Is ts ps)
     (hd : (bTA0 EF P Is ts ps).duplex = Poseidon2.duplex)
     (hg : (bLP EF P Is ts ps).2.grindFailed = false) :
     lookupPhase (H := poseidon2 F) P Is proof (bTA0 EF P Is ts ps) =
       Except.ok (((bLP EF P Is ts ps).1.2.1, (bLP EF P Is ts ps).1.2.2), bTA EF P Is ts ps) := by
-  have hroot : ((proof.permutationCommit.map (·.toList)).getD []) =
-      (((bPermCP EF P Is ts ps).2.map fun c ↦ c.root.toList).getD []) := by
+  have hroot : ((proof.permutationCommit.map capElems).getD []) =
+      (((bPermCP EF P Is ts ps).2.map fun c ↦ capElems (c.cap P.capHeight)).getD []) := by
     rw [hpc, Option.map_map]; rfl
   unfold lookupPhase bTA
   by_cases hl : hasLookups Is = true
@@ -1241,7 +1298,7 @@ theorem lookupShapeOk_honest (hts : ts.length = Is.length) (hps : ps.length = Is
   have hTl := length_bTerms EF P Is ts ps hts hps
   unfold lookupShapeOk
   simp only [Bool.and_eq_true, hwidths, hbound, true_and]
-  refine ⟨⟨?_, ?_⟩, ?_⟩
+  refine ⟨⟨⟨?_, ?_⟩, ?_⟩, ?_⟩
   · rw [List.all_eq_true]
     intro x hx
     obtain ⟨i, hi, rfl⟩ := List.getElem_of_mem hx
@@ -1276,6 +1333,10 @@ theorem lookupShapeOk_honest (hts : ts.length = Is.length) (hps : ps.length = Is
         beq_self_eq_true, Option.isSome_some, Bool.not_false, Bool.and_self]
   · rw [hp, Option.isSome_map, bPermCP_snd]
     split <;> rename_i h <;> simp only [h, Option.isSome_some, Option.isSome_none, beq_self_eq_true]
+  · rw [hp, Option.all_eq_true_iff_get]
+    intro hs
+    rw [Option.get_map, bne_iff_ne, Committed.size_cap]
+    exact (Nat.two_pow_pos _).ne'
   · rw [hp, bLP_eq]
     by_cases hl : hasLookups Is = true
     · rw [ite_eq_left_of_eq_true _ _ (eq_true hl)]
@@ -1333,6 +1394,7 @@ theorem verifyBatch_proveBatch_of (EF : Type) [Challenge F EF] (P : Params)
       ((batchLookupChallenges EF P Is ts ps).getD i []) r)
     (hP : 0 < P.maxLogArity) (hq : 0 < P.numQueries) (hb : 0 < P.logBlowup)
     (hfin : ∀ I ∈ Is, P.logFinalPolyLen ≤ I.logN)
+    (hcap : ∀ I ∈ Is, ∀ J ∈ Is, min P.capHeight (J.logN + P.logBlowup) ≤ I.logN + P.logBlowup)
     (hgrind : (proveBatchTranscript EF P Is ts ps).grindFailed = false)
     (hz : Ext.OutsideBase (batchOutOfDomainPoint EF P Is ts ps)) :
     verifyBatch P Is (setupBatch P Is) (proveBatch EF P Is ts ps) ps = .ok () := by
@@ -1380,11 +1442,11 @@ theorem verifyBatch_proveBatch_of (EF : Type) [Challenge F EF] (P : Params)
     intro I hI
     exact powTwo_ne_one hz (by have := (hfitI I hI).1; omega)
   have hpcs : verifyPcs (poseidon2 F) P
-      (verifierRounds P.logBlowup (honestRounds P.logBlowup (bRounds EF P Is ts ps)))
+      (verifierRounds P.capHeight P.logBlowup (honestRounds P.logBlowup (bRounds EF P Is ts ps)))
       (bPcs EF P Is ts ps).1.2 (Transcript.sampleExtState EF (bOod EF P Is ts ps).2) =
       .ok ((), (bPcs EF P Is ts ps).2) :=
     verifyPcs_openPcs P (bRounds EF P Is ts ps) _ hd2
-      (honest_bRounds EF P Is ts ps hne hts hps hfit hlc hfin hz) hP hq hb hgrind
+      (honest_bRounds EF P Is ts ps hne hts hps hfit hlc hfin hcap hz) hP hq hb hgrind
   have hrun : bVerifyRun P Is (setupBatch P Is) (proveBatch EF P Is ts ps) ps
       Poseidon2.initTranscript =
       .ok (((bLP EF P Is ts ps).1.2.1, (bLP EF P Is ts ps).1.2.2, bAlpha EF P Is ts ps,
@@ -1393,12 +1455,13 @@ theorem verifyBatch_proveBatch_of (EF : Type) [Challenge F EF] (P : Params)
     dsimp only
     rw [bind_ok (sampleExt_run _)]
     have hqc : (proveBatch EF P Is ts ps).quotientCommit =
-        (Committed.ofMats hashF compF (bChunks EF P Is ts ps).flatten).root := by rw [hp]
+        (Committed.ofMats hashF compF (bChunks EF P Is ts ps).flatten).cap P.capHeight := by rw [hp]
     have how : (proveBatch EF P Is ts ps).oodWitness = (bOod EF P Is ts ps).1 := by rw [hp]
     have hfri : (proveBatch EF P Is ts ps).fri = (bPcs EF P Is ts ps).1.2 := by rw [hp]
-    rw [observeList_bind, hqc, how]
+    rw [observeCap, observeList_bind, hqc, how]
     rw [show (Transcript.sampleExtState EF (bTA EF P Is ts ps)).observeList
-      (Committed.ofMats hashF compF (bChunks EF P Is ts ps).flatten).root.toList =
+      (capElems ((Committed.ofMats hashF compF (bChunks EF P Is ts ps).flatten).cap
+        P.capHeight)) =
         bTC EF P Is ts ps from rfl, bind_ok hcO, ensure_true, pure_bind, bind_ok (sampleExt_run _)]
     have hzeta : ((bOod EF P Is ts ps).2.sampleExtValue : EF) = bZeta EF P Is ts ps := rfl
     rw [hzeta, hdom, ensure_true, pure_bind, batchRounds_eq EF P Is ts ps hts hps, hfri,
@@ -1516,13 +1579,16 @@ theorem verifyBatch_proveBatch_of (EF : Type) [Challenge F EF] (P : Params)
     rw [hpis i hiI, beq_self_eq_true]
   have hood : (P.oodPowBits != 0 || (proveBatch EF P Is ts ps).oodWitness == 0) = true := by
     rw [hp]; exact grind_canonical _ _
+  have hqne : ((proveBatch EF P Is ts ps).quotientCommit.size != 0) = true := by
+    rw [hp, bne_iff_ne, Committed.size_cap]
+    exact (Nat.two_pow_pos _).ne'
   have hlk := lookupShapeOk_honest EF P Is ts ps hts hps hwidths hbound
   have hterm : (((proveBatch EF P Is ts ps).lookupTerminals.toList.filterMap id).foldl (· + ·) 0
       == 0) = true := by
     rw [hp, List.toList_toArray, bTerms, bPerms_eq, bChs, terminals_permutationsWith]
     exact beq_iff_eq.mpr (terminals_sum_eq_zero Is ts ps hts hps hbal _ _)
   rw [verifyBatch_eq]
-  simp only [hcount, hdb, hqd, hper, hpv, hshape, hprepOk, hlk, hood, ↓reduceIte]
+  simp only [hcount, hdb, hqd, hper, hpv, hshape, hprepOk, hlk, hood, hqne, ↓reduceIte]
   have hrun' : StateT.run (bVerifyRun P Is (setupBatch P Is) (proveBatch EF P Is ts ps) ps)
       Poseidon2.initTranscript = pure (((bLP EF P Is ts ps).1.2.1, (bLP EF P Is ts ps).1.2.2,
         bAlpha EF P Is ts ps, bZeta EF P Is ts ps), (bPcs EF P Is ts ps).2) := hrun

@@ -677,22 +677,33 @@ end Static
 section Prefix
 variable [BaseField F] [Challenge F EF] (S : Iop.Batch.Setup EF)
 
-/-- The digest a duplex call's input binds: the main commitment after the batch's domain separator
-and the degree bits in the first round (initial capacity); the first digest in the second round,
-whose capacity is an answer to a call on the initial capacity (in `firsts`), as the permutation
-commitment opens it with lookups; FRI's first commitment after its domain separator in an input of
-FRI's first fold round's length otherwise; and the first digest, as the quotient commitment and
-FRI's later ones open their rounds, otherwise. The second round has to be told apart by its
-capacity: the permutation commitment and the terminals may have FRI's first fold round's length. -/
-noncomputable def boundDigestB (firsts : List (Digest F)) (cap : Digest F) (input : List F) :
-    Digest F :=
-  digestAt input (if cap = initCap then mainOffsetB S else if cap ∈ firsts then 0
-    else if input.length = (friSeedB S).length + 8 + challengeOffset S.params.commitPowBits
-      then (friSeedB S).length else 0)
+/-- The digests a duplex call's input binds, the `2 ^ capHeight` digests of a cap that is at most
+as wide: the main commitment after the batch's domain separator and the degree bits in the first
+round (initial capacity); the first digests in the second round, whose capacity is an answer to a
+call on the initial capacity (in `firsts`), as the permutation commitment opens it with lookups;
+FRI's first commitment after its domain separator in an input of FRI's first fold round's length
+(the cap fitting FRI's first tree, `Setup.capFits`) otherwise; and the first digests, as the
+quotient commitment and FRI's later ones open their rounds, otherwise. The second round has to be
+told apart by its capacity: the permutation commitment and the terminals may have FRI's first
+fold round's length. -/
+noncomputable def boundDigestsB (firsts : List (Digest F)) (cap : Digest F) (input : List F) :
+    List (Digest F) :=
+  (capFrom input (if cap = initCap then mainOffsetB S else if cap ∈ firsts then 0
+    else if input.length = (friSeedB S).length + 8 * 2 ^ S.params.capHeight +
+        challengeOffset S.params.commitPowBits
+      then (friSeedB S).length else 0) (2 ^ S.params.capHeight)).toList
 
-theorem boundDigestB_congr (r r' : List (Digest F)) (cap : Digest F) (input : List F)
-    (h : cap ∈ r ↔ cap ∈ r') : boundDigestB S r cap input = boundDigestB S r' cap input := by
-  simp only [boundDigestB, h]
+theorem length_boundDigestsB (firsts : List (Digest F)) (cap : Digest F) (input : List F) :
+    (boundDigestsB S firsts cap input).length = 2 ^ S.params.capHeight := by
+  simp only [boundDigestsB, Array.length_toList, capFrom, Array.size_ofFn]
+
+theorem boundDigestsB_congr (r r' : List (Digest F)) (cap : Digest F) (input : List F)
+    (h : cap ∈ r ↔ cap ∈ r') : boundDigestsB S r cap input = boundDigestsB S r' cap input := by
+  simp only [boundDigestsB, h]
+
+/-- The levels below fold `j`'s commitment: the tallest extended trace's, less the arities of the
+folds up to `j`. -/
+def friDepthB (j : ℕ) : ℕ := S.logTop - (S.friArities.take (j + 1)).sum
 
 /-- FRI's folding challenges in ArkLib's coordinate, from the answers `sample` of the fold rounds:
 `s_j β_j`, `s_j` the shift of word `j`'s domain; none past the last fold. -/
@@ -713,31 +724,36 @@ def terminalIndex (i : Fin S.k) : ℕ :=
 
 /-- The batch transcript read off the inputs `block j` and answers `sample j` of the rounds `j`
 and the hash queries `cache`, after the `L` lookup rounds (`lookupRounds`): the words extracted
-under the observed digests, the observed terminals, openings and final polynomial, and the
+under the observed caps, the observed terminals, openings and final polynomial, and the
 challenges of the answers. -/
 noncomputable def prefixTranscriptB (cache : Merkle.Cache F (Digest F)) (block : ℕ → List F)
     (sample : ℕ → Vector F S.streamLen) : Sound.Batch.Transcript S where
-  trace i c x := Merkle.matColumn cache (digestAt (block 0) (mainOffsetB S)) S.logTop
-    S.mainHeights S.mainWidths i c (S.logN i + S.params.logBlowup)
+  trace i c x := Merkle.matColumnCap cache
+    (capFrom (block 0) (mainOffsetB S) (2 ^ S.params.capHeight)).toList S.params.capHeight
+    S.logTop S.mainHeights S.mainWidths i c (S.logN i + S.params.logBlowup)
     (reverseBits x (S.logN i + S.params.logBlowup))
   lookupAlpha := if S.hasLookups then
     extAt (sample 0) (challengeOffset S.params.lookupPowBits) else 0
   lookupBeta := if S.hasLookups then
     extAt (sample 0) (challengeOffset S.params.lookupPowBits + Challenge.d EF) else 0
-  perm i c e x := Merkle.matColumn cache (digestAt (block (lookupRounds S)) 0) (permLog S)
-    (permHeights S) (permWidths S) (permIndex S i) (c.val * Challenge.d EF + e.val)
+  perm i c e x := Merkle.matColumnCap cache
+    (capFrom (block (lookupRounds S)) 0 (2 ^ S.params.capHeight)).toList S.params.capHeight
+    (permLog S) (permHeights S) (permWidths S) (permIndex S i) (c.val * Challenge.d EF + e.val)
     (S.logN i + S.params.logBlowup) (reverseBits x (S.logN i + S.params.logBlowup))
   terminal i := if (S.lookups i).isEmpty then 0 else
-    Challenge.toSpec (extFrom (EF := EF) ((block (lookupRounds S)).drop 8) (terminalIndex S i))
+    Challenge.toSpec (extFrom (EF := EF) ((block (lookupRounds S)).drop
+      (8 * 2 ^ S.params.capHeight)) (terminalIndex S i))
   alpha := extAt (sample (lookupRounds S)) 0
-  quotient i c e x := Merkle.matColumn cache (digestAt (block (lookupRounds S + 1)) 0) S.logTop
-    (quotHeights S) (quotWidths S) (quotOffset S i + c) e (S.logN i + S.params.logBlowup)
-    (reverseBits x (S.logN i + S.params.logBlowup))
+  quotient i c e x := Merkle.matColumnCap cache
+    (capFrom (block (lookupRounds S + 1)) 0 (2 ^ S.params.capHeight)).toList S.params.capHeight
+    S.logTop (quotHeights S) (quotWidths S) (quotOffset S i + c) e
+    (S.logN i + S.params.logBlowup) (reverseBits x (S.logN i + S.params.logBlowup))
   zeta := extAt (sample (lookupRounds S + 1)) (challengeOffset S.params.oodPowBits)
   openings := openingsAtB S ((block (lookupRounds S + 2)).drop (pcsSeedB S).length)
   batch := extAt (sample (lookupRounds S + 2)) (challengeOffset S.params.batchPowBits)
   words j m z := if j < S.friArities.length then
-      friWordAt cache (digestAt (block (lookupRounds S + 3 + j)) (friOffsetB S j)) m
+      friWordAt cache (capFrom (block (lookupRounds S + 3 + j)) (friOffsetB S j)
+        (2 ^ min S.params.capHeight (friDepthB S j))) S.params.capHeight m
         (S.friArities.getD j 0) z.val
     else 0
   finalPoly := finalPoly S.domainSetup

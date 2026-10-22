@@ -27,10 +27,10 @@ local notation "𝕂" => Challenge.Spec EF
 
 variable (S : Iop.Setup EF) (cache : Merkle.Cache F (Digest F))
 
-/-- Column `j` of the base-field matrices committed under `root`, at the point of `L` of index
-`z`: entry `j` of the extracted leaf `rev z`, zero where nothing is extracted. -/
-noncomputable def committedColumn (root : Digest F) (j : Nat) (z : S.Point) : F :=
-  ((leafRow cache S.logSize (reverseBits z.val S.logSize) root).getD j 0)
+/-- Column `j` of the base-field matrices committed under the cap `cap`, at the point of `L` of
+index `z`: entry `j` of the extracted leaf `rev z`, zero where nothing is extracted. -/
+noncomputable def committedColumn (cap : Cap F) (j : Nat) (z : S.Point) : F :=
+  ((leafRow cache S.logSize S.params.capHeight (reverseBits z.val S.logSize) cap).getD j 0)
 
 /-- The trace words committed under the proof's trace commitment. -/
 noncomputable def traceWords (proof : Proof F EF) : Fin S.air.width → S.Point → F :=
@@ -135,8 +135,10 @@ theorem getD_flatten_of_length (w : Nat) (L : List (List F)) (hL : ∀ l ∈ L, 
 /-! ### The DEEP word -/
 
 /-- An opened row at `index` that binds is the committed column at the query's point. -/
-theorem committedColumn_eq (root : Digest F) (index : Nat) (hidx : index < 2 ^ S.logSize)
-    (row : List F) (h : Merkle.extractRow cache S.logSize index root = some row) (j : Nat) :
+theorem committedColumn_eq (root : Cap F) (index : Nat) (hidx : index < 2 ^ S.logSize)
+    (row : List F)
+    (h : Merkle.extractCapRow cache S.logSize S.params.capHeight index root.toList = some row)
+    (j : Nat) :
     committedColumn S cache root j (finMod S.logSize (reverseBits index S.logSize)) =
       (row.getD j 0) := by
   rw [committedColumn, finMod_val (reverseBits_lt _ _),
@@ -158,14 +160,14 @@ preprocessed trace's extension: the preprocessed words' DEEP quotients with the 
 theorem prepTerms_eq (H : Primitives F Id) (vk : Option (PreprocessedKey F)) (o : OpenedValues EF)
     (zeta : EF) (index : Nat) (hidx : index < 2 ^ S.logSize) (db : Nat) (hdb : db = S.logN)
     (hprep : preprocessedShapeOk S.air vk o db = true)
-    (hbP : ∀ k ∈ vk, Binding cache H k.commit)
+    (hbP : ∀ k ∈ vk, CapBinding cache H k.commit)
     (hP : ∀ k ∈ vk, ∀ j < S.air.preprocessedWidth,
       committedColumn S cache k.commit j = S.preprocessedWord j)
     (bP : List (List (Array F)))
     (hlen : bP.length = (preprocessedRound S.air vk o ⟨1, db⟩ zeta
       (zeta * Ext.ofBase (twoAdicGen db))).length)
     (hok : ∀ x ∈ bP.zip (preprocessedRound S.air vk o ⟨1, db⟩ zeta
-      (zeta * Ext.ofBase (twoAdicGen db))), BatchOk H S.logSize index x) :
+      (zeta * Ext.ofBase (twoAdicGen db))), BatchOk H S.params.capHeight S.logSize index x) :
     let z0 : S.Point := finMod S.logSize (reverseBits index S.logSize)
     let x : F := gen * powF (twoAdicGen S.logSize) (reverseBits index S.logSize)
     ((List.finRange S.air.preprocessedWidth).map
@@ -199,10 +201,10 @@ theorem prepTerms_eq (H : Primitives F Id) (vk : Option (PreprocessedKey F)) (o 
     simp only [preprocessedShapeOk, Bool.and_eq_true, beq_iff_eq, decide_eq_true_eq] at hprep
     obtain ⟨⟨⟨⟨h0, hkw⟩, -⟩, hl⟩, hnx⟩ := hprep
     obtain ⟨bp, rfl⟩ : ∃ bp, bP = [bp] := List.length_eq_one_iff.mp hlen
-    obtain ⟨-, ⟨path, hv⟩, hsP, hwP⟩ := hok _ List.mem_cons_self
+    obtain ⟨-, -, ⟨path, hv⟩, hsP, hwP⟩ := hok _ List.mem_cons_self
     simp only [List.length_cons, List.length_nil, Nat.zero_add, Option.getD_some] at hsP hv hwP
     obtain ⟨rowP, rfl⟩ : ∃ rowP, bp = [rowP] := List.length_eq_one_iff.mp hsP
-    have hex := hbP k rfl _ _ _ _ _ Nat.one_pos hv
+    have hex := extractCapRow_of_verifyCapH cache H _ (hbP k rfl) _ _ _ _ _ _ Nat.one_pos hv
     simp only [List.map_cons, List.map_nil, List.flatten_cons, List.flatten_nil,
       List.append_nil] at hex
     have hwidth : rowP.size = S.air.preprocessedWidth := by
@@ -268,13 +270,14 @@ theorem deepWord_eq (H : Primitives F Id) (vk : Option (PreprocessedKey F)) (pro
     (hqc : proof.opened.quotientChunks.size = S.chunks)
     (hq4 : ∀ ch ∈ proof.opened.quotientChunks, ch.size = Challenge.d EF)
     (hprep : preprocessedShapeOk S.air vk proof.opened S.logN = true)
-    (hbT : Binding cache H proof.traceCommit) (hbQ : Binding cache H proof.quotientCommit)
-    (hbP : ∀ k ∈ vk, Binding cache H k.commit)
+    (hbT : CapBinding cache H proof.traceCommit) (hbQ : CapBinding cache H proof.quotientCommit)
+    (hbP : ∀ k ∈ vk, CapBinding cache H k.commit)
     (hP : ∀ k ∈ vk, ∀ j < S.air.preprocessedWidth,
       committedColumn S cache k.commit j = S.preprocessedWord j)
     (inputs : List (List (Array F))) (index : Nat) (hidx : index < 2 ^ S.logSize)
     (hlen : inputs.length = (openingRounds S.air vk proof zeta).length)
-    (hok : ∀ x ∈ inputs.zip (openingRounds S.air vk proof zeta), BatchOk H S.logSize index x) :
+    (hok : ∀ x ∈ inputs.zip (openingRounds S.air vk proof zeta),
+      BatchOk H S.params.capHeight S.logSize index x) :
     Iop.deepWord (fixedProver (traceWords S cache proof) (quotientWords S cache proof)
         (openingsOf S proof.opened)) α (Challenge.toSpec zeta) (Challenge.toSpec a)
         (finMod S.logSize (reverseBits index S.logSize)) =
@@ -303,9 +306,9 @@ theorem deepWord_eq (H : Primitives F Id) (vk : Option (PreprocessedKey F)) (pro
   have hz : (bT :: bQ :: bP).zip ((proof.traceCommit, mT) :: (proof.quotientCommit, mQ) :: mP) =
       (bT, (proof.traceCommit, mT)) :: (bQ, (proof.quotientCommit, mQ)) :: bP.zip mP := rfl
   rw [hz] at hok ⊢
-  obtain ⟨-, ⟨pT, hvT⟩, hsT, hwT⟩ := hok _ List.mem_cons_self
-  obtain ⟨hneQ, ⟨pQ, hvQ⟩, hsQ, hwQ⟩ := hok _ (List.mem_cons_of_mem _ List.mem_cons_self)
-  have hokP : ∀ y ∈ bP.zip mP, BatchOk H S.logSize index y := fun y hy ↦
+  obtain ⟨-, -, ⟨pT, hvT⟩, hsT, hwT⟩ := hok _ List.mem_cons_self
+  obtain ⟨hneQ, -, ⟨pQ, hvQ⟩, hsQ, hwQ⟩ := hok _ (List.mem_cons_of_mem _ List.mem_cons_self)
+  have hokP : ∀ y ∈ bP.zip mP, BatchOk H S.params.capHeight S.logSize index y := fun y hy ↦
     hok y (List.mem_cons_of_mem _ (List.mem_cons_of_mem _ hy))
   dsimp only at hvT hsT hwT hneQ hvQ hsQ hwQ
   -- The trace batch: one row of the trace's width, extracted.
@@ -316,7 +319,7 @@ theorem deepWord_eq (H : Primitives F Id) (vk : Option (PreprocessedKey F)) (pro
     have := hwT (rowT, mT.head (List.cons_ne_nil _ _)) List.mem_cons_self
       (zeta, o.traceLocal.toList) List.mem_cons_self
     rw [← this, Array.length_toList, htl]
-  have hexT := hbT _ _ _ _ _ Nat.one_pos hvT
+  have hexT := extractCapRow_of_verifyCapH cache H _ hbT _ _ _ _ _ _ Nat.one_pos hvT
   simp only [List.map_cons, List.map_nil, List.flatten_cons, List.flatten_nil,
     List.append_nil] at hexT
   -- The quotient batch: a row of `d` coordinates per chunk, extracted.
@@ -335,7 +338,8 @@ theorem deepWord_eq (H : Primitives F Id) (vk : Option (PreprocessedKey F)) (pro
         or_false])
     rw [List.getD_eq_getElem _ _ hc', ← this, Array.length_toList]
     exact hq4 _ (Array.getElem_mem hcq)
-  have hexQ := hbQ _ _ _ _ _ (List.length_pos_of_ne_nil hneQ) hvQ
+  have hexQ := extractCapRow_of_verifyCapH cache H _ hbQ _ _ _ _ _ _
+    (List.length_pos_of_ne_nil hneQ) hvQ
   -- The extracted words at the query's point.
   have hTw : ∀ j, traceWords S cache proof j z0 = (rowT.toList.getD j 0) :=
     fun j ↦ committedColumn_eq S cache _ index hidx _ hexT j

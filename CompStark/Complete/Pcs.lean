@@ -344,12 +344,13 @@ theorem verifyInputs_honest (P : Params) (logMax : Nat) (indices : List Nat)
     (hidx : ∀ i ∈ indices, i < 2 ^ logMax)
     (hrounds : ∀ r ∈ rounds, r.2 ≠ [] ∧ r.1 = Committed.ofMats hashF compF (r.2.map (·.1)) ∧
       ∃ H ≤ logMax, (∃ x ∈ r.2, x.1.height = 2 ^ H) ∧
+        (∀ x ∈ r.2, 2 ^ min P.capHeight H ≤ x.1.height) ∧
         ∀ x ∈ r.2, x.2 ≠ [] ∧ ∃ h ≤ H, Deep.HonestItem P.logBlowup h x)
     (t : Transcript F 24) :
     verifyInputs (poseidon2 F) P logMax indices
-      (rounds.map fun r ↦ openMulti (specBackend EF) r.1
+      (rounds.map fun r ↦ openMulti (specBackend EF) P.capHeight r.1
         (indices.map (· >>> (logMax - (specBackend EF).logHeight r.1))))
-      (rounds.map fun r ↦ (r.1.root, r.2.map fun x ↦
+      (rounds.map fun r ↦ (r.1.cap P.capHeight, r.2.map fun x ↦
         ((⟨1, Nat.log2 x.1.height - P.logBlowup⟩ : Domain F), x.2.map fun y ↦ (y.1, y.2.toList))))
       t = .ok ((), t) := by
   unfold verifyInputs
@@ -358,12 +359,12 @@ theorem verifyInputs_honest (P : Params) (logMax : Nat) (indices : List Nat)
   induction rounds with
   | nil => rfl
   | cons r rounds ih =>
-    obtain ⟨hne, hc, H, hH, htop, hits⟩ := hrounds r List.mem_cons_self
+    obtain ⟨hne, hc, H, hH, htop, hcapr, hits⟩ := hrounds r List.mem_cons_self
     rw [List.map_cons]
     refine (forIn_cons_ok _ _ _ PUnit.unit _ t t ?_).trans
       (ih fun r' hr' ↦ hrounds r' (List.mem_cons_of_mem _ hr'))
     obtain ⟨c, its⟩ := r
-    dsimp only at hne hc hits htop ⊢
+    dsimp only at hne hc hits htop hcapr ⊢
     subst hc
     have hmix : Fri.MixedHeights H (its.map (·.1)) := by
       refine ⟨fun m hm ↦ ?_, ?_⟩
@@ -422,7 +423,9 @@ theorem verifyInputs_honest (P : Params) (logMax : Nat) (indices : List Nat)
       simp only [List.all_map, List.all_eq_true, Function.comp_apply, beq_iff_eq]
       exact fun i _ ↦ hrows i
     rw [hall, ensure_true, pure_bind]
-    have hv := Fri.verifyMulti_openMulti hmix idx' fun i hi ↦ by
+    have hv := Fri.verifyMulti_openMulti hmix P.capHeight (fun m hm ↦ by
+        obtain ⟨x, hx, rfl⟩ := List.mem_map.mp hm
+        exact hcapr x hx) idx' fun i hi ↦ by
       obtain ⟨j, hj, rfl⟩ := List.mem_map.mp hi
       exact Deep.shiftRight_lt (hidx j hj) hH
     set C := Committed.ofMats hashF compF (its.map (·.1))
@@ -433,7 +436,7 @@ theorem verifyInputs_honest (P : Params) (logMax : Nat) (indices : List Nat)
     have e2 : (idx'.map ((specBackend EF).openAt C)).map (·.path.toList) =
         idx'.map fun i ↦ (C.openAt i).path.toList := by
       rw [List.map_map]; rfl
-    rw [bind_ok (checkMulti_eq _ _ _ _ _ t), e1, e2, hv]
+    rw [bind_ok (checkMulti_eq _ _ _ _ _ _ t), e1, e2, hv]
     rfl
 
 
@@ -442,11 +445,11 @@ def honestRounds (b : Nat) (rounds : List (OpenRound (specBackend EF))) :
     List (Committed F × List (Mat F × List (EF × Array EF))) :=
   rounds.map fun r ↦ (r.1, r.2.map fun x ↦ (x.1, x.2.zip (openedOf b x)))
 
-/-- The verifier's rounds: the commitments' roots, every matrix on its trace domain with its
-points and opened values. -/
-def verifierRounds (b : Nat) (rounds : List (Committed F × List (Mat F × List (EF × Array EF)))) :
-    List (Round F EF) :=
-  rounds.map fun r ↦ (r.1.root, r.2.map fun x ↦
+/-- The verifier's rounds: the commitments' caps of height `capHeight`, every matrix on its trace
+domain with its points and opened values. -/
+def verifierRounds (capHeight b : Nat)
+    (rounds : List (Committed F × List (Mat F × List (EF × Array EF)))) : List (Round F EF) :=
+  rounds.map fun r ↦ (r.1.cap capHeight, r.2.map fun x ↦
     ((⟨1, Nat.log2 x.1.height - b⟩ : Domain F), x.2.map fun y ↦ (y.1, y.2.toList)))
 
 /-- Rounds the specification prover opens honestly: some round, each committing to a nonempty
@@ -458,10 +461,13 @@ structure HonestRounds (P : Params) (rounds : List (OpenRound (specBackend EF)))
   points : ∀ r ∈ rounds, ∀ x ∈ r.2, x.2 ≠ [] ∧ ∀ z ∈ x.2, Ext.OutsideBase z
   lde : ∀ r ∈ rounds, ∀ x ∈ r.2, ∃ h ps, CompStark.Mat.IsLde P.logBlowup h x.1 ps ∧
     P.logBlowup + P.logFinalPolyLen ≤ h
+  /-- No matrix of a round is below the cap of another's tree. -/
+  capFits : ∀ r ∈ rounds, ∀ x ∈ r.2, ∀ y ∈ r.2,
+    2 ^ min P.capHeight (Nat.log2 y.1.height) ≤ x.1.height
 
 /-- The verifier's claimed evaluation counts are the prover's. -/
-theorem claimCounts_verifierRounds (b : Nat) (rounds : List (OpenRound (specBackend EF))) :
-    claimCounts (verifierRounds b (honestRounds b rounds)) =
+theorem claimCounts_verifierRounds (c b : Nat) (rounds : List (OpenRound (specBackend EF))) :
+    claimCounts (verifierRounds c b (honestRounds b rounds)) =
       countsOf (rounds.map fun r ↦ r.2.map fun x ↦
         (openedOf b x, x.1, x.2.zip (openedOf b x))) := by
   simp only [claimCounts, verifierRounds, honestRounds, countsOf, List.map_map]
@@ -471,8 +477,8 @@ theorem claimCounts_verifierRounds (b : Nat) (rounds : List (OpenRound (specBack
   exact length_zip_openedOf b x.1 x.2
 
 /-- The verifier observes the prover's opened values. -/
-theorem flat_verifierRounds (b : Nat) (rounds : List (OpenRound (specBackend EF))) :
-    (verifierRounds b (honestRounds b rounds)).flatMap
+theorem flat_verifierRounds (c b : Nat) (rounds : List (OpenRound (specBackend EF))) :
+    (verifierRounds c b (honestRounds b rounds)).flatMap
         (fun r ↦ r.2.flatMap fun x ↦ x.2.flatMap (·.2)) =
       (rounds.flatMap fun r ↦ r.2.flatMap (openedOf b)).flatMap (·.toList) := by
   induction rounds with
@@ -496,7 +502,7 @@ theorem honestRounds_ok {P : Params} {rounds : List (OpenRound (specBackend EF))
     (hmax : ∀ r ∈ rounds, ∀ x ∈ r.2, Nat.log2 x.1.height ≤ logMax) :
     ∀ r ∈ honestRounds P.logBlowup rounds, r.2 ≠ [] ∧
       r.1 = Committed.ofMats hashF compF (r.2.map (·.1)) ∧ ∃ H ≤ logMax,
-        (∃ x ∈ r.2, x.1.height = 2 ^ H) ∧
+        (∃ x ∈ r.2, x.1.height = 2 ^ H) ∧ (∀ x ∈ r.2, 2 ^ min P.capHeight H ≤ x.1.height) ∧
           ∀ x ∈ r.2, x.2 ≠ [] ∧ ∃ h ≤ H, Deep.HonestItem P.logBlowup h x := by
   intro r' hr'
   obtain ⟨r, hrm, rfl⟩ := List.mem_map.mp hr'
@@ -508,7 +514,9 @@ theorem honestRounds_ok {P : Params} {rounds : List (OpenRound (specBackend EF))
   refine ⟨by rwa [ne_eq, List.map_eq_nil_iff], by rw [hfst]; exact hc,
     Nat.log2 xm.1.height, hmax r hrm xm hxm,
     ⟨(xm.1, xm.2.zip (openedOf P.logBlowup xm)), List.mem_map_of_mem hxm,
-      by rw [hlm.2.1, Nat.log2_two_pow]⟩, fun y hy ↦ ?_⟩
+      by rw [hlm.2.1, Nat.log2_two_pow]⟩, fun y hy ↦ ?_, fun y hy ↦ ?_⟩
+  · obtain ⟨x, hx, rfl⟩ := List.mem_map.mp hy
+    exact hr.capFits r hrm x hx xm hxm
   obtain ⟨x, hx, rfl⟩ := List.mem_map.mp hy
   obtain ⟨hpne, hpts⟩ := hr.points r hrm x hx
   obtain ⟨h, ps, hl, -⟩ := hr.lde r hrm x hx
@@ -539,14 +547,15 @@ theorem verifyPcs_openPcs (P : Params) (rounds : List (OpenRound (specBackend EF
     (t : Transcript F 24) (hd : t.duplex = Poseidon2.duplex) (hr : HonestRounds P rounds)
     (hP : 0 < P.maxLogArity) (hq : 0 < P.numQueries) (hb : 0 < P.logBlowup)
     (hgrind : ((openPcs (specBackend EF) P rounds).run t).2.grindFailed = false) :
-    verifyPcs (poseidon2 F) P (verifierRounds P.logBlowup (honestRounds P.logBlowup rounds))
+    verifyPcs (poseidon2 F) P (verifierRounds P.capHeight P.logBlowup
+      (honestRounds P.logBlowup rounds))
       ((openPcs (specBackend EF) P rounds).run t).1.2 t =
       .ok ((), ((openPcs (specBackend EF) P rounds).run t).2) := by
   rw [openPcs_run] at hgrind ⊢
   dsimp only at hgrind ⊢
   set b := P.logBlowup with hbdef
   set drs := honestRounds b rounds with hdrs
-  set vr := verifierRounds (EF := EF) b drs with hvr
+  set vr := verifierRounds (EF := EF) P.capHeight b drs with hvr
   set opened := rounds.map fun r ↦ r.2.map fun x ↦ (openedOf b x, x.1, x.2.zip (openedOf b x))
     with hopened
   have hitems : opened.flatten.map (·.2) = drs.flatMap (·.2) := by
@@ -685,7 +694,7 @@ theorem verifyPcs_openPcs (P : Params) (rounds : List (OpenRound (specBackend EF
         List.mem_map_of_mem hxr⟩, hblog x hx⟩
   · intro indices t' hidx
     rw [hs0] at hidx ⊢
-    rw [← map_fst_congr (fun c ↦ openMulti (specBackend EF) c
+    rw [← map_fst_congr (fun c ↦ openMulti (specBackend EF) P.capHeight c
       (indices.map (· >>> (h0 - (specBackend EF).logHeight c)))) drs rounds hfst]
     exact verifyInputs_honest P h0 indices drs hidx hround t'
   · intro index t' hidx
@@ -693,7 +702,7 @@ theorem verifyPcs_openPcs (P : Params) (rounds : List (OpenRound (specBackend EF
     rw [← map_fst_congr (fun c ↦ ((specBackend EF).openAt c
       (index >>> (h0 - (specBackend EF).logHeight c))).values.toList) drs rounds hfst]
     have hD := reduceQuery_honest P h0 index alpha drs hidx fun r hr' ↦ by
-      obtain ⟨h1, h2, H, hH, htop, hall⟩ := hround r hr'
+      obtain ⟨h1, h2, H, hH, htop, -, hall⟩ := hround r hr'
       exact ⟨h1, h2, H, hH, htop, fun x hx ↦ (hall x hx).2⟩
     rw [hL] at hD
     refine (congrFun hD t').trans ?_

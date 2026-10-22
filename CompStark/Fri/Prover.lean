@@ -53,7 +53,7 @@ def ldeRef (logH bits : Nat) (shift : F) (w : Nat) (m : Array F) : Mat F :=
 
 /-- The kernels the prover runs, on the backend's own traces `Trace`, matrices `M`, commitments
 `C` and vectors of extension elements `V`: the transcript, low-degree extension of traces and of
-matrices of values, a trace's values, commitments with their roots,
+matrices of values, a trace's values, commitments with their caps,
 openings and heights, the quotient values from the extensions of the trace and the preprocessed
 trace, if any, the values of a matrix's columns at points, and the FRI inputs and folds. Every
 backend computes the same functions (`Refines`); `spec` runs the specifications. -/
@@ -69,7 +69,8 @@ structure Backend (F EF : Type) (width : Nat) where
   traceValues : Trace → Array F
   lde : Nat → Nat → F → Nat → Array F → M
   commit : List M → C
-  root : C → Digest F
+  /-- The commitment's cap of the given height (capped at the tree's levels). -/
+  cap : C → Nat → Cap F
   openAt : C → Nat → BatchOpening F
   /-- `log₂` of the largest committed height. -/
   logHeight : C → Nat
@@ -130,8 +131,12 @@ def ofMats (hash : List F → Digest F) (compress : Digest F → Digest F → Di
     (ms : List (Mat F)) : Committed F :=
   ⟨ms, ((Merkle.layers hash compress (ms.map Mat.toMatrix)).map List.toArray).toArray⟩
 
-/-- The Merkle root. -/
-def root (c : Committed F) : Digest F := (c.layers.back?.getD #[]).getD 0 0
+/-- The Merkle cap of height `h` (`Merkle.capOf`). -/
+def cap (c : Committed F) (h : Nat) : Cap F :=
+  (Merkle.capOf (c.layers.toList.map Array.toList) h).toArray
+
+theorem size_cap (c : Committed F) (h : Nat) : (c.cap h).size = 2 ^ min h (c.layers.size - 1) := by
+  rw [cap, List.size_toArray, Merkle.length_capOf, List.length_map, Array.length_toList]
 
 /-- The largest matrix height. -/
 def maxHeight (c : Committed F) : Nat := c.mats.foldl (fun m a ↦ max m a.height) 0
@@ -168,7 +173,7 @@ def idft (logN : Nat) (vs : Array EF) : Array EF :=
 
 /-- The result of the commit phase, on commitments `C`. -/
 structure CommitPhase (F EF C : Type) where
-  commits : Array (Digest F)
+  commits : Array (Cap F)
   data : List C
   witnesses : Array F
   arities : Array Nat
@@ -206,7 +211,7 @@ def commitRounds (B : Backend F EF width) (P : Params) :
     let arity := 2 ^ la
     let rows := B.size folded / arity
     let c := B.commit [B.leaves arity folded]
-    pObserveList (B.root c).toList
+    pObserveList (capElems (B.cap c P.capHeight))
     let w ← pGrind P.commitPowBits
     let beta : EF ← pSampleExt
     let logRows := Nat.log2 rows
@@ -219,7 +224,8 @@ def commitRounds (B : Backend F EF width) (P : Params) :
           (B.addScaled folded v (Ext.powTwo beta la), vs) else (folded, rest)
       | [] => (folded, [])
     commitRounds B P las folded rest
-      ⟨cp.commits.push (B.root c), cp.data ++ [c], cp.witnesses.push w, cp.arities.push la,
+      ⟨cp.commits.push (B.cap c P.capHeight), cp.data ++ [c], cp.witnesses.push w,
+        cp.arities.push la,
         cp.finalPoly⟩
 
 /-- Plonky3's `commit_phase` on the batched quotients `inputs`, tallest first, with log arities
@@ -237,25 +243,27 @@ def commitPhase (B : Backend F EF width) (P : Params) (arities : List Nat) (inpu
   pObserveExts finalPoly.toList
   return { cp with finalPoly := finalPoly }
 
-/-- The multi-opening of the commitment `c` at `indices`: every query's rows, and the siblings of
-their paths pruned (`Merkle.prune`). -/
-def openMulti (B : Backend F EF width) (c : B.C) (indices : List Nat) : MultiOpening F :=
+/-- The multi-opening of the commitment `c` with a cap of height `capHeight` at `indices`: every
+query's rows, and the siblings of their paths below the cap pruned (`Merkle.prune`). -/
+def openMulti (B : Backend F EF width) (capHeight : Nat) (c : B.C) (indices : List Nat) :
+    MultiOpening F :=
   let os := indices.map (B.openAt c)
   ⟨(os.map (·.values)).toArray,
-    (Merkle.prune (B.logHeight c) indices (os.map (·.path.toList))).toArray⟩
+    (Merkle.prune (B.logHeight c - min capHeight (B.logHeight c)) indices
+      (os.map (·.path.toList))).toArray⟩
 
 /-- The openings of the commit-phase rounds with commitments `cs` and log arities `las` at the
 queries' indices `cur`: each round opens the groups of `cur`, gives every query the other members
 of its group, and passes the group indices on. -/
-def answerFolds (B : Backend F EF width) : List B.C → List Nat → List Nat →
+def answerFolds (B : Backend F EF width) (capHeight : Nat) : List B.C → List Nat → List Nat →
     List (CommitOpening F EF)
   | c :: cs, la :: las, cur =>
     let groups := cur.map (· >>> la)
-    let o := openMulti B c groups
+    let o := openMulti B capHeight c groups
     let siblings := (cur.zip o.values.toList).map fun (i, rows) ↦
       let evals : List EF := unflatten ((rows.getD 0 #[]).toList)
       (((List.range (2 ^ la)).filter (· != i % 2 ^ la)).map fun j ↦ evals.getD j 0).toArray
-    ⟨siblings.toArray, o.siblings⟩ :: answerFolds B cs las groups
+    ⟨siblings.toArray, o.siblings⟩ :: answerFolds B capHeight cs las groups
   | _, _, _ => []
 
 /-- `factor · ∑ᵢ weights[i] · m[perm[i]][j]` for the columns `j0, …, j0 + nj - 1` of the row-major
@@ -402,7 +410,7 @@ def Backend.spec (EF : Type) [Challenge F EF] (t : Transcript F width) (hash : L
   traceValues := id
   lde := ldeRef
   commit := Committed.ofMats hash compress
-  root := Committed.root
+  cap := Committed.cap
   openAt := Committed.openAt
   logHeight c := Nat.log2 c.maxHeight
   quotient := quotientOfLde
@@ -434,9 +442,10 @@ def proveFri (B : Backend F EF width) (P : Params) (rounds : List (OpenRound B))
   let cp ← commitPhase B P arities inputs
   let qw ← pGrind P.queryPowBits
   let indices ← (List.range P.numQueries).mapM fun _ ↦ pSampleBits logMax
-  let ins := rounds.map fun (c, _) ↦ openMulti B c (indices.map (· >>> (logMax - B.logHeight c)))
+  let ins := rounds.map fun (c, _) ↦
+    openMulti B P.capHeight c (indices.map (· >>> (logMax - B.logHeight c)))
   return ⟨batchWitness, cp.commits, cp.witnesses, ins.toArray,
-    (answerFolds B cp.data cp.arities.toList indices).toArray, cp.finalPoly, qw⟩
+    (answerFolds B P.capHeight cp.data cp.arities.toList indices).toArray, cp.finalPoly, qw⟩
 
 /-- Plonky3's `TwoAdicFriPcs::open`: the opened values, by round, matrix and point, observed
 after the domain separator, the batching grinding and challenge `α`, and the FRI proof. -/

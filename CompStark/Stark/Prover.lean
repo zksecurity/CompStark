@@ -77,13 +77,13 @@ def commitAndSample (B : Backend F EF width) (P : Params) (A : Air F) (logN : Na
   let ext := B.ldeTrace logN P.logBlowup gen A.width trace
   let traceC := B.commit [ext]
   pObserveList (starkSeedOf EF P A logN)
-  pObserveList (B.root traceC).toList
-  pObserveList ((prep.map fun x ↦ (B.root x.2).toList).getD [])
+  pObserveList (capElems (B.cap traceC P.capHeight))
+  pObserveList ((prep.map fun x ↦ capElems (B.cap x.2 P.capHeight)).getD [])
   pObserveList pis
   let alpha : EF ← pSampleExt
   let chunks := quotientChunks B P A logN ext (prep.map (·.1)) pis alpha
   let quotC := B.commit chunks
-  pObserveList (B.root quotC).toList
+  pObserveList (capElems (B.cap quotC P.capHeight))
   let ow ← pGrind P.oodPowBits
   let zeta : EF ← pSampleExt
   return (ext, traceC, chunks, quotC, zeta, ow)
@@ -111,8 +111,8 @@ def openAndAssemble (B : Backend F EF width) (P : Params) (A : Air F) (logN : Na
     let traceOpened := (opened.headD []).headD []
     let prepOpened := (opened.getD 2 []).headD []
     return {
-      traceCommit := B.root traceC
-      quotientCommit := B.root quotC
+      traceCommit := B.cap traceC P.capHeight
+      quotientCommit := B.cap quotC P.capHeight
       opened := ⟨traceOpened.headD #[],
         if A.mainNextRow then some (traceOpened.getD 1 #[]) else none,
         prep.map fun _ ↦ prepOpened.headD #[],

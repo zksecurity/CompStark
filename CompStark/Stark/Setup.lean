@@ -10,13 +10,14 @@ public import CompStark.Merkle.VCVio
 /-! # The preprocessed trace's verifying key
 
 Plonky3's `setup_preprocessed`: the verifying key of an AIR's preprocessed trace is its width,
-the log of its height, and the Merkle root of its low-degree extension onto `L`, rows in
-bit-reversed order. `preprocessedKeyWith` computes it on any primitives `H` (`Primitives`), node
-by node from the leaves (`merkleNodeWith`), so that one definition is Plonky3's setup on Poseidon2
-(`setup`) and the random-oracle model's on random oracles, where its oracle calls are counted.
+the log of its height, and the Merkle cap of its low-degree extension onto `L`, rows in
+bit-reversed order: the nodes of the layer the cap height below the root. `preprocessedKeyWith`
+computes it on any primitives `H` (`Primitives`), node by node from the leaves
+(`merkleNodeWith`), so that one definition is Plonky3's setup on Poseidon2 (`setup`) and the
+random-oracle model's on random oracles, where its oracle calls are counted.
 
 On pure hashes the nodes are VCVio's (`merkleNodeWith_pure`), so the root is the Merkle tree's
-(`Merkle.root_eq_nodeValue`).
+(`Merkle.root_eq_nodeValue`), and so is the cap.
 -/
 
 @[expose] public section
@@ -38,14 +39,22 @@ def merkleNodeWith (H : Primitives F m) (leaf : Nat → m (Digest F)) : Nat → 
 def preprocessedLde [BaseField F] (P : Params) (A : Air F) (logN : Nat) : Mat F :=
   ldeRef logN P.logBlowup gen A.preprocessedWidth A.preprocessed
 
+/-- The cap of height `h` (capped at `levels`) of the Merkle tree with `levels` levels above the
+leaf digests `leaf`, by the compression of `H`: the `2 ^ h` nodes of its layer `h` levels below the
+root. -/
+def merkleCapWith (H : Primitives F m) (leaf : Nat → m (Digest F)) (levels h : Nat) :
+    m (Cap F) := do
+  let h := min h levels
+  return (← (List.range (2 ^ h)).mapM (merkleNodeWith H leaf (levels - h))).toArray
+
 /-- The verifying key of `A`'s preprocessed trace for `2 ^ logN` rows on the primitives `H`: the
-Merkle root by `H`'s hashes of the rows of its extension, if it has columns. -/
+Merkle cap by `H`'s hashes of the rows of its extension, if it has columns. -/
 def preprocessedKeyWith [BaseField F] (H : Primitives F m) (P : Params) (A : Air F) (logN : Nat) :
     m (Option (PreprocessedKey F)) :=
   if A.preprocessedWidth = 0 then pure none else do
-    let root ← merkleNodeWith H (fun r ↦ H.hash (rowOf (preprocessedLde P A logN) r).toList)
-      (logN + P.logBlowup) 0
-    pure (some ⟨A.preprocessedWidth, logN, root⟩)
+    let cap ← merkleCapWith H (fun r ↦ H.hash (rowOf (preprocessedLde P A logN) r).toList)
+      (logN + P.logBlowup) P.capHeight
+    pure (some ⟨A.preprocessedWidth, logN, cap⟩)
 
 /-- On pure hashes, the nodes are VCVio's. -/
 theorem merkleNodeWith_pure (H : Primitives F Id) (hash : List F → Digest F)

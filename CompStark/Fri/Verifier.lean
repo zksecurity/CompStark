@@ -19,10 +19,11 @@ with challenges in the extension `EF`, on the challenger and Merkle hashes of pr
 * The commitment scheme observes its domain separator (`pcsSeed`) and every opened value, checks
   the batching grinding witness and samples the batching challenge `α`.
 * FRI folds by Plonky3's schedule for the input heights (`foldSchedule`). It observes its domain
-  separator (`friSeed`), and for every commit-phase commitment observes it, checks its grinding
-  witness and samples a folding challenge `β`. It observes the final polynomial, checks the
-  query grinding witness and samples one index into the largest domain per query.
-* The input openings at the queries, verified against their commitments as Merkle
+  separator (`friSeed`), and for every commit-phase commitment, a cap that is not empty, observes
+  it, checks its grinding witness and samples a folding challenge `β`. It observes the final
+  polynomial, checks the query grinding witness and samples one index into the largest domain
+  per query.
+* The input openings at the queries, verified against their commitments, Merkle caps, as Merkle
   multi-openings, give each query the batched quotients `∑ αⁱ (pᵢ(z) - pᵢ(x)) / (z - x)` of
   every height. The folds then interpolate each group of `2 ^ arity` values at `β`, adding the
   next height's batched quotient times `β ^ (2 ^ arity)`, and must end at the final
@@ -50,6 +51,9 @@ structure Params where
   /-- Grinding before the batch STARK's lookup challenges (`StarkConfig`'s
   `lookup_proof_of_work_bits`). -/
   lookupPowBits : Nat := 0
+  /-- The height of the Merkle commitments' caps (`MerkleTreeMmcs`'s `cap_height`): a commitment
+  is the layer this many levels below the root, the root alone for `0`. -/
+  capHeight : Nat := 0
 
 /-- The coset `shift · ⟨ω⟩` with `ω` of order `2 ^ logSize`. -/
 structure Domain (F : Type) where
@@ -57,7 +61,7 @@ structure Domain (F : Type) where
   logSize : Nat
 
 /-- A commitment with, for each committed matrix, its domain and its claimed values at points. -/
-abbrev Round (F EF : Type) := Digest F × List (Domain F × List (EF × List EF))
+abbrev Round (F EF : Type) := Cap F × List (Domain F × List (EF × List EF))
 
 variable {m : Type → Type} [Monad m] {F : Type} [BaseField F] {EF : Type} [Challenge F EF]
 
@@ -97,10 +101,15 @@ def checkWitness (bits : Nat) (w : F) : M H Bool :=
     observe H w
     return (← sampleBits H bits) == 0
 
-/-- Verify a Merkle multi-opening with the hashes of `H` (`Merkle.verifyMultiM`). -/
-def checkMulti (commit : Digest F) (dims : List (Nat × Nat)) (indices : List Nat)
+/-- Verify a Merkle multi-opening against a cap of height `capHeight` with the hashes of `H`
+(`Merkle.verifyMultiM`). -/
+def checkMulti (capHeight : Nat) (commit : Cap F) (dims : List (Nat × Nat)) (indices : List Nat)
     (rows : List (List (List F))) (siblings : List (Digest F)) : M H Bool :=
-  monadLift (Merkle.verifyMultiM H.hash H.compress commit dims indices rows siblings)
+  monadLift (Merkle.verifyMultiM H.hash H.compress commit.toList capHeight dims indices rows
+    siblings)
+
+/-- Observe a commitment: its digests in order. -/
+def observeCap (c : Cap F) : M H Unit := observeList H (capElems c)
 
 end Challenger
 
@@ -160,7 +169,7 @@ def verifyInputs (H : Primitives F m) (P : Params) (logMax : Nat) (indices : Lis
     let dims := mats.map fun (d, pts) ↦
       (2 ^ (d.logSize + P.logBlowup), (pts.headD default).2.length)
     let logBatch := (mats.map (·.1.logSize + P.logBlowup)).foldl max 0
-    ensure (← checkMulti H commit dims (indices.map (· >>> (logMax - logBatch)))
+    ensure (← checkMulti H P.capHeight commit dims (indices.map (· >>> (logMax - logBatch)))
       (b.values.toList.map fun r ↦ r.toList.map (·.toList)) b.siblings.toList) "input opening"
 
 /-- The batched quotients of the query at `index` from its rows `rows` (per batch, per matrix),
@@ -244,10 +253,11 @@ def verifyFri (H : Primitives F m) (P : Params) (proof : FriProof F EF)
   observeList H (DomainSeparator.friSeed F EF arities (2 ^ P.logFinalPolyLen) P.commitPowBits
     P.queryPowBits P.numQueries logMax P.logBlowup P.maxLogArity)
   ensure (proof.commits.size == arities.length &&
-    proof.commitWitnesses.size == arities.length) "commit rounds"
+    proof.commitWitnesses.size == arities.length && proof.commits.all (·.size != 0))
+    "commit rounds"
   let mut betas := #[]
   for (c, w) in proof.commits.toList.zip proof.commitWitnesses.toList do
-    observeList H c.toList
+    observeCap H c
     ensure (← checkWitness H P.commitPowBits w) "commit witness"
     betas := betas.push (← sampleExt H : EF)
   observeExts H proof.finalPoly.toList
@@ -266,8 +276,9 @@ def verifyFri (H : Primitives F m) (P : Params) (proof : FriProof F EF)
   for ((c, o), (la, i)) in (proof.commits.toList.zip proof.folds.toList).zip arities.zipIdx do
     let logFolded := logH - la
     let gs := groups.map fun g ↦ g.getD i (0, [])
-    ensure (← checkMulti H c [(2 ^ logFolded, Challenge.d EF * 2 ^ la)] (gs.map (·.1))
-      (gs.map fun (_, evals) ↦ [evals.flatMap Ext.coeffs]) o.path.toList) "commit-phase opening"
+    ensure (← checkMulti H P.capHeight c [(2 ^ logFolded, Challenge.d EF * 2 ^ la)]
+      (gs.map (·.1)) (gs.map fun (_, evals) ↦ [evals.flatMap Ext.coeffs]) o.path.toList)
+      "commit-phase opening"
     logH := logFolded
 
 /-- The claimed evaluation counts of the rounds: per commitment, per matrix, per point. -/

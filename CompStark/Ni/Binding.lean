@@ -14,9 +14,10 @@ checked. The verifier's run on an answer table only depends on the answers to th
 queries, so the table can be changed elsewhere (`evalWithAnswerFn_congr`): `fresh log answer
 dstar` keeps the answers to the keys of `log` and answers every other hash query `dstar`, a digest
 that no query of `log` answers or holds in its key. With no digest clashes in `log`, an opening
-accepted against a digest of `log` then uses only hash queries of `log` (`climb_cached`: once a
-climb leaves the log it is stuck at `dstar`), so it opens the extracted rows (D's
-`extractRow_eq_of_verifyBatch`; `binding_fresh`).
+accepted against any digest but `dstar`, a cap's entry or the zero digest an index past the cap
+reads, then uses only hash queries of `log` (`climb_cached`: once a climb leaves the log it is
+stuck at `dstar`), so it opens the extracted rows (D's `extractRow_eq_of_verifyBatch`;
+`binding_fresh`).
 -/
 
 @[expose] public section
@@ -44,19 +45,21 @@ theorem evalWithAnswerFn_congr {α : Type} (answer answer' : (q : Query F) → A
     exact ih _ fun e he ↦ h e (List.mem_cons_of_mem _ he)
 
 section
-variable (bd : Digest F → List F → Digest F)
+variable (bd : Digest F → List F → List (Digest F))
 
 /-- The digests of a log: its answers' and its keys'. -/
 def logDigests (log : QueryLog (spec F K)) : List (Digest F) :=
   log.flatMap fun e ↦ digestOf e.1 e.2 :: keyDigests bd e.1
 
-theorem length_logDigests_le (log : QueryLog (spec F K)) :
-    (logDigests bd log).length ≤ 3 * log.length := by
+/-- A log holds at most `m + 2` digests per query if an input binds at most `m ≥ 1`. -/
+theorem length_logDigests_le (m : Nat) (hm : 1 ≤ m) (hbd : ∀ c i, (bd c i).length ≤ m)
+    (log : QueryLog (spec F K)) : (logDigests bd log).length ≤ (m + 2) * log.length := by
   induction log with
   | nil => simp only [logDigests, List.flatMap_nil, List.length_nil, Nat.zero_le]
   | cons e log ih =>
     simp only [logDigests, List.flatMap_cons, List.length_append, List.length_cons] at ih ⊢
-    have := length_keyDigests_le bd e.1
+    have := length_keyDigests_le bd m hm hbd e.1
+    rw [Nat.mul_succ]
     omega
 
 variable [BaseField F]
@@ -146,11 +149,12 @@ theorem climb_of_verifyBatch {d : Nat} (hash : List F → Vector F d)
 /-! ### Binding -/
 
 /-- **Binding from a log.** With no digest clashes in `log`, answered by `answer`, the primitives
-on `fresh log answer dstar` bind every digest of `log` to the rows extracted from it. -/
-theorem binding_fresh {bd : Digest F → List F → Digest F} (answer : (q : Query F) → Answer K q)
+on `fresh log answer dstar` bind every digest other than `dstar` to the rows extracted from it. -/
+theorem binding_fresh {bd : Digest F → List F → List (Digest F)}
+    (answer : (q : Query F) → Answer K q)
     (log : QueryLog (spec F K)) (hcons : Consistent answer log) (hclash : NoClash bd log)
     (dstar : Digest F) (hdstar : dstar ∉ logDigests bd log) (root : Digest F)
-    (hroot : root ∈ logDigests bd log) :
+    (hroot : root ≠ dstar) :
     Binding (logCache log) (idealOf (fresh log answer dstar)) root := by
   intro n k i values path hn hv
   set g' := fresh log answer dstar
@@ -173,7 +177,7 @@ theorem binding_fresh {bd : Digest F → List F → Digest F} (answer : (q : Que
         List.not_mem_nil, or_false, or_true])
   obtain ⟨hleaf, hnodes⟩ := climb_cached hash compress values dstar
     (fun a b ↦ Query.node a b ∈ log.map Sigma.fst) hfresh_node hstuck path _ i (2 ^ k)
-    (by rw [hclimb]; rintro rfl; exact hdstar hroot)
+    (by rw [hclimb]; exact hroot)
   have hleaf_mem : Query.leaf values.flatten ∈ log.map Sigma.fst := by
     by_contra h
     exact hleaf (by simp only [hash, g', fresh, h, ↓reduceIte])

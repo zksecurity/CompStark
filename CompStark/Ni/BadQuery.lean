@@ -48,9 +48,9 @@ theorem mem_map_fst_take {K : Nat} {log : QueryLog (spec F K)} {t : Query F} {n 
   rw [List.map_take] at h
   exact List.mem_of_mem_take h
 
-theorem mem_logDigests {bd : Digest F → List F → Digest F} {K : Nat} {log : QueryLog (spec F K)}
-    {t : Query F} (ht : t ∈ log.map Sigma.fst) {d : Digest F} (hd : d ∈ keyDigests bd t) :
-    d ∈ logDigests bd log := by
+theorem mem_logDigests {bd : Digest F → List F → List (Digest F)} {K : Nat}
+    {log : QueryLog (spec F K)} {t : Query F} (ht : t ∈ log.map Sigma.fst) {d : Digest F}
+    (hd : d ∈ keyDigests bd t) : d ∈ logDigests bd log := by
   obtain ⟨e, he, rfl⟩ := List.mem_map.mp ht
   exact List.mem_flatMap.mpr ⟨e, he, List.mem_cons_of_mem _ hd⟩
 
@@ -133,7 +133,7 @@ variable (S : Iop.Setup EF) (publicValues : List F) (δ δ' loss : NNReal)
 bad. -/
 def BadAt (log : QueryLog (spec F S.streamLen)) (p : Nat) (hp : p < log.length) : Prop :=
   log[p].1 ∉ (log.take p).map Sigma.fst ∧
-    (Clash (boundDigest S) (log.take p) log[p].1 log[p].2 ∨
+    (Clash (boundDigests S) (log.take p) log[p].1 log[p].2 ∨
       RoundBad S publicValues δ δ' loss (log.take p) log[p].1 log[p].2)
 
 /-- **The bad query.** If the verifier, run after the setup and a prover whose queries `log` an
@@ -147,7 +147,7 @@ theorem exists_badAt (hδ' : (δ' : ℝ) < 1 - S.rate) (answer : (q : Query F) �
     (hsetup : ∀ e ∈ tableQueryLog S.setupRo answer, e ∈ log)
     (hdb : proof.degreeBits = S.logN)
     (hok : verifyWith (idealOf answer) S.params S.air vk proof publicValues = .ok ())
-    (hsmall : 3 * (log ++ tableQueryLog
+    (hsmall : (2 ^ S.params.capHeight + 2) * (log ++ tableQueryLog
       (verifyWith (ideal F S.streamLen) S.params S.air vk proof publicValues) answer).length <
         Fintype.card (Digest F))
     (hfail : ∀ trace ∈ closeTraces S δ' (committedTrace S log proof),
@@ -158,7 +158,7 @@ theorem exists_badAt (hδ' : (δ' : ℝ) < 1 - S.rate) (answer : (q : Query F) �
     publicValues) answer with hvlog
   set L := log ++ vlog with hL
   by_contra hno
-  have hclash : NoClash (boundDigest S) L := fun p hp hfresh hc ↦ hno ⟨p, hp, hfresh, Or.inl hc⟩
+  have hclash : NoClash (boundDigests S) L := fun p hp hfresh hc ↦ hno ⟨p, hp, hfresh, Or.inl hc⟩
   have hconsL : Consistent answer L := by
     intro e he
     rcases List.mem_append.mp he with h | h
@@ -179,55 +179,89 @@ theorem exists_badAt (hδ' : (δ' : ℝ) < 1 - S.rate) (answer : (q : Query F) �
   have hinjL : CapsInjective answer L := capsInjective hconsL hclash L fun t ht ↦ ht
   have hcap : ∀ j, j < blocks.length → capAt answer blocks (j + 1) ≠ initCap :=
     fun j hj ↦ capAt_ne_initCap hinjL (fun k hk ↦ hkeys k hk) j hj
-  -- the digests the rounds bind
-  have hroot0 : digestAt (blocks.getD 0 []) (starkSeedS S).length ∈
-      keyDigests (boundDigest S) (keyAt answer blocks 0) := by
-    simp only [keyAt, keyDigests, boundDigest, capAt, ↓reduceIte, List.mem_cons,
-      List.not_mem_nil, or_false, or_true]
+  -- the caps the rounds bind
+  have hqne := size_quotientCommit_ne (idealOf answer) S.params S.air vk proof publicValues hok
+  obtain ⟨-, hqsize, hfsize⟩ := size_caps S answer hdb hok
+  have hcapLe : ∀ m, capSize S m ≤ 2 ^ S.params.capHeight := fun m ↦
+    Nat.pow_le_pow_right (by decide) (Nat.min_le_left _ _)
+  have hinit0 : initCap ∈ keyDigests (boundDigests S) (keyAt answer blocks 0) := by
+    simp only [keyAt, keyDigests, capAt, List.mem_cons, true_or]
+  -- an entry of a cap read off round `r` at the offset its key binds is a key digest
+  have hcapMem : ∀ r off n, n ≤ 2 ^ S.params.capHeight →
+      boundDigests S (capAt answer blocks r) (blocks.getD r []) =
+        (capFrom (blocks.getD r []) off (2 ^ S.params.capHeight)).toList →
+      ∀ j, (capFrom (blocks.getD r []) off n).toList.getD j 0 ∈
+        keyDigests (boundDigests S) (keyAt answer blocks r) ∨
+        (capFrom (blocks.getD r []) off n).toList.getD j 0 = initCap := by
+    intro r off n hn hbd j
+    rcases getD_capFrom_mem (blocks.getD r []) off n _ hn j with h | h
+    · left
+      simp only [keyAt, keyDigests]
+      rw [hbd]
+      exact List.mem_cons_of_mem _ h
+    · exact Or.inr h
+  have hcap0 : ∀ j, (capFrom (blocks.getD 0 []) (starkSeedS S).length
+      (capSize S S.logSize)).toList.getD j 0 ∈ keyDigests (boundDigests S) (keyAt answer blocks 0) ∨
+      (capFrom (blocks.getD 0 []) (starkSeedS S).length (capSize S S.logSize)).toList.getD j 0 =
+        initCap :=
+    hcapMem 0 _ _ (hcapLe _) (by simp only [boundDigests, capAt, ↓reduceIte])
   have hseed := two_le_length_friSeed (F := F) (EF := EF) (S.foldArities.map PNat.val)
     (2 ^ S.params.logFinalPolyLen) S.params.commitPowBits S.params.queryPowBits
     S.params.numQueries S.logSize S.params.logBlowup S.params.maxLogArity
   have hwlen : ∀ (bits : Nat), challengeOffset bits ≤ 1 := challengeOffset_le_one
-  have hroot1 : digestAt (blocks.getD 1 []) 0 ∈
-      keyDigests (boundDigest S) (keyAt answer blocks 1) := by
-    have hlen1 : (blocks.getD 1 []).length ≠ (friSeedS S).length + 8 +
+  have hcap1 : ∀ j, (capFrom (blocks.getD 1 []) 0 (capSize S S.logSize)).toList.getD j 0 ∈
+      keyDigests (boundDigests S) (keyAt answer blocks 1) ∨
+      (capFrom (blocks.getD 1 []) 0 (capSize S S.logSize)).toList.getD j 0 = initCap := by
+    have hlen1 : (blocks.getD 1 []).length ≠ (friSeedS S).length + 8 * 2 ^ S.params.capHeight +
         challengeOffset S.params.commitPowBits := by
-      rw [hblocks, inputs_getD_one, List.length_append, Vector.length_toList, length_witnessInput]
+      rw [hblocks, inputs_getD_one, List.length_append, length_capElems, length_witnessInput,
+        hqsize]
       have := hwlen S.params.oodPowBits
       have := hwlen S.params.commitPowBits
+      have := hcapLe S.logSize
       have : 2 ≤ (friSeedS S).length := hseed
       omega
-    simp only [keyAt, keyDigests, boundDigest, hcap 0 (by omega), ↓reduceIte, hlen1,
-      List.mem_cons, List.not_mem_nil, or_false, or_true]
-  have hrootF : ∀ f < S.lastFold + 1, digestAt (blocks.getD (3 + f) []) (friOffset S f) ∈
-      keyDigests (boundDigest S) (keyAt answer blocks (3 + f)) := by
+    exact hcapMem 1 _ _ (hcapLe _)
+      (by simp only [boundDigests, hcap 0 (by omega), ↓reduceIte, hlen1])
+  have hcapF : ∀ f < S.lastFold + 1, ∀ j, (capFrom (blocks.getD (3 + f) []) (friOffset S f)
+      (capSize S (friDepth S f))).toList.getD j 0 ∈
+        keyDigests (boundDigests S) (keyAt answer blocks (3 + f)) ∨
+      (capFrom (blocks.getD (3 + f) []) (friOffset S f) (capSize S (friDepth S f))).toList.getD j
+        0 = initCap := by
     intro f hf
     have hcap3 := hcap (2 + f) (by omega)
     rw [show 2 + f + 1 = 3 + f by omega] at hcap3
     have hblk3 := inputs_getD_fold S.params S.air vk publicValues proof f (by omega)
     rw [friSeedOf_eq S proof hdb] at hblk3
     rw [← hblocks] at hblk3
+    have hsz : ((proof.fri.commits.toList.zip proof.fri.commitWitnesses.toList)[f]'(by
+        omega)).1.size = capSize S (friDepth S f) := by
+      rw [List.getElem_zip, Array.getElem_toList]
+      exact hfsize f (by rw [(length_commits S answer hdb hok).2]; exact hf)
     by_cases hf0 : f = 0
     · subst hf0
-      have hlen : (blocks.getD 3 []).length = (friSeedS S).length + 8 +
+      have hlen : (blocks.getD 3 []).length = (friSeedS S).length + 8 * 2 ^ S.params.capHeight +
           challengeOffset S.params.commitPowBits := by
         rw [hblk3]
-        simp only [seedAt, ↓reduceIte, List.length_append, Vector.length_toList,
+        simp only [seedAt, ↓reduceIte, List.length_append, length_capElems,
           length_witnessInput]
-      simp only [keyAt, keyDigests, boundDigest, hcap3, ↓reduceIte, hlen, friOffset,
-        List.mem_cons, List.not_mem_nil, or_false, or_true]
-    · have hlen : (blocks.getD (3 + f) []).length ≠ (friSeedS S).length + 8 +
-          challengeOffset S.params.commitPowBits := by
+        rw [hsz, capSize, Nat.min_eq_left (capHeight_le_friDepth_zero S)]
+      exact hcapMem 3 _ _ (hcapLe _)
+        (by simp only [boundDigests, hcap3, ↓reduceIte, hlen, friOffset])
+    · have hlen : (blocks.getD (3 + f) []).length ≠ (friSeedS S).length +
+          8 * 2 ^ S.params.capHeight + challengeOffset S.params.commitPowBits := by
         rw [hblk3]
         simp only [seedAt, hf0, ↓reduceIte, List.nil_append, List.length_append,
-          Vector.length_toList, length_witnessInput]
+          length_capElems, length_witnessInput]
+        rw [hsz]
+        have := hcapLe (friDepth S f)
         have : 2 ≤ (friSeedS S).length := hseed
         omega
-      simp only [keyAt, keyDigests, boundDigest, hcap3, ↓reduceIte, hlen, friOffset, hf0,
-        List.mem_cons, List.not_mem_nil, or_false, or_true]
+      exact hcapMem (3 + f) _ _ (hcapLe _)
+        (by simp only [boundDigests, hcap3, ↓reduceIte, hlen, friOffset, hf0])
   -- extraction is stable after the round binding the digest
   have hsame : ∀ j0 j, j0 ≤ j → j < blocks.length →
-      ∀ r ∈ keyDigests (boundDigest S) (keyAt answer blocks j0),
+      ∀ r ∈ keyDigests (boundDigests S) (keyAt answer blocks j0),
       SameUnder (logCache (L.take (idx L (keyAt answer blocks j)))) (logCache L) r := by
     intro j0 j hj0 hj r hr k i
     have hle : idx L (keyAt answer blocks j0) ≤ idx L (keyAt answer blocks j) := by
@@ -275,20 +309,27 @@ theorem exists_badAt (hδ' : (δ' : ℝ) < 1 - S.rate) (answer : (q : Query F) �
   obtain ⟨T, hT⟩ : ∃ T, T = prefixTranscript S (logCache L) blk smp := ⟨_, rfl⟩
   -- extraction is stable after the round binding the digest
   have hsameC : ∀ j0 j, j0 ≤ j → j < blocks.length →
-      ∀ r ∈ keyDigests (boundDigest S) (keyAt answer blocks j0),
+      ∀ r ∈ keyDigests (boundDigests S) (keyAt answer blocks j0),
       SameUnder (C j) (logCache L) r := fun j0 j hj0 hj r hr ↦ by
     rw [hC]; exact hsame j0 j hj0 hj r hr
-  have htraceS : ∀ j < blocks.length,
-      SameUnder (C j) (logCache L) (digestAt (blk 0) (starkSeedS S).length) :=
-    fun j hj ↦ by rw [hblk]; exact hsameC 0 j (Nat.zero_le _) hj _ hroot0
+  -- a cap read off round `r` at its bound offset stays extracted after round `r`
+  have hcapS : ∀ (c : Cap F) (r j : Nat), r ≤ j → j < blocks.length →
+      (∀ i, c.toList.getD i 0 ∈ keyDigests (boundDigests S) (keyAt answer blocks r) ∨
+        c.toList.getD i 0 = initCap) → CapSameUnder (C j) (logCache L) c := by
+    intro c r j hrj hj h i
+    rcases h i with h | h
+    · exact hsameC r j hrj hj _ h
+    · rw [h]; exact hsameC 0 j (Nat.zero_le _) hj _ hinit0
+  have htraceS : ∀ j < blocks.length, CapSameUnder (C j) (logCache L)
+      (capFrom (blk 0) (starkSeedS S).length (capSize S S.logSize)) :=
+    fun j hj ↦ by rw [hblk]; exact hcapS _ 0 j (Nat.zero_le _) hj hcap0
   have hquotS : ∀ j, 1 ≤ j → j < blocks.length →
-      SameUnder (C j) (logCache L) (digestAt (blk 1) 0) :=
-    fun j h1 hj ↦ by rw [hblk]; exact hsameC 1 j h1 hj _ hroot1
+      CapSameUnder (C j) (logCache L) (capFrom (blk 1) 0 (capSize S S.logSize)) :=
+    fun j h1 hj ↦ by rw [hblk]; exact hcapS _ 1 j h1 hj hcap1
   have hfoldS : ∀ j f, 3 + f ≤ j → j < blocks.length → f < S.lastFold + 1 →
-      SameUnder (C j) (logCache L) (digestAt (blk (3 + f)) (friOffset S f)) :=
-    fun j f hf hj hf' ↦ by
-      rw [hblk]
-      exact hsameC (3 + f) j hf hj _ (hrootF f hf')
+      CapSameUnder (C j) (logCache L)
+        (capFrom (blk (3 + f)) (friOffset S f) (capSize S (friDepth S f))) :=
+    fun j f hf hj hf' ↦ by rw [hblk]; exact hcapS _ (3 + f) j hf hj (hcapF f hf')
   have hαeq : ∀ j, (prefixTranscript S (C j) (B j) (Sm j)).alpha = T.alpha := fun j ↦ by
     rw [hT]; show extAt (Sm j 0) 0 = extAt (smp 0) 0; rw [hSk j 0 (Nat.zero_le _)]
   -- round `α`
@@ -307,7 +348,7 @@ theorem exists_badAt (hδ' : (δ' : ℝ) < 1 - S.rate) (answer : (q : Query F) �
     have hpow : S.params.oodPowBits ≠ 0 → CompPoly.CanonicalNat.toNat
         ((smp 1).toList.getD 0 0) % 2 ^ S.params.oodPowBits = 0 := fun hb ↦ by
       rw [hsmp]
-      exact oodWitness_idealOf answer S.params S.air vk proof publicValues (by omega) hood hb
+      exact oodWitness_idealOf answer S.params S.air vk proof publicValues (by omega) hqne hood hb
     have hz : (prefixTranscript S (C 1) (B 1) (Sm 1)).zeta = T.zeta := by
       rw [hT]
       show extAt (Sm 1 1) (challengeOffset S.params.oodPowBits) =
@@ -324,7 +365,8 @@ theorem exists_badAt (hδ' : (δ' : ℝ) < 1 - S.rate) (answer : (q : Query F) �
     have hpow : S.params.batchPowBits ≠ 0 → CompPoly.CanonicalNat.toNat
         ((smp 2).toList.getD 0 0) % 2 ^ S.params.batchPowBits = 0 := fun hb ↦ by
       rw [hsmp]
-      exact batchWitness_idealOf answer S.params S.air vk proof publicValues hK htn hshape hbc hb
+      exact batchWitness_idealOf answer S.params S.air vk proof publicValues hK hqne htn hshape hbc
+        hb
     have hz : (prefixTranscript S (C 2) (B 2) (Sm 2)).zeta = T.zeta := by
       rw [hT]
       show extAt (Sm 2 1) (challengeOffset S.params.oodPowBits) =
@@ -359,7 +401,8 @@ theorem exists_badAt (hδ' : (δ' : ℝ) < 1 - S.rate) (answer : (q : Query F) �
         ((smp (3 + f.val)).toList.getD 0 0) % 2 ^ S.params.commitPowBits = 0 := fun hb ↦ by
       rw [hsmp]
       exact commitWitness_idealOf answer S.params S.air vk proof publicValues (le_refl _) _
-        (heights_openingRounds S.params S.air vk proof _) st htn hshape hfriOk f.val (by omega) hb
+        (heights_openingRounds S.params S.air vk proof _) st hqne htn hshape hfriOk f.val (by omega)
+        hb
     have h' := fun hfb ↦ h ⟨hpow, hfb⟩
     rw [foldBad_congr S δ loss f (prefixTranscript_committedWord S f
         (hBk _ _ le_rfl) (hfoldS _ f.val le_rfl (by omega) hf)),
@@ -375,8 +418,9 @@ theorem exists_badAt (hδ' : (δ' : ℝ) < 1 - S.rate) (answer : (q : Query F) �
       (htraceS _ (by omega)) (hquotS _ (by omega) (by omega))
       (fun i hi ↦ hfoldS _ i (by omega) (by omega) hi), ← hT] at h
   -- binding commitments on answers changed outside the run
-  obtain ⟨dstar, hdstar⟩ := exists_not_mem (logDigests (boundDigest S) L)
-    ((length_logDigests_le (boundDigest S) L).trans_lt hsmall)
+  obtain ⟨dstar, hdstar⟩ := exists_not_mem (logDigests (boundDigests S) L)
+    ((length_logDigests_le (boundDigests S) (2 ^ S.params.capHeight) Nat.one_le_two_pow
+      (fun c i ↦ (length_boundDigests S c i).le) L).trans_lt hsmall)
   set g' := fresh L answer dstar with hg'
   have hagree : ∀ e ∈ vlog, g' e.1 = answer e.1 := fun e he ↦
     fresh_of_mem L answer dstar _ (by
@@ -385,35 +429,51 @@ theorem exists_badAt (hδ' : (δ' : ℝ) < 1 - S.rate) (answer : (q : Query F) �
     rw [← evalWithAnswerFn_verifyWith, evalWithAnswerFn_congr answer g' _ hagree,
       evalWithAnswerFn_verifyWith]
     exact hok
-  have hbind : ∀ r ∈ logDigests (boundDigest S) L, Binding (logCache L) (idealOf g') r :=
-    binding_fresh answer L hconsL hclash dstar hdstar
-  have htr : proof.traceCommit ∈ logDigests (boundDigest S) L := by
-    rw [← traceRoot_eq S vk proof publicValues hdb]
-    exact mem_logDigests (hkeys 0 (by omega)) hroot0
-  have hqu : proof.quotientCommit ∈ logDigests (boundDigest S) L := by
-    rw [← quotientRoot_eq S vk proof publicValues]
-    exact mem_logDigests (hkeys 1 (by omega)) hroot1
-  -- the setup's key: its root is a digest of the setup's queries, on which `g'` is `answer`
+  have hne : ∀ r ∈ logDigests (boundDigests S) L, r ≠ dstar := fun r hr he ↦ hdstar (he ▸ hr)
+  have hbind : ∀ r ∈ logDigests (boundDigests S) L, Binding (logCache L) (idealOf g') r :=
+    fun r hr ↦ binding_fresh answer L hconsL hclash dstar hdstar r (hne r hr)
+  have hinitL : initCap ∈ logDigests (boundDigests S) L :=
+    mem_logDigests (hkeys 0 (by omega)) hinit0
+  -- a cap read off round `r` at its bound offset binds
+  have hcapB : ∀ (c : Cap F) (r : Nat), r < blocks.length →
+      (∀ i, c.toList.getD i 0 ∈ keyDigests (boundDigests S) (keyAt answer blocks r) ∨
+        c.toList.getD i 0 = initCap) → CapBinding (logCache L) (idealOf g') c := by
+    intro c r hr h i
+    rcases h i with h | h
+    · exact hbind _ (mem_logDigests (hkeys r hr) h)
+    · rw [h]; exact hbind _ hinitL
+  have htr : CapBinding (logCache L) (idealOf g') proof.traceCommit := by
+    rw [← traceRoot_eq S answer hdb hok]; exact hcapB _ 0 (by omega) hcap0
+  have hqu : CapBinding (logCache L) (idealOf g') proof.quotientCommit := by
+    rw [← quotientRoot_eq S answer hdb hok]; exact hcapB _ 1 (by omega) hcap1
+  -- the setup's key: its cap's entries are digests of the setup's queries, on which `g'` is
+  -- `answer`
   have hsetupL : ∀ e ∈ tableQueryLog S.setupRo answer, g' e.1 = answer e.1 := fun e he ↦
     fresh_of_mem L answer dstar _ (by
       rw [List.map_append]; exact List.mem_append_left _ (List.mem_map_of_mem (hsetup e he)))
   have hvk' : preprocessedKeyWith (idealOf g') S.params S.air S.logN = vk := by
     rw [← evalWithAnswerFn_setupRo S g', evalWithAnswerFn_congr answer g' _ hsetupL,
       evalWithAnswerFn_setupRo, hvk]
-  have hprepMem : ∀ k ∈ vk, k.commit ∈ logDigests (boundDigest S) L := fun k hk ↦ by
-    obtain ⟨e, he, hd⟩ := exists_root_mem S answer k (by rw [hvk]; exact hk)
-    rw [← hd]
-    exact List.mem_flatMap.mpr ⟨e, List.mem_append_left _ (hsetup e he), List.mem_cons_self⟩
-  have hbcs := bcs S (logCache L) (idealOf g') vk proof publicValues hdb (hbind _ htr)
-    (hbind _ hqu)
+  have hprepBind : ∀ k ∈ vk, CapBinding (logCache L) (idealOf g') k.commit := by
+    intro k hk i
+    by_cases hi : i < k.commit.size
+    · obtain ⟨e, he, hd⟩ := exists_cap_mem S answer k (by rw [hvk]; exact hk) i hi
+      rw [List.getD_eq_getElem _ _ (by rw [Array.length_toList]; exact hi), Array.getElem_toList,
+        ← hd]
+      exact hbind _ (List.mem_flatMap.mpr ⟨e, List.mem_append_left _ (hsetup e he),
+        List.mem_cons_self⟩)
+    · rw [List.getD_eq_getElem?_getD, List.getElem?_eq_none (by rw [Array.length_toList]; omega),
+        Option.getD_none, zero_eq_initCap]
+      exact hbind _ hinitL
+  have hbcs := bcs S (logCache L) (idealOf g') vk proof publicValues hdb htr hqu
     (fun c hc ↦ by
       obtain ⟨i, hi, rfl⟩ := Array.getElem_of_mem hc
       have hsize := (length_commits S answer hdb hok).2
       rw [← foldRoot_eq S answer hdb hok i (by omega)]
-      exact hbind _ (mem_logDigests (hkeys _ (by omega)) (hrootF i (by omega))))
-    (fun k hk ↦ hbind _ (hprepMem k hk))
+      exact hcapB _ (3 + i) (by omega) (hcapF i (by omega)))
+    hprepBind
     (fun k hk ↦ committedColumn_setup S (logCache L) g' k (by rw [hvk']; exact hk)
-      (hbind _ (hprepMem k hk)))
+      (hprepBind k hk))
     hok'
   have hext : extract S (logCache L) (idealOf g') vk proof publicValues = T := by
     rw [extract_eq_prefixTranscript S g' (logCache L) hdb hok', hT, hblk, hsmp]
@@ -424,7 +484,8 @@ theorem exists_badAt (hδ' : (δ' : ℝ) < 1 - S.rate) (answer : (q : Query F) �
   rw [hext] at hbcs
   obtain ⟨hcheck, hdeg, hpow, hqueries⟩ := hbcs
   obtain ⟨-, -, -, -, -, hpowEq, hqEq⟩ := challenges_idealOf g' S.params S.air vk proof
-    publicValues (le_refl _) htn hshape hfp
+    publicValues (le_refl _) htn hshape hfp hqne
+    (size_commits_ne (idealOf answer) S.params proof.fri _ _ _ _ hfriOk)
   have h4 : 3 + (proof.fri.commits.toList.zip proof.fri.commitWitnesses.toList).length =
       4 + S.lastFold := by rw [hz]; omega
   rw [h4, hg'] at hpowEq hqEq
@@ -462,20 +523,26 @@ theorem exists_badAt (hδ' : (δ' : ℝ) < 1 - S.rate) (answer : (q : Query F) �
       unfold idx
       rw [List.map_append, List.idxOf_append_of_notMem hin, hrest, List.map_cons,
         List.idxOf_cons_self, List.length_map, Nat.add_zero]
-  have hlogL : SameUnder (logCache log) (logCache L) proof.traceCommit := by
-    intro k i
-    have hnp := noPrediction_take hconsL hclash proof.traceCommit _ (hkeys 0 (by omega))
-      (by rw [← traceRoot_eq S vk proof publicValues hdb]; exact hroot0) log.length L.length hhead
-      (by rw [hL, List.length_append]; omega)
+  have hlogL : CapSameUnder (logCache log) (logCache L) proof.traceCommit := by
+    rw [← traceRoot_eq S answer hdb hok]
+    intro idx k i
+    have hmem : (capFrom (blocks.getD 0 []) (starkSeedS S).length
+        (capSize S S.logSize)).toList.getD idx 0 ∈
+          keyDigests (boundDigests S) (keyAt answer blocks 0) := by
+      rcases hcap0 idx with h | h
+      · exact h
+      · rw [h]; exact hinit0
+    have hnp := noPrediction_take hconsL hclash _ _ (hkeys 0 (by omega)) hmem log.length L.length
+      hhead (by rw [hL, List.length_append]; omega)
     rw [List.take_length, hL, List.take_left' rfl] at hnp
     exact (Merkle.extractRow_eq_of_noPrediction _ _ _ hnp k i).symm
   have htraceT : committedTrace S log proof = T.trace := by
     rw [committedTrace_eq, hT, hblk]
     show traceWords S (logCache log) proof = fun j : Fin S.air.width ↦
       committedColumn S (logCache L)
-      (digestAt ((inputs S.params S.air vk publicValues proof).getD 0 [])
-        (starkSeedS S).length) j.val
-    rw [traceRoot_eq S vk proof publicValues hdb, ← committedColumn_congr S hlogL]
+      (capFrom ((inputs S.params S.air vk publicValues proof).getD 0 [])
+        (starkSeedS S).length (capSize S S.logSize)) j.val
+    rw [traceRoot_eq S answer hdb hok, ← committedColumn_congr S hlogL]
     rfl
   rw [← htraceT] at hP
   exact hfail _ ⟨P, hP.1, hP.2, rfl⟩ hsat

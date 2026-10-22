@@ -45,6 +45,20 @@ theorem getD_column (m : Array F) (w h j i : Nat) (hi : i < h) :
   simp only [column, Vector.toArray_ofFn, Array.getD_eq_getD_getElem?, Array.getElem?_ofFn]
   rw [dite_eq_left_of_eq_true (eq_true hi), Option.getD_some]
 
+/-- Joined, the chunks of rows of a matrix are its words. -/
+theorem joinRows_rowChunks (m : Array F) (w logH k : Nat) (hk : k ≤ logH)
+    (hm : m.size = 2 ^ logH * w) :
+    NTTFast.Packed.Native.joinRows (NTTFast.Packed.Native.rowChunks m w logH k) = encode m :=
+  NTTFast.Packed.joinRows_extract m (2 ^ k) (2 ^ (logH - k) * w) (by
+    rw [hm, ← Nat.mul_assoc, ← Nat.pow_add, Nat.add_sub_cancel' hk])
+
+/-- A matrix of `2 ^ logH` rows in one chunk. -/
+theorem rowChunks_zero (m : Array F) (w logH : Nat) (hm : m.size = 2 ^ logH * w) :
+    NTTFast.Packed.Native.rowChunks m w logH 0 = #[encode m] := by
+  simp only [NTTFast.Packed.Native.rowChunks, Nat.pow_zero, Nat.sub_zero]
+  rw [show Array.range 1 = #[0] by rw [Array.range_eq_range', Array.range'_one],
+    Array.map_singleton, Nat.zero_mul, Nat.zero_add, ← hm, Array.extract_size]
+
 variable [Mont32BaseField p]
 
 /-- A plan `plan?` returns extends onto `shift · ⟨ω_N⟩`, `ω_N = twoAdicGen (logH + bits)`. -/
@@ -220,20 +234,6 @@ theorem ldeWordsWith_rel [PackedCosetLde p] (plans : List (Nat × Nat × F × Ld
       (·.2.2.2) with
     | none => rw [hf] at hnone; exact absurd hnone hp
     | some _ => rw [hf] at hnone; exact absurd hnone (Option.some_ne_none _)
-
-/-- Joined, the chunks of rows of a matrix are its words. -/
-theorem joinRows_rowChunks (m : Array F) (w logH k : Nat) (hk : k ≤ logH)
-    (hm : m.size = 2 ^ logH * w) :
-    NTTFast.Packed.Native.joinRows (NTTFast.Packed.Native.rowChunks m w logH k) = encode m :=
-  NTTFast.Packed.joinRows_extract m (2 ^ k) (2 ^ (logH - k) * w) (by
-    rw [hm, ← Nat.mul_assoc, ← Nat.pow_add, Nat.add_sub_cancel' hk])
-
-/-- A matrix of `2 ^ logH` rows in one chunk. -/
-theorem rowChunks_zero (m : Array F) (w logH : Nat) (hm : m.size = 2 ^ logH * w) :
-    NTTFast.Packed.Native.rowChunks m w logH 0 = #[encode m] := by
-  simp only [NTTFast.Packed.Native.rowChunks, Nat.pow_zero, Nat.sub_zero]
-  rw [show Array.range 1 = #[0] by rw [Array.range_eq_range', Array.range'_one],
-    Array.map_singleton, Nat.zero_mul, Nat.zero_add, ← hm, Array.extract_size]
 
 /-- `ldeWordsWith_rel` on one chunk. -/
 theorem ldeWordsWith_one_rel [PackedCosetLde p] (plans : List (Nat × Nat × F × LdePlan p))

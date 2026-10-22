@@ -141,24 +141,24 @@ traces' extensions and commitment `prep`. -/
 def batchCommitAndSample (B : Backend F EF width) (P : Params) (instances : List (Instance F))
     (prep : List (Option B.M) × Option B.C) (traces : List B.Trace) (pis : List (List F)) :
     PM F width (Commitments B) := do
-  pObserveList (batchSeedOf EF P instances ⟨prep.2.map B.root⟩)
+  pObserveList (batchSeedOf EF P instances ⟨prep.2.map (B.cap · P.capHeight)⟩)
   pObserveExts (instances.map fun I ↦ (Ext.ofBase (I.logN : F) : EF))
   let exts := (instances.zip traces).map fun (I, t) ↦
     B.ldeTrace I.logN P.logBlowup gen I.air.width t
   let mainC := B.commit exts
-  pObserveList (B.root mainC).toList
+  pObserveList (capElems (B.cap mainC P.capHeight))
   pObserveList pis.flatten
-  pObserveList ((prep.2.map fun c ↦ (B.root c).toList).getD [])
+  pObserveList ((prep.2.map fun c ↦ capElems (B.cap c P.capHeight)).getD [])
   let (lw, chs) ← lookupChallenges P instances
   let perms := permutationsWith B P instances (traces.map B.traceValues) pis chs
   let (permExts, permC) := commitPermutations B instances perms
-  pObserveList ((permC.map fun c ↦ (B.root c).toList).getD [])
+  pObserveList ((permC.map fun c ↦ capElems (B.cap c P.capHeight)).getD [])
   let terminals := perms.map (·.map (·.2))
   pObserveExts (terminals.filterMap id)
   let alpha : EF ← pSampleExt
   let chunks := allQuotientChunks B P instances exts prep.1 permExts pis chs terminals alpha
   let quotC := B.commit chunks.flatten
-  pObserveList (B.root quotC).toList
+  pObserveList (capElems (B.cap quotC P.capHeight))
   let ow ← pGrind P.oodPowBits
   let zeta : EF ← pSampleExt
   return ⟨exts, mainC, chs, permExts, permC, terminals, lw, chunks, quotC, zeta, ow⟩
@@ -201,9 +201,9 @@ def batchOpenAndAssemble (B : Backend F EF width) (P : Params) (instances : List
     if (permCounts.getD i 0) = 0 then #[]
     else (permOpened.getD (permCounts.take i).sum []).getD k #[]
   return {
-    mainCommit := B.root c.mainC
-    permutationCommit := c.permC.map B.root
-    quotientCommit := B.root c.quotC
+    mainCommit := B.cap c.mainC P.capHeight
+    permutationCommit := c.permC.map (B.cap · P.capHeight)
+    quotientCommit := B.cap c.quotC P.capHeight
     opened := (instances.zipIdx.map fun (I, i) ↦ instanceOpened I.air opened i
       (counts.getD i 0) (counts.take i).sum (prepCounts.take i).sum).toArray
     permutationLocal := ((List.range instances.length).map (permAt · 0)).toArray

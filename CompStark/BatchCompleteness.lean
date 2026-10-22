@@ -61,6 +61,10 @@ structure ValidConfig (params : Params) (instances : List (Instance F)) : Prop w
     l.Fits I.air.width I.air.mainNextWidth I.air.preprocessedWidth I.air.preprocessedNextWidth
   /-- Every lookup's tuples share one width, and so do every bus's (`widthsOk`). -/
   widths : widthsOk (instances.flatMap (·.lookups)) = true
+  /-- No instance's extension is below the Merkle cap of another's: the commitments open every
+  matrix below the cap. -/
+  capFits : ∀ I ∈ instances, ∀ J ∈ instances,
+    min params.capHeight (J.logN + params.logBlowup) ≤ I.logN + params.logBlowup
 
 /-- One trace and one list of public values per instance; every instance's trace satisfies its
 AIR with its public values, as many as the AIR declares; every bus balances; and the
@@ -135,7 +139,8 @@ theorem completeness {params : Params} {instances : List (Instance F)} {traces :
     (fun i hi ↦ (sat.satisfied _ (hmem i hi)).vanish)
     (fun i hi ↦ ?_) config.chunksFit config.degreeFits config.lookupDegreeFits config.lookupsFit
     config.widths sat.multiplicityBound sat.balanced (fun i hi r hr ↦ ?_) v0.folds v0.queries
-    v0.blowup (fun I hI ↦ (config.valid I hI).finalPolyFits) luck.grinding luck.outOfDomain
+    v0.blowup (fun I hI ↦ (config.valid I hI).finalPolyFits) config.capFits luck.grinding
+    luck.outOfDomain
   · have v := config.valid _ (List.getElem_mem hi)
     exact ⟨(sat.satisfied _ (hmem i hi)).size, v.colsInWidth, v.twoAdic, v.chunksFit,
       v.periodicFits⟩

@@ -19,8 +19,26 @@ namespace CompStark.Stark
 /-- A Merkle digest. -/
 abbrev Digest (F : Type) := Vector F 8
 
+/-- A Merkle commitment: the cap of the tree, the digests of the layer as many levels below the
+root as the cap height, the root alone for height `0` (Plonky3's `MerkleCap`). -/
+abbrev Cap (F : Type) := Array (Digest F)
+
+/-- The elements of a cap, as a transcript observes them: its digests in order. -/
+def capElems {F : Type} (c : Cap F) : List F := c.toList.flatMap Vector.toList
+
+theorem length_flatMap_digests {F : Type} (l : List (Digest F)) :
+    (l.flatMap Vector.toList).length = 8 * l.length := by
+  induction l with
+  | nil => rfl
+  | cons d l ih =>
+    rw [List.flatMap_cons, List.length_append, Vector.length_toList, ih, List.length_cons]
+    omega
+
+theorem length_capElems {F : Type} (c : Cap F) : (capElems c).length = 8 * c.size := by
+  rw [capElems, length_flatMap_digests, Array.length_toList]
+
 /-- A Merkle opening at one index of a batch of committed matrices: the row of every matrix, and
-the sibling digests from the leaf layer up. -/
+the sibling digests from the leaf layer up to the root. -/
 structure BatchOpening (F : Type) where
   values : Array (Array F)
   path : Array (Digest F)
@@ -28,7 +46,8 @@ deriving BEq
 
 /-- A Merkle opening at several indices of a batch of committed matrices: for every index, in the
 order of the queries, the row of every matrix; and the sibling digests the indices' paths do not
-cover, level by level from the leaves, left to right (Plonky3's pruned multi-opening). -/
+cover, level by level from the leaves up to the cap, left to right (Plonky3's pruned
+multi-opening). -/
 structure MultiOpening (F : Type) where
   values : Array (Array (Array F))
   siblings : Array (Digest F)
@@ -46,7 +65,7 @@ and grinding witnesses, the input openings at the queries (one per committed bat
 openings at the queries (one per fold), the final polynomial and the query grinding witness. -/
 structure FriProof (F EF : Type) where
   batchWitness : F
-  commits : Array (Digest F)
+  commits : Array (Cap F)
   commitWitnesses : Array F
   inputs : Array (MultiOpening F)
   folds : Array (CommitOpening F EF)
@@ -70,13 +89,13 @@ the log of its height and its commitment. -/
 structure PreprocessedKey (F : Type) where
   width : Nat
   degreeBits : Nat
-  commit : Digest F
+  commit : Cap F
 deriving BEq
 
 /-- A STARK proof, without zero knowledge. -/
 structure Proof (F EF : Type) where
-  traceCommit : Digest F
-  quotientCommit : Digest F
+  traceCommit : Cap F
+  quotientCommit : Cap F
   opened : OpenedValues EF
   fri : FriProof F EF
   degreeBits : Nat

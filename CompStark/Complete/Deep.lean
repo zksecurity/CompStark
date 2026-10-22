@@ -633,7 +633,7 @@ theorem reduceQuery_honest [Poseidon2Field F] (P : Params) (logMax index : Nat) 
         ∀ x ∈ r.2, ∃ h ≤ H, Deep.HonestItem P.logBlowup h x) :
     reduceQuery (poseidon2 F) P logMax index alpha
       (rounds.map fun r ↦ (r.1.openAt (index >>> (logMax - Nat.log2 r.1.maxHeight))).values.toList)
-      (rounds.map fun r ↦ (r.1.root, r.2.map fun x ↦
+      (rounds.map fun r ↦ (r.1.cap P.capHeight, r.2.map fun x ↦
         ((⟨1, Nat.log2 x.1.height - P.logBlowup⟩ : Domain F), x.2.map fun y ↦ (y.1, y.2.toList)))) =
       pure ((Fri.reduce alpha (rounds.flatMap (·.2))).map fun y ↦
         (y.1, y.2.getD (index >>> (logMax - y.1)) 0)) := by

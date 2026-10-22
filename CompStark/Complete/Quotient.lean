@@ -1018,7 +1018,7 @@ theorem chunk_isLde (P : Params) (logN lc : Nat) (qs : Array EF)
 
 /-- The honest openings pass the verifier's shape check. -/
 theorem honest_shape (P : Params) (A : Air F) (logN : Nat) (trace : Array F) (pis : List F)
-    (alpha zeta : EF) (r : Digest F) :
+    (alpha zeta : EF) (r : Cap F) :
     let ext := ldeRef logN P.logBlowup gen A.width trace
     let qs := quotientOfLde A pis logN (A.logQuotientChunks logN) ext (prepLde P.logBlowup A logN)
       alpha

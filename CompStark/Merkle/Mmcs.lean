@@ -28,9 +28,14 @@ pruned list of siblings (`verifyMultiM`, `prune`):
   level, the frontier's nodes are grouped by parent; a parent with both children on the frontier
   takes no sibling, otherwise the absent child is the next sibling of the list. Rows of shorter
   matrices are injected as in a single opening, from the lead's rows.
+* The commitment is a Merkle cap (Plonky3's `MerkleCap`): the `2 ^ h` digests of the layer `h`
+  levels below the root, `h` the cap height capped at the tree's levels; height `0` is the root.
+  The walk climbs the levels below the cap and accepts if every node it ends at is its entry of
+  the cap. Every shorter matrix must be injected below the cap, where the walk reaches it (Plonky3
+  leaves the rows of a matrix injected above the cap unchecked).
 * Verification first checks the shape: reachable heights, every row's width, indices below the
-  height, rows that agree wherever two queries open the same row of a matrix, and the number of
-  siblings the walk takes. It accepts if the walk ends at the commitment.
+  height, rows that agree wherever two queries open the same row of a matrix, the number of
+  siblings the walk takes, the cap's size and the injected heights.
 * `prune` collects the siblings a walk takes from the queries' full paths: each absent child is
   the sibling on its group's lead's path.
 -/
@@ -234,23 +239,30 @@ def multiShapeOk [DecidableEq F] (dims : List (Nat × Nat)) (maxH levels : Nat)
         i >>> shift h != i' >>> shift h || x == x')) &&
     sibs.length == siblingCount levels ((frontier indices).map (·.1))
 
-/-- Plonky3's `verify_multi_batch`: the multi-opening of matrices of dimensions `dims` (height,
-width) at `indices`, with the queries' rows `rows` and the pruned siblings `sibs`, against
-`commit`, with the hashes in `m`. -/
+/-- The levels of a tree whose tallest matrix has height `maxH` below its cap of height
+`capHeight` (capped at the tree's levels), and that cap's height. -/
+def capLevels (maxH capHeight : Nat) : Nat × Nat :=
+  let levels := Nat.log2 maxH.nextPowerOfTwo
+  (levels - min capHeight levels, min capHeight levels)
+
+/-- Plonky3's `verify_batch_pruned`: the multi-opening of matrices of dimensions `dims` (height,
+width) at `indices`, with the queries' rows `rows` and the pruned siblings `sibs`, against the cap
+`cap` of height `capHeight`, with the hashes in `m`. -/
 def verifyMultiM [DecidableEq F] (hash : List F → m (Vector F d))
-    (compress : Vector F d → Vector F d → m (Vector F d)) (commit : Vector F d)
-    (dims : List (Nat × Nat)) (indices : List Nat) (rows : List (List (List F)))
+    (compress : Vector F d → Vector F d → m (Vector F d)) (cap : List (Vector F d))
+    (capHeight : Nat) (dims : List (Nat × Nat)) (indices : List Nat) (rows : List (List (List F)))
     (sibs : List (Vector F d)) : m Bool :=
   match heightGroups (dims.map (·.1)) with
   | [] => pure false
   | (maxH, tallest) :: rest => do
     let padded := maxH.nextPowerOfTwo
-    let levels := Nat.log2 padded
-    if multiShapeOk dims maxH levels indices rows sibs then
+    let (levels, h) := capLevels maxH capHeight
+    if multiShapeOk dims maxH levels indices rows sibs && cap.length == 2 ^ h &&
+        rest.all (fun g ↦ 2 ^ h ≤ g.1.nextPowerOfTwo) then
       let leaves ← (frontier indices).mapM fun (i, q) ↦ do
         return (i, q, ← hash (tallest.flatMap fun k ↦ (rows.getD q []).getD k []))
       let (top, _) ← walkM hash compress rows levels rest padded leaves sibs
-      return top.all fun (_, _, x) ↦ x == commit
+      return top.all fun (j, _, x) ↦ x == cap.getD j 0
     else return false
 
 /-- One level of `prune` at `level`: the parents of the frontier `nodes`, each led by its first

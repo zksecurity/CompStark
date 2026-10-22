@@ -160,25 +160,26 @@ def chain [Poseidon2Field F] (P : Params) :
   | [], f, _, t => ([], f, t)
   | la :: las, f, rest, t =>
     let t1 := t.observeList
-        (Committed.ofMats hashF compF [(specBackend EF).leaves (2 ^ la) f]).root.toList
+        (capElems ((Committed.ofMats hashF compF [(specBackend EF).leaves (2 ^ la) f]).cap
+          P.capHeight))
     let t2 := (t1.grind P.commitPowBits).2
     let beta := (t2.sampleExtValue : EF)
     let nx := inject beta la (foldOnce la beta f) rest
     let r := chain P las nx.1 nx.2 (Transcript.sampleExtState EF t2)
     (⟨la, f, t, (t1.grind P.commitPowBits).1, beta⟩ :: r.1, r.2)
 
-/-- Record a round in the commit phase's result. -/
-def pushRd [Poseidon2Field F] (cp : CommitPhase F EF (Committed F)) (r : Rd EF) : CommitPhase F EF
-    (Committed F) :=
-  ⟨cp.commits.push r.c.root, cp.data ++ [r.c], cp.witnesses.push r.w, cp.arities.push r.la,
-    cp.finalPoly⟩
+/-- Record a round in the commit phase's result, with caps of height `capHeight`. -/
+def pushRd [Poseidon2Field F] (capHeight : Nat) (cp : CommitPhase F EF (Committed F)) (r : Rd EF) :
+    CommitPhase F EF (Committed F) :=
+  ⟨cp.commits.push (r.c.cap capHeight), cp.data ++ [r.c], cp.witnesses.push r.w,
+    cp.arities.push r.la, cp.finalPoly⟩
 
 theorem commitRounds_run [Poseidon2Field F] (P : Params) :
     ∀ (las : List Nat) (f : Array EF) (rest : List (Array EF))
         (cp : CommitPhase F EF (Committed F)) (t : Transcript F 24),
       (commitRounds (specBackend EF) P las f rest cp).run t =
         let r := chain P las f rest t
-        ((r.2.1, r.1.foldl pushRd cp), r.2.2)
+        ((r.2.1, r.1.foldl (pushRd P.capHeight) cp), r.2.2)
   | [], f, rest, cp, t => rfl
   | la :: las, f, rest, cp, t => by
     simp only [commitRounds, chain]
@@ -513,23 +514,23 @@ theorem flag_chain [Poseidon2Field F] (P : Params) :
 /-! ### The verifier's commit loop -/
 
 /-- The body of the verifier's loop over the commitments. -/
-def commitBody [Poseidon2Field F] (P : Params) (c : Digest F) (w : F) (betas : Array EF) : M
+def commitBody [Poseidon2Field F] (P : Params) (c : Cap F) (w : F) (betas : Array EF) : M
     (poseidon2 F) (ForInStep (Array EF)) :=
   do
-  observeList (poseidon2 F) c.toList
+  observeList (poseidon2 F) (capElems c)
   let ok ← checkWitness (poseidon2 F) P.commitPowBits w
   ensure ok "commit witness"
   let beta ← (sampleExt (poseidon2 F) : M (poseidon2 F) EF)
   pure (ForInStep.yield (betas.push beta))
 
-theorem commitBody_run [Poseidon2Field F] (P : Params) (c : Digest F) (w : F) (b : Array EF)
+theorem commitBody_run [Poseidon2Field F] (P : Params) (c : Cap F) (w : F) (b : Array EF)
     (t t2 : Transcript F 24)
     (hd : t.duplex = Poseidon2.duplex)
-    (h : (t.observeList c.toList).checkWitness P.commitPowBits w = (true, t2)) :
+    (h : (t.observeList (capElems c)).checkWitness P.commitPowBits w = (true, t2)) :
     commitBody P c w b t = .ok (.yield (b.push (t2.sampleExtValue : EF)),
         (Transcript.sampleExtState EF t2)) := by
   unfold commitBody
-  rw [bind_ok (observeList_run t c.toList),
+  rw [bind_ok (observeList_run t (capElems c)),
     bind_ok (t' := t2) (a := true) (by
       rw [checkWitness_run _ _ _ ((duplex_observeList t _).trans hd), h]),
     ensure_true, pure_bind, bind_ok (sampleExt_run t2)]
@@ -538,11 +539,12 @@ theorem commitBody_run [Poseidon2Field F] (P : Params) (c : Digest F) (w : F) (b
 /-- The verifier observes the prover's commitments, its witnesses check, and it samples the
 prover's folding challenges. -/
 theorem commit_loop [Poseidon2Field F] (P : Params)
-    (body : Digest F × F → Array EF → M (poseidon2 F) (ForInStep (Array EF)))
+    (body : Cap F × F → Array EF → M (poseidon2 F) (ForInStep (Array EF)))
     (hbody : ∀ c w b, body (c, w) b = commitBody P c w b) :
     ∀ las f rest t betas, t.duplex = Poseidon2.duplex →
       (chain P las f rest t).2.2.grindFailed = false →
-      forIn (((chain P las f rest t).1.map (·.c.root)).zip ((chain P las f rest t).1.map (·.w)))
+      forIn (((chain P las f rest t).1.map (·.c.cap P.capHeight)).zip
+        ((chain P las f rest t).1.map (·.w)))
         betas body t =
         .ok (betas ++ ((chain P las f rest t).1.map (·.beta)).toArray, (chain P las f rest t).2.2)
   | [], f, rest, t, betas, _, _ => by
@@ -563,8 +565,8 @@ theorem commit_loop [Poseidon2Field F] (P : Params)
       rw [hbody]
       exact commitBody_run P _ _ _ t _ hd (by
         show (t.observeList
-            (Committed.ofMats hashF compF [(specBackend EF).leaves (2 ^ la) f]).root.toList
-          ).checkWitness P.commitPowBits (t1.grind P.commitPowBits).1 = _
+            (capElems ((Committed.ofMats hashF compF [(specBackend EF).leaves (2 ^ la) f]).cap
+              P.capHeight))).checkWitness P.commitPowBits (t1.grind P.commitPowBits).1 = _
         rw [ht1]; exact checkWitness_grind _ _ hg1)),
       commit_loop P body hbody las _ _ _ _ hd1 ht]
     refine congrArg Except.ok (Prod.ext (Array.toList_inj.mp ?_) rfl)
@@ -609,8 +611,8 @@ def sibsAt [Poseidon2Field F] (r : Rd EF) (idx : Nat) : Array EF :=
   let ev := unflatten (((r.c.openAt (idx >>> r.la)).values.getD 0 #[]).toList)
   (((List.range (2 ^ r.la)).filter (· != idx % 2 ^ r.la)).map fun j ↦ ev.getD j 0).toArray
 
-theorem siblings_answerFolds [Poseidon2Field F] (r : Rd EF) (cur : List Nat) :
-    (cur.zip (openMulti (specBackend EF) r.c (cur.map (· >>> r.la))).values.toList).map
+theorem siblings_answerFolds [Poseidon2Field F] (capHeight : Nat) (r : Rd EF) (cur : List Nat) :
+    (cur.zip (openMulti (specBackend EF) capHeight r.c (cur.map (· >>> r.la))).values.toList).map
         (fun (x : Nat × Array (Array F)) ↦
           let evals : List EF := unflatten ((x.2.getD 0 #[]).toList)
           (((List.range (2 ^ r.la)).filter (· != x.1 % 2 ^ r.la)).map fun j ↦
@@ -620,13 +622,13 @@ theorem siblings_answerFolds [Poseidon2Field F] (r : Rd EF) (cur : List Nat) :
   intro i h1 h2
   simp only [openMulti, List.toList_toArray, List.getElem_map, List.getElem_zip, sibsAt]
 
-theorem answerFolds_cons [Poseidon2Field F] (r : Rd EF) (rs : List (Rd EF)) (las : List Nat)
-    (cur : List Nat) :
-    answerFolds (specBackend EF) ((r :: rs).map (·.c)) (r.la :: las) cur =
+theorem answerFolds_cons [Poseidon2Field F] (capHeight : Nat) (r : Rd EF) (rs : List (Rd EF))
+    (las : List Nat) (cur : List Nat) :
+    answerFolds (specBackend EF) capHeight ((r :: rs).map (·.c)) (r.la :: las) cur =
       ⟨(cur.map (sibsAt r)).toArray,
-        (openMulti (specBackend EF) r.c (cur.map (· >>> r.la))).siblings⟩ ::
-        answerFolds (specBackend EF) (rs.map (·.c)) las (cur.map (· >>> r.la)) := by
-  rw [← siblings_answerFolds]
+        (openMulti (specBackend EF) capHeight r.c (cur.map (· >>> r.la))).siblings⟩ ::
+        answerFolds (specBackend EF) capHeight (rs.map (·.c)) las (cur.map (· >>> r.la)) := by
+  rw [← siblings_answerFolds capHeight]
   rfl
 
 /-- The verifier's reduced openings of the inputs `rest` still to be added, at the index `idx` into
@@ -659,7 +661,7 @@ theorem fold_round [Poseidon2Field F] (P : Params) {h : Nat} {f : Array EF} (hg 
   subst hr
   have hsz := hg.2.1
   have h24 := hg.2.2.1
-  obtain ⟨hs1, hs2, -⟩ := answer_round f' h la idx hsz (by omega) hidx
+  obtain ⟨hs1, hs2⟩ := answer_round f' h la idx hsz (by omega) hidx
   have hr' : idx >>> la < 2 ^ (h - la) := by
     rw [Nat.shiftRight_eq_div_pow]
     refine Nat.div_lt_of_lt_mul ?_
@@ -723,7 +725,7 @@ theorem fold_loop [Poseidon2Field F] (P : Params) (q : Nat)
       Sched (P.logBlowup + P.logFinalPolyLen) las h (rest.map (Nat.log2 ·.size)) →
       cur[q] < 2 ^ h →
       forIn ((((chain P las f rest t).1.map (·.beta)).zip las).zip
-          (answerFolds (specBackend EF) ((chain P las f rest t).1.map (·.c)) las cur))
+          (answerFolds (specBackend EF) P.capHeight ((chain P las f rest t).1.map (·.c)) las cur))
         (roOf rest cur[q] h, f.getD cur[q] 0, cur[q], h, gs) body t' =
         .ok (([], (chain P las f rest t).2.1.getD (cur[q] >>> las.sum) 0, cur[q] >>> las.sum,
           h - las.sum, gs ++ qGroups (chain P las f rest t).1 cur[q]), t')
@@ -787,7 +789,7 @@ theorem foldQuery_run [Poseidon2Field F] (P : Params) (h0 : Nat) (f0 : Array EF)
     (t : Transcript F 24) (cur : List Nat) (q : Nat)
     (hq : q < cur.length) (hidx : cur[q] < 2 ^ h0) (t' : Transcript F 24) :
     foldQuery (poseidon2 F) P h0 cur[q] q ((chain P las f0 rest t).1.map (·.beta)) las
-      (answerFolds (specBackend EF) ((chain P las f0 rest t).1.map (·.c)) las cur)
+      (answerFolds (specBackend EF) P.capHeight ((chain P las f0 rest t).1.map (·.c)) las cur)
       ((h0, f0.getD cur[q] 0) :: roOf rest cur[q] h0) t' =
       .ok (((chain P las f0 rest t).2.1.getD (cur[q] >>> las.sum) 0, cur[q] >>> las.sum,
         qGroups (chain P las f0 rest t).1 cur[q]), t') := by
@@ -802,18 +804,19 @@ theorem foldQuery_run [Poseidon2Field F] (P : Params) (h0 : Nat) (f0 : Array EF)
 
 /-! ### The commit phase's result and the queries -/
 
-theorem foldl_pushRd [Poseidon2Field F] (rs : List (Rd EF)) :
+theorem foldl_pushRd [Poseidon2Field F] (capHeight : Nat) (rs : List (Rd EF)) :
     ∀ cp : CommitPhase F EF (Committed F),
-      (rs.foldl pushRd cp).commits.toList = cp.commits.toList ++ rs.map (·.c.root) ∧
-      (rs.foldl pushRd cp).data = cp.data ++ rs.map (·.c) ∧
-      (rs.foldl pushRd cp).witnesses.toList = cp.witnesses.toList ++ rs.map (·.w) ∧
-      (rs.foldl pushRd cp).arities.toList = cp.arities.toList ++ rs.map (·.la) ∧
-      (rs.foldl pushRd cp).finalPoly = cp.finalPoly := by
+      (rs.foldl (pushRd capHeight) cp).commits.toList =
+          cp.commits.toList ++ rs.map (·.c.cap capHeight) ∧
+      (rs.foldl (pushRd capHeight) cp).data = cp.data ++ rs.map (·.c) ∧
+      (rs.foldl (pushRd capHeight) cp).witnesses.toList = cp.witnesses.toList ++ rs.map (·.w) ∧
+      (rs.foldl (pushRd capHeight) cp).arities.toList = cp.arities.toList ++ rs.map (·.la) ∧
+      (rs.foldl (pushRd capHeight) cp).finalPoly = cp.finalPoly := by
   induction rs with
   | nil => intro cp; simp only [List.foldl_nil, List.map_nil, List.append_nil, and_self]
   | cons r rs ih =>
     intro cp
-    obtain ⟨h1, h2, h3, h4, h5⟩ := ih (pushRd cp r)
+    obtain ⟨h1, h2, h3, h4, h5⟩ := ih (pushRd capHeight cp r)
     rw [List.foldl_cons, h1, h2, h3, h4, h5]
     simp only [pushRd, Array.toList_push, List.map_cons, List.append_assoc, List.singleton_append,
       and_self]
@@ -860,7 +863,8 @@ def finalPolyOf (P : Params) (fin : Array EF) : Array EF :=
 theorem commitPhase_run [Poseidon2Field F] (P : Params) (las : List Nat)
     (inputs : List (Array EF)) (t : Transcript F 24) :
     (commitPhase (specBackend EF) P las inputs).run t =
-      ({ (chain P las (inputs.headD #[]) inputs.tail t).1.foldl pushRd ⟨#[], [], #[], #[], #[]⟩
+      ({ (chain P las (inputs.headD #[]) inputs.tail t).1.foldl (pushRd P.capHeight)
+            ⟨#[], [], #[], #[], #[]⟩
           with finalPoly := finalPolyOf P (chain P las (inputs.headD #[]) inputs.tail t).2.1 },
         (chain P las (inputs.headD #[]) inputs.tail t).2.2.observeExts
           (finalPolyOf P (chain P las (inputs.headD #[]) inputs.tail t).2.1).toList) := by
@@ -918,13 +922,15 @@ theorem proveFri_run [Poseidon2Field F] (P : Params) (rounds : List (OpenRound (
     let t1 := t.observeList (DomainSeparator.friSeed F EF las (2 ^ P.logFinalPolyLen)
       P.commitPowBits P.queryPowBits P.numQueries h0 P.logBlowup P.maxLogArity)
     let r := chain P las (inputs.headD #[]) inputs.tail t1
-    let cp := { r.1.foldl pushRd ⟨#[], [], #[], #[], #[]⟩ with finalPoly := finalPolyOf P r.2.1 }
+    let cp := { r.1.foldl (pushRd P.capHeight) ⟨#[], [], #[], #[], #[]⟩ with
+      finalPoly := finalPolyOf P r.2.1 }
     let t3 := r.2.2.observeExts (finalPolyOf P r.2.1).toList
     let qs := sampleIndices h0 P.numQueries (t3.grind P.queryPowBits).2
     (proveFri (specBackend EF) P rounds inputs bw).run t =
-      (⟨bw, cp.commits, cp.witnesses, (rounds.map fun (c, _) ↦ openMulti (specBackend EF) c
-          (qs.1.map (· >>> (h0 - (specBackend EF).logHeight c)))).toArray,
-        (answerFolds (specBackend EF) cp.data cp.arities.toList qs.1).toArray,
+      (⟨bw, cp.commits, cp.witnesses, (rounds.map fun (c, _) ↦
+          openMulti (specBackend EF) P.capHeight c
+            (qs.1.map (· >>> (h0 - (specBackend EF).logHeight c)))).toArray,
+        (answerFolds (specBackend EF) P.capHeight cp.data cp.arities.toList qs.1).toArray,
         finalPolyOf P r.2.1, (t3.grind P.queryPowBits).1⟩, qs.2) := by
   intro h0 las t1 r cp t3 qs
   unfold proveFri
@@ -942,13 +948,15 @@ theorem la_chain [Poseidon2Field F] (P : Params) :
     rw [chain]
     exact congrArg (List.cons la) (la_chain P las _ _ _)
 
-theorem length_answerFolds [Poseidon2Field F] :
+theorem length_answerFolds [Poseidon2Field F] (capHeight : Nat) :
     ∀ (rs : List (Rd EF)) (cur : List Nat),
-      (answerFolds (specBackend EF) (rs.map (·.c)) (rs.map (·.la)) cur).length = rs.length
+      (answerFolds (specBackend EF) capHeight (rs.map (·.c)) (rs.map (·.la)) cur).length =
+        rs.length
   | [], _ => rfl
   | r :: rs, cur => by
-    show (answerFolds (specBackend EF) ((r :: rs).map (·.c)) (r.la :: rs.map (·.la)) cur).length = _
-    rw [answerFolds_cons, List.length_cons, List.length_cons, length_answerFolds rs]
+    show (answerFolds (specBackend EF) capHeight ((r :: rs).map (·.c)) (r.la :: rs.map (·.la))
+      cur).length = _
+    rw [answerFolds_cons, List.length_cons, List.length_cons, length_answerFolds capHeight rs]
 
 theorem size_sibsAt [Poseidon2Field F] (r : Rd EF) (idx : Nat) :
     (sibsAt r idx).size = 2 ^ r.la - 1 := by
@@ -956,15 +964,15 @@ theorem size_sibsAt [Poseidon2Field F] (r : Rd EF) (idx : Nat) :
     length_filter_range _ _ (Nat.mod_lt _ (Nat.two_pow_pos _))]
 
 /-- Every fold answers every query with its siblings. -/
-theorem answerFolds_shape [Poseidon2Field F] :
+theorem answerFolds_shape [Poseidon2Field F] (capHeight : Nat) :
     ∀ (rs : List (Rd EF)) (cur : List Nat),
-      ((answerFolds (specBackend EF) (rs.map (·.c)) (rs.map (·.la)) cur).zip
+      ((answerFolds (specBackend EF) capHeight (rs.map (·.c)) (rs.map (·.la)) cur).zip
         (rs.map (·.la))).all (fun (o, la) ↦ o.siblings.size == cur.length &&
           o.siblings.all (·.size == 2 ^ la - 1)) = true
   | [], _ => rfl
   | r :: rs, cur => by
-    show ((answerFolds (specBackend EF) ((r :: rs).map (·.c)) (r.la :: rs.map (·.la)) cur).zip
-      (r.la :: rs.map (·.la))).all _ = true
+    show ((answerFolds (specBackend EF) capHeight ((r :: rs).map (·.c)) (r.la :: rs.map (·.la))
+      cur).zip (r.la :: rs.map (·.la))).all _ = true
     rw [answerFolds_cons, List.zip_cons_cons, List.all_cons, Bool.and_eq_true]
     refine ⟨?_, ?_⟩
     · rw [Bool.and_eq_true]
@@ -973,18 +981,19 @@ theorem answerFolds_shape [Poseidon2Field F] :
       intro x hx
       obtain ⟨i, -, rfl⟩ := List.mem_map.mp (List.mem_toArray.mp hx)
       rw [size_sibsAt, beq_self_eq_true]
-    · have := answerFolds_shape rs (cur.map (· >>> r.la))
+    · have := answerFolds_shape capHeight rs (cur.map (· >>> r.la))
       rwa [List.length_map] at this
 
 /-! ### The folds' multi-openings -/
 
 /-- The body of the verifier's loop over the folds' multi-openings. -/
-def multiBody [Poseidon2Field F] (groups : List (List (Nat × List EF))) (c : Digest F)
+def multiBody [Poseidon2Field F] (P : Params) (groups : List (List (Nat × List EF))) (c : Cap F)
     (o : CommitOpening F EF) (la i logH : Nat) : M (poseidon2 F) (ForInStep Nat) := do
   let logFolded := logH - la
   let gs := groups.map fun g ↦ g.getD i (0, [])
-  ensure (← checkMulti (poseidon2 F) c [(2 ^ logFolded, Challenge.d EF * 2 ^ la)] (gs.map (·.1))
-    (gs.map fun (_, evals) ↦ [evals.flatMap Ext.coeffs]) o.path.toList) "commit-phase opening"
+  ensure (← checkMulti (poseidon2 F) P.capHeight c [(2 ^ logFolded, Challenge.d EF * 2 ^ la)]
+    (gs.map (·.1)) (gs.map fun (_, evals) ↦ [evals.flatMap Ext.coeffs]) o.path.toList)
+    "commit-phase opening"
   pure (ForInStep.yield logFolded)
 
 /-- A round's groups at the queries' indices `cur` are an honest multi-opening of its
@@ -994,8 +1003,8 @@ theorem multiBody_run [Poseidon2Field F] (P : Params) {h : Nat} {f : Array EF} (
     (cur : List Nat) (hcur : ∀ i ∈ cur, i < 2 ^ h) (groups : List (List (Nat × List EF)))
     (n : Nat) (hgroups : groups.map (fun g ↦ g.getD n (0, [])) = cur.map (groupAt r.la f))
     (sibs : Array (Array EF)) (t : Transcript F 24) :
-    multiBody groups r.c.root
-      ⟨sibs, (openMulti (specBackend EF) r.c (cur.map (· >>> r.la))).siblings⟩
+    multiBody P groups (r.c.cap P.capHeight)
+      ⟨sibs, (openMulti (specBackend EF) P.capHeight r.c (cur.map (· >>> r.la))).siblings⟩
       r.la n h t = .ok (.yield (h - r.la), t) := by
   obtain ⟨la, f', t0, w, beta⟩ := r
   dsimp only at hr h2 hgroups ⊢
@@ -1013,7 +1022,10 @@ theorem multiBody_run [Poseidon2Field F] (P : Params) {h : Nat} {f : Array EF} (
     exact Nat.div_lt_of_lt_mul (by rw [Nat.mul_comm, ← hhl]; exact hcur j hj)
   have hv := verifyMulti_openMulti (k := h - la) (ms := [(specBackend EF).leaves (2 ^ la) f'])
     ⟨fun m hm' ↦ ⟨h - la, le_rfl, (List.mem_singleton.mp hm') ▸ hm⟩,
-      ⟨_, List.mem_singleton_self _, hm⟩⟩ (cur.map (· >>> la)) hlt
+      ⟨_, List.mem_singleton_self _, hm⟩⟩ P.capHeight
+    (fun m hm' ↦ by
+      rw [List.mem_singleton.mp hm', hm]
+      exact Nat.pow_le_pow_right (by decide) (Nat.min_le_right _ _)) (cur.map (· >>> la)) hlt
   have hmax : Nat.log2 (Committed.ofMats hashF compF
       [(specBackend EF).leaves (2 ^ la) f']).maxHeight = h - la := by
     have := maxHeight_ofMats (F := F) [((specBackend EF).leaves (2 ^ la) f' : Mat F)] _
@@ -1038,10 +1050,11 @@ theorem multiBody_run [Poseidon2Field F] (P : Params) {h : Nat} {f : Array EF} (
   have hsnd : (cur.map ((fun x : Nat × List EF ↦ [x.2.flatMap Ext.coeffs]) ∘ groupAt la f')) =
       cur.map fun i ↦ [((groupAt la f' i).2).flatMap Ext.coeffs] := rfl
   have hcheck : Merkle.verifyMultiM (m := Id) hashF compF
-      (Committed.ofMats hashF compF [(specBackend EF).leaves (2 ^ la) f']).root
+      ((Committed.ofMats hashF compF [(specBackend EF).leaves (2 ^ la) f']).cap
+        P.capHeight).toList P.capHeight
       [(2 ^ (h - la), Challenge.d EF * 2 ^ la)] (cur.map ((·.1) ∘ groupAt la f'))
       (cur.map ((fun x : Nat × List EF ↦ [x.2.flatMap Ext.coeffs]) ∘ groupAt la f'))
-      (openMulti (specBackend EF) (Committed.ofMats hashF compF
+      (openMulti (specBackend EF) P.capHeight (Committed.ofMats hashF compF
         [(specBackend EF).leaves (2 ^ la) f']) (cur.map (· >>> la))).siblings.toList = true := by
     rw [hfst, hsnd, ← hrows, show [(2 ^ (h - la), Challenge.d EF * 2 ^ la)] =
       [(specBackend EF).leaves (2 ^ la) f'].map fun m ↦ (m.height, m.width) by
@@ -1062,8 +1075,8 @@ theorem multiBody_run [Poseidon2Field F] (P : Params) {h : Nat} {f : Array EF} (
 
 /-- The verifier's loop over the folds' multi-openings accepts the honest groups. -/
 theorem multi_loop [Poseidon2Field F] (P : Params) (groups : List (List (Nat × List EF)))
-    (body : (Digest F × CommitOpening F EF) × Nat × Nat → Nat → M (poseidon2 F) (ForInStep Nat))
-    (hbody : ∀ c o la i logH, body ((c, o), (la, i)) logH = multiBody groups c o la i logH) :
+    (body : (Cap F × CommitOpening F EF) × Nat × Nat → Nat → M (poseidon2 F) (ForInStep Nat))
+    (hbody : ∀ c o la i logH, body ((c, o), (la, i)) logH = multiBody P groups c o la i logH) :
     ∀ (las : List Nat) (h : Nat) (f : Array EF) (rest : List (Array EF)) (t : Transcript F 24)
       (cur : List Nat) (n : Nat) (t' : Transcript F 24),
       Good P h f → Pending P rest →
@@ -1071,8 +1084,9 @@ theorem multi_loop [Poseidon2Field F] (P : Params) (groups : List (List (Nat × 
       (∀ i ∈ cur, i < 2 ^ h) →
       (∀ j, groups.map (fun g ↦ g.getD (n + j) (0, [])) =
         cur.map fun i ↦ (qGroups (chain P las f rest t).1 i).getD j (0, [])) →
-      forIn ((((chain P las f rest t).1.map (·.c.root)).zip
-          (answerFolds (specBackend EF) ((chain P las f rest t).1.map (·.c)) las cur)).zip
+      forIn ((((chain P las f rest t).1.map (·.c.cap P.capHeight)).zip
+          (answerFolds (specBackend EF) P.capHeight ((chain P las f rest t).1.map (·.c)) las
+            cur)).zip
           (las.zipIdx n)) h body t' = .ok (h - las.sum, t')
   | [], h, _, _, _, _, _, _, _, _, _, _, _ => by
     simp only [chain, List.map_nil, List.zip_nil_left, List.forIn_nil, List.sum_nil,
@@ -1091,8 +1105,8 @@ theorem multi_loop [Poseidon2Field F] (P : Params) (groups : List (List (Nat × 
         omega
     rw [chain] at hgroups ⊢
     dsimp only at hgroups ⊢
-    set g2 := (t.observeList (Committed.ofMats hashF compF
-      [(specBackend EF).leaves (2 ^ la) f]).root.toList).grind P.commitPowBits with hg2
+    set g2 := (t.observeList (capElems ((Committed.ofMats hashF compF
+      [(specBackend EF).leaves (2 ^ la) f]).cap P.capHeight))).grind P.commitPowBits with hg2
     set r : Rd EF := ⟨la, f, t, g2.1, (g2.2.sampleExtValue : EF)⟩ with hr
     rw [show (la :: las) = r.la :: las from rfl, answerFolds_cons, List.map_cons,
       List.zip_cons_cons, List.zipIdx_cons, List.zip_cons_cons]
@@ -1138,9 +1152,9 @@ theorem mapM_zipIdx_ok [Poseidon2Field F] {α β : Type} (body : α × Nat → M
     rw [List.zipIdx_cons, List.mapM_cons, bind_ok h0, bind_ok hl]
     rfl
 
-theorem values_openMulti [Poseidon2Field F] (c : (specBackend EF).C) (idxs : List Nat) (k : Nat)
-    (hk : k < idxs.length) :
-    (openMulti (specBackend EF) c idxs).values.getD k #[] =
+theorem values_openMulti [Poseidon2Field F] (capHeight : Nat) (c : (specBackend EF).C)
+    (idxs : List Nat) (k : Nat) (hk : k < idxs.length) :
+    (openMulti (specBackend EF) capHeight c idxs).values.getD k #[] =
       ((specBackend EF).openAt c idxs[k]).values := by
   simp only [openMulti, Array.getD_eq_getD_getElem?, List.getElem?_toArray, List.getElem?_map,
     List.getElem?_eq_getElem hk, Option.map_some, Option.getD_some]
@@ -1195,7 +1209,7 @@ theorem verifyFri_proveFri [Poseidon2Field F] (P : Params)
     (hinputs : ∀ (indices : List Nat) (t' : Transcript F 24),
       (∀ i ∈ indices, i < 2 ^ Nat.log2 f0.size) →
       verifyInputs (poseidon2 F) P (Nat.log2 f0.size) indices
-        (rounds.map fun (c, _) ↦ openMulti (specBackend EF) c
+        (rounds.map fun (c, _) ↦ openMulti (specBackend EF) P.capHeight c
           (indices.map (· >>> (Nat.log2 f0.size - (specBackend EF).logHeight c)))) vrounds t' =
         .ok ((), t'))
     (hreduce : ∀ (index : Nat) (t' : Transcript F 24), index < 2 ^ Nat.log2 f0.size →
@@ -1238,7 +1252,7 @@ theorem verifyFri_proveFri [Poseidon2Field F] (P : Params)
   set t3 := r.2.2.observeExts fp.toList with ht3
   set g4 := t3.grind P.queryPowBits with hg4
   set qs := sampleIndices h0 P.numQueries g4.2 with hqs
-  obtain ⟨hcom, hdata, hwit, hari, -⟩ := foldl_pushRd r.1 ⟨#[], [], #[], #[], #[]⟩
+  obtain ⟨hcom, hdata, hwit, hari, -⟩ := foldl_pushRd P.capHeight r.1 ⟨#[], [], #[], #[], #[]⟩
   simp only [List.nil_append] at hcom hdata hwit hari
   have hrl : r.1.map (·.la) = las := la_chain P las f0 rest t1
   -- flags and duplexes
@@ -1256,20 +1270,21 @@ theorem verifyFri_proveFri [Poseidon2Field F] (P : Params)
     simp only [hq, hb, hP, decide_true, Bool.and_self]
   rw [hpar, ensure_true, pure_bind, hv, ensure_true, pure_bind]
   simp only [h24, decide_true, ensure_true, pure_bind]
-  set cp := List.foldl pushRd ⟨#[], [], #[], #[], #[]⟩ r.1 with hcp
+  set cp := List.foldl (pushRd P.capHeight) ⟨#[], [], #[], #[], #[]⟩ r.1 with hcp
   have hdata' : cp.data = r.1.map (·.c) := hdata
   have hari' : cp.arities.toList = las := hari.trans hrl
   have hqlen : qs.1.length = P.numQueries := length_sampleIndices _ _ _
-  have hfold1 : ((answerFolds (specBackend EF) cp.data cp.arities.toList qs.1).toArray.size ==
-      las.length) = true := by
+  have hfold1 : ((answerFolds (specBackend EF) P.capHeight cp.data cp.arities.toList
+      qs.1).toArray.size == las.length) = true := by
     rw [hdata', hari', List.size_toArray, ← hrl]
     erw [length_answerFolds]
     rw [List.length_map, beq_self_eq_true]
-  have hfold2 : ((answerFolds (specBackend EF) cp.data cp.arities.toList qs.1).zip las).all
+  have hfold2 : ((answerFolds (specBackend EF) P.capHeight cp.data cp.arities.toList
+      qs.1).zip las).all
       (fun x ↦ x.1.siblings.size == P.numQueries &&
         x.1.siblings.all fun y ↦ y.size == 2 ^ x.2 - 1) = true := by
     rw [hdata', hari', ← hqlen]
-    have := answerFolds_shape r.1 qs.1
+    have := answerFolds_shape P.capHeight r.1 qs.1
     rwa [hrl] at this
   have hwit0 : (P.commitPowBits != 0 || cp.witnesses.all fun x ↦ x == 0) = true := by
     by_cases h0 : P.commitPowBits = 0
@@ -1285,9 +1300,16 @@ theorem verifyFri_proveFri [Poseidon2Field F] (P : Params)
     · rw [bne_iff_ne.mpr h0, Bool.true_or]
   have hfps : (fp.size == 2 ^ P.logFinalPolyLen) = true := by
     rw [hfp, finalPolyOf, idft, Array.size_ofFn, beq_self_eq_true]
-  have hcsz : (cp.commits.size == las.length && cp.witnesses.size == las.length) = true := by
-    rw [← Array.length_toList, ← Array.length_toList, hcom, hwit, List.length_map, List.length_map,
-      length_chain, beq_self_eq_true, Bool.and_self]
+  have hcsz : (cp.commits.size == las.length && cp.witnesses.size == las.length &&
+      cp.commits.all (·.size != 0)) = true := by
+    have hne : cp.commits.all (·.size != 0) = true := by
+      rw [← Array.all_toList, hcom, List.all_eq_true]
+      intro x hx
+      obtain ⟨rd, -, rfl⟩ := List.mem_map.mp hx
+      rw [bne_iff_ne, Committed.size_cap]
+      exact (Nat.two_pow_pos _).ne'
+    rw [hne, Bool.and_true, ← Array.length_toList, ← Array.length_toList, hcom, hwit,
+      List.length_map, List.length_map, length_chain, beq_self_eq_true, Bool.and_self]
   rw [hfold1, ensure_true, pure_bind, hfold2, ensure_true, pure_bind, hwit0, ensure_true,
     pure_bind, hqw0, ensure_true, pure_bind, hfps, ensure_true, pure_bind,
     bind_ok (observeList_run t seed), ← ht1, hcsz, ensure_true, pure_bind, hcom, hwit]
@@ -1308,14 +1330,14 @@ theorem verifyFri_proveFri [Poseidon2Field F] (P : Params)
     rw [Nat.zero_add]
     have hk' : qs.1[k] < 2 ^ h0 := hidx _ (List.getElem_mem hk)
     have hrows : (List.map (fun b ↦ (b.values.getD k #[]).toList)
-        (List.map (fun x ↦ openMulti (specBackend EF) x.1
+        (List.map (fun x ↦ openMulti (specBackend EF) P.capHeight x.1
           (List.map (fun x_1 ↦ x_1 >>> (h0 - (specBackend EF).logHeight x.1)) qs.1)) rounds)) =
         rounds.map fun (c, _) ↦ ((specBackend EF).openAt c
           (qs.1[k] >>> (h0 - (specBackend EF).logHeight c))).values.toList := by
       rw [List.map_map]
       refine List.map_congr_left fun x _ ↦ ?_
       simp only [Function.comp_apply]
-      rw [values_openMulti _ _ _ (by rw [List.length_map]; exact hk), List.getElem_map]
+      rw [values_openMulti _ _ _ _ (by rw [List.length_map]; exact hk), List.getElem_map]
     simp only [hrows]
     have hfq := foldQuery_run P h0 f0 rest hg hp las hsched t1 qs.1 k hk hk' qs.2
     rw [← hr] at hfq

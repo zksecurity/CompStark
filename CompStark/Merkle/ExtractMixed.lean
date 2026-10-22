@@ -465,6 +465,15 @@ noncomputable def matColumn [Zero F] (cache : Cache F D) (root : D) (K : ℕ)
   ((Merkle.extractGroup cache (Merkle.injLevels K hs) K m r root).getD []).getD
     (matOffset hs ws t + j) 0
 
+/-- Column `j` of matrix `t` at row `r` of its height `2 ^ m`, extracted under the cap `cap` of
+height `capHeight` (capped at `K`, `c` levels): `matColumn` in the subtree under the row's cap
+entry, whose matrices have the heights divided by `2 ^ c`, at the row's low `m - c` bits. -/
+noncomputable def matColumnCap [Zero F] [Zero D] (cache : Cache F D) (cap : List D)
+    (capHeight K : ℕ) (hs ws : List ℕ) (t j m r : ℕ) : F :=
+  matColumn cache (cap.getD (r >>> (m - min capHeight K)) 0) (K - min capHeight K)
+    (hs.map (· / 2 ^ min capHeight K)) ws t j (m - min capHeight K)
+    (r % 2 ^ (m - min capHeight K))
+
 end Columns
 
 end CompStark.Merkle

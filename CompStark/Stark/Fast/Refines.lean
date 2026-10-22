@@ -59,7 +59,7 @@ def backendFor_refines (hζ : 2 ≤ twoAdicity F) (hA : DomainsAddressable F EF)
       obtain ⟨⟨n, c⟩, -, he⟩ := List.mem_flatMap.mp he
       exact ldePlans_valid n logBlowup c e he
     commit := commit_rel
-    root := root_rel
+    cap := fun h hc ↦ cap_rel hc h
     openAt := openAt_rel
     logHeight := fun h ↦ congrArg Nat.log2 (maxHeight_rel h)
     quotient := fun A pis d l _ _ _ _ alpha h hs hh hp hps hc ↦ by

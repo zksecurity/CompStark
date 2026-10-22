@@ -72,18 +72,18 @@ def Balanced (instances : List (Instance F)) (traces : List (Array F)) (pis : Li
 end Messages
 
 /-- What the verifier shares with the prover (Plonky3's `CommonData`, whose lookups the verifier
-derives from the AIRs): the root of the commitment to the preprocessed traces of the instances
+derives from the AIRs): the commitment to the preprocessed traces of the instances
 that have one, in instance order, if any has one. -/
 structure Common (F : Type) where
-  preprocessed : Option (Digest F)
+  preprocessed : Option (Cap F)
 deriving BEq
 
 /-- A batch-STARK proof without zero knowledge (Plonky3's `BatchProof`). -/
 structure BatchProof (F EF : Type) where
-  mainCommit : Digest F
+  mainCommit : Cap F
   /-- The commitment to the permutation traces of the instances with lookups, if any. -/
-  permutationCommit : Option (Digest F)
-  quotientCommit : Digest F
+  permutationCommit : Option (Cap F)
+  quotientCommit : Cap F
   /-- Every instance's opened values, in `uni-stark`'s format. -/
   opened : Array (OpenedValues EF)
   /-- Every instance's permutation trace's row at `ζ`, in base coordinates; empty without

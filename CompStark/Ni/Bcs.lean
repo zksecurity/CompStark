@@ -15,7 +15,8 @@ FRI oracles extracted from the cache under the proof's commitments, the proof's 
 final polynomial, and the challenges the challenger returns.
 
 `bcs`: if the verifier accepts a proof of `2 ^ logN` rows, and every accepted opening against the
-proof's commitments opens the rows extracted from the cache (`Binding`), the extracted transcript
+proof's commitments, every entry of their caps, opens the rows extracted from the cache
+(`CapBinding`), the extracted transcript
 passes the deterministic checks of the round-by-round terminal lemma
 (`Sound.exists_satisfied_of_safe`): the constraints hold at `ζ`, the final polynomial has low
 degree, the query grinding sample has its vanishing bits, and every query sample selects a point
@@ -96,7 +97,7 @@ theorem foldArities_eq (m : Nat) : ∀ r, foldArities m r = (folds m r).map PNat
   decreasing_by omega
 
 theorem natDegree_finalPoly (S : Iop.Setup EF) (cache : Merkle.Cache F (Digest F))
-    (commits : List (Digest F)) (coeffs : Array EF)
+    (commits : List (Cap F)) (coeffs : Array EF)
     (h : coeffs.size = 2 ^ S.params.logFinalPolyLen) :
     (finalPolynomial S.schedule (friOracles S cache commits coeffs)).natDegree <
       (finalDegreeOf S).val := by
@@ -150,9 +151,10 @@ samples. -/
 theorem bcs (S : Iop.Setup EF) (cache : Merkle.Cache F (Digest F)) (H : Primitives F Id)
     (vk : Option (PreprocessedKey F)) (proof : Proof F EF)
     (pis : List F) (hdb : proof.degreeBits = S.logN)
-    (htrace : Binding cache H proof.traceCommit) (hquot : Binding cache H proof.quotientCommit)
-    (hfri : ∀ c ∈ proof.fri.commits, Binding cache H c)
-    (hprepBind : ∀ k ∈ vk, Binding cache H k.commit)
+    (htrace : CapBinding cache H proof.traceCommit)
+    (hquot : CapBinding cache H proof.quotientCommit)
+    (hfri : ∀ c ∈ proof.fri.commits, CapBinding cache H c)
+    (hprepBind : ∀ k ∈ vk, CapBinding cache H k.commit)
     (hprep : ∀ k ∈ vk, ∀ j < S.air.preprocessedWidth,
       committedColumn S cache k.commit j = S.preprocessedWord j)
     (h : verifyWith H S.params S.air vk proof pis = .ok ()) :

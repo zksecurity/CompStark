@@ -148,12 +148,13 @@ theorem sqFoldMapGen_finMod (n la idx : ℕ) (hla : la ≤ n) :
 /-- **One fold of a query.** If fold `x` of a query at index `idx` of a domain `c ⟨ω_n⟩` passes its
 checks against a binding commitment, the extracted word holds the running value at the query's
 point, and its fold at `β` is ArkLib's fold of the extracted word at `c β`, at the folded point. -/
-theorem fold_step (cache : Merkle.Cache F (Digest F)) (H : Primitives F Id) (commit : Digest F)
+theorem fold_step (cache : Merkle.Cache F (Digest F)) (H : Primitives F Id) (h : ℕ)
+    (commit : Cap F)
     {n : ℕ} (D : Domain.SmoothCosetFftDomain n 𝕂) (c : 𝕂) (hn : n ≤ twoAdicity F)
     (hD : ∀ x : Fin (2 ^ n), D x = c * lift (twoAdicGen n ^ x.val))
     (x : EF × QueryFold EF) (e : EF) (idx : ℕ) (hidx : idx < 2 ^ n) (ha : x.2.logArity ≤ n)
-    (hok : StepOk H commit x (e, idx, n)) (hbind : Binding cache H commit) :
-    let f : Fin (2 ^ n) → 𝕂 := fun z ↦ friWordAt cache commit n x.2.logArity z.val
+    (hok : StepOk H h commit x (e, idx, n)) (hbind : CapBinding cache H commit) :
+    let f : Fin (2 ^ n) → 𝕂 := fun z ↦ friWordAt cache commit h n x.2.logArity z.val
     f (finMod n (reverseBits idx n)) = Challenge.toSpec e ∧
       Challenge.toSpec (foldRow (idx >>> x.2.logArity) (n - x.2.logArity) x.2.logArity x.1
         (groupOf x.2 idx e)) =
@@ -163,7 +164,7 @@ theorem fold_step (cache : Merkle.Cache F (Digest F)) (H : Primitives F Id) (com
   set a := x.2.logArity
   refine ⟨?_, ?_⟩
   · simp only [f, finMod_val (reverseBits_lt _ _)]
-    exact friWordAt_eval cache H commit x (e, idx, n) n rfl hidx ha hok hbind
+    exact friWordAt_eval cache H h commit x (e, idx, n) n rfl hidx ha hok hbind
   · have hpos : idx % 2 ^ a < 2 ^ a := Nat.mod_lt _ (Nat.two_pow_pos _)
     have hgroup : groupOf x.2 idx e = (List.range (2 ^ a)).map fun k ↦
         (groupOf x.2 idx e).getD k 0 := by
@@ -174,7 +175,7 @@ theorem fold_step (cache : Merkle.Cache F (Digest F)) (H : Primitives F Id) (com
     rw [hgroup, toSpec_foldRow_eq_foldValue_of D c hn hD (n - a) a (by omega) f (idx >>> a) x.1
       (fun k ↦ (groupOf x.2 idx e).getD k 0) (fun k hk ↦ by
         simp only [f, finMod_val (reverseBits_lt _ _)]
-        exact (friWordAt_group cache H commit x e idx n hidx ha hok hbind k hk).symm)
+        exact (friWordAt_group cache H h commit x e idx n hidx ha hok hbind k hk).symm)
       (idx % 2 ^ a) hpos, shiftRight_mul_add_mod, ProximityGap.foldWord,
       ← Domain.CosetFftDomainClass.pow_eq_subdomain_sqFoldMapGen (ω := D),
       sqFoldMapGen_finMod n a idx ha]
@@ -226,11 +227,11 @@ folds `l` follow the rounds' schedule and pass their checks against binding comm
 the reduced openings `ro` of the injected heights, each the injected word scaled by its domain's
 shift at the query's point, and end at the final polynomial: the query's point is accepted by the
 run on the extracted words at the scaled challenges, and the run's first word holds `e` there. -/
-theorem query_run (cache : Merkle.Cache F (Digest F)) (H : Primitives F Id) (K I : ℕ)
+theorem query_run (cache : Merkle.Cache F (Digest F)) (H : Primitives F Id) (h K I : ℕ)
     (hK : K ≤ twoAdicity F) (ma lf d : ℕ) (hd : 0 < d) (W : (m : ℕ) → Fin (2 ^ m) → 𝕂)
     (fp : Polynomial 𝕂) :
     ∀ (fuel n : ℕ) (heights : List ℕ) (ω : Domain.SmoothCosetFftDomain n 𝕂)
-      (l : List (EF × QueryFold EF)) (commits : List (Digest F)) (ro : List (Nat × EF)) (e : EF)
+      (l : List (EF × QueryFold EF)) (commits : List (Cap F)) (ro : List (Nat × EF)) (e : EF)
       (fw : ℕ → (m : ℕ) → Fin (2 ^ m) → 𝕂) (βs : ℕ → 𝕂),
       n ≤ K → I < 2 ^ K →
       (∀ x : Fin (2 ^ n), ω x = (lift gen : 𝕂) ^ 2 ^ (K - n) * lift (twoAdicGen n ^ x.val)) →
@@ -239,10 +240,10 @@ theorem query_run (cache : Merkle.Cache F (Digest F)) (H : Primitives F Id) (K I
         W hv.1 (finMod hv.1 (reverseBits (I >>> (K - hv.1)) hv.1)) = Challenge.toSpec hv.2) →
       l.map (·.2.logArity) = foldSchedule ma lf fuel (n :: heights) →
       (∀ (j : ℕ) (x : EF × QueryFold EF), l[j]? = some x →
-        StepOk H (commits.getD j 0) x (foldStateR l (ro, e, I >>> (K - n), n) j).2) →
-      (∀ j < l.length, Binding cache H (commits.getD j 0)) →
+        StepOk H h (commits.getD j #[]) x (foldStateR l (ro, e, I >>> (K - n), n) j).2) →
+      (∀ j < l.length, CapBinding cache H (commits.getD j #[])) →
       (∀ j (hj : j < l.length), fw j = fun m z ↦
-        friWordAt cache (commits.getD j 0) m l[j].2.logArity z.val) →
+        friWordAt cache (commits.getD j #[]) h m l[j].2.logArity z.val) →
       (∀ j (hj : j < l.length), βs j = (lift gen : 𝕂) ^ 2 ^ (K -
         (foldStateR l (ro, e, I >>> (K - n), n) j).2.2.2) * Challenge.toSpec l[j].1) →
       (foldStateR l (ro, e, I >>> (K - n), n) l.length).1 = [] →
@@ -315,8 +316,8 @@ theorem query_run (cache : Merkle.Cache F (Digest F)) (H : Primitives F Id) (K I
     rw [hst0] at hβ0
     simp only [List.getElem_cons_zero] at hfw0 hβ0
     have hlaN : x0.2.logArity ≤ n := by rw [hx0]; exact hla
-    obtain ⟨hf0, hfold⟩ := fold_step cache H (commits.getD 0 0) ω c (by omega) hω x0 e idx hidxlt
-      hlaN hok0 (hbind 0 (by simp only [List.length_cons]; omega))
+    obtain ⟨hf0, hfold⟩ := fold_step cache H h (commits.getD 0 #[]) ω c (by omega) hω x0 e idx
+      hidxlt hlaN hok0 (hbind 0 (by simp only [List.length_cons]; omega))
     rw [hx0] at hfold
     -- The next state.
     have hidx' : idx >>> la = I >>> (K - (n - la)) := by
@@ -340,17 +341,17 @@ theorem query_run (cache : Merkle.Cache F (Digest F)) (H : Primitives F Id) (K I
     have hstep_snd : (foldStepR x0 (ro, e, idx, n)).2.2 = (I >>> (K - (n - la)), n - la) := by
       rw [foldStepR_snd]
       simp only [hx0, hidx']
-    have htail : ∀ j, commits.tail.getD j 0 = commits.getD (j + 1) 0 := fun j ↦ by
+    have htail : ∀ j, commits.tail.getD j #[] = commits.getD (j + 1) #[] := fun j ↦ by
       cases commits <;> rfl
     -- The tail's hypotheses for a next state `st1`.
     have htailHyps : ∀ (ro1 : List (Nat × EF)) (e1 : EF),
         foldStepR x0 (ro, e, idx, n) = (ro1, e1, I >>> (K - (n - la)), n - la) →
         (∀ (j : ℕ) (x : EF × QueryFold EF), l'[j]? = some x →
-          StepOk H (commits.tail.getD j 0) x
+          StepOk H h (commits.tail.getD j #[]) x
             (foldStateR l' (ro1, e1, I >>> (K - (n - la)), n - la) j).2) ∧
-        (∀ j < l'.length, Binding cache H (commits.tail.getD j 0)) ∧
+        (∀ j < l'.length, CapBinding cache H (commits.tail.getD j #[])) ∧
         (∀ j (hj : j < l'.length), (fun j ↦ fw (j + 1)) j = fun m z ↦
-          friWordAt cache (commits.tail.getD j 0) m l'[j].2.logArity z.val) ∧
+          friWordAt cache (commits.tail.getD j #[]) h m l'[j].2.logArity z.val) ∧
         (∀ j (hj : j < l'.length), (fun j ↦ βs (j + 1)) j = (lift gen : 𝕂) ^ 2 ^ (K -
           (foldStateR l' (ro1, e1, I >>> (K - (n - la)), n - la) j).2.2.2) *
             Challenge.toSpec l'[j].1) ∧
