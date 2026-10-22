@@ -162,25 +162,35 @@ def Words.of (p : Nat) [Montgomery.Native32.Mont32Field p] : Words :=
 
 open CompPoly.CPolynomial.NTTFast.Packed.Native (read write write16U)
 
+/-- The word of bit `z` of `x`: `one` or zero. -/
+@[inline] def bitWord (one : UInt32) (x z : UInt64) : UInt32 := one * ((x >>> z) &&& 1).toUInt32
+
+/-- Store bits `z, …, z + 15` of `x` as words `off, …, off + 15`. -/
+@[inline] def writeBits16 (one : UInt32) (b : ByteArray) (off : Nat) (x z : UInt64) : ByteArray :=
+  write16U b off.toUSize (bitWord one x z) (bitWord one x (z + 1)) (bitWord one x (z + 2))
+    (bitWord one x (z + 3)) (bitWord one x (z + 4)) (bitWord one x (z + 5))
+    (bitWord one x (z + 6)) (bitWord one x (z + 7)) (bitWord one x (z + 8))
+    (bitWord one x (z + 9)) (bitWord one x (z + 10)) (bitWord one x (z + 11))
+    (bitWord one x (z + 12)) (bitWord one x (z + 13)) (bitWord one x (z + 14))
+    (bitWord one x (z + 15))
+
 /-- Store the 64 bits of `x` as words `off, …, off + 63`. -/
 @[inline] def writeBits (W : Words) (b : ByteArray) (off : Nat) (x : UInt64) : ByteArray :=
-  let bit (z : UInt64) : UInt32 := W.one * ((x >>> z) &&& 1).toUInt32
-  let b := write16U b off.toUSize (bit 0) (bit 1) (bit 2) (bit 3) (bit 4) (bit 5) (bit 6) (bit 7)
-    (bit 8) (bit 9) (bit 10) (bit 11) (bit 12) (bit 13) (bit 14) (bit 15)
-  let b := write16U b (off + 16).toUSize (bit 16) (bit 17) (bit 18) (bit 19) (bit 20) (bit 21)
-    (bit 22) (bit 23) (bit 24) (bit 25) (bit 26) (bit 27) (bit 28) (bit 29) (bit 30) (bit 31)
-  let b := write16U b (off + 32).toUSize (bit 32) (bit 33) (bit 34) (bit 35) (bit 36) (bit 37)
-    (bit 38) (bit 39) (bit 40) (bit 41) (bit 42) (bit 43) (bit 44) (bit 45) (bit 46) (bit 47)
-  write16U b (off + 48).toUSize (bit 48) (bit 49) (bit 50) (bit 51) (bit 52) (bit 53) (bit 54)
-    (bit 55) (bit 56) (bit 57) (bit 58) (bit 59) (bit 60) (bit 61) (bit 62) (bit 63)
+  let b := writeBits16 W.one b off x 0
+  let b := writeBits16 W.one b (off + 16) x 16
+  let b := writeBits16 W.one b (off + 32) x 32
+  writeBits16 W.one b (off + 48) x 48
+
+/-- The word of limb `l` of `x`. -/
+@[inline] def limbWord (W : Words) (x : UInt64) (l : UInt64) : UInt32 :=
+  read W.limbs ((x >>> (16 * l)) &&& 0xffff).toNat
 
 /-- Store the four 16-bit limbs of `x`, lowest first, as words `off, …, off + 3`. -/
 @[inline] def writeLimbs (W : Words) (b : ByteArray) (off : Nat) (x : UInt64) : ByteArray :=
-  let limb (l : UInt64) : UInt32 := read W.limbs ((x >>> (16 * l)) &&& 0xffff).toNat
-  let b := write b off (limb 0)
-  let b := write b (off + 1) (limb 1)
-  let b := write b (off + 2) (limb 2)
-  write b (off + 3) (limb 3)
+  let b := write b off (limbWord W x 0)
+  let b := write b (off + 1) (limbWord W x 1)
+  let b := write b (off + 2) (limbWord W x 2)
+  write b (off + 3) (limbWord W x 3)
 
 /-- Lane `(x, y)` of a state indexed `5 x + y`. -/
 @[inline] def lane (s : Array UInt64) (x y : Nat) : UInt64 := s.getD (5 * x + y) 0
@@ -210,18 +220,19 @@ def roundValues (s : Array UInt64) (r : Nat) :
 def round (W : Words) (b : ByteArray) (off : Nat) (s0 s : Array UInt64) (r : Nat) :
     ByteArray × Array UInt64 :=
   let (cs, cps, ap, app, out) := roundValues s r
-  let b := write b (off + r) W.one
-  let b := (List.range 25).foldl (fun b k ↦
-    let (y, x) := (k / 5, k % 5)
-    let b := writeLimbs W b (off + preimageCol y x 0) (lane s0 x y)
-    let b := writeLimbs W b (off + aCol y x 0) (lane s x y)
-    let b := writeBits W b (off + aPrimeCol y x 0) (lane ap x y)
-    writeLimbs W b (off + aPrimePrimeCol y x 0) (lane app x y)) b
-  let b := (List.range 5).foldl (fun b x ↦
-    let b := writeBits W b (off + cCol x 0) (cs.getD x 0)
-    writeBits W b (off + cPrimeCol x 0) (cps.getD x 0)) b
-  let b := writeBits W b (off + aPrimePrime00BitCol 0) (app.getD 0 0)
-  (writeLimbs W b (off + aPrimePrimePrime00Col 0) (out.getD 0 0), out)
+  Id.run do
+    let mut b := write b (off + r) W.one
+    for k in [0:25] do
+      let (y, x) := (k / 5, k % 5)
+      b := writeLimbs W b (off + preimageCol y x 0) (lane s0 x y)
+      b := writeLimbs W b (off + aCol y x 0) (lane s x y)
+      b := writeBits W b (off + aPrimeCol y x 0) (lane ap x y)
+      b := writeLimbs W b (off + aPrimePrimeCol y x 0) (lane app x y)
+    for x in [0:5] do
+      b := writeBits W b (off + cCol x 0) (cs.getD x 0)
+      b := writeBits W b (off + cPrimeCol x 0) (cps.getD x 0)
+    b := writeBits W b (off + aPrimePrime00BitCol 0) (app.getD 0 0)
+    return (writeLimbs W b (off + aPrimePrimePrime00Col 0) (out.getD 0 0), out)
 
 /-- The rows of rounds `lo, …, hi - 1` of the permutation of `input` (Plonky3's indexing, lane
 `(x, y)` at `x + 5 y`), written from word `off` of `b`. -/

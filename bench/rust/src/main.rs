@@ -96,6 +96,9 @@ fn main() {
     if args.len() == 4 && args[1] == "fingerprint" {
         return fingerprint::fingerprint(&args[2], args[3].parse().unwrap());
     }
+    if args.len() == 4 && args[1] == "lde" {
+        return keccak::lde(args[2].parse().unwrap(), args[3].parse().unwrap());
+    }
     if args.len() == 3 && args[1] == "keccak-trace" {
         return keccak::trace_kat(args[2].parse().unwrap());
     }

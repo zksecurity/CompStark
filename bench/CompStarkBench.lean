@@ -6,6 +6,8 @@ import CompStark.Stark.Prover
 import CompStark.KoalaBear.Fast
 import CompStark.Mont32.Json
 import CompStark.Batch.Prover
+import CompStark.Stark.Fingerprint
+import CompStarkFixtures.Keccak
 
 /-! # CompStark micro-benchmarks
 
@@ -194,6 +196,41 @@ def phasesBatch : IO UInt32 := do
       (logNs.map fun _ ↦ [])) fun pf ↦ s!"{pf.oodWitness.val}"
   return 0
 
+open CompStark CompStark.Stark CompStark.Fri in
+/-- `keccak LOG_N [prove]`: the phases of the fast prover on Plonky3's Keccak AIR with a trace of
+`2 ^ LOG_N` rows of pseudorandom permutations, blowup 2: the trace generation, the trace's
+extension from field elements and from packed words, its commitment and the quotient; and with
+`prove`, whole proofs at Plonky3's example configuration. -/
+def keccak (logN : Nat) (prove : Bool) : IO UInt32 := do
+  let p := _root_.KoalaBear.fieldSize
+  let A : Air KoalaBear.Fast.Field := CompStark.Fixtures.Keccak.air
+  let w := CompStark.Fixtures.Keccak.width
+  let inputs := (Array.range (2 ^ logN / 24)).map fun k ↦ (Array.range 25).map fun i ↦
+    (splitMix (25 * k + i).toUInt64).2
+  let B := CompStark.KoalaBear.backendFor 1 [(logN, A.logQuotientChunks logN)]
+  for _ in [0:2] do
+    let chunks ← timed "tracegen" (fun _ ↦ CompStark.Fixtures.Keccak.trace p inputs 16)
+      (s!"{·.size} chunks")
+    let words ← timed "join" (fun _ ↦ CompPoly.CPolynomial.NTTFast.Packed.Native.joinRows chunks)
+      (s!"{·.size / (4 * w)} rows")
+    let trace : Array KoalaBear.Fast.Field := CompPoly.PackedRepr.decode words
+    let lde ← timed "trace lde (field elements)" (fun _ ↦ B.lde logN 1 gen w trace)
+      (s!"{·.height} rows")
+    let _ ← timed "trace lde (words)"
+      (fun _ ↦ CompStark.Stark.Fast.ldeWordsWith (p := p) [] logN 1 gen w words)
+      (s!"{·.height} rows")
+    let tc ← timed "trace commit" (fun _ ↦ B.commit [lde]) fun c ↦
+      s!"{((B.root c).toArray.getD 0 0).val}"
+    let alpha : _root_.KoalaBear.Fast.Ext4 := ⟨5, 7, 11, 13⟩
+    let _ ← timed "quotient" (fun _ ↦ B.quotient A [] logN (A.logQuotientChunks logN) lde none
+      alpha) (s!"{·.size}")
+    if tc.mats.length == 12345 then IO.println ""
+    if prove then
+      let P : Params := ⟨1, 0, 3, 87, 0, 16, 10, 0, 0⟩
+      let _ ← timed "whole proof" (fun _ ↦ proveWith B P A logN trace []) (s!"{·.degreeBits}")
+  return 0
+
+
 def main (args : List String) : IO UInt32 := do
   match args with
   | ["poseidon2-spec", logN] =>
@@ -324,6 +361,24 @@ def main (args : List String) : IO UInt32 := do
     IO.println s!"perm24 ns/perm {m * 10 / (8 * groups) / 10}.{m * 10 / (8 * groups) % 10}"
     return 0
   | ["phases", logN] => phases logN.toNat!
+  | ["keccak", logN] => keccak logN.toNat! false
+  | ["keccak", logN, "prove"] => keccak logN.toNat! true
+  | ["keccak-lde", logN] =>
+    -- The trace's extension from packed words, five times.
+    let logN := logN.toNat!
+    let w := CompStark.Fixtures.Keccak.width
+    let inputs := (Array.range (2 ^ logN / 24)).map fun k ↦ (Array.range 25).map fun i ↦
+      (CompStark.Stark.splitMix (25 * k + i).toUInt64).2
+    let words := CompPoly.CPolynomial.NTTFast.Packed.Native.joinRows
+      (CompStark.Fixtures.Keccak.trace _root_.KoalaBear.fieldSize inputs 16)
+    let some P := CompStark.Stark.Fast.plan? (p := _root_.KoalaBear.fieldSize) logN 1
+      CompStark.gen | return 1
+    for k in [0:5] do
+      let chunks ← timed "coset lde chunks" (fun _ ↦ P.cosetLde w (write words 0 k.toUInt32))
+        (s!"{·.size} chunks")
+      let _ ← timed "join" (fun _ ↦ CompPoly.CPolynomial.NTTFast.Packed.Native.joinRows chunks)
+        (s!"{·.size} bytes")
+    return 0
   | ["phases-batch"] => phasesBatch
   | "prove" :: backend :: air :: rest =>
     -- `prove (spec|fast) (fib|wide) LOG_N LOG_BLOWUP LOG_FINAL MAX_LOG_ARITY QUERIES COMMIT_POW
