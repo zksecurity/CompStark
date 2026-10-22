@@ -253,7 +253,7 @@ theorem degree_hornerPoly_lt [Nontrivial K] (t : List K) : (hornerPoly t).degree
     · refine (degree_mul_le _ _).trans_lt ?_
       refine (add_le_add le_rfl degree_X_le).trans_lt ?_
       have : (hornerPoly l).degree + 1 < (l.length : WithBot ℕ) + 1 :=
-        WithBot.add_lt_add_right (by simp) ih
+        WithBot.add_lt_add_right WithBot.one_ne_bot ih
       exact_mod_cast this
 
 theorem hornerPoly_injective [IsDomain K] :
