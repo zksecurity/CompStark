@@ -18,7 +18,7 @@ logs of their runs on `idealLogged` (`tableQueryLog_verifyBatchWith`).
 
 @[expose] public section
 namespace CompStark.Batch
-open CompStark.Fri CompStark.Stark
+open CompStark.Fri CompStark.Stark CompStark.Lookup
 
 variable {F : Type} {m n : Type → Type} [Monad m] [Monad n] (φ : m →ᵐ n)
 
@@ -42,6 +42,13 @@ theorem commonWith_map (H : Primitives F m) (P : Params) (instances : List (Inst
 
 variable [LawfulMonad m] [LawfulMonad n] {EF : Type} [Challenge F EF]
 
+theorem mapM_lookupPhase (H : Primitives F m) (P : Params) (instances : List (Instance F))
+    (proof : BatchProof F EF) :
+    Fri.mapM φ H (lookupPhase (H := H) P instances proof) =
+      lookupPhase (H := H.map φ) P instances proof := by
+  simp only [lookupPhase, MonadHom.mmap_bind, MonadHom.mmap_pure, MonadHom.mmap_ite,
+    mapM_ensure, mapM_checkWitness, mapM_sampleExt, mapM_observeList, mapM_observeExts]
+
 /-- **The batch verifier is natural in its primitives.** -/
 theorem verifyBatchWith_map (H : Primitives F m) (P : Params) (instances : List (Instance F))
     (common : Common F) (proof : BatchProof F EF) (pis : List (List F)) :
@@ -50,7 +57,7 @@ theorem verifyBatchWith_map (H : Primitives F m) (P : Params) (instances : List 
   change (ExceptT.mapHom φ _).run = _
   simp only [verifyBatchWith, MonadHom.mmap_bind, MonadHom.mmap_pure, MonadHom.mmap_ite,
     exceptT_mapHom_throw, exceptT_mapHom_run, mapM_observeList, mapM_observeExts, mapM_sampleExt,
-    mapM_ensure, mapM_checkWitness, mapM_verifyPcs, Primitives.map_init]
+    mapM_ensure, mapM_checkWitness, mapM_verifyPcs, mapM_lookupPhase, Primitives.map_init]
   rfl
 
 end CompStark.Batch

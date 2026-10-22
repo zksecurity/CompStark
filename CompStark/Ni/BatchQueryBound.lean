@@ -280,7 +280,7 @@ theorem bound_unless {ι : Type} {spec : OracleSpec ι} {α : Type} (b : Bool) (
     trivial
   · exact h rfl
 
-theorem isTotalQueryBound_verifyBatchWith (common : CompStark.Batch.Common F)
+theorem isTotalQueryBound_verifyBatchWith (hnl : S.NoLookups) (common : CompStark.Batch.Common F)
     (proof : CompStark.Batch.BatchProof F EF) (pis : List (List F)) :
     IsTotalQueryBound (CompStark.Batch.verifyBatchWith (ideal F S.streamLen) S.params S.instances
       common proof pis) S.verifierCalls := by
@@ -292,19 +292,32 @@ theorem isTotalQueryBound_verifyBatchWith (common : CompStark.Batch.Common F)
   refine bound_unless _ _ _ _ fun _ ↦ ?_
   refine bound_unless _ _ _ _ fun _ ↦ ?_
   refine bound_unless _ _ _ _ fun hprep ↦ ?_
+  refine bound_unless _ _ _ _ fun hlk ↦ ?_
   refine bound_unless _ _ _ _ fun _ ↦ ?_
+  have hperm := permutationCommit_eq_none S.params S.instances proof
+    (hasLookups_instances S hnl) hlk
   simp only [Bool.and_eq_true, beq_iff_eq] at hcount hprep
-  have hsize : proof.opened.size = S.k := by rw [hcount.1, length_instances]
+  have hsize : proof.opened.size = S.k := by rw [hcount.1.1.1.1, length_instances]
+  have hlp : Costs (H := ideal F S.streamLen)
+      (CompStark.Batch.lookupPhase S.params S.instances proof : M _ (EF × EF)) 0
+      fun _ ↦ True := by
+    unfold CompStark.Batch.lookupPhase
+    rw [hasLookups_instances S hnl]
+    refine costs_free_bind (costs_pure _ (fun _ ↦ True) trivial) fun _ _ ↦
+      costs_free_bind (costs_observeList _) fun _ _ ↦
+      costs_free_bind (costs_observeExts _) fun _ _ ↦ costs_pure _ (fun _ ↦ True) trivial
   dsimp only
   rw [ExceptT.run_bind]
   refine (isTotalQueryBound_bind (n₂ := 0) ((?_ : Costs (H := ideal F S.streamLen) _
     S.verifierCalls fun _ ↦ True) _).1 fun r ↦ ?_).mono (by omega)
   swap
-  · rcases r with _ | ⟨⟨alpha, zeta⟩, s⟩
+  · rcases r with _ | ⟨⟨la, lb, alpha, zeta⟩, s⟩
     · trivial
     · dsimp only
       split
-      · trivial
+      · split
+        · trivial
+        · trivial
       · trivial
   set G := S.friHeights.length
   set c := 1 + S.logTop + 2 * G
@@ -314,8 +327,8 @@ theorem isTotalQueryBound_verifyBatchWith (common : CompStark.Batch.Common F)
       S.params (CompStark.Batch.batchRounds S.instances common proof zeta) proof.fri) V
       fun _ ↦ True := by
     intro zeta
-    have hD := descHeights_batchRounds S common proof zeta hsize
-    have hmem := mem_matHeights S common proof zeta hsize
+    have hD := descHeights_batchRounds S common proof zeta hsize hperm
+    have hmem := mem_matHeights S common proof zeta hsize hperm
     refine costs_mono (costs_verifyPcs_mixed S.params _ proof.fri S.logTop G
       (fun h hh ↦ ?_) (S.logTop :: S.friHeights) (fun h hh ↦ ?_) le_rfl) ?_ fun _ h ↦ h
     · obtain ⟨i, rfl⟩ := (hmem h).mp hh
@@ -331,7 +344,7 @@ theorem isTotalQueryBound_verifyBatchWith (common : CompStark.Batch.Common F)
         rfl
       have hlen : (CompStark.Batch.batchRounds S.instances common proof zeta).length ≤
           S.inputRounds := by
-        rw [batchRounds_cases, inputRounds]
+        rw [batchRounds_cases (hperm := hperm), inputRounds]
         cases hc : common.preprocessed with
         | none => simp only [List.length_append, List.length_cons, List.length_nil]; split <;> omega
         | some root =>
@@ -348,7 +361,8 @@ theorem isTotalQueryBound_verifyBatchWith (common : CompStark.Batch.Common F)
   refine costs_free_bind (costs_observeList _) fun _ _ ↦ costs_free_bind (costs_observeExts _)
     fun _ _ ↦ costs_free_bind (costs_observeList _) fun _ _ ↦
     costs_free_bind (costs_observeList _) fun _ _ ↦ costs_free_bind (costs_observeList _)
-    fun _ _ ↦ costs_bind_le (b := 1 + Challenge.d EF + V) costs_sampleExt (fun alpha _ ↦
+    fun _ _ ↦ costs_free_bind hlp fun _ _ ↦
+    costs_bind_le (b := 1 + Challenge.d EF + V) costs_sampleExt (fun alpha _ ↦
       costs_free_bind (costs_observeList _) fun _ _ ↦ costs_bind_le (b := Challenge.d EF + V)
       (costs_checkWitness _ _) (fun _ _ ↦ costs_ensure_bind fun _ ↦ costs_bind_le (b := V)
         costs_sampleExt (fun zeta _ ↦ costs_ensure_bind fun _ ↦ costs_bind_le (a := V) (b := 0)

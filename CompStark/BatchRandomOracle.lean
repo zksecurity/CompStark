@@ -42,6 +42,9 @@ variable (S : Setup EF)
 /-- The statement the verifier checks: every instance's AIR and trace length, in order. -/
 def instances : List (CompStark.Batch.Instance F) := List.ofFn fun i ↦ ⟨S.air i, S.logN i⟩
 
+/-- No instance has lookups (`Air.lookups`): the batch verifier's lookup phase is idle. -/
+def NoLookups : Prop := ∀ i, (S.air i).lookups = []
+
 /-- The samples in one duplex answer, enough for every round (`Iop.Setup.streamLen`). -/
 def streamLen : Nat := S.params.numQueries + Challenge.d EF + 1
 

@@ -196,7 +196,8 @@ noncomputable def openingsAtB (xs : List F) (i : Fin S.k) : Openings (S.instance
 
 /-- The values the PCS observes, laid out by instance. -/
 theorem roundValues_batchRounds_eq (common : CompStark.Batch.Common F)
-    (proof : CompStark.Batch.BatchProof F EF) (hsize : proof.opened.size = S.k) (z : EF) :
+    (proof : CompStark.Batch.BatchProof F EF) (hsize : proof.opened.size = S.k)
+    (hperm : proof.permutationCommit = none) (z : EF) :
     roundValues (CompStark.Batch.batchRounds S.instances common proof z) =
       (List.finRange S.k).flatMap (fun i ↦ mainVals (S.air i)
         (proof.opened.toList.getD i noOpenings)) ++
@@ -244,7 +245,7 @@ theorem roundValues_batchRounds_eq (common : CompStark.Batch.Common F)
           Bool.false_eq_true, List.flatMap_cons, List.flatMap_nil, List.append_nil]
     · simp only [Function.comp_apply, prepVals, hp, decide_false, ↓reduceIte,
         Bool.false_eq_true]
-  rw [batchRounds_cases]
+  rw [batchRounds_cases (hperm := hperm)]
   cases common.preprocessed with
   | none =>
     rw [List.append_nil, hcons, hcons, hM, hQ]
@@ -255,15 +256,16 @@ theorem roundValues_batchRounds_eq (common : CompStark.Batch.Common F)
 
 /-- **Decoding the opened values.** On opened values in the instances' shapes, the decoder reads
 every instance's openings back from the values the PCS observes. -/
-theorem openingsAtB_coeffs (common : CompStark.Batch.Common F)
+theorem openingsAtB_coeffs (hnl : S.NoLookups) (common : CompStark.Batch.Common F)
     (proof : CompStark.Batch.BatchProof F EF) (hsize : proof.opened.size = S.k)
-    (hshape : ∀ i : Fin S.k, CompStark.Batch.openedShapeOk (S.air i)
-      (proof.opened.toList.getD i noOpenings) (S.logN i) = true)
+    (hshape : ∀ i : Fin S.k, CompStark.Batch.openedShapeOk ⟨S.air i, S.logN i⟩
+      (proof.opened.toList.getD i noOpenings) = true)
     (hprep : common.preprocessed.isSome = S.instances.any (0 < ·.air.preprocessedWidth))
-    (z : EF) (rest : List F) (i : Fin S.k) :
+    (hperm : proof.permutationCommit = none) (z : EF) (rest : List F) (i : Fin S.k) :
     openingsAtB S (coeffs (roundValues (CompStark.Batch.batchRounds S.instances common proof z)) ++
       rest) i = openingsOf (S.instanceSetup i) (proof.opened.toList.getD i noOpenings) := by
-  have hsh := fun i ↦ openedShapeOk_spec (hshape i)
+  have hsh := fun i ↦ openedShapeOk_spec (hnl i) (hshape i)
+  dsimp only at hsh
   set A := (List.finRange S.k).flatMap fun i ↦ mainVals (S.air i)
     (proof.opened.toList.getD i noOpenings) with hAdef
   set B := (List.finRange S.k).flatMap fun i : Fin S.k ↦
@@ -294,7 +296,7 @@ theorem openingsAtB_coeffs (common : CompStark.Batch.Common F)
         rw [this] at hprep
         exact Bool.false_ne_true hprep
       simp only [prepVals, hpw, ↓reduceIte]
-  rw [roundValues_batchRounds_eq S common proof hsize z, hC]
+  rw [roundValues_batchRounds_eq S common proof hsize hperm z, hC]
   have hx : ∀ k < (A ++ B ++ P).length,
       extFrom (EF := EF) (coeffs (A ++ B ++ P) ++ rest) k = (A ++ B ++ P).getD k 0 :=
     fun k hk ↦ by rw [extFrom_coeffs rest _ k hk, List.getD_eq_getElem _ _ hk]
@@ -441,7 +443,7 @@ def pcsSeedB : List F := DomainSeparator.pcsSeed F EF (countsB S) S.params.batch
 def batchSeedS : List F :=
   DomainSeparator.batchSeed F EF (S.instances.map (·.air.width))
     (S.instances.map (·.air.preprocessedWidth)) (S.instances.map (·.air.numPublicValues))
-    S.hasPreprocessed S.params.oodPowBits
+    S.hasPreprocessed 0 S.params.lookupPowBits S.params.oodPowBits
 
 /-- Where the main commitment sits in the first round's input: after the batch's domain separator
 and every instance's degree bits. -/
@@ -449,15 +451,16 @@ def mainOffsetB : Nat := (batchSeedS S).length + Challenge.d EF * S.k
 
 /-- **The PCS's counts are static.** On opened values in the instances' shapes, the PCS observes
 the counts `countsB`. -/
-theorem claimCounts_batchRounds_eq (common : CompStark.Batch.Common F)
+theorem claimCounts_batchRounds_eq (hnl : S.NoLookups) (common : CompStark.Batch.Common F)
     (proof : CompStark.Batch.BatchProof F EF) (hsize : proof.opened.size = S.k)
-    (hshape : ∀ i : Fin S.k, CompStark.Batch.openedShapeOk (S.air i)
-      (proof.opened.toList.getD i noOpenings) (S.logN i) = true)
+    (hshape : ∀ i : Fin S.k, CompStark.Batch.openedShapeOk ⟨S.air i, S.logN i⟩
+      (proof.opened.toList.getD i noOpenings) = true)
     (hprep : common.preprocessed.isSome = S.instances.any (0 < ·.air.preprocessedWidth))
-    (z : EF) :
+    (hperm : proof.permutationCommit = none) (z : EF) :
     claimCounts (CompStark.Batch.batchRounds S.instances common proof z) = countsB S := by
   have hos : proof.opened.toList.length = S.k := by rw [Array.length_toList, hsize]
-  have hsh := fun i ↦ openedShapeOk_spec (hshape i)
+  have hsh := fun i ↦ openedShapeOk_spec (hnl i) (hshape i)
+  dsimp only at hsh
   have hM : ((S.instances.zip proof.opened.toList).map fun x ↦
       ((⟨1, x.1.logN⟩ : Domain F), traceOpenings x.1.air x.2 z
         (z * Ext.ofBase (twoAdicGen x.1.logN)))).map (fun m ↦ m.2.map (·.2.length)) =
@@ -477,7 +480,7 @@ theorem claimCounts_batchRounds_eq (common : CompStark.Batch.Common F)
     obtain ⟨ch, hch, rfl⟩ := List.mem_map.mp hl
     simp only [Function.comp_apply, List.map_cons, List.map_nil, Array.length_toList,
       (hsh i).2.2.2.1 ch (Array.mem_toList_iff.mp hch)]
-  rw [batchRounds_cases, claimCounts, List.map_append, List.map_cons, List.map_cons,
+  rw [batchRounds_cases (hperm := hperm), claimCounts, List.map_append, List.map_cons, List.map_cons,
     List.map_nil]
   dsimp only
   rw [hM, hQ, countsB, hasPreprocessed_eq, ← hprep]

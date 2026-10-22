@@ -26,12 +26,15 @@ section States
 variable (P : Params) (instances : List (Instance F)) (common : Common F)
   (proof : BatchProof F EF) (pis : List (List F))
 
-/-- The challenger before `α`: after the batch's domain separator, every instance's degree bits,
-the main commitment, the public values and the preprocessed commitment. -/
+/-- The challenger before `α` in a batch without lookups: after the batch's domain separator,
+every instance's degree bits, the main commitment, the public values, the preprocessed commitment,
+and the lookup phase's observations, the permutation commitment and terminals if any. -/
 abbrev stateAlphaB : H.State :=
-  obsList H (obsList H (obsList H (obsExts H (obsList H H.init (batchSeedOf EF P instances common))
+  obsExts H (obsList H (obsList H (obsList H (obsList H (obsExts H
+    (obsList H H.init (batchSeedOf EF P instances common))
     (instances.map fun I ↦ (Ext.ofBase (I.logN : F) : EF))) proof.mainCommit.toList) pis.flatten)
-    ((common.preprocessed.map (·.toList)).getD [])
+    ((common.preprocessed.map (·.toList)).getD []))
+    ((proof.permutationCommit.map (·.toList)).getD [])) (proof.lookupTerminals.toList.filterMap id)
 
 /-- The constraint-folding challenge `α`. -/
 def alphaOfB : EF := (smpExt H (stateAlphaB H P instances common proof pis)).1
@@ -69,27 +72,58 @@ theorem unless_ok {α : Type} (b : Bool) (e : String) (k : PUnit → ExceptT Str
   · exact absurd h (by intro h'; cases h')
   · exact ⟨rfl, h⟩
 
-/-- **An accepting batch verifier** on pure primitives: the proof's shape checks, the grinding
-witnesses check, `ζ` is off every trace domain, FRI accepts from the challenger after the batching
-challenge, and every instance's constraints hold at `ζ` with the challenger's `α` and `ζ`. -/
+/-- Without lookups, the lookup phase only observes the permutation commitment and terminals. -/
+theorem lookupPhase_eq (P : Params) (instances : List (Instance F)) (proof : BatchProof F EF)
+    (hnl : hasLookups instances = false) (s : H.State) :
+    (lookupPhase (H := H) P instances proof : M H (EF × EF)) s =
+      .ok ((0, 0), obsExts H (obsList H s ((proof.permutationCommit.map (·.toList)).getD []))
+        (proof.lookupTerminals.toList.filterMap id)) := by
+  unfold lookupPhase
+  rw [hnl]
+  rfl
+
+/-- Without lookups, a proof that passes the lookup checks commits to no permutation trace. -/
+theorem permutationCommit_eq_none (P : Params) (instances : List (Instance F))
+    (proof : BatchProof F EF) (hnl : hasLookups instances = false)
+    (hlk : lookupShapeOk P instances proof = true) : proof.permutationCommit = none := by
+  simp only [lookupShapeOk, Bool.and_eq_true, beq_iff_eq, hnl] at hlk
+  exact Option.not_isSome_iff_eq_none.mp (by rw [hlk.1.2]; exact Bool.false_ne_true)
+
+/-- The rest of an accepted run after a computation. -/
+theorem except_bind_ok' {α : Type} (R : ExceptT String Id α) (k : α → ExceptT String Id Unit)
+    (h : (R >>= k).run = .ok ()) : ∃ x, R = .ok x ∧ (k x).run = .ok () := by
+  revert h
+  match R with
+  | .ok x => exact fun h ↦ ⟨x, rfl, h⟩
+  | .error e => exact fun h ↦ absurd h (by intro h'; cases h')
+
+/-- **An accepting batch verifier** on pure primitives, for a batch without lookups: the proof's
+shape checks, the grinding witnesses check, `ζ` is off every trace domain, FRI accepts from the
+challenger after the batching challenge, and every instance's constraints hold at `ζ` with the
+challenger's `α` and `ζ`. -/
 theorem verifyBatchWith_ok (P : Params) (instances : List (Instance F)) (common : Common F)
-    (proof : BatchProof F EF) (pis : List (List F))
+    (proof : BatchProof F EF) (pis : List (List F)) (hnl : hasLookups instances = false)
     (h : verifyBatchWith H P instances common proof pis = .ok ()) :
     let zeta := zetaOfB H P instances common proof pis
     proof.opened.size = instances.length ∧ pis.length = instances.length ∧
       proof.degreeBits.toList = instances.map (·.logN) ∧
-      (∀ I ∈ instances, I.logN + I.air.logQuotientChunks I.logN ≤ twoAdicity F) ∧
+      (∀ I ∈ instances, I.logN + I.logQuotientChunks ≤ twoAdicity F) ∧
       (∀ x ∈ instances.zip pis, x.2.length = x.1.air.numPublicValues) ∧
-      (∀ x ∈ instances.zip proof.opened.toList, openedShapeOk x.1.air x.2 x.1.logN = true) ∧
+      (∀ x ∈ instances.zip proof.opened.toList, openedShapeOk x.1 x.2 = true) ∧
       common.preprocessed.isSome = instances.any (0 < ·.air.preprocessedWidth) ∧
+      lookupShapeOk P instances proof = true ∧
       (oodCheckB (EF := EF) H P instances common proof pis).1 = true ∧
       (∀ I ∈ instances, (Ext.powTwo zeta I.logN - 1 != 0) = true) ∧
       (batchCheckB H P instances common proof pis).1 = true ∧
       (∃ st, verifyFri H P proof.fri (batchRounds instances common proof zeta)
         (batchOfB H P instances common proof pis) (stateFriB H P instances common proof pis) =
           .ok ((), st)) ∧
-      ∀ x ∈ instances.zip (proof.opened.toList.zip pis),
-        instanceCheck x.1 x.2.1 x.2.2 zeta (alphaOfB H P instances common proof pis) = true := by
+      ∀ x ∈ instances.zipIdx.zip (proof.opened.toList.zip pis),
+        instanceCheck x.1.1 x.2.1 x.2.2 (proof.permutationLocal.getD x.1.2 #[])
+          (proof.permutationNext.getD x.1.2 #[]) ((CompStark.Lookup.challengeLayout
+            (instances.map (·.lookups)) 0 0).getD x.1.2 [])
+          ((proof.lookupTerminals.getD x.1.2 none).getD 0) zeta
+          (alphaOfB H P instances common proof pis) = true := by
   intro zeta
   unfold verifyBatchWith at h
   obtain ⟨hcount, h⟩ := unless_ok _ _ _ _ h
@@ -99,13 +133,16 @@ theorem verifyBatchWith_ok (P : Params) (instances : List (Instance F)) (common 
   obtain ⟨hpub, h⟩ := unless_ok _ _ _ _ h
   obtain ⟨hshape, h⟩ := unless_ok _ _ _ _ h
   obtain ⟨hprep, h⟩ := unless_ok _ _ _ _ h
+  obtain ⟨hlk, h⟩ := unless_ok _ _ _ _ h
   obtain ⟨-, h⟩ := unless_ok _ _ _ _ h
-  obtain ⟨x, hx, hc⟩ := except_bind_ok _ _ _ h
+  obtain ⟨x, hx, hc⟩ := except_bind_ok' _ _ h
   unfold StateT.run at hx
   rw [bind_ok_of H (observeList_eq H _ _), bind_ok_of H (observeExts_eq H _ _),
     bind_ok_of H (observeList_eq H _ _), bind_ok_of H (observeList_eq H _ _),
-    bind_ok_of H (observeList_eq H _ _),
-    bind_ok_of H (a := alphaOfB H P instances common proof pis)
+    bind_ok_of H (observeList_eq H _ _), bind_ok_of H (lookupPhase_eq H P instances proof hnl _)]
+    at hx
+  dsimp only at hx
+  rw [bind_ok_of H (a := alphaOfB H P instances common proof pis)
       (s' := (smpExt (EF := EF) H (stateAlphaB H P instances common proof pis)).2)
       (sampleExt_eq H _),
     bind_ok_of H (observeList_eq H _ _),
@@ -121,10 +158,11 @@ theorem verifyBatchWith_ok (P : Params) (instances : List (Instance F)) (common 
   obtain ⟨-, hbc, hfri⟩ := verifyPcs_ok H P _ proof.fri _ _ h3
   have hx' := pure_eq_ok H h4
   subst hx'
+  obtain ⟨hc, -⟩ := unless_ok _ _ _ _ hc
   simp only [Bool.and_eq_true, beq_iff_eq, List.all_eq_true, decide_eq_true_eq] at hcount hdb hq
   simp only [beq_iff_eq, List.all_eq_true] at hpub hshape
   simp only [beq_iff_eq, List.all_eq_true] at hprep hz hc
-  exact ⟨hcount.1, hcount.2, hdb, hq, fun x hx ↦ hpub x hx, hshape, hprep, hood, hz, hbc,
-    ⟨_, hfri⟩, hc⟩
+  exact ⟨hcount.1.1.1.1, hcount.1.1.1.2, hdb, hq, fun x hx ↦ hpub x hx, hshape, hprep, hlk, hood,
+    hz, hbc, ⟨_, hfri⟩, hc⟩
 
 end CompStark.Ni

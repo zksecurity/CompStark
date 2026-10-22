@@ -49,7 +49,8 @@ variable [BaseField F] [Challenge F EF] (S : Iop.Batch.Setup EF) (common : CompS
 
 /-- Every matrix of the rounds is some instance's extension, and every instance's extended
 trace is a matrix of the main round. -/
-theorem mem_matHeights (hsize : proof.opened.size = S.k) (a : ℕ) :
+theorem mem_matHeights (hsize : proof.opened.size = S.k) (hperm : proof.permutationCommit = none)
+    (a : ℕ) :
     a ∈ matHeights S.params (CompStark.Batch.batchRounds S.instances common proof zeta) ↔
       ∃ i : Fin S.k, S.logN i + S.params.logBlowup = a := by
   have hos : proof.opened.toList.length = S.k := by rw [Array.length_toList, hsize]
@@ -61,7 +62,7 @@ theorem mem_matHeights (hsize : proof.opened.size = S.k) (a : ℕ) :
     exact ⟨i, hi.symm⟩
   constructor
   · intro ha
-    simp only [matHeights, batchRounds_cases, List.mem_map, List.mem_flatMap, List.mem_append,
+    simp only [matHeights, batchRounds_cases (hperm := hperm), List.mem_map, List.mem_flatMap, List.mem_append,
       List.mem_cons, List.not_mem_nil, or_false] at ha
     obtain ⟨d, ⟨r, hr, hd⟩, rfl⟩ := ha
     rcases hr with (rfl | rfl) | hr
@@ -80,7 +81,7 @@ theorem mem_matHeights (hsize : proof.opened.size = S.k) (a : ℕ) :
         exact ⟨i, by rw [hi]⟩
       · exact absurd hr List.not_mem_nil
   · rintro ⟨i, rfl⟩
-    simp only [matHeights, batchRounds_cases, List.mem_map, List.mem_flatMap, List.mem_append,
+    simp only [matHeights, batchRounds_cases (hperm := hperm), List.mem_map, List.mem_flatMap, List.mem_append,
       List.mem_cons, List.not_mem_nil, or_false]
     refine ⟨((⟨1, S.logN i⟩ : Domain F), traceOpenings (S.air i)
       (proof.opened.toList.getD i noOpenings) zeta (zeta * Ext.ofBase (twoAdicGen (S.logN i)))),
@@ -97,13 +98,14 @@ theorem mem_matHeights (hsize : proof.opened.size = S.k) (a : ℕ) :
     exact List.getElem_mem hi
 
 /-- The FRI verifier's heights are the tallest domain's, then the shorter instances'. -/
-theorem descHeights_batchRounds (hsize : proof.opened.size = S.k) :
+theorem descHeights_batchRounds (hsize : proof.opened.size = S.k)
+    (hperm : proof.permutationCommit = none) :
     descHeights (matHeights S.params (CompStark.Batch.batchRounds S.instances common proof zeta)) =
       S.logTop :: S.friHeights := by
   have hfit := fits_friHeights S
   refine List.Pairwise.eq_of_mem_iff (r := (· > ·)) (pairwise_descHeights _)
     (List.pairwise_cons.mpr ⟨fun m hm ↦ (hfit.2 m hm).2, hfit.1⟩) fun a ↦ ?_
-  rw [mem_descHeights, mem_matHeights S common proof zeta hsize, List.mem_cons, mem_friHeights]
+  rw [mem_descHeights, mem_matHeights S common proof zeta hsize hperm, List.mem_cons, mem_friHeights]
   constructor
   · rintro ⟨i, rfl⟩
     by_cases h : S.logN i + S.params.logBlowup = S.logTop
@@ -662,17 +664,27 @@ theorem reverseBits_instPoint (S : Iop.Batch.Setup EF) (I : ℕ) (hI : I < 2 ^ S
 /-- An instance's opened values and public values are those the verifier checks. -/
 theorem mem_zip_check (S : Iop.Batch.Setup EF) (os : List (OpenedValues EF))
     (hos : os.length = S.k) (publicValues : Fin S.k → List F) (i : Fin S.k) :
-    ((⟨S.air i, S.logN i⟩ : CompStark.Batch.Instance F), os.getD i noOpenings, publicValues i) ∈
-      S.instances.zip (os.zip (List.ofFn publicValues)) := by
-  have hl : i.val < (S.instances.zip (os.zip (List.ofFn publicValues))).length := by
-    rw [List.length_zip, List.length_zip, length_instances, hos, List.length_ofFn]
+    (((⟨S.air i, S.logN i⟩ : CompStark.Batch.Instance F), i.val), os.getD i noOpenings,
+      publicValues i) ∈ S.instances.zipIdx.zip (os.zip (List.ofFn publicValues)) := by
+  have hl : i.val < (S.instances.zipIdx.zip (os.zip (List.ofFn publicValues))).length := by
+    rw [List.length_zip, List.length_zip, List.length_zipIdx, length_instances, hos,
+      List.length_ofFn]
     simp only [Nat.min_self]
     exact i.isLt
   have := List.getElem_mem hl
-  rw [List.getElem_zip, List.getElem_zip] at this
-  simp only [Iop.Batch.Setup.instances, List.getElem_ofFn] at this
+  rw [List.getElem_zip, List.getElem_zip, List.getElem_zipIdx] at this
+  simp only [Iop.Batch.Setup.instances, List.getElem_ofFn, Nat.zero_add] at this
   rw [List.getD_eq_getElem _ _ (by rw [hos]; exact i.isLt)]
   exact this
+
+/-- Without lookups, an instance's check is the STARK's constraint check. -/
+theorem instanceCheck_eq (I : CompStark.Batch.Instance F) (hl : I.air.lookups = [])
+    (o : OpenedValues EF) (pis : List F) (cur next : Array EF) (chs : List EF) (t zeta alpha : EF) :
+    CompStark.Batch.instanceCheck I o pis cur next chs t zeta alpha =
+      checkConstraints I.air pis o I.logN zeta alpha (recompose
+        (chunkDomains I.logN (I.air.logQuotientChunks I.logN)) o.quotientChunks.toList zeta) := by
+  rw [CompStark.Batch.instanceCheck, lookupConstraints_eq_nil I hl, logQuotientChunks_eq I hl]
+  rfl
 
 /-- **BCS consistency of the batch STARK.** If the batch verifier on pure primitives `H` accepts
 a proof whose commitments bind the rows extracted from `cache`, and under whose preprocessed
@@ -692,6 +704,7 @@ theorem bcsB (S : Iop.Batch.Setup EF) (cache : Merkle.Cache F (Digest F)) (H : P
           (S.logN i + S.params.logBlowup) r =
         (S.instanceSetup i).preprocessedWord j
           (finMod _ (reverseBits r (S.logN i + S.params.logBlowup))))
+    (hnl : S.NoLookups)
     (h : CompStark.Batch.verifyBatchWith H S.params S.instances common proof
       (List.ofFn publicValues) = .ok ()) :
     let t := extractB S cache H common proof (List.ofFn publicValues)
@@ -703,25 +716,28 @@ theorem bcsB (S : Iop.Batch.Setup EF) (cache : Merkle.Cache F (Digest F)) (H : P
         (querySampleOfB H S common proof (List.ofFn publicValues) j) ∈ t.consistentQueries := by
   intro t
   set pis := List.ofFn publicValues with hpis
-  obtain ⟨hsize, -, -, -, -, hshapeZ, hprepS, -, -, -, ⟨st, hfriOk⟩, hcheck⟩ :=
-    verifyBatchWith_ok H S.params S.instances common proof pis h
+  obtain ⟨hsize, -, -, -, -, hshapeZ, hprepS, hlk, -, -, -, ⟨st, hfriOk⟩, hcheck⟩ :=
+    verifyBatchWith_ok H S.params S.instances common proof pis (hasLookups_instances S hnl) h
+  have hperm := permutationCommit_eq_none S.params S.instances proof
+    (hasLookups_instances S hnl) hlk
   have hos : proof.opened.toList.length = S.k := by
     rw [Array.length_toList, hsize, length_instances]
   rw [length_instances] at hsize
-  have hshape : ∀ i : Fin S.k, CompStark.Batch.openedShapeOk (S.air i)
-      (proof.opened.toList.getD i noOpenings) (S.logN i) = true := by
+  have hshape : ∀ i : Fin S.k, CompStark.Batch.openedShapeOk ⟨S.air i, S.logN i⟩
+      (proof.opened.toList.getD i noOpenings) = true := by
     intro i
     have hm := hshapeZ _ (zip_instances S _ hos ▸ List.mem_map.mpr ⟨i, List.mem_finRange _, rfl⟩)
     exact hm
-  have hsh := fun i ↦ openedShapeOk_spec (hshape i)
+  have hsh := fun i ↦ openedShapeOk_spec (hnl i) (hshape i)
   set zeta := zetaOfB H S.params S.instances common proof pis with hzeta
-  have hD := descHeights_batchRounds S common proof zeta (by rw [hsize])
+  have hD := descHeights_batchRounds S common proof zeta (by rw [hsize]) hperm
   have hok := verifyFri_okR H S.params proof.fri _ _ _ _ hfriOk
   dsimp only at hok
   rw [hD, List.headD_cons] at hok
   obtain ⟨-, -, -, hK, hfolds, hcs, -, hfp, hw, hcrlen, hq⟩ := hok
   refine ⟨fun i ↦ ?_, ?_, ?_, fun j ↦ ?_⟩
   · have hc := hcheck _ (mem_zip_check S _ hos publicValues i)
+    rw [instanceCheck_eq ⟨S.air i, S.logN i⟩ (hnl i)] at hc
     exact constraintsHoldAt_of_check (S.instanceSetup i) (publicValues i) _ _ _ (hsh i).2.2.1 hc
   · show (finalPoly S.domainSetup proof.fri.finalPoly).natDegree < _
     refine natDegree_lt_of_degree ?_ (Nat.two_pow_pos _)
@@ -755,7 +771,7 @@ theorem bcsB (S : Iop.Batch.Setup EF) (cache : Merkle.Cache F (Digest F)) (H : P
   obtain ⟨rM, rQ, rP, hrs⟩ : ∃ rM rQ rP, rows = [rM, rQ] ++
       (match common.preprocessed with | some _ => [rP] | none => []) := by
     have hl := hrl
-    rw [hrounds, batchRounds_cases] at hl
+    rw [hrounds, batchRounds_cases (hperm := hperm)] at hl
     cases hc : common.preprocessed with
     | none =>
       simp only [hc, List.append_nil, List.length_cons, List.length_nil] at hl
@@ -768,7 +784,7 @@ theorem bcsB (S : Iop.Batch.Setup EF) (cache : Merkle.Cache F (Digest F)) (H : P
       (match common.preprocessed with | some _ => [rP] | none => []).zip
         (match common.preprocessed with
           | some root => [(root, prepMats S proof zeta)] | none => []) := by
-    rw [hrs, hrounds, batchRounds_cases]
+    rw [hrs, hrounds, batchRounds_cases (hperm := hperm)]
     rfl
   have hbM : BatchOkR H S.params S.logTop index (rM, proof.mainCommit, mainMats S proof zeta) :=
     hbok _ (by rw [hzip]; exact List.mem_cons_self)
@@ -785,8 +801,8 @@ theorem bcsB (S : Iop.Batch.Setup EF) (cache : Merkle.Cache F (Digest F)) (H : P
         t.deepWords m (finMod m (reverseBits (index >>> (S.logTop - m)) m)) := by
     intro m
     rw [hrs, hrounds]
-    refine reducedAt_eq_groupDeepWord S t.prover t.alpha t.zeta proof zeta S.logTop index m rfl
-      (fun i ↦ rfl) hsize hshape common hprepS rM rQ rP (fun x hx ↦ ?_) (fun i j hj ↦ ?_)
+    refine reducedAt_eq_groupDeepWord S t.prover t.alpha t.zeta proof zeta S.logTop index m hnl
+      rfl (fun i ↦ rfl) hsize hshape common hprepS hperm rM rQ rP (fun x hx ↦ ?_) (fun i j hj ↦ ?_)
       (fun i c e he ↦ ?_) (fun i hp j hj ↦ ?_) alpha
     · have hx' : x ∈ rows.zip rounds := by rw [hrs, hrounds]; exact hx
       obtain ⟨-, -, h3, h4⟩ := hbok x hx'

@@ -44,33 +44,36 @@ variable (S : Iop.Batch.Setup EF) (H : Primitives F Id) (common : CompStark.Batc
 /-- **The shape of an accepted batch proof.** One opened value set per instance, each in its
 AIR's shape, the preprocessed commitment exactly when some instance has preprocessed columns, a
 commitment and grinding witness per fold, and a final polynomial of its length. -/
-theorem shape_of_verifyBatchWith
+theorem shape_of_verifyBatchWith (hnl : S.NoLookups)
     (h : CompStark.Batch.verifyBatchWith H S.params S.instances common proof pis = .ok ()) :
     proof.opened.size = S.k ∧
-      (∀ i : Fin S.k, CompStark.Batch.openedShapeOk (S.air i)
-        (proof.opened.toList.getD i noOpenings) (S.logN i) = true) ∧
+      (∀ i : Fin S.k, CompStark.Batch.openedShapeOk ⟨S.air i, S.logN i⟩
+        (proof.opened.toList.getD i noOpenings) = true) ∧
       common.preprocessed.isSome = S.instances.any (0 < ·.air.preprocessedWidth) ∧
       proof.fri.commits.size = (friAritiesB S).length ∧
       proof.fri.commitWitnesses.size = (friAritiesB S).length ∧
-      proof.fri.finalPoly.size = 2 ^ S.params.logFinalPolyLen := by
-  obtain ⟨hsize, -, -, -, -, hshapeZ, hprepS, -, -, -, ⟨st, hfriOk⟩, -⟩ :=
-    verifyBatchWith_ok H S.params S.instances common proof pis h
+      proof.fri.finalPoly.size = 2 ^ S.params.logFinalPolyLen ∧
+      proof.permutationCommit = none := by
+  obtain ⟨hsize, -, -, -, -, hshapeZ, hprepS, hlk, -, -, -, ⟨st, hfriOk⟩, -⟩ :=
+    verifyBatchWith_ok H S.params S.instances common proof pis (hasLookups_instances S hnl) h
+  have hperm := permutationCommit_eq_none S.params S.instances proof
+    (hasLookups_instances S hnl) hlk
   rw [length_instances] at hsize
   have hos : proof.opened.toList.length = S.k := by rw [Array.length_toList, hsize]
   have hD := descHeights_batchRounds S common proof
-    (zetaOfB H S.params S.instances common proof pis) hsize
+    (zetaOfB H S.params S.instances common proof pis) hsize hperm
   have hok := verifyFri_okR H S.params proof.fri _ _ _ _ hfriOk
   dsimp only at hok
   rw [hD, List.headD_cons] at hok
   obtain ⟨-, -, -, -, -, hcs, hcw, hfp, -⟩ := hok
   exact ⟨hsize, fun i ↦ hshapeZ _ (zip_instances S _ hos ▸
-    List.mem_map.mpr ⟨i, List.mem_finRange _, rfl⟩), hprepS, hcs, hcw, hfp⟩
+    List.mem_map.mpr ⟨i, List.mem_finRange _, rfl⟩), hprepS, hcs, hcw, hfp, hperm⟩
 
-theorem length_zip_commitsB
+theorem length_zip_commitsB (hnl : S.NoLookups)
     (h : CompStark.Batch.verifyBatchWith H S.params S.instances common proof pis = .ok ()) :
     (proof.fri.commits.toList.zip proof.fri.commitWitnesses.toList).length =
       (friAritiesB S).length := by
-  obtain ⟨-, -, -, hcs, hcw, -⟩ := shape_of_verifyBatchWith S H common proof pis h
+  obtain ⟨-, -, -, hcs, hcw, -⟩ := shape_of_verifyBatchWith S H common proof pis hnl h
   rw [List.length_zip, Array.length_toList, Array.length_toList, hcs, hcw, Nat.min_self]
 
 end Accepted
@@ -121,7 +124,8 @@ variable (S : Iop.Batch.Setup EF) (common : CompStark.Batch.Common F)
 theorem inputsB_getD_zero : (inputsB S common pis proof).getD 0 [] =
     CompStark.Batch.batchSeedOf EF S.params S.instances common ++
       coeffs (S.instances.map fun I ↦ (Ext.ofBase (I.logN : F) : EF)) ++ proof.mainCommit.toList ++
-      pis.flatten ++ prepDigest common := by
+      pis.flatten ++ prepDigest common ++ permDigest proof ++
+      coeffs (proof.lookupTerminals.toList.filterMap id) := by
   simp only [inputsB, List.getD_eq_getElem?_getD, List.getElem?_cons_zero, Option.getD_some]
 
 theorem inputsB_getD_one : (inputsB S common pis proof).getD 1 [] =
@@ -147,15 +151,22 @@ theorem length_coeffs_map {α : Type} (l : List α) (f : α → EF) :
       exact Challenge.length_coeffs _), List.length_map, smul_eq_mul, Nat.mul_comm]
 
 /-- The batch's domain separator on a proof with the setup's preprocessed commitment is `S`'s. -/
-theorem batchSeedOf_eq
+theorem batchSeedOf_eq (hnl : S.NoLookups)
     (hprep : common.preprocessed.isSome = S.instances.any (0 < ·.air.preprocessedWidth)) :
     CompStark.Batch.batchSeedOf EF S.params S.instances common = batchSeedS S := by
-  rw [CompStark.Batch.batchSeedOf, batchSeedS, hprep, hasPreprocessed_eq]
+  have h0 : S.instances.countP (!·.lookups.isEmpty) = 0 := by
+    rw [List.countP_eq_zero]
+    intro I hI
+    obtain ⟨i, rfl⟩ := List.mem_ofFn.mp hI
+    simp only [lookups_eq_nil ⟨S.air i, S.logN i⟩ (hnl i), List.isEmpty_nil, Bool.not_true,
+      Bool.false_eq_true, not_false_eq_true]
+  rw [CompStark.Batch.batchSeedOf, batchSeedS, hprep, hasPreprocessed_eq, h0]
 
-theorem mainRoot_eq
+theorem mainRoot_eq (hnl : S.NoLookups)
     (hprep : common.preprocessed.isSome = S.instances.any (0 < ·.air.preprocessedWidth)) :
     digestAt ((inputsB S common pis proof).getD 0 []) (mainOffsetB S) = proof.mainCommit := by
-  rw [inputsB_getD_zero, List.append_assoc _ pis.flatten, batchSeedOf_eq S common hprep]
+  rw [inputsB_getD_zero, List.append_assoc _ _ (coeffs _), List.append_assoc _ _ (permDigest _ ++ _),
+    List.append_assoc _ pis.flatten, batchSeedOf_eq S common hnl hprep]
   have hlen : mainOffsetB S = (batchSeedS S ++
       coeffs (S.instances.map fun I ↦ (Ext.ofBase (I.logN : F) : EF))).length := by
     rw [List.length_append, length_coeffs_map, length_instances, mainOffsetB]
@@ -167,16 +178,17 @@ theorem quotientRoot_eqB :
   rw [inputsB_getD_one, digestAt_append_zero]
 
 /-- On a proof in the instances' shapes, the decoded openings are the opened values. -/
-theorem openings_eqB (hsize : proof.opened.size = S.k)
-    (hshape : ∀ i : Fin S.k, CompStark.Batch.openedShapeOk (S.air i)
-      (proof.opened.toList.getD i noOpenings) (S.logN i) = true)
-    (hprep : common.preprocessed.isSome = S.instances.any (0 < ·.air.preprocessedWidth)) :
+theorem openings_eqB (hnl : S.NoLookups) (hsize : proof.opened.size = S.k)
+    (hshape : ∀ i : Fin S.k, CompStark.Batch.openedShapeOk ⟨S.air i, S.logN i⟩
+      (proof.opened.toList.getD i noOpenings) = true)
+    (hprep : common.preprocessed.isSome = S.instances.any (0 < ·.air.preprocessedWidth))
+    (hperm : proof.permutationCommit = none) :
     openingsAtB S (((inputsB S common pis proof).getD 2 []).drop (pcsSeedB S).length) =
       fun i ↦ openingsOf (S.instanceSetup i) (proof.opened.toList.getD i noOpenings) := by
-  rw [inputsB_getD_two, claimCounts_batchRounds_eq S common proof hsize hshape hprep, ← pcsSeedB,
+  rw [inputsB_getD_two, claimCounts_batchRounds_eq S hnl common proof hsize hshape hprep hperm, ← pcsSeedB,
     List.append_assoc, List.drop_left]
   funext i
-  exact openingsAtB_coeffs S common proof hsize hshape hprep 0 _ i
+  exact openingsAtB_coeffs S hnl common proof hsize hshape hprep hperm 0 _ i
 
 theorem friAritiesB_ne_nil : friAritiesB S ≠ [] := by
   have hf := S.folds S.top
@@ -190,29 +202,29 @@ theorem friAritiesB_ne_nil : friAritiesB S ≠ [] := by
 variable (answer : (q : Query F) → Answer S.streamLen q)
 variable {common proof pis}
 
-theorem foldRoot_eqB
+theorem foldRoot_eqB (hnl : S.NoLookups)
     (hok : CompStark.Batch.verifyBatchWith (idealOf answer) S.params S.instances common proof pis =
       .ok ()) (i : ℕ) (hi : i < (friAritiesB S).length) :
     digestAt ((inputsB S common pis proof).getD (3 + i) []) (friOffsetB S i) =
       proof.fri.commits.toList.getD i 0 := by
-  have hz := length_zip_commitsB S (idealOf answer) common proof pis hok
+  have hz := length_zip_commitsB S (idealOf answer) common proof pis hnl hok
   rw [inputsB_getD_fold _ _ _ _ i (by omega)]
   have hpre : friOffsetB S i = (seedAt (friSeedB S) i).length := by
     simp only [friOffsetB, seedAt]
     split <;> rfl
   have hc : i < proof.fri.commits.toList.length := by
-    obtain ⟨-, -, -, hcs, -⟩ := shape_of_verifyBatchWith S (idealOf answer) common proof pis hok
+    obtain ⟨-, -, -, hcs, -⟩ := shape_of_verifyBatchWith S (idealOf answer) common proof pis hnl hok
     rw [Array.length_toList, hcs]
     exact hi
   rw [hpre, digestAt_append, List.getElem_zip, List.getD_eq_getElem _ _ hc]
 
-theorem finalPoly_eqB
+theorem finalPoly_eqB (hnl : S.NoLookups)
     (hok : CompStark.Batch.verifyBatchWith (idealOf answer) S.params S.instances common proof pis =
       .ok ()) :
     finalPolyAt S.domainSetup ((inputsB S common pis proof).getD (3 + (friAritiesB S).length) []) =
       proof.fri.finalPoly := by
-  have hz := length_zip_commitsB S (idealOf answer) common proof pis hok
-  obtain ⟨-, -, -, -, -, hfp⟩ := shape_of_verifyBatchWith S (idealOf answer) common proof pis hok
+  have hz := length_zip_commitsB S (idealOf answer) common proof pis hnl hok
+  obtain ⟨-, -, -, -, -, hfp, -⟩ := shape_of_verifyBatchWith S (idealOf answer) common proof pis hnl hok
   have hlast := inputsB_getD_last S common pis proof
   rw [hz] at hlast
   have hseed : seedAt (friSeedB S) (friAritiesB S).length = [] := by
@@ -235,19 +247,19 @@ theorem transcript_ext {t t' : Sound.Batch.Transcript S} (h1 : t.trace = t'.trac
 /-- **The extracted batch transcript.** On an accepted batch proof, the transcript extracted
 from a run on the answers `answer` is the prefix transcript of the proof's schedule with the
 answers to its duplex calls. -/
-theorem extractB_eq_prefixTranscriptB (cache : Merkle.Cache F (Digest F))
+theorem extractB_eq_prefixTranscriptB (hnl : S.NoLookups) (cache : Merkle.Cache F (Digest F))
     (hok : CompStark.Batch.verifyBatchWith (idealOf answer) S.params S.instances common proof pis =
       .ok ()) :
     extractB S cache (idealOf answer) common proof pis =
       prefixTranscriptB S cache (fun k ↦ (inputsB S common pis proof).getD k [])
         (fun k ↦ (answer (keyAt answer (inputsB S common pis proof) k)).2) := by
-  obtain ⟨hsize, hshape, hprep, hcs, -, hfp⟩ :=
-    shape_of_verifyBatchWith S (idealOf answer) common proof pis hok
+  obtain ⟨hsize, hshape, hprep, hcs, -, hfp, hperm⟩ :=
+    shape_of_verifyBatchWith S (idealOf answer) common proof pis hnl hok
   have hfpne : proof.fri.finalPoly.toList ≠ [] := by
     refine List.ne_nil_of_length_pos ?_
     rw [Array.length_toList, hfp]
     exact Nat.two_pow_pos _
-  have hz := length_zip_commitsB S (idealOf answer) common proof pis hok
+  have hz := length_zip_commitsB S (idealOf answer) common proof pis hnl hok
   obtain ⟨hα, hζ, hbatch, hlenβ, hβ, -, -⟩ :=
     challengesB_idealOf answer S common proof pis (le_refl _) hfpne
   refine transcript_ext S ?_ hα ?_ hζ ?_ hbatch ?_ ?_ ?_
@@ -255,12 +267,12 @@ theorem extractB_eq_prefixTranscriptB (cache : Merkle.Cache F (Digest F))
     show Merkle.matColumn cache proof.mainCommit _ _ _ _ _ _ _ =
       Merkle.matColumn cache (digestAt ((inputsB S common pis proof).getD 0 []) (mainOffsetB S))
         _ _ _ _ _ _ _
-    rw [mainRoot_eq S common proof pis hprep]
+    rw [mainRoot_eq S common proof pis hnl hprep]
   · funext i c e x
     show Merkle.matColumn cache proof.quotientCommit _ _ _ _ _ _ _ =
       Merkle.matColumn cache (digestAt ((inputsB S common pis proof).getD 1 []) 0) _ _ _ _ _ _ _
     rw [quotientRoot_eqB]
-  · exact (openings_eqB S common proof pis hsize hshape hprep).symm
+  · exact (openings_eqB S common proof pis hnl hsize hshape hprep hperm).symm
   · funext j m z
     show (if j < (friAritiesB S).length then friWordAt (EF := EF) cache
         (proof.fri.commits.toList.getD j 0) m ((friAritiesB S).getD j 0) z.val else 0) =
@@ -269,12 +281,12 @@ theorem extractB_eq_prefixTranscriptB (cache : Merkle.Cache F (Digest F))
           ((friAritiesB S).getD j 0) z.val else 0)
     split
     · rename_i hj
-      rw [foldRoot_eqB S answer hok j hj]
+      rw [foldRoot_eqB S answer hnl hok j hj]
     · rfl
   · show finalPoly S.domainSetup proof.fri.finalPoly = finalPoly S.domainSetup
       (finalPolyAt S.domainSetup
         ((inputsB S common pis proof).getD (3 + (friAritiesB S).length) []))
-    rw [finalPoly_eqB S answer hok]
+    rw [finalPoly_eqB S answer hnl hok]
   · funext j
     show (lift gen : Challenge.Spec EF) ^ 2 ^ ((friAritiesB S).take j).sum *
       Challenge.toSpec ((commitReplayB (idealOf answer) S common proof pis).1.getD j 0) =

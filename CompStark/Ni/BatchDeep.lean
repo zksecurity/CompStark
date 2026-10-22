@@ -25,6 +25,42 @@ variable {F : Type} [BaseField F] {EF : Type} [Challenge F EF]
 
 local notation "𝕂" => Challenge.Spec EF
 
+/-! ### Batches without lookups -/
+
+section NoLookups
+
+theorem lookups_eq_nil (I : CompStark.Batch.Instance F) (h : I.air.lookups = []) :
+    I.lookups = [] := by
+  simp only [CompStark.Batch.Instance.lookups, Air.packedLookups, h, CompStark.Lookup.packSameBus,
+    CompStark.Lookup.buses, List.filter_nil, List.foldl_nil, List.flatMap_nil, List.append_nil]
+
+theorem lookupConstraints_eq_nil (I : CompStark.Batch.Instance F) (h : I.air.lookups = []) :
+    I.air.lookupConstraints I.logN = [] := by
+  have := lookups_eq_nil I h
+  simp only [CompStark.Batch.Instance.lookups] at this
+  simp only [Air.lookupConstraints, this, CompStark.Lookup.logUpConstraints, List.isEmpty_nil,
+    ↓reduceIte]
+
+/-- Without lookups, an instance's quotient has its AIR's chunks. -/
+theorem logQuotientChunks_eq (I : CompStark.Batch.Instance F) (h : I.air.lookups = []) :
+    I.logQuotientChunks = I.air.logQuotientChunks I.logN := by
+  rw [CompStark.Batch.Instance.logQuotientChunks, lookupConstraints_eq_nil I h,
+    Air.logQuotientChunksWith, Air.logQuotientChunks]
+  have h0 : CompStark.Lookup.extDegree I.air I.logN [] = 0 := by
+    unfold CompStark.Lookup.extDegree
+    split <;> simp only [List.foldl_nil, ↓reduceIte]
+  rw [h0, Nat.max_zero]
+
+theorem hasLookups_instances (S : Iop.Batch.Setup EF) (h : S.NoLookups) :
+    CompStark.Batch.hasLookups S.instances = false := by
+  rw [CompStark.Batch.hasLookups, List.any_eq_false]
+  intro I hI
+  obtain ⟨i, rfl⟩ := List.mem_ofFn.mp hI
+  simp only [lookups_eq_nil ⟨S.air i, S.logN i⟩ (h i), List.isEmpty_nil, Bool.not_true, Bool.false_eq_true,
+    not_false_eq_true]
+
+end NoLookups
+
 /-! ### DEEP terms -/
 
 /-- The DEEP term of an opened value `pz` at `z` of a column whose value at the query point `x` is
@@ -602,7 +638,8 @@ theorem prep_part (hz : Challenge.toSpec zeta = ζ)
 
 /-- The commitment scheme's rounds of a batch proof at `ζ`: the main traces, the quotient chunks,
 and the preprocessed traces if the common data commits to some. -/
-theorem batchRounds_cases (common : CompStark.Batch.Common F) :
+theorem batchRounds_cases (common : CompStark.Batch.Common F)
+    (hperm : proof.permutationCommit = none) :
     CompStark.Batch.batchRounds S.instances common proof zeta =
       [(proof.mainCommit, (S.instances.zip proof.opened.toList).map fun x ↦
           ((⟨1, x.1.logN⟩ : Domain F), traceOpenings x.1.air x.2 zeta
@@ -618,7 +655,9 @@ theorem batchRounds_cases (common : CompStark.Batch.Common F) :
                   [(zeta * Ext.ofBase (twoAdicGen x.1.logN),
                     (x.2.preprocessedNext.getD #[]).toList)]
                 else []))]
-        | none => [] := rfl
+        | none => [] := by
+  rw [CompStark.Batch.batchRounds, hperm]
+  exact List.append_nil _
 
 /-- An instance without preprocessed columns opens no preprocessed words. -/
 theorem preprocessedOpened_nil {T : Iop.Setup EF} (q : Iop.Prover T) (α ζ : 𝕂)
@@ -629,20 +668,21 @@ theorem preprocessedOpened_nil {T : Iop.Setup EF} (q : Iop.Prover T) (α ζ : �
     List.finRange_eq_nil_iff]
   exact ⟨hp, hn0⟩
 
-/-- Opened values in an AIR's shape have its widths. -/
-theorem openedShapeOk_spec {A : Air F} {o : OpenedValues EF} {logN : ℕ}
-    (h : CompStark.Batch.openedShapeOk A o logN = true) :
-    o.traceLocal.size = A.width ∧ traceNextOk A o = true ∧
-      o.quotientChunks.size = 2 ^ A.logQuotientChunks logN ∧
+/-- Opened values in the shape of an instance without lookups have its AIR's widths. -/
+theorem openedShapeOk_spec {I : CompStark.Batch.Instance F} {o : OpenedValues EF}
+    (hl : I.air.lookups = []) (h : CompStark.Batch.openedShapeOk I o = true) :
+    o.traceLocal.size = I.air.width ∧ traceNextOk I.air o = true ∧
+      o.quotientChunks.size = 2 ^ I.air.logQuotientChunks I.logN ∧
       (∀ ch ∈ o.quotientChunks, ch.size = Challenge.d EF) ∧
-      (o.preprocessedLocal.getD #[]).size = A.preprocessedWidth ∧
-      (o.preprocessedNext.getD #[]).size = A.preprocessedNextWidth := by
+      (o.preprocessedLocal.getD #[]).size = I.air.preprocessedWidth ∧
+      (o.preprocessedNext.getD #[]).size = I.air.preprocessedNextWidth := by
+  rw [← logQuotientChunks_eq I hl]
   rcases o with ⟨tl, tn, pl, pn, qc⟩
   simp only [CompStark.Batch.openedShapeOk, Bool.and_eq_true, beq_iff_eq, Array.all_eq_true']
     at h
   obtain ⟨⟨⟨⟨h1, h2⟩, h3⟩, h4⟩, h5⟩ := h
   refine ⟨h1, h2, h3, h4, ?_⟩
-  have hnl := A.preprocessedNextWidth_le
+  have hnl := I.air.preprocessedNextWidth_le
   match pl, pn, h5 with
   | none, none, h5 =>
     simp only [beq_iff_eq] at h5
@@ -664,15 +704,15 @@ theorem openedShapeOk_spec {A : Air F} {o : OpenedValues EF} {logN : ℕ}
 chunks and the preprocessed traces at index `I` hold the prover's words at the instances' points,
 its reduced opening at each height is the batched DEEP word of the instances of that domain size
 at the query's point, at the batching challenge. -/
-theorem reducedAt_eq_groupDeepWord (hz : Challenge.toSpec zeta = ζ)
+theorem reducedAt_eq_groupDeepWord (hnl : S.NoLookups) (hz : Challenge.toSpec zeta = ζ)
     (hopen : ∀ i, p.openings α ζ i =
       openingsOf (S.instanceSetup i) (proof.opened.toList.getD i noOpenings))
     (hsize : proof.opened.size = S.k)
-    (hshape : ∀ i : Fin S.k, CompStark.Batch.openedShapeOk (S.air i)
-      (proof.opened.toList.getD i noOpenings) (S.logN i) = true)
+    (hshape : ∀ i : Fin S.k, CompStark.Batch.openedShapeOk ⟨S.air i, S.logN i⟩
+      (proof.opened.toList.getD i noOpenings) = true)
     (common : CompStark.Batch.Common F)
     (hprep : common.preprocessed.isSome = S.instances.any (0 < ·.air.preprocessedWidth))
-    (rM rQ rP : List (Array F))
+    (hperm : proof.permutationCommit = none) (rM rQ rP : List (Array F))
     (hw : ∀ x ∈ ([rM, rQ] ++ (match common.preprocessed with | some _ => [rP] | none => [])).zip
       (CompStark.Batch.batchRounds S.instances common proof zeta),
       x.1.length = x.2.2.length ∧ ∀ y ∈ x.1.zip x.2.2, ∀ zy ∈ y.2.2, zy.2.length = y.1.size)
@@ -695,9 +735,9 @@ theorem reducedAt_eq_groupDeepWord (hz : Challenge.toSpec zeta = ζ)
     one_mul, groupDeepWord_eq_horner]
   congr 1
   change (batchTerms _).map (deepTerm (pointAt logMax I m)) = _
-  have hsh := fun i ↦ openedShapeOk_spec (hshape i)
+  have hsh := fun i ↦ openedShapeOk_spec (hnl i) (hshape i)
   rw [Iop.Batch.groupOpened, List.map_append, List.map_append]
-  rw [batchRounds_cases] at hw ⊢
+  rw [batchRounds_cases (hperm := hperm)] at hw ⊢
   have hbt : ∀ (u v : List (Array F × Domain F × List (EF × List EF))),
       batchTerms (u ++ v) = batchTerms u ++ batchTerms v := fun u v ↦ List.flatMap_append
   have hq : ∀ (x y : List (Array F) × Round F EF) (xs : List (List (Array F) × Round F EF)),

@@ -31,10 +31,10 @@ theorem stateAlphaB_idealOf :
       ⟨capAt answer (inputsB S common pis proof) 0, (inputsB S common pis proof).getD 0 [],
         []⟩ := by
   unfold stateAlphaB
-  rw [show (idealOf answer).init = ⟨initCap, [], []⟩ from rfl, obsExts_eq]
-  simp only [obsList_idealOf_mk, List.nil_append]
-  simp only [inputsB, prepDigest, List.getD_eq_getElem?_getD, List.getElem?_cons_zero,
-    Option.getD_some]
+  rw [show (idealOf answer).init = ⟨initCap, [], []⟩ from rfl]
+  simp only [obsExts_eq, obsList_idealOf_mk, List.nil_append]
+  simp only [inputsB, prepDigest, permDigest, List.getD_eq_getElem?_getD,
+    List.getElem?_cons_zero, Option.getD_some]
   rfl
 
 theorem alphaB_idealOf (hK : Challenge.d EF ≤ K) :

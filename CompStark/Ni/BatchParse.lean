@@ -56,7 +56,7 @@ theorem claimCounts_batchRounds (z z' : EF) :
     claimCounts (CompStark.Batch.batchRounds instances common proof z) =
       claimCounts (CompStark.Batch.batchRounds instances common proof z') := by
   unfold claimCounts CompStark.Batch.batchRounds traceOpenings
-  cases common.preprocessed <;>
+  cases common.preprocessed <;> cases proof.permutationCommit <;>
     simp only [List.map_cons, List.map_map, List.map_nil, List.map_flatMap,
       Function.comp_def, apply_ite, List.cons_append, List.nil_append, List.append_nil]
 
@@ -64,7 +64,7 @@ theorem roundValues_batchRounds (z z' : EF) :
     roundValues (CompStark.Batch.batchRounds instances common proof z) =
       roundValues (CompStark.Batch.batchRounds instances common proof z') := by
   unfold roundValues CompStark.Batch.batchRounds traceOpenings
-  cases common.preprocessed <;>
+  cases common.preprocessed <;> cases proof.permutationCommit <;>
     simp only [List.flatMap_cons, List.flatMap_map, List.flatMap_nil, apply_ite, List.cons_append,
       List.nil_append, List.append_nil, List.flatMap_assoc]
 
@@ -73,6 +73,10 @@ end Schedule
 /-- The preprocessed commitment's elements, none without one. -/
 def prepDigest (common : CompStark.Batch.Common F) : List F :=
   (common.preprocessed.map (·.toList)).getD []
+
+/-- The permutation commitment's elements, none without one. -/
+def permDigest (proof : CompStark.Batch.BatchProof F EF) : List F :=
+  (proof.permutationCommit.map (·.toList)).getD []
 
 /-- FRI's domain separator on a batch proof for `S`. -/
 noncomputable def friSeedB (S : Iop.Batch.Setup EF) : List F :=
@@ -85,7 +89,8 @@ noncomputable def inputsB (S : Iop.Batch.Setup EF) (common : CompStark.Batch.Com
     (pis : List (List F)) (proof : CompStark.Batch.BatchProof F EF) : List (List F) :=
   (CompStark.Batch.batchSeedOf EF S.params S.instances common ++
     coeffs (S.instances.map fun I ↦ (Ext.ofBase (I.logN : F) : EF)) ++ proof.mainCommit.toList ++
-    pis.flatten ++ prepDigest common) ::
+    pis.flatten ++ prepDigest common ++ permDigest proof ++
+    coeffs (proof.lookupTerminals.toList.filterMap id)) ::
   (proof.quotientCommit.toList ++ witnessInput S.params.oodPowBits proof.oodWitness) ::
   (DomainSeparator.pcsSeed F EF
       (claimCounts (CompStark.Batch.batchRounds S.instances common proof 0))
@@ -170,8 +175,20 @@ theorem out_observeExts_nil (xs : List EF) (cap : Digest F) (input : List F) :
     rw [h, List.append_nil]
   · rfl
 
+/-- Without lookups, the lookup phase observes the permutation commitment and terminals. -/
+theorem out_lookupPhase (S : Iop.Batch.Setup EF) (hnl : S.NoLookups)
+    (proof : CompStark.Batch.BatchProof F EF) (cap : Digest F) (input : List F) :
+    out answer (CompStark.Batch.lookupPhase (H := idealLogged answer) S.params S.instances proof :
+      M _ (EF × EF)) ⟨cap, input, []⟩ =
+      (.ok ((0, 0), ⟨cap, input ++ permDigest proof ++
+        coeffs (proof.lookupTerminals.toList.filterMap id), []⟩), []) := by
+  unfold CompStark.Batch.lookupPhase
+  rw [hasLookups_instances S hnl]
+  simp only [Bool.false_eq_true, ↓reduceIte, out_bind, out_pure, out_observeList_nil,
+    out_observeExts_nil, List.append_nil, permDigest]
+
 /-- The batch verifier on logged answers, if it accepts, queries every round of the schedule. -/
-theorem verifyBatchWith_logs (S : Iop.Batch.Setup EF)
+theorem verifyBatchWith_logs (S : Iop.Batch.Setup EF) (hnl : S.NoLookups)
     (hK : S.params.numQueries + Challenge.d EF + 1 ≤ K)
     (common : CompStark.Batch.Common F) (proof : CompStark.Batch.BatchProof F EF)
     (pis : List (List F))
@@ -195,13 +212,22 @@ theorem verifyBatchWith_logs (S : Iop.Batch.Setup EF)
   rw [hrw] at hok ⊢
   obtain ⟨-, hrw⟩ := unless_logged _ _ _ _ hok
   rw [hrw] at hok ⊢
+  obtain ⟨hlk, hrw⟩ := unless_logged _ _ _ _ hok
+  rw [hrw] at hok ⊢
   obtain ⟨-, hrw⟩ := unless_logged _ _ _ _ hok
   rw [hrw] at hok ⊢
   clear hrw
+  have hperm := permutationCommit_eq_none S.params S.instances proof
+    (hasLookups_instances S hnl) hlk
   dsimp only at hok ⊢
-  rw [run_stateT_bind _ _ _ (fun a ↦ by split <;> rfl)] at hok ⊢
+  rw [run_stateT_bind _ _ _ (fun a ↦ by
+    rcases a with ⟨⟨_, _, _, _⟩, _⟩
+    dsimp only
+    split
+    · split <;> rfl
+    · rfl)] at hok ⊢
   simp only [Bool.and_eq_true, beq_iff_eq] at hcount
-  have hsize : proof.opened.size = S.k := by rw [hcount.1, length_instances]
+  have hsize : proof.opened.size = S.k := by rw [hcount.1.1.1.1, length_instances]
   rcases hrun : out answer _ { cap := initCap, input := [], samples := [] } with ⟨_ | a, w⟩
   · rw [hrun] at hok
     cases hok
@@ -234,9 +260,14 @@ theorem verifyBatchWith_logs (S : Iop.Batch.Setup EF)
   rw [out_observeList_nil] at h₁
   obtain ⟨-, rfl⟩ := Prod.mk.inj (Except.ok.inj h₁)
   rw [hlog, out_observeList_nil, List.nil_append]
+  obtain ⟨_, s₁, h₁, hrun1, hlog⟩ := out_bind_ok answer hrun1
+  rw [out_lookupPhase answer S hnl] at h₁
+  obtain ⟨-, rfl⟩ := Prod.mk.inj (Except.ok.inj h₁)
+  rw [hlog, out_lookupPhase answer S hnl, List.nil_append]
   have hin₀ : [] ++ CompStark.Batch.batchSeedOf EF S.params S.instances common ++
       coeffs (S.instances.map fun I ↦ (Ext.ofBase (I.logN : F) : EF)) ++ proof.mainCommit.toList ++
-      pis.flatten ++ ((common.preprocessed.map (·.toList)).getD []) = blocks.getD 0 [] := by
+      pis.flatten ++ ((common.preprocessed.map (·.toList)).getD []) ++ permDigest proof ++
+      coeffs (proof.lookupTerminals.toList.filterMap id) = blocks.getD 0 [] := by
     simp only [hblocks, inputsB, prepDigest, List.nil_append, List.getD_eq_getElem?_getD,
       List.getElem?_cons_zero, Option.getD_some]
   rw [hin₀, show initCap = capAt answer blocks 0 from rfl] at hrun1 ⊢
@@ -264,21 +295,21 @@ theorem verifyBatchWith_logs (S : Iop.Batch.Setup EF)
       proof.quotientCommit.toList ++ witnessInput S.params.oodPowBits proof.oodWitness := by
     simp only [hblocks, inputsB, List.getD_eq_getElem?_getD, List.getElem?_cons_succ,
       List.getElem?_cons_zero, Option.getD_some]
-  have hzeta : ∀ (alpha zeta : EF) (smp : List F) {res : (EF × EF) × Sponge F},
+  have hzeta : ∀ (la lb alpha zeta : EF) (smp : List F) {res : (EF × EF × EF × EF) × Sponge F},
       (out answer (do
         ensure (S.instances.all fun I ↦ Ext.powTwo zeta I.logN - 1 != 0)
           "out-of-domain point in a trace domain"
         verifyPcs (idealLogged answer) S.params
           (CompStark.Batch.batchRounds S.instances common proof zeta) proof.fri
-        pure (alpha, zeta)) ⟨capAt answer blocks 2, [], smp⟩).1 = .ok res →
+        pure (la, lb, alpha, zeta)) ⟨capAt answer blocks 2, [], smp⟩).1 = .ok res →
       LogsRounds answer blocks 2 blocks.length
         (out answer (do
           ensure (S.instances.all fun I ↦ Ext.powTwo zeta I.logN - 1 != 0)
             "out-of-domain point in a trace domain"
           verifyPcs (idealLogged answer) S.params
             (CompStark.Batch.batchRounds S.instances common proof zeta) proof.fri
-          pure (alpha, zeta)) ⟨capAt answer blocks 2, [], smp⟩).2 := by
-    intro alpha zeta smp res h
+          pure (la, lb, alpha, zeta)) ⟨capAt answer blocks 2, [], smp⟩).2 := by
+    intro la lb alpha zeta smp res h
     obtain ⟨-, h, hlog⟩ := out_ensure_bind_ok answer h
     rw [hlog]
     obtain ⟨_, _, h₂, -, hlog⟩ := out_bind_ok answer h
@@ -286,7 +317,7 @@ theorem verifyBatchWith_logs (S : Iop.Batch.Setup EF)
     refine logsRounds_left ?_
     rw [hblocks, length_inputsB]
     refine verifyPcs_logs hK _ 2 proof.fri _ (S.logTop :: S.friHeights)
-      (descHeights_batchRounds S common proof zeta hsize) ?_
+      (descHeights_batchRounds S common proof zeta hsize hperm) ?_
       (fun j hj ↦ inputsB_getD_fold S common pis proof j hj) (inputsB_getD_last S common pis proof)
       _ h₂
     simp only [inputsB, List.getD_eq_getElem?_getD, List.getElem?_cons_succ,
@@ -310,7 +341,7 @@ theorem verifyBatchWith_logs (S : Iop.Batch.Setup EF)
     rw [hlog, hv₁]
     refine logsRounds_cons (by simp only [keyAt, List.map_cons, List.map_nil,
       List.mem_singleton]) ?_
-    exact hzeta _ _ _ hrun1
+    exact hzeta _ _ _ _ _ hrun1
   · simp only [witnessInput, hbits, ↓reduceIte] at hin₁
     obtain ⟨v, hv⟩ := out_checkWitness_pos answer _ hbits proof.oodWitness
       (capAt answer blocks 1) proof.quotientCommit.toList []
@@ -331,7 +362,7 @@ theorem verifyBatchWith_logs (S : Iop.Batch.Setup EF)
     rw [hv₁] at h₃
     obtain ⟨rfl, rfl⟩ := Prod.mk.inj (Except.ok.inj h₃)
     rw [hlog, hv₁, List.nil_append]
-    exact hzeta _ _ _ hrun1
+    exact hzeta _ _ _ _ _ hrun1
 
 end Run
 
@@ -350,7 +381,7 @@ theorem run_idealLoggedB {K : Nat} {answer : (q : Query F) → Answer K q} (P : 
 
 /-- **The batch verifier queries every round.** If the batch verifier accepts a proof on the
 answers `answer`, the duplex call of every round of the proof's schedule is in its log. -/
-theorem hasRounds_verifyBatchWith (S : Iop.Batch.Setup EF)
+theorem hasRounds_verifyBatchWith (S : Iop.Batch.Setup EF) (hnl : S.NoLookups)
     (answer : (q : Query F) → Answer S.streamLen q) (common : CompStark.Batch.Common F)
     (proof : CompStark.Batch.BatchProof F EF) (pis : List (List F))
     (hok : CompStark.Batch.verifyBatchWith (idealOf answer) S.params S.instances common proof pis =
@@ -358,7 +389,7 @@ theorem hasRounds_verifyBatchWith (S : Iop.Batch.Setup EF)
     HasRounds answer (tableQueryLog (CompStark.Batch.verifyBatchWith (ideal F S.streamLen)
       S.params S.instances common proof pis) answer) (inputsB S common pis proof)
       (inputsB S common pis proof).length := by
-  have h := verifyBatchWith_logs answer S (le_refl _) common proof pis
+  have h := verifyBatchWith_logs answer S hnl (le_refl _) common proof pis
     (by rw [run_idealLoggedB]; exact hok)
   rw [run_idealLoggedB] at h
   exact fun j hj ↦ h j (Nat.zero_le j) hj
