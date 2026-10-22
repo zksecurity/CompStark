@@ -224,10 +224,11 @@ def constraintDegree (A : Air F) (logN : Nat) : Nat :=
     if D = 0 then 0 else (D - 1 + denom - 1) / denom
 
 /-- Plonky3's `get_log_num_quotient_chunks` for a trace of `2 ^ logN` rows:
-`⌈log₂ (max (d, 2) - 1)⌉` for the `constraintDegree` `d`. -/
-def logQuotientChunks (A : Air F) (logN : Nat) : Nat :=
+`⌈log₂ (max (d, 2) - 1)⌉ = log₂ (2 (max (d, 2) - 1) - 1)` for the `constraintDegree` `d`.
+Irreducible, so that elaboration never evaluates it; the kernel does. -/
+@[irreducible] def logQuotientChunks (A : Air F) (logN : Nat) : Nat :=
   let d := max (A.constraintDegree logN) 2 - 1
-  Nat.log2 d.nextPowerOfTwo
+  Nat.log2 (2 * d - 1)
 
 end Air
 

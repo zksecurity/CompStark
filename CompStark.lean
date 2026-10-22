@@ -129,6 +129,8 @@ public import CompStark.Sound.PowersMca
 public import CompStark.Sound.Numbers
 public import CompStark.Sound.NumbersNi
 public import CompStark.Sound.BatchNumbersNi
+public import CompStark.SecurityCalculator
+public import CompStark.Sound.Calculator
 public import CompStark.Security
 public import CompStark.Sound.CurveCA
 public import CompStark.Sound.LogUp

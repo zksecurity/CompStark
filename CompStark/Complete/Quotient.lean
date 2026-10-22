@@ -50,12 +50,12 @@ theorem Expr.mul_eq (a b : Expr F) : a * b = .mul a b := rfl
 theorem Expr.sub_eq (a b : Expr F) : a - b = .sub a b := rfl
 theorem Expr.add_eq (a b : Expr F) : a + b = .add a b := rfl
 
-/-- Powers of two are powers of two. -/
-theorem isPowerOfTwo_two_pow : ∀ k, (2 ^ k).isPowerOfTwo
-  | 0 => Nat.isPowerOfTwo_one
-  | k + 1 => by
-    rw [Nat.pow_succ]
-    exact Nat.isPowerOfTwo_mul_two_of_isPowerOfTwo (isPowerOfTwo_two_pow k)
+/-- `⌈log₂ 2 ^ k⌉ = k`. -/
+theorem log2_two_mul_two_pow_sub_one (k : Nat) : Nat.log2 (2 * 2 ^ k - 1) = k := by
+  have h1 := Nat.one_le_two_pow (n := k)
+  rw [Nat.log2_eq_iff (by omega), Nat.pow_succ]
+  generalize 2 ^ k = x at h1 ⊢
+  omega
 
 /-- Plonky3's chunk count for a largest degree `d + 1`, `d = 2 ^ k`, without periodic
 columns. -/
@@ -63,7 +63,7 @@ theorem logQuotientChunks_of (A : Air F) (logN k : Nat) (hp : A.periodic = [])
     (h : max A.maxDegree 2 - 1 = 2 ^ k) : A.logQuotientChunks logN = k := by
   unfold Air.logQuotientChunks Air.constraintDegree
   simp only [hp, ↓reduceIte, h]
-  rw [Nat.nextPowerOfTwo_eq_self (isPowerOfTwo_two_pow k), Nat.log2_two_pow]
+  exact log2_two_mul_two_pow_sub_one k
 
 /-- The Fibonacci AIR fits its single chunk for every trace length. -/
 theorem fibonacci_degreeFits (logN : Nat) : (fibonacci : Air F).DegreeFits logN := by

@@ -22,7 +22,7 @@ with the extractor's radius below the unique-decoding radius, as for the STARK
   a smaller one (`foldErrorAt_schedule_one_le`, `friFoldErrorB_le`);
 * FRI's queries: `(1 - δ + #folds · loss + 1/p) ^ numQueries`.
 
-`batchRoundError_le` collects them at one proximity loss.
+`CompStark/Sound/Calculator.lean` collects them at one proximity loss.
 -/
 
 @[expose] public section
@@ -176,56 +176,6 @@ theorem friQueryErrorB_eq (harity : S.params.maxLogArity = 1) (δ loss : ℝ≥0
   have : S.logN S.top + S.params.logBlowup - (S.params.logFinalPolyLen + S.params.logBlowup) =
       S.logN S.top - S.params.logFinalPolyLen := by omega
   rw [this]
-
-/-- The batch round errors at FRI arity `2`, FRI at `δ` and the extractor at `δ'` below the
-unique-decoding radius, `δ < δ' - 2/N` on every domain, at one proximity loss `loss > 0` and a fold
-threshold `2 ^ t` below the shorter domains: every instance's constraint-folding integer at most
-`A₁` and out-of-domain integer at most `A₂`, the curve bound on batching every instance's domain
-size at most `b`, FRI's folds (`friFoldErrorB_le`, `δ_int = δ + loss`) and queries
-(`friQueryErrorB_eq`), and LogUp's integer at most `L`, all but constraint folding credited with
-their grinding. -/
-theorem batchRoundError_le (harity : S.params.maxLogArity = 1) (t : ℕ)
-    (ht : ∀ m ∈ S.friHeights, t ≤ m) (δ δ' loss : ℝ≥0) (L A₁ A₂ : ℕ) (b : ℝ)
-    (hL : S.numInteractions + (S.numInteractions - 1) * S.lookupWidth ≤ L)
-    (hA₁ : ∀ i, (S.instanceSetup i).numConstraints - 1 ≤ A₁)
-    (hA₂ : ∀ i, (S.instanceSetup i).identityDegree + (S.instanceSetup i).n ≤ A₂)
-    (hb : ∀ i, ((S.groupNumOpened (S.logN i + S.params.logBlowup) - 1 : ℕ) *
-      max ((1 - S.rate - δ) / (δ * (1 - S.rate - 2 * δ)))
-        ((δ' - 2 / (S.instanceSetup i).size) / (δ' - 2 / (S.instanceSetup i).size - δ))) ≤ b)
-    (h_ud : ∀ i, (δ : ℝ) ≤ (1 - S.rate) / 2 - 1 / (S.instanceSetup i).size)
-    (h_udt : (δ : ℝ) ≤ (1 - S.rate) / 2 - 1 / 2 ^ t) (h_pos : 0 < δ)
-    (h_lt : ∀ i, (δ : ℝ) < δ' - 2 / (S.instanceSetup i).size)
-    (hδ' : (δ' : ℝ) < (1 - S.rate) / 2) (h_loss : 0 < loss) :
-    Iop.Batch.roundError S δ δ' ≤
-      (max (powFraction F S.params.lookupPowBits * ((L : ENNReal) / (Fintype.card 𝕂 : ENNReal))) <|
-      max ((A₁ : ENNReal) / (Fintype.card 𝕂 : ENNReal)) <|
-      max (powFraction F S.params.oodPowBits * ((A₂ : ENNReal) / (Fintype.card 𝕂 : ENNReal))) <|
-      max (powFraction F S.params.batchPowBits * (ENNReal.ofReal b / Fintype.card 𝕂)) <|
-      max (powFraction F S.params.commitPowBits * (ENNReal.ofReal
-          (max (2 * LossyMca.lossyBound 1 (2 ^ S.params.logBlowup) δ (δ + loss) loss) (2 ^ t)) /
-            Fintype.card 𝕂))
-        (powFraction F S.params.queryPowBits *
-          ENNReal.ofReal (1 - δ + (S.logN S.top - S.params.logFinalPolyLen : ℕ) * loss +
-            1 / Nat.card F) ^ S.params.numQueries)) := by
-  refine (iInf_le _ loss).trans ?_
-  rw [← friQueryErrorB_eq S harity]
-  have hrate (i : Fin S.k) : (S.instanceSetup i).rate = S.rate := rate_instanceSetup S i
-  gcongr
-  · rw [Iop.Batch.Setup.lookupError]
-    refine ENNReal.div_le_div_right (Nat.cast_le.mpr ?_) _
-    refine (Nat.mul_le_mul_right _ (Finset.prod_le_one fun i _ ↦ listSize_le_one
-      (S.instanceSetup i) _ δ' (by rw [hrate]; exact hδ'))).trans (by rw [one_mul]; exact hL)
-  · refine iSup_le fun i ↦ (foldingError_le_of_le _ δ' (by rw [hrate]; exact hδ')).trans ?_
-    exact ENNReal.div_le_div_right (Nat.cast_le.mpr (hA₁ i)) _
-  · refine iSup_le fun i ↦ (outOfDomainError_le_of_le _ δ' (by rw [hrate]; exact hδ')).trans ?_
-    exact ENNReal.div_le_div_right (Nat.cast_le.mpr (hA₂ i)) _
-  · refine iSup_le fun i ↦ (batchingError_le_curve (S.instanceSetup i) _ δ _
-      (by rw [hrate]; exact h_ud i) h_pos (h_lt i)).trans ?_
-    refine ENNReal.div_le_div_right (ENNReal.ofReal_le_ofReal ?_) _
-    rw [hrate]
-    exact hb i
-  · exact friFoldErrorB_le S harity t ht δ (δ + loss) loss h_udt h_pos
-      (lt_add_of_pos_right _ h_loss) h_loss
 
 end Batch
 

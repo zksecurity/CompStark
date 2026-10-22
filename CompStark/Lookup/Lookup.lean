@@ -45,10 +45,10 @@ def extDegree (A : Air F) (logN : Nat) (ext : List (ExtExpr F)) : Nat :=
 
 /-- Plonky3's log number of quotient chunks of `A`'s constraints and the extension constraints
 `ext` on a trace of `2 ^ logN` rows. -/
-def _root_.CompStark.Stark.Air.logQuotientChunksWith (A : Air F) (logN : Nat)
+@[irreducible] def _root_.CompStark.Stark.Air.logQuotientChunksWith (A : Air F) (logN : Nat)
     (ext : List (ExtExpr F)) : Nat :=
   let d := max (max (A.constraintDegree logN) (extDegree A logN ext)) 2 - 1
-  Nat.log2 d.nextPowerOfTwo
+  Nat.log2 (2 * d - 1)
 
 /-- One bus's lookups packed greedily in order: each joins the open column while the column's
 fraction pin stays within the degree `budget`, adding its count weight; otherwise the column is
