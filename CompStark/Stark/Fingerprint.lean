@@ -131,8 +131,8 @@ def preprocessedDigest [Poseidon2Field F] (A : Air F) : Option (Vector F 8) :=
 at the point. -/
 def stream [Poseidon2Field F] (A : Air F) (logN : Nat) (E : Expr.Env F EF)
     (values : List EF) : List F :=
-  (header A logN).map num ++ values.flatMap Ext.coeffs ++ (lookupsByTuple A).flatMap (lookupStream E) ++
-    A.periodic.flatMap (fun c ↦ num c.length :: c) ++
+  (header A logN).map num ++ values.flatMap Ext.coeffs ++
+    (lookupsByTuple A).flatMap (lookupStream E) ++ A.periodic.flatMap (fun c ↦ num c.length :: c) ++
     ((preprocessedDigest A).map Vector.toList).getD []
 
 /-- A canonical value as JSON. -/
