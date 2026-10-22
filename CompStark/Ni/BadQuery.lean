@@ -48,13 +48,15 @@ theorem mem_map_fst_take {K : Nat} {log : QueryLog (spec F K)} {t : Query F} {n 
   rw [List.map_take] at h
   exact List.mem_of_mem_take h
 
+variable [BaseField F]
+
 theorem mem_logDigests {bd : Digest F → List F → Digest F} {K : Nat} {log : QueryLog (spec F K)}
     {t : Query F} (ht : t ∈ log.map Sigma.fst) {d : Digest F} (hd : d ∈ keyDigests bd t) :
     d ∈ logDigests bd log := by
   obtain ⟨e, he, rfl⟩ := List.mem_map.mp ht
   exact List.mem_flatMap.mpr ⟨e, he, List.mem_cons_of_mem _ hd⟩
 
-variable [BaseField F] {EF : Type} [Challenge F EF]
+variable {EF : Type} [Challenge F EF]
 
 /-- A property of every fresh query holds at the first query of each key. -/
 theorem of_first {K : Nat} {answer : (q : Query F) → Answer K q} {log : QueryLog (spec F K)}
@@ -147,7 +149,7 @@ theorem exists_badAt (hδ' : (δ' : ℝ) < 1 - S.rate) (answer : (q : Query F) �
     (hsetup : ∀ e ∈ tableQueryLog S.setupRo answer, e ∈ log)
     (hdb : proof.degreeBits = S.logN)
     (hok : verifyWith (idealOf answer) S.params S.air vk proof publicValues = .ok ())
-    (hsmall : 3 * (log ++ tableQueryLog
+    (hsmall : 4 * (log ++ tableQueryLog
       (verifyWith (ideal F S.streamLen) S.params S.air vk proof publicValues) answer).length <
         Fintype.card (Digest F))
     (hfail : ∀ trace ∈ closeTraces S δ' (committedTrace S log proof),

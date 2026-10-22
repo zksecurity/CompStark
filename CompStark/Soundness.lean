@@ -45,6 +45,6 @@ theorem knowledgeSoundness (S : Setup EF) (publicValues : List F) (prover : Prov
   rw [← acceptance_toBatch, ← knowledgeError_toBatch]
   exact batchKnowledgeSoundness S.toBatch (fun _ ↦ publicValues) prover.toBatch δ δ'
     (by rwa [rate_toBatch]) fun traces htraces hsat ↦
-      h _ (htraces ⟨0, Nat.one_pos⟩) (hsat ⟨0, Nat.one_pos⟩)
+      h _ (htraces ⟨0, Nat.one_pos⟩) (hsat.air ⟨0, Nat.one_pos⟩)
 
 end CompStark.Iop

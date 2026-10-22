@@ -13,14 +13,20 @@ public import CompStark.BatchNonInteractiveError
 The batch STARK's rounds as bad events on transcript prefixes, each bounded for every prefix by
 its error in `CompStark/BatchNonInteractiveError.lean`, for the non-interactive proof, where every
 round is one random-oracle answer. The transcript (`Batch.Transcript`) holds every instance's
-words and claimed values, the challenges, and FRI's committed words and final polynomial, which
-FRI folds by Plonky3's schedule from the tallest domain, injecting the batched DEEP words of the
-shorter domains (`Transcript.rounds`, `Transcript.fri`).
+words, terminals and claimed values, the challenges, and FRI's committed words and final
+polynomial, which FRI folds by Plonky3's schedule from the tallest domain, injecting the batched
+DEEP words of the shorter domains (`Transcript.rounds`, `Transcript.fri`).
 
-The rounds of `α`, `ζ` and `a` are those of the instance that the traces make fail
-(`Batch.failing`): one whose candidate traces all fail its AIR, if there is one.
+* The lookup challenges `(α_L, β_L)` (`LookupBad`, `Sound/BatchLogUp.lean`): for some tuple of
+  candidate traces satisfying every AIR but unbalanced, a message's denominator or the messages'
+  sum of fractions vanishes.
 
-* `α` (`AlphaBad`) and `ζ` (`ZetaBad`): the STARK's events for that instance.
+The rounds of `α`, `ζ` and `a` are those of the instance that the traces, permutation traces and
+terminals make fail (`Batch.failing`): one whose candidate traces and permutation traces all fail
+some constraint, if there is one.
+
+* `α` (`AlphaBad`) and `ζ` (`ZetaBad`): the STARK's events for that instance, its permutation
+  trace, lookup challenges and terminal included.
 * `a` (`BatchBad`): the DEEP components of the opened words of that instance's domain size are
   not near the code together, the batched word of that size is.
 * FRI fold `j` (`FoldBad`): the fold of committed word `j`, with its injected word, fails
@@ -30,10 +36,11 @@ The rounds of `α`, `ζ` and `a` are those of the instance that the traces make 
   batched word.
 
 The terminal lemma `exists_satisfied_of_safe` is deterministic: if the verifier's checks pass on a
-transcript whose rounds are all safe, some tuple of candidate traces satisfies every AIR. Otherwise
-an instance fails, and as for the STARK its safe `α`, `ζ` and `a` make the batched word of its
-domain size far (`not_near_deepWords`); FRI starts with that word or injects it, so with safe
-folds not every query passes.
+transcript whose rounds are all safe, some tuple of candidate traces satisfies the batch.
+Otherwise, with safe lookup challenges and terminals summing to zero, an instance fails
+(`exists_failing_instance`), and as for the STARK its safe `α`, `ζ` and `a` make the batched word
+of its domain size far (`not_near_deepWords`); FRI starts with that word or injects it, so with
+safe folds not every query passes.
 -/
 
 @[expose] public section
@@ -49,7 +56,7 @@ namespace Batch
 /-! ### FRI's injected words -/
 
 section Injected
-variable (S : Iop.Batch.Setup EF)
+variable {withLookups : Bool} (S : Iop.Batch.Setup EF withLookups)
 
 /-- The shift of the domain of `2 ^ m` points that FRI's folds reach from the tallest domain
 `g ⟨ω⟩`: `g ^ 2 ^ (logTop - m)`. -/
@@ -79,10 +86,15 @@ theorem agrees_of_agrees_mul {m : ℕ} {D : Fin (2 ^ m) ↪ 𝕂} {deg : ℕ} {�
 /-! ### The transcript -/
 
 /-- The transcript of the batch STARK, as the extractor reads it off a non-interactive proof:
-every instance's words and claimed values, the challenges, and FRI's committed words, final
-polynomial and folding challenges. -/
-structure Transcript (S : Iop.Batch.Setup EF) where
+every instance's words, terminals and claimed values, the challenges, and FRI's committed words,
+final polynomial and folding challenges. -/
+structure Transcript {withLookups : Bool} (S : Iop.Batch.Setup EF withLookups) where
   trace : (i : Fin S.k) → Fin (S.air i).width → (S.instanceSetup i).Point → F
+  lookupAlpha : 𝕂
+  lookupBeta : 𝕂
+  perm : (i : Fin S.k) → Fin (S.instanceSetup i).permWidth → Fin (Challenge.d EF) →
+    (S.instanceSetup i).Point → F
+  terminal : Fin S.k → 𝕂
   alpha : 𝕂
   quotient : (i : Fin S.k) → Fin (S.instanceSetup i).chunks → Fin (Challenge.d EF) →
     (S.instanceSetup i).Point → F
@@ -98,14 +110,16 @@ structure Transcript (S : Iop.Batch.Setup EF) where
   betas : ℕ → 𝕂
 
 namespace Transcript
-variable {S : Iop.Batch.Setup EF} (t : Transcript S)
+variable {withLookups : Bool} {S : Iop.Batch.Setup EF withLookups} (t : Transcript S)
 
 /-- The transcript's prover. -/
-def prover : Iop.Batch.Prover S := ⟨t.trace, fun _ ↦ t.quotient, fun _ _ ↦ t.openings⟩
+def prover : Iop.Batch.Prover S :=
+  ⟨t.trace, fun _ _ ↦ t.perm, fun _ _ ↦ t.terminal, fun _ _ _ ↦ t.quotient,
+    fun _ _ _ _ ↦ t.openings⟩
 
 /-- The batched DEEP words of the transcript, one per domain size. -/
 noncomputable def deepWords (m : ℕ) : Fin (2 ^ m) → 𝕂 :=
-  Iop.Batch.groupDeepWord t.prover t.alpha t.zeta t.batch m
+  Iop.Batch.groupDeepWord t.prover t.lookupAlpha t.lookupBeta t.alpha t.zeta t.batch m
 
 /-- FRI's rounds: Plonky3's schedule from the tallest domain, injecting the shorter domains'
 batched words. -/
@@ -128,42 +142,50 @@ end Transcript
 /-! ### The bad events -/
 
 section Events
-variable (S : Iop.Batch.Setup EF) (publicValues : Fin S.k → List F)
-
-/-- Instance `i` fails: none of its candidate traces satisfies its AIR. -/
-def Failing (δ' : NNReal)
-    (traces : (i : Fin S.k) → Fin (S.air i).width → (S.instanceSetup i).Point → F)
-    (i : Fin S.k) : Prop :=
-  ∀ P ∈ candidates (S.instanceSetup i) δ' (traces i),
-    ¬ (S.air i).Satisfied (S.logN i) (traceOf (S.instanceSetup i) P) (publicValues i)
+variable {withLookups : Bool} (S : Iop.Batch.Setup EF withLookups)
+  (publicValues : Fin S.k → List F)
 
 open Classical in
-/-- The instance the traces make fail, if one fails. -/
+/-- The instance the traces, permutation traces and terminals make fail at the lookup challenges,
+if one fails (`Failing`). -/
 noncomputable def failing (δ' : NNReal)
-    (traces : (i : Fin S.k) → Fin (S.air i).width → (S.instanceSetup i).Point → F) : Fin S.k :=
-  if h : ∃ i, Failing S publicValues δ' traces i then Classical.choose h else ⟨0, S.nonempty⟩
+    (traces : (i : Fin S.k) → Fin (S.air i).width → (S.instanceSetup i).Point → F)
+    (perms : (i : Fin S.k) → Fin (S.instanceSetup i).permWidth → Fin (Challenge.d EF) →
+      (S.instanceSetup i).Point → F)
+    (terminals : Fin S.k → 𝕂) (lα lβ : 𝕂) : Fin S.k :=
+  if h : ∃ i, Failing S publicValues δ' traces perms terminals lα lβ i then Classical.choose h
+  else ⟨0, S.nonempty⟩
 
 theorem failing_spec (δ' : NNReal)
     (traces : (i : Fin S.k) → Fin (S.air i).width → (S.instanceSetup i).Point → F)
-    (h : ∃ i, Failing S publicValues δ' traces i) :
-    Failing S publicValues δ' traces (failing S publicValues δ' traces) := by
+    (perms : (i : Fin S.k) → Fin (S.instanceSetup i).permWidth → Fin (Challenge.d EF) →
+      (S.instanceSetup i).Point → F)
+    (terminals : Fin S.k → 𝕂) (lα lβ : 𝕂)
+    (h : ∃ i, Failing S publicValues δ' traces perms terminals lα lβ i) :
+    Failing S publicValues δ' traces perms terminals lα lβ
+      (failing S publicValues δ' traces perms terminals lα lβ) := by
   simp only [failing, h, ↓reduceDIte]
   exact Classical.choose_spec h
 
 variable (δ δ' loss : NNReal)
   (traces : (i : Fin S.k) → Fin (S.air i).width → (S.instanceSetup i).Point → F)
+  (perms : (i : Fin S.k) → Fin (S.instanceSetup i).permWidth → Fin (Challenge.d EF) →
+    (S.instanceSetup i).Point → F)
+  (terminals : Fin S.k → Challenge.Spec EF) (lα lβ : Challenge.Spec EF)
 
 /-- Round `α`: `α` is bad for the failing instance (`Sound.AlphaBad`). -/
 def AlphaBad (α : 𝕂) : Prop :=
-  Sound.AlphaBad (S.instanceSetup (failing S publicValues δ' traces))
-    (publicValues (failing S publicValues δ' traces)) δ' (traces _) α
+  let i := failing S publicValues δ' traces perms terminals lα lβ
+  Sound.AlphaBad (S.instanceSetup i) (publicValues i) δ' (traces i) α (perms i)
+    (S.challenges lα lβ i) (terminals i)
 
 /-- Round `ζ`: `ζ` is bad for the failing instance (`Sound.ZetaBad`). -/
 def ZetaBad (α : 𝕂)
     (quotients : (i : Fin S.k) → Fin (S.instanceSetup i).chunks → Fin (Challenge.d EF) →
       (S.instanceSetup i).Point → F) (ζ : 𝕂) : Prop :=
-  Sound.ZetaBad (S.instanceSetup (failing S publicValues δ' traces))
-    (publicValues (failing S publicValues δ' traces)) δ' (traces _) α (quotients _) ζ
+  let i := failing S publicValues δ' traces perms terminals lα lβ
+  Sound.ZetaBad (S.instanceSetup i) (publicValues i) δ' (traces i) α (quotients i) ζ (perms i)
+    (S.challenges lα lβ i) (terminals i)
 
 /-- Round `a`: the DEEP components of the opened words of the failing instance's domain size are
 not near the code on a common set at `δ' - 2/N`, but their batched word is `δ`-near. -/
@@ -171,11 +193,13 @@ def BatchBad (α : 𝕂)
     (quotients : (i : Fin S.k) → Fin (S.instanceSetup i).chunks → Fin (Challenge.d EF) →
       (S.instanceSetup i).Point → F) (ζ : 𝕂)
     (openings : (i : Fin S.k) → Openings (S.instanceSetup i)) (a : 𝕂) : Prop :=
-  let i := failing S publicValues δ' traces
-  let p : Iop.Batch.Prover S := ⟨traces, fun _ ↦ quotients, fun _ _ ↦ openings⟩
+  let i := failing S publicValues δ' traces perms terminals lα lβ
+  let p : Iop.Batch.Prover S := ⟨traces, fun _ _ ↦ perms, fun _ _ ↦ terminals,
+    fun _ _ _ ↦ quotients, fun _ _ _ _ ↦ openings⟩
   ¬ NearTogether (S.instanceSetup i) ((δ' : ℝ) - 2 / (S.instanceSetup i).size)
-      (groupComponents p α ζ i) ∧
-    Near (S.instanceSetup i) δ (Iop.Batch.groupDeepWord p α ζ a (S.logN i + S.params.logBlowup))
+      (groupComponents p lα lβ α ζ i) ∧
+    Near (S.instanceSetup i) δ
+      (Iop.Batch.groupDeepWord p lα lβ α ζ a (S.logN i + S.params.logBlowup))
 
 /-- FRI fold `j`: the fold of committed word `j` at `β` fails, on FRI's rounds `rounds`. -/
 def FoldBad (rounds : Rounds 𝕂 S.logTop) (words : ℕ → (m : ℕ) → Fin (2 ^ m) → 𝕂) (j : ℕ)
@@ -203,15 +227,44 @@ end Events
 
 section Bounds
 open Classical
-variable (S : Iop.Batch.Setup EF) (publicValues : Fin S.k → List F) (δ δ' loss : NNReal)
+variable {withLookups : Bool} (S : Iop.Batch.Setup EF withLookups)
+  (publicValues : Fin S.k → List F) (δ δ' loss : NNReal)
   (traces : (i : Fin S.k) → Fin (S.air i).width → (S.instanceSetup i).Point → F)
+  (perms : (i : Fin S.k) → Fin (S.instanceSetup i).permWidth → Fin (Challenge.d EF) →
+    (S.instanceSetup i).Point → F)
+  (terminals : Fin S.k → Challenge.Spec EF) (lα lβ : Challenge.Spec EF)
+
+/-- The lookup round: a uniform pair `(α_L, β_L)` is bad with probability at most
+`lookupError`. -/
+theorem prob_lookupBad_le :
+    Pr{let z ← $ᵗ (𝕂 × 𝕂)}[LookupBad S publicValues δ' traces z.1 z.2] ≤ S.lookupError δ' := by
+  rw [SampleableType.prEvent_uniformSample, Iop.Batch.Setup.lookupError, Fintype.card_prod]
+  have h := card_lookupBad_le S publicValues δ' traces
+  have hK := card𝕂_ne_zero (EF := EF)
+  have hT := card𝕂_ne_top (EF := EF)
+  calc ((Finset.univ.filter fun z : 𝕂 × 𝕂 ↦ LookupBad S publicValues δ' traces z.1 z.2).card :
+        ENNReal) / ((Fintype.card 𝕂 * Fintype.card 𝕂 : ℕ) : ENNReal)
+      ≤ ((S.traceListSize δ' * (S.numInteractions + (S.numInteractions - 1) * S.lookupWidth) *
+          Fintype.card 𝕂 : ℕ) : ENNReal) / ((Fintype.card 𝕂 * Fintype.card 𝕂 : ℕ) : ENNReal) :=
+        ENNReal.div_le_div_right (Nat.cast_le.mpr h) _
+    _ = _ := by
+        simp only [Nat.cast_mul]
+        rw [ENNReal.mul_div_mul_right _ _ hK hT]
+
+/-- The lookup round with its grinding sample, drawn in the same answer: at most
+`powFraction lookupPowBits · lookupError`. -/
+theorem prob_lookupRound_le :
+    Pr{let z ← $ᵗ (F × (𝕂 × 𝕂))}[CompPoly.CanonicalNat.toNat z.1 % 2 ^ S.params.lookupPowBits = 0 ∧
+      LookupBad S publicValues δ' traces z.2.1 z.2.2] ≤
+      powFraction F S.params.lookupPowBits * S.lookupError δ' :=
+  (prob_pow_and_le _ _).trans (mul_le_mul_right (prob_lookupBad_le S publicValues δ' traces) _)
 
 /-- Round `α`: a uniform `α` is bad with probability at most the worst instance's
 `foldingError`. -/
 theorem prob_alphaBad_le :
-    Pr{let α ← $ᵗ 𝕂}[AlphaBad S publicValues δ' traces α] ≤
+    Pr{let α ← $ᵗ 𝕂}[AlphaBad S publicValues δ' traces perms terminals lα lβ α] ≤
       ⨆ i, foldingError (S.instanceSetup i) δ' :=
-  (Sound.prob_alphaBad_le _ _ δ' _).trans
+  (Sound.prob_alphaBad_le _ _ _ _ δ' _ _).trans
     (le_iSup (fun i ↦ foldingError (S.instanceSetup i) δ') _)
 
 /-- Round `ζ`: a uniform `ζ` is bad with probability at most the worst instance's
@@ -219,9 +272,9 @@ theorem prob_alphaBad_le :
 theorem prob_zetaBad_le (α : 𝕂)
     (quotients : (i : Fin S.k) → Fin (S.instanceSetup i).chunks → Fin (Challenge.d EF) →
       (S.instanceSetup i).Point → F) :
-    Pr{let ζ ← $ᵗ 𝕂}[ZetaBad S publicValues δ' traces α quotients ζ] ≤
+    Pr{let ζ ← $ᵗ 𝕂}[ZetaBad S publicValues δ' traces perms terminals lα lβ α quotients ζ] ≤
       ⨆ i, outOfDomainError (S.instanceSetup i) δ' :=
-  (Sound.prob_zetaBad_le _ _ δ' _ _ _).trans
+  (Sound.prob_zetaBad_le _ _ _ _ δ' _ _ _ _).trans
     (le_iSup (fun i ↦ outOfDomainError (S.instanceSetup i) δ') _)
 
 /-- Round `a`: a uniform `a` is bad with probability at most the worst instance's batching
@@ -230,31 +283,33 @@ theorem prob_batchBad_le (α : 𝕂)
     (quotients : (i : Fin S.k) → Fin (S.instanceSetup i).chunks → Fin (Challenge.d EF) →
       (S.instanceSetup i).Point → F) (ζ : 𝕂)
     (openings : (i : Fin S.k) → Openings (S.instanceSetup i)) :
-    Pr{let a ← $ᵗ 𝕂}[BatchBad S publicValues δ δ' traces α quotients ζ openings a] ≤
+    Pr{let a ← $ᵗ 𝕂}[BatchBad S publicValues δ δ' traces perms terminals lα lβ α quotients ζ
+      openings a] ≤
       ⨆ i, batchingErrorOf (S.instanceSetup i)
         (S.groupNumOpened (S.logN i + S.params.logBlowup)) δ
         ((δ' : ℝ) - 2 / (S.instanceSetup i).size) := by
   classical
-  set i := failing S publicValues δ' traces
-  set p : Iop.Batch.Prover S := ⟨traces, fun _ ↦ quotients, fun _ _ ↦ openings⟩
+  set i := failing S publicValues δ' traces perms terminals lα lβ
+  set p : Iop.Batch.Prover S := ⟨traces, fun _ _ ↦ perms, fun _ _ ↦ terminals,
+    fun _ _ _ ↦ quotients, fun _ _ _ _ ↦ openings⟩
   refine le_trans ?_ (le_iSup (fun i ↦ batchingErrorOf (S.instanceSetup i)
     (S.groupNumOpened (S.logN i + S.params.logBlowup)) δ
     ((δ' : ℝ) - 2 / (S.instanceSetup i).size)) i)
   rw [SampleableType.prEvent_uniformSample]
   by_cases hfar : NearTogether (S.instanceSetup i) ((δ' : ℝ) - 2 / (S.instanceSetup i).size)
-    (groupComponents p α ζ i)
+    (groupComponents p lα lβ α ζ i)
   · have h : (Finset.univ.filter fun a : 𝕂 ↦
-        BatchBad S publicValues δ δ' traces α quotients ζ openings a) = ∅ :=
+        BatchBad S publicValues δ δ' traces perms terminals lα lβ α quotients ζ openings a) = ∅ :=
       Finset.filter_false_of_mem fun a _ ha ↦ ha.1 hfar
     rw [h, Finset.card_empty, Nat.cast_zero, ENNReal.zero_div]
     exact bot_le
   have hset : (Finset.univ.filter fun a : 𝕂 ↦
-      BatchBad S publicValues δ δ' traces α quotients ζ openings a) =
+      BatchBad S publicValues δ δ' traces perms terminals lα lβ α quotients ζ openings a) =
       Finset.univ.filter fun a : 𝕂 ↦ Near (S.instanceSetup i) δ
         fun x ↦ ∑ k : Fin (S.groupNumOpened (S.logN i + S.params.logBlowup)),
-          a ^ (k : Nat) * groupComponents p α ζ i k x :=
+          a ^ (k : Nat) * groupComponents p lα lβ α ζ i k x :=
     Finset.filter_congr fun a _ ↦ by
-      change (¬ _ ∧ Near _ δ (Iop.Batch.groupDeepWord p α ζ a _)) ↔ _
+      change (¬ _ ∧ Near _ δ (Iop.Batch.groupDeepWord p lα lβ α ζ a _)) ↔ _
       rw [groupDeepWord_eq]
       exact and_iff_right hfar
   rw [hset]
@@ -328,7 +383,8 @@ end Bounds
 /-! ### The terminal lemma -/
 
 section Terminal
-variable (S : Iop.Batch.Setup EF) (publicValues : Fin S.k → List F)
+variable {withLookups : Bool} (S : Iop.Batch.Setup EF withLookups)
+  (publicValues : Fin S.k → List F)
 
 /-- Every instance's code has the batch's rate. -/
 theorem rate_instanceSetup (i : Fin S.k) : (S.instanceSetup i).rate = S.rate := by
@@ -341,28 +397,36 @@ theorem rate_instanceSetup (i : Fin S.k) : (S.instanceSetup i).rate = S.rate := 
 /-- If an instance fails, the check passes at `ζ` and the rounds `α`, `ζ`, `a` are safe, the
 batched DEEP word of the failing instance's domain size is `δ`-far from its code. -/
 theorem not_near_deepWords (δ δ' : NNReal) (hδ' : (δ' : ℝ) < 1 - S.rate) (t : Transcript S)
-    (hfail : ∃ i, Failing S publicValues δ' t.trace i)
+    (hfail : ∃ i, Failing S publicValues δ' t.trace t.perm t.terminal t.lookupAlpha
+      t.lookupBeta i)
     (hcheck : ∀ i, ConstraintsHoldAt (S.instanceSetup i) (publicValues i) t.alpha t.zeta
-      (t.openings i))
-    (hα : ¬ AlphaBad S publicValues δ' t.trace t.alpha)
-    (hζ : ¬ ZetaBad S publicValues δ' t.trace t.alpha t.quotient t.zeta)
-    (ha : ¬ BatchBad S publicValues δ δ' t.trace t.alpha t.quotient t.zeta t.openings t.batch) :
-    let i := failing S publicValues δ' t.trace
+      (t.openings i) (S.challenges t.lookupAlpha t.lookupBeta i) (t.terminal i))
+    (hα : ¬ AlphaBad S publicValues δ' t.trace t.perm t.terminal t.lookupAlpha t.lookupBeta
+      t.alpha)
+    (hζ : ¬ ZetaBad S publicValues δ' t.trace t.perm t.terminal t.lookupAlpha t.lookupBeta
+      t.alpha t.quotient t.zeta)
+    (ha : ¬ BatchBad S publicValues δ δ' t.trace t.perm t.terminal t.lookupAlpha t.lookupBeta
+      t.alpha t.quotient t.zeta t.openings t.batch) :
+    let i := failing S publicValues δ' t.trace t.perm t.terminal t.lookupAlpha t.lookupBeta
     ¬ Near (S.instanceSetup i) δ (t.deepWords (S.logN i + S.params.logBlowup)) := by
   intro i hnear
   set I := S.instanceSetup i
-  have hf := failing_spec S publicValues δ' t.trace hfail
-  have htogether : NearTogether I ((δ' : ℝ) - 2 / I.size) (groupComponents t.prover t.alpha
-      t.zeta i) :=
+  have hf := failing_spec S publicValues δ' t.trace t.perm t.terminal t.lookupAlpha t.lookupBeta
+    hfail
+  have htogether : NearTogether I ((δ' : ℝ) - 2 / I.size)
+      (groupComponents t.prover t.lookupAlpha t.lookupBeta t.alpha t.zeta i) :=
     not_not.mp fun h ↦ ha ⟨h, hnear⟩
-  have hinst := nearTogether_instance t.prover t.alpha t.zeta i _ htogether
+  have hinst := nearTogether_instance t.prover t.lookupAlpha t.lookupBeta t.alpha t.zeta i _
+    htogether
   have hoff : OffTraceDomain I t.zeta := not_not.mp fun h ↦ hζ ⟨hα, Or.inl h⟩
   have hδI : (δ' : ℝ) < 1 - I.rate := by rw [rate_instanceSetup]; exact hδ'
-  obtain ⟨P, Q, hPd, hPa, hQd, hQa, ho⟩ :=
-    decodingStep I δ' hδI (t.prover.instanceProver i) t.alpha t.zeta hoff hinst
-  refine hζ ⟨hα, Or.inr ⟨P, ⟨hPd, hPa⟩, hf P ⟨hPd, hPa⟩, fun ce ↦ Q ce.1 ce.2,
+  obtain ⟨P, Q, R, hPd, hPa, hQd, hQa, hRd, hRa, ho⟩ :=
+    decodingStep I δ' hδI (t.prover.instanceProver t.lookupAlpha t.lookupBeta i) t.alpha t.zeta
+      hoff hinst
+  refine hζ ⟨hα, Or.inr ⟨P, ⟨hPd, hPa⟩, fun ce ↦ R ce.1 ce.2, ⟨fun ce ↦ hRd ce.1 ce.2, hRa⟩,
+    hf P ⟨hPd, hPa⟩ _ ⟨fun ce ↦ hRd ce.1 ce.2, hRa⟩, fun ce ↦ Q ce.1 ce.2,
     ⟨fun ce ↦ hQd ce.1 ce.2, hQa⟩, ?_⟩⟩
-  have h : t.openings i = trueOpenings I P Q t.zeta := ho
+  have h : t.openings i = trueOpenings I P Q t.zeta R := ho
   rw [← h]
   exact hcheck i
 
@@ -406,29 +470,34 @@ theorem not_agrees_of_not_near (δ : NNReal) (t : Transcript S) (i : Fin S.k)
     exact hfar' hE.1 h2
 
 /-- **The terminal lemma.** If the verifier's checks pass on a transcript whose rounds are all
-safe, some tuple of candidate traces satisfies every AIR: every instance's check at `ζ`, a final
-polynomial of degree below `2 ^ logFinalPolyLen`, a grinding sample with `queryPowBits` vanishing
-low bits, and every query sample selecting a point where the checks pass and FRI's first word
-agrees with the tallest batched word. -/
+safe, some tuple of candidate traces satisfies the batch: the terminals of the instances with
+lookups sum to zero, every instance's check at `ζ`, a final polynomial of degree below
+`2 ^ logFinalPolyLen`, a grinding sample with `queryPowBits` vanishing low bits, and every query
+sample selecting a point where the checks pass and FRI's first word agrees with the tallest
+batched word. -/
 theorem exists_satisfied_of_safe (δ δ' loss : NNReal) (hδ' : (δ' : ℝ) < 1 - S.rate)
     (t : Transcript S) (pow : F) (queries : Fin S.params.numQueries → F)
+    (hsum : (∑ i with S.lookups i ≠ [], t.terminal i) = 0)
     (hcheck : ∀ i, ConstraintsHoldAt (S.instanceSetup i) (publicValues i) t.alpha t.zeta
-      (t.openings i))
+      (t.openings i) (S.challenges t.lookupAlpha t.lookupBeta i) (t.terminal i))
     (hdegree : t.finalPoly.natDegree < 2 ^ S.params.logFinalPolyLen)
     (hpow : CompPoly.CanonicalNat.toNat pow % 2 ^ S.params.queryPowBits = 0)
     (hqueries : ∀ j, queryPoint S.domainSetup (queries j) ∈ t.consistentQueries)
-    (hα : ¬ AlphaBad S publicValues δ' t.trace t.alpha)
-    (hζ : ¬ ZetaBad S publicValues δ' t.trace t.alpha t.quotient t.zeta)
-    (ha : ¬ BatchBad S publicValues δ δ' t.trace t.alpha t.quotient t.zeta t.openings t.batch)
+    (hlookup : ¬ LookupBad S publicValues δ' t.trace t.lookupAlpha t.lookupBeta)
+    (hα : ¬ AlphaBad S publicValues δ' t.trace t.perm t.terminal t.lookupAlpha t.lookupBeta
+      t.alpha)
+    (hζ : ¬ ZetaBad S publicValues δ' t.trace t.perm t.terminal t.lookupAlpha t.lookupBeta
+      t.alpha t.quotient t.zeta)
+    (ha : ¬ BatchBad S publicValues δ δ' t.trace t.perm t.terminal t.lookupAlpha t.lookupBeta
+      t.alpha t.quotient t.zeta t.openings t.batch)
     (hfolds : ∀ j, ¬ FoldBad S δ loss t.rounds t.words j (t.betas j))
     (hq : ¬ QueryBad S δ loss t pow queries) :
-    ∃ traces ∈ Iop.Batch.closeTraces S δ' t.trace,
-      ∀ i, (S.air i).Satisfied (S.logN i) (traces i) (publicValues i) := by
+    ∃ traces ∈ Iop.Batch.closeTraces S δ' t.trace, S.Satisfied traces publicValues := by
   by_contra hno
-  have hfail : ∀ traces ∈ Iop.Batch.closeTraces S δ' t.prover.trace,
-      ¬ ∀ i, (S.air i).Satisfied (S.logN i) (traces i) (publicValues i) :=
+  have hfail : ∀ traces ∈ Iop.Batch.closeTraces S δ' t.trace, ¬ S.Satisfied traces publicValues :=
     fun traces h hs ↦ hno ⟨traces, h, hs⟩
-  obtain ⟨i, hi⟩ := exists_failing_instance publicValues t.prover δ' hfail
+  obtain ⟨i, hi⟩ := exists_failing_instance publicValues δ' t.trace t.perm t.terminal
+    t.lookupAlpha t.lookupBeta hfail hlookup hsum
   have hfar := not_near_deepWords S publicValues δ δ' hδ' t ⟨i, hi⟩ hcheck hα hζ ha
   refine hq ⟨⟨not_agrees_of_not_near S δ t _ hfar, ?_, hdegree⟩, hpow, hqueries⟩
   rw [Transcript.fri, Rounds.safeLossy_run_iff]

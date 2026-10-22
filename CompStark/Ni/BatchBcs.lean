@@ -4,7 +4,7 @@ Released under Apache 2.0 license as described in the file LICENSE.
 -/
 module
 
-public import CompStark.Ni.BatchDeep
+public import CompStark.Ni.BatchCheck
 public import CompStark.Ni.BatchFri
 public import CompStark.Ni.BatchAccept
 public import CompStark.Ni.Bcs
@@ -49,45 +49,52 @@ variable [BaseField F] [Challenge F EF] (S : Iop.Batch.Setup EF) (common : CompS
 
 /-- Every matrix of the rounds is some instance's extension, and every instance's extended
 trace is a matrix of the main round. -/
-theorem mem_matHeights (hsize : proof.opened.size = S.k) (hperm : proof.permutationCommit = none)
-    (a : ℕ) :
+theorem mem_matHeights (hsize : proof.opened.size = S.k) (a : ℕ) :
     a ∈ matHeights S.params (CompStark.Batch.batchRounds S.instances common proof zeta) ↔
       ∃ i : Fin S.k, S.logN i + S.params.logBlowup = a := by
   have hos : proof.opened.toList.length = S.k := by rw [Array.length_toList, hsize]
-  have hzip : ∀ x ∈ S.instances.zip proof.opened.toList,
-      ∃ i : Fin S.k, x.1 = ⟨S.air i, S.logN i⟩ := fun x hx ↦ by
-    have h1 := (List.of_mem_zip hx).1
-    rw [Iop.Batch.Setup.instances, List.mem_ofFn] at h1
-    obtain ⟨i, hi⟩ := h1
+  have hinst : ∀ I ∈ S.instances, ∃ i : Fin S.k, I = ⟨S.air i, S.logN i⟩ := fun I hI ↦ by
+    rw [Iop.Batch.Setup.instances, List.mem_ofFn] at hI
+    obtain ⟨i, hi⟩ := hI
     exact ⟨i, hi.symm⟩
+  have hzip : ∀ x ∈ S.instances.zip proof.opened.toList,
+      ∃ i : Fin S.k, x.1 = ⟨S.air i, S.logN i⟩ := fun x hx ↦ hinst x.1 (List.of_mem_zip hx).1
   constructor
   · intro ha
-    simp only [matHeights, batchRounds_cases (hperm := hperm), List.mem_map, List.mem_flatMap,
-      List.mem_append,
-      List.mem_cons, List.not_mem_nil, or_false] at ha
+    simp only [matHeights, batchRounds_cases, List.mem_map, List.mem_flatMap,
+      List.mem_append] at ha
     obtain ⟨d, ⟨r, hr, hd⟩, rfl⟩ := ha
-    rcases hr with (rfl | rfl) | hr
-    · obtain ⟨x, hx, rfl⟩ := List.mem_map.mp hd
-      obtain ⟨i, hi⟩ := hzip x hx
-      exact ⟨i, by rw [hi]⟩
-    · obtain ⟨x, hx, hd⟩ := List.mem_flatMap.mp hd
-      obtain ⟨ch, -, rfl⟩ := List.mem_map.mp hd
-      obtain ⟨i, hi⟩ := hzip x hx
-      exact ⟨i, by rw [hi]⟩
-    · split at hr
+    rcases hr with ((hr | hr) | hr)
+    · simp only [List.mem_cons, List.not_mem_nil, or_false] at hr
+      rcases hr with rfl | rfl
+      · obtain ⟨x, hx, rfl⟩ := List.mem_map.mp hd
+        obtain ⟨i, hi⟩ := hzip x hx
+        exact ⟨i, by rw [hi]⟩
+      · obtain ⟨x, hx, hd⟩ := List.mem_flatMap.mp hd
+        obtain ⟨ch, -, rfl⟩ := List.mem_map.mp hd
+        obtain ⟨i, hi⟩ := hzip x hx
+        exact ⟨i, by rw [hi]⟩
+    · rw [prepRounds] at hr
+      split at hr
       · rw [List.mem_singleton] at hr
         subst hr
         obtain ⟨x, hx, rfl⟩ := List.mem_map.mp hd
         obtain ⟨i, hi⟩ := hzip x (List.mem_filter.mp hx).1
         exact ⟨i, by rw [hi]⟩
       · exact absurd hr List.not_mem_nil
+    · rw [permRounds] at hr
+      split at hr
+      · rw [List.mem_singleton] at hr
+        subst hr
+        obtain ⟨x, hx, rfl⟩ := List.mem_map.mp hd
+        obtain ⟨i, hi⟩ := hinst x.1 (List.of_mem_zip (List.mem_filter.mp hx).1).1
+        exact ⟨i, by rw [hi]⟩
+      · exact absurd hr List.not_mem_nil
   · rintro ⟨i, rfl⟩
-    simp only [matHeights, batchRounds_cases (hperm := hperm), List.mem_map, List.mem_flatMap,
-      List.mem_append,
-      List.mem_cons, List.not_mem_nil, or_false]
+    simp only [matHeights, batchRounds_cases, List.mem_map, List.mem_flatMap, List.mem_append]
     refine ⟨((⟨1, S.logN i⟩ : Domain F), traceOpenings (S.air i)
       (proof.opened.toList.getD i noOpenings) zeta (zeta * Ext.ofBase (twoAdicGen (S.logN i)))),
-      ⟨_, Or.inl (Or.inl rfl), ?_⟩, rfl⟩
+      ⟨_, Or.inl (Or.inl List.mem_cons_self), ?_⟩, rfl⟩
     refine List.mem_map.mpr ⟨(⟨S.air i, S.logN i⟩, proof.opened.toList.getD i noOpenings), ?_,
       rfl⟩
     have hi : i.val < (S.instances.zip proof.opened.toList).length := by
@@ -100,14 +107,13 @@ theorem mem_matHeights (hsize : proof.opened.size = S.k) (hperm : proof.permutat
     exact List.getElem_mem hi
 
 /-- The FRI verifier's heights are the tallest domain's, then the shorter instances'. -/
-theorem descHeights_batchRounds (hsize : proof.opened.size = S.k)
-    (hperm : proof.permutationCommit = none) :
+theorem descHeights_batchRounds (hsize : proof.opened.size = S.k) :
     descHeights (matHeights S.params (CompStark.Batch.batchRounds S.instances common proof zeta)) =
       S.logTop :: S.friHeights := by
   have hfit := fits_friHeights S
   refine List.Pairwise.eq_of_mem_iff (r := (· > ·)) (pairwise_descHeights _)
     (List.pairwise_cons.mpr ⟨fun m hm ↦ (hfit.2 m hm).2, hfit.1⟩) fun a ↦ ?_
-  rw [mem_descHeights, mem_matHeights S common proof zeta hsize hperm, List.mem_cons,
+  rw [mem_descHeights, mem_matHeights S common proof zeta hsize, List.mem_cons,
     mem_friHeights]
   constructor
   · rintro ⟨i, rfl⟩
@@ -157,6 +163,18 @@ def prepWidths : List ℕ := (prepInsts S).map fun i ↦ (S.air i).preprocessedW
 
 /-- The log height of the tallest preprocessed trace's extension. -/
 def prepLog : ℕ := ((prepInsts S).map fun i ↦ S.logN i + S.params.logBlowup).foldl max 0
+
+/-- The instances with lookups. -/
+def permInsts : List (Fin S.k) := (List.finRange S.k).filter fun i ↦ !(S.lookups i).isEmpty
+
+/-- The permutation commitment's matrices' heights. -/
+def permHeights : List ℕ := (permInsts S).map fun i ↦ 2 ^ (S.logN i + S.params.logBlowup)
+
+/-- The permutation commitment's matrices' widths: every column's `d` coordinates. -/
+def permWidths : List ℕ := (permInsts S).map fun i ↦ Challenge.d EF * (S.instanceSetup i).permWidth
+
+/-- The log height of the tallest permutation trace's extension. -/
+def permLog : ℕ := ((permInsts S).map fun i ↦ S.logN i + S.params.logBlowup).foldl max 0
 
 end Matrices
 
@@ -579,6 +597,143 @@ theorem prep_rows (hsize : proof.opened.size = S.k)
 
 end Preprocessed
 
+/-! ### The permutation traces' round -/
+
+section Permutation
+variable [BaseField F] [Challenge F EF] (H : Primitives F Id) (S : Iop.Batch.Setup EF)
+  (cache : Merkle.Cache F (Digest F)) (proof : CompStark.Batch.BatchProof F EF) (zeta : EF)
+
+/-- The statement's instances, zipped with a list of one entry per instance. -/
+theorem zip_instances_getD {β : Type} (os : List β) (hos : os.length = S.k) (d : β) :
+    S.instances.zip os = (List.finRange S.k).map fun i ↦
+      ((⟨S.air i, S.logN i⟩ : CompStark.Batch.Instance F), os.getD i d) := by
+  refine List.ext_getElem (by rw [List.length_zip, length_instances, hos, Nat.min_self,
+    List.length_map, List.length_finRange]) fun j h1 h2 ↦ ?_
+  have hj : j < S.k := by simpa only [List.length_map, List.length_finRange] using h2
+  rw [List.getElem_zip, List.getElem_map, List.getElem_finRange,
+    List.getD_eq_getElem _ _ (by rw [hos]; exact hj)]
+  simp only [Iop.Batch.Setup.instances, List.getElem_ofFn]
+  rfl
+
+/-- Instance `i`'s permutation matrix, opened at `ζ` and `ζ ω`. -/
+abbrev permMat (i : Fin S.k) : Domain F × List (EF × List EF) :=
+  ((⟨1, S.logN i⟩ : Domain F), [(zeta, (proof.permutationLocal.getD i #[]).toList),
+    (zeta * Ext.ofBase (twoAdicGen (S.logN i)), (proof.permutationNext.getD i #[]).toList)])
+
+theorem permMats_eq (hlsize : proof.permutationLocal.size = S.k)
+    (hnsize : proof.permutationNext.size = S.k) :
+    permMats S proof zeta = (permInsts S).map (permMat S proof zeta) := by
+  have hz : (proof.permutationLocal.toList.zip proof.permutationNext.toList).length = S.k := by
+    rw [List.length_zip, Array.length_toList, Array.length_toList, hlsize, hnsize, Nat.min_self]
+  rw [permMats, zip_instances_getD S _ hz (#[], #[]), List.filter_map, List.map_map, permInsts]
+  refine List.map_congr_left fun i _ ↦ ?_
+  have hpair : (proof.permutationLocal.toList.zip proof.permutationNext.toList).getD i
+      (#[], #[]) = (proof.permutationLocal.getD i #[], proof.permutationNext.getD i #[]) := by
+    rw [List.getD_eq_getElem _ _ (by rw [hz]; exact i.isLt), List.getElem_zip,
+      Array.getElem_toList, Array.getElem_toList, Array.getD_eq_getD_getElem?,
+      Array.getElem?_eq_getElem (by rw [hlsize]; exact i.isLt), Option.getD_some,
+      Array.getD_eq_getD_getElem?, Array.getElem?_eq_getElem (by rw [hnsize]; exact i.isLt),
+      Option.getD_some]
+  simp only [Function.comp_apply, hpair]
+
+theorem permIndex_eq (i : Fin S.k) :
+    permIndex S i = (((List.finRange S.k).take i).filter fun i' ↦
+      !(S.lookups i').isEmpty).length := by
+  rw [permIndex, Iop.Batch.Setup.instances, List.ofFn_eq_map, ← List.map_take, List.filter_map,
+    List.length_map]
+  rfl
+
+/-- Instance `i` is at its rank among the instances with lookups. -/
+theorem getD_permInsts (i : Fin S.k) (hp : S.lookups i ≠ []) (d : Fin S.k) :
+    (permInsts S).getD (permIndex S i) d = i := by
+  have hik : i.val < (List.finRange S.k).length := by rw [List.length_finRange]; exact i.isLt
+  have hfi : (List.finRange S.k)[i.val] = i := by
+    rw [List.getElem_finRange]
+    rfl
+  rw [permIndex_eq, permInsts]
+  have := getD_filter_rank (fun i' ↦ !(S.lookups i').isEmpty) d _ i.val hik
+    (by rw [hfi]; simpa only [Bool.not_eq_eq_eq_not, Bool.not_true, List.isEmpty_eq_false_iff]
+      using hp)
+  rw [hfi] at this
+  exact this
+
+theorem permLog_le : permLog S ≤ S.logTop := by
+  unfold permLog
+  rcases foldl_max_mem ((permInsts S).map fun i ↦ S.logN i + S.params.logBlowup) 0 with h | h
+  · rw [h]
+    exact Nat.zero_le _
+  · obtain ⟨i, -, hi⟩ := List.mem_map.mp h
+    rw [← hi]
+    exact logTop_ge S i
+
+/-- **The permutation traces' rows.** If a query's opening of the permutation round at `I` is
+accepted and binds, the row of every instance with lookups opens its permutation trace's
+coordinates as extracted under the permutation commitment. -/
+theorem perm_rows (hlsize : proof.permutationLocal.size = S.k)
+    (hnsize : proof.permutationNext.size = S.k)
+    (hshape : ∀ i : Fin S.k,
+      (proof.permutationLocal.getD i #[]).size = Challenge.d EF * (S.instanceSetup i).permWidth)
+    (I : ℕ) (root : Digest F) (rR : List (Array F))
+    (hok : BatchOkR H S.params S.logTop I (rR, root, permMats S proof zeta))
+    (hbind : BindingM cache H root (permLog S) (permHeights S))
+    (i : Fin S.k) (hp : S.lookups i ≠ []) (j : ℕ)
+    (hj : j < Challenge.d EF * (S.instanceSetup i).permWidth) :
+    (rR.getD (permIndex S i) #[]).toList.getD j 0 = Merkle.matColumn cache root (permLog S)
+      (permHeights S) (permWidths S) (permIndex S i) j (S.logN i + S.params.logBlowup)
+      (I >>> (S.logTop - (S.logN i + S.params.logBlowup))) := by
+  have hP := permMats_eq S proof zeta hlsize hnsize
+  have hlen : (permMats S proof zeta).length = (permInsts S).length := by
+    rw [hP, List.length_map]
+  have hget : ∀ (t : ℕ) (ht : t < (permMats S proof zeta).length),
+      (permMats S proof zeta)[t] = permMat S proof zeta ((permInsts S)[t]'(hlen ▸ ht)) := by
+    intro t ht
+    simp only [hP, List.getElem_map]
+  have hlb : logBatch S.params (permMats S proof zeta) = permLog S := by
+    rw [logBatch, hP, List.map_map, permLog]
+    rfl
+  have hrh : roundHeights S.params (permMats S proof zeta) = permHeights S := by
+    rw [hP, roundHeights, List.map_map, permHeights]
+    rfl
+  have hwd : ∀ t (ht : t < (permMats S proof zeta).length),
+      (permWidths S).getD t 0 =
+        Challenge.d EF * (S.instanceSetup ((permInsts S)[t]'(hlen ▸ ht))).permWidth := by
+    intro t ht
+    rw [permWidths, List.getD_eq_getElem _ _ (by rw [List.length_map]; exact hlen ▸ ht),
+      List.getElem_map]
+  have hws : ∀ t < (permMats S proof zeta).length,
+      (rR.getD t #[]).size = (permWidths S).getD t 0 := by
+    intro t ht
+    have h1 := size_of_batchOk H S.params S.logTop I _ hok t ht
+    dsimp only at h1
+    rw [hget t ht] at h1
+    have h2 := h1 _ List.mem_cons_self
+    dsimp only at h2
+    rw [← h2, Array.length_toList, hshape, hwd t ht]
+  have hrank : permIndex S i < (permInsts S).length := by
+    rw [permIndex_eq, permInsts]
+    have hik : i.val < (List.finRange S.k).length := by rw [List.length_finRange]; exact i.isLt
+    have hfi : (List.finRange S.k)[i.val] = i := by
+      rw [List.getElem_finRange]
+      rfl
+    have hsplit := List.take_append_drop i.val (List.finRange S.k)
+    rw [List.drop_eq_getElem_cons hik, hfi] at hsplit
+    conv_rhs => rw [← hsplit]
+    rw [List.filter_append, List.length_append, List.filter_cons_of_pos
+      (p := fun i ↦ !(S.lookups i).isEmpty) (by
+        simpa only [Bool.not_eq_eq_eq_not, Bool.not_true, List.isEmpty_eq_false_iff] using hp),
+      List.length_cons]
+    omega
+  have ht : permIndex S i < (permMats S proof zeta).length := hlen ▸ hrank
+  have hti : (permInsts S)[permIndex S i]'hrank = i := by
+    rw [← List.getD_eq_getElem _ i hrank]
+    exact getD_permInsts S i hp i
+  have := rows_eq_matColumn H S.params cache S.logTop I _ hok (by rw [hlb, hrh]; exact hbind)
+    (by rw [hlb]; exact permLog_le S) (permWidths S) hws _ ht (S.logN i + S.params.logBlowup)
+    (by rw [hget, hti]) j (by rw [hwd _ ht, hti]; exact hj)
+  rw [← this, hlb, hrh]
+
+end Permutation
+
 /-! ### The run's challenges -/
 
 section Challenges
@@ -586,16 +741,10 @@ variable [BaseField F] [Challenge F EF] (H : Primitives F Id) (S : Iop.Batch.Set
   (common : CompStark.Batch.Common F) (proof : CompStark.Batch.BatchProof F EF)
   (pis : List (List F))
 
-/-- FRI's fold arities on the batch: Plonky3's schedule from the tallest domain, through the
-shorter domains' sizes. -/
-noncomputable def friAritiesB : List ℕ :=
-  foldSchedule S.params.maxLogArity (S.params.logBlowup + S.params.logFinalPolyLen) S.logTop
-    (S.logTop :: S.friHeights)
-
 /-- The challenger when FRI's commit loop starts, after FRI's domain separator. -/
 noncomputable def friStartB : H.State :=
   obsList H (stateFriB H S.params S.instances common proof pis)
-    (DomainSeparator.friSeed F EF (friAritiesB S) (2 ^ S.params.logFinalPolyLen)
+    (DomainSeparator.friSeed F EF S.friArities (2 ^ S.params.logFinalPolyLen)
       S.params.commitPowBits S.params.queryPowBits S.params.numQueries S.logTop
       S.params.logBlowup S.params.maxLogArity)
 
@@ -623,27 +772,38 @@ end Challenges
 
 /-! ### The extracted transcript -/
 
-/-- The batch IOP's transcript extracted from an accepted proof: every instance's trace and
-quotient words and FRI's words from `cache`, the opened values and final polynomial from the
-proof, and the challenges of the run on `H`. ArkLib folds at `s β` where Plonky3 folds at `β`,
-`s` the shift of the folded domain. -/
+/-- The permutation commitment's root, if the proof commits to permutation traces. -/
+def permRoot [Zero F] (proof : CompStark.Batch.BatchProof F EF) : Digest F :=
+  proof.permutationCommit.getD (Vector.replicate _ 0)
+
+/-- The batch IOP's transcript extracted from an accepted proof: every instance's trace,
+permutation trace and quotient words and FRI's words from `cache`, the opened values, terminals
+and final polynomial from the proof, and the challenges of the run on `H`. ArkLib folds at `s β`
+where Plonky3 folds at `β`, `s` the shift of the folded domain. -/
 noncomputable def extractB [BaseField F] [Challenge F EF] (S : Iop.Batch.Setup EF)
     (cache : Merkle.Cache F (Digest F)) (H : Primitives F Id) (common : CompStark.Batch.Common F)
     (proof : CompStark.Batch.BatchProof F EF) (pis : List (List F)) : Sound.Batch.Transcript S where
   trace i c x := Merkle.matColumn cache proof.mainCommit S.logTop S.mainHeights S.mainWidths i c
     (S.logN i + S.params.logBlowup) (reverseBits x (S.logN i + S.params.logBlowup))
+  lookupAlpha := Challenge.toSpec (lookupRunB H S.params S.instances common proof pis).1
+  lookupBeta := Challenge.toSpec (lookupRunB H S.params S.instances common proof pis).2
+  perm i c e x := Merkle.matColumn cache (permRoot proof) (permLog S) (permHeights S)
+    (permWidths S) (permIndex S i) (c.val * Challenge.d EF + e.val) (S.logN i + S.params.logBlowup)
+    (reverseBits x (S.logN i + S.params.logBlowup))
+  terminal i := Challenge.toSpec ((proof.lookupTerminals.getD i none).getD 0)
   alpha := Challenge.toSpec (alphaOfB H S.params S.instances common proof pis)
   quotient i c e x := Merkle.matColumn cache proof.quotientCommit S.logTop (quotHeights S)
     (quotWidths S) (quotOffset S i + c) e (S.logN i + S.params.logBlowup)
     (reverseBits x (S.logN i + S.params.logBlowup))
   zeta := Challenge.toSpec (zetaOfB H S.params S.instances common proof pis)
   openings i := openingsOf (S.instanceSetup i) (proof.opened.toList.getD i noOpenings)
+    (proof.permutationLocal.getD i #[]) (proof.permutationNext.getD i #[])
   batch := Challenge.toSpec (batchOfB H S.params S.instances common proof pis)
-  words j m z := if j < (friAritiesB S).length then
-      friWordAt cache (proof.fri.commits.toList.getD j 0) m ((friAritiesB S).getD j 0) z.val
+  words j m z := if j < S.friArities.length then
+      friWordAt cache (proof.fri.commits.toList.getD j 0) m (S.friArities.getD j 0) z.val
     else 0
   finalPoly := finalPoly S.domainSetup proof.fri.finalPoly
-  betas j := lift gen ^ 2 ^ ((friAritiesB S).take j).sum *
+  betas j := lift gen ^ 2 ^ (S.friArities.take j).sum *
     Challenge.toSpec ((commitReplayB H S common proof pis).1.getD j 0)
 
 /-! ### BCS consistency -/
@@ -680,14 +840,96 @@ theorem mem_zip_check (S : Iop.Batch.Setup EF) (os : List (OpenedValues EF))
   rw [List.getD_eq_getElem _ _ (by rw [hos]; exact i.isLt)]
   exact this
 
-/-- Without lookups, an instance's check is the STARK's constraint check. -/
-theorem instanceCheck_eq (I : CompStark.Batch.Instance F) (hl : I.air.lookups = [])
-    (o : OpenedValues EF) (pis : List F) (cur next : Array EF) (chs : List EF) (t zeta alpha : EF) :
-    CompStark.Batch.instanceCheck I o pis cur next chs t zeta alpha =
-      checkConstraints I.air pis o I.logN zeta alpha (recompose
-        (chunkDomains I.logN (I.air.logQuotientChunks I.logN)) o.quotientChunks.toList zeta) := by
-  rw [CompStark.Batch.instanceCheck, lookupConstraints_eq_nil I hl, logQuotientChunks_eq I hl]
+/-- The terminals of an accepted proof: the instances with lookups' sum to the verifier's sum of
+the proof's terminals. -/
+theorem sum_terminals_toSpec (S : Iop.Batch.Setup EF) (ts : List (Option EF))
+    (hlen : ts.length = S.k)
+    (hsome : ∀ i : Fin S.k, (ts.getD i none).isSome = !(S.lookups i).isEmpty) :
+    (∑ i with S.lookups i ≠ [], Challenge.toSpec ((ts.getD i none).getD 0)) =
+      Challenge.toSpec ((ts.filterMap id).foldl (· + ·) 0) := by
+  classical
+  have hzero : ∀ i ∈ Finset.univ, ¬ (S.lookups i ≠ []) →
+      Challenge.toSpec ((ts.getD i none).getD 0) = 0 := by
+    intro i _ hi
+    have h := hsome i
+    rw [not_not.mp hi, List.isEmpty_nil, Bool.not_true] at h
+    rcases hx : ts.getD i none with _ | y
+    · rw [Option.getD_none, Challenge.toSpec_zero]
+    · rw [hx, Option.isSome_some] at h
+      exact absurd h (by decide)
+  rw [Finset.sum_filter_of_ne fun i _ h ↦ by_contra fun hn ↦ h (hzero i (Finset.mem_univ _) hn)]
+  have hgen : ∀ (l : List (Option EF)) (x : EF), Challenge.toSpec ((l.filterMap id).foldl
+      (· + ·) x) = Challenge.toSpec x + (l.map fun o ↦ Challenge.toSpec (o.getD 0)).sum := by
+    intro l
+    induction l with
+    | nil => intro x; simp only [List.filterMap_nil, List.foldl_nil, List.map_nil, List.sum_nil,
+        add_zero]
+    | cons o l ih =>
+      intro x
+      cases o with
+      | none =>
+        rw [List.filterMap_cons, show (id none : Option EF) = none from rfl]
+        dsimp only
+        rw [ih, List.map_cons, List.sum_cons, Option.getD_none, Challenge.toSpec_zero, zero_add]
+      | some y =>
+        rw [List.filterMap_cons, show (id (some y) : Option EF) = some y from rfl]
+        dsimp only
+        rw [List.foldl_cons, ih, Challenge.toSpec_add, List.map_cons, List.sum_cons,
+          Option.getD_some, add_assoc]
+  rw [hgen, Challenge.toSpec_zero, zero_add, Fin.sum_univ_def]
+  congr 1
+  refine List.ext_getElem (by rw [List.length_map, List.length_map, List.length_finRange, hlen])
+    fun j h1 h2 ↦ ?_
+  have hj : j < S.k := by simpa only [List.length_map, List.length_finRange] using h1
+  rw [List.getElem_map, List.getElem_map, List.getElem_finRange,
+    List.getD_eq_getElem _ _ (by rw [hlen]; exact hj)]
   rfl
+
+/-- The permutation openings' and terminals' shapes of a proof whose lookup checks pass: `d`
+coordinates per permutation column at both points, and a terminal exactly for the instances with
+lookups. -/
+theorem permShapes (S : Iop.Batch.Setup EF) (proof : CompStark.Batch.BatchProof F EF)
+    (hlsize : proof.permutationLocal.size = S.k) (hnsize : proof.permutationNext.size = S.k)
+    (htsize : proof.lookupTerminals.size = S.k)
+    (hpshapes : ∀ x ∈ S.instances.zip (proof.permutationLocal.toList.zip
+      (proof.permutationNext.toList.zip proof.lookupTerminals.toList)),
+        CompStark.Batch.permutationShapeOk x.1 x.2.1 x.2.2.1 x.2.2.2 = true) (i : Fin S.k) :
+    (proof.permutationLocal.getD i #[]).size = Challenge.d EF * (S.instanceSetup i).permWidth ∧
+      (proof.permutationNext.getD i #[]).size = Challenge.d EF * (S.instanceSetup i).permWidth ∧
+      (proof.lookupTerminals.getD i none).isSome = !(S.lookups i).isEmpty := by
+  have hpsh : ∀ i : Fin S.k, CompStark.Batch.permutationShapeOk ⟨S.air i, S.logN i⟩
+      (proof.permutationLocal.getD i #[]) (proof.permutationNext.getD i #[])
+      (proof.lookupTerminals.getD i none) = true := by
+    intro i
+    have hz : (proof.permutationLocal.toList.zip (proof.permutationNext.toList.zip
+        proof.lookupTerminals.toList)).length = S.k := by
+      simp only [List.length_zip, Array.length_toList, hlsize, hnsize, htsize, Nat.min_self]
+    have hm := hpshapes _ (by
+      rw [zip_instances_getD S _ hz (#[], #[], none)]
+      exact List.mem_map.mpr ⟨i, List.mem_finRange _, rfl⟩)
+    have hget : (proof.permutationLocal.toList.zip (proof.permutationNext.toList.zip
+        proof.lookupTerminals.toList)).getD i (#[], #[], none) = (proof.permutationLocal.getD i #[],
+          proof.permutationNext.getD i #[], proof.lookupTerminals.getD i none) := by
+      rw [List.getD_eq_getElem _ _ (by rw [hz]; exact i.isLt)]
+      simp only [List.getElem_zip, Array.getElem_toList, Array.getD_eq_getD_getElem?,
+        Array.getElem?_eq_getElem (show i.val < proof.permutationLocal.size by
+          rw [hlsize]; exact i.isLt),
+        Array.getElem?_eq_getElem (show i.val < proof.permutationNext.size by
+          rw [hnsize]; exact i.isLt),
+        Array.getElem?_eq_getElem (show i.val < proof.lookupTerminals.size by
+          rw [htsize]; exact i.isLt), Option.getD_some]
+    rw [hget] at hm
+    exact hm
+  have h := hpsh i
+  simp only [CompStark.Batch.permutationShapeOk, Bool.and_eq_true, beq_iff_eq] at h
+  have hw : (if (⟨S.air i, S.logN i⟩ : CompStark.Batch.Instance F).lookups.isEmpty then 0 else
+      ((⟨S.air i, S.logN i⟩ : CompStark.Batch.Instance F).lookups.length + 1) *
+        Challenge.d EF) = Challenge.d EF * (S.instanceSetup i).permWidth := by
+    rw [permWidth_eq, ← lookups_eq]
+    cases (S.lookups i).isEmpty <;>
+      simp only [Bool.false_eq_true, ↓reduceIte, Nat.zero_mul, Nat.mul_comm]
+  rw [← lookups_eq] at h
+  exact ⟨h.1.1.trans hw, h.1.2.trans hw, h.2⟩
 
 /-- **BCS consistency of the batch STARK.** If the batch verifier on pure primitives `H` accepts
 a proof whose commitments bind the rows extracted from `cache`, and under whose preprocessed
@@ -707,11 +949,14 @@ theorem bcsB (S : Iop.Batch.Setup EF) (cache : Merkle.Cache F (Digest F)) (H : P
           (S.logN i + S.params.logBlowup) r =
         (S.instanceSetup i).preprocessedWord j
           (finMod _ (reverseBits r (S.logN i + S.params.logBlowup))))
-    (hnl : S.NoLookups)
+    (hpermBind : ∀ root ∈ proof.permutationCommit,
+      BindingM cache H root (permLog S) (permHeights S))
     (h : CompStark.Batch.verifyBatchWith H S.params S.instances common proof
       (List.ofFn publicValues) = .ok ()) :
     let t := extractB S cache H common proof (List.ofFn publicValues)
-    (∀ i, ConstraintsHoldAt (S.instanceSetup i) (publicValues i) t.alpha t.zeta (t.openings i)) ∧
+    (∑ i with S.lookups i ≠ [], t.terminal i) = 0 ∧
+    (∀ i, ConstraintsHoldAt (S.instanceSetup i) (publicValues i) t.alpha t.zeta (t.openings i)
+      (S.challenges t.lookupAlpha t.lookupBeta i) (t.terminal i)) ∧
       t.finalPoly.natDegree < 2 ^ S.params.logFinalPolyLen ∧
       CompPoly.CanonicalNat.toNat (powSampleOfB H S common proof (List.ofFn publicValues)) %
         2 ^ S.params.queryPowBits = 0 ∧
@@ -719,29 +964,44 @@ theorem bcsB (S : Iop.Batch.Setup EF) (cache : Merkle.Cache F (Digest F)) (H : P
         (querySampleOfB H S common proof (List.ofFn publicValues) j) ∈ t.consistentQueries := by
   intro t
   set pis := List.ofFn publicValues with hpis
-  obtain ⟨hsize, -, -, -, -, hshapeZ, hprepS, hlk, -, -, -, ⟨st, hfriOk⟩, hcheck⟩ :=
-    verifyBatchWith_ok H S.params S.instances common proof pis (hasLookups_instances S hnl) h
-  have hperm := permutationCommit_eq_none S.params S.instances proof
-    (hasLookups_instances S hnl) hlk
+  obtain ⟨hsize, -, hlsize, hnsize, htsize, -, -, -, hshapeZ, hprepS, hlk, -, -, -, -,
+    ⟨st, hfriOk⟩, hcheck, hsum⟩ :=
+    verifyBatchWith_ok H S.params S.instances common proof pis h
+  obtain ⟨hpshapes, hperm⟩ := lookupShapeOk_spec S.params S.instances proof hlk
   have hos : proof.opened.toList.length = S.k := by
     rw [Array.length_toList, hsize, length_instances]
-  rw [length_instances] at hsize
+  rw [length_instances] at hsize hlsize hnsize htsize
   have hshape : ∀ i : Fin S.k, CompStark.Batch.openedShapeOk ⟨S.air i, S.logN i⟩
       (proof.opened.toList.getD i noOpenings) = true := by
     intro i
     have hm := hshapeZ _ (zip_instances S _ hos ▸ List.mem_map.mpr ⟨i, List.mem_finRange _, rfl⟩)
     exact hm
-  have hsh := fun i ↦ openedShapeOk_spec (hnl i) (hshape i)
+  have hsh := fun i ↦ openedShapeOk_spec (hshape i)
+  have hpw := permShapes S proof hlsize hnsize htsize hpshapes
   set zeta := zetaOfB H S.params S.instances common proof pis with hzeta
-  have hD := descHeights_batchRounds S common proof zeta (by rw [hsize]) hperm
+  have hD := descHeights_batchRounds S common proof zeta (by rw [hsize])
   have hok := verifyFri_okR H S.params proof.fri _ _ _ _ hfriOk
   dsimp only at hok
   rw [hD, List.headD_cons] at hok
   obtain ⟨-, -, -, hK, hfolds, hcs, -, hfp, hw, hcrlen, hq⟩ := hok
-  refine ⟨fun i ↦ ?_, ?_, ?_, fun j ↦ ?_⟩
+  refine ⟨?_, fun i ↦ ?_, ?_, ?_, fun j ↦ ?_⟩
+  · show (∑ i with S.lookups i ≠ [],
+      Challenge.toSpec ((proof.lookupTerminals.getD i none).getD 0)) = 0
+    have h1 := sum_terminals_toSpec S proof.lookupTerminals.toList
+      (by rw [Array.length_toList, htsize]) fun i ↦ by
+        rw [show proof.lookupTerminals.toList.getD i none = proof.lookupTerminals.getD i none by
+          rw [Array.getD_eq_getD_getElem?, List.getD_eq_getElem?_getD, Array.getElem?_toList]]
+        exact (hpw i).2.2
+    simp only [show ∀ i : Fin S.k, proof.lookupTerminals.toList.getD i none =
+      proof.lookupTerminals.getD i none from fun i ↦ by
+        rw [Array.getD_eq_getD_getElem?, List.getD_eq_getElem?_getD, Array.getElem?_toList]]
+      at h1
+    rw [h1, hsum, Challenge.toSpec_zero]
   · have hc := hcheck _ (mem_zip_check S _ hos publicValues i)
-    rw [instanceCheck_eq ⟨S.air i, S.logN i⟩ (hnl i)] at hc
-    exact constraintsHoldAt_of_check (S.instanceSetup i) (publicValues i) _ _ _ (hsh i).2.2.1 hc
+    have hci := constraintsHoldAt_of_instanceCheck S i (publicValues i) _ _ _ _ _ _ _
+      ((hsh i).2.2.1.trans (congrArg (2 ^ ·) (logChunks_eq S i).symm)) (hpw i).1 (hpw i).2.1 hc
+    rw [challenges_eq] at hci
+    exact hci
   · show (finalPoly S.domainSetup proof.fri.finalPoly).natDegree < _
     refine natDegree_lt_of_degree ?_ (Nat.two_pow_pos _)
     rw [← hfp]
@@ -758,7 +1018,7 @@ theorem bcsB (S : Iop.Batch.Setup EF) (cache : Merkle.Cache F (Digest F)) (H : P
   set index := (smpBits H S.logTop (sampleStates H (chkWit H S.params.queryPowBits
     proof.fri.queryWitness (queryStateB H S common proof pis)).2 j.val)).1 with hindex
   have hqj : QueryOkR H S.params S.logTop alpha rounds (commitReplayB H S common proof pis).1
-      proof.fri.commits.toList (friAritiesB S) proof.fri.folds.toList proof.fri.inputs.toList
+      proof.fri.commits.toList S.friArities proof.fri.folds.toList proof.fri.inputs.toList
       proof.fri.finalPoly j index := hq j.val j.isLt
   have hidx : index < 2 ^ S.logTop := Nat.mod_lt _ (Nat.two_pow_pos _)
   have hpt : queryPoint S.domainSetup (querySampleOfB H S common proof pis j) =
@@ -771,42 +1031,73 @@ theorem bcsB (S : Iop.Batch.Setup EF) (cache : Merkle.Cache F (Digest F)) (H : P
   rw [hD, List.tail_cons] at hqj
   obtain ⟨hrl, hbok, hsteps, hfin, hnil, hfinal⟩ := hqj
   set rows := proof.fri.inputs.toList.map fun b ↦ (b.values.getD j.val #[]).toList with hrows
-  obtain ⟨rM, rQ, rP, hrs⟩ : ∃ rM rQ rP, rows = [rM, rQ] ++
-      (match common.preprocessed with | some _ => [rP] | none => []) := by
+  obtain ⟨rM, rQ, rP, rR, hrs⟩ : ∃ rM rQ rP rR, rows = [rM, rQ] ++
+      (match common.preprocessed with | some _ => [rP] | none => []) ++
+      (match proof.permutationCommit with | some _ => [rR] | none => []) := by
     have hl := hrl
-    rw [hrounds, batchRounds_cases (hperm := hperm)] at hl
+    rw [hrounds, batchRounds_cases, prepRounds, permRounds] at hl
     cases hc : common.preprocessed with
     | none =>
-      simp only [hc, List.append_nil, List.length_cons, List.length_nil] at hl
-      exact ⟨_, _, [], List.eq_getElem_of_length_eq_two rows hl⟩
+      cases hp : proof.permutationCommit with
+      | none =>
+        simp only [hc, hp, List.append_nil, List.length_cons, List.length_nil] at hl
+        exact ⟨_, _, [], [], List.eq_getElem_of_length_eq_two rows hl⟩
+      | some r =>
+        simp only [hc, hp, List.append_nil, List.cons_append, List.nil_append, List.length_cons,
+          List.length_nil] at hl
+        exact ⟨_, _, [], _, List.eq_getElem_of_length_eq_three rows hl⟩
     | some root =>
-      simp only [hc, List.cons_append, List.nil_append, List.length_cons, List.length_nil] at hl
-      exact ⟨_, _, _, List.eq_getElem_of_length_eq_three rows hl⟩
-  have hzip : rows.zip rounds = (rM, proof.mainCommit, mainMats S proof zeta) ::
-      (rQ, proof.quotientCommit, quotMats S proof zeta) ::
+      cases hp : proof.permutationCommit with
+      | none =>
+        simp only [hc, hp, List.append_nil, List.cons_append, List.nil_append, List.length_cons,
+          List.length_nil] at hl
+        exact ⟨_, _, _, [], List.eq_getElem_of_length_eq_three rows hl⟩
+      | some r =>
+        simp only [hc, hp, List.cons_append, List.nil_append, List.length_cons,
+          List.length_nil] at hl
+        obtain ⟨a, b, c, d, hr⟩ : ∃ a b c d, rows = [a, b, c, d] := by
+          match rows, hl with
+          | [a, b, c, d], _ => exact ⟨a, b, c, d, rfl⟩
+        exact ⟨a, b, c, d, hr⟩
+  have hzip : rows.zip rounds = [(rM, proof.mainCommit, mainMats S proof zeta),
+      (rQ, proof.quotientCommit, quotMats S proof zeta)] ++
       (match common.preprocessed with | some _ => [rP] | none => []).zip
-        (match common.preprocessed with
-          | some root => [(root, prepMats S proof zeta)] | none => []) := by
-    rw [hrs, hrounds, batchRounds_cases (hperm := hperm)]
+        (prepRounds S proof zeta common) ++
+      (match proof.permutationCommit with | some _ => [rR] | none => []).zip
+        (permRounds S proof zeta) := by
+    rw [hrs, hrounds, batchRounds_cases, List.zip_append (by
+      rw [prepRounds]; cases common.preprocessed <;> rfl),
+      List.zip_append (by simp only [List.length_cons, List.length_nil])]
     rfl
   have hbM : BatchOkR H S.params S.logTop index (rM, proof.mainCommit, mainMats S proof zeta) :=
-    hbok _ (by rw [hzip]; exact List.mem_cons_self)
+    hbok _ (by rw [hzip]; exact List.mem_append_left _ (List.mem_append_left _
+      List.mem_cons_self))
   have hbQ : BatchOkR H S.params S.logTop index (rQ, proof.quotientCommit, quotMats S proof zeta) :=
-    hbok _ (by rw [hzip]; exact List.mem_cons_of_mem _ List.mem_cons_self)
+    hbok _ (by rw [hzip]; exact List.mem_append_left _ (List.mem_append_left _
+      (List.mem_cons_of_mem _ List.mem_cons_self)))
   have hbP : ∀ root, common.preprocessed = some root →
       BatchOkR H S.params S.logTop index (rP, root, prepMats S proof zeta) := by
     intro root hc
     refine hbok _ ?_
-    rw [hzip, hc]
-    exact List.mem_cons_of_mem _ (List.mem_cons_of_mem _ List.mem_cons_self)
+    rw [hzip]
+    refine List.mem_append_left _ (List.mem_append_right _ ?_)
+    simp only [prepRounds, hc, List.zip_cons_cons, List.zip_nil_left, List.mem_singleton]
+  have hbR : ∀ root, proof.permutationCommit = some root →
+      BatchOkR H S.params S.logTop index (rR, root, permMats S proof zeta) := by
+    intro root hc
+    refine hbok _ ?_
+    rw [hzip]
+    refine List.mem_append_right _ ?_
+    simp only [permRounds, hc, List.zip_cons_cons, List.zip_nil_left, List.mem_singleton]
   have hdeep : ∀ m, Challenge.toSpec (reducedAt S.params S.logTop index alpha
       (queryMats (rows.zip rounds)) m).2 =
         t.deepWords m (finMod m (reverseBits (index >>> (S.logTop - m)) m)) := by
     intro m
     rw [hrs, hrounds]
-    refine reducedAt_eq_groupDeepWord S t.prover t.alpha t.zeta proof zeta S.logTop index m hnl
-      rfl (fun i ↦ rfl) hsize hshape common hprepS hperm rM rQ rP (fun x hx ↦ ?_) (fun i j hj ↦ ?_)
-      (fun i c e he ↦ ?_) (fun i hp j hj ↦ ?_) alpha
+    refine reducedAt_eq_groupDeepWord S t.prover t.lookupAlpha t.lookupBeta t.alpha t.zeta proof
+      zeta S.logTop index m rfl (fun i ↦ rfl) hsize hshape hlsize hnsize
+      (fun i ↦ ⟨(hpw i).1, (hpw i).2.1⟩) common hprepS hperm rM rQ rP rR (fun x hx ↦ ?_)
+      (fun i j hj ↦ ?_) (fun i c e he ↦ ?_) (fun i hp j hj ↦ ?_) (fun i hl c hcw e he ↦ ?_) alpha
     · have hx' : x ∈ rows.zip rounds := by rw [hrs, hrounds]; exact hx
       obtain ⟨-, -, h3, h4⟩ := hbok x hx'
       exact ⟨h3, h4⟩
@@ -814,8 +1105,8 @@ theorem bcsB (S : Iop.Batch.Setup EF) (cache : Merkle.Cache F (Digest F)) (H : P
       show _ = Merkle.matColumn cache proof.mainCommit S.logTop S.mainHeights S.mainWidths i j
         _ (reverseBits (instPoint S S.logTop index i).val _)
       rw [reverseBits_instPoint S index hidx i]
-    · rw [quot_rows H S cache proof zeta hsize (fun i ↦ ⟨(hsh i).2.2.1, (hsh i).2.2.2.1⟩) index rQ
-        hbQ hquot i c e he]
+    · rw [quot_rows H S cache proof zeta hsize (fun i ↦ ⟨(hsh i).2.2.1.trans
+        (congrArg (2 ^ ·) (logChunks_eq S i).symm), (hsh i).2.2.2.1⟩) index rQ hbQ hquot i c e he]
       show _ = Merkle.matColumn cache proof.quotientCommit S.logTop (quotHeights S)
         (quotWidths S) _ e _ (reverseBits (instPoint S S.logTop index i).val _)
       rw [reverseBits_instPoint S index hidx i]
@@ -832,31 +1123,53 @@ theorem bcsB (S : Iop.Batch.Setup EF) (cache : Merkle.Cache F (Digest F)) (H : P
           (hbP root hc) (hprepBind root hc) i hp j hj,
           hprep root hc i hp j hj _ (shiftRight_lt hidx _ (logTop_ge S i))]
         rfl
+    · cases hc : proof.permutationCommit with
+      | none =>
+        rw [hc, Option.isSome_none] at hperm
+        have hany : CompStark.Batch.hasLookups S.instances = true :=
+          List.any_eq_true.mpr ⟨⟨S.air i, S.logN i⟩, List.mem_ofFn.mpr ⟨i, rfl⟩, by
+            rw [← lookups_eq]
+            simpa only [Bool.not_eq_eq_eq_not, Bool.not_true, List.isEmpty_eq_false_iff]
+              using hl⟩
+        rw [hany] at hperm
+        exact absurd hperm Bool.false_ne_true
+      | some root =>
+        have hj : c * Challenge.d EF + e < Challenge.d EF * (S.instanceSetup i).permWidth := by
+          rw [Nat.mul_comm (Challenge.d EF)]
+          calc c * Challenge.d EF + e < c * Challenge.d EF + Challenge.d EF := by omega
+            _ = (c + 1) * Challenge.d EF := (Nat.succ_mul _ _).symm
+            _ ≤ _ := Nat.mul_le_mul_right _ hcw
+        rw [perm_rows H S cache proof zeta hlsize hnsize (fun i ↦ (hpw i).1) index root rR
+          (hbR root hc) (hpermBind root hc) i hl _ hj]
+        show _ = Merkle.matColumn cache (permRoot proof) (permLog S) (permHeights S)
+          (permWidths S) (permIndex S i) (c * Challenge.d EF + e) _
+          (reverseBits (instPoint S S.logTop index i).val _)
+        rw [reverseBits_instPoint S index hidx i, permRoot, hc, Option.getD_some]
   set cr := commitReplayB H S common proof pis with hcr
-  set l := cr.1.zip (querySteps j.val (friAritiesB S) proof.fri.folds.toList) with hl
+  set l := cr.1.zip (querySteps j.val S.friArities proof.fri.folds.toList) with hl
   set ro := S.friHeights.map fun h ↦
     (h, (reducedAt S.params S.logTop index alpha (queryMats (rows.zip rounds)) h).2) with hro
   set e0 := (reducedAt S.params S.logTop index alpha (queryMats (rows.zip rounds)) S.logTop).2
     with he0
-  have hfl : proof.fri.folds.toList.length = (friAritiesB S).length := by
+  have hfl : proof.fri.folds.toList.length = S.friArities.length := by
     rw [Array.length_toList, hfolds]
     rfl
-  have hqs := length_querySteps j.val (friAritiesB S) _ hfl
-  have hlar : l.map (·.2.logArity) = friAritiesB S := by
+  have hqs := length_querySteps j.val S.friArities _ hfl
+  have hlar : l.map (·.2.logArity) = S.friArities := by
     show List.map ((fun x : QueryFold EF ↦ x.logArity) ∘ Prod.snd) _ = _
     rw [← List.map_map, List.map_snd_zip (by rw [hqs]; exact hcrlen.ge),
       map_logArity_querySteps _ _ _ hfl]
-  have hll : l.length = (friAritiesB S).length := by rw [← hlar, List.length_map]
-  have hsum : (friAritiesB S).sum ≤ S.logTop := by
+  have hll : l.length = S.friArities.length := by rw [← hlar, List.length_map]
+  have hsum : S.friArities.sum ≤ S.logTop := by
     have := sum_foldSchedule_le S.params.maxLogArity (S.params.logBlowup + S.params.logFinalPolyLen)
       S.logTop (S.logTop :: S.friHeights)
     rw [List.headD_cons] at this
     exact this
-  have hpre : ∀ j', ((l.take j').map (·.2.logArity)).sum = ((friAritiesB S).take j').sum := by
+  have hpre : ∀ j', ((l.take j').map (·.2.logArity)).sum = (S.friArities.take j').sum := by
     intro j'
     rw [List.map_take, hlar]
-  have hpre_le : ∀ j', ((friAritiesB S).take j').sum ≤ S.logTop := fun j' ↦ by
-    have := List.sum_take_add_sum_drop (friAritiesB S) j'
+  have hpre_le : ∀ j', (S.friArities.take j').sum ≤ S.logTop := fun j' ↦ by
+    have := List.sum_take_add_sum_drop S.friArities j'
     omega
   have hI0 : index >>> (S.logTop - S.logTop) = index := by
     rw [Nat.sub_self, Nat.shiftRight_zero]
@@ -880,7 +1193,7 @@ theorem bcsB (S : Iop.Batch.Setup EF) (cache : Merkle.Cache F (Digest F)) (H : P
     exact (hdeep h').symm
   have hsched : l.map (·.2.logArity) = foldSchedule S.params.maxLogArity
       (S.params.logFinalPolyLen + S.params.logBlowup) S.logTop (S.logTop :: S.friHeights) := by
-    rw [hlar, friAritiesB, Nat.add_comm S.params.logFinalPolyLen]
+    rw [hlar, Iop.Batch.Setup.friArities, Nat.add_comm S.params.logFinalPolyLen]
   have hbind : ∀ j' < l.length, Binding cache H (proof.fri.commits.toList.getD j' 0) := by
     intro j' hj'
     have hlt : j' < proof.fri.commits.toList.length := by
@@ -891,14 +1204,14 @@ theorem bcsB (S : Iop.Batch.Setup EF) (cache : Merkle.Cache F (Digest F)) (H : P
   have hfw : ∀ j' (hj' : j' < l.length), t.words j' = fun m z ↦
       friWordAt cache (proof.fri.commits.toList.getD j' 0) m l[j'].2.logArity z.val := by
     intro j' hj'
-    have hget : l[j'].2.logArity = (friAritiesB S).getD j' 0 := by
+    have hget : l[j'].2.logArity = S.friArities.getD j' 0 := by
       have := congrArg (fun L : List ℕ ↦ L.getD j' 0) hlar
       rw [List.getD_eq_getElem (l.map (·.2.logArity)) 0 (by rw [List.length_map]; exact hj'),
         List.getElem_map] at this
       exact this
     funext m z
-    show (if j' < (friAritiesB S).length then friWordAt cache (proof.fri.commits.toList.getD j' 0)
-      m ((friAritiesB S).getD j' 0) z.val else 0) = _
+    show (if j' < S.friArities.length then friWordAt cache (proof.fri.commits.toList.getD j' 0)
+      m (S.friArities.getD j' 0) z.val else 0) = _
     rw [ite_eq_left_of_eq_true _ _ (eq_true (hll ▸ hj')), hget]
   have hβ : ∀ j' (hj' : j' < l.length), t.betas j' = (lift gen : 𝕂) ^ 2 ^ (S.logTop -
       (foldStateR l (ro, e0, index >>> (S.logTop - S.logTop), S.logTop) j').2.2.2) *
@@ -909,7 +1222,7 @@ theorem bcsB (S : Iop.Batch.Setup EF) (cache : Merkle.Cache F (Digest F)) (H : P
     rw [hpre j', Nat.sub_sub_self (hpre_le j')]
     have hj1 : j' < cr.1.length := lt_of_lt_of_le hj'
       (by rw [List.length_zip]; exact Nat.min_le_left _ _)
-    show (lift gen : 𝕂) ^ 2 ^ ((friAritiesB S).take j').sum * Challenge.toSpec (cr.1.getD j' 0) = _
+    show (lift gen : 𝕂) ^ 2 ^ (S.friArities.take j').sum * Challenge.toSpec (cr.1.getD j' 0) = _
     rw [List.getD_eq_getElem _ _ hj1, List.getElem_zip]
   have hfinal' : t.finalPoly.eval ((lift gen : 𝕂) ^ 2 ^ (S.logTop -
       (foldStateR l (ro, e0, index >>> (S.logTop - S.logTop), S.logTop) l.length).2.2.2) *
@@ -927,7 +1240,7 @@ theorem bcsB (S : Iop.Batch.Setup EF) (cache : Merkle.Cache F (Digest F)) (H : P
         2 ^ (S.params.logBlowup + S.params.logFinalPolyLen) := by
       rw [← hfin, h2]
       dsimp only
-      have := shiftRight_lt hidx (S.logTop - (friAritiesB S).sum) (Nat.sub_le _ _)
+      have := shiftRight_lt hidx (S.logTop - S.friArities.sum) (Nat.sub_le _ _)
       rwa [Nat.sub_sub_self hsum] at this
     rw [hfin]
     have hsub : S.logTop - (S.params.logBlowup + S.params.logFinalPolyLen) =

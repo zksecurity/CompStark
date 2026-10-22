@@ -43,6 +43,7 @@ public import CompStark.Stark.Field
 public import CompStark.Fri.Verifier
 public import CompStark.Stark.Air
 public import CompStark.Lookup.LogUp
+public import CompStark.Lookup.Poly
 public import CompStark.Lookup.Lookup
 public import CompStark.Lookup.Quotient
 public import CompStark.Stark.Verifier
@@ -130,6 +131,10 @@ public import CompStark.Sound.NumbersNi
 public import CompStark.Sound.BatchNumbersNi
 public import CompStark.Security
 public import CompStark.Sound.CurveCA
+public import CompStark.Sound.LogUp
+public import CompStark.Sound.Telescope
+public import CompStark.Sound.BatchLogUp
+public import CompStark.Sound.BalancedInt
 public import CompStark.Sound.LossyMca
 public import CompStark.Fs.FreshQuery
 public import CompStark.Fs.DigestClash
@@ -169,6 +174,7 @@ public import CompStark.Ni.BatchAccept
 public import CompStark.Ni.BatchFri
 public import CompStark.Ni.BatchBind
 public import CompStark.Ni.BatchDeep
+public import CompStark.Ni.BatchCheck
 public import CompStark.Ni.BatchBcs
 public import CompStark.Ni.BatchNatural
 public import CompStark.Ni.BatchQueryBound

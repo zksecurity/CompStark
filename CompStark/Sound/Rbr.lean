@@ -106,10 +106,11 @@ theorem le_relHammingDist_of_not_near (S : Iop.Setup EF) (δ : ℝ) (w : S.Point
 /-! ### The transcript -/
 
 /-- The prover with fixed words and messages. -/
-def fixedProver {S : Iop.Setup EF} (trace : Fin S.air.width → S.Point → F)
+def fixedProver {lookups : List (Lookup F)} {S : Iop.Setup EF lookups}
+    (trace : Fin S.air.width → S.Point → F)
     (quotient : Fin S.chunks → Fin (Challenge.d EF) → S.Point → F) (openings : Openings S)
-    : Prover S :=
-  ⟨trace, fun _ ↦ quotient, fun _ _ ↦ openings⟩
+    (perm : Fin S.permWidth → Fin (Challenge.d EF) → S.Point → F := fun _ _ _ ↦ 0) : Prover S :=
+  ⟨trace, fun _ ↦ quotient, fun _ _ ↦ openings, perm⟩
 
 /-- The transcript of the interactive oracle proof, as the extractor reads it off a
 non-interactive proof: the prover's words and messages, and the challenges. -/
@@ -144,39 +145,89 @@ end Transcript
 /-! ### The bad events -/
 
 section Events
-variable (S : Iop.Setup EF) (publicValues : List F)
+variable {lookups : List (Lookup F)} (S : Iop.Setup EF lookups) (publicValues : List F)
 
 open Classical
 
-/-- `α` is bad for a candidate trace `P`: with some quotient of degree at most `n`, the check
-passes with the true values at more than `identityDegree` points `ζ` off the trace domain. -/
-def AlphaBadFor (P : Fin S.air.width → F[X]) (α : 𝕂) : Prop :=
+/-- `α` is bad for candidate polynomials `P` of the trace and `R` of the permutation trace: with
+some quotient of degree at most `n`, the check passes with the true values at more than
+`identityDegree` points `ζ` off the trace domain. -/
+def AlphaBadFor (P : Fin S.air.width → F[X]) (α : 𝕂)
+    (R : Fin S.permWidth → Fin (Challenge.d EF) → F[X] := fun _ _ ↦ 0)
+    (challenges : List 𝕂 := []) (terminal : 𝕂 := 0) : Prop :=
   ∃ quotient : Fin S.chunks → Fin (Challenge.d EF) → F[X], (∀ c e, (quotient c e).natDegree ≤ S.n) ∧
     S.identityDegree < (Finset.univ.filter fun ζ : 𝕂 ↦ OffTraceDomain S ζ ∧
-      ConstraintsHoldAt S publicValues α ζ (trueOpenings S P quotient ζ)).card
+      ConstraintsHoldAt S publicValues α ζ (trueOpenings S P quotient ζ R) challenges
+        terminal).card
 
-/-- Round `α`: `α` is bad for a candidate trace that fails the AIR. -/
-def AlphaBad (δ' : ℝ) (trace : Fin S.air.width → S.Point → F) (α : 𝕂) : Prop :=
-  ∃ P ∈ candidates S δ' trace, ¬ S.air.Satisfied S.logN (traceOf S P) publicValues ∧
-    AlphaBadFor S publicValues P α
+/-- Round `α`: `α` is bad for a candidate trace and permutation trace failing a constraint
+(`Holds`), with the lookup challenges `challenges` and the terminal `terminal`. -/
+def AlphaBad (δ' : ℝ) (trace : Fin S.air.width → S.Point → F) (α : 𝕂)
+    (perm : Fin S.permWidth → Fin (Challenge.d EF) → S.Point → F := fun _ _ _ ↦ 0)
+    (challenges : List 𝕂 := []) (terminal : 𝕂 := 0) : Prop :=
+  ∃ P ∈ candidates S δ' trace, ∃ R ∈ candidates S δ'
+    (fun ce : Fin S.permWidth × Fin (Challenge.d EF) ↦ perm ce.1 ce.2),
+    ¬ Holds S publicValues challenges terminal (traceOf S P) (fun c e ↦ R (c, e)) ∧
+    AlphaBadFor S publicValues P α (fun c e ↦ R (c, e)) challenges terminal
 
 /-- Round `ζ`: `α` is safe, and `ζ` lies on the trace domain or the check passes at `ζ` with the
-true values of a candidate trace failing the AIR and a candidate quotient. -/
+true values of a candidate trace and permutation trace failing a constraint and a candidate
+quotient. -/
 def ZetaBad (δ' : ℝ) (trace : Fin S.air.width → S.Point → F) (α : 𝕂)
-    (quotient : Fin S.chunks → Fin (Challenge.d EF) → S.Point → F) (ζ : 𝕂) : Prop :=
-  ¬ AlphaBad S publicValues δ' trace α ∧ (¬ OffTraceDomain S ζ ∨
-    ∃ P ∈ candidates S δ' trace, ¬ S.air.Satisfied S.logN (traceOf S P) publicValues ∧
+    (quotient : Fin S.chunks → Fin (Challenge.d EF) → S.Point → F) (ζ : 𝕂)
+    (perm : Fin S.permWidth → Fin (Challenge.d EF) → S.Point → F := fun _ _ _ ↦ 0)
+    (challenges : List 𝕂 := []) (terminal : 𝕂 := 0) : Prop :=
+  ¬ AlphaBad S publicValues δ' trace α perm challenges terminal ∧ (¬ OffTraceDomain S ζ ∨
+    ∃ P ∈ candidates S δ' trace, ∃ R ∈ candidates S δ'
+      (fun ce : Fin S.permWidth × Fin (Challenge.d EF) ↦ perm ce.1 ce.2),
+      ¬ Holds S publicValues challenges terminal (traceOf S P) (fun c e ↦ R (c, e)) ∧
       ∃ Q ∈ candidates S δ' (fun ce : Fin S.chunks × Fin (Challenge.d EF) ↦ quotient ce.1 ce.2),
-        ConstraintsHoldAt S publicValues α ζ (trueOpenings S P (fun c e ↦ Q (c, e)) ζ))
+        ConstraintsHoldAt S publicValues α ζ
+          (trueOpenings S P (fun c e ↦ Q (c, e)) ζ (fun c e ↦ R (c, e))) challenges terminal)
 
 /-- Round `a`: the DEEP components are not near the code together at `δ' - 2/N`, but their
 batched word is `δ`-near. -/
 def BatchBad (δ : NNReal) (δ' : ℝ) (trace : Fin S.air.width → S.Point → F) (α : 𝕂)
     (quotient : Fin S.chunks → Fin (Challenge.d EF) → S.Point → F) (ζ : 𝕂) (openings : Openings S)
-    (a : 𝕂) :
+    (a : 𝕂) (perm : Fin S.permWidth → Fin (Challenge.d EF) → S.Point → F := fun _ _ _ ↦ 0) :
     Prop :=
-  ¬ NearTogether S (δ' - 2 / S.size) (components (fixedProver trace quotient openings) α ζ) ∧
-    Near S δ (Iop.deepWord (fixedProver trace quotient openings) α ζ a)
+  ¬ NearTogether S (δ' - 2 / S.size)
+      (components (fixedProver trace quotient openings perm) α ζ) ∧
+    Near S δ (Iop.deepWord (fixedProver trace quotient openings perm) α ζ a)
+
+end Events
+
+/-! ### The queries -/
+
+/-- The point of `L` that a query sample selects: the low `log N` bits of its canonical value, the
+index into `L` in bit-reversed order. -/
+def queryPoint {lookups : List (Lookup F)} (S : Iop.Setup EF lookups) (x : F) :
+    S.Point :=
+  ⟨reverseBits (CompPoly.CanonicalNat.toNat x % 2 ^ (S.logN + S.params.logBlowup))
+      (S.logN + S.params.logBlowup),
+    reverseBits_lt _ _⟩
+
+/-- The query samples that select a point of `G` are those whose residues lie in the
+bit-reversed `G`, a set of the same size. -/
+theorem queryPoint_mem_iff {lookups : List (Lookup F)} (S : Iop.Setup EF lookups)
+    (G : Finset S.Point) (x : F) :
+    queryPoint S x ∈ G ↔ CompPoly.CanonicalNat.toNat x % 2 ^ (S.logN + S.params.logBlowup) ∈
+      G.image fun z ↦ reverseBits z.val (S.logN + S.params.logBlowup) := by
+  set m := S.logN + S.params.logBlowup
+  have hlt : CompPoly.CanonicalNat.toNat x % 2 ^ m < 2 ^ m := Nat.mod_lt _ (Nat.two_pow_pos m)
+  simp only [Finset.mem_image]
+  constructor
+  · intro h
+    exact ⟨_, h, reverseBits_reverseBits hlt⟩
+  · rintro ⟨z, hz, hzx⟩
+    have hz' : queryPoint S x = z := by
+      apply Fin.ext
+      simp only [queryPoint, ← hzx, reverseBits_reverseBits z.isLt]
+    rw [hz']
+    exact hz
+
+section FriEvents
+variable (S : Iop.Setup EF)
 
 /-- FRI fold `i`: ArkLib's lossy folding failure of committed word `i` at `β`. The safe history
 of ArkLib's query analysis (`SafeHistory`) is that no fold is bad. -/
@@ -186,13 +237,6 @@ def FoldBad (δ loss : NNReal) (i : Fin (S.lastFold + 1))
     (fun z ↦ committedFunction S.schedule fri i.castSucc
       (S.domain.subdomain (foldingPrefix S.schedule i.castSucc) z))
     (S.schedule i).val (foldingDegree S.schedule (finalDegreeOf S) i.succ) δ loss β
-
-/-- The point of `L` that a query sample selects: the low `log N` bits of its canonical value, the
-index into `L` in bit-reversed order. -/
-def queryPoint (x : F) : S.Point :=
-  ⟨reverseBits (CompPoly.CanonicalNat.toNat x % 2 ^ (S.logN + S.params.logBlowup))
-      (S.logN + S.params.logBlowup),
-    reverseBits_lt _ _⟩
 
 /-- Before the queries: the DEEP word is `δ`-far, no fold is bad and the final polynomial has
 degree below `2 ^ logFinalPolyLen`. -/
@@ -223,23 +267,26 @@ theorem foldBad_congr (δ loss : NNReal) (i : Fin (S.lastFold + 1))
     simp only [committedFunction, Fin.val_castSucc, i.isLt, ↓reduceDIte, Fin.eta, h]
   simp only [FoldBad, hf]
 
-end Events
+end FriEvents
 
 /-! ### The bounds -/
 
 section Bounds
-variable (S : Iop.Setup EF) (publicValues : List F)
+variable {lookups : List (Lookup F)} (S : Iop.Setup EF lookups) (publicValues : List F)
+  (challenges : List (Challenge.Spec EF)) (terminal : Challenge.Spec EF)
 
 open Classical
 
 -- The constructor-name linter exhausts its recursion budget on this proof's locals.
 set_option linter.constructorNameAsVariable false in
-/-- The `α` bad for a failing candidate trace number at most `#constraints - 1`. -/
+/-- The `α` bad for a failing candidate pair number at most `#constraints - 1`. -/
 theorem card_alphaBadFor_le (P : Fin S.air.width → F[X]) (hP : ∀ j, (P j).natDegree ≤ S.n)
-    (hfail : ¬ S.air.Satisfied S.logN (traceOf S P) publicValues) :
-    (Finset.univ.filter fun α : 𝕂 ↦ AlphaBadFor S publicValues P α).card ≤
-      S.air.constraints.length - 1 := by
-  obtain ⟨bad, hcard, hgood⟩ := algebraStep S publicValues P hP hfail
+    (R : Fin S.permWidth → Fin (Challenge.d EF) → F[X]) (hR : ∀ c e, (R c e).natDegree ≤ S.n)
+    (hfail : ¬ Holds S publicValues challenges terminal (traceOf S P) R) :
+    (Finset.univ.filter fun α : 𝕂 ↦ AlphaBadFor S publicValues P α R challenges terminal).card ≤
+      S.numConstraints - 1 := by
+  obtain ⟨bad, hcard, hgood⟩ :=
+    algebraStep S publicValues challenges terminal P R hP hR hfail
   refine (Finset.card_le_card fun α hα ↦ ?_).trans hcard
   simp only [Finset.mem_filter, Finset.mem_univ, true_and] at hα
   by_contra hb
@@ -248,104 +295,127 @@ theorem card_alphaBadFor_le (P : Fin S.air.width → F[X]) (hP : ∀ j, (P j).na
 
 -- The constructor-name linter exhausts its recursion budget on this proof's locals.
 set_option linter.constructorNameAsVariable false in
-/-- Round `α`: at most `ℓT (#constraints - 1)` bad values. -/
-theorem card_alphaBad_le (δ' : NNReal) (trace : Fin S.air.width → S.Point → F) :
-    (Finset.univ.filter fun α : 𝕂 ↦ AlphaBad S publicValues δ' trace α).card ≤
-      S.listSize (Fin S.air.width) δ' * (S.air.constraints.length - 1) := by
-  set C := (candidates_finite S δ' trace).toFinset
-  have hsub : (Finset.univ.filter fun α : 𝕂 ↦ AlphaBad S publicValues δ' trace α) ⊆
-      (C.filter fun P ↦ ¬ S.air.Satisfied S.logN (traceOf S P) publicValues).biUnion
-        fun P ↦ Finset.univ.filter fun α : 𝕂 ↦ AlphaBadFor S publicValues P α := by
+/-- Round `α`: at most `ℓT ℓP (#constraints - 1)` bad values. -/
+theorem card_alphaBad_le (δ' : NNReal) (trace : Fin S.air.width → S.Point → F)
+    (perm : Fin S.permWidth → Fin (Challenge.d EF) → S.Point → F) :
+    (Finset.univ.filter fun α : 𝕂 ↦
+        AlphaBad S publicValues δ' trace α perm challenges terminal).card ≤
+      S.listSize (Fin S.air.width) δ' * S.permListSize δ' * (S.numConstraints - 1) := by
+  set C := (candidates_finite S δ' trace).toFinset ×ˢ (candidates_finite S δ'
+    fun ce : Fin S.permWidth × Fin (Challenge.d EF) ↦ perm ce.1 ce.2).toFinset
+  have hsub : (Finset.univ.filter fun α : 𝕂 ↦
+        AlphaBad S publicValues δ' trace α perm challenges terminal) ⊆
+      (C.filter fun PR ↦ ¬ Holds S publicValues challenges terminal (traceOf S PR.1)
+        fun c e ↦ PR.2 (c, e)).biUnion fun PR ↦ Finset.univ.filter fun α : 𝕂 ↦
+          AlphaBadFor S publicValues PR.1 α (fun c e ↦ PR.2 (c, e)) challenges terminal := by
     intro α hα
     simp only [Finset.mem_filter, Finset.mem_univ, true_and] at hα
-    obtain ⟨P, hP, hfail, hbad⟩ := hα
+    obtain ⟨P, hP, R, hR, hfail, hbad⟩ := hα
     simp only [Finset.mem_biUnion, Finset.mem_filter, Finset.mem_univ, true_and, C,
-      Set.Finite.mem_toFinset]
-    exact ⟨P, ⟨hP, hfail⟩, hbad⟩
+      Finset.mem_product, Set.Finite.mem_toFinset]
+    exact ⟨(P, R), ⟨⟨hP, hR⟩, hfail⟩, hbad⟩
   refine (Finset.card_le_card hsub).trans (Finset.card_biUnion_le.trans ?_)
-  refine (Finset.sum_le_sum (g := fun _ ↦ S.air.constraints.length - 1) fun P hP ↦ ?_).trans ?_
-  · simp only [Finset.mem_filter, C, Set.Finite.mem_toFinset] at hP
-    exact card_alphaBadFor_le S publicValues P hP.1.1 hP.2
+  refine (Finset.sum_le_sum (g := fun _ ↦ S.numConstraints - 1) fun PR hPR ↦ ?_).trans ?_
+  · simp only [Finset.mem_filter, C, Finset.mem_product, Set.Finite.mem_toFinset] at hPR
+    exact card_alphaBadFor_le S publicValues challenges terminal PR.1 hPR.1.1.1 _
+      (fun c e ↦ hPR.1.2.1 (c, e)) hPR.2
   · rw [Finset.sum_const, smul_eq_mul]
-    exact Nat.mul_le_mul_right _ ((Finset.card_filter_le _ _).trans (card_candidates_le S δ' _))
+    refine Nat.mul_le_mul_right _ ((Finset.card_filter_le _ _).trans ?_)
+    rw [Finset.card_product]
+    exact Nat.mul_le_mul (card_candidates_le S δ' _) (card_permCandidates_le S δ' _)
 
 /-- Round `α`: a uniform `α` is bad with probability at most `foldingError`. -/
-theorem prob_alphaBad_le (δ' : NNReal) (trace : Fin S.air.width → S.Point → F) :
-    Pr{let α ← $ᵗ 𝕂}[AlphaBad S publicValues δ' trace α] ≤ foldingError S δ' := by
+theorem prob_alphaBad_le (δ' : NNReal) (trace : Fin S.air.width → S.Point → F)
+    (perm : Fin S.permWidth → Fin (Challenge.d EF) → S.Point → F := fun _ _ _ ↦ 0) :
+    Pr{let α ← $ᵗ 𝕂}[AlphaBad S publicValues δ' trace α perm challenges terminal] ≤
+      foldingError S δ' := by
   rw [SampleableType.prEvent_uniformSample, Iop.foldingError]
   gcongr
-  exact_mod_cast card_alphaBad_le S publicValues δ' trace
+  exact_mod_cast card_alphaBad_le S publicValues challenges terminal δ' trace perm
 
 -- The constructor-name linter exhausts its recursion budget on this proof's locals.
 set_option linter.constructorNameAsVariable false in
-/-- Round `ζ`: at most `ℓT ℓQ identityDegree + n` bad values. -/
+/-- Round `ζ`: at most `ℓT ℓP ℓQ identityDegree + n` bad values. -/
 theorem card_zetaBad_le (δ' : NNReal) (trace : Fin S.air.width → S.Point → F) (α : 𝕂)
-    (quotient : Fin S.chunks → Fin (Challenge.d EF) → S.Point → F) :
-    (Finset.univ.filter fun ζ : 𝕂 ↦ ZetaBad S publicValues δ' trace α quotient ζ).card ≤
-      S.listSize (Fin S.air.width) δ' * S.listSize (Fin S.chunks × Fin (Challenge.d EF)) δ' *
-        S.identityDegree + S.n := by
-  by_cases hα : AlphaBad S publicValues δ' trace α
-  · have h : (Finset.univ.filter fun ζ : 𝕂 ↦ ZetaBad S publicValues δ' trace α quotient ζ) = ∅ :=
+    (quotient : Fin S.chunks → Fin (Challenge.d EF) → S.Point → F)
+    (perm : Fin S.permWidth → Fin (Challenge.d EF) → S.Point → F) :
+    (Finset.univ.filter fun ζ : 𝕂 ↦
+        ZetaBad S publicValues δ' trace α quotient ζ perm challenges terminal).card ≤
+      S.listSize (Fin S.air.width) δ' * S.permListSize δ' *
+        S.listSize (Fin S.chunks × Fin (Challenge.d EF)) δ' * S.identityDegree + S.n := by
+  by_cases hα : AlphaBad S publicValues δ' trace α perm challenges terminal
+  · have h : (Finset.univ.filter fun ζ : 𝕂 ↦
+        ZetaBad S publicValues δ' trace α quotient ζ perm challenges terminal) = ∅ :=
       Finset.filter_false_of_mem fun ζ _ hζ ↦ hζ.1 hα
     rw [h, Finset.card_empty]
     exact Nat.zero_le _
-  set C1 := ((candidates_finite S δ' trace).toFinset.filter
-    fun P ↦ ¬ S.air.Satisfied S.logN (traceOf S P) publicValues)
+  set C1 := ((candidates_finite S δ' trace).toFinset ×ˢ (candidates_finite S δ'
+    fun ce : Fin S.permWidth × Fin (Challenge.d EF) ↦ perm ce.1 ce.2).toFinset).filter
+      fun PR ↦ ¬ Holds S publicValues challenges terminal (traceOf S PR.1) fun c e ↦ PR.2 (c, e)
   set C2 := (candidates_finite S δ' fun ce : Fin S.chunks × Fin (Challenge.d EF) ↦
     quotient ce.1 ce.2).toFinset
-  set check : (Fin S.air.width → F[X]) → (Fin S.chunks × Fin (Challenge.d EF) → F[X]) → Finset 𝕂 :=
-    fun P Q ↦ Finset.univ.filter fun ζ : 𝕂 ↦ OffTraceDomain S ζ ∧
-      ConstraintsHoldAt S publicValues α ζ (trueOpenings S P (fun c e ↦ Q (c, e)) ζ)
-  have hsub : (Finset.univ.filter fun ζ : 𝕂 ↦ ZetaBad S publicValues δ' trace α quotient ζ) ⊆
-      (C1.biUnion fun P ↦ C2.biUnion fun Q ↦ check P Q) ∪
+  set check : ((Fin S.air.width → F[X]) × (Fin S.permWidth × Fin (Challenge.d EF) → F[X])) →
+      (Fin S.chunks × Fin (Challenge.d EF) → F[X]) → Finset 𝕂 :=
+    fun PR Q ↦ Finset.univ.filter fun ζ : 𝕂 ↦ OffTraceDomain S ζ ∧
+      ConstraintsHoldAt S publicValues α ζ
+        (trueOpenings S PR.1 (fun c e ↦ Q (c, e)) ζ fun c e ↦ PR.2 (c, e)) challenges terminal
+  have hsub : (Finset.univ.filter fun ζ : 𝕂 ↦
+        ZetaBad S publicValues δ' trace α quotient ζ perm challenges terminal) ⊆
+      (C1.biUnion fun PR ↦ C2.biUnion fun Q ↦ check PR Q) ∪
         Finset.univ.filter fun ζ : 𝕂 ↦ ¬ OffTraceDomain S ζ := by
     intro ζ hζ
     simp only [Finset.mem_filter, Finset.mem_univ, true_and] at hζ
     obtain ⟨-, hζ'⟩ := hζ
     simp only [Finset.mem_union, Finset.mem_biUnion, Finset.mem_filter, Finset.mem_univ,
-      true_and, check, C1, C2, Set.Finite.mem_toFinset]
+      true_and, check, C1, C2, Set.Finite.mem_toFinset, Finset.mem_product]
     by_cases hoff : OffTraceDomain S ζ
     · left
-      rcases hζ' with h | ⟨P, hP, hfail, Q, hQ, hcheck⟩
+      rcases hζ' with h | ⟨P, hP, R, hR, hfail, Q, hQ, hcheck⟩
       · exact absurd hoff h
-      · exact ⟨P, ⟨hP, hfail⟩, Q, hQ, hoff, hcheck⟩
+      · exact ⟨(P, R), ⟨⟨hP, hR⟩, hfail⟩, Q, hQ, hoff, hcheck⟩
     · exact Or.inr hoff
   refine (Finset.card_le_card hsub).trans ((Finset.card_union_le _ _).trans
     (Nat.add_le_add ?_ (card_not_offTraceDomain S)))
-  refine Finset.card_biUnion_le.trans ((Finset.sum_le_sum fun P hP ↦
+  refine Finset.card_biUnion_le.trans ((Finset.sum_le_sum fun PR hPR ↦
     Finset.card_biUnion_le.trans (Finset.sum_le_sum (g := fun _ ↦ S.identityDegree)
       fun Q hQ ↦ ?_)).trans ?_)
-  · simp only [C1, Finset.mem_filter, Set.Finite.mem_toFinset] at hP
+  · simp only [C1, Finset.mem_filter, Finset.mem_product, Set.Finite.mem_toFinset] at hPR
     simp only [C2, Set.Finite.mem_toFinset] at hQ
     by_contra hlt
-    exact hα ⟨P, hP.1, hP.2, fun c e ↦ Q (c, e), fun c e ↦ hQ.1 (c, e), not_le.mp hlt⟩
+    exact hα ⟨PR.1, hPR.1.1, PR.2, hPR.1.2, hPR.2, fun c e ↦ Q (c, e), fun c e ↦ hQ.1 (c, e),
+      not_le.mp hlt⟩
   · rw [Finset.sum_const, Finset.sum_const, smul_eq_mul, smul_eq_mul, ← Nat.mul_assoc]
-    exact Nat.mul_le_mul_right _ (Nat.mul_le_mul
-      ((Finset.card_filter_le _ _).trans (card_candidates_le S δ' _))
+    refine Nat.mul_le_mul_right _ (Nat.mul_le_mul ((Finset.card_filter_le _ _).trans ?_)
       (card_candidates_le S δ' _))
+    rw [Finset.card_product]
+    exact Nat.mul_le_mul (card_candidates_le S δ' _) (card_permCandidates_le S δ' _)
 
 /-- Round `ζ`: a uniform `ζ` is bad with probability at most `outOfDomainError`. -/
 theorem prob_zetaBad_le (δ' : NNReal) (trace : Fin S.air.width → S.Point → F) (α : 𝕂)
-    (quotient : Fin S.chunks → Fin (Challenge.d EF) → S.Point → F) :
-    Pr{let ζ ← $ᵗ 𝕂}[ZetaBad S publicValues δ' trace α quotient ζ] ≤ outOfDomainError S δ' := by
+    (quotient : Fin S.chunks → Fin (Challenge.d EF) → S.Point → F)
+    (perm : Fin S.permWidth → Fin (Challenge.d EF) → S.Point → F := fun _ _ _ ↦ 0) :
+    Pr{let ζ ← $ᵗ 𝕂}[ZetaBad S publicValues δ' trace α quotient ζ perm challenges terminal] ≤
+      outOfDomainError S δ' := by
   rw [SampleableType.prEvent_uniformSample, outOfDomainError]
   gcongr
-  exact_mod_cast card_zetaBad_le S publicValues δ' trace α quotient
+  exact_mod_cast card_zetaBad_le S publicValues challenges terminal δ' trace α quotient perm
 
 /-- Round `a`: a uniform `a` is bad with probability at most `batchingError`. -/
 theorem prob_batchBad_le (δ : NNReal) (δ' : ℝ) (trace : Fin S.air.width → S.Point → F)
     (α : 𝕂) (quotient : Fin S.chunks → Fin (Challenge.d EF) → S.Point → F) (ζ : 𝕂)
-    (openings : Openings S) :
-    Pr{let a ← $ᵗ 𝕂}[BatchBad S δ δ' trace α quotient ζ openings a] ≤
+    (openings : Openings S)
+    (perm : Fin S.permWidth → Fin (Challenge.d EF) → S.Point → F := fun _ _ _ ↦ 0) :
+    Pr{let a ← $ᵗ 𝕂}[BatchBad S δ δ' trace α quotient ζ openings a perm] ≤
       batchingError S δ (δ' - 2 / S.size) := by
   rw [SampleableType.prEvent_uniformSample]
-  set p := fixedProver trace quotient openings
+  set p := fixedProver trace quotient openings perm
   by_cases hfar : NearTogether S (δ' - 2 / S.size) (components p α ζ)
-  · have h : (Finset.univ.filter fun a : 𝕂 ↦ BatchBad S δ δ' trace α quotient ζ openings a) = ∅ :=
+  · have h : (Finset.univ.filter fun a : 𝕂 ↦ BatchBad S δ δ' trace α quotient ζ openings a perm) =
+        ∅ :=
       Finset.filter_false_of_mem fun a _ ha ↦ ha.1 hfar
     rw [h, Finset.card_empty, Nat.cast_zero, ENNReal.zero_div]
     exact bot_le
-  have hset : (Finset.univ.filter fun a : 𝕂 ↦ BatchBad S δ δ' trace α quotient ζ openings a) =
+  have hset : (Finset.univ.filter fun a : 𝕂 ↦ BatchBad S δ δ' trace α quotient ζ openings a perm) =
       Finset.univ.filter fun a : 𝕂 ↦
         Near S δ fun i ↦ ∑ k : Fin S.numOpened, a ^ (k : Nat) * components p α ζ k i :=
     Finset.filter_congr fun a _ ↦ by
@@ -353,6 +423,13 @@ theorem prob_batchBad_le (δ : NNReal) (δ' : ℝ) (trace : Fin S.air.width → 
       exact and_iff_right hfar
   rw [hset]
   exact batchingStep S S.numOpened δ _ _ hfar
+
+end Bounds
+
+section FriBounds
+variable (S : Iop.Setup EF)
+
+open Classical
 
 /-- FRI fold `i`: a uniform `β` is bad with probability at most `friFoldError`, for every
 committed word. -/
@@ -372,24 +449,6 @@ theorem prob_foldRound_le (δ loss : NNReal) (i : Fin (S.lastFold + 1))
       FoldBad S δ loss i fri z.2] ≤
       powFraction F S.params.commitPowBits * friFoldError S δ loss i := by
   exact (prob_pow_and_le _ _).trans (mul_le_mul_right (prob_foldBad_le S δ loss i fri) _)
-
-/-- The query samples that select a point of `G` are those whose residues lie in the
-bit-reversed `G`, a set of the same size. -/
-theorem queryPoint_mem_iff (G : Finset S.Point) (x : F) :
-    queryPoint S x ∈ G ↔ CompPoly.CanonicalNat.toNat x % 2 ^ (S.logN + S.params.logBlowup) ∈
-      G.image fun z ↦ reverseBits z.val (S.logN + S.params.logBlowup) := by
-  set m := S.logN + S.params.logBlowup
-  have hlt : CompPoly.CanonicalNat.toNat x % 2 ^ m < 2 ^ m := Nat.mod_lt _ (Nat.two_pow_pos m)
-  simp only [Finset.mem_image]
-  constructor
-  · intro h
-    exact ⟨_, h, reverseBits_reverseBits hlt⟩
-  · rintro ⟨z, hz, hzx⟩
-    have hz' : queryPoint S x = z := by
-      apply Fin.ext
-      simp only [queryPoint, ← hzx, reverseBits_reverseBits z.isLt]
-    rw [hz']
-    exact hz
 
 /-- The query round: at most `powFraction queryPowBits · friQueryError`. -/
 theorem prob_queryBad_le (δ loss : NNReal) (t : Transcript S) :
@@ -423,34 +482,48 @@ theorem prob_queryBad_le (δ loss : NNReal) (t : Transcript S) :
     rw [h, Finset.card_empty, Nat.cast_zero, ENNReal.zero_div]
     exact bot_le
 
-end Bounds
+end FriBounds
 
 /-! ### The terminal lemma -/
+
+/-- If every candidate trace and permutation trace fail a constraint, the check passes at `ζ` and
+the rounds `α`, `ζ`, `a` are safe, the DEEP word is `δ`-far from the code. -/
+theorem not_near_deepWord {lookups : List (Lookup F)} (S : Iop.Setup EF lookups)
+    (publicValues : List F) (challenges : List 𝕂) (terminal : 𝕂) (δ δ' : NNReal)
+    (hδ' : (δ' : ℝ) < 1 - S.rate) (trace : Fin S.air.width → S.Point → F)
+    (perm : Fin S.permWidth → Fin (Challenge.d EF) → S.Point → F) (α : 𝕂)
+    (quotient : Fin S.chunks → Fin (Challenge.d EF) → S.Point → F) (ζ : 𝕂) (openings : Openings S)
+    (a : 𝕂)
+    (hfail : ∀ P ∈ candidates S δ' trace, ∀ R ∈ candidates S δ'
+      (fun ce : Fin S.permWidth × Fin (Challenge.d EF) ↦ perm ce.1 ce.2),
+      ¬ Holds S publicValues challenges terminal (traceOf S P) fun c e ↦ R (c, e))
+    (hcheck : ConstraintsHoldAt S publicValues α ζ openings challenges terminal)
+    (hα : ¬ AlphaBad S publicValues δ' trace α perm challenges terminal)
+    (hζ : ¬ ZetaBad S publicValues δ' trace α quotient ζ perm challenges terminal)
+    (ha : ¬ BatchBad S δ δ' trace α quotient ζ openings a perm) :
+    ¬ Near S δ (Iop.deepWord (fixedProver trace quotient openings perm) α ζ a) := by
+  intro hnear
+  have htogether : NearTogether S ((δ' : ℝ) - 2 / S.size)
+      (components (fixedProver trace quotient openings perm) α ζ) :=
+    not_not.mp fun h ↦ ha ⟨h, hnear⟩
+  have hoff : OffTraceDomain S ζ := not_not.mp fun h ↦ hζ ⟨hα, Or.inl h⟩
+  obtain ⟨P, Q, R, hPd, hPa, hQd, hQa, hRd, hRa, ho⟩ :=
+    decodingStep S δ' hδ' (fixedProver trace quotient openings perm) α ζ hoff htogether
+  refine hζ ⟨hα, Or.inr ⟨P, ⟨hPd, hPa⟩, fun ce ↦ R ce.1 ce.2, ⟨fun ce ↦ hRd ce.1 ce.2, hRa⟩,
+    hfail P ⟨hPd, hPa⟩ _ ⟨fun ce ↦ hRd ce.1 ce.2, hRa⟩, fun ce ↦ Q ce.1 ce.2,
+    ⟨fun ce ↦ hQd ce.1 ce.2, hQa⟩, ?_⟩⟩
+  have h : openings = trueOpenings S P Q ζ R := ho
+  rw [← h]
+  exact hcheck
 
 section Terminal
 variable (S : Iop.Setup EF) (publicValues : List F)
 
-/-- If every candidate trace fails the AIR, the check passes at `ζ` and the rounds `α`, `ζ`, `a`
-are safe, the DEEP word is `δ`-far from the code. -/
-theorem not_near_deepWord (δ δ' : NNReal) (hδ' : (δ' : ℝ) < 1 - S.rate) (t : Transcript S)
-    (hfail : ∀ P ∈ candidates S δ' t.trace,
-      ¬ S.air.Satisfied S.logN (traceOf S P) publicValues)
-    (hcheck : ConstraintsHoldAt S publicValues t.alpha t.zeta t.openings)
-    (hα : ¬ AlphaBad S publicValues δ' t.trace t.alpha)
-    (hζ : ¬ ZetaBad S publicValues δ' t.trace t.alpha t.quotient t.zeta)
-    (ha : ¬ BatchBad S δ δ' t.trace t.alpha t.quotient t.zeta t.openings t.batch) :
-    ¬ Near S δ t.deepWord := by
-  intro hnear
-  have htogether : NearTogether S ((δ' : ℝ) - 2 / S.size) (components t.prover t.alpha t.zeta) :=
-    not_not.mp fun h ↦ ha ⟨h, hnear⟩
-  have hoff : OffTraceDomain S t.zeta := not_not.mp fun h ↦ hζ ⟨hα, Or.inl h⟩
-  obtain ⟨P, Q, hPd, hPa, hQd, hQa, ho⟩ :=
-    decodingStep S δ' hδ' t.prover t.alpha t.zeta hoff htogether
-  refine hζ ⟨hα, Or.inr ⟨P, ⟨hPd, hPa⟩, hfail P ⟨hPd, hPa⟩, fun ce ↦ Q ce.1 ce.2,
-    ⟨fun ce ↦ hQd ce.1 ce.2, hQa⟩, ?_⟩⟩
-  have h : t.openings = trueOpenings S P Q t.zeta := ho
-  rw [← h]
-  exact hcheck
+/-- A STARK of its own: the candidates of its empty permutation trace hold exactly when the trace
+satisfies the AIR. -/
+theorem holds_iff (trace : Array F) (R : Fin S.permWidth → Fin (Challenge.d EF) → F[X]) :
+    Holds S publicValues [] 0 trace R ↔ S.air.Satisfied S.logN trace publicValues :=
+  ⟨fun h ↦ h.air, fun h ↦ ⟨h, fun _ hg ↦ absurd hg List.not_mem_nil⟩⟩
 
 /-- **The terminal lemma.** If the verifier's checks pass on a transcript whose rounds are all
 safe, some candidate trace satisfies the AIR: the check at `ζ`, a final polynomial of degree
@@ -469,10 +542,12 @@ theorem exists_satisfied_of_safe (δ δ' loss : NNReal) (hδ' : (δ' : ℝ) < 1 
     (hq : ¬ QueryBad S δ loss t pow queries) :
     ∃ P ∈ candidates S δ' t.trace, S.air.Satisfied S.logN (traceOf S P) publicValues := by
   by_contra hno
-  have hfail : ∀ P ∈ candidates S δ' t.trace,
-      ¬ S.air.Satisfied S.logN (traceOf S P) publicValues := fun P hP h ↦ hno ⟨P, hP, h⟩
-  exact hq ⟨⟨not_near_deepWord S publicValues δ δ' hδ' t hfail hcheck hα hζ ha, hfolds,
-    hdegree⟩, hpow, hqueries⟩
+  have hfail : ∀ P ∈ candidates S δ' t.trace, ∀ R ∈ candidates S δ'
+      (fun _ : Fin S.permWidth × Fin (Challenge.d EF) ↦ fun _ ↦ (0 : F)),
+      ¬ Holds S publicValues [] 0 (traceOf S P) fun c e ↦ R (c, e) :=
+    fun P hP _ _ h ↦ hno ⟨P, hP, (holds_iff S publicValues _ _).mp h⟩
+  exact hq ⟨⟨not_near_deepWord S publicValues [] 0 δ δ' hδ' t.trace _ t.alpha t.quotient t.zeta
+    t.openings t.batch hfail hcheck hα hζ ha, hfolds, hdegree⟩, hpow, hqueries⟩
 
 end Terminal
 

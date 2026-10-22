@@ -17,9 +17,9 @@ bijections (`prob_answer_prefix`, `extEquiv`). The fold rounds' challenges are P
 a nonzero shift to ArkLib's coordinate, another bijection.
 
 The answer's digest (a hash, or the duplex's new capacity) clashes with the known digests with
-probability at most `3 q / |F|^8` after fewer than `q` queries (`prob_digestClash_le`), for the
-digests of the keys: a compression's two children, a duplex call's capacity and the digest a
-commitment round observes (`keyDigests`).
+probability at most `4 q / |F|^8` after fewer than `q` queries (`prob_digestClash_le`), for the
+digests of the keys: a compression's two children, a duplex call's capacity, the digest at its
+input's start and the digest a commitment round observes (`keyDigests`).
 -/
 
 @[expose] public section
@@ -215,8 +215,9 @@ theorem prob_roundBadAt_le (cache : Merkle.Cache F (Digest F)) (block : Nat → 
       _ = Pr{let a ← $ᵗ 𝕂}[AlphaBad S publicValues δ' tr a] := by
           refine (prob_answer_prefix S.streamLen (Challenge.d EF) (by omega)
             (fun x ↦ AlphaBad S publicValues δ' tr (extEquiv x))).trans ?_
-          exact SampleableType.prEvent_uniformSample_equiv extEquiv _
-      _ ≤ foldingError S δ' := prob_alphaBad_le S publicValues δ' tr
+          exact SampleableType.prEvent_uniformSample_equiv (extEquiv (EF := EF))
+            (fun a ↦ AlphaBad S publicValues δ' tr a)
+      _ ≤ foldingError S δ' := prob_alphaBad_le S publicValues [] 0 δ' tr
       _ ≤ _ := le_max_left _ _
   · -- `ζ`
     set T := prefixTranscript S cache block fun j ↦ samples.getD j d
@@ -229,7 +230,7 @@ theorem prob_roundBadAt_le (cache : Merkle.Cache F (Digest F)) (block : Nat → 
               getD_append_singleton_lt samples u.2 d 0 (by omega)]
       _ ≤ powFraction F S.params.oodPowBits * outOfDomainError S δ' :=
           (prob_grindExt_le S.streamLen _ (by omega) _).trans
-            (mul_le_mul_right (prob_zetaBad_le S publicValues δ' _ _ _) _)
+            (mul_le_mul_right (prob_zetaBad_le S publicValues [] 0 δ' _ _ _) _)
       _ ≤ _ := (le_max_left _ _).trans (le_max_right _ _)
   · -- batching
     set T := prefixTranscript S cache block fun j ↦ samples.getD j d
@@ -416,12 +417,12 @@ theorem prob_digestOf_eq_le (K : Nat) (t : Query F) (x : Digest F) :
   | node left right => exact (SampleableType.prEvent_uniformSample_eq_singleton x).le
 
 /-- A fresh answer after fewer than `n` queries clashes with probability at most
-`3 n / |Digest|`. -/
+`4 n / |Digest|`. -/
 theorem prob_clash_le (bd : Digest F → List F → Digest F) (K n : Nat)
     (pre : QueryLog (spec F K)) (hpre : pre.length < n) (t : Query F) :
     Pr{let u ← $ᵗ (Answer K t)}[Clash bd pre t u] ≤
-      (3 * n : ℕ) * (Fintype.card (Digest F) : ℝ≥0∞)⁻¹ := by
-  refine (prEvent_digestClash_le digestOf (prob_digestOf_eq_le K) (keyDigests bd) 2
+      (4 * n : ℕ) * (Fintype.card (Digest F) : ℝ≥0∞)⁻¹ := by
+  refine (prEvent_digestClash_le digestOf (prob_digestOf_eq_le K) (keyDigests bd) 3
     (length_keyDigests_le bd) [initCap] pre t).trans ?_
   gcongr
   simp only [List.length_cons, List.length_nil]

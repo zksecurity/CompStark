@@ -131,7 +131,8 @@ theorem exists_root_mem (S : Iop.Setup EF) (answer : (q : Query F) → Answer S.
     exact ⟨e, List.mem_append_left _ he, hd⟩
 
 /-- The preprocessed trace's polynomials are those of its extension. -/
-theorem lde_eq_preprocessedPoly (S : Iop.Setup EF) (ps : List F[X])
+theorem lde_eq_preprocessedPoly {lookups : List (Lookup F)} (S : Iop.Setup EF lookups)
+    (ps : List F[X])
     (hlde : CompStark.Mat.IsLde S.params.logBlowup (S.logN + S.params.logBlowup)
       (preprocessedLde S.params S.air S.logN) ps)
     (hval : ∀ j < S.air.preprocessedWidth, ∀ i < 2 ^ S.logN,

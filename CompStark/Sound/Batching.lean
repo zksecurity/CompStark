@@ -23,10 +23,10 @@ family `ws`, whose uniform probability is the event's density, and at most the s
 
 The error only decreases as the radius `δ'` of the common set grows (`batchingError_anti`).
 
-`batchingError_le_curve` bounds the error with proximity loss `δ < δ'` in the unique-decoding
-range by correlated agreement for curves (`CompStark/Sound/CurveCA.lean`):
-`(m - 1) · max(T₁, T₂) / |𝕂|`. A combination `δ`-near the code is within relative distance `δ` of it,
-and words jointly `δ'`-close to the code are near it on a common set.
+`batchingError_le_curve` bounds the error with proximity loss `δ < δ'` in the unique-decoding range
+by correlated agreement for curves (`CompStark/Sound/CurveCA.lean`): `(m - 1) · max(T₁, T₂) / |𝕂|`.
+A combination `δ`-near the code is within relative distance `δ` of it, and words jointly `δ'`-close
+to the code are near it on a common set.
 -/
 
 @[expose] public section
@@ -34,12 +34,13 @@ namespace CompStark.Sound
 open CompStark.Stark CompStark.Iop CoreDefinitions LinearCode
 
 variable {F : Type} [BaseField F] {EF : Type} [Challenge F EF]
+variable {lookups : List (Lookup F)}
 
 local notation "𝕂" => Challenge.Spec EF
 
 /-- A combination `δ`-near the code, of words not near the code on a common set, is an MCA event
 for the powers generator. -/
-theorem isMCA_of_near (S : Setup EF) (δ : NNReal) {M : Nat} (ws : Fin (M + 1) → S.Point → 𝕂)
+theorem isMCA_of_near (S : Setup EF lookups) (δ : NNReal) {M : Nat} (ws : Fin (M + 1) → S.Point → 𝕂)
     (hfar : ¬ NearTogether S δ ws) (a : 𝕂)
     (hnear : Near S δ fun i ↦ ∑ k : Fin (M + 1), a ^ (k : Nat) * ws k i) :
     IsMCA (univariatePowersGenerator 𝕂 M) S.code a ws δ := by
@@ -57,7 +58,7 @@ theorem isMCA_of_near (S : Setup EF) (δ : NNReal) {M : Nat} (ws : Fin (M + 1) �
 open Classical in
 /-- The density of `a` making a combination of `M + 1` words not near on a common set `δ`-near
 is at most the MCA error of the powers generator. -/
-theorem density_near_le_mcaError (S : Setup EF) (δ : NNReal) {M : Nat}
+theorem density_near_le_mcaError (S : Setup EF lookups) (δ : NNReal) {M : Nat}
     (ws : Fin (M + 1) → S.Point → 𝕂) :
     ((Finset.univ.filter fun a : 𝕂 ↦
         Near S δ (fun i ↦ ∑ k : Fin (M + 1), a ^ (k : Nat) * ws k i) ∧
@@ -73,7 +74,7 @@ theorem density_near_le_mcaError (S : Setup EF) (δ : NNReal) {M : Nat}
   exact fun ⟨hnear, hfar⟩ ↦ isMCA_of_near S δ ws hfar a hnear
 
 /-- An empty family of words is near the code on a common set. -/
-theorem nearTogether_of_isEmpty (S : Setup EF) (δ : NNReal) {ι : Type} [IsEmpty ι]
+theorem nearTogether_of_isEmpty (S : Setup EF lookups) (δ : NNReal) {ι : Type} [IsEmpty ι]
     (ws : ι → S.Point → 𝕂) : NearTogether S δ ws := by
   refine ⟨Finset.univ, ?_, isEmptyElim⟩
   rw [Finset.card_univ, Fintype.card_fin, ge_iff_le]
@@ -81,7 +82,7 @@ theorem nearTogether_of_isEmpty (S : Setup EF) (δ : NNReal) {ι : Type} [IsEmpt
 
 /-- At a single radius, the batching error of `m` words is at most the mutual
 correlated-agreement error of the powers `1, a, …, a ^ (m - 1)`. -/
-theorem batchingError_le_mcaError (S : Setup EF) (m : Nat) (δ : NNReal) :
+theorem batchingError_le_mcaError (S : Setup EF lookups) (m : Nat) (δ : NNReal) :
     batchingErrorOf S m δ δ ≤ mcaError (univariatePowersGenerator 𝕂 (m - 1)) S.code δ := by
   unfold batchingErrorOf
   cases m with
@@ -92,14 +93,15 @@ theorem batchingError_le_mcaError (S : Setup EF) (m : Nat) (δ : NNReal) :
   | succ M => exact iSup_le fun ws ↦ density_near_le_mcaError S δ ws
 
 /-- Words near on a common set at a radius are near on it at every larger radius. -/
-theorem NearTogether.mono {S : Setup EF} {ι : Type} {δ δ' : ℝ} (h : δ ≤ δ')
+theorem NearTogether.mono {S : Setup EF lookups} {ι : Type} {δ δ' : ℝ} (h : δ ≤ δ')
     {ws : ι → S.Point → 𝕂} (hnear : NearTogether S δ ws) : NearTogether S δ' ws := by
   obtain ⟨T, hT, hws⟩ := hnear
   refine ⟨T, le_trans ?_ hT, hws⟩
   exact mul_le_mul_of_nonneg_left (by linarith) (Nat.cast_nonneg _)
 
 /-- The batching error decreases as the radius of the common set grows. -/
-theorem batchingError_anti (S : Setup EF) (m : Nat) (δ : NNReal) {δ' δ'' : ℝ} (h : δ' ≤ δ'') :
+theorem batchingError_anti (S : Setup EF lookups) (m : Nat) (δ : NNReal) {δ' δ'' : ℝ}
+    (h : δ' ≤ δ'') :
     batchingErrorOf S m δ δ'' ≤ batchingErrorOf S m δ δ' := by
   classical
   refine iSup_le fun ws ↦ le_iSup_of_le ws (ENNReal.div_le_div_right (Nat.cast_le.mpr
@@ -110,7 +112,7 @@ theorem batchingError_anti (S : Setup EF) (m : Nat) (δ : NNReal) {δ' δ'' : �
 open Classical in
 /-- Batching by powers keeps words that are not near on a common set far, except with
 probability `batchingError`. -/
-theorem batchingStep (S : Setup EF) : BatchingStep S := by
+theorem batchingStep (S : Setup EF lookups) : BatchingStep S := by
   intro m δ δ' ws hfar
   refine le_trans (le_of_eq ?_) (le_iSup (fun ws : Fin m → S.Point → 𝕂 ↦
     ((Finset.univ.filter fun a : 𝕂 ↦
@@ -119,7 +121,7 @@ theorem batchingStep (S : Setup EF) : BatchingStep S := by
   simp only [hfar, not_false_eq_true, and_true]
 
 /-- A word `δ`-near the code is within relative distance `δ` of it. -/
-theorem relDist_le_of_near (S : Setup EF) (δ : NNReal) (w : S.Point → 𝕂) (h : Near S δ w) :
+theorem relDist_le_of_near (S : Setup EF lookups) (δ : NNReal) (w : S.Point → 𝕂) (h : Near S δ w) :
     δᵣ(w, (S.code : Set (S.Point → 𝕂))) ≤ δ := by
   classical
   obtain ⟨T, hT, c, hc, hagree⟩ := h
@@ -138,7 +140,7 @@ theorem relDist_le_of_near (S : Setup EF) (δ : NNReal) (w : S.Point → 𝕂) (
   exact_mod_cast this
 
 /-- Words jointly `δ`-close to the code are near it on a common set. -/
-theorem nearTogether_of_jointProximity (S : Setup EF) (δ : NNReal) {ι : Type} [Fintype ι]
+theorem nearTogether_of_jointProximity (S : Setup EF lookups) (δ : NNReal) {ι : Type} [Fintype ι]
     (ws : ι → S.Point → 𝕂)
     (h : Code.jointProximity (C := (S.code : Set (S.Point → 𝕂))) (u := ws) δ) :
     NearTogether S δ ws := by
@@ -159,7 +161,7 @@ set_option linter.constructorNameAsVariable false in
 /-- **Batching error from curve CA.** In the unique-decoding range, with proximity loss
 `δ < δ'`, the batching error of `m` words is at most `(m - 1) · max(T₁, T₂) / |𝕂|`,
 `T₁ = (1 - ρ - δ) / (δ (1 - ρ - 2δ))`, `T₂ = δ' / (δ' - δ)` (`card_goodCoeffs_le`). -/
-theorem batchingError_le_curve (S : Setup EF) (m : Nat) (δ : NNReal) (δ' : ℝ)
+theorem batchingError_le_curve (S : Setup EF lookups) (m : Nat) (δ : NNReal) (δ' : ℝ)
     (h_ud : (δ : ℝ) ≤ (1 - S.rate) / 2 - 1 / S.size) (h_pos : 0 < δ) (h_lt : δ < δ') :
     batchingErrorOf S m δ δ' ≤
       ENNReal.ofReal ((m - 1 : ℕ) *

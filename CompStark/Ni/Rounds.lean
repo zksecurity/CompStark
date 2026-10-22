@@ -79,6 +79,8 @@ noncomputable def openingsAt (S : Iop.Setup EF) (xs : List F) : Openings S where
     (S.air.width + S.air.mainNextWidth + Challenge.d EF * S.chunks + j))
   preprocessedNext j := Challenge.toSpec (extFrom (EF := EF) xs
     (S.air.width + S.air.mainNextWidth + Challenge.d EF * S.chunks + S.air.preprocessedWidth + j))
+  permAt _ _ := 0
+  permNext _ _ := 0
 
 theorem getElem_flatMap_of_length {α : Type} (w : Nat) (L : List (List α))
     (hL : ∀ l ∈ L, l.length = w) (c e : Nat) (hc : c < L.length) (he : e < w)
@@ -123,16 +125,18 @@ theorem openingsAt_coeffs (S : Iop.Setup EF) (o : OpenedValues EF) (rest : List 
       extFrom (coeffs (openedValues o) ++ rest) k = (openedValues o)[k] :=
     extFrom_coeffs rest (openedValues o) k hk
   cases hS : openingsOf S o with
-  | mk ta tn qa pa pn =>
+  | mk ta tn qa pa pn ma mn =>
   have hta : ta = (openingsOf S o).traceAt := by rw [hS]
   have htn' : tn = (openingsOf S o).traceNext := by rw [hS]
   have hqa : qa = (openingsOf S o).quotientAt := by rw [hS]
   have hpa : pa = (openingsOf S o).preprocessedAt := by rw [hS]
   have hpn' : pn = (openingsOf S o).preprocessedNext := by rw [hS]
-  subst hta htn' hqa hpa hpn'
+  have hma : ma = (openingsOf S o).permAt := by rw [hS]
+  have hmn : mn = (openingsOf S o).permNext := by rw [hS]
+  subst hta htn' hqa hpa hpn' hma hmn
   simp only [openingsAt, Openings.mk.injEq]
   refine ⟨funext fun j ↦ ?_, funext fun j ↦ ?_, funext fun c ↦ funext fun e ↦ ?_,
-    funext fun j ↦ ?_, funext fun j ↦ ?_⟩
+    funext fun j ↦ ?_, funext fun j ↦ ?_, funext fun c ↦ c.elim0, funext fun c ↦ c.elim0⟩
   · rw [hx j (by omega)]
     simp only [openingsOf, openedValues, List.append_assoc]
     rw [List.getElem_append_left (by simp only [Array.length_toList, htl]; exact j.isLt),
@@ -203,10 +207,12 @@ theorem openingsAt_coeffs (S : Iop.Setup EF) (o : OpenedValues EF) (rest : List 
 
 /-- The final polynomial's `2 ^ logFinalPolyLen` coefficients, from the extension elements in
 `xs`. -/
-def finalPolyAt (S : Iop.Setup EF) (xs : List F) : Array EF :=
+def finalPolyAt {lookups : List (Lookup F)} (S : Iop.Setup EF lookups) (xs : List F) :
+    Array EF :=
   Array.ofFn fun k : Fin (2 ^ S.params.logFinalPolyLen) ↦ extFrom xs k
 
-theorem finalPolyAt_coeffs (S : Iop.Setup EF) (coeffs' : Array EF) (rest : List F)
+theorem finalPolyAt_coeffs {lookups : List (Lookup F)} (S : Iop.Setup EF lookups)
+    (coeffs' : Array EF) (rest : List F)
     (h : coeffs'.size = 2 ^ S.params.logFinalPolyLen) :
     finalPolyAt S (coeffs coeffs'.toList ++ rest) = coeffs' := by
   ext k hk₁ hk₂

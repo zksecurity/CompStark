@@ -53,19 +53,50 @@ noncomputable def friWordAt (root : Digest F) (m a z : Nat) : 𝕂 :=
 
 end Extract
 
-variable (S : Iop.Setup EF)
+section Final
+variable {lookups : List (Lookup F)} (T : Iop.Setup EF lookups)
 
 /-- `log₂ |L|`. -/
-abbrev _root_.CompStark.Iop.Setup.logSize : Nat := S.logN + S.params.logBlowup
+abbrev _root_.CompStark.Iop.Setup.logSize : Nat := T.logN + T.params.logBlowup
 
 /-- The shift of the final polynomial's domain: `g ^ 2 ^ (logN - logFinalPolyLen)`. -/
 noncomputable def _root_.CompStark.Iop.Setup.finalShift : 𝕂 :=
-  lift gen ^ 2 ^ (S.logN - S.params.logFinalPolyLen)
+  lift gen ^ 2 ^ (T.logN - T.params.logFinalPolyLen)
 
 /-- The final polynomial on the coset: `∑ᵢ cᵢ (X / s) ^ i`, `s` the final domain's shift. -/
 noncomputable def finalPoly (coeffs : Array EF) : 𝕂[X] :=
   ∑ i ∈ Finset.range coeffs.size,
-    Polynomial.C (Challenge.toSpec (coeffs.getD i 0) * (S.finalShift)⁻¹ ^ i) * Polynomial.X ^ i
+    Polynomial.C (Challenge.toSpec (coeffs.getD i 0) * (T.finalShift)⁻¹ ^ i) * Polynomial.X ^ i
+
+/-! ### The final polynomial -/
+
+/-- The extracted final polynomial at the final domain's point of index `rev I` is Plonky3's
+final polynomial at the subgroup's point. -/
+theorem eval_finalPoly (coeffs : Array EF) (I : Nat)
+    (hI : I < 2 ^ (T.params.logBlowup + T.params.logFinalPolyLen)) :
+    (finalPoly T coeffs).eval (lift gen ^ 2 ^ (T.logN - T.params.logFinalPolyLen) *
+        lift (twoAdicGen (T.params.logBlowup + T.params.logFinalPolyLen) ^
+          reverseBits I (T.params.logBlowup + T.params.logFinalPolyLen))) =
+      Challenge.toSpec (coeffs.foldr (fun c acc ↦
+        acc * Ext.ofBase (powF (twoAdicGen T.logSize) (reverseBits I T.logSize)) + c) 0) := by
+  set L := T.params.logBlowup + T.params.logFinalPolyLen
+  have hn : T.logSize = (T.logN - T.params.logFinalPolyLen) + L := by
+    have := T.folds; unfold Iop.Setup.logSize; omega
+  have hpt : Challenge.toSpec (Ext.ofBase (powF (twoAdicGen T.logSize) (reverseBits I T.logSize)) :
+      EF) = lift (twoAdicGen L ^ reverseBits I L) := by
+    rw [Challenge.toSpec_ofBase', ← lift, powF_eq, hn, reverseBits_low L _ I hI,
+      pow_mul, Nat.add_comm _ L,
+      BaseField.twoAdicGen_pow (F := F) L _ (by have := T.valid.twoAdic; have := T.folds; omega)]
+  rw [← Array.foldr_toList, toSpec_horner_list, Array.length_toList, hpt, finalPoly,
+    eval_finsetSum]
+  refine Finset.sum_congr rfl fun i _ ↦ ?_
+  rw [eval_mul, eval_C, eval_pow, eval_X, Iop.Setup.finalShift, Array.getD_eq_getD_getElem?,
+    List.getD_eq_getElem?_getD, Array.getElem?_toList, mul_assoc, ← mul_pow, ← mul_assoc,
+    inv_mul_cancel₀ (pow_ne_zero _ lift_gen_ne_zero), one_mul]
+
+end Final
+
+variable (S : Iop.Setup EF)
 
 /-- The extracted FRI oracles of commitments `commits` and final polynomial `coeffs`. -/
 noncomputable def friOracles (cache : Merkle.Cache F (Digest F)) (commits : List (Digest F))
@@ -239,32 +270,6 @@ theorem sum_take_arities (l : List Nat) (hl : l = S.foldArities.map PNat.val) :
 theorem foldingPrefix_last_eq :
     foldingPrefix S.schedule (Fin.last (S.lastFold + 1)) = S.logN - S.params.logFinalPolyLen := by
   rw [foldingPrefix_last, Setup.sum_schedule]
-
-/-! ### The final polynomial -/
-
-/-- The extracted final polynomial at the final domain's point of index `rev I` is Plonky3's
-final polynomial at the subgroup's point. -/
-theorem eval_finalPoly (coeffs : Array EF) (I : Nat)
-    (hI : I < 2 ^ (S.params.logBlowup + S.params.logFinalPolyLen)) :
-    (finalPoly S coeffs).eval (lift gen ^ 2 ^ (S.logN - S.params.logFinalPolyLen) *
-        lift (twoAdicGen (S.params.logBlowup + S.params.logFinalPolyLen) ^
-          reverseBits I (S.params.logBlowup + S.params.logFinalPolyLen))) =
-      Challenge.toSpec (coeffs.foldr (fun c acc ↦
-        acc * Ext.ofBase (powF (twoAdicGen S.logSize) (reverseBits I S.logSize)) + c) 0) := by
-  set L := S.params.logBlowup + S.params.logFinalPolyLen
-  have hn : S.logSize = (S.logN - S.params.logFinalPolyLen) + L := by
-    have := S.folds; unfold Iop.Setup.logSize; omega
-  have hpt : Challenge.toSpec (Ext.ofBase (powF (twoAdicGen S.logSize) (reverseBits I S.logSize)) :
-      EF) = lift (twoAdicGen L ^ reverseBits I L) := by
-    rw [Challenge.toSpec_ofBase', ← lift, powF_eq, hn, reverseBits_low L _ I hI,
-      pow_mul, Nat.add_comm _ L,
-      BaseField.twoAdicGen_pow (F := F) L _ (by have := S.valid.twoAdic; have := S.folds; omega)]
-  rw [← Array.foldr_toList, toSpec_horner_list, Array.length_toList, hpt, finalPoly,
-    eval_finsetSum]
-  refine Finset.sum_congr rfl fun i _ ↦ ?_
-  rw [eval_mul, eval_C, eval_pow, eval_X, Iop.Setup.finalShift, Array.getD_eq_getD_getElem?,
-    List.getD_eq_getElem?_getD, Array.getElem?_toList, mul_assoc, ← mul_pow, ← mul_assoc,
-    inv_mul_cancel₀ (pow_ne_zero _ lift_gen_ne_zero), one_mul]
 
 /-! ### The query checks -/
 

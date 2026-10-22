@@ -117,7 +117,8 @@ theorem exists_prep_mem (S : Iop.Batch.Setup EF) (answer : (q : Query F) → Ans
     exact Option.some_injective _ h
 
 /-- A row of a preprocessed trace's extension holds the preprocessed words at its point. -/
-theorem lde_row (T : Iop.Setup EF) (j : Nat) (hj : j < T.air.preprocessedWidth) (r : Nat)
+theorem lde_row {lookups : List (Lookup F)} (T : Iop.Setup EF lookups) (j : Nat)
+    (hj : j < T.air.preprocessedWidth) (r : Nat)
     (hr : r < 2 ^ T.logSize) :
     ((preprocessedLde T.params T.air T.logN).toMatrix.row r).getD j 0 =
       T.preprocessedWord j (finMod T.logSize (reverseBits r T.logSize)) := by

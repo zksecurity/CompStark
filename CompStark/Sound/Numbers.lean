@@ -43,6 +43,7 @@ namespace CompStark.Sound
 open CompStark.Stark CompStark.Iop NNReal ProximityGap CoreDefinitions Code
 
 variable {F : Type} [BaseField F] {EF : Type} [Challenge F EF]
+variable {lookups : List (Lookup F)}
 
 local notation "𝕂" => Challenge.Spec EF
 
@@ -324,13 +325,13 @@ theorem foldError_schedule_one_le (c t : ℕ) (hc : 0 < c) (d logFinal : ℕ)
 /-! ### The terms of a setup -/
 
 /-- The rate is `1 / 2 ^ logBlowup`. -/
-theorem rate_eq (S : Setup EF) : S.rate = 1 / 2 ^ S.params.logBlowup := by
+theorem rate_eq (S : Setup EF lookups) : S.rate = 1 / 2 ^ S.params.logBlowup := by
   rw [Setup.rate, Setup.n, Setup.size, pow_add]
   push_cast
   field_simp
 
 /-- Below the unique-decoding radius `(1 - rate) / 2`, with `c = 2 ^ logBlowup`. -/
-theorem mul_le_of_le_udr (S : Setup EF) (δ : ℝ≥0) (hδ : (δ : ℝ) ≤ (1 - S.rate) / 2) :
+theorem mul_le_of_le_udr (S : Setup EF lookups) (δ : ℝ≥0) (hδ : (δ : ℝ) ≤ (1 - S.rate) / 2) :
     (δ : ℝ) * (2 * (2 ^ S.params.logBlowup : ℕ)) ≤ (2 ^ S.params.logBlowup : ℕ) - 1 := by
   rw [rate_eq, le_div_iff₀ two_pos] at hδ
   have hc : (0 : ℝ) < 2 ^ S.params.logBlowup := by positivity
@@ -340,28 +341,38 @@ theorem mul_le_of_le_udr (S : Setup EF) (δ : ℝ≥0) (hδ : (δ : ℝ) ≤ (1 
   push_cast
   nlinarith
 
+/-- Below the unique-decoding radius, the permutation trace's list has at most one element. -/
+theorem permListSize_le_one (S : Setup EF lookups) (δ : ℝ) (hδ : δ < (1 - S.rate) / 2) :
+    S.permListSize δ ≤ 1 := by
+  cases lookups with
+  | nil => exact le_rfl
+  | cons l ls => exact listSize_le_one S _ δ hδ
+
 /-- Below the unique-decoding radius, the lists have at most one element. -/
-theorem foldingError_le_of_le (S : Setup EF) (δ : ℝ≥0) (hδ : (δ : ℝ) < (1 - S.rate) / 2) :
-    foldingError S δ ≤ (S.air.constraints.length - 1 : ℕ) / (Fintype.card 𝕂 : ENNReal) := by
+theorem foldingError_le_of_le (S : Setup EF lookups) (δ : ℝ≥0)
+    (hδ : (δ : ℝ) < (1 - S.rate) / 2) :
+    foldingError S δ ≤ (S.numConstraints - 1 : ℕ) / (Fintype.card 𝕂 : ENNReal) := by
   refine ENNReal.div_le_div_right (Nat.cast_le.mpr ?_) _
-  calc S.listSize (Fin S.air.width) δ * (S.air.constraints.length - 1)
-      ≤ 1 * (S.air.constraints.length - 1) :=
-        Nat.mul_le_mul_right _ (listSize_le_one S _ δ hδ)
-    _ = _ := one_mul _
+  calc S.listSize (Fin S.air.width) δ * S.permListSize δ * (S.numConstraints - 1)
+      ≤ 1 * 1 * (S.numConstraints - 1) :=
+        Nat.mul_le_mul_right _ (Nat.mul_le_mul (listSize_le_one S _ δ hδ)
+          (permListSize_le_one S δ hδ))
+    _ = _ := by rw [one_mul, one_mul]
 
 /-- The out-of-domain term below the unique-decoding radius. -/
-theorem outOfDomainError_le_of_le (S : Setup EF) (δ : ℝ≥0) (hδ : (δ : ℝ) < (1 - S.rate) / 2) :
+theorem outOfDomainError_le_of_le (S : Setup EF lookups) (δ : ℝ≥0)
+    (hδ : (δ : ℝ) < (1 - S.rate) / 2) :
     outOfDomainError S δ ≤
       (S.identityDegree + S.n : ℕ) / (Fintype.card 𝕂 : ENNReal) := by
   refine ENNReal.div_le_div_right (Nat.cast_le.mpr ?_) _
-  have h := Nat.mul_le_mul_right S.identityDegree (Nat.mul_le_mul
-    (listSize_le_one S (Fin S.air.width) δ hδ)
+  have h := Nat.mul_le_mul_right S.identityDegree (Nat.mul_le_mul (Nat.mul_le_mul
+    (listSize_le_one S (Fin S.air.width) δ hδ) (permListSize_le_one S δ hδ))
     (listSize_le_one S (Fin S.chunks × Fin (Challenge.d EF)) δ hδ))
   omega
 
 /-- The batching term at a single radius below the unique-decoding radius: the powers MCA bound
 `(numOpened - 1) N / |𝕂|`. -/
-theorem batchingError_le_of_le (S : Setup EF) (δ : ℝ≥0) (hδ : (δ : ℝ) ≤ (1 - S.rate) / 2) :
+theorem batchingError_le_of_le (S : Setup EF lookups) (δ : ℝ≥0) (hδ : (δ : ℝ) ≤ (1 - S.rate) / 2) :
     batchingError S δ δ ≤ ((S.numOpened - 1) * S.size : ℕ) / (Fintype.card 𝕂 : ENNReal) := by
   have hN : 2 ^ S.params.logBlowup * S.n ≤ S.size := by
     rw [Setup.n, Setup.size, pow_add, mul_comm]
@@ -378,7 +389,7 @@ points: the at most `log₂ N - t` folds onto domains of at least `2 ^ t` points
 `max(T₁, T₂, δ_int / loss) / |𝕂|` each (`lossyMcaError_line_le`, any `δ_int > δ`), and each
 injected input one more; the smaller ones `2 ^ t / |𝕂|` together, and the queries
 `(1 - δ + #folds · loss) ^ numQueries`. -/
-theorem friErrorWith_le_lossy (S : Setup EF) (harity : S.params.maxLogArity = 1) (t : ℕ)
+theorem friErrorWith_le_lossy (S : Setup EF lookups) (harity : S.params.maxLogArity = 1) (t : ℕ)
     (heights : List ℕ)
     (hfit : FriGame.Rounds.Fits (S.params.logFinalPolyLen + S.params.logBlowup)
       (S.logN + S.params.logBlowup) heights) (ht : ∀ m ∈ heights, t ≤ m)
@@ -411,7 +422,7 @@ theorem friErrorWith_le_lossy (S : Setup EF) (harity : S.params.maxLogArity = 1)
     rfl
 
 /-- `friErrorWith_le_lossy` without injected inputs. -/
-theorem friError_le_lossy (S : Setup EF) (harity : S.params.maxLogArity = 1) (t : ℕ)
+theorem friError_le_lossy (S : Setup EF lookups) (harity : S.params.maxLogArity = 1) (t : ℕ)
     (δ δ_int loss : ℝ≥0) (hδ : (δ : ℝ) ≤ (1 - S.rate) / 2 - 1 / 2 ^ t) (h_pos : 0 < δ)
     (h_lt : δ < δ_int) (h_loss : 0 < loss) :
     friError S δ ≤
@@ -429,15 +440,15 @@ theorem friError_le_lossy (S : Setup EF) (harity : S.params.maxLogArity = 1) (t 
 /-- The knowledge error with FRI at `δ` and the extractor at `δ' ≥ δ + 2/N` below the
 unique-decoding radius, with the MCA bound for batching: one integer over `|𝕂|`, and FRI's
 error. -/
-theorem knowledgeError_le_of_le (S : Setup EF) (δ δ' : ℝ≥0) (hδ : (δ : ℝ) ≤ δ' - 2 / S.size)
+theorem knowledgeError_le_of_le (S : Setup EF lookups) (δ δ' : ℝ≥0) (hδ : (δ : ℝ) ≤ δ' - 2 / S.size)
     (hδ' : (δ' : ℝ) < (1 - S.rate) / 2) :
     knowledgeError S δ δ' ≤
-      ((S.air.constraints.length - 1) + (S.identityDegree + S.n) +
+      ((S.numConstraints - 1) + (S.identityDegree + S.n) +
         (S.numOpened - 1) * S.size : ℕ) / (Fintype.card 𝕂 : ENNReal) + friError S δ := by
   have hδu : (δ : ℝ) ≤ (1 - S.rate) / 2 :=
     hδ.trans ((sub_le_self _ (by positivity)).trans hδ'.le)
   calc knowledgeError S δ δ'
-      ≤ (S.air.constraints.length - 1 : ℕ) / (Fintype.card 𝕂 : ENNReal) +
+      ≤ (S.numConstraints - 1 : ℕ) / (Fintype.card 𝕂 : ENNReal) +
           (S.identityDegree + S.n : ℕ) / (Fintype.card 𝕂 : ENNReal) +
           ((S.numOpened - 1) * S.size : ℕ) / (Fintype.card 𝕂 : ENNReal) + friError S δ :=
         add_le_add (add_le_add (add_le_add (foldingError_le_of_le S δ' hδ')
@@ -449,11 +460,11 @@ theorem knowledgeError_le_of_le (S : Setup EF) (δ δ' : ℝ≥0) (hδ : (δ : �
 /-- The knowledge error with FRI at `δ` and the extractor at `δ'` below the unique-decoding
 radius, `δ < δ' - 2/N`, with the curve bound for batching at `δ' - 2/N`
 (`batchingError_le_curve`), and FRI's error. -/
-theorem knowledgeError_le_curve (S : Setup EF) (δ δ' : ℝ≥0)
+theorem knowledgeError_le_curve (S : Setup EF lookups) (δ δ' : ℝ≥0)
     (h_ud : (δ : ℝ) ≤ (1 - S.rate) / 2 - 1 / S.size) (h_pos : 0 < δ)
     (h_lt : (δ : ℝ) < δ' - 2 / S.size) (hδ' : (δ' : ℝ) < (1 - S.rate) / 2) :
     knowledgeError S δ δ' ≤
-      ((S.air.constraints.length - 1) + (S.identityDegree + S.n) : ℕ) /
+      ((S.numConstraints - 1) + (S.identityDegree + S.n) : ℕ) /
           (Fintype.card 𝕂 : ENNReal) +
         ENNReal.ofReal ((S.numOpened - 1 : ℕ) *
           max ((1 - S.rate - δ) / (δ * (1 - S.rate - 2 * δ)))
@@ -461,7 +472,7 @@ theorem knowledgeError_le_curve (S : Setup EF) (δ δ' : ℝ≥0)
           Fintype.card 𝕂 +
         friError S δ := by
   calc knowledgeError S δ δ'
-      ≤ (S.air.constraints.length - 1 : ℕ) / (Fintype.card 𝕂 : ENNReal) +
+      ≤ (S.numConstraints - 1 : ℕ) / (Fintype.card 𝕂 : ENNReal) +
           (S.identityDegree + S.n : ℕ) / (Fintype.card 𝕂 : ENNReal) +
           ENNReal.ofReal ((S.numOpened - 1 : ℕ) *
             max ((1 - S.rate - δ) / (δ * (1 - S.rate - 2 * δ)))
@@ -477,8 +488,10 @@ theorem knowledgeError_le_curve (S : Setup EF) (δ δ' : ℝ≥0)
 unique-decoding radius, `δ < δ' - 2/N` on every domain: every instance's constraint-folding and
 out-of-domain integers at most `A`, the curve bound on batching the opened words of every
 instance's domain size at `δ' - 2/N` at most `b`, and FRI's error. -/
-theorem batchKnowledgeError_le_curve (S : Batch.Setup EF) (δ δ' : ℝ≥0) (A : ℕ) (b : ℝ)
-    (hA : ∀ i, ((S.air i).constraints.length - 1) + ((S.instanceSetup i).identityDegree +
+theorem batchKnowledgeError_le_curve {withLookups : Bool} (S : Batch.Setup EF withLookups)
+    (δ δ' : ℝ≥0) (L A : ℕ) (b : ℝ)
+    (hL : S.numInteractions + (S.numInteractions - 1) * S.lookupWidth ≤ L)
+    (hA : ∀ i, ((S.instanceSetup i).numConstraints - 1) + ((S.instanceSetup i).identityDegree +
       2 ^ S.logN i) ≤ A)
     (hb : ∀ i, ((S.groupNumOpened (S.logN i + S.params.logBlowup) - 1 : ℕ) *
       max ((1 - S.rate - δ) / (δ * (1 - S.rate - 2 * δ)))
@@ -487,9 +500,16 @@ theorem batchKnowledgeError_le_curve (S : Batch.Setup EF) (δ δ' : ℝ≥0) (A 
     (h_lt : ∀ i, (δ : ℝ) < δ' - 2 / (S.instanceSetup i).size)
     (hδ' : (δ' : ℝ) < (1 - S.rate) / 2) :
     Batch.knowledgeError S δ δ' ≤
-      ((A : ENNReal) / (Fintype.card 𝕂 : ENNReal) + ENNReal.ofReal b / Fintype.card 𝕂) +
+      (L : ENNReal) / (Fintype.card 𝕂 : ENNReal) +
+        ((A : ENNReal) / (Fintype.card 𝕂 : ENNReal) + ENNReal.ofReal b / Fintype.card 𝕂) +
         friErrorWith S.domainSetup S.friHeights δ := by
-  refine add_le_add (iSup_le fun i ↦ ?_) le_rfl
+  refine add_le_add (add_le_add ?_ (iSup_le fun i ↦ ?_)) le_rfl
+  · rw [Batch.Setup.lookupError]
+    refine ENNReal.div_le_div_right (Nat.cast_le.mpr ?_) _
+    refine (Nat.mul_le_mul_right _ (Finset.prod_le_one fun i _ ↦ listSize_le_one
+      (S.instanceSetup i) _ δ' ?_)).trans (by rw [one_mul]; exact hL)
+    rw [rate_eq, ← Batch.Setup.rate]
+    exact hδ'
   have hrate : (S.instanceSetup i).rate = S.rate := by
     rw [rate_eq, Batch.Setup.rate]
   rw [← hrate] at hδ' hb

@@ -386,7 +386,7 @@ theorem deepWord_eq (H : Primitives F Id) (vk : Option (PreprocessedKey F)) (pro
       simp only [Option.map_some, Option.toList_some, List.flatMap_cons, List.flatMap_nil,
         List.append_nil, Option.getD_some]
   rw [hterms, openedWords]
-  simp only [List.map_append]
+  simp only [List.map_append, List.finRange_zero, List.flatMap_nil, List.append_nil]
   have hw1 : rowT.toList.length = S.air.width := by rw [Array.length_toList, hwidth]
   have hprepEq := prepTerms_eq S cache H vk o zeta index hidx proof.degreeBits hdb
     (hdb ▸ hprep) hbP hP bP hlenP hokP

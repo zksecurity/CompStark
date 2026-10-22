@@ -27,6 +27,7 @@ namespace CompStark.Sound
 open CompStark.Stark CompStark.Iop Polynomial Domain FriGame FriInject
 
 variable {F : Type} [BaseField F] {EF : Type} [Challenge F EF]
+variable {lookups : List (Lookup F)}
 
 local notation "𝕂" => Challenge.Spec EF
 
@@ -42,7 +43,8 @@ theorem sum_folds (m : Nat) : ∀ r, ((folds m r).map (fun x : ℕ+ ↦ x.val)).
     omega
 
 /-- A word at relative distance below `δ` from a codeword is `δ`-near the code. -/
-theorem near_of_relHammingDist_lt (S : Setup EF) (δ : ℝ) (w u : S.Point → 𝕂) (hu : u ∈ S.code)
+theorem near_of_relHammingDist_lt (S : Setup EF lookups) (δ : ℝ) (w u : S.Point → 𝕂)
+    (hu : u ∈ S.code)
     (h : (Code.relHammingDist w u : ℝ) < δ) : Near S δ w := by
   classical
   refine ⟨Finset.univ.filter fun i ↦ w i = u i, ?_, u, hu, fun i hi ↦ (Finset.mem_filter.mp hi).2⟩
@@ -140,7 +142,7 @@ theorem agrees_cosetDomain_of_isLevel {m : ℕ} (D : SmoothCosetFftDomain m 𝕂
   field_simp
 
 /-- A word agreeing with the code on `(1 - δ) N` points is `δ`-near. -/
-theorem near_of_agrees (S : Setup EF) (δ : ℝ) (w : S.Point → 𝕂)
+theorem near_of_agrees (S : Setup EF lookups) (δ : ℝ) (w : S.Point → 𝕂)
     (h : Agrees S.domain S.n (1 - δ) w) : Near S δ w := by
   obtain ⟨T, hT, v, hv, hvT⟩ := h
   refine ⟨T, ?_, v, hv, fun x hx ↦ (hvT x hx).symm⟩
@@ -150,7 +152,8 @@ theorem near_of_agrees (S : Setup EF) (δ : ℝ) (w : S.Point → 𝕂)
 /-! ### FRI's rounds on `L` -/
 
 /-- The code before FRI's folds on `L` has degree `n`. -/
-theorem degree_friRounds (S : Setup EF) (words : (m : ℕ) → Fin (2 ^ m) → 𝕂) (heights : List ℕ)
+theorem degree_friRounds (S : Setup EF lookups) (words : (m : ℕ) → Fin (2 ^ m) → 𝕂)
+    (heights : List ℕ)
     (hfit : Rounds.Fits (S.params.logFinalPolyLen + S.params.logBlowup)
       (S.logN + S.params.logBlowup) heights) :
     (S.friRounds words heights).degree (2 ^ S.params.logFinalPolyLen) = S.n := by
@@ -163,7 +166,7 @@ theorem degree_friRounds (S : Setup EF) (words : (m : ℕ) → Fin (2 ^ m) → �
 /-- **FRI rejects far words.** If the word is not `δ`-near the code, or an injected input is not
 `δ`-close to its code on its own coset domain, FRI accepts with probability at most
 `friErrorWith`. -/
-theorem friAcceptanceWith_le (S : Setup EF) (words : (m : ℕ) → Fin (2 ^ m) → 𝕂)
+theorem friAcceptanceWith_le (S : Setup EF lookups) (words : (m : ℕ) → Fin (2 ^ m) → 𝕂)
     (heights : List ℕ)
     (hfit : Rounds.Fits (S.params.logFinalPolyLen + S.params.logBlowup)
       (S.logN + S.params.logBlowup) heights)
@@ -200,10 +203,11 @@ theorem friAcceptanceWith_le (S : Setup EF) (words : (m : ℕ) → Fin (2 ^ m) �
     exact agrees_cosetDomain_of_isLevel D hD _ (Nat.two_pow_pos _) _ _ hagree
 
 /-- FRI accepts a word that is not `δ`-near the code with probability at most `friError`. -/
-theorem friStep (S : Setup EF) : FriStep S := fun δ w hw ↦
+theorem friStep (S : Setup EF lookups) : FriStep S := fun δ w hw ↦
   friAcceptanceWith_le S _ [] (Rounds.fits_nil _ _) w δ (Or.inl hw)
 
 /-- FRI accepts with probability at most `1`. -/
-theorem friAtMostOne (S : Setup EF) : FriAtMostOne S := fun w ↦ acceptance_le_one _ _ _ _ _ w
+theorem friAtMostOne (S : Setup EF lookups) : FriAtMostOne S :=
+  fun w ↦ acceptance_le_one _ _ _ _ _ w
 
 end CompStark.Sound

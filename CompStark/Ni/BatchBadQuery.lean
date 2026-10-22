@@ -50,9 +50,9 @@ theorem foldFails_of_le {K : Type} [Field K] [DecidableEq K] (d : ℕ) (θ loss 
   | words, j + 1, _, ω, .fold k _ (some _) rest, h => by
     exact foldFails_of_le d θ loss β _ j _ rest (by simp only [Rounds.numFolds] at h; omega)
 
-theorem length_friAritiesB (S : Iop.Batch.Setup EF) :
-    (friAritiesB S).length = S.friRounds.numFolds := by
-  rw [friAritiesB, Nat.add_comm S.params.logBlowup, ← FriRounds.arities_schedule _ _
+theorem length_friArities (S : Iop.Batch.Setup EF) :
+    S.friArities.length = S.friRounds.numFolds := by
+  rw [Iop.Batch.Setup.friArities, Nat.add_comm S.params.logBlowup, ← FriRounds.arities_schedule _ _
     (fun _ _ ↦ (0 : 𝕂)), FriRounds.length_arities]
   rfl
 
@@ -64,28 +64,39 @@ variable (S : Iop.Batch.Setup EF) {cache cache' : Merkle.Cache F (Digest F)}
 
 /-- The prefix transcript of all rounds depends on their inputs and answers, and on the rows
 extracted under the observed digests. -/
-theorem prefixTranscriptB_congr (hb : ∀ k ≤ 3 + (friAritiesB S).length, block k = block' k)
-    (hs : ∀ k < 3 + (friAritiesB S).length, sample k = sample' k)
+theorem prefixTranscriptB_congr
+    (hb : ∀ k ≤ lookupRounds S + 3 + S.friArities.length, block k = block' k)
+    (hs : ∀ k < lookupRounds S + 3 + S.friArities.length, sample k = sample' k)
     (htrace : SameUnderM cache cache' (digestAt (block' 0) (mainOffsetB S)))
-    (hquot : SameUnderM cache cache' (digestAt (block' 1) 0))
-    (hfri : ∀ f < (friAritiesB S).length,
-      SameUnder cache cache' (digestAt (block' (3 + f)) (friOffsetB S f))) :
+    (hperm : SameUnderM cache cache' (digestAt (block' (lookupRounds S)) 0))
+    (hquot : SameUnderM cache cache' (digestAt (block' (lookupRounds S + 1)) 0))
+    (hfri : ∀ f < S.friArities.length,
+      SameUnder cache cache' (digestAt (block' (lookupRounds S + 3 + f)) (friOffsetB S f))) :
     prefixTranscriptB S cache block sample = prefixTranscriptB S cache' block' sample' := by
   rw [prefixTranscriptB_sample_congr S cache block hs]
-  refine transcript_ext S (prefixTranscriptB_trace S (hb 0 (by omega)) htrace) rfl
-    (prefixTranscriptB_quotient S (hb 1 (by omega)) hquot) rfl ?_ rfl ?_ ?_ rfl
-  · show openingsAtB S ((block 2).drop (pcsSeedB S).length) =
-      openingsAtB S ((block' 2).drop (pcsSeedB S).length)
-    rw [hb 2 (by omega)]
+  refine transcript_ext S (prefixTranscriptB_trace S (hb 0 (by omega)) htrace) rfl rfl
+    (prefixTranscriptB_perm S (hb _ (by omega)) hperm) ?_ rfl
+    (prefixTranscriptB_quotient S (hb _ (by omega)) hquot) rfl ?_ rfl ?_ ?_ rfl
+  · funext i
+    show (if (S.lookups i).isEmpty then 0 else Challenge.toSpec (extFrom (EF := EF)
+        ((block (lookupRounds S)).drop 8) (terminalIndex S i))) =
+      (if (S.lookups i).isEmpty then 0 else Challenge.toSpec (extFrom (EF := EF)
+        ((block' (lookupRounds S)).drop 8) (terminalIndex S i)))
+    rw [hb _ (by omega)]
+  · show openingsAtB S ((block (lookupRounds S + 2)).drop (pcsSeedB S).length) =
+      openingsAtB S ((block' (lookupRounds S + 2)).drop (pcsSeedB S).length)
+    rw [hb _ (by omega)]
   · funext f
-    by_cases hf : f < (friAritiesB S).length
-    · exact prefixTranscriptB_words S f (hb (3 + f) (by omega)) (hfri f hf)
+    by_cases hf : f < S.friArities.length
+    · exact prefixTranscriptB_words S f (hb _ (by omega)) (hfri f hf)
     · funext m z
-      show (if f < (friAritiesB S).length then _ else 0) =
-        (if f < (friAritiesB S).length then _ else 0)
+      show (if f < S.friArities.length then _ else 0) =
+        (if f < S.friArities.length then _ else 0)
       rw [ite_eq_right_of_eq_false _ _ (eq_false hf), ite_eq_right_of_eq_false _ _ (eq_false hf)]
-  · show finalPoly S.domainSetup (finalPolyAt S.domainSetup (block (3 + (friAritiesB S).length))) =
-      finalPoly S.domainSetup (finalPolyAt S.domainSetup (block' (3 + (friAritiesB S).length)))
+  · show finalPoly S.domainSetup (finalPolyAt S.domainSetup
+        (block (lookupRounds S + 3 + S.friArities.length))) =
+      finalPoly S.domainSetup (finalPolyAt S.domainSetup
+        (block' (lookupRounds S + 3 + S.friArities.length)))
     rw [hb _ le_rfl]
 
 end Congr
@@ -94,6 +105,16 @@ end Congr
 
 section Bad
 variable (S : Iop.Batch.Setup EF) (publicValues : Fin S.k → List F) (δ δ' loss : NNReal)
+
+/-- Without lookups, no instance has lookups. -/
+theorem lookups_eq_nil_of (hl : S.hasLookups = false) (i : Fin S.k) : S.lookups i = [] := by
+  by_contra hne
+  have : S.hasLookups = true :=
+    List.any_eq_true.mpr ⟨⟨S.air i, S.logN i⟩, List.mem_ofFn.mpr ⟨i, rfl⟩, by
+      rw [← lookups_eq]
+      simpa only [Bool.not_eq_eq_eq_not, Bool.not_true, List.isEmpty_eq_false_iff] using hne⟩
+  rw [hl] at this
+  exact Bool.false_ne_true this
 
 /-- Query `p` of `log` is fresh, and its answer clashes with a known digest or makes its batch
 round bad. -/
@@ -104,9 +125,9 @@ def BadAtB (log : QueryLog (spec F S.streamLen)) (p : Nat) (hp : p < log.length)
 
 /-- **The bad query.** If the batch verifier, run after the setup and a prover whose queries
 `log` an answer table answers, accepts a proof against the setup's common data `common`, and no
-tuple of traces close to the traces committed in `log` satisfies every AIR, then some query of the
+tuple of traces close to the traces committed in `log` satisfies the batch, then some query of the
 run is fresh and clashes or is round-bad. -/
-theorem exists_badAtB (hδ' : (δ' : ℝ) < 1 - S.rate) (hnl : S.NoLookups)
+theorem exists_badAtB (hδ' : (δ' : ℝ) < 1 - S.rate)
     (answer : (q : Query F) → Answer S.streamLen q) (common : CompStark.Batch.Common F)
     (proof : CompStark.Batch.BatchProof F EF) (log : QueryLog (spec F S.streamLen))
     (hcons : Consistent answer log)
@@ -114,11 +135,11 @@ theorem exists_badAtB (hδ' : (δ' : ℝ) < 1 - S.rate) (hnl : S.NoLookups)
     (hsetup : ∀ e ∈ tableQueryLog S.setupRo answer, e ∈ log)
     (hok : CompStark.Batch.verifyBatchWith (idealOf answer) S.params S.instances common proof
       (List.ofFn publicValues) = .ok ())
-    (hsmall : 3 * (log ++ tableQueryLog (CompStark.Batch.verifyBatchWith (ideal F S.streamLen)
+    (hsmall : 4 * (log ++ tableQueryLog (CompStark.Batch.verifyBatchWith (ideal F S.streamLen)
       S.params S.instances common proof (List.ofFn publicValues)) answer).length <
         Fintype.card (Digest F))
     (hfail : ∀ traces ∈ Iop.Batch.closeTraces S δ' (Iop.Batch.committedTraces S log proof),
-      ¬ ∀ i, (S.air i).Satisfied (S.logN i) (traces i) (publicValues i)) :
+      ¬ S.Satisfied traces publicValues) :
     ∃ p hp, BadAtB S publicValues δ δ' loss (log ++ tableQueryLog
       (CompStark.Batch.verifyBatchWith (ideal F S.streamLen) S.params S.instances common proof
         (List.ofFn publicValues)) answer) p hp := by
@@ -137,15 +158,15 @@ theorem exists_badAtB (hδ' : (δ' : ℝ) < 1 - S.rate) (hnl : S.NoLookups)
       ¬ RoundBadB S publicValues δ δ' loss (L.take (idx L t)) t (answer t) :=
     fun t ht ↦ of_first hconsL (fun pre t u ↦ ¬ RoundBadB S publicValues δ δ' loss pre t u)
       (fun p hp hfresh hr ↦ hno ⟨p, hp, hfresh, Or.inr hr⟩) ht
-  set nf := (friAritiesB S).length with hnf
+  set nf := S.friArities.length with hnf
   set blocks := inputsB S common pis proof with hblocks
-  have hz := length_zip_commitsB S (idealOf answer) common proof pis hnl hok
-  have hlen : blocks.length = 4 + nf := by
+  have hz := length_zip_commitsB S (idealOf answer) common proof pis hok
+  have hlen : blocks.length = lookupRounds S + 4 + nf := by
     rw [hblocks, length_inputsB, hz]
   have hkeys : ∀ j < blocks.length, keyAt answer blocks j ∈ L.map Sigma.fst := fun j hj ↦ by
     rw [List.map_append]
     exact List.mem_append_right _
-      (hasRounds_verifyBatchWith S hnl answer common proof pis hok j hj)
+      (hasRounds_verifyBatchWith S answer common proof pis hok j hj)
   have hinjL : CapsInjective answer L := capsInjective hconsL hclash L fun t ht ↦ ht
   have hcap : ∀ j, j < blocks.length → capAt answer blocks (j + 1) ≠ initCap :=
     fun j hj ↦ capAt_ne_initCap hinjL (fun k hk ↦ hkeys k hk) j hj
@@ -154,43 +175,19 @@ theorem exists_badAtB (hδ' : (δ' : ℝ) < 1 - S.rate) (hnl : S.NoLookups)
       keyDigests (boundDigestB S) (keyAt answer blocks 0) := by
     simp only [keyAt, keyDigests, boundDigestB, capAt, ↓reduceIte, List.mem_cons,
       List.not_mem_nil, or_false, or_true]
-  have hseed : 2 ≤ (friSeedB S).length := two_le_length_friSeed (F := F) (EF := EF) _ _ _ _ _ _ _ _
-  have hwlen : ∀ (bits : Nat), challengeOffset bits ≤ 1 := challengeOffset_le_one
-  have hroot1 : digestAt (blocks.getD 1 []) 0 ∈
-      keyDigests (boundDigestB S) (keyAt answer blocks 1) := by
-    have hlen1 : (blocks.getD 1 []).length ≠ (friSeedB S).length + 8 +
-        challengeOffset S.params.commitPowBits := by
-      rw [hblocks, inputsB_getD_one, List.length_append, Vector.length_toList,
-        length_witnessInput]
-      have := hwlen S.params.oodPowBits
-      have := hwlen S.params.commitPowBits
-      omega
-    simp only [keyAt, keyDigests, boundDigestB, hcap 0 (by omega), ↓reduceIte, hlen1,
-      List.mem_cons, List.not_mem_nil, or_false, or_true]
-  have hrootF : ∀ f < nf, digestAt (blocks.getD (3 + f) []) (friOffsetB S f) ∈
-      keyDigests (boundDigestB S) (keyAt answer blocks (3 + f)) := by
+  have hfirst : ∀ j, digestAt (blocks.getD j []) 0 ∈
+      keyDigests (boundDigestB S) (keyAt answer blocks j) := fun j ↦ by
+    simp only [keyAt, keyDigests, List.mem_cons, true_or, or_true]
+  have hrootF : ∀ f < nf, digestAt (blocks.getD (lookupRounds S + 3 + f) []) (friOffsetB S f) ∈
+      keyDigests (boundDigestB S) (keyAt answer blocks (lookupRounds S + 3 + f)) := by
     intro f hf
-    have hcap3 := hcap (2 + f) (by omega)
-    rw [show 2 + f + 1 = 3 + f by omega] at hcap3
-    have hblk3 := inputsB_getD_fold S common pis proof f (by omega)
-    rw [← hblocks] at hblk3
     by_cases hf0 : f = 0
     · subst hf0
-      have hlen : (blocks.getD 3 []).length = (friSeedB S).length + 8 +
-          challengeOffset S.params.commitPowBits := by
-        rw [hblk3]
-        simp only [seedAt, ↓reduceIte, List.length_append, Vector.length_toList,
-          length_witnessInput]
-      simp only [keyAt, keyDigests, boundDigestB, hcap3, ↓reduceIte, hlen, friOffsetB,
+      have hcap3 := hcap (lookupRounds S + 2) (by omega)
+      simp only [keyAt, keyDigests, boundDigestB, Nat.add_zero, hcap3, ↓reduceIte, friOffsetB,
         List.mem_cons, List.not_mem_nil, or_false, or_true]
-    · have hlen : (blocks.getD (3 + f) []).length ≠ (friSeedB S).length + 8 +
-          challengeOffset S.params.commitPowBits := by
-        rw [hblk3]
-        simp only [seedAt, hf0, ↓reduceIte, List.nil_append, List.length_append,
-          Vector.length_toList, length_witnessInput]
-        omega
-      simp only [keyAt, keyDigests, boundDigestB, hcap3, ↓reduceIte, hlen, friOffsetB, hf0,
-        List.mem_cons, List.not_mem_nil, or_false, or_true]
+    · simp only [friOffsetB, hf0, ↓reduceIte]
+      exact hfirst _
   -- extraction is stable after the round binding the digest
   have hnp : ∀ j0 j, j0 ≤ j → j < blocks.length →
       ∀ r ∈ keyDigests (boundDigestB S) (keyAt answer blocks j0),
@@ -251,106 +248,155 @@ theorem exists_badAtB (hδ' : (δ' : ℝ) < 1 - S.rate) (hnl : S.NoLookups)
   have htraceS : ∀ j < blocks.length,
       SameUnderM (C j) (logCache L) (digestAt (blk 0) (mainOffsetB S)) :=
     fun j hj ↦ by rw [hC, hblk]; exact hsameM 0 j (Nat.zero_le _) hj _ hroot0
-  have hquotS : ∀ j, 1 ≤ j → j < blocks.length →
-      SameUnderM (C j) (logCache L) (digestAt (blk 1) 0) :=
-    fun j h1 hj ↦ by rw [hC, hblk]; exact hsameM 1 j h1 hj _ hroot1
-  have hfoldS : ∀ j f, 3 + f ≤ j → j < blocks.length → f < nf →
-      SameUnder (C j) (logCache L) (digestAt (blk (3 + f)) (friOffsetB S f)) :=
+  have hpermS : ∀ j, lookupRounds S ≤ j → j < blocks.length →
+      SameUnderM (C j) (logCache L) (digestAt (blk (lookupRounds S)) 0) :=
+    fun j h1 hj ↦ by rw [hC, hblk]; exact hsameM _ j h1 hj _ (hfirst _)
+  have hquotS : ∀ j, lookupRounds S + 1 ≤ j → j < blocks.length →
+      SameUnderM (C j) (logCache L) (digestAt (blk (lookupRounds S + 1)) 0) :=
+    fun j h1 hj ↦ by rw [hC, hblk]; exact hsameM _ j h1 hj _ (hfirst _)
+  have hfoldS : ∀ j f, lookupRounds S + 3 + f ≤ j → j < blocks.length → f < nf →
+      SameUnder (C j) (logCache L) (digestAt (blk (lookupRounds S + 3 + f)) (friOffsetB S f)) :=
     fun j f hf hj hf' ↦ by
       rw [hC, hblk]
-      exact hsame (3 + f) j hf hj _ (hrootF f hf')
-  have hαeq : ∀ j, (prefixTranscriptB S (C j) (B j) (Sm j)).alpha = T.alpha := fun j ↦ by
-    rw [hT]; show extAt (Sm j 0) 0 = extAt (smp 0) 0; rw [hSk j 0 (Nat.zero_le _)]
-  have hζeq : ∀ j, 1 ≤ j → (prefixTranscriptB S (C j) (B j) (Sm j)).zeta = T.zeta :=
-    fun j hj ↦ by
-      rw [hT]
-      show extAt (Sm j 1) (challengeOffset S.params.oodPowBits) =
-        extAt (smp 1) (challengeOffset S.params.oodPowBits)
-      rw [hSk j 1 hj]
-  have hbeq : ∀ j, 2 ≤ j → (prefixTranscriptB S (C j) (B j) (Sm j)).batch = T.batch :=
-    fun j hj ↦ by
-      rw [hT]
-      show extAt (Sm j 2) (challengeOffset S.params.batchPowBits) =
-        extAt (smp 2) (challengeOffset S.params.batchPowBits)
-      rw [hSk j 2 hj]
-  have hoeq : ∀ j, 2 ≤ j → (prefixTranscriptB S (C j) (B j) (Sm j)).openings = T.openings :=
-    fun j hj ↦ by
-      rw [hT]
-      show openingsAtB S ((B j 2).drop (pcsSeedB S).length) =
-        openingsAtB S ((blk 2).drop (pcsSeedB S).length)
-      rw [hBk j 2 hj]
+      exact hsame _ j hf hj _ (hrootF f hf')
+  have hlkeq : ∀ j, (prefixTranscriptB S (C j) (B j) (Sm j)).lookupAlpha = T.lookupAlpha ∧
+      (prefixTranscriptB S (C j) (B j) (Sm j)).lookupBeta = T.lookupBeta := fun j ↦ by
+    rw [hT]
+    exact prefixTranscriptB_lookup_congr S _ _ fun _ ↦ hSk j 0 (Nat.zero_le _)
   have htreq : ∀ j < blocks.length, (prefixTranscriptB S (C j) (B j) (Sm j)).trace = T.trace :=
     fun j hj ↦ by
       rw [hT]; exact prefixTranscriptB_trace S (hBk j 0 (Nat.zero_le _)) (htraceS j hj)
-  have hqeq : ∀ j, 1 ≤ j → j < blocks.length →
+  have hpermeq : ∀ j, lookupRounds S ≤ j → j < blocks.length →
+      (prefixTranscriptB S (C j) (B j) (Sm j)).perm = T.perm := fun j h1 hj ↦ by
+    rw [hT]; exact prefixTranscriptB_perm S (hBk j _ h1) (hpermS j h1 hj)
+  have htermeq : ∀ j, lookupRounds S ≤ j →
+      (prefixTranscriptB S (C j) (B j) (Sm j)).terminal = T.terminal := fun j h1 ↦ by
+    rw [hT]
+    funext i
+    show (if (S.lookups i).isEmpty then 0 else Challenge.toSpec (extFrom (EF := EF)
+        ((B j (lookupRounds S)).drop 8) (terminalIndex S i))) =
+      (if (S.lookups i).isEmpty then 0 else Challenge.toSpec (extFrom (EF := EF)
+        ((blk (lookupRounds S)).drop 8) (terminalIndex S i)))
+    rw [hBk j _ h1]
+  have hαeq : ∀ j, lookupRounds S ≤ j →
+      (prefixTranscriptB S (C j) (B j) (Sm j)).alpha = T.alpha := fun j hj ↦ by
+    rw [hT]
+    show extAt (Sm j (lookupRounds S)) 0 = extAt (smp (lookupRounds S)) 0
+    rw [hSk j _ hj]
+  have hζeq : ∀ j, lookupRounds S + 1 ≤ j →
+      (prefixTranscriptB S (C j) (B j) (Sm j)).zeta = T.zeta := fun j hj ↦ by
+    rw [hT]
+    show extAt (Sm j (lookupRounds S + 1)) (challengeOffset S.params.oodPowBits) =
+      extAt (smp (lookupRounds S + 1)) (challengeOffset S.params.oodPowBits)
+    rw [hSk j _ hj]
+  have hbeq : ∀ j, lookupRounds S + 2 ≤ j →
+      (prefixTranscriptB S (C j) (B j) (Sm j)).batch = T.batch := fun j hj ↦ by
+    rw [hT]
+    show extAt (Sm j (lookupRounds S + 2)) (challengeOffset S.params.batchPowBits) =
+      extAt (smp (lookupRounds S + 2)) (challengeOffset S.params.batchPowBits)
+    rw [hSk j _ hj]
+  have hoeq : ∀ j, lookupRounds S + 2 ≤ j →
+      (prefixTranscriptB S (C j) (B j) (Sm j)).openings = T.openings := fun j hj ↦ by
+    rw [hT]
+    show openingsAtB S ((B j (lookupRounds S + 2)).drop (pcsSeedB S).length) =
+      openingsAtB S ((blk (lookupRounds S + 2)).drop (pcsSeedB S).length)
+    rw [hBk j _ hj]
+  have hqeq : ∀ j, lookupRounds S + 1 ≤ j → j < blocks.length →
       (prefixTranscriptB S (C j) (B j) (Sm j)).quotient = T.quotient := fun j h1 hj ↦ by
-    rw [hT]; exact prefixTranscriptB_quotient S (hBk j 1 h1) (hquotS j h1 hj)
-  have hReq : ∀ j, 2 ≤ j → j < blocks.length →
+    rw [hT]; exact prefixTranscriptB_quotient S (hBk j _ h1) (hquotS j h1 hj)
+  have hReq : ∀ j, lookupRounds S + 2 ≤ j → j < blocks.length →
       (prefixTranscriptB S (C j) (B j) (Sm j)).rounds = T.rounds := fun j h2 hj ↦ by
     unfold Sound.Batch.Transcript.rounds Sound.Batch.Transcript.deepWords
       Sound.Batch.Transcript.prover
-    rw [htreq j hj, hqeq j (by omega) hj, hαeq, hζeq j (by omega), hbeq j h2, hoeq j h2]
-  -- round `α`
-  have hα : ¬ Sound.Batch.AlphaBad S publicValues δ' T.trace T.alpha := by
-    have h := hbad 0 (by omega)
-    rw [roundBadAtB, ite_eq_left_of_eq_true _ _ (eq_true rfl), htreq 0 (by omega), hαeq] at h
-    exact h
+    rw [htreq j hj, hpermeq j (by omega) hj, htermeq j (by omega), (hlkeq j).1, (hlkeq j).2,
+      hqeq j (by omega) hj, hαeq j (by omega), hζeq j (by omega), hbeq j h2, hoeq j h2]
   -- the grinding checks and the run of FRI
-  obtain ⟨hsize, -, -, -, -, -, -, hlk, hood, -, hbc, ⟨st, hfriOk⟩, -⟩ :=
-    verifyBatchWith_ok (idealOf answer) S.params S.instances common proof pis
-      (hasLookups_instances S hnl) hok
+  obtain ⟨hsize, -, -, -, -, -, -, -, -, -, hlk, hlc, hood, -, hbc, ⟨st, hfriOk⟩, -⟩ :=
+    verifyBatchWith_ok (idealOf answer) S.params S.instances common proof pis hok
   rw [length_instances] at hsize
-  have hperm := permutationCommit_eq_none S.params S.instances proof
-    (hasLookups_instances S hnl) hlk
-  have hK : Challenge.d EF + 1 ≤ S.streamLen := by unfold Iop.Batch.Setup.streamLen; omega
-  -- round `ζ`
-  have hζ : ¬ Sound.Batch.ZetaBad S publicValues δ' T.trace T.alpha T.quotient T.zeta := by
-    have h := hbad 1 (by omega)
-    have hpow : S.params.oodPowBits ≠ 0 → CompPoly.CanonicalNat.toNat
-        ((smp 1).toList.getD 0 0) % 2 ^ S.params.oodPowBits = 0 := fun hb ↦ by
-      rw [hsmp]
-      exact oodWitnessB_idealOf answer S common proof pis (by omega) hood hb
+  have hperm := (lookupShapeOk_spec S.params S.instances proof hlk).2
+  have hK : 2 * Challenge.d EF + 1 ≤ S.streamLen := by unfold Iop.Batch.Setup.streamLen; omega
+  -- the lookup round
+  have hlookup : ¬ Sound.Batch.LookupBad S publicValues δ' T.trace T.lookupAlpha T.lookupBeta := by
+    cases hl : S.hasLookups
+    · exact Sound.Batch.not_lookupBad S publicValues (lookups_eq_nil_of S hl) δ' _ _ _
+    · have h1 : lookupRounds S = 1 := by simp only [lookupRounds, hl, ↓reduceIte]
+      have h := hbad 0 (by omega)
+      have hpow : S.params.lookupPowBits ≠ 0 → CompPoly.CanonicalNat.toNat
+          ((smp 0).toList.getD 0 0) % 2 ^ S.params.lookupPowBits = 0 := fun hb ↦ by
+        rw [hsmp]
+        exact lookupWitnessB_idealOf answer S common proof pis hl (hlc hl) hb
+      rw [roundBadAtB, ite_eq_left_of_eq_true _ _ (eq_true (by omega)), htreq 0 (by omega),
+        (hlkeq 0).1, (hlkeq 0).2] at h
+      exact fun hlb ↦ h ⟨hpow, hlb⟩
+  -- round `α`
+  have hα : ¬ Sound.Batch.AlphaBad S publicValues δ' T.trace T.perm T.terminal T.lookupAlpha
+      T.lookupBeta T.alpha := by
+    have h := hbad (lookupRounds S) (by omega)
     rw [roundBadAtB, ite_eq_right_of_eq_false _ _ (eq_false (by omega)),
-      ite_eq_left_of_eq_true _ _ (eq_true rfl), htreq 1 (by omega), hqeq 1 le_rfl (by omega),
-      hαeq, hζeq 1 le_rfl] at h
-    exact fun hzb ↦ h ⟨hpow, hzb⟩
-  -- the batching round
-  have ha : ¬ Sound.Batch.BatchBad S publicValues δ δ' T.trace T.alpha T.quotient T.zeta
-      T.openings T.batch := by
-    have h := hbad 2 (by omega)
-    have hpow : S.params.batchPowBits ≠ 0 → CompPoly.CanonicalNat.toNat
-        ((smp 2).toList.getD 0 0) % 2 ^ S.params.batchPowBits = 0 := fun hb ↦ by
+      ite_eq_left_of_eq_true _ _ (eq_true (by omega)), htreq _ (by omega),
+      hpermeq _ le_rfl (by omega), htermeq _ le_rfl, (hlkeq _).1, (hlkeq _).2, hαeq _ le_rfl] at h
+    exact h
+  -- round `ζ`
+  have hζ : ¬ Sound.Batch.ZetaBad S publicValues δ' T.trace T.perm T.terminal T.lookupAlpha
+      T.lookupBeta T.alpha T.quotient T.zeta := by
+    have h := hbad (lookupRounds S + 1) (by omega)
+    have hpow : S.params.oodPowBits ≠ 0 → CompPoly.CanonicalNat.toNat
+        ((smp (lookupRounds S + 1)).toList.getD 0 0) % 2 ^ S.params.oodPowBits = 0 := fun hb ↦ by
       rw [hsmp]
-      exact batchWitnessB_idealOf answer S common proof pis hK hbc hb
+      exact oodWitnessB_idealOf answer S common proof pis hK hperm hood hb
     rw [roundBadAtB, ite_eq_right_of_eq_false _ _ (eq_false (by omega)),
       ite_eq_right_of_eq_false _ _ (eq_false (by omega)),
-      ite_eq_left_of_eq_true _ _ (eq_true rfl), htreq 2 (by omega), hqeq 2 (by omega) (by omega),
-      hαeq, hζeq 2 (by omega), hbeq 2 le_rfl, hoeq 2 le_rfl] at h
+      ite_eq_left_of_eq_true _ _ (eq_true (by omega)), htreq _ (by omega),
+      hpermeq _ (by omega) (by omega), htermeq _ (by omega), (hlkeq _).1, (hlkeq _).2,
+      hqeq _ le_rfl (by omega), hαeq _ (by omega), hζeq _ le_rfl] at h
+    exact fun hzb ↦ h ⟨hpow, hzb⟩
+  -- the batching round
+  have ha : ¬ Sound.Batch.BatchBad S publicValues δ δ' T.trace T.perm T.terminal T.lookupAlpha
+      T.lookupBeta T.alpha T.quotient T.zeta T.openings T.batch := by
+    have h := hbad (lookupRounds S + 2) (by omega)
+    have hpow : S.params.batchPowBits ≠ 0 → CompPoly.CanonicalNat.toNat
+        ((smp (lookupRounds S + 2)).toList.getD 0 0) % 2 ^ S.params.batchPowBits = 0 :=
+      fun hb ↦ by
+        rw [hsmp]
+        exact batchWitnessB_idealOf answer S common proof pis hK hperm hbc hb
+    rw [roundBadAtB, ite_eq_right_of_eq_false _ _ (eq_false (by omega)),
+      ite_eq_right_of_eq_false _ _ (eq_false (by omega)),
+      ite_eq_right_of_eq_false _ _ (eq_false (by omega)),
+      ite_eq_left_of_eq_true _ _ (eq_true (by omega)), htreq _ (by omega),
+      hpermeq _ (by omega) (by omega), htermeq _ (by omega), (hlkeq _).1, (hlkeq _).2,
+      hqeq _ (by omega) (by omega), hαeq _ (by omega), hζeq _ (by omega), hbeq _ le_rfl,
+      hoeq _ le_rfl] at h
     exact fun hbb ↦ h ⟨hpow, hbb⟩
   -- the folds
   set zeta := zetaOfB (idealOf answer) S.params S.instances common proof pis
-  have hD := descHeights_batchRounds S common proof zeta hsize hperm
+  have hD := descHeights_batchRounds S common proof zeta hsize
   have hfolds : ∀ f, ¬ Sound.Batch.FoldBad S δ loss T.rounds T.words f (T.betas f) := by
     intro f
     by_cases hf : f < nf
-    · have h := hbad (3 + f) (by omega)
+    · have h := hbad (lookupRounds S + 3 + f) (by omega)
       have hpow : S.params.commitPowBits ≠ 0 → CompPoly.CanonicalNat.toNat
-          ((smp (3 + f)).toList.getD 0 0) % 2 ^ S.params.commitPowBits = 0 := fun hb ↦ by
-        rw [hsmp]
-        exact commitWitnessB_idealOf answer S common proof pis (le_refl _) _ hD st hfriOk f
-          (by omega) hb
+          ((smp (lookupRounds S + 3 + f)).toList.getD 0 0) % 2 ^ S.params.commitPowBits = 0 :=
+        fun hb ↦ by
+          rw [hsmp]
+          exact commitWitnessB_idealOf answer S common proof pis (le_refl _) hperm _ hD st
+            hfriOk f (by omega) hb
       rw [roundBadAtB, ite_eq_right_of_eq_false _ _ (eq_false (by omega)),
         ite_eq_right_of_eq_false _ _ (eq_false (by omega)),
         ite_eq_right_of_eq_false _ _ (eq_false (by omega)),
-        ite_eq_left_of_eq_true _ _ (eq_true (by omega : 3 + f - 3 < nf)),
-        show 3 + f - 3 = f by omega, hReq (3 + f) (by omega) (by omega)] at h
-      have hw : (prefixTranscriptB S (C (3 + f)) (B (3 + f)) (Sm (3 + f))).words f = T.words f := by
+        ite_eq_right_of_eq_false _ _ (eq_false (by omega)),
+        ite_eq_left_of_eq_true _ _ (eq_true (by omega :
+          lookupRounds S + 3 + f - lookupRounds S - 3 < nf)),
+        show lookupRounds S + 3 + f - lookupRounds S - 3 = f by omega,
+        hReq _ (by omega) (by omega)] at h
+      have hw : (prefixTranscriptB S (C (lookupRounds S + 3 + f)) (B (lookupRounds S + 3 + f))
+          (Sm (lookupRounds S + 3 + f))).words f = T.words f := by
         rw [hT]
         exact prefixTranscriptB_words S f (hBk _ _ le_rfl) (hfoldS _ f le_rfl (by omega) hf)
-      have hβ : (prefixTranscriptB S (C (3 + f)) (B (3 + f)) (Sm (3 + f))).betas f =
-          T.betas f := by
+      have hβ : (prefixTranscriptB S (C (lookupRounds S + 3 + f)) (B (lookupRounds S + 3 + f))
+          (Sm (lookupRounds S + 3 + f))).betas f = T.betas f := by
         rw [hT]
-        show betasAtB S (Sm (3 + f)) f = betasAtB S smp f
+        show betasAtB S (Sm (lookupRounds S + 3 + f)) f = betasAtB S smp f
         unfold betasAtB
         rw [hSk _ _ le_rfl]
       intro hfb
@@ -359,19 +405,20 @@ theorem exists_badAtB (hδ' : (δ' : ℝ) < 1 - S.rate) (hnl : S.NoLookups)
       rw [hβ]
       exact (Rounds.foldFails_congr _ _ _ _ _ _ f hw _ _).mpr hfb
     · refine foldFails_of_le _ _ _ _ _ f _ _ ?_
-      rw [Sound.Batch.numFolds_rounds, ← length_friAritiesB]
+      rw [Sound.Batch.numFolds_rounds, ← length_friArities]
       omega
   -- the query round
-  have hq : ¬ Sound.Batch.QueryBad S δ loss T (powAtB S (smp (3 + nf)))
-      (queriesAtB S (smp (3 + nf))) := by
-    have h := hbad (3 + nf) (by omega)
+  have hq : ¬ Sound.Batch.QueryBad S δ loss T (powAtB S (smp (lookupRounds S + 3 + nf)))
+      (queriesAtB S (smp (lookupRounds S + 3 + nf))) := by
+    have h := hbad (lookupRounds S + 3 + nf) (by omega)
     rw [roundBadAtB, ite_eq_right_of_eq_false _ _ (eq_false (by omega)),
       ite_eq_right_of_eq_false _ _ (eq_false (by omega)),
       ite_eq_right_of_eq_false _ _ (eq_false (by omega)),
       ite_eq_right_of_eq_false _ _ (eq_false (by omega)),
-      ite_eq_left_of_eq_true _ _ (eq_true rfl)] at h
+      ite_eq_right_of_eq_false _ _ (eq_false (by omega)),
+      ite_eq_left_of_eq_true _ _ (eq_true (by omega))] at h
     rwa [prefixTranscriptB_congr S (fun k hk ↦ hBk _ k hk) (fun k hk ↦ hSk _ k (by omega))
-      (htraceS _ (by omega)) (hquotS _ (by omega) (by omega))
+      (htraceS _ (by omega)) (hpermS _ (by omega) (by omega)) (hquotS _ (by omega) (by omega))
       (fun f hf ↦ hfoldS _ f (by omega) (by omega) hf), ← hT] at h
   -- binding commitments on answers changed outside the run
   obtain ⟨dstar, hdstar⟩ := exists_not_mem (logDigests (boundDigestB S) L)
@@ -391,13 +438,13 @@ theorem exists_badAtB (hδ' : (δ' : ℝ) < 1 - S.rate) (hnl : S.NoLookups)
   have hcommon' : CompStark.Batch.commonWith (idealOf g') S.params S.instances = common := by
     rw [← evalWithAnswerFn_setupRoB S g', evalWithAnswerFn_congr answer g' _ hsetupL,
       evalWithAnswerFn_setupRoB, hcommon]
+  have hshapeA := shape_of_verifyBatchWith S (idealOf answer) common proof pis hok
   have hmainMem : proof.mainCommit ∈ logDigests (boundDigestB S) L := by
-    rw [← mainRoot_eq S common proof pis hnl
-      (shape_of_verifyBatchWith S (idealOf answer) common proof pis hnl hok).2.2.1]
+    rw [← mainRoot_eq S common proof pis hshapeA.2.2.1]
     exact mem_logDigests (hkeys 0 (by omega)) hroot0
   have hquotMem : proof.quotientCommit ∈ logDigests (boundDigestB S) L := by
     rw [← quotientRoot_eqB S common proof pis]
-    exact mem_logDigests (hkeys 1 (by omega)) hroot1
+    exact mem_logDigests (hkeys _ (by omega)) (hfirst _)
   have htopI : ∀ i : Fin S.k, S.logN i + S.params.logBlowup ≤ S.logTop := logTop_ge S
   have hmain : BindingM (logCache L) (idealOf g') proof.mainCommit S.logTop S.mainHeights :=
     bindingM_fresh answer L hconsL hclash dstar hdstar _ hmainMem S.logTop S.mainHeights
@@ -415,9 +462,9 @@ theorem exists_badAtB (hδ' : (δ' : ℝ) < 1 - S.rate) (hnl : S.NoLookups)
   have hfri : ∀ c ∈ proof.fri.commits, Binding (logCache L) (idealOf g') c := by
     intro c hc
     obtain ⟨i, hi, rfl⟩ := Array.getElem_of_mem hc
-    obtain ⟨-, -, -, hcs, -⟩ := shape_of_verifyBatchWith S (idealOf answer) common proof pis hnl hok
+    obtain ⟨-, -, -, hcs, -⟩ := hshapeA
     have hi' : i < nf := by rw [hnf, ← hcs]; exact hi
-    have h := foldRoot_eqB S answer hnl hok i hi'
+    have h := foldRoot_eqB S answer hok i hi'
     rw [List.getD_eq_getElem proof.fri.commits.toList 0 (by rw [Array.length_toList]; exact hi),
       Array.getElem_toList] at h
     rw [← h]
@@ -432,7 +479,7 @@ theorem exists_badAtB (hδ' : (δ' : ℝ) < 1 - S.rate) (hnl : S.NoLookups)
       BindingM (logCache L) (idealOf g') root (prepLog S) (prepHeights S) := by
     intro root hr
     obtain ⟨i, hi⟩ : ∃ i : Fin S.k, 0 < (S.air i).preprocessedWidth := by
-      have hprep := (shape_of_verifyBatchWith S (idealOf answer) common proof pis hnl hok).2.2.1
+      have hprep := hshapeA.2.2.1
       rw [show common.preprocessed.isSome = true by rw [Option.isSome_iff_exists]; exact ⟨_, hr⟩]
         at hprep
       obtain ⟨I, hI, hp⟩ := List.any_eq_true.mp hprep.symm
@@ -458,28 +505,56 @@ theorem exists_badAtB (hδ' : (δ' : ℝ) < 1 - S.rate) (hnl : S.NoLookups)
           (finMod _ (reverseBits r (S.logN i + S.params.logBlowup))) :=
     fun root hr i hp j hj r hrr ↦ matColumn_setup S (logCache L) g' root
       (by rw [hcommon']; exact hr) (hprepBind root hr) i hp j hj r hrr
+  have hpermBind : ∀ root ∈ proof.permutationCommit,
+      BindingM (logCache L) (idealOf g') root (permLog S) (permHeights S) := by
+    intro root hr
+    have hl : S.hasLookups = true := hperm.symm.trans (Option.isSome_iff_exists.mpr ⟨_, hr⟩)
+    obtain ⟨i, hi⟩ : ∃ i : Fin S.k, (S.lookups i).isEmpty = false := by
+      obtain ⟨I, hI, hp⟩ := List.any_eq_true.mp hl
+      obtain ⟨i, rfl⟩ := List.mem_ofFn.mp hI
+      refine ⟨i, ?_⟩
+      rw [lookups_eq]
+      simpa only [Bool.not_eq_eq_eq_not, Bool.not_true] using hp
+    have hmem : root ∈ logDigests (boundDigestB S) L := by
+      rw [← permRoot_eqB S common proof pis hl hr]
+      exact mem_logDigests (hkeys _ (by omega)) (hfirst _)
+    have hpi : i ∈ permInsts S :=
+      List.mem_filter.mpr ⟨List.mem_finRange _, by rw [hi]; rfl⟩
+    refine bindingM_fresh answer L hconsL hclash dstar hdstar _ hmem (permLog S)
+      (permHeights S) (fun h hh ↦ ?_) ?_
+    · obtain ⟨i', hi', rfl⟩ := List.mem_map.mp hh
+      exact ⟨_, (le_foldl_max _ 0).2 _ (List.mem_map.mpr ⟨i', hi', rfl⟩), rfl⟩
+    · rcases foldl_max_mem ((permInsts S).map fun i ↦ S.logN i + S.params.logBlowup) 0 with
+        h | h
+      · have h0 : permLog S = 0 := h
+        have := (le_foldl_max ((permInsts S).map fun i ↦ S.logN i + S.params.logBlowup) 0).2 _
+          (List.mem_map.mpr ⟨i, hpi, rfl⟩)
+        have := (S.valid i).blowup
+        rw [permLog] at h0
+        omega
+      · obtain ⟨i', hi', he⟩ := List.mem_map.mp h
+        exact List.mem_map.mpr ⟨i', hi', congrArg (2 ^ ·) he⟩
   have hbcs := bcsB S (logCache L) (idealOf g') common proof publicValues hmain hquot hfri
-    hprepBind hprep hnl hok'
+    hprepBind hprep hpermBind hok'
   have hext : extractB S (logCache L) (idealOf g') common proof pis = T := by
-    rw [extractB_eq_prefixTranscriptB S g' hnl (logCache L) hok', hT, hblk, hsmp]
+    rw [extractB_eq_prefixTranscriptB S g' (logCache L) hok', hT, hblk, hsmp]
     congr 1
     funext k
     exact samples_keyAt_fresh answer _ L dstar k
   dsimp only at hbcs
   rw [hext] at hbcs
-  obtain ⟨hcheck, hdeg, hpow, hqueries⟩ := hbcs
-  obtain ⟨-, -, hfp, -⟩ :=
-    (shape_of_verifyBatchWith S (idealOf answer) common proof pis hnl hok).2.2.2
+  obtain ⟨hsum, hcheck, hdeg, hpow, hqueries⟩ := hbcs
+  obtain ⟨-, -, hfp, -⟩ := hshapeA.2.2.2
   have hfpne : proof.fri.finalPoly.toList ≠ [] := by
     refine List.ne_nil_of_length_pos ?_
     rw [Array.length_toList, hfp]
     exact Nat.two_pow_pos _
-  obtain ⟨-, -, -, -, -, hpowEq, hqEq⟩ := challengesB_idealOf g' S common proof pis (le_refl _)
-    hfpne
+  obtain ⟨-, -, -, -, -, -, hpowEq, hqEq⟩ := challengesB_idealOf g' S common proof pis (le_refl _)
+    hfpne hperm
   rw [hz, hg'] at hpowEq hqEq
   dsimp only at hpowEq hqEq
   rw [samples_keyAt_fresh answer _ L dstar] at hpowEq hqEq
-  have hpow' : CompPoly.CanonicalNat.toNat (powAtB S (smp (3 + nf))) %
+  have hpow' : CompPoly.CanonicalNat.toNat (powAtB S (smp (lookupRounds S + 3 + nf))) %
       2 ^ S.params.queryPowBits = 0 := by
     by_cases hb : S.params.queryPowBits = 0
     · simp only [hb, pow_zero, Nat.mod_one]
@@ -487,14 +562,14 @@ theorem exists_badAtB (hδ' : (δ' : ℝ) < 1 - S.rate) (hnl : S.NoLookups)
       dsimp only
       rw [← hpowEq hb]
       exact hpow
-  have hqueries' : ∀ j, queryPoint S.domainSetup (queriesAtB S (smp (3 + nf)) j) ∈
+  have hqueries' : ∀ j, queryPoint S.domainSetup (queriesAtB S (smp (lookupRounds S + 3 + nf)) j) ∈
       T.consistentQueries := fun j ↦ by
     rw [queriesAtB, hsmp]
     dsimp only
     rw [← hqEq j.val j.isLt]
     exact hqueries j
   obtain ⟨traces, hP, hsat⟩ := Sound.Batch.exists_satisfied_of_safe S publicValues δ δ' loss hδ' T
-    _ _ hcheck hdeg hpow' hqueries' hα hζ ha hfolds hq
+    _ _ hsum hcheck hdeg hpow' hqueries' hlookup hα hζ ha hfolds hq
   -- the traces committed in the prover's queries are the run's
   have hhead : idx L (keyAt answer blocks 0) ≤ log.length := by
     by_cases hin : keyAt answer blocks 0 ∈ log.map Sigma.fst
@@ -503,7 +578,7 @@ theorem exists_badAtB (hδ' : (δ' : ℝ) < 1 - S.rate) (hnl : S.NoLookups)
       unfold idx
       rw [List.map_append, List.idxOf_append_of_mem hin]
       exact this.le
-    · obtain ⟨rest, hrest⟩ := verifyBatchWith_log_head answer S hnl (le_refl _) common proof pis
+    · obtain ⟨rest, hrest⟩ := verifyBatchWith_log_head answer S (le_refl _) common proof pis
         (by rw [run_idealLoggedB]; exact hok)
       rw [run_idealLoggedB] at hrest
       dsimp only at hrest
@@ -512,8 +587,7 @@ theorem exists_badAtB (hδ' : (δ' : ℝ) < 1 - S.rate) (hnl : S.NoLookups)
       rw [List.map_append, List.idxOf_append_of_notMem hin, hrest, List.map_cons,
         List.idxOf_cons_self, List.length_map, Nat.add_zero]
   have hroot0' : proof.mainCommit ∈ keyDigests (boundDigestB S) (keyAt answer blocks 0) := by
-    rw [← mainRoot_eq S common proof pis hnl
-      (shape_of_verifyBatchWith S (idealOf answer) common proof pis hnl hok).2.2.1]
+    rw [← mainRoot_eq S common proof pis hshapeA.2.2.1]
     exact hroot0
   have hlogL : SameUnderM (logCache log) (logCache L) proof.mainCommit := by
     intro inj K' t i
@@ -526,9 +600,7 @@ theorem exists_badAtB (hδ' : (δ' : ℝ) < 1 - S.rate) (hnl : S.NoLookups)
     funext i c x
     show Merkle.matColumn (logCache log) proof.mainCommit _ _ _ _ _ _ _ =
       Merkle.matColumn (logCache L) (digestAt (blocks.getD 0 []) (mainOffsetB S)) _ _ _ _ _ _ _
-    rw [mainRoot_eq S common proof pis hnl
-      (shape_of_verifyBatchWith S (idealOf answer) common proof pis hnl hok).2.2.1,
-      matColumn_congr hlogL]
+    rw [mainRoot_eq S common proof pis hshapeA.2.2.1, matColumn_congr hlogL]
   rw [← htraceT] at hP
   exact hfail traces hP hsat
 

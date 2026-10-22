@@ -280,6 +280,17 @@ def wide {F : Type} (w : Nat) : Air F where
   constraints := (List.range w).map fun j ↦
     .isTransition * ((.cur j * .cur j * .cur j + .cur ((j + 1) % w)) - .next j)
 
+/-- The lookup of `wideBus`: on the global bus `wide`, every row receives its columns `0..3` and
+sends its columns `4..7`, each tuple with multiplicity `±1`. -/
+def wideBusLookup {F : Type} [One F] [Neg F] : Lookup F :=
+  ⟨some "wide", [([.cur 0, .cur 1, .cur 2, .cur 3], .const 1),
+    ([.cur 4, .cur 5, .cur 6, .cur 7], .const (-1))], 2⟩
+
+/-- `wide w` exchanging tuples of four columns on a global bus (`wideBusLookup`): two interactions
+of width `4` per row. -/
+def wideBus {F : Type} [One F] [Neg F] (w : Nat) : Air F :=
+  { wide w with lookups := [wideBusLookup] }
+
 /-- Two columns `a, b` and two preprocessed columns `p = i mod 2`, `s = (i + 1) mod 6` on row `i`
 of `2 ^ logN`, with public values `x, y`: the first row is `(x, y)`, each next row is
 `(b, p a b + s (a + b))` (Plonky3's `MulFibPAir`, with public values). With `nextRow` the AIR also
