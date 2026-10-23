@@ -267,10 +267,15 @@ holds them at that time, spelled out. -/
   (m.at (next.getD (r0 + o.toNat + 14) 0) c)
   (m.at (next.getD (r0 + o.toNat + 15) 0) c)
 
-/-- Column `c` of the columns `m` at the rows `next[r0 + k]` into word `d`. -/
+/-- Column `c` of the columns `m` at the rows `next[r0 + k]` into word `d`: copied when they are
+consecutive (`nseq`) within one block of `m`, else gathered word by word. -/
 @[inline] def gather (nm : Nat) (s : ByteArray) (d : USize) (m : @& Cols) (c : Nat)
-    (next : @& Array Nat) (r0 : Nat) : ByteArray :=
-  groups (stepGather m c next r0 d) nm s 0
+    (next : @& Array Nat) (r0 : Nat) (nseq : Bool) : ByteArray :=
+  let n0 := next.getD r0 0
+  if nseq ∧ n0 % m.rows + 16 * nm ≤ m.rows then
+    groups (stepEW (fun x _ ↦ x) (m.cols.getD (n0 / m.rows * m.width + c) .empty) d
+      (n0 % m.rows).toUSize 0) nm s 0
+  else groups (stepGather m c next r0 d) nm s 0
 
 variable (p : ℕ) [Mont32Field p]
 
@@ -434,10 +439,13 @@ o.append('''  | o, .const x, .const y => fill env.nm s (regOff env d) (Op.wordG 
 @[inline] def loadG (env : @& GroupEnv) (d : Nat) (src : Src) (s : ByteArray) : ByteArray :=
   match src with
   | .next c => gather env.nm s (regOff env d) env.L.main c env.L.next env.L.r0
+    env.L.nseq
   | .prepCur c => copy env.nm s env.L.prepT (regOff env d) (tcolOff env c)
   | .prepNext c => gather env.nm s (regOff env d) env.L.prep c env.L.next env.L.r0
+    env.L.nseq
   | .permCur c => copy env.nm s env.L.permT (regOff env d) (tcolOff env c)
   | .permNext c => gather env.nm s (regOff env d) env.L.perm c env.L.next env.L.r0
+    env.L.nseq
   | .periodic j => copyPer env.nm s env.L.per j (regOff env d) env.sb
   | .isFirstRow => copy env.nm s env.L.first (regOff env d) env.sb
   | .isLastRow => copy env.nm s env.L.last (regOff env d) env.sb

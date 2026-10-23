@@ -790,24 +790,85 @@ theorem copy_upd (X E : Array F) (nm od oa : Nat) (d a : USize) (hd : d.toNat = 
   groupsEW_upd (fun x _ ↦ x) (fun x _ ↦ x) (fun _ _ ↦ rfl) X nm od _ d hd hX hrd E hE oa a ha
     hra 0 fun _ _ ↦ rfl
 
-theorem gather_upd (X : Array F) (M : ColsF p) (nm od c r0 : Nat) (next : Array Nat) (d : USize)
-    (hd : d.toNat = od) (hX : 4 * X.size < USize.size) (hM : M.Addr)
-    (hrd : od + 16 * nm ≤ X.size) (hr : ∀ k < 16 * nm, M.Has (next.getD (r0 + k) 0) c) :
-    gather nm (encode X) d M.enc c next r0 =
-      encode (updR X od (16 * nm) fun k ↦ M.at (next.getD (r0 + k) 0) c) :=
-  pass_upd _ (fun x _ ↦ x) (fun x _ ↦ x) (fun _ _ ↦ rfl) X nm od _ d hd hX hrd
-    (fun k ↦ M.at (next.getD (r0 + k) 0) c) (fun _ ↦ 0) (fun _ _ ↦ rfl) fun m hm ↦
-      ⟨fun k _ ↦ M.enc.at (next.getD (r0 + (16 * m).toUSize.toNat + k) 0) c,
-        fun _ _ ↦ 0, fun k hk ↦ by
-          have h1 := hr (16 * m + k) (by omega)
-          rw [toUSize_toNat (by omega)]
-          dsimp only
-          rw [Nat.add_assoc, M.at_enc hM _ c h1], fun _ _ ↦ rfl, by
-        have hw := winS X od od m nm (fun k ↦ M.at (next.getD (r0 + k) 0) c) d hd hX
-          hrd hm
-        unfold stepGather
-        rw [withWin_pos _ _ _ _ hw.1 hw.2, st16_eq _ _ _ hw.2]
-        rfl⟩
+theorem div_mod_add {n0 k R : Nat} (hk : n0 % R + k < R) :
+    (n0 + k) / R = n0 / R ∧ (n0 + k) % R = n0 % R + k := by
+  have hR : 0 < R := by omega
+  have e : n0 + k = (n0 % R + k) + n0 / R * R := by have := Nat.div_add_mod' n0 R; omega
+  rw [e, Nat.add_mul_div_right _ _ hR, Nat.div_eq_of_lt hk, Nat.zero_add,
+    Nat.add_mul_mod_self_right, Nat.mod_eq_of_lt hk]
+  exact ⟨rfl, rfl⟩
+
+/-- Entry `n0 + k` of columns in blocks, for rows within the block of `n0`. -/
+theorem ColsF.at_add (M : ColsF p) (n0 k c : Nat) (hk : n0 % M.rows + k < M.rows) :
+    M.at (n0 + k) c = (M.col n0 c).getD (n0 % M.rows + k) 0 := by
+  obtain ⟨h1, h2⟩ := div_mod_add hk
+  unfold ColsF.at ColsF.col
+  rw [h1, h2]
+
+theorem gather_upd (X : Array F) (M : ColsF p) (nm od c r0 : Nat) (next : Array Nat)
+    (nseq : Bool) (d : USize) (hd : d.toNat = od) (hX : 4 * X.size < USize.size) (hM : M.Addr)
+    (hrd : od + 16 * nm ≤ X.size) (hr : ∀ k < 16 * nm, M.Has (next.getD (r0 + k) 0) c)
+    (hseq : nseq = true → ∀ k < 16 * nm, next.getD (r0 + k) 0 = next.getD r0 0 + k) :
+    gather nm (encode X) d M.enc c next r0 nseq =
+      encode (updR X od (16 * nm) fun k ↦ M.at (next.getD (r0 + k) 0) c) := by
+  unfold gather
+  dsimp only
+  split
+  · rename_i hc
+    obtain ⟨hs, hblk⟩ := hc
+    have hseq := hseq hs
+    have hR : M.enc.rows = M.rows := rfl
+    have hw : M.enc.width = M.width := rfl
+    rw [hR] at hblk
+    rw [hR, hw]
+    generalize hn0 : next.getD r0 0 = n0 at hblk hseq
+    by_cases hnm : nm = 0
+    · subst hnm
+      simp only [groups, Nat.mul_zero, updR_zero]
+    have hcol : M.enc.cols.getD (n0 / M.rows * M.width + c) .empty = encode (M.col n0 c) := by
+      unfold ColsF.enc ColsF.col
+      dsimp only
+      generalize n0 / M.rows * M.width + c = i
+      rw [Array.getD_eq_getD_getElem?, Array.getD_eq_getD_getElem?, Array.getElem?_map]
+      cases M.C[i]? with
+      | none => exact CompPoly.PackedRepr.encode_empty.symm
+      | some a => rfl
+    have hlast := hr (16 * nm - 1) (by omega)
+    rw [hseq _ (by omega)] at hlast
+    obtain ⟨h1, h2⟩ := div_mod_add (show n0 % M.rows + (16 * nm - 1) < M.rows by omega)
+    have hsz : n0 % M.rows + 16 * nm ≤ (M.col n0 c).size := by
+      unfold ColsF.Has ColsF.col at hlast
+      rw [h1, h2] at hlast
+      unfold ColsF.col
+      omega
+    have hE : 4 * (M.col n0 c).size < USize.size := by
+      unfold ColsF.col
+      rw [Array.getD_eq_getD_getElem?]
+      cases e : M.C[n0 / M.rows * M.width + c]? with
+      | none => show 4 * 0 < USize.size; have := USize.le_size; omega
+      | some a => exact hM a (Array.mem_of_getElem? e)
+    rw [hcol]
+    have e := copy_upd X (M.col n0 c) nm od (n0 % M.rows) d (n0 % M.rows).toUSize hd
+      (toUSize_toNat (by omega)) hX hE hrd hsz
+    unfold copy at e
+    rw [e]
+    congr 1
+    apply updR_congr
+    intro k hk
+    rw [hseq k hk, ColsF.at_add M _ k c (by omega)]
+  · exact pass_upd _ (fun x _ ↦ x) (fun x _ ↦ x) (fun _ _ ↦ rfl) X nm od _ d hd hX hrd
+      (fun k ↦ M.at (next.getD (r0 + k) 0) c) (fun _ ↦ 0) (fun _ _ ↦ rfl) fun m hm ↦
+        ⟨fun k _ ↦ M.enc.at (next.getD (r0 + (16 * m).toUSize.toNat + k) 0) c,
+          fun _ _ ↦ 0, fun k hk ↦ by
+            have h1 := hr (16 * m + k) (by omega)
+            rw [toUSize_toNat (by omega)]
+            dsimp only
+            rw [Nat.add_assoc, M.at_enc hM _ c h1], fun _ _ ↦ rfl, by
+          have hw := winS X od od m nm (fun k ↦ M.at (next.getD (r0 + k) 0) c) d hd hX
+            hrd hm
+          unfold stepGather
+          rw [withWin_pos _ _ _ _ hw.1 hw.2, st16_eq _ _ _ hw.2]
+          rfl⟩
 
 theorem copyPer_upd (X : Array F) (PER : Array (Array F)) (nm od j oa : Nat) (d a : USize)
     (hd : d.toNat = od) (ha : j < PER.size → a.toNat = oa) (hX : 4 * X.size < USize.size)
@@ -1086,21 +1147,21 @@ theorem loadG_rel (V : Array F) (cb cs : Nat) (L : LoadsF p) (SC WT : Array F) (
   cases src <;> simp only [LoadsF.InRange] at hs
   case next c =>
     simp only [loadG, hnm]
-    exact gather_upd _ L.M nm _ c L.r0 L.next _ hro hX hM hrd hs
+    exact gather_upd _ L.M nm _ c L.r0 L.next L.nseq _ hro hX hM hrd hs.1 hs.2
   case prepCur c =>
     simp only [loadG, hnm]
     exact copy_upd _ L.PT nm _ (c * (16 * nm)) _ _ hro (tcolOff_toNat _ c _ _ _ _ L.PT.size hs hPT)
       hX hPT hrd hs
   case prepNext c =>
     simp only [loadG, hnm]
-    exact gather_upd _ L.P nm _ c L.r0 L.next _ hro hX hP hrd hs
+    exact gather_upd _ L.P nm _ c L.r0 L.next L.nseq _ hro hX hP hrd hs.1 hs.2
   case permCur c =>
     simp only [loadG, hnm]
     exact copy_upd _ L.QT nm _ (c * (16 * nm)) _ _ hro (tcolOff_toNat _ c _ _ _ _ L.QT.size hs hQT)
       hX hQT hrd hs
   case permNext c =>
     simp only [loadG, hnm]
-    exact gather_upd _ L.Q nm _ c L.r0 L.next _ hro hX hQ hrd hs
+    exact gather_upd _ L.Q nm _ c L.r0 L.next L.nseq _ hro hX hQ hrd hs.1 hs.2
   case periodic j =>
     simp only [loadG, hnm]
     by_cases hj : j < L.PER.size

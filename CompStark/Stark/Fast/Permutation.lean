@@ -1214,7 +1214,8 @@ theorem permutationWords_eq [Mont32BaseField p] [Binomial4 p] (A : Air F)
     let TS : Array F := Array.ofFn (n := n) fun i ↦ if decide (i.val + 1 < n) = true then 1 else 0
     let L : Prog.LoadsF p := ⟨⟨colBlocks mt n, A.width, n⟩,
       ⟨colBlocks mp n, A.preprocessedWidth, n⟩, blockT mp r0 B, ⟨#[], 0, 1⟩, #[], r0,
-      Array.ofFn (n := n) fun i ↦ (i.val + 1) % n, #[], FS, LS, TS⟩
+      Array.ofFn (n := n) fun i ↦ (i.val + 1) % n,
+      seqRows (Array.ofFn (n := n) fun i ↦ (i.val + 1) % n) r0 B, #[], FS, LS, TS⟩
     have hRn (m : Mat F) (hm : m.height = n) : RowsOk m n :=
       ⟨Nat.two_pow_pos _, by rw [hm, Nat.mod_self], hn⟩
     have hmt : (r0 + B) * A.width ≤ trace.size := by
@@ -1262,9 +1263,10 @@ theorem permutationWords_eq [Mont32BaseField p] [Binomial4 p] (A : Air F)
         L.InRange B src := by
       intro src hsrc
       cases src with
-      | next c => exact fun k hk ↦ colsF_has (hRn mt rfl) _ c (hnext k hk) hsrc
+      | next c => exact ⟨fun k hk ↦ colsF_has (hRn mt rfl) _ c (hnext k hk) hsrc, seqRows_spec⟩
       | prepCur c => exact hcolB mp c hsrc
-      | prepNext c => exact fun k hk ↦ colsF_has (hRn mp rfl) _ c (hnext k hk) hsrc
+      | prepNext c =>
+        exact ⟨fun k hk ↦ colsF_has (hRn mp rfl) _ c (hnext k hk) hsrc, seqRows_spec⟩
       | permCur c => exact absurd hsrc (Nat.not_lt_zero c)
       | permNext c => exact absurd hsrc (Nat.not_lt_zero c)
       | periodic j => exact fun h ↦ absurd h (Nat.not_lt_zero j)
@@ -1358,7 +1360,8 @@ theorem permutationWords_eq [Mont32BaseField p] [Binomial4 p] (A : Air F)
         rowMajorCols (NTTFast.Packed.Native.encodeFields A.preprocessed) A.preprocessedWidth n,
         NTTFast.Packed.Native.transposeRows (NTTFast.Packed.Native.encodeFields A.preprocessed)
           A.preprocessedWidth r0 B, PMat.empty.toCols, ByteArray.empty, r0,
-        Array.ofFn (n := n) fun i ↦ (i.val + 1) % n, #[],
+        Array.ofFn (n := n) fun i ↦ (i.val + 1) % n,
+        seqRows (Array.ofFn (n := n) fun i ↦ (i.val + 1) % n) r0 B, #[],
         NTTFast.Packed.Native.encodeFields FS, NTTFast.Packed.Native.encodeFields LS,
         NTTFast.Packed.Native.encodeFields TS⟩ : Prog.Loads) = L.enc := by
       rw [NTTFast.Packed.Native.encodeFields_eq, NTTFast.Packed.Native.encodeFields_eq,

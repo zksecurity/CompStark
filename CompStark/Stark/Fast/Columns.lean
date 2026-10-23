@@ -133,6 +133,13 @@ theorem empty_toCols (h : Nat) :
   rw [colBlocks_empty]
   simp only [PMat.empty, PMat.toCols, Prog.ColsF.enc, List.map_toArray, List.map_nil]
 
+theorem seqRows_spec {next : Array Nat} {r0 B : Nat} (h : seqRows next r0 B = true) :
+    ∀ k < B, next.getD (r0 + k) 0 = next.getD r0 0 + k := by
+  intro k hk
+  unfold seqRows at h
+  have := List.all_eq_true.mp h k (List.mem_range.mpr hk)
+  simpa only [beq_iff_eq] using this
+
 /-- The values of a packed matrix, row-major, read from its columns. -/
 def PMat.vals (p : ℕ) [Mont32Field p] (m : PMat) : Array (FastField p) :=
   Array.ofFn (n := m.height * m.width) fun k ↦ CompPoly.CPolynomial.NTTFast.Packed.ofWord p

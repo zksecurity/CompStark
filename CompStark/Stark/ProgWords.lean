@@ -277,9 +277,10 @@ structure Cols where
   read (m.cols.getD (r / m.rows * m.width + c) .empty) (r % m.rows)
 
 /-- What a program loads on a block of `B` rows from row `r0`: the trace, the preprocessed trace
-and the permutation trace as columns, with the next row of row `r` at `next[r]`, and the block's
-current rows of the last two transposed (`prepT`, `permT`: column `c` at words `c B`); the
-periodic columns, one buffer each; and the selectors. -/
+and the permutation trace as columns, with the next row of row `r` at `next[r]` (`nseq`: the
+block's next rows are consecutive), and the block's current rows of the last two transposed
+(`prepT`, `permT`: column `c` at words `c B`); the periodic columns, one buffer each; and the
+selectors. -/
 structure Loads where
   main : Cols
   prep : Cols
@@ -288,6 +289,7 @@ structure Loads where
   permT : ByteArray
   r0 : Nat
   next : Array Nat
+  nseq : Bool
   per : Array ByteArray
   first : ByteArray
   last : ByteArray

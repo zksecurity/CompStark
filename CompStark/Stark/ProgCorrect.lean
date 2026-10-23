@@ -269,7 +269,11 @@ theorem Dag.op_built [DecidableEq F] [Hashable F] [Field F] (g : Dag F) (hg : g.
         · split
           · rename_i h1
             exact hself b hb _ fun ctx ↦ by simp only [Op.eval]; rw [vx, h1, one_mul]
-          · exact hmul
+          · split
+            · rename_i h2
+              exact hbin .add b b ⟨hb, hb⟩ _ fun ctx ↦ by
+                simp only [Op.eval]; rw [vx, h2, two_mul]
+            · exact hmul
   | none =>
     cases hcb : g.constAt b with
     | some y =>
@@ -289,7 +293,11 @@ theorem Dag.op_built [DecidableEq F] [Hashable F] [Field F] (g : Dag F) (hg : g.
         · split
           · rename_i h1
             exact hself a ha _ fun ctx ↦ by simp only [Op.eval]; rw [vy, h1, mul_one]
-          · exact hmul
+          · split
+            · rename_i h2
+              exact hbin .add a a ⟨ha, ha⟩ _ fun ctx ↦ by
+                simp only [Op.eval]; rw [vy, h2, mul_two]
+            · exact hmul
     | none =>
       cases o <;> simp only [Dag.op, hca, hcb]
       · exact hadd

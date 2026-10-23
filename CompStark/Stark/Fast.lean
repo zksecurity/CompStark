@@ -308,6 +308,10 @@ def PMat.block (m : @& PMat) (r0 B : Nat) : ByteArray :=
       (m.colAt c (r0 + k)).1.copySlice (4 * (m.colAt c (r0 + k)).2) out out.size 4) B 0 out)
       m.width 0 out
 
+/-- Whether the rows `next[r0], …, next[r0 + B - 1]` are consecutive. -/
+def seqRows (next : @& Array Nat) (r0 B : Nat) : Bool :=
+  (List.range B).all fun k ↦ next.getD (r0 + k) 0 == next.getD r0 0 + k
+
 /-- The empty matrix. -/
 def PMat.empty : PMat := ⟨0, 0, 1, #[]⟩
 
@@ -464,8 +468,8 @@ def quotientWith [Mont32BaseField p] [Binomial4 p] (kernels : List (Prog.GroupKe
   quotientBlocks T prog (groupRun k? prog.code)
     pis.toArray (weightCoords alpha A.constraints.length) fun r0 ↦
       (⟨ext.block r0 T.B, 0, T.B⟩,
-        ⟨ext.toCols, pm.toCols, pm.block r0 T.B, PMat.empty.toCols, .empty, r0, T.next, per,
-          T.first, T.last, T.trans⟩)
+        ⟨ext.toCols, pm.toCols, pm.block r0 T.B, PMat.empty.toCols, .empty, r0, T.next,
+          seqRows T.next r0 T.B, per, T.first, T.last, T.trans⟩)
 
 /-- `quotientOfLde` on packed words. -/
 def quotient [Mont32BaseField p] [Binomial4 p] (A : Air F) (pis : List F)
@@ -550,8 +554,8 @@ def lookupQuotientWith [Mont32BaseField p] [Binomial4 p] (kernels : List (Prog.G
     (pis.toArray ++ (terminal :: chs).toArray.flatMap fun c ↦ (Ext.coeffs c).toArray)
     (extWeightCoords alpha ext.length) fun r0 ↦
       (⟨tr.block r0 T.B, 0, T.B⟩,
-        ⟨tr.toCols, pm.toCols, pm.block r0 T.B, perm.toCols, perm.block r0 T.B, r0, T.next, per,
-          T.first, T.last, T.trans⟩)
+        ⟨tr.toCols, pm.toCols, pm.block r0 T.B, perm.toCols, perm.block r0 T.B, r0, T.next,
+          seqRows T.next r0 T.B, per, T.first, T.last, T.trans⟩)
 
 /-- `lookupQuotientOfLde` on packed words. -/
 def lookupQuotient [Mont32BaseField p] [Binomial4 p] (A : Air F) (ext : List (Lookup.ExtExpr F))
@@ -745,7 +749,7 @@ def permutationWords [Mont32BaseField p] [Binomial4 p] (A : Air F) (ls : List (S
   let blk (r0 : Nat) : Array ByteArray :=
     let tr := CompPoly.CPolynomial.NTTFast.Packed.Native.transposeRows
     let L : Prog.Loads := ⟨mc, pc, tr pwords pw r0 B, PMat.empty.toCols, .empty, r0, next,
-      #[], first, last, trans⟩
+      seqRows next r0 B, #[], first, last, trans⟩
     let v : Prog.View := ⟨tr words w r0 B, 0, B⟩
     let regs := Prog.runBlock p prog.code v L pis.toArray #[] B hS (Array.replicate (4 + prog.regs)
       ⟨CompPoly.CPolynomial.NTTFast.Packed.Native.zeroWords B, ByteArray.size_zeros _⟩)
@@ -806,18 +810,24 @@ def openedAt [Mont32BaseField p] [Binomial4 p] (logBlowup : Nat) (m : PMat) (zs 
         word (sums.getD (4 * k + 2) .empty) j, word (sums.getD (4 * k + 3) .empty) j⟩
 
 /-- Rows `r0, …, r0 + len - 1` of a packed matrix, within one block of its rows, batched by the
-powers of `α`, given as four coordinate planes `a0, …, a3`: four planes of `len` words, every
-column multiply-added into them. -/
+powers of `α`, given as four coordinate planes `a0, …, a3`: four planes of `len` words, the columns
+multiply-added into them four at a time, reduced once per word. -/
 def compressRange (p : ℕ) [Mont32Field p] (m : @& PMat) (a0 a1 a2 a3 : @& ByteArray)
     (r0 len : Nat) : Array ByteArray :=
   let z := CompPoly.CPolynomial.NTTFast.Packed.Native.zeroWords len
   let read := CompPoly.CPolynomial.NTTFast.Packed.Native.read
-  let ps := Merkle.Packed.foldRange (fun (ps : ByteArray × ByteArray × ByteArray × ByteArray) j ↦
-    let c := m.colAt j r0
-    (Words.mulAddInto p ps.1 c.1 c.2 (read a0 j) len,
-      Words.mulAddInto p ps.2.1 c.1 c.2 (read a1 j) len,
-      Words.mulAddInto p ps.2.2.1 c.1 c.2 (read a2 j) len,
-      Words.mulAddInto p ps.2.2.2 c.1 c.2 (read a3 j) len)) m.width 0 (z, z, z, z)
+  let quad (a : ByteArray) (j : Nat) (pl : ByteArray) : ByteArray :=
+    Words.mulAdd4BufsInto p pl (m.colAt j r0).1 (m.colAt (j + 1) r0).1 (m.colAt (j + 2) r0).1
+      (m.colAt (j + 3) r0).1 (m.colAt j r0).2 (m.colAt (j + 1) r0).2 (m.colAt (j + 2) r0).2
+      (m.colAt (j + 3) r0).2 (read a j) (read a (j + 1)) (read a (j + 2)) (read a (j + 3)) len
+  let one (a : ByteArray) (j : Nat) (pl : ByteArray) : ByteArray :=
+    Words.mulAddInto p pl (m.colAt j r0).1 (m.colAt j r0).2 (read a j) len
+  let ps := Merkle.Packed.foldRange (fun (ps : ByteArray × ByteArray × ByteArray × ByteArray) g ↦
+    (quad a0 (4 * g) ps.1, quad a1 (4 * g) ps.2.1, quad a2 (4 * g) ps.2.2.1,
+      quad a3 (4 * g) ps.2.2.2)) (m.width / 4) 0 (z, z, z, z)
+  let ps := Merkle.Packed.foldRange (fun (ps : ByteArray × ByteArray × ByteArray × ByteArray) i ↦
+    let j := 4 * (m.width / 4) + i
+    (one a0 j ps.1, one a1 j ps.2.1, one a2 j ps.2.2.1, one a3 j ps.2.2.2)) (m.width % 4) 0 ps
   #[ps.1, ps.2.1, ps.2.2.1, ps.2.2.2]
 
 /-- Concatenate parallel pieces of planes. -/

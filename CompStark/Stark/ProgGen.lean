@@ -97,8 +97,9 @@ macro "group_kernels " p:term : command => `(
     @[noinline] def copy (nm : Nat) (s : ByteArray) (e : @& ByteArray) (d a : USize) : ByteArray :=
       CompStark.Stark.Prog.copy nm s e d a
     @[noinline] def gather (nm : Nat) (s : ByteArray) (d : USize)
-        (m : @& CompStark.Stark.Prog.Cols) (c : Nat) (next : @& Array Nat) (r0 : Nat) : ByteArray :=
-      CompStark.Stark.Prog.gather nm s d m c next r0
+        (m : @& CompStark.Stark.Prog.Cols) (c : Nat) (next : @& Array Nat) (r0 : Nat)
+        (nseq : Bool) : ByteArray :=
+      CompStark.Stark.Prog.gather nm s d m c next r0 nseq
     @[noinline] def accS (nm : Nat) (rb : USize) (s : ByteArray) (a : USize)
         (wts : @& Array UInt32) (w : Nat) :
         ByteArray :=
@@ -188,7 +189,7 @@ meta def callE (ns : Name) (env s : Lean.Expr) (i : Instr UInt32) : MetaM Lean.E
     let tcol (c : Nat) : MetaM Lean.Expr := pure (mkApp2 (mkConst ``tcolOff) env (natE c))
     let gather (m : Name) (c : Nat) : MetaM Lean.Expr := do
       return mkAppN (mkConst (ns ++ `gather)) #[nm, s, d, ← fld m, natE c,
-        ← fld ``Loads.next, ← fld ``Loads.r0]
+        ← fld ``Loads.next, ← fld ``Loads.r0, ← fld ``Loads.nseq]
     let sb ← mkAppM ``GroupEnv.sb #[env]
     match src with
     | .next c => gather ``Loads.main c

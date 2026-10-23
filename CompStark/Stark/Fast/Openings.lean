@@ -929,64 +929,147 @@ theorem compressRange_cols [Mont32BaseField p] [Binomial4 p] {pm : PMat} {s : Ma
         coord c.val (crow s.values ap s.width (r0 + t.val))) := by
   unfold compressRange
   dsimp only
-  rw [CompStark.Merkle.Packed.foldRange_eq, h.width]
+  rw [CompStark.Merkle.Packed.foldRange_eq, CompStark.Merkle.Packed.foldRange_eq, h.width]
   -- The rows batched by the first `J` columns.
+  let x (J t : Nat) : F := s.values.getD ((r0 + t) * s.width + J) 0
   let part (c J t : Nat) : F := coord c ((List.range' 0 J).foldl (fun acc i ↦
     acc + Challenge.smul (s.values.getD ((r0 + t) * s.width + i) 0) (ap.getD i 0)) 0)
+  have hpart (c J t : Nat) : part c (J + 1) t = part c J t + x J t * coord c (ap.getD J 0) := by
+    simp only [part, x]
+    rw [List.range'_concat, List.foldl_append, List.foldl_cons, List.foldl_nil, Nat.zero_add,
+      Nat.one_mul, coord_add, coord_smul]
   let P (c J : Nat) : ByteArray := encode (Array.ofFn (n := len) fun t ↦ part c J t.val)
   have hz : CompPoly.CPolynomial.NTTFast.Packed.Native.zeroWords len = encode
       (Array.ofFn (n := len) fun _ ↦ (0 : F)) := by
     rw [CompStark.Merkle.Packed.zeroWords_fields (p := p)]
     exact congrArg encode (Array.ext (by rw [Array.size_replicate, Array.size_ofFn])
       fun _ _ _ ↦ by rw [Array.getElem_replicate, Array.getElem_ofFn])
-  have hstep (c J : Nat) (hJ : J < s.width) (pr : EF → F) (hpr : ∀ a, pr a = coord c a) :
+  have hrd (c J : Nat) (hJ : J < s.width) (pr : EF → F) (hpr : ∀ a, pr a = coord c a) :
+      CompPoly.CPolynomial.NTTFast.Packed.Native.read (encode (ap.map pr)) J =
+        (coord c (ap.getD J 0)).val := by
+    rw [Words.read_encode _ _ (by rw [Array.size_map]; exact hsa) (by
+      rw [Array.size_map, hap]; exact hJ), EVec.getD_map _ _ _ (by rw [hap]; exact hJ), hpr,
+      Array.getD_eq_getD_getElem?, Array.getElem?_eq_getElem (by rw [hap]; exact hJ),
+      Option.getD_some]
+  have hs (c J : Nat) : (Array.ofFn (n := len) fun t ↦ part c J t.val).size = len :=
+    Array.size_ofFn
+  have hone (c J : Nat) (hJ : J < s.width) (pr : EF → F) (hpr : ∀ a, pr a = coord c a) :
       Words.mulAddInto p (P c J) (pm.colAt J r0).1 (pm.colAt J r0).2
         (CompPoly.CPolynomial.NTTFast.Packed.Native.read (encode (ap.map pr)) J) len =
         P c (J + 1) := by
     obtain ⟨A, e1, e2, e3, e4⟩ := colAt_spec h r0 len J hblk hr hlen hJ
-    have hs : (Array.ofFn (n := len) fun t ↦ part c J t.val).size = len := Array.size_ofFn
-    have hrd : CompPoly.CPolynomial.NTTFast.Packed.Native.read (encode (ap.map pr)) J =
-        (coord c (ap.getD J 0)).val := by
-      rw [Words.read_encode _ _ (by rw [Array.size_map]; exact hsa) (by
-        rw [Array.size_map, hap]; exact hJ), EVec.getD_map _ _ _ (by rw [hap]; exact hJ), hpr,
-        Array.getD_eq_getD_getElem?, Array.getElem?_eq_getElem (by rw [hap]; exact hJ),
-        Option.getD_some]
     have e := Words.mulAddInto_encode (p := p) (Array.ofFn (n := len) fun t ↦ part c J t.val) A
       (pm.colAt J r0).2 (coord c (ap.getD J 0)) (by rw [hs]; exact e2) (by rw [hs]; exact hl) e3
     rw [hs] at e
-    rw [hrd, e1, e]
+    rw [hrd c J hJ pr hpr, e1, e]
     refine congrArg encode (congrArg Array.ofFn (funext fun t ↦ ?_))
-    rw [getD_ofFn_bounded _ _ t.isLt, e4 t t.isLt]
-    simp only [part]
-    rw [List.range'_concat, List.foldl_append, List.foldl_cons, List.foldl_nil, Nat.zero_add,
-      Nat.one_mul, coord_add, coord_smul, mul_comm]
-  have key : ∀ J ≤ s.width, (List.range J).foldl (fun (ps : ByteArray × ByteArray × ByteArray ×
-      ByteArray) j ↦ (Words.mulAddInto p ps.1 (pm.colAt j r0).1 (pm.colAt j r0).2
-        (CompPoly.CPolynomial.NTTFast.Packed.Native.read (encode (ap.map (·.c0))) j) len,
-      Words.mulAddInto p ps.2.1 (pm.colAt j r0).1 (pm.colAt j r0).2
-        (CompPoly.CPolynomial.NTTFast.Packed.Native.read (encode (ap.map (·.c1))) j) len,
-      Words.mulAddInto p ps.2.2.1 (pm.colAt j r0).1 (pm.colAt j r0).2
-        (CompPoly.CPolynomial.NTTFast.Packed.Native.read (encode (ap.map (·.c2))) j) len,
-      Words.mulAddInto p ps.2.2.2 (pm.colAt j r0).1 (pm.colAt j r0).2
-        (CompPoly.CPolynomial.NTTFast.Packed.Native.read (encode (ap.map (·.c3))) j) len))
+    rw [getD_ofFn_bounded _ _ t.isLt, e4 t t.isLt, hpart]
+  have hquad (c J : Nat) (hJ : J + 4 ≤ s.width) (pr : EF → F) (hpr : ∀ a, pr a = coord c a) :
+      Words.mulAdd4BufsInto p (P c J) (pm.colAt J r0).1 (pm.colAt (J + 1) r0).1
+        (pm.colAt (J + 2) r0).1 (pm.colAt (J + 3) r0).1 (pm.colAt J r0).2
+        (pm.colAt (J + 1) r0).2 (pm.colAt (J + 2) r0).2 (pm.colAt (J + 3) r0).2
+        (CompPoly.CPolynomial.NTTFast.Packed.Native.read (encode (ap.map pr)) J)
+        (CompPoly.CPolynomial.NTTFast.Packed.Native.read (encode (ap.map pr)) (J + 1))
+        (CompPoly.CPolynomial.NTTFast.Packed.Native.read (encode (ap.map pr)) (J + 2))
+        (CompPoly.CPolynomial.NTTFast.Packed.Native.read (encode (ap.map pr)) (J + 3)) len =
+        P c (J + 4) := by
+    obtain ⟨A0, e10, e20, e30, e40⟩ := colAt_spec h r0 len J hblk hr hlen (by omega)
+    obtain ⟨A1, e11, e21, e31, e41⟩ := colAt_spec h r0 len (J + 1) hblk hr hlen (by omega)
+    obtain ⟨A2, e12, e22, e32, e42⟩ := colAt_spec h r0 len (J + 2) hblk hr hlen (by omega)
+    obtain ⟨A3, e13, e23, e33, e43⟩ := colAt_spec h r0 len (J + 3) hblk hr hlen (by omega)
+    have e := Words.mulAdd4BufsInto_encode (p := p)
+      (Array.ofFn (n := len) fun t ↦ part c J t.val) A0 A1 A2 A3 (pm.colAt J r0).2
+      (pm.colAt (J + 1) r0).2 (pm.colAt (J + 2) r0).2 (pm.colAt (J + 3) r0).2
+      (coord c (ap.getD J 0)) (coord c (ap.getD (J + 1) 0)) (coord c (ap.getD (J + 2) 0))
+      (coord c (ap.getD (J + 3) 0)) (by rw [hs]; exact e20) (by rw [hs]; exact e21)
+      (by rw [hs]; exact e22) (by rw [hs]; exact e23) (by rw [hs]; exact hl) e30 e31 e32 e33
+    rw [hs] at e
+    rw [hrd c J (by omega) pr hpr, hrd c (J + 1) (by omega) pr hpr,
+      hrd c (J + 2) (by omega) pr hpr, hrd c (J + 3) (by omega) pr hpr, e10, e11, e12, e13, e]
+    refine congrArg encode (congrArg Array.ofFn (funext fun t ↦ ?_))
+    rw [getD_ofFn_bounded _ _ t.isLt, e40 t t.isLt, e41 t t.isLt, e42 t t.isLt, e43 t t.isLt,
+      show J + 4 = J + 1 + 1 + 1 + 1 by omega, hpart, hpart, hpart, hpart]
+    simp only [x]
+    ring
+  have key4 : ∀ G ≤ s.width / 4, (List.range G).foldl (fun (ps : ByteArray × ByteArray ×
+      ByteArray × ByteArray) g ↦
+      (Words.mulAdd4BufsInto p ps.1 (pm.colAt (4 * g) r0).1 (pm.colAt (4 * g + 1) r0).1
+        (pm.colAt (4 * g + 2) r0).1 (pm.colAt (4 * g + 3) r0).1 (pm.colAt (4 * g) r0).2
+        (pm.colAt (4 * g + 1) r0).2 (pm.colAt (4 * g + 2) r0).2 (pm.colAt (4 * g + 3) r0).2
+        (CompPoly.CPolynomial.NTTFast.Packed.Native.read (encode (ap.map (·.c0))) (4 * g))
+        (CompPoly.CPolynomial.NTTFast.Packed.Native.read (encode (ap.map (·.c0))) (4 * g + 1))
+        (CompPoly.CPolynomial.NTTFast.Packed.Native.read (encode (ap.map (·.c0))) (4 * g + 2))
+        (CompPoly.CPolynomial.NTTFast.Packed.Native.read (encode (ap.map (·.c0))) (4 * g + 3)) len,
+      Words.mulAdd4BufsInto p ps.2.1 (pm.colAt (4 * g) r0).1 (pm.colAt (4 * g + 1) r0).1
+        (pm.colAt (4 * g + 2) r0).1 (pm.colAt (4 * g + 3) r0).1 (pm.colAt (4 * g) r0).2
+        (pm.colAt (4 * g + 1) r0).2 (pm.colAt (4 * g + 2) r0).2 (pm.colAt (4 * g + 3) r0).2
+        (CompPoly.CPolynomial.NTTFast.Packed.Native.read (encode (ap.map (·.c1))) (4 * g))
+        (CompPoly.CPolynomial.NTTFast.Packed.Native.read (encode (ap.map (·.c1))) (4 * g + 1))
+        (CompPoly.CPolynomial.NTTFast.Packed.Native.read (encode (ap.map (·.c1))) (4 * g + 2))
+        (CompPoly.CPolynomial.NTTFast.Packed.Native.read (encode (ap.map (·.c1))) (4 * g + 3)) len,
+      Words.mulAdd4BufsInto p ps.2.2.1 (pm.colAt (4 * g) r0).1 (pm.colAt (4 * g + 1) r0).1
+        (pm.colAt (4 * g + 2) r0).1 (pm.colAt (4 * g + 3) r0).1 (pm.colAt (4 * g) r0).2
+        (pm.colAt (4 * g + 1) r0).2 (pm.colAt (4 * g + 2) r0).2 (pm.colAt (4 * g + 3) r0).2
+        (CompPoly.CPolynomial.NTTFast.Packed.Native.read (encode (ap.map (·.c2))) (4 * g))
+        (CompPoly.CPolynomial.NTTFast.Packed.Native.read (encode (ap.map (·.c2))) (4 * g + 1))
+        (CompPoly.CPolynomial.NTTFast.Packed.Native.read (encode (ap.map (·.c2))) (4 * g + 2))
+        (CompPoly.CPolynomial.NTTFast.Packed.Native.read (encode (ap.map (·.c2))) (4 * g + 3)) len,
+      Words.mulAdd4BufsInto p ps.2.2.2 (pm.colAt (4 * g) r0).1 (pm.colAt (4 * g + 1) r0).1
+        (pm.colAt (4 * g + 2) r0).1 (pm.colAt (4 * g + 3) r0).1 (pm.colAt (4 * g) r0).2
+        (pm.colAt (4 * g + 1) r0).2 (pm.colAt (4 * g + 2) r0).2 (pm.colAt (4 * g + 3) r0).2
+        (CompPoly.CPolynomial.NTTFast.Packed.Native.read (encode (ap.map (·.c3))) (4 * g))
+        (CompPoly.CPolynomial.NTTFast.Packed.Native.read (encode (ap.map (·.c3))) (4 * g + 1))
+        (CompPoly.CPolynomial.NTTFast.Packed.Native.read (encode (ap.map (·.c3))) (4 * g + 2))
+        (CompPoly.CPolynomial.NTTFast.Packed.Native.read (encode (ap.map (·.c3))) (4 * g + 3))
+          len))
       (CompPoly.CPolynomial.NTTFast.Packed.Native.zeroWords len,
         CompPoly.CPolynomial.NTTFast.Packed.Native.zeroWords len,
         CompPoly.CPolynomial.NTTFast.Packed.Native.zeroWords len,
         CompPoly.CPolynomial.NTTFast.Packed.Native.zeroWords len) =
-      (P 0 J, P 1 J, P 2 J, P 3 J) := by
-    intro J hJ
-    induction J with
+      (P 0 (4 * G), P 1 (4 * G), P 2 (4 * G), P 3 (4 * G)) := by
+    intro G hG
+    induction G with
     | zero =>
       rw [List.range_zero, List.foldl_nil, hz]
-      have e (c : Nat) : P c 0 = encode (Array.ofFn (n := len) fun _ ↦ (0 : F)) := by
-        simp only [P, part, List.range'_zero, List.foldl_nil, coord_zero]
+      have e (c : Nat) : P c (4 * 0) = encode (Array.ofFn (n := len) fun _ ↦ (0 : F)) := by
+        simp only [P, part, Nat.mul_zero, List.range'_zero, List.foldl_nil, coord_zero]
       rw [e 0, e 1, e 2, e 3]
-    | succ J ih =>
+    | succ G ih =>
       rw [List.range_succ, List.foldl_append, ih (by omega), List.foldl_cons, List.foldl_nil]
+      have hG4 : 4 * G + 4 ≤ s.width := by omega
       dsimp only
-      rw [hstep 0 J (by omega) (·.c0) fun _ ↦ rfl, hstep 1 J (by omega) (·.c1) fun _ ↦ rfl,
-        hstep 2 J (by omega) (·.c2) fun _ ↦ rfl, hstep 3 J (by omega) (·.c3) fun _ ↦ rfl]
-  rw [key s.width le_rfl]
+      rw [hquad 0 (4 * G) hG4 (·.c0) fun _ ↦ rfl, hquad 1 (4 * G) hG4 (·.c1) fun _ ↦ rfl,
+        hquad 2 (4 * G) hG4 (·.c2) fun _ ↦ rfl, hquad 3 (4 * G) hG4 (·.c3) fun _ ↦ rfl,
+        show 4 * G + 4 = 4 * (G + 1) by omega]
+  have key1 : ∀ I ≤ s.width % 4, (List.range I).foldl (fun (ps : ByteArray × ByteArray ×
+      ByteArray × ByteArray) i ↦
+      (Words.mulAddInto p ps.1 (pm.colAt (4 * (s.width / 4) + i) r0).1
+        (pm.colAt (4 * (s.width / 4) + i) r0).2 (CompPoly.CPolynomial.NTTFast.Packed.Native.read
+          (encode (ap.map (·.c0))) (4 * (s.width / 4) + i)) len,
+      Words.mulAddInto p ps.2.1 (pm.colAt (4 * (s.width / 4) + i) r0).1
+        (pm.colAt (4 * (s.width / 4) + i) r0).2 (CompPoly.CPolynomial.NTTFast.Packed.Native.read
+          (encode (ap.map (·.c1))) (4 * (s.width / 4) + i)) len,
+      Words.mulAddInto p ps.2.2.1 (pm.colAt (4 * (s.width / 4) + i) r0).1
+        (pm.colAt (4 * (s.width / 4) + i) r0).2 (CompPoly.CPolynomial.NTTFast.Packed.Native.read
+          (encode (ap.map (·.c2))) (4 * (s.width / 4) + i)) len,
+      Words.mulAddInto p ps.2.2.2 (pm.colAt (4 * (s.width / 4) + i) r0).1
+        (pm.colAt (4 * (s.width / 4) + i) r0).2 (CompPoly.CPolynomial.NTTFast.Packed.Native.read
+          (encode (ap.map (·.c3))) (4 * (s.width / 4) + i)) len))
+      (P 0 (4 * (s.width / 4)), P 1 (4 * (s.width / 4)), P 2 (4 * (s.width / 4)),
+        P 3 (4 * (s.width / 4))) =
+      (P 0 (4 * (s.width / 4) + I), P 1 (4 * (s.width / 4) + I), P 2 (4 * (s.width / 4) + I),
+        P 3 (4 * (s.width / 4) + I)) := by
+    intro I hI
+    induction I with
+    | zero => rfl
+    | succ I ih =>
+      rw [List.range_succ, List.foldl_append, ih (by omega), List.foldl_cons, List.foldl_nil]
+      have hI4 : 4 * (s.width / 4) + I < s.width := by omega
+      dsimp only
+      rw [hone 0 _ hI4 (·.c0) fun _ ↦ rfl, hone 1 _ hI4 (·.c1) fun _ ↦ rfl,
+        hone 2 _ hI4 (·.c2) fun _ ↦ rfl, hone 3 _ hI4 (·.c3) fun _ ↦ rfl, Nat.add_assoc]
+  rw [key4 (s.width / 4) le_rfl, key1 (s.width % 4) le_rfl,
+    show 4 * (s.width / 4) + s.width % 4 = s.width by omega]
   refine Array.ext (by rfl) fun c hc _ ↦ ?_
   change c < 4 at hc
   match c, hc with

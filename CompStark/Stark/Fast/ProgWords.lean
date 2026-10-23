@@ -94,6 +94,14 @@ theorem getD_updR (X : Array F) (od m : Nat) (G : Nat → F) (idx : Nat) :
   · simp only [h, false_and, ite_false]
     exact (Words.getD_eq_zero X idx (by omega)).symm
 
+theorem updR_congr {X : Array F} {od m : Nat} {G G' : Nat → F} (h : ∀ k < m, G k = G' k) :
+    updR X od m G = updR X od m G' := by
+  unfold updR updF
+  refine congrArg Array.ofFn (funext fun idx ↦ ?_)
+  split
+  · rename_i hi; rw [h _ (by omega)]
+  · rfl
+
 theorem updR_zero (X : Array F) (od : Nat) (G : Nat → F) : updR X od 0 G = X := by
   apply array_eq_of_getD _ _ 0 (size_updR ..)
   intro idx
@@ -597,6 +605,7 @@ structure LoadsF (p : ℕ) [Mont32Field p] where
   QT : Array (FastField p)
   r0 : Nat
   next : Array Nat
+  nseq : Bool
   PER : Array (Array (FastField p))
   FS : Array (FastField p)
   LS : Array (FastField p)
@@ -604,8 +613,8 @@ structure LoadsF (p : ℕ) [Mont32Field p] where
 
 /-- The packed loads. -/
 def LoadsF.enc (L : LoadsF p) : Loads :=
-  ⟨L.M.enc, L.P.enc, encode L.PT, L.Q.enc, encode L.QT, L.r0, L.next, L.PER.map encode,
-    encode L.FS, encode L.LS, encode L.TS⟩
+  ⟨L.M.enc, L.P.enc, encode L.PT, L.Q.enc, encode L.QT, L.r0, L.next, L.nseq,
+    L.PER.map encode, encode L.FS, encode L.LS, encode L.TS⟩
 
 /-- A loaded column on row `i` of a block of `B` rows. -/
 def LoadsF.src (L : LoadsF p) (B i : Nat) : Src → F
@@ -619,13 +628,17 @@ def LoadsF.src (L : LoadsF p) (B i : Nat) : Src → F
   | .isLastRow => L.LS.getD (L.r0 + i) 0
   | .isTransition => L.TS.getD (L.r0 + i) 0
 
+/-- If the block's next rows are said to be consecutive, they are. -/
+def LoadsF.Seq (L : LoadsF p) (B : Nat) : Prop :=
+  L.nseq = true → ∀ k < B, L.next.getD (L.r0 + k) 0 = L.next.getD L.r0 0 + k
+
 /-- A loaded column's words lie in their arrays on the block's `B` rows. -/
 def LoadsF.InRange (L : LoadsF p) (B : Nat) : Src → Prop
-  | .next c => ∀ k < B, L.M.Has (L.next.getD (L.r0 + k) 0) c
+  | .next c => (∀ k < B, L.M.Has (L.next.getD (L.r0 + k) 0) c) ∧ L.Seq B
   | .prepCur c => c * B + B ≤ L.PT.size
-  | .prepNext c => ∀ k < B, L.P.Has (L.next.getD (L.r0 + k) 0) c
+  | .prepNext c => (∀ k < B, L.P.Has (L.next.getD (L.r0 + k) 0) c) ∧ L.Seq B
   | .permCur c => c * B + B ≤ L.QT.size
-  | .permNext c => ∀ k < B, L.Q.Has (L.next.getD (L.r0 + k) 0) c
+  | .permNext c => (∀ k < B, L.Q.Has (L.next.getD (L.r0 + k) 0) c) ∧ L.Seq B
   | .periodic j => j < L.PER.size → L.r0 + B ≤ (L.PER.getD j #[]).size
   | .isFirstRow => L.r0 + B ≤ L.FS.size
   | .isLastRow => L.r0 + B ≤ L.LS.size
@@ -653,11 +666,11 @@ theorem loadSrc_tab (X : Array F) (B S : Nat) (hS : S < USize.size) (hX : X.size
     rw [ho]
     exact this
   cases s with
-  | next c => exact hnext L.M c hM hs
+  | next c => exact hnext L.M c hM hs.1
   | prepCur c => exact copyWords_tab X L.PT B S hS hX hSX hPT (c * B) hs out hr ho
-  | prepNext c => exact hnext L.P c hP hs
+  | prepNext c => exact hnext L.P c hP hs.1
   | permCur c => exact copyWords_tab X L.QT B S hS hX hSX hQT (c * B) hs out hr ho
-  | permNext c => exact hnext L.Q c hQ hs
+  | permNext c => exact hnext L.Q c hQ hs.1
   | periodic j =>
     simp only [loadSrc, LoadsF.enc, LoadsF.src, Array.getElem?_map]
     by_cases hj : j < L.PER.size

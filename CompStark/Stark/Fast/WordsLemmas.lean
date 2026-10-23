@@ -438,6 +438,62 @@ theorem mulAdd4Into_upto (o b : Array F) (o0 o1 o2 o3 : Nat) (c0 c1 c2 c3 : F) (
       exact write_upto _ f k (by omega) hso),
     Nat.add_sub_cancel' (Nat.mul_div_le n 16)]
 
+theorem mulAdd4BufsInto16_encode (o B0 B1 B2 B3 : Array F) (io i0 i1 i2 i3 : USize)
+    (c0 c1 c2 c3 : F) (hout h0 h1 h2 h3) (hi : io.toNat + 16 ≤ o.size)
+    (ho : 4 * o.size < USize.size) :
+    mulAdd4BufsInto16 p (encode o) io (encode B0) (encode B1) (encode B2) (encode B3) i0 i1 i2 i3
+      c0.val c1.val c2.val c3.val hout h0 h1 h2 h3 = encode (splice o io.toNat (lit16 fun t ↦
+        o.getD (io.toNat + t) 0 + (B0.getD (i0.toNat + t) 0 * c0 + B1.getD (i1.toNat + t) 0 * c1 +
+          B2.getD (i2.toNat + t) 0 * c2 + B3.getD (i3.toNat + t) 0 * c3))) := by
+  unfold mulAdd4BufsInto16
+  simp only [rd_encode, mulAdd4_val, add_val]
+  rw [CompPoly.CPolynomial.NTTFast.Packed.Native.write16U_encode _ _
+    (by rw [size_encode_fields]; exact ho) hi]
+  rfl
+
+/-- `out[k] += c0 · B0[o0 + k] + c1 · B1[o1 + k] + c2 · B2[o2 + k] + c3 · B3[o3 + k]` for all `n`
+words of `out`. -/
+theorem mulAdd4BufsInto_encode (o B0 B1 B2 B3 : Array F) (o0 o1 o2 o3 : Nat) (c0 c1 c2 c3 : F)
+    (h0 : o0 + o.size ≤ B0.size) (h1 : o1 + o.size ≤ B1.size) (h2 : o2 + o.size ≤ B2.size)
+    (h3 : o3 + o.size ≤ B3.size) (hso : 4 * o.size < USize.size)
+    (hs0 : 4 * B0.size < USize.size) (hs1 : 4 * B1.size < USize.size)
+    (hs2 : 4 * B2.size < USize.size) (hs3 : 4 * B3.size < USize.size) :
+    mulAdd4BufsInto p (encode o) (encode B0) (encode B1) (encode B2) (encode B3) o0 o1 o2 o3
+      c0.val c1.val c2.val c3.val o.size =
+      encode (Array.ofFn (n := o.size) fun k ↦ o.getD k.val 0 +
+        (B0.getD (o0 + k.val) 0 * c0 + B1.getD (o1 + k.val) 0 * c1 + B2.getD (o2 + k.val) 0 * c2 +
+          B3.getD (o3 + k.val) 0 * c3)) := by
+  unfold mulAdd4BufsInto
+  simp only [Std.Legacy.Range.forIn_eq_forIn_range', Std.Legacy.Range.size,
+    Nat.sub_zero, Nat.add_sub_cancel, Nat.div_one, ← List.range_eq_range',
+    bind_pure, pure_bind, dite_pure_yield, List.forIn_pure_yield_eq_foldl, Id.run_pure]
+  have hso' : (encode o).size = 4 * o.size := size_encode_fields o
+  let f (k : Nat) : F := o.getD k 0 + (B0.getD (o0 + k) 0 * c0 + B1.getD (o1 + k) 0 * c1 +
+    B2.getD (o2 + k) 0 * c2 + B3.getD (o3 + k) 0 * c3)
+  rw [foldl_blocks o f (o.size / 16) _ (fun m hm ↦ by
+    have h16 : 16 * m + 16 ≤ o.size := by omega
+    rw [dite_eq_left_of_eq_true (eq_true ⟨by rw [size_encode_fields, size_upto]; omega,
+      by rw [size_encode_fields]; omega, by rw [size_encode_fields]; omega,
+      by rw [size_encode_fields]; omega, by rw [size_encode_fields]; omega,
+      by rw [size_encode_fields, size_upto]; omega, by rw [size_encode_fields]; omega,
+      by rw [size_encode_fields]; omega, by rw [size_encode_fields]; omega,
+      by rw [size_encode_fields]; omega⟩),
+      mulAdd4BufsInto16_encode _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _
+        (by simp only [USize.toNat_ofNatLT, size_upto]; omega) (by rw [size_upto]; exact hso)]
+    simp only [USize.toNat_ofNatLT]
+    refine Eq.trans ?_ (congrArg encode (splice_upto o f _ (by omega)))
+    congr 2
+    refine congrArg lit16 (funext fun t ↦ ?_)
+    rw [getD_upto_of_le _ _ _ _ (by omega)]
+    simp only [f, Nat.add_assoc]),
+    foldl_tail _ f _ _ _ (fun k _ hk ↦ by
+      rw [read_encode _ k (by rw [size_upto]; exact hso) (by rw [size_upto]; omega),
+        read_encode B0 _ hs0 (by omega), read_encode B1 _ hs1 (by omega),
+        read_encode B2 _ hs2 (by omega), read_encode B3 _ hs3 (by omega),
+        getD_upto_of_le _ _ _ _ (Nat.le_refl _), mulAdd4_val, add_val]
+      exact write_upto _ f k (by omega) hso),
+    Nat.add_sub_cancel' (Nat.mul_div_le o.size 16), upto_full _ _ _ rfl]
+
 /-- `out[k] += c0 · b[o0 + k] + c1 · b[o1 + k] + c2 · b[o2 + k] + c3 · b[o3 + k]` for all `n` words
 of `out`. -/
 theorem mulAdd4Into_encode (o b : Array F) (o0 o1 o2 o3 : Nat) (c0 c1 c2 c3 : F)

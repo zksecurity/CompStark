@@ -586,8 +586,8 @@ def qLoads [Mont32BaseField p] (d l : Nat) (s sp rs : Mat F) (R Rp Rq : Nat)
     (pl : List (Array F)) (nx : Array Nat) (r0 B : Nat) :
     Prog.LoadsF p :=
   ⟨⟨colBlocks s R, s.width, R⟩, ⟨colBlocks sp Rp, sp.width, Rp⟩, blockT sp r0 B,
-    ⟨colBlocks rs Rq, rs.width, Rq⟩, blockT rs r0 B, r0, nx, perT d l pl, selT d l (qFirst d l),
-    selT d l (qLast d l), selT d l (qTrans d l)⟩
+    ⟨colBlocks rs Rq, rs.width, Rq⟩, blockT rs r0 B, r0, nx, seqRows nx r0 B, perT d l pl,
+    selT d l (qFirst d l), selT d l (qLast d l), selT d l (qTrans d l)⟩
 
 /-- A matrix of `H` rows, at least the quotient domain's, addressable. -/
 def QShape (d l H : Nat) (m : Mat F) : Prop :=
@@ -642,22 +642,25 @@ theorem qLoads_inRange [Mont32BaseField p] {d l H : Nat} {s sp rs : Mat F} {R Rp
     rw [Nat.succ_mul] at this; omega
   cases src with
   | next c =>
-    intro k hk
+    refine ⟨fun k hk ↦ ?_, ?_⟩
     have := hnx k hk
     have := hs.2.1
     exact colsF_has hR ((quotientTables (p := p) d l).next.getD (r0 + k) 0) c (by omega) h
+    exact seqRows_spec
   | prepCur c => exact hcolB sp c h
   | prepNext c =>
-    intro k hk
+    refine ⟨fun k hk ↦ ?_, ?_⟩
     have := hnx k hk
     have := hsp.2.1
     exact colsF_has hRp ((quotientTables (p := p) d l).next.getD (r0 + k) 0) c (by omega) h
+    exact seqRows_spec
   | permCur c => exact hcolB rs c h
   | permNext c =>
-    intro k hk
+    refine ⟨fun k hk ↦ ?_, ?_⟩
     have := hnx k hk
     have := hrs.2.1
     exact colsF_has hRq ((quotientTables (p := p) d l).next.getD (r0 + k) 0) c (by omega) h
+    exact seqRows_spec
   | periodic j =>
     intro hj
     have hj' : j < (perT d l pl).size := hj

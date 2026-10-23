@@ -185,9 +185,11 @@ def op [Field F] (g : Dag F) (o : Op) (a b : Nat) : Dag F × Nat :=
   | .sub, _, none => if a = b then g.intern (.const 0) else g.intern (.bin .sub a b)
   | .mul, some x, none =>
     if x = 0 then g.intern (.const 0) else if x = 1 then (g, b)
+    else if x = 2 then g.intern (.bin .add b b)
     else g.intern (.bin .mul (min a b) (max a b))
   | .mul, none, some y =>
     if y = 0 then g.intern (.const 0) else if y = 1 then (g, a)
+    else if y = 2 then g.intern (.bin .add a a)
     else g.intern (.bin .mul (min a b) (max a b))
   | .mul, none, none => g.intern (.bin .mul (min a b) (max a b))
 

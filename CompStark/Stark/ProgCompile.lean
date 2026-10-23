@@ -403,7 +403,7 @@ theorem Dag.intern_leafOk {cq : Nat → Prop} {lq : Src → Prop} (g : Dag F) (h
 theorem Dag.op_leafOk [Field F] {cq : Nat → Prop} {lq : Src → Prop} (g : Dag F)
     (h : g.LeafOk cq lq) (o : Op) (a b : Nat) : (g.op o a b).1.LeafOk cq lq := by
   unfold Dag.op
-  split <;> (try split) <;> (try split) <;>
+  split <;> (try split) <;> (try split) <;> (try split) <;>
     first
     | exact h
     | exact g.intern_leafOk h _ trivial
