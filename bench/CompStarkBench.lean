@@ -8,6 +8,7 @@ import CompStark.Mont32.Json
 import CompStark.Batch.Prover
 import CompStark.Stark.Fingerprint
 import CompStarkFixtures.Keccak
+import CompStarkFixtures.KeccakKernel
 
 /-! # CompStark micro-benchmarks
 
@@ -96,7 +97,7 @@ def lookupBatch : List (CompStark.Batch.Instance KoalaBear.Fast.Field) ×
 open CompStark CompStark.Stark CompStark.Fri in
 /-- The wall time of each phase of the fast prover on `wide 64`, `2 ^ logN` rows, blowup 2. -/
 def phases (logN : Nat) : IO UInt32 := do
-  let B := CompStark.KoalaBear.backendFor 1 [(logN, 1)]
+  let B := CompStark.KoalaBear.backendFor [] 1 [(logN, 1)]
   let P : Params := ⟨1, 0, 1, 100, 0, 16, 0, 0, 0, 0⟩
   let A := wide 64
   let trace := wideTrace 64 (2 ^ logN)
@@ -161,7 +162,7 @@ def phasesBatch : IO UInt32 := do
   let logNs := [20, 19, 16]
   let instances : List (Batch.Instance KoalaBear.Fast.Field) :=
     logNs.map fun logN ↦ ⟨wide 64, logN⟩
-  let B := CompStark.KoalaBear.backendFor P.logBlowup (Batch.shapes instances)
+  let B := CompStark.KoalaBear.backendFor [] P.logBlowup (Batch.shapes instances)
   for k in [0:2] do
     let traces := logNs.map fun logN ↦ (wideTrace 64 (2 ^ logN)).set! 0 (k : _)
     let exts ← timed "trace lde" (fun _ ↦ (instances.zip traces).map fun (I, t) ↦
@@ -170,7 +171,8 @@ def phasesBatch : IO UInt32 := do
       fun c ↦ s!"{((B.cap c 0).getD 0 0)[0].val}"
     let alpha : _root_.KoalaBear.Fast.Ext4 := ⟨5, 7, 11, k⟩
     let qs ← timed "quotient" (fun _ ↦ (instances.zip exts).map fun (I, e) ↦
-      B.quotient I.air [] I.logN I.logQuotientChunks e none alpha) fun q ↦ s!"{(q.map (·.size)).sum}"
+      B.quotient I.air [] I.logN I.logQuotientChunks e none alpha) fun q ↦ s!"{(q.map
+          (·.size)).sum}"
     let chunks ← timed "quotient chunks lde" (fun _ ↦ (instances.zip qs).map fun (I, q) ↦
       chunksOf B P I.logN I.logQuotientChunks q) fun c ↦ s!"{(c.map (·.length)).sum}"
     let quotC ← timed "quotient commit" (fun _ ↦ B.commit chunks.flatten)
@@ -210,7 +212,8 @@ def keccak (logN reps : Nat) : IO UInt32 := do
   let P : Params := ⟨1, 0, 3, 87, 0, 16, 10, 0, 0, 3⟩
   let inputs := (Array.range (2 ^ logN / 24)).map fun k ↦ (Array.range 25).map fun i ↦
     (splitMix (25 * k + i).toUInt64).2
-  let B := CompStark.KoalaBear.backendFor 1 [(logN, A.logQuotientChunks logN)]
+  let B := CompStark.KoalaBear.backendFor [CompStark.Fixtures.KeccakKernel.kernel] 1
+    [(logN, A.logQuotientChunks logN)]
   let labels := #["tracegen", "trace lde", "trace commit", "quotient", "whole proof"]
   let mut samples : Array (Array Nat) := labels.map fun _ ↦ #[]
   for _ in [0:reps] do
@@ -254,7 +257,8 @@ def quotientPhase (air : String) (logN reps : Nat) : IO UInt32 := do
       pure (mulAirLookups 8 true (List.replicate 8 "MulFib"), #[encodeFields (mulTrace n 8)])
     | _ => IO.eprintln "AIR: keccak, wide, widebus or lookup"; return 1
   let I : Batch.Instance KoalaBear.Fast.Field := ⟨A, logN⟩
-  let B := CompStark.KoalaBear.backendFor 1 [(logN, I.logQuotientChunks)]
+  let B := CompStark.KoalaBear.backendFor [CompStark.Fixtures.KeccakKernel.kernel] 1
+    [(logN, I.logQuotientChunks)]
   let trace := B.traceValues chunks
   let ext := B.ldeTrace logN 1 gen A.width chunks
   let alpha : _root_.KoalaBear.Fast.Ext4 := ⟨5, 7, 11, 13⟩
@@ -472,7 +476,7 @@ def main (args : List String) : IO UInt32 := do
     if backend == "fast" then
       -- The fast backend's extension plans are built once, outside timing, as Plonky3's twiddles.
       proveTimed s!"fast prove {air} 2^{logN}"
-        (CompStark.KoalaBear.backendFor P.logBlowup [(logN, A.logQuotientChunks logN)]) P A logN
+        (CompStark.KoalaBear.backendFor [] P.logBlowup [(logN, A.logQuotientChunks logN)]) P A logN
         (fun k ↦ #[encodeFields (trace.set! 0 (k : _))]) pis rust?
     else
       proveTimed s!"spec prove {air} 2^{logN}" B P A logN (fun k ↦ trace.set! 0 (k : _)) pis
@@ -491,7 +495,7 @@ def main (args : List String) : IO UInt32 := do
     let traces := logNs.map fun logN ↦ wideTrace 64 (2 ^ logN)
     let pis := logNs.map fun _ ↦ []
     -- The fast backend's extension plans are built once, outside timing, as Plonky3's twiddles.
-    let B := CompStark.KoalaBear.backendFor P.logBlowup (CompStark.Batch.shapes instances)
+    let B := CompStark.KoalaBear.backendFor [] P.logBlowup (CompStark.Batch.shapes instances)
     let mut samples := #[]
     for k in [0:3] do
       let ws ← IO.lazyPure fun _ ↦ traces.map fun t ↦ #[encodeFields (t.set! 0 (k : _))]
@@ -513,7 +517,7 @@ def main (args : List String) : IO UInt32 := do
       | _ => IO.eprintln "six parameters"; return 1
     let (instances, traces, pis) := lookupBatch
     let words := traces.map fun t ↦ #[encodeFields t]
-    let B := CompStark.KoalaBear.backendFor P.logBlowup (CompStark.Batch.shapes instances)
+    let B := CompStark.KoalaBear.backendFor [] P.logBlowup (CompStark.Batch.shapes instances)
     if let path :: _ := rest.drop ps.length then
       let rust ← IO.ofExcept (CompStark.Stark.Json.parseBatch (p := KoalaBear.fieldSize)
         (EF := KoalaBear.Fast.Ext4) (← IO.FS.readFile path))

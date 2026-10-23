@@ -12,6 +12,7 @@ public import CompPoly.Univariate.NTTFast.Packed.CosetLde
 public import CompStark.Stark.Words
 public import CompStark.Stark.ExtWords
 public import CompStark.Stark.ProgWords
+public import CompStark.Stark.ProgGroup
 
 /-! # The fast prover backend
 
@@ -343,29 +344,53 @@ def weightCoords [Mont32BaseField p] [Binomial4 p] (alpha : EF) (K : Nat) : Arra
   Array.ofFn (n := 4 * K) fun i ↦
     (Ext.coeffs (Ext.pow alpha (K - 1 - i.val / 4))).getD (i.val % 4) 0
 
+/-- A program on groups of rows: a kernel of `kernels` with the program's code, or the program
+interpreted. -/
+@[noinline] def groupRun (kernels : List (Prog.GroupKernel p)) (code : Array (Prog.Instr F)) :
+    Prog.GroupEnv → ByteArray → ByteArray :=
+  match kernels.find? fun k ↦ k.code == code with
+  | some k => k.run
+  | none => fun env s ↦ Prog.run (Prog.groupMachine p env) code s
+
 /-- The values of a program accumulating every row of the quotient domain, in the extension's
-bit-reversed order, put in natural order: the program runs on blocks of rows (`Prog.runBlock`),
-`block r0` giving the block from row `r0` its view and loads, in parallel ranges of blocks; every
-row's accumulators are its value's coordinates, times the inverse vanishing polynomial. -/
+bit-reversed order, put in natural order: the program runs on blocks of rows, `block r0` giving the
+block from row `r0` its view and loads, in parallel ranges of blocks, each range with one state; on
+blocks of a multiple of sixteen rows as one group (`run`, the program on the group machine), else
+by `Prog.runBlock`. Every row's accumulators are its value's coordinates, times the inverse
+vanishing polynomial. -/
 def quotientBlocks [Mont32BaseField p] [Binomial4 p] (T : QuotientTables p) (prog : Prog F)
-    (scal wts : Array F) (block : Nat → Prog.View × Prog.Loads) : Array EF := Id.run do
+    (run : Prog.GroupEnv → ByteArray → ByteArray) (scal wts : Array F)
+    (block : Nat → Prog.View × Prog.Loads) : Array EF := Id.run do
   let n := 2 ^ (T.degreeBits + T.logChunks)
   let period := 2 ^ T.logChunks
   let perm := T.perm
   let B := T.B
   let blocks := n / B
+  let scalW := scal.map (·.val)
+  let wtsW := wts.map (·.val)
   let byRow := parChunks blocks (min blocks 16) fun b0 nb ↦ Id.run do
     let mut out := Array.emptyWithCapacity (nb * B)
-    let mut regs : Prog.Regs (4 * B) := Array.replicate (4 + prog.regs)
-      ⟨CompPoly.CPolynomial.NTTFast.Packed.Native.zeroWords B, ByteArray.size_zeros _⟩
-    for blk in [b0:b0 + nb] do
-      let r0 := blk * B
-      let (v, L) := block r0
-      regs := Prog.runBlock p prog.code v L scal wts B T.hB (Prog.clearAcc T.hB B regs)
-      for i in [0:B] do
-        out := out.push (Ext4.smul (T.invZh.getD (perm.getD (r0 + i) 0 % period) 0)
-          ⟨word (Prog.regBuf regs 0) i, word (Prog.regBuf regs 1) i,
-            word (Prog.regBuf regs 2) i, word (Prog.regBuf regs 3) i⟩)
+    if B % 16 = 0 ∧ 4 * (B * (4 + prog.regs)) < USize.size then
+      let mut st := CompPoly.CPolynomial.NTTFast.Packed.Native.zeroWords (B * (4 + prog.regs))
+      for blk in [b0:b0 + nb] do
+        let r0 := blk * B
+        let (v, L) := block r0
+        let env := Prog.blockEnv B v L scalW wtsW
+        st := run env (Prog.clearAccs B st)
+        for i in [0:B] do
+          out := out.push (Ext4.smul (T.invZh.getD (perm.getD (r0 + i) 0 % period) 0)
+            ⟨word st i, word st (B + i), word st (2 * B + i), word st (3 * B + i)⟩)
+    else
+      let mut regs : Prog.Regs (4 * B) := Array.replicate (4 + prog.regs)
+        ⟨CompPoly.CPolynomial.NTTFast.Packed.Native.zeroWords B, ByteArray.size_zeros _⟩
+      for blk in [b0:b0 + nb] do
+        let r0 := blk * B
+        let (v, L) := block r0
+        regs := Prog.runBlock p prog.code v L scal wts B T.hB (Prog.clearAcc T.hB B regs)
+        for i in [0:B] do
+          out := out.push (Ext4.smul (T.invZh.getD (perm.getD (r0 + i) 0 % period) 0)
+            ⟨word (Prog.regBuf regs 0) i, word (Prog.regBuf regs 1) i,
+              word (Prog.regBuf regs 2) i, word (Prog.regBuf regs 3) i⟩)
     return out
   return perm.map fun r ↦ byRow.getD r 0
 
@@ -380,13 +405,15 @@ def periodicWords [Mont32BaseField p] (T : QuotientTables p) (A : Air F) : Array
 /-- `quotientOfLde` on packed words with the shape's tables `T`: the constraints' program
 (`Prog.compile`) on blocks of rows in the extension's bit-reversed order (`quotientBlocks`),
 every block's rows of the extensions transposed, their next rows gathered. -/
-def quotientWith [Mont32BaseField p] [Binomial4 p] (T : QuotientTables p) (A : Air F)
-    (pis : List F) (ext : PMat) (prep : Option PMat) (alpha : EF) : Array EF :=
+def quotientWith [Mont32BaseField p] [Binomial4 p] (kernels : List (Prog.GroupKernel p))
+    (T : QuotientTables p) (A : Air F) (pis : List F) (ext : PMat) (prep : Option PMat)
+    (alpha : EF) : Array EF :=
   let pw := (prep.map (·.width)).getD 0
   let pwords := (prep.map (·.words)).getD ByteArray.empty
   let per := periodicWords T A
   let tr := CompPoly.CPolynomial.NTTFast.Packed.Native.transposeRows
-  quotientBlocks T (Prog.compile A.constraints)
+  let prog := Prog.compile A.constraints
+  quotientBlocks T prog (groupRun kernels prog.code)
     pis.toArray (weightCoords alpha A.constraints.length) fun r0 ↦
       (⟨tr ext.words ext.width r0 T.B, 0, T.B⟩,
         ⟨ext.words, ext.width, pwords, pw, tr pwords pw r0 T.B, .empty, 0, .empty, r0, T.next,
@@ -395,7 +422,7 @@ def quotientWith [Mont32BaseField p] [Binomial4 p] (T : QuotientTables p) (A : A
 /-- `quotientOfLde` on packed words. -/
 def quotient [Mont32BaseField p] [Binomial4 p] (A : Air F) (pis : List F)
     (degreeBits logChunks : Nat) (ext : PMat) (prep : Option PMat) (alpha : EF) : Array EF :=
-  quotientWith (quotientTables degreeBits logChunks) A pis ext prep alpha
+  quotientWith [] (quotientTables degreeBits logChunks) A pis ext prep alpha
 
 /-! ### LogUp kernels -/
 
@@ -464,14 +491,15 @@ def extWeightCoords [Mont32BaseField p] [Binomial4 p] (alpha : EF) (K : Nat) : A
 /-- `lookupQuotientOfLde` on packed words with the shape's tables `T`, as `quotientWith`: the
 extension constraints' program (`Prog.compileExt`, its scalars the public values, the terminal
 and the challenges) on blocks of rows (`quotientBlocks`). -/
-def lookupQuotientWith [Mont32BaseField p] [Binomial4 p] (T : QuotientTables p) (A : Air F)
-    (ext : List (Lookup.ExtExpr F)) (pis : List F) (tr : PMat) (prep : Option PMat) (perm : PMat)
-    (chs : List EF) (terminal alpha : EF) : Array EF :=
+def lookupQuotientWith [Mont32BaseField p] [Binomial4 p] (kernels : List (Prog.GroupKernel p))
+    (T : QuotientTables p) (A : Air F) (ext : List (Lookup.ExtExpr F)) (pis : List F) (tr : PMat)
+    (prep : Option PMat) (perm : PMat) (chs : List EF) (terminal alpha : EF) : Array EF :=
   let pw := (prep.map (·.width)).getD 0
   let pwords := (prep.map (·.words)).getD ByteArray.empty
   let per := periodicWords T A
   let tp := CompPoly.CPolynomial.NTTFast.Packed.Native.transposeRows
-  quotientBlocks T (Prog.compileExt Binomial4.W pis.length ext)
+  let prog := Prog.compileExt Binomial4.W pis.length ext
+  quotientBlocks T prog (groupRun kernels prog.code)
     (pis.toArray ++ (terminal :: chs).toArray.flatMap fun c ↦ (Ext.coeffs c).toArray)
     (extWeightCoords alpha ext.length) fun r0 ↦
       (⟨tp tr.words tr.width r0 T.B, 0, T.B⟩,
@@ -482,7 +510,7 @@ def lookupQuotientWith [Mont32BaseField p] [Binomial4 p] (T : QuotientTables p) 
 def lookupQuotient [Mont32BaseField p] [Binomial4 p] (A : Air F) (ext : List (Lookup.ExtExpr F))
     (pis : List F) (degreeBits logChunks : Nat) (tr : PMat) (prep : Option PMat) (perm : PMat)
     (chs : List EF) (terminal alpha : EF) : Array EF :=
-  lookupQuotientWith (quotientTables degreeBits logChunks) A ext pis tr prep perm chs terminal
+  lookupQuotientWith [] (quotientTables degreeBits logChunks) A ext pis tr prep perm chs terminal
     alpha
 
 /-- The words `a` of a block of `B` with every zero replaced by one. -/
@@ -673,7 +701,8 @@ def permutationWords [Mont32BaseField p] [Binomial4 p] (A : Air F) (ls : List (S
     let regs := Prog.runBlock p prog.code v L pis.toArray #[] B hS (Array.replicate (4 + prog.regs)
       ⟨CompPoly.CPolynomial.NTTFast.Packed.Native.zeroWords B, ByteArray.size_zeros _⟩)
     Prog.outWords p prog.outs v regs B
-  assembleRanges blk (fun ws k ↦ ws.getD k .empty) (indexTuples tups 0) chs B ((ls.length + 1) * 4) blocks
+  assembleRanges blk (fun ws k ↦ ws.getD k .empty) (indexTuples tups 0) chs B
+      ((ls.length + 1) * 4) blocks
 
 /-- `permutationLdeOf` on packed words: the permutation trace's words (`permutationWords`)
 extended by CompPoly's batched coset LDE with plans from `plans`. -/
@@ -927,8 +956,10 @@ def backend : Backend F EF 24 where
 /-- The fast backend with the extension plans and quotient tables of proofs of instances of the
 shapes `shapes` prepared: for every `(logN, logChunks)`, a `2 ^ logN`-row trace with
 `2 ^ logChunks` quotient chunks, the trace's extension on `g · ⟨ω_N⟩`, every chunk's and the
-quotient's tables. -/
-def backendFor (logBlowup : Nat) (shapes : List (Nat × Nat)) : Backend F EF 24 :=
+quotient's tables, and the quotients' programs run by a kernel of `kernels` with their code
+(`groupRun`). -/
+def backendFor (kernels : List (Prog.GroupKernel p)) (logBlowup : Nat) (shapes : List (Nat × Nat)) :
+    Backend F EF 24 :=
   let shapes := shapes.eraseDups
   let tables := shapes.map fun (n, c) ↦ (n, c, quotientTables n c)
   let plans := shapes.flatMap fun (n, c) ↦ ldePlans n logBlowup c
@@ -938,11 +969,11 @@ def backendFor (logBlowup : Nat) (shapes : List (Nat × Nat)) : Backend F EF 24 
     permutation := permutationLdeWith plans
     quotient := fun A pis db lc ext prep alpha ↦
       match tables.find? fun (n, c, _) ↦ n == db && c == lc with
-      | some (_, _, T) => quotientWith T A pis ext prep alpha
+      | some (_, _, T) => quotientWith kernels T A pis ext prep alpha
       | none => quotient A pis db lc ext prep alpha
     lookupQuotient := fun A ext pis db lc tr prep perm chs t alpha ↦
       match tables.find? fun (n, c, _) ↦ n == db && c == lc with
-      | some (_, _, T) => lookupQuotientWith T A ext pis tr prep perm chs t alpha
+      | some (_, _, T) => lookupQuotientWith kernels T A ext pis tr prep perm chs t alpha
       | none => lookupQuotient A ext pis db lc tr prep perm chs t alpha }
 
 end CompStark.Stark.Fast

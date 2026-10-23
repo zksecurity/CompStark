@@ -6,6 +6,7 @@ module
 
 public import CompStark.Stark.Fast.Openings
 public import CompStark.Stark.Fast.ProgWords
+public import CompStark.Stark.Fast.ProgGroup
 public import CompStark.Stark.Constraints
 
 /-! # The fast quotient is the specification's
@@ -215,10 +216,23 @@ theorem foldl_blocks_eq {α σ : Type} (B b0 nb : Nat) (g : Nat → α) (Inv : �
         congrArg Array.ofFn (funext fun i ↦ by simp only; congr 1; ring),
       ofFn_append_ofFn (fun k ↦ g (b0 * B + k)) (m * B) B, show m * B + B = (m + 1) * B by ring]
 
+/-- A program on groups of rows is the program on the group machine. -/
+theorem groupRun_eq (kernels : List (Prog.GroupKernel p)) (code : Array (Prog.Instr F))
+    (env : Prog.GroupEnv) (s : ByteArray) :
+    groupRun kernels code env s = Prog.run (Prog.groupMachine p env) code s := by
+  unfold groupRun
+  rcases hk : List.find? (fun k ↦ k.code == code) kernels with _ | k
+  · rw [hk]
+  · rw [hk]
+    have := beq_iff_eq.mp (List.find?_some (p := fun k : Prog.GroupKernel p ↦ k.code == code) hk)
+    show k.run env s = _
+    rw [k.run_eq, this]
+
 /-- **The quotient's blocks**: a program accumulating, on every block of rows, every stored row
 `j`'s value coordinates `Q j`, gives the quotient values in natural order. -/
 theorem quotientBlocks_eq [Mont32BaseField p] [Binomial4 p] (d l : Nat) (prog : Prog F)
-    (SC WT : Array F)
+    (run : Prog.GroupEnv → ByteArray → ByteArray)
+    (hrun : ∀ env s, run env s = Prog.run (Prog.groupMachine p env) prog.code s) (SC WT : Array F)
     (block : Nat → Prog.View × Prog.Loads) (Q : Nat → Nat → F)
     (hblk : ∀ r0, (quotientTables (p := p) d l).B ∣ r0 →
       r0 + (quotientTables (p := p) d l).B ≤ 2 ^ (d + l) →
@@ -228,7 +242,7 @@ theorem quotientBlocks_eq [Mont32BaseField p] [Binomial4 p] (d l : Nat) (prog : 
         ∀ i < (quotientTables (p := p) d l).B, ∀ st0 : Prog.St F, st0.acc = (fun _ ↦ 0) →
           ∀ j < 4, (Prog.run (Prog.fieldMachine (Prog.blockCtx V cb cs L SC WT
             (quotientTables (p := p) d l).B i)) prog.code st0).acc j = Q (r0 + i) j) :
-    quotientBlocks (quotientTables (p := p) d l) prog SC WT block =
+    quotientBlocks (quotientTables (p := p) d l) prog run SC WT block =
       Array.ofFn (n := 2 ^ (d + l)) fun r ↦ Ext4.smul ((batchInv (qZh d l) : Array F).getD
         (r.val % 2 ^ l) 0) ⟨Q ((bitRevPerm (d + l)).getD r 0) 0,
           Q ((bitRevPerm (d + l)).getD r 0) 1, Q ((bitRevPerm (d + l)).getD r 0) 2,
@@ -255,15 +269,40 @@ theorem quotientBlocks_eq [Mont32BaseField p] [Binomial4 p] (d l : Nat) (prog : 
       by decide⟩)), Nat.div_mul_cancel hBn]
   case hf =>
     intro b0 nb hnb
-    refine foldl_blocks_eq B b0 nb g (Prog.Encoded (p := p) B prog.regs) _ ?_ _
-      Array.emptyWithCapacity_eq _ ⟨_, Prog.blockRel_zeros B prog.regs _⟩
-    · intro out st a hst ha1 ha2
-      have hr0 : a * B + B ≤ 2 ^ (d + l) := by
-        rcases hnb with hnb | hnb
-        · have := Nat.mul_le_mul_right B (show a + 1 ≤ 2 ^ (d + l) / B by omega)
-          rw [Nat.succ_mul, Nat.div_mul_cancel hBn] at this; exact this
-        · omega
-      obtain ⟨V, cb, cs, L, hb, hV, hL, hcode, hQ⟩ := hblk (a * B) (Dvd.intro_left _ rfl) hr0
+    have hr0 (a : Nat) (ha1 : b0 ≤ a) (ha2 : a < b0 + nb) : a * B + B ≤ 2 ^ (d + l) := by
+      rcases hnb with hnb | hnb
+      · have := Nat.mul_le_mul_right B (show a + 1 ≤ 2 ^ (d + l) / B by omega)
+        rw [Nat.succ_mul, Nat.div_mul_cancel hBn] at this; exact this
+      · omega
+    split
+    · rename_i hc
+      refine foldl_blocks_eq B b0 nb g (Prog.GEncoded (p := p) B prog.regs) _ ?_ _
+        Array.emptyWithCapacity_eq _ (Prog.gEncoded_zeros B prog.regs)
+      intro out st a hst ha1 ha2
+      obtain ⟨V, cb, cs, L, hb, hV, hL, hcode, hQ⟩ := hblk (a * B) (Dvd.intro_left _ rfl)
+        (hr0 a ha1 ha2)
+      obtain ⟨hE, hw⟩ := Prog.groupBlock_acc prog.code prog.regs V cb cs L SC WT B hc.1 hc.2 hV hL
+        hcode (fun i j ↦ Q (a * B + i) j) hQ st hst
+      dsimp only
+      rw [hb, hrun]
+      refine ⟨hE, ?_⟩
+      rw [CompStark.Stark.foldl_push_range']
+      refine congrArg (out ++ ·) (congrArg Array.ofFn (funext fun i ↦ ?_))
+      have h0 := hw 0 (by decide) i i.isLt
+      have h1 := hw 1 (by decide) i i.isLt
+      have h2 := hw 2 (by decide) i i.isLt
+      have h3 := hw 3 (by decide) i i.isLt
+      rw [Nat.mul_zero, Nat.zero_add] at h0
+      rw [Nat.mul_one] at h1
+      rw [Nat.mul_comm B 2] at h2
+      rw [Nat.mul_comm B 3] at h3
+      simp only [Nat.zero_add, g, word, h0, h1, h2, h3,
+          CompPoly.CPolynomial.NTTFast.Packed.ofWord_val]
+    · refine foldl_blocks_eq B b0 nb g (Prog.Encoded (p := p) B prog.regs) _ ?_ _
+        Array.emptyWithCapacity_eq _ ⟨_, Prog.blockRel_zeros B prog.regs _⟩
+      intro out st a hst ha1 ha2
+      obtain ⟨V, cb, cs, L, hb, hV, hL, hcode, hQ⟩ := hblk (a * B) (Dvd.intro_left _ rfl)
+        (hr0 a ha1 ha2)
       obtain ⟨hE, hw⟩ := Prog.runBlock_acc prog.code prog.regs V cb cs L SC WT B (4 * B) hS st
         hst hV hL hcode (fun i j ↦ Q (a * B + i) j) hQ
       dsimp only
@@ -530,13 +569,14 @@ abbrev prepOrEmpty (ps : Option (Mat F)) (height : Nat) : Mat F := ps.getD ⟨0,
 
 /-- The fast quotient is the specification's on related extensions of the trace and the
 preprocessed trace. -/
-theorem quotientWith_rel [Mont32BaseField p] [Binomial4 p] (A : Air F) (pis : List F) (d l : Nat)
+theorem quotientWith_rel [Mont32BaseField p] [Binomial4 p] (kernels : List (Prog.GroupKernel p))
+    (A : Air F) (pis : List F) (d l : Nat)
     (alpha : EF) {ext : PMat} {s : Mat F} {prep : Option PMat} {ps : Option (Mat F)}
     (h : RM ext s) (hs : MatOk s) (hh : 2 ^ (d + l) ≤ s.height) (hp : Option.Rel RM prep ps)
     (hps : ∀ q ∈ ps, MatOk q ∧ q.height = s.height)
     (hc : ∀ c ∈ A.constraints, c.colsBelow s.width s.width ((ps.map (·.width)).getD 0)
       ((ps.map (·.width)).getD 0)) :
-    quotientWith (quotientTables
+    quotientWith kernels (quotientTables
         (p := p) d l) A pis ext prep alpha = quotientOfLde A pis d l s ps alpha := by
   obtain ⟨hw, -, hv⟩ := h
   obtain ⟨hw0, -, hvs', hadd⟩ := hs
@@ -607,7 +647,9 @@ theorem quotientWith_rel [Mont32BaseField p] [Binomial4 p] (A : Air F) (pis : Li
   let E (j : Nat) : Expr.Env F F := rowEnv tq pq pl (2 ^ (d + l)) (2 ^ l) pis (qFirst d l)
     (qLast d l) (qTrans d l) ((bitRevPerm (d + l)).getD j 0)
   let Q (j k : Nat) : F := rowAcc (weighted A alpha) (fun c ↦ c.eval (E j)) k 0
-  rw [hpw', hpwords, hv, hw, hWT, quotientBlocks_eq d l _ pis.toArray WT _ Q ?hblk]
+  rw [hpw', hpwords, hv, hw, hWT, quotientBlocks_eq d l _ _
+      (groupRun_eq kernels _) pis.toArray WT _ Q
+    ?hblk]
   case hblk =>
     intro r0 hdvd hr0
     obtain ⟨hB0, -, -⟩ := tables_B (p := p) d l

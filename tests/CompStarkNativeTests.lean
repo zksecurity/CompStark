@@ -290,7 +290,7 @@ def challenger : IO Unit := do
     759660911]
   check "challenger" (challengerRun Poseidon2.initTranscript == expected)
   check "fast challenger"
-      (challengerRun (CompStark.KoalaBear.backendFor 0 []).transcript == expected)
+      (challengerRun (CompStark.KoalaBear.backendFor [] 0 []).transcript == expected)
 
 
 /-- The parameters `logN logBlowup logFinal maxLogArity queries commitPow queryPow [batchPow
@@ -339,7 +339,7 @@ def proof (name : String) (air : Nat → Air F) (inst : Nat → Array F × List 
     check s!"{file}: rejects another verifying key" (verify P A other rust pis matches .error _)
   check s!"{file}: specification prover" (prove EF P A logN trace pis == rust)
   check s!"{file}: fast prover"
-    (proveWith (CompStark.KoalaBear.backendFor P.logBlowup [(logN, A.logQuotientChunks logN)]) P
+    (proveWith (CompStark.KoalaBear.backendFor [] P.logBlowup [(logN, A.logQuotientChunks logN)]) P
       A logN #[encodeFields trace] pis == rust)
 
 /-- Over the quintic extension, the specification prover's proof verifies, and is rejected for
@@ -375,7 +375,7 @@ def batchProof (name : String) (ps : List Nat) : IO Unit := do
       .error "lookup terminals do not sum to zero")
     check s!"{file}: specification prover" (Batch.proveBatch EF P instances traces pis == rust)
     check s!"{file}: fast prover" (Batch.proveBatchWith
-      (CompStark.KoalaBear.backendFor P.logBlowup (Batch.shapes instances)) P instances
+      (CompStark.KoalaBear.backendFor [] P.logBlowup (Batch.shapes instances)) P instances
         (traces.map fun t ↦ #[encodeFields t]) pis == rust)
     return
   if let .error e := Batch.verifyBatch P instances common rust pis then
@@ -436,7 +436,7 @@ def batchProof (name : String) (ps : List Nat) : IO Unit := do
       (Batch.verifyBatch P instances (Batch.setupBatch P other) rust pis matches .error _)
   check s!"{file}: specification prover" (Batch.proveBatch EF P instances traces pis == rust)
   check s!"{file}: fast prover" (Batch.proveBatchWith
-    (CompStark.KoalaBear.backendFor P.logBlowup (Batch.shapes instances)) P instances
+    (CompStark.KoalaBear.backendFor [] P.logBlowup (Batch.shapes instances)) P instances
       (traces.map fun t ↦ #[encodeFields t]) pis == rust)
 
 def batchProofs : IO Unit := do
@@ -501,7 +501,7 @@ def proof (name : String) (air : Nat → Air F) (inst : Nat → Array F × List 
   let rust : Proof F EF ← IO.ofExcept (Json.parse (← IO.FS.readFile s!"tests/data/{file}.json"))
   let (trace, pis) := inst (2 ^ logN)
   check s!"{file}: fast prover"
-    (proveWith (CompStark.BabyBear.backendFor P.logBlowup [(logN, A.logQuotientChunks logN)]) P
+    (proveWith (CompStark.BabyBear.backendFor [] P.logBlowup [(logN, A.logQuotientChunks logN)]) P
       A logN #[encodeFields trace] pis == rust)
 
 def proofs : IO Unit := do
@@ -536,7 +536,7 @@ def batchProof (name : String) (ps : List Nat) : IO Unit := do
     throw (IO.userError s!"{file}: {e}")
   check s!"{file}: specification prover" (Batch.proveBatch EF P instances traces pis == rust)
   check s!"{file}: fast prover" (Batch.proveBatchWith
-    (CompStark.BabyBear.backendFor P.logBlowup (Batch.shapes instances)) P instances
+    (CompStark.BabyBear.backendFor [] P.logBlowup (Batch.shapes instances)) P instances
       (traces.map fun t ↦ #[encodeFields t]) pis == rust)
 
 def batchProofs : IO Unit := do

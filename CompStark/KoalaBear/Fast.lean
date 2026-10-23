@@ -27,8 +27,9 @@ local notation "EF" => _root_.KoalaBear.Fast.Ext4
 /-- The fast backend over KoalaBear, with the extension plans and quotient tables of instances of
 the shapes `shapes` prepared: `(logN, logChunks)` for a `2 ^ logN`-row trace with `2 ^ logChunks`
 quotient chunks. -/
-def backendFor (logBlowup : Nat) (shapes : List (Nat × Nat)) : Backend F EF 24 :=
-  Stark.Fast.backendFor logBlowup shapes
+def backendFor (kernels : List (Stark.Prog.GroupKernel _root_.KoalaBear.fieldSize))
+    (logBlowup : Nat) (shapes : List (Nat × Nat)) : Backend F EF 24 :=
+  Stark.Fast.backendFor kernels logBlowup shapes
 
 /-- KoalaBear's domains of extension elements, up to `4 · 2 ^ 24` words, are addressable. -/
 theorem domainsAddressable : DomainsAddressable F EF := by
@@ -41,21 +42,23 @@ theorem domainsAddressable : DomainsAddressable F EF := by
 (`Stark.Fast.RT`) of the shapes the prover supports (`InputOk`), it produces the specification's
 proof, unless the out-of-domain point `ζ` lands in the base field (probability about
 `2 ^ -93`). -/
-theorem prove_fast {params : Params} {air : Air F} {logN : Nat} {words : Array ByteArray}
+theorem prove_fast (kernels : List (Stark.Prog.GroupKernel _root_.KoalaBear.fieldSize))
+    {params : Params} {air : Air F} {logN : Nat} {words : Array ByteArray}
     {trace : Array F} (publicValues : List F) (encoded : Stark.Fast.RT logN air.width words trace)
     (input : InputOk EF params air logN trace)
     (outOfDomain : Ext.OutsideBase (outOfDomainPoint EF params air logN trace publicValues)) :
-    proveWith (backendFor params.logBlowup [(logN, air.logQuotientChunks logN)]) params air logN
-        words publicValues =
+    proveWith (backendFor kernels params.logBlowup [(logN, air.logQuotientChunks logN)]) params
+        air logN words publicValues =
       prove EF params air logN trace publicValues :=
-  Stark.Fast.prove_fast (by rw [twoAdicity_eq]; decide) domainsAddressable publicValues encoded
-    input outOfDomain
+  Stark.Fast.prove_fast (by rw [twoAdicity_eq]; decide) domainsAddressable kernels publicValues
+    encoded input outOfDomain
 
 /-- **The fast batch prover over KoalaBear is correct**: for traces given as chunks of packed rows
 of a batch of the shapes the prover supports (`Batch.InputOk`) with a list of public values per
 instance, it produces the specification's proof, unless the out-of-domain point `ζ` lands in the
 base field. -/
-theorem proveBatch_fast {params : Params} {instances : List (Batch.Instance F)}
+theorem proveBatch_fast (kernels : List (Stark.Prog.GroupKernel _root_.KoalaBear.fieldSize))
+    {params : Params} {instances : List (Batch.Instance F)}
     {words : List (Array ByteArray)} {traces : List (Array F)} {publicValues : List (List F)}
     (encoded : List.Forall₂ (fun t (m : Batch.Instance F × Array F) ↦
       Stark.Fast.RT m.1.logN m.1.air.width t m.2) words (instances.zip traces))
@@ -63,33 +66,36 @@ theorem proveBatch_fast {params : Params} {instances : List (Batch.Instance F)}
     (publicValuesLength : publicValues.length = instances.length)
     (outOfDomain :
       Ext.OutsideBase (Batch.batchOutOfDomainPoint EF params instances traces publicValues)) :
-    Batch.proveBatchWith (backendFor params.logBlowup (Batch.shapes instances)) params instances
-        words publicValues =
+    Batch.proveBatchWith (backendFor kernels params.logBlowup (Batch.shapes instances)) params
+        instances words publicValues =
       Batch.proveBatch EF params instances traces publicValues :=
-  Stark.Fast.proveBatch_fast (by rw [twoAdicity_eq]; decide) domainsAddressable encoded input
-    publicValuesLength outOfDomain
+  Stark.Fast.proveBatch_fast (by rw [twoAdicity_eq]; decide) domainsAddressable kernels encoded
+    input publicValuesLength outOfDomain
 
 /-- The fast backend over KoalaBear on the Poseidon2 instances `I` (`backendFor` is it on Plonky3's
 default ones), specialized here, in the CPU-targeted library. -/
-def Instances.backendFor (I : Instances) (logBlowup : Nat) (shapes : List (Nat × Nat)) :
-    Backend F EF 24 :=
+def Instances.backendFor (I : Instances) (kernels : List
+    (Stark.Prog.GroupKernel _root_.KoalaBear.fieldSize))
+    (logBlowup : Nat) (shapes : List (Nat × Nat)) : Backend F EF 24 :=
   letI := I.field
   letI := I.packed
-  Stark.Fast.backendFor logBlowup shapes
+  Stark.Fast.backendFor kernels logBlowup shapes
 
 /-- **The fast prover over KoalaBear on the Poseidon2 instances `I` is correct** (`prove_fast`). -/
-theorem Instances.prove_fast (I : Instances) {params : Params} {air : Air F} {logN : Nat}
+theorem Instances.prove_fast (I : Instances) (kernels : List
+    (Stark.Prog.GroupKernel _root_.KoalaBear.fieldSize))
+    {params : Params} {air : Air F} {logN : Nat}
     {words : Array ByteArray} {trace : Array F} (publicValues : List F)
     (encoded : Stark.Fast.RT logN air.width words trace)
     (input : InputOk EF params air logN trace)
     (outOfDomain : Ext.OutsideBase
       (@outOfDomainPoint F _ I.field EF _ params air logN trace publicValues)) :
-    proveWith (I.backendFor params.logBlowup [(logN, air.logQuotientChunks logN)]) params air logN
-        words publicValues =
+    proveWith (I.backendFor kernels params.logBlowup [(logN, air.logQuotientChunks logN)]) params
+        air logN words publicValues =
       @prove F _ I.field EF _ params air logN trace publicValues :=
   letI := I.field
   letI := I.packed
-  Stark.Fast.prove_fast (by rw [twoAdicity_eq]; decide) domainsAddressable publicValues encoded
-    input outOfDomain
+  Stark.Fast.prove_fast (by rw [twoAdicity_eq]; decide) domainsAddressable kernels publicValues
+    encoded input outOfDomain
 
 end CompStark.KoalaBear

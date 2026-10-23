@@ -54,6 +54,7 @@ inductive Opd (F : Type) where
   | reg (r : Nat)
   | cur (c : Nat)
   | const (x : F)
+  deriving DecidableEq
 
 /-- A binary operation. -/
 inductive Op where
@@ -76,6 +77,7 @@ inductive Instr (F : Type) where
   | scalar (d i : Nat)
   | bin (op : Op) (d : Nat) (a b : Opd F)
   | acc (a : Opd F) (w : Nat)
+  deriving DecidableEq
 
 /-- A program: its code on the registers `0, …, regs - 1`, and its outputs. -/
 structure _root_.CompStark.Stark.Prog (F : Type) where
