@@ -246,11 +246,11 @@ theorem weightCoords_eq [Mont32BaseField p] [Binomial4 p] (alpha : EF) (K : Nat)
   refine congrArg Array.ofFn (funext fun i ↦ ?_)
   rw [powerSeq_getD alpha K _ (by have := i.isLt; omega)]
 
-/-- A program on groups of rows is the program on the group machine. -/
+/-- A program on groups of rows by the kernel with its code is the program on the group machine. -/
 theorem groupRun_eq (kernels : List (Prog.GroupKernel p)) (code : Array (Prog.Instr F))
     (env : Prog.GroupEnv) (s : ByteArray) :
-    groupRun kernels code env s = Prog.run (Prog.groupMachine p env) code s := by
-  unfold groupRun
+    groupRun (kernelFor kernels code) code env s = Prog.run (Prog.groupMachine p env) code s := by
+  unfold groupRun kernelFor
   rcases hk : List.find? (fun k ↦ k.code == code) kernels with _ | k
   · rw [hk]
   · rw [hk]

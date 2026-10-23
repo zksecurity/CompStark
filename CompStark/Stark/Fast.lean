@@ -349,13 +349,17 @@ def weightCoords [Mont32BaseField p] [Binomial4 p] (alpha : EF) (K : Nat) : Arra
   Array.ofFn (n := 4 * K) fun i ↦
     (Ext.coeffs (pw.getD (K - 1 - i.val / 4) 0)).getD (i.val % 4) 0
 
-/-- A program on groups of rows: a kernel of `kernels` with the program's code, or the program
-interpreted. -/
-@[noinline] def groupRun (kernels : List (Prog.GroupKernel p)) (code : Array (Prog.Instr F)) :
-    Prog.GroupEnv → ByteArray → ByteArray :=
-  match kernels.find? fun k ↦ k.code == code with
-  | some k => k.run
-  | none => fun env s ↦ Prog.run (Prog.groupMachine p env) code s
+/-- The kernel of `kernels` with the program's code, if any. -/
+def kernelFor (kernels : List (Prog.GroupKernel p)) (code : Array (Prog.Instr F)) :
+    Option (Prog.GroupKernel p) :=
+  kernels.find? fun k ↦ k.code == code
+
+/-- A program on groups of rows: by its kernel `k?`, or interpreted. -/
+def groupRun (k? : Option (Prog.GroupKernel p)) (code : Array (Prog.Instr F))
+    (env : Prog.GroupEnv) (s : ByteArray) : ByteArray :=
+  match k? with
+  | some k => k.run env s
+  | none => Prog.run (Prog.groupMachine p env) code s
 
 /-- The values of a program accumulating every row of the quotient domain, in the extension's
 bit-reversed order, put in natural order: the program runs on blocks of rows, `block r0` giving the
@@ -418,7 +422,8 @@ def quotientWith [Mont32BaseField p] [Binomial4 p] (kernels : List (Prog.GroupKe
   let per := periodicWords T A
   let tr := CompPoly.CPolynomial.NTTFast.Packed.Native.transposeRows
   let prog := Prog.compile A.constraints
-  quotientBlocks T prog (groupRun kernels prog.code)
+  let k? := kernelFor kernels prog.code
+  quotientBlocks T prog (groupRun k? prog.code)
     pis.toArray (weightCoords alpha A.constraints.length) fun r0 ↦
       (⟨tr ext.words ext.width r0 T.B, 0, T.B⟩,
         ⟨ext.words, ext.width, pwords, pw, tr pwords pw r0 T.B, .empty, 0, .empty, r0, T.next,
@@ -504,7 +509,8 @@ def lookupQuotientWith [Mont32BaseField p] [Binomial4 p] (kernels : List (Prog.G
   let per := periodicWords T A
   let tp := CompPoly.CPolynomial.NTTFast.Packed.Native.transposeRows
   let prog := Prog.compileExt Binomial4.W pis.length ext
-  quotientBlocks T prog (groupRun kernels prog.code)
+  let k? := kernelFor kernels prog.code
+  quotientBlocks T prog (groupRun k? prog.code)
     (pis.toArray ++ (terminal :: chs).toArray.flatMap fun c ↦ (Ext.coeffs c).toArray)
     (extWeightCoords alpha ext.length) fun r0 ↦
       (⟨tp tr.words tr.width r0 T.B, 0, T.B⟩,
@@ -962,7 +968,7 @@ def backend : Backend F EF 24 where
 shapes `shapes` prepared: for every `(logN, logChunks)`, a `2 ^ logN`-row trace with
 `2 ^ logChunks` quotient chunks, the trace's extension on `g · ⟨ω_N⟩`, every chunk's and the
 quotient's tables, and the quotients' programs run by a kernel of `kernels` with their code
-(`groupRun`). -/
+(`kernelFor`). -/
 def backendFor (kernels : List (Prog.GroupKernel p)) (logBlowup : Nat) (shapes : List (Nat × Nat)) :
     Backend F EF 24 :=
   let shapes := shapes.eraseDups
