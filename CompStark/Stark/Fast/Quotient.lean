@@ -258,6 +258,30 @@ theorem groupRun_eq (kernels : List (Prog.GroupKernel p)) (code : Array (Prog.In
     show k.run env s = _
     rw [k.run_eq, this]
 
+/-- The program `progRun` gives is the constraints' compiled program. -/
+theorem progRun_fst (ks : List (CheckedKernel p)) (cs : List (Expr F)) :
+    (progRun ks cs).1 = Prog.compile cs := by
+  unfold progRun
+  split
+  · rename_i k hk
+    have hc : k.1.cs = cs :=
+      of_decide_eq_true (List.find?_some (p := fun k : CheckedKernel p ↦ decide (k.1.cs = cs)) hk)
+    rw [k.1.prog_eq, hc]
+  · rfl
+
+/-- The run `progRun` gives is the compiled program on the group machine. -/
+theorem progRun_snd (ks : List (CheckedKernel p)) (cs : List (Expr F)) (env : Prog.GroupEnv)
+    (s : ByteArray) :
+    (progRun ks cs).2 env s = Prog.run (Prog.groupMachine p env) (Prog.compile cs).code s := by
+  unfold progRun
+  split
+  · rename_i k hk
+    have hc : k.1.cs = cs :=
+      of_decide_eq_true (List.find?_some (p := fun k : CheckedKernel p ↦ decide (k.1.cs = cs)) hk)
+    show k.1.kernel.run env s = _
+    rw [k.1.kernel.run_eq, k.2, k.1.prog_eq, hc]
+  · exact groupRun_eq _ _ env s
+
 /-- **The quotient's blocks**: a program accumulating, on every block of rows, every stored row
 `j`'s value coordinates `Q j`, gives the quotient values in natural order. -/
 theorem quotientBlocks_eq [Mont32BaseField p] [Binomial4 p] (d l : Nat) (prog : Prog F)
@@ -748,14 +772,14 @@ abbrev prepOrEmpty (ps : Option (Mat F)) (height : Nat) : Mat F := ps.getD ⟨0,
 
 /-- The fast quotient is the specification's on related extensions of the trace and the
 preprocessed trace. -/
-theorem quotientWith_rel [Mont32BaseField p] [Binomial4 p] (kernels : List (Prog.GroupKernel p))
+theorem quotientWith_rel [Mont32BaseField p] [Binomial4 p] (ks : List (CheckedKernel p))
     (A : Air F) (pis : List F) (d l : Nat)
     (alpha : EF) {ext : PMat} {s : Mat F} {prep : Option PMat} {ps : Option (Mat F)}
     (h : RM ext s) (hs : MatOk s) (hh : 2 ^ (d + l) ≤ s.height) (hp : Option.Rel RM prep ps)
     (hps : ∀ q ∈ ps, MatOk q ∧ q.height = s.height)
     (hc : ∀ c ∈ A.constraints, c.colsBelow s.width s.width ((ps.map (·.width)).getD 0)
       ((ps.map (·.width)).getD 0)) :
-    quotientWith kernels (quotientTables
+    quotientWith ks (quotientTables
         (p := p) d l) A pis ext prep alpha = quotientOfLde A pis d l s ps alpha := by
   have hw := h.width
   obtain ⟨hw0, -, hvs', hadd⟩ := hs
@@ -847,8 +871,8 @@ theorem quotientWith_rel [Mont32BaseField p] [Binomial4 p] (kernels : List (Prog
     (qLast d l) (qTrans d l) ((bitRevPerm (d + l)).getD j 0)
   let Q (j k : Nat) : F := rowAcc (weighted A alpha) (fun c ↦ c.eval (E j)) k 0
   dsimp only
-  rw [hWT, quotientBlocks_eq d l _ _
-      (groupRun_eq kernels _) pis.toArray WT _ Q
+  rw [progRun_fst, hWT, quotientBlocks_eq d l _ _
+      (progRun_snd ks A.constraints) pis.toArray WT _ Q
     ?hblk]
   case hblk =>
     intro r0 hdvd hr0

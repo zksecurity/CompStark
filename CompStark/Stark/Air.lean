@@ -55,6 +55,7 @@ inductive Expr (F : Type) where
   | add (a b : Expr F)
   | sub (a b : Expr F)
   | mul (a b : Expr F)
+  deriving DecidableEq
 
 namespace Expr
 

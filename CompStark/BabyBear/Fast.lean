@@ -34,7 +34,7 @@ set_option maxHeartbeats 1000000 in
 /-- The fast backend over BabyBear, with the extension plans and quotient tables of instances of
 the shapes `shapes` prepared: `(logN, logChunks)` for a `2 ^ logN`-row trace with `2 ^ logChunks`
 quotient chunks. -/
-def backendFor (kernels : List (Stark.Prog.GroupKernel _root_.BabyBear.fieldSize))
+def backendFor (kernels : List (Stark.Fast.AirKernel _root_.BabyBear.fieldSize))
     (logBlowup : Nat) (shapes : List (Nat × Nat)) : Backend F EF 24 :=
   Stark.Fast.backendFor kernels logBlowup shapes
 

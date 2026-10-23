@@ -30,7 +30,7 @@ set_option maxHeartbeats 1000000 in
 /-- The fast backend over KoalaBear, with the extension plans and quotient tables of instances of
 the shapes `shapes` prepared: `(logN, logChunks)` for a `2 ^ logN`-row trace with `2 ^ logChunks`
 quotient chunks. -/
-def backendFor (kernels : List (Stark.Prog.GroupKernel _root_.KoalaBear.fieldSize))
+def backendFor (kernels : List (Stark.Fast.AirKernel _root_.KoalaBear.fieldSize))
     (logBlowup : Nat) (shapes : List (Nat × Nat)) : Backend F EF 24 :=
   Stark.Fast.backendFor kernels logBlowup shapes
 
@@ -45,7 +45,7 @@ theorem domainsAddressable : DomainsAddressable F EF := by
 (`Stark.Fast.RT`) of the shapes the prover supports (`InputOk`), it produces the specification's
 proof, unless the out-of-domain point `ζ` lands in the base field (probability about
 `2 ^ -93`). -/
-theorem prove_fast (kernels : List (Stark.Prog.GroupKernel _root_.KoalaBear.fieldSize))
+theorem prove_fast (kernels : List (Stark.Fast.AirKernel _root_.KoalaBear.fieldSize))
     {params : Params} {air : Air F} {logN : Nat} {words : Array ByteArray}
     {trace : Array F} (publicValues : List F) (encoded : Stark.Fast.RT logN air.width words trace)
     (input : InputOk EF params air logN trace)
@@ -60,7 +60,7 @@ theorem prove_fast (kernels : List (Stark.Prog.GroupKernel _root_.KoalaBear.fiel
 of a batch of the shapes the prover supports (`Batch.InputOk`) with a list of public values per
 instance, it produces the specification's proof, unless the out-of-domain point `ζ` lands in the
 base field. -/
-theorem proveBatch_fast (kernels : List (Stark.Prog.GroupKernel _root_.KoalaBear.fieldSize))
+theorem proveBatch_fast (kernels : List (Stark.Fast.AirKernel _root_.KoalaBear.fieldSize))
     {params : Params} {instances : List (Batch.Instance F)}
     {words : List (Array ByteArray)} {traces : List (Array F)} {publicValues : List (List F)}
     (encoded : List.Forall₂ (fun t (m : Batch.Instance F × Array F) ↦
@@ -79,7 +79,7 @@ set_option maxHeartbeats 1000000 in
 /-- The fast backend over KoalaBear on the Poseidon2 instances `I` (`backendFor` is it on Plonky3's
 default ones), specialized here, in the CPU-targeted library. -/
 def Instances.backendFor (I : Instances) (kernels : List
-    (Stark.Prog.GroupKernel _root_.KoalaBear.fieldSize))
+    (Stark.Fast.AirKernel _root_.KoalaBear.fieldSize))
     (logBlowup : Nat) (shapes : List (Nat × Nat)) : Backend F EF 24 :=
   letI := I.field
   letI := I.packed
@@ -87,7 +87,7 @@ def Instances.backendFor (I : Instances) (kernels : List
 
 /-- **The fast prover over KoalaBear on the Poseidon2 instances `I` is correct** (`prove_fast`). -/
 theorem Instances.prove_fast (I : Instances) (kernels : List
-    (Stark.Prog.GroupKernel _root_.KoalaBear.fieldSize))
+    (Stark.Fast.AirKernel _root_.KoalaBear.fieldSize))
     {params : Params} {air : Air F} {logN : Nat}
     {words : Array ByteArray} {trace : Array F} (publicValues : List F)
     (encoded : Stark.Fast.RT logN air.width words trace)

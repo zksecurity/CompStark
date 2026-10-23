@@ -5,6 +5,7 @@ Released under Apache 2.0 license as described in the file LICENSE.
 module
 
 public import CompStark.Stark.ProgGroup
+public import CompStark.Stark.Fast
 public meta import Lean.Elab.Command
 
 /-! # Straight-line code for a program
@@ -12,13 +13,15 @@ public meta import Lean.Elab.Command
 `group_kernels p` defines, in the current namespace, the group kernels (`CompStark/Stark/ProgGroup`)
 over the field `FastField p` as compiled functions, the field's constants immediate.
 
-`#gen_group_chunks K ns prog size i n` cuts the code of the program `prog`, evaluated during
-elaboration, into chunks of `size` instructions and, for the `i`-th of `n` equal parts of them
-(chunks `i c / n` to `(i + 1) c / n - 1` of `c`), defines their code `K.code_k` and their
-straight-line code `K.chunk_k`, a call of the kernel of `ns` per instruction, with `K.chunk_k_eq : K.chunk_k env s = K.code_k.foldl (fun s i ↦ i.exec M s) s` for
-the group machine `M` checked by the kernel's `rfl`, without unfolding field arithmetic: both sides
-reduce to the same calls. `#gen_group_kernel K p` assembles the chunks into
-`K.kernel : GroupKernel p` (`runChunks_eq`). Chunks of a program can be generated in separate
+`#gen_group_chunks K ns prog size i n` cuts the code of the program `prog = Prog.compile cs`,
+evaluated during elaboration, into chunks of `size` instructions and, for the `i`-th of `n` equal
+parts of them (chunks `i c / n` to `(i + 1) c / n - 1` of `c`), defines their code `K.code_k` and
+their straight-line code `K.chunk_k`, a call of the kernel of `ns` per instruction, with
+`K.chunk_k_eq : K.chunk_k env s = K.code_k.foldl (fun s i ↦ i.exec M s) s` for the group
+machine `M` checked by the kernel's `rfl`, without unfolding field arithmetic: both sides reduce
+to the same calls; the first part also defines the constraints `K.constraints = cs`.
+`#gen_group_kernel K p` assembles the chunks into a kernel (`runChunks_eq`), with the program of
+`K.constraints`: `K.kernel : AirKernel p`. Chunks of a program can be generated in separate
 modules, built in parallel.
 -/
 
@@ -126,6 +129,7 @@ structure GenProg where
   P : Lean.Expr
   inst : Lean.Expr
   code : Array (Instr UInt32)
+  term : Lean.Expr
 
 /-- Evaluate a program term. Elements of `FastField P` are represented as their words. -/
 meta def evalProg (stx : Syntax) : TermElabM GenProg := do
@@ -138,7 +142,7 @@ meta def evalProg (stx : Syntax) : TermElabM GenProg := do
   unless F'.isAppOfArity ``Montgomery.Native32.FastField 2 do
     throwError "expected a program over `FastField p`, got {F}"
   let prog ← unsafe evalExpr (Prog UInt32) ty e
-  return ⟨F, F'.appFn!.appArg!, F'.appArg!, prog.code⟩
+  return ⟨F, F'.appFn!.appArg!, F'.appArg!, prog.code, e⟩
 
 /-- A field element `w` as a term of `FastField P`. -/
 meta def fieldE (g : GenProg) (w : UInt32) : MetaM Lean.Expr := do
@@ -246,6 +250,12 @@ elab "#gen_group_chunks " K:ident ns:ident prog:term:max size:num part:num parts
     let instrT := mkApp (mkConst ``Instr) g.F
     let envT := mkConst ``GroupEnv
     let baT := mkConst ``ByteArray
+    if part.getNat == 0 then
+      unless g.term.isAppOfArity ``CompStark.Stark.Prog.compile 5 do
+        throwError "expected the program of constraints `Prog.compile cs`"
+      let csT := mkApp (mkConst ``List [0]) (mkApp (mkConst ``CompStark.Stark.Expr) g.F)
+      liftCoreM <| addAndCompile (.defnDecl (mkDefinitionValEx (K ++ `constraints) [] csT
+          g.term.appArg! (.regular 0) .safe []))
     let chunks := (g.code.size + N - 1) / N
     let lo := part.getNat * chunks / parts.getNat
     let hi := (part.getNat + 1) * chunks / parts.getNat
@@ -279,7 +289,8 @@ elab "#gen_group_chunks " K:ident ns:ident prog:term:max size:num part:num parts
       let tv : TheoremVal := { name := thmName, levelParams := [], type := thm.1, value := thm.2 }
       liftCoreM <| addDecl (.thmDecl tv)
 
-/-- `#gen_group_kernel K p`: the chunks `K.chunk_0, K.chunk_1, …` as `K.kernel : GroupKernel p`. -/
+/-- `#gen_group_kernel K p`: the chunks `K.chunk_0, K.chunk_1, …` as a kernel, with the program of
+`K.constraints`: `K.kernel : AirKernel p`. -/
 elab "#gen_group_kernel " K:ident p:term:max : command => do
   let K := K.getId
   let env ← getEnv
@@ -327,6 +338,9 @@ elab "#gen_group_kernel " K:ident p:term:max : command => do
       mkLambdaFVars #[env] (mkApp5 (mkConst ``runChunks_eq) F
           (mkConst ``ByteArray) M csE fsE |>.app acc)
     let kernel ← mkAppM ``GroupKernel.mk #[code, run, pf]
+    let cs := mkConst (K ++ `constraints)
+    let prog ← mkAppM ``CompStark.Stark.Prog.compile #[cs]
+    let kernel ← mkAppM ``CompStark.Stark.Fast.AirKernel.mk #[kernel, cs, prog, ← mkEqRefl prog]
     let ty ← inferType kernel
     let decl := Declaration.defnDecl (mkDefinitionValEx (K ++ `kernel) [] ty kernel
       ReducibilityHints.abbrev DefinitionSafety.safe [])

@@ -34,7 +34,7 @@ local notation "EF" => Ext4 p
 
 /-- The fast backend refines the specification. -/
 def backendFor_refines (hζ : 2 ≤ twoAdicity F) (hA : DomainsAddressable F EF)
-    (kernels : List (Prog.GroupKernel p)) (logBlowup : Nat) (shapes : List (Nat × Nat)) :
+    (kernels : List (AirKernel p)) (logBlowup : Nat) (shapes : List (Nat × Nat)) :
     Refines (backendFor kernels logBlowup shapes) :=
   have h16 : 16 * 2 ^ twoAdicity F < USize.size := by
     unfold DomainsAddressable Addressable at hA
@@ -72,7 +72,7 @@ def backendFor_refines (hζ : 2 ≤ twoAdicity F) (hA : DomainsAddressable F EF)
         simp only [Prod.mk.injEq] at he
         obtain ⟨rfl, rfl, rfl⟩ := he
         obtain ⟨rfl, rfl⟩ := hd
-        exact quotientWith_rel kernels A pis _ _ alpha h hs hh hp hps hc
+        exact quotientWith_rel _ A pis _ _ alpha h hs hh hp hps hc
       · exact quotientWith_rel [] A pis _ _ alpha h hs hh hp hps hc
     lookupQuotient := fun A ext pis d l _ _ _ _ _ _ chs t alpha k h hs hh hp hps hr hrs hrh hk hc ↦
       by
@@ -86,8 +86,7 @@ def backendFor_refines (hζ : 2 ≤ twoAdicity F) (hA : DomainsAddressable F EF)
         simp only [Prod.mk.injEq] at he
         obtain ⟨rfl, rfl, rfl⟩ := he
         obtain ⟨rfl, rfl⟩ := hd
-        exact lookupQuotientWith_rel kernels A ext pis _ _ chs t alpha k h hs hh hp hps hr hrs hrh
-          hk hc
+        exact lookupQuotientWith_rel _ A ext pis _ _ chs t alpha k h hs hh hp hps hr hrs hrh hk hc
       · exact lookupQuotientWith_rel [] A ext pis _ _ chs t alpha k h hs hh hp hps hr hrs hrh hk hc
     permutation := fun bits A ls logN t pis chs hok ↦
       permutationLdeWith_rel _ (fun e he ↦ by
@@ -106,7 +105,7 @@ def backendFor_refines (hζ : 2 ≤ twoAdicity F) (hA : DomainsAddressable F EF)
 it produces the specification's proof, unless the out-of-domain point `ζ` lands in the base field,
 where both provers divide by zero and compute different garbage. -/
 theorem prove_fast (hζ : 2 ≤ twoAdicity F) (hA : DomainsAddressable F EF)
-    (kernels : List (Prog.GroupKernel p)) {params : Params}
+    (kernels : List (AirKernel p)) {params : Params}
     {air : Air F} {logN : Nat} {words : Array ByteArray} {trace : Array F}
     (publicValues : List F) (encoded : RT logN air.width words trace)
     (input : InputOk EF params air logN trace)
@@ -120,7 +119,7 @@ theorem prove_fast (hζ : 2 ≤ twoAdicity F) (hA : DomainsAddressable F EF)
 (`Batch.InputOk`) with a list of public values per instance, it produces the specification's
 proof, unless the out-of-domain point `ζ` lands in the base field. -/
 theorem proveBatch_fast (hζ : 2 ≤ twoAdicity F) (hA : DomainsAddressable F EF)
-    (kernels : List (Prog.GroupKernel p)) {params : Params}
+    (kernels : List (AirKernel p)) {params : Params}
     {instances : List (Batch.Instance F)} {words : List (Array ByteArray)}
     {traces : List (Array F)} {publicValues : List (List F)}
     (encoded : List.Forall₂ (fun t (m : Batch.Instance F × Array F) ↦

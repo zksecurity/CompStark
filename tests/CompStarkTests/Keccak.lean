@@ -136,7 +136,8 @@ def plonky3Example : IO Unit :=
   let tampered := { rust with opened.traceLocal := rust.opened.traceLocal.modify 0 (· + 1) }
   if (I.verifyFast P A (setup P A logN) tampered []).isOk then
     throw (IO.userError "the fast verifier accepts a tampered example proof")
-  unless CompStark.Fixtures.KeccakKernel.kernel.code == (Prog.compile A.constraints).code do
+  let K := CompStark.Fixtures.KeccakKernel.kernel
+  unless K.kernel.code == K.prog.code && decide (K.cs = A.constraints) do
     throw (IO.userError "the generated kernel's code is not the Keccak AIR's program")
   let B := Stark.Fast.backendFor [CompStark.Fixtures.KeccakKernel.kernel] P.logBlowup
     [(logN, A.logQuotientChunks logN)]

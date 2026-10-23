@@ -410,6 +410,31 @@ def groupRun (k? : Option (Prog.GroupKernel p)) (code : Array (Prog.Instr F))
   | some k => k.run env s
   | none => Prog.run (Prog.groupMachine p env) code s
 
+/-- A group kernel generated for the program of the constraints `cs` (`Prog.compile`), with the
+program. -/
+structure AirKernel (q : ℕ) [Mont32Field q] where
+  kernel : Prog.GroupKernel q
+  cs : List (Expr (FastField q))
+  prog : Prog (FastField q)
+  prog_eq : prog = Prog.compile cs
+
+/-- A kernel whose code is its program's. -/
+abbrev CheckedKernel (q : ℕ) [Mont32Field q] := { k : AirKernel q // k.kernel.code = k.prog.code }
+
+/-- The kernels of `kernels` whose code is their program's. -/
+def checkedKernels (kernels : List (AirKernel p)) : List (CheckedKernel p) :=
+  kernels.filterMap fun k ↦ if h : k.kernel.code = k.prog.code then some ⟨k, h⟩ else none
+
+/-- The program of the constraints `cs` and its run on groups of rows: a checked kernel's for
+`cs`, without compiling them, or compiled and run by a kernel with its code, or interpreted. -/
+def progRun (ks : List (CheckedKernel p)) (cs : List (Expr F)) :
+    Prog F × (Prog.GroupEnv → ByteArray → ByteArray) :=
+  match ks.find? fun k ↦ decide (k.1.cs = cs) with
+  | some k => (k.1.prog, k.1.kernel.run)
+  | none =>
+    let prog := Prog.compile cs
+    (prog, groupRun (kernelFor (ks.map (·.1.kernel)) prog.code) prog.code)
+
 /-- The values of a program accumulating every row of the quotient domain, in the extension's
 bit-reversed order, put in natural order: the program runs on blocks of rows, `block r0` giving the
 block from row `r0` its view and loads, in parallel ranges of blocks, each range with one state; on
@@ -461,16 +486,16 @@ def periodicWords [Mont32BaseField p] (T : QuotientTables p) (A : Air F) : Array
       periodicRow tab r)).toArray
 
 /-- `quotientOfLde` on packed words with the shape's tables `T`: the constraints' program
-(`Prog.compile`) on blocks of rows in the extension's bit-reversed order (`quotientBlocks`),
-every block's rows of the extensions copied from their columns, their next rows gathered. -/
-def quotientWith [Mont32BaseField p] [Binomial4 p] (kernels : List (Prog.GroupKernel p))
+(`Prog.compile`, a checked kernel's of `ks` if there is one, `progRun`) on blocks of rows in the
+extension's bit-reversed order (`quotientBlocks`), every block's rows of the extensions copied
+from their columns, their next rows gathered. -/
+def quotientWith [Mont32BaseField p] [Binomial4 p] (ks : List (CheckedKernel p))
     (T : QuotientTables p) (A : Air F) (pis : List F) (ext : PMat) (prep : Option PMat)
     (alpha : EF) : Array EF :=
   let pm := prep.getD PMat.empty
   let per := periodicWords T A
-  let prog := Prog.compile A.constraints
-  let k? := kernelFor kernels prog.code
-  quotientBlocks T prog (groupRun k? prog.code)
+  let pr := progRun ks A.constraints
+  quotientBlocks T pr.1 pr.2
     pis.toArray (weightCoords alpha A.constraints.length) fun r0 ↦
       (⟨ext.block r0 T.B, 0, T.B⟩,
         ⟨ext.toCols, pm.toCols, pm.block r0 T.B, PMat.empty.toCols, .empty, r0, T.next,
@@ -1001,10 +1026,12 @@ def backend : Backend F EF 24 where
 /-- The fast backend with the extension plans and quotient tables of proofs of instances of the
 shapes `shapes` prepared: for every `(logN, logChunks)`, a `2 ^ logN`-row trace with
 `2 ^ logChunks` quotient chunks, the trace's extension on `g · ⟨ω_N⟩`, every chunk's and the
-quotient's tables, and the quotients' programs run by a kernel of `kernels` with their code
-(`kernelFor`). -/
-def backendFor (kernels : List (Prog.GroupKernel p)) (logBlowup : Nat) (shapes : List (Nat × Nat)) :
+quotient's tables, and the kernels of `kernels` whose code is their program's
+(`checkedKernels`): an AIR's constraints with a kernel are not compiled again, and every program
+runs by a kernel with its code (`kernelFor`). -/
+def backendFor (kernels : List (AirKernel p)) (logBlowup : Nat) (shapes : List (Nat × Nat)) :
     Backend F EF 24 :=
+  let checked := checkedKernels kernels
   let shapes := shapes.eraseDups
   let tables := shapes.map fun (n, c) ↦ (n, c, quotientTables n c)
   let plans := shapes.flatMap fun (n, c) ↦ ldePlans n logBlowup c
@@ -1014,11 +1041,12 @@ def backendFor (kernels : List (Prog.GroupKernel p)) (logBlowup : Nat) (shapes :
     permutation := permutationLdeWith plans
     quotient := fun A pis db lc ext prep alpha ↦
       match tables.find? fun (n, c, _) ↦ n == db && c == lc with
-      | some (_, _, T) => quotientWith kernels T A pis ext prep alpha
+      | some (_, _, T) => quotientWith checked T A pis ext prep alpha
       | none => quotient A pis db lc ext prep alpha
     lookupQuotient := fun A ext pis db lc tr prep perm chs t alpha ↦
       match tables.find? fun (n, c, _) ↦ n == db && c == lc with
-      | some (_, _, T) => lookupQuotientWith kernels T A ext pis tr prep perm chs t alpha
+      | some (_, _, T) =>
+        lookupQuotientWith (kernels.map (·.kernel)) T A ext pis tr prep perm chs t alpha
       | none => lookupQuotient A ext pis db lc tr prep perm chs t alpha }
 
 end CompStark.Stark.Fast
