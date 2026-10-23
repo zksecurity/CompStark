@@ -810,25 +810,26 @@ def openedAt [Mont32BaseField p] [Binomial4 p] (logBlowup : Nat) (m : PMat) (zs 
         word (sums.getD (4 * k + 2) .empty) j, word (sums.getD (4 * k + 3) .empty) j⟩
 
 /-- Rows `r0, …, r0 + len - 1` of a packed matrix, within one block of its rows, batched by the
-powers of `α`, given as four coordinate planes `a0, …, a3`: four planes of `len` words, the columns
-multiply-added into them four at a time, reduced once per word. -/
+powers of `α`, given as four coordinate planes `a0, …, a3`: four planes of `len` words in one
+buffer, the columns multiply-added into all four four at a time, every column word read once and
+every word reduced once per four columns (`Words.mulAdd4x4Into`); a last group short of four
+columns repeats the last column with zero powers. -/
 def compressRange (p : ℕ) [Mont32Field p] (m : @& PMat) (a0 a1 a2 a3 : @& ByteArray)
     (r0 len : Nat) : Array ByteArray :=
-  let z := CompPoly.CPolynomial.NTTFast.Packed.Native.zeroWords len
-  let read := CompPoly.CPolynomial.NTTFast.Packed.Native.read
-  let quad (a : ByteArray) (j : Nat) (pl : ByteArray) : ByteArray :=
-    Words.mulAdd4BufsInto p pl (m.colAt j r0).1 (m.colAt (j + 1) r0).1 (m.colAt (j + 2) r0).1
-      (m.colAt (j + 3) r0).1 (m.colAt j r0).2 (m.colAt (j + 1) r0).2 (m.colAt (j + 2) r0).2
-      (m.colAt (j + 3) r0).2 (read a j) (read a (j + 1)) (read a (j + 2)) (read a (j + 3)) len
-  let one (a : ByteArray) (j : Nat) (pl : ByteArray) : ByteArray :=
-    Words.mulAddInto p pl (m.colAt j r0).1 (m.colAt j r0).2 (read a j) len
-  let ps := Merkle.Packed.foldRange (fun (ps : ByteArray × ByteArray × ByteArray × ByteArray) g ↦
-    (quad a0 (4 * g) ps.1, quad a1 (4 * g) ps.2.1, quad a2 (4 * g) ps.2.2.1,
-      quad a3 (4 * g) ps.2.2.2)) (m.width / 4) 0 (z, z, z, z)
-  let ps := Merkle.Packed.foldRange (fun (ps : ByteArray × ByteArray × ByteArray × ByteArray) i ↦
-    let j := 4 * (m.width / 4) + i
-    (one a0 j ps.1, one a1 j ps.2.1, one a2 j ps.2.2.1, one a3 j ps.2.2.2)) (m.width % 4) 0 ps
-  #[ps.1, ps.2.1, ps.2.2.1, ps.2.2.2]
+  let read (a : @& ByteArray) (j : Nat) : UInt32 :=
+    if j < m.width then CompPoly.CPolynomial.NTTFast.Packed.Native.read a j else 0
+  let col (j : Nat) := m.colAt (min j (m.width - 1)) r0
+  let out := Merkle.Packed.foldRange (fun out g ↦
+    Words.mulAdd4x4Into p out (col (4 * g)).1 (col (4 * g + 1)).1 (col (4 * g + 2)).1
+      (col (4 * g + 3)).1 (col (4 * g)).2 (col (4 * g + 1)).2 (col (4 * g + 2)).2
+      (col (4 * g + 3)).2 (read a0 (4 * g)) (read a0 (4 * g + 1)) (read a0 (4 * g + 2))
+      (read a0 (4 * g + 3)) (read a1 (4 * g)) (read a1 (4 * g + 1)) (read a1 (4 * g + 2))
+      (read a1 (4 * g + 3)) (read a2 (4 * g)) (read a2 (4 * g + 1)) (read a2 (4 * g + 2))
+      (read a2 (4 * g + 3)) (read a3 (4 * g)) (read a3 (4 * g + 1)) (read a3 (4 * g + 2))
+      (read a3 (4 * g + 3)) len)
+    ((m.width + 3) / 4) 0 (CompPoly.CPolynomial.NTTFast.Packed.Native.zeroWords (4 * len))
+  #[out.extract (4 * 0) (4 * len), out.extract (4 * len) (4 * (2 * len)),
+    out.extract (4 * (2 * len)) (4 * (3 * len)), out.extract (4 * (3 * len)) (4 * (4 * len))]
 
 /-- Concatenate parallel pieces of planes. -/
 def joinPlanes (p : ℕ) (n : Nat) (pieces : Array (Task (Array ByteArray))) : EVec p :=

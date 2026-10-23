@@ -340,85 +340,193 @@ place: four rows multiply-added at once, reduced once per word. -/
       (read b (o2 + k)) c2 (read b (o3 + k)) c3))
   return out
 
-/-- Words `io, …, io + 15` of `out` plus the words from `i0`, `i1`, `i2`, `i3` of `b0`, `b1`, `b2`,
-`b3` times `c0`, `c1`, `c2`, `c3`, reduced once per word, in place. -/
-@[noinline, specialize] def mulAdd4BufsInto16 (p : ℕ) [Mont32Field p] (out : ByteArray)
-    (io : USize) (b0 b1 b2 b3 : @& ByteArray) (i0 i1 i2 i3 : USize) (c0 c1 c2 c3 : UInt32)
-    (hout : Fits out io 15) (h0 : Fits b0 i0 15) (h1 : Fits b1 i1 15) (h2 : Fits b2 i2 15)
-    (h3 : Fits b3 i3 15) : ByteArray :=
-  let x0 := add p (rd out io 0 hout)
-    (mulAdd4 p (rd b0 i0 0 h0) c0 (rd b1 i1 0 h1) c1 (rd b2 i2 0 h2) c2
-      (rd b3 i3 0 h3) c3)
-  let x1 := add p (rd out io 1 hout)
-    (mulAdd4 p (rd b0 i0 1 h0) c0 (rd b1 i1 1 h1) c1 (rd b2 i2 1 h2) c2
-      (rd b3 i3 1 h3) c3)
-  let x2 := add p (rd out io 2 hout)
-    (mulAdd4 p (rd b0 i0 2 h0) c0 (rd b1 i1 2 h1) c1 (rd b2 i2 2 h2) c2
-      (rd b3 i3 2 h3) c3)
-  let x3 := add p (rd out io 3 hout)
-    (mulAdd4 p (rd b0 i0 3 h0) c0 (rd b1 i1 3 h1) c1 (rd b2 i2 3 h2) c2
-      (rd b3 i3 3 h3) c3)
-  let x4 := add p (rd out io 4 hout)
-    (mulAdd4 p (rd b0 i0 4 h0) c0 (rd b1 i1 4 h1) c1 (rd b2 i2 4 h2) c2
-      (rd b3 i3 4 h3) c3)
-  let x5 := add p (rd out io 5 hout)
-    (mulAdd4 p (rd b0 i0 5 h0) c0 (rd b1 i1 5 h1) c1 (rd b2 i2 5 h2) c2
-      (rd b3 i3 5 h3) c3)
-  let x6 := add p (rd out io 6 hout)
-    (mulAdd4 p (rd b0 i0 6 h0) c0 (rd b1 i1 6 h1) c1 (rd b2 i2 6 h2) c2
-      (rd b3 i3 6 h3) c3)
-  let x7 := add p (rd out io 7 hout)
-    (mulAdd4 p (rd b0 i0 7 h0) c0 (rd b1 i1 7 h1) c1 (rd b2 i2 7 h2) c2
-      (rd b3 i3 7 h3) c3)
-  let x8 := add p (rd out io 8 hout)
-    (mulAdd4 p (rd b0 i0 8 h0) c0 (rd b1 i1 8 h1) c1 (rd b2 i2 8 h2) c2
-      (rd b3 i3 8 h3) c3)
-  let x9 := add p (rd out io 9 hout)
-    (mulAdd4 p (rd b0 i0 9 h0) c0 (rd b1 i1 9 h1) c1 (rd b2 i2 9 h2) c2
-      (rd b3 i3 9 h3) c3)
-  let x10 := add p (rd out io 10 hout)
-    (mulAdd4 p (rd b0 i0 10 h0) c0 (rd b1 i1 10 h1) c1 (rd b2 i2 10 h2) c2
-      (rd b3 i3 10 h3) c3)
-  let x11 := add p (rd out io 11 hout)
-    (mulAdd4 p (rd b0 i0 11 h0) c0 (rd b1 i1 11 h1) c1 (rd b2 i2 11 h2) c2
-      (rd b3 i3 11 h3) c3)
-  let x12 := add p (rd out io 12 hout)
-    (mulAdd4 p (rd b0 i0 12 h0) c0 (rd b1 i1 12 h1) c1 (rd b2 i2 12 h2) c2
-      (rd b3 i3 12 h3) c3)
-  let x13 := add p (rd out io 13 hout)
-    (mulAdd4 p (rd b0 i0 13 h0) c0 (rd b1 i1 13 h1) c1 (rd b2 i2 13 h2) c2
-      (rd b3 i3 13 h3) c3)
-  let x14 := add p (rd out io 14 hout)
-    (mulAdd4 p (rd b0 i0 14 h0) c0 (rd b1 i1 14 h1) c1 (rd b2 i2 14 h2) c2
-      (rd b3 i3 14 h3) c3)
-  let x15 := add p (rd out io 15 hout)
-    (mulAdd4 p (rd b0 i0 15 h0) c0 (rd b1 i1 15 h1) c1 (rd b2 i2 15 h2) c2
-      (rd b3 i3 15 h3) c3)
-  write16U out io x0 x1 x2 x3 x4 x5 x6 x7 x8 x9 x10 x11 x12 x13 x14 x15
+/-- Sixteen words of each of the four planes at `q0, q1, q2, q3` of `out`, plane `c` added
+`ac0 · b0[i0 + t] + ac1 · b1[i1 + t] + ac2 · b2[i2 + t] + ac3 · b3[i3 + t]`, reduced once per
+word: every word of the four buffers read once for the four planes. -/
+@[noinline, specialize] def mulAdd4x4Into16 (p : ℕ) [Mont32Field p] (out : ByteArray)
+    (q0 q1 q2 q3 : USize) (b0 b1 b2 b3 : @& ByteArray) (i0 i1 i2 i3 : USize)
+    (a00 a01 a02 a03 a10 a11 a12 a13 a20 a21 a22 a23 a30 a31 a32 a33 : UInt32)
+    (hq0 : Fits out q0 15) (hq1 : Fits out q1 15) (hq2 : Fits out q2 15) (hq3 : Fits out q3 15)
+    (h0 : Fits b0 i0 15) (h1 : Fits b1 i1 15) (h2 : Fits b2 i2 15) (h3 : Fits b3 i3 15) :
+    ByteArray :=
+  let y0_0 := add p (rd out q0 0 hq0)
+    (mulAdd4 p (rd b0 i0 0 h0) a00 (rd b1 i1 0 h1) a01 (rd b2 i2 0 h2) a02 (rd b3 i3 0 h3) a03)
+  let y0_1 := add p (rd out q0 1 hq0)
+    (mulAdd4 p (rd b0 i0 1 h0) a00 (rd b1 i1 1 h1) a01 (rd b2 i2 1 h2) a02 (rd b3 i3 1 h3) a03)
+  let y0_2 := add p (rd out q0 2 hq0)
+    (mulAdd4 p (rd b0 i0 2 h0) a00 (rd b1 i1 2 h1) a01 (rd b2 i2 2 h2) a02 (rd b3 i3 2 h3) a03)
+  let y0_3 := add p (rd out q0 3 hq0)
+    (mulAdd4 p (rd b0 i0 3 h0) a00 (rd b1 i1 3 h1) a01 (rd b2 i2 3 h2) a02 (rd b3 i3 3 h3) a03)
+  let y0_4 := add p (rd out q0 4 hq0)
+    (mulAdd4 p (rd b0 i0 4 h0) a00 (rd b1 i1 4 h1) a01 (rd b2 i2 4 h2) a02 (rd b3 i3 4 h3) a03)
+  let y0_5 := add p (rd out q0 5 hq0)
+    (mulAdd4 p (rd b0 i0 5 h0) a00 (rd b1 i1 5 h1) a01 (rd b2 i2 5 h2) a02 (rd b3 i3 5 h3) a03)
+  let y0_6 := add p (rd out q0 6 hq0)
+    (mulAdd4 p (rd b0 i0 6 h0) a00 (rd b1 i1 6 h1) a01 (rd b2 i2 6 h2) a02 (rd b3 i3 6 h3) a03)
+  let y0_7 := add p (rd out q0 7 hq0)
+    (mulAdd4 p (rd b0 i0 7 h0) a00 (rd b1 i1 7 h1) a01 (rd b2 i2 7 h2) a02 (rd b3 i3 7 h3) a03)
+  let y0_8 := add p (rd out q0 8 hq0)
+    (mulAdd4 p (rd b0 i0 8 h0) a00 (rd b1 i1 8 h1) a01 (rd b2 i2 8 h2) a02 (rd b3 i3 8 h3) a03)
+  let y0_9 := add p (rd out q0 9 hq0)
+    (mulAdd4 p (rd b0 i0 9 h0) a00 (rd b1 i1 9 h1) a01 (rd b2 i2 9 h2) a02 (rd b3 i3 9 h3) a03)
+  let y0_10 := add p (rd out q0 10 hq0)
+    (mulAdd4 p (rd b0 i0 10 h0) a00 (rd b1 i1 10 h1) a01 (rd b2 i2 10 h2) a02 (rd b3 i3 10 h3) a03)
+  let y0_11 := add p (rd out q0 11 hq0)
+    (mulAdd4 p (rd b0 i0 11 h0) a00 (rd b1 i1 11 h1) a01 (rd b2 i2 11 h2) a02 (rd b3 i3 11 h3) a03)
+  let y0_12 := add p (rd out q0 12 hq0)
+    (mulAdd4 p (rd b0 i0 12 h0) a00 (rd b1 i1 12 h1) a01 (rd b2 i2 12 h2) a02 (rd b3 i3 12 h3) a03)
+  let y0_13 := add p (rd out q0 13 hq0)
+    (mulAdd4 p (rd b0 i0 13 h0) a00 (rd b1 i1 13 h1) a01 (rd b2 i2 13 h2) a02 (rd b3 i3 13 h3) a03)
+  let y0_14 := add p (rd out q0 14 hq0)
+    (mulAdd4 p (rd b0 i0 14 h0) a00 (rd b1 i1 14 h1) a01 (rd b2 i2 14 h2) a02 (rd b3 i3 14 h3) a03)
+  let y0_15 := add p (rd out q0 15 hq0)
+    (mulAdd4 p (rd b0 i0 15 h0) a00 (rd b1 i1 15 h1) a01 (rd b2 i2 15 h2) a02 (rd b3 i3 15 h3) a03)
+  let y1_0 := add p (rd out q1 0 hq1)
+    (mulAdd4 p (rd b0 i0 0 h0) a10 (rd b1 i1 0 h1) a11 (rd b2 i2 0 h2) a12 (rd b3 i3 0 h3) a13)
+  let y1_1 := add p (rd out q1 1 hq1)
+    (mulAdd4 p (rd b0 i0 1 h0) a10 (rd b1 i1 1 h1) a11 (rd b2 i2 1 h2) a12 (rd b3 i3 1 h3) a13)
+  let y1_2 := add p (rd out q1 2 hq1)
+    (mulAdd4 p (rd b0 i0 2 h0) a10 (rd b1 i1 2 h1) a11 (rd b2 i2 2 h2) a12 (rd b3 i3 2 h3) a13)
+  let y1_3 := add p (rd out q1 3 hq1)
+    (mulAdd4 p (rd b0 i0 3 h0) a10 (rd b1 i1 3 h1) a11 (rd b2 i2 3 h2) a12 (rd b3 i3 3 h3) a13)
+  let y1_4 := add p (rd out q1 4 hq1)
+    (mulAdd4 p (rd b0 i0 4 h0) a10 (rd b1 i1 4 h1) a11 (rd b2 i2 4 h2) a12 (rd b3 i3 4 h3) a13)
+  let y1_5 := add p (rd out q1 5 hq1)
+    (mulAdd4 p (rd b0 i0 5 h0) a10 (rd b1 i1 5 h1) a11 (rd b2 i2 5 h2) a12 (rd b3 i3 5 h3) a13)
+  let y1_6 := add p (rd out q1 6 hq1)
+    (mulAdd4 p (rd b0 i0 6 h0) a10 (rd b1 i1 6 h1) a11 (rd b2 i2 6 h2) a12 (rd b3 i3 6 h3) a13)
+  let y1_7 := add p (rd out q1 7 hq1)
+    (mulAdd4 p (rd b0 i0 7 h0) a10 (rd b1 i1 7 h1) a11 (rd b2 i2 7 h2) a12 (rd b3 i3 7 h3) a13)
+  let y1_8 := add p (rd out q1 8 hq1)
+    (mulAdd4 p (rd b0 i0 8 h0) a10 (rd b1 i1 8 h1) a11 (rd b2 i2 8 h2) a12 (rd b3 i3 8 h3) a13)
+  let y1_9 := add p (rd out q1 9 hq1)
+    (mulAdd4 p (rd b0 i0 9 h0) a10 (rd b1 i1 9 h1) a11 (rd b2 i2 9 h2) a12 (rd b3 i3 9 h3) a13)
+  let y1_10 := add p (rd out q1 10 hq1)
+    (mulAdd4 p (rd b0 i0 10 h0) a10 (rd b1 i1 10 h1) a11 (rd b2 i2 10 h2) a12 (rd b3 i3 10 h3) a13)
+  let y1_11 := add p (rd out q1 11 hq1)
+    (mulAdd4 p (rd b0 i0 11 h0) a10 (rd b1 i1 11 h1) a11 (rd b2 i2 11 h2) a12 (rd b3 i3 11 h3) a13)
+  let y1_12 := add p (rd out q1 12 hq1)
+    (mulAdd4 p (rd b0 i0 12 h0) a10 (rd b1 i1 12 h1) a11 (rd b2 i2 12 h2) a12 (rd b3 i3 12 h3) a13)
+  let y1_13 := add p (rd out q1 13 hq1)
+    (mulAdd4 p (rd b0 i0 13 h0) a10 (rd b1 i1 13 h1) a11 (rd b2 i2 13 h2) a12 (rd b3 i3 13 h3) a13)
+  let y1_14 := add p (rd out q1 14 hq1)
+    (mulAdd4 p (rd b0 i0 14 h0) a10 (rd b1 i1 14 h1) a11 (rd b2 i2 14 h2) a12 (rd b3 i3 14 h3) a13)
+  let y1_15 := add p (rd out q1 15 hq1)
+    (mulAdd4 p (rd b0 i0 15 h0) a10 (rd b1 i1 15 h1) a11 (rd b2 i2 15 h2) a12 (rd b3 i3 15 h3) a13)
+  let y2_0 := add p (rd out q2 0 hq2)
+    (mulAdd4 p (rd b0 i0 0 h0) a20 (rd b1 i1 0 h1) a21 (rd b2 i2 0 h2) a22 (rd b3 i3 0 h3) a23)
+  let y2_1 := add p (rd out q2 1 hq2)
+    (mulAdd4 p (rd b0 i0 1 h0) a20 (rd b1 i1 1 h1) a21 (rd b2 i2 1 h2) a22 (rd b3 i3 1 h3) a23)
+  let y2_2 := add p (rd out q2 2 hq2)
+    (mulAdd4 p (rd b0 i0 2 h0) a20 (rd b1 i1 2 h1) a21 (rd b2 i2 2 h2) a22 (rd b3 i3 2 h3) a23)
+  let y2_3 := add p (rd out q2 3 hq2)
+    (mulAdd4 p (rd b0 i0 3 h0) a20 (rd b1 i1 3 h1) a21 (rd b2 i2 3 h2) a22 (rd b3 i3 3 h3) a23)
+  let y2_4 := add p (rd out q2 4 hq2)
+    (mulAdd4 p (rd b0 i0 4 h0) a20 (rd b1 i1 4 h1) a21 (rd b2 i2 4 h2) a22 (rd b3 i3 4 h3) a23)
+  let y2_5 := add p (rd out q2 5 hq2)
+    (mulAdd4 p (rd b0 i0 5 h0) a20 (rd b1 i1 5 h1) a21 (rd b2 i2 5 h2) a22 (rd b3 i3 5 h3) a23)
+  let y2_6 := add p (rd out q2 6 hq2)
+    (mulAdd4 p (rd b0 i0 6 h0) a20 (rd b1 i1 6 h1) a21 (rd b2 i2 6 h2) a22 (rd b3 i3 6 h3) a23)
+  let y2_7 := add p (rd out q2 7 hq2)
+    (mulAdd4 p (rd b0 i0 7 h0) a20 (rd b1 i1 7 h1) a21 (rd b2 i2 7 h2) a22 (rd b3 i3 7 h3) a23)
+  let y2_8 := add p (rd out q2 8 hq2)
+    (mulAdd4 p (rd b0 i0 8 h0) a20 (rd b1 i1 8 h1) a21 (rd b2 i2 8 h2) a22 (rd b3 i3 8 h3) a23)
+  let y2_9 := add p (rd out q2 9 hq2)
+    (mulAdd4 p (rd b0 i0 9 h0) a20 (rd b1 i1 9 h1) a21 (rd b2 i2 9 h2) a22 (rd b3 i3 9 h3) a23)
+  let y2_10 := add p (rd out q2 10 hq2)
+    (mulAdd4 p (rd b0 i0 10 h0) a20 (rd b1 i1 10 h1) a21 (rd b2 i2 10 h2) a22 (rd b3 i3 10 h3) a23)
+  let y2_11 := add p (rd out q2 11 hq2)
+    (mulAdd4 p (rd b0 i0 11 h0) a20 (rd b1 i1 11 h1) a21 (rd b2 i2 11 h2) a22 (rd b3 i3 11 h3) a23)
+  let y2_12 := add p (rd out q2 12 hq2)
+    (mulAdd4 p (rd b0 i0 12 h0) a20 (rd b1 i1 12 h1) a21 (rd b2 i2 12 h2) a22 (rd b3 i3 12 h3) a23)
+  let y2_13 := add p (rd out q2 13 hq2)
+    (mulAdd4 p (rd b0 i0 13 h0) a20 (rd b1 i1 13 h1) a21 (rd b2 i2 13 h2) a22 (rd b3 i3 13 h3) a23)
+  let y2_14 := add p (rd out q2 14 hq2)
+    (mulAdd4 p (rd b0 i0 14 h0) a20 (rd b1 i1 14 h1) a21 (rd b2 i2 14 h2) a22 (rd b3 i3 14 h3) a23)
+  let y2_15 := add p (rd out q2 15 hq2)
+    (mulAdd4 p (rd b0 i0 15 h0) a20 (rd b1 i1 15 h1) a21 (rd b2 i2 15 h2) a22 (rd b3 i3 15 h3) a23)
+  let y3_0 := add p (rd out q3 0 hq3)
+    (mulAdd4 p (rd b0 i0 0 h0) a30 (rd b1 i1 0 h1) a31 (rd b2 i2 0 h2) a32 (rd b3 i3 0 h3) a33)
+  let y3_1 := add p (rd out q3 1 hq3)
+    (mulAdd4 p (rd b0 i0 1 h0) a30 (rd b1 i1 1 h1) a31 (rd b2 i2 1 h2) a32 (rd b3 i3 1 h3) a33)
+  let y3_2 := add p (rd out q3 2 hq3)
+    (mulAdd4 p (rd b0 i0 2 h0) a30 (rd b1 i1 2 h1) a31 (rd b2 i2 2 h2) a32 (rd b3 i3 2 h3) a33)
+  let y3_3 := add p (rd out q3 3 hq3)
+    (mulAdd4 p (rd b0 i0 3 h0) a30 (rd b1 i1 3 h1) a31 (rd b2 i2 3 h2) a32 (rd b3 i3 3 h3) a33)
+  let y3_4 := add p (rd out q3 4 hq3)
+    (mulAdd4 p (rd b0 i0 4 h0) a30 (rd b1 i1 4 h1) a31 (rd b2 i2 4 h2) a32 (rd b3 i3 4 h3) a33)
+  let y3_5 := add p (rd out q3 5 hq3)
+    (mulAdd4 p (rd b0 i0 5 h0) a30 (rd b1 i1 5 h1) a31 (rd b2 i2 5 h2) a32 (rd b3 i3 5 h3) a33)
+  let y3_6 := add p (rd out q3 6 hq3)
+    (mulAdd4 p (rd b0 i0 6 h0) a30 (rd b1 i1 6 h1) a31 (rd b2 i2 6 h2) a32 (rd b3 i3 6 h3) a33)
+  let y3_7 := add p (rd out q3 7 hq3)
+    (mulAdd4 p (rd b0 i0 7 h0) a30 (rd b1 i1 7 h1) a31 (rd b2 i2 7 h2) a32 (rd b3 i3 7 h3) a33)
+  let y3_8 := add p (rd out q3 8 hq3)
+    (mulAdd4 p (rd b0 i0 8 h0) a30 (rd b1 i1 8 h1) a31 (rd b2 i2 8 h2) a32 (rd b3 i3 8 h3) a33)
+  let y3_9 := add p (rd out q3 9 hq3)
+    (mulAdd4 p (rd b0 i0 9 h0) a30 (rd b1 i1 9 h1) a31 (rd b2 i2 9 h2) a32 (rd b3 i3 9 h3) a33)
+  let y3_10 := add p (rd out q3 10 hq3)
+    (mulAdd4 p (rd b0 i0 10 h0) a30 (rd b1 i1 10 h1) a31 (rd b2 i2 10 h2) a32 (rd b3 i3 10 h3) a33)
+  let y3_11 := add p (rd out q3 11 hq3)
+    (mulAdd4 p (rd b0 i0 11 h0) a30 (rd b1 i1 11 h1) a31 (rd b2 i2 11 h2) a32 (rd b3 i3 11 h3) a33)
+  let y3_12 := add p (rd out q3 12 hq3)
+    (mulAdd4 p (rd b0 i0 12 h0) a30 (rd b1 i1 12 h1) a31 (rd b2 i2 12 h2) a32 (rd b3 i3 12 h3) a33)
+  let y3_13 := add p (rd out q3 13 hq3)
+    (mulAdd4 p (rd b0 i0 13 h0) a30 (rd b1 i1 13 h1) a31 (rd b2 i2 13 h2) a32 (rd b3 i3 13 h3) a33)
+  let y3_14 := add p (rd out q3 14 hq3)
+    (mulAdd4 p (rd b0 i0 14 h0) a30 (rd b1 i1 14 h1) a31 (rd b2 i2 14 h2) a32 (rd b3 i3 14 h3) a33)
+  let y3_15 := add p (rd out q3 15 hq3)
+    (mulAdd4 p (rd b0 i0 15 h0) a30 (rd b1 i1 15 h1) a31 (rd b2 i2 15 h2) a32 (rd b3 i3 15 h3) a33)
+  let o := write16U out q0 y0_0 y0_1 y0_2 y0_3 y0_4 y0_5 y0_6 y0_7
+    y0_8 y0_9 y0_10 y0_11 y0_12 y0_13 y0_14 y0_15
+  let o := write16U o q1 y1_0 y1_1 y1_2 y1_3 y1_4 y1_5 y1_6 y1_7
+    y1_8 y1_9 y1_10 y1_11 y1_12 y1_13 y1_14 y1_15
+  let o := write16U o q2 y2_0 y2_1 y2_2 y2_3 y2_4 y2_5 y2_6 y2_7
+    y2_8 y2_9 y2_10 y2_11 y2_12 y2_13 y2_14 y2_15
+  write16U o q3 y3_0 y3_1 y3_2 y3_3 y3_4 y3_5 y3_6 y3_7
+    y3_8 y3_9 y3_10 y3_11 y3_12 y3_13 y3_14 y3_15
 
-/-- `out[k] += c0 · b0[o0 + k] + c1 · b1[o1 + k] + c2 · b2[o2 + k] + c3 · b3[o3 + k]` for `k < n`,
-in place: four buffers multiply-added at once, reduced once per word. -/
-@[specialize] def mulAdd4BufsInto (p : ℕ) [Mont32Field p] (out : ByteArray)
-    (b0 b1 b2 b3 : @& ByteArray) (o0 o1 o2 o3 : Nat) (c0 c1 c2 c3 : UInt32) (n : Nat) :
+
+/-- `out[c n + k] += ac0 · b0[o0 + k] + ac1 · b1[o1 + k] + ac2 · b2[o2 + k] + ac3 · b3[o3 + k]` for
+the four planes `c` of `n` words of `out` and `k < n`, in place: sixteen words of every plane at
+once (`mulAdd4x4Into16`), then the remaining words. -/
+@[specialize] def mulAdd4x4Into (p : ℕ) [Mont32Field p] (out : ByteArray)
+    (b0 b1 b2 b3 : @& ByteArray) (o0 o1 o2 o3 : Nat)
+    (a00 a01 a02 a03 a10 a11 a12 a13 a20 a21 a22 a23 a30 a31 a32 a33 : UInt32) (n : Nat) :
     ByteArray := Id.run do
   let mut out := out
-  for block in [:n / 16] do
-    let i := 16 * block
-    if h : 4 * (i + 15) + 3 < out.size ∧ 4 * (o0 + i + 15) + 3 < b0.size ∧
-        4 * (o1 + i + 15) + 3 < b1.size ∧ 4 * (o2 + i + 15) + 3 < b2.size ∧
-        4 * (o3 + i + 15) + 3 < b3.size ∧ out.size < USize.size ∧ b0.size < USize.size ∧
-        b1.size < USize.size ∧ b2.size < USize.size ∧ b3.size < USize.size then
-      out := mulAdd4BufsInto16 p out (USize.ofNatLT i (by omega)) b0 b1 b2 b3
-        (USize.ofNatLT (o0 + i) (by omega)) (USize.ofNatLT (o1 + i) (by omega))
-        (USize.ofNatLT (o2 + i) (by omega)) (USize.ofNatLT (o3 + i) (by omega)) c0 c1 c2 c3
-        (by simp only [Fits, USize.toNat_ofNatLT]; omega)
-        (by simp only [Fits, USize.toNat_ofNatLT]; omega)
-        (by simp only [Fits, USize.toNat_ofNatLT]; omega)
-        (by simp only [Fits, USize.toNat_ofNatLT]; omega)
-        (by simp only [Fits, USize.toNat_ofNatLT]; omega)
+  if hb : b0.size < USize.size ∧ b1.size < USize.size ∧ b2.size < USize.size ∧
+      b3.size < USize.size then
+    for block in [:n / 16] do
+      let i := 16 * block
+      if h : 4 * (3 * n + i + 15) + 3 < out.size ∧ out.size < USize.size ∧
+          4 * (o0 + i + 15) + 3 < b0.size ∧ 4 * (o1 + i + 15) + 3 < b1.size ∧
+          4 * (o2 + i + 15) + 3 < b2.size ∧ 4 * (o3 + i + 15) + 3 < b3.size then
+        out := mulAdd4x4Into16 p out (USize.ofNatLT i (by omega))
+          (USize.ofNatLT (n + i) (by omega)) (USize.ofNatLT (2 * n + i) (by omega))
+          (USize.ofNatLT (3 * n + i) (by omega)) b0 b1 b2 b3
+          (USize.ofNatLT (o0 + i) (by omega)) (USize.ofNatLT (o1 + i) (by omega))
+          (USize.ofNatLT (o2 + i) (by omega)) (USize.ofNatLT (o3 + i) (by omega))
+          a00 a01 a02 a03 a10 a11 a12 a13 a20 a21 a22 a23 a30 a31 a32 a33
+          (by simp only [Fits, USize.toNat_ofNatLT]; omega)
+          (by simp only [Fits, USize.toNat_ofNatLT]; omega)
+          (by simp only [Fits, USize.toNat_ofNatLT]; omega)
+          (by simp only [Fits, USize.toNat_ofNatLT]; omega)
+          (by simp only [Fits, USize.toNat_ofNatLT]; omega)
+          (by simp only [Fits, USize.toNat_ofNatLT]; omega)
+          (by simp only [Fits, USize.toNat_ofNatLT]; omega)
+          (by simp only [Fits, USize.toNat_ofNatLT]; omega)
   for k in [16 * (n / 16):n] do
-    out := write out k (add p (read out k) (mulAdd4 p (read b0 (o0 + k)) c0 (read b1 (o1 + k)) c1
-      (read b2 (o2 + k)) c2 (read b3 (o3 + k)) c3))
+    let x0 := read b0 (o0 + k)
+    let x1 := read b1 (o1 + k)
+    let x2 := read b2 (o2 + k)
+    let x3 := read b3 (o3 + k)
+    out := write out k (add p (read out k) (mulAdd4 p x0 a00 x1 a01 x2 a02 x3 a03))
+    out := write out (n + k) (add p (read out (n + k)) (mulAdd4 p x0 a10 x1 a11 x2 a12 x3 a13))
+    out := write out (2 * n + k)
+      (add p (read out (2 * n + k)) (mulAdd4 p x0 a20 x1 a21 x2 a22 x3 a23))
+    out := write out (3 * n + k)
+      (add p (read out (3 * n + k)) (mulAdd4 p x0 a30 x1 a31 x2 a32 x3 a33))
   return out
 
 /-- `∑ₖ b[bo + k] · c[k]` for `k < n`: sixteen running sums, each adding four products reduced

@@ -438,61 +438,300 @@ theorem mulAdd4Into_upto (o b : Array F) (o0 o1 o2 o3 : Nat) (c0 c1 c2 c3 : F) (
       exact write_upto _ f k (by omega) hso),
     Nat.add_sub_cancel' (Nat.mul_div_le n 16)]
 
-theorem mulAdd4BufsInto16_encode (o B0 B1 B2 B3 : Array F) (io i0 i1 i2 i3 : USize)
-    (c0 c1 c2 c3 : F) (hout h0 h1 h2 h3) (hi : io.toNat + 16 ≤ o.size)
+/-- The four planes' sixteen words of `mulAdd4x4Into16`, as four splices of the words read
+before any of them. -/
+theorem mulAdd4x4Into16_encode (o B0 B1 B2 B3 : Array F) (q0 q1 q2 q3 i0 i1 i2 i3 : USize)
+    (a00 a01 a02 a03 a10 a11 a12 a13 a20 a21 a22 a23 a30 a31 a32 a33 : F)
+    (hq0 hq1 hq2 hq3 h0 h1 h2 h3) (e0 : q0.toNat + 16 ≤ o.size) (e1 : q1.toNat + 16 ≤ o.size)
+    (e2 : q2.toNat + 16 ≤ o.size) (e3 : q3.toNat + 16 ≤ o.size)
     (ho : 4 * o.size < USize.size) :
-    mulAdd4BufsInto16 p (encode o) io (encode B0) (encode B1) (encode B2) (encode B3) i0 i1 i2 i3
-      c0.val c1.val c2.val c3.val hout h0 h1 h2 h3 = encode (splice o io.toNat (lit16 fun t ↦
-        o.getD (io.toNat + t) 0 + (B0.getD (i0.toNat + t) 0 * c0 + B1.getD (i1.toNat + t) 0 * c1 +
-          B2.getD (i2.toNat + t) 0 * c2 + B3.getD (i3.toNat + t) 0 * c3))) := by
-  unfold mulAdd4BufsInto16
+    Words.mulAdd4x4Into16 p (encode o) q0 q1 q2 q3 (encode B0) (encode B1) (encode B2)
+      (encode B3) i0 i1 i2 i3 a00.val a01.val a02.val a03.val a10.val a11.val a12.val a13.val
+      a20.val a21.val a22.val a23.val a30.val a31.val a32.val a33.val hq0 hq1 hq2 hq3
+      h0 h1 h2 h3 =
+      encode (splice (splice (splice (splice o q0.toNat
+        (lit16 fun t ↦ o.getD (q0.toNat + t) 0 + (B0.getD (i0.toNat + t) 0 * a00 +
+            B1.getD (i1.toNat + t) 0 * a01 + B2.getD (i2.toNat + t) 0 * a02 +
+            B3.getD (i3.toNat + t) 0 * a03)))
+        q1.toNat
+        (lit16 fun t ↦ o.getD (q1.toNat + t) 0 + (B0.getD (i0.toNat + t) 0 * a10 +
+            B1.getD (i1.toNat + t) 0 * a11 + B2.getD (i2.toNat + t) 0 * a12 +
+            B3.getD (i3.toNat + t) 0 * a13)))
+        q2.toNat
+        (lit16 fun t ↦ o.getD (q2.toNat + t) 0 + (B0.getD (i0.toNat + t) 0 * a20 +
+            B1.getD (i1.toNat + t) 0 * a21 + B2.getD (i2.toNat + t) 0 * a22 +
+            B3.getD (i3.toNat + t) 0 * a23)))
+        q3.toNat
+        (lit16 fun t ↦ o.getD (q3.toNat + t) 0 + (B0.getD (i0.toNat + t) 0 * a30 +
+            B1.getD (i1.toNat + t) 0 * a31 + B2.getD (i2.toNat + t) 0 * a32 +
+            B3.getD (i3.toNat + t) 0 * a33))) := by
+  unfold Words.mulAdd4x4Into16
   simp only [rd_encode, mulAdd4_val, add_val]
+  have z : ∀ (a : Array F) (i : Nat) (x0 x1 x2 x3 x4 x5 x6 x7 x8 x9 x10 x11 x12 x13 x14 x15 : F),
+      i + 16 ≤ a.size → (splice a i #[x0, x1, x2, x3, x4, x5, x6, x7, x8, x9, x10, x11, x12, x13,
+        x14, x15]).size = a.size := fun a i _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ h ↦
+    CompPoly.CPolynomial.NTTFast.Packed.size_splice16 a i _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ h
   rw [CompPoly.CPolynomial.NTTFast.Packed.Native.write16U_encode _ _
-    (by rw [size_encode_fields]; exact ho) hi]
+    (by rw [size_encode_fields]; exact ho) e0]
+  generalize hA1 : splice o q0.toNat _ = A1
+  have s1 : A1.size = o.size := by rw [← hA1]; exact z _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ e0
+  rw [CompPoly.CPolynomial.NTTFast.Packed.Native.write16U_encode _ _
+    (by rw [size_encode_fields, s1]; exact ho) (by rw [s1]; exact e1)]
+  generalize hA2 : splice A1 q1.toNat _ = A2
+  have s2 : A2.size = o.size := by
+    rw [← hA2, z _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ (by rw [s1]; exact e1), s1]
+  rw [CompPoly.CPolynomial.NTTFast.Packed.Native.write16U_encode _ _
+    (by rw [size_encode_fields, s2]; exact ho) (by rw [s2]; exact e2)]
+  generalize hA3 : splice A2 q2.toNat _ = A3
+  have s3 : A3.size = o.size := by
+    rw [← hA3, z _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ (by rw [s2]; exact e2), s2]
+  rw [CompPoly.CPolynomial.NTTFast.Packed.Native.write16U_encode _ _
+    (by rw [size_encode_fields, s3]; exact ho) (by rw [s3]; exact e3)]
+  subst hA1 hA2 hA3
   rfl
 
-/-- `out[k] += c0 · B0[o0 + k] + c1 · B1[o1 + k] + c2 · B2[o2 + k] + c3 · B3[o3 + k]` for all `n`
-words of `out`. -/
-theorem mulAdd4BufsInto_encode (o B0 B1 B2 B3 : Array F) (o0 o1 o2 o3 : Nat) (c0 c1 c2 c3 : F)
-    (h0 : o0 + o.size ≤ B0.size) (h1 : o1 + o.size ≤ B1.size) (h2 : o2 + o.size ≤ B2.size)
-    (h3 : o3 + o.size ≤ B3.size) (hso : 4 * o.size < USize.size)
+/-! ### Four planes, partly overwritten -/
+
+/-- Rows below `k` of the four planes of `n` entries of `o` overwritten with `f`. -/
+def upto4 (o : Array F) (f : Nat → F) (n k : Nat) : Array F :=
+  Array.ofFn (n := o.size) fun j ↦
+    if j.val < k ∨ (n ≤ j.val ∧ j.val < n + k) ∨ (2 * n ≤ j.val ∧ j.val < 2 * n + k) ∨
+      (3 * n ≤ j.val ∧ j.val < 3 * n + k) then f j else o.getD j 0
+
+@[simp] theorem size_upto4 (o : Array F) (f : Nat → F) (n k : Nat) :
+    (upto4 o f n k).size = o.size :=
+  Array.size_ofFn
+
+theorem getD_upto4 (o : Array F) (f : Nat → F) (n k j : Nat) :
+    (upto4 o f n k).getD j 0 = if j < o.size then (if j < k ∨ (n ≤ j ∧ j < n + k) ∨
+      (2 * n ≤ j ∧ j < 2 * n + k) ∨ (3 * n ≤ j ∧ j < 3 * n + k) then f j else o.getD j 0)
+      else 0 :=
+  getD_ofFn o.size (fun j ↦ if j < k ∨ (n ≤ j ∧ j < n + k) ∨ (2 * n ≤ j ∧ j < 2 * n + k) ∨
+    (3 * n ≤ j ∧ j < 3 * n + k) then f j else o.getD j 0) j
+
+theorem ite_of_pos {α : Type} {c : Prop} [Decidable c] (h : c) (a b : α) :
+    (if c then a else b) = a := by
+  simp only [h, ↓reduceIte]
+
+theorem ite_of_neg {α : Type} {c : Prop} [Decidable c] (h : ¬c) (a b : α) :
+    (if c then a else b) = b := by
+  simp only [h, ↓reduceIte]
+
+theorem upto4_zero (o : Array F) (f : Nat → F) (n : Nat) : upto4 o f n 0 = o := by
+  apply array_eq_of_getD _ _ 0 (size_upto4 _ _ _ _)
+  intro j
+  rw [getD_upto4]
+  by_cases hj : j < o.size
+  · rw [ite_of_pos hj, ite_of_neg (by omega)]
+  · rw [ite_of_neg hj, getD_eq_zero o j (by omega)]
+
+theorem upto4_full (o : Array F) (f : Nat → F) (n : Nat) (hn : o.size = 4 * n) :
+    upto4 o f n n = Array.ofFn (n := 4 * n) fun j ↦ f j.val := by
+  apply array_eq_of_getD _ _ 0 (by rw [size_upto4, Array.size_ofFn, hn])
+  intro j
+  rw [getD_upto4, getD_ofFn, hn]
+  by_cases hj : j < 4 * n
+  · rw [ite_of_pos hj, ite_of_pos hj, ite_of_pos (by omega)]
+  · rw [ite_of_neg hj, ite_of_neg hj]
+
+/-- `o` with the entries where `P` holds replaced by `f`. -/
+def fill (o : Array F) (f : Nat → F) (P : Nat → Prop) [DecidablePred P] : Array F :=
+  Array.ofFn (n := o.size) fun j ↦ if P j then f j else o.getD j 0
+
+theorem upto4_eq_fill (o : Array F) (f : Nat → F) (n k : Nat) :
+    upto4 o f n k = fill o f fun j ↦ j < k ∨ (n ≤ j ∧ j < n + k) ∨
+      (2 * n ≤ j ∧ j < 2 * n + k) ∨ (3 * n ≤ j ∧ j < 3 * n + k) := rfl
+
+/-- Splicing sixteen entries of `f` at `q` into a fill extends it. -/
+theorem splice_fill (o : Array F) (f : Nat → F) (P : Nat → Prop) [DecidablePred P] (q : Nat)
+    (hq : q + 16 ≤ o.size) :
+    splice (fill o f P) q (lit16 fun t ↦ f (q + t)) =
+      fill o f fun j ↦ P j ∨ (q ≤ j ∧ j < q + 16) := by
+  have hs : (fill o f P).size = o.size := Array.size_ofFn
+  apply array_eq_of_getD _ _ 0 (by rw [size_splice _ _ _ (by rw [size_lit16, hs]; exact hq), hs,
+    fill, Array.size_ofFn])
+  intro j
+  have g1 := getD_ofFn o.size (fun j ↦ if P j then f j else o.getD j 0)
+  have g2 := getD_ofFn o.size (fun j ↦ if P j ∨ (q ≤ j ∧ j < q + 16) then f j else o.getD j 0) j
+  rw [getD_splice _ _ _ (by rw [size_lit16, hs]; exact hq), fill, fill, g1, g2, size_lit16]
+  by_cases h0 : j < o.size
+  · simp only [h0, ↓reduceIte]
+    by_cases h1 : j < q
+    · rw [ite_of_pos h1]
+      by_cases hP : P j
+      · simp only [hP, true_or, ↓reduceIte]
+      · simp only [hP, false_or, show ¬(q ≤ j ∧ j < q + 16) by omega, ↓reduceIte]
+    · rw [ite_of_neg h1]
+      by_cases h2 : j < q + 16
+      · rw [ite_of_pos h2, getD_lit16 _ _ (by omega), ite_of_pos (Or.inr ⟨by omega, h2⟩),
+          Nat.add_sub_cancel' (by omega)]
+      · rw [ite_of_neg h2]
+        by_cases hP : P j
+        · simp only [hP, true_or, ↓reduceIte]
+        · simp only [hP, false_or, show ¬(q ≤ j ∧ j < q + 16) by omega, ↓reduceIte]
+  · simp only [h0, ↓reduceIte, show ¬j < q by omega, show ¬j < q + 16 by omega]
+
+theorem getD_fill (o : Array F) (f : Nat → F) (P : Nat → Prop) [DecidablePred P] (j : Nat) :
+    (fill o f P).getD j 0 = if j < o.size then (if P j then f j else o.getD j 0) else 0 :=
+  getD_ofFn o.size (fun j ↦ if P j then f j else o.getD j 0) j
+
+/-- Adding `x` to an entry not yet filled fills it, when `f` is the entry plus `x` there. -/
+theorem write_fill (o : Array F) (f : Nat → F) (P : Nat → Prop) [DecidablePred P] (j : Nat)
+    (x : F) (hj : j < o.size) (hP : ¬P j) (hx : f j = o.getD j 0 + x)
+    (hs : 4 * o.size < USize.size) :
+    write (encode (fill o f P)) j (add p (read (encode (fill o f P)) j) x.val) =
+      encode (fill o f fun i ↦ P i ∨ i = j) := by
+  have hsz : (fill o f P).size = o.size := Array.size_ofFn
+  rw [read_encode _ _ (by rw [hsz]; exact hs) (by rw [hsz]; exact hj), add_val, getD_fill,
+    ite_of_pos hj, ite_of_neg hP, ← hx,
+    CompPoly.CPolynomial.NTTFast.Packed.Native.write_encode _ _
+      (by rw [size_encode_fields, hsz]; exact hs) (by rw [hsz]; exact hj)]
+  congr 1
+  apply array_eq_of_getD _ _ 0 (by rw [Array.size_setIfInBounds, hsz, fill, Array.size_ofFn])
+  intro i
+  rw [getD_setIfInBounds _ _ _ _ _ (by rw [hsz]; exact hj), getD_fill, getD_fill]
+  by_cases hi : i = j
+  · subst hi
+    simp only [hj, ↓reduceIte, or_true]
+  · simp only [hi, ↓reduceIte, or_false]
+
+theorem fill_congr (o : Array F) (f : Nat → F) (P Q : Nat → Prop) [DecidablePred P]
+    [DecidablePred Q] (h : ∀ j < o.size, (P j ↔ Q j)) : fill o f P = fill o f Q := by
+  unfold fill
+  exact congrArg _ (funext fun j ↦ by rw [if_congr (h j j.isLt) rfl rfl])
+
+/-- Splicing sixteen entries at row `i` of each plane extends the overwritten rows. -/
+theorem splice4_upto4 (o : Array F) (f : Nat → F) (n i : Nat) (hn : o.size = 4 * n)
+    (hi : i + 16 ≤ n) :
+    splice (splice (splice (splice (upto4 o f n i) i (lit16 fun t ↦ f (i + t)))
+      (n + i) (lit16 fun t ↦ f (n + i + t))) (2 * n + i) (lit16 fun t ↦ f (2 * n + i + t)))
+      (3 * n + i) (lit16 fun t ↦ f (3 * n + i + t)) = upto4 o f n (i + 16) := by
+  rw [upto4_eq_fill, splice_fill _ _ _ _ (by omega), splice_fill _ _ _ _ (by omega),
+    splice_fill _ _ _ _ (by omega), splice_fill _ _ _ _ (by omega), upto4_eq_fill]
+  exact fill_congr _ _ _ _ fun j _ ↦ by omega
+
+theorem lit16_congr {α : Type} (g g' : Nat → α) (h : ∀ t < 16, g t = g' t) :
+    lit16 g = lit16 g' := by
+  simp only [lit16, h 0 (by decide), h 1 (by decide), h 2 (by decide), h 3 (by decide),
+    h 4 (by decide), h 5 (by decide), h 6 (by decide), h 7 (by decide), h 8 (by decide),
+    h 9 (by decide), h 10 (by decide), h 11 (by decide), h 12 (by decide), h 13 (by decide),
+    h 14 (by decide), h 15 (by decide)]
+
+theorem foldl_blocks4 (o : Array F) (f : Nat → F) (n M : Nat) (B : ByteArray → Nat → ByteArray)
+    (hB : ∀ m < M, B (encode (upto4 o f n (16 * m))) m = encode (upto4 o f n (16 * m + 16))) :
+    (List.range M).foldl B (encode o) = encode (upto4 o f n (16 * M)) := by
+  induction M with
+  | zero => rw [List.range_zero, List.foldl_nil, Nat.mul_zero, upto4_zero]
+  | succ M ih =>
+    rw [List.range_succ, List.foldl_append, ih fun m hm ↦ hB m (by omega), List.foldl_cons,
+      List.foldl_nil, hB M (by omega)]
+    rfl
+
+theorem foldl_tail4 (o : Array F) (f : Nat → F) (n k0 len : Nat)
+    (T : ByteArray → Nat → ByteArray)
+    (hT : ∀ k, k0 ≤ k → k < k0 + len →
+      T (encode (upto4 o f n k)) k = encode (upto4 o f n (k + 1))) :
+    (List.range' k0 len).foldl T (encode (upto4 o f n k0)) = encode (upto4 o f n (k0 + len)) := by
+  induction len generalizing k0 with
+  | zero => rfl
+  | succ len ih =>
+    rw [List.range'_succ, List.foldl_cons, hT k0 (Nat.le_refl _) (by omega),
+      ih (k0 + 1) fun k h1 h2 ↦ hT k (by omega) (by omega), Nat.add_right_comm, Nat.add_assoc]
+
+/-- `out[c n + k] += ac0 · B0[o0 + k] + ac1 · B1[o1 + k] + ac2 · B2[o2 + k] + ac3 · B3[o3 + k]`
+for the four planes `c` of `n` words of `out`: `f` on all `4 n` words. -/
+theorem mulAdd4x4Into_encode (o B0 B1 B2 B3 : Array F) (o0 o1 o2 o3 n : Nat)
+    (a00 a01 a02 a03 a10 a11 a12 a13 a20 a21 a22 a23 a30 a31 a32 a33 : F) (f : Nat → F)
+    (hn : o.size = 4 * n) (h0 : o0 + n ≤ B0.size) (h1 : o1 + n ≤ B1.size)
+    (h2 : o2 + n ≤ B2.size) (h3 : o3 + n ≤ B3.size) (hso : 4 * o.size < USize.size)
     (hs0 : 4 * B0.size < USize.size) (hs1 : 4 * B1.size < USize.size)
-    (hs2 : 4 * B2.size < USize.size) (hs3 : 4 * B3.size < USize.size) :
-    mulAdd4BufsInto p (encode o) (encode B0) (encode B1) (encode B2) (encode B3) o0 o1 o2 o3
-      c0.val c1.val c2.val c3.val o.size =
-      encode (Array.ofFn (n := o.size) fun k ↦ o.getD k.val 0 +
-        (B0.getD (o0 + k.val) 0 * c0 + B1.getD (o1 + k.val) 0 * c1 + B2.getD (o2 + k.val) 0 * c2 +
-          B3.getD (o3 + k.val) 0 * c3)) := by
-  unfold mulAdd4BufsInto
+    (hs2 : 4 * B2.size < USize.size) (hs3 : 4 * B3.size < USize.size)
+    (hf0 : ∀ r < n, f r = o.getD r 0 + (B0.getD (o0 + r) 0 * a00 + B1.getD (o1 + r) 0 * a01 +
+      B2.getD (o2 + r) 0 * a02 + B3.getD (o3 + r) 0 * a03))
+    (hf1 : ∀ r < n, f (n + r) = o.getD (n + r) 0 + (B0.getD (o0 + r) 0 * a10 +
+      B1.getD (o1 + r) 0 * a11 + B2.getD (o2 + r) 0 * a12 + B3.getD (o3 + r) 0 * a13))
+    (hf2 : ∀ r < n, f (2 * n + r) = o.getD (2 * n + r) 0 + (B0.getD (o0 + r) 0 * a20 +
+      B1.getD (o1 + r) 0 * a21 + B2.getD (o2 + r) 0 * a22 + B3.getD (o3 + r) 0 * a23))
+    (hf3 : ∀ r < n, f (3 * n + r) = o.getD (3 * n + r) 0 + (B0.getD (o0 + r) 0 * a30 +
+      B1.getD (o1 + r) 0 * a31 + B2.getD (o2 + r) 0 * a32 + B3.getD (o3 + r) 0 * a33)) :
+    Words.mulAdd4x4Into p (encode o) (encode B0) (encode B1) (encode B2) (encode B3) o0 o1 o2 o3
+      a00.val a01.val a02.val a03.val a10.val a11.val a12.val a13.val a20.val a21.val a22.val
+      a23.val a30.val a31.val a32.val a33.val n =
+      encode (Array.ofFn (n := 4 * n) fun j ↦ f j.val) := by
+  unfold Words.mulAdd4x4Into
+  rw [dite_eq_left_of_eq_true (eq_true ⟨by rw [size_encode_fields]; omega,
+    by rw [size_encode_fields]; omega, by rw [size_encode_fields]; omega,
+    by rw [size_encode_fields]; omega⟩)]
   simp only [Std.Legacy.Range.forIn_eq_forIn_range', Std.Legacy.Range.size,
     Nat.sub_zero, Nat.add_sub_cancel, Nat.div_one, ← List.range_eq_range',
     bind_pure, pure_bind, dite_pure_yield, List.forIn_pure_yield_eq_foldl, Id.run_pure]
   have hso' : (encode o).size = 4 * o.size := size_encode_fields o
-  let f (k : Nat) : F := o.getD k 0 + (B0.getD (o0 + k) 0 * c0 + B1.getD (o1 + k) 0 * c1 +
-    B2.getD (o2 + k) 0 * c2 + B3.getD (o3 + k) 0 * c3)
-  rw [foldl_blocks o f (o.size / 16) _ (fun m hm ↦ by
-    have h16 : 16 * m + 16 ≤ o.size := by omega
-    rw [dite_eq_left_of_eq_true (eq_true ⟨by rw [size_encode_fields, size_upto]; omega,
-      by rw [size_encode_fields]; omega, by rw [size_encode_fields]; omega,
-      by rw [size_encode_fields]; omega, by rw [size_encode_fields]; omega,
-      by rw [size_encode_fields, size_upto]; omega, by rw [size_encode_fields]; omega,
-      by rw [size_encode_fields]; omega, by rw [size_encode_fields]; omega,
-      by rw [size_encode_fields]; omega⟩),
-      mulAdd4BufsInto16_encode _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _
-        (by simp only [USize.toNat_ofNatLT, size_upto]; omega) (by rw [size_upto]; exact hso)]
+  have hu (k : Nat) : (upto4 o f n k).size = o.size := size_upto4 o f n k
+  rw [foldl_blocks4 o f n (n / 16) _ (fun m hm ↦ by
+    have h16 : 16 * m + 16 ≤ n := by omega
+    split
+    swap
+    · rename_i hc
+      exfalso
+      apply hc
+      refine ⟨?_, ?_, ?_, ?_, ?_, ?_⟩ <;> simp only [size_encode_fields, hu] <;> omega
+    rw [mulAdd4x4Into16_encode _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _
+      _ _ _ _ (by simp only [USize.toNat_ofNatLT, hu]; omega)
+      (by simp only [USize.toNat_ofNatLT, hu]; omega)
+      (by simp only [USize.toNat_ofNatLT, hu]; omega)
+      (by simp only [USize.toNat_ofNatLT, hu]; omega) (by rw [hu]; exact hso)]
     simp only [USize.toNat_ofNatLT]
-    refine Eq.trans ?_ (congrArg encode (splice_upto o f _ (by omega)))
-    congr 2
-    refine congrArg lit16 (funext fun t ↦ ?_)
-    rw [getD_upto_of_le _ _ _ _ (by omega)]
-    simp only [f, Nat.add_assoc]),
-    foldl_tail _ f _ _ _ (fun k _ hk ↦ by
-      rw [read_encode _ k (by rw [size_upto]; exact hso) (by rw [size_upto]; omega),
-        read_encode B0 _ hs0 (by omega), read_encode B1 _ hs1 (by omega),
-        read_encode B2 _ hs2 (by omega), read_encode B3 _ hs3 (by omega),
-        getD_upto_of_le _ _ _ _ (Nat.le_refl _), mulAdd4_val, add_val]
-      exact write_upto _ f k (by omega) hso),
-    Nat.add_sub_cancel' (Nat.mul_div_le o.size 16), upto_full _ _ _ rfl]
+    refine Eq.trans ?_ (congrArg encode (splice4_upto4 o f n (16 * m) hn h16))
+    have hold (c t : Nat) (hc : c < 4) (ht : t < 16) :
+        (upto4 o f n (16 * m)).getD (c * n + 16 * m + t) 0 = o.getD (c * n + 16 * m + t) 0 := by
+      interval_cases c <;>
+        rw [getD_upto4, ite_of_pos (by rw [hn]; omega), ite_of_neg (by omega)]
+    have L0 : (lit16 fun t ↦ (upto4 o f n (16 * m)).getD (16 * m + t) 0 +
+        (B0.getD (o0 + 16 * m + t) 0 * a00 + B1.getD (o1 + 16 * m + t) 0 * a01 +
+          B2.getD (o2 + 16 * m + t) 0 * a02 + B3.getD (o3 + 16 * m + t) 0 * a03)) =
+        lit16 fun t ↦ f (16 * m + t) := by
+      refine lit16_congr _ _ fun t ht ↦ ?_
+      have e := hold 0 t (by decide) ht
+      simp only [Nat.zero_mul, Nat.zero_add] at e
+      rw [e, hf0 _ (by omega)]
+      simp only [Nat.add_assoc]
+    have L1 : (lit16 fun t ↦ (upto4 o f n (16 * m)).getD (n + 16 * m + t) 0 +
+        (B0.getD (o0 + 16 * m + t) 0 * a10 + B1.getD (o1 + 16 * m + t) 0 * a11 +
+          B2.getD (o2 + 16 * m + t) 0 * a12 + B3.getD (o3 + 16 * m + t) 0 * a13)) =
+        lit16 fun t ↦ f (n + 16 * m + t) := by
+      refine lit16_congr _ _ fun t ht ↦ ?_
+      have e := hold 1 t (by decide) ht
+      simp only [Nat.one_mul] at e
+      rw [e, show n + 16 * m + t = n + (16 * m + t) by omega, hf1 _ (by omega)]
+      simp only [Nat.add_assoc]
+    have L2 : (lit16 fun t ↦ (upto4 o f n (16 * m)).getD (2 * n + 16 * m + t) 0 +
+        (B0.getD (o0 + 16 * m + t) 0 * a20 + B1.getD (o1 + 16 * m + t) 0 * a21 +
+          B2.getD (o2 + 16 * m + t) 0 * a22 + B3.getD (o3 + 16 * m + t) 0 * a23)) =
+        lit16 fun t ↦ f (2 * n + 16 * m + t) := by
+      refine lit16_congr _ _ fun t ht ↦ ?_
+      have e := hold 2 t (by decide) ht
+      rw [e, show 2 * n + 16 * m + t = 2 * n + (16 * m + t) by omega, hf2 _ (by omega)]
+      simp only [Nat.add_assoc]
+    have L3 : (lit16 fun t ↦ (upto4 o f n (16 * m)).getD (3 * n + 16 * m + t) 0 +
+        (B0.getD (o0 + 16 * m + t) 0 * a30 + B1.getD (o1 + 16 * m + t) 0 * a31 +
+          B2.getD (o2 + 16 * m + t) 0 * a32 + B3.getD (o3 + 16 * m + t) 0 * a33)) =
+        lit16 fun t ↦ f (3 * n + 16 * m + t) := by
+      refine lit16_congr _ _ fun t ht ↦ ?_
+      have e := hold 3 t (by decide) ht
+      rw [e, show 3 * n + 16 * m + t = 3 * n + (16 * m + t) by omega, hf3 _ (by omega)]
+      simp only [Nat.add_assoc]
+    rw [L0, L1, L2, L3])]
+  rw [foldl_tail4 o f n _ _ _ (fun k hk1 hk2 ↦ by
+    have hk : k < n := by omega
+    rw [read_encode B0 _ hs0 (by omega), read_encode B1 _ hs1 (by omega),
+      read_encode B2 _ hs2 (by omega), read_encode B3 _ hs3 (by omega), mulAdd4_val,
+      mulAdd4_val, mulAdd4_val, mulAdd4_val, upto4_eq_fill,
+      write_fill o f _ k _ (by omega) (by omega) (hf0 k hk) hso,
+      write_fill o f _ (n + k) _ (by omega) (by omega) (hf1 k hk) hso,
+      write_fill o f _ (2 * n + k) _ (by omega) (by omega) (hf2 k hk) hso,
+      write_fill o f _ (3 * n + k) _ (by omega) (by omega) (hf3 k hk) hso, upto4_eq_fill]
+    exact congrArg encode (fill_congr _ _ _ _ fun j _ ↦ by omega)),
+    Nat.add_sub_cancel' (Nat.mul_div_le n 16), upto4_full o f n hn]
 
 /-- `out[k] += c0 · b[o0 + k] + c1 · b[o1 + k] + c2 · b[o2 + k] + c3 · b[o3 + k]` for all `n` words
 of `out`. -/

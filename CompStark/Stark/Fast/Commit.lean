@@ -32,28 +32,32 @@ variable {p : ℕ} [Mont32Field p]
 
 local notation "F" => FastField p
 
+/-- A read past the end of a buffer is zero. -/
+theorem read_oob (b : ByteArray) (i : Nat) (hb : b.size < USize.size)
+    (hu : 4 * i + 3 < USize.size) (hi : b.size ≤ 4 * i + 3) :
+    CompPoly.CPolynomial.NTTFast.Packed.Native.read b i = 0 := by
+  open CompPoly.CPolynomial.NTTFast.Packed.Native in
+  have hiu : i.toUSize.toNat = i := USize.toNat_ofNat_of_lt' (by omega)
+  have hz : (0 : USize).toNat = 0 := rfl
+  have hsz : b.usize.toNat = b.size := by
+    rw [ByteArray.usize, Nat.toUSize, USize.toNat_ofNat_of_lt' hb]
+  have h4 := usize_numeral 4 (by decide)
+  unfold CompPoly.CPolynomial.NTTFast.Packed.Native.read
+    CompPoly.CPolynomial.NTTFast.Packed.Native.readAt
+  rw [dite_eq_right_iff]
+  intro hc
+  exfalso
+  have h1 := hc.1
+  have h2 := hc.2
+  rw [USize.le_iff_toNat_le, hsz, h4] at h1
+  rw [USize.le_iff_toNat_le, USize.toNat_sub_of_le _ _ hc.1, hsz, h4,
+    wordOffset_toNat _ _ (by rw [hiu, hz]; omega), hiu, hz] at h2
+  omega
+
 /-- A word past the end of a buffer reads zero. -/
 theorem word_oob (b : ByteArray) (i : Nat) (hb : b.size < USize.size)
     (hu : 4 * i + 3 < USize.size) (hi : b.size ≤ 4 * i + 3) : word (p := p) b i = 0 := by
-  open CompPoly.CPolynomial.NTTFast.Packed.Native in
-  have hr : CompPoly.CPolynomial.NTTFast.Packed.Native.read b i = 0 := by
-    have hiu : i.toUSize.toNat = i := USize.toNat_ofNat_of_lt' (by omega)
-    have hz : (0 : USize).toNat = 0 := rfl
-    have hsz : b.usize.toNat = b.size := by
-      rw [ByteArray.usize, Nat.toUSize, USize.toNat_ofNat_of_lt' hb]
-    have h4 := usize_numeral 4 (by decide)
-    unfold CompPoly.CPolynomial.NTTFast.Packed.Native.read
-      CompPoly.CPolynomial.NTTFast.Packed.Native.readAt
-    rw [dite_eq_right_iff]
-    intro hc
-    exfalso
-    have h1 := hc.1
-    have h2 := hc.2
-    rw [USize.le_iff_toNat_le, hsz, h4] at h1
-    rw [USize.le_iff_toNat_le, USize.toNat_sub_of_le _ _ hc.1, hsz, h4,
-      wordOffset_toNat _ _ (by rw [hiu, hz]; omega), hiu, hz] at h2
-    omega
-  rw [word, hr]
+  rw [word, read_oob b i hb hu hi]
   exact ofWord_val (0 : F)
 
 /-- A word of an encoded array is its entry, or zero past its end. -/
