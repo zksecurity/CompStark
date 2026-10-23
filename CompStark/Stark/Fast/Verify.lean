@@ -27,7 +27,8 @@ open CompPoly.PackedRepr (encode)
 open CompStark.Poseidon2 Montgomery.Native32
 
 /-- Entry `r · w + j` of rows of width `w` laid end to end is entry `j` of row `r`. -/
-theorem getD_flatten_uniform {α : Type} (d : α) (xss : List (List α)) (w : Nat) (h : ∀ xs ∈ xss, xs.length = w)
+theorem getD_flatten_uniform {α : Type} (d : α) (xss : List (List α)) (w : Nat)
+    (h : ∀ xs ∈ xss, xs.length = w)
     (r j : Nat) (hr : r < xss.length) (hj : j < w) :
     xss.flatten.toArray.getD (r * w + j) d = (xss.getD r []).getD j d := by
   induction xss generalizing r with
@@ -52,7 +53,8 @@ section Monad
 
 variable {F : Type} {m : Type → Type} [Monad m] (H : Primitives F m)
 
-theorem ensure_bind_congr [LawfulMonad m] {β : Type} (c : Bool) (msg : String) (k1 k2 : Unit → M H β)
+theorem ensure_bind_congr [LawfulMonad m] {β : Type} (c : Bool) (msg : String)
+    (k1 k2 : Unit → M H β)
     (h : c = true → k1 () = k2 ()) : (ensure c msg >>= k1) = (ensure c msg >>= k2) := by
   cases c
   · funext s
@@ -161,7 +163,8 @@ theorem powSum_foldl (alpha : EF) (ys : List EF) (s a : EF) :
 
 theorem dotBase_foldl (xs : List F) (ws : List EF) (d : EF) (h : xs.length ≤ ws.length) :
     toSpec ((xs.zip ws).foldl (fun d (x, w) ↦ d + smul x w) d) = toSpec d +
-      ∑ i ∈ Finset.range xs.length, algebraMap F (Spec EF) (xs.getD i 0) * toSpec (ws.getD i 0) := by
+      ∑ i ∈ Finset.range xs.length,
+        algebraMap F (Spec EF) (xs.getD i 0) * toSpec (ws.getD i 0) := by
   induction xs generalizing ws d with
   | nil => simp only [List.zip_nil_left, List.foldl_nil, List.length_nil, Finset.range_zero,
       Finset.sum_empty, add_zero]
@@ -542,7 +545,8 @@ def verifyFast (P : Params) (A : Air F) (vk : Option (PreprocessedKey F)) (proof
 
 /-- **The fast verifier is Plonky3's verifier.** -/
 theorem verifyFast_eq (P : Params) (A : Air F) (vk : Option (PreprocessedKey F))
-    (proof : Proof F EF) (pis : List F) : verifyFast P A vk proof pis = verify P A vk proof pis := by
+    (proof : Proof F EF) (pis : List F) :
+    verifyFast P A vk proof pis = verify P A vk proof pis := by
   unfold verifyFast verify verifyWith
   simp only [verifyPcs_eq]
   rfl
