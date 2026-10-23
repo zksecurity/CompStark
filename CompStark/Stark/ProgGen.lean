@@ -12,10 +12,10 @@ public meta import Lean.Elab.Command
 `group_kernels p` defines, in the current namespace, the group kernels (`CompStark/Stark/ProgGroup`)
 over the field `FastField p` as compiled functions, the field's constants immediate.
 
-`#gen_group_chunks K ns prog size lo hi` cuts the code of the program `prog`, evaluated during
-elaboration, into chunks of `size` instructions and, for the chunks `lo, …, hi - 1`, defines their
-code `K.code_k` and their straight-line code `K.chunk_k`, a call of the kernel of `ns` per
-instruction, with `K.chunk_k_eq : K.chunk_k env s = K.code_k.foldl (fun s i ↦ i.exec M s) s` for
+`#gen_group_chunks K ns prog size i n` cuts the code of the program `prog`, evaluated during
+elaboration, into chunks of `size` instructions and, for the `i`-th of `n` equal parts of them
+(chunks `i c / n` to `(i + 1) c / n - 1` of `c`), defines their code `K.code_k` and their
+straight-line code `K.chunk_k`, a call of the kernel of `ns` per instruction, with `K.chunk_k_eq : K.chunk_k env s = K.code_k.foldl (fun s i ↦ i.exec M s) s` for
 the group machine `M` checked by the kernel's `rfl`, without unfolding field arithmetic: both sides
 reduce to the same calls. `#gen_group_kernel K p` assembles the chunks into
 `K.kernel : GroupKernel p` (`runChunks_eq`). Chunks of a program can be generated in separate
@@ -233,9 +233,10 @@ meta def callE (ns : Name) (env s : Lean.Expr) (i : Instr UInt32) : MetaM Lean.E
       return mkAppN (mkConst (ns ++ `accE)) #[nm, rb, s, view, off, wts, natE w]
     | .const c => return mkAppN (mkConst (ns ++ `accW)) #[nm, rb, s, toExpr c, wts, natE w]
 
-/-- `#gen_group_chunks K ns prog size lo hi`: chunks `lo, …, hi - 1` of `size` instructions of the
-program `prog`, as `K.code_k`, `K.chunk_k` (calls of the kernels of `ns`) and `K.chunk_k_eq`. -/
-elab "#gen_group_chunks " K:ident ns:ident prog:term:max size:num lo:num hi:num : command =>
+/-- `#gen_group_chunks K ns prog size i n`: the `i`-th of `n` parts of the chunks of `size`
+instructions of the program `prog`, as `K.code_k`, `K.chunk_k` (calls of the kernels of `ns`) and
+`K.chunk_k_eq`. -/
+elab "#gen_group_chunks " K:ident ns:ident prog:term:max size:num part:num parts:num : command =>
   withScope (fun sc ↦ { sc with opts := maxRecDepth.set sc.opts 100000 }) do
     let g ← liftTermElabM (evalProg prog)
     let N := size.getNat
@@ -244,7 +245,10 @@ elab "#gen_group_chunks " K:ident ns:ident prog:term:max size:num lo:num hi:num 
     let instrT := mkApp (mkConst ``Instr) g.F
     let envT := mkConst ``GroupEnv
     let baT := mkConst ``ByteArray
-    for k in [lo.getNat:hi.getNat] do
+    let chunks := (g.code.size + N - 1) / N
+    let lo := part.getNat * chunks / parts.getNat
+    let hi := (part.getNat + 1) * chunks / parts.getNat
+    for k in [lo:hi] do
       let instrs := (g.code.extract (k * N) ((k + 1) * N)).toList
       let codeName := K ++ Name.mkSimple s!"code_{k}"
       let chunkName := K ++ Name.mkSimple s!"chunk_{k}"
