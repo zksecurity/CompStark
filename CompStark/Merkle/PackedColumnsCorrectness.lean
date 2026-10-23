@@ -181,7 +181,7 @@ theorem absorbColumnsBlock_encode {cs : Array ByteArray} {os : Array Nat} {C : N
       simp only [Fits, size_encode_fields, USize.toNat_ofNat_of_lt' (hqu j hj')]
       omega
     have hg : GroupFits24 (encode A) 0 := groupFits24_zero A hA
-    unfold loadColumnLines24
+    unfold loadColumnLines24 loadColumnsAt
     rw [dite_eq_left_of_eq_true (eq_true ⟨hfit 0 (by decide), hfit 1 (by decide),
       hfit 2 (by decide), hfit 3 (by decide), hfit 4 (by decide), hfit 5 (by decide),
       hfit 6 (by decide), hfit 7 (by decide), hfit 8 (by decide), hfit 9 (by decide),
@@ -288,7 +288,34 @@ theorem absorbColumns_eq [Poseidon2Field (FastField p)] [PackedPoseidon2 p] (cs 
     absorbColumns p cs os w rows r0 g = Array.ofFn (n := g) fun k ↦ foldRange (fun st blk ↦
       PackedPoseidon2.permute24 p (absorbColumnsBlock cs os w rows (r0 + 8 * k.val) blk st))
         ((w + 15) / 16) 0 (zeroWords 192) := by
+  have hb : ∀ blk sts, absorbBlockGroups p cs os w rows r0 blk g sts =
+      foldRange (fun (sts : Array ByteArray) k ↦ sts.modify k fun st ↦
+        PackedPoseidon2.permute24 p (absorbColumnsBlock cs os w rows (r0 + 8 * k) blk st)) g 0
+          sts := by
+    intro blk sts
+    unfold absorbBlockGroups absorbColumnsBlock
+    split
+    · rename_i hw
+      dsimp only
+      congr 1
+      funext sts k
+      congr 1
+      funext st
+      congr 1
+      by_cases hr : r0 + 8 * k + 8 ≤ rows
+      · rw [ite_eq_left_of_eq_true _ _ (eq_true hr),
+          ite_eq_left_of_eq_true _ _ (eq_true ⟨hr, hw⟩)]
+        rfl
+      · rw [ite_eq_right_of_eq_false _ _ (eq_false hr),
+          ite_eq_right_of_eq_false _ _ (eq_false fun h ↦ hr h.1)]
+    · rename_i hw
+      congr 1
+      funext sts k
+      congr 1
+      funext st
+      rw [ite_eq_right_of_eq_false _ _ (eq_false fun h ↦ hw h.2)]
   unfold absorbColumns
+  simp only [hb]
   exact foldRange_modify (fun blk k st ↦
     PackedPoseidon2.permute24 p (absorbColumnsBlock cs os w rows (r0 + 8 * k) blk st)) _ _ _
 
@@ -341,75 +368,47 @@ theorem hashColumns_encode [Poseidon2Field (FastField p)] [PackedPoseidon2 p]
     hashColumns p cs os w n = encode (flat ((List.range n).map fun r ↦
       Hash.Poseidon2.hash (FastField p)
         ((⟨w, n, colMatrix C o w n⟩ : CompStark.Merkle.Matrix F).row r))) := by
-  have key : ∀ T, ∃ D, (List.range T).foldl (fun out t ↦
-      foldRange (fun out k ↦ storeRows ((absorbColumns p cs os w n (128 * t)
-        (min 16 ((n - 128 * t + 7) / 8))).getD k .empty) n (128 * t + 8 * k) out)
-        (min 16 ((n - 128 * t + 7) / 8)) 0 out)
+  have key : ∀ K ≤ (n + 7) / 8, ∃ D, (List.range K).foldl (fun out k ↦ storeRows
+      ((Array.ofFn (n := (n + 7) / 8) fun k ↦ foldRange (fun st blk ↦ PackedPoseidon2.permute24 p
+        (absorbColumnsBlock cs os w n (0 + 8 * k.val) blk st)) ((w + 15) / 16) 0
+          (zeroWords 192)).getD k .empty) n (8 * k) out)
       (encode (Array.replicate (8 * n) (0 : F))) = encode D ∧ D.size = 8 * n ∧
-      ∀ r < n, ∀ j (hj : j < 8), D.getD (8 * r + j) 0 = if r < 128 * T then
+      ∀ r < n, ∀ j (hj : j < 8), D.getD (8 * r + j) 0 = if r < 8 * K then
         (Hash.Poseidon2.hash (FastField p)
           ((⟨w, n, colMatrix C o w n⟩ : CompStark.Merkle.Matrix F).row r))[j]'hj
         else 0 := by
-    intro T
-    induction T with
+    intro K hK
+    induction K with
     | zero =>
       refine ⟨_, rfl, Array.size_replicate, fun r hr j hj ↦ ?_⟩
       rw [ite_eq_right (by omega), Array.getD_eq_getD_getElem?, Array.getElem?_replicate,
         ite_eq_left (by omega)]
       rfl
-    | succ T ih =>
-      obtain ⟨D, e, s, g⟩ := ih
-      rw [List.range_succ, List.foldl_append, e, List.foldl_cons, List.foldl_nil, foldRange_eq,
-        absorbColumns_eq]
-      generalize hG : min 16 ((n - 128 * T + 7) / 8) = G
-      have inner : ∀ K ≤ G, ∃ D', (List.range K).foldl (fun out k ↦ storeRows
-          ((Array.ofFn (n := G) fun k ↦ foldRange (fun st blk ↦ PackedPoseidon2.permute24 p
-            (absorbColumnsBlock cs os w n (128 * T + 8 * k.val) blk st)) ((w + 15) / 16) 0
-              (zeroWords 192)).getD k .empty) n (128 * T + 8 * k) out) (encode D) =
-            encode D' ∧ D'.size = 8 * n ∧
-          ∀ r < n, ∀ j (hj : j < 8), D'.getD (8 * r + j) 0 = if r < 128 * T + 8 * K then
-            (Hash.Poseidon2.hash (FastField p)
-              ((⟨w, n, colMatrix C o w n⟩ : CompStark.Merkle.Matrix F).row r))[j]'hj
-            else 0 := by
-        intro K hK
-        induction K with
-        | zero =>
-          refine ⟨D, rfl, s, fun r hr j hj ↦ ?_⟩
-          rw [g r hr j hj, Nat.mul_zero, Nat.add_zero]
-        | succ K ihK =>
-          obtain ⟨D1, e1, s1, g1⟩ := ihK (by omega)
-          rw [List.range_succ, List.foldl_append, e1, List.foldl_cons, List.foldl_nil,
-            Array.getD_eq_getD_getElem?, Array.getElem?_ofFn]
-          simp only [show K < G by omega, ↓reduceDIte, Option.getD_some]
-          obtain ⟨A, eA, sA, lA⟩ := absorbGroup_encode (p := p) h (128 * T + 8 * K)
-          rw [eA]
-          obtain ⟨D', e', s', g'⟩ := storeRows_encode A D1 n (128 * T + 8 * K) (by omega)
-            (by rw [sA]; have := USize.le_size; omega) s1 (by rw [s1]; exact ho)
-          refine ⟨D', e', s', fun r hr j hj ↦ ?_⟩
-          rw [g']
-          by_cases hG' : 128 * T + 8 * K ≤ r ∧ r < 128 * T + 8 * K + 8
-          · have hl := lA (r - (128 * T + 8 * K)) (by omega) (by omega)
-            rw [show 128 * T + 8 * K + (r - (128 * T + 8 * K)) = r by omega] at hl
-            rw [ite_eq_left (by omega), ite_eq_left (by omega), getElem_hash _ _ hj, ← hl,
-              show (8 * r + j) % 8 = j by omega,
-              show (8 * r + j) / 8 - (128 * T + 8 * K) = r - (128 * T + 8 * K) by omega]
-            simp only [lane, Vector.getElem_ofFn]
-          · rw [ite_eq_right (by omega), g1 r hr j hj]
-            split_ifs <;> first | rfl | omega
-      obtain ⟨D', e', s', g'⟩ := inner G le_rfl
+    | succ K ih =>
+      obtain ⟨D, e, s, g⟩ := ih (by omega)
+      rw [List.range_succ, List.foldl_append, e, List.foldl_cons, List.foldl_nil,
+        Array.getD_eq_getD_getElem?, Array.getElem?_ofFn]
+      simp only [show K < (n + 7) / 8 by omega, ↓reduceDIte, Option.getD_some]
+      obtain ⟨A, eA, sA, lA⟩ := absorbGroup_encode (p := p) h (0 + 8 * K)
+      rw [eA]
+      obtain ⟨D', e', s', g'⟩ := storeRows_encode A D n (8 * K) (by omega)
+        (by rw [sA]; have := USize.le_size; omega) s (by rw [s]; exact ho)
       refine ⟨D', e', s', fun r hr j hj ↦ ?_⟩
-      rw [g' r hr j hj]
-      have hcov : r < 128 * T + 8 * G ↔ r < 128 * (T + 1) := by
-        constructor
-        · intro h1; omega
-        · intro h1; omega
-      by_cases h1 : r < 128 * (T + 1)
-      · rw [ite_eq_left (hcov.mpr h1), ite_eq_left h1]
-      · rw [ite_eq_right (fun h2 ↦ h1 (hcov.mp h2)), ite_eq_right h1]
-  obtain ⟨D, e, s, g⟩ := key ((n + 127) / 128)
-  rw [hashColumns, foldRange_eq, zeroWords_fields (p := p)]
-  simp only [foldRange_eq] at e ⊢
-  rw [e, flat_eq D ((List.range n).map fun r ↦ Hash.Poseidon2.hash (FastField p)
+      rw [g']
+      by_cases hG : 8 * K ≤ r ∧ r < 8 * K + 8
+      · have hl := lA (r - 8 * K) (by omega) (by omega)
+        rw [show 0 + 8 * K + (r - 8 * K) = r by omega] at hl
+        rw [ite_eq_left (by omega), ite_eq_left (by omega), getElem_hash _ _ hj, ← hl,
+          show (8 * r + j) % 8 = j by omega,
+          show (8 * r + j) / 8 - 8 * K = r - 8 * K by omega]
+        simp only [lane, Vector.getElem_ofFn]
+      · rw [ite_eq_right (by omega), g r hr j hj]
+        split_ifs <;> first | rfl | omega
+  obtain ⟨D, e, s, g⟩ := key ((n + 7) / 8) le_rfl
+  unfold hashColumns
+  dsimp only
+  rw [absorbColumns_eq, foldRange_eq, zeroWords_fields (p := p) (8 * n), e,
+    flat_eq D ((List.range n).map fun r ↦ Hash.Poseidon2.hash (FastField p)
     ((⟨w, n, colMatrix C o w n⟩ : CompStark.Merkle.Matrix F).row r))
     (by rw [s, List.length_map, List.length_range])]
   intro r hr j hj
