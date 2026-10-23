@@ -145,14 +145,19 @@ def plan? [Mont32BaseField p] (logH bits : Nat) (shift : F) : Option (LdePlan p)
         omega))
   else none
 
-open CompPoly.CPolynomial.NTTFast.Packed.Native (rangesPerChunk transposeRows columnCoefficients
+/-- The number of row ranges each of `chunks` input chunks of a `2 ^ logH`-row matrix splits into
+for its transpose: ranges of 256 rows, whose transposed columns of 1 KiB keep the writes of a
+range within few pages. -/
+def lineRanges (logH chunks : Nat) : Nat := max 1 (2 ^ logH / chunks / 256)
+
+open CompPoly.CPolynomial.NTTFast.Packed.Native (transposeRows columnCoefficients
   gatherColumn cosetBlock) in
 /-- The extension by `P` of the `w`-column matrix whose rows are the chunks `ms` of equal heights,
 column by column: block `t` of column `j`, the values on coset `bitrev t`, at `t * w + j`. Tasks
-transpose row ranges of the chunks into columns; every column is one task, its coefficients and
-then each of its coset blocks, the last one from the coefficients' buffer. -/
+transpose row ranges of the chunks into columns (`lineRanges`); every column is one task, its
+coefficients and then each of its coset blocks, the last one from the coefficients' buffer. -/
 def ldeColumns (P : LdePlan p) (w : Nat) (ms : Array ByteArray) : Array ByteArray :=
-  let q := rangesPerChunk P.logH ms.size
+  let q := lineRanges P.logH ms.size
   let rows := 2 ^ P.logH / (ms.size * q)
   let pieces := CompPoly.Tasks.join (CompPoly.Tasks.spawnAll (ms.size * q) fun k ↦
     transposeRows (ms.getD (k / q) .empty) w (k % q * rows) rows)

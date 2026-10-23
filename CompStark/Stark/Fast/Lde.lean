@@ -59,7 +59,28 @@ theorem rowChunks_zero (m : Array F) (w logH : Nat) (hm : m.size = 2 ^ logH * w)
   rw [show Array.range 1 = #[0] by rw [Array.range_eq_range', Array.range'_one],
     Array.map_singleton, Nat.zero_mul, Nat.zero_add, ← hm, Array.extract_size]
 
-open NTTFast.Packed (cosetTable getD_block getD_map_range rangesPerChunk_spec flatMap_range_map)
+open NTTFast.Packed (cosetTable getD_block getD_map_range flatMap_range_map)
+
+/-- The split of `2 ^ k` input chunks into `2 ^ k · q` row ranges of `rows` rows. -/
+theorem lineRanges_spec (logH k : Nat) (hk : k ≤ logH) :
+    0 < lineRanges logH (2 ^ k) ∧
+      2 ^ k * lineRanges logH (2 ^ k) * (2 ^ logH / (2 ^ k * lineRanges logH (2 ^ k))) =
+        2 ^ logH ∧
+      lineRanges logH (2 ^ k) * (2 ^ logH / (2 ^ k * lineRanges logH (2 ^ k))) =
+        2 ^ (logH - k) := by
+  unfold lineRanges
+  rw [Nat.pow_div hk (by decide)]
+  by_cases h : 8 ≤ logH - k
+  · rw [show (256 : Nat) = 2 ^ 8 from rfl, Nat.pow_div h (by decide),
+      Nat.max_eq_right Nat.one_le_two_pow, ← Nat.pow_add, Nat.pow_div (by omega) (by decide),
+      ← Nat.pow_add, ← Nat.pow_add]
+    refine ⟨Nat.two_pow_pos _, by congr 1; omega, by congr 1; omega⟩
+  · rw [Nat.div_eq_of_lt (by
+      have := Nat.pow_lt_pow_right (a := 2) (by decide) (show logH - k < 8 by omega)
+      simpa only using this), Nat.max_eq_left (Nat.zero_le _), Nat.mul_one, Nat.one_mul,
+      Nat.pow_div hk (by decide), ← Nat.pow_add]
+    exact ⟨Nat.one_pos, by congr 1; omega, rfl⟩
+
 open NTTFast.Packed.Native (rowChunks transposeRows gatherColumn columnCoefficients cosetBlock)
   in
 /-- **The column-wise extension is `ldeSpec`**, in blocks of the input's height: column `j` of
@@ -74,8 +95,8 @@ theorem ldeColumns_eq (P : LdePlan p) (w : Nat) (M : Array F) (k : Nat) (hk : k 
   have hHN : 2 ^ P.logH * w ≤ 2 ^ P.domain.logN * w :=
     Nat.mul_le_mul_right w (Nat.pow_le_pow_right (by decide) (Nat.sub_le _ _))
   have hMs : 4 * M.size < USize.size := by omega
-  obtain ⟨hq0, hR, hq⟩ := rangesPerChunk_spec P.logH k hk
-  set q := NTTFast.Packed.Native.rangesPerChunk P.logH (2 ^ k) with hqd
+  obtain ⟨hq0, hR, hq⟩ := lineRanges_spec P.logH k hk
+  set q := lineRanges P.logH (2 ^ k) with hqd
   set R := 2 ^ k * q with hRd
   set rows := 2 ^ P.logH / R with hrows
   have hpieces : (Array.range R).map (fun j ↦ transposeRows
