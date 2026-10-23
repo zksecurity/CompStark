@@ -71,6 +71,45 @@ theorem store8_encode' {n : Nat} (W : Array F) (hW : (encode W).size = n) (i k :
   store8_encode W hW _ _ (wordOffset_toNat i k hk) (by rw [← hW, size_encode_fields] at hi; omega)
     x0 x1 x2 x3 x4 x5 x6 x7 h
 
+/-- Splicing in the eight words a buffer already holds leaves it unchanged. -/
+theorem splice_self8 (W : Array F) (idx : Nat) (h : idx + 8 ≤ W.size) :
+    splice W idx #[W.getD idx 0, W.getD (idx + 1) 0, W.getD (idx + 2) 0, W.getD (idx + 3) 0,
+      W.getD (idx + 4) 0, W.getD (idx + 5) 0, W.getD (idx + 6) 0, W.getD (idx + 7) 0] = W := by
+  have hs : idx + (#[W.getD idx 0, W.getD (idx + 1) 0, W.getD (idx + 2) 0, W.getD (idx + 3) 0,
+      W.getD (idx + 4) 0, W.getD (idx + 5) 0, W.getD (idx + 6) 0, W.getD (idx + 7) 0] :
+        Array F).size ≤ W.size := by
+    simp only [List.size_toArray, List.length_cons, List.length_nil]; omega
+  have key (k : Nat) : (splice W idx #[W.getD idx 0, W.getD (idx + 1) 0, W.getD (idx + 2) 0,
+      W.getD (idx + 3) 0, W.getD (idx + 4) 0, W.getD (idx + 5) 0, W.getD (idx + 6) 0,
+      W.getD (idx + 7) 0]).getD k 0 = W.getD k 0 := by
+    rw [CompPoly.CPolynomial.NTTFast.Packed.getD_splice W idx _ hs k 0]
+    split_ifs with ha hb
+    · rfl
+    · obtain ⟨d, rfl⟩ : ∃ d, k = idx + d := ⟨k - idx, by omega⟩
+      have hd : d < 8 := by
+        simp only [List.size_toArray, List.length_cons, List.length_nil] at hb; omega
+      rw [Nat.add_sub_cancel_left]
+      interval_cases d <;> rfl
+    · rfl
+  apply Array.ext (CompPoly.CPolynomial.NTTFast.Packed.size_splice _ _ _ hs)
+  intro k h1 h2
+  have e := key k
+  simp only [Array.getD, h1, h2, dite_true] at e
+  exact e
+
+/-- Writing words `i, …, i + 7` of a packed field array back unchanged leaves it unchanged. -/
+theorem touch8_encode (W : Array F) (i : USize) (h) :
+    touch8 (encode W) i h = ⟨encode W, rfl⟩ := by
+  have hs := h
+  simp only [Fits, size_encode_fields] at hs
+  unfold touch8
+  simp only [readUOffset_encode, USize.toNat_zero, Nat.add_zero, USize.reduceToNat]
+  rw [store8_encode' W rfl i 0 (by simp only [USize.toNat_zero]; omega)
+    (by simp only [USize.toNat_zero, size_encode_fields]; omega)]
+  apply Subtype.ext
+  simp only [USize.toNat_zero, Nat.add_zero]
+  rw [splice_self8 W i.toNat (by omega)]
+
 /-- Eight values of a function, as an array literal. -/
 def lit8 {α : Type} (f : Nat → α) : Array α := #[f 0, f 1, f 2, f 3, f 4, f 5, f 6, f 7]
 
@@ -217,10 +256,14 @@ def treeSum : Nat → List F → F
   | 0, xs => xs.headD 0
   | n + 1, xs => treeSum n (pairSums xs)
 
+/-- The tree sum of the coordinates `ks` of lane `l`. -/
+def restSum (ks : List Nat) (W : Array F) (i l : Nat) : F :=
+  treeSum 5 (ks.map fun j ↦ word W i j l)
+
 /-- The sum of lane `l` after the S-box of a partial round: the S-box output plus the tree sum of
 the coordinates `ks`. -/
 def rowSum (ks : List Nat) (c : F) (W : Array F) (i l : Nat) : F :=
-  cubeAdd c (word W i 0 l) + treeSum 5 (ks.map fun j ↦ word W i j l)
+  cubeAdd c (word W i 0 l) + restSum ks W i l
 
 /-! ### The round loops -/
 

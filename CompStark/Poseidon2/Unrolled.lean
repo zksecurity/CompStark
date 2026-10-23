@@ -18,6 +18,9 @@ open Lean
 
 meta def name (s : String) : Ident := mkIdent (Name.mkSimple s)
 
+/-- The identifier `s.f`. -/
+meta def dotted (s f : String) : Ident := mkIdent (Name.mkStr (Name.mkSimple s) f)
+
 meta def lit (k : Nat) : Term := Syntax.mkNumLit (toString k)
 
 /-- Word `k` after word `idx` of `arr`, with its bound `inBounds hb k _` from the hypothesis
@@ -54,12 +57,20 @@ meta def interleave (L : Nat) (lane : Nat → MacroM (Array (Ident × Term))) :
       bs := bs.push seqs[l]![k]!
   return bs
 
-/-- Read the `t × L` state. -/
+/-- Write words `i, …, i + 7` of `b` back unchanged, as `s0` (`touch8`), first: the stores after
+it then need no exclusivity checks, so the compiler interleaves the loads with them instead of
+holding every loaded word until the first store. -/
+meta def touch : MacroM (Array (Ident × Term)) := do
+  return #[(name "s0", ← `($(name "touch8") $(name "b") $(name "i")
+    ($(dotted "Fits" "mono") $(name "hb") (by decide))))]
+
+/-- Read the `t × L` state from the touched buffer `s0`. -/
 meta def readState (t L : Nat) : MacroM (Array (Ident × Term)) := do
   let mut bs := #[]
   for j in [0:t] do
     for l in [0:L] do
-      bs := bs.push (v "x" j l, ← read (name "b") (name "i") (name "hb") (j * L + l))
+      bs := bs.push (v "x" j l, ← read (← `($(name "s0").1)) (name "i")
+        (← `($(dotted "Fits" "of_size") $(name "s0").2 $(name "hb"))) (j * L + l))
   return bs
 
 /-- `y ^ 3` as two products, the square left unreduced. -/
@@ -67,11 +78,11 @@ meta def cube (out a : Ident) : MacroM (Array (Ident × Term)) := do
   let sq := name s!"{out.getId}_sq"
   return #[(sq, ← `($(name "mulLazy") $a $a)), (out, ← `($(name "mulSign") $sq $a))]
 
-/-- Store the `t × L` state `z`, one unchecked eight-word store per coordinate: the state stays
-a `ByteArray` of the size of `b`, so the bounds come from `hb` and no store branches. -/
+/-- Store the `t × L` state `z` into the touched buffer `s0`, one unchecked eight-word store per
+coordinate: the state stays a `ByteArray` of the size of `b`, so the bounds come from `hb` and no
+store branches. -/
 meta def store (t L : Nat) (z : String) : MacroM (Array (Ident × Term)) := do
-  let mut bs := #[(name "st",
-    ← `((⟨$(name "b"), rfl⟩ : { x : ByteArray // x.size = $(name "b").size })))]
+  let mut bs := #[(name "st", (name "s0" : Term))]
   for j in [0:t] do
     let vs := (Array.range L).map fun l ↦ (v z j l : Term)
     bs := bs.push (name "st", ← `($(name "store8") $(name "st") $(name "i") $(lit (j * L)) $vs*
@@ -104,12 +115,12 @@ meta def mat4Lane (t l : Nat) : MacroM (Array (Ident × Term)) := do
 
 /-- `mat4` on every block of four, in place. -/
 meta def mat4Blocks (t L : Nat) : MacroM Term := do
-  let bs := (← readState t L) ++ (← interleave L (mat4Lane t)) ++ (← store t L "z")
-  lets bs (← `($(name "st").1))
+  let bs := (← touch) ++ (← readState t L) ++ (← interleave L (mat4Lane t)) ++ (← store t L "z")
+  lets bs (← `($(name "st")))
 
 /-- Add to every coordinate the sum over all blocks of its row, in place. -/
 meta def mixBlocks (t L : Nat) : MacroM Term := do
-  let bs := (← readState t L) ++ (← interleave L fun l ↦ do
+  let bs := (← touch) ++ (← readState t L) ++ (← interleave L fun l ↦ do
     let mut bs := #[]
     for k in [0:4] do
       let mut acc : Term := v "x" k l
@@ -121,11 +132,11 @@ meta def mixBlocks (t L : Nat) : MacroM Term := do
     for j in [0:t] do
       bs := bs.push (v "z" j l, ← add (v "x" j l) (name s!"S{j % 4}_{l}"))
     return bs) ++ (← store t L "z")
-  lets bs (← `($(name "st").1))
+  lets bs (← `($(name "st")))
 
 /-- The constant additions and S-boxes of a full round, in place. -/
 meta def sbox (t L : Nat) : MacroM Term := do
-  let mut bs := #[]
+  let mut bs := (← touch)
   for j in [0:t] do
     bs := bs.push (name s!"c{j}", ← read (name "rc") (name "r") (name "hr") j)
   bs := bs ++ (← readState t L)
@@ -136,7 +147,7 @@ meta def sbox (t L : Nat) : MacroM Term := do
       bs := bs ++ (← cube (v "y" j l) (v "a" j l))
     return bs)
   bs := bs ++ (← store t L "y")
-  lets bs (← `($(name "st").1))
+  lets bs (← `($(name "st")))
 
 /-- `V_j · x + sum` for the width-`t` diagonal `V` of KoalaBear's Poseidon2, which starts
 `[-2, 1, 2, 1/2, 3, 4, -1/2, -3, -4]` and continues with `±1/2^k`: small multiples and halves as
@@ -189,7 +200,7 @@ meta def partialRound (t L : Nat) : MacroM Term := do
   let mut bs := #[]
   for j in [0:t] do
     bs := bs.push (name s!"d{j}", ← read (name "d") (lit 0) (name "hd") j)
-  bs := bs ++ (← readState t L)
+  bs := bs ++ (← touch) ++ (← readState t L)
   bs := bs ++ (← interleave L fun l ↦ do
     let mut bs := #[]
     bs := bs.push (v "a" 0 l, ← add (v "x" 0 l) (name "c"))
@@ -200,16 +211,18 @@ meta def partialRound (t L : Nat) : MacroM Term := do
     let acc : Term := name s!"s_{l}"
     let ys : Array Term :=
       #[v "y" 0 l] ++ (Array.range (t - 1)).map fun j ↦ (v "x" (j + 1) l : Term)
-    for j in [0:t] do
+    -- Coordinate 0: `-2 y + (y + rest) = rest - y`.
+    bs := bs.push (v "z" 0 l, ← sub rest (v "y" 0 l))
+    for j in [1:t] do
       bs := bs ++ (← diagonal t j (v "z" j l) ys[j]! acc)
     return bs)
   bs := bs ++ (← store t L "z")
-  lets bs (← `($(name "st").1))
+  lets bs (← `($(name "st")))
 
 /-- Coordinates `0, …, 15` of the eight lanes of a width-`t` group from eight source lines of
 sixteen words: word `j` of line `q{l}` of `m` becomes coordinate `j` of lane `l`. -/
 meta def load16 (t : Nat) : MacroM Term := do
-  let mut bs := #[]
+  let mut bs := (← touch)
   for j in [0:16] do
     for l in [0:8] do
       bs := bs.push (v "x" j l, ← read (name "m") (name s!"q{l}") (name s!"h{l}") j)
@@ -219,12 +232,11 @@ meta def load16 (t : Nat) : MacroM Term := do
 /-- Coordinates `0, …, 7` of the eight lanes of the group at `i` of `st`, stored as eight
 contiguous digests: lane `l` at word `p{l}` of `out`. -/
 meta def store8x8 : MacroM Term := do
-  let mut bs := #[]
+  -- `out` written back at `p0` first, as `touch` does for the kernels' groups.
+  let mut bs := #[(name "o", ← `($(name "touch8") $(name "out") $(name "p0") $(name "g0")))]
   for j in [0:8] do
     for l in [0:8] do
       bs := bs.push (v "x" j l, ← read (name "st") (name "i") (name "hb") (8 * j + l))
-  bs := bs.push (name "o",
-    ← `((⟨$(name "out"), rfl⟩ : { x : ByteArray // x.size = $(name "out").size })))
   for l in [0:8] do
     let vs := (Array.range 8).map fun j ↦ (v "x" j l : Term)
     bs := bs.push (name "o", ← `($(name "store8") $(name "o") $(name s!"p{l}") 0 $vs*

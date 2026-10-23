@@ -46,7 +46,8 @@ theorem load16x24_encode (M W : Array F) (q : Nat → Nat) (hq : ∀ l < 8, q l 
   simp only [GroupFits24, Fits, size_encode_fields] at hs
   have hu (l : Nat) (hl : l < 8) : (q l).toUSize.toNat = q l := USize.toNat_ofNat_of_lt' (hq l hl)
   unfold load16x24
-  simp only [readUOffset_encode, USize.reduceToNat, hu 0 (by decide), hu 1 (by decide),
+  simp only [touch8_encode, readUOffset_encode, USize.reduceToNat, hu 0 (by decide),
+    hu 1 (by decide),
     hu 2 (by decide), hu 3 (by decide), hu 4 (by decide), hu 5 (by decide), hu 6 (by decide),
     hu 7 (by decide)]
   simp (disch := (simp only [USize.reduceToNat, size_encode_fields]; omega)) only [store8_encode']
@@ -64,7 +65,8 @@ theorem load16x16_encode (M W : Array F) (q : Nat → Nat) (hq : ∀ l < 8, q l 
   simp only [GroupFits, Fits, size_encode_fields] at hs
   have hu (l : Nat) (hl : l < 8) : (q l).toUSize.toNat = q l := USize.toNat_ofNat_of_lt' (hq l hl)
   unfold load16x16
-  simp only [readUOffset_encode, USize.reduceToNat, hu 0 (by decide), hu 1 (by decide),
+  simp only [touch8_encode, readUOffset_encode, USize.reduceToNat, hu 0 (by decide),
+    hu 1 (by decide),
     hu 2 (by decide), hu 3 (by decide), hu 4 (by decide), hu 5 (by decide), hu 6 (by decide),
     hu 7 (by decide)]
   simp (disch := (simp only [USize.reduceToNat, size_encode_fields]; omega)) only [store8_encode']
@@ -86,7 +88,7 @@ theorem store8x8_encode (S O : Array F) (i : USize) (dst : Nat → Nat)
     hu 3 (by decide), hu 4 (by decide), hu 5 (by decide), hu 6 (by decide),
     hu 7 (by decide)] at f0 f1 f2 f3 f4 f5 f6 f7
   unfold store8x8
-  simp only [readUOffset_encode, USize.reduceToNat]
+  simp only [touch8_encode, readUOffset_encode, USize.reduceToNat]
   simp (disch := (simp only [USize.reduceToNat, size_encode_fields, hu 0 (by decide),
     hu 1 (by decide), hu 2 (by decide), hu 3 (by decide), hu 4 (by decide), hu 5 (by decide),
     hu 6 (by decide), hu 7 (by decide)]; omega)) only [store8_encode']
