@@ -6,11 +6,11 @@ package CompStark where
   version := v!"0.1.0"
   testDriver := "CompStarkNativeTests"
 
--- Pinned to a CompPoly commit with the packed NTT, the batched coset LDE on chunks of rows and
--- coset interpolation generic over 32-bit Montgomery fields, fast KoalaBear⁵ and spec fields over
--- the fast base field.
+-- Pinned to a CompPoly commit with the packed NTT, the batched coset LDE on chunks of rows with
+-- input transposes by column range, coset interpolation generic over 32-bit Montgomery fields,
+-- fast KoalaBear⁵ and spec fields over the fast base field.
 require CompPoly from git "https://github.com/mitschabaude-bot/CompPoly.git" @
-    "b8e2f94c8176b2ee92fa4add3eff06a89cc93598"
+    "7596b8e735e693547fa4e86308f23e2ced15ef78"
 
 -- ArkLib with FRI round-by-round soundness on Lean v4.35 (Verified-zkEVM/ArkLib#1317, stacked on
 -- #992 and #1251) and lossy mutual correlated agreement (branch `fri-lossy`).

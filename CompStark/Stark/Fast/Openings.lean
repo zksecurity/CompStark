@@ -367,16 +367,16 @@ theorem writeAll_eq (f : Nat → F) (g : Nat → UInt32) (w : Nat) (hw : 4 * w <
 /-- The transpose of a range of rows of an encoded matrix, on field elements. -/
 theorem transposeRows_encode (M : Array F) (w r0 rows : Nat) (hM : (r0 + rows) * w ≤ M.size)
     (hs : 4 * M.size < USize.size) :
-    transposeRows (encode M) w r0 rows = encode (Array.ofFn (n := w * rows) fun k ↦
+    transposeRows (encode M) w 0 w r0 rows = encode (Array.ofFn (n := w * rows) fun k ↦
       M.getD ((r0 + k.val % rows) * w + k.val / rows) 0) := by
   rw [CompPoly.CPolynomial.NTTFast.Packed.encode_eq_map_val M,
-    CompPoly.CPolynomial.NTTFast.Packed.Native.transposeRows_encodeWords _ _ _ _
+    CompPoly.CPolynomial.NTTFast.Packed.Native.transposeRows_encodeWords _ _ _ _ _ _ (by omega)
       (by rw [Array.size_map]; exact hM) (by rw [Array.size_map]; exact hs),
     CompPoly.CPolynomial.NTTFast.Packed.encode_eq_map_val]
   refine congrArg encode (Array.ext (by rw [Array.size_map, Array.size_ofFn, Array.size_ofFn])
     fun k _ _ ↦ ?_)
   rw [Array.getElem_map, Array.getElem_ofFn, Array.getElem_ofFn,
-    CompPoly.CPolynomial.NTTFast.Packed.getD_map_val]
+    CompPoly.CPolynomial.NTTFast.Packed.getD_map_val, Nat.add_zero]
 
 theorem mul_ofBase [Binomial4 p] (a : EF) (x : F) : a * Ext4.ofBase x = Ext4.smul x a := by
   apply Norm.ext <;>

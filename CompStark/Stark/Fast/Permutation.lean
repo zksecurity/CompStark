@@ -1353,13 +1353,13 @@ theorem permutationWords_eq [Mont32BaseField p] [Binomial4 p] (A : Air F)
       fun jj hj' ↦ by rw [Nat.zero_add, List.getD_eq_getElem _ _ hj']; rfl
     obtain ⟨h1, -, h2⟩ := hidx t ht x hx
     have hvb : NTTFast.Packed.Native.transposeRows (NTTFast.Packed.Native.encodeFields trace)
-        A.width r0 B = encode (blockT mt r0 B) := by
+        A.width 0 A.width r0 B = encode (blockT mt r0 B) := by
       rw [NTTFast.Packed.Native.encodeFields_eq]
       exact transposeRows_encode trace A.width r0 B hmt hus
     have hLc : (⟨rowMajorCols (NTTFast.Packed.Native.encodeFields trace) A.width n,
         rowMajorCols (NTTFast.Packed.Native.encodeFields A.preprocessed) A.preprocessedWidth n,
         NTTFast.Packed.Native.transposeRows (NTTFast.Packed.Native.encodeFields A.preprocessed)
-          A.preprocessedWidth r0 B, PMat.empty.toCols, ByteArray.empty, r0,
+          A.preprocessedWidth 0 A.preprocessedWidth r0 B, PMat.empty.toCols, ByteArray.empty, r0,
         Array.ofFn (n := n) fun i ↦ (i.val + 1) % n,
         seqRows (Array.ofFn (n := n) fun i ↦ (i.val + 1) % n) r0 B, #[],
         NTTFast.Packed.Native.encodeFields FS, NTTFast.Packed.Native.encodeFields LS,

@@ -81,6 +81,43 @@ theorem lineRanges_spec (logH k : Nat) (hk : k ≤ logH) :
       Nat.pow_div hk (by decide), ← Nat.pow_add]
     exact ⟨Nat.one_pos, by congr 1; omega, rfl⟩
 
+/-- Flat maps over a range agree where their functions agree on the range. -/
+theorem flatMap_range_congr {α : Type} (n : Nat) (f g : Nat → Array α)
+    (h : ∀ a < n, f a = g a) : (Array.range n).flatMap f = (Array.range n).flatMap g := by
+  apply Array.toList_inj.mp
+  simp only [Array.toList_flatMap, Array.toList_range]
+  exact List.flatMap_congr fun a ha ↦ by rw [h a (List.mem_range.mp ha)]
+
+/-- Ranges of `K` consecutive indices below `w` cover them in order. -/
+theorem flatMap_ranges {α : Type} (f : Nat → α) (w K : Nat) (hK : 0 < K) :
+    (Array.range ((w + K - 1) / K)).flatMap (fun r ↦ (Array.range (min K (w - K * r))).map
+      fun j ↦ f (K * r + j)) = (Array.range w).map f := by
+  have h : ∀ m, (Array.range m).flatMap (fun r ↦ (Array.range (min K (w - K * r))).map
+      fun j ↦ f (K * r + j)) = (Array.range (min (K * m) w)).map f := by
+    intro m
+    induction m with
+    | zero =>
+      rw [Nat.mul_zero, Nat.zero_min,
+        show Array.range 0 = #[] from Array.eq_empty_of_size_eq_zero (Array.size_range ..),
+        Array.flatMap_empty, Array.map_empty]
+    | succ m ih =>
+      rw [Array.range_succ, Array.flatMap_append, ih, Array.flatMap_singleton]
+      by_cases hm : K * m ≤ w
+      · have e : min (K * (m + 1)) w = K * m + min K (w - K * m) := by
+          rw [Nat.mul_succ]; omega
+        rw [e, Array.range_add, Array.map_append, Array.map_map, Nat.min_eq_left hm]
+        rfl
+      · rw [Nat.min_eq_right (show w ≤ K * m by omega),
+          Nat.min_eq_right (show w ≤ K * (m + 1) by rw [Nat.mul_succ]; omega),
+          show w - K * m = 0 by omega, Nat.min_eq_right (Nat.zero_le K)]
+        simp
+  rw [h, Nat.min_eq_right]
+  have h1 := Nat.div_add_mod (w + K - 1) K
+  have h2 := Nat.mod_lt (w + K - 1) hK
+  rcases Nat.eq_zero_or_pos w with rfl | hw
+  · omega
+  · omega
+
 open NTTFast.Packed.Native (rowChunks transposeRows gatherColumn columnCoefficients cosetBlock)
   in
 /-- **The column-wise extension is `ldeSpec`**, in blocks of the input's height: column `j` of
@@ -99,30 +136,41 @@ theorem ldeColumns_eq (P : LdePlan p) (w : Nat) (M : Array F) (k : Nat) (hk : k 
   set q := lineRanges P.logH (2 ^ k) with hqd
   set R := 2 ^ k * q with hRd
   set rows := 2 ^ P.logH / R with hrows
-  have hpieces : (Array.range R).map (fun j ↦ transposeRows
-      ((rowChunks M w P.logH k).getD (j / q) .empty) w (j % q * rows) rows) =
-      (Array.range R).map fun j ↦ transposeRows (encode M) w (j * rows) rows := by
+  have hpieces (c0 n : Nat) (hn : c0 + n ≤ w) : (Array.range R).map (fun j ↦ transposeRows
+      ((rowChunks M w P.logH k).getD (j / q) .empty) w c0 n (j % q * rows) rows) =
+      (Array.range R).map fun j ↦ transposeRows (encode M) w c0 n (j * rows) rows := by
     apply Array.ext (by simp only [Array.size_map])
     intro j h1 _
     simp only [Array.size_map, Array.size_range] at h1
     simp only [Array.getElem_map, Array.getElem_range]
-    exact NTTFast.Packed.Native.transposeRows_rowChunks M w P.logH k q rows hM hk hq0 hq hMs j h1
+    exact NTTFast.Packed.Native.transposeRows_rowChunks M w c0 n P.logH k q rows hn hM hk hq0 hq
+      hMs j h1
   -- Block `t` of column `j`, as field coordinates.
   let B (t j : Nat) : Array F := NTTFast.Packed.difSpec P.low (Array.ofFn (n := 2 ^ P.logH)
     fun l ↦ (cosetTable P.domain P.bits P.shift (NTT.Transform.bitRevNat P.bits t)).getD l.val 0 *
       (NTT.Forward.forwardSpec P.low.inverse (column M w (2 ^ P.logH) j).toArray).getD l.val 0)
-  have hcol (j : Nat) (hj : j < w) (t : Nat) : cosetBlock P (columnCoefficients P (gatherColumn
-      ((Array.range R).map fun k ↦ transposeRows (encode M) w (k * rows) rows) rows j)) t =
-      encode (B t j) := by
-    rw [NTTFast.Packed.Native.gatherColumn_eq_column M w _ R rows j hj hR hM hMs,
+  have hcol (c0 n j : Nat) (hn : c0 + n ≤ w) (hj : j < n) (t : Nat) : cosetBlock P
+      (columnCoefficients P (gatherColumn ((Array.range R).map fun k ↦
+        transposeRows (encode M) w c0 n (k * rows) rows) rows j)) t = encode (B t (c0 + j)) := by
+    rw [NTTFast.Packed.Native.gatherColumn_eq_column M w c0 n _ R rows j hn hj hR hM hMs,
       NTTFast.Packed.Native.columnCoefficients_encode P _ (by simp only [Vector.size_toArray]),
       NTTFast.Packed.Native.cosetBlock_encode P _ (by
         rw [NTT.Forward.forwardSpec, Array.size_ofFn]; rfl)]
   unfold ldeColumns
   simp only [Array.map_map, Function.comp_def, CompPoly.Tasks.get_bind,
     CompPoly.Tasks.get_spawn, CompPoly.Tasks.get_join, CompPoly.Tasks.map_get_spawnAll,
-    rowChunks, Array.size_map, Array.size_range]
-  rw [← rowChunks, hpieces, flatMap_range_map]
+    rowChunks, Array.size_map, Array.size_range, Array.map_flatMap]
+  rw [flatMap_range_congr _ _ (fun t ↦ (Array.range w).map fun c ↦ encode (B t c)) fun t ht ↦ by
+    rw [← flatMap_ranges (fun c ↦ encode (B t c)) w rangeColumns (by decide)]
+    refine flatMap_range_congr _ _ _ fun a ha ↦ ?_
+    have hn : rangeColumns * a + min rangeColumns (w - rangeColumns * a) ≤ w := by
+      simp only [rangeColumns] at ha ⊢
+      omega
+    apply Array.ext (by simp only [Array.size_map])
+    intro x hx _
+    simp only [Array.size_map, Array.size_range] at hx
+    simp only [Array.getElem_map, Array.getElem_range]
+    rw [← rowChunks, hpieces _ _ hn, getD_map_range _ _ _ ht, hcol _ _ _ hn hx], flatMap_range_map]
   apply Array.ext (by simp only [Array.size_map])
   intro c h1 _
   simp only [Array.size_map, Array.size_range] at h1
@@ -131,7 +179,6 @@ theorem ldeColumns_eq (P : LdePlan p) (w : Nat) (M : Array F) (k : Nat) (hk : k 
   have hcw0 : c % w < w := Nat.mod_lt _ hw0
   have h1' : c < 2 ^ P.bits * w := h1
   have hct0 : c / w < 2 ^ P.bits := (Nat.div_lt_iff_lt_mul hw0).mpr h1'
-  rw [getD_map_range _ _ _ hct0, hcol _ hcw0]
   congr 1
   apply Array.ext (by simp only [B, NTTFast.Packed.size_difSpec, Array.size_ofFn]; rfl)
   intro kk k1 k2
