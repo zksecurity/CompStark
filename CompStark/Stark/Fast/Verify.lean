@@ -13,7 +13,8 @@ Plonky3's verifier `verify` over a 32-bit Montgomery field with packed Poseidon2
 faster (`verifyFast`, equal to `verify` by `verifyFast_eq`):
 
 * Every Merkle multi-opening hashes its leaves eight at a time in the lanes of packed width-24
-  groups (`hashRows`, `Merkle.Packed.hashRange`).
+  groups (`hashRows`, `Merkle.Packed.hashRange`), and checks its shape with every matrix's index
+  shift computed once, comparing queries' rows without building lists (`shapeOk`).
 * The batched quotient of a query, `∑ αⁱ (pᵢ(z) - pᵢ(x)) / (z - x)` over a matrix's columns, is
   `(∑ αⁱ pᵢ(z) - ∑ αⁱ pᵢ(x)) / (z - x)`: the opened values' sum `∑ αⁱ pᵢ(z)` is the same for every
   query and is computed once (`annotate`), and the row's `∑ αⁱ pᵢ(x)` takes one multiplication by
