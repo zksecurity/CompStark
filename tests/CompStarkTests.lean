@@ -6,3 +6,4 @@ import CompStarkTests.FreshQuery
 import CompStarkTests.RandomOracle
 import CompStarkTests.Security
 import CompStarkTests.Keccak
+import CompStarkTests.KeccakSecurity

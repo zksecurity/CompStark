@@ -6,15 +6,17 @@ module
 
 public import CompStark.Sound.Numbers
 public import CompStark.NonInteractiveError
+public import CompStark.Sound.Rbr
 
 /-! # Bounds on the round errors of one random-oracle answer
 
-The terms of `roundError` (`CompStark/NonInteractiveError.lean`) at FRI arity `2`, with the
-extractor's radius below the unique-decoding radius, as in `CompStark/Sound/Numbers.lean`:
+The terms of `roundError` (`CompStark/NonInteractiveError.lean`) at any FRI arity, with FRI's
+radius at most the unique-decoding radius, as in `CompStark/Sound/Numbers.lean`:
 
 * constraint folding, out of domain and batching as for the knowledge error;
-* each FRI fold: the lossy bound `max(T₁, T₂, δ_int / loss)` on a domain of at least `2 ^ t`
-  points, the powers MCA bound `|L'| < 2 ^ t` on a smaller one (`friFoldError_le`);
+* each FRI fold: ArkLib's schedule of Plonky3's arities is the plan of the folds without inputs
+  (`plan_eq_arityPlan`, `schedule_mem_plan`), so every fold costs at most the plan's largest level
+  bound (`friFoldError_le`);
 * FRI's queries: `(1 - δ + #folds · loss + 1/p) ^ numQueries` (`friQueryError_eq`).
 
 `CompStark/Sound/Calculator.lean` collects them at one proximity loss.
@@ -28,121 +30,195 @@ variable {F : Type} [BaseField F] {EF : Type} [Challenge F EF]
 
 local notation "𝕂" => Challenge.Spec EF
 
-/-- A schedule of arity `2` everywhere folds once per round: `i` folds precede fold `i`. -/
-theorem foldingPrefix_ones {k : ℕ} (s : Fin (k + 1) → ℕ+) (hs : ∀ j, s j = 1) (i : Fin (k + 2)) :
-    Fri.Spec.foldingPrefix s i = i := by
-  induction i using Fin.induction with
-  | zero => rw [Fri.Spec.foldingPrefix_zero, Fin.val_zero]
-  | succ i ih =>
-    rw [Fri.Spec.foldingPrefix_succ, ih, hs, PNat.one_coe, Fin.val_succ, Fin.val_castSucc]
+/-- The largest level bound of a plan's folds at rate `1/c`, `0` if empty. -/
+noncomputable def planMax (c : ℕ) (δ δ_int : ℝ≥0) (loss : ℝ) (plan : List (ℕ × ℕ × Bool)) : ℝ :=
+  (plan.map fun f ↦ levelBound c δ δ_int loss (FriGame.Rounds.foldWords f) f.2.1).foldr max 0
 
-/-- One fold of a schedule of arity `2` at rate `1/c` and a radius `δ ≤ (1 - 1/c) / 2 - 1 / 2 ^ t`:
-the lossy bound if its domain has at least `2 ^ t` points, the powers MCA bound below. -/
-theorem foldingErrorLossy_ones_le {N k : ℕ} {ω : Domain.SmoothCosetFftDomain N 𝕂} (c : ℕ)
-    (hc : 0 < c) (s : Fin (k + 1) → ℕ+) (hs : ∀ j, s j = 1) (d : ℕ+) (i : Fin (k + 1))
-    (h : c * (2 ^ (∑ j, (s j).val) * d.val) = 2 ^ N) (t : ℕ) (δ δ_int loss : ℝ≥0)
-    (hδ : (δ : ℝ) ≤ (1 - 1 / c) / 2 - 1 / 2 ^ t) (h_pos : 0 < δ) (h_lt : δ < δ_int)
-    (h_loss : 0 < loss) :
-    (Fri.Spec.foldingErrorLossy (ω := ω) s d δ loss i : ENNReal) ≤
-      ENNReal.ofReal (max (LossyMca.lossyBound 1 c δ δ_int loss) (2 ^ t)) /
-        (Fintype.card 𝕂 : ENNReal) := by
-  have hK : (0 : ℝ) < Fintype.card 𝕂 := by exact_mod_cast Fintype.card_pos
-  have hcR : (0 : ℝ) < c := by exact_mod_cast hc
-  have hpre := foldingPrefix_ones s hs i.castSucc
-  rw [Fin.val_castSucc] at hpre
-  by_cases hj : t + i + 1 ≤ N
-  · refine (foldingErrorLossy_le c s d i h δ δ_int loss ?_ h_pos h_lt h_loss).trans ?_
-    · rw [hpre, hs, PNat.one_coe]
-      have hpow : (2 : ℝ) ^ t ≤ ((2 ^ (N - i - 1) : ℕ) : ℝ) := by
-        push_cast
-        exact pow_le_pow_right₀ (by norm_num) (by omega)
-      have := one_div_le_one_div_of_le (by positivity) hpow
-      linarith
-    · rw [hs, PNat.one_coe, pow_one, show ((2 : ℝ) - 1) = 1 by norm_num, one_mul,
-        ENNReal.ofReal_div_of_pos hK, ENNReal.ofReal_natCast]
-      exact ENNReal.div_le_div_right (ENNReal.ofReal_le_ofReal (le_max_left _ _)) _
-  · have hudr : (δ : ℝ) * (2 * c) ≤ c - 1 := by
-      have h2 : (0 : ℝ) < 1 / 2 ^ t := by positivity
-      have h3 : ((1 - 1 / c) / 2 : ℝ) * (2 * c) = c - 1 := by field_simp
-      nlinarith
-    refine (foldingErrorLossy_le_foldingError _ _ i _ _ loss.coe_nonneg).trans
-      ((foldingError_le c hc _ _ i h δ hudr).trans ?_)
-    rw [hpre, hs, PNat.one_coe, pow_one, Nat.add_one_sub_one, one_mul, ← ENNReal.ofReal_natCast]
-    refine ENNReal.div_le_div_right (ENNReal.ofReal_le_ofReal ((le_max_right _ _).trans' ?_)) _
-    push_cast
-    exact pow_le_pow_right₀ (by norm_num) (by omega)
+theorem le_planMax (c : ℕ) (δ δ_int : ℝ≥0) (loss : ℝ) {f : ℕ × ℕ × Bool} :
+    ∀ {plan : List (ℕ × ℕ × Bool)}, f ∈ plan →
+      levelBound c δ δ_int loss (FriGame.Rounds.foldWords f) f.2.1 ≤ planMax c δ δ_int loss plan
+  | _ :: _, .head _ => le_max_left _ _
+  | _ :: _, .tail _ h => (le_planMax c δ δ_int loss h).trans (le_max_right _ _)
 
-/-- At arity `2`, Plonky3's schedule halves `logN - logFinalPolyLen` times. -/
-theorem foldArities_eq (S : Setup EF) (harity : S.params.maxLogArity = 1) :
-    S.foldArities = List.replicate (S.logN - S.params.logFinalPolyLen) 1 := by
-  rw [Setup.foldArities, harity, folds_one]
+theorem planMax_nonneg (c : ℕ) (δ δ_int : ℝ≥0) (loss : ℝ) :
+    ∀ plan : List (ℕ × ℕ × Bool), 0 ≤ planMax c δ δ_int loss plan
+  | [] => le_rfl
+  | _ :: plan => (planMax_nonneg c δ δ_int loss plan).trans (le_max_right _ _)
 
-/-- At arity `2`, FRI folds `logN - logFinalPolyLen` times. -/
-theorem lastFold_add_one (S : Setup EF) (harity : S.params.maxLogArity = 1) :
-    S.lastFold + 1 = S.logN - S.params.logFinalPolyLen := by
-  have := S.folds
-  rw [Setup.lastFold, foldArities_eq S harity, List.length_replicate]
+/-- The plan of folds by the arities `l` from a domain of `2 ^ n` points, injecting nothing. -/
+def arityPlan : List ℕ → ℕ → List (ℕ × ℕ × Bool)
+  | [], _ => []
+  | s :: l, n => (s, n - s, false) :: arityPlan l (n - s)
+
+/-- Without inputs, the plan folds by Plonky3's arities. -/
+theorem plan_nil (a logFinal : ℕ) (ha : 0 < a) :
+    ∀ fuel n, logFinal ≤ n → n - logFinal ≤ fuel →
+      FriGame.Rounds.plan a logFinal fuel n [] =
+        arityPlan ((folds a (n - logFinal)).map PNat.val) n
+  | 0, n, hn, hfuel => by
+    rw [FriGame.Rounds.plan, show n - logFinal = 0 by omega, folds]
+    rfl
+  | fuel + 1, n, hn, hfuel => by
+    by_cases hfin : n ≤ logFinal
+    · rw [FriGame.Rounds.plan, ite_eq_left hfin, show n - logFinal = 0 by omega, folds]
+      rfl
+    obtain ⟨r, hr⟩ : ∃ r, n - logFinal = r + 1 := ⟨n - logFinal - 1, by omega⟩
+    have hla : FriGame.Rounds.logArity a logFinal n [] = max 1 (min a (r + 1)) := by
+      unfold FriGame.Rounds.logArity
+      simp only [List.headD_nil]
+      omega
+    rw [FriGame.Rounds.plan, ite_eq_right hfin, hr, folds]
+    simp only [hla]
+    congr 1
+    rw [plan_nil a logFinal ha fuel _ (by omega) (by omega)]
+    congr 3
+    omega
+
+/-- Entry `i` of an arity plan: the arity, and the domain after the first `i + 1` folds. -/
+theorem arityPlan_getElem : ∀ (l : List ℕ) (n i : ℕ) (hi : i < l.length),
+    (arityPlan l n)[i]'(by
+      induction l generalizing n i with
+      | nil => exact absurd hi (Nat.not_lt_zero _)
+      | cons s l ih =>
+        cases i with
+        | zero => exact Nat.succ_pos _
+        | succ i => exact Nat.succ_lt_succ (ih (n - s) i (Nat.lt_of_succ_lt_succ hi))) =
+      (l[i], n - (l.take (i + 1)).sum, false)
+  | s :: l, n, 0, _ => by simp only [arityPlan, List.getElem_cons_zero, List.take_succ_cons,
+      List.take_zero, List.sum_cons, List.sum_nil, add_zero]
+  | s :: l, n, i + 1, hi => by
+    simp only [arityPlan, List.getElem_cons_succ, List.take_succ_cons, List.sum_cons]
+    rw [arityPlan_getElem l (n - s) i (Nat.lt_of_succ_lt_succ hi), Nat.sub_sub]
+
+theorem length_arityPlan : ∀ (l : List ℕ) (n : ℕ), (arityPlan l n).length = l.length
+  | [], _ => rfl
+  | _ :: l, _ => congrArg (· + 1) (length_arityPlan l _)
+
+/-- The plan of a setup's FRI without inputs folds by the setup's arities. -/
+theorem plan_eq_arityPlan (S : Setup EF) :
+    FriGame.Rounds.plan S.params.maxLogArity (S.params.logFinalPolyLen + S.params.logBlowup)
+        (S.logN + S.params.logBlowup) (S.logN + S.params.logBlowup) [] =
+      arityPlan (S.foldArities.map PNat.val) (S.logN + S.params.logBlowup) := by
+  have hf := S.valid.finalPolyFits
+  rw [plan_nil _ _ S.valid.folds _ _ (by omega) (Nat.sub_le _ _), Setup.foldArities]
+  congr 3
   omega
 
-/-- At arity `2`, every fold halves. -/
-theorem schedule_eq_one (S : Setup EF) (harity : S.params.maxLogArity = 1)
-    (j : Fin (S.lastFold + 1)) :
-    S.schedule j = 1 := by
-  rw [Setup.schedule, foldArities_eq S harity, List.getD_eq_getElem?_getD,
-    List.getElem?_replicate]
-  split_ifs <;> rfl
+/-- Fold `i` of a setup's FRI is entry `i` of its plan: its arity and the domain it folds onto. -/
+theorem schedule_mem_plan (S : Setup EF) (i : Fin (S.lastFold + 1)) :
+    ((S.schedule i : ℕ), S.logN + S.params.logBlowup -
+        Fri.Spec.foldingPrefix S.schedule i.castSucc - S.schedule i, false) ∈
+      FriGame.Rounds.plan S.params.maxLogArity (S.params.logFinalPolyLen + S.params.logBlowup)
+        (S.logN + S.params.logBlowup) (S.logN + S.params.logBlowup) [] := by
+  have hne := Setup.foldArities_ne_nil S
+  have hlen : S.lastFold + 1 = S.foldArities.length := by
+    unfold Setup.lastFold
+    have := List.length_pos_iff.mpr hne
+    omega
+  set l := S.foldArities.map PNat.val with hl
+  have hi : (i : ℕ) < l.length := by rw [hl, List.length_map, ← hlen]; exact i.2
+  have hs (j : Fin (S.lastFold + 1)) : (S.schedule j : ℕ) = l[(j : ℕ)]'(by
+      rw [hl, List.length_map, ← hlen]; exact j.2) := by
+    simp only [Setup.schedule, hl, List.getElem_map]
+    rw [List.getD_eq_getElem]
+  -- the prefix is the sum of the arities before `i`
+  have hpre : ∀ j : Fin (S.lastFold + 2), (j : ℕ) ≤ S.lastFold + 1 →
+      Fri.Spec.foldingPrefix S.schedule j = (l.take j).sum := by
+    intro j hj
+    induction j using Fin.induction with
+    | zero => rw [Fri.Spec.foldingPrefix_zero, Fin.val_zero, List.take_zero, List.sum_nil]
+    | succ j ih =>
+      rw [Fri.Spec.foldingPrefix_succ, ih (by simp only [Fin.val_castSucc]; omega), hs j,
+        Fin.val_succ, Fin.val_castSucc, List.sum_take_succ]
+  rw [plan_eq_arityPlan, List.mem_iff_getElem]
+  refine ⟨i, by rw [length_arityPlan]; exact hi, ?_⟩
+  rw [arityPlan_getElem l _ i hi, hpre i.castSucc (by simp only [Fin.val_castSucc]; omega), hs i,
+    Fin.val_castSucc, List.sum_take_succ, Nat.sub_sub]
 
-/-- The largest error of FRI's folds at arity `2`, at a proximity loss `loss > 0` and a radius
-`δ ≤ (1 - rate) / 2 - 1 / 2 ^ t`: `max(T₁, T₂, δ_int / loss, 2 ^ t) / |𝕂|` for any
-`δ_int > δ`. -/
-theorem friFoldError_le (S : Setup EF) (harity : S.params.maxLogArity = 1) (t : ℕ)
-    (δ δ_int loss : ℝ≥0) (hδ : (δ : ℝ) ≤ (1 - S.rate) / 2 - 1 / 2 ^ t) (h_pos : 0 < δ)
-    (h_lt : δ < δ_int) (h_loss : 0 < loss) :
+/-- The largest error of FRI's folds at any arity, for `δ ≤ (1 - rate) / 2` and a proximity loss
+`loss > 0`: the largest level bound of its folds' plan over `|𝕂|`, for any `δ_int > δ`. -/
+theorem friFoldError_le (S : Setup EF) (δ δ_int loss : ℝ≥0) (hδ : (δ : ℝ) ≤ (1 - S.rate) / 2)
+    (h_pos : 0 < δ) (h_lt : δ < δ_int) (h_loss : 0 < loss) :
     ⨆ i, friFoldError S δ loss i ≤
-      ENNReal.ofReal (max (LossyMca.lossyBound 1 (2 ^ S.params.logBlowup) δ δ_int loss)
-        (2 ^ t)) / (Fintype.card 𝕂 : ENNReal) := by
-  refine iSup_le fun i ↦ ?_
-  have hs := schedule_eq_one S harity
-  have hsum : ∑ j, (S.schedule j).val = S.logN - S.params.logFinalPolyLen := by
-    simp only [hs, PNat.one_coe, Finset.sum_const, Finset.card_univ, Fintype.card_fin,
-      smul_eq_mul, mul_one]
-    exact lastFold_add_one S harity
+      ENNReal.ofReal (planMax (2 ^ S.params.logBlowup) δ δ_int loss
+        (FriGame.Rounds.plan S.params.maxLogArity (S.params.logFinalPolyLen + S.params.logBlowup)
+          (S.logN + S.params.logBlowup) (S.logN + S.params.logBlowup) []) /
+        (Fintype.card 𝕂 : ℝ)) := by
+  have hK : (0 : ℝ) < Fintype.card 𝕂 := by exact_mod_cast Fintype.card_pos
+  have hc : 0 < 2 ^ S.params.logBlowup := Nat.two_pow_pos _
   have hfin := S.valid.finalPolyFits
-  refine foldingErrorLossy_ones_le (2 ^ S.params.logBlowup) (Nat.two_pow_pos _) _ hs _ i ?_ t
-    δ δ_int loss ?_ h_pos h_lt h_loss
-  · change 2 ^ S.params.logBlowup * (2 ^ _ * 2 ^ S.params.logFinalPolyLen) = _
+  have hsum := Setup.sum_schedule S
+  have h : 2 ^ S.params.logBlowup * (2 ^ (∑ j, (S.schedule j).val) *
+      (finalDegree S.params.logFinalPolyLen).val) = 2 ^ (S.logN + S.params.logBlowup) := by
+    change 2 ^ S.params.logBlowup * (2 ^ _ * 2 ^ S.params.logFinalPolyLen) = _
     rw [hsum, ← pow_add, ← pow_add]
     congr 1
     omega
-  · rw [rate_eq] at hδ
+  have hδ' : (δ : ℝ) ≤ (1 - 1 / ((2 ^ S.params.logBlowup : ℕ) : ℝ)) / 2 := by
+    rw [rate_eq] at hδ
     push_cast
     exact hδ
+  refine iSup_le fun i ↦ ?_
+  refine le_trans ?_ (ENNReal.ofReal_le_ofReal (div_le_div_of_nonneg_right
+    (le_planMax _ δ δ_int loss (schedule_mem_plan S i)) hK.le))
+  rw [foldWords_false]
+  set m := S.logN + S.params.logBlowup - Fri.Spec.foldingPrefix S.schedule i.castSucc -
+    (S.schedule i : ℕ)
+  have hudr : (δ : ℝ) * (2 * (2 ^ S.params.logBlowup : ℕ)) ≤ (2 ^ S.params.logBlowup : ℕ) - 1 :=
+    mul_le_of_le_udr S δ hδ
+  have hmca : (friFoldError S δ loss i : ENNReal) ≤
+      ENNReal.ofReal ((2 ^ (S.schedule i : ℕ) - 1 : ℕ) * 2 ^ m / Fintype.card 𝕂) := by
+    refine (foldingErrorLossy_le_foldingError _ _ i _ _ loss.coe_nonneg).trans
+      ((foldingError_le _ hc _ _ i h δ hudr).trans (le_of_eq ?_))
+    rw [ENNReal.ofReal_div_of_pos hK, ENNReal.ofReal_natCast, ← ENNReal.ofReal_natCast]
+    push_cast
+    rfl
+  unfold levelBound
+  split_ifs with hl
+  · have hlossy := foldingErrorLossy_le (ω := S.domain) (2 ^ S.params.logBlowup) S.schedule
+      (finalDegree S.params.logFinalPolyLen) i h δ δ_int loss (by push_cast at hl ⊢; exact hl)
+      h_pos h_lt h_loss
+    have hM : ((2 ^ (S.schedule i : ℕ) - 1 : ℕ) : ℝ) = 2 ^ (S.schedule i : ℕ) - 1 := by
+      rw [Nat.cast_sub Nat.one_le_two_pow]
+      push_cast
+      rfl
+    rw [mul_min_of_nonneg _ _ (Nat.cast_nonneg _), ← min_div_div_right hK.le, ENNReal.ofReal_min]
+    refine le_min ?_ hmca
+    rw [hM]
+    exact hlossy
+  · exact hmca
 
-/-- FRI's queries at arity `2`: `(1 - δ + #folds · loss + 1/p) ^ numQueries`. -/
-theorem friQueryError_eq (S : Setup EF) (harity : S.params.maxLogArity = 1) (δ loss : ℝ≥0) :
+/-- FRI's queries at any arity: `(1 - δ + #folds · loss + 1/p) ^ numQueries`, one fold per entry of
+the plan. -/
+theorem friQueryError_eq (S : Setup EF) (δ loss : ℝ≥0) :
     friQueryError S δ loss =
-      ENNReal.ofReal (1 - δ + (S.logN - S.params.logFinalPolyLen : ℕ) * loss +
-        1 / Nat.card F) ^ S.params.numQueries := by
-  rw [friQueryError, ← lastFold_add_one S harity,
-    min_eq_right (by nlinarith [loss.coe_nonneg])]
+      ENNReal.ofReal (1 - δ + (FriGame.Rounds.plan S.params.maxLogArity
+        (S.params.logFinalPolyLen + S.params.logBlowup) (S.logN + S.params.logBlowup)
+        (S.logN + S.params.logBlowup) []).length * loss + 1 / Nat.card F) ^
+          S.params.numQueries := by
+  have hne := Setup.foldArities_ne_nil S
+  have hlen : (S.lastFold : ℝ) + 1 = (FriGame.Rounds.plan S.params.maxLogArity
+      (S.params.logFinalPolyLen + S.params.logBlowup) (S.logN + S.params.logBlowup)
+      (S.logN + S.params.logBlowup) []).length := by
+    rw [plan_eq_arityPlan, length_arityPlan, List.length_map, Setup.lastFold]
+    have := List.length_pos_iff.mpr hne
+    norm_cast
+    omega
+  rw [friQueryError, min_eq_right (by nlinarith [loss.coe_nonneg]), ← hlen]
   congr 2
-  push_cast
   ring
 
 /-! ### The numbers -/
 
-/-- A radius `3/8 - 2 ^ (-a)`, as a real number. -/
-theorem coe_three_eighths_sub (k : ℤ) (a : ℕ) (hk : k = -a) (ha : 2 ≤ a) :
-    ((3 / 8 - 2 ^ k : NNReal) : ℝ) = 3 / 8 - 1 / 2 ^ a := by
+/-- A radius `x - 2 ^ (-a)`, `2 ^ (-a) ≤ x`, as a real number. -/
+theorem coe_sub_two_zpow (x : NNReal) (k : ℤ) (a : ℕ) (hk : k = -a) (h : 1 / 2 ^ a ≤ (x : ℝ)) :
+    ((x - 2 ^ k : NNReal) : ℝ) = x - 1 / 2 ^ a := by
   subst hk
   rw [NNReal.coe_sub, zpow_neg, zpow_natCast]
   · push_cast
     ring
   · rw [zpow_neg, zpow_natCast, ← NNReal.coe_le_coe]
     push_cast
-    have : (2 : ℝ) ^ 2 ≤ 2 ^ a := pow_le_pow_right₀ (by norm_num) ha
-    have := inv_anti₀ (by norm_num : (0 : ℝ) < 2 ^ 2) this
-    norm_num at this ⊢
-    linarith
+    rwa [one_div] at h
 
 end CompStark.Sound

@@ -65,6 +65,21 @@ theorem logQuotientChunks_of (A : Air F) (logN k : Nat) (hp : A.periodic = [])
   simp only [hp, ↓reduceIte, h]
   exact log2_two_mul_two_pow_sub_one k
 
+/-- Constraints whose profiles fit `2 ^ logChunks` chunks fit them at every trace length. -/
+theorem Air.degreeFitsAt_of_profileFits (air : Air F) (logN logChunks : Nat)
+    (h : air.ProfileFits logChunks) : air.DegreeFitsAt logN logChunks := by
+  intro c hc
+  have hle := c.degBound_le_profile (2 ^ logN) (air.periodicDegree (2 ^ logN))
+    (air.periodicDegree_le _)
+  obtain ⟨h1, h2⟩ := h c hc
+  have hn := Nat.two_pow_pos logN
+  rw [pow_add]
+  have : c.degProfile.1 * (2 ^ logN - 1) + c.degProfile.2 <
+      2 ^ logN * 2 ^ logChunks + 2 ^ logN := by
+    have hk := Nat.two_pow_pos logChunks
+    nlinarith [Nat.sub_add_cancel (Nat.one_le_two_pow (n := logN))]
+  omega
+
 /-- The Fibonacci AIR fits its single chunk for every trace length. -/
 theorem fibonacci_degreeFits (logN : Nat) : (fibonacci : Air F).DegreeFits logN := by
   have hlc : (fibonacci : Air F).logQuotientChunks logN = 0 := logQuotientChunks_of _ _ 0 rfl rfl
