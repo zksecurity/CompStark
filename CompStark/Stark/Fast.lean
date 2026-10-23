@@ -150,21 +150,28 @@ for its transpose: ranges of 256 rows, whose transposed columns of 1 KiB keep th
 range within few pages. -/
 def lineRanges (logH chunks : Nat) : Nat := max 1 (2 ^ logH / chunks / 256)
 
+/-- The number of columns the extension transposes together: a range's transposed rows are freed
+once its columns are extended, so the input's transposed copy shrinks while the extension grows. -/
+def rangeColumns : Nat := 256
+
 open CompPoly.CPolynomial.NTTFast.Packed.Native (transposeRows columnCoefficients
   gatherColumn cosetBlock) in
 /-- The extension by `P` of the `w`-column matrix whose rows are the chunks `ms` of equal heights,
-column by column: block `t` of column `j`, the values on coset `bitrev t`, at `t * w + j`. Tasks
-transpose row ranges of the chunks into columns (`lineRanges`); every column is one task, its
-coefficients and then each of its coset blocks, the last one from the coefficients' buffer. -/
+column by column: block `t` of column `j`, the values on coset `bitrev t`, at `t * w + j`. For each
+range of `rangeColumns` columns, tasks transpose row ranges of the chunks into columns
+(`lineRanges`); every column is one task, its coefficients and then each of its coset blocks, the
+last one from the coefficients' buffer. -/
 def ldeColumns (P : LdePlan p) (w : Nat) (ms : Array ByteArray) : Array ByteArray :=
   let q := lineRanges P.logH ms.size
   let rows := 2 ^ P.logH / (ms.size * q)
-  let pieces := CompPoly.Tasks.join (CompPoly.Tasks.spawnAll (ms.size * q) fun k ↦
-    transposeRows (ms.getD (k / q) .empty) w (k % q * rows) rows)
-  let blocks := (CompPoly.Tasks.join ((Array.range w).map fun j ↦ pieces.bind fun ps ↦
-    Task.spawn fun _ ↦
-      let c := columnCoefficients P (gatherColumn ps rows j)
-      (Array.range (2 ^ P.bits)).map fun t ↦ cosetBlock P c t)).get
+  let blocks := (CompPoly.Tasks.join ((Array.range ((w + rangeColumns - 1) / rangeColumns)).flatMap
+    fun r ↦
+      let n := min rangeColumns (w - rangeColumns * r)
+      let pieces := CompPoly.Tasks.join (CompPoly.Tasks.spawnAll (ms.size * q) fun k ↦
+        transposeRows (ms.getD (k / q) .empty) w (rangeColumns * r) n (k % q * rows) rows)
+      (Array.range n).map fun j ↦ pieces.bind fun ps ↦ Task.spawn fun _ ↦
+        let c := columnCoefficients P (gatherColumn ps rows j)
+        (Array.range (2 ^ P.bits)).map fun t ↦ cosetBlock P c t)).get
   (Array.range (2 ^ P.bits)).flatMap fun t ↦ blocks.map fun b ↦ b.getD t .empty
 
 /-- CompPoly's batched coset extension, bit-reversed rows, of a matrix given as chunks of packed
@@ -322,7 +329,7 @@ def PMat.empty : PMat := ⟨0, 0, 1, #[]⟩
 
 /-- The columns of a packed row-major matrix of width `w` and `n` rows, in one block. -/
 def rowMajorCols (m : @& ByteArray) (w n : Nat) : Prog.Cols :=
-  let t := CompPoly.CPolynomial.NTTFast.Packed.Native.transposeRows m w 0 n
+  let t := CompPoly.CPolynomial.NTTFast.Packed.Native.transposeRows m w 0 w 0 n
   ⟨(Array.range w).map fun j ↦ t.extract (4 * (j * n)) (4 * (j * n + n)), w, n⟩
 
 /-- Words `i, …, i + B - 1` of `b`. -/
@@ -778,9 +785,9 @@ def permutationWords [Mont32BaseField p] [Binomial4 p] (A : Air F) (ls : List (S
   let pc := rowMajorCols pwords pw n
   let blk (r0 : Nat) : Array ByteArray :=
     let tr := CompPoly.CPolynomial.NTTFast.Packed.Native.transposeRows
-    let L : Prog.Loads := ⟨mc, pc, tr pwords pw r0 B, PMat.empty.toCols, .empty, r0, next,
+    let L : Prog.Loads := ⟨mc, pc, tr pwords pw 0 pw r0 B, PMat.empty.toCols, .empty, r0, next,
       seqRows next r0 B, #[], first, last, trans⟩
-    let v : Prog.View := ⟨tr words w r0 B, 0, B⟩
+    let v : Prog.View := ⟨tr words w 0 w r0 B, 0, B⟩
     let regs := Prog.runBlock p prog.code v L pis.toArray #[] B hS (Array.replicate (4 + prog.regs)
       ⟨CompPoly.CPolynomial.NTTFast.Packed.Native.zeroWords B, ByteArray.size_zeros _⟩)
     Prog.outWords p prog.outs v regs B

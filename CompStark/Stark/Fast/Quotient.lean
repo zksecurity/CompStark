@@ -537,7 +537,7 @@ theorem block_rel {pm : PMat} {s : Mat F} (h : RM pm s) (r0 B : Nat) (hB : 0 < B
 
 theorem transposeRows_blockT (m : Mat F) (r0 B : Nat) (hM : (r0 + B) * m.width ≤ m.values.size)
     (hs : 4 * m.values.size < USize.size) :
-    NTTFast.Packed.Native.transposeRows (encode m.values) m.width r0 B =
+    NTTFast.Packed.Native.transposeRows (encode m.values) m.width 0 m.width r0 B =
       encode (blockT m r0 B) :=
   transposeRows_encode m.values m.width r0 B hM hs
 
