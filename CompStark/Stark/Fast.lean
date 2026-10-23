@@ -537,17 +537,17 @@ def combineX [Binomial4 p] (B : Nat) (b : EF) : List ByteArray → XVal p
   | x :: xs => xs.foldl (fun acc y ↦ (XVal.base y).add B (acc.mul B (.const b))) (.base x)
 
 /-- The fractions of lookups on a block of `B` rows (`rowFractions`), lookup `c` given by its
-tuples `ts[c]` of expressions whose blocks are `ev`: its tuples `(t, m)` add
+tuples `ts[c]` of expressions whose blocks are `get v`: its tuples `(t, m)` add
 `m / (a - combine b t)`, with its pair `(a, b)` of the challenges `chs`, `a` given as the planes
 `apl[c]`. -/
-def fractionsX [Binomial4 p] {E : Type} (B : Nat) (ev : E → ByteArray)
+def fractionsX [Binomial4 p] {β E : Type} (B : Nat) (get : β → E → ByteArray) (v : β)
     (ts : List (List (List E × E))) (chs : List EF) (apl : Array (EVec p)) :
     List (EVec p) :=
   ts.zipIdx.map fun (l, c) ↦
     l.foldl (fun s (t, m) ↦
       let den := (XVal.ext (apl.getD c (EVec.zeros B))).sub B
-        (combineX B (chs.getD (2 * c + 1) 0) (t.map ev))
-      s.add ((invPlanes (den.planes B)).mulBase (ev m))) (EVec.zeros B)
+        (combineX B (chs.getD (2 * c + 1) 0) (t.map (get v)))
+      s.add ((invPlanes (den.planes B)).mulBase (get v m))) (EVec.zeros B)
 
 /-- Row `i` of the permutation trace in base coordinates, written from word `o` of `out`: the
 accumulator `acc`, then every lookup's fraction, the planes `fs`. -/
@@ -595,24 +595,25 @@ def shiftAccumulator (out : ByteArray) (rows W : Nat) (s : EF) : ByteArray :=
 
 /-- The rows of `nb` blocks of `B` rows from block `b0` of the permutation trace of lookups given
 by their tuples `ts`, in base coordinates, `W` words per row, with the accumulator from `0` at the
-first; and the sum of their fractions. `ev r0` are the expressions' blocks from row `r0`. -/
-def rangeRows [Binomial4 p] {E : Type} (ev : Nat → E → ByteArray) (ts : List (List (List E × E)))
+first; and the sum of their fractions. `get (blk r0)` are the expressions' blocks from row `r0`. -/
+def rangeRows [Binomial4 p] {β E : Type} (blk : Nat → β) (get : β → E → ByteArray)
+    (ts : List (List (List E × E)))
     (chs : List EF) (B W b0 nb : Nat) : ByteArray × EF :=
   let apl := (Array.range ts.length).map fun c ↦ (XVal.const (chs.getD (2 * c) 0)).planes B
   (List.range nb).foldl (fun (out, acc) j ↦
-      writeBlock out (j * B) (fractionsX B (ev ((b0 + j) * B)) ts chs apl).toArray acc B W)
+      writeBlock out (j * B) (fractionsX B get (blk ((b0 + j) * B)) ts chs apl).toArray acc B W)
     (CompPoly.CPolynomial.NTTFast.Packed.Native.zeroWords (nb * B * W), 0)
 
 /-- The permutation trace's rows of `blocks` blocks of `B` rows, `W` words per row, as packed
 words, and its terminal: in parallel ranges of blocks, the rows with the accumulator from the
 range's start (`rangeRows`), then the ranges' accumulators shifted by the sums before them. -/
-def assembleRanges [Binomial4 p] {E : Type} (ev : Nat → E → ByteArray)
+def assembleRanges [Binomial4 p] {β E : Type} (blk : Nat → β) (get : β → E → ByteArray)
     (ts : List (List (List E × E))) (chs : List EF) (B W blocks : Nat) : ByteArray × EF :=
   let tasks := if blocks < 16 then 1 else 16
   let size := blocks / tasks
   let count (k : Nat) := if k + 1 = tasks then blocks - k * size else size
   let ranges := (Array.range tasks).map fun k ↦ Task.spawn fun _ ↦
-    rangeRows ev ts chs B W (k * size) (count k)
+    rangeRows blk get ts chs B W (k * size) (count k)
   let starts := ranges.foldl (fun (acc : Array EF × EF) t ↦ (acc.1.push acc.2, acc.2 + t.get.2))
     (#[], 0)
   let words := ((Array.range tasks).map fun k ↦ Task.spawn fun _ ↦
@@ -665,16 +666,15 @@ def permutationWords [Mont32BaseField p] [Binomial4 p] (A : Air F) (ls : List (S
   let trans := sel (· + 1 < n)
   let tups := ls.map Stark.Lookup.tuples
   let prog := Prog.compileOuts (flatTuples tups)
-  let ev (r0 : Nat) : Nat → ByteArray :=
+  let blk (r0 : Nat) : Array ByteArray :=
     let tr := CompPoly.CPolynomial.NTTFast.Packed.Native.transposeRows
     let L : Prog.Loads := ⟨words, w, pwords, pw, tr pwords pw r0 B, .empty, 0, .empty, r0, next,
       #[], first, last, trans⟩
     let v : Prog.View := ⟨tr words w r0 B, 0, B⟩
     let regs := Prog.runBlock p prog.code v L pis.toArray #[] B hS (Array.replicate (4 + prog.regs)
       ⟨CompPoly.CPolynomial.NTTFast.Packed.Native.zeroWords B, ByteArray.size_zeros _⟩)
-    let ws := Prog.outWords p prog.outs v regs B
-    fun k ↦ ws.getD k .empty
-  assembleRanges ev (indexTuples tups 0) chs B ((ls.length + 1) * 4) blocks
+    Prog.outWords p prog.outs v regs B
+  assembleRanges blk (fun ws k ↦ ws.getD k .empty) (indexTuples tups 0) chs B ((ls.length + 1) * 4) blocks
 
 /-- `permutationLdeOf` on packed words: the permutation trace's words (`permutationWords`)
 extended by CompPoly's batched coset LDE with plans from `plans`. -/

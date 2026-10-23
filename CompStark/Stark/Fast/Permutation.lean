@@ -144,9 +144,9 @@ theorem ext4_mul_ofBase_zero [Binomial4 p] (a : EF) : a * Ext4.ofBase 0 = 0 := b
 
 /-! ### Fractions -/
 
-theorem length_fractionsX [Binomial4 p] {E : Type} (B : Nat) (ev : E → ByteArray)
-    (ts : List (List (List E × E))) (chs : List EF) (apl : Array (EVec p)) :
-    (fractionsX B ev ts chs apl).length = ts.length := by
+theorem length_fractionsX [Binomial4 p] {β E : Type} (B : Nat) (get : β → E → ByteArray)
+    (v : β) (ts : List (List (List E × E))) (chs : List EF) (apl : Array (EVec p)) :
+    (fractionsX B get v ts chs apl).length = ts.length := by
   rw [fractionsX, List.length_map, List.length_zipIdx]
 
 
@@ -243,19 +243,20 @@ theorem fractionX_rel {E : Type} {B : Nat} (hB : 4 * B < USize.size) (ev : E →
   exact fractionX_fold hB ev val a b apl hapl t hev _ _ hz
 
 /-- Lookup `c`'s fraction planes on a block. -/
-theorem fractionsX_getD {E : Type} {B : Nat} (hB : 4 * B < USize.size) (ev : E → ByteArray)
+theorem fractionsX_getD {β E : Type} {B : Nat} (hB : 4 * B < USize.size)
+    (get : β → E → ByteArray) (v : β)
     (val : E → Nat → F) (ts : List (List (List E × E))) (chs : List EF)
     (apl : Array (EVec p))
     (hapl : ∀ c < ts.length, RV (apl.getD c (EVec.zeros B)) (tab B fun _ ↦ chs.getD (2 * c) 0))
-    (hev : ∀ t ∈ ts, ∀ x ∈ t, (∀ e ∈ x.1, ev e = encode (tab B (val e))) ∧
-      ev x.2 = encode (tab B (val x.2))) (c : Nat) (hc : c < ts.length) :
-    RV ((fractionsX B ev ts chs apl).toArray.getD c (EVec.zeros B))
+    (hev : ∀ t ∈ ts, ∀ x ∈ t, (∀ e ∈ x.1, get v e = encode (tab B (val e))) ∧
+      get v x.2 = encode (tab B (val x.2))) (c : Nat) (hc : c < ts.length) :
+    RV ((fractionsX B get v ts chs apl).toArray.getD c (EVec.zeros B))
       (tab B fun i ↦ fracOf (val · i) (chs.getD (2 * c) 0) (chs.getD (2 * c + 1) 0) ts[c]) := by
-  have hc' : c < (fractionsX B ev ts chs apl).length := by rw [length_fractionsX]; exact hc
+  have hc' : c < (fractionsX B get v ts chs apl).length := by rw [length_fractionsX]; exact hc
   rw [Array.getD_eq_getD_getElem?, List.getElem?_toArray, List.getElem?_eq_getElem hc',
     Option.getD_some]
   simp only [fractionsX, List.getElem_map, List.getElem_zipIdx, Nat.zero_add]
-  exact fractionX_rel hB ev val ts[c] _ _ _ (hapl c hc) (hev _ (List.getElem_mem hc))
+  exact fractionX_rel hB (get v) val ts[c] _ _ _ (hapl c hc) (hev _ (List.getElem_mem hc))
 
 end Fractions
 
@@ -641,7 +642,8 @@ theorem div_mod_row (W row e : Nat) (he : e < W) :
 
 /-- **A range of blocks**: its rows of the permutation trace, the accumulator from `0`, and the
 sum of their fractions. -/
-theorem rangeRows_eq [Mont32BaseField p] [Binomial4 p] {E : Type} (ev : Nat → E → ByteArray)
+theorem rangeRows_eq [Mont32BaseField p] [Binomial4 p] {β E : Type} (blk : Nat → β)
+    (get : β → E → ByteArray)
     (ts : List (List (List E × E)))
     (chs : List EF) (B W b0 nb : Nat) (val : E → Nat → F) (frs : Nat → List EF)
     (hW : W = (ts.length + 1) * 4) (hB : 4 * B < USize.size)
@@ -649,9 +651,10 @@ theorem rangeRows_eq [Mont32BaseField p] [Binomial4 p] {E : Type} (ev : Nat → 
     (hfrs : ∀ r, frs r = ts.zipIdx.map fun (t, c) ↦
       fracOf (val · r) (chs.getD (2 * c) 0) (chs.getD (2 * c + 1) 0) t)
     (hev : ∀ j < nb, ∀ t ∈ ts, ∀ x ∈ t,
-      (∀ e ∈ x.1, ev ((b0 + j) * B) e = encode (tab B fun i ↦ val e ((b0 + j) * B + i))) ∧
-      ev ((b0 + j) * B) x.2 = encode (tab B fun i ↦ val x.2 ((b0 + j) * B + i))) :
-    rangeRows ev ts chs B W b0 nb =
+      (∀ e ∈ x.1,
+        get (blk ((b0 + j) * B)) e = encode (tab B fun i ↦ val e ((b0 + j) * B + i))) ∧
+      get (blk ((b0 + j) * B)) x.2 = encode (tab B fun i ↦ val x.2 ((b0 + j) * B + i))) :
+    rangeRows blk get ts chs B W b0 nb =
       (encode (tab (nb * B * W) (rangeVal frs (b0 * B) W)), localAcc frs (b0 * B) (nb * B)) := by
   unfold rangeRows
   dsimp only
@@ -672,7 +675,7 @@ theorem rangeRows_eq [Mont32BaseField p] [Binomial4 p] {E : Type} (ev : Nat → 
   have hZs : 4 * Z.size < USize.size := by rw [size_tab]; exact hsz
   rw [hZ]
   suffices h : ∀ m ≤ nb, (List.range m).foldl (fun st j ↦
-      writeBlock st.1 (j * B) (fractionsX B (ev ((b0 + j) * B)) ts chs apl).toArray st.2 B W)
+      writeBlock st.1 (j * B) (fractionsX B get (blk ((b0 + j) * B)) ts chs apl).toArray st.2 B W)
       (encode (Words.upto Z (rangeVal frs (b0 * B) W) (0 * B * W)), 0) =
       (encode (Words.upto Z (rangeVal frs (b0 * B) W) (m * B * W)),
         localAcc frs (b0 * B) (m * B)) by
@@ -686,12 +689,12 @@ theorem rangeRows_eq [Mont32BaseField p] [Binomial4 p] {E : Type} (ev : Nat → 
   | succ m ih =>
     rw [List.range_succ, List.foldl_append, ih (by omega), List.foldl_cons, List.foldl_nil]
     dsimp only
-    have hfs (c : Nat) (hc : c < ts.length) := fractionsX_getD hB (ev ((b0 + m) * B))
+    have hfs (c : Nat) (hc : c < ts.length) := fractionsX_getD hB get (blk ((b0 + m) * B))
       (fun e i ↦ val e ((b0 + m) * B + i)) ts chs apl hapl (hev m (by omega)) c hc
-    have hsize : (fractionsX B (ev ((b0 + m) * B)) ts chs apl).toArray.size = ts.length := by
+    have hsize : (fractionsX B get (blk ((b0 + m) * B)) ts chs apl).toArray.size = ts.length := by
       rw [List.size_toArray, length_fractionsX]
     have hrow (i : Nat) (hi : i < B) : (frs ((b0 + m) * B + i)) =
-        (fractionsX B (ev ((b0 + m) * B)) ts chs apl).map (·.get i) := by
+        (fractionsX B get (blk ((b0 + m) * B)) ts chs apl).map (·.get i) := by
       apply List.ext_getElem (by rw [List.length_map, length_fractionsX, hfrs, List.length_map,
         List.length_zipIdx])
       intro c h1 h2
@@ -703,7 +706,7 @@ theorem rangeRows_eq [Mont32BaseField p] [Binomial4 p] {E : Type} (ev : Nat → 
       rw [get_tab hB this i hi]
       simp only [hfrs, List.getElem_map, List.getElem_zipIdx, Nat.zero_add]
     have hx := writeBlock_rel Z (rangeVal frs (b0 * B) W) (m * B)
-      (fractionsX B (ev ((b0 + m) * B)) ts chs apl).toArray (localAcc frs (b0 * B) (m * B)) B W
+      (fractionsX B get (blk ((b0 + m) * B)) ts chs apl).toArray (localAcc frs (b0 * B) (m * B)) B W
       (fun i ↦ localAcc frs (b0 * B) (m * B + i)) (by rw [hsize, hW])
       (by
         rw [size_tab]
@@ -727,8 +730,8 @@ theorem rangeRows_eq [Mont32BaseField p] [Binomial4 p] {E : Type} (ev : Nat → 
         rw [Array.getD_eq_getD_getElem?, List.getElem?_toArray,
           List.getElem?_eq_getElem (by rw [length_fractionsX]; exact hc), Option.getD_some] at this
         obtain ⟨-, h0, h1, h2, h3⟩ := rv_tab_iff.mp this
-        have hfsc : (fractionsX B (ev ((b0 + m) * B)) ts chs apl).toArray.getD c (EVec.zeros 0) =
-            (fractionsX B (ev ((b0 + m) * B)) ts chs apl)[c]'(by
+        have hfsc : (fractionsX B get (blk ((b0 + m) * B)) ts chs apl).toArray.getD c (EVec.zeros 0) =
+            (fractionsX B get (blk ((b0 + m) * B)) ts chs apl)[c]'(by
               rw [length_fractionsX]; exact hc) := by
           rw [Array.getD_eq_getD_getElem?, List.getElem?_toArray,
             List.getElem?_eq_getElem (by rw [length_fractionsX]; exact hc), Option.getD_some]
@@ -897,17 +900,17 @@ theorem shifted_rangeVal (frs : Nat → List EF) (L R0 rows : Nat) :
       Array.getElem?_eq_none (by rw [size_tab]; omega)]
 
 /-- **The parallel ranges of blocks** give the permutation trace's words and its terminal. -/
-theorem assembleRanges_eq [Mont32BaseField p] [Binomial4 p] {E : Type}
-    (ev : Nat → E → ByteArray) (ts : List (List (List E × E)))
+theorem assembleRanges_eq [Mont32BaseField p] [Binomial4 p] {β E : Type}
+    (blk : Nat → β) (get : β → E → ByteArray) (ts : List (List (List E × E)))
     (chs : List EF) (B blocks : Nat) (val : E → Nat → F) (frs : Nat → List EF)
     (hB : 4 * B < USize.size) (hsz : 4 * (blocks * B * ((ts.length + 1) * 4)) < USize.size)
     (hdiv : (if blocks < 16 then 1 else 16) ∣ blocks)
     (hfrs : ∀ r, frs r = ts.zipIdx.map fun (t, c) ↦
       fracOf (val · r) (chs.getD (2 * c) 0) (chs.getD (2 * c + 1) 0) t)
     (hev : ∀ j < blocks, ∀ t ∈ ts, ∀ x ∈ t,
-      (∀ e ∈ x.1, ev (j * B) e = encode (tab B fun i ↦ val e (j * B + i))) ∧
-      ev (j * B) x.2 = encode (tab B fun i ↦ val x.2 (j * B + i))) :
-    assembleRanges ev ts chs B ((ts.length + 1) * 4) blocks =
+      (∀ e ∈ x.1, get (blk (j * B)) e = encode (tab B fun i ↦ val e (j * B + i))) ∧
+      get (blk (j * B)) x.2 = encode (tab B fun i ↦ val x.2 (j * B + i))) :
+    assembleRanges blk get ts chs B ((ts.length + 1) * 4) blocks =
       (encode (tab (blocks * B * ((ts.length + 1) * 4)) (specWord frs ts.length)),
         specAcc frs (blocks * B)) := by
   unfold assembleRanges
@@ -926,22 +929,22 @@ theorem assembleRanges_eq [Mont32BaseField p] [Binomial4 p] {E : Type}
     · rfl
   -- Every range.
   have hrange (k : Nat) (hk : k < tasks) :
-      rangeRows ev ts chs B W (k * size) (if k + 1 = tasks then tasks * size - k * size else size)
+      rangeRows blk get ts chs B W (k * size) (if k + 1 = tasks then tasks * size - k * size else size)
         = (encode (tab (size * B * W) (rangeVal frs (k * size * B) W)),
           localAcc frs (k * size * B) (size * B)) := by
     rw [hcount k hk]
-    refine rangeRows_eq ev ts chs B W (k * size) size val frs hW.symm hB ?_ hfrs fun j hj ↦ ?_
+    refine rangeRows_eq blk get ts chs B W (k * size) size val frs hW.symm hB ?_ hfrs fun j hj ↦ ?_
     · exact lt_of_le_of_lt (Nat.mul_le_mul_left 4 (Nat.mul_le_mul_right W
         (Nat.mul_le_mul_right B (Nat.le_mul_of_pos_left size ht0)))) hsz
     · exact hev (k * size + j) (by nlinarith)
   -- The accumulators before the ranges, and the terminal.
-  have hstarts : (Array.map (fun k ↦ Task.spawn fun _ ↦ rangeRows ev ts chs B W (k * size)
+  have hstarts : (Array.map (fun k ↦ Task.spawn fun _ ↦ rangeRows blk get ts chs B W (k * size)
       (if k + 1 = tasks then tasks * size - k * size else size)) (Array.range tasks)).foldl
       (fun (acc : Array EF × EF) t ↦ (acc.1.push acc.2, acc.2 + t.get.2)) (#[], 0) =
       (tab tasks fun k ↦ specAcc frs (k * size * B), specAcc frs (tasks * size * B)) := by
     rw [Array.foldl_map, ← Array.foldl_toList, Array.toList_range]
     suffices h : ∀ m ≤ tasks, (List.range m).foldl (fun (acc : Array EF × EF) k ↦
-        (acc.1.push acc.2, acc.2 + (Task.spawn fun _ ↦ rangeRows ev ts chs B W (k * size)
+        (acc.1.push acc.2, acc.2 + (Task.spawn fun _ ↦ rangeRows blk get ts chs B W (k * size)
           (if k + 1 = tasks then tasks * size - k * size else size)).get.2)) (#[], 0) =
         (tab m fun k ↦ specAcc frs (k * size * B), specAcc frs (m * size * B)) from h tasks le_rfl
     intro m hm
@@ -962,9 +965,9 @@ theorem assembleRanges_eq [Mont32BaseField p] [Binomial4 p] {E : Type}
       specWord frs ts.length (k * (size * B * W) + j)) fun k hk ↦ ?_,
     foldl_tab_ranges (specWord frs ts.length) (size * B * W) tasks,
     show tasks * (size * B * W) = tasks * size * B * W by ring]
-  have hget : ((Array.range tasks).map fun k ↦ Task.spawn fun _ ↦ rangeRows ev ts chs B W
+  have hget : ((Array.range tasks).map fun k ↦ Task.spawn fun _ ↦ rangeRows blk get ts chs B W
       (k * size) (if k + 1 = tasks then tasks * size - k * size else size)).getD k
-      (Task.pure (ByteArray.empty, 0)) = Task.spawn fun _ ↦ rangeRows ev ts chs B W (k * size)
+      (Task.pure (ByteArray.empty, 0)) = Task.spawn fun _ ↦ rangeRows blk get ts chs B W (k * size)
         (if k + 1 = tasks then tasks * size - k * size else size) := by
     rw [Array.getD_eq_getD_getElem?, Array.getElem?_map, Array.getElem?_range]
     simp only [hk, ite_true, Option.map_some, Option.getD_some]
@@ -1123,7 +1126,7 @@ theorem permutationWords_eq [Mont32BaseField p] [Binomial4 p] (A : Air F)
   have hlen : (indexTuples tups 0).length = ls.length := by
     rw [length_indexTuples, List.length_map]
   conv_lhs => rw [show ls.length = (indexTuples tups 0).length from hlen.symm]
-  rw [assembleRanges_eq _ (indexTuples tups 0) chs B blocks val frs hBs (by rw [hlen]; exact hsz)
+  rw [assembleRanges_eq _ _ (indexTuples tups 0) chs B blocks val frs hBs (by rw [hlen]; exact hsz)
     htasks (fun r ↦ ?hfrs) ?hev, hnB, hlen]
   case hfrs =>
     rw [← hfrs]
