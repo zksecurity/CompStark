@@ -10,7 +10,7 @@ package CompStark where
 -- coset interpolation generic over 32-bit Montgomery fields, fast KoalaBear⁵ and spec fields over
 -- the fast base field.
 require CompPoly from git "https://github.com/mitschabaude-bot/CompPoly.git" @
-    "26ee884e25033e52642dabc833ac087adb5a9dfb"
+    "b8e2f94c8176b2ee92fa4add3eff06a89cc93598"
 
 -- ArkLib with FRI round-by-round soundness on Lean v4.35 (Verified-zkEVM/ArkLib#1317, stacked on
 -- #992 and #1251) and lossy mutual correlated agreement (branch `fri-lossy`).
