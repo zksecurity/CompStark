@@ -125,13 +125,6 @@ theorem ensure_true [Poseidon2Field F] (msg : String) : ensure (H := (poseidon2 
 
 /-! ### The commit rounds as a chain -/
 
-/-- One fold of the commit phase by `2 ^ la` at `β`. -/
-def foldOnce (la : Nat) (beta : EF) (f : Array EF) : Array EF :=
-  let rows := f.size / 2 ^ la
-  if la = 1 then foldPairs f beta (Nat.log2 rows) else
-    Array.ofFn (n := rows) fun i ↦ foldRow i (Nat.log2 rows) la beta
-      ((List.range (2 ^ la)).map fun k ↦ f.getD (i * 2 ^ la + k) 0)
-
 /-- A commit round: its log arity, the folded vector it starts from, the transcript before it, its
 grinding witness and its folding challenge. -/
 structure Rd (EF : Type) [Challenge F EF] where
@@ -216,11 +209,6 @@ theorem foldOnce_eq (la h : Nat) (beta : EF) (f : Array EF) (hs : f.size = 2 ^ h
     rw [Array.size_ofFn] at h2
     rw [← getD_lt _ i h1, foldPairs_getD f beta (h - 1) (by omega) i h2, Array.getElem_ofFn]
   · rfl
-
-theorem size_foldOnce (la h : Nat) (beta : EF) (f : Array EF) (hs : f.size = 2 ^ h)
-    (hla : la ≤ h) (h24 : h ≤ twoAdicity F) (hla1 : 1 ≤ la) : (foldOnce la beta f).size = 2 ^
-        (h - la) := by
-  rw [foldOnce_eq la h beta f hs hla h24 hla1, Array.size_ofFn]
 
 theorem lowDegree_foldOnce (P : Params) (la h : Nat) (beta : EF) (f : Array EF)
     (hf : LowDegree h (h - P.logBlowup) f) (hla : la ≤ h - P.logBlowup) (hla1 : 1 ≤ la) :
@@ -672,7 +660,7 @@ theorem fold_round [Poseidon2Field F] (P : Params) {h : Nat} {f : Array EF} (hg 
     rw [foldOnce_eq la h beta f' hsz (by omega) h24 h1,
       CompPoly.CPolynomial.NTTFast.Packed.getD_ofFn_bounded _ _ hr']
   have hgsz : (foldOnce la beta f').size = 2 ^ (h - la) :=
-    size_foldOnce la h beta f' hsz (by omega) h24 h1
+    size_foldOnce la h beta f' hsz (by omega)
   unfold foldBody
   rw [ho]
   simp only [sibsAt, Rd.c] at hs1 hs2 ⊢

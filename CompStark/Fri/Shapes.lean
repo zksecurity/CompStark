@@ -67,6 +67,16 @@ theorem size_foldPairs (vs : Array EF) (beta : EF) (k : Nat) :
   size_parChunks _ _ _ (fun _ _ ↦ size_foldRange ..) (by split <;> simp only [Nat.zero_lt_one,
     Nat.ofNat_pos, true_or])
 
+theorem size_foldOnce (la h : Nat) (beta : EF) (f : Array EF) (hs : f.size = 2 ^ h)
+    (hla : la ≤ h) : (foldOnce la beta f).size = 2 ^ (h - la) := by
+  have hrows : f.size / 2 ^ la = 2 ^ (h - la) := by rw [hs, Nat.pow_div hla (by decide)]
+  unfold foldOnce
+  dsimp only
+  rw [hrows, Nat.log2_two_pow]
+  split
+  · exact size_foldPairs ..
+  · exact Array.size_ofFn
+
 theorem size_accumulateRows (acc comp : Array EF) (xs : Array F) (z yz offset : EF)
     (r0 len : Nat) : (accumulateRows acc comp xs z yz offset r0 len).size = len := by
   simp only [accumulateRows, Id.run, Std.Legacy.Range.forIn_eq_forIn_range',

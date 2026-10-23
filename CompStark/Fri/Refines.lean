@@ -126,8 +126,8 @@ structure Refines (B : Backend F EF 24) where
     (∀ x ∈ sitems, MatOk x.1 ∧ ∀ p ∈ x.2, Ext.OutsideBase p.1) →
     List.Forall₂ (fun x y ↦ x.1 = y.1 ∧ RV x.2 y.2) (B.reduce alpha items)
       ((specBackend EF).reduce alpha sitems)
-  fold2 : ∀ beta k {v a}, RV v a → a.size = 2 ^ (k + 1) → k < twoAdicity F →
-    RV (B.fold2 v beta k) ((specBackend EF).fold2 a beta k)
+  fold : ∀ la beta s {v a}, RV v a → a.size = 2 ^ s → la ≤ s → s ≤ twoAdicity F →
+    RV (B.fold la beta v) ((specBackend EF).fold la beta a)
   addScaled : ∀ x {v a w b}, RV v a → RV w b → a.size = b.size → a.size ≤ 2 ^ twoAdicity F →
     RV (B.addScaled v w x) ((specBackend EF).addScaled a b x)
   leaves : ∀ k {v a}, RV v a → a.size ≤ 2 ^ twoAdicity F → k ∣ a.size → 0 < a.size →
@@ -218,26 +218,14 @@ theorem commitRounds_refines (hA : DomainsAddressable F EF) (h : Refines B) (P :
     have hpos : 0 < a.size := by rw [ha]; exact Nat.two_pow_pos s
     have hcm := h.commit (.cons (h.leaves (2 ^ la) hf ha24 hdvd hpos) .nil)
       (commitOk_leaves hA a s la hs ha hla)
-    rw [h.cap _ hcm, h.size hf]
+    rw [h.cap _ hcm]
     dsimp only
     refine RelM.bind_eq fun _ ↦ RelM.bind_eq fun w ↦ RelM.bind_eq fun beta ↦ ?_
-    have hrows : (specBackend EF).size a / 2 ^ la = 2 ^ (s - la) := by
-      show a.size / 2 ^ la = _; rw [ha, Nat.pow_div hla (by decide)]
-    generalize hfB : (if la = 1 then _ else _ : B.V) = fB
-    generalize hfS : (if la = 1 then _ else _ : (specBackend EF).V) = fS
+    generalize hfB : B.fold la beta folded = fB
+    generalize hfS : foldOnce la beta a = fS
     have hfold : h.RV fB fS ∧ fS.size = 2 ^ (s - la) := by
       subst hfB hfS
-      split
-      · rename_i h1
-        subst h1
-        have hk : ((specBackend EF).size a / 2 ^ 1).log2 = s - 1 := by
-          rw [hrows, Nat.log2_two_pow]
-        rw [hk]
-        refine ⟨h.fold2 _ _ hf (by rw [ha]; congr 1; omega) (by omega), size_foldPairs ..⟩
-      · rw [h.toArray hf ha24]
-        refine ⟨h.ofArray _, ?_⟩
-        show (Array.ofFn _).size = _
-        rw [Array.size_ofFn, hrows]
+      exact ⟨h.fold la beta s hf ha hla hs, size_foldOnce la s beta a ha hla⟩
     have hfit' : FoldsFit (F := F) las fS := Or.inr ⟨s - la, by omega, hfold.2, by omega⟩
     have hshape' : ShapeOk (F := F) fS := Or.inr ⟨s - la, by omega, hfold.2⟩
     have hc' : CPRel h.RC

@@ -261,6 +261,51 @@ def keccakProve (logN : Nat) : IO UInt32 := do
   return 0
 
 open CompStark CompStark.Stark CompStark.Fri in
+/-- `keccak-phases LOG_N`: the wall time of each phase of `keccak LOG_N`'s proof, twice. -/
+def keccakPhases (logN : Nat) : IO UInt32 := do
+  let p := _root_.KoalaBear.fieldSize
+  let A : Air KoalaBear.Fast.Field := CompStark.Fixtures.Keccak.air
+  let w := CompStark.Fixtures.Keccak.width
+  let P : Params := ⟨1, 0, 3, 87, 0, 16, 10, 0, 0, 3⟩
+  let inputs := (Array.range (2 ^ logN / 24)).map fun k ↦ (Array.range 25).map fun i ↦
+    (splitMix (25 * k + i).toUInt64).2
+  let logChunks := A.logQuotientChunks logN
+  let B := CompStark.KoalaBear.backendFor [CompStark.Fixtures.KeccakKernel.kernel] 1
+    [(logN, logChunks)]
+  let chunks := CompStark.Fixtures.Keccak.trace p inputs 16
+  for k in [0:2] do
+    let lde ← timed "trace lde" (fun _ ↦ B.ldeTrace logN 1 gen w (chunks.modify 0
+      (write · 0 k.toUInt32))) fun e ↦ s!"{e.height}"
+    let tc ← timed "trace commit" (fun _ ↦ B.commit [lde])
+      fun c ↦ s!"{((B.cap c 0).getD 0 0)[0].val}"
+    let alpha : _root_.KoalaBear.Fast.Ext4 := ⟨5, 7, 11, k⟩
+    let q ← timed "quotient" (fun _ ↦ B.quotient A [] logN logChunks lde none alpha)
+      fun q ↦ s!"{q.size}"
+    let qms ← timed "quotient chunks lde" (fun _ ↦ chunksOf B P logN logChunks q)
+      fun c ↦ s!"{c.length}"
+    let qc ← timed "quotient commit" (fun _ ↦ B.commit qms)
+      fun c ↦ s!"{((B.cap c 0).getD 0 0)[0].val}"
+    let zeta : _root_.KoalaBear.Fast.Ext4 := ⟨17, 19, 23, k⟩
+    let rounds : List (OpenRound B) :=
+      [(tc, [(lde, [zeta, zeta * Ext.ofBase (twoAdicGen logN)])]),
+        (qc, qms.map fun m ↦ (m, [zeta]))]
+    let opened ← timed "opened values" (fun _ ↦ rounds.map fun (_, ms) ↦ ms.map fun (m, zs) ↦
+      B.openedAt 1 m zs) fun o ↦ s!"{o.length}"
+    let items := ((rounds.zip opened).map fun ((_, ms), orow) ↦
+      (ms.zip orow).map fun ((m, zs), ovs) ↦ (m, zs.zip ovs)).flatten
+    let red ← timed "reduce" (fun _ ↦ B.reduce alpha items) fun r ↦ s!"{r.length}"
+    let heights := red.map fun (h, _) ↦ h
+    let arities := foldSchedule P.maxLogArity (P.logBlowup + P.logFinalPolyLen) (heights.headD 0)
+      heights
+    let _ ← timed "commit phase" (fun _ ↦ (commitPhase B P arities (red.map (·.2))).run
+      B.transcript) fun cp ↦ s!"{cp.1.commits.size}"
+    let _ ← timed "openPcs" (fun _ ↦ (openPcs B P rounds).run B.transcript)
+      fun r ↦ s!"{r.1.2.folds.size}"
+    let _ ← timed "whole proof" (fun _ ↦ proveWith B P A logN chunks []) fun pf ↦
+      s!"{pf.oodWitness.val}"
+  return 0
+
+open CompStark CompStark.Stark CompStark.Fri in
 /-- `quotient-phase AIR LOG_N REPS`: the fast prover's quotient phase on `2 ^ LOG_N` rows,
 blowup 2, for `keccak` (Plonky3's Keccak AIR), `wide` (`wide 64`), `widebus` (`wideBus 64`) or
 `lookup` (`mulAirLookups 8` with local lookups, sending on eight buses): per round the AIR's
@@ -484,6 +529,7 @@ def main (args : List String) : IO UInt32 := do
         (trace.modify 0 (write · 0 k.toUInt32))) (s!"{·.size} columns")
     return 0
   | ["keccak-prove", logN] => keccakProve logN.toNat!
+  | ["keccak-phases", logN] => keccakPhases logN.toNat!
   | ["phases-batch"] => phasesBatch
   | ["quotient-phase", air, logN, reps] => quotientPhase air logN.toNat! reps.toNat!
   | "prove" :: backend :: air :: rest =>

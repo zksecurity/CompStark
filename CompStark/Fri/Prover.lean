@@ -91,8 +91,8 @@ structure Backend (F EF : Type) (width : Nat) where
   /-- The batched quotients by log height, tallest first, of committed matrices with their points
   and opened values, for the batching challenge `α`. -/
   reduce : EF → List (M × List (EF × Array EF)) → List (Nat × V)
-  /-- The arity-2 fold at `β` of `2 ^ (logRows + 1)` values. -/
-  fold2 : V → EF → Nat → V
+  /-- The fold by `2 ^ la` at `β` (`foldOnce`). -/
+  fold : Nat → EF → V → V
   /-- `a + s · b`. -/
   addScaled : V → V → EF → V
   /-- The matrix of rows of `k` elements, flattened to coordinates. -/
@@ -201,6 +201,14 @@ def foldPairs (vs : Array EF) (beta : EF) (logRows : Nat) : Array EF :=
   let half := Ext.ofBase (2 : F)⁻¹
   parChunks rows (if rows < 4096 then 1 else 16) fun r0 len ↦ foldRange vs pw perm beta half r0 len
 
+/-- The fold by `2 ^ la` at `β` of a vector of `rows · 2 ^ la` values: `foldPairs` for arity 2,
+otherwise every group's `foldRow`. -/
+def foldOnce (la : Nat) (beta : EF) (f : Array EF) : Array EF :=
+  let rows := f.size / 2 ^ la
+  if la = 1 then foldPairs f beta (Nat.log2 rows) else
+    Array.ofFn (n := rows) fun i ↦ foldRow i (Nat.log2 rows) la beta
+      ((List.range (2 ^ la)).map fun k ↦ f.getD (i * 2 ^ la + k) 0)
+
 /-- The rounds of Plonky3's `commit_phase` with log arities `arities`: commit to the folded
 vector's groups, fold them at a fresh `β`, and add the next input of the folded height times
 `β ^ (2 ^ arity)`. -/
@@ -209,16 +217,11 @@ def commitRounds (B : Backend F EF width) (P : Params) :
   | [], folded, _, cp => pure (folded, cp)
   | la :: las, folded, rest, cp => do
     let arity := 2 ^ la
-    let rows := B.size folded / arity
     let c := B.commit [B.leaves arity folded]
     pObserveList (capElems (B.cap c P.capHeight))
     let w ← pGrind P.commitPowBits
     let beta : EF ← pSampleExt
-    let logRows := Nat.log2 rows
-    let folded := if la = 1 then B.fold2 folded beta logRows else
-      let vs := B.toArray folded
-      B.ofArray <| Array.ofFn (n := rows) fun i ↦
-        foldRow i logRows la beta ((List.range arity).map fun k ↦ vs.getD (i * arity + k) 0)
+    let folded := B.fold la beta folded
     let (folded, rest) := match rest with
       | v :: vs => if B.size v == B.size folded then
           (B.addScaled folded v (Ext.powTwo beta la), vs) else (folded, rest)
@@ -421,7 +424,7 @@ def Backend.spec (EF : Type) [Challenge F EF] (t : Transcript F width) (hash : L
   ofArray := id
   size := Array.size
   reduce := Fri.reduce
-  fold2 := foldPairs
+  fold := foldOnce
   addScaled a b x := Array.zipWith (fun u v ↦ u + x * v) a b
   leaves k vs :=
     Mat.ofValues (Challenge.d EF * k) (vs.size / k) (vs.flatMap fun x ↦ (Ext.coeffs x).toArray)

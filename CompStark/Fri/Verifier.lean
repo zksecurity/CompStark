@@ -148,6 +148,80 @@ def lagrange (xs : List F) (ys : List EF) (z : EF) : EF :=
         if x' == x then w else w * (z - Ext.ofBase x') * Ext.ofBase (x - x')⁻¹) 1
       acc + y * w) 0
 
+/-- `lagrange` with each weight's base denominators multiplied before one inversion: the compiled
+form of `lagrange` (`lagrange_eq_lagrangeFast`). -/
+def lagrangeFast (xs : List F) (ys : List EF) (z : EF) : EF :=
+  let pts := xs.zip ys
+  match pts.find? fun (x, _) ↦ z == Ext.ofBase x with
+  | some (_, y) => y
+  | none =>
+    pts.foldl (fun acc (x, y) ↦
+      let nd := pts.foldl (fun (nd : EF × F) (x', _) ↦
+        if x' == x then nd else (nd.1 * (z - Ext.ofBase x'), nd.2 * (x - x'))) (1, 1)
+      acc + y * (nd.1 * Ext.ofBase nd.2⁻¹)) 0
+
+theorem toSpec_foldl_weightL (z : EF) (x : F) (l : List (F × EF)) (w : EF) :
+    Challenge.toSpec (l.foldl (fun w (x', _) ↦
+      if x' == x then w else w * (z - Ext.ofBase x') * Ext.ofBase (x - x')⁻¹) w) =
+      Challenge.toSpec w * ((l.filter (·.1 != x)).map fun (x', _) ↦
+        Challenge.toSpec (z - Ext.ofBase x') *
+          algebraMap F (Challenge.Spec EF) (x - x')⁻¹).prod := by
+  induction l generalizing w with
+  | nil => rw [List.foldl_nil, List.filter_nil, List.map_nil, List.prod_nil, mul_one]
+  | cons a l ih =>
+    obtain ⟨x', y'⟩ := a
+    simp only [List.foldl_cons, List.filter_cons, beq_iff_eq, bne_iff_ne, ne_eq] at ih ⊢
+    by_cases h : x' = x
+    · simp only [h, ↓reduceIte, not_true_eq_false]
+      exact ih w
+    · simp only [h, ↓reduceIte, not_false_eq_true, List.map_cons, List.prod_cons]
+      rw [ih, Challenge.toSpec_mul, Challenge.toSpec_mul, Ext.ofBase, Challenge.toSpec_ofBase']
+      ring
+
+theorem foldl_nd (z : EF) (x : F) (l : List (F × EF)) (nd : EF × F) :
+    Challenge.toSpec (l.foldl (fun (nd : EF × F) (x', _) ↦
+        if x' == x then nd else (nd.1 * (z - Ext.ofBase x'), nd.2 * (x - x'))) nd).1 =
+      Challenge.toSpec nd.1 * ((l.filter (·.1 != x)).map fun (x', _) ↦
+        Challenge.toSpec (z - Ext.ofBase x')).prod ∧
+    (l.foldl (fun (nd : EF × F) (x', _) ↦
+        if x' == x then nd else (nd.1 * (z - Ext.ofBase x'), nd.2 * (x - x'))) nd).2 =
+      nd.2 * ((l.filter (·.1 != x)).map fun (x', _) ↦ x - x').prod := by
+  induction l generalizing nd with
+  | nil => simp only [List.foldl_nil, List.filter_nil, List.map_nil, List.prod_nil, mul_one,
+      and_self]
+  | cons a l ih =>
+    obtain ⟨x', y'⟩ := a
+    simp only [List.foldl_cons, List.filter_cons, beq_iff_eq, bne_iff_ne, ne_eq] at ih ⊢
+    by_cases h : x' = x
+    · simp only [h, ↓reduceIte, not_true_eq_false]
+      exact ih nd
+    · simp only [h, ↓reduceIte, not_false_eq_true, List.map_cons, List.prod_cons]
+      obtain ⟨h1, h2⟩ := ih (nd.1 * (z - Ext.ofBase x'), nd.2 * (x - x'))
+      rw [h1, h2, Challenge.toSpec_mul]
+      exact ⟨by ring, by ring⟩
+
+/-- `lagrange` is `lagrangeFast`, which the compiler runs in its place. -/
+@[csimp] theorem lagrange_eq_lagrangeFast : @lagrange = @lagrangeFast := by
+  funext F _ EF _ xs ys z
+  unfold lagrange lagrangeFast
+  dsimp only
+  split
+  · rfl
+  · congr 1
+    funext acc xy
+    obtain ⟨x, y⟩ := xy
+    dsimp only
+    congr 1
+    congr 1
+    apply Challenge.toSpec_injective
+    obtain ⟨h1, h2⟩ := foldl_nd z x (xs.zip ys) (1, 1)
+    rw [toSpec_foldl_weightL, Challenge.toSpec_mul, h1, Ext.ofBase, Challenge.toSpec_ofBase', h2,
+      Challenge.toSpec_one, one_mul, one_mul, one_mul, map_inv₀, map_list_prod, List.map_map,
+      List.prod_inv, List.map_map, ← List.prod_map_mul]
+    congr 1
+    refine List.map_congr_left fun ⟨_, _⟩ _ ↦ ?_
+    simp only [Function.comp_apply, map_inv₀]
+
 /-- The fold of a group of `2 ^ logArity` values at the folded index `index` of the domain of
 size `2 ^ logHeight`: the interpolant through the group's points, in bit-reversed order, at `β`. -/
 def foldRow (index logHeight logArity : Nat) (beta : EF) (evals : List EF) : EF :=

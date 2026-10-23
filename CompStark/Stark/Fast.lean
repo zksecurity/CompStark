@@ -930,6 +930,16 @@ def fold2 [Mont32BaseField p] [Binomial4 p] (v : EVec p) (beta : EF) (logRows : 
     let f := fold2Range v twoX beta (k * size) (if k + 1 = parts then rows - k * size else size)
     #[f.c0, f.c1, f.c2, f.c3]
 
+/-- `Fri.foldOnce` on planes: the arity-2 fold `fold2`, otherwise every group's `foldRow`, in
+parallel ranges of rows. -/
+def fold [Mont32BaseField p] [Binomial4 p] (la : Nat) (beta : EF) (v : EVec p) : EVec p :=
+  let rows := v.n / 2 ^ la
+  if la = 1 then fold2 v beta (Nat.log2 rows) else
+    let vs := v.toArray
+    EVec.ofArray (parChunks rows (if rows < 1024 then 1 else 16) fun r0 len ↦
+      Array.ofFn (n := len) fun i ↦ Fri.foldRow (r0 + i.val) (Nat.log2 rows) la beta
+        ((List.range (2 ^ la)).map fun k ↦ vs.getD ((r0 + i.val) * 2 ^ la + k) 0))
+
 /-- Words `i, i + k, i + 2 k, …` of `a`, `count` of them. -/
 def strided (a : @& ByteArray) (i k count : Nat) : ByteArray := Id.run do
   let mut out := CompPoly.CPolynomial.NTTFast.Packed.Native.zeroWords count
@@ -978,7 +988,7 @@ def backend : Backend F EF 24 where
   ofArray := EVec.ofArray
   size := (·.n)
   reduce := reduce
-  fold2 := fold2
+  fold := fold
   addScaled := addScaled
   leaves := leaves
 

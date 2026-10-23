@@ -98,7 +98,7 @@ def backendFor_refines (hζ : 2 ≤ twoAdicity F) (hA : DomainsAddressable F EF)
     ofArray := ofArray_rel
     size := fun h ↦ h.1
     reduce := fun alpha _ _ h hok ↦ reduce_rel hζ alpha h hok
-    fold2 := fun beta k _ _ h ha hk ↦ fold2_rel h16 beta k h ha hk
+    fold := fun la beta s _ _ h ha hla hs ↦ fold_rel h16 la beta s h ha hla hs
     addScaled := fun x _ _ _ _ hv hw hab ha ↦ addScaled_rel h16 x hv hw hab ha
     leaves := fun k _ _ h ha hk hp ↦ leaves_rel h16 k h ha hk hp }
 

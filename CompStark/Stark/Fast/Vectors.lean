@@ -294,6 +294,27 @@ theorem fold2_rel [Mont32BaseField p] [Binomial4 p] (hA : 16 * 2 ^ twoAdicity F 
   simp only [E, hTx i.val i.isLt]
   rfl
 
+/-- The fast fold by `2 ^ la` is the specification's. -/
+theorem fold_rel [Mont32BaseField p] [Binomial4 p] (hA : 16 * 2 ^ twoAdicity F < USize.size)
+    (la : Nat) (beta : EF) (s : Nat) {v : EVec p} {a : Array EF} (h : RV v a)
+    (ha : a.size = 2 ^ s) (hla : la ≤ s) (hs : s ≤ twoAdicity F) :
+    RV (fold la beta v) (Fri.foldOnce la beta a) := by
+  have hrows : v.n / 2 ^ la = 2 ^ (s - la) := by rw [h.1, ha, Nat.pow_div hla (by decide)]
+  have hrows' : a.size / 2 ^ la = 2 ^ (s - la) := by rw [← h.1, hrows]
+  unfold fold Fri.foldOnce
+  dsimp only
+  rw [hrows, hrows', Nat.log2_two_pow]
+  split
+  · rename_i h1
+    subst h1
+    exact fold2_rel hA beta (s - 1) h (by rw [ha]; congr 1; omega) (by omega)
+  · rw [EVec.toArray_eq h (by have := size_bound hA (n := a.size) (by
+      rw [ha]; exact Nat.pow_le_pow_right (by decide) hs); omega)]
+    rw [parChunks_eq (2 ^ (s - la)) _ _ (fun r ↦ Fri.foldRow r (s - la) la beta
+      ((List.range (2 ^ la)).map fun k ↦ a.getD (r * 2 ^ la + k) 0)) (fun _ _ _ ↦ rfl)
+      (by split <;> simp only [Nat.zero_lt_one, Nat.ofNat_pos, true_or])]
+    exact EVec.ofArray_rel _
+
 /-- Represented planes read back their elements. -/
 theorem toArray_rel [Mont32BaseField p] (hA : 16 * 2 ^ twoAdicity F < USize.size) {v : EVec p}
     {a : Array EF}
