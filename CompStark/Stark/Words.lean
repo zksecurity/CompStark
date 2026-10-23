@@ -411,35 +411,96 @@ word, a plane at a time (`mulAdd4RowsInto16`). -/
   mulAdd4RowsInto16 p o3 q3 b0 b1 b2 b3 i0 i1 i2 i3 a30 a31 a32 a33
     (CompStark.Poseidon2.Packed.Fits.of_size e3 hq3) h0 h1 h2 h3
 
+theorem size_mulAdd4x4Into16 (p : ℕ) [Mont32Field p] (out : ByteArray)
+    (q0 q1 q2 q3 : USize) (b0 b1 b2 b3 : ByteArray) (i0 i1 i2 i3 : USize)
+    (a00 a01 a02 a03 a10 a11 a12 a13 a20 a21 a22 a23 a30 a31 a32 a33 : UInt32)
+    (hq0 : Fits out q0 15) (hq1 : Fits out q1 15) (hq2 : Fits out q2 15) (hq3 : Fits out q3 15)
+    (h0 : Fits b0 i0 15) (h1 : Fits b1 i1 15) (h2 : Fits b2 i2 15) (h3 : Fits b3 i3 15) :
+    (mulAdd4x4Into16 p out q0 q1 q2 q3 b0 b1 b2 b3 i0 i1 i2 i3 a00 a01 a02 a03 a10 a11 a12 a13
+      a20 a21 a22 a23 a30 a31 a32 a33 hq0 hq1 hq2 hq3 h0 h1 h2 h3).size = out.size := by
+  simp only [mulAdd4x4Into16, size_mulAdd4RowsInto16]
+
+/-- A sum of machine words below the machine size does not wrap. -/
+theorem usize_add_toNat {x y : USize} (h : x.toNat + y.toNat < USize.size) :
+    (x + y).toNat = x.toNat + y.toNat := by
+  have hsize : (2 : Nat) ^ System.Platform.numBits = USize.size := rfl
+  rw [USize.toNat_add, hsize, Nat.mod_eq_of_lt h]
+
+/-- The bounds of `k` blocks of sixteen words from word `i` of the four planes at `0, q1, q2, q3`
+of `out` and of the rows at `r0, r1, r2, r3` of `b0, b1, b2, b3`. -/
+abbrev Blocks4 (out b0 b1 b2 b3 : ByteArray) (q1 q2 q3 r0 r1 r2 r3 i : USize) (k : Nat) : Prop :=
+  4 * (q3.toNat + i.toNat + 16 * k) ≤ out.size ∧ q1.toNat ≤ q3.toNat ∧ q2.toNat ≤ q3.toNat ∧
+    out.size < USize.size ∧ 4 * (r0.toNat + i.toNat + 16 * k) ≤ b0.size ∧
+    4 * (r1.toNat + i.toNat + 16 * k) ≤ b1.size ∧ 4 * (r2.toNat + i.toNat + 16 * k) ≤ b2.size ∧
+    4 * (r3.toNat + i.toNat + 16 * k) ≤ b3.size ∧ b0.size < USize.size ∧ b1.size < USize.size ∧
+    b2.size < USize.size ∧ b3.size < USize.size
+
+theorem Blocks4.next {out out' b0 b1 b2 b3 : ByteArray} {q1 q2 q3 r0 r1 r2 r3 i : USize}
+    {k : Nat} (h : Blocks4 out b0 b1 b2 b3 q1 q2 q3 r0 r1 r2 r3 i (k + 1))
+    (hs : out'.size = out.size) :
+    (i + 16).toNat = i.toNat + 16 ∧ Blocks4 out' b0 b1 b2 b3 q1 q2 q3 r0 r1 r2 r3 (i + 16) k := by
+  obtain ⟨h1, h2, h3, h4, h5, h6, h7, h8, h9, h10, h11, h12⟩ := h
+  have e16 : (16 : USize).toNat = 16 :=
+    CompPoly.CPolynomial.NTTFast.Packed.Native.usize_numeral 16 (by decide)
+  have ei : (i + 16).toNat = i.toNat + 16 := by rw [usize_add_toNat (by rw [e16]; omega), e16]
+  rw [ei]
+  exact ⟨rfl, by omega, h2, h3, by omega, by omega, by omega, by omega, by omega, h9, h10, h11,
+    h12⟩
+
+/-- `mulAdd4x4Into16` on `k` blocks of sixteen words from word `i` of the four planes at
+`0, q1, q2, q3` of `out` and of the rows at `r0, r1, r2, r3`, their bounds proved once. -/
+@[specialize] def mulAddBlocks4 (p : ℕ) [Mont32Field p] (b0 b1 b2 b3 : @& ByteArray)
+    (q1 q2 q3 r0 r1 r2 r3 : USize)
+    (a00 a01 a02 a03 a10 a11 a12 a13 a20 a21 a22 a23 a30 a31 a32 a33 : UInt32) :
+    (k : Nat) → (i : USize) → (out : ByteArray) →
+      Blocks4 out b0 b1 b2 b3 q1 q2 q3 r0 r1 r2 r3 i k → ByteArray
+  | 0, _, out, _ => out
+  | k + 1, i, out, h =>
+    mulAddBlocks4 p b0 b1 b2 b3 q1 q2 q3 r0 r1 r2 r3 a00 a01 a02 a03 a10 a11 a12 a13 a20 a21 a22
+      a23 a30 a31 a32 a33 k (i + 16)
+      (mulAdd4x4Into16 p out i (q1 + i) (q2 + i) (q3 + i) b0 b1 b2 b3 (r0 + i) (r1 + i) (r2 + i)
+        (r3 + i) a00 a01 a02 a03 a10 a11 a12 a13 a20 a21 a22 a23 a30 a31 a32 a33
+        (by obtain ⟨h1, -, -, h4, -⟩ := h; unfold Fits; omega)
+        (by obtain ⟨h1, h2, -, h4, -⟩ := h; unfold Fits; rw [usize_add_toNat (by omega)]; omega)
+        (by obtain ⟨h1, -, h3, h4, -⟩ := h; unfold Fits; rw [usize_add_toNat (by omega)]; omega)
+        (by obtain ⟨h1, -, -, h4, -⟩ := h; unfold Fits; rw [usize_add_toNat (by omega)]; omega)
+        (by
+          obtain ⟨-, -, -, -, h5, -, -, -, h9, -⟩ := h
+          unfold Fits; rw [usize_add_toNat (by omega)]; omega)
+        (by
+          obtain ⟨-, -, -, -, -, h6, -, -, -, h10, -⟩ := h
+          unfold Fits; rw [usize_add_toNat (by omega)]; omega)
+        (by
+          obtain ⟨-, -, -, -, -, -, h7, -, -, -, h11, -⟩ := h
+          unfold Fits; rw [usize_add_toNat (by omega)]; omega)
+        (by
+          obtain ⟨-, -, -, -, -, -, -, h8, -, -, -, h12⟩ := h
+          unfold Fits; rw [usize_add_toNat (by omega)]; omega))
+      (h.next (size_mulAdd4x4Into16 ..)).2
+
 /-- `out[c n + k] += ac0 · b0[o0 + k] + ac1 · b1[o1 + k] + ac2 · b2[o2 + k] + ac3 · b3[o3 + k]` for
 the four planes `c` of `n` words of `out` and `k < n`, in place: sixteen words of every plane at
-once (`mulAdd4x4Into16`), then the remaining words. -/
+once (`mulAddBlocks4`), then the remaining words. -/
 @[specialize] def mulAdd4x4Into (p : ℕ) [Mont32Field p] (out : ByteArray)
     (b0 b1 b2 b3 : @& ByteArray) (o0 o1 o2 o3 : Nat)
     (a00 a01 a02 a03 a10 a11 a12 a13 a20 a21 a22 a23 a30 a31 a32 a33 : UInt32) (n : Nat) :
     ByteArray := Id.run do
+  let m := 16 * (n / 16)
   let mut out := out
-  if hb : b0.size < USize.size ∧ b1.size < USize.size ∧ b2.size < USize.size ∧
+  if h : 4 * (3 * n + m) ≤ out.size ∧ out.size < USize.size ∧ 4 * (o0 + m) ≤ b0.size ∧
+      4 * (o1 + m) ≤ b1.size ∧ 4 * (o2 + m) ≤ b2.size ∧ 4 * (o3 + m) ≤ b3.size ∧
+      b0.size < USize.size ∧ b1.size < USize.size ∧ b2.size < USize.size ∧
       b3.size < USize.size then
-    for block in [:n / 16] do
-      let i := 16 * block
-      if h : 4 * (3 * n + i + 15) + 3 < out.size ∧ out.size < USize.size ∧
-          4 * (o0 + i + 15) + 3 < b0.size ∧ 4 * (o1 + i + 15) + 3 < b1.size ∧
-          4 * (o2 + i + 15) + 3 < b2.size ∧ 4 * (o3 + i + 15) + 3 < b3.size then
-        out := mulAdd4x4Into16 p out (USize.ofNatLT i (by omega))
-          (USize.ofNatLT (n + i) (by omega)) (USize.ofNatLT (2 * n + i) (by omega))
-          (USize.ofNatLT (3 * n + i) (by omega)) b0 b1 b2 b3
-          (USize.ofNatLT (o0 + i) (by omega)) (USize.ofNatLT (o1 + i) (by omega))
-          (USize.ofNatLT (o2 + i) (by omega)) (USize.ofNatLT (o3 + i) (by omega))
-          a00 a01 a02 a03 a10 a11 a12 a13 a20 a21 a22 a23 a30 a31 a32 a33
-          (by simp only [Fits, USize.toNat_ofNatLT]; omega)
-          (by simp only [Fits, USize.toNat_ofNatLT]; omega)
-          (by simp only [Fits, USize.toNat_ofNatLT]; omega)
-          (by simp only [Fits, USize.toNat_ofNatLT]; omega)
-          (by simp only [Fits, USize.toNat_ofNatLT]; omega)
-          (by simp only [Fits, USize.toNat_ofNatLT]; omega)
-          (by simp only [Fits, USize.toNat_ofNatLT]; omega)
-          (by simp only [Fits, USize.toNat_ofNatLT]; omega)
+    out := mulAddBlocks4 p b0 b1 b2 b3 (USize.ofNatLT n (by obtain ⟨h1, h2, -⟩ := h; omega))
+      (USize.ofNatLT (2 * n) (by obtain ⟨h1, h2, -⟩ := h; omega))
+      (USize.ofNatLT (3 * n) (by obtain ⟨h1, h2, -⟩ := h; omega))
+      (USize.ofNatLT o0 (by obtain ⟨-, -, h3, -, -, -, h7, -⟩ := h; omega))
+      (USize.ofNatLT o1 (by obtain ⟨-, -, -, h4, -, -, -, h8, -⟩ := h; omega))
+      (USize.ofNatLT o2 (by obtain ⟨-, -, -, -, h5, -, -, -, h9, -⟩ := h; omega))
+      (USize.ofNatLT o3 (by obtain ⟨-, -, -, -, -, h6, -, -, -, h10⟩ := h; omega))
+      a00 a01 a02 a03 a10 a11 a12 a13 a20 a21 a22 a23 a30 a31 a32 a33 (n / 16) 0 out (by
+        obtain ⟨h1, h2, h3, h4, h5, h6, h7, h8, h9, h10⟩ := h
+        simp only [Blocks4, USize.toNat_ofNatLT, USize.toNat_zero]; omega)
   for k in [16 * (n / 16):n] do
     let x0 := read b0 (o0 + k)
     let x1 := read b1 (o1 + k)
@@ -453,19 +514,59 @@ once (`mulAdd4x4Into16`), then the remaining words. -/
       (add p (read out (3 * n + k)) (mulAdd4 p x0 a30 x1 a31 x2 a32 x3 a33))
   return out
 
+theorem size_dot4Into16 (p : ℕ) [Mont32Field p] (out : ByteArray) (b : ByteArray) (ib : USize)
+    (c : ByteArray) (ic : USize) (hout : Fits out 0 15) (hb : Fits b ib 63) (hc : Fits c ic 63) :
+    (dot4Into16 p out b ib c ic hout hb hc).size = out.size := by
+  unfold dot4Into16
+  exact CompPoly.CPolynomial.NTTFast.Packed.Native.size_storeWords ..
+
+/-- The bounds of `k` blocks of 64 words from words `ib` of `b` and `ic` of `c`, into sixteen
+running sums `acc`. -/
+abbrev DotBlocks (b c acc : ByteArray) (k : Nat) (ib ic : USize) : Prop :=
+  4 * (ib.toNat + 64 * k) ≤ b.size ∧ 4 * (ic.toNat + 64 * k) ≤ c.size ∧ b.size < USize.size ∧
+    c.size < USize.size ∧ 64 ≤ acc.size ∧ acc.size < USize.size
+
+theorem DotBlocks.next {b c acc acc' : ByteArray} {k : Nat} {ib ic : USize}
+    (h : DotBlocks b c acc (k + 1) ib ic) (hs : acc'.size = acc.size) :
+    (ib + 64).toNat = ib.toNat + 64 ∧ (ic + 64).toNat = ic.toNat + 64 ∧
+      DotBlocks b c acc' k (ib + 64) (ic + 64) := by
+  obtain ⟨h1, h2, h3, h4, h5, h6⟩ := h
+  have e64 : (64 : USize).toNat = 64 :=
+    CompPoly.CPolynomial.NTTFast.Packed.Native.usize_numeral 64 (by decide)
+  have hsize : (2 : Nat) ^ System.Platform.numBits = USize.size := rfl
+  have ea : (ib + 64).toNat = ib.toNat + 64 := by
+    rw [USize.toNat_add, e64, hsize, Nat.mod_eq_of_lt (by omega)]
+  have ec : (ic + 64).toNat = ic.toNat + 64 := by
+    rw [USize.toNat_add, e64, hsize, Nat.mod_eq_of_lt (by omega)]
+  exact ⟨ea, ec, by rw [ea]; omega, by rw [ec]; omega, h3, h4, by omega, by omega⟩
+
+/-- `dot4Into16` on `k` blocks of 64 words from words `ib` of `b` and `ic` of `c`, their bounds
+proved once. -/
+@[specialize] def dotBlocks (p : ℕ) [Mont32Field p] (b c : @& ByteArray) :
+    (k : Nat) → (ib ic : USize) → (acc : ByteArray) → DotBlocks b c acc k ib ic → ByteArray
+  | 0, _, _, acc, _ => acc
+  | k + 1, ib, ic, acc, h =>
+    dotBlocks p b c k (ib + 64) (ic + 64)
+      (dot4Into16 p acc b ib c ic (by
+        obtain ⟨-, -, -, -, h5, h6⟩ := h; simp only [Fits, USize.toNat_zero]; omega)
+        (by obtain ⟨h1, -, h3, -⟩ := h; unfold Fits; omega)
+        (by obtain ⟨-, h2, -, h4, -⟩ := h; unfold Fits; omega))
+      (h.next (size_dot4Into16 ..)).2.2
+
 /-- `∑ₖ b[bo + k] · c[k]` for `k < n`: sixteen running sums, each adding four products reduced
-once per block of 64 words, then their total and the remaining words. -/
+once per block of 64 words (`dotBlocks`), then their total and the remaining words. -/
 @[specialize] def dotAt (p : ℕ) [Mont32Field p] (b : @& ByteArray) (bo : Nat) (c : @& ByteArray)
     (n : Nat) : UInt32 := Id.run do
-  let mut acc := zeroWords 16
-  for block in [:n / 64] do
-    let i := 64 * block
-    if h : 4 * 15 + 3 < acc.size ∧ 4 * (bo + i + 63) + 3 < b.size ∧ 4 * (i + 63) + 3 < c.size ∧
-        acc.size < USize.size ∧ b.size < USize.size ∧ c.size < USize.size then
-      acc := dot4Into16 p acc b (USize.ofNatLT (bo + i) (by omega)) c (USize.ofNatLT i (by omega))
-        (by simp only [Fits, USize.toNat_zero]; omega)
-        (by simp only [Fits, USize.toNat_ofNatLT]; omega)
-        (by simp only [Fits, USize.toNat_ofNatLT]; omega)
+  let acc := if h : 4 * (bo + 64 * (n / 64)) ≤ b.size ∧ 4 * (64 * (n / 64)) ≤ c.size ∧
+      b.size < USize.size ∧ c.size < USize.size then
+    dotBlocks p b c (n / 64) (USize.ofNatLT bo (by obtain ⟨h1, -, h3, -⟩ := h; omega)) 0
+      (zeroWords 16) (by
+        obtain ⟨h1, h2, h3, h4⟩ := h
+        have hz : (zeroWords 16).size = 64 := ByteArray.size_zeros _
+        simp only [DotBlocks, USize.toNat_ofNatLT, USize.toNat_zero, hz]
+        have := USize.le_size
+        omega)
+  else zeroWords 16
   let mut sum : UInt32 := 0
   for k in [0:16] do
     sum := add p sum (read acc k)

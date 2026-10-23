@@ -700,28 +700,21 @@ theorem mulAdd4x4Into_encode (o B0 B1 B2 B3 : Array F) (o0 o1 o2 o3 n : Nat)
       a00.val a01.val a02.val a03.val a10.val a11.val a12.val a13.val a20.val a21.val a22.val
       a23.val a30.val a31.val a32.val a33.val n =
       encode (Array.ofFn (n := 4 * n) fun j ↦ f j.val) := by
-  unfold Words.mulAdd4x4Into
-  rw [dite_eq_left_of_eq_true (eq_true ⟨by rw [size_encode_fields]; omega,
-    by rw [size_encode_fields]; omega, by rw [size_encode_fields]; omega,
-    by rw [size_encode_fields]; omega⟩)]
-  simp only [Std.Legacy.Range.forIn_eq_forIn_range', Std.Legacy.Range.size,
-    Nat.sub_zero, Nat.add_sub_cancel, Nat.div_one, ← List.range_eq_range',
-    bind_pure, pure_bind, dite_pure_yield, List.forIn_pure_yield_eq_foldl, Id.run_pure]
   have hso' : (encode o).size = 4 * o.size := size_encode_fields o
   have hu (k : Nat) : (upto4 o f n k).size = o.size := size_upto4 o f n k
-  rw [foldl_blocks4 o f n (n / 16) _ (fun m hm ↦ by
-    have h16 : 16 * m + 16 ≤ n := by omega
-    split
-    swap
-    · rename_i hc
-      exfalso
-      apply hc
-      refine ⟨?_, ?_, ?_, ?_, ?_, ?_⟩ <;> simp only [size_encode_fields, hu] <;> omega
+  -- A block of sixteen words of the four planes.
+  have hstep : ∀ m, 16 * m + 16 ≤ n → ∀ (Q0 Q1 Q2 Q3 I0 I1 I2 I3 : USize),
+      Q0.toNat = 16 * m → Q1.toNat = n + 16 * m → Q2.toNat = 2 * n + 16 * m →
+      Q3.toNat = 3 * n + 16 * m → I0.toNat = o0 + 16 * m → I1.toNat = o1 + 16 * m →
+      I2.toNat = o2 + 16 * m → I3.toNat = o3 + 16 * m → ∀ hq0 hq1 hq2 hq3 g0 g1 g2 g3,
+      Words.mulAdd4x4Into16 p (encode (upto4 o f n (16 * m))) Q0 Q1 Q2 Q3 (encode B0)
+        (encode B1) (encode B2) (encode B3) I0 I1 I2 I3 a00.val a01.val a02.val a03.val a10.val
+        a11.val a12.val a13.val a20.val a21.val a22.val a23.val a30.val a31.val a32.val a33.val
+        hq0 hq1 hq2 hq3 g0 g1 g2 g3 = encode (upto4 o f n (16 * m + 16)) := by
+    intro m h16 Q0 Q1 Q2 Q3 I0 I1 I2 I3 eQ0 eQ1 eQ2 eQ3 eI0 eI1 eI2 eI3 hq0 hq1 hq2 hq3 g0 g1 g2 g3
     rw [mulAdd4x4Into16_encode _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _
-      _ _ _ _ (by simp only [USize.toNat_ofNatLT]; omega)
-      (by simp only [USize.toNat_ofNatLT]; omega) (by simp only [USize.toNat_ofNatLT]; omega)
-      (by simp only [USize.toNat_ofNatLT, hu]; omega) (by rw [hu]; exact hso)]
-    simp only [USize.toNat_ofNatLT]
+      _ _ _ _ (by omega) (by omega) (by omega) (by rw [hu]; omega) (by rw [hu]; exact hso)]
+    simp only [eQ0, eQ1, eQ2, eQ3, eI0, eI1, eI2, eI3]
     refine Eq.trans ?_ (congrArg encode (splice4_upto4 o f n (16 * m) hn h16))
     have hold (c t : Nat) (hc : c < 4) (ht : t < 16) :
         (upto4 o f n (16 * m)).getD (c * n + 16 * m + t) 0 = o.getD (c * n + 16 * m + t) 0 := by
@@ -761,7 +754,65 @@ theorem mulAdd4x4Into_encode (o B0 B1 B2 B3 : Array F) (o0 o1 o2 o3 n : Nat)
       have e := hold 3 t (by decide) ht
       rw [e, show 3 * n + 16 * m + t = 3 * n + (16 * m + t) by omega, hf3 _ (by omega)]
       simp only [Nat.add_assoc]
-    rw [L0, L1, L2, L3])]
+    rw [L0, L1, L2, L3]
+  -- The blocks, every one from the planes so far.
+  have hblocks : ∀ (k M : Nat) (Q1 Q2 Q3 R0 R1 R2 R3 i : USize) (out : ByteArray) (h),
+      Q1.toNat = n → Q2.toNat = 2 * n → Q3.toNat = 3 * n → R0.toNat = o0 → R1.toNat = o1 →
+      R2.toNat = o2 → R3.toNat = o3 → i.toNat = 16 * M → M + k ≤ n / 16 →
+      out = encode (upto4 o f n (16 * M)) →
+      Words.mulAddBlocks4 p (encode B0) (encode B1) (encode B2) (encode B3) Q1 Q2 Q3 R0 R1 R2 R3
+        a00.val a01.val a02.val a03.val a10.val a11.val a12.val a13.val a20.val a21.val a22.val
+        a23.val a30.val a31.val a32.val a33.val k i out h =
+        encode (upto4 o f n (16 * (M + k))) := by
+    intro k
+    induction k with
+    | zero =>
+      intro M _ _ _ _ _ _ _ _ out _ _ _ _ _ _ _ _ _ _ hout
+      rw [Words.mulAddBlocks4, hout, Nat.add_zero]
+    | succ k ih =>
+      intro M Q1 Q2 Q3 R0 R1 R2 R3 i out h e1 e2 e3 f0 f1 f2 f3 hi hMk hout
+      rw [Words.mulAddBlocks4]
+      have hn' := h.next (out' := out) rfl
+      have b1 := h.1
+      have b2 := h.2.1
+      have b3 := h.2.2.1
+      have b4 := h.2.2.2.1
+      have b5 := h.2.2.2.2.1
+      have b6 := h.2.2.2.2.2.1
+      have b7 := h.2.2.2.2.2.2.1
+      have b8 := h.2.2.2.2.2.2.2.1
+      have b9 := h.2.2.2.2.2.2.2.2.1
+      have b10 := h.2.2.2.2.2.2.2.2.2.1
+      have b11 := h.2.2.2.2.2.2.2.2.2.2.1
+      have b12 := h.2.2.2.2.2.2.2.2.2.2.2
+      refine Eq.trans (ih (M + 1) _ _ _ _ _ _ _ _ _ _ e1 e2 e3 f0 f1 f2 f3
+        (by rw [hn'.1, hi]; ring) (by omega) ?_) (by rw [Nat.add_assoc, Nat.add_comm 1 k])
+      subst hout
+      have h16 : 16 * M + 16 ≤ n := by omega
+      rw [show 16 * (M + 1) = 16 * M + 16 by ring]
+      exact hstep M h16 _ _ _ _ _ _ _ _ hi
+        (by rw [Words.usize_add_toNat (by omega), e1, hi])
+        (by rw [Words.usize_add_toNat (by omega), e2, hi])
+        (by rw [Words.usize_add_toNat (by omega), e3, hi])
+        (by rw [Words.usize_add_toNat (by omega), f0, hi])
+        (by rw [Words.usize_add_toNat (by omega), f1, hi])
+        (by rw [Words.usize_add_toNat (by omega), f2, hi])
+        (by rw [Words.usize_add_toNat (by omega), f3, hi]) _ _ _ _ _ _ _ _
+  unfold Words.mulAdd4x4Into
+  have hcond : 4 * (3 * n + 16 * (n / 16)) ≤ (encode o).size ∧ (encode o).size < USize.size ∧
+      4 * (o0 + 16 * (n / 16)) ≤ (encode B0).size ∧ 4 * (o1 + 16 * (n / 16)) ≤ (encode B1).size ∧
+      4 * (o2 + 16 * (n / 16)) ≤ (encode B2).size ∧ 4 * (o3 + 16 * (n / 16)) ≤ (encode B3).size ∧
+      (encode B0).size < USize.size ∧ (encode B1).size < USize.size ∧
+      (encode B2).size < USize.size ∧ (encode B3).size < USize.size := by
+    simp only [size_encode_fields]
+    refine ⟨?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_⟩ <;> omega
+  simp only [Std.Legacy.Range.forIn_eq_forIn_range', Std.Legacy.Range.size, Nat.add_sub_cancel,
+    Nat.div_one, bind_pure, List.forIn_pure_yield_eq_foldl]
+  rw [dite_eq_left_of_eq_true (eq_true hcond)]
+  rw [hblocks (n / 16) 0 _ _ _ _ _ _ _ 0 _ _ (USize.toNat_ofNatLT ..) (USize.toNat_ofNatLT ..)
+    (USize.toNat_ofNatLT ..) (USize.toNat_ofNatLT ..) (USize.toNat_ofNatLT ..)
+    (USize.toNat_ofNatLT ..) (USize.toNat_ofNatLT ..) (by rw [USize.toNat_zero]) (by omega)
+    (by rw [Nat.mul_zero, upto4_zero]), Nat.zero_add]
   rw [foldl_tail4 o f n _ _ _ (fun k hk1 hk2 ↦ by
     have hk : k < n := by omega
     rw [read_encode B0 _ hs0 (by omega), read_encode B1 _ hs1 (by omega),
@@ -773,6 +824,7 @@ theorem mulAdd4x4Into_encode (o B0 B1 B2 B3 : Array F) (o0 o1 o2 o3 n : Nat)
       write_fill o f _ (3 * n + k) _ (by omega) (by omega) (hf3 k hk) hso, upto4_eq_fill]
     exact congrArg encode (fill_congr _ _ _ _ fun j _ ↦ by omega)),
     Nat.add_sub_cancel' (Nat.mul_div_le n 16), upto4_full o f n hn]
+  rfl
 
 /-- `out[k] += c0 · b[o0 + k] + c1 · b[o1 + k] + c2 · b[o2 + k] + c3 · b[o3 + k]` for all `n` words
 of `out`. -/
@@ -829,54 +881,57 @@ theorem dotAt_encode (b c : Array F) (bo n : Nat) (hb : bo + n ≤ b.size) (hc :
   unfold dotAt
   simp only [Std.Legacy.Range.forIn_eq_forIn_range', Std.Legacy.Range.size,
     Nat.sub_zero, Nat.add_sub_cancel, Nat.div_one, ← List.range_eq_range',
-    bind_pure, pure_bind, dite_pure_yield, List.forIn_pure_yield_eq_foldl, Id.run_pure]
+    bind_pure, pure_bind, List.forIn_pure_yield_eq_foldl, Id.run_pure]
   have hsb' : (encode b).size = 4 * b.size := size_encode_fields b
   have hsc' : (encode c).size = 4 * c.size := size_encode_fields c
   let x (k : Nat) : F := b.getD (bo + k) 0 * c.getD k 0
   let S (M t : Nat) : F := ∑ m ∈ Finset.range M, (x (64 * m + t) + x (64 * m + (t + 16)) +
     x (64 * m + (t + 32)) + x (64 * m + (t + 48)))
-  have hacc : ∀ M ≤ n / 64, (List.range M).foldl (fun acc a ↦
-      if h : 4 * 15 + 3 < acc.size ∧ 4 * (bo + 64 * a + 63) + 3 < (encode b).size ∧
-          4 * (64 * a + 63) + 3 < (encode c).size ∧ acc.size < USize.size ∧
-          (encode b).size < USize.size ∧ (encode c).size < USize.size then
-        dot4Into16 p acc (encode b) (USize.ofNatLT (bo + 64 * a) (by omega)) (encode c)
-          (USize.ofNatLT (64 * a) (by omega))
-          (by simp only [Fits, USize.toNat_zero]; omega)
-          (by simp only [Fits, USize.toNat_ofNatLT]; omega)
-          (by simp only [Fits, USize.toNat_ofNatLT]; omega)
-      else acc) (zeroWords 16) = encode (Array.ofFn (n := 16) fun t ↦ S M t.val) := by
-    intro M hM
-    induction M with
-    | zero =>
-      rw [List.range_zero, List.foldl_nil, zeroWords_eq (p := p)]
-      rfl
-    | succ M ih =>
-      rw [List.range_succ, List.foldl_append, ih (by omega), List.foldl_cons, List.foldl_nil]
+  -- Every block adds its sixteen sums.
+  have hblocks : ∀ (k M : Nat) (ib ic : USize) (acc : ByteArray)
+      (h : DotBlocks (encode b) (encode c) acc k ib ic), ib.toNat = bo + 64 * M →
+      ic.toNat = 64 * M → M + k ≤ n / 64 → acc = encode (Array.ofFn (n := 16) fun t ↦ S M t.val) →
+      dotBlocks p (encode b) (encode c) k ib ic acc h =
+        encode (Array.ofFn (n := 16) fun t ↦ S (M + k) t.val) := by
+    intro k
+    induction k with
+    | zero => intro M ib ic acc h _ _ _ hacc; rw [dotBlocks, hacc]; rfl
+    | succ k ih =>
+      intro M ib ic acc h hib hic hMk hacc
+      rw [dotBlocks]
+      have hn := h.next (acc' := acc) rfl
+      refine Eq.trans (ih (M + 1) _ _ _ _ (by rw [hn.1, hib]; ring) (by rw [hn.2.1, hic]; ring)
+        (by omega) ?_) (by rw [Nat.add_assoc, Nat.add_comm 1 k])
+      subst hacc
       have h64 : 64 * M + 64 ≤ n := by omega
       have h0 : 16 ≤ (Array.ofFn (n := 16) fun t ↦ S M t.val).size := by
         rw [Array.size_ofFn]
       have h1 : 4 * (Array.ofFn (n := 16) fun t ↦ S M t.val).size < USize.size := by
         rw [Array.size_ofFn]; have := USize.le_size; omega
-      rw [dite_eq_left_of_eq_true (eq_true ⟨by rw [size_encode_fields, Array.size_ofFn]; omega,
-        by omega, by omega, by rw [size_encode_fields]; omega, by omega,
-        by omega⟩), dot4Into16_encode _ _ _ _ _ _ _ _ h0 h1]
+      rw [dot4Into16_encode _ _ _ _ _ _ _ _ h0 h1]
       refine congrArg encode ?_
-      have h2 : ∀ g : Nat → F, (0 : USize).toNat + (lit16 g).size ≤
-          (Array.ofFn (n := 16) fun t ↦ S M t.val).size := fun g ↦ by
-        rw [size_lit16, USize.toNat_zero]; exact h0
       apply array_eq_of_getD _ _ 0 (by rw [size_splice _ _ _ (by rw [size_lit16]; exact h0),
         Array.size_ofFn, Array.size_ofFn])
       intro t
       rw [getD_splice _ _ _ (by rw [size_lit16]; exact h0), getD_ofFn, getD_ofFn]
-      simp only [USize.toNat_ofNatLT, size_lit16, Nat.zero_add, Nat.not_lt_zero, ite_false]
+      simp only [hib, hic, size_lit16, Nat.zero_add, Nat.not_lt_zero,
+        ite_false]
       split
       · rw [getD_lit16 _ _ (by assumption), getD_ofFn, ite_eq_left_of_eq_true _ _
           (eq_true (by assumption)), Nat.sub_zero]
         simp only [S, x, Finset.sum_range_succ, Nat.add_assoc]
       · rfl
+  have hcond : 4 * (bo + 64 * (n / 64)) ≤ (encode b).size ∧
+      4 * (64 * (n / 64)) ≤ (encode c).size ∧ (encode b).size < USize.size ∧
+      (encode c).size < USize.size := ⟨by omega, by omega, by omega, by omega⟩
+  have hbo : bo < USize.size := by omega
+  rw [dite_eq_left_of_eq_true (eq_true hcond),
+    hblocks (n / 64) 0 (USize.ofNatLT bo hbo) 0 (zeroWords 16) _
+      (by rw [USize.toNat_ofNatLT]; omega) (by rw [USize.toNat_zero]) (by omega)
+      (by rw [zeroWords_eq (p := p)]; rfl), Nat.zero_add]
   have hA : 4 * (Array.ofFn (n := 16) fun t ↦ S (n / 64) t.val).size < USize.size := by
     rw [Array.size_ofFn]; have := USize.le_size; omega
-  rw [hacc (n / 64) (Nat.le_refl _), List.range_eq_range', ← zero_val (p := p),
+  rw [List.range_eq_range', ← zero_val (p := p),
     foldl_add (S (n / 64)) _ 0 16 (fun k _ hk ↦ by
       rw [read_encode _ k hA (by rw [Array.size_ofFn]; omega), getD_ofFn,
         ite_eq_left_of_eq_true _ _ (eq_true (by omega))]),
