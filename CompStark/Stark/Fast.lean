@@ -774,22 +774,27 @@ def permutationLdeWith [Mont32BaseField p] [Binomial4 p] [PackedCosetLde p]
   let (words, t) := permutationWords A ls logN trace pis chs
   (ldeWordsWith plans logN bits gen ((ls.length + 1) * 4) #[words], t)
 
+/-- The weight planes of the stored rows `r0, …, r0 + len - 1` for every point `z` of `zs`: the
+four coordinate planes of `x_r / (z - x_r)` for each point, in order. -/
+def weightPlanes [Mont32BaseField p] [Binomial4 p] (zs : @& Array EF) (xs : @& ByteArray)
+    (r0 len : Nat) : Array ByteArray :=
+  let xr := slice xs r0 len
+  zs.foldl (fun acc z ↦
+    let wt := (invDenoms z xr len).mulBase xr
+    acc ++ #[wt.c0, wt.c1, wt.c2, wt.c3]) #[]
+
 /-- The column sums `∑_r m[r][j] · x_r / (z - x_r)` over the stored rows `r0, …, r0 + len - 1` of a
-packed matrix of width `w`, for every point `z` of `zs`: per point four planes of `w` words. The
-range is transposed once; each column is a dot product with each weight plane. -/
+packed matrix of width `w`, for every point `z` of `zs`: per point four planes of `w` words. Every
+row is multiply-added into every plane while it is in cache, so the matrix is read once, row by
+row. -/
 def weightedColumns [Mont32BaseField p] [Binomial4 p] (m : @& ByteArray) (w : Nat)
     (zs : @& Array EF) (xs : @& ByteArray) (r0 len : Nat) : Array ByteArray := Id.run do
-  let cols := CompPoly.CPolynomial.NTTFast.Packed.Native.transposeRows m w r0 len
-  let xr := slice xs r0 len
-  let mut out := #[]
-  for z in zs do
-    let wt := (invDenoms z xr len).mulBase xr
-    for pl in #[wt.c0, wt.c1, wt.c2, wt.c3] do
-      let mut sums := CompPoly.CPolynomial.NTTFast.Packed.Native.zeroWords w
-      for j in [0:w] do
-        sums := CompPoly.CPolynomial.NTTFast.Packed.Native.write sums j
-          (Words.dotAt p cols (j * len) pl len)
-      out := out.push sums
+  let wts := weightPlanes zs xs r0 len
+  let mut out := Array.replicate wts.size (CompPoly.CPolynomial.NTTFast.Packed.Native.zeroWords w)
+  for t in [0:len] do
+    for i in [0:wts.size] do
+      out := out.modify i fun a ↦ Words.mulAddInto p a m ((r0 + t) * w)
+        (CompPoly.CPolynomial.NTTFast.Packed.Native.read (wts.getD i .empty) t) w
   return out
 
 /-- `openedAt` on packed words, at all points of a matrix: the barycentric weights `x / (z - x)` in
@@ -816,23 +821,22 @@ def openedAt [Mont32BaseField p] [Binomial4 p] (logBlowup : Nat) (m : PMat) (zs 
         word (sums.getD (4 * k + 2) .empty) j, word (sums.getD (4 * k + 3) .empty) j⟩
 
 /-- Rows `r0, …, r0 + len - 1` of a packed matrix of width `w` batched by the powers of `α`, given
-as four coordinate planes `a0, …, a3`: four planes of `len` words. -/
+as four coordinate planes `a0, …, a3`: four planes of `len` words. Every row is dotted with the
+four planes while it is in cache, so the matrix is read once, row by row. -/
 def compressRange (p : ℕ) [Mont32Field p] (m : @& ByteArray) (w : Nat)
     (a0 a1 a2 a3 : @& ByteArray) (r0 len : Nat) : Array ByteArray := Id.run do
-  -- The range transposed, column `j` at words `j * len`: every plane is a sum of columns times
-  -- scalars, in place.
-  let cols := CompPoly.CPolynomial.NTTFast.Packed.Native.transposeRows m w r0 len
   let z := CompPoly.CPolynomial.NTTFast.Packed.Native.zeroWords len
   let mut p0 := z
   let mut p1 := z
   let mut p2 := z
   let mut p3 := z
-  for j in [0:w] do
-    let read := CompPoly.CPolynomial.NTTFast.Packed.Native.read
-    p0 := Words.mulAddInto p p0 cols (j * len) (read a0 j) len
-    p1 := Words.mulAddInto p p1 cols (j * len) (read a1 j) len
-    p2 := Words.mulAddInto p p2 cols (j * len) (read a2 j) len
-    p3 := Words.mulAddInto p p3 cols (j * len) (read a3 j) len
+  for t in [0:len] do
+    let o := (r0 + t) * w
+    let write := CompPoly.CPolynomial.NTTFast.Packed.Native.write
+    p0 := write p0 t (Words.dotAt p m o a0 w)
+    p1 := write p1 t (Words.dotAt p m o a1 w)
+    p2 := write p2 t (Words.dotAt p m o a2 w)
+    p3 := write p3 t (Words.dotAt p m o a3 w)
   return #[p0, p1, p2, p3]
 
 /-- Concatenate parallel pieces of planes. -/

@@ -426,13 +426,15 @@ where
 /// OOD_POW]`: the batch proof of `case` over KoalaBear as JSON, after Plonky3 verified it. Run
 /// with `RAYON_NUM_THREADS=1` for the smallest grinding witnesses.
 pub fn batch(name: &str, args: &[usize]) {
-    let config = config(default_koalabear_poseidon2_16(), default_koalabear_poseidon2_24(), args);
+    let config = config::<p3_koala_bear::KoalaBear, _, _>(
+        default_koalabear_poseidon2_16(), default_koalabear_poseidon2_24(), args);
     println!("{}", prove_case(&config, name));
 }
 
 /// `batch-babybear CASE …`: the same over BabyBear.
 pub fn batch_babybear(name: &str, args: &[usize]) {
-    let config = config(default_babybear_poseidon2_16(), default_babybear_poseidon2_24(), args);
+    let config = config::<p3_baby_bear::BabyBear, _, _>(
+        default_babybear_poseidon2_16(), default_babybear_poseidon2_24(), args);
     println!("{}", prove_case(&config, name));
 }
 
