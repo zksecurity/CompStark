@@ -89,23 +89,73 @@ def defaultInstances : Instances where
 def lane0 {t : Nat} (s : Vector F t) : Array F :=
   Array.ofFn (n := 8 * t) fun k ↦ if k.val % 8 = 0 then s.toArray.getD (k / 8) 0 else 0
 
+/-- The packed group of `lane0 s`, written word by word into a zero group. -/
+def lane0Words {t : Nat} (s : Vector F t) : ByteArray :=
+  (List.range t).foldl (fun b j ↦ CompPoly.CPolynomial.NTTFast.Packed.Native.write b (8 * j)
+    (s.toArray.getD j 0).val) (CompPoly.CPolynomial.NTTFast.Packed.Native.zeroWords (8 * t))
+
 namespace Instances
 
 variable (I : Instances)
 
 /-- The width-16 permutation of one state, in lane 0 of a packed group. -/
 def perm16 (s : Vector F 16) : Vector F 16 :=
-  let out := permute16 I.K16 (encodeFields (lane0 s)) 0
+  let out := permute16 I.K16 (lane0Words s) 0
   Vector.ofFn fun j ↦ ofWord _ (read out (8 * j.val))
 
 /-- The width-24 permutation of one state, in lane 0 of a packed group. -/
 def perm24 (s : Vector F 24) : Vector F 24 :=
-  let out := permute24 I.K24 (encodeFields (lane0 s)) 0
+  let out := permute24 I.K24 (lane0Words s) 0
   Vector.ofFn fun j ↦ ofWord _ (read out (8 * j.val))
 
 end Instances
 
 theorem size_lane0 {t : Nat} (s : Vector F t) : (lane0 s).size = 8 * t := Array.size_ofFn
+
+/-- `lane0Words` is the encoded group of `lane0`. -/
+theorem lane0Words_eq {t : Nat} (s : Vector F t) (ht : 4 * (8 * t) < USize.size) :
+    lane0Words s = encode (lane0 s) := by
+  have key : ∀ J ≤ t, (List.range J).foldl (fun b j ↦
+      CompPoly.CPolynomial.NTTFast.Packed.Native.write b (8 * j) (s.toArray.getD j 0).val)
+      (CompPoly.CPolynomial.NTTFast.Packed.Native.zeroWords (8 * t)) =
+      encode (Array.ofFn (n := 8 * t) fun k ↦
+        if k.val % 8 = 0 ∧ k.val / 8 < J then s.toArray.getD (k.val / 8) 0 else 0) := by
+    intro J
+    induction J with
+    | zero =>
+      intro _
+      rw [List.range_zero, List.foldl_nil, CompPoly.CPolynomial.NTTFast.Packed.Native.zeroWords_eq,
+        CompPoly.CPolynomial.NTTFast.Packed.encode_eq_map_val]
+      refine congrArg _ (Array.ext (by rw [Array.size_map, Array.size_replicate, Array.size_ofFn])
+        fun k _ _ ↦ ?_)
+      rw [Array.getElem_map, Array.getElem_replicate, Array.getElem_ofFn,
+        ite_eq_right (by omega)]
+      rfl
+    | succ J ih =>
+      intro hJ
+      rw [List.range_succ, List.foldl_append, ih (by omega), List.foldl_cons, List.foldl_nil,
+        CompPoly.CPolynomial.NTTFast.Packed.Native.write_encode _ _
+          (by rw [size_encode_fields, Array.size_ofFn]; exact ht)
+          (by rw [Array.size_ofFn]; omega)]
+      refine congrArg _ (Array.ext (by rw [Array.size_setIfInBounds, Array.size_ofFn,
+        Array.size_ofFn]) fun k h1 h2 ↦ ?_)
+      rw [Array.getElem_setIfInBounds, Array.getElem_ofFn, Array.getElem_ofFn]
+      dsimp only
+      by_cases hk : 8 * J = k
+      · rw [ite_eq_left hk, ite_eq_left (by omega), show k / 8 = J by omega]
+      · rw [ite_eq_right hk]
+        by_cases hk' : k % 8 = 0 ∧ k / 8 < J
+        · rw [ite_eq_left hk', ite_eq_left (by omega)]
+        · rw [ite_eq_right hk', ite_eq_right (by omega)]
+      rw [Array.size_ofFn] at h2 ⊢
+      exact h2
+  rw [lane0Words, key t (Nat.le_refl _), lane0]
+  refine congrArg _ (Array.ext (by rw [Array.size_ofFn, Array.size_ofFn]) fun k _ _ ↦ ?_)
+  rw [Array.getElem_ofFn, Array.getElem_ofFn]
+  dsimp only
+  by_cases hk : k % 8 = 0
+  · rw [ite_eq_left ⟨hk, by rw [Array.size_ofFn] at *; omega⟩, ite_eq_left hk]
+  · rw [ite_eq_right (by omega), ite_eq_right hk]
 
 /-- Lane 0 of the group of `lane0 s` is `s`. -/
 theorem lane_lane0 {t : Nat} (s : Vector F t) : lane t (lane0 s) 0 0 = s := by
@@ -140,7 +190,7 @@ theorem perm16_eq (s : Vector F 16) : I.perm16 s = Poseidon2.permute I.params16 
       omega)
   have h0 := hl 0 (by decide)
   rw [USize.toNat_zero, lane_lane0] at h0
-  rw [perm16, I.K16_eq, encodeFields_eq, e]
+  rw [perm16, lane0Words_eq s (by have := USize.le_size; omega), I.K16_eq, e]
   apply Vector.ext
   intro j hj
   rw [Vector.getElem_ofFn, read_lane (by decide) W' (by rw [hsz, size_lane0]) j hj, h0]
@@ -153,7 +203,7 @@ theorem perm24_eq (s : Vector F 24) : I.perm24 s = Poseidon2.permute I.params24 
       omega)
   have h0 := hl 0 (by decide)
   rw [USize.toNat_zero, lane_lane0] at h0
-  rw [perm24, I.K24_eq, encodeFields_eq, e]
+  rw [perm24, lane0Words_eq s (by have := USize.le_size; omega), I.K24_eq, e]
   apply Vector.ext
   intro j hj
   rw [Vector.getElem_ofFn, read_lane (by decide) W' (by rw [hsz, size_lane0]) j hj, h0]

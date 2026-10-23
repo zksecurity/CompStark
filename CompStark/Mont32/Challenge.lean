@@ -24,8 +24,9 @@ namespace Mont32
 
 variable {p : ℕ} [Mont32Field p] [Mont32BaseField p] [Binomial4 p]
 
-/-- The quartic extension `FastField p [X] / (X^4 - W)`. -/
-instance instChallengeExt4 : Challenge (FastField p) (Ext4 p) where
+/-- The quartic extension `FastField p [X] / (X^4 - W)`. Inlined, so that code specialized to it
+runs the extension's arithmetic directly instead of through the instance's closures. -/
+@[inline] instance instChallengeExt4 : Challenge (FastField p) (Ext4 p) where
   params := Ext4.P p
   coeffs x := [x.c0, x.c1, x.c2, x.c3]
   ofCoeffs l := ⟨l.getD 0 0, l.getD 1 0, l.getD 2 0, l.getD 3 0⟩

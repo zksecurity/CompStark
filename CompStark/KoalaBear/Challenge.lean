@@ -32,8 +32,8 @@ theorem mulW_eq (x : Field) : Binomial4.mulW (p := _root_.KoalaBear.fieldSize) x
   rw [Binomial4.mulW_eq]; rfl
 
 /-- The quintic extension `KoalaBear[X] / (X^5 + X^2 - 1)`, Plonky3's
-`QuinticTrinomialExtensionField<KoalaBear>`. -/
-instance instChallengeExt5 : Challenge (FastField _root_.KoalaBear.fieldSize) Ext5 where
+`QuinticTrinomialExtensionField<KoalaBear>`. Inlined, as the quartic extension's instance. -/
+@[inline] instance instChallengeExt5 : Challenge (FastField _root_.KoalaBear.fieldSize) Ext5 where
   params := Ext5.P
   coeffs x := [x.c0, x.c1, x.c2, x.c3, x.c4]
   ofCoeffs l := ⟨l.getD 0 0, l.getD 1 0, l.getD 2 0, l.getD 3 0, l.getD 4 0⟩
