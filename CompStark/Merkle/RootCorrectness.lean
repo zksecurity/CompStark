@@ -107,7 +107,7 @@ theorem compressRange_encode [Poseidon2Field (FastField p)] [PackedPoseidon2 p] 
         · rw [ite_eq_left h2, ite_eq_left (by omega)]
         · rw [ite_eq_right h2, ite_eq_right (by omega)]
   obtain ⟨C, e, s, g⟩ := key ((count + 7) / 8)
-  rw [compressRange, zeroWords_fields (p := p), e,
+  rw [compressRange, foldRange_eq, zeroWords_fields (p := p), e,
     flat_eq C ((List.range count).map fun i ↦ parent P (o0 + i))
       (by rw [s, List.length_map, List.length_range])]
   intro i hi j hj

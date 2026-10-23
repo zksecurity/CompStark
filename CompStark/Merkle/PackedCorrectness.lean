@@ -269,9 +269,10 @@ theorem absorbBlock_encode (M A : Array F) (w rows r0 blk : Nat) (hM : M.size = 
       simp only [GroupFits24, Fits, size_encode_fields, hA, USize.reduceToNat]
       have := USize.le_size; omega
     unfold loadLines24
-    rw [dite_eq_left_of_eq_true (eq_true ⟨hfit 0 (by decide), hfit 1 (by decide),
-      hfit 2 (by decide), hfit 3 (by decide), hfit 4 (by decide), hfit 5 (by decide),
-      hfit 6 (by decide), hfit 7 (by decide), hg⟩)]
+    rw [dite_eq_left_of_eq_true (eq_true ⟨(hfit 0 (by decide)).2, (hfit 0 (by decide)).1,
+      (hfit 1 (by decide)).1, (hfit 2 (by decide)).1, (hfit 3 (by decide)).1,
+      (hfit 4 (by decide)).1, (hfit 5 (by decide)).1, (hfit 6 (by decide)).1,
+      (hfit 7 (by decide)).1, hg⟩)]
     refine ⟨loadModel M A (fun l ↦ (r0 + l) * w + 16 * blk) 0,
       load16x24_encode M A (fun l ↦ (r0 + l) * w + 16 * blk) hqu 0 _ _ _ _ _ _ _ _ _, ?_, ?_⟩
     · have hL : ∀ j ∈ coords16, j < 24 := fun j hj ↦ by have := coords16_spec.lt j hj; omega
@@ -406,7 +407,8 @@ theorem absorbRows_encode [Poseidon2Field (FastField p)] [PackedPoseidon2 p] (M 
       rw [l2 l hl, l1 l hl, ite_eq_left_of_eq_true _ _ (eq_true hr), hprev l hl hr,
         block_eq _ _ rows]
   obtain ⟨A, e, hs, hl⟩ := key ((w + 15) / 16)
-  refine ⟨A, by rw [absorbRows, zeroWords_fields (p := p), e], hs, fun l h8 hr ↦ ?_⟩
+  refine ⟨A, by rw [absorbRows, foldRange_eq, zeroWords_fields (p := p), e], hs,
+    fun l h8 hr ↦ ?_⟩
   rw [hl l h8 hr, absorb_eq_foldl]
   simp only [CompStark.Merkle.Matrix.row, List.length_map, List.length_range,
     show w + 16 - 1 = w + 15 by omega]
@@ -588,7 +590,8 @@ theorem hashChunk_encode [Poseidon2Field (FastField p)] [PackedPoseidon2 p] (M :
       · rw [ite_eq_right (by omega), g r hr j hj]
         split_ifs <;> first | rfl | omega
   obtain ⟨D, e, s, g⟩ := key ((rows + 7) / 8)
-  refine ⟨D, by rw [hashChunk, zeroWords_fields (p := p), e], s, fun r hr j hj ↦ ?_⟩
+  refine ⟨D, by rw [hashChunk, foldRange_eq, zeroWords_fields (p := p), e], s,
+    fun r hr j hj ↦ ?_⟩
   rw [g r hr j hj, ite_eq_left (by omega)]
 
 /-- Digest `k` of a layer stored as consecutive words. -/
@@ -614,9 +617,10 @@ theorem loadPairs_encode (P : Array F) (n o : Nat) (hP : P.size = 8 * n)
       simp only [GroupFits, Fits, size_encode_fields, Array.size_replicate, USize.reduceToNat]
       omega
     unfold loadLines16
-    rw [dite_eq_left_of_eq_true (eq_true ⟨hfit 0 (by decide), hfit 1 (by decide),
-      hfit 2 (by decide), hfit 3 (by decide), hfit 4 (by decide), hfit 5 (by decide),
-      hfit 6 (by decide), hfit 7 (by decide), hg⟩)]
+    rw [dite_eq_left_of_eq_true (eq_true ⟨(hfit 0 (by decide)).2, (hfit 0 (by decide)).1,
+      (hfit 1 (by decide)).1, (hfit 2 (by decide)).1, (hfit 3 (by decide)).1,
+      (hfit 4 (by decide)).1, (hfit 5 (by decide)).1, (hfit 6 (by decide)).1,
+      (hfit 7 (by decide)).1, hg⟩)]
     have hL : ∀ j ∈ coords16, j < 16 := coords16_spec.lt
     have hW : 0 + 8 * 16 ≤ (Array.replicate 128 (0 : F)).size := by
       rw [Array.size_replicate]

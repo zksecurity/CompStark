@@ -38,6 +38,23 @@ theorem storeAt {b : ByteArray} {p : USize} (h : Fits b p 7) :
   simp only [USize.reduceToNat]
   omega
 
+/-- Words `q, …, q + 15` of `m` are in bounds, the size of `m` aside. -/
+abbrev LineFits (m : ByteArray) (q : USize) : Prop := 4 * (q.toNat + 15) + 3 < m.size
+
+/-- `f` folded over `k, …, k + n - 1`, by recursion so the loop allocates nothing. -/
+@[specialize] def foldRange {α : Type} (f : α → Nat → α) : Nat → Nat → α → α
+  | 0, _, a => a
+  | n + 1, k, a => foldRange f n (k + 1) (f a k)
+
+theorem foldRange_eq {α : Type} (f : α → Nat → α) (n : Nat) (a : α) :
+    foldRange f n 0 a = (List.range n).foldl f a := by
+  have go : ∀ n k a, foldRange f n k a = (List.range' k n).foldl f a := by
+    intro n
+    induction n with
+    | zero => intro k a; rfl
+    | succ n ih => intro k a; rw [List.range'_succ, List.foldl_cons, ← ih]; rfl
+  rw [go, List.range_eq_range']
+
 set_option maxRecDepth 16384 in
 /-- Lines `q0, …, q7` of sixteen words of `m` into coordinates `0, …, 15` of the width-24 group
 at `i`. -/
@@ -67,22 +84,28 @@ set_option maxRecDepth 16384 in
 
 /-- Words `q l, …, q l + 15`, `l < 8`, of `m` into coordinates `0, …, 15` of the width-24 group
 at word `0` of `st`, if they fit. -/
-def loadLines24 (m : @& ByteArray) (q : Nat → Nat) (st : ByteArray) : ByteArray :=
+@[inline] def loadLines24 (m : @& ByteArray) (q : Nat → Nat) (st : ByteArray) : ByteArray :=
   let u (l : Nat) : USize := (q l).toUSize
-  if h : Fits m (u 0) 15 ∧ Fits m (u 1) 15 ∧ Fits m (u 2) 15 ∧ Fits m (u 3) 15 ∧
-      Fits m (u 4) 15 ∧ Fits m (u 5) 15 ∧ Fits m (u 6) 15 ∧ Fits m (u 7) 15 ∧ GroupFits24 st 0 then
-    load16x24 m (u 0) (u 1) (u 2) (u 3) (u 4) (u 5) (u 6) (u 7) st 0 h.1 h.2.1 h.2.2.1
-      h.2.2.2.1 h.2.2.2.2.1 h.2.2.2.2.2.1 h.2.2.2.2.2.2.1 h.2.2.2.2.2.2.2.1 h.2.2.2.2.2.2.2.2
+  if h : m.size < USize.size ∧ LineFits m (u 0) ∧ LineFits m (u 1) ∧ LineFits m (u 2) ∧
+      LineFits m (u 3) ∧ LineFits m (u 4) ∧ LineFits m (u 5) ∧ LineFits m (u 6) ∧
+      LineFits m (u 7) ∧ GroupFits24 st 0 then
+    load16x24 m (u 0) (u 1) (u 2) (u 3) (u 4) (u 5) (u 6) (u 7) st 0 ⟨h.2.1, h.1⟩
+      ⟨h.2.2.1, h.1⟩ ⟨h.2.2.2.1, h.1⟩ ⟨h.2.2.2.2.1, h.1⟩ ⟨h.2.2.2.2.2.1, h.1⟩
+      ⟨h.2.2.2.2.2.2.1, h.1⟩ ⟨h.2.2.2.2.2.2.2.1, h.1⟩ ⟨h.2.2.2.2.2.2.2.2.1, h.1⟩
+      h.2.2.2.2.2.2.2.2.2
   else st
 
 /-- Words `q l, …, q l + 15`, `l < 8`, of `m` into coordinates `0, …, 15` of the width-16 group
 at word `0` of `st`, if they fit. -/
-def loadLines16 (m : @& ByteArray) (q : Nat → Nat) (st : ByteArray) : ByteArray :=
+@[inline] def loadLines16 (m : @& ByteArray) (q : Nat → Nat) (st : ByteArray) : ByteArray :=
   let u (l : Nat) : USize := (q l).toUSize
-  if h : Fits m (u 0) 15 ∧ Fits m (u 1) 15 ∧ Fits m (u 2) 15 ∧ Fits m (u 3) 15 ∧
-      Fits m (u 4) 15 ∧ Fits m (u 5) 15 ∧ Fits m (u 6) 15 ∧ Fits m (u 7) 15 ∧ GroupFits st 0 then
-    load16x16 m (u 0) (u 1) (u 2) (u 3) (u 4) (u 5) (u 6) (u 7) st 0 h.1 h.2.1 h.2.2.1
-      h.2.2.2.1 h.2.2.2.2.1 h.2.2.2.2.2.1 h.2.2.2.2.2.2.1 h.2.2.2.2.2.2.2.1 h.2.2.2.2.2.2.2.2
+  if h : m.size < USize.size ∧ LineFits m (u 0) ∧ LineFits m (u 1) ∧ LineFits m (u 2) ∧
+      LineFits m (u 3) ∧ LineFits m (u 4) ∧ LineFits m (u 5) ∧ LineFits m (u 6) ∧
+      LineFits m (u 7) ∧ GroupFits st 0 then
+    load16x16 m (u 0) (u 1) (u 2) (u 3) (u 4) (u 5) (u 6) (u 7) st 0 ⟨h.2.1, h.1⟩
+      ⟨h.2.2.1, h.1⟩ ⟨h.2.2.2.1, h.1⟩ ⟨h.2.2.2.2.1, h.1⟩ ⟨h.2.2.2.2.2.1, h.1⟩
+      ⟨h.2.2.2.2.2.2.1, h.1⟩ ⟨h.2.2.2.2.2.2.2.1, h.1⟩ ⟨h.2.2.2.2.2.2.2.2.1, h.1⟩
+      h.2.2.2.2.2.2.2.2.2
   else st
 
 /-- The digests in coordinates `0, …, 7` of the eight lanes of `st` as digests `d, …, d + 7`
@@ -121,8 +144,8 @@ below `w`. -/
 @[inline] def absorbRows (p : ℕ) [Mont32Field p] [Poseidon2Field (FastField p)] [PackedPoseidon2 p]
     (m : @& ByteArray)
     (w rows r0 : Nat) : ByteArray :=
-  (List.range ((w + 15) / 16)).foldl (fun st blk ↦
-    PackedPoseidon2.permute24 p (absorbBlock m w rows r0 blk st)) (zeroWords 192)
+  foldRange (fun st blk ↦ PackedPoseidon2.permute24 p (absorbBlock m w rows r0 blk st))
+    ((w + 15) / 16) 0 (zeroWords 192)
 
 /-- The digests in coordinates `0, …, 7` of the lanes of `st` as digests `r0, …, r0 + 7` of
 `out`, for rows below `rows`. -/
@@ -147,7 +170,7 @@ digests `r0, …, r0 + 7` of `out`; rows past `rows` read as zeros and are not s
 @[specialize] def hashChunk (p : ℕ) [Mont32Field p] [Poseidon2Field (FastField p)]
     [PackedPoseidon2 p] (m : @& ByteArray)
     (w rows : Nat) : ByteArray :=
-  (List.range ((rows + 7) / 8)).foldl (fun out g ↦ hashRows8 p m w rows (8 * g) out)
+  foldRange (fun out g ↦ hashRows8 p m w rows (8 * g) out) ((rows + 7) / 8) 0
     (zeroWords (8 * rows))
 
 /-- The pairs `o, …, o + 7` of the layer `prev` of `n` digests into the lanes of a width-16
@@ -167,7 +190,7 @@ parents past `o0 + count` are not stored. -/
 @[specialize] def compressRange (p : ℕ) [Mont32Field p] [Poseidon2Field (FastField p)]
     [PackedPoseidon2 p]
     (prev : @& ByteArray) (n o0 count : Nat) : ByteArray :=
-  (List.range ((count + 7) / 8)).foldl (fun out g ↦ compress8 p prev n (o0 + 8 * g) o0 count out)
+  foldRange (fun out g ↦ compress8 p prev n (o0 + 8 * g) o0 count out) ((count + 7) / 8) 0
     (zeroWords (8 * count))
 
 /-- `n` digests padded with zero digests to `padded`. -/
