@@ -245,7 +245,7 @@ theorem scatterRows_encode (M A : Array F) (w rows r0 blk : Nat) (hM : rows * w 
   rw [wl l hl j hj]
   split_ifs <;> first | rfl | omega
 
-theorem absorbBlock_encode (M A : Array F) (w rows r0 blk : Nat) (hM : M.size = rows * w)
+theorem absorbBlock_encode (M A : Array F) (w rows r0 blk : Nat) (hM : rows * w ≤ M.size)
     (hA : A.size = 192) (hu : 4 * M.size < USize.size) :
     ∃ A', absorbBlock (encode M) w rows r0 blk (encode A) = encode A' ∧ A'.size = 192 ∧
       ∀ l < 8, lane 24 A' 0 l = if r0 + l < rows then
@@ -291,7 +291,7 @@ theorem absorbBlock_encode (M A : Array F) (w rows r0 blk : Nat) (hM : M.size = 
       · rw [ite_eq_right_of_eq_false _ _
           (eq_false fun h ↦ hj16 (coords16_spec.lt j h)), ite_eq_right_of_eq_false _ _
               (eq_false hj16)]
-  · obtain ⟨A', e, s, wl⟩ := scatterRows_encode M A w rows r0 blk (by rw [hM]) (by omega) hu
+  · obtain ⟨A', e, s, wl⟩ := scatterRows_encode M A w rows r0 blk hM (by omega) hu
       (by rw [hA]; have := USize.le_size; omega)
     refine ⟨A', e, by rw [s, hA], fun l hl ↦ ?_⟩
     ext j hj
@@ -374,7 +374,7 @@ theorem permute16_lanes [Poseidon2Field (FastField p)] [PackedPoseidon2 p] (A : 
     rw [lane_zero, lane_zero, Group.lane_map _ _ _ _ hl]⟩
 
 theorem absorbRows_encode [Poseidon2Field (FastField p)] [PackedPoseidon2 p] (M : Array F)
-    (w rows r0 : Nat) (hM : M.size = rows * w)
+    (w rows r0 : Nat) (hM : rows * w ≤ M.size)
     (hu : 4 * M.size < USize.size) :
     ∃ A, absorbRows p (encode M) w rows r0 = encode A ∧
       A.size = 192 ∧ ∀ l < 8, r0 + l < rows → lane 24 A 0 l =
@@ -552,18 +552,19 @@ theorem getElem_hash [Poseidon2Field (FastField p)] [PackedPoseidon2 p] (xs : Li
   simp only [Hash.Poseidon2.hash_eq, CompStark.Hash.sponge, Vector.getElem_cast,
     Vector.getElem_take]
 
-theorem hashChunk_encode [Poseidon2Field (FastField p)] [PackedPoseidon2 p] (M : Array F)
-    (w rows : Nat) (hM : M.size = rows * w)
-    (hu : 4 * M.size < USize.size) (ho : 4 * (8 * rows) < USize.size) :
-    ∃ D, hashChunk p (encode M) w rows = encode D ∧
-      D.size = 8 * rows ∧ ∀ r < rows, ∀ j (hj : j < 8), D.getD (8 * r + j) 0 =
+theorem hashRange_encode [Poseidon2Field (FastField p)] [PackedPoseidon2 p] (M : Array F)
+    (w r0 n : Nat) (hM : (r0 + n) * w ≤ M.size)
+    (hu : 4 * M.size < USize.size) (ho : 4 * (8 * n) < USize.size) :
+    ∃ D, hashRange p (encode M) w r0 n = encode D ∧
+      D.size = 8 * n ∧ ∀ r < n, ∀ j (hj : j < 8), D.getD (8 * r + j) 0 =
         (Hash.Poseidon2.hash (FastField p)
-          ((⟨w, rows, M⟩ : CompStark.Merkle.Matrix F).row r))[j]'hj := by
+          ((⟨w, r0 + n, M⟩ : CompStark.Merkle.Matrix F).row (r0 + r)))[j]'hj := by
   have key : ∀ G, ∃ D, (List.range G).foldl (fun out g ↦
-      hashRows8 p (encode M) w rows (8 * g) out)
-      (encode (Array.replicate (8 * rows) (0 : F))) = encode D ∧ D.size = 8 * rows ∧
-      ∀ r < rows, ∀ j (hj : j < 8), D.getD (8 * r + j) 0 = if r < 8 * G then
-        (Hash.Poseidon2.hash (FastField p) ((⟨w, rows, M⟩ : CompStark.Merkle.Matrix F).row r))[j]'hj
+      storeRows (absorbRows p (encode M) w (r0 + n) (r0 + 8 * g)) n (8 * g) out)
+      (encode (Array.replicate (8 * n) (0 : F))) = encode D ∧ D.size = 8 * n ∧
+      ∀ r < n, ∀ j (hj : j < 8), D.getD (8 * r + j) 0 = if r < 8 * G then
+        (Hash.Poseidon2.hash (FastField p)
+          ((⟨w, r0 + n, M⟩ : CompStark.Merkle.Matrix F).row (r0 + r)))[j]'hj
         else 0 := by
     intro G
     induction G with
@@ -574,23 +575,23 @@ theorem hashChunk_encode [Poseidon2Field (FastField p)] [PackedPoseidon2 p] (M :
       rfl
     | succ G ih =>
       obtain ⟨D, e, s, g⟩ := ih
-      rw [List.range_succ, List.foldl_append, e, List.foldl_cons, List.foldl_nil, hashRows8]
-      obtain ⟨A, eA, sA, lA⟩ := absorbRows_encode M w rows (8 * G) hM hu
+      rw [List.range_succ, List.foldl_append, e, List.foldl_cons, List.foldl_nil]
+      obtain ⟨A, eA, sA, lA⟩ := absorbRows_encode M w (r0 + n) (r0 + 8 * G) hM hu
       rw [eA]
-      obtain ⟨D', e', s', g'⟩ := storeRows_encode A D rows (8 * G) (by omega)
+      obtain ⟨D', e', s', g'⟩ := storeRows_encode A D n (8 * G) (by omega)
         (by rw [sA]; have := USize.le_size; omega) s (by rw [s]; exact ho)
       refine ⟨D', e', s', fun r hr j hj ↦ ?_⟩
       rw [g']
       by_cases hG : 8 * G ≤ r ∧ r < 8 * G + 8
       · have hl := lA (r - 8 * G) (by omega) (by omega)
-        rw [show 8 * G + (r - 8 * G) = r by omega] at hl
+        rw [show r0 + 8 * G + (r - 8 * G) = r0 + r by omega] at hl
         rw [ite_eq_left (by omega), ite_eq_left (by omega), getElem_hash _ _ hj, ← hl,
           show (8 * r + j) % 8 = j by omega, show (8 * r + j) / 8 - 8 * G = r - 8 * G by omega]
         simp only [lane, Vector.getElem_ofFn]
       · rw [ite_eq_right (by omega), g r hr j hj]
         split_ifs <;> first | rfl | omega
-  obtain ⟨D, e, s, g⟩ := key ((rows + 7) / 8)
-  refine ⟨D, by rw [hashChunk, foldRange_eq, zeroWords_fields (p := p), e], s,
+  obtain ⟨D, e, s, g⟩ := key ((n + 7) / 8)
+  refine ⟨D, by rw [hashRange, foldRange_eq, zeroWords_fields (p := p), e], s,
     fun r hr j hj ↦ ?_⟩
   rw [g r hr j hj, ite_eq_left (by omega)]
 

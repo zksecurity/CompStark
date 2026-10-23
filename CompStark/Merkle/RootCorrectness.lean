@@ -257,31 +257,64 @@ theorem flatMap_chunkLeaves [Poseidon2Field (FastField p)] (w : Nat) (cs : List 
       have : (c.size / w + r) * w + j = c.size + (r * w + j) := by rw [Nat.add_mul, ← hs]; omega
       rw [this, ite_eq_right (by omega), Nat.add_sub_cancel_left]
 
+theorem hashRange_flat [Poseidon2Field (FastField p)] [PackedPoseidon2 p] (w : Nat) (V : Array F)
+    (r0 n : Nat) (hV : (r0 + n) * w ≤ V.size) (hu : 4 * V.size < USize.size)
+    (ho : 4 * (8 * n) < USize.size) :
+    hashRange p (encode V) w r0 n = encode (flat ((List.range n).map fun r ↦
+      Hash.Poseidon2.hash (FastField p)
+        ((⟨w, 0, V⟩ : CompStark.Merkle.Matrix F).row (r0 + r)))) := by
+  obtain ⟨D, e, s, g⟩ := hashRange_encode V w r0 n hV hu ho
+  rw [e, flat_eq D ((List.range n).map fun r ↦ Hash.Poseidon2.hash (FastField p)
+    ((⟨w, 0, V⟩ : CompStark.Merkle.Matrix F).row (r0 + r)))
+    (by rw [s, List.length_map, List.length_range])]
+  intro r hr j hj
+  rw [List.length_map, List.length_range] at hr
+  rw [g r hr j hj, List.getD_eq_getElem _ _ (by rw [List.length_map, List.length_range]; exact hr)]
+  simp only [List.getElem_map, List.getElem_range]
+  rfl
+
 theorem hashChunk_flat [Poseidon2Field (FastField p)] [PackedPoseidon2 p] (w : Nat) (c : Array F)
     (hc : c.size % w = 0)
     (hu : 32 * c.size < USize.size) :
-    hashChunk p (encode c) w (c.size / w) =
+    hashRange p (encode c) w 0 (c.size / w) =
       encode (flat (chunkLeaves w c)) := by
   have hs : c.size = c.size / w * w := (Nat.div_mul_cancel (Nat.dvd_of_mod_eq_zero hc)).symm
   have hr : c.size / w ≤ c.size := Nat.div_le_self _ _
-  obtain ⟨D, e, s, g⟩ := hashChunk_encode c w (c.size / w) hs (by omega) (by omega)
-  rw [e, flat_eq D (chunkLeaves w c) (by rw [s, chunkLeaves, List.length_map, List.length_range])]
-  intro r hr j hj
-  have hl := hr
-  rw [chunkLeaves, List.length_map, List.length_range] at hr
-  rw [g r hr j hj, List.getD_eq_getElem _ _ hl]
-  simp only [chunkLeaves, List.getElem_map, List.getElem_range]
-
-/-- `leavesOf` is `leaves` of the chunks it makes. -/
-theorem leavesOf_eq [Poseidon2Field (FastField p)] [PackedPoseidon2 p] (w n : Nat)
-    (chunk : Nat → ByteArray) :
-    leavesOf p w n chunk = leaves p w ((Array.range n).map chunk) := by
-  unfold leavesOf leaves
-  dsimp only
-  rw [CompPoly.Tasks.get_join, CompPoly.Tasks.map_get_spawnAll, CompPoly.Tasks.get_join,
-    Array.map_map, Array.map_map, Array.foldl_map, Array.foldl_map, Array.foldl_map,
-    Array.foldl_map]
+  rw [hashRange_flat w c 0 (c.size / w) (by rw [Nat.zero_add]; omega) (by omega) (by omega),
+    chunkLeaves]
+  simp only [Nat.zero_add]
   rfl
+
+/-- The leaves of a matrix hashed in place by range tasks are its row digests. -/
+theorem leavesIn_encode [Poseidon2Field (FastField p)] [PackedPoseidon2 p] (w : Nat) (V : Array F)
+    (h parts : Nat) (hV : h * w ≤ V.size) (hp : 0 < parts) (hu : 4 * V.size < USize.size)
+    (ho : 4 * (8 * h) < USize.size) :
+    leavesIn p w (encode V) h parts = encode (flat ((List.range h).map fun r ↦
+      Hash.Poseidon2.hash (FastField p) ((⟨w, h, V⟩ : CompStark.Merkle.Matrix F).row r))) := by
+  unfold leavesIn
+  dsimp only
+  rw [foldl_spawnAll]
+  generalize hsize : (h + parts - 1) / parts = size
+  have hcover : h ≤ parts * size := by
+    subst hsize
+    have := Nat.div_add_mod (h + parts - 1) parts
+    have := Nat.mod_lt (h + parts - 1) hp
+    omega
+  have hr : ∀ k, hashRange p (encode V) w (k * size) (min size (h - min h (k * size))) =
+      encode (flat ((List.range (min size (h - min h (k * size)))).map fun i ↦
+        Hash.Poseidon2.hash (FastField p)
+          ((⟨w, h, V⟩ : CompStark.Merkle.Matrix F).row (k * size + i)))) := fun k ↦ by
+    by_cases hk : k * size ≤ h
+    · rw [hashRange_flat w V _ _ (Nat.le_trans (Nat.mul_le_mul_right w (by omega)) hV) hu
+        (by omega)]
+      rfl
+    · rw [show h - min h (k * size) = 0 by omega, Nat.min_zero]
+      rfl
+  simp only [hr]
+  rw [show ByteArray.emptyWithCapacity (32 * _) = ByteArray.emptyWithCapacity 0 from rfl,
+    foldl_encode_flat, foldl_tiles h size (fun r ↦ Hash.Poseidon2.hash (FastField p)
+      ((⟨w, h, V⟩ : CompStark.Merkle.Matrix F).row r)) parts,
+    show min h (parts * size) = h by omega]
 
 theorem leaves_encode [Poseidon2Field (FastField p)] [PackedPoseidon2 p] (w : Nat) (hw : 0 < w)
     (cs : List (Array F))

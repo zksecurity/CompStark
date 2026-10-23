@@ -21,8 +21,8 @@ packed permutations of a `PackedPoseidon2` field:
   coordinates `0, …, 7` and the right in `8, …, 15`; the first eight coordinates after the
   permutation are the parent digests.
 
-Digest `k` of a layer is words `8 k, …, 8 k + 7` of a `ByteArray`. Rows come in chunks, as the
-coset LDE returns them; tasks hash the chunks, and the larger layers in ranges.
+Digest `k` of a layer is words `8 k, …, 8 k + 7` of a `ByteArray`. Tasks hash ranges of rows in
+place (`leavesIn`), or chunks of rows (`leaves`), and the larger layers in ranges.
 -/
 
 @[expose] public section
@@ -159,19 +159,12 @@ below `w`. -/
         out := write out (8 * (r0 + l) + j) (read st (8 * j + l))
   return out
 
-/-- The digests of the eight rows `r0, …, r0 + 7` of the row-major words `m` of width `w`, as
-digests `r0, …, r0 + 7` of `out`; rows past `rows` read as zeros and are not stored. -/
-@[specialize] def hashRows8 (p : ℕ) [Mont32Field p] [Poseidon2Field (FastField p)]
-    [PackedPoseidon2 p] (m : @& ByteArray)
-    (w rows r0 : Nat) (out : ByteArray) : ByteArray :=
-  storeRows (absorbRows p m w rows r0) rows r0 out
-
-/-- The leaf digests of a chunk of `rows` rows of width `w`. -/
-@[specialize] def hashChunk (p : ℕ) [Mont32Field p] [Poseidon2Field (FastField p)]
-    [PackedPoseidon2 p] (m : @& ByteArray)
-    (w rows : Nat) : ByteArray :=
-  foldRange (fun out g ↦ hashRows8 p m w rows (8 * g) out) ((rows + 7) / 8) 0
-    (zeroWords (8 * rows))
+/-- The leaf digests of the rows `r0, …, r0 + n - 1` of the row-major words `m` of width `w`,
+eight rows at a time; rows past `r0 + n` read as zeros and are not stored. -/
+@[specialize] def hashRange (p : ℕ) [Mont32Field p] [Poseidon2Field (FastField p)]
+    [PackedPoseidon2 p] (m : @& ByteArray) (w r0 n : Nat) : ByteArray :=
+  foldRange (fun out g ↦ storeRows (absorbRows p m w (r0 + n) (r0 + 8 * g)) n (8 * g) out)
+    ((n + 7) / 8) 0 (zeroWords (8 * n))
 
 /-- The pairs `o, …, o + 7` of the layer `prev` of `n` digests into the lanes of a width-16
 group; pairs past `n / 2` read zeros. -/
@@ -218,20 +211,18 @@ tasks, and the number of rows. -/
     (chunks : Array ByteArray) : ByteArray × Nat :=
   let rowsOf (c : ByteArray) := if w = 0 then 0 else c.size / (4 * w)
   let tasks := CompPoly.Tasks.join (chunks.map fun c ↦ Task.spawn fun _ ↦
-    hashChunk p c w (rowsOf c))
+    hashRange p c w 0 (rowsOf c))
   let h := chunks.foldl (fun acc c ↦ acc + rowsOf c) 0
   (tasks.get.foldl (· ++ ·) (ByteArray.emptyWithCapacity (32 * (h + 1))), h)
 
-/-- `leaves` of the chunks `chunk 0, …, chunk (n - 1)`, each made by the task that hashes it, so
-that copying the chunks out of a larger buffer runs in parallel too. -/
-@[noinline, specialize] def leavesOf (p : ℕ) [Mont32Field p] [Poseidon2Field (FastField p)]
-    [PackedPoseidon2 p] (w n : Nat) (chunk : Nat → ByteArray) : ByteArray × Nat :=
-  let rowsOf (c : ByteArray) := if w = 0 then 0 else c.size / (4 * w)
-  let rs := (CompPoly.Tasks.join (CompPoly.Tasks.spawnAll n fun k ↦
-    let c := chunk k
-    (hashChunk p c w (rowsOf c), rowsOf c))).get
-  let h := rs.foldl (fun acc r ↦ acc + r.2) 0
-  (rs.foldl (fun acc r ↦ acc ++ r.1) (ByteArray.emptyWithCapacity (32 * (h + 1))), h)
+/-- The leaf digests of the `h` rows of the row-major words `m` of width `w`, hashed in place by
+`parts` parallel tasks over ranges of rows. -/
+@[noinline, specialize] def leavesIn (p : ℕ) [Mont32Field p] [Poseidon2Field (FastField p)]
+    [PackedPoseidon2 p] (w : Nat) (m : ByteArray) (h parts : Nat) : ByteArray :=
+  let size := (h + parts - 1) / parts
+  let tasks := CompPoly.Tasks.spawnAll parts fun k ↦
+    hashRange p m w (k * size) (min size (h - min h (k * size)))
+  tasks.foldl (fun acc t ↦ acc ++ t.get) (ByteArray.emptyWithCapacity (32 * (h + 1)))
 
 /-- The root above the first layer of `h` leaf digests. -/
 @[noinline, specialize] def rootOfLeaves (p : ℕ) [Mont32Field p] [Poseidon2Field (FastField p)]

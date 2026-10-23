@@ -215,72 +215,6 @@ theorem openAt_rel [Mont32BaseField p] {c : Commit} {s : Committed F} (i : Nat) 
   · intro k _ _
     rw [Array.getElem_ofFn, Array.getElem_ofFn, layer_rel h, readDigest_encodeDigests]
 
-/-! ### Chunks -/
-
-/-- Chunk `k` of `parts` chunks of `rows` rows of width `W` of `V`, the last taking the rest. -/
-def chunk (V : Array F) (W parts rows k : Nat) : Array F :=
-  V.extract (W * (k * rows)) (if k + 1 = parts then V.size else W * ((k + 1) * rows))
-
-/-- The chunks of `packedLayers` cover the matrix. -/
-theorem chunks_flatten (V : Array F) (W H parts rows : Nat) (hV : V.size = H * W)
-    (hp : 0 < parts) (hpr : parts * rows ≤ H) :
-    ((List.range parts).map (chunk V W parts rows)).toArray.flatten = V := by
-  let e (k : Nat) : Nat := if k = parts then V.size else W * (k * rows)
-  have he : ∀ k < parts, chunk V W parts rows k = V.extract (e k) (e (k + 1)) := by
-    intro k hk
-    simp only [chunk, e, ite_eq_right_of_eq_false _ _ (eq_false (show ¬k = parts by omega))]
-  have hmono : ∀ k < parts, e k ≤ e (k + 1) ∧ e (k + 1) ≤ V.size := by
-    intro k hk
-    have h1 : W * (k * rows) ≤ W * ((k + 1) * rows) :=
-      Nat.mul_le_mul_left _ (Nat.mul_le_mul_right _ (by omega))
-    have h2 : W * ((k + 1) * rows) ≤ V.size := by
-      rw [hV, Nat.mul_comm H]
-      exact Nat.mul_le_mul_left _ ((Nat.mul_le_mul_right _ (by omega)).trans hpr)
-    simp only [e, ite_eq_right_of_eq_false _ _ (eq_false (show ¬k = parts by omega))]
-    split <;> omega
-  have key : ∀ n ≤ parts,
-      ((List.range n).map (chunk V W parts rows)).toArray.flatten = V.extract 0 (e n) := by
-    intro n hn
-    induction n with
-    | zero =>
-      simp only [e, ite_eq_right_of_eq_false _ _ (eq_false (show ¬0 = parts by omega)),
-        Nat.zero_mul, Nat.mul_zero, List.range_zero, List.map_nil, Array.extract_zero]
-      rfl
-    | succ n ih =>
-      rw [List.range_succ, List.map_append, ← List.append_toArray, Array.flatten_append,
-        ih (by omega), List.map_singleton, he n (by omega)]
-      have : (([V.extract (e n) (e (n + 1))] : List (Array F))).toArray.flatten =
-          V.extract (e n) (e (n + 1)) := by
-        apply Array.toList_inj.mp
-        simp only [Array.toList_flatten, List.map_cons,
-          List.map_nil, List.flatten_cons, List.flatten_nil, List.append_nil]
-      rw [this, Array.extract_append_extract, Nat.zero_min,
-        Nat.max_eq_right (hmono n (by omega)).1]
-  rw [key parts le_rfl]
-  simp only [e, ite_true, Array.extract_size]
-
-theorem size_chunk_mod (V : Array F) (W H parts rows k : Nat) (hV : V.size = H * W)
-    (hk : k < parts) (hpr : parts * rows ≤ H) : (chunk V W parts rows k).size % W = 0 := by
-  have h2 : W * ((k + 1) * rows) ≤ V.size := by
-    rw [hV, Nat.mul_comm H]
-    exact Nat.mul_le_mul_left _ ((Nat.mul_le_mul_right _ (by omega)).trans hpr)
-  apply Nat.mod_eq_zero_of_dvd
-  rw [chunk, Array.size_extract]
-  apply Nat.dvd_sub
-  · split
-    · rw [Nat.min_self, hV]; exact Nat.dvd_mul_left _ _
-    · rw [Nat.min_eq_left h2]; exact Nat.dvd_mul_right _ _
-  · exact Nat.dvd_mul_right _ _
-
-theorem sum_div_mul (W : Nat) (cs : List (Array F)) (hc : ∀ c ∈ cs, c.size % W = 0) :
-    (cs.map (·.size / W)).sum * W = (cs.map (·.size)).sum := by
-  induction cs with
-  | nil => simp only [List.map_nil, List.sum_nil, Nat.zero_mul]
-  | cons c cs ih =>
-    rw [List.map_cons, List.map_cons, List.sum_cons, List.sum_cons, Nat.add_mul,
-      ih fun c' h ↦ hc c' (List.mem_cons_of_mem c h),
-      Nat.div_mul_cancel (Nat.dvd_of_mod_eq_zero (hc c List.mem_cons_self))]
-
 /-! ### Rows side by side -/
 
 /-- Row `r` of matrices side by side. -/
@@ -669,51 +603,13 @@ theorem leafLayer_encode [PackedPoseidon2 p] (W H : Nat) (V : Array F) (hV : V.s
     rw [ite_eq_right_of_eq_false _ _ (eq_false (by omega)), size_encode_fields, hV,
       Nat.mul_comm H W, ← Nat.mul_assoc, Nat.mul_div_cancel_left _ (by omega)]
   simp only [hh]
-  generalize hp : (if H < 1024 then 1 else H / 512) = parts
-  have hp0 : 0 < parts := by
-    rw [← hp]
+  have hp : 0 < if H < 1024 then 1 else H / 512 := by
     split
     · omega
     · exact Nat.div_pos (by omega) (by decide)
-  have hpr : parts * (H / parts) ≤ H := Nat.mul_div_le H parts
-  generalize H / parts = rows at hpr
-  let cs := (List.range parts).map (chunk V W parts rows)
-  have hc : (Array.range parts).map (fun k ↦ (encode V).extract (4 * W * (k * rows))
-      (if k + 1 = parts then (encode V).size else 4 * W * ((k + 1) * rows))) =
-      cs.toArray.map encode := by
-    apply Array.toList_inj.mp
-    simp only [cs, Array.toList_map, Array.toList_range, List.map_toArray, List.toList_toArray,
-      List.map_map]
-    refine List.map_congr_left fun k _ ↦ ?_
-    simp only [Function.comp_apply, chunk, size_encode_fields, Nat.mul_assoc]
-    split <;> rw [extract_encode]
-  have hmem : ∀ c ∈ cs, ∃ k < parts, c = chunk V W parts rows k := by
-    intro c hc
-    obtain ⟨k, hk, rfl⟩ := List.mem_map.mp hc
-    exact ⟨k, List.mem_range.mp hk, rfl⟩
-  have hmod : ∀ c ∈ cs, c.size % W = 0 := by
-    intro c hc
-    obtain ⟨k, hk, rfl⟩ := hmem c hc
-    exact size_chunk_mod V W H parts rows k hV hk hpr
-  have hfl : cs.toArray.flatten = V := chunks_flatten V W H parts rows hV hp0 hpr
-  have hsz : ∀ c ∈ cs, 32 * c.size < USize.size := by
-    intro c hc
-    have : c.size ≤ V.size := by
-      have := Array.size_flatten (xss := cs.toArray)
-      rw [hfl, List.map_toArray, List.sum_toArray] at this
-      rw [this]
-      exact List.le_sum_of_mem (List.mem_map_of_mem hc)
-    rw [hV] at this
-    omega
-  have hsum : (cs.map (·.size / W)).sum = H := by
-    have h1 := sum_div_mul W cs hmod
-    have := Array.size_flatten (xss := cs.toArray)
-    rw [hfl, List.map_toArray, List.sum_toArray, hV, ← h1] at this
-    exact (Nat.eq_of_mul_eq_mul_right hW this).symm
-  rw [CompStark.Merkle.Packed.leavesOf_eq, hc,
-    CompStark.Merkle.Packed.leaves_encode W hW cs hmod hsz,
-    CompStark.Merkle.Packed.flatMap_chunkLeaves W cs hmod H, hsum, hfl]
-  dsimp only
+  have hHW : H ≤ H * W := Nat.le_mul_of_pos_right H hW
+  rw [CompStark.Merkle.Packed.leavesIn_encode W V H _ (by rw [hV]) hp (by rw [hV]; omega)
+    (by omega)]
   generalize hL : List.map (fun r ↦ hashF ((⟨W, H, V⟩ : Merkle.Matrix F).row r)) (List.range H) = L
   have hLl : L.length = H := by rw [← hL, List.length_map, List.length_range]
   have e := CompStark.Merkle.Packed.padDigests_flat L (Merkle.padEven H)

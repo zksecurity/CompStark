@@ -168,17 +168,15 @@ def ldePlans [Mont32BaseField p] (logN logBlowup logChunks : Nat) : List
     gen * (gen * powF (twoAdicGen qlog) c)⁻¹
   shifts.filterMap fun s ↦ (plan? logN logBlowup s).map fun P ↦ (logN, logBlowup, s, P)
 
-/-- The padded leaf digests of a matrix of width `w` given as one chunk of rows, hashed by
-parallel tasks over pieces of the rows, and their number. -/
+/-- The padded leaf digests of a matrix of width `w` given as one chunk of rows, hashed in place by
+parallel tasks over ranges of the rows, and their number. -/
 def leafLayer (p : ℕ) [Mont32Field p] [Poseidon2Field (FastField p)] [PackedPoseidon2 p]
     (w : Nat) (m : ByteArray) : ByteArray × Nat :=
   let h := if w = 0 then 0 else m.size / (4 * w)
   -- Ranges of 512 rows or more: many more tasks than threads, so that busy cores do not hold
   -- back the layer.
   let parts := if h < 1024 then 1 else h / 512
-  let rows := h / parts
-  let (first, h) := Merkle.Packed.leavesOf p w parts fun k ↦
-    m.extract (4 * w * (k * rows)) (if k + 1 = parts then m.size else 4 * w * ((k + 1) * rows))
+  let first := Merkle.Packed.leavesIn p w m h parts
   let padded := if h = 1 then 1 else h + h % 2
   (Merkle.Packed.padDigests first h padded, padded)
 

@@ -396,7 +396,7 @@ def main (args : List String) : IO UInt32 := do
       let input := write m 0 k.toUInt32
       let (ns, r) ← timeNs fun _ ↦ do
         return (read
-          (CompStark.Merkle.Packed.hashChunk KoalaBear.fieldSize input w rows) 0).toUInt64
+          (CompStark.Merkle.Packed.hashRange KoalaBear.fieldSize input w 0 rows) 0).toUInt64
       samples := samples.push ns
       if r == 12345 then IO.println ""
     let med := (samples.qsort (· < ·))[3]!
@@ -413,7 +413,7 @@ def main (args : List String) : IO UInt32 := do
       let input := chunks.modify 0 fun c ↦ write c 0 k.toUInt32
       let (ns, r) ← timeNs fun _ ↦ do
         let ts := input.map fun c ↦ Task.spawn fun _ ↦
-          CompStark.Merkle.Packed.hashChunk KoalaBear.fieldSize c w (rows / C)
+          CompStark.Merkle.Packed.hashRange KoalaBear.fieldSize c w 0 (rows / C)
         let j := CompPoly.Tasks.join ts
         return j.get.foldl (fun acc t ↦ acc + (read t 0).toUInt64) 0
       samples := samples.push ns
