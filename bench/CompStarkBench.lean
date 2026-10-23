@@ -376,6 +376,32 @@ def proveTimed (label : String)
   return 0
 
 
+open CompStark CompStark.Stark CompStark.Fri in
+/-- `openings-phase LOG_N REPS`: the fast prover's opening phases on the trace's extension of
+`keccak LOG_N`'s Keccak trace, blowup 2: per round the values at `ζ` and `ζ ω` (`openedAt`) and
+the batched reduction of the trace's extension (`reduce`); then the medians of `REPS` rounds. -/
+def openingsPhase (logN reps : Nat) : IO UInt32 := do
+  let A : Air KoalaBear.Fast.Field := CompStark.Fixtures.Keccak.air
+  let inputs := (Array.range (2 ^ logN / 24)).map fun k ↦ (Array.range 25).map fun i ↦
+    (splitMix (25 * k + i).toUInt64).2
+  let chunks := CompStark.Fixtures.Keccak.trace _root_.KoalaBear.fieldSize inputs 16
+  let B := CompStark.KoalaBear.backendFor [] 1 [(logN, A.logQuotientChunks logN)]
+  let ext := B.ldeTrace logN 1 gen A.width chunks
+  let labels := #["opened values", "reduce"]
+  let mut samples : Array (Array Nat) := labels.map fun _ ↦ #[]
+  for k in [0:reps] do
+    let zeta : _root_.KoalaBear.Fast.Ext4 := ⟨17, 19, 23, (k : KoalaBear.Fast.Field)⟩
+    let alpha : _root_.KoalaBear.Fast.Ext4 := ⟨5, 7, 11, (k : KoalaBear.Fast.Field)⟩
+    let zs := [zeta, zeta * Ext.ofBase (twoAdicGen logN)]
+    let (t0, ys) ← timeNs fun _ ↦ IO.lazyPure fun _ ↦ B.openedAt 1 ext zs
+    let (t1, red) ← timeNs fun _ ↦ IO.lazyPure fun _ ↦ B.reduce alpha [(ext, zs.zip ys)]
+    IO.println s!"opened values {t0 / 1000000} ms reduce {t1 / 1000000} ms {red.length}"
+    samples := (samples.zip #[t0, t1]).map fun (s, t) ↦ s.push t
+  for (l, s) in labels.zip samples do
+    let m := (s.qsort (· < ·))[s.size / 2]!
+    IO.println s!"lean keccak 2^{logN} {l} median {m / 1000000} ms"
+  return 0
+
 def main (args : List String) : IO UInt32 := do
   match args with
   | ["poseidon2-spec", logN] =>
@@ -531,6 +557,7 @@ def main (args : List String) : IO UInt32 := do
   | ["keccak-prove", logN] => keccakProve logN.toNat!
   | ["keccak-phases", logN] => keccakPhases logN.toNat!
   | ["phases-batch"] => phasesBatch
+  | ["openings-phase", logN, reps] => openingsPhase logN.toNat! reps.toNat!
   | ["quotient-phase", air, logN, reps] => quotientPhase air logN.toNat! reps.toNat!
   | "prove" :: backend :: air :: rest =>
     -- `prove (spec|fast) (fib|wide) LOG_N LOG_BLOWUP LOG_FINAL MAX_LOG_ARITY QUERIES COMMIT_POW

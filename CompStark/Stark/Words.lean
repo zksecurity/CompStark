@@ -340,152 +340,76 @@ place: four rows multiply-added at once, reduced once per word. -/
       (read b (o2 + k)) c2 (read b (o3 + k)) c3))
   return out
 
+/-- Sixteen words of the plane at `q` of `out` plus `a0 · b0[i0 + t] + a1 · b1[i1 + t] +
+a2 · b2[i2 + t] + a3 · b3[i3 + t]`, reduced once per word, in place. -/
+@[noinline, specialize] def mulAdd4RowsInto16 (p : ℕ) [Mont32Field p] (out : ByteArray)
+    (q : USize) (b0 b1 b2 b3 : @& ByteArray) (i0 i1 i2 i3 : USize) (a0 a1 a2 a3 : UInt32)
+    (hq : Fits out q 15) (h0 : Fits b0 i0 15) (h1 : Fits b1 i1 15) (h2 : Fits b2 i2 15)
+    (h3 : Fits b3 i3 15) : ByteArray :=
+  let y0 := add p (rd out q 0 hq)
+    (mulAdd4 p (rd b0 i0 0 h0) a0 (rd b1 i1 0 h1) a1 (rd b2 i2 0 h2) a2 (rd b3 i3 0 h3) a3)
+  let y1 := add p (rd out q 1 hq)
+    (mulAdd4 p (rd b0 i0 1 h0) a0 (rd b1 i1 1 h1) a1 (rd b2 i2 1 h2) a2 (rd b3 i3 1 h3) a3)
+  let y2 := add p (rd out q 2 hq)
+    (mulAdd4 p (rd b0 i0 2 h0) a0 (rd b1 i1 2 h1) a1 (rd b2 i2 2 h2) a2 (rd b3 i3 2 h3) a3)
+  let y3 := add p (rd out q 3 hq)
+    (mulAdd4 p (rd b0 i0 3 h0) a0 (rd b1 i1 3 h1) a1 (rd b2 i2 3 h2) a2 (rd b3 i3 3 h3) a3)
+  let y4 := add p (rd out q 4 hq)
+    (mulAdd4 p (rd b0 i0 4 h0) a0 (rd b1 i1 4 h1) a1 (rd b2 i2 4 h2) a2 (rd b3 i3 4 h3) a3)
+  let y5 := add p (rd out q 5 hq)
+    (mulAdd4 p (rd b0 i0 5 h0) a0 (rd b1 i1 5 h1) a1 (rd b2 i2 5 h2) a2 (rd b3 i3 5 h3) a3)
+  let y6 := add p (rd out q 6 hq)
+    (mulAdd4 p (rd b0 i0 6 h0) a0 (rd b1 i1 6 h1) a1 (rd b2 i2 6 h2) a2 (rd b3 i3 6 h3) a3)
+  let y7 := add p (rd out q 7 hq)
+    (mulAdd4 p (rd b0 i0 7 h0) a0 (rd b1 i1 7 h1) a1 (rd b2 i2 7 h2) a2 (rd b3 i3 7 h3) a3)
+  let y8 := add p (rd out q 8 hq)
+    (mulAdd4 p (rd b0 i0 8 h0) a0 (rd b1 i1 8 h1) a1 (rd b2 i2 8 h2) a2 (rd b3 i3 8 h3) a3)
+  let y9 := add p (rd out q 9 hq)
+    (mulAdd4 p (rd b0 i0 9 h0) a0 (rd b1 i1 9 h1) a1 (rd b2 i2 9 h2) a2 (rd b3 i3 9 h3) a3)
+  let y10 := add p (rd out q 10 hq)
+    (mulAdd4 p (rd b0 i0 10 h0) a0 (rd b1 i1 10 h1) a1 (rd b2 i2 10 h2) a2 (rd b3 i3 10 h3) a3)
+  let y11 := add p (rd out q 11 hq)
+    (mulAdd4 p (rd b0 i0 11 h0) a0 (rd b1 i1 11 h1) a1 (rd b2 i2 11 h2) a2 (rd b3 i3 11 h3) a3)
+  let y12 := add p (rd out q 12 hq)
+    (mulAdd4 p (rd b0 i0 12 h0) a0 (rd b1 i1 12 h1) a1 (rd b2 i2 12 h2) a2 (rd b3 i3 12 h3) a3)
+  let y13 := add p (rd out q 13 hq)
+    (mulAdd4 p (rd b0 i0 13 h0) a0 (rd b1 i1 13 h1) a1 (rd b2 i2 13 h2) a2 (rd b3 i3 13 h3) a3)
+  let y14 := add p (rd out q 14 hq)
+    (mulAdd4 p (rd b0 i0 14 h0) a0 (rd b1 i1 14 h1) a1 (rd b2 i2 14 h2) a2 (rd b3 i3 14 h3) a3)
+  let y15 := add p (rd out q 15 hq)
+    (mulAdd4 p (rd b0 i0 15 h0) a0 (rd b1 i1 15 h1) a1 (rd b2 i2 15 h2) a2 (rd b3 i3 15 h3) a3)
+  write16U out q y0 y1 y2 y3 y4 y5 y6 y7 y8 y9 y10 y11 y12 y13 y14 y15
+
+theorem size_mulAdd4RowsInto16 (p : ℕ) [Mont32Field p] (out : ByteArray)
+    (q : USize) (b0 b1 b2 b3 : ByteArray) (i0 i1 i2 i3 : USize) (a0 a1 a2 a3 : UInt32)
+    (hq : Fits out q 15) (h0 : Fits b0 i0 15) (h1 : Fits b1 i1 15) (h2 : Fits b2 i2 15)
+    (h3 : Fits b3 i3 15) :
+    (mulAdd4RowsInto16 p out q b0 b1 b2 b3 i0 i1 i2 i3 a0 a1 a2 a3 hq h0 h1 h2 h3).size =
+      out.size := by
+  unfold mulAdd4RowsInto16
+  exact CompPoly.CPolynomial.NTTFast.Packed.Native.size_storeWords ..
+
 /-- Sixteen words of each of the four planes at `q0, q1, q2, q3` of `out`, plane `c` added
 `ac0 · b0[i0 + t] + ac1 · b1[i1 + t] + ac2 · b2[i2 + t] + ac3 · b3[i3 + t]`, reduced once per
-word: every word of the four buffers read once for the four planes. -/
-@[noinline, specialize] def mulAdd4x4Into16 (p : ℕ) [Mont32Field p] (out : ByteArray)
+word, a plane at a time (`mulAdd4RowsInto16`). -/
+@[inline] def mulAdd4x4Into16 (p : ℕ) [Mont32Field p] (out : ByteArray)
     (q0 q1 q2 q3 : USize) (b0 b1 b2 b3 : @& ByteArray) (i0 i1 i2 i3 : USize)
     (a00 a01 a02 a03 a10 a11 a12 a13 a20 a21 a22 a23 a30 a31 a32 a33 : UInt32)
     (hq0 : Fits out q0 15) (hq1 : Fits out q1 15) (hq2 : Fits out q2 15) (hq3 : Fits out q3 15)
     (h0 : Fits b0 i0 15) (h1 : Fits b1 i1 15) (h2 : Fits b2 i2 15) (h3 : Fits b3 i3 15) :
     ByteArray :=
-  let y0_0 := add p (rd out q0 0 hq0)
-    (mulAdd4 p (rd b0 i0 0 h0) a00 (rd b1 i1 0 h1) a01 (rd b2 i2 0 h2) a02 (rd b3 i3 0 h3) a03)
-  let y0_1 := add p (rd out q0 1 hq0)
-    (mulAdd4 p (rd b0 i0 1 h0) a00 (rd b1 i1 1 h1) a01 (rd b2 i2 1 h2) a02 (rd b3 i3 1 h3) a03)
-  let y0_2 := add p (rd out q0 2 hq0)
-    (mulAdd4 p (rd b0 i0 2 h0) a00 (rd b1 i1 2 h1) a01 (rd b2 i2 2 h2) a02 (rd b3 i3 2 h3) a03)
-  let y0_3 := add p (rd out q0 3 hq0)
-    (mulAdd4 p (rd b0 i0 3 h0) a00 (rd b1 i1 3 h1) a01 (rd b2 i2 3 h2) a02 (rd b3 i3 3 h3) a03)
-  let y0_4 := add p (rd out q0 4 hq0)
-    (mulAdd4 p (rd b0 i0 4 h0) a00 (rd b1 i1 4 h1) a01 (rd b2 i2 4 h2) a02 (rd b3 i3 4 h3) a03)
-  let y0_5 := add p (rd out q0 5 hq0)
-    (mulAdd4 p (rd b0 i0 5 h0) a00 (rd b1 i1 5 h1) a01 (rd b2 i2 5 h2) a02 (rd b3 i3 5 h3) a03)
-  let y0_6 := add p (rd out q0 6 hq0)
-    (mulAdd4 p (rd b0 i0 6 h0) a00 (rd b1 i1 6 h1) a01 (rd b2 i2 6 h2) a02 (rd b3 i3 6 h3) a03)
-  let y0_7 := add p (rd out q0 7 hq0)
-    (mulAdd4 p (rd b0 i0 7 h0) a00 (rd b1 i1 7 h1) a01 (rd b2 i2 7 h2) a02 (rd b3 i3 7 h3) a03)
-  let y0_8 := add p (rd out q0 8 hq0)
-    (mulAdd4 p (rd b0 i0 8 h0) a00 (rd b1 i1 8 h1) a01 (rd b2 i2 8 h2) a02 (rd b3 i3 8 h3) a03)
-  let y0_9 := add p (rd out q0 9 hq0)
-    (mulAdd4 p (rd b0 i0 9 h0) a00 (rd b1 i1 9 h1) a01 (rd b2 i2 9 h2) a02 (rd b3 i3 9 h3) a03)
-  let y0_10 := add p (rd out q0 10 hq0)
-    (mulAdd4 p (rd b0 i0 10 h0) a00 (rd b1 i1 10 h1) a01 (rd b2 i2 10 h2) a02 (rd b3 i3 10 h3) a03)
-  let y0_11 := add p (rd out q0 11 hq0)
-    (mulAdd4 p (rd b0 i0 11 h0) a00 (rd b1 i1 11 h1) a01 (rd b2 i2 11 h2) a02 (rd b3 i3 11 h3) a03)
-  let y0_12 := add p (rd out q0 12 hq0)
-    (mulAdd4 p (rd b0 i0 12 h0) a00 (rd b1 i1 12 h1) a01 (rd b2 i2 12 h2) a02 (rd b3 i3 12 h3) a03)
-  let y0_13 := add p (rd out q0 13 hq0)
-    (mulAdd4 p (rd b0 i0 13 h0) a00 (rd b1 i1 13 h1) a01 (rd b2 i2 13 h2) a02 (rd b3 i3 13 h3) a03)
-  let y0_14 := add p (rd out q0 14 hq0)
-    (mulAdd4 p (rd b0 i0 14 h0) a00 (rd b1 i1 14 h1) a01 (rd b2 i2 14 h2) a02 (rd b3 i3 14 h3) a03)
-  let y0_15 := add p (rd out q0 15 hq0)
-    (mulAdd4 p (rd b0 i0 15 h0) a00 (rd b1 i1 15 h1) a01 (rd b2 i2 15 h2) a02 (rd b3 i3 15 h3) a03)
-  let y1_0 := add p (rd out q1 0 hq1)
-    (mulAdd4 p (rd b0 i0 0 h0) a10 (rd b1 i1 0 h1) a11 (rd b2 i2 0 h2) a12 (rd b3 i3 0 h3) a13)
-  let y1_1 := add p (rd out q1 1 hq1)
-    (mulAdd4 p (rd b0 i0 1 h0) a10 (rd b1 i1 1 h1) a11 (rd b2 i2 1 h2) a12 (rd b3 i3 1 h3) a13)
-  let y1_2 := add p (rd out q1 2 hq1)
-    (mulAdd4 p (rd b0 i0 2 h0) a10 (rd b1 i1 2 h1) a11 (rd b2 i2 2 h2) a12 (rd b3 i3 2 h3) a13)
-  let y1_3 := add p (rd out q1 3 hq1)
-    (mulAdd4 p (rd b0 i0 3 h0) a10 (rd b1 i1 3 h1) a11 (rd b2 i2 3 h2) a12 (rd b3 i3 3 h3) a13)
-  let y1_4 := add p (rd out q1 4 hq1)
-    (mulAdd4 p (rd b0 i0 4 h0) a10 (rd b1 i1 4 h1) a11 (rd b2 i2 4 h2) a12 (rd b3 i3 4 h3) a13)
-  let y1_5 := add p (rd out q1 5 hq1)
-    (mulAdd4 p (rd b0 i0 5 h0) a10 (rd b1 i1 5 h1) a11 (rd b2 i2 5 h2) a12 (rd b3 i3 5 h3) a13)
-  let y1_6 := add p (rd out q1 6 hq1)
-    (mulAdd4 p (rd b0 i0 6 h0) a10 (rd b1 i1 6 h1) a11 (rd b2 i2 6 h2) a12 (rd b3 i3 6 h3) a13)
-  let y1_7 := add p (rd out q1 7 hq1)
-    (mulAdd4 p (rd b0 i0 7 h0) a10 (rd b1 i1 7 h1) a11 (rd b2 i2 7 h2) a12 (rd b3 i3 7 h3) a13)
-  let y1_8 := add p (rd out q1 8 hq1)
-    (mulAdd4 p (rd b0 i0 8 h0) a10 (rd b1 i1 8 h1) a11 (rd b2 i2 8 h2) a12 (rd b3 i3 8 h3) a13)
-  let y1_9 := add p (rd out q1 9 hq1)
-    (mulAdd4 p (rd b0 i0 9 h0) a10 (rd b1 i1 9 h1) a11 (rd b2 i2 9 h2) a12 (rd b3 i3 9 h3) a13)
-  let y1_10 := add p (rd out q1 10 hq1)
-    (mulAdd4 p (rd b0 i0 10 h0) a10 (rd b1 i1 10 h1) a11 (rd b2 i2 10 h2) a12 (rd b3 i3 10 h3) a13)
-  let y1_11 := add p (rd out q1 11 hq1)
-    (mulAdd4 p (rd b0 i0 11 h0) a10 (rd b1 i1 11 h1) a11 (rd b2 i2 11 h2) a12 (rd b3 i3 11 h3) a13)
-  let y1_12 := add p (rd out q1 12 hq1)
-    (mulAdd4 p (rd b0 i0 12 h0) a10 (rd b1 i1 12 h1) a11 (rd b2 i2 12 h2) a12 (rd b3 i3 12 h3) a13)
-  let y1_13 := add p (rd out q1 13 hq1)
-    (mulAdd4 p (rd b0 i0 13 h0) a10 (rd b1 i1 13 h1) a11 (rd b2 i2 13 h2) a12 (rd b3 i3 13 h3) a13)
-  let y1_14 := add p (rd out q1 14 hq1)
-    (mulAdd4 p (rd b0 i0 14 h0) a10 (rd b1 i1 14 h1) a11 (rd b2 i2 14 h2) a12 (rd b3 i3 14 h3) a13)
-  let y1_15 := add p (rd out q1 15 hq1)
-    (mulAdd4 p (rd b0 i0 15 h0) a10 (rd b1 i1 15 h1) a11 (rd b2 i2 15 h2) a12 (rd b3 i3 15 h3) a13)
-  let y2_0 := add p (rd out q2 0 hq2)
-    (mulAdd4 p (rd b0 i0 0 h0) a20 (rd b1 i1 0 h1) a21 (rd b2 i2 0 h2) a22 (rd b3 i3 0 h3) a23)
-  let y2_1 := add p (rd out q2 1 hq2)
-    (mulAdd4 p (rd b0 i0 1 h0) a20 (rd b1 i1 1 h1) a21 (rd b2 i2 1 h2) a22 (rd b3 i3 1 h3) a23)
-  let y2_2 := add p (rd out q2 2 hq2)
-    (mulAdd4 p (rd b0 i0 2 h0) a20 (rd b1 i1 2 h1) a21 (rd b2 i2 2 h2) a22 (rd b3 i3 2 h3) a23)
-  let y2_3 := add p (rd out q2 3 hq2)
-    (mulAdd4 p (rd b0 i0 3 h0) a20 (rd b1 i1 3 h1) a21 (rd b2 i2 3 h2) a22 (rd b3 i3 3 h3) a23)
-  let y2_4 := add p (rd out q2 4 hq2)
-    (mulAdd4 p (rd b0 i0 4 h0) a20 (rd b1 i1 4 h1) a21 (rd b2 i2 4 h2) a22 (rd b3 i3 4 h3) a23)
-  let y2_5 := add p (rd out q2 5 hq2)
-    (mulAdd4 p (rd b0 i0 5 h0) a20 (rd b1 i1 5 h1) a21 (rd b2 i2 5 h2) a22 (rd b3 i3 5 h3) a23)
-  let y2_6 := add p (rd out q2 6 hq2)
-    (mulAdd4 p (rd b0 i0 6 h0) a20 (rd b1 i1 6 h1) a21 (rd b2 i2 6 h2) a22 (rd b3 i3 6 h3) a23)
-  let y2_7 := add p (rd out q2 7 hq2)
-    (mulAdd4 p (rd b0 i0 7 h0) a20 (rd b1 i1 7 h1) a21 (rd b2 i2 7 h2) a22 (rd b3 i3 7 h3) a23)
-  let y2_8 := add p (rd out q2 8 hq2)
-    (mulAdd4 p (rd b0 i0 8 h0) a20 (rd b1 i1 8 h1) a21 (rd b2 i2 8 h2) a22 (rd b3 i3 8 h3) a23)
-  let y2_9 := add p (rd out q2 9 hq2)
-    (mulAdd4 p (rd b0 i0 9 h0) a20 (rd b1 i1 9 h1) a21 (rd b2 i2 9 h2) a22 (rd b3 i3 9 h3) a23)
-  let y2_10 := add p (rd out q2 10 hq2)
-    (mulAdd4 p (rd b0 i0 10 h0) a20 (rd b1 i1 10 h1) a21 (rd b2 i2 10 h2) a22 (rd b3 i3 10 h3) a23)
-  let y2_11 := add p (rd out q2 11 hq2)
-    (mulAdd4 p (rd b0 i0 11 h0) a20 (rd b1 i1 11 h1) a21 (rd b2 i2 11 h2) a22 (rd b3 i3 11 h3) a23)
-  let y2_12 := add p (rd out q2 12 hq2)
-    (mulAdd4 p (rd b0 i0 12 h0) a20 (rd b1 i1 12 h1) a21 (rd b2 i2 12 h2) a22 (rd b3 i3 12 h3) a23)
-  let y2_13 := add p (rd out q2 13 hq2)
-    (mulAdd4 p (rd b0 i0 13 h0) a20 (rd b1 i1 13 h1) a21 (rd b2 i2 13 h2) a22 (rd b3 i3 13 h3) a23)
-  let y2_14 := add p (rd out q2 14 hq2)
-    (mulAdd4 p (rd b0 i0 14 h0) a20 (rd b1 i1 14 h1) a21 (rd b2 i2 14 h2) a22 (rd b3 i3 14 h3) a23)
-  let y2_15 := add p (rd out q2 15 hq2)
-    (mulAdd4 p (rd b0 i0 15 h0) a20 (rd b1 i1 15 h1) a21 (rd b2 i2 15 h2) a22 (rd b3 i3 15 h3) a23)
-  let y3_0 := add p (rd out q3 0 hq3)
-    (mulAdd4 p (rd b0 i0 0 h0) a30 (rd b1 i1 0 h1) a31 (rd b2 i2 0 h2) a32 (rd b3 i3 0 h3) a33)
-  let y3_1 := add p (rd out q3 1 hq3)
-    (mulAdd4 p (rd b0 i0 1 h0) a30 (rd b1 i1 1 h1) a31 (rd b2 i2 1 h2) a32 (rd b3 i3 1 h3) a33)
-  let y3_2 := add p (rd out q3 2 hq3)
-    (mulAdd4 p (rd b0 i0 2 h0) a30 (rd b1 i1 2 h1) a31 (rd b2 i2 2 h2) a32 (rd b3 i3 2 h3) a33)
-  let y3_3 := add p (rd out q3 3 hq3)
-    (mulAdd4 p (rd b0 i0 3 h0) a30 (rd b1 i1 3 h1) a31 (rd b2 i2 3 h2) a32 (rd b3 i3 3 h3) a33)
-  let y3_4 := add p (rd out q3 4 hq3)
-    (mulAdd4 p (rd b0 i0 4 h0) a30 (rd b1 i1 4 h1) a31 (rd b2 i2 4 h2) a32 (rd b3 i3 4 h3) a33)
-  let y3_5 := add p (rd out q3 5 hq3)
-    (mulAdd4 p (rd b0 i0 5 h0) a30 (rd b1 i1 5 h1) a31 (rd b2 i2 5 h2) a32 (rd b3 i3 5 h3) a33)
-  let y3_6 := add p (rd out q3 6 hq3)
-    (mulAdd4 p (rd b0 i0 6 h0) a30 (rd b1 i1 6 h1) a31 (rd b2 i2 6 h2) a32 (rd b3 i3 6 h3) a33)
-  let y3_7 := add p (rd out q3 7 hq3)
-    (mulAdd4 p (rd b0 i0 7 h0) a30 (rd b1 i1 7 h1) a31 (rd b2 i2 7 h2) a32 (rd b3 i3 7 h3) a33)
-  let y3_8 := add p (rd out q3 8 hq3)
-    (mulAdd4 p (rd b0 i0 8 h0) a30 (rd b1 i1 8 h1) a31 (rd b2 i2 8 h2) a32 (rd b3 i3 8 h3) a33)
-  let y3_9 := add p (rd out q3 9 hq3)
-    (mulAdd4 p (rd b0 i0 9 h0) a30 (rd b1 i1 9 h1) a31 (rd b2 i2 9 h2) a32 (rd b3 i3 9 h3) a33)
-  let y3_10 := add p (rd out q3 10 hq3)
-    (mulAdd4 p (rd b0 i0 10 h0) a30 (rd b1 i1 10 h1) a31 (rd b2 i2 10 h2) a32 (rd b3 i3 10 h3) a33)
-  let y3_11 := add p (rd out q3 11 hq3)
-    (mulAdd4 p (rd b0 i0 11 h0) a30 (rd b1 i1 11 h1) a31 (rd b2 i2 11 h2) a32 (rd b3 i3 11 h3) a33)
-  let y3_12 := add p (rd out q3 12 hq3)
-    (mulAdd4 p (rd b0 i0 12 h0) a30 (rd b1 i1 12 h1) a31 (rd b2 i2 12 h2) a32 (rd b3 i3 12 h3) a33)
-  let y3_13 := add p (rd out q3 13 hq3)
-    (mulAdd4 p (rd b0 i0 13 h0) a30 (rd b1 i1 13 h1) a31 (rd b2 i2 13 h2) a32 (rd b3 i3 13 h3) a33)
-  let y3_14 := add p (rd out q3 14 hq3)
-    (mulAdd4 p (rd b0 i0 14 h0) a30 (rd b1 i1 14 h1) a31 (rd b2 i2 14 h2) a32 (rd b3 i3 14 h3) a33)
-  let y3_15 := add p (rd out q3 15 hq3)
-    (mulAdd4 p (rd b0 i0 15 h0) a30 (rd b1 i1 15 h1) a31 (rd b2 i2 15 h2) a32 (rd b3 i3 15 h3) a33)
-  let o := write16U out q0 y0_0 y0_1 y0_2 y0_3 y0_4 y0_5 y0_6 y0_7
-    y0_8 y0_9 y0_10 y0_11 y0_12 y0_13 y0_14 y0_15
-  let o := write16U o q1 y1_0 y1_1 y1_2 y1_3 y1_4 y1_5 y1_6 y1_7
-    y1_8 y1_9 y1_10 y1_11 y1_12 y1_13 y1_14 y1_15
-  let o := write16U o q2 y2_0 y2_1 y2_2 y2_3 y2_4 y2_5 y2_6 y2_7
-    y2_8 y2_9 y2_10 y2_11 y2_12 y2_13 y2_14 y2_15
-  write16U o q3 y3_0 y3_1 y3_2 y3_3 y3_4 y3_5 y3_6 y3_7
-    y3_8 y3_9 y3_10 y3_11 y3_12 y3_13 y3_14 y3_15
-
+  let o1 := mulAdd4RowsInto16 p out q0 b0 b1 b2 b3 i0 i1 i2 i3 a00 a01 a02 a03 hq0 h0 h1 h2 h3
+  have e1 := size_mulAdd4RowsInto16 p out q0 b0 b1 b2 b3 i0 i1 i2 i3 a00 a01 a02 a03 hq0 h0 h1 h2 h3
+  let o2 := mulAdd4RowsInto16 p o1 q1 b0 b1 b2 b3 i0 i1 i2 i3 a10 a11 a12 a13
+    (CompStark.Poseidon2.Packed.Fits.of_size e1 hq1) h0 h1 h2 h3
+  have e2 := (size_mulAdd4RowsInto16 p o1 q1 b0 b1 b2 b3 i0 i1 i2 i3 a10 a11 a12 a13
+    (CompStark.Poseidon2.Packed.Fits.of_size e1 hq1) h0 h1 h2 h3).trans e1
+  let o3 := mulAdd4RowsInto16 p o2 q2 b0 b1 b2 b3 i0 i1 i2 i3 a20 a21 a22 a23
+    (CompStark.Poseidon2.Packed.Fits.of_size e2 hq2) h0 h1 h2 h3
+  have e3 := (size_mulAdd4RowsInto16 p o2 q2 b0 b1 b2 b3 i0 i1 i2 i3 a20 a21 a22 a23
+    (CompStark.Poseidon2.Packed.Fits.of_size e2 hq2) h0 h1 h2 h3).trans e2
+  mulAdd4RowsInto16 p o3 q3 b0 b1 b2 b3 i0 i1 i2 i3 a30 a31 a32 a33
+    (CompStark.Poseidon2.Packed.Fits.of_size e3 hq3) h0 h1 h2 h3
 
 /-- `out[c n + k] += ac0 · b0[o0 + k] + ac1 · b1[o1 + k] + ac2 · b2[o2 + k] + ac3 · b3[o3 + k]` for
 the four planes `c` of `n` words of `out` and `k < n`, in place: sixteen words of every plane at
