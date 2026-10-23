@@ -69,4 +69,27 @@ theorem proveBatch_fast {params : Params} {instances : List (Batch.Instance F)}
   Stark.Fast.proveBatch_fast (by rw [twoAdicity_eq]; decide) domainsAddressable encoded input
     publicValuesLength outOfDomain
 
+/-- The fast backend over KoalaBear on the Poseidon2 instances `I` (`backendFor` is it on Plonky3's
+default ones), specialized here, in the CPU-targeted library. -/
+def Instances.backendFor (I : Instances) (logBlowup : Nat) (shapes : List (Nat × Nat)) :
+    Backend F EF 24 :=
+  letI := I.field
+  letI := I.packed
+  Stark.Fast.backendFor logBlowup shapes
+
+/-- **The fast prover over KoalaBear on the Poseidon2 instances `I` is correct** (`prove_fast`). -/
+theorem Instances.prove_fast (I : Instances) {params : Params} {air : Air F} {logN : Nat}
+    {words : Array ByteArray} {trace : Array F} (publicValues : List F)
+    (encoded : Stark.Fast.RT logN air.width words trace)
+    (input : InputOk EF params air logN trace)
+    (outOfDomain : Ext.OutsideBase
+      (@outOfDomainPoint F _ I.field EF _ params air logN trace publicValues)) :
+    proveWith (I.backendFor params.logBlowup [(logN, air.logQuotientChunks logN)]) params air logN
+        words publicValues =
+      @prove F _ I.field EF _ params air logN trace publicValues :=
+  letI := I.field
+  letI := I.packed
+  Stark.Fast.prove_fast (by rw [twoAdicity_eq]; decide) domainsAddressable publicValues encoded
+    input outOfDomain
+
 end CompStark.KoalaBear
