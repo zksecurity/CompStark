@@ -16,7 +16,7 @@ nine diagonal entries of the internal matrix are those of width 16; the rest are
 
 @[expose] public section
 namespace CompStark.Poseidon2.Packed
-open CompPoly.CPolynomial.NTTFast.Packed (add sub mul)
+open CompPoly.CPolynomial.NTTFast.Packed (add sub mul reduceOnce)
 open CompPoly.CPolynomial.NTTFast.Packed.Native (readUOffset putWords size_putWords wordOffset_toNat
   encodeFields usize_numeral)
 
@@ -45,7 +45,7 @@ set_option maxHeartbeats 4000000 in
 
 set_option maxRecDepth 16384 in
 set_option maxHeartbeats 4000000 in
-/-- `mat4` on every block of four coordinates of a width-24 group. -/
+/-- `mat4` on every block of four coordinates of a width-24 group, words below `2 p`. -/
 @[noinline] def mat4x24 (b : ByteArray) (i : USize) (hb : GroupFits24 b i) :
     { x : ByteArray // x.size = b.size } :=
   p2_mat4% 24 8

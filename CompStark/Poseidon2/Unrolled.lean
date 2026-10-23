@@ -90,13 +90,15 @@ meta def store (t L : Nat) (z : String) : MacroM (Array (Ident × Term)) := do
         (by simp only [USize.reduceToNat]; decide))))
   return bs
 
-/-- `mat4` on every block of four coordinates of lane `l`, with Plonky3's addition chain except
-row 2 as `(t0123 + x2) + 2 x3`: with Plonky3's `t01233 + t23`, clang's SLP vectorizer splices lanes
-across vectors and the kernel grows by a third. -/
+/-- `mat4` on every block of four coordinates of lane `l`, its words reduced below `p` first, with
+Plonky3's addition chain except row 2 as `(t0123 + x2) + 2 x3`: with Plonky3's `t01233 + t23`,
+clang's SLP vectorizer splices lanes across vectors and the kernel grows by a third. -/
 meta def mat4Lane (t l : Nat) : MacroM (Array (Ident × Term)) := do
   let mut bs := #[]
+  for j in [0:t] do
+    bs := bs.push (v "r" j l, ← `($(name "reduceOnce") $modulus $(v "x" j l)))
   for blk in [0:t / 4] do
-    let x (k : Nat) : Term := v "x" (4 * blk + k) l
+    let x (k : Nat) : Term := v "r" (4 * blk + k) l
     let m (s : String) : Ident := name s!"m{blk}_{l}_{s}"
     bs := bs.push (m "t01", ← add (x 0) (x 1))
     bs := bs.push (m "t23", ← add (x 2) (x 3))
@@ -113,7 +115,8 @@ meta def mat4Lane (t l : Nat) : MacroM (Array (Ident × Term)) := do
     bs := bs.push (v "z" (4 * blk + 3) l, ← add (m "t01233") (m "x0x0"))
   return bs
 
-/-- `mat4` on every block of four, in place. -/
+/-- `mat4` on every block of four, in place, on words below `2 p` reduced first: the S-box
+leaves its cubes unreduced, which takes the reduction out of its multiplier-bound kernel. -/
 meta def mat4Blocks (t L : Nat) : MacroM Term := do
   let bs := (← touch) ++ (← readState t L) ++ (← interleave L (mat4Lane t)) ++ (← store t L "z")
   lets bs (← `($(name "st")))
@@ -134,7 +137,7 @@ meta def mixBlocks (t L : Nat) : MacroM Term := do
     return bs) ++ (← store t L "z")
   lets bs (← `($(name "st")))
 
-/-- The constant additions and S-boxes of a full round, in place. -/
+/-- The constant additions and S-boxes of a full round, in place, the cubes left below `2 p`. -/
 meta def sbox (t L : Nat) : MacroM Term := do
   let mut bs := (← touch)
   for j in [0:t] do
@@ -144,7 +147,7 @@ meta def sbox (t L : Nat) : MacroM Term := do
     let mut bs := #[]
     for j in [0:t] do
       bs := bs.push (v "a" j l, ← add (v "x" j l) (name s!"c{j}"))
-      bs := bs ++ (← cube (v "y" j l) (v "a" j l))
+      bs := bs.push (v "y" j l, ← `($(name "cubeLazy") $(v "a" j l)))
     return bs)
   bs := bs ++ (← store t L "y")
   lets bs (← `($(name "st")))

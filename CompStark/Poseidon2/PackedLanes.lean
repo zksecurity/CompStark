@@ -22,10 +22,10 @@ group unchanged. `Holds` threads lanes through the round loops.
 @[expose] public section
 namespace CompStark.Poseidon2.Packed
 open CompPoly.PackedRepr (encode size_encode_uint32)
-open CompPoly.CPolynomial.NTTFast.Packed (splice encode_eq_map_val size_encode_fields
+open CompPoly.CPolynomial.NTTFast.Packed (splice encode_eq_map_val size_encode_fields getD_map_val
   map_val_extract add_val sub_val mul_val)
 open CompPoly.CPolynomial.NTTFast.Packed.Native (putWords size_putWords putWords_eq readUOffset
-  readUOffset_encode wordOffset_toNat)
+  readUOffset_encode readUOffset_encodeWords wordOffset_toNat)
 open CompPoly.CPolynomial.NTTFast.Packed (Native.encodeFields_eq)
 
 variable {p : ℕ} [Montgomery.Native32.Mont32Field p]
@@ -72,12 +72,12 @@ theorem store8_encode' {n : Nat} (W : Array F) (hW : (encode W).size = n) (i k :
     x0 x1 x2 x3 x4 x5 x6 x7 h
 
 /-- Splicing in the eight words a buffer already holds leaves it unchanged. -/
-theorem splice_self8 (W : Array F) (idx : Nat) (h : idx + 8 ≤ W.size) :
+theorem splice_self8 {α : Type} [Zero α] (W : Array α) (idx : Nat) (h : idx + 8 ≤ W.size) :
     splice W idx #[W.getD idx 0, W.getD (idx + 1) 0, W.getD (idx + 2) 0, W.getD (idx + 3) 0,
       W.getD (idx + 4) 0, W.getD (idx + 5) 0, W.getD (idx + 6) 0, W.getD (idx + 7) 0] = W := by
   have hs : idx + (#[W.getD idx 0, W.getD (idx + 1) 0, W.getD (idx + 2) 0, W.getD (idx + 3) 0,
       W.getD (idx + 4) 0, W.getD (idx + 5) 0, W.getD (idx + 6) 0, W.getD (idx + 7) 0] :
-        Array F).size ≤ W.size := by
+        Array α).size ≤ W.size := by
     simp only [List.size_toArray, List.length_cons, List.length_nil]; omega
   have key (k : Nat) : (splice W idx #[W.getD idx 0, W.getD (idx + 1) 0, W.getD (idx + 2) 0,
       W.getD (idx + 3) 0, W.getD (idx + 4) 0, W.getD (idx + 5) 0, W.getD (idx + 6) 0,
@@ -110,15 +110,46 @@ theorem touch8_encode (W : Array F) (i : USize) (h) :
   simp only [USize.toNat_zero, Nat.add_zero]
   rw [splice_self8 W i.toNat (by omega)]
 
+/-- Eight words stored at word `i + k` of a packed word array splice them in. -/
+theorem store8_encodeWords {n : Nat} (U : Array UInt32) (hU : (encode U).size = n) (i k : USize)
+    (hk : 4 * (i.toNat + k.toNat) + 3 < USize.size) (hi : 4 * (i.toNat + k.toNat + 8) ≤ n)
+    (v0 v1 v2 v3 v4 v5 v6 v7 : UInt32) (h) :
+    store8 ⟨encode U, hU⟩ i k v0 v1 v2 v3 v4 v5 v6 v7 h =
+      ⟨encode (splice U (i.toNat + k.toNat) #[v0, v1, v2, v3, v4, v5, v6, v7]), by
+        rw [← hU, size_encode_uint32, size_encode_uint32,
+          CompPoly.CPolynomial.NTTFast.Packed.size_splice _ _ _ (by
+            rw [← hU, size_encode_uint32] at hi
+            simp only [List.size_toArray, List.length_cons, List.length_nil]
+            omega)]⟩ := by
+  apply Subtype.ext
+  subst hU
+  dsimp only [store8]
+  rw [putWords_eq _ _ 8 (by decide), wordOffset_toNat i k hk,
+    CompPoly.PackedRepr.replaceAt_encode_uint32]
+  rfl
+
+/-- Writing words `i, …, i + 7` of a packed word array back unchanged leaves it unchanged. -/
+theorem touch8_encodeWords (U : Array UInt32) (i : USize) (h) :
+    touch8 (encode U) i h = ⟨encode U, rfl⟩ := by
+  have hs := h
+  simp only [Fits, size_encode_uint32] at hs
+  unfold touch8
+  simp only [readUOffset_encodeWords, USize.toNat_zero, Nat.add_zero, USize.reduceToNat]
+  rw [store8_encodeWords U rfl i 0 (by simp only [USize.toNat_zero]; omega)
+    (by simp only [USize.toNat_zero, size_encode_uint32]; omega)]
+  apply Subtype.ext
+  simp only [USize.toNat_zero, Nat.add_zero]
+  rw [splice_self8 U i.toNat (by omega)]
+
 /-- Eight values of a function, as an array literal. -/
 def lit8 {α : Type} (f : Nat → α) : Array α := #[f 0, f 1, f 2, f 3, f 4, f 5, f 6, f 7]
 
 /-- Coordinate `j` of lane `l` of the eight states at `i`. -/
-abbrev word (W : Array F) (i j l : Nat) : F := W.getD (i + (8 * j + l)) 0
+abbrev word {α : Type} [Zero α] (W : Array α) (i j l : Nat) : α := W.getD (i + (8 * j + l)) 0
 
 /-- Row `j` of the eight states at `i` replaced by `g j 0, …, g j 7`, for every coordinate `j` of
 `cs`. Every kernel computes such a replacement, with `g` reading only the input. -/
-def spliceRows (cs : List Nat) (W : Array F) (i : Nat) (g : Nat → Nat → F) : Array F :=
+def spliceRows {α : Type} (cs : List Nat) (W : Array α) (i : Nat) (g : Nat → Nat → α) : Array α :=
   cs.foldl (fun A j ↦ splice A (i + 8 * j) (lit8 (g j))) W
 
 /-- Lane `l` of the eight states of width `t` at `i`: coordinate `j` is word `i + 8 j + l`. -/
@@ -137,8 +168,8 @@ theorem coords16_spec : Coords 16 coords16 :=
 
 /-- A fold of row splices: word `(j, l)` holds `g j l` once row `j` is spliced, and the words
 outside the group are unchanged. -/
-theorem foldl_splice_rows (t : Nat) (g : Nat → Nat → F) (i : Nat) (L : List Nat)
-    (hL : ∀ j ∈ L, j < t) : ∀ W : Array F, i + 8 * t ≤ W.size →
+theorem foldl_splice_rows {α : Type} [Zero α] (t : Nat) (g : Nat → Nat → α) (i : Nat)
+    (L : List Nat) (hL : ∀ j ∈ L, j < t) : ∀ W : Array α, i + 8 * t ≤ W.size →
       (L.foldl (fun A j ↦ splice A (i + 8 * j) (lit8 (g j))) W).size = W.size ∧
       (∀ j < t, ∀ l < 8, (L.foldl (fun A j ↦ splice A (i + 8 * j) (lit8 (g j))) W).getD
         (i + (8 * j + l)) 0 = if j ∈ L then g j l else W.getD (i + (8 * j + l)) 0) ∧
@@ -176,13 +207,14 @@ variable {t : Nat} {cs : List Nat} (hc : Coords t cs)
 include hc
 
 /-- A row splice keeps the size. -/
-theorem size_spliceRows (W : Array F) (i : Nat) (g : Nat → Nat → F) (hW : i + 8 * t ≤ W.size) :
-    (spliceRows cs W i g).size = W.size :=
+theorem size_spliceRows {α : Type} [Zero α] (W : Array α) (i : Nat) (g : Nat → Nat → α)
+    (hW : i + 8 * t ≤ W.size) : (spliceRows cs W i g).size = W.size :=
   (foldl_splice_rows t g i cs hc.lt W hW).1
 
 /-- After a row splice, word `(j, l)` is `g j l`. -/
-theorem word_spliceRows (W : Array F) (i : Nat) (g : Nat → Nat → F) (hW : i + 8 * t ≤ W.size)
-    (j : Nat) (hj : j < t) (l : Nat) (hl : l < 8) : word (spliceRows cs W i g) i j l = g j l := by
+theorem word_spliceRows {α : Type} [Zero α] (W : Array α) (i : Nat) (g : Nat → Nat → α)
+    (hW : i + 8 * t ≤ W.size) (j : Nat) (hj : j < t) (l : Nat) (hl : l < 8) :
+    word (spliceRows cs W i g) i j l = g j l := by
   rw [word, spliceRows, (foldl_splice_rows t g i cs hc.lt W hW).2.1 j hj l hl,
     ite_eq_left_of_eq_true _ _ (eq_true (hc.mem j hj))]
 
@@ -195,10 +227,60 @@ theorem lane_spliceRows (W : Array F) (i : Nat) (g : Nat → Nat → F) (hW : i 
   exact word_spliceRows hc W i g hW j hj l hl
 
 /-- A row splice leaves the words outside the group unchanged. -/
-theorem getD_spliceRows_outside (W : Array F) (i : Nat) (g : Nat → Nat → F)
-    (hW : i + 8 * t ≤ W.size) (k : Nat) (hk : k < i ∨ i + 8 * t ≤ k) :
+theorem getD_spliceRows_outside {α : Type} [Zero α] (W : Array α) (i : Nat)
+    (g : Nat → Nat → α) (hW : i + 8 * t ≤ W.size) (k : Nat) (hk : k < i ∨ i + 8 * t ≤ k) :
     (spliceRows cs W i g).getD k 0 = W.getD k 0 :=
   (foldl_splice_rows t g i cs hc.lt W hW).2.2 k hk
+
+/-- Row splices with functions that agree on the group are equal. -/
+theorem spliceRows_congr {α : Type} (W : Array α) (i : Nat) (g g' : Nat → Nat → α)
+    (h : ∀ j < t, ∀ l < 8, g j l = g' j l) : spliceRows cs W i g = spliceRows cs W i g' := by
+  unfold spliceRows
+  have key : ∀ L : List Nat, (∀ j ∈ L, j < t) → ∀ A : Array α,
+      L.foldl (fun A j ↦ splice A (i + 8 * j) (lit8 (g j))) A =
+        L.foldl (fun A j ↦ splice A (i + 8 * j) (lit8 (g' j))) A := by
+    intro L
+    induction L with
+    | nil => intro _ A; simp only [List.foldl_nil]
+    | cons a L ih =>
+      intro hL A
+      have ha := hL a List.mem_cons_self
+      have e : lit8 (g a) = lit8 (g' a) := by
+        unfold lit8
+        rw [h a ha 0 (by decide), h a ha 1 (by decide), h a ha 2 (by decide),
+          h a ha 3 (by decide), h a ha 4 (by decide), h a ha 5 (by decide),
+          h a ha 6 (by decide), h a ha 7 (by decide)]
+      rw [List.foldl_cons, List.foldl_cons, e]
+      exact ih (fun j hj ↦ hL j (List.mem_cons_of_mem a hj)) _
+  exact key cs hc.lt W
+
+/-- A row splice of words is the encoding of the row splice of field elements whose words they
+are, if the arrays agree outside the group. -/
+theorem encode_spliceRows_val (U : Array UInt32) (V : Array F) (i : Nat) (g : Nat → Nat → F)
+    (hsz : U.size = V.size) (hW : i + 8 * t ≤ V.size)
+    (hout : ∀ k, (k < i ∨ i + 8 * t ≤ k) → U.getD k 0 = (V.getD k 0).val) :
+    encode (spliceRows cs U i fun j l ↦ (g j l).val) = encode (spliceRows cs V i g) := by
+  rw [encode_eq_map_val (spliceRows cs V i g)]
+  congr 1
+  have hU : i + 8 * t ≤ U.size := by omega
+  have key (k : Nat) : (spliceRows cs U i fun j l ↦ (g j l).val).getD k 0 =
+      ((spliceRows cs V i g).map Subtype.val).getD k 0 := by
+    rw [getD_map_val]
+    by_cases hk : k < i ∨ i + 8 * t ≤ k
+    · rw [getD_spliceRows_outside hc _ _ _ hU k hk, getD_spliceRows_outside hc _ _ _ hW k hk,
+        hout k hk]
+    · obtain ⟨j, l, hj, hl, rfl⟩ : ∃ j l, j < t ∧ l < 8 ∧ k = i + (8 * j + l) :=
+        ⟨(k - i) / 8, (k - i) % 8, by omega, by omega, by omega⟩
+      have e1 := word_spliceRows hc U i (fun j l ↦ (g j l).val) hU j hj l hl
+      have e2 := word_spliceRows hc V i g hW j hj l hl
+      simp only [word] at e1 e2
+      rw [e1, e2]
+  apply Array.ext (by
+    rw [size_spliceRows hc _ _ _ hU, Array.size_map, size_spliceRows hc _ _ _ hW, hsz])
+  intro k h1 h2
+  have e := key k
+  simp only [Array.getD, h1, h2, dite_true] at e
+  exact e
 
 end Rows
 

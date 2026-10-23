@@ -18,7 +18,7 @@ is eight-lane straight-line code that the C compiler vectorizes.
 
 @[expose] public section
 namespace CompStark.Poseidon2.Packed
-open CompPoly.CPolynomial.NTTFast.Packed (add sub mul)
+open CompPoly.CPolynomial.NTTFast.Packed (add sub mul reduceOnce)
 open CompPoly.CPolynomial.NTTFast.Packed.Native (readUOffset putWords size_putWords wordOffset_toNat
   encodeFields usize_numeral)
 
@@ -88,7 +88,8 @@ set_option maxHeartbeats 4000000 in
   p2_sbox% 16 8
 
 set_option maxRecDepth 16384 in
-/-- `mat4` on every block of four coordinates of the eight states at `i`. -/
+set_option maxHeartbeats 4000000 in
+/-- `mat4` on every block of four coordinates of the eight states at `i`, words below `2 p`. -/
 @[noinline] def mat4x16 (b : ByteArray) (i : USize) (hb : GroupFits b i) :
     { x : ByteArray // x.size = b.size } :=
   p2_mat4% 16 8

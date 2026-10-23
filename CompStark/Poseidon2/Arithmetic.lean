@@ -30,6 +30,10 @@ result is `x_hi - 127 · 2 ^ (24 - n) · x_lo`, which lies in `(-p, p)`; a wrapp
   let z := x.toUInt64 * y.toUInt64
   ((z + (z.toUInt32 * 0x7effffff).toUInt64 * 0x7f000001) >>> 32).toUInt32
 
+/-- `x ^ 3` of a canonical word, both products left unreduced: below `2 p`. -/
+@[inline] def cubeLazy (x : UInt32) : UInt32 :=
+  mulLazy (mulLazy x x) x
+
 /-- `u < 2 p` reduced below `p`: `p` is added back to `u - p` under the mask of its sign bit, which
 the vectorizer keeps in 32-bit lanes where an unsigned minimum after a product moves to 64-bit
 ones. -/

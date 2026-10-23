@@ -237,4 +237,24 @@ theorem cube_val (a : F) : mulSign (mulLazy a.val a.val) a.val = (a * a * a).val
   rw [Nat.mod_eq_of_lt (by omega), Nat.cast_mul, hqc, Nat.cast_mul, val_toNat_cast a]
   field_simp
 
+/-- The unreduced cube of a canonical word is below `2 p`. -/
+theorem cubeLazy_lt (a : F) : (cubeLazy a.val).toNat < 2 * 2130706433 := by
+  have ha : a.val.toNat < 2130706433 := a.property
+  obtain ⟨hq, -⟩ := mulLazy_toNat a.val a.val (by nlinarith)
+  exact (mulLazy_toNat (mulLazy a.val a.val) a.val (by nlinarith)).1
+
+/-- Reducing the unreduced cube of a canonical word once gives the field cube. -/
+theorem reduceOnce_cubeLazy (a : F) :
+    CompPoly.CPolynomial.NTTFast.Packed.reduceOnce KoalaBear.fieldSize (cubeLazy a.val) =
+      (a * a * a).val := by
+  rw [← cube_val, mulSign, show mulLazy (mulLazy a.val a.val) a.val = cubeLazy a.val from rfl,
+    reduceSign_eq _ (cubeLazy_lt a), CompPoly.CPolynomial.NTTFast.Packed.reduceOnce_eq]
+  rfl
+
+/-- Reducing a canonical word once leaves it. -/
+theorem reduceOnce_val (x : F) :
+    CompPoly.CPolynomial.NTTFast.Packed.reduceOnce KoalaBear.fieldSize x.val = x.val := by
+  rw [CompPoly.CPolynomial.NTTFast.Packed.reduceOnce_eq]
+  exact ite_eq_left x.property
+
 end CompStark.Poseidon2

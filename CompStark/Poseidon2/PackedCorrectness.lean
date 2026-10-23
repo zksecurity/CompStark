@@ -19,10 +19,13 @@ specification; the round loops thread `Holds` through them (`permute16_spec`), a
 
 @[expose] public section
 namespace CompStark.Poseidon2.Packed
-open CompPoly.PackedRepr (encode)
+open CompPoly.PackedRepr (encode size_encode_uint32)
 open CompPoly.CPolynomial.NTTFast.Packed (size_encode_fields add_val sub_val
   Native.encodeFields_eq)
-open CompPoly.CPolynomial.NTTFast.Packed.Native (readUOffset_encode usize_numeral)
+open CompPoly.CPolynomial.NTTFast.Packed.Native (readUOffset_encode readUOffset_encodeWords
+  usize_numeral)
+open CompPoly.CPolynomial.NTTFast.Packed (ofWord ofWord_val reduceOnce encode_eq_map_val
+  getD_map_val)
 
 local notation "F" => KoalaBear.Fast.Field
 
@@ -53,33 +56,148 @@ def partialRows16 (c : F) (W : Array F) (i : Nat) : List (Nat → F) :=
 def partialModel16 (c : F) (W : Array F) (i : Nat) : Array F :=
   spliceList coords16 W i (partialRows16 c W i)
 
+/-- A word below `2 p` reduced once, as a field element. -/
+def red (u : UInt32) : F := ofWord _ (reduceOnce KoalaBear.fieldSize u)
+
+theorem reduceOnce_eq_red (u : UInt32) (h : u.toNat < 2 * 2130706433) :
+    reduceOnce KoalaBear.fieldSize u = (red u).val := by
+  have hp : (reduceOnce KoalaBear.fieldSize u).toNat < KoalaBear.fieldSize := by
+    rw [CompPoly.CPolynomial.NTTFast.Packed.reduceOnce_eq]
+    split <;> rename_i hu
+    · exact hu
+    · simp only [UInt32.lt_iff_toNat_lt] at hu
+      have : (Montgomery.Native32.Mont32Field.modulus32
+        (modulus := KoalaBear.fieldSize)).toNat = 2130706433 := rfl
+      rw [UInt32.toNat_sub_of_le _ _ (by rw [UInt32.le_iff_toNat_le]; omega)]
+      change _ < 2130706433
+      omega
+  simp only [red, ofWord, hp, ↓reduceDIte]
+
+/-- The words of the S-box kernel: the cubes of the group, below `2 p`, and the other words. -/
+def sboxWords (cs : List Nat) (rc W : Array F) (r i : Nat) : Array UInt32 :=
+  spliceRows cs (W.map Subtype.val) i fun j l ↦ cubeLazy (word W i j l + rc.getD (r + j) 0).val
+
+/-- A packed field array, as the words of its encoding. -/
+theorem touch8_encode_words (W : Array F) (i : USize) (h) :
+    touch8 (encode W) i h = ⟨encode (W.map Subtype.val), by rw [← encode_eq_map_val]⟩ := by
+  rw [touch8_encode]
+  apply Subtype.ext
+  exact encode_eq_map_val W
+
 /-! ### Kernels -/
 
 set_option maxRecDepth 65536 in
 set_option maxHeartbeats 4000000 in
 theorem sbox16_encode (rc W : Array F) (r i : USize) (hb) (hr) :
     (sbox16 (encode rc) r (encode W) i hb hr).1 =
-      encode (sboxModel coords16 rc W r.toNat i.toNat) := by
+      encode (sboxWords coords16 rc W r.toNat i.toNat) := by
   have hs := hb
   simp only [GroupFits, Fits, size_encode_fields] at hs
   unfold sbox16
-  simp only [touch8_encode, readUOffset_encode, add_val, cube_val, USize.reduceToNat]
-  simp (disch := (simp only [USize.reduceToNat, size_encode_fields]; omega)) only [store8_encode']
-  simp only [USize.reduceToNat, sboxModel, spliceRows, word, coords16, lit8, List.foldl_cons,
+  simp only [touch8_encode_words, readUOffset_encodeWords, getD_map_val, readUOffset_encode,
+    add_val, USize.reduceToNat]
+  simp (disch := (simp only [USize.reduceToNat, size_encode_uint32, Array.size_map]; omega)) only
+    [store8_encodeWords]
+  simp only [USize.reduceToNat, sboxWords, spliceRows, word, coords16, lit8, List.foldl_cons,
     List.foldl_nil, Nat.reduceMul, Nat.reduceAdd, Nat.add_zero]
+
+/-- The words `mat4` writes on a group of words below `2 p`. -/
+def mat4Words (cs : List Nat) (U : Array UInt32) (i : Nat) : Array UInt32 :=
+  spliceRows cs U i fun j l ↦
+    (mat4Word (red (word U i (4 * (j / 4)) l)) (red (word U i (4 * (j / 4) + 1) l))
+      (red (word U i (4 * (j / 4) + 2) l)) (red (word U i (4 * (j / 4) + 3) l)) (j % 4)).val
 
 set_option maxRecDepth 65536 in
 set_option maxHeartbeats 4000000 in
-theorem mat4x16_encode (W : Array F) (i : USize) (hb) :
-    (mat4x16 (encode W) i hb).1 = encode (mat4Model coords16 W i.toNat) := by
+theorem mat4x16_encodeWords (U : Array UInt32) (i : USize) (hb)
+    (hU : ∀ k, (U.getD k 0).toNat < 2 * 2130706433) :
+    (mat4x16 (encode U) i hb).1 = encode (mat4Words coords16 U i.toNat) := by
   have hs := hb
-  simp only [GroupFits, Fits, size_encode_fields] at hs
+  simp only [GroupFits, Fits, size_encode_uint32] at hs
   unfold mat4x16
-  simp only [touch8_encode, readUOffset_encode, add_val, USize.reduceToNat]
-  simp (disch := (simp only [USize.reduceToNat, size_encode_fields]; omega)) only [store8_encode']
-  simp only [USize.reduceToNat, mat4Model, spliceRows, word, coords16, lit8, List.foldl_cons,
+  simp only [touch8_encodeWords, readUOffset_encodeWords, USize.reduceToNat]
+  simp (disch := exact hU _) only [reduceOnce_eq_red]
+  simp only [add_val]
+  simp (disch := (simp only [USize.reduceToNat, size_encode_uint32]; omega)) only
+    [store8_encodeWords]
+  simp only [USize.reduceToNat, mat4Words, spliceRows, word, coords16, lit8, List.foldl_cons,
     List.foldl_nil, Nat.reduceMul, Nat.reduceAdd, Nat.reduceDiv, Nat.reduceMod, Nat.add_zero,
     mat4Word]
+
+/-- A canonical word reduced once is its field element. -/
+theorem red_val (x : F) : red x.val = x := by
+  rw [red, reduceOnce_val, ofWord_val]
+
+/-- The words of a packed field array are below `2 p`. -/
+theorem map_val_lt (W : Array F) (k : Nat) :
+    ((W.map Subtype.val).getD k 0).toNat < 2 * 2130706433 := by
+  rw [getD_map_val]
+  have := (W.getD k 0).property
+  change _ < 2130706433 at this
+  omega
+
+/-- The words of a packed field array reduced are its elements. -/
+theorem red_word_map (W : Array F) (i j l : Nat) :
+    red (word (W.map Subtype.val) i j l) = word W i j l := by
+  rw [word, getD_map_val, red_val]
+
+section Words
+variable {t : Nat} {cs : List Nat} (hc : Coords t cs)
+include hc
+
+/-- The S-box words are below `2 p`. -/
+theorem sboxWords_lt (rc W : Array F) (r i : Nat) (hW : i + 8 * t ≤ W.size) (k : Nat) :
+    ((sboxWords cs rc W r i).getD k 0).toNat < 2 * 2130706433 := by
+  have hW' : i + 8 * t ≤ (W.map Subtype.val).size := by rw [Array.size_map]; exact hW
+  by_cases hk : k < i ∨ i + 8 * t ≤ k
+  · rw [sboxWords, getD_spliceRows_outside hc _ _ _ hW' k hk]
+    exact map_val_lt W k
+  · obtain ⟨j, l, hj, hl, rfl⟩ : ∃ j l, j < t ∧ l < 8 ∧ k = i + (8 * j + l) :=
+      ⟨(k - i) / 8, (k - i) % 8, by omega, by omega, by omega⟩
+    have e := word_spliceRows hc (W.map Subtype.val) i
+      (fun j l ↦ cubeLazy (word W i j l + rc.getD (r + j) 0).val) hW' j hj l hl
+    simp only [word] at e
+    rw [sboxWords, e]
+    exact cubeLazy_lt _
+
+/-- The S-box words reduced are the S-box model. -/
+theorem red_word_sboxWords (rc W : Array F) (r i : Nat) (hW : i + 8 * t ≤ W.size) (j : Nat)
+    (hj : j < t) (l : Nat) (hl : l < 8) :
+    red (word (sboxWords cs rc W r i) i j l) = word (sboxModel cs rc W r i) i j l := by
+  have hW' : i + 8 * t ≤ (W.map Subtype.val).size := by rw [Array.size_map]; exact hW
+  rw [sboxWords, word_spliceRows hc _ _ _ hW' j hj l hl, sboxModel,
+    word_spliceRows hc _ _ _ hW j hj l hl, red, reduceOnce_cubeLazy, ofWord_val]
+
+end Words
+
+/-- `mat4` on the S-box words is `mat4` on the S-box model. -/
+theorem encode_mat4Words_sbox16 (rc W : Array F) (r i : Nat) (hW : i + 8 * 16 ≤ W.size) :
+    encode (mat4Words coords16 (sboxWords coords16 rc W r i) i) =
+      encode (mat4Model coords16 (sboxModel coords16 rc W r i) i) := by
+  have hc := coords16_spec
+  have hW' : i + 8 * 16 ≤ (W.map Subtype.val).size := by rw [Array.size_map]; exact hW
+  have hs1 : (sboxWords coords16 rc W r i).size = (sboxModel coords16 rc W r i).size := by
+    rw [sboxWords, size_spliceRows hc _ _ _ hW', sboxModel, size_spliceRows hc _ _ _ hW,
+      Array.size_map]
+  have hs2 : i + 8 * 16 ≤ (sboxModel coords16 rc W r i).size := by
+    rw [sboxModel, size_spliceRows hc _ _ _ hW]; exact hW
+  rw [mat4Words, mat4Model, encode_spliceRows_val hc _ _ _ _ hs1 hs2 fun k hk ↦ by
+    rw [sboxWords, getD_spliceRows_outside hc _ _ _ hW' k hk, getD_map_val, sboxModel,
+      getD_spliceRows_outside hc _ _ _ hW k hk]]
+  exact congrArg encode (spliceRows_congr hc _ _ _ _ fun j hj l hl ↦ by
+    rw [red_word_sboxWords hc rc W r i hW _ (by omega) l hl,
+      red_word_sboxWords hc rc W r i hW _ (by omega) l hl,
+      red_word_sboxWords hc rc W r i hW _ (by omega) l hl,
+      red_word_sboxWords hc rc W r i hW _ (by omega) l hl])
+
+/-- `mat4` on the words of a packed field array is `mat4` on the array. -/
+theorem encode_mat4Words_map16 (W : Array F) (i : Nat) (hW : i + 8 * 16 ≤ W.size) :
+    encode (mat4Words coords16 (W.map Subtype.val) i) = encode (mat4Model coords16 W i) := by
+  have hc := coords16_spec
+  rw [mat4Words, mat4Model, encode_spliceRows_val hc _ _ _ _ (Array.size_map ..) hW
+    fun k _ ↦ getD_map_val W k]
+  exact congrArg encode (spliceRows_congr hc _ _ _ _ fun j _ l _ ↦ by
+    rw [red_word_map, red_word_map, red_word_map, red_word_map])
 
 set_option maxRecDepth 65536 in
 set_option maxHeartbeats 4000000 in
@@ -187,30 +305,46 @@ theorem le_of_room16 {n : Nat} (W : Array F) (i : USize) (hn : (encode W).size =
   rw [size_encode_fields] at hn
   omega
 
+/-- `mat4` then the block-sum mixing on a group that holds `S` holds the external matrix of it. -/
+theorem holds_external16 (W0 X : Array F) (i : Nat) (S : Nat → Vector F 16)
+    (h : Holds 16 W0 i S X) (hX : i + 8 * 16 ≤ X.size) :
+    Holds 16 W0 i (fun l ↦ externalLinear (S l))
+      (mixModel coords16 [4, 8, 12] (mat4Model coords16 X i) i) := by
+  have hs1 : (mat4Model coords16 X i).size = X.size := by
+    rw [mat4Model, size_spliceRows coords16_spec _ _ _ hX]
+  have hX1 : i + 8 * 16 ≤ (mat4Model coords16 X i).size := by rw [hs1]; exact hX
+  refine ⟨?_, fun l hl ↦ by rw [lane_mix_mat4_16 X i hX l hl, h.2.1 l hl], fun k hk ↦ ?_⟩
+  · rw [mixModel, size_spliceRows coords16_spec _ _ _ hX1, hs1, h.1]
+  · rw [mixModel, getD_spliceRows_outside coords16_spec _ _ _ hX1 k hk, mat4Model,
+      getD_spliceRows_outside coords16_spec _ _ _ hX k hk, h.2.2 k hk]
+
+/-- The external matrix on words below `2 p` whose `mat4` is `mat4` on `X`. -/
+theorem external16_words {n : Nat} (U : Array UInt32) (X : Array F) (i : USize)
+    (hr : Room16 n i) (hU : ∀ k, (U.getD k 0).toNat < 2 * 2130706433)
+    (hM : encode (mat4Words coords16 U i.toNat) = encode (mat4Model coords16 X i.toNat))
+    (s : Buf n) (hs : s.1 = encode U) :
+    (external16 s i hr).1 =
+      encode (mixModel coords16 [4, 8, 12] (mat4Model coords16 X i.toNat) i.toNat) := by
+  obtain ⟨b, hb⟩ := s
+  dsimp only at hs
+  subst hs
+  obtain ⟨hb1, e⟩ := Buf.val_eq (s := Buf.of ⟨encode U, hb⟩
+      (mat4x16 (encode U) i (hr.fits ⟨encode U, hb⟩)))
+      ((Buf.of_val _ _).trans ((mat4x16_encodeWords U i _ hU).trans hM))
+  unfold external16
+  dsimp only
+  rw [e, Buf.of_val]
+  exact mix16_encode _ i _
+
 /-- The external matrix on a group that holds `S`. -/
 theorem external16_holds {n : Nat} (W0 W : Array F) (i : USize) (S : Nat → Vector F 16)
     (h : Holds 16 W0 i.toNat S W) (hr : Room16 n i) (s : Buf n) (hs : s.1 = encode W) :
     ∃ W', (external16 s i hr).1 = encode W' ∧
       Holds 16 W0 i.toNat (fun l ↦ externalLinear (S l)) W' := by
-  obtain ⟨b, hb⟩ := s
-  dsimp only at hs
-  subst hs
-  have hW := le_of_room16 W i hb hr
-  have hs1 : (mat4Model coords16 W i.toNat).size = W.size := by
-    rw [mat4Model, size_spliceRows coords16_spec _ _ _ hW]
-  refine ⟨mixModel coords16 [4, 8, 12] (mat4Model coords16 W i.toNat) i.toNat, ?_, ?_⟩
-  · obtain ⟨hb1, e⟩ := Buf.val_eq (s := Buf.of ⟨encode W, hb⟩
-      (mat4x16 (encode W) i (hr.fits ⟨encode W, hb⟩)))
-      ((Buf.of_val _ _).trans (mat4x16_encode W i _))
-    unfold external16
-    dsimp only
-    rw [e, Buf.of_val]
-    exact mix16_encode _ i _
-  · have hW1 : i.toNat + 8 * 16 ≤ (mat4Model coords16 W i.toNat).size := by rw [hs1]; exact hW
-    refine ⟨?_, fun l hl ↦ by rw [lane_mix_mat4_16 W i.toNat hW l hl, h.2.1 l hl], fun k hk ↦ ?_⟩
-    · rw [mixModel, size_spliceRows coords16_spec _ _ _ hW1, hs1, h.1]
-    · rw [mixModel, getD_spliceRows_outside coords16_spec _ _ _ hW1 k hk, mat4Model,
-        getD_spliceRows_outside coords16_spec _ _ _ hW k hk, h.2.2 k hk]
+  have hW := le_of_room16 W i (hs ▸ s.2) hr
+  exact ⟨_, external16_words (W.map Subtype.val) W i hr (map_val_lt W)
+    (encode_mat4Words_map16 W i.toNat hW) s (hs.trans (encode_eq_map_val W)),
+    holds_external16 W0 W i.toNat S h hW⟩
 
 theorem toNat_sixteen_mul (k : USize) (hk : k < 4) : (16 * k).toNat = 16 * k.toNat := by
   have hk' := lt_four_toNat hk
@@ -257,10 +391,16 @@ theorem fullRoundsGo_holds {n : Nat} (P : Params F 16) (hd : P.degree = 3) (rcW 
       ⟨by rw [hsz, h.1], fun l hl ↦ by rw [lane_sbox coords16_spec _ _ _ _ hW l hl, h.2.1 l hl],
         fun k' hk' ↦ by
           rw [sboxModel, getD_spliceRows_outside coords16_spec _ _ _ hW k' hk', h.2.2 k' hk']⟩
-    obtain ⟨W2, e2, h2⟩ := external16_holds W0 _ i _ hsb hr
+    have hsz' : i.toNat + 8 * 16 ≤ (sboxModel coords16 rcW W (16 * k.toNat) i.toNat).size := by
+      rw [hsz]; exact hW
+    have e2 := external16_words (sboxWords coords16 rcW W (16 * k.toNat) i.toNat)
+      (sboxModel coords16 rcW W (16 * k.toNat) i.toNat) i hr
+      (sboxWords_lt coords16_spec rcW W _ _ hW)
+      (encode_mat4Words_sbox16 rcW W _ _ hW)
       (Buf.of ⟨encode W, hb⟩ (sbox16 (encode rcW) (16 * k) (encode W) i (hr.fits ⟨encode W, hb⟩)
         (hrc.fits k hk))) (by rw [Buf.of_val, sbox16_encode, e16])
-    obtain ⟨W3, e3, h3⟩ := ih (k + 1) (by rw [toNat_succ_of_lt_four k hk]; omega) W2 _ h2 _ e2
+    have h2 := holds_external16 W0 _ i.toNat _ hsb hsz'
+    obtain ⟨W3, e3, h3⟩ := ih (k + 1) (by rw [toNat_succ_of_lt_four k hk]; omega) _ _ h2 _ e2
     refine ⟨W3, ?_, ?_⟩
     · rw [fullRoundsGo, dite_eq_left hk]
       exact e3

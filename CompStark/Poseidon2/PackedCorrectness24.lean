@@ -21,10 +21,13 @@ specification; the round loops thread `Holds` through them (`permute24_spec`), a
 
 @[expose] public section
 namespace CompStark.Poseidon2.Packed
-open CompPoly.PackedRepr (encode)
+open CompPoly.PackedRepr (encode size_encode_uint32)
 open CompPoly.CPolynomial.NTTFast.Packed (size_encode_fields add_val sub_val
   Native.encodeFields_eq)
-open CompPoly.CPolynomial.NTTFast.Packed.Native (readUOffset_encode usize_numeral)
+open CompPoly.CPolynomial.NTTFast.Packed.Native (readUOffset_encode readUOffset_encodeWords
+  usize_numeral)
+open CompPoly.CPolynomial.NTTFast.Packed (ofWord ofWord_val reduceOnce encode_eq_map_val
+  getD_map_val)
 
 local notation "F" => KoalaBear.Fast.Field
 
@@ -78,27 +81,62 @@ set_option maxRecDepth 65536 in
 set_option maxHeartbeats 4000000 in
 theorem sbox24_encode (rc W : Array F) (r i : USize) (hb) (hr) :
     (sbox24 (encode rc) r (encode W) i hb hr).1 =
-      encode (sboxModel coords24 rc W r.toNat i.toNat) := by
+      encode (sboxWords coords24 rc W r.toNat i.toNat) := by
   have hs := hb
   simp only [GroupFits24, Fits, size_encode_fields] at hs
   unfold sbox24
-  simp only [touch8_encode, readUOffset_encode, add_val, cube_val, USize.reduceToNat]
-  simp (disch := (simp only [USize.reduceToNat, size_encode_fields]; omega)) only [store8_encode']
-  simp only [USize.reduceToNat, sboxModel, spliceRows, word, coords24, lit8, List.foldl_cons,
+  simp only [touch8_encode_words, readUOffset_encodeWords, getD_map_val, readUOffset_encode,
+    add_val, USize.reduceToNat]
+  simp (disch := (simp only [USize.reduceToNat, size_encode_uint32, Array.size_map]; omega)) only
+    [store8_encodeWords]
+  simp only [USize.reduceToNat, sboxWords, spliceRows, word, coords24, lit8, List.foldl_cons,
     List.foldl_nil, Nat.reduceMul, Nat.reduceAdd, Nat.add_zero]
 
 set_option maxRecDepth 65536 in
 set_option maxHeartbeats 4000000 in
-theorem mat4x24_encode (W : Array F) (i : USize) (hb) :
-    (mat4x24 (encode W) i hb).1 = encode (mat4Model coords24 W i.toNat) := by
+theorem mat4x24_encodeWords (U : Array UInt32) (i : USize) (hb)
+    (hU : ∀ k, (U.getD k 0).toNat < 2 * 2130706433) :
+    (mat4x24 (encode U) i hb).1 = encode (mat4Words coords24 U i.toNat) := by
   have hs := hb
-  simp only [GroupFits24, Fits, size_encode_fields] at hs
+  simp only [GroupFits24, Fits, size_encode_uint32] at hs
   unfold mat4x24
-  simp only [touch8_encode, readUOffset_encode, add_val, USize.reduceToNat]
-  simp (disch := (simp only [USize.reduceToNat, size_encode_fields]; omega)) only [store8_encode']
-  simp only [USize.reduceToNat, mat4Model, spliceRows, word, coords24, lit8, List.foldl_cons,
+  simp only [touch8_encodeWords, readUOffset_encodeWords, USize.reduceToNat]
+  simp (disch := exact hU _) only [reduceOnce_eq_red]
+  simp only [add_val]
+  simp (disch := (simp only [USize.reduceToNat, size_encode_uint32]; omega)) only
+    [store8_encodeWords]
+  simp only [USize.reduceToNat, mat4Words, spliceRows, word, coords24, lit8, List.foldl_cons,
     List.foldl_nil, Nat.reduceMul, Nat.reduceAdd, Nat.reduceDiv, Nat.reduceMod, Nat.add_zero,
     mat4Word]
+
+/-- `mat4` on the S-box words is `mat4` on the S-box model. -/
+theorem encode_mat4Words_sbox24 (rc W : Array F) (r i : Nat) (hW : i + 8 * 24 ≤ W.size) :
+    encode (mat4Words coords24 (sboxWords coords24 rc W r i) i) =
+      encode (mat4Model coords24 (sboxModel coords24 rc W r i) i) := by
+  have hc := coords24_spec
+  have hW' : i + 8 * 24 ≤ (W.map Subtype.val).size := by rw [Array.size_map]; exact hW
+  have hs1 : (sboxWords coords24 rc W r i).size = (sboxModel coords24 rc W r i).size := by
+    rw [sboxWords, size_spliceRows hc _ _ _ hW', sboxModel, size_spliceRows hc _ _ _ hW,
+      Array.size_map]
+  have hs2 : i + 8 * 24 ≤ (sboxModel coords24 rc W r i).size := by
+    rw [sboxModel, size_spliceRows hc _ _ _ hW]; exact hW
+  rw [mat4Words, mat4Model, encode_spliceRows_val hc _ _ _ _ hs1 hs2 fun k hk ↦ by
+    rw [sboxWords, getD_spliceRows_outside hc _ _ _ hW' k hk, getD_map_val, sboxModel,
+      getD_spliceRows_outside hc _ _ _ hW k hk]]
+  exact congrArg encode (spliceRows_congr hc _ _ _ _ fun j hj l hl ↦ by
+    rw [red_word_sboxWords hc rc W r i hW _ (by omega) l hl,
+      red_word_sboxWords hc rc W r i hW _ (by omega) l hl,
+      red_word_sboxWords hc rc W r i hW _ (by omega) l hl,
+      red_word_sboxWords hc rc W r i hW _ (by omega) l hl])
+
+/-- `mat4` on the words of a packed field array is `mat4` on the array. -/
+theorem encode_mat4Words_map24 (W : Array F) (i : Nat) (hW : i + 8 * 24 ≤ W.size) :
+    encode (mat4Words coords24 (W.map Subtype.val) i) = encode (mat4Model coords24 W i) := by
+  have hc := coords24_spec
+  rw [mat4Words, mat4Model, encode_spliceRows_val hc _ _ _ _ (Array.size_map ..) hW
+    fun k _ ↦ getD_map_val W k]
+  exact congrArg encode (spliceRows_congr hc _ _ _ _ fun j _ l _ ↦ by
+    rw [red_word_map, red_word_map, red_word_map, red_word_map])
 
 set_option maxRecDepth 65536 in
 set_option maxHeartbeats 4000000 in
@@ -204,30 +242,46 @@ theorem le_of_room24 {n : Nat} (W : Array F) (i : USize) (hn : (encode W).size =
   rw [size_encode_fields] at hn
   omega
 
+/-- `mat4` then the block-sum mixing on a group that holds `S` holds the external matrix of it. -/
+theorem holds_external24 (W0 X : Array F) (i : Nat) (S : Nat → Vector F 24)
+    (h : Holds 24 W0 i S X) (hX : i + 8 * 24 ≤ X.size) :
+    Holds 24 W0 i (fun l ↦ externalLinear (S l))
+      (mixModel coords24 [4, 8, 12, 16, 20] (mat4Model coords24 X i) i) := by
+  have hs1 : (mat4Model coords24 X i).size = X.size := by
+    rw [mat4Model, size_spliceRows coords24_spec _ _ _ hX]
+  have hX1 : i + 8 * 24 ≤ (mat4Model coords24 X i).size := by rw [hs1]; exact hX
+  refine ⟨?_, fun l hl ↦ by rw [lane_mix_mat4_24 X i hX l hl, h.2.1 l hl], fun k hk ↦ ?_⟩
+  · rw [mixModel, size_spliceRows coords24_spec _ _ _ hX1, hs1, h.1]
+  · rw [mixModel, getD_spliceRows_outside coords24_spec _ _ _ hX1 k hk, mat4Model,
+      getD_spliceRows_outside coords24_spec _ _ _ hX k hk, h.2.2 k hk]
+
+/-- The external matrix on words below `2 p` whose `mat4` is `mat4` on `X`. -/
+theorem external24_words {n : Nat} (U : Array UInt32) (X : Array F) (i : USize)
+    (hr : Room24 n i) (hU : ∀ k, (U.getD k 0).toNat < 2 * 2130706433)
+    (hM : encode (mat4Words coords24 U i.toNat) = encode (mat4Model coords24 X i.toNat))
+    (s : Buf n) (hs : s.1 = encode U) :
+    (external24 s i hr).1 =
+      encode (mixModel coords24 [4, 8, 12, 16, 20] (mat4Model coords24 X i.toNat) i.toNat) := by
+  obtain ⟨b, hb⟩ := s
+  dsimp only at hs
+  subst hs
+  obtain ⟨hb1, e⟩ := Buf.val_eq (s := Buf.of ⟨encode U, hb⟩
+      (mat4x24 (encode U) i (hr.fits ⟨encode U, hb⟩)))
+      ((Buf.of_val _ _).trans ((mat4x24_encodeWords U i _ hU).trans hM))
+  unfold external24
+  dsimp only
+  rw [e, Buf.of_val]
+  exact mix24_encode _ i _
+
 /-- The external matrix on a group that holds `S`. -/
 theorem external24_holds {n : Nat} (W0 W : Array F) (i : USize) (S : Nat → Vector F 24)
     (h : Holds 24 W0 i.toNat S W) (hr : Room24 n i) (s : Buf n) (hs : s.1 = encode W) :
     ∃ W', (external24 s i hr).1 = encode W' ∧
       Holds 24 W0 i.toNat (fun l ↦ externalLinear (S l)) W' := by
-  obtain ⟨b, hb⟩ := s
-  dsimp only at hs
-  subst hs
-  have hW := le_of_room24 W i hb hr
-  have hs1 : (mat4Model coords24 W i.toNat).size = W.size := by
-    rw [mat4Model, size_spliceRows coords24_spec _ _ _ hW]
-  refine ⟨mixModel coords24 [4, 8, 12, 16, 20] (mat4Model coords24 W i.toNat) i.toNat, ?_, ?_⟩
-  · obtain ⟨hb1, e⟩ := Buf.val_eq (s := Buf.of ⟨encode W, hb⟩
-      (mat4x24 (encode W) i (hr.fits ⟨encode W, hb⟩)))
-      ((Buf.of_val _ _).trans (mat4x24_encode W i _))
-    unfold external24
-    dsimp only
-    rw [e, Buf.of_val]
-    exact mix24_encode _ i _
-  · have hW1 : i.toNat + 8 * 24 ≤ (mat4Model coords24 W i.toNat).size := by rw [hs1]; exact hW
-    refine ⟨?_, fun l hl ↦ by rw [lane_mix_mat4_24 W i.toNat hW l hl, h.2.1 l hl], fun k hk ↦ ?_⟩
-    · rw [mixModel, size_spliceRows coords24_spec _ _ _ hW1, hs1, h.1]
-    · rw [mixModel, getD_spliceRows_outside coords24_spec _ _ _ hW1 k hk, mat4Model,
-        getD_spliceRows_outside coords24_spec _ _ _ hW k hk, h.2.2 k hk]
+  have hW := le_of_room24 W i (hs ▸ s.2) hr
+  exact ⟨_, external24_words (W.map Subtype.val) W i hr (map_val_lt W)
+    (encode_mat4Words_map24 W i.toNat hW) s (hs.trans (encode_eq_map_val W)),
+    holds_external24 W0 W i.toNat S h hW⟩
 
 theorem toNat_twentyfour_mul (k : USize) (hk : k < 4) : (24 * k).toNat = 24 * k.toNat := by
   have hk' := lt_four_toNat hk
@@ -268,10 +322,16 @@ theorem fullRounds24Go_holds {n : Nat} (P : Params F 24) (hd : P.degree = 3) (rc
       ⟨by rw [hsz, h.1], fun l hl ↦ by rw [lane_sbox coords24_spec _ _ _ _ hW l hl, h.2.1 l hl],
         fun k' hk' ↦ by
           rw [sboxModel, getD_spliceRows_outside coords24_spec _ _ _ hW k' hk', h.2.2 k' hk']⟩
-    obtain ⟨W2, e2, h2⟩ := external24_holds W0 _ i _ hsb hr
+    have hsz' : i.toNat + 8 * 24 ≤ (sboxModel coords24 rcW W (24 * k.toNat) i.toNat).size := by
+      rw [hsz]; exact hW
+    have e2 := external24_words (sboxWords coords24 rcW W (24 * k.toNat) i.toNat)
+      (sboxModel coords24 rcW W (24 * k.toNat) i.toNat) i hr
+      (sboxWords_lt coords24_spec rcW W _ _ hW)
+      (encode_mat4Words_sbox24 rcW W _ _ hW)
       (Buf.of ⟨encode W, hb⟩ (sbox24 (encode rcW) (24 * k) (encode W) i (hr.fits ⟨encode W, hb⟩)
         (hrc.fits k hk))) (by rw [Buf.of_val, sbox24_encode, e24])
-    obtain ⟨W3, e3, h3⟩ := ih (k + 1) (by rw [toNat_succ_of_lt_four k hk]; omega) W2 _ h2 _ e2
+    have h2 := holds_external24 W0 _ i.toNat _ hsb hsz'
+    obtain ⟨W3, e3, h3⟩ := ih (k + 1) (by rw [toNat_succ_of_lt_four k hk]; omega) _ _ h2 _ e2
     refine ⟨W3, ?_, ?_⟩
     · rw [fullRounds24Go, dite_eq_left hk]
       exact e3
