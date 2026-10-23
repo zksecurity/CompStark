@@ -238,6 +238,29 @@ def keccak (logN reps : Nat) : IO UInt32 := do
 
 
 open CompStark CompStark.Stark CompStark.Fri in
+/-- `keccak-prove LOG_N`: one whole proof of `keccak LOG_N`'s, from the row chunks, alone in the
+process for its peak memory, then three verifications of it by the specification verifier and
+by the fast one. -/
+def keccakProve (logN : Nat) : IO UInt32 := do
+  let p := _root_.KoalaBear.fieldSize
+  let A : Air KoalaBear.Fast.Field := CompStark.Fixtures.Keccak.air
+  let P : Params := ⟨1, 0, 3, 87, 0, 16, 10, 0, 0, 3⟩
+  let inputs := (Array.range (2 ^ logN / 24)).map fun k ↦ (Array.range 25).map fun i ↦
+    (splitMix (25 * k + i).toUInt64).2
+  let B := CompStark.KoalaBear.backendFor [CompStark.Fixtures.KeccakKernel.kernel] 1
+    [(logN, A.logQuotientChunks logN)]
+  let chunks ← timed "tracegen" (fun _ ↦ CompStark.Fixtures.Keccak.trace p inputs 16)
+    (s!"{·.size} chunks")
+  let pf ← timed "whole proof" (fun _ ↦ proveWith B P A logN chunks []) fun pf ↦
+    s!"{pf.degreeBits}"
+  let vk := setup P A logN
+  for _ in [0:3] do
+    let _ ← timed "verify" (fun _ ↦ verify P A vk pf []) fun r ↦ if r.isOk then "ok" else "rejected"
+    let _ ← timed "verify fast" (fun _ ↦ CompStark.KoalaBear.verifyFast P A vk pf [])
+      fun r ↦ if r.isOk then "ok" else "rejected"
+  return 0
+
+open CompStark CompStark.Stark CompStark.Fri in
 /-- `quotient-phase AIR LOG_N REPS`: the fast prover's quotient phase on `2 ^ LOG_N` rows,
 blowup 2, for `keccak` (Plonky3's Keccak AIR), `wide` (`wide 64`), `widebus` (`wideBus 64`) or
 `lookup` (`mulAirLookups 8` with local lookups, sending on eight buses): per round the AIR's
@@ -457,11 +480,10 @@ def main (args : List String) : IO UInt32 := do
     let some P := CompStark.Stark.Fast.plan? (p := _root_.KoalaBear.fieldSize) logN 1
       CompStark.gen | return 1
     for k in [0:5] do
-      let chunks ← timed "coset lde chunks" (fun _ ↦ P.cosetLde w (trace.modify 0 (write · 0
-        k.toUInt32))) (s!"{·.size} chunks")
-      let _ ← timed "join" (fun _ ↦ CompPoly.CPolynomial.NTTFast.Packed.Native.joinRows chunks)
-        (s!"{·.size} bytes")
+      let _ ← timed "coset lde columns" (fun _ ↦ CompStark.Stark.Fast.ldeColumns P w
+        (trace.modify 0 (write · 0 k.toUInt32))) (s!"{·.size} columns")
     return 0
+  | ["keccak-prove", logN] => keccakProve logN.toNat!
   | ["phases-batch"] => phasesBatch
   | ["quotient-phase", air, logN, reps] => quotientPhase air logN.toNat! reps.toNat!
   | "prove" :: backend :: air :: rest =>

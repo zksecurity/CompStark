@@ -7,6 +7,7 @@ import CompStark.KoalaBear.Poseidon2
 import CompStark.KoalaBear.Challenge
 import CompStark.Plonky3.Prover
 import CompStark.Stark.Fast
+import CompStark.KoalaBear.Fast
 import CompStark.Mont32.Json
 import CompStarkFixtures.Keccak
 import CompStarkFixtures.KeccakKernel
@@ -110,8 +111,8 @@ def exampleInputs : IO (Array (Array UInt64)) := do
     |>.filter (· ≠ "")
   return lines.toArray.map fun l ↦ (l.splitOn " ").toArray.map (·.toNat!.toUInt64)
 
-/-- Plonky3's example proof verifies with the example's Poseidon2 constants, and both provers
-reproduce it. -/
+/-- Plonky3's example proof verifies with the example's Poseidon2 constants, by the fast verifier
+too, which rejects it with an opened value changed, and both provers reproduce it. -/
 def plonky3Example : IO Unit :=
   let I := CompStark.Fixtures.Poseidon2Example.instances
   letI := I.field
@@ -130,6 +131,11 @@ def plonky3Example : IO Unit :=
   match verify P A (setup P A logN) rust [] with
   | .ok _ => pure ()
   | .error e => throw (IO.userError s!"example proof rejected: {e}")
+  unless (I.verifyFast P A (setup P A logN) rust []).isOk do
+    throw (IO.userError "the fast verifier rejects the example proof")
+  let tampered := { rust with opened.traceLocal := rust.opened.traceLocal.modify 0 (· + 1) }
+  if (I.verifyFast P A (setup P A logN) tampered []).isOk then
+    throw (IO.userError "the fast verifier accepts a tampered example proof")
   unless CompStark.Fixtures.KeccakKernel.kernel.code == (Prog.compile A.constraints).code do
     throw (IO.userError "the generated kernel's code is not the Keccak AIR's program")
   let B := Stark.Fast.backendFor [CompStark.Fixtures.KeccakKernel.kernel] P.logBlowup

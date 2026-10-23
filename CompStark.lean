@@ -94,6 +94,7 @@ public import CompStark.Stark.Fast.Quotient
 public import CompStark.Stark.Fast.LookupQuotient
 public import CompStark.Stark.Fast.Permutation
 public import CompStark.Stark.Fast.Refines
+public import CompStark.Stark.Fast.Verify
 public import CompStark.KoalaBear.Fast
 public import CompStark.KoalaBear.Group
 public import CompStark.BabyBear.Fast

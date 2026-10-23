@@ -5,6 +5,7 @@ Released under Apache 2.0 license as described in the file LICENSE.
 module
 
 public import CompStark.Stark.Fast.Refines
+public import CompStark.Stark.Fast.Verify
 public import CompStark.KoalaBear.Poseidon2
 public import CompStark.KoalaBear.Challenge
 public import CompPoly.Univariate.NTTFast.Packed.Instances
@@ -12,9 +13,10 @@ public import CompPoly.Univariate.NTTFast.Packed.Instances
 /-! # The fast prover over KoalaBear
 
 The fast backend over KoalaBear and its quartic extension `KoalaBear.Fast.Ext4`, on KoalaBear's
-vectorized Poseidon2 and CompPoly's compiled coset LDE (`backendFor`). This module belongs to the
-CPU-targeted native library: the compiler specializes the generic backend here, with KoalaBear's
-constants as immediates. Its proofs are the specification's (`prove_fast`).
+vectorized Poseidon2 and CompPoly's compiled coset LDE (`backendFor`), and the fast verifier
+(`verifyFast`). This module belongs to the CPU-targeted native library: the compiler specializes
+the generic backend and verifier here, with KoalaBear's constants as immediates. Its proofs are
+the specification's (`prove_fast`, `verifyFast_eq`).
 -/
 
 @[expose] public section
@@ -99,5 +101,34 @@ theorem Instances.prove_fast (I : Instances) (kernels : List
   letI := I.packed
   Stark.Fast.prove_fast (by rw [twoAdicity_eq]; decide) domainsAddressable kernels publicValues
     encoded input outOfDomain
+
+/-- Plonky3's verifier over KoalaBear, with the leaves of every Merkle multi-opening hashed in
+packed groups and the batched quotients' sums over the opened values shared between queries
+(`Stark.Fast.verifyFast`), specialized here, in the CPU-targeted library. -/
+def verifyFast (P : Params) (A : Air F) (vk : Option (PreprocessedKey F)) (proof : Proof F EF)
+    (pis : List F) : Except String Unit :=
+  Stark.Fast.verifyFast P A vk proof pis
+
+/-- **The fast verifier over KoalaBear is Plonky3's verifier.** -/
+theorem verifyFast_eq (P : Params) (A : Air F) (vk : Option (PreprocessedKey F))
+    (proof : Proof F EF) (pis : List F) : verifyFast P A vk proof pis = verify P A vk proof pis :=
+  Stark.Fast.verifyFast_eq P A vk proof pis
+
+/-- The fast verifier over KoalaBear on the Poseidon2 instances `I` (`verifyFast` is it on
+Plonky3's default ones), specialized here, in the CPU-targeted library. -/
+def Instances.verifyFast (I : Instances) (P : Params) (A : Air F)
+    (vk : Option (PreprocessedKey F)) (proof : Proof F EF) (pis : List F) : Except String Unit :=
+  letI := I.field
+  letI := I.packed
+  Stark.Fast.verifyFast P A vk proof pis
+
+/-- **The fast verifier over KoalaBear on the Poseidon2 instances `I` is Plonky3's verifier on
+them.** -/
+theorem Instances.verifyFast_eq (I : Instances) (P : Params) (A : Air F)
+    (vk : Option (PreprocessedKey F)) (proof : Proof F EF) (pis : List F) :
+    I.verifyFast P A vk proof pis = @verify F _ I.field EF _ P A vk proof pis :=
+  letI := I.field
+  letI := I.packed
+  Stark.Fast.verifyFast_eq P A vk proof pis
 
 end CompStark.KoalaBear
