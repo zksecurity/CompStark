@@ -173,7 +173,9 @@ parallel tasks over pieces of the rows, and their number. -/
 def leafLayer (p : ℕ) [Mont32Field p] [Poseidon2Field (FastField p)] [PackedPoseidon2 p]
     (w : Nat) (m : ByteArray) : ByteArray × Nat :=
   let h := if w = 0 then 0 else m.size / (4 * w)
-  let parts := if h < 1024 then 1 else 16
+  -- Ranges of 512 rows or more: many more tasks than threads, so that busy cores do not hold
+  -- back the layer.
+  let parts := if h < 1024 then 1 else h / 512
   let rows := h / parts
   let (first, h) := Merkle.Packed.leavesOf p w parts fun k ↦
     m.extract (4 * w * (k * rows)) (if k + 1 = parts then m.size else 4 * w * ((k + 1) * rows))

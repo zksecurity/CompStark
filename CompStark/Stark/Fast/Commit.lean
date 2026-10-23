@@ -669,8 +669,12 @@ theorem leafLayer_encode [PackedPoseidon2 p] (W H : Nat) (V : Array F) (hV : V.s
     rw [ite_eq_right_of_eq_false _ _ (eq_false (by omega)), size_encode_fields, hV,
       Nat.mul_comm H W, ← Nat.mul_assoc, Nat.mul_div_cancel_left _ (by omega)]
   simp only [hh]
-  generalize hp : (if H < 1024 then 1 else 16) = parts
-  have hp0 : 0 < parts := by rw [← hp]; split <;> omega
+  generalize hp : (if H < 1024 then 1 else H / 512) = parts
+  have hp0 : 0 < parts := by
+    rw [← hp]
+    split
+    · omega
+    · exact Nat.div_pos (by omega) (by decide)
   have hpr : parts * (H / parts) ≤ H := Nat.mul_div_le H parts
   generalize H / parts = rows at hpr
   let cs := (List.range parts).map (chunk V W parts rows)

@@ -426,12 +426,20 @@ def main (args : List String) : IO UInt32 := do
     let K := Packed.Packed24.ofParams (KoalaBear.width24 KoalaBear.Fast.Field)
     let buf := CompPoly.CPolynomial.NTTFast.Packed.Native.encodeFields
       (Array.ofFn (n := 192 * groups) fun k ↦ KoalaBear.Fast.ofUInt32 k.val.toUInt32)
-    let m ← timeMedian 15 fun k ↦ Id.run do
-      let mut b := CompPoly.CPolynomial.NTTFast.Packed.Native.write buf 0 k.toUInt32
-      for g in [0:groups] do
-        b := Packed.permute24 K b (192 * g).toUSize
-      return (CompPoly.CPolynomial.NTTFast.Packed.Native.read b 0).toUInt64
-    IO.println s!"perm24 ns/perm {m * 10 / (8 * groups) / 10}.{m * 10 / (8 * groups) % 10}"
+    -- Each sample permutes its own copy of the buffer, made (and read) before the clock starts.
+    let mut samples := #[]
+    for k in [0:15] do
+      let input := CompPoly.CPolynomial.NTTFast.Packed.Native.write buf 0 k.toUInt32
+      if CompPoly.CPolynomial.NTTFast.Packed.Native.read input 1 == 12345 then IO.println ""
+      let (ns, r) ← timeNs fun _ ↦ do
+        let mut b := input
+        for g in [0:groups] do
+          b := Packed.permute24 K b (192 * g).toUSize
+        return (CompPoly.CPolynomial.NTTFast.Packed.Native.read b 0).toUInt64
+      samples := samples.push (ns * 10 / (8 * groups))
+      if r == 12345 then IO.println ""
+    let m := (samples.qsort (· < ·))[7]!
+    IO.println s!"perm24 ns/perm median {m / 10}.{m % 10}"
     return 0
   | ["phases", logN] => phases logN.toNat!
   | ["keccak", logN, reps] => keccak logN.toNat! reps.toNat!
