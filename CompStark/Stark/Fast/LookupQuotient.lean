@@ -564,8 +564,8 @@ theorem lookupQuotientWith_rel (kernels : List (Prog.GroupKernel p)) (A : Air F)
       ((ps.map (·.width)).getD 0) k) :
     lookupQuotientWith kernels (quotientTables (p := p) d l) A ext pis tr prep perm chs terminal
       alpha = lookupQuotientOfLde A ext pis d l s ps rs chs terminal alpha := by
-  obtain ⟨hw, -, hv⟩ := h
-  obtain ⟨hrw, -, hrv⟩ := hr
+  have hw := h.width
+  have hrw := hr.width
   obtain ⟨hw0, -, hvs', hadd⟩ := hs
   obtain ⟨-, -, hrvs, hradd⟩ := hrs
   have hus : 4 * s.values.size < USize.size := by
@@ -581,11 +581,27 @@ theorem lookupQuotientWith_rel (kernels : List (Prog.GroupKernel p)) (A : Air F)
     cases hp with
     | none => rfl
     | @some a q hr => exact hr.1
-  have hpwords : (prep.map (·.words)).getD ByteArray.empty =
-      encode (prepOrEmpty ps s.height).values := by
+  have hpm : RowsOk (prepOrEmpty ps s.height) (prep.getD PMat.empty).rows ∧
+      (prep.getD PMat.empty).toCols = (⟨colBlocks (prepOrEmpty ps s.height)
+        (prep.getD PMat.empty).rows, (prepOrEmpty ps s.height).width,
+        (prep.getD PMat.empty).rows⟩ : Prog.ColsF p).enc ∧
+      ∀ r0 B, 0 < B → r0 + B ≤ s.height → (prep.getD PMat.empty).block r0 B =
+        encode (blockT (prepOrEmpty ps s.height) r0 B) := by
     cases hp with
-    | none => rfl
-    | @some a q hr => exact hr.2.2
+    | none =>
+      refine ⟨⟨Nat.one_pos, Nat.mod_one _, by
+        show 4 * 1 < USize.size; have := USize.le_size; omega⟩,
+        empty_toCols s.height, fun r0 B _ _ ↦ ?_⟩
+      show PMat.empty.block r0 B = encode (blockT (⟨0, s.height, #[]⟩ : Mat F) r0 B)
+      rw [Array.eq_empty_of_size_eq_zero (xs := blockT _ r0 B) (by rw [size_blockT,
+        Nat.zero_mul])]
+      unfold PMat.block
+      simp only [PMat.empty, Nat.zero_mul, Nat.mul_zero]
+      split <;> rfl
+    | @some a q hr =>
+      obtain ⟨-, hqh⟩ := hps q rfl
+      refine ⟨hr.rowsOk, toCols_rel hr, fun r0 B hB hrB ↦ block_rel hr r0 B hB (by
+        show r0 + B ≤ q.height; rw [hqh]; exact hrB)⟩
   have hspv : (prepOrEmpty ps s.height).values.size =
       (prepOrEmpty ps s.height).width * s.height := by
     cases hp with
@@ -613,7 +629,11 @@ theorem lookupQuotientWith_rel (kernels : List (Prog.GroupKernel p)) (A : Air F)
       rw [Array.eq_empty_of_size_eq_zero (xs := permuteRows _ _)
         (by rw [permuteRows_eq, Array.size_ofFn]; rfl)]
     | some q => rfl
-  generalize prepOrEmpty ps s.height = sp at hpw hpw' hpwords hspv husp hpq
+  have hsph : (prepOrEmpty ps s.height).height = s.height := by
+    cases ps with
+    | none => rfl
+    | some q => exact (hps q rfl).2
+  generalize prepOrEmpty ps s.height = sp at hpw hpw' hpm hspv husp hpq hsph
   rw [hpw] at hc
   have hn : 2 ^ (d + l) ≤ s.values.size := by
     rw [hvs']; exact le_trans hh (Nat.le_mul_of_pos_left _ hw0)
@@ -649,23 +669,23 @@ theorem lookupQuotientWith_rel (kernels : List (Prog.GroupKernel p)) (A : Air F)
     rw [Array.size_ofFn] at h2
     rw [Array.getElem_ofFn, ← getD_lt _ _ (d := 0) h1]
     exact lookupQuotientValues_getD ext pis d l tq pq rq pl chs terminal alpha r h2
-  rw [hspec, hpw', hpwords, hv, hw, hrv, hrw, hWT,
-    quotientBlocks_eq d l _ _ (groupRun_eq kernels _) SC WT _ Q ?hblk]
+  dsimp only
+  rw [hspec, hWT, quotientBlocks_eq d l _ _ (groupRun_eq kernels _) SC WT _ Q ?hblk]
   case hblk =>
     intro r0 hdvd hr0
     obtain ⟨hB0, -, -⟩ := tables_B (p := p) d l
     rw [tables_first, tables_last, tables_trans]
     generalize (quotientTables (p := p) d l).B = B at hdvd hr0 hB0 ⊢
-    refine ⟨blockT s r0 B, 0, B, qLoads d l s sp rs pl (quotientTables (p := p) d l).next r0 B,
-      ?_, hsS.blockT hr0, qLoads_addr hsS hspS hrsS pl _ hr0 hnU, fun ins hins ↦ ?_,
+    refine ⟨blockT s r0 B, 0, B, qLoads d l s sp rs tr.rows (prep.getD PMat.empty).rows
+      perm.rows pl (quotientTables (p := p) d l).next r0 B, ?_, hsS.blockT hr0,
+      qLoads_addr h.rowsOk hpm.1 hr.rowsOk hspS hrsS pl _ hr0 hnU, fun ins hins ↦ ?_,
       fun i hi st0 hst0 j hj ↦ ?_⟩
-    · rw [transposeRows_blockT s r0 B (hsS.block hr0) hus,
-        transposeRows_blockT sp r0 B (hspS.block hr0) husp,
-        transposeRows_blockT rs r0 B (hrsS.block hr0) hrus]
+    · rw [block_rel h r0 B hB0 (by omega), hpm.2.2 r0 B hB0 (by omega), toCols_rel h,
+        hpm.2.1, block_rel hr r0 B hB0 (by omega), toCols_rel hr]
       rfl
     · refine Prog.Instr.inRange_of (cq := (· < s.width))
         (lq := Prog.Src.Below s.width sp.width sp.width rs.width) (fun c hc ↦ ?_)
-        (qLoads_inRange hsS hspS hrsS pl hr0)
+        (qLoads_inRange h.rowsOk hpm.1 hr.rowsOk hsS hspS hrsS rfl hsph hrh pl hr0)
         ins ((Prog.compileExt_run Binomial4.W np ext ⟨fun _ ↦ 0, fun _ ↦ 0, fun _ ↦ 0,
           fun _ _ ↦ 0⟩ ⟨fun _ ↦ 0, fun _ ↦ 0⟩).2 ins hins)
         (Prog.compileExt_leafOk Binomial4.W np ext s.width s.width sp.width sp.width k rs.width
@@ -674,9 +694,12 @@ theorem lookupQuotientWith_rel (kernels : List (Prog.GroupKernel p)) (A : Air F)
       have := Nat.mul_le_mul_right B (show c + 1 ≤ s.width by exact hc)
       rw [Nat.succ_mul] at this; exact this
     · have hri : r0 + i < 2 ^ (d + l) := by omega
-      obtain ⟨e1, e2, e3, e4, e5, e6, e7, e8⟩ := qLoads_env d l s sp rs pl pis SC WT r0 B i hi hri
+      obtain ⟨e1, e2, e3, e4, e5, e6, e7, e8⟩ := qLoads_env d l s sp rs tr.rows
+        (prep.getD PMat.empty).rows perm.rows h.rowsOk hpm.1 hh (by rw [hsph]; exact hh) pl pis
+        SC WT r0 B i hi hri
       set ctx := Prog.blockCtx (blockT s r0 B) 0 B
-        (qLoads d l s sp rs pl (quotientTables (p := p) d l).next r0 B) SC WT B i with hctx
+        (qLoads d l s sp rs tr.rows (prep.getD PMat.empty).rows perm.rows pl
+          (quotientTables (p := p) d l).next r0 B) SC WT B i with hctx
       let R := (bitRevPerm (d + l)).getD (r0 + i) 0
       let u (c : Lookup.ExtExpr F) : EF := c.eval (lqEnv pis d l tq pq pl R)
         (lqAux d l rq chs terminal R)
@@ -746,9 +769,12 @@ theorem lookupQuotientWith_rel (kernels : List (Prog.GroupKernel p)) (A : Air F)
           exact (permuteRows_bitRev rs d l _ _ hri (by omega)).symm
         · refine hpermAt ((R + 2 ^ l) % 2 ^ (d + l)) c hc (fun m ↦ ctx.src (.permNext m))
             fun e he ↦ ?_
-          show rs.values.getD ((quotientTables (p := p) d l).next.getD (r0 + i) 0 * rs.width +
-            (4 * c + e)) 0 = _
-          rw [show c * 4 + e = 4 * c + e by ring]
+          have hn : (quotientTables (p := p) d l).next.getD (r0 + i) 0 < 2 ^ (d + l) := by
+            rw [tables_next _ _ _ hri]
+            exact bitRevPerm_getD_lt _ _ (Nat.mod_lt _ (Nat.two_pow_pos _))
+          show (⟨colBlocks rs perm.rows, rs.width, perm.rows⟩ : Prog.ColsF p).at
+            ((quotientTables (p := p) d l).next.getD (r0 + i) 0) (4 * c + e) = _
+          rw [colsF_at hr.rowsOk _ _ (by omega) (by omega), show c * 4 + e = 4 * c + e by ring]
           exact (permuteRows_bitRev_next rs d l _ _ hri (by omega)).symm
         · show toE (ctx.scalars4 Binomial4.W (np + 4 * (jj + 1))) = chs.getD jj 0
           rw [hsc4]

@@ -790,20 +790,20 @@ theorem copy_upd (X E : Array F) (nm od oa : Nat) (d a : USize) (hd : d.toNat = 
   groupsEW_upd (fun x _ ↦ x) (fun x _ ↦ x) (fun _ _ ↦ rfl) X nm od _ d hd hX hrd E hE oa a ha
     hra 0 fun _ _ ↦ rfl
 
-theorem gather_upd (X M : Array F) (nm od w c r0 : Nat) (next : Array Nat) (d : USize)
-    (hd : d.toNat = od) (hX : 4 * X.size < USize.size) (hM : 4 * M.size < USize.size)
-    (hrd : od + 16 * nm ≤ X.size) (hr : ∀ k < 16 * nm, next.getD (r0 + k) 0 * w + c < M.size) :
-    gather nm (encode X) d (encode M) w c next r0 =
-      encode (updR X od (16 * nm) fun k ↦ M.getD (next.getD (r0 + k) 0 * w + c) 0) :=
+theorem gather_upd (X : Array F) (M : ColsF p) (nm od c r0 : Nat) (next : Array Nat) (d : USize)
+    (hd : d.toNat = od) (hX : 4 * X.size < USize.size) (hM : M.Addr)
+    (hrd : od + 16 * nm ≤ X.size) (hr : ∀ k < 16 * nm, M.Has (next.getD (r0 + k) 0) c) :
+    gather nm (encode X) d M.enc c next r0 =
+      encode (updR X od (16 * nm) fun k ↦ M.at (next.getD (r0 + k) 0) c) :=
   pass_upd _ (fun x _ ↦ x) (fun x _ ↦ x) (fun _ _ ↦ rfl) X nm od _ d hd hX hrd
-    (fun k ↦ M.getD (next.getD (r0 + k) 0 * w + c) 0) (fun _ ↦ 0) (fun _ _ ↦ rfl) fun m hm ↦
-      ⟨fun k _ ↦ read (encode M) (next.getD (r0 + (16 * m).toUSize.toNat + k) 0 * w + c),
+    (fun k ↦ M.at (next.getD (r0 + k) 0) c) (fun _ ↦ 0) (fun _ _ ↦ rfl) fun m hm ↦
+      ⟨fun k _ ↦ M.enc.at (next.getD (r0 + (16 * m).toUSize.toNat + k) 0) c,
         fun _ _ ↦ 0, fun k hk ↦ by
           have h1 := hr (16 * m + k) (by omega)
           rw [toUSize_toNat (by omega)]
           dsimp only
-          rw [Nat.add_assoc, Words.read_encode M _ hM h1], fun _ _ ↦ rfl, by
-        have hw := winS X od od m nm (fun k ↦ M.getD (next.getD (r0 + k) 0 * w + c) 0) d hd hX
+          rw [Nat.add_assoc, M.at_enc hM _ c h1], fun _ _ ↦ rfl, by
+        have hw := winS X od od m nm (fun k ↦ M.at (next.getD (r0 + k) 0) c) d hd hX
           hrd hm
         unfold stepGather
         rw [withWin_pos _ _ _ _ hw.1 hw.2, st16_eq _ _ _ hw.2]
@@ -1086,21 +1086,21 @@ theorem loadG_rel (V : Array F) (cb cs : Nat) (L : LoadsF p) (SC WT : Array F) (
   cases src <;> simp only [LoadsF.InRange] at hs
   case next c =>
     simp only [loadG, hnm]
-    exact gather_upd _ L.M nm _ L.w c L.r0 L.next _ hro hX hM hrd hs
+    exact gather_upd _ L.M nm _ c L.r0 L.next _ hro hX hM hrd hs
   case prepCur c =>
     simp only [loadG, hnm]
     exact copy_upd _ L.PT nm _ (c * (16 * nm)) _ _ hro (tcolOff_toNat _ c _ _ _ _ L.PT.size hs hPT)
       hX hPT hrd hs
   case prepNext c =>
     simp only [loadG, hnm]
-    exact gather_upd _ L.P nm _ L.pw c L.r0 L.next _ hro hX hP hrd hs
+    exact gather_upd _ L.P nm _ c L.r0 L.next _ hro hX hP hrd hs
   case permCur c =>
     simp only [loadG, hnm]
     exact copy_upd _ L.QT nm _ (c * (16 * nm)) _ _ hro (tcolOff_toNat _ c _ _ _ _ L.QT.size hs hQT)
       hX hQT hrd hs
   case permNext c =>
     simp only [loadG, hnm]
-    exact gather_upd _ L.Q nm _ L.rw c L.r0 L.next _ hro hX hQ hrd hs
+    exact gather_upd _ L.Q nm _ c L.r0 L.next _ hro hX hQ hrd hs
   case periodic j =>
     simp only [loadG, hnm]
     by_cases hj : j < L.PER.size

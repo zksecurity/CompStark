@@ -21,7 +21,7 @@ namespace CompStark.Stark.Fast
 open CompStark.Fri
 open CompPoly.PackedRepr (encode)
 open CompPoly.CPolynomial
-open CompPoly.CPolynomial.NTTFast.Packed (LdePlan PackedCosetLde)
+open CompPoly.CPolynomial.NTTFast.Packed (LdePlan)
 
 open Montgomery.Native32
 
@@ -1090,6 +1090,39 @@ theorem fracOf_map [Mont32BaseField p] [Binomial4 p] {E : Type} (val : E → F) 
   simp only [fracOf, List.foldl_map, List.map_id]
   rfl
 
+/-- The columns of an encoded row-major matrix, in one block. -/
+theorem rowMajorCols_eq (M : Array F) (w n : Nat) (hn : 0 < n) (hM : M.size = n * w)
+    (hs : 4 * M.size < USize.size) :
+    rowMajorCols (encode M) w n = (⟨colBlocks ⟨w, n, M⟩ n, w, n⟩ : Prog.ColsF p).enc := by
+  unfold rowMajorCols Prog.ColsF.enc
+  dsimp only
+  rw [transposeRows_encode M w 0 n (by rw [Nat.zero_add, hM]) hs]
+  congr 1
+  apply Array.ext (by rw [Array.size_map, Array.size_range, Array.size_map, size_colBlocks,
+    Nat.div_self hn, Nat.one_mul])
+  intro j h1 h2
+  rw [Array.size_map, Array.size_range] at h1
+  simp only [Array.getElem_map, Array.getElem_range, colBlocks, Array.getElem_ofFn]
+  rw [extract_encode]
+  congr 1
+  apply Array.ext (by rw [Array.size_extract, Array.size_ofFn, Array.size_ofFn]
+                      have := Nat.mul_le_mul_right n (show j + 1 ≤ w by omega)
+                      rw [Nat.succ_mul] at this; omega)
+  intro k k1 k2
+  rw [Array.size_ofFn] at k2
+  have hlt : j * n + k < w * n := by
+    have := Nat.mul_le_mul_right n (show j + 1 ≤ w by omega)
+    rw [Nat.succ_mul] at this; omega
+  rw [Array.getElem_extract, Array.getElem_ofFn, Array.getElem_ofFn]
+  dsimp only
+  have e1 : (j * n + k) % n = k := by
+    rw [Nat.add_comm, Nat.add_mul_mod_self_right, Nat.mod_eq_of_lt k2]
+  have e2 : (j * n + k) / n = j := by
+    rw [Nat.add_comm, Nat.add_mul_div_right _ _ hn, Nat.div_eq_of_lt k2, Nat.zero_add]
+  have e3 : j / w = 0 := Nat.div_eq_of_lt h1
+  have e4 : j % w = j := Nat.mod_eq_of_lt h1
+  simp only [e1, e2, e3, e4, Nat.zero_mul, Nat.zero_add]
+
 /-- **The fast permutation trace is the specification's**, in base coordinates as packed words,
 with its terminal. -/
 theorem permutationWords_eq [Mont32BaseField p] [Binomial4 p] (A : Air F)
@@ -1179,9 +1212,11 @@ theorem permutationWords_eq [Mont32BaseField p] [Binomial4 p] (A : Air F)
     let FS : Array F := Array.ofFn (n := n) fun i ↦ if (i.val == 0) = true then 1 else 0
     let LS : Array F := Array.ofFn (n := n) fun i ↦ if (i.val + 1 == n) = true then 1 else 0
     let TS : Array F := Array.ofFn (n := n) fun i ↦ if decide (i.val + 1 < n) = true then 1 else 0
-    let L : Prog.LoadsF p := ⟨trace, A.width, A.preprocessed, A.preprocessedWidth,
-      blockT mp r0 B, #[], 0, #[], r0, Array.ofFn (n := n) fun i ↦ (i.val + 1) % n, #[], FS, LS,
-      TS⟩
+    let L : Prog.LoadsF p := ⟨⟨colBlocks mt n, A.width, n⟩,
+      ⟨colBlocks mp n, A.preprocessedWidth, n⟩, blockT mp r0 B, ⟨#[], 0, 1⟩, #[], r0,
+      Array.ofFn (n := n) fun i ↦ (i.val + 1) % n, #[], FS, LS, TS⟩
+    have hRn (m : Mat F) (hm : m.height = n) : RowsOk m n :=
+      ⟨Nat.two_pow_pos _, by rw [hm, Nat.mod_self], hn⟩
     have hmt : (r0 + B) * A.width ≤ trace.size := by
       rw [htr]; exact Nat.mul_le_mul_right _ hjB
     have hmp : (r0 + B) * A.preprocessedWidth ≤ A.preprocessed.size := by
@@ -1204,12 +1239,12 @@ theorem permutationWords_eq [Mont32BaseField p] [Binomial4 p] (A : Air F)
     have htB : A.width * B ≤ trace.size := by
       refine le_trans ?_ hmt
       rw [Nat.mul_comm]; exact Nat.mul_le_mul_right _ (by omega)
-    have hL : L.Addr := ⟨hus, husp, by
+    have hL : L.Addr := ⟨colsF_addr (hRn mt rfl), colsF_addr (hRn mp rfl), by
         show 4 * (blockT mp r0 B).size < USize.size
         rw [size_blockT]
         show 4 * (A.preprocessedWidth * B) < USize.size
         omega,
-      by show 4 * 0 < USize.size; omega, by show 4 * 0 < USize.size; omega,
+      fun a ha ↦ absurd ha (Array.not_mem_empty a), by show 4 * 0 < USize.size; omega,
       fun c hc ↦ absurd hc (Array.not_mem_empty c),
       by show 4 * FS.size < USize.size; rw [Array.size_ofFn]; exact hn,
       by show 4 * LS.size < USize.size; rw [Array.size_ofFn]; exact hn,
@@ -1227,10 +1262,9 @@ theorem permutationWords_eq [Mont32BaseField p] [Binomial4 p] (A : Air F)
         L.InRange B src := by
       intro src hsrc
       cases src with
-      | next c => exact fun k hk ↦ hrow mt (by show trace.size = _; rw [htr]) (hnext k hk) hsrc
+      | next c => exact fun k hk ↦ colsF_has (hRn mt rfl) _ c (hnext k hk) hsrc
       | prepCur c => exact hcolB mp c hsrc
-      | prepNext c =>
-        exact fun k hk ↦ hrow mp (by show A.preprocessed.size = _; rw [hpre]) (hnext k hk) hsrc
+      | prepNext c => exact fun k hk ↦ colsF_has (hRn mp rfl) _ c (hnext k hk) hsrc
       | permCur c => exact absurd hsrc (Nat.not_lt_zero c)
       | permNext c => exact absurd hsrc (Nat.not_lt_zero c)
       | periodic j => exact fun h ↦ absurd h (Nat.not_lt_zero j)
@@ -1288,16 +1322,17 @@ theorem permutationWords_eq [Mont32BaseField p] [Binomial4 p] (A : Air F)
       · show (blockT mt r0 B).getD (0 + c * B + i) 0 = trace.getD ((r0 + i) * A.width + c) 0
         rw [Nat.zero_add]
         exact blockT_getD mt r0 B c i hc hi
-      · show trace.getD ((Array.ofFn (n := n) fun i ↦ (i.val + 1) % n).getD (r0 + i) 0 * A.width
-          + c) 0 = trace.getD ((r0 + i + 1) % 2 ^ logN * A.width + c) 0
-        rw [NTTFast.Packed.getD_ofFn_bounded _ _ hri]
+      · show (⟨colBlocks mt n, A.width, n⟩ : Prog.ColsF p).at
+          ((Array.ofFn (n := n) fun i ↦ (i.val + 1) % n).getD (r0 + i) 0) c =
+          trace.getD ((r0 + i + 1) % 2 ^ logN * A.width + c) 0
+        rw [colsF_at (hRn mt rfl) _ c (hnext i hi) hc, NTTFast.Packed.getD_ofFn_bounded _ _ hri]
       · show (blockT mp r0 B).getD (c * B + i) 0 =
           A.preprocessed.getD ((r0 + i) * A.preprocessedWidth + c) 0
         exact blockT_getD mp r0 B c i hc hi
-      · show A.preprocessed.getD ((Array.ofFn (n := n) fun i ↦ (i.val + 1) % n).getD (r0 + i) 0 *
-          A.preprocessedWidth + c) 0 =
+      · show (⟨colBlocks mp n, A.preprocessedWidth, n⟩ : Prog.ColsF p).at
+          ((Array.ofFn (n := n) fun i ↦ (i.val + 1) % n).getD (r0 + i) 0) c =
           A.preprocessed.getD ((r0 + i + 1) % 2 ^ logN * A.preprocessedWidth + c) 0
-        rw [NTTFast.Packed.getD_ofFn_bounded _ _ hri]
+        rw [colsF_at (hRn mp rfl) _ c (hnext i hi) hc, NTTFast.Packed.getD_ofFn_bounded _ _ hri]
       · show ((#[] : Array (Array F)).getD jj #[]).getD (r0 + i) 0 = 0
         simp only [Array.getD_eq_getD_getElem?, List.getElem?_toArray, List.getElem?_nil,
           Option.getD_none]
@@ -1319,19 +1354,22 @@ theorem permutationWords_eq [Mont32BaseField p] [Binomial4 p] (A : Air F)
         A.width r0 B = encode (blockT mt r0 B) := by
       rw [NTTFast.Packed.Native.encodeFields_eq]
       exact transposeRows_encode trace A.width r0 B hmt hus
-    have hLc : (⟨NTTFast.Packed.Native.encodeFields trace, A.width,
-        NTTFast.Packed.Native.encodeFields A.preprocessed, A.preprocessedWidth,
+    have hLc : (⟨rowMajorCols (NTTFast.Packed.Native.encodeFields trace) A.width n,
+        rowMajorCols (NTTFast.Packed.Native.encodeFields A.preprocessed) A.preprocessedWidth n,
         NTTFast.Packed.Native.transposeRows (NTTFast.Packed.Native.encodeFields A.preprocessed)
-          A.preprocessedWidth r0 B, ByteArray.empty, 0, ByteArray.empty, r0,
+          A.preprocessedWidth r0 B, PMat.empty.toCols, ByteArray.empty, r0,
         Array.ofFn (n := n) fun i ↦ (i.val + 1) % n, #[],
         NTTFast.Packed.Native.encodeFields FS, NTTFast.Packed.Native.encodeFields LS,
         NTTFast.Packed.Native.encodeFields TS⟩ : Prog.Loads) = L.enc := by
       rw [NTTFast.Packed.Native.encodeFields_eq, NTTFast.Packed.Native.encodeFields_eq,
         transposeRows_encode A.preprocessed A.preprocessedWidth r0 B hmp husp,
         NTTFast.Packed.Native.encodeFields_eq, NTTFast.Packed.Native.encodeFields_eq,
-        NTTFast.Packed.Native.encodeFields_eq]
-      simp only [L, Prog.LoadsF.enc, mp, blockT, CompPoly.PackedRepr.encode_empty,
-        Array.map_empty]
+        NTTFast.Packed.Native.encodeFields_eq,
+        rowMajorCols_eq trace A.width n (Nat.two_pow_pos _) (by rw [htr]) hus,
+        rowMajorCols_eq A.preprocessed A.preprocessedWidth n (Nat.two_pow_pos _) (by rw [hpre])
+          husp]
+      simp only [L, Prog.LoadsF.enc, mp, mt, blockT, CompPoly.PackedRepr.encode_empty,
+        PMat.empty, PMat.toCols, List.map_toArray, List.map_nil, Prog.ColsF.enc]
     exact ⟨fun e he ↦ key _ _ _ hvb hLc e (by
         have := (h1 e he).2; simpa only [Nat.zero_add] using this),
       key _ _ _ hvb hLc x.2 (by simpa only [Nat.zero_add] using h2)⟩
@@ -1339,7 +1377,7 @@ theorem permutationWords_eq [Mont32BaseField p] [Binomial4 p] (A : Air F)
 
 /-- **The fast extension of the permutation trace is the specification's**, and so is its
 terminal. -/
-theorem permutationLdeWith_rel [Mont32BaseField p] [Binomial4 p] [PackedCosetLde p]
+theorem permutationLdeWith_rel [Mont32BaseField p] [Binomial4 p]
     (plans : List (Nat × Nat × F × LdePlan p))
     (hplans : ∀ e ∈ plans, plan? e.1 e.2.1 e.2.2.1 = some e.2.2.2) (bits : Nat) (A : Air F)
     (ls : List (Stark.Lookup F)) (logN : Nat) (t : Array F) (pis : List F) (chs : List EF)

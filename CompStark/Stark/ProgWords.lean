@@ -265,18 +265,26 @@ structure View where
   cb : Nat
   cs : Nat
 
+/-- A matrix's columns in blocks of rows: entry `(r, c)` is word `r % rows` of
+`cols[r / rows * width + c]`. -/
+structure Cols where
+  cols : Array ByteArray
+  width : Nat
+  rows : Nat
+
+/-- Entry `(r, c)` of columns in blocks of rows. -/
+@[inline] def Cols.at (m : @& Cols) (r c : Nat) : UInt32 :=
+  read (m.cols.getD (r / m.rows * m.width + c) .empty) (r % m.rows)
+
 /-- What a program loads on a block of `B` rows from row `r0`: the trace, the preprocessed trace
-and the permutation trace, row-major of widths `w`, `pw`, `rw`, with the next row of row `r` at
-`next[r]`, and the block's current rows of the last two transposed (`prepT`, `permT`: column `c`
-at words `c B`); the periodic columns, one buffer each; and the selectors. -/
+and the permutation trace as columns, with the next row of row `r` at `next[r]`, and the block's
+current rows of the last two transposed (`prepT`, `permT`: column `c` at words `c B`); the
+periodic columns, one buffer each; and the selectors. -/
 structure Loads where
-  main : ByteArray
-  w : Nat
-  prep : ByteArray
-  pw : Nat
+  main : Cols
+  prep : Cols
   prepT : ByteArray
-  perm : ByteArray
-  rw : Nat
+  perm : Cols
   permT : ByteArray
   r0 : Nat
   next : Array Nat
@@ -359,28 +367,26 @@ theorem size_fillWord (S : Nat) (hS : S < USize.size) (regs : ByteArray) (hr : r
     (c : UInt32) (B : Nat) : (fillWord S hS regs hr c B).size = S :=
   size_passWord ..
 
-/-- Column `c` of a row-major matrix of width `w` at the rows `next[r0 + k]`, into the buffer,
-word by word. -/
-def nextInto (m : @& ByteArray) (w c : Nat) (next : @& Array Nat) (r0 : Nat) :
+/-- Column `c` of columns `m` at the rows `next[r0 + k]`, into the buffer, word by word. -/
+def nextInto (m : @& Cols) (c : Nat) (next : @& Array Nat) (r0 : Nat) :
     (k n : Nat) → ByteArray → ByteArray
   | _, 0, out => out
   | k, n + 1, out =>
-    nextInto m w c next r0 (k + 1) n
-      (write out k (read m (next.getD (r0 + k) 0 * w + c)))
+    nextInto m c next r0 (k + 1) n (write out k (m.at (next.getD (r0 + k) 0) c))
 
-theorem size_nextInto (m : ByteArray) (w c : Nat) (next : Array Nat) (r0 : Nat) :
-    ∀ k n out, (nextInto m w c next r0 k n out).size = out.size
+theorem size_nextInto (m : Cols) (c : Nat) (next : Array Nat) (r0 : Nat) :
+    ∀ k n out, (nextInto m c next r0 k n out).size = out.size
   | _, 0, _ => rfl
   | k, n + 1, out => by rw [nextInto, size_nextInto, size_write]
 
 /-- Load a source into the buffer. -/
 def loadSrc (S : Nat) (hS : S < USize.size) (regs : ByteArray) (hr : regs.size = S)
     (L : @& Loads) (B : Nat) : Src → ByteArray
-  | .next c => nextInto L.main L.w c L.next L.r0 0 B regs
+  | .next c => nextInto L.main c L.next L.r0 0 B regs
   | .prepCur c => copyWords S hS regs hr L.prepT (c * B) B
-  | .prepNext c => nextInto L.prep L.pw c L.next L.r0 0 B regs
+  | .prepNext c => nextInto L.prep c L.next L.r0 0 B regs
   | .permCur c => copyWords S hS regs hr L.permT (c * B) B
-  | .permNext c => nextInto L.perm L.rw c L.next L.r0 0 B regs
+  | .permNext c => nextInto L.perm c L.next L.r0 0 B regs
   | .periodic j =>
     match L.per[j]? with
     | some c => copyWords S hS regs hr c L.r0 B

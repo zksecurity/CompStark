@@ -32,9 +32,21 @@ def RT (logH w : Nat) (t : Array ByteArray) (m : Array F) : Prop :=
   m.size = 2 ^ logH * w ∧
     ∃ k ≤ logH, t = CompPoly.CPolynomial.NTTFast.Packed.Native.rowChunks m w logH k
 
-/-- A packed matrix represents the matrix of its encoded values. -/
-def RM (pm : PMat) (m : Mat F) : Prop :=
-  pm.width = m.width ∧ pm.height = m.height ∧ pm.words = encode m.values
+/-- The columns of a matrix in blocks of `R` rows: column `j` of block `b` at `b * width + j`. -/
+def colBlocks (m : Mat F) (R : Nat) : Array (Array F) :=
+  Array.ofFn (n := m.height / R * m.width) fun i ↦ Array.ofFn (n := R) fun k ↦
+    m.values.getD ((i.val / m.width * R + k) * m.width + i.val % m.width) 0
+
+/-- A packed matrix represents the matrix of its encoded values, `width × height` of them: its
+columns in blocks of an addressable number of rows that divides the height. -/
+structure RM (pm : PMat) (m : Mat F) : Prop where
+  width : pm.width = m.width
+  height : pm.height = m.height
+  size : m.values.size = m.width * m.height
+  pos : 0 < pm.rows
+  addr : 4 * pm.rows < USize.size
+  dvd : m.height % pm.rows = 0
+  cols : pm.cols = (colBlocks m pm.rows).map encode
 
 /-- Planes represent the elements whose coordinates they encode. -/
 def RV (v : EVec p) (a : Array EF) : Prop :=

@@ -7,7 +7,7 @@ module
 public import CompStark.Plonky3.Prover
 public import CompStark.Mont32.Challenge
 public import CompStark.Poseidon2.PackedField
-public import CompStark.Merkle.Packed
+public import CompStark.Merkle.PackedColumns
 public import CompPoly.Univariate.NTTFast.Packed.CosetLde
 public import CompStark.Stark.Words
 public import CompStark.Stark.ExtWords
@@ -18,16 +18,17 @@ public import CompStark.Stark.ProgGroup
 
 The kernels of `Backend` on packed Montgomery words, over a Montgomery field `FastField p` with its
 domains (`Mont32BaseField`), the quartic extension `Ext4 p` (`Binomial4`), Plonky3's Poseidon2
-(`Poseidon2Field`) on packed groups (`PackedPoseidon2`) and CompPoly's compiled coset LDE
-(`PackedCosetLde`):
+(`Poseidon2Field`) on packed groups (`PackedPoseidon2`) and CompPoly's coset LDE kernels. Matrices
+are packed column by column (`PMat`), in blocks of rows:
 
 * The transcript is Plonky3's duplex challenger on the field's Poseidon2 implementation. Grinding
   tries eight candidates per packed permutation, as Plonky3 does, and returns the smallest that
   passes.
-* Low-degree extension is CompPoly's batched coset LDE.
+* Low-degree extension is CompPoly's batched coset LDE, every column extended by one task into its
+  coset blocks (`ldeColumns`), which are the extension's blocks of columns.
 * The Merkle digest layers come from the packed Merkle commitment: the tallest matrices' rows side
-  by side are hashed, and the matrices of each smaller height are hashed likewise and injected
-  into the layer of their height by one more packed compression.
+  by side are hashed from their columns, and the matrices of each smaller height are hashed
+  likewise and injected into the layer of their height by one more packed compression.
 * The LogUp kernels work on blocks of rows as base words or as planes of extension coordinates
   (`XVal`, keeping the cheapest kind through every operation). The permutation trace's fractions
   are computed block by block, every denominator inverted through the norm with one batch
@@ -49,18 +50,24 @@ native library.
 @[expose] public section
 namespace CompStark.Stark.Fast
 open CompStark.Fri CompStark.Poseidon2 Montgomery.Native32
-open CompPoly.CPolynomial.NTTFast.Packed (LdePlan PackedCosetLde)
+open CompPoly.CPolynomial.NTTFast.Packed (LdePlan)
 
 variable {p : ℕ} [Mont32Field p]
 
 local notation "F" => FastField p
 local notation "EF" => Ext4 p
 
-/-- A row-major matrix of base elements as packed Montgomery words. -/
+/-- A matrix of base elements as packed Montgomery words, column by column in blocks of `rows`
+rows: `cols[b * width + j]` holds column `j` on the rows `b · rows, …, b · rows + rows - 1`. -/
 structure PMat where
   width : Nat
   height : Nat
-  words : ByteArray
+  rows : Nat
+  cols : Array ByteArray
+
+/-- Column `j` of a packed matrix from row `r` on: its block's buffer, and the word of row `r`. -/
+@[inline] def PMat.colAt (m : @& PMat) (j r : Nat) : ByteArray × Nat :=
+  (m.cols.getD (r / m.rows * m.width + j) .empty, r % m.rows)
 
 /-- A field element from a packed word. -/
 def word (b : ByteArray) (i : Nat) : F :=
@@ -138,25 +145,40 @@ def plan? [Mont32BaseField p] (logH bits : Nat) (shift : F) : Option (LdePlan p)
         omega))
   else none
 
-/-- CompPoly's batched coset LDE, bit-reversed rows, of a matrix given as chunks of packed rows.
-Plans come from `plans` when one matches, else are built; there is none beyond the two-adic
-subgroups. -/
-def ldeWordsWith [Mont32BaseField p] [PackedCosetLde p] (plans : List (Nat × Nat × F × LdePlan p))
+open CompPoly.CPolynomial.NTTFast.Packed.Native (rangesPerChunk transposeRows columnCoefficients
+  gatherColumn cosetBlock) in
+/-- The extension by `P` of the `w`-column matrix whose rows are the chunks `ms` of equal heights,
+column by column: block `t` of column `j`, the values on coset `bitrev t`, at `t * w + j`. Tasks
+transpose row ranges of the chunks into columns; every column is one task, its coefficients and
+then each of its coset blocks, the last one from the coefficients' buffer. -/
+def ldeColumns (P : LdePlan p) (w : Nat) (ms : Array ByteArray) : Array ByteArray :=
+  let q := rangesPerChunk P.logH ms.size
+  let rows := 2 ^ P.logH / (ms.size * q)
+  let pieces := CompPoly.Tasks.join (CompPoly.Tasks.spawnAll (ms.size * q) fun k ↦
+    transposeRows (ms.getD (k / q) .empty) w (k % q * rows) rows)
+  let blocks := (CompPoly.Tasks.join ((Array.range w).map fun j ↦ pieces.bind fun ps ↦
+    Task.spawn fun _ ↦
+      let c := columnCoefficients P (gatherColumn ps rows j)
+      (Array.range (2 ^ P.bits)).map fun t ↦ cosetBlock P c t)).get
+  (Array.range (2 ^ P.bits)).flatMap fun t ↦ blocks.map fun b ↦ b.getD t .empty
+
+/-- CompPoly's batched coset extension, bit-reversed rows, of a matrix given as chunks of packed
+rows, as columns in blocks of the input's height (`ldeColumns`). Plans come from `plans` when one
+matches, else are built; there is none beyond the two-adic subgroups. -/
+def ldeWordsWith [Mont32BaseField p] (plans : List (Nat × Nat × F × LdePlan p))
     (logH bits : Nat) (shift : F) (w : Nat) (ms : Array ByteArray) : PMat :=
   let found := plans.find? fun (h, b, s, _) ↦ h == logH && b == bits && s == shift
   match found.map (·.2.2.2) <|> plan? logH bits shift with
-  | some P =>
-    let out := CompPoly.CPolynomial.NTTFast.Packed.Native.joinRows (P.cosetLde w ms)
-    { width := w, height := 2 ^ (logH + bits), words := out }
-  | none => { width := w, height := 0, words := .empty }
+  | some P => ⟨w, 2 ^ (logH + bits), 2 ^ logH, ldeColumns P w ms⟩
+  | none => ⟨w, 0, 1, #[]⟩
 
 /-- CompPoly's batched coset LDE, bit-reversed rows, packed: `ldeRef` on words. -/
-def ldeWith [Mont32BaseField p] [PackedCosetLde p] (plans : List (Nat × Nat × F × LdePlan p))
+def ldeWith [Mont32BaseField p] (plans : List (Nat × Nat × F × LdePlan p))
     (logH bits : Nat) (shift : F) (w : Nat) (m : Array F) : PMat :=
   ldeWordsWith plans logH bits shift w #[CompPoly.CPolynomial.NTTFast.Packed.Native.encodeFields m]
 
 /-- The extension without cached plans. -/
-def lde [Mont32BaseField p] [PackedCosetLde p] (logH bits : Nat) (shift : F) (w : Nat)
+def lde [Mont32BaseField p] (logH bits : Nat) (shift : F) (w : Nat)
     (m : Array F) : PMat :=
   ldeWith [] logH bits shift w m
 
@@ -169,31 +191,29 @@ def ldePlans [Mont32BaseField p] (logN logBlowup logChunks : Nat) : List
     gen * (gen * powF (twoAdicGen qlog) c)⁻¹
   shifts.filterMap fun s ↦ (plan? logN logBlowup s).map fun P ↦ (logN, logBlowup, s, P)
 
-/-- The padded leaf digests of a matrix of width `w` given as one chunk of rows, hashed in place by
-parallel tasks over ranges of the rows, and their number. -/
+/-- The columns of matrices side by side from row `r` on (`PMat.colAt`). -/
+def colsList (ms : List PMat) (r : Nat) : List (ByteArray × Nat) :=
+  ms.flatMap fun m ↦ (List.range m.width).map fun j ↦ m.colAt j r
+
+/-- The padded leaf digests of the rows of matrices of height `h` side by side, and their number:
+hashed from the matrices' columns by parallel tasks over ranges of at most 512 rows, each range
+within one block of rows of every matrix. -/
 def leafLayer (p : ℕ) [Mont32Field p] [Poseidon2Field (FastField p)] [PackedPoseidon2 p]
-    (w : Nat) (m : ByteArray) : ByteArray × Nat :=
-  let h := if w = 0 then 0 else m.size / (4 * w)
-  -- Ranges of 512 rows or more: many more tasks than threads, so that busy cores do not hold
-  -- back the layer.
-  let parts := if h < 1024 then 1 else h / 512
-  let first := Merkle.Packed.leavesIn p w m h parts
+    (ms : List PMat) (h : Nat) : ByteArray × Nat :=
+  let w := ms.foldl (· + ·.width) 0
+  let size := ms.foldl (fun a m ↦ Nat.gcd a m.rows) 512
+  let parts := h / size
+  let first := (CompPoly.Tasks.spawnAll parts fun k ↦
+    Merkle.Packed.hashColumns p ((colsList ms (k * size)).map (·.1)).toArray
+      ((colsList ms (k * size)).map (·.2)).toArray w size).foldl (fun acc t ↦ acc ++ t.get)
+      (ByteArray.emptyWithCapacity (32 * (h + 1)))
   let padded := if h = 1 then 1 else h + h % 2
   (Merkle.Packed.padDigests first h padded, padded)
 
-/-- The rows of matrices of one height side by side, packed. -/
-def sideBySide (ms : List PMat) (h : Nat) : ByteArray :=
-  match ms with
-  | [m] => m.words
-  | _ => Id.run do
-    let w := ms.foldl (· + ·.width) 0
-    let mut out := CompPoly.CPolynomial.NTTFast.Packed.Native.zeroWords (h * w)
-    for r in [0:h] do
-      let mut off := r * w
-      for m in ms do
-        out := m.words.copySlice (4 * r * m.width) out (4 * off) (4 * m.width)
-        off := off + m.width
-    return out
+/-- Digests `0, …, n - 1` of two layers interleaved: digest `i` of `a`, then digest `i` of `b`. -/
+def interleaveDigests (a b : @& ByteArray) (n : Nat) : ByteArray :=
+  (List.range n).foldl (fun out i ↦ out ++ a.extract (32 * i) (32 * i + 32) ++
+    b.extract (32 * i) (32 * i + 32)) (ByteArray.emptyWithCapacity (64 * n))
 
 /-- Digests as consecutive packed words. -/
 def encodeDigests (ds : Array (Digest F)) : ByteArray :=
@@ -205,8 +225,8 @@ side, by the packed compression of the two layers interleaved. -/
 def injectLayer (p : ℕ) [Mont32Field p] [Poseidon2Field (FastField p)] [PackedPoseidon2 p]
     (layer : ByteArray) (n : Nat) (inj : List PMat) : ByteArray :=
   if inj.isEmpty then layer else
-    let (hs, _) := leafLayer p (inj.foldl (· + ·.width) 0) (sideBySide inj n)
-    (Merkle.Packed.nextLayer p (sideBySide [⟨8, n, layer⟩, ⟨8, n, hs⟩] n) (2 * n)).1
+    let (hs, _) := leafLayer p inj n
+    (Merkle.Packed.nextLayer p (interleaveDigests layer hs n) (2 * n)).1
 
 /-- `out` followed by at most `fuel` layers above `layer` of `n` digests, up to the root, with the
 matrices of `rest`, tallest first, injected where their height is the layer's. -/
@@ -231,7 +251,7 @@ def commitLayers (p : ℕ) [Mont32Field p] [Poseidon2Field (FastField p)] [Packe
   | [] => #[]
   | m :: _ =>
     let tallest := sorted.takeWhile (·.height == m.height)
-    let (first, n) := leafLayer p (tallest.foldl (· + ·.width) 0) (sideBySide tallest m.height)
+    let (first, n) := leafLayer p tallest m.height
     upperMixed p (sorted.drop tallest.length) first n #[first] n
 
 /-- Packed matrices under one Merkle tree, with the packed digest layers, leaves first. -/
@@ -249,12 +269,9 @@ namespace Commit
 /-- The largest matrix height. -/
 def maxHeight (c : Commit) : Nat := c.mats.foldl (fun m a ↦ max m a.height) 0
 
-/-- Row `r` of a packed matrix, read without bounds: a query reads a few rows, so its reads need
-no `USize` index. -/
+/-- Row `r` of a packed matrix, word by word from its columns. -/
 def readRow (m : PMat) (r : Nat) : Array F :=
-  let a : Array F := CompPoly.PackedRepr.decode (m.words.extract (4 * (r * m.width))
-    (4 * (r * m.width + m.width)))
-  Array.ofFn (n := m.width) fun j ↦ a.getD j.val 0
+  Array.ofFn (n := m.width) fun j ↦ word (m.colAt j r).1 (m.colAt j r).2
 
 /-- Digest `k` of a packed layer: its 32 bytes, copied out, whose word reads always fit. -/
 def readDigest (b : ByteArray) (k : Nat) : Digest F :=
@@ -275,6 +292,29 @@ def openAt (c : Commit) (index : Nat) : BatchOpening F :=
     readDigest (c.layers.getD i.val .empty) ((index >>> i.val) ^^^ 1)⟩
 
 end Commit
+
+/-- A packed matrix's columns for programs. -/
+def PMat.toCols (m : PMat) : Prog.Cols := ⟨m.cols, m.width, m.rows⟩
+
+/-- Rows `r0, …, r0 + B - 1` of a packed matrix, transposed: column `c` at words `c B`, copied from
+the columns, word by word unless they lie in one block of rows. -/
+def PMat.block (m : @& PMat) (r0 B : Nat) : ByteArray :=
+  let out := ByteArray.emptyWithCapacity (4 * (m.width * B))
+  if r0 % m.rows + B ≤ m.rows then
+    Merkle.Packed.foldRange (fun out c ↦
+      (m.colAt c r0).1.copySlice (4 * (m.colAt c r0).2) out out.size (4 * B)) m.width 0 out
+  else
+    Merkle.Packed.foldRange (fun out c ↦ Merkle.Packed.foldRange (fun out k ↦
+      (m.colAt c (r0 + k)).1.copySlice (4 * (m.colAt c (r0 + k)).2) out out.size 4) B 0 out)
+      m.width 0 out
+
+/-- The empty matrix. -/
+def PMat.empty : PMat := ⟨0, 0, 1, #[]⟩
+
+/-- The columns of a packed row-major matrix of width `w` and `n` rows, in one block. -/
+def rowMajorCols (m : @& ByteArray) (w n : Nat) : Prog.Cols :=
+  let t := CompPoly.CPolynomial.NTTFast.Packed.Native.transposeRows m w 0 n
+  ⟨(Array.range w).map fun j ↦ t.extract (4 * (j * n)) (4 * (j * n + n)), w, n⟩
 
 /-- Words `i, …, i + B - 1` of `b`. -/
 def slice (b : @& ByteArray) (i B : Nat) : ByteArray := b.extract (4 * i) (4 * (i + B))
@@ -413,21 +453,19 @@ def periodicWords [Mont32BaseField p] (T : QuotientTables p) (A : Air F) : Array
 
 /-- `quotientOfLde` on packed words with the shape's tables `T`: the constraints' program
 (`Prog.compile`) on blocks of rows in the extension's bit-reversed order (`quotientBlocks`),
-every block's rows of the extensions transposed, their next rows gathered. -/
+every block's rows of the extensions copied from their columns, their next rows gathered. -/
 def quotientWith [Mont32BaseField p] [Binomial4 p] (kernels : List (Prog.GroupKernel p))
     (T : QuotientTables p) (A : Air F) (pis : List F) (ext : PMat) (prep : Option PMat)
     (alpha : EF) : Array EF :=
-  let pw := (prep.map (·.width)).getD 0
-  let pwords := (prep.map (·.words)).getD ByteArray.empty
+  let pm := prep.getD PMat.empty
   let per := periodicWords T A
-  let tr := CompPoly.CPolynomial.NTTFast.Packed.Native.transposeRows
   let prog := Prog.compile A.constraints
   let k? := kernelFor kernels prog.code
   quotientBlocks T prog (groupRun k? prog.code)
     pis.toArray (weightCoords alpha A.constraints.length) fun r0 ↦
-      (⟨tr ext.words ext.width r0 T.B, 0, T.B⟩,
-        ⟨ext.words, ext.width, pwords, pw, tr pwords pw r0 T.B, .empty, 0, .empty, r0, T.next,
-          per, T.first, T.last, T.trans⟩)
+      (⟨ext.block r0 T.B, 0, T.B⟩,
+        ⟨ext.toCols, pm.toCols, pm.block r0 T.B, PMat.empty.toCols, .empty, r0, T.next, per,
+          T.first, T.last, T.trans⟩)
 
 /-- `quotientOfLde` on packed words. -/
 def quotient [Mont32BaseField p] [Binomial4 p] (A : Air F) (pis : List F)
@@ -504,18 +542,16 @@ and the challenges) on blocks of rows (`quotientBlocks`). -/
 def lookupQuotientWith [Mont32BaseField p] [Binomial4 p] (kernels : List (Prog.GroupKernel p))
     (T : QuotientTables p) (A : Air F) (ext : List (Lookup.ExtExpr F)) (pis : List F) (tr : PMat)
     (prep : Option PMat) (perm : PMat) (chs : List EF) (terminal alpha : EF) : Array EF :=
-  let pw := (prep.map (·.width)).getD 0
-  let pwords := (prep.map (·.words)).getD ByteArray.empty
+  let pm := prep.getD PMat.empty
   let per := periodicWords T A
-  let tp := CompPoly.CPolynomial.NTTFast.Packed.Native.transposeRows
   let prog := Prog.compileExt Binomial4.W pis.length ext
   let k? := kernelFor kernels prog.code
   quotientBlocks T prog (groupRun k? prog.code)
     (pis.toArray ++ (terminal :: chs).toArray.flatMap fun c ↦ (Ext.coeffs c).toArray)
     (extWeightCoords alpha ext.length) fun r0 ↦
-      (⟨tp tr.words tr.width r0 T.B, 0, T.B⟩,
-        ⟨tr.words, tr.width, pwords, pw, tp pwords pw r0 T.B, perm.words, perm.width,
-          tp perm.words perm.width r0 T.B, r0, T.next, per, T.first, T.last, T.trans⟩)
+      (⟨tr.block r0 T.B, 0, T.B⟩,
+        ⟨tr.toCols, pm.toCols, pm.block r0 T.B, perm.toCols, perm.block r0 T.B, r0, T.next, per,
+          T.first, T.last, T.trans⟩)
 
 /-- `lookupQuotientOfLde` on packed words. -/
 def lookupQuotient [Mont32BaseField p] [Binomial4 p] (A : Air F) (ext : List (Lookup.ExtExpr F))
@@ -704,9 +740,11 @@ def permutationWords [Mont32BaseField p] [Binomial4 p] (A : Air F) (ls : List (S
   let trans := sel (· + 1 < n)
   let tups := ls.map Stark.Lookup.tuples
   let prog := Prog.compileOuts (flatTuples tups)
+  let mc := rowMajorCols words w n
+  let pc := rowMajorCols pwords pw n
   let blk (r0 : Nat) : Array ByteArray :=
     let tr := CompPoly.CPolynomial.NTTFast.Packed.Native.transposeRows
-    let L : Prog.Loads := ⟨words, w, pwords, pw, tr pwords pw r0 B, .empty, 0, .empty, r0, next,
+    let L : Prog.Loads := ⟨mc, pc, tr pwords pw r0 B, PMat.empty.toCols, .empty, r0, next,
       #[], first, last, trans⟩
     let v : Prog.View := ⟨tr words w r0 B, 0, B⟩
     let regs := Prog.runBlock p prog.code v L pis.toArray #[] B hS (Array.replicate (4 + prog.regs)
@@ -717,7 +755,7 @@ def permutationWords [Mont32BaseField p] [Binomial4 p] (A : Air F) (ls : List (S
 
 /-- `permutationLdeOf` on packed words: the permutation trace's words (`permutationWords`)
 extended by CompPoly's batched coset LDE with plans from `plans`. -/
-def permutationLdeWith [Mont32BaseField p] [Binomial4 p] [PackedCosetLde p]
+def permutationLdeWith [Mont32BaseField p] [Binomial4 p]
     (plans : List (Nat × Nat × F × LdePlan p)) (bits : Nat) (A : Air F)
     (ls : List (Stark.Lookup F)) (logN : Nat) (trace : Array F) (pis : List F) (chs : List EF) :
     PMat × EF :=
@@ -734,29 +772,20 @@ def weightPlanes [Mont32BaseField p] [Binomial4 p] (zs : @& Array EF) (xs : @& B
     acc ++ #[wt.c0, wt.c1, wt.c2, wt.c3]) #[]
 
 /-- The column sums `∑_r m[r][j] · x_r / (z - x_r)` over the stored rows `r0, …, r0 + len - 1` of a
-packed matrix of width `w`, for every point `z` of `zs`: per point four planes of `w` words. Rows
-are multiply-added into every plane four at a time, reduced once per word, while they are in
-cache, so the matrix is read once, row by row; the last `len % 4` rows one at a time. -/
-def weightedColumns [Mont32BaseField p] [Binomial4 p] (m : @& ByteArray) (w : Nat)
-    (zs : @& Array EF) (xs : @& ByteArray) (r0 len : Nat) : Array ByteArray := Id.run do
+packed matrix, within one block of its rows, for every point `z` of `zs`: per point four planes of
+a word per column. Each column's rows are dotted with every plane while they are in cache. -/
+def weightedColumns [Mont32BaseField p] [Binomial4 p] (m : @& PMat) (zs : @& Array EF)
+    (xs : @& ByteArray) (r0 len : Nat) : Array ByteArray :=
   let wts := weightPlanes zs xs r0 len
-  let read := CompPoly.CPolynomial.NTTFast.Packed.Native.read
-  let mut out := Array.replicate wts.size (CompPoly.CPolynomial.NTTFast.Packed.Native.zeroWords w)
-  for g in [0:len / 4] do
-    for i in [0:wts.size] do
-      let pl := wts.getD i .empty
-      out := out.modify i fun a ↦ Words.mulAdd4Into p a m ((r0 + 4 * g) * w)
-        ((r0 + 4 * g + 1) * w) ((r0 + 4 * g + 2) * w) ((r0 + 4 * g + 3) * w) (read pl (4 * g))
-        (read pl (4 * g + 1)) (read pl (4 * g + 2)) (read pl (4 * g + 3)) w
-  for t in [4 * (len / 4):len] do
-    for i in [0:wts.size] do
-      out := out.modify i fun a ↦ Words.mulAddInto p a m ((r0 + t) * w) (read (wts.getD i .empty) t)
-        w
-  return out
+  let sums := (Array.range m.width).map fun j ↦
+    wts.map fun pl ↦ Words.dotAt p (m.colAt j r0).1 (m.colAt j r0).2 pl len
+  (Array.range wts.size).map fun i ↦ CompPoly.CPolynomial.NTTFast.Packed.Native.encodeFields
+    (Array.ofFn (n := m.width) fun j ↦
+      CompPoly.CPolynomial.NTTFast.Packed.ofWord p ((sums.getD j.val #[]).getD i 0))
 
 /-- `openedAt` on packed words, at all points of a matrix: the barycentric weights `x / (z - x)` in
 the stored bit-reversed row order, as planes by the norm, and the column sums over parallel row
-ranges, each range transposed once for all points. -/
+ranges, each range within one block of the matrix's rows. -/
 def openedAt [Mont32BaseField p] [Binomial4 p] (logBlowup : Nat) (m : PMat) (zs : List EF) : List
     (Array EF) :=
   let logH := Nat.log2 m.height - logBlowup
@@ -764,11 +793,10 @@ def openedAt [Mont32BaseField p] [Binomial4 p] (logBlowup : Nat) (m : PMat) (zs 
   let w := m.width
   let xs := CompPoly.CPolynomial.NTTFast.Packed.Native.encodeFields
       (cosetPointsBitRev (gen : F) logH)
-  let parts := if h < 4096 then 1 else 16
+  let parts := h / Nat.gcd (if h < 4096 then h else h / 16) m.rows
   let size := h / parts
   let tasks := (Array.range parts).map fun k ↦ Task.spawn fun _ ↦
-    weightedColumns m.words w zs.toArray xs (k * size)
-      (if k + 1 = parts then h - k * size else size)
+    weightedColumns m zs.toArray xs (k * size) (if k + 1 = parts then h - k * size else size)
   let sums := tasks.foldl (fun acc t ↦ (acc.zip t.get).map fun (a, b) ↦ Words.addWords p a b w)
     (Array.replicate (4 * zs.length) (CompPoly.CPolynomial.NTTFast.Packed.Native.zeroWords w))
   zs.zipIdx.map fun (z, k) ↦
@@ -777,24 +805,20 @@ def openedAt [Mont32BaseField p] [Binomial4 p] (logBlowup : Nat) (m : PMat) (zs 
       factor * ⟨word (sums.getD (4 * k) .empty) j, word (sums.getD (4 * k + 1) .empty) j,
         word (sums.getD (4 * k + 2) .empty) j, word (sums.getD (4 * k + 3) .empty) j⟩
 
-/-- Rows `r0, …, r0 + len - 1` of a packed matrix of width `w` batched by the powers of `α`, given
-as four coordinate planes `a0, …, a3`: four planes of `len` words. Every row is dotted with the
-four planes while it is in cache, so the matrix is read once, row by row. -/
-def compressRange (p : ℕ) [Mont32Field p] (m : @& ByteArray) (w : Nat)
-    (a0 a1 a2 a3 : @& ByteArray) (r0 len : Nat) : Array ByteArray := Id.run do
+/-- Rows `r0, …, r0 + len - 1` of a packed matrix, within one block of its rows, batched by the
+powers of `α`, given as four coordinate planes `a0, …, a3`: four planes of `len` words, every
+column multiply-added into them. -/
+def compressRange (p : ℕ) [Mont32Field p] (m : @& PMat) (a0 a1 a2 a3 : @& ByteArray)
+    (r0 len : Nat) : Array ByteArray :=
   let z := CompPoly.CPolynomial.NTTFast.Packed.Native.zeroWords len
-  let mut p0 := z
-  let mut p1 := z
-  let mut p2 := z
-  let mut p3 := z
-  for t in [0:len] do
-    let o := (r0 + t) * w
-    let write := CompPoly.CPolynomial.NTTFast.Packed.Native.write
-    p0 := write p0 t (Words.dotAt p m o a0 w)
-    p1 := write p1 t (Words.dotAt p m o a1 w)
-    p2 := write p2 t (Words.dotAt p m o a2 w)
-    p3 := write p3 t (Words.dotAt p m o a3 w)
-  return #[p0, p1, p2, p3]
+  let read := CompPoly.CPolynomial.NTTFast.Packed.Native.read
+  let ps := Merkle.Packed.foldRange (fun (ps : ByteArray × ByteArray × ByteArray × ByteArray) j ↦
+    let c := m.colAt j r0
+    (Words.mulAddInto p ps.1 c.1 c.2 (read a0 j) len,
+      Words.mulAddInto p ps.2.1 c.1 c.2 (read a1 j) len,
+      Words.mulAddInto p ps.2.2.1 c.1 c.2 (read a2 j) len,
+      Words.mulAddInto p ps.2.2.2 c.1 c.2 (read a3 j) len)) m.width 0 (z, z, z, z)
+  #[ps.1, ps.2.1, ps.2.2.1, ps.2.2.2]
 
 /-- Concatenate parallel pieces of planes. -/
 def joinPlanes (p : ℕ) (n : Nat) (pieces : Array (Task (Array ByteArray))) : EVec p :=
@@ -802,28 +826,18 @@ def joinPlanes (p : ℕ) (n : Nat) (pieces : Array (Task (Array ByteArray))) : E
     (ByteArray.emptyWithCapacity (4 * n))
   ⟨n, cat 0, cat 1, cat 2, cat 3⟩
 
-/-- Every row of a packed matrix batched by the powers `ap` of `α`, in parallel row ranges. -/
-def compressPlanes (m : PMat) (ap : Array EF) : EVec p :=
-  let a := EVec.ofArray ap
-  let n := m.height
-  let parts := if n < 4096 then 1 else 16
-  let size := n / parts
-  joinPlanes p n <| (Array.range parts).map fun k ↦ Task.spawn fun _ ↦
-    compressRange p m.words m.width a.c0 a.c1 a.c2 a.c3 (k * size)
-      (if k + 1 = parts then n - k * size else size)
-
 /-- Rows `r0, …, r0 + len - 1` of the batched quotient of one height: for every matrix, its rows
 batched by the planes `a` of the powers of `α`, and for every point `(z, yz, offset)` the term
 `offset · (yz - comp) / (z - x)`, `xs` the height's points. -/
 def reduceRange [Mont32BaseField p] [Binomial4 p]
-    (items : @& Array (ByteArray × Nat × EVec p × List (EF × EF × EF))) (xs : @& ByteArray)
+    (items : @& Array (PMat × EVec p × List (EF × EF × EF))) (xs : @& ByteArray)
     (r0 len : Nat) : EVec p := Id.run do
   let xr := slice xs r0 len
   let mut acc := EVec.zeros len
   -- `1 / (z - x)` once per distinct point.
   let mut invs : List (EF × EVec p) := []
-  for (words, w, a, pts) in items do
-    let comp := compressRange p words w a.c0 a.c1 a.c2 a.c3 r0 len
+  for (m, a, pts) in items do
+    let comp := compressRange p m a.c0 a.c1 a.c2 a.c3 r0 len
     let comp : EVec p := ⟨len, comp.getD 0 .empty, comp.getD 1 .empty, comp.getD 2 .empty,
       comp.getD 3 .empty⟩
     for (z, yz, offset) in pts do
@@ -836,14 +850,14 @@ def reduceRange [Mont32BaseField p] [Binomial4 p]
       acc := acc.add (((EVec.rsub yz comp).mul inv).smul offset)
   return acc
 
-/-- `Fri.reduce` on planes, every height in parallel row ranges: rows batched by word dot
-products, `1 / (z - x)` by the norm. -/
+/-- `Fri.reduce` on planes, every height in parallel ranges of rows within one block of every
+matrix: rows batched column by column, `1 / (z - x)` by the norm. -/
 def reduce [Mont32BaseField p] [Binomial4 p] (alpha : EF)
     (items : List (PMat × List (EF × Array EF))) :
     List (Nat × EVec p) :=
   Id.run do
   -- Per height: the matrices with their points, opened sums and powers of `α`, in order.
-  let mut groups : List (Nat × Nat × Array (ByteArray × Nat × EVec p × List (EF × EF × EF))) := []
+  let mut groups : List (Nat × Nat × Array (PMat × EVec p × List (EF × EF × EF))) := []
   for (m, pts) in items do
     let logH := Nat.log2 m.height
     let (cnt, g) := (groups.lookup logH).getD (0, #[])
@@ -854,13 +868,13 @@ def reduce [Mont32BaseField p] [Binomial4 p] (alpha : EF)
       let yz := (List.range m.width).foldl (fun s i ↦ s + ap.getD i 0 * ys.getD i 0) 0
       terms := terms ++ [(z, yz, Ext.pow alpha cnt)]
       cnt := cnt + m.width
-    groups := (logH, cnt, g.push (m.words, m.width, EVec.ofArray ap, terms)) ::
+    groups := (logH, cnt, g.push (m, EVec.ofArray ap, terms)) ::
       groups.filter (·.1 != logH)
   let out := groups.map fun (logH, _, g) ↦
     let n := 2 ^ logH
     let xs := CompPoly.CPolynomial.NTTFast.Packed.Native.encodeFields
         (cosetPointsBitRev (gen : F) logH)
-    let parts := if n < 4096 then 1 else 16
+    let parts := n / g.foldl (fun a (m, _) ↦ Nat.gcd a m.rows) (if n < 4096 then n else n / 16)
     let size := n / parts
     let ts := (Array.range parts).map fun k ↦ Task.spawn fun _ ↦
       let v := reduceRange g xs (k * size) (if k + 1 = parts then n - k * size else size)
@@ -906,36 +920,30 @@ def fold2 [Mont32BaseField p] [Binomial4 p] (v : EVec p) (beta : EF) (logRows : 
     let f := fold2Range v twoX beta (k * size) (if k + 1 = parts then rows - k * size else size)
     #[f.c0, f.c1, f.c2, f.c3]
 
-/-- The coordinates of elements `i0, …, i0 + len - 1` of planes, interleaved. -/
-def interleaveRange (a0 a1 a2 a3 : @& ByteArray) (i0 len : Nat) : ByteArray := Id.run do
-  let mut out := CompPoly.CPolynomial.NTTFast.Packed.Native.zeroWords (4 * len)
-  for k in [0:len] do
-    let i := i0 + k
-    out := CompPoly.CPolynomial.NTTFast.Packed.Native.write out (4 * k)
-      (CompPoly.CPolynomial.NTTFast.Packed.Native.read a0 i)
-    out := CompPoly.CPolynomial.NTTFast.Packed.Native.write out (4 * k + 1)
-      (CompPoly.CPolynomial.NTTFast.Packed.Native.read a1 i)
-    out := CompPoly.CPolynomial.NTTFast.Packed.Native.write out (4 * k + 2)
-      (CompPoly.CPolynomial.NTTFast.Packed.Native.read a2 i)
-    out := CompPoly.CPolynomial.NTTFast.Packed.Native.write out (4 * k + 3)
-      (CompPoly.CPolynomial.NTTFast.Packed.Native.read a3 i)
+/-- Words `i, i + k, i + 2 k, …` of `a`, `count` of them. -/
+def strided (a : @& ByteArray) (i k count : Nat) : ByteArray := Id.run do
+  let mut out := CompPoly.CPolynomial.NTTFast.Packed.Native.zeroWords count
+  for r in [0:count] do
+    out := CompPoly.CPolynomial.NTTFast.Packed.Native.write out r
+      (CompPoly.CPolynomial.NTTFast.Packed.Native.read a (r * k + i))
   return out
 
-/-- The matrix of rows of `k` elements, flattened, packed in parallel ranges. -/
+/-- The matrix of rows of `k` elements, flattened, packed as one block of columns: column
+`4 i + c` holds coordinate `c` of the `i`-th element of every row, gathered by parallel tasks. -/
 def leaves (k : Nat) (v : EVec p) : PMat :=
-  let n := v.n
-  let parts := if n < 4096 then 1 else 16
-  let size := n / parts
-  let ts := (Array.range parts).map fun p ↦ Task.spawn fun _ ↦
-    interleaveRange v.c0 v.c1 v.c2 v.c3 (p * size) (if p + 1 = parts then n - p * size else size)
-  { width := 4 * k, height := n / k,
-    words := ts.foldl (fun acc t ↦ acc ++ t.get) (ByteArray.emptyWithCapacity (16 * n)) }
+  let h := v.n / k
+  let plane (c : Nat) : ByteArray := match c with
+    | 0 => v.c0
+    | 1 => v.c1
+    | 2 => v.c2
+    | _ => v.c3
+  ⟨4 * k, h, h, (CompPoly.Tasks.join (CompPoly.Tasks.spawnAll (4 * k) fun j ↦
+    strided (plane (j % 4)) (j / 4) k h)).get⟩
 
 /-- `a + x · b`. -/
 def addScaled [Binomial4 p] (a b : EVec p) (x : EF) : EVec p := a.add (b.smul x)
 
 variable [Mont32BaseField p] [Binomial4 p] [Poseidon2Field (FastField p)] [PackedPoseidon2 p]
-    [PackedCosetLde p]
 
 /-- The fast backend. A trace is packed words in chunks of consecutive rows (`rowChunks`). -/
 def backend : Backend F EF 24 where

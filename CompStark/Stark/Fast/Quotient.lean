@@ -396,6 +396,121 @@ theorem blockT_getD (m : Mat F) (r0 B c k : Nat) (hc : c < m.width) (hk : k < B)
     rw [Nat.add_comm, Nat.add_mul_mod_self_right, Nat.mod_eq_of_lt hk]
   simp only [hd, hm]
 
+/-- Appending `n` rows of column `c` of a packed matrix from row `r`, within one block. -/
+theorem append_colAt {pm : PMat} {s : Mat F} (h : RM pm s) (r n c : Nat) (hn : 0 < n)
+    (hblk : r % pm.rows + n ≤ pm.rows) (hr : r + n ≤ s.height) (hc : c < s.width) (X : Array F) :
+    (pm.colAt c r).1.copySlice (4 * (pm.colAt c r).2) (encode X) (encode X).size (4 * n) =
+      encode (X ++ Array.ofFn (n := n) fun k ↦ s.values.getD ((r + k.val) * s.width + c) 0) := by
+  obtain ⟨A, e1, e2, -, e4⟩ := colAt_spec h r n c hblk hr hn hc
+  rw [e1]
+  have := CompPoly.PackedRepr.copySlice_encode A X (pm.colAt c r).2 n
+  change (encode A).copySlice (4 * _) _ _ (4 * n) = _ at this
+  rw [this]
+  refine congrArg (fun Y ↦ encode (X ++ Y)) (Array.ext (by
+    rw [Array.size_extract, Array.size_ofFn]; omega) fun k k1 k2 ↦ ?_)
+  rw [Array.size_ofFn] at k2
+  rw [Array.getElem_extract, Array.getElem_ofFn, ← e4 k k2, Array.getD_eq_getD_getElem?,
+    Array.getElem?_eq_getElem (by omega), Option.getD_some]
+
+/-- The transposed rows of a block copied from a packed matrix's columns. -/
+theorem block_rel {pm : PMat} {s : Mat F} (h : RM pm s) (r0 B : Nat) (hB : 0 < B)
+    (hr : r0 + B ≤ s.height) : pm.block r0 B = encode (blockT s r0 B) := by
+  have hw := h.width
+  have hT (C : Nat) (hC : C ≤ s.width) : (blockT s r0 B).extract 0 (C * B) =
+      Array.ofFn (n := C * B) fun k ↦ s.values.getD ((r0 + k.val % B) * s.width + k.val / B) 0 := by
+    have hle : C * B ≤ s.width * B := Nat.mul_le_mul_right B hC
+    refine Array.ext (by
+      rw [Array.size_extract, size_blockT, Array.size_ofFn, Nat.min_eq_left hle,
+        Nat.sub_zero]) fun k k1 k2 ↦ ?_
+    rw [Array.size_ofFn] at k2
+    have hk : k < s.width * B := Nat.lt_of_lt_of_le k2 hle
+    rw [Array.getElem_extract, Array.getElem_ofFn, Array.getElem_eq_getD 0, blockT,
+      NTTFast.Packed.getD_ofFn_bounded _ _ (by rw [Nat.zero_add]; exact hk)]
+    simp only [Nat.zero_add]
+  have hstep (C : Nat) (X : Array F) (hX : X = Array.ofFn (n := C * B) fun k ↦
+      s.values.getD ((r0 + k.val % B) * s.width + k.val / B) 0) :
+      X ++ (Array.ofFn (n := B) fun k ↦ s.values.getD ((r0 + k.val) * s.width + C) 0) =
+      Array.ofFn (n := (C + 1) * B) fun k ↦
+        s.values.getD ((r0 + k.val % B) * s.width + k.val / B) 0 := by
+    subst hX
+    refine Array.ext (by rw [Array.size_append, Array.size_ofFn, Array.size_ofFn,
+      Array.size_ofFn, Nat.succ_mul]) fun k k1 k2 ↦ ?_
+    rw [Array.getElem_append, Array.getElem_ofFn]
+    split
+    · rename_i hk
+      rw [Array.getElem_ofFn]
+    · rename_i hk
+      rw [Array.size_ofFn] at hk
+      rw [Array.getElem_ofFn]
+      dsimp only
+      rw [Array.size_ofFn] at k2
+      have h1 : k / B = C := Nat.div_eq_of_lt_le (Nat.le_of_not_lt hk) k2
+      have h2 : k % B = k - C * B := by
+        rw [Nat.mod_eq_sub_mul_div, h1, Nat.mul_comm]
+      rw [Array.size_ofFn, h1, h2]
+  unfold PMat.block
+  rw [show ByteArray.emptyWithCapacity (4 * (pm.width * B)) = encode (#[] : Array F) from rfl]
+  dsimp only
+  rw [CompStark.Merkle.Packed.foldRange_eq, CompStark.Merkle.Packed.foldRange_eq, hw]
+  split
+  · rename_i hblk
+    have key : ∀ C ≤ s.width, (List.range C).foldl (fun out c ↦
+        (pm.colAt c r0).1.copySlice (4 * (pm.colAt c r0).2) out out.size (4 * B))
+        (encode (#[] : Array F)) = encode ((blockT s r0 B).extract 0 (C * B)) := by
+      intro C hC
+      induction C with
+      | zero => rw [List.range_zero, List.foldl_nil, Nat.zero_mul, Array.extract_zero]
+      | succ C ih =>
+        rw [List.range_succ, List.foldl_append, ih (by omega), List.foldl_cons, List.foldl_nil,
+          append_colAt h r0 B C hB hblk hr (by omega), hT C (by omega), hT (C + 1) hC,
+          hstep C _ rfl]
+    rw [key s.width le_rfl, show s.width * B = (blockT s r0 B).size by rw [size_blockT],
+      Array.extract_size]
+  · have key : ∀ C ≤ s.width, (List.range C).foldl (fun out c ↦
+        CompStark.Merkle.Packed.foldRange (fun out k ↦ (pm.colAt c (r0 + k)).1.copySlice
+          (4 * (pm.colAt c (r0 + k)).2) out out.size 4) B 0 out)
+        (encode (#[] : Array F)) = encode ((blockT s r0 B).extract 0 (C * B)) := by
+      intro C hC
+      induction C with
+      | zero => rw [List.range_zero, List.foldl_nil, Nat.zero_mul, Array.extract_zero]
+      | succ C ih =>
+        rw [List.range_succ, List.foldl_append, ih (by omega), List.foldl_cons, List.foldl_nil,
+          CompStark.Merkle.Packed.foldRange_eq, hT C (by omega), hT (C + 1) hC,
+          ← hstep C _ rfl]
+        have inner : ∀ K ≤ B, (List.range K).foldl (fun out k ↦ (pm.colAt C (r0 + k)).1.copySlice
+            (4 * (pm.colAt C (r0 + k)).2) out out.size 4) (encode (Array.ofFn (n := C * B)
+              fun k ↦ s.values.getD ((r0 + k.val % B) * s.width + k.val / B) 0)) =
+            encode ((Array.ofFn (n := C * B) fun k ↦
+              s.values.getD ((r0 + k.val % B) * s.width + k.val / B) 0) ++
+              Array.ofFn (n := K) fun k ↦ s.values.getD ((r0 + k.val) * s.width + C) 0) := by
+          intro K hK
+          induction K with
+          | zero => rw [List.range_zero, List.foldl_nil, Array.ofFn_zero, Array.append_empty]
+          | succ K ihK =>
+            rw [List.range_succ, List.foldl_append, ihK (by omega), List.foldl_cons,
+              List.foldl_nil]
+            have e := append_colAt h (r0 + K) 1 C (by decide)
+              (by have := Nat.mod_lt (r0 + K) h.pos; omega) (by omega) (by omega)
+              ((Array.ofFn (n := C * B) fun k ↦
+                s.values.getD ((r0 + k.val % B) * s.width + k.val / B) 0) ++
+                Array.ofFn (n := K) fun k ↦ s.values.getD ((r0 + k.val) * s.width + C) 0)
+            rw [Nat.mul_one] at e
+            rw [e, Array.append_assoc]
+            congr 2
+            refine Array.ext (by rw [Array.size_append, Array.size_ofFn, Array.size_ofFn,
+              Array.size_ofFn]) fun k k1 k2 ↦ ?_
+            rw [Array.getElem_append, Array.getElem_ofFn]
+            split
+            · rw [Array.getElem_ofFn]
+            · rename_i hk
+              rw [Array.size_ofFn] at hk k2
+              rw [Array.getElem_ofFn]
+              dsimp only
+              rw [show k = K by omega, Array.size_ofFn, Nat.sub_self, Nat.add_zero]
+        exact inner B le_rfl
+    rw [key s.width le_rfl, show s.width * B = (blockT s r0 B).size by rw [size_blockT],
+      Array.extract_size]
+
 theorem transposeRows_blockT (m : Mat F) (r0 B : Nat) (hM : (r0 + B) * m.width ≤ m.values.size)
     (hs : 4 * m.values.size < USize.size) :
     NTTFast.Packed.Native.transposeRows (encode m.values) m.width r0 B =
@@ -467,11 +582,12 @@ theorem periodicWords_eq [Mont32BaseField p] (A : Air F) (d l : Nat) :
 /-- The loads of the block of `B` stored rows from `r0`: the trace `s`, the preprocessed trace
 `sp` and the permutation trace `rs` with the next rows `nx`, the periodic columns `pl` and the
 selectors, in the extension's bit-reversed order. -/
-def qLoads [Mont32BaseField p] (d l : Nat) (s sp rs : Mat F) (pl : List (Array F))
-    (nx : Array Nat) (r0 B : Nat) :
+def qLoads [Mont32BaseField p] (d l : Nat) (s sp rs : Mat F) (R Rp Rq : Nat)
+    (pl : List (Array F)) (nx : Array Nat) (r0 B : Nat) :
     Prog.LoadsF p :=
-  ⟨s.values, s.width, sp.values, sp.width, blockT sp r0 B, rs.values, rs.width, blockT rs r0 B,
-    r0, nx, perT d l pl, selT d l (qFirst d l), selT d l (qLast d l), selT d l (qTrans d l)⟩
+  ⟨⟨colBlocks s R, s.width, R⟩, ⟨colBlocks sp Rp, sp.width, Rp⟩, blockT sp r0 B,
+    ⟨colBlocks rs Rq, rs.width, Rq⟩, blockT rs r0 B, r0, nx, perT d l pl, selT d l (qFirst d l),
+    selT d l (qLast d l), selT d l (qTrans d l)⟩
 
 /-- A matrix of `H` rows, at least the quotient domain's, addressable. -/
 def QShape (d l H : Nat) (m : Mat F) : Prop :=
@@ -496,22 +612,26 @@ theorem QShape.row {d l H : Nat} {m : Mat F} (h : QShape d l H m) {j c : Nat}
     rw [h.1, Nat.mul_comm]; exact Nat.mul_le_mul_left _ (by have := h.2.1; omega)
   rw [Nat.succ_mul] at this; omega
 
-theorem qLoads_addr [Mont32BaseField p] {d l H : Nat} {s sp rs : Mat F} (hs : QShape d l H s)
+theorem qLoads_addr [Mont32BaseField p] {d l H : Nat} {s sp rs : Mat F} {R Rp Rq : Nat}
+    (hR : RowsOk s R) (hRp : RowsOk sp Rp) (hRq : RowsOk rs Rq)
     (hsp : QShape d l H sp)
     (hrs : QShape d l H rs) (pl : List (Array F)) (nx : Array Nat) {r0 B : Nat}
     (hr0 : r0 + B ≤ 2 ^ (d + l)) (hn : 4 * 2 ^ (d + l) < USize.size) :
-    (qLoads (p := p) d l s sp rs pl nx r0 B).Addr :=
-  ⟨hs.2.2, hsp.2.2, hsp.blockT hr0, hrs.2.2, hrs.blockT hr0,
+    (qLoads (p := p) d l s sp rs R Rp Rq pl nx r0 B).Addr :=
+  ⟨colsF_addr hR, colsF_addr hRp, hsp.blockT hr0, colsF_addr hRq, hrs.blockT hr0,
     fun c hc ↦ by rw [mem_perT hc]; exact hn,
     by show 4 * (selT d l _).size < _; rw [size_selT]; exact hn,
     by show 4 * (selT d l _).size < _; rw [size_selT]; exact hn,
     by show 4 * (selT d l _).size < _; rw [size_selT]; exact hn⟩
 
-theorem qLoads_inRange [Mont32BaseField p] {d l H : Nat} {s sp rs : Mat F}
+theorem qLoads_inRange [Mont32BaseField p] {d l H : Nat} {s sp rs : Mat F} {R Rp Rq : Nat}
+    (hR : RowsOk s R) (hRp : RowsOk sp Rp) (hRq : RowsOk rs Rq)
     (hs : QShape d l H s) (hsp : QShape d l H sp) (hrs : QShape d l H rs)
+    (hHs : s.height = H) (hHp : sp.height = H) (hHq : rs.height = H)
     (pl : List (Array F)) {r0 B : Nat} (hr0 : r0 + B ≤ 2 ^ (d + l)) (src : Prog.Src)
     (h : Prog.Src.Below s.width sp.width sp.width rs.width src) :
-    (qLoads (p := p) d l s sp rs pl (quotientTables (p := p) d l).next r0 B).InRange B src := by
+    (qLoads (p := p) d l s sp rs R Rp Rq pl (quotientTables (p := p) d l).next r0 B).InRange B
+      src := by
   have hnx (k : Nat) (hk : k < B) :
       (quotientTables (p := p) d l).next.getD (r0 + k) 0 < 2 ^ (d + l) := by
     rw [tables_next _ _ _ (by omega)]
@@ -521,11 +641,23 @@ theorem qLoads_inRange [Mont32BaseField p] {d l H : Nat} {s sp rs : Mat F}
     have := Nat.mul_le_mul_right B (show c + 1 ≤ m.width by omega)
     rw [Nat.succ_mul] at this; omega
   cases src with
-  | next c => exact fun k hk ↦ hs.row (hnx k hk) h
+  | next c =>
+    intro k hk
+    have := hnx k hk
+    have := hs.2.1
+    exact colsF_has hR ((quotientTables (p := p) d l).next.getD (r0 + k) 0) c (by omega) h
   | prepCur c => exact hcolB sp c h
-  | prepNext c => exact fun k hk ↦ hsp.row (hnx k hk) h
+  | prepNext c =>
+    intro k hk
+    have := hnx k hk
+    have := hsp.2.1
+    exact colsF_has hRp ((quotientTables (p := p) d l).next.getD (r0 + k) 0) c (by omega) h
   | permCur c => exact hcolB rs c h
-  | permNext c => exact fun k hk ↦ hrs.row (hnx k hk) h
+  | permNext c =>
+    intro k hk
+    have := hnx k hk
+    have := hrs.2.1
+    exact colsF_has hRq ((quotientTables (p := p) d l).next.getD (r0 + k) 0) c (by omega) h
   | periodic j =>
     intro hj
     have hj' : j < (perT d l pl).size := hj
@@ -540,45 +672,47 @@ theorem qLoads_inRange [Mont32BaseField p] {d l H : Nat} {s sp rs : Mat F}
 /-- A block row's base environment (`Prog.blockCtx` on `qLoads`) is the specification's on the
 natural row `perm[r0 + i]` at the columns below the widths and the periodic columns and
 selectors. -/
-theorem qLoads_env [Mont32BaseField p] (d l : Nat) (s sp rs : Mat F) (pl : List (Array F))
+theorem qLoads_env [Mont32BaseField p] (d l : Nat) (s sp rs : Mat F) (R Rp Rq : Nat)
+    (hR : RowsOk s R) (hRp : RowsOk sp Rp) (hs : 2 ^ (d + l) ≤ s.height)
+    (hsp : 2 ^ (d + l) ≤ sp.height) (pl : List (Array F))
     (pis : List F) (SC WT : Array F) (r0 B i : Nat) (hi : i < B) (hri : r0 + i < 2 ^ (d + l)) :
-    (∀ c < s.width, (Prog.blockCtx (blockT s r0 B) 0 B (qLoads (p := p) d l s sp rs pl
+    (∀ c < s.width, (Prog.blockCtx (blockT s r0 B) 0 B (qLoads (p := p) d l s sp rs R Rp Rq pl
       (quotientTables (p := p) d l).next r0 B) SC WT B i).env.cur c =
       (rowEnv (Mat.ofValues s.width (2 ^ (d + l)) (permuteRows s (bitRevPerm (d + l))))
         (Mat.ofValues sp.width (2 ^ (d + l)) (permuteRows sp (bitRevPerm (d + l)))) pl
         (2 ^ (d + l)) (2 ^ l) pis (qFirst d l) (qLast d l) (qTrans d l)
         ((bitRevPerm (d + l)).getD (r0 + i) 0)).cur c) ∧
-    (∀ c < s.width, (Prog.blockCtx (blockT s r0 B) 0 B (qLoads (p := p) d l s sp rs pl
+    (∀ c < s.width, (Prog.blockCtx (blockT s r0 B) 0 B (qLoads (p := p) d l s sp rs R Rp Rq pl
       (quotientTables (p := p) d l).next r0 B) SC WT B i).env.next c =
       (rowEnv (Mat.ofValues s.width (2 ^ (d + l)) (permuteRows s (bitRevPerm (d + l))))
         (Mat.ofValues sp.width (2 ^ (d + l)) (permuteRows sp (bitRevPerm (d + l)))) pl
         (2 ^ (d + l)) (2 ^ l) pis (qFirst d l) (qLast d l) (qTrans d l)
         ((bitRevPerm (d + l)).getD (r0 + i) 0)).next c) ∧
-    (∀ c < sp.width, (Prog.blockCtx (blockT s r0 B) 0 B (qLoads (p := p) d l s sp rs pl
+    (∀ c < sp.width, (Prog.blockCtx (blockT s r0 B) 0 B (qLoads (p := p) d l s sp rs R Rp Rq pl
       (quotientTables (p := p) d l).next r0 B) SC WT B i).env.prepCur c =
       (rowEnv (Mat.ofValues s.width (2 ^ (d + l)) (permuteRows s (bitRevPerm (d + l))))
         (Mat.ofValues sp.width (2 ^ (d + l)) (permuteRows sp (bitRevPerm (d + l)))) pl
         (2 ^ (d + l)) (2 ^ l) pis (qFirst d l) (qLast d l) (qTrans d l)
         ((bitRevPerm (d + l)).getD (r0 + i) 0)).prepCur c) ∧
-    (∀ c < sp.width, (Prog.blockCtx (blockT s r0 B) 0 B (qLoads (p := p) d l s sp rs pl
+    (∀ c < sp.width, (Prog.blockCtx (blockT s r0 B) 0 B (qLoads (p := p) d l s sp rs R Rp Rq pl
       (quotientTables (p := p) d l).next r0 B) SC WT B i).env.prepNext c =
       (rowEnv (Mat.ofValues s.width (2 ^ (d + l)) (permuteRows s (bitRevPerm (d + l))))
         (Mat.ofValues sp.width (2 ^ (d + l)) (permuteRows sp (bitRevPerm (d + l)))) pl
         (2 ^ (d + l)) (2 ^ l) pis (qFirst d l) (qLast d l) (qTrans d l)
         ((bitRevPerm (d + l)).getD (r0 + i) 0)).prepNext c) ∧
-    (∀ j, (Prog.blockCtx (blockT s r0 B) 0 B (qLoads (p := p) d l s sp rs pl
+    (∀ j, (Prog.blockCtx (blockT s r0 B) 0 B (qLoads (p := p) d l s sp rs R Rp Rq pl
       (quotientTables (p := p) d l).next r0 B) SC WT B i).env.periodic j =
       (rowEnv (Mat.ofValues s.width (2 ^ (d + l)) (permuteRows s (bitRevPerm (d + l))))
         (Mat.ofValues sp.width (2 ^ (d + l)) (permuteRows sp (bitRevPerm (d + l)))) pl
         (2 ^ (d + l)) (2 ^ l) pis (qFirst d l) (qLast d l) (qTrans d l)
         ((bitRevPerm (d + l)).getD (r0 + i) 0)).periodic j) ∧
-    (Prog.blockCtx (blockT s r0 B) 0 B (qLoads (p := p) d l s sp rs pl
+    (Prog.blockCtx (blockT s r0 B) 0 B (qLoads (p := p) d l s sp rs R Rp Rq pl
       (quotientTables (p := p) d l).next r0 B) SC WT B i).env.isFirstRow =
       (qFirst d l : Array F).getD ((bitRevPerm (d + l)).getD (r0 + i) 0) 0 ∧
-    (Prog.blockCtx (blockT s r0 B) 0 B (qLoads (p := p) d l s sp rs pl
+    (Prog.blockCtx (blockT s r0 B) 0 B (qLoads (p := p) d l s sp rs R Rp Rq pl
       (quotientTables (p := p) d l).next r0 B) SC WT B i).env.isLastRow =
       (qLast d l : Array F).getD ((bitRevPerm (d + l)).getD (r0 + i) 0) 0 ∧
-    (Prog.blockCtx (blockT s r0 B) 0 B (qLoads (p := p) d l s sp rs pl
+    (Prog.blockCtx (blockT s r0 B) 0 B (qLoads (p := p) d l s sp rs R Rp Rq pl
       (quotientTables (p := p) d l).next r0 B) SC WT B i).env.isTransition =
       (qTrans d l : Array F).getD ((bitRevPerm (d + l)).getD (r0 + i) 0) 0 := by
   refine ⟨fun c hc ↦ ?_, fun c hc ↦ ?_, fun c hc ↦ ?_, fun c hc ↦ ?_, fun j ↦ ?_,
@@ -587,11 +721,23 @@ theorem qLoads_env [Mont32BaseField p] (d l : Nat) (s sp rs : Mat F) (pl : List 
   · show (blockT s r0 B).getD (0 + c * B + i) 0 = (permuteRows s _).getD _ 0
     rw [Nat.zero_add, blockT_getD s r0 B c i hc hi]
     exact (permuteRows_bitRev s d l _ c hri hc).symm
-  · exact (permuteRows_bitRev_next s d l _ c hri hc).symm
+  · have hn : (quotientTables (p := p) d l).next.getD (r0 + i) 0 < 2 ^ (d + l) := by
+      rw [tables_next _ _ _ hri]
+      exact bitRevPerm_getD_lt _ _ (Nat.mod_lt _ (Nat.two_pow_pos _))
+    show (⟨colBlocks s R, s.width, R⟩ : Prog.ColsF p).at
+      ((quotientTables (p := p) d l).next.getD (r0 + i) 0) c = _
+    rw [colsF_at hR ((quotientTables (p := p) d l).next.getD (r0 + i) 0) c (by omega) hc]
+    exact (permuteRows_bitRev_next s d l _ c hri hc).symm
   · show (blockT sp r0 B).getD (c * B + i) 0 = (permuteRows sp _).getD _ 0
     rw [blockT_getD sp r0 B c i hc hi]
     exact (permuteRows_bitRev sp d l _ c hri hc).symm
-  · exact (permuteRows_bitRev_next sp d l _ c hri hc).symm
+  · have hn : (quotientTables (p := p) d l).next.getD (r0 + i) 0 < 2 ^ (d + l) := by
+      rw [tables_next _ _ _ hri]
+      exact bitRevPerm_getD_lt _ _ (Nat.mod_lt _ (Nat.two_pow_pos _))
+    show (⟨colBlocks sp Rp, sp.width, Rp⟩ : Prog.ColsF p).at
+      ((quotientTables (p := p) d l).next.getD (r0 + i) 0) c = _
+    rw [colsF_at hRp ((quotientTables (p := p) d l).next.getD (r0 + i) 0) c (by omega) hc]
+    exact (permuteRows_bitRev_next sp d l _ c hri hc).symm
   · exact perT_getD d l pl j _ hri
 
 /-- The preprocessed trace the quotient reads: the one given, or none of `height` rows. -/
@@ -608,7 +754,7 @@ theorem quotientWith_rel [Mont32BaseField p] [Binomial4 p] (kernels : List (Prog
       ((ps.map (·.width)).getD 0)) :
     quotientWith kernels (quotientTables
         (p := p) d l) A pis ext prep alpha = quotientOfLde A pis d l s ps alpha := by
-  obtain ⟨hw, -, hv⟩ := h
+  have hw := h.width
   obtain ⟨hw0, -, hvs', hadd⟩ := hs
   have hus : 4 * s.values.size < USize.size := by
     unfold Addressable at hadd
@@ -619,11 +765,27 @@ theorem quotientWith_rel [Mont32BaseField p] [Binomial4 p] (kernels : List (Prog
     cases hp with
     | none => rfl
     | @some a q hr => exact hr.1
-  have hpwords : (prep.map (·.words)).getD ByteArray.empty =
-      encode (prepOrEmpty ps s.height).values := by
+  have hpm : RowsOk (prepOrEmpty ps s.height) (prep.getD PMat.empty).rows ∧
+      (prep.getD PMat.empty).toCols = (⟨colBlocks (prepOrEmpty ps s.height)
+        (prep.getD PMat.empty).rows, (prepOrEmpty ps s.height).width,
+        (prep.getD PMat.empty).rows⟩ : Prog.ColsF p).enc ∧
+      ∀ r0 B, 0 < B → r0 + B ≤ s.height → (prep.getD PMat.empty).block r0 B =
+        encode (blockT (prepOrEmpty ps s.height) r0 B) := by
     cases hp with
-    | none => rfl
-    | @some a q hr => exact hr.2.2
+    | none =>
+      refine ⟨⟨Nat.one_pos, Nat.mod_one _, by
+        show 4 * 1 < USize.size; have := USize.le_size; omega⟩,
+        empty_toCols s.height, fun r0 B _ _ ↦ ?_⟩
+      show PMat.empty.block r0 B = encode (blockT (⟨0, s.height, #[]⟩ : Mat F) r0 B)
+      rw [Array.eq_empty_of_size_eq_zero (xs := blockT _ r0 B) (by rw [size_blockT,
+        Nat.zero_mul])]
+      unfold PMat.block
+      simp only [PMat.empty, Nat.zero_mul, Nat.mul_zero]
+      split <;> rfl
+    | @some a q hr =>
+      obtain ⟨-, hqh⟩ := hps q rfl
+      refine ⟨hr.rowsOk, toCols_rel hr, fun r0 B hB hrB ↦ block_rel hr r0 B hB (by
+        show r0 + B ≤ q.height; rw [hqh]; exact hrB)⟩
   have hspv : (prepOrEmpty ps s.height).values.size =
       (prepOrEmpty ps s.height).width * s.height := by
     cases hp with
@@ -651,7 +813,11 @@ theorem quotientWith_rel [Mont32BaseField p] [Binomial4 p] (kernels : List (Prog
       rw [Array.eq_empty_of_size_eq_zero (xs := permuteRows _ _)
         (by rw [permuteRows_eq, Array.size_ofFn]; rfl)]
     | some q => rfl
-  generalize prepOrEmpty ps s.height = sp at hpw hpw' hpwords hspv husp hpq
+  have hsph : (prepOrEmpty ps s.height).height = s.height := by
+    cases ps with
+    | none => rfl
+    | some q => exact (hps q rfl).2
+  generalize prepOrEmpty ps s.height = sp at hpw hpw' hpm hspv husp hpq hsph
   rw [hpw] at hc
   have hn : 2 ^ (d + l) ≤ s.values.size := by
     rw [hvs']; exact le_trans hh (Nat.le_mul_of_pos_left _ hw0)
@@ -677,7 +843,8 @@ theorem quotientWith_rel [Mont32BaseField p] [Binomial4 p] (kernels : List (Prog
   let E (j : Nat) : Expr.Env F F := rowEnv tq pq pl (2 ^ (d + l)) (2 ^ l) pis (qFirst d l)
     (qLast d l) (qTrans d l) ((bitRevPerm (d + l)).getD j 0)
   let Q (j k : Nat) : F := rowAcc (weighted A alpha) (fun c ↦ c.eval (E j)) k 0
-  rw [hpw', hpwords, hv, hw, hWT, quotientBlocks_eq d l _ _
+  dsimp only
+  rw [hWT, quotientBlocks_eq d l _ _
       (groupRun_eq kernels _) pis.toArray WT _ Q
     ?hblk]
   case hblk =>
@@ -687,16 +854,20 @@ theorem quotientWith_rel [Mont32BaseField p] [Binomial4 p] (kernels : List (Prog
     have hrs0 : blockT (⟨0, s.height, #[]⟩ : Mat F) r0 (quotientTables (p := p) d l).B = #[] :=
       Array.eq_empty_of_size_eq_zero (by rw [size_blockT]; exact Nat.zero_mul _)
     generalize (quotientTables (p := p) d l).B = B at hdvd hr0 hB0 hrs0 ⊢
-    refine ⟨blockT s r0 B, 0, B, qLoads d l s sp (⟨0, s.height, #[]⟩ : Mat F) pl
-      (quotientTables (p := p) d l).next r0 B, ?_, hsS.blockT hr0,
-      qLoads_addr hsS hspS hrsS pl _ hr0 hnU, fun ins hins ↦ ?_, fun i hi st0 hst0 j hj ↦ ?_⟩
-    · rw [transposeRows_blockT s r0 B (hsS.block hr0) hus,
-        transposeRows_blockT sp r0 B (hspS.block hr0) husp]
+    have hrs1 : RowsOk (⟨0, s.height, #[]⟩ : Mat F) 1 :=
+      ⟨Nat.one_pos, Nat.mod_one _, by have := USize.le_size; omega⟩
+    refine ⟨blockT s r0 B, 0, B, qLoads d l s sp (⟨0, s.height, #[]⟩ : Mat F) ext.rows
+      (prep.getD PMat.empty).rows 1 pl (quotientTables (p := p) d l).next r0 B, ?_,
+      hsS.blockT hr0,
+      qLoads_addr h.rowsOk hpm.1 hrs1 hspS hrsS pl _ hr0 hnU, fun ins hins ↦ ?_,
+      fun i hi st0 hst0 j hj ↦ ?_⟩
+    · rw [block_rel h r0 B hB0 (by omega), hpm.2.2 r0 B hB0 (by omega), toCols_rel h,
+        hpm.2.1, empty_toCols (p := p) s.height]
       simp only [Prog.LoadsF.enc, qLoads, hrs0]
       rfl
     · refine Prog.Instr.inRange_of (cq := (· < s.width))
         (lq := Prog.Src.Below s.width sp.width sp.width 0) (fun c hc ↦ ?_)
-        (qLoads_inRange hsS hspS hrsS pl hr0)
+        (qLoads_inRange h.rowsOk hpm.1 hrs1 hsS hspS hrsS rfl hsph rfl pl hr0)
         ins ((Prog.compile_run A.constraints ⟨fun _ ↦ 0, fun _ ↦ 0, fun _ ↦ 0, fun _ _ ↦ 0⟩
           ⟨fun _ ↦ 0, fun _ ↦ 0⟩).2 ins hins)
         (Prog.compile_leafOk A.constraints s.width s.width sp.width sp.width 0 hc ins hins)
@@ -705,7 +876,7 @@ theorem quotientWith_rel [Mont32BaseField p] [Binomial4 p] (kernels : List (Prog
       rw [Nat.succ_mul] at this; exact this
     · have hri : r0 + i < 2 ^ (d + l) := by omega
       obtain ⟨e1, e2, e3, e4, e5, e6, e7, e8⟩ := qLoads_env d l s sp (⟨0, s.height, #[]⟩ : Mat F)
-        pl pis
+        ext.rows (prep.getD PMat.empty).rows 1 h.rowsOk hpm.1 hh (by rw [hsph]; exact hh) pl pis
         pis.toArray WT r0 B i hi hri
       rw [(Prog.compile_run A.constraints _ st0).1, hst0]
       dsimp only

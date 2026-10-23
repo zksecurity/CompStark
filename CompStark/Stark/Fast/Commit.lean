@@ -4,8 +4,9 @@ Released under Apache 2.0 license as described in the file LICENSE.
 -/
 module
 
-public import CompStark.Stark.Fast.Rel
+public import CompStark.Stark.Fast.Columns
 public import CompStark.Merkle.RootCorrectness
+public import CompStark.Merkle.PackedColumnsCorrectness
 import all CompPoly.Univariate.NTTFast.Packed.Native
 
 /-! # The fast commitments are the specification's
@@ -122,20 +123,39 @@ theorem map_encodeDigests (L : List (List (Digest F))) :
 /-- A row read from a packed matrix is the row of its matrix. -/
 theorem readRow_rel [Mont32BaseField p] {pm : PMat} {m : Mat F} (h : RM pm m) (r : Nat) :
     Commit.readRow (p := p) pm r = rowOf m r := by
-  obtain ⟨hw, -, he⟩ := h
-  rw [Commit.readRow, rowOf, he, hw, extract_encode, CompPoly.PackedRepr.decode_encode]
+  rw [Commit.readRow, rowOf]
   apply Array.ext
-  · simp only [Array.size_ofFn]
+  · simp only [Array.size_ofFn, h.width]
   · intro j h1 _
     rw [Array.getElem_ofFn, Array.getElem_ofFn]
-    rw [Array.size_ofFn] at h1
-    exact extract_getD _ _ _ _ h1
+    rw [Array.size_ofFn, h.width] at h1
+    by_cases hr : r < m.height
+    · rw [word, read_colAt h r j hr h1, ofWord_val]
+    · have hc : (colBlocks m pm.rows).getD (r / pm.rows * m.width + j) #[] = #[] := by
+        rw [Array.getD_eq_getD_getElem?, Array.getElem?_eq_none, Option.getD_none]
+        rw [size_colBlocks]
+        have h1' : m.height / pm.rows ≤ r / pm.rows := Nat.div_le_div_right (by omega)
+        have := Nat.mul_le_mul_right m.width h1'
+        omega
+      have hv : m.values.size ≤ r * m.width + j := by
+        rw [h.size, Nat.mul_comm]
+        have := Nat.mul_le_mul_right m.width (show m.height ≤ r by omega)
+        omega
+      have h0 : 4 * (#[] : Array F).size < USize.size := by
+        simp only [List.size_toArray, List.length_nil]; have := USize.le_size; omega
+      have h3 : 4 * (r % pm.rows) + 3 < USize.size := by
+        have := h.addr; have := Nat.mod_lt r h.pos; omega
+      rw [colAt_eq h, hc]
+      dsimp only
+      rw [word_encode_getD _ _ h0 h3, Array.getD_eq_getD_getElem?, Array.getD_eq_getD_getElem?,
+        Array.getElem?_eq_none hv]
+      rfl
 
 theorem foldl_maxHeight {ms : List PMat} {ss : List (Mat F)} (h : List.Forall₂ RM ms ss)
     (a : Nat) : ms.foldl (fun m x ↦ max m x.height) a = ss.foldl (fun m x ↦ max m x.height) a := by
   induction h generalizing a with
   | nil => rfl
-  | cons hr _ ih => rw [List.foldl_cons, List.foldl_cons, hr.2.1, ih]
+  | cons hr _ ih => rw [List.foldl_cons, List.foldl_cons, hr.height, ih]
 
 /-- Heights are the represented matrices'. -/
 theorem maxHeight_rel {c : Commit} {s : Committed F} (h : RC c s) : c.maxHeight = s.maxHeight :=
@@ -200,7 +220,7 @@ theorem rows_rel [Mont32BaseField p] (g : Nat → Nat) {ms : List PMat} {ss : Li
         := by
   induction h with
   | nil => rfl
-  | cons hm _ ih => rw [List.map_cons, List.map_cons, ih, readRow_rel hm, hm.2.1]
+  | cons hm _ ih => rw [List.map_cons, List.map_cons, ih, readRow_rel hm, hm.height]
 
 /-- The packed opening is the specification's. -/
 theorem openAt_rel [Mont32BaseField p] {c : Commit} {s : Committed F} (i : Nat) (h : RC c s) :
@@ -232,36 +252,6 @@ theorem length_rowcat (ss : List (Mat F)) (r : Nat) :
       List.sum_cons]
     rfl
 
-theorem toList_extract_eq (a : Array F) (i c : Nat) (h : i + c ≤ a.size) :
-    (a.extract i (i + c)).toList = (List.range c).map fun j ↦ a.getD (i + j) 0 := by
-  apply List.ext_getElem
-  · simp only [Array.length_toList, Array.size_extract, List.length_map, List.length_range]
-    omega
-  · intro j h1 h2
-    simp only [Array.getElem_toList, Array.getElem_extract, List.getElem_map, List.getElem_range,
-      Array.getD_eq_getD_getElem?, Array.getElem?_eq_getElem (show i + j < a.size by
-        simp only [Array.length_toList, Array.size_extract] at h1; omega), Option.getD_some]
-
-/-- Copying a range of a packed array over the zeros after a prefix. -/
-theorem copySlice_mid (a P : Array F) (z i c : Nat) (hc : i + c ≤ a.size) :
-    (encode a).copySlice (4 * i) (encode (P ++ Array.replicate z 0)) (4 * P.size) (4 * c) =
-      encode (P ++ a.extract i (i + c) ++ Array.replicate (z - c) 0) := by
-  have hs : (encode (P ++ Array.replicate z (0 : F))).data.size =
-      4 * (P ++ Array.replicate z (0 : F)).size := size_encode_fields _
-  have ha : (encode a).data.size = 4 * a.size := size_encode_fields _
-  rw [ByteArray.copySlice_eq_append, hs, ha,
-    show 4 * P.size + min (4 * c) (4 * a.size - 4 * i) = 4 * (P.size + c) by
-      rw [Nat.min_eq_left (by omega)]; omega,
-    show (0 : Nat) = 4 * 0 from rfl, show 4 * i + 4 * c = 4 * (i + c) by omega,
-    extract_encode, extract_encode, extract_encode, ← CompPoly.PackedRepr.encode_append,
-    ← CompPoly.PackedRepr.encode_append]
-  congr 1
-  rw [Array.extract_append, Array.extract_append]
-  simp only [Array.extract_size, Nat.zero_sub, Nat.sub_self, Array.extract_zero,
-    Array.append_empty, Array.size_append, Array.size_replicate, Nat.add_sub_cancel_left,
-    Array.extract_replicate, Nat.min_self, Array.append_assoc,
-    Array.extract_empty_of_size_le_start (show P.size ≤ P.size + c by omega), Array.empty_append]
-
 theorem foldl_width (ms : List PMat) (a : Nat) :
     ms.foldl (fun x m ↦ x + m.width) a = a + (ms.map PMat.width).sum := by
   induction ms generalizing a with
@@ -278,131 +268,72 @@ theorem sum_width {ms : List PMat} {ss : List (Mat F)} (h : List.Forall₂ RM ms
     (ms.map PMat.width).sum = (ss.map Mat.width).sum := by
   induction h with
   | nil => rfl
-  | cons hm _ ih => rw [List.map_cons, List.map_cons, List.sum_cons, List.sum_cons, ih, hm.1]
+  | cons hm _ ih => rw [List.map_cons, List.map_cons, List.sum_cons, List.sum_cons, ih, hm.width]
 
-/-- One row of the copies of `sideBySide`. -/
-theorem foldl_row (H r : Nat) (hr : r < H) {ms : List PMat} {ss : List (Mat F)}
-    (h : List.Forall₂ RM ms ss)
-    (hf : ∀ s ∈ ss, s.values.size = s.width * s.height ∧ s.height = H) (P : Array F) (z : Nat) :
-    ms.foldl (fun b m ↦ (m.words.copySlice (4 * r * m.width) b.1 (4 * b.2)
-        (4 * m.width), b.2 + m.width)) (encode (P ++ Array.replicate z 0), P.size) =
-      (encode (P ++ (rowcat ss r).toArray ++ Array.replicate (z - (ss.map Mat.width).sum) 0),
-        P.size + (ss.map Mat.width).sum) := by
-  induction h generalizing P z with
-  | nil =>
-    simp only [List.foldl_nil, rowcat, List.flatMap_nil, List.map_nil, List.sum_nil,
-      Nat.sub_zero, Nat.add_zero]
-    rfl
+/-- Column `jj` of a matrix from row `r0` on holds the entries of rows `r0, …, r0 + n - 1`, for
+rows within one block. -/
+theorem colAt_spec {pm : PMat} {s : Mat F} (hm : RM pm s) (r0 n jj : Nat)
+    (hblk : r0 % pm.rows + n ≤ pm.rows) (hr : r0 + n ≤ s.height) (hn : 0 < n)
+    (hj : jj < s.width) :
+    ∃ A, (pm.colAt jj r0).1 = encode A ∧ (pm.colAt jj r0).2 + n ≤ A.size ∧
+      4 * A.size < USize.size ∧ ∀ r < n, A.getD ((pm.colAt jj r0).2 + r) 0 =
+        s.values.getD ((r0 + r) * s.width + jj) 0 := by
+  have hr0 : r0 < s.height := by omega
+  refine ⟨Array.ofFn (n := pm.rows) fun k ↦
+      s.values.getD ((r0 / pm.rows * pm.rows + k) * s.width + jj) 0, ?_, ?_, ?_, fun r hrn ↦ ?_⟩
+  · rw [colAt_eq hm, colBlocks_getD s _ r0 jj hm.pos hm.dvd hr0 hj]
+  · unfold PMat.colAt; rw [Array.size_ofFn]; exact hblk
+  · rw [Array.size_ofFn]; exact hm.addr
+  · unfold PMat.colAt
+    dsimp only
+    rw [CompPoly.CPolynomial.NTTFast.Packed.getD_ofFn_bounded _ _ (by omega)]
+    dsimp only
+    rw [← Nat.add_assoc, Nat.div_add_mod']
+
+/-- The columns of matrices side by side from row `r0` on hold their rows side by side, for rows
+within one block of every matrix. -/
+theorem colsList_spec {ms : List PMat} {ss : List (Mat F)} (h : List.Forall₂ RM ms ss)
+    (r0 n : Nat) (hn : 0 < n) (hblk : ∀ m ∈ ms, r0 % m.rows + n ≤ m.rows)
+    (hr : ∀ s ∈ ss, r0 + n ≤ s.height ∧ s.values.size = s.width * s.height)
+    :
+    ∀ j < (ss.map Mat.width).sum, ∃ A, ((colsList ms r0).getD j (.empty, 0)).1 = encode A ∧
+      ((colsList ms r0).getD j (.empty, 0)).2 + n ≤ A.size ∧ 4 * A.size < USize.size ∧
+      ∀ r < n, A.getD (((colsList ms r0).getD j (.empty, 0)).2 + r) 0 =
+        (rowcat ss (r0 + r)).getD j 0 := by
+  induction h with
+  | nil => intro j hj; simp only [List.map_nil, List.sum_nil] at hj; omega
   | @cons pm s ms ss hm _ ih =>
-    rw [List.foldl_cons]
-    obtain ⟨hv, hhm⟩ := hf s List.mem_cons_self
-    have hle : r * s.width + s.width ≤ s.values.size := by
-      rw [hv, hhm, Nat.mul_comm s.width H]
-      have := Nat.mul_le_mul_right s.width (show r + 1 ≤ H by omega)
-      rw [Nat.add_mul, Nat.one_mul] at this
-      omega
-    have e := ih (fun m h ↦ hf m (List.mem_cons_of_mem s h)) (P ++ s.values.extract
-      (r * s.width) (r * s.width + s.width)) (z - s.width)
-    rw [Array.size_append, Array.size_extract,
-      Nat.min_eq_left hle, Nat.add_sub_cancel_left] at e
-    rw [hm.1, hm.2.2, Nat.mul_assoc, copySlice_mid _ _ _ _ _ hle]
-    rw [e]
-    have hrow : s.toMatrix.row r =
-        (s.values.extract (r * s.width) (r * s.width + s.width)).toList :=
-      (toList_extract_eq _ _ _ hle).symm
-    have hc : rowcat (s :: ss) r = s.toMatrix.row r ++ rowcat ss r := List.flatMap_cons
-    simp only [hc, List.map_cons, List.sum_cons, hrow, Nat.sub_sub, Nat.add_assoc]
-    congr 2
-    apply Array.toList_inj.mp
-    simp only [Array.toList_append, List.append_assoc]
-
-theorem length_flatMap_range (f : Nat → List F) (W : Nat) (hf : ∀ i, (f i).length = W) (n : Nat) :
-    ((List.range n).flatMap f).length = n * W := by
-  induction n with
-  | zero => simp only [List.range_zero, List.flatMap_nil, List.length_nil, Nat.zero_mul]
-  | succ n ih =>
-    rw [List.range_succ, List.flatMap_append, List.length_append, ih, List.flatMap_singleton, hf,
-      Nat.succ_mul]
-
-theorem getD_flatMap_range (f : Nat → List F) (W : Nat) (hf : ∀ i, (f i).length = W) (n r j : Nat)
-    (hr : r < n) (hj : j < W) : ((List.range n).flatMap f).getD (r * W + j) 0 = (f r).getD j 0 := by
-  induction n with
-  | zero => omega
-  | succ n ih =>
-    have hl := length_flatMap_range f W hf n
-    rw [List.range_succ, List.flatMap_append, List.flatMap_singleton, List.getD_eq_getElem?_getD,
-      List.getElem?_append]
-    by_cases hrn : r < n
-    · have : r * W + j < n * W := by
-        have := Nat.mul_le_mul_right W (show r + 1 ≤ n by omega)
-        rw [Nat.add_mul, Nat.one_mul] at this
-        omega
-      rw [hl, ite_eq_left_of_eq_true _ _ (eq_true this), ← List.getD_eq_getElem?_getD,
-        ih hrn]
-    · obtain rfl : r = n := by omega
-      rw [hl, ite_eq_right_of_eq_false _ _ (eq_false (by omega)), Nat.add_sub_cancel_left,
-        ← List.getD_eq_getElem?_getD]
-
-/-- Matrices of one height side by side are the packed matrix of their rows side by side. -/
-theorem sideBySide_eq (H : Nat) {ms : List PMat} {ss : List (Mat F)} (h : List.Forall₂ RM ms ss)
-    (hf : ∀ s ∈ ss, s.values.size = s.width * s.height ∧ s.height = H) :
-    ∃ V, sideBySide ms H = encode V ∧ V.size = H * (ss.map Mat.width).sum ∧
-      ∀ r < H, (⟨(ss.map Mat.width).sum, H, V⟩ : Merkle.Matrix F).row r = rowcat ss r := by
-  unfold sideBySide
-  split
-  · rename_i m
-    obtain ⟨s, rfl⟩ : ∃ s, ss = [s] := by
-      cases h with
-      | cons hm h' => cases h'; exact ⟨_, rfl⟩
-    have hm : RM m s := by cases h; assumption
-    obtain ⟨hv, hhm⟩ := hf s List.mem_cons_self
-    refine ⟨s.values, hm.2.2, ?_, fun r _ ↦ ?_⟩
-    · rw [hv, hhm]
-      simp only [List.map_cons, List.map_nil, List.sum_cons, List.sum_nil, Nat.add_zero,
-        Nat.mul_comm]
-    · simp only [rowcat, List.flatMap_cons, List.flatMap_nil, List.append_nil, List.map_cons,
-        List.map_nil, List.sum_cons, List.sum_nil, Nat.add_zero]
-      rfl
-  · simp only [Std.Legacy.Range.forIn_eq_forIn_range', Std.Legacy.Range.size,
-      List.forIn_pure_yield_eq_foldl, Id.run_pure, bind_pure, pure_bind, Nat.sub_zero,
-      Nat.add_sub_cancel,
-      Nat.div_one, ← List.range_eq_range', foldl_width, Nat.zero_add, sum_width h,
-      CompStark.Merkle.Packed.zeroWords_fields (p := p)]
-    generalize hW : (ss.map Mat.width).sum = W
-    have hrow : ∀ i, (rowcat ss i).length = W := fun i ↦ by rw [length_rowcat, hW]
-    have key : ∀ n ≤ H, (List.range n).foldl (fun b a ↦ (ms.foldl (fun b m ↦
-        (m.words.copySlice (4 * a * m.width) b.1 (4 * b.2) (4 * m.width), b.2 + m.width))
-          (b, a * W)).1) (encode (Array.replicate (H * W) (0 : F))) =
-        encode (((List.range n).flatMap (rowcat ss)).toArray ++
-          Array.replicate ((H - n) * W) 0) := by
-      intro n hn
-      induction n with
-      | zero =>
-        simp only [List.range_zero, List.foldl_nil, List.flatMap_nil, Nat.sub_zero]
-        exact congrArg encode Array.empty_append.symm
-      | succ n ih =>
-        rw [List.range_succ, List.foldl_append, ih (by omega), List.foldl_cons, List.foldl_nil]
-        have hs : (((List.range n).flatMap (rowcat ss)).toArray).size = n * W := by
-          rw [List.size_toArray, length_flatMap_range _ W hrow]
-        rw [← hs, foldl_row H n (by omega) h hf, hW]
-        dsimp only
-        congr 1
-        apply Array.toList_inj.mp
-        simp only [Array.toList_append, List.flatMap_append, List.flatMap_singleton,
-          List.append_assoc, Array.toList_replicate]
-        congr 3
-        rw [Nat.sub_mul, Nat.sub_mul, Nat.succ_mul, Nat.sub_sub]
-    refine ⟨((List.range H).flatMap (rowcat ss)).toArray, by
-      rw [key H le_rfl, Nat.sub_self, Nat.zero_mul, Array.replicate_zero, Array.append_empty],
-      ?_, fun r hr ↦ ?_⟩
-    · rw [List.size_toArray, length_flatMap_range _ W hrow]
-    · apply List.ext_getElem
-      · rw [length_row, hrow]
-      · intro j h1 h2
-        rw [length_row] at h1
-        simp only [Merkle.Matrix.row, List.getElem_map, List.getElem_range,
-          Array.getD_eq_getD_getElem?, List.getElem?_toArray, ← List.getD_eq_getElem?_getD,
-          getD_flatMap_range _ W hrow H r j hr h1, List.getD_eq_getElem _ _ h2]
+    intro j hj
+    rw [List.map_cons, List.sum_cons] at hj
+    have hlen : ((List.range pm.width).map fun jj ↦ pm.colAt jj r0).length = s.width := by
+      rw [List.length_map, List.length_range, hm.width]
+    have hrow : (s.toMatrix.row (r0 + 0)).length = s.width := length_row _ _
+    have hcl : colsList (pm :: ms) r0 =
+        (List.range pm.width).map (fun jj ↦ pm.colAt jj r0) ++ colsList ms r0 := by
+      simp only [colsList, List.flatMap_cons]
+    have hrc (r : Nat) : rowcat (s :: ss) (r0 + r) = s.toMatrix.row (r0 + r) ++ rowcat ss (r0 + r)
+      := by simp only [rowcat, List.flatMap_cons]
+    have hlr (r : Nat) : (s.toMatrix.row (r0 + r)).length = s.width := length_row _ _
+    rw [hcl]
+    by_cases hjs : j < s.width
+    · have hjl : j < ((List.range pm.width).map fun jj ↦ pm.colAt jj r0).length := by
+        rw [hlen]; exact hjs
+      rw [List.getD_append _ _ _ _ hjl, List.getD_eq_getElem _ _ hjl, List.getElem_map,
+        List.getElem_range]
+      obtain ⟨A, e1, e2, e3, e4⟩ := colAt_spec hm r0 n j
+        (hblk pm List.mem_cons_self) (hr s List.mem_cons_self).1 hn hjs
+      refine ⟨A, e1, e2, e3, fun r hrn ↦ ?_⟩
+      have hjr : j < (s.toMatrix.row (r0 + r)).length := by rw [hlr]; exact hjs
+      rw [e4 r hrn, hrc, List.getD_append _ _ _ _ hjr, List.getD_eq_getElem _ _ hjr]
+      simp only [Mat.toMatrix, Merkle.Matrix.row, List.getElem_map, List.getElem_range]
+    · have hjl : ((List.range pm.width).map fun jj ↦ pm.colAt jj r0).length ≤ j := by
+        rw [hlen]; omega
+      rw [List.getD_append_right _ _ _ _ hjl, hlen]
+      obtain ⟨A, e1, e2, e3, e4⟩ := ih (fun m hm' ↦ hblk m (List.mem_cons_of_mem _ hm'))
+        (fun s' hs' ↦ hr s' (List.mem_cons_of_mem _ hs')) (j - s.width) (by omega)
+      refine ⟨A, e1, e2, e3, fun r hrn ↦ ?_⟩
+      have hjr : (s.toMatrix.row (r0 + r)).length ≤ j := by rw [hlr]; omega
+      rw [e4 r hrn, hrc, List.getD_append_right _ _ _ _ hjr, hlr]
 
 theorem takeWhile_all {α : Type*} (p : α → Bool) (l : List α) (h : ∀ x ∈ l, p x) :
     l.takeWhile p = l := by
@@ -503,7 +434,7 @@ theorem forall₂_mergeSort_height {ms : List PMat} {ss : List (Mat F)}
     exact h.2 hx
   have e1 := List.map_mergeSort (l := ms.zip ss) (f := Prod.fst)
     (r := fun a b ↦ decide (b.2.height ≤ a.2.height)) (s := fun a b ↦ decide (b.height ≤ a.height))
-    fun a ha b hb ↦ by rw [(hR a ha).2.1, (hR b hb).2.1]
+    fun a ha b hb ↦ by rw [(hR a ha).height, (hR b hb).height]
   have e2 := List.map_mergeSort (l := ms.zip ss) (f := Prod.snd)
     (r := fun a b ↦ decide (b.2.height ≤ a.2.height)) (s := fun a b ↦ decide (b.height ≤ a.height))
     fun _ _ _ _ ↦ rfl
@@ -512,57 +443,47 @@ theorem forall₂_mergeSort_height {ms : List PMat} {ss : List (Mat F)}
   rw [← e1, ← e2, List.forall₂_map_left_iff, List.forall₂_map_right_iff]
   refine List.forall₂_same.mpr fun x hx ↦ hR x ((List.mem_mergeSort).mp hx)
 
-/-- Two packed layers of `n` digests side by side are the layers interleaved. -/
-theorem sideBySide_interleave (a b : List (Digest F)) (n : Nat) (ha : a.length = n)
+theorem flat_extract (a : List (Digest F)) (m : Nat) (hm : m < a.length) :
+    (flat a).extract (8 * m) (8 * m + 8) = flat [a[m]] := by
+  refine CompStark.Merkle.Packed.flat_eq _ _ (by
+    rw [Array.size_extract, size_flat, List.length_singleton]; omega) fun i hi j hj ↦ ?_
+  rw [List.length_singleton] at hi
+  obtain rfl : i = 0 := by omega
+  rw [Nat.mul_zero, Nat.zero_add, extract_getD _ _ 8 _ hj, getD_flat,
+    show (8 * m + j) / 8 = m by omega, List.getD_eq_getElem _ _ hm]
+  exact CompStark.Merkle.Packed.vget_congr _ (by omega) _ _
+
+theorem interleave_take_succ (a b : List (Digest F)) (m : Nat) (ha : m < a.length)
+    (hb : m < b.length) :
+    interleave (a.take (m + 1)) (b.take (m + 1)) =
+      interleave (a.take m) (b.take m) ++ [a[m], b[m]] := by
+  rw [List.take_add_one, List.take_add_one, interleave, interleave, List.zip_append (by
+    rw [List.length_take, List.length_take]; omega), List.flatMap_append,
+    List.getElem?_eq_getElem ha, List.getElem?_eq_getElem hb]
+  rfl
+
+/-- Two packed layers of `n` digests interleaved are the layers interleaved. -/
+theorem interleaveDigests_eq (a b : List (Digest F)) (n : Nat) (ha : a.length = n)
     (hb : b.length = n) :
-    sideBySide [⟨8, n, encode (flat a)⟩, ⟨8, n, encode (flat b)⟩] n =
-      encode (flat (interleave a b)) := by
-  have hfa : (flat a).size = 8 * n := by rw [size_flat, ha]
-  have hfb : (flat b).size = 8 * n := by rw [size_flat, hb]
-  obtain ⟨V, e, hV, hrow⟩ := sideBySide_eq
-    (ms := [⟨8, n, encode (flat a)⟩, ⟨8, n, encode (flat b)⟩])
-    (ss := [⟨8, n, flat a⟩, ⟨8, n, flat b⟩]) n
-    (.cons ⟨rfl, rfl, rfl⟩ (.cons ⟨rfl, rfl, rfl⟩ .nil)) (by
-      intro s hs
-      simp only [List.mem_cons, List.not_mem_nil, or_false] at hs
-      rcases hs with rfl | rfl
-      · exact ⟨by rw [hfa], rfl⟩
-      · exact ⟨by rw [hfb], rfl⟩)
-  rw [e]
-  congr 1
-  have hw : ([⟨8, n, flat a⟩, ⟨8, n, flat b⟩] : List (Mat F)).map Mat.width = [8, 8] := rfl
-  simp only [hw, List.sum_cons, List.sum_nil] at hV hrow
-  have hVs : V.size = 8 * (interleave a b).length := by
-    rw [hV, length_interleave, ha, hb, Nat.min_self]; omega
-  refine CompStark.Merkle.Packed.flat_eq V _ hVs fun i hi j hj ↦ ?_
-  rw [length_interleave, ha, hb, Nat.min_self] at hi
-  have hr := hrow (i / 2) (by omega)
-  have hrj := congrArg (fun l ↦ l.getD (8 * (i % 2) + j) 0) hr
-  simp only [Merkle.Matrix.row, rowcat, Mat.toMatrix, List.flatMap_cons, List.flatMap_nil,
-    List.append_nil] at hrj
-  rw [List.getD_eq_getElem _ _ (by rw [List.length_map, List.length_range]; omega),
-    List.getElem_map, List.getElem_range] at hrj
-  have hk : i / 2 * (8 + (8 + 0)) + (8 * (i % 2) + j) = 8 * i + j := by omega
-  rw [hk] at hrj
-  rw [hrj]
-  have hga := getD_interleave a b (i / 2) (by omega) (by omega)
-  rcases Nat.mod_two_eq_zero_or_one i with h0 | h1
-  · have hi2 : i = 2 * (i / 2) := by omega
-    rw [h0, Nat.mul_zero, Nat.zero_add, List.getD_append _ _ _ _ (by
-      rw [List.length_map, List.length_range]; omega), List.getD_eq_getElem _ _ (by
-      rw [List.length_map, List.length_range]; omega), List.getElem_map, List.getElem_range,
-      CompStark.Merkle.Packed.getD_flat]
-    conv_rhs => rw [hi2, hga.1]
-    congr 2 <;> omega
-  · have hi2 : i = 2 * (i / 2) + 1 := by omega
-    have h8 : ((List.range 8).map fun j ↦ (flat a).getD (i / 2 * 8 + j) 0).length ≤ 8 + j := by
-      rw [List.length_map, List.length_range]; omega
-    rw [h1, Nat.mul_one, List.getD_append_right _ _ _ _ h8, List.length_map, List.length_range,
-      Nat.add_sub_cancel_left, List.getD_eq_getElem _ _ (by
-      rw [List.length_map, List.length_range]; omega), List.getElem_map, List.getElem_range,
-      CompStark.Merkle.Packed.getD_flat]
-    conv_rhs => rw [hi2, hga.2]
-    congr 2 <;> omega
+    interleaveDigests (encode (flat a)) (encode (flat b)) n = encode (flat (interleave a b)) := by
+  unfold interleaveDigests
+  rw [show ByteArray.emptyWithCapacity (64 * n) = encode (flat (p := p) []) from rfl]
+  have key : ∀ m ≤ n, (List.range m).foldl (fun out i ↦ out ++
+      (encode (flat a)).extract (32 * i) (32 * i + 32) ++
+      (encode (flat b)).extract (32 * i) (32 * i + 32)) (encode (flat (p := p) [])) =
+      encode (flat (interleave (a.take m) (b.take m))) := by
+    intro m hm
+    induction m with
+    | zero => rfl
+    | succ m ih =>
+      rw [List.range_succ, List.foldl_append, ih (by omega), List.foldl_cons, List.foldl_nil,
+        show 32 * m = 4 * (8 * m) by omega, show 4 * (8 * m) + 32 = 4 * (8 * m + 8) by omega,
+        extract_encode, extract_encode, flat_extract a m (by omega), flat_extract b m (by omega),
+        ← CompPoly.PackedRepr.encode_append, ← CompPoly.PackedRepr.encode_append,
+        ← CompStark.Merkle.Packed.flat_append, ← CompStark.Merkle.Packed.flat_append,
+        interleave_take_succ a b m (by omega) (by omega), List.append_assoc]
+      rfl
+  rw [key n le_rfl, ← ha, List.take_length, ha, ← hb, List.take_length]
 
 /-! ### The digest layers -/
 
@@ -592,25 +513,150 @@ theorem length_nextLayer_pow (L : List (Digest F)) (k : Nat) (h : L.length = 2 ^
 
 /-! ### The leaf layer -/
 
-/-- The packed leaf layer of a matrix is the specification's leaf digests, padded. -/
-theorem leafLayer_encode [PackedPoseidon2 p] (W H : Nat) (V : Array F) (hV : V.size = H * W)
-    (hW : 0 < W) (hu : 32 * (H * W + 1) < USize.size) :
-    leafLayer p W (encode V) = (encode (flat (Merkle.padTo 0 (Merkle.padEven H)
-      ((List.range H).map fun r ↦ hashF ((⟨W, H, V⟩ : Merkle.Matrix F).row r)))),
-      Merkle.padEven H) := by
+theorem forall₂_mem_left {α β : Type*} {R : α → β → Prop} {l₁ : List α} {l₂ : List β}
+    (h : List.Forall₂ R l₁ l₂) {a : α} (ha : a ∈ l₁) : ∃ b, b ∈ l₂ ∧ R a b := by
+  induction h with
+  | nil => exact absurd ha List.not_mem_nil
+  | @cons x y _ _ hxy _ ih =>
+    rcases List.mem_cons.mp ha with rfl | ha
+    · exact ⟨y, List.mem_cons_self, hxy⟩
+    · obtain ⟨b, hb, r⟩ := ih ha; exact ⟨b, List.mem_cons_of_mem _ hb, r⟩
+
+theorem forall₂_mem_right {α β : Type*} {R : α → β → Prop} {l₁ : List α} {l₂ : List β}
+    (h : List.Forall₂ R l₁ l₂) {b : β} (hb : b ∈ l₂) : ∃ a, a ∈ l₁ ∧ R a b := by
+  induction h with
+  | nil => exact absurd hb List.not_mem_nil
+  | @cons x y _ _ hxy _ ih =>
+    rcases List.mem_cons.mp hb with rfl | hb
+    · exact ⟨x, List.mem_cons_self, hxy⟩
+    · obtain ⟨a, ha, r⟩ := ih hb; exact ⟨a, List.mem_cons_of_mem _ ha, r⟩
+
+/-- A multiple of `d` modulo a multiple `R` of `d` leaves room for `d` more. -/
+theorem mod_add_le_of_dvd {R d x : Nat} (hR : 0 < R) (hd : d ∣ R) (hx : d ∣ x) :
+    x % R + d ≤ R := by
+  have h1 : d ∣ x % R := (Nat.dvd_mod_iff hd).mpr hx
+  have h2 : x % R < R := Nat.mod_lt _ hR
+  obtain ⟨a, ha⟩ := h1
+  obtain ⟨b, hb⟩ := hd
+  have : a < b := by
+    rcases Nat.eq_zero_or_pos d with h0 | h0
+    · subst h0; omega
+    · rw [ha, hb] at h2; exact Nat.lt_of_mul_lt_mul_left h2
+  rw [ha, hb]
+  have := Nat.mul_le_mul_left d (show a + 1 ≤ b by omega)
+  rw [Nat.mul_add, Nat.mul_one] at this
+  exact this
+
+theorem getD_map_toArray {α β : Type} (l : List α) (f : α → β) (j : Nat) (d : α) :
+    (l.map f).toArray.getD j (f d) = f (l.getD j d) := by
+  rw [Array.getD_eq_getD_getElem?, List.getElem?_toArray, List.getElem?_map,
+    List.getD_eq_getElem?_getD]
+  cases l[j]? <;> rfl
+
+theorem gcd_dvd_init (ms : List PMat) : ∀ b, ms.foldl (fun a m ↦ Nat.gcd a m.rows) b ∣ b := by
+  induction ms with
+  | nil => intro b; exact dvd_rfl
+  | cons x xs ih => intro b; rw [List.foldl_cons]; exact (ih _).trans (Nat.gcd_dvd_left _ _)
+
+theorem gcd_dvd_rows (ms : List PMat) (a : Nat) :
+    ∀ m ∈ ms, ms.foldl (fun a m ↦ Nat.gcd a m.rows) a ∣ m.rows := by
+  induction ms generalizing a with
+  | nil => intro m hm; exact absurd hm (List.not_mem_nil)
+  | cons m' ms ih =>
+    intro m hm
+    rw [List.foldl_cons]
+    rcases List.mem_cons.mp hm with rfl | hm
+    · exact (gcd_dvd_init ms _).trans (Nat.gcd_dvd_right _ _)
+    · exact ih _ m hm
+
+theorem gcd_pos (ms : List PMat) (a : Nat) (ha : 0 < a) :
+    0 < ms.foldl (fun a m ↦ Nat.gcd a m.rows) a := by
+  induction ms generalizing a with
+  | nil => exact ha
+  | cons m ms ih => rw [List.foldl_cons]; exact ih _ (Nat.gcd_pos_of_pos_left _ ha)
+
+/-- **The packed leaf layer of matrices side by side** is the specification's leaf digests of
+their rows side by side, padded. -/
+theorem leafLayer_cols [PackedPoseidon2 p] (H : Nat) {ms : List PMat} {ss : List (Mat F)}
+    (h : List.Forall₂ RM ms ss) (hH : ∀ s ∈ ss, s.height = H)
+    (hW : 0 < (ss.map Mat.width).sum) (hu : 32 * (H + 1) < USize.size) :
+    leafLayer p ms H = (encode (flat (Merkle.padTo 0 (Merkle.padEven H)
+      ((List.range H).map fun r ↦ hashF (rowcat ss r)))), Merkle.padEven H) := by
   unfold leafLayer
-  have hh : (if W = 0 then 0 else (encode V).size / (4 * W)) = H := by
-    rw [ite_eq_right_of_eq_false _ _ (eq_false (by omega)), size_encode_fields, hV,
-      Nat.mul_comm H W, ← Nat.mul_assoc, Nat.mul_div_cancel_left _ (by omega)]
-  simp only [hh]
-  have hp : 0 < if H < 1024 then 1 else H / 512 := by
-    split
-    · omega
-    · exact Nat.div_pos (by omega) (by decide)
-  have hHW : H ≤ H * W := Nat.le_mul_of_pos_right H hW
-  rw [CompStark.Merkle.Packed.leavesIn_encode W V H _ (by rw [hV]) hp (by rw [hV]; omega)
-    (by omega)]
-  generalize hL : List.map (fun r ↦ hashF ((⟨W, H, V⟩ : Merkle.Matrix F).row r)) (List.range H) = L
+  dsimp only
+  rw [foldl_width, Nat.zero_add, sum_width h]
+  generalize hWd : (ss.map Mat.width).sum = W at hW
+  generalize hsz : ms.foldl (fun a m ↦ Nat.gcd a m.rows) 512 = size
+  have hs0 : 0 < size := by rw [← hsz]; exact gcd_pos ms 512 (by decide)
+  have hdv : ∀ m ∈ ms, size ∣ m.rows := fun m hm ↦ by rw [← hsz]; exact gcd_dvd_rows ms 512 m hm
+  have hHs : H % size = 0 := by
+    have h' := h
+    cases h' with
+    | nil => simp only [List.map_nil, List.sum_nil] at hWd; omega
+    | @cons m s _ _ hm _ =>
+      have h1 := hm.dvd
+      rw [hH s List.mem_cons_self] at h1
+      exact Nat.mod_eq_zero_of_dvd ((hdv m List.mem_cons_self).trans (Nat.dvd_of_mod_eq_zero h1))
+  have hparts : H / size * size = H := Nat.div_mul_cancel (Nat.dvd_of_mod_eq_zero hHs)
+  generalize H / size = parts at hparts ⊢
+  have hss : ∀ s ∈ ss, s.values.size = s.width * s.height := fun s hs ↦ by
+    obtain ⟨m, -, hm⟩ := forall₂_mem_right h hs
+    exact hm.size
+  have task : ∀ k < parts, Merkle.Packed.hashColumns p
+      ((colsList ms (k * size)).map (·.1)).toArray ((colsList ms (k * size)).map (·.2)).toArray
+        W size =
+        encode (flat ((List.range size).map fun i ↦ hashF (rowcat ss (k * size + i)))) := by
+    intro k hk
+    have hk1 : k * size + size ≤ H := by
+      rw [← hparts]; have := Nat.mul_le_mul_right size (show k + 1 ≤ parts by omega)
+      rw [Nat.succ_mul] at this; exact this
+    have spec := colsList_spec h (k * size) size hs0 (fun m hm ↦ by
+        obtain ⟨s, -, hrm⟩ := forall₂_mem_left h hm
+        exact mod_add_le_of_dvd hrm.pos (hdv m hm) (Nat.dvd_mul_left size k))
+      (fun s hs ↦ ⟨by rw [hH s hs]; exact hk1, hss s hs⟩)
+    rw [hWd] at spec
+    generalize colsList ms (k * size) = L at spec
+    have hC : Merkle.Packed.ColumnsOk (L.map (·.1)).toArray (L.map (·.2)).toArray
+        (fun j ↦ (CompPoly.PackedRepr.decode (L.getD j (.empty, 0)).1 : Array F))
+        (fun j ↦ (L.getD j (.empty, 0)).2) W size := by
+      refine ⟨fun j hj ↦ ?_, fun j hj ↦ ?_, fun j hj ↦ ?_, fun j hj ↦ ?_⟩
+      · obtain ⟨A, e1, -, -, -⟩ := spec j hj
+        have e : (L.map (·.1)).toArray.getD j .empty = (L.getD j (.empty, 0)).1 :=
+          getD_map_toArray L (·.1) j (ByteArray.empty, 0)
+        rw [e, e1, CompPoly.PackedRepr.decode_encode]
+      · exact getD_map_toArray L (·.2) j (ByteArray.empty, 0)
+      · obtain ⟨A, e1, e2, -, -⟩ := spec j hj
+        rw [e1, CompPoly.PackedRepr.decode_encode]; exact e2
+      · obtain ⟨A, e1, -, e3, -⟩ := spec j hj
+        rw [e1, CompPoly.PackedRepr.decode_encode]; exact e3
+    rw [Merkle.Packed.hashColumns_encode hC (by omega)]
+    congr 2
+    refine List.map_congr_left fun r hr ↦ congrArg _ ?_
+    have hr := List.mem_range.mp hr
+    apply List.ext_getElem
+    · simp only [Merkle.Matrix.row, List.length_map, List.length_range, length_rowcat, hWd]
+    · intro c h1 h2
+      simp only [Merkle.Matrix.row, List.length_map, List.length_range] at h1
+      simp only [Merkle.Matrix.row, List.getElem_map, List.getElem_range]
+      rw [Merkle.Packed.colMatrix_getD _ _ _ _ _ _ hr h1, ← List.getD_eq_getElem _ 0 h2]
+      obtain ⟨A, e1, -, -, e4⟩ := spec c h1
+      rw [e1, CompPoly.PackedRepr.decode_encode, e4 r hr]
+  rw [CompStark.Merkle.Packed.foldl_spawnAll,
+    show ByteArray.emptyWithCapacity (32 * (H + 1)) = ByteArray.emptyWithCapacity 0 from rfl,
+    CompStark.Merkle.Packed.foldl_congr_mem _ _ _ (fun k hk acc ↦ by rw [task k
+      (List.mem_range.mp hk)]), CompStark.Merkle.Packed.foldl_encode_flat]
+  have hfold : (List.range parts).foldl (fun acc k ↦ acc ++ (List.range size).map fun i ↦
+      hashF (rowcat ss (k * size + i))) [] = (List.range H).map fun r ↦ hashF (rowcat ss r) := by
+    have htiles := CompStark.Merkle.Packed.foldl_tiles H size (fun r ↦ hashF (rowcat ss r)) parts
+    rw [hparts, Nat.min_self] at htiles
+    rw [← htiles]
+    refine CompStark.Merkle.Packed.foldl_congr_mem _ _ _ (fun k hk acc ↦ ?_) []
+    have hk := List.mem_range.mp hk
+    have := Nat.mul_le_mul_right size (show k + 1 ≤ parts by omega)
+    rw [Nat.succ_mul, hparts] at this
+    rw [show min size (H - min H (k * size)) = size by omega]
+  rw [hfold]
+  generalize hL : (List.range H).map (fun r ↦ hashF (rowcat ss r)) = L
   have hLl : L.length = H := by rw [← hL, List.length_map, List.length_range]
   have e := CompStark.Merkle.Packed.padDigests_flat L (Merkle.padEven H)
   rw [hLl] at e
@@ -683,25 +729,21 @@ theorem injectLayer_encode [PackedPoseidon2 p] (L : List (Digest F)) (n : Nat)
     rw [ite_eq_right (List.cons_ne_nil _ _)]
     unfold injectLayer
     simp only [List.isEmpty_cons, Bool.false_eq_true, ↓reduceIte]
-    rw [foldl_width, Nat.zero_add, sum_width (.cons hm hr)]
-    obtain ⟨V, e, hV, hrow⟩ := sideBySide_eq n (.cons hm hr)
-      (fun x hx ↦ ⟨(hf x hx).1, (hf x hx).2.1⟩)
     have hW : 0 < ((s :: ss').map Mat.width).sum := by
       rw [List.map_cons, List.sum_cons]; have := (hf s List.mem_cons_self).2.2; omega
-    rw [e, leafLayer_encode _ n V hV hW hu]
+    rw [leafLayer_cols n (.cons hm hr) (fun x hx ↦ (hf x hx).2.1) hW (by
+      have := USize.le_size; omega)]
     dsimp only
     have hpad : Merkle.padEven n = n := by
       unfold Merkle.padEven
       split <;> omega
-    have hhs : (List.range n).map (fun r ↦
-        hashF ((⟨((s :: ss').map Mat.width).sum, n, V⟩ : Merkle.Matrix F).row r)) =
-        (List.range n).map fun i ↦ hashF (rowcat (s :: ss') i) :=
-      List.map_congr_left fun r hr ↦ by rw [hrow r (List.mem_range.mp hr)]
     have hP : Merkle.padTo 0 n ((List.range n).map fun i ↦ hashF (rowcat (s :: ss') i)) =
         (List.range n).map fun i ↦ hashF (rowcat (s :: ss') i) := by
       simp only [Merkle.padTo, List.length_map, List.length_range, Nat.sub_self,
         List.replicate_zero, List.append_nil]
-    rw [hpad, hhs, hP, sideBySide_interleave L _ n hL (by rw [List.length_map, List.length_range])]
+    have hlm : ((List.range n).map fun i ↦ hashF (rowcat (s :: ss') i)).length = n := by
+      rw [List.length_map, List.length_range]
+    rw [hpad, hP, interleaveDigests_eq L _ n hL hlm]
     have hlen : (interleave L ((List.range n).map fun i ↦ hashF (rowcat (s :: ss') i))).length =
         2 * n := by
       rw [length_interleave, List.length_map, List.length_range, hL, Nat.min_self]
@@ -762,7 +804,7 @@ theorem upperMixed_encode [Mont32BaseField p] [PackedPoseidon2 p] (H W : Nat)
     generalize hG : restS.takeWhile (fun x : Mat F ↦ x.height == 2 ^ k) = G
     have hinj : List.Forall₂ RM (rest.takeWhile (·.height == 2 ^ k)) G := by
       rw [← hG]
-      exact forall₂_takeWhile (fun a b hab ↦ by rw [hab.2.1]) h
+      exact forall₂_takeWhile (fun a b hab ↦ by rw [hab.height]) h
     have hGmem : ∀ s ∈ G, s ∈ restS := fun s hs ↦ by
       rw [← hG] at hs; exact (mem_takeWhile hs).1
     have hGsum : (G.map Mat.width).sum ≤ W := by
@@ -847,13 +889,13 @@ theorem commitLayers_eq [Mont32BaseField p] [PackedPoseidon2 p] {ms : List PMat}
   | @cons m s msP ssS hm hrest =>
     dsimp only
     simp only [List.map_cons, List.headD_cons, Mat.toMatrix]
-    rw [hm.2.1]
+    rw [hm.height]
     have hs := hall' s List.mem_cons_self
     obtain ⟨j, -, hj⟩ := hs.1.2.1
     -- The tallest matrices.
     have htall : List.Forall₂ RM ((m :: msP).takeWhile (·.height == s.height))
         ((s :: ssS).takeWhile (·.height == s.height)) :=
-      forall₂_takeWhile (fun a b hab ↦ by rw [hab.2.1]) (.cons hm hrest)
+      forall₂_takeWhile (fun a b hab ↦ by rw [hab.height]) (.cons hm hrest)
     have hmatT : ((s :: ssS).map Mat.toMatrix).takeWhile (·.height == s.height) =
         ((s :: ssS).takeWhile (·.height == s.height)).map Mat.toMatrix := by
       rw [List.takeWhile_map]; rfl
@@ -876,10 +918,9 @@ theorem commitLayers_eq [Mont32BaseField p] [PackedPoseidon2 p] {ms : List PMat}
         List.sum_cons]
       have := hs.1.1
       omega
-    obtain ⟨V, e, hV, hrow⟩ := sideBySide_eq s.height htall hTf
-    rw [foldl_width, Nat.zero_add, sum_width htall, e,
-      leafLayer_encode _ s.height V hV hT0 (by
-        have := Nat.mul_le_mul hs.2 hTsum; omega)]
+    have hTh : ∀ x ∈ T, x.height = s.height := fun x hx ↦ (hTf x hx).2
+    rw [leafLayer_cols s.height htall hTh hT0 (by
+        have := Nat.mul_le_mul hs.2 (show 1 ≤ W by omega); omega)]
     dsimp only
     have hpad : Merkle.padEven s.height = s.height := by
       unfold Merkle.padEven
@@ -891,14 +932,14 @@ theorem commitLayers_eq [Mont32BaseField p] [PackedPoseidon2 p] {ms : List PMat}
           omega
     have hfirst : Merkle.firstLayer hashF (T.map Mat.toMatrix) s.height =
         Merkle.padTo 0 (Merkle.padEven s.height) ((List.range s.height).map fun r ↦
-          hashF ((⟨(T.map Mat.width).sum, s.height, V⟩ : Merkle.Matrix F).row r)) := by
+          hashF (rowcat T r)) := by
       rw [Merkle.firstLayer]
       congr 1
       refine List.map_congr_left fun r hr ↦ ?_
-      rw [hrow r (List.mem_range.mp hr), rowcat, List.flatMap_map]
+      rw [rowcat, List.flatMap_map]
     rw [hfirst]
     generalize hF : Merkle.padTo 0 (Merkle.padEven s.height) ((List.range s.height).map fun r ↦
-      hashF ((⟨(T.map Mat.width).sum, s.height, V⟩ : Merkle.Matrix F).row r)) = first
+      hashF (rowcat T r)) = first
     have hFlen : first.length = s.height := by
       rw [← hF, Merkle.padTo, List.length_append, List.length_replicate, List.length_map,
         List.length_range, hpad]

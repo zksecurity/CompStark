@@ -5,6 +5,7 @@ Released under Apache 2.0 license as described in the file LICENSE.
 module
 
 public import CompStark.Stark.Fast.WordsLemmas
+public import CompStark.Stark.Fast.Columns
 public import CompStark.Stark.Fast.OpeningsSpec
 public import CompStark.Stark.Fast.BatchInv
 
@@ -347,84 +348,108 @@ theorem flatMap_coeffs [Mont32BaseField p] [Binomial4 p] (n : Nat) (g : Nat → 
     rw [show (4 * n + t) / 4 = n by omega, show (4 * n + t) % 4 = t by omega]
     interval_cases t <;> rfl
 
-/-- The coordinates of elements `i0, …, i0 + len - 1`, interleaved. -/
-theorem interleaveRange_encode [Mont32BaseField p] [Binomial4 p] {v : EVec p} {a : Array EF}
-    (hv : RV v a) (i0 len : Nat)
-    (hi : i0 + len ≤ a.size) (hs : 16 * a.size < USize.size) :
-    interleaveRange v.c0 v.c1 v.c2 v.c3 i0 len = encode ((Array.ofFn (n := len) fun j ↦
-      a.getD (i0 + j.val) 0).flatMap fun x ↦ (Ext.coeffs x).toArray) := by
-  obtain ⟨hvn, h0, h1, h2, h3⟩ := hv
-  unfold interleaveRange
+/-- Every `k`-th word from word `i`. -/
+theorem strided_encode (A : Array F) (i k count : Nat) (hA : ∀ r < count, r * k + i < A.size)
+    (hs : 4 * A.size < USize.size) (hc : 4 * count < USize.size) :
+    strided (encode A) i k count = encode (Array.ofFn (n := count) fun r ↦ A.getD (r.val * k + i) 0)
+    := by
+  unfold strided
   simp only [Std.Legacy.Range.forIn_eq_forIn_range', Std.Legacy.Range.size,
     Nat.sub_zero, Nat.add_sub_cancel, Nat.div_one, ← List.range_eq_range',
-    pure_bind, List.forIn_pure_yield_eq_foldl, Id.run_pure, h0, h1, h2, h3]
-  let f (t : Nat) : F := coord (t % 4) (a.getD (i0 + t / 4) 0)
-  have ho : 4 * (Array.replicate (4 * len) (0 : F)).size < USize.size := by
-    rw [Array.size_replicate]; omega
-  have hm : ∀ p : EF → F, 4 * (a.map p).size < USize.size := fun p ↦ by
-    rw [Array.size_map]; omega
-  have hr : ∀ (p : EF → F) (c K : Nat), K < len → c < 4 →
-      (∀ x : EF, coord c x = p x) → read (encode (a.map p)) (i0 + K) = (f (4 * K + c)).val :=
-    fun p c K hK hc hp ↦ by
-      rw [read_encode _ _ (hm p) (by rw [Array.size_map]; omega),
-        EVec.getD_map a p _ (by omega), ← getD_lt a _ (by omega), ← hp]
-      simp only [f]
-      rw [show (4 * K + c) % 4 = c by omega, show (4 * K + c) / 4 = K by omega]
-  have key : ∀ K ≤ len, (List.range K).foldl (fun b k ↦
-      write (write (write (write b (4 * k) (read (encode (a.map (·.c0))) (i0 + k))) (4 * k + 1)
-        (read (encode (a.map (·.c1))) (i0 + k))) (4 * k + 2)
-        (read (encode (a.map (·.c2))) (i0 + k))) (4 * k + 3)
-        (read (encode (a.map (·.c3))) (i0 + k)))
-      (zeroWords (4 * len)) = encode (upto (Array.replicate (4 * len) 0) f (4 * K)) := by
+    pure_bind, List.forIn_pure_yield_eq_foldl, Id.run_pure]
+  let f (r : Nat) : F := A.getD (r * k + i) 0
+  have ho : 4 * (Array.replicate count (0 : F)).size < USize.size := by
+    rw [Array.size_replicate]; exact hc
+  have key : ∀ K ≤ count, (List.range K).foldl (fun b r ↦ write b r (read (encode A) (r * k + i)))
+      (zeroWords count) = encode (upto (Array.replicate count 0) f K) := by
     intro K hK
     induction K with
-    | zero => rw [List.range_zero, List.foldl_nil, zeroWords_eq (p := p), Nat.mul_zero, upto_zero]
+    | zero => rw [List.range_zero, List.foldl_nil, zeroWords_eq (p := p), upto_zero]
     | succ K ih =>
-      rw [List.range_succ, List.foldl_append, ih (by omega), List.foldl_cons, List.foldl_nil]
-      have hK : K < len := by omega
-      have r0 := hr (·.c0) 0 K hK (by decide) fun _ ↦ rfl
-      rw [Nat.add_zero] at r0
-      rw [r0, hr (·.c1) 1 K hK (by decide) fun _ ↦ rfl, hr (·.c2) 2 K hK (by decide) fun _ ↦ rfl,
-        hr (·.c3) 3 K hK (by decide) fun _ ↦ rfl]
-      rw [write_upto _ f _ (by rw [Array.size_replicate]; omega) ho,
-        write_upto _ f _ (by rw [Array.size_replicate]; omega) ho,
-        write_upto _ f _ (by rw [Array.size_replicate]; omega) ho,
-        write_upto _ f _ (by rw [Array.size_replicate]; omega) ho, Nat.mul_succ]
-  rw [key len (Nat.le_refl _), upto_full _ _ _ (Array.size_replicate ..),
-    flatMap_coeffs len fun j ↦ a.getD (i0 + j) 0]
-
-/-- Flattening commutes with concatenation. -/
-theorem foldl_append_flatMap {α β : Type} (g : α → Array β) (A : Nat → Array α) (L : List Nat)
-    (acc : Array α) :
-    L.foldl (fun acc k ↦ acc ++ (A k).flatMap g) (acc.flatMap g) =
-      (L.foldl (fun acc k ↦ acc ++ A k) acc).flatMap g := by
-  induction L generalizing acc with
-  | nil => rfl
-  | cons k L ih => rw [List.foldl_cons, List.foldl_cons, ← Array.flatMap_append, ih]
+      rw [List.range_succ, List.foldl_append, ih (by omega), List.foldl_cons, List.foldl_nil,
+        read_encode _ _ hs (hA K (by omega)),
+        write_upto _ f _ (by rw [Array.size_replicate]; omega) ho]
+  rw [key count le_rfl, upto_full _ _ _ (Array.size_replicate ..)]
 
 /-- The leaves are the elements' coordinates, `k` elements per row. -/
 theorem leaves_rel [Mont32BaseField p] [Binomial4 p] (hA : 16 * 2 ^ twoAdicity F < USize.size)
     {v : EVec p} {a : Array EF} (k : Nat)
-    (h : RV v a) (ha : a.size ≤ 2 ^ twoAdicity F) :
+    (h : RV v a) (ha : a.size ≤ 2 ^ twoAdicity F) (hk : k ∣ a.size) (h0 : 0 < a.size) :
     RM (leaves k v) (Mat.ofValues (4 * k) (a.size / k)
       (a.flatMap fun x ↦ (Ext.coeffs x).toArray)) := by
-  unfold leaves
   have hs := size_bound hA ha
-  rw [h.1]
-  refine ⟨rfl, rfl, ?_⟩
-  simp only [Mat.ofValues]
-  have hp : 0 < (if a.size < 4096 then 1 else 16) := by split <;> decide
-  generalize (if a.size < 4096 then 1 else 16) = parts at hp ⊢
-  rw [foldl_tasks parts _ (fun p ↦ (Array.ofFn (n := if p + 1 = parts then
-      a.size - p * (a.size / parts) else a.size / parts) fun j ↦
-      a.getD (p * (a.size / parts) + j.val) 0).flatMap fun x ↦ (Ext.coeffs x).toArray)
-      fun p hp' ↦ interleaveRange_encode h _ _ (range_le a.size parts p hp') hs,
-    ← Array.flatMap_empty (fun x : EF ↦ (Ext.coeffs x).toArray), foldl_append_flatMap,
-    foldl_ranges (fun j ↦ a.getD j 0) a.size parts _ hp (ranges_cover a.size parts)]
-  congr 2
-  apply Array.ext (by rw [Array.size_ofFn])
-  intro i h1 _
-  rw [Array.size_ofFn] at h1
-  simp only [Array.getElem_ofFn, getD_lt a i h1]
+  have hk0 : 0 < k := Nat.pos_of_ne_zero (by rintro rfl; rw [Nat.zero_dvd] at hk; omega)
+  obtain ⟨n, hn⟩ := hk
+  have hn0 : 0 < n := Nat.pos_of_ne_zero (by rintro rfl; rw [Nat.mul_zero] at hn; omega)
+  have hdiv : a.size / k = n := by rw [hn, Nat.mul_div_cancel_left _ hk0]
+  obtain ⟨hvn, hc0, hc1, hc2, hc3⟩ := h
+  unfold leaves
+  rw [hvn, hdiv]
+  have hfl : (a.flatMap fun x ↦ (Ext.coeffs x).toArray) =
+      Array.ofFn (n := 4 * a.size) fun t ↦ coord (t.val % 4) (a.getD (t.val / 4) 0) := by
+    have e : a = Array.ofFn (n := a.size) fun j ↦ a.getD j.val 0 :=
+      Array.ext (by rw [Array.size_ofFn]) fun j h1 _ ↦ by
+        rw [Array.getElem_ofFn, getD_lt a j h1]
+    conv_lhs => rw [e]
+    rw [flatMap_coeffs a.size (fun j ↦ a.getD j 0)]
+  refine ⟨rfl, rfl, ?_, hn0, ?_, Nat.mod_self n, ?_⟩
+  · show (a.flatMap fun x ↦ (Ext.coeffs x).toArray).size = 4 * k * n
+    rw [hfl, Array.size_ofFn, hn, Nat.mul_assoc]
+  · show 4 * n < USize.size
+    have : n ≤ a.size := by rw [hn]; exact Nat.le_mul_of_pos_left n hk0
+    omega
+  · show (CompPoly.Tasks.join (CompPoly.Tasks.spawnAll (4 * k) fun j ↦
+      strided (match j % 4 with | 0 => v.c0 | 1 => v.c1 | 2 => v.c2 | _ => v.c3) (j / 4) k
+        n)).get = _
+    rw [CompPoly.Tasks.get_join, CompPoly.Tasks.map_get_spawnAll]
+    apply Array.ext (by
+      simp only [Array.size_map, Array.size_range, size_colBlocks, Mat.ofValues,
+        Nat.div_self hn0, Nat.one_mul])
+    intro j h1 _
+    simp only [Array.size_map, Array.size_range] at h1
+    simp only [Array.getElem_map, Array.getElem_ofFn, Array.getElem_range, colBlocks,
+      Mat.ofValues]
+    have hj4 : j % 4 < 4 := Nat.mod_lt _ (by decide)
+    have hpl (pr : EF → F) (hpr : ∀ x, pr x = coord (j % 4) x) :
+        strided (encode (a.map pr)) (j / 4) k n = encode (Array.ofFn (n := n) fun r ↦
+          coord (j % 4) (a.getD (r.val * k + j / 4) 0)) := by
+      rw [strided_encode _ _ _ _ (fun r hr ↦ by
+          rw [Array.size_map, hn]
+          have := Nat.mul_le_mul_right k (show r + 1 ≤ n by omega)
+          rw [Nat.succ_mul] at this
+          have : j / 4 < k := by omega
+          rw [Nat.mul_comm k n]; omega) (by rw [Array.size_map]; omega) (by
+          have : n ≤ a.size := by rw [hn]; exact Nat.le_mul_of_pos_left n hk0
+          omega)]
+      refine congrArg encode (congrArg Array.ofFn (funext fun r ↦ ?_))
+      have hr : r.val * k + j / 4 < a.size := by
+        rw [hn]
+        have := Nat.mul_le_mul_right k (show r.val + 1 ≤ n by omega)
+        rw [Nat.succ_mul] at this
+        have : j / 4 < k := by omega
+        rw [Nat.mul_comm k n]; omega
+      rw [EVec.getD_map _ _ _ hr, hpr, getD_lt a _ hr]
+    have hj : (match j % 4 with | 0 => v.c0 | 1 => v.c1 | 2 => v.c2 | _ => v.c3) =
+        encode (a.map fun x ↦ coord (j % 4) x) := by
+      generalize hc : j % 4 = c at hj4
+      match c, hj4 with
+      | 0, _ => exact hc0
+      | 1, _ => exact hc1
+      | 2, _ => exact hc2
+      | 3, _ => exact hc3
+    rw [hj, hpl _ fun _ ↦ rfl]
+    refine congrArg encode (congrArg Array.ofFn (funext fun r ↦ ?_))
+    have hidx : (j / (4 * k) * n + r.val) * (4 * k) + j % (4 * k) = r.val * (4 * k) + j := by
+      rw [Nat.div_eq_of_lt h1, Nat.mod_eq_of_lt h1, Nat.zero_mul, Nat.zero_add]
+    have hlt : r.val * (4 * k) + j < 4 * a.size := by
+      rw [hn]
+      have := Nat.mul_le_mul_right (4 * k) (show r.val + 1 ≤ n by omega)
+      rw [Nat.succ_mul] at this
+      have : 4 * (k * n) = n * (4 * k) := by ring
+      omega
+    rw [hidx, hfl, CompPoly.CPolynomial.NTTFast.Packed.getD_ofFn_bounded _ _ hlt]
+    dsimp only
+    have e4 : r.val * (4 * k) = 4 * (r.val * k) := by ring
+    rw [e4, Nat.mul_add_mod, Nat.mul_add_div (by decide)]
 
 end CompStark.Stark.Fast

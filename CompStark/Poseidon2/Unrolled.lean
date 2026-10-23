@@ -232,6 +232,16 @@ meta def load16 (t : Nat) : MacroM Term := do
   bs := bs ++ (← store t 8 "x").extract 0 17
   lets bs (← `($(name "st").1))
 
+/-- Coordinates `0, …, 15` of the eight lanes of a width-`t` group from sixteen source lines of
+eight words: word `l` of line `o{j}` of `c{j}` becomes coordinate `j` of lane `l`. -/
+meta def loadColumns (t : Nat) : MacroM Term := do
+  let mut bs := (← touch)
+  for j in [0:16] do
+    for l in [0:8] do
+      bs := bs.push (v "x" j l, ← read (name s!"c{j}") (name s!"o{j}") (name s!"h{j}") l)
+  bs := bs ++ (← store t 8 "x").extract 0 17
+  lets bs (← `($(name "st").1))
+
 /-- Coordinates `0, …, 7` of the eight lanes of the group at `i` of `st`, stored as eight
 contiguous digests: lane `l` at word `p{l}` of `out`. -/
 meta def store8x8 : MacroM Term := do
@@ -267,6 +277,10 @@ macro "p2_mix%" t:num L:num : term => mixBlocks t.getNat L.getNat
 open CompStark.Poseidon2.Unrolled in
 /-- The body of a transposing load of eight lines into a width-`t` group. -/
 macro "p2_load16%" t:num : term => load16 t.getNat
+
+open CompStark.Poseidon2.Unrolled in
+/-- The body of a load of sixteen columns' lines of eight words into a group. -/
+macro "p2_loadColumns%" t:num : term => loadColumns t.getNat
 
 open CompStark.Poseidon2.Unrolled in
 /-- The body of a transposing store of eight digests from a group. -/

@@ -23,6 +23,7 @@ public import CompStark.Poseidon2.PackedCorrectness24
 public import CompStark.Hash.Sponge
 public import CompStark.Merkle.Tree
 public import CompStark.Merkle.Packed
+public import CompStark.Merkle.PackedColumns
 public import CompStark.Merkle.PackedCorrectness
 public import CompStark.Merkle.RootCorrectness
 public import CompStark.Poseidon2.Impl

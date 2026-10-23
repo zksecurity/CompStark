@@ -96,9 +96,9 @@ macro "group_kernels " p:term : command => `(
       CompStark.Stark.Prog.fill nm s d c
     @[noinline] def copy (nm : Nat) (s : ByteArray) (e : @& ByteArray) (d a : USize) : ByteArray :=
       CompStark.Stark.Prog.copy nm s e d a
-    @[noinline] def gather (nm : Nat) (s : ByteArray) (d : USize) (m : @& ByteArray) (w c : Nat)
-        (next : @& Array Nat) (r0 : Nat) : ByteArray :=
-      CompStark.Stark.Prog.gather nm s d m w c next r0
+    @[noinline] def gather (nm : Nat) (s : ByteArray) (d : USize)
+        (m : @& CompStark.Stark.Prog.Cols) (c : Nat) (next : @& Array Nat) (r0 : Nat) : ByteArray :=
+      CompStark.Stark.Prog.gather nm s d m c next r0
     @[noinline] def accS (nm : Nat) (rb : USize) (s : ByteArray) (a : USize)
         (wts : @& Array UInt32) (w : Nat) :
         ByteArray :=
@@ -186,16 +186,16 @@ meta def callE (ns : Name) (env s : Lean.Expr) (i : Instr UInt32) : MetaM Lean.E
     let fld (n : Name) : MetaM Lean.Expr := mkAppM n #[L]
     let d := mkApp2 (mkConst ``regOff) env (natE d)
     let tcol (c : Nat) : MetaM Lean.Expr := pure (mkApp2 (mkConst ``tcolOff) env (natE c))
-    let gather (m w : Name) (c : Nat) : MetaM Lean.Expr := do
-      return mkAppN (mkConst (ns ++ `gather)) #[nm, s, d, ← fld m, ← fld w, natE c,
+    let gather (m : Name) (c : Nat) : MetaM Lean.Expr := do
+      return mkAppN (mkConst (ns ++ `gather)) #[nm, s, d, ← fld m, natE c,
         ← fld ``Loads.next, ← fld ``Loads.r0]
     let sb ← mkAppM ``GroupEnv.sb #[env]
     match src with
-    | .next c => gather ``Loads.main ``Loads.w c
+    | .next c => gather ``Loads.main c
     | .prepCur c => return mkAppN (mkConst (ns ++ `copy)) #[nm, s, ← fld ``Loads.prepT, d, ← tcol c]
-    | .prepNext c => gather ``Loads.prep ``Loads.pw c
+    | .prepNext c => gather ``Loads.prep c
     | .permCur c => return mkAppN (mkConst (ns ++ `copy)) #[nm, s, ← fld ``Loads.permT, d, ← tcol c]
-    | .permNext c => gather ``Loads.perm ``Loads.rw c
+    | .permNext c => gather ``Loads.perm c
     | .periodic j =>
       return mkAppN (mkConst ``copyPer) #[nm, s, ← fld ``Loads.per, natE j, d, sb]
     | .isFirstRow => return mkAppN (mkConst (ns ++ `copy)) #[nm, s, ← fld ``Loads.first, d, sb]

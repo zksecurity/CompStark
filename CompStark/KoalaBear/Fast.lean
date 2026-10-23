@@ -24,6 +24,7 @@ open CompStark.Fri CompStark.Stark
 local notation "F" => _root_.KoalaBear.Fast.Field
 local notation "EF" => _root_.KoalaBear.Fast.Ext4
 
+set_option maxHeartbeats 1000000 in
 /-- The fast backend over KoalaBear, with the extension plans and quotient tables of instances of
 the shapes `shapes` prepared: `(logN, logChunks)` for a `2 ^ logN`-row trace with `2 ^ logChunks`
 quotient chunks. -/
@@ -72,6 +73,7 @@ theorem proveBatch_fast (kernels : List (Stark.Prog.GroupKernel _root_.KoalaBear
   Stark.Fast.proveBatch_fast (by rw [twoAdicity_eq]; decide) domainsAddressable kernels encoded
     input publicValuesLength outOfDomain
 
+set_option maxHeartbeats 1000000 in
 /-- The fast backend over KoalaBear on the Poseidon2 instances `I` (`backendFor` is it on Plonky3's
 default ones), specialized here, in the CPU-targeted library. -/
 def Instances.backendFor (I : Instances) (kernels : List

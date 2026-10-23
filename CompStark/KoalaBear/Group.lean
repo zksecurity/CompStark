@@ -5,7 +5,8 @@ Released under Apache 2.0 license as described in the file LICENSE.
 module
 
 public import CompStark.Stark.ProgGen
-public import CompStark.KoalaBear.Fast
+public import CompStark.KoalaBear.Field
+public import CompStark.Stark.Fast
 
 /-! # Group kernels over KoalaBear
 

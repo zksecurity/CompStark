@@ -30,6 +30,7 @@ local notation "EF" => _root_.BabyBear.Fast.Ext4
 instance instPackedPoseidon2 : Poseidon2.PackedPoseidon2 _root_.BabyBear.fieldSize :=
   .ofLanes _
 
+set_option maxHeartbeats 1000000 in
 /-- The fast backend over BabyBear, with the extension plans and quotient tables of instances of
 the shapes `shapes` prepared: `(logN, logChunks)` for a `2 ^ logN`-row trace with `2 ^ logChunks`
 quotient chunks. -/

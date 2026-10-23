@@ -25,10 +25,9 @@ backend refines the specification (`backendFor_refines`), so its proofs are the 
 @[expose] public section
 namespace CompStark.Stark.Fast
 open CompStark.Fri CompStark.Poseidon2 Montgomery.Native32
-open CompPoly.CPolynomial.NTTFast.Packed (PackedCosetLde)
 
 variable {p : ℕ} [Mont32Field p] [Mont32BaseField p] [Binomial4 p] [Poseidon2Field (FastField p)]
-  [PackedPoseidon2 p] [PackedCosetLde p]
+  [PackedPoseidon2 p]
 
 local notation "F" => FastField p
 local notation "EF" => Ext4 p
@@ -101,7 +100,7 @@ def backendFor_refines (hζ : 2 ≤ twoAdicity F) (hA : DomainsAddressable F EF)
     reduce := fun alpha _ _ h hok ↦ reduce_rel hζ alpha h hok
     fold2 := fun beta k _ _ h ha hk ↦ fold2_rel h16 beta k h ha hk
     addScaled := fun x _ _ _ _ hv hw hab ha ↦ addScaled_rel h16 x hv hw hab ha
-    leaves := fun k _ _ h ha ↦ leaves_rel h16 k h ha }
+    leaves := fun k _ _ h ha hk hp ↦ leaves_rel h16 k h ha hk hp }
 
 /-- **The fast prover is correct.** For an input of the shapes the prover supports (`InputOk`),
 it produces the specification's proof, unless the out-of-domain point `ζ` lands in the base field,

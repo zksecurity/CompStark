@@ -29,7 +29,8 @@ lean_lib CompStark where
 /-- CPU-targeted packed kernels; the proof artifacts remain platform independent. -/
 lean_lib CompStarkPackedNative where
   roots := #[`CompStark.Poseidon2.Packed, `CompStark.Poseidon2.Packed24,
-    `CompStark.Merkle.Packed, `CompStark.Stark.Words, `CompStark.Stark.ExtWords,
+    `CompStark.Merkle.Packed, `CompStark.Merkle.PackedColumns, `CompStark.Stark.Words,
+    `CompStark.Stark.ExtWords,
     `CompStark.Stark.ProgWords, `CompStark.Stark.ProgGroup, `CompStark.Stark.Fast,
     `CompStark.KoalaBear.Fast, `CompStark.KoalaBear.Group, `CompStark.BabyBear.Fast]
   platformIndependent := true

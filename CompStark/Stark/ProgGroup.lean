@@ -222,31 +222,31 @@ holds them at that time, spelled out. -/
 @[inline] def copy (nm : Nat) (s : ByteArray) (e : @& ByteArray) (d a : USize) : ByteArray :=
   groups (stepEW (fun x _ ↦ x) e d a 0) nm s 0
 
-/-- Column `c` of a row-major matrix of width `w` at the rows `next[r0 + o + k]` into `d + o`. -/
-@[inline] def stepGather (m : @& ByteArray) (w c : Nat) (next : @& Array Nat) (r0 : Nat) (d : USize)
+/-- Column `c` of the columns `m` at the rows `next[r0 + o + k]` into `d + o`. -/
+@[inline] def stepGather (m : @& Cols) (c : Nat) (next : @& Array Nat) (r0 : Nat) (d : USize)
     (s : ByteArray) (o : USize) : ByteArray :=
   withWin s (d + o) s fun hd ↦ st16 s (d + o) hd
-  (read m (next.getD (r0 + o.toNat + 0) 0 * w + c))
-  (read m (next.getD (r0 + o.toNat + 1) 0 * w + c))
-  (read m (next.getD (r0 + o.toNat + 2) 0 * w + c))
-  (read m (next.getD (r0 + o.toNat + 3) 0 * w + c))
-  (read m (next.getD (r0 + o.toNat + 4) 0 * w + c))
-  (read m (next.getD (r0 + o.toNat + 5) 0 * w + c))
-  (read m (next.getD (r0 + o.toNat + 6) 0 * w + c))
-  (read m (next.getD (r0 + o.toNat + 7) 0 * w + c))
-  (read m (next.getD (r0 + o.toNat + 8) 0 * w + c))
-  (read m (next.getD (r0 + o.toNat + 9) 0 * w + c))
-  (read m (next.getD (r0 + o.toNat + 10) 0 * w + c))
-  (read m (next.getD (r0 + o.toNat + 11) 0 * w + c))
-  (read m (next.getD (r0 + o.toNat + 12) 0 * w + c))
-  (read m (next.getD (r0 + o.toNat + 13) 0 * w + c))
-  (read m (next.getD (r0 + o.toNat + 14) 0 * w + c))
-  (read m (next.getD (r0 + o.toNat + 15) 0 * w + c))
+  (m.at (next.getD (r0 + o.toNat + 0) 0) c)
+  (m.at (next.getD (r0 + o.toNat + 1) 0) c)
+  (m.at (next.getD (r0 + o.toNat + 2) 0) c)
+  (m.at (next.getD (r0 + o.toNat + 3) 0) c)
+  (m.at (next.getD (r0 + o.toNat + 4) 0) c)
+  (m.at (next.getD (r0 + o.toNat + 5) 0) c)
+  (m.at (next.getD (r0 + o.toNat + 6) 0) c)
+  (m.at (next.getD (r0 + o.toNat + 7) 0) c)
+  (m.at (next.getD (r0 + o.toNat + 8) 0) c)
+  (m.at (next.getD (r0 + o.toNat + 9) 0) c)
+  (m.at (next.getD (r0 + o.toNat + 10) 0) c)
+  (m.at (next.getD (r0 + o.toNat + 11) 0) c)
+  (m.at (next.getD (r0 + o.toNat + 12) 0) c)
+  (m.at (next.getD (r0 + o.toNat + 13) 0) c)
+  (m.at (next.getD (r0 + o.toNat + 14) 0) c)
+  (m.at (next.getD (r0 + o.toNat + 15) 0) c)
 
-/-- Column `c` of a row-major matrix of width `w` at the rows `next[r0 + k]` into word `d`. -/
-@[inline] def gather (nm : Nat) (s : ByteArray) (d : USize) (m : @& ByteArray) (w c : Nat)
+/-- Column `c` of the columns `m` at the rows `next[r0 + k]` into word `d`. -/
+@[inline] def gather (nm : Nat) (s : ByteArray) (d : USize) (m : @& Cols) (c : Nat)
     (next : @& Array Nat) (r0 : Nat) : ByteArray :=
-  groups (stepGather m w c next r0 d) nm s 0
+  groups (stepGather m c next r0 d) nm s 0
 
 variable (p : ℕ) [Mont32Field p]
 
@@ -475,11 +475,11 @@ of `x y` and of `q p` subtracted (`sub`), which vectorizes to word multiplicatio
 /-- A loaded column into register `d`. -/
 @[inline] def loadG (env : @& GroupEnv) (d : Nat) (src : Src) (s : ByteArray) : ByteArray :=
   match src with
-  | .next c => gather env.nm s (regOff env d) env.L.main env.L.w c env.L.next env.L.r0
+  | .next c => gather env.nm s (regOff env d) env.L.main c env.L.next env.L.r0
   | .prepCur c => copy env.nm s env.L.prepT (regOff env d) (tcolOff env c)
-  | .prepNext c => gather env.nm s (regOff env d) env.L.prep env.L.pw c env.L.next env.L.r0
+  | .prepNext c => gather env.nm s (regOff env d) env.L.prep c env.L.next env.L.r0
   | .permCur c => copy env.nm s env.L.permT (regOff env d) (tcolOff env c)
-  | .permNext c => gather env.nm s (regOff env d) env.L.perm env.L.rw c env.L.next env.L.r0
+  | .permNext c => gather env.nm s (regOff env d) env.L.perm c env.L.next env.L.r0
   | .periodic j => copyPer env.nm s env.L.per j (regOff env d) env.sb
   | .isFirstRow => copy env.nm s env.L.first (regOff env d) env.sb
   | .isLastRow => copy env.nm s env.L.last (regOff env d) env.sb

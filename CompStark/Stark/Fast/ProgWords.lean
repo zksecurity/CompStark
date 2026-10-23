@@ -527,36 +527,73 @@ theorem copyWords_tab (X A : Array F) (B S : Nat) (hS : S < USize.size) (hX : X.
     (by simp only [Bool.false_eq_true, ite_false]; exact hoA) out hr ho, updR_full X B hX]
   rfl
 
-theorem nextInto_encode (M X : Array F) (w c : Nat) (next : Array Nat) (r0 B : Nat)
-    (hX : 4 * X.size < USize.size) (hM : 4 * M.size < USize.size) (hB : B ≤ X.size)
-    (hin : ∀ k < B, next.getD (r0 + k) 0 * w + c < M.size) :
+/-- The values of columns in blocks of rows (`Cols`): column `c` of block `b` is `C[b w + c]`. -/
+structure ColsF (p : ℕ) [Mont32Field p] where
+  C : Array (Array (FastField p))
+  width : Nat
+  rows : Nat
+
+/-- The packed columns. -/
+def ColsF.enc (m : ColsF p) : Cols := ⟨m.C.map encode, m.width, m.rows⟩
+
+/-- The column of entry `(r, c)`. -/
+abbrev ColsF.col (m : ColsF p) (r c : Nat) : Array F := m.C.getD (r / m.rows * m.width + c) #[]
+
+/-- Entry `(r, c)`. -/
+def ColsF.at (m : ColsF p) (r c : Nat) : F := (m.col r c).getD (r % m.rows) 0
+
+/-- Entry `(r, c)` lies in its column. -/
+def ColsF.Has (m : ColsF p) (r c : Nat) : Prop := r % m.rows < (m.col r c).size
+
+/-- The columns are addressable by machine words. -/
+def ColsF.Addr (m : ColsF p) : Prop := ∀ a ∈ m.C, 4 * a.size < USize.size
+
+theorem ColsF.at_enc (m : ColsF p) (h : m.Addr) (r c : Nat) (hrc : m.Has r c) :
+    m.enc.at r c = (m.at r c).val := by
+  unfold Cols.at ColsF.enc ColsF.at
+  dsimp only
+  have hcol : (m.C.map encode).getD (r / m.rows * m.width + c) .empty = encode (m.col r c) := by
+    unfold ColsF.col
+    rw [Array.getD_eq_getD_getElem?, Array.getD_eq_getD_getElem?, Array.getElem?_map]
+    cases m.C[r / m.rows * m.width + c]? with
+    | none => rfl
+    | some a => rfl
+  rw [hcol]
+  have hA : 4 * (m.col r c).size < USize.size := by
+    unfold ColsF.col
+    rw [Array.getD_eq_getD_getElem?]
+    cases e : m.C[r / m.rows * m.width + c]? with
+    | none => show 4 * 0 < USize.size; have := USize.le_size; omega
+    | some a => exact h a (Array.mem_of_getElem? e)
+  exact read_encode' _ _ hA hrc
+
+theorem nextInto_encode (M : ColsF p) (X : Array F) (c : Nat) (next : Array Nat) (r0 B : Nat)
+    (hX : 4 * X.size < USize.size) (hM : M.Addr) (hB : B ≤ X.size)
+    (hin : ∀ k < B, M.Has (next.getD (r0 + k) 0) c) :
     ∀ n k, k + n ≤ B →
-      nextInto (encode M) w c next r0 k n
-        (encode (updR X 0 k fun k ↦ M.getD (next.getD (r0 + k) 0 * w + c) 0)) =
-        encode (updR X 0 (k + n) fun k ↦ M.getD (next.getD (r0 + k) 0 * w + c) 0) := by
+      nextInto M.enc c next r0 k n
+        (encode (updR X 0 k fun k ↦ M.at (next.getD (r0 + k) 0) c)) =
+        encode (updR X 0 (k + n) fun k ↦ M.at (next.getD (r0 + k) 0) c) := by
   intro n
   induction n with
   | zero => intro k _; rfl
   | succ n ih =>
     intro k hk
-    have hset := set_updR X 0 k (fun k ↦ M.getD (next.getD (r0 + k) 0 * w + c) 0) (by omega)
+    have hset := set_updR X 0 k (fun k ↦ M.at (next.getD (r0 + k) 0) c) (by omega)
     rw [Nat.zero_add] at hset
-    rw [nextInto, read_encode M _ hM (hin k (by omega)),
+    rw [nextInto, M.at_enc hM _ c (hin k (by omega)),
       CompPoly.CPolynomial.NTTFast.Packed.Native.write_encode _ _
         (by rw [size_encode_fields, size_updR]; exact hX) (by rw [size_updR]; omega),
       hset, ih (k + 1) (by omega), Nat.add_assoc, Nat.add_comm 1 n]
 
 /-- The values a block's loads hold (`Loads`): the trace, the preprocessed trace and the
-permutation trace row-major, the block's rows of the last two transposed, the next rows, the
+permutation trace as columns, the block's rows of the last two transposed, the next rows, the
 periodic columns and the selectors. -/
 structure LoadsF (p : ℕ) [Mont32Field p] where
-  M : Array (FastField p)
-  w : Nat
-  P : Array (FastField p)
-  pw : Nat
+  M : ColsF p
+  P : ColsF p
   PT : Array (FastField p)
-  Q : Array (FastField p)
-  rw : Nat
+  Q : ColsF p
   QT : Array (FastField p)
   r0 : Nat
   next : Array Nat
@@ -567,16 +604,16 @@ structure LoadsF (p : ℕ) [Mont32Field p] where
 
 /-- The packed loads. -/
 def LoadsF.enc (L : LoadsF p) : Loads :=
-  ⟨encode L.M, L.w, encode L.P, L.pw, encode L.PT, encode L.Q, L.rw, encode L.QT, L.r0, L.next,
-    L.PER.map encode, encode L.FS, encode L.LS, encode L.TS⟩
+  ⟨L.M.enc, L.P.enc, encode L.PT, L.Q.enc, encode L.QT, L.r0, L.next, L.PER.map encode,
+    encode L.FS, encode L.LS, encode L.TS⟩
 
 /-- A loaded column on row `i` of a block of `B` rows. -/
 def LoadsF.src (L : LoadsF p) (B i : Nat) : Src → F
-  | .next c => L.M.getD (L.next.getD (L.r0 + i) 0 * L.w + c) 0
+  | .next c => L.M.at (L.next.getD (L.r0 + i) 0) c
   | .prepCur c => L.PT.getD (c * B + i) 0
-  | .prepNext c => L.P.getD (L.next.getD (L.r0 + i) 0 * L.pw + c) 0
+  | .prepNext c => L.P.at (L.next.getD (L.r0 + i) 0) c
   | .permCur c => L.QT.getD (c * B + i) 0
-  | .permNext c => L.Q.getD (L.next.getD (L.r0 + i) 0 * L.rw + c) 0
+  | .permNext c => L.Q.at (L.next.getD (L.r0 + i) 0) c
   | .periodic j => (L.PER.getD j #[]).getD (L.r0 + i) 0
   | .isFirstRow => L.FS.getD (L.r0 + i) 0
   | .isLastRow => L.LS.getD (L.r0 + i) 0
@@ -584,11 +621,11 @@ def LoadsF.src (L : LoadsF p) (B i : Nat) : Src → F
 
 /-- A loaded column's words lie in their arrays on the block's `B` rows. -/
 def LoadsF.InRange (L : LoadsF p) (B : Nat) : Src → Prop
-  | .next c => ∀ k < B, L.next.getD (L.r0 + k) 0 * L.w + c < L.M.size
+  | .next c => ∀ k < B, L.M.Has (L.next.getD (L.r0 + k) 0) c
   | .prepCur c => c * B + B ≤ L.PT.size
-  | .prepNext c => ∀ k < B, L.next.getD (L.r0 + k) 0 * L.pw + c < L.P.size
+  | .prepNext c => ∀ k < B, L.P.Has (L.next.getD (L.r0 + k) 0) c
   | .permCur c => c * B + B ≤ L.QT.size
-  | .permNext c => ∀ k < B, L.next.getD (L.r0 + k) 0 * L.rw + c < L.Q.size
+  | .permNext c => ∀ k < B, L.Q.Has (L.next.getD (L.r0 + k) 0) c
   | .periodic j => j < L.PER.size → L.r0 + B ≤ (L.PER.getD j #[]).size
   | .isFirstRow => L.r0 + B ≤ L.FS.size
   | .isLastRow => L.r0 + B ≤ L.LS.size
@@ -596,8 +633,8 @@ def LoadsF.InRange (L : LoadsF p) (B : Nat) : Src → Prop
 
 /-- The loads' arrays are addressable by machine words. -/
 def LoadsF.Addr (L : LoadsF p) : Prop :=
-  4 * L.M.size < USize.size ∧ 4 * L.P.size < USize.size ∧ 4 * L.PT.size < USize.size ∧
-    4 * L.Q.size < USize.size ∧ 4 * L.QT.size < USize.size ∧
+  L.M.Addr ∧ L.P.Addr ∧ 4 * L.PT.size < USize.size ∧
+    L.Q.Addr ∧ 4 * L.QT.size < USize.size ∧
     (∀ c ∈ L.PER, 4 * c.size < USize.size) ∧
     4 * L.FS.size < USize.size ∧ 4 * L.LS.size < USize.size ∧ 4 * L.TS.size < USize.size
 
@@ -607,20 +644,20 @@ theorem loadSrc_tab (X : Array F) (B S : Nat) (hS : S < USize.size) (hX : X.size
     loadSrc S hS out hr L.enc B s = encode (tab B fun k ↦ L.src B k s) := by
   have hXs : 4 * X.size < USize.size := by omega
   obtain ⟨hM, hP, hPT, hQ, hQT, hPER, hFS, hLS, hTS⟩ := hL
-  have hnext (M : Array F) (w c : Nat) (hM : 4 * M.size < USize.size)
-      (hin : ∀ k < B, L.next.getD (L.r0 + k) 0 * w + c < M.size) :
-      nextInto (encode M) w c L.next L.r0 0 B out =
-        encode (tab B fun k ↦ M.getD (L.next.getD (L.r0 + k) 0 * w + c) 0) := by
-    have := nextInto_encode M X w c L.next L.r0 B hXs hM (by omega) hin B 0 (by omega)
+  have hnext (M : ColsF p) (c : Nat) (hM : M.Addr)
+      (hin : ∀ k < B, M.Has (L.next.getD (L.r0 + k) 0) c) :
+      nextInto M.enc c L.next L.r0 0 B out =
+        encode (tab B fun k ↦ M.at (L.next.getD (L.r0 + k) 0) c) := by
+    have := nextInto_encode M X c L.next L.r0 B hXs hM (by omega) hin B 0 (by omega)
     rw [updR_zero, Nat.zero_add, updR_full X B hX] at this
     rw [ho]
     exact this
   cases s with
-  | next c => exact hnext L.M L.w c hM hs
+  | next c => exact hnext L.M c hM hs
   | prepCur c => exact copyWords_tab X L.PT B S hS hX hSX hPT (c * B) hs out hr ho
-  | prepNext c => exact hnext L.P L.pw c hP hs
+  | prepNext c => exact hnext L.P c hP hs
   | permCur c => exact copyWords_tab X L.QT B S hS hX hSX hQT (c * B) hs out hr ho
-  | permNext c => exact hnext L.Q L.rw c hQ hs
+  | permNext c => exact hnext L.Q c hQ hs
   | periodic j =>
     simp only [loadSrc, LoadsF.enc, LoadsF.src, Array.getElem?_map]
     by_cases hj : j < L.PER.size

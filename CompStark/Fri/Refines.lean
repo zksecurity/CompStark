@@ -130,8 +130,8 @@ structure Refines (B : Backend F EF 24) where
     RV (B.fold2 v beta k) ((specBackend EF).fold2 a beta k)
   addScaled : ∀ x {v a w b}, RV v a → RV w b → a.size = b.size → a.size ≤ 2 ^ twoAdicity F →
     RV (B.addScaled v w x) ((specBackend EF).addScaled a b x)
-  leaves : ∀ k {v a}, RV v a → a.size ≤ 2 ^ twoAdicity F → RM (B.leaves k v)
-      ((specBackend EF).leaves k a)
+  leaves : ∀ k {v a}, RV v a → a.size ≤ 2 ^ twoAdicity F → k ∣ a.size → 0 < a.size →
+      RM (B.leaves k v) ((specBackend EF).leaves k a)
 
 /-- Related traces have the specification's values. -/
 theorem Refines.map_traceValues {B : Backend F EF 24} (h : Refines B) {α : Type}
@@ -214,7 +214,9 @@ theorem commitRounds_refines (hA : DomainsAddressable F EF) (h : Refines B) (P :
     rw [List.sum_cons] at hsum
     have hla : la ≤ s := by omega
     have ha24 : a.size ≤ 2 ^ twoAdicity F := shapeOk_le (Or.inr ⟨s, hs, ha⟩)
-    have hcm := h.commit (.cons (h.leaves (2 ^ la) hf ha24) .nil)
+    have hdvd : 2 ^ la ∣ a.size := by rw [ha]; exact Nat.pow_dvd_pow 2 hla
+    have hpos : 0 < a.size := by rw [ha]; exact Nat.two_pow_pos s
+    have hcm := h.commit (.cons (h.leaves (2 ^ la) hf ha24 hdvd hpos) .nil)
       (commitOk_leaves hA a s la hs ha hla)
     rw [h.cap _ hcm, h.size hf]
     dsimp only
