@@ -20,7 +20,7 @@ group machine simulates `B` runs on the field.
 @[expose] public section
 namespace CompStark.Stark.Prog
 open CompPoly.PackedRepr (encode)
-open CompPoly.CPolynomial.NTTFast.Packed (add sub mul add_val sub_val mul_val
+open CompPoly.CPolynomial.NTTFast.Packed (add sub mul add_val sub_val mul_val reduceOnce_eq sub_eq
   size_encode_fields splice getD_splice size_splice lit16 getD_lit16 size_lit16
   array_eq_of_getD)
 open CompPoly.CPolynomial.NTTFast.Packed.Native (read write16U toNat_usize_le
@@ -28,7 +28,7 @@ open CompPoly.CPolynomial.NTTFast.Packed.Native (read write16U toNat_usize_le
 open Montgomery.Native32
 open CompStark.Stark.Fast (tab size_tab tab_congr getD_tab)
 
-variable {p : ℕ} [Mont32Field p]
+variable {p : ℕ} [P : Mont32Field p]
 
 local notation "F" => FastField p
 
@@ -71,6 +71,25 @@ theorem withWin_pos {α : Type} (b : ByteArray) (i : USize) (d : α) (k : Win b 
     omega
   rw [dite_eq_left ⟨c1, c2⟩]
 
+/-- A store in the window of a buffer that fits machine indices is the checked store. -/
+theorem st16_eq (s : ByteArray) (i : USize) (h : Win s i) (hs : s.size < USize.size)
+    (v0 v1 v2 v3 v4 v5 v6 v7 v8 v9 v10 v11 v12 v13 v14 v15 : UInt32) :
+    st16 s i h v0 v1 v2 v3 v4 v5 v6 v7 v8 v9 v10 v11 v12 v13 v14 v15 =
+      write16U s i v0 v1 v2 v3 v4 v5 v6 v7 v8 v9 v10 v11 v12 v13 v14 v15 := by
+  have hb := win_bytes h
+  have h64 : (4 * (16 : UInt8).toNat).toUSize.toNat = 64 :=
+    toUSize_toNat (Nat.lt_of_lt_of_le (by decide) usize_size_le)
+  have hu : s.usize.toNat = s.size := by rw [ByteArray.usize, toUSize_toNat hs]
+  have hn : (i * 4 + (4 * (16 : UInt8).toNat).toUSize).toNat = (i * 4).toNat + 64 := by
+    rw [usize_add_toNat (by rw [h64]; omega), h64]
+  have c1 : i * 4 ≤ i * 4 + (4 * (16 : UInt8).toNat).toUSize :=
+    USize.le_iff_toNat_le.mpr (by rw [hn]; omega)
+  have c2 : i * 4 + (4 * (16 : UInt8).toNat).toUSize ≤ s.usize :=
+    USize.le_iff_toNat_le.mpr (by rw [hn, hu]; omega)
+  unfold st16 write16U CompPoly.CPolynomial.NTTFast.Packed.Native.storeWords
+  rw [dite_eq_right (by decide), dite_eq_left ⟨c1, c2⟩]
+  rfl
+
 /-- A word read from an encoded array is its element. -/
 theorem ld_encode (Y : Array F) (i : USize) (h : Win (encode Y) i) (k : Nat) (hk : k ≤ 15) :
     ld (encode Y) i h k hk = (Y.getD (i.toNat + k) 0).val := by
@@ -79,6 +98,137 @@ theorem ld_encode (Y : Array F) (i : USize) (h : Win (encode Y) i) (k : Nat) (hk
     CompPoly.CPolynomial.NTTFast.Packed.encode_eq_map_val,
     CompPoly.PackedRepr.getUInt32LE!_encode,
     CompPoly.CPolynomial.NTTFast.Packed.getD_map_val]
+
+/-! ### Montgomery multiplication -/
+
+/-- The Montgomery quotients `q₁ = L n` of `mul` and `q₂ = L (-n)` of `mulM`, with `n m ≡ -1`
+modulo `2 ^ 32`: `L + q₁ m ≡ 0` and `q₁ + q₂ ≡ 0`. -/
+theorem mont_quotients (L n m : Nat) (hn : n < 2 ^ 32) (hnp : n * m % 2 ^ 32 = 2 ^ 32 - 1) :
+    (L + L * n % 2 ^ 32 * m) % 2 ^ 32 = 0 ∧
+      (L * n % 2 ^ 32 + L * ((2 ^ 32 - n) % 2 ^ 32) % 2 ^ 32) % 2 ^ 32 = 0 := by
+  constructor
+  · have h1 : L * n % 2 ^ 32 * m ≡ L * (2 ^ 32 - 1) [MOD 2 ^ 32] := by
+      rw [show L * (2 ^ 32 - 1) = L * ((n * m) % 2 ^ 32) by rw [hnp]]
+      refine Nat.ModEq.trans (Nat.ModEq.mul_right _ (Nat.mod_modEq _ _)) ?_
+      rw [Nat.mul_assoc]
+      exact Nat.ModEq.mul_left _ (Nat.mod_modEq _ _).symm
+    have h2 := Nat.ModEq.add_left L h1
+    have h3 : L + L * (2 ^ 32 - 1) = L * 2 ^ 32 := by
+      have h4 : L ≤ L * 2 ^ 32 := Nat.le_mul_of_pos_right L (by decide)
+      rw [Nat.mul_sub, Nat.mul_one]
+      omega
+    rw [h3] at h2
+    rw [h2, Nat.mul_mod_left]
+  · have h1 : L * n % 2 ^ 32 + L * ((2 ^ 32 - n) % 2 ^ 32) % 2 ^ 32 ≡
+        L * n + L * (2 ^ 32 - n) [MOD 2 ^ 32] :=
+      Nat.ModEq.add (Nat.mod_modEq _ _)
+        (Nat.ModEq.trans (Nat.mod_modEq _ _) (Nat.ModEq.mul_left _ (Nat.mod_modEq _ _)))
+    rw [← Nat.mul_add, Nat.add_sub_cancel' hn.le] at h1
+    rw [h1, Nat.mul_mod_left]
+
+/-- `mulM` is `mul` on canonical residues. -/
+theorem mulM_eq (x y : UInt32) (hx : x.toNat < p) (hy : y.toNat < p) :
+    mulM p x y = mul p x y := by
+  have hp31 := P.modulus_lt_two_pow_31
+  have hp32 := P.modulus32_toNat
+  have hp64 := P.modulus64_toNat
+  have hp2 := P.two_lt_modulus
+  have hnp := P.montgomeryNegInv_mul_modulus_mod_two_pow_32
+  have hn := P.montgomeryNegInv.toNat_lt
+  set n := P.montgomeryNegInv.toNat with hn_def
+  have hz : x.toNat * y.toNat < p * 2 ^ 32 :=
+    lt_of_lt_of_le (Nat.mul_lt_mul_of_lt_of_le hx hy.le (by omega))
+      (Nat.mul_le_mul_left _ (by omega))
+  set z := x.toNat * y.toNat with hz_def
+  have hz64 : (x.toUInt64 * y.toUInt64).toNat = z := by
+    rw [UInt64.toNat_mul, UInt32.toNat_toUInt64, UInt32.toNat_toUInt64]
+    exact Nat.mod_eq_of_lt (by omega)
+  set L := z % 2 ^ 32 with hL
+  set q1 := L * n % 2 ^ 32 with hq1
+  set q2 := L * ((2 ^ 32 - n) % 2 ^ 32) % 2 ^ 32 with hq2
+  obtain ⟨c1, c2⟩ := mont_quotients L n p hn hnp
+  rw [← hq1, ← hq2] at c2
+  rw [← hq1] at c1
+  have hq1R : q1 < 2 ^ 32 := Nat.mod_lt _ (by decide)
+  have hq2R : q2 < 2 ^ 32 := Nat.mod_lt _ (by decide)
+  have hq1p : q1 * p < 2 ^ 32 * p := Nat.mul_lt_mul_of_pos_right hq1R (by omega)
+  -- `mul`
+  have hA : (mul p x y).toNat = if (z + q1 * p) / 2 ^ 32 < p then (z + q1 * p) / 2 ^ 32
+      else (z + q1 * p) / 2 ^ 32 - p := by
+    have hS : (((x.toUInt64 * y.toUInt64 + ((x.toUInt64 * y.toUInt64).toUInt32 *
+        P.montgomeryNegInv).toUInt64 * P.modulus64) >>> 32).toUInt32).toNat =
+        (z + q1 * p) / 2 ^ 32 := by
+      have e32 : (32 : UInt64).toNat % 64 = 32 := rfl
+      have hz' : x.toNat * y.toNat % 2 ^ 64 = z := Nat.mod_eq_of_lt (by omega)
+      simp only [UInt64.toNat_toUInt32, UInt64.toNat_shiftRight, UInt64.toNat_add,
+        UInt64.toNat_mul, UInt32.toNat_toUInt64, UInt32.toNat_mul, e32, hz', hp64, ← hL]
+      rw [Nat.mod_eq_of_lt (show q1 * p < 2 ^ 64 by omega),
+        Nat.mod_eq_of_lt (show z + q1 * p < 2 ^ 64 by omega), Nat.shiftRight_eq_div_pow]
+      exact Nat.mod_eq_of_lt (by omega)
+    rw [CompPoly.CPolynomial.NTTFast.Packed.mul, reduceOnce_eq]
+    split
+    · rename_i h
+      rw [UInt32.lt_iff_toNat_lt, hS, hp32] at h
+      rw [hS, ite_eq_left h]
+    · rename_i h
+      rw [UInt32.lt_iff_toNat_lt, hS, hp32] at h
+      rw [UInt32.toNat_sub_of_le _ _ (UInt32.le_iff_toNat_le.mpr (by rw [hS, hp32]; omega)), hS,
+        hp32, ite_eq_right h]
+  -- `mulM`
+  have hB : (mulM p x y).toNat = if (q2 * p) / 2 ^ 32 ≤ z / 2 ^ 32 then
+      z / 2 ^ 32 - (q2 * p) / 2 ^ 32 else z / 2 ^ 32 + p - (q2 * p) / 2 ^ 32 := by
+    have hq2p : q2 * p < 2 ^ 32 * p := Nat.mul_lt_mul_of_pos_right hq2R (by omega)
+    have hH : ((x.toUInt64 * y.toUInt64) >>> 32).toUInt32.toNat = z / 2 ^ 32 := by
+      have e32 : (32 : UInt64).toNat % 64 = 32 := rfl
+      rw [UInt64.toNat_toUInt32, UInt64.toNat_shiftRight, hz64, e32, Nat.shiftRight_eq_div_pow]
+      exact Nat.mod_eq_of_lt (by omega)
+    have hH2 : ((((x.toUInt64 * y.toUInt64).toUInt32 * (0 - P.montgomeryNegInv)).toUInt64 *
+        P.modulus64) >>> 32).toUInt32.toNat = q2 * p / 2 ^ 32 := by
+      have e32 : (32 : UInt64).toNat % 64 = 32 := rfl
+      have hz' : x.toNat * y.toNat % 2 ^ 64 = z := Nat.mod_eq_of_lt (by omega)
+      simp only [UInt64.toNat_toUInt32, UInt64.toNat_shiftRight, UInt64.toNat_mul,
+        UInt32.toNat_toUInt64, UInt32.toNat_mul, UInt32.toNat_sub, UInt32.toNat_zero, Nat.add_zero,
+        e32, hz', hp64, ← hL, ← hn_def, ← hq2]
+      rw [Nat.mod_eq_of_lt (show q2 * p < 2 ^ 64 by omega), Nat.shiftRight_eq_div_pow]
+      exact Nat.mod_eq_of_lt (by omega)
+    unfold mulM
+    dsimp only
+    rw [sub_eq _ _ (by rw [hH]; omega) (by rw [hH2]; omega)]
+    split
+    · rename_i h
+      rw [UInt32.le_iff_toNat_le, hH, hH2] at h
+      rw [UInt32.toNat_sub_of_le _ _ (UInt32.le_iff_toNat_le.mpr (by rw [hH, hH2]; omega)), hH,
+        hH2, ite_eq_left h]
+    · rename_i h
+      rw [UInt32.le_iff_toNat_le, hH, hH2] at h
+      have hs : (((x.toUInt64 * y.toUInt64) >>> 32).toUInt32 + P.modulus32).toNat =
+          z / 2 ^ 32 + p := by
+        rw [UInt32.toNat_add, hH, hp32]; exact Nat.mod_eq_of_lt (by omega)
+      rw [UInt32.toNat_sub_of_le _ _ (UInt32.le_iff_toNat_le.mpr (by rw [hs, hH2]; omega)), hs,
+        hH2, ite_eq_right h]
+  apply UInt32.toNat_inj.mp
+  rw [hA, hB]
+  have hzL : z = z / 2 ^ 32 * 2 ^ 32 + L := by omega
+  rcases Nat.eq_zero_or_pos q1 with h0 | h0
+  · have hq20 : q2 = 0 := by omega
+    have hL0 : L = 0 := by rw [h0, Nat.zero_mul, Nat.add_zero] at c1; omega
+    rw [h0, hq20, Nat.zero_mul, Nat.add_zero, Nat.zero_div]
+    split <;> split <;> omega
+  · have hq2' : q2 = 2 ^ 32 - q1 := by omega
+    have hQ2 : q2 * p = 2 ^ 32 * p - q1 * p := by rw [hq2', Nat.sub_mul]
+    have hp1 : p ≤ q1 * p := Nat.le_mul_of_pos_left p h0
+    rw [hQ2]
+    split <;> split <;> omega
+
+/-- `mulM` is the carrier's verified multiplication. -/
+theorem mulM_val (x y : F) : mulM p x.val y.val = (x * y).val := by
+  rw [mulM_eq _ _ x.property y.property, mul_val]
+
+theorem Op.wordG_val (o : Op) (x y : F) : Op.wordG p o x.val y.val = (o.eval x y).val := by
+  cases o
+  · exact add_val x y
+  · exact sub_val x y
+  · exact mulM_val x y
 
 /-! ### Passes over a group -/
 
@@ -208,10 +358,12 @@ theorem groupsSS_upd (f : UInt32 → UInt32 → UInt32) (g : F → F → F)
       fun k hk ↦ ld _ _ (winS' X od ob m nm G b hb hX hrb hm) k hk,
       fun k hk ↦ ldS_upd X od oa m nm G a ha hX hra hm hAa _ k hk,
       fun k hk ↦ ldS_upd X od ob m nm G b hb hX hrb hm hAb _ k hk, ?_⟩
+  have hw := winS X od od m nm G d hd hX hrd hm
   unfold stepSS
-  rw [withWin_pos _ _ _ _ (winS X od oa m nm G a ha hX hra hm).1
+  rw [withWin_pos _ _ _ _ hw.1 hw.2, withWin_pos _ _ _ _ (winS X od oa m nm G a ha hX hra hm).1
     (winS X od oa m nm G a ha hX hra hm).2, withWin_pos _ _ _ _
     (winS X od ob m nm G b hb hX hrb hm).1 (winS X od ob m nm G b hb hX hrb hm).2]
+  rw [st16_eq _ _ _ hw.2]
   rfl
 
 theorem groupsSE_upd (f : UInt32 → UInt32 → UInt32) (g : F → F → F)
@@ -228,10 +380,12 @@ theorem groupsSE_upd (f : UInt32 → UInt32 → UInt32) (g : F → F → F)
       fun k hk ↦ ld _ _ (winE' E ob m b hb hE (by omega)) k hk,
       fun k hk ↦ ldS_upd X od oa m nm G a ha hX hra hm hAa _ k hk,
       fun k hk ↦ ldE_val E ob m b hb hE (by omega) _ k hk, ?_⟩
+  have hw := winS X od od m nm G d hd hX hrd hm
   unfold stepSE
-  rw [withWin_pos _ _ _ _ (winS X od oa m nm G a ha hX hra hm).1
+  rw [withWin_pos _ _ _ _ hw.1 hw.2, withWin_pos _ _ _ _ (winS X od oa m nm G a ha hX hra hm).1
     (winS X od oa m nm G a ha hX hra hm).2, withWin_pos _ _ _ _
     (winE E ob m b hb hE (by omega)).1 (winE E ob m b hb hE (by omega)).2]
+  rw [st16_eq _ _ _ hw.2]
   rfl
 
 theorem groupsES_upd (f : UInt32 → UInt32 → UInt32) (g : F → F → F)
@@ -248,10 +402,12 @@ theorem groupsES_upd (f : UInt32 → UInt32 → UInt32) (g : F → F → F)
       fun k hk ↦ ld _ _ (winS' X od ob m nm G b hb hX hrb hm) k hk,
       fun k hk ↦ ldE_val E oa m a ha hE (by omega) _ k hk,
       fun k hk ↦ ldS_upd X od ob m nm G b hb hX hrb hm hAb _ k hk, ?_⟩
+  have hw := winS X od od m nm G d hd hX hrd hm
   unfold stepES
-  rw [withWin_pos _ _ _ _ (winE E oa m a ha hE (by omega)).1
+  rw [withWin_pos _ _ _ _ hw.1 hw.2, withWin_pos _ _ _ _ (winE E oa m a ha hE (by omega)).1
     (winE E oa m a ha hE (by omega)).2, withWin_pos _ _ _ _
     (winS X od ob m nm G b hb hX hrb hm).1 (winS X od ob m nm G b hb hX hrb hm).2]
+  rw [st16_eq _ _ _ hw.2]
   rfl
 
 theorem groupsEE_upd (f : UInt32 → UInt32 → UInt32) (g : F → F → F)
@@ -268,10 +424,12 @@ theorem groupsEE_upd (f : UInt32 → UInt32 → UInt32) (g : F → F → F)
       fun k hk ↦ ld _ _ (winE' E ob m b hb hE (by omega)) k hk,
       fun k hk ↦ ldE_val E oa m a ha hE (by omega) _ k hk,
       fun k hk ↦ ldE_val E ob m b hb hE (by omega) _ k hk, ?_⟩
+  have hw := winS X od od m nm G d hd hX hrd hm
   unfold stepEE
-  rw [withWin_pos _ _ _ _ (winE E oa m a ha hE (by omega)).1
+  rw [withWin_pos _ _ _ _ hw.1 hw.2, withWin_pos _ _ _ _ (winE E oa m a ha hE (by omega)).1
     (winE E oa m a ha hE (by omega)).2, withWin_pos _ _ _ _
     (winE E ob m b hb hE (by omega)).1 (winE E ob m b hb hE (by omega)).2]
+  rw [st16_eq _ _ _ hw.2]
   rfl
 
 theorem groupsSW_upd (f : UInt32 → UInt32 → UInt32) (g : F → F → F)
@@ -284,9 +442,11 @@ theorem groupsSW_upd (f : UInt32 → UInt32 → UInt32) (g : F → F → F)
   refine pass_upd _ f g hf X nm od G d hd hX hrd _ (fun _ ↦ c) hG fun m hm ↦ ?_
   refine ⟨fun k hk ↦ ld _ _ (winS' X od oa m nm G a ha hX hra hm) k hk, fun _ _ ↦ c.val,
       fun k hk ↦ ldS_upd X od oa m nm G a ha hX hra hm hAa _ k hk, fun _ _ ↦ rfl, ?_⟩
+  have hw := winS X od od m nm G d hd hX hrd hm
   unfold stepSW
-  rw [withWin_pos _ _ _ _ (winS X od oa m nm G a ha hX hra hm).1
+  rw [withWin_pos _ _ _ _ hw.1 hw.2, withWin_pos _ _ _ _ (winS X od oa m nm G a ha hX hra hm).1
     (winS X od oa m nm G a ha hX hra hm).2]
+  rw [st16_eq _ _ _ hw.2]
   rfl
 
 theorem groupsEW_upd (f : UInt32 → UInt32 → UInt32) (g : F → F → F)
@@ -300,9 +460,11 @@ theorem groupsEW_upd (f : UInt32 → UInt32 → UInt32) (g : F → F → F)
   refine pass_upd _ f g hf X nm od G d hd hX hrd _ (fun _ ↦ c) hG fun m hm ↦ ?_
   refine ⟨fun k hk ↦ ld _ _ (winE' E oa m a ha hE (by omega)) k hk, fun _ _ ↦ c.val,
       fun k hk ↦ ldE_val E oa m a ha hE (by omega) _ k hk, fun _ _ ↦ rfl, ?_⟩
+  have hw := winS X od od m nm G d hd hX hrd hm
   unfold stepEW
-  rw [withWin_pos _ _ _ _ (winE E oa m a ha hE (by omega)).1
+  rw [withWin_pos _ _ _ _ hw.1 hw.2, withWin_pos _ _ _ _ (winE E oa m a ha hE (by omega)).1
     (winE E oa m a ha hE (by omega)).2]
+  rw [st16_eq _ _ _ hw.2]
   rfl
 
 theorem groupsWS_upd (f : UInt32 → UInt32 → UInt32) (g : F → F → F)
@@ -315,9 +477,11 @@ theorem groupsWS_upd (f : UInt32 → UInt32 → UInt32) (g : F → F → F)
   refine pass_upd _ f g hf X nm od G d hd hX hrd (fun _ ↦ c) _ hG fun m hm ↦ ?_
   refine ⟨fun _ _ ↦ c.val, fun k hk ↦ ld _ _ (winS' X od oa m nm G a ha hX hra hm) k hk,
       fun _ _ ↦ rfl, fun k hk ↦ ldS_upd X od oa m nm G a ha hX hra hm hAa _ k hk, ?_⟩
+  have hw := winS X od od m nm G d hd hX hrd hm
   unfold stepWS
-  rw [withWin_pos _ _ _ _ (winS X od oa m nm G a ha hX hra hm).1
+  rw [withWin_pos _ _ _ _ hw.1 hw.2, withWin_pos _ _ _ _ (winS X od oa m nm G a ha hX hra hm).1
     (winS X od oa m nm G a ha hX hra hm).2]
+  rw [st16_eq _ _ _ hw.2]
   rfl
 
 theorem groupsWE_upd (f : UInt32 → UInt32 → UInt32) (g : F → F → F)
@@ -331,9 +495,11 @@ theorem groupsWE_upd (f : UInt32 → UInt32 → UInt32) (g : F → F → F)
   refine pass_upd _ f g hf X nm od G d hd hX hrd (fun _ ↦ c) _ hG fun m hm ↦ ?_
   refine ⟨fun _ _ ↦ c.val, fun k hk ↦ ld _ _ (winE' E oa m a ha hE (by omega)) k hk,
       fun _ _ ↦ rfl, fun k hk ↦ ldE_val E oa m a ha hE (by omega) _ k hk, ?_⟩
+  have hw := winS X od od m nm G d hd hX hrd hm
   unfold stepWE
-  rw [withWin_pos _ _ _ _ (winE E oa m a ha hE (by omega)).1
+  rw [withWin_pos _ _ _ _ hw.1 hw.2, withWin_pos _ _ _ _ (winE E oa m a ha hE (by omega)).1
     (winE E oa m a ha hE (by omega)).2]
+  rw [st16_eq _ _ _ hw.2]
   rfl
 
 
@@ -452,12 +618,12 @@ theorem lanesAcc_upd (X : Array F) (B m j : Nat) (A W : Nat → F) (hj : j < 4)
     (ho : o.toNat = j * B + 16 * m) (h : Win (encode (accUpd X B m j A W)) o) (wj : UInt32)
     (hw : wj = (W j).val) (y : (k : Nat) → k ≤ 15 → UInt32)
     (hy : ∀ k hk, y k hk = (A (16 * m + k)).val) :
-    lanes16 (fun acc x ↦ add p acc (mul p x wj)) (fun k hk ↦ ld _ o h k hk) y
+    lanes16 (fun acc x ↦ add p acc (mulM p x wj)) (fun k hk ↦ ld _ o h k hk) y
         (encode (accUpd X B m j A W)) o = encode (accUpd X B m (j + 1) A W) := by
   subst hw
   have hjB : j * B + B ≤ 4 * B := by rw [← Nat.succ_mul]; exact Nat.mul_le_mul_right B (by omega)
-  rw [lanes16_encode (fun acc x ↦ add p acc (mul p x (W j).val)) (fun acc x ↦ acc + x * W j)
-    (fun x y ↦ by rw [mul_val, add_val]) _ y (fun k ↦ X.getD (j * B + 16 * m + k) 0)
+  rw [lanes16_encode (fun acc x ↦ add p acc (mulM p x (W j).val)) (fun acc x ↦ acc + x * W j)
+    (fun x y ↦ by rw [mulM_val, add_val]) _ y (fun k ↦ X.getD (j * B + 16 * m + k) 0)
     (fun k ↦ A (16 * m + k)) (fun k hk ↦ ?_) hy _ o (by rw [size_accUpd]; exact hX)
     (by rw [size_accUpd, ho]; omega), ho]
   · rw [← splice_accUpd X B m j A W hj hm (by omega)]
@@ -497,6 +663,7 @@ theorem stepAccS_upd (X : Array F) (B m j : Nat) (A W : Nat → F) (hj : j < 4)
   unfold stepAccS
   rw [withWin_pos _ _ _ _ (by rw [hs, ho]; omega) (by rw [hs]; exact hX),
     withWin_pos _ _ _ _ (by rw [hs, hoa']; omega) (by rw [hs]; exact hX)]
+  rw [st16_eq _ _ _ (by rw [hs]; exact hX)]
   refine lanesAcc_upd X B m j A W hj hm hX hB _ ho _ wj hw _ fun k hk ↦ ?_
   rw [ld_encode, hoa', getD_accUpd, ite_eq_right_of_eq_false _ _ (eq_false (by omega)), hA _
       (by omega), Nat.add_assoc]
@@ -519,6 +686,7 @@ theorem stepAccE_upd (X E : Array F) (B m j : Nat) (A W : Nat → F) (hj : j < 4
   rw [withWin_pos _ _ _ _ (by rw [hs, ho]; omega) (by rw [hs]; exact hX),
     withWin_pos _ _ _ _ (by rw [size_encode_fields, hoa']; omega)
       (by rw [size_encode_fields]; exact hE)]
+  rw [st16_eq _ _ _ (by rw [hs]; exact hX)]
   refine lanesAcc_upd X B m j A W hj hm hX hB _ ho _ wj hw _ fun k hk ↦ ?_
   rw [ld_encode, hoa', hA _ (by omega), Nat.add_assoc]
 
@@ -534,6 +702,7 @@ theorem stepAccW_upd (X : Array F) (B m j : Nat) (W : Nat → F) (hj : j < 4)
   have hjB : j * B + B ≤ 4 * B := by rw [← Nat.succ_mul]; exact Nat.mul_le_mul_right B (by omega)
   unfold stepAccW
   rw [withWin_pos _ _ _ _ (by rw [hs, ho]; omega) (by rw [hs]; exact hX)]
+  rw [st16_eq _ _ _ (by rw [hs]; exact hX)]
   exact lanesAcc_upd X B m j _ W hj hm hX hB _ ho _ wj hw (fun _ _ ↦ c.val) fun _ _ ↦ rfl
 
 /-- The four coordinates' steps of an accumulation, from `accUpd … m 0` to `accUpd … (m + 1) 0`. -/
@@ -562,7 +731,8 @@ theorem accS_upd (X : Array F) (nm : Nat) (A W : Nat → F) (hX : 4 * X.size < U
     (hw : WtsOk wts w W) :
     accS p nm rb (encode X) a wts w = encode (accUpd X (16 * nm) nm 0 A W) := by
   obtain ⟨u0, u1, u2, u3⟩ := usize_lits
-  have h := groups_states (stepAcc4S p rb a wts w) nm
+  have h := groups_states (stepAcc4S p rb a (wts.getD (4 * w) 0)
+    (wts.getD (4 * w + 1) 0) (wts.getD (4 * w + 2) 0) (wts.getD (4 * w + 3) 0)) nm
     (fun m ↦ encode (accUpd X (16 * nm) m 0 A W)) (by omega) fun m hm ↦
       acc4_steps (fun j s ↦ stepAccS p rb j.toUSize a (wts.getD (4 * w + j) 0) s
         (16 * m).toUSize) X (16 * nm) m A W fun j hj ↦
@@ -577,7 +747,8 @@ theorem accE_upd (X E : Array F) (nm : Nat) (A W : Nat → F) (hX : 4 * X.size <
     (hA : ∀ k < 16 * nm, A k = E.getD (oa + k) 0) (wts : Array UInt32) (w : Nat)
     (hw : WtsOk wts w W) :
     accE p nm rb (encode X) (encode E) a wts w = encode (accUpd X (16 * nm) nm 0 A W) := by
-  have h := groups_states (stepAcc4E p rb (encode E) a wts w) nm
+  have h := groups_states (stepAcc4E p rb (encode E) a (wts.getD (4 * w) 0)
+    (wts.getD (4 * w + 1) 0) (wts.getD (4 * w + 2) 0) (wts.getD (4 * w + 3) 0)) nm
     (fun m ↦ encode (accUpd X (16 * nm) m 0 A W)) (by omega) fun m hm ↦
       acc4_steps (fun j s ↦ stepAccE p rb j.toUSize (encode E) a (wts.getD (4 * w + j) 0) s
         (16 * m).toUSize) X (16 * nm) m A W fun j hj ↦
@@ -590,7 +761,8 @@ theorem accW_upd (X : Array F) (nm : Nat) (W : Nat → F) (hX : 4 * X.size < USi
     (hB : 4 * (16 * nm) ≤ X.size) (rb : USize) (hrb : rb.toNat = 16 * nm) (c : F)
     (wts : Array UInt32) (w : Nat) (hw : WtsOk wts w W) :
     accW p nm rb (encode X) c.val wts w = encode (accUpd X (16 * nm) nm 0 (fun _ ↦ c) W) := by
-  have h := groups_states (stepAcc4W p rb c.val wts w) nm
+  have h := groups_states (stepAcc4W p rb c.val (wts.getD (4 * w) 0)
+    (wts.getD (4 * w + 1) 0) (wts.getD (4 * w + 2) 0) (wts.getD (4 * w + 3) 0)) nm
     (fun m ↦ encode (accUpd X (16 * nm) m 0 (fun _ ↦ c) W)) (by omega) fun m hm ↦
       acc4_steps (fun j s ↦ stepAccW p rb j.toUSize c.val (wts.getD (4 * w + j) 0) s
         (16 * m).toUSize) X (16 * nm) m _ W fun j hj ↦
@@ -604,8 +776,12 @@ theorem fill_upd (X : Array F) (nm od : Nat) (d : USize) (hd : d.toNat = od)
     (hX : 4 * X.size < USize.size) (hrd : od + 16 * nm ≤ X.size) (c : F) :
     fill nm (encode X) d c.val = encode (updR X od (16 * nm) fun _ ↦ c) :=
   pass_upd _ (fun x _ ↦ x) (fun x _ ↦ x) (fun _ _ ↦ rfl) X nm od _ d hd hX hrd (fun _ ↦ c)
-    (fun _ ↦ c) (fun _ _ ↦ rfl) fun _ _ ↦ ⟨fun _ _ ↦ c.val, fun _ _ ↦ c.val, fun _ _ ↦ rfl,
-      fun _ _ ↦ rfl, rfl⟩
+    (fun _ ↦ c) (fun _ _ ↦ rfl) fun m hm ↦ ⟨fun _ _ ↦ c.val, fun _ _ ↦ c.val, fun _ _ ↦ rfl,
+      fun _ _ ↦ rfl, by
+        have hw := winS X od od m nm (fun _ ↦ c) d hd hX hrd hm
+        unfold stepW
+        rw [withWin_pos _ _ _ _ hw.1 hw.2, st16_eq _ _ _ hw.2]
+        rfl⟩
 
 theorem copy_upd (X E : Array F) (nm od oa : Nat) (d a : USize) (hd : d.toNat = od)
     (ha : a.toNat = oa) (hX : 4 * X.size < USize.size) (hE : 4 * E.size < USize.size)
@@ -626,7 +802,12 @@ theorem gather_upd (X M : Array F) (nm od w c r0 : Nat) (next : Array Nat) (d : 
           have h1 := hr (16 * m + k) (by omega)
           rw [toUSize_toNat (by omega)]
           dsimp only
-          rw [Nat.add_assoc, Words.read_encode M _ hM h1], fun _ _ ↦ rfl, rfl⟩
+          rw [Nat.add_assoc, Words.read_encode M _ hM h1], fun _ _ ↦ rfl, by
+        have hw := winS X od od m nm (fun k ↦ M.getD (next.getD (r0 + k) 0 * w + c) 0) d hd hX
+          hrd hm
+        unfold stepGather
+        rw [withWin_pos _ _ _ _ hw.1 hw.2, st16_eq _ _ _ hw.2]
+        rfl⟩
 
 theorem copyPer_upd (X : Array F) (PER : Array (Array F)) (nm od j oa : Nat) (d a : USize)
     (hd : d.toNat = od) (ha : j < PER.size → a.toNat = oa) (hX : 4 * X.size < USize.size)
@@ -722,58 +903,58 @@ theorem accUpd_gtab (nm nregs : Nat) (sts : Nat → St F) (A W : Nat → F) :
 variable (p) in
 theorem binG_SS (env : GroupEnv) (o : Op) (d : Nat) (x y : Nat) (s : ByteArray) :
     binG p env o d (.reg x) (.reg y) s =
-      groups (stepSS (Op.word p o) (regOff env d) (regOff env x) (regOff env y)) env.nm s 0 := by
+      groups (stepSS (Op.wordG p o) (regOff env d) (regOff env x) (regOff env y)) env.nm s 0 := by
   cases o <;> rfl
 
 variable (p) in
 theorem binG_SE (env : GroupEnv) (o : Op) (d : Nat) (x y : Nat) (s : ByteArray) :
     binG p env o d (.reg x) (.cur y) s =
-      groups (stepSE (Op.word p o) env.view (regOff env d) (regOff env x)
+      groups (stepSE (Op.wordG p o) env.view (regOff env d) (regOff env x)
           (colOff env y)) env.nm s 0 := by
   cases o <;> rfl
 
 variable (p) in
 theorem binG_ES (env : GroupEnv) (o : Op) (d : Nat) (x y : Nat) (s : ByteArray) :
     binG p env o d (.cur x) (.reg y) s =
-      groups (stepES (Op.word p o) env.view (regOff env d) (colOff env x)
+      groups (stepES (Op.wordG p o) env.view (regOff env d) (colOff env x)
           (regOff env y)) env.nm s 0 := by
   cases o <;> rfl
 
 variable (p) in
 theorem binG_EE (env : GroupEnv) (o : Op) (d : Nat) (x y : Nat) (s : ByteArray) :
     binG p env o d (.cur x) (.cur y) s =
-      groups (stepEE (Op.word p o) env.view (regOff env d) (colOff env x)
+      groups (stepEE (Op.wordG p o) env.view (regOff env d) (colOff env x)
           (colOff env y)) env.nm s 0 := by
   cases o <;> rfl
 
 variable (p) in
 theorem binG_SW (env : GroupEnv) (o : Op) (d : Nat) (x : Nat) (y : F) (s : ByteArray) :
     binG p env o d (.reg x) (.const y) s =
-      groups (stepSW (Op.word p o) (regOff env d) (regOff env x) y.val) env.nm s 0 := by
+      groups (stepSW (Op.wordG p o) (regOff env d) (regOff env x) y.val) env.nm s 0 := by
   cases o <;> rfl
 
 variable (p) in
 theorem binG_EW (env : GroupEnv) (o : Op) (d : Nat) (x : Nat) (y : F) (s : ByteArray) :
     binG p env o d (.cur x) (.const y) s =
-      groups (stepEW (Op.word p o) env.view (regOff env d) (colOff env x) y.val) env.nm s 0 := by
+      groups (stepEW (Op.wordG p o) env.view (regOff env d) (colOff env x) y.val) env.nm s 0 := by
   cases o <;> rfl
 
 variable (p) in
 theorem binG_WS (env : GroupEnv) (o : Op) (d : Nat) (x : F) (y : Nat) (s : ByteArray) :
     binG p env o d (.const x) (.reg y) s =
-      groups (stepWS (Op.word p o) (regOff env d) (regOff env y) x.val) env.nm s 0 := by
+      groups (stepWS (Op.wordG p o) (regOff env d) (regOff env y) x.val) env.nm s 0 := by
   cases o <;> rfl
 
 variable (p) in
 theorem binG_WE (env : GroupEnv) (o : Op) (d : Nat) (x : F) (y : Nat) (s : ByteArray) :
     binG p env o d (.const x) (.cur y) s =
-      groups (stepWE (Op.word p o) env.view (regOff env d) (colOff env y) x.val) env.nm s 0 := by
+      groups (stepWE (Op.wordG p o) env.view (regOff env d) (colOff env y) x.val) env.nm s 0 := by
   cases o <;> rfl
 
 variable (p) in
 theorem binG_WW (env : GroupEnv) (o : Op) (d : Nat) (x y : F) (s : ByteArray) :
     binG p env o d (.const x) (.const y) s = fill env.nm s (regOff env d)
-        (Op.word p o x.val y.val) := by
+        (Op.wordG p o x.val y.val) := by
   cases o <;> rfl
 
 theorem regOff_toNat (B nregs r : Nat) (v : View) (L : Loads) (scal wts : Array UInt32)
@@ -968,7 +1149,7 @@ theorem binG_rel (V : Array F) (cb cs : Nat) (L : LoadsF p) (SC WT : Array F) (n
   have hco (c : Nat) (hc : cb + c * cs + 16 * nm ≤ V.size) := colOff_toNat (16 * nm) V cb cs c
     L.enc (SC.map (·.val)) (WT.map (·.val)) hc hV
   have hnm := groupOf_nm nm V cb cs L SC WT
-  have hw := Op.word_val (p := p) o
+  have hw := Op.wordG_val (p := p) o
   rw [← updR_gtab _ _ _ _ _]
   cases a with
   | reg x =>

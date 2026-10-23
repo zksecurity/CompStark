@@ -21,7 +21,7 @@ they are: column `c` of the group at words `cb + c · cs` and `tcb + c · tcs`.
 namespace CompStark.Stark.Prog
 open CompPoly.CPolynomial.NTTFast.Packed (add sub mul)
 open CompPoly.CPolynomial.NTTFast.Packed.Native (read putWords size_putWords toNat_usize_le
-  usize_add_toNat_of_le write16U)
+  usize_add_toNat_of_le)
 open Montgomery.Native32 (Mont32Field FastField)
 
 /-- What a program reads on a group of `16 · nm` rows, whose registers are `rb` words apart: the
@@ -80,10 +80,18 @@ theorem win_off {b : ByteArray} {i : USize} (h : Win b i) (k : Nat) (hk : k ≤ 
     (hk : k ≤ 15 := by decide) : UInt32 :=
   b.ugetUInt32LE ((i + k.toUSize) * 4) (by rw [(win_off h k hk).1]; exact (win_off h k hk).2)
 
-/-- Sixteen words stored from word `i`. -/
-@[inline] def st16 (s : ByteArray) (i : USize)
+theorem win_bytes {b : ByteArray} {i : USize} (h : Win b i) :
+    (i * 4).toNat + 4 * 16 ≤ b.size ∧ (i * 4).toNat + 4 * 16 < USize.size := by
+  obtain ⟨h1, h2⟩ := h
+  have hsz : (2 : Nat) ^ System.Platform.numBits = USize.size := rfl
+  have h4 : (4 : USize).toNat = 4 := usize_lit 4 (by decide)
+  rw [USize.toNat_mul, h4, hsz, Nat.mod_eq_of_lt (by omega)]
+  omega
+
+/-- Sixteen words stored from word `i`, in the window. -/
+@[inline] def st16 (s : ByteArray) (i : USize) (h : Win s i)
     (v0 v1 v2 v3 v4 v5 v6 v7 v8 v9 v10 v11 v12 v13 v14 v15 : UInt32) : ByteArray :=
-  write16U s i v0 v1 v2 v3 v4 v5 v6 v7 v8 v9 v10 v11 v12 v13 v14 v15
+  putWords ⟨s, rfl⟩ (i * 4) 16 v0 v1 v2 v3 v4 v5 v6 v7 v8 v9 v10 v11 v12 v13 v14 v15 (win_bytes h)
 
 /-- `step s off` on the offsets `off, off + 16, …, off + 16 (j - 1)`. -/
 @[specialize] def groups
@@ -98,8 +106,8 @@ holds them at that time, spelled out. -/
 
 @[inline] def stepSS (f : UInt32 → UInt32 → UInt32) (d a b : USize) (s : ByteArray) (o : USize) :
     ByteArray :=
-  withWin s (a + o) s fun ha ↦ withWin s (b + o) s fun hb ↦
-    write16U s (d + o)
+  withWin s (d + o) s fun hd ↦ withWin s (a + o) s fun ha ↦ withWin s (b + o) s fun hb ↦
+    st16 s (d + o) hd
       (f (ld s (a + o) ha 0) (ld s (b + o) hb 0)) (f (ld s (a + o) ha 1) (ld s (b + o) hb 1))
       (f (ld s (a + o) ha 2) (ld s (b + o) hb 2)) (f (ld s (a + o) ha 3) (ld s (b + o) hb 3))
       (f (ld s (a + o) ha 4) (ld s (b + o) hb 4)) (f (ld s (a + o) ha 5) (ld s (b + o) hb 5))
@@ -112,8 +120,8 @@ holds them at that time, spelled out. -/
 @[inline] def stepSE (f : UInt32 → UInt32 → UInt32) (e : @& ByteArray) (d a b : USize)
     (s : ByteArray) (o : USize) :
     ByteArray :=
-  withWin s (a + o) s fun ha ↦ withWin e (b + o) s fun hb ↦
-    write16U s (d + o)
+  withWin s (d + o) s fun hd ↦ withWin s (a + o) s fun ha ↦ withWin e (b + o) s fun hb ↦
+    st16 s (d + o) hd
       (f (ld s (a + o) ha 0) (ld e (b + o) hb 0)) (f (ld s (a + o) ha 1) (ld e (b + o) hb 1))
       (f (ld s (a + o) ha 2) (ld e (b + o) hb 2)) (f (ld s (a + o) ha 3) (ld e (b + o) hb 3))
       (f (ld s (a + o) ha 4) (ld e (b + o) hb 4)) (f (ld s (a + o) ha 5) (ld e (b + o) hb 5))
@@ -126,8 +134,8 @@ holds them at that time, spelled out. -/
 @[inline] def stepES (f : UInt32 → UInt32 → UInt32) (e : @& ByteArray) (d a b : USize)
     (s : ByteArray) (o : USize) :
     ByteArray :=
-  withWin e (a + o) s fun ha ↦ withWin s (b + o) s fun hb ↦
-    write16U s (d + o)
+  withWin s (d + o) s fun hd ↦ withWin e (a + o) s fun ha ↦ withWin s (b + o) s fun hb ↦
+    st16 s (d + o) hd
       (f (ld e (a + o) ha 0) (ld s (b + o) hb 0)) (f (ld e (a + o) ha 1) (ld s (b + o) hb 1))
       (f (ld e (a + o) ha 2) (ld s (b + o) hb 2)) (f (ld e (a + o) ha 3) (ld s (b + o) hb 3))
       (f (ld e (a + o) ha 4) (ld s (b + o) hb 4)) (f (ld e (a + o) ha 5) (ld s (b + o) hb 5))
@@ -140,8 +148,8 @@ holds them at that time, spelled out. -/
 @[inline] def stepEE (f : UInt32 → UInt32 → UInt32) (e : @& ByteArray) (d a b : USize)
     (s : ByteArray) (o : USize) :
     ByteArray :=
-  withWin e (a + o) s fun ha ↦ withWin e (b + o) s fun hb ↦
-    write16U s (d + o)
+  withWin s (d + o) s fun hd ↦ withWin e (a + o) s fun ha ↦ withWin e (b + o) s fun hb ↦
+    st16 s (d + o) hd
       (f (ld e (a + o) ha 0) (ld e (b + o) hb 0)) (f (ld e (a + o) ha 1) (ld e (b + o) hb 1))
       (f (ld e (a + o) ha 2) (ld e (b + o) hb 2)) (f (ld e (a + o) ha 3) (ld e (b + o) hb 3))
       (f (ld e (a + o) ha 4) (ld e (b + o) hb 4)) (f (ld e (a + o) ha 5) (ld e (b + o) hb 5))
@@ -154,8 +162,8 @@ holds them at that time, spelled out. -/
 @[inline] def stepSW (f : UInt32 → UInt32 → UInt32) (d a : USize) (c : UInt32) (s : ByteArray)
     (o : USize) :
     ByteArray :=
-  withWin s (a + o) s fun ha ↦
-    write16U s (d + o)
+  withWin s (d + o) s fun hd ↦ withWin s (a + o) s fun ha ↦
+    st16 s (d + o) hd
       (f (ld s (a + o) ha 0) c) (f (ld s (a + o) ha 1) c) (f (ld s (a + o) ha 2) c)
       (f (ld s (a + o) ha 3) c) (f (ld s (a + o) ha 4) c) (f (ld s (a + o) ha 5) c)
       (f (ld s (a + o) ha 6) c) (f (ld s (a + o) ha 7) c) (f (ld s (a + o) ha 8) c)
@@ -166,8 +174,8 @@ holds them at that time, spelled out. -/
 @[inline] def stepEW (f : UInt32 → UInt32 → UInt32) (e : @& ByteArray) (d a : USize)
     (c : UInt32) (s : ByteArray) (o : USize) :
     ByteArray :=
-  withWin e (a + o) s fun ha ↦
-    write16U s (d + o)
+  withWin s (d + o) s fun hd ↦ withWin e (a + o) s fun ha ↦
+    st16 s (d + o) hd
       (f (ld e (a + o) ha 0) c) (f (ld e (a + o) ha 1) c) (f (ld e (a + o) ha 2) c)
       (f (ld e (a + o) ha 3) c) (f (ld e (a + o) ha 4) c) (f (ld e (a + o) ha 5) c)
       (f (ld e (a + o) ha 6) c) (f (ld e (a + o) ha 7) c) (f (ld e (a + o) ha 8) c)
@@ -178,8 +186,8 @@ holds them at that time, spelled out. -/
 @[inline] def stepWS (f : UInt32 → UInt32 → UInt32) (d a : USize) (c : UInt32) (s : ByteArray)
     (o : USize) :
     ByteArray :=
-  withWin s (a + o) s fun ha ↦
-    write16U s (d + o)
+  withWin s (d + o) s fun hd ↦ withWin s (a + o) s fun ha ↦
+    st16 s (d + o) hd
       (f c (ld s (a + o) ha 0)) (f c (ld s (a + o) ha 1)) (f c (ld s (a + o) ha 2))
       (f c (ld s (a + o) ha 3)) (f c (ld s (a + o) ha 4)) (f c (ld s (a + o) ha 5))
       (f c (ld s (a + o) ha 6)) (f c (ld s (a + o) ha 7)) (f c (ld s (a + o) ha 8))
@@ -190,8 +198,8 @@ holds them at that time, spelled out. -/
 @[inline] def stepWE (f : UInt32 → UInt32 → UInt32) (e : @& ByteArray) (d a : USize)
     (c : UInt32) (s : ByteArray) (o : USize) :
     ByteArray :=
-  withWin e (a + o) s fun ha ↦
-    write16U s (d + o)
+  withWin s (d + o) s fun hd ↦ withWin e (a + o) s fun ha ↦
+    st16 s (d + o) hd
       (f c (ld e (a + o) ha 0)) (f c (ld e (a + o) ha 1)) (f c (ld e (a + o) ha 2))
       (f c (ld e (a + o) ha 3)) (f c (ld e (a + o) ha 4)) (f c (ld e (a + o) ha 5))
       (f c (ld e (a + o) ha 6)) (f c (ld e (a + o) ha 7)) (f c (ld e (a + o) ha 8))
@@ -201,7 +209,7 @@ holds them at that time, spelled out. -/
 
 /-- Sixteen copies of `c` into `d + o`. -/
 @[inline] def stepW (d : USize) (c : UInt32) (s : ByteArray) (o : USize) : ByteArray :=
-  write16U s (d + o)
+  withWin s (d + o) s fun hd ↦ st16 s (d + o) hd
   (c) (c) (c) (c) (c) (c) (c) (c) (c) (c) (c) (c) (c) (c) (c) (c)
 
 /-- `B = 16 nm` copies of `c` into word `d`. -/
@@ -215,7 +223,7 @@ holds them at that time, spelled out. -/
 /-- Column `c` of a row-major matrix of width `w` at the rows `next[r0 + o + k]` into `d + o`. -/
 @[inline] def stepGather (m : @& ByteArray) (w c : Nat) (next : @& Array Nat) (r0 : Nat) (d : USize)
     (s : ByteArray) (o : USize) : ByteArray :=
-  write16U s (d + o)
+  withWin s (d + o) s fun hd ↦ st16 s (d + o) hd
   (read m (next.getD (r0 + o.toNat + 0) 0 * w + c))
   (read m (next.getD (r0 + o.toNat + 1) 0 * w + c))
   (read m (next.getD (r0 + o.toNat + 2) 0 * w + c))
@@ -240,107 +248,123 @@ holds them at that time, spelled out. -/
 
 variable (p : ℕ) [Mont32Field p]
 
+/-- Multiply canonical Montgomery residues with the positive Montgomery quotient `q`: the high words
+of `x y` and of `q p` subtracted (`sub`), which vectorizes to word multiplications and a minimum. -/
+@[inline] def mulM (x y : UInt32) : UInt32 :=
+  let z := x.toUInt64 * y.toUInt64
+  let q := z.toUInt32 * (0 - Mont32Field.montgomeryNegInv (modulus := p))
+  sub p (z >>> 32).toUInt32 ((q.toUInt64 * Mont32Field.modulus64 (modulus := p)) >>> 32).toUInt32
+
+/-- The operation on words of the group kernels. -/
+@[inline] def Op.wordG : Op → UInt32 → UInt32 → UInt32
+  | .add => CompPoly.CPolynomial.NTTFast.Packed.add p
+  | .sub => CompPoly.CPolynomial.NTTFast.Packed.sub p
+  | .mul => mulM p
+
 /-- Sixteen words of accumulator `j` (word `j · rb`) plus the operand's words times `w`. -/
 @[inline] def stepAccS (rb j : USize) (a : USize) (w : UInt32) (s : ByteArray)
     (o : USize) : ByteArray :=
   withWin s (j * rb + o) s fun h ↦ withWin s (a + o) s fun ha ↦
-    write16U s (j * rb + o)
-      (add p (ld s (j * rb + o) h 0) (mul p (ld s (a + o) ha 0) w))
-      (add p (ld s (j * rb + o) h 1) (mul p (ld s (a + o) ha 1) w))
-      (add p (ld s (j * rb + o) h 2) (mul p (ld s (a + o) ha 2) w))
-      (add p (ld s (j * rb + o) h 3) (mul p (ld s (a + o) ha 3) w))
-      (add p (ld s (j * rb + o) h 4) (mul p (ld s (a + o) ha 4) w))
-      (add p (ld s (j * rb + o) h 5) (mul p (ld s (a + o) ha 5) w))
-      (add p (ld s (j * rb + o) h 6) (mul p (ld s (a + o) ha 6) w))
-      (add p (ld s (j * rb + o) h 7) (mul p (ld s (a + o) ha 7) w))
-      (add p (ld s (j * rb + o) h 8) (mul p (ld s (a + o) ha 8) w))
-      (add p (ld s (j * rb + o) h 9) (mul p (ld s (a + o) ha 9) w))
-      (add p (ld s (j * rb + o) h 10) (mul p (ld s (a + o) ha 10) w))
-      (add p (ld s (j * rb + o) h 11) (mul p (ld s (a + o) ha 11) w))
-      (add p (ld s (j * rb + o) h 12) (mul p (ld s (a + o) ha 12) w))
-      (add p (ld s (j * rb + o) h 13) (mul p (ld s (a + o) ha 13) w))
-      (add p (ld s (j * rb + o) h 14) (mul p (ld s (a + o) ha 14) w))
-      (add p (ld s (j * rb + o) h 15) (mul p (ld s (a + o) ha 15) w))
+    st16 s (j * rb + o) h
+      (add p (ld s (j * rb + o) h 0) (mulM p (ld s (a + o) ha 0) w))
+      (add p (ld s (j * rb + o) h 1) (mulM p (ld s (a + o) ha 1) w))
+      (add p (ld s (j * rb + o) h 2) (mulM p (ld s (a + o) ha 2) w))
+      (add p (ld s (j * rb + o) h 3) (mulM p (ld s (a + o) ha 3) w))
+      (add p (ld s (j * rb + o) h 4) (mulM p (ld s (a + o) ha 4) w))
+      (add p (ld s (j * rb + o) h 5) (mulM p (ld s (a + o) ha 5) w))
+      (add p (ld s (j * rb + o) h 6) (mulM p (ld s (a + o) ha 6) w))
+      (add p (ld s (j * rb + o) h 7) (mulM p (ld s (a + o) ha 7) w))
+      (add p (ld s (j * rb + o) h 8) (mulM p (ld s (a + o) ha 8) w))
+      (add p (ld s (j * rb + o) h 9) (mulM p (ld s (a + o) ha 9) w))
+      (add p (ld s (j * rb + o) h 10) (mulM p (ld s (a + o) ha 10) w))
+      (add p (ld s (j * rb + o) h 11) (mulM p (ld s (a + o) ha 11) w))
+      (add p (ld s (j * rb + o) h 12) (mulM p (ld s (a + o) ha 12) w))
+      (add p (ld s (j * rb + o) h 13) (mulM p (ld s (a + o) ha 13) w))
+      (add p (ld s (j * rb + o) h 14) (mulM p (ld s (a + o) ha 14) w))
+      (add p (ld s (j * rb + o) h 15) (mulM p (ld s (a + o) ha 15) w))
 
 /-- Sixteen words of the four accumulators plus the operand's words times the weights `w`'s. -/
-@[inline] def stepAcc4S (rb : USize) (a : USize) (wts : @& Array UInt32) (w : Nat) (s : ByteArray)
+@[inline] def stepAcc4S (rb : USize) (a : USize) (w0 w1 w2 w3 : UInt32) (s : ByteArray)
     (o : USize) : ByteArray :=
-  let s := stepAccS p rb 0 a (wts.getD (4 * w) 0) s o
-  let s := stepAccS p rb 1 a (wts.getD (4 * w + 1) 0) s o
-  let s := stepAccS p rb 2 a (wts.getD (4 * w + 2) 0) s o
-  stepAccS p rb 3 a (wts.getD (4 * w + 3) 0) s o
+  let s := stepAccS p rb 0 a w0 s o
+  let s := stepAccS p rb 1 a w1 s o
+  let s := stepAccS p rb 2 a w2 s o
+  stepAccS p rb 3 a w3 s o
 
 /-- The accumulators plus the operand's words times the weights `w`'s four words. -/
 @[inline] def accS (nm : Nat) (rb : USize) (s : ByteArray) (a : USize) (wts : @& Array UInt32)
     (w : Nat) : ByteArray :=
-  groups (stepAcc4S p rb a wts w) nm s 0
+  groups (stepAcc4S p rb a (wts.getD (4 * w) 0) (wts.getD (4 * w + 1) 0)
+    (wts.getD (4 * w + 2) 0) (wts.getD (4 * w + 3) 0)) nm s 0
 
 /-- Sixteen words of accumulator `j` (word `j · rb`) plus the operand's words times `w`. -/
 @[inline] def stepAccE (rb j : USize) (e : @& ByteArray) (a : USize) (w : UInt32)
     (s : ByteArray) (o : USize) : ByteArray :=
   withWin s (j * rb + o) s fun h ↦ withWin e (a + o) s fun ha ↦
-    write16U s (j * rb + o)
-      (add p (ld s (j * rb + o) h 0) (mul p (ld e (a + o) ha 0) w))
-      (add p (ld s (j * rb + o) h 1) (mul p (ld e (a + o) ha 1) w))
-      (add p (ld s (j * rb + o) h 2) (mul p (ld e (a + o) ha 2) w))
-      (add p (ld s (j * rb + o) h 3) (mul p (ld e (a + o) ha 3) w))
-      (add p (ld s (j * rb + o) h 4) (mul p (ld e (a + o) ha 4) w))
-      (add p (ld s (j * rb + o) h 5) (mul p (ld e (a + o) ha 5) w))
-      (add p (ld s (j * rb + o) h 6) (mul p (ld e (a + o) ha 6) w))
-      (add p (ld s (j * rb + o) h 7) (mul p (ld e (a + o) ha 7) w))
-      (add p (ld s (j * rb + o) h 8) (mul p (ld e (a + o) ha 8) w))
-      (add p (ld s (j * rb + o) h 9) (mul p (ld e (a + o) ha 9) w))
-      (add p (ld s (j * rb + o) h 10) (mul p (ld e (a + o) ha 10) w))
-      (add p (ld s (j * rb + o) h 11) (mul p (ld e (a + o) ha 11) w))
-      (add p (ld s (j * rb + o) h 12) (mul p (ld e (a + o) ha 12) w))
-      (add p (ld s (j * rb + o) h 13) (mul p (ld e (a + o) ha 13) w))
-      (add p (ld s (j * rb + o) h 14) (mul p (ld e (a + o) ha 14) w))
-      (add p (ld s (j * rb + o) h 15) (mul p (ld e (a + o) ha 15) w))
+    st16 s (j * rb + o) h
+      (add p (ld s (j * rb + o) h 0) (mulM p (ld e (a + o) ha 0) w))
+      (add p (ld s (j * rb + o) h 1) (mulM p (ld e (a + o) ha 1) w))
+      (add p (ld s (j * rb + o) h 2) (mulM p (ld e (a + o) ha 2) w))
+      (add p (ld s (j * rb + o) h 3) (mulM p (ld e (a + o) ha 3) w))
+      (add p (ld s (j * rb + o) h 4) (mulM p (ld e (a + o) ha 4) w))
+      (add p (ld s (j * rb + o) h 5) (mulM p (ld e (a + o) ha 5) w))
+      (add p (ld s (j * rb + o) h 6) (mulM p (ld e (a + o) ha 6) w))
+      (add p (ld s (j * rb + o) h 7) (mulM p (ld e (a + o) ha 7) w))
+      (add p (ld s (j * rb + o) h 8) (mulM p (ld e (a + o) ha 8) w))
+      (add p (ld s (j * rb + o) h 9) (mulM p (ld e (a + o) ha 9) w))
+      (add p (ld s (j * rb + o) h 10) (mulM p (ld e (a + o) ha 10) w))
+      (add p (ld s (j * rb + o) h 11) (mulM p (ld e (a + o) ha 11) w))
+      (add p (ld s (j * rb + o) h 12) (mulM p (ld e (a + o) ha 12) w))
+      (add p (ld s (j * rb + o) h 13) (mulM p (ld e (a + o) ha 13) w))
+      (add p (ld s (j * rb + o) h 14) (mulM p (ld e (a + o) ha 14) w))
+      (add p (ld s (j * rb + o) h 15) (mulM p (ld e (a + o) ha 15) w))
 
 /-- Sixteen words of the four accumulators plus the operand's words times the weights `w`'s. -/
-@[inline] def stepAcc4E (rb : USize) (e : @& ByteArray) (a : USize) (wts : @& Array UInt32)
-    (w : Nat) (s : ByteArray)
+@[inline] def stepAcc4E (rb : USize) (e : @& ByteArray) (a : USize) (w0 w1 w2 w3 : UInt32)
+    (s : ByteArray)
     (o : USize) : ByteArray :=
-  let s := stepAccE p rb 0 e a (wts.getD (4 * w) 0) s o
-  let s := stepAccE p rb 1 e a (wts.getD (4 * w + 1) 0) s o
-  let s := stepAccE p rb 2 e a (wts.getD (4 * w + 2) 0) s o
-  stepAccE p rb 3 e a (wts.getD (4 * w + 3) 0) s o
+  let s := stepAccE p rb 0 e a w0 s o
+  let s := stepAccE p rb 1 e a w1 s o
+  let s := stepAccE p rb 2 e a w2 s o
+  stepAccE p rb 3 e a w3 s o
 
 /-- The accumulators plus the operand's words times the weights `w`'s four words. -/
 @[inline] def accE (nm : Nat) (rb : USize) (s : ByteArray) (e : @& ByteArray) (a : USize)
     (wts : @& Array UInt32)
     (w : Nat) : ByteArray :=
-  groups (stepAcc4E p rb e a wts w) nm s 0
+  groups (stepAcc4E p rb e a (wts.getD (4 * w) 0) (wts.getD (4 * w + 1) 0)
+    (wts.getD (4 * w + 2) 0) (wts.getD (4 * w + 3) 0)) nm s 0
 
 /-- Sixteen words of accumulator `j` (word `j · rb`) plus the operand's words times `w`. -/
 @[inline] def stepAccW (rb j : USize) (c : UInt32) (w : UInt32) (s : ByteArray)
     (o : USize) : ByteArray :=
   withWin s (j * rb + o) s fun h ↦ 
-    write16U s (j * rb + o)
-      (add p (ld s (j * rb + o) h 0) (mul p (c) w)) (add p (ld s (j * rb + o) h 1) (mul p (c) w))
-      (add p (ld s (j * rb + o) h 2) (mul p (c) w)) (add p (ld s (j * rb + o) h 3) (mul p (c) w))
-      (add p (ld s (j * rb + o) h 4) (mul p (c) w)) (add p (ld s (j * rb + o) h 5) (mul p (c) w))
-      (add p (ld s (j * rb + o) h 6) (mul p (c) w)) (add p (ld s (j * rb + o) h 7) (mul p (c) w))
-      (add p (ld s (j * rb + o) h 8) (mul p (c) w)) (add p (ld s (j * rb + o) h 9) (mul p (c) w))
-      (add p (ld s (j * rb + o) h 10) (mul p (c) w))
-      (add p (ld s (j * rb + o) h 11) (mul p (c) w))
-      (add p (ld s (j * rb + o) h 12) (mul p (c) w))
-      (add p (ld s (j * rb + o) h 13) (mul p (c) w))
-      (add p (ld s (j * rb + o) h 14) (mul p (c) w))
-      (add p (ld s (j * rb + o) h 15) (mul p (c) w))
+    st16 s (j * rb + o) h
+      (add p (ld s (j * rb + o) h 0) (mulM p (c) w)) (add p (ld s (j * rb + o) h 1) (mulM p (c) w))
+      (add p (ld s (j * rb + o) h 2) (mulM p (c) w)) (add p (ld s (j * rb + o) h 3) (mulM p (c) w))
+      (add p (ld s (j * rb + o) h 4) (mulM p (c) w)) (add p (ld s (j * rb + o) h 5) (mulM p (c) w))
+      (add p (ld s (j * rb + o) h 6) (mulM p (c) w)) (add p (ld s (j * rb + o) h 7) (mulM p (c) w))
+      (add p (ld s (j * rb + o) h 8) (mulM p (c) w)) (add p (ld s (j * rb + o) h 9) (mulM p (c) w))
+      (add p (ld s (j * rb + o) h 10) (mulM p (c) w))
+      (add p (ld s (j * rb + o) h 11) (mulM p (c) w))
+      (add p (ld s (j * rb + o) h 12) (mulM p (c) w))
+      (add p (ld s (j * rb + o) h 13) (mulM p (c) w))
+      (add p (ld s (j * rb + o) h 14) (mulM p (c) w))
+      (add p (ld s (j * rb + o) h 15) (mulM p (c) w))
 
 /-- Sixteen words of the four accumulators plus the operand's words times the weights `w`'s. -/
-@[inline] def stepAcc4W (rb : USize) (c : UInt32) (wts : @& Array UInt32) (w : Nat) (s : ByteArray)
+@[inline] def stepAcc4W (rb : USize) (c : UInt32) (w0 w1 w2 w3 : UInt32) (s : ByteArray)
     (o : USize) : ByteArray :=
-  let s := stepAccW p rb 0 c (wts.getD (4 * w) 0) s o
-  let s := stepAccW p rb 1 c (wts.getD (4 * w + 1) 0) s o
-  let s := stepAccW p rb 2 c (wts.getD (4 * w + 2) 0) s o
-  stepAccW p rb 3 c (wts.getD (4 * w + 3) 0) s o
+  let s := stepAccW p rb 0 c w0 s o
+  let s := stepAccW p rb 1 c w1 s o
+  let s := stepAccW p rb 2 c w2 s o
+  stepAccW p rb 3 c w3 s o
 
 /-- The accumulators plus the operand's words times the weights `w`'s four words. -/
 @[inline] def accW (nm : Nat) (rb : USize) (s : ByteArray) (c : UInt32) (wts : @& Array UInt32)
     (w : Nat) : ByteArray :=
-  groups (stepAcc4W p rb c wts w) nm s 0
+  groups (stepAcc4W p rb c (wts.getD (4 * w) 0) (wts.getD (4 * w + 1) 0)
+    (wts.getD (4 * w + 2) 0) (wts.getD (4 * w + 3) 0)) nm s 0
 
 @[inline] def addSS (nm : Nat) (s : ByteArray) (d a b : USize) : ByteArray :=
   groups (stepSS (add p) d a b) nm s 0
@@ -379,23 +403,23 @@ variable (p : ℕ) [Mont32Field p]
     (c : UInt32) : ByteArray :=
   groups (stepWE (sub p) e d a c) nm s 0
 @[inline] def mulSS (nm : Nat) (s : ByteArray) (d a b : USize) : ByteArray :=
-  groups (stepSS (mul p) d a b) nm s 0
+  groups (stepSS (mulM p) d a b) nm s 0
 @[inline] def mulSE (nm : Nat) (s : ByteArray) (e : @& ByteArray) (d a b : USize) : ByteArray :=
-  groups (stepSE (mul p) e d a b) nm s 0
+  groups (stepSE (mulM p) e d a b) nm s 0
 @[inline] def mulES (nm : Nat) (s : ByteArray) (e : @& ByteArray) (d a b : USize) : ByteArray :=
-  groups (stepES (mul p) e d a b) nm s 0
+  groups (stepES (mulM p) e d a b) nm s 0
 @[inline] def mulEE (nm : Nat) (s : ByteArray) (e : @& ByteArray) (d a b : USize) : ByteArray :=
-  groups (stepEE (mul p) e d a b) nm s 0
+  groups (stepEE (mulM p) e d a b) nm s 0
 @[inline] def mulSW (nm : Nat) (s : ByteArray) (d a : USize) (c : UInt32) : ByteArray :=
-  groups (stepSW (mul p) d a c) nm s 0
+  groups (stepSW (mulM p) d a c) nm s 0
 @[inline] def mulEW (nm : Nat) (s : ByteArray) (e : @& ByteArray) (d a : USize)
     (c : UInt32) : ByteArray :=
-  groups (stepEW (mul p) e d a c) nm s 0
+  groups (stepEW (mulM p) e d a c) nm s 0
 @[inline] def mulWS (nm : Nat) (s : ByteArray) (d a : USize) (c : UInt32) : ByteArray :=
-  groups (stepWS (mul p) d a c) nm s 0
+  groups (stepWS (mulM p) d a c) nm s 0
 @[inline] def mulWE (nm : Nat) (s : ByteArray) (e : @& ByteArray) (d a : USize)
     (c : UInt32) : ByteArray :=
-  groups (stepWE (mul p) e d a c) nm s 0
+  groups (stepWE (mulM p) e d a c) nm s 0
 
 /-- The periodic column `j` from word `a` into word `d`, zero if there is none. -/
 @[noinline] def copyPer (nm : Nat) (s : ByteArray) (per : @& Array ByteArray) (j : Nat)
@@ -444,7 +468,7 @@ variable (p : ℕ) [Mont32Field p]
   | .mul, .cur x, .const y => mulEW p env.nm s env.view (regOff env d) (colOff env x) y.val
   | .mul, .const x, .reg y => mulWS p env.nm s (regOff env d) (regOff env y) x.val
   | .mul, .const x, .cur y => mulWE p env.nm s env.view (regOff env d) (colOff env y) x.val
-  | o, .const x, .const y => fill env.nm s (regOff env d) (Op.word p o x.val y.val)
+  | o, .const x, .const y => fill env.nm s (regOff env d) (Op.wordG p o x.val y.val)
 
 /-- A loaded column into register `d`. -/
 @[inline] def loadG (env : @& GroupEnv) (d : Nat) (src : Src) (s : ByteArray) : ByteArray :=
