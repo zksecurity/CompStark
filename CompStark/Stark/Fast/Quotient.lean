@@ -216,6 +216,36 @@ theorem foldl_blocks_eq {α σ : Type} (B b0 nb : Nat) (g : Nat → α) (Inv : �
         congrArg Array.ofFn (funext fun i ↦ by simp only; congr 1; ring),
       ofFn_append_ofFn (fun k ↦ g (b0 * B + k)) (m * B) B, show m * B + B = (m + 1) * B by ring]
 
+theorem powerSeq_getD [Mont32BaseField p] [Binomial4 p] (alpha : EF) (K k : Nat) (hk : k < K) :
+    (powerSeq alpha K).getD k 0 = Ext.pow alpha k := by
+  suffices h : ∀ n, (List.range n).foldl (fun (acc, x) _ ↦ (acc.push x, x * alpha))
+      ((#[] : Array EF), 1) = (Array.ofFn (n := n) fun i ↦ Ext.pow alpha i.val,
+        Ext.pow alpha n) by
+    rw [powerSeq, h K, Array.getD_eq_getD_getElem?, Array.getElem?_eq_getElem (by
+      rw [Array.size_ofFn]; exact hk), Option.getD_some, Array.getElem_ofFn]
+  intro n
+  induction n with
+  | zero =>
+    simp only [List.range_zero, List.foldl_nil]
+    refine Prod.ext (by rw [Array.ofFn_zero]) ?_
+    show (1 : EF) = Ext.pow alpha 0
+    rw [Ext.pow]
+  | succ n ih =>
+    rw [List.range_succ, List.foldl_append, ih, List.foldl_cons, List.foldl_nil]
+    refine Prod.ext ?_ ?_
+    · show (Array.ofFn fun i : Fin n ↦ Ext.pow alpha i.val).push (Ext.pow alpha n) = _
+      exact (Array.ofFn_succ (f := fun i : Fin (n + 1) ↦ Ext.pow alpha i.val)).symm
+    · show Ext.pow alpha n * alpha = Ext.pow alpha (n + 1)
+      apply Challenge.toSpec.injective
+      rw [Challenge.toSpec_mul, Ext.toSpec_pow, Ext.toSpec_pow, pow_succ]
+
+theorem weightCoords_eq [Mont32BaseField p] [Binomial4 p] (alpha : EF) (K : Nat) :
+    weightCoords alpha K = Array.ofFn (n := 4 * K) fun i ↦
+      (Ext.coeffs (Ext.pow alpha (K - 1 - i.val / 4))).getD (i.val % 4) 0 := by
+  unfold weightCoords
+  refine congrArg Array.ofFn (funext fun i ↦ ?_)
+  rw [powerSeq_getD alpha K _ (by have := i.isLt; omega)]
+
 /-- A program on groups of rows is the program on the group machine. -/
 theorem groupRun_eq (kernels : List (Prog.GroupKernel p)) (code : Array (Prog.Instr F))
     (env : Prog.GroupEnv) (s : ByteArray) :
@@ -630,7 +660,7 @@ theorem quotientWith_rel [Mont32BaseField p] [Binomial4 p] (kernels : List (Prog
   let K := A.constraints.length
   let WT : Array F := Array.ofFn (n := 4 * K) fun i ↦
     (Ext.coeffs (Ext.pow alpha (K - 1 - i.val / 4))).getD (i.val % 4) 0
-  have hWT : weightCoords alpha K = WT := rfl
+  have hWT : weightCoords alpha K = WT := weightCoords_eq alpha K
   have hsS : QShape d l s.height s := ⟨hvs', hh, hus⟩
   have hspS : QShape d l s.height sp := ⟨hspv, hh, husp⟩
   have hrsS : QShape d l s.height (⟨0, s.height, #[]⟩ : Mat F) :=

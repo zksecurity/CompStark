@@ -339,10 +339,15 @@ def quotientTables [Mont32BaseField p] (degreeBits logChunks : Nat) : QuotientTa
 /-- Field elements hash by their words. -/
 instance : Hashable F := ⟨fun x ↦ hash x.val⟩
 
+/-- The powers `α ^ 0, …, α ^ (K - 1)`, by successive products. -/
+def powerSeq [Mont32BaseField p] [Binomial4 p] (alpha : EF) (K : Nat) : Array EF :=
+  ((List.range K).foldl (fun (acc, x) _ ↦ (acc.push x, x * alpha)) ((#[] : Array EF), 1)).1
+
 /-- The weights `α ^ (K - 1 - k)` of `K` constraints, four coordinates each. -/
 def weightCoords [Mont32BaseField p] [Binomial4 p] (alpha : EF) (K : Nat) : Array F :=
+  let pw := powerSeq alpha K
   Array.ofFn (n := 4 * K) fun i ↦
-    (Ext.coeffs (Ext.pow alpha (K - 1 - i.val / 4))).getD (i.val % 4) 0
+    (Ext.coeffs (pw.getD (K - 1 - i.val / 4) 0)).getD (i.val % 4) 0
 
 /-- A program on groups of rows: a kernel of `kernels` with the program's code, or the program
 interpreted. -/
