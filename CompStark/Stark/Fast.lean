@@ -11,6 +11,7 @@ public import CompStark.Merkle.Packed
 public import CompPoly.Univariate.NTTFast.Packed.CosetLde
 public import CompStark.Stark.Words
 public import CompStark.Stark.ExtWords
+public import CompStark.Stark.ProgWords
 
 /-! # The fast prover backend
 
@@ -278,58 +279,6 @@ end Commit
 /-- Words `i, …, i + B - 1` of `b`. -/
 def slice (b : @& ByteArray) (i B : Nat) : ByteArray := b.extract (4 * i) (4 * (i + B))
 
-/-- Word `(c, r)` of the trace on the quotient domain held as pieces of `R` rows each, every piece
-column-major, the pieces one after another: rows in the extension's bit-reversed order. -/
-@[inline] def cell (cols : @& ByteArray) (w R c r : Nat) : UInt32 :=
-  CompPoly.CPolynomial.NTTFast.Packed.Native.read cols (r / R * (R * w) + c * R + r % R)
-
-/-- Column `c` at the rows `idx[r0], …, idx[r0 + B - 1]`. -/
-def gather (cols : @& ByteArray) (w R c : Nat) (idx : @& Array Nat) (r0 B : Nat) : ByteArray :=
-  Id.run do
-  let mut out := CompPoly.CPolynomial.NTTFast.Packed.Native.zeroWords B
-  for k in [0:B] do
-    out := CompPoly.CPolynomial.NTTFast.Packed.Native.write out k
-      (cell cols w R c (idx.getD (r0 + k) 0))
-  return out
-
-/-- The packed values of `e` on the rows `r0, …, r0 + B - 1` of the quotient domain in the
-extension's bit-reversed order, `B` dividing the piece height `R`: `evalBlock` on words. `cols` and
-`pcols` hold the trace and the preprocessed trace, of widths `w` and `pw`, and `per` the `np`
-periodic columns, `n` rows each in that order. The next row of row `r` is `next[r]`, and `first`,
-`last`, `trans` are the selectors in that order. Next rows of a block are almost always a block
-themselves: `contiguous` gives its first row, and it is read as one slice. -/
-def evalWords (cols pcols per : @& ByteArray) (w pw np n R B : Nat) (next : @& Array Nat)
-    (contiguous : @& Array (Option Nat)) (pis : @& List F) (first last trans : @& ByteArray)
-    (r0 : Nat) :
-    Expr F → ByteArray
-  | .cur c => slice cols (r0 / R * (R * w) + c * R + r0 % R) B
-  | .next c =>
-    match contiguous.getD (r0 / B) none with
-    | some n0 => slice cols (n0 / R * (R * w) + c * R + n0 % R) B
-    | none => gather cols w R c next r0 B
-  | .prepCur c => slice pcols (r0 / R * (R * pw) + c * R + r0 % R) B
-  | .prepNext c =>
-    match contiguous.getD (r0 / B) none with
-    | some n0 => slice pcols (n0 / R * (R * pw) + c * R + n0 % R) B
-    | none => gather pcols pw R c next r0 B
-  | .periodic j =>
-    if j < np then slice per (j * n + r0) B
-    else CompPoly.CPolynomial.NTTFast.Packed.Native.zeroWords B
-  | .pub j => Words.replicateWord (pis.getD j 0).val B
-  | .const c => Words.replicateWord c.val B
-  | .isFirstRow => slice first r0 B
-  | .isLastRow => slice last r0 B
-  | .isTransition => slice trans r0 B
-  | .add a b => Words.addWords p
-      (evalWords cols pcols per w pw np n R B next contiguous pis first last trans r0 a)
-      (evalWords cols pcols per w pw np n R B next contiguous pis first last trans r0 b) B
-  | .sub a b => Words.subWords p
-      (evalWords cols pcols per w pw np n R B next contiguous pis first last trans r0 a)
-      (evalWords cols pcols per w pw np n R B next contiguous pis first last trans r0 b) B
-  | .mul a b => Words.mulWords p
-      (evalWords cols pcols per w pw np n R B next contiguous pis first last trans r0 a)
-      (evalWords cols pcols per w pw np n R B next contiguous pis first last trans r0 b) B
-
 /-- The rows `perm[i0], …, perm[i0 + len - 1]` of a packed row-major matrix of width `w`,
 copied whole. -/
 def permuteRange (m : @& ByteArray) (w : Nat) (perm : @& Array Nat) (i0 len : Nat) : ByteArray :=
@@ -362,7 +311,7 @@ structure QuotientTables (q : ℕ) [Mont32Field q] where
   trans : ByteArray
   next : Array Nat
   B : Nat
-  contiguous : Array (Option Nat)
+  hB : 4 * B < USize.size
 
 /-- The quotient tables of a shape. -/
 def quotientTables [Mont32BaseField p] (degreeBits logChunks : Nat) : QuotientTables p :=
@@ -379,63 +328,70 @@ def quotientTables [Mont32BaseField p] (degreeBits logChunks : Nat) : QuotientTa
   let R := n / (if n < 4096 then 1 else 16)
   let B := min R 256
   { degreeBits, logChunks, perm, invZh := batchInv zhs, next, B
+    hB := Nat.lt_of_lt_of_le (by omega) USize.le_size
     first := CompPoly.CPolynomial.NTTFast.Packed.Native.encodeFields (perm.map fun i ↦
       zhs.getD (i % period) 0 * invFirst.getD i 0)
     last := CompPoly.CPolynomial.NTTFast.Packed.Native.encodeFields (perm.map fun i ↦
       zhs.getD (i % period) 0 * invLast.getD i 0)
     trans := CompPoly.CPolynomial.NTTFast.Packed.Native.encodeFields (perm.map fun i ↦
-      xs.getD i 0 - gInv)
-    contiguous := (Array.range (n / B)).map fun b ↦
-      let n0 := next.getD (b * B) 0
-      if n0 % B == 0 && (List.range B).all fun k ↦ next.getD (b * B + k) 0 == n0 + k then some n0
-      else none }
+      xs.getD i 0 - gInv) }
 
-/-- The first `parts · R` rows of `m`, transposed in `parts` pieces of `R` rows each: within a piece
-column-major, the pieces one after another. -/
-def transposePieces (m : PMat) (parts R : Nat) : ByteArray :=
-  let pieces := (Array.range parts).map fun k ↦ Task.spawn fun _ ↦
-    CompPoly.CPolynomial.NTTFast.Packed.Native.transposeRows m.words m.width (k * R) R
-  pieces.foldl (fun acc t ↦ acc ++ t.get) (ByteArray.emptyWithCapacity (4 * parts * R * m.width))
+/-- Field elements hash by their words. -/
+instance : Hashable F := ⟨fun x ↦ hash x.val⟩
 
-/-- `quotientOfLde` on packed words with the shape's tables `T`. The traces on the quotient
-domain are their extensions' first rows, transposed in parallel pieces; constraints are evaluated
-in that bit-reversed row order, every node one vectorized operation per block of rows, in
-parallel block ranges, and the result is put in natural order. -/
-def quotientWith [Mont32BaseField p] [Binomial4 p] (T : QuotientTables p) (A : Air F)
-    (pis : List F) (ext : PMat) (prep : Option PMat) (alpha : EF) : Array EF := Id.run do
+/-- The weights `α ^ (K - 1 - k)` of `K` constraints, four coordinates each. -/
+def weightCoords [Mont32BaseField p] [Binomial4 p] (alpha : EF) (K : Nat) : Array F :=
+  Array.ofFn (n := 4 * K) fun i ↦
+    (Ext.coeffs (Ext.pow alpha (K - 1 - i.val / 4))).getD (i.val % 4) 0
+
+/-- The values of a program accumulating every row of the quotient domain, in the extension's
+bit-reversed order, put in natural order: the program runs on blocks of rows (`Prog.runBlock`),
+`block r0` giving the block from row `r0` its view and loads, in parallel ranges of blocks; every
+row's accumulators are its value's coordinates, times the inverse vanishing polynomial. -/
+def quotientBlocks [Mont32BaseField p] [Binomial4 p] (T : QuotientTables p) (prog : Prog F)
+    (scal wts : Array F) (block : Nat → Prog.View × Prog.Loads) : Array EF := Id.run do
   let n := 2 ^ (T.degreeBits + T.logChunks)
-  let w := ext.width
-  let pw := (prep.map (·.width)).getD 0
   let period := 2 ^ T.logChunks
   let perm := T.perm
-  let parts := if n < 4096 then 1 else 16
-  let R := n / parts
-  let cols := transposePieces ext parts R
-  let pcols := (prep.map (transposePieces · parts R)).getD ByteArray.empty
-  let tabs := (A.periodic.map fun col ↦ periodicOnQuotient col T.degreeBits T.logChunks).toArray
-  let np := tabs.size
-  let per := CompPoly.CPolynomial.NTTFast.Packed.Native.encodeFields (Array.ofFn (n := np * n)
-    fun k ↦ periodicRow (tabs.getD (k.val / n) #[]) (perm.getD (k.val % n) 0))
-  let K := A.constraints.length
-  let weights := (List.range K).map fun k ↦ (Ext.coeffs (Ext.pow alpha (K - 1 - k))).map (·.val)
   let B := T.B
   let blocks := n / B
   let byRow := parChunks blocks (min blocks 16) fun b0 nb ↦ Id.run do
     let mut out := Array.emptyWithCapacity (nb * B)
+    let mut regs : Prog.Regs (4 * B) := Array.replicate (4 + prog.regs)
+      ⟨CompPoly.CPolynomial.NTTFast.Packed.Native.zeroWords B, ByteArray.size_zeros _⟩
     for blk in [b0:b0 + nb] do
       let r0 := blk * B
-      let z0 := CompPoly.CPolynomial.NTTFast.Packed.Native.zeroWords B
-      let mut acc := #[z0, z0, z0, z0]
-      for (c, wk) in A.constraints.zip weights do
-        let v := evalWords cols pcols per w pw np n R B T.next T.contiguous pis T.first T.last
-          T.trans r0 c
-        acc := (acc.zip wk.toArray).map fun (a, x) ↦ Words.mulAddWords p a v x B
+      let (v, L) := block r0
+      regs := Prog.runBlock p prog.code v L scal wts B T.hB (Prog.clearAcc T.hB B regs)
       for i in [0:B] do
-        let z := T.invZh.getD (perm.getD (r0 + i) 0 % period) 0
-        out := out.push (Ext4.smul z
-          ⟨word acc[0]! i, word acc[1]! i, word acc[2]! i, word acc[3]! i⟩)
+        out := out.push (Ext4.smul (T.invZh.getD (perm.getD (r0 + i) 0 % period) 0)
+          ⟨word (Prog.regBuf regs 0) i, word (Prog.regBuf regs 1) i,
+            word (Prog.regBuf regs 2) i, word (Prog.regBuf regs 3) i⟩)
     return out
   return perm.map fun r ↦ byRow.getD r 0
+
+/-- The periodic columns of `A` on the quotient domain of the tables `T`, in the extension's
+bit-reversed order, as words. -/
+def periodicWords [Mont32BaseField p] (T : QuotientTables p) (A : Air F) : Array ByteArray :=
+  (A.periodic.map fun col ↦
+    let tab := periodicOnQuotient col T.degreeBits T.logChunks
+    CompPoly.CPolynomial.NTTFast.Packed.Native.encodeFields (T.perm.map fun r ↦
+      periodicRow tab r)).toArray
+
+/-- `quotientOfLde` on packed words with the shape's tables `T`: the constraints' program
+(`Prog.compile`) on blocks of rows in the extension's bit-reversed order (`quotientBlocks`),
+every block's rows of the extensions transposed, their next rows gathered. -/
+def quotientWith [Mont32BaseField p] [Binomial4 p] (T : QuotientTables p) (A : Air F)
+    (pis : List F) (ext : PMat) (prep : Option PMat) (alpha : EF) : Array EF :=
+  let pw := (prep.map (·.width)).getD 0
+  let pwords := (prep.map (·.words)).getD ByteArray.empty
+  let per := periodicWords T A
+  let tr := CompPoly.CPolynomial.NTTFast.Packed.Native.transposeRows
+  quotientBlocks T (Prog.compile A.constraints)
+    pis.toArray (weightCoords alpha A.constraints.length) fun r0 ↦
+      (⟨tr ext.words ext.width r0 T.B, 0, T.B⟩,
+        ⟨ext.words, ext.width, pwords, pw, tr pwords pw r0 T.B, .empty, 0, .empty, r0, T.next,
+          per, T.first, T.last, T.trans⟩)
 
 /-- `quotientOfLde` on packed words. -/
 def quotient [Mont32BaseField p] [Binomial4 p] (A : Air F) (pis : List F)
@@ -496,109 +452,32 @@ def mul [Binomial4 p] (B : Nat) : XVal p → XVal p → XVal p
 
 end XVal
 
-/-- The values of the extension expression `e` on the rows `r0, …, r0 + B - 1` of the quotient
-domain in the extension's bit-reversed order (`evalWords` for its base expressions): `rcols`
-holds the permutation trace of width `rw` in base coordinates, as `cols` the trace, and `cpl` and
-`tpl` the planes of the challenges and of the terminal. -/
-def evalX [Binomial4 p] (cols pcols per rcols : @& ByteArray) (w pw np rw n R B : Nat)
-    (next : @& Array Nat) (contiguous : @& Array (Option Nat)) (pis : @& List F)
-    (first last trans : @& ByteArray) (cpl : @& Array (EVec p)) (tpl : @& EVec p) (r0 : Nat) :
-    Lookup.ExtExpr F → XVal p
-  | .base e => .base (evalWords cols pcols per w pw np n R B next contiguous pis first last trans
-      r0 e)
-  | .perm c =>
-    let ev (j : Nat) := evalWords (p := p) rcols .empty .empty rw 0 0 n R B next contiguous []
-      first last trans r0 (.cur (4 * c + j))
-    .ext ⟨B, ev 0, ev 1, ev 2, ev 3⟩
-  | .permNext c =>
-    let ev (j : Nat) := evalWords (p := p) rcols .empty .empty rw 0 0 n R B next contiguous []
-      first last trans r0 (.next (4 * c + j))
-    .ext ⟨B, ev 0, ev 1, ev 2, ev 3⟩
-  | .challenge i => .ext (cpl.getD i (EVec.zeros B))
-  | .terminal => .ext tpl
-  | .add a b => XVal.add B
-      (evalX cols pcols per rcols w pw np rw n R B next contiguous pis first last trans cpl tpl
-        r0 a)
-      (evalX cols pcols per rcols w pw np rw n R B next contiguous pis first last trans cpl tpl
-        r0 b)
-  | .sub a b => XVal.sub B
-      (evalX cols pcols per rcols w pw np rw n R B next contiguous pis first last trans cpl tpl
-        r0 a)
-      (evalX cols pcols per rcols w pw np rw n R B next contiguous pis first last trans cpl tpl
-        r0 b)
-  | .mul a b => XVal.mul B
-      (evalX cols pcols per rcols w pw np rw n R B next contiguous pis first last trans cpl tpl
-        r0 a)
-      (evalX cols pcols per rcols w pw np rw n R B next contiguous pis first last trans cpl tpl
-        r0 b)
+/-- `X ^ j · s`: the weight of coordinate `j` of a value weighted by `s`. -/
+def xPowMul [Binomial4 p] (j : Nat) (s : EF) : EF := (List.range j).foldl
+  (fun x _ ↦ ⟨Binomial4.mulW x.c3, x.c0, x.c1, x.c2⟩) s
 
-/-- `acc + v · s` on four planes of `B` words in place, for the planes `v` of a block of values
-and the coordinates `s` of an extension scalar, `ws` holding `W s₃, W s₂, W s₁`. -/
-def accumulate (B : Nat) (acc : Array ByteArray) (v : XVal p) (s : EF) (ws : F × F × F) :
-    Array ByteArray :=
-  let mai (o x : ByteArray) (c : F) := Words.mulAddInto p o x 0 c.val B
-  let (w3, w2, w1) := ws
-  match v with
-  | .base x => #[mai (acc.getD 0 .empty) x s.c0, mai (acc.getD 1 .empty) x s.c1,
-      mai (acc.getD 2 .empty) x s.c2, mai (acc.getD 3 .empty) x s.c3]
-  | v =>
-    let e := v.planes B
-    #[mai (mai (mai (mai (acc.getD 0 .empty) e.c0 s.c0) e.c1 w3) e.c2 w2) e.c3 w1,
-      mai (mai (mai (mai (acc.getD 1 .empty) e.c0 s.c1) e.c1 s.c0) e.c2 w3) e.c3 w2,
-      mai (mai (mai (mai (acc.getD 2 .empty) e.c0 s.c2) e.c1 s.c1) e.c2 s.c0) e.c3 w3,
-      mai (mai (mai (mai (acc.getD 3 .empty) e.c0 s.c3) e.c1 s.c2) e.c2 s.c1) e.c3 s.c0]
-
-/-- The weights `α ^ (K - 1 - k)` of `K` constraints, each with `W s₃, W s₂, W s₁`. -/
-def weightsOf [Mont32BaseField p] [Binomial4 p] (alpha : EF) (K : Nat) :
-    List (EF × F × F × F) :=
-  (List.range K).map fun k ↦
-    let s := Ext.pow alpha (K - 1 - k)
-    (s, Binomial4.mulW s.c3, Binomial4.mulW s.c2, Binomial4.mulW s.c1)
-
-/-- The planes of the constraints `cws` on a block of `B` rows, `ev c` the block value of `c`,
-accumulated in place with their weights. -/
-def accumulateAll (B : Nat) (ev : Lookup.ExtExpr F → XVal p)
-    (cws : List (Lookup.ExtExpr F × EF × F × F × F)) : Array ByteArray :=
-  let z0 := CompPoly.CPolynomial.NTTFast.Packed.Native.zeroWords B
-  cws.foldl (fun acc x ↦ accumulate B acc (ev x.1) x.2.1 x.2.2) #[z0, z0, z0, z0]
+/-- The weights of `K` extension constraints, coordinate `j` of constraint `k` weighted by
+`X ^ j α ^ (K - 1 - k)`, four coordinates each. -/
+def extWeightCoords [Mont32BaseField p] [Binomial4 p] (alpha : EF) (K : Nat) : Array F :=
+  Array.ofFn (n := 16 * K) fun i ↦
+    (Ext.coeffs (xPowMul (i.val / 4 % 4) (Ext.pow alpha (K - 1 - i.val / 16)))).getD (i.val % 4) 0
 
 /-- `lookupQuotientOfLde` on packed words with the shape's tables `T`, as `quotientWith`: the
-traces on the quotient domain transposed in parallel pieces, the extension constraints evaluated
-block by block in the bit-reversed row order and accumulated in place with the weights
-`α ^ (K - 1 - k)`, the result put in natural order. -/
+extension constraints' program (`Prog.compileExt`, its scalars the public values, the terminal
+and the challenges) on blocks of rows (`quotientBlocks`). -/
 def lookupQuotientWith [Mont32BaseField p] [Binomial4 p] (T : QuotientTables p) (A : Air F)
     (ext : List (Lookup.ExtExpr F)) (pis : List F) (tr : PMat) (prep : Option PMat) (perm : PMat)
-    (chs : List EF) (terminal alpha : EF) : Array EF := Id.run do
-  let n := 2 ^ (T.degreeBits + T.logChunks)
-  let w := tr.width
+    (chs : List EF) (terminal alpha : EF) : Array EF :=
   let pw := (prep.map (·.width)).getD 0
-  let period := 2 ^ T.logChunks
-  let order := T.perm
-  let parts := if n < 4096 then 1 else 16
-  let R := n / parts
-  let cols := transposePieces tr parts R
-  let pcols := (prep.map (transposePieces · parts R)).getD ByteArray.empty
-  let rcols := transposePieces perm parts R
-  let tabs := (A.periodic.map fun col ↦ periodicOnQuotient col T.degreeBits T.logChunks).toArray
-  let np := tabs.size
-  let per := CompPoly.CPolynomial.NTTFast.Packed.Native.encodeFields (Array.ofFn (n := np * n)
-    fun k ↦ periodicRow (tabs.getD (k.val / n) #[]) (order.getD (k.val % n) 0))
-  let B := T.B
-  let blocks := n / B
-  let cws := ext.zip (weightsOf alpha ext.length)
-  let byRow := parChunks blocks (min blocks 16) fun b0 nb ↦ Id.run do
-    let cpl := chs.toArray.map fun c ↦ (XVal.const c).planes B
-    let tpl := (XVal.const terminal).planes B
-    let mut out := Array.emptyWithCapacity (nb * B)
-    for blk in [b0:b0 + nb] do
-      let r0 := blk * B
-      let acc := accumulateAll B (evalX cols pcols per rcols w pw np perm.width n R B T.next
-        T.contiguous pis T.first T.last T.trans cpl tpl r0) cws
-      for i in [0:B] do
-        out := out.push (Ext4.smul (T.invZh.getD (order.getD (r0 + i) 0 % period) 0)
-          ⟨word acc[0]! i, word acc[1]! i, word acc[2]! i, word acc[3]! i⟩)
-    return out
-  return order.map fun r ↦ byRow.getD r 0
+  let pwords := (prep.map (·.words)).getD ByteArray.empty
+  let per := periodicWords T A
+  let tp := CompPoly.CPolynomial.NTTFast.Packed.Native.transposeRows
+  quotientBlocks T (Prog.compileExt Binomial4.W pis.length ext)
+    (pis.toArray ++ (terminal :: chs).toArray.flatMap fun c ↦ (Ext.coeffs c).toArray)
+    (extWeightCoords alpha ext.length) fun r0 ↦
+      (⟨tp tr.words tr.width r0 T.B, 0, T.B⟩,
+        ⟨tr.words, tr.width, pwords, pw, tp pwords pw r0 T.B, perm.words, perm.width,
+          tp perm.words perm.width r0 T.B, r0, T.next, per, T.first, T.last, T.trans⟩)
 
 /-- `lookupQuotientOfLde` on packed words. -/
 def lookupQuotient [Mont32BaseField p] [Binomial4 p] (A : Air F) (ext : List (Lookup.ExtExpr F))
@@ -657,13 +536,15 @@ def combineX [Binomial4 p] (B : Nat) (b : EF) : List ByteArray → XVal p
   | [] => .const 0
   | x :: xs => xs.foldl (fun acc y ↦ (XVal.base y).add B (acc.mul B (.const b))) (.base x)
 
-/-- The fractions of the lookups `ls` on a block of `B` rows (`rowFractions`), `ev e` the base
-expression `e` there: lookup `c`'s tuples `(t, m)` add `m / (a - combine b t)`, with its pair
-`(a, b)` of the challenges `chs`, `a` given as the planes `apl[c]`. -/
-def fractionsX [Binomial4 p] (B : Nat) (ev : Expr F → ByteArray) (ls : List (Stark.Lookup F))
-    (chs : List EF) (apl : Array (EVec p)) : List (EVec p) :=
-  ls.zipIdx.map fun (l, c) ↦
-    l.tuples.foldl (fun s (t, m) ↦
+/-- The fractions of lookups on a block of `B` rows (`rowFractions`), lookup `c` given by its
+tuples `ts[c]` of expressions whose blocks are `ev`: its tuples `(t, m)` add
+`m / (a - combine b t)`, with its pair `(a, b)` of the challenges `chs`, `a` given as the planes
+`apl[c]`. -/
+def fractionsX [Binomial4 p] {E : Type} (B : Nat) (ev : E → ByteArray)
+    (ts : List (List (List E × E))) (chs : List EF) (apl : Array (EVec p)) :
+    List (EVec p) :=
+  ts.zipIdx.map fun (l, c) ↦
+    l.foldl (fun s (t, m) ↦
       let den := (XVal.ext (apl.getD c (EVec.zeros B))).sub B
         (combineX B (chs.getD (2 * c + 1) 0) (t.map ev))
       s.add ((invPlanes (den.planes B)).mulBase (ev m))) (EVec.zeros B)
@@ -712,26 +593,26 @@ def shiftRow (out : ByteArray) (o : Nat) (s : EF) : ByteArray :=
 def shiftAccumulator (out : ByteArray) (rows W : Nat) (s : EF) : ByteArray :=
   (List.range rows).foldl (fun out i ↦ shiftRow out (i * W) s) out
 
-/-- The rows of `nb` blocks of `B` rows from block `b0` of the permutation trace of the lookups
-`ls` in base coordinates, `W` words per row, with the accumulator from `0` at the first; and the
-sum of their fractions. `ev r0` evaluates base expressions on the block from row `r0`. -/
-def rangeRows [Binomial4 p] (ev : Nat → Expr F → ByteArray) (ls : List (Stark.Lookup F))
+/-- The rows of `nb` blocks of `B` rows from block `b0` of the permutation trace of lookups given
+by their tuples `ts`, in base coordinates, `W` words per row, with the accumulator from `0` at the
+first; and the sum of their fractions. `ev r0` are the expressions' blocks from row `r0`. -/
+def rangeRows [Binomial4 p] {E : Type} (ev : Nat → E → ByteArray) (ts : List (List (List E × E)))
     (chs : List EF) (B W b0 nb : Nat) : ByteArray × EF :=
-  let apl := (Array.range ls.length).map fun c ↦ (XVal.const (chs.getD (2 * c) 0)).planes B
+  let apl := (Array.range ts.length).map fun c ↦ (XVal.const (chs.getD (2 * c) 0)).planes B
   (List.range nb).foldl (fun (out, acc) j ↦
-      writeBlock out (j * B) (fractionsX B (ev ((b0 + j) * B)) ls chs apl).toArray acc B W)
+      writeBlock out (j * B) (fractionsX B (ev ((b0 + j) * B)) ts chs apl).toArray acc B W)
     (CompPoly.CPolynomial.NTTFast.Packed.Native.zeroWords (nb * B * W), 0)
 
 /-- The permutation trace's rows of `blocks` blocks of `B` rows, `W` words per row, as packed
 words, and its terminal: in parallel ranges of blocks, the rows with the accumulator from the
 range's start (`rangeRows`), then the ranges' accumulators shifted by the sums before them. -/
-def assembleRanges [Binomial4 p] (ev : Nat → Expr F → ByteArray) (ls : List (Stark.Lookup F))
-    (chs : List EF) (B W blocks : Nat) : ByteArray × EF :=
+def assembleRanges [Binomial4 p] {E : Type} (ev : Nat → E → ByteArray)
+    (ts : List (List (List E × E))) (chs : List EF) (B W blocks : Nat) : ByteArray × EF :=
   let tasks := if blocks < 16 then 1 else 16
   let size := blocks / tasks
   let count (k : Nat) := if k + 1 = tasks then blocks - k * size else size
   let ranges := (Array.range tasks).map fun k ↦ Task.spawn fun _ ↦
-    rangeRows ev ls chs B W (k * size) (count k)
+    rangeRows ev ts chs B W (k * size) (count k)
   let starts := ranges.foldl (fun (acc : Array EF × EF) t ↦ (acc.1.push acc.2, acc.2 + t.get.2))
     (#[], 0)
   let words := ((Array.range tasks).map fun k ↦ Task.spawn fun _ ↦
@@ -740,30 +621,60 @@ def assembleRanges [Binomial4 p] (ev : Nat → Expr F → ByteArray) (ls : List 
       (ByteArray.emptyWithCapacity (4 * blocks * B * W))
   (words, starts.2)
 
+/-- A lookup's tuples with every expression replaced by its index among all of them in order, from
+`k`, and the next index. -/
+def indexLookup {α : Type} : List (List α × α) → Nat → List (List Nat × Nat) × Nat
+  | [], k => ([], k)
+  | (t, _) :: l, k =>
+    let (r, k') := indexLookup l (k + t.length + 1)
+    ((List.range' k t.length, k + t.length) :: r, k')
+
+/-- Lookups' tuples with every expression replaced by its index among all of them in order, from
+`k` (`indexLookup`). -/
+def indexTuples {α : Type} : List (List (List α × α)) → Nat → List (List (List Nat × Nat))
+  | [], _ => []
+  | l :: ls, k => (indexLookup l k).1 :: indexTuples ls (indexLookup l k).2
+
+theorem blockSize_lt (x : Nat) : 4 * min x 256 < USize.size :=
+  Nat.lt_of_lt_of_le (by have := Nat.min_le_right x 256; omega) USize.le_size
+
+/-- Lookups' tuples' expressions in order: every tuple's elements, then its multiplicity. -/
+def flatTuples {α : Type} (ts : List (List (List α × α))) : List α :=
+  ts.flatMap fun l ↦ l.flatMap fun (t, m) ↦ t ++ [m]
+
 /-- The permutation trace of `A`'s lookups `ls` in base coordinates as packed words, and its
-terminal (`permutationOf`): the trace transposed in parallel pieces, every lookup's fractions
-computed block by block (`fractionsX`) with one batch inversion per tuple, in parallel ranges of
-blocks (`assembleRanges`). -/
+terminal (`permutationOf`): the lookups' expressions as one program (`Prog.compileOuts`) run on
+blocks of rows, every lookup's fractions computed block by block (`fractionsX`) with one batch
+inversion per tuple, in parallel ranges of blocks (`assembleRanges`). -/
 def permutationWords [Mont32BaseField p] [Binomial4 p] (A : Air F) (ls : List (Stark.Lookup F))
     (logN : Nat) (trace : Array F) (pis : List F) (chs : List EF) : ByteArray × EF :=
   let n := 2 ^ logN
   let w := A.width
   let pw := A.preprocessedWidth
   let parts := if n < 4096 then 1 else 16
-  let R := n / parts
-  let B := min R 256
+  let B := min (n / parts) 256
+  have hS : 4 * B < USize.size := blockSize_lt (n / parts)
   let blocks := n / B
   let enc := CompPoly.CPolynomial.NTTFast.Packed.Native.encodeFields
-  let cols := transposePieces ⟨w, n, enc trace⟩ parts R
-  let pcols := transposePieces ⟨pw, n, enc A.preprocessed⟩ parts R
+  let words := enc trace
+  let pwords := enc A.preprocessed
   let next := Array.ofFn (n := n) fun i ↦ (i.val + 1) % n
   let sel (f : Nat → Bool) := enc (Array.ofFn (n := n) fun i ↦ if f i.val then (1 : F) else 0)
   let first := sel (· == 0)
   let last := sel (· + 1 == n)
   let trans := sel (· + 1 < n)
-  let noRuns := Array.replicate blocks none
-  let ev (r0 : Nat) := evalWords cols pcols .empty w pw 0 n R B next noRuns pis first last trans r0
-  assembleRanges ev ls chs B ((ls.length + 1) * 4) blocks
+  let tups := ls.map Stark.Lookup.tuples
+  let prog := Prog.compileOuts (flatTuples tups)
+  let ev (r0 : Nat) : Nat → ByteArray :=
+    let tr := CompPoly.CPolynomial.NTTFast.Packed.Native.transposeRows
+    let L : Prog.Loads := ⟨words, w, pwords, pw, tr pwords pw r0 B, .empty, 0, .empty, r0, next,
+      #[], first, last, trans⟩
+    let v : Prog.View := ⟨tr words w r0 B, 0, B⟩
+    let regs := Prog.runBlock p prog.code v L pis.toArray #[] B hS (Array.replicate (4 + prog.regs)
+      ⟨CompPoly.CPolynomial.NTTFast.Packed.Native.zeroWords B, ByteArray.size_zeros _⟩)
+    let ws := Prog.outWords p prog.outs v regs B
+    fun k ↦ ws.getD k .empty
+  assembleRanges ev (indexTuples tups 0) chs B ((ls.length + 1) * 4) blocks
 
 /-- `permutationLdeOf` on packed words: the permutation trace's words (`permutationWords`)
 extended by CompPoly's batched coset LDE with plans from `plans`. -/

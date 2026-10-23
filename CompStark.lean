@@ -68,6 +68,11 @@ public import CompStark.Complete.LogUp
 public import CompStark.Complete.LogUpQuotient
 public import CompStark.Batch.Refines
 public import CompStark.Stark.Refines
+public import CompStark.Stark.Prog
+public import CompStark.Stark.ProgWords
+public import CompStark.Stark.ProgCorrect
+public import CompStark.Stark.ProgAlloc
+public import CompStark.Stark.ProgCompile
 public import CompStark.Stark.Fast
 public import CompStark.Stark.Fast.Transcript
 public import CompStark.Stark.Fast.Rel
@@ -78,6 +83,7 @@ public import CompStark.Stark.Fast.OpeningsSpec
 public import CompStark.Stark.Fast.BatchInv
 public import CompStark.Stark.Fast.Commit
 public import CompStark.Stark.Fast.WordsLemmas
+public import CompStark.Stark.Fast.ProgWords
 public import CompStark.Stark.Fast.Vectors
 public import CompStark.Stark.Fast.Openings
 public import CompStark.Stark.Fast.Quotient

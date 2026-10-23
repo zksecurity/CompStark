@@ -234,6 +234,53 @@ def keccak (logN reps : Nat) : IO UInt32 := do
   return 0
 
 
+open CompStark CompStark.Stark CompStark.Fri in
+/-- `quotient-phase AIR LOG_N REPS`: the fast prover's quotient phase on `2 ^ LOG_N` rows,
+blowup 2, for `keccak` (Plonky3's Keccak AIR), `wide` (`wide 64`), `widebus` (`wideBus 64`) or
+`lookup` (`mulAirLookups 8` with local lookups, sending on eight buses): per round the AIR's
+quotient values and, with lookups, the permutation trace's extension and the LogUp constraints'
+quotient values, from the trace's extension; then the medians of `REPS` rounds. -/
+def quotientPhase (air : String) (logN reps : Nat) : IO UInt32 := do
+  let n := 2 ^ logN
+  let (A, chunks) : Air KoalaBear.Fast.Field × Array ByteArray ← match air with
+    | "keccak" =>
+      let inputs := (Array.range (n / 24)).map fun k ↦ (Array.range 25).map fun i ↦
+        (splitMix (25 * k + i).toUInt64).2
+      pure (CompStark.Fixtures.Keccak.air,
+        CompStark.Fixtures.Keccak.trace _root_.KoalaBear.fieldSize inputs 16)
+    | "wide" => pure (wide 64, #[encodeFields (wideTrace 64 n)])
+    | "widebus" => pure (wideBus 64, #[encodeFields (wideTrace 64 n)])
+    | "lookup" =>
+      pure (mulAirLookups 8 true (List.replicate 8 "MulFib"), #[encodeFields (mulTrace n 8)])
+    | _ => IO.eprintln "AIR: keccak, wide, widebus or lookup"; return 1
+  let I : Batch.Instance KoalaBear.Fast.Field := ⟨A, logN⟩
+  let B := CompStark.KoalaBear.backendFor 1 [(logN, I.logQuotientChunks)]
+  let trace := B.traceValues chunks
+  let ext := B.ldeTrace logN 1 gen A.width chunks
+  let alpha : _root_.KoalaBear.Fast.Ext4 := ⟨5, 7, 11, 13⟩
+  let chs := (Lookup.challengeLayout [I.lookups] (⟨3, 1, 4, 1⟩ : _root_.KoalaBear.Fast.Ext4)
+    ⟨5, 9, 2, 6⟩).headD []
+  let labels := #["quotient", "permutation", "lookup quotient"]
+  let mut samples : Array (Array Nat) := labels.map fun _ ↦ #[]
+  for k in [0:reps] do
+    let alpha := alpha + Ext.ofBase (k : KoalaBear.Fast.Field)
+    let (t0, q) ← timeNs fun _ ↦ IO.lazyPure fun _ ↦
+      B.quotient A [] logN I.logQuotientChunks ext none alpha
+    let (t1, pm) ← timeNs fun _ ↦ IO.lazyPure fun _ ↦
+      if I.lookups.isEmpty then none else some (B.permutation 1 A I.lookups logN trace [] chs)
+    let (t2, lq) ← timeNs fun _ ↦ IO.lazyPure fun _ ↦ match pm with
+      | none => #[]
+      | some (perm, t) => B.lookupQuotient A (A.lookupConstraints logN) [] logN
+          I.logQuotientChunks ext none perm chs t alpha
+    IO.println s!"quotient {t0 / 1000000} ms permutation {t1 / 1000000} ms \
+      lookup quotient {t2 / 1000000} ms {((q.getD 5 0) + lq.getD 5 0).c0.val}"
+    samples := (samples.zip #[t0, t1, t2]).map fun (s, t) ↦ s.push t
+  for (l, s) in labels.zip samples do
+    let m := (s.qsort (· < ·))[s.size / 2]!
+    IO.println s!"lean {air} 2^{logN} {l} median {m / 1000000} ms"
+  return 0
+
+
 /-- The median time of three proofs by `B` of `A` on the traces `trace 0, trace 1, trace 2`,
 checked against the proof `rust?` on the first if given. -/
 def proveTimed (label : String)
@@ -404,6 +451,7 @@ def main (args : List String) : IO UInt32 := do
         (s!"{·.size} bytes")
     return 0
   | ["phases-batch"] => phasesBatch
+  | ["quotient-phase", air, logN, reps] => quotientPhase air logN.toNat! reps.toNat!
   | "prove" :: backend :: air :: rest =>
     -- `prove (spec|fast) (fib|wide) LOG_N LOG_BLOWUP LOG_FINAL MAX_LOG_ARITY QUERIES COMMIT_POW
     -- QUERY_POW [BATCH_POW OOD_POW] [JSON]`: the proof's median time, checked against Plonky3's
