@@ -30,8 +30,8 @@ lean_lib CompStark where
 lean_lib CompStarkPackedNative where
   roots := #[`CompStark.Poseidon2.Packed, `CompStark.Poseidon2.Packed24,
     `CompStark.Merkle.Packed, `CompStark.Stark.Words, `CompStark.Stark.ExtWords,
-    `CompStark.Stark.ProgWords, `CompStark.Stark.Fast, `CompStark.KoalaBear.Fast,
-    `CompStark.BabyBear.Fast]
+    `CompStark.Stark.ProgWords, `CompStark.Stark.ProgGroup, `CompStark.Stark.Fast,
+    `CompStark.KoalaBear.Fast, `CompStark.KoalaBear.Group, `CompStark.BabyBear.Fast]
   platformIndependent := true
   moreLeancArgs := #["-march=native", "-mstackrealign"]
 

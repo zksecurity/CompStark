@@ -70,6 +70,8 @@ public import CompStark.Batch.Refines
 public import CompStark.Stark.Refines
 public import CompStark.Stark.Prog
 public import CompStark.Stark.ProgWords
+public import CompStark.Stark.ProgGroup
+public import CompStark.Stark.ProgGen
 public import CompStark.Stark.ProgCorrect
 public import CompStark.Stark.ProgAlloc
 public import CompStark.Stark.ProgCompile
@@ -84,6 +86,7 @@ public import CompStark.Stark.Fast.BatchInv
 public import CompStark.Stark.Fast.Commit
 public import CompStark.Stark.Fast.WordsLemmas
 public import CompStark.Stark.Fast.ProgWords
+public import CompStark.Stark.Fast.ProgGroup
 public import CompStark.Stark.Fast.Vectors
 public import CompStark.Stark.Fast.Openings
 public import CompStark.Stark.Fast.Quotient
@@ -91,6 +94,7 @@ public import CompStark.Stark.Fast.LookupQuotient
 public import CompStark.Stark.Fast.Permutation
 public import CompStark.Stark.Fast.Refines
 public import CompStark.KoalaBear.Fast
+public import CompStark.KoalaBear.Group
 public import CompStark.BabyBear.Fast
 public import CompStark.Stark.Words
 public import CompStark.Stark.Quotient

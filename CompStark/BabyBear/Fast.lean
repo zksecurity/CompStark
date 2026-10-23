@@ -33,7 +33,8 @@ instance instPackedPoseidon2 : Poseidon2.PackedPoseidon2 _root_.BabyBear.fieldSi
 /-- The fast backend over BabyBear, with the extension plans and quotient tables of instances of
 the shapes `shapes` prepared: `(logN, logChunks)` for a `2 ^ logN`-row trace with `2 ^ logChunks`
 quotient chunks. -/
-def backendFor (logBlowup : Nat) (shapes : List (Nat × Nat)) : Backend F EF 24 :=
-  Stark.Fast.backendFor logBlowup shapes
+def backendFor (kernels : List (Stark.Prog.GroupKernel _root_.BabyBear.fieldSize))
+    (logBlowup : Nat) (shapes : List (Nat × Nat)) : Backend F EF 24 :=
+  Stark.Fast.backendFor kernels logBlowup shapes
 
 end CompStark.BabyBear

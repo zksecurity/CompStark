@@ -553,7 +553,8 @@ theorem flatMap_coeffs_getD (xs : List EF) (q e : Nat) (he : e < 4) :
 /-- **The fast LogUp quotient is the specification's** on related extensions of the trace, the
 preprocessed trace and the permutation trace, for extension constraints reading their columns, `k`
 permutation columns of four coordinates. -/
-theorem lookupQuotientWith_rel (A : Air F) (ext : List (Lookup.ExtExpr F)) (pis : List F)
+theorem lookupQuotientWith_rel (kernels : List (Prog.GroupKernel p)) (A : Air F) (ext : List
+    (Lookup.ExtExpr F)) (pis : List F)
     (d l : Nat) (chs : List EF) (terminal alpha : EF) (k : Nat) {tr : PMat} {s : Mat F}
     {prep : Option PMat} {ps : Option (Mat F)} {perm : PMat} {rs : Mat F}
     (h : RM tr s) (hs : MatOk s) (hh : 2 ^ (d + l) ≤ s.height) (hp : Option.Rel RM prep ps)
@@ -561,8 +562,8 @@ theorem lookupQuotientWith_rel (A : Air F) (ext : List (Lookup.ExtExpr F)) (pis 
     (hrh : rs.height = s.height) (hk : k * 4 ≤ rs.width)
     (hc : ∀ c ∈ ext, c.colsBelow s.width s.width ((ps.map (·.width)).getD 0)
       ((ps.map (·.width)).getD 0) k) :
-    lookupQuotientWith (quotientTables (p := p) d l) A ext pis tr prep perm chs terminal alpha =
-      lookupQuotientOfLde A ext pis d l s ps rs chs terminal alpha := by
+    lookupQuotientWith kernels (quotientTables (p := p) d l) A ext pis tr prep perm chs terminal
+      alpha = lookupQuotientOfLde A ext pis d l s ps rs chs terminal alpha := by
   obtain ⟨hw, -, hv⟩ := h
   obtain ⟨hrw, -, hrv⟩ := hr
   obtain ⟨hw0, -, hvs', hadd⟩ := hs
@@ -649,7 +650,7 @@ theorem lookupQuotientWith_rel (A : Air F) (ext : List (Lookup.ExtExpr F)) (pis 
     rw [Array.getElem_ofFn, ← getD_lt _ _ (d := 0) h1]
     exact lookupQuotientValues_getD ext pis d l tq pq rq pl chs terminal alpha r h2
   rw [hspec, hpw', hpwords, hv, hw, hrv, hrw, hWT,
-    quotientBlocks_eq d l _ SC WT _ Q ?hblk]
+    quotientBlocks_eq d l _ _ (groupRun_eq kernels _) SC WT _ Q ?hblk]
   case hblk =>
     intro r0 hdvd hr0
     obtain ⟨hB0, -, -⟩ := tables_B (p := p) d l

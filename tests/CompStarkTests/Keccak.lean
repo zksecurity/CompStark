@@ -9,6 +9,7 @@ import CompStark.Plonky3.Prover
 import CompStark.Stark.Fast
 import CompStark.Mont32.Json
 import CompStarkFixtures.Keccak
+import CompStarkFixtures.KeccakKernel
 import CompStarkFixtures.Poseidon2Example
 import CompPoly.Univariate.NTTFast.Packed.Instances
 
@@ -129,7 +130,9 @@ def plonky3Example : IO Unit :=
   match verify P A (setup P A logN) rust [] with
   | .ok _ => pure ()
   | .error e => throw (IO.userError s!"example proof rejected: {e}")
-  let B := Stark.Fast.backendFor (p := _root_.KoalaBear.fieldSize) P.logBlowup
+  unless CompStark.Fixtures.KeccakKernel.kernel.code == (Prog.compile A.constraints).code do
+    throw (IO.userError "the generated kernel's code is not the Keccak AIR's program")
+  let B := Stark.Fast.backendFor [CompStark.Fixtures.KeccakKernel.kernel] P.logBlowup
     [(logN, A.logQuotientChunks logN)]
   unless proveWith B P A logN chunks [] == rust do
     throw (IO.userError "the fast prover does not reproduce the example proof")
