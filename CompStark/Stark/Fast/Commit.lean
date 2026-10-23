@@ -706,7 +706,8 @@ theorem leafLayer_encode [PackedPoseidon2 p] (W H : Nat) (V : Array F) (hV : V.s
     have := Array.size_flatten (xss := cs.toArray)
     rw [hfl, List.map_toArray, List.sum_toArray, hV, ← h1] at this
     exact (Nat.eq_of_mul_eq_mul_right hW this).symm
-  rw [hc, CompStark.Merkle.Packed.leaves_encode W hW cs hmod hsz,
+  rw [CompStark.Merkle.Packed.leavesOf_eq, hc,
+    CompStark.Merkle.Packed.leaves_encode W hW cs hmod hsz,
     CompStark.Merkle.Packed.flatMap_chunkLeaves W cs hmod H, hsum, hfl]
   dsimp only
   generalize hL : List.map (fun r ↦ hashF ((⟨W, H, V⟩ : Merkle.Matrix F).row r)) (List.range H) = L

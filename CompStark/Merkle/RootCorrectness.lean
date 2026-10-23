@@ -272,6 +272,17 @@ theorem hashChunk_flat [Poseidon2Field (FastField p)] [PackedPoseidon2 p] (w : N
   rw [g r hr j hj, List.getD_eq_getElem _ _ hl]
   simp only [chunkLeaves, List.getElem_map, List.getElem_range]
 
+/-- `leavesOf` is `leaves` of the chunks it makes. -/
+theorem leavesOf_eq [Poseidon2Field (FastField p)] [PackedPoseidon2 p] (w n : Nat)
+    (chunk : Nat → ByteArray) :
+    leavesOf p w n chunk = leaves p w ((Array.range n).map chunk) := by
+  unfold leavesOf leaves
+  dsimp only
+  rw [CompPoly.Tasks.get_join, CompPoly.Tasks.map_get_spawnAll, CompPoly.Tasks.get_join,
+    Array.map_map, Array.map_map, Array.foldl_map, Array.foldl_map, Array.foldl_map,
+    Array.foldl_map]
+  rfl
+
 theorem leaves_encode [Poseidon2Field (FastField p)] [PackedPoseidon2 p] (w : Nat) (hw : 0 < w)
     (cs : List (Array F))
     (hc : ∀ c ∈ cs, c.size % w = 0) (hu : ∀ c ∈ cs, 32 * c.size < USize.size) :

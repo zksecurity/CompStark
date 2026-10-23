@@ -175,9 +175,8 @@ def leafLayer (p : ℕ) [Mont32Field p] [Poseidon2Field (FastField p)] [PackedPo
   let h := if w = 0 then 0 else m.size / (4 * w)
   let parts := if h < 1024 then 1 else 16
   let rows := h / parts
-  let chunks := (Array.range parts).map fun k ↦
+  let (first, h) := Merkle.Packed.leavesOf p w parts fun k ↦
     m.extract (4 * w * (k * rows)) (if k + 1 = parts then m.size else 4 * w * ((k + 1) * rows))
-  let (first, h) := Merkle.Packed.leaves p w chunks
   let padded := if h = 1 then 1 else h + h % 2
   (Merkle.Packed.padDigests first h padded, padded)
 

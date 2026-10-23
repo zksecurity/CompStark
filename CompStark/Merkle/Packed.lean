@@ -199,6 +199,17 @@ tasks, and the number of rows. -/
   let h := chunks.foldl (fun acc c ↦ acc + rowsOf c) 0
   (tasks.get.foldl (· ++ ·) (ByteArray.emptyWithCapacity (32 * (h + 1))), h)
 
+/-- `leaves` of the chunks `chunk 0, …, chunk (n - 1)`, each made by the task that hashes it, so
+that copying the chunks out of a larger buffer runs in parallel too. -/
+@[noinline, specialize] def leavesOf (p : ℕ) [Mont32Field p] [Poseidon2Field (FastField p)]
+    [PackedPoseidon2 p] (w n : Nat) (chunk : Nat → ByteArray) : ByteArray × Nat :=
+  let rowsOf (c : ByteArray) := if w = 0 then 0 else c.size / (4 * w)
+  let rs := (CompPoly.Tasks.join (CompPoly.Tasks.spawnAll n fun k ↦
+    let c := chunk k
+    (hashChunk p c w (rowsOf c), rowsOf c))).get
+  let h := rs.foldl (fun acc r ↦ acc + r.2) 0
+  (rs.foldl (fun acc r ↦ acc ++ r.1) (ByteArray.emptyWithCapacity (32 * (h + 1))), h)
+
 /-- The root above the first layer of `h` leaf digests. -/
 @[noinline, specialize] def rootOfLeaves (p : ℕ) [Mont32Field p] [Poseidon2Field (FastField p)]
     [PackedPoseidon2 p] (first : ByteArray)
