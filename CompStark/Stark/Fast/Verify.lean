@@ -94,9 +94,14 @@ def powersFrom (alpha : EF) : Nat → EF → List EF
 def powSum (alpha : EF) (ys : List EF) : EF × EF :=
   ys.foldl (fun (s, a) y ↦ (s + a * y, a * alpha)) (0, 1)
 
+/-- `d + ∑ xᵢ wᵢ` for `i < n`, from the last `i` down. -/
+def dotBaseGo (xs : Array F) (ws : Array EF) : Nat → EF → EF
+  | 0, d => d
+  | n + 1, d => dotBaseGo xs ws n (d + smul (xs.getD n 0) (ws.getD n 0))
+
 /-- `∑ xᵢ wᵢ` of base elements and extension weights, by multiplications by base elements. -/
-def dotBase (xs : List F) (ws : List EF) : EF :=
-  (xs.zip ws).foldl (fun d (x, w) ↦ d + smul x w) 0
+def dotBase (xs : Array F) (ws : Array EF) : EF :=
+  dotBaseGo xs ws (min xs.size ws.size) 0
 
 /-- A matrix of a round for `reduceQueryWith`: its domain, the powers of `α` up to its widest
 opened row, and its opening points with `powSum` of their values. -/
@@ -161,23 +166,14 @@ theorem powSum_foldl (alpha : EF) (ys : List EF) (s a : EF) :
     · rw [h2, toSpec_mul, List.length_cons, pow_succ]
       ring
 
-theorem dotBase_foldl (xs : List F) (ws : List EF) (d : EF) (h : xs.length ≤ ws.length) :
-    toSpec ((xs.zip ws).foldl (fun d (x, w) ↦ d + smul x w) d) = toSpec d +
-      ∑ i ∈ Finset.range xs.length,
-        algebraMap F (Spec EF) (xs.getD i 0) * toSpec (ws.getD i 0) := by
-  induction xs generalizing ws d with
-  | nil => simp only [List.zip_nil_left, List.foldl_nil, List.length_nil, Finset.range_zero,
-      Finset.sum_empty, add_zero]
-  | cons x xs ih =>
-    cases ws with
-    | nil => simp only [List.length_cons, List.length_nil] at h; omega
-    | cons w ws =>
-      simp only [List.length_cons] at h
-      rw [List.zip_cons_cons, List.foldl_cons, ih ws _ (by omega), List.length_cons,
-        Finset.sum_range_succ']
-      simp only [toSpec_add, toSpec_smul, Algebra.smul_def, List.getD_cons_succ,
-        List.getD_cons_zero]
-      ring
+theorem toSpec_dotBaseGo (xs : Array F) (ws : Array EF) (n : Nat) (d : EF) :
+    toSpec (dotBaseGo xs ws n d) = toSpec d +
+      ∑ i ∈ Finset.range n, algebraMap F (Spec EF) (xs.getD i 0) * toSpec (ws.getD i 0) := by
+  induction n generalizing d with
+  | zero => rw [dotBaseGo, Finset.range_zero, Finset.sum_empty, add_zero]
+  | succ n ih =>
+    rw [dotBaseGo, ih, Finset.sum_range_succ, toSpec_add, toSpec_smul, Algebra.smul_def]
+    ring
 
 theorem columns_foldl (alpha q : EF) (xs : List F) (ys : List EF) (a c : EF)
     (h : xs.length = ys.length) :
@@ -223,7 +219,7 @@ def reduceQueryWith (P : Params) (logMax index : Nat) (rows : List (List (Array 
       let (ap, acc) := (ro.lookup logH).getD (1, 0)
       let mut ap := ap
       let mut acc := acc
-      let D := dotBase row.toList pows.toList
+      let D := dotBase row pows
       for ((z, ys), (sum, step)) in pts do
         ensure (ys.length == row.size) "opened width"
         ensure (z - Ext.ofBase x != 0) "opening point is the query point"
@@ -266,19 +262,28 @@ theorem reduceQuery_eq (P : Params) (logMax index : Nat) (alpha : EF)
   have hrow : row.toList.length = ys.length := by rw [Array.length_toList, hlen]
   obtain ⟨e1, e2⟩ := columns_foldl alpha (z - Ext.ofBase x)⁻¹ row.toList ys a c hrow
   obtain ⟨s1, s2⟩ := powSum_foldl alpha ys 0 1
-  have hd := dotBase_foldl row.toList (powersFrom alpha
-    (pts.foldl (fun l x ↦ max l x.2.length) 0) 1) 0 (by
-      rw [length_powersFrom, hrow]; exact hL _ hpt)
+  have hd := toSpec_dotBaseGo row (powersFrom alpha
+    (pts.foldl (fun l x ↦ max l x.2.length) 0) 1).toArray (min row.size
+      (powersFrom alpha (pts.foldl (fun l x ↦ max l x.2.length) 0) 1).toArray.size) 0
+  have hmin : min row.size
+      (powersFrom alpha (pts.foldl (fun l x ↦ max l x.2.length) 0) 1).toArray.size = row.size := by
+    simp only [List.size_toArray, length_powersFrom]
+    exact Nat.min_eq_left (by rw [← hlen]; exact hL _ hpt)
   congr 2
   refine Prod.ext (toSpec_injective ?_) (toSpec_injective ?_)
   · rw [e1, toSpec_mul, powSum, s2, toSpec_one, one_mul, hrow]
-  · rw [e2, toSpec_add, toSpec_mul, toSpec_mul, toSpec_sub, powSum, s1, dotBase, hd]
+  · rw [e2, toSpec_add, toSpec_mul, toSpec_mul, toSpec_sub, powSum, s1, dotBase, hd, hmin]
     simp only [toSpec_zero, toSpec_one, zero_add, one_mul]
-    rw [hrow, ← Finset.sum_sub_distrib]
+    rw [hrow, ← hlen, ← Finset.sum_sub_distrib]
     refine congrArg _ (congrArg _ (Finset.sum_congr rfl fun i hi ↦ ?_))
     have hi' : i < pts.foldl (fun l x ↦ max l x.2.length) 0 :=
       lt_of_lt_of_le (Finset.mem_range.mp hi) (hL _ hpt)
-    rw [toSpec_getD_powersFrom alpha _ 1 i hi', toSpec_one, one_mul]
+    have e : (powersFrom alpha (pts.foldl (fun l x ↦ max l x.2.length) 0) 1).toArray.getD i 0 =
+        (powersFrom alpha (pts.foldl (fun l x ↦ max l x.2.length) 0) 1).getD i 0 := by
+      rw [Array.getD_eq_getD_getElem?, List.getElem?_toArray, List.getD_eq_getElem?_getD]
+    have e' : row.toList.getD i 0 = row.getD i 0 := by
+      rw [Array.getD_eq_getD_getElem?, List.getD_eq_getElem?_getD, Array.getElem?_toList]
+    rw [e, e', toSpec_getD_powersFrom alpha _ 1 i hi', toSpec_one, one_mul]
     ring
 
 end Reduce
