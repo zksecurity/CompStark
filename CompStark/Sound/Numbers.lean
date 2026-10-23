@@ -11,26 +11,30 @@ public import CompStark.Sound.Batching
 public import CompStark.Sound.LossyMca
 public import CompStark.BatchSoundnessError
 
-/-! # Bounds on the knowledge error's terms below the unique-decoding radius
+/-! # Bounds on the knowledge error's terms
 
-At FRI arity `2`, with the extractor's radius below the unique-decoding radius `(1 - rate) / 2`,
-each term of the knowledge error is an integer over `|𝕂|`, except FRI's queries and the curve
-bounds on batching and FRI's large folds:
+At any FRI arity, with FRI's radius at most the unique-decoding radius `(1 - rate) / 2`, each term
+of the knowledge error is an integer over `|𝕂|`, except FRI's queries and the curve and lossy
+bounds:
 
-* the candidate lists have at most one element (`listSize_le_one`), so the constraint-folding and
-  out-of-domain terms are at most `#constraints - 1` and `identityDegree + n`;
+* with the candidate lists at the extractor's radius of at most `ℓ` elements (`listSize_le_one`
+  below the unique-decoding radius, `listSize_le_johnson` up to the Johnson radius), the
+  constraint-folding and out-of-domain terms are at most `ℓ ℓₚ (#constraints - 1)` and
+  `ℓ ℓₚ ℓ identityDegree + n` (`foldingError_le_of_listSize`, `outOfDomainError_le_of_listSize`);
 * every code involved, the trace's and each folded FRI code, has the rate `1 / 2 ^ logBlowup`, so
-  a radius below `(1 - rate) / 2` is within its relative unique-decoding radius (`le_relUDR`), and
-  the powers MCA bound `mcaError_powers_le` gives `(numOpened - 1) N` for batching at a single
-  radius (`batchingError_le_mcaError`, and so at every larger one, `batchingError_anti`) and `|L'|`
-  for a fold onto the domain `L'`;
+  a radius at most `(1 - rate) / 2` is within its relative unique-decoding radius (`le_relUDR`),
+  and the powers MCA bound `mcaError_powers_le` gives `(numOpened - 1) N` for batching at a
+  single radius (`batchingError_le_mcaError`, and so at every larger one, `batchingError_anti`)
+  and `M |L'|` for a fold onto the domain `L'` batching `M + 1` words;
 * batching at `δ < δ'' = δ' - 2/N` is at most `(numOpened - 1) max(T₁, T₂)`
   (`batchingError_le_curve`);
-* FRI at a proximity loss `loss > 0` (`friErrorWith_le_lossy`): a fold onto a domain `L'` with
-  `δ ≤ (1 - rate) / 2 - 1 / |L'|` has lossy MCA error at most `max(T₁, T₂, δ_int / loss)`
-  (`lossyMcaError_line_le`, any `δ_int > δ`), independent of `|L'|`; the smaller domains, below a
-  threshold `2 ^ t`, take the lossless bound `|L'|` and sum to at most `2 ^ t`; the queries
-  contribute `(1 - δ + #folds · loss) ^ numQueries`.
+* FRI at a proximity loss `loss > 0` (`friErrorWith_le`): Plonky3's schedule as a plan of folds
+  (`FriGame.Rounds.plan`), each fold by `2 ^ k` onto a domain `L'` batching `M = 2 ^ k - 1` words
+  besides the first (one more if it injects an input) and costing `levelBound`:
+  `M min(B, |L'|) / |𝕂|` if `δ ≤ (1 - rate) / 2 - 1 / |L'|`, `B = max(T₁, T₂, δ_int / loss)` the
+  lossy bound (`lossyMcaError_le`, any `δ_int > δ`), independent of `|L'|`, and `M |L'| / |𝕂|`
+  otherwise (`levelError_le`, `foldError_schedule_le`); the queries contribute
+  `(1 - δ + #folds · loss) ^ numQueries`.
 
 `CompStark/Sound/Calculator.lean` casts them to the security calculator's rationals.
 -/
@@ -163,27 +167,30 @@ theorem foldingErrorLossy_le {N k : ℕ} {ω : Domain.SmoothCosetFftDomain N �
   rw [hrate, Fintype.card_fin, Nat.cast_one]
   exact hθ
 
-/-- Folding by arity `2` halves `r` times. -/
-theorem folds_one : ∀ r, folds 1 r = List.replicate r 1
-  | 0 => by rw [folds]; rfl
-  | r + 1 => by
-    rw [folds, List.replicate_succ]
-    congr 1
-    rw [show r + 1 - max 1 (min 1 (r + 1)) = r by omega]
-    exact folds_one r
+/-- A fold's error onto a domain of `2 ^ m` points at rate `1/c` over `M + 1` words, times `|𝕂|`:
+`M min(B, 2 ^ m)` if `δ ≤ (1 - 1/c) / 2 - 2 ^ (-m)`, with `B = max(T₁, T₂, δ_int / loss)` the
+lossy bound, and the powers MCA bound `M 2 ^ m` otherwise. -/
+noncomputable def levelBound (c : ℕ) (δ δ_int : ℝ≥0) (loss : ℝ) (M m : ℕ) : ℝ :=
+  M * if (δ : ℝ) ≤ (1 - 1 / c) / 2 - 1 / 2 ^ m then
+    min (LossyMca.lossyBound 1 c δ δ_int loss) (2 ^ m) else 2 ^ m
 
-/-- An arity-`2` fold's error onto a domain `D` of `2 ^ m` points at rate `1/c`, over `M + 1`
-words (the fold's two coefficient words, and an injected input): `M · max(T₁, T₂, δ_int / loss)`
-over `|𝕂|` if `D` has at least `2 ^ t` points (`lossyMcaError_le`), and the powers MCA bound
-`M · 2 ^ m` over `|𝕂|` otherwise. -/
-theorem levelError_le {m : ℕ} (D : Domain.SmoothCosetFftDomain m 𝕂) (M c t deg : ℕ) (hc : 0 < c)
-    (hdeg : c * deg = 2 ^ m) (δ δ_int loss : ℝ≥0) (hδ : (δ : ℝ) ≤ (1 - 1 / c) / 2 - 1 / 2 ^ t)
+theorem levelBound_nonneg (c : ℕ) (δ δ_int : ℝ≥0) {loss : ℝ} (h_loss : 0 < loss) (M m : ℕ) :
+    0 ≤ levelBound c δ δ_int loss M m := by
+  have hB : 0 ≤ LossyMca.lossyBound 1 c δ δ_int loss :=
+    le_trans (div_nonneg δ_int.coe_nonneg h_loss.le) (le_max_right _ _)
+  unfold levelBound
+  split_ifs <;> positivity
+
+/-- A fold's error onto a domain `D` of `2 ^ m` points at rate `1/c`, over `M + 1` words, for
+`δ ≤ (1 - 1/c) / 2`: at most `levelBound` over `|𝕂|`, by lossy correlated agreement
+(`lossyMcaError_le`) when `δ ≤ (1 - 1/c) / 2 - 2 ^ (-m)`, and by the powers MCA bound. -/
+theorem levelError_le {m : ℕ} (D : Domain.SmoothCosetFftDomain m 𝕂) (M c deg : ℕ) (hc : 0 < c)
+    (hdeg : c * deg = 2 ^ m) (δ δ_int : ℝ≥0) (loss : ℝ) (hδ : (δ : ℝ) ≤ (1 - 1 / c) / 2)
     (h_pos : 0 < δ) (h_lt : δ < δ_int) (h_loss : 0 < loss) :
     lossyMcaError (univariatePowersGenerator 𝕂 M) (ReedSolomon.code (D : Fin (2 ^ m) ↪ 𝕂) deg)
-        δ loss ≤
-      if t ≤ m then ENNReal.ofReal (M * LossyMca.lossyBound 1 c δ δ_int loss / Fintype.card 𝕂)
-      else ((M * 2 ^ m : ℕ) : ENNReal) / Fintype.card 𝕂 := by
+        δ loss ≤ ENNReal.ofReal (levelBound c δ δ_int loss M m / Fintype.card 𝕂) := by
   have hcR : (0 : ℝ) < c := by exact_mod_cast hc
+  have hK : (0 : ℝ) < Fintype.card 𝕂 := by exact_mod_cast Fintype.card_pos
   have hdegpos : 0 < deg := Nat.pos_of_ne_zero fun h ↦ by
     rw [h, mul_zero] at hdeg
     exact (Nat.two_pow_pos m).ne' hdeg.symm
@@ -191,133 +198,112 @@ theorem levelError_le {m : ℕ} (D : Domain.SmoothCosetFftDomain m 𝕂) (M c t 
     rw [Fintype.card_fin, ← hdeg, Nat.cast_mul, Nat.cast_one]
     have : (0 : ℝ) < deg := by exact_mod_cast hdegpos
     field_simp
-  split_ifs with ht
-  · rw [← lossyBound_congr hrate]
-    refine LossyMca.lossyMcaError_le _ _ _ δ δ_int loss ?_ h_pos h_lt h_loss
-    rw [hrate, Fintype.card_fin, Nat.cast_one]
-    have hpow : (2 : ℝ) ^ t ≤ ((2 ^ m : ℕ) : ℝ) := by
-      push_cast
-      exact pow_le_pow_right₀ (by norm_num) ht
-    have := one_div_le_one_div_of_le (by positivity) hpow
-    push_cast at this ⊢
-    linarith
-  · have : NeZero (2 ^ m) := ⟨(Nat.two_pow_pos m).ne'⟩
-    have : NeZero deg := ⟨hdegpos.ne'⟩
-    have hudr : (δ : ℝ) * (2 * c) ≤ c - 1 := by
-      have h2 : (0 : ℝ) < 1 / 2 ^ t := by positivity
-      have h3 : ((1 - 1 / c) / 2 : ℝ) * (2 * c) = c - 1 := by field_simp
-      nlinarith
-    refine (lossyMcaError_le_mcaError _ _ _ loss.coe_nonneg).trans ?_
-    exact mcaError_powers_le hdegpos (by rw [← hdeg]; exact Nat.le_mul_of_pos_left _ hc) M
-      (le_relUDR c (by rw [Fintype.card_fin, hdeg]) δ hudr)
+  have : NeZero (2 ^ m) := ⟨(Nat.two_pow_pos m).ne'⟩
+  have : NeZero deg := ⟨hdegpos.ne'⟩
+  have hudr : (δ : ℝ) * (2 * c) ≤ c - 1 := by
+    have h3 : ((1 - 1 / c) / 2 : ℝ) * (2 * c) = c - 1 := by field_simp
+    nlinarith
+  have hmca : lossyMcaError (univariatePowersGenerator 𝕂 M)
+      (ReedSolomon.code (D : Fin (2 ^ m) ↪ 𝕂) deg) δ loss ≤
+        ENNReal.ofReal (M * 2 ^ m / Fintype.card 𝕂) := by
+    refine (lossyMcaError_le_mcaError _ _ _ h_loss.le).trans ?_
+    refine (mcaError_powers_le hdegpos (by rw [← hdeg]; exact Nat.le_mul_of_pos_left _ hc) M
+      (le_relUDR c (by rw [Fintype.card_fin, hdeg]) δ hudr)).trans (le_of_eq ?_)
+    rw [ENNReal.ofReal_div_of_pos hK, ENNReal.ofReal_natCast, ← ENNReal.ofReal_natCast]
+    push_cast
+    rfl
+  unfold levelBound
+  split_ifs with hl
+  · have hlossy := LossyMca.lossyMcaError_le (F := 𝕂) (D : Fin (2 ^ m) ↪ 𝕂) deg M δ δ_int loss
+      (by rw [hrate, Fintype.card_fin, Nat.cast_one]; push_cast; exact hl) h_pos h_lt h_loss
+    rw [lossyBound_congr hrate] at hlossy
+    rw [mul_min_of_nonneg _ _ (Nat.cast_nonneg M), ← min_div_div_right hK.le, ENNReal.ofReal_min]
+    exact le_min hlossy hmca
+  · exact hmca
 
-/-- `ofReal (a x / K) + ofReal (b x / K) = ofReal ((a + b) x / K)`. -/
-theorem ofReal_add_mul_div (a b : ℕ) (x K : ℝ) (hx : 0 ≤ x) (hK : 0 < K) :
-    ENNReal.ofReal (a * x / K) + ENNReal.ofReal (b * x / K) =
-      ENNReal.ofReal ((a + b : ℕ) * x / K) := by
-  rw [← ENNReal.ofReal_add (by positivity) (by positivity)]
-  congr 1
-  push_cast
-  ring
+/-- `ofReal (x / K) + ofReal (y / K) = ofReal ((x + y) / K)` for `x, y ≥ 0`. -/
+theorem ofReal_div_add_ofReal_div {x y : ℝ} (K : ℝ) (hx : 0 ≤ x) (hy : 0 ≤ y) (hK : 0 < K) :
+    ENNReal.ofReal (x / K) + ENNReal.ofReal (y / K) = ENNReal.ofReal ((x + y) / K) := by
+  rw [← ENNReal.ofReal_add (by positivity) (by positivity), add_div]
 
-/-- One fold's error `e` and the rest's: a large fold adds `M` bounds `B`, a small one `2 ^ (n - 1)`
-to the small folds' `2 ^ min (n - 1) t`. -/
-theorem fold_add_le (n t len M L : ℕ) (hn : 1 ≤ n) (hM : M = 1 ∨ (M = 2 ∧ t ≤ n - 1))
-    (hL : n - t + (len + (M - 1)) = L) (B : ℝ) (K : ℕ) (hB : 0 ≤ B) (hK : 0 < K) (e rest : ENNReal)
-    (he : e ≤ if t ≤ n - 1 then ENNReal.ofReal (M * B / K)
-      else ((M * 2 ^ (n - 1) : ℕ) : ENNReal) / K)
-    (hrest : rest ≤ ENNReal.ofReal ((n - 1 - t + len : ℕ) * B / K) +
-      ((2 ^ min (n - 1) t : ℕ) : ENNReal) / K) :
-    e + rest ≤ ENNReal.ofReal ((L : ℕ) * B / K) + ((2 ^ min n t : ℕ) : ENNReal) / K := by
-  subst hL
-  have hK' : (0 : ℝ) < K := by exact_mod_cast hK
-  split_ifs at he with h
-  · have hcount : M + (n - 1 - t + len) = n - t + (len + (M - 1)) := by omega
-    calc e + rest
-        ≤ ENNReal.ofReal (M * B / K) + (ENNReal.ofReal ((n - 1 - t + len : ℕ) * B / K) +
-            ((2 ^ min (n - 1) t : ℕ) : ENNReal) / K) := add_le_add he hrest
-      _ = ENNReal.ofReal ((n - t + (len + (M - 1)) : ℕ) * B / K) +
-            ((2 ^ min (n - 1) t : ℕ) : ENNReal) / K := by
-          rw [← add_assoc, ofReal_add_mul_div _ _ _ _ hB hK', hcount]
-      _ ≤ _ := by
-          gcongr
-          omega
-  · have hM1 : M = 1 := by omega
-    subst hM1
-    have hsmall : 2 ^ min (n - 1) t + 2 ^ (n - 1) ≤ 2 ^ min n t := by
-      rw [min_eq_left (by omega), min_eq_left (by omega), ← two_mul, ← pow_succ']
-      exact Nat.pow_le_pow_right two_pos (by omega)
-    have hcount : n - 1 - t + len = n - t + (len + (1 - 1)) := by omega
-    calc e + rest
-        ≤ ((1 * 2 ^ (n - 1) : ℕ) : ENNReal) / K +
-            (ENNReal.ofReal ((n - 1 - t + len : ℕ) * B / K) +
-              ((2 ^ min (n - 1) t : ℕ) : ENNReal) / K) := add_le_add he hrest
-      _ = ENNReal.ofReal ((n - t + (len + (1 - 1)) : ℕ) * B / K) +
-            ((2 ^ min (n - 1) t + 2 ^ (n - 1) : ℕ) : ENNReal) / K := by
-          rw [hcount, one_mul, Nat.cast_add (2 ^ min (n - 1) t), ENNReal.add_div]
-          ring
-      _ ≤ _ := by
-          gcongr
+/-- The level bounds of a plan's folds at rate `1/c`, summed. -/
+noncomputable def planBound (c : ℕ) (δ δ_int : ℝ≥0) (loss : ℝ) (plan : List (ℕ × ℕ × Bool)) :
+    ℝ :=
+  (plan.map fun f ↦ levelBound c δ δ_int loss (FriGame.Rounds.foldWords f) f.2.1).sum
+
+theorem planBound_nonneg (c : ℕ) (δ δ_int : ℝ≥0) {loss : ℝ} (h_loss : 0 < loss) :
+    ∀ plan : List (ℕ × ℕ × Bool), 0 ≤ planBound c δ δ_int loss plan
+  | [] => le_rfl
+  | _ :: plan => by
+    rw [planBound, List.map_cons, List.sum_cons]
+    exact add_nonneg (levelBound_nonneg c δ δ_int h_loss _ _)
+      (planBound_nonneg c δ δ_int h_loss plan)
+
+/-- A fold by `2 ^ la` batches `2 ^ la - 1` words besides the first, and one more if it injects. -/
+theorem foldWords_false (la m : ℕ) : FriGame.Rounds.foldWords (la, m, false) = 2 ^ la - 1 := rfl
+
+theorem foldWords_true (la m : ℕ) : FriGame.Rounds.foldWords (la, m, true) = 2 ^ la :=
+  Nat.sub_add_cancel Nat.one_le_two_pow
 
 open FriGame in
-/-- The folds' errors of Plonky3's schedule at arity `2` and rate `1/c` (`c d = 2 ^ logFinal`), with
-inputs injected at heights of at least `2 ^ t` points: the at most `n - t` folds onto domains of
-at least `2 ^ t` points contribute `max(T₁, T₂, δ_int / loss) / |𝕂|` each, and each injected input
-one more; the smaller ones the powers MCA bound on their halving domains, `2 ^ t` together. -/
-theorem foldError_schedule_one_le (c t : ℕ) (hc : 0 < c) (d logFinal : ℕ)
-    (hd : c * d = 2 ^ logFinal) (δ δ_int loss : ℝ≥0)
-    (hδ : (δ : ℝ) ≤ (1 - 1 / c) / 2 - 1 / 2 ^ t) (h_pos : 0 < δ) (h_lt : δ < δ_int)
-    (h_loss : 0 < loss) (words : (m : ℕ) → Fin (2 ^ m) → 𝕂) :
+/-- The folds' errors of Plonky3's schedule at any arity and rate `1/c` (`c d = 2 ^ logFinal`), for
+`δ ≤ (1 - 1/c) / 2`: the plan's level bounds over `|𝕂|`. -/
+theorem foldError_schedule_le (c : ℕ) (hc : 0 < c) (a : ℕ) (ha : 0 < a) (d logFinal : ℕ)
+    (hd : c * d = 2 ^ logFinal) (δ δ_int : ℝ≥0) (loss : ℝ) (hδ : (δ : ℝ) ≤ (1 - 1 / c) / 2)
+    (h_pos : 0 < δ) (h_lt : δ < δ_int) (h_loss : 0 < loss) (words : (m : ℕ) → Fin (2 ^ m) → 𝕂) :
     ∀ (fuel n : ℕ) (ω : Domain.SmoothCosetFftDomain n 𝕂) (heights : List ℕ),
       logFinal ≤ n → n - logFinal ≤ fuel → Rounds.Fits logFinal n heights →
-      (∀ m ∈ heights, t ≤ m) →
-      (Rounds.schedule 1 logFinal words fuel n heights).foldError d δ loss ω ≤
-        ENNReal.ofReal ((n - t + heights.length : ℕ) * LossyMca.lossyBound 1 c δ δ_int loss /
-          Fintype.card 𝕂) + ((2 ^ min n t : ℕ) : ENNReal) / Fintype.card 𝕂
-  | 0, n, ω, heights, hn, hfuel, hfit, ht => by
+      (Rounds.schedule a logFinal words fuel n heights).foldError d δ loss ω ≤
+        ENNReal.ofReal (planBound c δ δ_int loss (Rounds.plan a logFinal fuel n heights) /
+          Fintype.card 𝕂)
+  | 0, n, ω, heights, hn, hfuel, hfit => by
     rw [Rounds.schedule, Rounds.foldError]
     exact bot_le
-  | fuel + 1, n, ω, heights, hn, hfuel, hfit, ht => by
+  | fuel + 1, n, ω, heights, hn, hfuel, hfit => by
     by_cases hfin : n ≤ logFinal
     · rw [Rounds.schedule, ite_eq_left hfin, Rounds.foldError]
       exact bot_le
-    have hB : 0 ≤ LossyMca.lossyBound 1 c δ δ_int loss :=
-      le_trans (by positivity) (le_max_right _ _)
-    have hla := Rounds.logArity_one (by omega) hfit
-    have hdeg (h : List ℕ) (hf : Rounds.Fits logFinal (n - 1) h) :
-        c * (Rounds.schedule 1 logFinal words fuel (n - 1) h).degree d = 2 ^ (n - 1) := by
-      rw [Rounds.degree_schedule Nat.one_pos words d fuel _ h (by omega) (by omega) hf,
-        mul_left_comm, hd, ← pow_add]
-      congr 1
-      omega
-    have hlevel (M : ℕ) (h : List ℕ) (hf : Rounds.Fits logFinal (n - 1) h) :=
-      levelError_le (ω.subdomain 1) M c t _ hc (hdeg h hf) δ δ_int loss hδ h_pos h_lt h_loss
-    have ih (h : List ℕ) (hf : Rounds.Fits logFinal (n - 1) h) (ht' : ∀ m ∈ h, t ≤ m) :=
-      foldError_schedule_one_le c t hc d logFinal hd δ δ_int loss hδ h_pos h_lt h_loss words
-        fuel (n - 1) (ω.subdomain 1) h (by omega) (by omega) hf ht'
-    have hK := Fintype.card_pos (α := 𝕂)
+    have hK : (0 : ℝ) < Fintype.card 𝕂 := by exact_mod_cast Fintype.card_pos
+    have h1 := Rounds.one_le_logArity ha (by omega) hfit
+    have h2 := Rounds.logArity_le a logFinal n heights
+    -- one fold onto `2 ^ (n - la)` points, and the rest
+    have hstep (la : ℕ) (hla1 : 1 ≤ la) (hla2 : la ≤ n - logFinal) (M : ℕ) (inj : Bool)
+        (hM : M = Rounds.foldWords (la, n - la, inj)) (h : List ℕ)
+        (hf : Rounds.Fits logFinal (n - la) h) :
+        lossyMcaError (univariatePowersGenerator 𝕂 M)
+            (ReedSolomon.code ((ω.subdomain la : Domain.SmoothCosetFftDomain (n - la) 𝕂) :
+              Fin (2 ^ (n - la)) ↪ 𝕂) ((Rounds.schedule a logFinal words fuel (n - la) h).degree d))
+            δ loss + (Rounds.schedule a logFinal words fuel (n - la) h).foldError d δ loss
+              (ω.subdomain la) ≤
+          ENNReal.ofReal (planBound c δ δ_int loss
+            ((la, n - la, inj) :: Rounds.plan a logFinal fuel (n - la) h) / Fintype.card 𝕂) := by
+      have hdeg : c * (Rounds.schedule a logFinal words fuel (n - la) h).degree d =
+          2 ^ (n - la) := by
+        rw [Rounds.degree_schedule ha words d fuel _ h (by omega) (by omega) hf, mul_left_comm,
+          hd, ← pow_add]
+        congr 1
+        omega
+      have hlevel := levelError_le (ω.subdomain la) M c _ hc hdeg δ δ_int loss hδ h_pos h_lt
+        h_loss
+      have ih := foldError_schedule_le c hc a ha d logFinal hd δ δ_int loss hδ h_pos h_lt h_loss
+        words fuel (n - la) (ω.subdomain la) h (by omega) (by omega) hf
+      refine (add_le_add hlevel ih).trans (le_of_eq ?_)
+      rw [ofReal_div_add_ofReal_div _ (levelBound_nonneg c δ δ_int h_loss _ _)
+        (planBound_nonneg c δ δ_int h_loss _) hK, hM]
+      simp only [planBound, List.map_cons, List.sum_cons]
     rw [Rounds.schedule, ite_eq_right hfin]
-    match heights, hfit, ht, hla with
-    | [], hfit, ht, hla =>
-      simp only [Rounds.foldError]
-      rw [hla]
-      exact fold_add_le n t 0 (2 ^ 1 - 1) _ (by omega) (Or.inl rfl) (by simp) _ _ hB hK _ _
-        (hlevel _ [] (Rounds.fits_nil _ _))
-        (ih [] (Rounds.fits_nil _ _) fun _ h ↦ absurd h List.not_mem_nil)
-    | m :: rest, hfit, ht, hla =>
-      have h3 := Rounds.logArity_le_cons 1 logFinal n m rest
-      by_cases hm : m = n - Rounds.logArity 1 logFinal n (m :: rest)
-      · simp only [ite_eq_left hm, Rounds.foldError]
-        rw [hla] at hm ⊢
-        have hfr := Rounds.fits_of_eq hfit hm
-        exact fold_add_le n t rest.length (2 ^ 1) _ (by omega)
-          (Or.inr ⟨rfl, hm ▸ ht m List.mem_cons_self⟩) (by simp) _ _ hB hK _ _ (hlevel _ rest hfr)
-          (ih rest hfr fun m' h ↦ ht m' (List.mem_cons_of_mem _ h))
-      · simp only [ite_eq_right hm, Rounds.foldError]
-        rw [hla] at hm ⊢
-        have hfr := Rounds.fits_cons_of_ne hfit (by omega) hm
-        exact fold_add_le n t (rest.length + 1) (2 ^ 1 - 1) _ (by omega) (Or.inl rfl) (by simp) _ _
-          hB hK _ _ (hlevel _ _ hfr) (ih _ hfr ht)
+    match heights, hfit, h1, h2 with
+    | [], hfit, h1, h2 =>
+      simp only [Rounds.foldError, Rounds.plan, ite_eq_right hfin]
+      exact hstep _ h1 h2 _ false (foldWords_false _ _).symm [] (Rounds.fits_nil _ _)
+    | m :: rest, hfit, h1, h2 =>
+      have h3 := Rounds.logArity_le_cons a logFinal n m rest
+      by_cases hm : m = n - Rounds.logArity a logFinal n (m :: rest)
+      · simp only [ite_eq_left hm, Rounds.foldError, Rounds.plan, ite_eq_right hfin]
+        exact hstep _ h1 h2 _ true (foldWords_true _ _).symm rest (Rounds.fits_of_eq hfit hm)
+      · simp only [ite_eq_right hm, Rounds.foldError, Rounds.plan, ite_eq_right hfin]
+        exact hstep _ h1 h2 _ false (foldWords_false _ _).symm _
+          (Rounds.fits_cons_of_ne hfit h3 hm)
 
 /-! ### The terms of a setup -/
 
@@ -338,71 +324,50 @@ theorem mul_le_of_le_udr (S : Setup EF lookups) (δ : ℝ≥0) (hδ : (δ : ℝ)
   push_cast
   nlinarith
 
-/-- Below the unique-decoding radius, the permutation trace's list has at most one element. -/
-theorem permListSize_le_one (S : Setup EF lookups) (δ : ℝ) (hδ : δ < (1 - S.rate) / 2) :
-    S.permListSize δ ≤ 1 := by
-  cases lookups with
-  | nil => exact le_rfl
-  | cons l ls => exact listSize_le_one S _ δ hδ
+/-- With the candidate lists at `δ` of at most `ℓ` elements and the permutation trace's of at most
+`ℓp`, the constraint-folding term is at most `ℓ ℓp (#constraints - 1)` over `|𝕂|`. -/
+theorem foldingError_le_of_listSize (S : Setup EF lookups) (δ : ℝ≥0) (ℓ ℓp : ℕ)
+    (hℓ : S.listSize (Fin S.air.width) δ ≤ ℓ) (hℓp : S.permListSize δ ≤ ℓp) :
+    foldingError S δ ≤ (ℓ * ℓp * (S.numConstraints - 1) : ℕ) / (Fintype.card 𝕂 : ENNReal) :=
+  ENNReal.div_le_div_right (Nat.cast_le.mpr (Nat.mul_le_mul_right _ (Nat.mul_le_mul hℓ hℓp))) _
 
-/-- Below the unique-decoding radius, the lists have at most one element. -/
-theorem foldingError_le_of_le (S : Setup EF lookups) (δ : ℝ≥0)
-    (hδ : (δ : ℝ) < (1 - S.rate) / 2) :
-    foldingError S δ ≤ (S.numConstraints - 1 : ℕ) / (Fintype.card 𝕂 : ENNReal) := by
-  refine ENNReal.div_le_div_right (Nat.cast_le.mpr ?_) _
-  calc S.listSize (Fin S.air.width) δ * S.permListSize δ * (S.numConstraints - 1)
-      ≤ 1 * 1 * (S.numConstraints - 1) :=
-        Nat.mul_le_mul_right _ (Nat.mul_le_mul (listSize_le_one S _ δ hδ)
-          (permListSize_le_one S δ hδ))
-    _ = _ := by rw [one_mul, one_mul]
-
-/-- The out-of-domain term below the unique-decoding radius. -/
-theorem outOfDomainError_le_of_le (S : Setup EF lookups) (δ : ℝ≥0)
-    (hδ : (δ : ℝ) < (1 - S.rate) / 2) :
+/-- With the candidate lists at `δ` of at most `ℓ` elements and the permutation trace's of at most
+`ℓp`, the out-of-domain term is at most `ℓ ℓp ℓ identityDegree + n` over `|𝕂|`. -/
+theorem outOfDomainError_le_of_listSize (S : Setup EF lookups) (δ : ℝ≥0) (ℓ ℓp : ℕ)
+    (hℓ : S.listSize (Fin S.air.width) δ ≤ ℓ) (hℓp : S.permListSize δ ≤ ℓp)
+    (hℓq : S.listSize (Fin S.chunks × Fin (Challenge.d EF)) δ ≤ ℓ) :
     outOfDomainError S δ ≤
-      (S.identityDegree + S.n : ℕ) / (Fintype.card 𝕂 : ENNReal) := by
-  refine ENNReal.div_le_div_right (Nat.cast_le.mpr ?_) _
-  have h := Nat.mul_le_mul_right S.identityDegree (Nat.mul_le_mul (Nat.mul_le_mul
-    (listSize_le_one S (Fin S.air.width) δ hδ) (permListSize_le_one S δ hδ))
-    (listSize_le_one S (Fin S.chunks × Fin (Challenge.d EF)) δ hδ))
-  omega
+      (ℓ * ℓp * ℓ * S.identityDegree + S.n : ℕ) / (Fintype.card 𝕂 : ENNReal) :=
+  ENNReal.div_le_div_right (Nat.cast_le.mpr (Nat.add_le_add_right
+    (Nat.mul_le_mul_right _ (Nat.mul_le_mul (Nat.mul_le_mul hℓ hℓp) hℓq)) _)) _
 
-/-- FRI's term at arity `2` from lossy correlated agreement, at a proximity loss `loss > 0` and a
-radius `δ ≤ (1 - rate) / 2 - 1 / 2 ^ t`, with inputs injected at heights of at least `2 ^ t`
-points: the at most `log₂ N - t` folds onto domains of at least `2 ^ t` points contribute
-`max(T₁, T₂, δ_int / loss) / |𝕂|` each (`lossyMcaError_line_le`, any `δ_int > δ`), and each
-injected input one more; the smaller ones `2 ^ t / |𝕂|` together, and the queries
+/-- FRI's term at any arity, for `δ ≤ (1 - rate) / 2` and a proximity loss `loss > 0`: the level
+bounds of its folds' plan over `|𝕂|` (`foldError_schedule_le`, any `δ_int > δ`), and the queries
 `(1 - δ + #folds · loss) ^ numQueries`. -/
-theorem friErrorWith_le_lossy (S : Setup EF lookups) (harity : S.params.maxLogArity = 1) (t : ℕ)
-    (heights : List ℕ)
+theorem friErrorWith_le (S : Setup EF lookups) (heights : List ℕ)
     (hfit : FriGame.Rounds.Fits (S.params.logFinalPolyLen + S.params.logBlowup)
-      (S.logN + S.params.logBlowup) heights) (ht : ∀ m ∈ heights, t ≤ m)
-    (δ δ_int loss : ℝ≥0) (hδ : (δ : ℝ) ≤ (1 - S.rate) / 2 - 1 / 2 ^ t) (h_pos : 0 < δ)
-    (h_lt : δ < δ_int) (h_loss : 0 < loss) :
+      (S.logN + S.params.logBlowup) heights)
+    (δ δ_int loss : ℝ≥0) (hδ : (δ : ℝ) ≤ (1 - S.rate) / 2) (h_pos : 0 < δ) (h_lt : δ < δ_int)
+    (h_loss : 0 < loss) :
     friErrorWith S heights δ ≤
-      ENNReal.ofReal ((S.logN + S.params.logBlowup - t + heights.length : ℕ) *
-          LossyMca.lossyBound 1 (2 ^ S.params.logBlowup) δ δ_int loss) /
-          (Fintype.card 𝕂 : ENNReal) +
-        (2 ^ t : ℕ) / (Fintype.card 𝕂 : ENNReal) +
-        ((Real.toNNReal (1 - δ + (S.logN - S.params.logFinalPolyLen : ℕ) * loss) ^
-          S.params.numQueries : ℝ≥0) : ENNReal) := by
+      ENNReal.ofReal (planBound (2 ^ S.params.logBlowup) δ δ_int loss
+          (FriGame.Rounds.plan S.params.maxLogArity (S.params.logFinalPolyLen + S.params.logBlowup)
+            (S.logN + S.params.logBlowup) (S.logN + S.params.logBlowup) heights) /
+          Fintype.card 𝕂) +
+        ((Real.toNNReal (1 - δ + (FriGame.Rounds.plan S.params.maxLogArity
+          (S.params.logFinalPolyLen + S.params.logBlowup) (S.logN + S.params.logBlowup)
+          (S.logN + S.params.logBlowup) heights).length * loss) ^
+            S.params.numQueries : ℝ≥0) : ENNReal) := by
   have hf := S.valid.finalPolyFits
-  have hK : (0 : ℝ) < Fintype.card 𝕂 := by exact_mod_cast Fintype.card_pos
   refine (iInf_le _ loss).trans (add_le_add ?_ (le_of_eq ?_))
-  · rw [Setup.friRounds, harity]
-    refine (foldError_schedule_one_le (2 ^ S.params.logBlowup) t (Nat.two_pow_pos _) _ _
+  · rw [Setup.friRounds]
+    refine foldError_schedule_le (2 ^ S.params.logBlowup) (Nat.two_pow_pos _) _ S.valid.folds _ _
       (by rw [← pow_add, add_comm]) δ δ_int loss ?_ h_pos h_lt h_loss _ _ _ S.domain heights
-      (by omega) (Nat.sub_le _ _) hfit ht).trans ?_
-    · rw [rate_eq] at hδ
-      push_cast
-      exact hδ
-    · rw [ENNReal.ofReal_div_of_pos hK, ENNReal.ofReal_natCast]
-      gcongr
-      exact min_le_right _ _
-  · rw [Setup.friRounds, harity, FriGame.Rounds.numFolds_schedule_one _ _ _ _ (by omega)
-      (Nat.sub_le _ _) hfit, ENNReal.coe_pow,
-      show S.logN + S.params.logBlowup - (S.params.logFinalPolyLen + S.params.logBlowup) =
-        S.logN - S.params.logFinalPolyLen by omega]
+      (by omega) (Nat.sub_le _ _) hfit
+    rw [rate_eq] at hδ
+    push_cast
+    exact hδ
+  · rw [Setup.friRounds, FriGame.Rounds.numFolds_schedule, ENNReal.coe_pow]
     rfl
 
 /-! ### The numbers -/

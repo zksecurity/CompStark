@@ -133,6 +133,44 @@ theorem colsBelow_mono {w wNext pw pwNext wNext' pw' pwNext' : Nat} (h0 : wNext 
     simp only [colsBelow, Bool.and_eq_true] at h ⊢
     exact ⟨colsBelow_mono h0 h1 h2 a h.1, colsBelow_mono h0 h1 h2 b h.2⟩
 
+/-- A degree profile `(a, b)` of an expression: its `degBound` on a trace domain of size `n` is at
+most `a (n - 1) + b` (`degBound_le_profile`). Columns and the first- and last-row selectors count
+`(1, 0)`, a periodic column `(1, 1)`, the transition selector `(0, 1)`. -/
+def degProfile : Expr F → ℕ × ℕ
+  | .cur _ | .next _ | .prepCur _ | .prepNext _ | .isFirstRow | .isLastRow => (1, 0)
+  | .periodic _ => (1, 1)
+  | .isTransition => (0, 1)
+  | .pub _ | .const _ => (0, 0)
+  | .add a b | .sub a b => (max a.degProfile.1 b.degProfile.1, max a.degProfile.2 b.degProfile.2)
+  | .mul a b => (a.degProfile.1 + b.degProfile.1, a.degProfile.2 + b.degProfile.2)
+
+/-- An expression's `degBound` is at most `a (n - 1) + b` for its profile `(a, b)`, with periodic
+columns of degree at most `n`. -/
+theorem degBound_le_profile (n : ℕ) (periodicDegree : ℕ → ℕ)
+    (hp : ∀ i, periodicDegree i ≤ n) :
+    ∀ e : Expr F, e.degBound n periodicDegree ≤ e.degProfile.1 * (n - 1) + e.degProfile.2
+  | .cur _ | .next _ | .prepCur _ | .prepNext _ | .isFirstRow | .isLastRow => by
+    simp only [degBound, degProfile, Nat.one_mul, Nat.add_zero, Nat.le_refl]
+  | .periodic i => by
+    simp only [degBound, degProfile, Nat.one_mul]
+    have := hp i
+    omega
+  | .isTransition | .pub _ | .const _ => by simp only [degBound, degProfile]; omega
+  | .add a b | .sub a b => by
+    have ha := degBound_le_profile n periodicDegree hp a
+    have hb := degBound_le_profile n periodicDegree hp b
+    simp only [degBound, degProfile]
+    exact Nat.max_le.mpr ⟨Nat.le_trans ha (Nat.add_le_add
+        (Nat.mul_le_mul_right _ (Nat.le_max_left _ _)) (Nat.le_max_left _ _)),
+      Nat.le_trans hb (Nat.add_le_add
+        (Nat.mul_le_mul_right _ (Nat.le_max_right _ _)) (Nat.le_max_right _ _))⟩
+  | .mul a b => by
+    have ha := degBound_le_profile n periodicDegree hp a
+    have hb := degBound_le_profile n periodicDegree hp b
+    simp only [degBound, degProfile]
+    rw [Nat.add_mul]
+    omega
+
 end Expr
 
 /-- A tuple's signed multiplicity with a bound on its magnitude on every row (Plonky3's `Count`):
@@ -250,6 +288,19 @@ Irreducible, so that elaboration never evaluates it; the kernel does. -/
 @[irreducible] def logQuotientChunks (A : Air F) (logN : Nat) : Nat :=
   let d := max (A.constraintDegree logN) 2 - 1
   Nat.log2 (2 * d - 1)
+
+/-- A periodic column's degree is at most the trace's length. -/
+theorem periodicDegree_le (air : Air F) (n i : Nat) : air.periodicDegree n i ≤ n :=
+  Nat.sub_le _ _
+
+/-- Every constraint's degree profile `(a, b)` fits `2 ^ logChunks` quotient chunks for every trace
+length: `a + b ≤ 2 ^ logChunks + 1` and `b ≤ 2 ^ logChunks`. -/
+def ProfileFits (air : Air F) (logChunks : Nat) : Prop :=
+  ∀ c ∈ air.constraints, c.degProfile.1 + c.degProfile.2 ≤ 2 ^ logChunks + 1 ∧
+    c.degProfile.2 ≤ 2 ^ logChunks
+
+instance (air : Air F) (logChunks : Nat) : Decidable (air.ProfileFits logChunks) := by
+  unfold ProfileFits; infer_instance
 
 end Air
 

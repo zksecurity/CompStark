@@ -17,7 +17,7 @@ For heights strictly decreasing, all below `n` and above `logFinal` (`Fits`), th
 final height exactly (`degree_schedule`: the code before them has degree bound
 `2 ^ (n - logFinal) d`), and every input is injected: inputs agreeing in the rounds means each
 input agrees with its code, on a domain the folds reach from the first (`agrees_of_inputsAgree`).
-At arity `2` the rounds are `n - logFinal` folds (`numFolds_schedule_one`). The rounds' errors
+`plan` lists the folds as data, one per fold (`numFolds_schedule`). The rounds' errors
 depend on the heights only, not on the words (`foldError_schedule_congr`).
 -/
 
@@ -132,38 +132,41 @@ theorem degree_schedule {maxLogArity logFinal : ℕ} (ha : 0 < maxLogArity)
         exact hpow _ _ h1 h2 (degree_schedule ha words d fuel _ _ (by omega) (by omega)
           (fits_cons_of_ne hfit h3 hm))
 
-/-- At arity `2`, the fold from a height above the final one is by one bit. -/
-theorem logArity_one {logFinal n : ℕ} (hn : logFinal < n) {heights : List ℕ}
-    (hfit : Fits logFinal n heights) : logArity 1 logFinal n heights = 1 :=
-  le_antisymm (min_le_right _ _) (one_le_logArity Nat.one_pos hn hfit)
+/-- The folds of `schedule` as data, in order: each fold's log arity, the log size of the domain
+it folds onto, and whether it injects an input there. -/
+def plan (maxLogArity logFinal : ℕ) : (fuel n : ℕ) → List ℕ → List (ℕ × ℕ × Bool)
+  | 0, _, _ => []
+  | fuel + 1, n, heights =>
+    if n ≤ logFinal then [] else
+      let la := logArity maxLogArity logFinal n heights
+      match heights with
+      | [] => (la, n - la, false) :: plan maxLogArity logFinal fuel (n - la) []
+      | m :: rest =>
+        if m = n - la then (la, n - la, true) :: plan maxLogArity logFinal fuel (n - la) rest
+        else (la, n - la, false) :: plan maxLogArity logFinal fuel (n - la) (m :: rest)
 
-/-- At arity `2`, the rounds are `n - logFinal` folds. -/
-theorem numFolds_schedule_one {logFinal : ℕ} (words : (m : ℕ) → Fin (2 ^ m) → K) :
-    ∀ (fuel n : ℕ) (heights : List ℕ), logFinal ≤ n → n - logFinal ≤ fuel →
-      Fits logFinal n heights →
-      (schedule 1 logFinal words fuel n heights).numFolds = n - logFinal
-  | 0, n, _, hn, hfuel, _ => by rw [schedule, numFolds]; omega
-  | fuel + 1, n, heights, hn, hfuel, hfit => by
+/-- The words a fold of the plan batches by powers of its challenge besides the first: the other
+`2 ^ la - 1` coefficient words of a fold by `2 ^ la`, and the input it injects, if any. -/
+def foldWords (f : ℕ × ℕ × Bool) : ℕ := 2 ^ f.1 - 1 + if f.2.2 then 1 else 0
+
+/-- The rounds have one fold per entry of the plan. -/
+theorem numFolds_schedule (maxLogArity logFinal : ℕ) (words : (m : ℕ) → Fin (2 ^ m) → K) :
+    ∀ (fuel n : ℕ) (heights : List ℕ),
+      (schedule maxLogArity logFinal words fuel n heights).numFolds =
+        (plan maxLogArity logFinal fuel n heights).length
+  | 0, _, _ => rfl
+  | fuel + 1, n, heights => by
     by_cases hfin : n ≤ logFinal
-    · rw [schedule, ite_eq_left hfin, numFolds]
-      omega
-    have h1 := logArity_one (by omega) hfit
-    rw [schedule, ite_eq_right hfin]
-    match heights, hfit, h1 with
-    | [], _, h1 =>
-      simp only [numFolds]
-      rw [numFolds_schedule_one words fuel _ [] (by omega) (by omega) (fits_nil _ _)]
-      omega
-    | m :: rest, hfit, h1 =>
-      have h3 := logArity_le_cons 1 logFinal n m rest
-      by_cases hm : m = n - logArity 1 logFinal n (m :: rest)
-      · simp only [ite_eq_left hm, numFolds]
-        rw [numFolds_schedule_one words fuel _ rest (by omega) (by omega) (fits_of_eq hfit hm)]
-        omega
-      · simp only [ite_eq_right hm, numFolds]
-        rw [numFolds_schedule_one words fuel _ _ (by omega) (by omega)
-          (fits_cons_of_ne hfit h3 hm)]
-        omega
+    · simp only [schedule, plan, ite_eq_left hfin, numFolds, List.length_nil]
+    have ih := numFolds_schedule maxLogArity logFinal words fuel
+    match heights with
+    | [] => simp only [schedule, plan, ite_eq_right hfin, numFolds, List.length_cons, ih]
+    | m :: rest =>
+      by_cases hm : m = n - logArity maxLogArity logFinal n (m :: rest)
+      · simp only [schedule, plan, ite_eq_right hfin, ite_eq_left hm, numFolds,
+          List.length_cons, ih]
+      · simp only [schedule, plan, ite_eq_right hfin, ite_eq_right hm, numFolds,
+          List.length_cons, ih]
 
 /-- Without inputs, the rounds do not read the words. -/
 theorem schedule_nil (maxLogArity logFinal : ℕ) (words words' : (m : ℕ) → Fin (2 ^ m) → K) :
