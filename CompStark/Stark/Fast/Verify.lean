@@ -288,6 +288,48 @@ theorem reduceQuery_eq (P : Params) (logMax index : Nat) (alpha : EF)
 
 end Reduce
 
+/-! ### Equal rows of queries at one leaf -/
+
+/-- Two queries at leaves `i` and `i'` open equal rows of every matrix where they are at one
+leaf, the matrices' index shifts `shifts` given. -/
+def rowsAgree {α : Type} [BEq α] (i i' : Nat) : List Nat → List α → List α → Bool
+  | s :: ss, x :: r, x' :: r' => (i >>> s != i' >>> s || x == x') && rowsAgree i i' ss r r'
+  | _, _, _ => true
+
+theorem rowsAgree_eq {α : Type} [BEq α] (sh : Nat → Nat) (i i' : Nat) :
+    ∀ (dims : List (Nat × Nat)) (r r' : List α), rowsAgree i i' (dims.map fun d ↦ sh d.1) r r' =
+      (dims.zip (r.zip r')).all fun ((h, _), (x, x')) ↦ i >>> sh h != i' >>> sh h || x == x'
+  | [], _, _ => rfl
+  | _ :: _, [], _ => rfl
+  | _ :: _, _ :: _, [] => rfl
+  | d :: ds, x :: r, x' :: r' => by
+    rw [List.map_cons, rowsAgree, rowsAgree_eq sh i i' ds r r', List.zip_cons_cons,
+      List.zip_cons_cons, List.all_cons]
+
+/-- `Merkle.multiShapeOk`, every matrix's index shift computed once and the queries' rows
+compared without building lists (`rowsAgree`). -/
+def shapeOk {α : Type} [Zero α] [DecidableEq α] {d : Nat} (dims : List (Nat × Nat))
+    (maxH levels : Nat) (indices : List Nat) (rows : List (List (List α)))
+    (sibs : List (Vector α d)) : Bool :=
+  let lm := Merkle.log2Ceil maxH
+  let shifts := dims.map fun d ↦ lm - Merkle.log2Ceil d.1
+  let qs := indices.zip rows
+  (dims.all fun (h, _) ↦ h = (maxH - 1) >>> (lm - Merkle.log2Ceil h) + 1) && 0 < maxH &&
+    rows.length == indices.length &&
+    (rows.all fun r ↦
+      r.length == dims.length && (r.zip dims).all fun (x, (_, w)) ↦ x.length == w) &&
+    (indices.all (· < maxH)) &&
+    (qs.all fun (i, r) ↦ qs.all fun (i', r') ↦ rowsAgree i i' shifts r r') &&
+    sibs.length == Merkle.siblingCount levels ((Merkle.frontier indices).map (·.1))
+
+theorem shapeOk_eq {α : Type} [Zero α] [DecidableEq α] {d : Nat} (dims : List (Nat × Nat))
+    (maxH levels : Nat) (indices : List Nat) (rows : List (List (List α)))
+    (sibs : List (Vector α d)) :
+    shapeOk dims maxH levels indices rows sibs =
+      Merkle.multiShapeOk dims maxH levels indices rows sibs := by
+  unfold shapeOk Merkle.multiShapeOk
+  simp only [rowsAgree_eq (fun h ↦ Merkle.log2Ceil maxH - Merkle.log2Ceil h)]
+
 variable {p : ℕ} [Mont32Field p] [Poseidon2Field (FastField p)] [PackedPoseidon2 p]
 
 local notation "F" => FastField p
@@ -354,7 +396,7 @@ def verifyMulti (cap : List (Digest F)) (capHeight : Nat) (dims : List (Nat × N
   | (maxH, tallest) :: rest =>
     let padded := maxH.nextPowerOfTwo
     let (levels, h) := Merkle.capLevels maxH capHeight
-    if Merkle.multiShapeOk dims maxH levels indices rows sibs && cap.length == 2 ^ h &&
+    if shapeOk dims maxH levels indices rows sibs && cap.length == 2 ^ h &&
         rest.all (fun g ↦ 2 ^ h ≤ g.1.nextPowerOfTwo) then
       let fr := Merkle.frontier indices
       let ds := hashRows (fr.map fun (_, q) ↦ tallest.flatMap fun k ↦ (rows.getD q []).getD k [])
@@ -390,6 +432,7 @@ theorem verifyMultiM_eq (cap : List (Digest F)) (capHeight : Nat) (dims : List (
     dsimp only
     cases Merkle.capLevels maxH capHeight
     dsimp only
+    rw [shapeOk_eq]
     split_ifs
     · rw [mapM_id, hashRows_eq, List.map_map, zip_map_self, List.map_map]
       rfl
