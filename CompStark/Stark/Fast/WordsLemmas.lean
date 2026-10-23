@@ -55,6 +55,34 @@ theorem rd_encode (a : Array F) (i : USize) (k : Nat) (h : Fits (encode a) i 15)
   rw [rd, CompPoly.CPolynomial.NTTFast.Packed.Native.readUOffset_encode,
     USize.toNat_ofNat_of_lt' (by have := USize.le_size; omega)]
 
+theorem rd64_encode (a : Array F) (i : USize) (k : Nat) (h : Fits (encode a) i 63) (hk : k ≤ 63) :
+    rd64 (encode a) i k h hk = (a.getD (i.toNat + k) 0).val := by
+  rw [rd64, CompPoly.CPolynomial.NTTFast.Packed.Native.readUOffset_encode,
+    USize.toNat_ofNat_of_lt' (by have := USize.le_size; omega)]
+
+/-- The fused sum of four products of words is the field's. -/
+theorem mulAdd4_val (a b c d e f g k : F) :
+    mulAdd4 p a.val b.val c.val d.val e.val f.val g.val k.val =
+      (a * b + c * d + e * f + g * k).val := by
+  have e1 : mulAdd4 p a.val b.val c.val d.val e.val f.val g.val k.val =
+      (Montgomery.Native32.mulAdd4 a b c d e f g k).val := by
+    unfold mulAdd4 Montgomery.Native32.mulAdd4 reduceWide mulWide
+    dsimp only
+    by_cases hx : a.val.toUInt64 * b.val.toUInt64 + c.val.toUInt64 * d.val.toUInt64 +
+        e.val.toUInt64 * f.val.toUInt64 + g.val.toUInt64 * k.val.toUInt64 <
+          ‹Mont32Field p›.modulus64 <<< 32
+    · rw [ite_eq_left hx, dite_eq_left hx]
+      rfl
+    · rw [ite_eq_right hx, dite_eq_right hx]
+      rfl
+  have e2 : Montgomery.Native32.mulAdd4 a b c d e f g k = a * b + c * d + e * f + g * k := by
+    apply Montgomery.Native32.toField_injective
+    rw [Montgomery.Native32.toField_mulAdd4, Montgomery.Native32.toField_add,
+      Montgomery.Native32.toField_add, Montgomery.Native32.toField_add,
+      Montgomery.Native32.toField_mul, Montgomery.Native32.toField_mul,
+      Montgomery.Native32.toField_mul, Montgomery.Native32.toField_mul]
+  rw [e1, e2]
+
 /-- Out of range reads default to zero. -/
 theorem getD_eq_zero (a : Array F) (i : Nat) (hi : a.size ≤ i) : a.getD i 0 = 0 := by
   rw [Array.getD_eq_getD_getElem?, Array.getElem?_eq_none hi, Option.getD_none]
@@ -338,6 +366,34 @@ theorem mulAddInto_upto (o b : Array F) (bo : Nat) (c : F) (n : Nat) (hn : n ≤
       exact write_upto _ f k (by omega) hso),
     Nat.add_sub_cancel' (Nat.mul_div_le n 16)]
 
+/-- `mulAdd4Into16` splices four-row multiply-adds in place. -/
+theorem mulAdd4Into16_encode (o b : Array F) (io i0 i1 i2 i3 : USize) (c0 c1 c2 c3 : F)
+    (hout h0 h1 h2 h3) (hi : io.toNat + 16 ≤ o.size) (ho : 4 * o.size < USize.size) :
+    mulAdd4Into16 p (encode o) io (encode b) i0 i1 i2 i3 c0.val c1.val c2.val c3.val hout h0 h1
+      h2 h3 = encode (splice o io.toNat (lit16 fun t ↦ o.getD (io.toNat + t) 0 +
+        (b.getD (i0.toNat + t) 0 * c0 + b.getD (i1.toNat + t) 0 * c1 +
+          b.getD (i2.toNat + t) 0 * c2 + b.getD (i3.toNat + t) 0 * c3))) := by
+  unfold mulAdd4Into16
+  simp only [rd_encode, mulAdd4_val, add_val]
+  rw [CompPoly.CPolynomial.NTTFast.Packed.Native.write16U_encode _ _
+    (by rw [size_encode_fields]; exact ho) hi]
+  rfl
+
+/-- `dot4Into16` adds four interleaved products to each of sixteen running sums in place. -/
+theorem dot4Into16_encode (o b c : Array F) (ib ic : USize) (hout hb hc)
+    (hi : 16 ≤ o.size) (ho : 4 * o.size < USize.size) :
+    dot4Into16 p (encode o) (encode b) ib (encode c) ic hout hb hc = encode (splice o 0
+      (lit16 fun t ↦ o.getD t 0 +
+        (b.getD (ib.toNat + t) 0 * c.getD (ic.toNat + t) 0 +
+          b.getD (ib.toNat + (t + 16)) 0 * c.getD (ic.toNat + (t + 16)) 0 +
+          b.getD (ib.toNat + (t + 32)) 0 * c.getD (ic.toNat + (t + 32)) 0 +
+          b.getD (ib.toNat + (t + 48)) 0 * c.getD (ic.toNat + (t + 48)) 0))) := by
+  unfold dot4Into16
+  simp only [rd_encode, rd64_encode, mulAdd4_val, add_val, USize.toNat_zero, Nat.zero_add]
+  rw [CompPoly.CPolynomial.NTTFast.Packed.Native.write16U_encode _ _
+    (by rw [size_encode_fields]; exact ho) (by rw [USize.toNat_zero]; exact hi)]
+  rfl
+
 /-- `out[k] += c · b[bo + k]` for all `n` words of `out`. -/
 theorem mulAddInto_encode (o b : Array F) (bo : Nat) (c : F) (hb : bo + o.size ≤ b.size)
     (hso : 4 * o.size < USize.size) (hsb : 4 * b.size < USize.size) :
@@ -345,17 +401,54 @@ theorem mulAddInto_encode (o b : Array F) (bo : Nat) (c : F) (hb : bo + o.size �
       encode (Array.ofFn (n := o.size) fun k ↦ o.getD k.val 0 + b.getD (bo + k.val) 0 * c) := by
   rw [mulAddInto_upto o b bo c o.size (Nat.le_refl _) hb hso hsb, upto_full _ _ _ rfl]
 
-/-- `dotInto16` splices running dot products in place. -/
-theorem dotInto16_encode (o b c : Array F) (io ib ic : USize) (hout hb hc)
-    (hi : io.toNat + 16 ≤ o.size) (ho : 4 * o.size < USize.size) :
-    dotInto16 p (encode o) io (encode b) ib (encode c) ic hout hb hc = encode (splice o io.toNat
-      (lit16 fun t ↦ o.getD (io.toNat + t) 0 + b.getD (ib.toNat + t) 0 * c.getD (ic.toNat + t) 0))
-    := by
-  unfold dotInto16
-  simp only [rd_encode, add_val, mul_val]
-  rw [CompPoly.CPolynomial.NTTFast.Packed.Native.write16U_encode _ _
-    (by rw [size_encode_fields]; exact ho) hi]
-  rfl
+/-- `out[k] += c0 · b[o0 + k] + c1 · b[o1 + k] + c2 · b[o2 + k] + c3 · b[o3 + k]` for `k < n`, in
+place. -/
+theorem mulAdd4Into_upto (o b : Array F) (o0 o1 o2 o3 : Nat) (c0 c1 c2 c3 : F) (n : Nat)
+    (hn : n ≤ o.size) (h0 : o0 + n ≤ b.size) (h1 : o1 + n ≤ b.size) (h2 : o2 + n ≤ b.size)
+    (h3 : o3 + n ≤ b.size) (hso : 4 * o.size < USize.size) (hsb : 4 * b.size < USize.size) :
+    mulAdd4Into p (encode o) (encode b) o0 o1 o2 o3 c0.val c1.val c2.val c3.val n =
+      encode (upto o (fun k ↦ o.getD k 0 + (b.getD (o0 + k) 0 * c0 + b.getD (o1 + k) 0 * c1 +
+        b.getD (o2 + k) 0 * c2 + b.getD (o3 + k) 0 * c3)) n) := by
+  unfold mulAdd4Into
+  simp only [Std.Legacy.Range.forIn_eq_forIn_range', Std.Legacy.Range.size,
+    Nat.sub_zero, Nat.add_sub_cancel, Nat.div_one, ← List.range_eq_range',
+    bind_pure, pure_bind, dite_pure_yield, List.forIn_pure_yield_eq_foldl, Id.run_pure]
+  have hso' : (encode o).size = 4 * o.size := size_encode_fields o
+  have hsb' : (encode b).size = 4 * b.size := size_encode_fields b
+  let f (k : Nat) : F := o.getD k 0 + (b.getD (o0 + k) 0 * c0 + b.getD (o1 + k) 0 * c1 +
+    b.getD (o2 + k) 0 * c2 + b.getD (o3 + k) 0 * c3)
+  rw [foldl_blocks o f (n / 16) _ (fun m hm ↦ by
+    have h16 : 16 * m + 16 ≤ n := by omega
+    rw [dite_eq_left_of_eq_true (eq_true ⟨by rw [size_encode_fields, size_upto]; omega,
+      by omega, by omega, by omega, by omega, by rw [size_encode_fields, size_upto]; omega,
+      by omega⟩),
+      mulAdd4Into16_encode _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _
+        (by simp only [USize.toNat_ofNatLT, size_upto]; omega) (by rw [size_upto]; exact hso)]
+    simp only [USize.toNat_ofNatLT]
+    refine Eq.trans ?_ (congrArg encode (splice_upto o f _ (by omega)))
+    congr 2
+    refine congrArg lit16 (funext fun t ↦ ?_)
+    rw [getD_upto_of_le _ _ _ _ (by omega)]
+    simp only [f, Nat.add_assoc]),
+    foldl_tail _ f _ _ _ (fun k _ hk ↦ by
+      rw [read_encode _ k (by rw [size_upto]; exact hso) (by rw [size_upto]; omega),
+        read_encode b _ hsb (by omega), read_encode b _ hsb (by omega),
+        read_encode b _ hsb (by omega), read_encode b _ hsb (by omega),
+        getD_upto_of_le _ _ _ _ (Nat.le_refl _), mulAdd4_val, add_val]
+      exact write_upto _ f k (by omega) hso),
+    Nat.add_sub_cancel' (Nat.mul_div_le n 16)]
+
+/-- `out[k] += c0 · b[o0 + k] + c1 · b[o1 + k] + c2 · b[o2 + k] + c3 · b[o3 + k]` for all `n` words
+of `out`. -/
+theorem mulAdd4Into_encode (o b : Array F) (o0 o1 o2 o3 : Nat) (c0 c1 c2 c3 : F)
+    (h0 : o0 + o.size ≤ b.size) (h1 : o1 + o.size ≤ b.size) (h2 : o2 + o.size ≤ b.size)
+    (h3 : o3 + o.size ≤ b.size) (hso : 4 * o.size < USize.size) (hsb : 4 * b.size < USize.size) :
+    mulAdd4Into p (encode o) (encode b) o0 o1 o2 o3 c0.val c1.val c2.val c3.val o.size =
+      encode (Array.ofFn (n := o.size) fun k ↦ o.getD k.val 0 +
+        (b.getD (o0 + k.val) 0 * c0 + b.getD (o1 + k.val) 0 * c1 + b.getD (o2 + k.val) 0 * c2 +
+          b.getD (o3 + k.val) 0 * c3)) := by
+  rw [mulAdd4Into_upto o b o0 o1 o2 o3 c0 c1 c2 c3 o.size (Nat.le_refl _) h0 h1 h2 h3 hso hsb,
+    upto_full _ _ _ rfl]
 
 /-- A running sum of words of field elements. -/
 theorem foldl_add (g : Nat → F) (r : Nat → UInt32) (k0 K : Nat)
@@ -380,6 +473,18 @@ theorem sum_interleave (x : Nat → F) (M : Nat) :
     simp only [Finset.sum_range_succ (fun m ↦ x (16 * m + _)), Finset.sum_add_distrib, ih,
       Nat.mul_succ, Finset.sum_range_add]
 
+/-- Four consecutive terms of a sum, block by block. -/
+theorem sum_blocks4 (f : Nat → F) (M : Nat) :
+    ∑ m ∈ Finset.range M, (f (4 * m) + f (4 * m + 1) + f (4 * m + 2) + f (4 * m + 3)) =
+      ∑ k ∈ Finset.range (4 * M), f k := by
+  induction M with
+  | zero => simp only [Finset.range_zero, Finset.sum_empty, Nat.mul_zero]
+  | succ M ih =>
+    rw [Finset.sum_range_succ, ih, show 4 * (M + 1) = 4 * M + 1 + 1 + 1 + 1 by omega,
+      Finset.sum_range_succ, Finset.sum_range_succ, Finset.sum_range_succ,
+      Finset.sum_range_succ]
+    simp only [add_assoc]
+
 /-- `∑ₖ b[bo + k] · c[k]` for `k < n`. -/
 theorem dotAt_encode (b c : Array F) (bo n : Nat) (hb : bo + n ≤ b.size) (hc : n ≤ c.size)
     (hsb : 4 * b.size < USize.size) (hsc : 4 * c.size < USize.size) :
@@ -392,16 +497,17 @@ theorem dotAt_encode (b c : Array F) (bo n : Nat) (hb : bo + n ≤ b.size) (hc :
   have hsb' : (encode b).size = 4 * b.size := size_encode_fields b
   have hsc' : (encode c).size = 4 * c.size := size_encode_fields c
   let x (k : Nat) : F := b.getD (bo + k) 0 * c.getD k 0
-  let S (M t : Nat) : F := ∑ m ∈ Finset.range M, x (16 * m + t)
-  have hacc : ∀ M ≤ n / 16, (List.range M).foldl (fun acc a ↦
-      if h : 4 * 15 + 3 < acc.size ∧ 4 * (bo + 16 * a + 15) + 3 < (encode b).size ∧
-          4 * (16 * a + 15) + 3 < (encode c).size ∧ acc.size < USize.size ∧
+  let S (M t : Nat) : F := ∑ m ∈ Finset.range M, (x (64 * m + t) + x (64 * m + (t + 16)) +
+    x (64 * m + (t + 32)) + x (64 * m + (t + 48)))
+  have hacc : ∀ M ≤ n / 64, (List.range M).foldl (fun acc a ↦
+      if h : 4 * 15 + 3 < acc.size ∧ 4 * (bo + 64 * a + 63) + 3 < (encode b).size ∧
+          4 * (64 * a + 63) + 3 < (encode c).size ∧ acc.size < USize.size ∧
           (encode b).size < USize.size ∧ (encode c).size < USize.size then
-        dotInto16 p acc 0 (encode b) (USize.ofNatLT (bo + 16 * a) (by omega)) (encode c)
-          (USize.ofNatLT (16 * a) (by omega))
-          (by simp only [Fits, USize.toNat_zero, Nat.zero_add]; exact ⟨h.1, h.2.2.2.1⟩)
-          (by simp only [Fits, USize.toNat_ofNatLT]; exact ⟨h.2.1, h.2.2.2.2.1⟩)
-          (by simp only [Fits, USize.toNat_ofNatLT]; exact ⟨h.2.2.1, h.2.2.2.2.2⟩)
+        dot4Into16 p acc (encode b) (USize.ofNatLT (bo + 64 * a) (by omega)) (encode c)
+          (USize.ofNatLT (64 * a) (by omega))
+          (by simp only [Fits, USize.toNat_zero]; omega)
+          (by simp only [Fits, USize.toNat_ofNatLT]; omega)
+          (by simp only [Fits, USize.toNat_ofNatLT]; omega)
       else acc) (zeroWords 16) = encode (Array.ofFn (n := 16) fun t ↦ S M t.val) := by
     intro M hM
     induction M with
@@ -410,39 +516,47 @@ theorem dotAt_encode (b c : Array F) (bo n : Nat) (hb : bo + n ≤ b.size) (hc :
       rfl
     | succ M ih =>
       rw [List.range_succ, List.foldl_append, ih (by omega), List.foldl_cons, List.foldl_nil]
-      have h16 : 16 * M + 16 ≤ n := by omega
-      have h0 : (0 : USize).toNat + 16 ≤ (Array.ofFn (n := 16) fun t ↦ S M t.val).size := by
-        rw [USize.toNat_zero, Array.size_ofFn]
+      have h64 : 64 * M + 64 ≤ n := by omega
+      have h0 : 16 ≤ (Array.ofFn (n := 16) fun t ↦ S M t.val).size := by
+        rw [Array.size_ofFn]
       have h1 : 4 * (Array.ofFn (n := 16) fun t ↦ S M t.val).size < USize.size := by
         rw [Array.size_ofFn]; have := USize.le_size; omega
       rw [dite_eq_left_of_eq_true (eq_true ⟨by rw [size_encode_fields, Array.size_ofFn]; omega,
         by omega, by omega, by rw [size_encode_fields]; omega, by omega,
-        by omega⟩), dotInto16_encode _ _ _ _ _ _ _ _ _ h0 h1]
+        by omega⟩), dot4Into16_encode _ _ _ _ _ _ _ _ h0 h1]
       refine congrArg encode ?_
       have h2 : ∀ g : Nat → F, (0 : USize).toNat + (lit16 g).size ≤
           (Array.ofFn (n := 16) fun t ↦ S M t.val).size := fun g ↦ by
-        rw [size_lit16]; exact h0
-      apply array_eq_of_getD _ _ 0 (by rw [size_splice _ _ _ (h2 _), Array.size_ofFn,
-        Array.size_ofFn])
+        rw [size_lit16, USize.toNat_zero]; exact h0
+      apply array_eq_of_getD _ _ 0 (by rw [size_splice _ _ _ (by rw [size_lit16]; exact h0),
+        Array.size_ofFn, Array.size_ofFn])
       intro t
-      rw [getD_splice _ _ _ (h2 _), getD_ofFn, getD_ofFn]
-      simp only [USize.toNat_zero, USize.toNat_ofNatLT, size_lit16, Nat.zero_add, Nat.not_lt_zero,
-        ite_false]
+      rw [getD_splice _ _ _ (by rw [size_lit16]; exact h0), getD_ofFn, getD_ofFn]
+      simp only [USize.toNat_ofNatLT, size_lit16, Nat.zero_add, Nat.not_lt_zero, ite_false]
       split
       · rw [getD_lit16 _ _ (by assumption), getD_ofFn, ite_eq_left_of_eq_true _ _
           (eq_true (by assumption)), Nat.sub_zero]
         simp only [S, x, Finset.sum_range_succ, Nat.add_assoc]
       · rfl
-  have hA : 4 * (Array.ofFn (n := 16) fun t ↦ S (n / 16) t.val).size < USize.size := by
+  have hA : 4 * (Array.ofFn (n := 16) fun t ↦ S (n / 64) t.val).size < USize.size := by
     rw [Array.size_ofFn]; have := USize.le_size; omega
-  rw [hacc (n / 16) (Nat.le_refl _), List.range_eq_range', ← zero_val (p := p),
-    foldl_add (S (n / 16)) _ 0 16 (fun k _ hk ↦ by
+  rw [hacc (n / 64) (Nat.le_refl _), List.range_eq_range', ← zero_val (p := p),
+    foldl_add (S (n / 64)) _ 0 16 (fun k _ hk ↦ by
       rw [read_encode _ k hA (by rw [Array.size_ofFn]; omega), getD_ofFn,
         ite_eq_left_of_eq_true _ _ (eq_true (by omega))]),
     foldl_add x _ _ _ (fun k _ hk ↦ by
       rw [read_encode b _ hsb (by omega), read_encode c _ hsc (by omega), mul_val])]
-  simp only [S, zero_add]
-  rw [sum_interleave, ← Finset.sum_range_add, Nat.add_sub_cancel' (Nat.mul_div_le n 16)]
+  have hS : ∀ t, S (n / 64) t = ∑ m ∈ Finset.range (4 * (n / 64)), x (16 * m + t) := by
+    intro t
+    rw [← sum_blocks4 (fun m ↦ x (16 * m + t))]
+    refine Finset.sum_congr rfl fun m _ ↦ ?_
+    simp only [show 16 * (4 * m) + t = 64 * m + t by omega,
+      show 16 * (4 * m + 1) + t = 64 * m + (t + 16) by omega,
+      show 16 * (4 * m + 2) + t = 64 * m + (t + 32) by omega,
+      show 16 * (4 * m + 3) + t = 64 * m + (t + 48) by omega]
+  simp only [hS, zero_add]
+  rw [sum_interleave, show 16 * (4 * (n / 64)) = 64 * (n / 64) by omega,
+    ← Finset.sum_range_add, Nat.add_sub_cancel' (Nat.mul_div_le n 64)]
 
 end CompStark.Words
 

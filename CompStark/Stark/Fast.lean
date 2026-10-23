@@ -694,17 +694,24 @@ def weightPlanes [Mont32BaseField p] [Binomial4 p] (zs : @& Array EF) (xs : @& B
     acc ++ #[wt.c0, wt.c1, wt.c2, wt.c3]) #[]
 
 /-- The column sums `∑_r m[r][j] · x_r / (z - x_r)` over the stored rows `r0, …, r0 + len - 1` of a
-packed matrix of width `w`, for every point `z` of `zs`: per point four planes of `w` words. Every
-row is multiply-added into every plane while it is in cache, so the matrix is read once, row by
-row. -/
+packed matrix of width `w`, for every point `z` of `zs`: per point four planes of `w` words. Rows
+are multiply-added into every plane four at a time, reduced once per word, while they are in
+cache, so the matrix is read once, row by row; the last `len % 4` rows one at a time. -/
 def weightedColumns [Mont32BaseField p] [Binomial4 p] (m : @& ByteArray) (w : Nat)
     (zs : @& Array EF) (xs : @& ByteArray) (r0 len : Nat) : Array ByteArray := Id.run do
   let wts := weightPlanes zs xs r0 len
+  let read := CompPoly.CPolynomial.NTTFast.Packed.Native.read
   let mut out := Array.replicate wts.size (CompPoly.CPolynomial.NTTFast.Packed.Native.zeroWords w)
-  for t in [0:len] do
+  for g in [0:len / 4] do
     for i in [0:wts.size] do
-      out := out.modify i fun a ↦ Words.mulAddInto p a m ((r0 + t) * w)
-        (CompPoly.CPolynomial.NTTFast.Packed.Native.read (wts.getD i .empty) t) w
+      let pl := wts.getD i .empty
+      out := out.modify i fun a ↦ Words.mulAdd4Into p a m ((r0 + 4 * g) * w)
+        ((r0 + 4 * g + 1) * w) ((r0 + 4 * g + 2) * w) ((r0 + 4 * g + 3) * w) (read pl (4 * g))
+        (read pl (4 * g + 1)) (read pl (4 * g + 2)) (read pl (4 * g + 3)) w
+  for t in [4 * (len / 4):len] do
+    for i in [0:wts.size] do
+      out := out.modify i fun a ↦ Words.mulAddInto p a m ((r0 + t) * w) (read (wts.getD i .empty) t)
+        w
   return out
 
 /-- `openedAt` on packed words, at all points of a matrix: the barycentric weights `x / (z - x)` in

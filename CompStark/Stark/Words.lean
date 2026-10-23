@@ -27,6 +27,20 @@ open CompPoly.CPolynomial.NTTFast.Packed.Native (readUOffset read write write16U
   readUOffset a i k.toUSize (inBounds h k.toUSize (by
     rw [USize.toNat_ofNat_of_lt' (by have := USize.le_size; omega)]; exact hk))
 
+/-- Word `i + k`, `k ≤ 63`, of a buffer whose words `i, …, i + 63` fit. -/
+@[inline] def rd64 (a : @& ByteArray) (i : USize) (k : Nat) (h : Fits a i 63)
+    (hk : k ≤ 63 := by decide) : UInt32 :=
+  readUOffset a i k.toUSize (inBounds h k.toUSize (by
+    rw [USize.toNat_ofNat_of_lt' (by have := USize.le_size; omega)]; exact hk))
+
+/-- `a b + c d + e f + g k` of canonical Montgomery words, the four products summed in 64 bits
+and reduced once (`Montgomery.Native32.mulAdd4`). -/
+@[inline] def mulAdd4 (p : ℕ) [P : Mont32Field p] (a b c d e f g k : UInt32) : UInt32 :=
+  let z := a.toUInt64 * b.toUInt64 + c.toUInt64 * d.toUInt64 + e.toUInt64 * f.toUInt64 +
+    g.toUInt64 * k.toUInt64
+  let z := if z < P.modulus64 <<< 32 then z else z - P.modulus64 <<< 32
+  Montgomery.Native32.reduceRaw P.modulus32 P.modulus64 P.montgomeryNegInv z
+
 /-- Words `i, …, i + 15` of `a + b`, stored from word `i` of `out`. -/
 @[noinline, specialize] def add16 (p : ℕ) [Mont32Field p] (a b : @& ByteArray) (i : USize)
     (out : ByteArray) (ha : Fits a i 15) (hb : Fits b i 15) : ByteArray :=
@@ -175,28 +189,117 @@ def replicateWord (c : UInt32) (n : Nat) : ByteArray := Id.run do
   let x15 := add p (rd out io 15 hout) (mul p (rd b ib 15 hb) c)
   write16U out io x0 x1 x2 x3 x4 x5 x6 x7 x8 x9 x10 x11 x12 x13 x14 x15
 
-/-- Words `io, …, io + 15` of `out` plus the products of words `ib, …` of `b` and `ic, …` of
-`c`, in place. -/
-@[noinline, specialize] def dotInto16 (p : ℕ) [Mont32Field p] (out : ByteArray) (io : USize)
-    (b : @& ByteArray) (ib : USize) (c : @& ByteArray) (ic : USize) (hout : Fits out io 15)
-    (hb : Fits b ib 15) (hc : Fits c ic 15) : ByteArray :=
-  let x0 := add p (rd out io 0 hout) (mul p (rd b ib 0 hb) (rd c ic 0 hc))
-  let x1 := add p (rd out io 1 hout) (mul p (rd b ib 1 hb) (rd c ic 1 hc))
-  let x2 := add p (rd out io 2 hout) (mul p (rd b ib 2 hb) (rd c ic 2 hc))
-  let x3 := add p (rd out io 3 hout) (mul p (rd b ib 3 hb) (rd c ic 3 hc))
-  let x4 := add p (rd out io 4 hout) (mul p (rd b ib 4 hb) (rd c ic 4 hc))
-  let x5 := add p (rd out io 5 hout) (mul p (rd b ib 5 hb) (rd c ic 5 hc))
-  let x6 := add p (rd out io 6 hout) (mul p (rd b ib 6 hb) (rd c ic 6 hc))
-  let x7 := add p (rd out io 7 hout) (mul p (rd b ib 7 hb) (rd c ic 7 hc))
-  let x8 := add p (rd out io 8 hout) (mul p (rd b ib 8 hb) (rd c ic 8 hc))
-  let x9 := add p (rd out io 9 hout) (mul p (rd b ib 9 hb) (rd c ic 9 hc))
-  let x10 := add p (rd out io 10 hout) (mul p (rd b ib 10 hb) (rd c ic 10 hc))
-  let x11 := add p (rd out io 11 hout) (mul p (rd b ib 11 hb) (rd c ic 11 hc))
-  let x12 := add p (rd out io 12 hout) (mul p (rd b ib 12 hb) (rd c ic 12 hc))
-  let x13 := add p (rd out io 13 hout) (mul p (rd b ib 13 hb) (rd c ic 13 hc))
-  let x14 := add p (rd out io 14 hout) (mul p (rd b ib 14 hb) (rd c ic 14 hc))
-  let x15 := add p (rd out io 15 hout) (mul p (rd b ib 15 hb) (rd c ic 15 hc))
+/-- Words `io, …, io + 15` of `out` plus the four rows of words from `i0`, `i1`, `i2`, `i3` of `b`
+times `c0`, `c1`, `c2`, `c3`, reduced once per word, in place. -/
+@[noinline, specialize] def mulAdd4Into16 (p : ℕ) [Mont32Field p] (out : ByteArray) (io : USize)
+    (b : @& ByteArray) (i0 i1 i2 i3 : USize) (c0 c1 c2 c3 : UInt32) (hout : Fits out io 15)
+    (h0 : Fits b i0 15) (h1 : Fits b i1 15) (h2 : Fits b i2 15) (h3 : Fits b i3 15) :
+    ByteArray :=
+  let x0 := add p (rd out io 0 hout)
+    (mulAdd4 p (rd b i0 0 h0) c0 (rd b i1 0 h1) c1 (rd b i2 0 h2) c2
+      (rd b i3 0 h3) c3)
+  let x1 := add p (rd out io 1 hout)
+    (mulAdd4 p (rd b i0 1 h0) c0 (rd b i1 1 h1) c1 (rd b i2 1 h2) c2
+      (rd b i3 1 h3) c3)
+  let x2 := add p (rd out io 2 hout)
+    (mulAdd4 p (rd b i0 2 h0) c0 (rd b i1 2 h1) c1 (rd b i2 2 h2) c2
+      (rd b i3 2 h3) c3)
+  let x3 := add p (rd out io 3 hout)
+    (mulAdd4 p (rd b i0 3 h0) c0 (rd b i1 3 h1) c1 (rd b i2 3 h2) c2
+      (rd b i3 3 h3) c3)
+  let x4 := add p (rd out io 4 hout)
+    (mulAdd4 p (rd b i0 4 h0) c0 (rd b i1 4 h1) c1 (rd b i2 4 h2) c2
+      (rd b i3 4 h3) c3)
+  let x5 := add p (rd out io 5 hout)
+    (mulAdd4 p (rd b i0 5 h0) c0 (rd b i1 5 h1) c1 (rd b i2 5 h2) c2
+      (rd b i3 5 h3) c3)
+  let x6 := add p (rd out io 6 hout)
+    (mulAdd4 p (rd b i0 6 h0) c0 (rd b i1 6 h1) c1 (rd b i2 6 h2) c2
+      (rd b i3 6 h3) c3)
+  let x7 := add p (rd out io 7 hout)
+    (mulAdd4 p (rd b i0 7 h0) c0 (rd b i1 7 h1) c1 (rd b i2 7 h2) c2
+      (rd b i3 7 h3) c3)
+  let x8 := add p (rd out io 8 hout)
+    (mulAdd4 p (rd b i0 8 h0) c0 (rd b i1 8 h1) c1 (rd b i2 8 h2) c2
+      (rd b i3 8 h3) c3)
+  let x9 := add p (rd out io 9 hout)
+    (mulAdd4 p (rd b i0 9 h0) c0 (rd b i1 9 h1) c1 (rd b i2 9 h2) c2
+      (rd b i3 9 h3) c3)
+  let x10 := add p (rd out io 10 hout)
+    (mulAdd4 p (rd b i0 10 h0) c0 (rd b i1 10 h1) c1 (rd b i2 10 h2) c2
+      (rd b i3 10 h3) c3)
+  let x11 := add p (rd out io 11 hout)
+    (mulAdd4 p (rd b i0 11 h0) c0 (rd b i1 11 h1) c1 (rd b i2 11 h2) c2
+      (rd b i3 11 h3) c3)
+  let x12 := add p (rd out io 12 hout)
+    (mulAdd4 p (rd b i0 12 h0) c0 (rd b i1 12 h1) c1 (rd b i2 12 h2) c2
+      (rd b i3 12 h3) c3)
+  let x13 := add p (rd out io 13 hout)
+    (mulAdd4 p (rd b i0 13 h0) c0 (rd b i1 13 h1) c1 (rd b i2 13 h2) c2
+      (rd b i3 13 h3) c3)
+  let x14 := add p (rd out io 14 hout)
+    (mulAdd4 p (rd b i0 14 h0) c0 (rd b i1 14 h1) c1 (rd b i2 14 h2) c2
+      (rd b i3 14 h3) c3)
+  let x15 := add p (rd out io 15 hout)
+    (mulAdd4 p (rd b i0 15 h0) c0 (rd b i1 15 h1) c1 (rd b i2 15 h2) c2
+      (rd b i3 15 h3) c3)
   write16U out io x0 x1 x2 x3 x4 x5 x6 x7 x8 x9 x10 x11 x12 x13 x14 x15
+
+/-- The sixteen words of `out` plus, for every `t < 16`, the products of words
+`ib + t, ib + 16 + t, ib + 32 + t, ib + 48 + t` of `b` and the same words from `ic` of `c`,
+reduced once per word, in place. -/
+@[noinline, specialize] def dot4Into16 (p : ℕ) [Mont32Field p] (out : ByteArray)
+    (b : @& ByteArray) (ib : USize) (c : @& ByteArray) (ic : USize) (hout : Fits out 0 15)
+    (hb : Fits b ib 63) (hc : Fits c ic 63) : ByteArray :=
+  let x0 := add p (rd out 0 0 hout)
+    (mulAdd4 p (rd64 b ib 0 hb) (rd64 c ic 0 hc) (rd64 b ib 16 hb) (rd64 c ic 16 hc)
+      (rd64 b ib 32 hb) (rd64 c ic 32 hc) (rd64 b ib 48 hb) (rd64 c ic 48 hc))
+  let x1 := add p (rd out 0 1 hout)
+    (mulAdd4 p (rd64 b ib 1 hb) (rd64 c ic 1 hc) (rd64 b ib 17 hb) (rd64 c ic 17 hc)
+      (rd64 b ib 33 hb) (rd64 c ic 33 hc) (rd64 b ib 49 hb) (rd64 c ic 49 hc))
+  let x2 := add p (rd out 0 2 hout)
+    (mulAdd4 p (rd64 b ib 2 hb) (rd64 c ic 2 hc) (rd64 b ib 18 hb) (rd64 c ic 18 hc)
+      (rd64 b ib 34 hb) (rd64 c ic 34 hc) (rd64 b ib 50 hb) (rd64 c ic 50 hc))
+  let x3 := add p (rd out 0 3 hout)
+    (mulAdd4 p (rd64 b ib 3 hb) (rd64 c ic 3 hc) (rd64 b ib 19 hb) (rd64 c ic 19 hc)
+      (rd64 b ib 35 hb) (rd64 c ic 35 hc) (rd64 b ib 51 hb) (rd64 c ic 51 hc))
+  let x4 := add p (rd out 0 4 hout)
+    (mulAdd4 p (rd64 b ib 4 hb) (rd64 c ic 4 hc) (rd64 b ib 20 hb) (rd64 c ic 20 hc)
+      (rd64 b ib 36 hb) (rd64 c ic 36 hc) (rd64 b ib 52 hb) (rd64 c ic 52 hc))
+  let x5 := add p (rd out 0 5 hout)
+    (mulAdd4 p (rd64 b ib 5 hb) (rd64 c ic 5 hc) (rd64 b ib 21 hb) (rd64 c ic 21 hc)
+      (rd64 b ib 37 hb) (rd64 c ic 37 hc) (rd64 b ib 53 hb) (rd64 c ic 53 hc))
+  let x6 := add p (rd out 0 6 hout)
+    (mulAdd4 p (rd64 b ib 6 hb) (rd64 c ic 6 hc) (rd64 b ib 22 hb) (rd64 c ic 22 hc)
+      (rd64 b ib 38 hb) (rd64 c ic 38 hc) (rd64 b ib 54 hb) (rd64 c ic 54 hc))
+  let x7 := add p (rd out 0 7 hout)
+    (mulAdd4 p (rd64 b ib 7 hb) (rd64 c ic 7 hc) (rd64 b ib 23 hb) (rd64 c ic 23 hc)
+      (rd64 b ib 39 hb) (rd64 c ic 39 hc) (rd64 b ib 55 hb) (rd64 c ic 55 hc))
+  let x8 := add p (rd out 0 8 hout)
+    (mulAdd4 p (rd64 b ib 8 hb) (rd64 c ic 8 hc) (rd64 b ib 24 hb) (rd64 c ic 24 hc)
+      (rd64 b ib 40 hb) (rd64 c ic 40 hc) (rd64 b ib 56 hb) (rd64 c ic 56 hc))
+  let x9 := add p (rd out 0 9 hout)
+    (mulAdd4 p (rd64 b ib 9 hb) (rd64 c ic 9 hc) (rd64 b ib 25 hb) (rd64 c ic 25 hc)
+      (rd64 b ib 41 hb) (rd64 c ic 41 hc) (rd64 b ib 57 hb) (rd64 c ic 57 hc))
+  let x10 := add p (rd out 0 10 hout)
+    (mulAdd4 p (rd64 b ib 10 hb) (rd64 c ic 10 hc) (rd64 b ib 26 hb) (rd64 c ic 26 hc)
+      (rd64 b ib 42 hb) (rd64 c ic 42 hc) (rd64 b ib 58 hb) (rd64 c ic 58 hc))
+  let x11 := add p (rd out 0 11 hout)
+    (mulAdd4 p (rd64 b ib 11 hb) (rd64 c ic 11 hc) (rd64 b ib 27 hb) (rd64 c ic 27 hc)
+      (rd64 b ib 43 hb) (rd64 c ic 43 hc) (rd64 b ib 59 hb) (rd64 c ic 59 hc))
+  let x12 := add p (rd out 0 12 hout)
+    (mulAdd4 p (rd64 b ib 12 hb) (rd64 c ic 12 hc) (rd64 b ib 28 hb) (rd64 c ic 28 hc)
+      (rd64 b ib 44 hb) (rd64 c ic 44 hc) (rd64 b ib 60 hb) (rd64 c ic 60 hc))
+  let x13 := add p (rd out 0 13 hout)
+    (mulAdd4 p (rd64 b ib 13 hb) (rd64 c ic 13 hc) (rd64 b ib 29 hb) (rd64 c ic 29 hc)
+      (rd64 b ib 45 hb) (rd64 c ic 45 hc) (rd64 b ib 61 hb) (rd64 c ic 61 hc))
+  let x14 := add p (rd out 0 14 hout)
+    (mulAdd4 p (rd64 b ib 14 hb) (rd64 c ic 14 hc) (rd64 b ib 30 hb) (rd64 c ic 30 hc)
+      (rd64 b ib 46 hb) (rd64 c ic 46 hc) (rd64 b ib 62 hb) (rd64 c ic 62 hc))
+  let x15 := add p (rd out 0 15 hout)
+    (mulAdd4 p (rd64 b ib 15 hb) (rd64 c ic 15 hc) (rd64 b ib 31 hb) (rd64 c ic 31 hc)
+      (rd64 b ib 47 hb) (rd64 c ic 47 hc) (rd64 b ib 63 hb) (rd64 c ic 63 hc))
+  write16U out 0 x0 x1 x2 x3 x4 x5 x6 x7 x8 x9 x10 x11 x12 x13 x14 x15
 
 /-- `out[k] += c · b[bo + k]` for `k < n`, in place. -/
 @[specialize] def mulAddInto (p : ℕ) [Mont32Field p] (out : ByteArray) (b : @& ByteArray)
@@ -214,23 +317,46 @@ def replicateWord (c : UInt32) (n : Nat) : ByteArray := Id.run do
     out := write out k (add p (read out k) (mul p (read b (bo + k)) c))
   return out
 
-/-- `∑ₖ b[bo + k] · c[k]` for `k < n`: sixteen running sums, then their total. -/
+/-- `out[k] += c0 · b[o0 + k] + c1 · b[o1 + k] + c2 · b[o2 + k] + c3 · b[o3 + k]` for `k < n`, in
+place: four rows multiply-added at once, reduced once per word. -/
+@[specialize] def mulAdd4Into (p : ℕ) [Mont32Field p] (out : ByteArray) (b : @& ByteArray)
+    (o0 o1 o2 o3 : Nat) (c0 c1 c2 c3 : UInt32) (n : Nat) : ByteArray := Id.run do
+  let mut out := out
+  for block in [:n / 16] do
+    let i := 16 * block
+    if h : 4 * (i + 15) + 3 < out.size ∧ 4 * (o0 + i + 15) + 3 < b.size ∧
+        4 * (o1 + i + 15) + 3 < b.size ∧ 4 * (o2 + i + 15) + 3 < b.size ∧
+        4 * (o3 + i + 15) + 3 < b.size ∧ out.size < USize.size ∧ b.size < USize.size then
+      out := mulAdd4Into16 p out (USize.ofNatLT i (by omega)) b (USize.ofNatLT (o0 + i) (by omega))
+        (USize.ofNatLT (o1 + i) (by omega)) (USize.ofNatLT (o2 + i) (by omega))
+        (USize.ofNatLT (o3 + i) (by omega)) c0 c1 c2 c3
+        (by simp only [Fits, USize.toNat_ofNatLT]; omega)
+        (by simp only [Fits, USize.toNat_ofNatLT]; omega)
+        (by simp only [Fits, USize.toNat_ofNatLT]; omega)
+        (by simp only [Fits, USize.toNat_ofNatLT]; omega)
+        (by simp only [Fits, USize.toNat_ofNatLT]; omega)
+  for k in [16 * (n / 16):n] do
+    out := write out k (add p (read out k) (mulAdd4 p (read b (o0 + k)) c0 (read b (o1 + k)) c1
+      (read b (o2 + k)) c2 (read b (o3 + k)) c3))
+  return out
+
+/-- `∑ₖ b[bo + k] · c[k]` for `k < n`: sixteen running sums, each adding four products reduced
+once per block of 64 words, then their total and the remaining words. -/
 @[specialize] def dotAt (p : ℕ) [Mont32Field p] (b : @& ByteArray) (bo : Nat) (c : @& ByteArray)
     (n : Nat) : UInt32 := Id.run do
   let mut acc := zeroWords 16
-  for block in [:n / 16] do
-    let i := 16 * block
-    if h : 4 * 15 + 3 < acc.size ∧ 4 * (bo + i + 15) + 3 < b.size ∧ 4 *
-        (i + 15) + 3 < c.size ∧ acc.size < USize.size ∧ b.size < USize.size ∧ c.size <
-            USize.size then
-      acc := dotInto16 p acc 0 b (USize.ofNatLT (bo + i) (by omega)) c (USize.ofNatLT i (by omega))
-        (by simp only [Fits]; exact ⟨by simpa using h.1, h.2.2.2.1⟩)
-        (by simp only [Fits, USize.toNat_ofNatLT]; exact ⟨h.2.1, h.2.2.2.2.1⟩)
-        (by simp only [Fits, USize.toNat_ofNatLT]; exact ⟨h.2.2.1, h.2.2.2.2.2⟩)
+  for block in [:n / 64] do
+    let i := 64 * block
+    if h : 4 * 15 + 3 < acc.size ∧ 4 * (bo + i + 63) + 3 < b.size ∧ 4 * (i + 63) + 3 < c.size ∧
+        acc.size < USize.size ∧ b.size < USize.size ∧ c.size < USize.size then
+      acc := dot4Into16 p acc b (USize.ofNatLT (bo + i) (by omega)) c (USize.ofNatLT i (by omega))
+        (by simp only [Fits, USize.toNat_zero]; omega)
+        (by simp only [Fits, USize.toNat_ofNatLT]; omega)
+        (by simp only [Fits, USize.toNat_ofNatLT]; omega)
   let mut sum : UInt32 := 0
   for k in [0:16] do
     sum := add p sum (read acc k)
-  for k in [16 * (n / 16):n] do
+  for k in [64 * (n / 64):n] do
     sum := add p sum (mul p (read b (bo + k)) (read c k))
   return sum
 
