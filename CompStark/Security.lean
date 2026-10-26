@@ -124,47 +124,53 @@ the analysis the search finds:
 namespace CompStark.Iop
 open CompStark.Stark CompStark.Sound
 
-/-! ### The calculator's theorems -/
+/-! ### The calculator's theorems
+
+Each takes the calculator's certificate with an MCA bound `B` and the hypothesis that `B` holds
+over the challenge field (`B.Holds`): `McaBound.uniqueDecoding_holds` for the bound within the
+unique-decoding radius. -/
 
 section Calculator
 variable {F : Type} [BaseField F] {EF : Type} [Challenge F EF] {p : ℕ}
 
 /-- **The calculator's knowledge error.** If the calculator certifies `bits` bits for `S` at the
-analysis `A` (`S.Secure p A bits`, for `|F| = p`), the knowledge error with FRI at `A.δ` and the
-extractor at `A.δ'` is at most `2 ^ (-bits)`. -/
+analysis `A` with an MCA bound `B` that holds (`S.Secure p B A bits`, for `|F| = p`), the
+knowledge error with FRI at `A.δ` and the extractor at `A.δ'` is at most `2 ^ (-bits)`. -/
 theorem knowledgeError_le_of_secure {lookups : List (Lookup F)} (S : Setup EF lookups)
-    (hp : Nat.card F = p) (A : Analysis) {bits : ℕ} (h : S.Secure p A bits) (δ δ' : NNReal)
-    (hδ : (δ : ℝ) = A.δ) (hδ' : (δ' : ℝ) = A.δ') :
+    (hp : Nat.card F = p) {B : McaBound} (hB : B.Holds) (A : Analysis) {bits : ℕ}
+    (h : S.Secure p B A bits) (δ δ' : NNReal) (hδ : (δ : ℝ) = A.δ) (hδ' : (δ' : ℝ) = A.δ') :
     knowledgeError S δ δ' ≤ (2 ^ bits)⁻¹ :=
-  (knowledgeError_le_bound S A hp h.1 δ δ' hδ hδ').trans (ofReal_le_inv_two_pow h.2)
+  (knowledgeError_le_bound S A hp B hB h.1 δ δ' hδ hδ').trans (ofReal_le_inv_two_pow h.2)
 
 /-- **Knowledge soundness from the calculator.** If the calculator certifies `bits` bits for `S`
-at `A`, and no trace within `δ' = A.δ'` of the prover's committed trace satisfies the AIR, the
-verifier accepts with probability at most `2 ^ (-bits)`. -/
-theorem knowledgeSoundness_of_secure (S : Setup EF) (hp : Nat.card F = p) (A : Analysis)
-    {bits : ℕ} (h : S.Secure p A bits) (δ' : NNReal) (hδ' : (δ' : ℝ) = A.δ')
-    (publicValues : List F) (prover : Prover S) :
+at `A` with an MCA bound that holds, and no trace within `δ' = A.δ'` of the prover's committed
+trace satisfies the AIR, the verifier accepts with probability at most `2 ^ (-bits)`. -/
+theorem knowledgeSoundness_of_secure (S : Setup EF) (hp : Nat.card F = p) {B : McaBound}
+    (hB : B.Holds) (A : Analysis) {bits : ℕ} (h : S.Secure p B A bits) (δ' : NNReal)
+    (hδ' : (δ' : ℝ) = A.δ') (publicValues : List F) (prover : Prover S) :
     (∀ trace ∈ closeTraces S δ' prover.trace, ¬ S.air.Satisfied S.logN trace publicValues) →
       acceptance publicValues prover ≤ (2 ^ bits)⁻¹ := fun hfar ↦
   (knowledgeSoundness S publicValues prover _ δ' (lt_one_sub_rate S A h.1.1 δ' hδ')
-    hfar).trans (knowledgeError_le_of_secure S hp A h _ δ' (coe_toNNReal_δ A h.1.1) hδ')
+    hfar).trans (knowledgeError_le_of_secure S hp hB A h _ δ' (coe_toNNReal_δ A h.1.1) hδ')
 
 /-- **The calculator's round error.** If the calculator certifies `bits` bits per oracle answer
-for `S` at `A` (`S.SecureRo p A bits`), the round error with FRI at `A.δ` and the extractor at
-`A.δ'` is at most `2 ^ (-bits)`. -/
-theorem roundError_le_of_secureRo (S : Setup EF) (hp : Nat.card F = p) (A : Analysis)
-    {bits : ℕ} (h : S.SecureRo p A bits) (δ δ' : NNReal) (hδ : (δ : ℝ) = A.δ)
-    (hδ' : (δ' : ℝ) = A.δ') :
+for `S` at `A` with an MCA bound `B` that holds (`S.SecureRo p B A bits`), the round error with
+FRI at `A.δ` and the extractor at `A.δ'` is at most `2 ^ (-bits)`. -/
+theorem roundError_le_of_secureRo (S : Setup EF) (hp : Nat.card F = p) {B : McaBound}
+    (hB : B.Holds) (A : Analysis) {bits : ℕ} (h : S.SecureRo p B A bits) (δ δ' : NNReal)
+    (hδ : (δ : ℝ) = A.δ) (hδ' : (δ' : ℝ) = A.δ') :
     roundError S δ δ' ≤ (2 ^ bits)⁻¹ :=
-  (roundError_le_bound A S hp h.1 δ δ' hδ hδ').trans (ofReal_le_inv_two_pow h.2)
+  (roundError_le_bound A S hp B hB h.1 δ δ' hδ hδ').trans (ofReal_le_inv_two_pow h.2)
 
 /-- **Knowledge soundness in the random-oracle model from the calculator.** If the calculator
-certifies `bits` bits per oracle answer for `S` at `A`, a prover making at most `Q` oracle calls
-gets a proof accepted while no trace within `δ' = A.δ'` of the one it committed to satisfies the
-AIR with probability at most `q · 2 ^ (-bits) + hashError q`, `q = Q + verifierQueries`. -/
-theorem knowledgeSoundness_ro_of_secureRo (S : Setup EF) (hp : Nat.card F = p) (A : Analysis)
-    {bits : ℕ} (h : S.SecureRo p A bits) (δ' : NNReal) (hδ' : (δ' : ℝ) = A.δ')
-    (publicValues : List F) (Q : Nat) (prover : NIProver S) (hQ : prover.IsTotalQueryBound Q) :
+certifies `bits` bits per oracle answer for `S` at `A` with an MCA bound that holds, a prover
+making at most `Q` oracle calls gets a proof accepted while no trace within `δ' = A.δ'` of the one
+it committed to satisfies the AIR with probability at most `q · 2 ^ (-bits) + hashError q`,
+`q = Q + verifierQueries`. -/
+theorem knowledgeSoundness_ro_of_secureRo (S : Setup EF) (hp : Nat.card F = p) {B : McaBound}
+    (hB : B.Holds) (A : Analysis) {bits : ℕ} (h : S.SecureRo p B A bits) (δ' : NNReal)
+    (hδ' : (δ' : ℝ) = A.δ') (publicValues : List F) (Q : Nat) (prover : NIProver S)
+    (hQ : prover.IsTotalQueryBound Q) :
     Pr{let (proof, log, verdict) ← run S publicValues prover}[
       verdict = .ok () ∧ proof.degreeBits = S.logN ∧
         ∀ trace ∈ closeTraces S δ' (committedTrace S log proof),
@@ -174,47 +180,48 @@ theorem knowledgeSoundness_ro_of_secureRo (S : Setup EF) (hp : Nat.card F = p) (
   refine (knowledgeSoundness_ro S publicValues (Real.toNNReal A.δ) δ'
     (lt_one_sub_rate S A h.1.1 δ' hδ') Q prover hQ).trans ?_
   gcongr
-  exact roundError_le_of_secureRo S hp A h _ δ' (coe_toNNReal_δ A h.1.1) hδ'
+  exact roundError_le_of_secureRo S hp hB A h _ δ' (coe_toNNReal_δ A h.1.1) hδ'
 
 /-- **The calculator's batch knowledge error.** If the calculator certifies `bits` bits for the
-batch `S` at `A`, its knowledge error with FRI at `A.δ` and the extractor at `A.δ'` is at most
-`2 ^ (-bits)`. -/
+batch `S` at `A` with an MCA bound that holds, its knowledge error with FRI at `A.δ` and the
+extractor at `A.δ'` is at most `2 ^ (-bits)`. -/
 theorem Batch.knowledgeError_le_of_secure {withLookups : Bool} (S : Batch.Setup EF withLookups)
-    (hp : Nat.card F = p) (A : Analysis) {bits : ℕ} (h : S.Secure p A bits) (δ δ' : NNReal)
-    (hδ : (δ : ℝ) = A.δ) (hδ' : (δ' : ℝ) = A.δ') :
+    (hp : Nat.card F = p) {B : McaBound} (hB : B.Holds) (A : Analysis) {bits : ℕ}
+    (h : S.Secure p B A bits) (δ δ' : NNReal) (hδ : (δ : ℝ) = A.δ) (hδ' : (δ' : ℝ) = A.δ') :
     Batch.knowledgeError S δ δ' ≤ (2 ^ bits)⁻¹ :=
-  (batchKnowledgeError_le_bound S A hp h.1 δ δ' hδ hδ').trans (ofReal_le_inv_two_pow h.2)
+  (batchKnowledgeError_le_bound S B A hp hB h.1 δ δ' hδ hδ').trans (ofReal_le_inv_two_pow h.2)
 
 /-- **Batch knowledge soundness from the calculator.** If the calculator certifies `bits` bits
-for the batch `S` at `A`, and no tuple of traces, each within `δ' = A.δ'` of its instance's
-committed trace, satisfies the batch, the verifier accepts with probability at most
-`2 ^ (-bits)`. -/
+for the batch `S` at `A` with an MCA bound that holds, and no tuple of traces, each within
+`δ' = A.δ'` of its instance's committed trace, satisfies the batch, the verifier accepts with
+probability at most `2 ^ (-bits)`. -/
 theorem batchKnowledgeSoundness_of_secure {withLookups : Bool} (S : Batch.Setup EF withLookups)
-    (hp : Nat.card F = p) (A : Analysis) {bits : ℕ} (h : S.Secure p A bits) (δ' : NNReal)
-    (hδ' : (δ' : ℝ) = A.δ') (publicValues : Fin S.k → List F) (prover : Batch.Prover S) :
+    (hp : Nat.card F = p) {B : McaBound} (hB : B.Holds) (A : Analysis) {bits : ℕ}
+    (h : S.Secure p B A bits) (δ' : NNReal) (hδ' : (δ' : ℝ) = A.δ')
+    (publicValues : Fin S.k → List F) (prover : Batch.Prover S) :
     (∀ traces ∈ Batch.closeTraces S δ' prover.trace, ¬ S.Satisfied traces publicValues) →
       Batch.acceptance publicValues prover ≤ (2 ^ bits)⁻¹ := fun hfar ↦
-  (batchKnowledgeSoundness S publicValues prover _ δ' (batch_lt_one_sub_rate S A h.1 δ' hδ')
-    hfar).trans (Batch.knowledgeError_le_of_secure S hp A h _ δ' (coe_toNNReal_δ A h.1.1) hδ')
+  (batchKnowledgeSoundness S publicValues prover _ δ' (batch_lt_one_sub_rate S B A h.1 δ' hδ')
+    hfar).trans (Batch.knowledgeError_le_of_secure S hp hB A h _ δ' (coe_toNNReal_δ A h.1.1) hδ')
 
 /-- **The calculator's batch round error.** If the calculator certifies `bits` bits per oracle
-answer for the batch `S` at `A`, its round error with FRI at `A.δ` and the extractor at `A.δ'` is
-at most `2 ^ (-bits)`. -/
+answer for the batch `S` at `A` with an MCA bound that holds, its round error with FRI at `A.δ`
+and the extractor at `A.δ'` is at most `2 ^ (-bits)`. -/
 theorem Batch.roundError_le_of_secureRo {withLookups : Bool} (S : Batch.Setup EF withLookups)
-    (hp : Nat.card F = p) (A : Analysis) {bits : ℕ} (h : S.SecureRo p A bits) (δ δ' : NNReal)
-    (hδ : (δ : ℝ) = A.δ) (hδ' : (δ' : ℝ) = A.δ') :
+    (hp : Nat.card F = p) {B : McaBound} (hB : B.Holds) (A : Analysis) {bits : ℕ}
+    (h : S.SecureRo p B A bits) (δ δ' : NNReal) (hδ : (δ : ℝ) = A.δ) (hδ' : (δ' : ℝ) = A.δ') :
     Batch.roundError S δ δ' ≤ (2 ^ bits)⁻¹ :=
-  (batchRoundError_le_bound S A hp h.1 δ δ' hδ hδ').trans (ofReal_le_inv_two_pow h.2)
+  (batchRoundError_le_bound S B A hp hB h.1 δ δ' hδ hδ').trans (ofReal_le_inv_two_pow h.2)
 
 /-- **Batch knowledge soundness in the random-oracle model from the calculator.** If the
-calculator certifies `bits` bits per oracle answer for the batch `S` at `A`, a prover making at
-most `Q` oracle calls gets a proof accepted while no tuple of traces within `δ' = A.δ'` of the
-ones it committed to satisfies the batch with probability at most `q · 2 ^ (-bits) + hashError q`,
-`q = Q + verifierQueries`. -/
+calculator certifies `bits` bits per oracle answer for the batch `S` at `A` with an MCA bound that
+holds, a prover making at most `Q` oracle calls gets a proof accepted while no tuple of traces
+within `δ' = A.δ'` of the ones it committed to satisfies the batch with probability at most
+`q · 2 ^ (-bits) + hashError q`, `q = Q + verifierQueries`. -/
 theorem Batch.batchKnowledgeSoundness_ro_of_secureRo (S : Batch.Setup EF) (hp : Nat.card F = p)
-    (A : Analysis) {bits : ℕ} (h : S.SecureRo p A bits) (δ' : NNReal) (hδ' : (δ' : ℝ) = A.δ')
-    (publicValues : Fin S.k → List F) (Q : Nat) (prover : Batch.NIProver S)
-    (hQ : prover.IsTotalQueryBound Q) :
+    {B : McaBound} (hB : B.Holds) (A : Analysis) {bits : ℕ} (h : S.SecureRo p B A bits)
+    (δ' : NNReal) (hδ' : (δ' : ℝ) = A.δ') (publicValues : Fin S.k → List F) (Q : Nat)
+    (prover : Batch.NIProver S) (hQ : prover.IsTotalQueryBound Q) :
     Pr{let (proof, log, verdict) ← Batch.run S publicValues prover}[
       verdict = .ok () ∧ proof.degreeBits.toList = List.ofFn S.logN ∧
         ∀ traces ∈ Batch.closeTraces S δ' (Batch.committedTraces S log proof),
@@ -222,9 +229,9 @@ theorem Batch.batchKnowledgeSoundness_ro_of_secureRo (S : Batch.Setup EF) (hp : 
       (Q + S.verifierQueries) * (2 ^ bits)⁻¹ +
         hashError F S.params.capHeight (Q + S.verifierQueries) := by
   refine (Batch.batchKnowledgeSoundness_ro S publicValues (Real.toNNReal A.δ) δ'
-    (batch_lt_one_sub_rate S A h.1 δ' hδ') Q prover hQ).trans ?_
+    (batch_lt_one_sub_rate S B A h.1 δ' hδ') Q prover hQ).trans ?_
   gcongr
-  exact Batch.roundError_le_of_secureRo S hp A h _ δ' (coe_toNNReal_δ A h.1.1) hδ'
+  exact Batch.roundError_le_of_secureRo S hp hB A h _ δ' (coe_toNNReal_δ A h.1.1) hδ'
 
 end Calculator
 
@@ -266,15 +273,16 @@ def fibonacciSetup : Setup KoalaBear.Fast.Ext4 where
 unique-decoding radius `15/32`, and `loss = 2 ^ (-60)`. -/
 def fibonacciAnalysis : Analysis := ⟨15 / 32 - 1 / 2 ^ 40, 4227071 / 8388608, 1 / 2 ^ 60⟩
 
-theorem fibonacci_secure : fibonacciSetup.Secure 2130706433 fibonacciAnalysis 100 := by
+theorem fibonacci_secure :
+    fibonacciSetup.Secure 2130706433 .uniqueDecoding fibonacciAnalysis 100 := by
   decide +kernel
 
 /-- **100 bits.** The knowledge error of `fibonacciSetup`, FRI at `δ = 15/32 - 2 ^ (-40)` and the
 extractor at `δ' = 4227071/8388608`, is at most `2 ^ (-100)`. -/
 theorem fibonacci_knowledgeError_le :
     knowledgeError fibonacciSetup (15 / 32 - 2 ^ (-40 : ℤ)) (4227071 / 8388608) ≤ (2 ^ 100)⁻¹ :=
-  knowledgeError_le_of_secure _ KoalaBear.card_eq _ fibonacci_secure _ _
-    (by rw [coe_sub_two_zpow _ (-40) 40 rfl (by norm_num)]; norm_num [fibonacciAnalysis])
+  knowledgeError_le_of_secure _ KoalaBear.card_eq McaBound.uniqueDecoding_holds _ fibonacci_secure
+    _ _ (by rw [coe_sub_two_zpow _ (-40) 40 rfl (by norm_num)]; norm_num [fibonacciAnalysis])
     (by norm_num [fibonacciAnalysis])
 
 /-- Knowledge soundness of `fibonacciSetup` with error `2 ^ (-100)`, the extractor at
@@ -284,8 +292,8 @@ theorem fibonacci_knowledgeSoundness (publicValues : List F) (prover : Prover fi
     (∀ trace ∈ closeTraces fibonacciSetup (4227071 / 8388608 : NNReal) prover.trace,
       ¬ fibonacci.Satisfied 10 trace publicValues) →
       acceptance publicValues prover ≤ (2 ^ 100)⁻¹ :=
-  knowledgeSoundness_of_secure _ KoalaBear.card_eq _ fibonacci_secure _
-    (by norm_num [fibonacciAnalysis]) publicValues prover
+  knowledgeSoundness_of_secure _ KoalaBear.card_eq McaBound.uniqueDecoding_holds _ fibonacci_secure
+    _ (by norm_num [fibonacciAnalysis]) publicValues prover
 
 /-- FRI with blowup `4`, folding by arity `2` down to a constant, and `149` queries. -/
 def wideParams : Fri.Params where
@@ -340,7 +348,7 @@ def wideSetup : Setup KoalaBear.Fast.Ext4 where
 `δ' = 12287/32768 = 3/8 - 2 ^ (-15)` and `loss = 2 ^ (-17)`. -/
 def wideAnalysis : Analysis := ⟨1535 / 4096, 12287 / 32768, 1 / 2 ^ 17⟩
 
-theorem wide_secure : wideSetup.Secure 2130706433 wideAnalysis 100 := by
+theorem wide_secure : wideSetup.Secure 2130706433 .uniqueDecoding wideAnalysis 100 := by
   decide +kernel
 
 /-- **100 bits on `2 ^ 20` rows.** The knowledge error of `wideSetup`, FRI at
@@ -348,7 +356,7 @@ theorem wide_secure : wideSetup.Secure 2130706433 wideAnalysis 100 := by
 most `2 ^ (-100)`. -/
 theorem wide_knowledgeError_le :
     knowledgeError wideSetup (1535 / 4096) (12287 / 32768) ≤ (2 ^ 100)⁻¹ :=
-  knowledgeError_le_of_secure _ KoalaBear.card_eq _ wide_secure _ _
+  knowledgeError_le_of_secure _ KoalaBear.card_eq McaBound.uniqueDecoding_holds _ wide_secure _ _
     (by norm_num [wideAnalysis]) (by norm_num [wideAnalysis])
 
 /-- Knowledge soundness of `wideSetup` with error `2 ^ (-100)`, the extractor at `12287/32768`:
@@ -358,7 +366,7 @@ theorem wide_knowledgeSoundness (publicValues : List F) (prover : Prover wideSet
     (∀ trace ∈ closeTraces wideSetup (12287 / 32768 : NNReal) prover.trace,
       ¬ (wide 64).Satisfied 20 trace publicValues) →
       acceptance publicValues prover ≤ (2 ^ 100)⁻¹ :=
-  knowledgeSoundness_of_secure _ KoalaBear.card_eq _ wide_secure _
+  knowledgeSoundness_of_secure _ KoalaBear.card_eq McaBound.uniqueDecoding_holds _ wide_secure _
     (by norm_num [wideAnalysis]) publicValues prover
 
 /-- FRI with blowup `4`, folding by arity `2` down to a constant, and `150` queries. -/
@@ -384,7 +392,7 @@ def wide21Setup : Setup KoalaBear.Fast.Ext4 where
 `δ' = 6143/16384 = 3/8 - 2 ^ (-14)` and `loss = 2 ^ (-17)`. -/
 def wide21Analysis : Analysis := ⟨1535 / 4096, 6143 / 16384, 1 / 2 ^ 17⟩
 
-theorem wide21_secure : wide21Setup.Secure 2130706433 wide21Analysis 100 := by
+theorem wide21_secure : wide21Setup.Secure 2130706433 .uniqueDecoding wide21Analysis 100 := by
   decide +kernel
 
 /-- **100 bits on `2 ^ 21` rows.** The knowledge error of `wide21Setup`, FRI at
@@ -392,7 +400,7 @@ theorem wide21_secure : wide21Setup.Secure 2130706433 wide21Analysis 100 := by
 most `2 ^ (-100)`. -/
 theorem wide21_knowledgeError_le :
     knowledgeError wide21Setup (1535 / 4096) (6143 / 16384) ≤ (2 ^ 100)⁻¹ :=
-  knowledgeError_le_of_secure _ KoalaBear.card_eq _ wide21_secure _ _
+  knowledgeError_le_of_secure _ KoalaBear.card_eq McaBound.uniqueDecoding_holds _ wide21_secure _ _
     (by norm_num [wide21Analysis]) (by norm_num [wide21Analysis])
 
 /-- Knowledge soundness of `wide21Setup` with error `2 ^ (-100)`, the extractor at `6143/16384`:
@@ -402,7 +410,7 @@ theorem wide21_knowledgeSoundness (publicValues : List F) (prover : Prover wide2
     (∀ trace ∈ closeTraces wide21Setup (6143 / 16384 : NNReal) prover.trace,
       ¬ (wide 64).Satisfied 21 trace publicValues) →
       acceptance publicValues prover ≤ (2 ^ 100)⁻¹ :=
-  knowledgeSoundness_of_secure _ KoalaBear.card_eq _ wide21_secure _
+  knowledgeSoundness_of_secure _ KoalaBear.card_eq McaBound.uniqueDecoding_holds _ wide21_secure _
     (by norm_num [wide21Analysis]) publicValues prover
 
 /-- SP1's FRI parameters (soundcalc's `sp1.toml`, core circuit): blowup `4`, folding by arity `2`
@@ -433,14 +441,15 @@ theorem wideSp1Setup_verifierQueries : wideSp1Setup.verifierQueries = 68692 := b
 `loss = 2 ^ (-60)`. -/
 def wideSp1Analysis : Analysis := ⟨3 / 8 - 1 / 2 ^ 17, 3 / 8 - 1 / 2 ^ 19, 1 / 2 ^ 60⟩
 
-theorem wideSp1_secureRo : wideSp1Setup.SecureRo 2130706433 wideSp1Analysis 100 := by
+theorem wideSp1_secureRo :
+    wideSp1Setup.SecureRo 2130706433 .uniqueDecoding wideSp1Analysis 100 := by
   decide +kernel
 
 /-- **100 bits per oracle answer on `2 ^ 21` rows.** Every round error of `wideSp1Setup`, FRI at
 `δ = 3/8 - 2 ^ (-17)` and the extractor at `δ' = 3/8 - 2 ^ (-19)`, is at most `2 ^ (-100)`. -/
 theorem wideSp1_roundError_le :
     roundError wideSp1Setup (3 / 8 - 2 ^ (-17 : ℤ)) (3 / 8 - 2 ^ (-19 : ℤ)) ≤ (2 ^ 100)⁻¹ :=
-  roundError_le_of_secureRo _ KoalaBear.card_eq _ wideSp1_secureRo _ _
+  roundError_le_of_secureRo _ KoalaBear.card_eq McaBound.uniqueDecoding_holds _ wideSp1_secureRo _ _
     (by rw [coe_sub_two_zpow _ (-17) 17 rfl (by norm_num)]; norm_num [wideSp1Analysis])
     (by rw [coe_sub_two_zpow _ (-19) 19 rfl (by norm_num)]; norm_num [wideSp1Analysis])
 
@@ -456,7 +465,8 @@ theorem wideSp1_knowledgeSoundness_ro (publicValues : List F) (Q : Nat)
           ¬ wideSp1Setup.air.Satisfied wideSp1Setup.logN trace publicValues] ≤
       (Q + wideSp1Setup.verifierQueries) * (2 ^ 100)⁻¹ +
         hashError F 0 (Q + wideSp1Setup.verifierQueries) :=
-  knowledgeSoundness_ro_of_secureRo _ KoalaBear.card_eq _ wideSp1_secureRo _
+  knowledgeSoundness_ro_of_secureRo _ KoalaBear.card_eq McaBound.uniqueDecoding_holds _
+    wideSp1_secureRo _
     (by rw [coe_sub_two_zpow _ (-19) 19 rfl (by norm_num)]; norm_num [wideSp1Analysis])
     publicValues Q prover hQ
 
@@ -491,7 +501,8 @@ theorem wideGrindSetup_verifierQueries : wideGrindSetup.verifierQueries = 79752 
 `loss = 2 ^ (-16)`. -/
 def wideGrindAnalysis : Analysis := ⟨3 / 8 - 1 / 2 ^ 11, 3 / 8 - 1 / 2 ^ 13, 1 / 2 ^ 16⟩
 
-theorem wideGrind_secureRo : wideGrindSetup.SecureRo 2130706433 wideGrindAnalysis 117 := by
+theorem wideGrind_secureRo :
+    wideGrindSetup.SecureRo 2130706433 .uniqueDecoding wideGrindAnalysis 117 := by
   decide +kernel
 
 /-- **117 bits per oracle answer on `2 ^ 21` rows over the quartic extension.** Every round error
@@ -499,8 +510,8 @@ of `wideGrindSetup`, FRI at `δ = 3/8 - 2 ^ (-11)` and the extractor at `δ' = 3
 at most `2 ^ (-117)`. -/
 theorem wideGrind_roundError_le :
     roundError wideGrindSetup (3 / 8 - 2 ^ (-11 : ℤ)) (3 / 8 - 2 ^ (-13 : ℤ)) ≤ (2 ^ 117)⁻¹ :=
-  roundError_le_of_secureRo _ KoalaBear.card_eq _ wideGrind_secureRo _ _
-    (by rw [coe_sub_two_zpow _ (-11) 11 rfl (by norm_num)]; norm_num [wideGrindAnalysis])
+  roundError_le_of_secureRo _ KoalaBear.card_eq McaBound.uniqueDecoding_holds _ wideGrind_secureRo
+    _ _ (by rw [coe_sub_two_zpow _ (-11) 11 rfl (by norm_num)]; norm_num [wideGrindAnalysis])
     (by rw [coe_sub_two_zpow _ (-13) 13 rfl (by norm_num)]; norm_num [wideGrindAnalysis])
 
 /-- **117 bits per oracle call on `2 ^ 21` rows over the quartic extension.** A prover for
@@ -516,7 +527,8 @@ theorem wideGrind_knowledgeSoundness_ro (publicValues : List F) (Q : Nat)
           ¬ wideGrindSetup.air.Satisfied wideGrindSetup.logN trace publicValues] ≤
       (Q + wideGrindSetup.verifierQueries) * (2 ^ 117)⁻¹ +
         hashError F 0 (Q + wideGrindSetup.verifierQueries) :=
-  knowledgeSoundness_ro_of_secureRo _ KoalaBear.card_eq _ wideGrind_secureRo _
+  knowledgeSoundness_ro_of_secureRo _ KoalaBear.card_eq McaBound.uniqueDecoding_holds _
+    wideGrind_secureRo _
     (by rw [coe_sub_two_zpow _ (-13) 13 rfl (by norm_num)]; norm_num [wideGrindAnalysis])
     publicValues Q prover hQ
 
@@ -547,14 +559,14 @@ theorem wide5Setup_verifierQueries : wide5Setup.verifierQueries = 88624 := by de
 `loss = 2 ^ (-60)`. -/
 def wide5Analysis : Analysis := ⟨3 / 8 - 1 / 2 ^ 19, 3 / 8 - 1 / 2 ^ 21, 1 / 2 ^ 60⟩
 
-theorem wide5_secureRo : wide5Setup.SecureRo 2130706433 wide5Analysis 128 := by
+theorem wide5_secureRo : wide5Setup.SecureRo 2130706433 .uniqueDecoding wide5Analysis 128 := by
   decide +kernel
 
 /-- **128 bits per oracle answer on `2 ^ 21` rows.** Every round error of `wide5Setup`, FRI at
 `δ = 3/8 - 2 ^ (-19)` and the extractor at `δ' = 3/8 - 2 ^ (-21)`, is at most `2 ^ (-128)`. -/
 theorem wide5_roundError_le :
     roundError wide5Setup (3 / 8 - 2 ^ (-19 : ℤ)) (3 / 8 - 2 ^ (-21 : ℤ)) ≤ (2 ^ 128)⁻¹ :=
-  roundError_le_of_secureRo _ KoalaBear.card_eq _ wide5_secureRo _ _
+  roundError_le_of_secureRo _ KoalaBear.card_eq McaBound.uniqueDecoding_holds _ wide5_secureRo _ _
     (by rw [coe_sub_two_zpow _ (-19) 19 rfl (by norm_num)]; norm_num [wide5Analysis])
     (by rw [coe_sub_two_zpow _ (-21) 21 rfl (by norm_num)]; norm_num [wide5Analysis])
 
@@ -571,7 +583,8 @@ theorem wide5_knowledgeSoundness_ro (publicValues : List F) (Q : Nat)
           ¬ wide5Setup.air.Satisfied wide5Setup.logN trace publicValues] ≤
       (Q + wide5Setup.verifierQueries) * (2 ^ 128)⁻¹ +
         hashError F 0 (Q + wide5Setup.verifierQueries) :=
-  knowledgeSoundness_ro_of_secureRo _ KoalaBear.card_eq _ wide5_secureRo _
+  knowledgeSoundness_ro_of_secureRo _ KoalaBear.card_eq McaBound.uniqueDecoding_holds _
+    wide5_secureRo _
     (by rw [coe_sub_two_zpow _ (-21) 21 rfl (by norm_num)]; norm_num [wide5Analysis])
     publicValues Q prover hQ
 
@@ -599,7 +612,7 @@ def wide5iSetup : Setup KoalaBear.Fast.Ext5 where
 `δ' = 49151/131072 = 3/8 - 2 ^ (-17)` and `loss = 2 ^ (-19)`. -/
 def wide5iAnalysis : Analysis := ⟨6143 / 16384, 49151 / 131072, 1 / 2 ^ 19⟩
 
-theorem wide5i_secure : wide5iSetup.Secure 2130706433 wide5iAnalysis 128 := by
+theorem wide5i_secure : wide5iSetup.Secure 2130706433 .uniqueDecoding wide5iAnalysis 128 := by
   decide +kernel
 
 /-- **128 bits, interactively, on `2 ^ 21` rows.** The knowledge error of `wide5iSetup`, FRI at
@@ -607,7 +620,7 @@ theorem wide5i_secure : wide5iSetup.Secure 2130706433 wide5iAnalysis 128 := by
 at most `2 ^ (-128)`. -/
 theorem wide5i_knowledgeError_le :
     knowledgeError wide5iSetup (6143 / 16384) (49151 / 131072) ≤ (2 ^ 128)⁻¹ :=
-  knowledgeError_le_of_secure _ KoalaBear.card_eq _ wide5i_secure _ _
+  knowledgeError_le_of_secure _ KoalaBear.card_eq McaBound.uniqueDecoding_holds _ wide5i_secure _ _
     (by norm_num [wide5iAnalysis]) (by norm_num [wide5iAnalysis])
 
 /-- Knowledge soundness of `wide5iSetup` with error `2 ^ (-128)`, FRI at `6143/16384` and the
@@ -617,7 +630,7 @@ theorem wide5i_knowledgeSoundness (publicValues : List F) (prover : Prover wide5
     (∀ trace ∈ closeTraces wide5iSetup (49151 / 131072 : NNReal) prover.trace,
       ¬ (wide 64).Satisfied 21 trace publicValues) →
       acceptance publicValues prover ≤ (2 ^ 128)⁻¹ :=
-  knowledgeSoundness_of_secure _ KoalaBear.card_eq _ wide5i_secure _
+  knowledgeSoundness_of_secure _ KoalaBear.card_eq McaBound.uniqueDecoding_holds _ wide5i_secure _
     (by norm_num [wide5iAnalysis]) publicValues prover
 
 /-! ### Batches with lookups -/
@@ -717,7 +730,8 @@ def wideBatchSetup : Batch.Setup KoalaBear.Fast.Ext5 where
 
 /-- FRI at `δ = 6143/16384 = 3/8 - 2 ^ (-14)`, the extractor at
 `δ' = 49151/131072 = 3/8 - 2 ^ (-17)` and `loss = 2 ^ (-19)`, as for `wide5iSetup`. -/
-theorem wideBatch_secure : wideBatchSetup.Secure 2130706433 wide5iAnalysis 128 := by
+theorem wideBatch_secure :
+    wideBatchSetup.Secure 2130706433 .uniqueDecoding wide5iAnalysis 128 := by
   decide +kernel
 
 /-- **128 bits, interactively, for a batch of three tables of mixed heights with lookups.** The
@@ -725,7 +739,8 @@ knowledge error of `wideBatchSetup`, FRI at `δ = 6143/16384 = 3/8 - 2 ^ (-14)` 
 `δ' = 49151/131072 = 3/8 - 2 ^ (-17)`, is at most `2 ^ (-128)`. -/
 theorem wideBatch_knowledgeError_le :
     Batch.knowledgeError wideBatchSetup (6143 / 16384) (49151 / 131072) ≤ (2 ^ 128)⁻¹ :=
-  Batch.knowledgeError_le_of_secure _ KoalaBear.card_eq _ wideBatch_secure _ _
+  Batch.knowledgeError_le_of_secure _ KoalaBear.card_eq McaBound.uniqueDecoding_holds _
+    wideBatch_secure _ _
     (by norm_num [wide5iAnalysis]) (by norm_num [wide5iAnalysis])
 
 /-- Knowledge soundness of `wideBatchSetup` with error `2 ^ (-128)`, FRI at `6143/16384` and the
@@ -737,7 +752,8 @@ theorem wideBatch_knowledgeSoundness (publicValues : Fin 3 → List F)
     (∀ traces ∈ Batch.closeTraces wideBatchSetup (49151 / 131072 : NNReal) prover.trace,
       ¬ wideBatchSetup.Satisfied traces publicValues) →
       Batch.acceptance publicValues prover ≤ (2 ^ 128)⁻¹ :=
-  batchKnowledgeSoundness_of_secure _ KoalaBear.card_eq _ wideBatch_secure _
+  batchKnowledgeSoundness_of_secure _ KoalaBear.card_eq McaBound.uniqueDecoding_holds _
+    wideBatch_secure _
     (by norm_num [wide5iAnalysis]) publicValues prover
 
 /-! ### The batch in the random-oracle model -/
@@ -783,11 +799,12 @@ def wideBatch5Analysis : Analysis := ⟨3 / 8 - 1 / 2 ^ 16, 3 / 8 - 1 / 2 ^ 18, 
 `loss = 2 ^ (-15)`. -/
 def wideBatchGrindAnalysis : Analysis := ⟨3 / 8 - 1 / 2 ^ 12, 3 / 8 - 1 / 2 ^ 14, 1 / 2 ^ 15⟩
 
-theorem wideBatch5_secureRo : wideBatch5Setup.SecureRo 2130706433 wideBatch5Analysis 128 := by
+theorem wideBatch5_secureRo :
+    wideBatch5Setup.SecureRo 2130706433 .uniqueDecoding wideBatch5Analysis 128 := by
   decide +kernel
 
 theorem wideBatchGrind_secureRo :
-    wideBatchGrindSetup.SecureRo 2130706433 wideBatchGrindAnalysis 117 := by
+    wideBatchGrindSetup.SecureRo 2130706433 .uniqueDecoding wideBatchGrindAnalysis 117 := by
   decide +kernel
 
 /-- **128 bits per oracle answer for a batch of three tables of mixed heights with lookups.**
@@ -796,7 +813,8 @@ Every round error of `wideBatch5Setup`, FRI at `δ = 3/8 - 2 ^ (-16)` and the ex
 theorem wideBatch5_roundError_le :
     Batch.roundError wideBatch5Setup (3 / 8 - 2 ^ (-16 : ℤ)) (3 / 8 - 2 ^ (-18 : ℤ)) ≤
       (2 ^ 128)⁻¹ :=
-  Batch.roundError_le_of_secureRo _ KoalaBear.card_eq _ wideBatch5_secureRo _ _
+  Batch.roundError_le_of_secureRo _ KoalaBear.card_eq McaBound.uniqueDecoding_holds _
+    wideBatch5_secureRo _ _
     (by rw [coe_sub_two_zpow _ (-16) 16 rfl (by norm_num)]; norm_num [wideBatch5Analysis])
     (by rw [coe_sub_two_zpow _ (-18) 18 rfl (by norm_num)]; norm_num [wideBatch5Analysis])
 
@@ -806,7 +824,8 @@ extractor at `δ' = 3/8 - 2 ^ (-14)`, is at most `2 ^ (-117)`. -/
 theorem wideBatchGrind_roundError_le :
     Batch.roundError wideBatchGrindSetup (3 / 8 - 2 ^ (-12 : ℤ)) (3 / 8 - 2 ^ (-14 : ℤ)) ≤
       (2 ^ 117)⁻¹ :=
-  Batch.roundError_le_of_secureRo _ KoalaBear.card_eq _ wideBatchGrind_secureRo _ _
+  Batch.roundError_le_of_secureRo _ KoalaBear.card_eq McaBound.uniqueDecoding_holds _
+    wideBatchGrind_secureRo _ _
     (by rw [coe_sub_two_zpow _ (-12) 12 rfl (by norm_num)]; norm_num [wideBatchGrindAnalysis])
     (by rw [coe_sub_two_zpow _ (-14) 14 rfl (by norm_num)]; norm_num [wideBatchGrindAnalysis])
 
@@ -829,7 +848,8 @@ theorem wideBatch5_knowledgeSoundness_ro (publicValues : Fin wideBatch5Setup.k �
           ¬ wideBatch5Setup.Satisfied traces publicValues] ≤
       (Q + wideBatch5Setup.verifierQueries) * (2 ^ 128)⁻¹ +
         hashError F 0 (Q + wideBatch5Setup.verifierQueries) :=
-  Batch.batchKnowledgeSoundness_ro_of_secureRo _ KoalaBear.card_eq _ wideBatch5_secureRo _
+  Batch.batchKnowledgeSoundness_ro_of_secureRo _ KoalaBear.card_eq McaBound.uniqueDecoding_holds _
+    wideBatch5_secureRo _
     (by rw [coe_sub_two_zpow _ (-18) 18 rfl (by norm_num)]; norm_num [wideBatch5Analysis])
     publicValues Q prover hQ
 
@@ -846,7 +866,8 @@ theorem wideBatchGrind_knowledgeSoundness_ro (publicValues : Fin wideBatchGrindS
           ¬ wideBatchGrindSetup.Satisfied traces publicValues] ≤
       (Q + wideBatchGrindSetup.verifierQueries) * (2 ^ 117)⁻¹ +
         hashError F 0 (Q + wideBatchGrindSetup.verifierQueries) :=
-  Batch.batchKnowledgeSoundness_ro_of_secureRo _ KoalaBear.card_eq _ wideBatchGrind_secureRo _
+  Batch.batchKnowledgeSoundness_ro_of_secureRo _ KoalaBear.card_eq McaBound.uniqueDecoding_holds _
+    wideBatchGrind_secureRo _
     (by rw [coe_sub_two_zpow _ (-14) 14 rfl (by norm_num)]; norm_num [wideBatchGrindAnalysis])
     publicValues Q prover hQ
 

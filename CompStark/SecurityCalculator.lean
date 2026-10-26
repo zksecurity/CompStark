@@ -5,6 +5,7 @@ Released under Apache 2.0 license as described in the file LICENSE.
 module
 
 public import CompStark.BatchNonInteractiveError
+public import CompStark.Sound.McaBound
 
 /-! # The security calculator
 
@@ -12,26 +13,28 @@ Rational upper bounds on the knowledge errors (`knowledgeError`, `Batch.knowledg
 random-oracle round errors (`roundError`, `Batch.roundError`), computed from a setup's numbers:
 its `Shape` (its constraint count and identity degree, its opened words, whether it has lookups),
 its lookups' interactions `T` and widest tuple `W`, its heights and FRI's parameters, for a base
-field of `p` elements and the challenge field's degree `d`. Every term is a rational number, so the calculator runs as code
-(`#eval`, `Report`) and in the kernel (`decide +kernel`), which evaluates the AIR's structure
-itself; the theorems of `CompStark/Security.lean` turn a checked bound into a bound on the error.
+field of `p` elements and the challenge field's degree `d`. Every term is a rational number, so
+the calculator runs as code (`#eval`, `Report`) and in the kernel (`decide +kernel`), which
+evaluates the AIR's structure itself; the theorems of `CompStark/Security.lean` turn a checked
+bound into a bound on the error.
 
-The analysis is the one of `CompStark/Sound/Numbers.lean`, at any FRI arity, with the free
-parameters of `Analysis`: FRI's proximity `δ` up to the unique-decoding radius `(1 - ρ) / 2`, the
-extractor's `δ'` below the Johnson radius `1 - √ρ`, and a proximity loss `loss`. With `K = p ^ d`,
-`N` the domain's size, `δ'' = δ' - 2/N` and `ℓ` the list bound at `δ'` (`1` below the
+The analysis is the one of `CompStark/Sound/Numbers.lean`, at any FRI arity, with an MCA bound `B`
+(`McaBound`: `uniqueDecoding` within the unique-decoding radius, `johnson` up to the Johnson
+radius, or the smaller of two) and the free parameters of `Analysis`: FRI's proximity `δ`, the
+extractor's `δ' ≥ δ` below the Johnson radius `1 - √ρ`, and a proximity loss `loss`. With
+`K = p ^ d`, `N` the domain's size, `δ'' = δ' - 2/N` and `ℓ` the list bound at `δ'` (`1` below the
 unique-decoding radius, `⌊(1 - δ' - ρ) / ((1 - δ')² - ρ)⌋` above, the Johnson bound):
 
 * constraint folding: `ℓ ℓₚ (#constraints - 1) / K`, `ℓₚ` the permutation trace's list bound, `1`
   without lookups;
 * out of domain: `(ℓ ℓₚ ℓ identityDegree + n) / K`;
-* batching `m` words: `(m - 1) N / K` (the powers MCA bound), or for `δ < δ''` and
-  `δ ≤ (1 - ρ) / 2 - 1/N` the curve bound `(m - 1) max(T₁, T₂) / K`,
+* batching `m` words: `B`'s count for curves of degree `m - 1` on `N` points over `K`, or for
+  `δ < δ''` and `δ ≤ (1 - ρ) / 2 - 1/N` the curve bound `(m - 1) max(T₁, T₂) / K`,
   `T₁ = (1 - ρ - δ) / (δ (1 - ρ - 2δ))`, `T₂ = δ'' / (δ'' - δ)`, if smaller;
 * FRI's folds, Plonky3's schedule as a plan of folds (`FriGame.Rounds.plan`): a fold by `2 ^ k`
-  onto `2 ^ m` points batching `M = 2 ^ k - 1` words (one more if it injects an input) costs
-  `M min(B, 2 ^ m) / K` if `δ ≤ (1 - ρ) / 2 - 2 ^ (-m)`, with the lossy bound
-  `B = max(T₁, δ_int / loss)`, `δ_int = δ + loss`, and `M 2 ^ m / K` otherwise;
+  onto `2 ^ m` points batching `M = 2 ^ k - 1` words (one more if it injects an input) costs `B`'s
+  count for curves of degree `M` on `2 ^ m` points over `K`, or if smaller and
+  `δ ≤ (1 - ρ) / 2 - 2 ^ (-m)` the lossy bound `M max(T₁, δ_int / loss) / K`, `δ_int = δ + loss`;
 * FRI's queries: `(1 - δ + #folds · loss) ^ numQueries`;
 * a batch's lookup challenges: `ℓᵏ (T + (T - 1) W) / K` for `k` instances.
 
@@ -41,10 +44,11 @@ is at most the largest term, each round after `α` multiplied by its grinding's 
 FRI's folds bounded by their largest fold and its queries by
 `(1 - δ + #folds · loss + 1/p) ^ numQueries`.
 
-`Setup.Secure p A bits` and `Setup.SecureRo p A bits` (and the batch's) are decidable: the
-analysis fits the setup (`Setup.Fits`) and the bound is at most `2 ^ (-bits)`. The analysis need
-not be picked by hand: `Setup.bestAnalysis` (`bestAnalysisRo`, and the batch's) searches the
-radii and the loss for the smallest bound, and `decide +kernel` checks the analysis it finds.
+`Setup.Secure p B A bits` and `Setup.SecureRo p B A bits` (and the batch's) are decidable: the
+analysis fits the setup (`Setup.Fits`: `B` admits batching and every fold at `δ`) and the bound is
+at most `2 ^ (-bits)`. The analysis need not be picked by hand: `Setup.bestAnalysis`
+(`bestAnalysisRo`, and the batch's) searches the radii and the loss for the smallest bound, and
+`decide +kernel` checks the analysis it finds.
 -/
 
 @[expose] public section
@@ -70,22 +74,32 @@ def curveT₁ (ρ : ℚ) : ℚ := (1 - ρ - A.δ) / (A.δ * (1 - ρ - 2 * A.δ))
 def lossyBound (ρ : ℚ) : ℚ :=
   max (max (A.curveT₁ ρ) ((A.δ + A.loss) / (A.δ + A.loss - A.δ))) ((A.δ + A.loss) / A.loss)
 
-/-- A fold of FRI's plan at rate `ρ`, times `|𝕂|` (`levelBound`): onto `2 ^ m` points, batching
-`M` words besides the first, `M min(B, 2 ^ m)` if `δ ≤ (1 - ρ) / 2 - 2 ^ (-m)`, `B` the lossy
-bound, and `M 2 ^ m` otherwise. -/
-def levelBound (ρ : ℚ) (f : ℕ × ℕ × Bool) : ℚ :=
-  (FriGame.Rounds.foldWords f : ℚ) *
-    if A.δ ≤ (1 - ρ) / 2 - 1 / 2 ^ f.2.1 then min (A.lossyBound ρ) (2 ^ f.2.1) else 2 ^ f.2.1
+/-- A fold of FRI's plan at rate `1 / 2 ^ lb`, times `|𝕂|`: onto `2 ^ m` points, batching `M`
+words besides the first, the MCA bound `B`'s count for the code of degree below `2 ^ (m - lb)`, or
+the lossy bound `M max(T₁, T₂, δ_int / loss)` if smaller and `δ ≤ (1 - ρ) / 2 - 2 ^ (-m)`. -/
+def levelBound (B : McaBound) (lb : ℕ) (f : ℕ × ℕ × Bool) : ℚ :=
+  let M := FriGame.Rounds.foldWords f
+  let count := B.count (2 ^ f.2.1) (2 ^ (f.2.1 - lb)) M A.δ
+  if A.δ ≤ (1 - 1 / 2 ^ lb) / 2 - 1 / 2 ^ f.2.1 then
+    min ((M : ℚ) * A.lossyBound (1 / 2 ^ lb)) count
+  else count
+
+/-- `B` admits every fold of `plan` at rate `1 / 2 ^ lb`. -/
+def Admits (B : McaBound) (lb : ℕ) (plan : List (ℕ × ℕ × Bool)) : Prop :=
+  ∀ f ∈ plan, B.admits (2 ^ f.2.1) (2 ^ (f.2.1 - lb)) A.δ
+
+instance (B : McaBound) (lb : ℕ) (plan : List (ℕ × ℕ × Bool)) : Decidable (A.Admits B lb plan) :=
+  by unfold Admits; infer_instance
 
 /-- The list bound at `δ'` and rate `ρ`: `1` below the unique-decoding radius `(1 - ρ) / 2`, and
 the Johnson bound `⌊(1 - δ' - ρ) / ((1 - δ')² - ρ)⌋` above it. -/
 def listBound (ρ : ℚ) : ℕ :=
   if A.δ' < (1 - ρ) / 2 then 1 else ⌊(1 - A.δ' - ρ) / ((1 - A.δ') ^ 2 - ρ)⌋₊
 
-/-- The analysis' conditions at rate `ρ`: `δ` and `loss` positive, `δ` at most the
-unique-decoding radius `(1 - ρ) / 2`, and `δ'` below the Johnson radius `1 - √ρ`. -/
+/-- The analysis' conditions at rate `ρ`: `δ` and `loss` positive, `δ ≤ δ'`, and `δ'` below the
+Johnson radius `1 - √ρ`. -/
 def Valid (ρ : ℚ) : Prop :=
-  0 < A.δ ∧ 0 < A.loss ∧ A.δ ≤ (1 - ρ) / 2 ∧ A.δ' < 1 ∧ ρ < (1 - A.δ') ^ 2
+  0 < A.δ ∧ 0 < A.loss ∧ A.δ ≤ A.δ' ∧ A.δ' < 1 ∧ ρ < (1 - A.δ') ^ 2
 
 instance (ρ : ℚ) : Decidable (A.Valid ρ) := by unfold Valid; infer_instance
 
@@ -113,7 +127,7 @@ structure Shape where
   logN : ℕ
 
 namespace Shape
-variable (c : Shape) (logBlowup : ℕ) (A : Analysis)
+variable (c : Shape) (logBlowup : ℕ) (B : McaBound) (A : Analysis)
 
 /-- The permutation trace's list bound at `δ'`, `1` without lookups. -/
 def permListBound : ℕ := if c.lookups then A.listBound (1 / 2 ^ logBlowup) else 1
@@ -128,16 +142,16 @@ def outOfDomainNum : ℚ :=
     A.listBound (1 / 2 ^ logBlowup) * c.identityDegree + 2 ^ c.logN : ℕ)
 
 /-- Batching `m` opened words on the domain of `N = 2 ^ (logN + logBlowup)` points at rate
-`ρ = 1 / 2 ^ logBlowup`, times `|𝕂|`: the powers MCA bound `(m - 1) N`, or for
-`δ < δ'' = δ' - 2/N` and `δ ≤ (1 - ρ) / 2 - 1/N` the curve bound `(m - 1) max(T₁, T₂)` if
+`ρ = 1 / 2 ^ logBlowup`, times `|𝕂|`: the MCA bound `B`'s count for curves of degree `m - 1`, or
+for `δ < δ'' = δ' - 2/N` and `δ ≤ (1 - ρ) / 2 - 1/N` the curve bound `(m - 1) max(T₁, T₂)` if
 smaller. -/
 def batchingNum (m : ℕ) : ℚ :=
   let N : ℕ := 2 ^ (c.logN + logBlowup)
   let ρ : ℚ := 1 / 2 ^ logBlowup
+  let count := B.count N (2 ^ c.logN) (m - 1) A.δ
   if A.δ < A.δ' - 2 / N ∧ A.δ ≤ (1 - ρ) / 2 - 1 / N then
-    min (((m - 1) * N : ℕ) : ℚ) (((m - 1 : ℕ) : ℚ) * max (A.curveT₁ ρ)
-      ((A.δ' - 2 / N) / (A.δ' - 2 / N - A.δ)))
-  else (((m - 1) * N : ℕ) : ℚ)
+    min count (((m - 1 : ℕ) : ℚ) * max (A.curveT₁ ρ) ((A.δ' - 2 / N) / (A.δ' - 2 / N - A.δ)))
+  else count
 
 end Shape
 
@@ -149,11 +163,6 @@ variable {lookups : List (Lookup F)} (S : Setup EF lookups)
 /-- The rate `1 / 2 ^ logBlowup`. -/
 def rateQ : ℚ := 1 / 2 ^ S.params.logBlowup
 
-/-- The analysis fits `S`: it is valid at `S`'s rate, and `δ ≤ δ' - 2/N`. -/
-def Fits (A : Analysis) : Prop := A.Valid S.rateQ ∧ A.δ ≤ A.δ' - 2 / S.size
-
-instance (A : Analysis) : Decidable (S.Fits A) := by unfold Fits; infer_instance
-
 /-- The setup's shape. -/
 def shape : Shape := ⟨S.numConstraints, S.identityDegree, S.numOpened, !lookups.isEmpty, S.logN⟩
 
@@ -163,39 +172,50 @@ def friPlan (heights : List ℕ) : List (ℕ × ℕ × Bool) :=
   FriGame.Rounds.plan S.params.maxLogArity (S.params.logFinalPolyLen + S.params.logBlowup)
     (S.logN + S.params.logBlowup) (S.logN + S.params.logBlowup) heights
 
+/-- The analysis fits `S` with the MCA bound `B`: it is valid at `S`'s rate, `δ ≤ δ' - 2/N`, and
+`B` admits batching and FRI's folds. -/
+def Fits (B : McaBound) (A : Analysis) : Prop :=
+  A.Valid S.rateQ ∧ A.δ ≤ A.δ' - 2 / S.size ∧ B.admits S.size S.n A.δ ∧
+    A.Admits B S.params.logBlowup (S.friPlan [])
+
+instance (B : McaBound) (A : Analysis) : Decidable (S.Fits B A) := by
+  unfold Fits; infer_instance
+
 /-- FRI's folds with inputs injected at `heights`, times `|𝕂|`: the sum of the level bounds of the
 plan's folds. -/
-def friFoldsNum (A : Analysis) (heights : List ℕ) : ℚ :=
-  ((S.friPlan heights).map (A.levelBound S.rateQ)).sum
+def friFoldsNum (B : McaBound) (A : Analysis) (heights : List ℕ) : ℚ :=
+  ((S.friPlan heights).map (A.levelBound B S.params.logBlowup)).sum
 
 /-- FRI's largest fold with inputs injected at `heights`, times `|𝕂|`. -/
-def friFoldMax (A : Analysis) (heights : List ℕ) : ℚ :=
-  maxQ ((S.friPlan heights).map (A.levelBound S.rateQ))
+def friFoldMax (B : McaBound) (A : Analysis) (heights : List ℕ) : ℚ :=
+  maxQ ((S.friPlan heights).map (A.levelBound B S.params.logBlowup))
 
 /-- The density `1 - δ + #folds · loss` of query positions where FRI's checks may pass. -/
 def queryDensity (A : Analysis) (heights : List ℕ) : ℚ :=
   1 - A.δ + (S.friPlan heights).length * A.loss
 
 /-- The terms of the knowledge error's bound for `|F| = p`, by challenge, for the shape `c`. -/
-def knowledgeErrorTermsOf (c : Shape) (p : ℕ) (A : Analysis) : List (String × ℚ) :=
+def knowledgeErrorTermsOf (c : Shape) (p : ℕ) (B : McaBound) (A : Analysis) :
+    List (String × ℚ) :=
   [("constraint folding", c.foldingNum S.params.logBlowup A / (p : ℚ) ^ Challenge.d EF),
     ("out of domain", c.outOfDomainNum S.params.logBlowup A / (p : ℚ) ^ Challenge.d EF),
-    ("batching", c.batchingNum S.params.logBlowup A c.numOpened / (p : ℚ) ^ Challenge.d EF),
-    ("FRI folds", S.friFoldsNum A [] / (p : ℚ) ^ Challenge.d EF),
+    ("batching", c.batchingNum S.params.logBlowup B A c.numOpened / (p : ℚ) ^ Challenge.d EF),
+    ("FRI folds", S.friFoldsNum B A [] / (p : ℚ) ^ Challenge.d EF),
     ("FRI queries", S.queryDensity A [] ^ S.params.numQueries)]
 
 /-- The terms of the knowledge error's bound for `|F| = p`, by challenge. -/
-def knowledgeErrorTerms (p : ℕ) (A : Analysis) : List (String × ℚ) :=
-  S.knowledgeErrorTermsOf S.shape p A
+def knowledgeErrorTerms (p : ℕ) (B : McaBound) (A : Analysis) : List (String × ℚ) :=
+  S.knowledgeErrorTermsOf S.shape p B A
 
 /-- The bound on the knowledge error: the sum of its terms. -/
-def knowledgeErrorBound (p : ℕ) (A : Analysis) : ℚ := sumTerms (S.knowledgeErrorTerms p A)
+def knowledgeErrorBound (p : ℕ) (B : McaBound) (A : Analysis) : ℚ :=
+  sumTerms (S.knowledgeErrorTerms p B A)
 
-/-- The calculator certifies `bits` bits of knowledge soundness. -/
-def Secure (p : ℕ) (A : Analysis) (bits : ℕ) : Prop :=
-  S.Fits A ∧ S.knowledgeErrorBound p A ≤ 1 / 2 ^ bits
+/-- The calculator certifies `bits` bits of knowledge soundness with the MCA bound `B`. -/
+def Secure (p : ℕ) (B : McaBound) (A : Analysis) (bits : ℕ) : Prop :=
+  S.Fits B A ∧ S.knowledgeErrorBound p B A ≤ 1 / 2 ^ bits
 
-instance (p : ℕ) (A : Analysis) (bits : ℕ) : Decidable (S.Secure p A bits) := by
+instance (p : ℕ) (B : McaBound) (A : Analysis) (bits : ℕ) : Decidable (S.Secure p B A bits) := by
   unfold Secure; infer_instance
 
 end Setup
@@ -205,28 +225,31 @@ variable (S : Setup EF)
 
 /-- The terms of the round error's bound for `|F| = p`, by round, each after `α` credited with
 its grinding, for the shape `c`. -/
-def roundErrorTermsOf (c : Shape) (p : ℕ) (A : Analysis) : List (String × ℚ) :=
+def roundErrorTermsOf (c : Shape) (p : ℕ) (B : McaBound) (A : Analysis) :
+    List (String × ℚ) :=
   [("constraint folding", c.foldingNum S.params.logBlowup A / (p : ℚ) ^ Challenge.d EF),
     ("out of domain", powFractionQ p S.params.oodPowBits *
       (c.outOfDomainNum S.params.logBlowup A / (p : ℚ) ^ Challenge.d EF)),
     ("batching", powFractionQ p S.params.batchPowBits *
-      (c.batchingNum S.params.logBlowup A c.numOpened / (p : ℚ) ^ Challenge.d EF)),
+      (c.batchingNum S.params.logBlowup B A c.numOpened / (p : ℚ) ^ Challenge.d EF)),
     ("FRI folds", powFractionQ p S.params.commitPowBits *
-      (S.friFoldMax A [] / (p : ℚ) ^ Challenge.d EF)),
+      (S.friFoldMax B A [] / (p : ℚ) ^ Challenge.d EF)),
     ("FRI queries", powFractionQ p S.params.queryPowBits *
       (S.queryDensity A [] + 1 / p) ^ S.params.numQueries)]
 
 /-- The terms of the round error's bound for `|F| = p`, by round. -/
-def roundErrorTerms (p : ℕ) (A : Analysis) : List (String × ℚ) := S.roundErrorTermsOf S.shape p A
+def roundErrorTerms (p : ℕ) (B : McaBound) (A : Analysis) : List (String × ℚ) :=
+  S.roundErrorTermsOf S.shape p B A
 
 /-- The bound on the round error: the largest of its terms. -/
-def roundErrorBound (p : ℕ) (A : Analysis) : ℚ := maxTerms (S.roundErrorTerms p A)
+def roundErrorBound (p : ℕ) (B : McaBound) (A : Analysis) : ℚ :=
+  maxTerms (S.roundErrorTerms p B A)
 
-/-- The calculator certifies `bits` bits per oracle answer. -/
-def SecureRo (p : ℕ) (A : Analysis) (bits : ℕ) : Prop :=
-  S.Fits A ∧ S.roundErrorBound p A ≤ 1 / 2 ^ bits
+/-- The calculator certifies `bits` bits per oracle answer with the MCA bound `B`. -/
+def SecureRo (p : ℕ) (B : McaBound) (A : Analysis) (bits : ℕ) : Prop :=
+  S.Fits B A ∧ S.roundErrorBound p B A ≤ 1 / 2 ^ bits
 
-instance (p : ℕ) (A : Analysis) (bits : ℕ) : Decidable (S.SecureRo p A bits) := by
+instance (p : ℕ) (B : McaBound) (A : Analysis) (bits : ℕ) : Decidable (S.SecureRo p B A bits) := by
   unfold SecureRo; infer_instance
 
 end Setup
@@ -244,45 +267,51 @@ def shapes : List Shape := (List.finRange S.k).map fun i ↦ (S.instanceSetup i)
 /-- LogUp's numbers, `T + (T - 1) W`. -/
 def lookupCount : ℕ := S.numInteractions + (S.numInteractions - 1) * S.lookupWidth
 
-/-- The analysis fits `S`: it is valid at the rate, and `δ ≤ δ' - 2/N` on every domain. -/
-def Fits (A : Analysis) : Prop :=
-  A.Valid S.domainSetup.rateQ ∧ ∀ i ∈ List.finRange S.k, A.δ ≤ A.δ' - 2 / (S.instanceSetup i).size
+/-- The analysis fits `S` with the MCA bound `B`: it is valid at the rate, `δ ≤ δ' - 2/N` on every
+domain, and `B` admits each instance's batching and FRI's folds. -/
+def Fits (B : McaBound) (A : Analysis) : Prop :=
+  A.Valid S.domainSetup.rateQ ∧
+    (∀ i ∈ List.finRange S.k, A.δ ≤ A.δ' - 2 / (S.instanceSetup i).size ∧
+      B.admits (S.instanceSetup i).size (S.instanceSetup i).n A.δ) ∧
+    A.Admits B S.params.logBlowup (S.domainSetup.friPlan S.friHeights)
 
-instance (A : Analysis) : Decidable (S.Fits A) := by unfold Fits; infer_instance
+instance (B : McaBound) (A : Analysis) : Decidable (S.Fits B A) := by unfold Fits; infer_instance
 
 /-- The terms of the batch's knowledge error bound for `|F| = p`, the instance terms at their
 worst instance, for the instances' shapes `cs` and LogUp's numbers `lookupCount`: LogUp's error
 `ℓᵏ (T + (T - 1) W)`, each instance's batching over the opened words of its domain size. -/
-def knowledgeErrorTermsOf (cs : List Shape) (lookupCount p : ℕ) (A : Analysis) :
+def knowledgeErrorTermsOf (cs : List Shape) (lookupCount p : ℕ) (B : McaBound) (A : Analysis) :
     List (String × ℚ) :=
   let lb := S.params.logBlowup
   [("lookup challenges", ((A.listBound S.domainSetup.rateQ ^ S.k * lookupCount : ℕ) : ℚ) /
       (p : ℚ) ^ Challenge.d EF),
     ("constraint folding", maxQ (cs.map (·.foldingNum lb A)) / (p : ℚ) ^ Challenge.d EF),
     ("out of domain", maxQ (cs.map (·.outOfDomainNum lb A)) / (p : ℚ) ^ Challenge.d EF),
-    ("batching", maxQ (cs.map fun c ↦ c.batchingNum lb A (groupNumOpenedOf cs c.logN)) /
+    ("batching", maxQ (cs.map fun c ↦ c.batchingNum lb B A (groupNumOpenedOf cs c.logN)) /
       (p : ℚ) ^ Challenge.d EF),
-    ("FRI folds", S.domainSetup.friFoldsNum A S.friHeights / (p : ℚ) ^ Challenge.d EF),
+    ("FRI folds", S.domainSetup.friFoldsNum B A S.friHeights / (p : ℚ) ^ Challenge.d EF),
     ("FRI queries", S.domainSetup.queryDensity A S.friHeights ^ S.params.numQueries)]
 
 /-- The terms of the batch's knowledge error bound for `|F| = p`. -/
-def knowledgeErrorTerms (p : ℕ) (A : Analysis) : List (String × ℚ) :=
-  S.knowledgeErrorTermsOf S.shapes S.lookupCount p A
+def knowledgeErrorTerms (p : ℕ) (B : McaBound) (A : Analysis) : List (String × ℚ) :=
+  S.knowledgeErrorTermsOf S.shapes S.lookupCount p B A
 
 /-- The bound on the batch's knowledge error: the sum of its terms. -/
-def knowledgeErrorBound (p : ℕ) (A : Analysis) : ℚ := sumTerms (S.knowledgeErrorTerms p A)
+def knowledgeErrorBound (p : ℕ) (B : McaBound) (A : Analysis) : ℚ :=
+  sumTerms (S.knowledgeErrorTerms p B A)
 
-/-- The calculator certifies `bits` bits of knowledge soundness for the batch. -/
-def Secure (p : ℕ) (A : Analysis) (bits : ℕ) : Prop :=
-  S.Fits A ∧ S.knowledgeErrorBound p A ≤ 1 / 2 ^ bits
+/-- The calculator certifies `bits` bits of knowledge soundness for the batch with the MCA bound
+`B`. -/
+def Secure (p : ℕ) (B : McaBound) (A : Analysis) (bits : ℕ) : Prop :=
+  S.Fits B A ∧ S.knowledgeErrorBound p B A ≤ 1 / 2 ^ bits
 
-instance (p : ℕ) (A : Analysis) (bits : ℕ) : Decidable (S.Secure p A bits) := by
+instance (p : ℕ) (B : McaBound) (A : Analysis) (bits : ℕ) : Decidable (S.Secure p B A bits) := by
   unfold Secure; infer_instance
 
 /-- The terms of the batch's round error bound for `|F| = p`, by round, the instance terms at
 their worst instance, each but `α` credited with its grinding, for the instances' shapes `cs` and
 LogUp's numbers `lookupCount`. -/
-def roundErrorTermsOf (cs : List Shape) (lookupCount p : ℕ) (A : Analysis) :
+def roundErrorTermsOf (cs : List Shape) (lookupCount p : ℕ) (B : McaBound) (A : Analysis) :
     List (String × ℚ) :=
   let lb := S.params.logBlowup
   [("lookup challenges", powFractionQ p S.params.lookupPowBits *
@@ -292,47 +321,50 @@ def roundErrorTermsOf (cs : List Shape) (lookupCount p : ℕ) (A : Analysis) :
     ("out of domain", powFractionQ p S.params.oodPowBits *
       (maxQ (cs.map (·.outOfDomainNum lb A)) / (p : ℚ) ^ Challenge.d EF)),
     ("batching", powFractionQ p S.params.batchPowBits *
-      (maxQ (cs.map fun c ↦ c.batchingNum lb A (groupNumOpenedOf cs c.logN)) /
+      (maxQ (cs.map fun c ↦ c.batchingNum lb B A (groupNumOpenedOf cs c.logN)) /
         (p : ℚ) ^ Challenge.d EF)),
     ("FRI folds", powFractionQ p S.params.commitPowBits *
-      (S.domainSetup.friFoldMax A S.friHeights / (p : ℚ) ^ Challenge.d EF)),
+      (S.domainSetup.friFoldMax B A S.friHeights / (p : ℚ) ^ Challenge.d EF)),
     ("FRI queries", powFractionQ p S.params.queryPowBits *
       (S.domainSetup.queryDensity A S.friHeights + 1 / p) ^ S.params.numQueries)]
 
 /-- The terms of the batch's round error bound for `|F| = p`. -/
-def roundErrorTerms (p : ℕ) (A : Analysis) : List (String × ℚ) :=
-  S.roundErrorTermsOf S.shapes S.lookupCount p A
+def roundErrorTerms (p : ℕ) (B : McaBound) (A : Analysis) : List (String × ℚ) :=
+  S.roundErrorTermsOf S.shapes S.lookupCount p B A
 
 /-- The bound on the batch's round error: the largest of its terms. -/
-def roundErrorBound (p : ℕ) (A : Analysis) : ℚ := maxTerms (S.roundErrorTerms p A)
+def roundErrorBound (p : ℕ) (B : McaBound) (A : Analysis) : ℚ :=
+  maxTerms (S.roundErrorTerms p B A)
 
-/-- The calculator certifies `bits` bits per oracle answer for the batch. -/
-def SecureRo (p : ℕ) (A : Analysis) (bits : ℕ) : Prop :=
-  S.Fits A ∧ S.roundErrorBound p A ≤ 1 / 2 ^ bits
+/-- The calculator certifies `bits` bits per oracle answer for the batch with the MCA bound `B`. -/
+def SecureRo (p : ℕ) (B : McaBound) (A : Analysis) (bits : ℕ) : Prop :=
+  S.Fits B A ∧ S.roundErrorBound p B A ≤ 1 / 2 ^ bits
 
-instance (p : ℕ) (A : Analysis) (bits : ℕ) : Decidable (S.SecureRo p A bits) := by
+instance (p : ℕ) (B : McaBound) (A : Analysis) (bits : ℕ) : Decidable (S.SecureRo p B A bits) := by
   unfold SecureRo; infer_instance
 
 end Batch.Setup
 
 /-! ### The search
 
-The bounds pull the parameters apart: the queries want `δ` close to the unique-decoding radius
-and a small loss, the curve and lossy bounds want them away from it, and the list sizes want `δ'`
-below it. `search` minimizes a bound over a grid of analyses by coordinate descent: FRI at
-`(1 - ρ) / 2 - 2 ^ (-a)`, the loss `2 ^ (-b)`, and the extractor at `(1 - ρ) / 2 - 2 ^ (-a-1-c)`
-for `c < 16`, or for `16 ≤ c < 23` at `(c - 15) / 8` of the way from the unique-decoding radius to
-`1 - r`, `r ≥ √ρ` a dyadic upper bound. It is computation only: what it finds is checked by
-`Secure` or `SecureRo`. -/
-
-/-- A dyadic upper bound `r ≥ √ρ`. -/
-def sqrtUpper (ρ : ℚ) : ℚ := ((⌊ρ * 2 ^ 40⌋₊.sqrt + 1 : ℕ) : ℚ) / 2 ^ 20
+The bounds pull the parameters apart: the queries want `δ` large and a small loss, the curve and
+lossy bounds want them away from the unique-decoding radius, the MCA bound's counts grow with `δ`,
+and the list sizes want `δ'` small. `search` minimizes a bound over a grid of analyses by
+coordinate descent: FRI at `(1 - ρ) / 2 - 2 ^ (-a)` for `a ≤ 40`, or for `40 < a ≤ 104` at
+`(a - 40) / 64` of the way from the unique-decoding radius to `1 - r`, `r ≥ √ρ` a dyadic upper
+bound; the loss `2 ^ (-b)`; and the extractor, for `c < 16`, at `(1 - ρ) / 2 - 2 ^ (-a-1-c)` below
+the unique-decoding radius and at `δ + 2 ^ (-8-c)` above it, or for `16 ≤ c < 23` at
+`(c - 15) / 8` of the way from the unique-decoding radius to `1 - r`. It is computation only: what
+it finds is checked by `Secure` or `SecureRo`. -/
 
 /-- The analysis at grid point `(a, b, c)` for rate `ρ`. -/
 def Analysis.grid (ρ : ℚ) (a b c : ℕ) : Analysis :=
   let udr := (1 - ρ) / 2
-  ⟨udr - 1 / 2 ^ a,
-    if c < 16 then udr - 1 / 2 ^ (a + 1 + c) else udr + (c - 15) * (1 - sqrtUpper ρ - udr) / 8,
+  let johnson := 1 - McaBound.sqrtUpper ρ
+  let δ := if a ≤ 40 then udr - 1 / 2 ^ a else udr + (a - 40) * (johnson - udr) / 64
+  ⟨δ,
+    if c < 16 then (if a ≤ 40 then udr - 1 / 2 ^ (a + 1 + c) else δ + 1 / 2 ^ (8 + c))
+    else udr + (c - 15) * (johnson - udr) / 8,
     1 / 2 ^ b⟩
 
 /-- `x` is a better value than `y`: smaller, or `y` does not fit. -/
@@ -348,12 +380,12 @@ def bestOn (f : ℕ → Option ℚ) (lo hi : ℕ) (cur : ℕ × Option ℚ) : �
     if better v best.2 then (lo + i, v) else best) cur
 
 /-- Coordinate descent of `bound` (`none` where the analysis does not fit) over the grid, `rounds`
-times over `a ∈ [1, 40]`, `b ∈ [1, 60]` and `c ∈ [0, 22]`, from `(8, 16, 1)`. -/
+times over `a ∈ [1, 104]`, `b ∈ [1, 60]` and `c ∈ [0, 22]`, from `(8, 16, 1)`. -/
 def search (ρ : ℚ) (bound : Analysis → Option ℚ) : (rounds : ℕ) → ℕ × ℕ × ℕ → ℕ × ℕ × ℕ
   | 0, x => x
   | rounds + 1, (a, b, c) =>
     let f (a b c : ℕ) := bound (Analysis.grid ρ a b c)
-    let a := (bestOn (f · b c) 1 40 (a, f a b c)).1
+    let a := (bestOn (f · b c) 1 104 (a, f a b c)).1
     let b := (bestOn (f a · c) 1 60 (b, f a b c)).1
     let c := (bestOn (f a b ·) 0 22 (c, f a b c)).1
     search ρ bound rounds (a, b, c)
@@ -363,33 +395,38 @@ def bestAnalysisOf (ρ : ℚ) (bound : Analysis → Option ℚ) : Analysis :=
   let (a, b, c) := search ρ bound 3 (8, 16, 1)
   Analysis.grid ρ a b c
 
-/-- The analysis of the smallest knowledge error bound the search finds for `|F| = p`. -/
-def Setup.bestAnalysis {lookups : List (Lookup F)} (S : Setup EF lookups) (p : ℕ) : Analysis :=
+/-- The analysis of the smallest knowledge error bound the search finds for `|F| = p` with the MCA
+bound `B`. -/
+def Setup.bestAnalysis {lookups : List (Lookup F)} (S : Setup EF lookups) (p : ℕ)
+    (B : McaBound) : Analysis :=
   let c := S.shape
   bestAnalysisOf S.rateQ fun A ↦
-    if S.Fits A then some (sumTerms (S.knowledgeErrorTermsOf c p A)) else none
+    if S.Fits B A then some (sumTerms (S.knowledgeErrorTermsOf c p B A)) else none
 
-/-- The analysis of the smallest round error bound the search finds for `|F| = p`. -/
-def Setup.bestAnalysisRo (S : Setup EF) (p : ℕ) : Analysis :=
+/-- The analysis of the smallest round error bound the search finds for `|F| = p` with the MCA
+bound `B`. -/
+def Setup.bestAnalysisRo (S : Setup EF) (p : ℕ) (B : McaBound) : Analysis :=
   let c := S.shape
   bestAnalysisOf S.rateQ fun A ↦
-    if S.Fits A then some (maxTerms (S.roundErrorTermsOf c p A)) else none
+    if S.Fits B A then some (maxTerms (S.roundErrorTermsOf c p B A)) else none
 
-/-- The analysis of the smallest batch knowledge error bound the search finds for `|F| = p`. -/
-def Batch.Setup.bestAnalysis {withLookups : Bool} (S : Batch.Setup EF withLookups) (p : ℕ) :
-    Analysis :=
+/-- The analysis of the smallest batch knowledge error bound the search finds for `|F| = p` with
+the MCA bound `B`. -/
+def Batch.Setup.bestAnalysis {withLookups : Bool} (S : Batch.Setup EF withLookups) (p : ℕ)
+    (B : McaBound) : Analysis :=
   let cs := S.shapes
   let t := S.lookupCount
   bestAnalysisOf S.domainSetup.rateQ fun A ↦
-    if S.Fits A then some (sumTerms (S.knowledgeErrorTermsOf cs t p A)) else none
+    if S.Fits B A then some (sumTerms (S.knowledgeErrorTermsOf cs t p B A)) else none
 
-/-- The analysis of the smallest batch round error bound the search finds for `|F| = p`. -/
-def Batch.Setup.bestAnalysisRo {withLookups : Bool} (S : Batch.Setup EF withLookups) (p : ℕ) :
-    Analysis :=
+/-- The analysis of the smallest batch round error bound the search finds for `|F| = p` with the
+MCA bound `B`. -/
+def Batch.Setup.bestAnalysisRo {withLookups : Bool} (S : Batch.Setup EF withLookups) (p : ℕ)
+    (B : McaBound) : Analysis :=
   let cs := S.shapes
   let t := S.lookupCount
   bestAnalysisOf S.domainSetup.rateQ fun A ↦
-    if S.Fits A then some (maxTerms (S.roundErrorTermsOf cs t p A)) else none
+    if S.Fits B A then some (maxTerms (S.roundErrorTermsOf cs t p B A)) else none
 
 /-! ### Reports -/
 
@@ -425,23 +462,23 @@ instance : Repr Report where
 def Report.of (A : Analysis) (fits : Bool) (terms : List (String × ℚ)) (bound : ℚ) : Report :=
   ⟨A, fits, terms.map fun (n, x) ↦ (n, securityBits x), securityBits bound⟩
 
-/-- The knowledge error's report for `|F| = p`. -/
+/-- The knowledge error's report for `|F| = p` with the MCA bound `B`. -/
 def Setup.knowledgeErrorReport {lookups : List (Lookup F)} (S : Setup EF lookups) (p : ℕ)
-    (A : Analysis) : Report :=
-  .of A (decide (S.Fits A)) (S.knowledgeErrorTerms p A) (S.knowledgeErrorBound p A)
+    (B : McaBound) (A : Analysis) : Report :=
+  .of A (decide (S.Fits B A)) (S.knowledgeErrorTerms p B A) (S.knowledgeErrorBound p B A)
 
-/-- The round error's report for `|F| = p`. -/
-def Setup.roundErrorReport (S : Setup EF) (p : ℕ) (A : Analysis) : Report :=
-  .of A (decide (S.Fits A)) (S.roundErrorTerms p A) (S.roundErrorBound p A)
+/-- The round error's report for `|F| = p` with the MCA bound `B`. -/
+def Setup.roundErrorReport (S : Setup EF) (p : ℕ) (B : McaBound) (A : Analysis) : Report :=
+  .of A (decide (S.Fits B A)) (S.roundErrorTerms p B A) (S.roundErrorBound p B A)
 
-/-- The batch's knowledge error report for `|F| = p`. -/
+/-- The batch's knowledge error report for `|F| = p` with the MCA bound `B`. -/
 def Batch.Setup.knowledgeErrorReport {withLookups : Bool} (S : Batch.Setup EF withLookups)
-    (p : ℕ) (A : Analysis) : Report :=
-  .of A (decide (S.Fits A)) (S.knowledgeErrorTerms p A) (S.knowledgeErrorBound p A)
+    (p : ℕ) (B : McaBound) (A : Analysis) : Report :=
+  .of A (decide (S.Fits B A)) (S.knowledgeErrorTerms p B A) (S.knowledgeErrorBound p B A)
 
-/-- The batch's round error report for `|F| = p`. -/
+/-- The batch's round error report for `|F| = p` with the MCA bound `B`. -/
 def Batch.Setup.roundErrorReport {withLookups : Bool} (S : Batch.Setup EF withLookups) (p : ℕ)
-    (A : Analysis) : Report :=
-  .of A (decide (S.Fits A)) (S.roundErrorTerms p A) (S.roundErrorBound p A)
+    (B : McaBound) (A : Analysis) : Report :=
+  .of A (decide (S.Fits B A)) (S.roundErrorTerms p B A) (S.roundErrorBound p B A)
 
 end CompStark.Iop

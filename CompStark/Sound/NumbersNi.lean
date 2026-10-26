@@ -10,13 +10,13 @@ public import CompStark.Sound.Rbr
 
 /-! # Bounds on the round errors of one random-oracle answer
 
-The terms of `roundError` (`CompStark/NonInteractiveError.lean`) at any FRI arity, with FRI's
-radius at most the unique-decoding radius, as in `CompStark/Sound/Numbers.lean`:
+The terms of `roundError` (`CompStark/NonInteractiveError.lean`) at any FRI arity and any radius,
+as in `CompStark/Sound/Numbers.lean`:
 
 * constraint folding, out of domain and batching as for the knowledge error;
 * each FRI fold: ArkLib's schedule of Plonky3's arities is the plan of the folds without inputs
-  (`plan_eq_arityPlan`, `schedule_mem_plan`), so every fold costs at most the plan's largest level
-  bound (`friFoldError_le`);
+  (`plan_eq_arityPlan`, `schedule_mem_plan`), so every fold costs at most the largest of bounds on
+  the plan's folds (`friFoldError_le`);
 * FRI's queries: `(1 - δ + #folds · loss + 1/p) ^ numQueries` (`friQueryError_eq`).
 
 `CompStark/Sound/Calculator.lean` collects them at one proximity loss.
@@ -30,20 +30,18 @@ variable {F : Type} [BaseField F] {EF : Type} [Challenge F EF]
 
 local notation "𝕂" => Challenge.Spec EF
 
-/-- The largest level bound of a plan's folds at rate `1/c`, `0` if empty. -/
-noncomputable def planMax (c : ℕ) (δ δ_int : ℝ≥0) (loss : ℝ) (plan : List (ℕ × ℕ × Bool)) : ℝ :=
-  (plan.map fun f ↦ levelBound c δ δ_int loss (FriGame.Rounds.foldWords f) f.2.1).foldr max 0
+/-- The largest of `g` over a plan's folds, `0` if empty. -/
+def planMax (g : ℕ × ℕ × Bool → ℝ) (plan : List (ℕ × ℕ × Bool)) : ℝ := (plan.map g).foldr max 0
 
-theorem le_planMax (c : ℕ) (δ δ_int : ℝ≥0) (loss : ℝ) {f : ℕ × ℕ × Bool} :
-    ∀ {plan : List (ℕ × ℕ × Bool)}, f ∈ plan →
-      levelBound c δ δ_int loss (FriGame.Rounds.foldWords f) f.2.1 ≤ planMax c δ δ_int loss plan
+theorem le_planMax (g : ℕ × ℕ × Bool → ℝ) {f : ℕ × ℕ × Bool} :
+    ∀ {plan : List (ℕ × ℕ × Bool)}, f ∈ plan → g f ≤ planMax g plan
   | _ :: _, .head _ => le_max_left _ _
-  | _ :: _, .tail _ h => (le_planMax c δ δ_int loss h).trans (le_max_right _ _)
+  | _ :: _, .tail _ h => (le_planMax g h).trans (le_max_right _ _)
 
-theorem planMax_nonneg (c : ℕ) (δ δ_int : ℝ≥0) (loss : ℝ) :
-    ∀ plan : List (ℕ × ℕ × Bool), 0 ≤ planMax c δ δ_int loss plan
+theorem planMax_nonneg (g : ℕ × ℕ × Bool → ℝ) :
+    ∀ plan : List (ℕ × ℕ × Bool), 0 ≤ planMax g plan
   | [] => le_rfl
-  | _ :: plan => (planMax_nonneg c δ δ_int loss plan).trans (le_max_right _ _)
+  | _ :: plan => (planMax_nonneg g plan).trans (le_max_right _ _)
 
 /-- The plan of folds by the arities `l` from a domain of `2 ^ n` points, injecting nothing. -/
 def arityPlan : List ℕ → ℕ → List (ℕ × ℕ × Bool)
@@ -135,17 +133,17 @@ theorem schedule_mem_plan (S : Setup EF) (i : Fin (S.lastFold + 1)) :
   rw [arityPlan_getElem l _ i hi, hpre i.castSucc (by simp only [Fin.val_castSucc]; omega), hs i,
     Fin.val_castSucc, List.sum_take_succ, Nat.sub_sub]
 
-/-- The largest error of FRI's folds at any arity, for `δ ≤ (1 - rate) / 2` and a proximity loss
-`loss > 0`: the largest level bound of its folds' plan over `|𝕂|`, for any `δ_int > δ`. -/
-theorem friFoldError_le (S : Setup EF) (δ δ_int loss : ℝ≥0) (hδ : (δ : ℝ) ≤ (1 - S.rate) / 2)
-    (h_pos : 0 < δ) (h_lt : δ < δ_int) (h_loss : 0 < loss) :
+/-- The largest error of FRI's folds at any arity and proximity loss: the largest of bounds `g` on
+the folds of its plan, over `|𝕂|`. -/
+theorem friFoldError_le (S : Setup EF) (δ loss : ℝ≥0) (g : ℕ × ℕ × Bool → ℝ)
+    (hg : FoldBounds 𝕂 (2 ^ S.params.logBlowup) δ loss g (FriGame.Rounds.plan S.params.maxLogArity
+      (S.params.logFinalPolyLen + S.params.logBlowup) (S.logN + S.params.logBlowup)
+      (S.logN + S.params.logBlowup) [])) :
     ⨆ i, friFoldError S δ loss i ≤
-      ENNReal.ofReal (planMax (2 ^ S.params.logBlowup) δ δ_int loss
-        (FriGame.Rounds.plan S.params.maxLogArity (S.params.logFinalPolyLen + S.params.logBlowup)
-          (S.logN + S.params.logBlowup) (S.logN + S.params.logBlowup) []) /
-        (Fintype.card 𝕂 : ℝ)) := by
+      ENNReal.ofReal (planMax g (FriGame.Rounds.plan S.params.maxLogArity
+        (S.params.logFinalPolyLen + S.params.logBlowup) (S.logN + S.params.logBlowup)
+        (S.logN + S.params.logBlowup) []) / (Fintype.card 𝕂 : ℝ)) := by
   have hK : (0 : ℝ) < Fintype.card 𝕂 := by exact_mod_cast Fintype.card_pos
-  have hc : 0 < 2 ^ S.params.logBlowup := Nat.two_pow_pos _
   have hfin := S.valid.finalPolyFits
   have hsum := Setup.sum_schedule S
   have h : 2 ^ S.params.logBlowup * (2 ^ (∑ j, (S.schedule j).val) *
@@ -154,39 +152,14 @@ theorem friFoldError_le (S : Setup EF) (δ δ_int loss : ℝ≥0) (hδ : (δ : �
     rw [hsum, ← pow_add, ← pow_add]
     congr 1
     omega
-  have hδ' : (δ : ℝ) ≤ (1 - 1 / ((2 ^ S.params.logBlowup : ℕ) : ℝ)) / 2 := by
-    rw [rate_eq] at hδ
-    push_cast
-    exact hδ
   refine iSup_le fun i ↦ ?_
+  have hmem := schedule_mem_plan S i
   refine le_trans ?_ (ENNReal.ofReal_le_ofReal (div_le_div_of_nonneg_right
-    (le_planMax _ δ δ_int loss (schedule_mem_plan S i)) hK.le))
-  rw [foldWords_false]
-  set m := S.logN + S.params.logBlowup - Fri.Spec.foldingPrefix S.schedule i.castSucc -
-    (S.schedule i : ℕ)
-  have hudr : (δ : ℝ) * (2 * (2 ^ S.params.logBlowup : ℕ)) ≤ (2 ^ S.params.logBlowup : ℕ) - 1 :=
-    mul_le_of_le_udr S δ hδ
-  have hmca : (friFoldError S δ loss i : ENNReal) ≤
-      ENNReal.ofReal ((2 ^ (S.schedule i : ℕ) - 1 : ℕ) * 2 ^ m / Fintype.card 𝕂) := by
-    refine (foldingErrorLossy_le_foldingError _ _ i _ _ loss.coe_nonneg).trans
-      ((foldingError_le _ hc _ _ i h δ hudr).trans (le_of_eq ?_))
-    rw [ENNReal.ofReal_div_of_pos hK, ENNReal.ofReal_natCast, ← ENNReal.ofReal_natCast]
-    push_cast
-    rfl
-  unfold levelBound
-  split_ifs with hl
-  · have hlossy := foldingErrorLossy_le (ω := S.domain) (2 ^ S.params.logBlowup) S.schedule
-      (finalDegree S.params.logFinalPolyLen) i h δ δ_int loss (by push_cast at hl ⊢; exact hl)
-      h_pos h_lt h_loss
-    have hM : ((2 ^ (S.schedule i : ℕ) - 1 : ℕ) : ℝ) = 2 ^ (S.schedule i : ℕ) - 1 := by
-      rw [Nat.cast_sub Nat.one_le_two_pow]
-      push_cast
-      rfl
-    rw [mul_min_of_nonneg _ _ (Nat.cast_nonneg _), ← min_div_div_right hK.le, ENNReal.ofReal_min]
-    refine le_min ?_ hmca
-    rw [hM]
-    exact hlossy
-  · exact hmca
+    (le_planMax g hmem) hK.le))
+  unfold friFoldError Fri.Spec.foldingErrorLossy
+  rw [ENNReal.coe_toNNReal (CoreDefinitions.lossyMcaError_ne_top _ _ _ _)]
+  exact (hg _ hmem).2 _ _ (mul_foldingDegree_eq _ S.schedule
+    (finalDegree S.params.logFinalPolyLen) i h)
 
 /-- FRI's queries at any arity: `(1 - δ + #folds · loss + 1/p) ^ numQueries`, one fold per entry of
 the plan. -/

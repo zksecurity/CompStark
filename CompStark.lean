@@ -154,6 +154,7 @@ public import CompStark.Sound.Counts
 public import CompStark.Sound.Range
 public import CompStark.LookupInclusion
 public import CompStark.Sound.LossyMca
+public import CompStark.Sound.McaBound
 public import CompStark.Fs.FreshQuery
 public import CompStark.Fs.DigestClash
 public import CompStark.NonInteractiveError

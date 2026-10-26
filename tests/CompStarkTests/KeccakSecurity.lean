@@ -131,14 +131,14 @@ def exampleAnalysis : Analysis := ⟨1 / 4 - 1 / 2 ^ 14, 1 / 4 - 1 / 2 ^ 26, 1 /
 
 /-- **52 bits per oracle answer** for Plonky3's Keccak example on `2 ^ 15` to `2 ^ 18` rows. -/
 theorem example_secureRo (height : Fin 4) :
-    (setup Ext4 0 87 height).SecureRo 2130706433 exampleRoAnalysis 52 := by
+    (setup Ext4 0 87 height).SecureRo 2130706433 .uniqueDecoding exampleRoAnalysis 52 := by
   refine secureRo_of_shape _ (shape_setup _ _ _ height) ?_
   revert height
   decide +kernel
 
 /-- **36 bits, interactively,** for Plonky3's Keccak example on `2 ^ 15` to `2 ^ 18` rows. -/
 theorem example_secure (height : Fin 4) :
-    (setup Ext4 0 87 height).Secure 2130706433 exampleAnalysis 36 := by
+    (setup Ext4 0 87 height).Secure 2130706433 .uniqueDecoding exampleAnalysis 36 := by
   refine secure_of_shape _ (shape_setup _ _ _ height) ?_
   revert height
   decide +kernel
@@ -158,25 +158,25 @@ def roAnalysis4 : Analysis := ⟨3 / 8 - 1 / 2 ^ 15, 3 / 8 - 1 / 2 ^ 17, 1 / 2 ^
 def analysis4 : Analysis := ⟨3 / 8 - 1 / 2 ^ 10, 3 / 8 - 1 / 2 ^ 13, 1 / 2 ^ 60⟩
 
 theorem secureRo100_blowup2 (height : Fin 4) :
-    (setup Ext4 0 203 height).SecureRo 2130706433 roAnalysis2 100 := by
+    (setup Ext4 0 203 height).SecureRo 2130706433 .uniqueDecoding roAnalysis2 100 := by
   refine secureRo_of_shape _ (shape_setup _ _ _ height) ?_
   revert height
   decide +kernel
 
 theorem secure100_blowup2 (height : Fin 4) :
-    (setup Ext4 0 244 height).Secure 2130706433 analysis2 100 := by
+    (setup Ext4 0 244 height).Secure 2130706433 .uniqueDecoding analysis2 100 := by
   refine secure_of_shape _ (shape_setup _ _ _ height) ?_
   revert height
   decide +kernel
 
 theorem secureRo100_blowup4 (height : Fin 4) :
-    (setup Ext4 1 124 height).SecureRo 2130706433 roAnalysis4 100 := by
+    (setup Ext4 1 124 height).SecureRo 2130706433 .uniqueDecoding roAnalysis4 100 := by
   refine secureRo_of_shape _ (shape_setup _ _ _ height) ?_
   revert height
   decide +kernel
 
 theorem secure100_blowup4 (height : Fin 4) :
-    (setup Ext4 1 149 height).Secure 2130706433 analysis4 100 := by
+    (setup Ext4 1 149 height).Secure 2130706433 .uniqueDecoding analysis4 100 := by
   refine secure_of_shape _ (shape_setup _ _ _ height) ?_
   revert height
   decide +kernel
@@ -190,25 +190,25 @@ def analysis2q : Analysis := ⟨1 / 4 - 1 / 2 ^ 12, 1 / 4 - 1 / 2 ^ 14, 1 / 2 ^ 
 def analysis4q : Analysis := ⟨3 / 8 - 1 / 2 ^ 12, 3 / 8 - 1 / 2 ^ 15, 1 / 2 ^ 60⟩
 
 theorem secureRo128_blowup2 (height : Fin 4) :
-    (setup Ext5 0 270 height).SecureRo 2130706433 roAnalysis2 128 := by
+    (setup Ext5 0 270 height).SecureRo 2130706433 .uniqueDecoding roAnalysis2 128 := by
   refine secureRo_of_shape _ (shape_setup _ _ _ height) ?_
   revert height
   decide +kernel
 
 theorem secure128_blowup2 (height : Fin 4) :
-    (setup Ext5 0 310 height).Secure 2130706433 analysis2q 128 := by
+    (setup Ext5 0 310 height).Secure 2130706433 .uniqueDecoding analysis2q 128 := by
   refine secure_of_shape _ (shape_setup _ _ _ height) ?_
   revert height
   decide +kernel
 
 theorem secureRo128_blowup4 (height : Fin 4) :
-    (setup Ext5 1 166 height).SecureRo 2130706433 roAnalysis4 128 := by
+    (setup Ext5 1 166 height).SecureRo 2130706433 .uniqueDecoding roAnalysis4 128 := by
   refine secureRo_of_shape _ (shape_setup _ _ _ height) ?_
   revert height
   decide +kernel
 
 theorem secure128_blowup4 (height : Fin 4) :
-    (setup Ext5 1 190 height).Secure 2130706433 analysis4q 128 := by
+    (setup Ext5 1 190 height).Secure 2130706433 .uniqueDecoding analysis4q 128 := by
   refine secure_of_shape _ (shape_setup _ _ _ height) ?_
   revert height
   decide +kernel
@@ -217,19 +217,23 @@ theorem secure128_blowup4 (height : Fin 4) :
 
 /-- The best bits the calculator finds for a setup, in the random-oracle model or interactively. -/
 def bestBits {EF : Type} [Challenge F EF] (S : Setup EF) (ro : Bool) : Float :=
-  if ro then (S.roundErrorReport 2130706433 (S.bestAnalysisRo 2130706433)).total
-  else (S.knowledgeErrorReport 2130706433 (S.bestAnalysis 2130706433)).total
+  if ro then
+    (S.roundErrorReport 2130706433 .uniqueDecoding
+      (S.bestAnalysisRo 2130706433 .uniqueDecoding)).total
+  else
+    (S.knowledgeErrorReport 2130706433 .uniqueDecoding
+      (S.bestAnalysis 2130706433 .uniqueDecoding)).total
 
-#guard (setup Ext4 0 87 0).bestAnalysisRo 2130706433 = exampleRoAnalysis
-#guard (setup Ext4 0 87 0).bestAnalysis 2130706433 = exampleAnalysis
-#guard (setup Ext4 0 203 0).bestAnalysisRo 2130706433 = roAnalysis2
-#guard (setup Ext4 0 244 0).bestAnalysis 2130706433 = analysis2
-#guard (setup Ext4 1 124 0).bestAnalysisRo 2130706433 = roAnalysis4
-#guard (setup Ext4 1 149 0).bestAnalysis 2130706433 = analysis4
-#guard (setup Ext5 0 270 0).bestAnalysisRo 2130706433 = roAnalysis2
-#guard (setup Ext5 0 310 0).bestAnalysis 2130706433 = analysis2q
-#guard (setup Ext5 1 166 0).bestAnalysisRo 2130706433 = roAnalysis4
-#guard (setup Ext5 1 190 0).bestAnalysis 2130706433 = analysis4q
+#guard (setup Ext4 0 87 0).bestAnalysisRo 2130706433 .uniqueDecoding = exampleRoAnalysis
+#guard (setup Ext4 0 87 0).bestAnalysis 2130706433 .uniqueDecoding = exampleAnalysis
+#guard (setup Ext4 0 203 0).bestAnalysisRo 2130706433 .uniqueDecoding = roAnalysis2
+#guard (setup Ext4 0 244 0).bestAnalysis 2130706433 .uniqueDecoding = analysis2
+#guard (setup Ext4 1 124 0).bestAnalysisRo 2130706433 .uniqueDecoding = roAnalysis4
+#guard (setup Ext4 1 149 0).bestAnalysis 2130706433 .uniqueDecoding = analysis4
+#guard (setup Ext5 0 270 0).bestAnalysisRo 2130706433 .uniqueDecoding = roAnalysis2
+#guard (setup Ext5 0 310 0).bestAnalysis 2130706433 .uniqueDecoding = analysis2q
+#guard (setup Ext5 1 166 0).bestAnalysisRo 2130706433 .uniqueDecoding = roAnalysis4
+#guard (setup Ext5 1 190 0).bestAnalysis 2130706433 .uniqueDecoding = analysis4q
 -- One query fewer does not reach the bits on `2 ^ 18` rows, at any analysis the search finds.
 #guard bestBits (setup Ext4 0 202 3) true < 100 ∧ bestBits (setup Ext4 0 243 3) false < 100
 #guard bestBits (setup Ext4 1 123 3) true < 100 ∧ bestBits (setup Ext4 1 148 3) false < 100
