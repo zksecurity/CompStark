@@ -472,7 +472,7 @@ theorem prob_queryBad_le (δ loss : NNReal) (t : Transcript S) :
     have h := prob_queryRound_le S.params.queryPowBits m S.params.numQueries
       (BaseField.two_pow_dvd_card_sub_one_of_le S.valid.twoAdic) G _ hG
     refine le_trans (le_of_eq ?_) h
-    congr 1
+    congr 2
     funext z
     simp only [QueryBad, hready, true_and, queryPoint_mem_iff, G, m, Transcript.consistentQueries]
   · rw [SampleableType.prEvent_uniformSample]
