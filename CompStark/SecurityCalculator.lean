@@ -348,22 +348,24 @@ end Batch.Setup
 /-! ### The search
 
 The bounds pull the parameters apart: the queries want `δ` large and a small loss, the curve and
-lossy bounds want them away from the unique-decoding radius, the MCA bound's counts grow with `δ`,
-and the list sizes want `δ'` small. `search` minimizes a bound over a grid of analyses by
-coordinate descent: FRI at `(1 - ρ) / 2 - 2 ^ (-a)` for `a ≤ 40`, or for `40 < a ≤ 104` at
-`(a - 40) / 64` of the way from the unique-decoding radius to `1 - r`, `r ≥ √ρ` a dyadic upper
-bound; the loss `2 ^ (-b)`; and the extractor, for `c < 16`, at `(1 - ρ) / 2 - 2 ^ (-a-1-c)` below
-the unique-decoding radius and at `δ + 2 ^ (-8-c)` above it, or for `16 ≤ c < 23` at
-`(c - 15) / 8` of the way from the unique-decoding radius to `1 - r`. It is computation only: what
+lossy bounds want them away from the unique-decoding radius `u = (1 - ρ) / 2`, the MCA bound's
+counts grow with `δ`, and the list sizes want `δ'` small. `search` minimizes a bound over a grid of
+analyses by coordinate descent, with `J = 1 - r`, `r ≥ √ρ` a dyadic upper bound: FRI at
+`u - 2 ^ (-a)` for `a ≤ 40`, at `(a - 40) / 64` of the way from `u` to `J` for `40 < a ≤ 104`,
+and at `J - (J - u) / (64 · 2 ^ (a - 104))` for `104 < a ≤ 124`; the loss `2 ^ (-b)`; and the
+extractor, for `c < 16`, at `u - 2 ^ (-a-1-c)` below `u` and at `δ + (J - δ) / 2 ^ (c + 1)` above
+it, or for `16 ≤ c < 23` at `(c - 15) / 8` of the way from `u` to `J`. It is computation only: what
 it finds is checked by `Secure` or `SecureRo`. -/
 
 /-- The analysis at grid point `(a, b, c)` for rate `ρ`. -/
 def Analysis.grid (ρ : ℚ) (a b c : ℕ) : Analysis :=
   let udr := (1 - ρ) / 2
   let johnson := 1 - McaBound.sqrtUpper ρ
-  let δ := if a ≤ 40 then udr - 1 / 2 ^ a else udr + (a - 40) * (johnson - udr) / 64
+  let δ := if a ≤ 40 then udr - 1 / 2 ^ a
+    else if a ≤ 104 then udr + (a - 40) * (johnson - udr) / 64
+    else johnson - (johnson - udr) / (64 * 2 ^ (a - 104))
   ⟨δ,
-    if c < 16 then (if a ≤ 40 then udr - 1 / 2 ^ (a + 1 + c) else δ + 1 / 2 ^ (8 + c))
+    if c < 16 then (if a ≤ 40 then udr - 1 / 2 ^ (a + 1 + c) else δ + (johnson - δ) / 2 ^ (c + 1))
     else udr + (c - 15) * (johnson - udr) / 8,
     1 / 2 ^ b⟩
 
@@ -380,12 +382,12 @@ def bestOn (f : ℕ → Option ℚ) (lo hi : ℕ) (cur : ℕ × Option ℚ) : �
     if better v best.2 then (lo + i, v) else best) cur
 
 /-- Coordinate descent of `bound` (`none` where the analysis does not fit) over the grid, `rounds`
-times over `a ∈ [1, 104]`, `b ∈ [1, 60]` and `c ∈ [0, 22]`, from `(8, 16, 1)`. -/
+times over `a ∈ [1, 124]`, `b ∈ [1, 60]` and `c ∈ [0, 22]`, from `(8, 16, 1)`. -/
 def search (ρ : ℚ) (bound : Analysis → Option ℚ) : (rounds : ℕ) → ℕ × ℕ × ℕ → ℕ × ℕ × ℕ
   | 0, x => x
   | rounds + 1, (a, b, c) =>
     let f (a b c : ℕ) := bound (Analysis.grid ρ a b c)
-    let a := (bestOn (f · b c) 1 104 (a, f a b c)).1
+    let a := (bestOn (f · b c) 1 124 (a, f a b c)).1
     let b := (bestOn (f a · c) 1 60 (b, f a b c)).1
     let c := (bestOn (f a b ·) 0 22 (c, f a b c)).1
     search ρ bound rounds (a, b, c)

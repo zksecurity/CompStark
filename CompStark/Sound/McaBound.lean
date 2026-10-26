@@ -22,7 +22,8 @@ soundness theorems built on it take `Holds` as their hypothesis.
 * `johnson`: up to the Johnson radius `1 - √ρ₋`, `ρ₋ = (k - 1) / N`, the closed form
   `M · 8 N t³ / (3 ρ₋)` of [DKT26] Theorem 5.12's line bound times the curve degree, with
   `t = m + 1/2`, `m = max(⌈r / (2η)⌉, 3)`, `r ≥ √ρ₋` dyadic and `η = 1 - δ - r > 0`.
-* `min`: the smaller count where both bounds apply (`min_holds`).
+* `min`: the smaller count where both bounds apply (`min_holds`); `uniqueOrJohnson` combines the
+  two above.
 -/
 
 @[expose] public section
@@ -82,6 +83,11 @@ def johnson : McaBound where
   count_nonneg N k M δ := by
     dsimp only
     positivity
+
+/-- Up to the Johnson radius: `johnson`'s count, the smaller of the two counts within the
+unique-decoding radius, and `uniqueDecoding`'s alone for the constant code (`k = 1`), which
+`johnson` does not admit. -/
+def uniqueOrJohnson : McaBound := uniqueDecoding.min johnson
 
 variable {K : Type} [Field K] [Fintype K] [SampleableType K]
 
