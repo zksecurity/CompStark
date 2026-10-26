@@ -12,13 +12,12 @@ package CompStark where
 require CompPoly from git "https://github.com/mitschabaude-bot/CompPoly.git" @
     "7596b8e735e693547fa4e86308f23e2ced15ef78"
 
--- ArkLib with FRI round-by-round soundness on Lean v4.35 (Verified-zkEVM/ArkLib#1317, stacked on
--- #992 and #1251), lossy mutual correlated agreement (branch `fri-lossy`) and Johnson-regime mutual
--- correlated agreement for power curves (branch `fri-lossy-johnson`).
-require Arklib from git "https://github.com/mitschabaude-bot/ArkLib.git" @ "ec1c17cb91147ed9240877d3926bb524ed1621d7"
+-- ArkLib main with Johnson-regime mutual correlated agreement for power curves and lossy mutual
+-- correlated agreement with FRI soundness from it (branch `fri-lossy-main` of the bot fork).
+require Arklib from git "https://github.com/mitschabaude-bot/ArkLib.git" @ "58536cf21876315c996e9a51ec5111140ed34a54"
 
--- VCVio as ArkLib#1317 pins it: Verified-zkEVM/VCVio#821 on Lean v4.35.
-require VCVio from git "https://github.com/Verified-zkEVM/VCVio" @ "0de3bf11c4acd77a5e750288049ad35e1a650bf9"
+-- VCVio as ArkLib main pins it.
+require VCVio from git "https://github.com/Verified-zkEVM/VCVio" @ "v4.35.0"
 
 -- Mathlib as CompPoly pins it, last so that its dependencies take precedence over ArkLib's.
 require mathlib from git "https://github.com/leanprover-community/mathlib4" @ "v4.35.0"

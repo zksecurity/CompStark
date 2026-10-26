@@ -145,11 +145,16 @@ private theorem prEvent_freshBadAfter_le [Finite D] [∀ d, SampleableType (R d)
             have hval (g : ∀ d, R d) (u : R t) : completeTable (c.cacheQuery t u) g t = u := by
               rw [completeTable_cacheQuery, Function.update_self]
             simp_rw [hupd, hval]
-            refine wp_le_of_forall_le _ fun u => ?_
-            have hcu : (c.cacheQuery t u) t ≠ none := by
+            have hcu (u : R t) : (c.cacheQuery t u) t ≠ none := by
               simp only [QueryCache.cacheQuery_self, ne_eq, reduceCtorEq, not_false_eq_true]
-            exact ih u (n - 1) (hk u) (pre ++ [⟨t, u⟩]) (c.cacheQuery t u)
-              (hcache _ u hcu fun t' ht' => QueryCache.cacheQuery_of_ne c u ht') (hlen' u)
+            have h := prEvent_bind_le_of_forall_le ($ᵗ (R t))
+              (fun u => (fun g => FreshBadAfter bad (pre ++ [⟨t, u⟩])
+                (tableQueryLog (k u) (completeTable (c.cacheQuery t u) g))) <$>
+                  ($ᵗ (∀ d, R d))) id fun u => by
+                rw [id_map]
+                exact ih u (n - 1) (hk u) (pre ++ [⟨t, u⟩]) (c.cacheQuery t u)
+                  (hcache _ u (hcu u) fun t' ht' => QueryCache.cacheQuery_of_ne c u ht') (hlen' u)
+            rwa [id_map] at h
           calc
             _ ≤ ε + ((n - 1 : ℕ) : ℝ≥0∞) * ε := add_le_add hfirst hrest
             _ = n * ε := by
@@ -172,7 +177,7 @@ private theorem prEvent_exists_fresh_bad_le_finite [Finite D] [∀ d, Sampleable
   have heager := evalDist_simulateQ_randomOracle_run'_eq_completeTable oa ∅
   simp only [completeTable_empty] at heager
   rw [(EvalDistEq.of_evalDist_eq heager).prEvent_eq event]
-  simp only [expect_norm]
+  simp only [prEvent_norm]
   refine (prEvent_mono ($ᵗ (∀ d, R d)) _ _ htrace).trans ?_
   have h := prEvent_freshBadAfter_le bad ε n hε oa n hn [] ∅
     (fun t => by simp only [QueryCache.empty_apply, List.map_nil, List.not_mem_nil,
