@@ -127,8 +127,8 @@ open CompStark.Stark CompStark.Sound
 /-! ### The calculator's theorems
 
 Each takes the calculator's certificate with an MCA bound `B` and the hypothesis that `B` holds
-over the challenge field (`B.Holds`): `McaBound.uniqueDecoding_holds` for the bound within the
-unique-decoding radius. -/
+(`B.Holds`): `McaBound.uniqueDecoding_holds` for the bound within the unique-decoding radius,
+`McaBound.uniqueOrJohnson_holds` up to the Johnson radius. -/
 
 section Calculator
 variable {F : Type} [BaseField F] {EF : Type} [Challenge F EF] {p : ℕ}
