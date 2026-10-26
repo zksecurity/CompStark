@@ -91,4 +91,9 @@ Classical.choice, Quot.sound] -/
 #guard_msgs in
 #print axioms wideBatchGrind_knowledgeSoundness_ro
 
+/-- info: 'CompStark.Sound.McaBound.uniqueOrJohnson_holds' depends on axioms: [propext,
+Classical.choice, Quot.sound] -/
+#guard_msgs in
+#print axioms CompStark.Sound.McaBound.uniqueOrJohnson_holds
+
 end CompStarkTests.Security

@@ -36,8 +36,9 @@ grinding give `52` bits per oracle answer. Over the quartic extension the out-of
 `(3n + n) / |𝕂|` caps the bits near `124 - (logN + 2)`, `104` to `107` here, so `128` bits need
 the quintic extension.
 
-Up to the Johnson radius (`McaBound.uniqueOrJohnson`, on the Johnson bound for power curves
-`McaBound.johnson`), FRI's `δ` goes up to `1 - √ρ` and the queries drop:
+Up to the Johnson radius (`McaBound.uniqueOrJohnson`, proved by `McaBound.uniqueOrJohnson_holds`
+on ArkLib's Johnson-regime MCA for power curves), FRI's `δ` goes up to `1 - √ρ` and the queries
+drop:
 
 | configuration | field | grinding | random-oracle bits | interactive bits |
 | --- | --- | --- | --- | --- |
@@ -334,23 +335,20 @@ theorem johnson_secureRo100_quartic_blowup4 (height : Fin 4) :
   decide +kernel
 
 /-- **100 bits per oracle answer with `85` queries**, Plonky3's grinding, over the quintic
-extension at blowup `4`, FRI beyond the unique-decoding radius at `δ ≈ 0.4995`, if the Johnson
-bound holds. -/
-theorem johnson_roundError_le_quintic (hJ : McaBound.johnson.Holds) (height : Fin 4) :
+extension at blowup `4`, FRI beyond the unique-decoding radius at `δ ≈ 0.4995`. -/
+theorem johnson_roundError_le_quintic (height : Fin 4) :
     roundError (setup Ext5 1 85 .plonky3 height) (134086401 / 268435456)
       (536476675 / 1073741824) ≤ (2 ^ 100)⁻¹ :=
-  roundError_le_of_secureRo _ KoalaBear.card_eq
-    (McaBound.min_holds McaBound.uniqueDecoding_holds hJ) _
+  roundError_le_of_secureRo _ KoalaBear.card_eq McaBound.uniqueOrJohnson_holds _
     (johnson_secureRo100_quintic_blowup4 height) _ _ (by norm_num [johnsonRo5b4])
     (by norm_num [johnsonRo5b4])
 
 /-- **100 bits per oracle answer with `86` queries over the quartic extension** at blowup `4`,
-with `johnsonGrinding4`, FRI at `δ ≈ 0.4941`, if the Johnson bound holds. -/
-theorem johnson_roundError_le_quartic (hJ : McaBound.johnson.Holds) (height : Fin 4) :
+with `johnsonGrinding4`, FRI at `δ ≈ 0.4941`. -/
+theorem johnson_roundError_le_quartic (height : Fin 4) :
     roundError (setup Ext4 1 86 johnsonGrinding4 height) (33161155 / 67108864)
       (133037833 / 268435456) ≤ (2 ^ 100)⁻¹ :=
-  roundError_le_of_secureRo _ KoalaBear.card_eq
-    (McaBound.min_holds McaBound.uniqueDecoding_holds hJ) _
+  roundError_le_of_secureRo _ KoalaBear.card_eq McaBound.uniqueOrJohnson_holds _
     (johnson_secureRo100_quartic_blowup4 height) _ _ (by norm_num [johnsonRo4b4])
     (by norm_num [johnsonRo4b4])
 
@@ -407,5 +405,10 @@ def bestBits (B : McaBound) {EF : Type} [Challenge F EF] (S : Setup EF) (ro : Bo
 Classical.choice, Quot.sound] -/
 #guard_msgs in
 #print axioms example_secureRo
+
+/-- info: 'CompStarkTests.KeccakSecurity.johnson_roundError_le_quintic' depends on axioms: [propext,
+Classical.choice, Quot.sound] -/
+#guard_msgs in
+#print axioms johnson_roundError_le_quintic
 
 end CompStarkTests.KeccakSecurity

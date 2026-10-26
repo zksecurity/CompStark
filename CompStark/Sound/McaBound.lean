@@ -5,6 +5,8 @@ Released under Apache 2.0 license as described in the file LICENSE.
 module
 
 public import CompStark.Sound.PowersMca
+public import
+  ArkLib.Data.CodingTheory.ReedSolomon.MutualCorrelatedAgreement.Johnson.CurveProbability
 
 /-! # Bounds on mutual correlated agreement for Reed–Solomon codes and power curves
 
@@ -21,7 +23,8 @@ soundness theorems built on it take `Holds` as their hypothesis.
   same MCA events).
 * `johnson`: up to the Johnson radius `1 - √ρ₋`, `ρ₋ = (k - 1) / N`, the closed form
   `M · 8 N t³ / (3 ρ₋)` of [DKT26] Theorem 5.12's line bound times the curve degree, with
-  `t = m + 1/2`, `m = max(⌈r / (2η)⌉, 3)`, `r ≥ √ρ₋` dyadic and `η = 1 - δ - r > 0`.
+  `t = m + 1/2`, `m = max(⌈r / (2η)⌉, 3)`, `r ≥ √ρ₋` dyadic and `η = 1 - δ - r > 0`
+  (`johnson_holds`, from ArkLib's Johnson-regime MCA for power curves at the slack `η`).
 * `min`: the smaller count where both bounds apply (`min_holds`); `uniqueOrJohnson` combines the
   two above.
 -/
@@ -160,6 +163,105 @@ theorem min_holds {B B' : McaBound} (hB : B.Holds) (hB' : B'.Holds) : (B.min B')
     exact le_min (hB K N k M domain δ h1) (hB' K N k M domain δ h2)
   · exact hB K N k M domain δ h1
   · exact hB' K N k M domain δ h2
+
+/-- `sqrtUpper ρ` bounds `√ρ` from above. -/
+theorem sqrt_le_sqrtUpper (ρ : ℚ) : √(ρ : ℝ) ≤ (sqrtUpper ρ : ℝ) := by
+  set n := ⌊ρ * 2 ^ 40⌋₊
+  have hn : ρ * 2 ^ 40 < (n.sqrt + 1 : ℕ) * (n.sqrt + 1 : ℕ) := by
+    have h1 := Nat.lt_floor_add_one (ρ * 2 ^ 40)
+    have h2 : n + 1 ≤ (n.sqrt + 1) * (n.sqrt + 1) := Nat.lt_succ_sqrt n
+    have h3 : ((n + 1 : ℕ) : ℚ) ≤ ((n.sqrt + 1) * (n.sqrt + 1) : ℕ) := by exact_mod_cast h2
+    push_cast at h1 h3 ⊢
+    linarith
+  have hu : (0 : ℝ) ≤ (sqrtUpper ρ : ℝ) := by unfold sqrtUpper; positivity
+  rw [Real.sqrt_le_left hu]
+  have : (ρ : ℝ) ≤ (sqrtUpper ρ : ℝ) ^ 2 := by
+    have : ρ ≤ sqrtUpper ρ ^ 2 := by
+      unfold sqrtUpper
+      rw [div_pow, le_div_iff₀ (by positivity)]
+      push_cast at hn ⊢
+      nlinarith
+    exact_mod_cast this
+  exact this
+
+open ReedSolomon HiddenDerivative in
+/-- **The Johnson bound holds**, from ArkLib's Johnson-regime MCA for power curves
+(`ReedSolomon.mcaError_univariatePowers_johnson_le_closed`, [DKT26] Theorem 5.12 for curves) at
+the slack `η = 1 - δ - r`, `r ≥ √ρ₋`, which only raises the multiplicity `t`. -/
+theorem johnson_holds : johnson.Holds := by
+  intro K _ _ _ _ N k M domain δ h
+  simp only [johnson, decide_eq_true_eq] at h
+  obtain ⟨hk, hkN, hδ0, hr⟩ := h
+  rcases Nat.eq_zero_or_pos M with rfl | hM
+  · rw [mcaError_univariatePowers_zero]
+    exact bot_le
+  obtain ⟨D, rfl⟩ : ∃ D, k = D + 1 := ⟨k - 1, by omega⟩
+  have hD : 1 ≤ D := by omega
+  have hNpos : (0 : ℝ) < N := by exact_mod_cast (show 0 < N by omega)
+  set ρ : ℚ := ((D + 1 - 1 : ℕ) : ℚ) / N with hρdef
+  set r := sqrtUpper ρ
+  have hρR : johnsonRhoMinus (Fintype.card (Fin N)) D = (ρ : ℝ) := by
+    rw [johnsonRhoMinus, Fintype.card_fin, hρdef, Nat.add_sub_cancel]
+    push_cast
+    rfl
+  have hρpos : (0 : ℝ) < ρ := by
+    rw [← hρR, johnsonRhoMinus, Fintype.card_fin]
+    have : (0 : ℝ) < D := by exact_mod_cast hD
+    positivity
+  have hsq : √(johnsonRhoMinus (Fintype.card (Fin N)) D) ≤ (r : ℝ) := by
+    rw [hρR]
+    exact sqrt_le_sqrtUpper ρ
+  set η : ℝ := 1 - δ - r with hη
+  have hη0 : 0 < η := by
+    have : (r : ℝ) < 1 - δ := by exact_mod_cast hr
+    linarith
+  have hagree : johnsonAgreement (Fintype.card (Fin N)) D η ≤ 1 - δ := by
+    rw [johnsonAgreement]
+    linarith
+  have ha : johnsonAgreement (Fintype.card (Fin N)) D η ≤ 1 := by
+    have : (0 : ℝ) ≤ δ := by exact_mod_cast hδ0
+    linarith
+  have hmono := mcaError_le_of_card (M := M) (k := D + 1) domain (δ : ℝ)
+    (1 - johnsonAgreement (Fintype.card (Fin N)) D η) fun t _ ht ↦ by
+      have : (N : ℝ) * johnsonAgreement (Fintype.card (Fin N)) D η ≤ N * (1 - δ) :=
+        mul_le_mul_of_nonneg_left hagree hNpos.le
+      linarith
+  have hclosed := ReedSolomon.mcaError_univariatePowers_johnson_le_closed domain hD
+    (by rw [Fintype.card_fin]; omega) hη0 hM ha
+  refine hmono.trans (hclosed.trans (ENNReal.ofReal_le_ofReal
+    (div_le_div_of_nonneg_right ?_ (Nat.cast_nonneg _))))
+  -- the multiplicity at `η` is at most the count's
+  set m : ℕ := Max.max ⌈r / (2 * (1 - δ - r))⌉₊ 3
+  have hm : johnsonM (Fintype.card (Fin N)) D η ≤ m := by
+    refine max_le_max (Nat.ceil_le.mpr ?_) le_rfl
+    have hx := Nat.le_ceil (r / (2 * (1 - δ - r)))
+    have hx' : ((r / (2 * (1 - δ - r)) : ℚ) : ℝ) ≤ ((⌈r / (2 * (1 - δ - r))⌉₊ : ℚ) : ℝ) := by
+      exact_mod_cast hx
+    calc √(johnsonRhoMinus (Fintype.card (Fin N)) D) / (2 * η) ≤ (r : ℝ) / (2 * η) :=
+          div_le_div_of_nonneg_right hsq (by positivity)
+      _ = ((r / (2 * (1 - δ - r)) : ℚ) : ℝ) := by rw [hη]; push_cast; rfl
+      _ ≤ _ := hx'.trans (by push_cast; rfl)
+  have hT : johnsonT (Fintype.card (Fin N)) D η ≤ (m : ℝ) + 1 / 2 := by
+    rw [johnsonT]
+    have : (johnsonM (Fintype.card (Fin N)) D η : ℝ) ≤ m := by exact_mod_cast hm
+    linarith
+  have hT0 : 0 ≤ johnsonT (Fintype.card (Fin N)) D η := by rw [johnsonT]; positivity
+  rw [hρR, Fintype.card_fin]
+  have h3 : johnsonT N D η ^ 3 ≤ ((m : ℝ) + 1 / 2) ^ 3 := by
+    rw [Fintype.card_fin] at hT hT0
+    exact pow_le_pow_left₀ hT0 hT 3
+  have hcube : (8 / 3 : ℝ) * N * johnsonT N D η ^ 3 / ρ ≤
+      8 * N * ((m : ℝ) + 1 / 2) ^ 3 / (3 * ρ) := by
+    rw [div_le_div_iff₀ hρpos (by positivity)]
+    nlinarith [mul_le_mul_of_nonneg_left h3 hNpos.le]
+  refine (mul_le_mul_of_nonneg_left hcube (Nat.cast_nonneg M)).trans (le_of_eq ?_)
+  simp only [johnson, m, r, hρdef]
+  push_cast
+  rfl
+
+/-- The bound up to the Johnson radius holds. -/
+theorem uniqueOrJohnson_holds : uniqueOrJohnson.Holds :=
+  min_holds uniqueDecoding_holds johnson_holds
 
 end McaBound
 
