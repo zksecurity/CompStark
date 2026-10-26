@@ -122,21 +122,18 @@ structure Holds (S : Setup EF lookups) (publicValues : List F) (challenges : Lis
 
 /-- If the DEEP components of the opened words are `(δ - 2/N)`-near the code on a common set, `δ`
 below `1 - rate` and `ζ` off the trace domain, the claimed values are those of polynomials of
-degree at most `n` that agree with the trace, quotient and permutation words on a common set of
-`(1 - δ) N` points: a candidate trace, quotient and permutation trace of the list decoding. The two
-points lost are those where `ζ` or `ζ ω_n` may meet `L`. -/
+degree at most `n` that agree with the trace, quotient and permutation words on one common set of
+`(1 - δ) N` points: a candidate of the list decoding of the committed words as one family
+(`Setup.Committed`). The two points lost are those where `ζ` or `ζ ω_n` may meet `L`. -/
 def DecodingStep (S : Setup EF lookups) : Prop :=
   ∀ (δ : NNReal), (δ : ℝ) < 1 - S.rate → ∀ (prover : Prover S) (α ζ : 𝕂), OffTraceDomain S ζ →
     NearTogether S ((δ : ℝ) - 2 / S.size) (components prover α ζ) →
     ∃ (trace : Fin S.air.width → F[X]) (quotient : Fin S.chunks → Fin (Challenge.d EF) → F[X])
       (perm : Fin S.permWidth → Fin (Challenge.d EF) → F[X]),
-      (∀ j, (trace j).natDegree ≤ S.n) ∧ Agree S δ prover.trace trace ∧
-      (∀ c e, (quotient c e).natDegree ≤ S.n) ∧
-      Agree S δ (fun ce : Fin S.chunks × Fin (Challenge.d EF) ↦ prover.quotient α ce.1 ce.2)
-        (fun ce ↦ quotient ce.1 ce.2) ∧
+      (∀ j, (trace j).natDegree ≤ S.n) ∧ (∀ c e, (quotient c e).natDegree ≤ S.n) ∧
       (∀ c e, (perm c e).natDegree ≤ S.n) ∧
-      Agree S δ (fun ce : Fin S.permWidth × Fin (Challenge.d EF) ↦ prover.perm ce.1 ce.2)
-        (fun ce ↦ perm ce.1 ce.2) ∧
+      Agree S δ (S.committed prover.trace prover.perm (prover.quotient α))
+        (S.committed trace perm quotient) ∧
       prover.openings α ζ = trueOpenings S trace quotient ζ perm
 
 open Classical in

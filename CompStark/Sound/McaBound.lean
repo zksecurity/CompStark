@@ -21,10 +21,12 @@ soundness theorems built on it take `Holds` as their hypothesis.
 * `uniqueDecoding`: within the unique-decoding radius, `2 ⌊δ N⌋ ≤ N - k`, at most `M N` exceptional
   seeds (`uniqueDecoding_holds`, from `mcaError_powers_le` at the radius `⌊δ N⌋ / N`, which has the
   same MCA events).
-* `johnson`: up to the Johnson radius `1 - √ρ₋`, `ρ₋ = (k - 1) / N`, the closed form
-  `M · 8 N t³ / (3 ρ₋)` of [DKT26] Theorem 5.12's line bound times the curve degree, with
-  `t = m + 1/2`, `m = max(⌈r / (2η)⌉, 3)`, `r ≥ √ρ₋` dyadic and `η = 1 - δ - r > 0`
-  (`johnson_holds`, from ArkLib's Johnson-regime MCA for power curves at the slack `η`).
+* `johnson`: up to the Johnson radius `1 - √ρ₋`, `ρ₋ = (k - 1) / N`, `M` times [DKT26] Theorem
+  5.12's exception count for lines, `johnsonLineCount`, ArkLib's `johnsonExceptionCount` in `Nat`
+  and `ℚ` arithmetic, at the agreement threshold `⌈(1 - δ) N⌉` and the multiplicity
+  `m = max(⌈r / (2 (1 - δ - r))⌉, 3)`, `r ≥ √ρ₋` dyadic (`johnson_holds`, from ArkLib's
+  Johnson-regime MCA for power curves at the slack `η = √ρ₋ / (2m)`, whose multiplicity is `m`).
+  The kernel evaluates it: `⌈√x⌉` is `ceilSqrt`, through `Nat.sqrt`.
 * `min`: the smaller count where both bounds apply (`min_holds`); `uniqueOrJohnson` combines the
   two above.
 -/
@@ -73,18 +75,37 @@ def min (B B' : McaBound) : McaBound where
 /-- A dyadic upper bound `r ≥ √ρ`, `r ≤ √ρ + 2 ^ (-20)`. -/
 def sqrtUpper (ρ : ℚ) : ℚ := ((⌊ρ * 2 ^ 40⌋₊.sqrt + 1 : ℕ) : ℚ) / 2 ^ 20
 
+/-- `⌈√x⌉` for a rational `x`: `0` for `⌈x⌉ = 0`, else `⌊√(⌈x⌉ - 1)⌋ + 1`, the least `c` with
+`x ≤ c²` (`ceilSqrt_le_iff`). -/
+def ceilSqrt (x : ℚ) : ℕ := if ⌈x⌉₊ = 0 then 0 else (⌈x⌉₊ - 1).sqrt + 1
+
+/-- [DKT26]'s exception count for lines, as ArkLib's `johnsonExceptionCount` computes it, for the
+code of degree at most `D` on `n` points, agreement threshold `A` and multiplicity `m`:
+`(2μ - 1) h + θ (h + μ + 4 D μ h) + (n - D - 1) μ` with `t = m + 1/2`, `ρ₋ = D / n`,
+`μ = ⌈t / √ρ₋⌉ - 1`, `h = ⌈t² / (3 ρ₋)⌉ - 1` and `θ = (n - D) / (A - D)`. -/
+def johnsonLineCount (n D A m : ℕ) : ℚ :=
+  let ρ : ℚ := (D : ℚ) / n
+  let t : ℚ := m + 1 / 2
+  let μ : ℕ := ceilSqrt (t ^ 2 / ρ) - 1
+  let h : ℕ := ⌈t ^ 2 / (3 * ρ)⌉₊ - 1
+  ((2 * μ - 1 : ℕ) : ℚ) * h + ((n - D : ℕ) : ℚ) / (A - D : ℕ) * (h + μ + 4 * D * μ * h) +
+    ((n - D - 1 : ℕ) : ℚ) * μ
+
+/-- The Johnson multiplicity at radius `δ` for `ρ₋`: `max(⌈r / (2 (1 - δ - r))⌉, 3)` with
+`r = sqrtUpper ρ₋ ≥ √ρ₋`. -/
+def johnsonMult (ρ δ : ℚ) : ℕ :=
+  Max.max ⌈sqrtUpper ρ / (2 * (1 - δ - sqrtUpper ρ))⌉₊ 3
+
 /-- The Johnson regime: for `2 ≤ k < N` and `δ < 1 - r`, `r = sqrtUpper ρ₋ ≥ √ρ₋`,
-`ρ₋ = (k - 1) / N`, the count `M · 8 N t³ / (3 ρ₋)` with `t = max(⌈r / (2η)⌉, 3) + 1/2` and
-`η = 1 - δ - r`: [DKT26] Theorem 5.12's closed form, times the curve degree `M`. -/
+`ρ₋ = (k - 1) / N`, the count `M · johnsonLineCount N (k - 1) ⌈(1 - δ) N⌉ m` at the multiplicity
+`m = johnsonMult ρ₋ δ`: [DKT26] Theorem 5.12's exception count for lines, times the curve degree
+`M`. -/
 def johnson : McaBound where
   admits N k δ := decide (2 ≤ k ∧ k < N ∧ 0 ≤ δ ∧ sqrtUpper ((k - 1 : ℕ) / N) < 1 - δ)
   count N k M δ :=
-    let ρ : ℚ := (k - 1 : ℕ) / N
-    let r := sqrtUpper ρ
-    let t : ℚ := (Max.max ⌈r / (2 * (1 - δ - r))⌉₊ 3 : ℕ) + 1 / 2
-    M * (8 * N * t ^ 3 / (3 * ρ))
+    M * johnsonLineCount N (k - 1) ⌈N * (1 - δ)⌉₊ (johnsonMult ((k - 1 : ℕ) / N) δ)
   count_nonneg N k M δ := by
-    dsimp only
+    unfold johnsonLineCount
     positivity
 
 /-- Up to the Johnson radius: `johnson`'s count, the smaller of the two counts within the
@@ -184,10 +205,74 @@ theorem sqrt_le_sqrtUpper (ρ : ℚ) : √(ρ : ℝ) ≤ (sqrtUpper ρ : ℝ) :=
     exact_mod_cast this
   exact this
 
+/-- `ceilSqrt x ≤ c` exactly when `x ≤ c²`. -/
+theorem ceilSqrt_le_iff (x : ℚ) (c : ℕ) : ceilSqrt x ≤ c ↔ x ≤ (c : ℚ) ^ 2 := by
+  have hc : x ≤ (c : ℚ) ^ 2 ↔ ⌈x⌉₊ ≤ c ^ 2 := by
+    rw [Nat.ceil_le]
+    push_cast
+    rfl
+  rw [hc, ceilSqrt]
+  generalize ⌈x⌉₊ = y
+  split_ifs with h
+  · simp only [zero_le, h]
+  · rw [Nat.add_one_le_iff, Nat.sqrt_lt']
+    omega
+
+/-- `⌈√x⌉ = ceilSqrt x`. -/
+theorem natCeil_sqrt (x : ℚ) : ⌈√(x : ℝ)⌉₊ = ceilSqrt x := by
+  refine le_antisymm (Nat.ceil_le.mpr ?_) ((ceilSqrt_le_iff x _).mpr ?_)
+  · rw [Real.sqrt_le_left (Nat.cast_nonneg _)]
+    exact_mod_cast (ceilSqrt_le_iff x (ceilSqrt x)).mp le_rfl
+  · have : (x : ℝ) ≤ (⌈√(x : ℝ)⌉₊ : ℝ) ^ 2 := by
+      rcases le_or_gt (x : ℝ) 0 with hx | hx
+      · exact hx.trans (sq_nonneg _)
+      · calc (x : ℝ) = √(x : ℝ) ^ 2 := (Real.sq_sqrt hx.le).symm
+          _ ≤ _ := pow_le_pow_left₀ (Real.sqrt_nonneg _) (Nat.le_ceil _) 2
+    exact_mod_cast this
+
+/-- `⌈x⌉₊` of a rational is the same in `ℝ`. -/
+theorem natCeil_ratCast (x : ℚ) : ⌈(x : ℝ)⌉₊ = ⌈x⌉₊ :=
+  Nat.ceil_congr fun n ↦ by rw [← Rat.cast_natCast, Rat.cast_le]
+
+open ReedSolomon HiddenDerivative in
+/-- At the slack `η = √ρ₋ / (2m)`, `m ≥ 3`, ArkLib's Johnson exception count is
+`johnsonLineCount`: the multiplicity is `m`. -/
+theorem johnsonExceptionCount_eq {n D A m : ℕ} (hD : 1 ≤ D) (hDn : D < n) (hm : 3 ≤ m) :
+    johnsonExceptionCount n D A (√(johnsonRhoMinus n D) / (2 * m)) =
+      (johnsonLineCount n D A m : ℝ) := by
+  have hs : 0 < √(johnsonRhoMinus n D) := Real.sqrt_pos.2 (johnsonRhoMinus_pos hD hDn)
+  have hm0 : (0 : ℝ) < m := by exact_mod_cast (show 0 < m by omega)
+  set η := √(johnsonRhoMinus n D) / (2 * m)
+  have hM : johnsonM n D η = m := by
+    rw [johnsonM, show √(johnsonRhoMinus n D) / (2 * η) = (m : ℝ) by
+      simp only [η]; field_simp, Nat.ceil_natCast]
+    exact max_eq_left hm
+  have hT : johnsonT n D η = (((m : ℚ) + 1 / 2 : ℚ) : ℝ) := by
+    rw [johnsonT, hM]
+    push_cast
+    rfl
+  have hρ : johnsonRhoMinus n D = (((D : ℚ) / n : ℚ) : ℝ) := by
+    rw [johnsonRhoMinus]
+    push_cast
+    rfl
+  have hμ : johnsonMu n D η = ceilSqrt (((m : ℚ) + 1 / 2) ^ 2 / ((D : ℚ) / n)) - 1 := by
+    rw [johnsonMu, ← natCeil_sqrt, hT]
+    congr 2
+    rw [hρ, Rat.cast_div (((m : ℚ) + 1 / 2) ^ 2), Rat.cast_pow,
+      Real.sqrt_div' _ (Rat.cast_nonneg.mpr (by positivity)), Real.sqrt_sq (by positivity)]
+  have hh : johnsonH n D η = ⌈((m : ℚ) + 1 / 2) ^ 2 / (3 * ((D : ℚ) / n))⌉₊ - 1 := by
+    rw [johnsonH, ← natCeil_ratCast, hT, hρ]
+    push_cast
+    rfl
+  rw [johnsonExceptionCount, johnsonTheta, hμ, hh, johnsonLineCount]
+  push_cast
+  rfl
+
 open ReedSolomon HiddenDerivative in
 /-- **The Johnson bound holds**, from ArkLib's Johnson-regime MCA for power curves
-(`ReedSolomon.mcaError_univariatePowers_johnson_le_closed`, [DKT26] Theorem 5.12 for curves) at
-the slack `η = 1 - δ - r`, `r ≥ √ρ₋`, which only raises the multiplicity `t`. -/
+(`ReedSolomon.uniformExactPowerAgreement_johnson_of_fintype`, [DKT26] Theorem 5.12 for curves)
+at the slack `η = √ρ₋ / (2m)`: the multiplicity is `m`, and `√ρ₋ + η ≤ 1 - δ` because
+`m ≥ r / (2 (1 - δ - r))` with `r ≥ √ρ₋`. -/
 theorem johnson_holds : johnson.Holds := by
   intro K _ _ _ _ N k M domain δ h
   simp only [johnson, decide_eq_true_eq] at h
@@ -197,65 +282,65 @@ theorem johnson_holds : johnson.Holds := by
     exact bot_le
   obtain ⟨D, rfl⟩ : ∃ D, k = D + 1 := ⟨k - 1, by omega⟩
   have hD : 1 ≤ D := by omega
+  simp only [Nat.add_sub_cancel] at hr ⊢
   have hNpos : (0 : ℝ) < N := by exact_mod_cast (show 0 < N by omega)
-  set ρ : ℚ := ((D + 1 - 1 : ℕ) : ℚ) / N with hρdef
+  set ρ : ℚ := (D : ℚ) / N with hρdef
   set r := sqrtUpper ρ
-  have hρR : johnsonRhoMinus (Fintype.card (Fin N)) D = (ρ : ℝ) := by
-    rw [johnsonRhoMinus, Fintype.card_fin, hρdef, Nat.add_sub_cancel]
+  set m := johnsonMult ρ δ
+  have hρR : johnsonRhoMinus N D = (ρ : ℝ) := by
+    rw [johnsonRhoMinus, hρdef]
     push_cast
     rfl
-  have hρpos : (0 : ℝ) < ρ := by
-    rw [← hρR, johnsonRhoMinus, Fintype.card_fin]
-    have : (0 : ℝ) < D := by exact_mod_cast hD
-    positivity
-  have hsq : √(johnsonRhoMinus (Fintype.card (Fin N)) D) ≤ (r : ℝ) := by
+  have hsq : √(johnsonRhoMinus N D) ≤ (r : ℝ) := by
     rw [hρR]
     exact sqrt_le_sqrtUpper ρ
-  set η : ℝ := 1 - δ - r with hη
-  have hη0 : 0 < η := by
+  have hs : 0 < √(johnsonRhoMinus N D) := Real.sqrt_pos.2 (johnsonRhoMinus_pos hD (by omega))
+  have hm3 : 3 ≤ m := le_max_right _ _
+  have hm0 : (0 : ℝ) < m := by exact_mod_cast (show 0 < m by omega)
+  set η : ℝ := √(johnsonRhoMinus N D) / (2 * m)
+  have hη : 0 < η := by positivity
+  -- `r ≤ 2 m (1 - δ - r)`, so `√ρ₋ (1 + 2m) ≤ 2 m (1 - δ)`.
+  have hgap : (0 : ℝ) < 1 - δ - r := by
     have : (r : ℝ) < 1 - δ := by exact_mod_cast hr
     linarith
-  have hagree : johnsonAgreement (Fintype.card (Fin N)) D η ≤ 1 - δ := by
+  have hmr : (r : ℝ) ≤ 2 * m * (1 - δ - r) := by
+    have h1 : r / (2 * (1 - δ - r)) ≤ (m : ℚ) :=
+      (Nat.le_ceil _).trans (by exact_mod_cast le_max_left _ _)
+    have h2 : ((r / (2 * (1 - δ - r)) : ℚ) : ℝ) ≤ m := by exact_mod_cast h1
+    push_cast at h2
+    rw [div_le_iff₀ (by positivity)] at h2
+    linarith
+  have hagree : johnsonAgreement N D η ≤ 1 - δ := by
     rw [johnsonAgreement]
+    have : √(johnsonRhoMinus N D) * (2 * m + 1) ≤ 2 * m * (1 - δ) := by nlinarith
+    simp only [η]
+    rw [← sub_nonneg] at this ⊢
+    have h' : (1 - (δ : ℝ)) - (√(johnsonRhoMinus N D) + √(johnsonRhoMinus N D) / (2 * m)) =
+        (2 * m * (1 - δ) - √(johnsonRhoMinus N D) * (2 * m + 1)) / (2 * m) := by
+      field_simp
+    rw [h']
+    positivity
+  set A := ⌈(N : ℚ) * (1 - δ)⌉₊
+  have hA : johnsonAgreement N D η * N ≤ A := by
+    have h1 : ((N : ℚ) * (1 - δ) : ℚ) ≤ (A : ℚ) := Nat.le_ceil _
+    have h2 : ((N * (1 - δ) : ℚ) : ℝ) ≤ (A : ℝ) := by exact_mod_cast h1
+    push_cast at h2
+    nlinarith
+  have hAN : A ≤ N := by
+    refine Nat.ceil_le.mpr ?_
+    have : (0 : ℚ) ≤ N * δ := by positivity
     linarith
-  have ha : johnsonAgreement (Fintype.card (Fin N)) D η ≤ 1 := by
-    have : (0 : ℝ) ≤ δ := by exact_mod_cast hδ0
-    linarith
-  have hmono := mcaError_le_of_card (M := M) (k := D + 1) domain (δ : ℝ)
-    (1 - johnsonAgreement (Fintype.card (Fin N)) D η) fun t _ ht ↦ by
-      have : (N : ℝ) * johnsonAgreement (Fintype.card (Fin N)) D η ≤ N * (1 - δ) :=
-        mul_le_mul_of_nonneg_left hagree hNpos.le
-      linarith
-  have hclosed := ReedSolomon.mcaError_univariatePowers_johnson_le_closed domain hD
-    (by rw [Fintype.card_fin]; omega) hη0 hM ha
-  refine hmono.trans (hclosed.trans (ENNReal.ofReal_le_ofReal
-    (div_le_div_of_nonneg_right ?_ (Nat.cast_nonneg _))))
-  -- the multiplicity at `η` is at most the count's
-  set m : ℕ := Max.max ⌈r / (2 * (1 - δ - r))⌉₊ 3
-  have hm : johnsonM (Fintype.card (Fin N)) D η ≤ m := by
-    refine max_le_max (Nat.ceil_le.mpr ?_) le_rfl
-    have hx := Nat.le_ceil (r / (2 * (1 - δ - r)))
-    have hx' : ((r / (2 * (1 - δ - r)) : ℚ) : ℝ) ≤ ((⌈r / (2 * (1 - δ - r))⌉₊ : ℚ) : ℝ) := by
-      exact_mod_cast hx
-    calc √(johnsonRhoMinus (Fintype.card (Fin N)) D) / (2 * η) ≤ (r : ℝ) / (2 * η) :=
-          div_le_div_of_nonneg_right hsq (by positivity)
-      _ = ((r / (2 * (1 - δ - r)) : ℚ) : ℝ) := by rw [hη]; push_cast; rfl
-      _ ≤ _ := hx'.trans (by push_cast; rfl)
-  have hT : johnsonT (Fintype.card (Fin N)) D η ≤ (m : ℝ) + 1 / 2 := by
-    rw [johnsonT]
-    have : (johnsonM (Fintype.card (Fin N)) D η : ℝ) ≤ m := by exact_mod_cast hm
-    linarith
-  have hT0 : 0 ≤ johnsonT (Fintype.card (Fin N)) D η := by rw [johnsonT]; positivity
-  rw [hρR, Fintype.card_fin]
-  have h3 : johnsonT N D η ^ 3 ≤ ((m : ℝ) + 1 / 2) ^ 3 := by
-    rw [Fintype.card_fin] at hT hT0
-    exact pow_le_pow_left₀ hT0 hT 3
-  have hcube : (8 / 3 : ℝ) * N * johnsonT N D η ^ 3 / ρ ≤
-      8 * N * ((m : ℝ) + 1 / 2) ^ 3 / (3 * ρ) := by
-    rw [div_le_div_iff₀ hρpos (by positivity)]
-    nlinarith [mul_le_mul_of_nonneg_left h3 hNpos.le]
-  refine (mul_le_mul_of_nonneg_left hcube (Nat.cast_nonneg M)).trans (le_of_eq ?_)
-  simp only [johnson, m, r, hρdef]
+  have hthr : A ≤ ⌈(Fintype.card (Fin N) : ℝ) * (1 - (δ : ℝ))⌉₊ := by
+    rw [Fintype.card_fin, show (N : ℝ) * (1 - (δ : ℝ)) = ((N * (1 - δ) : ℚ) : ℝ) by push_cast; rfl,
+      natCeil_ratCast]
+  refine (mcaError_univariatePowers_le_of_uniformExactPowerAgreement domain (fun w ↦
+    uniformExactPowerAgreement_johnson_of_fintype domain w hD (by rw [Fintype.card_fin]; omega)
+      hη hM (by rwa [Fintype.card_fin]) (by rwa [Fintype.card_fin])) _ hthr).trans
+    (ENNReal.ofReal_le_ofReal (div_le_div_of_nonneg_right ?_ (Nat.cast_nonneg _)))
+  refine (Nat.floor_le (mul_nonneg (Nat.cast_nonneg _)
+    (ReedSolomon.johnsonExceptionCount_nonneg _ _ _ _))).trans (le_of_eq ?_)
+  rw [Fintype.card_fin, johnsonExceptionCount_eq hD (by omega) hm3]
+  simp only [johnson, Nat.add_sub_cancel]
   push_cast
   rfl
 

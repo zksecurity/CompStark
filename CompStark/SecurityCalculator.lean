@@ -27,7 +27,8 @@ unique-decoding radius, `⌊(1 - δ' - ρ) / ((1 - δ')² - ρ)⌋` above, the J
 
 * constraint folding: `ℓ ℓₚ (#constraints - 1) / K`, `ℓₚ` the permutation trace's list bound, `1`
   without lookups;
-* out of domain: `(ℓ ℓₚ ℓ identityDegree + n) / K`;
+* out of domain: `(ℓ identityDegree + n) / K`, `ℓ` bounding the list of the committed words as
+  one family;
 * batching `m` words: `B`'s count for curves of degree `m - 1` on `N` points over `K`, or for
   `δ < δ''` and `δ ≤ (1 - ρ) / 2 - 1/N` the curve bound `(m - 1) max(T₁, T₂) / K`,
   `T₁ = (1 - ρ - δ) / (δ (1 - ρ - 2δ))`, `T₂ = δ'' / (δ'' - δ)`, if smaller;
@@ -136,10 +137,9 @@ def permListBound : ℕ := if c.lookups then A.listBound (1 / 2 ^ logBlowup) els
 def foldingNum : ℚ :=
   (A.listBound (1 / 2 ^ logBlowup) * c.permListBound logBlowup A * (c.numConstraints - 1) : ℕ)
 
-/-- The out-of-domain point, times `|𝕂|`: `ℓ ℓₚ ℓ identityDegree + n`. -/
-def outOfDomainNum : ℚ :=
-  (A.listBound (1 / 2 ^ logBlowup) * c.permListBound logBlowup A *
-    A.listBound (1 / 2 ^ logBlowup) * c.identityDegree + 2 ^ c.logN : ℕ)
+/-- The out-of-domain point, times `|𝕂|`: `ℓ identityDegree + n`, `ℓ` the list bound of the
+committed words as one family. -/
+def outOfDomainNum : ℚ := (A.listBound (1 / 2 ^ logBlowup) * c.identityDegree + 2 ^ c.logN : ℕ)
 
 /-- Batching `m` opened words on the domain of `N = 2 ^ (logN + logBlowup)` points at rate
 `ρ = 1 / 2 ^ logBlowup`, times `|𝕂|`: the MCA bound `B`'s count for curves of degree `m - 1`, or

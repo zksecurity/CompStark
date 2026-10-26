@@ -49,10 +49,15 @@ drop:
 | blowup `2`, `172` queries | quartic | `johnsonGrinding4` | `100` | |
 | blowup `4`, `86` queries | quartic | `johnsonGrinding4` | `100` | |
 
-The analyses are the ones the search finds on `2 ^ 18` rows. Interactively, without credit for
+The analyses are the ones the search finds on `2 ^ 18` rows, and on `2 ^ 15` rows for blowup `4`
+and `102` queries, whose extractor's `δ'` on `2 ^ 18` rows is too close to `δ` for `2 ^ 15`
+rows. Interactively, without credit for
 grinding, the quartic extension and `128` bits stay at the unique-decoding counts, and so does the
-quartic extension per oracle answer with Plonky3's grinding: the batching term, the Johnson count
-times the batching curve's degree `5273`, needs `30` bits of grinding there.
+quartic extension per oracle answer with Plonky3's grinding: beyond the unique-decoding radius the
+batching term, the Johnson count times the batching curve's degree `5273`, stays above `2 ^ (-91)`
+(blowup `2`) or `2 ^ (-94)` (blowup `4`) with Plonky3's `10` bits before the batching challenge.
+The out-of-domain term is linear in the list size, so `ζ` needs no grinding over the quintic
+extension and `1` bit over the quartic one.
 -/
 
 namespace CompStarkTests.KeccakSecurity
@@ -249,14 +254,14 @@ With the MCA bound up to the Johnson radius (`McaBound.uniqueOrJohnson`), FRI's 
 goes up to `1 - √ρ`: about `0.2925` at blowup `2` and `0.4995` at blowup `4`, so a query is worth
 up to `0.4985` or `0.9986` bits. The batching curve has degree `5273` (`5275` over the quintic
 extension), which the Johnson count multiplies, so the quartic extension and `128` bits need
-grinding before the batching challenge: `johnsonGrinding5` (`16`, `30` and `12` bits before `ζ`,
-the batching challenge and each fold) and `johnsonGrinding4` (`20`, `30`, `16`). -/
+grinding before the batching challenge: `johnsonGrinding5` (`0`, `30` and `12` bits before `ζ`,
+the batching challenge and each fold) and `johnsonGrinding4` (`1`, `30`, `16`). -/
 
 /-- Grinding for `128` bits over the quintic extension up to the Johnson radius. -/
-def johnsonGrinding5 : Grinding := ⟨16, 30, 12⟩
+def johnsonGrinding5 : Grinding := ⟨0, 30, 12⟩
 
 /-- Grinding for `100` bits over the quartic extension up to the Johnson radius. -/
-def johnsonGrinding4 : Grinding := ⟨20, 30, 16⟩
+def johnsonGrinding4 : Grinding := ⟨1, 30, 16⟩
 
 /-- Quintic extension, blowup `2`, `169` queries, Plonky3's grinding, per oracle answer. -/
 def johnsonRo5b2 : Analysis := ⟨2454149 / 8388608, 9819407 / 33554432, 1 / 2 ^ 60⟩
@@ -267,11 +272,12 @@ def johnsonRo5b4 : Analysis := ⟨134086401 / 268435456, 536476675 / 1073741824,
 /-- Quintic extension, blowup `2`, `205` queries. -/
 def johnson5b2 : Analysis := ⟨605807 / 2097152, 38780081 / 134217728, 1 / 2 ^ 60⟩
 
-/-- Quintic extension, blowup `4`, `102` queries. -/
-def johnson5b4 : Analysis := ⟨33161155 / 67108864, 4245021053 / 8589934592, 1 / 2 ^ 60⟩
+/-- Quintic extension, blowup `4`, `102` queries, the analysis the search finds on `2 ^ 15`
+rows. -/
+def johnson5b4 : Analysis := ⟨16646113 / 33554432, 1065482303 / 2147483648, 1 / 2 ^ 60⟩
 
 /-- `128` bits over the quintic extension, blowup `2`, `230` queries, per oracle answer. -/
-def johnsonRo128b2 : Analysis := ⟨1203181 / 4194304, 4838023 / 16777216, 1 / 2 ^ 16⟩
+def johnsonRo128b2 : Analysis := ⟨1203181 / 4194304, 4838023 / 16777216, 1 / 2 ^ 60⟩
 
 /-- `128` bits over the quintic extension, blowup `4`, `115` queries, per oracle answer. -/
 def johnsonRo128b4 : Analysis := ⟨8257521 / 16777216, 33161155 / 67108864, 1 / 2 ^ 60⟩
@@ -280,7 +286,7 @@ def johnsonRo128b4 : Analysis := ⟨8257521 / 16777216, 33161155 / 67108864, 1 /
 def johnsonRo4b2 : Analysis := ⟨150749 / 524288, 605807 / 2097152, 1 / 2 ^ 60⟩
 
 /-- Quartic extension, blowup `4`, `86` queries, per oracle answer. -/
-def johnsonRo4b4 : Analysis := ⟨33161155 / 67108864, 133037833 / 268435456, 1 / 2 ^ 16⟩
+def johnsonRo4b4 : Analysis := ⟨8257521 / 16777216, 66191239 / 134217728, 1 / 2 ^ 60⟩
 
 theorem johnson_secureRo100_quintic_blowup2 (height : Fin 4) :
     (setup Ext5 0 169 .plonky3 height).SecureRo 2130706433 .uniqueOrJohnson johnsonRo5b2 100 := by
@@ -344,10 +350,10 @@ theorem johnson_roundError_le_quintic (height : Fin 4) :
     (by norm_num [johnsonRo5b4])
 
 /-- **100 bits per oracle answer with `86` queries over the quartic extension** at blowup `4`,
-with `johnsonGrinding4`, FRI at `δ ≈ 0.4941`. -/
+with `johnsonGrinding4`, FRI at `δ ≈ 0.4922`. -/
 theorem johnson_roundError_le_quartic (height : Fin 4) :
-    roundError (setup Ext4 1 86 johnsonGrinding4 height) (33161155 / 67108864)
-      (133037833 / 268435456) ≤ (2 ^ 100)⁻¹ :=
+    roundError (setup Ext4 1 86 johnsonGrinding4 height) (8257521 / 16777216)
+      (66191239 / 134217728) ≤ (2 ^ 100)⁻¹ :=
   roundError_le_of_secureRo _ KoalaBear.card_eq McaBound.uniqueOrJohnson_holds _
     (johnson_secureRo100_quartic_blowup4 height) _ _ (by norm_num [johnsonRo4b4])
     (by norm_num [johnsonRo4b4])
@@ -383,7 +389,7 @@ def bestBits (B : McaBound) {EF : Type} [Challenge F EF] (S : Setup EF) (ro : Bo
 #guard (setup Ext5 0 169 .plonky3 3).bestAnalysisRo 2130706433 .uniqueOrJohnson = johnsonRo5b2
 #guard (setup Ext5 1 85 .plonky3 3).bestAnalysisRo 2130706433 .uniqueOrJohnson = johnsonRo5b4
 #guard (setup Ext5 0 205 .plonky3 3).bestAnalysis 2130706433 .uniqueOrJohnson = johnson5b2
-#guard (setup Ext5 1 102 .plonky3 3).bestAnalysis 2130706433 .uniqueOrJohnson = johnson5b4
+#guard (setup Ext5 1 102 .plonky3 0).bestAnalysis 2130706433 .uniqueOrJohnson = johnson5b4
 #guard (setup Ext5 0 230 johnsonGrinding5 3).bestAnalysisRo 2130706433 .uniqueOrJohnson =
   johnsonRo128b2
 #guard (setup Ext5 1 115 johnsonGrinding5 3).bestAnalysisRo 2130706433 .uniqueOrJohnson =
@@ -400,6 +406,10 @@ def bestBits (B : McaBound) {EF : Type} [Challenge F EF] (S : Setup EF) (ro : Bo
 #guard bestBits .uniqueOrJohnson (setup Ext5 1 114 johnsonGrinding5 3) true < 128
 #guard bestBits .uniqueOrJohnson (setup Ext4 0 171 johnsonGrinding4 3) true < 100
 #guard bestBits .uniqueOrJohnson (setup Ext4 1 85 johnsonGrinding4 3) true < 100
+-- With Plonky3's grinding over the quartic extension, the Johnson regime does not beat the
+-- unique-decoding counts.
+#guard bestBits .uniqueOrJohnson (setup Ext4 0 202 .plonky3 3) true < 100
+#guard bestBits .uniqueOrJohnson (setup Ext4 1 123 .plonky3 3) true < 100
 
 /-- info: 'CompStarkTests.KeccakSecurity.example_secureRo' depends on axioms: [propext,
 Classical.choice, Quot.sound] -/

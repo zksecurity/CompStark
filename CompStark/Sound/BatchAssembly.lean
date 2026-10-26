@@ -335,7 +335,7 @@ theorem acceptanceAt_le {withLookups : Bool} (S : Batch.Setup EF withLookups)
     (p.instanceProver lα lβ i₀) δ' (hrate ▸ hδ') hfail₀
   set ℓT := I.listSize (Fin I.air.width) δ'
   set ℓP := I.permListSize δ'
-  set ℓQ := I.listSize (Fin I.chunks × Fin (Challenge.d EF)) δ'
+  set ℓ := I.listSize I.Committed δ'
   set E := batchingErrorOf I (S.groupNumOpened (S.logN i₀ + S.params.logBlowup)) δ
       ((δ' : ℝ) - 2 / I.size) + friErrorWith S.domainSetup S.friHeights δ
   set D := I.identityDegree
@@ -344,7 +344,7 @@ theorem acceptanceAt_le {withLookups : Bool} (S : Batch.Setup EF withLookups)
       NearTogether I ((δ' : ℝ) - 2 / I.size) (groupComponents p lα lβ α ζ i₀) ∧
         ConstraintsHoldAt I (publicValues i₀) α ζ (p.openings lα lβ α ζ i₀) chs τ).card :
           ENNReal) ≤
-      I.n + ((if α ∈ bad then card𝕂 EF else 0) + (ℓT * ℓP * ℓQ * D : Nat)) := by
+      I.n + ((if α ∈ bad then card𝕂 EF else 0) + (ℓ * D : Nat)) := by
     intro α
     by_cases hα : α ∈ bad
     · simp only [hα, ↓reduceIte]
@@ -363,7 +363,7 @@ theorem acceptanceAt_le {withLookups : Bool} (S : Batch.Setup EF withLookups)
         then friAcceptanceWith S.domainSetup (Batch.groupDeepWord p lα lβ α ζ a) S.friHeights
           (Batch.groupDeepWord p lα lβ α ζ a _) else 0) ≤
       card𝕂 EF ^ 2 * E + card𝕂 EF * (I.n + ((if α ∈ bad then card𝕂 EF else 0) +
-        (ℓT * ℓP * ℓQ * D : Nat))) := by
+        (ℓ * D : Nat))) := by
     intro α
     refine (Finset.sum_le_sum fun ζ _ ↦
       batch_sum_a_le publicValues p δ ((δ' : ℝ) - 2 / I.size) lα lβ α ζ i₀).trans ?_
@@ -378,7 +378,7 @@ theorem acceptanceAt_le {withLookups : Bool} (S : Batch.Setup EF withLookups)
           (p.openings lα lβ α ζ i) (S.challenges lα lβ i) (p.terminal lα lβ i)
         then friAcceptanceWith S.domainSetup (Batch.groupDeepWord p lα lβ α ζ a) S.friHeights
           (Batch.groupDeepWord p lα lβ α ζ a _) else 0) ≤
-      card𝕂 EF ^ 3 * E + card𝕂 EF ^ 2 * (I.n + bad.card + (ℓT * ℓP * ℓQ * D : Nat)) := by
+      card𝕂 EF ^ 3 * E + card𝕂 EF ^ 2 * (I.n + bad.card + (ℓ * D : Nat)) := by
     refine (Finset.sum_le_sum fun α _ ↦ hα α).trans_eq ?_
     rw [Finset.sum_add_distrib, Finset.sum_const, Finset.card_univ, nsmul_eq_mul,
       ← Finset.mul_sum, Finset.sum_add_distrib, Finset.sum_add_distrib, Finset.sum_const,
@@ -386,22 +386,22 @@ theorem acceptanceAt_le {withLookups : Bool} (S : Batch.Setup EF withLookups)
       Finset.card_univ, nsmul_eq_mul, nsmul_eq_mul, nsmul_eq_mul]
     ring
   -- The error of instance `i₀`'s challenges `α` and `ζ`.
-  have hI : ((I.n + bad.card + (ℓT * ℓP * ℓQ * D : Nat) : ENNReal)) / card𝕂 EF ≤
+  have hI : ((I.n + bad.card + (ℓ * D : Nat) : ENNReal)) / card𝕂 EF ≤
       foldingError I δ' + outOfDomainError I δ' := by
-    have key : (I.n + bad.card + (ℓT * ℓP * ℓQ * D : Nat) : ENNReal) ≤
+    have key : (I.n + bad.card + (ℓ * D : Nat) : ENNReal) ≤
         ((ℓT * ℓP * (I.numConstraints - 1) : Nat) : ENNReal) +
-          ((ℓT * ℓP * ℓQ * D + I.n : Nat) : ENNReal) := by
+          ((ℓ * D + I.n : Nat) : ENNReal) := by
       have hbad' : bad.card ≤ ℓT * ℓP * (I.numConstraints - 1) := hbad
-      have hk : I.n + bad.card + ℓT * ℓP * ℓQ * D ≤
-          ℓT * ℓP * (I.numConstraints - 1) + (ℓT * ℓP * ℓQ * D + I.n) := by omega
+      have hk : I.n + bad.card + ℓ * D ≤
+          ℓT * ℓP * (I.numConstraints - 1) + (ℓ * D + I.n) := by omega
       exact_mod_cast hk
     refine (ENNReal.div_le_div_right key (card𝕂 EF)).trans_eq ?_
     rw [← ENNReal.div_add_div_same, foldingError, outOfDomainError]
   calc Batch.acceptanceAt publicValues p lα lβ
       ≤ (card𝕂 EF)⁻¹ ^ 3 * (card𝕂 EF ^ 3 * E +
-          card𝕂 EF ^ 2 * (I.n + bad.card + (ℓT * ℓP * ℓQ * D : Nat))) :=
+          card𝕂 EF ^ 2 * (I.n + bad.card + (ℓ * D : Nat))) :=
         mul_le_mul_right hsum _
-    _ = E + (I.n + bad.card + (ℓT * ℓP * ℓQ * D : Nat)) / card𝕂 EF := inv_cube_mul _ _
+    _ = E + (I.n + bad.card + (ℓ * D : Nat)) / card𝕂 EF := inv_cube_mul _ _
     _ ≤ E + (foldingError I δ' + outOfDomainError I δ') := add_le_add le_rfl hI
     _ = S.instanceError δ δ' i₀ + friErrorWith S.domainSetup S.friHeights δ := by
         rw [Batch.Setup.instanceError]

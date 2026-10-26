@@ -293,8 +293,7 @@ theorem outOfDomainError_le_calc (hp : Nat.card F = p) (hA : A.Valid S.rateQ) (�
     outOfDomainError S δ' ≤
       ENNReal.ofReal ((S.shape.outOfDomainNum S.params.logBlowup A / (p : ℚ) ^ Challenge.d EF :
         ℚ) : ℝ) :=
-  (outOfDomainError_le_of_listSize S δ' _ _ (listSize_le_listBound S A hA δ' hδ' _)
-    (permListSize_le S A hA δ' hδ') (listSize_le_listBound S A hA δ' hδ' _)).trans
+  (outOfDomainError_le_of_listSize S δ' _ (listSize_le_listBound S A hA δ' hδ' _)).trans
     (natCast_div_card_eq hp _).le
 
 /-- Batching `m` words: the MCA bound `B`'s count where it admits the trace's code, and the curve

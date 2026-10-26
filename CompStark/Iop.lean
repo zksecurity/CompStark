@@ -285,6 +285,49 @@ def Agree (S : Setup EF lookups) {ι : Type} (δ : ℝ) (words : ι → S.Point 
   ∃ T : Finset S.Point, (T.card : ℝ) ≥ S.size * (1 - δ) ∧
     ∀ i ∈ T, ∀ k, words k i = (polys k).eval (basePoint (S.logN + S.params.logBlowup) i)
 
+namespace Setup
+variable (S : Setup EF lookups)
+
+/-- The committed words that the check at `ζ` reads, as one family: the trace's columns, the
+coordinates of the permutation trace's columns and the coordinates of the quotient's chunks. -/
+abbrev Committed : Type :=
+  Fin S.air.width ⊕ (Fin S.permWidth × Fin (Challenge.d EF)) ⊕
+    (Fin S.chunks × Fin (Challenge.d EF))
+
+/-- A trace, a permutation trace and a quotient as one family over `Committed`. -/
+def committed {α : Type} (trace : Fin S.air.width → α)
+    (perm : Fin S.permWidth → Fin (Challenge.d EF) → α)
+    (quotient : Fin S.chunks → Fin (Challenge.d EF) → α) : S.Committed → α :=
+  Sum.elim trace (Sum.elim (fun ce ↦ perm ce.1 ce.2) fun ce ↦ quotient ce.1 ce.2)
+
+/-- The trace of a family over `Committed`. -/
+def committedTrace {α : Type} (J : S.Committed → α) : Fin S.air.width → α :=
+  fun j ↦ J (.inl j)
+
+/-- The permutation trace of a family over `Committed`. -/
+def committedPerm {α : Type} (J : S.Committed → α) : Fin S.permWidth → Fin (Challenge.d EF) → α :=
+  fun c e ↦ J (.inr (.inl (c, e)))
+
+/-- The quotient of a family over `Committed`. -/
+def committedQuotient {α : Type} (J : S.Committed → α) :
+    Fin S.chunks → Fin (Challenge.d EF) → α :=
+  fun c e ↦ J (.inr (.inr (c, e)))
+
+variable {α : Type} (trace : Fin S.air.width → α)
+  (perm : Fin S.permWidth → Fin (Challenge.d EF) → α)
+  (quotient : Fin S.chunks → Fin (Challenge.d EF) → α)
+
+@[simp] theorem committedTrace_committed :
+    S.committedTrace (S.committed trace perm quotient) = trace := rfl
+
+@[simp] theorem committedPerm_committed :
+    S.committedPerm (S.committed trace perm quotient) = perm := rfl
+
+@[simp] theorem committedQuotient_committed :
+    S.committedQuotient (S.committed trace perm quotient) = quotient := rfl
+
+end Setup
+
 /-- The traces the extractor reads off committed trace words at proximity `δ`, by list decoding:
 those whose columns are polynomials of degree at most `n` agreeing with the words on a common set
 of at least `(1 - δ) N` points. -/

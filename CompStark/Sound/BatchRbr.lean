@@ -420,14 +420,15 @@ theorem not_near_deepWords (δ δ' : NNReal) (hδ' : (δ' : ℝ) < 1 - S.rate) (
     htogether
   have hoff : OffTraceDomain I t.zeta := not_not.mp fun h ↦ hζ ⟨hα, Or.inl h⟩
   have hδI : (δ' : ℝ) < 1 - I.rate := by rw [rate_instanceSetup]; exact hδ'
-  obtain ⟨P, Q, R, hPd, hPa, hQd, hQa, hRd, hRa, ho⟩ :=
+  obtain ⟨P, Q, R, hPd, hQd, hRd, hagree, ho⟩ :=
     decodingStep I δ' hδI (t.prover.instanceProver t.lookupAlpha t.lookupBeta i) t.alpha t.zeta
       hoff hinst
-  refine hζ ⟨hα, Or.inr ⟨P, ⟨hPd, hPa⟩, fun ce ↦ R ce.1 ce.2, ⟨fun ce ↦ hRd ce.1 ce.2, hRa⟩,
-    hf P ⟨hPd, hPa⟩ _ ⟨fun ce ↦ hRd ce.1 ce.2, hRa⟩, fun ce ↦ Q ce.1 ce.2,
-    ⟨fun ce ↦ hQd ce.1 ce.2, hQa⟩, ?_⟩⟩
+  have hJ := committed_mem_candidates hPd hRd hQd hagree
+  refine hζ ⟨hα, Or.inr ⟨I.committed P R Q, hJ, hf _ (committedTrace_mem_candidates hJ) _
+    (committedPerm_mem_candidates hJ), ?_⟩⟩
   have h : t.openings i = trueOpenings I P Q t.zeta R := ho
-  rw [← h]
+  rw [Setup.committedTrace_committed, Setup.committedQuotient_committed,
+    Setup.committedPerm_committed, ← h]
   exact hcheck i
 
 /-- A batched word far from its code makes FRI's first word or one of its injected words far: it

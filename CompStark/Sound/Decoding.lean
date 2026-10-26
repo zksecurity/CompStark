@@ -24,7 +24,8 @@ whose DEEP component `(y - f(x)) / (z - x)` agrees on `T` with a codeword `h` (d
 A trace column, or a coordinate of a permutation column, is opened at `ζ` and `ζ ω_n`; both
 polynomials agree with it on `T`, so they are equal (`eq_of_agree`). A preprocessed column's word is
 the verifier's, the values of a polynomial of degree below `n`, so the polynomial is that one. No
-unique decoding is needed.
+unique decoding is needed. All the polynomials agree with their words on the same `T`: together
+they are one candidate of the committed words as a family (`Setup.Committed`).
 -/
 
 @[expose] public section
@@ -296,9 +297,11 @@ theorem decodingStep (S : Setup EF lookups) : DecodingStep S := by
     hsame (hndeg j) (htdeg _) (hnT j) (htT _)
   have hpermNext (c : Fin S.permWidth) (e : Fin (Challenge.d EF)) : permNext c e = perm c e :=
     hsame (hmndeg c e) (hmdeg c e) (hmnT c e) (hmT c e)
-  refine ⟨trace, quotient, perm, htdeg, ⟨T, hTcard, fun i hi j ↦ htT j i hi⟩, hqdeg,
-    ⟨T, hTcard, fun i hi ce ↦ hqT ce.1 ce.2 i hi⟩, hmdeg,
-    ⟨T, hTcard, fun i hi ce ↦ hmT ce.1 ce.2 i hi⟩, ?_⟩
+  refine ⟨trace, quotient, perm, htdeg, hqdeg, hmdeg, ⟨T, hTcard, fun i hi ↦ ?_⟩, ?_⟩
+  · rintro (j | ⟨c, e⟩ | ⟨c, e⟩)
+    · exact htT j i hi
+    · exact hmT c e i hi
+    · exact hqT c e i hi
   have hnz' (j : Fin S.air.mainNextWidth) := hnext j ▸ hnz j
   have hpz' (j : Fin S.air.preprocessedWidth) := hprep j _ (hpdeg j) (hpT j) ▸ hpz j
   have hpnz' (j : Fin S.air.preprocessedNextWidth) :=

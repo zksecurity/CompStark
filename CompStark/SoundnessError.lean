@@ -10,13 +10,17 @@ public import CompStark.Iop
 
 The bound of `knowledgeSoundness` (`CompStark/Soundness.lean`), for FRI at proximity `δ` and the
 extractor at a proximity `δ' ≥ δ + 2/N` below `1 - rate`. It has one term per challenge of the
-interactive oracle proof (`CompStark/Iop.lean`), with `ℓ` the list sizes of the trace's and the
-quotient's codes at `δ'` (`Setup.listSize`):
+interactive oracle proof (`CompStark/Iop.lean`), with `ℓ` the list sizes of the committed words'
+interleaved codes at `δ'` (`Setup.listSize`):
 
 * `α`: folding the constraints by `α` makes a constraint that fails on some row of one of the
   `ℓ` candidate traces vanish on every row (`foldingError`).
-* `ζ`: the constraints hold at `ζ` for one of the `ℓ²` candidate pairs although they fail as
-  polynomials, or `ζ` lies on the trace domain (`outOfDomainError`).
+* `ζ`: the constraints hold at `ζ` for one of the `ℓ` candidates of the committed words although
+  they fail as polynomials, or `ζ` lies on the trace domain (`outOfDomainError`). The decoding
+  step finds the trace, permutation trace and quotient polynomials on one common set, so the
+  candidates are those of the committed words as one family, whose list size is that of an
+  interleaved code: linear in the list size, as in DEEP-ALI's analysis (Haböck,
+  <https://eprint.iacr.org/2022/1216>, Theorem 8).
 * `a`: the batched DEEP word is `δ`-close to low degree although its summands are not on a common
   set at `δ' - 2/N` (`batchingError`, the correlated-agreement error of the powers of `a`; the
   difference `δ' - 2/N - δ` is the proximity loss). Decoding loses the up to two points of `L`
@@ -113,13 +117,12 @@ noncomputable def foldingError (S : Setup EF lookups) (δ : NNReal) : ENNReal :=
   (S.listSize (Fin S.air.width) δ * S.permListSize δ * (S.numConstraints - 1) : Nat) /
     (Fintype.card 𝕂 : ENNReal)
 
-/-- For some triple of candidate trace, permutation trace and quotient, the constraint identity, a
-nonzero polynomial of degree at most `identityDegree`, vanishes at `ζ`; or `ζ` lies on the trace
-domain `H`, `n` points. -/
+/-- For some candidate of the committed words as one family (`Setup.Committed`: trace,
+permutation trace and quotient on one common set), the constraint identity, a nonzero polynomial
+of degree at most `identityDegree`, vanishes at `ζ`; or `ζ` lies on the trace domain `H`, `n`
+points. -/
 noncomputable def outOfDomainError (S : Setup EF lookups) (δ : NNReal) : ENNReal :=
-  (S.listSize (Fin S.air.width) δ * S.permListSize δ *
-    S.listSize (Fin S.chunks × Fin (Challenge.d EF)) δ * S.identityDegree + S.n : Nat) /
-    (Fintype.card 𝕂 : ENNReal)
+  (S.listSize S.Committed δ * S.identityDegree + S.n : Nat) / (Fintype.card 𝕂 : ENNReal)
 
 open Classical in
 /-- The correlated-agreement error of the powers `1, a, a², …` over `m` words on `L`: the largest

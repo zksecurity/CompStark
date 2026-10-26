@@ -22,7 +22,7 @@ where every round is one random-oracle answer:
 * `α` (`AlphaBad`): a candidate trace failing the AIR has a quotient passing the check at more
   than `identityDegree` points; `foldingError`.
 * `ζ` (`ZetaBad`): `α` is safe, and `ζ` lies on the trace domain or passes the check for a
-  failing candidate trace and a candidate quotient; `outOfDomainError`.
+  candidate of the committed words with a failing trace; `outOfDomainError`.
 * `a` (`BatchBad`): the DEEP components are not near the code together, the batched word is;
   `batchingError`.
 * FRI fold `i` (`FoldBad`): ArkLib's lossy folding failure of committed word `i` at `β_i`;
@@ -171,19 +171,19 @@ def AlphaBad (δ' : ℝ) (trace : Fin S.air.width → S.Point → F) (α : 𝕂)
     AlphaBadFor S publicValues P α (fun c e ↦ R (c, e)) challenges terminal
 
 /-- Round `ζ`: `α` is safe, and `ζ` lies on the trace domain or the check passes at `ζ` with the
-true values of a candidate trace and permutation trace failing a constraint and a candidate
-quotient. -/
+true values of a candidate of the committed words (`Setup.Committed`) whose trace and permutation
+trace fail a constraint. -/
 def ZetaBad (δ' : ℝ) (trace : Fin S.air.width → S.Point → F) (α : 𝕂)
     (quotient : Fin S.chunks → Fin (Challenge.d EF) → S.Point → F) (ζ : 𝕂)
     (perm : Fin S.permWidth → Fin (Challenge.d EF) → S.Point → F := fun _ _ _ ↦ 0)
     (challenges : List 𝕂 := []) (terminal : 𝕂 := 0) : Prop :=
   ¬ AlphaBad S publicValues δ' trace α perm challenges terminal ∧ (¬ OffTraceDomain S ζ ∨
-    ∃ P ∈ candidates S δ' trace, ∃ R ∈ candidates S δ'
-      (fun ce : Fin S.permWidth × Fin (Challenge.d EF) ↦ perm ce.1 ce.2),
-      ¬ Holds S publicValues challenges terminal (traceOf S P) (fun c e ↦ R (c, e)) ∧
-      ∃ Q ∈ candidates S δ' (fun ce : Fin S.chunks × Fin (Challenge.d EF) ↦ quotient ce.1 ce.2),
-        ConstraintsHoldAt S publicValues α ζ
-          (trueOpenings S P (fun c e ↦ Q (c, e)) ζ (fun c e ↦ R (c, e))) challenges terminal)
+    ∃ J ∈ candidates S δ' (S.committed trace perm quotient),
+      ¬ Holds S publicValues challenges terminal (traceOf S (S.committedTrace J))
+        (S.committedPerm J) ∧
+      ConstraintsHoldAt S publicValues α ζ
+        (trueOpenings S (S.committedTrace J) (S.committedQuotient J) ζ (S.committedPerm J))
+        challenges terminal)
 
 /-- Round `a`: the DEEP components are not near the code together at `δ' - 2/N`, but their
 batched word is `δ`-near. -/
@@ -335,60 +335,53 @@ theorem prob_alphaBad_le (δ' : NNReal) (trace : Fin S.air.width → S.Point →
 
 -- The constructor-name linter exhausts its recursion budget on this proof's locals.
 set_option linter.constructorNameAsVariable false in
-/-- Round `ζ`: at most `ℓT ℓP ℓQ identityDegree + n` bad values. -/
+/-- Round `ζ`: at most `ℓ identityDegree + n` bad values, `ℓ` the list size of the committed words
+as one family. -/
 theorem card_zetaBad_le (δ' : NNReal) (trace : Fin S.air.width → S.Point → F) (α : 𝕂)
     (quotient : Fin S.chunks → Fin (Challenge.d EF) → S.Point → F)
     (perm : Fin S.permWidth → Fin (Challenge.d EF) → S.Point → F) :
     (Finset.univ.filter fun ζ : 𝕂 ↦
         ZetaBad S publicValues δ' trace α quotient ζ perm challenges terminal).card ≤
-      S.listSize (Fin S.air.width) δ' * S.permListSize δ' *
-        S.listSize (Fin S.chunks × Fin (Challenge.d EF)) δ' * S.identityDegree + S.n := by
+      S.listSize S.Committed δ' * S.identityDegree + S.n := by
   by_cases hα : AlphaBad S publicValues δ' trace α perm challenges terminal
   · have h : (Finset.univ.filter fun ζ : 𝕂 ↦
         ZetaBad S publicValues δ' trace α quotient ζ perm challenges terminal) = ∅ :=
       Finset.filter_false_of_mem fun ζ _ hζ ↦ hζ.1 hα
     rw [h, Finset.card_empty]
     exact Nat.zero_le _
-  set C1 := ((candidates_finite S δ' trace).toFinset ×ˢ (candidates_finite S δ'
-    fun ce : Fin S.permWidth × Fin (Challenge.d EF) ↦ perm ce.1 ce.2).toFinset).filter
-      fun PR ↦ ¬ Holds S publicValues challenges terminal (traceOf S PR.1) fun c e ↦ PR.2 (c, e)
-  set C2 := (candidates_finite S δ' fun ce : Fin S.chunks × Fin (Challenge.d EF) ↦
-    quotient ce.1 ce.2).toFinset
-  set check : ((Fin S.air.width → F[X]) × (Fin S.permWidth × Fin (Challenge.d EF) → F[X])) →
-      (Fin S.chunks × Fin (Challenge.d EF) → F[X]) → Finset 𝕂 :=
-    fun PR Q ↦ Finset.univ.filter fun ζ : 𝕂 ↦ OffTraceDomain S ζ ∧
+  set C := ((candidates_finite S δ' (S.committed trace perm quotient)).toFinset).filter
+    fun J ↦ ¬ Holds S publicValues challenges terminal (traceOf S (S.committedTrace J))
+      (S.committedPerm J)
+  set check : (S.Committed → F[X]) → Finset 𝕂 :=
+    fun J ↦ Finset.univ.filter fun ζ : 𝕂 ↦ OffTraceDomain S ζ ∧
       ConstraintsHoldAt S publicValues α ζ
-        (trueOpenings S PR.1 (fun c e ↦ Q (c, e)) ζ fun c e ↦ PR.2 (c, e)) challenges terminal
+        (trueOpenings S (S.committedTrace J) (S.committedQuotient J) ζ (S.committedPerm J))
+        challenges terminal
   have hsub : (Finset.univ.filter fun ζ : 𝕂 ↦
         ZetaBad S publicValues δ' trace α quotient ζ perm challenges terminal) ⊆
-      (C1.biUnion fun PR ↦ C2.biUnion fun Q ↦ check PR Q) ∪
-        Finset.univ.filter fun ζ : 𝕂 ↦ ¬ OffTraceDomain S ζ := by
+      C.biUnion check ∪ Finset.univ.filter fun ζ : 𝕂 ↦ ¬ OffTraceDomain S ζ := by
     intro ζ hζ
     simp only [Finset.mem_filter, Finset.mem_univ, true_and] at hζ
     obtain ⟨-, hζ'⟩ := hζ
     simp only [Finset.mem_union, Finset.mem_biUnion, Finset.mem_filter, Finset.mem_univ,
-      true_and, check, C1, C2, Set.Finite.mem_toFinset, Finset.mem_product]
+      true_and, check, C, Set.Finite.mem_toFinset]
     by_cases hoff : OffTraceDomain S ζ
     · left
-      rcases hζ' with h | ⟨P, hP, R, hR, hfail, Q, hQ, hcheck⟩
+      rcases hζ' with h | ⟨J, hJ, hfail, hcheck⟩
       · exact absurd hoff h
-      · exact ⟨(P, R), ⟨⟨hP, hR⟩, hfail⟩, Q, hQ, hoff, hcheck⟩
+      · exact ⟨J, ⟨hJ, hfail⟩, hoff, hcheck⟩
     · exact Or.inr hoff
   refine (Finset.card_le_card hsub).trans ((Finset.card_union_le _ _).trans
     (Nat.add_le_add ?_ (card_not_offTraceDomain S)))
-  refine Finset.card_biUnion_le.trans ((Finset.sum_le_sum fun PR hPR ↦
-    Finset.card_biUnion_le.trans (Finset.sum_le_sum (g := fun _ ↦ S.identityDegree)
-      fun Q hQ ↦ ?_)).trans ?_)
-  · simp only [C1, Finset.mem_filter, Finset.mem_product, Set.Finite.mem_toFinset] at hPR
-    simp only [C2, Set.Finite.mem_toFinset] at hQ
+  refine Finset.card_biUnion_le.trans ((Finset.sum_le_sum (g := fun _ ↦ S.identityDegree)
+    fun J hJ ↦ ?_).trans ?_)
+  · simp only [C, Finset.mem_filter, Set.Finite.mem_toFinset] at hJ
     by_contra hlt
-    exact hα ⟨PR.1, hPR.1.1, PR.2, hPR.1.2, hPR.2, fun c e ↦ Q (c, e), fun c e ↦ hQ.1 (c, e),
-      not_le.mp hlt⟩
-  · rw [Finset.sum_const, Finset.sum_const, smul_eq_mul, smul_eq_mul, ← Nat.mul_assoc]
-    refine Nat.mul_le_mul_right _ (Nat.mul_le_mul ((Finset.card_filter_le _ _).trans ?_)
-      (card_candidates_le S δ' _))
-    rw [Finset.card_product]
-    exact Nat.mul_le_mul (card_candidates_le S δ' _) (card_permCandidates_le S δ' _)
+    exact hα ⟨S.committedTrace J, committedTrace_mem_candidates hJ.1,
+      fun ce ↦ S.committedPerm J ce.1 ce.2, committedPerm_mem_candidates hJ.1, hJ.2,
+      S.committedQuotient J, fun c e ↦ hJ.1.1 (.inr (.inr (c, e))), not_le.mp hlt⟩
+  · rw [Finset.sum_const, smul_eq_mul]
+    exact Nat.mul_le_mul_right _ ((Finset.card_filter_le _ _).trans (card_candidates_le S δ' _))
 
 /-- Round `ζ`: a uniform `ζ` is bad with probability at most `outOfDomainError`. -/
 theorem prob_zetaBad_le (δ' : NNReal) (trace : Fin S.air.width → S.Point → F) (α : 𝕂)
@@ -507,13 +500,14 @@ theorem not_near_deepWord {lookups : List (Lookup F)} (S : Iop.Setup EF lookups)
       (components (fixedProver trace quotient openings perm) α ζ) :=
     not_not.mp fun h ↦ ha ⟨h, hnear⟩
   have hoff : OffTraceDomain S ζ := not_not.mp fun h ↦ hζ ⟨hα, Or.inl h⟩
-  obtain ⟨P, Q, R, hPd, hPa, hQd, hQa, hRd, hRa, ho⟩ :=
+  obtain ⟨P, Q, R, hPd, hQd, hRd, hagree, ho⟩ :=
     decodingStep S δ' hδ' (fixedProver trace quotient openings perm) α ζ hoff htogether
-  refine hζ ⟨hα, Or.inr ⟨P, ⟨hPd, hPa⟩, fun ce ↦ R ce.1 ce.2, ⟨fun ce ↦ hRd ce.1 ce.2, hRa⟩,
-    hfail P ⟨hPd, hPa⟩ _ ⟨fun ce ↦ hRd ce.1 ce.2, hRa⟩, fun ce ↦ Q ce.1 ce.2,
-    ⟨fun ce ↦ hQd ce.1 ce.2, hQa⟩, ?_⟩⟩
+  have hJ := committed_mem_candidates hPd hRd hQd hagree
+  refine hζ ⟨hα, Or.inr ⟨S.committed P R Q, hJ, hfail _ (committedTrace_mem_candidates hJ) _
+    (committedPerm_mem_candidates hJ), ?_⟩⟩
   have h : openings = trueOpenings S P Q ζ R := ho
-  rw [← h]
+  rw [Setup.committedTrace_committed, Setup.committedQuotient_committed,
+    Setup.committedPerm_committed, ← h]
   exact hcheck
 
 section Terminal
