@@ -8,9 +8,9 @@ package CompStark where
 
 -- Pinned to a CompPoly commit with the packed NTT, the batched coset LDE on chunks of rows with
 -- input transposes by column range, coset interpolation generic over 32-bit Montgomery fields,
--- fast KoalaBear⁵ and spec fields over the fast base field.
+-- fast KoalaBear⁵ and spec fields over the fast base field, and word-sized packed loads and stores.
 require CompPoly from git "https://github.com/mitschabaude-bot/CompPoly.git" @
-    "7596b8e735e693547fa4e86308f23e2ced15ef78"
+    "6de4e90026a12ea10a2a24f53f332aed3e877961"
 
 -- ArkLib main with Johnson-regime mutual correlated agreement for power curves and lossy mutual
 -- correlated agreement with FRI soundness from it (branch `fri-lossy-main` of the bot fork).
