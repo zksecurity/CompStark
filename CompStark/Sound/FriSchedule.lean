@@ -150,6 +150,78 @@ def plan (maxLogArity logFinal : ℕ) : (fuel n : ℕ) → List ℕ → List (�
 `2 ^ la - 1` coefficient words of a fold by `2 ^ la`, and the input it injects, if any. -/
 def foldWords (f : ℕ × ℕ × Bool) : ℕ := 2 ^ f.1 - 1 + if f.2.2 then 1 else 0
 
+/-- Every fold of the plan from height `n`, for fitting heights, is by `1` to `maxLogArity`
+bits onto a height from `logFinal` to below `n`. -/
+theorem mem_plan {maxLogArity logFinal : ℕ} (ha : 0 < maxLogArity) :
+    ∀ (fuel n : ℕ) (heights : List ℕ), Fits logFinal n heights →
+      ∀ f ∈ plan maxLogArity logFinal fuel n heights,
+        1 ≤ f.1 ∧ f.1 ≤ maxLogArity ∧ logFinal ≤ f.2.1 ∧ f.2.1 < n
+  | 0, _, _, _, f, hf => absurd hf List.not_mem_nil
+  | fuel + 1, n, heights, hfit, f, hf => by
+    by_cases hfin : n ≤ logFinal
+    · rw [plan, ite_eq_left hfin] at hf
+      exact absurd hf List.not_mem_nil
+    have h1 := one_le_logArity ha (by omega) hfit
+    have h2 := logArity_le maxLogArity logFinal n heights
+    have h3 : logArity maxLogArity logFinal n heights ≤ maxLogArity := min_le_right _ _
+    have hhead : 1 ≤ logArity maxLogArity logFinal n heights ∧
+        logArity maxLogArity logFinal n heights ≤ maxLogArity ∧
+        logFinal ≤ n - logArity maxLogArity logFinal n heights ∧
+        n - logArity maxLogArity logFinal n heights < n := ⟨h1, h3, by omega, by omega⟩
+    have hrest : ∀ heights', Fits logFinal (n - logArity maxLogArity logFinal n heights) heights' →
+        ∀ f ∈ plan maxLogArity logFinal fuel (n - logArity maxLogArity logFinal n heights)
+          heights', 1 ≤ f.1 ∧ f.1 ≤ maxLogArity ∧ logFinal ≤ f.2.1 ∧ f.2.1 < n :=
+      fun heights' hfit' f hf ↦ by
+        have := mem_plan ha fuel _ heights' hfit' f hf
+        omega
+    rw [plan, ite_eq_right hfin] at hf
+    match heights, hfit, hhead, hrest, hf with
+    | [], _, hhead, hrest, hf =>
+      rcases List.mem_cons.mp hf with rfl | hf
+      · exact hhead
+      · exact hrest [] (fits_nil _ _) f hf
+    | m :: rest, hfit, hhead, hrest, hf =>
+      have h4 := logArity_le_cons maxLogArity logFinal n m rest
+      by_cases hm : m = n - logArity maxLogArity logFinal n (m :: rest)
+      · dsimp only at hf
+        rw [ite_eq_left hm] at hf
+        rcases List.mem_cons.mp hf with rfl | hf
+        · exact hhead
+        · exact hrest rest (fits_of_eq hfit hm) f hf
+      · dsimp only at hf
+        rw [ite_eq_right hm] at hf
+        rcases List.mem_cons.mp hf with rfl | hf
+        · exact hhead
+        · exact hrest _ (fits_cons_of_ne hfit h4 hm) f hf
+
+/-- The plan from height `n` has at most `n - logFinal` folds, for fitting heights. -/
+theorem length_plan_le {maxLogArity logFinal : ℕ} (ha : 0 < maxLogArity) :
+    ∀ (fuel n : ℕ) (heights : List ℕ), Fits logFinal n heights →
+      (plan maxLogArity logFinal fuel n heights).length ≤ n - logFinal
+  | 0, _, _, _ => Nat.zero_le _
+  | fuel + 1, n, heights, hfit => by
+    by_cases hfin : n ≤ logFinal
+    · rw [plan, ite_eq_left hfin, List.length_nil]
+      exact Nat.zero_le _
+    have h1 := one_le_logArity ha (by omega) hfit
+    have h2 := logArity_le maxLogArity logFinal n heights
+    rw [plan, ite_eq_right hfin]
+    match heights, hfit, h1, h2 with
+    | [], _, h1, h2 =>
+      have := length_plan_le (logFinal := logFinal) ha fuel (n - logArity maxLogArity logFinal n [])
+        [] (fits_nil _ _)
+      simp only [List.length_cons]
+      omega
+    | m :: rest, hfit, h1, h2 =>
+      have h4 := logArity_le_cons maxLogArity logFinal n m rest
+      by_cases hm : m = n - logArity maxLogArity logFinal n (m :: rest)
+      · have := length_plan_le ha fuel _ rest (fits_of_eq hfit hm)
+        simp only [ite_eq_left hm, List.length_cons]
+        omega
+      · have := length_plan_le ha fuel _ _ (fits_cons_of_ne hfit h4 hm)
+        simp only [ite_eq_right hm, List.length_cons]
+        omega
+
 /-- The rounds have one fold per entry of the plan. -/
 theorem numFolds_schedule (maxLogArity logFinal : ℕ) (words : (m : ℕ) → Fin (2 ^ m) → K) :
     ∀ (fuel n : ℕ) (heights : List ℕ),

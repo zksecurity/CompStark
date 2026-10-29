@@ -28,6 +28,22 @@ variable {F : Type} [BaseField F] {EF : Type} [Challenge F EF]
 def Setup.IsRangeBatch (S : Setup EF) : Prop :=
   ∀ i, S.air i = rangeTable (S.logN i) ∨ S.air i = rangeQuery
 
+/-- A batch statement of range tables and range queries: every instance is `rangeTable` of its
+keygen height or `rangeQuery`. -/
+def Statement.IsRangeBatch (C : Statement F) : Prop :=
+  ∀ i, C.air i = rangeTable (C.keyLogN i) ∨ C.air i = rangeQuery
+
+/-- A range table has preprocessed columns, so at every admitted vector of lengths it has its
+keygen height: the statement is a range batch there. -/
+theorem Statement.isRangeBatch_setupAt (C : Statement F) (hC : C.IsRangeBatch)
+    (n : Fin C.k → ℕ) (h : C.Admits n) : (C.setupAt EF n h).IsRangeBatch := fun i ↦ by
+  rcases hC i with ht | hq
+  · refine Or.inl ?_
+    have hn := h.keyed i (by rw [ht]; exact Nat.one_pos)
+    show C.air i = rangeTable (n i)
+    rw [hn, ht]
+  · exact Or.inr hq
+
 /-- Every real query is in range: on every row of every `rangeQuery` instance whose `s` is `1`,
 the value `v` is the index of a row of some `rangeTable` instance. -/
 def Setup.RangeChecked (S : Setup EF) (traces : Fin S.k → Array F) : Prop :=

@@ -14,7 +14,7 @@ FRI on rounds of mixed heights makes at most `n (1 + L + 2 G)` calls per query a
 (`Fri.costs_verifyPcs`, `Ni/QueryBound.lean`), so the batch verifier makes at most
 `Batch.verifierCallsOf` calls on a proof of the instances it checks
 (`Batch.isTotalQueryBound_verifyInstancesWith`), the lookup round's included, and at most
-`Setup.verifierCalls` on a proof of any lengths (`isTotalQueryBound_verifyBatchWith`), which
+`Statement.verifierCalls` on a proof of any lengths (`isTotalQueryBound_verifyBatchWith`), which
 `verifierCalls_le` bounds in closed form. The batch setup makes at most four calls per leaf of its
 tree (`isTotalQueryBound_setupRo`).
 -/
@@ -314,10 +314,10 @@ theorem verifierCallsOf_le (P : Params) (instances : List (Instance F)) (t k : �
 
 end CompStark.Batch
 
-namespace CompStark.Iop.Batch.Setup
+namespace CompStark.Iop.Batch
 open CompStark.Stark CompStark.Fri CompStark.RandomOracle CompStark.Ni OracleSpec OracleComp
 
-variable {F : Type} [BaseField F] {EF : Type} [Challenge F EF] (S : Setup EF)
+variable {F : Type} [BaseField F] {EF : Type} [Challenge F EF]
 
 theorem mem_lengthVectors : ∀ (k t : ℕ) (n : Fin k → ℕ), (∀ i, n i ≤ t) → n ∈ lengthVectors k t
   | 0, _, n, _ => by
@@ -328,110 +328,21 @@ theorem mem_lengthVectors : ∀ (k t : ℕ) (n : Fin k → ℕ), (∀ i, n i ≤
     refine ⟨n 0, List.mem_range.mpr (Nat.lt_succ_of_le (h 0)), List.mem_map.mpr
       ⟨Fin.tail n, mem_lengthVectors k t _ fun i ↦ h i.succ, Fin.cons_self_tail n⟩⟩
 
-theorem hasLookups_instancesAt (n : Fin S.k → ℕ) :
-    CompStark.Batch.hasLookups (S.instancesAt n) = S.hasLookups := by
-  simp only [CompStark.Batch.hasLookups, instancesAt, hasLookups, instances, List.ofFn_eq_map,
-    List.any_map, Function.comp_def]
-
-theorem inputRoundsOf_instancesAt (n : Fin S.k → ℕ) :
-    CompStark.Batch.inputRoundsOf (S.instancesAt n) = CompStark.Batch.inputRoundsOf S.instances :=
-        by
-  unfold CompStark.Batch.inputRoundsOf
-  rw [hasLookups_instancesAt, ← hasLookups]
-  simp only [instancesAt, instances, List.ofFn_eq_map, List.any_map, Function.comp_def]
+theorem le_of_mem_lengthVectors : ∀ (k t : ℕ) (n : Fin k → ℕ), n ∈ lengthVectors k t →
+    ∀ i, n i ≤ t
+  | 0, _, _, _, i => i.elim0
+  | k + 1, t, n, hn, i => by
+    rw [lengthVectors, List.mem_flatMap] at hn
+    obtain ⟨a, ha, hn⟩ := hn
+    obtain ⟨m, hm, rfl⟩ := List.mem_map.mp hn
+    refine Fin.cases ?_ (fun j ↦ ?_) i
+    · rw [Fin.cons_zero]; exact Nat.lt_succ_iff.mp (List.mem_range.mp ha)
+    · rw [Fin.cons_succ]; exact le_of_mem_lengthVectors k t m hm j
 
 theorem foldr_max_le (B : ℕ) : ∀ l : List ℕ, (∀ x ∈ l, x ≤ B) → l.foldr max 0 ≤ B
   | [], _ => Nat.zero_le _
   | x :: l, h => max_le (h x List.mem_cons_self)
       (foldr_max_le B l fun y hy ↦ h y (List.mem_cons_of_mem _ hy))
-
-/-- The verifier's oracle calls on proofs of any lengths, for FRI folding at least once per
-round: at most `twoAdicity - logFinalPolyLen` folds, the tallest domain of
-`2 ^ (twoAdicity + logBlowup)` points and `k` heights. -/
-theorem verifierCalls_le (hm : 0 < S.params.maxLogArity) :
-    S.verifierCalls ≤
-      (if S.hasLookups then 2 * Challenge.d EF + 1 else 0) + 3 * Challenge.d EF + 3 +
-        (Challenge.d EF + 1) * (twoAdicity F - S.params.logFinalPolyLen) +
-        S.params.numQueries * (1 + (twoAdicity F - S.params.logFinalPolyLen +
-          CompStark.Batch.inputRoundsOf S.instances) *
-          (1 + (twoAdicity F + S.params.logBlowup) + 2 * (S.k - 1))) := by
-  refine foldr_max_le _ _ fun x hx ↦ ?_
-  obtain ⟨n, hn, rfl⟩ := List.mem_map.mp hx
-  have hle : ∀ i, n i ≤ twoAdicity F := by
-    intro i
-    have : ∀ (k t : ℕ) (n : Fin k → ℕ), n ∈ lengthVectors k t → ∀ i, n i ≤ t := by
-      intro k
-      induction k with
-      | zero => intro t n _ i; exact i.elim0
-      | succ k ih =>
-        intro t n hn i
-        rw [lengthVectors, List.mem_flatMap] at hn
-        obtain ⟨a, ha, hn⟩ := hn
-        obtain ⟨m, hm, rfl⟩ := List.mem_map.mp hn
-        refine Fin.cases ?_ (fun j ↦ ?_) i
-        · rw [Fin.cons_zero]; exact Nat.lt_succ_iff.mp (List.mem_range.mp ha)
-        · rw [Fin.cons_succ]; exact ih t m hm j
-    exact this _ _ n hn i
-  have h := CompStark.Batch.verifierCallsOf_le (EF := EF) S.params (S.instancesAt n)
-    (twoAdicity F) S.k (by rw [instancesAt, List.length_ofFn])
-    (fun I hI ↦ by
-      obtain ⟨i, rfl⟩ := List.mem_ofFn.mp hI
-      exact hle i) hm
-  rwa [hasLookups_instancesAt, inputRoundsOf_instancesAt] at h
-
-/-- The setup's and the verifier's oracle calls on proofs of any lengths, for FRI folding at
-least once per round (`verifierCalls_le`). -/
-theorem verifierQueries_le (hm : 0 < S.params.maxLogArity) :
-    S.verifierQueries ≤ S.setupQueries +
-      ((if S.hasLookups then 2 * Challenge.d EF + 1 else 0) + 3 * Challenge.d EF + 3 +
-        (Challenge.d EF + 1) * (twoAdicity F - S.params.logFinalPolyLen) +
-        S.params.numQueries * (1 + (twoAdicity F - S.params.logFinalPolyLen +
-          CompStark.Batch.inputRoundsOf S.instances) *
-          (1 + (twoAdicity F + S.params.logBlowup) + 2 * (S.k - 1)))) :=
-  Nat.add_le_add_left (S.verifierCalls_le hm) _
-
-/-- **The batch verifier's oracle calls on a proof of any lengths**, against common data of the
-batch's lookups. -/
-theorem isTotalQueryBound_verifyBatchWith (common : CompStark.Batch.Common F)
-    (hl : common.lookups = List.ofFn S.lookups) (proof : CompStark.Batch.BatchProof F EF)
-    (pis : List (List F)) :
-    IsTotalQueryBound (CompStark.Batch.verifyBatchWith (ideal F S.streamLen) S.params S.airs
-      common proof pis) S.verifierCalls := by
-  unfold CompStark.Batch.verifyBatchWith
-  split
-  · rename_i hkey
-    simp only [CompStark.Batch.keyOk, Bool.and_eq_true, beq_iff_eq] at hkey
-    obtain ⟨⟨⟨-, -⟩, hdl⟩, -⟩ := hkey
-    have hdl' : proof.degreeBits.toList.length = S.k := by
-      rw [hdl, airs, List.length_ofFn]
-    set n : Fin S.k → ℕ := fun i ↦ proof.degreeBits.toList[i]'(by rw [hdl']; exact i.isLt)
-    have hinst : CompStark.Batch.instancesOf S.airs common proof.degreeBits.toList =
-        S.instancesAt n := by
-      unfold CompStark.Batch.instancesOf instancesAt airs
-      rw [hl]
-      refine List.ext_getElem (by simp only [List.length_map, List.length_zip, List.length_ofFn,
-        hdl', Nat.min_self]) fun j h1 h2 ↦ ?_
-      simp only [List.getElem_map, List.getElem_zip, List.getElem_ofFn, n]
-      rfl
-    rw [hinst]
-    by_cases hle : ∀ i, n i ≤ twoAdicity F
-    · exact (CompStark.Batch.isTotalQueryBound_verifyInstancesWith S.params _ common proof
-        pis).mono (Ni.le_foldr_max _ _ (List.mem_map_of_mem
-          (mem_lengthVectors S.k _ n hle)))
-    · refine (show IsTotalQueryBound (CompStark.Batch.verifyInstancesWith (ideal F S.streamLen)
-          S.params (S.instancesAt n) common proof pis) 0 from ?_).mono (Nat.zero_le _)
-      push Not at hle
-      obtain ⟨i, hi⟩ := hle
-      unfold CompStark.Batch.verifyInstancesWith
-      refine bound_unless _ _ _ _ fun _ ↦ ?_
-      have hq : (List.all (S.instancesAt n) fun I ↦
-          decide (I.logN + I.logQuotientChunks ≤ twoAdicity F)) = false := by
-        rw [List.all_eq_false]
-        exact ⟨⟨S.air i, n i, S.lookups i⟩, List.mem_ofFn.mpr ⟨i, rfl⟩, by
-          simp only [decide_eq_true_eq]; omega⟩
-      simp only [hq, Bool.false_eq_true, ↓reduceIte]
-      trivial
-  · trivial
 
 /-- A node of the batch setup's tree at level `l` costs at most `4 · 2 ^ l - 3` calls: a hash per
 leaf, a compression per node, and a hash and a compression where a node injects. -/
@@ -452,17 +363,117 @@ theorem isTotalQueryBound_injNodeWith {K : Nat} (ms : List (Merkle.Matrix F)) (k
     · rw [Nat.pow_succ]
       omega
 
+namespace Statement
+variable (C : Statement F)
+
+theorem hasLookups_instancesAt (n : Fin C.k → ℕ) :
+    CompStark.Batch.hasLookups (C.instancesAt n) = C.hasLookups := by
+  simp only [CompStark.Batch.hasLookups, instancesAt, hasLookups, keyInstances, List.ofFn_eq_map,
+    List.any_map, Function.comp_def]
+
+theorem inputRoundsOf_instancesAt (n : Fin C.k → ℕ) :
+    CompStark.Batch.inputRoundsOf (C.instancesAt n) =
+      CompStark.Batch.inputRoundsOf C.keyInstances := by
+  unfold CompStark.Batch.inputRoundsOf
+  rw [hasLookups_instancesAt, keyInstances, hasLookups_instancesAt]
+  simp only [instancesAt, List.ofFn_eq_map, List.any_map, Function.comp_def]
+
+variable (EF) in
+/-- The verifier's oracle calls on proofs of any lengths, for FRI folding at least once per
+round: at most `twoAdicity - logFinalPolyLen` folds, the tallest domain of
+`2 ^ (twoAdicity + logBlowup)` points and `k` heights. -/
+theorem verifierCalls_le (hm : 0 < C.params.maxLogArity) :
+    C.verifierCalls EF ≤
+      (if C.hasLookups then 2 * Challenge.d EF + 1 else 0) + 3 * Challenge.d EF + 3 +
+        (Challenge.d EF + 1) * (twoAdicity F - C.params.logFinalPolyLen) +
+        C.params.numQueries * (1 + (twoAdicity F - C.params.logFinalPolyLen +
+          CompStark.Batch.inputRoundsOf C.keyInstances) *
+          (1 + (twoAdicity F + C.params.logBlowup) + 2 * (C.k - 1))) := by
+  refine foldr_max_le _ _ fun x hx ↦ ?_
+  obtain ⟨n, hn, rfl⟩ := List.mem_map.mp hx
+  have h := CompStark.Batch.verifierCallsOf_le (EF := EF) C.params (C.instancesAt n)
+    (twoAdicity F) C.k (by rw [instancesAt, List.length_ofFn])
+    (fun I hI ↦ by
+      obtain ⟨i, rfl⟩ := List.mem_ofFn.mp hI
+      exact le_of_mem_lengthVectors _ _ n hn i) hm
+  rwa [hasLookups_instancesAt, inputRoundsOf_instancesAt] at h
+
+variable (EF) in
+/-- The setup's and the verifier's oracle calls on proofs of any lengths, for FRI folding at
+least once per round (`verifierCalls_le`). -/
+theorem verifierQueries_le (hm : 0 < C.params.maxLogArity) :
+    C.verifierQueries EF ≤ C.setupQueries +
+      ((if C.hasLookups then 2 * Challenge.d EF + 1 else 0) + 3 * Challenge.d EF + 3 +
+        (Challenge.d EF + 1) * (twoAdicity F - C.params.logFinalPolyLen) +
+        C.params.numQueries * (1 + (twoAdicity F - C.params.logFinalPolyLen +
+          CompStark.Batch.inputRoundsOf C.keyInstances) *
+          (1 + (twoAdicity F + C.params.logBlowup) + 2 * (C.k - 1)))) :=
+  Nat.add_le_add_left (C.verifierCalls_le EF hm) _
+
+/-- On a proof whose degree bits pass `keyOk`, against common data of the statement's lookups,
+the verifier checks the statement's instances at the proof's lengths. -/
+theorem instancesOf_eq (common : CompStark.Batch.Common F)
+    (hl : common.lookups = List.ofFn C.lookups) (proof : CompStark.Batch.BatchProof F EF)
+    (hdl : proof.degreeBits.toList.length = C.k) :
+    CompStark.Batch.instancesOf C.airs common proof.degreeBits.toList =
+      C.instancesAt (C.lengthsOf proof) := by
+  unfold CompStark.Batch.instancesOf instancesAt airs lengthsOf
+  rw [hl]
+  refine List.ext_getElem (by simp only [List.length_map, List.length_zip, List.length_ofFn,
+    hdl, Nat.min_self]) fun j h1 h2 ↦ ?_
+  simp only [List.getElem_map, List.getElem_zip, List.getElem_ofFn]
+  rw [List.getD_eq_getElem _ _ (by rw [hdl]; simpa only [List.length_ofFn] using h2)]
+
+/-- `keyOk` checks one degree bit per AIR. -/
+theorem length_degreeBits_of_keyOk (common : CompStark.Batch.Common F)
+    (proof : CompStark.Batch.BatchProof F EF)
+    (hkey : CompStark.Batch.keyOk C.airs common proof.degreeBits.toList = true) :
+    proof.degreeBits.toList.length = C.k := by
+  simp only [CompStark.Batch.keyOk, Bool.and_eq_true, beq_iff_eq] at hkey
+  rw [hkey.1.2, airs, List.length_ofFn]
+
+/-- **The batch verifier's oracle calls on a proof of any lengths**, against common data of the
+statement's lookups. -/
+theorem isTotalQueryBound_verifyBatchWith (common : CompStark.Batch.Common F)
+    (hl : common.lookups = List.ofFn C.lookups) (proof : CompStark.Batch.BatchProof F EF)
+    (pis : List (List F)) :
+    IsTotalQueryBound (CompStark.Batch.verifyBatchWith (ideal F (C.streamLen EF)) C.params C.airs
+      common proof pis) (C.verifierCalls EF) := by
+  unfold CompStark.Batch.verifyBatchWith
+  split
+  · rename_i hkey
+    rw [C.instancesOf_eq common hl proof (C.length_degreeBits_of_keyOk common proof hkey)]
+    set n := C.lengthsOf proof
+    by_cases hle : ∀ i, n i ≤ twoAdicity F
+    · exact (CompStark.Batch.isTotalQueryBound_verifyInstancesWith C.params _ common proof
+        pis).mono (Ni.le_foldr_max _ _ (List.mem_map_of_mem
+          (mem_lengthVectors C.k _ n hle)))
+    · refine (show IsTotalQueryBound (CompStark.Batch.verifyInstancesWith
+          (ideal F (C.streamLen EF)) C.params (C.instancesAt n) common proof pis) 0
+          from ?_).mono (Nat.zero_le _)
+      push Not at hle
+      obtain ⟨i, hi⟩ := hle
+      unfold CompStark.Batch.verifyInstancesWith
+      refine Setup.bound_unless _ _ _ _ fun _ ↦ ?_
+      have hq : (List.all (C.instancesAt n) fun I ↦
+          decide (I.logN + I.logQuotientChunks ≤ twoAdicity F)) = false := by
+        rw [List.all_eq_false]
+        exact ⟨⟨C.air i, n i, C.lookups i⟩, List.mem_ofFn.mpr ⟨i, rfl⟩, by
+          simp only [decide_eq_true_eq]; omega⟩
+      simp only [hq, Bool.false_eq_true, ↓reduceIte]
+      trivial
+  · trivial
+
 /-- **The batch setup's oracle calls.** -/
-theorem isTotalQueryBound_setupRo : IsTotalQueryBound S.setupRo S.setupQueries := by
+theorem isTotalQueryBound_setupRo : IsTotalQueryBound (C.setupRo EF) C.setupQueries := by
   unfold setupRo CompStark.Batch.commonWith
-  rw [preprocessedCapWith_keyInstances]
   refine (isTotalQueryBound_bind (n₂ := 0) ?_ fun _ ↦ Merkle.isTotalQueryBound_pure _).mono
     (Nat.add_zero _).le
   unfold CompStark.Batch.preprocessedCapWith setupQueries
   split
   · trivial
   · rename_i hne
-    have hhas : S.hasPreprocessed = true := by
+    have hhas : C.hasPreprocessed = true := by
       rw [List.isEmpty_iff] at hne
       obtain ⟨x, hx⟩ := List.exists_mem_of_ne_nil _ hne
       obtain ⟨I, hI, hf⟩ := List.mem_filterMap.mp hx
@@ -476,14 +487,16 @@ theorem isTotalQueryBound_setupRo : IsTotalQueryBound S.setupRo S.setupQueries :
     refine (isTotalQueryBound_bind (Merkle.mapM_bound _ _
       (isTotalQueryBound_injNodeWith _ _ _) _).1 fun _ ↦ Merkle.isTotalQueryBound_pure _).mono ?_
     rw [List.length_range, Nat.add_zero]
-    have hc := Nat.min_le_right S.params.capHeight
-      (CompStark.Batch.preprocessedLogHeight S.params S.instances)
-    generalize min S.params.capHeight
-      (CompStark.Batch.preprocessedLogHeight S.params S.instances) = c at hc ⊢
-    calc 2 ^ c * (4 * 2 ^ (CompStark.Batch.preprocessedLogHeight S.params S.instances - c) - 3)
-        ≤ 2 ^ c * (4 * 2 ^ (CompStark.Batch.preprocessedLogHeight S.params S.instances - c)) :=
+    have hc := Nat.min_le_right C.params.capHeight
+      (CompStark.Batch.preprocessedLogHeight C.params C.keyInstances)
+    generalize min C.params.capHeight
+      (CompStark.Batch.preprocessedLogHeight C.params C.keyInstances) = c at hc ⊢
+    calc 2 ^ c * (4 * 2 ^ (CompStark.Batch.preprocessedLogHeight C.params C.keyInstances - c) - 3)
+        ≤ 2 ^ c * (4 * 2 ^ (CompStark.Batch.preprocessedLogHeight C.params C.keyInstances - c)) :=
           Nat.mul_le_mul_left _ (Nat.sub_le _ _)
-      _ = 4 * 2 ^ CompStark.Batch.preprocessedLogHeight S.params S.instances := by
+      _ = 4 * 2 ^ CompStark.Batch.preprocessedLogHeight C.params C.keyInstances := by
           rw [Nat.mul_left_comm, ← Nat.pow_add, Nat.add_sub_cancel' hc]
 
-end CompStark.Iop.Batch.Setup
+end Statement
+
+end CompStark.Iop.Batch

@@ -23,11 +23,12 @@ statements: `knowledgeSoundness_of_secure`, `knowledgeSoundness_ro_of_secureRo`,
 `batchKnowledgeSoundness_of_secure` and `Batch.batchKnowledgeSoundness_ro_of_secureRo`, and their
 error bounds. `knowledgeErrorReport` and `roundErrorReport` print the bits of each term (`#eval`).
 
-Every analysis below is the one `bestAnalysis` (or `bestAnalysisRo`) finds for its setup
-(`tests/CompStarkTests/Security.lean` checks this). FRI's radius `δ` stays below the
-unique-decoding radius `(1 - rate) / 2`, and so does the extractor's `δ'`, where the candidate
-lists have at most one element (`listSize_le_one`). Every term but the queries is over `|𝕂|`:
-`p ^ 4 ≈ 2 ^ 123.95` for `KoalaBear.Fast.Ext4`, which caps every configuration below
+Every analysis of a setup below is the one `bestAnalysis` (or `bestAnalysisRo`) finds for it
+(`tests/CompStarkTests/Security.lean` checks this); the batch statements' analyses are chosen by
+hand, a statement's terms ranging over every admitted vector of lengths. FRI's radius `δ` stays
+below the unique-decoding radius `(1 - rate) / 2`, and so does the extractor's `δ'`, where the
+candidate lists have at most one element (`listSize_le_one`). Every term but the queries is over
+`|𝕂|`: `p ^ 4 ≈ 2 ^ 123.95` for `KoalaBear.Fast.Ext4`, which caps every configuration below
 `2 ^ (-123.95)` (constraint folding alone is about `2 ^ (-117.98)`), and `p ^ 5 ≈ 2 ^ 154.94` for
 `KoalaBear.Fast.Ext5`. In the random-oracle model, grinding divides every round's error after `α`
 by about `2 ^ bits`; only constraint folding, which Plonky3 does not grind, stays an integer over
@@ -106,20 +107,24 @@ the analysis the search finds:
   bound here, `(T + (T - 1) W) / |𝕂|`, is Schwartz–Zippel on the numerator with every denominator
   cleared, at most `(W + 1) T / |𝕂|`, the same up to `T / |𝕂|`, and it counts the poles of every
   tuple, whatever its multiplicity.
-* `wideBatch5Setup`, the batch in the random-oracle model, with `wide5Params`;
-  `δ = 3/8 - 2 ^ (-20)`, `δ' = 3/8 - 2 ^ (-22)`, no loss needed: the lookup challenges `130.98`,
-  constraint folding `148.88`, out of domain `131.94`, batching `128.65`, FRI's folds `132.94`,
-  queries `128.49`; every round error is at most `2 ^ (-128)` (`wideBatch5_roundError_le`),
+* `wideBatch5Statement`, the batch in the random-oracle model, with `wide5Params`, at every
+  vector of trace lengths the verifier admits (every instance up to `2 ^ 22` rows, keygen heights
+  `2 ^ 20`, `2 ^ 19` and `2 ^ 16`); `δ = 3/8 - 2 ^ (-19)`, `δ' = 3/8 - 2 ^ (-22)`, no loss needed.
+  Each term is at its worst admitted value (`Batch.Statement.roundErrorTerms`), every instance on
+  `2 ^ 22` rows for the lookups and the out-of-domain point, all `474` opened words on one domain
+  size for batching: the lookup challenges `128.04` (`T = 2 · 3 · 2 ^ 22`), constraint folding
+  `148.88`, out of domain `129.94`, batching `128.06`, FRI's folds `130.94`, queries `128.49`;
+  every round error at every admitted vector is at most `2 ^ (-128)` (`wideBatch5_roundError_le`),
   `verifierQueries ≤ 134253` on proofs of any lengths (`wideBatch5_knowledgeSoundness_ro`).
-* `wideBatchGrindSetup`, the batch over the quartic extension with `wideBusGrindParams` (`144`
-  queries, grinding in every round but `α`, `18` bits before the lookup challenges);
-  `δ = 3/8 - 2 ^ (-12)`, `δ' = 3/8 - 2 ^ (-14)`, `loss = 2 ^ (-15)`: the lookup challenges
-  `117.99` (`99.99` without grinding), constraint folding `117.89`, out of domain `120.95`,
-  batching `117.71`, FRI's folds `117.37`, queries `117.36`; every round error is at most
-  `2 ^ (-117)` (`wideBatchGrind_roundError_le`), `verifierQueries ≤ 120816`
-  (`wideBatchGrind_knowledgeSoundness_ro`). Constraint folding, which Plonky3 does not grind,
-  keeps the quartic extension above `2 ^ (-117.89)`: `117` bits is the best integer level, reached
-  with `18` bits of lookup grinding (`17` leave the lookup challenges at `2 ^ (-116.99)`).
+* `wideBatchGrindStatement`, the batch over the quartic extension with `wideBusGrindParams` (`144`
+  queries, grinding in every round but `α`, `18` bits before the lookup challenges), at every
+  admitted vector; `δ = 3/8 - 2 ^ (-12)`, `δ' = 3/8 - 2 ^ (-14)`, `loss = 2 ^ (-15)`: the lookup
+  challenges `115.05`, constraint folding `117.89`, out of domain `118.95`, batching `116.12`,
+  FRI's folds `117.37`, queries `117.34`; every round error is at most `2 ^ (-115)`
+  (`wideBatchGrind_roundError_le`), `verifierQueries ≤ 120816`
+  (`wideBatchGrind_knowledgeSoundness_ro`). At the keygen heights alone the lookup challenges
+  would be at `117.99`: the prover may claim every instance at `2 ^ 22` rows, which multiplies the
+  interactions by about `7.7`.
 -/
 
 @[expose] public section
@@ -247,26 +252,41 @@ theorem Batch.roundError_le_of_secureRo {withLookups : Bool} (S : Batch.Setup EF
     Batch.roundError S δ δ' ≤ (2 ^ bits)⁻¹ :=
   (batchRoundError_le_bound S B A hp hB h.1 δ δ' hδ hδ').trans (ofReal_le_inv_two_pow h.2)
 
+/-- **The calculator's round error of a batch statement.** If the calculator certifies `bits` bits
+per oracle answer for the batch statement `C` at `A` with an MCA bound `B` that holds
+(`C.SecureRo EF p B A bits`), the round error with FRI at `A.δ` and the extractor at `A.δ'` at every
+vector of lengths is at most `2 ^ (-bits)`. -/
+theorem Batch.Statement.roundError_le_of_secureRo (C : Batch.Statement F) (hp : Nat.card F = p)
+    {B : McaBound} (hB : B.Holds) (A : Analysis) {bits : ℕ} (h : C.SecureRo EF p B A bits)
+    (δ δ' : NNReal) (hδ : (δ : ℝ) = A.δ) (hδ' : (δ' : ℝ) = A.δ') :
+    C.roundError EF (fun _ ↦ δ) (fun _ ↦ δ') ≤ (2 ^ bits)⁻¹ :=
+  iSup_le fun n ↦ iSup_le fun hn ↦ Batch.roundError_le_of_secureRo _ hp hB A
+    (C.secureRo_setupAt EF h n hn) δ δ' hδ hδ'
+
 /-- **Batch knowledge soundness in the random-oracle model from the calculator.** If the
-calculator certifies `bits` bits per oracle answer for the batch `S` at `A` with an MCA bound that
-holds, a prover making at most `Q` oracle calls gets a proof accepted while no tuple of traces
-within `δ' = A.δ'` of the ones it committed to satisfies the batch with probability at most
-`q · 2 ^ (-bits) + hashError q`, `q = Q + verifierQueries`. -/
-theorem Batch.batchKnowledgeSoundness_ro_of_secureRo (S : Batch.Setup EF)
-    (hp : Nat.card F = p)
-    {B : McaBound} (hB : B.Holds) (A : Analysis) {bits : ℕ} (h : S.SecureRo p B A bits)
-    (δ' : NNReal) (hδ' : (δ' : ℝ) = A.δ') (publicValues : Fin S.k → List F) (Q : Nat)
-    (prover : Batch.NIProver S) (hQ : prover.IsTotalQueryBound Q) :
-    Pr{let (proof, log, verdict) ← Batch.run S publicValues prover}[
-      verdict = .ok () ∧ proof.degreeBits.toList = List.ofFn S.logN ∧
-        ∀ traces ∈ Batch.closeTraces S δ' (Batch.committedTraces S log proof),
-          ¬ S.Satisfied traces publicValues] ≤
-      (Q + S.verifierQueries) * (2 ^ bits)⁻¹ +
-        hashError F (S.params.capHeight + 1) (Q + S.verifierQueries) := by
-  refine (Batch.batchKnowledgeSoundness_ro S publicValues (Real.toNNReal A.δ) δ'
-    (batch_lt_one_sub_rate S B A h.1 δ' hδ') Q prover hQ).trans ?_
+calculator certifies `bits` bits per oracle answer for the batch statement `C` at `A` with an MCA
+bound that holds, a prover making at most `Q` oracle calls gets a proof accepted while no tuple of
+traces of the proof's lengths within `δ' = A.δ'` of the ones it committed to satisfies the batch
+at those lengths, with probability at most `q · 2 ^ (-bits) + hashError q`,
+`q = Q + verifierQueries`. -/
+theorem Batch.batchKnowledgeSoundness_ro_of_secureRo (C : Batch.Statement F)
+    (hp : Nat.card F = p) {B : McaBound} (hB : B.Holds) (A : Analysis) {bits : ℕ}
+    (h : C.SecureRo EF p B A bits) (δ' : NNReal) (hδ' : (δ' : ℝ) = A.δ')
+    (publicValues : Fin C.k → List F) (Q : Nat) (prover : C.NIProver EF)
+    (hQ : prover.IsTotalQueryBound Q) :
+    Pr{let (proof, log, verdict) ← C.run publicValues prover}[
+      verdict = .ok () ∧
+        ∀ h : C.Admits (C.lengthsOf proof),
+          ∀ traces ∈ Batch.closeTraces (C.setupAt EF _ h) δ'
+              (Batch.committedTraces (C.setupAt EF _ h) log proof),
+            ¬ (C.setupAt EF _ h).Satisfied traces publicValues] ≤
+      (Q + C.verifierQueries EF) * (2 ^ bits)⁻¹ +
+        hashError F (C.params.capHeight + 1) (Q + C.verifierQueries EF) := by
+  refine (Batch.batchKnowledgeSoundness_ro C publicValues (fun _ ↦ Real.toNNReal A.δ)
+    (fun _ ↦ δ') (fun n hn ↦ batch_lt_one_sub_rate (C.setupAt EF n hn) B A
+      (C.secureRo_setupAt EF h n hn).1 δ' hδ') Q prover hQ).trans ?_
   gcongr
-  exact Batch.roundError_le_of_secureRo S hp hB A h _ δ' (coe_toNNReal_δ A h.1.1) hδ'
+  exact C.roundError_le_of_secureRo hp hB A h _ δ' (coe_toNNReal_δ A h.1.1) hδ'
 
 end Calculator
 
@@ -815,124 +835,139 @@ theorem wideBatch_knowledgeSoundness (publicValues : Fin 3 → List F)
     wideBatch_secure _
     (by norm_num [wide5iAnalysis]) publicValues prover
 
-/-! ### The batch in the random-oracle model -/
+/-! ### Batch statements in the random-oracle model -/
 
-/-- The three instances `wideBus 64` on `2 ^ 20`, `2 ^ 19` and `2 ^ 16` rows over the quintic
-extension with `wide5Params` (`160` queries, `20` bits of query grinding). -/
-def wideBatch5Setup : Batch.Setup KoalaBear.Fast.Ext5 where
+/-- `wideBus 64` packs its lookup, which reads its columns, at every height. -/
+theorem wideBus_lookupsFit (keyLogN : ℕ) :
+    ∀ l ∈ (wideBus 64 : Air F).packedLookups keyLogN,
+      l.Fits (wideBus 64 : Air F).width (wideBus 64 : Air F).mainNextWidth
+        (wideBus 64 : Air F).preprocessedWidth (wideBus 64 : Air F).preprocessedNextWidth := by
+  rw [wideBus_packedLookups]
+  intro l hl
+  rw [List.mem_singleton.mp hl]
+  unfold Stark.Lookup.Fits
+  decide
+
+/-- Three instances of `wideBus 64` of keygen heights `2 ^ 20`, `2 ^ 19` and `2 ^ 16` over the
+quintic extension with `wide5Params` (`160` queries, `20` bits of query grinding), at every vector
+of trace lengths. -/
+def wideBatch5Statement : Batch.Statement F where
   params := wide5Params
   k := 3
   air _ := wideBus 64
-  logN := ![20, 19, 16]
   keyLogN := ![20, 19, 16]
-  valid i := ValidConfig.sound <|
-    wideBus_valid wide5Params rfl (by decide) rfl (by decide) _ (by fin_cases i <;> decide)
-  keyed _ h := absurd h (by decide)
+  colsInWidth _ := wide_colsInWidth 64
   nonempty := by decide
-  lookupsValid i := wideBus_lookupsValid _ _ (by fin_cases i <;> decide)
+  lookupsFit _ := wideBus_lookupsFit _
   buses := wideBus_busesValid _
 
 /-- `wideGrindParams` with `18` bits of grinding before the lookup challenges. -/
 def wideBusGrindParams : Fri.Params := { wideGrindParams with lookupPowBits := 18 }
 
 /-- The three instances over the quartic extension with `wideBusGrindParams` (`144` queries,
-grinding in every round but `α`). -/
-def wideBatchGrindSetup : Batch.Setup KoalaBear.Fast.Ext4 where
+grinding in every round but `α`), at every vector of trace lengths. -/
+def wideBatchGrindStatement : Batch.Statement F where
   params := wideBusGrindParams
   k := 3
   air _ := wideBus 64
-  logN := ![20, 19, 16]
   keyLogN := ![20, 19, 16]
-  valid i := ValidConfig.sound <|
-    wideBus_valid wideBusGrindParams rfl (by decide) rfl (by decide) _ (by fin_cases i <;> decide)
-  keyed _ h := absurd h (by decide)
+  colsInWidth _ := wide_colsInWidth 64
   nonempty := by decide
-  lookupsValid i := wideBus_lookupsValid _ _ (by fin_cases i <;> decide)
+  lookupsFit _ := wideBus_lookupsFit _
   buses := wideBus_busesValid _
 
-/-- FRI at `δ = 3/8 - 2 ^ (-20)`, the extractor at `δ' = 3/8 - 2 ^ (-22)` and
+/-- FRI at `δ = 3/8 - 2 ^ (-19)`, the extractor at `δ' = 3/8 - 2 ^ (-22)` and
 `loss = 2 ^ (-60)`. -/
-def wideBatch5Analysis : Analysis := ⟨3 / 8 - 1 / 2 ^ 20, 3 / 8 - 1 / 2 ^ 22, 1 / 2 ^ 60⟩
+def wideBatch5Analysis : Analysis := ⟨3 / 8 - 1 / 2 ^ 19, 3 / 8 - 1 / 2 ^ 22, 1 / 2 ^ 60⟩
 
 /-- FRI at `δ = 3/8 - 2 ^ (-12)`, the extractor at `δ' = 3/8 - 2 ^ (-14)` and
 `loss = 2 ^ (-15)`. -/
 def wideBatchGrindAnalysis : Analysis := ⟨3 / 8 - 1 / 2 ^ 12, 3 / 8 - 1 / 2 ^ 14, 1 / 2 ^ 15⟩
 
-theorem wideBatch5_secureRo :
-    wideBatch5Setup.SecureRo 2130706433 .uniqueDecoding wideBatch5Analysis 128 := by
+theorem wideBatch5Statement_secureRo :
+    wideBatch5Statement.SecureRo Ext5 2130706433 .uniqueDecoding wideBatch5Analysis 128 := by
   decide +kernel
 
-theorem wideBatchGrind_secureRo :
-    wideBatchGrindSetup.SecureRo 2130706433 .uniqueDecoding wideBatchGrindAnalysis 117 := by
+theorem wideBatchGrindStatement_secureRo :
+    wideBatchGrindStatement.SecureRo Ext4 2130706433 .uniqueDecoding wideBatchGrindAnalysis
+      115 := by
   decide +kernel
 
-/-- **128 bits per oracle answer for a batch of three tables of mixed heights with lookups.**
-Every round error of `wideBatch5Setup`, FRI at `δ = 3/8 - 2 ^ (-20)` and the extractor at
-`δ' = 3/8 - 2 ^ (-22)`, is at most `2 ^ (-128)`. -/
+/-- **128 bits per oracle answer for a batch of three tables with lookups, at every vector of
+trace lengths.** Every round error of `wideBatch5Statement` at every admitted vector, FRI at
+`δ = 3/8 - 2 ^ (-19)` and the extractor at `δ' = 3/8 - 2 ^ (-22)`, is at most `2 ^ (-128)`. -/
 theorem wideBatch5_roundError_le :
-    Batch.roundError wideBatch5Setup (3 / 8 - 2 ^ (-20 : ℤ)) (3 / 8 - 2 ^ (-22 : ℤ)) ≤
-      (2 ^ 128)⁻¹ :=
-  Batch.roundError_le_of_secureRo _ KoalaBear.card_eq McaBound.uniqueDecoding_holds _
-    wideBatch5_secureRo _ _
-    (by rw [coe_sub_two_zpow _ (-20) 20 rfl (by norm_num)]; norm_num [wideBatch5Analysis])
+    wideBatch5Statement.roundError Ext5 (fun _ ↦ 3 / 8 - 2 ^ (-19 : ℤ))
+      (fun _ ↦ 3 / 8 - 2 ^ (-22 : ℤ)) ≤ (2 ^ 128)⁻¹ :=
+  Batch.Statement.roundError_le_of_secureRo _ KoalaBear.card_eq McaBound.uniqueDecoding_holds _
+    wideBatch5Statement_secureRo _ _
+    (by rw [coe_sub_two_zpow _ (-19) 19 rfl (by norm_num)]; norm_num [wideBatch5Analysis])
     (by rw [coe_sub_two_zpow _ (-22) 22 rfl (by norm_num)]; norm_num [wideBatch5Analysis])
 
-/-- **117 bits per oracle answer for a batch of three tables of mixed heights over the quartic
-extension.** Every round error of `wideBatchGrindSetup`, FRI at `δ = 3/8 - 2 ^ (-12)` and the
-extractor at `δ' = 3/8 - 2 ^ (-14)`, is at most `2 ^ (-117)`. -/
+/-- **115 bits per oracle answer for a batch of three tables over the quartic extension, at every
+vector of trace lengths.** Every round error of `wideBatchGrindStatement` at every admitted vector,
+FRI at `δ = 3/8 - 2 ^ (-12)` and the extractor at `δ' = 3/8 - 2 ^ (-14)`, is at most
+`2 ^ (-115)`. -/
 theorem wideBatchGrind_roundError_le :
-    Batch.roundError wideBatchGrindSetup (3 / 8 - 2 ^ (-12 : ℤ)) (3 / 8 - 2 ^ (-14 : ℤ)) ≤
-      (2 ^ 117)⁻¹ :=
-  Batch.roundError_le_of_secureRo _ KoalaBear.card_eq McaBound.uniqueDecoding_holds _
-    wideBatchGrind_secureRo _ _
+    wideBatchGrindStatement.roundError Ext4 (fun _ ↦ 3 / 8 - 2 ^ (-12 : ℤ))
+      (fun _ ↦ 3 / 8 - 2 ^ (-14 : ℤ)) ≤ (2 ^ 115)⁻¹ :=
+  Batch.Statement.roundError_le_of_secureRo _ KoalaBear.card_eq McaBound.uniqueDecoding_holds _
+    wideBatchGrindStatement_secureRo _ _
     (by rw [coe_sub_two_zpow _ (-12) 12 rfl (by norm_num)]; norm_num [wideBatchGrindAnalysis])
     (by rw [coe_sub_two_zpow _ (-14) 14 rfl (by norm_num)]; norm_num [wideBatchGrindAnalysis])
 
-/-- The verifier's oracle calls on `wideBatch5Setup`'s proofs, of any lengths: at most those at
+/-- The verifier's oracle calls on `wideBatch5Statement`'s proofs, of any lengths: at most those at
 three distinct heights, the tallest of `2 ^ 24` rows. -/
-theorem wideBatch5Setup_verifierQueries_le : wideBatch5Setup.verifierQueries ≤ 134253 := by
-  refine (wideBatch5Setup.verifierQueries_le (by decide)).trans ?_
+theorem wideBatch5Statement_verifierQueries_le :
+    wideBatch5Statement.verifierQueries Ext5 ≤ 134253 := by
+  refine (wideBatch5Statement.verifierQueries_le Ext5 (by decide)).trans ?_
   decide +kernel
 
-/-- The verifier's oracle calls on `wideBatchGrindSetup`'s proofs, of any lengths. -/
-theorem wideBatchGrindSetup_verifierQueries_le :
-    wideBatchGrindSetup.verifierQueries ≤ 120816 := by
-  refine (wideBatchGrindSetup.verifierQueries_le (by decide)).trans ?_
+/-- The verifier's oracle calls on `wideBatchGrindStatement`'s proofs, of any lengths. -/
+theorem wideBatchGrindStatement_verifierQueries_le :
+    wideBatchGrindStatement.verifierQueries Ext4 ≤ 120816 := by
+  refine (wideBatchGrindStatement.verifierQueries_le Ext4 (by decide)).trans ?_
   decide +kernel
 
-/-- **128 bits per oracle call for a batch of three tables of mixed heights with lookups.** A
-prover for `wideBatch5Setup` making at most `Q` oracle calls gets a proof accepted while no tuple of
-traces close to the ones it committed to satisfies the batch with probability at most `q · 2 ^
-(-128) + hashError q`, `q = Q + verifierQueries`. -/
-theorem wideBatch5_knowledgeSoundness_ro (publicValues : Fin wideBatch5Setup.k → List F) (Q : Nat)
-    (prover : Batch.NIProver wideBatch5Setup) (hQ : prover.IsTotalQueryBound Q) :
-    Pr{let (proof, log, verdict) ← Batch.run wideBatch5Setup publicValues prover}[
-      verdict = .ok () ∧ proof.degreeBits.toList = List.ofFn wideBatch5Setup.logN ∧
-        ∀ traces ∈ Batch.closeTraces wideBatch5Setup (3 / 8 - 2 ^ (-22 : ℤ) : NNReal)
-            (Batch.committedTraces wideBatch5Setup log proof),
-          ¬ wideBatch5Setup.Satisfied traces publicValues] ≤
-      (Q + wideBatch5Setup.verifierQueries) * (2 ^ 128)⁻¹ +
-        hashError F 1 (Q + wideBatch5Setup.verifierQueries) :=
+/-- **128 bits per oracle call for a batch of three tables with lookups.** A prover for
+`wideBatch5Statement` making at most `Q` oracle calls gets a proof accepted, of any trace lengths,
+while no tuple of traces of those lengths close to the ones it committed to satisfies the batch,
+with probability at most `q · 2 ^ (-128) + hashError q`, `q = Q + verifierQueries`. -/
+theorem wideBatch5_knowledgeSoundness_ro (publicValues : Fin wideBatch5Statement.k → List F)
+    (Q : Nat) (prover : wideBatch5Statement.NIProver Ext5) (hQ : prover.IsTotalQueryBound Q) :
+    Pr{let (proof, log, verdict) ← wideBatch5Statement.run publicValues prover}[
+      verdict = .ok () ∧
+        ∀ h : wideBatch5Statement.Admits (wideBatch5Statement.lengthsOf proof),
+          ∀ traces ∈ Batch.closeTraces (wideBatch5Statement.setupAt Ext5 _ h)
+              (3 / 8 - 2 ^ (-22 : ℤ) : NNReal)
+              (Batch.committedTraces (wideBatch5Statement.setupAt Ext5 _ h) log proof),
+            ¬ (wideBatch5Statement.setupAt Ext5 _ h).Satisfied traces publicValues] ≤
+      (Q + wideBatch5Statement.verifierQueries Ext5) * (2 ^ 128)⁻¹ +
+        hashError F 1 (Q + wideBatch5Statement.verifierQueries Ext5) :=
   Batch.batchKnowledgeSoundness_ro_of_secureRo _ KoalaBear.card_eq McaBound.uniqueDecoding_holds _
-    wideBatch5_secureRo _
+    wideBatch5Statement_secureRo _
     (by rw [coe_sub_two_zpow _ (-22) 22 rfl (by norm_num)]; norm_num [wideBatch5Analysis])
     publicValues Q prover hQ
 
-/-- **117 bits per oracle call for a batch of three tables with lookups over the quartic
-extension.** A prover for `wideBatchGrindSetup` making at most `Q` oracle calls gets a proof
-accepted while no tuple of traces close to the ones it committed to satisfies the batch with
-probability at most `q · 2 ^ (-117) + hashError q`, `q = Q + verifierQueries`. -/
-theorem wideBatchGrind_knowledgeSoundness_ro (publicValues : Fin wideBatchGrindSetup.k → List F)
-    (Q : Nat) (prover : Batch.NIProver wideBatchGrindSetup) (hQ : prover.IsTotalQueryBound Q) :
-    Pr{let (proof, log, verdict) ← Batch.run wideBatchGrindSetup publicValues prover}[
-      verdict = .ok () ∧ proof.degreeBits.toList = List.ofFn wideBatchGrindSetup.logN ∧
-        ∀ traces ∈ Batch.closeTraces wideBatchGrindSetup (3 / 8 - 2 ^ (-14 : ℤ) : NNReal)
-            (Batch.committedTraces wideBatchGrindSetup log proof),
-          ¬ wideBatchGrindSetup.Satisfied traces publicValues] ≤
-      (Q + wideBatchGrindSetup.verifierQueries) * (2 ^ 117)⁻¹ +
-        hashError F 1 (Q + wideBatchGrindSetup.verifierQueries) :=
+/-- **115 bits per oracle call for a batch of three tables with lookups over the quartic
+extension.** A prover for `wideBatchGrindStatement` making at most `Q` oracle calls gets a proof
+accepted, of any trace lengths, while no tuple of traces of those lengths close to the ones it
+committed to satisfies the batch, with probability at most `q · 2 ^ (-115) + hashError q`,
+`q = Q + verifierQueries`. -/
+theorem wideBatchGrind_knowledgeSoundness_ro
+    (publicValues : Fin wideBatchGrindStatement.k → List F) (Q : Nat)
+    (prover : wideBatchGrindStatement.NIProver Ext4) (hQ : prover.IsTotalQueryBound Q) :
+    Pr{let (proof, log, verdict) ← wideBatchGrindStatement.run publicValues prover}[
+      verdict = .ok () ∧
+        ∀ h : wideBatchGrindStatement.Admits (wideBatchGrindStatement.lengthsOf proof),
+          ∀ traces ∈ Batch.closeTraces (wideBatchGrindStatement.setupAt Ext4 _ h)
+              (3 / 8 - 2 ^ (-14 : ℤ) : NNReal)
+              (Batch.committedTraces (wideBatchGrindStatement.setupAt Ext4 _ h) log proof),
+            ¬ (wideBatchGrindStatement.setupAt Ext4 _ h).Satisfied traces publicValues] ≤
+      (Q + wideBatchGrindStatement.verifierQueries Ext4) * (2 ^ 115)⁻¹ +
+        hashError F 1 (Q + wideBatchGrindStatement.verifierQueries Ext4) :=
   Batch.batchKnowledgeSoundness_ro_of_secureRo _ KoalaBear.card_eq McaBound.uniqueDecoding_holds _
-    wideBatchGrind_secureRo _
+    wideBatchGrindStatement_secureRo _
     (by rw [coe_sub_two_zpow _ (-14) 14 rfl (by norm_num)]; norm_num [wideBatchGrindAnalysis])
     publicValues Q prover hQ
 

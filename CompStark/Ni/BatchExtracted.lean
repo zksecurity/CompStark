@@ -211,6 +211,16 @@ theorem batchSeedOf_eq
     CompStark.Batch.batchSeedOf EF S.params S.instances common.preprocessed = batchSeedS S := by
   rw [CompStark.Batch.batchSeedOf, batchSeedS, hprep, hasPreprocessed_eq]
 
+/-- The first round observes the setup's seed first: the batch's domain separator and every
+instance's degree bits. -/
+theorem seedB_prefix
+    (hprep : common.preprocessed.isSome = S.instances.any (0 < ·.air.preprocessedWidth)) :
+    seedB S <+: (inputsB S common pis proof).getD 0 [] := by
+  obtain ⟨rest, hr⟩ := inputsB_getD_head S common proof pis
+  rw [hr, headB, batchSeedOf_eq S common hprep, seedB]
+  refine ⟨capElems proof.mainCommit ++ pis.flatten ++ prepDigest common ++ rest, ?_⟩
+  simp only [List.append_assoc]
+
 theorem mainRoot_eq
     (hprep : common.preprocessed.isSome = S.instances.any (0 < ·.air.preprocessedWidth))
     (hsz : proof.mainCommit.size = 2 ^ min S.params.capHeight S.logTop) :

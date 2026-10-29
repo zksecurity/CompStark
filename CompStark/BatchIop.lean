@@ -43,6 +43,10 @@ instance's committed trace: `closeTraces` are the tuples of traces, one per inst
 to that instance's committed trace (`Iop.closeTraces`). The permutation traces are auxiliary: the
 extractor does not output them.
 
+A batch statement (`Statement`) is a batch without its trace lengths: FRI parameters, the AIRs and
+their keygen heights. A proof claims the lengths, the verifier checks them (`Statement.Admits`), and
+`Statement.setupAt` is the batch at an admitted vector of lengths.
+
 A batch without lookups (`Setup` with `withLookups := false`) is a batch of STARKs of their own;
 a STARK is such a batch of one instance (`Setup.toBatch`).
 -/
@@ -153,6 +157,82 @@ noncomputable def challenges (lookupAlpha lookupBeta : 𝕂) (i : Fin S.k) : Lis
       lookupBeta ^ maxWidth (List.ofFn S.lookups).flatten, lookupBeta]
 
 end Setup
+
+/-! ### Statements -/
+
+/-- A batch statement: FRI parameters and `k ≥ 1` AIRs whose constraints read only their columns,
+with their keygen heights `2 ^ keyLogN i`, at which their lookups are packed
+(`Statement.lookups`): row-local lookups reading their AIRs' columns (`Lookup.Fits`), valid
+together (`BusesValid`). The trace lengths are not part of it: a proof claims them, and the
+verifier checks them (`Statement.Admits`); `Statement.setupAt` is the batch at a vector of
+lengths. -/
+structure Statement (F : Type) [BaseField F] where
+  params : Fri.Params
+  /-- The number of instances. -/
+  k : Nat
+  air : Fin k → Air F
+  /-- Every instance's log trace height at keygen. -/
+  keyLogN : Fin k → Nat
+  /-- The constraints read only the AIRs' columns (`Air.ColsInWidth`). -/
+  colsInWidth : ∀ i, (air i).ColsInWidth
+  /-- The batch has an instance. -/
+  nonempty : 0 < k
+  /-- Every lookup is row-local and reads its AIR's columns. -/
+  lookupsFit : ∀ i, ∀ l ∈ (air i).packedLookups (keyLogN i),
+    l.Fits (air i).width (air i).mainNextWidth (air i).preprocessedWidth
+      (air i).preprocessedNextWidth
+  /-- The instances' lookups are valid together. -/
+  buses : BusesValid (List.ofFn fun i ↦ (air i).packedLookups (keyLogN i))
+
+namespace Statement
+variable (C : Statement F)
+
+/-- Instance `i`'s lookups, packed at its keygen height. -/
+abbrev lookups (i : Fin C.k) : List (Stark.Lookup F) := (C.air i).packedLookups (C.keyLogN i)
+
+/-- The vectors of trace lengths `2 ^ n i` the verifier admits: its checks on every instance's
+length and on the parameters (`SoundConfig`, the quotient domain with the lookups' LogUp
+constraints within the two-adic subgroups), and the keygen height of every instance with
+preprocessed columns, which the common data fixes. -/
+structure Admits (n : Fin C.k → Nat) : Prop where
+  sound : ∀ i, SoundConfig C.params (C.air i) (n i)
+  quotient : ∀ i, n i + (C.air i).logQuotientChunksWith (n i)
+    (Lookup.logUpConstraints (C.lookups i)) ≤ twoAdicity F
+  keyed : ∀ i, 0 < (C.air i).preprocessedWidth → n i = C.keyLogN i
+
+/-- Instance `i`'s lookups are valid on `2 ^ m` rows whose quotient domain, with the lookups'
+LogUp constraints, fits the two-adic subgroups. -/
+theorem lookupsValid_of_quotient (i : Fin C.k) (m : ℕ)
+    (hq : m + (C.air i).logQuotientChunksWith m (Lookup.logUpConstraints (C.lookups i)) ≤
+      twoAdicity F) :
+    LookupsValid (C.air i) m (instanceLookups true (C.air i) (C.keyLogN i)) := by
+  show LookupsValid (C.air i) m (C.lookups i)
+  have hf : ∀ l ∈ C.lookups i, l.Fits (C.air i).width (C.air i).mainNextWidth
+      (C.air i).preprocessedWidth (C.air i).preprocessedNextWidth := C.lookupsFit i
+  generalize C.lookups i = ls at hq hf
+  cases ls with
+  | nil => trivial
+  | cons l ls => exact ⟨hq, hf⟩
+
+variable (EF : Type) [Challenge F EF]
+
+/-- The batch at an admitted vector of trace lengths. -/
+def setupAt (n : Fin C.k → Nat) (h : C.Admits n) : Setup EF where
+  params := C.params
+  k := C.k
+  air := C.air
+  logN := n
+  keyLogN := C.keyLogN
+  valid := h.sound
+  keyed := h.keyed
+  nonempty := C.nonempty
+  lookupsValid i := C.lookupsValid_of_quotient i (n i) (h.quotient i)
+  buses := C.buses
+
+/-- The rate `1 / 2 ^ logBlowup` of the traces' codes, at every vector of lengths. -/
+noncomputable def rate : ℝ := 1 / 2 ^ C.params.logBlowup
+
+end Statement
 
 /-! ### The prover -/
 

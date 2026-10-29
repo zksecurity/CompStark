@@ -27,9 +27,10 @@ def within (r : Report) (lo hi : Float) : Bool := r.fits && lo ≤ r.total && r.
 #guard within (wideGrindSetup.roundErrorReport 2130706433 .uniqueDecoding wideGrindAnalysis) 117.37 117.38
 #guard within (wide5Setup.roundErrorReport 2130706433 .uniqueDecoding wide5Analysis) 128.49 128.50
 #guard within (wideBatchSetup.knowledgeErrorReport 2130706433 .uniqueDecoding wide5iAnalysis) 128.33 128.34
-#guard within (wideBatch5Setup.roundErrorReport 2130706433 .uniqueDecoding wideBatch5Analysis) 128.49 128.50
-#guard within (wideBatchGrindSetup.roundErrorReport 2130706433 .uniqueDecoding wideBatchGrindAnalysis) 117.35
-  117.36
+#guard within (wideBatch5Statement.roundErrorReport KoalaBear.Fast.Ext5 2130706433 .uniqueDecoding
+  wideBatch5Analysis) 128.03 128.04
+#guard within (wideBatchGrindStatement.roundErrorReport KoalaBear.Fast.Ext4 2130706433
+  .uniqueDecoding wideBatchGrindAnalysis) 115.04 115.05
 -- The analyses are the ones the search finds.
 #guard fibonacciSetup.bestAnalysis 2130706433 .uniqueDecoding = fibonacciAnalysis
 #guard wideSetup.bestAnalysis 2130706433 .uniqueDecoding = wideAnalysis
@@ -39,8 +40,6 @@ def within (r : Report) (lo hi : Float) : Bool := r.fits && lo ≤ r.total && r.
 #guard wideGrindSetup.bestAnalysisRo 2130706433 .uniqueDecoding = wideGrindAnalysis
 #guard wide5Setup.bestAnalysisRo 2130706433 .uniqueDecoding = wide5Analysis
 #guard wideBatchSetup.bestAnalysis 2130706433 .uniqueDecoding = wide5iAnalysis
-#guard wideBatch5Setup.bestAnalysisRo 2130706433 .uniqueDecoding = wideBatch5Analysis
-#guard wideBatchGrindSetup.bestAnalysisRo 2130706433 .uniqueDecoding = wideBatchGrindAnalysis
 -- The extractor beyond the unique-decoding radius `3/8` fits up to the Johnson radius `1/2`.
 #guard (wideSetup.knowledgeErrorReport 2130706433 .uniqueDecoding ⟨3 / 8 - 1 / 2 ^ 12, 3 / 8, 1 / 2 ^ 17⟩).fits
 #guard !(wideSetup.knowledgeErrorReport 2130706433 .uniqueDecoding ⟨3 / 8 - 1 / 2 ^ 12, 1 / 2, 1 / 2 ^ 17⟩).fits
@@ -89,6 +88,16 @@ Classical.choice, Quot.sound] -/
 Classical.choice, Quot.sound] -/
 #guard_msgs in
 #print axioms wideBatchGrind_knowledgeSoundness_ro
+
+/-- info: 'CompStark.Iop.Batch.Statement.roundError_le_of_secureRo' depends on axioms: [propext,
+Classical.choice, Quot.sound] -/
+#guard_msgs in
+#print axioms Batch.Statement.roundError_le_of_secureRo
+
+/-- info: 'CompStark.Iop.Batch.Statement.secureRo_setupAt' depends on axioms: [propext,
+Classical.choice, Quot.sound] -/
+#guard_msgs in
+#print axioms Batch.Statement.secureRo_setupAt
 
 /-- info: 'CompStark.Sound.McaBound.uniqueOrJohnson_holds' depends on axioms: [propext,
 Classical.choice, Quot.sound] -/

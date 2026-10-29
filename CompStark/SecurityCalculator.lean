@@ -48,8 +48,8 @@ FRI's folds bounded by their largest fold and its queries by
 `Setup.Secure p B A bits` and `Setup.SecureRo p B A bits` (and the batch's) are decidable: the
 analysis fits the setup (`Setup.Fits`: `B` admits batching and every fold at `δ`) and the bound is
 at most `2 ^ (-bits)`. The analysis need not be picked by hand: `Setup.bestAnalysis`
-(`bestAnalysisRo`, and the batch's) searches the radii and the loss for the smallest bound, and
-`decide +kernel` checks the analysis it finds.
+(`bestAnalysisRo`, and the batch's `bestAnalysis`) searches the radii and the loss for the smallest
+bound, and `decide +kernel` checks the analysis it finds.
 -/
 
 @[expose] public section
@@ -420,14 +420,6 @@ def Batch.Setup.bestAnalysis {withLookups : Bool} (S : Batch.Setup EF withLookup
   bestAnalysisOf S.domainSetup.rateQ fun A ↦
     if S.Fits B A then some (sumTerms (S.knowledgeErrorTermsOf cs t p B A)) else none
 
-/-- The analysis of the smallest batch round error bound the search finds for `|F| = p` with the
-MCA bound `B`. -/
-def Batch.Setup.bestAnalysisRo {withLookups : Bool} (S : Batch.Setup EF withLookups) (p : ℕ)
-    (B : McaBound) : Analysis :=
-  let cs := S.shapes
-  let t := S.lookupCount
-  bestAnalysisOf S.domainSetup.rateQ fun A ↦
-    if S.Fits B A then some (maxTerms (S.roundErrorTermsOf cs t p B A)) else none
 
 /-! ### Statements
 
@@ -482,6 +474,145 @@ instance (p : ℕ) (B : McaBound) (A : Analysis) (bits : ℕ) :
 
 end Statement
 
+/-! ### Batch statements
+
+A batch statement's round error is the largest over the vectors of trace lengths the verifier
+admits (`Batch.Statement.roundError`). The vectors are too many to enumerate (`25 ^ 3` for three
+instances over KoalaBear), so the statement's terms (`Batch.Statement.roundErrorTerms`) bound each
+term of the batch's bound (`Batch.Setup.roundErrorTerms`) over the term's own parameters: the
+verifier's checks on an instance's length are a Boolean (`Batch.Statement.admits`), and the
+admitted vectors are those of admitted lengths. Constraint folding, the out-of-domain point and
+batching take the largest over every instance's shape at every admitted length (`allShapes`),
+batching at the most opened words a domain size can have (`groupBound`); LogUp is at every
+instance's longest admitted length (`lookupCountMax`), its interactions growing with every length;
+FRI's folds at every arity, target height and injection a fold can have (`foldPlans`); and the
+queries at the most folds, `twoAdicity - logBlowup - logFinalPolyLen`. -/
+
+namespace Batch.Statement
+variable (C : Batch.Statement F)
+
+/-- The verifier's checks on instance `i`'s length `2 ^ m`, as a Boolean: the periodic columns
+fit, its domain and its quotient domain, without and with the lookups' LogUp constraints, fit the
+two-adic subgroups, FRI's parameters are positive, its final polynomial no longer than the trace,
+and an instance with preprocessed columns is at its keygen height. -/
+def admits (i : Fin C.k) (m : ℕ) : Bool :=
+  (C.air i).periodicFits m && decide (m + C.params.logBlowup ≤ twoAdicity F) &&
+    decide (m + (C.air i).logQuotientChunks m ≤ twoAdicity F) &&
+    decide (m + (C.air i).logQuotientChunksWith m (Lookup.logUpConstraints (C.lookups i)) ≤
+      twoAdicity F) &&
+    decide (0 < C.params.maxLogArity) && decide (C.params.logFinalPolyLen ≤ m) &&
+    decide (0 < C.params.numQueries) && decide (0 < C.params.logBlowup) &&
+    ((C.air i).preprocessedWidth == 0 || m == C.keyLogN i)
+
+theorem admits_spec {i : Fin C.k} {m : ℕ} (h : C.admits i m = true) :
+    SoundConfig C.params (C.air i) m ∧
+      m + (C.air i).logQuotientChunksWith m (Lookup.logUpConstraints (C.lookups i)) ≤
+        twoAdicity F ∧ (0 < (C.air i).preprocessedWidth → m = C.keyLogN i) := by
+  simp only [admits, Bool.and_eq_true, decide_eq_true_eq, Bool.or_eq_true, beq_iff_eq] at h
+  obtain ⟨⟨⟨⟨⟨⟨⟨⟨hp, ht⟩, hq⟩, hw⟩, hm⟩, hf⟩, hn⟩, hb⟩, hpre⟩ := h
+  refine ⟨⟨C.colsInWidth i, hp, ht, hq, hm, hf, hn, hb⟩, hw, fun hpw ↦ ?_⟩
+  rcases hpre with h0 | h
+  · omega
+  · exact h
+
+theorem admits_iff (n : Fin C.k → ℕ) : (∀ i, C.admits i (n i) = true) ↔ C.Admits n := by
+  constructor
+  · intro h
+    exact ⟨fun i ↦ (C.admits_spec (h i)).1, fun i ↦ (C.admits_spec (h i)).2.1,
+      fun i ↦ (C.admits_spec (h i)).2.2⟩
+  · intro h i
+    have hs := h.sound i
+    simp only [admits, Bool.and_eq_true, decide_eq_true_eq, Bool.or_eq_true, beq_iff_eq]
+    refine ⟨⟨⟨⟨⟨⟨⟨⟨hs.periodicFits, hs.twoAdic⟩, hs.quotientFits⟩, h.quotient i⟩, hs.folds⟩,
+      hs.finalPolyFits⟩, hs.queries⟩, hs.blowup⟩, ?_⟩
+    by_cases hw : (C.air i).preprocessedWidth = 0
+    · exact Or.inl hw
+    · exact Or.inr (h.keyed i (Nat.pos_of_ne_zero hw))
+
+/-- Instance `i`'s longest admitted length, `0` if it has none. -/
+def maxLength (i : Fin C.k) : ℕ :=
+  ((List.range (twoAdicity F + 1)).filter (C.admits i)).foldr max 0
+
+/-- LogUp's numbers `T + (T - 1) W` with every instance at its longest admitted length. -/
+def lookupCountMax : ℕ :=
+  let T := ((List.finRange C.k).map fun i ↦
+    2 ^ C.maxLength i * ((C.lookups i).map (·.tuples.length)).sum).sum
+  T + (T - 1) * Lookup.maxWidth (List.ofFn C.lookups).flatten
+
+/-- The folds FRI can make on a vector of admitted lengths, as data (`FriGame.Rounds.plan`): by
+`1` to `maxLogArity` bits onto `2 ^ m` points, `logFinalPolyLen + logBlowup ≤ m` below the
+two-adicity, injecting an input or not. -/
+def foldPlans : List (ℕ × ℕ × Bool) :=
+  (List.range' 1 C.params.maxLogArity).flatMap fun la ↦
+    (List.range' (C.params.logFinalPolyLen + C.params.logBlowup)
+      (twoAdicity F - (C.params.logFinalPolyLen + C.params.logBlowup))).flatMap fun m ↦
+        [(la, m, false), (la, m, true)]
+
+variable (EF : Type) [Challenge F EF]
+
+/-- Instance `i` as a STARK of its own on `2 ^ m` rows, at a length `admits` admits. -/
+def instanceOf (i : Fin C.k) (m : ℕ) (h : C.admits i m = true) : Iop.Setup EF (C.lookups i) :=
+  ⟨C.params, C.air i, m, (C.admits_spec h).1,
+    C.lookupsValid_of_quotient i m (C.admits_spec h).2.1⟩
+
+/-- Instance `i`'s shapes at its admitted lengths. -/
+def shapesAt (i : Fin C.k) : List Shape :=
+  (List.range (twoAdicity F + 1)).flatMap fun m ↦
+    if h : C.admits i m = true then [(C.instanceOf EF i m h).shape] else []
+
+/-- Every instance's shapes at its admitted lengths. -/
+def allShapes : List Shape := (List.finRange C.k).flatMap (C.shapesAt EF)
+
+/-- The most opened words a domain size can batch: every instance's most at an admitted
+length. -/
+def groupBound : ℕ :=
+  ((List.finRange C.k).map fun i ↦ ((C.shapesAt EF i).map (·.numOpened)).foldr max 0).sum
+
+/-- The analysis fits every vector of admitted lengths with the MCA bound `B`: it is valid at the
+rate, and `B` admits every instance's batching at every admitted length and every fold FRI can
+make. -/
+def Fits (B : McaBound) (A : Analysis) : Prop :=
+  A.Valid (1 / 2 ^ C.params.logBlowup) ∧
+    (∀ c ∈ C.allShapes EF, B.admits (2 ^ (c.logN + C.params.logBlowup)) (2 ^ c.logN) A.δ) ∧
+    A.Admits B C.params.logBlowup C.foldPlans
+
+instance (B : McaBound) (A : Analysis) : Decidable (C.Fits EF B A) := by
+  unfold Fits; infer_instance
+
+/-- The terms of the statement's round error bound for `|F| = p`, by round, each the largest of
+the batch's term over the term's parameters at the admitted vectors of lengths. -/
+def roundErrorTerms (p : ℕ) (B : McaBound) (A : Analysis) : List (String × ℚ) :=
+  let lb := C.params.logBlowup
+  let K := (p : ℚ) ^ Challenge.d EF
+  [("lookup challenges", powFractionQ p C.params.lookupPowBits *
+      (((A.listBound (1 / 2 ^ lb) ^ C.k * C.lookupCountMax : ℕ) : ℚ) / K)),
+    ("constraint folding", maxQ ((C.allShapes EF).map (·.foldingNum lb A)) / K),
+    ("out of domain", powFractionQ p C.params.oodPowBits *
+      (maxQ ((C.allShapes EF).map (·.outOfDomainNum lb A)) / K)),
+    ("batching", powFractionQ p C.params.batchPowBits *
+      (maxQ ((C.allShapes EF).map fun c ↦ c.batchingNum lb B A (C.groupBound EF)) / K)),
+    ("FRI folds", powFractionQ p C.params.commitPowBits *
+      (maxQ (C.foldPlans.map (A.levelBound B lb)) / K)),
+    ("FRI queries", powFractionQ p C.params.queryPowBits *
+      (1 - A.δ + ((twoAdicity F - (C.params.logFinalPolyLen + lb) : ℕ) : ℚ) * A.loss + 1 / p) ^
+        C.params.numQueries)]
+
+/-- The bound on the statement's round error: the largest of its terms. -/
+def roundErrorBound (p : ℕ) (B : McaBound) (A : Analysis) : ℚ :=
+  maxTerms (C.roundErrorTerms EF p B A)
+
+/-- The calculator certifies `bits` bits per oracle answer at the analysis `A` at every vector of
+trace lengths the verifier admits. -/
+def SecureRo (p : ℕ) (B : McaBound) (A : Analysis) (bits : ℕ) : Prop :=
+  C.Fits EF B A ∧ C.roundErrorBound EF p B A ≤ 1 / 2 ^ bits
+
+instance (p : ℕ) (B : McaBound) (A : Analysis) (bits : ℕ) :
+    Decidable (C.SecureRo EF p B A bits) := by
+  unfold SecureRo; infer_instance
+
+end Batch.Statement
+
+
 /-! ### Reports -/
 
 /-- `log₂ n` as a float, from the leading `61` bits of `n`. -/
@@ -530,9 +661,10 @@ def Batch.Setup.knowledgeErrorReport {withLookups : Bool} (S : Batch.Setup EF wi
     (p : ℕ) (B : McaBound) (A : Analysis) : Report :=
   .of A (decide (S.Fits B A)) (S.knowledgeErrorTerms p B A) (S.knowledgeErrorBound p B A)
 
-/-- The batch's round error report for `|F| = p` with the MCA bound `B`. -/
-def Batch.Setup.roundErrorReport {withLookups : Bool} (S : Batch.Setup EF withLookups) (p : ℕ)
-    (B : McaBound) (A : Analysis) : Report :=
-  .of A (decide (S.Fits B A)) (S.roundErrorTerms p B A) (S.roundErrorBound p B A)
+/-- The batch statement's round error report for `|F| = p` with the MCA bound `B`. -/
+def Batch.Statement.roundErrorReport (C : Batch.Statement F) (EF : Type) [Challenge F EF]
+    (p : ℕ) (B : McaBound) (A : Analysis) : Report :=
+  .of A (decide (C.Fits EF B A)) (C.roundErrorTerms EF p B A) (C.roundErrorBound EF p B A)
+
 
 end CompStark.Iop

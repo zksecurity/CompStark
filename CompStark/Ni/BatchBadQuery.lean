@@ -315,13 +315,19 @@ theorem exists_badAtB (hδ' : (δ' : ℝ) < 1 - S.rate)
       parse_keyAt (consistent_take hconsL _)
         (capsInjective hconsL hclash _ fun t ht ↦ mem_map_fst_take ht)
         (hasRounds_take hconsL hclash blocks blocks.length hkeys j hj)
+    have hseed : seedB S <+:
+        ((history answer blocks j).map Prod.fst ++ [blocks.getD j []]).getD 0 [] := by
+      rw [history_fst answer blocks j 0 (Nat.zero_le _), hblocks]
+      exact seedB_prefix S common proof pis
+        (shape_of_verifyInstancesWith S (idealOf answer) common proof pis hok).2.2.1
     rw [hC, hB, hSm, hsmp]
     simp only [keyAt] at h hparse ⊢
     unfold RoundBadB at h
     dsimp only at h
     rw [hparse] at h
     dsimp only at h
-    rwa [length_history] at h
+    rw [length_history] at h
+    exact fun hb ↦ h ⟨hseed, hb⟩
   -- the transcript of the run
   obtain ⟨T, hT⟩ : ∃ T, T = prefixTranscriptB S (logCache L) blk smp := ⟨_, rfl⟩
   -- a cap read off round `r` at its bound offset stays extracted after round `r`

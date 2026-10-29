@@ -211,4 +211,5 @@ public import CompStark.Ni.BatchAccepted
 public import CompStark.Ni.BatchSetup
 public import CompStark.Ni.BatchBadQuery
 public import CompStark.Ni.BatchAssembly
+public import CompStark.Ni.BatchLengths
 public import CompStark.NonInteractive

@@ -102,13 +102,15 @@ namespace CompStarkTests.RandomOracle
 #guard_msgs in
 #print axioms CompStark.RandomOracle.evalWithAnswerFn_verifyBatchWith
 
-/-- info: 'CompStark.Iop.Batch.Setup.isTotalQueryBound_verifyBatchWith' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+/-- info: 'CompStark.Iop.Batch.Statement.isTotalQueryBound_verifyBatchWith' depends on axioms: [propext,
+ Classical.choice,
+ Quot.sound] -/
 #guard_msgs in
-#print axioms CompStark.Iop.Batch.Setup.isTotalQueryBound_verifyBatchWith
+#print axioms CompStark.Iop.Batch.Statement.isTotalQueryBound_verifyBatchWith
 
-/-- info: 'CompStark.Iop.Batch.Setup.isTotalQueryBound_setupRo' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+/-- info: 'CompStark.Iop.Batch.Statement.isTotalQueryBound_setupRo' depends on axioms: [propext, Classical.choice, Quot.sound] -/
 #guard_msgs in
-#print axioms CompStark.Iop.Batch.Setup.isTotalQueryBound_setupRo
+#print axioms CompStark.Iop.Batch.Statement.isTotalQueryBound_setupRo
 
 /-- info: 'CompStark.Ni.hasRounds_verifyInstancesWith' depends on axioms: [propext, Classical.choice, Quot.sound] -/
 #guard_msgs in
@@ -125,6 +127,18 @@ namespace CompStarkTests.RandomOracle
 /-- info: 'CompStark.Ni.exists_badAtB' depends on axioms: [propext, Classical.choice, Quot.sound] -/
 #guard_msgs in
 #print axioms CompStark.Ni.exists_badAtB
+
+/-- info: 'CompStark.Iop.Batch.Statement.admits_of_ok' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in
+#print axioms CompStark.Iop.Batch.Statement.admits_of_ok
+
+/-- info: 'CompStark.Iop.Batch.Statement.eq_of_seedB_prefix' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in
+#print axioms CompStark.Iop.Batch.Statement.eq_of_seedB_prefix
+
+/-- info: 'CompStark.Ni.prob_roundBadCB_le' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in
+#print axioms CompStark.Ni.prob_roundBadCB_le
 
 /-- info: 'CompStark.Iop.Batch.batchKnowledgeSoundness_ro' depends on axioms: [propext, Classical.choice, Quot.sound] -/
 #guard_msgs in
@@ -145,5 +159,21 @@ namespace CompStarkTests.RandomOracle
 /-- info: 'CompStark.Iop.wideBatchGrind_knowledgeSoundness_ro' depends on axioms: [propext, Classical.choice, Quot.sound] -/
 #guard_msgs in
 #print axioms CompStark.Iop.wideBatchGrind_knowledgeSoundness_ro
+
+/-- info: 'CompStark.Iop.wideBatch5_roundError_le' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in
+#print axioms CompStark.Iop.wideBatch5_roundError_le
+
+/-- info: 'CompStark.Iop.wideBatchGrind_roundError_le' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in
+#print axioms CompStark.Iop.wideBatchGrind_roundError_le
+
+/-- info: 'CompStark.Iop.wideBatch5Statement_verifierQueries_le' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in
+#print axioms CompStark.Iop.wideBatch5Statement_verifierQueries_le
+
+/-- info: 'CompStark.Iop.wideBatchGrindStatement_verifierQueries_le' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in
+#print axioms CompStark.Iop.wideBatchGrindStatement_verifierQueries_le
 
 end CompStarkTests.RandomOracle

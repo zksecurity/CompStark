@@ -596,12 +596,11 @@ and every instance's degree bits. It depends on the AIRs and the instances' look
 trace lengths. -/
 def mainOffsetB : Nat := (batchSeedS S).length + Challenge.d EF * S.k
 
-/-- The main offset depends on the AIRs and the instances' lookups only. -/
-theorem mainOffsetB_eq : mainOffsetB S = (DomainSeparator.batchSeed F EF
+/-- The batch's domain separator depends on the AIRs and the instances' lookups only. -/
+theorem batchSeedS_eq : batchSeedS S = DomainSeparator.batchSeed F EF
     (List.ofFn fun i ↦ (S.air i).width) (List.ofFn fun i ↦ (S.air i).preprocessedWidth)
     (List.ofFn fun i ↦ (S.air i).numPublicValues) S.hasPreprocessed
-    ((List.ofFn S.lookups).countP (!·.isEmpty)) S.params.lookupPowBits
-    S.params.oodPowBits).length + Challenge.d EF * S.k := by
+    ((List.ofFn S.lookups).countP (!·.isEmpty)) S.params.lookupPowBits S.params.oodPowBits := by
   have hmap : ∀ f : Air F → ℕ, S.instances.map (f ·.air) = List.ofFn fun i ↦ f (S.air i) :=
     fun f ↦ by rw [Iop.Batch.Setup.instances, List.map_ofFn]; rfl
   have hcount : S.instances.countP (!·.lookups.isEmpty) =
@@ -609,7 +608,20 @@ theorem mainOffsetB_eq : mainOffsetB S = (DomainSeparator.batchSeed F EF
     rw [Iop.Batch.Setup.instances, List.ofFn_eq_map, List.ofFn_eq_map, List.countP_map,
       List.countP_map]
     rfl
-  rw [mainOffsetB, batchSeedS, hmap, hmap, hmap, hcount]
+  rw [batchSeedS, hmap, hmap, hmap, hcount]
+
+/-- The main offset depends on the AIRs and the instances' lookups only. -/
+theorem mainOffsetB_eq : mainOffsetB S = (DomainSeparator.batchSeed F EF
+    (List.ofFn fun i ↦ (S.air i).width) (List.ofFn fun i ↦ (S.air i).preprocessedWidth)
+    (List.ofFn fun i ↦ (S.air i).numPublicValues) S.hasPreprocessed
+    ((List.ofFn S.lookups).countP (!·.isEmpty)) S.params.lookupPowBits
+    S.params.oodPowBits).length + Challenge.d EF * S.k := by
+  rw [mainOffsetB, batchSeedS_eq]
+
+/-- What a batch transcript for `S` observes first: the batch's domain separator and every
+instance's degree bits. -/
+def seedB : List F :=
+  batchSeedS S ++ coeffs (S.instances.map fun I ↦ (Ext.ofBase (I.logN : F) : EF))
 
 /-- **The PCS's counts are static.** On opened values in the instances' shapes, the PCS observes
 the counts `countsB`. -/
@@ -804,12 +816,14 @@ def roundBadAtB (i : ℕ) (t : Sound.Batch.Transcript S) (u : Vector F S.streamL
     Sound.Batch.QueryBad S δ loss t (powAtB S u) (queriesAtB S u)
   else False
 
-/-- A duplex call is bad after the queries `pre` if `pre` parses it as round `i` and its answer
-makes round `i` bad for the prefix transcript on `pre`'s hash queries. -/
+/-- A duplex call is bad after the queries `pre` if `pre` parses it as round `i` of a transcript
+whose first round observes `seedB` first, and its answer makes round `i` bad for the prefix
+transcript on `pre`'s hash queries. -/
 def RoundBadB (pre : QueryLog (spec F S.streamLen)) :
     (t : Query F) → Answer S.streamLen t → Prop
   | .duplex cap input, u => match parse pre (.duplex cap input) with
     | some (steps, _) =>
+      seedB S <+: (steps.map Prod.fst ++ [input]).getD 0 [] ∧
       roundBadAtB S publicValues δ δ' loss steps.length
         (prefixTranscriptB S (logCache pre) (fun j ↦ (steps.map Prod.fst ++ [input]).getD j [])
           fun j ↦ (steps.map Prod.snd ++ [u.2]).getD j (Vector.replicate _ 0)) u.2

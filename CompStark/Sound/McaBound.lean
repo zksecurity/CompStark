@@ -42,6 +42,8 @@ structure McaBound where
   admits : ℕ → ℕ → ℚ → Bool
   count : ℕ → ℕ → ℕ → ℚ → ℚ
   count_nonneg : ∀ N k M δ, 0 ≤ count N k M δ
+  /-- The count grows with the curve's degree. -/
+  count_mono : ∀ N k δ, Monotone fun M ↦ count N k M δ
 
 namespace McaBound
 
@@ -59,6 +61,7 @@ def uniqueDecoding : McaBound where
   admits N k δ := decide (0 < k ∧ k ≤ N ∧ 0 ≤ δ ∧ 2 * ⌊δ * N⌋₊ ≤ N - k)
   count N _ M _ := M * N
   count_nonneg _ _ _ _ := by positivity
+  count_mono _ _ _ _ _ h := mul_le_mul_of_nonneg_right (Nat.cast_le.mpr h) (Nat.cast_nonneg _)
 
 /-- The smaller of the counts of `B` and `B'` where both apply. -/
 def min (B B' : McaBound) : McaBound where
@@ -71,6 +74,11 @@ def min (B B' : McaBound) : McaBound where
     have := B.count_nonneg N k M δ
     have := B'.count_nonneg N k M δ
     split_ifs <;> first | assumption | exact le_min ‹_› ‹_›
+  count_mono N k δ a b h := by
+    have := B.count_mono N k δ h
+    have := B'.count_mono N k δ h
+    dsimp only at *
+    split_ifs <;> first | assumption | exact min_le_min ‹_› ‹_›
 
 /-- A dyadic upper bound `r ≥ √ρ`, `r ≤ √ρ + 2 ^ (-20)`. -/
 def sqrtUpper (ρ : ℚ) : ℚ := ((⌊ρ * 2 ^ 40⌋₊.sqrt + 1 : ℕ) : ℚ) / 2 ^ 20
@@ -107,6 +115,8 @@ def johnson : McaBound where
   count_nonneg N k M δ := by
     unfold johnsonLineCount
     positivity
+  count_mono N k δ a b h :=
+    mul_le_mul_of_nonneg_right (Nat.cast_le.mpr h) (by unfold johnsonLineCount; positivity)
 
 /-- Up to the Johnson radius: `johnson`'s count, the smaller of the two counts within the
 unique-decoding radius, and `uniqueDecoding`'s alone for the constant code (`k = 1`), which

@@ -17,7 +17,8 @@ their weights (`Air.CountsBounded`). A syntactic check discharges it for any AIR
 
 A range check: range tables (`rangeTable`), each providing the values `0, …, 2 ^ logN - 1` on the
 bus `range` with unconstrained multiplicities, and range queries (`rangeQuery`), each querying a
-value `v` there with a boolean multiplicity `s`. In a batch of them (`Setup.IsRangeBatch`), lookup
+value `v` there with a boolean multiplicity `s`. In a batch of them (`Setup.IsRangeBatch`, and
+`Statement.IsRangeBatch` for a statement, its tables at their keygen heights), lookup
 inclusion makes every query with `s = 1` a row index of some table (`Setup.RangeChecked`), so the
 verifier accepts with probability at most the knowledge error while no tuple of close traces
 satisfies the AIRs with every real query in range (`rangeKnowledgeSoundness`,
@@ -42,13 +43,15 @@ theorem wideBatch_countsBounded (i : Fin wideBatchSetup.k) :
     (wideBatchSetup.air i).CountsBounded (wideBatchSetup.logN i) :=
   Batch.Setup.countsBounded_of_countsChecked _ (fun _ ↦ wideBus_countsChecked) i
 
-theorem wideBatch5_countsBounded (i : Fin wideBatch5Setup.k) :
-    (wideBatch5Setup.air i).CountsBounded (wideBatch5Setup.logN i) :=
-  Batch.Setup.countsBounded_of_countsChecked _ (fun _ ↦ wideBus_countsChecked) i
+theorem wideBatch5_countsBounded (n : Fin wideBatch5Statement.k → ℕ)
+    (hn : wideBatch5Statement.Admits n) (i : Fin wideBatch5Statement.k) :
+    (wideBatch5Statement.air i).CountsBounded (n i) :=
+  wideBatch5Statement.countsBounded_of_countsChecked (fun _ ↦ wideBus_countsChecked) n hn i
 
-theorem wideBatchGrind_countsBounded (i : Fin wideBatchGrindSetup.k) :
-    (wideBatchGrindSetup.air i).CountsBounded (wideBatchGrindSetup.logN i) :=
-  Batch.Setup.countsBounded_of_countsChecked _ (fun _ ↦ wideBus_countsChecked) i
+theorem wideBatchGrind_countsBounded (n : Fin wideBatchGrindStatement.k → ℕ)
+    (hn : wideBatchGrindStatement.Admits n) (i : Fin wideBatchGrindStatement.k) :
+    (wideBatchGrindStatement.air i).CountsBounded (n i) :=
+  wideBatchGrindStatement.countsBounded_of_countsChecked (fun _ ↦ wideBus_countsChecked) n hn i
 
 end WideBus
 
@@ -71,24 +74,29 @@ theorem rangeKnowledgeSoundness (S : Batch.Setup EF) (hS : S.IsRangeBatch)
     (Batch.countsBounded_of_isRangeBatch S hS) fun traces ht hsat ↦ h traces ht
       ⟨hsat.air, Batch.rangeChecked_of_satisfiedWithInclusion S hS traces publicValues hsat⟩
 
-/-- **Knowledge soundness of a range check in the random-oracle model.** For a batch of range
-tables and range queries: a prover making at most `Q` oracle calls gets a proof for the
-instances' trace lengths accepted, while no tuple of traces close to the ones it committed to
-satisfies every AIR with every real query in range, with probability at most
+/-- **Knowledge soundness of a range check in the random-oracle model.** For a batch statement
+of range tables and range queries: a prover making at most `Q` oracle calls gets a proof accepted,
+while no tuple of traces of the proof's lengths close to the ones it committed to satisfies every
+AIR with every real query in range, with probability at most
 `q · roundError + hashError F (h + 1) q`, `q = Q + verifierQueries`. -/
-theorem rangeKnowledgeSoundness_ro (S : Batch.Setup EF) (hS : S.IsRangeBatch)
-    (publicValues : Fin S.k → List F) (δ δ' : NNReal) (hδ' : (δ' : ℝ) < 1 - S.rate) (Q : Nat)
-    (prover : Batch.NIProver S) (hQ : prover.IsTotalQueryBound Q) :
-    Pr{let (proof, log, verdict) ← Batch.run S publicValues prover}[
-      verdict = .ok () ∧ proof.degreeBits.toList = List.ofFn S.logN ∧
-        ∀ traces ∈ Batch.closeTraces S δ' (Batch.committedTraces S log proof),
-          ¬ ((∀ i, (S.air i).Satisfied (S.logN i) (traces i) (publicValues i)) ∧
-            S.RangeChecked traces)] ≤
-      (Q + S.verifierQueries) * Batch.roundError S δ δ' +
-        hashError F (S.params.capHeight + 1) (Q + S.verifierQueries) :=
-  (prEvent_mono _ _ _ fun ⟨_, _, _⟩ h ↦ ⟨h.1, h.2.1, fun traces ht hsat ↦ h.2.2 traces ht
-    ⟨hsat.air, Batch.rangeChecked_of_satisfiedWithInclusion S hS traces publicValues hsat⟩⟩).trans
-    (Batch.batchKnowledgeSoundness_ro_inclusion S publicValues δ δ' hδ' Q prover hQ
-      (Batch.countsBounded_of_isRangeBatch S hS))
+theorem rangeKnowledgeSoundness_ro (C : Batch.Statement F) (hC : C.IsRangeBatch)
+    (publicValues : Fin C.k → List F) (δ δ' : (Fin C.k → ℕ) → NNReal)
+    (hδ' : ∀ n, C.Admits n → (δ' n : ℝ) < 1 - C.rate) (Q : Nat) (prover : C.NIProver EF)
+    (hQ : prover.IsTotalQueryBound Q) :
+    Pr{let (proof, log, verdict) ← C.run publicValues prover}[
+      verdict = .ok () ∧
+        ∀ h : C.Admits (C.lengthsOf proof),
+          ∀ traces ∈ Batch.closeTraces (C.setupAt EF _ h) (δ' (C.lengthsOf proof))
+              (Batch.committedTraces (C.setupAt EF _ h) log proof),
+            ¬ ((∀ i, (C.air i).Satisfied (C.lengthsOf proof i) (traces i) (publicValues i)) ∧
+              (C.setupAt EF _ h).RangeChecked traces)] ≤
+      (Q + C.verifierQueries EF) * C.roundError EF δ δ' +
+        hashError F (C.params.capHeight + 1) (Q + C.verifierQueries EF) :=
+  (prEvent_mono _ _ _ fun ⟨_, _, _⟩ h ↦ ⟨h.1, fun hn traces ht hsat ↦ h.2 hn traces ht
+    ⟨hsat.air, Batch.rangeChecked_of_satisfiedWithInclusion _ (C.isRangeBatch_setupAt hC _ hn)
+      traces publicValues hsat⟩⟩).trans
+    (Batch.batchKnowledgeSoundness_ro_inclusion C publicValues δ δ' hδ' Q prover hQ
+      fun n hn ↦ Batch.countsBounded_of_isRangeBatch _
+        (C.isRangeBatch_setupAt (EF := EF) hC n hn))
 
 end CompStark.Iop

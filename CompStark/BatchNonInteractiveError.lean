@@ -31,7 +31,8 @@ instance's error:
 
 Grinding multiplies each round's error by `powFraction`, as for the STARK: the lookup grinding
 the lookup challenges', and every round's after `α` its own. `roundError` is the largest round
-error, at the best proximity loss.
+error, at the best proximity loss, and `Statement.roundError` the largest over the vectors of
+trace lengths the verifier admits.
 -/
 
 @[expose] public section
@@ -79,5 +80,13 @@ noncomputable def roundError {withLookups : Bool} (S : Setup EF withLookups) (δ
         δ') <|
       max (powFraction F S.params.commitPowBits * ⨆ j, friFoldError S δ loss j)
         (powFraction F S.params.queryPowBits * friQueryError S δ loss))
+
+variable (EF) in
+/-- The error of one random-oracle answer for a batch statement: the largest error over the
+vectors of trace lengths the verifier admits, FRI at proximity `δ n` and the extractor at `δ' n`
+on traces of `2 ^ n i` rows. -/
+noncomputable def Statement.roundError (C : Statement F) (δ δ' : (Fin C.k → ℕ) → NNReal) :
+    ENNReal :=
+  ⨆ (n : Fin C.k → ℕ) (h : C.Admits n), Batch.roundError (C.setupAt EF n h) (δ n) (δ' n)
 
 end CompStark.Iop.Batch

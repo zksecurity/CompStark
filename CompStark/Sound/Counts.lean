@@ -283,4 +283,11 @@ theorem _root_.CompStark.Iop.Batch.Setup.countsBounded_of_countsChecked {EF : Ty
     (S.air i).CountsBounded (S.logN i) :=
   Batch.countsBounded_of_countsChecked (h i) (by have := (S.valid i).twoAdic; omega)
 
+/-- Every AIR of a batch statement passing `countsChecked` bounds its queries' multiplicities at
+every admitted vector of lengths. -/
+theorem _root_.CompStark.Iop.Batch.Statement.countsBounded_of_countsChecked
+    (C : Iop.Batch.Statement F) (h : ∀ i, (C.air i).countsChecked = true) (n : Fin C.k → ℕ)
+    (hn : C.Admits n) (i : Fin C.k) : (C.air i).CountsBounded (n i) :=
+  Batch.countsBounded_of_countsChecked (h i) (by have := (hn.sound i).twoAdic; omega)
+
 end CompStark.Sound.Batch
