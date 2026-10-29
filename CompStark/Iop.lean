@@ -128,6 +128,40 @@ noncomputable def preprocessedWord (j : Nat) (i : S.Point) : F :=
 
 end Setup
 
+/-- A STARK's statement: FRI parameters and an AIR whose constraints read only its columns. The
+trace length is not part of it: a proof claims it, and the verifier checks it (`Statement.Admits`);
+`Statement.setupAt` is the STARK at a length. -/
+structure Statement (F : Type) [BaseField F] where
+  params : Fri.Params
+  air : Air F
+  /-- The constraints read only the AIR's columns, and the next preprocessed row only if the AIR
+  declares it reads it. -/
+  colsInWidth : air.ColsInWidth
+
+namespace Statement
+variable (C : Statement F)
+
+/-- The log height of the AIR's preprocessed trace, its size over its width: the trace length its
+verifying key fixes. -/
+def preprocessedLogN : Nat := Nat.log2 (C.air.preprocessed.size / C.air.preprocessedWidth)
+
+/-- The trace lengths `2 ^ n` the verifier admits: its checks on the length and the parameters
+(`SoundConfig`, the AIR reading only its columns), and the preprocessed trace's length if the AIR
+has one, which its verifying key fixes. -/
+structure Admits (n : Nat) : Prop where
+  sound : SoundConfig C.params C.air n
+  preprocessed : 0 < C.air.preprocessedWidth → n = C.preprocessedLogN
+
+/-- The STARK at an admitted trace length where FRI folds. -/
+def setupAt (EF : Type) [Challenge F EF] (n : Nat) (h : C.Admits n)
+    (hf : C.params.logFinalPolyLen < n) : Setup EF :=
+  ⟨C.params, C.air, n, h.sound, hf, trivial⟩
+
+/-- The rate `1 / 2 ^ logBlowup` of the trace's code, at every length. -/
+noncomputable def rate : ℝ := 1 / 2 ^ C.params.logBlowup
+
+end Statement
+
 /-- `ω_k`, the base field's generator of order `2 ^ k`, in `𝕂`. -/
 noncomputable def rootOfUnity (k : Nat) : 𝕂 := lift (twoAdicGen k)
 

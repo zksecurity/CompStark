@@ -79,6 +79,18 @@ noncomputable def roundError (S : Setup EF) (δ δ' : NNReal) : ENNReal :=
       max (powFraction F S.params.commitPowBits * ⨆ i, friFoldError S δ loss i)
         (powFraction F S.params.queryPowBits * friQueryError S δ loss))
 
+namespace Statement
+
+variable (EF) in
+/-- The error of one random-oracle answer for a statement: the largest round error over the
+trace lengths the verifier admits where FRI folds, FRI at proximity `δ n` and the extractor at
+`δ' n` on `2 ^ n` rows. -/
+noncomputable def roundError (C : Statement F) (δ δ' : ℕ → NNReal) : ENNReal :=
+  ⨆ (n : ℕ) (h : C.Admits n) (hf : C.params.logFinalPolyLen < n),
+    Iop.roundError (C.setupAt EF n h hf) (δ n) (δ' n)
+
+end Statement
+
 /-- Digest collisions and predictions among `q` queries, digests of eight elements of `F`, each
 commitment round binding the `2 ^ capHeight` digests of a Merkle cap. -/
 noncomputable def hashError (F : Type) (capHeight q : Nat) : ENNReal :=

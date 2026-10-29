@@ -303,7 +303,8 @@ theorem capFrom_mem_capBack (pre w : List F) (c : Cap F) (N : Nat) (hc : c.size 
     rw [List.length_append, List.length_append, capElems, length_flatMap_digests,
       Array.length_toList]
     rfl
-  rw [List.getD_eq_getElem _ _ (by simp only [capFrom, Array.length_toList, Array.size_ofFn]; exact hj)]
+  rw [List.getD_eq_getElem _ _
+    (by simp only [capFrom, Array.length_toList, Array.size_ofFn]; exact hj)]
   simp only [capFrom, Array.getElem_toList, Array.getElem_ofFn, capBack, List.mem_map,
     List.mem_range]
   refine ⟨c.size - 1 - j, by omega, ?_⟩
@@ -311,21 +312,31 @@ theorem capFrom_mem_capBack (pre w : List F) (c : Cap F) (N : Nat) (hc : c.size 
   congr 1
   omega
 
+/-- The digests a duplex call's input binds (`boundDigests`), for FRI parameters `P` and a STARK
+domain separator of `seedLen` elements. -/
+def boundDigestsOf (P : Fri.Params) (seedLen : Nat) (cap : Digest F) (input : List F) :
+    List (Digest F) :=
+  if cap = initCap then (capFrom input seedLen (2 ^ P.capHeight)).toList
+  else (capFrom input 0 (2 ^ P.capHeight)).toList ++
+    capBack input (challengeOffset P.commitPowBits) (2 ^ P.capHeight)
+
+theorem length_boundDigestsOf_le (P : Fri.Params) (seedLen : Nat) (cap : Digest F)
+    (input : List F) : (boundDigestsOf P seedLen cap input).length ≤ 2 ^ (P.capHeight + 1) := by
+  unfold boundDigestsOf capBack
+  split <;> simp only [Array.length_toList, capFrom, Array.size_ofFn, List.length_append,
+    List.length_map, List.length_range, Nat.pow_succ] <;> omega
+
 /-- The digests observed in a duplex call's input, those a commitment round binds: the
 `2 ^ capHeight` digests of a cap that is at most as wide, after the STARK's domain separator in
 the first round (initial capacity); otherwise those at the start of the input, as the quotient
 commitment and FRI's later commitments open their rounds, and those ending before the commit-phase
 grinding witness, as FRI's first commitment ends its round after FRI's domain separator. -/
 def boundDigests (cap : Digest F) (input : List F) : List (Digest F) :=
-  if cap = initCap then (capFrom input (starkSeedS S).length (2 ^ S.params.capHeight)).toList
-  else (capFrom input 0 (2 ^ S.params.capHeight)).toList ++
-    capBack input (challengeOffset S.params.commitPowBits) (2 ^ S.params.capHeight)
+  boundDigestsOf S.params (starkSeedS S).length cap input
 
 theorem length_boundDigests_le (cap : Digest F) (input : List F) :
-    (boundDigests S cap input).length ≤ 2 ^ (S.params.capHeight + 1) := by
-  unfold boundDigests capBack
-  split <;> simp only [Array.length_toList, capFrom, Array.size_ofFn, List.length_append,
-    List.length_map, List.length_range, Nat.pow_succ] <;> omega
+    (boundDigests S cap input).length ≤ 2 ^ (S.params.capHeight + 1) :=
+  length_boundDigestsOf_le _ _ _ _
 
 /-- The number of entries of the cap of a tree of `2 ^ m` leaves. -/
 abbrev capSize (m : Nat) : Nat := 2 ^ min S.params.capHeight m
@@ -400,12 +411,14 @@ def roundBadAt (i : Nat) (t : Sound.Transcript S) (u : Vector F S.streamLen) : P
   else if i = 4 + S.lastFold then QueryBad S δ loss t (powAt S u) (queriesAt S u)
   else False
 
-/-- A duplex call is bad after the queries `pre` if `pre` parses it as round `i` and its answer
-makes round `i` bad for the prefix transcript on `pre`'s hash queries. -/
+/-- A duplex call is bad after the queries `pre` if `pre` parses it as round `i` of a transcript
+whose first round observes `S`'s domain separator first, and its answer makes round `i` bad for
+the prefix transcript on `pre`'s hash queries. -/
 def RoundBad (pre : QueryLog (spec F S.streamLen)) :
     (t : Query F) → Answer S.streamLen t → Prop
   | .duplex cap input, u => match parse pre (.duplex cap input) with
     | some (steps, _) =>
+      starkSeedS S <+: (steps.map Prod.fst ++ [input]).getD 0 [] ∧
       roundBadAt S publicValues δ δ' loss steps.length
         (prefixTranscript S (logCache pre) (fun j ↦ (steps.map Prod.fst ++ [input]).getD j [])
           fun j ↦ (steps.map Prod.snd ++ [u.2]).getD j (Vector.replicate _ 0)) u.2

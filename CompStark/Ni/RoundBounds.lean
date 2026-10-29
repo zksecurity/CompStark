@@ -388,10 +388,11 @@ theorem prob_roundBad_le (pre : QueryLog (spec F S.streamLen)) (t : Query F) :
       have h := prob_roundBadAt_le S publicValues δ δ' loss (logCache pre)
         (fun j ↦ (steps.map Prod.fst ++ [input]).getD j []) (steps.map Prod.snd)
       rw [List.length_map] at h
-      refine le_of_eq_of_le (prEvent_congr_iff _ fun u ↦ ?_) h
-      unfold RoundBad
-      dsimp only
-      rw [hparse]
+      refine le_trans (prEvent_mono _ _ _ fun u hu ↦ ?_) h
+      unfold RoundBad at hu
+      dsimp only at hu
+      rw [hparse] at hu
+      exact hu.2
   | leaf row =>
     refine le_of_eq_of_le (prEvent_congr_iff _ fun u ↦ (Iff.rfl : _ ↔ False)) ?_
     simp only [prEvent_false, zero_le]

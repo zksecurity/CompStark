@@ -1384,4 +1384,34 @@ theorem size_quotientCommit_ne (P : Params) (A : Air F) (vk : Option (Preprocess
   · rw [ite_eq_right hdeg] at h
     exact absurd h (by intro h'; cases h')
 
+/-- An accepted proof's periodic columns fit its trace. -/
+theorem periodicFits_of_ok (P : Params) (A : Air F) (vk : Option (PreprocessedKey F))
+    (proof : Proof F EF) (pis : List F) (h : verifyWith H P A vk proof pis = .ok ()) :
+    A.periodicFits proof.degreeBits = true := by
+  unfold verifyWith at h
+  dsimp only at h
+  by_cases hdeg : proof.degreeBits + A.logQuotientChunks proof.degreeBits ≤ twoAdicity F
+  · rw [ite_eq_left hdeg] at h
+    by_contra hper
+    rw [ite_eq_right hper] at h
+    exact absurd h (by intro h'; cases h')
+  · rw [ite_eq_right hdeg] at h
+    exact absurd h (by intro h'; cases h')
+
+/-- An accepting FRI verifier's parameters make at least one query, extend the trace and fold,
+and its largest height is below the two-adicity. -/
+theorem verifyFri_checks (P : Params) (proof : FriProof F EF) (rounds : List (Round F EF))
+    (alpha : EF) (s : H.State) (r : Unit × H.State)
+    (h : verifyFri H P proof rounds alpha s = .ok r) :
+    0 < P.numQueries ∧ 0 < P.logBlowup ∧ 0 < P.maxLogArity ∧
+      (((rounds.flatMap (·.2)).map (·.1.logSize + P.logBlowup)).mergeSort
+        (fun a b ↦ b ≤ a)).dedup.headD 0 ≤ twoAdicity F := by
+  unfold verifyFri at h
+  obtain ⟨hpar, h⟩ := ensure_bind_eq_ok H h
+  simp only [Bool.and_eq_true, decide_eq_true_eq] at hpar
+  obtain ⟨-, h⟩ := ensure_bind_eq_ok H h
+  obtain ⟨hmax, -⟩ := ensure_bind_eq_ok H h
+  simp only [decide_eq_true_eq] at hmax
+  exact ⟨hpar.1.1, hpar.1.2, hpar.2, hmax⟩
+
 end CompStark.Ni

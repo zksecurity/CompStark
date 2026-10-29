@@ -66,31 +66,3 @@ theorem tableQueryLog_verifyWith (answer : (q : Query F) → Answer K q) (P : Fr
   rw [tableQueryLog, simulateQ_verifyWith]
 
 end CompStark.RandomOracle
-
-namespace CompStark.Iop.Setup
-open CompStark.Stark CompStark.RandomOracle OracleSpec OracleComp
-
-variable {F : Type} [BaseField F] {EF : Type} [Challenge F EF] (S : Setup EF)
-
-theorem evalWithAnswerFn_verifyRo (answer : (q : Query F) → Answer S.streamLen q)
-    (vk : Option (PreprocessedKey F)) (proof : Proof F EF) (pis : List F) :
-    evalWithAnswerFn (QueryImpl.ofFn answer) (S.verifyRo vk proof pis) =
-      if proof.degreeBits = S.logN then verifyWith (idealOf answer) S.params S.air vk proof pis
-      else .error "degree bits" := by
-  unfold verifyRo
-  split
-  · exact evalWithAnswerFn_verifyWith answer _ _ vk proof pis
-  · rfl
-
-theorem tableQueryLog_verifyRo (answer : (q : Query F) → Answer S.streamLen q)
-    (vk : Option (PreprocessedKey F)) (proof : Proof F EF) (pis : List F) :
-    tableQueryLog (S.verifyRo vk proof pis) answer =
-      if proof.degreeBits = S.logN then
-        (verifyWith (idealLogged answer) S.params S.air vk proof pis).run.2
-      else [] := by
-  unfold verifyRo
-  split
-  · exact tableQueryLog_verifyWith answer _ _ vk proof pis
-  · exact tableQueryLog_pure _ _
-
-end CompStark.Iop.Setup

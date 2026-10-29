@@ -26,9 +26,17 @@ namespace CompStarkTests.RandomOracle
 #guard_msgs in
 #print axioms CompStark.RandomOracle.tableQueryLog_verifyWith
 
-/-- info: 'CompStark.Iop.Setup.isTotalQueryBound_verifyRo' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+/-- info: 'CompStark.Iop.Setup.isTotalQueryBound_verifyWith' depends on axioms: [propext, Classical.choice, Quot.sound] -/
 #guard_msgs in
-#print axioms CompStark.Iop.Setup.isTotalQueryBound_verifyRo
+#print axioms CompStark.Iop.Setup.isTotalQueryBound_verifyWith
+
+/-- info: 'CompStark.DomainSeparator.starkSeedOf_inj' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in
+#print axioms CompStark.DomainSeparator.starkSeedOf_inj
+
+/-- info: 'CompStark.Iop.Statement.admits_of_ok' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in
+#print axioms CompStark.Iop.Statement.admits_of_ok
 
 /-- info: 'CompStark.Ni.parse_keyAt' depends on axioms: [propext, Classical.choice, Quot.sound] -/
 #guard_msgs in
@@ -66,21 +74,21 @@ namespace CompStarkTests.RandomOracle
 #guard_msgs in
 #print axioms CompStark.Iop.wide5_knowledgeSoundness_ro
 
-/-- info: 'CompStark.Iop.wideSp1Setup_verifierQueries' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+/-- info: 'CompStark.Iop.wideSp1Statement_verifierQueries' depends on axioms: [propext, Classical.choice, Quot.sound] -/
 #guard_msgs in
-#print axioms CompStark.Iop.wideSp1Setup_verifierQueries
+#print axioms CompStark.Iop.wideSp1Statement_verifierQueries
 
-/-- info: 'CompStark.Iop.wide5Setup_verifierQueries' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+/-- info: 'CompStark.Iop.wide5Statement_verifierQueries' depends on axioms: [propext, Classical.choice, Quot.sound] -/
 #guard_msgs in
-#print axioms CompStark.Iop.wide5Setup_verifierQueries
+#print axioms CompStark.Iop.wide5Statement_verifierQueries
 
 /-- info: 'CompStark.Iop.wideGrind_knowledgeSoundness_ro' depends on axioms: [propext, Classical.choice, Quot.sound] -/
 #guard_msgs in
 #print axioms CompStark.Iop.wideGrind_knowledgeSoundness_ro
 
-/-- info: 'CompStark.Iop.wideGrindSetup_verifierQueries' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+/-- info: 'CompStark.Iop.wideGrindStatement_verifierQueries' depends on axioms: [propext, Classical.choice, Quot.sound] -/
 #guard_msgs in
-#print axioms CompStark.Iop.wideGrindSetup_verifierQueries
+#print axioms CompStark.Iop.wideGrindStatement_verifierQueries
 
 /-- info: 'CompStark.Batch.verifyBatchWith_map' depends on axioms: [propext, Classical.choice, Quot.sound] -/
 #guard_msgs in

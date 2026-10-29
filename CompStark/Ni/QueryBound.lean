@@ -14,11 +14,11 @@ public import Mathlib.Tactic.Ring
 
 /-! # The verifier's oracle calls
 
-The verifier makes at most `Setup.verifierQueries` oracle calls on a proof for `2 ^ logN` rows
-(`isTotalQueryBound_verifyWith`), and so does the game's verifier on every proof
-(`isTotalQueryBound_verifyRo`). A Merkle multi-opening of `n` queries into matrices of heights
-`2 ^ j ≤ 2 ^ L` of at most `G + 1` distinct heights hashes at most `n` leaves, compresses at most
-`n` nodes per layer, and hashes and compresses once more per node where it injects a shorter
+The verifier makes at most `verifierCallsAt n` oracle calls on a proof for `2 ^ n` rows
+(`isTotalQueryBound_verifyWith`), and the verifying key's computation at most `setupQueries`
+(`isTotalQueryBound_preprocessedKeyWith`). A Merkle multi-opening of `n` queries into matrices of
+heights `2 ^ j ≤ 2 ^ L` of at most `G + 1` distinct heights hashes at most `n` leaves, compresses
+at most `n` nodes per layer, and hashes and compresses once more per node where it injects a shorter
 height (`isTotalQueryBound_verifyMultiM`): at most `n (1 + L + 2 G)` calls, `n (1 + L)` for the
 STARK's matrices of one height. So FRI makes at most so many calls per query and round
 (`costs_verifyFri`).
@@ -555,13 +555,13 @@ theorem preprocessedWidth_pos {F EF : Type} {A : Air F} {k : PreprocessedKey F}
   · simp only [preprocessedShapeOk, Bool.and_eq_true, decide_eq_true_eq] at h
     exact h.1.1.1.1
 
-variable {F : Type} [BaseField F] {EF : Type} [Challenge F EF] (S : Setup EF)
+variable {F : Type} [BaseField F] {EF : Type} [Challenge F EF]
 
-/-- The verifier opens at most `inputRounds` committed rounds at a query. -/
-theorem length_openingRounds_le (vk : Option (PreprocessedKey F)) (proof : Proof F EF) (zeta : EF)
-    (hshape : preprocessedShapeOk S.air vk proof.opened proof.degreeBits = true) :
-    (openingRounds S.air vk proof zeta).length ≤ S.inputRounds := by
-  unfold openingRounds preprocessedRound inputRounds
+/-- The verifier opens at most `inputRoundsOf` committed rounds at a query. -/
+theorem length_openingRounds_le (A : Air F) (vk : Option (PreprocessedKey F)) (proof : Proof F EF)
+    (zeta : EF) (hshape : preprocessedShapeOk A vk proof.opened proof.degreeBits = true) :
+    (openingRounds A vk proof zeta).length ≤ inputRoundsOf A := by
+  unfold openingRounds preprocessedRound inputRoundsOf
   cases vk with
   | none =>
     simp only [List.length_append, List.length_cons, List.length_nil]
@@ -572,34 +572,34 @@ theorem length_openingRounds_le (vk : Option (PreprocessedKey F)) (proof : Proof
       List.length_nil]
     omega
 
-/-- **The verifier's oracle calls.** On a proof for `2 ^ logN` rows, the verifier makes at most
-`verifierCalls` oracle calls. -/
-theorem isTotalQueryBound_verifyWith (vk : Option (PreprocessedKey F)) (proof : Proof F EF)
-    (publicValues : List F) (hdb : proof.degreeBits = S.logN) :
-    IsTotalQueryBound (verifyWith (ideal F S.streamLen) S.params S.air vk proof publicValues)
-      S.verifierCalls := by
-  have hrun (hshape : preprocessedShapeOk S.air vk proof.opened proof.degreeBits = true) :
-      Costs (H := ideal F S.streamLen) (do
-      observeList (ideal F S.streamLen) (starkSeedOf EF S.params S.air proof.degreeBits)
-      observeCap (ideal F S.streamLen) proof.traceCommit
-      observeList (ideal F S.streamLen) (preprocessedDigest vk)
-      observeList (ideal F S.streamLen) publicValues
-      let alpha ← (sampleExt (ideal F S.streamLen) : M _ EF)
-      observeCap (ideal F S.streamLen) proof.quotientCommit
-      ensure (← checkWitness (ideal F S.streamLen) S.params.oodPowBits proof.oodWitness)
+/-- **The verifier's oracle calls.** On a proof for `2 ^ n` rows, the verifier makes at most
+`verifierCallsAt n` oracle calls. -/
+theorem isTotalQueryBound_verifyWith (P : Fri.Params) (A : Air F) {K : Nat}
+    (vk : Option (PreprocessedKey F)) (proof : Proof F EF) (publicValues : List F) :
+    IsTotalQueryBound (verifyWith (ideal F K) P A vk proof publicValues)
+      (verifierCallsAt EF P A proof.degreeBits) := by
+  have hrun (hshape : preprocessedShapeOk A vk proof.opened proof.degreeBits = true) :
+      Costs (H := ideal F K) (do
+      observeList (ideal F K) (starkSeedOf EF P A proof.degreeBits)
+      observeCap (ideal F K) proof.traceCommit
+      observeList (ideal F K) (preprocessedDigest vk)
+      observeList (ideal F K) publicValues
+      let alpha ← (sampleExt (ideal F K) : M _ EF)
+      observeCap (ideal F K) proof.quotientCommit
+      ensure (← checkWitness (ideal F K) P.oodPowBits proof.oodWitness)
         "out-of-domain witness"
-      let zeta ← (sampleExt (ideal F S.streamLen) : M _ EF)
+      let zeta ← (sampleExt (ideal F K) : M _ EF)
       ensure (Ext.powTwo zeta proof.degreeBits - 1 != 0) "out-of-domain point in the trace domain"
-      verifyPcs (ideal F S.streamLen) S.params (openingRounds S.air vk proof zeta) proof.fri
-      return (alpha, zeta)) S.verifierCalls fun _ ↦ True := by
-    set L := proof.degreeBits + S.params.logBlowup
-    set A := foldArities S.params.maxLogArity (proof.degreeBits - S.params.logFinalPolyLen)
-    set V := Challenge.d EF + 2 + (Challenge.d EF + 1) * A.length + S.params.numQueries *
-      (1 + (S.inputRounds + A.length) * (1 + L + 2 * 0))
-    have hpcs : ∀ zeta : EF, Costs (H := ideal F S.streamLen) (verifyPcs (ideal F S.streamLen)
-        S.params (openingRounds S.air vk proof zeta) proof.fri) V fun _ ↦ True := by
+      verifyPcs (ideal F K) P (openingRounds A vk proof zeta) proof.fri
+      return (alpha, zeta)) (verifierCallsAt EF P A proof.degreeBits) fun _ ↦ True := by
+    set L := proof.degreeBits + P.logBlowup
+    set Ar := foldSchedule P.maxLogArity (P.logBlowup + P.logFinalPolyLen) L [L]
+    set V := Challenge.d EF + 2 + (Challenge.d EF + 1) * Ar.length + P.numQueries *
+      (1 + (inputRoundsOf A + Ar.length) * (1 + L + 2 * 0))
+    have hpcs : ∀ zeta : EF, Costs (H := ideal F K) (verifyPcs (ideal F K)
+        P (openingRounds A vk proof zeta) proof.fri) V fun _ ↦ True := by
       intro zeta
-      have hmats : ∀ r ∈ openingRounds S.air vk proof zeta, ∀ mat ∈ r.2,
+      have hmats : ∀ r ∈ openingRounds A vk proof zeta, ∀ mat ∈ r.2,
           mat.1.logSize = proof.degreeBits := by
         intro r hr mat hmat
         simp only [openingRounds, List.cons_append, List.nil_append, List.mem_cons] at hr
@@ -615,26 +615,20 @@ theorem isTotalQueryBound_verifyWith (vk : Option (PreprocessedKey F)) (proof : 
             rw [List.mem_singleton] at hmat
             rw [hmat]
           · exact absurd hr List.not_mem_nil
-      have hM : ∀ h ∈ matHeights S.params (openingRounds S.air vk proof zeta), h = L := by
+      have hM : ∀ h ∈ matHeights P (openingRounds A vk proof zeta), h = L := by
         intro h hh
         obtain ⟨mat, hm, rfl⟩ := List.mem_map.mp hh
         obtain ⟨r, hr, hm⟩ := List.mem_flatMap.mp hm
         rw [hmats r hr mat hm]
-      have hD : descHeights (matHeights S.params (openingRounds S.air vk proof zeta)) = [L] :=
+      have hD : descHeights (matHeights P (openingRounds A vk proof zeta)) = [L] :=
         dedup_mergeSort_const _ _ _ hM (List.ne_nil_of_mem (List.mem_map_of_mem
           (List.mem_flatMap.mpr ⟨_, List.mem_cons_self, List.mem_cons_self⟩)))
-      have hA : foldSchedule S.params.maxLogArity (S.params.logBlowup + S.params.logFinalPolyLen)
-          L [L] = A := by
-        have := S.folds
-        rw [foldSchedule_single _ _ S.valid.folds _ _ (Nat.sub_le _ _)]
-        congr 1
-        omega
-      refine costs_mono (costs_verifyPcs S.params _ proof.fri L 0 (fun h hh ↦ (hM h hh).le) [L]
+      refine costs_mono (costs_verifyPcs P _ proof.fri L 0 (fun h hh ↦ (hM h hh).le) [L]
         (fun h hh ↦ by rw [hM h hh]; exact List.mem_singleton_self _) le_rfl) ?_ fun _ h ↦ h
-      rw [hD, List.headD_cons, hA]
+      rw [hD, List.headD_cons]
       exact Nat.add_le_add_left (Nat.mul_le_mul_left _ (Nat.add_le_add_left
         (Nat.mul_le_mul_right _ (Nat.add_le_add_right
-          (length_openingRounds_le S vk proof zeta hshape) _)) 1)) _
+          (length_openingRounds_le A vk proof zeta hshape) _)) 1)) _
     refine costs_free_bind (costs_observeList _) fun _ _ ↦ costs_free_bind (costs_observeCap _)
       fun _ _ ↦ costs_free_bind (costs_observeList _) fun _ _ ↦
       costs_free_bind (costs_observeList _) fun _ _ ↦ costs_bind_le
@@ -644,13 +638,13 @@ theorem isTotalQueryBound_verifyWith (vk : Option (PreprocessedKey F)) (proof : 
           costs_sampleExt (fun zeta _ ↦ costs_ensure_bind fun _ ↦ costs_bind_le (a := V) (b := 0)
             (hpcs zeta) (fun _ _ ↦ costs_pure _ (fun _ ↦ True) trivial) le_rfl) le_rfl)
         (by omega)) ?_
-    simp only [V, A, L, hdb, verifierCalls, openingQueries, friArities]
+    simp only [V, Ar, L, verifierCallsAt]
     exact le_of_eq (by ring)
   unfold verifyWith
   dsimp only
-  by_cases h1 : proof.degreeBits + S.air.logQuotientChunks proof.degreeBits ≤ twoAdicity F
+  by_cases h1 : proof.degreeBits + A.logQuotientChunks proof.degreeBits ≤ twoAdicity F
   · rw [ite_eq_left h1]
-    by_cases h2 : S.air.periodicFits proof.degreeBits = true
+    by_cases h2 : A.periodicFits proof.degreeBits = true
     · rw [ite_eq_left h2]
       split
       · split
@@ -660,7 +654,8 @@ theorem isTotalQueryBound_verifyWith (vk : Option (PreprocessedKey F)) (proof : 
             swap
             · trivial
             rw [ExceptT.run_bind]
-            apply IsTotalQueryBound.mono (n₁ := S.verifierCalls + 0) _ (Nat.add_zero _).le
+            apply IsTotalQueryBound.mono (n₁ := verifierCallsAt EF P A proof.degreeBits + 0) _
+              (Nat.add_zero _).le
             refine isTotalQueryBound_bind (hrun (by
               simp only [Bool.and_eq_true] at hshape
               exact hshape.2) _).1 fun r ↦ ?_
@@ -678,23 +673,18 @@ theorem isTotalQueryBound_verifyWith (vk : Option (PreprocessedKey F)) (proof : 
   · rw [ite_eq_right h1]
     trivial
 
-/-- **The game's verifier's oracle calls.** On every proof, the verifier in the random-oracle
-model makes at most `verifierCalls` oracle calls. -/
-theorem isTotalQueryBound_verifyRo (vk : Option (PreprocessedKey F)) (proof : Proof F EF)
-    (publicValues : List F) :
-    IsTotalQueryBound (S.verifyRo vk proof publicValues) S.verifierCalls := by
-  unfold verifyRo
-  split
-  · exact S.isTotalQueryBound_verifyWith vk proof publicValues (by assumption)
-  · trivial
+variable (S : Setup EF)
 
-/-- **The setup's oracle calls.** -/
-theorem isTotalQueryBound_setupRo : IsTotalQueryBound S.setupRo S.setupQueries := by
-  have hnode : ∀ (leaf : Nat → OracleComp (spec F S.streamLen) (Digest F)),
+/-- **The setup's oracle calls.** The verifying key for `2 ^ n` rows costs a leaf hash per row of
+the preprocessed trace's extension and a compression per inner node. -/
+theorem isTotalQueryBound_preprocessedKeyWith (P : Fri.Params) (A : Air F) (n K : Nat) :
+    IsTotalQueryBound (preprocessedKeyWith (ideal F K) P A n)
+      (if A.preprocessedWidth = 0 then 0 else 2 * 2 ^ (n + P.logBlowup) - 1) := by
+  have hnode : ∀ (leaf : Nat → OracleComp (spec F K) (Digest F)),
       (∀ r, IsTotalQueryBound (leaf r) 1) → ∀ j t,
-      IsTotalQueryBound (merkleNodeWith (ideal F S.streamLen) leaf j t) (2 ^ (j + 1) - 1) := by
+      IsTotalQueryBound (merkleNodeWith (ideal F K) leaf j t) (2 ^ (j + 1) - 1) := by
     intro leaf hleaf j
-    have hc : ∀ l r, IsTotalQueryBound ((ideal F S.streamLen).compress l r) 1 :=
+    have hc : ∀ l r, IsTotalQueryBound ((ideal F K).compress l r) 1 :=
       fun l r ↦ isTotalQueryBound_query (.node l r)
     induction j with
     | zero => intro t; exact hleaf t
@@ -706,7 +696,7 @@ theorem isTotalQueryBound_setupRo : IsTotalQueryBound S.setupRo S.setupQueries :
       have := Nat.one_le_two_pow (n := j + 1)
       rw [Nat.pow_succ 2 (j + 1)]
       omega
-  unfold setupRo preprocessedKeyWith setupQueries
+  unfold preprocessedKeyWith
   split
   · trivial
   · unfold merkleCapWith
@@ -714,13 +704,15 @@ theorem isTotalQueryBound_setupRo : IsTotalQueryBound S.setupRo S.setupQueries :
       (hnode _ (fun _ ↦ isTotalQueryBound_query _) _) _).1
       fun _ ↦ Merkle.isTotalQueryBound_pure _) fun _ ↦ Merkle.isTotalQueryBound_pure _).mono ?_
     rw [List.length_range, Nat.add_zero, Nat.add_zero]
-    unfold size
-    have hc := Nat.min_le_right S.params.capHeight (S.logN + S.params.logBlowup)
-    generalize min S.params.capHeight (S.logN + S.params.logBlowup) = c at hc ⊢
+    have hc := Nat.min_le_right P.capHeight (n + P.logBlowup)
+    generalize min P.capHeight (n + P.logBlowup) = c at hc ⊢
     rw [Nat.mul_sub, Nat.mul_one, ← Nat.pow_add,
-      show c + (S.logN + S.params.logBlowup - c + 1) = S.logN + S.params.logBlowup + 1 by omega,
+      show c + (n + P.logBlowup - c + 1) = n + P.logBlowup + 1 by omega,
       Nat.pow_succ]
     have := Nat.one_le_two_pow (n := c)
     omega
+
+theorem isTotalQueryBound_setupRo : IsTotalQueryBound S.setupRo S.setupQueries :=
+  isTotalQueryBound_preprocessedKeyWith S.params S.air S.logN _
 
 end CompStark.Iop.Setup

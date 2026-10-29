@@ -187,6 +187,8 @@ public import CompStark.Ni.Setup
 public import CompStark.Ni.Accepted
 public import CompStark.Ni.Extracted
 public import CompStark.Ni.BadQuery
+public import CompStark.Ni.Seed
+public import CompStark.Ni.Lengths
 public import CompStark.Ni.Assembly
 public import CompStark.Ni.BatchRun
 public import CompStark.Ni.BatchAccept

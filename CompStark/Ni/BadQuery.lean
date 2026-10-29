@@ -204,13 +204,14 @@ theorem exists_badAt (hδ' : (δ' : ℝ) < 1 - S.rate) (answer : (q : Query F) �
       ∀ d ∈ (capFrom (blocks.getD r []) 0 (2 ^ S.params.capHeight)).toList,
         d ∈ boundDigests S (capAt answer blocks r) (blocks.getD r []) := by
     intro r hr d hd
-    simp only [boundDigests, hr, ↓reduceIte]
+    simp only [boundDigests, boundDigestsOf, hr, ↓reduceIte]
     exact List.mem_append_left _ hd
   have hcap0 : ∀ j, (capFrom (blocks.getD 0 []) (starkSeedS S).length
       (capSize S S.logSize)).toList.getD j 0 ∈ keyDigests (boundDigests S) (keyAt answer blocks 0) ∨
       (capFrom (blocks.getD 0 []) (starkSeedS S).length (capSize S S.logSize)).toList.getD j 0 =
         initCap :=
-    hcapMem 0 _ _ (hcapLe _) (fun d hd ↦ by simpa only [boundDigests, capAt, ↓reduceIte] using hd)
+    hcapMem 0 _ _ (hcapLe _) (fun d hd ↦ by
+      simpa only [boundDigests, boundDigestsOf, capAt, ↓reduceIte] using hd)
   have hcap1 : ∀ j, (capFrom (blocks.getD 1 []) 0 (capSize S S.logSize)).toList.getD j 0 ∈
       keyDigests (boundDigests S) (keyAt answer blocks 1) ∨
       (capFrom (blocks.getD 1 []) 0 (capSize S S.logSize)).toList.getD j 0 = initCap :=
@@ -241,7 +242,7 @@ theorem exists_badAt (hδ' : (δ' : ℝ) < 1 - S.rate) (answer : (q : Query F) �
         simp only [keyAt, keyDigests]
         refine List.mem_cons_of_mem _ ?_
         rw [← hblk3]
-        simp only [boundDigests, hcap3, ↓reduceIte]
+        simp only [boundDigests, boundDigestsOf, hcap3, ↓reduceIte]
         refine List.mem_append_right _ ?_
         rw [hblk3, ← length_witnessInput S.params.commitPowBits
           ((proof.fri.commits.toList.zip proof.fri.commitWitnesses.toList)[0]'(by omega)).2]
@@ -293,13 +294,19 @@ theorem exists_badAt (hδ' : (δ' : ℝ) < 1 - S.rate) (answer : (q : Query F) �
       parse_keyAt (consistent_take hconsL _)
         (capsInjective hconsL hclash _ fun t ht ↦ mem_map_fst_take ht)
         (hasRounds_take hconsL hclash blocks blocks.length hkeys j hj)
+    have hseed : starkSeedS S <+:
+        ((history answer blocks j).map Prod.fst ++ [blocks.getD j []]).getD 0 [] := by
+      rw [history_fst answer blocks j 0 (Nat.zero_le _), hblocks, inputs_getD_zero, hdb]
+      exact List.prefix_append_of_prefix (List.prefix_append_of_prefix
+        (List.prefix_append_of_prefix (List.prefix_refl _)))
     rw [hC, hB, hSm, hsmp]
     simp only [keyAt] at h hparse ⊢
     unfold RoundBad at h
     dsimp only at h
     rw [hparse] at h
     dsimp only at h
-    rwa [length_history] at h
+    rw [length_history] at h
+    exact fun hb ↦ h ⟨hseed, hb⟩
   -- the transcript of the run
   obtain ⟨T, hT⟩ : ∃ T, T = prefixTranscript S (logCache L) blk smp := ⟨_, rfl⟩
   -- extraction is stable after the round binding the digest

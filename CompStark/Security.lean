@@ -61,25 +61,29 @@ the analysis the search finds:
   `117.98`, out of domain `99.95`, batching `103.88`, FRI's folds `109.37`, queries
   `powFraction 16 · (5/8 + …) ^ 124`, `99.97`: every round error is at most `2 ^ (-99)`
   (`wideSp1_roundError_le`), `99.95` bits, capped by the out-of-domain term; `123` queries reach
-  `99.40`. By `knowledgeSoundness_ro`, a prover making `Q` oracle calls gets a proof accepted
-  that the extractor cannot open with probability at most `q · 2 ^ (-99) + 3 q² / |𝔽| ^ 8`,
-  `q = Q + verifierQueries`, `verifierQueries = 15 + 5 · 21 + 124 · 553 = 68692`
-  (`wideSp1_knowledgeSoundness_ro`).
+  `99.40`. At every trace length the verifier admits, up to `2 ^ 22` rows, the same analysis
+  gives at least `98.95` bits (`wideSp1Statement_secureRo`, `98`), the out-of-domain term growing
+  with the length; by `knowledgeSoundness_ro`, a prover making `Q` oracle calls gets a proof
+  accepted that the extractor cannot open with probability at most
+  `q · 2 ^ (-98) + 4 q² / |𝔽| ^ 8`, `q = Q + verifierQueries`, `verifierQueries = 87307` on proofs
+  of any length (`wideSp1_knowledgeSoundness_ro`).
 * `wideGrindSetup`, in the random-oracle model: `wide 64` on `2 ^ 21` rows over the quartic
   extension, blowup `4`, `144` queries, grinding `20` bits before `ζ`, `12` before the batching
   challenge, `8` per fold and `20` before the queries (`wideGrindParams`);
   `δ = 3/8 - 2 ^ (-11)`, `δ' = 3/8 - 2 ^ (-13)`, `loss = 2 ^ (-16)`. Constraint folding `117.98`,
   out of domain `119.95`, batching `118.87`, FRI's folds `117.37`, queries `117.37`: every round
   error is at most `2 ^ (-117)` (`wideGrind_roundError_le`), `117.37` bits; `143` queries reach
-  `116.82`. Constraint folding, without grinding, keeps any configuration above `2 ^ (-117.98)`;
-  `verifierQueries = 79752` (`wideGrind_knowledgeSoundness_ro`).
+  `116.82`. Constraint folding, without grinding, keeps any configuration above `2 ^ (-117.98)`.
+  The analysis reaches `117` bits at every admitted length (`wideGrindStatement_secureRo`);
+  `verifierQueries = 101367` (`wideGrind_knowledgeSoundness_ro`).
 * `wide5Setup`, in the random-oracle model over the quintic extension `KoalaBear.Fast.Ext5`:
   `wide 64` on `2 ^ 21` rows with zkDTVM's FRI (soundcalc's `zkdtvm_v080.toml`, `wide5Params`):
   blowup `4`, `160` queries, `20` bits of query grinding; `δ = 3/8 - 2 ^ (-20)`,
   `δ' = 3/8 - 2 ^ (-22)`, no loss needed. Constraint folding `148.97`, out of domain `130.94`,
   batching `128.85`, FRI's folds `132.94`, queries `128.49`: every round error is at most
-  `2 ^ (-128)` (`wide5_roundError_le`); `159` queries reach `127.81`;
-  `verifierQueries = 88624` (`wide5_knowledgeSoundness_ro`).
+  `2 ^ (-128)` (`wide5_roundError_le`); `159` queries reach `127.81`. The analysis reaches `128`
+  bits at every admitted length (`wide5Statement_secureRo`); `verifierQueries = 112642`
+  (`wide5_knowledgeSoundness_ro`).
 * `wide5iSetup`, the interactive counterpart, without credit for grinding: `wide 64` on `2 ^ 21`
   rows over `KoalaBear.Fast.Ext5`, blowup `4`, `190` queries (`wide5iParams`);
   `δ = 3/8 - 2 ^ (-14)`, `δ' = 3/8 - 2 ^ (-16)`, `loss = 2 ^ (-19)`. Constraint folding `148.97`,
@@ -160,25 +164,48 @@ theorem roundError_le_of_secureRo (S : Setup EF) (hp : Nat.card F = p) {B : McaB
     roundError S δ δ' ≤ (2 ^ bits)⁻¹ :=
   (roundError_le_bound A S hp B hB h.1 δ δ' hδ hδ').trans (ofReal_le_inv_two_pow h.2)
 
+/-- **The calculator's round error of a statement.** If the calculator certifies `bits` bits per
+oracle answer for the statement `C` at `A` with an MCA bound `B` that holds
+(`C.SecureRo p B A bits`), the round error with FRI at `A.δ` and the extractor at `A.δ'` at every
+length is at most `2 ^ (-bits)`. -/
+theorem Statement.roundError_le_of_secureRo (C : Statement F) (hp : Nat.card F = p)
+    {B : McaBound} (hB : B.Holds) (A : Analysis) {bits : ℕ} (h : C.SecureRo EF p B A bits)
+    (δ δ' : NNReal) (hδ : (δ : ℝ) = A.δ) (hδ' : (δ' : ℝ) = A.δ') :
+    C.roundError EF (fun _ ↦ δ) (fun _ ↦ δ') ≤ (2 ^ bits)⁻¹ := by
+  refine iSup_le fun n ↦ iSup_le fun hn ↦ iSup_le fun hf ↦ ?_
+  have hb : C.admitsFolding n = true := (C.admitsFolding_iff n).mpr ⟨hn, hf⟩
+  exact _root_.CompStark.Iop.roundError_le_of_secureRo (C.setupOf EF n hb) hp hB A
+    (h n (by have := hn.sound.twoAdic; omega) hb) δ δ' hδ hδ'
+
 /-- **Knowledge soundness in the random-oracle model from the calculator.** If the calculator
-certifies `bits` bits per oracle answer for `S` at `A` with an MCA bound that holds, a prover
-making at most `Q` oracle calls gets a proof accepted while no trace within `δ' = A.δ'` of the one
-it committed to satisfies the AIR with probability at most `q · 2 ^ (-bits) + hashError q`,
-`q = Q + verifierQueries`. -/
-theorem knowledgeSoundness_ro_of_secureRo (S : Setup EF) (hp : Nat.card F = p) {B : McaBound}
-    (hB : B.Holds) (A : Analysis) {bits : ℕ} (h : S.SecureRo p B A bits) (δ' : NNReal)
-    (hδ' : (δ' : ℝ) = A.δ') (publicValues : List F) (Q : Nat) (prover : NIProver S)
-    (hQ : prover.IsTotalQueryBound Q) :
-    Pr{let (proof, log, verdict) ← run S publicValues prover}[
-      verdict = .ok () ∧ proof.degreeBits = S.logN ∧
-        ∀ trace ∈ closeTraces S δ' (committedTrace S log proof),
-          ¬ S.air.Satisfied S.logN trace publicValues] ≤
-      (Q + S.verifierQueries) * (2 ^ bits)⁻¹ +
-        hashError F (S.params.capHeight + 1) (Q + S.verifierQueries) := by
-  refine (knowledgeSoundness_ro S publicValues (Real.toNNReal A.δ) δ'
-    (lt_one_sub_rate S A h.1.1 δ' hδ') Q prover hQ).trans ?_
-  gcongr
-  exact roundError_le_of_secureRo S hp hB A h _ δ' (coe_toNNReal_δ A h.1.1) hδ'
+certifies `bits` bits per oracle answer for the statement `C` at `A` with an MCA bound that holds,
+on a base field of at least `2 ^ 8` elements with two-adicity below `2 ^ 64`, a prover making at
+most `Q` oracle calls gets a proof accepted at a length FRI folds at, while no trace of that length
+within `δ' = A.δ'` of the one it committed to satisfies the AIR, with probability at most
+`q · 2 ^ (-bits) + hashError q`, `q = Q + verifierQueries`. -/
+theorem knowledgeSoundness_ro_of_secureRo (C : Statement F) (hp : Nat.card F = p)
+    {B : McaBound} (hB : B.Holds) (A : Analysis) {bits : ℕ} (h : C.SecureRo EF p B A bits)
+    (h8 : 2 ^ 8 ≤ Nat.card F) (h64 : twoAdicity F < 2 ^ 64) (δ' : NNReal)
+    (hδ' : (δ' : ℝ) = A.δ') (hA : A.Valid (1 / 2 ^ C.params.logBlowup)) (publicValues : List F)
+    (Q : Nat) (prover : C.NIProver EF) (hQ : prover.IsTotalQueryBound Q) :
+    Pr{let (proof, log, verdict) ← C.run publicValues prover}[
+      verdict = .ok () ∧ C.params.logFinalPolyLen < proof.degreeBits ∧
+        ∀ (h : C.Admits proof.degreeBits) (hf : C.params.logFinalPolyLen < proof.degreeBits),
+          ∀ trace ∈ closeTraces (C.setupAt EF _ h hf) δ'
+              (committedTrace (C.setupAt EF _ h hf) log proof),
+            ¬ C.air.Satisfied proof.degreeBits trace publicValues] ≤
+      (Q + C.verifierQueries EF) * (2 ^ bits)⁻¹ +
+        hashError F (C.params.capHeight + 1) (Q + C.verifierQueries EF) := by
+  refine (knowledgeSoundness_ro C publicValues h8 h64 (fun _ ↦ Real.toNNReal A.δ) (fun _ ↦ δ')
+    (fun n hn ↦ ?_) Q prover hQ).trans ?_
+  · obtain ⟨h0, -, hle, h1, hρ⟩ := hA
+    have hq : A.δ' < 1 - 1 / 2 ^ C.params.logBlowup := by nlinarith
+    have hr : ((A.δ' : ℚ) : ℝ) < ((1 - 1 / 2 ^ C.params.logBlowup : ℚ) : ℝ) := Rat.cast_lt.mpr hq
+    rw [hδ', Statement.rate]
+    push_cast at hr
+    exact hr
+  · gcongr
+    exact C.roundError_le_of_secureRo hp hB A h _ δ' (coe_toNNReal_δ A hA) hδ'
 
 /-- **The calculator's batch knowledge error.** If the calculator certifies `bits` bits for the
 batch `S` at `A` with an MCA bound that holds, its knowledge error with FRI at `A.δ` and the
@@ -216,7 +243,8 @@ calculator certifies `bits` bits per oracle answer for the batch `S` at `A` with
 holds, a prover making at most `Q` oracle calls gets a proof accepted while no tuple of traces
 within `δ' = A.δ'` of the ones it committed to satisfies the batch with probability at most
 `q · 2 ^ (-bits) + hashError q`, `q = Q + verifierQueries`. -/
-theorem Batch.batchKnowledgeSoundness_ro_of_secureRo (S : Batch.Setup EF) [S.CapFits] (hp : Nat.card F = p)
+theorem Batch.batchKnowledgeSoundness_ro_of_secureRo (S : Batch.Setup EF) [S.CapFits]
+    (hp : Nat.card F = p)
     {B : McaBound} (hB : B.Holds) (A : Analysis) {bits : ℕ} (h : S.SecureRo p B A bits)
     (δ' : NNReal) (hδ' : (δ' : ℝ) = A.δ') (publicValues : Fin S.k → List F) (Q : Nat)
     (prover : Batch.NIProver S) (hQ : prover.IsTotalQueryBound Q) :
@@ -236,6 +264,8 @@ end Calculator
 /-! ### Examples -/
 
 local notation "F" => Montgomery.Native32.FastField _root_.KoalaBear.fieldSize
+local notation "Ext4" => KoalaBear.Fast.Ext4
+local notation "Ext5" => KoalaBear.Fast.Ext5
 
 /-- FRI with blowup `16`, folding by arity `2` down to a constant, and `110` queries. -/
 def fibonacciParams : Fri.Params where
@@ -338,8 +368,8 @@ def wideSetup : Setup KoalaBear.Fast.Ext4 where
   params := wideParams
   air := wide 64
   logN := 20
-  valid := ValidConfig.sound <| wide_valid wideParams rfl (by decide) rfl (by decide) 64 (by decide) 20
-    (by decide)
+  valid := ValidConfig.sound <|
+    wide_valid wideParams rfl (by decide) rfl (by decide) 64 (by decide) 20 (by decide)
   folds := by decide
 
 /-- FRI at `δ = 1535/4096 = 3/8 - 2 ^ (-12)`, the extractor at
@@ -372,8 +402,8 @@ def wide21Setup : Setup KoalaBear.Fast.Ext4 where
   params := wideParams
   air := wide 64
   logN := 21
-  valid := ValidConfig.sound <| wide_valid wideParams rfl (by decide) rfl (by decide) 64 (by decide) 21
-    (by decide)
+  valid := ValidConfig.sound <|
+    wide_valid wideParams rfl (by decide) rfl (by decide) 64 (by decide) 21 (by decide)
   folds := by decide
 
 /-- FRI at `δ = 1535/4096 = 3/8 - 2 ^ (-12)`, the extractor at
@@ -417,12 +447,10 @@ def wideSp1Setup : Setup KoalaBear.Fast.Ext4 where
   params := sp1Params
   air := wide 64
   logN := 21
-  valid := ValidConfig.sound <| wide_valid sp1Params rfl (by decide) rfl (by decide) 64 (by decide) 21
-    (by decide)
+  valid := ValidConfig.sound <|
+    wide_valid sp1Params rfl (by decide) rfl (by decide) 64 (by decide) 21 (by decide)
   folds := by decide
 
-/-- The verifier's oracle calls on a proof for `wideSp1Setup`: `15 + 5 · 21 + 124 · 553`. -/
-theorem wideSp1Setup_verifierQueries : wideSp1Setup.verifierQueries = 68692 := by decide +kernel
 
 /-- FRI at `δ = 3/8 - 2 ^ (-14)`, the extractor at `δ' = 3/8 - 2 ^ (-16)` and
 `loss = 2 ^ (-16)`. -/
@@ -440,22 +468,38 @@ theorem wideSp1_roundError_le :
     (by rw [coe_sub_two_zpow _ (-14) 14 rfl (by norm_num)]; norm_num [wideSp1Analysis])
     (by rw [coe_sub_two_zpow _ (-16) 16 rfl (by norm_num)]; norm_num [wideSp1Analysis])
 
-/-- **99 bits per oracle call on `2 ^ 21` rows.** A prover for `wideSp1Setup` making at most `Q`
-oracle calls gets a proof accepted while no trace close to the one it committed to satisfies the
-AIR with probability at most `q · 2 ^ (-99) + hashError q`, `q = Q + verifierQueries`. -/
+/-- `wide 64` with `sp1Params` at every trace length. -/
+def wideSp1Statement : Statement F := ⟨sp1Params, wide 64, wide_colsInWidth 64⟩
+
+/-- The oracle calls of the verifier on `wideSp1Statement`'s proofs, of any length. -/
+theorem wideSp1Statement_verifierQueries : wideSp1Statement.verifierQueries Ext4 = 87307 := by
+  decide +kernel
+
+theorem wideSp1Statement_secureRo :
+    wideSp1Statement.SecureRo Ext4 2130706433 .uniqueDecoding wideSp1Analysis 98 := by
+  decide +kernel
+
+/-- **98 bits per oracle call at every trace length.** A prover for `wideSp1Statement` making at
+most `Q` oracle calls gets a proof accepted at a length FRI folds at, while no trace of that length
+within `3/8 - 2 ^ (-16)` of the one it committed to satisfies the AIR, with probability at most
+`q · 2 ^ (-98) + hashError q`, `q = Q + verifierQueries`. -/
 theorem wideSp1_knowledgeSoundness_ro (publicValues : List F) (Q : Nat)
-    (prover : NIProver wideSp1Setup) (hQ : prover.IsTotalQueryBound Q) :
-    Pr{let (proof, log, verdict) ← run wideSp1Setup publicValues prover}[
-      verdict = .ok () ∧ proof.degreeBits = wideSp1Setup.logN ∧
-        ∀ trace ∈ closeTraces wideSp1Setup (3 / 8 - 2 ^ (-16 : ℤ) : NNReal)
-            (committedTrace wideSp1Setup log proof),
-          ¬ wideSp1Setup.air.Satisfied wideSp1Setup.logN trace publicValues] ≤
-      (Q + wideSp1Setup.verifierQueries) * (2 ^ 99)⁻¹ +
-        hashError F 1 (Q + wideSp1Setup.verifierQueries) :=
-  knowledgeSoundness_ro_of_secureRo _ KoalaBear.card_eq McaBound.uniqueDecoding_holds _
-    wideSp1_secureRo _
+    (prover : wideSp1Statement.NIProver Ext4) (hQ : prover.IsTotalQueryBound Q) :
+    Pr{let (proof, log, verdict) ← wideSp1Statement.run publicValues prover}[
+      verdict = .ok () ∧ wideSp1Statement.params.logFinalPolyLen < proof.degreeBits ∧
+        ∀ (h : wideSp1Statement.Admits proof.degreeBits)
+          (hf : wideSp1Statement.params.logFinalPolyLen < proof.degreeBits),
+          ∀ trace ∈ closeTraces (wideSp1Statement.setupAt Ext4 _ h hf)
+              (3 / 8 - 2 ^ (-16 : ℤ) : NNReal)
+              (committedTrace (wideSp1Statement.setupAt Ext4 _ h hf) log proof),
+            ¬ (wide 64 : Air F).Satisfied proof.degreeBits trace publicValues] ≤
+      (Q + wideSp1Statement.verifierQueries Ext4) * (2 ^ 98)⁻¹ +
+        hashError F 1 (Q + wideSp1Statement.verifierQueries Ext4) :=
+  knowledgeSoundness_ro_of_secureRo _ KoalaBear.card_eq McaBound.uniqueDecoding_holds
+    wideSp1Analysis
+    wideSp1Statement_secureRo (by rw [KoalaBear.card_eq]; norm_num) (by decide) _
     (by rw [coe_sub_two_zpow _ (-16) 16 rfl (by norm_num)]; norm_num [wideSp1Analysis])
-    publicValues Q prover hQ
+    (by decide +kernel) publicValues Q prover hQ
 
 /-- FRI with blowup `4`, folding by arity `2` down to a constant, and `144` queries, with grinding
 in every round after `α`: `20` bits before `ζ`, `12` before the batching challenge, `8` per fold
@@ -475,13 +519,10 @@ def wideGrindSetup : Setup KoalaBear.Fast.Ext4 where
   params := wideGrindParams
   air := wide 64
   logN := 21
-  valid := ValidConfig.sound <| wide_valid wideGrindParams rfl (by decide) rfl (by decide) 64 (by decide) 21
-    (by decide)
+  valid := ValidConfig.sound <|
+    wide_valid wideGrindParams rfl (by decide) rfl (by decide) 64 (by decide) 21 (by decide)
   folds := by decide
 
-/-- The verifier's oracle calls on a proof for `wideGrindSetup`: `15 + 5 · 21 + 144 · 553`. -/
-theorem wideGrindSetup_verifierQueries : wideGrindSetup.verifierQueries = 79752 := by
-  decide +kernel
 
 /-- FRI at `δ = 3/8 - 2 ^ (-11)`, the extractor at `δ' = 3/8 - 2 ^ (-13)` and
 `loss = 2 ^ (-16)`. -/
@@ -500,23 +541,38 @@ theorem wideGrind_roundError_le :
     _ _ (by rw [coe_sub_two_zpow _ (-11) 11 rfl (by norm_num)]; norm_num [wideGrindAnalysis])
     (by rw [coe_sub_two_zpow _ (-13) 13 rfl (by norm_num)]; norm_num [wideGrindAnalysis])
 
-/-- **117 bits per oracle call on `2 ^ 21` rows over the quartic extension.** A prover for
-`wideGrindSetup` making at most `Q` oracle calls gets a proof accepted while no trace close to the
-one it committed to satisfies the AIR with probability at most
+/-- `wide 64` with `wideGrindParams` at every trace length. -/
+def wideGrindStatement : Statement F := ⟨wideGrindParams, wide 64, wide_colsInWidth 64⟩
+
+/-- The oracle calls of the verifier on `wideGrindStatement`'s proofs, of any length. -/
+theorem wideGrindStatement_verifierQueries : wideGrindStatement.verifierQueries Ext4 = 101367 := by
+  decide +kernel
+
+theorem wideGrindStatement_secureRo :
+    wideGrindStatement.SecureRo Ext4 2130706433 .uniqueDecoding wideGrindAnalysis 117 := by
+  decide +kernel
+
+/-- **117 bits per oracle call at every trace length.** A prover for `wideGrindStatement` making at
+most `Q` oracle calls gets a proof accepted at a length FRI folds at, while no trace of that length
+within `3/8 - 2 ^ (-13)` of the one it committed to satisfies the AIR, with probability at most
 `q · 2 ^ (-117) + hashError q`, `q = Q + verifierQueries`. -/
 theorem wideGrind_knowledgeSoundness_ro (publicValues : List F) (Q : Nat)
-    (prover : NIProver wideGrindSetup) (hQ : prover.IsTotalQueryBound Q) :
-    Pr{let (proof, log, verdict) ← run wideGrindSetup publicValues prover}[
-      verdict = .ok () ∧ proof.degreeBits = wideGrindSetup.logN ∧
-        ∀ trace ∈ closeTraces wideGrindSetup (3 / 8 - 2 ^ (-13 : ℤ) : NNReal)
-            (committedTrace wideGrindSetup log proof),
-          ¬ wideGrindSetup.air.Satisfied wideGrindSetup.logN trace publicValues] ≤
-      (Q + wideGrindSetup.verifierQueries) * (2 ^ 117)⁻¹ +
-        hashError F 1 (Q + wideGrindSetup.verifierQueries) :=
-  knowledgeSoundness_ro_of_secureRo _ KoalaBear.card_eq McaBound.uniqueDecoding_holds _
-    wideGrind_secureRo _
+    (prover : wideGrindStatement.NIProver Ext4) (hQ : prover.IsTotalQueryBound Q) :
+    Pr{let (proof, log, verdict) ← wideGrindStatement.run publicValues prover}[
+      verdict = .ok () ∧ wideGrindStatement.params.logFinalPolyLen < proof.degreeBits ∧
+        ∀ (h : wideGrindStatement.Admits proof.degreeBits)
+          (hf : wideGrindStatement.params.logFinalPolyLen < proof.degreeBits),
+          ∀ trace ∈ closeTraces (wideGrindStatement.setupAt Ext4 _ h hf)
+              (3 / 8 - 2 ^ (-13 : ℤ) : NNReal)
+              (committedTrace (wideGrindStatement.setupAt Ext4 _ h hf) log proof),
+            ¬ (wide 64 : Air F).Satisfied proof.degreeBits trace publicValues] ≤
+      (Q + wideGrindStatement.verifierQueries Ext4) * (2 ^ 117)⁻¹ +
+        hashError F 1 (Q + wideGrindStatement.verifierQueries Ext4) :=
+  knowledgeSoundness_ro_of_secureRo _ KoalaBear.card_eq McaBound.uniqueDecoding_holds
+    wideGrindAnalysis
+    wideGrindStatement_secureRo (by rw [KoalaBear.card_eq]; norm_num) (by decide) _
     (by rw [coe_sub_two_zpow _ (-13) 13 rfl (by norm_num)]; norm_num [wideGrindAnalysis])
-    publicValues Q prover hQ
+    (by decide +kernel) publicValues Q prover hQ
 
 /-- zkDTVM's FRI parameters (soundcalc's `zkdtvm_v080.toml`, compress circuit): blowup `4`, folding
 by arity `2` down to a constant, `160` queries with `20` bits of query grinding. -/
@@ -533,12 +589,10 @@ def wide5Setup : Setup KoalaBear.Fast.Ext5 where
   params := wide5Params
   air := wide 64
   logN := 21
-  valid := ValidConfig.sound <| wide_valid wide5Params rfl (by decide) rfl (by decide) 64 (by decide) 21
-    (by decide)
+  valid := ValidConfig.sound <|
+    wide_valid wide5Params rfl (by decide) rfl (by decide) 64 (by decide) 21 (by decide)
   folds := by decide
 
-/-- The verifier's oracle calls on a proof for `wide5Setup`: `18 + 6 · 21 + 160 · 553`. -/
-theorem wide5Setup_verifierQueries : wide5Setup.verifierQueries = 88624 := by decide +kernel
 
 /-- FRI at `δ = 3/8 - 2 ^ (-20)`, the extractor at `δ' = 3/8 - 2 ^ (-22)` and
 `loss = 2 ^ (-60)`. -/
@@ -555,23 +609,38 @@ theorem wide5_roundError_le :
     (by rw [coe_sub_two_zpow _ (-20) 20 rfl (by norm_num)]; norm_num [wide5Analysis])
     (by rw [coe_sub_two_zpow _ (-22) 22 rfl (by norm_num)]; norm_num [wide5Analysis])
 
-/-- **128 bits per oracle call on `2 ^ 21` rows over the quintic extension.** A prover for
-`wide5Setup` making at most `Q` oracle calls gets a proof accepted while no trace close to the one
-it committed to satisfies the AIR with probability at most `q · 2 ^ (-128) + hashError q`,
-`q = Q + verifierQueries`. -/
+/-- `wide 64` with `wide5Params` at every trace length. -/
+def wide5Statement : Statement F := ⟨wide5Params, wide 64, wide_colsInWidth 64⟩
+
+/-- The oracle calls of the verifier on `wide5Statement`'s proofs, of any length. -/
+theorem wide5Statement_verifierQueries : wide5Statement.verifierQueries Ext5 = 112642 := by
+  decide +kernel
+
+theorem wide5Statement_secureRo :
+    wide5Statement.SecureRo Ext5 2130706433 .uniqueDecoding wide5Analysis 128 := by
+  decide +kernel
+
+/-- **128 bits per oracle call at every trace length.** A prover for `wide5Statement` making at
+most `Q` oracle calls gets a proof accepted at a length FRI folds at, while no trace of that length
+within `3/8 - 2 ^ (-22)` of the one it committed to satisfies the AIR, with probability at most
+`q · 2 ^ (-128) + hashError q`, `q = Q + verifierQueries`. -/
 theorem wide5_knowledgeSoundness_ro (publicValues : List F) (Q : Nat)
-    (prover : NIProver wide5Setup) (hQ : prover.IsTotalQueryBound Q) :
-    Pr{let (proof, log, verdict) ← run wide5Setup publicValues prover}[
-      verdict = .ok () ∧ proof.degreeBits = wide5Setup.logN ∧
-        ∀ trace ∈ closeTraces wide5Setup (3 / 8 - 2 ^ (-22 : ℤ) : NNReal)
-            (committedTrace wide5Setup log proof),
-          ¬ wide5Setup.air.Satisfied wide5Setup.logN trace publicValues] ≤
-      (Q + wide5Setup.verifierQueries) * (2 ^ 128)⁻¹ +
-        hashError F 1 (Q + wide5Setup.verifierQueries) :=
-  knowledgeSoundness_ro_of_secureRo _ KoalaBear.card_eq McaBound.uniqueDecoding_holds _
-    wide5_secureRo _
+    (prover : wide5Statement.NIProver Ext5) (hQ : prover.IsTotalQueryBound Q) :
+    Pr{let (proof, log, verdict) ← wide5Statement.run publicValues prover}[
+      verdict = .ok () ∧ wide5Statement.params.logFinalPolyLen < proof.degreeBits ∧
+        ∀ (h : wide5Statement.Admits proof.degreeBits)
+          (hf : wide5Statement.params.logFinalPolyLen < proof.degreeBits),
+          ∀ trace ∈ closeTraces (wide5Statement.setupAt Ext5 _ h hf)
+              (3 / 8 - 2 ^ (-22 : ℤ) : NNReal)
+              (committedTrace (wide5Statement.setupAt Ext5 _ h hf) log proof),
+            ¬ (wide 64 : Air F).Satisfied proof.degreeBits trace publicValues] ≤
+      (Q + wide5Statement.verifierQueries Ext5) * (2 ^ 128)⁻¹ +
+        hashError F 1 (Q + wide5Statement.verifierQueries Ext5) :=
+  knowledgeSoundness_ro_of_secureRo _ KoalaBear.card_eq McaBound.uniqueDecoding_holds
+    wide5Analysis
+    wide5Statement_secureRo (by rw [KoalaBear.card_eq]; norm_num) (by decide) _
     (by rw [coe_sub_two_zpow _ (-22) 22 rfl (by norm_num)]; norm_num [wide5Analysis])
-    publicValues Q prover hQ
+    (by decide +kernel) publicValues Q prover hQ
 
 /-- FRI with blowup `4`, folding by arity `2` down to a constant, and `190` queries without
 grinding. -/
@@ -588,8 +657,8 @@ def wide5iSetup : Setup KoalaBear.Fast.Ext5 where
   params := wide5iParams
   air := wide 64
   logN := 21
-  valid := ValidConfig.sound <| wide_valid wide5iParams rfl (by decide) rfl (by decide) 64 (by decide) 21
-    (by decide)
+  valid := ValidConfig.sound <|
+    wide_valid wide5iParams rfl (by decide) rfl (by decide) 64 (by decide) 21 (by decide)
   folds := by decide
 
 /-- FRI at `δ = 6143/16384 = 3/8 - 2 ^ (-14)`, the extractor at
@@ -704,8 +773,8 @@ def wideBatchSetup : Batch.Setup KoalaBear.Fast.Ext5 where
   k := 3
   air _ := wideBus 64
   logN := ![20, 19, 16]
-  valid i := ValidConfig.sound <| wideBus_valid wide5iParams rfl (by decide) rfl (by decide) _
-    (by fin_cases i <;> decide)
+  valid i := ValidConfig.sound <|
+    wideBus_valid wide5iParams rfl (by decide) rfl (by decide) _ (by fin_cases i <;> decide)
   folds i := by fin_cases i <;> decide
   nonempty := by decide
   lookupsValid _ := wideBus_lookupsValid _ rfl _
@@ -748,8 +817,8 @@ def wideBatch5Setup : Batch.Setup KoalaBear.Fast.Ext5 where
   k := 3
   air _ := wideBus 64
   logN := ![20, 19, 16]
-  valid i := ValidConfig.sound <| wideBus_valid wide5Params rfl (by decide) rfl (by decide) _
-    (by fin_cases i <;> decide)
+  valid i := ValidConfig.sound <|
+    wideBus_valid wide5Params rfl (by decide) rfl (by decide) _ (by fin_cases i <;> decide)
   folds i := by fin_cases i <;> decide
   nonempty := by decide
   lookupsValid _ := wideBus_lookupsValid _ rfl _
@@ -765,8 +834,8 @@ def wideBatchGrindSetup : Batch.Setup KoalaBear.Fast.Ext4 where
   k := 3
   air _ := wideBus 64
   logN := ![20, 19, 16]
-  valid i := ValidConfig.sound <| wideBus_valid wideBusGrindParams rfl (by decide) rfl (by decide) _
-    (by fin_cases i <;> decide)
+  valid i := ValidConfig.sound <|
+    wideBus_valid wideBusGrindParams rfl (by decide) rfl (by decide) _ (by fin_cases i <;> decide)
   folds i := by fin_cases i <;> decide
   nonempty := by decide
   lookupsValid _ := wideBus_lookupsValid _ rfl _
