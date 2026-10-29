@@ -20,7 +20,9 @@ Merkle cap height (`CompStark/NonInteractiveError.lean`). The lengths share one 
 not one each: the STARK's domain separator puts the length into every transcript, so a fresh answer
 can only be bad at the length its transcript has. That needs the challenger to read the domain
 separator's bytes in chunks of at least one byte and the lengths to fit its eight bytes: a base
-field of at least `2 ^ 8` elements with two-adicity below `2 ^ 64`.
+field of at least `2 ^ 8` elements with two-adicity below `2 ^ 64`. Plonky3's `uni-stark` observes
+the length only there, as eight big-endian bytes of the instance label; its `batch-stark` also
+observes every degree as a field element below `p`, so the batch needs neither assumption.
 
 The preprocessed trace is part of the AIR, so of the statement: the game computes its verifying key
 on the oracles before the prover runs (`Statement.setupRo`), at the length its rows fix, which the

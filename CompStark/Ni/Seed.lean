@@ -12,7 +12,7 @@ public import Mathlib.Data.Nat.Digits.Defs
 The challenger observes the STARK's domain separator (`starkSeedOf`) first, the trace's log length
 among its numbers. Its length does not depend on the trace length (`length_starkSeedOf`): the
 interaction pattern is the same, and the instance label has one number per field. It tells the
-trace lengths apart (`starkSeedOf_injective`) when the challenger reads its bytes in chunks of at
+trace lengths apart (`starkSeedOf_inj`) when the challenger reads its bytes in chunks of at
 least one byte, `p ≥ 2 ^ 8`, and the lengths fit the label's eight bytes, below `2 ^ 64`: the
 chunks' values are below `p`, so they are the chunks' little-endian numbers, which give the bytes
 back, and the label's first number is the trace's log length in eight big-endian bytes.
