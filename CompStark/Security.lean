@@ -252,7 +252,7 @@ calculator certifies `bits` bits per oracle answer for the batch `S` at `A` with
 holds, a prover making at most `Q` oracle calls gets a proof accepted while no tuple of traces
 within `δ' = A.δ'` of the ones it committed to satisfies the batch with probability at most
 `q · 2 ^ (-bits) + hashError q`, `q = Q + verifierQueries`. -/
-theorem Batch.batchKnowledgeSoundness_ro_of_secureRo (S : Batch.Setup EF) [S.CapFits]
+theorem Batch.batchKnowledgeSoundness_ro_of_secureRo (S : Batch.Setup EF)
     (hp : Nat.card F = p)
     {B : McaBound} (hB : B.Holds) (A : Analysis) {bits : ℕ} (h : S.SecureRo p B A bits)
     (δ' : NNReal) (hδ' : (δ' : ℝ) = A.δ') (publicValues : Fin S.k → List F) (Q : Nat)
@@ -262,7 +262,7 @@ theorem Batch.batchKnowledgeSoundness_ro_of_secureRo (S : Batch.Setup EF) [S.Cap
         ∀ traces ∈ Batch.closeTraces S δ' (Batch.committedTraces S log proof),
           ¬ S.Satisfied traces publicValues] ≤
       (Q + S.verifierQueries) * (2 ^ bits)⁻¹ +
-        hashError F S.params.capHeight (Q + S.verifierQueries) := by
+        hashError F (S.params.capHeight + 1) (Q + S.verifierQueries) := by
   refine (Batch.batchKnowledgeSoundness_ro S publicValues (Real.toNNReal A.δ) δ'
     (batch_lt_one_sub_rate S B A h.1 δ' hδ') Q prover hQ).trans ?_
   gcongr
@@ -869,10 +869,6 @@ def wideBatch5Analysis : Analysis := ⟨3 / 8 - 1 / 2 ^ 20, 3 / 8 - 1 / 2 ^ 22, 
 `loss = 2 ^ (-15)`. -/
 def wideBatchGrindAnalysis : Analysis := ⟨3 / 8 - 1 / 2 ^ 12, 3 / 8 - 1 / 2 ^ 14, 1 / 2 ^ 15⟩
 
-instance : wideBatch5Setup.CapFits := ⟨fun _ ↦ Nat.zero_le _⟩
-
-instance : wideBatchGrindSetup.CapFits := ⟨fun _ ↦ Nat.zero_le _⟩
-
 theorem wideBatch5_secureRo :
     wideBatch5Setup.SecureRo 2130706433 .uniqueDecoding wideBatch5Analysis 128 := by
   decide +kernel
@@ -927,7 +923,7 @@ theorem wideBatch5_knowledgeSoundness_ro (publicValues : Fin wideBatch5Setup.k �
             (Batch.committedTraces wideBatch5Setup log proof),
           ¬ wideBatch5Setup.Satisfied traces publicValues] ≤
       (Q + wideBatch5Setup.verifierQueries) * (2 ^ 128)⁻¹ +
-        hashError F 0 (Q + wideBatch5Setup.verifierQueries) :=
+        hashError F 1 (Q + wideBatch5Setup.verifierQueries) :=
   Batch.batchKnowledgeSoundness_ro_of_secureRo _ KoalaBear.card_eq McaBound.uniqueDecoding_holds _
     wideBatch5_secureRo _
     (by rw [coe_sub_two_zpow _ (-22) 22 rfl (by norm_num)]; norm_num [wideBatch5Analysis])
@@ -945,7 +941,7 @@ theorem wideBatchGrind_knowledgeSoundness_ro (publicValues : Fin wideBatchGrindS
             (Batch.committedTraces wideBatchGrindSetup log proof),
           ¬ wideBatchGrindSetup.Satisfied traces publicValues] ≤
       (Q + wideBatchGrindSetup.verifierQueries) * (2 ^ 117)⁻¹ +
-        hashError F 0 (Q + wideBatchGrindSetup.verifierQueries) :=
+        hashError F 1 (Q + wideBatchGrindSetup.verifierQueries) :=
   Batch.batchKnowledgeSoundness_ro_of_secureRo _ KoalaBear.card_eq McaBound.uniqueDecoding_holds _
     wideBatchGrind_secureRo _
     (by rw [coe_sub_two_zpow _ (-14) 14 rfl (by norm_num)]; norm_num [wideBatchGrindAnalysis])

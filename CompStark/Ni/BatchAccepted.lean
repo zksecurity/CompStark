@@ -23,7 +23,7 @@ variable {F : Type} [BaseField F] {EF : Type} [Challenge F EF] {K : Nat}
   (answer : (q : Query F) → Answer K q)
 
 section Rounds
-variable (S : Iop.Batch.Setup EF) [S.CapFits] (common : CompStark.Batch.Common F)
+variable (S : Iop.Batch.Setup EF) (common : CompStark.Batch.Common F)
   (proof : CompStark.Batch.BatchProof F EF) (pis : List (List F))
 
 /-- **The lookup round's grinding.** -/

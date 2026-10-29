@@ -81,18 +81,18 @@ def permDigest (proof : CompStark.Batch.BatchProof F EF) : List F :=
   (proof.permutationCommit.map capElems).getD []
 
 /-- FRI's domain separator on a batch proof for `S`. -/
-noncomputable def friSeedB (S : Iop.Batch.Setup EF) [S.CapFits] : List F :=
+noncomputable def friSeedB (S : Iop.Batch.Setup EF) : List F :=
   DomainSeparator.friSeed F EF S.friArities (2 ^ S.params.logFinalPolyLen)
     S.params.commitPowBits S.params.queryPowBits S.params.numQueries S.logTop S.params.logBlowup
     S.params.maxLogArity
 
 /-- The rounds before the round of `α`: the lookup round, with lookups. -/
-def lookupRounds (S : Iop.Batch.Setup EF) [S.CapFits] : ℕ := if S.hasLookups then 1 else 0
+def lookupRounds (S : Iop.Batch.Setup EF) : ℕ := if S.hasLookups then 1 else 0
 
 /-- The elements the batch verifier observes before the lookup phase: the batch's domain
 separator, every instance's degree bits, the main commitment, the public values and the
 preprocessed commitment. -/
-noncomputable def headB (S : Iop.Batch.Setup EF) [S.CapFits] (common : CompStark.Batch.Common F)
+noncomputable def headB (S : Iop.Batch.Setup EF) (common : CompStark.Batch.Common F)
     (pis : List (List F)) (proof : CompStark.Batch.BatchProof F EF) : List F :=
   CompStark.Batch.batchSeedOf EF S.params S.instances common.preprocessed ++
     coeffs (S.instances.map fun I ↦ (Ext.ofBase (I.logN : F) : EF)) ++ capElems proof.mainCommit ++
@@ -101,7 +101,7 @@ noncomputable def headB (S : Iop.Batch.Setup EF) [S.CapFits] (common : CompStark
 /-- The elements the batch verifier observes on `proof` before each squeeze from the round of `α`
 on, round by round: before `α`, without lookups the head, and the permutation commitment and the
 terminals. -/
-noncomputable def roundsB (S : Iop.Batch.Setup EF) [S.CapFits] (common : CompStark.Batch.Common F)
+noncomputable def roundsB (S : Iop.Batch.Setup EF) (common : CompStark.Batch.Common F)
     (pis : List (List F)) (proof : CompStark.Batch.BatchProof F EF) : List (List F) :=
   ((if S.hasLookups then [] else headB S common pis proof) ++ permDigest proof ++
     coeffs (proof.lookupTerminals.toList.filterMap id)) ::
@@ -119,14 +119,14 @@ noncomputable def roundsB (S : Iop.Batch.Setup EF) [S.CapFits] (common : CompSta
 
 /-- The elements the batch verifier observes on `proof` before each squeeze, round by round: with
 lookups, the head and the lookup grinding witness before the lookup round, then `roundsB`. -/
-noncomputable def inputsB (S : Iop.Batch.Setup EF) [S.CapFits] (common : CompStark.Batch.Common F)
+noncomputable def inputsB (S : Iop.Batch.Setup EF) (common : CompStark.Batch.Common F)
     (pis : List (List F)) (proof : CompStark.Batch.BatchProof F EF) : List (List F) :=
   (if S.hasLookups then
     [headB S common pis proof ++ witnessInput S.params.lookupPowBits (proof.lookupWitness.getD 0)]
   else []) ++ roundsB S common pis proof
 
 section Getters
-variable (S : Iop.Batch.Setup EF) [S.CapFits] (common : CompStark.Batch.Common F) (pis : List (List F))
+variable (S : Iop.Batch.Setup EF) (common : CompStark.Batch.Common F) (pis : List (List F))
   (proof : CompStark.Batch.BatchProof F EF)
 
 theorem length_lookupPrefix :
@@ -244,7 +244,7 @@ theorem out_observeExts_nil (xs : List EF) (cap : Digest F) (input : List F) :
 
 /-- **The lookup phase on logged answers.** From the head, an accepted lookup phase queries the
 lookup round, with lookups, and leaves the challenger at the round of `α` with its input. -/
-theorem out_lookupPhase_logs (S : Iop.Batch.Setup EF) [S.CapFits] (hK : 2 * Challenge.d EF + 1 ≤ K)
+theorem out_lookupPhase_logs (S : Iop.Batch.Setup EF) (hK : 2 * Challenge.d EF + 1 ≤ K)
     (common : CompStark.Batch.Common F) (proof : CompStark.Batch.BatchProof F EF)
     (pis : List (List F)) (hperm : proof.permutationCommit.isSome = S.hasLookups)
     (hpne : ∀ c ∈ proof.permutationCommit, c.size ≠ 0) {r : (EF × EF) × Sponge F}
@@ -343,7 +343,7 @@ theorem out_lookupPhase_logs (S : Iop.Batch.Setup EF) [S.CapFits] (hK : 2 * Chal
         rfl
 
 /-- The batch verifier on logged answers, if it accepts, queries every round of the schedule. -/
-theorem verifyInstancesWith_logs (S : Iop.Batch.Setup EF) [S.CapFits]
+theorem verifyInstancesWith_logs (S : Iop.Batch.Setup EF)
     (hK : S.params.numQueries + 2 * Challenge.d EF + 1 ≤ K)
     (common : CompStark.Batch.Common F) (proof : CompStark.Batch.BatchProof F EF)
     (pis : List (List F))
@@ -539,7 +539,7 @@ theorem verifyInstancesWith_logs (S : Iop.Batch.Setup EF) [S.CapFits]
 
 /-- **The first call.** If the batch verifier on logged answers accepts, its log starts with
 the duplex call of the first round. -/
-theorem verifyInstancesWith_log_head (S : Iop.Batch.Setup EF) [S.CapFits]
+theorem verifyInstancesWith_log_head (S : Iop.Batch.Setup EF)
     (hK : S.params.numQueries + 2 * Challenge.d EF + 1 ≤ K)
     (common : CompStark.Batch.Common F) (proof : CompStark.Batch.BatchProof F EF)
     (pis : List (List F))
@@ -656,7 +656,7 @@ theorem run_idealLoggedB {K : Nat} {answer : (q : Query F) → Answer K q} (P : 
 
 /-- **The batch verifier queries every round.** If the batch verifier accepts a proof on the
 answers `answer`, the duplex call of every round of the proof's schedule is in its log. -/
-theorem hasRounds_verifyInstancesWith (S : Iop.Batch.Setup EF) [S.CapFits]
+theorem hasRounds_verifyInstancesWith (S : Iop.Batch.Setup EF)
     (answer : (q : Query F) → Answer S.streamLen q) (common : CompStark.Batch.Common F)
     (proof : CompStark.Batch.BatchProof F EF) (pis : List (List F))
     (hok : CompStark.Batch.verifyInstancesWith (idealOf answer) S.params S.instances common proof

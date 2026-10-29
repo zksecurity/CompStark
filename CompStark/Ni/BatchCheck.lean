@@ -140,7 +140,7 @@ theorem toSpec_foldl_horner {β : Type} (v : β → EF) (alpha : EF) :
 values with its chunks and permutation rows of its permutation trace's width, its constraints
 and LogUp constraints hold at `ζ` in the spec field, with the spec images of its lookup
 challenges and terminal. -/
-theorem constraintsHoldAt_of_instanceCheck (S : Iop.Batch.Setup EF) [S.CapFits] (i : Fin S.k) (pis : List F)
+theorem constraintsHoldAt_of_instanceCheck (S : Iop.Batch.Setup EF) (i : Fin S.k) (pis : List F)
     (o : OpenedValues EF) (cur next : Array EF) (chs : List EF) (t zeta alpha : EF)
     (hqc : o.quotientChunks.size = (S.instanceSetup i).chunks)
     (hcur : cur.size = Challenge.d EF * (S.instanceSetup i).permWidth)
@@ -190,14 +190,14 @@ open CompStark.Stark CompStark.Lookup
 variable {F : Type} [BaseField F] {EF : Type} [Challenge F EF]
 
 /-- The statement's lookups are the instances'. -/
-theorem map_lookups_instances (S : Iop.Batch.Setup EF) [S.CapFits] :
+theorem map_lookups_instances (S : Iop.Batch.Setup EF) :
     S.instances.map (·.lookups) = List.ofFn S.lookups := by
   rw [Iop.Batch.Setup.instances, List.map_ofFn]
   rfl
 
 /-- **The lookup challenges.** The verifier's challenges of instance `i` from the pair `(α_L, β_L)`
 are, in the spec field, the instance's challenges of the spec images of the pair. -/
-theorem challenges_eq (S : Iop.Batch.Setup EF) [S.CapFits] (a b : EF) (i : Fin S.k) :
+theorem challenges_eq (S : Iop.Batch.Setup EF) (a b : EF) (i : Fin S.k) :
     ((challengeLayout (S.instances.map (·.lookups)) a b).getD i []).map Challenge.toSpec =
       S.challenges (Challenge.toSpec a) (Challenge.toSpec b) i := by
   rw [map_lookups_instances, challengeLayout, Iop.Batch.Setup.challenges]

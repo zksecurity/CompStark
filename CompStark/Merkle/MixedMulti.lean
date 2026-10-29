@@ -553,6 +553,53 @@ theorem length_cap_of_verifyMulti_mixed [DecidableEq F] (cap : List (Vector F d)
   have := length_cap_of_verifyMulti hash compress cap capHeight dims indices rows sibs h g rest hg
   rwa [hg1, capLevels_two_pow] at this
 
+/-- An accepted multi-opening of matrices of heights `2 ^ j ≤ 2 ^ k`, some of height `2 ^ k`, has
+every matrix at least as tall as its cap of `2 ^ c` entries, `c` the cap height capped at `k`. -/
+theorem cap_le_of_verifyMulti_mixed [DecidableEq F] (cap : List (Vector F d))
+    (capHeight k : Nat) (dims : List (Nat × Nat)) (hpow : ∀ x ∈ dims, ∃ j ≤ k, x.1 = 2 ^ j)
+    (htop : ∃ x ∈ dims, x.1 = 2 ^ k) (indices : List Nat) (rows : List (List (List F)))
+    (sibs : List (Vector F d))
+    (h : verifyMultiM (m := Id) hash compress cap capHeight dims indices rows sibs = true) :
+    ∀ x ∈ dims, 2 ^ min capHeight k ≤ x.1 := by
+  obtain ⟨keys, hk, hmem, hG⟩ := heightGroups_eq (dims.map (·.1))
+  have htopK : 2 ^ k ∈ keys := by
+    obtain ⟨x, hx, e⟩ := htop
+    exact (hmem _).mpr (e ▸ List.mem_map_of_mem hx)
+  obtain ⟨ks, hks⟩ : ∃ ks, keys = 2 ^ k :: ks := by
+    rcases keys with _ | ⟨a, ks⟩
+    · exact absurd htopK List.not_mem_nil
+    · refine ⟨ks, ?_⟩
+      obtain ⟨x, hx, rfl⟩ := List.mem_map.mp ((hmem a).mp List.mem_cons_self)
+      obtain ⟨j, hj, e⟩ := hpow x hx
+      rw [e]
+      rcases List.mem_cons.mp htopK with h | h
+      · rw [← e, h]
+      · have := List.rel_of_pairwise_cons hk h
+        have := Nat.pow_le_pow_right (show 0 < 2 by decide) hj
+        omega
+  unfold verifyMultiM at h
+  rw [hG, hks, List.map_cons] at h
+  dsimp only at h
+  rw [capLevels_two_pow, nextPowerOfTwo_two_pow] at h
+  dsimp only at h
+  split at h
+  swap
+  · exact absurd h Bool.false_ne_true
+  rename_i hcond
+  simp only [Bool.and_eq_true] at hcond
+  obtain ⟨-, hrestCap⟩ := hcond
+  intro x hx
+  obtain ⟨j, -, hxj⟩ := hpow x hx
+  have hxk : 2 ^ j ∈ keys := (hmem _).mpr (hxj ▸ List.mem_map_of_mem hx)
+  rw [hxj]
+  rw [hks] at hxk
+  rcases List.mem_cons.mp hxk with e | e
+  · rw [e]
+    exact Nat.pow_le_pow_right (by decide) (Nat.min_le_right _ _)
+  · rw [List.all_eq_true] at hrestCap
+    have := decide_eq_true_eq.mp (hrestCap _ (List.mem_map_of_mem e))
+    rwa [nextPowerOfTwo_two_pow] at this
+
 /-- **Restoring the paths at mixed heights.** An accepted multi-opening of matrices of heights
 `2 ^ j ≤ 2 ^ k`, some of height `2 ^ k`, against a cap of height `c = min capHeight k` gives
 every query an accepted single opening of its rows in the subtree under its cap entry: the

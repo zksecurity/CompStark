@@ -12,10 +12,11 @@ public import CompStark.Sound.Inclusion
 
 As for the STARK (`Ni/Assembly.lean`): the game of `Iop.Batch.run` (`gameB`) makes at most
 `Q + verifierQueries` oracle calls, the setup's, the prover's and the verifier's. A fresh answer
-is bad if its digest clashes (`prob_clash_le`: `(2 ^ h + 2) q / |F|^8` for caps of height `h`) or
-it makes its batch round bad (`prob_roundBadB_le`: the largest batch round error at the proximity
-loss), and an accepted proof the extractor cannot open forces such a query (`exists_badAtB`). The
-bound holds at every loss, so at the infimum: `q · roundError + hashError F h q`.
+is bad if its digest clashes (`prob_clash_le`: `(2 ^ (h + 1) + 2) q / |F|^8` for caps of height
+`h`, a duplex call's input binding two windows of `2 ^ h` digests, `boundDigestsB`) or it makes its
+batch round bad (`prob_roundBadB_le`: the largest batch round error at the proximity loss), and an
+accepted proof the extractor cannot open forces such a query (`exists_badAtB`). The bound holds at
+every loss, so at the infimum: `q · roundError + hashError F (h + 1) q`.
 -/
 
 @[expose] public section
@@ -29,7 +30,7 @@ variable {F : Type} [BaseField F] {EF : Type} [Challenge F EF]
 /-! ### The game -/
 
 section Game
-variable (S : Iop.Batch.Setup EF) [S.CapFits] (publicValues : Fin S.k → List F)
+variable (S : Iop.Batch.Setup EF) (publicValues : Fin S.k → List F)
 
 /-- The batch setup, then the prover. -/
 def setupAndProveB (prover : Iop.Batch.NIProver S) :
@@ -176,7 +177,7 @@ end Lengths
 /-! ### The bound -/
 
 section Bound
-variable (S : Iop.Batch.Setup EF) [S.CapFits] (publicValues : Fin S.k → List F) (δ δ' : NNReal)
+variable (S : Iop.Batch.Setup EF) (publicValues : Fin S.k → List F) (δ δ' : NNReal)
 
 /-- The event of knowledge soundness: an accepted proof for the instances' trace lengths, no
 tuple of traces close to the committed ones satisfying the batch. -/
@@ -198,9 +199,9 @@ theorem prob_le_of_unopenedB (hδ' : (δ' : ℝ) < 1 - S.rate) (Q : Nat)
         (gameB S publicValues prover))) :
     Pr{let result ← Iop.Batch.run S publicValues prover}[E result] ≤
       (Q + S.verifierQueries) * Iop.Batch.roundError S δ δ' +
-        hashError F S.params.capHeight (Q + S.verifierQueries) := by
+        hashError F (S.params.capHeight + 1) (Q + S.verifierQueries) := by
   set n := Q + S.verifierQueries
-  set c := 2 ^ S.params.capHeight + 2
+  set c := 2 ^ (S.params.capHeight + 1) + 2
   have hn0 : 0 < n := by
     have h3 : 3 ≤ CompStark.Batch.verifierCallsOf EF S.params (S.instancesAt fun _ ↦ 0) := by
       unfold CompStark.Batch.verifierCallsOf; dsimp only; omega
@@ -223,17 +224,17 @@ theorem prob_le_of_unopenedB (hδ' : (δ' : ℝ) < 1 - S.rate) (Q : Nat)
         (by exact_mod_cast Nat.one_le_iff_ne_zero.mpr hn0.ne')
   have hsmall : c * n < Fintype.card (Digest F) := by omega
   have hloss : ∀ loss, Pr{let result ← Iop.Batch.run S publicValues prover}[E result] ≤
-      n * roundBoundB S δ δ' loss + hashError F S.params.capHeight n := by
+      n * roundBoundB S δ δ' loss + hashError F (S.params.capHeight + 1) n := by
     intro loss
     rw [run_eqB]
     refine (prEvent_exists_fresh_bad_le (gameB S publicValues prover) n
       (isTotalQueryBound_gameB S publicValues prover Q hQ) E
-      (fun pre t u ↦ Clash (boundDigestsB S (initAnswers pre)) pre t u ∨
+      (fun pre t u ↦ Clash (boundDigestsB S) pre t u ∨
         RoundBadB S publicValues δ δ' loss pre t u)
       (((c * n : Nat) : ℝ≥0∞) * (Fintype.card (Digest F) : ℝ≥0∞)⁻¹ + roundBoundB S δ δ' loss)
       (fun pre t hlen _ ↦ (prEvent_or_le _ _ _).trans
-        (add_le_add (prob_clash_le (boundDigestsB S (initAnswers pre)) _ Nat.one_le_two_pow
-          (fun c i ↦ (length_boundDigestsB S _ c i).le) _ n pre hlen t)
+        (add_le_add (prob_clash_le (boundDigestsB S) _ Nat.one_le_two_pow
+          (fun c i ↦ length_boundDigestsOf_le _ _ c i) _ n pre hlen t)
           (prob_roundBadB_le S publicValues δ δ' loss pre t)))
       fun answer hev ↦ ?_).trans ?_
     · replace hev := hE answer hev
@@ -257,9 +258,9 @@ theorem prob_le_of_unopenedB (hδ' : (δ' : ℝ) < 1 - S.rate) (Q : Nat)
       exact ⟨_, _, _, (List.take_append_drop p _).symm.trans
         (by rw [List.drop_eq_getElem_cons hp]), hfresh, hbad⟩
     · rw [mul_add, add_comm, hashError_eq]
-  calc _ ≤ ⨅ loss, (n * roundBoundB S δ δ' loss + hashError F S.params.capHeight n) :=
+  calc _ ≤ ⨅ loss, (n * roundBoundB S δ δ' loss + hashError F (S.params.capHeight + 1) n) :=
         le_iInf hloss
-    _ = n * Iop.Batch.roundError S δ δ' + hashError F S.params.capHeight n := by
+    _ = n * Iop.Batch.roundError S δ δ' + hashError F (S.params.capHeight + 1) n := by
       rw [roundError_eqB, ENNReal.mul_iInf_of_ne (by exact_mod_cast hn0.ne')
         (ENNReal.natCast_ne_top _), ENNReal.iInf_add]
     _ = _ := by simp only [n, Nat.cast_add]
@@ -270,7 +271,7 @@ theorem prob_unopenedB_le (hδ' : (δ' : ℝ) < 1 - S.rate) (Q : Nat)
     (prover : Iop.Batch.NIProver S) (hQ : prover.IsTotalQueryBound Q) :
     Pr{let result ← Iop.Batch.run S publicValues prover}[UnopenedB S publicValues δ' result] ≤
       (Q + S.verifierQueries) * Iop.Batch.roundError S δ δ' +
-        hashError F S.params.capHeight (Q + S.verifierQueries) :=
+        hashError F (S.params.capHeight + 1) (Q + S.verifierQueries) :=
   prob_le_of_unopenedB S publicValues δ δ' hδ' Q prover hQ _ fun _ h ↦ h
 
 /-- An accepting batch verifier checked the multiplicity bound. -/
@@ -304,7 +305,7 @@ theorem prob_unopenedInclusionB_le (hδ' : (δ' : ℝ) < 1 - S.rate) (Q : Nat)
     Pr{let result ← Iop.Batch.run S publicValues prover}[
       UnopenedInclusionB S publicValues δ' result] ≤
       (Q + S.verifierQueries) * Iop.Batch.roundError S δ δ' +
-        hashError F S.params.capHeight (Q + S.verifierQueries) := by
+        hashError F (S.params.capHeight + 1) (Q + S.verifierQueries) := by
   refine prob_le_of_unopenedB S publicValues δ δ' hδ' Q prover hQ _ fun answer h ↦ ?_
   obtain ⟨hok, hdb, hfail⟩ := h
   refine ⟨hok, hdb, fun traces ht hsat ↦ hfail traces ht ?_⟩

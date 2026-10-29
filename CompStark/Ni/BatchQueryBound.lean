@@ -23,7 +23,7 @@ tree (`isTotalQueryBound_setupRo`).
 namespace CompStark.Iop.Batch.Setup
 open CompStark.Stark CompStark.Fri CompStark.RandomOracle CompStark.Ni OracleSpec OracleComp
 
-variable {F : Type} [BaseField F] {EF : Type} [Challenge F EF] (S : Setup EF) [S.CapFits]
+variable {F : Type} [BaseField F] {EF : Type} [Challenge F EF] (S : Setup EF)
 
 /-- A failed `unless` check makes no calls; a passed one costs what the rest costs. -/
 theorem bound_unless {ι : Type} {spec : OracleSpec ι} {α : Type} (b : Bool) (e : String)
@@ -317,7 +317,7 @@ end CompStark.Batch
 namespace CompStark.Iop.Batch.Setup
 open CompStark.Stark CompStark.Fri CompStark.RandomOracle CompStark.Ni OracleSpec OracleComp
 
-variable {F : Type} [BaseField F] {EF : Type} [Challenge F EF] (S : Setup EF) [S.CapFits]
+variable {F : Type} [BaseField F] {EF : Type} [Challenge F EF] (S : Setup EF)
 
 theorem mem_lengthVectors : ∀ (k t : ℕ) (n : Fin k → ℕ), (∀ i, n i ≤ t) → n ∈ lengthVectors k t
   | 0, _, n, _ => by
@@ -328,13 +328,11 @@ theorem mem_lengthVectors : ∀ (k t : ℕ) (n : Fin k → ℕ), (∀ i, n i ≤
     refine ⟨n 0, List.mem_range.mpr (Nat.lt_succ_of_le (h 0)), List.mem_map.mpr
       ⟨Fin.tail n, mem_lengthVectors k t _ fun i ↦ h i.succ, Fin.cons_self_tail n⟩⟩
 
-omit [S.CapFits] in
 theorem hasLookups_instancesAt (n : Fin S.k → ℕ) :
     CompStark.Batch.hasLookups (S.instancesAt n) = S.hasLookups := by
   simp only [CompStark.Batch.hasLookups, instancesAt, hasLookups, instances, List.ofFn_eq_map,
     List.any_map, Function.comp_def]
 
-omit [S.CapFits] in
 theorem inputRoundsOf_instancesAt (n : Fin S.k → ℕ) :
     CompStark.Batch.inputRoundsOf (S.instancesAt n) = CompStark.Batch.inputRoundsOf S.instances :=
         by
@@ -347,7 +345,6 @@ theorem foldr_max_le (B : ℕ) : ∀ l : List ℕ, (∀ x ∈ l, x ≤ B) → l.
   | x :: l, h => max_le (h x List.mem_cons_self)
       (foldr_max_le B l fun y hy ↦ h y (List.mem_cons_of_mem _ hy))
 
-omit [S.CapFits] in
 /-- The verifier's oracle calls on proofs of any lengths, for FRI folding at least once per
 round: at most `twoAdicity - logFinalPolyLen` folds, the tallest domain of
 `2 ^ (twoAdicity + logBlowup)` points and `k` heights. -/
@@ -382,7 +379,6 @@ theorem verifierCalls_le (hm : 0 < S.params.maxLogArity) :
       exact hle i) hm
   rwa [hasLookups_instancesAt, inputRoundsOf_instancesAt] at h
 
-omit [S.CapFits] in
 /-- The setup's and the verifier's oracle calls on proofs of any lengths, for FRI folding at
 least once per round (`verifierCalls_le`). -/
 theorem verifierQueries_le (hm : 0 < S.params.maxLogArity) :

@@ -91,7 +91,7 @@ theorem exists_digest_injNode (answer : (q : Query F) → Answer K q)
         (List.mem_append_left _ (List.mem_singleton_self _))), rfl⟩
 
 /-- **The batch setup against an answer table** is the batch setup on `idealOf`. -/
-theorem evalWithAnswerFn_setupRoB (S : Iop.Batch.Setup EF) [S.CapFits]
+theorem evalWithAnswerFn_setupRoB (S : Iop.Batch.Setup EF)
     (answer : (q : Query F) → Answer S.streamLen q) :
     evalWithAnswerFn (QueryImpl.ofFn answer) S.setupRo =
       CompStark.Batch.commonWith (idealOf answer) S.params S.keyInstances :=
@@ -125,7 +125,7 @@ theorem preprocessedMats_ne_of {g : (q : Query F) → Answer K q} {P : Fri.Param
     simpa only [Bool.not_eq_true] using hne'
 
 /-- The instances' preprocessed traces are those at their keygen heights. -/
-theorem preprocessedMats_keyInstances (S : Iop.Batch.Setup EF) [S.CapFits] (P : Fri.Params) :
+theorem preprocessedMats_keyInstances (S : Iop.Batch.Setup EF) (P : Fri.Params) :
     CompStark.Batch.preprocessedMats P S.keyInstances =
       CompStark.Batch.preprocessedMats P S.instances := by
   unfold CompStark.Batch.preprocessedMats Iop.Batch.Setup.keyInstances Iop.Batch.Setup.instances
@@ -137,7 +137,7 @@ theorem preprocessedMats_keyInstances (S : Iop.Batch.Setup EF) [S.CapFits] (P : 
   · rename_i h
     rw [S.keyed i (Nat.pos_of_ne_zero h)]
 
-theorem preprocessedLogHeight_keyInstances (S : Iop.Batch.Setup EF) [S.CapFits] (P : Fri.Params) :
+theorem preprocessedLogHeight_keyInstances (S : Iop.Batch.Setup EF) (P : Fri.Params) :
     CompStark.Batch.preprocessedLogHeight P S.keyInstances =
       CompStark.Batch.preprocessedLogHeight P S.instances := by
   unfold CompStark.Batch.preprocessedLogHeight Iop.Batch.Setup.keyInstances
@@ -152,14 +152,14 @@ theorem preprocessedLogHeight_keyInstances (S : Iop.Batch.Setup EF) [S.CapFits] 
 /-- **The common data's commitment is that of the instances' preprocessed traces**, which have
 their keygen heights. -/
 theorem preprocessedCapWith_keyInstances {m : Type → Type} [Monad m] (S : Iop.Batch.Setup EF)
-    [S.CapFits] (H : Primitives F m) (P : Fri.Params) :
+    (H : Primitives F m) (P : Fri.Params) :
     CompStark.Batch.preprocessedCapWith H P S.keyInstances =
       CompStark.Batch.preprocessedCapWith H P S.instances := by
   unfold CompStark.Batch.preprocessedCapWith
   rw [preprocessedMats_keyInstances, preprocessedLogHeight_keyInstances]
 
 /-- The batch setup's commitment on an answer table. -/
-theorem preprocessed_commonWith (S : Iop.Batch.Setup EF) [S.CapFits]
+theorem preprocessed_commonWith (S : Iop.Batch.Setup EF)
     (g : (q : Query F) → Answer K q) :
     (CompStark.Batch.commonWith (idealOf g) S.params S.keyInstances).preprocessed =
       CompStark.Batch.preprocessedCapWith (idealOf g) S.params S.instances := by
@@ -167,7 +167,7 @@ theorem preprocessed_commonWith (S : Iop.Batch.Setup EF) [S.CapFits]
   rfl
 
 /-- Every entry of the setup's preprocessed cap is the digest of one of its queries. -/
-theorem exists_prep_mem (S : Iop.Batch.Setup EF) [S.CapFits]
+theorem exists_prep_mem (S : Iop.Batch.Setup EF)
     (answer : (q : Query F) → Answer S.streamLen q) (root : Cap F)
     (h : CompStark.Batch.preprocessedCapWith (idealOf answer) S.params S.instances = some root)
     (e : Nat) (he : e < root.size) :
@@ -223,7 +223,7 @@ theorem filterMap_ite {α β : Type} (p : α → Prop) [DecidablePred p] (h : α
         List.map_cons, filterMap_ite p h L]
 
 section Prep
-variable (S : Iop.Batch.Setup EF) [S.CapFits]
+variable (S : Iop.Batch.Setup EF)
 
 theorem preprocessedMats_eq :
     (CompStark.Batch.preprocessedMats S.params S.instances).map Mat.toMatrix =
@@ -246,7 +246,7 @@ theorem preprocessedLogHeight_eq :
 
 end Prep
 
-theorem prepIndex_lt (S : Iop.Batch.Setup EF) [S.CapFits] (i : Fin S.k)
+theorem prepIndex_lt (S : Iop.Batch.Setup EF) (i : Fin S.k)
     (hp : 0 < (S.air i).preprocessedWidth) : prepIndex S i < (prepInsts S).length := by
   rw [prepIndex_eq, prepInsts]
   have hik : i.val < (List.finRange S.k).length := by rw [List.length_finRange]; exact i.isLt
@@ -261,18 +261,20 @@ theorem prepIndex_lt (S : Iop.Batch.Setup EF) [S.CapFits] (i : Fin S.k)
     List.length_cons]
   omega
 
-theorem le_prepLog (S : Iop.Batch.Setup EF) [S.CapFits] (i : Fin S.k) (hp : 0 < (S.air i).preprocessedWidth) :
+theorem le_prepLog (S : Iop.Batch.Setup EF) (i : Fin S.k) (hp : 0 < (S.air i).preprocessedWidth) :
     S.logN i + S.params.logBlowup ≤ prepLog S :=
   (le_foldl_max _ 0).2 _ (List.mem_map.mpr ⟨i, List.mem_filter.mpr ⟨List.mem_finRange _,
     decide_eq_true hp⟩, rfl⟩)
 
 /-- **The preprocessed traces under a binding cap.** If honest openings against the batch setup's
-preprocessed cap bind the rows of `cache`, the columns read off `cache` under it are the
-preprocessed traces' words. -/
-theorem matColumn_setup (S : Iop.Batch.Setup EF) [S.CapFits] (cache : Merkle.Cache F (Digest F))
+preprocessed cap bind the rows of `cache`, and every preprocessed trace's extension is at least as
+tall as the cap, the columns read off `cache` under it are the preprocessed traces' words. -/
+theorem matColumn_setup (S : Iop.Batch.Setup EF) (cache : Merkle.Cache F (Digest F))
     (g : (q : Query F) → Answer K q) (root : Cap F)
     (hroot : CompStark.Batch.preprocessedCapWith (idealOf g) S.params S.instances = some root)
     (hbind : CapBindingM cache (idealOf g) root S.params.capHeight (prepLog S) (prepHeights S))
+    (hfit : ∀ i, 0 < (S.air i).preprocessedWidth →
+      min S.params.capHeight (prepLog S) ≤ S.logN i + S.params.logBlowup)
     (i : Fin S.k) (hp : 0 < (S.air i).preprocessedWidth) (j : ℕ)
     (hj : j < (S.air i).preprocessedWidth) (r : ℕ) (hr : r < 2 ^ (S.logN i + S.params.logBlowup)) :
     Merkle.matColumnCap cache root.toList S.params.capHeight (prepLog S) (prepHeights S)
@@ -326,10 +328,9 @@ theorem matColumn_setup (S : Iop.Batch.Setup EF) [S.CapFits] (cache : Merkle.Cac
   set paths := [(List.range k).map fun l ↦ Merkle.injNode hash compress ms k l ((I >>> l) ^^^ 1)]
   have hcapH : ∀ mt ∈ ms, 2 ^ min S.params.capHeight k ≤ mt.height := by
     intro mt hmt
-    obtain ⟨i', -, rfl⟩ := List.mem_map.mp hmt
+    obtain ⟨i', hi', rfl⟩ := List.mem_map.mp hmt
     rw [hheight i']
-    exact Nat.pow_le_pow_right (by decide) ((Nat.min_le_left _ _).trans
-      ((S.capFits i').trans (Nat.sub_le _ _)))
+    exact Nat.pow_le_pow_right (by decide) (hfit i' (by simpa using (List.mem_filter.mp hi').2))
   have hv := Merkle.verifyMulti_prune_mixed hash compress ms k S.params.capHeight hpow htop hcapH
     [I]
     (fun i' hi' ↦ by rw [List.mem_singleton.mp hi']; exact hIk) paths (fun q hq l hl ↦ by
@@ -381,7 +382,7 @@ theorem matColumn_setup (S : Iop.Batch.Setup EF) [S.CapFits] (cache : Merkle.Cac
     exact hj
   have := matColumnCap_eq cache (idealOf g) root S.params.capHeight k (prepHeights S)
     (prepWidths S) hbind I values path hpath hw (prepIndex S i) m (hlenP ▸ hrank) htm
-    ((Nat.min_le_left _ _).trans ((S.capFits i).trans (Nat.sub_le _ _))) hmk j hjw
+    (hfit i hp) hmk j hjw
   rw [hIr] at this
   rw [this, hval _ hrank]
   simp only [hti]

@@ -536,21 +536,25 @@ abbrev verifyCapMixedH (cap : Cap F) (capHeight : Nat) (heights : List Nat) (k i
     (heights.map (· / 2 ^ min capHeight k)) (index % 2 ^ (k - min capHeight k)) values path
 
 /-- One batch of a query's input rows passes its checks at `index` into the largest domain, of
-log size `logMax`: its matrices are some, with an accepted opening of their rows at the index
-shifted to the batch's tallest height against the batch's cap, one row per matrix, and every
-opened point has a value per column. -/
+log size `logMax`: its matrices are some, its cap clamped to its tallest matrix and every matrix
+at least as tall as the cap, with an accepted opening of their rows at the index shifted to the
+batch's tallest height against the batch's cap, one row per matrix, and every opened point has a
+value per column. -/
 def BatchOkR (P : Params) (logMax index : Nat) (x : List (Array F) × Round F EF) : Prop :=
   x.2.2 ≠ [] ∧ x.2.1.size = 2 ^ min P.capHeight (logBatch P x.2.2) ∧
+    (∀ dp ∈ x.2.2, min P.capHeight (logBatch P x.2.2) ≤ dp.1.logSize + P.logBlowup) ∧
     (∃ path, verifyCapMixedH H x.2.1 P.capHeight (roundHeights P x.2.2) (logBatch P x.2.2)
       (index >>> (logMax - logBatch P x.2.2)) (x.1.map (·.toList)) path = true) ∧
     x.1.length = x.2.2.length ∧
     ∀ y ∈ x.1.zip x.2.2, ∀ zy ∈ y.2.2, zy.2.length = y.1.size
 
-/-- An accepted input multi-opening of batch `x` at `indices`: its matrices are some, every query
-opens a row per matrix, and every query's rows have an accepted single opening. -/
+/-- An accepted input multi-opening of batch `x` at `indices`: its matrices are some, its cap
+clamped to its tallest matrix and every matrix at least as tall as the cap, every query opens a
+row per matrix, and every query's rows have an accepted single opening. -/
 def InputOkR (P : Params) (logMax : Nat) (indices : List Nat) (x : MultiOpening F × Round F EF) :
     Prop :=
   x.2.2 ≠ [] ∧ x.2.1.size = 2 ^ min P.capHeight (logBatch P x.2.2) ∧
+    (∀ dp ∈ x.2.2, min P.capHeight (logBatch P x.2.2) ≤ dp.1.logSize + P.logBlowup) ∧
     x.1.values.size = indices.length ∧ (∀ v ∈ x.1.values, v.size = x.2.2.length) ∧
     ∀ j (hj : j < indices.length), ∃ path, verifyCapMixedH H x.2.1 P.capHeight
       (roundHeights P x.2.2) (logBatch P x.2.2) (indices[j] >>> (logMax - logBatch P x.2.2))
@@ -602,7 +606,11 @@ theorem inputBody_okR (P : Params) (logMax : Nat) (indices : List Nat)
   have hcap := Merkle.length_cap_of_verifyMulti_mixed H.hash H.compress x.2.1.toList P.capHeight k
     _ hpowD htopD _ _ _ hv
   rw [Array.length_toList] at hcap
-  refine ⟨⟨hne, hcap, beq_iff_eq.mp hq, fun v hv' ↦ ?_, fun j hj ↦ ?_⟩, pure_eq_ok H h⟩
+  have hfit := Merkle.cap_le_of_verifyMulti_mixed H.hash H.compress x.2.1.toList P.capHeight k
+    _ hpowD htopD _ _ _ hv
+  refine ⟨⟨hne, hcap, fun dp hdp ↦ ?_, beq_iff_eq.mp hq, fun v hv' ↦ ?_, fun j hj ↦ ?_⟩,
+    pure_eq_ok H h⟩
+  · exact (Nat.pow_le_pow_iff_right (by decide)).mp (hfit _ (List.mem_map_of_mem hdp))
   · rw [Array.all_eq_true_iff_forall_mem] at hrows
     exact beq_iff_eq.mp (hrows v hv')
   · obtain ⟨path, hp⟩ := Merkle.verifyBatch_of_verifyMulti_mixed H.hash H.compress x.2.1.toList
@@ -713,13 +721,15 @@ def QueryOkR (P : Params) (logMax : Nat) (alpha : EF) (rounds : List (Round F EF
     finalPoly.foldr (fun c acc ↦
       acc * Ext.ofBase (powF (twoAdicGen logMax) (reverseBits fin.2.2.1 logMax)) + c) 0 = fin.2.1
 
-/-- A query that passes its checks opens every round's cap and every fold's at its size. -/
+/-- A query that passes its checks opens every round's cap and every fold's at its size, every
+round's matrices at least as tall as its cap. -/
 theorem size_caps_of_queryOkR (P : Params) (logMax : Nat) (alpha : EF)
     (rounds : List (Round F EF)) (betas : List EF) (commits : List (Cap F)) (arities : List Nat)
     (folds : List (CommitOpening F EF)) (inputs : List (MultiOpening F)) (finalPoly : Array EF)
     (q index : Nat) (hb : betas.length = arities.length) (hf : folds.length = arities.length)
     (h : QueryOkR H P logMax alpha rounds betas commits arities folds inputs finalPoly q index) :
-    (∀ x ∈ rounds, x.2 ≠ [] ∧ x.1.size = 2 ^ min P.capHeight (logBatch P x.2)) ∧
+    (∀ x ∈ rounds, x.2 ≠ [] ∧ x.1.size = 2 ^ min P.capHeight (logBatch P x.2) ∧
+      ∀ dp ∈ x.2, min P.capHeight (logBatch P x.2) ≤ dp.1.logSize + P.logBlowup) ∧
       ∀ i < arities.length, (commits.getD i #[]).size =
         2 ^ min P.capHeight (logMax - (arities.take (i + 1)).sum) := by
   obtain ⟨hrl, hbatch, hsteps, -⟩ := h
@@ -729,7 +739,7 @@ theorem size_caps_of_queryOkR (P : Params) (logMax : Nat) (alpha : EF)
       rw [List.length_zip, hrl, Nat.min_self]; exact hk
     have := hbatch _ (List.getElem_mem hk')
     rw [List.getElem_zip] at this
-    exact ⟨this.1, this.2.1⟩
+    exact ⟨this.1, this.2.1, this.2.2.1⟩
   · set l := betas.zip (querySteps q arities folds) with hl
     have hll : l.length = arities.length := by
       rw [hl, List.length_zip, hb, length_querySteps _ _ _ hf, Nat.min_self]
@@ -872,7 +882,7 @@ theorem verifyFri_okR (P : Params) (proof : FriProof F EF) (rounds : List (Round
     intro q hq y hy
     rw [List.zip_map_left] at hy
     obtain ⟨⟨b, rd⟩, hbr, rfl⟩ := List.mem_map.mp hy
-    obtain ⟨-, -, hsz, hall, -⟩ := hinok _ hbr
+    obtain ⟨-, -, -, hsz, hall, -⟩ := hinok _ hbr
     simp only [Prod.map, id, Array.length_toList]
     rw [Array.getD_eq_getD_getElem?, Array.getElem?_eq_getElem (by rw [hsz, hidxlen]; exact hq),
       Option.getD_some]
@@ -930,10 +940,10 @@ theorem verifyFri_okR (P : Params) (proof : FriProof F EF) (rounds : List (Round
     have hx' := hx
     rw [List.zip_map_left] at hx'
     obtain ⟨⟨b, rd⟩, hbr, rfl⟩ := List.mem_map.mp hx'
-    obtain ⟨hne', hcsz, hsz, hall, hpath⟩ := hinok _ hbr
+    obtain ⟨hne', hcsz, hfit, hsz, hall, hpath⟩ := hinok _ hbr
     have hlen := hrowsq j hj _ hx
     obtain ⟨path, hp⟩ := hpath j (by rw [hidxlen]; exact hj)
-    refine ⟨hne', hcsz, ⟨path, ?_⟩, hlen, hwid _ hx⟩
+    refine ⟨hne', hcsz, hfit, ⟨path, ?_⟩, hlen, hwid _ hx⟩
     rw [← hidxj]
     simpa only [Prod.map, id, List.map_map, Function.comp_def] using hp
   · -- the folds

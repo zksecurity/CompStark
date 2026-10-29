@@ -11,12 +11,12 @@ public import CompStark.Ni.Rounds
 
 As for the STARK (`Ni/Rounds.lean`): a fresh duplex call is bad (`RoundBadB`) when the queries
 before it parse it as round `i` of a batch transcript and its answer makes round `i` bad
-(`roundBadAtB`, the events of `Sound/BatchRbr.lean`) for the transcript read off the parsed
-prefix and the cache of the earlier hash queries (`prefixTranscriptB`): every instance's trace
-and quotient words are extracted under the digests rounds `0` and `1` observe, FRI's words under
-those of the fold rounds; the openings are decoded from the batching round's observations
-(`openingsAtB`), the final polynomial from the query round's; and the challenges are read off the
-answers.
+(`roundBadAtB`, the events of `Sound/BatchRbr.lean`) for the transcript read off the parsed prefix
+and the cache of the earlier hash queries (`prefixTranscriptB`): every instance's trace and quotient
+words are extracted under the digests rounds `0` and `1` observe, FRI's words under those of the
+fold rounds, every cap read at its size clamped to its tree; the openings are decoded from the
+batching round's observations (`openingsAtB`), the final polynomial from the query round's; and the
+challenges are read off the answers.
 
 The decoder inverts the verifier's observations: on opened values of the instances' shapes, the
 PCS observes the static counts `countsB` and the values in a static layout
@@ -180,7 +180,7 @@ theorem length_permVals (lookups : List (Lookup F)) (cur next : Array EF) (n : �
 end Values
 
 section Layout
-variable [BaseField F] [Challenge F EF] (S : Iop.Batch.Setup EF) [S.CapFits]
+variable [BaseField F] [Challenge F EF] (S : Iop.Batch.Setup EF)
 
 /-- Instance `i`'s number of opened trace values: its width, twice if it reads the next row. -/
 def mainLenB (i : Fin S.k) : ℕ := (S.air i).width + (S.air i).mainNextWidth
@@ -554,7 +554,7 @@ end Layout
 /-! ### The static counts and domain separators -/
 
 section Static
-variable [BaseField F] [Challenge F EF] (S : Iop.Batch.Setup EF) [S.CapFits]
+variable [BaseField F] [Challenge F EF] (S : Iop.Batch.Setup EF)
 
 theorem hasPreprocessed_eq :
     S.hasPreprocessed = S.instances.any (0 < ·.air.preprocessedWidth) := by
@@ -592,8 +592,24 @@ def batchSeedS : List F :=
     S.params.oodPowBits
 
 /-- Where the main commitment sits in the first round's input: after the batch's domain separator
-and every instance's degree bits. -/
+and every instance's degree bits. It depends on the AIRs and the instances' lookups, not on the
+trace lengths. -/
 def mainOffsetB : Nat := (batchSeedS S).length + Challenge.d EF * S.k
+
+/-- The main offset depends on the AIRs and the instances' lookups only. -/
+theorem mainOffsetB_eq : mainOffsetB S = (DomainSeparator.batchSeed F EF
+    (List.ofFn fun i ↦ (S.air i).width) (List.ofFn fun i ↦ (S.air i).preprocessedWidth)
+    (List.ofFn fun i ↦ (S.air i).numPublicValues) S.hasPreprocessed
+    ((List.ofFn S.lookups).countP (!·.isEmpty)) S.params.lookupPowBits
+    S.params.oodPowBits).length + Challenge.d EF * S.k := by
+  have hmap : ∀ f : Air F → ℕ, S.instances.map (f ·.air) = List.ofFn fun i ↦ f (S.air i) :=
+    fun f ↦ by rw [Iop.Batch.Setup.instances, List.map_ofFn]; rfl
+  have hcount : S.instances.countP (!·.lookups.isEmpty) =
+      (List.ofFn S.lookups).countP (!·.isEmpty) := by
+    rw [Iop.Batch.Setup.instances, List.ofFn_eq_map, List.ofFn_eq_map, List.countP_map,
+      List.countP_map]
+    rfl
+  rw [mainOffsetB, batchSeedS, hmap, hmap, hmap, hcount]
 
 /-- **The PCS's counts are static.** On opened values in the instances' shapes, the PCS observes
 the counts `countsB`. -/
@@ -675,31 +691,16 @@ end Static
 /-! ### The transcript of a prefix -/
 
 section Prefix
-variable [BaseField F] [Challenge F EF] (S : Iop.Batch.Setup EF) [S.CapFits]
+variable [BaseField F] [Challenge F EF] (S : Iop.Batch.Setup EF)
 
-/-- The digests a duplex call's input binds, the `2 ^ capHeight` digests of a cap that is at most
-as wide: the main commitment after the batch's domain separator and the degree bits in the first
-round (initial capacity); the first digests in the second round, whose capacity is an answer to a
-call on the initial capacity (in `firsts`), as the permutation commitment opens it with lookups;
-FRI's first commitment after its domain separator in an input of FRI's first fold round's length
-(the cap fitting FRI's first tree, `Setup.capFits`) otherwise; and the first digests, as the
-quotient commitment and FRI's later ones open their rounds, otherwise. The second round has to be
-told apart by its capacity: the permutation commitment and the terminals may have FRI's first
-fold round's length. -/
-noncomputable def boundDigestsB (firsts : List (Digest F)) (cap : Digest F) (input : List F) :
-    List (Digest F) :=
-  (capFrom input (if cap = initCap then mainOffsetB S else if cap ∈ firsts then 0
-    else if input.length = (friSeedB S).length + 8 * 2 ^ S.params.capHeight +
-        challengeOffset S.params.commitPowBits
-      then (friSeedB S).length else 0) (2 ^ S.params.capHeight)).toList
-
-theorem length_boundDigestsB (firsts : List (Digest F)) (cap : Digest F) (input : List F) :
-    (boundDigestsB S firsts cap input).length = 2 ^ S.params.capHeight := by
-  simp only [boundDigestsB, Array.length_toList, capFrom, Array.size_ofFn]
-
-theorem boundDigestsB_congr (r r' : List (Digest F)) (cap : Digest F) (input : List F)
-    (h : cap ∈ r ↔ cap ∈ r') : boundDigestsB S r cap input = boundDigestsB S r' cap input := by
-  simp only [boundDigestsB, h]
+/-- The digests a duplex call's input binds, as for the STARK (`boundDigestsOf`): the
+`2 ^ capHeight` digests of a cap that is at most as wide, after the batch's domain separator and
+the degree bits in the first round (initial capacity); otherwise those at the start of the input,
+as the permutation, quotient and FRI's later commitments open their rounds, and those ending
+before the commit-phase grinding witness, as FRI's first commitment ends its round after FRI's
+domain separator. They depend on FRI's parameters and the main offset only. -/
+def boundDigestsB (cap : Digest F) (input : List F) : List (Digest F) :=
+  boundDigestsOf S.params (mainOffsetB S) cap input
 
 /-- The levels below fold `j`'s commitment: the tallest extended trace's, less the arities of the
 folds up to `j`. -/
@@ -729,24 +730,25 @@ challenges of the answers. -/
 noncomputable def prefixTranscriptB (cache : Merkle.Cache F (Digest F)) (block : ℕ → List F)
     (sample : ℕ → Vector F S.streamLen) : Sound.Batch.Transcript S where
   trace i c x := Merkle.matColumnCap cache
-    (capFrom (block 0) (mainOffsetB S) (2 ^ S.params.capHeight)).toList S.params.capHeight
-    S.logTop S.mainHeights S.mainWidths i c (S.logN i + S.params.logBlowup)
+    (capFrom (block 0) (mainOffsetB S) (2 ^ min S.params.capHeight S.logTop)).toList
+    S.params.capHeight S.logTop S.mainHeights S.mainWidths i c (S.logN i + S.params.logBlowup)
     (reverseBits x (S.logN i + S.params.logBlowup))
   lookupAlpha := if S.hasLookups then
     extAt (sample 0) (challengeOffset S.params.lookupPowBits) else 0
   lookupBeta := if S.hasLookups then
     extAt (sample 0) (challengeOffset S.params.lookupPowBits + Challenge.d EF) else 0
   perm i c e x := Merkle.matColumnCap cache
-    (capFrom (block (lookupRounds S)) 0 (2 ^ S.params.capHeight)).toList S.params.capHeight
-    (permLog S) (permHeights S) (permWidths S) (permIndex S i) (c.val * Challenge.d EF + e.val)
+    (capFrom (block (lookupRounds S)) 0 (2 ^ min S.params.capHeight (permLog S))).toList
+    S.params.capHeight (permLog S) (permHeights S) (permWidths S) (permIndex S i)
+    (c.val * Challenge.d EF + e.val)
     (S.logN i + S.params.logBlowup) (reverseBits x (S.logN i + S.params.logBlowup))
   terminal i := if (S.lookups i).isEmpty then 0 else
     Challenge.toSpec (extFrom (EF := EF) ((block (lookupRounds S)).drop
-      (8 * 2 ^ S.params.capHeight)) (terminalIndex S i))
+      (8 * 2 ^ min S.params.capHeight (permLog S))) (terminalIndex S i))
   alpha := extAt (sample (lookupRounds S)) 0
   quotient i c e x := Merkle.matColumnCap cache
-    (capFrom (block (lookupRounds S + 1)) 0 (2 ^ S.params.capHeight)).toList S.params.capHeight
-    S.logTop (quotHeights S) (quotWidths S) (quotOffset S i + c) e
+    (capFrom (block (lookupRounds S + 1)) 0 (2 ^ min S.params.capHeight S.logTop)).toList
+    S.params.capHeight S.logTop (quotHeights S) (quotWidths S) (quotOffset S i + c) e
     (S.logN i + S.params.logBlowup) (reverseBits x (S.logN i + S.params.logBlowup))
   zeta := extAt (sample (lookupRounds S + 1)) (challengeOffset S.params.oodPowBits)
   openings := openingsAtB S ((block (lookupRounds S + 2)).drop (pcsSeedB S).length)

@@ -46,11 +46,11 @@ local notation "𝕂" => Challenge.Spec EF
 section Lookups
 
 /-- An instance's lookups are the verifier's. -/
-theorem lookups_eq (S : Iop.Batch.Setup EF) [S.CapFits] (i : Fin S.k) :
+theorem lookups_eq (S : Iop.Batch.Setup EF) (i : Fin S.k) :
     S.lookups i = (⟨S.air i, S.logN i, S.lookups i⟩ : CompStark.Batch.Instance F).lookups := rfl
 
 /-- An instance's LogUp constraints are the verifier's. -/
-theorem extConstraints_eq (S : Iop.Batch.Setup EF) [S.CapFits] (i : Fin S.k) :
+theorem extConstraints_eq (S : Iop.Batch.Setup EF) (i : Fin S.k) :
     (S.instanceSetup i).extConstraints =
       (⟨S.air i, S.logN i, S.lookups i⟩ : CompStark.Batch.Instance F).lookupConstraints := rfl
 
@@ -79,7 +79,7 @@ theorem logN_add_logChunks_le {lookups : List (Lookup F)} (T : Iop.Setup EF look
   | cons l ls => exact hv.1
 
 /-- An instance's quotient chunks are the verifier's. -/
-theorem logChunks_eq (S : Iop.Batch.Setup EF) [S.CapFits] (i : Fin S.k) :
+theorem logChunks_eq (S : Iop.Batch.Setup EF) (i : Fin S.k) :
     (S.instanceSetup i).logChunks =
       (⟨S.air i, S.logN i, S.lookups i⟩ : CompStark.Batch.Instance F).logQuotientChunks :=
   logChunks_eq_with (S.instanceSetup i)
@@ -460,7 +460,7 @@ theorem length_instances : S.instances.length = S.k := by
 end Group
 
 section Parts
-variable (S : Iop.Batch.Setup EF) [S.CapFits] (p : Iop.Batch.Prover S) (lα lβ α ζ : Challenge.Spec EF)
+variable (S : Iop.Batch.Setup EF) (p : Iop.Batch.Prover S) (lα lβ α ζ : Challenge.Spec EF)
   (proof : CompStark.Batch.BatchProof F EF) (zeta : EF) (logMax I m : ℕ)
 
 /-- Instance `i`'s point at the query of index `I` into the tallest domain: the index shifted to

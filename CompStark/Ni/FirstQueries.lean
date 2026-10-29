@@ -23,11 +23,6 @@ by one table `answer`:
   a digest some key binds does not change after that key is first queried
   (`noPrediction_take`).
 
-A bound digest may depend on the queries before: the batch STARK tells its second round apart by
-its capacity, an answer to a call on the initial capacity (`initAnswers`). Without fresh clashes
-for the bound digests of the queries before (`noClash_initAnswers`), the log has no clashes for
-those of the whole log, since a capacity that some key holds is answered before it.
-
 Positions are first occurrences: `idx log t` is the index of the first query of `t` in `log`.
 -/
 
@@ -288,92 +283,5 @@ theorem noPrediction_take (root : Digest F) (t₀ : Query F) (ht₀ : t₀ ∈ l
     node_new := fun left right y h hk ↦ hnew (.node left right) y h hk }
 
 end Log
-
-/-! ### Bound digests depending on the queries before -/
-
-/-- A duplex call on the initial capacity. -/
-def isInitDuplex : Query F → Bool
-  | .duplex cap _ => decide (cap = initCap)
-  | .leaf _ => false
-  | .node .. => false
-
-/-- The capacities answered to duplex calls on the initial capacity in `log`. -/
-def initAnswers (log : QueryLog (spec F K)) : List (Digest F) :=
-  (log.filter fun e ↦ isInitDuplex e.1).map fun e ↦ digestOf e.1 e.2
-
-section Before
-variable {answer : (q : Query F) → Answer K q} {log : QueryLog (spec F K)}
-
-/-- **Bound digests depending on the queries before.** If the digest a duplex input binds depends
-on the answers to calls on the initial capacity only through whether they hold the call's
-capacity, and no fresh query clashes for the bound digests of the queries before it, then the log
-has no clashes for the bound digests of the whole log. -/
-theorem noClash_initAnswers (G : List (Digest F) → Digest F → List F → List (Digest F))
-    (hG : ∀ r r' cap input, (cap ∈ r ↔ cap ∈ r') → G r cap input = G r' cap input)
-    (hcons : Consistent answer log)
-    (h : ∀ p (hp : p < log.length), log[p].1 ∉ (log.take p).map Sigma.fst →
-      ¬ Clash (G (initAnswers (log.take p))) (log.take p) log[p].1 log[p].2) :
-    NoClash (G (initAnswers log)) log := by
-  intro p hp hfresh hc
-  -- a capacity in a key up to position `p`, if answered on the initial capacity at all, is so
-  -- before `p`
-  have hcap : ∀ q (hq : q < log.length), q ≤ p → ∀ c input, log[q].1 = .duplex c input →
-      (c ∈ initAnswers log ↔ c ∈ initAnswers (log.take p)) := by
-    intro q hq hqp c input hx
-    refine ⟨fun hmem ↦ ?_, fun hmem ↦ ?_⟩
-    · obtain ⟨e, he, hec⟩ := List.mem_map.mp hmem
-      have he' := List.mem_filter.mp he
-      have ht : e.1 ∈ log.map Sigma.fst := List.mem_map_of_mem he'.1
-      set p'' := idx log e.1
-      have hp'' := idx_lt ht
-      have hfst := getElem_idx_fst ht
-      have hd : digestOf log[p''].1 (answer log[p''].1) = c := by
-        rw [← hec, hcons _ he'.1]
-        exact congrArg (fun t ↦ digestOf t (answer t)) hfst
-      by_cases hlt : p'' < p
-      · refine List.mem_map.mpr
-          ⟨log[p''], List.mem_filter.mpr ⟨getElem_mem_take p p'' hlt hp'', ?_⟩, ?_⟩
-        · rw [hfst]; exact he'.2
-        · rw [getElem_snd hcons _ hp'', hd]
-      · exfalso
-        refine h p'' hp'' (by rw [hfst]; exact not_mem_take_idx ht) ?_
-        unfold Clash DigestClash
-        rw [getElem_snd hcons _ hp'', hd]
-        rcases Nat.lt_or_eq_of_le (show q ≤ p'' by omega) with hq' | hq'
-        · refine mem_known_of_mem (bd := G (initAnswers (log.take p''))) _ _
-            (getElem_mem_take p'' q hq' hq) _ _ (List.mem_cons_of_mem _ ?_)
-          rw [hx]
-          exact List.mem_cons_self
-        · have hxe : log[q].1 = e.1 := by rw [← hfst]; simp only [hq']; rfl
-          rw [hx] at hxe
-          have hinit := he'.2
-          rw [← hxe] at hinit
-          simp only [isInitDuplex, decide_eq_true_eq] at hinit
-          subst hinit
-          unfold knownDigests
-          exact List.mem_append_left _ (List.mem_append_left _ List.mem_cons_self)
-    · obtain ⟨e, he, hec⟩ := List.mem_map.mp hmem
-      have he' := List.mem_filter.mp he
-      exact List.mem_map.mpr ⟨e, List.mem_filter.mpr ⟨List.mem_of_mem_take he'.1, he'.2⟩, hec⟩
-  -- so the keys up to `p` bind the same digests
-  have hkey : ∀ q (hq : q < log.length), q ≤ p →
-      keyDigests (G (initAnswers log)) log[q].1 =
-        keyDigests (G (initAnswers (log.take p))) log[q].1 := by
-    intro q hq hqp
-    cases hx : log[q].1 with
-    | duplex c input =>
-      simp only [keyDigests, hG _ _ c input (hcap q hq hqp c input hx)]
-    | leaf row => rfl
-    | node left right => rfl
-  refine h p hp hfresh ?_
-  unfold Clash DigestClash knownDigests at hc ⊢
-  rw [← hkey p hp le_rfl]
-  convert hc using 3
-  refine List.flatMap_congr fun e he ↦ ?_
-  obtain ⟨q, hq, rfl⟩ := List.getElem_of_mem he
-  rw [List.length_take] at hq
-  rw [List.getElem_take, hkey q (by omega) (by omega)]
-
-end Before
 
 end CompStark.Ni

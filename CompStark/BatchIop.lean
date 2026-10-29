@@ -103,15 +103,6 @@ structure Setup (EF : Type) [Challenge F EF] (withLookups : Bool := true) where
 namespace Setup
 variable {withLookups : Bool} (S : Setup EF withLookups)
 
-/-- The Merkle cap fits below the commit-phase tree FRI's first fold would make of every
-instance. The random-oracle analysis of the batch assumes it. -/
-class CapFits : Prop where
-  capFits : ∀ i, S.params.capHeight ≤ S.logN i + S.params.logBlowup - S.params.maxLogArity
-
-theorem capFits [h : S.CapFits] (i : Fin S.k) :
-    S.params.capHeight ≤ S.logN i + S.params.logBlowup - S.params.maxLogArity :=
-  h.capFits i
-
 /-- Instance `i`'s lookups (`instanceLookups`). -/
 abbrev lookups (i : Fin S.k) : List (Stark.Lookup F) :=
   instanceLookups withLookups (S.air i) (S.keyLogN i)
