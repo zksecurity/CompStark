@@ -348,18 +348,6 @@ theorem prob_unopenedB_le (hδ' : ∀ n, C.Admits n → (δ' n : ℝ) < 1 - C.ra
         hashError F (C.params.capHeight + 1) (Q + C.verifierQueries EF) :=
   prob_le_of_unopenedB C publicValues δ δ' hδ' Q prover hQ _ fun _ h ↦ h
 
-/-- An accepting batch verifier checked the multiplicity bound. -/
-theorem heightBounded_of_ok (S : Iop.Batch.Setup EF) (publicValues : Fin S.k → List F)
-    (answer : (q : Query F) → Answer S.streamLen q)
-    (common : CompStark.Batch.Common F) (proof : CompStark.Batch.BatchProof F EF)
-    (hok : CompStark.Batch.verifyInstancesWith (idealOf answer) S.params S.instances common proof
-      (List.ofFn publicValues) = .ok ()) : S.HeightBounded := by
-  obtain ⟨-, -, -, -, -, -, -, -, -, hlk, -⟩ :=
-    verifyInstancesWith_ok (idealOf answer) S.params S.instances common proof _ hok
-  simp only [CompStark.Batch.lookupShapeOk, Bool.and_eq_true] at hlk
-  have h := hlk.1.1.1.1.2
-  rwa [Iop.Batch.Setup.instances, List.map_ofFn] at h
-
 /-- The event of knowledge soundness with lookup inclusion: an accepted proof, no tuple of traces
 of its lengths close to the committed ones satisfying the batch at those lengths with lookup
 inclusion. -/
@@ -373,7 +361,7 @@ def UnopenedInclusionB
         ¬ (C.setupAt EF _ h).SatisfiedWithInclusion traces publicValues
 
 /-- **Knowledge soundness of the batch STARK in the random-oracle model, with lookup inclusion**,
-with the event spelled out: an accepting verifier checked the multiplicity bound, so with AIRs
+with the event spelled out: admitted lengths pass the multiplicity bound, so with AIRs
 bounding their queries' multiplicities at every admitted vector of lengths, traces satisfying the
 batch satisfy it with lookup inclusion. -/
 theorem prob_unopenedInclusionB_le (hδ' : ∀ n, C.Admits n → (δ' n : ℝ) < 1 - C.rate) (Q : Nat)
@@ -387,11 +375,8 @@ theorem prob_unopenedInclusionB_le (hδ' : ∀ n, C.Admits n → (δ' n : ℝ) <
   rw [evalWithAnswerFn_gameB] at h ⊢
   obtain ⟨hok, hfail⟩ := h
   refine ⟨hok, fun hn traces ht hsat ↦ hfail hn traces ht ?_⟩
-  dsimp only at hok
-  obtain ⟨-, hl⟩ := C.commonWith_keyInstances (idealOf answer)
-  rw [verifyBatchWith_eq_setupAt C _ _ hl _ _ (keyOk_of_ok _ _ _ _ _ _ hok) hn] at hok
   exact Sound.Batch.satisfiedWithInclusion_of_satisfied _ traces publicValues
-    (heightBounded_of_ok _ publicValues answer _ _ hok) (hcounts _ hn) hsat
+    (C.heightBounded_setupAt _ hn) (hcounts _ hn) hsat
 
 end Bound
 

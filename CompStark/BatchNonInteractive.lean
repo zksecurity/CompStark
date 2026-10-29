@@ -48,8 +48,8 @@ and safe rounds then give satisfying traces (`Sound/BatchRbr.lean`). `Ni/BatchAs
 the bounds.
 
 With lookup inclusion (`batchKnowledgeSoundness_ro_inclusion`), as for the interactive batch
-(`CompStark/BatchSoundness.lean`): an accepting verifier checked the multiplicity bound
-`∑ᵢ wᵢ 2 ^ logNᵢ < p`, so for AIRs that keep their queries' multiplicities within their weights
+(`CompStark/BatchSoundness.lean`): the verifier admits only lengths that pass the multiplicity
+bound `∑ᵢ wᵢ 2 ^ logNᵢ < p`, so for AIRs that keep their queries' multiplicities within their weights
 (`Air.CountsBounded`) at every admitted vector, traces satisfying the batch have every bus's
 queries included in what is provided (`Sound.Batch.included_of_balanced`), and the same bound
 holds for the event that no tuple of close traces satisfies the batch with lookup inclusion

@@ -522,19 +522,16 @@ theorem admits_spec {i : Fin C.k} {m : ℕ} (h : C.admits i m = true) :
   · omega
   · exact h
 
-theorem admits_iff (n : Fin C.k → ℕ) : (∀ i, C.admits i (n i) = true) ↔ C.Admits n := by
-  constructor
-  · intro h
-    exact ⟨fun i ↦ (C.admits_spec (h i)).1, fun i ↦ (C.admits_spec (h i)).2.1,
-      fun i ↦ (C.admits_spec (h i)).2.2⟩
-  · intro h i
-    have hs := h.sound i
-    simp only [admits, Bool.and_eq_true, decide_eq_true_eq, Bool.or_eq_true, beq_iff_eq]
-    refine ⟨⟨⟨⟨⟨⟨⟨⟨hs.periodicFits, hs.twoAdic⟩, hs.quotientFits⟩, h.quotient i⟩, hs.folds⟩,
-      hs.finalPolyFits⟩, hs.queries⟩, hs.blowup⟩, ?_⟩
-    by_cases hw : (C.air i).preprocessedWidth = 0
-    · exact Or.inl hw
-    · exact Or.inr (h.keyed i (Nat.pos_of_ne_zero hw))
+/-- An admitted vector's lengths each pass the verifier's checks on their instance. -/
+theorem _root_.CompStark.Iop.Batch.Statement.Admits.admits {C : Batch.Statement F}
+    {n : Fin C.k → ℕ} (h : C.Admits n) (i : Fin C.k) : C.admits i (n i) = true := by
+  have hs := h.sound i
+  simp only [Batch.Statement.admits, Bool.and_eq_true, decide_eq_true_eq, Bool.or_eq_true, beq_iff_eq]
+  refine ⟨⟨⟨⟨⟨⟨⟨⟨hs.periodicFits, hs.twoAdic⟩, hs.quotientFits⟩, h.quotient i⟩, hs.folds⟩,
+    hs.finalPolyFits⟩, hs.queries⟩, hs.blowup⟩, ?_⟩
+  by_cases hw : (C.air i).preprocessedWidth = 0
+  · exact Or.inl hw
+  · exact Or.inr (h.keyed i (Nat.pos_of_ne_zero hw))
 
 /-- Instance `i`'s longest admitted length, `0` if it has none. -/
 def maxLength (i : Fin C.k) : ℕ :=

@@ -61,20 +61,19 @@ end WideBus
 variable {F : Type} [BaseField F] {EF : Type} [Challenge F EF]
 
 /-- **Knowledge soundness of a range check.** For a batch statement of range tables and range
-queries, and a prover whose claimed lengths pass the verifier's multiplicity bound: if no tuple of
-traces of those lengths, each close to its instance's committed trace, satisfies every AIR with
-every real query in range, the verifier accepts with probability at most the statement's knowledge
-error. -/
+queries: if no tuple of traces of the prover's claimed lengths, each close to its instance's
+committed trace, satisfies every AIR with every real query in range, the verifier accepts with
+probability at most the statement's knowledge error. -/
 theorem rangeKnowledgeSoundness (C : Batch.Statement F) (hC : C.IsRangeBatch)
     (publicValues : Fin C.k → List F) (prover : C.Prover EF) (δ δ' : (Fin C.k → ℕ) → NNReal)
-    (hδ' : ∀ n, C.Admits n → (δ' n : ℝ) < 1 - C.rate) (hbound : prover.setup.HeightBounded) :
+    (hδ' : ∀ n, C.Admits n → (δ' n : ℝ) < 1 - C.rate) :
     (∀ traces ∈ Batch.closeTraces prover.setup (δ' prover.logN) prover.prover.trace,
       ¬ ((∀ i, (C.air i).Satisfied (prover.logN i) (traces i) (publicValues i)) ∧
         prover.setup.RangeChecked traces)) →
       Batch.acceptance publicValues prover.prover ≤ C.knowledgeError EF δ δ' :=
   fun h ↦ batchKnowledgeSoundness_inclusion C publicValues prover δ δ' hδ'
     (fun n hn ↦ Batch.countsBounded_of_isRangeBatch _ (C.isRangeBatch_setupAt (EF := EF) hC n hn))
-    hbound fun traces ht hsat ↦ h traces ht ⟨hsat.air, Batch.rangeChecked_of_satisfiedWithInclusion
+    fun traces ht hsat ↦ h traces ht ⟨hsat.air, Batch.rangeChecked_of_satisfiedWithInclusion
       _ (C.isRangeBatch_setupAt hC _ prover.admits) traces publicValues hsat⟩
 
 /-- **Knowledge soundness of a range check in the random-oracle model.** For a batch statement

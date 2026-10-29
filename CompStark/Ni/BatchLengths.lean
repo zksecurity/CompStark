@@ -14,7 +14,8 @@ The batch verifier takes every instance's trace length from the proof. Against a
 
 * an accepted proof's lengths are a vector the statement admits (`Statement.admits_of_ok`): the
   common data fixes the lengths of the instances with preprocessed columns (`keyOk`), the verifier
-  checks the quotient domains and the periodic columns, and FRI checks its parameters, that the
+  checks the quotient domains, the periodic columns and the lookups' multiplicity bound, and FRI
+  checks its parameters, that the
   tallest domain fits the two-adic subgroups and that every query folds every height down to the
   final polynomial's, so every trace is at least as long as the final polynomial
   (`logBlowup_add_le_of_verifyFri`);
@@ -228,7 +229,7 @@ theorem admits_of_ok {K : Nat} (answer : (q : Query F) → Answer K q)
     C.instancesOf_eq common hl proof hdl] at hok
   set n := C.lengthsOf proof
   have hper := periodicFits_of_verifyInstancesWith _ _ _ _ _ _ hok
-  obtain ⟨hsize, -, -, -, -, hq, -, -, -, -, -, -, -, -, ⟨st, hfri⟩, -⟩ :=
+  obtain ⟨hsize, -, -, -, -, hq, -, -, -, hlk, -, -, -, -, ⟨st, hfri⟩, -⟩ :=
     verifyInstancesWith_ok (idealOf answer) C.params (C.instancesAt n) common proof pis hok
   obtain ⟨hnq, hb, ha, hmax⟩ := verifyFri_checks (idealOf answer) _ _ _ _ _ _ hfri
   have hfin := logBlowup_add_le_of_verifyFri (idealOf answer) _ _ _ _ _ _ hfri
@@ -240,7 +241,7 @@ theorem admits_of_ok {K : Nat} (answer : (q : Query F) → Answer K q)
     (CompStark.Batch.mem_matHeights_batchRounds _ _ _ _ _ hsize _).mpr ⟨_, hI i, rfl⟩
   have hquot : ∀ i, n i + (C.air i).logQuotientChunksWith (n i)
       (Lookup.logUpConstraints (C.lookups i)) ≤ twoAdicity F := fun i ↦ hq _ (hI i)
-  refine ⟨fun i ↦ ⟨C.colsInWidth i, hper _ (hI i), ?_, ?_, ha, ?_, hnq, hb⟩, hquot, ?_⟩
+  refine ⟨fun i ↦ ⟨C.colsInWidth i, hper _ (hI i), ?_, ?_, ha, ?_, hnq, hb⟩, hquot, ?_, ?_⟩
   · refine le_trans ?_ hmax
     exact CompStark.Batch.headD_le_of_mem (pairwise_descHeights _)
       ((mem_descHeights _ _).mpr (hext i))
@@ -260,6 +261,9 @@ theorem admits_of_ok {K : Nat} (answer : (q : Query F) → Answer K q)
       rw [← h]
       show proof.degreeBits.toList.getD i 0 = _
       rw [List.getD_eq_getElem _ _ (by rw [hdl]; exact i.2)]
+  · simp only [CompStark.Batch.lookupShapeOk, Bool.and_eq_true] at hlk
+    have h := hlk.1.1.1.1.2
+    rwa [instancesAt, List.map_ofFn] at h
 
 variable (EF)
 

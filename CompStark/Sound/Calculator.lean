@@ -730,7 +730,7 @@ variable (EF) (n : Fin C.k → ℕ) (hn : C.Admits n)
 /-- At an admitted vector, every instance's shape is one of its shapes at its admitted lengths. -/
 theorem shape_mem_shapesAt (i : Fin C.k) :
     ((C.setupAt EF n hn).instanceSetup i).shape ∈ C.shapesAt EF i := by
-  have hadm : C.admits i (n i) = true := (C.admits_iff n).mpr hn i
+  have hadm : C.admits i (n i) = true := hn.admits i
   have hlt : n i < twoAdicity F + 1 := by have := (hn.sound i).twoAdic; omega
   refine List.mem_flatMap.mpr ⟨n i, List.mem_range.mpr hlt, ?_⟩
   simp only [hadm, ↓reduceDIte, List.mem_singleton]
@@ -790,7 +790,7 @@ theorem lookupCount_le : (C.setupAt EF n hn).lookupCount ≤ C.lookupCountMax :=
     refine List.sum_le_sum fun i _ ↦ Nat.mul_le_mul_right _ (Nat.pow_le_pow_right two_pos ?_)
     have hlt : n i < twoAdicity F + 1 := by have := (hn.sound i).twoAdic; omega
     exact le_foldr_max_nat
-      (List.mem_filter.mpr ⟨List.mem_range.mpr hlt, (C.admits_iff n).mpr hn i⟩)
+      (List.mem_filter.mpr ⟨List.mem_range.mpr hlt, hn.admits i⟩)
   unfold Iop.Batch.Setup.lookupCount Iop.Batch.Statement.lookupCountMax
   exact Nat.add_le_add hT (Nat.mul_le_mul_right _ (Nat.sub_le_sub_right hT 1))
 

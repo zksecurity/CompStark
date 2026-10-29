@@ -193,13 +193,16 @@ abbrev lookups (i : Fin C.k) : List (Stark.Lookup F) := (C.air i).packedLookups 
 
 /-- The vectors of trace lengths `2 ^ n i` the verifier admits: its checks on every instance's
 length and on the parameters (`SoundConfig`, the quotient domain with the lookups' LogUp
-constraints within the two-adic subgroups), and the keygen height of every instance with
-preprocessed columns, which the common data fixes. -/
+constraints within the two-adic subgroups), the keygen height of every instance with
+preprocessed columns, which the common data fixes, and the multiplicity bound
+`∑ᵢ wᵢ 2 ^ n i < p` on the lookups' count weights (`heightBoundOk`). -/
 structure Admits (n : Fin C.k → Nat) : Prop where
   sound : ∀ i, SoundConfig C.params (C.air i) (n i)
   quotient : ∀ i, n i + (C.air i).logQuotientChunksWith (n i)
     (Lookup.logUpConstraints (C.lookups i)) ≤ twoAdicity F
   keyed : ∀ i, 0 < (C.air i).preprocessedWidth → n i = C.keyLogN i
+  heightBound :
+    heightBoundOk (CompPoly.CanonicalNat.bound F) (List.ofFn fun i ↦ (C.lookups i, n i)) = true
 
 /-- Instance `i`'s lookups are valid on `2 ^ m` rows whose quotient domain, with the lookups'
 LogUp constraints, fits the two-adic subgroups. -/
@@ -391,6 +394,11 @@ structure Setup.Satisfied (S : Setup EF withLookups) (traces : Fin S.k → Array
 instance `i`'s count weights: the verifier rejects every proof for a batch that fails it. -/
 def Setup.HeightBounded (S : Setup EF withLookups) : Prop :=
   heightBoundOk (CompPoly.CanonicalNat.bound F) (List.ofFn fun i ↦ (S.lookups i, S.logN i)) = true
+
+/-- The batch at an admitted vector of lengths passes the multiplicity bound. -/
+theorem Statement.heightBounded_setupAt (C : Statement F) (n : Fin C.k → Nat) (h : C.Admits n) :
+    (C.setupAt EF n h).HeightBounded :=
+  h.heightBound
 
 /-- The batch's queries: its messages (`messages`) of the tuples of positive weight. -/
 def Setup.queries (S : Setup EF withLookups) (traces : Fin S.k → Array F)
