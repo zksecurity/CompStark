@@ -26,7 +26,7 @@ error bounds. `knowledgeErrorReport` and `roundErrorReport` print the bits of ea
 Every analysis of a setup below is the one `bestAnalysis` (or `bestAnalysisRo`) finds for it, and
 an interactive statement's the one it finds at the statement's longest admitted length, where the
 error is largest (`tests/CompStarkTests/Security.lean` checks this); the batch statements'
-analyses are chosen by hand, a statement's terms ranging over every admitted vector of lengths.
+analyses are chosen by hand, a statement's bound ranging over every admitted vector of lengths.
 Every admitted length is at most `2 ^ 22` rows over KoalaBear with blowup `4` (`2 ^ 20` with
 blowup `16`). FRI's radius `δ` stays
 below the unique-decoding radius `(1 - rate) / 2`, and so does the extractor's `δ'`, where the
@@ -97,13 +97,14 @@ for the setups the smallest query count reaching the claim at the analysis the s
   global bus (`wideBus`: `wide 64` and two interactions of width `W = 4` per row; its LogUp
   constraints keep the two quotient chunks, add `4` constraints of degree `3` and two permutation
   columns, `20` opened words over the quintic extension), with `wide5iParams`, at every vector of
-  trace lengths; `δ = 3/8 - 2 ^ (-13)`, `δ' = 3/8 - 2 ^ (-15)`, `loss = 2 ^ (-18)`. Each term is
-  at its worst admitted value (`Batch.Statement.knowledgeErrorTerms`): the lookup challenges with
-  every instance on `2 ^ 22` rows, `T = 2 · 3 · 2 ^ 22`, `128.04` (`lookupError`); constraint
-  folding `148.88`, out of domain `129.94` and batching all `474` opened words on one domain size
-  `134.06`, each at the worst instance; FRI's folds, the sum over the heights of the worst fold
-  onto each, `134.30`; queries `128.74`: `127.10` bits (`wideBatch_knowledgeError_le`, `127`,
-  `wideBatch_knowledgeSoundness`). At the keygen heights alone the batch reached `128.34` bits,
+  trace lengths; `δ = 3/8 - 2 ^ (-13)`, `δ' = 3/8 - 2 ^ (-15)`, `loss = 2 ^ (-18)`. The worst
+  admitted vector has every instance on `2 ^ 22` rows (`Batch.Statement.knowledgeErrorTerms`):
+  the lookup challenges, `T = 2 · 3 · 2 ^ 22`, `128.04` (`lookupError`), outweighing what an
+  instance on fewer rows adds to FRI's folds as an input; constraint folding `148.88`, out of
+  domain `129.94` and batching all `474` opened words on one domain size `134.06`; FRI's folds,
+  without inputs, `135.30`; queries `128.74`: `127.11` bits, the largest per-vector bound over the
+  admitted vectors (`wideBatch_knowledgeError_le`, `127`, `wideBatch_knowledgeSoundness`). At the
+  keygen heights alone the batch reached `128.34` bits,
   the lookup challenges `130.98`: the prover may claim every instance at `2 ^ 22` rows. The batch
   pays for the lookups once, for `α`, `ζ` and batching once, as its failing instance would alone
   among the instances of its size; FRI pays one more word per injected height. Plonky3's
@@ -114,10 +115,11 @@ for the setups the smallest query count reaching the claim at the analysis the s
 * `wideBatch5Statement`, the batch in the random-oracle model, with `wide5Params`, at every
   vector of trace lengths the verifier admits (every instance up to `2 ^ 22` rows, keygen heights
   `2 ^ 20`, `2 ^ 19` and `2 ^ 16`); `δ = 3/8 - 2 ^ (-19)`, `δ' = 3/8 - 2 ^ (-22)`, no loss needed.
-  Each term is at its worst admitted value (`Batch.Statement.roundErrorTerms`), every instance on
-  `2 ^ 22` rows for the lookups and the out-of-domain point, all `474` opened words on one domain
-  size for batching: the lookup challenges `128.04` (`T = 2 · 3 · 2 ^ 22`), constraint folding
-  `148.88`, out of domain `129.94`, batching `128.06`, FRI's folds `130.94`, queries `128.49`;
+  Each term is at its largest over the admitted vectors (`Batch.Statement.roundErrorTerms`), every
+  instance on `2 ^ 22` rows for the lookups and the out-of-domain point, all `474` opened words on
+  one domain size for batching, an input on `2 ^ 21` rows for FRI's folds: the lookup challenges
+  `128.04` (`T = 2 · 3 · 2 ^ 22`), constraint folding `148.88`, out of domain `129.94`, batching
+  `128.06`, FRI's folds `130.94`, queries `128.49`;
   every round error at every admitted vector is at most `2 ^ (-128)` (`wideBatch5_roundError_le`),
   `verifierQueries ≤ 134253` on proofs of any lengths (`wideBatch5_knowledgeSoundness_ro`).
 * `wideBatchGrindStatement`, the batch over the quartic extension with `wideBusGrindParams` (`144`

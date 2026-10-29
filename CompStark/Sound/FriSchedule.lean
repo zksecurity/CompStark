@@ -253,6 +253,79 @@ theorem length_plan_le {maxLogArity logFinal : ℕ} (ha : 0 < maxLogArity) :
         simp only [ite_eq_right hm, List.length_cons]
         omega
 
+/-- The plan does not depend on its fuel once the fuel covers the folds, for fitting heights. -/
+theorem plan_fuel {maxLogArity logFinal : ℕ} (ha : 0 < maxLogArity) :
+    ∀ (fuel fuel' n : ℕ) (heights : List ℕ), Fits logFinal n heights → n - logFinal ≤ fuel →
+      n - logFinal ≤ fuel' →
+      plan maxLogArity logFinal fuel n heights = plan maxLogArity logFinal fuel' n heights
+  | 0, 0, _, _, _, _, _ => rfl
+  | 0, _ + 1, n, _, _, h, _ => by
+    simp only [plan, ite_eq_left (show n ≤ logFinal by omega)]
+  | _ + 1, 0, n, _, _, _, h => by
+    simp only [plan, ite_eq_left (show n ≤ logFinal by omega)]
+  | fuel + 1, fuel' + 1, n, heights, hfit, h, h' => by
+    by_cases hfin : n ≤ logFinal
+    · simp only [plan, ite_eq_left hfin]
+    have h1 := one_le_logArity ha (by omega) hfit
+    have h2 := logArity_le maxLogArity logFinal n heights
+    simp only [plan, ite_eq_right hfin]
+    match heights, hfit, h1, h2 with
+    | [], _, h1, h2 =>
+      rw [plan_fuel ha fuel fuel' _ [] (fits_nil _ _) (by omega) (by omega)]
+    | m :: rest, hfit, h1, h2 =>
+      have h4 := logArity_le_cons maxLogArity logFinal n m rest
+      by_cases hm : m = n - logArity maxLogArity logFinal n (m :: rest)
+      · simp only [ite_eq_left hm]
+        rw [plan_fuel ha fuel fuel' _ rest (fits_of_eq hfit hm) (by omega) (by omega)]
+      · simp only [ite_eq_right hm]
+        rw [plan_fuel ha fuel fuel' _ _ (fits_cons_of_ne hfit h4 hm) (by omega) (by omega)]
+
+/-- **The plan up to the next input.** From a height `a` above the next input's height `x`, the
+plan folds as the plan without inputs does down to a height `a'` at most `maxLogArity` above `x`,
+then onto `x`, injecting the input there, and goes on from `x`. -/
+theorem plan_cons_split {maxLogArity logFinal : ℕ} (ha : 0 < maxLogArity) :
+    ∀ (a x : ℕ) (rest : List ℕ), Fits logFinal a (x :: rest) →
+      ∃ (P : List (ℕ × ℕ × Bool)) (a' : ℕ), x < a' ∧ a' - x ≤ maxLogArity ∧
+        plan maxLogArity logFinal a a (x :: rest) =
+          P ++ (a' - x, x, true) :: plan maxLogArity logFinal x x rest ∧
+        plan maxLogArity logFinal a a [] = P ++ plan maxLogArity logFinal a' a' [] := by
+  intro a
+  induction a using Nat.strong_induction_on with
+  | _ a ih =>
+  intro x rest hfit
+  have hx := hfit.2 x List.mem_cons_self
+  obtain ⟨a₀, rfl⟩ : ∃ a₀, a = a₀ + 1 := ⟨a - 1, by omega⟩
+  have hfin : ¬ a₀ + 1 ≤ logFinal := by omega
+  by_cases hle : a₀ + 1 - x ≤ maxLogArity
+  · have hla : logArity maxLogArity logFinal (a₀ + 1) (x :: rest) = a₀ + 1 - x := by
+      simp only [logArity, List.headD_cons]
+      omega
+    have hm : x = a₀ + 1 - logArity maxLogArity logFinal (a₀ + 1) (x :: rest) := by omega
+    refine ⟨[], a₀ + 1, hx.2, hle, ?_, rfl⟩
+    have hfit' := fits_of_eq hfit hm
+    simp only [plan, ite_eq_right hfin, ite_eq_left hm, List.nil_append]
+    rw [hla, show a₀ + 1 - (a₀ + 1 - x) = x by omega,
+      plan_fuel ha a₀ x x rest (by rwa [hla, show a₀ + 1 - (a₀ + 1 - x) = x by omega] at hfit')
+        (by omega) (by omega)]
+  · have hla : logArity maxLogArity logFinal (a₀ + 1) (x :: rest) = maxLogArity := by
+      simp only [logArity, List.headD_cons]
+      omega
+    have hla' : logArity maxLogArity logFinal (a₀ + 1) [] = maxLogArity := by
+      simp only [logArity, List.headD_nil]
+      omega
+    have hm : ¬ x = a₀ + 1 - logArity maxLogArity logFinal (a₀ + 1) (x :: rest) := by omega
+    have hfit' := fits_cons_of_ne hfit (logArity_le_cons _ _ _ _ _) hm
+    rw [hla] at hfit'
+    obtain ⟨P, a', h1, h2, h3, h4⟩ := ih (a₀ + 1 - maxLogArity) (by omega) x rest hfit'
+    refine ⟨(maxLogArity, a₀ + 1 - maxLogArity, false) :: P, a', h1, h2, ?_, ?_⟩
+    · simp only [plan, ite_eq_right hfin, hla]
+      rw [ite_eq_right (show ¬ x = a₀ + 1 - maxLogArity by omega),
+        plan_fuel ha a₀ (a₀ + 1 - maxLogArity) _ _ hfit' (by omega) (by omega), h3,
+        List.cons_append]
+    · simp only [plan, ite_eq_right hfin, hla']
+      rw [plan_fuel ha a₀ (a₀ + 1 - maxLogArity) _ [] (fits_nil _ _) (by omega) (by omega), h4,
+        List.cons_append]
+
 /-- The rounds have one fold per entry of the plan. -/
 theorem numFolds_schedule (maxLogArity logFinal : ℕ) (words : (m : ℕ) → Fin (2 ^ m) → K) :
     ∀ (fuel n : ℕ) (heights : List ℕ),

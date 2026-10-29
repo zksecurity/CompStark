@@ -119,6 +119,10 @@ def sumTerms (l : List (String × ℚ)) : ℚ := l.foldr (fun x s ↦ x.2 + s) 0
 /-- The largest of a list of named terms, `0` if empty. -/
 def maxTerms (l : List (String × ℚ)) : ℚ := l.foldr (fun x s ↦ max x.2 s) 0
 
+/-- An element of `d :: l` where `f` is largest, the first of them. -/
+def argmaxOn (f : ℕ → ℚ) (l : List ℕ) (d : ℕ) : ℕ :=
+  ((l.map fun m ↦ (m, f m)).foldl (fun b x ↦ if b.2 < x.2 then x else b) (d, f d)).1
+
 /-- What the calculator reads of an instance's AIR and lookups: its constraint count, its identity
 degree and its opened words, whether it proves lookups, and its log trace length `logN`. -/
 structure Shape where
@@ -479,21 +483,33 @@ end Statement
 
 /-! ### Batch statements
 
-A batch statement's round error is the largest over the vectors of trace lengths the verifier
-admits (`Batch.Statement.roundError`). The vectors are too many to enumerate (`25 ^ 3` for three
-instances over KoalaBear), so the statement's terms (`Batch.Statement.roundErrorTerms`) bound each
-term of the batch's bound (`Batch.Setup.roundErrorTerms`) over the term's own parameters: the
-verifier's checks on an instance's length are a Boolean (`Batch.Statement.admits`), and the
-admitted vectors are those of admitted lengths. Constraint folding, the out-of-domain point and
-batching take the largest over every instance's shape at every admitted length (`allShapes`),
-batching at the most opened words a domain size can have (`groupBound`); LogUp is at every
-instance's longest admitted length (`lookupCountMax`), its interactions growing with every length;
-FRI's folds at every arity, target height and injection a fold can have (`foldPlans`); and the
-queries at the most folds, `twoAdicity - logBlowup - logFinalPolyLen`. The knowledge error's terms
-(`Batch.Statement.knowledgeErrorTerms`) are the same without grinding, but for FRI's folds, which
-the knowledge error sums over the plan: a plan's folds fold onto distinct heights
-(`FriGame.Rounds.pairwise_plan`), so the sum over the heights of the worst fold onto each bounds
-it. -/
+A batch statement's errors are the largest over the vectors of trace lengths the verifier admits
+(`Batch.Statement.roundError`, `Batch.Statement.knowledgeError`), too many to enumerate (`25 ^ 3`
+for three instances over KoalaBear). The verifier's checks on an instance's length are a Boolean
+(`Batch.Statement.admits`), and an admitted vector has admitted lengths. The calculator reads a
+vector through its terms: every instance's shape at its own length; on each domain size, the
+opened words of the instances there, at most those of every instance admitting that length
+(`batchingOn`); LogUp's numbers `T + (T - 1) W`, affine in the interactions `T`, a share
+`(1 + W) 2 ^ m tᵢ` per instance; and FRI's plan from the tallest domain with the shorter ones
+injected. Up to an input at the height `x`, the plan is the plan without it down to at most
+`maxLogArity` above `x` (`FriGame.Rounds.plan_cons_split`), so the input adds at most
+`injectNum x` to the folds' bound, `injectFolds x` folds, and `injectMax x` as its largest fold;
+at FRI arity `2` these are what it adds.
+
+The round error is the largest of its terms, so its largest over the vectors is each term's
+largest (`roundErrorTerms`): LogUp with every instance at its longest admitted length, constraint
+folding and the out-of-domain point at every instance's shape at every admitted length, batching
+on every domain size with every instance admitting it there, FRI's folds from every top length
+and at every input (`foldMax`), and the queries at the most folds (`mostFolds`).
+
+The knowledge error sums its terms. At each top length `h` (`tops`), every instance takes the
+length up to `h` of the largest share (`share`, `choice`): its LogUp interactions and, below `h`,
+what its input adds to FRI's folds and queries (`lengthTermsAt`), the instance terms at their worst
+admitted shapes (`instanceTerms`). At every admitted vector of top length `h` the per-vector bound
+is at most that, so `knowledgeErrorBound`, its largest over the top lengths, bounds every admitted
+vector's; it is the per-vector bound of the vector `choice` picks when that vector holds the
+instance terms' worst and its inputs, at arity `2`, sit at distinct heights, as when LogUp outweighs
+every injection and every instance is at the top length. -/
 
 namespace Batch.Statement
 variable (C : Batch.Statement F)
@@ -526,7 +542,8 @@ theorem admits_spec {i : Fin C.k} {m : ℕ} (h : C.admits i m = true) :
 theorem _root_.CompStark.Iop.Batch.Statement.Admits.admits {C : Batch.Statement F}
     {n : Fin C.k → ℕ} (h : C.Admits n) (i : Fin C.k) : C.admits i (n i) = true := by
   have hs := h.sound i
-  simp only [Batch.Statement.admits, Bool.and_eq_true, decide_eq_true_eq, Bool.or_eq_true, beq_iff_eq]
+  simp only [Batch.Statement.admits, Bool.and_eq_true, decide_eq_true_eq, Bool.or_eq_true,
+    beq_iff_eq]
   refine ⟨⟨⟨⟨⟨⟨⟨⟨hs.periodicFits, hs.twoAdic⟩, hs.quotientFits⟩, h.quotient i⟩, hs.folds⟩,
     hs.finalPolyFits⟩, hs.queries⟩, hs.blowup⟩, ?_⟩
   by_cases hw : (C.air i).preprocessedWidth = 0
@@ -537,11 +554,41 @@ theorem _root_.CompStark.Iop.Batch.Statement.Admits.admits {C : Batch.Statement 
 def maxLength (i : Fin C.k) : ℕ :=
   ((List.range (twoAdicity F + 1)).filter (C.admits i)).foldr max 0
 
-/-- LogUp's numbers `T + (T - 1) W` with every instance at its longest admitted length. -/
-def lookupCountMax : ℕ :=
-  let T := ((List.finRange C.k).map fun i ↦
-    2 ^ C.maxLength i * ((C.lookups i).map (·.tuples.length)).sum).sum
-  T + (T - 1) * Lookup.maxWidth (List.ofFn C.lookups).flatten
+/-- Instance `i`'s admitted lengths up to `h`. -/
+def lengthsUpTo (i : Fin C.k) (h : ℕ) : List ℕ := (List.range (h + 1)).filter (C.admits i)
+
+/-- The lengths that can be an admitted vector's longest: some instance admits `h`, and every
+instance a length up to `h`. -/
+def tops : List ℕ :=
+  (List.range (twoAdicity F + 1)).filter fun h ↦
+    (List.finRange C.k).any (C.admits · h) &&
+      (List.finRange C.k).all fun i ↦ !(C.lengthsUpTo i h).isEmpty
+
+/-- The heights where FRI can inject an input on an admitted vector: the domain of an instance at
+an admitted length that another instance exceeds. -/
+def inputHeights : List ℕ :=
+  ((List.range (twoAdicity F + 1)).filter fun m ↦ (List.finRange C.k).any fun i ↦
+    C.admits i m && (List.finRange C.k).any fun j ↦ j != i &&
+      (List.range (twoAdicity F + 1)).any fun h ↦ decide (m < h) && C.admits j h).map
+    (· + C.params.logBlowup)
+
+/-- Instance `i`'s tuples per row. -/
+def tuplesPerRow (i : Fin C.k) : ℕ := ((C.lookups i).map (·.tuples.length)).sum
+
+/-- The widest tuple, at least `1` (`W`). -/
+abbrev lookupWidth : ℕ := Lookup.maxWidth (List.ofFn C.lookups).flatten
+
+/-- LogUp's interactions `T` with instance `i` on `2 ^ n i` rows. -/
+def interactions (n : Fin C.k → ℕ) : ℕ :=
+  ((List.finRange C.k).map fun i ↦ 2 ^ n i * C.tuplesPerRow i).sum
+
+/-- LogUp's numbers `T + (T - 1) W` with instance `i` on `2 ^ n i` rows. -/
+def lookupCountAt (n : Fin C.k → ℕ) : ℕ :=
+  C.interactions n + (C.interactions n - 1) * C.lookupWidth
+
+/-- LogUp's numbers with every instance at its longest admitted length, the most of any admitted
+vector. -/
+def lookupCountMax : ℕ := C.lookupCountAt C.maxLength
 
 /-- The log sizes FRI's folds can fold onto on a vector of admitted lengths:
 `logFinalPolyLen + logBlowup ≤ m` below the two-adicity. -/
@@ -556,6 +603,71 @@ def foldsOnto (m : ℕ) : List (ℕ × ℕ × Bool) :=
 
 /-- The folds FRI can make on a vector of admitted lengths: onto every height of `foldHeights`. -/
 def foldPlans : List (ℕ × ℕ × Bool) := C.foldHeights.flatMap C.foldsOnto
+
+section Fri
+variable (B : McaBound) (A : Analysis)
+
+/-- FRI's plan from the height `a` with inputs at `heights`, as data (`FriGame.Rounds.plan`). -/
+def planFrom (a : ℕ) (heights : List ℕ) : List (ℕ × ℕ × Bool) :=
+  FriGame.Rounds.plan C.params.maxLogArity (C.params.logFinalPolyLen + C.params.logBlowup) a a
+    heights
+
+/-- FRI's folds from the height `a` without inputs, times `|𝕂|`. -/
+def plainNum (a : ℕ) : ℚ := ((C.planFrom a []).map (A.levelBound B C.params.logBlowup)).sum
+
+/-- What an input at the height `x` adds to FRI's folds at most, times `|𝕂|`. The plan up to `x`
+is the plan without it down to `x + la`, `1 ≤ la ≤ maxLogArity`, then a fold by `la` bits onto
+`x` (`FriGame.Rounds.plan_cons_split`); at `la = maxLogArity` the plan without it folds onto `x`
+too, without the input. -/
+def injectNum (x : ℕ) : ℚ :=
+  let r := C.params.maxLogArity
+  let lb := C.params.logBlowup
+  max (A.levelBound B lb (r, x, true) - A.levelBound B lb (r, x, false))
+    (maxQ ((List.range' 1 (r - 1)).map fun la ↦
+      A.levelBound B lb (la, x, true) + C.plainNum B A x - C.plainNum B A (x + la)))
+
+/-- The folds an input at the height `x` adds at most: `1 + #plan(x) - #plan(x + la)` for
+`la < maxLogArity`, none at `la = maxLogArity`. -/
+def injectFolds (x : ℕ) : ℕ :=
+  ((List.range' 1 (C.params.maxLogArity - 1)).map fun la ↦
+    1 + (C.planFrom x []).length - (C.planFrom (x + la) []).length).foldr max 0
+
+/-- The largest fold an input at the height `x` brings, times `|𝕂|`: its last fold, by at most
+`maxLogArity` bits, or one of the plan from `x`. -/
+def injectMax (x : ℕ) : ℚ :=
+  max (maxQ ((List.range' 1 C.params.maxLogArity).map fun la ↦
+      A.levelBound B C.params.logBlowup (la, x, true)))
+    (maxQ ((C.planFrom x []).map (A.levelBound B C.params.logBlowup)))
+
+/-- FRI's queries all land where the checks pass, after `f` folds: `(1 - δ + f loss) ^ numQueries`
+(`Iop.Setup.queryDensity`). -/
+def queriesAfter (f : ℕ) : ℚ := (1 - A.δ + f * A.loss) ^ C.params.numQueries
+
+/-- The most the queries' bound grows per fold from the top length `h`: at its last fold, of the at
+most `h - logFinalPolyLen`. -/
+def queryStep (h : ℕ) : ℚ :=
+  C.queriesAfter A (h - C.params.logFinalPolyLen) -
+    C.queriesAfter A (h - C.params.logFinalPolyLen - 1)
+
+/-- What an input at the height `x` adds to the queries' bound at most, from the top length `h`. -/
+def injectQueries (h x : ℕ) : ℚ :=
+  if C.injectFolds x = 0 then 0 else C.injectFolds x * C.queryStep A h
+
+/-- The most folds FRI makes on an admitted vector: from every top length, without inputs and
+with the most each instance's input adds. -/
+def mostFolds : ℕ :=
+  (C.tops.map fun h ↦ (C.planFrom (h + C.params.logBlowup) []).length +
+    ((List.finRange C.k).map fun i ↦ (((C.lengthsUpTo i h).filter (· < h)).map fun m ↦
+      C.injectFolds (m + C.params.logBlowup)).foldr max 0).sum).foldr max 0
+
+/-- FRI's largest fold on an admitted vector, times `|𝕂|`: of a plan from a top length without
+inputs, or one an input brings. -/
+def foldMax : ℚ :=
+  max (maxQ (C.tops.map fun h ↦
+      maxQ ((C.planFrom (h + C.params.logBlowup) []).map (A.levelBound B C.params.logBlowup))))
+    (maxQ (C.inputHeights.map (C.injectMax B A)))
+
+end Fri
 
 variable (EF : Type) [Challenge F EF]
 
@@ -572,10 +684,21 @@ def shapesAt (i : Fin C.k) : List Shape :=
 /-- Every instance's shapes at its admitted lengths. -/
 def allShapes : List Shape := (List.finRange C.k).flatMap (C.shapesAt EF)
 
-/-- The most opened words a domain size can batch: every instance's most at an admitted
-length. -/
-def groupBound : ℕ :=
-  ((List.finRange C.k).map fun i ↦ ((C.shapesAt EF i).map (·.numOpened)).foldr max 0).sum
+/-- The shapes of the instances admitting `2 ^ m` rows, there. -/
+def shapesOn (m : ℕ) : List Shape :=
+  (List.finRange C.k).flatMap fun i ↦
+    if h : C.admits i m = true then [(C.instanceOf EF i m h).shape] else []
+
+/-- Batching on `2 ^ m` rows, times `|𝕂|`: every instance admitting `m` there, batching all their
+opened words, at most what a domain of that size batches on an admitted vector. -/
+def batchingOn (B : McaBound) (A : Analysis) (m : ℕ) : ℚ :=
+  let cs := C.shapesOn EF m
+  let words := (cs.map (·.numOpened)).sum
+  maxQ (cs.map fun c ↦ c.batchingNum C.params.logBlowup B A words)
+
+/-- Batching on an admitted vector, times `|𝕂|`, at most. -/
+def batchingMax (B : McaBound) (A : Analysis) : ℚ :=
+  maxQ ((List.range (twoAdicity F + 1)).map (C.batchingOn EF B A))
 
 /-- The analysis fits every vector of admitted lengths with the MCA bound `B`: it is valid at the
 rate, and `B` admits every instance's batching at every admitted length and every fold FRI can
@@ -588,8 +711,8 @@ def Fits (B : McaBound) (A : Analysis) : Prop :=
 instance (B : McaBound) (A : Analysis) : Decidable (C.Fits EF B A) := by
   unfold Fits; infer_instance
 
-/-- The terms of the statement's round error bound for `|F| = p`, by round, each the largest of
-the batch's term over the term's parameters at the admitted vectors of lengths. -/
+/-- The terms of the statement's round error bound for `|F| = p`, by round, each its largest over
+the admitted vectors of lengths. -/
 def roundErrorTerms (p : ℕ) (B : McaBound) (A : Analysis) : List (String × ℚ) :=
   let lb := C.params.logBlowup
   let K := (p : ℚ) ^ Challenge.d EF
@@ -598,13 +721,10 @@ def roundErrorTerms (p : ℕ) (B : McaBound) (A : Analysis) : List (String × �
     ("constraint folding", maxQ ((C.allShapes EF).map (·.foldingNum lb A)) / K),
     ("out of domain", powFractionQ p C.params.oodPowBits *
       (maxQ ((C.allShapes EF).map (·.outOfDomainNum lb A)) / K)),
-    ("batching", powFractionQ p C.params.batchPowBits *
-      (maxQ ((C.allShapes EF).map fun c ↦ c.batchingNum lb B A (C.groupBound EF)) / K)),
-    ("FRI folds", powFractionQ p C.params.commitPowBits *
-      (maxQ (C.foldPlans.map (A.levelBound B lb)) / K)),
+    ("batching", powFractionQ p C.params.batchPowBits * (C.batchingMax EF B A / K)),
+    ("FRI folds", powFractionQ p C.params.commitPowBits * (C.foldMax B A / K)),
     ("FRI queries", powFractionQ p C.params.queryPowBits *
-      (1 - A.δ + ((twoAdicity F - (C.params.logFinalPolyLen + lb) : ℕ) : ℚ) * A.loss + 1 / p) ^
-        C.params.numQueries)]
+      (1 - A.δ + C.mostFolds * A.loss + 1 / p) ^ C.params.numQueries)]
 
 /-- The bound on the statement's round error: the largest of its terms. -/
 def roundErrorBound (p : ℕ) (B : McaBound) (A : Analysis) : ℚ :=
@@ -619,26 +739,56 @@ instance (p : ℕ) (B : McaBound) (A : Analysis) (bits : ℕ) :
     Decidable (C.SecureRo EF p B A bits) := by
   unfold SecureRo; infer_instance
 
-/-- The terms of the statement's knowledge error bound for `|F| = p`, by challenge, each the
-largest of the batch's term over the term's parameters at the admitted vectors of lengths. FRI's
-folds are a sum over the plan's folds, whose target sizes are distinct: the sum over the heights
-`foldHeights` of the worst fold onto each bounds it. -/
-def knowledgeErrorTerms (p : ℕ) (B : McaBound) (A : Analysis) : List (String × ℚ) :=
+/-- Instance `i`'s share of the knowledge error's bound on `2 ^ m` rows, at the top length `h`,
+for `|F| = p`: its LogUp interactions, `(1 + W) 2 ^ m tᵢ` per tuple of candidate traces, and
+below `h`, what its input adds to FRI's folds and queries. -/
+def share (p : ℕ) (B : McaBound) (A : Analysis) (h : ℕ) (i : Fin C.k) (m : ℕ) : ℚ :=
   let lb := C.params.logBlowup
   let K := (p : ℚ) ^ Challenge.d EF
-  [("lookup challenges", ((A.listBound (1 / 2 ^ lb) ^ C.k * C.lookupCountMax : ℕ) : ℚ) / K),
-    ("constraint folding", maxQ ((C.allShapes EF).map (·.foldingNum lb A)) / K),
-    ("out of domain", maxQ ((C.allShapes EF).map (·.outOfDomainNum lb A)) / K),
-    ("batching", maxQ ((C.allShapes EF).map fun c ↦ c.batchingNum lb B A (C.groupBound EF)) / K),
-    ("FRI folds",
-      (C.foldHeights.map fun m ↦ maxQ ((C.foldsOnto m).map (A.levelBound B lb))).sum / K),
-    ("FRI queries",
-      (1 - A.δ + ((twoAdicity F - (C.params.logFinalPolyLen + lb) : ℕ) : ℚ) * A.loss) ^
-        C.params.numQueries)]
+  ((A.listBound (1 / 2 ^ lb) ^ C.k * ((1 + C.lookupWidth) * (2 ^ m * C.tuplesPerRow i)) : ℕ) :
+      ℚ) / K +
+    if m < h then C.injectNum B A (m + lb) / K + C.injectQueries A h (m + lb) else 0
 
-/-- The bound on the statement's knowledge error: the sum of its terms. -/
+/-- Instance `i`'s length up to `h` of the largest share. -/
+def choice (p : ℕ) (B : McaBound) (A : Analysis) (h : ℕ) (i : Fin C.k) : ℕ :=
+  argmaxOn (C.share EF p B A h i) (C.lengthsUpTo i h) h
+
+/-- The terms of the knowledge error's bound that depend on the lengths, at the top length `h`,
+every instance at its `choice`, for `|F| = p`: the lookup challenges, FRI's folds and queries. -/
+def lengthTermsAt (p : ℕ) (B : McaBound) (A : Analysis) (h : ℕ) : List (String × ℚ) :=
+  let lb := C.params.logBlowup
+  let K := (p : ℚ) ^ Challenge.d EF
+  let s := C.choice EF p B A h
+  let below := (List.finRange C.k).filter (s · < h)
+  [("lookup challenges", ((A.listBound (1 / 2 ^ lb) ^ C.k * C.lookupCountAt s : ℕ) : ℚ) / K),
+    ("FRI folds",
+      (C.plainNum B A (h + lb) + (below.map fun i ↦ C.injectNum B A (s i + lb)).sum) / K),
+    ("FRI queries", C.queriesAfter A (C.planFrom (h + lb) []).length +
+      (below.map fun i ↦ C.injectQueries A h (s i + lb)).sum)]
+
+/-- The instance terms of the knowledge error's bound for `|F| = p`, each its largest over the
+admitted lengths: constraint folding, the out-of-domain point and batching. -/
+def instanceTerms (p : ℕ) (B : McaBound) (A : Analysis) : List (String × ℚ) :=
+  let lb := C.params.logBlowup
+  let K := (p : ℚ) ^ Challenge.d EF
+  [("constraint folding", maxQ ((C.allShapes EF).map (·.foldingNum lb A)) / K),
+    ("out of domain", maxQ ((C.allShapes EF).map (·.outOfDomainNum lb A)) / K),
+    ("batching", C.batchingMax EF B A / K)]
+
+/-- The top length of the largest bound. -/
+def worstTop (p : ℕ) (B : McaBound) (A : Analysis) : ℕ :=
+  argmaxOn (fun h ↦ sumTerms (C.lengthTermsAt EF p B A h)) C.tops 0
+
+/-- The terms of the statement's knowledge error bound for `|F| = p`, those that depend on the
+lengths at the worst top length. -/
+def knowledgeErrorTerms (p : ℕ) (B : McaBound) (A : Analysis) : List (String × ℚ) :=
+  C.lengthTermsAt EF p B A (C.worstTop EF p B A) ++ C.instanceTerms EF p B A
+
+/-- The bound on the statement's knowledge error: the instance terms and the largest over the top
+lengths of the terms that depend on the lengths. -/
 def knowledgeErrorBound (p : ℕ) (B : McaBound) (A : Analysis) : ℚ :=
-  sumTerms (C.knowledgeErrorTerms EF p B A)
+  sumTerms (C.instanceTerms EF p B A) +
+    maxQ (C.tops.map fun h ↦ sumTerms (C.lengthTermsAt EF p B A h))
 
 /-- The calculator certifies `bits` bits of knowledge soundness at the analysis `A` at every vector
 of trace lengths the verifier admits. -/

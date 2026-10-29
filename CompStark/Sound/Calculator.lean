@@ -694,6 +694,19 @@ theorem maxQ_le_maxQ {l l' : List ℚ} (h : ∀ x ∈ l, ∃ y ∈ l', x ≤ y) 
     obtain ⟨y, hy, hxy⟩ := h x List.mem_cons_self
     exact max_le (hxy.trans (le_maxQ hy)) (ih fun z hz ↦ h z (List.mem_cons_of_mem _ hz))
 
+theorem maxQ_le {l : List ℚ} {ε : ℚ} (h0 : 0 ≤ ε) (h : ∀ x ∈ l, x ≤ ε) : maxQ l ≤ ε := by
+  induction l with
+  | nil => exact h0
+  | cons x l ih =>
+    exact max_le (h x List.mem_cons_self) (ih fun y hy ↦ h y (List.mem_cons_of_mem _ hy))
+
+theorem maxQ_append (l l' : List ℚ) : maxQ (l ++ l') = max (maxQ l) (maxQ l') := by
+  induction l with
+  | nil => exact (max_eq_right (maxQ_nonneg l')).symm
+  | cons x l ih =>
+    change max x (maxQ (l ++ l')) = max (max x (maxQ l)) (maxQ l')
+    rw [ih, max_assoc]
+
 theorem maxTerms_le {ε : ℚ} (h0 : 0 ≤ ε) : ∀ {l : List (String × ℚ)}, (∀ x ∈ l, x.2 ≤ ε) →
     maxTerms l ≤ ε
   | [], _ => h0
@@ -718,22 +731,291 @@ theorem batchingNum_mono (c : Shape) (lb : ℕ) (hA : A.Valid (1 / 2 ^ lb)) {m m
     exact div_nonneg (by linarith [hA.1, hd.1]) (by linarith [hd.1])
   · exact hc
 
-/-- A sum over distinct elements of `L` of a nonnegative function is at most its sum over `L`. -/
-theorem sum_map_le_of_subset {l L : List ℕ} (G : ℕ → ℚ) (hG : ∀ m, 0 ≤ G m) (hl : l.Nodup)
-    (hL : L.Nodup) (hsub : ∀ m ∈ l, m ∈ L) : (l.map G).sum ≤ (L.map G).sum := by
-  rw [← List.sum_toFinset G hl, ← List.sum_toFinset G hL]
-  exact Finset.sum_le_sum_of_subset_of_nonneg
-    (fun m hm ↦ List.mem_toFinset.mpr (hsub m (List.mem_toFinset.mp hm))) fun m _ _ ↦ hG m
+/-- The `argmaxOn` fold keeps an element with its value, at least every value it has seen. -/
+theorem foldl_argmaxOn (f : ℕ → ℚ) : ∀ (l : List ℕ) (b : ℕ × ℚ), b.2 = f b.1 →
+    let r := (l.map fun m ↦ (m, f m)).foldl (fun b x ↦ if b.2 < x.2 then x else b) b
+    r.2 = f r.1 ∧ b.2 ≤ r.2 ∧ ∀ m ∈ l, f m ≤ r.2
+  | [], b, hb => ⟨hb, le_rfl, fun _ h ↦ absurd h List.not_mem_nil⟩
+  | m :: l, b, hb => by
+    set b' := if b.2 < f m then (m, f m) else b with hb'
+    have h1 : b'.2 = f b'.1 := by rw [hb']; split <;> simp only [hb]
+    have h2 : b.2 ≤ b'.2 ∧ f m ≤ b'.2 := by
+      rw [hb']; split <;> rename_i h
+      · exact ⟨h.le, le_rfl⟩
+      · exact ⟨le_rfl, not_lt.mp h⟩
+    obtain ⟨r1, r2, r3⟩ := foldl_argmaxOn f l b' h1
+    refine ⟨r1, h2.1.trans r2, fun x hx ↦ ?_⟩
+    rcases List.mem_cons.mp hx with rfl | hx
+    · exact h2.2.trans r2
+    · exact r3 x hx
 
-variable (EF) (n : Fin C.k → ℕ) (hn : C.Admits n)
+/-- `argmaxOn` is where `f` is largest. -/
+theorem le_argmaxOn (f : ℕ → ℚ) {l : List ℕ} (d : ℕ) {m : ℕ} (hm : m ∈ l) :
+    f m ≤ f (argmaxOn f l d) := by
+  obtain ⟨r1, -, r3⟩ := foldl_argmaxOn f l (d, f d) rfl
+  exact (r3 m hm).trans r1.le
+
+/-! #### FRI's plans -/
+
+section Plans
+variable {r L : ℕ} (ha : 0 < r)
+include ha
+
+omit ha in
+theorem fits_tail {a x : ℕ} {rest : List ℕ} (hfit : FriGame.Rounds.Fits L a (x :: rest)) :
+    FriGame.Rounds.Fits L x rest :=
+  ⟨(List.pairwise_cons.mp hfit.1).2, fun m hm ↦
+    ⟨(hfit.2 m (List.mem_cons_of_mem _ hm)).1, List.rel_of_pairwise_cons hfit.1 hm⟩⟩
+
+/-- A plan's folds cost at most those of the plan without inputs and, per input, a bound on what
+its last fold and the plan from it add against the plan without it. -/
+theorem sum_plan_le (g : ℕ × ℕ × Bool → ℚ) (Δ : ℕ → ℚ)
+    (hΔ : ∀ x a', L ≤ x → x < a' → a' - x ≤ r →
+      g (a' - x, x, true) + ((FriGame.Rounds.plan r L x x []).map g).sum -
+        ((FriGame.Rounds.plan r L a' a' []).map g).sum ≤ Δ x) :
+    ∀ (hs : List ℕ) (a : ℕ), FriGame.Rounds.Fits L a hs →
+      ((FriGame.Rounds.plan r L a a hs).map g).sum ≤
+        ((FriGame.Rounds.plan r L a a []).map g).sum + (hs.map Δ).sum
+  | [], a, _ => by simp only [List.map_nil, List.sum_nil, add_zero, le_refl]
+  | x :: rest, a, hfit => by
+    obtain ⟨P, a', h1, h2, h3, h4⟩ := FriGame.Rounds.plan_cons_split ha a x rest hfit
+    have ih := sum_plan_le g Δ hΔ rest x (fits_tail hfit)
+    have hd := hΔ x a' (hfit.2 x List.mem_cons_self).1 h1 h2
+    rw [h3, h4]
+    simp only [List.map_append, List.map_cons, List.sum_append, List.sum_cons]
+    linarith
+
+/-- A plan's folds are at most those of the plan without inputs and, per input, a bound on what
+it adds. -/
+theorem length_plan_le_add (φ : ℕ → ℕ)
+    (hφ : ∀ x a', L ≤ x → x < a' → a' - x ≤ r →
+      1 + (FriGame.Rounds.plan r L x x []).length ≤
+        (FriGame.Rounds.plan r L a' a' []).length + φ x) :
+    ∀ (hs : List ℕ) (a : ℕ), FriGame.Rounds.Fits L a hs →
+      (FriGame.Rounds.plan r L a a hs).length ≤
+        (FriGame.Rounds.plan r L a a []).length + (hs.map φ).sum
+  | [], a, _ => by simp only [List.map_nil, List.sum_nil, add_zero, le_refl]
+  | x :: rest, a, hfit => by
+    obtain ⟨P, a', h1, h2, h3, h4⟩ := FriGame.Rounds.plan_cons_split ha a x rest hfit
+    have ih := length_plan_le_add φ hφ rest x (fits_tail hfit)
+    have hd := hφ x a' (hfit.2 x List.mem_cons_self).1 h1 h2
+    rw [h3, h4]
+    simp only [List.length_append, List.length_cons, List.map_cons, List.sum_cons]
+    omega
+
+/-- A plan's largest fold is one of the plan without inputs, or at most a bound per input on its
+last fold and the plan from it. -/
+theorem maxQ_plan_le (g : ℕ × ℕ × Bool → ℚ) (Ψ : ℕ → ℚ)
+    (hΨ : ∀ x a', L ≤ x → x < a' → a' - x ≤ r → g (a' - x, x, true) ≤ Ψ x)
+    (hΨ' : ∀ x, L ≤ x → maxQ ((FriGame.Rounds.plan r L x x []).map g) ≤ Ψ x) :
+    ∀ (hs : List ℕ) (a : ℕ), FriGame.Rounds.Fits L a hs →
+      maxQ ((FriGame.Rounds.plan r L a a hs).map g) ≤
+        max (maxQ ((FriGame.Rounds.plan r L a a []).map g)) (maxQ (hs.map Ψ))
+  | [], a, _ => le_max_left _ _
+  | x :: rest, a, hfit => by
+    obtain ⟨P, a', h1, h2, h3, h4⟩ := FriGame.Rounds.plan_cons_split ha a x rest hfit
+    have hL := (hfit.2 x List.mem_cons_self).1
+    have ih := maxQ_plan_le g Ψ hΨ hΨ' rest x (fits_tail hfit)
+    have hP : maxQ (P.map g) ≤ maxQ ((FriGame.Rounds.plan r L a a []).map g) := by
+      rw [h4, List.map_append, maxQ_append]
+      exact le_max_left _ _
+    have hx : Ψ x ≤ maxQ ((x :: rest).map Ψ) := le_maxQ (List.mem_map_of_mem List.mem_cons_self)
+    have hrest : maxQ (rest.map Ψ) ≤ maxQ ((x :: rest).map Ψ) := le_max_right _ _
+    rw [h3, List.map_append, maxQ_append, List.map_cons]
+    refine max_le (hP.trans (le_max_left _ _)) (max_le (((hΨ x a' hL h1 h2).trans hx).trans
+      (le_max_right _ _)) (ih.trans (max_le (((hΨ' x hL).trans hx).trans (le_max_right _ _))
+        (hrest.trans (le_max_right _ _)))))
+
+end Plans
+
+/-! #### The queries' bound -/
+
+/-- `(y + d) ^ n - y ^ n` grows with `y ≥ 0`, for `d ≥ 0`. -/
+theorem pow_add_sub_pow_mono {y y' d : ℚ} (hy : 0 ≤ y) (hyy : y ≤ y') (hd : 0 ≤ d) :
+    ∀ n : ℕ, (y + d) ^ n - y ^ n ≤ (y' + d) ^ n - y' ^ n
+  | 0 => by simp only [pow_zero, le_refl]
+  | n + 1 => by
+    have ih := pow_add_sub_pow_mono hy hyy hd n
+    have h0 : 0 ≤ (y + d) ^ n - y ^ n :=
+      sub_nonneg.mpr (pow_le_pow_left₀ hy (by linarith) n)
+    have h1 : (y + d) * ((y + d) ^ n - y ^ n) ≤ (y' + d) * ((y' + d) ^ n - y' ^ n) :=
+      mul_le_mul (by linarith) ih h0 (by linarith)
+    have h2 : d * y ^ n ≤ d * y' ^ n := mul_le_mul_of_nonneg_left (pow_le_pow_left₀ hy hyy n) hd
+    calc (y + d) ^ (n + 1) - y ^ (n + 1) = (y + d) * ((y + d) ^ n - y ^ n) + d * y ^ n := by ring
+      _ ≤ (y' + d) * ((y' + d) ^ n - y' ^ n) + d * y' ^ n := add_le_add h1 h2
+      _ = (y' + d) ^ (n + 1) - y' ^ (n + 1) := by ring
+
+/-- `(c + f l) ^ n` grows by at most its last step per step, up to `fcap`: convexity. -/
+theorem pow_le_add_mul_step {c l : ℚ} (hc : 0 ≤ c) (hl : 0 ≤ l) (n f0 fcap : ℕ) :
+    ∀ j : ℕ, f0 + j ≤ fcap →
+      (c + ((f0 + j : ℕ) : ℚ) * l) ^ n ≤
+        (c + (f0 : ℚ) * l) ^ n + j * ((c + (fcap : ℚ) * l) ^ n - (c + ((fcap - 1 : ℕ) : ℚ) * l) ^ n)
+  | 0, _ => by simp only [Nat.cast_zero, zero_mul, add_zero, le_refl]
+  | j + 1, hj => by
+    have ih := pow_le_add_mul_step hc hl n f0 fcap j (by omega)
+    set y := c + ((f0 + j : ℕ) : ℚ) * l
+    set y' := c + ((fcap - 1 : ℕ) : ℚ) * l
+    have hy : 0 ≤ y := by positivity
+    have hyy : y ≤ y' := by
+      have : ((f0 + j : ℕ) : ℚ) ≤ ((fcap - 1 : ℕ) : ℚ) := Nat.cast_le.mpr (by omega)
+      have := mul_le_mul_of_nonneg_right this hl
+      linarith
+    have hstep := pow_add_sub_pow_mono hy hyy hl n
+    have e1 : c + ((f0 + (j + 1) : ℕ) : ℚ) * l = y + l := by
+      simp only [y]; push_cast; ring
+    have e2 : c + (fcap : ℚ) * l = y' + l := by
+      simp only [y']; rw [Nat.cast_sub (by omega)]; push_cast; ring
+    rw [e2] at ih
+    rw [e1, e2]
+    push_cast
+    nlinarith
+
+
+/-! #### FRI's numbers -/
+
+section FriNumbers
+variable (hr : 0 < C.params.maxLogArity)
+include hr
+
+theorem planFrom_add {x : ℕ} (hx : C.params.logFinalPolyLen + C.params.logBlowup ≤ x) :
+    C.planFrom (x + C.params.maxLogArity) [] =
+      (C.params.maxLogArity, x, false) :: C.planFrom x [] := by
+  unfold Iop.Batch.Statement.planFrom
+  obtain ⟨c, hc⟩ : ∃ c, x + C.params.maxLogArity = c + 1 := ⟨x + C.params.maxLogArity - 1, by omega⟩
+  have hla : FriGame.Rounds.logArity C.params.maxLogArity
+      (C.params.logFinalPolyLen + C.params.logBlowup) (c + 1) [] = C.params.maxLogArity := by
+    simp only [FriGame.Rounds.logArity, List.headD_nil]
+    omega
+  rw [hc, FriGame.Rounds.plan, ite_eq_right (by omega)]
+  simp only [hla]
+  rw [show c + 1 - C.params.maxLogArity = x by omega,
+    FriGame.Rounds.plan_fuel hr c x x [] (FriGame.Rounds.fits_nil _ _) (by omega) (by omega)]
+
+theorem plainNum_add {x : ℕ} (hx : C.params.logFinalPolyLen + C.params.logBlowup ≤ x) :
+    C.plainNum B A (x + C.params.maxLogArity) =
+      A.levelBound B C.params.logBlowup (C.params.maxLogArity, x, false) + C.plainNum B A x := by
+  simp only [Iop.Batch.Statement.plainNum, planFrom_add C hr hx, List.map_cons, List.sum_cons]
+
+theorem le_injectNum {x a' : ℕ} (hx : C.params.logFinalPolyLen + C.params.logBlowup ≤ x)
+    (h1 : x < a') (h2 : a' - x ≤ C.params.maxLogArity) :
+    A.levelBound B C.params.logBlowup (a' - x, x, true) + C.plainNum B A x - C.plainNum B A a' ≤
+      C.injectNum B A x := by
+  unfold Iop.Batch.Statement.injectNum
+  dsimp only
+  rcases Nat.lt_or_ge (a' - x) C.params.maxLogArity with hlt | hge
+  · refine le_max_of_le_right (le_maxQ (List.mem_map.mpr
+      ⟨a' - x, List.mem_range'_1.mpr ⟨by omega, by omega⟩, ?_⟩))
+    rw [show x + (a' - x) = a' by omega]
+  · obtain rfl : a' = x + C.params.maxLogArity := by omega
+    refine le_max_of_le_left (le_of_eq ?_)
+    rw [show x + C.params.maxLogArity - x = C.params.maxLogArity by omega, plainNum_add C B A hr hx]
+    ring
+
+theorem le_injectFolds {x a' : ℕ} (hx : C.params.logFinalPolyLen + C.params.logBlowup ≤ x)
+    (h1 : x < a') (h2 : a' - x ≤ C.params.maxLogArity) :
+    1 + (C.planFrom x []).length ≤ (C.planFrom a' []).length + C.injectFolds x := by
+  rcases Nat.lt_or_ge (a' - x) C.params.maxLogArity with hlt | hge
+  · have := le_foldr_max_nat (List.mem_map.mpr
+      ⟨a' - x, List.mem_range'_1.mpr ⟨by omega, by omega⟩, rfl⟩ :
+        1 + (C.planFrom x []).length - (C.planFrom (x + (a' - x)) []).length ∈
+          (List.range' 1 (C.params.maxLogArity - 1)).map fun la ↦
+            1 + (C.planFrom x []).length - (C.planFrom (x + la) []).length)
+    rw [show x + (a' - x) = a' by omega] at this
+    unfold Iop.Batch.Statement.injectFolds
+    omega
+  · obtain rfl : a' = x + C.params.maxLogArity := by omega
+    rw [planFrom_add C hr hx, List.length_cons]
+    omega
+
+end FriNumbers
+
+theorem injectNum_nonneg (x : ℕ) : 0 ≤ C.injectNum B A x :=
+  le_max_of_le_right (maxQ_nonneg _)
+
+theorem le_injectMax {x a' : ℕ} (h1 : x < a') (h2 : a' - x ≤ C.params.maxLogArity) :
+    A.levelBound B C.params.logBlowup (a' - x, x, true) ≤ C.injectMax B A x :=
+  le_max_of_le_left (le_maxQ (List.mem_map.mpr
+    ⟨a' - x, List.mem_range'_1.mpr ⟨by omega, by omega⟩, rfl⟩))
+
+theorem injectQueries_eq (h x : ℕ) :
+    C.injectQueries A h x = C.injectFolds x * C.queryStep A h := by
+  unfold Iop.Batch.Statement.injectQueries
+  split_ifs with h0
+  · rw [h0, Nat.cast_zero, zero_mul]
+  · rfl
+
+/-- A sum over a list of a term and, where `q` holds, another, is the sum of the first terms and
+of the others where `q` holds. -/
+theorem sum_map_add_ite {ι : Type} (l : List ι) (a b : ι → ℚ) (q : ι → Prop) [DecidablePred q] :
+    (l.map fun i ↦ a i + if q i then b i else 0).sum =
+      (l.map a).sum + ((l.filter fun i ↦ decide (q i)).map b).sum := by
+  induction l with
+  | nil => simp only [List.map_nil, List.sum_nil, List.filter_nil, add_zero]
+  | cons i l ih =>
+    by_cases hq : q i
+    · rw [List.filter_cons_of_pos (by simpa only [decide_eq_true_eq] using hq)]
+      simp only [List.map_cons, List.sum_cons, hq, ↓reduceIte, ih]
+      ring
+    · rw [List.filter_cons_of_neg (by simpa only [decide_eq_true_eq] using hq)]
+      simp only [List.map_cons, List.sum_cons, hq, ↓reduceIte, ih]
+      ring
+
+/-- A sum of naturals over `K`, cast. -/
+theorem sum_map_cast_div {ι : Type} (l : List ι) (x : ι → ℕ) (K : ℚ) :
+    (l.map fun i ↦ (x i : ℚ) / K).sum = ((l.map x).sum : ℚ) / K := by
+  induction l with
+  | nil => simp only [List.map_nil, List.sum_nil, Nat.cast_zero, zero_div]
+  | cons i l ih => simp only [List.map_cons, List.sum_cons, ih, Nat.cast_add, add_div]
+
+/-- A sum over `K`. -/
+theorem sum_map_div {ι : Type} (l : List ι) (x : ι → ℚ) (K : ℚ) :
+    (l.map fun i ↦ x i / K).sum = (l.map x).sum / K := by
+  induction l with
+  | nil => simp only [List.map_nil, List.sum_nil, zero_div]
+  | cons i l ih => simp only [List.map_cons, List.sum_cons, ih, add_div]
+
+/-- A sum over distinct elements of a nonnegative function is at most its sum over a list holding
+them. -/
+theorem sum_map_le_of_subset {M : Type} [AddCommMonoid M] [PartialOrder M] [IsOrderedAddMonoid M]
+    {l L : List ℕ} (G : ℕ → M) (hG : ∀ m, 0 ≤ G m) (hl : l.Nodup) (hsub : l ⊆ L) :
+    (l.map G).sum ≤ (L.map G).sum := by
+  obtain ⟨l', hp, hl'⟩ := List.subperm_of_subset hl hsub
+  rw [← (hp.map G).sum_eq]
+  exact (hl'.map G).sum_le_sum fun a ha ↦ by
+    obtain ⟨m, -, rfl⟩ := List.mem_map.mp ha
+    exact hG m
+
+variable (EF)
+
+/-- A sum over the elements where `q` holds is at most a sum of bounds over all. -/
+theorem sum_filter_le {ι : Type} (l : List ι) (q : ι → Bool) (f g : ι → ℕ)
+    (h : ∀ i ∈ l, q i = true → f i ≤ g i) : ((l.filter q).map f).sum ≤ (l.map g).sum := by
+  induction l with
+  | nil => exact le_refl _
+  | cons i l ih =>
+    have ih' := ih fun j hj ↦ h j (List.mem_cons_of_mem _ hj)
+    by_cases hq : q i = true
+    · simp only [List.filter_cons_of_pos hq, List.map_cons, List.sum_cons]
+      exact Nat.add_le_add (h i List.mem_cons_self hq) ih'
+    · simp only [List.filter_cons_of_neg hq, List.map_cons, List.sum_cons]
+      omega
+
+/-- A sum over a `flatMap`. -/
+theorem sum_map_flatMap {ι α : Type} (l : List ι) (f : ι → List α) (g : α → ℕ) :
+    ((l.flatMap f).map g).sum = (l.map fun i ↦ ((f i).map g).sum).sum := by
+  induction l with
+  | nil => rfl
+  | cons i l ih => rw [List.flatMap_cons, List.map_append, List.sum_append, ih, List.map_cons,
+      List.sum_cons]
+
+variable (n : Fin C.k → ℕ) (hn : C.Admits n)
 
 /-- At an admitted vector, every instance's shape is one of its shapes at its admitted lengths. -/
 theorem shape_mem_shapesAt (i : Fin C.k) :
     ((C.setupAt EF n hn).instanceSetup i).shape ∈ C.shapesAt EF i := by
-  have hadm : C.admits i (n i) = true := hn.admits i
   have hlt : n i < twoAdicity F + 1 := by have := (hn.sound i).twoAdic; omega
   refine List.mem_flatMap.mpr ⟨n i, List.mem_range.mpr hlt, ?_⟩
-  simp only [hadm, ↓reduceDIte, List.mem_singleton]
+  simp only [hn.admits i, ↓reduceDIte, List.mem_singleton]
   rfl
 
 theorem mem_allShapes {c : Shape} (hc : c ∈ (C.setupAt EF n hn).shapes) : c ∈ C.allShapes EF := by
@@ -771,85 +1053,315 @@ theorem mem_foldPlans_of_mem_plan {f : ℕ × ℕ × Bool}
     f ∈ C.foldPlans :=
   List.mem_flatMap.mpr ⟨f.2.1, mem_foldsOnto_of_mem_plan EF C n hn hf⟩
 
-/-- A domain size batches at most `groupBound` words at an admitted vector. -/
-theorem groupNumOpenedOf_le (l : ℕ) :
-    groupNumOpenedOf (C.setupAt EF n hn).shapes l ≤ C.groupBound EF :=
-  calc groupNumOpenedOf (C.setupAt EF n hn).shapes l ≤
-        ((C.setupAt EF n hn).shapes.map (·.numOpened)).sum :=
-        List.sum_le_sum fun c _ ↦ by split <;> omega
-    _ ≤ C.groupBound EF := by
-        rw [Iop.Batch.Setup.shapes, List.map_map]
-        exact List.sum_le_sum fun i _ ↦
-          le_foldr_max_nat (List.mem_map_of_mem (shape_mem_shapesAt EF C n hn i))
-
-/-- LogUp's numbers at an admitted vector are at most those at the longest admitted lengths. -/
-theorem lookupCount_le : (C.setupAt EF n hn).lookupCount ≤ C.lookupCountMax := by
-  have hT : (C.setupAt EF n hn).numInteractions ≤ ((List.finRange C.k).map fun i ↦
-      2 ^ C.maxLength i * ((C.lookups i).map (·.tuples.length)).sum).sum := by
-    rw [Iop.Batch.Setup.numInteractions, Fin.sum_univ_def]
-    refine List.sum_le_sum fun i _ ↦ Nat.mul_le_mul_right _ (Nat.pow_le_pow_right two_pos ?_)
-    have hlt : n i < twoAdicity F + 1 := by have := (hn.sound i).twoAdic; omega
-    exact le_foldr_max_nat
-      (List.mem_filter.mpr ⟨List.mem_range.mpr hlt, hn.admits i⟩)
-  unfold Iop.Batch.Setup.lookupCount Iop.Batch.Statement.lookupCountMax
-  exact Nat.add_le_add hT (Nat.mul_le_mul_right _ (Nat.sub_le_sub_right hT 1))
-
 /-- An analysis fitting the statement fits the batch at every admitted vector. -/
 theorem fits_setupAt (h : C.Fits EF B A) : (C.setupAt EF n hn).Fits B A :=
   ⟨h.1, fun i _ ↦ h.2.1 _ (mem_allShapes EF C n hn (shape_mem _ i)),
     fun f hf ↦ h.2.2 f (mem_foldPlans_of_mem_plan EF C n hn hf)⟩
 
+/-- LogUp's numbers at an admitted vector, as the statement counts them. -/
+theorem lookupCount_eq : (C.setupAt EF n hn).lookupCount = C.lookupCountAt n := by
+  have hT : (C.setupAt EF n hn).numInteractions = C.interactions n := by
+    rw [Iop.Batch.Setup.numInteractions, Fin.sum_univ_def]
+    rfl
+  unfold Iop.Batch.Setup.lookupCount Iop.Batch.Statement.lookupCountAt
+  rw [hT]
+  rfl
+
+/-- LogUp's numbers at an admitted vector are at most those at the longest admitted lengths. -/
+theorem lookupCount_le : (C.setupAt EF n hn).lookupCount ≤ C.lookupCountMax := by
+  have hT : C.interactions n ≤ C.interactions C.maxLength := by
+    unfold Iop.Batch.Statement.interactions
+    refine List.sum_le_sum fun i _ ↦ Nat.mul_le_mul_right _ (Nat.pow_le_pow_right two_pos ?_)
+    have hlt : n i < twoAdicity F + 1 := by have := (hn.sound i).twoAdic; omega
+    exact le_foldr_max_nat (List.mem_filter.mpr ⟨List.mem_range.mpr hlt, hn.admits i⟩)
+  rw [lookupCount_eq]
+  unfold Iop.Batch.Statement.lookupCountMax Iop.Batch.Statement.lookupCountAt
+  exact Nat.add_le_add hT (Nat.mul_le_mul_right _ (Nat.sub_le_sub_right hT 1))
+
+/-- The instance with the most rows. -/
+abbrev topLength : ℕ := n (C.setupAt EF n hn).top
+
+theorem mem_lengthsUpTo (i : Fin C.k) : n i ∈ C.lengthsUpTo i (topLength EF C n hn) :=
+  List.mem_filter.mpr ⟨List.mem_range.mpr (Nat.lt_succ_of_le ((C.setupAt EF n hn).logN_le_top i)),
+    hn.admits i⟩
+
+theorem topLength_mem_tops : topLength EF C n hn ∈ C.tops := by
+  set S := C.setupAt EF n hn
+  have hlt : n S.top < twoAdicity F + 1 := by have := (hn.sound S.top).twoAdic; omega
+  refine List.mem_filter.mpr ⟨List.mem_range.mpr hlt, ?_⟩
+  simp only [Bool.and_eq_true, List.any_eq_true, List.all_eq_true, List.mem_finRange, true_and,
+    true_implies, Bool.not_eq_eq_eq_not, Bool.not_true, List.isEmpty_eq_false_iff]
+  exact ⟨⟨S.top, hn.admits S.top⟩, fun i ↦ List.ne_nil_of_mem (mem_lengthsUpTo EF C n hn i)⟩
+
+/-- The shapes of the instances on `2 ^ n i` rows include instance `i`'s. -/
+theorem shape_mem_shapesOn (i : Fin C.k) :
+    ((C.setupAt EF n hn).instanceSetup i).shape ∈ C.shapesOn EF (n i) := by
+  refine List.mem_flatMap.mpr ⟨i, List.mem_finRange i, ?_⟩
+  simp only [hn.admits i, ↓reduceDIte, List.mem_singleton]
+  rfl
+
+/-- A domain size batches at an admitted vector at most the words of every instance admitting its
+length. -/
+theorem groupNumOpenedOf_le (m : ℕ) :
+    groupNumOpenedOf (C.setupAt EF n hn).shapes m ≤ ((C.shapesOn EF m).map (·.numOpened)).sum := by
+  rw [groupNumOpenedOf, Iop.Batch.Setup.shapes, List.map_map, Iop.Batch.Statement.shapesOn,
+    sum_map_flatMap]
+  show ((List.finRange C.k).map _).sum ≤ ((List.finRange C.k).map _).sum
+  refine List.sum_le_sum fun i _ ↦ ?_
+  by_cases hm : ((C.setupAt EF n hn).instanceSetup i).shape.logN = m
+  · have hni : n i = m := hm
+    subst hni
+    simp only [hn.admits i, ↓reduceDIte, List.map_cons, List.map_nil, List.sum_cons, List.sum_nil,
+      add_zero]
+    show (if _ then _ else 0) ≤ _
+    rw [ite_eq_left hm]
+    exact le_of_eq rfl
+  · show (if _ then _ else 0) ≤ _
+    rw [ite_eq_right hm]
+    exact Nat.zero_le _
+
 /-- Batching at an admitted vector is at most the statement's batching term. -/
 theorem batchingMax_le (hA : A.Valid (1 / 2 ^ C.params.logBlowup)) :
     maxQ ((C.setupAt EF n hn).shapes.map fun c ↦ c.batchingNum C.params.logBlowup B A
-      (groupNumOpenedOf (C.setupAt EF n hn).shapes c.logN)) ≤
-      maxQ ((C.allShapes EF).map fun c ↦ c.batchingNum C.params.logBlowup B A (C.groupBound EF)) :=
-  maxQ_le_maxQ fun x hx ↦ by
-    obtain ⟨c, hc, rfl⟩ := List.mem_map.mp hx
-    exact ⟨_, List.mem_map_of_mem
-      (f := fun c ↦ c.batchingNum C.params.logBlowup B A (C.groupBound EF))
-      (mem_allShapes EF C n hn hc),
-      batchingNum_mono B A c C.params.logBlowup hA (groupNumOpenedOf_le EF C n hn _)⟩
+      (groupNumOpenedOf (C.setupAt EF n hn).shapes c.logN)) ≤ C.batchingMax EF B A := by
+  refine maxQ_le (maxQ_nonneg _) fun x hx ↦ ?_
+  obtain ⟨c, hc, rfl⟩ := List.mem_map.mp hx
+  obtain ⟨i, -, rfl⟩ := List.mem_map.mp hc
+  have hlt : n i < twoAdicity F + 1 := by have := (hn.sound i).twoAdic; omega
+  refine (batchingNum_mono B A _ _ hA (groupNumOpenedOf_le EF C n hn _)).trans
+    ((le_maxQ (List.mem_map_of_mem (f := fun c ↦ c.batchingNum C.params.logBlowup B A
+      ((C.shapesOn EF (n i)).map (·.numOpened)).sum) (shape_mem_shapesOn EF C n hn i))).trans
+    (le_maxQ (List.mem_map_of_mem (f := C.batchingOn EF B A) (List.mem_range.mpr hlt))))
 
-/-- FRI's query density at an admitted vector is at most the statement's, at the most folds. -/
-theorem queryDensity_le (hA : A.Valid (1 / 2 ^ C.params.logBlowup)) :
-    (C.setupAt EF n hn).domainSetup.queryDensity A (C.setupAt EF n hn).friHeights ≤
-      1 - A.δ + ((twoAdicity F - (C.params.logFinalPolyLen + C.params.logBlowup) : ℕ) : ℚ) *
-        A.loss := by
+/-- The heights where FRI injects at an admitted vector are its shorter instances' domains. -/
+theorem friHeights_subset :
+    (C.setupAt EF n hn).friHeights ⊆ ((List.finRange C.k).filter (n · < topLength EF C n hn)).map
+      (n · + C.params.logBlowup) := by
+  intro x hx
+  obtain ⟨i, rfl, hne⟩ := (mem_friHeights _ x).mp hx
+  have := (C.setupAt EF n hn).logN_le_top i
+  exact List.mem_map.mpr ⟨i, List.mem_filter.mpr ⟨List.mem_finRange i,
+    decide_eq_true (lt_of_le_of_ne this fun h ↦ hne (congrArg (· + C.params.logBlowup) h))⟩, rfl⟩
+
+theorem friHeights_nodup : (C.setupAt EF n hn).friHeights.Nodup :=
+  (fits_friHeights (C.setupAt EF n hn)).1.imp ne_of_gt
+
+/-- FRI's plan at an admitted vector is the statement's from the tallest domain. -/
+theorem friPlan_eq :
+    (C.setupAt EF n hn).domainSetup.friPlan (C.setupAt EF n hn).friHeights =
+      C.planFrom (topLength EF C n hn + C.params.logBlowup) (C.setupAt EF n hn).friHeights := rfl
+
+/-- FRI's largest fold at an admitted vector is at most the statement's. -/
+theorem friFoldMax_le :
+    maxQ (((C.setupAt EF n hn).domainSetup.friPlan (C.setupAt EF n hn).friHeights).map
+      (A.levelBound B C.params.logBlowup)) ≤ C.foldMax B A := by
   set S := C.setupAt EF n hn
   have ha : 0 < C.params.maxLogArity := (S.valid S.top).folds
-  have htop : S.logN S.top + C.params.logBlowup ≤ twoAdicity F := (S.valid S.top).twoAdic
-  have hlen : (S.domainSetup.friPlan S.friHeights).length ≤ S.logN S.top +
-      C.params.logBlowup - (C.params.logFinalPolyLen + C.params.logBlowup) :=
-    FriGame.Rounds.length_plan_le ha _ _ _ (fits_friHeights S)
-  unfold Iop.Setup.queryDensity
-  have hl : ((S.domainSetup.friPlan S.friHeights).length : ℚ) ≤
-      ((twoAdicity F - (C.params.logFinalPolyLen + C.params.logBlowup) : ℕ) : ℚ) :=
-    Nat.cast_le.mpr (le_trans hlen (by omega))
-  have := mul_le_mul_of_nonneg_right hl hA.2.1.le
+  rw [friPlan_eq]
+  refine (maxQ_plan_le ha _ (C.injectMax B A) (fun x a' _ h1 h2 ↦ le_injectMax C B A h1 h2)
+    (fun x _ ↦ le_max_right _ _) _ _ (fits_friHeights S)).trans (max_le_max ?_ ?_)
+  · exact le_maxQ (List.mem_map_of_mem (f := fun h ↦ maxQ ((C.planFrom (h + C.params.logBlowup)
+      []).map (A.levelBound B C.params.logBlowup))) (topLength_mem_tops EF C n hn))
+  · refine maxQ_le_maxQ fun y hy ↦ ?_
+    obtain ⟨x, hx, rfl⟩ := List.mem_map.mp hy
+    refine ⟨_, List.mem_map_of_mem ?_, le_rfl⟩
+    obtain ⟨i, rfl, hne⟩ := (mem_friHeights _ x).mp hx
+    have hle : n i ≤ n S.top := S.logN_le_top i
+    have hlt : n i < twoAdicity F + 1 := by have := (hn.sound i).twoAdic; omega
+    have hlt' : n S.top < twoAdicity F + 1 := by have := (hn.sound S.top).twoAdic; omega
+    have hi : n i < n S.top :=
+      lt_of_le_of_ne hle fun h ↦ hne (congrArg (· + C.params.logBlowup) h)
+    refine List.mem_map.mpr ⟨n i, List.mem_filter.mpr ⟨List.mem_range.mpr hlt, ?_⟩, rfl⟩
+    simp only [List.any_eq_true, List.mem_finRange, true_and, Bool.and_eq_true, bne_iff_ne,
+      ne_eq, List.mem_range, decide_eq_true_eq]
+    refine ⟨i, hn.admits i, S.top, fun h ↦ ?_, n S.top, hlt', hi, hn.admits S.top⟩
+    rw [h] at hi
+    exact lt_irrefl _ hi
+
+/-- FRI's folds at an admitted vector are at most the plan's without inputs and what each input
+adds. -/
+theorem length_friPlan_le :
+    ((C.setupAt EF n hn).domainSetup.friPlan (C.setupAt EF n hn).friHeights).length ≤
+      (C.planFrom (topLength EF C n hn + C.params.logBlowup) []).length +
+        ((((List.finRange C.k).filter (n · < topLength EF C n hn)).map fun i ↦
+          C.injectFolds (n i + C.params.logBlowup))).sum := by
+  set S := C.setupAt EF n hn
+  have ha : 0 < C.params.maxLogArity := (S.valid S.top).folds
+  rw [friPlan_eq]
+  refine (length_plan_le_add ha (C.injectFolds) (fun x a' hx h1 h2 ↦ le_injectFolds C ha hx h1 h2)
+    _ _ (fits_friHeights S)).trans (Nat.add_le_add_left ?_ _)
+  have h2 := sum_map_le_of_subset C.injectFolds (fun _ ↦ Nat.zero_le _)
+    (friHeights_nodup EF C n hn) (friHeights_subset EF C n hn)
+  simp only [List.map_map, Function.comp_def] at h2
+  exact h2
+
+/-- FRI's folds at an admitted vector are at most the statement's most. -/
+theorem length_friPlan_le_mostFolds :
+    ((C.setupAt EF n hn).domainSetup.friPlan (C.setupAt EF n hn).friHeights).length ≤
+      C.mostFolds := by
+  refine (length_friPlan_le EF C n hn).trans (le_trans ?_ (le_foldr_max_nat (List.mem_map_of_mem
+    (f := fun h ↦ (C.planFrom (h + C.params.logBlowup) []).length +
+      ((List.finRange C.k).map fun i ↦ (((C.lengthsUpTo i h).filter (· < h)).map fun m ↦
+        C.injectFolds (m + C.params.logBlowup)).foldr max 0).sum)
+    (topLength_mem_tops EF C n hn))))
+  refine Nat.add_le_add_left (sum_filter_le (List.finRange C.k)
+    (fun i ↦ decide (n i < topLength EF C n hn)) (fun i ↦ C.injectFolds (n i + C.params.logBlowup))
+    (fun i ↦ (((C.lengthsUpTo i (topLength EF C n hn)).filter (· < topLength EF C n hn)).map
+      fun m ↦ C.injectFolds (m + C.params.logBlowup)).foldr max 0)
+    fun i _ hi ↦ le_foldr_max_nat
+      (List.mem_map_of_mem (f := fun m ↦ C.injectFolds (m + C.params.logBlowup))
+        (List.mem_filter.mpr ⟨mem_lengthsUpTo EF C n hn i, hi⟩))) _
+
+theorem interactions_eq_zero_iff (t : Fin C.k → ℕ) :
+    C.interactions t = 0 ↔ ∀ i, C.tuplesPerRow i = 0 := by
+  simp only [Iop.Batch.Statement.interactions, List.sum_eq_zero_iff, List.mem_map,
+    List.mem_finRange, true_and, forall_exists_index, forall_apply_eq_imp_iff, mul_eq_zero,
+    pow_eq_zero_iff', OfNat.ofNat_ne_zero, ne_eq, false_and, false_or]
+
+/-- LogUp's numbers are affine in the interactions, at every vector the same way. -/
+theorem lookupCountAt_sub (t t' : Fin C.k → ℕ) :
+    (C.lookupCountAt t : ℚ) - (1 + C.lookupWidth) * C.interactions t =
+      (C.lookupCountAt t' : ℚ) - (1 + C.lookupWidth) * C.interactions t' := by
+  have key : ∀ t : Fin C.k → ℕ, (C.lookupCountAt t : ℚ) - (1 + C.lookupWidth) * C.interactions t =
+      if ∀ i, C.tuplesPerRow i = 0 then 0 else -(C.lookupWidth : ℚ) := by
+    intro t
+    unfold Iop.Batch.Statement.lookupCountAt
+    split_ifs with h
+    · rw [(interactions_eq_zero_iff C t).mpr h]
+      simp only [Nat.zero_sub, zero_mul, add_zero, Nat.cast_zero, mul_zero, sub_self]
+    · have h1 : 1 ≤ C.interactions t :=
+        Nat.one_le_iff_ne_zero.mpr fun h0 ↦ h ((interactions_eq_zero_iff C t).mp h0)
+      push_cast [Nat.cast_sub h1]
+      ring
+  rw [key, key]
+
+/-- The terms that depend on the lengths at an admitted vector are at most the statement's at its
+top length: each instance's share there is at most its choice's. -/
+theorem lengthTerms_le (hA : A.Valid (1 / 2 ^ C.params.logBlowup)) (p : ℕ) :
+    ((A.listBound (C.setupAt EF n hn).domainSetup.rateQ ^ (C.setupAt EF n hn).k *
+        (C.setupAt EF n hn).lookupCount : ℕ) : ℚ) / (p : ℚ) ^ Challenge.d EF +
+      ((C.setupAt EF n hn).domainSetup.friFoldsNum B A (C.setupAt EF n hn).friHeights /
+          (p : ℚ) ^ Challenge.d EF +
+        (C.setupAt EF n hn).domainSetup.queryDensity A (C.setupAt EF n hn).friHeights ^
+          C.params.numQueries) ≤
+      sumTerms (C.lengthTermsAt EF p B A (topLength EF C n hn)) := by
+  have ha : 0 < C.params.maxLogArity := ((C.setupAt EF n hn).valid (C.setupAt EF n hn).top).folds
+  have hfit := fits_friHeights (C.setupAt EF n hn)
+  have hnd := friHeights_nodup EF C n hn
+  have hsub := friHeights_subset EF C n hn
+  have hlenP := length_friPlan_le EF C n hn
+  rw [friPlan_eq] at hlenP
+  have hcap0 : (C.planFrom (topLength EF C n hn + C.params.logBlowup) []).length ≤
+      topLength EF C n hn + C.params.logBlowup -
+        (C.params.logFinalPolyLen + C.params.logBlowup) :=
+    FriGame.Rounds.length_plan_le ha _ _ [] (FriGame.Rounds.fits_nil _ _)
+  have eF : (C.setupAt EF n hn).domainSetup.friFoldsNum B A (C.setupAt EF n hn).friHeights =
+      ((C.planFrom (topLength EF C n hn + C.params.logBlowup) (C.setupAt EF n hn).friHeights).map
+        (A.levelBound B C.params.logBlowup)).sum := rfl
+  have eQ : (C.setupAt EF n hn).domainSetup.queryDensity A (C.setupAt EF n hn).friHeights =
+      1 - A.δ + ((C.planFrom (topLength EF C n hn + C.params.logBlowup)
+        (C.setupAt EF n hn).friHeights).length : ℚ) * A.loss := rfl
+  have eL : A.listBound (C.setupAt EF n hn).domainSetup.rateQ ^ (C.setupAt EF n hn).k =
+      A.listBound (1 / 2 ^ C.params.logBlowup) ^ C.k := rfl
+  have hLC := lookupCount_eq EF C n hn
+  change FriGame.Rounds.Fits (C.params.logFinalPolyLen + C.params.logBlowup)
+    (topLength EF C n hn + C.params.logBlowup) _ at hfit
+  have hcap : (C.planFrom (topLength EF C n hn + C.params.logBlowup)
+      (C.setupAt EF n hn).friHeights).length ≤ topLength EF C n hn + C.params.logBlowup -
+        (C.params.logFinalPolyLen + C.params.logBlowup) :=
+    FriGame.Rounds.length_plan_le ha _ _ _ hfit
+  rw [eF, eQ, eL, hLC]
+  generalize (C.setupAt EF n hn).friHeights = hs at hfit hnd hsub hlenP hcap ⊢
+  generalize hh : topLength EF C n hn = h at hfit hsub hlenP hcap hcap0 ⊢
+  have hmem : ∀ i, n i ∈ C.lengthsUpTo i h := fun i ↦ hh ▸ mem_lengthsUpTo EF C n hn i
+  clear hh
+  set K := (p : ℚ) ^ Challenge.d EF
+  set lb := C.params.logBlowup
+  set fin := C.params.logFinalPolyLen
+  set s := C.choice EF p B A h
+  set ℓ := A.listBound (1 / 2 ^ lb) ^ C.k
+  have hK : 0 ≤ K := by positivity
+  -- FRI's folds
+  have hF : ((C.planFrom (h + lb) hs).map (A.levelBound B lb)).sum ≤ C.plainNum B A (h + lb) +
+      ((((List.finRange C.k).filter fun i ↦ decide (n i < h))).map fun i ↦
+        C.injectNum B A (n i + lb)).sum := by
+    have h1 : ((C.planFrom (h + lb) hs).map (A.levelBound B lb)).sum ≤
+        C.plainNum B A (h + lb) + (hs.map (C.injectNum B A)).sum :=
+      sum_plan_le ha (A.levelBound B lb) (C.injectNum B A)
+        (fun x a' hx h1 h2 ↦ le_injectNum C B A ha hx h1 h2) hs (h + lb) hfit
+    have h2 := sum_map_le_of_subset (C.injectNum B A) (injectNum_nonneg C B A) hnd hsub
+    simp only [List.map_map, Function.comp_def] at h2
+    linarith
+  -- FRI's queries
+  have hQ : (1 - A.δ + ((C.planFrom (h + lb) hs).length : ℚ) * A.loss) ^ C.params.numQueries ≤
+      C.queriesAfter A (C.planFrom (h + lb) []).length +
+        (((List.finRange C.k).filter fun i ↦ decide (n i < h)).map fun i ↦
+          C.injectQueries A h (n i + lb)).sum := by
+    set len := (C.planFrom (h + lb) hs).length
+    set len0 := (C.planFrom (h + lb) []).length
+    set j := (((List.finRange C.k).filter fun i ↦ decide (n i < h)).map fun i ↦
+      C.injectFolds (n i + lb)).sum
+    have hc : 0 ≤ 1 - A.δ := by linarith [hA.2.2.1, hA.2.2.2.1]
+    have hl : 0 ≤ A.loss := hA.2.1.le
+    have hmono : ∀ a b : ℕ, a ≤ b → C.queriesAfter A a ≤ C.queriesAfter A b := fun a b hab ↦ by
+      unfold Iop.Batch.Statement.queriesAfter
+      have : (a : ℚ) * A.loss ≤ b * A.loss := mul_le_mul_of_nonneg_right (by exact_mod_cast hab) hl
+      exact pow_le_pow_left₀ (by positivity) (by linarith) _
+    have hstep0 : 0 ≤ C.queryStep A h := sub_nonneg.mpr (hmono _ _ (Nat.sub_le _ _))
+    have hsum : (((List.finRange C.k).filter fun i ↦ decide (n i < h)).map fun i ↦
+        C.injectQueries A h (n i + lb)).sum = (j : ℚ) * C.queryStep A h := by
+      simp only [injectQueries_eq, j, Nat.cast_list_sum, List.map_map, Function.comp_def,
+        List.sum_map_mul_right]
+    rw [hsum]
+    show C.queriesAfter A len ≤ C.queriesAfter A len0 + j * C.queryStep A h
+    by_cases h0 : len0 ≤ len
+    · obtain ⟨j', hj'⟩ : ∃ j', len = len0 + j' := ⟨len - len0, by omega⟩
+      have hb := pow_le_add_mul_step hc hl C.params.numQueries len0 (h - fin) j' (by omega)
+      have hjj : (j' : ℚ) * C.queryStep A h ≤ j * C.queryStep A h :=
+        mul_le_mul_of_nonneg_right (by exact_mod_cast (show j' ≤ j by omega)) hstep0
+      unfold Iop.Batch.Statement.queryStep Iop.Batch.Statement.queriesAfter at *
+      rw [hj']
+      linarith
+    · exact (hmono _ _ (by omega)).trans
+        (le_add_of_nonneg_right (mul_nonneg (Nat.cast_nonneg _) hstep0))
+  -- the shares
+  have hdec : ∀ t : Fin C.k → ℕ, ((List.finRange C.k).map fun i ↦ C.share EF p B A h i (t i)).sum =
+      ((ℓ * ((1 + C.lookupWidth) * C.interactions t) : ℕ) : ℚ) / K +
+        ((((List.finRange C.k).filter fun i ↦ decide (t i < h)).map fun i ↦
+          C.injectNum B A (t i + lb)).sum / K +
+          (((List.finRange C.k).filter fun i ↦ decide (t i < h)).map fun i ↦
+            C.injectQueries A h (t i + lb)).sum) := by
+    intro t
+    have e := sum_map_add_ite (List.finRange C.k)
+      (fun i ↦ ((ℓ * ((1 + C.lookupWidth) * (2 ^ t i * C.tuplesPerRow i)) : ℕ) : ℚ) / K)
+      (fun i ↦ C.injectNum B A (t i + lb) / K + C.injectQueries A h (t i + lb)) (t · < h)
+    have e2 : ((List.finRange C.k).map fun i ↦
+        ((ℓ * ((1 + C.lookupWidth) * (2 ^ t i * C.tuplesPerRow i)) : ℕ) : ℚ) / K).sum =
+        ((ℓ * ((1 + C.lookupWidth) * C.interactions t) : ℕ) : ℚ) / K := by
+      rw [sum_map_cast_div, Iop.Batch.Statement.interactions, ← List.sum_map_mul_left,
+        ← List.sum_map_mul_left]
+    unfold Iop.Batch.Statement.share
+    dsimp only
+    rw [e, e2, List.sum_map_add, sum_map_div]
+  have hshare : ((List.finRange C.k).map fun i ↦ C.share EF p B A h i (n i)).sum ≤
+      ((List.finRange C.k).map fun i ↦ C.share EF p B A h i (s i)).sum :=
+    List.sum_le_sum fun i _ ↦ le_argmaxOn _ h (hmem i)
+  rw [hdec, hdec] at hshare
+  have hlook : ∀ t : Fin C.k → ℕ, ((ℓ * C.lookupCountAt t : ℕ) : ℚ) / K -
+      ((ℓ * ((1 + C.lookupWidth) * C.interactions t) : ℕ) : ℚ) / K =
+      (ℓ : ℚ) * ((C.lookupCountAt t : ℚ) - (1 + C.lookupWidth) * C.interactions t) / K := by
+    intro t
+    push_cast
+    ring
+  have hl := lookupCountAt_sub C n s
+  have hln := hlook n
+  have hls := hlook s
+  rw [hl] at hln
+  have hF' := div_le_div_of_nonneg_right hF hK
+  rw [add_div] at hF'
+  simp only [Iop.Batch.Statement.lengthTermsAt, sumTerms, List.foldr, add_zero]
+  rw [add_div]
   linarith
-
-/-- FRI's folds at an admitted vector are at most the statement's: the plan's folds have distinct
-target heights in `foldHeights`, each at most the worst fold onto its height. -/
-theorem friFoldsNum_le :
-    (C.setupAt EF n hn).domainSetup.friFoldsNum B A (C.setupAt EF n hn).friHeights ≤
-      (C.foldHeights.map fun m ↦
-        maxQ ((C.foldsOnto m).map (A.levelBound B C.params.logBlowup))).sum := by
-  set S := C.setupAt EF n hn
-  set G : ℕ → ℚ := fun m ↦ maxQ ((C.foldsOnto m).map (A.levelBound B C.params.logBlowup))
-  have ha : 0 < C.params.maxLogArity := (S.valid S.top).folds
-  have hnd : ((S.domainSetup.friPlan S.friHeights).map (·.2.1)).Nodup :=
-    (List.pairwise_map.mpr (FriGame.Rounds.pairwise_plan ha _ _ _ (fits_friHeights S))).imp
-      ne_of_gt
-  calc S.domainSetup.friFoldsNum B A S.friHeights
-      ≤ ((S.domainSetup.friPlan S.friHeights).map fun f ↦ G f.2.1).sum :=
-        List.sum_le_sum fun f hf ↦
-          le_maxQ (List.mem_map_of_mem (mem_foldsOnto_of_mem_plan EF C n hn hf).2)
-    _ = (((S.domainSetup.friPlan S.friHeights).map (·.2.1)).map G).sum := by rw [List.map_map]; rfl
-    _ ≤ (C.foldHeights.map G).sum :=
-        sum_map_le_of_subset G (fun m ↦ maxQ_nonneg _) hnd List.nodup_range' fun m hm ↦ by
-          obtain ⟨f, hf, rfl⟩ := List.mem_map.mp hm
-          exact (mem_foldsOnto_of_mem_plan EF C n hn hf).1
 
 /-- **The calculator's batch statement bound is every admitted vector's.** If the calculator
 certifies `bits` bits per oracle answer for the statement `C`, it does for the batch at every
@@ -880,16 +1392,18 @@ theorem _root_.CompStark.Iop.Batch.Statement.secureRo_setupAt {p : ℕ} {B : Mca
   · exact le_trans (mul_le_mul_of_nonneg_left (div_le_div_of_nonneg_right
       (batchingMax_le EF C B A n hn hA) hK) (powFractionQ_nonneg' _ _))
       (hC _ (.tail _ (.tail _ (.tail _ (.head _)))))
-  · refine le_trans (mul_le_mul_of_nonneg_left (div_le_div_of_nonneg_right
-      (maxQ_le_maxQ fun x hx ↦ ?_) hK) (powFractionQ_nonneg' _ _))
+  · exact le_trans (mul_le_mul_of_nonneg_left (div_le_div_of_nonneg_right
+      (friFoldMax_le EF C B A n hn) hK) (powFractionQ_nonneg' _ _))
       (hC _ (.tail _ (.tail _ (.tail _ (.tail _ (.head _))))))
-    obtain ⟨f, hf, rfl⟩ := List.mem_map.mp hx
-    exact ⟨_, List.mem_map_of_mem (mem_foldPlans_of_mem_plan EF C n hn hf), le_rfl⟩
   · refine le_trans (mul_le_mul_of_nonneg_left ?_ (powFractionQ_nonneg' _ _))
       (hC _ (.tail _ (.tail _ (.tail _ (.tail _ (.tail _ (.head _)))))))
     have hq0 := queryDensity_nonneg S.domainSetup A hA S.friHeights
     refine pow_le_pow_left₀ (add_nonneg hq0 (by positivity)) ?_ _
-    linarith [queryDensity_le EF C A n hn hA]
+    have hl : ((S.domainSetup.friPlan S.friHeights).length : ℚ) ≤ C.mostFolds :=
+      Nat.cast_le.mpr (length_friPlan_le_mostFolds EF C n hn)
+    have := mul_le_mul_of_nonneg_right hl hA.2.1.le
+    unfold Iop.Setup.queryDensity
+    linarith
 
 /-- **The calculator's batch statement bound is every admitted vector's.** If the calculator
 certifies `bits` bits of knowledge soundness for the statement `C`, it does for the batch at every
@@ -898,23 +1412,24 @@ theorem _root_.CompStark.Iop.Batch.Statement.secure_setupAt {p : ℕ} {B : McaBo
     {A : Analysis} {bits : ℕ} (h : C.Secure EF p B A bits) (n : Fin C.k → ℕ)
     (hn : C.Admits n) : (C.setupAt EF n hn).Secure p B A bits := by
   obtain ⟨hfit, hb⟩ := h
-  set S := C.setupAt EF n hn with hS
   have hA := hfit.1
   refine ⟨fits_setupAt EF C B A n hn hfit, le_trans ?_ hb⟩
   have hK : (0 : ℚ) ≤ (p : ℚ) ^ Challenge.d EF := by positivity
-  simp only [Iop.Batch.Setup.knowledgeErrorBound, Iop.Batch.Setup.knowledgeErrorTerms,
+  have hlen := lengthTerms_le EF C B A n hn hA p
+  have htop : sumTerms (C.lengthTermsAt EF p B A (topLength EF C n hn)) ≤
+      maxQ (C.tops.map fun h ↦ sumTerms (C.lengthTermsAt EF p B A h)) :=
+    le_maxQ (List.mem_map_of_mem (f := fun h ↦ sumTerms (C.lengthTermsAt EF p B A h))
+      (topLength_mem_tops EF C n hn))
+  have h1 := div_le_div_of_nonneg_right (maxQ_shapes_le EF C n hn
+    (·.foldingNum C.params.logBlowup A)) hK
+  have h2 := div_le_div_of_nonneg_right (maxQ_shapes_le EF C n hn
+    (·.outOfDomainNum C.params.logBlowup A)) hK
+  have h3 := div_le_div_of_nonneg_right (batchingMax_le EF C B A n hn hA) hK
+  have hP : (C.setupAt EF n hn).params = C.params := rfl
+  simp only [hP, Iop.Batch.Setup.knowledgeErrorBound, Iop.Batch.Setup.knowledgeErrorTerms,
     Iop.Batch.Setup.knowledgeErrorTermsOf, Iop.Batch.Statement.knowledgeErrorBound,
-    Iop.Batch.Statement.knowledgeErrorTerms, sumTerms, List.foldr]
-  refine add_le_add ?_ (add_le_add ?_ (add_le_add ?_ (add_le_add ?_ (add_le_add ?_
-    (add_le_add ?_ le_rfl)))))
-  · exact div_le_div_of_nonneg_right
-      (Nat.cast_le.mpr (Nat.mul_le_mul_left _ (lookupCount_le EF C n hn))) hK
-  · exact div_le_div_of_nonneg_right (maxQ_shapes_le EF C n hn _) hK
-  · exact div_le_div_of_nonneg_right (maxQ_shapes_le EF C n hn _) hK
-  · exact div_le_div_of_nonneg_right (batchingMax_le EF C B A n hn hA) hK
-  · exact div_le_div_of_nonneg_right (friFoldsNum_le EF C B A n hn) hK
-  · exact pow_le_pow_left₀ (queryDensity_nonneg S.domainSetup A hA S.friHeights)
-      (queryDensity_le EF C A n hn hA) _
+    Iop.Batch.Statement.instanceTerms, sumTerms, List.foldr, add_zero] at hlen htop ⊢
+  linarith
 
 end Statement
 

@@ -33,12 +33,11 @@ is a polynomial identity that a failing candidate satisfies at few points.
 A lookup's tuples are queries, of positive weight, or provided table entries, of weight `0` and
 any multiplicity. The base field being the prime field `ℤ/p`, balance in the field makes the
 queries included in what is provided when they are few (`Sound.Batch.included_of_balanced`): the
-claimed lengths pass the verifier's multiplicity bound `∑ᵢ wᵢ 2 ^ logNᵢ < p` (`Setup.HeightBounded`),
-which the verifier checks on every length vector it admits (`Statement.Admits`), so if every AIR
-keeps its queries' multiplicities within their weights
+claimed lengths pass the verifier's multiplicity bound `∑ᵢ wᵢ 2 ^ logNᵢ < p`
+(`Setup.HeightBounded`), which the verifier checks on every length vector it admits
+(`Statement.Admits`), so if every AIR keeps its queries' multiplicities within their weights
 (`Air.CountsBounded`, an obligation of the AIRs the verifier does not check), then for every bus
-and tuple of values,
-some row of some instance provides it, or its queries' multiplicities, read as the integers of
+and tuple of values, some row of some instance provides it, or its queries' multiplicities, read as the integers of
 magnitude below `p / 2` they stand for, sum to zero (`Setup.Included`). So the knowledge error
 also bounds acceptance while no tuple of close traces satisfies the batch with lookup inclusion
 (`batchKnowledgeSoundness_inclusion`).
