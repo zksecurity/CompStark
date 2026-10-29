@@ -23,7 +23,7 @@ variable {F : Type} [BaseField F] {EF : Type} [Challenge F EF]
 local notation "𝕂" => Challenge.Spec EF
 
 /-- The batch of one instance has the STARK's rate. -/
-theorem rate_toBatch (S : Iop.Setup EF) [S.Folds] : S.toBatch.rate = S.rate := by
+theorem rate_toBatch (S : Iop.Setup EF) : S.toBatch.rate = S.rate := by
   rw [Batch.Setup.rate, Iop.Setup.rate, Iop.Setup.n, Iop.Setup.size, pow_add, Nat.cast_mul]
   have : ((2 ^ S.logN : ℕ) : ℝ) ≠ 0 := by positivity
   field_simp
@@ -31,13 +31,13 @@ theorem rate_toBatch (S : Iop.Setup EF) [S.Folds] : S.toBatch.rate = S.rate := b
   ring
 
 /-- The batch of one instance injects nothing into FRI. -/
-theorem friHeights_toBatch (S : Iop.Setup EF) [S.Folds] : S.toBatch.friHeights = [] := by
+theorem friHeights_toBatch (S : Iop.Setup EF) : S.toBatch.friHeights = [] := by
   refine List.eq_nil_iff_forall_not_mem.mpr fun m hm ↦ ?_
   obtain ⟨i, rfl, hne⟩ := (mem_friHeights _ m).mp hm
   exact hne rfl
 
 /-- The batch of one instance opens the STARK's words. -/
-theorem groupOpened_toBatch {S : Iop.Setup EF} [S.Folds] (p : Iop.Prover S) (lα lβ α ζ : 𝕂) :
+theorem groupOpened_toBatch {S : Iop.Setup EF} (p : Iop.Prover S) (lα lβ α ζ : 𝕂) :
     Batch.groupOpened p.toBatch lα lβ α ζ (S.logN + S.params.logBlowup) =
       Iop.openedWords p α ζ := by
   rw [openedWords_eq_append]
@@ -47,7 +47,7 @@ theorem groupOpened_toBatch {S : Iop.Setup EF} [S.Folds] (p : Iop.Prover S) (lα
   rfl
 
 /-- The batch of one instance batches the STARK's DEEP word. -/
-theorem groupDeepWord_toBatch {S : Iop.Setup EF} [S.Folds] (p : Iop.Prover S) (lα lβ α ζ a : 𝕂) :
+theorem groupDeepWord_toBatch {S : Iop.Setup EF} (p : Iop.Prover S) (lα lβ α ζ a : 𝕂) :
     Batch.groupDeepWord p.toBatch lα lβ α ζ a (S.logN + S.params.logBlowup) =
       Iop.deepWord p α ζ a := by
   funext x
@@ -59,7 +59,7 @@ theorem groupDeepWord_toBatch {S : Iop.Setup EF} [S.Folds] (p : Iop.Prover S) (l
   rw [domain_eq]
 
 /-- The batch of one instance accepts at any lookup challenges as the STARK does. -/
-theorem acceptanceAt_toBatch {S : Iop.Setup EF} [S.Folds] (publicValues : List F) (p : Iop.Prover S)
+theorem acceptanceAt_toBatch {S : Iop.Setup EF} (publicValues : List F) (p : Iop.Prover S)
     (lα lβ : 𝕂) :
     Batch.acceptanceAt (fun _ ↦ publicValues) p.toBatch lα lβ = acceptance publicValues p := by
   classical
@@ -79,7 +79,7 @@ theorem acceptanceAt_toBatch {S : Iop.Setup EF} [S.Folds] (publicValues : List F
   exact if_congr ⟨fun h ↦ h.2 ⟨0, Nat.one_pos⟩, fun h ↦ ⟨hsum, fun _ ↦ h⟩⟩ rfl rfl
 
 /-- The batch of one instance accepts as the STARK does. -/
-theorem acceptance_toBatch {S : Iop.Setup EF} [S.Folds] (publicValues : List F) (p : Iop.Prover S) :
+theorem acceptance_toBatch {S : Iop.Setup EF} (publicValues : List F) (p : Iop.Prover S) :
     Batch.acceptance (fun _ ↦ publicValues) p.toBatch = acceptance publicValues p := by
   rw [Batch.acceptance]
   simp only [acceptanceAt_toBatch, Finset.sum_const, Finset.card_univ, nsmul_eq_mul]
@@ -88,7 +88,7 @@ theorem acceptance_toBatch {S : Iop.Setup EF} [S.Folds] (publicValues : List F) 
   rw [h, ENNReal.inv_mul_cancel card𝕂_ne_zero card𝕂_ne_top, one_pow, one_mul]
 
 /-- The batch of one instance has the STARK's knowledge error. -/
-theorem knowledgeError_toBatch (S : Iop.Setup EF) [S.Folds] (δ δ' : NNReal) :
+theorem knowledgeError_toBatch (S : Iop.Setup EF) (δ δ' : NNReal) :
     Batch.knowledgeError S.toBatch δ δ' = knowledgeError S δ δ' := by
   have hnum : S.toBatch.groupNumOpened (S.logN + S.params.logBlowup) = S.numOpened := by
     simp only [Batch.Setup.groupNumOpened, Finset.univ_unique, Finset.filter_singleton,

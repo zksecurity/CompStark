@@ -120,7 +120,7 @@ theorem friFoldErrorB_le (δ loss : ℝ≥0) (g : ℕ × ℕ × Bool → ℝ)
     ⨆ j, Iop.Batch.friFoldError S δ loss j ≤
       ENNReal.ofReal (planMax g (friPlan S) / Fintype.card 𝕂) := by
   refine iSup_le fun j ↦ ?_
-  have hf := S.folds S.top
+  have hf := (S.valid S.top).finalPolyFits
   have hn : S.params.logFinalPolyLen + S.params.logBlowup ≤ S.logTop := by
     change _ ≤ S.logN S.top + S.params.logBlowup
     omega

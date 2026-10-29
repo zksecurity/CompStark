@@ -13,11 +13,12 @@ does for inputs of log heights `m₁ > m₂ > …` below the tallest: from heigh
 `min (n - mᵢ) (n - logFinal) maxLogArity` towards the next input's height `mᵢ` and the final
 height, and inject the input `words mᵢ` when its height is reached.
 
-For heights strictly decreasing, all below `n` and above `logFinal` (`Fits`), the rounds reach the
-final height exactly (`degree_schedule`: the code before them has degree bound
-`2 ^ (n - logFinal) d`), and every input is injected: inputs agreeing in the rounds means each
-input agrees with its code, on a domain the folds reach from the first (`agrees_of_inputsAgree`).
-`plan` lists the folds as data, one per fold (`numFolds_schedule`). The rounds' errors
+For heights strictly decreasing, all below `n` and at least `logFinal` (`Fits`), the last one
+possibly the final height itself, the rounds reach the final height exactly (`degree_schedule`:
+the code before them has degree bound `2 ^ (n - logFinal) d`), and every input is injected:
+inputs agreeing in the rounds means each input agrees with its code, on a domain the folds reach
+from the first (`agrees_of_inputsAgree`). From the final height, the rounds are `.final`, without
+folds. `plan` lists the folds as data, one per fold (`numFolds_schedule`). The rounds' errors
 depend on the heights only, not on the words (`foldError_schedule_congr`).
 -/
 
@@ -62,9 +63,9 @@ def schedule (maxLogArity logFinal : ℕ) (words : (m : ℕ) → Fin (2 ^ m) →
             (schedule maxLogArity logFinal words fuel (n - la) rest)
         else .fold la hla none (schedule maxLogArity logFinal words fuel (n - la) (m :: rest))
 
-/-- Heights fit below height `n`: strictly decreasing, all below `n` and above `logFinal`. -/
+/-- Heights fit below height `n`: strictly decreasing, all below `n` and at least `logFinal`. -/
 def Fits (logFinal n : ℕ) (heights : List ℕ) : Prop :=
-  heights.Pairwise (· > ·) ∧ ∀ m ∈ heights, logFinal < m ∧ m < n
+  heights.Pairwise (· > ·) ∧ ∀ m ∈ heights, logFinal ≤ m ∧ m < n
 
 theorem fits_nil (logFinal n : ℕ) : Fits logFinal n [] :=
   ⟨List.Pairwise.nil, fun _ h ↦ absurd h List.not_mem_nil⟩

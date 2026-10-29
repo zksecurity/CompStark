@@ -1272,7 +1272,7 @@ theorem bcsB (S : Iop.Batch.Setup EF) (cache : Merkle.Cache F (Digest F)) (H : P
     rw [hfin]
     have hsub : S.logTop - (S.params.logBlowup + S.params.logFinalPolyLen) =
         S.domainSetup.logN - S.params.logFinalPolyLen := by
-      have := S.folds S.top
+      have := (S.valid S.top).finalPolyFits
       have hl : S.domainSetup.logN = S.logN S.top := rfl
       unfold Iop.Batch.Setup.logTop
       omega

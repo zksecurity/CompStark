@@ -320,15 +320,6 @@ theorem openings_eqB (hsize : proof.opened.size = S.k)
   funext i
   exact openingsAtB_coeffs S common proof hsize hlsize hnsize hshape hprep hpw hperm 0 _ i
 
-theorem friArities_ne_nil : S.friArities ≠ [] := by
-  have hf := S.folds S.top
-  have hb := (S.valid S.top).blowup
-  unfold Iop.Batch.Setup.friArities Iop.Batch.Setup.logTop
-  obtain ⟨n, hn⟩ : ∃ n, S.logN S.top + S.params.logBlowup = n + 1 := ⟨_, (Nat.succ_pred_eq_of_pos
-    (by omega)).symm⟩
-  rw [hn, foldSchedule, ite_eq_right_of_eq_false _ _ (eq_false (by omega))]
-  exact List.cons_ne_nil _ _
-
 variable (answer : (q : Query F) → Answer S.streamLen q)
 variable {common proof pis}
 
@@ -405,17 +396,19 @@ theorem finalPoly_eqB
         pis =
       .ok ()) :
     finalPolyAt S.domainSetup
-      ((inputsB S common pis proof).getD (lookupRounds S + 3 + S.friArities.length) []) =
+      (((inputsB S common pis proof).getD (lookupRounds S + 3 + S.friArities.length) []).drop
+        (friOffsetB S S.friArities.length)) =
       proof.fri.finalPoly := by
   have hz := length_zip_commitsB S (idealOf answer) common proof pis hok
   obtain ⟨-, -, -, -, -, hfp, -⟩ := shape_of_verifyInstancesWith S (idealOf answer) common proof
       pis hok
   have hlast := inputsB_getD_last S common pis proof
   rw [hz] at hlast
-  have hseed : seedAt (friSeedB S) S.friArities.length = [] := by
-    have := List.length_pos_of_ne_nil (friArities_ne_nil S)
-    simp only [seedAt, Nat.pos_iff_ne_zero.mp this, ↓reduceIte]
-  rw [hlast, hseed, List.nil_append]
+  have hpre : friOffsetB S S.friArities.length =
+      (seedAt (friSeedB S) S.friArities.length).length := by
+    simp only [friOffsetB, seedAt]
+    split <;> rfl
+  rw [hlast, hpre, List.append_assoc, List.drop_left]
   exact finalPolyAt_coeffs S.domainSetup _ _ hfp
 
 /-- Batch transcripts with the same fields are equal. -/
@@ -532,7 +525,8 @@ theorem extractB_eq_prefixTranscriptB (cache : Merkle.Cache F (Digest F))
     · rfl
   · show finalPoly S.domainSetup proof.fri.finalPoly = finalPoly S.domainSetup
       (finalPolyAt S.domainSetup
-        ((inputsB S common pis proof).getD (lookupRounds S + 3 + S.friArities.length) []))
+        (((inputsB S common pis proof).getD (lookupRounds S + 3 + S.friArities.length) []).drop
+          (friOffsetB S S.friArities.length)))
     rw [finalPoly_eqB S answer hok]
   · funext j
     show (lift gen : Challenge.Spec EF) ^ 2 ^ (S.friArities.take j).sum *

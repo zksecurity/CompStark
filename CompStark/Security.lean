@@ -147,7 +147,7 @@ theorem knowledgeError_le_of_secure {lookups : List (Lookup F)} (S : Setup EF lo
 /-- **Knowledge soundness from the calculator.** If the calculator certifies `bits` bits for `S`
 at `A` with an MCA bound that holds, and no trace within `δ' = A.δ'` of the prover's committed
 trace satisfies the AIR, the verifier accepts with probability at most `2 ^ (-bits)`. -/
-theorem knowledgeSoundness_of_secure (S : Setup EF) [S.Folds] (hp : Nat.card F = p)
+theorem knowledgeSoundness_of_secure (S : Setup EF) (hp : Nat.card F = p)
     {B : McaBound}
     (hB : B.Holds) (A : Analysis) {bits : ℕ} (h : S.Secure p B A bits) (δ' : NNReal)
     (hδ' : (δ' : ℝ) = A.δ') (publicValues : List F) (prover : Prover S) :
@@ -304,8 +304,6 @@ def fibonacciSetup : Setup KoalaBear.Fast.Ext4 where
       queries := by decide
       blowup := by decide }
 
-instance : fibonacciSetup.Folds := ⟨by decide⟩
-
 /-- FRI at `δ = 15/32 - 2 ^ (-40)`, the extractor at `δ' = 15/32 - 2 ^ (-42)`, below the
 unique-decoding radius `15/32`, and `loss = 2 ^ (-60)`. -/
 def fibonacciAnalysis : Analysis := ⟨15 / 32 - 1 / 2 ^ 40, 15 / 32 - 1 / 2 ^ 42, 1 / 2 ^ 60⟩
@@ -381,8 +379,6 @@ def wideSetup : Setup KoalaBear.Fast.Ext4 where
   valid := ValidConfig.sound <|
     wide_valid wideParams rfl (by decide) rfl (by decide) 64 (by decide) 20 (by decide)
 
-instance : wideSetup.Folds := ⟨by decide⟩
-
 /-- FRI at `δ = 1535/4096 = 3/8 - 2 ^ (-12)`, the extractor at
 `δ' = 6143/16384 = 3/8 - 2 ^ (-14)` and `loss = 2 ^ (-17)`. -/
 def wideAnalysis : Analysis := ⟨1535 / 4096, 6143 / 16384, 1 / 2 ^ 17⟩
@@ -415,8 +411,6 @@ def wide21Setup : Setup KoalaBear.Fast.Ext4 where
   logN := 21
   valid := ValidConfig.sound <|
     wide_valid wideParams rfl (by decide) rfl (by decide) 64 (by decide) 21 (by decide)
-
-instance : wide21Setup.Folds := ⟨by decide⟩
 
 /-- FRI at `δ = 1535/4096 = 3/8 - 2 ^ (-12)`, the extractor at
 `δ' = 6143/16384 = 3/8 - 2 ^ (-14)` and `loss = 2 ^ (-17)`. -/
@@ -672,8 +666,6 @@ def wide5iSetup : Setup KoalaBear.Fast.Ext5 where
   valid := ValidConfig.sound <|
     wide_valid wide5iParams rfl (by decide) rfl (by decide) 64 (by decide) 21 (by decide)
 
-instance : wide5iSetup.Folds := ⟨by decide⟩
-
 /-- FRI at `δ = 6143/16384 = 3/8 - 2 ^ (-14)`, the extractor at
 `δ' = 24575/65536 = 3/8 - 2 ^ (-16)` and `loss = 2 ^ (-19)`. -/
 def wide5iAnalysis : Analysis := ⟨6143 / 16384, 24575 / 65536, 1 / 2 ^ 19⟩
@@ -791,7 +783,6 @@ def wideBatchSetup : Batch.Setup KoalaBear.Fast.Ext5 where
   valid i := ValidConfig.sound <|
     wideBus_valid wide5iParams rfl (by decide) rfl (by decide) _ (by fin_cases i <;> decide)
   keyed _ h := absurd h (by decide)
-  folds i := by fin_cases i <;> decide
   nonempty := by decide
   lookupsValid i := wideBus_lookupsValid _ _ (by fin_cases i <;> decide)
   buses := wideBus_busesValid _
@@ -837,7 +828,6 @@ def wideBatch5Setup : Batch.Setup KoalaBear.Fast.Ext5 where
   valid i := ValidConfig.sound <|
     wideBus_valid wide5Params rfl (by decide) rfl (by decide) _ (by fin_cases i <;> decide)
   keyed _ h := absurd h (by decide)
-  folds i := by fin_cases i <;> decide
   nonempty := by decide
   lookupsValid i := wideBus_lookupsValid _ _ (by fin_cases i <;> decide)
   buses := wideBus_busesValid _
@@ -856,7 +846,6 @@ def wideBatchGrindSetup : Batch.Setup KoalaBear.Fast.Ext4 where
   valid i := ValidConfig.sound <|
     wideBus_valid wideBusGrindParams rfl (by decide) rfl (by decide) _ (by fin_cases i <;> decide)
   keyed _ h := absurd h (by decide)
-  folds i := by fin_cases i <;> decide
   nonempty := by decide
   lookupsValid i := wideBus_lookupsValid _ _ (by fin_cases i <;> decide)
   buses := wideBus_busesValid _

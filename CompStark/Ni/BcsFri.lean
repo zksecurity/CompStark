@@ -67,7 +67,7 @@ noncomputable def friWordAt (cap : Cap F) (h m a z : Nat) : 𝕂 :=
 end Extract
 
 section Final
-variable {lookups : List (Lookup F)} (T : Iop.Setup EF lookups) [T.Folds]
+variable {lookups : List (Lookup F)} (T : Iop.Setup EF lookups)
 
 /-- `log₂ |L|`. -/
 abbrev _root_.CompStark.Iop.Setup.logSize : Nat := T.logN + T.params.logBlowup
@@ -94,12 +94,13 @@ theorem eval_finalPoly (coeffs : Array EF) (I : Nat)
         acc * Ext.ofBase (powF (twoAdicGen T.logSize) (reverseBits I T.logSize)) + c) 0) := by
   set L := T.params.logBlowup + T.params.logFinalPolyLen
   have hn : T.logSize = (T.logN - T.params.logFinalPolyLen) + L := by
-    have := T.folds; unfold Iop.Setup.logSize; omega
+    have := T.valid.finalPolyFits; unfold Iop.Setup.logSize; omega
   have hpt : Challenge.toSpec (Ext.ofBase (powF (twoAdicGen T.logSize) (reverseBits I T.logSize)) :
       EF) = lift (twoAdicGen L ^ reverseBits I L) := by
     rw [Challenge.toSpec_ofBase', ← lift, powF_eq, hn, reverseBits_low L _ I hI,
       pow_mul, Nat.add_comm _ L,
-      BaseField.twoAdicGen_pow (F := F) L _ (by have := T.valid.twoAdic; have := T.folds; omega)]
+      BaseField.twoAdicGen_pow (F := F) L _
+        (by have := T.valid.twoAdic; have := T.valid.finalPolyFits; omega)]
   rw [← Array.foldr_toList, toSpec_horner_list, Array.length_toList, hpt, finalPoly,
     eval_finsetSum]
   refine Finset.sum_congr rfl fun i _ ↦ ?_

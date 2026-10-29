@@ -158,7 +158,7 @@ theorem mem_friHeights (m : ℕ) :
     have := S.logN_le_top i
     exact ⟨lt_of_le_of_ne (by omega) hne, i, hi⟩
 
-/-- The sizes where FRI injects fit below the tallest domain and above the final one. -/
+/-- The sizes where FRI injects fit below the tallest domain and at or above the final one. -/
 theorem fits_friHeights :
     Rounds.Fits (S.params.logFinalPolyLen + S.params.logBlowup)
       (S.logN S.top + S.params.logBlowup) S.friHeights := by
@@ -168,7 +168,7 @@ theorem fits_friHeights :
     exact List.pairwise_lt_range
   · obtain ⟨i, rfl, hne⟩ := (mem_friHeights S m).mp hm
     have := S.logN_le_top i
-    have := S.folds i
+    have := (S.valid i).finalPolyFits
     omega
 
 /-- A word near the code agrees with it on `(1 - δ) N` points. -/

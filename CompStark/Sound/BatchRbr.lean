@@ -464,7 +464,7 @@ theorem not_agrees_of_not_near (δ : NNReal) (t : Transcript S) (i : Fin S.k)
         2 ^ S.logN i := by
       rw [← pow_add]
       congr 1
-      have := S.folds i
+      have := (S.valid i).finalPolyFits
       omega
     rw [hdeg] at hagree
     have h1 := agrees_of_agrees_mul (inv_ne_zero (foldShift_ne_zero S _)) hagree

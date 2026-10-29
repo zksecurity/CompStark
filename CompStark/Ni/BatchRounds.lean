@@ -15,8 +15,8 @@ before it parse it as round `i` of a batch transcript and its answer makes round
 and the cache of the earlier hash queries (`prefixTranscriptB`): every instance's trace and quotient
 words are extracted under the digests rounds `0` and `1` observe, FRI's words under those of the
 fold rounds, every cap read at its size clamped to its tree; the openings are decoded from the
-batching round's observations (`openingsAtB`), the final polynomial from the query round's; and the
-challenges are read off the answers.
+batching round's observations (`openingsAtB`), the final polynomial from the query round's, after
+FRI's domain separator when FRI does not fold; and the challenges are read off the answers.
 
 The decoder inverts the verifier's observations: on opened values of the instances' shapes, the
 PCS observes the static counts `countsB` and the values in a static layout
@@ -714,8 +714,8 @@ noncomputable def betasAtB (sample : ℕ → Vector F S.streamLen) (j : ℕ) : �
       extAt (sample (lookupRounds S + 3 + j)) (challengeOffset S.params.commitPowBits)
   else 0
 
-/-- Where fold round `j`'s commitment sits in its input: after FRI's domain separator in the
-first fold round. -/
+/-- Where FRI's round `j`'s commitment or, past the last fold, final polynomial sits in its
+input: after FRI's domain separator in the first of FRI's rounds. -/
 noncomputable def friOffsetB (j : ℕ) : ℕ := if j = 0 then (friSeedB S).length else 0
 
 /-- Where instance `i`'s terminal sits among the observed terminals, one per instance with
@@ -759,7 +759,8 @@ noncomputable def prefixTranscriptB (cache : Merkle.Cache F (Digest F)) (block :
         (S.friArities.getD j 0) z.val
     else 0
   finalPoly := finalPoly S.domainSetup
-    (finalPolyAt S.domainSetup (block (lookupRounds S + 3 + S.friArities.length)))
+    (finalPolyAt S.domainSetup ((block (lookupRounds S + 3 + S.friArities.length)).drop
+      (friOffsetB S S.friArities.length)))
   betas := betasAtB S sample
 
 /-- The query round's grinding sample: the answer's first sample, `0` without grinding. -/

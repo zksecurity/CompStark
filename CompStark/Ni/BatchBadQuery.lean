@@ -102,9 +102,11 @@ theorem prefixTranscriptB_congr
         (if f < S.friArities.length then _ else 0)
       rw [ite_eq_right_of_eq_false _ _ (eq_false hf), ite_eq_right_of_eq_false _ _ (eq_false hf)]
   · show finalPoly S.domainSetup (finalPolyAt S.domainSetup
-        (block (lookupRounds S + 3 + S.friArities.length))) =
+        ((block (lookupRounds S + 3 + S.friArities.length)).drop
+          (friOffsetB S S.friArities.length))) =
       finalPoly S.domainSetup (finalPolyAt S.domainSetup
-        (block' (lookupRounds S + 3 + S.friArities.length)))
+        ((block' (lookupRounds S + 3 + S.friArities.length)).drop
+          (friOffsetB S S.friArities.length)))
     rw [hb _ le_rfl]
 
 end Congr
