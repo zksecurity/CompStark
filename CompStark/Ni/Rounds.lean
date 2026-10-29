@@ -289,19 +289,43 @@ def friSeedS : List F :=
     S.params.commitPowBits S.params.queryPowBits S.params.numQueries S.logSize
     S.params.logBlowup S.params.maxLogArity
 
+/-- The `n` digests of `xs` that end `off` elements before its end, last first: those of a cap
+observed just before a grinding witness of `off` elements, whatever comes before the cap. -/
+def capBack (xs : List F) (off n : Nat) : List (Digest F) :=
+  (List.range n).map fun j ↦ digestAt xs (xs.length - off - 8 * (j + 1))
+
+/-- A cap observed just before `w` is read off the end of the input. -/
+theorem capFrom_mem_capBack (pre w : List F) (c : Cap F) (N : Nat) (hc : c.size ≤ N) (j : Nat)
+    (hj : j < c.size) :
+    (capFrom (pre ++ capElems c ++ w) pre.length c.size).toList.getD j 0 ∈
+      capBack (pre ++ capElems c ++ w) w.length N := by
+  have hlen : (pre ++ capElems c ++ w).length = pre.length + 8 * c.size + w.length := by
+    rw [List.length_append, List.length_append, capElems, length_flatMap_digests,
+      Array.length_toList]
+    rfl
+  rw [List.getD_eq_getElem _ _ (by simp only [capFrom, Array.length_toList, Array.size_ofFn]; exact hj)]
+  simp only [capFrom, Array.getElem_toList, Array.getElem_ofFn, capBack, List.mem_map,
+    List.mem_range]
+  refine ⟨c.size - 1 - j, by omega, ?_⟩
+  rw [hlen]
+  congr 1
+  omega
+
 /-- The digests observed in a duplex call's input, those a commitment round binds: the
 `2 ^ capHeight` digests of a cap that is at most as wide, after the STARK's domain separator in
-the first round (initial capacity), after FRI's in the first fold round (an input of its length,
-the cap fitting FRI's first tree, `Setup.capFits`), first otherwise. -/
+the first round (initial capacity); otherwise those at the start of the input, as the quotient
+commitment and FRI's later commitments open their rounds, and those ending before the commit-phase
+grinding witness, as FRI's first commitment ends its round after FRI's domain separator. -/
 def boundDigests (cap : Digest F) (input : List F) : List (Digest F) :=
-  (capFrom input (if cap = initCap then (starkSeedS S).length
-    else if input.length = (friSeedS S).length + 8 * 2 ^ S.params.capHeight +
-        challengeOffset S.params.commitPowBits
-      then (friSeedS S).length else 0) (2 ^ S.params.capHeight)).toList
+  if cap = initCap then (capFrom input (starkSeedS S).length (2 ^ S.params.capHeight)).toList
+  else (capFrom input 0 (2 ^ S.params.capHeight)).toList ++
+    capBack input (challengeOffset S.params.commitPowBits) (2 ^ S.params.capHeight)
 
-theorem length_boundDigests (cap : Digest F) (input : List F) :
-    (boundDigests S cap input).length = 2 ^ S.params.capHeight := by
-  simp only [boundDigests, Array.length_toList, capFrom, Array.size_ofFn]
+theorem length_boundDigests_le (cap : Digest F) (input : List F) :
+    (boundDigests S cap input).length ≤ 2 ^ (S.params.capHeight + 1) := by
+  unfold boundDigests capBack
+  split <;> simp only [Array.length_toList, capFrom, Array.size_ofFn, List.length_append,
+    List.length_map, List.length_range, Nat.pow_succ] <;> omega
 
 /-- The number of entries of the cap of a tree of `2 ^ m` leaves. -/
 abbrev capSize (m : Nat) : Nat := 2 ^ min S.params.capHeight m
@@ -309,22 +333,6 @@ abbrev capSize (m : Nat) : Nat := 2 ^ min S.params.capHeight m
 /-- The levels below fold `i`'s commitment: the extended trace's, less the arities of the folds
 up to `i`. -/
 def friDepth (i : Nat) : Nat := S.logSize - ((S.foldArities.map PNat.val).take (i + 1)).sum
-
-theorem capHeight_le_friDepth_zero : S.params.capHeight ≤ friDepth S 0 := by
-  have hf := S.folds
-  have hc := S.capFits
-  obtain ⟨r, hr⟩ : ∃ r, S.logN - S.params.logFinalPolyLen = r + 1 := ⟨_, (Nat.succ_pred_eq_of_pos
-    (by omega)).symm⟩
-  have hhead : ((Sound.folds S.params.maxLogArity (r + 1)).map PNat.val).take 1 =
-      [max 1 (min S.params.maxLogArity (r + 1))] := by
-    rw [Sound.folds]
-    rfl
-  have ha : max 1 (min S.params.maxLogArity (r + 1)) ≤ S.params.maxLogArity := by
-    have := S.valid.folds
-    omega
-  unfold friDepth Iop.Setup.foldArities
-  rw [hr, hhead, List.sum_singleton]
-  exact hc.trans (Nat.sub_le_sub_left ha _)
 
 /-- The folding challenges of ArkLib's oracles, from the answers `sample` of the fold rounds:
 `s_j β_j`, `s_j` the shift of word `j`'s domain. -/

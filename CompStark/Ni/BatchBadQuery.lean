@@ -50,7 +50,7 @@ theorem foldFails_of_le {K : Type} [Field K] [DecidableEq K] (d : ℕ) (θ loss 
   | words, j + 1, _, ω, .fold k _ (some _) rest, h => by
     exact foldFails_of_le d θ loss β _ j _ rest (by simp only [Rounds.numFolds] at h; omega)
 
-theorem length_friArities (S : Iop.Batch.Setup EF) :
+theorem length_friArities (S : Iop.Batch.Setup EF) [S.CapFits] :
     S.friArities.length = S.friRounds.numFolds := by
   rw [Iop.Batch.Setup.friArities, Nat.add_comm S.params.logBlowup, ← FriRounds.arities_schedule _ _
     (fun _ _ ↦ (0 : 𝕂)), FriRounds.length_arities]
@@ -59,7 +59,7 @@ theorem length_friArities (S : Iop.Batch.Setup EF) :
 /-! ### The prefix transcript of all rounds -/
 
 section Congr
-variable (S : Iop.Batch.Setup EF) {cache cache' : Merkle.Cache F (Digest F)}
+variable (S : Iop.Batch.Setup EF) [S.CapFits] {cache cache' : Merkle.Cache F (Digest F)}
   {block block' : ℕ → List F} {sample sample' : ℕ → Vector F S.streamLen}
 
 /-- The prefix transcript of all rounds depends on their inputs and answers, and on the rows
@@ -108,7 +108,7 @@ end Congr
 /-! ### The bad query -/
 
 section Bad
-variable (S : Iop.Batch.Setup EF) (publicValues : Fin S.k → List F) (δ δ' loss : NNReal)
+variable (S : Iop.Batch.Setup EF) [S.CapFits] (publicValues : Fin S.k → List F) (δ δ' loss : NNReal)
 
 /-- Query `p` of `log` is fresh, and its answer clashes with a known digest or makes its batch
 round bad. -/

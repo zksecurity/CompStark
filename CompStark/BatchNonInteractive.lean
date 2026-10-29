@@ -50,8 +50,9 @@ variable {F : Type} [BaseField F] {EF : Type} [Challenge F EF]
 most `Q` oracle calls gets a proof for the instances' trace lengths accepted, while no tuple of
 traces close to the ones it committed to satisfies the batch, with probability at most
 `q · roundError + hashError F h q`, `q = Q + verifierQueries`: FRI tests proximity `δ`, and the
-extractor list-decodes at any `δ'` below `1 - rate`. -/
-theorem batchKnowledgeSoundness_ro (S : Setup EF) (publicValues : Fin S.k → List F)
+extractor list-decodes at any `δ'` below `1 - rate`. The Merkle cap fits below the commit-phase
+tree FRI's first fold makes of every instance (`Setup.CapFits`). -/
+theorem batchKnowledgeSoundness_ro (S : Setup EF) [S.CapFits] (publicValues : Fin S.k → List F)
     (δ δ' : NNReal) (hδ' : (δ' : ℝ) < 1 - S.rate) (Q : Nat) (prover : NIProver S)
     (hQ : prover.IsTotalQueryBound Q) :
     Pr{let (proof, log, verdict) ← run S publicValues prover}[
@@ -68,7 +69,7 @@ making at most `Q` oracle calls gets a proof for the instances' trace lengths ac
 tuple of traces close to the ones it committed to satisfies every AIR with every bus's queries
 included in what is provided, with probability at most `q · roundError + hashError F h q`,
 `q = Q + verifierQueries`. -/
-theorem batchKnowledgeSoundness_ro_inclusion (S : Setup EF) (publicValues : Fin S.k → List F)
+theorem batchKnowledgeSoundness_ro_inclusion (S : Setup EF) [S.CapFits] (publicValues : Fin S.k → List F)
     (δ δ' : NNReal) (hδ' : (δ' : ℝ) < 1 - S.rate) (Q : Nat) (prover : NIProver S)
     (hQ : prover.IsTotalQueryBound Q) (hcounts : ∀ i, (S.air i).CountsBounded (S.logN i)) :
     Pr{let (proof, log, verdict) ← run S publicValues prover}[

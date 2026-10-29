@@ -84,8 +84,7 @@ theorem constraintsHoldAt_of_check (S : Iop.Setup EF) (pis : List F)
       fun i h1 h2 ↦ ?_
     rw [List.getElem_map, List.getElem_range, Array.getElem_toList, Array.getD_eq_getD_getElem?,
       Array.getElem?_eq_getElem (by rwa [← Array.length_toList]), Option.getD_some]
-  have h24 : S.logN + (S.air.logQuotientChunks S.logN) ≤ twoAdicity F := by
-    have := S.valid.twoAdic; have := S.valid.chunksFit; omega
+  have h24 : S.logN + (S.air.logQuotientChunks S.logN) ≤ twoAdicity F := S.valid.quotientFits
   rw [hlist, toSpec_recompose S.logN _ h24] at h'
   rw [constraintsHoldAt_iff, extConstraints_nil, List.foldl_nil, ← Fin.sum_univ_eq_sum_range] at *
   rw [Challenge.toSpec_mul, toSpec_foldedConstraints, Challenge.toSpec_inv, Challenge.toSpec_sub,

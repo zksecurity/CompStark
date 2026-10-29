@@ -124,7 +124,7 @@ theorem prob_grindPair_le (K bits : Nat) (hK : 2 * Challenge.d EF + 1 ≤ K) (P 
 end Pair
 
 section Bounds
-variable (S : Iop.Batch.Setup EF) (publicValues : Fin S.k → List F) (δ δ' loss : NNReal)
+variable (S : Iop.Batch.Setup EF) [S.CapFits] (publicValues : Fin S.k → List F) (δ δ' loss : NNReal)
 
 /-- The largest batch round error at proximity loss `loss`; `roundError` is its infimum. -/
 noncomputable def roundBoundB : ENNReal :=

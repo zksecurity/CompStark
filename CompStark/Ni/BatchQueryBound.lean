@@ -19,7 +19,7 @@ batch setup makes at most four calls per leaf of its tree (`isTotalQueryBound_se
 namespace CompStark.Iop.Batch.Setup
 open CompStark.Stark CompStark.Fri CompStark.RandomOracle CompStark.Ni OracleSpec OracleComp
 
-variable {F : Type} [BaseField F] {EF : Type} [Challenge F EF] (S : Setup EF)
+variable {F : Type} [BaseField F] {EF : Type} [Challenge F EF] (S : Setup EF) [S.CapFits]
 
 /-- A failed `unless` check makes no calls; a passed one costs what the rest costs. -/
 theorem bound_unless {ι : Type} {spec : OracleSpec ι} {α : Type} (b : Bool) (e : String)

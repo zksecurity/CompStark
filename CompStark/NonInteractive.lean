@@ -50,7 +50,7 @@ theorem knowledgeSoundness_ro (S : Setup EF) (publicValues : List F)
         ∀ trace ∈ closeTraces S δ' (committedTrace S log proof),
           ¬ S.air.Satisfied S.logN trace publicValues] ≤
       (Q + S.verifierQueries) * roundError S δ δ' +
-        hashError F S.params.capHeight (Q + S.verifierQueries) :=
+        hashError F (S.params.capHeight + 1) (Q + S.verifierQueries) :=
   prob_unopened_le S publicValues δ δ' hδ' Q prover hQ
 
 end CompStark.Iop

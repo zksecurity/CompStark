@@ -43,7 +43,7 @@ theorem matColumnCap_congr {cache cache' : Merkle.Cache F (Digest F)} {cap : Cap
 /-! ### Accepted proofs -/
 
 section Accepted
-variable (S : Iop.Batch.Setup EF) (H : Primitives F Id) (common : CompStark.Batch.Common F)
+variable (S : Iop.Batch.Setup EF) [S.CapFits] (H : Primitives F Id) (common : CompStark.Batch.Common F)
   (proof : CompStark.Batch.BatchProof F EF) (pis : List (List F))
 
 /-- **The shape of an accepted batch proof.** One opened value set per instance, each in its
@@ -94,7 +94,7 @@ end Accepted
 /-! ### Congruences -/
 
 section Congr
-variable (S : Iop.Batch.Setup EF) {cache cache' : Merkle.Cache F (Digest F)}
+variable (S : Iop.Batch.Setup EF) [S.CapFits] {cache cache' : Merkle.Cache F (Digest F)}
   {block block' : ℕ → List F} {sample sample' : ℕ → Vector F S.streamLen}
 
 /-- Without lookups, no instance has lookups. -/
@@ -174,7 +174,7 @@ end Congr
 /-! ### The schedule of an accepted proof -/
 
 section Schedule
-variable (S : Iop.Batch.Setup EF) (common : CompStark.Batch.Common F)
+variable (S : Iop.Batch.Setup EF) [S.CapFits] (common : CompStark.Batch.Common F)
   (proof : CompStark.Batch.BatchProof F EF) (pis : List (List F))
 
 /-- The first round observes the head first. -/

@@ -65,18 +65,15 @@ def LookupsValid (params : Fri.Params) (air : Air F) (logN : Nat) : List (Lookup
         l.Fits air.width air.mainNextWidth air.preprocessedWidth air.preprocessedNextWidth
 
 /-- A STARK to prove with over the challenge field `EF`: FRI parameters, an AIR and a trace of
-`2 ^ logN` rows, in a valid configuration (`ValidConfig`) with at least one FRI fold, and the
+`2 ^ logN` rows, in a sound configuration (`SoundConfig`) with at least one FRI fold, and the
 lookups it proves, Plonky3-packed (`Air.packedLookups`): none for a STARK of its own. -/
 structure Setup (EF : Type) [Challenge F EF] (lookups : List (Lookup F) := []) where
   params : Fri.Params
   air : Air F
   logN : Nat
-  valid : ValidConfig params air logN
+  valid : SoundConfig params air logN
   /-- FRI's final polynomial is shorter than the trace, so FRI folds at least once. -/
   folds : params.logFinalPolyLen < logN
-  /-- The Merkle cap fits below FRI's first commit-phase tree, of at least
-  `logN + logBlowup - maxLogArity` levels. -/
-  capFits : params.capHeight ≤ logN + params.logBlowup - params.maxLogArity
   /-- The lookups are valid on the instance (`LookupsValid`). -/
   lookupsValid : LookupsValid params air logN lookups := by trivial
 

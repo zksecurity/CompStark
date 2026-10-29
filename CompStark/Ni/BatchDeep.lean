@@ -46,11 +46,11 @@ local notation "𝕂" => Challenge.Spec EF
 section Lookups
 
 /-- An instance's lookups are its statement's, as the verifier derives them. -/
-theorem lookups_eq (S : Iop.Batch.Setup EF) (i : Fin S.k) :
+theorem lookups_eq (S : Iop.Batch.Setup EF) [S.CapFits] (i : Fin S.k) :
     S.lookups i = (⟨S.air i, S.logN i⟩ : CompStark.Batch.Instance F).lookups := rfl
 
 /-- An instance's LogUp constraints are the verifier's. -/
-theorem extConstraints_eq (S : Iop.Batch.Setup EF) (i : Fin S.k) :
+theorem extConstraints_eq (S : Iop.Batch.Setup EF) [S.CapFits] (i : Fin S.k) :
     (S.instanceSetup i).extConstraints = (S.air i).lookupConstraints (S.logN i) := rfl
 
 /-- A STARK's quotient chunks are those of its AIR's constraints and its lookups' LogUp
@@ -69,16 +69,19 @@ theorem logChunks_eq_with {lookups : List (Lookup F)} (T : Iop.Setup EF lookups)
     rw [h0, Nat.max_zero]
   | cons l ls => rfl
 
-/-- A STARK's quotient chunks fit its blowup. -/
-theorem logChunks_le {lookups : List (Lookup F)} (T : Iop.Setup EF lookups) :
-    T.logChunks ≤ T.params.logBlowup := by
+/-- A STARK's quotient domain is a two-adic subgroup of the base field. -/
+theorem logN_add_logChunks_le {lookups : List (Lookup F)} (T : Iop.Setup EF lookups) :
+    T.logN + T.logChunks ≤ twoAdicity F := by
   have hv := T.lookupsValid
   cases lookups with
-  | nil => exact T.valid.chunksFit
-  | cons l ls => exact hv.1
+  | nil => exact T.valid.quotientFits
+  | cons l ls =>
+    have := T.valid.twoAdic
+    have h1 : T.logChunks ≤ T.params.logBlowup := hv.1
+    omega
 
 /-- An instance's quotient chunks are the verifier's. -/
-theorem logChunks_eq (S : Iop.Batch.Setup EF) (i : Fin S.k) :
+theorem logChunks_eq (S : Iop.Batch.Setup EF) [S.CapFits] (i : Fin S.k) :
     (S.instanceSetup i).logChunks =
       (⟨S.air i, S.logN i⟩ : CompStark.Batch.Instance F).logQuotientChunks :=
   logChunks_eq_with (S.instanceSetup i)
@@ -458,7 +461,7 @@ theorem length_instances : S.instances.length = S.k := by
 end Group
 
 section Parts
-variable (S : Iop.Batch.Setup EF) (p : Iop.Batch.Prover S) (lα lβ α ζ : Challenge.Spec EF)
+variable (S : Iop.Batch.Setup EF) [S.CapFits] (p : Iop.Batch.Prover S) (lα lβ α ζ : Challenge.Spec EF)
   (proof : CompStark.Batch.BatchProof F EF) (zeta : EF) (logMax I m : ℕ)
 
 /-- Instance `i`'s point at the query of index `I` into the tallest domain: the index shifted to

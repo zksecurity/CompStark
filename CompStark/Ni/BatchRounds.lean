@@ -180,7 +180,7 @@ theorem length_permVals (lookups : List (Lookup F)) (cur next : Array EF) (n : �
 end Values
 
 section Layout
-variable [BaseField F] [Challenge F EF] (S : Iop.Batch.Setup EF)
+variable [BaseField F] [Challenge F EF] (S : Iop.Batch.Setup EF) [S.CapFits]
 
 /-- Instance `i`'s number of opened trace values: its width, twice if it reads the next row. -/
 def mainLenB (i : Fin S.k) : ℕ := (S.air i).width + (S.air i).mainNextWidth
@@ -554,7 +554,7 @@ end Layout
 /-! ### The static counts and domain separators -/
 
 section Static
-variable [BaseField F] [Challenge F EF] (S : Iop.Batch.Setup EF)
+variable [BaseField F] [Challenge F EF] (S : Iop.Batch.Setup EF) [S.CapFits]
 
 theorem hasPreprocessed_eq :
     S.hasPreprocessed = S.instances.any (0 < ·.air.preprocessedWidth) := by
@@ -675,7 +675,7 @@ end Static
 /-! ### The transcript of a prefix -/
 
 section Prefix
-variable [BaseField F] [Challenge F EF] (S : Iop.Batch.Setup EF)
+variable [BaseField F] [Challenge F EF] (S : Iop.Batch.Setup EF) [S.CapFits]
 
 /-- The digests a duplex call's input binds, the `2 ^ capHeight` digests of a cap that is at most
 as wide: the main commitment after the batch's domain separator and the degree bits in the first

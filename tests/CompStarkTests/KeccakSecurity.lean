@@ -129,10 +129,9 @@ def setup (EF : Type) [Challenge F EF] (blowup : Fin 2) (numQueries : ℕ+) (g :
   params := params blowup numQueries g
   air := keccak
   logN := height + 15
-  valid := keccak_valid _ (Nat.succ_pos _) (Nat.succ_pos 2) rfl numQueries.pos _
-    (by change (height : ℕ) + 15 + (blowup + 1) ≤ 24; omega)
+  valid := (keccak_valid _ (Nat.succ_pos _) (Nat.succ_pos 2) rfl numQueries.pos _
+    (by change (height : ℕ) + 15 + (blowup + 1) ≤ 24; omega)).sound
   folds := by change 0 < (height : ℕ) + 15; omega
-  capFits := by change 3 ≤ (height : ℕ) + 15 + (blowup + 1) - 3; omega
 
 /-- The calculator's shape of a Keccak setup. -/
 theorem shape_setup (EF : Type) [Challenge F EF] (blowup : Fin 2) (numQueries : ℕ+) (g : Grinding)

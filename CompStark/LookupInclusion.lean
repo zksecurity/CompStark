@@ -76,7 +76,7 @@ tables and range queries: a prover making at most `Q` oracle calls gets a proof 
 instances' trace lengths accepted, while no tuple of traces close to the ones it committed to
 satisfies every AIR with every real query in range, with probability at most
 `q · roundError + hashError F h q`, `q = Q + verifierQueries`. -/
-theorem rangeKnowledgeSoundness_ro (S : Batch.Setup EF) (hS : S.IsRangeBatch)
+theorem rangeKnowledgeSoundness_ro (S : Batch.Setup EF) [S.CapFits] (hS : S.IsRangeBatch)
     (publicValues : Fin S.k → List F) (δ δ' : NNReal) (hδ' : (δ' : ℝ) < 1 - S.rate) (Q : Nat)
     (prover : Batch.NIProver S) (hQ : prover.IsTotalQueryBound Q) :
     Pr{let (proof, log, verdict) ← Batch.run S publicValues prover}[

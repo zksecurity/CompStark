@@ -44,7 +44,7 @@ local notation "𝕂" => Challenge.Spec EF
 /-! ### The rounds' heights -/
 
 section Heights
-variable [BaseField F] [Challenge F EF] (S : Iop.Batch.Setup EF) (common : CompStark.Batch.Common F)
+variable [BaseField F] [Challenge F EF] (S : Iop.Batch.Setup EF) [S.CapFits] (common : CompStark.Batch.Common F)
   (proof : CompStark.Batch.BatchProof F EF) (zeta : EF)
 
 /-- Every matrix of the rounds is some instance's extension, and every instance's extended
@@ -129,7 +129,7 @@ end Heights
 /-! ### The rounds' matrices -/
 
 section Matrices
-variable [BaseField F] [Challenge F EF] (S : Iop.Batch.Setup EF)
+variable [BaseField F] [Challenge F EF] (S : Iop.Batch.Setup EF) [S.CapFits]
 
 /-- The statement's instances, zipped with every instance's opened values. -/
 theorem zip_instances (os : List (OpenedValues EF)) (hos : os.length = S.k) :
@@ -244,7 +244,7 @@ end Rows
 /-! ### The main traces' round -/
 
 section Main
-variable [BaseField F] [Challenge F EF] (H : Primitives F Id) (S : Iop.Batch.Setup EF)
+variable [BaseField F] [Challenge F EF] (H : Primitives F Id) (S : Iop.Batch.Setup EF) [S.CapFits]
   (cache : Merkle.Cache F (Digest F)) (proof : CompStark.Batch.BatchProof F EF) (zeta : EF)
 
 theorem getD_ofFn {α : Type} {k : ℕ} (f : Fin k → α) (i : Fin k) (d : α) :
@@ -342,7 +342,7 @@ theorem getD_flatMap_blocks {β γ : Type} (f : β → List γ) (d : γ) :
       List.getD_append_right _ _ _ _ (by omega), Nat.add_sub_cancel_left]
     exact getD_flatMap_blocks f d L i (by simp only [List.length_cons] at hi; omega) c hc
 
-variable [BaseField F] [Challenge F EF] (H : Primitives F Id) (S : Iop.Batch.Setup EF)
+variable [BaseField F] [Challenge F EF] (H : Primitives F Id) (S : Iop.Batch.Setup EF) [S.CapFits]
   (cache : Merkle.Cache F (Digest F)) (proof : CompStark.Batch.BatchProof F EF) (zeta : EF)
 
 /-- The quotient round's matrices: every instance's chunks, opened at `ζ`. -/
@@ -482,7 +482,7 @@ theorem getD_filter_rank {β : Type} (q : β → Bool) (d : β) :
     · rw [List.length_cons, List.getD_cons_succ, ih]
     · exact ih
 
-variable [BaseField F] [Challenge F EF] (H : Primitives F Id) (S : Iop.Batch.Setup EF)
+variable [BaseField F] [Challenge F EF] (H : Primitives F Id) (S : Iop.Batch.Setup EF) [S.CapFits]
   (cache : Merkle.Cache F (Digest F)) (proof : CompStark.Batch.BatchProof F EF) (zeta : EF)
 
 /-- The preprocessed round's matrices: the extended preprocessed traces of the instances that
@@ -607,7 +607,7 @@ end Preprocessed
 /-! ### The permutation traces' round -/
 
 section Permutation
-variable [BaseField F] [Challenge F EF] (H : Primitives F Id) (S : Iop.Batch.Setup EF)
+variable [BaseField F] [Challenge F EF] (H : Primitives F Id) (S : Iop.Batch.Setup EF) [S.CapFits]
   (cache : Merkle.Cache F (Digest F)) (proof : CompStark.Batch.BatchProof F EF) (zeta : EF)
 
 /-- The statement's instances, zipped with a list of one entry per instance. -/
@@ -745,7 +745,7 @@ end Permutation
 /-! ### The run's challenges -/
 
 section Challenges
-variable [BaseField F] [Challenge F EF] (H : Primitives F Id) (S : Iop.Batch.Setup EF)
+variable [BaseField F] [Challenge F EF] (H : Primitives F Id) (S : Iop.Batch.Setup EF) [S.CapFits]
   (common : CompStark.Batch.Common F) (proof : CompStark.Batch.BatchProof F EF)
   (pis : List (List F))
 
@@ -788,7 +788,7 @@ def permRoot (proof : CompStark.Batch.BatchProof F EF) : Cap F :=
 permutation trace and quotient words and FRI's words from `cache`, the opened values, terminals
 and final polynomial from the proof, and the challenges of the run on `H`. ArkLib folds at `s β`
 where Plonky3 folds at `β`, `s` the shift of the folded domain. -/
-noncomputable def extractB [BaseField F] [Challenge F EF] (S : Iop.Batch.Setup EF)
+noncomputable def extractB [BaseField F] [Challenge F EF] (S : Iop.Batch.Setup EF) [S.CapFits]
     (cache : Merkle.Cache F (Digest F)) (H : Primitives F Id) (common : CompStark.Batch.Common F)
     (proof : CompStark.Batch.BatchProof F EF) (pis : List (List F)) : Sound.Batch.Transcript S where
   trace i c x := Merkle.matColumnCap cache proof.mainCommit.toList S.params.capHeight S.logTop
@@ -827,7 +827,7 @@ theorem shiftRight_lt {I L : ℕ} (hI : I < 2 ^ L) (m : ℕ) (hm : m ≤ L) : I 
   exact hI
 
 /-- The point of a query at a height is the extracted words' point of its row there. -/
-theorem reverseBits_instPoint (S : Iop.Batch.Setup EF) (I : ℕ) (hI : I < 2 ^ S.logTop)
+theorem reverseBits_instPoint (S : Iop.Batch.Setup EF) [S.CapFits] (I : ℕ) (hI : I < 2 ^ S.logTop)
     (i : Fin S.k) :
     reverseBits (instPoint S S.logTop I i).val (S.logN i + S.params.logBlowup) =
       I >>> (S.logTop - (S.logN i + S.params.logBlowup)) := by
@@ -835,7 +835,7 @@ theorem reverseBits_instPoint (S : Iop.Batch.Setup EF) (I : ℕ) (hI : I < 2 ^ S
   rw [instPoint, finMod_val (reverseBits_lt _ _), reverseBits_reverseBits hlt]
 
 /-- An instance's opened values and public values are those the verifier checks. -/
-theorem mem_zip_check (S : Iop.Batch.Setup EF) (os : List (OpenedValues EF))
+theorem mem_zip_check (S : Iop.Batch.Setup EF) [S.CapFits] (os : List (OpenedValues EF))
     (hos : os.length = S.k) (publicValues : Fin S.k → List F) (i : Fin S.k) :
     (((⟨S.air i, S.logN i⟩ : CompStark.Batch.Instance F), i.val), os.getD i noOpenings,
       publicValues i) ∈ S.instances.zipIdx.zip (os.zip (List.ofFn publicValues)) := by
@@ -852,7 +852,7 @@ theorem mem_zip_check (S : Iop.Batch.Setup EF) (os : List (OpenedValues EF))
 
 /-- The terminals of an accepted proof: the instances with lookups' sum to the verifier's sum of
 the proof's terminals. -/
-theorem sum_terminals_toSpec (S : Iop.Batch.Setup EF) (ts : List (Option EF))
+theorem sum_terminals_toSpec (S : Iop.Batch.Setup EF) [S.CapFits] (ts : List (Option EF))
     (hlen : ts.length = S.k)
     (hsome : ∀ i : Fin S.k, (ts.getD i none).isSome = !(S.lookups i).isEmpty) :
     (∑ i with S.lookups i ≠ [], Challenge.toSpec ((ts.getD i none).getD 0)) =
@@ -898,7 +898,7 @@ theorem sum_terminals_toSpec (S : Iop.Batch.Setup EF) (ts : List (Option EF))
 /-- The permutation openings' and terminals' shapes of a proof whose lookup checks pass: `d`
 coordinates per permutation column at both points, and a terminal exactly for the instances with
 lookups. -/
-theorem permShapes (S : Iop.Batch.Setup EF) (proof : CompStark.Batch.BatchProof F EF)
+theorem permShapes (S : Iop.Batch.Setup EF) [S.CapFits] (proof : CompStark.Batch.BatchProof F EF)
     (hlsize : proof.permutationLocal.size = S.k) (hnsize : proof.permutationNext.size = S.k)
     (htsize : proof.lookupTerminals.size = S.k)
     (hpshapes : ∀ x ∈ S.instances.zip (proof.permutationLocal.toList.zip
@@ -946,7 +946,7 @@ a proof whose commitments bind the rows extracted from `cache`, and under whose 
 commitment `cache` holds the preprocessed traces' extensions, the extracted transcript passes the
 deterministic checks of `Sound.Batch.exists_satisfied_of_safe`, with the run's grinding and query
 samples. -/
-theorem bcsB (S : Iop.Batch.Setup EF) (cache : Merkle.Cache F (Digest F)) (H : Primitives F Id)
+theorem bcsB (S : Iop.Batch.Setup EF) [S.CapFits] (cache : Merkle.Cache F (Digest F)) (H : Primitives F Id)
     (common : CompStark.Batch.Common F) (proof : CompStark.Batch.BatchProof F EF)
     (publicValues : Fin S.k → List F)
     (hmain : CapBindingM cache H proof.mainCommit S.params.capHeight S.logTop S.mainHeights)

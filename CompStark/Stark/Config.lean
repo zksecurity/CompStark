@@ -10,7 +10,9 @@ public import CompStark.Stark.Satisfied
 /-! # Valid configurations
 
 `ValidConfig`: the configurations the prover supports, checkable before proving and independent of
-the trace.
+the trace. `SoundConfig`: what the soundness analysis uses of a configuration at a trace length,
+the AIR reading only its columns and the length checks of the verifier; a valid configuration is
+one (`ValidConfig.sound`).
 -/
 
 @[expose] public section
@@ -42,5 +44,40 @@ structure ValidConfig {F : Type} [BaseField F] (params : Params) (air : Air F) (
   queries : 0 < params.numQueries
   /-- The trace is extended to at least twice its length. -/
   blowup : 0 < params.logBlowup
+
+/-- What the soundness analysis uses of an AIR, FRI parameters and traces of `2 ^ logN` rows: the
+constraints read only the AIR's columns, and the verifier's checks on the length and the
+parameters hold. -/
+structure SoundConfig {F : Type} [BaseField F] (params : Params) (air : Air F) (logN : Nat) :
+    Prop where
+  /-- The constraints read only the AIR's columns, and the next preprocessed row only if the
+  AIR declares it reads it. -/
+  colsInWidth : air.ColsInWidth
+  /-- Each periodic column's period is a power of two dividing `2 ^ logN`. -/
+  periodicFits : air.periodicFits logN = true
+  /-- The extended trace domain is a two-adic subgroup of the base field. -/
+  twoAdic : logN + params.logBlowup ≤ twoAdicity F
+  /-- The quotient domain is a two-adic subgroup of the base field. -/
+  quotientFits : logN + air.logQuotientChunks logN ≤ twoAdicity F
+  /-- FRI folds at least once per round. -/
+  folds : 0 < params.maxLogArity
+  /-- FRI's final polynomial is no longer than the trace. -/
+  finalPolyFits : params.logFinalPolyLen ≤ logN
+  /-- FRI makes at least one query. -/
+  queries : 0 < params.numQueries
+  /-- The trace is extended to at least twice its length. -/
+  blowup : 0 < params.logBlowup
+
+/-- A valid configuration is sound. -/
+theorem ValidConfig.sound {F : Type} [BaseField F] {params : Params} {air : Air F} {logN : Nat}
+    (h : ValidConfig params air logN) : SoundConfig params air logN where
+  colsInWidth := h.colsInWidth
+  periodicFits := h.periodicFits
+  twoAdic := h.twoAdic
+  quotientFits := by have := h.twoAdic; have := h.chunksFit; omega
+  folds := h.folds
+  finalPolyFits := h.finalPolyFits
+  queries := h.queries
+  blowup := h.blowup
 
 end CompStark.Stark

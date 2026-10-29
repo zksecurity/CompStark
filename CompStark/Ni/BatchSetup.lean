@@ -91,7 +91,7 @@ theorem exists_digest_injNode (answer : (q : Query F) → Answer K q)
         (List.mem_append_left _ (List.mem_singleton_self _))), rfl⟩
 
 /-- **The batch setup against an answer table** is the batch setup on `idealOf`. -/
-theorem evalWithAnswerFn_setupRoB (S : Iop.Batch.Setup EF)
+theorem evalWithAnswerFn_setupRoB (S : Iop.Batch.Setup EF) [S.CapFits]
     (answer : (q : Query F) → Answer S.streamLen q) :
     evalWithAnswerFn (QueryImpl.ofFn answer) S.setupRo =
       CompStark.Batch.commonWith (idealOf answer) S.params S.instances :=
@@ -115,7 +115,7 @@ theorem commonWith_idealOf (g : (q : Query F) → Answer K q) (P : Fri.Params)
   exact congrArg (fun l ↦ some (List.toArray l)) List.idRun_mapM
 
 /-- Every entry of the setup's preprocessed cap is the digest of one of its queries. -/
-theorem exists_prep_mem (S : Iop.Batch.Setup EF) (answer : (q : Query F) → Answer S.streamLen q)
+theorem exists_prep_mem (S : Iop.Batch.Setup EF) [S.CapFits] (answer : (q : Query F) → Answer S.streamLen q)
     (root : Cap F)
     (h : (CompStark.Batch.commonWith (idealOf answer) S.params S.instances).preprocessed =
       some root) (e : Nat) (he : e < root.size) :
@@ -173,7 +173,7 @@ theorem filterMap_ite {α β : Type} (p : α → Prop) [DecidablePred p] (h : α
         List.map_cons, filterMap_ite p h L]
 
 section Prep
-variable (S : Iop.Batch.Setup EF)
+variable (S : Iop.Batch.Setup EF) [S.CapFits]
 
 theorem preprocessedMats_eq :
     (CompStark.Batch.preprocessedMats S.params S.instances).map Mat.toMatrix =
@@ -196,7 +196,7 @@ theorem preprocessedLogHeight_eq :
 
 end Prep
 
-theorem prepIndex_lt (S : Iop.Batch.Setup EF) (i : Fin S.k)
+theorem prepIndex_lt (S : Iop.Batch.Setup EF) [S.CapFits] (i : Fin S.k)
     (hp : 0 < (S.air i).preprocessedWidth) : prepIndex S i < (prepInsts S).length := by
   rw [prepIndex_eq, prepInsts]
   have hik : i.val < (List.finRange S.k).length := by rw [List.length_finRange]; exact i.isLt
@@ -211,7 +211,7 @@ theorem prepIndex_lt (S : Iop.Batch.Setup EF) (i : Fin S.k)
     List.length_cons]
   omega
 
-theorem le_prepLog (S : Iop.Batch.Setup EF) (i : Fin S.k) (hp : 0 < (S.air i).preprocessedWidth) :
+theorem le_prepLog (S : Iop.Batch.Setup EF) [S.CapFits] (i : Fin S.k) (hp : 0 < (S.air i).preprocessedWidth) :
     S.logN i + S.params.logBlowup ≤ prepLog S :=
   (le_foldl_max _ 0).2 _ (List.mem_map.mpr ⟨i, List.mem_filter.mpr ⟨List.mem_finRange _,
     decide_eq_true hp⟩, rfl⟩)
@@ -219,7 +219,7 @@ theorem le_prepLog (S : Iop.Batch.Setup EF) (i : Fin S.k) (hp : 0 < (S.air i).pr
 /-- **The preprocessed traces under a binding cap.** If honest openings against the batch setup's
 preprocessed cap bind the rows of `cache`, the columns read off `cache` under it are the
 preprocessed traces' words. -/
-theorem matColumn_setup (S : Iop.Batch.Setup EF) (cache : Merkle.Cache F (Digest F))
+theorem matColumn_setup (S : Iop.Batch.Setup EF) [S.CapFits] (cache : Merkle.Cache F (Digest F))
     (g : (q : Query F) → Answer K q) (root : Cap F)
     (hroot : (CompStark.Batch.commonWith (idealOf g) S.params S.instances).preprocessed =
       some root)

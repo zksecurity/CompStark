@@ -174,7 +174,7 @@ theorem knowledgeSoundness_ro_of_secureRo (S : Setup EF) (hp : Nat.card F = p) {
         ∀ trace ∈ closeTraces S δ' (committedTrace S log proof),
           ¬ S.air.Satisfied S.logN trace publicValues] ≤
       (Q + S.verifierQueries) * (2 ^ bits)⁻¹ +
-        hashError F S.params.capHeight (Q + S.verifierQueries) := by
+        hashError F (S.params.capHeight + 1) (Q + S.verifierQueries) := by
   refine (knowledgeSoundness_ro S publicValues (Real.toNNReal A.δ) δ'
     (lt_one_sub_rate S A h.1.1 δ' hδ') Q prover hQ).trans ?_
   gcongr
@@ -216,7 +216,7 @@ calculator certifies `bits` bits per oracle answer for the batch `S` at `A` with
 holds, a prover making at most `Q` oracle calls gets a proof accepted while no tuple of traces
 within `δ' = A.δ'` of the ones it committed to satisfies the batch with probability at most
 `q · 2 ^ (-bits) + hashError q`, `q = Q + verifierQueries`. -/
-theorem Batch.batchKnowledgeSoundness_ro_of_secureRo (S : Batch.Setup EF) (hp : Nat.card F = p)
+theorem Batch.batchKnowledgeSoundness_ro_of_secureRo (S : Batch.Setup EF) [S.CapFits] (hp : Nat.card F = p)
     {B : McaBound} (hB : B.Holds) (A : Analysis) {bits : ℕ} (h : S.SecureRo p B A bits)
     (δ' : NNReal) (hδ' : (δ' : ℝ) = A.δ') (publicValues : Fin S.k → List F) (Q : Nat)
     (prover : Batch.NIProver S) (hQ : prover.IsTotalQueryBound Q) :
@@ -251,7 +251,7 @@ def fibonacciSetup : Setup KoalaBear.Fast.Ext4 where
   params := fibonacciParams
   air := fibonacci
   logN := 10
-  valid :=
+  valid := ValidConfig.sound
     { colsInWidth := by unfold Air.ColsInWidth; decide
       preprocessedSize := rfl
       periodicFits := rfl
@@ -265,7 +265,6 @@ def fibonacciSetup : Setup KoalaBear.Fast.Ext4 where
       queries := by decide
       blowup := by decide }
   folds := by decide
-  capFits := Nat.zero_le _
 
 /-- FRI at `δ = 15/32 - 2 ^ (-40)`, the extractor at `δ' = 15/32 - 2 ^ (-42)`, below the
 unique-decoding radius `15/32`, and `loss = 2 ^ (-60)`. -/
@@ -339,10 +338,9 @@ def wideSetup : Setup KoalaBear.Fast.Ext4 where
   params := wideParams
   air := wide 64
   logN := 20
-  valid := wide_valid wideParams rfl (by decide) rfl (by decide) 64 (by decide) 20
+  valid := ValidConfig.sound <| wide_valid wideParams rfl (by decide) rfl (by decide) 64 (by decide) 20
     (by decide)
   folds := by decide
-  capFits := Nat.zero_le _
 
 /-- FRI at `δ = 1535/4096 = 3/8 - 2 ^ (-12)`, the extractor at
 `δ' = 6143/16384 = 3/8 - 2 ^ (-14)` and `loss = 2 ^ (-17)`. -/
@@ -374,10 +372,9 @@ def wide21Setup : Setup KoalaBear.Fast.Ext4 where
   params := wideParams
   air := wide 64
   logN := 21
-  valid := wide_valid wideParams rfl (by decide) rfl (by decide) 64 (by decide) 21
+  valid := ValidConfig.sound <| wide_valid wideParams rfl (by decide) rfl (by decide) 64 (by decide) 21
     (by decide)
   folds := by decide
-  capFits := Nat.zero_le _
 
 /-- FRI at `δ = 1535/4096 = 3/8 - 2 ^ (-12)`, the extractor at
 `δ' = 6143/16384 = 3/8 - 2 ^ (-14)` and `loss = 2 ^ (-17)`. -/
@@ -420,10 +417,9 @@ def wideSp1Setup : Setup KoalaBear.Fast.Ext4 where
   params := sp1Params
   air := wide 64
   logN := 21
-  valid := wide_valid sp1Params rfl (by decide) rfl (by decide) 64 (by decide) 21
+  valid := ValidConfig.sound <| wide_valid sp1Params rfl (by decide) rfl (by decide) 64 (by decide) 21
     (by decide)
   folds := by decide
-  capFits := Nat.zero_le _
 
 /-- The verifier's oracle calls on a proof for `wideSp1Setup`: `15 + 5 · 21 + 124 · 553`. -/
 theorem wideSp1Setup_verifierQueries : wideSp1Setup.verifierQueries = 68692 := by decide +kernel
@@ -455,7 +451,7 @@ theorem wideSp1_knowledgeSoundness_ro (publicValues : List F) (Q : Nat)
             (committedTrace wideSp1Setup log proof),
           ¬ wideSp1Setup.air.Satisfied wideSp1Setup.logN trace publicValues] ≤
       (Q + wideSp1Setup.verifierQueries) * (2 ^ 99)⁻¹ +
-        hashError F 0 (Q + wideSp1Setup.verifierQueries) :=
+        hashError F 1 (Q + wideSp1Setup.verifierQueries) :=
   knowledgeSoundness_ro_of_secureRo _ KoalaBear.card_eq McaBound.uniqueDecoding_holds _
     wideSp1_secureRo _
     (by rw [coe_sub_two_zpow _ (-16) 16 rfl (by norm_num)]; norm_num [wideSp1Analysis])
@@ -479,10 +475,9 @@ def wideGrindSetup : Setup KoalaBear.Fast.Ext4 where
   params := wideGrindParams
   air := wide 64
   logN := 21
-  valid := wide_valid wideGrindParams rfl (by decide) rfl (by decide) 64 (by decide) 21
+  valid := ValidConfig.sound <| wide_valid wideGrindParams rfl (by decide) rfl (by decide) 64 (by decide) 21
     (by decide)
   folds := by decide
-  capFits := Nat.zero_le _
 
 /-- The verifier's oracle calls on a proof for `wideGrindSetup`: `15 + 5 · 21 + 144 · 553`. -/
 theorem wideGrindSetup_verifierQueries : wideGrindSetup.verifierQueries = 79752 := by
@@ -517,7 +512,7 @@ theorem wideGrind_knowledgeSoundness_ro (publicValues : List F) (Q : Nat)
             (committedTrace wideGrindSetup log proof),
           ¬ wideGrindSetup.air.Satisfied wideGrindSetup.logN trace publicValues] ≤
       (Q + wideGrindSetup.verifierQueries) * (2 ^ 117)⁻¹ +
-        hashError F 0 (Q + wideGrindSetup.verifierQueries) :=
+        hashError F 1 (Q + wideGrindSetup.verifierQueries) :=
   knowledgeSoundness_ro_of_secureRo _ KoalaBear.card_eq McaBound.uniqueDecoding_holds _
     wideGrind_secureRo _
     (by rw [coe_sub_two_zpow _ (-13) 13 rfl (by norm_num)]; norm_num [wideGrindAnalysis])
@@ -538,10 +533,9 @@ def wide5Setup : Setup KoalaBear.Fast.Ext5 where
   params := wide5Params
   air := wide 64
   logN := 21
-  valid := wide_valid wide5Params rfl (by decide) rfl (by decide) 64 (by decide) 21
+  valid := ValidConfig.sound <| wide_valid wide5Params rfl (by decide) rfl (by decide) 64 (by decide) 21
     (by decide)
   folds := by decide
-  capFits := Nat.zero_le _
 
 /-- The verifier's oracle calls on a proof for `wide5Setup`: `18 + 6 · 21 + 160 · 553`. -/
 theorem wide5Setup_verifierQueries : wide5Setup.verifierQueries = 88624 := by decide +kernel
@@ -573,7 +567,7 @@ theorem wide5_knowledgeSoundness_ro (publicValues : List F) (Q : Nat)
             (committedTrace wide5Setup log proof),
           ¬ wide5Setup.air.Satisfied wide5Setup.logN trace publicValues] ≤
       (Q + wide5Setup.verifierQueries) * (2 ^ 128)⁻¹ +
-        hashError F 0 (Q + wide5Setup.verifierQueries) :=
+        hashError F 1 (Q + wide5Setup.verifierQueries) :=
   knowledgeSoundness_ro_of_secureRo _ KoalaBear.card_eq McaBound.uniqueDecoding_holds _
     wide5_secureRo _
     (by rw [coe_sub_two_zpow _ (-22) 22 rfl (by norm_num)]; norm_num [wide5Analysis])
@@ -594,10 +588,9 @@ def wide5iSetup : Setup KoalaBear.Fast.Ext5 where
   params := wide5iParams
   air := wide 64
   logN := 21
-  valid := wide_valid wide5iParams rfl (by decide) rfl (by decide) 64 (by decide) 21
+  valid := ValidConfig.sound <| wide_valid wide5iParams rfl (by decide) rfl (by decide) 64 (by decide) 21
     (by decide)
   folds := by decide
-  capFits := Nat.zero_le _
 
 /-- FRI at `δ = 6143/16384 = 3/8 - 2 ^ (-14)`, the extractor at
 `δ' = 24575/65536 = 3/8 - 2 ^ (-16)` and `loss = 2 ^ (-19)`. -/
@@ -711,10 +704,9 @@ def wideBatchSetup : Batch.Setup KoalaBear.Fast.Ext5 where
   k := 3
   air _ := wideBus 64
   logN := ![20, 19, 16]
-  valid i := wideBus_valid wide5iParams rfl (by decide) rfl (by decide) _
+  valid i := ValidConfig.sound <| wideBus_valid wide5iParams rfl (by decide) rfl (by decide) _
     (by fin_cases i <;> decide)
   folds i := by fin_cases i <;> decide
-  capFits _ := Nat.zero_le _
   nonempty := by decide
   lookupsValid _ := wideBus_lookupsValid _ rfl _
   buses := wideBus_busesValid _
@@ -756,10 +748,9 @@ def wideBatch5Setup : Batch.Setup KoalaBear.Fast.Ext5 where
   k := 3
   air _ := wideBus 64
   logN := ![20, 19, 16]
-  valid i := wideBus_valid wide5Params rfl (by decide) rfl (by decide) _
+  valid i := ValidConfig.sound <| wideBus_valid wide5Params rfl (by decide) rfl (by decide) _
     (by fin_cases i <;> decide)
   folds i := by fin_cases i <;> decide
-  capFits _ := Nat.zero_le _
   nonempty := by decide
   lookupsValid _ := wideBus_lookupsValid _ rfl _
   buses := wideBus_busesValid _
@@ -774,10 +765,9 @@ def wideBatchGrindSetup : Batch.Setup KoalaBear.Fast.Ext4 where
   k := 3
   air _ := wideBus 64
   logN := ![20, 19, 16]
-  valid i := wideBus_valid wideBusGrindParams rfl (by decide) rfl (by decide) _
+  valid i := ValidConfig.sound <| wideBus_valid wideBusGrindParams rfl (by decide) rfl (by decide) _
     (by fin_cases i <;> decide)
   folds i := by fin_cases i <;> decide
-  capFits _ := Nat.zero_le _
   nonempty := by decide
   lookupsValid _ := wideBus_lookupsValid _ rfl _
   buses := wideBus_busesValid _
@@ -789,6 +779,10 @@ def wideBatch5Analysis : Analysis := ⟨3 / 8 - 1 / 2 ^ 20, 3 / 8 - 1 / 2 ^ 22, 
 /-- FRI at `δ = 3/8 - 2 ^ (-12)`, the extractor at `δ' = 3/8 - 2 ^ (-14)` and
 `loss = 2 ^ (-15)`. -/
 def wideBatchGrindAnalysis : Analysis := ⟨3 / 8 - 1 / 2 ^ 12, 3 / 8 - 1 / 2 ^ 14, 1 / 2 ^ 15⟩
+
+instance : wideBatch5Setup.CapFits := ⟨fun _ ↦ Nat.zero_le _⟩
+
+instance : wideBatchGrindSetup.CapFits := ⟨fun _ ↦ Nat.zero_le _⟩
 
 theorem wideBatch5_secureRo :
     wideBatch5Setup.SecureRo 2130706433 .uniqueDecoding wideBatch5Analysis 128 := by

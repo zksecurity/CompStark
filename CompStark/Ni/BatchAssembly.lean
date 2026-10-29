@@ -29,7 +29,7 @@ variable {F : Type} [BaseField F] {EF : Type} [Challenge F EF]
 /-! ### The game -/
 
 section Game
-variable (S : Iop.Batch.Setup EF) (publicValues : Fin S.k → List F)
+variable (S : Iop.Batch.Setup EF) [S.CapFits] (publicValues : Fin S.k → List F)
 
 /-- The batch setup, then the prover. -/
 def setupAndProveB (prover : Iop.Batch.NIProver S) :
@@ -110,7 +110,7 @@ end Game
 /-! ### The bound -/
 
 section Bound
-variable (S : Iop.Batch.Setup EF) (publicValues : Fin S.k → List F) (δ δ' : NNReal)
+variable (S : Iop.Batch.Setup EF) [S.CapFits] (publicValues : Fin S.k → List F) (δ δ' : NNReal)
 
 /-- The event of knowledge soundness: an accepted proof for the instances' trace lengths, no
 tuple of traces close to the committed ones satisfying the batch. -/

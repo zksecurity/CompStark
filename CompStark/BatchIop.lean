@@ -76,7 +76,7 @@ structure BusesValid (ls : List (List (Stark.Lookup F))) : Prop where
     ((x.1 + 1 : ℕ) : F) = ((y.1 + 1 : ℕ) : F) → x.1 = y.1
 
 /-- A batch STARK to prove with over the challenge field `EF`: FRI parameters and `k ≥ 1` AIRs,
-instance `i` with a trace of `2 ^ logN i` rows in a valid configuration (`ValidConfig`), with at
+instance `i` with a trace of `2 ^ logN i` rows in a sound configuration (`SoundConfig`), with at
 least one FRI fold, proving its AIR's lookups if `withLookups`. -/
 structure Setup (EF : Type) [Challenge F EF] (withLookups : Bool := true) where
   params : Fri.Params
@@ -84,12 +84,9 @@ structure Setup (EF : Type) [Challenge F EF] (withLookups : Bool := true) where
   k : Nat
   air : Fin k → Air F
   logN : Fin k → Nat
-  valid : ∀ i, ValidConfig params (air i) (logN i)
+  valid : ∀ i, SoundConfig params (air i) (logN i)
   /-- FRI's final polynomial is shorter than every trace, so FRI folds at least once. -/
   folds : ∀ i, params.logFinalPolyLen < logN i
-  /-- The Merkle cap fits below the commit-phase tree FRI's first fold would make of every
-  instance. -/
-  capFits : ∀ i, params.capHeight ≤ logN i + params.logBlowup - params.maxLogArity
   /-- The batch has an instance. -/
   nonempty : 0 < k
   /-- Every instance's lookups are valid on it (`LookupsValid`). -/
@@ -101,13 +98,22 @@ structure Setup (EF : Type) [Challenge F EF] (withLookups : Bool := true) where
 namespace Setup
 variable {withLookups : Bool} (S : Setup EF withLookups)
 
+/-- The Merkle cap fits below the commit-phase tree FRI's first fold would make of every
+instance. The random-oracle analysis of the batch assumes it. -/
+class CapFits : Prop where
+  capFits : ∀ i, S.params.capHeight ≤ S.logN i + S.params.logBlowup - S.params.maxLogArity
+
+theorem capFits [h : S.CapFits] (i : Fin S.k) :
+    S.params.capHeight ≤ S.logN i + S.params.logBlowup - S.params.maxLogArity :=
+  h.capFits i
+
 /-- Instance `i`'s lookups (`instanceLookups`). -/
 abbrev lookups (i : Fin S.k) : List (Stark.Lookup F) :=
   instanceLookups withLookups (S.air i) (S.logN i)
 
 /-- Instance `i` as a STARK of its own with its lookups. -/
 abbrev instanceSetup (i : Fin S.k) : Iop.Setup EF (S.lookups i) :=
-  ⟨S.params, S.air i, S.logN i, S.valid i, S.folds i, S.capFits i, S.lookupsValid i⟩
+  ⟨S.params, S.air i, S.logN i, S.valid i, S.folds i, S.lookupsValid i⟩
 
 /-- An instance of the largest trace length: the last of the largest. -/
 def top : Fin S.k :=
@@ -363,7 +369,7 @@ end Batch
 /-- A STARK as a batch of one instance, without lookups. -/
 abbrev Setup.toBatch (S : Iop.Setup EF) : Batch.Setup EF false :=
   ⟨S.params, 1, fun _ ↦ S.air, fun _ ↦ S.logN, fun _ ↦ S.valid, fun _ ↦ S.folds,
-    fun _ ↦ S.capFits, Nat.one_pos,
+    Nat.one_pos,
     fun _ ↦ trivial, ⟨fun _ hl ↦ absurd hl List.not_mem_nil, fun _ hx ↦ absurd hx List.not_mem_nil,
       fun _ hx ↦ absurd hx List.not_mem_nil⟩⟩
 

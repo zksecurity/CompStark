@@ -70,7 +70,7 @@ theorem grindPair_idealOf (hK : 2 * Challenge.d EF + 1 ≤ K) (blocks : List (Li
   exact ⟨ha.1, toSpec_ofCoeffs_drop _ _, _, rfl⟩
 
 section Rounds
-variable (S : Iop.Batch.Setup EF) (common : CompStark.Batch.Common F)
+variable (S : Iop.Batch.Setup EF) [S.CapFits] (common : CompStark.Batch.Common F)
   (proof : CompStark.Batch.BatchProof F EF) (pis : List (List F))
 
 theorem stateLookupB_idealOf :
