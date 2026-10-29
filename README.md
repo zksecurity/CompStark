@@ -87,7 +87,7 @@ lake test
 
 ## Roadmap
 
-1. Binary fields: a binary tower field and Binius-style ring switching.
+1. Binary fields, following [leanVM](https://github.com/leanEthereum/leanMultisig): a binary tower field, WHIR, and Binius-style ring switching.
 2. Multilinear proving, following [SP1 Hypercube](https://blog.succinct.xyz/sp1-hypercube/): zerocheck by sumcheck, LogUp-GKR, and Basefold behind the jagged commitment.
-3. Newer polynomial commitments, starting with WHIR.
+3. Newer polynomial commitments and their analyses as they appear.
 4. Zero knowledge.
