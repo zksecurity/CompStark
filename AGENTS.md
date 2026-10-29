@@ -2,6 +2,8 @@
 
 Fast, proved STARK components in Lean 4 on top of CompPoly. Start with `README.md`.
 
+The goal is state-of-the-art prover and verifier performance and security analysis for every configuration people use, never one showcase or one field: read [VISION.md](VISION.md), whose north star decides what counts as progress here.
+
 - `lake build` and `lake test` validate the library; `tests/` holds `#guard` known-answer tests under `CompStarkTests`.
 - `CompStark.lean` imports every module; keep it in sync when adding files.
 - Proofs must be kernel-checked: no `native_decide`, no `sorry` in commits, no `implemented_by` or externs.
