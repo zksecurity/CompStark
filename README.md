@@ -11,8 +11,8 @@ The protocols are Plonky3's `uni-stark` and `batch-stark` at revision `a4982ec`:
 | Theorem | Statement | Assumptions |
 |---|---|---|
 | Completeness (`Stark.completeness`, `Batch.completeness`) | An honest proof of a satisfying trace verifies. | A valid configuration; the out-of-domain point avoids the base field, grinding finds a witness, and no lookup denominator vanishes. |
-| Knowledge soundness, interactive (`Iop.knowledgeSoundness`, `Iop.batchKnowledgeSoundness`) | A prover that is accepted with probability above the knowledge error committed to words close to a satisfying trace. | The extractor's decoding radius is below `1 - rate`. |
-| Knowledge soundness, non-interactive (`Iop.knowledgeSoundness_ro`, `Iop.Batch.batchKnowledgeSoundness_ro`) | The same for the actual verifier, with Merkle commitments, Fiat–Shamir and grinding, against a prover making `Q` hash queries. | Poseidon2's roles (challenger, leaf hash, compression) are random oracles; the proof's trace length is the statement's. |
+| Knowledge soundness, interactive (`Iop.knowledgeSoundness`, `Iop.batchKnowledgeSoundness`) | A prover that claims a trace length and is accepted with probability above the knowledge error, the largest over the lengths the verifier admits, committed to words close to a satisfying trace of that length. | The extractor's decoding radius is below `1 - rate`. |
+| Knowledge soundness, non-interactive (`Iop.knowledgeSoundness_ro`, `Iop.Batch.batchKnowledgeSoundness_ro`) | The same for Plonky3's verifier as it runs, at the trace length the proof claims, with Merkle commitments, Fiat–Shamir and grinding, against a prover making `Q` hash queries. | Poseidon2's roles (challenger, leaf hash, compression) are random oracles; for `uni-stark`, the field has at least `2 ^ 8` elements and two-adicity below `2 ^ 64`. |
 | Fast prover (`KoalaBear.prove_fast`, `KoalaBear.proveBatch_fast`) | The fast prover outputs exactly the specification prover's proof. | Well-shaped inputs; the out-of-domain point avoids the base field. |
 | Fast verifier (`verifyFast_eq`) | The fast verifier is the specification verifier. | None. |
 
@@ -46,32 +46,32 @@ Verifying the Keccak proof takes about 50 ms, against 11 ms for Plonky3. [docs/c
 
 ## Security of your own AIR
 
-1. Build a `Setup` (or `Batch.Setup`) for your AIR, trace length and FRI parameters, at any folding arity.
-2. Let the calculator search the analysis, and read the bits of each term:
+1. Build a `Statement` (or `Batch.Statement`) for your AIR and FRI parameters, at any folding arity: `⟨params, air, colsInWidth⟩`. The verifier takes the trace length from the proof, so the statement covers every length it admits (`Statement.Admits`, decided by `C.admits n`); `C.setupOf EF n h` is the setup at an admitted length `n`.
+2. Let the calculator search the analysis at a length, the longest admitted one usually being the worst, and read the bits of each term:
 
    ```lean
-   #eval mySetup.knowledgeErrorReport 2130706433 .uniqueDecoding
-     (mySetup.bestAnalysis 2130706433 .uniqueDecoding)
-   #eval mySetup.roundErrorReport 2130706433 .uniqueDecoding
-     (mySetup.bestAnalysisRo 2130706433 .uniqueDecoding)
+   #eval (myStatement.setupOf EF 22 (by decide)).knowledgeErrorReport 2130706433 .uniqueDecoding
+     ((myStatement.setupOf EF 22 (by decide)).bestAnalysis 2130706433 .uniqueDecoding)
+   #eval (myStatement.setupOf EF 22 (by decide)).roundErrorReport 2130706433 .uniqueDecoding
+     ((myStatement.setupOf EF 22 (by decide)).bestAnalysisRo 2130706433 .uniqueDecoding)
    ```
 
    The report shows the analysis it found: FRI's radius `δ`, the extractor's `δ'` and the loss. Change the FRI parameters until the total reaches your target, or pick an analysis by hand: `δ` where the MCA bound admits batching and every fold (`δ ≤ (1 - rate) / 2` for `.uniqueDecoding`, below `1 - √rate` for `.uniqueOrJohnson`), `δ ≤ δ'`, `δ'` below the Johnson radius `1 - √rate`, and a positive loss (`fits: false` otherwise).
-3. Check it in the kernel and apply the theorem (`KoalaBear.card_eq : Nat.card F = 2130706433`), with the analysis the search found written out:
+3. Check it in the kernel at every admitted length at once and apply the theorem (`KoalaBear.card_eq : Nat.card F = 2130706433`), with the analysis written out:
 
    ```lean
    def myAnalysis : Analysis := ⟨3/8 - 1/2^14, 3/8 - 1/2^17, 1/2^19⟩
-   theorem my_secure : mySetup.Secure 2130706433 .uniqueDecoding myAnalysis 128 := by
+   theorem my_secure : myStatement.Secure EF 2130706433 .uniqueDecoding myAnalysis 128 := by
      decide +kernel
-   theorem my_knowledgeSoundness (publicValues : List F) (prover : Prover mySetup) :
-       (∀ trace ∈ closeTraces mySetup (49151 / 131072 : NNReal) prover.trace,
-         ¬ mySetup.air.Satisfied mySetup.logN trace publicValues) →
-         acceptance publicValues prover ≤ (2 ^ 128)⁻¹ :=
+   theorem my_knowledgeSoundness (publicValues : List F) (prover : myStatement.Prover EF) :
+       (∀ trace ∈ closeTraces prover.setup (49151 / 131072 : NNReal) prover.prover.trace,
+         ¬ myStatement.air.Satisfied prover.logN trace publicValues) →
+         acceptance publicValues prover.prover ≤ (2 ^ 128)⁻¹ :=
      knowledgeSoundness_of_secure _ KoalaBear.card_eq McaBound.uniqueDecoding_holds _ my_secure _
        (by norm_num [myAnalysis]) publicValues prover
    ```
 
-   The kernel can also run the search itself (`mySetup.Secure 2130706433 .uniqueDecoding (mySetup.bestAnalysis 2130706433 .uniqueDecoding) 128 := by decide +kernel`), at a few hundred evaluations of the bound. For a large AIR, prove its shape once (`shape_eq_of_profileFits`) and certify with `secure_of_shape`, as `tests/CompStarkTests/KeccakSecurity.lean` does for Keccak.
+   Per oracle answer, `myStatement.SecureRo` and `knowledgeSoundness_ro_of_secureRo` bound the verifier's acceptance at the length the proof claims, given `2 ^ 8 ≤ Nat.card F` and `twoAdicity F < 2 ^ 64` (the STARK's domain separator then fixes the length). For a large AIR, prove its shape at every length once (`shape_eq_of_profileFits`) and certify each length with `secure_of_shape`, as `secureRo_of_lengths` in `tests/CompStarkTests/KeccakSecurity.lean` does for Keccak.
 
    The kernel evaluates the AIR's structure but never a field operation; keep every number of the check in `Nat` and `ℚ`.
 
