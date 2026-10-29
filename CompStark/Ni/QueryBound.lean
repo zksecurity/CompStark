@@ -543,6 +543,14 @@ theorem costs_verifyPcs (P : Params) (rounds : List (Round F EF)) (proof : FriPr
 
 end CompStark.Fri
 
+namespace CompStark.Ni
+
+theorem le_foldr_max : ∀ (l : List Nat) (x : Nat), x ∈ l → x ≤ l.foldr max 0
+  | _ :: _, _, .head _ => le_max_left _ _
+  | _ :: l, x, .tail _ h => (le_foldr_max l x h).trans (le_max_right _ _)
+
+end CompStark.Ni
+
 namespace CompStark.Iop.Setup
 open CompStark.Stark CompStark.Fri CompStark.RandomOracle CompStark.Ni OracleSpec OracleComp
 

@@ -59,7 +59,7 @@ def bPrep : List (Option (Mat F)) × Option (Committed F) := setupBatchWith (spe
 values and the preprocessed commitment. -/
 def bTA0 : Transcript F 24 :=
   ((((Poseidon2.initTranscript.observeList
-    (batchSeedOf EF P Is ⟨(bPrep EF P Is).2.map fun c : Committed F ↦ c.cap P.capHeight⟩)
+    (batchSeedOf EF P Is ((bPrep EF P Is).2.map fun c : Committed F ↦ c.cap P.capHeight))
       ).observeExts (Is.map fun I ↦ (Ext.ofBase (I.logN : F) : EF))).observeList
     (capElems ((Committed.ofMats hashF compF (bExts P Is ts)).cap P.capHeight))).observeList
       ps.flatten).observeList
@@ -515,9 +515,11 @@ theorem opened_getElem (hts : ts.length = Is.length) (hps : ps.length = Is.lengt
   simp only [proveBatch_eq, List.toList_toArray, List.getElem_map, List.getElem_zipIdx,
     Nat.zero_add]
 
-/-- The common data is the cap of the preprocessed traces' commitment. -/
+/-- The common data is the cap of the preprocessed traces' commitment, with the instances'
+heights and lookups. -/
 theorem setupBatch_eq :
-    setupBatch P Is = ⟨(bPrep EF P Is).2.map fun c : Committed F ↦ c.cap P.capHeight⟩ := by
+    setupBatch P Is = ⟨(bPrep EF P Is).2.map fun c : Committed F ↦ c.cap P.capHeight,
+      Is.map (·.logN), Is.map (·.lookups)⟩ := by
   rw [bPrep_snd]
   unfold setupBatch
   simp only [prepLde]
@@ -1119,7 +1121,7 @@ end Honest
 /-- The transcript part of `verifyBatch`. -/
 def bVerifyRun (P : Params) (Is : List (Instance F)) (common : Common F)
     (proof : BatchProof F EF) (pis : List (List F)) : M (poseidon2 F) (EF × EF × EF × EF) := do
-  observeList (poseidon2 F) (batchSeedOf EF P Is common)
+  observeList (poseidon2 F) (batchSeedOf EF P Is common.preprocessed)
   observeExts (poseidon2 F) (Is.map fun I ↦ (Ext.ofBase (I.logN : F) : EF))
   observeCap (poseidon2 F) proof.mainCommit
   observeList (poseidon2 F) pis.flatten
@@ -1144,15 +1146,13 @@ def bVerifyCheck (Is : List (Instance F)) (proof : BatchProof F EF) (pis : List 
   unless (proof.lookupTerminals.toList.filterMap id).foldl (· + ·) 0 == 0 do
     throw "lookup terminals do not sum to zero"
 
-theorem verifyBatch_eq (P : Params) (Is : List (Instance F)) (common : Common F)
+theorem verifyInstances_eq (P : Params) (Is : List (Instance F)) (common : Common F)
     (proof : BatchProof F EF) (pis : List (List F)) :
-    verifyBatch P Is common proof pis = ExceptT.run (do
+    verifyInstancesWith (poseidon2 F) P Is common proof pis = ExceptT.run (do
       let n := Is.length
       unless proof.opened.size == n && pis.length == n && proof.permutationLocal.size == n &&
           proof.permutationNext.size == n && proof.lookupTerminals.size == n do
         throw "instance count"
-      unless proof.degreeBits.toList == Is.map (·.logN) do
-        throw "degree bits"
       unless Is.all fun I ↦ I.logN + I.logQuotientChunks ≤ twoAdicity F do
         throw "quotient domain"
       unless Is.all fun I ↦ I.air.periodicFits I.logN do
@@ -1171,7 +1171,7 @@ theorem verifyBatch_eq (P : Params) (Is : List (Instance F)) (common : Common F)
         throw "empty quotient commitment"
       (bVerifyRun P Is common proof pis).run Poseidon2.initTranscript >>=
         bVerifyCheck Is proof pis) := by
-  delta verifyBatch verifyBatchWith bVerifyRun bVerifyCheck
+  delta verifyInstancesWith bVerifyRun bVerifyCheck
   rfl
 
 theorem observeExts_bind {β : Type} (xs : List EF) (f : Unit → M (poseidon2 F) β)
@@ -1183,7 +1183,7 @@ theorem observeExts_bind {β : Type} (xs : List EF) (f : Unit → M (poseidon2 F
 the public values and the preprocessed commitment. -/
 def bVTA0 (P : Params) (Is : List (Instance F)) (common : Common F) (proof : BatchProof F EF)
     (pis : List (List F)) : Transcript F 24 :=
-  ((((Poseidon2.initTranscript.observeList (batchSeedOf EF P Is common)).observeExts
+  ((((Poseidon2.initTranscript.observeList (batchSeedOf EF P Is common.preprocessed)).observeExts
     (Is.map fun I ↦ (Ext.ofBase (I.logN : F) : EF))).observeList
       (capElems proof.mainCommit)).observeList
     pis.flatten).observeList ((common.preprocessed.map capElems).getD [])
@@ -1380,7 +1380,7 @@ theorem verifyBatch_proveBatch_of (EF : Type) [Challenge F EF] (P : Params)
     (hpis : ∀ i (hi : i < Is.length), (ps[i]'(hps ▸ hi)).length = Is[i].air.numPublicValues)
     (hlc : ∀ I ∈ Is, I.logQuotientChunks ≤ P.logBlowup)
     (hdeg : ∀ I ∈ Is, I.air.DegreeFitsAt I.logN I.logQuotientChunks)
-    (hdegL : ∀ I ∈ Is, ∀ g ∈ I.air.lookupConstraints I.logN,
+    (hdegL : ∀ I ∈ Is, ∀ g ∈ I.lookupConstraints,
       g.degBound (2 ^ I.logN) (I.air.periodicDegree (2 ^ I.logN)) <
         2 ^ (I.logN + I.logQuotientChunks) + 2 ^ I.logN)
     (hls : ∀ I ∈ Is, ∀ l ∈ I.lookups,
@@ -1397,7 +1397,7 @@ theorem verifyBatch_proveBatch_of (EF : Type) [Challenge F EF] (P : Params)
     (hcap : ∀ I ∈ Is, ∀ J ∈ Is, min P.capHeight (J.logN + P.logBlowup) ≤ I.logN + P.logBlowup)
     (hgrind : (proveBatchTranscript EF P Is ts ps).grindFailed = false)
     (hz : Ext.OutsideBase (batchOutOfDomainPoint EF P Is ts ps)) :
-    verifyBatch P Is (setupBatch P Is) (proveBatch EF P Is ts ps) ps = .ok () := by
+    verifyBatch P (Is.map (·.air)) (setupBatch P Is) (proveBatch EF P Is ts ps) ps = .ok () := by
   rw [batchOutOfDomainPoint_eq] at hz
   rw [proveBatchTranscript_eq] at hgrind
   rw [batchLookupChallenges_eq] at hpole
@@ -1559,8 +1559,8 @@ theorem verifyBatch_proveBatch_of (EF : Type) [Challenge F EF] (P : Params)
     rw [hp]
     simp only [List.size_toArray, List.length_map, List.length_range, hTl, beq_self_eq_true,
       Bool.and_self]
-  have hdb : ((proveBatch EF P Is ts ps).degreeBits.toList == Is.map (·.logN)) = true := by
-    rw [hp]; exact beq_self_eq_true _
+  have hdb : (proveBatch EF P Is ts ps).degreeBits.toList = Is.map (·.logN) := by
+    rw [hp]
   have hqd : (Is.all fun I ↦ I.logN + I.logQuotientChunks ≤ twoAdicity F) = true := by
     rw [List.all_eq_true]
     intro I hI
@@ -1587,8 +1587,13 @@ theorem verifyBatch_proveBatch_of (EF : Type) [Challenge F EF] (P : Params)
       == 0) = true := by
     rw [hp, List.toList_toArray, bTerms, bPerms_eq, bChs, terminals_permutationsWith]
     exact beq_iff_eq.mpr (terminals_sum_eq_zero Is ts ps hts hps hbal _ _)
-  rw [verifyBatch_eq]
-  simp only [hcount, hdb, hqd, hper, hpv, hshape, hprepOk, hlk, hood, hqne, ↓reduceIte]
+  have hkey : keyOk (Is.map (·.air)) (setupBatch P Is)
+      (proveBatch EF P Is ts ps).degreeBits.toList = true := by
+    rw [hdb]
+    exact keyOk_self Is _ (by rw [hcommon]) (by rw [hcommon])
+  rw [verifyBatch, verifyBatchWith_of_keyOk _ _ _ _ _ _ hkey, hdb,
+    instancesOf_self Is _ (by rw [hcommon]), verifyInstances_eq]
+  simp only [hcount, hqd, hper, hpv, hshape, hprepOk, hlk, hood, hqne, ↓reduceIte]
   have hrun' : StateT.run (bVerifyRun P Is (setupBatch P Is) (proveBatch EF P Is ts ps) ps)
       Poseidon2.initTranscript = pure (((bLP EF P Is ts ps).1.2.1, (bLP EF P Is ts ps).1.2.2,
         bAlpha EF P Is ts ps, bZeta EF P Is ts ps), (bPcs EF P Is ts ps).2) := hrun

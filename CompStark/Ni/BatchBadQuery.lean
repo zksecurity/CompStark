@@ -125,20 +125,20 @@ theorem exists_badAtB (hδ' : (δ' : ℝ) < 1 - S.rate)
     (answer : (q : Query F) → Answer S.streamLen q) (common : CompStark.Batch.Common F)
     (proof : CompStark.Batch.BatchProof F EF) (log : QueryLog (spec F S.streamLen))
     (hcons : Consistent answer log)
-    (hcommon : CompStark.Batch.commonWith (idealOf answer) S.params S.instances = common)
+    (hcommon : CompStark.Batch.commonWith (idealOf answer) S.params S.keyInstances = common)
     (hsetup : ∀ e ∈ tableQueryLog S.setupRo answer, e ∈ log)
-    (hok : CompStark.Batch.verifyBatchWith (idealOf answer) S.params S.instances common proof
+    (hok : CompStark.Batch.verifyInstancesWith (idealOf answer) S.params S.instances common proof
       (List.ofFn publicValues) = .ok ())
     (hsmall : (2 ^ S.params.capHeight + 2) * (log ++ tableQueryLog
-      (CompStark.Batch.verifyBatchWith (ideal F S.streamLen) S.params S.instances common proof
+      (CompStark.Batch.verifyInstancesWith (ideal F S.streamLen) S.params S.instances common proof
         (List.ofFn publicValues)) answer).length < Fintype.card (Digest F))
     (hfail : ∀ traces ∈ Iop.Batch.closeTraces S δ' (Iop.Batch.committedTraces S log proof),
       ¬ S.Satisfied traces publicValues) :
     ∃ p hp, BadAtB S publicValues δ δ' loss (log ++ tableQueryLog
-      (CompStark.Batch.verifyBatchWith (ideal F S.streamLen) S.params S.instances common proof
+      (CompStark.Batch.verifyInstancesWith (ideal F S.streamLen) S.params S.instances common proof
         (List.ofFn publicValues)) answer) p hp := by
   set pis := List.ofFn publicValues with hpis
-  set vlog := tableQueryLog (CompStark.Batch.verifyBatchWith (ideal F S.streamLen) S.params
+  set vlog := tableQueryLog (CompStark.Batch.verifyInstancesWith (ideal F S.streamLen) S.params
     S.instances common proof pis) answer with hvlog
   set L := log ++ vlog with hL
   by_contra hno
@@ -162,13 +162,13 @@ theorem exists_badAtB (hδ' : (δ' : ℝ) < 1 - S.rate)
   have hkeys : ∀ j < blocks.length, keyAt answer blocks j ∈ L.map Sigma.fst := fun j hj ↦ by
     rw [List.map_append]
     exact List.mem_append_right _
-      (hasRounds_verifyBatchWith S answer common proof pis hok j hj)
+      (hasRounds_verifyInstancesWith S answer common proof pis hok j hj)
   have hinjL : CapsInjective answer L := capsInjective hconsL hclash L fun t ht ↦ ht
   have hcap : ∀ j, j < blocks.length → capAt answer blocks (j + 1) ≠ initCap :=
     fun j hj ↦ capAt_ne_initCap hinjL (fun k hk ↦ hkeys k hk) j hj
   -- the caps the rounds bind
-  obtain ⟨-, -, -, -, -, -, -, -, -, -, hlkA, -, -, -, -, ⟨stA, hfriA⟩, -⟩ :=
-    verifyBatchWith_ok (idealOf answer) S.params S.instances common proof pis hok
+  obtain ⟨-, -, -, -, -, -, -, -, -, hlkA, -, -, -, -, ⟨stA, hfriA⟩, -⟩ :=
+    verifyInstancesWith_ok (idealOf answer) S.params S.instances common proof pis hok
   obtain ⟨-, hpermA, hpne⟩ := lookupShapeOk_spec S.params S.instances proof hlkA
   have hqne := size_quotientCommit_neB _ _ _ _ _ _ hok
   have hcne := size_commits_ne _ _ _ _ _ _ _ hfriA
@@ -262,7 +262,8 @@ theorem exists_badAtB (hδ' : (δ' : ℝ) < 1 - S.rate)
         omega)).1.size = 2 ^ min S.params.capHeight (friDepthB S f) := by
       have h := hfsz f hf
       rw [List.getD_eq_getElem _ _ (by
-        obtain ⟨-, -, -, hcs, -⟩ := shape_of_verifyBatchWith S (idealOf answer) common proof pis hok
+        obtain ⟨-, -, -, hcs, -⟩ := shape_of_verifyInstancesWith S (idealOf answer) common proof
+            pis hok
         rw [Array.length_toList, hcs]; exact hf)] at h
       rw [List.getElem_zip]
       exact h
@@ -441,8 +442,8 @@ theorem exists_badAtB (hδ' : (δ' : ℝ) < 1 - S.rate)
     rw [htreq j hj, hpermeq j (by omega) hj, htermeq j (by omega), (hlkeq j).1, (hlkeq j).2,
       hqeq j (by omega) hj, hαeq j (by omega), hζeq j (by omega), hbeq j h2, hoeq j h2]
   -- the grinding checks and the run of FRI
-  obtain ⟨hsize, -, -, -, -, -, -, -, -, -, hlk, hlc, hood, -, hbc, ⟨st, hfriOk⟩, -⟩ :=
-    verifyBatchWith_ok (idealOf answer) S.params S.instances common proof pis hok
+  obtain ⟨hsize, -, -, -, -, -, -, -, -, hlk, hlc, hood, -, hbc, ⟨st, hfriOk⟩, -⟩ :=
+    verifyInstancesWith_ok (idealOf answer) S.params S.instances common proof pis hok
   rw [length_instances] at hsize
   have hperm := (lookupShapeOk_spec S.params S.instances proof hlk).2.1
   have hK : 2 * Challenge.d EF + 1 ≤ S.streamLen := by unfold Iop.Batch.Setup.streamLen; omega
@@ -558,18 +559,19 @@ theorem exists_badAtB (hδ' : (δ' : ℝ) < 1 - S.rate)
   have hagree : ∀ e ∈ vlog, g' e.1 = answer e.1 := fun e he ↦
     fresh_of_mem L answer dstar _ (by
       rw [List.map_append]; exact List.mem_append_right _ (List.mem_map_of_mem he))
-  have hok' : CompStark.Batch.verifyBatchWith (idealOf g') S.params S.instances common proof pis =
+  have hok' : CompStark.Batch.verifyInstancesWith (idealOf g') S.params S.instances common proof
+      pis =
       .ok () := by
-    rw [← evalWithAnswerFn_verifyBatchWith, evalWithAnswerFn_congr answer g' _ hagree,
-      evalWithAnswerFn_verifyBatchWith]
+    rw [← evalWithAnswerFn_verifyInstancesWith, evalWithAnswerFn_congr answer g' _ hagree,
+      evalWithAnswerFn_verifyInstancesWith]
     exact hok
   have hsetupL : ∀ e ∈ tableQueryLog S.setupRo answer, g' e.1 = answer e.1 := fun e he ↦
     fresh_of_mem L answer dstar _ (by
       rw [List.map_append]; exact List.mem_append_left _ (List.mem_map_of_mem (hsetup e he)))
-  have hcommon' : CompStark.Batch.commonWith (idealOf g') S.params S.instances = common := by
+  have hcommon' : CompStark.Batch.commonWith (idealOf g') S.params S.keyInstances = common := by
     rw [← evalWithAnswerFn_setupRoB S g', evalWithAnswerFn_congr answer g' _ hsetupL,
       evalWithAnswerFn_setupRoB, hcommon]
-  have hshapeA := shape_of_verifyBatchWith S (idealOf answer) common proof pis hok
+  have hshapeA := shape_of_verifyInstancesWith S (idealOf answer) common proof pis hok
   have hne : ∀ r ∈ logDigests (boundDigestsB S (initAnswers L)) L, r ≠ dstar :=
     fun r hr he ↦ hdstar (he ▸ hr)
   have hinitL : initCap ∈ logDigests (boundDigestsB S (initAnswers L)) L :=
@@ -616,7 +618,9 @@ theorem exists_badAtB (hδ' : (δ' : ℝ) < 1 - S.rate)
   have hprepNe : ∀ root ∈ common.preprocessed, ∀ e, root.toList.getD e 0 ≠ dstar := by
     intro root hr e
     by_cases he : e < root.size
-    · obtain ⟨q, hq, hd⟩ := exists_prep_mem S answer root (by rw [hcommon]; exact hr) e he
+    · have hr' : CompStark.Batch.preprocessedCapWith (idealOf answer) S.params S.instances =
+          some root := by rw [← preprocessed_commonWith, hcommon]; exact hr
+      obtain ⟨q, hq, hd⟩ := exists_prep_mem S answer root hr' e he
       rw [List.getD_eq_getElem _ _ (by rw [Array.length_toList]; exact he), Array.getElem_toList,
         ← hd]
       exact hne _ (List.mem_flatMap.mpr ⟨q, List.mem_append_left _ (hsetup q hq),
@@ -656,7 +660,7 @@ theorem exists_badAtB (hδ' : (δ' : ℝ) < 1 - S.rate)
         (S.instanceSetup i).preprocessedWord j
           (finMod _ (reverseBits r (S.logN i + S.params.logBlowup))) :=
     fun root hr i hp j hj r hrr ↦ matColumn_setup S (logCache L) g' root
-      (by rw [hcommon']; exact hr) (hprepBind root hr) i hp j hj r hrr
+      (by rw [← preprocessed_commonWith, hcommon']; exact hr) (hprepBind root hr) i hp j hj r hrr
   have hpermBind : ∀ root ∈ proof.permutationCommit,
       CapBindingM (logCache L) (idealOf g') root S.params.capHeight (permLog S)
         (permHeights S) := by
@@ -731,7 +735,7 @@ theorem exists_badAtB (hδ' : (δ' : ℝ) < 1 - S.rate)
       unfold idx
       rw [List.map_append, List.idxOf_append_of_mem hin]
       exact this.le
-    · obtain ⟨rest, hrest⟩ := verifyBatchWith_log_head answer S (le_refl _) common proof pis
+    · obtain ⟨rest, hrest⟩ := verifyInstancesWith_log_head answer S (le_refl _) common proof pis
         (by rw [run_idealLoggedB]; exact hok)
       rw [run_idealLoggedB] at hrest
       dsimp only at hrest

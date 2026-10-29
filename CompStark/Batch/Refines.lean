@@ -46,7 +46,7 @@ structure InputOk (EF : Type) [Challenge F EF] (P : Params) (instances : List (I
   /-- Every instance's quotient's chunks fit the blowup. -/
   chunks : ∀ I ∈ instances, I.logQuotientChunks ≤ P.logBlowup
   /-- Every instance's lookups read only its AIR's columns. -/
-  lookups : ∀ I ∈ instances, ∀ l ∈ I.air.lookups, l.ColsBelow I.air.width I.air.preprocessedWidth
+  lookups : ∀ I ∈ instances, ∀ l ∈ I.lookups, l.ColsBelow I.air.width I.air.preprocessedWidth
   /-- The extensions side by side are addressable. -/
   mem : ∃ logH, (∀ I ∈ instances, I.logN ≤ logH) ∧
     Addressable (2 ^ (logH + P.logBlowup) * (instances.map (·.columns EF)).sum)
@@ -212,7 +212,7 @@ theorem permutationOk {EF : Type} [Challenge F EF] {P : Params} {instances : Lis
     PermutationOk EF I.air I.lookups I.logN P.logBlowup t := by
   obtain ⟨logH, hlogH, hmem⟩ := hin.mem
   refine ⟨ht.trace, ht.preprocessed, ht.width,
-    Air.packedLookups_colsBelow _ _ _ _ (hin.lookups I hI), ht.twoAdic, ?_⟩
+    hin.lookups I hI, ht.twoAdic, ?_⟩
   refine addressable_le (Nat.mul_le_mul (Nat.pow_le_pow_right (by decide)
     (by have := hlogH I hI; omega)) ((?_ : _ ≤ I.columns EF).trans
       (List.le_sum_of_mem (List.mem_map_of_mem hI)))) hmem
@@ -670,7 +670,7 @@ theorem allQuotientChunks_refines (h : Refines B) {P : Params} {instances : List
       (getElem_of_forall₂ hprep i (by omega) (by omega)) hS.1 hS.2
       (getElem_of_forall₂ hperm i (by omega) (by omega))
       (getElem_of_forall₂ hpermS i hi (by have := hpermS.length_eq; omega))
-      (Air.packedLookups_colsBelow _ _ _ _ (hin.lookups _ (List.getElem_mem hi))) _ _ _
+      (hin.lookups _ (List.getElem_mem hi)) _ _ _
   have hlen : (allQuotientChunks B P instances ((instances.zip ts).map fun (I, t) ↦
       B.ldeTrace I.logN P.logBlowup gen I.air.width t) prepB permB pis chs terminals alpha).length =
       (allQuotientChunks (specBackend EF) P instances ((instances.zip traces).map fun (I, t) ↦

@@ -127,7 +127,7 @@ theorem rowQueries_le (i : Fin S.k) (hcounts : (S.air i).CountsBounded (S.logN i
       ((S.lookups i).map (·.countWeight)).sum := by
   unfold Iop.Batch.Setup.lookups Iop.Batch.instanceLookups
   split
-  · have hp := perm_packSameBus (2 ^ (S.air i).logQuotientChunksWith (S.logN i)
+  · have hp := perm_packSameBus (2 ^ (S.air i).logQuotientChunksWith (S.keyLogN i)
       (logUpConstraints (S.air i).lookups) + 1) (S.air i).lookups
     rw [Air.packedLookups, ((hp.filter _).map _).sum_eq, sum_countWeight, (hp.map _).sum_eq,
       ← sum_countWeight]

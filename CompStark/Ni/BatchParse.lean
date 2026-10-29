@@ -22,7 +22,7 @@ call, and an accepting run queries all of them in order.
   its grinding witness, the first after FRI's domain separator; the final polynomial and the query
   grinding witness. The PCS's observations do not depend on the opening points
   (`claimCounts_batchRounds`, `roundValues_batchRounds`).
-* `hasRounds_verifyBatchWith`: if the batch verifier accepts a proof on fixed answers, its log
+* `hasRounds_verifyInstancesWith`: if the batch verifier accepts a proof on fixed answers, its log
   holds the call of every round of the proof's schedule.
 -/
 
@@ -94,7 +94,7 @@ separator, every instance's degree bits, the main commitment, the public values 
 preprocessed commitment. -/
 noncomputable def headB (S : Iop.Batch.Setup EF) [S.CapFits] (common : CompStark.Batch.Common F)
     (pis : List (List F)) (proof : CompStark.Batch.BatchProof F EF) : List F :=
-  CompStark.Batch.batchSeedOf EF S.params S.instances common ++
+  CompStark.Batch.batchSeedOf EF S.params S.instances common.preprocessed ++
     coeffs (S.instances.map fun I ↦ (Ext.ofBase (I.logN : F) : EF)) ++ capElems proof.mainCommit ++
     pis.flatten ++ prepDigest common
 
@@ -343,19 +343,17 @@ theorem out_lookupPhase_logs (S : Iop.Batch.Setup EF) [S.CapFits] (hK : 2 * Chal
         rfl
 
 /-- The batch verifier on logged answers, if it accepts, queries every round of the schedule. -/
-theorem verifyBatchWith_logs (S : Iop.Batch.Setup EF) [S.CapFits]
+theorem verifyInstancesWith_logs (S : Iop.Batch.Setup EF) [S.CapFits]
     (hK : S.params.numQueries + 2 * Challenge.d EF + 1 ≤ K)
     (common : CompStark.Batch.Common F) (proof : CompStark.Batch.BatchProof F EF)
     (pis : List (List F))
-    (hok : (CompStark.Batch.verifyBatchWith (idealLogged answer) S.params S.instances common
+    (hok : (CompStark.Batch.verifyInstancesWith (idealLogged answer) S.params S.instances common
       proof pis).run.1 = .ok ()) :
     LogsRounds answer (inputsB S common pis proof) 0 (inputsB S common pis proof).length
-      (CompStark.Batch.verifyBatchWith (idealLogged answer) S.params S.instances common proof
+      (CompStark.Batch.verifyInstancesWith (idealLogged answer) S.params S.instances common proof
         pis).run.2 := by
-  unfold CompStark.Batch.verifyBatchWith at hok ⊢
+  unfold CompStark.Batch.verifyInstancesWith at hok ⊢
   obtain ⟨hcount, hrw⟩ := unless_logged _ _ _ _ hok
-  rw [hrw] at hok ⊢
-  obtain ⟨-, hrw⟩ := unless_logged _ _ _ _ hok
   rw [hrw] at hok ⊢
   obtain ⟨-, hrw⟩ := unless_logged _ _ _ _ hok
   rw [hrw] at hok ⊢
@@ -416,7 +414,7 @@ theorem verifyBatchWith_logs (S : Iop.Batch.Setup EF) [S.CapFits]
   rw [out_observeList_nil] at h₁
   obtain ⟨-, rfl⟩ := Prod.mk.inj (Except.ok.inj h₁)
   rw [hlog, out_observeList_nil, List.nil_append]
-  have hhead : [] ++ CompStark.Batch.batchSeedOf EF S.params S.instances common ++
+  have hhead : [] ++ CompStark.Batch.batchSeedOf EF S.params S.instances common.preprocessed ++
       coeffs (S.instances.map fun I ↦ (Ext.ofBase (I.logN : F) : EF)) ++
       capElems proof.mainCommit ++ pis.flatten ++ ((common.preprocessed.map capElems).getD []) =
         headB S common pis proof := by
@@ -541,19 +539,17 @@ theorem verifyBatchWith_logs (S : Iop.Batch.Setup EF) [S.CapFits]
 
 /-- **The first call.** If the batch verifier on logged answers accepts, its log starts with
 the duplex call of the first round. -/
-theorem verifyBatchWith_log_head (S : Iop.Batch.Setup EF) [S.CapFits]
+theorem verifyInstancesWith_log_head (S : Iop.Batch.Setup EF) [S.CapFits]
     (hK : S.params.numQueries + 2 * Challenge.d EF + 1 ≤ K)
     (common : CompStark.Batch.Common F) (proof : CompStark.Batch.BatchProof F EF)
     (pis : List (List F))
-    (hok : (CompStark.Batch.verifyBatchWith (idealLogged answer) S.params S.instances common
+    (hok : (CompStark.Batch.verifyInstancesWith (idealLogged answer) S.params S.instances common
       proof pis).run.1 = .ok ()) :
-    ∃ rest, (CompStark.Batch.verifyBatchWith (idealLogged answer) S.params S.instances common
+    ∃ rest, (CompStark.Batch.verifyInstancesWith (idealLogged answer) S.params S.instances common
       proof pis).run.2 = ⟨keyAt answer (inputsB S common pis proof) 0,
         answer (keyAt answer (inputsB S common pis proof) 0)⟩ :: rest := by
-  unfold CompStark.Batch.verifyBatchWith at hok ⊢
+  unfold CompStark.Batch.verifyInstancesWith at hok ⊢
   obtain ⟨hcount, hrw⟩ := unless_logged _ _ _ _ hok
-  rw [hrw] at hok ⊢
-  obtain ⟨-, hrw⟩ := unless_logged _ _ _ _ hok
   rw [hrw] at hok ⊢
   obtain ⟨-, hrw⟩ := unless_logged _ _ _ _ hok
   rw [hrw] at hok ⊢
@@ -614,7 +610,7 @@ theorem verifyBatchWith_log_head (S : Iop.Batch.Setup EF) [S.CapFits]
   rw [out_observeList_nil] at h₁
   obtain ⟨-, rfl⟩ := Prod.mk.inj (Except.ok.inj h₁)
   rw [hlog, out_observeList_nil, List.nil_append]
-  have hhead : [] ++ CompStark.Batch.batchSeedOf EF S.params S.instances common ++
+  have hhead : [] ++ CompStark.Batch.batchSeedOf EF S.params S.instances common.preprocessed ++
       coeffs (S.instances.map fun I ↦ (Ext.ofBase (I.logN : F) : EF)) ++
       capElems proof.mainCommit ++ pis.flatten ++ ((common.preprocessed.map capElems).getD []) =
         headB S common pis proof := by
@@ -649,26 +645,27 @@ end Run
 theorem run_idealLoggedB {K : Nat} {answer : (q : Query F) → Answer K q} (P : Fri.Params)
     (instances : List (CompStark.Batch.Instance F)) (common : CompStark.Batch.Common F)
     (proof : CompStark.Batch.BatchProof F EF) (pis : List (List F)) :
-    (CompStark.Batch.verifyBatchWith (idealLogged answer) P instances common proof pis).run =
-      (CompStark.Batch.verifyBatchWith (idealOf answer) P instances common proof pis,
-        tableQueryLog (CompStark.Batch.verifyBatchWith (ideal F K) P instances common proof pis)
+    (CompStark.Batch.verifyInstancesWith (idealLogged answer) P instances common proof pis).run =
+      (CompStark.Batch.verifyInstancesWith (idealOf answer) P instances common proof pis,
+        tableQueryLog (CompStark.Batch.verifyInstancesWith (ideal F K) P instances common proof pis)
           answer) := by
   have h := QueryImpl.fst_map_run_withLogging (QueryImpl.ofFn answer)
-    (CompStark.Batch.verifyBatchWith (ideal F K) P instances common proof pis)
-  rw [simulateQ_verifyBatchWith, simulateQ_verifyBatchWith] at h
-  exact Prod.ext h (tableQueryLog_verifyBatchWith answer P instances common proof pis).symm
+    (CompStark.Batch.verifyInstancesWith (ideal F K) P instances common proof pis)
+  rw [simulateQ_verifyInstancesWith, simulateQ_verifyInstancesWith] at h
+  exact Prod.ext h (tableQueryLog_verifyInstancesWith answer P instances common proof pis).symm
 
 /-- **The batch verifier queries every round.** If the batch verifier accepts a proof on the
 answers `answer`, the duplex call of every round of the proof's schedule is in its log. -/
-theorem hasRounds_verifyBatchWith (S : Iop.Batch.Setup EF) [S.CapFits]
+theorem hasRounds_verifyInstancesWith (S : Iop.Batch.Setup EF) [S.CapFits]
     (answer : (q : Query F) → Answer S.streamLen q) (common : CompStark.Batch.Common F)
     (proof : CompStark.Batch.BatchProof F EF) (pis : List (List F))
-    (hok : CompStark.Batch.verifyBatchWith (idealOf answer) S.params S.instances common proof pis =
+    (hok : CompStark.Batch.verifyInstancesWith (idealOf answer) S.params S.instances common proof
+        pis =
       .ok ()) :
-    HasRounds answer (tableQueryLog (CompStark.Batch.verifyBatchWith (ideal F S.streamLen)
+    HasRounds answer (tableQueryLog (CompStark.Batch.verifyInstancesWith (ideal F S.streamLen)
       S.params S.instances common proof pis) answer) (inputsB S common pis proof)
       (inputsB S common pis proof).length := by
-  have h := verifyBatchWith_logs answer S (le_refl _) common proof pis
+  have h := verifyInstancesWith_logs answer S (le_refl _) common proof pis
     (by rw [run_idealLoggedB]; exact hok)
   rw [run_idealLoggedB] at h
   exact fun j hj ↦ h j (Nat.zero_le j) hj

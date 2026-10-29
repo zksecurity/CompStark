@@ -45,13 +45,14 @@ local notation "𝕂" => Challenge.Spec EF
 
 section Lookups
 
-/-- An instance's lookups are its statement's, as the verifier derives them. -/
+/-- An instance's lookups are the verifier's. -/
 theorem lookups_eq (S : Iop.Batch.Setup EF) [S.CapFits] (i : Fin S.k) :
-    S.lookups i = (⟨S.air i, S.logN i⟩ : CompStark.Batch.Instance F).lookups := rfl
+    S.lookups i = (⟨S.air i, S.logN i, S.lookups i⟩ : CompStark.Batch.Instance F).lookups := rfl
 
 /-- An instance's LogUp constraints are the verifier's. -/
 theorem extConstraints_eq (S : Iop.Batch.Setup EF) [S.CapFits] (i : Fin S.k) :
-    (S.instanceSetup i).extConstraints = (S.air i).lookupConstraints (S.logN i) := rfl
+    (S.instanceSetup i).extConstraints =
+      (⟨S.air i, S.logN i, S.lookups i⟩ : CompStark.Batch.Instance F).lookupConstraints := rfl
 
 /-- A STARK's quotient chunks are those of its AIR's constraints and its lookups' LogUp
 constraints. -/
@@ -75,15 +76,12 @@ theorem logN_add_logChunks_le {lookups : List (Lookup F)} (T : Iop.Setup EF look
   have hv := T.lookupsValid
   cases lookups with
   | nil => exact T.valid.quotientFits
-  | cons l ls =>
-    have := T.valid.twoAdic
-    have h1 : T.logChunks ≤ T.params.logBlowup := hv.1
-    omega
+  | cons l ls => exact hv.1
 
 /-- An instance's quotient chunks are the verifier's. -/
 theorem logChunks_eq (S : Iop.Batch.Setup EF) [S.CapFits] (i : Fin S.k) :
     (S.instanceSetup i).logChunks =
-      (⟨S.air i, S.logN i⟩ : CompStark.Batch.Instance F).logQuotientChunks :=
+      (⟨S.air i, S.logN i, S.lookups i⟩ : CompStark.Batch.Instance F).logQuotientChunks :=
   logChunks_eq_with (S.instanceSetup i)
 
 /-- The permutation trace's width: the verifier's, an accumulator and a column per lookup, none
@@ -445,7 +443,8 @@ theorem pointAt_eq (logMax I m : ℕ) :
 /-- The statement's instances, zipped with a list of opened values of every instance. -/
 theorem getD_map_zip_instances {γ : Type} (os : List (OpenedValues EF)) (hos : os.length = S.k)
     (φ : CompStark.Batch.Instance F × OpenedValues EF → γ) (d : γ) (i : Fin S.k) :
-    ((S.instances.zip os).map φ).getD i d = φ (⟨S.air i, S.logN i⟩, os.getD i noOpenings) := by
+    ((S.instances.zip os).map φ).getD i d = φ (⟨S.air i, S.logN i, S.lookups i⟩, os.getD i
+        noOpenings) := by
   have hl : i.val < (S.instances.zip os).length := by
     rw [List.length_zip, Iop.Batch.Setup.instances, List.length_ofFn, hos, Nat.min_self]
     exact i.isLt
@@ -568,13 +567,13 @@ theorem quot_part (hz : Challenge.toSpec zeta = ζ)
       simp only [List.getD_eq_getElem?_getD, List.getElem?_eq_getElem ht, Option.getD_some])]
   have hb := range_flatMap_blocks blk (fun t y ↦ if y.1.logSize + S.params.logBlowup = m then
     matTerms (pointAt logMax I m) (fun j ↦ (rows.getD t #[]).toList.getD j 0) y.2 else [])
-    (⟨0, 0⟩, []) (⟨S.air ⟨0, S.nonempty⟩, 0⟩, noOpenings) L 0
+    (⟨0, 0⟩, []) (⟨S.air ⟨0, S.nonempty⟩, 0, []⟩, noOpenings) L 0
   simp only [Nat.zero_add] at hb
   rw [hb, hLl, ← flatMap_finRange_eq_range, List.map_flatMap]
   refine List.flatMap_congr fun i _ ↦ ?_
-  have hLi : L.getD i (⟨S.air ⟨0, S.nonempty⟩, 0⟩, noOpenings) =
-      (⟨S.air i, S.logN i⟩, proof.opened.toList.getD i noOpenings) := by
-    have := getD_map_zip_instances (S := S) _ hos id (⟨S.air ⟨0, S.nonempty⟩, 0⟩, noOpenings) i
+  have hLi : L.getD i (⟨S.air ⟨0, S.nonempty⟩, 0, []⟩, noOpenings) =
+      (⟨S.air i, S.logN i, S.lookups i⟩, proof.opened.toList.getD i noOpenings) := by
+    have := getD_map_zip_instances (S := S) _ hos id (⟨S.air ⟨0, S.nonempty⟩, 0, []⟩, noOpenings) i
     rwa [List.map_id] at this
   obtain ⟨hcs, hch⟩ := hshape i
   have hoff : ((L.take i).map fun b ↦ (blk b).length).sum = quotOffset S i := by
@@ -586,18 +585,20 @@ theorem quot_part (hz : Challenge.toSpec zeta = ζ)
       simp only [List.length_map, List.length_take, hLl] at h1; omega
     have hk : i' < S.k := by omega
     have hLi' := getD_map_zip_instances (S := S) _ hos id
-      (⟨S.air ⟨0, S.nonempty⟩, 0⟩, noOpenings) ⟨i', hk⟩
+      (⟨S.air ⟨0, S.nonempty⟩, 0, []⟩, noOpenings) ⟨i', hk⟩
     rw [List.map_id] at hLi'
     simp only [List.getElem_map, List.getElem_take, List.getElem_ofFn, hblk, List.length_map,
       Array.length_toList]
-    rw [← List.getD_eq_getElem _ (⟨S.air ⟨0, S.nonempty⟩, 0⟩, noOpenings), hLi']
+    rw [← List.getD_eq_getElem _ (⟨S.air ⟨0, S.nonempty⟩, 0, []⟩, noOpenings), hLi']
     exact (hshape ⟨i', hk⟩).1
   rw [hLi, hoff, onSize_map]
-  have hlen : (blk (⟨S.air i, S.logN i⟩, proof.opened.toList.getD i noOpenings)).length =
+  have hlen : (blk (⟨S.air i, S.logN i, S.lookups i⟩, proof.opened.toList.getD i
+      noOpenings)).length =
       (S.instanceSetup i).chunks := by
     simp only [hblk, List.length_map, Array.length_toList, hcs]
   have hget : ∀ c < (S.instanceSetup i).chunks,
-      (blk (⟨S.air i, S.logN i⟩, proof.opened.toList.getD i noOpenings)).getD c (⟨0, 0⟩, []) =
+      (blk (⟨S.air i, S.logN i, S.lookups i⟩, proof.opened.toList.getD i noOpenings)).getD c (⟨0,
+          0⟩, []) =
         ((⟨1, S.logN i⟩ : Domain F),
           [(zeta, ((proof.opened.toList.getD i noOpenings).quotientChunks.getD c #[]).toList)]) :=
         by
@@ -691,7 +692,8 @@ theorem prep_part (hz : Challenge.toSpec zeta = ζ)
         if x.1.air.opensPreprocessedNext then
           [(zeta * Ext.ofBase (twoAdicGen x.1.logN), (x.2.preprocessedNext.getD #[]).toList)]
         else []) with hψ
-  set b0 : CompStark.Batch.Instance F × OpenedValues EF := (⟨S.air ⟨0, S.nonempty⟩, 0⟩, noOpenings)
+  set b0 : CompStark.Batch.Instance F × OpenedValues EF := (⟨S.air ⟨0, S.nonempty⟩, 0, []⟩,
+      noOpenings)
   set G : ℕ → CompStark.Batch.Instance F × OpenedValues EF → List 𝕂 := fun t y ↦
     if (ψ y).1.logSize + S.params.logBlowup = m then
       matTerms (pointAt logMax I m) (fun j ↦ (rows.getD t #[]).toList.getD j 0) (ψ y).2 else []
@@ -708,7 +710,8 @@ theorem prep_part (hz : Challenge.toSpec zeta = ζ)
   simp only [Nat.zero_add] at hf
   rw [hf, hLl, ← flatMap_finRange_eq_range, List.map_flatMap]
   refine List.flatMap_congr fun i _ ↦ ?_
-  have hLi : L.getD i b0 = (⟨S.air i, S.logN i⟩, proof.opened.toList.getD i noOpenings) := by
+  have hLi : L.getD i b0 = (⟨S.air i, S.logN i, S.lookups i⟩, proof.opened.toList.getD i
+      noOpenings) := by
     have := getD_map_zip_instances (S := S) _ hos id b0 i
     rwa [List.map_id] at this
   have hrank : ((L.take i).filter q).length = prepIndex S i := by
@@ -863,7 +866,7 @@ theorem perm_part (hz : Challenge.toSpec zeta = ζ)
     fun x ↦ ((⟨1, x.1.logN⟩ : Domain F),
       [(zeta, x.2.1.toList), (zeta * Ext.ofBase (twoAdicGen x.1.logN), x.2.2.toList)]) with hψ
   set b0 : CompStark.Batch.Instance F × Array EF × Array EF :=
-      (⟨S.air ⟨0, S.nonempty⟩, 0⟩, #[], #[])
+      (⟨S.air ⟨0, S.nonempty⟩, 0, []⟩, #[], #[])
   set G : ℕ → CompStark.Batch.Instance F × Array EF × Array EF → List 𝕂 := fun t y ↦
     if (ψ y).1.logSize + S.params.logBlowup = m then
       matTerms (pointAt logMax I m) (fun j ↦ (rows.getD t #[]).toList.getD j 0) (ψ y).2 else []
@@ -882,7 +885,7 @@ theorem perm_part (hz : Challenge.toSpec zeta = ζ)
   simp only [Nat.zero_add] at hf
   rw [hf, hLl, ← flatMap_finRange_eq_range, List.map_flatMap]
   refine List.flatMap_congr fun i _ ↦ ?_
-  have hLi : L.getD i b0 = (⟨S.air i, S.logN i⟩, proof.permutationLocal.getD i #[],
+  have hLi : L.getD i b0 = (⟨S.air i, S.logN i, S.lookups i⟩, proof.permutationLocal.getD i #[],
       proof.permutationNext.getD i #[]) := by
     rw [List.getD_eq_getElem?_getD, hL, List.getElem?_zip_eq_some.mpr ⟨?_,
       List.getElem?_zip_eq_some.mpr ⟨?_, ?_⟩⟩, Option.getD_some]
@@ -910,11 +913,11 @@ theorem perm_part (hz : Challenge.toSpec zeta = ζ)
       simp only [Iop.Batch.permOpened, List.append_eq_nil_iff, List.flatMap_eq_nil_iff,
         List.mem_finRange, forall_const]
       refine ⟨fun c ↦ absurd c.isLt (by omega), fun c ↦ absurd c.isLt (by omega)⟩
-    have hq0 : q (⟨S.air i, S.logN i⟩, proof.permutationLocal.getD i #[],
+    have hq0 : q (⟨S.air i, S.logN i, S.lookups i⟩, proof.permutationLocal.getD i #[],
         proof.permutationNext.getD i #[]) = false := by
       simp only [hq, ← lookups_eq, hp, List.isEmpty_nil, Bool.not_true]
     simp only [hq0, Bool.false_eq_true, ↓reduceIte, hpo, List.map_nil, dite_eq_ite, ite_self]
-  · have hq1 : q (⟨S.air i, S.logN i⟩, proof.permutationLocal.getD i #[],
+  · have hq1 : q (⟨S.air i, S.logN i, S.lookups i⟩, proof.permutationLocal.getD i #[],
         proof.permutationNext.getD i #[]) = true := by
       simp only [hq, ← lookups_eq, Bool.not_eq_eq_eq_not, Bool.not_true,
         List.isEmpty_eq_false_iff]
@@ -939,7 +942,7 @@ theorem reducedAt_eq_groupDeepWord (hz : Challenge.toSpec zeta = ζ)
       openingsOf (S.instanceSetup i) (proof.opened.toList.getD i noOpenings)
         (proof.permutationLocal.getD i #[]) (proof.permutationNext.getD i #[]))
     (hsize : proof.opened.size = S.k)
-    (hshape : ∀ i : Fin S.k, CompStark.Batch.openedShapeOk ⟨S.air i, S.logN i⟩
+    (hshape : ∀ i : Fin S.k, CompStark.Batch.openedShapeOk ⟨S.air i, S.logN i, S.lookups i⟩
       (proof.opened.toList.getD i noOpenings) = true)
     (hlsize : proof.permutationLocal.size = S.k) (hnsize : proof.permutationNext.size = S.k)
     (hpshape : ∀ i : Fin S.k,
@@ -1067,7 +1070,7 @@ theorem reducedAt_eq_groupDeepWord (hz : Challenge.toSpec zeta = ζ)
       obtain ⟨i, -, rfl⟩ := List.mem_map.mp hn
       have hp : (S.air i).preprocessedWidth = 0 := by
         rw [hc, Option.isSome_none] at hprep
-        have := (List.any_eq_false.mp hprep.symm) ⟨S.air i, S.logN i⟩ (by
+        have := (List.any_eq_false.mp hprep.symm) ⟨S.air i, S.logN i, S.lookups i⟩ (by
           rw [Iop.Batch.Setup.instances, List.mem_ofFn]; exact ⟨i, rfl⟩)
         simp only [decide_eq_true_eq] at this
         omega
@@ -1105,7 +1108,7 @@ theorem reducedAt_eq_groupDeepWord (hz : Challenge.toSpec zeta = ζ)
       obtain ⟨i, -, rfl⟩ := List.mem_map.mp hn
       have hl0 : S.lookups i = [] := by
         rw [hc, Option.isSome_none] at hperm
-        have := (List.any_eq_false.mp hperm.symm) ⟨S.air i, S.logN i⟩ (by
+        have := (List.any_eq_false.mp hperm.symm) ⟨S.air i, S.logN i, S.lookups i⟩ (by
           rw [Iop.Batch.Setup.instances, List.mem_ofFn]; exact ⟨i, rfl⟩)
         rw [lookups_eq]
         simpa only [Bool.not_eq_eq_eq_not, Bool.not_true, List.isEmpty_eq_false_iff,

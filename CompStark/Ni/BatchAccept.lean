@@ -9,7 +9,7 @@ public import CompStark.Batch.Verifier
 
 /-! # Accepting runs of the batch verifier on pure primitives
 
-`verifyBatchWith_ok` reads an accepting run of the batch STARK's verifier on pure primitives
+`verifyInstancesWith_ok` reads an accepting run of the batch STARK's verifier on pure primitives
 backwards, as `verifyWith_ok` does the STARK's: the proof's shape checks, the lookup and
 out-of-domain grinding witnesses check, `ζ` is off every instance's trace domain, the commitment
 scheme accepts at the batching challenge, every instance's constraints hold at `ζ`, and the
@@ -31,7 +31,7 @@ variable (P : Params) (instances : List (Instance F)) (common : Common F)
 degree bits, the main commitment, the public values and the preprocessed commitment. -/
 abbrev stateLookupB : H.State :=
   obsList H (obsList H (obsList H (obsExts H
-    (obsList H H.init (batchSeedOf EF P instances common))
+    (obsList H H.init (batchSeedOf EF P instances common.preprocessed))
     (instances.map fun I ↦ (Ext.ofBase (I.logN : F) : EF))) (capElems proof.mainCommit))
     pis.flatten) ((common.preprocessed.map capElems).getD [])
 
@@ -156,16 +156,15 @@ theorem except_bind_ok' {α : Type} (R : ExceptT String Id α) (k : α → Excep
 witnesses check, `ζ` is off every trace domain, FRI accepts from the challenger after the batching
 challenge, every instance's constraints hold at `ζ` with the challenger's lookup challenges, `α`
 and `ζ`, and the terminals sum to zero. -/
-theorem verifyBatchWith_ok (P : Params) (instances : List (Instance F)) (common : Common F)
+theorem verifyInstancesWith_ok (P : Params) (instances : List (Instance F)) (common : Common F)
     (proof : BatchProof F EF) (pis : List (List F))
-    (h : verifyBatchWith H P instances common proof pis = .ok ()) :
+    (h : verifyInstancesWith H P instances common proof pis = .ok ()) :
     let zeta := zetaOfB H P instances common proof pis
     let lk := lookupRunB H P instances common proof pis
     proof.opened.size = instances.length ∧ pis.length = instances.length ∧
       proof.permutationLocal.size = instances.length ∧
       proof.permutationNext.size = instances.length ∧
       proof.lookupTerminals.size = instances.length ∧
-      proof.degreeBits.toList = instances.map (·.logN) ∧
       (∀ I ∈ instances, I.logN + I.logQuotientChunks ≤ twoAdicity F) ∧
       (∀ x ∈ instances.zip pis, x.2.length = x.1.air.numPublicValues) ∧
       (∀ x ∈ instances.zip proof.opened.toList, openedShapeOk x.1 x.2 = true) ∧
@@ -187,9 +186,8 @@ theorem verifyBatchWith_ok (P : Params) (instances : List (Instance F)) (common 
           (alphaOfB H P instances common proof pis) = true) ∧
       (proof.lookupTerminals.toList.filterMap id).foldl (· + ·) 0 = 0 := by
   intro zeta lk
-  unfold verifyBatchWith at h
+  unfold verifyInstancesWith at h
   obtain ⟨hcount, h⟩ := unless_ok _ _ _ _ h
-  obtain ⟨hdb, h⟩ := unless_ok _ _ _ _ h
   obtain ⟨hq, h⟩ := unless_ok _ _ _ _ h
   obtain ⟨-, h⟩ := unless_ok _ _ _ _ h
   obtain ⟨hpub, h⟩ := unless_ok _ _ _ _ h
@@ -226,19 +224,18 @@ theorem verifyBatchWith_ok (P : Params) (instances : List (Instance F)) (common 
   subst hx'
   obtain ⟨hc, hc'⟩ := unless_ok _ _ _ _ hc
   obtain ⟨hsum, -⟩ := unless_ok _ _ _ _ hc'
-  simp only [Bool.and_eq_true, beq_iff_eq, List.all_eq_true, decide_eq_true_eq] at hcount hdb hq
+  simp only [Bool.and_eq_true, beq_iff_eq, List.all_eq_true, decide_eq_true_eq] at hcount hq
   simp only [beq_iff_eq, List.all_eq_true] at hpub hshape
   simp only [beq_iff_eq, List.all_eq_true] at hprep hz hc hsum
-  exact ⟨hcount.1.1.1.1, hcount.1.1.1.2, hcount.1.1.2, hcount.1.2, hcount.2, hdb, hq,
+  exact ⟨hcount.1.1.1.1, hcount.1.1.1.2, hcount.1.1.2, hcount.1.2, hcount.2, hq,
     fun x hx ↦ hpub x hx, hshape, hprep, hlk, hlw, hood, hz, hbc, ⟨_, hfri⟩, hc, hsum⟩
 
 /-- An accepted batch proof's quotient cap is not empty. -/
 theorem size_quotientCommit_neB (P : Params) (instances : List (Instance F)) (common : Common F)
     (proof : BatchProof F EF) (pis : List (List F))
-    (h : verifyBatchWith H P instances common proof pis = .ok ()) :
+    (h : verifyInstancesWith H P instances common proof pis = .ok ()) :
     proof.quotientCommit.size ≠ 0 := by
-  unfold verifyBatchWith at h
-  obtain ⟨-, h⟩ := unless_ok _ _ _ _ h
+  unfold verifyInstancesWith at h
   obtain ⟨-, h⟩ := unless_ok _ _ _ _ h
   obtain ⟨-, h⟩ := unless_ok _ _ _ _ h
   obtain ⟨-, h⟩ := unless_ok _ _ _ _ h

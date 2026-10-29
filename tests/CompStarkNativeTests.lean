@@ -135,9 +135,9 @@ def mulTrace (rows reps : Nat) : Array F :=
 abbrev BatchInstance (F : Type) := Batch.Instance F × Array F × List F
 
 def fibIndexed (logN : Nat) : BatchInstance F :=
-  (⟨fibonacciIndexed logN, logN⟩, fibInstance (2 ^ logN))
+  (.ofAir (fibonacciIndexed logN) logN, fibInstance (2 ^ logN))
 def mulInstance (logN reps : Nat) : BatchInstance F :=
-  (⟨mulAir reps, logN⟩, mulTrace (2 ^ logN) reps, [])
+  (.ofAir (mulAir reps) logN, mulTrace (2 ^ logN) reps, [])
 
 /-- `n` Fibonacci rows `(F_{k+j}, F_{k+j+1})` and the public values `F_k, F_{k+1}, F_{k+n}`. -/
 def fibFrom (n k : Nat) : Array F × List F :=
@@ -146,9 +146,9 @@ def fibFrom (n k : Nat) : Array F × List F :=
     [f.getD k 0, f.getD (k + 1) 0, f.getD (k + n) 0])
 
 def mulLookups (logN reps : Nat) (isLocal : Bool) (global : List String) : BatchInstance F :=
-  (⟨mulAirLookups reps isLocal global, logN⟩, mulTrace (2 ^ logN) reps, [])
+  (.ofAir (mulAirLookups reps isLocal global) logN, mulTrace (2 ^ logN) reps, [])
 def fibLookups (logN : Nat) (bus : String) (count : Int) (k : Nat := 0) : BatchInstance F :=
-  (⟨fibonacciLookups logN bus count, logN⟩, fibFrom (2 ^ logN) k)
+  (.ofAir (fibonacciLookups logN bus count) logN, fibFrom (2 ^ logN) k)
 
 /-- The trace of `singleTableLocalLookup` on `n` rows (Plonky3's
 `single_table_local_lookup_trace`). -/
@@ -171,8 +171,8 @@ def rangeCase (logT logQ : Nat) : List (BatchInstance F) :=
   let real (r : Nat) : Bool := r % 3 != 2
   let value (r : Nat) : Nat := (5 * r + 3) % 2 ^ logT
   let mult (v : Nat) : Nat := ((List.range (2 ^ logQ)).filter fun r ↦ real r && value r == v).length
-  [(⟨rangeTable logT, logT⟩, Array.ofFn (n := 2 ^ logT) fun v ↦ (mult v.val : F), []),
-    (⟨rangeQuery, logQ⟩, Array.ofFn (n := 2 ^ logQ * 2) fun k ↦
+  [(.ofAir (rangeTable logT) logT, Array.ofFn (n := 2 ^ logT) fun v ↦ (mult v.val : F), []),
+    (.ofAir rangeQuery logQ, Array.ofFn (n := 2 ^ logQ * 2) fun k ↦
       let r := k.val / 2
       if k.val % 2 = 0 then (if real r then (value r : F) else 1000)
       else if real r then 1 else 0, [])]
@@ -181,11 +181,11 @@ def rangeCase (logT logQ : Nat) : List (BatchInstance F) :=
 def batchCase : String → List (BatchInstance F)
   | "three" => [fibIndexed 4, mulInstance 3 2, fibIndexed 3]
   | "mixed" => [fibIndexed 4, mulInstance 4 2]
-  | "periodic" => [(⟨periodicAir periodicCols, 6⟩, periodicInstance periodicCols 64)]
+  | "periodic" => [(.ofAir (periodicAir periodicCols) 6, periodicInstance periodicCols 64)]
   | "single" => [fibIndexed 5]
-  | "prepmul" => [(⟨preprocessedMul 4 2, 4⟩, Array.ofFn (n := 16) fun i ↦ ((2 * i.val : Nat) : F),
-      []), fibIndexed 5, mulInstance 3 1]
-  | "square" => [(⟨square, 4⟩, squareInstance 16), fibIndexed 3]
+  | "prepmul" => [(.ofAir (preprocessedMul 4 2) 4,
+      Array.ofFn (n := 16) fun i ↦ ((2 * i.val : Nat) : F), []), fibIndexed 5, mulInstance 3 1]
+  | "square" => [(.ofAir square 4, squareInstance 16), fibIndexed 3]
   | "local1" => [mulLookups 3 1 true []]
   | "local" => [mulLookups 4 2 true [], fibIndexed 4]
   | "global" => [mulLookups 3 2 false ["MulFib", "MulFib"], fibLookups 3 "MulFib" 2]
@@ -193,7 +193,7 @@ def batchCase : String → List (BatchInstance F)
   | "lookups" => [mulLookups 4 2 true ["MulFib1", "MulFib2"], fibIndexed 3,
       fibLookups 4 "MulFib1" 1, mulLookups 3 2 false [], fibLookups 4 "MulFib2" 1,
       mulLookups 4 2 true []]
-  | "single-local" => [(⟨singleTableLocalLookup, 3⟩, singleLocalTrace 8, [])]
+  | "single-local" => [(.ofAir singleTableLocalLookup 3, singleLocalTrace 8, [])]
   | "heights" => [fibLookups 3 "Fib" (-1), mulLookups 2 1 true [], fibLookups 4 "Fib" 1,
       fibLookups 3 "Fib" (-1) 8]
   | "range" => rangeCase 4 3
@@ -363,6 +363,7 @@ def batchProof (name : String) (ps : List Nat) : IO Unit := do
   let (_, P) ← params (0 :: ps)
   let insts : List (BatchInstance F) := batchCase name
   let instances := insts.map (·.1)
+  let airs := instances.map (·.air)
   let traces := insts.map (·.2.1)
   let pis := insts.map (·.2.2)
   let common := Batch.setupBatch P instances
@@ -371,19 +372,19 @@ def batchProof (name : String) (ps : List Nat) : IO Unit := do
     IO.ofExcept (Json.parseBatch (← IO.FS.readFile s!"tests/data/{file}.json"))
   if name.startsWith "failed" then
     -- an unbalanced batch: Plonky3's proof of it is rejected by the terminals' sum alone
-    check s!"{file}: rejects unbalanced lookups" (Batch.verifyBatch P instances common rust pis ==
+    check s!"{file}: rejects unbalanced lookups" (Batch.verifyBatch P airs common rust pis ==
       .error "lookup terminals do not sum to zero")
     check s!"{file}: specification prover" (Batch.proveBatch EF P instances traces pis == rust)
     check s!"{file}: fast prover" (Batch.proveBatchWith
       (CompStark.KoalaBear.backendFor [] P.logBlowup (Batch.shapes instances)) P instances
         (traces.map fun t ↦ #[encodeFields t]) pis == rust)
     return
-  if let .error e := Batch.verifyBatch P instances common rust pis then
+  if let .error e := Batch.verifyBatch P airs common rust pis then
     throw (IO.userError s!"{file}: {e}")
   if Batch.hasLookups instances then
     let rejects (label : String) (pf : Batch.BatchProof F EF) : IO Unit :=
       check s!"{file}: rejects {label}"
-        (Batch.verifyBatch P instances common pf pis matches .error _)
+        (Batch.verifyBatch P airs common pf pis matches .error _)
     let i := (instances.findIdx? (!·.lookups.isEmpty)).getD 0
     rejects "a tampered terminal"
       { rust with lookupTerminals := rust.lookupTerminals.modify i fun t ↦ t.map (· + 1) }
@@ -400,40 +401,41 @@ def batchProof (name : String) (ps : List Nat) : IO Unit := do
     rejects "no permutation commitment" { rust with permutationCommit := none }
     rejects "no lookup witness" { rust with lookupWitness := none }
     rejects "another lookup witness" { rust with lookupWitness := rust.lookupWitness.map (· + 1) }
-    let unbounded := instances.modify i fun I ↦ { I with air := { I.air with
+    let unbounded := instances.modify i fun I ↦ .ofAir { I.air with
       lookups := I.air.lookups.map fun l ↦
-        { l with entries := l.entries.map fun (es, c) ↦ (es, { c with weight := 2 ^ 31 }) } } }
+        { l with entries := l.entries.map fun (es, c) ↦ (es, { c with weight := 2 ^ 31 }) } }
+      I.logN
     check s!"{file}: rejects count weights past the characteristic" (Batch.verifyBatch P
-      unbounded (Batch.setupBatch P unbounded) rust pis matches .error "lookups")
+      (unbounded.map (·.air)) (Batch.setupBatch P unbounded) rust pis matches .error "lookups")
   else
     check s!"{file}: rejects a lookup witness"
-      (Batch.verifyBatch P instances common { rust with lookupWitness := some 0 } pis
+      (Batch.verifyBatch P airs common { rust with lookupWitness := some 0 } pis
         matches .error _)
   let tampered := { rust with opened := rust.opened.modify (rust.opened.size - 1) fun o ↦
     { o with traceLocal := o.traceLocal.modify 0 (· + 1) } }
   check s!"{file}: rejects a tampered proof"
-    (Batch.verifyBatch P instances common tampered pis matches .error _)
+    (Batch.verifyBatch P airs common tampered pis matches .error _)
   for (I, i) in instances.zipIdx do
     unless I.air.mainNextRow do
       let withNext := { rust with opened := rust.opened.modify i fun o ↦
         { o with traceNext := some (Array.replicate I.air.width 0) } }
       check s!"{file}: rejects an opened next row"
-        (Batch.verifyBatch P instances common withNext pis matches .error _)
+        (Batch.verifyBatch P airs common withNext pis matches .error _)
   check s!"{file}: rejects other degree bits"
-    (Batch.verifyBatch P instances common
+    (Batch.verifyBatch P airs common
       { rust with degreeBits := rust.degreeBits.modify 0 (· + 1) } pis matches .error _)
   check s!"{file}: rejects other public values"
-    (Batch.verifyBatch P instances common rust (pis.map (·.map (· + 1)))
+    (Batch.verifyBatch P airs common rust (pis.map (·.map (· + 1)))
       matches .error _ || pis.all (·.isEmpty))
   if 1 < instances.length then
     let swapped := instances.drop 1 ++ instances.take 1
-    check s!"{file}: rejects reordered instances" (Batch.verifyBatch P swapped
+    check s!"{file}: rejects reordered instances" (Batch.verifyBatch P (swapped.map (·.air))
       (Batch.setupBatch P swapped) rust (pis.drop 1 ++ pis.take 1) matches .error _)
   let other := instances.map fun I ↦
     { I with air := { I.air with preprocessed := I.air.preprocessed.modify 2 (· + 1) } }
   if common.preprocessed.isSome then
     check s!"{file}: rejects other preprocessed traces"
-      (Batch.verifyBatch P instances (Batch.setupBatch P other) rust pis matches .error _)
+      (Batch.verifyBatch P airs (Batch.setupBatch P other) rust pis matches .error _)
   check s!"{file}: specification prover" (Batch.proveBatch EF P instances traces pis == rust)
   check s!"{file}: fast prover" (Batch.proveBatchWith
     (CompStark.KoalaBear.backendFor [] P.logBlowup (Batch.shapes instances)) P instances
@@ -527,12 +529,13 @@ def batchProof (name : String) (ps : List Nat) : IO Unit := do
   let (_, P) ← KoalaBear.params (0 :: ps)
   let insts : List (BatchInstance F) := batchCase name
   let instances := insts.map (·.1)
+  let airs := instances.map (·.air)
   let traces := insts.map (·.2.1)
   let pis := insts.map (·.2.2)
   let file := s!"babybear_batch_{name}_{"_".intercalate (ps.map toString)}"
   let rust : Batch.BatchProof F EF ←
     IO.ofExcept (Json.parseBatch (← IO.FS.readFile s!"tests/data/{file}.json"))
-  if let .error e := Batch.verifyBatch P instances (Batch.setupBatch P instances) rust pis then
+  if let .error e := Batch.verifyBatch P airs (Batch.setupBatch P instances) rust pis then
     throw (IO.userError s!"{file}: {e}")
   check s!"{file}: specification prover" (Batch.proveBatch EF P instances traces pis == rust)
   check s!"{file}: fast prover" (Batch.proveBatchWith

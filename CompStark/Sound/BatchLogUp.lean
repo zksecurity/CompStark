@@ -254,8 +254,8 @@ variable {F : Type} [BaseField F] {EF : Type} [Challenge F EF]
 local notation "𝕂" => Challenge.Spec EF
 
 /-- Valid lookups are row-local and read the AIR's columns. -/
-theorem fits_of_lookupsValid {params : Fri.Params} {air : Air F} {logN : Nat}
-    {L : List (Stark.Lookup F)} (h : LookupsValid params air logN L) :
+theorem fits_of_lookupsValid {air : Air F} {logN : Nat}
+    {L : List (Stark.Lookup F)} (h : LookupsValid air logN L) :
     ∀ l ∈ L, l.Fits air.width air.mainNextWidth air.preprocessedWidth
       air.preprocessedNextWidth := by
   cases L with

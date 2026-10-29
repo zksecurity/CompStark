@@ -45,7 +45,7 @@ theorem batchCompleteness {EF : Type} [Challenge F EF] {params : Params}
     {publicValues : List (List F)} (config : Batch.ValidConfig params instances)
     (luck : Batch.NoBadLuck EF params instances traces publicValues) :
     Batch.Satisfied instances traces publicValues →
-      Batch.verifyBatch params instances (Batch.setupBatch params instances)
+      Batch.verifyBatch params (instances.map (·.air)) (Batch.setupBatch params instances)
         (Batch.proveBatch EF params instances traces publicValues) publicValues = .ok () :=
   Batch.completeness config luck
 

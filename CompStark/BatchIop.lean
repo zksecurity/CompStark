@@ -12,10 +12,10 @@ public import Mathlib.Data.Finset.Sort
 The protocol behind `verifyBatchWith`, with oracles in place of the Merkle commitments and uniform
 challenges in place of Fiat–Shamir, for a `Batch.Setup`: FRI parameters and `k ≥ 1` AIR instances,
 instance `i` with a trace of `2 ^ logN i` rows, proving its AIR's lookups (`Setup.lookups`, the
-lookups packed as Plonky3 packs them). Each instance is a STARK of its own with its lookups
-(`Setup.instanceSetup`, `CompStark/Iop.lean`), on its own domain `Lᵢ` of
-`2 ^ (logN i + logBlowup)` points; the rounds are the STARK's, every instance in each, after a
-round for the lookups:
+lookups packed as Plonky3's keygen packs them, at the keygen height `2 ^ keyLogN i`). Each
+instance is a STARK of its own with its lookups (`Setup.instanceSetup`, `CompStark/Iop.lean`), on
+its own domain `Lᵢ` of `2 ^ (logN i + logBlowup)` points; the rounds are the STARK's, every
+instance in each, after a round for the lookups:
 
 1. The prover sends every instance's extended trace (`Prover.trace`).
 2. The verifier samples the lookup challenges `(α_L, β_L)`. Lookup `c` of instance `i` gets its
@@ -57,8 +57,8 @@ local notation "𝕂" => Challenge.Spec EF
 
 namespace Batch
 
-/-- The lookups an instance proves: its AIR's, packed for its height (`Air.packedLookups`), if the
-batch proves lookups. -/
+/-- The lookups an instance proves: its AIR's, packed for its keygen height `2 ^ logN`
+(`Air.packedLookups`), if the batch proves lookups. -/
 def instanceLookups (withLookups : Bool) (air : Air F) (logN : Nat) : List (Stark.Lookup F) :=
   if withLookups then air.packedLookups logN else []
 
@@ -77,23 +77,28 @@ structure BusesValid (ls : List (List (Stark.Lookup F))) : Prop where
 
 /-- A batch STARK to prove with over the challenge field `EF`: FRI parameters and `k ≥ 1` AIRs,
 instance `i` with a trace of `2 ^ logN i` rows in a sound configuration (`SoundConfig`), with at
-least one FRI fold, proving its AIR's lookups if `withLookups`. -/
+least one FRI fold, proving its AIR's lookups packed at its keygen height `2 ^ keyLogN i` if
+`withLookups`; an instance with preprocessed columns is at its keygen height. -/
 structure Setup (EF : Type) [Challenge F EF] (withLookups : Bool := true) where
   params : Fri.Params
   /-- The number of instances. -/
   k : Nat
   air : Fin k → Air F
   logN : Fin k → Nat
+  /-- Every instance's log trace height at keygen. -/
+  keyLogN : Fin k → Nat
   valid : ∀ i, SoundConfig params (air i) (logN i)
+  /-- An instance with preprocessed columns is at its keygen height, its preprocessed trace's. -/
+  keyed : ∀ i, 0 < (air i).preprocessedWidth → logN i = keyLogN i
   /-- FRI's final polynomial is shorter than every trace, so FRI folds at least once. -/
   folds : ∀ i, params.logFinalPolyLen < logN i
   /-- The batch has an instance. -/
   nonempty : 0 < k
   /-- Every instance's lookups are valid on it (`LookupsValid`). -/
-  lookupsValid : ∀ i, LookupsValid params (air i) (logN i)
-    (instanceLookups withLookups (air i) (logN i))
+  lookupsValid : ∀ i, LookupsValid (air i) (logN i)
+    (instanceLookups withLookups (air i) (keyLogN i))
   /-- The instances' lookups are valid together (`BusesValid`). -/
-  buses : BusesValid (List.ofFn fun i ↦ instanceLookups withLookups (air i) (logN i))
+  buses : BusesValid (List.ofFn fun i ↦ instanceLookups withLookups (air i) (keyLogN i))
 
 namespace Setup
 variable {withLookups : Bool} (S : Setup EF withLookups)
@@ -109,7 +114,7 @@ theorem capFits [h : S.CapFits] (i : Fin S.k) :
 
 /-- Instance `i`'s lookups (`instanceLookups`). -/
 abbrev lookups (i : Fin S.k) : List (Stark.Lookup F) :=
-  instanceLookups withLookups (S.air i) (S.logN i)
+  instanceLookups withLookups (S.air i) (S.keyLogN i)
 
 /-- Instance `i` as a STARK of its own with its lookups. -/
 abbrev instanceSetup (i : Fin S.k) : Iop.Setup EF (S.lookups i) :=
@@ -370,8 +375,8 @@ end Batch
 
 /-- A STARK as a batch of one instance, without lookups. -/
 abbrev Setup.toBatch (S : Iop.Setup EF) [S.Folds] : Batch.Setup EF false :=
-  ⟨S.params, 1, fun _ ↦ S.air, fun _ ↦ S.logN, fun _ ↦ S.valid, fun _ ↦ S.folds,
-    Nat.one_pos,
+  ⟨S.params, 1, fun _ ↦ S.air, fun _ ↦ S.logN, fun _ ↦ S.logN, fun _ ↦ S.valid,
+    fun _ _ ↦ rfl, fun _ ↦ S.folds, Nat.one_pos,
     fun _ ↦ trivial, ⟨fun _ hl ↦ absurd hl List.not_mem_nil, fun _ hx ↦ absurd hx List.not_mem_nil,
       fun _ hx ↦ absurd hx List.not_mem_nil⟩⟩
 

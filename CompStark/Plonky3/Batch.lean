@@ -23,14 +23,14 @@ variable {F : Type} [BaseField F] [Poseidon2Field F]
 
 /-- The common data of the instances `instances` (Plonky3's `ProverData::from_airs_and_degrees`):
 the Poseidon2 Merkle root of the extensions of their preprocessed traces, in instance order, if
-any has preprocessed columns. -/
+any has preprocessed columns, and their heights and lookups. -/
 def setupBatch (P : Params) (instances : List (Instance F)) : Common F :=
   let mats := instances.filterMap fun I ↦
     if I.air.preprocessedWidth = 0 then none
     else some (ldeRef I.logN P.logBlowup gen I.air.preprocessedWidth I.air.preprocessed)
   ⟨if mats.isEmpty then none
     else some ((Committed.ofMats (Hash.Poseidon2.hash F) (Hash.Poseidon2.compress F) mats).cap
-      P.capHeight)⟩
+      P.capHeight), instances.map (·.logN), instances.map (·.lookups)⟩
 
 /-- The out-of-domain point `ζ` of the specification's batch proof: the challenge, sampled after
 the main and quotient commitments, at which the prover opens every instance's traces and quotient
@@ -64,9 +64,10 @@ def proveBatch (EF : Type) [Challenge F EF] (P : Params) (instances : List (Inst
 
 variable {EF : Type} [Challenge F EF]
 
-/-- Plonky3's batch verifier: `verifyBatchWith` on Poseidon2, against the common data `common`. -/
-def verifyBatch (P : Params) (instances : List (Instance F)) (common : Common F)
-    (proof : BatchProof F EF) (pis : List (List F)) : Except String Unit :=
-  verifyBatchWith (poseidon2 F) P instances common proof pis
+/-- Plonky3's batch verifier: `verifyBatchWith` on Poseidon2, for the AIRs `airs` against the
+common data `common`. -/
+def verifyBatch (P : Params) (airs : List (Air F)) (common : Common F) (proof : BatchProof F EF)
+    (pis : List (List F)) : Except String Unit :=
+  verifyBatchWith (poseidon2 F) P airs common proof pis
 
 end CompStark.Batch

@@ -64,14 +64,14 @@ theorem countsBounded_of_isRangeBatch (S : Iop.Batch.Setup EF) (hS : S.IsRangeBa
 
 theorem lookups_of_rangeQuery {S : Iop.Batch.Setup EF} {i : Fin S.k}
     (h : S.air i = rangeQuery) : S.lookups i = (rangeQuery : Air F).lookups := by
-  show Iop.Batch.instanceLookups true (S.air i) (S.logN i) = _
+  show Iop.Batch.instanceLookups true (S.air i) (S.keyLogN i) = _
   rw [h]
   rfl
 
 theorem lookups_of_rangeTable {S : Iop.Batch.Setup EF} {i : Fin S.k}
     (h : S.air i = rangeTable (S.logN i)) :
     S.lookups i = (rangeTable (S.logN i) : Air F).lookups := by
-  show Iop.Batch.instanceLookups true (S.air i) (S.logN i) = _
+  show Iop.Batch.instanceLookups true (S.air i) (S.keyLogN i) = _
   rw [h]
   rfl
 

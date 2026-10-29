@@ -11,19 +11,24 @@ public import CompStark.Stark.Verifier
 
 Plonky3's `batch-stark` `verify_batch` (revision `a4982ec`) without zero knowledge, over a base
 field `F` with challenges in the extension `EF`. `verifyBatchWith` runs on any challenger and
-Merkle hashes (`Primitives`). Each instance is checked as `uni-stark` checks a proof, its
-constraints followed by its lookups' LogUp constraints (`CompStark/Lookup/`), under one
-transcript and one opening argument:
+Merkle hashes (`Primitives`), against the AIRs and the batch's common data (`Common`): it takes
+every instance's height from the proof (`instancesOf`, the instances at the proof's heights with
+the common data's lookups) and checks the proof of these instances (`verifyInstancesWith`). Each
+instance is checked as `uni-stark` checks a proof, its constraints followed by its lookups' LogUp
+constraints (`CompStark/Lookup/`), under one transcript and one opening argument:
 
-* The proof's shape is checked first: one opened value set, one list of public values, one
-  permutation opening and one lookup terminal per instance; every instance's degree is its
-  statement's (Plonky3 lets the prover choose it); the degrees and quotient domains fit the
-  two-adic subgroups and the periodic columns the traces; the lookups' tuples have one width per
-  lookup and per bus, and their multiplicities cannot wrap around the characteristic; the public
-  values are as many as each AIR declares; every instance's opened values have its AIR's shape,
-  with a permutation row and a terminal exactly when it has lookups; the preprocessed commitment
-  is present exactly when an instance has preprocessed columns, the permutation commitment and
-  the lookup grinding witness exactly when one has lookups.
+* The common data has one keygen height and one list of lookups per AIR, and the proof one
+  height per AIR; every instance with preprocessed columns has its keygen height, the height of
+  the committed preprocessed trace (`keyOk`).
+* The proof's shape is checked next: one opened value set, one list of public values, one
+  permutation opening and one lookup terminal per instance; the quotient domains, of the proof's
+  heights, fit the two-adic subgroups and the periodic columns the traces; the lookups' tuples
+  have one width per lookup and per bus, and their multiplicities on traces of the proof's
+  heights cannot wrap around the characteristic; the public values are as many as each AIR
+  declares; every instance's opened values have its AIR's shape, with a permutation row and a
+  terminal exactly when it has lookups; the preprocessed commitment is present exactly when an
+  instance has preprocessed columns, the permutation commitment and the lookup grinding witness
+  exactly when one has lookups.
 * The transcript observes the batch's domain separator (`batchSeed`), every instance's degree
   bits, the main commitment, every instance's public values and the preprocessed commitment if
   any. With lookups, it checks the lookup grinding witness, samples the lookup challenges
@@ -97,12 +102,13 @@ def batchRounds (instances : List (Instance F)) (common : Common F) (proof : Bat
           (domain I, [(zeta, l.toList), (zetaNext I, n.toList)]))]
     | none => []
 
-/-- The batch's domain separator (`batchSeed`). -/
+/-- The batch's domain separator (`batchSeed`), with the preprocessed commitment
+`preprocessed`. -/
 def batchSeedOf (EF : Type) [Challenge F EF] (P : Params) (instances : List (Instance F))
-    (common : Common F) : List F :=
+    (preprocessed : Option (Cap F)) : List F :=
   DomainSeparator.batchSeed F EF (instances.map (·.air.width))
     (instances.map (·.air.preprocessedWidth)) (instances.map (·.air.numPublicValues))
-    common.preprocessed.isSome (instances.countP (!·.lookups.isEmpty)) P.lookupPowBits
+    preprocessed.isSome (instances.countP (!·.lookups.isEmpty)) P.lookupPowBits
     P.oodPowBits
 
 /-- Instance `I`'s constraint check at `ζ` on its opened values `o` and public values `pis`, its
@@ -113,7 +119,7 @@ def instanceCheck (I : Instance F) (o : OpenedValues EF) (pis : List F) (cur nex
     (chs : List EF) (terminal : EF) (zeta alpha : EF) : Bool :=
   let env := outOfDomainEnv I.air pis o I.logN zeta
   let aux : ExtExpr.Env EF := ⟨unflattenAt cur, unflattenAt next, (chs.getD · 0), terminal⟩
-  (I.air.lookupConstraints I.logN).foldl (fun acc c ↦ acc * alpha + c.eval env aux)
+  I.lookupConstraints.foldl (fun acc c ↦ acc * alpha + c.eval env aux)
       (foldedConstraints I.air env alpha) * (Ext.powTwo zeta I.logN - 1)⁻¹ ==
     recompose (chunkDomains I.logN I.logQuotientChunks) o.quotientChunks.toList zeta
 
@@ -147,16 +153,15 @@ def lookupPhase {m : Type → Type} [Monad m] {H : Primitives F m} (P : Params)
   return pair
 
 /-- Verify a batch proof of the instances `instances` with the public values `pis`, one list per
-instance, on the primitives `H`, against the common data `common`. -/
-def verifyBatchWith {m : Type → Type} [Monad m] (H : Primitives F m) (P : Params)
+instance, on the primitives `H`, against the commitment to their preprocessed traces in
+`common`. -/
+def verifyInstancesWith {m : Type → Type} [Monad m] (H : Primitives F m) (P : Params)
     (instances : List (Instance F)) (common : Common F) (proof : BatchProof F EF)
     (pis : List (List F)) : m (Except String Unit) := ExceptT.run do
   let n := instances.length
   unless proof.opened.size == n && pis.length == n && proof.permutationLocal.size == n &&
       proof.permutationNext.size == n && proof.lookupTerminals.size == n do
     throw "instance count"
-  unless proof.degreeBits.toList == instances.map (·.logN) do
-    throw "degree bits"
   unless instances.all fun I ↦ I.logN + I.logQuotientChunks ≤ twoAdicity F do
     throw "quotient domain"
   unless instances.all fun I ↦ I.air.periodicFits I.logN do
@@ -174,7 +179,7 @@ def verifyBatchWith {m : Type → Type} [Monad m] (H : Primitives F m) (P : Para
   unless proof.quotientCommit.size != 0 do
     throw "empty quotient commitment"
   let run : M H (EF × EF × EF × EF) := do
-    observeList H (batchSeedOf EF P instances common)
+    observeList H (batchSeedOf EF P instances common.preprocessed)
     observeExts H (instances.map fun I ↦ (Ext.ofBase (I.logN : F) : EF))
     observeCap H proof.mainCommit
     observeList H pis.flatten
@@ -196,5 +201,62 @@ def verifyBatchWith {m : Type → Type} [Monad m] (H : Primitives F m) (P : Para
     throw "out-of-domain evaluation mismatch"
   unless (proof.lookupTerminals.toList.filterMap id).foldl (· + ·) 0 == 0 do
     throw "lookup terminals do not sum to zero"
+
+/-- The instances of the AIRs `airs` at the heights `degreeBits`, with the common data's
+lookups. -/
+def instancesOf (airs : List (Air F)) (common : Common F) (degreeBits : List Nat) :
+    List (Instance F) :=
+  (airs.zip (degreeBits.zip common.lookups)).map fun (A, n, ls) ↦ ⟨A, n, ls⟩
+
+/-- The common data and the proof's heights fit the AIRs `airs`: one keygen height and one list of
+lookups per AIR, one height per AIR in the proof, and every AIR with preprocessed columns at its
+keygen height (Plonky3's preprocessed metadata check). -/
+def keyOk (airs : List (Air F)) (common : Common F) (degreeBits : List Nat) : Bool :=
+  common.degreeBits.length == airs.length && common.lookups.length == airs.length &&
+    degreeBits.length == airs.length &&
+    (airs.zip (degreeBits.zip common.degreeBits)).all fun (A, n, k) ↦
+      A.preprocessedWidth == 0 || n == k
+
+/-- Verify a batch proof of the AIRs `airs` with the public values `pis`, one list per AIR, on
+the primitives `H`, against the common data `common`, at the heights the proof claims. -/
+def verifyBatchWith {m : Type → Type} [Monad m] (H : Primitives F m) (P : Params)
+    (airs : List (Air F)) (common : Common F) (proof : BatchProof F EF) (pis : List (List F)) :
+    m (Except String Unit) :=
+  if keyOk airs common proof.degreeBits.toList then
+    verifyInstancesWith H P (instancesOf airs common proof.degreeBits.toList) common proof pis
+  else pure (.error "common data")
+
+theorem verifyBatchWith_of_keyOk {m : Type → Type} [Monad m] (H : Primitives F m) (P : Params)
+    (airs : List (Air F)) (common : Common F) (proof : BatchProof F EF) (pis : List (List F))
+    (h : keyOk airs common proof.degreeBits.toList = true) :
+    verifyBatchWith H P airs common proof pis =
+      verifyInstancesWith H P (instancesOf airs common proof.degreeBits.toList) common proof pis :=
+  ite_eq_left_iff.mpr fun h' ↦ absurd h h'
+
+omit [BaseField F] in
+/-- The instances of their AIRs at their heights, with their lookups, are themselves. -/
+theorem instancesOf_self (instances : List (Instance F)) (common : Common F)
+    (hl : common.lookups = instances.map (·.lookups)) :
+    instancesOf (instances.map (·.air)) common (instances.map (·.logN)) = instances := by
+  rw [instancesOf, hl]
+  clear hl
+  induction instances with
+  | nil => rfl
+  | cons I instances ih =>
+    simp only [List.map_cons, List.zip_cons_cons, List.cons.injEq]
+    exact ⟨trivial, ih⟩
+
+omit [BaseField F] in
+/-- Common data of the instances' heights and lookups fits a proof of their heights. -/
+theorem keyOk_self (instances : List (Instance F)) (common : Common F)
+    (hd : common.degreeBits = instances.map (·.logN))
+    (hl : common.lookups = instances.map (·.lookups)) :
+    keyOk (instances.map (·.air)) common (instances.map (·.logN)) = true := by
+  simp only [keyOk, hd, hl, List.length_map, beq_self_eq_true, Bool.and_self, Bool.true_and,
+    List.all_eq_true, Bool.or_eq_true, beq_iff_eq]
+  intro x hx
+  right
+  obtain ⟨i, hi, rfl⟩ := List.getElem_of_mem hx
+  simp only [List.getElem_zip]
 
 end CompStark.Batch

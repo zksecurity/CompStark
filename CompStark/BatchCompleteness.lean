@@ -52,7 +52,7 @@ structure ValidConfig (params : Params) (instances : List (Instance F)) : Prop w
   quotient's chunks (`Air.DegreeFitsAt`). -/
   degreeFits : ∀ I ∈ instances, I.air.DegreeFitsAt I.logN I.logQuotientChunks
   /-- So do its lookups' LogUp constraints. -/
-  lookupDegreeFits : ∀ I ∈ instances, ∀ g ∈ I.air.lookupConstraints I.logN,
+  lookupDegreeFits : ∀ I ∈ instances, ∀ g ∈ I.lookupConstraints,
     g.degBound (2 ^ I.logN) (I.air.periodicDegree (2 ^ I.logN)) <
       2 ^ (I.logN + I.logQuotientChunks) + 2 ^ I.logN
   /-- Every lookup's tuples and multiplicities read only the trace's and the preprocessed trace's
@@ -119,7 +119,7 @@ theorem completeness {params : Params} {instances : List (Instance F)} {traces :
     {publicValues : List (List F)} (config : ValidConfig params instances)
     (luck : NoBadLuck EF params instances traces publicValues) :
     Satisfied instances traces publicValues →
-      verifyBatch params instances (setupBatch params instances)
+      verifyBatch params (instances.map (·.air)) (setupBatch params instances)
         (proveBatch EF params instances traces publicValues) publicValues = .ok () := by
   intro sat
   have hmem : ∀ i (hi : i < instances.length),

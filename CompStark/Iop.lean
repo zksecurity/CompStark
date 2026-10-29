@@ -55,12 +55,12 @@ variable {F : Type} [BaseField F] {EF : Type} [Challenge F EF]
 local notation "𝕂" => Challenge.Spec EF
 
 /-- Lookups that an AIR's instance of `2 ^ logN` rows can prove: none, or lookups whose LogUp
-constraints keep the quotient's chunks within the blowup, each row-local and reading the AIR's
-columns (`Lookup.Fits`). -/
-def LookupsValid (params : Fri.Params) (air : Air F) (logN : Nat) : List (Lookup F) → Prop
+constraints keep the quotient domain within the two-adic subgroups, as the verifier checks, each
+row-local and reading the AIR's columns (`Lookup.Fits`). -/
+def LookupsValid (air : Air F) (logN : Nat) : List (Lookup F) → Prop
   | [] => True
   | lookups@(_ :: _) =>
-    air.logQuotientChunksWith logN (Lookup.logUpConstraints lookups) ≤ params.logBlowup ∧
+    logN + air.logQuotientChunksWith logN (Lookup.logUpConstraints lookups) ≤ twoAdicity F ∧
       ∀ l ∈ lookups,
         l.Fits air.width air.mainNextWidth air.preprocessedWidth air.preprocessedNextWidth
 
@@ -73,7 +73,7 @@ structure Setup (EF : Type) [Challenge F EF] (lookups : List (Lookup F) := []) w
   logN : Nat
   valid : SoundConfig params air logN
   /-- The lookups are valid on the instance (`LookupsValid`). -/
-  lookupsValid : LookupsValid params air logN lookups := by trivial
+  lookupsValid : LookupsValid air logN lookups := by trivial
 
 namespace Setup
 variable {lookups : List (Lookup F)} (S : Setup EF lookups)

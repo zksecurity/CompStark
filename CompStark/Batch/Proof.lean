@@ -10,10 +10,12 @@ public import CompStark.Stark.Proof
 /-! # Batch-STARK statements and proofs
 
 Plonky3's `batch-stark` proves several AIR instances at once, of mixed heights, under shared
-commitments and one opening argument. A batch's statement is its instances (`Instance`: an AIR
-and the log of its trace's height) with their public values; the verifier holds the commitment to
-the instances' preprocessed traces (`Common`, Plonky3's `CommonData`) and derives every instance's
-packed lookups from its AIR (`Instance.lookups`), as Plonky3's keygen does for its common data.
+commitments and one opening argument. An instance (`Instance`) is an AIR, the log of its trace's
+height and its lookups, packed at keygen (`Instance.ofAir`, Plonky3's
+`ProverData::from_airs_and_degrees`). The verifier holds the AIRs and the batch's common data
+(`Common`, Plonky3's `CommonData`): the commitment to the instances' preprocessed traces, and every
+instance's keygen height and packed lookups. A proof claims every instance's height
+(`BatchProof.degreeBits`), which the verifier takes from it.
 
 A proof (`BatchProof`) carries the commitments to all main traces, to the permutation traces of
 the instances with lookups and to all quotient chunks, every instance's opened values in
@@ -26,20 +28,25 @@ out-of-domain point.
 namespace CompStark.Batch
 open CompStark.Stark CompStark.Lookup
 
-/-- An instance of a batch: an AIR and its trace's height `2 ^ logN`. -/
+/-- An instance of a batch: an AIR, its trace's height `2 ^ logN` and the lookups it proves. -/
 structure Instance (F : Type) where
   air : Air F
   logN : Nat
+  lookups : List (Stark.Lookup F)
 
 variable {F : Type} [Zero F] [One F]
 
-/-- The instance's lookups, packed for its height (`Air.packedLookups`). -/
-def Instance.lookups (I : Instance F) : List (Stark.Lookup F) := I.air.packedLookups I.logN
+/-- The instance of `air` on `2 ^ logN` rows with its AIR's lookups packed for that height, as
+Plonky3's keygen packs them (`Air.packedLookups`). -/
+def Instance.ofAir (air : Air F) (logN : Nat) : Instance F := ⟨air, logN, air.packedLookups logN⟩
+
+/-- The LogUp constraints of the instance's lookups. -/
+def Instance.lookupConstraints (I : Instance F) : List (ExtExpr F) := logUpConstraints I.lookups
 
 /-- Plonky3's log number of the instance's quotient chunks: of its AIR's constraints and its
 lookups' LogUp constraints. -/
 def Instance.logQuotientChunks (I : Instance F) : Nat :=
-  I.air.logQuotientChunksWith I.logN (I.air.lookupConstraints I.logN)
+  I.air.logQuotientChunksWith I.logN I.lookupConstraints
 
 /-- The instances' shapes: every instance's log trace height and log number of quotient
 chunks. -/
@@ -71,12 +78,15 @@ def Balanced (instances : List (Instance F)) (traces : List (Array F)) (pis : Li
 
 end Messages
 
-/-- What the verifier shares with the prover (Plonky3's `CommonData`, whose lookups the verifier
-derives from the AIRs): the commitment to the preprocessed traces of the instances
-that have one, in instance order, if any has one. -/
+/-- What the verifier shares with the prover (Plonky3's `CommonData`), fixed at keygen: the
+commitment to the preprocessed traces of the instances that have one, in instance order, if any
+has one, and every instance's keygen height and lookups. -/
 structure Common (F : Type) where
   preprocessed : Option (Cap F)
-deriving BEq
+  /-- Every instance's log trace height at keygen. -/
+  degreeBits : List Nat
+  /-- Every instance's lookups, packed at keygen. -/
+  lookups : List (List (Stark.Lookup F))
 
 /-- A batch-STARK proof without zero knowledge (Plonky3's `BatchProof`). -/
 structure BatchProof (F EF : Type) where
@@ -96,7 +106,7 @@ structure BatchProof (F EF : Type) where
   /-- Every instance's lookup terminal, the sum of its lookups' fractions; none without
   lookups. -/
   lookupTerminals : Array (Option EF)
-  /-- Every instance's log trace height. -/
+  /-- Every instance's log trace height, the prover's to choose. -/
   degreeBits : Array Nat
   /-- The grinding witness of the lookup challenges, if the batch has lookups. -/
   lookupWitness : Option F

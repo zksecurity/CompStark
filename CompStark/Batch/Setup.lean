@@ -12,7 +12,8 @@ public import CompStark.Merkle.Mixed
 
 Plonky3's `ProverData::from_airs_and_degrees`: the common data of a batch is the Merkle cap of
 the extensions of its instances' preprocessed traces, in instance order, those of mixed heights
-injected into the tree of the tallest (`setupBatch`). `commonWith` computes it on any primitives
+injected into the tree of the tallest, with the instances' keygen heights and lookups
+(`setupBatch`). `commonWith` computes it on any primitives
 `H` (`Primitives`), node by node from the leaves (`injNodeWith`, the nodes `Merkle.injNode` on
 `H`'s hashes), so that the random-oracle model runs Plonky3's setup on random oracles and counts
 its oracle calls.
@@ -52,15 +53,21 @@ def preprocessedMats (P : Params) (instances : List (Instance F)) : List (Mat F)
 def preprocessedLogHeight (P : Params) (instances : List (Instance F)) : Nat :=
   ((instances.filter (0 < ·.air.preprocessedWidth)).map (·.logN + P.logBlowup)).foldl max 0
 
-/-- The common data of the instances on the primitives `H`: the cap of height `P.capHeight`
-(capped at the tree's levels) of the tree of their preprocessed traces' extensions, if any has
+/-- The commitment to the instances' preprocessed traces on the primitives `H`: the cap of height
+`P.capHeight` (capped at the tree's levels) of the tree of their extensions, if any has
 preprocessed columns. -/
-def commonWith (H : Primitives F m) (P : Params) (instances : List (Instance F)) : m (Common F) :=
-  if (preprocessedMats P instances).isEmpty then pure ⟨none⟩ else do
+def preprocessedCapWith (H : Primitives F m) (P : Params) (instances : List (Instance F)) :
+    m (Option (Cap F)) :=
+  if (preprocessedMats P instances).isEmpty then pure none else do
     let k := preprocessedLogHeight P instances
     let h := min P.capHeight k
     let cap ← (List.range (2 ^ h)).mapM
       (injNodeWith H ((preprocessedMats P instances).map Mat.toMatrix) k (k - h))
-    return ⟨some cap.toArray⟩
+    return some cap.toArray
+
+/-- The common data of the instances on the primitives `H`: the commitment to their preprocessed
+traces (`preprocessedCapWith`), their heights and their lookups. -/
+def commonWith (H : Primitives F m) (P : Params) (instances : List (Instance F)) : m (Common F) :=
+  return ⟨← preprocessedCapWith H P instances, instances.map (·.logN), instances.map (·.lookups)⟩
 
 end CompStark.Batch

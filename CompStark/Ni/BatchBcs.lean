@@ -53,12 +53,14 @@ theorem mem_matHeights (hsize : proof.opened.size = S.k) (a : ℕ) :
     a ∈ matHeights S.params (CompStark.Batch.batchRounds S.instances common proof zeta) ↔
       ∃ i : Fin S.k, S.logN i + S.params.logBlowup = a := by
   have hos : proof.opened.toList.length = S.k := by rw [Array.length_toList, hsize]
-  have hinst : ∀ I ∈ S.instances, ∃ i : Fin S.k, I = ⟨S.air i, S.logN i⟩ := fun I hI ↦ by
+  have hinst : ∀ I ∈ S.instances, ∃ i : Fin S.k, I = ⟨S.air i, S.logN i, S.lookups i⟩ := fun I hI
+      ↦ by
     rw [Iop.Batch.Setup.instances, List.mem_ofFn] at hI
     obtain ⟨i, hi⟩ := hI
     exact ⟨i, hi.symm⟩
   have hzip : ∀ x ∈ S.instances.zip proof.opened.toList,
-      ∃ i : Fin S.k, x.1 = ⟨S.air i, S.logN i⟩ := fun x hx ↦ hinst x.1 (List.of_mem_zip hx).1
+      ∃ i : Fin S.k, x.1 = ⟨S.air i, S.logN i, S.lookups i⟩ := fun x hx ↦ hinst x.1
+          (List.of_mem_zip hx).1
   constructor
   · intro ha
     simp only [matHeights, batchRounds_cases, List.mem_map, List.mem_flatMap,
@@ -95,13 +97,15 @@ theorem mem_matHeights (hsize : proof.opened.size = S.k) (a : ℕ) :
     refine ⟨((⟨1, S.logN i⟩ : Domain F), traceOpenings (S.air i)
       (proof.opened.toList.getD i noOpenings) zeta (zeta * Ext.ofBase (twoAdicGen (S.logN i)))),
       ⟨_, Or.inl (Or.inl List.mem_cons_self), ?_⟩, rfl⟩
-    refine List.mem_map.mpr ⟨(⟨S.air i, S.logN i⟩, proof.opened.toList.getD i noOpenings), ?_,
+    refine List.mem_map.mpr ⟨(⟨S.air i, S.logN i, S.lookups i⟩, proof.opened.toList.getD i
+        noOpenings), ?_,
       rfl⟩
     have hi : i.val < (S.instances.zip proof.opened.toList).length := by
       rw [List.length_zip, length_instances, hos, Nat.min_self]; exact i.isLt
-    have := getD_map_zip_instances (S := S) _ hos id (⟨S.air i, S.logN i⟩, noOpenings) i
+    have := getD_map_zip_instances (S := S) _ hos id (⟨S.air i, S.logN i, S.lookups i⟩,
+        noOpenings) i
     rw [List.map_id, List.getD_eq_getElem _ _ hi] at this
-    rw [show ((⟨S.air i, S.logN i⟩ : CompStark.Batch.Instance F),
+    rw [show ((⟨S.air i, S.logN i, S.lookups i⟩ : CompStark.Batch.Instance F),
       proof.opened.toList.getD i noOpenings) = (S.instances.zip proof.opened.toList)[i.val] from
         this.symm]
     exact List.getElem_mem hi
@@ -134,11 +138,11 @@ variable [BaseField F] [Challenge F EF] (S : Iop.Batch.Setup EF) [S.CapFits]
 /-- The statement's instances, zipped with every instance's opened values. -/
 theorem zip_instances (os : List (OpenedValues EF)) (hos : os.length = S.k) :
     S.instances.zip os = (List.finRange S.k).map fun i ↦
-      ((⟨S.air i, S.logN i⟩ : CompStark.Batch.Instance F), os.getD i noOpenings) := by
+      ((⟨S.air i, S.logN i, S.lookups i⟩ : CompStark.Batch.Instance F), os.getD i noOpenings) := by
   refine List.ext_getElem (by rw [List.length_zip, length_instances, hos, Nat.min_self,
     List.length_map, List.length_finRange]) fun j h1 h2 ↦ ?_
   have hj : j < S.k := by simpa only [List.length_map, List.length_finRange] using h2
-  have := getD_map_zip_instances (S := S) _ hos id (⟨S.air ⟨0, S.nonempty⟩, 0⟩, noOpenings)
+  have := getD_map_zip_instances (S := S) _ hos id (⟨S.air ⟨0, S.nonempty⟩, 0, []⟩, noOpenings)
     ⟨j, hj⟩
   rw [List.map_id, List.getD_eq_getElem _ _ h1] at this
   rw [this, List.getElem_map, List.getElem_finRange]
@@ -613,7 +617,7 @@ variable [BaseField F] [Challenge F EF] (H : Primitives F Id) (S : Iop.Batch.Set
 /-- The statement's instances, zipped with a list of one entry per instance. -/
 theorem zip_instances_getD {β : Type} (os : List β) (hos : os.length = S.k) (d : β) :
     S.instances.zip os = (List.finRange S.k).map fun i ↦
-      ((⟨S.air i, S.logN i⟩ : CompStark.Batch.Instance F), os.getD i d) := by
+      ((⟨S.air i, S.logN i, S.lookups i⟩ : CompStark.Batch.Instance F), os.getD i d) := by
   refine List.ext_getElem (by rw [List.length_zip, length_instances, hos, Nat.min_self,
     List.length_map, List.length_finRange]) fun j h1 h2 ↦ ?_
   have hj : j < S.k := by simpa only [List.length_map, List.length_finRange] using h2
@@ -837,7 +841,7 @@ theorem reverseBits_instPoint (S : Iop.Batch.Setup EF) [S.CapFits] (I : ℕ) (hI
 /-- An instance's opened values and public values are those the verifier checks. -/
 theorem mem_zip_check (S : Iop.Batch.Setup EF) [S.CapFits] (os : List (OpenedValues EF))
     (hos : os.length = S.k) (publicValues : Fin S.k → List F) (i : Fin S.k) :
-    (((⟨S.air i, S.logN i⟩ : CompStark.Batch.Instance F), i.val), os.getD i noOpenings,
+    (((⟨S.air i, S.logN i, S.lookups i⟩ : CompStark.Batch.Instance F), i.val), os.getD i noOpenings,
       publicValues i) ∈ S.instances.zipIdx.zip (os.zip (List.ofFn publicValues)) := by
   have hl : i.val < (S.instances.zipIdx.zip (os.zip (List.ofFn publicValues))).length := by
     rw [List.length_zip, List.length_zip, List.length_zipIdx, length_instances, hos,
@@ -907,7 +911,7 @@ theorem permShapes (S : Iop.Batch.Setup EF) [S.CapFits] (proof : CompStark.Batch
     (proof.permutationLocal.getD i #[]).size = Challenge.d EF * (S.instanceSetup i).permWidth ∧
       (proof.permutationNext.getD i #[]).size = Challenge.d EF * (S.instanceSetup i).permWidth ∧
       (proof.lookupTerminals.getD i none).isSome = !(S.lookups i).isEmpty := by
-  have hpsh : ∀ i : Fin S.k, CompStark.Batch.permutationShapeOk ⟨S.air i, S.logN i⟩
+  have hpsh : ∀ i : Fin S.k, CompStark.Batch.permutationShapeOk ⟨S.air i, S.logN i, S.lookups i⟩
       (proof.permutationLocal.getD i #[]) (proof.permutationNext.getD i #[])
       (proof.lookupTerminals.getD i none) = true := by
     intro i
@@ -932,13 +936,11 @@ theorem permShapes (S : Iop.Batch.Setup EF) [S.CapFits] (proof : CompStark.Batch
     exact hm
   have h := hpsh i
   simp only [CompStark.Batch.permutationShapeOk, Bool.and_eq_true, beq_iff_eq] at h
-  have hw : (if (⟨S.air i, S.logN i⟩ : CompStark.Batch.Instance F).lookups.isEmpty then 0 else
-      ((⟨S.air i, S.logN i⟩ : CompStark.Batch.Instance F).lookups.length + 1) *
-        Challenge.d EF) = Challenge.d EF * (S.instanceSetup i).permWidth := by
-    rw [permWidth_eq, ← lookups_eq]
+  have hw : (if (S.lookups i).isEmpty then 0 else ((S.lookups i).length + 1) *
+      Challenge.d EF) = Challenge.d EF * (S.instanceSetup i).permWidth := by
+    rw [permWidth_eq]
     cases (S.lookups i).isEmpty <;>
       simp only [Bool.false_eq_true, ↓reduceIte, Nat.zero_mul, Nat.mul_comm]
-  rw [← lookups_eq] at h
   exact ⟨h.1.1.trans hw, h.1.2.trans hw, h.2⟩
 
 /-- **BCS consistency of the batch STARK.** If the batch verifier on pure primitives `H` accepts
@@ -962,7 +964,7 @@ theorem bcsB (S : Iop.Batch.Setup EF) [S.CapFits] (cache : Merkle.Cache F (Diges
           (finMod _ (reverseBits r (S.logN i + S.params.logBlowup))))
     (hpermBind : ∀ root ∈ proof.permutationCommit,
       CapBindingM cache H root S.params.capHeight (permLog S) (permHeights S))
-    (h : CompStark.Batch.verifyBatchWith H S.params S.instances common proof
+    (h : CompStark.Batch.verifyInstancesWith H S.params S.instances common proof
       (List.ofFn publicValues) = .ok ()) :
     let t := extractB S cache H common proof (List.ofFn publicValues)
     (∑ i with S.lookups i ≠ [], t.terminal i) = 0 ∧
@@ -975,14 +977,14 @@ theorem bcsB (S : Iop.Batch.Setup EF) [S.CapFits] (cache : Merkle.Cache F (Diges
         (querySampleOfB H S common proof (List.ofFn publicValues) j) ∈ t.consistentQueries := by
   intro t
   set pis := List.ofFn publicValues with hpis
-  obtain ⟨hsize, -, hlsize, hnsize, htsize, -, -, -, hshapeZ, hprepS, hlk, -, -, -, -,
+  obtain ⟨hsize, -, hlsize, hnsize, htsize, -, -, hshapeZ, hprepS, hlk, -, -, -, -,
     ⟨st, hfriOk⟩, hcheck, hsum⟩ :=
-    verifyBatchWith_ok H S.params S.instances common proof pis h
+    verifyInstancesWith_ok H S.params S.instances common proof pis h
   obtain ⟨hpshapes, hperm, -⟩ := lookupShapeOk_spec S.params S.instances proof hlk
   have hos : proof.opened.toList.length = S.k := by
     rw [Array.length_toList, hsize, length_instances]
   rw [length_instances] at hsize hlsize hnsize htsize
-  have hshape : ∀ i : Fin S.k, CompStark.Batch.openedShapeOk ⟨S.air i, S.logN i⟩
+  have hshape : ∀ i : Fin S.k, CompStark.Batch.openedShapeOk ⟨S.air i, S.logN i, S.lookups i⟩
       (proof.opened.toList.getD i noOpenings) = true := by
     intro i
     have hm := hshapeZ _ (zip_instances S _ hos ▸ List.mem_map.mpr ⟨i, List.mem_finRange _, rfl⟩)
@@ -1125,7 +1127,7 @@ theorem bcsB (S : Iop.Batch.Setup EF) [S.CapFits] (cache : Merkle.Cache F (Diges
       | none =>
         rw [hc] at hprepS
         have hany : S.instances.any (0 < ·.air.preprocessedWidth) = true :=
-          List.any_eq_true.mpr ⟨⟨S.air i, S.logN i⟩, List.mem_ofFn.mpr ⟨i, rfl⟩,
+          List.any_eq_true.mpr ⟨⟨S.air i, S.logN i, S.lookups i⟩, List.mem_ofFn.mpr ⟨i, rfl⟩,
             decide_eq_true hp⟩
         rw [hany] at hprepS
         exact absurd hprepS Bool.false_ne_true
@@ -1138,7 +1140,7 @@ theorem bcsB (S : Iop.Batch.Setup EF) [S.CapFits] (cache : Merkle.Cache F (Diges
       | none =>
         rw [hc, Option.isSome_none] at hperm
         have hany : CompStark.Batch.hasLookups S.instances = true :=
-          List.any_eq_true.mpr ⟨⟨S.air i, S.logN i⟩, List.mem_ofFn.mpr ⟨i, rfl⟩, by
+          List.any_eq_true.mpr ⟨⟨S.air i, S.logN i, S.lookups i⟩, List.mem_ofFn.mpr ⟨i, rfl⟩, by
             rw [← lookups_eq]
             simpa only [Bool.not_eq_eq_eq_not, Bool.not_true, List.isEmpty_eq_false_iff]
               using hl⟩

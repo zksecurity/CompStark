@@ -56,7 +56,7 @@ def batchQuotientValues (B : Backend F EF width) (I : Instance F) (ext : B.M) (p
   match perm with
   | none => qs
   | some pm =>
-    let ext' := I.air.lookupConstraints I.logN
+    let ext' := I.lookupConstraints
     let shift := Ext.pow alpha ext'.length
     Array.zipWith (fun q l ↦ q * shift + l) qs
       (B.lookupQuotient I.air ext' pis I.logN I.logQuotientChunks ext prep pm chs terminal alpha)
@@ -141,7 +141,7 @@ traces' extensions and commitment `prep`. -/
 def batchCommitAndSample (B : Backend F EF width) (P : Params) (instances : List (Instance F))
     (prep : List (Option B.M) × Option B.C) (traces : List B.Trace) (pis : List (List F)) :
     PM F width (Commitments B) := do
-  pObserveList (batchSeedOf EF P instances ⟨prep.2.map (B.cap · P.capHeight)⟩)
+  pObserveList (batchSeedOf EF P instances (prep.2.map (B.cap · P.capHeight)))
   pObserveExts (instances.map fun I ↦ (Ext.ofBase (I.logN : F) : EF))
   let exts := (instances.zip traces).map fun (I, t) ↦
     B.ldeTrace I.logN P.logBlowup gen I.air.width t

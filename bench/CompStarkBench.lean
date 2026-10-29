@@ -87,9 +87,9 @@ def lookupBatch : List (CompStark.Batch.Instance KoalaBear.Fast.Field) ×
     List (Array KoalaBear.Fast.Field) × List (List KoalaBear.Fast.Field) :=
   let n := 2 ^ 18
   let f := fibs n
-  ([⟨CompStark.Stark.mulAirLookups 8 true (List.replicate 8 "MulFib"), 18⟩,
-      ⟨CompStark.Stark.fibonacciLookups 18 "MulFib" 8, 18⟩,
-      ⟨CompStark.Stark.mulAirLookups 8 true [], 16⟩],
+  ([.ofAir (CompStark.Stark.mulAirLookups 8 true (List.replicate 8 "MulFib")) 18,
+      .ofAir (CompStark.Stark.fibonacciLookups 18 "MulFib" 8) 18,
+      .ofAir (CompStark.Stark.mulAirLookups 8 true []) 16],
     [mulTrace n 8, Array.ofFn (n := 2 * n) fun j ↦ f.getD (j.val / 2 + j.val % 2) 0,
       mulTrace (2 ^ 16) 8],
     [[], [0, 1, f.getD n 0], []])
@@ -161,7 +161,7 @@ def phasesBatch : IO UInt32 := do
   let P : Params := ⟨1, 0, 1, 100, 0, 16, 0, 0, 0, 0⟩
   let logNs := [20, 19, 16]
   let instances : List (Batch.Instance KoalaBear.Fast.Field) :=
-    logNs.map fun logN ↦ ⟨wide 64, logN⟩
+    logNs.map fun logN ↦ .ofAir (wide 64) logN
   let B := CompStark.KoalaBear.backendFor [] P.logBlowup (Batch.shapes instances)
   for k in [0:2] do
     let traces := logNs.map fun logN ↦ (wideTrace 64 (2 ^ logN)).set! 0 (k : _)
@@ -324,7 +324,7 @@ def quotientPhase (air : String) (logN reps : Nat) : IO UInt32 := do
     | "lookup" =>
       pure (mulAirLookups 8 true (List.replicate 8 "MulFib"), #[encodeFields (mulTrace n 8)])
     | _ => IO.eprintln "AIR: keccak, wide, widebus or lookup"; return 1
-  let I : Batch.Instance KoalaBear.Fast.Field := ⟨A, logN⟩
+  let I : Batch.Instance KoalaBear.Fast.Field := .ofAir A logN
   let B := CompStark.KoalaBear.backendFor [CompStark.Fixtures.KeccakKernel.kernel] 1
     [(logN, I.logQuotientChunks)]
   let trace := B.traceValues chunks
@@ -594,7 +594,7 @@ def main (args : List String) : IO UInt32 := do
       | _ => IO.eprintln "six or eight parameters"; return 1
     let logNs := [20, 19, 16]
     let instances : List (CompStark.Batch.Instance KoalaBear.Fast.Field) :=
-      logNs.map fun logN ↦ ⟨CompStark.Stark.wide 64, logN⟩
+      logNs.map fun logN ↦ .ofAir (CompStark.Stark.wide 64) logN
     let traces := logNs.map fun logN ↦ wideTrace 64 (2 ^ logN)
     let pis := logNs.map fun _ ↦ []
     -- The fast backend's extension plans are built once, outside timing, as Plonky3's twiddles.

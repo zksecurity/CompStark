@@ -14,33 +14,86 @@ public import CompStark.Merkle.ExtractMixed
 The batch verifier `verifyBatchWith` runs on the random oracles of the STARK's random-oracle model
 (`CompStark/RandomOracle.lean`): the duplex challenger, the Merkle leaf hash and the compression.
 
-* `Setup.instances`: the statement the verifier checks, every instance's AIR and trace length.
+* `Setup.instances`: every instance's AIR, trace length and lookups; `Setup.keyInstances` the
+  same at the keygen heights; `Setup.airs` the AIRs the verifier checks.
 * `Setup.streamLen`: every challenge round takes one duplex answer, the lookup round's grinding
   sample and two challenges and the query round's grinding sample and indices included.
 * `Setup.setupRo`: the batch's common data, the root of the tree of its preprocessed traces'
-  extensions, computed on the oracles (`Batch.commonWith`, Plonky3's setup).
+  extensions with the keygen heights and lookups, computed on the oracles (`Batch.commonWith`,
+  Plonky3's setup).
 * `NIProver`, `run`: a prover is an oracle computation that outputs a batch proof. The game
   computes the common data on the oracles, runs the prover, logging both's queries, and then the
   verifier on the proof against the common data, against one lazy random oracle. The verifier
-  rejects proofs for other trace lengths. The setup and the verifier together make at most
-  `Setup.verifierQueries` calls: a leaf hash and a compression per level of every Merkle opening,
-  and a hash and a compression where it injects a shorter domain's matrices.
+  takes the trace lengths from the proof. On a proof of the instances `instances` it makes at
+  most `Batch.verifierCallsOf` calls: a leaf hash and a compression per level of every Merkle
+  opening, and a hash and a compression where it injects a shorter domain's matrices; the setup
+  and the verifier together make at most `Setup.verifierQueries` calls on a proof of any
+  lengths.
 * `committedTraces`: every instance's trace words the proof commits to, read off the logged hash
   queries under the main commitment, an instance's columns at its offset among the matrices of its
   height (`Merkle.matColumn`).
 -/
 
 @[expose] public section
+namespace CompStark.Batch
+open CompStark.Stark
+
+variable {F : Type} [BaseField F]
+
+/-- The log sizes of the instances' extended traces, tallest first, each once: the heights of
+the verifier's openings. -/
+def extHeights (P : Fri.Params) (instances : List (Instance F)) : List ℕ :=
+  (List.range ((instances.map (·.logN + P.logBlowup)).foldl max 0 + 1)).reverse.filter fun h ↦
+    instances.any (·.logN + P.logBlowup == h)
+
+/-- The committed rounds the verifier opens at every query: the main traces, the quotients, the
+preprocessed traces if some instance has them, and the permutation traces if some instance has
+lookups. -/
+def inputRoundsOf (instances : List (Instance F)) : ℕ :=
+  2 + (if instances.any (0 < ·.air.preprocessedWidth) then 1 else 0) +
+    if hasLookups instances then 1 else 0
+
+variable (EF : Type) [Challenge F EF] in
+/-- The verifier's oracle calls on a proof of the instances `instances`, at most one per sample
+(the lookup round's grinding sample and `d` each for `α_L` and `β_L`, with lookups; `α`, `ζ` and
+the batching challenge take `d` samples each, the out-of-domain and batching grinding one each,
+every fold a grinding sample and `d` for `β`, the query round a grinding sample), and per query
+its index and its openings of the committed rounds and every fold: a leaf hash, a compression
+per level of the tallest domain, and a hash and a compression where a shorter domain's matrices
+are injected. -/
+def verifierCallsOf (P : Fri.Params) (instances : List (Instance F)) : ℕ :=
+  let hs := extHeights P instances
+  let arities := Fri.foldSchedule P.maxLogArity (P.logBlowup + P.logFinalPolyLen) (hs.headD 0) hs
+  (if hasLookups instances then 2 * Challenge.d EF + 1 else 0) + 3 * Challenge.d EF + 3 +
+    (Challenge.d EF + 1) * arities.length +
+    P.numQueries * (1 + (arities.length + inputRoundsOf instances) *
+      (1 + hs.headD 0 + 2 * (hs.length - 1)))
+
+end CompStark.Batch
+
 namespace CompStark.Iop.Batch
 open CompStark.Stark CompStark.RandomOracle OracleSpec OracleComp
 
 variable {F : Type} [BaseField F] {EF : Type} [Challenge F EF]
 
+/-- The vectors of `k` lengths up to `t`. -/
+def lengthVectors : (k t : ℕ) → List (Fin k → ℕ)
+  | 0, _ => [Fin.elim0]
+  | k + 1, t => (List.range (t + 1)).flatMap fun n ↦ (lengthVectors k t).map (Fin.cons n)
+
 namespace Setup
 variable (S : Setup EF)
 
-/-- The statement the verifier checks: every instance's AIR and trace length, in order. -/
-def instances : List (CompStark.Batch.Instance F) := List.ofFn fun i ↦ ⟨S.air i, S.logN i⟩
+/-- The instances: every instance's AIR, trace length and lookups, in order. -/
+def instances : List (CompStark.Batch.Instance F) :=
+  List.ofFn fun i ↦ ⟨S.air i, S.logN i, S.lookups i⟩
+
+/-- The instances at their keygen heights, of which the common data is computed. -/
+def keyInstances : List (CompStark.Batch.Instance F) :=
+  List.ofFn fun i ↦ ⟨S.air i, S.keyLogN i, S.lookups i⟩
+
+/-- The AIRs the verifier checks, in order. -/
+def airs : List (Air F) := List.ofFn S.air
 
 /-- Some instance has lookups: the batch verifier runs its lookup round. -/
 def hasLookups : Bool := CompStark.Batch.hasLookups S.instances
@@ -51,10 +104,9 @@ def streamLen : Nat := S.params.numQueries + 2 * Challenge.d EF + 1
 /-- Some instance has preprocessed columns. -/
 def hasPreprocessed : Bool := (List.ofFn fun i ↦ (S.air i).preprocessedWidth).any (0 < ·)
 
-/-- The committed rounds the verifier opens at every query: the main traces, the quotients, the
-preprocessed traces if some instance has them, and the permutation traces if some instance has
-lookups. -/
-def inputRounds : Nat := 2 + (if S.hasPreprocessed then 1 else 0) + if S.hasLookups then 1 else 0
+/-- The instances at the trace lengths `2 ^ n i`, with their lookups. -/
+def instancesAt (n : Fin S.k → ℕ) : List (CompStark.Batch.Instance F) :=
+  List.ofFn fun i ↦ ⟨S.air i, n i, S.lookups i⟩
 
 /-- FRI's fold arities: Plonky3's schedule from the tallest domain, through the shorter domains'
 sizes. -/
@@ -62,22 +114,12 @@ def friArities : List ℕ :=
   Fri.foldSchedule S.params.maxLogArity (S.params.logBlowup + S.params.logFinalPolyLen) S.logTop
     (S.logTop :: S.friHeights)
 
-/-- The oracle calls of one Merkle opening of a round: the leaf hash, a compression per level of
-the tallest domain, and a hash and a compression where a shorter domain's matrices are injected. -/
-def openingQueries : Nat := 1 + S.logTop + 2 * S.friHeights.length
-
-/-- The oracle calls of the lookup round, with lookups: its grinding sample and `d` samples each
-for `α_L` and `β_L`. -/
-def lookupCalls : Nat := if S.hasLookups then 2 * Challenge.d EF + 1 else 0
-
-/-- The verifier's oracle calls on a proof, at most one per sample (the lookup round's,
-`lookupCalls`; `α`, `ζ` and the batching challenge take `d` samples each, the out-of-domain and
-batching grinding one each, every fold a grinding sample and `d` for `β`, the query round a
-grinding sample), and per query its index and its openings of the committed rounds and every
-fold. -/
+/-- The verifier's oracle calls on a proof of any trace lengths: at most `verifierCallsOf` at
+one of the vectors of lengths up to the two-adicity, none at longer ones, which the verifier
+rejects first. -/
 def verifierCalls : Nat :=
-  S.lookupCalls + 3 * Challenge.d EF + 3 + (Challenge.d EF + 1) * S.friArities.length +
-    S.params.numQueries * (1 + (S.friArities.length + S.inputRounds) * S.openingQueries)
+  ((lengthVectors S.k (twoAdicity F)).map fun n ↦
+    CompStark.Batch.verifierCallsOf EF S.params (S.instancesAt n)).foldr max 0
 
 /-- The oracle calls of the common data's computation: at most four per leaf of the preprocessed
 traces' tree, none without preprocessed columns. -/
@@ -88,15 +130,15 @@ def setupQueries : Nat :=
 /-- The oracle calls of the common data's computation and of the verifier. -/
 def verifierQueries : Nat := S.setupQueries + S.verifierCalls
 
-/-- The common data on the random oracles. -/
+/-- The common data on the random oracles, at the keygen heights. -/
 def setupRo : OracleComp (spec F S.streamLen) (CompStark.Batch.Common F) :=
-  CompStark.Batch.commonWith (ideal F S.streamLen) S.params S.instances
+  CompStark.Batch.commonWith (ideal F S.streamLen) S.params S.keyInstances
 
 /-- The batch verifier in the random-oracle model, against the common data `common`. -/
 def verifyRo (common : CompStark.Batch.Common F) (proof : CompStark.Batch.BatchProof F EF)
     (publicValues : Fin S.k → List F) :
     OracleComp (spec F S.streamLen) (Except String Unit) :=
-  CompStark.Batch.verifyBatchWith (ideal F S.streamLen) S.params S.instances common proof
+  CompStark.Batch.verifyBatchWith (ideal F S.streamLen) S.params S.airs common proof
     (List.ofFn publicValues)
 
 /-- The heights of the main commitment's matrices: every instance's extended trace. -/

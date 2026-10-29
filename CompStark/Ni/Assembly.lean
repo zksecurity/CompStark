@@ -93,10 +93,6 @@ theorem run_eq (prover : C.NIProver EF) :
     C.run publicValues prover = (simulateQ randomOracle (game C publicValues prover)).run' ∅ :=
   rfl
 
-theorem le_foldr_max : ∀ (l : List Nat) (x : Nat), x ∈ l → x ≤ l.foldr max 0
-  | _ :: _, _, .head _ => le_max_left _ _
-  | _ :: l, x, .tail _ h => (le_foldr_max l x h).trans (le_max_right _ _)
-
 /-- **The verifier's oracle calls on any proof.** -/
 theorem isTotalQueryBound_verifyWith_max (vk : Option (PreprocessedKey F)) (proof : Proof F EF) :
     IsTotalQueryBound (verifyWith (ideal F (C.streamLen EF)) C.params C.air vk proof

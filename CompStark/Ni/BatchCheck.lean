@@ -145,13 +145,15 @@ theorem constraintsHoldAt_of_instanceCheck (S : Iop.Batch.Setup EF) [S.CapFits] 
     (hqc : o.quotientChunks.size = (S.instanceSetup i).chunks)
     (hcur : cur.size = Challenge.d EF * (S.instanceSetup i).permWidth)
     (hnext : next.size = Challenge.d EF * (S.instanceSetup i).permWidth)
-    (h : CompStark.Batch.instanceCheck ⟨S.air i, S.logN i⟩ o pis cur next chs t zeta alpha =
+    (h : CompStark.Batch.instanceCheck ⟨S.air i, S.logN i, S.lookups i⟩ o pis cur next chs t zeta
+        alpha =
       true) :
     ConstraintsHoldAt (S.instanceSetup i) pis (Challenge.toSpec alpha) (Challenge.toSpec zeta)
       (openingsOf (S.instanceSetup i) o cur next) (chs.map Challenge.toSpec)
       (Challenge.toSpec t) := by
   set T := S.instanceSetup i
-  have hlc : (⟨S.air i, S.logN i⟩ : CompStark.Batch.Instance F).logQuotientChunks = T.logChunks :=
+  have hlc : (⟨S.air i, S.logN i, S.lookups i⟩ : CompStark.Batch.Instance F).logQuotientChunks =
+      T.logChunks :=
     (logChunks_eq S i).symm
   rw [CompStark.Batch.instanceCheck, hlc, beq_iff_eq] at h
   have h' := congrArg Challenge.toSpec h

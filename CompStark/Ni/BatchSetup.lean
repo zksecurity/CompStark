@@ -94,15 +94,15 @@ theorem exists_digest_injNode (answer : (q : Query F) → Answer K q)
 theorem evalWithAnswerFn_setupRoB (S : Iop.Batch.Setup EF) [S.CapFits]
     (answer : (q : Query F) → Answer S.streamLen q) :
     evalWithAnswerFn (QueryImpl.ofFn answer) S.setupRo =
-      CompStark.Batch.commonWith (idealOf answer) S.params S.instances :=
-  evalWithAnswerFn_commonWith answer S.params S.instances
+      CompStark.Batch.commonWith (idealOf answer) S.params S.keyInstances :=
+  evalWithAnswerFn_commonWith answer S.params S.keyInstances
 
 /-- The batch setup's cap on an answer table: the mixed-height tree's nodes at the cap's
 level. -/
-theorem commonWith_idealOf (g : (q : Query F) → Answer K q) (P : Fri.Params)
+theorem preprocessedCapWith_idealOf (g : (q : Query F) → Answer K q) (P : Fri.Params)
     (instances : List (CompStark.Batch.Instance F))
     (hne : (CompStark.Batch.preprocessedMats P instances).isEmpty = false) :
-    (CompStark.Batch.commonWith (idealOf g) P instances).preprocessed =
+    CompStark.Batch.preprocessedCapWith (idealOf g) P instances =
       some ((List.range
         (2 ^ min P.capHeight (CompStark.Batch.preprocessedLogHeight P instances))).map
         (CompStark.Batch.injNodeWith (idealOf g)
@@ -110,23 +110,70 @@ theorem commonWith_idealOf (g : (q : Query F) → Answer K q) (P : Fri.Params)
           (CompStark.Batch.preprocessedLogHeight P instances)
           (CompStark.Batch.preprocessedLogHeight P instances -
             min P.capHeight (CompStark.Batch.preprocessedLogHeight P instances)))).toArray := by
-  unfold CompStark.Batch.commonWith
+  unfold CompStark.Batch.preprocessedCapWith
   rw [ite_eq_right_of_eq_false _ _ (eq_false (by rw [hne]; exact Bool.false_ne_true))]
   exact congrArg (fun l ↦ some (List.toArray l)) List.idRun_mapM
 
+theorem preprocessedMats_ne_of {g : (q : Query F) → Answer K q} {P : Fri.Params}
+    {instances : List (CompStark.Batch.Instance F)} {root : Cap F}
+    (h : CompStark.Batch.preprocessedCapWith (idealOf g) P instances = some root) :
+    (CompStark.Batch.preprocessedMats P instances).isEmpty = false := by
+  unfold CompStark.Batch.preprocessedCapWith at h
+  split at h
+  · exact absurd h (by simp only [reduceCtorEq, not_false_eq_true])
+  · rename_i hne'
+    simpa only [Bool.not_eq_true] using hne'
+
+/-- The instances' preprocessed traces are those at their keygen heights. -/
+theorem preprocessedMats_keyInstances (S : Iop.Batch.Setup EF) [S.CapFits] (P : Fri.Params) :
+    CompStark.Batch.preprocessedMats P S.keyInstances =
+      CompStark.Batch.preprocessedMats P S.instances := by
+  unfold CompStark.Batch.preprocessedMats Iop.Batch.Setup.keyInstances Iop.Batch.Setup.instances
+  rw [List.ofFn_eq_map, List.ofFn_eq_map, List.filterMap_map, List.filterMap_map]
+  refine List.filterMap_congr fun i _ ↦ ?_
+  simp only [Function.comp_apply]
+  split
+  · rfl
+  · rename_i h
+    rw [S.keyed i (Nat.pos_of_ne_zero h)]
+
+theorem preprocessedLogHeight_keyInstances (S : Iop.Batch.Setup EF) [S.CapFits] (P : Fri.Params) :
+    CompStark.Batch.preprocessedLogHeight P S.keyInstances =
+      CompStark.Batch.preprocessedLogHeight P S.instances := by
+  unfold CompStark.Batch.preprocessedLogHeight Iop.Batch.Setup.keyInstances
+    Iop.Batch.Setup.instances
+  rw [List.ofFn_eq_map, List.ofFn_eq_map, List.filter_map, List.filter_map, List.map_map,
+    List.map_map]
+  congr 1
+  refine List.map_congr_left fun i hi ↦ ?_
+  simp only [Function.comp_apply]
+  rw [S.keyed i (by simpa using (List.mem_filter.mp hi).2)]
+
+/-- **The common data's commitment is that of the instances' preprocessed traces**, which have
+their keygen heights. -/
+theorem preprocessedCapWith_keyInstances {m : Type → Type} [Monad m] (S : Iop.Batch.Setup EF)
+    [S.CapFits] (H : Primitives F m) (P : Fri.Params) :
+    CompStark.Batch.preprocessedCapWith H P S.keyInstances =
+      CompStark.Batch.preprocessedCapWith H P S.instances := by
+  unfold CompStark.Batch.preprocessedCapWith
+  rw [preprocessedMats_keyInstances, preprocessedLogHeight_keyInstances]
+
+/-- The batch setup's commitment on an answer table. -/
+theorem preprocessed_commonWith (S : Iop.Batch.Setup EF) [S.CapFits]
+    (g : (q : Query F) → Answer K q) :
+    (CompStark.Batch.commonWith (idealOf g) S.params S.keyInstances).preprocessed =
+      CompStark.Batch.preprocessedCapWith (idealOf g) S.params S.instances := by
+  rw [← preprocessedCapWith_keyInstances S (idealOf g)]
+  rfl
+
 /-- Every entry of the setup's preprocessed cap is the digest of one of its queries. -/
-theorem exists_prep_mem (S : Iop.Batch.Setup EF) [S.CapFits] (answer : (q : Query F) → Answer S.streamLen q)
-    (root : Cap F)
-    (h : (CompStark.Batch.commonWith (idealOf answer) S.params S.instances).preprocessed =
-      some root) (e : Nat) (he : e < root.size) :
+theorem exists_prep_mem (S : Iop.Batch.Setup EF) [S.CapFits]
+    (answer : (q : Query F) → Answer S.streamLen q) (root : Cap F)
+    (h : CompStark.Batch.preprocessedCapWith (idealOf answer) S.params S.instances = some root)
+    (e : Nat) (he : e < root.size) :
     ∃ q ∈ tableQueryLog S.setupRo answer, digestOf q.1 q.2 = root[e] := by
-  have hne : (CompStark.Batch.preprocessedMats S.params S.instances).isEmpty = false := by
-    unfold CompStark.Batch.commonWith at h
-    split at h
-    · exact absurd h (by simp only [reduceCtorEq, not_false_eq_true])
-    · rename_i hne'
-      simpa only [Bool.not_eq_true] using hne'
-  rw [commonWith_idealOf answer S.params S.instances hne] at h
+  have hne := preprocessedMats_ne_of h
+  rw [preprocessedCapWith_idealOf answer S.params S.instances hne] at h
   obtain rfl := Option.some_injective _ h
   simp only [List.size_toArray, List.length_map, List.length_range] at he
   obtain ⟨q, hq, hd⟩ := exists_digest_injNode answer
@@ -136,6 +183,9 @@ theorem exists_prep_mem (S : Iop.Batch.Setup EF) [S.CapFits] (answer : (q : Quer
       min S.params.capHeight (CompStark.Batch.preprocessedLogHeight S.params S.instances)) e
   refine ⟨q, ?_, by simp only [hd, List.getElem_toArray, List.getElem_map, List.getElem_range]⟩
   unfold Iop.Batch.Setup.setupRo CompStark.Batch.commonWith
+  rw [tableQueryLog_bind, preprocessedCapWith_keyInstances]
+  refine List.mem_append_left _ ?_
+  unfold CompStark.Batch.preprocessedCapWith
   rw [ite_eq_right_of_eq_false _ _ (eq_false (by rw [hne]; exact Bool.false_ne_true)),
     tableQueryLog_bind]
   exact List.mem_append_left _ (mem_tableQueryLog_mapM _ answer _ e (List.mem_range.mpr he) q hq)
@@ -221,8 +271,7 @@ preprocessed cap bind the rows of `cache`, the columns read off `cache` under it
 preprocessed traces' words. -/
 theorem matColumn_setup (S : Iop.Batch.Setup EF) [S.CapFits] (cache : Merkle.Cache F (Digest F))
     (g : (q : Query F) → Answer K q) (root : Cap F)
-    (hroot : (CompStark.Batch.commonWith (idealOf g) S.params S.instances).preprocessed =
-      some root)
+    (hroot : CompStark.Batch.preprocessedCapWith (idealOf g) S.params S.instances = some root)
     (hbind : CapBindingM cache (idealOf g) root S.params.capHeight (prepLog S) (prepHeights S))
     (i : Fin S.k) (hp : 0 < (S.air i).preprocessedWidth) (j : ℕ)
     (hj : j < (S.air i).preprocessedWidth) (r : ℕ) (hr : r < 2 ^ (S.logN i + S.params.logBlowup)) :
@@ -241,13 +290,8 @@ theorem matColumn_setup (S : Iop.Batch.Setup EF) [S.CapFits] (cache : Merkle.Cac
   -- the commitment is the tree's cap
   have hcl : root.toList =
       (List.range (2 ^ c)).map (Merkle.injNode hash compress ms k (k - c)) := by
-    have hne : (CompStark.Batch.preprocessedMats S.params S.instances).isEmpty = false := by
-      unfold CompStark.Batch.commonWith at hroot
-      split at hroot
-      · exact absurd hroot (by simp only [reduceCtorEq, not_false_eq_true])
-      · rename_i hne'
-        simpa only [Bool.not_eq_true] using hne'
-    rw [commonWith_idealOf g S.params S.instances hne] at hroot
+    have hne := preprocessedMats_ne_of hroot
+    rw [preprocessedCapWith_idealOf g S.params S.instances hne] at hroot
     rw [← Option.some_injective _ hroot, List.toList_toArray, preprocessedMats_eq,
       preprocessedLogHeight_eq]
     exact List.map_congr_left fun t _ ↦ injNodeWith_idealOf g ms k (k - c) t

@@ -51,6 +51,18 @@ theorem run_eqB (prover : Iop.Batch.NIProver S) :
       (simulateQ randomOracle (gameB S publicValues prover)).run' ∅ :=
   rfl
 
+/-- The common data the setup computes has the batch's lookups. -/
+theorem lookups_of_mem_support_setupRo (common : CompStark.Batch.Common F)
+    (h : common ∈ support S.setupRo) : common.lookups = List.ofFn S.lookups := by
+  unfold Iop.Batch.Setup.setupRo CompStark.Batch.commonWith at h
+  rw [mem_support_bind_iff] at h
+  obtain ⟨c, -, hc⟩ := h
+  rw [support_pure, Set.mem_singleton_iff] at hc
+  rw [hc]
+  show S.keyInstances.map (·.lookups) = _
+  rw [Iop.Batch.Setup.keyInstances, List.map_ofFn]
+  rfl
+
 theorem isTotalQueryBound_gameB (prover : Iop.Batch.NIProver S) (Q : Nat)
     (hQ : prover.IsTotalQueryBound Q) :
     (gameB S publicValues prover).IsTotalQueryBound (Q + S.verifierQueries) := by
@@ -59,12 +71,24 @@ theorem isTotalQueryBound_gameB (prover : Iop.Batch.NIProver S) (Q : Nat)
       (isTotalQueryBound_bind (n₂ := 0) hQ fun proof ↦
         (show IsTotalQueryBound (pure (common, proof) : OracleComp (spec F S.streamLen) _) 0
           from trivial)).mono (by omega)
-  refine (isTotalQueryBound_bind (n₂ := S.verifierCalls)
-    ((isTotalQueryBound_run_simulateQ_loggingOracle_iff _ _).mpr hsp) fun x ↦ ?_).mono
+  refine (isTotalQueryBound_bind_of_mem_support (suffixBound := S.verifierCalls)
+    ((isTotalQueryBound_run_simulateQ_loggingOracle_iff _ _).mpr hsp) fun x hx ↦ ?_).mono
     (by unfold Iop.Batch.Setup.verifierQueries; omega)
   obtain ⟨⟨common, proof⟩, log⟩ := x
+  have hmem : (common, proof) ∈ support (setupAndProveB S prover) := by
+    rw [← loggingOracle.support_fst_map_run_simulateQ, support_map]
+    exact ⟨_, hx, rfl⟩
+  have hl : common.lookups = List.ofFn S.lookups := by
+    unfold setupAndProveB at hmem
+    rw [mem_support_bind_iff] at hmem
+    obtain ⟨c, hc, hmem⟩ := hmem
+    rw [mem_support_bind_iff] at hmem
+    obtain ⟨p, -, hmem⟩ := hmem
+    rw [support_pure, Set.mem_singleton_iff, Prod.mk.injEq] at hmem
+    rw [hmem.1]
+    exact lookups_of_mem_support_setupRo S c hc
   exact (isTotalQueryBound_bind (n₂ := 0)
-    (S.isTotalQueryBound_verifyBatchWith common proof (List.ofFn publicValues))
+    (S.isTotalQueryBound_verifyBatchWith common hl proof (List.ofFn publicValues))
     fun v ↦ (show IsTotalQueryBound (pure (proof, log, v) :
       OracleComp (spec F S.streamLen) _) 0 from trivial)).mono (by omega)
 
@@ -72,7 +96,7 @@ variable (answer : (q : Query F) → Answer S.streamLen q) (prover : Iop.Batch.N
 
 theorem evalWithAnswerFn_setupAndProveB :
     evalWithAnswerFn (QueryImpl.ofFn answer) (setupAndProveB S prover) =
-      (CompStark.Batch.commonWith (idealOf answer) S.params S.instances,
+      (CompStark.Batch.commonWith (idealOf answer) S.params S.keyInstances,
         evalWithAnswerFn (QueryImpl.ofFn answer) prover) := by
   simp only [setupAndProveB, evalWithAnswerFn_bind, evalWithAnswerFn_pure,
     evalWithAnswerFn_setupRoB]
@@ -88,8 +112,8 @@ theorem evalWithAnswerFn_gameB :
     evalWithAnswerFn (QueryImpl.ofFn answer) (gameB S publicValues prover) =
       (evalWithAnswerFn (QueryImpl.ofFn answer) prover,
         tableQueryLog (setupAndProveB S prover) answer,
-        CompStark.Batch.verifyBatchWith (idealOf answer) S.params S.instances
-          (CompStark.Batch.commonWith (idealOf answer) S.params S.instances)
+        CompStark.Batch.verifyBatchWith (idealOf answer) S.params S.airs
+          (CompStark.Batch.commonWith (idealOf answer) S.params S.keyInstances)
           (evalWithAnswerFn (QueryImpl.ofFn answer) prover) (List.ofFn publicValues)) := by
   simp only [gameB, evalWithAnswerFn_bind, evalWithAnswerFn_logged, evalWithAnswerFn_pure,
     evalWithAnswerFn_setupAndProveB, Iop.Batch.Setup.verifyRo, evalWithAnswerFn_verifyBatchWith]
@@ -97,8 +121,8 @@ theorem evalWithAnswerFn_gameB :
 theorem tableQueryLog_gameB :
     tableQueryLog (gameB S publicValues prover) answer =
       tableQueryLog (setupAndProveB S prover) answer ++
-      tableQueryLog (CompStark.Batch.verifyBatchWith (ideal F S.streamLen) S.params S.instances
-        (CompStark.Batch.commonWith (idealOf answer) S.params S.instances)
+      tableQueryLog (CompStark.Batch.verifyBatchWith (ideal F S.streamLen) S.params S.airs
+        (CompStark.Batch.commonWith (idealOf answer) S.params S.keyInstances)
         (evalWithAnswerFn (QueryImpl.ofFn answer) prover) (List.ofFn publicValues)) answer := by
   simp only [gameB]
   rw [tableQueryLog_bind, evalWithAnswerFn_logged, tableQueryLog_logged, tableQueryLog_bind,
@@ -106,6 +130,48 @@ theorem tableQueryLog_gameB :
   rfl
 
 end Game
+
+/-! ### The verifier at the setup's lengths -/
+
+section Lengths
+variable (S : Iop.Batch.Setup EF)
+
+/-- The common data the setup computes on pure primitives has the batch's lookups. -/
+theorem lookups_commonWith (H : Primitives F Id) :
+    (CompStark.Batch.commonWith H S.params S.keyInstances).lookups = List.ofFn S.lookups := by
+  show S.keyInstances.map (·.lookups) = _
+  rw [Iop.Batch.Setup.keyInstances, List.map_ofFn]
+  rfl
+
+/-- On a proof of the setup's lengths, against common data of its lookups, the batch verifier
+checks the setup's instances. -/
+theorem verifyBatchWith_eq_of {m : Type → Type} [Monad m] (H : Primitives F m)
+    (common : CompStark.Batch.Common F) (hl : common.lookups = List.ofFn S.lookups)
+    (proof : CompStark.Batch.BatchProof F EF) (pis : List (List F))
+    (hdb : proof.degreeBits.toList = List.ofFn S.logN)
+    (hkey : CompStark.Batch.keyOk S.airs common proof.degreeBits.toList = true) :
+    CompStark.Batch.verifyBatchWith H S.params S.airs common proof pis =
+      CompStark.Batch.verifyInstancesWith H S.params S.instances common proof pis := by
+  rw [CompStark.Batch.verifyBatchWith_of_keyOk _ _ _ _ _ _ hkey]
+  congr 1
+  unfold CompStark.Batch.instancesOf Iop.Batch.Setup.instances Iop.Batch.Setup.airs
+  rw [hdb, hl]
+  refine List.ext_getElem (by simp only [List.length_map, List.length_zip, List.length_ofFn,
+    Nat.min_self]) fun j h1 h2 ↦ ?_
+  simp only [List.getElem_map, List.getElem_zip, List.getElem_ofFn]
+
+/-- An accepting batch verifier on pure primitives checked the common data. -/
+theorem keyOk_of_ok (H : Primitives F Id) (P : Fri.Params) (airs : List (Air F))
+    (common : CompStark.Batch.Common F) (proof : CompStark.Batch.BatchProof F EF)
+    (pis : List (List F))
+    (h : CompStark.Batch.verifyBatchWith H P airs common proof pis = .ok ()) :
+    CompStark.Batch.keyOk airs common proof.degreeBits.toList = true := by
+  unfold CompStark.Batch.verifyBatchWith at h
+  split at h
+  · assumption
+  · exact absurd h (by intro h'; cases h')
+
+end Lengths
 
 /-! ### The bound -/
 
@@ -136,7 +202,14 @@ theorem prob_le_of_unopenedB (hδ' : (δ' : ℝ) < 1 - S.rate) (Q : Nat)
   set n := Q + S.verifierQueries
   set c := 2 ^ S.params.capHeight + 2
   have hn0 : 0 < n := by
-    unfold n Iop.Batch.Setup.verifierQueries Iop.Batch.Setup.verifierCalls; omega
+    have h3 : 3 ≤ CompStark.Batch.verifierCallsOf EF S.params (S.instancesAt fun _ ↦ 0) := by
+      unfold CompStark.Batch.verifierCallsOf; dsimp only; omega
+    have h4 := le_foldr_max _ _ (List.mem_map_of_mem (f := fun n ↦
+      CompStark.Batch.verifierCallsOf EF S.params (S.instancesAt n))
+      (Iop.Batch.Setup.mem_lengthVectors S.k (twoAdicity F) (fun _ ↦ 0) fun _ ↦ Nat.zero_le _))
+    have : 0 < S.verifierCalls := lt_of_lt_of_le (by omega) (h3.trans h4)
+    unfold n Iop.Batch.Setup.verifierQueries
+    omega
   by_cases hbig : Fintype.card (Digest F) ≤ c * n
   · refine (prEvent_le_one _).trans (le_add_left ?_)
     rw [hashError_eq]
@@ -165,13 +238,16 @@ theorem prob_le_of_unopenedB (hδ' : (δ' : ℝ) < 1 - S.rate) (Q : Nat)
       fun answer hev ↦ ?_).trans ?_
     · replace hev := hE answer hev
       rw [evalWithAnswerFn_gameB] at hev
-      obtain ⟨hok, -, hfail⟩ := hev
-      dsimp only at hok hfail
+      obtain ⟨hok, hdb, hfail⟩ := hev
+      dsimp only at hok hdb hfail
       have hlog := tableQueryLog_gameB S publicValues answer prover
       have hlen := length_tableQueryLog_le answer _ n
         (isTotalQueryBound_gameB S publicValues prover Q hQ)
       rw [hlog] at hlen
       set proof := evalWithAnswerFn (QueryImpl.ofFn answer) prover
+      have hl := lookups_commonWith S (idealOf answer)
+      have hkey := keyOk_of_ok _ _ _ _ _ _ hok
+      rw [verifyBatchWith_eq_of S _ _ hl _ _ hdb hkey] at hok hlog hlen
       obtain ⟨p, hp, hfresh, hbad⟩ := exists_badAtB S publicValues δ δ' loss hδ' answer _
         proof (tableQueryLog (setupAndProveB S prover) answer) (consistent_tableQueryLog _) rfl
         (fun e he ↦ by
@@ -200,10 +276,10 @@ theorem prob_unopenedB_le (hδ' : (δ' : ℝ) < 1 - S.rate) (Q : Nat)
 /-- An accepting batch verifier checked the multiplicity bound. -/
 theorem heightBounded_of_ok (answer : (q : Query F) → Answer S.streamLen q)
     (common : CompStark.Batch.Common F) (proof : CompStark.Batch.BatchProof F EF)
-    (hok : CompStark.Batch.verifyBatchWith (idealOf answer) S.params S.instances common proof
+    (hok : CompStark.Batch.verifyInstancesWith (idealOf answer) S.params S.instances common proof
       (List.ofFn publicValues) = .ok ()) : S.HeightBounded := by
-  obtain ⟨-, -, -, -, -, -, -, -, -, -, hlk, -⟩ :=
-    verifyBatchWith_ok (idealOf answer) S.params S.instances common proof _ hok
+  obtain ⟨-, -, -, -, -, -, -, -, -, hlk, -⟩ :=
+    verifyInstancesWith_ok (idealOf answer) S.params S.instances common proof _ hok
   simp only [CompStark.Batch.lookupShapeOk, Bool.and_eq_true] at hlk
   have h := hlk.1.1.1.1.2
   rwa [Iop.Batch.Setup.instances, List.map_ofFn] at h
@@ -232,7 +308,9 @@ theorem prob_unopenedInclusionB_le (hδ' : (δ' : ℝ) < 1 - S.rate) (Q : Nat)
   refine prob_le_of_unopenedB S publicValues δ δ' hδ' Q prover hQ _ fun answer h ↦ ?_
   obtain ⟨hok, hdb, hfail⟩ := h
   refine ⟨hok, hdb, fun traces ht hsat ↦ hfail traces ht ?_⟩
-  rw [evalWithAnswerFn_gameB] at hok
+  rw [evalWithAnswerFn_gameB] at hok hdb
+  have hl := lookups_commonWith S (idealOf answer)
+  rw [verifyBatchWith_eq_of S _ _ hl _ _ hdb (keyOk_of_ok _ _ _ _ _ _ hok)] at hok
   exact Sound.Batch.satisfiedWithInclusion_of_satisfied S traces publicValues
     (heightBounded_of_ok S publicValues answer _ _ hok) hcounts hsat
 

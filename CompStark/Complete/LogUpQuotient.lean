@@ -455,11 +455,11 @@ theorem toSpec_batchQuotientValues (P : Params) (I : Instance F) (trace : Array 
       (permutationTrace I.air I.lookups I.logN trace pis chs).2 alpha).getD r 0) =
       (qFold I.air I.logN (ps.getD · 0) (pps.getD · 0) (I.air.periodicPolys I.logN) pis
           (Challenge.toSpec alpha) *
-          C (Challenge.toSpec alpha ^ (I.air.lookupConstraints I.logN).length) +
+          C (Challenge.toSpec alpha ^ I.lookupConstraints.length) +
         qExt I.logN (ps.getD · 0) (pps.getD · 0) (I.air.periodicPolys I.logN) pis (auxPoly rps)
           (chs.map Challenge.toSpec)
           (Challenge.toSpec (permutationTrace I.air I.lookups I.logN trace pis chs).2)
-          (I.air.lookupConstraints I.logN) (Challenge.toSpec alpha)).eval
+          I.lookupConstraints (Challenge.toSpec alpha)).eval
         (algebraMap K E (qpt (I.logN + I.logQuotientChunks) r)) := by
   set A := I.air
   set logN := I.logN
@@ -480,7 +480,7 @@ theorem toSpec_batchQuotientValues (P : Params) (I : Instance F) (trace : Array 
     exact hqb
   rw [ite_eq_right_of_eq_false _ _ (eq_false he)]
   dsimp only
-  set ext' := A.lookupConstraints logN
+  set ext' := I.lookupConstraints
   have hsize : (quotientOfLde A pis logN lc (ldeRef logN b gen A.width trace)
       (prepLde b A logN) alpha).size = 2 ^ (logN + lc) := by
     rw [quotientOfLde, quotientValues_eq, Array.size_ofFn]
@@ -527,7 +527,7 @@ theorem instanceCheck_honest (P : Params) (I : Instance F) (trace : Array F) (pi
     (chs : List EF) (alpha zeta : EF) (hfit : Fits P I.air I.logN trace)
     (hlc : I.logQuotientChunks ≤ P.logBlowup) (hsat : I.air.ConstraintsVanish I.logN trace pis)
     (hdeg : I.air.DegreeFitsAt I.logN I.logQuotientChunks)
-    (hdegL : ∀ g ∈ I.air.lookupConstraints I.logN,
+    (hdegL : ∀ g ∈ I.lookupConstraints,
       g.degBound (2 ^ I.logN) (I.air.periodicDegree (2 ^ I.logN)) <
         2 ^ (I.logN + I.logQuotientChunks) + 2 ^ I.logN)
     (hls : ∀ l ∈ I.lookups,
@@ -546,7 +546,7 @@ theorem instanceCheck_honest (P : Params) (I : Instance F) (trace : Array F) (pi
   set lc := I.logQuotientChunks
   set b := P.logBlowup
   set pt := permutationTrace A I.lookups logN trace pis chs
-  set ext' := A.lookupConstraints logN
+  set ext' := I.lookupConstraints
   have h24 := hfit.twoAdic
   have hlc24 : logN + lc ≤ twoAdicity F := by omega
   obtain ⟨ps, hlde, hT, hTd⟩ := trace_lde P A logN trace hfit

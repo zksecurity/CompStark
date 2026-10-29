@@ -110,9 +110,9 @@ namespace CompStarkTests.RandomOracle
 #guard_msgs in
 #print axioms CompStark.Iop.Batch.Setup.isTotalQueryBound_setupRo
 
-/-- info: 'CompStark.Ni.hasRounds_verifyBatchWith' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+/-- info: 'CompStark.Ni.hasRounds_verifyInstancesWith' depends on axioms: [propext, Classical.choice, Quot.sound] -/
 #guard_msgs in
-#print axioms CompStark.Ni.hasRounds_verifyBatchWith
+#print axioms CompStark.Ni.hasRounds_verifyInstancesWith
 
 /-- info: 'CompStark.Ni.bcsB' depends on axioms: [propext, Classical.choice, Quot.sound] -/
 #guard_msgs in

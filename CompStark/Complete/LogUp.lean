@@ -722,7 +722,7 @@ theorem toSpec_terminals_aux (pre : Nat → EF) (beta : EF) : ∀ (Is : List (In
     absurd h (by simp only [List.length_cons, List.length_nil]; omega)
 
 theorem lookupConstraints_of_isEmpty (I : Instance F) (h : I.lookups.isEmpty = true) :
-    I.air.lookupConstraints I.logN = [] := by
+    I.lookupConstraints = [] := by
   show logUpConstraints I.lookups = []
   unfold logUpConstraints
   rw [ite_eq_left_of_eq_true _ _ (eq_true h)]

@@ -51,10 +51,10 @@ AIR's shape, the preprocessed commitment exactly when some instance has preproce
 permutation openings in their shapes and a terminal exactly for the instances with lookups, the
 permutation commitment exactly with lookups, a commitment and grinding witness per fold, and a
 final polynomial of its length. -/
-theorem shape_of_verifyBatchWith
-    (h : CompStark.Batch.verifyBatchWith H S.params S.instances common proof pis = .ok ()) :
+theorem shape_of_verifyInstancesWith
+    (h : CompStark.Batch.verifyInstancesWith H S.params S.instances common proof pis = .ok ()) :
     proof.opened.size = S.k ∧
-      (∀ i : Fin S.k, CompStark.Batch.openedShapeOk ⟨S.air i, S.logN i⟩
+      (∀ i : Fin S.k, CompStark.Batch.openedShapeOk ⟨S.air i, S.logN i, S.lookups i⟩
         (proof.opened.toList.getD i noOpenings) = true) ∧
       common.preprocessed.isSome = S.instances.any (0 < ·.air.preprocessedWidth) ∧
       proof.fri.commits.size = S.friArities.length ∧
@@ -67,8 +67,8 @@ theorem shape_of_verifyBatchWith
         (proof.permutationNext.getD i #[]).size = Challenge.d EF * (S.instanceSetup i).permWidth ∧
         (proof.lookupTerminals.getD i none).isSome = !(S.lookups i).isEmpty) ∧
       proof.permutationCommit.isSome = S.hasLookups := by
-  obtain ⟨hsize, -, hlsize, hnsize, htsize, -, -, -, hshapeZ, hprepS, hlk, -, -, -, -,
-    ⟨st, hfriOk⟩, -⟩ := verifyBatchWith_ok H S.params S.instances common proof pis h
+  obtain ⟨hsize, -, hlsize, hnsize, htsize, -, -, hshapeZ, hprepS, hlk, -, -, -, -,
+    ⟨st, hfriOk⟩, -⟩ := verifyInstancesWith_ok H S.params S.instances common proof pis h
   obtain ⟨hpshapes, hperm, -⟩ := lookupShapeOk_spec S.params S.instances proof hlk
   rw [length_instances] at hsize hlsize hnsize htsize
   have hos : proof.opened.toList.length = S.k := by rw [Array.length_toList, hsize]
@@ -83,10 +83,10 @@ theorem shape_of_verifyBatchWith
     htsize, permShapes S proof hlsize hnsize htsize hpshapes, hperm⟩
 
 theorem length_zip_commitsB
-    (h : CompStark.Batch.verifyBatchWith H S.params S.instances common proof pis = .ok ()) :
+    (h : CompStark.Batch.verifyInstancesWith H S.params S.instances common proof pis = .ok ()) :
     (proof.fri.commits.toList.zip proof.fri.commitWitnesses.toList).length =
       S.friArities.length := by
-  obtain ⟨-, -, -, hcs, hcw, -⟩ := shape_of_verifyBatchWith S H common proof pis h
+  obtain ⟨-, -, -, hcs, hcw, -⟩ := shape_of_verifyInstancesWith S H common proof pis h
   rw [List.length_zip, Array.length_toList, Array.length_toList, hcs, hcw, Nat.min_self]
 
 end Accepted
@@ -101,8 +101,9 @@ variable (S : Iop.Batch.Setup EF) [S.CapFits] {cache cache' : Merkle.Cache F (Di
 theorem lookups_eq_nil_of (hl : S.hasLookups = false) (i : Fin S.k) : S.lookups i = [] := by
   by_contra hne
   have : S.hasLookups = true :=
-    List.any_eq_true.mpr ⟨⟨S.air i, S.logN i⟩, List.mem_ofFn.mpr ⟨i, rfl⟩, by
-      rw [show (⟨S.air i, S.logN i⟩ : CompStark.Batch.Instance F).lookups = S.lookups i from rfl]
+    List.any_eq_true.mpr ⟨⟨S.air i, S.logN i, S.lookups i⟩, List.mem_ofFn.mpr ⟨i, rfl⟩, by
+      rw [show (⟨S.air i, S.logN i, S.lookups i⟩ : CompStark.Batch.Instance F).lookups = S.lookups
+          i from rfl]
       simpa only [Bool.not_eq_eq_eq_not, Bool.not_true, List.isEmpty_eq_false_iff] using hne⟩
   rw [hl] at this
   exact Bool.false_ne_true this
@@ -200,7 +201,7 @@ theorem length_coeffs_map {α : Type} (l : List α) (f : α → EF) :
 /-- The batch's domain separator on a proof with the setup's preprocessed commitment is `S`'s. -/
 theorem batchSeedOf_eq
     (hprep : common.preprocessed.isSome = S.instances.any (0 < ·.air.preprocessedWidth)) :
-    CompStark.Batch.batchSeedOf EF S.params S.instances common = batchSeedS S := by
+    CompStark.Batch.batchSeedOf EF S.params S.instances common.preprocessed = batchSeedS S := by
   rw [CompStark.Batch.batchSeedOf, batchSeedS, hprep, hasPreprocessed_eq]
 
 theorem mainRoot_eq
@@ -295,7 +296,7 @@ theorem terminal_eqB (hl : S.hasLookups = true)
 /-- On a proof in the instances' shapes, the decoded openings are the opened values. -/
 theorem openings_eqB (hsize : proof.opened.size = S.k)
     (hlsize : proof.permutationLocal.size = S.k) (hnsize : proof.permutationNext.size = S.k)
-    (hshape : ∀ i : Fin S.k, CompStark.Batch.openedShapeOk ⟨S.air i, S.logN i⟩
+    (hshape : ∀ i : Fin S.k, CompStark.Batch.openedShapeOk ⟨S.air i, S.logN i, S.lookups i⟩
       (proof.opened.toList.getD i noOpenings) = true)
     (hprep : common.preprocessed.isSome = S.instances.any (0 < ·.air.preprocessedWidth))
     (hpw : ∀ i : Fin S.k,
@@ -344,15 +345,16 @@ variable {common proof pis}
 `2 ^ capHeight` entries, the cap fitting every instance (`Setup.capFits`), and fold `i`'s one per
 node at the cap's level of its tree. -/
 theorem size_capsB
-    (hok : CompStark.Batch.verifyBatchWith (idealOf answer) S.params S.instances common proof pis =
+    (hok : CompStark.Batch.verifyInstancesWith (idealOf answer) S.params S.instances common proof
+        pis =
       .ok ()) :
     (∀ x ∈ CompStark.Batch.batchRounds S.instances common proof
       (zetaOfB (idealOf answer) S.params S.instances common proof pis),
         x.1.size = 2 ^ S.params.capHeight) ∧
     ∀ i < S.friArities.length, (proof.fri.commits.toList.getD i #[]).size =
       2 ^ min S.params.capHeight (friDepthB S i) := by
-  obtain ⟨hsize, -, -, -, -, -, -, -, -, -, -, -, -, -, -, ⟨st, hfriOk⟩, -⟩ :=
-    verifyBatchWith_ok (idealOf answer) S.params S.instances common proof pis hok
+  obtain ⟨hsize, -, -, -, -, -, -, -, -, -, -, -, -, -, ⟨st, hfriOk⟩, -⟩ :=
+    verifyInstancesWith_ok (idealOf answer) S.params S.instances common proof pis hok
   rw [length_instances] at hsize
   have hD := descHeights_batchRounds S common proof
     (zetaOfB (idealOf answer) S.params S.instances common proof pis) hsize
@@ -376,7 +378,8 @@ theorem size_capsB
       y.1.logSize + S.params.logBlowup) hdp))
 
 theorem foldRoot_eqB
-    (hok : CompStark.Batch.verifyBatchWith (idealOf answer) S.params S.instances common proof pis =
+    (hok : CompStark.Batch.verifyInstancesWith (idealOf answer) S.params S.instances common proof
+        pis =
       .ok ()) (i : ℕ) (hi : i < S.friArities.length)
     (hsz : (proof.fri.commits.toList.getD i #[]).size =
       2 ^ min S.params.capHeight (friDepthB S i)) :
@@ -388,7 +391,7 @@ theorem foldRoot_eqB
     simp only [friOffsetB, seedAt]
     split <;> rfl
   have hc : i < proof.fri.commits.toList.length := by
-    obtain ⟨-, -, -, hcs, -⟩ := shape_of_verifyBatchWith S (idealOf answer) common proof pis hok
+    obtain ⟨-, -, -, hcs, -⟩ := shape_of_verifyInstancesWith S (idealOf answer) common proof pis hok
     rw [Array.length_toList, hcs]
     exact hi
   rw [List.getD_eq_getElem _ _ hc] at hsz ⊢
@@ -396,13 +399,15 @@ theorem foldRoot_eqB
   exact capFrom_append _ _ _
 
 theorem finalPoly_eqB
-    (hok : CompStark.Batch.verifyBatchWith (idealOf answer) S.params S.instances common proof pis =
+    (hok : CompStark.Batch.verifyInstancesWith (idealOf answer) S.params S.instances common proof
+        pis =
       .ok ()) :
     finalPolyAt S.domainSetup
       ((inputsB S common pis proof).getD (lookupRounds S + 3 + S.friArities.length) []) =
       proof.fri.finalPoly := by
   have hz := length_zip_commitsB S (idealOf answer) common proof pis hok
-  obtain ⟨-, -, -, -, -, hfp, -⟩ := shape_of_verifyBatchWith S (idealOf answer) common proof pis hok
+  obtain ⟨-, -, -, -, -, hfp, -⟩ := shape_of_verifyInstancesWith S (idealOf answer) common proof
+      pis hok
   have hlast := inputsB_getD_last S common pis proof
   rw [hz] at hlast
   have hseed : seedAt (friSeedB S) S.friArities.length = [] := by
@@ -434,20 +439,21 @@ theorem lookupRunB_eq_zero (hl : S.hasLookups = false) :
 from a run on the answers `answer` is the prefix transcript of the proof's schedule with the
 answers to its duplex calls. -/
 theorem extractB_eq_prefixTranscriptB (cache : Merkle.Cache F (Digest F))
-    (hok : CompStark.Batch.verifyBatchWith (idealOf answer) S.params S.instances common proof pis =
+    (hok : CompStark.Batch.verifyInstancesWith (idealOf answer) S.params S.instances common proof
+        pis =
       .ok ()) :
     extractB S cache (idealOf answer) common proof pis =
       prefixTranscriptB S cache (fun k ↦ (inputsB S common pis proof).getD k [])
         (fun k ↦ (answer (keyAt answer (inputsB S common pis proof) k)).2) := by
   obtain ⟨hsize, hshape, hprep, hcs, -, hfp, hlsize, hnsize, htsize, hpw, hperm⟩ :=
-    shape_of_verifyBatchWith S (idealOf answer) common proof pis hok
+    shape_of_verifyInstancesWith S (idealOf answer) common proof pis hok
   have hfpne : proof.fri.finalPoly.toList ≠ [] := by
     refine List.ne_nil_of_length_pos ?_
     rw [Array.length_toList, hfp]
     exact Nat.two_pow_pos _
   have hz := length_zip_commitsB S (idealOf answer) common proof pis hok
-  obtain ⟨-, -, -, -, -, -, -, -, -, -, hlk', -, -, -, -, ⟨st, hfriOk⟩, -⟩ :=
-    verifyBatchWith_ok (idealOf answer) S.params S.instances common proof pis hok
+  obtain ⟨-, -, -, -, -, -, -, -, -, hlk', -, -, -, -, ⟨st, hfriOk⟩, -⟩ :=
+    verifyInstancesWith_ok (idealOf answer) S.params S.instances common proof pis hok
   obtain ⟨-, -, hpne⟩ := lookupShapeOk_spec S.params S.instances proof hlk'
   have hqne := size_quotientCommit_neB _ _ _ _ _ _ hok
   obtain ⟨hlk, hα, hζ, hbatch, hlenβ, hβ, -, -⟩ :=
@@ -490,7 +496,7 @@ theorem extractB_eq_prefixTranscriptB (cache : Merkle.Cache F (Digest F))
         have hi : (S.lookups i).isEmpty = true := by
           by_contra hne
           have : S.hasLookups = true :=
-            List.any_eq_true.mpr ⟨⟨S.air i, S.logN i⟩, List.mem_ofFn.mpr ⟨i, rfl⟩, by
+            List.any_eq_true.mpr ⟨⟨S.air i, S.logN i, S.lookups i⟩, List.mem_ofFn.mpr ⟨i, rfl⟩, by
               rw [← lookups_eq]
               simpa only [Bool.not_eq_eq_eq_not, Bool.not_true, Bool.not_eq_true] using hne⟩
           rw [hl] at this
@@ -508,7 +514,7 @@ theorem extractB_eq_prefixTranscriptB (cache : Merkle.Cache F (Digest F))
       if (S.lookups i).isEmpty then 0 else _
     cases hi : (S.lookups i).isEmpty
     · have hl : S.hasLookups = true :=
-        List.any_eq_true.mpr ⟨⟨S.air i, S.logN i⟩, List.mem_ofFn.mpr ⟨i, rfl⟩, by
+        List.any_eq_true.mpr ⟨⟨S.air i, S.logN i, S.lookups i⟩, List.mem_ofFn.mpr ⟨i, rfl⟩, by
           rw [← lookups_eq, hi]; rfl⟩
       exact (terminal_eqB S common proof pis hl hperm htsize (fun j ↦ (hpw j).2.2) hpsz i hi).symm
     · have h := (hpw i).2.2

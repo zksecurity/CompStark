@@ -307,7 +307,7 @@ every instance's openings back from the values the PCS observes. -/
 theorem openingsAtB_coeffs (common : CompStark.Batch.Common F)
     (proof : CompStark.Batch.BatchProof F EF) (hsize : proof.opened.size = S.k)
     (hlsize : proof.permutationLocal.size = S.k) (hnsize : proof.permutationNext.size = S.k)
-    (hshape : ∀ i : Fin S.k, CompStark.Batch.openedShapeOk ⟨S.air i, S.logN i⟩
+    (hshape : ∀ i : Fin S.k, CompStark.Batch.openedShapeOk ⟨S.air i, S.logN i, S.lookups i⟩
       (proof.opened.toList.getD i noOpenings) = true)
     (hprep : common.preprocessed.isSome = S.instances.any (0 < ·.air.preprocessedWidth))
     (hpw : ∀ i : Fin S.k,
@@ -353,7 +353,7 @@ theorem openingsAtB_coeffs (common : CompStark.Batch.Common F)
       have hpw : ¬ 0 < (S.air i).preprocessedWidth := fun hp ↦ by
         rw [hc] at hprep
         have : S.instances.any (0 < ·.air.preprocessedWidth) = true :=
-          List.any_eq_true.mpr ⟨⟨S.air i, S.logN i⟩, List.mem_ofFn.mpr ⟨i, rfl⟩,
+          List.any_eq_true.mpr ⟨⟨S.air i, S.logN i, S.lookups i⟩, List.mem_ofFn.mpr ⟨i, rfl⟩,
             decide_eq_true hp⟩
         rw [this] at hprep
         exact Bool.false_ne_true hprep
@@ -369,7 +369,7 @@ theorem openingsAtB_coeffs (common : CompStark.Batch.Common F)
         rw [hc, Option.isSome_none] at hperm
         by_contra hne
         have : S.hasLookups = true :=
-          List.any_eq_true.mpr ⟨⟨S.air i, S.logN i⟩, List.mem_ofFn.mpr ⟨i, rfl⟩, by
+          List.any_eq_true.mpr ⟨⟨S.air i, S.logN i, S.lookups i⟩, List.mem_ofFn.mpr ⟨i, rfl⟩, by
             rw [← lookups_eq]
             simpa only [Bool.not_eq_eq_eq_not, Bool.not_true, Bool.not_eq_true] using hne⟩
         rw [this] at hperm
@@ -600,7 +600,7 @@ the counts `countsB`. -/
 theorem claimCounts_batchRounds_eq (common : CompStark.Batch.Common F)
     (proof : CompStark.Batch.BatchProof F EF) (hsize : proof.opened.size = S.k)
     (hlsize : proof.permutationLocal.size = S.k) (hnsize : proof.permutationNext.size = S.k)
-    (hshape : ∀ i : Fin S.k, CompStark.Batch.openedShapeOk ⟨S.air i, S.logN i⟩
+    (hshape : ∀ i : Fin S.k, CompStark.Batch.openedShapeOk ⟨S.air i, S.logN i, S.lookups i⟩
       (proof.opened.toList.getD i noOpenings) = true)
     (hprep : common.preprocessed.isSome = S.instances.any (0 < ·.air.preprocessedWidth))
     (hpw : ∀ i : Fin S.k,

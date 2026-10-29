@@ -110,13 +110,13 @@ the analysis the search finds:
   `δ = 3/8 - 2 ^ (-20)`, `δ' = 3/8 - 2 ^ (-22)`, no loss needed: the lookup challenges `130.98`,
   constraint folding `148.88`, out of domain `131.94`, batching `128.65`, FRI's folds `132.94`,
   queries `128.49`; every round error is at most `2 ^ (-128)` (`wideBatch5_roundError_le`),
-  `verifierQueries = 99669` (`wideBatch5_knowledgeSoundness_ro`).
+  `verifierQueries ≤ 134253` on proofs of any lengths (`wideBatch5_knowledgeSoundness_ro`).
 * `wideBatchGrindSetup`, the batch over the quartic extension with `wideBusGrindParams` (`144`
   queries, grinding in every round but `α`, `18` bits before the lookup challenges);
   `δ = 3/8 - 2 ^ (-12)`, `δ' = 3/8 - 2 ^ (-14)`, `loss = 2 ^ (-15)`: the lookup challenges
   `117.99` (`99.99` without grinding), constraint folding `117.89`, out of domain `120.95`,
   batching `117.71`, FRI's folds `117.37`, queries `117.36`; every round error is at most
-  `2 ^ (-117)` (`wideBatchGrind_roundError_le`), `verifierQueries = 89692`
+  `2 ^ (-117)` (`wideBatchGrind_roundError_le`), `verifierQueries ≤ 120816`
   (`wideBatchGrind_knowledgeSoundness_ro`). Constraint folding, which Plonky3 does not grind,
   keeps the quartic extension above `2 ^ (-117.89)`: `117` bits is the best integer level, reached
   with `18` bits of lookup grinding (`17` leave the lookup challenges at `2 ^ (-116.99)`).
@@ -747,13 +747,14 @@ theorem wideBus_valid (P : Fri.Params) (hb : P.logBlowup = 2) (ha : 0 < P.maxLog
     queries := hq
     blowup := by rw [hb]; decide }
 
-/-- The lookup of `wideBus 64` fits its quotient chunks and reads its columns. -/
-theorem wideBus_lookupsValid (P : Fri.Params) (hb : P.logBlowup = 2) (logN : ℕ) :
-    LookupsValid P (wideBus 64 : Air F) logN
-      (Batch.instanceLookups true (wideBus 64) logN) := by
-  rw [show Batch.instanceLookups true (wideBus 64 : Air F) logN = [wideBusLookup] from
-    wideBus_packedLookups logN]
-  refine ⟨by rw [wideBus_logQuotientChunksWith, hb]; decide, fun l hl ↦ ?_⟩
+/-- The lookup of `wideBus 64`, packed for any height, keeps the quotient domain of `2 ^ logN`
+rows within the two-adic subgroups for `logN ≤ 22`, and reads its columns. -/
+theorem wideBus_lookupsValid (logN keyLogN : ℕ) (h : logN ≤ 22) :
+    LookupsValid (wideBus 64 : Air F) logN
+      (Batch.instanceLookups true (wideBus 64) keyLogN) := by
+  rw [show Batch.instanceLookups true (wideBus 64 : Air F) keyLogN = [wideBusLookup] from
+    wideBus_packedLookups keyLogN]
+  refine ⟨by rw [wideBus_logQuotientChunksWith]; change logN + 1 ≤ 24; omega, fun l hl ↦ ?_⟩
   rw [List.mem_singleton.mp hl]
   unfold Stark.Lookup.Fits
   decide
@@ -786,11 +787,13 @@ def wideBatchSetup : Batch.Setup KoalaBear.Fast.Ext5 where
   k := 3
   air _ := wideBus 64
   logN := ![20, 19, 16]
+  keyLogN := ![20, 19, 16]
   valid i := ValidConfig.sound <|
     wideBus_valid wide5iParams rfl (by decide) rfl (by decide) _ (by fin_cases i <;> decide)
+  keyed _ h := absurd h (by decide)
   folds i := by fin_cases i <;> decide
   nonempty := by decide
-  lookupsValid _ := wideBus_lookupsValid _ rfl _
+  lookupsValid i := wideBus_lookupsValid _ _ (by fin_cases i <;> decide)
   buses := wideBus_busesValid _
 
 /-- FRI at `δ = 6143/16384 = 3/8 - 2 ^ (-14)`, the extractor at
@@ -830,11 +833,13 @@ def wideBatch5Setup : Batch.Setup KoalaBear.Fast.Ext5 where
   k := 3
   air _ := wideBus 64
   logN := ![20, 19, 16]
+  keyLogN := ![20, 19, 16]
   valid i := ValidConfig.sound <|
     wideBus_valid wide5Params rfl (by decide) rfl (by decide) _ (by fin_cases i <;> decide)
+  keyed _ h := absurd h (by decide)
   folds i := by fin_cases i <;> decide
   nonempty := by decide
-  lookupsValid _ := wideBus_lookupsValid _ rfl _
+  lookupsValid i := wideBus_lookupsValid _ _ (by fin_cases i <;> decide)
   buses := wideBus_busesValid _
 
 /-- `wideGrindParams` with `18` bits of grinding before the lookup challenges. -/
@@ -847,11 +852,13 @@ def wideBatchGrindSetup : Batch.Setup KoalaBear.Fast.Ext4 where
   k := 3
   air _ := wideBus 64
   logN := ![20, 19, 16]
+  keyLogN := ![20, 19, 16]
   valid i := ValidConfig.sound <|
     wideBus_valid wideBusGrindParams rfl (by decide) rfl (by decide) _ (by fin_cases i <;> decide)
+  keyed _ h := absurd h (by decide)
   folds i := by fin_cases i <;> decide
   nonempty := by decide
-  lookupsValid _ := wideBus_lookupsValid _ rfl _
+  lookupsValid i := wideBus_lookupsValid _ _ (by fin_cases i <;> decide)
   buses := wideBus_busesValid _
 
 /-- FRI at `δ = 3/8 - 2 ^ (-20)`, the extractor at `δ' = 3/8 - 2 ^ (-22)` and
@@ -896,10 +903,16 @@ theorem wideBatchGrind_roundError_le :
     (by rw [coe_sub_two_zpow _ (-12) 12 rfl (by norm_num)]; norm_num [wideBatchGrindAnalysis])
     (by rw [coe_sub_two_zpow _ (-14) 14 rfl (by norm_num)]; norm_num [wideBatchGrindAnalysis])
 
-theorem wideBatch5Setup_verifierQueries : wideBatch5Setup.verifierQueries = 99669 := by
+/-- The verifier's oracle calls on `wideBatch5Setup`'s proofs, of any lengths: at most those at
+three distinct heights, the tallest of `2 ^ 24` rows. -/
+theorem wideBatch5Setup_verifierQueries_le : wideBatch5Setup.verifierQueries ≤ 134253 := by
+  refine (wideBatch5Setup.verifierQueries_le (by decide)).trans ?_
   decide +kernel
 
-theorem wideBatchGrindSetup_verifierQueries : wideBatchGrindSetup.verifierQueries = 89692 := by
+/-- The verifier's oracle calls on `wideBatchGrindSetup`'s proofs, of any lengths. -/
+theorem wideBatchGrindSetup_verifierQueries_le :
+    wideBatchGrindSetup.verifierQueries ≤ 120816 := by
+  refine (wideBatchGrindSetup.verifierQueries_le (by decide)).trans ?_
   decide +kernel
 
 /-- **128 bits per oracle call for a batch of three tables of mixed heights with lookups.** A
