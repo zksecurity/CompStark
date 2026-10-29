@@ -20,14 +20,14 @@ local notation "F" => Montgomery.Native32.FastField _root_.KoalaBear.fieldSize
 def within (r : Report) (lo hi : Float) : Bool := r.fits && lo ≤ r.total && r.total < hi
 
 #guard within (fibonacciSetup.knowledgeErrorReport 2130706433 .uniqueDecoding fibonacciAnalysis) 100.36 100.37
-#guard within (wideSetup.knowledgeErrorReport 2130706433 .uniqueDecoding wideAnalysis) 100.26 100.27
-#guard within (wide21Setup.knowledgeErrorReport 2130706433 .uniqueDecoding wide21Analysis) 100.16 100.17
-#guard within (wide5iSetup.knowledgeErrorReport 2130706433 .uniqueDecoding wide5iAnalysis) 128.59 128.60
-#guard within (wideSp1Setup.roundErrorReport 2130706433 .uniqueDecoding wideSp1Analysis) 100.07 100.08
+#guard within (wideSetup.knowledgeErrorReport 2130706433 .uniqueDecoding wideAnalysis) 100.16 100.17
+#guard within (wide21Setup.knowledgeErrorReport 2130706433 .uniqueDecoding wide21Analysis) 99.50 99.51
+#guard within (wide5iSetup.knowledgeErrorReport 2130706433 .uniqueDecoding wide5iAnalysis) 128.46 128.47
+#guard within (wideSp1Setup.roundErrorReport 2130706433 .uniqueDecoding wideSp1Analysis) 99.95 99.96
 #guard within (wideGrindSetup.roundErrorReport 2130706433 .uniqueDecoding wideGrindAnalysis) 117.37 117.38
 #guard within (wide5Setup.roundErrorReport 2130706433 .uniqueDecoding wide5Analysis) 128.49 128.50
-#guard within (wideBatchSetup.knowledgeErrorReport 2130706433 .uniqueDecoding wide5iAnalysis) 128.39 128.40
-#guard within (wideBatch5Setup.roundErrorReport 2130706433 .uniqueDecoding wideBatch5Analysis) 128.48 128.49
+#guard within (wideBatchSetup.knowledgeErrorReport 2130706433 .uniqueDecoding wide5iAnalysis) 128.33 128.34
+#guard within (wideBatch5Setup.roundErrorReport 2130706433 .uniqueDecoding wideBatch5Analysis) 128.49 128.50
 #guard within (wideBatchGrindSetup.roundErrorReport 2130706433 .uniqueDecoding wideBatchGrindAnalysis) 117.35
   117.36
 -- The analyses are the ones the search finds.

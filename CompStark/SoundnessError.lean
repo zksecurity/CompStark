@@ -9,22 +9,22 @@ public import CompStark.Iop
 /-! # The knowledge error of the STARK
 
 The bound of `knowledgeSoundness` (`CompStark/Soundness.lean`), for FRI at proximity `δ` and the
-extractor at a proximity `δ' ≥ δ + 2/N` below `1 - rate`. It has one term per challenge of the
+extractor at a proximity `δ' ≥ δ` below `1 - rate`. It has one term per challenge of the
 interactive oracle proof (`CompStark/Iop.lean`), with `ℓ` the list sizes of the committed words'
 interleaved codes at `δ'` (`Setup.listSize`):
 
 * `α`: folding the constraints by `α` makes a constraint that fails on some row of one of the
   `ℓ` candidate traces vanish on every row (`foldingError`).
 * `ζ`: the constraints hold at `ζ` for one of the `ℓ` candidates of the committed words although
-  they fail as polynomials, or `ζ` lies on the trace domain (`outOfDomainError`). The decoding
+  they fail as polynomials, or `ζ` lies on the trace domain or on `L`, where the DEEP quotients
+  divide by zero (`outOfDomainError`). The decoding
   step finds the trace, permutation trace and quotient polynomials on one common set, so the
   candidates are those of the committed words as one family, whose list size is that of an
   interleaved code: linear in the list size, as in DEEP-ALI's analysis (Haböck,
   <https://eprint.iacr.org/2022/1216>, Theorem 8).
 * `a`: the batched DEEP word is `δ`-close to low degree although its summands are not on a common
-  set at `δ' - 2/N` (`batchingError`, the correlated-agreement error of the powers of `a`; the
-  difference `δ' - 2/N - δ` is the proximity loss). Decoding loses the up to two points of `L`
-  where `ζ` or `ζ ω_n` lies, at which the DEEP quotients divide by zero.
+  set at `δ'` (`batchingError`, the correlated-agreement error of the powers of `a`; the
+  difference `δ' - δ` is the proximity loss).
 * FRI accepts a word that is `δ`-far from low degree (`friError`, `FriGame.acceptance_le`).
 
 Below the unique-decoding radius `ℓ ≤ 1`; up to the Johnson bound `1 - √rate`, `ℓ` is small.
@@ -120,9 +120,9 @@ noncomputable def foldingError (S : Setup EF lookups) (δ : NNReal) : ENNReal :=
 /-- For some candidate of the committed words as one family (`Setup.Committed`: trace,
 permutation trace and quotient on one common set), the constraint identity, a nonzero polynomial
 of degree at most `identityDegree`, vanishes at `ζ`; or `ζ` lies on the trace domain `H`, `n`
-points. -/
+points, or on `L`, `N` points. -/
 noncomputable def outOfDomainError (S : Setup EF lookups) (δ : NNReal) : ENNReal :=
-  (S.listSize S.Committed δ * S.identityDegree + S.n : Nat) / (Fintype.card 𝕂 : ENNReal)
+  (S.listSize S.Committed δ * S.identityDegree + S.n + S.size : Nat) / (Fintype.card 𝕂 : ENNReal)
 
 open Classical in
 /-- The correlated-agreement error of the powers `1, a, a², …` over `m` words on `L`: the largest
@@ -150,10 +150,9 @@ noncomputable def friErrorWith (S : Setup EF lookups) (heights : List ℕ) (δ :
 /-- FRI's soundness error at proximity `δ`. -/
 noncomputable def friError (S : Setup EF lookups) (δ : NNReal) : ENNReal := friErrorWith S [] δ
 
-/-- The knowledge error, for FRI at proximity `δ` and the extractor at `δ' ≥ δ + 2/N`; batching
-at `δ' - 2/N` pays for the two points that decoding may lose. -/
+/-- The knowledge error, for FRI at proximity `δ` and the extractor at `δ' ≥ δ`. -/
 noncomputable def knowledgeError (S : Setup EF lookups) (δ δ' : NNReal) : ENNReal :=
-  foldingError S δ' + outOfDomainError S δ' + batchingError S δ ((δ' : ℝ) - 2 / S.size) +
+  foldingError S δ' + outOfDomainError S δ' + batchingError S δ δ' +
     friError S δ
 
 end CompStark.Iop

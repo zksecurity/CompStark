@@ -75,7 +75,7 @@ noncomputable def roundError (S : Setup EF) (δ δ' : NNReal) : ENNReal :=
   ⨅ loss : NNReal,
     (max (foldingError S δ') <|
       max (powFraction F S.params.oodPowBits * outOfDomainError S δ') <|
-      max (powFraction F S.params.batchPowBits * batchingError S δ ((δ' : ℝ) - 2 / S.size)) <|
+      max (powFraction F S.params.batchPowBits * batchingError S δ δ') <|
       max (powFraction F S.params.commitPowBits * ⨆ i, friFoldError S δ loss i)
         (powFraction F S.params.queryPowBits * friQueryError S δ loss))
 

@@ -19,8 +19,9 @@ pieces are here:
   by the powers of `a` (`sum_zipIdx_deep`);
 * list decoding has at most `listSize` candidates (`card_candidates_le`);
 * for a STARK whose candidate traces and permutation traces all fail some constraint, all but few
-  `α` leave few `ζ` at which the DEEP components are `(δ' - 2/N)`-near the code on a common set
-  and the check passes (`exists_bad_alphas`): for `ζ` off the trace domain, the claimed values
+  `α` leave few `ζ` at which the DEEP components are `δ'`-near the code on a common set
+  and the check passes (`exists_bad_alphas`): for `ζ` off the trace domain and off `L`, the
+  claimed values
   are those of a candidate of the committed words at `δ'`, trace, permutation trace and quotient
   polynomials close to them on one common set (`decodingStep`), and the check holds for few `ζ`
   per candidate unless `α` is one of few bad values per candidate pair of trace and permutation
@@ -207,6 +208,20 @@ theorem card_not_offTraceDomain (S : Setup EF lookups) :
     exact hζ
   exact (Finset.card_le_card hsub).trans ((Multiset.toFinset_card_le _).trans (card_nthRoots _ _))
 
+/-- The points on `L` number `N`. -/
+theorem card_not_offDomain (S : Setup EF lookups) :
+    (Finset.univ.filter fun ζ : 𝕂 ↦ ¬ OffDomain S ζ).card ≤ S.size := by
+  classical
+  have hsub : (Finset.univ.filter fun ζ : 𝕂 ↦ ¬ OffDomain S ζ) ⊆
+      Finset.univ.image fun i : S.Point ↦ S.domain i := by
+    intro ζ hζ
+    simp only [OffDomain, Finset.mem_filter, Finset.mem_univ, true_and, not_forall,
+      not_not] at hζ
+    obtain ⟨i, hi⟩ := hζ
+    exact Finset.mem_image.mpr ⟨i, Finset.mem_univ _, hi⟩
+  refine (Finset.card_le_card hsub).trans (Finset.card_image_le.trans ?_)
+  rw [Finset.card_univ, Fintype.card_fin]
+
 /-- The candidates of the prover's committed words at `δ` after `α`, as one family
 (`Setup.Committed`): trace, permutation trace and quotient polynomials on one common set. -/
 noncomputable def committedCandidates (δ : ℝ) (α : 𝕂) : Finset (S.Committed → F[X]) :=
@@ -222,26 +237,31 @@ noncomputable def checkPoints (α : 𝕂) (J : S.Committed → F[X]) : Finset �
 
 -- The constructor-name linter exhausts its recursion budget on this proof's locals.
 set_option linter.constructorNameAsVariable false in
-/-- The `ζ` where the components are near on a common set at `δ - 2/N` and the check passes: on
-the trace domain, or the check passes with the true values of a candidate of the committed words
-at `δ`. -/
+/-- The `ζ` where the components are near on a common set at `δ` and the check passes: on the
+trace domain or on `L`, or the check passes with the true values of a candidate of the committed
+words at `δ`. -/
 theorem card_near_check_le (δ : NNReal) (hδ : (δ : ℝ) < 1 - S.rate) (α : 𝕂) :
-    (Finset.univ.filter fun ζ : 𝕂 ↦ NearTogether S ((δ : ℝ) - 2 / S.size) (components p α ζ) ∧
+    (Finset.univ.filter fun ζ : 𝕂 ↦ NearTogether S δ (components p α ζ) ∧
         ConstraintsHoldAt S publicValues α ζ (p.openings α ζ) challenges terminal).card ≤
-      S.n + ∑ J ∈ committedCandidates p δ α, (checkPoints publicValues challenges terminal α J).card
+      S.n + S.size +
+        ∑ J ∈ committedCandidates p δ α, (checkPoints publicValues challenges terminal α J).card
       := by
   have hsub : (Finset.univ.filter fun ζ : 𝕂 ↦
-        NearTogether S ((δ : ℝ) - 2 / S.size) (components p α ζ) ∧
+        NearTogether S δ (components p α ζ) ∧
         ConstraintsHoldAt S publicValues α ζ (p.openings α ζ) challenges terminal) ⊆
       (Finset.univ.filter fun ζ : 𝕂 ↦ ¬ OffTraceDomain S ζ) ∪
+        (Finset.univ.filter fun ζ : 𝕂 ↦ ¬ OffDomain S ζ) ∪
         (committedCandidates p δ α).biUnion (checkPoints publicValues challenges terminal α) := by
     intro ζ hζ
     simp only [Finset.mem_filter, Finset.mem_univ, true_and] at hζ
     simp only [Finset.mem_union, Finset.mem_filter, Finset.mem_univ, true_and,
       Finset.mem_biUnion]
     by_cases hb : OffTraceDomain S ζ
-    · right
-      obtain ⟨tr, qu, pm, htd, hqd, hpd, hagree, ho⟩ := decodingStep S δ hδ p α ζ hb hζ.1
+    · by_cases hL : OffDomain S ζ
+      swap
+      · exact Or.inl (Or.inr hL)
+      right
+      obtain ⟨tr, qu, pm, htd, hqd, hpd, hagree, ho⟩ := decodingStep S δ hδ p α ζ hb hL hζ.1
       refine ⟨S.committed tr pm qu, ?_, ?_⟩
       · rw [committedCandidates, Set.Finite.mem_toFinset]
         exact committed_mem_candidates htd hpd hqd hagree
@@ -249,15 +269,16 @@ theorem card_near_check_le (δ : NNReal) (hδ : (δ : ℝ) < 1 - S.rate) (α : �
         have h := hζ.2
         rw [ho] at h
         exact ⟨hb, h⟩
-    · exact Or.inl hb
+    · exact Or.inl (Or.inl hb)
   refine (Finset.card_le_card hsub).trans ((Finset.card_union_le _ _).trans ?_)
-  exact Nat.add_le_add (card_not_offTraceDomain S) Finset.card_biUnion_le
+  exact Nat.add_le_add ((Finset.card_union_le _ _).trans
+    (Nat.add_le_add (card_not_offTraceDomain S) (card_not_offDomain S))) Finset.card_biUnion_le
 
 -- The constructor-name linter exhausts its recursion budget on this proof's locals.
 set_option linter.constructorNameAsVariable false in
 /-- If every candidate trace and permutation trace at `δ'` fail some constraint (`Holds`), then
 for all but `ℓT ℓP (#constraints - 1)` values of `α`, the components are near on a common set at
-`δ' - 2/N` and the check passes for at most `n + ℓ identityDegree` values of `ζ`, with `ℓ` the list
+`δ'` and the check passes for at most `n + N + ℓ identityDegree` values of `ζ`, with `ℓ` the list
 size of the committed words as one family. -/
 theorem exists_bad_alphas (δ' : NNReal) (hδ' : (δ' : ℝ) < 1 - S.rate)
     (hfail : ∀ P ∈ candidates S δ' p.trace, ∀ R ∈ candidates S δ'
@@ -266,9 +287,9 @@ theorem exists_bad_alphas (δ' : NNReal) (hδ' : (δ' : ℝ) < 1 - S.rate)
     ∃ bad : Finset 𝕂,
       bad.card ≤ S.listSize (Fin S.air.width) δ' * S.permListSize δ' * (S.numConstraints - 1) ∧
       ∀ α ∉ bad, (Finset.univ.filter fun ζ : 𝕂 ↦
-        NearTogether S ((δ' : ℝ) - 2 / S.size) (components p α ζ) ∧
+        NearTogether S δ' (components p α ζ) ∧
           ConstraintsHoldAt S publicValues α ζ (p.openings α ζ) challenges terminal).card ≤
-        S.n + S.listSize S.Committed δ' * S.identityDegree := by
+        S.n + S.size + S.listSize S.Committed δ' * S.identityDegree := by
   set C1 := (candidates_finite S δ' p.trace).toFinset
   set C2 := (candidates_finite S δ' fun ce : Fin S.permWidth × Fin (Challenge.d EF) ↦
     p.perm ce.1 ce.2).toFinset

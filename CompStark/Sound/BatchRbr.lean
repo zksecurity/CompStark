@@ -188,7 +188,7 @@ def ZetaBad (α : 𝕂)
     (S.challenges lα lβ i) (terminals i)
 
 /-- Round `a`: the DEEP components of the opened words of the failing instance's domain size are
-not near the code on a common set at `δ' - 2/N`, but their batched word is `δ`-near. -/
+not near the code on a common set at `δ'`, but their batched word is `δ`-near. -/
 def BatchBad (α : 𝕂)
     (quotients : (i : Fin S.k) → Fin (S.instanceSetup i).chunks → Fin (Challenge.d EF) →
       (S.instanceSetup i).Point → F) (ζ : 𝕂)
@@ -196,7 +196,7 @@ def BatchBad (α : 𝕂)
   let i := failing S publicValues δ' traces perms terminals lα lβ
   let p : Iop.Batch.Prover S := ⟨traces, fun _ _ ↦ perms, fun _ _ ↦ terminals,
     fun _ _ _ ↦ quotients, fun _ _ _ _ ↦ openings⟩
-  ¬ NearTogether (S.instanceSetup i) ((δ' : ℝ) - 2 / (S.instanceSetup i).size)
+  ¬ NearTogether (S.instanceSetup i) δ'
       (groupComponents p lα lβ α ζ i) ∧
     Near (S.instanceSetup i) δ
       (Iop.Batch.groupDeepWord p lα lβ α ζ a (S.logN i + S.params.logBlowup))
@@ -287,16 +287,16 @@ theorem prob_batchBad_le (α : 𝕂)
       openings a] ≤
       ⨆ i, batchingErrorOf (S.instanceSetup i)
         (S.groupNumOpened (S.logN i + S.params.logBlowup)) δ
-        ((δ' : ℝ) - 2 / (S.instanceSetup i).size) := by
+        δ' := by
   classical
   set i := failing S publicValues δ' traces perms terminals lα lβ
   set p : Iop.Batch.Prover S := ⟨traces, fun _ _ ↦ perms, fun _ _ ↦ terminals,
     fun _ _ _ ↦ quotients, fun _ _ _ _ ↦ openings⟩
   refine le_trans ?_ (le_iSup (fun i ↦ batchingErrorOf (S.instanceSetup i)
     (S.groupNumOpened (S.logN i + S.params.logBlowup)) δ
-    ((δ' : ℝ) - 2 / (S.instanceSetup i).size)) i)
+    δ') i)
   rw [SampleableType.prEvent_uniformSample]
-  by_cases hfar : NearTogether (S.instanceSetup i) ((δ' : ℝ) - 2 / (S.instanceSetup i).size)
+  by_cases hfar : NearTogether (S.instanceSetup i) δ'
     (groupComponents p lα lβ α ζ i)
   · have h : (Finset.univ.filter fun a : 𝕂 ↦
         BatchBad S publicValues δ δ' traces perms terminals lα lβ α quotients ζ openings a) = ∅ :=
@@ -413,19 +413,20 @@ theorem not_near_deepWords (δ δ' : NNReal) (hδ' : (δ' : ℝ) < 1 - S.rate) (
   set I := S.instanceSetup i
   have hf := failing_spec S publicValues δ' t.trace t.perm t.terminal t.lookupAlpha t.lookupBeta
     hfail
-  have htogether : NearTogether I ((δ' : ℝ) - 2 / I.size)
+  have htogether : NearTogether I δ'
       (groupComponents t.prover t.lookupAlpha t.lookupBeta t.alpha t.zeta i) :=
     not_not.mp fun h ↦ ha ⟨h, hnear⟩
   have hinst := nearTogether_instance t.prover t.lookupAlpha t.lookupBeta t.alpha t.zeta i _
     htogether
   have hoff : OffTraceDomain I t.zeta := not_not.mp fun h ↦ hζ ⟨hα, Or.inl h⟩
+  have hL : OffDomain I t.zeta := not_not.mp fun h ↦ hζ ⟨hα, Or.inr (Or.inl h)⟩
   have hδI : (δ' : ℝ) < 1 - I.rate := by rw [rate_instanceSetup]; exact hδ'
   obtain ⟨P, Q, R, hPd, hQd, hRd, hagree, ho⟩ :=
     decodingStep I δ' hδI (t.prover.instanceProver t.lookupAlpha t.lookupBeta i) t.alpha t.zeta
-      hoff hinst
+      hoff hL hinst
   have hJ := committed_mem_candidates hPd hRd hQd hagree
-  refine hζ ⟨hα, Or.inr ⟨I.committed P R Q, hJ, hf _ (committedTrace_mem_candidates hJ) _
-    (committedPerm_mem_candidates hJ), ?_⟩⟩
+  refine hζ ⟨hα, Or.inr (Or.inr ⟨I.committed P R Q, hJ,
+    hf _ (committedTrace_mem_candidates hJ) _ (committedPerm_mem_candidates hJ), ?_⟩)⟩
   have h : t.openings i = trueOpenings I P Q t.zeta R := ho
   rw [Setup.committedTrace_committed, Setup.committedQuotient_committed,
     Setup.committedPerm_committed, ← h]

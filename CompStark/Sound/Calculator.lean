@@ -246,13 +246,11 @@ theorem permListSize_le (hA : A.Valid S.rateQ) (δ' : ℝ≥0) (hδ' : (δ' : �
 theorem coe_toNNReal_δ {ρ : ℚ} (hA : A.Valid ρ) : ((Real.toNNReal A.δ : ℝ≥0) : ℝ) = A.δ :=
   Real.coe_toNNReal _ (by exact_mod_cast hA.1.le)
 
-/-- `δ ≤ δ' - 2/N`, as reals. -/
-theorem fits_real (hle : A.δ ≤ A.δ' - 2 / S.size) (δ δ' : ℝ≥0) (hδ : (δ : ℝ) = A.δ)
-    (hδ' : (δ' : ℝ) = A.δ') : (δ : ℝ) ≤ δ' - 2 / S.size := by
-  have := (Rat.cast_le (K := ℝ)).mpr hle
+/-- `δ ≤ δ'`, as reals. -/
+theorem le_real {ρ : ℚ} (hA : A.Valid ρ) (δ δ' : ℝ≥0) (hδ : (δ : ℝ) = A.δ)
+    (hδ' : (δ' : ℝ) = A.δ') : (δ : ℝ) ≤ δ' := by
   rw [hδ, hδ']
-  push_cast at this ⊢
-  exact this
+  exact_mod_cast hA.2.2.1
 
 theorem batchingNum_nonneg (c : Shape) (lb : ℕ) (B : McaBound) (m : ℕ)
     (hA : A.Valid (1 / 2 ^ lb)) : 0 ≤ c.batchingNum lb B A m := by
@@ -297,16 +295,16 @@ theorem outOfDomainError_le_calc (hp : Nat.card F = p) (hA : A.Valid S.rateQ) (�
     (natCast_div_card_eq hp _).le
 
 /-- Batching `m` words: the MCA bound `B`'s count where it admits the trace's code, and the curve
-bound for `δ < δ' - 2/N` and `δ ≤ (1 - rate) / 2 - 1/N`. -/
+bound for `δ < δ'` and `δ ≤ (1 - rate) / 2 - 1/N`. -/
 theorem batchingErrorOf_le_calc (hp : Nat.card F = p) (B : McaBound) (hB : B.Holds) (m : ℕ)
-    (hA : A.Valid S.rateQ) (hle : A.δ ≤ A.δ' - 2 / S.size) (hadm : B.admits S.size S.n A.δ)
+    (hA : A.Valid S.rateQ) (hadm : B.admits S.size S.n A.δ)
     (δ δ' : ℝ≥0) (hδ : (δ : ℝ) = A.δ) (hδ' : (δ' : ℝ) = A.δ') :
-    batchingErrorOf S m δ ((δ' : ℝ) - 2 / S.size) ≤
+    batchingErrorOf S m δ δ' ≤
       ENNReal.ofReal ((S.shape.batchingNum S.params.logBlowup B A m /
         (p : ℚ) ^ Challenge.d EF : ℚ) : ℝ) := by
-  have hle' := fits_real S A hle δ δ' hδ hδ'
+  have hle' := le_real A hA δ δ' hδ hδ'
   have h0 : 0 < δ := by rw [← NNReal.coe_pos, hδ]; exact_mod_cast hA.1
-  have hmca : batchingErrorOf S m δ ((δ' : ℝ) - 2 / S.size) ≤ ENNReal.ofReal
+  have hmca : batchingErrorOf S m δ δ' ≤ ENNReal.ofReal
       ((B.count S.size S.n (m - 1) A.δ / (p : ℚ) ^ Challenge.d EF : ℚ) : ℝ) := by
     refine (batchingError_anti S m δ hle').trans ((batchingError_le_mcaError S m δ).trans ?_)
     rw [← ofReal_div_card_eq' hp]
@@ -316,7 +314,7 @@ theorem batchingErrorOf_le_calc (hp : Nat.card F = p) (B : McaBound) (hB : B.Hol
   unfold Shape.batchingNum
   dsimp only [Iop.Setup.shape]
   split_ifs with hlt
-  · have hltR : (δ : ℝ) < δ' - 2 / S.size := by
+  · have hltR : (δ : ℝ) < δ' := by
       have := (Rat.cast_lt (K := ℝ)).mpr hlt.1
       rw [hδ, hδ']
       push_cast at this ⊢
@@ -382,9 +380,9 @@ theorem knowledgeError_le_bound (hp : Nat.card F = p) (B : McaBound) (hB : B.Hol
     knowledgeError S δ δ' ≤ ENNReal.ofReal (S.knowledgeErrorBound p B A : ℝ) := by
   have h1 := foldingError_le_calc S A hp hA.1 δ' hδ'
   have h2 := outOfDomainError_le_calc S A hp hA.1 δ' hδ'
-  have h3 := batchingErrorOf_le_calc S A hp B hB S.shape.numOpened hA.1 hA.2.1 hA.2.2.1 δ δ' hδ
+  have h3 := batchingErrorOf_le_calc S A hp B hB S.shape.numOpened hA.1 hA.2.1 δ δ' hδ
     hδ'
-  have h4 := friErrorWith_le_calc S A hp B hB hA.1 [] (FriGame.Rounds.fits_nil _ _) hA.2.2.2 δ hδ
+  have h4 := friErrorWith_le_calc S A hp B hB hA.1 [] (FriGame.Rounds.fits_nil _ _) hA.2.2 δ hδ
   have hK := card_pow_pos (EF := EF) hp
   have hb := batchingNum_nonneg A S.shape S.params.logBlowup B S.shape.numOpened hA.1
   have hq := queryDensity_nonneg S A hA.1 []
@@ -425,10 +423,10 @@ theorem roundError_le_bound (S : Iop.Setup EF) (hp : Nat.card F = p) (B : McaBou
   · exact (powFraction_mul_le_ofReal hp _ (outOfDomainError_le_calc S A hp hA.1 δ' hδ')).trans
       (hT (.tail _ (.head _)))
   · exact (powFraction_mul_le_ofReal hp _
-      (batchingErrorOf_le_calc S A hp B hB S.numOpened hA.1 hA.2.1 hA.2.2.1 δ δ' hδ hδ')).trans
+      (batchingErrorOf_le_calc S A hp B hB S.numOpened hA.1 hA.2.1 δ δ' hδ hδ')).trans
       (hT (.tail _ (.tail _ (.head _))))
   · refine (powFraction_mul_le_ofReal hp _ ((friFoldError_le S δ loss _
-      (foldBounds_calc A B hB _ hA.1 δ loss hδ hloss _ hA.2.2.2)).trans
+      (foldBounds_calc A B hB _ hA.1 δ loss hδ hloss _ hA.2.2)).trans
         (le_of_eq ?_))).trans (hT (.tail _ (.tail _ (.tail _ (.head _)))))
     rw [← cast_maxQ_map, ofReal_div_card_eq' hp]
     rfl
@@ -519,7 +517,7 @@ theorem le_maxQ_shapes (f : Shape → ℚ) (i : Fin S.k) :
 
 /-- Instance `i`'s conditions of a fitting analysis. -/
 theorem fits_instance (hA : S.Fits B A) (i : Fin S.k) :
-    A.Valid (S.instanceSetup i).rateQ ∧ A.δ ≤ A.δ' - 2 / (S.instanceSetup i).size ∧
+    A.Valid (S.instanceSetup i).rateQ ∧
       B.admits (S.instanceSetup i).size (S.instanceSetup i).n A.δ :=
   ⟨hA.1, hA.2.1 i (List.mem_finRange i)⟩
 
@@ -551,7 +549,7 @@ theorem instance_le_calc (hp : Nat.card F = p) (hB : B.Holds) (hA : S.Fits B A) 
         ((maxQ (S.shapes.map (·.outOfDomainNum S.params.logBlowup A)) /
           (p : ℚ) ^ Challenge.d EF : ℚ) : ℝ) ∧
       batchingErrorOf (S.instanceSetup i) (S.groupNumOpened (S.logN i + S.params.logBlowup)) δ
-          ((δ' : ℝ) - 2 / (S.instanceSetup i).size) ≤ ENNReal.ofReal
+          δ' ≤ ENNReal.ofReal
         ((maxQ (S.shapes.map fun c ↦ c.batchingNum S.params.logBlowup B A
           (groupNumOpenedOf S.shapes c.logN)) / (p : ℚ) ^ Challenge.d EF : ℚ) : ℝ) := by
   have hfi := fits_instance S B A hA i
@@ -561,7 +559,7 @@ theorem instance_le_calc (hp : Nat.card F = p) (hB : B.Holds) (hA : S.Fits B A) 
     (outOfDomainError_le_calc _ A hp hfi.1 δ' hδ').trans
       (ofReal_div_le (le_maxQ_shapes S (·.outOfDomainNum S.params.logBlowup A) i) _ hK), ?_⟩
   rw [groupNumOpened_eq]
-  exact (batchingErrorOf_le_calc _ A hp B hB _ hfi.1 hfi.2.1 hfi.2.2 δ δ' hδ hδ').trans
+  exact (batchingErrorOf_le_calc _ A hp B hB _ hfi.1 hfi.2 δ δ' hδ hδ').trans
     (ofReal_div_le (le_maxQ_shapes S (fun c ↦ c.batchingNum S.params.logBlowup B A
       (groupNumOpenedOf S.shapes c.logN)) i) _ hK)
 

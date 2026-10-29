@@ -16,7 +16,8 @@ here as propositions and proved in their own files:
 * `BatchingStep`: batching by powers keeps summands that are not `δ'`-near on a common set
   `δ`-far, except for few `a` (correlated agreement).
 * `DecodingStep`: if the DEEP summands are near on a common set and `ζ` lies off the trace
-  domain, the claimed values are those of a candidate trace, permutation trace and quotient.
+  domain and off `L`, the claimed values are those of a candidate trace, permutation trace and
+  quotient.
 * `AlgebraStep`: if a candidate trace and permutation trace fail a constraint on some row
   (`Holds`), the constraint check at `ζ` passes for few `(α, ζ)`.
 -/
@@ -38,6 +39,10 @@ noncomputable def deepComponent (S : Setup EF lookups) (f : S.Point → F) (z y 
 /-- `ζ` lies off the trace domain `H = ⟨ω_n⟩`: the check's denominators `Z_H(ζ)`, `ζ - 1`,
 `ζ - ω_n⁻¹` are nonzero. -/
 def OffTraceDomain (S : Setup EF lookups) (ζ : 𝕂) : Prop := ζ ^ S.n ≠ 1
+
+/-- `ζ` lies off the domain `L`, where the DEEP quotients at `ζ` divide by zero; then so does
+`ζ ω_n`, `L` being a coset of a group that holds `ω_n` (`offDomain_mul_rootOfUnity`). -/
+def OffDomain (S : Setup EF lookups) (ζ : 𝕂) : Prop := ∀ i, S.domain i ≠ ζ
 
 /-- FRI accepts a word that is not `δ`-near the code with probability at most `friError`. -/
 def FriStep (S : Setup EF lookups) : Prop :=
@@ -120,14 +125,14 @@ structure Holds (S : Setup EF lookups) (publicValues : List F) (challenges : Lis
     g.eval ((S.air.traceRow S.logN trace publicValues r).map lift)
       ⟨permRow S perm r, permRow S perm (r + 1), (challenges.getD · 0), terminal⟩ = 0
 
-/-- If the DEEP components of the opened words are `(δ - 2/N)`-near the code on a common set, `δ`
-below `1 - rate` and `ζ` off the trace domain, the claimed values are those of polynomials of
-degree at most `n` that agree with the trace, quotient and permutation words on one common set of
-`(1 - δ) N` points: a candidate of the list decoding of the committed words as one family
-(`Setup.Committed`). The two points lost are those where `ζ` or `ζ ω_n` may meet `L`. -/
+/-- If the DEEP components of the opened words are `δ`-near the code on a common set, `δ` below
+`1 - rate` and `ζ` off the trace domain and off `L`, the claimed values are those of polynomials
+of degree at most `n` that agree with the trace, quotient and permutation words on one common set
+of `(1 - δ) N` points: a candidate of the list decoding of the committed words as one family
+(`Setup.Committed`). -/
 def DecodingStep (S : Setup EF lookups) : Prop :=
   ∀ (δ : NNReal), (δ : ℝ) < 1 - S.rate → ∀ (prover : Prover S) (α ζ : 𝕂), OffTraceDomain S ζ →
-    NearTogether S ((δ : ℝ) - 2 / S.size) (components prover α ζ) →
+    OffDomain S ζ → NearTogether S δ (components prover α ζ) →
     ∃ (trace : Fin S.air.width → F[X]) (quotient : Fin S.chunks → Fin (Challenge.d EF) → F[X])
       (perm : Fin S.permWidth → Fin (Challenge.d EF) → F[X]),
       (∀ j, (trace j).natDegree ≤ S.n) ∧ (∀ c e, (quotient c e).natDegree ≤ S.n) ∧

@@ -9,10 +9,10 @@ public import Mathlib.LinearAlgebra.Basis.VectorSpace
 
 /-! # Decoding: the claimed values are those of polynomials close to the words
 
-Let the DEEP components of the opened words agree with codewords on a common set of at least
-`N (1 - δ) + 2` points, `δ < 1 - rate`. Drop the at most two points of `L` equal to `ζ` or
-`ζ ω_n`, where the DEEP quotients divide by zero: the rest, `T`, has `|T| ≥ N (1 - δ) > n` points
-(`card_le_card_filter_add_two`). For an opened word `f` with point `z` and claimed value `y`,
+Let the DEEP components of the opened words agree with codewords on a common set `T` of at least
+`N (1 - δ) > n` points, `δ < 1 - rate`, and let `ζ` lie off `L`; then so does `ζ ω_n`
+(`offDomain_mul_rootOfUnity`), so no DEEP quotient divides by zero. For an opened word `f` with
+point `z` and claimed value `y`,
 whose DEEP component `(y - f(x)) / (z - x)` agrees on `T` with a codeword `h` (degree below `n`):
 
 1. `f` agrees on `T` with `P = y - (z - X) h`, of degree at most `n`, and `P(z) = y`
@@ -189,25 +189,38 @@ theorem mem_openedWords_permNext (α ζ : 𝕂) (c : Fin S.permWidth) (e : Fin (
 
 end Mem
 
-/-- Dropping the points of `T` where `L` meets `z` or `z'` loses at most two points. -/
-theorem card_le_card_filter_add_two (S : Setup EF lookups) (T : Finset S.Point) (z z' : 𝕂) :
-    T.card ≤ (T.filter fun i ↦ S.domain i ≠ z ∧ S.domain i ≠ z').card + 2 := by
-  classical
-  have hone (w : 𝕂) : (Finset.univ.filter fun i : S.Point ↦ S.domain i = w).card ≤ 1 :=
-    Finset.card_le_one.mpr fun i hi j hj ↦ (S.domain).injective
-      ((Finset.mem_filter.mp hi).2.trans (Finset.mem_filter.mp hj).2.symm)
-  have hsub : (T.filter fun i ↦ ¬ (S.domain i ≠ z ∧ S.domain i ≠ z')) ⊆
-      (Finset.univ.filter fun i : S.Point ↦ S.domain i = z) ∪
-        Finset.univ.filter fun i : S.Point ↦ S.domain i = z' := by
-    intro i hi
-    simp only [Finset.mem_filter, ne_eq, not_and_or, not_not] at hi
-    simp only [Finset.mem_union, Finset.mem_filter, Finset.mem_univ, true_and]
-    exact hi.2
-  have h := (Finset.card_le_card hsub).trans ((Finset.card_union_le _ _).trans
-    (Nat.add_le_add (hone z) (hone z')))
-  rw [← Finset.card_filter_add_card_filter_not
-    (fun i ↦ S.domain i ≠ z ∧ S.domain i ≠ z')]
-  omega
+/-- `L` is a coset of the group of order `N`, which holds `ω_n`: the point before `x_i` by `ω_n`
+is a point of `L`. -/
+theorem domain_mul_rootOfUnity (S : Setup EF lookups) (i : S.Point) :
+    ∃ j : S.Point, S.domain j * rootOfUnity S.logN = S.domain i := by
+  set b := S.params.logBlowup
+  set m := S.logN + b
+  have hm : m ≤ twoAdicity F := S.valid.twoAdic
+  set w : F := twoAdicGen m
+  have hw : w ^ 2 ^ b = twoAdicGen S.logN := BaseField.twoAdicGen_pow S.logN b hm
+  have hN : w ^ 2 ^ m = 1 := (BaseField.isPrimitiveRoot_twoAdicGen m hm).pow_eq_one
+  have hb : 2 ^ b ≤ 2 ^ m := Nat.pow_le_pow_right (by norm_num) (Nat.le_add_left _ _)
+  have hlt : (i.val + 2 ^ m - 2 ^ b) % 2 ^ m < 2 ^ m := Nat.mod_lt _ (Nat.two_pow_pos m)
+  refine ⟨⟨_, hlt⟩, ?_⟩
+  have hpow (a : Nat) : w ^ a = w ^ (a % 2 ^ m) := by
+    conv_lhs => rw [← Nat.div_add_mod a (2 ^ m), pow_add, pow_mul, hN, one_pow, one_mul]
+  have hmod : ((i.val + 2 ^ m - 2 ^ b) % 2 ^ m + 2 ^ b) % 2 ^ m = i.val := by
+    rw [Nat.add_mod, Nat.mod_mod, ← Nat.add_mod, Nat.sub_add_cancel (by omega),
+      Nat.add_mod_right, Nat.mod_eq_of_lt i.isLt]
+  rw [domain_eq, domain_eq, rootOfUnity, lift, ← map_mul]
+  congr 1
+  simp only [basePoint, mul_assoc, ← hw]
+  rw [← pow_add, hpow, hmod]
+
+/-- If `ζ` lies off `L`, so does `ζ ω_n`. -/
+theorem offDomain_mul_rootOfUnity (S : Setup EF lookups) {ζ : 𝕂} (hζ : OffDomain S ζ)
+    (i : S.Point) : S.domain i ≠ ζ * rootOfUnity S.logN := by
+  intro h
+  obtain ⟨j, hj⟩ := domain_mul_rootOfUnity S i
+  have hω : (rootOfUnity (EF := EF) S.logN) ≠ 0 := by
+    rw [rootOfUnity, lift, ne_eq, map_eq_zero]
+    exact BaseField.twoAdicGen_ne_zero _ (by have := S.valid.twoAdic; omega)
+  exact hζ j (mul_right_cancel₀ hω (hj.trans h))
 
 /-- A set of at least `(1 - δ) N` points, `δ < 1 - rate`, has more than `n` points. -/
 theorem lt_card_of_rate (S : Setup EF lookups) (δ : ℝ) (hδ : δ < 1 - S.rate) (t : Nat)
@@ -230,24 +243,13 @@ theorem near_of_mem {S : Setup EF lookups} (p : Prover S) (α ζ : 𝕂) (T : Fi
 
 /-- **The decoding step.** -/
 theorem decodingStep (S : Setup EF lookups) : DecodingStep S := by
-  intro δ hδ prover α ζ _ hnear
-  obtain ⟨T₀, hT₀card, hT₀near⟩ := hnear
-  set T := T₀.filter fun i ↦ S.domain i ≠ ζ ∧ S.domain i ≠ ζ * rootOfUnity S.logN
-  have hTcard : (T.card : ℝ) ≥ S.size * (1 - δ) := by
-    have h : (T₀.card : ℝ) ≤ T.card + 2 := by
-      exact_mod_cast card_le_card_filter_add_two S T₀ ζ (ζ * rootOfUnity S.logN)
-    have hN : (S.size : ℝ) ≠ 0 := by positivity
-    have : (S.size : ℝ) * (1 - (δ - 2 / S.size)) = S.size * (1 - δ) + 2 := by
-      field_simp
-      ring
-    linarith
+  intro δ hδ prover α ζ _ hoff hnear
+  obtain ⟨T, hTcard, hTnear⟩ := hnear
   have hT := lt_card_of_rate S δ hδ T.card hTcard
-  have hmem := near_of_mem prover α ζ T fun k ↦ by
-    obtain ⟨u, hu, hk⟩ := hT₀near k
-    exact ⟨u, hu, fun i hi ↦ hk i (Finset.mem_filter.mp hi).1⟩
-  have hζ (i) (hi : i ∈ T) : ζ ≠ S.domain i := ((Finset.mem_filter.mp hi).2.1).symm
-  have hζω (i) (hi : i ∈ T) : ζ * rootOfUnity S.logN ≠ S.domain i :=
-    ((Finset.mem_filter.mp hi).2.2).symm
+  have hmem := near_of_mem prover α ζ T hTnear
+  have hζ (i) (_ : i ∈ T) : ζ ≠ S.domain i := (hoff i).symm
+  have hζω (i) (_ : i ∈ T) : ζ * rootOfUnity S.logN ≠ S.domain i :=
+    (offDomain_mul_rootOfUnity S hoff i).symm
   have mtr := fun j ↦ hmem _ (mem_openedWords_trace prover α ζ j)
   have mnx := fun j ↦ hmem _ (mem_openedWords_traceNext prover α ζ j)
   have mqu := fun c e ↦ hmem _ (mem_openedWords_quotient prover α ζ c e)

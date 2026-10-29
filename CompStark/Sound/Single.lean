@@ -101,7 +101,7 @@ theorem knowledgeError_toBatch (S : Iop.Setup EF) (δ δ' : NNReal) :
   rw [Batch.knowledgeError, hlookup, zero_add, iSup_unique, friHeights_toBatch,
     Batch.Setup.instanceError]
   change foldingError S δ' + outOfDomainError S δ' + batchingErrorOf S
-    (S.toBatch.groupNumOpened (S.logN + S.params.logBlowup)) δ ((δ' : ℝ) - 2 / S.size) +
+    (S.toBatch.groupNumOpened (S.logN + S.params.logBlowup)) δ δ' +
     friErrorWith S [] δ = _
   rw [hnum]
   rfl

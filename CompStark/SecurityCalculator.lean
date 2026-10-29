@@ -22,16 +22,16 @@ The analysis is the one of `CompStark/Sound/Numbers.lean`, at any FRI arity, wit
 (`McaBound`: `uniqueDecoding` within the unique-decoding radius, `johnson` up to the Johnson
 radius, or the smaller of two) and the free parameters of `Analysis`: FRI's proximity `δ`, the
 extractor's `δ' ≥ δ` below the Johnson radius `1 - √ρ`, and a proximity loss `loss`. With
-`K = p ^ d`, `N` the domain's size, `δ'' = δ' - 2/N` and `ℓ` the list bound at `δ'` (`1` below the
+`K = p ^ d`, `N` the domain's size and `ℓ` the list bound at `δ'` (`1` below the
 unique-decoding radius, `⌊(1 - δ' - ρ) / ((1 - δ')² - ρ)⌋` above, the Johnson bound):
 
 * constraint folding: `ℓ ℓₚ (#constraints - 1) / K`, `ℓₚ` the permutation trace's list bound, `1`
   without lookups;
-* out of domain: `(ℓ identityDegree + n) / K`, `ℓ` bounding the list of the committed words as
-  one family;
+* out of domain: `(ℓ identityDegree + n + N) / K`, `ℓ` bounding the list of the committed words
+  as one family;
 * batching `m` words: `B`'s count for curves of degree `m - 1` on `N` points over `K`, or for
-  `δ < δ''` and `δ ≤ (1 - ρ) / 2 - 1/N` the curve bound `(m - 1) max(T₁, T₂) / K`,
-  `T₁ = (1 - ρ - δ) / (δ (1 - ρ - 2δ))`, `T₂ = δ'' / (δ'' - δ)`, if smaller;
+  `δ < δ'` and `δ ≤ (1 - ρ) / 2 - 1/N` the curve bound `(m - 1) max(T₁, T₂) / K`,
+  `T₁ = (1 - ρ - δ) / (δ (1 - ρ - 2δ))`, `T₂ = δ' / (δ' - δ)`, if smaller;
 * FRI's folds, Plonky3's schedule as a plan of folds (`FriGame.Rounds.plan`): a fold by `2 ^ k`
   onto `2 ^ m` points batching `M = 2 ^ k - 1` words (one more if it injects an input) costs `B`'s
   count for curves of degree `M` on `2 ^ m` points over `K`, or if smaller and
@@ -137,20 +137,20 @@ def permListBound : ℕ := if c.lookups then A.listBound (1 / 2 ^ logBlowup) els
 def foldingNum : ℚ :=
   (A.listBound (1 / 2 ^ logBlowup) * c.permListBound logBlowup A * (c.numConstraints - 1) : ℕ)
 
-/-- The out-of-domain point, times `|𝕂|`: `ℓ identityDegree + n`, `ℓ` the list bound of the
+/-- The out-of-domain point, times `|𝕂|`: `ℓ identityDegree + n + N`, `ℓ` the list bound of the
 committed words as one family. -/
-def outOfDomainNum : ℚ := (A.listBound (1 / 2 ^ logBlowup) * c.identityDegree + 2 ^ c.logN : ℕ)
+def outOfDomainNum : ℚ :=
+  (A.listBound (1 / 2 ^ logBlowup) * c.identityDegree + 2 ^ c.logN + 2 ^ (c.logN + logBlowup) : ℕ)
 
 /-- Batching `m` opened words on the domain of `N = 2 ^ (logN + logBlowup)` points at rate
 `ρ = 1 / 2 ^ logBlowup`, times `|𝕂|`: the MCA bound `B`'s count for curves of degree `m - 1`, or
-for `δ < δ'' = δ' - 2/N` and `δ ≤ (1 - ρ) / 2 - 1/N` the curve bound `(m - 1) max(T₁, T₂)` if
-smaller. -/
+for `δ < δ'` and `δ ≤ (1 - ρ) / 2 - 1/N` the curve bound `(m - 1) max(T₁, T₂)` if smaller. -/
 def batchingNum (m : ℕ) : ℚ :=
   let N : ℕ := 2 ^ (c.logN + logBlowup)
   let ρ : ℚ := 1 / 2 ^ logBlowup
   let count := B.count N (2 ^ c.logN) (m - 1) A.δ
-  if A.δ < A.δ' - 2 / N ∧ A.δ ≤ (1 - ρ) / 2 - 1 / N then
-    min count (((m - 1 : ℕ) : ℚ) * max (A.curveT₁ ρ) ((A.δ' - 2 / N) / (A.δ' - 2 / N - A.δ)))
+  if A.δ < A.δ' ∧ A.δ ≤ (1 - ρ) / 2 - 1 / N then
+    min count (((m - 1 : ℕ) : ℚ) * max (A.curveT₁ ρ) (A.δ' / (A.δ' - A.δ)))
   else count
 
 end Shape
@@ -172,10 +172,10 @@ def friPlan (heights : List ℕ) : List (ℕ × ℕ × Bool) :=
   FriGame.Rounds.plan S.params.maxLogArity (S.params.logFinalPolyLen + S.params.logBlowup)
     (S.logN + S.params.logBlowup) (S.logN + S.params.logBlowup) heights
 
-/-- The analysis fits `S` with the MCA bound `B`: it is valid at `S`'s rate, `δ ≤ δ' - 2/N`, and
-`B` admits batching and FRI's folds. -/
+/-- The analysis fits `S` with the MCA bound `B`: it is valid at `S`'s rate, and `B` admits
+batching and FRI's folds. -/
 def Fits (B : McaBound) (A : Analysis) : Prop :=
-  A.Valid S.rateQ ∧ A.δ ≤ A.δ' - 2 / S.size ∧ B.admits S.size S.n A.δ ∧
+  A.Valid S.rateQ ∧ B.admits S.size S.n A.δ ∧
     A.Admits B S.params.logBlowup (S.friPlan [])
 
 instance (B : McaBound) (A : Analysis) : Decidable (S.Fits B A) := by
@@ -267,12 +267,11 @@ def shapes : List Shape := (List.finRange S.k).map fun i ↦ (S.instanceSetup i)
 /-- LogUp's numbers, `T + (T - 1) W`. -/
 def lookupCount : ℕ := S.numInteractions + (S.numInteractions - 1) * S.lookupWidth
 
-/-- The analysis fits `S` with the MCA bound `B`: it is valid at the rate, `δ ≤ δ' - 2/N` on every
-domain, and `B` admits each instance's batching and FRI's folds. -/
+/-- The analysis fits `S` with the MCA bound `B`: it is valid at the rate, and `B` admits each
+instance's batching and FRI's folds. -/
 def Fits (B : McaBound) (A : Analysis) : Prop :=
   A.Valid S.domainSetup.rateQ ∧
-    (∀ i ∈ List.finRange S.k, A.δ ≤ A.δ' - 2 / (S.instanceSetup i).size ∧
-      B.admits (S.instanceSetup i).size (S.instanceSetup i).n A.δ) ∧
+    (∀ i ∈ List.finRange S.k, B.admits (S.instanceSetup i).size (S.instanceSetup i).n A.δ) ∧
     A.Admits B S.params.logBlowup (S.domainSetup.friPlan S.friHeights)
 
 instance (B : McaBound) (A : Analysis) : Decidable (S.Fits B A) := by unfold Fits; infer_instance

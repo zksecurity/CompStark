@@ -56,7 +56,7 @@ Verifying the Keccak proof takes about 50 ms, against 11 ms for Plonky3. [docs/c
      (mySetup.bestAnalysisRo 2130706433 .uniqueDecoding)
    ```
 
-   The report shows the analysis it found: FRI's radius `δ`, the extractor's `δ'` and the loss. Change the FRI parameters until the total reaches your target, or pick an analysis by hand: `δ` where the MCA bound admits batching and every fold (`δ ≤ (1 - rate) / 2` for `.uniqueDecoding`, below `1 - √rate` for `.uniqueOrJohnson`), `δ ≤ δ' - 2/N`, `δ'` below the Johnson radius `1 - √rate`, and a positive loss (`fits: false` otherwise).
+   The report shows the analysis it found: FRI's radius `δ`, the extractor's `δ'` and the loss. Change the FRI parameters until the total reaches your target, or pick an analysis by hand: `δ` where the MCA bound admits batching and every fold (`δ ≤ (1 - rate) / 2` for `.uniqueDecoding`, below `1 - √rate` for `.uniqueOrJohnson`), `δ ≤ δ'`, `δ'` below the Johnson radius `1 - √rate`, and a positive loss (`fits: false` otherwise).
 3. Check it in the kernel and apply the theorem (`KoalaBear.card_eq : Nat.card F = 2130706433`), with the analysis the search found written out:
 
    ```lean

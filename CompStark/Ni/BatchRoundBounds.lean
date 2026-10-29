@@ -133,7 +133,7 @@ noncomputable def roundBoundB : ENNReal :=
     max (powFraction F S.params.oodPowBits * ⨆ i, outOfDomainError (S.instanceSetup i) δ') <|
     max (powFraction F S.params.batchPowBits * ⨆ i, batchingErrorOf (S.instanceSetup i)
       (S.groupNumOpened (S.logN i + S.params.logBlowup)) δ
-      ((δ' : ℝ) - 2 / (S.instanceSetup i).size)) <|
+      δ') <|
     max (powFraction F S.params.commitPowBits * ⨆ j, Iop.Batch.friFoldError S δ loss j)
       (powFraction F S.params.queryPowBits * Iop.Batch.friQueryError S δ loss)
 
@@ -305,7 +305,7 @@ theorem prob_roundBadAtB_le (cache : Merkle.Cache F (Digest F)) (block : ℕ →
               hpre u.2 (lookupRounds S + 1) (by omega)]
       _ ≤ powFraction F S.params.batchPowBits * ⨆ i, batchingErrorOf (S.instanceSetup i)
             (S.groupNumOpened (S.logN i + S.params.logBlowup)) δ
-            ((δ' : ℝ) - 2 / (S.instanceSetup i).size) :=
+            δ' :=
           (prob_grindExt_le S.streamLen _ (by omega) _).trans
             (mul_le_mul_right (Sound.Batch.prob_batchBad_le S publicValues δ δ' _ _ _ _ _ _ _ _
               _) _)

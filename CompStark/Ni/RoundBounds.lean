@@ -184,7 +184,7 @@ variable (S : Iop.Setup EF) (publicValues : List F) (δ δ' loss : NNReal)
 /-- The largest round error at proximity loss `loss`; `roundError` is its infimum. -/
 noncomputable def roundBound : ENNReal :=
   max (foldingError S δ') <| max (powFraction F S.params.oodPowBits * outOfDomainError S δ') <|
-    max (powFraction F S.params.batchPowBits * batchingError S δ ((δ' : ℝ) - 2 / S.size)) <|
+    max (powFraction F S.params.batchPowBits * batchingError S δ δ') <|
     max (powFraction F S.params.commitPowBits * ⨆ i, friFoldError S δ loss i)
       (powFraction F S.params.queryPowBits * friQueryError S δ loss)
 
@@ -242,7 +242,7 @@ theorem prob_roundBadAt_le (cache : Merkle.Cache F (Digest F)) (block : Nat → 
             simp only [prefixTranscript, T, getD_append_singleton samples u.2 d 2 h2.symm,
               getD_append_singleton_lt samples u.2 d 0 (by omega),
               getD_append_singleton_lt samples u.2 d 1 (by omega)]
-      _ ≤ powFraction F S.params.batchPowBits * batchingError S δ ((δ' : ℝ) - 2 / S.size) :=
+      _ ≤ powFraction F S.params.batchPowBits * batchingError S δ δ' :=
           (prob_grindExt_le S.streamLen _ (by omega) _).trans
             (mul_le_mul_right (prob_batchBad_le S δ δ' _ _ _ _ _) _)
       _ ≤ _ := (le_max_left _ _).trans ((le_max_right _ _).trans (le_max_right _ _))

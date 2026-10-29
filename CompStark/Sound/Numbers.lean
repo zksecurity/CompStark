@@ -20,11 +20,11 @@ FRI's queries and the bounds on correlated agreement:
 * with the candidate lists at the extractor's radius of at most `ℓ` elements (`listSize_le_one`
   below the unique-decoding radius, `listSize_le_johnson` up to the Johnson radius), the
   constraint-folding and out-of-domain terms are at most `ℓ ℓₚ (#constraints - 1)` and
-  `ℓ identityDegree + n`, the latter's list that of the committed words as one family
+  `ℓ identityDegree + n + N`, the latter's list that of the committed words as one family
   (`foldingError_le_of_listSize`, `outOfDomainError_le_of_listSize`);
 * batching at a single radius is at most the MCA error of the powers (`batchingError_le_mcaError`,
   and so at every larger one, `batchingError_anti`), which an MCA bound (`McaBound.Holds`) bounds;
-  batching at `δ < δ'' = δ' - 2/N` with `δ ≤ (1 - rate) / 2 - 1/N` is at most
+  batching at `δ < δ'` with `δ ≤ (1 - rate) / 2 - 1/N` is at most
   `(numOpened - 1) max(T₁, T₂)` (`batchingError_le_curve`);
 * FRI at a proximity loss (`friErrorWith_le`): Plonky3's schedule as a plan of folds
   (`FriGame.Rounds.plan`), each fold by `2 ^ k` onto a domain `L'` batching `M = 2 ^ k - 1` words
@@ -214,12 +214,13 @@ theorem foldingError_le_of_listSize (S : Setup EF lookups) (δ : ℝ≥0) (ℓ �
   ENNReal.div_le_div_right (Nat.cast_le.mpr (Nat.mul_le_mul_right _ (Nat.mul_le_mul hℓ hℓp))) _
 
 /-- With the candidate list of the committed words at `δ` of at most `ℓ` elements, the
-out-of-domain term is at most `ℓ identityDegree + n` over `|𝕂|`. -/
+out-of-domain term is at most `ℓ identityDegree + n + N` over `|𝕂|`. -/
 theorem outOfDomainError_le_of_listSize (S : Setup EF lookups) (δ : ℝ≥0) (ℓ : ℕ)
     (hℓ : S.listSize S.Committed δ ≤ ℓ) :
-    outOfDomainError S δ ≤ (ℓ * S.identityDegree + S.n : ℕ) / (Fintype.card 𝕂 : ENNReal) :=
-  ENNReal.div_le_div_right (Nat.cast_le.mpr (Nat.add_le_add_right
-    (Nat.mul_le_mul_right _ hℓ) _)) _
+    outOfDomainError S δ ≤
+      (ℓ * S.identityDegree + S.n + S.size : ℕ) / (Fintype.card 𝕂 : ENNReal) :=
+  ENNReal.div_le_div_right (Nat.cast_le.mpr (Nat.add_le_add_right (Nat.add_le_add_right
+    (Nat.mul_le_mul_right _ hℓ) _) _)) _
 
 /-- FRI's term at any arity and proximity loss: the sum of bounds `g` on the folds of its plan over
 `|𝕂|` (`foldError_schedule_le`), and the queries `(1 - δ + #folds · loss) ^ numQueries`. -/

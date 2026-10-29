@@ -33,8 +33,8 @@ unique-decoding radius (`McaBound.uniqueDecoding`). FRI's proximity `δ` stays b
 unique-decoding radius `1/4` (blowup `2`) or `3/8` (blowup `4`), so each query is worth at most
 `log₂ (4/3) ≈ 0.415` or `log₂ (8/5) ≈ 0.678` bits; Plonky3's `87` queries and `16` bits of
 grinding give `52` bits per oracle answer. Over the quartic extension the out-of-domain term
-`(3n + n) / |𝕂|` caps the bits near `124 - (logN + 2)`, `104` to `107` here, so `128` bits need
-the quintic extension.
+`(3n + n + N) / |𝕂|` caps the bits near `124 - (logN + 2.6)` at blowup `2` and
+`124 - (logN + 3)` at blowup `4`, `103` to `106` here, so `128` bits need the quintic extension.
 
 Up to the Johnson radius (`McaBound.uniqueOrJohnson`, proved by `McaBound.uniqueOrJohnson_holds`
 on ArkLib's Johnson-regime MCA for power curves), FRI's `δ` goes up to `1 - √ρ` and the queries
@@ -50,8 +50,7 @@ drop:
 | blowup `4`, `86` queries | quartic | `johnsonGrinding4` | `100` | |
 
 The analyses are the ones the search finds on `2 ^ 18` rows, and on `2 ^ 15` rows for blowup `4`
-and `102` queries, whose extractor's `δ'` on `2 ^ 18` rows is too close to `δ` for `2 ^ 15`
-rows. Interactively, without credit for
+and `102` queries. Interactively, without credit for
 grinding, the quartic extension and `128` bits stay at the unique-decoding counts, and so does the
 quartic extension per oracle answer with Plonky3's grinding: beyond the unique-decoding radius the
 batching term, the Johnson count times the batching curve's degree `5273`, stays above `2 ^ (-91)`
@@ -159,10 +158,10 @@ local notation "Ext5" => _root_.KoalaBear.Fast.Ext5
 /-! ### Plonky3's example configuration -/
 
 /-- The analysis `bestAnalysisRo` finds for the example on `2 ^ 15` rows. -/
-def exampleRoAnalysis : Analysis := ⟨1 / 4 - 1 / 2 ^ 14, 1 / 4 - 1 / 2 ^ 16, 1 / 2 ^ 60⟩
+def exampleRoAnalysis : Analysis := ⟨1 / 4 - 1 / 2 ^ 40, 1 / 4 - 1 / 2 ^ 42, 1 / 2 ^ 60⟩
 
 /-- The analysis `bestAnalysis` finds for the example on `2 ^ 15` rows. -/
-def exampleAnalysis : Analysis := ⟨1 / 4 - 1 / 2 ^ 14, 1 / 4 - 1 / 2 ^ 26, 1 / 2 ^ 60⟩
+def exampleAnalysis : Analysis := ⟨1 / 4 - 1 / 2 ^ 40, 1 / 4 - 1 / 2 ^ 42, 1 / 2 ^ 60⟩
 
 /-- **52 bits per oracle answer** for Plonky3's Keccak example on `2 ^ 15` to `2 ^ 18` rows. -/
 theorem example_secureRo (height : Fin 4) :
@@ -181,16 +180,16 @@ theorem example_secure (height : Fin 4) :
 /-! ### 100 bits over the quartic extension -/
 
 /-- The analysis for blowup `2`, `203` queries, per oracle answer. -/
-def roAnalysis2 : Analysis := ⟨1 / 4 - 1 / 2 ^ 14, 1 / 4 - 1 / 2 ^ 16, 1 / 2 ^ 60⟩
+def roAnalysis2 : Analysis := ⟨1 / 4 - 1 / 2 ^ 40, 1 / 4 - 1 / 2 ^ 42, 1 / 2 ^ 60⟩
 
 /-- The analysis for blowup `2`, `244` queries. -/
 def analysis2 : Analysis := ⟨1 / 4 - 1 / 2 ^ 10, 1 / 4 - 1 / 2 ^ 12, 1 / 2 ^ 60⟩
 
 /-- The analysis for blowup `4`, `124` queries, per oracle answer. -/
-def roAnalysis4 : Analysis := ⟨3 / 8 - 1 / 2 ^ 15, 3 / 8 - 1 / 2 ^ 17, 1 / 2 ^ 60⟩
+def roAnalysis4 : Analysis := ⟨3 / 8 - 1 / 2 ^ 40, 3 / 8 - 1 / 2 ^ 42, 1 / 2 ^ 60⟩
 
 /-- The analysis for blowup `4`, `149` queries. -/
-def analysis4 : Analysis := ⟨3 / 8 - 1 / 2 ^ 10, 3 / 8 - 1 / 2 ^ 13, 1 / 2 ^ 60⟩
+def analysis4 : Analysis := ⟨3 / 8 - 1 / 2 ^ 10, 3 / 8 - 1 / 2 ^ 12, 1 / 2 ^ 60⟩
 
 theorem secureRo100_blowup2 (height : Fin 4) :
     (setup Ext4 0 203 .plonky3 height).SecureRo 2130706433 .uniqueDecoding roAnalysis2 100 := by
@@ -222,7 +221,7 @@ theorem secure100_blowup4 (height : Fin 4) :
 def analysis2q : Analysis := ⟨1 / 4 - 1 / 2 ^ 12, 1 / 4 - 1 / 2 ^ 14, 1 / 2 ^ 60⟩
 
 /-- The analysis for blowup `4`, `190` queries. -/
-def analysis4q : Analysis := ⟨3 / 8 - 1 / 2 ^ 12, 3 / 8 - 1 / 2 ^ 15, 1 / 2 ^ 60⟩
+def analysis4q : Analysis := ⟨3 / 8 - 1 / 2 ^ 12, 3 / 8 - 1 / 2 ^ 14, 1 / 2 ^ 60⟩
 
 theorem secureRo128_blowup2 (height : Fin 4) :
     (setup Ext5 0 270 .plonky3 height).SecureRo 2130706433 .uniqueDecoding roAnalysis2 128 := by
@@ -274,7 +273,7 @@ def johnson5b2 : Analysis := ⟨605807 / 2097152, 38780081 / 134217728, 1 / 2 ^ 
 
 /-- Quintic extension, blowup `4`, `102` queries, the analysis the search finds on `2 ^ 15`
 rows. -/
-def johnson5b4 : Analysis := ⟨16646113 / 33554432, 1065482303 / 2147483648, 1 / 2 ^ 60⟩
+def johnson5b4 : Analysis := ⟨16646113 / 33554432, 4261535999 / 8589934592, 1 / 2 ^ 60⟩
 
 /-- `128` bits over the quintic extension, blowup `2`, `230` queries, per oracle answer. -/
 def johnsonRo128b2 : Analysis := ⟨1203181 / 4194304, 4838023 / 16777216, 1 / 2 ^ 60⟩
@@ -283,7 +282,7 @@ def johnsonRo128b2 : Analysis := ⟨1203181 / 4194304, 4838023 / 16777216, 1 / 2
 def johnsonRo128b4 : Analysis := ⟨8257521 / 16777216, 33161155 / 67108864, 1 / 2 ^ 60⟩
 
 /-- Quartic extension, blowup `2`, `172` queries, per oracle answer. -/
-def johnsonRo4b2 : Analysis := ⟨150749 / 524288, 605807 / 2097152, 1 / 2 ^ 60⟩
+def johnsonRo4b2 : Analysis := ⟨1208803 / 4194304, 19360525 / 67108864, 1 / 2 ^ 20⟩
 
 /-- Quartic extension, blowup `4`, `86` queries, per oracle answer. -/
 def johnsonRo4b4 : Analysis := ⟨8257521 / 16777216, 66191239 / 134217728, 1 / 2 ^ 60⟩

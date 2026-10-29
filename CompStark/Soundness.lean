@@ -33,8 +33,8 @@ variable {F : Type} [BaseField F] {EF : Type} [Challenge F EF]
 
 /-- **Knowledge soundness.** If no trace close to the prover's committed trace satisfies the AIR,
 the verifier accepts the prover with probability at most the knowledge error: FRI tests proximity
-`δ`, and the extractor list-decodes at any `δ'` below `1 - rate` (typically `δ' ≥ δ + 2/N`, the
-difference being the proximity loss of batching and the two points decoding may lose). So a
+`δ`, and the extractor list-decodes at any `δ'` below `1 - rate` (typically `δ' ≥ δ`, the
+difference being the proximity loss of batching). So a
 prover accepted with higher probability has committed to a trace within `δ'` of one that
 satisfies the AIR. -/
 theorem knowledgeSoundness (S : Setup EF) (publicValues : List F) (prover : Prover S)

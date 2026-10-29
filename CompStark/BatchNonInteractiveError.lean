@@ -22,7 +22,7 @@ instance's error:
 * `α` and `ζ`: the instance's constraint-folding and out-of-domain errors (`foldingError`,
   `outOfDomainError`).
 * `a`: the correlated-agreement error of the powers of `a` over the opened words of the instances
-  of the failing instance's domain size (`batchingErrorOf`, at `δ' - 2/N`).
+  of the failing instance's domain size (`batchingErrorOf`, at `δ'`).
 * FRI fold `j` (`friFoldError`): the lossy correlated-agreement error of the fold of FRI with the
   shorter instances' words injected, at a proximity loss `loss` (`FriGame.Rounds.foldErrorAt`,
   the summand of `friErrorWith`).
@@ -76,7 +76,7 @@ noncomputable def roundError {withLookups : Bool} (S : Setup EF withLookups) (δ
       max (powFraction F S.params.oodPowBits * ⨆ i, outOfDomainError (S.instanceSetup i) δ') <|
       max (powFraction F S.params.batchPowBits * ⨆ i, batchingErrorOf (S.instanceSetup i)
         (S.groupNumOpened (S.logN i + S.params.logBlowup)) δ
-        ((δ' : ℝ) - 2 / (S.instanceSetup i).size)) <|
+        δ') <|
       max (powFraction F S.params.commitPowBits * ⨆ j, friFoldError S δ loss j)
         (powFraction F S.params.queryPowBits * friQueryError S δ loss))
 

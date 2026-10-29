@@ -20,7 +20,7 @@ checks at `ζ` times FRI's acceptance of the batched DEEP words. For each `(α, 
 log size of `i₀`'s domain:
 
 * if the DEEP components of the opened words of the instances of size `m₀` are not
-  `(δ' - 2/N)`-near the code on a common set, their batched word is `δ`-near for few `a`
+  `δ'`-near the code on a common set, their batched word is `δ`-near for few `a`
   (`batchingStep`), and FRI rejects when it is `δ`-far, be it FRI's word or an injected one
   (`batchFriStep`): `batchingErrorOf + friErrorWith`;
 * otherwise the components of instance `i₀`'s opened words, among them, are near on the same set
@@ -337,14 +337,15 @@ theorem acceptanceAt_le {withLookups : Bool} (S : Batch.Setup EF withLookups)
   set ℓP := I.permListSize δ'
   set ℓ := I.listSize I.Committed δ'
   set E := batchingErrorOf I (S.groupNumOpened (S.logN i₀ + S.params.logBlowup)) δ
-      ((δ' : ℝ) - 2 / I.size) + friErrorWith S.domainSetup S.friHeights δ
+      δ' + friErrorWith S.domainSetup S.friHeights δ
   set D := I.identityDegree
+  set M : Nat := I.n + I.size
   -- The `ζ` with near components and instance `i₀`'s check passing, for one `α`.
   have hcount : ∀ α : 𝕂, ((Finset.univ.filter fun ζ : 𝕂 ↦
-      NearTogether I ((δ' : ℝ) - 2 / I.size) (groupComponents p lα lβ α ζ i₀) ∧
+      NearTogether I δ' (groupComponents p lα lβ α ζ i₀) ∧
         ConstraintsHoldAt I (publicValues i₀) α ζ (p.openings lα lβ α ζ i₀) chs τ).card :
           ENNReal) ≤
-      I.n + ((if α ∈ bad then card𝕂 EF else 0) + (ℓ * D : Nat)) := by
+      M + ((if α ∈ bad then card𝕂 EF else 0) + (ℓ * D : Nat)) := by
     intro α
     by_cases hα : α ∈ bad
     · simp only [hα, ↓reduceIte]
@@ -362,11 +363,11 @@ theorem acceptanceAt_le {withLookups : Bool} (S : Batch.Setup EF withLookups)
           (p.openings lα lβ α ζ i) (S.challenges lα lβ i) (p.terminal lα lβ i)
         then friAcceptanceWith S.domainSetup (Batch.groupDeepWord p lα lβ α ζ a) S.friHeights
           (Batch.groupDeepWord p lα lβ α ζ a _) else 0) ≤
-      card𝕂 EF ^ 2 * E + card𝕂 EF * (I.n + ((if α ∈ bad then card𝕂 EF else 0) +
+      card𝕂 EF ^ 2 * E + card𝕂 EF * (M + ((if α ∈ bad then card𝕂 EF else 0) +
         (ℓ * D : Nat))) := by
     intro α
     refine (Finset.sum_le_sum fun ζ _ ↦
-      batch_sum_a_le publicValues p δ ((δ' : ℝ) - 2 / I.size) lα lβ α ζ i₀).trans ?_
+      batch_sum_a_le publicValues p δ δ' lα lβ α ζ i₀).trans ?_
     rw [Finset.sum_add_distrib, Finset.sum_const, Finset.card_univ, nsmul_eq_mul,
       Finset.sum_ite, Finset.sum_const_zero, add_zero, Finset.sum_const, nsmul_eq_mul,
       ← mul_assoc, ← pow_two, mul_comm _ (card𝕂 EF)]
@@ -378,7 +379,7 @@ theorem acceptanceAt_le {withLookups : Bool} (S : Batch.Setup EF withLookups)
           (p.openings lα lβ α ζ i) (S.challenges lα lβ i) (p.terminal lα lβ i)
         then friAcceptanceWith S.domainSetup (Batch.groupDeepWord p lα lβ α ζ a) S.friHeights
           (Batch.groupDeepWord p lα lβ α ζ a _) else 0) ≤
-      card𝕂 EF ^ 3 * E + card𝕂 EF ^ 2 * (I.n + bad.card + (ℓ * D : Nat)) := by
+      card𝕂 EF ^ 3 * E + card𝕂 EF ^ 2 * (M + bad.card + (ℓ * D : Nat)) := by
     refine (Finset.sum_le_sum fun α _ ↦ hα α).trans_eq ?_
     rw [Finset.sum_add_distrib, Finset.sum_const, Finset.card_univ, nsmul_eq_mul,
       ← Finset.mul_sum, Finset.sum_add_distrib, Finset.sum_add_distrib, Finset.sum_const,
@@ -386,22 +387,22 @@ theorem acceptanceAt_le {withLookups : Bool} (S : Batch.Setup EF withLookups)
       Finset.card_univ, nsmul_eq_mul, nsmul_eq_mul, nsmul_eq_mul]
     ring
   -- The error of instance `i₀`'s challenges `α` and `ζ`.
-  have hI : ((I.n + bad.card + (ℓ * D : Nat) : ENNReal)) / card𝕂 EF ≤
+  have hI : ((M + bad.card + (ℓ * D : Nat) : ENNReal)) / card𝕂 EF ≤
       foldingError I δ' + outOfDomainError I δ' := by
-    have key : (I.n + bad.card + (ℓ * D : Nat) : ENNReal) ≤
+    have key : (M + bad.card + (ℓ * D : Nat) : ENNReal) ≤
         ((ℓT * ℓP * (I.numConstraints - 1) : Nat) : ENNReal) +
-          ((ℓ * D + I.n : Nat) : ENNReal) := by
+          ((ℓ * D + M : Nat) : ENNReal) := by
       have hbad' : bad.card ≤ ℓT * ℓP * (I.numConstraints - 1) := hbad
-      have hk : I.n + bad.card + ℓ * D ≤
-          ℓT * ℓP * (I.numConstraints - 1) + (ℓ * D + I.n) := by omega
+      have hk : M + bad.card + ℓ * D ≤
+          ℓT * ℓP * (I.numConstraints - 1) + (ℓ * D + M) := by omega
       exact_mod_cast hk
     refine (ENNReal.div_le_div_right key (card𝕂 EF)).trans_eq ?_
-    rw [← ENNReal.div_add_div_same, foldingError, outOfDomainError]
+    rw [← ENNReal.div_add_div_same, foldingError, outOfDomainError, Nat.add_assoc _ I.n]
   calc Batch.acceptanceAt publicValues p lα lβ
       ≤ (card𝕂 EF)⁻¹ ^ 3 * (card𝕂 EF ^ 3 * E +
-          card𝕂 EF ^ 2 * (I.n + bad.card + (ℓ * D : Nat))) :=
+          card𝕂 EF ^ 2 * (M + bad.card + (ℓ * D : Nat))) :=
         mul_le_mul_right hsum _
-    _ = E + (I.n + bad.card + (ℓ * D : Nat)) / card𝕂 EF := inv_cube_mul _ _
+    _ = E + (M + bad.card + (ℓ * D : Nat)) / card𝕂 EF := inv_cube_mul _ _
     _ ≤ E + (foldingError I δ' + outOfDomainError I δ') := add_le_add le_rfl hI
     _ = S.instanceError δ δ' i₀ + friErrorWith S.domainSetup S.friHeights δ := by
         rw [Batch.Setup.instanceError]

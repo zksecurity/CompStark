@@ -27,8 +27,7 @@ batched with the other instances of its domain's size:
   `outOfDomainError`), with its own list sizes, constraints and `identityDegree`, its LogUp
   constraints and permutation trace included.
 * `a`: the correlated-agreement error of the powers of `a` over the opened words of the instances
-  of its domain's size (`batchingErrorOf`, `groupNumOpened` words), at `δ' - 2/N`, `N` its
-  domain's size: decoding loses the up to two points of its domain where `ζ` or `ζ ω_n` lies.
+  of its domain's size (`batchingErrorOf`, `groupNumOpened` words), at `δ'`.
 
 The knowledge error adds the lookup error, the worst instance's, and FRI's error with the shorter
 instances' words injected (`friErrorWith`, `FriGame.acceptance_le`).
@@ -55,7 +54,7 @@ of its domain's size. -/
 noncomputable def instanceError (δ δ' : NNReal) (i : Fin S.k) : ENNReal :=
   foldingError (S.instanceSetup i) δ' + outOfDomainError (S.instanceSetup i) δ' +
     batchingErrorOf (S.instanceSetup i) (S.groupNumOpened (S.logN i + S.params.logBlowup)) δ
-      ((δ' : ℝ) - 2 / (S.instanceSetup i).size)
+      δ'
 
 /-- The number `T` of the batch's interactions: every tuple of every lookup on every row of every
 instance. -/
