@@ -127,7 +127,7 @@ end Rounds
 /-! ### The bad query -/
 
 section Bad
-variable (S : Iop.Setup EF) (publicValues : List F) (δ δ' loss : NNReal)
+variable (S : Iop.Setup EF) [S.Folds] (publicValues : List F) (δ δ' loss : NNReal)
 
 /-- Query `p` of `log` is fresh, and its answer clashes with a known digest or makes its round
 bad. -/

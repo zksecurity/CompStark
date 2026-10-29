@@ -673,7 +673,7 @@ theorem isTotalQueryBound_verifyWith (P : Fri.Params) (A : Air F) {K : Nat}
   · rw [ite_eq_right h1]
     trivial
 
-variable (S : Setup EF)
+variable (S : Setup EF) [S.Folds]
 
 /-- **The setup's oracle calls.** The verifying key for `2 ^ n` rows costs a leaf hash per row of
 the preprocessed trace's extension and a compression per inner node. -/

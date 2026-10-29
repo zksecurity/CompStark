@@ -113,7 +113,9 @@ abbrev lookups (i : Fin S.k) : List (Stark.Lookup F) :=
 
 /-- Instance `i` as a STARK of its own with its lookups. -/
 abbrev instanceSetup (i : Fin S.k) : Iop.Setup EF (S.lookups i) :=
-  ⟨S.params, S.air i, S.logN i, S.valid i, S.folds i, S.lookupsValid i⟩
+  ⟨S.params, S.air i, S.logN i, S.valid i, S.lookupsValid i⟩
+
+instance (i : Fin S.k) : (S.instanceSetup i).Folds := ⟨S.folds i⟩
 
 /-- An instance of the largest trace length: the last of the largest. -/
 def top : Fin S.k :=
@@ -367,14 +369,14 @@ end Batch
 /-! ### A STARK is a batch of one instance -/
 
 /-- A STARK as a batch of one instance, without lookups. -/
-abbrev Setup.toBatch (S : Iop.Setup EF) : Batch.Setup EF false :=
+abbrev Setup.toBatch (S : Iop.Setup EF) [S.Folds] : Batch.Setup EF false :=
   ⟨S.params, 1, fun _ ↦ S.air, fun _ ↦ S.logN, fun _ ↦ S.valid, fun _ ↦ S.folds,
     Nat.one_pos,
     fun _ ↦ trivial, ⟨fun _ hl ↦ absurd hl List.not_mem_nil, fun _ hx ↦ absurd hx List.not_mem_nil,
       fun _ hx ↦ absurd hx List.not_mem_nil⟩⟩
 
 /-- A STARK prover as a prover of a batch of one instance. -/
-abbrev Prover.toBatch {S : Iop.Setup EF} (p : Iop.Prover S) : Batch.Prover S.toBatch :=
+abbrev Prover.toBatch {S : Iop.Setup EF} [S.Folds] (p : Iop.Prover S) : Batch.Prover S.toBatch :=
   ⟨fun _ ↦ p.trace, fun _ _ _ ↦ p.perm, fun _ _ _ ↦ 0, fun _ _ α _ ↦ p.quotient α,
     fun _ _ α ζ _ ↦ p.openings α ζ⟩
 

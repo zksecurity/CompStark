@@ -23,9 +23,12 @@ round has an error, the probability that a fresh answer makes it bad:
 A round with grinding (`oodPowBits` for `ζ`, `batchPowBits` for `a`, `commitPowBits` for the
 folds, `queryPowBits` for the queries) also needs its proof-of-work sample to vanish on its low
 bits, in the same answer: its error is multiplied by `powFraction`. `roundError` is the largest
-round error, at the best proximity loss. `hashError` bounds collisions and predictions among the
-digests of `q` queries, `(2 + 2 ^ h) q² / |F|⁸` for commitments to Merkle caps of height `h`
-(`3 q² / |F|⁸` for roots).
+round error, at the best proximity loss. Where the trace is as short as FRI's final polynomial,
+FRI does not fold and its queries check the batched word against the final polynomial:
+`roundError0`, with `friQueryError0 = (1 - δ + 1/p) ^ numQueries` for the queries.
+`Setup.lengthError` is the one at the setup's length, and `Statement.roundError` the largest over
+the trace lengths the verifier admits. `hashError` bounds collisions and predictions among the
+digests of `q` queries, `(2 + 2 ^ h) q² / |F|⁸` for commitments binding `2 ^ h` digests each.
 -/
 
 @[expose] public section
@@ -79,15 +82,33 @@ noncomputable def roundError (S : Setup EF) (δ δ' : NNReal) : ENNReal :=
       max (powFraction F S.params.commitPowBits * ⨆ i, friFoldError S δ loss i)
         (powFraction F S.params.queryPowBits * friQueryError S δ loss))
 
+/-- FRI's queries without folds all land where the batched word agrees with the final
+polynomial, for a word `δ`-far from the code: `(1 - δ + 1/p) ^ numQueries`. -/
+noncomputable def friQueryError0 (S : Setup EF) (δ : NNReal) : ENNReal :=
+  ENNReal.ofReal (1 - δ + 1 / Nat.card F) ^ S.params.numQueries
+
+/-- The error of one random-oracle answer when FRI does not fold, the trace as short as the final
+polynomial: the rounds of `α`, `ζ` and the batching challenge, and the queries, each after `α`
+credited with its grinding. -/
+noncomputable def roundError0 (S : Setup EF) (δ δ' : NNReal) : ENNReal :=
+  max (foldingError S δ') <|
+    max (powFraction F S.params.oodPowBits * outOfDomainError S δ') <|
+    max (powFraction F S.params.batchPowBits * batchingError S δ δ')
+      (powFraction F S.params.queryPowBits * friQueryError0 S δ)
+
+/-- The error of one random-oracle answer at the setup's trace length: `roundError` where FRI
+folds, `roundError0` where the trace is as short as FRI's final polynomial. -/
+noncomputable def Setup.lengthError (S : Setup EF) (δ δ' : NNReal) : ENNReal :=
+  if S.params.logFinalPolyLen < S.logN then roundError S δ δ' else roundError0 S δ δ'
+
 namespace Statement
 
 variable (EF) in
-/-- The error of one random-oracle answer for a statement: the largest round error over the
-trace lengths the verifier admits where FRI folds, FRI at proximity `δ n` and the extractor at
-`δ' n` on `2 ^ n` rows. -/
+/-- The error of one random-oracle answer for a statement: the largest error over the trace
+lengths the verifier admits, FRI at proximity `δ n` and the extractor at `δ' n` on `2 ^ n`
+rows. -/
 noncomputable def roundError (C : Statement F) (δ δ' : ℕ → NNReal) : ENNReal :=
-  ⨆ (n : ℕ) (h : C.Admits n) (hf : C.params.logFinalPolyLen < n),
-    Iop.roundError (C.setupAt EF n h hf) (δ n) (δ' n)
+  ⨆ (n : ℕ) (h : C.Admits n), (C.setupAt EF n h).lengthError (δ n) (δ' n)
 
 end Statement
 

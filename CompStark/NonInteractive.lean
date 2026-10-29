@@ -46,19 +46,19 @@ variable {F : Type} [BaseField F] {EF : Type} [Challenge F EF]
 
 /-- **Knowledge soundness in the random-oracle model.** On a base field of at least `2 ^ 8`
 elements with two-adicity below `2 ^ 64`, a prover making at most `Q` oracle calls gets a proof
-accepted, at a trace length FRI folds at, while no trace of the proof's length close to the one it
-committed to satisfies the AIR at that length, with probability at most
-`q · roundError + hashError F (h + 1) q`, `q = Q + verifierQueries`: FRI tests proximity `δ n`, and
-the extractor list-decodes at any `δ' n` below `1 - rate`, on `2 ^ n` rows. -/
+accepted while no trace of the proof's length close to the one it committed to satisfies the AIR
+at that length, with probability at most `q · roundError + hashError F (h + 1) q`,
+`q = Q + verifierQueries`: FRI tests proximity `δ n`, and the extractor list-decodes at any `δ' n`
+below `1 - rate`, on `2 ^ n` rows. -/
 theorem knowledgeSoundness_ro (C : Statement F) (publicValues : List F)
     (h8 : 2 ^ 8 ≤ Nat.card F) (h64 : twoAdicity F < 2 ^ 64) (δ δ' : ℕ → NNReal)
     (hδ' : ∀ n, C.Admits n → (δ' n : ℝ) < 1 - C.rate) (Q : Nat) (prover : C.NIProver EF)
     (hQ : prover.IsTotalQueryBound Q) :
     Pr{let (proof, log, verdict) ← C.run publicValues prover}[
-      verdict = .ok () ∧ C.params.logFinalPolyLen < proof.degreeBits ∧
-        ∀ (h : C.Admits proof.degreeBits) (hf : C.params.logFinalPolyLen < proof.degreeBits),
-          ∀ trace ∈ closeTraces (C.setupAt EF _ h hf) (δ' proof.degreeBits)
-              (committedTrace (C.setupAt EF _ h hf) log proof),
+      verdict = .ok () ∧
+        ∀ h : C.Admits proof.degreeBits,
+          ∀ trace ∈ closeTraces (C.setupAt EF _ h) (δ' proof.degreeBits)
+              (committedTrace (C.setupAt EF _ h) log proof),
             ¬ C.air.Satisfied proof.degreeBits trace publicValues] ≤
       (Q + C.verifierQueries EF) * C.roundError EF δ δ' +
         hashError F (C.params.capHeight + 1) (Q + C.verifierQueries EF) :=

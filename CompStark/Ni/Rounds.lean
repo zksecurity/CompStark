@@ -267,7 +267,7 @@ theorem finalPolyAt_coeffs {lookups : List (Lookup F)} (S : Iop.Setup EF lookups
 /-! ### The transcript of a prefix -/
 
 section Prefix
-variable (S : Iop.Setup EF)
+variable (S : Iop.Setup EF) [S.Folds]
 
 /-- The STARK's domain separator on a proof for `S`. -/
 def starkSeedS : List F := starkSeedOf EF S.params S.air S.logN

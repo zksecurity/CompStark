@@ -519,12 +519,12 @@ theorem batchLoop_ok (P : Params) (logMax index : Nat) (alpha : EF)
         rfl
       | cons y ys => exact hne'' (List.cons_ne_nil _ _)
 
-/-- **An accepting `reduceQuery`** on batches whose matrices all have height `2 ^ logMax`, above
-the blowup, with a row per matrix: every opened point has a value per column, and the result is
+/-- **An accepting `reduceQuery`** on batches whose matrices all have height `2 ^ logMax`, with a
+row per matrix: every opened point has a value per column, and the result is
 the single reduced opening at `logMax`, the batched quotient over all opened values at the
 query's point. -/
 theorem reduceQuery_ok (P : Params) (logMax index : Nat) (alpha : EF) (rows : List (List (Array F)))
-    (rounds : List (Round F EF)) (hb : logMax ≠ P.logBlowup) (hne : rows.zip rounds ≠ [])
+    (rounds : List (Round F EF)) (hne : rows.zip rounds ≠ [])
     (hh : ∀ x ∈ rounds, ∀ dp ∈ x.2, dp.1.logSize + P.logBlowup = logMax)
     (hrows : ∀ x ∈ rows.zip rounds, x.1.length = x.2.2.length ∧ x.2.2 ≠ []) (st : H.State)
     (r : List (Nat × EF) × H.State)
@@ -539,11 +539,17 @@ theorem reduceQuery_ok (P : Params) (logMax index : Nat) (alpha : EF) (rows : Li
   simp only at hst hro
   subst hst
   rw [hro hne] at h2
-  simp only [List.lookup_cons, show (P.logBlowup == logMax) = false from
-    beq_false_of_ne (Ne.symm hb), List.lookup_nil] at h2
   refine ⟨hw, ?_⟩
-  rw [pure_eq_ok H h2, List.mergeSort_singleton]
-  rfl
+  by_cases hb : logMax = P.logBlowup
+  · subst hb
+    simp only [List.lookup_cons, beq_self_eq_true, ↓reduceIte] at h2
+    obtain ⟨-, h2⟩ := ensure_bind_eq_ok H h2
+    rw [pure_eq_ok H h2, List.mergeSort_singleton]
+    rfl
+  · simp only [List.lookup_cons, show (P.logBlowup == logMax) = false from
+      beq_false_of_ne (Ne.symm hb), List.lookup_nil] at h2
+    rw [pure_eq_ok H h2, List.mergeSort_singleton]
+    rfl
 
 /-! ### The input multi-openings -/
 
@@ -898,7 +904,6 @@ theorem size_caps_of_queryOk (P : Params) (logMax : Nat) (alpha : EF)
 theorem queryBody_ok (P : Params) (logMax : Nat) (alpha : EF) (rounds : List (Round F EF))
     (betas : List EF) (arities : List Nat) (folds : List (CommitOpening F EF))
     (inputs : List (MultiOpening F)) (finalPoly : Array EF) (x : Nat × Nat)
-    (hb : logMax ≠ P.logBlowup)
     (hne : (inputs.map fun b ↦ (b.values.getD x.2 #[]).toList).zip rounds ≠ [])
     (hh : ∀ y ∈ rounds, ∀ dp ∈ y.2, dp.1.logSize + P.logBlowup = logMax)
     (hrows : ∀ y ∈ (inputs.map fun b ↦ (b.values.getD x.2 #[]).toList).zip rounds,
@@ -919,7 +924,7 @@ theorem queryBody_ok (P : Params) (logMax : Nat) (alpha : EF) (rounds : List (Ro
   intro rows e0 l fin
   unfold queryBody at h
   obtain ⟨ro, st1, h1, hk1⟩ := bind_eq_ok H h
-  obtain ⟨hw, hro⟩ := reduceQuery_ok H P logMax x.1 alpha _ rounds hb hne hh hrows st _ h1
+  obtain ⟨hw, hro⟩ := reduceQuery_ok H P logMax x.1 alpha _ rounds hne hh hrows st _ h1
   obtain ⟨rfl, rfl⟩ := Prod.mk.inj hro
   obtain ⟨res, st2, h2, hk2⟩ := bind_eq_ok H hk1
   obtain ⟨hsib, hfin, hres⟩ := foldQuery_ok H P logMax x.1 x.2 betas arities folds _ _ _ h2
@@ -973,13 +978,13 @@ theorem phaseLoop_ok (capHeight : Nat) (groups : List (List (Nat × List EF)))
 
 
 /-- **An accepting FRI verifier**, after the batching challenge `alpha`, on batches whose
-matrices all have height `2 ^ logMax`, above the blowup: the proof has Plonky3's shape for the
+matrices all have height `2 ^ logMax`: the proof has Plonky3's shape for the
 fold schedule, the query grinding witness checks, and every query passes its checks at the index
 it samples. The challenges are those the challenger returns after the domain separator: the
 folding challenges of the commit loop (`commitReplay`), and the query indices after the grinding
 check (`sampleStates`). -/
 theorem verifyFri_ok (P : Params) (proof : FriProof F EF) (rounds : List (Round F EF))
-    (alpha : EF) (logMax : Nat) (hb : logMax ≠ P.logBlowup)
+    (alpha : EF) (logMax : Nat)
     (hh : ∀ x ∈ rounds, ∀ dp ∈ x.2, dp.1.logSize + P.logBlowup = logMax)
     (s : H.State) (r : Unit × H.State) (h : verifyFri H P proof rounds alpha s = .ok r) :
     let ar := foldSchedule P.maxLogArity (P.logBlowup + P.logFinalPolyLen) logMax [logMax]
@@ -1072,7 +1077,7 @@ theorem verifyFri_ok (P : Params) (proof : FriProof F EF) (rounds : List (Round 
         rw [List.getElem_zipIdx, Nat.zero_add]
         rw [List.length_zipIdx, hidxlen] at hk
         exact hk
-      exact congrArg Prod.snd ((queryBody_ok H P logMax alpha rounds _ ar _ _ _ x hb (hzne _) hh
+      exact congrArg Prod.snd ((queryBody_ok H P logMax alpha rounds _ ar _ _ _ x (hzne _) hh
         (hrowsq _ hq) s r hr).2.2.2.2)) h4
   simp only at hst4
   subst hst4
@@ -1090,7 +1095,7 @@ theorem verifyFri_ok (P : Params) (proof : FriProof F EF) (rounds : List (Round 
   have hq := hg j hjk hjg
   rw [List.getElem_zipIdx, Nat.zero_add, hbetas] at hq
   obtain ⟨hwid, hsib, hfin, hfinal, hres⟩ := queryBody_ok H P logMax alpha rounds _ ar _ _ _
-    (idx[j]'(by rw [hidxlen]; exact hj), j) hb (hzne _) hh (hrowsq j hj) _ _ hq
+    (idx[j]'(by rw [hidxlen]; exact hj), j) (hzne _) hh (hrowsq j hj) _ _ hq
   have hgj := congrArg Prod.fst hres
   dsimp only at hgj hwid hfin hfinal
   have hidxj : idx[j]'(by rw [hidxlen]; exact hj) =

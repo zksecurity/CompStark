@@ -170,14 +170,14 @@ theorem obsOpened_eq (H : Primitives F Id) (s : H.State) (rounds : List (Round F
         roundValues rounds from List.flatMap_cons, coeffs_append, obsList_append]
 
 /-- An accepted proof opens values and has a final polynomial. -/
-theorem nonempty_of_verify (S : Iop.Setup EF) (H : Primitives F Id)
+theorem nonempty_of_verify (S : Iop.Setup EF) [S.Folds] (H : Primitives F Id)
     (vk : Option (PreprocessedKey F)) (proof : Proof F EF) (pis : List F)
     (hdb : proof.degreeBits = S.logN) (h : verifyWith H S.params S.air vk proof pis = .ok ()) :
     openedValues proof.opened ≠ [] ∧ proof.fri.finalPoly.toList ≠ [] := by
   obtain ⟨-, -, hqc, hq4, -, -, -, -, -, -, ⟨st, hfriOk⟩, -⟩ :=
     verifyWith_ok H S.params S.air vk proof pis h
   obtain ⟨-, hb, hh, -⟩ := friHyps S vk proof (zetaOf H S.params S.air vk proof pis) hdb
-  obtain ⟨-, -, -, -, hfp, -⟩ := verifyFri_ok H S.params proof.fri _ _ _ hb hh _ _ hfriOk
+  obtain ⟨-, -, -, -, hfp, -⟩ := verifyFri_ok H S.params proof.fri _ _ _ hh _ _ hfriOk
   refine ⟨fun he ↦ ?_, fun he ↦ ?_⟩
   · have hpos : 0 < proof.opened.quotientChunks.size := by rw [hqc]; exact Nat.two_pow_pos _
     have h4 := hq4 _ (Array.getElem_mem hpos)

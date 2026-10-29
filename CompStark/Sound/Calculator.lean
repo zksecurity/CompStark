@@ -408,7 +408,7 @@ theorem knowledgeError_le_bound (hp : Nat.card F = p) (B : McaBound) (hB : B.Hol
   ring
 
 /-- The round error is at most the calculator's bound with an MCA bound `B` that holds. -/
-theorem roundError_le_bound (S : Iop.Setup EF) (hp : Nat.card F = p) (B : McaBound)
+theorem roundError_le_bound (S : Iop.Setup EF) [S.Folds] (hp : Nat.card F = p) (B : McaBound)
     (hB : B.Holds) (hA : S.Fits B A) (δ δ' : ℝ≥0) (hδ : (δ : ℝ) = A.δ)
     (hδ' : (δ' : ℝ) = A.δ') :
     roundError S δ δ' ≤ ENNReal.ofReal (S.roundErrorBound p B A : ℝ) := by
@@ -440,6 +440,41 @@ theorem roundError_le_bound (S : Iop.Setup EF) (hp : Nat.card F = p) (B : McaBou
     rw [Iop.Setup.queryDensity]
     push_cast
     rfl
+
+/-- Without FRI folds, the round error is at most the calculator's bound with an MCA bound `B`
+that holds. -/
+theorem roundError0_le_bound (S : Iop.Setup EF) (hp : Nat.card F = p) (B : McaBound)
+    (hB : B.Holds) (hA : S.Fits B A) (δ δ' : ℝ≥0) (hδ : (δ : ℝ) = A.δ)
+    (hδ' : (δ' : ℝ) = A.δ') :
+    roundError0 S δ δ' ≤ ENNReal.ofReal (S.roundErrorBound p B A : ℝ) := by
+  have hT {x : String × ℚ} (h : x ∈ S.roundErrorTerms p B A) :
+      ENNReal.ofReal (x.2 : ℝ) ≤ ENNReal.ofReal (S.roundErrorBound p B A : ℝ) :=
+    ENNReal.ofReal_le_ofReal (Rat.cast_le.mpr (le_maxTerms h))
+  refine max_le ?_ (max_le ?_ (max_le ?_ ?_))
+  · exact (foldingError_le_calc S A hp hA.1 δ' hδ').trans (hT (.head _))
+  · exact (powFraction_mul_le_ofReal hp _ (outOfDomainError_le_calc S A hp hA.1 δ' hδ')).trans
+      (hT (.tail _ (.head _)))
+  · exact (powFraction_mul_le_ofReal hp _
+      (batchingErrorOf_le_calc S A hp B hB S.numOpened hA.1 hA.2.1 δ δ' hδ hδ')).trans
+      (hT (.tail _ (.tail _ (.head _))))
+  · have hd1 : A.δ < 1 := lt_of_le_of_lt hA.1.2.2.1 hA.1.2.2.2.1
+    have hp0 : (0 : ℚ) ≤ 1 / p := by positivity
+    have hl : (0 : ℚ) ≤ ((S.friPlan []).length : ℚ) * A.loss := mul_nonneg (by positivity)
+      hA.1.2.1.le
+    refine (powFraction_mul_le_ofReal hp _ ?_).trans
+      (hT (.tail _ (.tail _ (.tail _ (.tail _ (.head _))))))
+    have h0 : (0 : ℝ) ≤ 1 - δ + 1 / Nat.card F := by
+      rw [hδ, hp]
+      have : (A.δ : ℝ) < 1 := by exact_mod_cast hd1
+      positivity
+    rw [friQueryError0, ← ENNReal.ofReal_pow h0]
+    refine ENNReal.ofReal_le_ofReal ?_
+    rw [Rat.cast_pow]
+    refine pow_le_pow_left₀ h0 ?_ _
+    rw [hδ, hp, Iop.Setup.queryDensity]
+    push_cast
+    have : (0 : ℝ) ≤ ((S.friPlan []).length : ℝ) * (A.loss : ℝ) := by exact_mod_cast hl
+    linarith
 
 end Setup
 

@@ -38,6 +38,10 @@ namespace CompStarkTests.RandomOracle
 #guard_msgs in
 #print axioms CompStark.Iop.Statement.admits_of_ok
 
+/-- info: 'CompStark.Ni.exists_badAt0' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in
+#print axioms CompStark.Ni.exists_badAt0
+
 /-- info: 'CompStark.Ni.parse_keyAt' depends on axioms: [propext, Classical.choice, Quot.sound] -/
 #guard_msgs in
 #print axioms CompStark.Ni.parse_keyAt

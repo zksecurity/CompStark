@@ -49,6 +49,50 @@ theorem exists_preprocessedKeyWith (H : Primitives F Id) (P : Params) (A : Air F
   simp only [show A.preprocessedWidth ≠ 0 from Nat.pos_iff_ne_zero.mp hw, ↓reduceIte]
   exact ⟨_, rfl, rfl⟩
 
+/-- Every matrix the verifier opens at `ζ` has the trace's length. -/
+theorem logSize_openingRounds (A : Air F) (vk : Option (PreprocessedKey F)) (proof : Proof F EF)
+    (zeta : EF) : ∀ x ∈ openingRounds A vk proof zeta, ∀ dp ∈ x.2,
+      dp.1.logSize = proof.degreeBits := by
+  intro x hx dp hdp
+  simp only [openingRounds, List.cons_append, List.nil_append, List.mem_cons] at hx
+  rcases hx with rfl | rfl | hx
+  · simp only [List.mem_cons, List.not_mem_nil, or_false] at hdp
+    rw [hdp]
+  · obtain ⟨ch, -, rfl⟩ := List.mem_map.mp hdp
+    rfl
+  · unfold preprocessedRound at hx
+    split at hx
+    · rw [List.mem_singleton] at hx
+      subst hx
+      rw [List.mem_singleton] at hdp
+      rw [hdp]
+    · exact absurd hx List.not_mem_nil
+
+/-- An accepting FRI verifier on the trace's rounds folds down to the final polynomial's length:
+the trace is at least as long, the query's checks ending at the final height. -/
+theorem finalPolyFits_of_verifyFri (H : Primitives F Id) (P : Params) (A : Air F)
+    (vk : Option (PreprocessedKey F)) (proof : Proof F EF) (zeta alpha : EF) (s : H.State)
+    (r : Unit × H.State)
+    (h : verifyFri H P proof.fri (openingRounds A vk proof zeta) alpha s = .ok r) :
+    P.logFinalPolyLen ≤ proof.degreeBits := by
+  obtain ⟨hq, -, -, -⟩ := verifyFri_checks H _ _ _ _ _ _ h
+  by_contra hlt
+  rw [not_le] at hlt
+  obtain ⟨-, hfolds, -, -, -, -, -, hok⟩ := verifyFri_ok H P proof.fri _ alpha
+    (proof.degreeBits + P.logBlowup)
+    (fun x hx dp hdp ↦ by rw [logSize_openingRounds A vk proof zeta x hx dp hdp]) s r h
+  have har : foldSchedule P.maxLogArity (P.logBlowup + P.logFinalPolyLen)
+      (proof.degreeBits + P.logBlowup) [proof.degreeBits + P.logBlowup] = [] := by
+    cases hm : proof.degreeBits + P.logBlowup with
+    | zero => rfl
+    | succ m =>
+      have hle : m + 1 ≤ P.logBlowup + P.logFinalPolyLen := by omega
+      simp only [foldSchedule, hle, ↓reduceIte]
+  obtain ⟨-, -, -, hfin, -⟩ := hok 0 hq
+  simp only [har, querySteps, List.zip_nil_left, List.map_nil, List.zip_nil_right,
+    List.length_nil, foldState_zero] at hfin
+  omega
+
 omit [BaseField F] [Challenge F EF] in
 /-- A proof that passes the shape check against a key has the key's length. -/
 theorem degreeBits_of_shapeOk {A : Air F} {k : PreprocessedKey F} {o : OpenedValues EF}
@@ -69,29 +113,30 @@ variable {F : Type} [BaseField F] {EF : Type} [Challenge F EF] (C : Statement F)
 theorem admits_of_ok {K : Nat} (answer : (q : Query F) → Answer K q) (proof : Proof F EF)
     (pis : List F)
     (hok : verifyWith (idealOf answer) C.params C.air
-      (preprocessedKeyWith (idealOf answer) C.params C.air C.preprocessedLogN) proof pis = .ok ())
-    (hf : C.params.logFinalPolyLen < proof.degreeBits) : C.Admits proof.degreeBits := by
+      (preprocessedKeyWith (idealOf answer) C.params C.air C.preprocessedLogN) proof pis = .ok ()) :
+    C.Admits proof.degreeBits := by
   obtain ⟨-, -, -, -, hshape, hdeg, -, -, -, -, ⟨st, hfri⟩, -⟩ :=
     verifyWith_ok (idealOf answer) C.params C.air _ proof pis hok
   obtain ⟨hq, hb, ha, hmax⟩ := verifyFri_checks (idealOf answer) _ _ _ _ _ _ hfri
+  have hfin := finalPolyFits_of_verifyFri (idealOf answer) _ _ _ _ _ _ _ _ hfri
   rw [heights_openingRounds, List.headD_cons] at hmax
   refine ⟨⟨C.colsInWidth, periodicFits_of_ok (idealOf answer) _ _ _ proof pis hok, hmax, hdeg, ha,
-    hf.le, hq, hb⟩, fun hw ↦ ?_⟩
+    hfin, hq, hb⟩, fun hw ↦ ?_⟩
   obtain ⟨k, hk, hkd⟩ := exists_preprocessedKeyWith (idealOf answer) C.params C.air
     C.preprocessedLogN hw
   rw [hk] at hshape
   rw [← degreeBits_of_shapeOk hshape, hkd]
 
 /-- At an admitted length, the setup's verifying key is the statement's. -/
-theorem setupRo_setupAt (n : Nat) (h : C.Admits n) (hf : C.params.logFinalPolyLen < n) :
-    (C.setupAt EF n h hf).setupRo = C.setupRo EF :=
+theorem setupRo_setupAt (n : Nat) (h : C.Admits n) :
+    (C.setupAt EF n h).setupRo = C.setupRo EF :=
   preprocessedKeyWith_congr _ _ _ h.preprocessed
 
 /-- At an admitted length, the setup's verifying key on an answer table is the statement's. -/
 theorem preprocessedKeyWith_setupAt {K : Nat} (answer : (q : Query F) → Answer K q) (n : Nat)
-    (h : C.Admits n) (hf : C.params.logFinalPolyLen < n) :
-    preprocessedKeyWith (idealOf answer) (C.setupAt EF n h hf).params (C.setupAt EF n h hf).air
-      (C.setupAt EF n h hf).logN =
+    (h : C.Admits n) :
+    preprocessedKeyWith (idealOf answer) (C.setupAt EF n h).params (C.setupAt EF n h).air
+      (C.setupAt EF n h).logN =
       preprocessedKeyWith (idealOf answer) C.params C.air C.preprocessedLogN :=
   preprocessedKeyWith_congr _ _ _ h.preprocessed
 
@@ -99,8 +144,8 @@ theorem preprocessedKeyWith_setupAt {K : Nat} (answer : (q : Query F) → Answer
 noncomputable abbrev boundDigestsC : Digest F → List F → List (Digest F) :=
   boundDigestsOf C.params (starkSeedOf EF C.params C.air 0).length
 
-theorem boundDigests_setupAt (n : Nat) (h : C.Admits n) (hf : C.params.logFinalPolyLen < n) :
-    boundDigests (C.setupAt EF n h hf) = C.boundDigestsC (EF := EF) := by
+theorem boundDigests_setupAt (n : Nat) (h : C.Admits n) :
+    boundDigests (C.setupAt EF n h) = C.boundDigestsC (EF := EF) := by
   funext cap input
   show boundDigestsOf C.params (starkSeedOf EF C.params C.air n).length cap input = _
   rw [DomainSeparator.length_starkSeedOf EF _ _ n 0]
@@ -122,7 +167,7 @@ def firstBlock {K : Nat} (pre : QueryLog (spec F K)) : Query F → List F
   | .leaf _ | .node .. => []
 
 /-- A bad duplex call's first round observes the setup's domain separator first. -/
-theorem prefix_firstBlock (S : Iop.Setup EF) (publicValues : List F) (δ δ' loss : NNReal)
+theorem prefix_firstBlock (S : Iop.Setup EF) [S.Folds] (publicValues : List F) (δ δ' loss : NNReal)
     (pre : QueryLog (spec F S.streamLen)) (t : Query F) (u : Answer S.streamLen t)
     (h : RoundBad S publicValues δ δ' loss pre t u) : starkSeedS S <+: firstBlock pre t := by
   cases t with

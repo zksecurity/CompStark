@@ -156,8 +156,8 @@ noncomputable def knowledgeError (S : Setup EF lookups) (δ δ' : NNReal) : ENNR
     friError S δ
 
 /-- The rate at every trace length is the statement's. -/
-theorem Statement.rate_setupAt (C : Statement F) (n : Nat) (h : C.Admits n)
-    (hf : C.params.logFinalPolyLen < n) : (C.setupAt EF n h hf).rate = C.rate := by
+theorem Statement.rate_setupAt (C : Statement F) (n : Nat) (h : C.Admits n) :
+    (C.setupAt EF n h).rate = C.rate := by
   rw [Setup.rate, Setup.n, Setup.size, pow_add, Statement.rate]
   push_cast
   field_simp

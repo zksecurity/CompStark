@@ -147,7 +147,8 @@ theorem knowledgeError_le_of_secure {lookups : List (Lookup F)} (S : Setup EF lo
 /-- **Knowledge soundness from the calculator.** If the calculator certifies `bits` bits for `S`
 at `A` with an MCA bound that holds, and no trace within `δ' = A.δ'` of the prover's committed
 trace satisfies the AIR, the verifier accepts with probability at most `2 ^ (-bits)`. -/
-theorem knowledgeSoundness_of_secure (S : Setup EF) (hp : Nat.card F = p) {B : McaBound}
+theorem knowledgeSoundness_of_secure (S : Setup EF) [S.Folds] (hp : Nat.card F = p)
+    {B : McaBound}
     (hB : B.Holds) (A : Analysis) {bits : ℕ} (h : S.Secure p B A bits) (δ' : NNReal)
     (hδ' : (δ' : ℝ) = A.δ') (publicValues : List F) (prover : Prover S) :
     (∀ trace ∈ closeTraces S δ' prover.trace, ¬ S.air.Satisfied S.logN trace publicValues) →
@@ -158,7 +159,8 @@ theorem knowledgeSoundness_of_secure (S : Setup EF) (hp : Nat.card F = p) {B : M
 /-- **The calculator's round error.** If the calculator certifies `bits` bits per oracle answer
 for `S` at `A` with an MCA bound `B` that holds (`S.SecureRo p B A bits`), the round error with
 FRI at `A.δ` and the extractor at `A.δ'` is at most `2 ^ (-bits)`. -/
-theorem roundError_le_of_secureRo (S : Setup EF) (hp : Nat.card F = p) {B : McaBound}
+theorem roundError_le_of_secureRo (S : Setup EF) [S.Folds] (hp : Nat.card F = p)
+    {B : McaBound}
     (hB : B.Holds) (A : Analysis) {bits : ℕ} (h : S.SecureRo p B A bits) (δ δ' : NNReal)
     (hδ : (δ : ℝ) = A.δ) (hδ' : (δ' : ℝ) = A.δ') :
     roundError S δ δ' ≤ (2 ^ bits)⁻¹ :=
@@ -172,27 +174,34 @@ theorem Statement.roundError_le_of_secureRo (C : Statement F) (hp : Nat.card F =
     {B : McaBound} (hB : B.Holds) (A : Analysis) {bits : ℕ} (h : C.SecureRo EF p B A bits)
     (δ δ' : NNReal) (hδ : (δ : ℝ) = A.δ) (hδ' : (δ' : ℝ) = A.δ') :
     C.roundError EF (fun _ ↦ δ) (fun _ ↦ δ') ≤ (2 ^ bits)⁻¹ := by
-  refine iSup_le fun n ↦ iSup_le fun hn ↦ iSup_le fun hf ↦ ?_
-  have hb : C.admitsFolding n = true := (C.admitsFolding_iff n).mpr ⟨hn, hf⟩
-  exact _root_.CompStark.Iop.roundError_le_of_secureRo (C.setupOf EF n hb) hp hB A
-    (h n (by have := hn.sound.twoAdic; omega) hb) δ δ' hδ hδ'
+  refine iSup_le fun n ↦ iSup_le fun hn ↦ ?_
+  have hb : C.admits n = true := (C.admits_iff n).mpr hn
+  have hs := h n (by have := hn.sound.twoAdic; omega) hb
+  unfold Setup.lengthError
+  split
+  · rename_i hf
+    have : (C.setupOf EF n hb).Folds := ⟨hf⟩
+    exact _root_.CompStark.Iop.roundError_le_of_secureRo (C.setupOf EF n hb) hp hB A hs δ δ' hδ
+      hδ'
+  · exact (roundError0_le_bound A (C.setupOf EF n hb) hp B hB hs.1 δ δ' hδ hδ').trans
+      (ofReal_le_inv_two_pow hs.2)
 
 /-- **Knowledge soundness in the random-oracle model from the calculator.** If the calculator
 certifies `bits` bits per oracle answer for the statement `C` at `A` with an MCA bound that holds,
 on a base field of at least `2 ^ 8` elements with two-adicity below `2 ^ 64`, a prover making at
-most `Q` oracle calls gets a proof accepted at a length FRI folds at, while no trace of that length
-within `δ' = A.δ'` of the one it committed to satisfies the AIR, with probability at most
-`q · 2 ^ (-bits) + hashError q`, `q = Q + verifierQueries`. -/
+most `Q` oracle calls gets a proof accepted while no trace of its length within `δ' = A.δ'` of the
+one it committed to satisfies the AIR, with probability at most `q · 2 ^ (-bits) + hashError q`,
+`q = Q + verifierQueries`. -/
 theorem knowledgeSoundness_ro_of_secureRo (C : Statement F) (hp : Nat.card F = p)
     {B : McaBound} (hB : B.Holds) (A : Analysis) {bits : ℕ} (h : C.SecureRo EF p B A bits)
     (h8 : 2 ^ 8 ≤ Nat.card F) (h64 : twoAdicity F < 2 ^ 64) (δ' : NNReal)
     (hδ' : (δ' : ℝ) = A.δ') (hA : A.Valid (1 / 2 ^ C.params.logBlowup)) (publicValues : List F)
     (Q : Nat) (prover : C.NIProver EF) (hQ : prover.IsTotalQueryBound Q) :
     Pr{let (proof, log, verdict) ← C.run publicValues prover}[
-      verdict = .ok () ∧ C.params.logFinalPolyLen < proof.degreeBits ∧
-        ∀ (h : C.Admits proof.degreeBits) (hf : C.params.logFinalPolyLen < proof.degreeBits),
-          ∀ trace ∈ closeTraces (C.setupAt EF _ h hf) δ'
-              (committedTrace (C.setupAt EF _ h hf) log proof),
+      verdict = .ok () ∧
+        ∀ h : C.Admits proof.degreeBits,
+          ∀ trace ∈ closeTraces (C.setupAt EF _ h) δ'
+              (committedTrace (C.setupAt EF _ h) log proof),
             ¬ C.air.Satisfied proof.degreeBits trace publicValues] ≤
       (Q + C.verifierQueries EF) * (2 ^ bits)⁻¹ +
         hashError F (C.params.capHeight + 1) (Q + C.verifierQueries EF) := by
@@ -294,7 +303,8 @@ def fibonacciSetup : Setup KoalaBear.Fast.Ext4 where
       finalPolyFits := by decide
       queries := by decide
       blowup := by decide }
-  folds := by decide
+
+instance : fibonacciSetup.Folds := ⟨by decide⟩
 
 /-- FRI at `δ = 15/32 - 2 ^ (-40)`, the extractor at `δ' = 15/32 - 2 ^ (-42)`, below the
 unique-decoding radius `15/32`, and `loss = 2 ^ (-60)`. -/
@@ -370,7 +380,8 @@ def wideSetup : Setup KoalaBear.Fast.Ext4 where
   logN := 20
   valid := ValidConfig.sound <|
     wide_valid wideParams rfl (by decide) rfl (by decide) 64 (by decide) 20 (by decide)
-  folds := by decide
+
+instance : wideSetup.Folds := ⟨by decide⟩
 
 /-- FRI at `δ = 1535/4096 = 3/8 - 2 ^ (-12)`, the extractor at
 `δ' = 6143/16384 = 3/8 - 2 ^ (-14)` and `loss = 2 ^ (-17)`. -/
@@ -404,7 +415,8 @@ def wide21Setup : Setup KoalaBear.Fast.Ext4 where
   logN := 21
   valid := ValidConfig.sound <|
     wide_valid wideParams rfl (by decide) rfl (by decide) 64 (by decide) 21 (by decide)
-  folds := by decide
+
+instance : wide21Setup.Folds := ⟨by decide⟩
 
 /-- FRI at `δ = 1535/4096 = 3/8 - 2 ^ (-12)`, the extractor at
 `δ' = 6143/16384 = 3/8 - 2 ^ (-14)` and `loss = 2 ^ (-17)`. -/
@@ -449,7 +461,8 @@ def wideSp1Setup : Setup KoalaBear.Fast.Ext4 where
   logN := 21
   valid := ValidConfig.sound <|
     wide_valid sp1Params rfl (by decide) rfl (by decide) 64 (by decide) 21 (by decide)
-  folds := by decide
+
+instance : wideSp1Setup.Folds := ⟨by decide⟩
 
 
 /-- FRI at `δ = 3/8 - 2 ^ (-14)`, the extractor at `δ' = 3/8 - 2 ^ (-16)` and
@@ -480,18 +493,17 @@ theorem wideSp1Statement_secureRo :
   decide +kernel
 
 /-- **98 bits per oracle call at every trace length.** A prover for `wideSp1Statement` making at
-most `Q` oracle calls gets a proof accepted at a length FRI folds at, while no trace of that length
+most `Q` oracle calls gets a proof accepted while no trace of its length
 within `3/8 - 2 ^ (-16)` of the one it committed to satisfies the AIR, with probability at most
 `q · 2 ^ (-98) + hashError q`, `q = Q + verifierQueries`. -/
 theorem wideSp1_knowledgeSoundness_ro (publicValues : List F) (Q : Nat)
     (prover : wideSp1Statement.NIProver Ext4) (hQ : prover.IsTotalQueryBound Q) :
     Pr{let (proof, log, verdict) ← wideSp1Statement.run publicValues prover}[
-      verdict = .ok () ∧ wideSp1Statement.params.logFinalPolyLen < proof.degreeBits ∧
-        ∀ (h : wideSp1Statement.Admits proof.degreeBits)
-          (hf : wideSp1Statement.params.logFinalPolyLen < proof.degreeBits),
-          ∀ trace ∈ closeTraces (wideSp1Statement.setupAt Ext4 _ h hf)
+      verdict = .ok () ∧
+        ∀ h : wideSp1Statement.Admits proof.degreeBits,
+          ∀ trace ∈ closeTraces (wideSp1Statement.setupAt Ext4 _ h)
               (3 / 8 - 2 ^ (-16 : ℤ) : NNReal)
-              (committedTrace (wideSp1Statement.setupAt Ext4 _ h hf) log proof),
+              (committedTrace (wideSp1Statement.setupAt Ext4 _ h) log proof),
             ¬ (wide 64 : Air F).Satisfied proof.degreeBits trace publicValues] ≤
       (Q + wideSp1Statement.verifierQueries Ext4) * (2 ^ 98)⁻¹ +
         hashError F 1 (Q + wideSp1Statement.verifierQueries Ext4) :=
@@ -521,7 +533,8 @@ def wideGrindSetup : Setup KoalaBear.Fast.Ext4 where
   logN := 21
   valid := ValidConfig.sound <|
     wide_valid wideGrindParams rfl (by decide) rfl (by decide) 64 (by decide) 21 (by decide)
-  folds := by decide
+
+instance : wideGrindSetup.Folds := ⟨by decide⟩
 
 
 /-- FRI at `δ = 3/8 - 2 ^ (-11)`, the extractor at `δ' = 3/8 - 2 ^ (-13)` and
@@ -553,18 +566,17 @@ theorem wideGrindStatement_secureRo :
   decide +kernel
 
 /-- **117 bits per oracle call at every trace length.** A prover for `wideGrindStatement` making at
-most `Q` oracle calls gets a proof accepted at a length FRI folds at, while no trace of that length
+most `Q` oracle calls gets a proof accepted while no trace of its length
 within `3/8 - 2 ^ (-13)` of the one it committed to satisfies the AIR, with probability at most
 `q · 2 ^ (-117) + hashError q`, `q = Q + verifierQueries`. -/
 theorem wideGrind_knowledgeSoundness_ro (publicValues : List F) (Q : Nat)
     (prover : wideGrindStatement.NIProver Ext4) (hQ : prover.IsTotalQueryBound Q) :
     Pr{let (proof, log, verdict) ← wideGrindStatement.run publicValues prover}[
-      verdict = .ok () ∧ wideGrindStatement.params.logFinalPolyLen < proof.degreeBits ∧
-        ∀ (h : wideGrindStatement.Admits proof.degreeBits)
-          (hf : wideGrindStatement.params.logFinalPolyLen < proof.degreeBits),
-          ∀ trace ∈ closeTraces (wideGrindStatement.setupAt Ext4 _ h hf)
+      verdict = .ok () ∧
+        ∀ h : wideGrindStatement.Admits proof.degreeBits,
+          ∀ trace ∈ closeTraces (wideGrindStatement.setupAt Ext4 _ h)
               (3 / 8 - 2 ^ (-13 : ℤ) : NNReal)
-              (committedTrace (wideGrindStatement.setupAt Ext4 _ h hf) log proof),
+              (committedTrace (wideGrindStatement.setupAt Ext4 _ h) log proof),
             ¬ (wide 64 : Air F).Satisfied proof.degreeBits trace publicValues] ≤
       (Q + wideGrindStatement.verifierQueries Ext4) * (2 ^ 117)⁻¹ +
         hashError F 1 (Q + wideGrindStatement.verifierQueries Ext4) :=
@@ -591,7 +603,8 @@ def wide5Setup : Setup KoalaBear.Fast.Ext5 where
   logN := 21
   valid := ValidConfig.sound <|
     wide_valid wide5Params rfl (by decide) rfl (by decide) 64 (by decide) 21 (by decide)
-  folds := by decide
+
+instance : wide5Setup.Folds := ⟨by decide⟩
 
 
 /-- FRI at `δ = 3/8 - 2 ^ (-20)`, the extractor at `δ' = 3/8 - 2 ^ (-22)` and
@@ -621,18 +634,17 @@ theorem wide5Statement_secureRo :
   decide +kernel
 
 /-- **128 bits per oracle call at every trace length.** A prover for `wide5Statement` making at
-most `Q` oracle calls gets a proof accepted at a length FRI folds at, while no trace of that length
+most `Q` oracle calls gets a proof accepted while no trace of its length
 within `3/8 - 2 ^ (-22)` of the one it committed to satisfies the AIR, with probability at most
 `q · 2 ^ (-128) + hashError q`, `q = Q + verifierQueries`. -/
 theorem wide5_knowledgeSoundness_ro (publicValues : List F) (Q : Nat)
     (prover : wide5Statement.NIProver Ext5) (hQ : prover.IsTotalQueryBound Q) :
     Pr{let (proof, log, verdict) ← wide5Statement.run publicValues prover}[
-      verdict = .ok () ∧ wide5Statement.params.logFinalPolyLen < proof.degreeBits ∧
-        ∀ (h : wide5Statement.Admits proof.degreeBits)
-          (hf : wide5Statement.params.logFinalPolyLen < proof.degreeBits),
-          ∀ trace ∈ closeTraces (wide5Statement.setupAt Ext5 _ h hf)
+      verdict = .ok () ∧
+        ∀ h : wide5Statement.Admits proof.degreeBits,
+          ∀ trace ∈ closeTraces (wide5Statement.setupAt Ext5 _ h)
               (3 / 8 - 2 ^ (-22 : ℤ) : NNReal)
-              (committedTrace (wide5Statement.setupAt Ext5 _ h hf) log proof),
+              (committedTrace (wide5Statement.setupAt Ext5 _ h) log proof),
             ¬ (wide 64 : Air F).Satisfied proof.degreeBits trace publicValues] ≤
       (Q + wide5Statement.verifierQueries Ext5) * (2 ^ 128)⁻¹ +
         hashError F 1 (Q + wide5Statement.verifierQueries Ext5) :=
@@ -659,7 +671,8 @@ def wide5iSetup : Setup KoalaBear.Fast.Ext5 where
   logN := 21
   valid := ValidConfig.sound <|
     wide_valid wide5iParams rfl (by decide) rfl (by decide) 64 (by decide) 21 (by decide)
-  folds := by decide
+
+instance : wide5iSetup.Folds := ⟨by decide⟩
 
 /-- FRI at `δ = 6143/16384 = 3/8 - 2 ^ (-14)`, the extractor at
 `δ' = 24575/65536 = 3/8 - 2 ^ (-16)` and `loss = 2 ^ (-19)`. -/

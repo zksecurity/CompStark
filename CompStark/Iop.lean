@@ -65,20 +65,24 @@ def LookupsValid (params : Fri.Params) (air : Air F) (logN : Nat) : List (Lookup
         l.Fits air.width air.mainNextWidth air.preprocessedWidth air.preprocessedNextWidth
 
 /-- A STARK to prove with over the challenge field `EF`: FRI parameters, an AIR and a trace of
-`2 ^ logN` rows, in a sound configuration (`SoundConfig`) with at least one FRI fold, and the
-lookups it proves, Plonky3-packed (`Air.packedLookups`): none for a STARK of its own. -/
+`2 ^ logN` rows, in a sound configuration (`SoundConfig`), and the lookups it proves,
+Plonky3-packed (`Air.packedLookups`): none for a STARK of its own. -/
 structure Setup (EF : Type) [Challenge F EF] (lookups : List (Lookup F) := []) where
   params : Fri.Params
   air : Air F
   logN : Nat
   valid : SoundConfig params air logN
-  /-- FRI's final polynomial is shorter than the trace, so FRI folds at least once. -/
-  folds : params.logFinalPolyLen < logN
   /-- The lookups are valid on the instance (`LookupsValid`). -/
   lookupsValid : LookupsValid params air logN lookups := by trivial
 
 namespace Setup
 variable {lookups : List (Lookup F)} (S : Setup EF lookups)
+
+/-- FRI's final polynomial is shorter than the trace, so FRI folds at least once. -/
+class Folds : Prop where
+  folds : S.params.logFinalPolyLen < S.logN
+
+theorem folds [h : S.Folds] : S.params.logFinalPolyLen < S.logN := h.folds
 
 /-- `n = 2 ^ logN`, the trace's length. -/
 abbrev n : Nat := 2 ^ S.logN
@@ -152,10 +156,9 @@ structure Admits (n : Nat) : Prop where
   sound : SoundConfig C.params C.air n
   preprocessed : 0 < C.air.preprocessedWidth → n = C.preprocessedLogN
 
-/-- The STARK at an admitted trace length where FRI folds. -/
-def setupAt (EF : Type) [Challenge F EF] (n : Nat) (h : C.Admits n)
-    (hf : C.params.logFinalPolyLen < n) : Setup EF :=
-  ⟨C.params, C.air, n, h.sound, hf, trivial⟩
+/-- The STARK at an admitted trace length. -/
+def setupAt (EF : Type) [Challenge F EF] (n : Nat) (h : C.Admits n) : Setup EF :=
+  ⟨C.params, C.air, n, h.sound, trivial⟩
 
 /-- The rate `1 / 2 ^ logBlowup` of the trace's code, at every length. -/
 noncomputable def rate : ℝ := 1 / 2 ^ C.params.logBlowup

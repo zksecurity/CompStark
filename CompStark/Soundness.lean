@@ -37,7 +37,7 @@ the verifier accepts the prover with probability at most the knowledge error: FR
 difference being the proximity loss of batching). So a
 prover accepted with higher probability has committed to a trace within `δ'` of one that
 satisfies the AIR. -/
-theorem knowledgeSoundness (S : Setup EF) (publicValues : List F) (prover : Prover S)
+theorem knowledgeSoundness (S : Setup EF) [S.Folds] (publicValues : List F) (prover : Prover S)
     (δ δ' : NNReal) (hδ' : (δ' : ℝ) < 1 - S.rate) :
     (∀ trace ∈ closeTraces S δ' prover.trace, ¬ S.air.Satisfied S.logN trace publicValues) →
       acceptance publicValues prover ≤ knowledgeError S δ δ' := by

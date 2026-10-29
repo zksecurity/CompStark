@@ -166,12 +166,12 @@ theorem getD_append_singleton_lt {α : Type} (l : List α) (x d : α) (j : Nat) 
     (l ++ [x]).getD j d = l.getD j d := by
   simp only [List.getD_eq_getElem?_getD, List.getElem?_append_left hj]
 
-theorem prefixTranscript_betas_eq (S : Iop.Setup EF)
+theorem prefixTranscript_betas_eq (S : Iop.Setup EF) [S.Folds]
     (cache : Merkle.Cache F (Digest F))
     (block : Nat → List F) (sample : Nat → Vector F S.streamLen) :
     (prefixTranscript S cache block sample).betas = betasAt S sample := rfl
 
-theorem prefixTranscript_fri_eq (S : Iop.Setup EF) (cache : Merkle.Cache F (Digest F))
+theorem prefixTranscript_fri_eq (S : Iop.Setup EF) [S.Folds] (cache : Merkle.Cache F (Digest F))
     (block : Nat → List F) (sample sample' : Nat → Vector F S.streamLen) :
     (prefixTranscript S cache block sample).fri = (prefixTranscript S cache block sample').fri :=
   rfl
@@ -179,7 +179,7 @@ theorem prefixTranscript_fri_eq (S : Iop.Setup EF) (cache : Merkle.Cache F (Dige
 /-! ### The rounds' errors -/
 
 section Bounds
-variable (S : Iop.Setup EF) (publicValues : List F) (δ δ' loss : NNReal)
+variable (S : Iop.Setup EF) [S.Folds] (publicValues : List F) (δ δ' loss : NNReal)
 
 /-- The largest round error at proximity loss `loss`; `roundError` is its infimum. -/
 noncomputable def roundBound : ENNReal :=

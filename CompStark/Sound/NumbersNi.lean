@@ -93,7 +93,7 @@ theorem length_arityPlan : ∀ (l : List ℕ) (n : ℕ), (arityPlan l n).length 
   | _ :: l, _ => congrArg (· + 1) (length_arityPlan l _)
 
 /-- The plan of a setup's FRI without inputs folds by the setup's arities. -/
-theorem plan_eq_arityPlan (S : Setup EF) :
+theorem plan_eq_arityPlan (S : Setup EF) [S.Folds] :
     FriGame.Rounds.plan S.params.maxLogArity (S.params.logFinalPolyLen + S.params.logBlowup)
         (S.logN + S.params.logBlowup) (S.logN + S.params.logBlowup) [] =
       arityPlan (S.foldArities.map PNat.val) (S.logN + S.params.logBlowup) := by
@@ -103,7 +103,7 @@ theorem plan_eq_arityPlan (S : Setup EF) :
   omega
 
 /-- Fold `i` of a setup's FRI is entry `i` of its plan: its arity and the domain it folds onto. -/
-theorem schedule_mem_plan (S : Setup EF) (i : Fin (S.lastFold + 1)) :
+theorem schedule_mem_plan (S : Setup EF) [S.Folds] (i : Fin (S.lastFold + 1)) :
     ((S.schedule i : ℕ), S.logN + S.params.logBlowup -
         Fri.Spec.foldingPrefix S.schedule i.castSucc - S.schedule i, false) ∈
       FriGame.Rounds.plan S.params.maxLogArity (S.params.logFinalPolyLen + S.params.logBlowup)
@@ -135,7 +135,7 @@ theorem schedule_mem_plan (S : Setup EF) (i : Fin (S.lastFold + 1)) :
 
 /-- The largest error of FRI's folds at any arity and proximity loss: the largest of bounds `g` on
 the folds of its plan, over `|𝕂|`. -/
-theorem friFoldError_le (S : Setup EF) (δ loss : ℝ≥0) (g : ℕ × ℕ × Bool → ℝ)
+theorem friFoldError_le (S : Setup EF) [S.Folds] (δ loss : ℝ≥0) (g : ℕ × ℕ × Bool → ℝ)
     (hg : FoldBounds 𝕂 (2 ^ S.params.logBlowup) δ loss g (FriGame.Rounds.plan S.params.maxLogArity
       (S.params.logFinalPolyLen + S.params.logBlowup) (S.logN + S.params.logBlowup)
       (S.logN + S.params.logBlowup) [])) :
@@ -163,7 +163,7 @@ theorem friFoldError_le (S : Setup EF) (δ loss : ℝ≥0) (g : ℕ × ℕ × Bo
 
 /-- FRI's queries at any arity: `(1 - δ + #folds · loss + 1/p) ^ numQueries`, one fold per entry of
 the plan. -/
-theorem friQueryError_eq (S : Setup EF) (δ loss : ℝ≥0) :
+theorem friQueryError_eq (S : Setup EF) [S.Folds] (δ loss : ℝ≥0) :
     friQueryError S δ loss =
       ENNReal.ofReal (1 - δ + (FriGame.Rounds.plan S.params.maxLogArity
         (S.params.logFinalPolyLen + S.params.logBlowup) (S.logN + S.params.logBlowup)

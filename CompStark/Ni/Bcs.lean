@@ -75,7 +75,7 @@ end Challenges
 /-- The interactive oracle proof's transcript extracted from an accepted proof: the words and FRI
 oracles from `cache`, the opened values and final polynomial from the proof, and the challenges
 of the run on `H`. -/
-noncomputable def extract (S : Iop.Setup EF) (cache : Merkle.Cache F (Digest F))
+noncomputable def extract (S : Iop.Setup EF) [S.Folds] (cache : Merkle.Cache F (Digest F))
     (H : Primitives F Id) (vk : Option (PreprocessedKey F)) (proof : Proof F EF) (pis : List F) :
     Sound.Transcript S where
   trace := traceWords S cache proof
@@ -96,7 +96,7 @@ theorem foldArities_eq (m : Nat) : ∀ r, foldArities m r = (folds m r).map PNat
     exact congrArg (List.cons _) (foldArities_eq m _)
   decreasing_by omega
 
-theorem natDegree_finalPoly (S : Iop.Setup EF) (cache : Merkle.Cache F (Digest F))
+theorem natDegree_finalPoly (S : Iop.Setup EF) [S.Folds] (cache : Merkle.Cache F (Digest F))
     (commits : List (Cap F)) (coeffs : Array EF)
     (h : coeffs.size = 2 ^ S.params.logFinalPolyLen) :
     (finalPolynomial S.schedule (friOracles S cache commits coeffs)).natDegree <
@@ -112,7 +112,7 @@ theorem natDegree_finalPoly (S : Iop.Setup EF) (cache : Merkle.Cache F (Digest F
 
 /-- The verifier's FRI rounds on a proof of `2 ^ logN` rows: the largest query domain is `L`,
 above the blowup, every opened matrix has its height, and FRI folds by `S`'s schedule. -/
-theorem friHyps (S : Iop.Setup EF) (vk : Option (PreprocessedKey F)) (proof : Proof F EF)
+theorem friHyps (S : Iop.Setup EF) [S.Folds] (vk : Option (PreprocessedKey F)) (proof : Proof F EF)
     (zeta : EF) (hdb : proof.degreeBits = S.logN) :
     friLogMax S.params proof = S.logSize ∧ S.logSize ≠ S.params.logBlowup ∧
       (∀ x ∈ openingRounds S.air vk proof zeta, ∀ dp ∈ x.2,
@@ -148,7 +148,7 @@ rows whose commitments bind the rows extracted from `cache`, and under whose pre
 commitment `cache` holds the preprocessed trace's extension, the extracted transcript passes the
 deterministic checks of `Sound.exists_satisfied_of_safe`, with the run's grinding and query
 samples. -/
-theorem bcs (S : Iop.Setup EF) (cache : Merkle.Cache F (Digest F)) (H : Primitives F Id)
+theorem bcs (S : Iop.Setup EF) [S.Folds] (cache : Merkle.Cache F (Digest F)) (H : Primitives F Id)
     (vk : Option (PreprocessedKey F)) (proof : Proof F EF)
     (pis : List F) (hdb : proof.degreeBits = S.logN)
     (htrace : CapBinding cache H proof.traceCommit)
@@ -170,7 +170,7 @@ theorem bcs (S : Iop.Setup EF) (cache : Merkle.Cache F (Digest F)) (H : Primitiv
     verifyWith_ok H S.params S.air vk proof pis h
   rw [hdb] at hcheck hshape hqc
   obtain ⟨hL, hb, hh, hsched⟩ := friHyps S vk proof (zetaOf H S.params S.air vk proof pis) hdb
-  have hok := verifyFri_ok H S.params proof.fri _ _ _ hb hh _ _ hfriOk
+  have hok := verifyFri_ok H S.params proof.fri _ _ _ hh _ _ hfriOk
   have hstart : friStart H S.params S.air vk proof pis =
       obsList H (stateFri H S.params S.air vk proof pis)
       (DomainSeparator.friSeed F EF (foldSchedule S.params.maxLogArity

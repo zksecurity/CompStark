@@ -67,7 +67,7 @@ noncomputable def friWordAt (cap : Cap F) (h m a z : Nat) : 𝕂 :=
 end Extract
 
 section Final
-variable {lookups : List (Lookup F)} (T : Iop.Setup EF lookups)
+variable {lookups : List (Lookup F)} (T : Iop.Setup EF lookups) [T.Folds]
 
 /-- `log₂ |L|`. -/
 abbrev _root_.CompStark.Iop.Setup.logSize : Nat := T.logN + T.params.logBlowup
@@ -109,7 +109,7 @@ theorem eval_finalPoly (coeffs : Array EF) (I : Nat)
 
 end Final
 
-variable (S : Iop.Setup EF)
+variable (S : Iop.Setup EF) [S.Folds]
 
 /-- The extracted FRI oracles of commitments `commits` and final polynomial `coeffs`. -/
 noncomputable def friOracles (cache : Merkle.Cache F (Digest F)) (commits : List (Cap F))

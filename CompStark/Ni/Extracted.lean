@@ -34,13 +34,14 @@ digest an index past it reads. -/
 def CapSameUnder (cache cache' : Merkle.Cache F (Digest F)) (cap : Cap F) : Prop :=
   ∀ j, SameUnder cache cache' (cap.toList.getD j 0)
 
-variable (S : Iop.Setup EF)
+variable (S : Iop.Setup EF) [S.Folds]
 
 /-! ### Congruences -/
 
 section Congr
 variable {cache cache' : Merkle.Cache F (Digest F)} {root : Cap F}
 
+omit [S.Folds] in
 theorem committedColumn_congr (h : CapSameUnder cache cache' root) :
     committedColumn S cache root = committedColumn S cache' root := by
   funext j z
@@ -142,17 +143,20 @@ variable (vk : Option (PreprocessedKey F)) (proof : Proof F EF) (pis : List F)
 theorem digestAt_toList (d : Digest F) : digestAt d.toList 0 = d := by
   simpa only [List.append_nil] using digestAt_append_zero d []
 
+omit [S.Folds] in
 theorem inputs_getD_zero :
     (inputs S.params S.air vk pis proof).getD 0 [] =
       starkSeedOf EF S.params S.air proof.degreeBits ++ capElems proof.traceCommit ++
         preprocessedDigest vk ++ pis := by
   simp only [inputs, List.getD_eq_getElem?_getD, List.getElem?_cons_zero, Option.getD_some]
 
+omit [S.Folds] in
 theorem inputs_getD_one : (inputs S.params S.air vk pis proof).getD 1 [] =
     capElems proof.quotientCommit ++ witnessInput S.params.oodPowBits proof.oodWitness := by
   simp only [inputs, List.getD_eq_getElem?_getD, List.getElem?_cons_succ,
     List.getElem?_cons_zero, Option.getD_some]
 
+omit [S.Folds] in
 theorem inputs_getD_two : (inputs S.params S.air vk pis proof).getD 2 [] =
     DomainSeparator.pcsSeed F EF (pcsCounts proof.opened) S.params.batchPowBits ++
       coeffs (openedValues proof.opened) ++
@@ -160,6 +164,7 @@ theorem inputs_getD_two : (inputs S.params S.air vk pis proof).getD 2 [] =
   simp only [inputs, List.getD_eq_getElem?_getD, List.getElem?_cons_succ,
     List.getElem?_cons_zero, Option.getD_some]
 
+omit [S.Folds] in
 /-- On a proof of `S`'s shape, the PCS's domain separator is `S`'s. -/
 theorem pcsCounts_eq (htl : proof.opened.traceLocal.size = S.air.width)
     (htn : traceNextOk S.air proof.opened = true)
@@ -175,6 +180,7 @@ theorem pcsCounts_eq (htl : proof.opened.traceLocal.size = S.air.width)
   obtain ⟨ch, hch, rfl⟩ := List.mem_map.mp hb
   rw [hq4 ch (Array.mem_toList_iff.mp hch)]
 
+omit [S.Folds] in
 theorem openings_eq (htl : proof.opened.traceLocal.size = S.air.width)
     (htn : traceNextOk S.air proof.opened = true)
     (hqc : proof.opened.quotientChunks.size = S.chunks)
@@ -205,7 +211,7 @@ theorem length_commits (hdb : proof.degreeBits = S.logN)
     S.params S.air vk proof pis hok
   obtain ⟨-, hb, hh, hsched⟩ := friHyps S vk proof
     (zetaOf (idealOf answer) S.params S.air vk proof pis) hdb
-  obtain ⟨-, -, hcs, hcw, -⟩ := verifyFri_ok (idealOf answer) S.params proof.fri _ _ _ hb hh _ _
+  obtain ⟨-, -, hcs, hcw, -⟩ := verifyFri_ok (idealOf answer) S.params proof.fri _ _ _ hh _ _
     hfriOk
   have hsched' : foldSchedule S.params.maxLogArity
       (S.params.logBlowup + S.params.logFinalPolyLen) S.logSize [S.logSize] =
@@ -233,7 +239,7 @@ theorem size_caps (hdb : proof.degreeBits = S.logN)
   obtain ⟨hL, hb, hh, hsched⟩ := friHyps S vk proof
     (zetaOf (idealOf answer) S.params S.air vk proof pis) hdb
   obtain ⟨-, hfolds, hcs, -, -, -, hcrlen, hq⟩ := verifyFri_ok (idealOf answer) S.params
-    proof.fri _ _ _ hb hh _ _ hfriOk
+    proof.fri _ _ _ hh _ _ hfriOk
   have hsched' : foldSchedule S.params.maxLogArity
       (S.params.logBlowup + S.params.logFinalPolyLen) S.logSize [S.logSize] =
       S.foldArities.map PNat.val := by
@@ -301,7 +307,7 @@ theorem finalPoly_eq (hdb : proof.degreeBits = S.logN)
     S.params S.air vk proof pis hok
   obtain ⟨-, hb, hh, -⟩ := friHyps S vk proof
     (zetaOf (idealOf answer) S.params S.air vk proof pis) hdb
-  obtain ⟨-, -, -, -, hfp, -⟩ := verifyFri_ok (idealOf answer) S.params proof.fri _ _ _ hb hh _ _
+  obtain ⟨-, -, -, -, hfp, -⟩ := verifyFri_ok (idealOf answer) S.params proof.fri _ _ _ hh _ _
     hfriOk
   have hlast := inputs_getD_last S.params S.air vk pis proof
   rw [hz, show 3 + (S.lastFold + 1) = 4 + S.lastFold by omega] at hlast

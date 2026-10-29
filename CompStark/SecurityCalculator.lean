@@ -433,49 +433,48 @@ def Batch.Setup.bestAnalysisRo {withLookups : Bool} (S : Batch.Setup EF withLook
 
 A statement's round error is the largest over the trace lengths the verifier admits
 (`Statement.roundError`). `Statement.SecureRo` checks every admitted length below the two-adicity
-where FRI folds at one analysis: the verifier's checks on a length are a Boolean
-(`Statement.admitsFolding`). -/
+at one analysis: the verifier's checks on a length are a Boolean (`Statement.admits`), and at the
+length where FRI does not fold the calculator's terms bound the error without folds
+(`roundError0_le_bound`). -/
 
 namespace Statement
 variable (C : Statement F)
 
-/-- The verifier's checks on a trace length `2 ^ n` where FRI folds, as a Boolean: the periodic
-columns fit, `L` and the quotient domain fit the two-adic subgroups, FRI's parameters are
-positive, its final polynomial shorter than the trace, and a preprocessed AIR's length is its
-trace's. -/
-def admitsFolding (n : ℕ) : Bool :=
+/-- The verifier's checks on a trace length `2 ^ n`, as a Boolean: the periodic columns fit, `L`
+and the quotient domain fit the two-adic subgroups, FRI's parameters are positive, its final
+polynomial no longer than the trace, and a preprocessed AIR's length is its trace's. -/
+def admits (n : ℕ) : Bool :=
   C.air.periodicFits n && decide (n + C.params.logBlowup ≤ twoAdicity F) &&
     decide (n + C.air.logQuotientChunks n ≤ twoAdicity F) && decide (0 < C.params.maxLogArity) &&
-    decide (C.params.logFinalPolyLen < n) && decide (0 < C.params.numQueries) &&
+    decide (C.params.logFinalPolyLen ≤ n) && decide (0 < C.params.numQueries) &&
     decide (0 < C.params.logBlowup) &&
     (C.air.preprocessedWidth == 0 || n == C.preprocessedLogN)
 
-theorem admitsFolding_iff (n : ℕ) :
-    C.admitsFolding n = true ↔ C.Admits n ∧ C.params.logFinalPolyLen < n := by
-  simp only [admitsFolding, Bool.and_eq_true, decide_eq_true_eq, Bool.or_eq_true, beq_iff_eq]
+theorem admits_iff (n : ℕ) : C.admits n = true ↔ C.Admits n := by
+  simp only [admits, Bool.and_eq_true, decide_eq_true_eq, Bool.or_eq_true, beq_iff_eq]
   constructor
   · rintro ⟨⟨⟨⟨⟨⟨⟨hp, ht⟩, hq⟩, hm⟩, hf⟩, hn⟩, hb⟩, hpre⟩
-    refine ⟨⟨⟨C.colsInWidth, hp, ht, hq, hm, hf.le, hn, hb⟩, fun hw ↦ ?_⟩, hf⟩
+    refine ⟨⟨C.colsInWidth, hp, ht, hq, hm, hf, hn, hb⟩, fun hw ↦ ?_⟩
     rcases hpre with h0 | h
     · omega
     · exact h
-  · rintro ⟨⟨hs, hpre⟩, hf⟩
-    refine ⟨⟨⟨⟨⟨⟨⟨hs.periodicFits, hs.twoAdic⟩, hs.quotientFits⟩, hs.folds⟩, hf⟩, hs.queries⟩,
-      hs.blowup⟩, ?_⟩
+  · rintro ⟨hs, hpre⟩
+    refine ⟨⟨⟨⟨⟨⟨⟨hs.periodicFits, hs.twoAdic⟩, hs.quotientFits⟩, hs.folds⟩, hs.finalPolyFits⟩,
+      hs.queries⟩, hs.blowup⟩, ?_⟩
     by_cases hw : C.air.preprocessedWidth = 0
     · exact Or.inl hw
     · exact Or.inr (hpre (Nat.pos_of_ne_zero hw))
 
 variable (EF : Type) [Challenge F EF]
 
-/-- The STARK at a length `admitsFolding` admits. -/
-def setupOf (n : ℕ) (h : C.admitsFolding n = true) : Setup EF :=
-  C.setupAt EF n ((C.admitsFolding_iff n).mp h).1 ((C.admitsFolding_iff n).mp h).2
+/-- The STARK at a length `admits` admits. -/
+def setupOf (n : ℕ) (h : C.admits n = true) : Setup EF :=
+  C.setupAt EF n ((C.admits_iff n).mp h)
 
 /-- The calculator certifies `bits` bits per oracle answer at the analysis `A` at every trace
-length the verifier admits where FRI folds. -/
+length the verifier admits. -/
 def SecureRo (p : ℕ) (B : McaBound) (A : Analysis) (bits : ℕ) : Prop :=
-  ∀ n < twoAdicity F + 1, ∀ h : C.admitsFolding n = true, (C.setupOf EF n h).SecureRo p B A bits
+  ∀ n < twoAdicity F + 1, ∀ h : C.admits n = true, (C.setupOf EF n h).SecureRo p B A bits
 
 instance (p : ℕ) (B : McaBound) (A : Analysis) (bits : ℕ) :
     Decidable (C.SecureRo EF p B A bits) := by

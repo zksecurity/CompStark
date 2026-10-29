@@ -4,7 +4,7 @@ Released under Apache 2.0 license as described in the file LICENSE.
 -/
 module
 
-public import CompStark.Ni.Lengths
+public import CompStark.Ni.Zero
 
 /-! # Knowledge soundness in the random-oracle model, assembled
 
@@ -171,14 +171,14 @@ end Game
 section Bound
 variable (C : Statement F) (publicValues : List F) (δ δ' : ℕ → NNReal)
 
-/-- The event of knowledge soundness: an accepted proof whose trace length FRI folds at, no trace
-of that length close to the committed one satisfying the AIR at that length. -/
+/-- The event of knowledge soundness: an accepted proof, no trace of its length close to the
+committed one satisfying the AIR at that length. -/
 def Unopened (result : Proof F EF × QueryLog (spec F (C.streamLen EF)) × Except String Unit) :
     Prop :=
-  result.2.2 = .ok () ∧ C.params.logFinalPolyLen < result.1.degreeBits ∧
-    ∀ (h : C.Admits result.1.degreeBits) (hf : C.params.logFinalPolyLen < result.1.degreeBits),
-      ∀ trace ∈ closeTraces (C.setupAt EF _ h hf) (δ' result.1.degreeBits)
-          (committedTrace (C.setupAt EF _ h hf) result.2.1 result.1),
+  result.2.2 = .ok () ∧
+    ∀ h : C.Admits result.1.degreeBits,
+      ∀ trace ∈ closeTraces (C.setupAt EF _ h) (δ' result.1.degreeBits)
+          (committedTrace (C.setupAt EF _ h) result.2.1 result.1),
         ¬ C.air.Satisfied result.1.degreeBits trace publicValues
 
 theorem hashError_eq (h q : Nat) :
@@ -188,28 +188,70 @@ theorem hashError_eq (h q : Nat) :
   push_cast
   ring
 
+/-- A duplex call's bad event at the setup's length: the folding rounds' where FRI folds, the
+rounds without folds otherwise. -/
+def RoundBadL (S : Iop.Setup EF) (δ δ' loss : NNReal) (pre : QueryLog (spec F S.streamLen))
+    (t : Query F) (u : Answer S.streamLen t) : Prop :=
+  if hf : S.params.logFinalPolyLen < S.logN then
+    haveI : S.Folds := ⟨hf⟩
+    RoundBad S publicValues δ δ' loss pre t u
+  else RoundBad0 S publicValues δ δ' pre t u
+
+/-- The bound on one fresh answer at the setup's length, at proximity loss `loss`. -/
+noncomputable def roundBoundL (S : Iop.Setup EF) (δ δ' loss : NNReal) : ENNReal :=
+  if hf : S.params.logFinalPolyLen < S.logN then
+    haveI : S.Folds := ⟨hf⟩
+    roundBound S δ δ' loss
+  else roundError0 S δ δ'
+
+theorem prob_roundBadL_le (S : Iop.Setup EF) (δ δ' loss : NNReal)
+    (pre : QueryLog (spec F S.streamLen)) (t : Query F) :
+    Pr{let u ← $ᵗ (Answer S.streamLen t)}[RoundBadL publicValues S δ δ' loss pre t u] ≤
+      roundBoundL S δ δ' loss := by
+  unfold RoundBadL roundBoundL
+  split
+  · rename_i hf
+    have : S.Folds := ⟨hf⟩
+    exact prob_roundBad_le S publicValues δ δ' loss pre t
+  · exact prob_roundBad0_le S publicValues δ δ' pre t
+
+theorem prefix_firstBlockL (S : Iop.Setup EF) (δ δ' loss : NNReal)
+    (pre : QueryLog (spec F S.streamLen)) (t : Query F) (u : Answer S.streamLen t)
+    (h : RoundBadL publicValues S δ δ' loss pre t u) : starkSeedS S <+: firstBlock pre t := by
+  unfold RoundBadL at h
+  split at h
+  · rename_i hf
+    have : S.Folds := ⟨hf⟩
+    exact prefix_firstBlock S publicValues δ δ' loss pre t u h
+  · exact prefix_firstBlock0 S publicValues δ δ' pre t u h
+
+theorem roundError_eq_iInf (S : Iop.Setup EF) (δ δ' : NNReal) :
+    S.lengthError δ δ' = ⨅ loss, roundBoundL S δ δ' loss := by
+  unfold Setup.lengthError roundBoundL
+  by_cases hf : S.params.logFinalPolyLen < S.logN
+  · have : S.Folds := ⟨hf⟩
+    simp only [hf, ↓reduceIte, ↓reduceDIte]
+    rfl
+  · simp only [hf, ↓reduceIte, ↓reduceDIte, iInf_const]
+
 variable (EF) in
 /-- The largest round bound over the admitted lengths at proximity losses `loss n`. -/
 noncomputable def roundBoundC (loss : ℕ → NNReal) : ENNReal :=
-  ⨆ (m : ℕ) (h : C.Admits m) (hf : C.params.logFinalPolyLen < m),
-    roundBound (C.setupAt EF m h hf) (δ m) (δ' m) (loss m)
+  ⨆ (m : ℕ) (h : C.Admits m), roundBoundL (C.setupAt EF m h) (δ m) (δ' m) (loss m)
 
-theorem le_roundBoundC (loss : ℕ → NNReal) (m : ℕ) (h : C.Admits m)
-    (hf : C.params.logFinalPolyLen < m) :
-    roundBound (C.setupAt EF m h hf) (δ m) (δ' m) (loss m) ≤ roundBoundC EF C δ δ' loss :=
-  le_iSup_of_le m (le_iSup_of_le h
-    (le_iSup (fun hf ↦ roundBound (C.setupAt EF m h hf) (δ m) (δ' m) (loss m)) hf))
+theorem le_roundBoundC (loss : ℕ → NNReal) (m : ℕ) (h : C.Admits m) :
+    roundBoundL (C.setupAt EF m h) (δ m) (δ' m) (loss m) ≤ roundBoundC EF C δ δ' loss :=
+  le_iSup_of_le m (le_iSup (fun h ↦ roundBoundL (C.setupAt EF m h) (δ m) (δ' m) (loss m)) h)
 
-theorem le_roundErrorC (m : ℕ) (h : C.Admits m) (hf : C.params.logFinalPolyLen < m) :
-    roundError (C.setupAt EF m h hf) (δ m) (δ' m) ≤ C.roundError EF δ δ' :=
-  le_iSup_of_le m (le_iSup_of_le h
-    (le_iSup (fun hf ↦ roundError (C.setupAt EF m h hf) (δ m) (δ' m)) hf))
+theorem le_roundErrorC (m : ℕ) (h : C.Admits m) :
+    (C.setupAt EF m h).lengthError (δ m) (δ' m) ≤ C.roundError EF δ δ' :=
+  le_iSup_of_le m (le_iSup (fun h ↦ (C.setupAt EF m h).lengthError (δ m) (δ' m)) h)
 
 /-- A duplex call is bad at some admitted length. -/
 def RoundBadC (loss : ℕ → NNReal) (pre : QueryLog (spec F (C.streamLen EF))) (t : Query F)
     (u : Answer (C.streamLen EF) t) : Prop :=
-  ∃ (m : ℕ) (h : C.Admits m) (hf : C.params.logFinalPolyLen < m),
-    RoundBad (C.setupAt EF m h hf) publicValues (δ m) (δ' m) (loss m) pre t u
+  ∃ (m : ℕ) (h : C.Admits m),
+    RoundBadL publicValues (C.setupAt EF m h) (δ m) (δ' m) (loss m) pre t u
 
 /-- **A fresh answer is bad at one length.** On fields of at least `2 ^ 8` elements with
 two-adicity below `2 ^ 64`, a uniform answer is round-bad at some admitted length with probability
@@ -219,23 +261,22 @@ theorem prob_roundBadC_le (h8 : 2 ^ 8 ≤ Nat.card F) (h64 : twoAdicity F < 2 ^ 
     (loss : ℕ → NNReal) (pre : QueryLog (spec F (C.streamLen EF))) (t : Query F) :
     Pr{let u ← $ᵗ (Answer (C.streamLen EF) t)}[
       RoundBadC C publicValues δ δ' loss pre t u] ≤ roundBoundC EF C δ δ' loss := by
-  by_cases hex : ∃ (m : ℕ) (h : C.Admits m) (_ : C.params.logFinalPolyLen < m),
-      starkSeedOf EF C.params C.air m <+: firstBlock pre t
-  · obtain ⟨m, h, hf, hpre⟩ := hex
+  by_cases hex : ∃ (m : ℕ) (_ : C.Admits m), starkSeedOf EF C.params C.air m <+: firstBlock pre t
+  · obtain ⟨m, h, hpre⟩ := hex
     have key : ∀ u, RoundBadC C publicValues δ δ' loss pre t u →
-        RoundBad (C.setupAt EF m h hf) publicValues (δ m) (δ' m) (loss m) pre t u := by
-      rintro u ⟨m', h', hf', hb⟩
+        RoundBadL publicValues (C.setupAt EF m h) (δ m) (δ' m) (loss m) pre t u := by
+      rintro u ⟨m', h', hb⟩
       have hp' : starkSeedOf EF C.params C.air m' <+: firstBlock pre t :=
-        prefix_firstBlock (C.setupAt EF m' h' hf') publicValues _ _ _ pre t u hb
+        prefix_firstBlockL publicValues (C.setupAt EF m' h') _ _ _ pre t u hb
       have hm : m' = m := eq_of_seed_prefix C h8 h64 h' h _ hp' hpre
       subst hm
       exact hb
-    exact (prEvent_mono _ _ _ key).trans ((prob_roundBad_le (C.setupAt EF m h hf) publicValues
-      (δ m) (δ' m) (loss m) pre t).trans (le_roundBoundC C δ δ' loss m h hf))
+    exact (prEvent_mono _ _ _ key).trans ((prob_roundBadL_le publicValues (C.setupAt EF m h)
+      (δ m) (δ' m) (loss m) pre t).trans (le_roundBoundC C δ δ' loss m h))
   · refine le_of_eq_of_le (prEvent_congr_iff _ fun u ↦ (?_ : _ ↔ False)) (by
       simp only [prEvent_false, zero_le])
-    refine ⟨fun ⟨m, h, hf, hb⟩ ↦ hex ⟨m, h, hf,
-      prefix_firstBlock (C.setupAt EF m h hf) publicValues _ _ _ pre t u hb⟩, False.elim⟩
+    refine ⟨fun ⟨m, h, hb⟩ ↦ hex ⟨m, h,
+      prefix_firstBlockL publicValues (C.setupAt EF m h) _ _ _ pre t u hb⟩, False.elim⟩
 
 /-- The infimum over the losses of the largest round bound at the chosen losses is at most the
 largest round error. -/
@@ -255,21 +296,18 @@ theorem le_roundError_of_forall (n : Nat) (hn : n ≠ 0) (H P : ℝ≥0∞)
     simp only [ε₁, ne_eq, ENNReal.div_eq_zero_iff, ENNReal.coe_eq_zero, ENNReal.natCast_ne_top,
       or_false]
     exact hε.ne'
-  have hfin : ∀ m (h : C.Admits m) (hf : C.params.logFinalPolyLen < m),
-      roundError (C.setupAt EF m h hf) (δ m) (δ' m) < ⊤ := fun m h hf ↦
-    lt_of_le_of_lt (le_roundErrorC C δ δ' m h hf) hR
-  have hex : ∀ m (h : C.Admits m) (hf : C.params.logFinalPolyLen < m), ∃ l,
-      roundBound (C.setupAt EF m h hf) (δ m) (δ' m) l <
-        roundError (C.setupAt EF m h hf) (δ m) (δ' m) + ε₁ := fun m h hf ↦
-    iInf_lt_iff.mp (ENNReal.lt_add_right (hfin m h hf).ne hε₁)
-  let loss : ℕ → NNReal := fun m ↦
-    if hm : C.Admits m ∧ C.params.logFinalPolyLen < m then (hex m hm.1 hm.2).choose else 0
+  have hex : ∀ m (h : C.Admits m), ∃ l,
+      roundBoundL (C.setupAt EF m h) (δ m) (δ' m) l <
+        (C.setupAt EF m h).lengthError (δ m) (δ' m) + ε₁ := fun m h ↦ by
+    have hfin := lt_of_le_of_lt (le_roundErrorC C δ δ' m h) hR
+    rw [roundError_eq_iInf] at hfin ⊢
+    exact iInf_lt_iff.mp (ENNReal.lt_add_right hfin.ne hε₁)
+  let loss : ℕ → NNReal := fun m ↦ if hm : C.Admits m then (hex m hm).choose else 0
   have hloss : roundBoundC EF C δ δ' loss ≤ C.roundError EF δ δ' + ε₁ := by
-    refine iSup_le fun m ↦ iSup_le fun h ↦ iSup_le fun hf ↦ ?_
-    have hm : C.Admits m ∧ C.params.logFinalPolyLen < m := ⟨h, hf⟩
-    have hl : loss m = (hex m h hf).choose := by simp only [loss, hm, and_self, ↓reduceDIte]
+    refine iSup_le fun m ↦ iSup_le fun h ↦ ?_
+    have hl : loss m = (hex m h).choose := by simp only [loss, h, ↓reduceDIte]
     rw [hl]
-    exact (hex m h hf).choose_spec.le.trans (add_le_add (le_roundErrorC C δ δ' m h hf) le_rfl)
+    exact (hex m h).choose_spec.le.trans (add_le_add (le_roundErrorC C δ δ' m h) le_rfl)
   calc P ≤ n * roundBoundC EF C δ δ' loss + H := hall loss
     _ ≤ n * (C.roundError EF δ δ' + ε₁) + H := by gcongr
     _ = n * C.roundError EF δ δ' + H + ε := by
@@ -321,38 +359,64 @@ theorem prob_unopened_le (h8 : 2 ^ 8 ≤ Nat.card F) (h64 : twoAdicity F < 2 ^ 6
         (prob_roundBadC_le C publicValues δ δ' h8 h64 loss pre t)))
     fun answer hev ↦ ?_).trans ?_
   · rw [evalWithAnswerFn_game] at hev
-    obtain ⟨hok, hf, hfail⟩ := hev
-    dsimp only at hok hf hfail
+    obtain ⟨hok, hfail⟩ := hev
+    dsimp only at hok hfail
     set proof := evalWithAnswerFn (QueryImpl.ofFn answer) prover
-    have h := C.admits_of_ok answer proof publicValues hok hf
-    set S := C.setupAt EF proof.degreeBits h hf
+    have h := C.admits_of_ok answer proof publicValues hok
+    set S := C.setupAt EF proof.degreeBits h
     have hlog := tableQueryLog_game C publicValues answer prover
     have hlen := length_tableQueryLog_le answer _ n
       (isTotalQueryBound_game C publicValues prover Q hQ)
     rw [hlog] at hlen
-    obtain ⟨p, hp, hfresh, hbad⟩ := exists_badAt S publicValues (δ proof.degreeBits)
-      (δ' proof.degreeBits) (loss proof.degreeBits)
-      (by rw [Statement.rate_setupAt]; exact hδ' _ h) answer _ proof
-      (tableQueryLog (setupAndProve C prover) answer) (consistent_tableQueryLog _)
-      (C.preprocessedKeyWith_setupAt answer _ h hf)
-      (fun e he ↦ by
-        rw [C.setupRo_setupAt _ h hf] at he
-        erw [tableQueryLog_setupAndProve C answer prover]
-        exact List.mem_append_left _ he)
-      rfl hok (lt_of_le_of_lt (Nat.mul_le_mul_left _ hlen) hsmall) (hfail h hf)
-    have hL : tableQueryLog (game C publicValues prover) answer =
-        (tableQueryLog (setupAndProve C prover) answer : QueryLog (spec F S.streamLen)) ++
-          tableQueryLog (verifyWith (ideal F S.streamLen) S.params S.air
-            (preprocessedKeyWith (idealOf answer) C.params C.air C.preprocessedLogN) proof
-            publicValues) answer := hlog
+    have hsetup : ∀ e ∈ tableQueryLog S.setupRo answer,
+        e ∈ tableQueryLog (setupAndProve C prover) answer := fun e he ↦ by
+      rw [C.setupRo_setupAt _ h] at he
+      erw [tableQueryLog_setupAndProve C answer prover]
+      exact List.mem_append_left _ he
+    have hδS : (δ' proof.degreeBits : ℝ) < 1 - S.rate := by
+      rw [Statement.rate_setupAt]; exact hδ' _ h
+    have hsmall' := lt_of_le_of_lt (Nat.mul_le_mul_left c hlen) hsmall
+    set L : QueryLog (spec F S.streamLen) :=
+      (tableQueryLog (setupAndProve C prover) answer : QueryLog (spec F S.streamLen)) ++
+        tableQueryLog (verifyWith (ideal F S.streamLen) S.params S.air
+          (preprocessedKeyWith (idealOf answer) C.params C.air C.preprocessedLogN) proof
+          publicValues) answer with hLdef
+    have hL : tableQueryLog (game C publicValues prover) answer = L := hlog
     rw [hL]
+    have hbad : ∃ (p : Nat) (hp : p < L.length), L[p].1 ∉ (L.take p).map Sigma.fst ∧
+        (Clash (boundDigests S) (L.take p) L[p].1 L[p].2 ∨
+          RoundBadL publicValues S (δ proof.degreeBits) (δ' proof.degreeBits)
+            (loss proof.degreeBits) (L.take p) L[p].1 L[p].2) := by
+      by_cases hf : C.params.logFinalPolyLen < proof.degreeBits
+      · have : S.Folds := ⟨hf⟩
+        obtain ⟨p, hp, hfresh, hb⟩ := exists_badAt S publicValues (δ proof.degreeBits)
+          (δ' proof.degreeBits) (loss proof.degreeBits) hδS answer _ proof
+          (tableQueryLog (setupAndProve C prover) answer) (consistent_tableQueryLog _)
+          (C.preprocessedKeyWith_setupAt answer _ h) hsetup rfl hok hsmall' (hfail h)
+        refine ⟨p, hp, hfresh, hb.imp id fun hr ↦ ?_⟩
+        have hf' : S.params.logFinalPolyLen < S.logN := hf
+        unfold RoundBadL
+        simp only [hf', ↓reduceDIte]
+        exact hr
+      · have h0 : C.params.logFinalPolyLen = proof.degreeBits := by
+          have := h.sound.finalPolyFits; omega
+        obtain ⟨p, hp, hfresh, hb⟩ := exists_badAt0 S publicValues (δ proof.degreeBits)
+          (δ' proof.degreeBits) h0 hδS answer _ proof
+          (tableQueryLog (setupAndProve C prover) answer) (consistent_tableQueryLog _)
+          (C.preprocessedKeyWith_setupAt answer _ h) hsetup rfl hok hsmall' (hfail h)
+        refine ⟨p, hp, hfresh, hb.imp id fun hr ↦ ?_⟩
+        have hf' : ¬ S.params.logFinalPolyLen < S.logN := hf
+        unfold RoundBadL
+        simp only [hf', ↓reduceDIte]
+        exact hr
+    obtain ⟨p, hp, hfresh, hb⟩ := hbad
     refine ⟨_, _, _, (List.take_append_drop p _).symm.trans
       (by rw [List.drop_eq_getElem_cons hp]; rfl), hfresh, ?_⟩
-    rcases hbad with hc | hr
+    rcases hb with hc | hr
     · left
-      rw [C.boundDigests_setupAt (EF := EF) _ h hf] at hc
+      rw [C.boundDigests_setupAt (EF := EF) _ h] at hc
       exact hc
-    · exact Or.inr ⟨_, h, hf, hr⟩
+    · exact Or.inr ⟨_, h, hr⟩
   · rw [mul_add, add_comm, hashError_eq]
 
 end Bound

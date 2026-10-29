@@ -53,7 +53,7 @@ local notation "𝕂" => Challenge.Spec EF
 /-! ### FRI's schedule -/
 
 namespace Setup
-variable (S : Iop.Setup EF)
+variable (S : Iop.Setup EF) [S.Folds]
 
 theorem foldArities_ne_nil : S.foldArities ≠ [] := by
   obtain ⟨f, fs, h⟩ := folds_cons S.params.maxLogArity (S.logN - S.params.logFinalPolyLen)
@@ -80,22 +80,22 @@ theorem sum_schedule :
 end Setup
 
 /-- FRI's final degree bound: the final polynomial has degree below `2 ^ logFinalPolyLen`. -/
-abbrev finalDegreeOf (S : Iop.Setup EF) : ℕ+ := finalDegree S.params.logFinalPolyLen
+abbrev finalDegreeOf (S : Iop.Setup EF) [S.Folds] : ℕ+ := finalDegree S.params.logFinalPolyLen
 
-theorem schedule_le (S : Iop.Setup EF) :
+theorem schedule_le (S : Iop.Setup EF) [S.Folds] :
     ∑ j, (S.schedule j).val ≤ S.logN + S.params.logBlowup := by
   rw [Setup.sum_schedule]
   omega
 
 /-- ArkLib's code of the folding schedule is `S.code`: degree below `n`. -/
-theorem schedule_degree (S : Iop.Setup EF) :
+theorem schedule_degree (S : Iop.Setup EF) [S.Folds] :
     2 ^ (∑ j, (S.schedule j).val) * (finalDegreeOf S).val = S.n := by
   have hlt := S.folds
   rw [Setup.sum_schedule, finalDegreeOf, finalDegree, PNat.mk_coe, ← pow_add,
     Nat.sub_add_cancel hlt.le]
 
 /-- A word not `δ`-near `S.code` is at relative distance at least `δ` from ArkLib's code. -/
-theorem le_relHammingDist_of_not_near (S : Iop.Setup EF) (δ : ℝ) (w : S.Point → 𝕂)
+theorem le_relHammingDist_of_not_near (S : Iop.Setup EF) [S.Folds] (δ : ℝ) (w : S.Point → 𝕂)
     (hw : ¬ Near S δ w) :
     ∀ u ∈ ReedSolomon.code S.domain (2 ^ (∑ j, (S.schedule j).val) * (finalDegreeOf S).val),
       δ ≤ (Code.relHammingDist w u : ℝ) := by
@@ -114,7 +114,7 @@ def fixedProver {lookups : List (Lookup F)} {S : Iop.Setup EF lookups}
 
 /-- The transcript of the interactive oracle proof, as the extractor reads it off a
 non-interactive proof: the prover's words and messages, and the challenges. -/
-structure Transcript (S : Iop.Setup EF) where
+structure Transcript (S : Iop.Setup EF) [S.Folds] where
   trace : Fin S.air.width → S.Point → F
   alpha : 𝕂
   quotient : Fin S.chunks → Fin (Challenge.d EF) → S.Point → F
@@ -128,7 +128,7 @@ structure Transcript (S : Iop.Setup EF) where
   betas : FinalStatement 𝕂 S.lastFold
 
 namespace Transcript
-variable {S : Iop.Setup EF} (t : Transcript S)
+variable {S : Iop.Setup EF} [S.Folds] (t : Transcript S)
 
 /-- The transcript's prover. -/
 def prover : Prover S := fixedProver t.trace t.quotient t.openings
@@ -227,7 +227,7 @@ theorem queryPoint_mem_iff {lookups : List (Lookup F)} (S : Iop.Setup EF lookups
     exact hz
 
 section FriEvents
-variable (S : Iop.Setup EF)
+variable (S : Iop.Setup EF) [S.Folds]
 
 /-- FRI fold `i`: ArkLib's lossy folding failure of committed word `i` at `β`. The safe history
 of ArkLib's query analysis (`SafeHistory`) is that no fold is bad. -/
@@ -423,7 +423,7 @@ theorem prob_batchBad_le (δ : NNReal) (δ' : ℝ) (trace : Fin S.air.width → 
 end Bounds
 
 section FriBounds
-variable (S : Iop.Setup EF)
+variable (S : Iop.Setup EF) [S.Folds]
 
 open Classical
 
@@ -515,7 +515,7 @@ theorem not_near_deepWord {lookups : List (Lookup F)} (S : Iop.Setup EF lookups)
   exact hcheck
 
 section Terminal
-variable (S : Iop.Setup EF) (publicValues : List F)
+variable (S : Iop.Setup EF) [S.Folds] (publicValues : List F)
 
 /-- A STARK of its own: the candidates of its empty permutation trace hold exactly when the trace
 satisfies the AIR. -/
