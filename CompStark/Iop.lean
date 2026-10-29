@@ -44,7 +44,8 @@ terminal.
 
 `acceptance` is the probability that the verifier accepts. The extractor list-decodes the
 committed trace: `closeTraces` are the traces whose columns are polynomials of degree at most
-`2 ^ logN` close to the prover's trace words.
+`2 ^ logN` close to the prover's trace words. For a statement, the prover claims an admitted
+length and plays the STARK there (`Statement.Prover`).
 -/
 @[expose] public section
 namespace CompStark.Iop
@@ -199,6 +200,17 @@ structure Prover {lookups : List (Lookup F)} (S : Setup EF lookups) where
   /-- The extended permutation trace, sent before `α` (after the batch's lookup challenges):
   coordinate `e` of column `c` on `L`. -/
   perm : Fin S.permWidth → Fin (Challenge.d EF) → S.Point → F
+
+/-- A prover for a statement: it claims a trace length `2 ^ logN` the verifier admits and plays the
+STARK at that length. -/
+structure Statement.Prover (C : Statement F) (EF : Type) [Challenge F EF] where
+  logN : Nat
+  admits : C.Admits logN
+  prover : Iop.Prover (C.setupAt EF logN admits)
+
+/-- The STARK at the length a statement's prover claims. -/
+abbrev Statement.Prover.setup {C : Statement F} (p : C.Prover EF) : Setup EF :=
+  C.setupAt EF p.logN p.admits
 
 /-! ### The verifier -/
 

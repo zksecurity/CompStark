@@ -11,7 +11,7 @@ public import CompStark.Complete.Quotient
 public import CompStark.BatchNonInteractive
 public import CompStark.Sound.Calculator
 
-/-! # Concrete security: 100 bits over the quartic extension, 117 with grinding, 128 over quintic
+/-! # Concrete security: 98 bits over the quartic extension, 117 with grinding, 128 over quintic
 
 The security calculator (`CompStark/SecurityCalculator.lean`) bounds every error term of a setup
 by a rational number computed from the setup's numbers, for a base field of `p` elements, at the
@@ -23,9 +23,12 @@ statements: `knowledgeSoundness_of_secure`, `knowledgeSoundness_ro_of_secureRo`,
 `batchKnowledgeSoundness_of_secure` and `Batch.batchKnowledgeSoundness_ro_of_secureRo`, and their
 error bounds. `knowledgeErrorReport` and `roundErrorReport` print the bits of each term (`#eval`).
 
-Every analysis of a setup below is the one `bestAnalysis` (or `bestAnalysisRo`) finds for it
-(`tests/CompStarkTests/Security.lean` checks this); the batch statements' analyses are chosen by
-hand, a statement's terms ranging over every admitted vector of lengths. FRI's radius `δ` stays
+Every analysis of a setup below is the one `bestAnalysis` (or `bestAnalysisRo`) finds for it, and
+an interactive statement's the one it finds at the statement's longest admitted length, where the
+error is largest (`tests/CompStarkTests/Security.lean` checks this); the batch statements'
+analyses are chosen by hand, a statement's terms ranging over every admitted vector of lengths.
+Every admitted length is at most `2 ^ 22` rows over KoalaBear with blowup `4` (`2 ^ 20` with
+blowup `16`). FRI's radius `δ` stays
 below the unique-decoding radius `(1 - rate) / 2`, and so does the extractor's `δ'`, where the
 candidate lists have at most one element (`listSize_le_one`). Every term but the queries is over
 `|𝕂|`: `p ^ 4 ≈ 2 ^ 123.95` for `KoalaBear.Fast.Ext4`, which caps every configuration below
@@ -36,26 +39,24 @@ by about `2 ^ bits`; only constraint folding, which Plonky3 does not grind, stay
 by arity `2` down to a constant; the calculator takes any arity (Plonky3's Keccak example, at
 arity `8`, is in `tests/CompStarkTests/KeccakSecurity.lean`).
 
-The bits of each term, `-log₂` of its bound, and the smallest query count reaching the claim at
-the analysis the search finds:
+The bits of each term, `-log₂` of its bound (at the worst admitted length for a statement), and
+for the setups the smallest query count reaching the claim at the analysis the search finds:
 
-* `fibonacciSetup`: the Fibonacci AIR (2 columns, 5 constraints, 1 quotient chunk) on `2 ^ 10`
-  rows, blowup `16` (rate `1/16`), `110` queries; FRI at `δ = 15/32 - 2 ^ (-40)`, the extractor
-  at `δ' = 15/32 - 2 ^ (-42)`. Constraint folding `121.95`, out of domain `109.71`, batching
-  `107.15` (the powers MCA bound `(m - 1) N`), FRI's folds `109.96` (each at the powers MCA bound
-  `|L'|`, which needs no loss), queries `100.38`: at most `2 ^ (-100)`
-  (`fibonacci_knowledgeError_le`), `100.36` bits; `109` queries reach `99.46`.
-* `wideSetup`: `wide 64` (64 columns, 64 constraints of degree `3`, 2 quotient chunks,
-  `numOpened = 136`) on `2 ^ 20` rows, blowup `4`, `150` queries; FRI at `δ = 3/8 - 2 ^ (-12)`,
-  the extractor at `δ' = 3/8 - 2 ^ (-14)`, `loss = 2 ^ (-17)`. Constraint folding `117.98`, out
-  of domain `100.95`, batching `105.88`, FRI's folds `105.50` (the lossy bound on the `6` largest
-  domains, `|L'|` on the smaller), queries `101.57`: `100.17` bits (`wide_knowledgeError_le`);
-  `149` queries reach `99.87`. The out-of-domain term `(ℓ identityDegree + n + N) / |𝕂|` grows
-  with the list size, so the extractor stays below the unique-decoding radius at this size.
-* `wide21Setup`: `wide 64` on `2 ^ 21` rows with `wideParams` and the same analysis: out of
-  domain `99.95`, batching `105.88`, FRI's folds `105.31`, queries `101.57`, `99.50` bits
-  (`wide21_knowledgeError_le`); the out-of-domain term caps the quartic extension below `100`
-  bits on `2 ^ 21` rows.
+* `fibonacciStatement`: the Fibonacci AIR (2 columns, 5 constraints, 1 quotient chunk) at every
+  trace length, blowup `16` (rate `1/16`), `110` queries; FRI at `δ = 15/32 - 2 ^ (-15)`, the
+  extractor at `δ' = 15/32 - 2 ^ (-19)`, `loss = 2 ^ (-17)`. On `2 ^ 20` rows, the worst:
+  constraint folding `121.95`, out of domain `99.71`, batching `107.15` (the powers MCA bound
+  `(m - 1) N`), FRI's folds `104.87`, queries `100.32`: at most `2 ^ (-98)` at every length
+  (`fibonacci_knowledgeError_le`), `98.95` bits (`100.37` on `2 ^ 10` rows).
+* `wideStatement`: `wide 64` (64 columns, 64 constraints of degree `3`, 2 quotient chunks,
+  `numOpened = 136`) at every trace length, blowup `4`, `150` queries; FRI at
+  `δ = 3/8 - 2 ^ (-12)`, the extractor at `δ' = 3/8 - 2 ^ (-14)`, `loss = 2 ^ (-17)`. On `2 ^ 22`
+  rows, the worst: constraint folding `117.98`, out of domain `98.95`, batching `105.88`, FRI's
+  folds `105.15` (the lossy bound on the largest domains, `|L'|` on the smaller), queries
+  `101.57`: `98.71` bits (`wide_knowledgeError_le`, `98`; `100.17` on `2 ^ 20` rows, `99.50` on
+  `2 ^ 21`). The out-of-domain term `(ℓ identityDegree + n + N) / |𝕂|` caps the quartic
+  extension below `100` bits from `2 ^ 21` rows, and grows with the list size, so the extractor
+  stays below the unique-decoding radius.
 * `wideSp1Setup`, in the random-oracle model: `wide 64` on `2 ^ 21` rows with SP1's FRI
   (soundcalc's core circuit, `sp1Params`): blowup `4`, `124` queries, `16` bits of query
   grinding; `δ = 3/8 - 2 ^ (-14)`, `δ' = 3/8 - 2 ^ (-16)`, `loss = 2 ^ (-16)`. Constraint folding
@@ -85,26 +86,29 @@ the analysis the search finds:
   `2 ^ (-128)` (`wide5_roundError_le`); `159` queries reach `127.81`. The analysis reaches `128`
   bits at every admitted length (`wide5Statement_secureRo`); `verifierQueries = 112642`
   (`wide5_knowledgeSoundness_ro`).
-* `wide5iSetup`, the interactive counterpart, without credit for grinding: `wide 64` on `2 ^ 21`
-  rows over `KoalaBear.Fast.Ext5`, blowup `4`, `190` queries (`wide5iParams`);
-  `δ = 3/8 - 2 ^ (-14)`, `δ' = 3/8 - 2 ^ (-16)`, `loss = 2 ^ (-19)`. Constraint folding `148.97`,
-  out of domain `130.94`, batching `134.84`, FRI's folds `134.70`, queries `128.79`: `128.46` bits
-  (`wide5i_knowledgeError_le`, `wide5i_knowledgeSoundness`); `189` queries reach `127.90`.
-* `wideBatchSetup`: a batch of three `wideBus 64` instances on `2 ^ 20`, `2 ^ 19` and `2 ^ 16`
-  rows over `KoalaBear.Fast.Ext5`, every row receiving four columns and sending four on one global
-  bus (`wideBus`: `wide 64` and two interactions of width `W = 4` per row,
-  `T = 2 (2 ^ 20 + 2 ^ 19 + 2 ^ 16) = 3276800` in all; its LogUp constraints keep the two quotient
-  chunks, add `4` constraints of degree `3` and two permutation columns, `20` opened words over
-  the quintic extension), with `wide5iParams` and `wide5iAnalysis`. The lookup challenges
-  `T + (T - 1) W = 16383996` (`lookupError`), `130.98`; constraint folding `148.88`, out of domain
-  `131.94` and batching `134.65`, each at the worst instance, batching the `158` opened words of
-  each instance's domain size; FRI's folds from `2 ^ 22` points, injecting the shorter instances'
-  words at `2 ^ 21` and `2 ^ 18` points, `134.48`; queries `128.79`: `128.34` bits
-  (`wideBatch_knowledgeError_le`, `wideBatch_knowledgeSoundness`); `189` queries reach `127.81`.
-  The batch pays for the lookups once, for `α`, `ζ` and batching once, as its failing instance
-  would alone among the instances of its size; FRI pays one more word per injected height.
-  Plonky3's `p3-security` estimates LogUp's error as `N (W + 2) / |𝕂|` for `N` interactions; the
-  bound here, `(T + (T - 1) W) / |𝕂|`, is Schwartz–Zippel on the numerator with every denominator
+* `wide5iStatement`, the interactive counterpart, without credit for grinding: `wide 64` at every
+  trace length over `KoalaBear.Fast.Ext5`, blowup `4`, `190` queries (`wide5iParams`);
+  `δ = 3/8 - 2 ^ (-14)`, `δ' = 3/8 - 2 ^ (-16)`, `loss = 2 ^ (-19)`. On `2 ^ 22` rows, the worst:
+  constraint folding `148.97`, out of domain `129.94`, batching `134.84`, FRI's folds `134.48`,
+  queries `128.79`: `128.22` bits (`wide5i_knowledgeError_le`, `wide5i_knowledgeSoundness`;
+  `128.46` on `2 ^ 21` rows).
+* `wideBatchStatement`: three `wideBus 64` instances of keygen heights `2 ^ 20`, `2 ^ 19` and
+  `2 ^ 16` over `KoalaBear.Fast.Ext5`, every row receiving four columns and sending four on one
+  global bus (`wideBus`: `wide 64` and two interactions of width `W = 4` per row; its LogUp
+  constraints keep the two quotient chunks, add `4` constraints of degree `3` and two permutation
+  columns, `20` opened words over the quintic extension), with `wide5iParams`, at every vector of
+  trace lengths; `δ = 3/8 - 2 ^ (-13)`, `δ' = 3/8 - 2 ^ (-15)`, `loss = 2 ^ (-18)`. Each term is
+  at its worst admitted value (`Batch.Statement.knowledgeErrorTerms`): the lookup challenges with
+  every instance on `2 ^ 22` rows, `T = 2 · 3 · 2 ^ 22`, `128.04` (`lookupError`); constraint
+  folding `148.88`, out of domain `129.94` and batching all `474` opened words on one domain size
+  `134.06`, each at the worst instance; FRI's folds, the sum over the heights of the worst fold
+  onto each, `134.30`; queries `128.74`: `127.10` bits (`wideBatch_knowledgeError_le`, `127`,
+  `wideBatch_knowledgeSoundness`). At the keygen heights alone the batch reached `128.34` bits,
+  the lookup challenges `130.98`: the prover may claim every instance at `2 ^ 22` rows. The batch
+  pays for the lookups once, for `α`, `ζ` and batching once, as its failing instance would alone
+  among the instances of its size; FRI pays one more word per injected height. Plonky3's
+  `p3-security` estimates LogUp's error as `N (W + 2) / |𝕂|` for `N` interactions; the bound
+  here, `(T + (T - 1) W) / |𝕂|`, is Schwartz–Zippel on the numerator with every denominator
   cleared, at most `(W + 1) T / |𝕂|`, the same up to `T / |𝕂|`, and it counts the poles of every
   tuple, whatever its multiplicity.
 * `wideBatch5Statement`, the batch in the random-oracle model, with `wide5Params`, at every
@@ -140,26 +144,36 @@ Each takes the calculator's certificate with an MCA bound `B` and the hypothesis
 section Calculator
 variable {F : Type} [BaseField F] {EF : Type} [Challenge F EF] {p : ℕ}
 
-/-- **The calculator's knowledge error.** If the calculator certifies `bits` bits for `S` at the
-analysis `A` with an MCA bound `B` that holds (`S.Secure p B A bits`, for `|F| = p`), the
-knowledge error with FRI at `A.δ` and the extractor at `A.δ'` is at most `2 ^ (-bits)`. -/
-theorem knowledgeError_le_of_secure {lookups : List (Lookup F)} (S : Setup EF lookups)
-    (hp : Nat.card F = p) {B : McaBound} (hB : B.Holds) (A : Analysis) {bits : ℕ}
-    (h : S.Secure p B A bits) (δ δ' : NNReal) (hδ : (δ : ℝ) = A.δ) (hδ' : (δ' : ℝ) = A.δ') :
-    knowledgeError S δ δ' ≤ (2 ^ bits)⁻¹ :=
-  (knowledgeError_le_bound S A hp B hB h.1 δ δ' hδ hδ').trans (ofReal_le_inv_two_pow h.2)
+/-- **The calculator's knowledge error of a statement.** If the calculator certifies `bits` bits
+for the statement `C` at the analysis `A` with an MCA bound `B` that holds
+(`C.Secure EF p B A bits`, for `|F| = p`), the knowledge error with FRI at `A.δ` and the
+extractor at `A.δ'` at every admitted length is at most `2 ^ (-bits)`. -/
+theorem Statement.knowledgeError_le_of_secure (C : Statement F) (hp : Nat.card F = p)
+    {B : McaBound} (hB : B.Holds) (A : Analysis) {bits : ℕ} (h : C.Secure EF p B A bits)
+    (δ δ' : NNReal) (hδ : (δ : ℝ) = A.δ) (hδ' : (δ' : ℝ) = A.δ') :
+    C.knowledgeError EF (fun _ ↦ δ) (fun _ ↦ δ') ≤ (2 ^ bits)⁻¹ :=
+  iSup₂_le fun n hn ↦
+    have hs := h n (by have := hn.sound.twoAdic; omega) ((C.admits_iff n).mpr hn)
+    (knowledgeError_le_bound (C.setupAt EF n hn) A hp B hB hs.1 δ δ' hδ hδ').trans
+      (ofReal_le_inv_two_pow hs.2)
 
-/-- **Knowledge soundness from the calculator.** If the calculator certifies `bits` bits for `S`
-at `A` with an MCA bound that holds, and no trace within `δ' = A.δ'` of the prover's committed
-trace satisfies the AIR, the verifier accepts with probability at most `2 ^ (-bits)`. -/
-theorem knowledgeSoundness_of_secure (S : Setup EF) (hp : Nat.card F = p)
-    {B : McaBound}
-    (hB : B.Holds) (A : Analysis) {bits : ℕ} (h : S.Secure p B A bits) (δ' : NNReal)
-    (hδ' : (δ' : ℝ) = A.δ') (publicValues : List F) (prover : Prover S) :
-    (∀ trace ∈ closeTraces S δ' prover.trace, ¬ S.air.Satisfied S.logN trace publicValues) →
-      acceptance publicValues prover ≤ (2 ^ bits)⁻¹ := fun hfar ↦
-  (knowledgeSoundness S publicValues prover _ δ' (lt_one_sub_rate S A h.1.1 δ' hδ')
-    hfar).trans (knowledgeError_le_of_secure S hp hB A h _ δ' (coe_toNNReal_δ A h.1.1) hδ')
+/-- **Knowledge soundness from the calculator.** If the calculator certifies `bits` bits for the
+statement `C` at `A` with an MCA bound that holds, and no trace of the prover's claimed length
+within `δ' = A.δ'` of its committed trace satisfies the AIR, the verifier accepts with probability
+at most `2 ^ (-bits)`. -/
+theorem knowledgeSoundness_of_secure (C : Statement F) (hp : Nat.card F = p) {B : McaBound}
+    (hB : B.Holds) (A : Analysis) {bits : ℕ} (h : C.Secure EF p B A bits) (δ' : NNReal)
+    (hδ' : (δ' : ℝ) = A.δ') (publicValues : List F) (prover : C.Prover EF) :
+    (∀ trace ∈ closeTraces prover.setup δ' prover.prover.trace,
+      ¬ C.air.Satisfied prover.logN trace publicValues) →
+      acceptance publicValues prover.prover ≤ (2 ^ bits)⁻¹ := fun hfar ↦
+  have hs (n : ℕ) (hn : C.Admits n) :=
+    h n (by have := hn.sound.twoAdic; omega) ((C.admits_iff n).mpr hn)
+  (knowledgeSoundness C publicValues prover (fun _ ↦ Real.toNNReal A.δ) (fun _ ↦ δ')
+    (fun n hn ↦ by
+      have := lt_one_sub_rate (C.setupAt EF n hn) A (hs n hn).1.1 δ' hδ'
+      rwa [Statement.rate_setupAt] at this) hfar).trans
+    (C.knowledgeError_le_of_secure hp hB A h _ δ' (coe_toNNReal_δ A (hs _ prover.admits).1.1) hδ')
 
 /-- **The calculator's round error.** If the calculator certifies `bits` bits per oracle answer
 for `S` at `A` with an MCA bound `B` that holds (`S.SecureRo p B A bits`), the round error with
@@ -221,27 +235,32 @@ theorem knowledgeSoundness_ro_of_secureRo (C : Statement F) (hp : Nat.card F = p
   · gcongr
     exact C.roundError_le_of_secureRo hp hB A h _ δ' (coe_toNNReal_δ A hA) hδ'
 
-/-- **The calculator's batch knowledge error.** If the calculator certifies `bits` bits for the
-batch `S` at `A` with an MCA bound that holds, its knowledge error with FRI at `A.δ` and the
-extractor at `A.δ'` is at most `2 ^ (-bits)`. -/
-theorem Batch.knowledgeError_le_of_secure {withLookups : Bool} (S : Batch.Setup EF withLookups)
-    (hp : Nat.card F = p) {B : McaBound} (hB : B.Holds) (A : Analysis) {bits : ℕ}
-    (h : S.Secure p B A bits) (δ δ' : NNReal) (hδ : (δ : ℝ) = A.δ) (hδ' : (δ' : ℝ) = A.δ') :
-    Batch.knowledgeError S δ δ' ≤ (2 ^ bits)⁻¹ :=
-  (batchKnowledgeError_le_bound S B A hp hB h.1 δ δ' hδ hδ').trans (ofReal_le_inv_two_pow h.2)
+/-- **The calculator's knowledge error of a batch statement.** If the calculator certifies `bits`
+bits for the batch statement `C` at `A` with an MCA bound `B` that holds
+(`C.Secure EF p B A bits`), the knowledge error with FRI at `A.δ` and the extractor at `A.δ'` at
+every admitted vector of lengths is at most `2 ^ (-bits)`. -/
+theorem Batch.Statement.knowledgeError_le_of_secure (C : Batch.Statement F) (hp : Nat.card F = p)
+    {B : McaBound} (hB : B.Holds) (A : Analysis) {bits : ℕ} (h : C.Secure EF p B A bits)
+    (δ δ' : NNReal) (hδ : (δ : ℝ) = A.δ) (hδ' : (δ' : ℝ) = A.δ') :
+    C.knowledgeError EF (fun _ ↦ δ) (fun _ ↦ δ') ≤ (2 ^ bits)⁻¹ :=
+  iSup₂_le fun n hn ↦ (batchKnowledgeError_le_bound _ B A hp hB (C.secure_setupAt EF h n hn).1
+    δ δ' hδ hδ').trans (ofReal_le_inv_two_pow (C.secure_setupAt EF h n hn).2)
 
 /-- **Batch knowledge soundness from the calculator.** If the calculator certifies `bits` bits
-for the batch `S` at `A` with an MCA bound that holds, and no tuple of traces, each within
-`δ' = A.δ'` of its instance's committed trace, satisfies the batch, the verifier accepts with
-probability at most `2 ^ (-bits)`. -/
-theorem batchKnowledgeSoundness_of_secure {withLookups : Bool} (S : Batch.Setup EF withLookups)
-    (hp : Nat.card F = p) {B : McaBound} (hB : B.Holds) (A : Analysis) {bits : ℕ}
-    (h : S.Secure p B A bits) (δ' : NNReal) (hδ' : (δ' : ℝ) = A.δ')
-    (publicValues : Fin S.k → List F) (prover : Batch.Prover S) :
-    (∀ traces ∈ Batch.closeTraces S δ' prover.trace, ¬ S.Satisfied traces publicValues) →
-      Batch.acceptance publicValues prover ≤ (2 ^ bits)⁻¹ := fun hfar ↦
-  (batchKnowledgeSoundness S publicValues prover _ δ' (batch_lt_one_sub_rate S B A h.1 δ' hδ')
-    hfar).trans (Batch.knowledgeError_le_of_secure S hp hB A h _ δ' (coe_toNNReal_δ A h.1.1) hδ')
+for the batch statement `C` at `A` with an MCA bound that holds, and no tuple of traces of the
+prover's claimed lengths, each within `δ' = A.δ'` of its instance's committed trace, satisfies the
+batch, the verifier accepts with probability at most `2 ^ (-bits)`. -/
+theorem batchKnowledgeSoundness_of_secure (C : Batch.Statement F) (hp : Nat.card F = p)
+    {B : McaBound} (hB : B.Holds) (A : Analysis) {bits : ℕ} (h : C.Secure EF p B A bits)
+    (δ' : NNReal) (hδ' : (δ' : ℝ) = A.δ') (publicValues : Fin C.k → List F)
+    (prover : C.Prover EF) :
+    (∀ traces ∈ Batch.closeTraces prover.setup δ' prover.prover.trace,
+      ¬ prover.setup.Satisfied traces publicValues) →
+      Batch.acceptance publicValues prover.prover ≤ (2 ^ bits)⁻¹ := fun hfar ↦
+  (batchKnowledgeSoundness C publicValues prover (fun _ ↦ Real.toNNReal A.δ) (fun _ ↦ δ')
+    (fun n hn ↦ batch_lt_one_sub_rate (C.setupAt EF n hn) B A (C.secure_setupAt EF h n hn).1 δ'
+      hδ') hfar).trans
+    (C.knowledgeError_le_of_secure hp hB A h _ δ' (coe_toNNReal_δ A h.1.1) hδ')
 
 /-- **The calculator's batch round error.** If the calculator certifies `bits` bits per oracle
 answer for the batch `S` at `A` with an MCA bound that holds, its round error with FRI at `A.δ`
@@ -305,51 +324,40 @@ def fibonacciParams : Fri.Params where
   commitPowBits := 0
   queryPowBits := 0
 
-/-- The Fibonacci AIR on `2 ^ 10` rows with `fibonacciParams`. -/
-def fibonacciSetup : Setup KoalaBear.Fast.Ext4 where
-  params := fibonacciParams
-  air := fibonacci
-  logN := 10
-  valid := ValidConfig.sound
-    { colsInWidth := by unfold Air.ColsInWidth; decide
-      preprocessedSize := rfl
-      periodicFits := rfl
-      degreeFits := fibonacci_degreeFits 10
-      twoAdic := by decide
-      chunksFit := by
-        rw [logQuotientChunks_of _ _ 0 rfl (by decide)]
-        exact Nat.zero_le _
-      folds := by decide
-      finalPolyFits := by decide
-      queries := by decide
-      blowup := by decide }
+/-- The Fibonacci AIR with `fibonacciParams` at every trace length. -/
+def fibonacciStatement : Statement F :=
+  ⟨fibonacciParams, fibonacci, by unfold Air.ColsInWidth; decide⟩
 
-/-- FRI at `δ = 15/32 - 2 ^ (-40)`, the extractor at `δ' = 15/32 - 2 ^ (-42)`, below the
-unique-decoding radius `15/32`, and `loss = 2 ^ (-60)`. -/
-def fibonacciAnalysis : Analysis := ⟨15 / 32 - 1 / 2 ^ 40, 15 / 32 - 1 / 2 ^ 42, 1 / 2 ^ 60⟩
+/-- FRI at `δ = 15/32 - 2 ^ (-15)`, the extractor at `δ' = 15/32 - 2 ^ (-19)`, below the
+unique-decoding radius `15/32`, and `loss = 2 ^ (-17)`. -/
+def fibonacciAnalysis : Analysis := ⟨15 / 32 - 1 / 2 ^ 15, 15 / 32 - 1 / 2 ^ 19, 1 / 2 ^ 17⟩
 
 theorem fibonacci_secure :
-    fibonacciSetup.Secure 2130706433 .uniqueDecoding fibonacciAnalysis 100 := by
+    fibonacciStatement.Secure Ext4 2130706433 .uniqueDecoding fibonacciAnalysis 98 := by
   decide +kernel
 
-/-- **100 bits.** The knowledge error of `fibonacciSetup`, FRI at `δ = 15/32 - 2 ^ (-40)` and the
-extractor at `δ' = 15/32 - 2 ^ (-42)`, is at most `2 ^ (-100)`. -/
+/-- **98 bits at every trace length.** The knowledge error of `fibonacciStatement`, FRI at
+`δ = 15/32 - 2 ^ (-15)` and the extractor at `δ' = 15/32 - 2 ^ (-19)`, is at most
+`2 ^ (-98)`. -/
 theorem fibonacci_knowledgeError_le :
-    knowledgeError fibonacciSetup (15 / 32 - 2 ^ (-40 : ℤ)) (15 / 32 - 2 ^ (-42 : ℤ)) ≤
-      (2 ^ 100)⁻¹ :=
-  knowledgeError_le_of_secure _ KoalaBear.card_eq McaBound.uniqueDecoding_holds _ fibonacci_secure
-    _ _ (by rw [coe_sub_two_zpow _ (-40) 40 rfl (by norm_num)]; norm_num [fibonacciAnalysis])
-    (by rw [coe_sub_two_zpow _ (-42) 42 rfl (by norm_num)]; norm_num [fibonacciAnalysis])
+    fibonacciStatement.knowledgeError Ext4 (fun _ ↦ 15 / 32 - 2 ^ (-15 : ℤ))
+      (fun _ ↦ 15 / 32 - 2 ^ (-19 : ℤ)) ≤ (2 ^ 98)⁻¹ :=
+  Statement.knowledgeError_le_of_secure _ KoalaBear.card_eq McaBound.uniqueDecoding_holds _
+    fibonacci_secure _ _
+    (by rw [coe_sub_two_zpow _ (-15) 15 rfl (by norm_num)]; norm_num [fibonacciAnalysis])
+    (by rw [coe_sub_two_zpow _ (-19) 19 rfl (by norm_num)]; norm_num [fibonacciAnalysis])
 
-/-- Knowledge soundness of `fibonacciSetup` with error `2 ^ (-100)`, the extractor at
-`15/32 - 2 ^ (-42)`: if no trace within `15/32 - 2 ^ (-42)` of the prover's committed trace
-satisfies the AIR, the verifier accepts with probability at most `2 ^ (-100)`. -/
-theorem fibonacci_knowledgeSoundness (publicValues : List F) (prover : Prover fibonacciSetup) :
-    (∀ trace ∈ closeTraces fibonacciSetup (15 / 32 - 2 ^ (-42 : ℤ) : NNReal) prover.trace,
-      ¬ fibonacci.Satisfied 10 trace publicValues) →
-      acceptance publicValues prover ≤ (2 ^ 100)⁻¹ :=
+/-- Knowledge soundness of `fibonacciStatement` with error `2 ^ (-98)`, the extractor at
+`15/32 - 2 ^ (-19)`: if no trace of the prover's claimed length within `15/32 - 2 ^ (-19)` of its
+committed trace satisfies the AIR, the verifier accepts with probability at most
+`2 ^ (-98)`. -/
+theorem fibonacci_knowledgeSoundness (publicValues : List F)
+    (prover : fibonacciStatement.Prover Ext4) :
+    (∀ trace ∈ closeTraces prover.setup (15 / 32 - 2 ^ (-19 : ℤ) : NNReal) prover.prover.trace,
+      ¬ fibonacci.Satisfied prover.logN trace publicValues) →
+      acceptance publicValues prover.prover ≤ (2 ^ 98)⁻¹ :=
   knowledgeSoundness_of_secure _ KoalaBear.card_eq McaBound.uniqueDecoding_holds _ fibonacci_secure
-    _ (by rw [coe_sub_two_zpow _ (-42) 42 rfl (by norm_num)]; norm_num [fibonacciAnalysis])
+    _ (by rw [coe_sub_two_zpow _ (-19) 19 rfl (by norm_num)]; norm_num [fibonacciAnalysis])
     publicValues prover
 
 /-- FRI with blowup `4`, folding by arity `2` down to a constant, and `150` queries. -/
@@ -391,71 +399,35 @@ theorem wide_valid (P : Fri.Params) (hb : P.logBlowup = 2) (ha : 0 < P.maxLogAri
   queries := hq
   blowup := by rw [hb]; decide
 
-/-- `wide 64` on `2 ^ 20` rows with `wideParams`. -/
-def wideSetup : Setup KoalaBear.Fast.Ext4 where
-  params := wideParams
-  air := wide 64
-  logN := 20
-  valid := ValidConfig.sound <|
-    wide_valid wideParams rfl (by decide) rfl (by decide) 64 (by decide) 20 (by decide)
+/-- `wide 64` with `wideParams` at every trace length. -/
+def wideStatement : Statement F := ⟨wideParams, wide 64, wide_colsInWidth 64⟩
 
 /-- FRI at `δ = 1535/4096 = 3/8 - 2 ^ (-12)`, the extractor at
 `δ' = 6143/16384 = 3/8 - 2 ^ (-14)` and `loss = 2 ^ (-17)`. -/
 def wideAnalysis : Analysis := ⟨1535 / 4096, 6143 / 16384, 1 / 2 ^ 17⟩
 
-theorem wide_secure : wideSetup.Secure 2130706433 .uniqueDecoding wideAnalysis 100 := by
+theorem wide_secure :
+    wideStatement.Secure Ext4 2130706433 .uniqueDecoding wideAnalysis 98 := by
   decide +kernel
 
-/-- **100 bits on `2 ^ 20` rows.** The knowledge error of `wideSetup`, FRI at
+/-- **98 bits at every trace length.** The knowledge error of `wideStatement`, FRI at
 `δ = 1535/4096 = 3/8 - 2 ^ (-12)` and the extractor at `δ' = 6143/16384 = 3/8 - 2 ^ (-14)`, is at
-most `2 ^ (-100)`. -/
+most `2 ^ (-98)`. -/
 theorem wide_knowledgeError_le :
-    knowledgeError wideSetup (1535 / 4096) (6143 / 16384) ≤ (2 ^ 100)⁻¹ :=
-  knowledgeError_le_of_secure _ KoalaBear.card_eq McaBound.uniqueDecoding_holds _ wide_secure _ _
-    (by norm_num [wideAnalysis]) (by norm_num [wideAnalysis])
+    wideStatement.knowledgeError Ext4 (fun _ ↦ 1535 / 4096) (fun _ ↦ 6143 / 16384) ≤
+      (2 ^ 98)⁻¹ :=
+  Statement.knowledgeError_le_of_secure _ KoalaBear.card_eq McaBound.uniqueDecoding_holds _
+    wide_secure _ _ (by norm_num [wideAnalysis]) (by norm_num [wideAnalysis])
 
-/-- Knowledge soundness of `wideSetup` with error `2 ^ (-100)`, the extractor at `6143/16384`:
-if no trace within `6143/16384` of the prover's committed trace satisfies the AIR, the verifier
-accepts with probability at most `2 ^ (-100)`. -/
-theorem wide_knowledgeSoundness (publicValues : List F) (prover : Prover wideSetup) :
-    (∀ trace ∈ closeTraces wideSetup (6143 / 16384 : NNReal) prover.trace,
-      ¬ (wide 64).Satisfied 20 trace publicValues) →
-      acceptance publicValues prover ≤ (2 ^ 100)⁻¹ :=
+/-- Knowledge soundness of `wideStatement` with error `2 ^ (-98)`, the extractor at
+`6143/16384`: if no trace of the prover's claimed length within `6143/16384` of its committed trace
+satisfies the AIR, the verifier accepts with probability at most `2 ^ (-98)`. -/
+theorem wide_knowledgeSoundness (publicValues : List F) (prover : wideStatement.Prover Ext4) :
+    (∀ trace ∈ closeTraces prover.setup (6143 / 16384 : NNReal) prover.prover.trace,
+      ¬ (wide 64).Satisfied prover.logN trace publicValues) →
+      acceptance publicValues prover.prover ≤ (2 ^ 98)⁻¹ :=
   knowledgeSoundness_of_secure _ KoalaBear.card_eq McaBound.uniqueDecoding_holds _ wide_secure _
     (by norm_num [wideAnalysis]) publicValues prover
-
-/-- `wide 64` on `2 ^ 21` rows with `wideParams`. -/
-def wide21Setup : Setup KoalaBear.Fast.Ext4 where
-  params := wideParams
-  air := wide 64
-  logN := 21
-  valid := ValidConfig.sound <|
-    wide_valid wideParams rfl (by decide) rfl (by decide) 64 (by decide) 21 (by decide)
-
-/-- FRI at `δ = 1535/4096 = 3/8 - 2 ^ (-12)`, the extractor at
-`δ' = 6143/16384 = 3/8 - 2 ^ (-14)` and `loss = 2 ^ (-17)`. -/
-def wide21Analysis : Analysis := ⟨1535 / 4096, 6143 / 16384, 1 / 2 ^ 17⟩
-
-theorem wide21_secure : wide21Setup.Secure 2130706433 .uniqueDecoding wide21Analysis 99 := by
-  decide +kernel
-
-/-- **99 bits on `2 ^ 21` rows.** The knowledge error of `wide21Setup`, FRI at
-`δ = 1535/4096 = 3/8 - 2 ^ (-12)` and the extractor at `δ' = 6143/16384 = 3/8 - 2 ^ (-14)`, is at
-most `2 ^ (-99)`. -/
-theorem wide21_knowledgeError_le :
-    knowledgeError wide21Setup (1535 / 4096) (6143 / 16384) ≤ (2 ^ 99)⁻¹ :=
-  knowledgeError_le_of_secure _ KoalaBear.card_eq McaBound.uniqueDecoding_holds _ wide21_secure _ _
-    (by norm_num [wide21Analysis]) (by norm_num [wide21Analysis])
-
-/-- Knowledge soundness of `wide21Setup` with error `2 ^ (-99)`, the extractor at `6143/16384`:
-if no trace within `6143/16384` of the prover's committed trace satisfies the AIR, the verifier
-accepts with probability at most `2 ^ (-99)`. -/
-theorem wide21_knowledgeSoundness (publicValues : List F) (prover : Prover wide21Setup) :
-    (∀ trace ∈ closeTraces wide21Setup (6143 / 16384 : NNReal) prover.trace,
-      ¬ (wide 64).Satisfied 21 trace publicValues) →
-      acceptance publicValues prover ≤ (2 ^ 99)⁻¹ :=
-  knowledgeSoundness_of_secure _ KoalaBear.card_eq McaBound.uniqueDecoding_holds _ wide21_secure _
-    (by norm_num [wide21Analysis]) publicValues prover
 
 /-- SP1's FRI parameters (soundcalc's `sp1.toml`, core circuit): blowup `4`, folding by arity `2`
 down to a constant (soundcalc's early-stop degree `4` is the final domain's size), `124` queries
@@ -678,95 +650,50 @@ def wide5iParams : Fri.Params where
   commitPowBits := 0
   queryPowBits := 0
 
-/-- `wide 64` on `2 ^ 21` rows over the quintic extension with `wide5iParams`. -/
-def wide5iSetup : Setup KoalaBear.Fast.Ext5 where
-  params := wide5iParams
-  air := wide 64
-  logN := 21
-  valid := ValidConfig.sound <|
-    wide_valid wide5iParams rfl (by decide) rfl (by decide) 64 (by decide) 21 (by decide)
+/-- `wide 64` over the quintic extension with `wide5iParams` at every trace length. -/
+def wide5iStatement : Statement F := ⟨wide5iParams, wide 64, wide_colsInWidth 64⟩
 
 /-- FRI at `δ = 6143/16384 = 3/8 - 2 ^ (-14)`, the extractor at
 `δ' = 24575/65536 = 3/8 - 2 ^ (-16)` and `loss = 2 ^ (-19)`. -/
 def wide5iAnalysis : Analysis := ⟨6143 / 16384, 24575 / 65536, 1 / 2 ^ 19⟩
 
-theorem wide5i_secure : wide5iSetup.Secure 2130706433 .uniqueDecoding wide5iAnalysis 128 := by
+theorem wide5i_secure :
+    wide5iStatement.Secure Ext5 2130706433 .uniqueDecoding wide5iAnalysis 128 := by
   decide +kernel
 
-/-- **128 bits, interactively, on `2 ^ 21` rows.** The knowledge error of `wide5iSetup`, FRI at
-`δ = 6143/16384 = 3/8 - 2 ^ (-14)` and the extractor at `δ' = 24575/65536 = 3/8 - 2 ^ (-16)`, is
-at most `2 ^ (-128)`. -/
+/-- **128 bits, interactively, at every trace length.** The knowledge error of
+`wide5iStatement`, FRI at `δ = 6143/16384 = 3/8 - 2 ^ (-14)` and the extractor at
+`δ' = 24575/65536 = 3/8 - 2 ^ (-16)`, is at most `2 ^ (-128)`. -/
 theorem wide5i_knowledgeError_le :
-    knowledgeError wide5iSetup (6143 / 16384) (24575 / 65536) ≤ (2 ^ 128)⁻¹ :=
-  knowledgeError_le_of_secure _ KoalaBear.card_eq McaBound.uniqueDecoding_holds _ wide5i_secure _ _
-    (by norm_num [wide5iAnalysis]) (by norm_num [wide5iAnalysis])
+    wide5iStatement.knowledgeError Ext5 (fun _ ↦ 6143 / 16384) (fun _ ↦ 24575 / 65536) ≤
+      (2 ^ 128)⁻¹ :=
+  Statement.knowledgeError_le_of_secure _ KoalaBear.card_eq McaBound.uniqueDecoding_holds _
+    wide5i_secure _ _ (by norm_num [wide5iAnalysis]) (by norm_num [wide5iAnalysis])
 
-/-- Knowledge soundness of `wide5iSetup` with error `2 ^ (-128)`, FRI at `6143/16384` and the
-extractor at `24575/65536`: if no trace within `24575/65536` of the prover's committed trace
-satisfies the AIR, the verifier accepts with probability at most `2 ^ (-128)`. -/
-theorem wide5i_knowledgeSoundness (publicValues : List F) (prover : Prover wide5iSetup) :
-    (∀ trace ∈ closeTraces wide5iSetup (24575 / 65536 : NNReal) prover.trace,
-      ¬ (wide 64).Satisfied 21 trace publicValues) →
-      acceptance publicValues prover ≤ (2 ^ 128)⁻¹ :=
+/-- Knowledge soundness of `wide5iStatement` with error `2 ^ (-128)`, FRI at `6143/16384` and
+the extractor at `24575/65536`: if no trace of the prover's claimed length within `24575/65536` of
+its committed trace satisfies the AIR, the verifier accepts with probability at most
+`2 ^ (-128)`. -/
+theorem wide5i_knowledgeSoundness (publicValues : List F) (prover : wide5iStatement.Prover Ext5) :
+    (∀ trace ∈ closeTraces prover.setup (24575 / 65536 : NNReal) prover.prover.trace,
+      ¬ (wide 64).Satisfied prover.logN trace publicValues) →
+      acceptance publicValues prover.prover ≤ (2 ^ 128)⁻¹ :=
   knowledgeSoundness_of_secure _ KoalaBear.card_eq McaBound.uniqueDecoding_holds _ wide5i_secure _
     (by norm_num [wide5iAnalysis]) publicValues prover
 
 /-! ### Batches with lookups -/
 
-section WideBus
-open CompStark.Lookup
-
 /-- `wideBus 64` packs its one lookup as it is. -/
 theorem wideBus_packedLookups (logN : ℕ) :
     (wideBus 64 : Air F).packedLookups logN = [wideBusLookup] := rfl
 
-/-- The LogUp constraints of `wideBus 64`, of degree `3`, keep its two quotient chunks. -/
-theorem wideBus_logQuotientChunksWith (logN : ℕ) :
-    (wideBus 64 : Air F).logQuotientChunksWith logN (logUpConstraints [wideBusLookup]) = 1 := by
-  have hmax : (wideBus 64 : Air F).maxDegree = 3 := by decide +kernel
-  have hext : (logUpConstraints [wideBusLookup] : List (ExtExpr F)).foldl
-      (fun m c ↦ max m c.degree) 0 = 3 := by decide +kernel
-  unfold Air.logQuotientChunksWith extDegree Air.constraintDegree
-  simp only [show (wideBus 64 : Air F).periodic = [] from rfl, ↓reduceIte, hmax, hext]
-  exact log2_two_mul_two_pow_sub_one 1
-
-end WideBus
-
-/-- `wideBus 64` on `2 ^ logN` rows with FRI parameters of blowup `4` and a constant final
-polynomial, for `logN ≤ 22`. -/
-theorem wideBus_valid (P : Fri.Params) (hb : P.logBlowup = 2) (ha : 0 < P.maxLogArity)
-    (hf : P.logFinalPolyLen = 0) (hq : 0 < P.numQueries) (logN : ℕ) (h : logN ≤ 22) :
-    ValidConfig P (wideBus 64 : Air F) logN :=
-  have hc : (wideBus 64 : Air F).logQuotientChunks logN = (wide 64).logQuotientChunks logN := by
-    unfold Air.logQuotientChunks
-    rfl
-  { colsInWidth := wide_colsInWidth 64
-    preprocessedSize := by simp only [wideBus, wide, Array.size_empty, Nat.mul_zero]
-    periodicFits := rfl
-    degreeFits := by
-      unfold Air.DegreeFits
-      rw [hc]
-      exact wide_degreeFits 64 logN
-    twoAdic := by
-      rw [hb]
-      change logN + 2 ≤ 24
-      omega
-    chunksFit := by
-      rw [hc, wide_logQuotientChunks 64 _ (by decide), hb]
-      decide
-    folds := ha
-    finalPolyFits := by rw [hf]; exact Nat.zero_le _
-    queries := hq
-    blowup := by rw [hb]; decide }
-
-/-- The lookup of `wideBus 64`, packed for any height, keeps the quotient domain of `2 ^ logN`
-rows within the two-adic subgroups for `logN ≤ 22`, and reads its columns. -/
-theorem wideBus_lookupsValid (logN keyLogN : ℕ) (h : logN ≤ 22) :
-    LookupsValid (wideBus 64 : Air F) logN
-      (Batch.instanceLookups true (wideBus 64) keyLogN) := by
-  rw [show Batch.instanceLookups true (wideBus 64 : Air F) keyLogN = [wideBusLookup] from
-    wideBus_packedLookups keyLogN]
-  refine ⟨by rw [wideBus_logQuotientChunksWith]; change logN + 1 ≤ 24; omega, fun l hl ↦ ?_⟩
+/-- `wideBus 64` packs its lookup, which reads its columns, at every height. -/
+theorem wideBus_lookupsFit (keyLogN : ℕ) :
+    ∀ l ∈ (wideBus 64 : Air F).packedLookups keyLogN,
+      l.Fits (wideBus 64 : Air F).width (wideBus 64 : Air F).mainNextWidth
+        (wideBus 64 : Air F).preprocessedWidth (wideBus 64 : Air F).preprocessedNextWidth := by
+  rw [wideBus_packedLookups]
+  intro l hl
   rw [List.mem_singleton.mp hl]
   unfold Stark.Lookup.Fits
   decide
@@ -792,61 +719,51 @@ theorem wideBus_busesValid (logN : Fin 3 → ℕ) :
     subst hx hy
     rfl
 
-/-- Three instances of `wideBus 64` on `2 ^ 20`, `2 ^ 19` and `2 ^ 16` rows over the quintic
-extension with `wide5iParams`. -/
-def wideBatchSetup : Batch.Setup KoalaBear.Fast.Ext5 where
+/-- Three instances of `wideBus 64` of keygen heights `2 ^ 20`, `2 ^ 19` and `2 ^ 16` over the
+quintic extension with `wide5iParams`, at every vector of trace lengths. -/
+def wideBatchStatement : Batch.Statement F where
   params := wide5iParams
   k := 3
   air _ := wideBus 64
-  logN := ![20, 19, 16]
   keyLogN := ![20, 19, 16]
-  valid i := ValidConfig.sound <|
-    wideBus_valid wide5iParams rfl (by decide) rfl (by decide) _ (by fin_cases i <;> decide)
-  keyed _ h := absurd h (by decide)
+  colsInWidth _ := wide_colsInWidth 64
   nonempty := by decide
-  lookupsValid i := wideBus_lookupsValid _ _ (by fin_cases i <;> decide)
+  lookupsFit _ := wideBus_lookupsFit _
   buses := wideBus_busesValid _
 
-/-- FRI at `δ = 6143/16384 = 3/8 - 2 ^ (-14)`, the extractor at
-`δ' = 24575/65536 = 3/8 - 2 ^ (-16)` and `loss = 2 ^ (-19)`, as for `wide5iSetup`. -/
+/-- FRI at `δ = 3/8 - 2 ^ (-13)`, the extractor at `δ' = 3/8 - 2 ^ (-15)` and `loss = 2 ^ (-18)`. -/
+def wideBatchAnalysis : Analysis := ⟨3 / 8 - 1 / 2 ^ 13, 3 / 8 - 1 / 2 ^ 15, 1 / 2 ^ 18⟩
+
 theorem wideBatch_secure :
-    wideBatchSetup.Secure 2130706433 .uniqueDecoding wide5iAnalysis 128 := by
+    wideBatchStatement.Secure Ext5 2130706433 .uniqueDecoding wideBatchAnalysis 127 := by
   decide +kernel
 
-/-- **128 bits, interactively, for a batch of three tables of mixed heights with lookups.** The
-knowledge error of `wideBatchSetup`, FRI at `δ = 6143/16384 = 3/8 - 2 ^ (-14)` and the extractor at
-`δ' = 24575/65536 = 3/8 - 2 ^ (-16)`, is at most `2 ^ (-128)`. -/
+/-- **127 bits, interactively, for a batch of three tables with lookups, at every vector of
+trace lengths.** The knowledge error of `wideBatchStatement`, FRI at `δ = 3/8 - 2 ^ (-13)` and the
+extractor at `δ' = 3/8 - 2 ^ (-15)`, is at most `2 ^ (-127)`. -/
 theorem wideBatch_knowledgeError_le :
-    Batch.knowledgeError wideBatchSetup (6143 / 16384) (24575 / 65536) ≤ (2 ^ 128)⁻¹ :=
-  Batch.knowledgeError_le_of_secure _ KoalaBear.card_eq McaBound.uniqueDecoding_holds _
+    wideBatchStatement.knowledgeError Ext5 (fun _ ↦ 3 / 8 - 2 ^ (-13 : ℤ))
+      (fun _ ↦ 3 / 8 - 2 ^ (-15 : ℤ)) ≤ (2 ^ 127)⁻¹ :=
+  Batch.Statement.knowledgeError_le_of_secure _ KoalaBear.card_eq McaBound.uniqueDecoding_holds _
     wideBatch_secure _ _
-    (by norm_num [wide5iAnalysis]) (by norm_num [wide5iAnalysis])
+    (by rw [coe_sub_two_zpow _ (-13) 13 rfl (by norm_num)]; norm_num [wideBatchAnalysis])
+    (by rw [coe_sub_two_zpow _ (-15) 15 rfl (by norm_num)]; norm_num [wideBatchAnalysis])
 
-/-- Knowledge soundness of `wideBatchSetup` with error `2 ^ (-128)`, FRI at `6143/16384` and the
-extractor at `24575/65536`: if no three traces, each within `24575/65536` of its instance's
-committed trace, satisfy the batch (`wideBus 64` each, the bus balanced), the verifier accepts
-with probability at most `2 ^ (-128)`. -/
-theorem wideBatch_knowledgeSoundness (publicValues : Fin 3 → List F)
-    (prover : Batch.Prover wideBatchSetup) :
-    (∀ traces ∈ Batch.closeTraces wideBatchSetup (24575 / 65536 : NNReal) prover.trace,
-      ¬ wideBatchSetup.Satisfied traces publicValues) →
-      Batch.acceptance publicValues prover ≤ (2 ^ 128)⁻¹ :=
+/-- Knowledge soundness of `wideBatchStatement` with error `2 ^ (-127)`, the extractor at
+`3/8 - 2 ^ (-15)`: if no three traces of the prover's claimed lengths, each within
+`3/8 - 2 ^ (-15)` of its instance's committed trace, satisfy the batch (`wideBus 64` each, the bus
+balanced), the verifier accepts with probability at most `2 ^ (-127)`. -/
+theorem wideBatch_knowledgeSoundness (publicValues : Fin wideBatchStatement.k → List F)
+    (prover : wideBatchStatement.Prover Ext5) :
+    (∀ traces ∈ Batch.closeTraces prover.setup (3 / 8 - 2 ^ (-15 : ℤ) : NNReal)
+        prover.prover.trace, ¬ prover.setup.Satisfied traces publicValues) →
+      Batch.acceptance publicValues prover.prover ≤ (2 ^ 127)⁻¹ :=
   batchKnowledgeSoundness_of_secure _ KoalaBear.card_eq McaBound.uniqueDecoding_holds _
     wideBatch_secure _
-    (by norm_num [wide5iAnalysis]) publicValues prover
+    (by rw [coe_sub_two_zpow _ (-15) 15 rfl (by norm_num)]; norm_num [wideBatchAnalysis])
+    publicValues prover
 
 /-! ### Batch statements in the random-oracle model -/
-
-/-- `wideBus 64` packs its lookup, which reads its columns, at every height. -/
-theorem wideBus_lookupsFit (keyLogN : ℕ) :
-    ∀ l ∈ (wideBus 64 : Air F).packedLookups keyLogN,
-      l.Fits (wideBus 64 : Air F).width (wideBus 64 : Air F).mainNextWidth
-        (wideBus 64 : Air F).preprocessedWidth (wideBus 64 : Air F).preprocessedNextWidth := by
-  rw [wideBus_packedLookups]
-  intro l hl
-  rw [List.mem_singleton.mp hl]
-  unfold Stark.Lookup.Fits
-  decide
 
 /-- Three instances of `wideBus 64` of keygen heights `2 ^ 20`, `2 ^ 19` and `2 ^ 16` over the
 quintic extension with `wide5Params` (`160` queries, `20` bits of query grinding), at every vector

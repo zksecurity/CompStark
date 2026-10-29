@@ -47,8 +47,9 @@ FRI's folds bounded by their largest fold and its queries by
 
 `Setup.Secure p B A bits` and `Setup.SecureRo p B A bits` (and the batch's) are decidable: the
 analysis fits the setup (`Setup.Fits`: `B` admits batching and every fold at `δ`) and the bound is
-at most `2 ^ (-bits)`. The analysis need not be picked by hand: `Setup.bestAnalysis`
-(`bestAnalysisRo`, and the batch's `bestAnalysis`) searches the radii and the loss for the smallest
+at most `2 ^ (-bits)`; a statement's (`Statement.Secure`, `Batch.Statement.Secure`, and their
+`SecureRo`) checks every trace length the verifier admits. The analysis need not be picked by
+hand: `Setup.bestAnalysis` (`bestAnalysisRo`) searches the radii and the loss for the smallest
 bound, and `decide +kernel` checks the analysis it finds.
 -/
 
@@ -411,21 +412,14 @@ def Setup.bestAnalysisRo (S : Setup EF) (p : ℕ) (B : McaBound) : Analysis :=
   bestAnalysisOf S.rateQ fun A ↦
     if S.Fits B A then some (maxTerms (S.roundErrorTermsOf c p B A)) else none
 
-/-- The analysis of the smallest batch knowledge error bound the search finds for `|F| = p` with
-the MCA bound `B`. -/
-def Batch.Setup.bestAnalysis {withLookups : Bool} (S : Batch.Setup EF withLookups) (p : ℕ)
-    (B : McaBound) : Analysis :=
-  let cs := S.shapes
-  let t := S.lookupCount
-  bestAnalysisOf S.domainSetup.rateQ fun A ↦
-    if S.Fits B A then some (sumTerms (S.knowledgeErrorTermsOf cs t p B A)) else none
 
 
 /-! ### Statements
 
 A statement's round error is the largest over the trace lengths the verifier admits
-(`Statement.roundError`). `Statement.SecureRo` checks every admitted length below the two-adicity
-at one analysis: the verifier's checks on a length are a Boolean (`Statement.admits`), and at the
+(`Statement.roundError`), and so is its knowledge error (`Statement.knowledgeError`).
+`Statement.SecureRo` and `Statement.Secure` check every admitted length below the two-adicity at
+one analysis: the verifier's checks on a length are a Boolean (`Statement.admits`), and at the
 length where FRI does not fold the calculator's terms bound the error without folds
 (`roundError0_le_bound`). -/
 
@@ -472,6 +466,15 @@ instance (p : ℕ) (B : McaBound) (A : Analysis) (bits : ℕ) :
     Decidable (C.SecureRo EF p B A bits) := by
   unfold SecureRo; infer_instance
 
+/-- The calculator certifies `bits` bits of knowledge soundness at the analysis `A` at every trace
+length the verifier admits. -/
+def Secure (p : ℕ) (B : McaBound) (A : Analysis) (bits : ℕ) : Prop :=
+  ∀ n < twoAdicity F + 1, ∀ h : C.admits n = true, (C.setupOf EF n h).Secure p B A bits
+
+instance (p : ℕ) (B : McaBound) (A : Analysis) (bits : ℕ) :
+    Decidable (C.Secure EF p B A bits) := by
+  unfold Secure; infer_instance
+
 end Statement
 
 /-! ### Batch statements
@@ -486,7 +489,11 @@ batching take the largest over every instance's shape at every admitted length (
 batching at the most opened words a domain size can have (`groupBound`); LogUp is at every
 instance's longest admitted length (`lookupCountMax`), its interactions growing with every length;
 FRI's folds at every arity, target height and injection a fold can have (`foldPlans`); and the
-queries at the most folds, `twoAdicity - logBlowup - logFinalPolyLen`. -/
+queries at the most folds, `twoAdicity - logBlowup - logFinalPolyLen`. The knowledge error's terms
+(`Batch.Statement.knowledgeErrorTerms`) are the same without grinding, but for FRI's folds, which
+the knowledge error sums over the plan: a plan's folds fold onto distinct heights
+(`FriGame.Rounds.pairwise_plan`), so the sum over the heights of the worst fold onto each bounds
+it. -/
 
 namespace Batch.Statement
 variable (C : Batch.Statement F)
@@ -539,14 +546,19 @@ def lookupCountMax : ℕ :=
     2 ^ C.maxLength i * ((C.lookups i).map (·.tuples.length)).sum).sum
   T + (T - 1) * Lookup.maxWidth (List.ofFn C.lookups).flatten
 
-/-- The folds FRI can make on a vector of admitted lengths, as data (`FriGame.Rounds.plan`): by
-`1` to `maxLogArity` bits onto `2 ^ m` points, `logFinalPolyLen + logBlowup ≤ m` below the
-two-adicity, injecting an input or not. -/
-def foldPlans : List (ℕ × ℕ × Bool) :=
-  (List.range' 1 C.params.maxLogArity).flatMap fun la ↦
-    (List.range' (C.params.logFinalPolyLen + C.params.logBlowup)
-      (twoAdicity F - (C.params.logFinalPolyLen + C.params.logBlowup))).flatMap fun m ↦
-        [(la, m, false), (la, m, true)]
+/-- The log sizes FRI's folds can fold onto on a vector of admitted lengths:
+`logFinalPolyLen + logBlowup ≤ m` below the two-adicity. -/
+def foldHeights : List ℕ :=
+  List.range' (C.params.logFinalPolyLen + C.params.logBlowup)
+    (twoAdicity F - (C.params.logFinalPolyLen + C.params.logBlowup))
+
+/-- The folds FRI can make onto `2 ^ m` points, as data (`FriGame.Rounds.plan`): by `1` to
+`maxLogArity` bits, injecting an input or not. -/
+def foldsOnto (m : ℕ) : List (ℕ × ℕ × Bool) :=
+  (List.range' 1 C.params.maxLogArity).flatMap fun la ↦ [(la, m, false), (la, m, true)]
+
+/-- The folds FRI can make on a vector of admitted lengths: onto every height of `foldHeights`. -/
+def foldPlans : List (ℕ × ℕ × Bool) := C.foldHeights.flatMap C.foldsOnto
 
 variable (EF : Type) [Challenge F EF]
 
@@ -610,8 +622,37 @@ instance (p : ℕ) (B : McaBound) (A : Analysis) (bits : ℕ) :
     Decidable (C.SecureRo EF p B A bits) := by
   unfold SecureRo; infer_instance
 
-end Batch.Statement
+/-- The terms of the statement's knowledge error bound for `|F| = p`, by challenge, each the
+largest of the batch's term over the term's parameters at the admitted vectors of lengths. FRI's
+folds are a sum over the plan's folds, whose target sizes are distinct: the sum over the heights
+`foldHeights` of the worst fold onto each bounds it. -/
+def knowledgeErrorTerms (p : ℕ) (B : McaBound) (A : Analysis) : List (String × ℚ) :=
+  let lb := C.params.logBlowup
+  let K := (p : ℚ) ^ Challenge.d EF
+  [("lookup challenges", ((A.listBound (1 / 2 ^ lb) ^ C.k * C.lookupCountMax : ℕ) : ℚ) / K),
+    ("constraint folding", maxQ ((C.allShapes EF).map (·.foldingNum lb A)) / K),
+    ("out of domain", maxQ ((C.allShapes EF).map (·.outOfDomainNum lb A)) / K),
+    ("batching", maxQ ((C.allShapes EF).map fun c ↦ c.batchingNum lb B A (C.groupBound EF)) / K),
+    ("FRI folds",
+      (C.foldHeights.map fun m ↦ maxQ ((C.foldsOnto m).map (A.levelBound B lb))).sum / K),
+    ("FRI queries",
+      (1 - A.δ + ((twoAdicity F - (C.params.logFinalPolyLen + lb) : ℕ) : ℚ) * A.loss) ^
+        C.params.numQueries)]
 
+/-- The bound on the statement's knowledge error: the sum of its terms. -/
+def knowledgeErrorBound (p : ℕ) (B : McaBound) (A : Analysis) : ℚ :=
+  sumTerms (C.knowledgeErrorTerms EF p B A)
+
+/-- The calculator certifies `bits` bits of knowledge soundness at the analysis `A` at every vector
+of trace lengths the verifier admits. -/
+def Secure (p : ℕ) (B : McaBound) (A : Analysis) (bits : ℕ) : Prop :=
+  C.Fits EF B A ∧ C.knowledgeErrorBound EF p B A ≤ 1 / 2 ^ bits
+
+instance (p : ℕ) (B : McaBound) (A : Analysis) (bits : ℕ) :
+    Decidable (C.Secure EF p B A bits) := by
+  unfold Secure; infer_instance
+
+end Batch.Statement
 
 /-! ### Reports -/
 
@@ -656,10 +697,11 @@ def Setup.knowledgeErrorReport {lookups : List (Lookup F)} (S : Setup EF lookups
 def Setup.roundErrorReport (S : Setup EF) (p : ℕ) (B : McaBound) (A : Analysis) : Report :=
   .of A (decide (S.Fits B A)) (S.roundErrorTerms p B A) (S.roundErrorBound p B A)
 
-/-- The batch's knowledge error report for `|F| = p` with the MCA bound `B`. -/
-def Batch.Setup.knowledgeErrorReport {withLookups : Bool} (S : Batch.Setup EF withLookups)
+/-- The batch statement's knowledge error report for `|F| = p` with the MCA bound `B`. -/
+def Batch.Statement.knowledgeErrorReport (C : Batch.Statement F) (EF : Type) [Challenge F EF]
     (p : ℕ) (B : McaBound) (A : Analysis) : Report :=
-  .of A (decide (S.Fits B A)) (S.knowledgeErrorTerms p B A) (S.knowledgeErrorBound p B A)
+  .of A (decide (C.Fits EF B A)) (C.knowledgeErrorTerms EF p B A)
+    (C.knowledgeErrorBound EF p B A)
 
 /-- The batch statement's round error report for `|F| = p` with the MCA bound `B`. -/
 def Batch.Statement.roundErrorReport (C : Batch.Statement F) (EF : Type) [Challenge F EF]

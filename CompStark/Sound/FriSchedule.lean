@@ -194,6 +194,37 @@ theorem mem_plan {maxLogArity logFinal : ℕ} (ha : 0 < maxLogArity) :
         · exact hhead
         · exact hrest _ (fits_cons_of_ne hfit h4 hm) f hf
 
+/-- The plan's folds fold onto strictly decreasing heights, for fitting heights: their target
+sizes are distinct. -/
+theorem pairwise_plan {maxLogArity logFinal : ℕ} (ha : 0 < maxLogArity) :
+    ∀ (fuel n : ℕ) (heights : List ℕ), Fits logFinal n heights →
+      (plan maxLogArity logFinal fuel n heights).Pairwise fun f g ↦ g.2.1 < f.2.1
+  | 0, _, _, _ => List.Pairwise.nil
+  | fuel + 1, n, heights, hfit => by
+    by_cases hfin : n ≤ logFinal
+    · rw [plan, ite_eq_left hfin]
+      exact List.Pairwise.nil
+    have hcons : ∀ (inj : Bool) (heights' : List ℕ),
+        Fits logFinal (n - logArity maxLogArity logFinal n heights) heights' →
+        ((logArity maxLogArity logFinal n heights, n - logArity maxLogArity logFinal n heights,
+          inj) :: plan maxLogArity logFinal fuel (n - logArity maxLogArity logFinal n heights)
+            heights').Pairwise fun f g ↦ g.2.1 < f.2.1 :=
+      fun inj heights' hfit' ↦ List.pairwise_cons.mpr
+        ⟨fun g hg ↦ (mem_plan ha fuel _ heights' hfit' g hg).2.2.2,
+          pairwise_plan ha fuel _ heights' hfit'⟩
+    rw [plan, ite_eq_right hfin]
+    match heights, hfit, hcons with
+    | [], _, hcons => exact hcons false [] (fits_nil _ _)
+    | m :: rest, hfit, hcons =>
+      have h4 := logArity_le_cons maxLogArity logFinal n m rest
+      by_cases hm : m = n - logArity maxLogArity logFinal n (m :: rest)
+      · dsimp only
+        rw [ite_eq_left hm]
+        exact hcons true rest (fits_of_eq hfit hm)
+      · dsimp only
+        rw [ite_eq_right hm]
+        exact hcons false _ (fits_cons_of_ne hfit h4 hm)
+
 /-- The plan from height `n` has at most `n - logFinal` folds, for fitting heights. -/
 theorem length_plan_le {maxLogArity logFinal : ℕ} (ha : 0 < maxLogArity) :
     ∀ (fuel n : ℕ) (heights : List ℕ), Fits logFinal n heights →

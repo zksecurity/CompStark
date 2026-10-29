@@ -718,7 +718,138 @@ theorem batchingNum_mono (c : Shape) (lb : ℕ) (hA : A.Valid (1 / 2 ^ lb)) {m m
     exact div_nonneg (by linarith [hA.1, hd.1]) (by linarith [hd.1])
   · exact hc
 
-variable (EF)
+/-- A sum over distinct elements of `L` of a nonnegative function is at most its sum over `L`. -/
+theorem sum_map_le_of_subset {l L : List ℕ} (G : ℕ → ℚ) (hG : ∀ m, 0 ≤ G m) (hl : l.Nodup)
+    (hL : L.Nodup) (hsub : ∀ m ∈ l, m ∈ L) : (l.map G).sum ≤ (L.map G).sum := by
+  rw [← List.sum_toFinset G hl, ← List.sum_toFinset G hL]
+  exact Finset.sum_le_sum_of_subset_of_nonneg
+    (fun m hm ↦ List.mem_toFinset.mpr (hsub m (List.mem_toFinset.mp hm))) fun m _ _ ↦ hG m
+
+variable (EF) (n : Fin C.k → ℕ) (hn : C.Admits n)
+
+/-- At an admitted vector, every instance's shape is one of its shapes at its admitted lengths. -/
+theorem shape_mem_shapesAt (i : Fin C.k) :
+    ((C.setupAt EF n hn).instanceSetup i).shape ∈ C.shapesAt EF i := by
+  have hadm : C.admits i (n i) = true := (C.admits_iff n).mpr hn i
+  have hlt : n i < twoAdicity F + 1 := by have := (hn.sound i).twoAdic; omega
+  refine List.mem_flatMap.mpr ⟨n i, List.mem_range.mpr hlt, ?_⟩
+  simp only [hadm, ↓reduceDIte, List.mem_singleton]
+  rfl
+
+theorem mem_allShapes {c : Shape} (hc : c ∈ (C.setupAt EF n hn).shapes) : c ∈ C.allShapes EF := by
+  obtain ⟨i, -, rfl⟩ := List.mem_map.mp hc
+  exact List.mem_flatMap.mpr ⟨i, List.mem_finRange i, shape_mem_shapesAt EF C n hn i⟩
+
+theorem maxQ_shapes_le (f : Shape → ℚ) :
+    maxQ ((C.setupAt EF n hn).shapes.map f) ≤ maxQ ((C.allShapes EF).map f) :=
+  maxQ_le_maxQ fun x hx ↦ by
+    obtain ⟨c, hc, rfl⟩ := List.mem_map.mp hx
+    exact ⟨_, List.mem_map_of_mem (mem_allShapes EF C n hn hc), le_rfl⟩
+
+/-- Every fold of FRI's plan at an admitted vector folds onto a height of `foldHeights`, and is
+one of the folds onto it. -/
+theorem mem_foldsOnto_of_mem_plan {f : ℕ × ℕ × Bool}
+    (hf : f ∈ (C.setupAt EF n hn).domainSetup.friPlan (C.setupAt EF n hn).friHeights) :
+    f.2.1 ∈ C.foldHeights ∧ f ∈ C.foldsOnto f.2.1 := by
+  set S := C.setupAt EF n hn
+  have ha : 0 < C.params.maxLogArity := (S.valid S.top).folds
+  have htop : S.logN S.top + C.params.logBlowup ≤ twoAdicity F := (S.valid S.top).twoAdic
+  obtain ⟨h1, h2, h3, h4⟩ := FriGame.Rounds.mem_plan ha _ _ _ (fits_friHeights S) f hf
+  obtain ⟨la, m, inj⟩ := f
+  change 1 ≤ la at h1
+  change la ≤ C.params.maxLogArity at h2
+  change C.params.logFinalPolyLen + C.params.logBlowup ≤ m at h3
+  change m < S.logN S.top + C.params.logBlowup at h4
+  show m ∈ C.foldHeights ∧ (la, m, inj) ∈ C.foldsOnto m
+  refine ⟨List.mem_range'_1.mpr ⟨h3, by omega⟩,
+    List.mem_flatMap.mpr ⟨la, List.mem_range'_1.mpr ⟨h1, by omega⟩, ?_⟩⟩
+  cases inj
+  exacts [List.mem_cons_self, List.mem_cons_of_mem _ List.mem_cons_self]
+
+theorem mem_foldPlans_of_mem_plan {f : ℕ × ℕ × Bool}
+    (hf : f ∈ (C.setupAt EF n hn).domainSetup.friPlan (C.setupAt EF n hn).friHeights) :
+    f ∈ C.foldPlans :=
+  List.mem_flatMap.mpr ⟨f.2.1, mem_foldsOnto_of_mem_plan EF C n hn hf⟩
+
+/-- A domain size batches at most `groupBound` words at an admitted vector. -/
+theorem groupNumOpenedOf_le (l : ℕ) :
+    groupNumOpenedOf (C.setupAt EF n hn).shapes l ≤ C.groupBound EF :=
+  calc groupNumOpenedOf (C.setupAt EF n hn).shapes l ≤
+        ((C.setupAt EF n hn).shapes.map (·.numOpened)).sum :=
+        List.sum_le_sum fun c _ ↦ by split <;> omega
+    _ ≤ C.groupBound EF := by
+        rw [Iop.Batch.Setup.shapes, List.map_map]
+        exact List.sum_le_sum fun i _ ↦
+          le_foldr_max_nat (List.mem_map_of_mem (shape_mem_shapesAt EF C n hn i))
+
+/-- LogUp's numbers at an admitted vector are at most those at the longest admitted lengths. -/
+theorem lookupCount_le : (C.setupAt EF n hn).lookupCount ≤ C.lookupCountMax := by
+  have hT : (C.setupAt EF n hn).numInteractions ≤ ((List.finRange C.k).map fun i ↦
+      2 ^ C.maxLength i * ((C.lookups i).map (·.tuples.length)).sum).sum := by
+    rw [Iop.Batch.Setup.numInteractions, Fin.sum_univ_def]
+    refine List.sum_le_sum fun i _ ↦ Nat.mul_le_mul_right _ (Nat.pow_le_pow_right two_pos ?_)
+    have hlt : n i < twoAdicity F + 1 := by have := (hn.sound i).twoAdic; omega
+    exact le_foldr_max_nat
+      (List.mem_filter.mpr ⟨List.mem_range.mpr hlt, (C.admits_iff n).mpr hn i⟩)
+  unfold Iop.Batch.Setup.lookupCount Iop.Batch.Statement.lookupCountMax
+  exact Nat.add_le_add hT (Nat.mul_le_mul_right _ (Nat.sub_le_sub_right hT 1))
+
+/-- An analysis fitting the statement fits the batch at every admitted vector. -/
+theorem fits_setupAt (h : C.Fits EF B A) : (C.setupAt EF n hn).Fits B A :=
+  ⟨h.1, fun i _ ↦ h.2.1 _ (mem_allShapes EF C n hn (shape_mem _ i)),
+    fun f hf ↦ h.2.2 f (mem_foldPlans_of_mem_plan EF C n hn hf)⟩
+
+/-- Batching at an admitted vector is at most the statement's batching term. -/
+theorem batchingMax_le (hA : A.Valid (1 / 2 ^ C.params.logBlowup)) :
+    maxQ ((C.setupAt EF n hn).shapes.map fun c ↦ c.batchingNum C.params.logBlowup B A
+      (groupNumOpenedOf (C.setupAt EF n hn).shapes c.logN)) ≤
+      maxQ ((C.allShapes EF).map fun c ↦ c.batchingNum C.params.logBlowup B A (C.groupBound EF)) :=
+  maxQ_le_maxQ fun x hx ↦ by
+    obtain ⟨c, hc, rfl⟩ := List.mem_map.mp hx
+    exact ⟨_, List.mem_map_of_mem
+      (f := fun c ↦ c.batchingNum C.params.logBlowup B A (C.groupBound EF))
+      (mem_allShapes EF C n hn hc),
+      batchingNum_mono B A c C.params.logBlowup hA (groupNumOpenedOf_le EF C n hn _)⟩
+
+/-- FRI's query density at an admitted vector is at most the statement's, at the most folds. -/
+theorem queryDensity_le (hA : A.Valid (1 / 2 ^ C.params.logBlowup)) :
+    (C.setupAt EF n hn).domainSetup.queryDensity A (C.setupAt EF n hn).friHeights ≤
+      1 - A.δ + ((twoAdicity F - (C.params.logFinalPolyLen + C.params.logBlowup) : ℕ) : ℚ) *
+        A.loss := by
+  set S := C.setupAt EF n hn
+  have ha : 0 < C.params.maxLogArity := (S.valid S.top).folds
+  have htop : S.logN S.top + C.params.logBlowup ≤ twoAdicity F := (S.valid S.top).twoAdic
+  have hlen : (S.domainSetup.friPlan S.friHeights).length ≤ S.logN S.top +
+      C.params.logBlowup - (C.params.logFinalPolyLen + C.params.logBlowup) :=
+    FriGame.Rounds.length_plan_le ha _ _ _ (fits_friHeights S)
+  unfold Iop.Setup.queryDensity
+  have hl : ((S.domainSetup.friPlan S.friHeights).length : ℚ) ≤
+      ((twoAdicity F - (C.params.logFinalPolyLen + C.params.logBlowup) : ℕ) : ℚ) :=
+    Nat.cast_le.mpr (le_trans hlen (by omega))
+  have := mul_le_mul_of_nonneg_right hl hA.2.1.le
+  linarith
+
+/-- FRI's folds at an admitted vector are at most the statement's: the plan's folds have distinct
+target heights in `foldHeights`, each at most the worst fold onto its height. -/
+theorem friFoldsNum_le :
+    (C.setupAt EF n hn).domainSetup.friFoldsNum B A (C.setupAt EF n hn).friHeights ≤
+      (C.foldHeights.map fun m ↦
+        maxQ ((C.foldsOnto m).map (A.levelBound B C.params.logBlowup))).sum := by
+  set S := C.setupAt EF n hn
+  set G : ℕ → ℚ := fun m ↦ maxQ ((C.foldsOnto m).map (A.levelBound B C.params.logBlowup))
+  have ha : 0 < C.params.maxLogArity := (S.valid S.top).folds
+  have hnd : ((S.domainSetup.friPlan S.friHeights).map (·.2.1)).Nodup :=
+    (List.pairwise_map.mpr (FriGame.Rounds.pairwise_plan ha _ _ _ (fits_friHeights S))).imp
+      ne_of_gt
+  calc S.domainSetup.friFoldsNum B A S.friHeights
+      ≤ ((S.domainSetup.friPlan S.friHeights).map fun f ↦ G f.2.1).sum :=
+        List.sum_le_sum fun f hf ↦
+          le_maxQ (List.mem_map_of_mem (mem_foldsOnto_of_mem_plan EF C n hn hf).2)
+    _ = (((S.domainSetup.friPlan S.friHeights).map (·.2.1)).map G).sum := by rw [List.map_map]; rfl
+    _ ≤ (C.foldHeights.map G).sum :=
+        sum_map_le_of_subset G (fun m ↦ maxQ_nonneg _) hnd List.nodup_range' fun m hm ↦ by
+          obtain ⟨f, hf, rfl⟩ := List.mem_map.mp hm
+          exact (mem_foldsOnto_of_mem_plan EF C n hn hf).1
 
 /-- **The calculator's batch statement bound is every admitted vector's.** If the calculator
 certifies `bits` bits per oracle answer for the statement `C`, it does for the batch at every
@@ -726,90 +857,64 @@ vector of lengths the verifier admits. -/
 theorem _root_.CompStark.Iop.Batch.Statement.secureRo_setupAt {p : ℕ} {B : McaBound}
     {A : Analysis} {bits : ℕ} (h : C.SecureRo EF p B A bits) (n : Fin C.k → ℕ)
     (hn : C.Admits n) : (C.setupAt EF n hn).SecureRo p B A bits := by
-  obtain ⟨⟨hA, hBs, hBf⟩, hb⟩ := h
+  obtain ⟨hfit, hb⟩ := h
   set S := C.setupAt EF n hn with hS
-  have hadm : ∀ i, C.admits i (n i) = true := (C.admits_iff n).mpr hn
-  have hlt : ∀ i, n i < twoAdicity F + 1 := fun i ↦ by
-    have := (hn.sound i).twoAdic; omega
-  have hshapeAt : ∀ i, (S.instanceSetup i).shape ∈ C.shapesAt EF i := fun i ↦ by
-    refine List.mem_flatMap.mpr ⟨n i, List.mem_range.mpr (hlt i), ?_⟩
-    rw [dif_pos (hadm i)]
-    exact List.mem_singleton.mpr rfl
-  have hsub : ∀ c ∈ S.shapes, c ∈ C.allShapes EF := fun c hc ↦ by
-    obtain ⟨i, -, rfl⟩ := List.mem_map.mp hc
-    exact List.mem_flatMap.mpr ⟨i, List.mem_finRange i, hshapeAt i⟩
-  have ha : 0 < C.params.maxLogArity := (S.valid S.top).folds
-  have htop : S.logN S.top + C.params.logBlowup ≤ twoAdicity F := (S.valid S.top).twoAdic
-  have hfit := fits_friHeights S
-  have hplan : ∀ f ∈ S.domainSetup.friPlan S.friHeights, f ∈ C.foldPlans := fun f hf ↦ by
-    obtain ⟨h1, h2, h3, h4⟩ := FriGame.Rounds.mem_plan ha _ _ _ hfit f hf
-    obtain ⟨la, m, inj⟩ := f
-    change 1 ≤ la at h1
-    change la ≤ C.params.maxLogArity at h2
-    change C.params.logFinalPolyLen + C.params.logBlowup ≤ m at h3
-    change m < S.logN S.top + C.params.logBlowup at h4
-    refine List.mem_flatMap.mpr ⟨la, List.mem_range'_1.mpr ⟨h1, by omega⟩,
-      List.mem_flatMap.mpr ⟨m, List.mem_range'_1.mpr ⟨h3, by omega⟩, ?_⟩⟩
-    cases inj
-    exacts [List.mem_cons_self, List.mem_cons_of_mem _ List.mem_cons_self]
-  have hgroup : ∀ l, groupNumOpenedOf S.shapes l ≤ C.groupBound EF := fun l ↦ by
-    calc groupNumOpenedOf S.shapes l ≤ (S.shapes.map (·.numOpened)).sum :=
-          List.sum_le_sum fun c _ ↦ by split <;> omega
-      _ ≤ C.groupBound EF := by
-          rw [Iop.Batch.Setup.shapes, List.map_map]
-          exact List.sum_le_sum fun i _ ↦ le_foldr_max_nat (List.mem_map_of_mem (hshapeAt i))
-  have hlc : S.lookupCount ≤ C.lookupCountMax := by
-    have hT : S.numInteractions ≤ ((List.finRange C.k).map fun i ↦
-        2 ^ C.maxLength i * ((C.lookups i).map (·.tuples.length)).sum).sum := by
-      rw [Iop.Batch.Setup.numInteractions, Fin.sum_univ_def]
-      refine List.sum_le_sum fun i _ ↦ Nat.mul_le_mul_right _ (Nat.pow_le_pow_right two_pos ?_)
-      exact le_foldr_max_nat (List.mem_filter.mpr ⟨List.mem_range.mpr (hlt i), hadm i⟩)
-    unfold Iop.Batch.Setup.lookupCount Iop.Batch.Statement.lookupCountMax
-    exact Nat.add_le_add hT (Nat.mul_le_mul_right _ (Nat.sub_le_sub_right hT 1))
-  refine ⟨⟨hA, fun i _ ↦ hBs _ (hsub _ (shape_mem S i)), fun f hf ↦ hBf f (hplan f hf)⟩, ?_⟩
+  have hA := hfit.1
+  refine ⟨fits_setupAt EF C B A n hn hfit, ?_⟩
   have hK : (0 : ℚ) ≤ (p : ℚ) ^ Challenge.d EF := by positivity
   have hC : ∀ x ∈ C.roundErrorTerms EF p B A, x.2 ≤ 1 / 2 ^ bits := fun x hx ↦
     (le_maxTerms hx).trans hb
-  have hmaxS : ∀ f : Shape → ℚ, maxQ (S.shapes.map f) ≤ maxQ ((C.allShapes EF).map f) :=
-    fun f ↦ maxQ_le_maxQ fun x hx ↦ by
-      obtain ⟨c, hc, rfl⟩ := List.mem_map.mp hx
-      exact ⟨_, List.mem_map_of_mem (hsub c hc), le_rfl⟩
   refine maxTerms_le (by positivity) fun x hx ↦ ?_
   simp only [Iop.Batch.Setup.roundErrorTerms, Iop.Batch.Setup.roundErrorTermsOf, List.mem_cons,
     List.not_mem_nil, or_false] at hx
   rcases hx with rfl | rfl | rfl | rfl | rfl | rfl
   · refine le_trans ?_ (hC _ (.head _))
     exact mul_le_mul_of_nonneg_left (div_le_div_of_nonneg_right
-      (Nat.cast_le.mpr (Nat.mul_le_mul_left _ hlc)) hK) (powFractionQ_nonneg' _ _)
-  · exact le_trans (div_le_div_of_nonneg_right (hmaxS _) hK) (hC _ (.tail _ (.head _)))
-  · exact le_trans (mul_le_mul_of_nonneg_left (div_le_div_of_nonneg_right (hmaxS _) hK)
-      (powFractionQ_nonneg' _ _)) (hC _ (.tail _ (.tail _ (.head _))))
-  · refine le_trans (mul_le_mul_of_nonneg_left (div_le_div_of_nonneg_right
-      (maxQ_le_maxQ fun x hx ↦ ?_) hK) (powFractionQ_nonneg' _ _))
+      (Nat.cast_le.mpr (Nat.mul_le_mul_left _ (lookupCount_le EF C n hn))) hK)
+      (powFractionQ_nonneg' _ _)
+  · exact le_trans (div_le_div_of_nonneg_right (maxQ_shapes_le EF C n hn _) hK)
+      (hC _ (.tail _ (.head _)))
+  · exact le_trans (mul_le_mul_of_nonneg_left (div_le_div_of_nonneg_right
+      (maxQ_shapes_le EF C n hn _) hK) (powFractionQ_nonneg' _ _))
+      (hC _ (.tail _ (.tail _ (.head _))))
+  · exact le_trans (mul_le_mul_of_nonneg_left (div_le_div_of_nonneg_right
+      (batchingMax_le EF C B A n hn hA) hK) (powFractionQ_nonneg' _ _))
       (hC _ (.tail _ (.tail _ (.tail _ (.head _)))))
-    obtain ⟨c, hc, rfl⟩ := List.mem_map.mp hx
-    exact ⟨_, List.mem_map_of_mem
-      (f := fun c ↦ c.batchingNum C.params.logBlowup B A (C.groupBound EF)) (hsub c hc),
-      batchingNum_mono B A c C.params.logBlowup hA (hgroup _)⟩
   · refine le_trans (mul_le_mul_of_nonneg_left (div_le_div_of_nonneg_right
       (maxQ_le_maxQ fun x hx ↦ ?_) hK) (powFractionQ_nonneg' _ _))
       (hC _ (.tail _ (.tail _ (.tail _ (.tail _ (.head _))))))
     obtain ⟨f, hf, rfl⟩ := List.mem_map.mp hx
-    exact ⟨_, List.mem_map_of_mem (hplan f hf), le_rfl⟩
+    exact ⟨_, List.mem_map_of_mem (mem_foldPlans_of_mem_plan EF C n hn hf), le_rfl⟩
   · refine le_trans (mul_le_mul_of_nonneg_left ?_ (powFractionQ_nonneg' _ _))
       (hC _ (.tail _ (.tail _ (.tail _ (.tail _ (.tail _ (.head _)))))))
-    have hA' : A.Valid S.domainSetup.rateQ := hA
-    have hq0 := queryDensity_nonneg S.domainSetup A hA' S.friHeights
-    have hlen : (S.domainSetup.friPlan S.friHeights).length ≤ S.logN S.top +
-        C.params.logBlowup - (C.params.logFinalPolyLen + C.params.logBlowup) :=
-      FriGame.Rounds.length_plan_le ha _ _ _ hfit
+    have hq0 := queryDensity_nonneg S.domainSetup A hA S.friHeights
     refine pow_le_pow_left₀ (add_nonneg hq0 (by positivity)) ?_ _
-    unfold Iop.Setup.queryDensity
-    have hl : ((S.domainSetup.friPlan S.friHeights).length : ℚ) ≤
-        ((twoAdicity F - (C.params.logFinalPolyLen + C.params.logBlowup) : ℕ) : ℚ) :=
-      Nat.cast_le.mpr (le_trans hlen (by omega))
-    have := mul_le_mul_of_nonneg_right hl hA.2.1.le
-    linarith
+    linarith [queryDensity_le EF C A n hn hA]
+
+/-- **The calculator's batch statement bound is every admitted vector's.** If the calculator
+certifies `bits` bits of knowledge soundness for the statement `C`, it does for the batch at every
+vector of lengths the verifier admits. -/
+theorem _root_.CompStark.Iop.Batch.Statement.secure_setupAt {p : ℕ} {B : McaBound}
+    {A : Analysis} {bits : ℕ} (h : C.Secure EF p B A bits) (n : Fin C.k → ℕ)
+    (hn : C.Admits n) : (C.setupAt EF n hn).Secure p B A bits := by
+  obtain ⟨hfit, hb⟩ := h
+  set S := C.setupAt EF n hn with hS
+  have hA := hfit.1
+  refine ⟨fits_setupAt EF C B A n hn hfit, le_trans ?_ hb⟩
+  have hK : (0 : ℚ) ≤ (p : ℚ) ^ Challenge.d EF := by positivity
+  simp only [Iop.Batch.Setup.knowledgeErrorBound, Iop.Batch.Setup.knowledgeErrorTerms,
+    Iop.Batch.Setup.knowledgeErrorTermsOf, Iop.Batch.Statement.knowledgeErrorBound,
+    Iop.Batch.Statement.knowledgeErrorTerms, sumTerms, List.foldr]
+  refine add_le_add ?_ (add_le_add ?_ (add_le_add ?_ (add_le_add ?_ (add_le_add ?_
+    (add_le_add ?_ le_rfl)))))
+  · exact div_le_div_of_nonneg_right
+      (Nat.cast_le.mpr (Nat.mul_le_mul_left _ (lookupCount_le EF C n hn))) hK
+  · exact div_le_div_of_nonneg_right (maxQ_shapes_le EF C n hn _) hK
+  · exact div_le_div_of_nonneg_right (maxQ_shapes_le EF C n hn _) hK
+  · exact div_le_div_of_nonneg_right (batchingMax_le EF C B A n hn hA) hK
+  · exact div_le_div_of_nonneg_right (friFoldsNum_le EF C B A n hn) hK
+  · exact pow_le_pow_left₀ (queryDensity_nonneg S.domainSetup A hA S.friHeights)
+      (queryDensity_le EF C A n hn hA) _
 
 end Statement
 

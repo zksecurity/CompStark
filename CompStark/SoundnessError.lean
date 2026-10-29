@@ -28,6 +28,9 @@ interleaved codes at `δ'` (`Setup.listSize`):
 * FRI accepts a word that is `δ`-far from low degree (`friError`, `FriGame.acceptance_le`).
 
 Below the unique-decoding radius `ℓ ≤ 1`; up to the Johnson bound `1 - √rate`, `ℓ` is small.
+
+A statement's knowledge error (`Statement.knowledgeError`) is the largest over the trace lengths
+the verifier admits, the prover choosing the length.
 -/
 
 @[expose] public section
@@ -154,6 +157,12 @@ noncomputable def friError (S : Setup EF lookups) (δ : NNReal) : ENNReal := fri
 noncomputable def knowledgeError (S : Setup EF lookups) (δ δ' : NNReal) : ENNReal :=
   foldingError S δ' + outOfDomainError S δ' + batchingError S δ δ' +
     friError S δ
+
+/-- A statement's knowledge error: the largest knowledge error over the trace lengths the verifier
+admits, for FRI at proximity `δ n` and the extractor at `δ' n` on traces of `2 ^ n` rows. -/
+noncomputable def Statement.knowledgeError (C : Statement F) (EF : Type) [Challenge F EF]
+    (δ δ' : ℕ → NNReal) : ENNReal :=
+  ⨆ (n : ℕ) (h : C.Admits n), Iop.knowledgeError (C.setupAt EF n h) (δ n) (δ' n)
 
 /-- The rate at every trace length is the statement's. -/
 theorem Statement.rate_setupAt (C : Statement F) (n : Nat) (h : C.Admits n) :

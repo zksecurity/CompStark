@@ -30,7 +30,9 @@ batched with the other instances of its domain's size:
   of its domain's size (`batchingErrorOf`, `groupNumOpened` words), at `δ'`.
 
 The knowledge error adds the lookup error, the worst instance's, and FRI's error with the shorter
-instances' words injected (`friErrorWith`, `FriGame.acceptance_le`).
+instances' words injected (`friErrorWith`, `FriGame.acceptance_le`). A batch statement's
+(`Statement.knowledgeError`) is the largest over the vectors of trace lengths the verifier admits,
+the prover choosing the vector.
 -/
 
 @[expose] public section
@@ -79,5 +81,12 @@ instance's error, and FRI's with the shorter instances' words injected. -/
 noncomputable def knowledgeError {withLookups : Bool} (S : Setup EF withLookups) (δ δ' : NNReal) :
     ENNReal :=
   S.lookupError δ' + (⨆ i, S.instanceError δ δ' i) + friErrorWith S.domainSetup S.friHeights δ
+
+/-- A batch statement's knowledge error: the largest knowledge error over the vectors of trace
+lengths the verifier admits, for FRI at proximity `δ n` and the extractor at `δ' n` on traces of
+`2 ^ n i` rows. -/
+noncomputable def Statement.knowledgeError (C : Statement F) (EF : Type) [Challenge F EF]
+    (δ δ' : (Fin C.k → ℕ) → NNReal) : ENNReal :=
+  ⨆ (n : Fin C.k → ℕ) (h : C.Admits n), Batch.knowledgeError (C.setupAt EF n h) (δ n) (δ' n)
 
 end CompStark.Iop.Batch

@@ -45,7 +45,8 @@ extractor does not output them.
 
 A batch statement (`Statement`) is a batch without its trace lengths: FRI parameters, the AIRs and
 their keygen heights. A proof claims the lengths, the verifier checks them (`Statement.Admits`), and
-`Statement.setupAt` is the batch at an admitted vector of lengths.
+`Statement.setupAt` is the batch at an admitted vector of lengths; a statement's prover claims an
+admitted vector and plays the batch there (`Statement.Prover`).
 
 A batch without lookups (`Setup` with `withLookups := false`) is a batch of STARKs of their own;
 a STARK is such a batch of one instance (`Setup.toBatch`).
@@ -258,6 +259,17 @@ def Prover.instanceProver {withLookups : Bool} {S : Setup EF withLookups} (p : P
     (lookupAlpha lookupBeta : 𝕂) (i : Fin S.k) : Iop.Prover (S.instanceSetup i) :=
   ⟨p.trace i, fun α ↦ p.quotient lookupAlpha lookupBeta α i,
     fun α ζ ↦ p.openings lookupAlpha lookupBeta α ζ i, p.perm lookupAlpha lookupBeta i⟩
+
+/-- A prover for a batch statement: it claims a vector of trace lengths `2 ^ logN i` the verifier
+admits and plays the batch at those lengths. -/
+structure Statement.Prover (C : Statement F) (EF : Type) [Challenge F EF] where
+  logN : Fin C.k → Nat
+  admits : C.Admits logN
+  prover : Batch.Prover (C.setupAt EF logN admits)
+
+/-- The batch at the lengths a batch statement's prover claims. -/
+abbrev Statement.Prover.setup {C : Statement F} (p : C.Prover EF) : Setup EF :=
+  C.setupAt EF p.logN p.admits
 
 /-! ### The verifier -/
 

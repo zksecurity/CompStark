@@ -39,9 +39,10 @@ local notation "F" => Montgomery.Native32.FastField _root_.KoalaBear.fieldSize
 weight `1`. -/
 theorem wideBus_countsChecked : (wideBus 64 : Air F).countsChecked = true := by decide
 
-theorem wideBatch_countsBounded (i : Fin wideBatchSetup.k) :
-    (wideBatchSetup.air i).CountsBounded (wideBatchSetup.logN i) :=
-  Batch.Setup.countsBounded_of_countsChecked _ (fun _ ↦ wideBus_countsChecked) i
+theorem wideBatch_countsBounded (n : Fin wideBatchStatement.k → ℕ)
+    (hn : wideBatchStatement.Admits n) (i : Fin wideBatchStatement.k) :
+    (wideBatchStatement.air i).CountsBounded (n i) :=
+  wideBatchStatement.countsBounded_of_countsChecked (fun _ ↦ wideBus_countsChecked) n hn i
 
 theorem wideBatch5_countsBounded (n : Fin wideBatch5Statement.k → ℕ)
     (hn : wideBatch5Statement.Admits n) (i : Fin wideBatch5Statement.k) :
@@ -59,20 +60,22 @@ end WideBus
 
 variable {F : Type} [BaseField F] {EF : Type} [Challenge F EF]
 
-/-- **Knowledge soundness of a range check.** For a batch of range tables and range queries
-within the verifier's multiplicity bound: if no tuple of traces, each close to its instance's
-committed trace, satisfies every AIR with every real query in range, the verifier accepts with
-probability at most the knowledge error. -/
-theorem rangeKnowledgeSoundness (S : Batch.Setup EF) (hS : S.IsRangeBatch)
-    (publicValues : Fin S.k → List F) (prover : Batch.Prover S) (δ δ' : NNReal)
-    (hδ' : (δ' : ℝ) < 1 - S.rate) (hbound : S.HeightBounded) :
-    (∀ traces ∈ Batch.closeTraces S δ' prover.trace,
-      ¬ ((∀ i, (S.air i).Satisfied (S.logN i) (traces i) (publicValues i)) ∧
-        S.RangeChecked traces)) →
-      Batch.acceptance publicValues prover ≤ Batch.knowledgeError S δ δ' :=
-  fun h ↦ batchKnowledgeSoundness_inclusion S publicValues prover δ δ' hδ' hbound
-    (Batch.countsBounded_of_isRangeBatch S hS) fun traces ht hsat ↦ h traces ht
-      ⟨hsat.air, Batch.rangeChecked_of_satisfiedWithInclusion S hS traces publicValues hsat⟩
+/-- **Knowledge soundness of a range check.** For a batch statement of range tables and range
+queries, and a prover whose claimed lengths pass the verifier's multiplicity bound: if no tuple of
+traces of those lengths, each close to its instance's committed trace, satisfies every AIR with
+every real query in range, the verifier accepts with probability at most the statement's knowledge
+error. -/
+theorem rangeKnowledgeSoundness (C : Batch.Statement F) (hC : C.IsRangeBatch)
+    (publicValues : Fin C.k → List F) (prover : C.Prover EF) (δ δ' : (Fin C.k → ℕ) → NNReal)
+    (hδ' : ∀ n, C.Admits n → (δ' n : ℝ) < 1 - C.rate) (hbound : prover.setup.HeightBounded) :
+    (∀ traces ∈ Batch.closeTraces prover.setup (δ' prover.logN) prover.prover.trace,
+      ¬ ((∀ i, (C.air i).Satisfied (prover.logN i) (traces i) (publicValues i)) ∧
+        prover.setup.RangeChecked traces)) →
+      Batch.acceptance publicValues prover.prover ≤ C.knowledgeError EF δ δ' :=
+  fun h ↦ batchKnowledgeSoundness_inclusion C publicValues prover δ δ' hδ'
+    (fun n hn ↦ Batch.countsBounded_of_isRangeBatch _ (C.isRangeBatch_setupAt (EF := EF) hC n hn))
+    hbound fun traces ht hsat ↦ h traces ht ⟨hsat.air, Batch.rangeChecked_of_satisfiedWithInclusion
+      _ (C.isRangeBatch_setupAt hC _ prover.admits) traces publicValues hsat⟩
 
 /-- **Knowledge soundness of a range check in the random-oracle model.** For a batch statement
 of range tables and range queries: a prover making at most `Q` oracle calls gets a proof accepted,
