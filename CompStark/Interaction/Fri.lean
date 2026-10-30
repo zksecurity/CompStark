@@ -90,7 +90,39 @@ def friSchedule (heights : List ℕ) : Fri.Interaction.Schedule (S.logN + S.para
     (S.params.logFinalPolyLen + S.params.logBlowup) (S.logN + S.params.logBlowup)
     (S.logN + S.params.logBlowup) heights
 
+/-- Each fold of FRI's schedule halves `L` at least once. -/
+theorem arityPos_friSchedule (heights : List ℕ)
+    (hfit : Fri.Interaction.Schedule.Fits (S.params.logFinalPolyLen + S.params.logBlowup)
+      (S.logN + S.params.logBlowup) heights) :
+    (S.friSchedule heights).ArityPos :=
+  Fri.Interaction.Schedule.arityPos_plonky3 S.valid.folds _ _ heights hfit
+
+/-- FRI's schedule tests the code of the trace's degree bound `n` on `L`. -/
+theorem degree_friSchedule (heights : List ℕ)
+    (hfit : Fri.Interaction.Schedule.Fits (S.params.logFinalPolyLen + S.params.logBlowup)
+      (S.logN + S.params.logBlowup) heights) :
+    (S.friSchedule heights).degree (2 ^ S.params.logFinalPolyLen) = S.n := by
+  have h := S.valid.finalPolyFits
+  rw [friSchedule, Fri.Interaction.Schedule.degree_plonky3 S.valid.folds _ _ _ heights (by omega)
+    (Nat.sub_le _ _) hfit, ← pow_add]
+  congr 1
+  omega
+
 end Setup
+
+/-- Plonky3's schedule without inputs injects none: every input is in its code. -/
+theorem inputsInCode_plonky3_nil {K : Type} [Field K] (inputs : (m : ℕ) → Fin (2 ^ m) → K)
+    (maxLogArity logFinal d : ℕ) :
+    ∀ (fuel n : ℕ) (ω : SmoothCosetFftDomain n K),
+      (Fri.Interaction.Schedule.plonky3 maxLogArity logFinal fuel n []).InputsInCode inputs d ω
+  | 0, _, _ => trivial
+  | fuel + 1, n, ω => by
+    by_cases hfin : n ≤ logFinal
+    · simp only [Fri.Interaction.Schedule.plonky3, ite_eq_left hfin]
+      trivial
+    simp only [Fri.Interaction.Schedule.plonky3, ite_eq_right hfin,
+      Fri.Interaction.Schedule.InputsInCode]
+    exact inputsInCode_plonky3_nil inputs maxLogArity logFinal d fuel _ _
 
 /-- **FRI's error is ArkLib's.** The STARK's FRI error with inputs injected at the log sizes
 `heights` is the error of ArkLib's FRI on `L` along Plonky3's schedule, with a final polynomial

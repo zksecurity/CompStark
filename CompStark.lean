@@ -125,6 +125,8 @@ public import CompStark.Sound.Defs
 public import CompStark.Iop
 public import CompStark.SoundnessError
 public import CompStark.Interaction.Fri
+public import CompStark.Interaction.Execution
+public import CompStark.Interaction.Stark
 public import CompStark.Sound.Steps
 public import CompStark.Sound.Fri
 public import CompStark.Sound.Algebra
