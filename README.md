@@ -11,7 +11,7 @@ The protocols are Plonky3's `uni-stark` and `batch-stark` at revision `a4982ec`:
 | Theorem | Statement | Assumptions |
 |---|---|---|
 | Completeness (`Stark.completeness`, `Batch.completeness`) | An honest proof of a satisfying trace verifies. | A valid configuration; the out-of-domain point avoids the base field, grinding finds a witness, and no lookup denominator vanishes. |
-| Knowledge soundness, interactive (`Iop.knowledgeSoundness`, `Iop.batchKnowledgeSoundness`) | A prover that claims a trace length and is accepted with probability above the knowledge error, the largest over the lengths the verifier admits, committed to words close to a satisfying trace of that length. | The extractor's decoding radius is below `1 - rate`. |
+| Knowledge soundness, interactive (`Iop.knowledgeSoundness`, `Iop.batchKnowledgeSoundness`) | The STARK and the batch STARK as oracle protocols on ArkLib's interaction layer, the trace length the prover's first message: against any prover, the verifier accepts while no trace of the claimed length close to the committed one satisfies the AIR with probability at most the knowledge error, the largest over the lengths the verifier admits. The proof is a round-by-round knowledge certificate, CompStark's DEEP-ALI rounds appended to ArkLib's FRI certificate. | The extractor's decoding radius is below `1 - rate`. |
 | Knowledge soundness, non-interactive (`Iop.knowledgeSoundness_ro`, `Iop.Batch.batchKnowledgeSoundness_ro`) | The same for Plonky3's verifier as it runs, at the trace length the proof claims, with Merkle commitments, Fiat–Shamir and grinding, against a prover making `Q` hash queries. | Poseidon2's roles (challenger, leaf hash, compression) are random oracles; for `uni-stark`, the field has at least `2 ^ 8` elements and two-adicity below `2 ^ 64`. |
 | Fast prover (`KoalaBear.prove_fast`, `KoalaBear.proveBatch_fast`) | The fast prover outputs exactly the specification prover's proof. | Well-shaped inputs; the out-of-domain point avoids the base field. |
 | Fast verifier (`verifyFast_eq`) | The fast verifier is the specification verifier. | None. |
@@ -24,7 +24,7 @@ The knowledge errors are explicit sums of one term per challenge, proved from co
 - **Hashing and commitments** (`CompStark/Poseidon2`, `CompStark/Hash`, `CompStark/Merkle`): Poseidon2 on any field, equal to ArkLib's specification, vectorized kernels for KoalaBear, Plonky3's sponge, compression and Merkle trees of mixed heights, bridged to [VCVio](https://github.com/Verified-zkEVM/VCVio)'s verified Merkle tree.
 - **Protocols** (`CompStark/Fri`, `CompStark/Stark`, `CompStark/Batch`, `CompStark/Lookup`): specification provers and verifiers, written once over their hash functions so that the same verifier runs on Poseidon2 and on random oracles.
 - **Fast backend** (`CompStark/Stark/Fast`): the prover over packed Montgomery words, with constraints compiled to vectorized straight-line code, each kernel proved against its specification.
-- **Analysis** (`CompStark/Sound`, `CompStark/Complete`): completeness, knowledge soundness and the error terms, on [ArkLib](https://github.com/Verified-zkEVM/ArkLib)'s coding theory and FRI analysis.
+- **Analysis** (`CompStark/Interaction`, `CompStark/Sound`, `CompStark/Complete`): the STARK and the batch STARK as oracle protocols on [ArkLib](https://github.com/Verified-zkEVM/ArkLib)'s interaction layer with their round-by-round knowledge certificates, completeness, knowledge soundness and the error terms, on ArkLib's coding theory and FRI.
 
 CompPoly and ArkLib are pinned to branches of forks that carry the results CompStark needs before they are upstream.
 
@@ -63,10 +63,12 @@ Verifying the Keccak proof takes about 50 ms, against 11 ms for Plonky3. [docs/c
    def myAnalysis : Analysis := ⟨3/8 - 1/2^14, 3/8 - 1/2^17, 1/2^19⟩
    theorem my_secure : myStatement.Secure EF 2130706433 .uniqueDecoding myAnalysis 128 := by
      decide +kernel
-   theorem my_knowledgeSoundness (publicValues : List F) (prover : myStatement.Prover EF) :
-       (∀ trace ∈ closeTraces prover.setup (49151 / 131072 : NNReal) prover.prover.trace,
-         ¬ myStatement.air.Satisfied prover.logN trace publicValues) →
-         acceptance publicValues prover.prover ≤ (2 ^ 128)⁻¹ :=
+   theorem my_knowledgeSoundness (publicValues : List F)
+       {OutP : (myStatement.protocol EF).tree.ExecutionPath → Type}
+       (prover : Interaction.Oracle.Prover.Strategy unifSpec (myStatement.protocol EF).tree
+         (myStatement.protocol EF).roles OutP) :
+       myStatement.farAcceptance EF publicValues (fun _ ↦ (49151 / 131072 : NNReal)) prover ≤
+         (2 ^ 128)⁻¹ :=
      knowledgeSoundness_of_secure _ KoalaBear.card_eq McaBound.uniqueDecoding_holds _ my_secure _
        (by norm_num [myAnalysis]) publicValues prover
    ```

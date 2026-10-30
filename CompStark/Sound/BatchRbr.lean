@@ -11,8 +11,11 @@ public import CompStark.BatchNonInteractiveError
 /-! # Round-by-round soundness of the batch STARK
 
 The batch STARK's rounds as bad events on transcript prefixes, each bounded for every prefix by
-its error in `CompStark/BatchNonInteractiveError.lean`, for the non-interactive proof, where every
-round is one random-oracle answer. The transcript (`Batch.Transcript`) holds every instance's
+its error: in `CompStark/BatchSoundnessError.lean` for the interactive protocol, whose knowledge
+certificate (`CompStark/Interaction/BatchKnowledge.lean`) is built from the events of the lookup
+challenges, `α`, `ζ` and `a`, with the failing instance's errors (`prob_batchBad_le_failing`), and
+in `CompStark/BatchNonInteractiveError.lean` for the non-interactive proof, where every round is
+one random-oracle answer. The transcript (`Batch.Transcript`) holds every instance's
 words, terminals and claimed values, the challenges, and FRI's committed words and final
 polynomial, which FRI folds by Plonky3's schedule from the tallest domain, injecting the batched
 DEEP words of the shorter domains (`Transcript.rounds`, `Transcript.fri`).

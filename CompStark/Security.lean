@@ -5,6 +5,7 @@ Released under Apache 2.0 license as described in the file LICENSE.
 module
 
 public import CompStark.Soundness
+public import CompStark.BatchSoundness
 public import CompStark.KoalaBear.Challenge
 public import CompStark.NonInteractive
 public import CompStark.Complete.Quotient
@@ -135,7 +136,7 @@ for the setups the smallest query count reaching the claim at the analysis the s
 
 @[expose] public section
 namespace CompStark.Iop
-open CompStark.Stark CompStark.Sound
+open CompStark.Stark CompStark.Sound OracleSpec
 
 /-! ### The calculator's theorems
 
@@ -160,22 +161,24 @@ theorem Statement.knowledgeError_le_of_secure (C : Statement F) (hp : Nat.card F
       (ofReal_le_inv_two_pow hs.2)
 
 /-- **Knowledge soundness from the calculator.** If the calculator certifies `bits` bits for the
-statement `C` at `A` with an MCA bound that holds, and no trace of the prover's claimed length
-within `δ' = A.δ'` of its committed trace satisfies the AIR, the verifier accepts with probability
-at most `2 ^ (-bits)`. -/
+statement `C` at `A` with an MCA bound that holds, against any prover the verifier accepts while no
+trace of the prover's claimed length within `δ' = A.δ'` of its committed trace satisfies the AIR
+with probability at most `2 ^ (-bits)`. -/
 theorem knowledgeSoundness_of_secure (C : Statement F) (hp : Nat.card F = p) {B : McaBound}
     (hB : B.Holds) (A : Analysis) {bits : ℕ} (h : C.Secure EF p B A bits) (δ' : NNReal)
-    (hδ' : (δ' : ℝ) = A.δ') (publicValues : List F) (prover : C.Prover EF) :
-    (∀ trace ∈ closeTraces prover.setup δ' prover.prover.trace,
-      ¬ C.air.Satisfied prover.logN trace publicValues) →
-      acceptance publicValues prover.prover ≤ (2 ^ bits)⁻¹ := fun hfar ↦
+    (hδ' : (δ' : ℝ) = A.δ') (publicValues : List F)
+    {OutP : (C.protocol EF).tree.ExecutionPath → Type}
+    (prover : _root_.Interaction.Oracle.Prover.Strategy unifSpec (C.protocol EF).tree
+      (C.protocol EF).roles OutP) :
+    C.farAcceptance EF publicValues (fun _ ↦ δ') prover ≤ (2 ^ bits)⁻¹ :=
   have hs (n : ℕ) (hn : C.Admits n) :=
     h n (by have := hn.sound.twoAdic; omega) ((C.admits_iff n).mpr hn)
   (knowledgeSoundness C publicValues prover (fun _ ↦ Real.toNNReal A.δ) (fun _ ↦ δ')
     (fun n hn ↦ by
       have := lt_one_sub_rate (C.setupAt EF n hn) A (hs n hn).1.1 δ' hδ'
-      rwa [Statement.rate_setupAt] at this) hfar).trans
-    (C.knowledgeError_le_of_secure hp hB A h _ δ' (coe_toNNReal_δ A (hs _ prover.admits).1.1) hδ')
+      rwa [Statement.rate_setupAt] at this)).trans
+    (iSup₂_le fun n hn ↦ (knowledgeError_le_bound (C.setupAt EF n hn) A hp B hB (hs n hn).1 _ δ'
+      (coe_toNNReal_δ A (hs n hn).1.1) hδ').trans (ofReal_le_inv_two_pow (hs n hn).2))
 
 /-- **The calculator's round error.** If the calculator certifies `bits` bits per oracle answer
 for `S` at `A` with an MCA bound `B` that holds (`S.SecureRo p B A bits`), the round error with
@@ -249,19 +252,20 @@ theorem Batch.Statement.knowledgeError_le_of_secure (C : Batch.Statement F) (hp 
     δ δ' hδ hδ').trans (ofReal_le_inv_two_pow (C.secure_setupAt EF h n hn).2)
 
 /-- **Batch knowledge soundness from the calculator.** If the calculator certifies `bits` bits
-for the batch statement `C` at `A` with an MCA bound that holds, and no tuple of traces of the
-prover's claimed lengths, each within `δ' = A.δ'` of its instance's committed trace, satisfies the
-batch, the verifier accepts with probability at most `2 ^ (-bits)`. -/
+for the batch statement `C` at `A` with an MCA bound that holds, against any prover the verifier
+accepts while no tuple of traces of the prover's claimed lengths, each within `δ' = A.δ'` of its
+instance's committed trace, satisfies the batch, with probability at most `2 ^ (-bits)`. -/
 theorem batchKnowledgeSoundness_of_secure (C : Batch.Statement F) (hp : Nat.card F = p)
     {B : McaBound} (hB : B.Holds) (A : Analysis) {bits : ℕ} (h : C.Secure EF p B A bits)
     (δ' : NNReal) (hδ' : (δ' : ℝ) = A.δ') (publicValues : Fin C.k → List F)
-    (prover : C.Prover EF) :
-    (∀ traces ∈ Batch.closeTraces prover.setup δ' prover.prover.trace,
-      ¬ prover.setup.Satisfied traces publicValues) →
-      Batch.acceptance publicValues prover.prover ≤ (2 ^ bits)⁻¹ := fun hfar ↦
+    {OutP : (C.protocol EF).tree.ExecutionPath → Type}
+    (prover : _root_.Interaction.Oracle.Prover.Strategy unifSpec (C.protocol EF).tree
+      (C.protocol EF).roles OutP) :
+    C.farAcceptance EF publicValues (fun _ ↦ δ')
+      (fun n traces ↦ (C.setup EF n).Satisfied traces publicValues) prover ≤ (2 ^ bits)⁻¹ :=
   (batchKnowledgeSoundness C publicValues prover (fun _ ↦ Real.toNNReal A.δ) (fun _ ↦ δ')
     (fun n hn ↦ batch_lt_one_sub_rate (C.setupAt EF n hn) B A (C.secure_setupAt EF h n hn).1 δ'
-      hδ') hfar).trans
+      hδ')).trans
     (C.knowledgeError_le_of_secure hp hB A h _ δ' (coe_toNNReal_δ A h.1.1) hδ')
 
 /-- **The calculator's batch round error.** If the calculator certifies `bits` bits per oracle
@@ -350,14 +354,15 @@ theorem fibonacci_knowledgeError_le :
     (by rw [coe_sub_two_zpow _ (-19) 19 rfl (by norm_num)]; norm_num [fibonacciAnalysis])
 
 /-- Knowledge soundness of `fibonacciStatement` with error `2 ^ (-98)`, the extractor at
-`15/32 - 2 ^ (-19)`: if no trace of the prover's claimed length within `15/32 - 2 ^ (-19)` of its
-committed trace satisfies the AIR, the verifier accepts with probability at most
-`2 ^ (-98)`. -/
+`15/32 - 2 ^ (-19)`: against any prover, the verifier accepts while no trace of the prover's
+claimed length within `15/32 - 2 ^ (-19)` of its committed trace satisfies the AIR with
+probability at most `2 ^ (-98)`. -/
 theorem fibonacci_knowledgeSoundness (publicValues : List F)
-    (prover : fibonacciStatement.Prover Ext4) :
-    (∀ trace ∈ closeTraces prover.setup (15 / 32 - 2 ^ (-19 : ℤ) : NNReal) prover.prover.trace,
-      ¬ fibonacci.Satisfied prover.logN trace publicValues) →
-      acceptance publicValues prover.prover ≤ (2 ^ 98)⁻¹ :=
+    {OutP : (fibonacciStatement.protocol Ext4).tree.ExecutionPath → Type}
+    (prover : _root_.Interaction.Oracle.Prover.Strategy unifSpec
+      (fibonacciStatement.protocol Ext4).tree (fibonacciStatement.protocol Ext4).roles OutP) :
+    fibonacciStatement.farAcceptance Ext4 publicValues
+      (fun _ ↦ (15 / 32 - 2 ^ (-19 : ℤ) : NNReal)) prover ≤ (2 ^ 98)⁻¹ :=
   knowledgeSoundness_of_secure _ KoalaBear.card_eq McaBound.uniqueDecoding_holds _ fibonacci_secure
     _ (by rw [coe_sub_two_zpow _ (-19) 19 rfl (by norm_num)]; norm_num [fibonacciAnalysis])
     publicValues prover
@@ -422,12 +427,15 @@ theorem wide_knowledgeError_le :
     wide_secure _ _ (by norm_num [wideAnalysis]) (by norm_num [wideAnalysis])
 
 /-- Knowledge soundness of `wideStatement` with error `2 ^ (-98)`, the extractor at
-`6143/16384`: if no trace of the prover's claimed length within `6143/16384` of its committed trace
-satisfies the AIR, the verifier accepts with probability at most `2 ^ (-98)`. -/
-theorem wide_knowledgeSoundness (publicValues : List F) (prover : wideStatement.Prover Ext4) :
-    (∀ trace ∈ closeTraces prover.setup (6143 / 16384 : NNReal) prover.prover.trace,
-      ¬ (wide 64).Satisfied prover.logN trace publicValues) →
-      acceptance publicValues prover.prover ≤ (2 ^ 98)⁻¹ :=
+`6143/16384`: against any prover, the verifier accepts while no trace of the prover's claimed
+length within `6143/16384` of its committed trace satisfies the AIR with probability at most
+`2 ^ (-98)`. -/
+theorem wide_knowledgeSoundness (publicValues : List F)
+    {OutP : (wideStatement.protocol Ext4).tree.ExecutionPath → Type}
+    (prover : _root_.Interaction.Oracle.Prover.Strategy unifSpec
+      (wideStatement.protocol Ext4).tree (wideStatement.protocol Ext4).roles OutP) :
+    wideStatement.farAcceptance Ext4 publicValues (fun _ ↦ (6143 / 16384 : NNReal)) prover ≤
+      (2 ^ 98)⁻¹ :=
   knowledgeSoundness_of_secure _ KoalaBear.card_eq McaBound.uniqueDecoding_holds _ wide_secure _
     (by norm_num [wideAnalysis]) publicValues prover
 
@@ -673,13 +681,15 @@ theorem wide5i_knowledgeError_le :
     wide5i_secure _ _ (by norm_num [wide5iAnalysis]) (by norm_num [wide5iAnalysis])
 
 /-- Knowledge soundness of `wide5iStatement` with error `2 ^ (-128)`, FRI at `6143/16384` and
-the extractor at `24575/65536`: if no trace of the prover's claimed length within `24575/65536` of
-its committed trace satisfies the AIR, the verifier accepts with probability at most
-`2 ^ (-128)`. -/
-theorem wide5i_knowledgeSoundness (publicValues : List F) (prover : wide5iStatement.Prover Ext5) :
-    (∀ trace ∈ closeTraces prover.setup (24575 / 65536 : NNReal) prover.prover.trace,
-      ¬ (wide 64).Satisfied prover.logN trace publicValues) →
-      acceptance publicValues prover.prover ≤ (2 ^ 128)⁻¹ :=
+the extractor at `24575/65536`: against any prover, the verifier accepts while no trace of the
+prover's claimed length within `24575/65536` of its committed trace satisfies the AIR with
+probability at most `2 ^ (-128)`. -/
+theorem wide5i_knowledgeSoundness (publicValues : List F)
+    {OutP : (wide5iStatement.protocol Ext5).tree.ExecutionPath → Type}
+    (prover : _root_.Interaction.Oracle.Prover.Strategy unifSpec
+      (wide5iStatement.protocol Ext5).tree (wide5iStatement.protocol Ext5).roles OutP) :
+    wide5iStatement.farAcceptance Ext5 publicValues (fun _ ↦ (24575 / 65536 : NNReal)) prover ≤
+      (2 ^ 128)⁻¹ :=
   knowledgeSoundness_of_secure _ KoalaBear.card_eq McaBound.uniqueDecoding_holds _ wide5i_secure _
     (by norm_num [wide5iAnalysis]) publicValues prover
 
@@ -752,14 +762,16 @@ theorem wideBatch_knowledgeError_le :
     (by rw [coe_sub_two_zpow _ (-15) 15 rfl (by norm_num)]; norm_num [wideBatchAnalysis])
 
 /-- Knowledge soundness of `wideBatchStatement` with error `2 ^ (-127)`, the extractor at
-`3/8 - 2 ^ (-15)`: if no three traces of the prover's claimed lengths, each within
-`3/8 - 2 ^ (-15)` of its instance's committed trace, satisfy the batch (`wideBus 64` each, the bus
-balanced), the verifier accepts with probability at most `2 ^ (-127)`. -/
+`3/8 - 2 ^ (-15)`: against any prover, the verifier accepts while no three traces of the prover's
+claimed lengths, each within `3/8 - 2 ^ (-15)` of its instance's committed trace, satisfy the batch
+(`wideBus 64` each, the bus balanced) with probability at most `2 ^ (-127)`. -/
 theorem wideBatch_knowledgeSoundness (publicValues : Fin wideBatchStatement.k → List F)
-    (prover : wideBatchStatement.Prover Ext5) :
-    (∀ traces ∈ Batch.closeTraces prover.setup (3 / 8 - 2 ^ (-15 : ℤ) : NNReal)
-        prover.prover.trace, ¬ prover.setup.Satisfied traces publicValues) →
-      Batch.acceptance publicValues prover.prover ≤ (2 ^ 127)⁻¹ :=
+    {OutP : (wideBatchStatement.protocol Ext5).tree.ExecutionPath → Type}
+    (prover : _root_.Interaction.Oracle.Prover.Strategy unifSpec
+      (wideBatchStatement.protocol Ext5).tree (wideBatchStatement.protocol Ext5).roles OutP) :
+    wideBatchStatement.farAcceptance Ext5 publicValues (fun _ ↦ (3 / 8 - 2 ^ (-15 : ℤ) : NNReal))
+      (fun n traces ↦ (wideBatchStatement.setup Ext5 n).Satisfied traces publicValues) prover ≤
+      (2 ^ 127)⁻¹ :=
   batchKnowledgeSoundness_of_secure _ KoalaBear.card_eq McaBound.uniqueDecoding_holds _
     wideBatch_secure _
     (by rw [coe_sub_two_zpow _ (-15) 15 rfl (by norm_num)]; norm_num [wideBatchAnalysis])

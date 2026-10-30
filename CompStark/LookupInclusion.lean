@@ -27,7 +27,7 @@ satisfies the AIRs with every real query in range (`rangeKnowledgeSoundness`,
 
 @[expose] public section
 namespace CompStark.Iop
-open CompStark.Stark CompStark.Sound
+open CompStark.Stark CompStark.Sound OracleSpec
 
 /-! ### The count check on `wideBus` -/
 
@@ -61,20 +61,22 @@ end WideBus
 variable {F : Type} [BaseField F] {EF : Type} [Challenge F EF]
 
 /-- **Knowledge soundness of a range check.** For a batch statement of range tables and range
-queries: if no tuple of traces of the prover's claimed lengths, each close to its instance's
-committed trace, satisfies every AIR with every real query in range, the verifier accepts with
-probability at most the statement's knowledge error. -/
+queries: against any prover, the verifier accepts while no tuple of traces of the prover's claimed
+lengths, each close to its instance's committed trace, satisfies every AIR with every real query
+in range, with probability at most the statement's knowledge error. -/
 theorem rangeKnowledgeSoundness (C : Batch.Statement F) (hC : C.IsRangeBatch)
-    (publicValues : Fin C.k → List F) (prover : C.Prover EF) (δ δ' : (Fin C.k → ℕ) → NNReal)
-    (hδ' : ∀ n, C.Admits n → (δ' n : ℝ) < 1 - C.rate) :
-    (∀ traces ∈ Batch.closeTraces prover.setup (δ' prover.logN) prover.prover.trace,
-      ¬ ((∀ i, (C.air i).Satisfied (prover.logN i) (traces i) (publicValues i)) ∧
-        prover.setup.RangeChecked traces)) →
-      Batch.acceptance publicValues prover.prover ≤ C.knowledgeError EF δ δ' :=
-  fun h ↦ batchKnowledgeSoundness_inclusion C publicValues prover δ δ' hδ'
-    (fun n hn ↦ Batch.countsBounded_of_isRangeBatch _ (C.isRangeBatch_setupAt (EF := EF) hC n hn))
-    fun traces ht hsat ↦ h traces ht ⟨hsat.air, Batch.rangeChecked_of_satisfiedWithInclusion
-      _ (C.isRangeBatch_setupAt hC _ prover.admits) traces publicValues hsat⟩
+    (publicValues : Fin C.k → List F) {OutP : (C.protocol EF).tree.ExecutionPath → Type}
+    (prover : _root_.Interaction.Oracle.Prover.Strategy unifSpec (C.protocol EF).tree
+      (C.protocol EF).roles OutP)
+    (δ δ' : (Fin C.k → ℕ) → NNReal) (hδ' : ∀ n, C.Admits n → (δ' n : ℝ) < 1 - C.rate) :
+    C.farAcceptance EF publicValues δ' (fun n traces ↦
+      (∀ i, (C.air i).Satisfied (n.1 i) (traces i) (publicValues i)) ∧
+        (C.setup EF n).RangeChecked traces) prover ≤ C.knowledgeError EF δ δ' :=
+  (C.farAcceptance_mono EF publicValues δ' (fun n traces hsat ↦
+    ⟨hsat.air, Batch.rangeChecked_of_satisfiedWithInclusion _ (C.isRangeBatch_setupAt hC n.1 n.2)
+      traces publicValues hsat⟩) prover).trans
+    (batchKnowledgeSoundness_inclusion C publicValues prover δ δ' hδ'
+      fun n hn ↦ Batch.countsBounded_of_isRangeBatch _ (C.isRangeBatch_setupAt (EF := EF) hC n hn))
 
 /-- **Knowledge soundness of a range check in the random-oracle model.** For a batch statement
 of range tables and range queries: a prover making at most `Q` oracle calls gets a proof accepted,

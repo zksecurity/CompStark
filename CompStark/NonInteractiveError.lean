@@ -9,7 +9,7 @@ public import CompStark.SoundnessError
 /-! # The error of one random-oracle answer
 
 In the random-oracle model, every challenge round of the interactive oracle proof
-(`CompStark/Iop.lean`) is one oracle answer, and the prover attacks one round per query. Each
+(`CompStark/Interaction/StarkSetup.lean`) is one oracle answer, and the prover attacks one round per query. Each
 round has an error, the probability that a fresh answer makes it bad:
 
 * `α`, `ζ` and `a`: `foldingError`, `outOfDomainError`, `batchingError`, as in the interactive

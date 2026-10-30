@@ -4,52 +4,41 @@ Released under Apache 2.0 license as described in the file LICENSE.
 -/
 module
 
-public import CompStark.Iop
+public import CompStark.Interaction.StarkSetup
 public import Mathlib.Data.Finset.Sort
 
-/-! # The batch STARK as an interactive oracle proof
+/-! # The batch STARK's setups, messages and checks
 
-The protocol behind `verifyBatchWith`, with oracles in place of the Merkle commitments and uniform
-challenges in place of Fiat–Shamir, for a `Batch.Setup`: FRI parameters and `k ≥ 1` AIR instances,
-instance `i` with a trace of `2 ^ logN i` rows, proving its AIR's lookups (`Setup.lookups`, the
-lookups packed as Plonky3's keygen packs them, at the keygen height `2 ^ keyLogN i`). Each
-instance is a STARK of its own with its lookups (`Setup.instanceSetup`, `CompStark/Iop.lean`), on
-its own domain `Lᵢ` of `2 ^ (logN i + logBlowup)` points; the rounds are the STARK's, every
-instance in each, after a round for the lookups:
+What the batch STARK proves and what its interactive oracle protocol
+(`CompStark/Interaction/Batch.lean`) exchanges, for a `Batch.Setup`: FRI parameters and `k ≥ 1` AIR
+instances, instance `i` with a trace of `2 ^ logN i` rows, proving its AIR's lookups
+(`Setup.lookups`, the lookups packed as Plonky3's keygen packs them, at the keygen height
+`2 ^ keyLogN i`). Each instance is a STARK of its own with its lookups (`Setup.instanceSetup`,
+`CompStark/Interaction/StarkSetup.lean`), on its own domain `Lᵢ` of `2 ^ (logN i + logBlowup)` points. Lookup `c` of
+instance `i` gets its bus `b`'s denominator base `α_L + (b + 1) β_Lᵂ` and `β_L` from the lookup
+challenges `(α_L, β_L)` (`Setup.challenges`).
 
-1. The prover sends every instance's extended trace (`Prover.trace`).
-2. The verifier samples the lookup challenges `(α_L, β_L)`. Lookup `c` of instance `i` gets its
-   bus `b`'s denominator base `α_L + (b + 1) β_Lᵂ` and `β_L` (`Setup.challenges`).
-3. The prover sends every instance's extended permutation trace (`Prover.perm`) and terminal
-   (`Prover.terminal`). The verifier checks that the terminals of the instances with lookups sum
-   to zero.
-4. The verifier samples one constraint-folding challenge `α`.
-5. The prover sends every instance's quotient chunks (`Prover.quotient`).
-6. The verifier samples one out-of-domain point `ζ`.
-7. The prover sends every instance's claimed values (`Prover.openings`). The verifier checks
-   every instance's constraints and LogUp constraints at `ζ` (`ConstraintsHoldAt`), over its
-   lookup challenges and terminal.
-8. The verifier samples the batching challenge `a`.
-9. As Plonky3's commitment scheme reduces the openings by height, the verifier batches, for each
-   domain size, the DEEP quotients of the opened words of the instances of that size, in Plonky3's
-   order (`groupOpened`: the main traces, the quotients, the preprocessed traces, the permutation
-   traces), by the powers of `a` starting over at each size (`groupDeepWord`). The prover shows
-   with FRI that these words are close to polynomials of degree below their traces' lengths: FRI
-   runs on the tallest word and injects each shorter one when its folds reach that size
-   (`friAcceptanceWith`).
+A `Prover` is every instance's words and messages as functions of the challenges before them: the
+extended trace, the extended permutation trace and terminal after `(α_L, β_L)`, the quotient's
+chunks after `α`, and the claimed values after `ζ`. As Plonky3's commitment scheme reduces the
+openings by height, the verifier batches, for each domain size, the DEEP quotients of the opened
+words of the instances of that size, in Plonky3's order (`groupOpened`: the main traces, the
+quotients, the preprocessed traces, the permutation traces), by the powers of `a` starting over at
+each size (`groupDeepWord`); FRI runs on the tallest word and injects each shorter one when its
+folds reach that size (`Setup.friHeights`).
 
-`acceptance` is the probability that the verifier accepts. The extractor list-decodes every
-instance's committed trace: `closeTraces` are the tuples of traces, one per instance, each close
-to that instance's committed trace (`Iop.closeTraces`). The permutation traces are auxiliary: the
-extractor does not output them.
+The batch's relation (`Setup.Satisfied`) asks every instance's trace to satisfy its AIR and every
+bus to balance; with lookup inclusion (`Setup.SatisfiedWithInclusion`), every bus's queries are
+included in what is provided. The extractor list-decodes every instance's committed trace:
+`closeTraces` are the tuples of traces, one per instance, each close to that instance's committed
+trace (`Iop.closeTraces`). The permutation traces are auxiliary: the extractor does not output
+them.
 
 A batch statement (`Statement`) is a batch without its trace lengths: FRI parameters, the AIRs and
-their keygen heights. A proof claims the lengths, the verifier checks them (`Statement.Admits`), and
-`Statement.setupAt` is the batch at an admitted vector of lengths; a statement's prover claims an
-admitted vector and plays the batch there (`Statement.Prover`).
+their keygen heights. The prover claims the lengths, the verifier checks them (`Statement.Admits`),
+and `Statement.setupAt` is the batch at an admitted vector of lengths.
 
-A batch without lookups (`Setup` with `withLookups := false`) is a batch of STARKs of their own;
-a STARK is such a batch of one instance (`Setup.toBatch`).
+A batch without lookups (`Setup` with `withLookups := false`) is a batch of STARKs of their own.
 -/
 
 @[expose] public section
@@ -263,17 +252,6 @@ def Prover.instanceProver {withLookups : Bool} {S : Setup EF withLookups} (p : P
   ⟨p.trace i, fun α ↦ p.quotient lookupAlpha lookupBeta α i,
     fun α ζ ↦ p.openings lookupAlpha lookupBeta α ζ i, p.perm lookupAlpha lookupBeta i⟩
 
-/-- A prover for a batch statement: it claims a vector of trace lengths `2 ^ logN i` the verifier
-admits and plays the batch at those lengths. -/
-structure Statement.Prover (C : Statement F) (EF : Type) [Challenge F EF] where
-  logN : Fin C.k → Nat
-  admits : C.Admits logN
-  prover : Batch.Prover (C.setupAt EF logN admits)
-
-/-- The batch at the lengths a batch statement's prover claims. -/
-abbrev Statement.Prover.setup {C : Statement F} (p : C.Prover EF) : Setup EF :=
-  C.setupAt EF p.logN p.admits
-
 /-! ### The verifier -/
 
 variable {lookups : List (Stark.Lookup F)}
@@ -339,28 +317,6 @@ noncomputable def groupDeepWord {S : Setup EF withLookups} (p : Prover S)
     (lookupAlpha lookupBeta α ζ a : 𝕂) (m : ℕ) (x : Fin (2 ^ m)) : 𝕂 :=
   ((groupOpened p lookupAlpha lookupBeta α ζ m).zipIdx.map fun ((f, z, y), k) ↦
     a ^ k * (y - algebraMap F 𝕂 (f x)) / (z - lift (basePoint m x))).sum
-
-open Classical in
-/-- The probability that the verifier accepts `prover` at the lookup challenges `(α_L, β_L)`:
-over uniform `α`, `ζ` and `a`, the terminals of the instances with lookups sum to zero, every
-instance's constraints hold at `ζ` and FRI accepts the batched DEEP words, the tallest as FRI's
-word and the shorter ones injected. -/
-noncomputable def acceptanceAt {S : Setup EF withLookups} (publicValues : Fin S.k → List F)
-    (prover : Prover S) (lookupAlpha lookupBeta : 𝕂) : ENNReal :=
-  (Fintype.card 𝕂 : ENNReal)⁻¹ ^ 3 * ∑ α : 𝕂, ∑ ζ : 𝕂, ∑ a : 𝕂,
-    if (∑ i with S.lookups i ≠ [], prover.terminal lookupAlpha lookupBeta i) = 0 ∧
-      ∀ i, ConstraintsHoldAt (S.instanceSetup i) (publicValues i) α ζ
-        (prover.openings lookupAlpha lookupBeta α ζ i) (S.challenges lookupAlpha lookupBeta i)
-        (prover.terminal lookupAlpha lookupBeta i)
-    then friAcceptanceWith S.domainSetup (groupDeepWord prover lookupAlpha lookupBeta α ζ a)
-      S.friHeights (groupDeepWord prover lookupAlpha lookupBeta α ζ a _) else 0
-
-/-- The probability that the verifier accepts `prover`: over uniform lookup challenges
-`(α_L, β_L)`, the probability that it accepts there (`acceptanceAt`). -/
-noncomputable def acceptance {S : Setup EF withLookups} (publicValues : Fin S.k → List F)
-    (prover : Prover S) : ENNReal :=
-  (Fintype.card 𝕂 : ENNReal)⁻¹ ^ 2 * ∑ lookupAlpha : 𝕂, ∑ lookupBeta : 𝕂,
-    acceptanceAt publicValues prover lookupAlpha lookupBeta
 
 /-! ### The relation -/
 
@@ -457,19 +413,5 @@ def closeTraces (S : Setup EF withLookups) (δ : ℝ)
   {traces | ∀ i, traces i ∈ Iop.closeTraces (S.instanceSetup i) δ (words i)}
 
 end Batch
-
-/-! ### A STARK is a batch of one instance -/
-
-/-- A STARK as a batch of one instance, without lookups. -/
-abbrev Setup.toBatch (S : Iop.Setup EF) : Batch.Setup EF false :=
-  ⟨S.params, 1, fun _ ↦ S.air, fun _ ↦ S.logN, fun _ ↦ S.logN, fun _ ↦ S.valid,
-    fun _ _ ↦ rfl, Nat.one_pos,
-    fun _ ↦ trivial, ⟨fun _ hl ↦ absurd hl List.not_mem_nil, fun _ hx ↦ absurd hx List.not_mem_nil,
-      fun _ hx ↦ absurd hx List.not_mem_nil⟩⟩
-
-/-- A STARK prover as a prover of a batch of one instance. -/
-abbrev Prover.toBatch {S : Iop.Setup EF} (p : Iop.Prover S) : Batch.Prover S.toBatch :=
-  ⟨fun _ ↦ p.trace, fun _ _ _ ↦ p.perm, fun _ _ _ ↦ 0, fun _ _ α _ ↦ p.quotient α,
-    fun _ _ α ζ _ ↦ p.openings α ζ⟩
 
 end CompStark.Iop

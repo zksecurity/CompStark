@@ -423,12 +423,6 @@ noncomputable def Prover.strategy {S : Setup EF} (p : Prover S) :
         (2 ^ S.params.logFinalPolyLen) S.params.numQueries (S.deepInputs (deepWord p α ζ a))
         S.domain (deepWord p α ζ a) (S.friSchedule []))⟩)⟩)⟩
 
-/-- The strategy of a statement's prover: it sends its trace length and plays its prover there. -/
-noncomputable def Statement.Prover.strategy {C : Statement F} (p : C.Prover EF) :
-    _root_.Interaction.Oracle.Prover.Strategy unifSpec (C.protocol EF).tree (C.protocol EF).roles
-      (fun _ ↦ Unit) :=
-  pure ⟨⟨p.logN, p.admits⟩, p.prover.strategy⟩
-
 namespace Setup
 variable (S : Setup EF)
 

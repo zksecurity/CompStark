@@ -6,20 +6,16 @@ module
 
 public import CompStark.Sound.Steps
 
-/-! # FRI rejects far words
+/-! # FRI's codes on `L` and the domains it reaches
 
-`friAcceptanceWith_le`: FRI with injected inputs accepts with probability at most `friErrorWith`
-if the word, or an injected input, is `δ`-far from its code. This is `FriGame.acceptance_le` on
-`L` with Plonky3's schedule (`friRounds`), whose code before the folds has degree `n`
-(`degree_friRounds`).
+FRI on `L` with Plonky3's schedule (`friRounds`) tests the code of degree `n` (`degree_friRounds`):
+a word agreeing with it is near the code (`near_of_agrees`).
 
 Every domain FRI's folds reach from `L = g ⟨ω⟩` is a coset `c ⟨ω'⟩` of a two-adic subgroup, `ω'`
 the base field's generator of its order (`IsLevel`): the folds square the points. A
 Reed–Solomon code on a coset depends only on the subgroup, as a set of words indexed by the
 powers of `ω'` (`agrees_cosetDomain_of_isLevel`): so an injected input close to its code on the
 domain where FRI injects it is close to its code on its own domain `g ⟨ω'⟩`.
-
-`friStep`: the STARK's FRI, without injected inputs. `friAtMostOne`: acceptance is at most `1`.
 -/
 
 @[expose] public section
@@ -162,52 +158,5 @@ theorem degree_friRounds (S : Setup EF lookups) (words : (m : ℕ) → Fin (2 ^ 
     hfit, ← pow_add]
   congr 1
   omega
-
-/-- **FRI rejects far words.** If the word is not `δ`-near the code, or an injected input is not
-`δ`-close to its code on its own coset domain, FRI accepts with probability at most
-`friErrorWith`. -/
-theorem friAcceptanceWith_le (S : Setup EF lookups) (words : (m : ℕ) → Fin (2 ^ m) → 𝕂)
-    (heights : List ℕ)
-    (hfit : Rounds.Fits (S.params.logFinalPolyLen + S.params.logBlowup)
-      (S.logN + S.params.logBlowup) heights)
-    (word : S.Point → 𝕂) (δ : NNReal)
-    (hfar : ¬ Near S δ word ∨ ∃ m ∈ heights, ∀ hm : m ≤ twoAdicity F,
-      ¬ Agrees (cosetDomain (EF := EF) m hm) (2 ^ (m - S.params.logBlowup)) (1 - δ) (words m)) :
-    friAcceptanceWith S words heights word ≤ friErrorWith S heights δ := by
-  have hf := S.valid.finalPolyFits
-  have herr : friErrorWith S heights δ =
-      FriGame.error S.domain (S.friRounds words heights) (2 ^ S.params.logFinalPolyLen)
-        S.params.numQueries δ := by
-    simp only [friErrorWith, FriGame.error, Setup.friRounds]
-    refine iInf_congr fun loss ↦ ?_
-    obtain ⟨h1, h2, -⟩ := Rounds.foldError_schedule_congr S.params.maxLogArity
-      (S.params.logFinalPolyLen + S.params.logBlowup) (2 ^ S.params.logFinalPolyLen) δ loss
-      (fun _ _ ↦ 0) words _ _ S.domain heights
-    rw [h1, h2]
-  rw [herr]
-  refine acceptance_le _ _ _ _ _ _ _ fun ⟨hw, hin⟩ ↦ ?_
-  rcases hfar with hfar | ⟨m, hm, hfar⟩
-  · rw [degree_friRounds S words heights hfit] at hw
-    exact hfar (near_of_agrees S δ word hw)
-  · obtain ⟨D, hD, hagree⟩ := Rounds.agrees_of_inputsAgree S.valid.folds words _ _
-      (fun D ↦ IsLevel D) (fun D k hD ↦ isLevel_subdomain D k hD) (S.logN + S.params.logBlowup)
-      _ S.domain heights (by omega) (Nat.sub_le _ _) hfit (isLevel_cosetDomain _ _) hin m hm
-    refine hfar hD.1 ?_
-    have hdeg : 2 ^ (m - (S.params.logFinalPolyLen + S.params.logBlowup)) *
-        2 ^ S.params.logFinalPolyLen = 2 ^ (m - S.params.logBlowup) := by
-      rw [← pow_add]
-      congr 1
-      have := (hfit.2 m hm).1
-      omega
-    rw [hdeg] at hagree
-    exact agrees_cosetDomain_of_isLevel D hD _ (Nat.two_pow_pos _) _ _ hagree
-
-/-- FRI accepts a word that is not `δ`-near the code with probability at most `friError`. -/
-theorem friStep (S : Setup EF lookups) : FriStep S := fun δ w hw ↦
-  friAcceptanceWith_le S _ [] (Rounds.fits_nil _ _) w δ (Or.inl hw)
-
-/-- FRI accepts with probability at most `1`. -/
-theorem friAtMostOne (S : Setup EF lookups) : FriAtMostOne S :=
-  fun w ↦ acceptance_le_one _ _ _ _ _ w
 
 end CompStark.Sound

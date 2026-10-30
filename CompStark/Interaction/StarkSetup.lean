@@ -8,44 +8,31 @@ public import CompStark.Sound.Defs
 public import CompStark.Stark.Constraints
 public import CompStark.Lookup.Lookup
 
-/-! # The STARK as an interactive oracle proof
+/-! # The STARK's setups, messages and checks
 
-The protocol behind `verify`, with the Merkle commitments replaced by oracles and the Fiat–Shamir
-challenges by the verifier's uniform randomness. It runs over a base field `F` (`BaseField`) and
-the spec field `𝕂 = Challenge.Spec EF` of a challenge field `EF` of degree `d` over it
-(`Challenge`), for a `Setup EF`: FRI parameters, an AIR and a trace length `2 ^ logN`. The
-prover's oracles are words on the domain `L = g · ⟨ω⟩` of `2 ^ (logN + logBlowup)` points, `g`
-the base field's shift, that the trace is extended to. The verifier holds the extension of the
-AIR's preprocessed trace, the polynomials through its columns on the trace domain evaluated on
-`L` (`Setup.preprocessedWord`), as oracles of its own, and evaluates the AIR's periodic columns,
-known polynomials, itself.
+What the STARK proves and what its interactive oracle protocol (`CompStark/Interaction/Stark.lean`)
+exchanges, over a base field `F` (`BaseField`) and the spec field `𝕂 = Challenge.Spec EF` of a
+challenge field `EF` of degree `d` over it (`Challenge`). A `Setup EF` is FRI parameters, an AIR
+and a trace length `2 ^ logN`, in a sound configuration; a `Statement` is the same without the
+length, which the prover claims and the verifier checks (`Statement.Admits`). The prover's words
+are on the domain `L = g · ⟨ω⟩` of `2 ^ (logN + logBlowup)` points, `g` the base field's shift,
+that the trace is extended to. The verifier holds the extension of the AIR's preprocessed trace
+(`Setup.preprocessedWord`) as words of its own, and evaluates the AIR's periodic columns, known
+polynomials, itself.
 
-A STARK of its own proves no lookups. An instance of a batch (`CompStark/BatchIop.lean`) proves
+A STARK of its own proves no lookups. An instance of a batch (`CompStark/Interaction/BatchSetup.lean`) proves
 its AIR's lookups (`Setup` with `lookups`): the prover also commits to its permutation trace, the
 accumulator and the lookups' fractions over the challenge field (`Prover.perm`), and the quotient
 holds the lookups' LogUp constraints too, over the batch's lookup challenges and the instance's
 terminal.
 
-1. The prover sends the extended trace, one word over `F` per column (`Prover.trace`).
-2. The verifier samples the constraint-folding challenge `α`.
-3. The prover sends the quotient's chunks, each as the `d` coordinates of a word over `𝕂`
-   (`Prover.quotient`).
-4. The verifier samples the out-of-domain point `ζ`.
-5. The prover sends the claimed values of the trace's and the preprocessed trace's columns at `ζ`
-   and, if the AIR reads their next rows, at `ζ ω_n`, and of the chunks at `ζ`
-   (`Prover.openings`). The verifier checks the constraints at `ζ` (`ConstraintsHoldAt`).
-6. The verifier samples the batching challenge `a`.
-7. The prover shows with FRI that the batched DEEP word `∑ᵢ aⁱ (yᵢ - fᵢ(x)) / (zᵢ - x)` over
-   the opened words `fᵢ`, points `zᵢ` and values `yᵢ` is close to a polynomial of degree below
-   `2 ^ logN` (`deepWord`). FRI is Plonky3's (`CompStark/Sound/FriGame.lean`): the prover
-   commits to the word again and to its folds by Plonky3's arities, each after the challenge
-   before it, and the queries check them against each other and against the DEEP word; the
-   prover may follow any FRI strategy, and `friAcceptance` takes the best one.
-
-`acceptance` is the probability that the verifier accepts. The extractor list-decodes the
-committed trace: `closeTraces` are the traces whose columns are polynomials of degree at most
-`2 ^ logN` close to the prover's trace words. For a statement, the prover claims an admitted
-length and plays the STARK there (`Statement.Prover`).
+A `Prover` is the prover's words and messages as functions of the challenges before them: the
+extended trace, the quotient's chunks after `α`, and the claimed values at `ζ` (`Openings`) after
+`ζ`. The verifier checks the constraints at `ζ` (`ConstraintsHoldAt`) and runs FRI on the batched
+DEEP word `∑ᵢ aⁱ (yᵢ - fᵢ(x)) / (zᵢ - x)` over the opened words `fᵢ`, points `zᵢ` and values `yᵢ`
+(`openedWords`, `deepWord`), along Plonky3's schedule (`Setup.friRounds`). The extractor
+list-decodes the committed trace: `closeTraces` are the traces whose columns are polynomials of
+degree at most `2 ^ logN` close to the prover's trace words.
 -/
 @[expose] public section
 namespace CompStark.Iop
@@ -188,8 +175,7 @@ structure Openings {lookups : List (Lookup F)} (S : Setup EF lookups) where
   /-- Each coordinate of each permutation column at `ζ ω_n`. -/
   permNext : Fin S.permWidth → Fin (Challenge.d EF) → 𝕂
 
-/-- A prover: its oracles and messages, each a function of the challenges before it. Provers are
-deterministic; a randomized prover is a mixture of deterministic ones. -/
+/-- The prover's words and messages, each a function of the challenges before it. -/
 structure Prover {lookups : List (Lookup F)} (S : Setup EF lookups) where
   /-- The extended trace: each column's values on `L`. -/
   trace : Fin S.air.width → S.Point → F
@@ -200,17 +186,6 @@ structure Prover {lookups : List (Lookup F)} (S : Setup EF lookups) where
   /-- The extended permutation trace, sent before `α` (after the batch's lookup challenges):
   coordinate `e` of column `c` on `L`. -/
   perm : Fin S.permWidth → Fin (Challenge.d EF) → S.Point → F
-
-/-- A prover for a statement: it claims a trace length `2 ^ logN` the verifier admits and plays the
-STARK at that length. -/
-structure Statement.Prover (C : Statement F) (EF : Type) [Challenge F EF] where
-  logN : Nat
-  admits : C.Admits logN
-  prover : Iop.Prover (C.setupAt EF logN admits)
-
-/-- The STARK at the length a statement's prover claims. -/
-abbrev Statement.Prover.setup {C : Statement F} (p : C.Prover EF) : Setup EF :=
-  C.setupAt EF p.logN p.admits
 
 /-! ### The verifier -/
 
@@ -294,27 +269,6 @@ noncomputable def Setup.friRounds (S : Setup EF lookups) (words : (m : ℕ) → 
     (heights : List ℕ) : FriGame.Rounds 𝕂 (S.logN + S.params.logBlowup) :=
   FriGame.Rounds.schedule S.params.maxLogArity (S.params.logFinalPolyLen + S.params.logBlowup)
     words (S.logN + S.params.logBlowup) (S.logN + S.params.logBlowup) heights
-
-/-- The probability that FRI accepts `word` on `L`, with the words `words m` injected at the log
-sizes `heights`, against the best FRI prover: Plonky3's FRI (`FriGame.acceptance`) with a final
-polynomial of degree below `2 ^ logFinalPolyLen` and `numQueries` queries. -/
-noncomputable def friAcceptanceWith (S : Setup EF lookups) (words : (m : ℕ) → Fin (2 ^ m) → 𝕂)
-    (heights : List ℕ) (word : S.Point → 𝕂) : ENNReal :=
-  FriGame.acceptance S.domain (S.friRounds words heights) (2 ^ S.params.logFinalPolyLen)
-    S.params.numQueries (Nat.two_pow_pos _) word
-
-/-- The probability that FRI accepts `word` against the best FRI prover. -/
-noncomputable def friAcceptance (S : Setup EF lookups) (word : S.Point → 𝕂) : ENNReal :=
-  friAcceptanceWith S (fun _ _ ↦ 0) [] word
-
-open Classical in
-/-- The probability that the verifier accepts `prover`: over uniform `α`, `ζ` and `a`, the
-constraints hold at `ζ` and FRI accepts the batched DEEP word. -/
-noncomputable def acceptance {S : Setup EF} (publicValues : List F) (prover : Prover S) :
-    ENNReal :=
-  (Fintype.card 𝕂 : ENNReal)⁻¹ ^ 3 * ∑ α : 𝕂, ∑ ζ : 𝕂, ∑ a : 𝕂,
-    if ConstraintsHoldAt S publicValues α ζ (prover.openings α ζ)
-    then friAcceptance S (deepWord prover α ζ a) else 0
 
 /-! ### The extractor: list decoding -/
 

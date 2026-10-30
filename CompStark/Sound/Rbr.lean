@@ -14,10 +14,11 @@ public import CompStark.Sound.ConsistentQueries
 
 /-! # Round-by-round soundness of the STARK
 
-The interactive knowledge-soundness proof (`Sound/Assembly.lean`) averages over the challenges;
-its ingredients are per round. Here they are bad events on transcript prefixes, each bounded for
-every prefix by its error in `CompStark/NonInteractiveError.lean`, for the non-interactive proof,
-where every round is one random-oracle answer:
+The STARK's rounds as bad events on transcript prefixes, each bounded for every prefix by its
+error: in `CompStark/SoundnessError.lean` for the interactive protocol, whose knowledge certificate
+(`CompStark/Interaction/StarkKnowledge.lean`) is built from the events of `α`, `ζ` and `a`, and in
+`CompStark/NonInteractiveError.lean` for the non-interactive proof, where every round is one
+random-oracle answer:
 
 * `α` (`AlphaBad`): a candidate trace failing the AIR has a quotient passing the check at more
   than `identityDegree` points; `foldingError`.

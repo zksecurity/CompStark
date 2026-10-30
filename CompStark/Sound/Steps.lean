@@ -9,10 +9,10 @@ public import CompStark.Lookup.Poly
 
 /-! # The steps of the soundness proof
 
-`knowledgeSoundness` and `batchKnowledgeSoundness` follow from four facts about a STARK, stated
-here as propositions and proved in their own files:
+The round arguments of `knowledgeSoundness` and `batchKnowledgeSoundness` (`Sound/Rbr.lean`,
+`Sound/BatchRbr.lean`) rest on three facts about a STARK, stated here as propositions and proved
+in their own files; FRI's rounds are ArkLib's (`Fri.Interaction.certificate`):
 
-* `FriStep`: FRI rejects words far from the code (`FriGame.acceptance_le`).
 * `BatchingStep`: batching by powers keeps summands that are not `δ'`-near on a common set
   `δ`-far, except for few `a` (correlated agreement).
 * `DecodingStep`: if the DEEP summands are near on a common set and `ζ` lies off the trace
@@ -43,13 +43,6 @@ def OffTraceDomain (S : Setup EF lookups) (ζ : 𝕂) : Prop := ζ ^ S.n ≠ 1
 /-- `ζ` lies off the domain `L`, where the DEEP quotients at `ζ` divide by zero; then so does
 `ζ ω_n`, `L` being a coset of a group that holds `ω_n` (`offDomain_mul_rootOfUnity`). -/
 def OffDomain (S : Setup EF lookups) (ζ : 𝕂) : Prop := ∀ i, S.domain i ≠ ζ
-
-/-- FRI accepts a word that is not `δ`-near the code with probability at most `friError`. -/
-def FriStep (S : Setup EF lookups) : Prop :=
-  ∀ (δ : NNReal) (w : S.Point → 𝕂), ¬ Near S δ w → friAcceptance S w ≤ friError S δ
-
-/-- FRI accepts with probability at most `1`. -/
-def FriAtMostOne (S : Setup EF lookups) : Prop := ∀ w : S.Point → 𝕂, friAcceptance S w ≤ 1
 
 open Classical in
 /-- If `m` words are not near the code on a common set at radius `δ'`, their combination by the

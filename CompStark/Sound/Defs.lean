@@ -12,7 +12,7 @@ public import CompStark.Stark.Points
 /-! # Constructions behind the IOP model
 
 The domain `L` as an ArkLib smooth coset FFT domain and Plonky3's folding schedule for a single
-input. `CompStark/Iop.lean` states the protocol with them and FRI with injected inputs
+input. `CompStark/Interaction/StarkSetup.lean` states the protocol with them and FRI with injected inputs
 (`CompStark/Sound/FriGame.lean`).
 -/
 

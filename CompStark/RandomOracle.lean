@@ -6,7 +6,7 @@ module
 
 public import CompStark.Stark.Verifier
 public import CompStark.Stark.Setup
-public import CompStark.Iop
+public import CompStark.Interaction.StarkSetup
 public import CompStark.Merkle.Extract
 public import VCVio.OracleComp.QueryTracking.RandomOracle.Basic
 public import VCVio.OracleComp.QueryTracking.LoggingOracle.Core

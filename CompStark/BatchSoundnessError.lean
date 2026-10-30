@@ -4,7 +4,7 @@ Released under Apache 2.0 license as described in the file LICENSE.
 -/
 module
 
-public import CompStark.BatchIop
+public import CompStark.Interaction.BatchSetup
 public import CompStark.SoundnessError
 
 /-! # The knowledge error of the batch STARK
@@ -30,7 +30,8 @@ batched with the other instances of its domain's size:
   of its domain's size (`batchingErrorOf`, `groupNumOpened` words), at `δ'`.
 
 The knowledge error adds the lookup error, the worst instance's, and FRI's error with the shorter
-instances' words injected (`friErrorWith`, `FriGame.acceptance_le`). A batch statement's
+instances' words injected (`friErrorWith`, the error of ArkLib's FRI certificate). A batch
+statement's
 (`Statement.knowledgeError`) is the largest over the vectors of trace lengths the verifier admits,
 the prover choosing the vector.
 -/

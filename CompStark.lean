@@ -122,7 +122,7 @@ public import CompStark.Completeness
 public import CompStark.BatchCompleteness
 public import CompStark.KoalaBear.Completeness
 public import CompStark.Sound.Defs
-public import CompStark.Iop
+public import CompStark.Interaction.StarkSetup
 public import CompStark.SoundnessError
 public import CompStark.Interaction.Fri
 public import CompStark.Interaction.Execution
@@ -135,11 +135,10 @@ public import CompStark.Sound.Algebra
 public import CompStark.Sound.Batching
 public import CompStark.Sound.Decoding
 public import CompStark.Sound.Assembly
-public import CompStark.BatchIop
+public import CompStark.Interaction.BatchSetup
 public import CompStark.BatchSoundnessError
 public import CompStark.Sound.BatchAssembly
 public import CompStark.BatchSoundness
-public import CompStark.Sound.Single
 public import CompStark.Soundness
 public import CompStark.Sound.Johnson
 public import CompStark.Sound.Numbers

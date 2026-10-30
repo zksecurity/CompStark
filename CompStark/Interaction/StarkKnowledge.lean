@@ -71,7 +71,7 @@ variable (δ δ' : ℝ≥0)
 
 /-- No trace close to the committed words satisfies the AIR. -/
 def Far (T : S.TraceMessage) : Prop :=
-  ∀ P ∈ candidates S δ' (S.traceWords T), ¬ S.air.Satisfied S.logN (traceOf S P) publicValues
+  ∀ t ∈ closeTraces S δ' (S.traceWords T), ¬ S.air.Satisfied S.logN t publicValues
 
 /-- The input state: a trace message and a trace close to it satisfying the AIR. -/
 def rootState : KnowledgeState where
@@ -163,10 +163,10 @@ theorem prefixExtractor_isProverPreserving (loss : ℝ≥0) :
 theorem far_iff (T : S.TraceMessage) :
     S.Far publicValues δ' T ↔ ¬ ∃ t, (S.traceState publicValues δ' T).holds t := by
   constructor
-  · rintro hfar ⟨t, ⟨P, hP, hPa, rfl⟩, hsat⟩
-    exact hfar P ⟨hP, hPa⟩ hsat
-  · intro h P hP hsat
-    exact h ⟨traceOf S P, ⟨P, hP.1, hP.2, rfl⟩, hsat⟩
+  · rintro hfar ⟨t, ht, hsat⟩
+    exact hfar t ht hsat
+  · intro h t ht hsat
+    exact h ⟨t, ht, hsat⟩
 
 /-- The chosen trace holds unless no close trace satisfies the AIR. -/
 theorem chooseTrace_holds (T : S.TraceMessage) (hfar : ¬ S.Far publicValues δ' T) :
@@ -216,7 +216,8 @@ theorem prefixExtractor_isLocallyBounded (hδ' : (δ' : ℝ) < 1 - S.rate) (loss
     obtain ⟨⟨hfar, hα⟩, hζ⟩ := not_not.mp hnot
     by_contra hbatch
     refine not_near_deepWord S publicValues [] 0 δ δ' hδ' (S.traceWords T) _ α
-      (S.quotientWords Q) ζ o a (fun P hP _ _ h ↦ hfar P hP ((S.holds_nil_iff publicValues _ _).mp h))
+      (S.quotientWords Q) ζ o a (fun P hP _ _ h ↦
+        hfar _ ⟨P, hP.1, hP.2, rfl⟩ ((S.holds_nil_iff publicValues _ _).mp h))
       hcheck hα hζ hbatch ?_
     exact S.near_of_levelState δ _ loss w hw
 
@@ -587,10 +588,7 @@ theorem extraction_le (hδ' : (δ' : ℝ) < 1 - S.rate) (loss : ℝ≥0)
   obtain ⟨hacc, hfar⟩ := h
   obtain ⟨w, hw⟩ := S.terminal_holds_of_accepts publicValues δ δ' loss hδ' prover result hresult
     hacc
-  refine ⟨w, hw, fun hroot ↦ ?_⟩
-  obtain ⟨⟨P, hP, hagree, heq⟩, hsat⟩ := hroot
-  rw [heq] at hsat
-  exact hfar P ⟨hP, hagree⟩ hsat
+  exact ⟨w, hw, fun hroot ↦ hfar _ hroot.1 hroot.2⟩
 
 /-- **Knowledge soundness at a length.** Against any prover, the verifier accepts while no trace
 close to the committed trace satisfies the AIR with probability at most the knowledge error. -/

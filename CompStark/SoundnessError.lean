@@ -4,14 +4,14 @@ Released under Apache 2.0 license as described in the file LICENSE.
 -/
 module
 
-public import CompStark.Iop
+public import CompStark.Interaction.StarkSetup
 
 /-! # The knowledge error of the STARK
 
 The bound of `knowledgeSoundness` (`CompStark/Soundness.lean`), for FRI at proximity `δ` and the
 extractor at a proximity `δ' ≥ δ` below `1 - rate`. It has one term per challenge of the
-interactive oracle proof (`CompStark/Iop.lean`), with `ℓ` the list sizes of the committed words'
-interleaved codes at `δ'` (`Setup.listSize`):
+interactive oracle protocol (`CompStark/Interaction/Stark.lean`), with `ℓ` the list sizes of the
+committed words' interleaved codes at `δ'` (`Setup.listSize`):
 
 * `α`: folding the constraints by `α` makes a constraint that fails on some row of one of the
   `ℓ` candidate traces vanish on every row (`foldingError`).
@@ -25,7 +25,8 @@ interleaved codes at `δ'` (`Setup.listSize`):
 * `a`: the batched DEEP word is `δ`-close to low degree although its summands are not on a common
   set at `δ'` (`batchingError`, the correlated-agreement error of the powers of `a`; the
   difference `δ' - δ` is the proximity loss).
-* FRI accepts a word that is `δ`-far from low degree (`friError`, `FriGame.acceptance_le`).
+* FRI accepts a word that is `δ`-far from low degree (`friError`, the error of ArkLib's FRI
+  certificate, `friErrorWith_eq`).
 
 Below the unique-decoding radius `ℓ ≤ 1`; up to the Johnson bound `1 - √rate`, `ℓ` is small.
 
