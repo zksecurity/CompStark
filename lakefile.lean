@@ -12,9 +12,10 @@ package CompStark where
 require CompPoly from git "https://github.com/mitschabaude-bot/CompPoly.git" @
     "6de4e90026a12ea10a2a24f53f332aed3e877961"
 
--- ArkLib main with Johnson-regime mutual correlated agreement for power curves and lossy mutual
--- correlated agreement with FRI soundness from it (branch `fri-lossy-main` of the bot fork).
-require Arklib from git "https://github.com/mitschabaude-bot/ArkLib.git" @ "a21fd97429ecb24afc7f453ad9a92afdceddf513"
+-- ArkLib main with Johnson-regime mutual correlated agreement for power curves, lossy mutual
+-- correlated agreement, and FRI on the interaction layer with its knowledge certificate (branch
+-- `fri-interaction` of the bot fork).
+require Arklib from git "https://github.com/mitschabaude-bot/ArkLib.git" @ "7dbc67db398a9c96950831d6738736a930057803"
 
 -- VCVio as ArkLib main pins it.
 require VCVio from git "https://github.com/Verified-zkEVM/VCVio" @
