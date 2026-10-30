@@ -117,7 +117,7 @@ noncomputable def friState (T : S.TraceMessage) (l : 𝕂 × 𝕂) (P : S.PermMe
   gateState (S.Checks publicValues l.1 l.2 terminals α ζ o)
     (Fri.Interaction.levelState (S.logN S.top + S.params.logBlowup)
       (2 ^ S.params.logFinalPolyLen) (S.deepWords T l.1 l.2 P terminals α Q ζ o a) δ loss
-      S.domainSetup.domain (S.domainSetup.friSchedule S.friHeights) 0
+      S.domainSetup.friDomain (S.domainSetup.friSchedule S.friHeights) 0
       (S.deepWords T l.1 l.2 P terminals α Q ζ o a _) Finset.univ)
 
 /-- The witness maps of the rounds before FRI. -/
@@ -165,10 +165,10 @@ theorem chooseTraces_holds (T : S.TraceMessage) (hfar : ¬ S.Far publicValues δ
 code. -/
 theorem near_of_levelState (w : (m : ℕ) → Fin (2 ^ m) → 𝕂) (loss : ℝ≥0)
     (x : (Fri.Interaction.levelState (S.logN S.top + S.params.logBlowup)
-      (2 ^ S.params.logFinalPolyLen) w δ loss S.domainSetup.domain
+      (2 ^ S.params.logFinalPolyLen) w δ loss S.domainSetup.friDomain
       (S.domainSetup.friSchedule S.friHeights) 0 (w _) Finset.univ).Witness)
     (hx : (Fri.Interaction.levelState (S.logN S.top + S.params.logBlowup)
-      (2 ^ S.params.logFinalPolyLen) w δ loss S.domainSetup.domain
+      (2 ^ S.params.logFinalPolyLen) w δ loss S.domainSetup.friDomain
       (S.domainSetup.friSchedule S.friHeights) 0 (w _) Finset.univ).holds x)
     (i : Fin S.k) : Near (S.instanceSetup i) δ (w (S.logN i + S.params.logBlowup)) := by
   obtain ⟨hword, hin⟩ := Fri.Interaction.agrees_of_root_holds _ _ w δ loss _ _ x hx
@@ -189,14 +189,14 @@ theorem near_of_levelState (w : (m : ℕ) → Fin (2 ^ m) → 𝕂) (loss : ℝ�
           (w (n + S.params.logBlowup)) := by
       intro n hn h
       subst h
-      exact hword
+      exact agrees_cosetDomain_of_isLevel _ (isLevel_subgroupDomain (EF := EF) _ hn) _ _ _ hword
     exact key _ hm htop
   · have hmem : S.logN i + S.params.logBlowup ∈ S.friHeights :=
       (mem_friHeights S _).mpr ⟨i, rfl, by omega⟩
     obtain ⟨E, hE, hagree⟩ := Fri.Interaction.Schedule.agrees_of_inputsAgree
       S.domainSetup.valid.folds w _ _ (fun E ↦ IsLevel E) (fun E k hE ↦ isLevel_subdomain E k hE)
-      (S.logN S.top + S.params.logBlowup) _ S.domainSetup.domain S.friHeights (by omega)
-      (Nat.sub_le _ _) hfit (isLevel_cosetDomain _ _) hin _ hmem
+      (S.logN S.top + S.params.logBlowup) _ S.domainSetup.friDomain S.friHeights (by omega)
+      (Nat.sub_le _ _) hfit (isLevel_subgroupDomain _ _) hin _ hmem
     have hdeg : 2 ^ (S.logN i + S.params.logBlowup -
         (S.params.logFinalPolyLen + S.params.logBlowup)) * 2 ^ S.params.logFinalPolyLen =
         2 ^ S.logN i := by
@@ -204,7 +204,7 @@ theorem near_of_levelState (w : (m : ℕ) → Fin (2 ^ m) → 𝕂) (loss : ℝ�
       congr 1
       omega
     rw [hdeg] at hagree
-    exact agrees_cosetDomain_of_isLevel E hE _ (Nat.two_pow_pos _) _ _ hagree
+    exact agrees_cosetDomain_of_isLevel E hE _ _ _ hagree
 
 /-- The transcript of the rounds before FRI, without FRI's words. -/
 noncomputable def transcriptOf (T : S.TraceMessage) (l : 𝕂 × 𝕂) (P : S.PermMessage)
@@ -287,7 +287,7 @@ noncomputable def friCertificate (T : S.TraceMessage) (l : 𝕂 × 𝕂) (P : S.
   gateCertificate _ (Fri.Interaction.certificate (S.logN S.top + S.params.logBlowup)
     (2 ^ S.params.logFinalPolyLen) S.params.numQueries
     (S.deepWords T l.1 l.2 P terminals α Q ζ o a) δ loss (Nat.two_pow_pos _) loss.coe_nonneg
-    le_rfl S.domainSetup.domain (S.domainSetup.friSchedule S.friHeights) 0
+    le_rfl S.domainSetup.friDomain (S.domainSetup.friSchedule S.friHeights) 0
     (S.deepWords T l.1 l.2 P terminals α Q ζ o a _) Finset.univ)
 
 /-- **The batch STARK's knowledge certificate**: the rounds before FRI, appended with FRI's on the
@@ -312,7 +312,7 @@ theorem maxError_certificate (hδ' : (δ' : ℝ) < 1 - S.rate) (loss : ℝ≥0) 
     refine (Fri.Interaction.maxError_certificate (S.logN S.top + S.params.logBlowup)
       (2 ^ S.params.logFinalPolyLen) S.params.numQueries
       (S.deepWords T l.1 l.2 P τ α Q ζ o a) δ loss (Nat.two_pow_pos _) loss.coe_nonneg le_rfl
-      S.domainSetup.domain (S.domainSetup.friSchedule S.friHeights) 0
+      S.domainSetup.friDomain (S.domainSetup.friSchedule S.friHeights) 0
       (S.deepWords T l.1 l.2 P τ α Q ζ o a _) Finset.univ).trans (le_of_eq ?_)
     simp only [Iop.Setup.friBound, Fri.Interaction.threshold, zero_add]
   change (⨆ T : S.TraceMessage, (S.lookupError δ' + ⨆ l : 𝕂 × 𝕂, ⨆ P : S.PermMessage,
@@ -351,7 +351,7 @@ theorem samples_fri (T : S.TraceMessage) (l : 𝕂 × 𝕂) (P : S.PermMessage)
     (Fri.Interaction.samplesChallenges_verifier (S.logN S.top + S.params.logBlowup)
       (2 ^ S.params.logFinalPolyLen) S.params.numQueries
       (S.deepWords T l.1 l.2 P τ α Q ζ o a) δ loss (Nat.two_pow_pos _) loss.coe_nonneg
-      (S.domainSetup.friSchedule S.friHeights) le_rfl S.domainSetup.domain _ _ _ 0
+      (S.domainSetup.friSchedule S.friHeights) le_rfl S.domainSetup.friDomain _ _ _ 0
       (S.deepWords T l.1 l.2 P τ α Q ζ o a _) Finset.univ)
 
 set_option backward.isDefEq.respectTransparency false in
@@ -565,7 +565,7 @@ theorem terminal_fri (T : S.TraceMessage) (l : 𝕂 × 𝕂) (P : S.PermMessage)
   obtain ⟨w, hw⟩ := Fri.Interaction.terminal_holds_of_accepts
     (S.logN S.top + S.params.logBlowup) (2 ^ S.params.logFinalPolyLen) S.params.numQueries
     (S.deepWords T l.1 l.2 P τ α Q ζ o a) δ loss unifSpec (Nat.two_pow_pos _) loss.coe_nonneg
-    _ _ (S.domainSetup.friSchedule S.friHeights) le_rfl S.domainSetup.domain _ _ _ 0
+    _ _ (S.domainSetup.friSchedule S.friHeights) le_rfl S.domainSetup.friDomain _ _ _ 0
     (S.deepWords T l.1 l.2 P τ α Q ζ o a _) Finset.univ prover
     (S.reads_deepReader T l.1 l.2 P τ α Q ζ o a)
     (fun x ↦ by simp only [Finset.mem_univ, decide_true]; rfl) r hr hacc'.2

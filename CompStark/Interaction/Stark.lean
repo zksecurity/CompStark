@@ -23,7 +23,9 @@ of the STARK at that length (`Statement.setup`):
 5. The prover sends the claimed values at `ζ` (`Openings`) in the clear.
 6. The verifier samples the batching challenge `a`.
 7. FRI runs on the batched DEEP word (`deepWord`), ArkLib's FRI on the interaction layer
-   (`Fri.Interaction.protocol`) along Plonky3's schedule (`Setup.friSchedule`).
+   (`Fri.Interaction.protocol`) along Plonky3's schedule (`Setup.friSchedule`), in Plonky3's
+   coordinate: on the subgroup `⟨ω⟩` (`Setup.friDomain`), whose points it folds and evaluates the
+   final polynomial at, with the challenges Plonky3 samples.
 
 The verifier (`Setup.verifier`) never reads a word: FRI's verifier reads the DEEP word at a point
 through a query program (`Setup.deepReader`) that queries the trace's and the chunks' values
@@ -171,7 +173,7 @@ noncomputable def friVerifier (α ζ : 𝕂) (o : Openings S) (a : 𝕂) :
     (Fri.Interaction.verifier unifSpec (S.logN + S.params.logBlowup)
       (2 ^ S.params.logFinalPolyLen) S.params.numQueries ($ᵗ 𝕂)
       ($ᵗ (Fin S.params.numQueries → Fin (2 ^ (S.logN + S.params.logBlowup))))
-      S.domain S.quotientAccess (S.deepReader α ζ o a) (S.friSchedule []))
+      S.friDomain S.quotientAccess (S.deepReader α ζ o a) (S.friSchedule []))
 
 /-- The verifier after the claimed values: it samples `a` and runs FRI's verifier. -/
 noncomputable def verifierAfterOpenings (α ζ : 𝕂) (o : Openings S) :
@@ -249,7 +251,7 @@ theorem execute_fri (α ζ : 𝕂) (o : Openings S) (a : 𝕂)
         (Fri.Interaction.verifier unifSpec (S.logN + S.params.logBlowup)
           (2 ^ S.params.logFinalPolyLen) S.params.numQueries ($ᵗ 𝕂)
           ($ᵗ (Fin S.params.numQueries → Fin (2 ^ (S.logN + S.params.logBlowup))))
-          S.domain S.quotientAccess (S.deepReader α ζ o a) (S.friSchedule [])) :=
+          S.friDomain S.quotientAccess (S.deepReader α ζ o a) (S.friSchedule [])) :=
   executeStrategies_mapOutput unifSpec _ _ _ _ impl _ prover _
 
 set_option backward.isDefEq.respectTransparency false in
@@ -421,7 +423,7 @@ noncomputable def Prover.strategy {S : Setup EF} (p : Prover S) :
     fun ζ ↦ pure (pure ⟨p.openings α ζ, fun a ↦ pure
       (Fri.Interaction.honestProver unifSpec (S.logN + S.params.logBlowup)
         (2 ^ S.params.logFinalPolyLen) S.params.numQueries (S.deepInputs (deepWord p α ζ a))
-        S.domain (deepWord p α ζ a) (S.friSchedule []))⟩)⟩)⟩
+        S.friDomain (deepWord p α ζ a) (S.friSchedule []))⟩)⟩)⟩
 
 namespace Setup
 variable (S : Setup EF)
@@ -507,10 +509,13 @@ theorem Prover.strategy_accepts {S : Setup EF} (p : Prover S) (publicValues : Li
   rw [hw] at hreads
   have hacc := Fri.Interaction.honest_accepts unifSpec (S.logN + S.params.logBlowup)
     (2 ^ S.params.logFinalPolyLen) S.params.numQueries _ _ (S.deepInputs (deepWord p α ζ a))
-    (Nat.two_pow_pos _) (S.friSchedule []) S.domain _ _ _ _
+    (Nat.two_pow_pos _) (S.friSchedule []) S.friDomain _ _ _ _
     (S.arityPos_friSchedule [] (Fri.Interaction.Schedule.fits_nil _ _))
     (inputsInCode_plonky3_nil _ _ _ _ _ _ _)
-    (by rwa [S.degree_friSchedule [] (Fri.Interaction.Schedule.fits_nil _ _)]) hreads
+    (by
+      rw [S.degree_friSchedule [] (Fri.Interaction.Schedule.fits_nil _ _)]
+      exact code_le_of_isLevel (isLevel_cosetDomain (EF := EF) _ S.valid.twoAdic)
+        (isLevel_subgroupDomain (EF := EF) _ S.valid.twoAdic) _ hcode) hreads
     (fun _ ↦ rfl) r7 hr7
   change (@decide _ (Classical.propDecidable _) && r7.2.2) = true
   rw [hacc, Bool.and_true]

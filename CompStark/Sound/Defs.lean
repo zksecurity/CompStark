@@ -76,6 +76,13 @@ noncomputable def cosetDomain (n : Nat) (hn : n ≤ twoAdicity F) : SmoothCosetF
     rw [lift, ne_eq, map_eq_zero_iff _ (algebraMap F 𝕂).injective]
     exact BaseField.gen_ne_zero)
 
+/-- The subgroup `⟨ω⟩` of order `2 ^ n`, `n ≤ twoAdicity`, as an ArkLib domain: FRI's domain in
+Plonky3's coordinate, where it interpolates its folds and evaluates its final polynomial. -/
+noncomputable def subgroupDomain (n : Nat) (hn : n ≤ twoAdicity F) : SmoothCosetFftDomain n 𝕂 where
+  subgroupDomain := subgroupHom n hn
+  subgroupDomain_inj := (cosetDomain (EF := EF) n hn).subgroupDomain_inj
+  cosetGenerator := 1
+
 /-- Plonky3's folding arities (`foldSchedule` with a single input): fold by
 `min maxLogArity remaining` until `remaining = 0`, with at least `1` per fold. -/
 def folds (maxLogArity : Nat) : Nat → List ℕ+

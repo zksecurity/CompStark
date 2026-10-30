@@ -108,6 +108,12 @@ abbrev Point : Type := Fin (2 ^ (S.logN + S.params.logBlowup))
 noncomputable def domain : Domain.SmoothCosetFftDomain (S.logN + S.params.logBlowup) 𝕂 :=
   cosetDomain _ S.valid.twoAdic
 
+/-- FRI's domain: the subgroup `⟨ω⟩` of `L`'s order. Plonky3 runs FRI in this coordinate: it
+interpolates its folds and evaluates its final polynomial at the points of `⟨ω⟩`. The words are
+those on `L`: a Reed–Solomon code on a coset of `⟨ω⟩` is the code on `⟨ω⟩` (`code_le_of_isLevel`). -/
+noncomputable def friDomain : Domain.SmoothCosetFftDomain (S.logN + S.params.logBlowup) 𝕂 :=
+  subgroupDomain _ S.valid.twoAdic
+
 /-- The polynomial of degree below `n` through column `j` of the preprocessed trace on the trace
 domain `⟨ω_n⟩`. -/
 noncomputable def preprocessedPoly (j : Nat) : F[X] :=

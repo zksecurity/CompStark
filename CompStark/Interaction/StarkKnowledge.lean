@@ -110,7 +110,7 @@ noncomputable def friState (T : S.TraceMessage) (α : 𝕂) (Q : S.QuotientMessa
     (a : 𝕂) (loss : ℝ≥0) : KnowledgeState :=
   gateState (ConstraintsHoldAt S publicValues α ζ o)
     (Fri.Interaction.levelState (S.logN + S.params.logBlowup) (2 ^ S.params.logFinalPolyLen)
-      (S.deepInputs (S.deepOf T α Q ζ o a)) δ loss S.domain (S.friSchedule []) 0
+      (S.deepInputs (S.deepOf T α Q ζ o a)) δ loss S.friDomain (S.friSchedule []) 0
       (S.deepOf T α Q ζ o a) Finset.univ)
 
 /-- The witness maps of the rounds before FRI. -/
@@ -133,15 +133,16 @@ noncomputable def prefixChallenges :
 /-- FRI's state on a word holds only if the word is `δ`-near the code. -/
 theorem near_of_levelState (w : S.Point → 𝕂) (loss : ℝ≥0)
     (x : (Fri.Interaction.levelState (S.logN + S.params.logBlowup) (2 ^ S.params.logFinalPolyLen)
-      (S.deepInputs w) δ loss S.domain (S.friSchedule []) 0 w Finset.univ).Witness)
+      (S.deepInputs w) δ loss S.friDomain (S.friSchedule []) 0 w Finset.univ).Witness)
     (hx : (Fri.Interaction.levelState (S.logN + S.params.logBlowup) (2 ^ S.params.logFinalPolyLen)
-      (S.deepInputs w) δ loss S.domain (S.friSchedule []) 0 w Finset.univ).holds x) :
+      (S.deepInputs w) δ loss S.friDomain (S.friSchedule []) 0 w Finset.univ).holds x) :
     Near S δ w := by
   obtain ⟨hu, -, hagree, hcard, -⟩ := hx
   rw [S.degree_friSchedule [] (Fri.Interaction.Schedule.fits_nil _ _)] at hu
   have hproj (y : S.Point) : Fri.Interaction.proj (S.logN + S.params.logBlowup) y = y :=
     Fin.ext (Nat.mod_eq_of_lt y.isLt)
-  refine ⟨x.1, ?_, x.2, hu, fun i hi ↦ ?_⟩
+  refine ⟨x.1, ?_, x.2, code_le_of_isLevel (isLevel_subgroupDomain (EF := EF) _ S.valid.twoAdic)
+    (isLevel_cosetDomain (EF := EF) _ S.valid.twoAdic) _ hu, fun i hi ↦ ?_⟩
   · have h : Fri.Interaction.threshold (δ : ℝ) loss 0 = 1 - δ := by
       simp only [Fri.Interaction.threshold, Nat.cast_zero, zero_mul, add_zero]
     rw [h] at hcard
@@ -237,7 +238,7 @@ noncomputable def friCertificate (T : S.TraceMessage) (α : 𝕂) (Q : S.Quotien
       (S.friState publicValues δ T α Q ζ o a loss) :=
   (Fri.Interaction.certificate (S.logN + S.params.logBlowup) (2 ^ S.params.logFinalPolyLen)
     S.params.numQueries (S.deepInputs (S.deepOf T α Q ζ o a)) δ loss (Nat.two_pow_pos _)
-    loss.coe_nonneg le_rfl S.domain (S.friSchedule []) 0 (S.deepOf T α Q ζ o a)
+    loss.coe_nonneg le_rfl S.friDomain (S.friSchedule []) 0 (S.deepOf T α Q ζ o a)
     Finset.univ)
     |> gateCertificate _
 
@@ -254,7 +255,7 @@ noncomputable def certificate (hδ' : (δ' : ℝ) < 1 - S.rate) (loss : ℝ≥0)
 log sizes `heights`. -/
 noncomputable def friBound {lookups : List (Lookup F)} (T : Iop.Setup EF lookups)
     (heights : List ℕ) (δ loss : ℝ≥0) : ENNReal :=
-  (T.friSchedule heights).foldError (2 ^ T.params.logFinalPolyLen) δ loss T.domain +
+  (T.friSchedule heights).foldError (2 ^ T.params.logFinalPolyLen) δ loss T.friDomain +
     ENNReal.ofReal (1 - δ + (T.friSchedule heights).numFolds * loss) ^ T.params.numQueries
 
 /-- The certificate's largest path error: the folding, out-of-domain and batching errors, and
@@ -268,7 +269,7 @@ theorem maxError_certificate (hδ' : (δ' : ℝ) < 1 - S.rate) (loss : ℝ≥0) 
     refine (Fri.Interaction.maxError_certificate (S.logN + S.params.logBlowup)
       (2 ^ S.params.logFinalPolyLen) S.params.numQueries
       (S.deepInputs (S.deepOf T α Q ζ o a)) δ loss (Nat.two_pow_pos _) loss.coe_nonneg le_rfl
-      S.domain (S.friSchedule []) 0 (S.deepOf T α Q ζ o a) Finset.univ).trans (le_of_eq ?_)
+      S.friDomain (S.friSchedule []) 0 (S.deepOf T α Q ζ o a) Finset.univ).trans (le_of_eq ?_)
     simp only [friBound, Fri.Interaction.threshold, zero_add]
   change (⨆ T : S.TraceMessage, (foldingError S δ' + ⨆ α : 𝕂, ⨆ Q : S.QuotientMessage,
     (outOfDomainError S δ' + ⨆ ζ : 𝕂, ⨆ o : Openings S, (batchingError S δ δ' + ⨆ a : 𝕂,
@@ -292,7 +293,7 @@ theorem samples_fri (T : S.TraceMessage) (α : 𝕂) (Q : S.QuotientMessage) (ζ
   samplesChallenges_mapOutput unifSpec (QueryImpl.id' unifSpec) _ _ _ _ _ _ _ _ _ _
     (Fri.Interaction.samplesChallenges_verifier (S.logN + S.params.logBlowup)
       (2 ^ S.params.logFinalPolyLen) S.params.numQueries (S.deepInputs (S.deepOf T α Q ζ o a)) δ
-      loss (Nat.two_pow_pos _) loss.coe_nonneg (S.friSchedule []) le_rfl S.domain _ _ _ 0
+      loss (Nat.two_pow_pos _) loss.coe_nonneg (S.friSchedule []) le_rfl S.friDomain _ _ _ 0
       (S.deepOf T α Q ζ o a) Finset.univ)
 
 set_option backward.isDefEq.respectTransparency false in
@@ -439,7 +440,7 @@ theorem terminal_fri (T : S.TraceMessage) (α : 𝕂) (Q : S.QuotientMessage) (�
       r.2.2 = true := Bool.and_eq_true _ _ ▸ hacc
   obtain ⟨w, hw⟩ := Fri.Interaction.terminal_holds_of_accepts (S.logN + S.params.logBlowup)
     (2 ^ S.params.logFinalPolyLen) S.params.numQueries (S.deepInputs (S.deepOf T α Q ζ o a)) δ
-    loss unifSpec (Nat.two_pow_pos _) loss.coe_nonneg _ _ (S.friSchedule []) le_rfl S.domain _ _
+    loss unifSpec (Nat.two_pow_pos _) loss.coe_nonneg _ _ (S.friSchedule []) le_rfl S.friDomain _ _
     _ 0 (S.deepOf T α Q ζ o a) Finset.univ prover (S.reads_deepReader T Q α ζ o a)
     (fun x ↦ by simp only [Finset.mem_univ, decide_true]; rfl) r hr hacc'.2
   simp only [friCertificate, gateCertificate]

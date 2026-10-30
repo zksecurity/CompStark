@@ -483,7 +483,7 @@ theorem not_agrees_of_not_near (δ : NNReal) (t : Transcript S) (i : Fin S.k)
       omega
     rw [hdeg] at hagree
     have h1 := agrees_of_agrees_mul (inv_ne_zero (foldShift_ne_zero S _)) hagree
-    have h2 := agrees_cosetDomain_of_isLevel E hE _ (Nat.two_pow_pos _) _ _ h1
+    have h2 := agrees_cosetDomain_of_isLevel E hE _ _ _ h1
     exact hfar' hE.1 h2
 
 /-- **The terminal lemma.** If the verifier's checks pass on a transcript whose rounds are all

@@ -4,18 +4,20 @@ Released under Apache 2.0 license as described in the file LICENSE.
 -/
 module
 
-public import CompStark.SoundnessError
+public import CompStark.Sound.Fri
 public import ArkLib.ProofSystem.Fri.Interaction.Soundness
 
 /-! # The STARK's FRI on ArkLib's interaction layer
 
-The STARK runs FRI as Plonky3 does: on the domain `L` of `2 ^ (logN + logBlowup)` points, folding
+The STARK runs FRI as Plonky3 does: on the words on `L`, in the coordinate of the subgroup `⟨ω⟩` of
+`2 ^ (logN + logBlowup)` points (`Setup.friDomain`), folding
 along Plonky3's schedule (`Setup.friSchedule`, ArkLib's `Schedule.plonky3`) down to the final
 polynomial's domain of `2 ^ (logFinalPolyLen + logBlowup)` points, injecting the words of the
 shorter domains of log sizes `heights` when the folds reach them. ArkLib's FRI on the interaction
 layer (`Fri.Interaction.protocol`) is that protocol, and its knowledge certificate bounds its
 acceptance by `Fri.Interaction.error`. That error is the STARK's FRI error `friErrorWith`
-(`friErrorWith_eq`): the schedules have the same folds, the same codes and the same injections.
+(`friErrorWith_eq`): the schedules have the same folds and the same injections, and their codes
+on `L` and on `⟨ω⟩` are the same words (`foldError_eq_of_isLevel`).
 -/
 
 @[expose] public section
@@ -124,24 +126,41 @@ theorem inputsInCode_plonky3_nil {K : Type} [Field K] (inputs : (m : ℕ) → Fi
       Fri.Interaction.Schedule.InputsInCode]
     exact inputsInCode_plonky3_nil inputs maxLogArity logFinal d fuel _ _
 
+/-- FRI's fold errors depend on its domain only through its codes, which are the same on any two
+cosets of one two-adic subgroup. -/
+theorem foldError_eq_of_isLevel (d : ℕ) (θ loss : ℝ) :
+    ∀ {n : ℕ} (s : Fri.Interaction.Schedule n) {ω ω' : SmoothCosetFftDomain n 𝕂},
+      IsLevel ω → IsLevel ω' → s.foldError d θ loss ω = s.foldError d θ loss ω'
+  | _, .final, _, _, _, _ => rfl
+  | _, .fold k _ inject rest, ω, ω', h, h' => by
+    have hc := le_antisymm
+      (code_le_of_isLevel (isLevel_subdomain ω k h) (isLevel_subdomain ω' k h') (rest.degree d))
+      (code_le_of_isLevel (isLevel_subdomain ω' k h') (isLevel_subdomain ω k h) (rest.degree d))
+    have ih := foldError_eq_of_isLevel d θ loss rest (isLevel_subdomain ω k h)
+      (isLevel_subdomain ω' k h')
+    cases inject <;>
+      simp only [Fri.Interaction.Schedule.foldError, Fri.Interaction.Schedule.roundError, hc, ih]
+
 /-- **FRI's error is ArkLib's.** The STARK's FRI error with inputs injected at the log sizes
-`heights` is the error of ArkLib's FRI on `L` along Plonky3's schedule, with a final polynomial
-of degree below `2 ^ logFinalPolyLen` and `numQueries` queries. -/
+`heights` is the error of ArkLib's FRI on FRI's domain `⟨ω⟩` along Plonky3's schedule, with a final
+polynomial of degree below `2 ^ logFinalPolyLen` and `numQueries` queries. -/
 theorem friErrorWith_eq {lookups : List (Lookup F)} (S : Setup EF lookups) (heights : List ℕ)
     (δ : NNReal) :
-    friErrorWith S heights δ = Fri.Interaction.error S.domain (S.friSchedule heights)
+    friErrorWith S heights δ = Fri.Interaction.error S.friDomain (S.friSchedule heights)
       (2 ^ S.params.logFinalPolyLen) S.params.numQueries δ := by
   unfold friErrorWith FriGame.error Fri.Interaction.error
   refine iInf_congr fun loss ↦ ?_
   obtain ⟨h1, h2, -⟩ := foldError_schedule_eq S.params.maxLogArity
     (S.params.logFinalPolyLen + S.params.logBlowup) (2 ^ S.params.logFinalPolyLen) δ loss
     (fun _ _ ↦ 0) (S.logN + S.params.logBlowup) (S.logN + S.params.logBlowup) S.domain heights
-  rw [Setup.friRounds, h1, h2]
+  rw [Setup.friRounds, h1, h2, foldError_eq_of_isLevel _ _ _ _ (ω := S.domain)
+    (ω' := S.friDomain) (isLevel_cosetDomain (EF := EF) _ S.valid.twoAdic)
+    (isLevel_subgroupDomain (EF := EF) _ S.valid.twoAdic)]
   rfl
 
 /-- FRI's error without injected inputs is ArkLib's along Plonky3's schedule without inputs. -/
 theorem friError_eq {lookups : List (Lookup F)} (S : Setup EF lookups) (δ : NNReal) :
-    friError S δ = Fri.Interaction.error S.domain (S.friSchedule [])
+    friError S δ = Fri.Interaction.error S.friDomain (S.friSchedule [])
       (2 ^ S.params.logFinalPolyLen) S.params.numQueries δ :=
   friErrorWith_eq S [] δ
 

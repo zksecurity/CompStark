@@ -12,10 +12,12 @@ FRI on `L` with Plonky3's schedule (`friRounds`) tests the code of degree `n` (`
 a word agreeing with it is near the code (`near_of_agrees`).
 
 Every domain FRI's folds reach from `L = g ⟨ω⟩` is a coset `c ⟨ω'⟩` of a two-adic subgroup, `ω'`
-the base field's generator of its order (`IsLevel`): the folds square the points. A
-Reed–Solomon code on a coset depends only on the subgroup, as a set of words indexed by the
-powers of `ω'` (`agrees_cosetDomain_of_isLevel`): so an injected input close to its code on the
-domain where FRI injects it is close to its code on its own domain `g ⟨ω'⟩`.
+the base field's generator of its order (`IsLevel`): the folds square the points; so is the
+subgroup `⟨ω⟩` itself (`subgroupDomain`), FRI's domain in Plonky3's coordinate. A Reed–Solomon
+code on a coset depends only on the subgroup, as a set of words indexed by the powers of `ω'`
+(`code_le_of_isLevel`): so an injected input close to its code on the domain where FRI injects
+it is close to its code on its own domain `g ⟨ω'⟩` (`agrees_cosetDomain_of_isLevel`), and a
+codeword on its own domain is one on every domain the folds reach.
 -/
 
 @[expose] public section
@@ -110,32 +112,51 @@ theorem isLevel_subdomain {m : ℕ} (D : SmoothCosetFftDomain m 𝕂) (k : ℕ) 
     have h0 : (y : ℕ) = 0 := Nat.lt_one_iff.mp (lt_of_lt_of_eq y.isLt h1)
     rw [h0, pow_zero, pow_zero]
 
-/-- A word close to the Reed–Solomon code on a coset `c ⟨ω_m⟩` is close to it on the coset
-`g ⟨ω_m⟩`: the codes are the same words, a polynomial `p` on the one being `p (c / g · X)` on
-the other. -/
-theorem agrees_cosetDomain_of_isLevel {m : ℕ} (D : SmoothCosetFftDomain m 𝕂) (hD : IsLevel D)
-    (deg : ℕ) (hdeg : 0 < deg) (ρ : ℝ) (w : Fin (2 ^ m) → 𝕂) (h : Agrees D deg ρ w) :
-    Agrees (cosetDomain (EF := EF) m hD.1) deg ρ w := by
-  obtain ⟨hm, c, hc, hDc⟩ := hD
-  obtain ⟨T, hT, v, hv, hvT⟩ := h
-  have : NeZero deg := ⟨hdeg.ne'⟩
-  obtain ⟨p, hp, rfl⟩ := ReedSolomon.mem_code_iff_exists_polynomial_of_ne_zero.mp hv
-  have hg : lift (EF := EF) gen ≠ 0 := by
-    rw [lift, ne_eq, map_eq_zero_iff _ (algebraMap F 𝕂).injective]
-    exact BaseField.gen_ne_zero
-  set q := p.comp (Polynomial.C (c / lift gen) * Polynomial.X)
-  have hq : q.natDegree < deg := by
-    refine lt_of_le_of_lt (natDegree_comp_le.trans ?_) hp
-    have : (Polynomial.C (c / lift (EF := EF) gen) * Polynomial.X).natDegree ≤ 1 :=
+/-- The points of the subgroup domain of `2 ^ n` points: `ω_n ^ i`. -/
+theorem subgroupDomain_apply (n : Nat) (hn : n ≤ twoAdicity F) (i : Fin (2 ^ n)) :
+    subgroupDomain (EF := EF) n hn i = lift (twoAdicGen n) ^ (i : ℕ) := by
+  simp only [subgroupDomain, Domain.CosetFftDomain.eval_coset_fft_domain_eq_eval_generator_mul_domain,
+    Domain.CosetFftDomain.subgroupUnit, subgroupHom, MonoidHom.coe_mk, OneHom.coe_mk,
+    Units.val_one, one_mul, Units.val_pow_eq_pow_val, IsUnit.unit_spec, toAdd_ofAdd]
+
+theorem isLevel_subgroupDomain (n : Nat) (hn : n ≤ twoAdicity F) :
+    IsLevel (subgroupDomain (EF := EF) n hn) :=
+  ⟨hn, 1, one_ne_zero, fun x ↦ by rw [subgroupDomain_apply, one_mul]⟩
+
+/-- The Reed–Solomon codes on two cosets `c ⟨ω_m⟩` and `c' ⟨ω_m⟩` are the same words: a polynomial
+`p` on the one is `p (c / c' · X)` on the other, of no larger degree. -/
+theorem code_le_of_isLevel {m : ℕ} {D D' : SmoothCosetFftDomain m 𝕂} (hD : IsLevel D)
+    (hD' : IsLevel D') (deg : ℕ) :
+    ReedSolomon.code (D : Fin (2 ^ m) ↪ 𝕂) deg ≤ ReedSolomon.code (D' : Fin (2 ^ m) ↪ 𝕂) deg := by
+  obtain ⟨-, c, hc, hDc⟩ := hD
+  obtain ⟨-, c', hc', hDc'⟩ := hD'
+  intro v hv
+  obtain ⟨p, hp, rfl⟩ := Submodule.mem_map.mp hv
+  set q := p.comp (Polynomial.C (c / c') * Polynomial.X)
+  refine Submodule.mem_map.mpr ⟨q, ?_, funext fun x ↦ ?_⟩
+  · rw [Polynomial.mem_degreeLT] at hp ⊢
+    by_cases hp0 : p = 0
+    · simp only [q, hp0, Polynomial.zero_comp, Polynomial.degree_zero]
+      exact WithBot.bot_lt_coe deg
+    have hlin : (Polynomial.C (c / c') * Polynomial.X).natDegree ≤ 1 :=
       (natDegree_C_mul_le _ _).trans natDegree_X_le
-    exact (Nat.mul_le_mul_left _ this).trans (Nat.mul_one _).le
-  refine ⟨T, hT, _, ReedSolomon.evalOnPoints_mem_code_of_natDegree_lt hq, fun x hx ↦ ?_⟩
-  rw [← hvT x hx]
-  change q.eval (cosetDomain (EF := EF) m hm x) = p.eval (D x)
-  simp only [q, eval_comp, eval_mul, eval_C, eval_X]
-  congr 1
-  rw [cosetDomain_apply, hDc]
-  field_simp
+    have hq : q.natDegree ≤ p.natDegree :=
+      natDegree_comp_le.trans ((Nat.mul_le_mul_left _ hlin).trans (Nat.mul_one _).le)
+    refine lt_of_le_of_lt (Polynomial.degree_le_natDegree.trans (WithBot.coe_le_coe.mpr hq)) ?_
+    rwa [Polynomial.degree_eq_natDegree hp0] at hp
+  · change q.eval (D' x) = p.eval (D x)
+    simp only [q, eval_comp, eval_mul, eval_C, eval_X]
+    congr 1
+    rw [hDc', hDc]
+    field_simp
+
+/-- A word close to the Reed–Solomon code on a coset `c ⟨ω_m⟩` is close to it on the coset
+`g ⟨ω_m⟩`, which has the same codewords (`code_le_of_isLevel`). -/
+theorem agrees_cosetDomain_of_isLevel {m : ℕ} (D : SmoothCosetFftDomain m 𝕂) (hD : IsLevel D)
+    (deg : ℕ) (ρ : ℝ) (w : Fin (2 ^ m) → 𝕂) (h : Agrees D deg ρ w) :
+    Agrees (cosetDomain (EF := EF) m hD.1) deg ρ w := by
+  obtain ⟨T, hT, v, hv, hvT⟩ := h
+  exact ⟨T, hT, v, code_le_of_isLevel hD (isLevel_cosetDomain m hD.1) deg hv, hvT⟩
 
 /-- A word agreeing with the code on `(1 - δ) N` points is `δ`-near. -/
 theorem near_of_agrees (S : Setup EF lookups) (δ : ℝ) (w : S.Point → 𝕂)

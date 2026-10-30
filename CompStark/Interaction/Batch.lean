@@ -27,7 +27,9 @@ lookups:
 8. The verifier samples the batching challenge `a`.
 9. FRI runs on the tallest domain's batched DEEP word, injecting the shorter domains' batched
    DEEP words (`groupDeepWord`) when its folds reach them: ArkLib's FRI on the interaction layer
-   along Plonky3's schedule (`Setup.friProtocol`).
+   along Plonky3's schedule (`Setup.friProtocol`), on the tallest domain's subgroup `⟨ω⟩` as
+   Plonky3 runs it. A fold by `2 ^ k` at `β` adds `β ^ 2 ^ k` times the injected word, Plonky3's
+   roll-in of a reduced opening.
 
 FRI's verifier reads a batched DEEP word at a point through a query program
 (`Setup.readGroupDeep`) that queries the trace's, the permutation trace's and the chunks' values
@@ -276,7 +278,7 @@ noncomputable def friVerifier (lα lβ : 𝕂) (terminals : Fin S.k → 𝕂) (�
     (Fri.Interaction.verifier unifSpec (S.logN S.top + S.params.logBlowup)
       (2 ^ S.params.logFinalPolyLen) S.params.numQueries ($ᵗ 𝕂)
       ($ᵗ (Fin S.params.numQueries → Fin (2 ^ (S.logN S.top + S.params.logBlowup))))
-      S.domainSetup.domain S.quotientAccess (S.deepReader lα lβ terminals α ζ o a)
+      S.domainSetup.friDomain S.quotientAccess (S.deepReader lα lβ terminals α ζ o a)
       (S.domainSetup.friSchedule S.friHeights))
 
 /-- The verifier after the claimed values: it samples `a` and runs FRI's verifier. -/
@@ -510,7 +512,7 @@ theorem execute_fri (lα lβ : 𝕂) (terminals : Fin S.k → 𝕂) (α ζ : �
         (Fri.Interaction.verifier unifSpec (S.logN S.top + S.params.logBlowup)
           (2 ^ S.params.logFinalPolyLen) S.params.numQueries ($ᵗ 𝕂)
           ($ᵗ (Fin S.params.numQueries → Fin (2 ^ (S.logN S.top + S.params.logBlowup))))
-          S.domainSetup.domain S.quotientAccess (S.deepReader lα lβ terminals α ζ o a)
+          S.domainSetup.friDomain S.quotientAccess (S.deepReader lα lβ terminals α ζ o a)
           (S.domainSetup.friSchedule S.friHeights)) :=
   executeStrategies_mapOutput unifSpec _ _ _ _ impl _ prover _
 
