@@ -542,7 +542,7 @@ theorem reduceQuery_ok (P : Params) (logMax index : Nat) (alpha : EF) (rows : Li
   refine ⟨hw, ?_⟩
   by_cases hb : logMax = P.logBlowup
   · subst hb
-    simp only [List.lookup_cons, beq_self_eq_true, ↓reduceIte] at h2
+    simp only [List.lookup_cons, beq_self_eq_true] at h2
     obtain ⟨-, h2⟩ := ensure_bind_eq_ok H h2
     rw [pure_eq_ok H h2, List.mergeSort_singleton]
     rfl

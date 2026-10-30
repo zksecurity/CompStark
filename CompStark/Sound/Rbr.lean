@@ -517,6 +517,7 @@ theorem not_near_deepWord {lookups : List (Lookup F)} (S : Iop.Setup EF lookups)
 section Terminal
 variable (S : Iop.Setup EF) [S.Folds] (publicValues : List F)
 
+omit [S.Folds] in
 /-- A STARK of its own: the candidates of its empty permutation trace hold exactly when the trace
 satisfies the AIR. -/
 theorem holds_iff (trace : Array F) (R : Fin S.permWidth → Fin (Challenge.d EF) → F[X]) :

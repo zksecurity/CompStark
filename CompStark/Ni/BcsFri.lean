@@ -130,6 +130,7 @@ word `j`'s domain. -/
 noncomputable def foldChallenges (betas : List EF) : FinalStatement 𝕂 S.lastFold := fun j ↦
   lift gen ^ 2 ^ foldingPrefix S.schedule j.castSucc * Challenge.toSpec (betas.getD j 0)
 
+omit [S.Folds] in
 theorem committedWord_friOracles (cache : Merkle.Cache F (Digest F)) (commits : List (Cap F))
     (coeffs : Array EF) (i : Fin (S.lastFold + 1))
     (x : (S.domain.subdomain (foldingPrefix S.schedule i.castSucc)).toFinset) :
@@ -142,6 +143,7 @@ theorem committedWord_friOracles (cache : Merkle.Cache F (Digest F)) (commits : 
   simp only [Fin.val_castSucc, show i.val ≠ S.lastFold + 1 by omega, ↓reduceDIte]
   exact congrFun (eq_of_heq ((cast_heq _ _).trans (cast_heq _ _))) x
 
+omit [S.Folds] in
 theorem finalPolynomial_friOracles (cache : Merkle.Cache F (Digest F)) (commits : List (Cap F))
     (coeffs : Array EF) :
     finalPolynomial S.schedule (friOracles S cache commits coeffs) =
@@ -150,6 +152,7 @@ theorem finalPolynomial_friOracles (cache : Merkle.Cache F (Digest F)) (commits 
   simp only [Fin.val_last, ↓reduceDIte]
   exact eq_of_heq ((cast_heq _ _).trans (cast_heq _ _))
 
+omit [S.Folds] in
 /-- The extracted word `i` at the point of index `z` of its domain. -/
 theorem committedFunction_friOracles (cache : Merkle.Cache F (Digest F)) (commits : List (Cap F))
     (coeffs : Array EF) (i : Fin (S.lastFold + 1))

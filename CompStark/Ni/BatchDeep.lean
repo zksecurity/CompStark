@@ -915,11 +915,11 @@ theorem perm_part (hz : Challenge.toSpec zeta = ζ)
       refine ⟨fun c ↦ absurd c.isLt (by omega), fun c ↦ absurd c.isLt (by omega)⟩
     have hq0 : q (⟨S.air i, S.logN i, S.lookups i⟩, proof.permutationLocal.getD i #[],
         proof.permutationNext.getD i #[]) = false := by
-      simp only [hq, ← lookups_eq, hp, List.isEmpty_nil, Bool.not_true]
+      simp only [hq, hp, List.isEmpty_nil, Bool.not_true]
     simp only [hq0, Bool.false_eq_true, ↓reduceIte, hpo, List.map_nil, dite_eq_ite, ite_self]
   · have hq1 : q (⟨S.air i, S.logN i, S.lookups i⟩, proof.permutationLocal.getD i #[],
         proof.permutationNext.getD i #[]) = true := by
-      simp only [hq, ← lookups_eq, Bool.not_eq_eq_eq_not, Bool.not_true,
+      simp only [hq, Bool.not_eq_eq_eq_not, Bool.not_true,
         List.isEmpty_eq_false_iff]
       exact hp
     simp only [hq1, ↓reduceIte, hG, hψ]

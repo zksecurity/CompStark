@@ -334,6 +334,7 @@ grinding witness, as FRI's first commitment ends its round after FRI's domain se
 def boundDigests (cap : Digest F) (input : List F) : List (Digest F) :=
   boundDigestsOf S.params (starkSeedS S).length cap input
 
+omit [S.Folds] in
 theorem length_boundDigests_le (cap : Digest F) (input : List F) :
     (boundDigests S cap input).length ≤ 2 ^ (S.params.capHeight + 1) :=
   length_boundDigestsOf_le _ _ _ _

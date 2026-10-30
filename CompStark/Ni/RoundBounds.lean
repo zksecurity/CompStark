@@ -188,8 +188,10 @@ noncomputable def roundBound : ENNReal :=
     max (powFraction F S.params.commitPowBits * ⨆ i, friFoldError S δ loss i)
       (powFraction F S.params.queryPowBits * friQueryError S δ loss)
 
+omit [S.Folds] in
 theorem roundError_eq : roundError S δ δ' = ⨅ loss, roundBound S δ δ' loss := rfl
 
+omit [S.Folds] in
 theorem streamLen_eq : S.streamLen = S.params.numQueries + Challenge.d EF + 1 := rfl
 
 /-- **One fresh answer.** The bad event of round `i` on the prefix transcript of `i` earlier

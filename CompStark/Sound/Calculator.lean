@@ -317,7 +317,6 @@ theorem batchingErrorOf_le_calc (hp : Nat.card F = p) (B : McaBound) (hB : B.Hol
   · have hltR : (δ : ℝ) < δ' := by
       have := (Rat.cast_lt (K := ℝ)).mpr hlt.1
       rw [hδ, hδ']
-      push_cast at this ⊢
       exact this
     have hudN : (δ : ℝ) ≤ (1 - S.rate) / 2 - 1 / S.size := by
       have := (Rat.cast_le (K := ℝ)).mpr hlt.2
@@ -710,7 +709,7 @@ theorem maxQ_append (l l' : List ℚ) : maxQ (l ++ l') = max (maxQ l) (maxQ l') 
 theorem maxTerms_le {ε : ℚ} (h0 : 0 ≤ ε) : ∀ {l : List (String × ℚ)}, (∀ x ∈ l, x.2 ≤ ε) →
     maxTerms l ≤ ε
   | [], _ => h0
-  | x :: l, h => max_le (h x List.mem_cons_self)
+  | x :: _, h => max_le (h x List.mem_cons_self)
       (maxTerms_le h0 fun y hy ↦ h y (List.mem_cons_of_mem _ hy))
 
 theorem powFractionQ_nonneg' (p bits : ℕ) : 0 ≤ powFractionQ p bits := by

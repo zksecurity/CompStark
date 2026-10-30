@@ -54,6 +54,7 @@ theorem friWordAt_congr (h : CapSameUnder cache cache' root) :
   unfold CapSameUnder SameUnder at h
   simp only [friWordAt, leafRow, Merkle.extractCapRow, h]
 
+omit [S.Folds] in
 theorem friOracles_congr (commits : List (Cap F)) (coeffs : Array EF)
     (h : ∀ i < S.lastFold + 1, CapSameUnder cache cache' (commits.getD i #[])) :
     friOracles S cache commits coeffs = friOracles S cache' commits coeffs := by
@@ -68,6 +69,7 @@ theorem friOracles_congr (commits : List (Cap F)) (coeffs : Array EF)
 first fold round. -/
 def friOffset (i : Nat) : Nat := if i = 0 then (friSeedS S).length else 0
 
+omit [S.Folds] in
 theorem getD_commits (block : Nat → List F) (i : Nat) (hi : i < S.lastFold + 1) :
     ((List.range (S.lastFold + 1)).map fun i ↦
       capFrom (block (3 + i)) (if i = 0 then (friSeedS S).length else 0)

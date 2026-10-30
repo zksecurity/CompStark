@@ -92,6 +92,7 @@ theorem mem_matHeights_batchRounds (P : Params) (instances : List (Instance F))
     · refine List.mem_map.mpr ⟨_, List.getElem_mem hz, ?_⟩
       simp only [List.getElem_zip]
 
+omit [BaseField F] in
 theorem mem_extHeights (P : Params) (instances : List (Instance F)) (a : ℕ) :
     a ∈ extHeights P instances ↔ ∃ I ∈ instances, I.logN + P.logBlowup = a := by
   simp only [extHeights, List.mem_filter, List.mem_reverse, List.mem_range, List.any_eq_true,
@@ -101,6 +102,7 @@ theorem mem_extHeights (P : Params) (instances : List (Instance F)) (a : ℕ) :
   · rintro ⟨I, hI, rfl⟩
     exact ⟨Nat.lt_succ_of_le ((le_foldl_max _ 0).2 _ (List.mem_map_of_mem hI)), I, hI, rfl⟩
 
+omit [BaseField F] in
 theorem pairwise_extHeights (P : Params) (instances : List (Instance F)) :
     (extHeights P instances).Pairwise (· > ·) := by
   refine List.Pairwise.filter _ ?_
@@ -310,7 +312,7 @@ theorem verifierCallsOf_le (P : Params) (instances : List (Instance F)) (t k : �
     omega
   unfold verifierCallsOf
   dsimp only
-  gcongr <;> omega
+  gcongr
 
 end CompStark.Batch
 
@@ -410,6 +412,7 @@ theorem verifierQueries_le (hm : 0 < C.params.maxLogArity) :
           (1 + (twoAdicity F + C.params.logBlowup) + 2 * (C.k - 1)))) :=
   Nat.add_le_add_left (C.verifierCalls_le EF hm) _
 
+omit [Challenge F EF] in
 /-- On a proof whose degree bits pass `keyOk`, against common data of the statement's lookups,
 the verifier checks the statement's instances at the proof's lengths. -/
 theorem instancesOf_eq (common : CompStark.Batch.Common F)
@@ -424,6 +427,7 @@ theorem instancesOf_eq (common : CompStark.Batch.Common F)
   simp only [List.getElem_map, List.getElem_zip, List.getElem_ofFn]
   rw [List.getD_eq_getElem _ _ (by rw [hdl]; simpa only [List.length_ofFn] using h2)]
 
+omit [Challenge F EF] in
 /-- `keyOk` checks one degree bit per AIR. -/
 theorem length_degreeBits_of_keyOk (common : CompStark.Batch.Common F)
     (proof : CompStark.Batch.BatchProof F EF)
