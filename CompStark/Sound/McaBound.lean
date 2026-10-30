@@ -4,7 +4,8 @@ Released under Apache 2.0 license as described in the file LICENSE.
 -/
 module
 
-public import CompStark.Sound.PowersMca
+public import ArkLib.Data.CodingTheory.ProximityGap.BCIKS20.CurveUniqueAgreement
+public import ArkLib.Data.CodingTheory.ProximityGenerator.PolynomialGenerator
 public import
   ArkLib.Data.CodingTheory.ReedSolomon.MutualCorrelatedAgreement.Johnson.CurveProbability
 
@@ -19,8 +20,9 @@ security calculator (`CompStark/SecurityCalculator.lean`) is parametric in the b
 soundness theorems built on it take `Holds` as their hypothesis.
 
 * `uniqueDecoding`: within the unique-decoding radius, `2 ⌊δ N⌋ ≤ N - k`, at most `M N` exceptional
-  seeds (`uniqueDecoding_holds`, from `mcaError_powers_le` at the radius `⌊δ N⌋ / N`, which has the
-  same MCA events).
+  seeds (`uniqueDecoding_holds`, from ArkLib's exact power agreement for curves below the
+  unique-decoding radius, [BCIKS20] Theorem 6.1, at the radius `⌊δ N⌋ / N`, which has the same MCA
+  events).
 * `johnson`: up to the Johnson radius `1 - √ρ₋`, `ρ₋ = (k - 1) / N`, `M` times [DKT26] Theorem
   5.12's exception count for lines, `johnsonLineCount`, ArkLib's `johnsonExceptionCount` in `Nat`
   and `ℚ` arithmetic, at the agreement threshold `⌈(1 - δ) N⌉` and the multiplicity
@@ -168,20 +170,23 @@ theorem uniqueDecoding_holds : uniqueDecoding.Holds := by
     have : (N : ℝ) ≤ t + (N - t : ℕ) := by rw [Nat.cast_sub ht]; linarith
     have : ((N - t : ℕ) : ℝ) ≤ e := by exact_mod_cast hle
     linarith
-  refine hmono.trans ((mcaError_powers_le hk hkN M ?_).trans (le_of_eq ?_))
-  · rw [relativeUniqueDecodingRadius, dist_eq_minDist,
+  have hδ' : (e : ℝ≥0) / N ≤
+      relativeUniqueDecodingRadius (ReedSolomon.code domain k : Set (Fin N → K)) := by
+    rw [relativeUniqueDecodingRadius, dist_eq_minDist,
       ReedSolomon.minDist_of_le (by rwa [Fintype.card_fin]), Fintype.card_fin]
     refine div_le_div_of_nonneg_right ?_ (Nat.cast_nonneg N)
     rw [Nat.cast_add, Nat.cast_one, add_tsub_cancel_right, le_div_iff₀ two_pos,
       ← NNReal.coe_le_coe]
     exact_mod_cast (show e * 2 ≤ N - k by omega)
-  · have hK : (0 : ℝ) < Fintype.card K := by exact_mod_cast Fintype.card_pos
-    rw [ENNReal.ofReal_div_of_pos hK, ENNReal.ofReal_natCast]
-    simp only [uniqueDecoding]
+  refine hmono.trans ((ProximityGap.mcaError_powers_le_of_exactPowerAgreement k domain M _
+    ((M * N : ℕ) : ℝ) _ le_rfl fun U ↦ ?_).trans (le_of_eq ?_))
+  · obtain ⟨E, hE, hgood⟩ := ProximityGap.exists_exactPowerAgreement_unique domain U hk
+      (by rwa [Fintype.card_fin]) _ hδ'
+    rw [Fintype.card_fin] at hE
+    exact ⟨E, by exact_mod_cast hE, hgood⟩
+  · simp only [uniqueDecoding]
     push_cast
-    rw [← ENNReal.ofReal_natCast, ← ENNReal.ofReal_natCast]
-    congr 1
-    rw [← ENNReal.ofReal_mul (Nat.cast_nonneg _)]
+    rfl
 
 /-- The smaller of two bounds that hold holds. -/
 theorem min_holds {B B' : McaBound} (hB : B.Holds) (hB' : B'.Holds) : (B.min B').Holds := by
@@ -280,15 +285,15 @@ theorem johnsonExceptionCount_eq {n D A m : ℕ} (hD : 1 ≤ D) (hDn : D < n) (h
 
 open ReedSolomon HiddenDerivative in
 /-- **The Johnson bound holds**, from ArkLib's Johnson-regime MCA for power curves
-(`ReedSolomon.uniformExactPowerAgreement_johnson_of_fintype`, [DKT26] Theorem 5.12 for curves)
-at the slack `η = √ρ₋ / (2m)`: the multiplicity is `m`, and `√ρ₋ + η ≤ 1 - δ` because
+(`ReedSolomon.exists_johnson_curve_exactPowerAgreement_line_mul_of_fintype`, [DKT26] Theorem 5.12
+for curves) at the slack `η = √ρ₋ / (2m)`: the multiplicity is `m`, and `√ρ₋ + η ≤ 1 - δ` because
 `m ≥ r / (2 (1 - δ - r))` with `r ≥ √ρ₋`. -/
 theorem johnson_holds : johnson.Holds := by
   intro K _ _ _ _ N k M domain δ h
   simp only [johnson, decide_eq_true_eq] at h
   obtain ⟨hk, hkN, hδ0, hr⟩ := h
   rcases Nat.eq_zero_or_pos M with rfl | hM
-  · rw [mcaError_univariatePowers_zero]
+  · rw [RSCode.mcaError_zeroPowers_eq_zero]
     exact bot_le
   obtain ⟨D, rfl⟩ : ∃ D, k = D + 1 := ⟨k - 1, by omega⟩
   have hD : 1 ≤ D := by omega
@@ -343,12 +348,11 @@ theorem johnson_holds : johnson.Holds := by
   have hthr : A ≤ ⌈(Fintype.card (Fin N) : ℝ) * (1 - (δ : ℝ))⌉₊ := by
     rw [Fintype.card_fin, show (N : ℝ) * (1 - (δ : ℝ)) = ((N * (1 - δ) : ℚ) : ℝ) by push_cast; rfl,
       natCeil_ratCast]
-  refine (mcaError_univariatePowers_le_of_uniformExactPowerAgreement domain (fun w ↦
-    uniformExactPowerAgreement_johnson_of_fintype domain w hD (by rw [Fintype.card_fin]; omega)
-      hη hM (by rwa [Fintype.card_fin]) (by rwa [Fintype.card_fin])) _ hthr).trans
-    (ENNReal.ofReal_le_ofReal (div_le_div_of_nonneg_right ?_ (Nat.cast_nonneg _)))
-  refine (Nat.floor_le (mul_nonneg (Nat.cast_nonneg _)
-    (ReedSolomon.johnsonExceptionCount_nonneg _ _ _ _))).trans (le_of_eq ?_)
+  refine (ProximityGap.mcaError_powers_le_of_exactPowerAgreement (D + 1) domain M A _ _ hthr
+    fun w ↦ exists_johnson_curve_exactPowerAgreement_line_mul_of_fintype domain w hD
+      (by rw [Fintype.card_fin]; omega) hη hM (by rwa [Fintype.card_fin])
+      (by rwa [Fintype.card_fin])).trans
+    (ENNReal.ofReal_le_ofReal (div_le_div_of_nonneg_right (le_of_eq ?_) (Nat.cast_nonneg _)))
   rw [Fintype.card_fin, johnsonExceptionCount_eq hD (by omega) hm3]
   simp only [johnson, Nat.add_sub_cancel]
   push_cast

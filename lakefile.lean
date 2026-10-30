@@ -14,10 +14,11 @@ require CompPoly from git "https://github.com/mitschabaude-bot/CompPoly.git" @
 
 -- ArkLib main with Johnson-regime mutual correlated agreement for power curves and lossy mutual
 -- correlated agreement with FRI soundness from it (branch `fri-lossy-main` of the bot fork).
-require Arklib from git "https://github.com/mitschabaude-bot/ArkLib.git" @ "58536cf21876315c996e9a51ec5111140ed34a54"
+require Arklib from git "https://github.com/mitschabaude-bot/ArkLib.git" @ "a21fd97429ecb24afc7f453ad9a92afdceddf513"
 
 -- VCVio as ArkLib main pins it.
-require VCVio from git "https://github.com/Verified-zkEVM/VCVio" @ "v4.35.0"
+require VCVio from git "https://github.com/Verified-zkEVM/VCVio" @
+    "6214f907760776ceab8b1f828c9015f549e66e31"
 
 -- Mathlib as CompPoly pins it, last so that its dependencies take precedence over ArkLib's.
 require mathlib from git "https://github.com/leanprover-community/mathlib4" @ "v4.35.0"

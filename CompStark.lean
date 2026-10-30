@@ -137,8 +137,6 @@ public import CompStark.BatchSoundness
 public import CompStark.Sound.Single
 public import CompStark.Soundness
 public import CompStark.Sound.Johnson
-public import CompStark.Sound.CurveBW
-public import CompStark.Sound.PowersMca
 public import CompStark.Sound.Numbers
 public import CompStark.Sound.NumbersNi
 public import CompStark.Sound.BatchNumbersNi

@@ -4,7 +4,6 @@ Released under Apache 2.0 license as described in the file LICENSE.
 -/
 module
 
-public import CompStark.Sound.PowersMca
 public import CompStark.Sound.Johnson
 public import CompStark.Sound.Fri
 public import CompStark.Sound.Batching
