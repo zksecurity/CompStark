@@ -167,6 +167,7 @@ public import CompStark.BatchRandomOracle
 public import CompStark.BatchNonInteractive
 public import CompStark.Sound.BatchRbr
 public import CompStark.Interaction.BatchKnowledge
+public import CompStark.Interaction.BatchCompleteness
 public import CompStark.Sound.Sampling
 public import CompStark.Sound.ConsistentQueries
 public import CompStark.Sound.Rbr

@@ -15,7 +15,7 @@ require CompPoly from git "https://github.com/mitschabaude-bot/CompPoly.git" @
 -- ArkLib main with Johnson-regime mutual correlated agreement for power curves, lossy mutual
 -- correlated agreement, and FRI on the interaction layer with its knowledge certificate (branch
 -- `fri-interaction` of the bot fork).
-require Arklib from git "https://github.com/mitschabaude-bot/ArkLib.git" @ "7dbc67db398a9c96950831d6738736a930057803"
+require Arklib from git "https://github.com/mitschabaude-bot/ArkLib.git" @ "f9b34cf9709ee328d409af9de485f6af349a772a"
 
 -- VCVio as ArkLib main pins it.
 require VCVio from git "https://github.com/Verified-zkEVM/VCVio" @
