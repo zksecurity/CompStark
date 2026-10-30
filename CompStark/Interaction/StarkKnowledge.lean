@@ -30,10 +30,11 @@ word, once the check at `ζ` passes. A challenge is bad only if it is bad in the
 * FRI's rounds, with FRI's errors.
 
 `Setup.extraction_le` bounds the probability that the verifier accepts while no trace close to the
-committed one satisfies the AIR by the sum, at every proximity loss, and `Setup.extraction_le_error`
-by the knowledge error `knowledgeError`. For a statement, the prover first sends the length
-(`Statement.certificate`), and `Statement.extraction_le` bounds the same event by the statement's
-knowledge error, the largest over the admitted lengths.
+committed one satisfies the AIR by the sum, at every proximity loss, and
+`Setup.extraction_le_knowledgeError` by the knowledge error `knowledgeError`. For a statement, the prover first sends the length, and
+`Statement.extraction_le_knowledgeError` bounds the same event by the statement's knowledge
+error, the largest over the admitted lengths: whatever length the prover sends, the certificate
+at that length bounds the rest.
 -/
 
 @[expose] public section
@@ -248,18 +249,20 @@ noncomputable def certificate (hδ' : (δ' : ℝ) < 1 - S.rate) (loss : ℝ≥0)
       S.friCertificate publicValues δ path.1 path.2.1 path.2.2.1 path.2.2.2.1 path.2.2.2.2.1
         path.2.2.2.2.2.1 loss
 
-/-- FRI's query term and folds' errors at the proximity loss `loss`. -/
-noncomputable def friBound (loss : ℝ≥0) : ENNReal :=
-  (S.friSchedule []).foldError (2 ^ S.params.logFinalPolyLen) δ loss S.domain +
-    ENNReal.ofReal (1 - δ + (S.friSchedule []).numFolds * loss) ^ S.params.numQueries
+/-- FRI's folds' errors and query term at the proximity loss `loss`, with inputs injected at the
+log sizes `heights`. -/
+noncomputable def friBound {lookups : List (Lookup F)} (T : Iop.Setup EF lookups)
+    (heights : List ℕ) (δ loss : ℝ≥0) : ENNReal :=
+  (T.friSchedule heights).foldError (2 ^ T.params.logFinalPolyLen) δ loss T.domain +
+    ENNReal.ofReal (1 - δ + (T.friSchedule heights).numFolds * loss) ^ T.params.numQueries
 
 /-- The certificate's largest path error: the folding, out-of-domain and batching errors, and
 FRI's at the proximity loss. -/
 theorem maxError_certificate (hδ' : (δ' : ℝ) < 1 - S.rate) (loss : ℝ≥0) :
     (S.certificate publicValues δ δ' hδ' loss).challenges.maxError S.protocol.roles ≤
-      foldingError S δ' + outOfDomainError S δ' + batchingError S δ δ' + S.friBound δ loss := by
+      foldingError S δ' + outOfDomainError S δ' + batchingError S δ δ' + S.friBound [] δ loss := by
   have hfri : ∀ T α Q ζ o a, RoundExtractor.ChallengeSchedule.maxError (S.friProtocol []).roles
-      (S.friCertificate publicValues δ T α Q ζ o a loss).challenges ≤ S.friBound δ loss := by
+      (S.friCertificate publicValues δ T α Q ζ o a loss).challenges ≤ S.friBound [] δ loss := by
     intro T α Q ζ o a
     refine (Fri.Interaction.maxError_certificate (S.logN + S.params.logBlowup)
       (2 ^ S.params.logFinalPolyLen) S.params.numQueries
@@ -574,7 +577,7 @@ theorem extraction_le (hδ' : (δ' : ℝ) < 1 - S.rate) (loss : ℝ≥0)
     Pr{let result ← (executeStrategies unifSpec S.protocol.tree S.protocol.roles
       S.protocol.oracles noAccess noImpl prover (S.verifier publicValues))}[
         result.2.2 = true ∧ S.Far publicValues δ' result.1.1] ≤
-      foldingError S δ' + outOfDomainError S δ' + batchingError S δ δ' + S.friBound δ loss := by
+      foldingError S δ' + outOfDomainError S δ' + batchingError S δ δ' + S.friBound [] δ loss := by
   have key := (S.certificate publicValues δ δ' hδ' loss).executeStrategies_extraction_le unifSpec
     (QueryImpl.id' unifSpec) S.protocol.oracles noAccess noImpl prover (S.verifier publicValues)
     (S.samplesChallenges_verifier publicValues δ δ' hδ' loss)
@@ -609,12 +612,6 @@ namespace Statement
 variable (C : Statement F) (EF : Type) [Challenge F EF] (publicValues : List F)
   (δ δ' : ℕ → ℝ≥0)
 
-/-- The input state for a statement: a length, a trace message and a trace close to it satisfying
-the AIR at that length. -/
-def rootState : KnowledgeState where
-  Witness := (n : C.Length) × (C.setup EF n).TraceMessage × Array F
-  holds w := ((C.setup EF w.1).rootState publicValues (δ' w.1)).holds w.2
-
 /-- No trace close to an execution's committed trace satisfies the AIR at its length. -/
 def Far (path : (C.protocol EF).tree.ExecutionPath) : Prop :=
   (C.setup EF path.1).Far publicValues (δ' (path.1 : C.Length).1) path.2.1
@@ -626,32 +623,17 @@ theorem rate_setup (n : C.Length) : (C.setup EF n).rate = C.rate :=
 
 variable (C)
 
-/-- **The STARK's knowledge certificate for a statement**: the length, then the STARK's
-certificate at that length, at the proximity loss `loss n`. -/
-noncomputable def certificate (hδ' : ∀ n, C.Admits n → (δ' n : ℝ) < 1 - C.rate)
-    (loss : C.Length → ℝ≥0) :
-    KnowledgeCertificate (C.protocol EF).tree (C.protocol EF).roles
-      (C.rootState EF publicValues δ') where
-  extractor := fun n ↦ ⟨(C.setup EF n).rootState publicValues (δ' n), fun w ↦ ⟨n, w⟩,
-    ((C.setup EF n).certificate publicValues (δ n) (δ' n)
-      (by rw [rate_setup]; exact hδ' n.1 n.2) (loss n)).extractor⟩
-  challenges := ⟨PUnit.unit, fun n ↦ ((C.setup EF n).certificate publicValues (δ n) (δ' n)
-      (by rw [rate_setup]; exact hδ' n.1 n.2) (loss n)).challenges⟩
-  prover_preserving := ⟨fun _ _ _ h ↦ h, fun n ↦ ((C.setup EF n).certificate publicValues (δ n)
-      (δ' n) (by rw [rate_setup]; exact hδ' n.1 n.2) (loss n)).prover_preserving⟩
-  local_bound := fun n ↦ ((C.setup EF n).certificate publicValues (δ n) (δ' n)
-      (by rw [rate_setup]; exact hδ' n.1 n.2) (loss n)).local_bound
-
 /-- The STARK's error at a length, but FRI's at the proximity loss `loss`. -/
 noncomputable def lengthBound (n : C.Length) (loss : ℝ≥0) : ENNReal :=
   foldingError (C.setup EF n) (δ' n) + outOfDomainError (C.setup EF n) (δ' n) +
-    batchingError (C.setup EF n) (δ n) (δ' n) + (C.setup EF n).friBound (δ n) loss
+    batchingError (C.setup EF n) (δ n) (δ' n) + (C.setup EF n).friBound [] (δ n) loss
 
 set_option backward.isDefEq.respectTransparency false in
 /-- **Knowledge soundness for a statement, at proximity losses.** Against any prover, the
 verifier accepts while no trace close to the committed trace satisfies the AIR at the claimed
 length with probability at most the largest over the lengths of the STARK's errors there, FRI's
-at the proximity loss `loss n`. -/
+at the proximity loss `loss n`: whatever length the prover sends, the STARK's certificate there
+bounds the rest. -/
 theorem extraction_le (hδ' : ∀ n, C.Admits n → (δ' n : ℝ) < 1 - C.rate)
     (loss : C.Length → ℝ≥0) {OutP : (C.protocol EF).tree.ExecutionPath → Type}
     (prover : _root_.Interaction.Oracle.Prover.Strategy unifSpec (C.protocol EF).tree
@@ -660,36 +642,14 @@ theorem extraction_le (hδ' : ∀ n, C.Admits n → (δ' n : ℝ) < 1 - C.rate)
       (C.protocol EF).oracles noAccess noImpl prover (C.verifier EF publicValues))}[
         result.2.2 = true ∧ C.Far EF publicValues δ' result.1] ≤
       ⨆ n, C.lengthBound EF δ δ' n (loss n) := by
-  have hδ'' (n : C.Length) : (δ' n : ℝ) < 1 - (C.setup EF n).rate := by
-    rw [rate_setup]; exact hδ' n.1 n.2
-  have fresh : SamplesChallenges unifSpec (QueryImpl.id' unifSpec) (C.protocol EF).tree
-      (C.protocol EF).roles (C.protocol EF).oracles noAccess noImpl _ (C.verifier EF publicValues)
-      (C.certificate EF publicValues δ δ' hδ' loss).challenges := by
-    intro n after hafter
-    rw [simulateQ_id', Statement.verifier, simulateQ_pure, mem_support_pure_iff] at hafter
-    subst hafter
-    exact (C.setup EF n).samplesChallenges_verifier publicValues (δ n) (δ' n) (hδ'' n) (loss n)
-  have key := (C.certificate EF publicValues δ δ' hδ' loss).executeStrategies_extraction_le
-    unifSpec (QueryImpl.id' unifSpec) (C.protocol EF).oracles noAccess noImpl prover
-    (C.verifier EF publicValues) fresh
-  rw [simulateQ_id'] at key
-  refine (prEvent_mono_of_support _ _ _ fun result hresult h ↦ ?_).trans (key.trans ?_)
-  · obtain ⟨hacc, hfar⟩ := h
-    rw [execute_protocol] at hresult
-    obtain ⟨chosen, -, hresult⟩ := support_bind_exists hresult
-    obtain ⟨r, hr, hresult⟩ := support_bind_exists hresult
-    rw [mem_support_pure_iff] at hresult
-    subst hresult
-    obtain ⟨w, hw⟩ := (C.setup EF chosen.1).terminal_holds_of_accepts publicValues
-      (δ (chosen.1 : C.Length).1) (δ' (chosen.1 : C.Length).1) (loss chosen.1) (hδ'' chosen.1)
-      (OutP := fun path ↦ OutP ⟨chosen.1, path⟩) chosen.2 r hr hacc
-    refine ⟨w, hw, fun hroot ↦ ?_⟩
-    obtain ⟨⟨P, hP, hagree, heq⟩, hsat⟩ := hroot
-    rw [heq] at hsat
-    exact hfar P ⟨hP, hagree⟩ hsat
-  · refine iSup_le fun n ↦ ?_
-    exact ((C.setup EF n).maxError_certificate publicValues (δ n) (δ' n) (hδ'' n) (loss n)).trans
-      (le_iSup (fun n ↦ C.lengthBound EF δ δ' n (loss n)) n)
+  rw [execute_protocol]
+  refine prEvent_bind_le_of_forall_le_of_support _ _ _ fun chosen _ ↦ ?_
+  rw [bind_pure_comp, prEvent_map]
+  exact ((C.setup EF chosen.1).extraction_le publicValues (δ (chosen.1 : C.Length).1)
+    (δ' (chosen.1 : C.Length).1)
+    (by rw [rate_setup]; exact hδ' (chosen.1 : C.Length).1 (chosen.1 : C.Length).2)
+    (loss chosen.1) (OutP := fun path ↦ OutP ⟨chosen.1, path⟩) chosen.2).trans
+    (le_iSup (fun n ↦ C.lengthBound EF δ δ' n (loss n)) chosen.1)
 
 /-- **Knowledge soundness for a statement.** Against any prover, the verifier accepts while no
 trace close to the committed trace satisfies the AIR at the claimed length with probability at
@@ -705,7 +665,7 @@ theorem extraction_le_knowledgeError (hδ' : ∀ n, C.Admits n → (δ' n : ℝ)
       Iop.knowledgeError (C.setup EF n) (δ n) (δ' n) := by
     rw [Statement.knowledgeError, iSup_subtype']
   refine ENNReal.le_of_forall_pos_le_add fun ε hε hlt ↦ ?_
-  have hloss (n : C.Length) : ∃ loss, (C.setup EF n).friBound (δ n) loss ≤
+  have hloss (n : C.Length) : ∃ loss, (C.setup EF n).friBound [] (δ n) loss ≤
       friError (C.setup EF n) (δ n) + ε := by
     have hfin : friError (C.setup EF n) (δ n) < ⊤ := by
       refine lt_of_le_of_lt (le_trans (le_add_self) (le_iSup (fun n : C.Length ↦

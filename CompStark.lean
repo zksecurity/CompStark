@@ -128,6 +128,7 @@ public import CompStark.Interaction.Fri
 public import CompStark.Interaction.Execution
 public import CompStark.Interaction.Stark
 public import CompStark.Interaction.Gate
+public import CompStark.Interaction.Batch
 public import CompStark.Sound.Steps
 public import CompStark.Sound.Fri
 public import CompStark.Sound.Algebra
@@ -166,6 +167,7 @@ public import CompStark.Batch.Setup
 public import CompStark.BatchRandomOracle
 public import CompStark.BatchNonInteractive
 public import CompStark.Sound.BatchRbr
+public import CompStark.Interaction.BatchKnowledge
 public import CompStark.Sound.Sampling
 public import CompStark.Sound.ConsistentQueries
 public import CompStark.Sound.Rbr

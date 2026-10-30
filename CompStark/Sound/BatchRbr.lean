@@ -277,24 +277,21 @@ theorem prob_zetaBad_le (α : 𝕂)
   (Sound.prob_zetaBad_le _ _ _ _ δ' _ _ _ _).trans
     (le_iSup (fun i ↦ outOfDomainError (S.instanceSetup i) δ') _)
 
-/-- Round `a`: a uniform `a` is bad with probability at most the worst instance's batching
+/-- Round `a`: a uniform `a` is bad with probability at most the failing instance's batching
 error over the opened words of its domain size. -/
-theorem prob_batchBad_le (α : 𝕂)
+theorem prob_batchBad_le_failing (α : 𝕂)
     (quotients : (i : Fin S.k) → Fin (S.instanceSetup i).chunks → Fin (Challenge.d EF) →
       (S.instanceSetup i).Point → F) (ζ : 𝕂)
     (openings : (i : Fin S.k) → Openings (S.instanceSetup i)) :
+    let i := failing S publicValues δ' traces perms terminals lα lβ
     Pr{let a ← $ᵗ 𝕂}[BatchBad S publicValues δ δ' traces perms terminals lα lβ α quotients ζ
       openings a] ≤
-      ⨆ i, batchingErrorOf (S.instanceSetup i)
-        (S.groupNumOpened (S.logN i + S.params.logBlowup)) δ
+      batchingErrorOf (S.instanceSetup i) (S.groupNumOpened (S.logN i + S.params.logBlowup)) δ
         δ' := by
   classical
-  set i := failing S publicValues δ' traces perms terminals lα lβ
+  intro i
   set p : Iop.Batch.Prover S := ⟨traces, fun _ _ ↦ perms, fun _ _ ↦ terminals,
     fun _ _ _ ↦ quotients, fun _ _ _ _ ↦ openings⟩
-  refine le_trans ?_ (le_iSup (fun i ↦ batchingErrorOf (S.instanceSetup i)
-    (S.groupNumOpened (S.logN i + S.params.logBlowup)) δ
-    δ') i)
   rw [SampleableType.prEvent_uniformSample]
   by_cases hfar : NearTogether (S.instanceSetup i) δ'
     (groupComponents p lα lβ α ζ i)
@@ -314,6 +311,21 @@ theorem prob_batchBad_le (α : 𝕂)
       exact and_iff_right hfar
   rw [hset]
   exact batchingStep _ _ δ _ _ hfar
+
+/-- Round `a`: a uniform `a` is bad with probability at most the worst instance's batching
+error over the opened words of its domain size. -/
+theorem prob_batchBad_le (α : 𝕂)
+    (quotients : (i : Fin S.k) → Fin (S.instanceSetup i).chunks → Fin (Challenge.d EF) →
+      (S.instanceSetup i).Point → F) (ζ : 𝕂)
+    (openings : (i : Fin S.k) → Openings (S.instanceSetup i)) :
+    Pr{let a ← $ᵗ 𝕂}[BatchBad S publicValues δ δ' traces perms terminals lα lβ α quotients ζ
+      openings a] ≤
+      ⨆ i, batchingErrorOf (S.instanceSetup i)
+        (S.groupNumOpened (S.logN i + S.params.logBlowup)) δ
+        δ' :=
+  (prob_batchBad_le_failing S publicValues δ δ' traces perms terminals lα lβ α quotients ζ
+    openings).trans (le_iSup (fun i ↦ batchingErrorOf (S.instanceSetup i)
+      (S.groupNumOpened (S.logN i + S.params.logBlowup)) δ δ') _)
 
 /-- FRI fold `j`: a uniform challenge is bad with probability at most the fold's error, for every
 committed word and injected words. -/
