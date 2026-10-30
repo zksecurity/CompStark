@@ -35,7 +35,8 @@ at `ζ` (`ConstraintsHoldAt`) and FRI accepts.
 An `Iop.Prover`, the prover's words and messages as functions of the challenges before them,
 plays the protocol (`Prover.strategy`), with FRI's honest prover on its DEEP word; it is accepted
 whenever its claimed values pass the check at `ζ` and its DEEP word has low degree
-(`Prover.strategy_accepts`).
+(`Prover.strategy_accepts`). The honest prover of a satisfying trace meets both
+(`Setup.completeness`, `CompStark/Interaction/StarkCompleteness.lean`).
 -/
 
 @[expose] public section
