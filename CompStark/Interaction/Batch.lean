@@ -19,7 +19,8 @@ lookups:
 1. The prover sends every instance's extended trace as one oracle (`Setup.TraceMessage`).
 2. The verifier samples the lookup challenges `(α_L, β_L)`.
 3. The prover sends every instance's extended permutation trace as one oracle
-   (`Setup.PermMessage`), then every instance's terminal in the clear.
+   (`Setup.PermMessage`), then the terminal of every instance with lookups in the clear
+   (`Setup.Terminals`), as Plonky3 sends them.
 4. The verifier samples the constraint-folding challenge `α`.
 5. The prover sends every instance's quotient chunks as one oracle (`Setup.QuotientMessage`).
 6. The verifier samples the out-of-domain point `ζ`.
@@ -112,8 +113,19 @@ def afterAlpha : Protocol := .oracle S.QuotientMessage S.afterQuotient
 /-- After the terminals: the constraint-folding challenge `α`. -/
 def afterTerminals : Protocol := .public .receiver 𝕂 fun _ ↦ S.afterAlpha
 
-/-- After the permutation traces: every instance's terminal in the clear. -/
-def afterPerm : Protocol := .public .sender (Fin S.k → 𝕂) fun _ ↦ S.afterTerminals
+/-- The instances with lookups. -/
+def lookupInstances : Finset (Fin S.k) := Finset.univ.filter fun i ↦ S.lookups i ≠ []
+
+/-- The terminals the prover sends: one for each instance with lookups. -/
+abbrev Terminals : Type := S.lookupInstances → 𝕂
+
+/-- The terminals of every instance: the sent terminal of an instance with lookups, and `0` for
+an instance without. -/
+def extendTerminals (τ : S.Terminals) : Fin S.k → 𝕂 :=
+  fun i ↦ if h : i ∈ S.lookupInstances then τ ⟨i, h⟩ else 0
+
+/-- After the permutation traces: the terminal of every instance with lookups in the clear. -/
+def afterPerm : Protocol := .public .sender S.Terminals fun _ ↦ S.afterTerminals
 
 /-- After the lookup challenges: every instance's permutation trace as an oracle. -/
 def afterLookup : Protocol := .oracle S.PermMessage S.afterPerm
@@ -319,7 +331,8 @@ noncomputable def verifierAfterTerminals (lα lβ : 𝕂) (terminals : Fin S.k �
 noncomputable def verifierAfterPerm (lα lβ : 𝕂) :
     Verifier.Strategy unifSpec S.afterPerm.tree S.afterPerm.roles S.afterPerm.oracles
       S.permAccess (fun _ ↦ Bool) :=
-  fun terminals ↦ pure (S.verifierAfterTerminals publicValues lα lβ terminals)
+  fun terminals ↦
+    pure (S.verifierAfterTerminals publicValues lα lβ (S.extendTerminals terminals))
 
 /-- The verifier after the lookup challenges: it receives the permutation traces. -/
 noncomputable def verifierAfterLookup (lα lβ : 𝕂) :
@@ -613,7 +626,7 @@ theorem execute_afterPerm (impl : QueryImpl (OracleSpec.ofPFunctor S.permAccess)
         let result ← executeStrategies unifSpec S.afterTerminals.tree S.afterTerminals.roles
           S.afterTerminals.oracles S.permAccess impl
           (OutP := fun path ↦ OutP ⟨chosen.1, path⟩) chosen.2
-          (S.verifierAfterTerminals publicValues lα lβ chosen.1)
+          (S.verifierAfterTerminals publicValues lα lβ (S.extendTerminals chosen.1))
         return ⟨⟨chosen.1, result.1⟩, result.2.1, result.2.2⟩) :=
   executeStrategies_receive unifSpec _ _ _ impl prover _
 

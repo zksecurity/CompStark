@@ -79,13 +79,13 @@ noncomputable def afterAlphaStrategy (l : 𝕂 × 𝕂) (α : 𝕂) :
   pure ⟨fun x ↦ p.quotient l.1 l.2 α x.1 x.2.1.1 x.2.1.2 x.2.2, fun ζ ↦
     pure (p.afterZetaStrategy l α ζ)⟩
 
-/-- The strategy after the lookup challenges: the permutation traces and the terminals, then the
-rest after `α`. -/
+/-- The strategy after the lookup challenges: the permutation traces and the terminals of the
+instances with lookups, then the rest after `α`. -/
 noncomputable def afterLookupStrategy (l : 𝕂 × 𝕂) :
     _root_.Interaction.Oracle.Prover.Strategy unifSpec S.afterLookup.tree S.afterLookup.roles
       (fun _ ↦ Unit) :=
-  pure ⟨fun x ↦ p.perm l.1 l.2 x.1 x.2.1.1 x.2.1.2 x.2.2, pure ⟨p.terminal l.1 l.2, fun α ↦
-    pure (p.afterAlphaStrategy l α)⟩⟩
+  pure ⟨fun x ↦ p.perm l.1 l.2 x.1 x.2.1.1 x.2.1.2 x.2.2,
+    pure ⟨fun i ↦ p.terminal l.1 l.2 i.1, fun α ↦ pure (p.afterAlphaStrategy l α)⟩⟩
 
 /-- The strategy of a batch prover's words and messages, as functions of the challenges before
 them: it sends them, and runs FRI's honest prover on the batched DEEP words. -/
@@ -141,15 +141,15 @@ set_option backward.isDefEq.respectTransparency false in
 /-- The strategy from the claimed values on is accepted on every execution where the checks in the
 clear pass and every domain's batched DEEP word is a codeword on that domain. -/
 theorem Prover.afterZeta_accepts {S : Setup EF withLookups} (p : Prover S)
-    (publicValues : Fin S.k → List F) (l : 𝕂 × 𝕂) (α ζ : 𝕂) :
+    (publicValues : Fin S.k → List F) (l : 𝕂 × 𝕂) (terminals : Fin S.k → 𝕂) (α ζ : 𝕂) :
     ∀ result ∈ support (executeStrategies unifSpec S.afterZeta.tree S.afterZeta.roles
       S.afterZeta.oracles S.quotientAccess
       (S.messagesImpl (fun x ↦ p.trace x.1 x.2.1 x.2.2)
         (fun x ↦ p.perm l.1 l.2 x.1 x.2.1.1 x.2.1.2 x.2.2)
         (fun x ↦ p.quotient l.1 l.2 α x.1 x.2.1.1 x.2.1.2 x.2.2))
       (p.afterZetaStrategy l α ζ)
-      (S.verifierAfterZeta publicValues l.1 l.2 (p.terminal l.1 l.2) α ζ)),
-      S.Checks publicValues l.1 l.2 (p.terminal l.1 l.2) α ζ (p.openings l.1 l.2 α ζ) →
+      (S.verifierAfterZeta publicValues l.1 l.2 terminals α ζ)),
+      S.Checks publicValues l.1 l.2 terminals α ζ (p.openings l.1 l.2 α ζ) →
       (∀ i, groupDeepWord p l.1 l.2 α ζ result.1.2.1 (S.logN i + S.params.logBlowup) ∈
         ReedSolomon.code
           ((S.instanceSetup i).domain : Fin (2 ^ (S.logN i + S.params.logBlowup)) ↪ 𝕂)
@@ -175,13 +175,13 @@ theorem Prover.afterZeta_accepts {S : Setup EF withLookups} (p : Prover S)
   obtain ⟨r3, hr3, rfl⟩ := hr2
   change ∀ i, groupDeepWord p l.1 l.2 α ζ a (S.logN i + S.params.logBlowup) ∈ _ at hcode
   have hw : S.deepWords (fun x ↦ p.trace x.1 x.2.1 x.2.2) l.1 l.2
-      (fun x ↦ p.perm l.1 l.2 x.1 x.2.1.1 x.2.1.2 x.2.2) (p.terminal l.1 l.2) α
+      (fun x ↦ p.perm l.1 l.2 x.1 x.2.1.1 x.2.1.2 x.2.2) terminals α
       (fun x ↦ p.quotient l.1 l.2 α x.1 x.2.1.1 x.2.1.2 x.2.2) ζ (p.openings l.1 l.2 α ζ) a =
       groupDeepWord p l.1 l.2 α ζ a :=
     funext fun m ↦ funext fun x ↦ groupDeepWord_congr_at _ _ l.1 l.2 α ζ a m x
       (fun _ _ _ ↦ rfl) (fun _ _ _ _ ↦ rfl) (fun _ _ _ _ ↦ rfl) fun _ ↦ rfl
   have hreads := S.reads_deepReader (fun x ↦ p.trace x.1 x.2.1 x.2.2) l.1 l.2
-    (fun x ↦ p.perm l.1 l.2 x.1 x.2.1.1 x.2.1.2 x.2.2) (p.terminal l.1 l.2) α
+    (fun x ↦ p.perm l.1 l.2 x.1 x.2.1.1 x.2.1.2 x.2.2) terminals α
     (fun x ↦ p.quotient l.1 l.2 α x.1 x.2.1.1 x.2.1.2 x.2.2) ζ (p.openings l.1 l.2 α ζ) a
   rw [hw] at hreads
   have hfit := fits_friHeights S
@@ -200,15 +200,16 @@ theorem Prover.afterZeta_accepts {S : Setup EF withLookups} (p : Prover S)
 
 set_option backward.isDefEq.respectTransparency false in
 /-- **Completeness.** A batch prover's strategy is accepted on every execution where the checks in
-the clear pass on its terminals and claimed values, and every domain's batched DEEP word is a
-codeword on that domain of degree below the trace length of the instances of that size. -/
+the clear pass on its terminals of the instances with lookups and its claimed values, and every
+domain's batched DEEP word is a codeword on that domain of degree below the trace length of the
+instances of that size. -/
 theorem Prover.strategy_accepts {S : Setup EF withLookups} (p : Prover S)
     (publicValues : Fin S.k → List F) :
     ∀ result ∈ support (executeStrategies unifSpec S.protocol.tree S.protocol.roles
       S.protocol.oracles noAccess noImpl p.strategy (S.verifier publicValues)),
       S.Checks publicValues (S.lookupOf result.1).1 (S.lookupOf result.1).2
-        (p.terminal (S.lookupOf result.1).1 (S.lookupOf result.1).2) (S.alphaOf result.1)
-        (S.zetaOf result.1)
+        (S.extendTerminals fun i ↦ p.terminal (S.lookupOf result.1).1 (S.lookupOf result.1).2 i.1)
+        (S.alphaOf result.1) (S.zetaOf result.1)
         (p.openings (S.lookupOf result.1).1 (S.lookupOf result.1).2 (S.alphaOf result.1)
           (S.zetaOf result.1)) →
       (∀ i, groupDeepWord p (S.lookupOf result.1).1 (S.lookupOf result.1).2 (S.alphaOf result.1)
@@ -270,7 +271,7 @@ theorem Prover.strategy_accepts {S : Setup EF withLookups} (p : Prover S)
   obtain ⟨r7, hr7, hr6⟩ := support_bind_exists hr6
   rw [mem_support_pure_iff] at hr6
   subst hr6
-  exact p.afterZeta_accepts publicValues l α ζ r7 hr7 hcheck hcode
+  exact p.afterZeta_accepts publicValues l _ α ζ r7 hr7 hcheck hcode
 
 end CompStark.Iop.Batch
 
@@ -446,6 +447,17 @@ theorem terminals_honest (hbal : S.Balanced traces publicValues) (lα lβ : 𝕂
       List.isEmpty_nil, Option.map_none, Option.getD_none]
   · simp only [ne_eq, List.isEmpty_iff.not.mp he, not_false_eq_true, ↓reduceIte,
       Function.comp_apply, he, Bool.false_eq_true, Option.map_some, Option.getD_some]
+
+/-- The honest terminal of an instance without lookups is `0`: its permutation trace's fold never
+adds a fraction. -/
+theorem honestPermutation_terminal_of_nil (lα lβ : 𝕂) (i : Fin S.k) (h : S.lookups i = []) :
+    (S.honestPermutation traces publicValues lα lβ i).2 = 0 := by
+  simp only [honestPermutation, h, permutationTrace_eq, accAt, rowFractions, List.zipIdx_nil,
+    List.map_nil, List.foldl_nil]
+  generalize List.range (2 ^ S.logN i) = l
+  induction l with
+  | nil => rfl
+  | cons _ _ ih => exact ih
 
 variable [Poseidon2Field F]
 
@@ -664,6 +676,20 @@ theorem constraintsHoldAt_honest (config : CompStark.Batch.ValidConfig S.params 
   rw [RingEquiv.apply_symm_apply, RingEquiv.apply_symm_apply, hchs] at h
   exact h
 
+/-- The honest terminals of the instances with lookups, extended by `0`, are the honest terminals
+of every instance. -/
+theorem extendTerminals_honest (lα lβ : 𝕂) :
+    S.extendTerminals (fun i ↦ (S.honestProver traces publicValues).terminal lα lβ i.1) =
+      (S.honestProver traces publicValues).terminal lα lβ := by
+  funext i
+  unfold extendTerminals
+  split_ifs with h
+  · rfl
+  · have hnil : S.lookups i = [] := by
+      simpa only [lookupInstances, Finset.mem_filter, Finset.mem_univ, true_and, not_not] using h
+    show 0 = Challenge.toSpec (S.honestPermutation traces publicValues lα lβ i).2
+    rw [honestPermutation_terminal_of_nil S traces publicValues lα lβ i hnil, Challenge.toSpec_zero]
+
 /-- **Completeness.** For a valid batch and traces satisfying it, the honest prover's strategy is
 accepted on every execution whose out-of-domain point `ζ` lies off the base field, so off every
 trace domain and every instance's domain, and under whose lookup challenges no lookup denominator
@@ -677,8 +703,10 @@ theorem completeness (config : CompStark.Batch.ValidConfig S.params S.instances)
       S.NoPole traces publicValues (S.lookupOf result.1).1 (S.lookupOf result.1).2 →
       result.2.2 = true :=
   fun result hres hζ hpole ↦ Prover.strategy_accepts _ publicValues result hres
-    ⟨terminals_honest S traces publicValues hsat.balanced _ _,
-      fun i ↦ constraintsHoldAt_honest _ _ _ _ i config hsat hζ hpole⟩
+    (by
+      rw [extendTerminals_honest]
+      exact ⟨terminals_honest S traces publicValues hsat.balanced _ _,
+        fun i ↦ constraintsHoldAt_honest _ _ _ _ i config hsat hζ hpole⟩)
     fun i ↦ groupDeepWord_honest_mem_code _ _ _ _ i config _ hζ
 
 end Setup

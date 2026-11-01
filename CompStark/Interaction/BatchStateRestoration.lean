@@ -63,9 +63,9 @@ theorem uniformChallenges_certificate (hδ' : (δ' : ℝ) < 1 - S.rate) (loss : 
   fun T ↦ ⟨rfl, fun l P τ ↦ ⟨rfl, fun α Q ↦ ⟨rfl, fun ζ o ↦ ⟨rfl, fun a ↦
     Fri.Interaction.uniformChallenges_certificate (S.logN S.top + S.params.logBlowup)
       (2 ^ S.params.logFinalPolyLen) S.params.numQueries
-      (S.deepWords T l.1 l.2 P τ α Q ζ o a) δ loss (Nat.two_pow_pos _) loss.coe_nonneg le_rfl
-      S.domainSetup.friDomain (S.domainSetup.friSchedule S.friHeights) 0
-      (S.deepWords T l.1 l.2 P τ α Q ζ o a _) Finset.univ⟩⟩⟩⟩
+      (S.deepWords T l.1 l.2 P (S.extendTerminals τ) α Q ζ o a) δ loss (Nat.two_pow_pos _)
+      loss.coe_nonneg le_rfl S.domainSetup.friDomain (S.domainSetup.friSchedule S.friHeights) 0
+      (S.deepWords T l.1 l.2 P (S.extendTerminals τ) α Q ζ o a _) Finset.univ⟩⟩⟩⟩
 
 /-- The verifier's checks on a branch: the lookup terminals and the constraints at `ζ`, and FRI's
 checks on the batched DEEP words read through the traces and the quotients. -/
@@ -73,12 +73,13 @@ noncomputable def terminal (p : S.protocol.tree.BranchPath) :
     OracleComp (OracleSpec.ofPFunctor (accessAfter S.protocol.tree S.protocol.oracles noAccess p))
       Bool :=
   open Classical in
-  (fun b ↦ decide (S.Checks publicValues p.2.1.1 p.2.1.2 p.2.2.2.1 p.2.2.2.2.1 p.2.2.2.2.2.2.1
-      p.2.2.2.2.2.2.2.1) && b) <$>
+  (fun b ↦ decide (S.Checks publicValues p.2.1.1 p.2.1.2 (S.extendTerminals p.2.2.2.1)
+      p.2.2.2.2.1 p.2.2.2.2.2.2.1 p.2.2.2.2.2.2.2.1) && b) <$>
     Fri.Interaction.terminal (S.logN S.top + S.params.logBlowup) (2 ^ S.params.logFinalPolyLen)
       S.params.numQueries S.domainSetup.friDomain S.quotientAccess
-      (S.deepReader p.2.1.1 p.2.1.2 p.2.2.2.1 p.2.2.2.2.1 p.2.2.2.2.2.2.1 p.2.2.2.2.2.2.2.1
-        p.2.2.2.2.2.2.2.2.1) (S.domainSetup.friSchedule S.friHeights) p.2.2.2.2.2.2.2.2.2
+      (S.deepReader p.2.1.1 p.2.1.2 (S.extendTerminals p.2.2.2.1) p.2.2.2.2.1 p.2.2.2.2.2.2.1
+        p.2.2.2.2.2.2.2.1 p.2.2.2.2.2.2.2.2.1) (S.domainSetup.friSchedule S.friHeights)
+      p.2.2.2.2.2.2.2.2.2
 
 set_option backward.isDefEq.respectTransparency false in
 /-- When the checks pass on a complete execution, closed with its traces, permutation traces and
@@ -88,7 +89,8 @@ theorem terminal_holds_of_eval (hδ' : (δ' : ℝ) < 1 - S.rate) (loss : ℝ≥0
     (h : evalWithAnswerFn (path.closingImpl S.protocol.oracles noAccess noImpl)
       (S.terminal publicValues path.toBranchPath) = true) :
     ∃ w, ((S.certificate publicValues δ δ' hδ' loss L).extractor.terminalState path).holds w := by
-  obtain ⟨T, l, P, τ, α, Q, ζ, o, a, p⟩ := path
+  obtain ⟨T, l, P, τ', α, Q, ζ, o, a, p⟩ := path
+  let τ := S.extendTerminals τ'
   have h' : (@decide _ (Classical.propDecidable (S.Checks publicValues l.1 l.2 τ α ζ o)) &&
       evalWithAnswerFn (ExecutionPath.closingImpl (tree := S.friProtocol.tree) p
         S.friProtocol.oracles S.quotientAccess (S.messagesImpl T P Q))
@@ -118,7 +120,7 @@ abbrev FriPrefix : Type :=
 
 /-- The erased prefixes of the batch. -/
 abbrev PrefixShape : Type :=
-  S.TraceMessage × (PUnit ⊕ (PUnit × (S.PermMessage × ((_ : Fin S.k → 𝕂) × (PUnit ⊕
+  S.TraceMessage × (PUnit ⊕ (PUnit × (S.PermMessage × ((_ : S.Terminals) × (PUnit ⊕
     (PUnit × (S.QuotientMessage × (PUnit ⊕ (PUnit × ((_ : S.OpeningsMessage) ×
       (PUnit ⊕ (PUnit × S.FriPrefix))))))))))))
 
@@ -154,10 +156,10 @@ theorem supErrors_certificate_le (hδ' : (δ' : ℝ) < 1 - S.rate) (loss : ℝ�
         δ δ') _
   · refine iSup_le fun l ↦ iSup_le fun α ↦ iSup_le fun ζ ↦ iSup_le fun a ↦ le_of_eq ?_
     exact Fri.Interaction.supErrors_certificate (S.logN S.top + S.params.logBlowup)
-      (2 ^ S.params.logFinalPolyLen) S.params.numQueries (S.deepWords T l.1 l.2 P τ α Q ζ o a) δ
-      loss L (Nat.two_pow_pos _) loss.coe_nonneg le_rfl S.domainSetup.friDomain
-      (S.domainSetup.friSchedule S.friHeights) 0 (S.deepWords T l.1 l.2 P τ α Q ζ o a _)
-      Finset.univ node
+      (2 ^ S.params.logFinalPolyLen) S.params.numQueries
+      (S.deepWords T l.1 l.2 P (S.extendTerminals τ) α Q ζ o a) δ loss L (Nat.two_pow_pos _)
+      loss.coe_nonneg le_rfl S.domainSetup.friDomain (S.domainSetup.friSchedule S.friHeights) 0
+      (S.deepWords T l.1 l.2 P (S.extendTerminals τ) α Q ζ o a _) Finset.univ node
 
 /-- The path sum of the node errors for uniform positions: the lookup error, the largest folding,
 out-of-domain and batching errors over the instances, and FRI's error at the proximity loss. -/
@@ -168,7 +170,7 @@ theorem pathError_nodeErrors (loss : ℝ≥0) :
         (⨆ i, batchingErrorOf (S.instanceSetup i)
           (S.groupNumOpened (S.logN i + S.params.logBlowup)) δ δ') +
         S.domainSetup.friBound S.friHeights δ loss := by
-  change (⨆ _ : S.TraceMessage, S.lookupError δ' + ⨆ _ : S.PermMessage, ⨆ _ : Fin S.k → 𝕂,
+  change (⨆ _ : S.TraceMessage, S.lookupError δ' + ⨆ _ : S.PermMessage, ⨆ _ : S.Terminals,
     (⨆ i, foldingError (S.instanceSetup i) δ') + ⨆ _ : S.QuotientMessage,
     (⨆ i, outOfDomainError (S.instanceSetup i) δ') + ⨆ _ : S.OpeningsMessage,
     (⨆ i, batchingErrorOf (S.instanceSetup i) (S.groupNumOpened (S.logN i + S.params.logBlowup))

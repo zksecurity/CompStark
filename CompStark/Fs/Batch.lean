@@ -21,11 +21,10 @@ claimed values and the batching witness; FRI's challenges as in the STARK (`friD
 lookups, Plonky3 neither squeezes nor observes a witness at the lookup challenges, which are
 `(0, 0)`. Here the commitments are the oracle messages themselves: a committed word is observed
 in full where Plonky3 observes its Merkle cap, and the preprocessed commitment, part of the
-statement, is not observed. Beyond the commitments, the observed elements differ from Plonky3's in
-one place: Plonky3 observes the terminals of the instances with lookups only, and the others are
-absent from its proof; the interactive message carries one terminal per instance, and every
-instance's terminal is observed. The public values are observed last before the first squeeze, so
-without lookups they come after the terminals, where Plonky3 observes them before.
+statement, is not observed. The terminals are those of the instances with lookups, observed in
+instance order after the permutation trace (`terminalsElems`), as Plonky3 observes them. The public
+values are observed last before the first squeeze: with lookups before the lookup challenges, and
+without lookups, where there are no terminals and the permutation trace is empty, before `α`.
 
 * `pairDraw`, `lookupDraw`: the lookup challenges, two extension elements after a grinding sample,
   or `(0, 0)` without lookups, bounded by `powFraction F bits` (`bounded_pairDraw`) or by
@@ -417,13 +416,40 @@ noncomputable def decoder : Decoder (Coins F K m) S.publicCoin :=
   (lookupDraw S.hasLookups S.params.lookupPowBits, fun _ ↦ (extDraw 0,
     (extDraw S.params.oodPowBits, fun _ ↦ (extDraw S.params.batchPowBits, S.friDecoderB K m))))
 
-/-- The batch's observations: the trace, the permutation trace and every instance's terminal,
-the quotient, the PCS's domain separator and the claimed values, FRI's with its domain separator,
-with the draws' witnesses, and the draws' squeezes. -/
+/-- The terminals as Plonky3 observes them: those of the instances with lookups, in instance
+order. -/
+noncomputable def terminalsElems (τ : S.Terminals) : List F :=
+  extsElems (τ ∘ S.lookupInstances.orderIsoOfFin rfl)
+
+/-- The observed terminals tell the terminals apart. -/
+theorem terminalsElems_injective : Function.Injective (S.terminalsElems (F := F)) :=
+  extsElems_injective.comp (S.lookupInstances.orderIsoOfFin rfl).surjective.injective_comp_right
+
+/-- The observed terminals are `d` elements per instance with lookups. -/
+theorem length_terminalsElems (τ : S.Terminals) :
+    (S.terminalsElems (F := F) τ).length = S.lookupInstances.card * Challenge.d EF :=
+  length_extsElems _
+
+/-- With lookups, the terminals are observed: some instance has lookups. -/
+theorem terminalsElems_ne_nil (hl : S.hasLookups = true) (τ : S.Terminals) :
+    S.terminalsElems (F := F) τ ≠ [] := by
+  obtain ⟨_, hmem, hne⟩ := List.any_eq_true.mp hl
+  obtain ⟨i, rfl⟩ := List.mem_ofFn.mp hmem
+  have hi : i ∈ S.lookupInstances := by
+    simpa only [lookupInstances, Finset.mem_filter, Finset.mem_univ, true_and, ne_eq,
+      Bool.not_eq_true', List.isEmpty_eq_false_iff] using hne
+  exact List.ne_nil_of_length_pos (by
+    rw [length_terminalsElems]
+    exact Nat.mul_pos (Finset.card_pos.mpr ⟨i, hi⟩) (Challenge.params EF).d_pos)
+
+/-- The batch's observations: the trace, the permutation trace and the terminals, the quotient,
+the PCS's domain separator and the claimed values, FRI's with its domain separator, with the
+draws' witnesses, and the draws' squeezes. -/
 noncomputable def observer : Observer F S.publicCoin (S.decoder K m) :=
   (wordElems, (lookupSqueezes (EF := EF) K S.hasLookups S.params.lookupPowBits,
     lookupWitnessElems S.hasLookups S.params.lookupPowBits,
-    (wordElems, (extsElems, fun _ ↦ (squeezesFor K (extSamples (EF := EF) 0), extWitnessElems 0,
+    (wordElems, (S.terminalsElems, fun _ ↦
+      (squeezesFor K (extSamples (EF := EF) 0), extWitnessElems 0,
       (wordElems, (squeezesFor K (extSamples (EF := EF) S.params.oodPowBits),
         extWitnessElems S.params.oodPowBits,
         (fun o ↦ pcsSeedB S ++ S.openingsElems o, fun _ ↦
@@ -488,9 +514,8 @@ theorem observer_prefixFree :
     (S.observer K m).PrefixFree S.publicCoin (S.decoder (F := F) K m) :=
   ⟨prefixFree_wordElems, (fixFree_lookupWitnessElems _ _).1,
     (fixFree_lookupWitnessElems _ _).2, prefixFree_wordElems,
-    prefixFree_of_length extsElems_injective fun a b ↦ by
-      show (extsElems (F := F) a).length = (extsElems b).length
-      simp only [length_extsElems],
+    prefixFree_of_length S.terminalsElems_injective fun a b ↦
+      (S.length_terminalsElems a).trans (S.length_terminalsElems b).symm,
     fun _ ↦ ⟨(fixFree_extWitnessElems 0).1, (fixFree_extWitnessElems 0).2,
       prefixFree_wordElems, (fixFree_extWitnessElems _).1, (fixFree_extWitnessElems _).2,
       prefixFree_of_length (fun _ _ h ↦ S.openingsElems_injective (List.append_cancel_left h))
@@ -504,7 +529,6 @@ theorem observer_prefixFree :
 `filled` holds before the trace. -/
 theorem observer_fills {filled : Prop} (hf : filled) :
     (S.observer K m).Fills S.publicCoin (S.decoder (F := F) K m) filled := by
-  have ht (t : Fin S.k → 𝕂) : extsElems (F := F) t ≠ [] := extsElems_ne_nil S.nonempty t
   have hQ (Q : S.QuotientMessage) : wordElems Q ≠ [] := by
     have : Nonempty ((i : Fin S.k) × ((Fin (S.instanceSetup i).chunks × Fin (Challenge.d EF)) ×
         (S.instanceSetup i).Point)) :=
@@ -516,10 +540,20 @@ theorem observer_fills {filled : Prop} (hf : filled) :
   have hpcs : pcsSeedB (F := F) S ≠ [] := by
     simp only [pcsSeedB, DomainSeparator.pcsSeed, DomainSeparator.toElems]
     exact List.cons_ne_nil _ _
-  exact fun _ ↦ ⟨fun _ _ ↦ Or.inl (Or.inl hf), fun _ _ t ↦ ⟨fun _ _ ↦ Or.inl (Or.inr (ht t)),
+  refine fun _ ↦ ⟨fun _ _ ↦ Or.inl (Or.inl hf), fun _ _ t ↦ ⟨fun _ _ ↦ Or.inl ?_,
     fun _ Q ↦ ⟨fun _ _ ↦ Or.inl (Or.inr (hQ Q)),
       fun _ _ ↦ ⟨fun _ _ ↦ Or.inl (Or.inr (List.append_ne_nil_of_left_ne_nil hpcs _)),
         fun _ ↦ friObserver_fills K m (Nat.two_pow_pos _) _ _ _⟩⟩⟩⟩
+  by_cases hl : S.hasLookups = true
+  · exact Or.inr (S.terminalsElems_ne_nil hl t)
+  · have h0 : (S.observer (F := F) K m).2.1 = 0 := by
+      show lookupSqueezes (EF := EF) K S.hasLookups S.params.lookupPowBits = 0
+      rw [Bool.eq_false_iff.mpr hl]
+      rfl
+    refine Or.inl (Or.inl ?_)
+    split
+    · exact Or.inl (Or.inl hf)
+    · exact absurd h0 ‹_›
 
 end CompStark.Iop.Batch.Setup
 

@@ -54,7 +54,7 @@ def prefixProtocol : Protocol :=
   .oracle S.TraceMessage <|
   .public .receiver (𝕂 × 𝕂) fun _ ↦
   .oracle S.PermMessage <|
-  .public .sender (Fin S.k → 𝕂) fun _ ↦
+  .public .sender S.Terminals fun _ ↦
   .public .receiver 𝕂 fun _ ↦
   .oracle S.QuotientMessage <|
   .public .receiver 𝕂 fun _ ↦
@@ -127,23 +127,31 @@ noncomputable def prefixExtractor (loss : ℝ≥0) :
     ⟨Setup.doomState (S.lookupDoom publicValues δ' T l), fun _ ↦ S.chooseTraces publicValues δ' T,
       fun P ↦ ⟨Setup.doomState (S.lookupDoom publicValues δ' T l), id, fun τ ↦
         ⟨Setup.doomState (S.lookupDoom publicValues δ' T l), id, fun α ↦
-          ⟨Setup.doomState (S.alphaDoom publicValues δ' T l P τ α), fun _ ↦ (), fun Q ↦
-            ⟨Setup.doomState (S.alphaDoom publicValues δ' T l P τ α), id, fun ζ ↦
-              ⟨Setup.doomState (S.zetaDoom publicValues δ' T l P τ α Q ζ), fun _ ↦ (), fun o ↦
-                ⟨Setup.doomState (S.zetaDoom publicValues δ' T l P τ α Q ζ), id, fun a ↦
-                  ⟨S.friState publicValues δ T l P τ α Q ζ o a loss, fun _ ↦ (),
-                    PUnit.unit⟩⟩⟩⟩⟩⟩⟩⟩⟩
+          ⟨Setup.doomState (S.alphaDoom publicValues δ' T l P (S.extendTerminals τ) α),
+            fun _ ↦ (), fun Q ↦
+            ⟨Setup.doomState (S.alphaDoom publicValues δ' T l P (S.extendTerminals τ) α), id,
+              fun ζ ↦
+              ⟨Setup.doomState (S.zetaDoom publicValues δ' T l P (S.extendTerminals τ) α Q ζ),
+                fun _ ↦ (), fun o ↦
+                ⟨Setup.doomState
+                  (S.zetaDoom publicValues δ' T l P (S.extendTerminals τ) α Q ζ), id, fun a ↦
+                  ⟨S.friState publicValues δ T l P (S.extendTerminals τ) α Q ζ o a loss,
+                    fun _ ↦ (), PUnit.unit⟩⟩⟩⟩⟩⟩⟩⟩⟩
 
 /-- The rounds' challenge programs and errors: uniform challenges, with the lookup error and the
 failing instance's folding, out-of-domain and batching errors. -/
 noncomputable def prefixChallenges :
     RoundExtractor.ChallengeSchedule S.prefixProtocol.tree S.prefixProtocol.roles :=
   fun T ↦ ⟨($ᵗ (𝕂 × 𝕂), S.lookupError δ'), fun l P ↦ ⟨PUnit.unit, fun τ ↦
-    ⟨($ᵗ 𝕂, foldingError (S.instanceSetup (S.failingOf publicValues δ' T l P τ)) δ'), fun _ _ ↦
-      ⟨($ᵗ 𝕂, outOfDomainError (S.instanceSetup (S.failingOf publicValues δ' T l P τ)) δ'),
+    ⟨($ᵗ 𝕂, foldingError
+      (S.instanceSetup (S.failingOf publicValues δ' T l P (S.extendTerminals τ))) δ'), fun _ _ ↦
+      ⟨($ᵗ 𝕂, outOfDomainError
+        (S.instanceSetup (S.failingOf publicValues δ' T l P (S.extendTerminals τ))) δ'),
         fun _ ↦ ⟨PUnit.unit, fun _ ↦
-          ⟨($ᵗ 𝕂, batchingErrorOf (S.instanceSetup (S.failingOf publicValues δ' T l P τ))
-            (S.groupNumOpened (S.logN (S.failingOf publicValues δ' T l P τ) + S.params.logBlowup))
+          ⟨($ᵗ 𝕂, batchingErrorOf
+            (S.instanceSetup (S.failingOf publicValues δ' T l P (S.extendTerminals τ)))
+            (S.groupNumOpened (S.logN (S.failingOf publicValues δ' T l P (S.extendTerminals τ)) +
+              S.params.logBlowup))
             δ δ'), fun _ ↦ PUnit.unit⟩⟩⟩⟩⟩⟩
 
 theorem prefixExtractor_isProverPreserving (loss : ℝ≥0) :
@@ -232,41 +240,41 @@ theorem prefixExtractor_isLocallyBounded (hδ' : (δ' : ℝ) < 1 - S.rate) (loss
     exact hdoom ⟨hfar, hl⟩
   · rw [_root_.RoundByRound.GameFamily.isBounded_iff]
     intro _ _
+    let i := S.failingOf publicValues δ' T l P (S.extendTerminals τ)
     refine (prEvent_mono _ _ _ fun α (h : ∃ _ : Unit,
-      ¬ ¬ S.lookupDoom publicValues δ' T l ∧ ¬ S.alphaDoom publicValues δ' T l P τ α) ↦ ?_).trans
-      (Sound.prob_alphaBad_le (S.instanceSetup (S.failingOf publicValues δ' T l P τ))
-        (publicValues (S.failingOf publicValues δ' T l P τ)) (S.challenges l.1 l.2 (S.failingOf publicValues δ' T l P τ))
-        (τ (S.failingOf publicValues δ' T l P τ)) δ' (S.traceWords T (S.failingOf publicValues δ' T l P τ))
-        (S.permWords P (S.failingOf publicValues δ' T l P τ)))
+      ¬ ¬ S.lookupDoom publicValues δ' T l ∧
+        ¬ S.alphaDoom publicValues δ' T l P (S.extendTerminals τ) α) ↦ ?_).trans
+      (Sound.prob_alphaBad_le (S.instanceSetup i) (publicValues i) (S.challenges l.1 l.2 i)
+        (S.extendTerminals τ i) δ' (S.traceWords T i) (S.permWords P i))
     obtain ⟨-, hnot, hdoom⟩ := h
     by_contra hα
     exact hdoom ⟨not_not.mp hnot, hα⟩
   · rw [_root_.RoundByRound.GameFamily.isBounded_iff]
     intro _ _
+    let i := S.failingOf publicValues δ' T l P (S.extendTerminals τ)
     refine (prEvent_mono _ _ _ fun ζ (h : ∃ _ : Unit,
-      ¬ ¬ S.alphaDoom publicValues δ' T l P τ α ∧
-        ¬ S.zetaDoom publicValues δ' T l P τ α Q ζ) ↦ ?_).trans
-      (Sound.prob_zetaBad_le (S.instanceSetup (S.failingOf publicValues δ' T l P τ))
-        (publicValues (S.failingOf publicValues δ' T l P τ)) (S.challenges l.1 l.2 (S.failingOf publicValues δ' T l P τ))
-        (τ (S.failingOf publicValues δ' T l P τ)) δ' (S.traceWords T (S.failingOf publicValues δ' T l P τ)) α
-        (S.quotientWords Q (S.failingOf publicValues δ' T l P τ)) (S.permWords P (S.failingOf publicValues δ' T l P τ)))
+      ¬ ¬ S.alphaDoom publicValues δ' T l P (S.extendTerminals τ) α ∧
+        ¬ S.zetaDoom publicValues δ' T l P (S.extendTerminals τ) α Q ζ) ↦ ?_).trans
+      (Sound.prob_zetaBad_le (S.instanceSetup i) (publicValues i) (S.challenges l.1 l.2 i)
+        (S.extendTerminals τ i) δ' (S.traceWords T i) α (S.quotientWords Q i) (S.permWords P i))
     obtain ⟨-, hnot, hdoom⟩ := h
     by_contra hζ
     exact hdoom ⟨not_not.mp hnot, hζ⟩
   · rw [_root_.RoundByRound.GameFamily.isBounded_iff]
     intro _ _
     refine (prEvent_mono _ _ _ fun a (h : ∃ w,
-      ¬ ¬ S.zetaDoom publicValues δ' T l P τ α Q ζ ∧
-        (S.friState publicValues δ T l P τ α Q ζ o a loss).holds w) ↦ ?_).trans
+      ¬ ¬ S.zetaDoom publicValues δ' T l P (S.extendTerminals τ) α Q ζ ∧
+        (S.friState publicValues δ T l P (S.extendTerminals τ) α Q ζ o a loss).holds w) ↦
+          ?_).trans
       (Sound.Batch.prob_batchBad_le_failing S publicValues δ δ' (S.traceWords T) (S.permWords P)
-        τ l.1 l.2 α (S.quotientWords Q) ζ o)
+        (S.extendTerminals τ) l.1 l.2 α (S.quotientWords Q) ζ o)
     obtain ⟨w, hnot, ⟨hsum, hcheck⟩, hw⟩ := h
     obtain ⟨⟨⟨hfar, hl⟩, hα⟩, hζ⟩ := not_not.mp hnot
     by_contra hbatch
-    have hfail := exists_failing_instance publicValues δ' (S.traceWords T) (S.permWords P) τ l.1
-      l.2 hfar hl hsum
+    have hfail := exists_failing_instance publicValues δ' (S.traceWords T) (S.permWords P)
+      (S.extendTerminals τ) l.1 l.2 hfar hl hsum
     exact Sound.Batch.not_near_deepWords S publicValues δ δ' hδ'
-      (S.transcriptOf T l P τ α Q ζ o a) hfail hcheck hα hζ hbatch
+      (S.transcriptOf T l P (S.extendTerminals τ) α Q ζ o a) hfail hcheck hα hζ hbatch
       (S.near_of_levelState δ _ loss w hw _)
 
 /-- **The rounds before FRI**, as a knowledge certificate. -/
@@ -298,8 +306,9 @@ noncomputable def certificate (hδ' : (δ' : ℝ) < 1 - S.rate) (loss : ℝ≥0)
     KnowledgeCertificate S.protocol.tree S.protocol.roles (S.rootState publicValues δ') :=
   (S.prefixCertificate publicValues δ δ' hδ' loss).append (fun _ ↦ S.friProtocol.tree)
     (fun _ ↦ S.friProtocol.roles) fun path ↦
-      S.friCertificate publicValues δ path.1 path.2.1 path.2.2.1 path.2.2.2.1 path.2.2.2.2.1
-        path.2.2.2.2.2.1 path.2.2.2.2.2.2.1 path.2.2.2.2.2.2.2.1 path.2.2.2.2.2.2.2.2.1 loss L
+      S.friCertificate publicValues δ path.1 path.2.1 path.2.2.1 (S.extendTerminals path.2.2.2.1)
+        path.2.2.2.2.1 path.2.2.2.2.2.1 path.2.2.2.2.2.2.1 path.2.2.2.2.2.2.2.1
+        path.2.2.2.2.2.2.2.2.1 loss L
 
 /-- The certificate's largest path error: the lookup error, the worst instance's error, and FRI's
 at the proximity loss. -/
@@ -322,24 +331,27 @@ theorem maxError_certificate (hδ' : (δ' : ℝ) < 1 - S.rate) (loss : ℝ≥0) 
     simp only [Iop.Setup.friBound, Fri.Interaction.threshold, zero_add, Iop.Setup.uniformPositions,
       Fri.Interaction.QueryLaw.slack_uniform, add_zero]
   change (⨆ T : S.TraceMessage, (S.lookupError δ' + ⨆ l : 𝕂 × 𝕂, ⨆ P : S.PermMessage,
-    ⨆ τ : Fin S.k → 𝕂, (foldingError (S.instanceSetup (S.failingOf publicValues δ' T l P τ)) δ' +
+    ⨆ τ : S.Terminals,
+      (foldingError (S.instanceSetup (S.failingOf publicValues δ' T l P (S.extendTerminals τ))) δ' +
       ⨆ α : 𝕂, ⨆ Q : S.QuotientMessage,
-        (outOfDomainError (S.instanceSetup (S.failingOf publicValues δ' T l P τ)) δ' +
+        (outOfDomainError
+          (S.instanceSetup (S.failingOf publicValues δ' T l P (S.extendTerminals τ))) δ' +
           ⨆ ζ : 𝕂, ⨆ o : S.OpeningsMessage,
-            (batchingErrorOf (S.instanceSetup (S.failingOf publicValues δ' T l P τ))
-              (S.groupNumOpened (S.logN (S.failingOf publicValues δ' T l P τ) +
+            (batchingErrorOf
+              (S.instanceSetup (S.failingOf publicValues δ' T l P (S.extendTerminals τ)))
+              (S.groupNumOpened (S.logN (S.failingOf publicValues δ' T l P (S.extendTerminals τ)) +
                 S.params.logBlowup)) δ δ' + ⨆ a : 𝕂,
               RoundExtractor.ChallengeSchedule.maxError S.friProtocol.roles
-                (S.friCertificate publicValues δ T l P τ α Q ζ o a loss
+                (S.friCertificate publicValues δ T l P (S.extendTerminals τ) α Q ζ o a loss
                   S.domainSetup.uniformPositions).challenges))))) ≤ _
   refine iSup_le fun T ↦ ?_
   rw [add_assoc]
   refine add_le_add le_rfl (iSup₂_le fun l P ↦ iSup_le fun τ ↦ ?_)
   refine le_trans ?_ (add_le_add (le_iSup (fun i ↦ S.instanceError δ δ' i)
-    (S.failingOf publicValues δ' T l P τ)) le_rfl)
+    (S.failingOf publicValues δ' T l P (S.extendTerminals τ))) le_rfl)
   rw [instanceError, add_assoc, add_assoc]
   refine add_le_add le_rfl (iSup₂_le fun α Q ↦ add_le_add le_rfl (iSup₂_le fun ζ o ↦
-    add_le_add le_rfl (iSup_le fun a ↦ hfri T l P τ α Q ζ o a)))
+    add_le_add le_rfl (iSup_le fun a ↦ hfri T l P (S.extendTerminals τ) α Q ζ o a)))
 
 /-! ### The verifier's challenge laws -/
 
@@ -464,7 +476,7 @@ theorem samples_afterPerm (lα lβ : 𝕂)
     (schedule : RoundExtractor.ChallengeSchedule S.afterPerm.tree S.afterPerm.roles)
     (hrest : ∀ τ, SamplesChallenges unifSpec (QueryImpl.id' unifSpec) S.afterTerminals.tree
       S.afterTerminals.roles S.afterTerminals.oracles S.permAccess impl _
-      (S.verifierAfterTerminals publicValues lα lβ τ) (schedule.2 τ)) :
+      (S.verifierAfterTerminals publicValues lα lβ (S.extendTerminals τ)) (schedule.2 τ)) :
     SamplesChallenges unifSpec (QueryImpl.id' unifSpec) S.afterPerm.tree S.afterPerm.roles
       S.afterPerm.oracles S.permAccess impl _ (S.verifierAfterPerm publicValues lα lβ)
       schedule := by
@@ -527,12 +539,12 @@ theorem samplesChallenges_verifier (hδ' : (δ' : ℝ) < 1 - S.rate) (loss : ℝ
   exact S.samples_afterTrace publicValues _ _ rfl fun l ↦
     S.samples_afterLookup publicValues _ l.1 l.2 _ fun P ↦
       S.samples_afterPerm publicValues _ l.1 l.2 _ fun τ ↦
-        S.samples_afterTerminals publicValues _ l.1 l.2 τ _ rfl fun α ↦
-          S.samples_afterAlpha publicValues _ l.1 l.2 τ α _ fun Q ↦
-            S.samples_afterQuotient publicValues _ l.1 l.2 τ α _ rfl fun ζ ↦
-              S.samples_afterZeta publicValues _ l.1 l.2 τ α ζ _ fun o ↦
-                S.samples_afterOpenings publicValues _ l.1 l.2 τ α ζ o _ rfl fun a ↦
-                  S.samples_fri publicValues δ _ T l P τ α Q ζ o a loss
+        S.samples_afterTerminals publicValues _ l.1 l.2 (S.extendTerminals τ) _ rfl fun α ↦
+          S.samples_afterAlpha publicValues _ l.1 l.2 (S.extendTerminals τ) α _ fun Q ↦
+            S.samples_afterQuotient publicValues _ l.1 l.2 (S.extendTerminals τ) α _ rfl fun ζ ↦
+              S.samples_afterZeta publicValues _ l.1 l.2 (S.extendTerminals τ) α ζ _ fun o ↦
+                S.samples_afterOpenings publicValues _ l.1 l.2 (S.extendTerminals τ) α ζ o _ rfl
+                  fun a ↦ S.samples_fri publicValues δ _ T l P (S.extendTerminals τ) α Q ζ o a loss
 
 /-! ### The verifier's terminal law -/
 
@@ -540,9 +552,10 @@ theorem samplesChallenges_verifier (hδ' : (δ' : ℝ) < 1 - S.rate) (loss : ℝ
 theorem terminalState_certificate (hδ' : (δ' : ℝ) < 1 - S.rate) (loss : ℝ≥0)
     (L : S.domainSetup.QueryPositions) (path : S.protocol.tree.ExecutionPath) :
     (S.certificate publicValues δ δ' hδ' loss L).extractor.terminalState path =
-      (S.friCertificate publicValues δ path.1 path.2.1 path.2.2.1 path.2.2.2.1 path.2.2.2.2.1
-        path.2.2.2.2.2.1 path.2.2.2.2.2.2.1 path.2.2.2.2.2.2.2.1 path.2.2.2.2.2.2.2.2.1
-        loss L).extractor.terminalState path.2.2.2.2.2.2.2.2.2 := rfl
+      (S.friCertificate publicValues δ path.1 path.2.1 path.2.2.1
+        (S.extendTerminals path.2.2.2.1) path.2.2.2.2.1 path.2.2.2.2.2.1 path.2.2.2.2.2.2.1
+        path.2.2.2.2.2.2.2.1 path.2.2.2.2.2.2.2.2.1 loss L).extractor.terminalState
+        path.2.2.2.2.2.2.2.2.2 := rfl
 
 /-- The extractor's input witness is the path's trace message, with traces. -/
 theorem extractWitness_fst (hδ' : (δ' : ℝ) < 1 - S.rate) (loss : ℝ≥0)
@@ -700,8 +713,8 @@ theorem terminal_afterPerm (T : S.TraceMessage) (l : 𝕂 × 𝕂) (P : S.PermMe
       (Access.extendImpl S.traceAccess OracleInterface.instFunction
         (Access.extendImpl noAccess OracleInterface.instFunction noImpl T) P) prover
       (S.verifierAfterPerm publicValues l.1 l.2)), result.2.2 = true →
-      ∃ w, ((S.friCertificate publicValues δ T l P result.1.1 result.1.2.1 result.1.2.2.1
-        result.1.2.2.2.1 result.1.2.2.2.2.1 result.1.2.2.2.2.2.1 loss
+      ∃ w, ((S.friCertificate publicValues δ T l P (S.extendTerminals result.1.1) result.1.2.1
+        result.1.2.2.1 result.1.2.2.2.1 result.1.2.2.2.2.1 result.1.2.2.2.2.2.1 loss
           S.domainSetup.uniformPositions).extractor.terminalState
           result.1.2.2.2.2.2.2).holds w := by
   intro result hres hacc
@@ -710,7 +723,7 @@ theorem terminal_afterPerm (T : S.TraceMessage) (l : 𝕂 × 𝕂) (P : S.PermMe
   obtain ⟨r, hr, hres⟩ := support_bind_exists hres
   rw [mem_support_pure_iff] at hres
   subst hres
-  exact S.terminal_afterTerminals publicValues δ loss T l P chosen.1
+  exact S.terminal_afterTerminals publicValues δ loss T l P (S.extendTerminals chosen.1)
     (OutP := fun path ↦ OutP ⟨chosen.1, path⟩) chosen.2 r hr hacc
 
 set_option backward.isDefEq.respectTransparency false in
@@ -722,9 +735,9 @@ theorem terminal_afterLookup (T : S.TraceMessage) (l : 𝕂 × 𝕂)
       S.afterLookup.oracles S.traceAccess
       (Access.extendImpl noAccess OracleInterface.instFunction noImpl T) prover
       (S.verifierAfterLookup publicValues l.1 l.2)), result.2.2 = true →
-      ∃ w, ((S.friCertificate publicValues δ T l result.1.1 result.1.2.1 result.1.2.2.1
-        result.1.2.2.2.1 result.1.2.2.2.2.1 result.1.2.2.2.2.2.1 result.1.2.2.2.2.2.2.1
-        loss S.domainSetup.uniformPositions).extractor.terminalState
+      ∃ w, ((S.friCertificate publicValues δ T l result.1.1 (S.extendTerminals result.1.2.1)
+        result.1.2.2.1 result.1.2.2.2.1 result.1.2.2.2.2.1 result.1.2.2.2.2.2.1
+        result.1.2.2.2.2.2.2.1 loss S.domainSetup.uniformPositions).extractor.terminalState
           result.1.2.2.2.2.2.2.2).holds w := by
   intro result hres hacc
   rw [execute_afterLookup] at hres
@@ -744,9 +757,9 @@ theorem terminal_afterTrace (T : S.TraceMessage)
       S.afterTrace.oracles S.traceAccess
       (Access.extendImpl noAccess OracleInterface.instFunction noImpl T) prover
       (S.verifierAfterTrace publicValues)), result.2.2 = true →
-      ∃ w, ((S.friCertificate publicValues δ T result.1.1 result.1.2.1 result.1.2.2.1
-        result.1.2.2.2.1 result.1.2.2.2.2.1 result.1.2.2.2.2.2.1 result.1.2.2.2.2.2.2.1
-        result.1.2.2.2.2.2.2.2.1 loss S.domainSetup.uniformPositions).extractor.terminalState
+      ∃ w, ((S.friCertificate publicValues δ T result.1.1 result.1.2.1
+        (S.extendTerminals result.1.2.2.1) result.1.2.2.2.1 result.1.2.2.2.2.1
+        result.1.2.2.2.2.2.1 result.1.2.2.2.2.2.2.1 result.1.2.2.2.2.2.2.2.1 loss S.domainSetup.uniformPositions).extractor.terminalState
           result.1.2.2.2.2.2.2.2.2).holds w := by
   intro result hres hacc
   rw [execute_afterTrace] at hres
