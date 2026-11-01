@@ -191,6 +191,7 @@ public import CompStark.Ni.Rounds
 public import CompStark.Ni.FirstQueries
 public import CompStark.Ni.RoundBounds
 public import CompStark.Fs.HashChain
+public import CompStark.Fs.MerkleLog
 public import CompStark.Ni.Binding
 public import CompStark.Ni.Setup
 public import CompStark.Ni.Accepted
@@ -223,8 +224,9 @@ public import CompStark.Ni.BatchAssembly
 public import CompStark.Ni.BatchLengths
 public import CompStark.NonInteractive
 public import CompStark.Fs.Draws
-public import CompStark.Fs.Codec
 public import CompStark.Fs.Stark
+public import CompStark.Fs.StarkWords
+public import CompStark.Fs.StarkTerminal
 public import CompStark.Fs.Batch
 public import CompStark.Fs.StarkFiatShamir
 public import CompStark.Fs.Secure

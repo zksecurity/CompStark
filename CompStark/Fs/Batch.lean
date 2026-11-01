@@ -44,7 +44,7 @@ without lookups, where there are no terminals and the permutation trace is empty
 namespace CompStark.Fs
 open CompStark.Stark CompStark.Sound CompStark.Iop CompStark.Ni OracleComp OracleSpec CompPoly
 open Interaction.Oracle Interaction.Oracle.PublicCoin Interaction.Oracle.Security
-open Interaction.Oracle.Security.StateRestoration
+open Interaction.Oracle.Security.StateRestoration Interaction.Oracle.Security.HashChain
 open scoped ENNReal
 
 variable {F : Type} [BaseField F] {EF : Type} [Challenge F EF] {K m : ℕ}
@@ -292,6 +292,7 @@ namespace CompStark.Iop.Batch.Setup
 open CompStark.Stark CompStark.Sound CompStark.Fs CompStark.Ni
 open Interaction.Oracle Interaction.Oracle.PublicCoin
 open Interaction.Oracle.Security Interaction.Oracle.Security.StateRestoration
+open Interaction.Oracle.Security.HashChain
 open scoped ENNReal NNReal
 
 variable {F : Type} [BaseField F] {EF : Type} [Challenge F EF]
@@ -563,6 +564,7 @@ namespace CompStark.Iop.Batch.Statement
 open CompStark.Stark CompStark.Sound CompStark.Fs CompStark.Ni
 open Interaction.Oracle Interaction.Oracle.PublicCoin
 open Interaction.Oracle.Security Interaction.Oracle.Security.StateRestoration
+open Interaction.Oracle.Security.HashChain
 open scoped ENNReal NNReal
 
 variable {F : Type} [BaseField F] (C : Statement F)

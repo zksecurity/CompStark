@@ -8,28 +8,13 @@ public import CompStark.Fs.Stark
 public import CompStark.Fs.HashChain
 public import ArkLib.Interaction.Oracle.Security.HashChainSqueeze
 
-/-! # Knowledge soundness of the STARK on Plonky3's duplex challenger
+/-! # The STARK's challenges on Plonky3's duplex challenger: counts
 
-The STARK's verifier as Plonky3 runs it on its duplex challenger, with the commitments as oracles:
-the duplex is a random oracle on its capacity and the elements observed since the last squeeze,
-answering a new capacity and `K` samples (`Fs.duplexSpec F K`), and the verifier draws every
-challenge of the STARK's public-coin presentation from the squeezes Plonky3 makes for it
-(`Statement.decoder`, `Statement.observer`): the duplex starts at the zero capacity, absorbs what
-Plonky3 observes before each challenge, the committed words in full where Plonky3 observes their
-Merkle caps, and squeezes as often as the challenge's samples take, with the empty input after the
-first squeeze (`HashChain.squeezeExecution`).
-
-`Statement.knowledgeSoundness_fs`: an adversary making at most `Q` duplex calls chooses the public
-values and every prover message; the verifier's checks pass on the path its coins decode to while
-no trace of the claimed length close to the committed one satisfies the AIR with probability at
-most `chainError (Digest F) q + maxError · q + sumError` of the node errors (`Statement.nodeErrors`,
-the calculator's terms, the query positions' slack `1/p`) each multiplied by its draw's ratio
-(`Statement.ratio`: the grinding's `powFraction` after `α`), `q = Q + verifierChainQueries` the
-duplex calls of the adversary and the verifier together. The query positions are residues of
-uniform elements of `F`; the certificate draws them from that law (`Setup.queryPositions`), so
-their bias costs `1/p` per position inside the query error, as in the random-oracle model. It
-needs `2 ^ 8 ≤ |F|` and two-adicity below `2 ^ 64`, so that the domain separator tells the lengths
-apart.
+The counts the duplex-challenger theorems of the STARK take: the STARK's paths have at most
+`maxChallenges = twoAdicity F + 4` challenges (`Setup.challengesLE_publicCoin`: `α`, `ζ`, the
+batching challenge, FRI's folds, at most the domain's log size, `numFolds_friSchedule_le`, and the
+queries), each drawn from at most `coinCount` squeezes (`FsCoins`, `fsCoin`), so the verifier's
+completion makes at most `verifierChainQueries` duplex calls.
 -/
 
 @[expose] public section
@@ -109,28 +94,6 @@ noncomputable abbrev fsCoin : PublicCoin (decodedProtocol (C.FsCoins EF K) (C.pu
     (C.decoder EF K (C.coinCount EF K))) :=
   decoded (C.FsCoins EF K) (C.publicCoin EF) (C.decoder EF K (C.coinCount EF K))
 
-/-- The number of squeezes at each challenge of the STARK. -/
-noncomputable abbrev fsSqueezes : Prefix PUnit (C.publicCoin EF) → ℕ :=
-  (C.observer EF K (C.coinCount EF K)).squeezes (C.publicCoin EF)
-    (C.decoder EF K (C.coinCount EF K))
-
-/-- The chain inputs of a key: what Plonky3's verifier absorbs before the key's first squeeze, the
-public values after the trace, and the inputs of the squeezes before it. -/
-noncomputable abbrev fsEncode (key : Key (List F) PUnit fun _ ↦ C.fsCoin EF K) :
-    List F × List (List F) :=
-  (C.observer EF K (C.coinCount EF K)).encode id key
-
-/-- The Fiat–Shamir game of the STARK on Plonky3's duplex challenger: the adversary queries the
-duplex and selects public values and messages, and the verifier squeezes each challenge's coins
-from the duplex, starting at the zero capacity. -/
-noncomputable def fsGame (adversary : OracleComp (unifSpec + (duplexSpec F K + []ₒ))
-    (Option (Selection (List F) PUnit PUnit fun _ ↦ C.fsCoin EF K))) :
-    OracleComp (unifSpec + (duplexSpec F K + []ₒ))
-      (Option (Outcome (List F) PUnit fun _ ↦ decodedProtocol (C.FsCoins EF K) (C.publicCoin EF)
-        (C.decoder EF K (C.coinCount EF K)))) :=
-  squeezeExecution initCap [] (fun _ ↦ C.decoder EF K (C.coinCount EF K))
-    (fun _ ↦ C.fsSqueezes EF K) (C.fsEncode EF K) adversary
-
 /-- The challenges on a path of the STARK at any admitted length: `α`, `ζ`, the batching challenge,
 at most `twoAdicity F` folds and the queries. -/
 def maxChallenges : ℕ := twoAdicity F + 4
@@ -141,72 +104,5 @@ challenges' squeezes and its own. -/
 def verifierChainQueries : ℕ :=
   maxChallenges (F := F) * (C.coinCount EF K * (maxChallenges (F := F) * C.coinCount EF K +
     C.coinCount EF K))
-
-variable (δ δ' : ℕ → ℝ≥0)
-
-/-- **Knowledge soundness of the STARK on Plonky3's duplex challenger.** On a base field of at
-least `2 ^ 8` elements with two-adicity below `2 ^ 64`, against an adversary making at most `Q`
-duplex calls that chooses the public values and every prover message, the verifier's checks pass
-on the path its coins decode to while no trace of the claimed length close to the committed one
-satisfies the AIR with probability at most `chainError (Digest F) q` plus `maxError * q + sumError`
-of the node errors, each times its draw's ratio, `q = Q + verifierChainQueries`: FRI tests
-proximity `δ n` and the extractor list-decodes at `δ' n` below `1 - rate`, at proximity loss
-`loss n`, each query position `1/p` more likely to land where the checks pass than a uniform
-one. -/
-theorem knowledgeSoundness_fs (h8 : 2 ^ 8 ≤ Nat.card F) (h64 : twoAdicity F < 2 ^ 64)
-    (hK : 0 < K) (hδ' : ∀ n, C.Admits n → (δ' n : ℝ) < 1 - C.rate) (loss : C.Length → ℝ≥0)
-    (adversary : OracleComp (unifSpec + (duplexSpec F K + []ₒ))
-      (Option (Selection (List F) PUnit PUnit fun _ ↦ C.fsCoin EF K)))
-    {Q : ℕ} (hQ : IsQueryBoundP adversary (fun t ↦ isChain t = true) Q) :
-    Pr{let result ← (simulateQ (duplexSpec F K + []ₒ).romImpl
-        (C.fsGame EF K adversary)).run' ∅}[
-      ∃ publicValues path, result = some ⟨publicValues, path, PUnit.unit⟩ ∧
-        ∃ p, decodePath (C.publicCoin EF) (C.decoder EF K (C.coinCount EF K)) path = some p ∧
-          evalWithAnswerFn (p.closingImpl (C.protocol EF).oracles noAccess noImpl)
-            (C.terminal EF publicValues p.toBranchPath) = true ∧
-          C.Far EF publicValues δ' p] ≤
-      HashChain.chainError (Digest F) (Q + C.verifierChainQueries EF K) +
-        (maxError (fun (_ : List F) node ↦
-            C.ratio EF node * C.nodeErrors EF δ δ' loss (1 / Nat.card F) node) *
-            (Q + C.verifierChainQueries EF K) +
-          sumError (fun (_ : List F) node ↦
-            C.ratio EF node * C.nodeErrors EF δ δ' loss (1 / Nat.card F) node)) := by
-  have : NeZero (C.coinCount EF K) := ⟨fun h0 ↦ by
-    have := le_squeezesFor_mul hK (Challenge.d EF + C.params.numQueries + 1)
-    unfold coinCount at h0
-    rw [h0, Nat.zero_mul] at this
-    omega⟩
-  have hN : ∀ _ : List F, (C.publicCoin EF).ChallengesLE (maxChallenges (F := F)) :=
-    fun _ n ↦ (C.setup EF n).challengesLE_publicCoin
-  have hq : IsQueryBoundP (C.fsGame EF K adversary) (fun t ↦ isChain t = true)
-      (Q + C.verifierChainQueries EF K) :=
-    isQueryBoundP_squeezeExecution initCap [] (fun _ ↦ C.decoder EF K (C.coinCount EF K))
-      (fun _ ↦ C.fsSqueezes EF K) (C.fsEncode EF K) adversary hN
-      (fun _ node ↦ squeezes_le node)
-      (fun key ↦ Observer.length_encode_le _ (hN key.1) squeezes_le id key) hQ
-  have h := KnowledgeCertificate.chainSqueeze_knowledge_soundness initCap []
-    (fun _ ↦ C.publicCoin EF) (fun _ ↦ C.decoder EF K (C.coinCount EF K)) (fun _ ↦ C.ratio EF)
-    (fun _ ↦ C.fsSqueezes EF K) (fun _ node ↦ squeezes_le node)
-    (fun _ ↦ reads_decoder _ hK) (C.fsEncode EF K)
-    (fun key key' hk hk' he ↦ Observer.encode_injective _ (observer_prefixFree _ h8 h64) id
-      Function.injective_id key key' hk hk' he)
-    (fun key hk ↦ Observer.encode_fst_ne_nil _ (observer_fills _) id key hk)
-    (fun publicValues ↦ C.rootState EF publicValues δ')
-    (fun publicValues ↦ certificate EF publicValues δ δ' hδ' loss
-      fun n ↦ (C.setup EF n).queryPositions)
-    (fun publicValues ↦ bounded_decoder hK publicValues δ δ' hδ' loss)
-    adversary hq
-  have herr (publicValues : List F) (node : Prefix PUnit (C.publicCoin EF)) :
-      supErrors (C.publicCoin EF) (certificate EF publicValues δ δ' hδ' loss
-        fun n ↦ (C.setup EF n).queryPositions).challenges node =
-        C.nodeErrors EF δ δ' loss (1 / Nat.card F) node :=
-    congrFun ((C.setup EF node.1).supErrors_certificate publicValues (δ node.1.1) (δ' node.1.1) _
-      (loss node.1) _) node.2
-  simp only [herr, Nat.cast_add] at h
-  refine (prEvent_mono _ _ _ fun result hres ↦ ?_).trans h
-  obtain ⟨publicValues, path, rfl, p, hp, hacc, hfar⟩ := hres
-  obtain ⟨w, hw⟩ := (C.setup EF p.1).terminal_holds_of_eval publicValues (δ p.1.1) (δ' p.1.1) _
-    (loss p.1) _ p.2 hacc
-  exact ⟨publicValues, path, PUnit.unit, rfl, p, hp, w, hw, fun hroot ↦ hfar _ hroot.1 hroot.2⟩
 
 end CompStark.Iop.Statement

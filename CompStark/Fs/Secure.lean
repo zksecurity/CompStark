@@ -9,18 +9,16 @@ public import CompStark.Sound.Calculator
 
 /-! # The calculator's bound on Plonky3's duplex challenger
 
-The duplex-challenger theorem (`Statement.knowledgeSoundness_fs`) bounds the verifier's failure by
-`chainError q + maxError · q + sumError` of the node errors, each times its draw's ratio. Every
-such node error is one of the calculator's round terms (`Setup.roundErrorTerms`): constraint
-folding at `α`, the grinding's `powFraction` times the out-of-domain and batching terms, times
-FRI's largest fold at each fold (`friRatio_mul_nodeErrors_le`, with the folds of Plonky3's
-schedule bounded by the plan's level bounds, `foldErrorsLE_plonky3`), and at the queries
+A duplex-challenger theorem bounds the verifier's failure by `chainError q + maxError · q +
+sumError` of the node errors, each times its draw's ratio. Every such node error is one of the
+calculator's round terms (`Setup.roundErrorTerms`): constraint folding at `α`, the grinding's
+`powFraction` times the out-of-domain and batching terms, times FRI's largest fold at each fold
+(`friRatio_mul_nodeErrors_le`, with the folds of Plonky3's schedule bounded by the plan's level
+bounds, `foldErrorsLE_plonky3`), and at the queries
 `powFraction · (1 - δ + #folds · loss + 1/p) ^ numQueries`, the query positions' slack `1/p`
 inside the query error as in the random-oracle model (`Setup.ratio_mul_nodeErrors_le`). So the
 largest is at most the round error's bound, and a path of at most `maxChallenges` challenges sums
-to at most `maxChallenges` times it. The calculator's certificate per oracle answer
-(`Statement.SecureRo`) then bounds the theorem by `chainError q + (q + maxChallenges) 2 ^ (-bits)`
-(`Statement.knowledgeSoundness_fs_of_secureRo`).
+to at most `maxChallenges` times it.
 -/
 
 @[expose] public section
@@ -208,62 +206,3 @@ theorem ratio_mul_nodeErrors_le (S : Setup EF) (hp : Nat.card F = p) {B : McaBou
         ENNReal.ofReal_natCast]
 
 end CompStark.Iop.Setup
-
-namespace CompStark.Iop.Statement
-open CompStark.Stark CompStark.Sound CompStark.Fs CompStark.RandomOracle OracleComp OracleSpec
-open _root_.Interaction.Oracle _root_.Interaction.Oracle.PublicCoin
-open _root_.Interaction.Oracle.Security _root_.Interaction.Oracle.Security.StateRestoration
-open _root_.Interaction.Oracle.Security.HashChain
-open scoped ENNReal NNReal
-
-variable {F : Type} [BaseField F] {EF : Type} [Challenge F EF] {p : ℕ}
-
-/-- **Knowledge soundness on Plonky3's duplex challenger from the calculator.** If the calculator
-certifies `bits` bits per oracle answer for the statement `C` at `A` with an MCA bound that holds
-(`C.SecureRo EF p B A bits`), on a base field of at least `2 ^ 8` elements with two-adicity below
-`2 ^ 64`, an adversary making at most `Q` duplex calls gets the verifier's checks to pass on the
-path its coins decode to while no trace of the claimed length within `δ' = A.δ'` of the committed
-one satisfies the AIR with probability at most `chainError q + (q + maxChallenges) 2 ^ (-bits)`,
-`q = Q + verifierChainQueries`. -/
-theorem knowledgeSoundness_fs_of_secureRo (C : Statement F) (hp : Nat.card F = p)
-    {B : McaBound} (hB : B.Holds) (A : Analysis) {bits : ℕ} (h : C.SecureRo EF p B A bits)
-    (h8 : 2 ^ 8 ≤ Nat.card F) (h64 : twoAdicity F < 2 ^ 64) {K : ℕ} (hK : 0 < K)
-    (δ' : ℝ≥0) (hδ' : (δ' : ℝ) = A.δ') (hA : A.Valid (1 / 2 ^ C.params.logBlowup))
-    (adversary : OracleComp (unifSpec + (duplexSpec F K + []ₒ))
-      (Option (Selection (List F) PUnit PUnit fun _ ↦ C.fsCoin EF K)))
-    {Q : ℕ} (hQ : IsQueryBoundP adversary (fun t ↦ isChain t = true) Q) :
-    Pr{let result ← (simulateQ (duplexSpec F K + []ₒ).romImpl
-        (C.fsGame EF K adversary)).run' ∅}[
-      ∃ publicValues path, result = some ⟨publicValues, path, PUnit.unit⟩ ∧
-        ∃ p, decodePath (C.publicCoin EF) (C.decoder EF K (C.coinCount EF K)) path = some p ∧
-          evalWithAnswerFn (p.closingImpl (C.protocol EF).oracles noAccess noImpl)
-            (C.terminal EF publicValues p.toBranchPath) = true ∧
-          C.Far EF publicValues (fun _ ↦ δ') p] ≤
-      HashChain.chainError (Digest F) (Q + C.verifierChainQueries EF K) +
-        (Q + C.verifierChainQueries EF K + maxChallenges (F := F)) * (2 ^ bits)⁻¹ := by
-  have hl0 : (0 : ℝ) < A.loss := by exact_mod_cast hA.2.1
-  have hloss : ((Real.toNNReal A.loss : ℝ≥0) : ℝ) = A.loss := Real.coe_toNNReal _ hl0.le
-  have hδ'r : ∀ n, C.Admits n → (δ' : ℝ) < 1 - C.rate := fun _ _ ↦ by
-    obtain ⟨h0, -, hle, h1, hρ⟩ := hA
-    have hq : A.δ' < 1 - 1 / 2 ^ C.params.logBlowup := by nlinarith
-    have hr : ((A.δ' : ℚ) : ℝ) < ((1 - 1 / 2 ^ C.params.logBlowup : ℚ) : ℝ) := Rat.cast_lt.mpr hq
-    rw [hδ', Statement.rate]
-    push_cast at hr
-    exact hr
-  have hnode (node : Prefix PUnit (C.publicCoin EF)) :
-      C.ratio EF node * C.nodeErrors EF (fun _ ↦ Real.toNNReal A.δ) (fun _ ↦ δ')
-        (fun _ ↦ Real.toNNReal A.loss) (1 / Nat.card F) node ≤ (2 ^ bits)⁻¹ := by
-    have hb : C.admits node.1.1 = true := (C.admits_iff _).mpr node.1.2
-    have hs := h node.1.1 (by have := node.1.2.sound.twoAdic; omega) hb
-    exact ((C.setupOf EF node.1.1 hb).ratio_mul_nodeErrors_le hp hB A hs.1 _ _ _
-      (coe_toNNReal_δ A hA) hδ' hloss node.2).trans (ofReal_le_inv_two_pow hs.2)
-  refine (C.knowledgeSoundness_fs EF K (fun _ ↦ Real.toNNReal A.δ) (fun _ ↦ δ') h8 h64 hK hδ'r
-    (fun _ ↦ Real.toNNReal A.loss) adversary hQ).trans (add_le_add le_rfl ?_)
-  rw [add_mul]
-  refine add_le_add ?_ ?_
-  · rw [mul_comm]
-    exact mul_le_mul_right (iSup_le fun _ ↦ iSup_le hnode) _
-  · exact iSup_le fun _ ↦ pathError_le_of_challengesLE (C.publicCoin EF)
-      (N := maxChallenges (F := F)) (fun n ↦ (C.setup EF n).challengesLE_publicCoin) _ hnode
-
-end CompStark.Iop.Statement
