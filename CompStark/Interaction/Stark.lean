@@ -25,7 +25,10 @@ of the STARK at that length (`Statement.setup`):
 7. FRI runs on the batched DEEP word (`deepWord`), ArkLib's FRI on the interaction layer
    (`Fri.Interaction.protocol`) along Plonky3's schedule (`Setup.friSchedule`), in Plonky3's
    coordinate: on the subgroup `⟨ω⟩` (`Setup.friDomain`), whose points it folds and evaluates the
-   final polynomial at, with the challenges Plonky3 samples.
+   final polynomial at, with the challenges Plonky3 samples. As in Plonky3, the prover commits the
+   DEEP word, and each later layer's word, before the folding challenge, and sends the final
+   polynomial in place of the last layer's word; the queries check the committed DEEP word
+   against the one FRI's verifier computes from the openings.
 
 The verifier (`Setup.verifier`) never reads a word: FRI's verifier reads the DEEP word at a point
 through a query program (`Setup.deepReader`) that queries the trace's and the chunks' values

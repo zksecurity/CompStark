@@ -15,8 +15,9 @@ require CompPoly from git "https://github.com/mitschabaude-bot/CompPoly.git" @
 -- ArkLib main with Johnson-regime mutual correlated agreement for power curves, lossy mutual
 -- correlated agreement, FRI on the interaction layer with its knowledge certificate, the
 -- hash-chain reduction to a prefix-keyed random oracle, and state restoration and Fiat–Shamir
--- over public-coin protocols (branch `fs-stark` of the bot fork).
-require Arklib from git "https://github.com/mitschabaude-bot/ArkLib.git" @ "812e864d22860faf74fb2dd7703e00d43702d171"
+-- over public-coin protocols, with FRI on Plonky3's commit-phase tree (branch `fri-plonky3-tree`
+-- of the bot fork).
+require Arklib from git "https://github.com/mitschabaude-bot/ArkLib.git" @ "fd1b4dd8ca080b288c041ca7bafa58302148a6e6"
 
 -- VCVio as ArkLib main pins it.
 require VCVio from git "https://github.com/Verified-zkEVM/VCVio" @
