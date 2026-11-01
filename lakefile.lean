@@ -17,7 +17,7 @@ require CompPoly from git "https://github.com/mitschabaude-bot/CompPoly.git" @
 -- commit-phase tree, state restoration over public-coin protocols with grinding draws, and
 -- Fiat–Shamir on a duplex challenger with challenges of several squeezes, its draws bounded
 -- against the certificate's challenge laws (branch `fs-tight` of the bot fork).
-require Arklib from git "https://github.com/mitschabaude-bot/ArkLib.git" @ "51da3076e31fc97ce84de4ead7d4721c178fe34f"
+require Arklib from git "https://github.com/mitschabaude-bot/ArkLib.git" @ "3f989b1460c435f3d887bcaa134143a2eea09465"
 
 -- VCVio as ArkLib main pins it.
 require VCVio from git "https://github.com/Verified-zkEVM/VCVio" @
