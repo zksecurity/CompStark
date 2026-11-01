@@ -227,4 +227,5 @@ public import CompStark.Fs.Codec
 public import CompStark.Fs.Stark
 public import CompStark.Fs.Batch
 public import CompStark.Fs.StarkFiatShamir
+public import CompStark.Fs.Secure
 public import CompStark.Fs.BatchFiatShamir

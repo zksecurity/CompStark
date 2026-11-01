@@ -7,6 +7,7 @@ module
 public import CompStark.Ni.RoundBounds
 public import CompStark.Sound.Sampling
 public import ArkLib.Interaction.Oracle.Security.DecodedChallenges
+public import ArkLib.ProofSystem.Fri.Interaction.QueryKnowledge
 
 /-! # Plonky3's challenges drawn from duplex squeezes
 
@@ -24,10 +25,13 @@ The draws (`ArkLib`'s `PublicCoin.Draw`):
   of one sample (`sample_bits`), after the grinding sample.
 
 Uniform coins give uniform samples (`prob_samples`), so an extension element is uniform and
-`extDraw bits` is bounded by `powFraction F bits` (`bounded_extDraw`). A position is the residue
-of a uniform element of `F`, which hits each residue with probability at most
-`powFraction F top`, `2 ^ top` times the uniform probability: `queryDraw bits top t` is bounded by
-`powFraction F bits * (2 ^ top * powFraction F top) ^ t` (`bounded_queryDraw`).
+`extDraw bits` is bounded by `powFraction F bits` against the uniform law (`bounded_extDraw`). The
+query positions are the residues of `t` uniform elements of `F` (`positionLaw`), and
+`queryDraw bits top t` is bounded by `powFraction F bits` against that law
+(`bounded_queryDraw`). With `2 ^ top ∣ p - 1`, a residue lands in a set of `c` positions with
+probability at most `c / 2 ^ top + 1 / p`: only the residue `0` has an extra preimage. So the
+law's positions all land in a set of density `ρ` with probability at most `(ρ + 1/p) ^ t`
+(`queryLaw`, FRI's `QueryLaw` with slack `1/p`).
 -/
 
 @[expose] public section
@@ -151,10 +155,11 @@ def extSamples (bits : ℕ) : ℕ := Challenge.d EF + if bits = 0 then 0 else 1
 /-- The samples the query draw with `bits` bits of grinding reads. -/
 def querySamples (t bits : ℕ) : ℕ := t + if bits = 0 then 0 else 1
 
-/-- An extension draw with `bits` bits of grinding is bounded by `powFraction F bits`, when its
-samples fit the coins. -/
+/-- An extension draw with `bits` bits of grinding is bounded by `powFraction F bits` against the
+uniform law, when its samples fit the coins. -/
 theorem bounded_extDraw (bits : ℕ) (hs : extSamples (EF := EF) bits ≤ m * K) :
-    (extDraw (F := F) (EF := EF) (K := K) (m := m) bits).Bounded (Iop.powFraction F bits) := by
+    (extDraw (F := F) (EF := EF) (K := K) (m := m) bits).Bounded ($ᵗ 𝕂)
+      (Iop.powFraction F bits) := by
   classical
   cases bits with
   | zero =>
@@ -183,84 +188,69 @@ theorem bounded_extDraw (bits : ℕ) (hs : extSamples (EF := EF) bits ≤ m * K)
             (fun z ↦ CanonicalNat.toNat z.1 % 2 ^ (b + 1) = 0 ∧ E z.2))
       _ ≤ _ := prob_pow_and_le (b + 1) E
 
-/-- A residue below `2 ^ top` has at most `(p - 1) / 2 ^ top + 1` preimages in `F`. -/
-theorem card_positionOf_le (top : ℕ) (r : Fin (2 ^ top)) :
-    (Finset.univ.filter fun x : F ↦ positionOf top x = r).card ≤
-      (Nat.card F - 1) / 2 ^ top + 1 := by
-  have hp : Nat.card F = CanonicalNat.bound F := by
-    rw [Nat.card_eq_fintype_card, CanonicalNat.card_eq]
-  refine (Finset.card_le_card_of_injOn (fun x ↦ CanonicalNat.toNat x / 2 ^ top) ?_ ?_).trans
-    (Finset.card_range _).le
-  · intro x _
-    have hx := CanonicalNat.toNat_lt x
-    simp only [Finset.mem_coe, Finset.mem_range]
-    exact Nat.lt_succ_of_le (Nat.div_le_div_right (by omega))
-  · intro x hx y hy hxy
-    simp only [Finset.coe_filter, Finset.mem_univ, true_and, Set.mem_ofPred_eq] at hx hy
-    have hx' := congrArg Fin.val hx
-    have hy' := congrArg Fin.val hy
-    simp only [positionOf] at hx' hy' hxy
-    apply CanonicalNat.toNat_injective
-    rw [← Nat.div_add_mod (CanonicalNat.toNat x) (2 ^ top),
-      ← Nat.div_add_mod (CanonicalNat.toNat y) (2 ^ top), hx', hy', hxy]
+/-- The law of `t` query positions on the domain of `2 ^ top` points, each the low `top` bits of a
+uniform element of `F`. -/
+noncomputable def positionLaw (top t : ℕ) : ProbComp (Fin t → Fin (2 ^ top)) :=
+  (fun x : Fin t → F ↦ fun i ↦ positionOf top (x i)) <$> ($ᵗ (Fin t → F))
 
-/-- The tuples of `F` whose positions satisfy `E` number at most `((p - 1) / 2 ^ top + 1) ^ t`
-for each tuple of positions satisfying `E`. -/
-theorem card_positions_le (top t : ℕ) (E : (Fin t → Fin (2 ^ top)) → Prop) [DecidablePred E] :
-    (Finset.univ.filter fun x : Fin t → F ↦ E fun i ↦ positionOf top (x i)).card ≤
-      ((Nat.card F - 1) / 2 ^ top + 1) ^ t * (Finset.univ.filter E).card := by
-  classical
-  have hsub : (Finset.univ.filter fun x : Fin t → F ↦ E fun i ↦ positionOf top (x i)) ⊆
-      (Finset.univ.filter E).biUnion fun y ↦
-        Fintype.piFinset fun i ↦ Finset.univ.filter fun a : F ↦ positionOf top a = y i := by
-    intro x hx
-    simp only [Finset.mem_filter, Finset.mem_univ, true_and] at hx
-    simp only [Finset.mem_biUnion, Finset.mem_filter, Finset.mem_univ, true_and,
-      Fintype.mem_piFinset]
-    exact ⟨_, hx, fun _ ↦ rfl⟩
-  refine (Finset.card_le_card hsub).trans (Finset.card_biUnion_le.trans ?_)
-  refine (Finset.sum_le_card_nsmul _ _ _ fun y _ ↦ ?_).trans_eq (by rw [smul_eq_mul, mul_comm])
-  rw [Fintype.card_piFinset]
-  refine (Finset.prod_le_pow_card _ _ _ fun i _ ↦ card_positionOf_le top (y i)).trans_eq ?_
-  rw [Finset.card_univ, Fintype.card_fin]
+/-- An event on the positions of `positionLaw` is the event on the residues of uniform elements. -/
+theorem prob_positionLaw (top t : ℕ) (E : (Fin t → Fin (2 ^ top)) → Prop) :
+    Pr{let y ← (positionLaw (F := F) top t)}[E y] =
+      Pr{let x ← $ᵗ (Fin t → F)}[E fun i ↦ positionOf top (x i)] := by
+  rw [positionLaw, prEvent_map]
 
-/-- `t` uniform positions of `F` satisfy `E` with probability at most
-`(2 ^ top * powFraction F top) ^ t` times that of `t` uniform positions. -/
-theorem prob_positions_le (top t : ℕ) (E : (Fin t → Fin (2 ^ top)) → Prop) :
-    Pr{let x ← $ᵗ (Fin t → F)}[E fun i ↦ positionOf top (x i)] ≤
-      (2 ^ top * Iop.powFraction F top) ^ t * Pr{let y ← $ᵗ (Fin t → Fin (2 ^ top))}[E y] := by
-  classical
-  rw [SampleableType.prEvent_uniformSample, SampleableType.prEvent_uniformSample,
-    Iop.powFraction, Fintype.card_fun, Fintype.card_fun, Fintype.card_fin, Fintype.card_fin,
-    ← Nat.card_eq_fintype_card]
-  have h2 : ((2 : ℝ≥0∞) ^ top) ^ t * (((2 : ℝ≥0∞) ^ top) ^ t)⁻¹ = 1 :=
-    ENNReal.mul_inv_cancel (by positivity) (by simp)
-  refine (ENNReal.div_le_div_right (Nat.cast_le.mpr (card_positions_le (F := F) top t E))
-    _).trans_eq ?_
-  push_cast
-  rw [div_eq_mul_inv, div_eq_mul_inv, div_eq_mul_inv, mul_pow, mul_pow, ENNReal.inv_pow]
-  generalize ((2 : ℝ≥0∞) ^ top) ^ t = a at h2 ⊢
-  refine ((mul_one _).symm.trans (congrArg (HMul.hMul _) h2.symm)).trans ?_
-  ring
+/-- **The positions' law.** With `2 ^ top ∣ p - 1`, the positions of `positionLaw` all land in a
+set of `c` positions with probability at most `(c / 2 ^ top + 1/p) ^ t`: FRI's query law with
+slack `1/p`. -/
+noncomputable def queryLaw (top t : ℕ) (hb : 2 ^ top ∣ Nat.card F - 1) :
+    Fri.Interaction.QueryLaw top t where
+  law := positionLaw (F := F) top t
+  slack := 1 / (Nat.card F : ENNReal)
+  bound C := by
+    classical
+    rw [prob_positionLaw]
+    set A := Finset.univ.filter fun x : F ↦ positionOf top x ∈ C
+    have hA : ∀ x : Fin t → F, (∀ i, positionOf top (x i) ∈ C) ↔ ∀ i, x i ∈ A := fun x ↦ by
+      simp only [A, Finset.mem_filter, Finset.mem_univ, true_and]
+    simp only [hA]
+    rw [Probability.prob_uniform_pi_mem_finset_eq]
+    gcongr
+    have h := prob_val_mod_mem_le top hb (C.map Fin.valEmbedding)
+    rw [SampleableType.prEvent_uniformSample, Finset.card_map] at h
+    refine le_of_eq_of_le ?_ h
+    have hmem (x : F) :
+        positionOf top x ∈ C ↔ CanonicalNat.toNat x % 2 ^ top ∈ C.map Fin.valEmbedding := by
+      rw [Finset.mem_map]
+      refine ⟨fun hx ↦ ⟨_, hx, rfl⟩, fun ⟨y, hy, he⟩ ↦ ?_⟩
+      have hy' : positionOf top x = y := Fin.ext he.symm
+      rwa [hy']
+    congr 3
+    ext x
+    simp only [A, Finset.mem_filter, Finset.mem_univ, true_and]
+    exact hmem x
 
-/-- The query draw with `bits` bits of grinding is bounded by
-`powFraction F bits * (2 ^ top * powFraction F top) ^ t`, when its samples fit the coins. -/
+@[simp] theorem slack_queryLaw (top t : ℕ) (hb : 2 ^ top ∣ Nat.card F - 1) :
+    (queryLaw (F := F) top t hb).slack = 1 / (Nat.card F : ENNReal) := rfl
+
+/-- The query draw with `bits` bits of grinding is bounded by `powFraction F bits` against the
+positions' law, when its samples fit the coins. -/
 theorem bounded_queryDraw (top t bits : ℕ) (hs : querySamples t bits ≤ m * K) :
-    (queryDraw (F := F) (K := K) (m := m) top t bits).Bounded
-      (Iop.powFraction F bits * (2 ^ top * Iop.powFraction F top) ^ t) := by
+    (queryDraw (F := F) (K := K) (m := m) top t bits).Bounded (positionLaw (F := F) top t)
+      (Iop.powFraction F bits) := by
   classical
   cases bits with
   | zero =>
     have ht : t ≤ m * K := by simpa only [querySamples, ↓reduceIte, Nat.add_zero] using hs
-    rw [Sound.powFraction_zero, one_mul, queryDraw]
+    rw [Sound.powFraction_zero, queryDraw]
     refine Draw.Bounded.plain fun E ↦ ?_
-    exact (prob_samples ht fun x ↦ E fun i ↦ positionOf top (x i)).trans_le
-      (prob_positions_le top t E)
+    rw [one_mul, prob_positionLaw]
+    exact (prob_samples ht fun x ↦ E fun i ↦ positionOf top (x i)).le
   | succ b =>
     have ht : t + 1 ≤ m * K := by
       simpa only [querySamples, Nat.add_one_ne_zero, ↓reduceIte] using hs
     intro E
     simp only [queryDraw, Draw.grind, beq_iff_eq]
+    rw [prob_positionLaw]
     calc _ = Pr{let c ← $ᵗ (Coins F K m)}[(fun x : Fin (t + 1) → F ↦
           CanonicalNat.toNat ((Fin.consEquiv fun _ ↦ F).symm x).1 % 2 ^ (b + 1) = 0 ∧
             E fun i ↦ positionOf top (((Fin.consEquiv fun _ ↦ F).symm x).2 i))
@@ -274,12 +264,8 @@ theorem bounded_queryDraw (top t bits : ℕ) (hs : querySamples t bits ≤ m * K
           (prob_samples ht _).trans (SampleableType.prEvent_uniformSample_equiv
             (Fin.consEquiv fun _ ↦ F).symm (fun z : F × (Fin t → F) ↦
               CanonicalNat.toNat z.1 % 2 ^ (b + 1) = 0 ∧ E fun i ↦ positionOf top (z.2 i)))
-      _ ≤ Iop.powFraction F (b + 1) *
-            Pr{let x ← $ᵗ (Fin t → F)}[E fun i ↦ positionOf top (x i)] :=
+      _ ≤ _ :=
           prob_pow_and_le (β := Fin t → F) (b + 1) fun x ↦ E fun i ↦ positionOf top (x i)
-      _ ≤ _ := by
-          rw [mul_assoc]
-          exact mul_le_mul_right (prob_positions_le top t E) _
 
 /-- An extension draw reads only the squeezes of its samples. -/
 theorem reads_extDraw (hK : 0 < K) (bits : ℕ) (c c' : Coins F K m)

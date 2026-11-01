@@ -23,9 +23,11 @@ first squeeze (`HashChain.squeezeExecution`).
 values and every prover message; the verifier's checks pass on the path its coins decode to while
 no trace of the claimed length close to the committed one satisfies the AIR with probability at
 most `chainError (Digest F) q + maxError · q + sumError` of the node errors (`Statement.nodeErrors`,
-the calculator's terms) each multiplied by its draw's ratio (`Statement.ratio`: the grinding's
-`powFraction` after `α`, and the query positions' bias), `q = Q + verifierChainQueries` the duplex
-calls of the adversary and the verifier together. It needs `2 ^ 8 ≤ |F|` and two-adicity below
+the calculator's terms, the query positions' slack `1/p`) each multiplied by its draw's ratio
+(`Statement.ratio`: the grinding's `powFraction` after `α`), `q = Q + verifierChainQueries` the
+duplex calls of the adversary and the verifier together. The query positions are residues of
+uniform elements of `F`; the certificate draws them from that law (`Setup.queryPositions`), so
+their bias costs `1/p` per position inside the query error, as in the random-oracle model. It needs `2 ^ 8 ≤ |F|` and two-adicity below
 `2 ^ 64`, so that the domain separator tells the lengths apart.
 -/
 
@@ -148,7 +150,8 @@ on the path its coins decode to while no trace of the claimed length close to th
 satisfies the AIR with probability at most `chainError (Digest F) q` plus `maxError * q + sumError`
 of the node errors, each times its draw's ratio, `q = Q + verifierChainQueries`: FRI tests
 proximity `δ n` and the extractor list-decodes at `δ' n` below `1 - rate`, at proximity loss
-`loss n`. -/
+`loss n`, each query position `1/p` more likely to land where the checks pass than a uniform
+one. -/
 theorem knowledgeSoundness_fs (h8 : 2 ^ 8 ≤ Nat.card F) (h64 : twoAdicity F < 2 ^ 64)
     (hK : 0 < K) (hδ' : ∀ n, C.Admits n → (δ' n : ℝ) < 1 - C.rate) (loss : C.Length → ℝ≥0)
     (adversary : OracleComp (unifSpec + (duplexSpec F K + []ₒ))
@@ -162,9 +165,11 @@ theorem knowledgeSoundness_fs (h8 : 2 ^ 8 ≤ Nat.card F) (h64 : twoAdicity F < 
             (C.terminal EF publicValues p.toBranchPath) = true ∧
           C.Far EF publicValues δ' p] ≤
       HashChain.chainError (Digest F) (Q + C.verifierChainQueries EF K) +
-        (maxError (fun (_ : List F) node ↦ C.ratio EF node * C.nodeErrors EF δ δ' loss node) *
+        (maxError (fun (_ : List F) node ↦
+            C.ratio EF node * C.nodeErrors EF δ δ' loss (1 / Nat.card F) node) *
             (Q + C.verifierChainQueries EF K) +
-          sumError (fun (_ : List F) node ↦ C.ratio EF node * C.nodeErrors EF δ δ' loss node)) := by
+          sumError (fun (_ : List F) node ↦
+            C.ratio EF node * C.nodeErrors EF δ δ' loss (1 / Nat.card F) node)) := by
   have : NeZero (C.coinCount EF K) := ⟨fun h0 ↦ by
     have := le_squeezesFor_mul hK (Challenge.d EF + C.params.numQueries + 1)
     unfold coinCount at h0
@@ -180,25 +185,27 @@ theorem knowledgeSoundness_fs (h8 : 2 ^ 8 ≤ Nat.card F) (h64 : twoAdicity F < 
       (fun key ↦ Observer.length_encode_le _ (hN key.1) squeezes_le id key) hQ
   have h := KnowledgeCertificate.chainSqueeze_knowledge_soundness initCap []
     (fun _ ↦ C.publicCoin EF) (fun _ ↦ C.decoder EF K (C.coinCount EF K)) (fun _ ↦ C.ratio EF)
-    (fun _ ↦ bounded_decoder hK) (fun _ ↦ C.fsSqueezes EF K) (fun _ node ↦ squeezes_le node)
+    (fun _ ↦ C.fsSqueezes EF K) (fun _ node ↦ squeezes_le node)
     (fun _ ↦ reads_decoder _ hK) (C.fsEncode EF K)
     (fun key key' hk hk' he ↦ Observer.encode_injective _ (observer_prefixFree _ h8 h64) id
       Function.injective_id key key' hk hk' he)
     (fun key hk ↦ Observer.encode_fst_ne_nil _ (observer_fills _) id key hk)
     (fun publicValues ↦ C.rootState EF publicValues δ')
-    (fun publicValues ↦ certificate EF publicValues δ δ' hδ' loss)
-    (fun publicValues ↦ uniformChallenges_certificate EF publicValues δ δ' hδ' loss)
+    (fun publicValues ↦ certificate EF publicValues δ δ' hδ' loss
+      fun n ↦ (C.setup EF n).queryPositions)
+    (fun publicValues ↦ bounded_decoder hK publicValues δ δ' hδ' loss)
     adversary hq
   have herr (publicValues : List F) (node : Prefix PUnit (C.publicCoin EF)) :
-      supErrors (C.publicCoin EF) (certificate EF publicValues δ δ' hδ' loss).challenges node =
-        C.nodeErrors EF δ δ' loss node :=
+      supErrors (C.publicCoin EF) (certificate EF publicValues δ δ' hδ' loss
+        fun n ↦ (C.setup EF n).queryPositions).challenges node =
+        C.nodeErrors EF δ δ' loss (1 / Nat.card F) node :=
     congrFun ((C.setup EF node.1).supErrors_certificate publicValues (δ node.1.1) (δ' node.1.1) _
-      (loss node.1)) node.2
+      (loss node.1) _) node.2
   simp only [herr, Nat.cast_add] at h
   refine (prEvent_mono _ _ _ fun result hres ↦ ?_).trans h
   obtain ⟨publicValues, path, rfl, p, hp, hacc, hfar⟩ := hres
   obtain ⟨w, hw⟩ := (C.setup EF p.1).terminal_holds_of_eval publicValues (δ p.1.1) (δ' p.1.1) _
-    (loss p.1) p.2 hacc
+    (loss p.1) _ p.2 hacc
   exact ⟨publicValues, path, PUnit.unit, rfl, p, hp, w, hw, fun hroot ↦ hfar _ hroot.1 hroot.2⟩
 
 end CompStark.Iop.Statement

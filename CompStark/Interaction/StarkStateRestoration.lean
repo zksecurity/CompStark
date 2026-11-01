@@ -12,9 +12,11 @@ public import ArkLib.ProofSystem.Fri.Interaction.StateRestoration
 The STARK on ArkLib's interaction layer is public-coin (`Statement.publicCoin`): the trace length
 is the prover's first public move, every challenge (`α`, `ζ`, `a`, FRI's folding challenges and
 query positions) has one continuation for all its values, and FRI's presentation
-(`Fri.Interaction.publicCoin`) is appended after `a`. The STARK's knowledge certificate samples
-every challenge uniformly (`Setup.uniformChallenges_certificate`), and so does the statement's
-(`Statement.certificate`), which conditions on the length the prover sends.
+(`Fri.Interaction.publicCoin`) is appended after `a`. The STARK's knowledge certificate draws the
+query positions from a law `L` (`Setup.QueryPositions`) and every other challenge uniformly; with
+uniform positions it samples every challenge uniformly (`Setup.uniformChallenges_certificate`),
+and so does the statement's (`Statement.certificate`), which conditions on the length the prover
+sends.
 
 The verifier's checks are a program of the branch (`Statement.terminal`): the constraints at `ζ`,
 then FRI's checks on the DEEP word. In the state-restoration game, where an adversary making at
@@ -22,7 +24,8 @@ most `Q` random-oracle queries chooses the public values and every prover messag
 while no trace of the claimed length close to the committed one satisfies the AIR with probability
 at most `Q * maxError + sumError` of the node errors (`Statement.stateRestoration_le`): at each
 length, the folding, out-of-domain and batching errors, each FRI fold's lossy MCA error and FRI's
-query error at the length's proximity loss (`Setup.nodeErrors`). The path sum at a length is the
+query error at the length's proximity loss (`Setup.nodeErrors`, the positions' slack `0`). The
+path sum at a length is the
 interactive knowledge error at that proximity loss (`Setup.pathError_nodeErrors`,
 `Statement.lengthBound`).
 -/
@@ -55,9 +58,10 @@ noncomputable def publicCoin : PublicCoin S.protocol :=
 
 variable (publicValues : List F) (δ δ' : ℝ≥0)
 
-/-- The STARK's certificate samples every challenge uniformly. -/
+/-- The STARK's certificate with uniform query positions samples every challenge uniformly. -/
 theorem uniformChallenges_certificate (hδ' : (δ' : ℝ) < 1 - S.rate) (loss : ℝ≥0) :
-    UniformChallenges S.publicCoin (S.certificate publicValues δ δ' hδ' loss).challenges :=
+    UniformChallenges S.publicCoin
+      (S.certificate publicValues δ δ' hδ' loss S.uniformPositions).challenges :=
   fun T => ⟨rfl, fun α Q => ⟨rfl, fun ζ o => ⟨rfl, fun a =>
     Fri.Interaction.uniformChallenges_certificate (S.logN + S.params.logBlowup)
       (2 ^ S.params.logFinalPolyLen) S.params.numQueries
@@ -80,10 +84,10 @@ set_option backward.isDefEq.respectTransparency false in
 /-- When the checks pass on a complete execution, closed with its trace and quotient, the
 certificate's terminal state holds. -/
 theorem terminal_holds_of_eval (hδ' : (δ' : ℝ) < 1 - S.rate) (loss : ℝ≥0)
-    (path : S.protocol.tree.ExecutionPath)
+    (L : S.QueryPositions) (path : S.protocol.tree.ExecutionPath)
     (h : evalWithAnswerFn (path.closingImpl S.protocol.oracles noAccess noImpl)
       (S.terminal publicValues path.toBranchPath) = true) :
-    ∃ w, ((S.certificate publicValues δ δ' hδ' loss).extractor.terminalState path).holds w := by
+    ∃ w, ((S.certificate publicValues δ δ' hδ' loss L).extractor.terminalState path).holds w := by
   obtain ⟨T, α, Q, ζ, o, a, p⟩ := path
   have h' : (@decide _ (Classical.propDecidable (ConstraintsHoldAt S publicValues α ζ o)) &&
       evalWithAnswerFn (ExecutionPath.closingImpl (tree := (S.friProtocol []).tree) p
@@ -98,7 +102,7 @@ theorem terminal_holds_of_eval (hδ' : (δ' : ℝ) < 1 - S.rate) (loss : ℝ≥0
   rw [Bool.and_eq_true] at h'
   obtain ⟨w, hw⟩ := Fri.Interaction.terminal_holds_of_eval (S.logN + S.params.logBlowup)
     (2 ^ S.params.logFinalPolyLen) S.params.numQueries (S.deepInputs (S.deepOf T α Q ζ o a)) δ
-    loss (Nat.two_pow_pos _) loss.coe_nonneg (S.friSchedule []) le_rfl S.friDomain _ _ _ 0
+    loss L (Nat.two_pow_pos _) loss.coe_nonneg (S.friSchedule []) le_rfl S.friDomain _ _ _ 0
     (S.deepOf T α Q ζ o a) Finset.univ (S.reads_deepReader T Q α ζ o a)
     (fun x ↦ by simp only [Finset.mem_univ, decide_true]; rfl) p h'.2
   rw [terminalState_certificate]
@@ -111,10 +115,10 @@ abbrev FriPrefix : Type :=
   Prefix PUnit (Fri.Interaction.publicCoin 𝕂 (S.logN + S.params.logBlowup)
     (2 ^ S.params.logFinalPolyLen) S.params.numQueries (S.friSchedule []))
 
-/-- The node errors of the STARK at a length, at proximity `δ`, extraction radius `δ'` and
-proximity loss `loss`: the folding error at `α`, the out-of-domain error at `ζ`, the batching
-error at `a`, and FRI's node errors on the DEEP word. -/
-noncomputable def nodeErrors (loss : ℝ≥0) : Errors S.publicCoin := fun node ↦
+/-- The node errors of the STARK at a length, at proximity `δ`, extraction radius `δ'`,
+proximity loss `loss` and query positions of slack `slack`: the folding error at `α`, the
+out-of-domain error at `ζ`, the batching error at `a`, and FRI's node errors on the DEEP word. -/
+noncomputable def nodeErrors (loss : ℝ≥0) (slack : ENNReal) : Errors S.publicCoin := fun node ↦
   match (node : S.TraceMessage × (PUnit ⊕ (PUnit × (S.QuotientMessage × (PUnit ⊕
       (PUnit × ((_ : Openings S) × (PUnit ⊕ (PUnit × S.FriPrefix))))))))) with
   | ⟨_, .inl _⟩ => foldingError S δ'
@@ -122,12 +126,13 @@ noncomputable def nodeErrors (loss : ℝ≥0) : Errors S.publicCoin := fun node 
   | ⟨_, .inr ⟨_, _, .inr ⟨_, _, .inl _⟩⟩⟩ => batchingError S δ δ'
   | ⟨_, .inr ⟨_, _, .inr ⟨_, _, .inr ⟨_, node⟩⟩⟩⟩ =>
       Fri.Interaction.nodeErrors (S.logN + S.params.logBlowup) (2 ^ S.params.logFinalPolyLen)
-        S.params.numQueries δ loss S.friDomain (S.friSchedule []) 0 node
+        S.params.numQueries δ loss slack S.friDomain (S.friSchedule []) 0 node
 
-/-- The certificate's error at each node is the node error. -/
-theorem supErrors_certificate (hδ' : (δ' : ℝ) < 1 - S.rate) (loss : ℝ≥0) :
-    supErrors S.publicCoin (S.certificate publicValues δ δ' hδ' loss).challenges =
-      S.nodeErrors δ δ' loss := by
+/-- The certificate's error at each node is the node error at its positions' slack. -/
+theorem supErrors_certificate (hδ' : (δ' : ℝ) < 1 - S.rate) (loss : ℝ≥0)
+    (L : S.QueryPositions) :
+    supErrors S.publicCoin (S.certificate publicValues δ δ' hδ' loss L).challenges =
+      S.nodeErrors δ δ' loss L.slack := by
   funext node
   obtain ⟨T, _ | ⟨_, Q, _ | ⟨_, o, _ | ⟨_, node⟩⟩⟩⟩ :=
     (node : S.TraceMessage × (PUnit ⊕ (PUnit × (S.QuotientMessage × (PUnit ⊕
@@ -139,21 +144,22 @@ theorem supErrors_certificate (hδ' : (δ' : ℝ) < 1 - S.rate) (loss : ℝ≥0)
       iSup_const).trans iSup_const).trans iSup_const
     exact Fri.Interaction.supErrors_certificate (S.logN + S.params.logBlowup)
       (2 ^ S.params.logFinalPolyLen) S.params.numQueries (S.deepInputs (S.deepOf T α Q ζ o a)) δ
-      loss (Nat.two_pow_pos _) loss.coe_nonneg le_rfl S.friDomain (S.friSchedule []) 0
+      loss L (Nat.two_pow_pos _) loss.coe_nonneg le_rfl S.friDomain (S.friSchedule []) 0
       (S.deepOf T α Q ζ o a) Finset.univ node
 
-/-- The path sum of the node errors is the STARK's error at the proximity loss. -/
+/-- The path sum of the node errors for uniform positions is the STARK's error at the proximity
+loss. -/
 theorem pathError_nodeErrors (loss : ℝ≥0) :
-    pathError S.publicCoin (S.nodeErrors δ δ' loss) =
+    pathError S.publicCoin (S.nodeErrors δ δ' loss 0) =
       foldingError S δ' + outOfDomainError S δ' + batchingError S δ δ' + S.friBound [] δ loss := by
   change (⨆ _ : S.TraceMessage, foldingError S δ' + ⨆ _ : S.QuotientMessage,
     outOfDomainError S δ' + ⨆ _ : Openings S, batchingError S δ δ' +
       pathError (Fri.Interaction.publicCoin 𝕂 (S.logN + S.params.logBlowup)
         (2 ^ S.params.logFinalPolyLen) S.params.numQueries (S.friSchedule []))
         (Fri.Interaction.nodeErrors (S.logN + S.params.logBlowup) (2 ^ S.params.logFinalPolyLen)
-          S.params.numQueries δ loss S.friDomain (S.friSchedule []) 0)) = _
+          S.params.numQueries δ loss 0 S.friDomain (S.friSchedule []) 0)) = _
   rw [Fri.Interaction.pathError_nodeErrors, iSup_const, iSup_const, iSup_const]
-  simp only [friBound, Fri.Interaction.threshold, zero_add, add_assoc]
+  simp only [friBound, Fri.Interaction.threshold, zero_add, add_assoc, add_zero]
 
 end Setup
 
@@ -176,24 +182,26 @@ def rootState : KnowledgeState where
 variable {C}
 
 /-- **The statement's knowledge certificate**: whatever length the prover sends, the STARK's
-certificate at that length, at its proximity loss `loss n`. -/
+certificate at that length, at its proximity loss `loss n` and its query positions `L n`. -/
 noncomputable def certificate (hδ' : ∀ n, C.Admits n → (δ' n : ℝ) < 1 - C.rate)
-    (loss : C.Length → ℝ≥0) :
+    (loss : C.Length → ℝ≥0) (L : (n : C.Length) → (C.setup EF n).QueryPositions) :
     KnowledgeCertificate (C.protocol EF).tree (C.protocol EF).roles
       (C.rootState EF publicValues δ') where
   extractor n := ⟨_, fun w ↦ ⟨n, w⟩, ((C.setup EF n).certificate publicValues (δ n.1) (δ' n.1)
-    (by rw [rate_setup]; exact hδ' n.1 n.2) (loss n)).extractor⟩
+    (by rw [rate_setup]; exact hδ' n.1 n.2) (loss n) (L n)).extractor⟩
   challenges := ⟨PUnit.unit, fun n ↦ ((C.setup EF n).certificate publicValues (δ n.1) (δ' n.1)
-    (by rw [rate_setup]; exact hδ' n.1 n.2) (loss n)).challenges⟩
+    (by rw [rate_setup]; exact hδ' n.1 n.2) (loss n) (L n)).challenges⟩
   prover_preserving := ⟨fun _ _ _ h ↦ h, fun n ↦ ((C.setup EF n).certificate publicValues
-    (δ n.1) (δ' n.1) (by rw [rate_setup]; exact hδ' n.1 n.2) (loss n)).prover_preserving⟩
+    (δ n.1) (δ' n.1) (by rw [rate_setup]; exact hδ' n.1 n.2) (loss n) (L n)).prover_preserving⟩
   local_bound n := ((C.setup EF n).certificate publicValues (δ n.1) (δ' n.1)
-    (by rw [rate_setup]; exact hδ' n.1 n.2) (loss n)).local_bound
+    (by rw [rate_setup]; exact hδ' n.1 n.2) (loss n) (L n)).local_bound
 
-/-- The statement's certificate samples every challenge uniformly. -/
+/-- The statement's certificate with uniform query positions samples every challenge uniformly. -/
 theorem uniformChallenges_certificate (hδ' : ∀ n, C.Admits n → (δ' n : ℝ) < 1 - C.rate)
     (loss : C.Length → ℝ≥0) :
-    UniformChallenges (C.publicCoin EF) (certificate EF publicValues δ δ' hδ' loss).challenges :=
+    UniformChallenges (C.publicCoin EF)
+      (certificate EF publicValues δ δ' hδ' loss
+        fun n ↦ (C.setup EF n).uniformPositions).challenges :=
   fun n ↦ (C.setup EF n).uniformChallenges_certificate publicValues (δ n.1) (δ' n.1) _ (loss n)
 
 variable (C)
@@ -205,14 +213,15 @@ noncomputable def terminal (p : (C.protocol EF).tree.BranchPath) :
   (C.setup EF p.1).terminal publicValues p.2
 
 /-- The node errors of the STARK for a statement: at each length, the STARK's node errors there,
-at that length's proximity loss. -/
-noncomputable def nodeErrors (loss : C.Length → ℝ≥0) : Errors (C.publicCoin EF) := fun node ↦
-  (C.setup EF node.1).nodeErrors (δ node.1.1) (δ' node.1.1) (loss node.1) node.2
+at that length's proximity loss and query positions of slack `slack`. -/
+noncomputable def nodeErrors (loss : C.Length → ℝ≥0) (slack : ENNReal) :
+    Errors (C.publicCoin EF) := fun node ↦
+  (C.setup EF node.1).nodeErrors (δ node.1.1) (δ' node.1.1) (loss node.1) slack node.2
 
-/-- The path sum of the node errors is the largest over the lengths of the STARK's error there,
-at that length's proximity loss. -/
+/-- The path sum of the node errors for uniform positions is the largest over the lengths of the
+STARK's error there, at that length's proximity loss. -/
 theorem pathError_nodeErrors (loss : C.Length → ℝ≥0) :
-    pathError (C.publicCoin EF) (C.nodeErrors EF δ δ' loss) =
+    pathError (C.publicCoin EF) (C.nodeErrors EF δ δ' loss 0) =
       ⨆ n, C.lengthBound EF δ δ' n (loss n) :=
   iSup_congr fun n ↦ (C.setup EF n).pathError_nodeErrors (δ n.1) (δ' n.1) (loss n)
 
@@ -231,25 +240,27 @@ theorem stateRestoration_le (hδ' : ∀ n, C.Admits n → (δ' n : ℝ) < 1 - C.
     Pr{let result ← (simulateQ randomOracle (verificationGame (fun _ ↦ C.publicCoin EF) noAccess
         (fun _ ↦ noImpl) (fun _ _ ↦ Bool) (C.terminal EF) adversary)).run' ∅}[
       result.2.2.1 = true ∧ C.Far EF result.1 δ' result.2.1] ≤
-      Q * maxError (fun _ : List F ↦ C.nodeErrors EF δ δ' loss) +
-        sumError (fun _ : List F ↦ C.nodeErrors EF δ δ' loss) := by
+      Q * maxError (fun _ : List F ↦ C.nodeErrors EF δ δ' loss 0) +
+        sumError (fun _ : List F ↦ C.nodeErrors EF δ δ' loss 0) := by
   have h := KnowledgeCertificate.stateRestoration_extraction_le (fun _ ↦ C.publicCoin EF)
     (fun publicValues ↦ C.rootState EF publicValues δ')
-    (fun publicValues ↦ certificate EF publicValues δ δ' hδ' loss)
+    (fun publicValues ↦ certificate EF publicValues δ δ' hδ' loss
+      fun n ↦ (C.setup EF n).uniformPositions)
     (fun publicValues ↦ uniformChallenges_certificate EF publicValues δ δ' hδ' loss) noAccess
     (fun _ ↦ noImpl) (fun _ _ ↦ Bool) (C.terminal EF) adversary Q queryBound
   have herr : (fun publicValues : List F ↦ supErrors (C.publicCoin EF)
-      (certificate EF publicValues δ δ' hδ' loss).challenges) =
-      fun _ ↦ C.nodeErrors EF δ δ' loss :=
+      (certificate EF publicValues δ δ' hδ' loss
+        fun n ↦ (C.setup EF n).uniformPositions).challenges) =
+      fun _ ↦ C.nodeErrors EF δ δ' loss 0 :=
     funext fun publicValues ↦ funext fun node ↦ congrFun ((C.setup EF node.1).supErrors_certificate
-      publicValues (δ node.1.1) (δ' node.1.1) _ (loss node.1)) node.2
+      publicValues (δ node.1.1) (δ' node.1.1) _ (loss node.1) _) node.2
   rw [herr, verificationGame_eq, simulateQ_map] at h
   rw [verificationGame_eq, simulateQ_map]
   simp only [StateT.run'_map', prEvent_map] at h ⊢
   refine (prEvent_mono _ _ _ fun result hres ↦ ?_).trans h
   obtain ⟨hacc, hfar⟩ := hres
   obtain ⟨w, hw⟩ := (C.setup EF result.2.1.1).terminal_holds_of_eval result.1
-    (δ result.2.1.1.1) (δ' result.2.1.1.1) _ (loss result.2.1.1) result.2.1.2 hacc
+    (δ result.2.1.1.1) (δ' result.2.1.1.1) _ (loss result.2.1.1) _ result.2.1.2 hacc
   exact ⟨w, hw, fun hroot ↦ hfar _ hroot.1 hroot.2⟩
 
 end Statement

@@ -100,10 +100,11 @@ noncomputable def lookupRatio : Bool → ℕ → ℝ≥0∞
   | true, bits => Iop.powFraction F bits
   | false, _ => (Fintype.card 𝕂 : ℝ≥0∞) ^ 2
 
-/-- The lookup challenges with `bits` bits of grinding are bounded by `powFraction F bits`, when
-their samples fit the coins. -/
+/-- The lookup challenges with `bits` bits of grinding are bounded by `powFraction F bits` against
+the uniform law, when their samples fit the coins. -/
 theorem bounded_pairDraw (bits : ℕ) (hs : pairSamples (EF := EF) bits ≤ m * K) :
-    (pairDraw (F := F) (EF := EF) (K := K) (m := m) bits).Bounded (Iop.powFraction F bits) := by
+    (pairDraw (F := F) (EF := EF) (K := K) (m := m) bits).Bounded ($ᵗ (𝕂 × 𝕂))
+      (Iop.powFraction F bits) := by
   classical
   cases bits with
   | zero =>
@@ -146,9 +147,10 @@ theorem bounded_pairDraw (bits : ℕ) (hs : pairSamples (EF := EF) bits ≤ m * 
             (fun z ↦ CanonicalNat.toNat z.1 % 2 ^ (b + 1) = 0 ∧ E z.2))
       _ ≤ _ := prob_pow_and_le (b + 1) E
 
-/-- The lookup challenges are bounded by their ratio, when their samples fit the coins. -/
+/-- The lookup challenges are bounded by their ratio against the uniform law, when their samples
+fit the coins. -/
 theorem bounded_lookupDraw (b : Bool) (bits : ℕ) (hs : pairSamples (EF := EF) bits ≤ m * K) :
-    (lookupDraw (F := F) (EF := EF) (K := K) (m := m) b bits).Bounded
+    (lookupDraw (F := F) (EF := EF) (K := K) (m := m) b bits).Bounded ($ᵗ (𝕂 × 𝕂))
       (lookupRatio F EF b bits) := by
   classical
   cases b with
@@ -291,7 +293,7 @@ namespace CompStark.Iop.Batch.Setup
 open CompStark.Stark CompStark.Sound CompStark.Fs CompStark.Ni
 open Interaction.Oracle Interaction.Oracle.PublicCoin
 open Interaction.Oracle.Security Interaction.Oracle.Security.StateRestoration
-open scoped ENNReal
+open scoped ENNReal NNReal
 
 variable {F : Type} [BaseField F] {EF : Type} [Challenge F EF]
 variable (K m : ℕ) (S : Setup EF)
@@ -447,19 +449,23 @@ noncomputable def ratio : Errors S.publicCoin := fun node ↦
 
 variable {K m S}
 
-/-- The batch's draws are bounded by their ratios, when the coins hold the most demanding
-challenge's samples. -/
-theorem bounded_decoder (hs : 2 * Challenge.d EF + S.params.numQueries + 1 ≤ m * K) :
-    Decoder.Bounded S.publicCoin (S.decoder K m) (S.ratio (F := F)) := by
+set_option backward.isDefEq.respectTransparency false in
+/-- The batch's draws are bounded by their ratios against the laws of its certificate with
+Plonky3's query positions, when the coins hold the most demanding challenge's samples. -/
+theorem bounded_decoder (hs : 2 * Challenge.d EF + S.params.numQueries + 1 ≤ m * K)
+    (publicValues : Fin S.k → List F) (δ δ' : ℝ≥0) (hδ' : (δ' : ℝ) < 1 - S.rate) (loss : ℝ≥0) :
+    Decoder.Bounded S.publicCoin (S.decoder K m) (S.ratio (F := F))
+      (S.certificate publicValues δ δ' hδ' loss S.domainSetup.queryPositions).challenges := by
   have he (bits : ℕ) : extSamples (EF := EF) bits ≤ m * K := by
     have := Iop.Setup.extSamples_le (EF := EF) bits
     omega
   have h0 := bounded_extDraw (F := F) (EF := EF) (K := K) (m := m) 0 (he 0)
   rw [Sound.powFraction_zero] at h0
   exact fun _ ↦ ⟨bounded_lookupDraw _ _ ((pairSamples_le _).trans (by omega)),
-    fun _ _ ↦ ⟨h0, fun _ ↦ ⟨bounded_extDraw _ (he _), fun _ ↦ ⟨bounded_extDraw _ (he _),
-      bounded_friDecoder K m (he _)
-        ((Iop.Setup.querySamples_le S.params.numQueries _).trans (by omega)) _⟩⟩⟩⟩
+    fun _ _ _ ↦ ⟨h0, fun _ _ ↦ ⟨bounded_extDraw _ (he _), fun _ _ ↦ ⟨bounded_extDraw _ (he _),
+      fun _ ↦ bounded_friDecoder K m (he _)
+        ((Iop.Setup.querySamples_le S.params.numQueries _).trans (by omega)) _ _ _ _ _ _ _ _ _ _
+          _ _⟩⟩⟩⟩
 
 /-- No challenge of the batch squeezes more often than the most demanding challenge's samples
 take. -/
@@ -523,7 +529,7 @@ namespace CompStark.Iop.Batch.Statement
 open CompStark.Stark CompStark.Sound CompStark.Fs CompStark.Ni
 open Interaction.Oracle Interaction.Oracle.PublicCoin
 open Interaction.Oracle.Security Interaction.Oracle.Security.StateRestoration
-open scoped ENNReal
+open scoped ENNReal NNReal
 
 variable {F : Type} [BaseField F] (C : Statement F)
 
@@ -574,10 +580,15 @@ noncomputable def ratio : Errors (C.publicCoin EF) := fun node ↦ (C.setup EF n
 
 variable {C EF K}
 
-/-- Each draw is bounded by its ratio, when the coins hold the most demanding challenge. -/
-theorem bounded_decoder (hK : 0 < K) :
-    Decoder.Bounded (C.publicCoin EF) (C.decoder EF K (C.coinCount EF K)) (C.ratio EF) :=
-  fun n ↦ (C.setup EF n).bounded_decoder (le_squeezesFor_mul hK _)
+/-- Each draw is bounded by its ratio against the laws of the statement's certificate with
+Plonky3's query positions, when the coins hold the most demanding challenge. -/
+theorem bounded_decoder (hK : 0 < K) (publicValues : Fin C.k → List F)
+    (δ δ' : (Fin C.k → ℕ) → ℝ≥0) (hδ' : ∀ n, C.Admits n → (δ' n : ℝ) < 1 - C.rate)
+    (loss : C.Length → ℝ≥0) :
+    Decoder.Bounded (C.publicCoin EF) (C.decoder EF K (C.coinCount EF K)) (C.ratio EF)
+      (certificate EF publicValues δ δ' hδ' loss
+        fun n ↦ (C.setup EF n).domainSetup.queryPositions).challenges :=
+  fun n ↦ (C.setup EF n).bounded_decoder (le_squeezesFor_mul hK _) _ _ _ _ _
 
 /-- No challenge squeezes more often than the coins hold. -/
 theorem squeezes_le (node : Prefix PUnit (C.publicCoin EF)) :

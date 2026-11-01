@@ -3,6 +3,7 @@ Copyright (c) 2026 zkSecurity. All rights reserved.
 Released under Apache 2.0 license as described in the file LICENSE.
 -/
 import CompStark.Security
+import CompStark.Fs.Secure
 
 /-! # The security calculator
 
@@ -15,6 +16,7 @@ namespace CompStarkTests.Security
 open CompStark CompStark.Iop CompStark.Stark
 
 local notation "F" => Montgomery.Native32.FastField _root_.KoalaBear.fieldSize
+local notation "Ext4" => KoalaBear.Fast.Ext4
 
 /-- The interactive statements at their longest admitted lengths, where their errors are
 largest. -/
@@ -130,5 +132,45 @@ Classical.choice, Quot.sound] -/
 Classical.choice, Quot.sound] -/
 #guard_msgs in
 #print axioms CompStark.Sound.McaBound.uniqueOrJohnson_holds
+
+section DuplexChallenger
+open OracleComp OracleSpec CompStark.Fs
+open _root_.Interaction.Oracle _root_.Interaction.Oracle.PublicCoin
+open _root_.Interaction.Oracle.Security _root_.Interaction.Oracle.Security.HashChain
+open _root_.Interaction.Oracle.Security.StateRestoration _root_.Interaction.Oracle.TypeTree
+
+/-- **117 bits per duplex call** for `wideGrindStatement` on Plonky3's duplex challenger: the
+calculator's certificate per oracle answer (`wideGrindStatement_secureRo`) bounds the duplex
+theorem, against an adversary making `Q` duplex calls with samples of `K` elements per squeeze, by
+`chainError q + (q + maxChallenges) · 2 ^ (-117)`, `q = Q + verifierChainQueries`. -/
+theorem wideGrind_knowledgeSoundness_fs {K : ℕ} (hK : 0 < K)
+    (adversary : OracleComp (unifSpec + (duplexSpec F K + []ₒ))
+      (Option (Selection (List F) PUnit PUnit fun _ ↦ wideGrindStatement.fsCoin Ext4 K)))
+    {Q : ℕ} (hQ : IsQueryBoundP adversary (fun t ↦ isChain t = true) Q) :
+    Pr{let result ← (simulateQ (duplexSpec F K + []ₒ).romImpl
+        (wideGrindStatement.fsGame Ext4 K adversary)).run' ∅}[
+      ∃ publicValues path, result = some ⟨publicValues, path, PUnit.unit⟩ ∧
+        ∃ p, decodePath (wideGrindStatement.publicCoin Ext4)
+            (wideGrindStatement.decoder Ext4 K (wideGrindStatement.coinCount Ext4 K)) path =
+              some p ∧
+          evalWithAnswerFn
+            (p.closingImpl (wideGrindStatement.protocol Ext4).oracles noAccess noImpl)
+            (wideGrindStatement.terminal Ext4 publicValues p.toBranchPath) = true ∧
+          wideGrindStatement.Far Ext4 publicValues (fun _ ↦ (3 / 8 - 2 ^ (-13 : ℤ) : NNReal)) p] ≤
+      chainError (Digest F) (Q + wideGrindStatement.verifierChainQueries Ext4 K) +
+        (Q + wideGrindStatement.verifierChainQueries Ext4 K + @Statement.maxChallenges F _) *
+          (2 ^ 117)⁻¹ :=
+  Statement.knowledgeSoundness_fs_of_secureRo _ KoalaBear.card_eq
+    Sound.McaBound.uniqueDecoding_holds
+    wideGrindAnalysis wideGrindStatement_secureRo (by rw [KoalaBear.card_eq]; norm_num) (by decide)
+    hK _ (by rw [Sound.coe_sub_two_zpow _ (-13) 13 rfl (by norm_num)]; norm_num [wideGrindAnalysis])
+    (by decide +kernel) adversary hQ
+
+/-- info: 'CompStarkTests.Security.wideGrind_knowledgeSoundness_fs' depends on axioms: [propext,
+Classical.choice, Quot.sound] -/
+#guard_msgs in
+#print axioms wideGrind_knowledgeSoundness_fs
+
+end DuplexChallenger
 
 end CompStarkTests.Security

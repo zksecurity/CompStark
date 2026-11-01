@@ -120,7 +120,8 @@ and every prover message, the verifier's checks pass on the path its coins decod
 tuple of traces of the claimed lengths close to the committed ones satisfies the batch with
 probability at most `chainError (Digest F) q` plus `maxError * q + sumError` of the node errors,
 each times its draw's ratio, `q = Q + verifierChainQueries`: FRI tests proximity `δ n` and the
-extractor list-decodes at `δ' n` below `1 - rate`, at proximity loss `loss n`. -/
+extractor list-decodes at `δ' n` below `1 - rate`, at proximity loss `loss n`, each query
+position `1/p` more likely to land where the checks pass than a uniform one. -/
 theorem knowledgeSoundness_fs (hK : 0 < K) (hδ' : ∀ n, C.Admits n → (δ' n : ℝ) < 1 - C.rate)
     (loss : C.Length → ℝ≥0)
     (adversary : OracleComp (unifSpec + (duplexSpec F K + []ₒ))
@@ -135,10 +136,10 @@ theorem knowledgeSoundness_fs (hK : 0 < K) (hδ' : ∀ n, C.Admits n → (δ' n 
           C.Far EF publicValues.1 δ' p] ≤
       HashChain.chainError (Digest F) (Q + C.verifierChainQueries EF K) +
         (maxError (fun (_ : C.PublicValues) node ↦
-            C.ratio EF node * C.nodeErrors EF δ δ' loss node) *
+            C.ratio EF node * C.nodeErrors EF δ δ' loss (1 / Nat.card F) node) *
             (Q + C.verifierChainQueries EF K) +
           sumError (fun (_ : C.PublicValues) node ↦
-            C.ratio EF node * C.nodeErrors EF δ δ' loss node)) := by
+            C.ratio EF node * C.nodeErrors EF δ δ' loss (1 / Nat.card F) node)) := by
   have : NeZero (C.coinCount EF K) := ⟨fun h0 ↦ by
     have := le_squeezesFor_mul hK (2 * Challenge.d EF + C.params.numQueries + 1)
     unfold coinCount at h0
@@ -154,27 +155,29 @@ theorem knowledgeSoundness_fs (hK : 0 < K) (hδ' : ∀ n, C.Admits n → (δ' n 
       (fun key ↦ Observer.length_encode_le _ (hN key.1) squeezes_le C.tail key) hQ
   have h := KnowledgeCertificate.chainSqueeze_knowledge_soundness initCap []
     (fun _ ↦ C.publicCoin EF) (fun _ ↦ C.decoder EF K (C.coinCount EF K)) (fun _ ↦ C.ratio EF)
-    (fun _ ↦ bounded_decoder hK) (fun _ ↦ C.fsSqueezes EF K) (fun _ node ↦ squeezes_le node)
+    (fun _ ↦ C.fsSqueezes EF K) (fun _ node ↦ squeezes_le node)
     (fun _ ↦ reads_decoder _ hK) (C.fsEncode EF K)
     (fun key key' hk hk' he ↦ Observer.encode_injective _ (observer_prefixFree _)
       C.tail tail_injective key key' hk hk' he)
     (fun key hk ↦ Observer.encode_fst_ne_nil _ (observer_fills _) C.tail key hk)
     (fun publicValues ↦ C.rootState EF publicValues.1 δ')
-    (fun publicValues ↦ certificate EF publicValues.1 δ δ' hδ' loss)
-    (fun publicValues ↦ uniformChallenges_certificate EF publicValues.1 δ δ' hδ' loss)
+    (fun publicValues ↦ certificate EF publicValues.1 δ δ' hδ' loss
+      fun n ↦ (C.setup EF n).domainSetup.queryPositions)
+    (fun publicValues ↦ bounded_decoder hK publicValues.1 δ δ' hδ' loss)
     adversary hq
   have hle (publicValues : C.PublicValues) (node : Prefix PUnit (C.publicCoin EF)) :
       C.ratio EF node * supErrors (C.publicCoin EF)
-        (certificate EF publicValues.1 δ δ' hδ' loss).challenges node ≤
-        C.ratio EF node * C.nodeErrors EF δ δ' loss node := by
+        (certificate EF publicValues.1 δ δ' hδ' loss
+          fun n ↦ (C.setup EF n).domainSetup.queryPositions).challenges node ≤
+        C.ratio EF node * C.nodeErrors EF δ δ' loss (1 / Nat.card F) node := by
     gcongr
     exact (C.setup EF node.1).supErrors_certificate_le publicValues.1 (δ node.1.1) (δ' node.1.1)
-      _ (loss node.1) node.2
+      _ (loss node.1) _ node.2
   simp only [Nat.cast_add] at h
   refine (prEvent_mono _ _ _ fun result hres ↦ ?_).trans (h.trans ?_)
   · obtain ⟨publicValues, path, rfl, p, hp, hacc, hfar⟩ := hres
     obtain ⟨w, hw⟩ := (C.setup EF p.1).terminal_holds_of_eval publicValues.1 (δ p.1.1)
-      (δ' p.1.1) (hδ' p.1.1 p.1.2) (loss p.1) p.2 hacc
+      (δ' p.1.1) (hδ' p.1.1 p.1.2) (loss p.1) (C.setup EF p.1).domainSetup.queryPositions p.2 hacc
     exact ⟨publicValues, path, PUnit.unit, rfl, p, hp, w, hw, fun hroot ↦ hfar _ hroot.1 hroot.2⟩
   · gcongr
     · exact maxError_mono hle

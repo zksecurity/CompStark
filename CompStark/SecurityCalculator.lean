@@ -44,11 +44,10 @@ worst instance. In the random-oracle model every round is one oracle answer and 
 is at most the largest term, each round after `α` multiplied by its grinding's `powFraction`,
 FRI's folds bounded by their largest fold and its queries by
 `(1 - δ + #folds · loss + 1/p) ^ numQueries`. On Plonky3's duplex challenger
-(`Statement.knowledgeSoundness_fs`) every node error is multiplied by its draw's ratio
-(`Setup.chainTermsOf`): the rounds after `α` by their grinding's `powFraction`, and the queries
-also by each position's bias `2 ^ top · powFraction top` on the domain of `2 ^ top` points;
-`Setup.chainBound` evaluates the whole bound at `q` duplex calls and `Setup.roBound` the
-random-oracle model's at `q` oracle calls.
+(`Statement.knowledgeSoundness_fs`) every node error times its draw's ratio is one of these round
+terms, so the round error's bound is also the error per duplex call
+(`Statement.knowledgeSoundness_fs_of_secureRo`); `Setup.chainBound` evaluates that theorem's bound
+at `q` duplex calls and `Setup.roBound` the random-oracle model's at `q` oracle calls.
 
 `Setup.Secure p B A bits` and `Setup.SecureRo p B A bits` (and the batch's) are decidable: the
 analysis fits the setup (`Setup.Fits`: `B` admits batching and every fold at `δ`) and the bound is
@@ -262,35 +261,11 @@ def SecureRo (p : ℕ) (B : McaBound) (A : Analysis) (bits : ℕ) : Prop :=
 instance (p : ℕ) (B : McaBound) (A : Analysis) (bits : ℕ) : Decidable (S.SecureRo p B A bits) := by
   unfold SecureRo; infer_instance
 
-/-- The node errors of the hash-chain bound for `|F| = p`, by challenge, each times its draw's
-ratio, for the shape `c` and FRI's folds `folds` (their largest, or their sum): the grinding's
-`powFraction` after `α`, and at the queries also each position's bias `2 ^ top · powFraction top`
-on the top domain of `2 ^ top` points. -/
-def chainTermsOf (c : Shape) (p : ℕ) (B : McaBound) (A : Analysis) (folds : ℚ) :
-    List (String × ℚ) :=
-  let top := S.logN + S.params.logBlowup
-  [("constraint folding", c.foldingNum S.params.logBlowup A / (p : ℚ) ^ Challenge.d EF),
-    ("out of domain", powFractionQ p S.params.oodPowBits *
-      (c.outOfDomainNum S.params.logBlowup A / (p : ℚ) ^ Challenge.d EF)),
-    ("batching", powFractionQ p S.params.batchPowBits *
-      (c.batchingNum S.params.logBlowup B A c.numOpened / (p : ℚ) ^ Challenge.d EF)),
-    ("FRI folds", powFractionQ p S.params.commitPowBits * (folds / (p : ℚ) ^ Challenge.d EF)),
-    ("FRI queries", powFractionQ p S.params.queryPowBits *
-      (2 ^ top * powFractionQ p top * S.queryDensity A []) ^ S.params.numQueries)]
-
-/-- The largest node error of the hash-chain bound, each times its ratio: the error per chain
-query. -/
-def chainMaxBound (p : ℕ) (B : McaBound) (A : Analysis) : ℚ :=
-  maxTerms (S.chainTermsOf S.shape p B A (S.friFoldMax B A []))
-
-/-- The path sum of the node errors of the hash-chain bound, each times its ratio. -/
-def chainSumBound (p : ℕ) (B : McaBound) (A : Analysis) : ℚ :=
-  sumTerms (S.chainTermsOf S.shape p B A (S.friFoldsNum B A []))
-
-/-- The hash-chain bound at `q` chain queries for `|F| = p`: the capacities' collisions and
-predictions `q (q + 1) / 2 / p ^ 8`, `q` times the largest node error and the path sum. -/
+/-- The bound of `knowledgeSoundness_fs_of_secureRo` at `q` duplex calls for `|F| = p`: the
+capacities' collisions and predictions `q (q + 1) / 2 / p ^ 8`, and `q` plus the path's at most
+`twoAdicity F + 4` challenges times the round error's bound. -/
 def chainBound (p q : ℕ) (B : McaBound) (A : Analysis) : ℚ :=
-  (q * (q + 1) / 2 : ℚ) / (p : ℚ) ^ 8 + q * S.chainMaxBound p B A + S.chainSumBound p B A
+  (q * (q + 1) / 2 : ℚ) / (p : ℚ) ^ 8 + (q + (twoAdicity F + 4) : ℚ) * S.roundErrorBound p B A
 
 /-- The random-oracle bound at `q` oracle calls for `|F| = p` and caps of height `h`:
 `q · roundError + (2 + 2 ^ (h + 1)) q² / p ^ 8`. -/
@@ -883,12 +858,6 @@ def Setup.knowledgeErrorReport {lookups : List (Lookup F)} (S : Setup EF lookups
 /-- The round error's report for `|F| = p` with the MCA bound `B`. -/
 def Setup.roundErrorReport (S : Setup EF) (p : ℕ) (B : McaBound) (A : Analysis) : Report :=
   .of A (decide (S.Fits B A)) (S.roundErrorTerms p B A) (S.roundErrorBound p B A)
-
-/-- The hash-chain bound's report for `|F| = p` with the MCA bound `B`: each node error times its
-ratio, and the largest, the error per chain query. -/
-def Setup.chainErrorReport (S : Setup EF) (p : ℕ) (B : McaBound) (A : Analysis) : Report :=
-  .of A (decide (S.Fits B A)) (S.chainTermsOf S.shape p B A (S.friFoldMax B A []))
-    (S.chainMaxBound p B A)
 
 /-- The batch statement's knowledge error report for `|F| = p` with the MCA bound `B`. -/
 def Batch.Statement.knowledgeErrorReport (C : Batch.Statement F) (EF : Type) [Challenge F EF]

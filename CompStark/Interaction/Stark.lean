@@ -75,6 +75,14 @@ def friProtocol (heights : List ℕ) : Protocol :=
   Fri.Interaction.protocol 𝕂 (S.logN + S.params.logBlowup) (2 ^ S.params.logFinalPolyLen)
     S.params.numQueries (S.friSchedule heights)
 
+/-- Laws of FRI's query positions on `L` (ArkLib's `QueryLaw`): the positions land in a set of
+density `ρ` with probability at most `(ρ + slack) ^ numQueries`. -/
+abbrev QueryPositions : Type :=
+  Fri.Interaction.QueryLaw (S.logN + S.params.logBlowup) S.params.numQueries
+
+/-- Uniform query positions, as the interactive verifier samples them. -/
+noncomputable abbrev uniformPositions : S.QueryPositions := Fri.Interaction.QueryLaw.uniform _ _
+
 /-- After the claimed values: the batching challenge `a`, then FRI on the DEEP word. -/
 def afterOpenings : Protocol := .public .receiver 𝕂 fun _ ↦ S.friProtocol []
 

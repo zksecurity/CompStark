@@ -22,8 +22,10 @@ squeezes as their samples take. Here the commitments are the oracle messages the
 committed word is observed in full where Plonky3 observes its Merkle cap.
 
 * `Setup.decoder`, `Statement.decoder`: the draws at every challenge (`extDraw`, `queryDraw`);
-* `Setup.ratio`, `Statement.ratio`: the draws' ratios, the grinding's `powFraction` and the query
-  positions' bias, bounding the draws (`Statement.bounded_decoder`);
+* `Setup.ratio`, `Statement.ratio`: the draws' ratios, the grinding's `powFraction`, bounding
+  the draws against the laws of the certificate with Plonky3's query positions
+  (`Setup.queryPositions`, the residues of uniform elements of `F`, of slack `1/p`;
+  `Statement.bounded_decoder`);
 * `Setup.observer`, `Statement.observer`: what the verifier observes and how often it squeezes,
   the inputs of the chain (`Observer.encode`), which tell the keys apart
   (`Statement.observer_prefixFree`, with the domain separator's injectivity on the admitted
@@ -210,10 +212,10 @@ noncomputable def friObserver : {n : ℕ} → (s : Fri.Interaction.Schedule n) �
         friObserver rest []))
 
 /-- The ratios of FRI's draws: the folds' `powFraction F commitBits`, the queries'
-`powFraction F queryBits * (2 ^ top * powFraction F top) ^ t`. -/
+`powFraction F queryBits`. -/
 noncomputable def friRatio : {n : ℕ} → (s : Fri.Interaction.Schedule n) →
     Errors (Fri.Interaction.publicCoin 𝕂 top d t s)
-  | _, .final => fun _ ↦ Iop.powFraction F queryBits * (2 ^ top * Iop.powFraction F top) ^ t
+  | _, .final => fun _ ↦ Iop.powFraction F queryBits
   | n, .fold _ _ _ rest => fun node ↦
       Sum.elim (fun _ ↦ Iop.powFraction F commitBits) (fun node ↦ friRatio rest node.2)
         (node : Fri.Interaction.Word 𝕂 n × (PUnit ⊕ (PUnit × Prefix PUnit
@@ -221,15 +223,25 @@ noncomputable def friRatio : {n : ℕ} → (s : Fri.Interaction.Schedule n) →
 
 variable {top d t commitBits queryBits}
 
-/-- FRI's draws are bounded by their ratios, when their samples fit the coins. -/
+/-- FRI's draws are bounded by their ratios against the laws of FRI's certificate with the
+positions' law `queryLaw`, when their samples fit the coins. -/
 theorem bounded_friDecoder (hc : extSamples (EF := EF) commitBits ≤ m * K)
-    (hq : querySamples t queryBits ≤ m * K) : {n : ℕ} → (s : Fri.Interaction.Schedule n) →
+    (hq : querySamples t queryBits ≤ m * K) (hb : 2 ^ top ∣ Nat.card F - 1)
+    (inputs : (m : ℕ) → Fin (2 ^ m) → 𝕂) (δ loss : ℝ) (hd : 0 < d) (hloss : 0 ≤ loss) :
+    ∀ {n : ℕ} (hn : n ≤ top) (ω : Domain.SmoothCosetFftDomain n 𝕂)
+      (s : Fri.Interaction.Schedule n) (j : ℕ) (f : Fri.Interaction.Word 𝕂 n)
+      (C : Finset (Fin (2 ^ top))),
     Decoder.Bounded (Fri.Interaction.publicCoin 𝕂 top d t s)
       (friDecoder (F := F) K m top d t commitBits queryBits s)
       (friRatio (F := F) top d t commitBits queryBits s)
-  | _, .final => fun _ ↦ ⟨bounded_queryDraw top t queryBits hq, trivial⟩
-  | _, .fold _ _ _ rest => fun _ ↦
-    ⟨bounded_extDraw commitBits hc, bounded_friDecoder hc hq rest⟩
+      (Fri.Interaction.certificate top d t inputs δ loss (queryLaw top t hb) hd hloss hn ω s j f
+        C).challenges
+  | _, _, _, .final, _, _, _ => fun _ ↦ ⟨bounded_queryDraw top t queryBits hq, fun _ ↦ trivial⟩
+  | n, hn, ω, .fold k hk inject rest, j, f, C => fun word ↦
+    ⟨bounded_extDraw commitBits hc, fun β ↦ bounded_friDecoder hc hq hb inputs δ loss hd hloss
+      ((Nat.sub_le n k).trans hn) (ω.subdomain k) rest (j + 1)
+      (Fri.Interaction.foldNext hk ω word β (Fri.Interaction.injected inputs (n - k) inject))
+      (Fri.Interaction.commitConsistent top f word C)⟩
 
 /-- FRI's draws read only their squeezes. -/
 theorem reads_friDecoder (hK : 0 < K) : {n : ℕ} → (s : Fri.Interaction.Schedule n) →
@@ -298,7 +310,7 @@ end CompStark.Fs
 namespace CompStark.Iop.Setup
 open CompStark.Stark CompStark.Sound CompStark.Fs Interaction.Oracle Interaction.Oracle.PublicCoin
 open Interaction.Oracle.Security Interaction.Oracle.Security.StateRestoration
-open scoped ENNReal
+open scoped ENNReal NNReal
 
 variable {F : Type} [BaseField F] {EF : Type} [Challenge F EF]
 variable (K m : ℕ) (S : Setup EF)
@@ -326,6 +338,13 @@ def friSeed : List F :=
 /-- The PCS's domain separator, observed before the claimed values. -/
 def pcsSeed : List F := DomainSeparator.pcsSeed F EF (Ni.pcsCountsS S) S.params.batchPowBits
 
+/-- The law of the query positions Plonky3's verifier draws: the residues of uniform elements of
+`F` on `L`, of slack `1/p` (`queryLaw`). -/
+noncomputable def queryPositions {lookups : List (Stark.Lookup F)} (T : Setup EF lookups) :
+    T.QueryPositions :=
+  queryLaw (T.logN + T.params.logBlowup) T.params.numQueries
+    (BaseField.two_pow_dvd_card_sub_one_of_le T.valid.twoAdic)
+
 /-- The STARK's draws: `α` without grinding, `ζ`, the batching challenge, FRI's. -/
 noncomputable def decoder : Decoder (Coins F K m) S.publicCoin :=
   (extDraw 0, (extDraw S.params.oodPowBits, fun _ ↦ (extDraw S.params.batchPowBits,
@@ -345,8 +364,8 @@ noncomputable def observer : Observer F S.publicCoin (S.decoder K m) :=
             S.params.numQueries S.params.commitPowBits S.params.queryPowBits (S.friSchedule [])
             S.friSeed))))))
 
-/-- The draws' ratios: `1` at `α`, the grinding's `powFraction` at `ζ` and the batching
-challenge, FRI's. -/
+/-- The draws' ratios: `1` at `α`, the grinding's `powFraction` at `ζ`, the batching challenge,
+FRI's folds and its queries. -/
 noncomputable def ratio : Errors S.publicCoin := fun node ↦
   match (node : S.TraceMessage × (PUnit ⊕ (PUnit × (S.QuotientMessage × (PUnit ⊕
       (PUnit × ((_ : Openings S) × (PUnit ⊕ (PUnit × S.FriPrefix))))))))) with
@@ -369,18 +388,21 @@ theorem querySamples_le (t bits : ℕ) : querySamples t bits ≤ t + 1 := by
   simp only [querySamples]
   split <;> omega
 
-/-- The STARK's draws are bounded by their ratios, when the coins hold the most demanding
-challenge's samples. -/
-theorem bounded_decoder (hs : Challenge.d EF + S.params.numQueries + 1 ≤ m * K) :
-    Decoder.Bounded S.publicCoin (S.decoder K m) (S.ratio (F := F)) := by
+set_option backward.isDefEq.respectTransparency false in
+/-- The STARK's draws are bounded by their ratios against the laws of its certificate with
+Plonky3's query positions, when the coins hold the most demanding challenge's samples. -/
+theorem bounded_decoder (hs : Challenge.d EF + S.params.numQueries + 1 ≤ m * K)
+    (publicValues : List F) (δ δ' : ℝ≥0) (hδ' : (δ' : ℝ) < 1 - S.rate) (loss : ℝ≥0) :
+    Decoder.Bounded S.publicCoin (S.decoder K m) (S.ratio (F := F))
+      (S.certificate publicValues δ δ' hδ' loss S.queryPositions).challenges := by
   have he (bits : ℕ) : extSamples (EF := EF) bits ≤ m * K := by
     have := extSamples_le (EF := EF) bits
     omega
   have h0 := bounded_extDraw (F := F) (EF := EF) (K := K) (m := m) 0 (he 0)
   rw [Sound.powFraction_zero] at h0
-  exact fun _ ↦ ⟨h0, fun _ ↦ ⟨bounded_extDraw _ (he _), fun _ ↦ ⟨bounded_extDraw _ (he _),
-    bounded_friDecoder K m (he _)
-      ((querySamples_le S.params.numQueries _).trans (by omega)) _⟩⟩⟩
+  exact fun T ↦ ⟨h0, fun α Q ↦ ⟨bounded_extDraw _ (he _), fun ζ o ↦ ⟨bounded_extDraw _ (he _),
+    fun a ↦ bounded_friDecoder K m (he _)
+      ((querySamples_le S.params.numQueries _).trans (by omega)) _ _ _ _ _ _ _ _ _ _ _ _⟩⟩⟩
 
 /-- The STARK's draws read only their squeezes. -/
 theorem reads_decoder (hK : 0 < K) :
@@ -474,7 +496,7 @@ end CompStark.Iop.Setup
 namespace CompStark.Iop.Statement
 open CompStark.Stark CompStark.Sound CompStark.Fs Interaction.Oracle Interaction.Oracle.PublicCoin
 open Interaction.Oracle.Security Interaction.Oracle.Security.StateRestoration
-open scoped ENNReal
+open scoped ENNReal NNReal
 
 variable {F : Type} [BaseField F] (C : Statement F) (EF : Type) [Challenge F EF] (K : ℕ)
 
@@ -498,10 +520,14 @@ noncomputable def ratio : Errors (C.publicCoin EF) := fun node ↦ (C.setup EF n
 
 variable {C EF K}
 
-/-- Each draw is bounded by its ratio, when the coins hold the most demanding challenge. -/
-theorem bounded_decoder (hK : 0 < K) :
-    Decoder.Bounded (C.publicCoin EF) (C.decoder EF K (C.coinCount EF K)) (C.ratio EF) :=
-  fun n ↦ (C.setup EF n).bounded_decoder (le_squeezesFor_mul hK _)
+/-- Each draw is bounded by its ratio against the laws of the statement's certificate with
+Plonky3's query positions, when the coins hold the most demanding challenge. -/
+theorem bounded_decoder (hK : 0 < K) (publicValues : List F) (δ δ' : ℕ → ℝ≥0)
+    (hδ' : ∀ n, C.Admits n → (δ' n : ℝ) < 1 - C.rate) (loss : C.Length → ℝ≥0) :
+    Decoder.Bounded (C.publicCoin EF) (C.decoder EF K (C.coinCount EF K)) (C.ratio EF)
+      (certificate EF publicValues δ δ' hδ' loss
+        fun n ↦ (C.setup EF n).queryPositions).challenges :=
+  fun n ↦ (C.setup EF n).bounded_decoder (le_squeezesFor_mul hK _) _ _ _ _ _
 
 /-- No challenge squeezes more often than the coins hold. -/
 theorem squeezes_le (node : Prefix PUnit (C.publicCoin EF)) :

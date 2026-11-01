@@ -231,25 +231,26 @@ noncomputable def prefixCertificate (hδ' : (δ' : ℝ) < 1 - S.rate) (loss : �
   prover_preserving := S.prefixExtractor_isProverPreserving publicValues δ δ' loss
   local_bound := S.prefixExtractor_isLocallyBounded publicValues δ δ' hδ' loss
 
-/-- FRI's knowledge certificate on the DEEP word, gated by the check at `ζ`. -/
+/-- FRI's knowledge certificate on the DEEP word, gated by the check at `ζ`, the query positions
+drawn from `L`. -/
 noncomputable def friCertificate (T : S.TraceMessage) (α : 𝕂) (Q : S.QuotientMessage) (ζ : 𝕂)
-    (o : Openings S) (a : 𝕂) (loss : ℝ≥0) :
+    (o : Openings S) (a : 𝕂) (loss : ℝ≥0) (L : S.QueryPositions) :
     KnowledgeCertificate (S.friProtocol []).tree (S.friProtocol []).roles
       (S.friState publicValues δ T α Q ζ o a loss) :=
   (Fri.Interaction.certificate (S.logN + S.params.logBlowup) (2 ^ S.params.logFinalPolyLen)
-    S.params.numQueries (S.deepInputs (S.deepOf T α Q ζ o a)) δ loss (Nat.two_pow_pos _)
+    S.params.numQueries (S.deepInputs (S.deepOf T α Q ζ o a)) δ loss L (Nat.two_pow_pos _)
     loss.coe_nonneg le_rfl S.friDomain (S.friSchedule []) 0 (S.deepOf T α Q ζ o a)
     Finset.univ)
     |> gateCertificate _
 
 /-- **The STARK's knowledge certificate**: the rounds before FRI, appended with FRI's on the DEEP
-word. -/
-noncomputable def certificate (hδ' : (δ' : ℝ) < 1 - S.rate) (loss : ℝ≥0) :
+word, the query positions drawn from `L`. -/
+noncomputable def certificate (hδ' : (δ' : ℝ) < 1 - S.rate) (loss : ℝ≥0) (L : S.QueryPositions) :
     KnowledgeCertificate S.protocol.tree S.protocol.roles (S.rootState publicValues δ') :=
   (S.prefixCertificate publicValues δ δ' hδ' loss).append (fun _ ↦ (S.friProtocol []).tree)
     (fun _ ↦ (S.friProtocol []).roles) fun path ↦
       S.friCertificate publicValues δ path.1 path.2.1 path.2.2.1 path.2.2.2.1 path.2.2.2.2.1
-        path.2.2.2.2.2.1 loss
+        path.2.2.2.2.2.1 loss L
 
 /-- FRI's folds' errors and query term at the proximity loss `loss`, with inputs injected at the
 log sizes `heights`. -/
@@ -261,20 +262,24 @@ noncomputable def friBound {lookups : List (Lookup F)} (T : Iop.Setup EF lookups
 /-- The certificate's largest path error: the folding, out-of-domain and batching errors, and
 FRI's at the proximity loss. -/
 theorem maxError_certificate (hδ' : (δ' : ℝ) < 1 - S.rate) (loss : ℝ≥0) :
-    (S.certificate publicValues δ δ' hδ' loss).challenges.maxError S.protocol.roles ≤
+    (S.certificate publicValues δ δ' hδ' loss S.uniformPositions).challenges.maxError
+      S.protocol.roles ≤
       foldingError S δ' + outOfDomainError S δ' + batchingError S δ δ' + S.friBound [] δ loss := by
   have hfri : ∀ T α Q ζ o a, RoundExtractor.ChallengeSchedule.maxError (S.friProtocol []).roles
-      (S.friCertificate publicValues δ T α Q ζ o a loss).challenges ≤ S.friBound [] δ loss := by
+      (S.friCertificate publicValues δ T α Q ζ o a loss S.uniformPositions).challenges ≤
+        S.friBound [] δ loss := by
     intro T α Q ζ o a
     refine (Fri.Interaction.maxError_certificate (S.logN + S.params.logBlowup)
       (2 ^ S.params.logFinalPolyLen) S.params.numQueries
-      (S.deepInputs (S.deepOf T α Q ζ o a)) δ loss (Nat.two_pow_pos _) loss.coe_nonneg le_rfl
-      S.friDomain (S.friSchedule []) 0 (S.deepOf T α Q ζ o a) Finset.univ).trans (le_of_eq ?_)
-    simp only [friBound, Fri.Interaction.threshold, zero_add]
+      (S.deepInputs (S.deepOf T α Q ζ o a)) δ loss S.uniformPositions (Nat.two_pow_pos _)
+      loss.coe_nonneg le_rfl S.friDomain (S.friSchedule []) 0 (S.deepOf T α Q ζ o a)
+      Finset.univ).trans (le_of_eq ?_)
+    simp only [friBound, Fri.Interaction.threshold, zero_add, uniformPositions,
+      Fri.Interaction.QueryLaw.slack_uniform, add_zero]
   change (⨆ T : S.TraceMessage, (foldingError S δ' + ⨆ α : 𝕂, ⨆ Q : S.QuotientMessage,
     (outOfDomainError S δ' + ⨆ ζ : 𝕂, ⨆ o : Openings S, (batchingError S δ δ' + ⨆ a : 𝕂,
       RoundExtractor.ChallengeSchedule.maxError (S.friProtocol []).roles
-        (S.friCertificate publicValues δ T α Q ζ o a loss).challenges)))) ≤ _
+        (S.friCertificate publicValues δ T α Q ζ o a loss S.uniformPositions).challenges)))) ≤ _
   refine iSup_le fun T ↦ ?_
   rw [add_assoc, add_assoc]
   refine add_le_add le_rfl (iSup₂_le fun α Q ↦ add_le_add le_rfl (iSup₂_le fun ζ o ↦
@@ -289,12 +294,12 @@ theorem samples_fri (T : S.TraceMessage) (α : 𝕂) (Q : S.QuotientMessage) (ζ
     SamplesChallenges unifSpec (QueryImpl.id' unifSpec) (S.friProtocol []).tree
       (S.friProtocol []).roles (S.friProtocol []).oracles S.quotientAccess impl _
       (S.friVerifier publicValues α ζ o a)
-      (S.friCertificate publicValues δ T α Q ζ o a loss).challenges :=
+      (S.friCertificate publicValues δ T α Q ζ o a loss S.uniformPositions).challenges :=
   samplesChallenges_mapOutput unifSpec (QueryImpl.id' unifSpec) _ _ _ _ _ _ _ _ _ _
     (Fri.Interaction.samplesChallenges_verifier (S.logN + S.params.logBlowup)
       (2 ^ S.params.logFinalPolyLen) S.params.numQueries (S.deepInputs (S.deepOf T α Q ζ o a)) δ
-      loss (Nat.two_pow_pos _) loss.coe_nonneg (S.friSchedule []) le_rfl S.friDomain _ _ _ 0
-      (S.deepOf T α Q ζ o a) Finset.univ)
+      loss S.uniformPositions (Nat.two_pow_pos _) loss.coe_nonneg (S.friSchedule []) le_rfl
+      S.friDomain _ _ _ 0 (S.deepOf T α Q ζ o a) Finset.univ)
 
 set_option backward.isDefEq.respectTransparency false in
 theorem samples_afterOpenings (α ζ : 𝕂) (o : Openings S)
@@ -394,7 +399,7 @@ set_option backward.isDefEq.respectTransparency false in
 theorem samplesChallenges_verifier (hδ' : (δ' : ℝ) < 1 - S.rate) (loss : ℝ≥0) :
     SamplesChallenges unifSpec (QueryImpl.id' unifSpec) S.protocol.tree S.protocol.roles
       S.protocol.oracles noAccess noImpl _ (S.verifier publicValues)
-      (S.certificate publicValues δ δ' hδ' loss).challenges := by
+      (S.certificate publicValues δ δ' hδ' loss S.uniformPositions).challenges := by
   intro T after hafter
   rw [simulateQ_id', verifier, simulateQ_pure, mem_support_pure_iff] at hafter
   subst hafter
@@ -407,16 +412,16 @@ theorem samplesChallenges_verifier (hδ' : (δ' : ℝ) < 1 - S.rate) (loss : ℝ
 
 /-- The certificate's terminal state is FRI's, on the DEEP word of the path's messages. -/
 theorem terminalState_certificate (hδ' : (δ' : ℝ) < 1 - S.rate) (loss : ℝ≥0)
-    (path : S.protocol.tree.ExecutionPath) :
-    (S.certificate publicValues δ δ' hδ' loss).extractor.terminalState path =
+    (L : S.QueryPositions) (path : S.protocol.tree.ExecutionPath) :
+    (S.certificate publicValues δ δ' hδ' loss L).extractor.terminalState path =
       (S.friCertificate publicValues δ path.1 path.2.1 path.2.2.1 path.2.2.2.1 path.2.2.2.2.1
-        path.2.2.2.2.2.1 loss).extractor.terminalState path.2.2.2.2.2.2 := rfl
+        path.2.2.2.2.2.1 loss L).extractor.terminalState path.2.2.2.2.2.2 := rfl
 
 /-- The extractor's input witness is the path's trace message, with a trace. -/
-theorem extractWitness_fst (hδ' : (δ' : ℝ) < 1 - S.rate) (loss : ℝ≥0)
+theorem extractWitness_fst (hδ' : (δ' : ℝ) < 1 - S.rate) (loss : ℝ≥0) (L : S.QueryPositions)
     (path : S.protocol.tree.ExecutionPath)
-    (w : ((S.certificate publicValues δ δ' hδ' loss).extractor.terminalState path).Witness) :
-    ((S.certificate publicValues δ δ' hδ' loss).extractor.extractWitness path w).1 = path.1 :=
+    (w : ((S.certificate publicValues δ δ' hδ' loss L).extractor.terminalState path).Witness) :
+    ((S.certificate publicValues δ δ' hδ' loss L).extractor.extractWitness path w).1 = path.1 :=
   rfl
 
 section Terminal
@@ -431,8 +436,8 @@ theorem terminal_fri (T : S.TraceMessage) (α : 𝕂) (Q : S.QuotientMessage) (�
     ∀ result ∈ support (executeStrategies unifSpec (S.friProtocol []).tree
       (S.friProtocol []).roles (S.friProtocol []).oracles S.quotientAccess (S.messagesImpl T Q)
       prover (S.friVerifier publicValues α ζ o a)), result.2.2 = true →
-      ∃ w, ((S.friCertificate publicValues δ T α Q ζ o a loss).extractor.terminalState
-        result.1).holds w := by
+      ∃ w, ((S.friCertificate publicValues δ T α Q ζ o a loss
+        S.uniformPositions).extractor.terminalState result.1).holds w := by
   intro result hres hacc
   rw [execute_fri, support_map] at hres
   obtain ⟨r, hr, rfl⟩ := hres
@@ -440,8 +445,8 @@ theorem terminal_fri (T : S.TraceMessage) (α : 𝕂) (Q : S.QuotientMessage) (�
       r.2.2 = true := Bool.and_eq_true _ _ ▸ hacc
   obtain ⟨w, hw⟩ := Fri.Interaction.terminal_holds_of_accepts (S.logN + S.params.logBlowup)
     (2 ^ S.params.logFinalPolyLen) S.params.numQueries (S.deepInputs (S.deepOf T α Q ζ o a)) δ
-    loss unifSpec (Nat.two_pow_pos _) loss.coe_nonneg _ _ (S.friSchedule []) le_rfl S.friDomain _ _
-    _ 0 (S.deepOf T α Q ζ o a) Finset.univ prover (S.reads_deepReader T Q α ζ o a)
+    loss S.uniformPositions unifSpec (Nat.two_pow_pos _) loss.coe_nonneg _ _ (S.friSchedule [])
+    le_rfl S.friDomain _ _ _ 0 (S.deepOf T α Q ζ o a) Finset.univ prover (S.reads_deepReader T Q α ζ o a)
     (fun x ↦ by simp only [Finset.mem_univ, decide_true]; rfl) r hr hacc'.2
   simp only [friCertificate, gateCertificate]
   rw [terminalState_gateExtractor]
@@ -455,8 +460,8 @@ theorem terminal_afterOpenings (T : S.TraceMessage) (α : 𝕂) (Q : S.QuotientM
     ∀ result ∈ support (executeStrategies unifSpec S.afterOpenings.tree S.afterOpenings.roles
       S.afterOpenings.oracles S.quotientAccess (S.messagesImpl T Q) prover
       (S.verifierAfterOpenings publicValues α ζ o)), result.2.2 = true →
-      ∃ w, ((S.friCertificate publicValues δ T α Q ζ o result.1.1 loss).extractor.terminalState
-        result.1.2).holds w := by
+      ∃ w, ((S.friCertificate publicValues δ T α Q ζ o result.1.1 loss
+        S.uniformPositions).extractor.terminalState result.1.2).holds w := by
   intro result hres hacc
   rw [execute_afterOpenings] at hres
   obtain ⟨a, -, hres⟩ := support_bind_exists hres
@@ -476,7 +481,7 @@ theorem terminal_afterZeta (T : S.TraceMessage) (α : 𝕂) (Q : S.QuotientMessa
       S.afterZeta.oracles S.quotientAccess (S.messagesImpl T Q) prover
       (S.verifierAfterZeta publicValues α ζ)), result.2.2 = true →
       ∃ w, ((S.friCertificate publicValues δ T α Q ζ result.1.1 result.1.2.1
-        loss).extractor.terminalState result.1.2.2).holds w := by
+        loss S.uniformPositions).extractor.terminalState result.1.2.2).holds w := by
   intro result hres hacc
   rw [execute_afterZeta] at hres
   obtain ⟨chosen, -, hres⟩ := support_bind_exists hres
@@ -495,7 +500,7 @@ theorem terminal_afterQuotient (T : S.TraceMessage) (α : 𝕂) (Q : S.QuotientM
       S.afterQuotient.oracles S.quotientAccess (S.messagesImpl T Q) prover
       (S.verifierAfterQuotient publicValues α)), result.2.2 = true →
       ∃ w, ((S.friCertificate publicValues δ T α Q result.1.1 result.1.2.1 result.1.2.2.1
-        loss).extractor.terminalState result.1.2.2.2).holds w := by
+        loss S.uniformPositions).extractor.terminalState result.1.2.2.2).holds w := by
   intro result hres hacc
   rw [execute_afterQuotient] at hres
   obtain ⟨ζ, -, hres⟩ := support_bind_exists hres
@@ -516,7 +521,8 @@ theorem terminal_afterAlpha (T : S.TraceMessage) (α : 𝕂)
       (Access.extendImpl noAccess OracleInterface.instFunction noImpl T) prover
       (S.verifierAfterAlpha publicValues α)), result.2.2 = true →
       ∃ w, ((S.friCertificate publicValues δ T α result.1.1 result.1.2.1 result.1.2.2.1
-        result.1.2.2.2.1 loss).extractor.terminalState result.1.2.2.2.2).holds w := by
+        result.1.2.2.2.1 loss S.uniformPositions).extractor.terminalState
+          result.1.2.2.2.2).holds w := by
   intro result hres hacc
   rw [execute_afterAlpha] at hres
   obtain ⟨chosen, -, hres⟩ := support_bind_exists hres
@@ -536,7 +542,7 @@ theorem terminal_afterTrace (T : S.TraceMessage)
       (Access.extendImpl noAccess OracleInterface.instFunction noImpl T) prover
       (S.verifierAfterTrace publicValues)), result.2.2 = true →
       ∃ w, ((S.friCertificate publicValues δ T result.1.1 result.1.2.1 result.1.2.2.1
-        result.1.2.2.2.1 result.1.2.2.2.2.1 loss).extractor.terminalState
+        result.1.2.2.2.1 result.1.2.2.2.2.1 loss S.uniformPositions).extractor.terminalState
           result.1.2.2.2.2.2).holds w := by
   intro result hres hacc
   rw [execute_afterTrace] at hres
@@ -555,7 +561,7 @@ theorem terminal_holds_of_accepts (hδ' : (δ' : ℝ) < 1 - S.rate)
       S.protocol.roles OutP) :
     ∀ result ∈ support (executeStrategies unifSpec S.protocol.tree S.protocol.roles
       S.protocol.oracles noAccess noImpl prover (S.verifier publicValues)), result.2.2 = true →
-      ∃ w, ((S.certificate publicValues δ δ' hδ' loss).extractor.terminalState
+      ∃ w, ((S.certificate publicValues δ δ' hδ' loss S.uniformPositions).extractor.terminalState
         result.1).holds w := by
   intro result hres hacc
   rw [terminalState_certificate]
@@ -580,7 +586,8 @@ theorem extraction_le (hδ' : (δ' : ℝ) < 1 - S.rate) (loss : ℝ≥0)
       S.protocol.oracles noAccess noImpl prover (S.verifier publicValues))}[
         result.2.2 = true ∧ S.Far publicValues δ' result.1.1] ≤
       foldingError S δ' + outOfDomainError S δ' + batchingError S δ δ' + S.friBound [] δ loss := by
-  have key := (S.certificate publicValues δ δ' hδ' loss).executeStrategies_extraction_le unifSpec
+  have key := (S.certificate publicValues δ δ' hδ' loss
+    S.uniformPositions).executeStrategies_extraction_le unifSpec
     (QueryImpl.id' unifSpec) S.protocol.oracles noAccess noImpl prover (S.verifier publicValues)
     (S.samplesChallenges_verifier publicValues δ δ' hδ' loss)
   rw [simulateQ_id'] at key
