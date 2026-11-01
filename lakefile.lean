@@ -16,7 +16,7 @@ require CompPoly from git "https://github.com/mitschabaude-bot/CompPoly.git" @
 -- correlated agreement, FRI on the interaction layer with its knowledge certificate, the
 -- hash-chain reduction to a prefix-keyed random oracle, and state restoration and Fiat–Shamir
 -- over public-coin protocols (branch `fs-stark` of the bot fork).
-require Arklib from git "https://github.com/mitschabaude-bot/ArkLib.git" @ "7d2905d45c7614ebebe1c2c53e2ce28d78863df2"
+require Arklib from git "https://github.com/mitschabaude-bot/ArkLib.git" @ "812e864d22860faf74fb2dd7703e00d43702d171"
 
 -- VCVio as ArkLib main pins it.
 require VCVio from git "https://github.com/Verified-zkEVM/VCVio" @
