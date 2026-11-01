@@ -173,6 +173,8 @@ public import CompStark.Sound.Sampling
 public import CompStark.Sound.ConsistentQueries
 public import CompStark.Sound.Rbr
 public import CompStark.Interaction.StarkKnowledge
+public import CompStark.Interaction.StarkStateRestoration
+public import CompStark.Interaction.BatchStateRestoration
 public import CompStark.RandomOracle
 public import CompStark.Ni.Natural
 public import CompStark.Ni.Answers
