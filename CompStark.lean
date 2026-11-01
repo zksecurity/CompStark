@@ -222,3 +222,9 @@ public import CompStark.Ni.BatchBadQuery
 public import CompStark.Ni.BatchAssembly
 public import CompStark.Ni.BatchLengths
 public import CompStark.NonInteractive
+public import CompStark.Fs.Draws
+public import CompStark.Fs.Codec
+public import CompStark.Fs.Stark
+public import CompStark.Fs.Batch
+public import CompStark.Fs.StarkFiatShamir
+public import CompStark.Fs.BatchFiatShamir
