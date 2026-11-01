@@ -446,7 +446,8 @@ theorem terminal_fri (T : S.TraceMessage) (α : 𝕂) (Q : S.QuotientMessage) (�
   obtain ⟨w, hw⟩ := Fri.Interaction.terminal_holds_of_accepts (S.logN + S.params.logBlowup)
     (2 ^ S.params.logFinalPolyLen) S.params.numQueries (S.deepInputs (S.deepOf T α Q ζ o a)) δ
     loss S.uniformPositions unifSpec (Nat.two_pow_pos _) loss.coe_nonneg _ _ (S.friSchedule [])
-    le_rfl S.friDomain _ _ _ 0 (S.deepOf T α Q ζ o a) Finset.univ prover (S.reads_deepReader T Q α ζ o a)
+    le_rfl S.friDomain _ _ _ 0 (S.deepOf T α Q ζ o a) Finset.univ prover
+    (S.reads_deepReader T Q α ζ o a)
     (fun x ↦ by simp only [Finset.mem_univ, decide_true]; rfl) r hr hacc'.2
   simp only [friCertificate, gateCertificate]
   rw [terminalState_gateExtractor]

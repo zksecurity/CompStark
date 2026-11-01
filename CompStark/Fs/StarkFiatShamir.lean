@@ -27,8 +27,9 @@ the calculator's terms, the query positions' slack `1/p`) each multiplied by its
 (`Statement.ratio`: the grinding's `powFraction` after `α`), `q = Q + verifierChainQueries` the
 duplex calls of the adversary and the verifier together. The query positions are residues of
 uniform elements of `F`; the certificate draws them from that law (`Setup.queryPositions`), so
-their bias costs `1/p` per position inside the query error, as in the random-oracle model. It needs `2 ^ 8 ≤ |F|` and two-adicity below
-`2 ^ 64`, so that the domain separator tells the lengths apart.
+their bias costs `1/p` per position inside the query error, as in the random-oracle model. It
+needs `2 ^ 8 ≤ |F|` and two-adicity below `2 ^ 64`, so that the domain separator tells the lengths
+apart.
 -/
 
 @[expose] public section

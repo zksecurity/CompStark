@@ -94,7 +94,8 @@ theorem foldErrorsLE_plonky3 (c : ℕ) (a : ℕ) (ha : 0 < a) (d logFinal : ℕ)
     -- one fold onto `2 ^ (n - la)` points, and the rest
     have hstep (la : ℕ) (hla1 : 1 ≤ la) (hla2 : la ≤ n - logFinal) (hla : la ≤ n) (inj : Bool)
         (h : List ℕ) (hf : Rounds.Fits logFinal (n - la) h)
-        (hg : FoldBounds 𝕂 c δ loss g ((la, n - la, inj) :: Rounds.plan a logFinal fuel (n - la) h)) :
+        (hg : FoldBounds 𝕂 c δ loss g
+          ((la, n - la, inj) :: Rounds.plan a logFinal fuel (n - la) h)) :
         foldErrorsLE d δ loss (ENNReal.ofReal (planMax g
             ((la, n - la, inj) :: Rounds.plan a logFinal fuel (n - la) h) / Fintype.card 𝕂)) ω
           (.fold la hla inj (Fri.Interaction.Schedule.plonky3 a logFinal fuel (n - la) h)) := by
