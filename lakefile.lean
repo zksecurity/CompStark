@@ -16,8 +16,9 @@ require CompPoly from git "https://github.com/mitschabaude-bot/CompPoly.git" @
 -- correlated agreement, FRI on the interaction layer with its knowledge certificate on Plonky3's
 -- commit-phase tree, state restoration over public-coin protocols with grinding draws, and
 -- Fiat–Shamir on a duplex challenger with challenges of several squeezes, its draws bounded
--- against the certificate's challenge laws (branch `fs-tight` of the bot fork).
-require Arklib from git "https://github.com/mitschabaude-bot/ArkLib.git" @ "a3c2e1703f20d1be507810c0a80f255ce2ed4196"
+-- against the certificate's challenge laws, and the BCS compiler: Merkle commitments in place of
+-- oracle messages (branch `bcs` of the bot fork).
+require Arklib from git "https://github.com/mitschabaude-bot/ArkLib.git" @ "bd9623ea0b4c4630bb655a200259dbdcb8ffb560"
 
 -- VCVio as ArkLib main pins it.
 require VCVio from git "https://github.com/Verified-zkEVM/VCVio" @
