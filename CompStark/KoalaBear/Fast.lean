@@ -53,7 +53,7 @@ theorem prove_fast (kernels : List (Stark.Fast.AirKernel _root_.KoalaBear.fieldS
     proveWith (backendFor kernels params.logBlowup [(logN, air.logQuotientChunks logN)]) params
         air logN words publicValues =
       prove EF params air logN trace publicValues :=
-  Stark.Fast.prove_fast (by rw [twoAdicity_eq]; decide) domainsAddressable kernels publicValues
+  Stark.Fast.prove_fast domainsAddressable kernels publicValues
     encoded input outOfDomain
 
 /-- **The fast batch prover over KoalaBear is correct**: for traces given as chunks of packed rows
@@ -72,7 +72,7 @@ theorem proveBatch_fast (kernels : List (Stark.Fast.AirKernel _root_.KoalaBear.f
     Batch.proveBatchWith (backendFor kernels params.logBlowup (Batch.shapes instances)) params
         instances words publicValues =
       Batch.proveBatch EF params instances traces publicValues :=
-  Stark.Fast.proveBatch_fast (by rw [twoAdicity_eq]; decide) domainsAddressable kernels encoded
+  Stark.Fast.proveBatch_fast domainsAddressable kernels encoded
     input publicValuesLength outOfDomain
 
 set_option maxHeartbeats 1000000 in
@@ -99,7 +99,7 @@ theorem Instances.prove_fast (I : Instances) (kernels : List
       @prove F _ I.field EF _ params air logN trace publicValues :=
   letI := I.field
   letI := I.packed
-  Stark.Fast.prove_fast (by rw [twoAdicity_eq]; decide) domainsAddressable kernels publicValues
+  Stark.Fast.prove_fast domainsAddressable kernels publicValues
     encoded input outOfDomain
 
 /-- Plonky3's verifier over KoalaBear, with the leaves of every Merkle multi-opening hashed in

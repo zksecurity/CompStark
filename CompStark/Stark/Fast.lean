@@ -9,8 +9,7 @@ public import CompStark.Mont32.Challenge
 public import CompStark.Poseidon2.PackedField
 public import CompStark.Merkle.PackedColumns
 public import CompPoly.Univariate.NTTFast.Packed.CosetLde
-public import CompStark.Stark.Words
-public import CompStark.Stark.ExtWords
+public import CompPoly.Fields.Montgomery.Native32Ext4Planes
 public import CompStark.Stark.ProgWords
 public import CompStark.Stark.ProgGroup
 
@@ -51,6 +50,7 @@ native library.
 namespace CompStark.Stark.Fast
 open CompStark.Fri CompStark.Poseidon2 Montgomery.Native32
 open CompPoly.CPolynomial.NTTFast.Packed (LdePlan)
+open CompPoly.Array (batchInv)
 
 variable {p : ℕ} [Mont32Field p]
 
@@ -520,7 +520,7 @@ words (`base`), or extension planes (`ext`). Each operation keeps the cheapest k
 inductive XVal (p : ℕ) [Mont32Field p] where
   | const (c : Ext4 p)
   | base (w : ByteArray)
-  | ext (v : EVec p)
+  | ext (v : Ext4Planes p)
 
 namespace XVal
 
@@ -528,7 +528,7 @@ namespace XVal
 abbrev rep (c : F) (B : Nat) : ByteArray := Words.replicateWord c.val B
 
 /-- The planes of a block of `B` values. -/
-def planes (B : Nat) : XVal p → EVec p
+def planes (B : Nat) : XVal p → Ext4Planes p
   | const c => ⟨B, rep c.c0 B, rep c.c1 B, rep c.c2 B, rep c.c3 B⟩
   | base w => ⟨B, w, CompPoly.CPolynomial.NTTFast.Packed.Native.zeroWords B,
       CompPoly.CPolynomial.NTTFast.Packed.Native.zeroWords B,
@@ -536,7 +536,7 @@ def planes (B : Nat) : XVal p → EVec p
   | ext v => v
 
 /-- Base words times an extension scalar. -/
-def scaleBase (B : Nat) (w : ByteArray) (c : EF) : EVec p :=
+def scaleBase (B : Nat) (w : ByteArray) (c : EF) : Ext4Planes p :=
   let z := CompPoly.CPolynomial.NTTFast.Packed.Native.zeroWords B
   ⟨B, Words.mulAddWords p z w c.c0.val B, Words.mulAddWords p z w c.c1.val B,
     Words.mulAddWords p z w c.c2.val B, Words.mulAddWords p z w c.c3.val B⟩
@@ -601,50 +601,6 @@ def lookupQuotient [Mont32BaseField p] [Binomial4 p] (A : Air F) (ext : List (Lo
   lookupQuotientWith [] (quotientTables degreeBits logChunks) A ext pis tr prep perm chs terminal
     alpha
 
-/-- The words `a` of a block of `B` with every zero replaced by one. -/
-def nonzeroWords (a : @& ByteArray) (B : Nat) : ByteArray := Id.run do
-  let mut out := CompPoly.CPolynomial.NTTFast.Packed.Native.zeroWords B
-  for k in [0:B] do
-    let x := CompPoly.CPolynomial.NTTFast.Packed.Native.read a k
-    out := CompPoly.CPolynomial.NTTFast.Packed.Native.write out k
-      (if x == 0 then (1 : F).val else x)
-  return out
-
-/-- The words `b` of a block of `B`, with `0` where `a` is zero. -/
-def maskZeros (a b : @& ByteArray) (B : Nat) : ByteArray := Id.run do
-  let mut out := CompPoly.CPolynomial.NTTFast.Packed.Native.zeroWords B
-  for k in [0:B] do
-    out := CompPoly.CPolynomial.NTTFast.Packed.Native.write out k
-      (if CompPoly.CPolynomial.NTTFast.Packed.Native.read a k == 0 then 0
-        else CompPoly.CPolynomial.NTTFast.Packed.Native.read b k)
-  return out
-
-/-- The inverses of a block of `B` words, `0` for zero: batch inversion with the zeros replaced
-by one, then masked. -/
-def invWords (a : ByteArray) (B : Nat) : ByteArray :=
-  maskZeros a (batchInvRange p (nonzeroWords (p := p) a B) 0 B) B
-
-/-- `x · c` on `B` words for a word `c`. -/
-def scaleWords (x : @& ByteArray) (c : F) (B : Nat) : ByteArray :=
-  Words.mulAddWords p (CompPoly.CPolynomial.NTTFast.Packed.Native.zeroWords B) x c.val B
-
-/-- `Ext4.inv` on planes: with `σ : X ↦ -X`, `a σ(a) = g₀ + g₁ X²`, its norm `g₀² - W g₁²`
-inverted in one batch, and `a⁻¹ = σ(a) (g₀ - g₁ X²) / (g₀² - W g₁²)`; zero to zero. -/
-def invPlanes [Binomial4 p] (a : EVec p) : EVec p :=
-  let B := a.n
-  let W : F := Binomial4.W
-  let m (x y : ByteArray) := Words.mulWords p x y B
-  let ad (x y : ByteArray) := Words.addWords p x y B
-  let sb (x y : ByteArray) := Words.subWords p x y B
-  let c13 := m a.c1 a.c3
-  let g0 := Words.mulAddWords p (m a.c0 a.c0) (sb (m a.c2 a.c2) (ad c13 c13)) W.val B
-  let c02 := m a.c0 a.c2
-  let g1 := Words.mulAddWords p (sb (ad c02 c02) (m a.c1 a.c1)) (m a.c3 a.c3) (-W).val B
-  let ni := invWords (p := p) (Words.mulAddWords p (m g0 g0) (m g1 g1) (-W).val B) B
-  ⟨B, m (Words.mulAddWords p (m a.c0 g0) (m a.c2 g1) (-W).val B) ni,
-    m (sb (scaleWords (m a.c3 g1) W B) (m a.c1 g0)) ni,
-    m (sb (m a.c2 g0) (m a.c0 g1)) ni, m (sb (m a.c1 g1) (m a.c3 g0)) ni⟩
-
 /-- `combine b t` on a block of `B` rows, the tuple's values `t` as base words: Horner's rule from
 the first. -/
 def combineX [Binomial4 p] (B : Nat) (b : EF) : List ByteArray → XVal p
@@ -656,24 +612,24 @@ tuples `ts[c]` of expressions whose blocks are `get v`: its tuples `(t, m)` add
 `m / (a - combine b t)`, with its pair `(a, b)` of the challenges `chs`, `a` given as the planes
 `apl[c]`. -/
 def fractionsX [Binomial4 p] {β E : Type} (B : Nat) (get : β → E → ByteArray) (v : β)
-    (ts : List (List (List E × E))) (chs : List EF) (apl : Array (EVec p)) :
-    List (EVec p) :=
+    (ts : List (List (List E × E))) (chs : List EF) (apl : Array (Ext4Planes p)) :
+    List (Ext4Planes p) :=
   ts.zipIdx.map fun (l, c) ↦
     l.foldl (fun s (t, m) ↦
-      let den := (XVal.ext (apl.getD c (EVec.zeros B))).sub B
+      let den := (XVal.ext (apl.getD c (Ext4Planes.zeros B))).sub B
         (combineX B (chs.getD (2 * c + 1) 0) (t.map (get v)))
-      s.add ((invPlanes (den.planes B)).mulBase (get v m))) (EVec.zeros B)
+      s.add ((den.planes B).inv.mulBase (get v m))) (Ext4Planes.zeros B)
 
 /-- Row `i` of the permutation trace in base coordinates, written from word `o` of `out`: the
 accumulator `acc`, then every lookup's fraction, the planes `fs`. -/
-def writeRow (out : ByteArray) (o : Nat) (fs : Array (EVec p)) (acc : EF) (i : Nat) :
+def writeRow (out : ByteArray) (o : Nat) (fs : Array (Ext4Planes p)) (acc : EF) (i : Nat) :
     ByteArray := Id.run do
   let mut out := CompPoly.CPolynomial.NTTFast.Packed.Native.write out o acc.c0.val
   out := CompPoly.CPolynomial.NTTFast.Packed.Native.write out (o + 1) acc.c1.val
   out := CompPoly.CPolynomial.NTTFast.Packed.Native.write out (o + 2) acc.c2.val
   out := CompPoly.CPolynomial.NTTFast.Packed.Native.write out (o + 3) acc.c3.val
   for c in [0:fs.size] do
-    let f := fs.getD c (EVec.zeros 0)
+    let f := fs.getD c (Ext4Planes.zeros 0)
     let oc := o + 4 * (c + 1)
     out := CompPoly.CPolynomial.NTTFast.Packed.Native.write out oc
       (CompPoly.CPolynomial.NTTFast.Packed.Native.read f.c0 i)
@@ -687,7 +643,7 @@ def writeRow (out : ByteArray) (o : Nat) (fs : Array (EVec p)) (acc : EF) (i : N
 
 /-- A block of `B` rows of the permutation trace in base coordinates, `W` words per row, written
 from row `r` of `out` (`writeRow`), the accumulator from `acc`; and the accumulator after it. -/
-def writeBlock (out : ByteArray) (r : Nat) (fs : Array (EVec p)) (acc : EF) (B W : Nat) :
+def writeBlock (out : ByteArray) (r : Nat) (fs : Array (Ext4Planes p)) (acc : EF) (B W : Nat) :
     ByteArray × EF := Id.run do
   let mut out := out
   let mut acc := acc
@@ -809,7 +765,7 @@ def weightPlanes [Mont32BaseField p] [Binomial4 p] (zs : @& Array EF) (xs : @& B
     (r0 len : Nat) : Array ByteArray :=
   let xr := slice xs r0 len
   zs.foldl (fun acc z ↦
-    let wt := (invDenoms z xr len).mulBase xr
+    let wt := (Ext4Planes.invDenoms z xr len).mulBase xr
     acc ++ #[wt.c0, wt.c1, wt.c2, wt.c3]) #[]
 
 /-- The column sums `∑_r m[r][j] · x_r / (z - x_r)` over the stored rows `r0, …, r0 + len - 1` of a
@@ -868,44 +824,38 @@ def compressRange (p : ℕ) [Mont32Field p] (m : @& PMat) (a0 a1 a2 a3 : @& Byte
   #[out.extract (4 * 0) (4 * len), out.extract (4 * len) (4 * (2 * len)),
     out.extract (4 * (2 * len)) (4 * (3 * len)), out.extract (4 * (3 * len)) (4 * (4 * len))]
 
-/-- Concatenate parallel pieces of planes. -/
-def joinPlanes (p : ℕ) (n : Nat) (pieces : Array (Task (Array ByteArray))) : EVec p :=
-  let cat (j : Nat) := pieces.foldl (fun acc t ↦ acc ++ t.get.getD j .empty)
-    (ByteArray.emptyWithCapacity (4 * n))
-  ⟨n, cat 0, cat 1, cat 2, cat 3⟩
-
 /-- Rows `r0, …, r0 + len - 1` of the batched quotient of one height: for every matrix, its rows
 batched by the planes `a` of the powers of `α`, and for every point `(z, yz, offset)` the term
 `offset · (yz - comp) / (z - x)`, `xs` the height's points. -/
 def reduceRange [Mont32BaseField p] [Binomial4 p]
-    (items : @& Array (PMat × EVec p × List (EF × EF × EF))) (xs : @& ByteArray)
-    (r0 len : Nat) : EVec p := Id.run do
+    (items : @& Array (PMat × Ext4Planes p × List (EF × EF × EF))) (xs : @& ByteArray)
+    (r0 len : Nat) : Ext4Planes p := Id.run do
   let xr := slice xs r0 len
-  let mut acc := EVec.zeros len
+  let mut acc := Ext4Planes.zeros len
   -- `1 / (z - x)` once per distinct point.
-  let mut invs : List (EF × EVec p) := []
+  let mut invs : List (EF × Ext4Planes p) := []
   for (m, a, pts) in items do
     let comp := compressRange p m a.c0 a.c1 a.c2 a.c3 r0 len
-    let comp : EVec p := ⟨len, comp.getD 0 .empty, comp.getD 1 .empty, comp.getD 2 .empty,
+    let comp : Ext4Planes p := ⟨len, comp.getD 0 .empty, comp.getD 1 .empty, comp.getD 2 .empty,
       comp.getD 3 .empty⟩
     for (z, yz, offset) in pts do
       let inv ← match invs.lookup z with
         | some v => pure v
         | none => do
-          let v := invDenoms z xr len
+          let v := Ext4Planes.invDenoms z xr len
           invs := (z, v) :: invs
           pure v
-      acc := acc.add (((EVec.rsub yz comp).mul inv).smul offset)
+      acc := acc.add (((Ext4Planes.rsub yz comp).mul inv).smul offset)
   return acc
 
 /-- `Fri.reduce` on planes, every height in parallel ranges of rows within one block of every
 matrix: rows batched column by column, `1 / (z - x)` by the norm. -/
 def reduce [Mont32BaseField p] [Binomial4 p] (alpha : EF)
     (items : List (PMat × List (EF × Array EF))) :
-    List (Nat × EVec p) :=
+    List (Nat × Ext4Planes p) :=
   Id.run do
   -- Per height: the matrices with their points, opened sums and powers of `α`, in order.
-  let mut groups : List (Nat × Nat × Array (PMat × EVec p × List (EF × EF × EF))) := []
+  let mut groups : List (Nat × Nat × Array (PMat × Ext4Planes p × List (EF × EF × EF))) := []
   for (m, pts) in items do
     let logH := Nat.log2 m.height
     let (cnt, g) := (groups.lookup logH).getD (0, #[])
@@ -916,7 +866,7 @@ def reduce [Mont32BaseField p] [Binomial4 p] (alpha : EF)
       let yz := (List.range m.width).foldl (fun s i ↦ s + ap.getD i 0 * ys.getD i 0) 0
       terms := terms ++ [(z, yz, Ext.pow alpha cnt)]
       cnt := cnt + m.width
-    groups := (logH, cnt, g.push (m, EVec.ofArray ap, terms)) ::
+    groups := (logH, cnt, g.push (m, Ext4Planes.ofArray ap, terms)) ::
       groups.filter (·.1 != logH)
   let out := groups.map fun (logH, _, g) ↦
     let n := 2 ^ logH
@@ -927,7 +877,7 @@ def reduce [Mont32BaseField p] [Binomial4 p] (alpha : EF)
     let ts := (Array.range parts).map fun k ↦ Task.spawn fun _ ↦
       let v := reduceRange g xs (k * size) (if k + 1 = parts then n - k * size else size)
       #[v.c0, v.c1, v.c2, v.c3]
-    (logH, joinPlanes p n ts)
+    (logH, Ext4Planes.join p n ts)
   return out.mergeSort fun a b ↦ b.1 ≤ a.1
 
 /-- Words `0, 2, 4, …` and `1, 3, 5, …` of the first `2 n` words of `b`. -/
@@ -943,38 +893,41 @@ def deinterleave (b : @& ByteArray) (n : Nat) : ByteArray × ByteArray := Id.run
 
 /-- Pairs `r0, …, r0 + len - 1` of the arity-2 fold of planes `v` at `β`; `twoX` holds `2 x` of
 every pair. -/
-def fold2Range [Mont32BaseField p] [Binomial4 p] (v : @& EVec p) (twoX : @& ByteArray) (beta : EF)
+def fold2Range [Mont32BaseField p] [Binomial4 p] (v : @& Ext4Planes p) (twoX : @& ByteArray) (beta :
+    EF)
     (r0 len : Nat) :
-    EVec p :=
+    Ext4Planes p :=
   let split (b : ByteArray) := deinterleave (slice b (2 * r0) (2 * len)) len
   let (l0, h0) := split v.c0
   let (l1, h1) := split v.c1
   let (l2, h2) := split v.c2
   let (l3, h3) := split v.c3
-  let lo : EVec p := ⟨len, l0, l1, l2, l3⟩
-  let hi : EVec p := ⟨len, h0, h1, h2, h3⟩
-  let inv2x := batchInvRange p twoX r0 len
+  let lo : Ext4Planes p := ⟨len, l0, l1, l2, l3⟩
+  let hi : Ext4Planes p := ⟨len, h0, h1, h2, h3⟩
+  let inv2x := Words.batchInvRange p twoX r0 len
   ((lo.add hi).smul (Ext.ofBase (2 : F)⁻¹)).add (((lo.sub hi).mulBase inv2x).smul beta)
 
 /-- `Fri.foldPairs` on planes, `(lo + hi) / 2 + β (lo - hi) / (2 x)`, in parallel ranges. -/
-def fold2 [Mont32BaseField p] [Binomial4 p] (v : EVec p) (beta : EF) (logRows : Nat) : EVec p :=
+def fold2 [Mont32BaseField p] [Binomial4 p] (v : Ext4Planes p) (beta : EF) (logRows : Nat) :
+    Ext4Planes p :=
   let rows := 2 ^ logRows
   let pw := cosetPoints (1 : F) (logRows + 1)
   let twoX := CompPoly.CPolynomial.NTTFast.Packed.Native.encodeFields
     ((bitRevPerm logRows).map fun i ↦ 2 * pw.getD i 0)
   let parts := if rows < 4096 then 1 else 16
   let size := rows / parts
-  joinPlanes p rows <| (Array.range parts).map fun k ↦ Task.spawn fun _ ↦
+  Ext4Planes.join p rows <| (Array.range parts).map fun k ↦ Task.spawn fun _ ↦
     let f := fold2Range v twoX beta (k * size) (if k + 1 = parts then rows - k * size else size)
     #[f.c0, f.c1, f.c2, f.c3]
 
 /-- `Fri.foldOnce` on planes: the arity-2 fold `fold2`, otherwise every group's `foldRow`, in
 parallel ranges of rows. -/
-def fold [Mont32BaseField p] [Binomial4 p] (la : Nat) (beta : EF) (v : EVec p) : EVec p :=
+def fold [Mont32BaseField p] [Binomial4 p] (la : Nat) (beta : EF) (v : Ext4Planes p) : Ext4Planes
+    p :=
   let rows := v.n / 2 ^ la
   if la = 1 then fold2 v beta (Nat.log2 rows) else
     let vs := v.toArray
-    EVec.ofArray (parChunks rows (if rows < 1024 then 1 else 16) fun r0 len ↦
+    Ext4Planes.ofArray (parChunks rows (if rows < 1024 then 1 else 16) fun r0 len ↦
       Array.ofFn (n := len) fun i ↦ Fri.foldRow (r0 + i.val) (Nat.log2 rows) la beta
         ((List.range (2 ^ la)).map fun k ↦ vs.getD ((r0 + i.val) * 2 ^ la + k) 0))
 
@@ -988,7 +941,7 @@ def strided (a : @& ByteArray) (i k count : Nat) : ByteArray := Id.run do
 
 /-- The matrix of rows of `k` elements, flattened, packed as one block of columns: column
 `4 i + c` holds coordinate `c` of the `i`-th element of every row, gathered by parallel tasks. -/
-def leaves (k : Nat) (v : EVec p) : PMat :=
+def leaves (k : Nat) (v : Ext4Planes p) : PMat :=
   let h := v.n / k
   let plane (c : Nat) : ByteArray := match c with
     | 0 => v.c0
@@ -999,7 +952,7 @@ def leaves (k : Nat) (v : EVec p) : PMat :=
     strided (plane (j % 4)) (j / 4) k h)).get⟩
 
 /-- `a + x · b`. -/
-def addScaled [Binomial4 p] (a b : EVec p) (x : EF) : EVec p := a.add (b.smul x)
+def addScaled [Binomial4 p] (a b : Ext4Planes p) (x : EF) : Ext4Planes p := a.add (b.smul x)
 
 variable [Mont32BaseField p] [Binomial4 p] [Poseidon2Field (FastField p)] [PackedPoseidon2 p]
 
@@ -1021,9 +974,9 @@ def backend : Backend F EF 24 where
   lookupQuotient := lookupQuotient
   permutation := permutationLdeWith []
   openedAt := openedAt
-  V := EVec p
-  toArray := EVec.toArray
-  ofArray := EVec.ofArray
+  V := Ext4Planes p
+  toArray := Ext4Planes.toArray
+  ofArray := Ext4Planes.ofArray
   size := (·.n)
   reduce := reduce
   fold := fold

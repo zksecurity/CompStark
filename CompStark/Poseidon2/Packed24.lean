@@ -16,6 +16,7 @@ nine diagonal entries of the internal matrix are those of width 16; the rest are
 
 @[expose] public section
 namespace CompStark.Poseidon2.Packed
+open Montgomery.Native32.Words (Fits Fits.mono Fits.of_size inBounds)
 open CompPoly.CPolynomial.NTTFast.Packed (add sub mul reduceOnce)
 open CompPoly.CPolynomial.NTTFast.Packed.Native (readUOffset putWords size_putWords wordOffset_toNat
   encodeFields usize_numeral)
@@ -127,7 +128,7 @@ termination_by K.internal.size - k
 
 /-- The constants of `K` fit their buffers. -/
 abbrev Packed24.Fits (K : Packed24) : Prop :=
-  Rows24 K.initial ∧ Rows24 K.terminal ∧ Poseidon2.Packed.Fits K.diagonal 0 23
+  Rows24 K.initial ∧ Rows24 K.terminal ∧ Montgomery.Native32.Words.Fits K.diagonal 0 23
 
 /-- The width-24 permutation of the eight states at `i`. -/
 def permute24 (K : @& Packed24) (b : ByteArray) (i : USize) : ByteArray :=

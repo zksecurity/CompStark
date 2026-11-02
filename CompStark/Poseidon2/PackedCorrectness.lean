@@ -19,6 +19,7 @@ specification; the round loops thread `Holds` through them (`permute16_spec`), a
 
 @[expose] public section
 namespace CompStark.Poseidon2.Packed
+open Montgomery.Native32.Words (Fits Fits.mono Fits.of_size inBounds)
 open CompPoly.PackedRepr (encode size_encode_uint32)
 open CompPoly.CPolynomial.NTTFast.Packed (size_encode_fields add_val sub_val
   Native.encodeFields_eq)

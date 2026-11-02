@@ -6,7 +6,8 @@ module
 
 public import CompStark.Stark.ProgWords
 public import CompStark.Stark.ProgCompile
-public import CompStark.Stark.Fast.WordsLemmas
+public import CompStark.Stark.Fast.Rel
+public import CompPoly.Fields.Montgomery.Native32Ext4PlanesCorrectness
 
 /-! # Programs on blocks of packed words compute the field's values
 
@@ -19,53 +20,15 @@ the packed run simulates `B` runs on the field.
 -/
 
 @[expose] public section
-namespace CompStark.Stark.Fast
-
-/-! ### Tabulated values -/
-
-/-- The values `f 0, …, f (B - 1)`. -/
-def tab {α : Type} (B : Nat) (f : Nat → α) : Array α := Array.ofFn (n := B) fun i ↦ f i.val
-
-theorem size_tab {α : Type} (B : Nat) (f : Nat → α) : (tab B f).size = B := Array.size_ofFn
-
-theorem tab_congr {α : Type} {B : Nat} {f g : Nat → α} (h : ∀ i < B, f i = g i) :
-    tab B f = tab B g :=
-  congrArg Array.ofFn (funext fun i ↦ h i.val i.isLt)
-
-theorem tab_zipWith {α β γ : Type} (B : Nat) (f : Nat → α) (g : Nat → β) (op : α → β → γ) :
-    Array.zipWith op (tab B f) (tab B g) = tab B fun i ↦ op (f i) (g i) := by
-  apply Array.ext (by simp only [Array.size_zipWith, tab, Array.size_ofFn, Nat.min_self])
-  intro i h1 h2
-  simp only [tab, Array.getElem_zipWith, Array.getElem_ofFn]
-
-theorem tab_map {α β : Type} (B : Nat) (f : Nat → α) (g : α → β) :
-    (tab B f).map g = tab B fun i ↦ g (f i) := by
-  apply Array.ext (by simp only [Array.size_map, tab, Array.size_ofFn])
-  intro i h1 h2
-  simp only [tab, Array.getElem_map, Array.getElem_ofFn]
-
-theorem getElem_tab {α : Type} (B : Nat) (f : Nat → α) (i : Nat) (h : i < (tab B f).size) :
-    (tab B f)[i] = f i := by
-  simp only [tab, Array.getElem_ofFn]
-
-theorem getD_tab {α : Type} (B : Nat) (f : Nat → α) (i : Nat) (h : i < B) (d : α) :
-    (tab B f).getD i d = f i := by
-  rw [Array.getD_eq_getD_getElem?, Array.getElem?_eq_getElem (by rw [size_tab]; exact h),
-    Option.getD_some]
-  simp only [tab, Array.getElem_ofFn]
-
-end CompStark.Stark.Fast
-
 namespace CompStark.Stark.Prog
 open CompPoly.PackedRepr (encode)
 open CompPoly.CPolynomial.NTTFast.Packed (add sub mul add_val sub_val mul_val
   size_encode_fields splice getD_splice size_splice lit16 getD_lit16 size_lit16
   array_eq_of_getD getD_ofFn_bounded)
 open CompPoly.CPolynomial.NTTFast.Packed.Native (read write write16U zeroWords)
-open CompStark.Poseidon2.Packed (Fits)
-open CompStark.Words (rd rd_encode read_encode)
+open Montgomery.Native32.Words (Fits rd rd_encode read_encode)
 open Montgomery.Native32
-open CompStark.Stark.Fast (tab size_tab tab_congr getD_tab)
+open Montgomery.Native32.Words (tab size_tab tab_congr getD_tab)
 
 variable {p : ℕ} [Mont32Field p]
 

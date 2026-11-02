@@ -26,7 +26,7 @@ open CompPoly.CPolynomial.NTTFast.Packed (add sub mul add_val sub_val mul_val re
 open CompPoly.CPolynomial.NTTFast.Packed.Native (Buf read write16U toNat_usize_le
   usize_add_toNat_of_le)
 open Montgomery.Native32
-open CompStark.Stark.Fast (tab size_tab tab_congr getD_tab)
+open Montgomery.Native32.Words (tab size_tab tab_congr getD_tab)
 
 variable {p : ℕ} [P : Mont32Field p]
 

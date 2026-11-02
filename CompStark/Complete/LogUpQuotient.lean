@@ -17,6 +17,7 @@ polynomials vanish on the trace domain, so they are `Z_H` times a polynomial ove
 
 @[expose] public section
 namespace CompStark.Lookup
+open CompPoly.Array (batchInv)
 open CompStark.Stark CompStark.Fri Polynomial
 
 variable {F : Type} [BaseField F] {EF : Type} [Challenge F EF]

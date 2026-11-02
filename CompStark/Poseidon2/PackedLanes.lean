@@ -21,6 +21,7 @@ group unchanged. `Holds` threads lanes through the round loops.
 
 @[expose] public section
 namespace CompStark.Poseidon2.Packed
+open Montgomery.Native32.Words (Fits Fits.mono Fits.of_size inBounds)
 open CompPoly.PackedRepr (encode size_encode_uint32)
 open CompPoly.CPolynomial.NTTFast.Packed (splice encode_eq_map_val size_encode_fields getD_map_val
   map_val_extract add_val sub_val mul_val)

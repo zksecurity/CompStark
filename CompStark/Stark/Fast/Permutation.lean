@@ -10,7 +10,7 @@ public import CompStark.Stark.Fast.Lde
 /-! # The fast permutation trace is the specification's
 
 Inverses of planes follow `Ext4.inv` coordinate by coordinate, the norms inverted in one batch
-with the zeros left zero (`invPlanes_rel`). So a block's fractions are the specification's
+with the zeros left zero (`Ext4Planes.inv_rel`). So a block's fractions are the specification's
 (`fractionsX_rel`), the rows written block by block are the permutation trace's rows with the
 accumulator from the range's start (`writeBlock_rel`), and shifting it by the sums before the range
 gives the permutation trace (`permutationWords_eq`, `permutationLdeWith_rel`).
@@ -18,6 +18,7 @@ gives the permutation trace (`permutationWords_eq`, `permutationLdeWith_rel`).
 
 @[expose] public section
 namespace CompStark.Stark.Fast
+open Montgomery.Native32.Words
 open CompStark.Fri
 open CompPoly.PackedRepr (encode)
 open CompPoly.CPolynomial
@@ -30,122 +31,10 @@ variable {p : ℕ} [Mont32Field p]
 local notation "F" => FastField p
 local notation "EF" => Ext4 p
 
-/-! ### Inverses -/
-
-theorem val_eq_zero_iff (x : F) : x.val = 0 ↔ x = 0 :=
-  ⟨fun h ↦ Subtype.ext h, fun h ↦ h ▸ rfl⟩
-
-theorem read_tab {B : Nat} (hB : 4 * B < USize.size) (g : Nat → F) (k : Nat) (hk : k < B) :
-    NTTFast.Packed.Native.read (encode (tab B g)) k = (g k).val := by
-  rw [Words.read_encode _ _ (by rw [size_tab]; exact hB) (by rw [size_tab]; exact hk),
-    getD_tab _ _ _ hk]
-
-/-- Single words written in order give the tabulated values. -/
-theorem foldl_write_tab {B : Nat} (f : Nat → F)
-    (T : ByteArray → Nat → ByteArray)
-    (hT : ∀ k < B, ∀ o : ByteArray, o = encode (Words.upto (tab B fun _ ↦ 0) f k) →
-      T o k = encode (Words.upto (tab B fun _ ↦ 0) f (k + 1))) :
-    (List.range' 0 B).foldl T (encode (tab B fun _ ↦ (0 : F))) = encode (tab B f) := by
-  have h := Words.foldl_tail (tab B fun _ ↦ (0 : F)) f 0 B T fun k _ hk ↦ hT k (by omega) _ rfl
-  rw [Words.upto_zero, Nat.zero_add, Words.upto_full _ _ _ (size_tab _ _)] at h
-  exact h
-
-theorem nonzeroWords_tab {B : Nat} (hB : 4 * B < USize.size) (g : Nat → F) :
-    nonzeroWords (p := p) (encode (tab B g)) B =
-      encode (tab B fun i ↦ if g i = 0 then 1 else g i) := by
-  unfold nonzeroWords
-  simp only [Id.run, Std.Legacy.Range.forIn_eq_forIn_range', List.forIn_pure_yield_eq_foldl,
-    Std.Legacy.Range.size, Nat.sub_zero, Nat.add_sub_cancel, Nat.div_one]
-  rw [zeroWords_tab (p := p)]
-  refine foldl_write_tab _ _ fun k hk o ho ↦ ?_
-  rw [ho, read_tab hB g k hk]
-  have hw : (if (g k).val == 0 then (1 : F).val else (g k).val) =
-      (if g k = 0 then (1 : F) else g k).val := by
-    by_cases h0 : g k = 0
-    · simp only [h0, ite_true]; rfl
-    · have : ((g k).val == 0) = false := by
-        rw [beq_eq_false_iff_ne, ne_eq, val_eq_zero_iff]; exact h0
-      simp only [this, h0, Bool.false_eq_true, ite_false]
-  rw [hw]
-  exact Words.write_upto _ _ k (by rw [size_tab]; exact hk) (by rw [size_tab]; exact hB)
-
-theorem maskZeros_tab {B : Nat} (hB : 4 * B < USize.size) (g h : Nat → F) :
-    maskZeros (encode (tab B g)) (encode (tab B h)) B =
-      encode (tab B fun i ↦ if g i = 0 then 0 else h i) := by
-  unfold maskZeros
-  simp only [Id.run, Std.Legacy.Range.forIn_eq_forIn_range', List.forIn_pure_yield_eq_foldl,
-    Std.Legacy.Range.size, Nat.sub_zero, Nat.add_sub_cancel, Nat.div_one]
-  rw [zeroWords_tab (p := p)]
-  refine foldl_write_tab _ _ fun k hk o ho ↦ ?_
-  rw [ho, read_tab hB g k hk, read_tab hB h k hk]
-  have hw : (if (g k).val == 0 then (0 : UInt32) else (h k).val) =
-      (if g k = 0 then (0 : F) else h k).val := by
-    by_cases h0 : g k = 0
-    · simp only [h0, ite_true]; rfl
-    · have : ((g k).val == 0) = false := by
-        rw [beq_eq_false_iff_ne, ne_eq, val_eq_zero_iff]; exact h0
-      simp only [this, h0, Bool.false_eq_true, ite_false]
-  rw [hw]
-  exact Words.write_upto _ _ k (by rw [size_tab]; exact hk) (by rw [size_tab]; exact hB)
-
-/-- The inverses of a block of words, zero for zero. -/
-theorem invWords_tab {B : Nat} (hB : 4 * B < USize.size) (g : Nat → F) :
-    invWords (p := p) (encode (tab B g)) B = encode (tab B fun i ↦ (g i)⁻¹) := by
-  unfold invWords
-  rw [nonzeroWords_tab hB g]
-  have hinv := batchInvRange_encode (tab B fun i ↦ if g i = 0 then 1 else g i) 0 B
-    (by rw [size_tab]; omega) (by rw [size_tab]; exact hB) fun k hk ↦ by
-      rw [Nat.zero_add, getD_tab _ _ _ hk]
-      split
-      · exact one_ne_zero
-      · assumption
-  rw [hinv]
-  have ht : (Array.ofFn (n := B) fun k ↦ ((tab B fun i ↦ if g i = 0 then 1 else g i).getD
-      (0 + k.val) 0)⁻¹) = tab B fun i ↦ (if g i = 0 then 1 else g i)⁻¹ := by
-    show tab B (fun k ↦ ((tab B fun i ↦ if g i = 0 then 1 else g i).getD (0 + k) 0)⁻¹) = _
-    exact tab_congr fun i hi ↦ by rw [Nat.zero_add, getD_tab _ _ _ hi]
-  rw [ht, maskZeros_tab hB]
-  exact congrArg encode (tab_congr fun i _ ↦ by
-    by_cases h0 : g i = 0
-    · simp only [h0, ite_true, inv_zero]
-    · simp only [h0, ite_false])
-
-theorem scaleWords_tab {B : Nat} (hB : 4 * B < USize.size) (g : Nat → F) (c : F) :
-    scaleWords (encode (tab B g)) c B = encode (tab B fun i ↦ g i * c) := by
-  unfold scaleWords
-  rw [zeroWords_tab (p := p), mulAddWords_tab hB]
-  exact congrArg encode (tab_congr fun i _ ↦ zero_add _)
-
-/-- **Inverses of planes**: `Ext4.inv` coordinate by coordinate, zero to zero. -/
-theorem invPlanes_rel [Binomial4 p] {B : Nat} (hB : 4 * B < USize.size) {v : EVec p}
-    {f : Nat → EF} (hv : RV v (tab B f)) : RV (invPlanes v) (tab B fun i ↦ (f i)⁻¹) := by
-  obtain ⟨hn, h0, h1, h2, h3⟩ := rv_tab_iff.mp hv
-  unfold invPlanes
-  simp only [hn, h0, h1, h2, h3, mulWords_tab hB, addWords_tab hB, subWords_tab hB,
-    mulAddWords_tab hB, scaleWords_tab hB, invWords_tab hB]
-  refine rv_tab_iff.mpr ⟨rfl, ?_, ?_, ?_, ?_⟩ <;>
-  · refine congrArg encode (tab_congr fun i _ ↦ ?_)
-    first
-      | show _ = (Ext4.inv (f i)).c0
-      | show _ = (Ext4.inv (f i)).c1
-      | show _ = (Ext4.inv (f i)).c2
-      | show _ = (Ext4.inv (f i)).c3
-    simp only [Ext4.inv, Ext4.g0, Ext4.g1, Ext4.norm, Binomial4.mulW_eq]
-    ring
-
-theorem ext4_add_zero (a : EF) : a + 0 = a := by
-  show (⟨a.c0 + 0, a.c1 + 0, a.c2 + 0, a.c3 + 0⟩ : EF) = a
-  simp only [add_zero]
-
-theorem ext4_mul_ofBase_zero [Binomial4 p] (a : EF) : a * Ext4.ofBase 0 = 0 := by
-  rw [EVec.mul_coords]
-  simp only [ofBase_c0, ofBase_c1, ofBase_c2, ofBase_c3, MulZeroClass.mul_zero, add_zero]
-  rfl
-
 /-! ### Fractions -/
 
 theorem length_fractionsX [Binomial4 p] {β E : Type} (B : Nat) (get : β → E → ByteArray)
-    (v : β) (ts : List (List (List E × E))) (chs : List EF) (apl : Array (EVec p)) :
+    (v : β) (ts : List (List (List E × E))) (chs : List EF) (apl : Array (Ext4Planes p)) :
     (fractionsX B get v ts chs apl).length = ts.length := by
   rw [fractionsX, List.length_map, List.length_zipIdx]
 
@@ -176,14 +65,15 @@ theorem combineX_rel {B : Nat} (hB : 4 * B < USize.size) (b : EF) (ws : List Byt
     exact combineX_fold hB b _ _ hs _ _ ⟨_, hw, fun _ _ ↦ rfl⟩
 
 theorem fractionX_fold {E : Type} {B : Nat} (hB : 4 * B < USize.size) (ev : E → ByteArray)
-    (val : E → Nat → F) (a b : EF) (apl : EVec p) (hapl : RV apl (tab B fun _ ↦ a)) :
+    (val : E → Nat → F) (a b : EF) (apl : Ext4Planes p) (hapl : Ext4Planes.Rel apl (tab B fun _
+        ↦ a)) :
     ∀ xs : List (List E × E),
       (∀ x ∈ xs, (∀ e ∈ x.1, ev e = encode (tab B (val e))) ∧
         ev x.2 = encode (tab B (val x.2))) →
-      ∀ (z : EVec p) (S : Nat → EF), RV z (tab B S) →
-      RV (xs.foldl (fun s (t, m) ↦
+      ∀ (z : Ext4Planes p) (S : Nat → EF), Ext4Planes.Rel z (tab B S) →
+      Ext4Planes.Rel (xs.foldl (fun s (t, m) ↦
           let den := (XVal.ext apl).sub B (combineX B b (t.map ev))
-          s.add ((invPlanes (den.planes B)).mulBase (ev m))) z)
+          s.add ((Ext4Planes.inv (den.planes B)).mulBase (ev m))) z)
         (tab B fun i ↦ xs.foldl (fun s (t, m) ↦
           let mv := val m i
           if mv = 0 then s
@@ -199,21 +89,22 @@ theorem fractionX_fold {E : Type} {B : Nat} (hB : 4 * B < USize.size) (ev : E �
         rw [List.forall₂_map_left_iff, List.forall₂_map_right_iff]
         exact List.forall₂_same.mpr fun e he ↦ ht e he)
     have hden := XRel.sub hB (x := .ext apl) (f := fun _ ↦ a) hapl hcomb
-    have hinv := invPlanes_rel hB (hden.planes hB)
-    have hmb := EVec.mulBase_rel (tab B (val m)) hinv
+    have hinv := Ext4Planes.inv_rel hB (hden.planes hB)
+    have hmb := Ext4Planes.mulBase_rel (tab B (val m)) hinv
       (by rw [size_tab, size_tab]) (by rw [size_tab]; exact hB)
     rw [← hm, tab_zipWith] at hmb
-    have hadd := EVec.add_rel hz hmb (by rw [(rv_tab_iff.mp hz).1, (rv_tab_iff.mp hmb).1])
+    have hadd := Ext4Planes.add_rel hz hmb (by rw [(Ext4Planes.rel_tab_iff.mp hz).1,
+        (Ext4Planes.rel_tab_iff.mp hmb).1])
       (by rw [size_tab]; exact hB)
     rw [tab_zipWith] at hadd
     refine hadd.congr_tab fun i _ ↦ ?_
     by_cases h0 : val m i = 0
     · rw [ite_eq_left_of_eq_true _ _ (eq_true h0), h0]
       show S i + _ * Ext4.ofBase 0 = S i
-      rw [ext4_mul_ofBase_zero, ext4_add_zero]
+      rw [Ext4.mul_ofBase_zero, Ext4.add_zero']
     · rw [ite_eq_right_of_eq_false _ _ (eq_false h0)]
       show _ = S i + Ext4.smul _ _
-      rw [Norm.smul_eq_ofBase_mul, ext4_mul_comm (Ext4.ofBase _)]
+      rw [Ext4.smul_eq_ofBase_mul, Ext4.mul_comm' (Ext4.ofBase _)]
       simp only [List.map_map]
       rfl
 
@@ -226,16 +117,16 @@ def fracOf {E : Type} (val : E → F) (a b : EF) (t : List (List E × E)) : EF :
 
 /-- A lookup's fraction on a block of rows, `ev` its expressions' values there. -/
 theorem fractionX_rel {E : Type} {B : Nat} (hB : 4 * B < USize.size) (ev : E → ByteArray)
-    (val : E → Nat → F) (t : List (List E × E)) (a b : EF) (apl : EVec p)
-    (hapl : RV apl (tab B fun _ ↦ a))
+    (val : E → Nat → F) (t : List (List E × E)) (a b : EF) (apl : Ext4Planes p)
+    (hapl : Ext4Planes.Rel apl (tab B fun _ ↦ a))
     (hev : ∀ x ∈ t, (∀ e ∈ x.1, ev e = encode (tab B (val e))) ∧
       ev x.2 = encode (tab B (val x.2))) :
-    RV (t.foldl (fun s (t, m) ↦
+    Ext4Planes.Rel (t.foldl (fun s (t, m) ↦
         let den := (XVal.ext apl).sub B (combineX B b (t.map ev))
-        s.add ((invPlanes (den.planes B)).mulBase (ev m))) (EVec.zeros B))
+        s.add ((Ext4Planes.inv (den.planes B)).mulBase (ev m))) (Ext4Planes.zeros B))
       (tab B fun i ↦ fracOf (val · i) a b t) := by
-  have hz : RV (EVec.zeros (p := p) B) (tab B fun _ ↦ 0) := by
-    have := EVec.zeros_rel (p := p) B
+  have hz : Ext4Planes.Rel (Ext4Planes.zeros (p := p) B) (tab B fun _ ↦ 0) := by
+    have := Ext4Planes.zeros_rel (p := p) B
     rwa [show Array.replicate B (0 : EF) = tab B fun _ ↦ 0 from by
       apply Array.ext (by simp only [Array.size_replicate, size_tab])
       intro i h1 h2
@@ -246,11 +137,12 @@ theorem fractionX_rel {E : Type} {B : Nat} (hB : 4 * B < USize.size) (ev : E →
 theorem fractionsX_getD {β E : Type} {B : Nat} (hB : 4 * B < USize.size)
     (get : β → E → ByteArray) (v : β)
     (val : E → Nat → F) (ts : List (List (List E × E))) (chs : List EF)
-    (apl : Array (EVec p))
-    (hapl : ∀ c < ts.length, RV (apl.getD c (EVec.zeros B)) (tab B fun _ ↦ chs.getD (2 * c) 0))
+    (apl : Array (Ext4Planes p))
+    (hapl : ∀ c < ts.length, Ext4Planes.Rel (apl.getD c (Ext4Planes.zeros B)) (tab B fun _
+        ↦ chs.getD (2 * c) 0))
     (hev : ∀ t ∈ ts, ∀ x ∈ t, (∀ e ∈ x.1, get v e = encode (tab B (val e))) ∧
       get v x.2 = encode (tab B (val x.2))) (c : Nat) (hc : c < ts.length) :
-    RV ((fractionsX B get v ts chs apl).toArray.getD c (EVec.zeros B))
+    Ext4Planes.Rel ((fractionsX B get v ts chs apl).toArray.getD c (Ext4Planes.zeros B))
       (tab B fun i ↦ fracOf (val · i) (chs.getD (2 * c) 0) (chs.getD (2 * c + 1) 0) ts[c]) := by
   have hc' : c < (fractionsX B get v ts chs apl).length := by rw [length_fractionsX]; exact hc
   rw [Array.getD_eq_getD_getElem?, List.getElem?_toArray, List.getElem?_eq_getElem hc',
@@ -269,16 +161,16 @@ theorem write_upto' (O : Array F) (f : Nat → F) (k : Nat) (x : UInt32) (hx : x
   rw [hx]; exact Words.write_upto O f k hk hs
 
 /-- A row written at `o`: the accumulator's four coordinates, then four per lookup. -/
-theorem writeRow_rel (O : Array F) (f : Nat → F) (o : Nat) (fs : Array (EVec p)) (acc : EF)
+theorem writeRow_rel (O : Array F) (f : Nat → F) (o : Nat) (fs : Array (Ext4Planes p)) (acc : EF)
     (i : Nat) (hO : o + (fs.size + 1) * 4 ≤ O.size) (hs : 4 * O.size < USize.size)
     (hacc : f o = acc.c0 ∧ f (o + 1) = acc.c1 ∧ f (o + 2) = acc.c2 ∧ f (o + 3) = acc.c3)
     (hfs : ∀ c < fs.size,
-      NTTFast.Packed.Native.read (fs.getD c (EVec.zeros 0)).c0 i = (f (o + 4 * (c + 1))).val ∧
-      NTTFast.Packed.Native.read (fs.getD c (EVec.zeros 0)).c1 i =
+      NTTFast.Packed.Native.read (fs.getD c (Ext4Planes.zeros 0)).c0 i = (f (o + 4 * (c + 1))).val ∧
+      NTTFast.Packed.Native.read (fs.getD c (Ext4Planes.zeros 0)).c1 i =
         (f (o + 4 * (c + 1) + 1)).val ∧
-      NTTFast.Packed.Native.read (fs.getD c (EVec.zeros 0)).c2 i =
+      NTTFast.Packed.Native.read (fs.getD c (Ext4Planes.zeros 0)).c2 i =
         (f (o + 4 * (c + 1) + 2)).val ∧
-      NTTFast.Packed.Native.read (fs.getD c (EVec.zeros 0)).c3 i =
+      NTTFast.Packed.Native.read (fs.getD c (Ext4Planes.zeros 0)).c3 i =
         (f (o + 4 * (c + 1) + 3)).val) :
     writeRow (encode (Words.upto O f o)) o fs acc i =
       encode (Words.upto O f (o + (fs.size + 1) * 4)) := by
@@ -294,10 +186,10 @@ theorem writeRow_rel (O : Array F) (f : Nat → F) (o : Nat) (fs : Array (EVec p
   suffices h : ∀ m ≤ fs.size, (List.range' 0 m).foldl (fun out c ↦
       NTTFast.Packed.Native.write (NTTFast.Packed.Native.write (NTTFast.Packed.Native.write
         (NTTFast.Packed.Native.write out (o + 4 * (c + 1))
-          (NTTFast.Packed.Native.read (fs.getD c (EVec.zeros 0)).c0 i))
-        (o + 4 * (c + 1) + 1) (NTTFast.Packed.Native.read (fs.getD c (EVec.zeros 0)).c1 i))
-        (o + 4 * (c + 1) + 2) (NTTFast.Packed.Native.read (fs.getD c (EVec.zeros 0)).c2 i))
-        (o + 4 * (c + 1) + 3) (NTTFast.Packed.Native.read (fs.getD c (EVec.zeros 0)).c3 i))
+          (NTTFast.Packed.Native.read (fs.getD c (Ext4Planes.zeros 0)).c0 i))
+        (o + 4 * (c + 1) + 1) (NTTFast.Packed.Native.read (fs.getD c (Ext4Planes.zeros 0)).c1 i))
+        (o + 4 * (c + 1) + 2) (NTTFast.Packed.Native.read (fs.getD c (Ext4Planes.zeros 0)).c2 i))
+        (o + 4 * (c + 1) + 3) (NTTFast.Packed.Native.read (fs.getD c (Ext4Planes.zeros 0)).c3 i))
       (encode (Words.upto O f (o + 1 + 1 + 1 + 1))) = encode (Words.upto O f (o + 4 * (m + 1))) by
     rw [h fs.size le_rfl, Nat.mul_comm 4 (fs.size + 1)]
     rfl
@@ -322,15 +214,17 @@ theorem writeRow_rel (O : Array F) (f : Nat → F) (o : Nat) (fs : Array (EVec p
       show o + 4 * (m + 1) + 1 + 1 + 1 + 1 = o + 4 * (m + 1 + 1) by omega]
 
 /-- The reads of a row: the fractions' coordinates at row `i` are `f`'s from word `o`. -/
-def RowReads (f : Nat → F) (o : Nat) (fs : Array (EVec p)) (i : Nat) : Prop :=
+def RowReads (f : Nat → F) (o : Nat) (fs : Array (Ext4Planes p)) (i : Nat) : Prop :=
   ∀ c < fs.size,
-    NTTFast.Packed.Native.read (fs.getD c (EVec.zeros 0)).c0 i = (f (o + 4 * (c + 1))).val ∧
-    NTTFast.Packed.Native.read (fs.getD c (EVec.zeros 0)).c1 i = (f (o + 4 * (c + 1) + 1)).val ∧
-    NTTFast.Packed.Native.read (fs.getD c (EVec.zeros 0)).c2 i = (f (o + 4 * (c + 1) + 2)).val ∧
-    NTTFast.Packed.Native.read (fs.getD c (EVec.zeros 0)).c3 i = (f (o + 4 * (c + 1) + 3)).val
+    NTTFast.Packed.Native.read (fs.getD c (Ext4Planes.zeros 0)).c0 i = (f (o + 4 * (c + 1))).val ∧
+    NTTFast.Packed.Native.read (fs.getD c (Ext4Planes.zeros 0)).c1 i = (f (o + 4 * (c + 1) + 1)).val
+        ∧
+    NTTFast.Packed.Native.read (fs.getD c (Ext4Planes.zeros 0)).c2 i = (f (o + 4 * (c + 1) + 2)).val
+        ∧
+    NTTFast.Packed.Native.read (fs.getD c (Ext4Planes.zeros 0)).c3 i = (f (o + 4 * (c + 1) + 3)).val
 
 /-- A block written from row `r`, the accumulators `accs` row by row. -/
-theorem writeBlock_rel (O : Array F) (f : Nat → F) (r : Nat) (fs : Array (EVec p)) (acc : EF)
+theorem writeBlock_rel (O : Array F) (f : Nat → F) (r : Nat) (fs : Array (Ext4Planes p)) (acc : EF)
     (B W : Nat) (accs : Nat → EF) (hW : W = (fs.size + 1) * 4) (hO : (r + B) * W ≤ O.size)
     (hs : 4 * O.size < USize.size) (hacc0 : accs 0 = acc)
     (hstep : ∀ i < B, accs (i + 1) = fs.foldl (fun a v ↦ a + v.get i) (accs i))
@@ -616,10 +510,10 @@ theorem flatten_tab [Mont32BaseField p] [Binomial4 p] (N : Nat) (g : Nat → EF)
 
 /-! ### A range of blocks -/
 
-theorem get_tab {B : Nat} (hB : 4 * B < USize.size) {v : EVec p} {f : Nat → EF}
-    (hv : RV v (tab B f)) (i : Nat) (hi : i < B) : v.get i = f i := by
-  obtain ⟨-, h0, h1, h2, h3⟩ := rv_tab_iff.mp hv
-  simp only [EVec.get, EVec.ofW, h0, h1, h2, h3, read_tab hB _ i hi,
+theorem get_tab {B : Nat} (hB : 4 * B < USize.size) {v : Ext4Planes p} {f : Nat → EF}
+    (hv : Ext4Planes.Rel v (tab B f)) (i : Nat) (hi : i < B) : v.get i = f i := by
+  obtain ⟨-, h0, h1, h2, h3⟩ := Ext4Planes.rel_tab_iff.mp hv
+  simp only [Ext4Planes.get, h0, h1, h2, h3, read_tab hB _ i hi,
     NTTFast.Packed.ofWord_val]
 
 /-- The accumulator `i` rows into a range of rows from row `R0`, from `0`. -/
@@ -659,9 +553,9 @@ theorem rangeRows_eq [Mont32BaseField p] [Binomial4 p] {β E : Type} (blk : Nat 
   unfold rangeRows
   dsimp only
   have hW4 : 4 ≤ W := by rw [hW]; omega
-  have hapl : ∀ c < ts.length, RV
+  have hapl : ∀ c < ts.length, Ext4Planes.Rel
       (((Array.range ts.length).map fun c ↦ (XVal.const (chs.getD (2 * c) 0)).planes B).getD c
-        (EVec.zeros B)) (tab B fun _ ↦ chs.getD (2 * c) 0) := by
+        (Ext4Planes.zeros B)) (tab B fun _ ↦ chs.getD (2 * c) 0) := by
     intro c hc
     rw [Array.getD_eq_getD_getElem?, Array.getElem?_map, Array.getElem?_range]
     simp only [hc, ite_true, Option.map_some, Option.getD_some]
@@ -729,8 +623,9 @@ theorem rangeRows_eq [Mont32BaseField p] [Binomial4 p] {β E : Type} (blk : Nat 
         have := hfs c hc
         rw [Array.getD_eq_getD_getElem?, List.getElem?_toArray,
           List.getElem?_eq_getElem (by rw [length_fractionsX]; exact hc), Option.getD_some] at this
-        obtain ⟨-, h0, h1, h2, h3⟩ := rv_tab_iff.mp this
-        have hfsc : (fractionsX B get (blk ((b0 + m) * B)) ts chs apl).toArray.getD c (EVec.zeros 0) =
+        obtain ⟨-, h0, h1, h2, h3⟩ := Ext4Planes.rel_tab_iff.mp this
+        have hfsc : (fractionsX B get (blk ((b0 + m) * B)) ts chs apl).toArray.getD c
+            (Ext4Planes.zeros 0) =
             (fractionsX B get (blk ((b0 + m) * B)) ts chs apl)[c]'(by
               rw [length_fractionsX]; exact hc) := by
           rw [Array.getD_eq_getD_getElem?, List.getElem?_toArray,
@@ -764,7 +659,7 @@ theorem rangeRows_eq [Mont32BaseField p] [Binomial4 p] {β E : Type} (blk : Nat 
 /-! ### The whole permutation trace -/
 
 theorem ext4_add_assoc (a b c : EF) : a + b + c = a + (b + c) := by
-  apply Norm.ext <;> simp only [Norm.add_c0, Norm.add_c1, Norm.add_c2, Norm.add_c3, add_assoc]
+  apply Ext4.ext' <;> simp only [Ext4.add_c0, Ext4.add_c1, Ext4.add_c2, Ext4.add_c3, add_assoc]
 
 theorem foldl_add_shift (s : EF) : ∀ (xs : List EF) (a : EF),
     xs.foldl (· + ·) (s + a) = s + xs.foldl (· + ·) a
@@ -780,7 +675,7 @@ theorem specAcc_add (frs : Nat → List EF) (R0 i : Nat) :
   generalize (List.range R0).foldl (fun acc r ↦ (frs r).foldl (· + ·) acc) 0 = s
   suffices h : ∀ (l : List Nat) (a : EF), l.foldl (fun acc r ↦ (frs (R0 + r)).foldl (· + ·) acc)
       (s + a) = s + l.foldl (fun acc r ↦ (frs (R0 + r)).foldl (· + ·) acc) a by
-    rw [← h, ext4_add_zero]
+    rw [← h, Ext4.add_zero']
   intro l
   induction l with
   | nil => intro a; rfl
@@ -868,7 +763,7 @@ theorem foldl_tab_ranges {α : Type} (g : Nat → α) (S : Nat) : ∀ K : Nat,
   | K + 1 => by
     rw [List.range_succ, List.foldl_append, foldl_tab_ranges g S K, List.foldl_cons,
       List.foldl_nil]
-    have := CompStark.Stark.ofFn_append g (K * S) S
+    have := Words.ofFn_append g (K * S) S
     rw [show K * S + S = (K + 1) * S by ring] at this
     exact this
 

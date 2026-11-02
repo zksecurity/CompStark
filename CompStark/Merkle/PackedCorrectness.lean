@@ -16,6 +16,7 @@ import CompPoly.Univariate.NTTFast.Packed.ArrayLemmas
 
 @[expose] public section
 namespace CompStark.Merkle.Packed
+open Montgomery.Native32.Words (Fits Fits.mono Fits.of_size inBounds)
 open CompStark.Poseidon2 CompStark.Poseidon2.Packed Montgomery.Native32
 open CompPoly.PackedRepr (encode)
 open CompPoly.CPolynomial.NTTFast.Packed (size_encode_fields array_eq_of_getD getD_ofFn_bounded)

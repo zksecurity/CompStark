@@ -4,7 +4,7 @@ Released under Apache 2.0 license as described in the file LICENSE.
 -/
 module
 
-public import CompPoly.Univariate.NTTFast.Packed.Native
+public import CompPoly.Fields.Montgomery.Native32Words
 public import CompStark.Poseidon2.KoalaBear
 import CompStark.Poseidon2.Unrolled
 public import CompStark.Poseidon2.Arithmetic
@@ -18,36 +18,19 @@ is eight-lane straight-line code that the C compiler vectorizes.
 
 @[expose] public section
 namespace CompStark.Poseidon2.Packed
+open Montgomery.Native32.Words (Fits Fits.mono Fits.of_size inBounds)
 open CompPoly.CPolynomial.NTTFast.Packed (add sub mul reduceOnce)
 open CompPoly.CPolynomial.NTTFast.Packed.Native (readUOffset putWords size_putWords wordOffset_toNat
   encodeFields usize_numeral)
 
-/-- Words `i, …, i + n` of `b` fit, and `b` fits machine indices. -/
-abbrev Fits (b : ByteArray) (i : USize) (n : Nat) : Prop :=
-  4 * (i.toNat + n) + 3 < b.size ∧ b.size < USize.size
-
 /-- The group at `i` fits the buffer. -/
 abbrev GroupFits (b : ByteArray) (i : USize) : Prop := Fits b i 127
-
-theorem inBounds {b : ByteArray} {i : USize} {n : Nat} (h : Fits b i n) (k : USize)
-    (hk : k.toNat ≤ n) : 4 * (i.toNat + k.toNat) + 3 < b.size ∧ b.size < USize.size :=
-  ⟨by omega, h.2⟩
 
 theorem storeBounds16 {b : ByteArray} {i : USize} (h : GroupFits b i) (k : USize)
     (hk : k.toNat ≤ 120) : ((i + k) * 4).toNat + 4 * 8 ≤ b.size ∧
       ((i + k) * 4).toNat + 4 * 8 < USize.size := by
   rw [wordOffset_toNat _ _ (by omega)]
   omega
-
-theorem Fits.mono {b : ByteArray} {i : USize} {m n : Nat} (h : Fits b i n) (hm : m ≤ n) :
-    Fits b i m :=
-  ⟨by omega, h.2⟩
-
-theorem Fits.of_size {b b' : ByteArray} {i : USize} {n : Nat} (hs : b'.size = b.size)
-    (h : Fits b i n) : Fits b' i n := by
-  unfold Fits at *
-  rw [hs]
-  exact h
 
 /-- Words `i + k, …, i + k + 7` of a buffer of size `n`, overwritten without a branch. -/
 @[inline] def store8 {n : Nat} (st : { x : ByteArray // x.size = n }) (i k : USize)
@@ -180,7 +163,7 @@ termination_by K.internal.size - k
 
 /-- The constants of `K` fit their buffers. -/
 abbrev Packed16.Fits (K : Packed16) : Prop :=
-  Rows16 K.initial ∧ Rows16 K.terminal ∧ Poseidon2.Packed.Fits K.diagonal 0 15
+  Rows16 K.initial ∧ Rows16 K.terminal ∧ Montgomery.Native32.Words.Fits K.diagonal 0 15
 
 /-- The permutation of the eight states at `i`. -/
 def permute16 (K : @& Packed16) (b : ByteArray) (i : USize) : ByteArray :=

@@ -27,6 +27,7 @@ place (`leavesIn`), or chunks of rows (`leaves`), and the larger layers in range
 
 @[expose] public section
 namespace CompStark.Merkle.Packed
+open Montgomery.Native32.Words (Fits Fits.mono Fits.of_size inBounds)
 open CompStark.Poseidon2 CompStark.Poseidon2.Packed Montgomery.Native32
 open CompPoly.CPolynomial.NTTFast.Packed.Native (read write zeroWords readUOffset putWords
   size_putWords wordOffset_toNat)

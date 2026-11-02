@@ -21,6 +21,8 @@ block of stored rows holds the specification's rows `quotientRow … perm[j]`, a
 
 @[expose] public section
 namespace CompStark.Stark.Fast
+open CompPoly.Array (batchInv)
+open Montgomery.Native32.Words
 open CompStark.Fri
 open CompPoly.PackedRepr (encode)
 open CompPoly.CPolynomial

@@ -16,6 +16,7 @@ vanishing polynomial: the quotient the prover splits into chunks and commits.
 
 @[expose] public section
 namespace CompStark.Stark
+open CompPoly.Array (batchInv)
 
 /-- A row-major matrix of base elements. -/
 structure Mat (F : Type) where

@@ -5,11 +5,11 @@ Released under Apache 2.0 license as described in the file LICENSE.
 module
 
 public import CompStark.Stark.Challenge
+public import CompPoly.Data.Array.BatchInv
 
 /-! # Field helpers of the STARK
 
-Exponentiation by squaring, bit reversal, the points of two-adic cosets, batch inversion and
-parallel chunks.
+Exponentiation by squaring, bit reversal, the points of two-adic cosets and parallel chunks.
 -/
 
 @[expose] public section
@@ -68,22 +68,6 @@ def cosetPoints {F : Type} [BaseField F] (shift : F) (logN : Nat) : Array F := I
 def cosetPointsBitRev {F : Type} [BaseField F] (shift : F) (logN : Nat) : Array F :=
   let xs := cosetPoints shift logN
   (bitRevPerm logN).map fun i ↦ xs.getD i 0
-
-/-- The inverses of all elements with one inversion, by prefix products. Defined when no element
-is zero. -/
-def batchInv {K : Type*} [Mul K] [Inv K] [One K] (xs : Array K) : Array K := Id.run do
-  let mut pre := Array.emptyWithCapacity xs.size
-  let mut acc : K := 1
-  for x in xs do
-    pre := pre.push acc
-    acc := acc * x
-  let mut inv := acc⁻¹
-  let mut out := Array.replicate xs.size (1 : K)
-  for k in [0:xs.size] do
-    let i := xs.size - 1 - k
-    out := out.set! i (inv * pre.getD i 1)
-    inv := inv * xs.getD i 1
-  return out
 
 /-- `f start len` on `parts` consecutive ranges covering `0, …, n - 1`, as parallel tasks, results
 concatenated in order. -/

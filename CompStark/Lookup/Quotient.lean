@@ -17,6 +17,7 @@ constraints in Horner's order, to the quotient (`lookupQuotientValues`).
 
 @[expose] public section
 namespace CompStark.Lookup
+open CompPoly.Array (batchInv)
 open CompStark.Stark
 
 variable {F : Type} [BaseField F] {EF : Type} [Challenge F EF]

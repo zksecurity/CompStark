@@ -8,9 +8,10 @@ package CompStark where
 
 -- Pinned to a CompPoly commit with the packed NTT, the batched coset LDE on chunks of rows with
 -- input transposes by column range, coset interpolation generic over 32-bit Montgomery fields,
--- fast KoalaBear⁵ and spec fields over the fast base field, and word-sized packed loads and stores.
+-- fast KoalaBear⁵ and spec fields over the fast base field, word-sized packed loads and stores, and
+-- the Montgomery word kernels and quartic coordinate planes.
 require CompPoly from git "https://github.com/mitschabaude-bot/CompPoly.git" @
-    "6de4e90026a12ea10a2a24f53f332aed3e877961"
+    "c1f337c7acd42ec5d4dbedb79e6f8fda42a415b9"
 
 -- ArkLib main with Johnson-regime mutual correlated agreement for power curves, lossy mutual
 -- correlated agreement, FRI on the interaction layer with its knowledge certificate on Plonky3's
@@ -34,8 +35,7 @@ lean_lib CompStark where
 /-- CPU-targeted packed kernels; the proof artifacts remain platform independent. -/
 lean_lib CompStarkPackedNative where
   roots := #[`CompStark.Poseidon2.Packed, `CompStark.Poseidon2.Packed24,
-    `CompStark.Merkle.Packed, `CompStark.Merkle.PackedColumns, `CompStark.Stark.Words,
-    `CompStark.Stark.ExtWords,
+    `CompStark.Merkle.Packed, `CompStark.Merkle.PackedColumns,
     `CompStark.Stark.ProgWords, `CompStark.Stark.ProgGroup, `CompStark.Stark.Fast,
     `CompStark.KoalaBear.Fast, `CompStark.KoalaBear.Group, `CompStark.BabyBear.Fast]
   platformIndependent := true

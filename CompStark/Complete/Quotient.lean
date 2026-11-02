@@ -39,6 +39,7 @@ holds all two-adic roots of unity.
 
 @[expose] public section
 namespace CompStark.Stark
+open CompPoly.Array (batchInv batchInv_eq)
 open CompStark.Fri Polynomial
 
 variable {F : Type}

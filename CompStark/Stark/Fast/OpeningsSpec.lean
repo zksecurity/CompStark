@@ -5,7 +5,6 @@ Released under Apache 2.0 license as described in the file LICENSE.
 module
 
 public import CompStark.Stark.Fast.QuotientSpec
-public import CompStark.Stark.Fast.BatchInv
 
 /-! # The specification's openings in closed form
 
@@ -15,6 +14,7 @@ point are, column by column, a weighted sum over the rows (`openedAt_eq`).
 
 @[expose] public section
 namespace CompStark.Stark
+open CompPoly.Array (batchInv batchInv_eq)
 open CompStark.Fri
 
 variable {F : Type} [BaseField F] {EF : Type} [Challenge F EF]

@@ -5,7 +5,7 @@ Released under Apache 2.0 license as described in the file LICENSE.
 module
 
 public import CompStark.Stark.Prog
-public import CompStark.Stark.Words
+public import CompPoly.Fields.Montgomery.Native32Words
 
 /-! # Programs on blocks of packed words
 
@@ -18,8 +18,7 @@ An operand on the trace's current row is read where it is: column `c` of the blo
 
 @[expose] public section
 namespace CompStark.Stark.Prog
-open CompStark.Poseidon2.Packed (Fits)
-open CompStark.Words (rd)
+open Montgomery.Native32.Words (Fits rd)
 open CompPoly.CPolynomial.NTTFast.Packed (add sub mul)
 open Montgomery.Native32 (Mont32Field FastField)
 open CompPoly.CPolynomial.NTTFast.Packed.Native (read write write16U zeroWords)
@@ -525,6 +524,6 @@ def outWords {S : Nat} (outs : @& Array (Opd (FastField p))) (v : @& View) (regs
   outs.map fun o ↦ match o with
     | .reg r => wordsAt (regBuf regs (4 + r)) 0 B
     | .cur c => wordsAt v.buf (v.cb + c * v.cs) B
-    | .const x => Words.replicateWord x.val B
+    | .const x => Montgomery.Native32.Words.replicateWord x.val B
 
 end CompStark.Stark.Prog

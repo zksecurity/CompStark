@@ -19,6 +19,8 @@ the rest follows the quotient's argument (`lookupQuotientWith_rel`).
 
 @[expose] public section
 namespace CompStark.Stark.Fast
+open Montgomery.Native32.Words
+open CompPoly.Array (batchInv)
 open CompStark.Fri
 open CompPoly.PackedRepr (encode)
 open CompPoly.CPolynomial
@@ -30,57 +32,7 @@ variable {p : ℕ} [Mont32Field p]
 local notation "F" => FastField p
 local notation "EF" => Ext4 p
 
-/-! ### Tabulated values -/
-
-theorem replicate_tab (B : Nat) (c : F) : Array.replicate B c = tab B fun _ ↦ c := by
-  apply Array.ext (by simp only [Array.size_replicate, tab, Array.size_ofFn])
-  intro i h1 h2
-  simp only [tab, Array.getElem_replicate, Array.getElem_ofFn]
-
-theorem zeroWords_tab (B : Nat) :
-    CompPoly.CPolynomial.NTTFast.Packed.Native.zeroWords B = encode (tab B fun _ ↦ (0 : F)) :=
-  EVec.zeroWords_ofFn B
-
-theorem addWords_tab {B : Nat} (hB : 4 * B < USize.size) (f g : Nat → F) :
-    Words.addWords p (encode (tab B f)) (encode (tab B g)) B = encode (tab B fun i ↦ f i + g i) :=
-  EVec.addWords_ofFn hB (fun i ↦ f i.val) (fun i ↦ g i.val)
-
-theorem subWords_tab {B : Nat} (hB : 4 * B < USize.size) (f g : Nat → F) :
-    Words.subWords p (encode (tab B f)) (encode (tab B g)) B = encode (tab B fun i ↦ f i - g i) :=
-  EVec.subWords_ofFn hB (fun i ↦ f i.val) (fun i ↦ g i.val)
-
-theorem mulWords_tab {B : Nat} (hB : 4 * B < USize.size) (f g : Nat → F) :
-    Words.mulWords p (encode (tab B f)) (encode (tab B g)) B = encode (tab B fun i ↦ f i * g i) :=
-  EVec.mulWords_ofFn hB (fun i ↦ f i.val) (fun i ↦ g i.val)
-
-theorem mulAddWords_tab {B : Nat} (hB : 4 * B < USize.size) (f g : Nat → F) (c : F) :
-    Words.mulAddWords p (encode (tab B f)) (encode (tab B g)) c.val B =
-      encode (tab B fun i ↦ f i + g i * c) :=
-  EVec.mulAddWords_ofFn hB (fun i ↦ f i.val) (fun i ↦ g i.val) c
-
-theorem replicateWord_tab {B : Nat} (hB : 4 * B < USize.size) (c : F) :
-    Words.replicateWord c.val B = encode (tab B fun _ ↦ c) := by
-  rw [Words.replicateWord_encode _ _ hB, replicate_tab]
-
-/-- Planes represent tabulated elements when they tabulate the coordinates. -/
-theorem rv_tab_iff {B : Nat} {v : EVec p} {f : Nat → EF} :
-    RV v (tab B f) ↔ v.n = B ∧ v.c0 = encode (tab B fun i ↦ (f i).c0) ∧
-      v.c1 = encode (tab B fun i ↦ (f i).c1) ∧ v.c2 = encode (tab B fun i ↦ (f i).c2) ∧
-      v.c3 = encode (tab B fun i ↦ (f i).c3) := by
-  simp only [RV, size_tab, tab_map]
-
-theorem RV.congr_tab {B : Nat} {v : EVec p} {f g : Nat → EF} (h : RV v (tab B f))
-    (hfg : ∀ i < B, f i = g i) : RV v (tab B g) := by
-  rw [← tab_congr hfg]; exact h
-
-theorem ext4_mul_comm [Binomial4 p] (a b : EF) : a * b = b * a := by
-  rw [EVec.mul_coords, EVec.mul_coords]
-  congr 1 <;> ring
-
-theorem ofBase_c0 (x : F) : (Ext4.ofBase x).c0 = x := rfl
-theorem ofBase_c1 (x : F) : (Ext4.ofBase x).c1 = 0 := rfl
-theorem ofBase_c2 (x : F) : (Ext4.ofBase x).c2 = 0 := rfl
-theorem ofBase_c3 (x : F) : (Ext4.ofBase x).c3 = 0 := rfl
+/-! ### Base elements -/
 
 theorem ofBase_add (a b : F) : Ext4.ofBase a + Ext4.ofBase b = Ext4.ofBase (p := p) (a + b) := by
   show (⟨a + b, 0 + 0, 0 + 0, 0 + 0⟩ : EF) = ⟨a + b, 0, 0, 0⟩
@@ -92,8 +44,8 @@ theorem ofBase_sub (a b : F) : Ext4.ofBase a - Ext4.ofBase b = Ext4.ofBase (p :=
 
 theorem ofBase_mul [Binomial4 p] (a b : F) :
     Ext4.ofBase a * Ext4.ofBase b = Ext4.ofBase (p := p) (a * b) := by
-  rw [EVec.mul_coords]
-  simp only [ofBase_c0, ofBase_c1, ofBase_c2, ofBase_c3]
+  rw [Ext4.mul_coords]
+  simp only [Ext4.ofBase_c0, Ext4.ofBase_c1, Ext4.ofBase_c2, Ext4.ofBase_c3]
   show (⟨_, _, _, _⟩ : EF) = ⟨a * b, 0, 0, 0⟩
   congr 1 <;> ring
 
@@ -103,7 +55,7 @@ theorem ofBase_mul [Binomial4 p] (a b : F) :
 def XRel (B : Nat) : XVal p → (Nat → EF) → Prop
   | .const c, f => ∀ i < B, f i = c
   | .base w, f => ∃ g : Nat → F, w = encode (tab B g) ∧ ∀ i < B, f i = Ext4.ofBase (g i)
-  | .ext v, f => RV v (tab B f)
+  | .ext v, f => Ext4Planes.Rel v (tab B f)
 
 theorem XRel.congr {B : Nat} {x : XVal p} {f g : Nat → EF} (h : XRel B x f)
     (hfg : ∀ i < B, f i = g i) : XRel B x g := by
@@ -112,20 +64,20 @@ theorem XRel.congr {B : Nat} {x : XVal p} {f g : Nat → EF} (h : XRel B x f)
   | base w =>
     obtain ⟨g', hw, hg⟩ := h
     exact ⟨g', hw, fun i hi ↦ (hfg i hi).symm.trans (hg i hi)⟩
-  | ext v => exact RV.congr_tab h hfg
+  | ext v => exact Ext4Planes.Rel.congr_tab h hfg
 
 /-- The planes of a block value represent its values. -/
 theorem XRel.planes {B : Nat} (hB : 4 * B < USize.size) {x : XVal p} {f : Nat → EF}
-    (h : XRel B x f) : RV (x.planes B) (tab B f) := by
+    (h : XRel B x f) : Ext4Planes.Rel (x.planes B) (tab B f) := by
   cases x with
   | const c =>
-    refine rv_tab_iff.mpr ⟨rfl, ?_, ?_, ?_, ?_⟩ <;>
+    refine Ext4Planes.rel_tab_iff.mpr ⟨rfl, ?_, ?_, ?_, ?_⟩ <;>
     · simp only [XVal.planes, XVal.rep]
       rw [replicateWord_tab hB]
       exact congrArg encode (tab_congr fun i hi ↦ by rw [h i hi])
   | base w =>
     obtain ⟨g, hw, hg⟩ := h
-    refine rv_tab_iff.mpr ⟨rfl, ?_, ?_, ?_, ?_⟩
+    refine Ext4Planes.rel_tab_iff.mpr ⟨rfl, ?_, ?_, ?_, ?_⟩
     · rw [XVal.planes, hw]
       exact congrArg encode (tab_congr fun i hi ↦ by rw [hg i hi]; rfl)
     all_goals
@@ -138,15 +90,15 @@ theorem XRel.planes_n {B : Nat} {x : XVal p} {f : Nat → EF} (h : XRel B x f) :
   cases x with
   | const c => rfl
   | base w => rfl
-  | ext v => exact (rv_tab_iff.mp h).1
+  | ext v => exact (Ext4Planes.rel_tab_iff.mp h).1
 
 /-- Base words added to the constant coordinate of planes. -/
-theorem rv_addC0 {B : Nat} (hB : 4 * B < USize.size) {v : EVec p} (f : Nat → EF) (g : Nat → F)
-    (hv : RV v (tab B f)) :
-    RV ⟨B, Words.addWords p v.c0 (encode (tab B g)) B, v.c1, v.c2, v.c3⟩
+theorem rv_addC0 {B : Nat} (hB : 4 * B < USize.size) {v : Ext4Planes p} (f : Nat → EF) (g : Nat → F)
+    (hv : Ext4Planes.Rel v (tab B f)) :
+    Ext4Planes.Rel ⟨B, Words.addWords p v.c0 (encode (tab B g)) B, v.c1, v.c2, v.c3⟩
       (tab B fun i ↦ f i + Ext4.ofBase (g i)) := by
-  obtain ⟨-, h0, h1, h2, h3⟩ := rv_tab_iff.mp hv
-  refine rv_tab_iff.mpr ⟨rfl, ?_, ?_, ?_, ?_⟩
+  obtain ⟨-, h0, h1, h2, h3⟩ := Ext4Planes.rel_tab_iff.mp hv
+  refine Ext4Planes.rel_tab_iff.mpr ⟨rfl, ?_, ?_, ?_, ?_⟩
   · show Words.addWords p v.c0 (encode (tab B g)) B = _
     rw [h0, addWords_tab hB]; rfl
   · show v.c1 = _
@@ -156,12 +108,13 @@ theorem rv_addC0 {B : Nat} (hB : 4 * B < USize.size) {v : EVec p} (f : Nat → E
   · show v.c3 = _
     rw [h3]; exact congrArg encode (tab_congr fun i _ ↦ (add_zero _).symm)
 
-theorem rv_addC0' {B : Nat} (hB : 4 * B < USize.size) {v : EVec p} (f : Nat → EF) (g : Nat → F)
-    (hv : RV v (tab B f)) :
-    RV ⟨B, Words.addWords p (encode (tab B g)) v.c0 B, v.c1, v.c2, v.c3⟩
+theorem rv_addC0' {B : Nat} (hB : 4 * B < USize.size) {v : Ext4Planes p} (f : Nat → EF) (g : Nat →
+    F)
+    (hv : Ext4Planes.Rel v (tab B f)) :
+    Ext4Planes.Rel ⟨B, Words.addWords p (encode (tab B g)) v.c0 B, v.c1, v.c2, v.c3⟩
       (tab B fun i ↦ Ext4.ofBase (g i) + f i) := by
-  obtain ⟨-, h0, h1, h2, h3⟩ := rv_tab_iff.mp hv
-  refine rv_tab_iff.mpr ⟨rfl, ?_, ?_, ?_, ?_⟩
+  obtain ⟨-, h0, h1, h2, h3⟩ := Ext4Planes.rel_tab_iff.mp hv
+  refine Ext4Planes.rel_tab_iff.mpr ⟨rfl, ?_, ?_, ?_, ?_⟩
   · show Words.addWords p (encode (tab B g)) v.c0 B = _
     rw [h0, addWords_tab hB]; rfl
   · show v.c1 = _
@@ -171,12 +124,12 @@ theorem rv_addC0' {B : Nat} (hB : 4 * B < USize.size) {v : EVec p} (f : Nat → 
   · show v.c3 = _
     rw [h3]; exact congrArg encode (tab_congr fun i _ ↦ (zero_add _).symm)
 
-theorem rv_subC0 {B : Nat} (hB : 4 * B < USize.size) {v : EVec p} (f : Nat → EF) (g : Nat → F)
-    (hv : RV v (tab B f)) :
-    RV ⟨B, Words.subWords p v.c0 (encode (tab B g)) B, v.c1, v.c2, v.c3⟩
+theorem rv_subC0 {B : Nat} (hB : 4 * B < USize.size) {v : Ext4Planes p} (f : Nat → EF) (g : Nat → F)
+    (hv : Ext4Planes.Rel v (tab B f)) :
+    Ext4Planes.Rel ⟨B, Words.subWords p v.c0 (encode (tab B g)) B, v.c1, v.c2, v.c3⟩
       (tab B fun i ↦ f i - Ext4.ofBase (g i)) := by
-  obtain ⟨-, h0, h1, h2, h3⟩ := rv_tab_iff.mp hv
-  refine rv_tab_iff.mpr ⟨rfl, ?_, ?_, ?_, ?_⟩
+  obtain ⟨-, h0, h1, h2, h3⟩ := Ext4Planes.rel_tab_iff.mp hv
+  refine Ext4Planes.rel_tab_iff.mpr ⟨rfl, ?_, ?_, ?_, ?_⟩
   · show Words.subWords p v.c0 (encode (tab B g)) B = _
     rw [h0, subWords_tab hB]; rfl
   · show v.c1 = _
@@ -188,8 +141,8 @@ theorem rv_subC0 {B : Nat} (hB : 4 * B < USize.size) {v : EVec p} (f : Nat → E
 
 theorem XRel.add {B : Nat} (hB : 4 * B < USize.size) {x y : XVal p} {f g : Nat → EF}
     (hx : XRel B x f) (hy : XRel B y g) : XRel B (x.add B y) fun i ↦ f i + g i := by
-  have generic : RV ((x.planes B).add (y.planes B)) (tab B fun i ↦ f i + g i) := by
-    have := EVec.add_rel (hx.planes hB) (hy.planes hB) (by rw [hx.planes_n, hy.planes_n])
+  have generic : Ext4Planes.Rel ((x.planes B).add (y.planes B)) (tab B fun i ↦ f i + g i) := by
+    have := Ext4Planes.add_rel (hx.planes hB) (hy.planes hB) (by rw [hx.planes_n, hy.planes_n])
       (by rw [size_tab]; exact hB)
     rwa [tab_zipWith] at this
   cases x with
@@ -209,7 +162,7 @@ theorem XRel.add {B : Nat} (hB : 4 * B < USize.size) {x y : XVal p} {f g : Nat �
       show Words.addWords p w w' B = _
       rw [hw1, hw2, addWords_tab hB]
     | ext v =>
-      show RV ⟨B, Words.addWords p w v.c0 B, v.c1, v.c2, v.c3⟩ _
+      show Ext4Planes.Rel ⟨B, Words.addWords p w v.c0 B, v.c1, v.c2, v.c3⟩ _
       rw [hw1]
       exact (rv_addC0' hB g g1 hy).congr_tab fun i hi ↦ by rw [hg1 i hi]
   | ext v =>
@@ -217,15 +170,15 @@ theorem XRel.add {B : Nat} (hB : 4 * B < USize.size) {x y : XVal p} {f g : Nat �
     | const b => exact generic
     | base w =>
       obtain ⟨g2, hw2, hg2⟩ := hy
-      show RV ⟨B, Words.addWords p v.c0 w B, v.c1, v.c2, v.c3⟩ _
+      show Ext4Planes.Rel ⟨B, Words.addWords p v.c0 w B, v.c1, v.c2, v.c3⟩ _
       rw [hw2]
       exact (rv_addC0 hB f g2 hx).congr_tab fun i hi ↦ by rw [hg2 i hi]
     | ext v' => exact generic
 
 theorem XRel.sub {B : Nat} (hB : 4 * B < USize.size) {x y : XVal p} {f g : Nat → EF}
     (hx : XRel B x f) (hy : XRel B y g) : XRel B (x.sub B y) fun i ↦ f i - g i := by
-  have generic : RV ((x.planes B).sub (y.planes B)) (tab B fun i ↦ f i - g i) := by
-    have := EVec.sub_rel (hx.planes hB) (hy.planes hB) (by rw [hx.planes_n, hy.planes_n])
+  have generic : Ext4Planes.Rel ((x.planes B).sub (y.planes B)) (tab B fun i ↦ f i - g i) := by
+    have := Ext4Planes.sub_rel (hx.planes hB) (hy.planes hB) (by rw [hx.planes_n, hy.planes_n])
       (by rw [size_tab]; exact hB)
     rwa [tab_zipWith] at this
   cases x with
@@ -250,20 +203,21 @@ theorem XRel.sub {B : Nat} (hB : 4 * B < USize.size) {x y : XVal p} {f g : Nat �
     | const b => exact generic
     | base w =>
       obtain ⟨g2, hw2, hg2⟩ := hy
-      show RV ⟨B, Words.subWords p v.c0 w B, v.c1, v.c2, v.c3⟩ _
+      show Ext4Planes.Rel ⟨B, Words.subWords p v.c0 w B, v.c1, v.c2, v.c3⟩ _
       rw [hw2]
       exact (rv_subC0 hB f g2 hx).congr_tab fun i hi ↦ by rw [hg2 i hi]
     | ext v' => exact generic
 
 /-- Base words times an extension scalar. -/
 theorem rv_scaleBase [Binomial4 p] {B : Nat} (hB : 4 * B < USize.size) (g : Nat → F) (c : EF) :
-    RV (XVal.scaleBase B (encode (tab B g)) c) (tab B fun i ↦ Ext4.ofBase (g i) * c) := by
-  refine rv_tab_iff.mpr ⟨rfl, ?_, ?_, ?_, ?_⟩ <;>
+    Ext4Planes.Rel (XVal.scaleBase B (encode (tab B g)) c) (tab B fun i ↦ Ext4.ofBase (g i) *
+        c) := by
+  refine Ext4Planes.rel_tab_iff.mpr ⟨rfl, ?_, ?_, ?_, ?_⟩ <;>
   · simp only [XVal.scaleBase]
     rw [zeroWords_tab (p := p), mulAddWords_tab hB]
     refine congrArg encode (tab_congr fun i _ ↦ ?_)
-    rw [EVec.mul_coords]
-    simp only [ofBase_c0, ofBase_c1, ofBase_c2, ofBase_c3]
+    rw [Ext4.mul_coords]
+    simp only [Ext4.ofBase_c0, Ext4.ofBase_c1, Ext4.ofBase_c2, Ext4.ofBase_c3]
     ring
 
 theorem XRel.mul [Mont32BaseField p] [Binomial4 p] {B : Nat} (hB : 4 * B < USize.size)
@@ -277,20 +231,20 @@ theorem XRel.mul [Mont32BaseField p] [Binomial4 p] {B : Nat} (hB : 4 * B < USize
     | const b => exact fun i hi ↦ by beta_reduce; rw [hx i hi, hy i hi]
     | base w =>
       obtain ⟨g2, hw2, hg2⟩ := hy
-      show RV (XVal.scaleBase B w a) _
+      show Ext4Planes.Rel (XVal.scaleBase B w a) _
       rw [hw2]
       exact (rv_scaleBase hB g2 a).congr_tab fun i hi ↦ by
-        rw [hx i hi, hg2 i hi, ext4_mul_comm]
+        rw [hx i hi, hg2 i hi, Ext4.mul_comm']
     | ext v =>
-      show RV (v.smul a) _
-      have := EVec.smul_rel a hy (by rw [size_tab]; exact hB)
+      show Ext4Planes.Rel (v.smul a) _
+      have := Ext4Planes.smul_rel a hy (by rw [size_tab]; exact hB)
       rw [tab_map] at this
-      exact this.congr_tab fun i hi ↦ by rw [hx i hi, ext4_mul_comm]
+      exact this.congr_tab fun i hi ↦ by rw [hx i hi, Ext4.mul_comm']
   | base w =>
     obtain ⟨g1, hw1, hg1⟩ := hx
     cases y with
     | const b =>
-      show RV (XVal.scaleBase B w b) _
+      show Ext4Planes.Rel (XVal.scaleBase B w b) _
       rw [hw1]
       exact (rv_scaleBase hB g1 b).congr_tab fun i hi ↦ by rw [hg1 i hi, hy i hi]
     | base w' =>
@@ -300,30 +254,31 @@ theorem XRel.mul [Mont32BaseField p] [Binomial4 p] {B : Nat} (hB : 4 * B < USize
       show Words.mulWords p w w' B = _
       rw [hw1, hw2, mulWords_tab hB]
     | ext v =>
-      show RV (v.mulBase w) _
+      show Ext4Planes.Rel (v.mulBase w) _
       rw [hw1]
-      have := EVec.mulBase_rel (tab B g1) hy (by rw [size_tab, size_tab])
+      have := Ext4Planes.mulBase_rel (tab B g1) hy (by rw [size_tab, size_tab])
         (by rw [size_tab]; exact hB)
       rw [tab_zipWith] at this
-      exact this.congr_tab fun i hi ↦ by rw [hg1 i hi, ext4_mul_comm]; rfl
+      exact this.congr_tab fun i hi ↦ by rw [hg1 i hi, Ext4.mul_comm']
   | ext v =>
     cases y with
     | const b =>
-      show RV (v.smul b) _
-      have := EVec.smul_rel b hx (by rw [size_tab]; exact hB)
+      show Ext4Planes.Rel (v.smul b) _
+      have := Ext4Planes.smul_rel b hx (by rw [size_tab]; exact hB)
       rw [tab_map] at this
       exact this.congr_tab fun i hi ↦ by rw [hy i hi]
     | base w =>
       obtain ⟨g2, hw2, hg2⟩ := hy
-      show RV (v.mulBase w) _
+      show Ext4Planes.Rel (v.mulBase w) _
       rw [hw2]
-      have := EVec.mulBase_rel (tab B g2) hx (by rw [size_tab, size_tab])
+      have := Ext4Planes.mulBase_rel (tab B g2) hx (by rw [size_tab, size_tab])
         (by rw [size_tab]; exact hB)
       rw [tab_zipWith] at this
-      exact this.congr_tab fun i hi ↦ by rw [hg2 i hi]; rfl
+      exact this.congr_tab fun i hi ↦ by rw [hg2 i hi]
     | ext v' =>
-      show RV (v.mul v') _
-      have := EVec.mul_rel hx hy (by rw [(rv_tab_iff.mp hx).1, (rv_tab_iff.mp hy).1]) hBs
+      show Ext4Planes.Rel (v.mul v') _
+      have := Ext4Planes.mul_rel hx hy (by rw [(Ext4Planes.rel_tab_iff.mp hx).1,
+          (Ext4Planes.rel_tab_iff.mp hy).1]) hBs
       rwa [tab_zipWith] at this
 
 /-! ### Extension expressions on a block -/
@@ -438,10 +393,10 @@ theorem cj_mul [Binomial4 p] (v s : EF) (j : Nat) (hj : j < 4) :
     s.c0⟩ := rfl
   rw [h1, h2, h3]
   rcases j with _ | _ | _ | _ | j
-  · simp only [cj, Norm.mul_c0, Binomial4.mulW_eq]; ring
-  · simp only [cj, Norm.mul_c1, Binomial4.mulW_eq]; ring
-  · simp only [cj, Norm.mul_c2, Binomial4.mulW_eq]; ring
-  · simp only [cj, Norm.mul_c3]
+  · simp only [cj, Ext4.mul_c0, Binomial4.mulW_eq]; ring
+  · simp only [cj, Ext4.mul_c1, Binomial4.mulW_eq]; ring
+  · simp only [cj, Ext4.mul_c2, Binomial4.mulW_eq]; ring
+  · simp only [cj, Ext4.mul_c3]
   · omega
 
 /-- Coordinate `j` of products zipped with weights by index, accumulated. -/
@@ -461,7 +416,7 @@ def toE [Binomial4 p] (x : Prog.Coords F (Binomial4.W (p := p))) : EF := ⟨x.c0
 
 theorem toE_mul [Binomial4 p] (a b : Prog.Coords F (Binomial4.W (p := p))) :
     toE (a * b) = toE a * toE b := by
-  apply Norm.ext <;> simp only [Norm.mul_c0, Norm.mul_c1, Norm.mul_c2, Norm.mul_c3] <;> rfl
+  apply Ext4.ext' <;> simp only [Ext4.mul_c0, Ext4.mul_c1, Ext4.mul_c2, Ext4.mul_c3] <;> rfl
 
 theorem eval_pubBelow (np : Nat) (env : Expr.Env F F) : ∀ e : Expr F,
     (Prog.Dag.pubBelow np e).eval env =
@@ -737,8 +692,8 @@ theorem lookupQuotientWith_rel (kernels : List (Prog.GroupKernel p)) (A : Air F)
         rfl
       have hu (c : Lookup.ExtExpr F) (hcm : c ∈ ext) :
           toE (c.eval (ctx.envQ Binomial4.W np) (ctx.auxQ Binomial4.W np)) = u c := by
-        refine Lookup.ExtExpr.eval_hom toE (fun _ _ ↦ Norm.ext rfl rfl rfl rfl)
-          (fun _ _ ↦ Norm.ext rfl rfl rfl rfl) toE_mul s.width s.width sp.width sp.width k _ _
+        refine Lookup.ExtExpr.eval_hom toE (fun _ _ ↦ Ext4.ext' rfl rfl rfl rfl)
+          (fun _ _ ↦ Ext4.ext' rfl rfl rfl rfl) toE_mul s.width s.width sp.width sp.width k _ _
           _ _ (fun e he ↦ ?_) (fun c hc ↦ ?_) (fun c hc ↦ ?_) (fun jj ↦ ?_) ?_ c (hc c hcm)
         · rw [Prog.Expr.eval_envQ, eval_pubBelow]
           show Ext4.ofBase _ = _

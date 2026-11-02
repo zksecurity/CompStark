@@ -16,10 +16,9 @@ public import CompStark.Stark.Fast.Permutation
 
 /-! # The fast prover proves what the specification proves
 
-Over a Montgomery field with a fourth root of unity (`2 ≤ twoAdicity`, for the norm of `invDenoms`)
-whose largest domains of extension elements are addressable (`DomainsAddressable`), the fast
-backend refines the specification (`backendFor_refines`), so its proofs are the specification's
-(`prove_fast`), batch proofs included (`proveBatch_fast`).
+Over a Montgomery field whose largest domains of extension elements are addressable
+(`DomainsAddressable`), the fast backend refines the specification (`backendFor_refines`), so its
+proofs are the specification's (`prove_fast`), batch proofs included (`proveBatch_fast`).
 -/
 
 @[expose] public section
@@ -33,7 +32,7 @@ local notation "F" => FastField p
 local notation "EF" => Ext4 p
 
 /-- The fast backend refines the specification. -/
-def backendFor_refines (hζ : 2 ≤ twoAdicity F) (hA : DomainsAddressable F EF)
+def backendFor_refines (hA : DomainsAddressable F EF)
     (kernels : List (AirKernel p)) (logBlowup : Nat) (shapes : List (Nat × Nat)) :
     Refines (backendFor kernels logBlowup shapes) :=
   have h16 : 16 * 2 ^ twoAdicity F < USize.size := by
@@ -43,7 +42,7 @@ def backendFor_refines (hζ : 2 ≤ twoAdicity F) (hA : DomainsAddressable F EF)
   { RT := RT
     RM := RM
     RC := RC
-    RV := RV
+    RV := Ext4Planes.Rel
     transcript := transcript_eq
     ldeTrace := fun logH bits shift w t m ⟨_, k, hk, ht⟩ hm hb ha ↦ by
       change RM (ldeWordsWith _ logH bits shift w t) _
@@ -92,11 +91,11 @@ def backendFor_refines (hζ : 2 ≤ twoAdicity F) (hA : DomainsAddressable F EF)
       permutationLdeWith_rel _ (fun e he ↦ by
         obtain ⟨⟨n, c⟩, -, he⟩ := List.mem_flatMap.mp he
         exact ldePlans_valid n logBlowup c e he) bits A ls logN t pis chs hok
-    openedAt := fun b zs _ _ h hs hz ↦ openedAt_rel hζ b zs h hs hz
+    openedAt := fun b zs _ _ h hs hz ↦ openedAt_rel b zs h hs hz
     toArray := toArray_rel h16
-    ofArray := ofArray_rel
+    ofArray := Ext4Planes.ofArray_rel
     size := fun h ↦ h.1
-    reduce := fun alpha _ _ h hok ↦ reduce_rel hζ alpha h hok
+    reduce := fun alpha _ _ h hok ↦ reduce_rel alpha h hok
     fold := fun la beta s _ _ h ha hla hs ↦ fold_rel h16 la beta s h ha hla hs
     addScaled := fun x _ _ _ _ hv hw hab ha ↦ addScaled_rel h16 x hv hw hab ha
     leaves := fun k _ _ h ha hk hp ↦ leaves_rel h16 k h ha hk hp }
@@ -104,7 +103,7 @@ def backendFor_refines (hζ : 2 ≤ twoAdicity F) (hA : DomainsAddressable F EF)
 /-- **The fast prover is correct.** For an input of the shapes the prover supports (`InputOk`),
 it produces the specification's proof, unless the out-of-domain point `ζ` lands in the base field,
 where both provers divide by zero and compute different garbage. -/
-theorem prove_fast (hζ : 2 ≤ twoAdicity F) (hA : DomainsAddressable F EF)
+theorem prove_fast (hA : DomainsAddressable F EF)
     (kernels : List (AirKernel p)) {params : Params}
     {air : Air F} {logN : Nat} {words : Array ByteArray} {trace : Array F}
     (publicValues : List F) (encoded : RT logN air.width words trace)
@@ -113,12 +112,12 @@ theorem prove_fast (hζ : 2 ≤ twoAdicity F) (hA : DomainsAddressable F EF)
     proveWith (backendFor kernels params.logBlowup [(logN, air.logQuotientChunks logN)]) params
         air logN words publicValues =
       prove EF params air logN trace publicValues :=
-  proveWith_refines hA (backendFor_refines hζ hA _ _ _) publicValues encoded input outOfDomain
+  proveWith_refines hA (backendFor_refines hA _ _ _) publicValues encoded input outOfDomain
 
 /-- **The fast batch prover is correct.** For a batch of the shapes the prover supports
 (`Batch.InputOk`) with a list of public values per instance, it produces the specification's
 proof, unless the out-of-domain point `ζ` lands in the base field. -/
-theorem proveBatch_fast (hζ : 2 ≤ twoAdicity F) (hA : DomainsAddressable F EF)
+theorem proveBatch_fast (hA : DomainsAddressable F EF)
     (kernels : List (AirKernel p)) {params : Params}
     {instances : List (Batch.Instance F)} {words : List (Array ByteArray)}
     {traces : List (Array F)} {publicValues : List (List F)}
@@ -131,7 +130,7 @@ theorem proveBatch_fast (hζ : 2 ≤ twoAdicity F) (hA : DomainsAddressable F EF
     Batch.proveBatchWith (backendFor kernels params.logBlowup (Batch.shapes instances)) params
         instances words publicValues =
       Batch.proveBatch EF params instances traces publicValues :=
-  Batch.proveBatchWith_refines hA (backendFor_refines hζ hA _ _ _) encoded input publicValuesLength
+  Batch.proveBatchWith_refines hA (backendFor_refines hA _ _ _) encoded input publicValuesLength
     outOfDomain
 
 end CompStark.Stark.Fast

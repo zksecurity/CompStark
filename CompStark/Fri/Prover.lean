@@ -28,6 +28,7 @@ Plonky3's `TwoAdicFriPcs::commit` and `open`, `prove_fri` (revision `a4982ec`), 
 
 @[expose] public section
 namespace CompStark.Fri
+open CompPoly.Array (batchInv)
 open CompStark.Stark
 
 variable {F : Type} [BaseField F]

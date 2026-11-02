@@ -15,6 +15,7 @@ public import CompStark.Fri.Prover
 
 @[expose] public section
 namespace CompStark.Stark
+open CompPoly.Array (batchInv)
 
 variable {F : Type} [BaseField F] {EF : Type} [Challenge F EF]
 

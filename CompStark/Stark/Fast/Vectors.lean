@@ -4,10 +4,8 @@ Released under Apache 2.0 license as described in the file LICENSE.
 -/
 module
 
-public import CompStark.Stark.Fast.WordsLemmas
 public import CompStark.Stark.Fast.Columns
 public import CompStark.Stark.Fast.OpeningsSpec
-public import CompStark.Stark.Fast.BatchInv
 
 /-! # The fast backend's vector laws
 
@@ -17,6 +15,7 @@ as the specification's.
 
 @[expose] public section
 namespace CompStark.Stark
+open CompPoly.Array (batchInv batchInv_eq)
 open CompPoly.PackedRepr (encode)
 open CompPoly.CPolynomial.NTTFast.Packed (getD_ofFn_bounded)
 
@@ -121,8 +120,8 @@ theorem foldPairs_eq (vs : Array EF) (beta : EF) (L : Nat) (hL : L < twoAdicity 
 end CompStark.Stark
 
 namespace CompStark.Stark.Fast
+open Montgomery.Native32.Words
 open CompPoly.PackedRepr (encode)
-open CompStark.Words
 open CompPoly.CPolynomial.NTTFast.Packed (getD_ofFn_bounded size_encode_fields)
 open CompPoly.CPolynomial.NTTFast.Packed.Native (zeroWords read write)
 open Montgomery.Native32
@@ -133,7 +132,8 @@ local notation "F" => FastField p
 local notation "EF" => Ext4 p
 
 /-- Representation transfers along equal arrays. -/
-theorem RV_congr {v : EVec p} {a b : Array EF} (h : RV v a) (e : a = b) : RV v b := e ▸ h
+theorem RV_congr {v : Ext4Planes p} {a b : Array EF} (h : Ext4Planes.Rel v a) (e : a = b) :
+    Ext4Planes.Rel v b := e ▸ h
 
 /-- A slice of words is the encoded range. -/
 theorem slice_encode (X : Array F) (i B : Nat) :
@@ -172,14 +172,14 @@ theorem deinterleave_encode (Y : Array F) (n : Nat) (hn : 2 * n ≤ Y.size)
     upto_full _ _ _ (Array.size_replicate ..)]
 
 /-- The even and odd elements of pairs `r0, …, r0 + len - 1`. -/
-theorem split_rel {v : EVec p} {a : Array EF} (hv : RV v a) (r0 len : Nat)
+theorem split_rel {v : Ext4Planes p} {a : Array EF} (hv : Ext4Planes.Rel v a) (r0 len : Nat)
     (hr : 2 * (r0 + len) ≤ a.size) (hs : 4 * a.size < USize.size) :
-    RV ⟨len, (deinterleave (slice v.c0 (2 * r0) (2 * len)) len).1,
+    Ext4Planes.Rel ⟨len, (deinterleave (slice v.c0 (2 * r0) (2 * len)) len).1,
       (deinterleave (slice v.c1 (2 * r0) (2 * len)) len).1,
       (deinterleave (slice v.c2 (2 * r0) (2 * len)) len).1,
       (deinterleave (slice v.c3 (2 * r0) (2 * len)) len).1⟩
       (Array.ofFn (n := len) fun i ↦ a.getD (2 * (r0 + i.val)) 0) ∧
-    RV ⟨len, (deinterleave (slice v.c0 (2 * r0) (2 * len)) len).2,
+    Ext4Planes.Rel ⟨len, (deinterleave (slice v.c0 (2 * r0) (2 * len)) len).2,
       (deinterleave (slice v.c1 (2 * r0) (2 * len)) len).2,
       (deinterleave (slice v.c2 (2 * r0) (2 * len)) len).2,
       (deinterleave (slice v.c3 (2 * r0) (2 * len)) len).2⟩
@@ -196,15 +196,16 @@ theorem split_rel {v : EVec p} {a : Array EF} (hv : RV v a) (r0 len : Nat)
       ((a.map p).extract (2 * r0) (2 * r0 + 2 * len)).getD j 0 = p (a.getD (2 * r0 + j) 0) :=
     fun p j hj ↦ by
       rw [CompPoly.CPolynomial.NTTFast.Packed.getD_extract _ _ _ _ _ (hx p) hj,
-        EVec.getD_map a p _ (by omega), getD_lt a _ (by omega)]
+        Ext4Planes.getD_map a p _ (by omega), getD_lt a _ (by omega)]
   simp only [h0, h1, h2, h3, slice_encode, deinterleave_encode _ _ (hd _) (hds _)]
   let E (p : EF → F) (j : Nat) : F := ((a.map p).extract (2 * r0) (2 * r0 + 2 * len)).getD j 0
   constructor
-  · refine EVec.rv_mk _ (Array.size_ofFn ..) (fun i ↦ E (·.c0) (2 * i)) (fun i ↦ E (·.c1) (2 * i))
+  · refine Ext4Planes.rel_mk _ (Array.size_ofFn ..) (fun i ↦ E (·.c0) (2 * i)) (fun i ↦ E (·.c1) (2
+      * i))
       (fun i ↦ E (·.c2) (2 * i)) (fun i ↦ E (·.c3) (2 * i)) rfl rfl rfl rfl fun i hi ↦ ?_
     rw [Array.size_ofFn] at hi
     simp only [E, Array.getElem_ofFn, he _ _ (show 2 * i < 2 * len by omega), Nat.mul_add]
-  · refine EVec.rv_mk _ (Array.size_ofFn ..) (fun i ↦ E (·.c0) (2 * i + 1))
+  · refine Ext4Planes.rel_mk _ (Array.size_ofFn ..) (fun i ↦ E (·.c0) (2 * i + 1))
       (fun i ↦ E (·.c1) (2 * i + 1)) (fun i ↦ E (·.c2) (2 * i + 1)) (fun i ↦ E (·.c3) (2 * i + 1))
       rfl rfl rfl rfl fun i hi ↦ ?_
     rw [Array.size_ofFn] at hi
@@ -212,12 +213,13 @@ theorem split_rel {v : EVec p} {a : Array EF} (hv : RV v a) (r0 len : Nat)
       Nat.add_assoc]
 
 /-- Pairs `r0, …, r0 + len - 1` of the fold, given the encoded `2 x` of all pairs. -/
-theorem fold2Range_rel [Mont32BaseField p] [Binomial4 p] {v : EVec p} {a : Array EF} (hv : RV v a)
+theorem fold2Range_rel [Mont32BaseField p] [Binomial4 p] {v : Ext4Planes p} {a : Array EF} (hv :
+    Ext4Planes.Rel v a)
     (T : Array F) (beta : EF)
     (r0 len : Nat) (hr : 2 * (r0 + len) ≤ a.size) (hs : 4 * a.size < USize.size)
     (hT : r0 + len ≤ T.size) (hsT : 4 * T.size < USize.size)
     (hnz : ∀ k < len, T.getD (r0 + k) 0 ≠ 0) :
-    RV (fold2Range v (encode T) beta r0 len) (Array.ofFn (n := len) fun k ↦
+    Ext4Planes.Rel (fold2Range v (encode T) beta r0 len) (Array.ofFn (n := len) fun k ↦
       (a.getD (2 * (r0 + k.val)) 0 + a.getD (2 * (r0 + k.val) + 1) 0) * Ext.ofBase (2 : F)⁻¹ +
         beta * (a.getD (2 * (r0 + k.val)) 0 - a.getD (2 * (r0 + k.val) + 1) 0) *
           Ext.ofBase (T.getD (r0 + k.val) 0)⁻¹) := by
@@ -227,22 +229,24 @@ theorem fold2Range_rel [Mont32BaseField p] [Binomial4 p] {v : EVec p} {a : Array
   unfold fold2Range
   simp only
   rw [batchInvRange_encode T r0 len hT hsT hnz]
-  have h1 := EVec.smul_rel (Ext.ofBase (2 : F)⁻¹) (EVec.add_rel hl hh rfl hn)
+  have h1 := Ext4Planes.smul_rel (Ext.ofBase (2 : F)⁻¹) (Ext4Planes.add_rel hl hh rfl hn)
     (by rw [Array.size_zipWith, Array.size_ofFn, Array.size_ofFn, Nat.min_self]; omega)
-  have h2 := EVec.smul_rel beta (EVec.mulBase_rel
-    (Array.ofFn (n := len) fun k ↦ (T.getD (r0 + k.val) 0)⁻¹) (EVec.sub_rel hl hh rfl hn)
+  have h2 := Ext4Planes.smul_rel beta (Ext4Planes.mulBase_rel
+    (Array.ofFn (n := len) fun k ↦ (T.getD (r0 + k.val) 0)⁻¹) (Ext4Planes.sub_rel hl hh rfl hn)
     (by rw [Array.size_zipWith, Array.size_ofFn, Array.size_ofFn, Array.size_ofFn, Nat.min_self])
     (by rw [Array.size_ofFn]; omega))
     (by rw [Array.size_zipWith, Array.size_zipWith, Array.size_ofFn, Array.size_ofFn,
       Array.size_ofFn, Nat.min_self, Nat.min_self]; omega)
-  have h3 := EVec.add_rel h1 h2 (by simp only [EVec.smul, EVec.add, EVec.sub, EVec.mulBase]) (by
+  have h3 := Ext4Planes.add_rel h1 h2
+    (by simp only [Ext4Planes.smul, Ext4Planes.add, Ext4Planes.sub, Ext4Planes.mulBase]) (by
     rw [Array.size_map, Array.size_zipWith, Array.size_ofFn, Array.size_ofFn, Nat.min_self]; omega)
   refine RV_congr h3 (Array.ext ?_ fun k h1 h2 ↦ ?_)
   · simp only [Array.size_zipWith, Array.size_map, Array.size_ofFn, Nat.min_self]
   · simp only [Array.getElem_zipWith, Array.getElem_map, Array.getElem_ofFn]
     apply Montgomery.Native32.Ext4.toSpec_injective
     simp only [Montgomery.Native32.Ext4.toSpec_add, Montgomery.Native32.Ext4.toSpec_mul,
-      Montgomery.Native32.Ext4.toSpec_sub]
+      Montgomery.Native32.Ext4.toSpec_sub, Montgomery.Native32.Ext4.toSpec_ofBase,
+      Mont32.toSpec_ofBase_ext4]
     ring
 
 /-- Vectors within the two-adic subgroups have indexable coordinates when the largest
@@ -254,9 +258,9 @@ theorem size_bound [Mont32BaseField p] {n : Nat} (hA : 16 * 2 ^ twoAdicity F < U
 /-- The fast fold is the specification's: both invert every `2 x` of the pairs, which are
 nonzero within the two-adic subgroups. -/
 theorem fold2_rel [Mont32BaseField p] [Binomial4 p] (hA : 16 * 2 ^ twoAdicity F < USize.size)
-    {v : EVec p} {a : Array EF} (beta : EF)
-    (k : Nat) (h : RV v a) (ha : a.size = 2 ^ (k + 1)) (hk : k < twoAdicity F) :
-    RV (fold2 v beta k) (Fri.foldPairs a beta k) := by
+    {v : Ext4Planes p} {a : Array EF} (beta : EF)
+    (k : Nat) (h : Ext4Planes.Rel v a) (ha : a.size = 2 ^ (k + 1)) (hk : k < twoAdicity F) :
+    Ext4Planes.Rel (fold2 v beta k) (Fri.foldPairs a beta k) := by
   unfold fold2
   have hs : 4 * a.size < USize.size := by
     have := size_bound (n := a.size) hA (by rw [ha]; exact Nat.pow_le_pow_right (by decide) hk)
@@ -275,7 +279,7 @@ theorem fold2_rel [Mont32BaseField p] [Binomial4 p] (hA : 16 * 2 ^ twoAdicity F 
   let E (i : Nat) : EF := (a.getD (2 * i) 0 + a.getD (2 * i + 1) 0) * Ext.ofBase (2 : F)⁻¹ +
     beta * (a.getD (2 * i) 0 - a.getD (2 * i + 1) 0) * Ext.ofBase (T.getD i 0)⁻¹
   have hcat := foldl_ranges E (2 ^ k) parts _ hp (ranges_cover (2 ^ k) parts)
-  have hj := joinPlanes_rel (2 ^ k) parts
+  have hj := Ext4Planes.join_rel (2 ^ k) parts
     (fun p ↦ fold2Range v (encode T) beta (p * (2 ^ k / parts))
       (if p + 1 = parts then 2 ^ k - p * (2 ^ k / parts) else 2 ^ k / parts))
     (fun p ↦ Array.ofFn (n := if p + 1 = parts then 2 ^ k - p * (2 ^ k / parts)
@@ -296,9 +300,9 @@ theorem fold2_rel [Mont32BaseField p] [Binomial4 p] (hA : 16 * 2 ^ twoAdicity F 
 
 /-- The fast fold by `2 ^ la` is the specification's. -/
 theorem fold_rel [Mont32BaseField p] [Binomial4 p] (hA : 16 * 2 ^ twoAdicity F < USize.size)
-    (la : Nat) (beta : EF) (s : Nat) {v : EVec p} {a : Array EF} (h : RV v a)
+    (la : Nat) (beta : EF) (s : Nat) {v : Ext4Planes p} {a : Array EF} (h : Ext4Planes.Rel v a)
     (ha : a.size = 2 ^ s) (hla : la ≤ s) (hs : s ≤ twoAdicity F) :
-    RV (fold la beta v) (Fri.foldOnce la beta a) := by
+    Ext4Planes.Rel (fold la beta v) (Fri.foldOnce la beta a) := by
   have hrows : v.n / 2 ^ la = 2 ^ (s - la) := by rw [h.1, ha, Nat.pow_div hla (by decide)]
   have hrows' : a.size / 2 ^ la = 2 ^ (s - la) := by rw [← h.1, hrows]
   unfold fold Fri.foldOnce
@@ -308,31 +312,30 @@ theorem fold_rel [Mont32BaseField p] [Binomial4 p] (hA : 16 * 2 ^ twoAdicity F <
   · rename_i h1
     subst h1
     exact fold2_rel hA beta (s - 1) h (by rw [ha]; congr 1; omega) (by omega)
-  · rw [EVec.toArray_eq h (by have := size_bound hA (n := a.size) (by
+  · rw [Ext4Planes.toArray_eq h (by have := size_bound hA (n := a.size) (by
       rw [ha]; exact Nat.pow_le_pow_right (by decide) hs); omega)]
     rw [parChunks_eq (2 ^ (s - la)) _ _ (fun r ↦ Fri.foldRow r (s - la) la beta
       ((List.range (2 ^ la)).map fun k ↦ a.getD (r * 2 ^ la + k) 0)) (fun _ _ _ ↦ rfl)
       (by split <;> simp only [Nat.zero_lt_one, Nat.ofNat_pos, true_or])]
-    exact EVec.ofArray_rel _
+    exact Ext4Planes.ofArray_rel _
 
 /-- Represented planes read back their elements. -/
-theorem toArray_rel [Mont32BaseField p] (hA : 16 * 2 ^ twoAdicity F < USize.size) {v : EVec p}
+theorem toArray_rel [Mont32BaseField p] (hA : 16 * 2 ^ twoAdicity F < USize.size) {v : Ext4Planes p}
     {a : Array EF}
-    (h : RV v a) (ha : a.size ≤ 2 ^ twoAdicity F) : v.toArray = a :=
-  EVec.toArray_eq h (by have := size_bound hA ha; omega)
+    (h : Ext4Planes.Rel v a) (ha : a.size ≤ 2 ^ twoAdicity F) : v.toArray = a :=
+  Ext4Planes.toArray_eq h (by have := size_bound hA ha; omega)
 
-/-- The planes of an array represent it. -/
-theorem ofArray_rel (a : Array EF) : RV (EVec.ofArray a) a := EVec.ofArray_rel a
 
 /-- `a + x · b` on planes. -/
 theorem addScaled_rel [Mont32BaseField p] [Binomial4 p] (hA : 16 * 2 ^ twoAdicity F < USize.size)
-    {v w : EVec p} {a b : Array EF}
-    (x : EF) (hv : RV v a) (hw : RV w b) (hab : a.size = b.size) (ha : a.size ≤ 2 ^ twoAdicity F) :
-    RV (addScaled v w x) (Array.zipWith (fun u v ↦ u + x * v) a b) := by
+    {v w : Ext4Planes p} {a b : Array EF}
+    (x : EF) (hv : Ext4Planes.Rel v a) (hw : Ext4Planes.Rel w b) (hab : a.size = b.size) (ha :
+        a.size ≤ 2 ^ twoAdicity F) :
+    Ext4Planes.Rel (addScaled v w x) (Array.zipWith (fun u v ↦ u + x * v) a b) := by
   have hs : 4 * a.size < USize.size := by have := size_bound hA ha; omega
   unfold addScaled
-  have h := EVec.add_rel hv (EVec.smul_rel x hw (by omega))
-    (by simp only [EVec.smul]; rw [hv.1, hw.1, hab]) hs
+  have h := Ext4Planes.add_rel hv (Ext4Planes.smul_rel x hw (by omega))
+    (by simp only [Ext4Planes.smul]; rw [hv.1, hw.1, hab]) hs
   refine RV_congr h (Array.ext (by simp only [Array.size_zipWith, Array.size_map])
     fun i _ _ ↦ ?_)
   simp only [Array.getElem_zipWith, Array.getElem_map]
@@ -394,8 +397,8 @@ theorem strided_encode (A : Array F) (i k count : Nat) (hA : ∀ r < count, r * 
 
 /-- The leaves are the elements' coordinates, `k` elements per row. -/
 theorem leaves_rel [Mont32BaseField p] [Binomial4 p] (hA : 16 * 2 ^ twoAdicity F < USize.size)
-    {v : EVec p} {a : Array EF} (k : Nat)
-    (h : RV v a) (ha : a.size ≤ 2 ^ twoAdicity F) (hk : k ∣ a.size) (h0 : 0 < a.size) :
+    {v : Ext4Planes p} {a : Array EF} (k : Nat)
+    (h : Ext4Planes.Rel v a) (ha : a.size ≤ 2 ^ twoAdicity F) (hk : k ∣ a.size) (h0 : 0 < a.size) :
     RM (leaves k v) (Mat.ofValues (4 * k) (a.size / k)
       (a.flatMap fun x ↦ (Ext.coeffs x).toArray)) := by
   have hs := size_bound hA ha
@@ -449,7 +452,7 @@ theorem leaves_rel [Mont32BaseField p] [Binomial4 p] (hA : 16 * 2 ^ twoAdicity F
         rw [Nat.succ_mul] at this
         have : j / 4 < k := by omega
         rw [Nat.mul_comm k n]; omega
-      rw [EVec.getD_map _ _ _ hr, hpr, getD_lt a _ hr]
+      rw [Ext4Planes.getD_map _ _ _ hr, hpr, getD_lt a _ hr]
     have hj : (match j % 4 with | 0 => v.c0 | 1 => v.c1 | 2 => v.c2 | _ => v.c3) =
         encode (a.map fun x ↦ coord (j % 4) x) := by
       generalize hc : j % 4 = c at hj4

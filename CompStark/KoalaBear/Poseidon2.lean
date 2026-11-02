@@ -24,6 +24,7 @@ instances (`instPoseidon2Field`, `instPackedPoseidon2`).
 
 @[expose] public section
 namespace CompStark.KoalaBear
+open Montgomery.Native32.Words (Fits Fits.mono Fits.of_size inBounds)
 open CompPoly.PackedRepr (encode)
 open CompPoly.CPolynomial.NTTFast.Packed (size_encode_fields ofWord ofWord_val)
 open CompPoly.CPolynomial.NTTFast.Packed.Native (encodeFields encodeFields_eq read read_encode)
