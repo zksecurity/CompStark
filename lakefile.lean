@@ -20,7 +20,7 @@ require CompPoly from git "https://github.com/mitschabaude-bot/CompPoly.git" @
 -- oracle messages, correlated agreement and lossy MCA for Reed–Solomon curves in the
 -- unique-decoding range, and the fold lists of Plonky3's schedule (branch `coding-theory` of the
 -- bot fork).
-require Arklib from git "https://github.com/mitschabaude-bot/ArkLib.git" @ "613b0bd8662c8bff03cc41ddba8c24655ec374cb"
+require Arklib from git "https://github.com/mitschabaude-bot/ArkLib.git" @ "5de1b10860c38bd50814e02af94b4a627780e118"
 
 -- VCVio as ArkLib main pins it.
 require VCVio from git "https://github.com/Verified-zkEVM/VCVio" @
