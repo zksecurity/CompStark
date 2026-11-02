@@ -25,7 +25,7 @@ lengths close to the committed ones satisfies the batch with probability at most
 `Q * maxError + sumError` of the node errors (`Statement.stateRestoration_le`): at each vector of
 lengths, the lookup error, the largest over the instances of the folding, out-of-domain and
 batching errors, and FRI's fold and query errors at the lengths' proximity loss
-(`Setup.nodeErrors`, path sum `Setup.pathError_nodeErrors`). A node's error is the largest over
+(`Setup.nodeErrors`). A node's error is the largest over
 the instances because the instance a doomed transcript fails on is chosen after the lookup
 challenges, which state restoration lets the adversary resample.
 -/
@@ -161,29 +161,6 @@ theorem supErrors_certificate_le (hδ' : (δ' : ℝ) < 1 - S.rate) (loss : ℝ�
       loss.coe_nonneg le_rfl S.domainSetup.friDomain (S.domainSetup.friSchedule S.friHeights) 0
       (S.deepWords T l.1 l.2 P (S.extendTerminals τ) α Q ζ o a _) Finset.univ node
 
-/-- The path sum of the node errors for uniform positions: the lookup error, the largest folding,
-out-of-domain and batching errors over the instances, and FRI's error at the proximity loss. -/
-theorem pathError_nodeErrors (loss : ℝ≥0) :
-    pathError S.publicCoin (S.nodeErrors δ δ' loss 0) =
-      S.lookupError δ' + (⨆ i, foldingError (S.instanceSetup i) δ') +
-        (⨆ i, outOfDomainError (S.instanceSetup i) δ') +
-        (⨆ i, batchingErrorOf (S.instanceSetup i)
-          (S.groupNumOpened (S.logN i + S.params.logBlowup)) δ δ') +
-        S.domainSetup.friBound S.friHeights δ loss := by
-  change (⨆ _ : S.TraceMessage, S.lookupError δ' + ⨆ _ : S.PermMessage, ⨆ _ : S.Terminals,
-    (⨆ i, foldingError (S.instanceSetup i) δ') + ⨆ _ : S.QuotientMessage,
-    (⨆ i, outOfDomainError (S.instanceSetup i) δ') + ⨆ _ : S.OpeningsMessage,
-    (⨆ i, batchingErrorOf (S.instanceSetup i) (S.groupNumOpened (S.logN i + S.params.logBlowup))
-      δ δ') +
-      pathError (Fri.Interaction.publicCoin 𝕂 (S.logN S.top + S.params.logBlowup)
-        (2 ^ S.params.logFinalPolyLen) S.params.numQueries (S.domainSetup.friSchedule S.friHeights))
-        (Fri.Interaction.nodeErrors (S.logN S.top + S.params.logBlowup)
-          (2 ^ S.params.logFinalPolyLen) S.params.numQueries δ loss 0 S.domainSetup.friDomain
-          (S.domainSetup.friSchedule S.friHeights) 0)) = _
-  rw [Fri.Interaction.pathError_nodeErrors]
-  simp only [iSup_const, Iop.Setup.friBound, Fri.Interaction.threshold, zero_add, add_assoc,
-    add_zero]
-
 end Setup
 
 namespace Statement
@@ -246,7 +223,7 @@ queries chooses the public values and every prover message, the verifier's check
 tuple of traces of the claimed lengths close to the committed ones satisfies the batch with
 probability at most `Q * maxError + sumError` of the node errors: at each vector of lengths, the
 lookup error, the largest folding, out-of-domain and batching errors over the instances, and FRI's
-fold and query errors at the proximity loss `loss n` (`Setup.pathError_nodeErrors`). -/
+fold and query errors at the proximity loss `loss n`. -/
 theorem stateRestoration_le (hδ' : ∀ n, C.Admits n → (δ' n : ℝ) < 1 - C.rate)
     (loss : C.Length → ℝ≥0) {Salt W : Type} [DecidableEq Salt]
     (adversary : OracleComp (oracleSpec (Fin C.k → List F) Salt fun _ ↦ C.publicCoin EF)

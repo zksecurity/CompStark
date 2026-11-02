@@ -45,35 +45,6 @@ variable {lookups : List (Lookup F)}
 
 local notation "𝕂" => Challenge.Spec EF
 
-/-- The degree of FRI's code after fold `i` is a `c`-th of its domain when the initial code's
-is. -/
-theorem mul_foldingDegree_eq {N k : ℕ} (c : ℕ) (s : Fin (k + 1) → ℕ+) (d : ℕ+)
-    (i : Fin (k + 1)) (h : c * (2 ^ (∑ j, (s j).val) * d.val) = 2 ^ N) :
-    c * Fri.Spec.foldingDegree s d i.succ =
-      2 ^ (N - Fri.Spec.foldingPrefix s i.castSucc - (s i).val) := by
-  have hq := Fri.Spec.foldingPrefix_le s i.succ
-  rw [Fri.Spec.foldingPrefix_succ] at hq
-  have hc : 0 < c := by
-    rcases Nat.eq_zero_or_pos c with rfl | hc
-    · rw [zero_mul] at h
-      exact absurd h.symm (Nat.two_pow_pos N).ne'
-    · exact hc
-  have hsN : ∑ j, (s j).val ≤ N := by
-    by_contra hlt
-    have : 2 ^ N < 2 ^ (∑ j, (s j).val) := Nat.pow_lt_pow_right (by norm_num) (by omega)
-    have h1 : 2 ^ (∑ j, (s j).val) ≤ c * (2 ^ (∑ j, (s j).val) * d.val) :=
-      (Nat.le_mul_of_pos_right _ d.pos).trans (Nat.le_mul_of_pos_left _ hc)
-    omega
-  set q := Fri.Spec.foldingPrefix s i.castSucc + (s i).val
-  have hpq : N - Fri.Spec.foldingPrefix s i.castSucc - (s i).val = N - q := by omega
-  rw [hpq, Fri.Spec.foldingDegree, Fri.Spec.foldingPrefix_succ]
-  refine Nat.eq_of_mul_eq_mul_right (Nat.two_pow_pos q) ?_
-  rw [← pow_add, Nat.sub_add_cancel (by omega)]
-  calc c * (2 ^ (∑ j, (s j).val - q) * d.val) * 2 ^ q
-      = c * (2 ^ (∑ j, (s j).val - q + q) * d.val) := by rw [pow_add]; ring
-    _ = c * (2 ^ (∑ j, (s j).val) * d.val) := by rw [Nat.sub_add_cancel hq]
-    _ = 2 ^ N := h
-
 /-- `lossyBound` depends on the code only through its rate. -/
 theorem lossyBound_congr {k n k' n' : ℕ} (h : (k : ℝ) / n = (k' : ℝ) / n') (δ_fld δ_int : ℝ≥0)
     (loss : ℝ) :

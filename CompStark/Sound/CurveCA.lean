@@ -21,8 +21,7 @@ jointly `δ_int`-close to `C`, then the number `a` of `z` with `u_z` `δ_fld`-cl
   `a ≤ M · max(T₁, T₂)`,  `T₁ = (1 - ρ - δ_fld) / (δ_fld (1 - ρ - 2 δ_fld))`,
   `T₂ = δ_int / (δ_int - δ_fld)`,
 
-so a uniform `z` is bad with probability at most `M · max(T₁, T₂) / q`
-(`prob_curveWord_close_le`, and `prob_univariatePowers_close_le` for the powers generator).
+so a uniform `z` is bad with probability at most `M · max(T₁, T₂) / q`.
 
 ## Derivation
 
@@ -714,41 +713,6 @@ theorem card_goodCoeffs_le (domain : ι ↪ F) (k M : ℕ) (u : Fin (M + 1) → 
   obtain ⟨p, hp, -, hD⟩ := exists_jointCodewords domain k M u δ_fld δ_int h_ud h_pos h_lt hcon
   exact hjoint (jointProximity_of_disagree_card_le _ u p δ_int hp
     (Nat.le_floor (by exact_mod_cast hD)))
-
-/-- **Curve CA, probability.** Over a uniform `z`, the curve point `∑ⱼ zʲ uⱼ` of words that are
-not jointly `δ_int`-close is `δ_fld`-close with probability at most `M · max(T₁, T₂) / q`. -/
-theorem prob_curveWord_close_le [SampleableType F] (domain : ι ↪ F) (k M : ℕ)
-    (u : Fin (M + 1) → ι → F) (δ_fld δ_int : ℝ≥0)
-    (h_ud : (δ_fld : ℝ) ≤ (1 - (k : ℝ) / Fintype.card ι) / 2 - 1 / Fintype.card ι)
-    (h_pos : 0 < δ_fld) (h_lt : δ_fld < δ_int)
-    (hjoint : ¬ Code.jointProximity
-      (C := (ReedSolomon.code domain k : Set (ι → F))) (u := u) δ_int) :
-    Pr{let z ← $ᵗ F}[δᵣ(curveWord u z, ReedSolomon.code domain k) ≤ δ_fld] ≤
-      ENNReal.ofReal (M * max
-        ((1 - (k : ℝ) / Fintype.card ι - δ_fld) /
-          ((δ_fld : ℝ) * (1 - (k : ℝ) / Fintype.card ι - 2 * δ_fld)))
-        ((δ_int : ℝ) / (δ_int - δ_fld)) / Fintype.card F) := by
-  rw [SampleableType.prEvent_uniformSample_eq_ofReal]
-  exact ENNReal.ofReal_le_ofReal (div_le_div_of_nonneg_right
-    (card_goodCoeffs_le domain k M u δ_fld δ_int h_ud h_pos h_lt hjoint) (Nat.cast_nonneg _))
-
-/-- `prob_curveWord_close_le` for the powers generator `z ↦ (1, z, …, z^M)`. -/
-theorem prob_univariatePowers_close_le [SampleableType F] (domain : ι ↪ F) (k M : ℕ)
-    (u : Fin (M + 1) → ι → F) (δ_fld δ_int : ℝ≥0)
-    (h_ud : (δ_fld : ℝ) ≤ (1 - (k : ℝ) / Fintype.card ι) / 2 - 1 / Fintype.card ι)
-    (h_pos : 0 < δ_fld) (h_lt : δ_fld < δ_int)
-    (hjoint : ¬ Code.jointProximity
-      (C := (ReedSolomon.code domain k : Set (ι → F))) (u := u) δ_int) :
-    Pr{let z ← $ᵗ F}[δᵣ(fun i => ∑ j, univariatePowersGenerator F M z j • u j i,
-        ReedSolomon.code domain k) ≤ δ_fld] ≤
-      ENNReal.ofReal (M * max
-        ((1 - (k : ℝ) / Fintype.card ι - δ_fld) /
-          ((δ_fld : ℝ) * (1 - (k : ℝ) / Fintype.card ι - 2 * δ_fld)))
-        ((δ_int : ℝ) / (δ_int - δ_fld)) / Fintype.card F) := by
-  have h : ∀ z, (fun i => ∑ j, univariatePowersGenerator F M z j • u j i) = curveWord u z :=
-    fun z => funext fun i => by simp only [curveWord_apply, smul_eq_mul]
-  simp only [h]
-  exact prob_curveWord_close_le domain k M u δ_fld δ_int h_ud h_pos h_lt hjoint
 
 end Main
 

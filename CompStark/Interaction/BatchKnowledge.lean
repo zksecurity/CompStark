@@ -61,11 +61,6 @@ def prefixProtocol : Protocol :=
   .public .sender S.OpeningsMessage fun _ ↦
   .public .receiver 𝕂 fun _ ↦ .done
 
-/-- The batch STARK is its rounds before FRI, then FRI. -/
-theorem protocol_tree :
-    S.protocol.tree = PFunctor.FreeM.append S.prefixProtocol.tree (fun _ ↦ S.friProtocol.tree) :=
-  rfl
-
 variable (δ δ' : ℝ≥0)
 
 /-- No tuple of traces close to the committed words satisfies the batch. -/
@@ -556,13 +551,6 @@ theorem terminalState_certificate (hδ' : (δ' : ℝ) < 1 - S.rate) (loss : ℝ�
         (S.extendTerminals path.2.2.2.1) path.2.2.2.2.1 path.2.2.2.2.2.1 path.2.2.2.2.2.2.1
         path.2.2.2.2.2.2.2.1 path.2.2.2.2.2.2.2.2.1 loss L).extractor.terminalState
         path.2.2.2.2.2.2.2.2.2 := rfl
-
-/-- The extractor's input witness is the path's trace message, with traces. -/
-theorem extractWitness_fst (hδ' : (δ' : ℝ) < 1 - S.rate) (loss : ℝ≥0)
-    (L : S.domainSetup.QueryPositions) (path : S.protocol.tree.ExecutionPath)
-    (w : ((S.certificate publicValues δ δ' hδ' loss L).extractor.terminalState path).Witness) :
-    ((S.certificate publicValues δ δ' hδ' loss L).extractor.extractWitness path w).1 = path.1 :=
-  rfl
 
 section Terminal
 variable (loss : ℝ≥0)

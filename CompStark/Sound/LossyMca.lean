@@ -19,9 +19,7 @@ words with curve points `u_z = ∑ⱼ zʲ uⱼ`. If `0 < δ_fld ≤ (1 - ρ) / 2
   `T₂ = δ_int / (δ_int - δ_fld)`,
 
 so `lossyMcaError ≤ M · max(T₁, T₂, δ_int / loss) / q` (`lossyMcaError_le`), independently of
-`n`. `δ_int` is a free parameter trading `T₂` against `δ_int / loss`. The specializations are
-`M = 1` (`lossyMcaError_line_le`, FRI folding of arity 2) and `M = 2^s - 1`
-(`lossyMcaError_fold_le`, arity `2^s`).
+`n`. `δ_int` is a free parameter trading `T₂` against `δ_int / loss`.
 
 ## Derivation
 
@@ -213,28 +211,5 @@ theorem lossyMcaError_le [SampleableType F] (domain : ι ↪ F) (k M : ℕ) (δ_
   exact ENNReal.ofReal_le_ofReal (div_le_div_of_nonneg_right
     (card_isLossyMCA_le domain k M u δ_fld δ_int loss h_ud h_pos h_lt h_loss)
     (Nat.cast_nonneg _))
-
-/-- `lossyMcaError_le` for lines (`M = 1`), as in FRI folding of arity 2. -/
-theorem lossyMcaError_line_le [SampleableType F] (domain : ι ↪ F) (k : ℕ)
-    (δ_fld δ_int : ℝ≥0) (loss : ℝ)
-    (h_ud : (δ_fld : ℝ) ≤ (1 - (k : ℝ) / Fintype.card ι) / 2 - 1 / Fintype.card ι)
-    (h_pos : 0 < δ_fld) (h_lt : δ_fld < δ_int) (h_loss : 0 < loss) :
-    lossyMcaError (univariatePowersGenerator F 1) (ReedSolomon.code domain k) δ_fld loss ≤
-      ENNReal.ofReal (lossyBound k (Fintype.card ι) δ_fld δ_int loss / Fintype.card F) := by
-  simpa only [Nat.cast_one, one_mul] using
-    lossyMcaError_le domain k 1 δ_fld δ_int loss h_ud h_pos h_lt h_loss
-
-/-- `lossyMcaError_le` for `M = 2^s - 1`, as in FRI folding of arity `2^s`. -/
-theorem lossyMcaError_fold_le [SampleableType F] (domain : ι ↪ F) (k s : ℕ)
-    (δ_fld δ_int : ℝ≥0) (loss : ℝ)
-    (h_ud : (δ_fld : ℝ) ≤ (1 - (k : ℝ) / Fintype.card ι) / 2 - 1 / Fintype.card ι)
-    (h_pos : 0 < δ_fld) (h_lt : δ_fld < δ_int) (h_loss : 0 < loss) :
-    lossyMcaError (univariatePowersGenerator F (2 ^ s - 1)) (ReedSolomon.code domain k)
-        δ_fld loss ≤
-      ENNReal.ofReal ((2 ^ s - 1) * lossyBound k (Fintype.card ι) δ_fld δ_int loss /
-        Fintype.card F) := by
-  have h := lossyMcaError_le (F := F) domain k (2 ^ s - 1) δ_fld δ_int loss h_ud h_pos h_lt
-    h_loss
-  rwa [Nat.cast_sub Nat.one_le_two_pow, Nat.cast_pow, Nat.cast_ofNat, Nat.cast_one] at h
 
 end CompStark.Sound.LossyMca

@@ -1,6 +1,5 @@
 module
 
-public import CompStark.Basic
 public import CompStark.BaseField
 public import CompStark.Mont32.BaseField
 public import CompStark.Mont32.Challenge
@@ -163,7 +162,6 @@ public import CompStark.Interaction.BatchKnowledge
 public import CompStark.Interaction.BatchCompleteness
 public import CompStark.Interaction.StarkCompleteness
 public import CompStark.Sound.Sampling
-public import CompStark.Sound.ConsistentQueries
 public import CompStark.Sound.Rbr
 public import CompStark.Interaction.StarkKnowledge
 public import CompStark.Interaction.StarkStateRestoration

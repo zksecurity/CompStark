@@ -8,8 +8,8 @@ public import CompStark.Sound.Steps
 
 /-! # FRI's codes on `L` and the domains it reaches
 
-FRI on `L` with Plonky3's schedule (`friRounds`) tests the code of degree `n` (`degree_friRounds`):
-a word agreeing with it is near the code (`near_of_agrees`).
+FRI on `L` with Plonky3's schedule (`friRounds`) tests the code of degree `n`: a word agreeing with
+it is near the code (`near_of_agrees`).
 
 Every domain FRI's folds reach from `L = g ⟨ω⟩` is a coset `c ⟨ω'⟩` of a two-adic subgroup, `ω'`
 the base field's generator of its order (`IsLevel`): the folds square the points; so is the
@@ -28,43 +28,6 @@ variable {F : Type} [BaseField F] {EF : Type} [Challenge F EF]
 variable {lookups : List (Lookup F)}
 
 local notation "𝕂" => Challenge.Spec EF
-
-/-- Plonky3's arities sum to the number of halvings they fold away. -/
-theorem sum_folds (m : Nat) : ∀ r, ((folds m r).map (fun x : ℕ+ ↦ x.val)).sum = r
-  | 0 => by rw [folds]; rfl
-  | r + 1 => by
-    have h := sum_folds m (r + 1 - max 1 (min m (r + 1)))
-    rw [folds]
-    change max 1 (min m (r + 1)) +
-      ((folds m (r + 1 - max 1 (min m (r + 1)))).map (fun x : ℕ+ ↦ x.val)).sum = r + 1
-    rw [h]
-    omega
-
-/-- A word at relative distance below `δ` from a codeword is `δ`-near the code. -/
-theorem near_of_relHammingDist_lt (S : Setup EF lookups) (δ : ℝ) (w u : S.Point → 𝕂)
-    (hu : u ∈ S.code)
-    (h : (Code.relHammingDist w u : ℝ) < δ) : Near S δ w := by
-  classical
-  refine ⟨Finset.univ.filter fun i ↦ w i = u i, ?_, u, hu, fun i hi ↦ (Finset.mem_filter.mp hi).2⟩
-  have hcard := Finset.card_filter_add_card_filter_not (s := Finset.univ)
-    (fun i : S.Point ↦ w i = u i)
-  have hd : hammingDist w u = (Finset.univ.filter fun i ↦ ¬ w i = u i).card := rfl
-  rw [Finset.card_univ, Fintype.card_fin] at hcard
-  have hpos : (0 : ℝ) < S.size := by exact_mod_cast Nat.two_pow_pos _
-  simp only [Code.relHammingDist, NNRat.cast_div, NNRat.cast_natCast, Fintype.card_fin] at h
-  rw [← hd] at hcard
-  have hpos' : (0 : ℝ) < (2 ^ (S.logN + S.params.logBlowup) : Nat) := hpos
-  rw [div_lt_iff₀ hpos'] at h
-  have hcard' : (({i | w i = u i} : Finset S.Point).card : ℝ) + (hammingDist w u : ℝ) =
-      (2 ^ (S.logN + S.params.logBlowup) : Nat) := by exact_mod_cast hcard
-  change _ ≥ ((2 ^ (S.logN + S.params.logBlowup) : Nat) : ℝ) * (1 - δ)
-  linarith
-
-/-- Plonky3's arities for a positive number of halvings are nonempty. -/
-theorem folds_cons (m r : Nat) (hr : r ≠ 0) : ∃ f fs, folds m r = f :: fs := by
-  obtain ⟨r, rfl⟩ := Nat.exists_eq_succ_of_ne_zero hr
-  rw [folds]
-  exact ⟨_, _, rfl⟩
 
 /-! ### The domains of the folds -/
 
@@ -167,17 +130,5 @@ theorem near_of_agrees (S : Setup EF lookups) (δ : ℝ) (w : S.Point → 𝕂)
   exact hT
 
 /-! ### FRI's rounds on `L` -/
-
-/-- The code before FRI's folds on `L` has degree `n`. -/
-theorem degree_friRounds (S : Setup EF lookups) (words : (m : ℕ) → Fin (2 ^ m) → 𝕂)
-    (heights : List ℕ)
-    (hfit : Rounds.Fits (S.params.logFinalPolyLen + S.params.logBlowup)
-      (S.logN + S.params.logBlowup) heights) :
-    (S.friRounds words heights).degree (2 ^ S.params.logFinalPolyLen) = S.n := by
-  have hf := S.valid.finalPolyFits
-  rw [Setup.friRounds, Rounds.degree_schedule S.valid.folds words _ _ _ _ (by omega) (by omega)
-    hfit, ← pow_add]
-  congr 1
-  omega
 
 end CompStark.Sound

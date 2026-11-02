@@ -214,24 +214,6 @@ theorem prob_lookupBad_le :
         simp only [Nat.cast_mul]
         rw [ENNReal.mul_div_mul_right _ _ hK hT]
 
-/-- Round `α`: a uniform `α` is bad with probability at most the worst instance's
-`foldingError`. -/
-theorem prob_alphaBad_le :
-    Pr{let α ← $ᵗ 𝕂}[AlphaBad S publicValues δ' traces perms terminals lα lβ α] ≤
-      ⨆ i, foldingError (S.instanceSetup i) δ' :=
-  (Sound.prob_alphaBad_le _ _ _ _ δ' _ _).trans
-    (le_iSup (fun i ↦ foldingError (S.instanceSetup i) δ') _)
-
-/-- Round `ζ`: a uniform `ζ` is bad with probability at most the worst instance's
-`outOfDomainError`. -/
-theorem prob_zetaBad_le (α : 𝕂)
-    (quotients : (i : Fin S.k) → Fin (S.instanceSetup i).chunks → Fin (Challenge.d EF) →
-      (S.instanceSetup i).Point → F) :
-    Pr{let ζ ← $ᵗ 𝕂}[ZetaBad S publicValues δ' traces perms terminals lα lβ α quotients ζ] ≤
-      ⨆ i, outOfDomainError (S.instanceSetup i) δ' :=
-  (Sound.prob_zetaBad_le _ _ _ _ δ' _ _ _ _).trans
-    (le_iSup (fun i ↦ outOfDomainError (S.instanceSetup i) δ') _)
-
 /-- Round `a`: a uniform `a` is bad with probability at most the failing instance's batching
 error over the opened words of its domain size. -/
 theorem prob_batchBad_le_failing (α : 𝕂)
@@ -266,21 +248,6 @@ theorem prob_batchBad_le_failing (α : 𝕂)
       exact and_iff_right hfar
   rw [hset]
   exact batchingStep _ _ δ _ _ hfar
-
-/-- Round `a`: a uniform `a` is bad with probability at most the worst instance's batching
-error over the opened words of its domain size. -/
-theorem prob_batchBad_le (α : 𝕂)
-    (quotients : (i : Fin S.k) → Fin (S.instanceSetup i).chunks → Fin (Challenge.d EF) →
-      (S.instanceSetup i).Point → F) (ζ : 𝕂)
-    (openings : (i : Fin S.k) → Openings (S.instanceSetup i)) :
-    Pr{let a ← $ᵗ 𝕂}[BatchBad S publicValues δ δ' traces perms terminals lα lβ α quotients ζ
-      openings a] ≤
-      ⨆ i, batchingErrorOf (S.instanceSetup i)
-        (S.groupNumOpened (S.logN i + S.params.logBlowup)) δ
-        δ' :=
-  (prob_batchBad_le_failing S publicValues δ δ' traces perms terminals lα lβ α quotients ζ
-    openings).trans (le_iSup (fun i ↦ batchingErrorOf (S.instanceSetup i)
-      (S.groupNumOpened (S.logN i + S.params.logBlowup)) δ δ') _)
 
 end Bounds
 

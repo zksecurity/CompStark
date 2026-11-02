@@ -70,8 +70,6 @@ variable {lookups : List (Lookup F)} (S : Setup EF lookups)
 class Folds : Prop where
   folds : S.params.logFinalPolyLen < S.logN
 
-theorem folds [h : S.Folds] : S.params.logFinalPolyLen < S.logN := h.folds
-
 /-- `n = 2 ^ logN`, the trace's length. -/
 abbrev n : Nat := 2 ^ S.logN
 

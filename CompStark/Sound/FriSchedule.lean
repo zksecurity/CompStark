@@ -15,11 +15,8 @@ height, and inject the input `words mᵢ` when its height is reached.
 
 For heights strictly decreasing, all below `n` and at least `logFinal` (`Fits`), the last one
 possibly the final height itself, the rounds reach the final height exactly (`degree_schedule`:
-the code before them has degree bound `2 ^ (n - logFinal) d`), and every input is injected:
-inputs agreeing in the rounds means each input agrees with its code, on a domain the folds reach
-from the first (`agrees_of_inputsAgree`). From the final height, the rounds are `.final`, without
-folds. `plan` lists the folds as data, one per fold (`numFolds_schedule`). The rounds' errors
-depend on the heights only, not on the words (`foldError_schedule_congr`).
+the code before them has degree bound `2 ^ (n - logFinal) d`). From the final height, the rounds
+are `.final`, without folds. `plan` lists the folds as data, one per fold (`numFolds_schedule`).
 -/
 
 @[expose] public section
@@ -194,37 +191,6 @@ theorem mem_plan {maxLogArity logFinal : ℕ} (ha : 0 < maxLogArity) :
         · exact hhead
         · exact hrest _ (fits_cons_of_ne hfit h4 hm) f hf
 
-/-- The plan's folds fold onto strictly decreasing heights, for fitting heights: their target
-sizes are distinct. -/
-theorem pairwise_plan {maxLogArity logFinal : ℕ} (ha : 0 < maxLogArity) :
-    ∀ (fuel n : ℕ) (heights : List ℕ), Fits logFinal n heights →
-      (plan maxLogArity logFinal fuel n heights).Pairwise fun f g ↦ g.2.1 < f.2.1
-  | 0, _, _, _ => List.Pairwise.nil
-  | fuel + 1, n, heights, hfit => by
-    by_cases hfin : n ≤ logFinal
-    · rw [plan, ite_eq_left hfin]
-      exact List.Pairwise.nil
-    have hcons : ∀ (inj : Bool) (heights' : List ℕ),
-        Fits logFinal (n - logArity maxLogArity logFinal n heights) heights' →
-        ((logArity maxLogArity logFinal n heights, n - logArity maxLogArity logFinal n heights,
-          inj) :: plan maxLogArity logFinal fuel (n - logArity maxLogArity logFinal n heights)
-            heights').Pairwise fun f g ↦ g.2.1 < f.2.1 :=
-      fun inj heights' hfit' ↦ List.pairwise_cons.mpr
-        ⟨fun g hg ↦ (mem_plan ha fuel _ heights' hfit' g hg).2.2.2,
-          pairwise_plan ha fuel _ heights' hfit'⟩
-    rw [plan, ite_eq_right hfin]
-    match heights, hfit, hcons with
-    | [], _, hcons => exact hcons false [] (fits_nil _ _)
-    | m :: rest, hfit, hcons =>
-      have h4 := logArity_le_cons maxLogArity logFinal n m rest
-      by_cases hm : m = n - logArity maxLogArity logFinal n (m :: rest)
-      · dsimp only
-        rw [ite_eq_left hm]
-        exact hcons true rest (fits_of_eq hfit hm)
-      · dsimp only
-        rw [ite_eq_right hm]
-        exact hcons false _ (fits_cons_of_ne hfit h4 hm)
-
 /-- The plan from height `n` has at most `n - logFinal` folds, for fitting heights. -/
 theorem length_plan_le {maxLogArity logFinal : ℕ} (ha : 0 < maxLogArity) :
     ∀ (fuel n : ℕ) (heights : List ℕ), Fits logFinal n heights →
@@ -345,94 +311,7 @@ theorem numFolds_schedule (maxLogArity logFinal : ℕ) (words : (m : ℕ) → Fi
       · simp only [schedule, plan, ite_eq_right hfin, ite_eq_right hm, numFolds,
           List.length_cons, ih]
 
-/-- Without inputs, the rounds do not read the words. -/
-theorem schedule_nil (maxLogArity logFinal : ℕ) (words words' : (m : ℕ) → Fin (2 ^ m) → K) :
-    ∀ fuel n, schedule maxLogArity logFinal words fuel n [] =
-      schedule maxLogArity logFinal words' fuel n []
-  | 0, _ => rfl
-  | fuel + 1, n => by
-    simp only [schedule, schedule_nil maxLogArity logFinal words words' fuel]
-
 variable [Field K]
-
-/-- The rounds' fold errors, number of folds and degree depend on the heights only, not on the
-words. -/
-theorem foldError_schedule_congr [Fintype K] [DecidableEq K] [SampleableType K]
-    (maxLogArity logFinal d : ℕ) (θ loss : ℝ) (words words' : (m : ℕ) → Fin (2 ^ m) → K) :
-    ∀ (fuel n : ℕ) (ω : SmoothCosetFftDomain n K) (heights : List ℕ),
-      (schedule maxLogArity logFinal words fuel n heights).foldError d θ loss ω =
-          (schedule maxLogArity logFinal words' fuel n heights).foldError d θ loss ω ∧
-        (schedule maxLogArity logFinal words fuel n heights).numFolds =
-          (schedule maxLogArity logFinal words' fuel n heights).numFolds ∧
-        (schedule maxLogArity logFinal words fuel n heights).degree d =
-          (schedule maxLogArity logFinal words' fuel n heights).degree d
-  | 0, _, _, _ => ⟨rfl, rfl, rfl⟩
-  | fuel + 1, n, ω, heights => by
-    by_cases hfin : n ≤ logFinal
-    · simp only [schedule, ite_eq_left hfin, and_self]
-    simp only [schedule, ite_eq_right hfin]
-    have ih := foldError_schedule_congr maxLogArity logFinal d θ loss words words' fuel
-    match heights with
-    | [] =>
-      obtain ⟨h1, h2, h3⟩ := ih (n - logArity maxLogArity logFinal n [])
-        (ω.subdomain (logArity maxLogArity logFinal n [])) []
-      simp only [foldError, numFolds, degree, h1, h2, h3, and_self]
-    | m :: rest =>
-      by_cases hm : m = n - logArity maxLogArity logFinal n (m :: rest)
-      · obtain ⟨h1, h2, h3⟩ := ih (n - logArity maxLogArity logFinal n (m :: rest))
-          (ω.subdomain (logArity maxLogArity logFinal n (m :: rest))) rest
-        simp only [ite_eq_left hm, foldError, numFolds, degree, h1, h2, h3, and_self]
-      · obtain ⟨h1, h2, h3⟩ := ih (n - logArity maxLogArity logFinal n (m :: rest))
-          (ω.subdomain (logArity maxLogArity logFinal n (m :: rest))) (m :: rest)
-        simp only [ite_eq_right hm, foldError, numFolds, degree, h1, h2, h3, and_self]
-
-/-- Agreement of a word on a domain of an equal height. -/
-theorem exists_agrees_cast (P : ∀ {m : ℕ}, SmoothCosetFftDomain m K → Prop)
-    (words : (m : ℕ) → Fin (2 ^ m) → K) {m m' : ℕ} (h : m = m')
-    (D : SmoothCosetFftDomain m' K) (hD : P D) (deg : ℕ) (ρ : ℝ)
-    (hg : Agrees D deg ρ (words m')) :
-    ∃ D' : SmoothCosetFftDomain m K, P D' ∧ Agrees D' deg ρ (words m) := by
-  subst h
-  exact ⟨D, hD, hg⟩
-
-/-- Every input is injected: if the rounds' inputs agree with their codes, each input agrees with
-its code, on a domain the folds reach from the first, which keeps any property `P` that
-subdomains keep. -/
-theorem agrees_of_inputsAgree {maxLogArity logFinal : ℕ} (ha : 0 < maxLogArity)
-    (words : (m : ℕ) → Fin (2 ^ m) → K) (d : ℕ) (ρ : ℝ)
-    (P : ∀ {m : ℕ}, SmoothCosetFftDomain m K → Prop)
-    (hP : ∀ {m : ℕ} (D : SmoothCosetFftDomain m K) (k : ℕ), P D → P (D.subdomain k)) :
-    ∀ (fuel n : ℕ) (ω : SmoothCosetFftDomain n K) (heights : List ℕ),
-      logFinal ≤ n → n - logFinal ≤ fuel → Fits logFinal n heights → P ω →
-      (schedule maxLogArity logFinal words fuel n heights).InputsAgree d ρ ω →
-      ∀ m ∈ heights, ∃ D : SmoothCosetFftDomain m K, P D ∧
-        Agrees D (2 ^ (m - logFinal) * d) ρ (words m)
-  | 0, n, _, heights, hn, hfuel, hfit, _, _, m, hm => by
-    have := hfit.2 m hm
-    omega
-  | fuel + 1, n, ω, heights, hn, hfuel, hfit, hω, hin, m', hm' => by
-    have hx := hfit.2 m' hm'
-    have hfin : ¬ n ≤ logFinal := by omega
-    have h1 := one_le_logArity ha (by omega) hfit
-    have h2 := logArity_le maxLogArity logFinal n heights
-    rw [schedule, ite_eq_right hfin] at hin
-    match heights, hfit, h1, h2, hin, hm' with
-    | m :: rest, hfit, h1, h2, hin, hm' =>
-      have h3 := logArity_le_cons maxLogArity logFinal n m rest
-      by_cases hm : m = n - logArity maxLogArity logFinal n (m :: rest)
-      · simp only [ite_eq_left hm, InputsAgree] at hin
-        rcases List.mem_cons.mp hm' with rfl | hm'
-        · refine exists_agrees_cast P words hm _ (hP ω _ hω) _ ρ ?_
-          have hdeg := degree_schedule ha words d fuel _ rest (by omega) (by omega)
-            (fits_of_eq hfit hm)
-          rw [hdeg, show n - logArity maxLogArity logFinal n (m' :: rest) - logFinal =
-            m' - logFinal by omega] at hin
-          exact hin.1
-        · exact agrees_of_inputsAgree ha words d ρ P hP fuel _ _ rest (by omega) (by omega)
-            (fits_of_eq hfit hm) (hP ω _ hω) hin.2 m' hm'
-      · simp only [ite_eq_right hm, InputsAgree] at hin
-        exact agrees_of_inputsAgree ha words d ρ P hP fuel _ _ _ (by omega) (by omega)
-          (fits_cons_of_ne hfit h3 hm) (hP ω _ hω) hin m' hm'
 
 end Rounds
 

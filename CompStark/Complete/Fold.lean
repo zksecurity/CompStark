@@ -40,9 +40,6 @@ abbrev emb (x : F) : L := algebraMap K L (x)
 theorem toSpec_ofBase (x : F) : Challenge.toSpec (Ext.ofBase x : EF) = emb x :=
   Challenge.toSpec_ofBase x
 
-theorem emb_mul (x y : F) : (emb (x * y) : L) = emb x * emb y := by
-  rw [emb, map_mul]
-
 theorem emb_pow (x : F) (n : Nat) : (emb (x ^ n) : L) = emb x ^ n := by
   rw [emb, map_pow]
 

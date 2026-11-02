@@ -24,12 +24,6 @@ variable {F : Type} [BaseField F] {EF : Type} [Challenge F EF]
 
 local notation "𝕂" => Challenge.Spec EF
 
-noncomputable instance : NonBinaryField 𝕂 where
-  char_neq_2 := by
-    have h : (2 : 𝕂) = algebraMap F 𝕂 2 := by rw [map_ofNat]
-    rw [h, ne_eq, map_eq_zero_iff _ (algebraMap F 𝕂).injective]
-    exact BaseField.two_ne_zero
-
 /-- Uniform sampling from `F`. -/
 noncomputable instance : SampleableType F := SampleableType.ofFintype F
 
@@ -91,8 +85,5 @@ def folds (maxLogArity : Nat) : Nat → List ℕ+
     let la := max 1 (min maxLogArity (remaining + 1))
     ⟨la, by omega⟩ :: folds maxLogArity (remaining + 1 - la)
   decreasing_by omega
-
-/-- FRI's final degree bound `2 ^ logFinal`. -/
-def finalDegree (logFinal : Nat) : ℕ+ := ⟨2 ^ logFinal, Nat.two_pow_pos logFinal⟩
 
 end CompStark.Sound

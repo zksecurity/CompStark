@@ -10,17 +10,7 @@ public import CompStark.Ni.BcsRun
 
 /-! # The verifier's transcript schedule
 
-* `inputs P A vk pis proof`: the transcript schedule, the elements the verifier observes before
-  each squeeze: the STARK's domain separator, the trace commitment and the public values; the
-  quotient commitment and the out-of-domain grinding witness; the PCS's domain separator, the
-  opened values and the batching grinding witness; each commit-phase commitment with its
-  grinding witness, the first after FRI's domain separator; the final polynomial and the query
-  grinding witness. A grinding witness is not observed without grinding (`witnessInput`).
-* `parse`: a duplex call read back from the queries made before it, by following capacities to
-  the initial one (`answering`, `stepsTo`): each capacity was answered by the call of the round
-  before. This gives the call's history (each earlier round's input and answered samples) and its
-  own input.
-* `out`: the result and the query log of a run of the verifier's monad on logged answers.
+* `witnessInput`: a grinding witness as the challenger observes it, nothing without grinding.
 * `roundValues`, `pcsCounts`: the values and counts the PCS observes, round by round.
 -/
 
@@ -34,11 +24,6 @@ variable {F : Type}
 
 /-- A grinding witness as the verifier observes it: not at all without grinding. -/
 def witnessInput (bits : Nat) (w : F) : List F := if bits = 0 then [] else [w]
-
-/-- `seed` observed before the first of `blocks`. -/
-def prependSeed (seed : List F) : List (List F) → List (List F)
-  | [] => [seed]
-  | b :: bs => (seed ++ b) :: bs
 
 /-! ### The preprocessed shape -/
 
@@ -153,76 +138,10 @@ theorem claimCounts_openingRounds (A : Air F) (vk : Option (PreprocessedKey F))
     refine congrArg (List.cons _) (congrArg₂ (fun a b ↦ a :: b) rfl ?_)
     cases proof.opened.preprocessedNext <;> rfl
 
-/-- The elements the verifier observes on `proof` before each squeeze, round by round: the
-STARK's domain separator, the trace commitment, the preprocessed commitment of the verifying key
-`vk` and the public values; the quotient commitment
-and the out-of-domain grinding witness; the PCS's domain separator, the opened values and the
-batching grinding witness; each commit-phase commitment with its grinding witness, the first
-after FRI's domain separator; the final polynomial and the query grinding witness. A grinding
-witness is not observed without grinding. -/
-def inputs (P : Fri.Params) (A : Air F) (vk : Option (PreprocessedKey F)) (pis : List F)
-    (proof : Proof F EF) : List (List F) :=
-  (starkSeedOf EF P A proof.degreeBits ++ capElems proof.traceCommit ++ preprocessedDigest vk ++
-    pis) ::
-  (capElems proof.quotientCommit ++ witnessInput P.oodPowBits proof.oodWitness) ::
-  (DomainSeparator.pcsSeed F EF (pcsCounts proof.opened) P.batchPowBits ++
-    coeffs (openedValues proof.opened) ++ witnessInput P.batchPowBits proof.fri.batchWitness) ::
-  prependSeed (friSeedOf P proof)
-    (((proof.fri.commits.toList.zip proof.fri.commitWitnesses.toList).map fun cw ↦
-      capElems cw.1 ++ witnessInput P.commitPowBits cw.2) ++
-    [coeffs proof.fri.finalPoly.toList ++ witnessInput P.queryPowBits proof.fri.queryWitness])
+/-! ### The PCS's rounds -/
 
-/-! ### The duplex chain of a schedule -/
-
-variable {K : Nat} (answer : (q : Query F) → Answer K q)
-
-/-- A round of a duplex chain: its input and the samples answered. -/
-abbrev Step (F : Type) (K : Nat) := List F × Vector F K
-
-/-! ### Parsing -/
-
-/-- The first duplex call in `log` answering capacity `cap`: its capacity, input and samples. -/
-def answering (log : QueryLog (spec F K)) (cap : Digest F) : Option (Digest F × Step F K) :=
-  log.findSome? fun e ↦ match e with
-    | ⟨.duplex c input, answer⟩ => if answer.1 = cap then some (c, input, answer.2) else none
-    | _ => none
-
-/-- The rounds that led to capacity `cap` in `log`, oldest first, following capacities back to
-the initial one in at most `fuel` steps. -/
-def stepsTo (log : QueryLog (spec F K)) : Nat → Digest F → Option (List (Step F K))
-  | fuel, cap =>
-    if cap = initCap then some [] else
-      match fuel with
-      | 0 => none
-      | fuel + 1 => match answering log cap with
-        | some (c, step) => (stepsTo log fuel c).map (· ++ [step])
-        | none => none
-
-/-- A duplex call parsed against the queries `log` before it: the rounds before it and its
-input. -/
-def parse (log : QueryLog (spec F K)) : Query F → Option (List (Step F K) × List F)
-  | .duplex cap input => (stepsTo log log.length cap).map (·, input)
-  | _ => none
-
-variable {answer}
-
-variable {log : QueryLog (spec F K)} {blocks : List (List F)} {i : Nat}
-
-/-! ### The verifier's run on logged answers -/
-
-section Run
+section Rounds
 open CompStark.Fri
-
-variable (answer : (q : Query F) → Answer K q) {P : Fri.Params}
-
-local notation "Hl" => idealLogged answer
-
-/-- The result and the query log of `x` from state `s`, on the logged answers. -/
-def out {α : Type} (x : M Hl α) (s : Sponge F) :
-    Except String (α × Sponge F) × QueryLog (spec F K) :=
-  ((x.run s).run).run
-
-variable {answer}
 
 theorem coeffs_ne_nil {xs : List EF} (h : xs ≠ []) : coeffs xs ≠ [] := by
   obtain ⟨x, xs, rfl⟩ := List.exists_cons_of_ne_nil h
@@ -289,6 +208,6 @@ theorem roundValues_openingRounds (A : Air F) (vk : Option (PreprocessedKey F))
         List.flatMap_nil, List.flatMap_cons, List.append_nil, Option.getD_none, Option.getD_some,
         Array.toList_empty]
 
-end Run
+end Rounds
 
 end CompStark.Ni

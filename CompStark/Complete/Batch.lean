@@ -1359,14 +1359,6 @@ theorem duplex_bLP : (bLP EF P Is ts ps).2.duplex = (bTA0 EF P Is ts ps).duplex 
   · rw [duplex_sampleExt, duplex_sampleExt, duplex_grind]
   · rfl
 
-theorem flag_bLP (h : (bLP EF P Is ts ps).2.grindFailed = false) :
-    (bTA0 EF P Is ts ps).grindFailed = false := by
-  rw [bLP_eq] at h
-  split at h
-  · rw [flag_sampleExt, flag_sampleExt] at h
-    exact flag_grind _ _ h
-  · exact h
-
 end Honest
 
 /-- Batch completeness with every assumption spelled out; `batchCompleteness`

@@ -10,7 +10,6 @@ public import CompStark.Sound.Batching
 public import CompStark.Sound.Decoding
 public import CompStark.Sound.Algebra
 public import CompStark.Sound.Sampling
-public import CompStark.Sound.ConsistentQueries
 
 /-! # Round-by-round soundness of the STARK
 
@@ -72,9 +71,6 @@ structure Transcript (S : Iop.Setup EF) [S.Folds] where
 
 namespace Transcript
 variable {S : Iop.Setup EF} [S.Folds] (t : Transcript S)
-
-/-- The transcript's prover. -/
-def prover : Prover S := fixedProver t.trace t.quotient t.openings
 
 end Transcript
 

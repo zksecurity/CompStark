@@ -11,7 +11,7 @@ public import CompStark.Sound.FriRun
 /-! # FRI's query checks with injected words
 
 The interactive oracle proof's FRI (`FriGame.Rounds.schedule`) folds by Plonky3's schedule
-(`arities`, `foldSchedule_cons`). `query_run`: if a query's folds pass their checks against
+(`foldSchedule_cons`). `query_run`: if a query's folds pass their checks against
 binding commitments, from the reduced opening of the tallest height, adding each shorter height's
 reduced opening when they reach it, and end at the final polynomial, then the query's point is
 accepted by FRI's run on the extracted words (`FriGame.Rounds.run`), at the folding challenges in
@@ -33,11 +33,6 @@ local notation "𝕂" => Challenge.Spec EF
 namespace FriRounds
 
 variable {K : Type}
-
-/-- The log arities of the folds of FRI's rounds. -/
-def arities : {n : ℕ} → Rounds K n → List ℕ
-  | _, .final => []
-  | _, .fold k _ _ rest => k :: arities rest
 
 theorem foldSchedule_cons (maxLogArity logFinal fuel n m : ℕ) (rest : List ℕ)
     (hn : ¬ n ≤ logFinal) :

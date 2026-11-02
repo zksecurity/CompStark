@@ -51,9 +51,6 @@ theorem flag_observeList (t : Transcript F 24) (xs : List F) :
     (t.observeList xs).grindFailed = t.grindFailed := by
   unfold Transcript.observeList; dsimp only
 
-theorem flag_observe (t : Transcript F 24) (x : F) : (t.observe x).grindFailed = t.grindFailed := by
-  unfold Transcript.observe; dsimp only
-
 theorem duplex_observeList (t : Transcript F 24) (xs : List F) :
     (t.observeList xs).duplex = t.duplex := rfl
 
@@ -188,9 +185,6 @@ theorem commitRounds_run [Poseidon2Field F] (P : Params) :
 /-- The folded vector has height `2 ^ h`, not below the final height, and low degree. -/
 def Good (P : Params) (h : Nat) (f : Array EF) : Prop :=
   P.logBlowup + P.logFinalPolyLen ≤ h ∧ LowDegree h (h - P.logBlowup) f
-
-theorem log2_size {h d : Nat} {v : Array EF} (hv : LowDegree h d v) : Nat.log2 v.size = h := by
-  rw [hv.1, Nat.log2_two_pow]
 
 /-- The fold of a vector of `2 ^ h` values is the groups' `foldRow`s. -/
 theorem foldOnce_eq (la h : Nat) (beta : EF) (f : Array EF) (hs : f.size = 2 ^ h)
@@ -392,13 +386,6 @@ theorem flag_sampleBits (t : Transcript F 24) (bits : Nat) :
     (t.sampleBits bits).2.grindFailed = t.grindFailed := by
   unfold Transcript.sampleBits; dsimp only
 
-theorem flag_foldl_observe (l : List Nat) :
-    ∀ t : Transcript F 24, (l.foldl (fun t (a : Nat) ↦ t.observe (a : F)) t).grindFailed =
-      t.grindFailed := by
-  induction l with
-  | nil => intro t; rfl
-  | cons a l ih => intro t; rw [List.foldl_cons, ih, flag_observe]
-
 theorem flag_checkWitness (t : Transcript F 24) (bits : Nat) (w : F) :
     (t.checkWitness bits w).2.grindFailed = t.grindFailed := by
   unfold Transcript.checkWitness; dsimp only
@@ -466,12 +453,6 @@ theorem duplex_grind (t : Transcript F 24) (bits : Nat) : (t.grind bits).2.duple
   · subst h0; rfl
   · rw [grind_of_ne t bits h0]
     exact duplex_checkWitness t bits (t.grinder t.state bits)
-
-theorem duplex_foldl_observe (l : List Nat) :
-    ∀ t : Transcript F 24, (l.foldl (fun t (a : Nat) ↦ t.observe (a : F)) t).duplex = t.duplex := by
-  induction l with
-  | nil => intro t; rfl
-  | cons a l ih => intro t; rw [List.foldl_cons, ih]; rfl
 
 theorem duplex_chain [Poseidon2Field F] (P : Params) :
     ∀ (las : List Nat) (f : Array EF) (rest : List (Array EF)) (t : Transcript F 24),
@@ -820,16 +801,6 @@ def sampleIndices (logMax : Nat) : Nat → Transcript F 24 → List Nat × Trans
   | n + 1, t =>
     let r := sampleIndices logMax n (t.sampleBits logMax).2
     ((t.sampleBits logMax).1 :: r.1, r.2)
-
-/-- The prover's queries, each sampling its index. -/
-theorem mapM_queries {α β : Type} (logMax : Nat) (mk : Nat → β) (g : α → PM F 24 β)
-    (hg : ∀ a t, (g a).run t = (mk (t.sampleBits logMax).1, (t.sampleBits logMax).2)) :
-    ∀ (l : List α) (t : Transcript F 24), (l.mapM g).run t =
-      ((sampleIndices logMax l.length t).1.map mk, (sampleIndices logMax l.length t).2)
-  | [], _ => rfl
-  | a :: l, t => by
-    rw [List.mapM_cons, prun_bind, hg, prun_bind, mapM_queries logMax mk g hg l]
-    rfl
 
 theorem flag_sampleIndices (logMax : Nat) :
     ∀ n (t : Transcript F 24), (sampleIndices logMax n t).2.grindFailed = t.grindFailed

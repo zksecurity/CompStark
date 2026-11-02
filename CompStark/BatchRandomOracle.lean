@@ -81,9 +81,6 @@ def instances : List (CompStark.Batch.Instance F) :=
 def keyInstances : List (CompStark.Batch.Instance F) :=
   List.ofFn fun i ↦ ⟨S.air i, S.keyLogN i, S.lookups i⟩
 
-/-- The AIRs the verifier checks, in order. -/
-def airs : List (Air F) := List.ofFn S.air
-
 /-- Some instance has lookups: the batch verifier runs its lookup round. -/
 def hasLookups : Bool := CompStark.Batch.hasLookups S.instances
 

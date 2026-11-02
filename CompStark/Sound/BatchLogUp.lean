@@ -224,22 +224,6 @@ theorem card_lookupBad_le (δ' : ℝ)
   rw [Fintype.card_piFinset, Iop.Batch.Setup.traceListSize]
   exact Finset.prod_le_prod fun i _ ↦ card_candidates_le _ δ' _
 
-/-- Without lookups, the buses balance and no pair of challenges is bad. -/
-theorem not_lookupBad (hl : ∀ i, S.lookups i = []) (δ' : ℝ)
-    (traces : (i : Fin S.k) → Fin (S.air i).width → (S.instanceSetup i).Point → F)
-    (lookupAlpha lookupBeta : 𝕂) :
-    ¬ LookupBad S publicValues δ' traces lookupAlpha lookupBeta := by
-  rintro ⟨P, -, -, hnb, -⟩
-  refine hnb fun key ↦ ?_
-  rw [messages_eq]
-  have hnil : ∀ i, instanceMessages S (fun i ↦ traceOf (S.instanceSetup i) (P i)) publicValues
-      i = [] := fun i ↦ by
-    unfold instanceMessages
-    rw [hl i]
-    exact List.flatMap_eq_nil_iff.mpr fun _ _ ↦ rfl
-  rw [List.flatMap_eq_nil_iff.mpr fun i _ ↦ hnil i]
-  rfl
-
 end Round
 
 end CompStark.Sound.Batch

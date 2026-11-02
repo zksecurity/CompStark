@@ -11,8 +11,7 @@ public import CompStark.Ni.Natural
 
 The primitives on oracle answers are natural in the monad the answers come from
 (`withAnswers_map`), so simulating the verifier's oracles by `impl` runs the verifier on the
-answers of `impl` (`simulateQ_verifyWith`, from `Stark.verifyWith_map`). `idealLogged answer`: the
-primitives on fixed answers that also log every query.
+answers of `impl` (`simulateQ_verifyWith`, from `Stark.verifyWith_map`).
 -/
 
 @[expose] public section
@@ -42,10 +41,5 @@ theorem simulateQ_verifyWith {n : Type → Type} [Monad n] [LawfulMonad n]
   have h := verifyWith_map (simulateQ' impl) (ideal F K) P A vk proof pis
   rw [withAnswers_map] at h
   simpa only [simulateQ'_apply, simulateQ_spec_query] using h
-
-/-- The verifier's primitives on fixed answers, logging every query. -/
-abbrev idealLogged (answer : (q : Query F) → Answer K q) :
-    Primitives F (WriterT (QueryLog (spec F K)) Id) :=
-  withAnswers K (QueryImpl.ofFn answer).withLogging
 
 end CompStark.RandomOracle
