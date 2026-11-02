@@ -228,9 +228,11 @@ public import CompStark.Fs.Stark
 public import CompStark.Fs.StarkWords
 public import CompStark.Fs.StarkTerminal
 public import CompStark.Fs.StarkParse
+public import CompStark.Fs.StarkStable
 public import CompStark.Fs.BatchWords
 public import CompStark.Fs.Batch
 public import CompStark.Fs.StarkFiatShamir
+public import CompStark.Fs.StarkBcs
 public import CompStark.Fs.Secure
 public import CompStark.Fs.BatchFiatShamir
 public import CompStark.Fs.BatchParse

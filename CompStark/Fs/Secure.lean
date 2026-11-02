@@ -4,7 +4,7 @@ Released under Apache 2.0 license as described in the file LICENSE.
 -/
 module
 
-public import CompStark.Fs.StarkFiatShamir
+public import CompStark.Fs.StarkBcs
 public import CompStark.Sound.Calculator
 
 /-! # The calculator's bound on Plonky3's duplex challenger
@@ -18,7 +18,10 @@ bounds, `foldErrorsLE_plonky3`), and at the queries
 `powFraction · (1 - δ + #folds · loss + 1/p) ^ numQueries`, the query positions' slack `1/p`
 inside the query error as in the random-oracle model (`Setup.ratio_mul_nodeErrors_le`). So the
 largest is at most the round error's bound, and a path of at most `maxChallenges` challenges sums
-to at most `maxChallenges` times it.
+to at most `maxChallenges` times it. The calculator's certificate per oracle answer
+(`Statement.SecureRo`) then bounds the STARK's knowledge soundness with Merkle commitments by
+`chainError q + hashBadError + (q + maxChallenges) 2 ^ (-bits)`
+(`Statement.knowledgeSoundness_bcs_of_secureRo`).
 -/
 
 @[expose] public section
@@ -206,3 +209,66 @@ theorem ratio_mul_nodeErrors_le (S : Setup EF) (hp : Nat.card F = p) {B : McaBou
         ENNReal.ofReal_natCast]
 
 end CompStark.Iop.Setup
+
+namespace CompStark.Iop.Statement
+open CompStark.Stark CompStark.Sound CompStark.Fs CompStark.RandomOracle OracleComp OracleSpec
+open _root_.Interaction.Oracle _root_.Interaction.Oracle.PublicCoin
+open _root_.Interaction.Oracle.Security _root_.Interaction.Oracle.Security.StateRestoration
+open _root_.Interaction.Oracle.Security.HashChain
+open scoped ENNReal NNReal
+
+variable {F : Type} [BaseField F] {EF : Type} [Challenge F EF] {p : ℕ}
+
+/-- **Knowledge soundness with Merkle commitments from the calculator.** If the calculator
+certifies `bits` bits per oracle answer for the statement `C` at `A` with an MCA bound that holds
+(`C.SecureRo EF p B A bits`), on a base field of at least `2 ^ 8` elements with two-adicity below
+`2 ^ 64`, an adversary making at most `Q` duplex calls and `q` oracle calls in all gets Plonky3's
+verifier to accept while no trace of the proof's length within `δ' = A.δ'` of the trace extracted
+from the log under the proof's trace commitment satisfies the AIR with probability at most
+`chainError Q' + hashBadError + (Q' + maxChallenges) 2 ^ (-bits)`,
+`Q' = Q + verifierQueries + 3 verifierChainQueries`. -/
+theorem knowledgeSoundness_bcs_of_secureRo (C : Statement F) (hp : Nat.card F = p)
+    {B : McaBound} (hB : B.Holds) (A : Analysis) {bits : ℕ} (h : C.SecureRo EF p B A bits)
+    (h8 : 2 ^ 8 ≤ Nat.card F) (h64 : twoAdicity F < 2 ^ 64) {K : ℕ} (hK : 0 < K)
+    (δ' : ℝ≥0) (hδ' : (δ' : ℝ) = A.δ') (hA : A.Valid (1 / 2 ^ C.params.logBlowup))
+    (adversary : OracleComp (spec F K) (List F × Proof F EF)) {Q q : ℕ}
+    (hQ : IsQueryBoundP adversary (fun t => isDuplex t = true) Q)
+    (hq : IsTotalQueryBound adversary q) :
+    Pr{let z ← (simulateQ Bcs.realImpl
+        (simulateQ translate (C.starkGame EF K adversary))).run []}[
+      z.1.2.2.2 = .ok () ∧ ∀ h : C.Admits z.1.2.2.1.degreeBits,
+        ∀ trace ∈ closeTraces (C.setupAt EF _ h) δ'
+          ((C.setupAt EF _ h).traceWords ((C.setupAt EF _ h).traceMessageOf
+            (merkleCache (Bcs.hashCacheOf z.2)) z.1.2.2.1.traceCommit)),
+        ¬ C.air.Satisfied z.1.2.2.1.degreeBits trace z.1.2.1] ≤
+      chainError (Digest F) (Q + C.verifierQueries EF + 3 * C.verifierChainQueries EF K) +
+        hashBadError F (2 ^ C.params.capHeight) (C.capOffsets EF).length
+          (q + C.verifierQueries EF) +
+        (Q + C.verifierQueries EF + 3 * C.verifierChainQueries EF K + maxChallenges (F := F)) *
+          (2 ^ bits)⁻¹ := by
+  have hl0 : (0 : ℝ) < A.loss := by exact_mod_cast hA.2.1
+  have hloss : ((Real.toNNReal A.loss : ℝ≥0) : ℝ) = A.loss := Real.coe_toNNReal _ hl0.le
+  have hδ'r : ∀ n, C.Admits n → (δ' : ℝ) < 1 - C.rate := fun _ _ ↦ by
+    obtain ⟨h0, -, hle, h1, hρ⟩ := hA
+    have hq : A.δ' < 1 - 1 / 2 ^ C.params.logBlowup := by nlinarith
+    have hr : ((A.δ' : ℚ) : ℝ) < ((1 - 1 / 2 ^ C.params.logBlowup : ℚ) : ℝ) := Rat.cast_lt.mpr hq
+    rw [hδ', Statement.rate]
+    push_cast at hr
+    exact hr
+  have hnode (node : Prefix PUnit (C.publicCoin EF)) :
+      C.ratio EF node * C.nodeErrors EF (fun _ ↦ Real.toNNReal A.δ) (fun _ ↦ δ')
+        (fun _ ↦ Real.toNNReal A.loss) (1 / Nat.card F) node ≤ (2 ^ bits)⁻¹ := by
+    have hb : C.admits node.1.1 = true := (C.admits_iff _).mpr node.1.2
+    have hs := h node.1.1 (by have := node.1.2.sound.twoAdic; omega) hb
+    exact ((C.setupOf EF node.1.1 hb).ratio_mul_nodeErrors_le hp hB A hs.1 _ _ _
+      (coe_toNNReal_δ A hA) hδ' hloss node.2).trans (ofReal_le_inv_two_pow hs.2)
+  refine (C.knowledgeSoundness_bcs EF K h8 h64 hK (fun _ ↦ Real.toNNReal A.δ) (fun _ ↦ δ') hδ'r
+    (fun _ ↦ Real.toNNReal A.loss) adversary hQ hq).trans (add_le_add le_rfl ?_)
+  rw [add_mul]
+  refine add_le_add ?_ ?_
+  · rw [mul_comm]
+    exact le_of_le_of_eq (mul_le_mul_right (iSup_le fun _ ↦ iSup_le hnode) _) (by push_cast; rfl)
+  · exact iSup_le fun _ ↦ pathError_le_of_challengesLE (C.publicCoin EF)
+      (N := maxChallenges (F := F)) (fun n ↦ (C.setup EF n).challengesLE_publicCoin) _ hnode
+
+end CompStark.Iop.Statement

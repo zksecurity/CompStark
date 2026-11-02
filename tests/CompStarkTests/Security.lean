@@ -133,4 +133,48 @@ Classical.choice, Quot.sound] -/
 #guard_msgs in
 #print axioms CompStark.Sound.McaBound.uniqueOrJohnson_holds
 
+section MerkleCommitments
+open OracleComp OracleSpec CompStark.Fs CompStark.RandomOracle
+open _root_.Interaction.Oracle.Security _root_.Interaction.Oracle.Security.HashChain
+
+/-- **117 bits per duplex call** for `wideGrindStatement` on Plonky3's verifier with Merkle
+commitments: the calculator's certificate per oracle answer (`wideGrindStatement_secureRo`) bounds
+the knowledge soundness theorem, against an adversary making `Q` duplex calls and `q` oracle calls
+with samples of `K` elements per squeeze, by `chainError Q' + hashBadError + (Q' + maxChallenges) ·
+2 ^ (-117)`, `Q' = Q + verifierQueries + 3 verifierChainQueries`. -/
+theorem wideGrind_knowledgeSoundness_bcs {K : ℕ} (hK : 0 < K)
+    (adversary : OracleComp (spec F K) (List F × Proof F Ext4)) {Q q : ℕ}
+    (hQ : IsQueryBoundP adversary (fun t => isDuplex t = true) Q)
+    (hq : IsTotalQueryBound adversary q) :
+    Pr{let z ← (simulateQ Bcs.realImpl
+        (simulateQ translate (wideGrindStatement.starkGame Ext4 K adversary))).run []}[
+      z.1.2.2.2 = .ok () ∧ ∀ h : wideGrindStatement.Admits z.1.2.2.1.degreeBits,
+        ∀ trace ∈ closeTraces (wideGrindStatement.setupAt Ext4 _ h)
+          ((3 / 8 - 2 ^ (-13 : ℤ) : NNReal) : ℝ)
+          ((wideGrindStatement.setupAt Ext4 _ h).traceWords
+            ((wideGrindStatement.setupAt Ext4 _ h).traceMessageOf
+              (merkleCache (Bcs.hashCacheOf z.2)) z.1.2.2.1.traceCommit)),
+        ¬ wideGrindStatement.air.Satisfied z.1.2.2.1.degreeBits trace z.1.2.1] ≤
+      chainError (Digest F) (Q + wideGrindStatement.verifierQueries Ext4 +
+          3 * wideGrindStatement.verifierChainQueries Ext4 K) +
+        hashBadError F (2 ^ wideGrindStatement.params.capHeight)
+          (wideGrindStatement.capOffsets Ext4).length
+          (q + wideGrindStatement.verifierQueries Ext4) +
+        (Q + wideGrindStatement.verifierQueries Ext4 +
+            3 * wideGrindStatement.verifierChainQueries Ext4 K + @Statement.maxChallenges F _) *
+          (2 ^ 117)⁻¹ :=
+  Statement.knowledgeSoundness_bcs_of_secureRo _ KoalaBear.card_eq
+    Sound.McaBound.uniqueDecoding_holds
+    wideGrindAnalysis wideGrindStatement_secureRo (by rw [KoalaBear.card_eq]; norm_num) (by decide)
+    hK (3 / 8 - 2 ^ (-13 : ℤ) : NNReal)
+    (by rw [Sound.coe_sub_two_zpow _ (-13) 13 rfl (by norm_num)]; norm_num [wideGrindAnalysis])
+    (by decide +kernel) adversary hQ hq
+
+/-- info: 'CompStarkTests.Security.wideGrind_knowledgeSoundness_bcs' depends on axioms: [propext,
+Classical.choice, Quot.sound] -/
+#guard_msgs in
+#print axioms wideGrind_knowledgeSoundness_bcs
+
+end MerkleCommitments
+
 end CompStarkTests.Security
