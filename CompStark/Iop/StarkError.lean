@@ -148,12 +148,12 @@ noncomputable def batchingError (S : Setup EF lookups) (δ : NNReal) (δ' : ℝ)
   batchingErrorOf S S.numOpened δ δ'
 
 /-- FRI's soundness error at proximity `δ` with inputs injected at the log heights `heights`
-(`FriRounds.error`): the lossy correlated-agreement error of each fold, and
+(`Fri.Interaction.error`): the lossy correlated-agreement error of each fold, and
 `(1 - δ + #folds · loss) ^ numQueries` for the queries, minimized over the proximity loss
 `loss ≥ 0`. It depends on the inputs' heights only. -/
 noncomputable def friErrorWith (S : Setup EF lookups) (heights : List ℕ) (δ : NNReal) : ENNReal :=
-  FriRounds.error S.domain (S.friRounds (fun _ _ ↦ 0) heights)
-    (2 ^ S.params.logFinalPolyLen) S.params.numQueries δ
+  Fri.Interaction.error S.domain (S.friSchedule heights) (2 ^ S.params.logFinalPolyLen)
+    S.params.numQueries δ
 
 /-- FRI's soundness error at proximity `δ`. -/
 noncomputable def friError (S : Setup EF lookups) (δ : NNReal) : ENNReal := friErrorWith S [] δ

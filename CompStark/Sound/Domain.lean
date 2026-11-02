@@ -5,15 +5,15 @@ Released under Apache 2.0 license as described in the file LICENSE.
 module
 
 public import ArkLib.ProofSystem.Fri.Spec.Soundness
-public import CompStark.Sound.FriSchedule
+public import ArkLib.ProofSystem.Fri.Interaction.Plonky3
 public import CompStark.Stark.Config
 public import CompStark.Stark.Points
 
 /-! # Constructions behind the IOP model
 
-The domain `L` as an ArkLib smooth coset FFT domain and Plonky3's folding schedule for a single
-input. `CompStark/Iop/StarkSetup.lean` states the protocol with them and FRI with injected inputs
-(`CompStark/Sound/FriRounds.lean`).
+The domain `L` as an ArkLib smooth coset FFT domain, the subgroup of its size, FRI's domain in
+Plonky3's coordinate, and Plonky3's folding arities for a single input.
+`CompStark/Iop/StarkSetup.lean` states the protocol with them.
 -/
 
 @[expose] public section

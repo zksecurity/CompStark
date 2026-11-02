@@ -80,43 +80,41 @@ theorem friRatio_mul_nodeErrors_le (top d t commitBits queryBits : ℕ) (δ loss
         (ω.subdomain k) rest (j + 1) h.2 node).trans (le_of_eq ?_)
       rw [Fri.Interaction.Schedule.numFolds, Nat.add_assoc, Nat.add_comm 1]
 
-open FriRounds in
+open Fri.Interaction Schedule in
 /-- The folds of Plonky3's schedule at rate `1/c` (`c d = 2 ^ logFinal`) have errors at most the
 largest bound `g` on the folds of its plan, over `|𝕂|`. -/
 theorem foldErrorsLE_plonky3 (c : ℕ) (a : ℕ) (ha : 0 < a) (d logFinal : ℕ)
     (hd : c * d = 2 ^ logFinal) (δ loss : ℝ) (g : ℕ × ℕ × Bool → ℝ) :
     ∀ (fuel n : ℕ) (ω : Domain.SmoothCosetFftDomain n 𝕂) (heights : List ℕ),
-      logFinal ≤ n → n - logFinal ≤ fuel → Rounds.Fits logFinal n heights →
-      FoldBounds 𝕂 c δ loss g (Rounds.plan a logFinal fuel n heights) →
+      logFinal ≤ n → n - logFinal ≤ fuel → Schedule.Fits logFinal n heights →
+      FoldBounds 𝕂 c δ loss g (plonky3 a logFinal fuel n heights).folds →
       foldErrorsLE d δ loss
-        (ENNReal.ofReal (planMax g (Rounds.plan a logFinal fuel n heights) / Fintype.card 𝕂)) ω
-        (Fri.Interaction.Schedule.plonky3 a logFinal fuel n heights)
+        (ENNReal.ofReal (planMax g (plonky3 a logFinal fuel n heights).folds / Fintype.card 𝕂)) ω
+        (plonky3 a logFinal fuel n heights)
   | 0, _, _, _, _, _, _, _ => trivial
   | fuel + 1, n, ω, heights, hn, hfuel, hfit, hg => by
     by_cases hfin : n ≤ logFinal
-    · simp only [Fri.Interaction.Schedule.plonky3, ite_eq_left hfin]
+    · simp only [plonky3, ite_eq_left hfin]
       trivial
-    have h1 := Rounds.one_le_logArity ha (by omega) hfit
-    have h2 := Rounds.logArity_le a logFinal n heights
+    have h1 := one_le_logArity ha (by omega) hfit
+    have h2 := logArity_le a logFinal n heights
     have hK : (0 : ℝ) < Fintype.card 𝕂 := by exact_mod_cast Fintype.card_pos
     -- one fold onto `2 ^ (n - la)` points, and the rest
     have hstep (la : ℕ) (hla1 : 1 ≤ la) (hla2 : la ≤ n - logFinal) (hla : la ≤ n) (inj : Bool)
-        (h : List ℕ) (hf : Rounds.Fits logFinal (n - la) h)
+        (h : List ℕ) (hf : Schedule.Fits logFinal (n - la) h)
         (hg : FoldBounds 𝕂 c δ loss g
-          ((la, n - la, inj) :: Rounds.plan a logFinal fuel (n - la) h)) :
+          ((la, n - la, inj) :: (plonky3 a logFinal fuel (n - la) h).folds)) :
         foldErrorsLE d δ loss (ENNReal.ofReal (planMax g
-            ((la, n - la, inj) :: Rounds.plan a logFinal fuel (n - la) h) / Fintype.card 𝕂)) ω
-          (.fold la hla inj (Fri.Interaction.Schedule.plonky3 a logFinal fuel (n - la) h)) := by
-      have hdeg : c * (Fri.Interaction.Schedule.plonky3 a logFinal fuel (n - la) h).degree d =
-          2 ^ (n - la) := by
-        rw [Fri.Interaction.Schedule.degree_plonky3 ha d fuel _ h (by omega) (by omega) hf,
-          mul_left_comm, hd, ← pow_add]
+            ((la, n - la, inj) :: (plonky3 a logFinal fuel (n - la) h).folds) / Fintype.card 𝕂)) ω
+          (.fold la hla inj (plonky3 a logFinal fuel (n - la) h)) := by
+      have hdeg : c * (plonky3 a logFinal fuel (n - la) h).degree d = 2 ^ (n - la) := by
+        rw [degree_plonky3 ha d fuel _ h (by omega) (by omega) hf, mul_left_comm, hd, ← pow_add]
         congr 1
         omega
       obtain ⟨hg0, hlevel⟩ := hg _ List.mem_cons_self
-      have hle : ENNReal.ofReal (planMax g (Rounds.plan a logFinal fuel (n - la) h) /
+      have hle : ENNReal.ofReal (planMax g (plonky3 a logFinal fuel (n - la) h).folds /
           Fintype.card 𝕂) ≤ ENNReal.ofReal (planMax g
-            ((la, n - la, inj) :: Rounds.plan a logFinal fuel (n - la) h) / Fintype.card 𝕂) :=
+            ((la, n - la, inj) :: (plonky3 a logFinal fuel (n - la) h).folds) / Fintype.card 𝕂) :=
         ENNReal.ofReal_le_ofReal (div_le_div_of_nonneg_right (le_max_right _ _) hK.le)
       refine ⟨?_, foldErrorsLE_mono d δ loss hle _ _ (foldErrorsLE_plonky3 c a ha d logFinal hd
         δ loss g fuel (n - la) (ω.subdomain la) h (by omega) (by omega) hf
@@ -129,20 +127,18 @@ theorem foldErrorsLE_plonky3 (c : ℕ) (a : ℕ) (ha : 0 < a) (d logFinal : ℕ)
         exact hw
       · rw [foldWords_true] at hw
         exact hw
-    simp only [Fri.Interaction.Schedule.plonky3, ite_eq_right hfin]
+    rw [plonky3, ite_eq_right hfin] at hg ⊢
     match heights, hfit, h1, h2, hg with
     | [], hfit, h1, h2, hg =>
-      simp only [Rounds.plan, ite_eq_right hfin] at hg ⊢
-      exact hstep _ h1 h2 _ false [] (Rounds.fits_nil _ _) hg
+      simp only [Schedule.folds] at hg ⊢
+      exact hstep _ h1 h2 _ false [] (fits_nil _ _) hg
     | m :: rest, hfit, h1, h2, hg =>
-      have h3 := Rounds.logArity_le_cons a logFinal n m rest
-      have hm' : (m = n - Fri.Interaction.Schedule.logArity a logFinal n (m :: rest)) =
-          (m = n - Rounds.logArity a logFinal n (m :: rest)) := rfl
-      by_cases hm : m = n - Rounds.logArity a logFinal n (m :: rest)
-      · simp only [hm', ite_eq_left hm, Rounds.plan, ite_eq_right hfin] at hg ⊢
-        exact hstep _ h1 h2 _ true rest (Rounds.fits_of_eq hfit hm) hg
-      · simp only [hm', ite_eq_right hm, Rounds.plan, ite_eq_right hfin] at hg ⊢
-        exact hstep _ h1 h2 _ false _ (Rounds.fits_cons_of_ne hfit h3 hm) hg
+      have h3 := logArity_le_cons a logFinal n m rest
+      by_cases hm : m = n - logArity a logFinal n (m :: rest)
+      · simp only [ite_eq_left hm, Schedule.folds] at hg ⊢
+        exact hstep _ h1 h2 _ true rest (fits_of_eq hfit hm) hg
+      · simp only [ite_eq_right hm, Schedule.folds] at hg ⊢
+        exact hstep _ h1 h2 _ false _ (fits_cons_of_ne hfit h3 hm) hg
 
 end CompStark.Fs
 
@@ -160,9 +156,7 @@ local notation "𝕂" => Challenge.Spec EF
 theorem numFolds_friSchedule {lookups : List (Lookup F)} (S : Setup EF lookups)
     (heights : List ℕ) :
     (S.friSchedule heights).numFolds = (S.friPlan heights).length := by
-  rw [friSchedule, friPlan, ← FriRounds.Rounds.numFolds_schedule _ _ (fun _ _ ↦ (0 : 𝕂))]
-  exact ((foldError_schedule_eq S.params.maxLogArity (S.params.logFinalPolyLen + S.params.logBlowup)
-    1 0 0 (fun _ _ ↦ (0 : 𝕂)) _ _ S.friDomain heights).2.1).symm
+  rw [friPlan, Fri.Interaction.Schedule.length_folds]
 
 /-- **The calculator bounds every node of the duplex-challenger theorem.** For `|F| = p` and an
 analysis that fits the setup with an MCA bound that holds, every node error with the query
@@ -191,7 +185,7 @@ theorem ratio_mul_nodeErrors_le (S : Setup EF) (hp : Nat.card F = p) {B : McaBou
     (2 ^ S.params.logFinalPolyLen) (S.params.logFinalPolyLen + S.params.logBlowup)
     (by rw [← pow_add, Nat.add_comm]) δ loss _ (S.logN + S.params.logBlowup)
     (S.logN + S.params.logBlowup) S.friDomain [] (by omega) (Nat.sub_le _ _)
-    (FriRounds.Rounds.fits_nil _ _) (foldBounds_calc A B hB _ hA.1 δ loss hδ hloss _ hA.2.2)
+    (Fri.Interaction.Schedule.fits_nil _ _) (foldBounds_calc A B hB _ hA.1 δ loss hδ hloss _ hA.2.2)
   refine (friRatio_mul_nodeErrors_le (F := F) (S.logN + S.params.logBlowup)
     (2 ^ S.params.logFinalPolyLen) S.params.numQueries S.params.commitPowBits
     S.params.queryPowBits δ loss _ _ S.friDomain (S.friSchedule []) 0 hfolds node).trans
