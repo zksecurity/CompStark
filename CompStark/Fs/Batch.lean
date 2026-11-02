@@ -5,6 +5,7 @@ Released under Apache 2.0 license as described in the file LICENSE.
 module
 
 public import CompStark.Fs.Stark
+public import CompStark.Fs.BatchWords
 public import CompStark.Interaction.BatchStateRestoration
 public import CompStark.Ni.BatchRounds
 public import CompStark.Ni.BatchLengths
@@ -14,17 +15,17 @@ public import CompStark.Ni.BatchLengths
 Plonky3's batch verifier (`verifyInstancesWith`) draws the batch's challenges from its duplex
 challenger with `K` samples per squeeze (`Draws.lean`): the lookup challenges `(α_L, β_L)`, if some
 instance has lookups, from the first squeeze after the batch's domain separator, every instance's
-degree bits, the main trace, the public values and the lookup grinding witness, both from one
-squeeze's samples; `α` after the permutation trace and the terminals; `ζ` after the quotients and
-the out-of-domain grinding witness; the batching challenge after the PCS's domain separator, the
-claimed values and the batching witness; FRI's challenges as in the STARK (`friDecoder`). Without
-lookups, Plonky3 neither squeezes nor observes a witness at the lookup challenges, which are
-`(0, 0)`. Here the commitments are the oracle messages themselves: a committed word is observed
-in full where Plonky3 observes its Merkle cap, and the preprocessed commitment, part of the
-statement, is not observed. The terminals are those of the instances with lookups, observed in
-instance order after the permutation trace (`terminalsElems`), as Plonky3 observes them. The public
-values are observed last before the first squeeze: with lookups before the lookup challenges, and
-without lookups, where there are no terminals and the permutation trace is empty, before `α`.
+degree bits, the main tree's Merkle cap, the public values, the preprocessed commitment and the
+lookup grinding witness, both from one squeeze's samples; `α` after the permutation tree's cap and
+the terminals; `ζ` after the quotient tree's cap and the out-of-domain grinding witness; the
+batching challenge after the PCS's domain separator, the claimed values and the batching witness;
+FRI's challenges as in the STARK (`friLayout`). Without lookups, Plonky3 neither squeezes nor
+observes a witness at the lookup challenges, which are `(0, 0)`, and observes no permutation
+commitment. The terminals are those of the instances with lookups, observed in instance order
+after the permutation commitment (`terminalsElems`), as Plonky3 observes them. The public values and
+the preprocessed commitment are observed last before the first squeeze: with lookups before the
+lookup challenges, and without lookups, where nothing is observed of the permutation trace and the
+terminals, before `α`.
 
 * `pairDraw`, `lookupDraw`: the lookup challenges, two extension elements after a grinding sample,
   or `(0, 0)` without lookups, bounded by `powFraction F bits` (`bounded_pairDraw`) or by
@@ -32,11 +33,17 @@ without lookups, where there are no terminals and the permutation trace is empty
 * `Setup.decoder`, `Statement.decoder`: the draws at every challenge;
 * `Setup.ratio`, `Statement.ratio`: the draws' ratios, bounding the draws
   (`Statement.bounded_decoder`);
-* `Setup.observer`, `Statement.observer`: what the verifier observes and how often it squeezes,
-  which tell the keys apart (`Statement.observer_prefixFree`, the degree bits telling the admitted
-  lengths apart on every base field) and are never empty (`Statement.observer_fills`);
-* `Statement.tail`: the public values, flattened in instance order, the statement's elements,
-  injective on the public values of the lengths the verifier checks (`Statement.tail_injective`);
+* `Setup.layout`, `Statement.layout`: what the verifier observes and how often it squeezes, with
+  each oracle message committed by the cap of its Merkle tree of mixed heights, `2 ^ min capHeight
+  depth` digests for the depth of its tallest matrix (`capCommit`, `Setup.permCommit`), and opened
+  to the words read off a snapshot of the Merkle hashes under it (`merkleCache`,
+  `BatchWords.lean`). Its observations are prefix-free (`Statement.layout_prefixFree`, the degree
+  bits telling the admitted lengths apart on every base field), and its draws read only its
+  squeezes (`Statement.reads_decoder`), at most `coinCount` per challenge
+  (`Statement.squeezes_le`);
+* `Statement.Input`, `Statement.tail`: the statement's elements observed before the first squeeze,
+  the public values, of the lengths the AIRs declare, and the preprocessed commitment's, told apart
+  by their observation (`Statement.tail_injective`);
 * `Statement.coinCount`: the squeezes of the most demanding challenge, the coins' size.
 -/
 
@@ -443,21 +450,36 @@ theorem terminalsElems_ne_nil (hl : S.hasLookups = true) (τ : S.Terminals) :
     rw [length_terminalsElems]
     exact Nat.mul_pos (Finset.card_pos.mpr ⟨i, hi⟩) (Challenge.params EF).d_pos)
 
-/-- The batch's observations: the trace, the permutation trace and the terminals, the quotient,
-the PCS's domain separator and the claimed values, FRI's with its domain separator, with the
-draws' witnesses, and the draws' squeezes. -/
-noncomputable def observer : Observer F S.publicCoin (S.decoder K m) :=
-  (wordElems, (lookupSqueezes (EF := EF) K S.hasLookups S.params.lookupPowBits,
+/-- The permutation trace's commitment: with lookups, the cap of the permutation tree, as deep as
+the tallest permutation trace (`permLog`), opened to the permutation traces under it
+(`permMessageOf`); without lookups, Plonky3 commits to none and observes nothing, and the message,
+of no columns, is read off the empty cap. -/
+noncomputable def permCommit : Bool →
+    Bcs.Commit F (merkleSpec F).QueryCache S.PermMessage
+  | true => capCommit S.params.capHeight (permLog S) [] S.permMessageOf
+  | false => ⟨PUnit, fun _ ↦ [], fun T _ ↦ S.permMessageOf (merkleCache T) #[]⟩
+
+/-- The batch's layout with Merkle caps of height `capHeight`, as Plonky3's batch verifier
+observes it: the cap of the main tree, as deep as the tallest trace (`logTop`), opened to every
+instance's trace under it (`traceMessageOf`); the permutation commitment (`permCommit`) and the
+terminals; the cap of the quotient tree, as deep as the main tree, opened to every instance's
+chunks under it (`quotientMessageOf`); the PCS's domain separator and the claimed values; FRI's
+(`friLayout`) with its domain separator; with the draws' witnesses, and the draws' squeezes. -/
+noncomputable def layout :
+    Bcs.Layout F (merkleSpec F).QueryCache S.publicCoin (S.decoder K m) :=
+  (capCommit S.params.capHeight S.logTop [] S.traceMessageOf,
+    (lookupSqueezes (EF := EF) K S.hasLookups S.params.lookupPowBits,
     lookupWitnessElems S.hasLookups S.params.lookupPowBits,
-    (wordElems, (S.terminalsElems, fun _ ↦
+    (S.permCommit S.hasLookups, (S.terminalsElems, fun _ ↦
       (squeezesFor K (extSamples (EF := EF) 0), extWitnessElems 0,
-      (wordElems, (squeezesFor K (extSamples (EF := EF) S.params.oodPowBits),
+      (capCommit S.params.capHeight S.logTop [] S.quotientMessageOf,
+        (squeezesFor K (extSamples (EF := EF) S.params.oodPowBits),
         extWitnessElems S.params.oodPowBits,
         (fun o ↦ pcsSeedB S ++ S.openingsElems o, fun _ ↦
           (squeezesFor K (extSamples (EF := EF) S.params.batchPowBits),
             extWitnessElems S.params.batchPowBits,
-            friObserver K m (S.logN S.top + S.params.logBlowup) (2 ^ S.params.logFinalPolyLen)
-              S.params.numQueries S.params.commitPowBits S.params.queryPowBits
+            friLayout K m (S.logN S.top + S.params.logBlowup) (2 ^ S.params.logFinalPolyLen)
+              S.params.numQueries S.params.commitPowBits S.params.queryPowBits S.params.capHeight
               (S.domainSetup.friSchedule S.friHeights) (friSeedB S))))))))))
 
 /-- The draws' ratios: the lookup challenges' (`lookupRatio`), `1` at `α`, the grinding's
@@ -494,10 +516,18 @@ theorem bounded_decoder (hs : 2 * Challenge.d EF + S.params.numQueries + 1 ≤ m
         ((Iop.Setup.querySamples_le S.params.numQueries _).trans (by omega)) _ _ _ _ _ _ _ _ _ _
           _ _⟩⟩⟩⟩
 
+/-- The batch's draws read only the layout's squeezes. -/
+theorem reads_decoder (hK : 0 < K) :
+    HashChain.Decoder.Reads S.publicCoin (S.decoder K m) (S.layout (F := F) K m).squeezes :=
+  fun _ ↦ ⟨fun c c' h ↦ reads_lookupDraw hK _ _ c c' h, fun _ _ ↦
+    ⟨fun c c' h ↦ reads_extDraw hK 0 c c' h, fun _ ↦ ⟨fun c c' h ↦ reads_extDraw hK _ c c' h,
+      fun _ ↦ ⟨fun c c' h ↦ reads_extDraw hK _ c c' h,
+        reads_friLayout K m hK _ (S.domainSetup.friSchedule S.friHeights) _⟩⟩⟩⟩
+
 /-- No challenge of the batch squeezes more often than the most demanding challenge's samples
 take. -/
-theorem observer_squeezes_le (node : Prefix PUnit S.publicCoin) :
-    (S.observer K m).squeezes S.publicCoin (S.decoder K m) node ≤
+theorem layout_squeezes_le (node : Prefix PUnit S.publicCoin) :
+    (S.layout (F := F) K m).squeezes node ≤
       squeezesFor K (2 * Challenge.d EF + S.params.numQueries + 1) := by
   have he (bits : ℕ) :
       extSamples (EF := EF) bits ≤ 2 * Challenge.d EF + S.params.numQueries + 1 :=
@@ -507,54 +537,33 @@ theorem observer_squeezes_le (node : Prefix PUnit S.publicCoin) :
   · exact squeezesFor_mono (he 0)
   · exact squeezesFor_mono (he _)
   · exact squeezesFor_mono (he _)
-  · exact friObserver_squeezes_le K m (he _)
-      ((Iop.Setup.querySamples_le S.params.numQueries _).trans (by omega)) _ _ node
+  · exact friLayout_squeezes_le K m (he _)
+      ((Iop.Setup.querySamples_le S.params.numQueries _).trans (by omega)) _ _ _ node
 
-/-- The batch's observations are prefix-free. -/
-theorem observer_prefixFree :
-    (S.observer K m).PrefixFree S.publicCoin (S.decoder (F := F) K m) :=
-  ⟨prefixFree_wordElems, (fixFree_lookupWitnessElems _ _).1,
-    (fixFree_lookupWitnessElems _ _).2, prefixFree_wordElems,
+variable (S) in
+/-- The permutation commitment is observed prefix-free. -/
+theorem prefixFree_permCommit (b : Bool) :
+    PrefixFree (S.permCommit b).observe := by
+  cases b with
+  | true => exact prefixFree_capCommit _ _ _ _
+  | false => exact prefixFree_of_length (fun _ _ _ ↦ rfl) fun _ _ ↦ rfl
+
+/-- The batch's layout is prefix-free. -/
+theorem layout_prefixFree :
+    (S.layout (F := F) K m).PrefixFree S.publicCoin (S.decoder K m) :=
+  ⟨prefixFree_capCommit _ _ [] _, (fixFree_lookupWitnessElems _ _).1,
+    (fixFree_lookupWitnessElems _ _).2, S.prefixFree_permCommit _,
     prefixFree_of_length S.terminalsElems_injective fun a b ↦
       (S.length_terminalsElems a).trans (S.length_terminalsElems b).symm,
     fun _ ↦ ⟨(fixFree_extWitnessElems 0).1, (fixFree_extWitnessElems 0).2,
-      prefixFree_wordElems, (fixFree_extWitnessElems _).1, (fixFree_extWitnessElems _).2,
+      prefixFree_capCommit _ _ [] _, (fixFree_extWitnessElems _).1,
+      (fixFree_extWitnessElems _).2,
       prefixFree_of_length (fun _ _ h ↦ S.openingsElems_injective (List.append_cancel_left h))
         (fun a b ↦ by
           show (pcsSeedB S ++ S.openingsElems a).length = (pcsSeedB S ++ S.openingsElems b).length
           rw [List.length_append, List.length_append, S.length_openingsElems a b]),
       fun _ ↦ ⟨(fixFree_extWitnessElems _).1, (fixFree_extWitnessElems _).2,
-        prefixFree_friObserver K m _ _⟩⟩⟩
-
-/-- Every challenge of the batch that squeezes has observations since the last squeeze, when
-`filled` holds before the trace. -/
-theorem observer_fills {filled : Prop} (hf : filled) :
-    (S.observer K m).Fills S.publicCoin (S.decoder (F := F) K m) filled := by
-  have hQ (Q : S.QuotientMessage) : wordElems Q ≠ [] := by
-    have : Nonempty ((i : Fin S.k) × ((Fin (S.instanceSetup i).chunks × Fin (Challenge.d EF)) ×
-        (S.instanceSetup i).Point)) :=
-      ⟨⟨⟨0, S.nonempty⟩, (⟨0, Nat.two_pow_pos _⟩, ⟨0, (Challenge.params EF).d_pos⟩),
-        ⟨0, Nat.two_pow_pos _⟩⟩⟩
-    exact List.ne_nil_of_length_pos (by
-      simp only [wordElems, List.length_ofFn]
-      exact Fintype.card_pos)
-  have hpcs : pcsSeedB (F := F) S ≠ [] := by
-    simp only [pcsSeedB, DomainSeparator.pcsSeed, DomainSeparator.toElems]
-    exact List.cons_ne_nil _ _
-  refine fun _ ↦ ⟨fun _ _ ↦ Or.inl (Or.inl hf), fun _ _ t ↦ ⟨fun _ _ ↦ Or.inl ?_,
-    fun _ Q ↦ ⟨fun _ _ ↦ Or.inl (Or.inr (hQ Q)),
-      fun _ _ ↦ ⟨fun _ _ ↦ Or.inl (Or.inr (List.append_ne_nil_of_left_ne_nil hpcs _)),
-        fun _ ↦ friObserver_fills K m (Nat.two_pow_pos _) _ _ _⟩⟩⟩⟩
-  by_cases hl : S.hasLookups = true
-  · exact Or.inr (S.terminalsElems_ne_nil hl t)
-  · have h0 : (S.observer (F := F) K m).2.1 = 0 := by
-      show lookupSqueezes (EF := EF) K S.hasLookups S.params.lookupPowBits = 0
-      rw [Bool.eq_false_iff.mpr hl]
-      rfl
-    refine Or.inl (Or.inl ?_)
-    split
-    · exact Or.inl (Or.inl hf)
-    · exact absurd h0 ‹_›
+        prefixFree_friLayout K m _ _ _⟩⟩⟩
 
 end CompStark.Iop.Batch.Setup
 
@@ -573,19 +582,36 @@ variable {F : Type} [BaseField F] (C : Statement F)
 abbrev PublicValues : Type :=
   {pis : Fin C.k → List F // ∀ i, (pis i).length = (C.air i).numPublicValues}
 
-/-- The statement's elements: the public values, flattened in instance order, which Plonky3
-observes after the main trace. -/
-def tail (pis : C.PublicValues) : List F := (List.ofFn pis.1).flatten
+/-- The statement's elements Plonky3's batch verifier observes before the first squeeze: the public
+values, and the preprocessed commitment's elements (`Ni.prepDigest`), none without one. -/
+abbrev Input : Type := C.PublicValues × List F
 
 variable {C} in
-theorem tail_injective : Function.Injective C.tail := fun pis pis' h ↦ by
+/-- The statement's elements as observed: the public values, flattened in instance order, then
+the preprocessed commitment's. -/
+def tail (z : C.Input) : List F := (List.ofFn z.1.1).flatten ++ z.2
+
+variable {C} in
+/-- The statement's input of public values and common data: the preprocessed commitment's
+elements. -/
+def inputOf (common : CompStark.Batch.Common F) (pis : C.PublicValues) : C.Input :=
+  (pis, prepDigest common)
+
+/-- The statement's elements are told by their observation: the public values have the lengths
+the AIRs declare. -/
+theorem tail_injective : Function.Injective (tail (C := C)) := fun z z' h ↦ by
   have hf (x : C.PublicValues) :
       (List.ofFn x.1).flatten = (List.finRange C.k).flatMap fun i ↦ id (x.1 i) := by
     rw [List.ofFn_eq_map, List.flatMap_def]
     rfl
-  simp only [tail, hf] at h
-  exact Subtype.ext (funext (eq_of_flatMap_finRange_eq (g := fun _ ↦ id)
-    (fun i ↦ by simp only [id, pis.2 i, pis'.2 i]) h))
+  have hl : ((List.ofFn z.1.1).flatten).length = ((List.ofFn z'.1.1).flatten).length := by
+    rw [hf, hf]
+    exact length_flatMap_finRange_eq (g := fun _ ↦ id) fun i ↦ by
+      simp only [id, z.1.2 i, z'.1.2 i]
+  obtain ⟨h1, h2⟩ := List.append_inj h hl
+  rw [hf, hf] at h1
+  exact Prod.ext (Subtype.ext (funext (eq_of_flatMap_finRange_eq (g := fun _ ↦ id)
+    (fun i ↦ by simp only [id, z.1.2 i, z'.1.2 i]) h1))) h2
 
 variable (EF : Type) [Challenge F EF] (K : ℕ)
 
@@ -606,10 +632,11 @@ variable (m : ℕ)
 noncomputable def decoder : Decoder (Coins F K m) (C.publicCoin EF) :=
   fun n ↦ (C.setup EF n).decoder K m
 
-/-- The observations: the batch's domain separator and the lengths the prover sends, then the
-batch's at those lengths. -/
-noncomputable def observer : Observer F (C.publicCoin EF) (C.decoder EF K m) :=
-  (fun n ↦ C.batchSeed EF ++ C.lengthElems EF n, fun n ↦ (C.setup EF n).observer K m)
+/-- The layout: the batch's domain separator and the lengths the prover sends, then the batch's
+layout at those lengths. -/
+noncomputable def layout :
+    Bcs.Layout F (merkleSpec F).QueryCache (C.publicCoin EF) (C.decoder EF K m) :=
+  (fun n ↦ C.batchSeed EF ++ C.lengthElems EF n, fun n ↦ (C.setup EF n).layout K m)
 
 /-- The draws' ratios: at each vector of lengths, the batch's. -/
 noncomputable def ratio : Errors (C.publicCoin EF) := fun node ↦ (C.setup EF node.1).ratio node.2
@@ -628,9 +655,13 @@ theorem bounded_decoder (hK : 0 < K) (publicValues : Fin C.k → List F)
 
 /-- No challenge squeezes more often than the coins hold. -/
 theorem squeezes_le (node : Prefix PUnit (C.publicCoin EF)) :
-    (C.observer EF K (C.coinCount EF K)).squeezes (C.publicCoin EF)
-      (C.decoder EF K (C.coinCount EF K)) node ≤ C.coinCount EF K :=
-  (C.setup EF node.1).observer_squeezes_le node.2
+    (C.layout EF K (C.coinCount EF K)).squeezes node ≤ C.coinCount EF K :=
+  (C.setup EF node.1).layout_squeezes_le node.2
+
+/-- Each draw reads only the layout's squeezes. -/
+theorem reads_decoder (hK : 0 < K) :
+    HashChain.Decoder.Reads (C.publicCoin EF) (C.decoder EF K m) (C.layout EF K m).squeezes :=
+  fun n ↦ (C.setup EF n).reads_decoder hK
 
 /-- The degree bits tell the admitted lengths apart: each is at most the two-adicity, below
 `p`. -/
@@ -642,21 +673,15 @@ theorem lengthElems_injective : Function.Injective (C.lengthElems EF) := fun n n
   have := (n'.2.sound i).twoAdic
   exact natCast_inj_of_lt (by omega) (by omega) ((algebraMap F 𝕂).injective hi)
 
-/-- The observations are prefix-free: the degree bits tell the admitted lengths apart. -/
-theorem observer_prefixFree :
-    (C.observer EF K m).PrefixFree (C.publicCoin EF) (C.decoder EF K m) :=
+/-- The layout is prefix-free: the degree bits tell the admitted lengths apart, on every base
+field. -/
+theorem layout_prefixFree :
+    (C.layout EF K m).PrefixFree (C.publicCoin EF) (C.decoder EF K m) :=
   ⟨prefixFree_of_length (fun _ _ h ↦ lengthElems_injective (List.append_cancel_left h))
     (fun a b ↦ by
       show (C.batchSeed EF ++ C.lengthElems EF a).length =
         (C.batchSeed EF ++ C.lengthElems EF b).length
       simp only [lengthElems, List.length_append, length_extsElems]),
-    fun n ↦ (C.setup EF n).observer_prefixFree⟩
-
-/-- Every challenge that squeezes has observations since the last squeeze. -/
-theorem observer_fills :
-    (C.observer EF K m).Fills (C.publicCoin EF) (C.decoder EF K m) False := by
-  refine fun n ↦ (C.setup EF n).observer_fills (Or.inr ?_)
-  simp only [observer, batchSeed, DomainSeparator.batchSeed, DomainSeparator.toElems]
-  exact List.append_ne_nil_of_left_ne_nil (List.cons_ne_nil _ _) _
+    fun n ↦ (C.setup EF n).layout_prefixFree⟩
 
 end CompStark.Iop.Batch.Statement
