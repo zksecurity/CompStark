@@ -47,6 +47,15 @@ Proving time on an 8-core Ryzen 7 3700X, against Plonky3 built for the native CP
 
 The Keccak-f rows are proofs from the trace in the keccak-air showcase of [Clean](https://github.com/Verified-zkEVM/clean)'s CompStark backend, which generates the trace; verifying the proof takes about 45 ms, against 11 ms for Plonky3. [docs/components.md](docs/components.md) has the configurations, the commands and per-phase breakdowns.
 
+Over KoalaBear's quintic extension, measured alongside the quartic on the same host, quiet, on 16 threads (Keccak-f proofs from a pseudorandom trace of the AIR's width, trace generation excluded on both sides):
+
+| Workload | CompStark quartic | CompStark quintic | Plonky3 quartic | Plonky3 quintic |
+|---|---|---|---|---|
+| `wide 64` AIR, $2^{16}$ rows | 0.14 s | 0.17 s | 0.11 s | 0.12 s |
+| `wide 64` AIR, $2^{18}$ rows | 0.49 s | 0.58 s | 0.44 s | 0.45 s |
+| Plonky3's Keccak-f example, $2^{16}$ rows | 1.63 s | 1.75 s | 1.90 s | 1.91 s |
+| Plonky3's Keccak-f example, $2^{18}$ rows | 6.5 s | 6.9 s | 10.9 s | 11.1 s |
+
 ## Security of your own AIR
 
 1. Build a `Statement` (or `Batch.Statement`) for your AIR and FRI parameters, at any folding arity: `⟨params, air, colsInWidth⟩`. The verifier takes the trace length from the proof, so the statement covers every length it admits (`Statement.Admits`, decided by `C.admits n`); `C.setupOf EF n h` is the setup at an admitted length `n`.

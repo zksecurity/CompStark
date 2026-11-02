@@ -95,9 +95,10 @@ def lookupBatch : List (CompStark.Batch.Instance KoalaBear.Fast.Field) ×
     [[], [0, 1, f.getD n 0], []])
 
 open CompStark CompStark.Stark CompStark.Fri in
-/-- The wall time of each phase of the fast prover on `wide 64`, `2 ^ logN` rows, blowup 2. -/
-def phases (logN : Nat) : IO UInt32 := do
-  let B := CompStark.KoalaBear.backendFor [] 1 [(logN, 1)]
+/-- `phases (quartic|quintic) LOG_N`: the wall time of each phase of the fast prover on `wide 64`,
+`2 ^ LOG_N` rows, blowup 2, over KoalaBear's quartic or quintic extension. -/
+def phases {EF : Type} [Challenge KoalaBear.Fast.Field EF] (logN : Nat)
+    (B : Backend KoalaBear.Fast.Field EF 24) : IO UInt32 := do
   let P : Params := ⟨1, 0, 1, 100, 0, 16, 0, 0, 0, 0⟩
   let A := wide 64
   let trace := wideTrace 64 (2 ^ logN)
@@ -109,7 +110,7 @@ def phases (logN : Nat) : IO UInt32 := do
   IO.println s!"trace commit {(← IO.monoMsNow) - t1} ms {((B.cap tc 0).getD 0 0)[0].val}"
   let qlog := logN + 1
   let t3 ← IO.monoMsNow
-  let alpha : _root_.KoalaBear.Fast.Ext4 := ⟨5, 7, 11, 13⟩
+  let alpha : EF := Challenge.ofCoeffs [5, 7, 11, 13]
   let qs := B.quotient A [] logN 1 lde none alpha
   let t4 ← IO.monoMsNow
   IO.println s!"quotient {t4 - t3} ms {qs.size}"
@@ -122,7 +123,7 @@ def phases (logN : Nat) : IO UInt32 := do
   let qc := B.commit chunks
   let t6 ← IO.monoMsNow
   IO.println s!"quotient commit {t6 - t5} ms {((B.cap qc 0).getD 0 0)[0].val}"
-  let zeta : _root_.KoalaBear.Fast.Ext4 := ⟨17, 19, 23, 29⟩
+  let zeta : EF := Challenge.ofCoeffs [17, 19, 23, 29]
   let rounds : List (OpenRound B) :=
     [(tc, [(lde, [zeta, zeta * zeta])]), (qc, chunks.map fun m ↦ (m, [zeta]))]
   let t6 ← IO.monoMsNow
@@ -214,30 +215,29 @@ def keccakShapedTrace (logN : Nat) : Array ByteArray :=
   tasks.map Task.get
 
 open CompStark CompStark.Stark CompStark.Fri in
-/-- `keccak-phases LOG_N`: the wall time of each phase of a proof of Plonky3's Keccak AIR on
-`keccakShapedTrace LOG_N`, at Plonky3's example configuration (blowup 2, arity up to 8, 87
-queries, caps of height 3), twice. -/
-def keccakPhases (logN : Nat) : IO UInt32 := do
+/-- `keccak-phases (quartic|quintic) LOG_N`: the wall time of each phase of a proof of Plonky3's
+Keccak AIR on `keccakShapedTrace LOG_N` over KoalaBear's quartic or quintic extension, at
+Plonky3's example configuration (blowup 2, arity up to 8, 87 queries, caps of height 3), twice. -/
+def keccakPhases {EF : Type} [Challenge KoalaBear.Fast.Field EF] (logN : Nat)
+    (B : Backend KoalaBear.Fast.Field EF 24) (trace : Array ByteArray → B.Trace) : IO UInt32 := do
   let A : Air KoalaBear.Fast.Field := CompStark.Fixtures.Keccak.air
   let w := CompStark.Fixtures.Keccak.width
   let P : Params := ⟨1, 0, 3, 87, 0, 16, 10, 0, 0, 3⟩
   let logChunks := A.logQuotientChunks logN
-  let B := CompStark.KoalaBear.backendFor [CompStark.Fixtures.KeccakKernel.kernel] 1
-    [(logN, logChunks)]
   let chunks := keccakShapedTrace logN
   for k in [0:2] do
-    let lde ← timed "trace lde" (fun _ ↦ B.ldeTrace logN 1 gen w (chunks.modify 0
-      (write · 0 k.toUInt32))) fun e ↦ s!"{e.height}"
+    let lde ← timed "trace lde" (fun _ ↦ B.ldeTrace logN 1 gen w (trace (chunks.modify 0
+      (write · 0 k.toUInt32)))) fun _ ↦ ""
     let tc ← timed "trace commit" (fun _ ↦ B.commit [lde])
       fun c ↦ s!"{((B.cap c 0).getD 0 0)[0].val}"
-    let alpha : _root_.KoalaBear.Fast.Ext4 := ⟨5, 7, 11, k⟩
+    let alpha : EF := Challenge.ofCoeffs [5, 7, 11, (k : KoalaBear.Fast.Field)]
     let q ← timed "quotient" (fun _ ↦ B.quotient A [] logN logChunks lde none alpha)
       fun q ↦ s!"{q.size}"
     let qms ← timed "quotient chunks lde" (fun _ ↦ chunksOf B P logN logChunks q)
       fun c ↦ s!"{c.length}"
     let qc ← timed "quotient commit" (fun _ ↦ B.commit qms)
       fun c ↦ s!"{((B.cap c 0).getD 0 0)[0].val}"
-    let zeta : _root_.KoalaBear.Fast.Ext4 := ⟨17, 19, 23, k⟩
+    let zeta : EF := Challenge.ofCoeffs [17, 19, 23, (k : KoalaBear.Fast.Field)]
     let rounds : List (OpenRound B) :=
       [(tc, [(lde, [zeta, zeta * Ext.ofBase (twoAdicGen logN)])]),
         (qc, qms.map fun m ↦ (m, [zeta]))]
@@ -253,7 +253,7 @@ def keccakPhases (logN : Nat) : IO UInt32 := do
       B.transcript) fun cp ↦ s!"{cp.1.commits.size}"
     let _ ← timed "openPcs" (fun _ ↦ (openPcs B P rounds).run B.transcript)
       fun r ↦ s!"{r.1.2.folds.size}"
-    let _ ← timed "whole proof" (fun _ ↦ proveWith B P A logN chunks []) fun pf ↦
+    let _ ← timed "whole proof" (fun _ ↦ proveWith B P A logN (trace chunks) []) fun pf ↦
       s!"{pf.oodWitness.val}"
   return 0
 
@@ -506,7 +506,10 @@ def main (args : List String) : IO UInt32 := do
     let m := (samples.qsort (· < ·))[7]!
     IO.println s!"perm24 ns/perm median {m / 10}.{m % 10}"
     return 0
-  | ["phases", logN] => phases logN.toNat!
+  | ["phases", "quartic", logN] =>
+    phases logN.toNat! (CompStark.KoalaBear.backendFor [] 1 [(logN.toNat!, 1)])
+  | ["phases", "quintic", logN] =>
+    phases logN.toNat! (CompStark.KoalaBear.backendForQuintic [] 1 [(logN.toNat!, 1)])
   | ["keccak-lde", logN] =>
     -- The extension of `keccakShapedTrace` from packed words, five times.
     let logN := logN.toNat!
@@ -518,7 +521,12 @@ def main (args : List String) : IO UInt32 := do
       let _ ← timed "coset lde columns" (fun _ ↦ CompStark.Stark.Fast.ldeColumns P w
         (trace.modify 0 (write · 0 k.toUInt32))) (s!"{·.size} columns")
     return 0
-  | ["keccak-phases", logN] => keccakPhases logN.toNat!
+  | ["keccak-phases", "quartic", logN] =>
+    keccakPhases logN.toNat! (CompStark.KoalaBear.backendFor
+      [CompStark.Fixtures.KeccakKernel.kernel] 1 (keccakShapes logN.toNat!)) id
+  | ["keccak-phases", "quintic", logN] =>
+    keccakPhases logN.toNat! (CompStark.KoalaBear.backendForQuintic
+      [CompStark.Fixtures.KeccakKernel.kernel] 1 (keccakShapes logN.toNat!)) id
   | ["keccak-prove", "quartic", logN] =>
     keccakProve "quartic" logN.toNat! (CompStark.KoalaBear.backendFor
       [CompStark.Fixtures.KeccakKernel.kernel] 1 (keccakShapes logN.toNat!)) id
