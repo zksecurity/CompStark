@@ -30,7 +30,7 @@ A `Prover` is the prover's words and messages as functions of the challenges bef
 extended trace, the quotient's chunks after `α`, and the claimed values at `ζ` (`Openings`) after
 `ζ`. The verifier checks the constraints at `ζ` (`ConstraintsHoldAt`) and runs FRI on the batched
 DEEP word `∑ᵢ aⁱ (yᵢ - fᵢ(x)) / (zᵢ - x)` over the opened words `fᵢ`, points `zᵢ` and values `yᵢ`
-(`openedWords`, `deepWord`), along Plonky3's schedule (`Setup.friRounds`). The extractor
+(`openedWords`, `deepWord`), along Plonky3's schedule (`Setup.friSchedule`). The extractor
 list-decodes the committed trace: `closeTraces` are the traces whose columns are polynomials of
 degree at most `2 ^ logN` close to the prover's trace words.
 -/
@@ -266,13 +266,14 @@ noncomputable def deepWord {S : Setup EF lookups} (p : Prover S) (α ζ a : 𝕂
   ((openedWords p α ζ).zipIdx.map fun ((f, z, y), k) ↦
     a ^ k * (y - algebraMap F 𝕂 (f i)) / (z - S.domain i)).sum
 
-/-- FRI's rounds on `L`: Plonky3's folding schedule from `L` down to the final polynomial's
-domain of `2 ^ (logFinalPolyLen + logBlowup)` points, injecting the word `words m` of the domain
-of `2 ^ m` points at each log size `m` of `heights` (tallest first) when the folds reach it. -/
-noncomputable def Setup.friRounds (S : Setup EF lookups) (words : (m : ℕ) → Fin (2 ^ m) → 𝕂)
-    (heights : List ℕ) : FriRounds.Rounds 𝕂 (S.logN + S.params.logBlowup) :=
-  FriRounds.Rounds.schedule S.params.maxLogArity (S.params.logFinalPolyLen + S.params.logBlowup)
-    words (S.logN + S.params.logBlowup) (S.logN + S.params.logBlowup) heights
+/-- FRI's schedule on `L`: Plonky3's, from `L` down to the final polynomial's domain of
+`2 ^ (logFinalPolyLen + logBlowup)` points, injecting the word of the domain of `2 ^ m` points at
+each log size `m` of `heights` (tallest first) when the folds reach it. -/
+def Setup.friSchedule (S : Setup EF lookups) (heights : List ℕ) :
+    Fri.Interaction.Schedule (S.logN + S.params.logBlowup) :=
+  Fri.Interaction.Schedule.plonky3 S.params.maxLogArity
+    (S.params.logFinalPolyLen + S.params.logBlowup) (S.logN + S.params.logBlowup)
+    (S.logN + S.params.logBlowup) heights
 
 /-! ### The extractor: list decoding -/
 

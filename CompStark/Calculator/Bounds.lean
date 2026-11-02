@@ -32,9 +32,9 @@ unique-decoding radius, `⌊(1 - δ' - ρ) / ((1 - δ')² - ρ)⌋` above, the J
 * batching `m` words: `B`'s count for curves of degree `m - 1` on `N` points over `K`, or for
   `δ < δ'` and `δ ≤ (1 - ρ) / 2 - 1/N` the curve bound `(m - 1) max(T₁, T₂) / K`,
   `T₁ = (1 - ρ - δ) / (δ (1 - ρ - 2δ))`, `T₂ = δ' / (δ' - δ)`, if smaller;
-* FRI's folds, Plonky3's schedule as a plan of folds (`FriRounds.Rounds.plan`): a fold by `2 ^ k`
-  onto `2 ^ m` points batching `M = 2 ^ k - 1` words (one more if it injects an input) costs `B`'s
-  count for curves of degree `M` on `2 ^ m` points over `K`, or if smaller and
+* FRI's folds, Plonky3's schedule as a list of folds (`Fri.Interaction.Schedule.folds`): a fold by
+  `2 ^ k` onto `2 ^ m` points batching `M = 2 ^ k - 1` words (one more if it injects an input)
+  costs `B`'s count for curves of degree `M` on `2 ^ m` points over `K`, or if smaller and
   `δ ≤ (1 - ρ) / 2 - 2 ^ (-m)` the lossy bound `M max(T₁, δ_int / loss) / K`, `δ_int = δ + loss`;
 * FRI's queries: `(1 - δ + #folds · loss) ^ numQueries`;
 * a batch's lookup challenges: `ℓᵏ (T + (T - 1) W) / K` for `k` instances.
@@ -76,7 +76,7 @@ variable (A : Analysis)
 def curveT₁ (ρ : ℚ) : ℚ := (1 - ρ - A.δ) / (A.δ * (1 - ρ - 2 * A.δ))
 
 /-- The lossy bound of one fold at rate `ρ`, `max(T₁, T₂, δ_int / loss)` with
-`δ_int = δ + loss` (`LossyMca.lossyBound`). -/
+`δ_int = δ + loss` (ArkLib's `CodingTheory.UniqueDecoding.lossyBound`). -/
 def lossyBound (ρ : ℚ) : ℚ :=
   max (max (A.curveT₁ ρ) ((A.δ + A.loss) / (A.δ + A.loss - A.δ))) ((A.δ + A.loss) / A.loss)
 
@@ -84,7 +84,7 @@ def lossyBound (ρ : ℚ) : ℚ :=
 words besides the first, the MCA bound `B`'s count for the code of degree below `2 ^ (m - lb)`, or
 the lossy bound `M max(T₁, T₂, δ_int / loss)` if smaller and `δ ≤ (1 - ρ) / 2 - 2 ^ (-m)`. -/
 def levelBound (B : McaBound) (lb : ℕ) (f : ℕ × ℕ × Bool) : ℚ :=
-  let M := FriRounds.Rounds.foldWords f
+  let M := Fri.Interaction.Schedule.foldWords f
   let count := B.count (2 ^ f.2.1) (2 ^ (f.2.1 - lb)) M A.δ
   if A.δ ≤ (1 - 1 / 2 ^ lb) / 2 - 1 / 2 ^ f.2.1 then
     min ((M : ℚ) * A.lossyBound (1 / 2 ^ lb)) count
@@ -176,10 +176,8 @@ def rateQ : ℚ := 1 / 2 ^ S.params.logBlowup
 def shape : Shape := ⟨S.numConstraints, S.identityDegree, S.numOpened, !lookups.isEmpty, S.logN⟩
 
 /-- The folds of FRI on `L`, with inputs injected at the log sizes `heights`, as data
-(`FriRounds.Rounds.plan`, `Setup.friRounds`). -/
-def friPlan (heights : List ℕ) : List (ℕ × ℕ × Bool) :=
-  FriRounds.Rounds.plan S.params.maxLogArity (S.params.logFinalPolyLen + S.params.logBlowup)
-    (S.logN + S.params.logBlowup) (S.logN + S.params.logBlowup) heights
+(`Setup.friSchedule`). -/
+def friPlan (heights : List ℕ) : List (ℕ × ℕ × Bool) := (S.friSchedule heights).folds
 
 /-- The analysis fits `S` with the MCA bound `B`: it is valid at `S`'s rate, and `B` admits
 batching and FRI's folds. -/
@@ -498,9 +496,9 @@ opened words of the instances there, at most those of every instance admitting t
 (`batchingOn`); LogUp's numbers `T + (T - 1) W`, affine in the interactions `T`, a share
 `(1 + W) 2 ^ m tᵢ` per instance; and FRI's plan from the tallest domain with the shorter ones
 injected. Up to an input at the height `x`, the plan is the plan without it down to at most
-`maxLogArity` above `x` (`FriRounds.Rounds.plan_cons_split`), so the input adds at most
-`injectNum x` to the folds' bound, `injectFolds x` folds, and `injectMax x` as its largest fold; at FRI arity
-`2` these are what it adds.
+`maxLogArity` above `x` (`Fri.Interaction.Schedule.folds_plonky3_cons_split`), so the input adds
+at most `injectNum x` to the folds' bound, `injectFolds x` folds, and `injectMax x` as its largest
+fold; at FRI arity `2` these are what it adds.
 
 The round error is the largest of its terms, so its largest over the vectors is each term's
 largest (`roundErrorTerms`): LogUp with every instance at its longest admitted length, constraint
@@ -602,8 +600,8 @@ def foldHeights : List ℕ :=
   List.range' (C.params.logFinalPolyLen + C.params.logBlowup)
     (twoAdicity F - (C.params.logFinalPolyLen + C.params.logBlowup))
 
-/-- The folds FRI can make onto `2 ^ m` points, as data (`FriRounds.Rounds.plan`): by `1` to
-`maxLogArity` bits, injecting an input or not. -/
+/-- The folds FRI can make onto `2 ^ m` points, as data (`Fri.Interaction.Schedule.folds`): by `1`
+to `maxLogArity` bits, injecting an input or not. -/
 def foldsOnto (m : ℕ) : List (ℕ × ℕ × Bool) :=
   (List.range' 1 C.params.maxLogArity).flatMap fun la ↦ [(la, m, false), (la, m, true)]
 
@@ -613,18 +611,19 @@ def foldPlans : List (ℕ × ℕ × Bool) := C.foldHeights.flatMap C.foldsOnto
 section Fri
 variable (B : McaBound) (A : Analysis)
 
-/-- FRI's plan from the height `a` with inputs at `heights`, as data (`FriRounds.Rounds.plan`). -/
+/-- FRI's plan from the height `a` with inputs at `heights`, as data
+(`Fri.Interaction.Schedule.folds`). -/
 def planFrom (a : ℕ) (heights : List ℕ) : List (ℕ × ℕ × Bool) :=
-  FriRounds.Rounds.plan C.params.maxLogArity (C.params.logFinalPolyLen + C.params.logBlowup) a a
-    heights
+  (Fri.Interaction.Schedule.plonky3 C.params.maxLogArity
+    (C.params.logFinalPolyLen + C.params.logBlowup) a a heights).folds
 
 /-- FRI's folds from the height `a` without inputs, times `|𝕂|`. -/
 def plainNum (a : ℕ) : ℚ := ((C.planFrom a []).map (A.levelBound B C.params.logBlowup)).sum
 
 /-- What an input at the height `x` adds to FRI's folds at most, times `|𝕂|`. The plan up to `x`
 is the plan without it down to `x + la`, `1 ≤ la ≤ maxLogArity`, then a fold by `la` bits onto
-`x` (`FriRounds.Rounds.plan_cons_split`); at `la = maxLogArity` the plan without it folds onto `x`
-too, without the input. -/
+`x` (`Fri.Interaction.Schedule.folds_plonky3_cons_split`); at `la = maxLogArity` the plan without
+it folds onto `x` too, without the input. -/
 def injectNum (x : ℕ) : ℚ :=
   let r := C.params.maxLogArity
   let lb := C.params.logBlowup

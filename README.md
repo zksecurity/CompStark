@@ -42,10 +42,10 @@ Proving time on an 8-core Ryzen 7 3700X, against Plonky3 built for the native CP
 | `wide 64` AIR (64 columns, degree 3), $2^{16}$ rows, blowup 2, 100 queries | 0.33 s / 1.32 s | 0.35 s / 1.96 s |
 | `wide 64` AIR, $2^{18}$ rows | 1.14 s / 4.8 s | 1.20 s / 7.9 s |
 | Batch of three `wide 64` tables, $2^{20}$, $2^{19}$ and $2^{16}$ rows | 6.0 s / 26.7 s | 6.3 s / 42.0 s |
-| Plonky3's Keccak-f example, $2^{16}$ rows | 1.96 s | 1.82 s |
-| Plonky3's Keccak-f example, $2^{18}$ rows | 8.2 s | 10.9 s |
+| Plonky3's Keccak-f example, $2^{16}$ rows | 1.90 s / 12.2 s | 1.85 s / 7.9 s |
+| Plonky3's Keccak-f example, $2^{18}$ rows | 6.5 s / 50.0 s | 11.2 s / 33.6 s |
 
-Verifying the Keccak proof takes about 50 ms, against 11 ms for Plonky3. [docs/components.md](docs/components.md) has the configurations, the commands and per-phase breakdowns.
+The Keccak-f rows are proofs from the trace in the keccak-air showcase of [Clean](https://github.com/Verified-zkEVM/clean)'s CompStark backend, which generates the trace; verifying the proof takes about 45 ms, against 11 ms for Plonky3. [docs/components.md](docs/components.md) has the configurations, the commands and per-phase breakdowns.
 
 ## Security of your own AIR
 

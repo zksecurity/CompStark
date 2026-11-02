@@ -5,7 +5,7 @@ Released under Apache 2.0 license as described in the file LICENSE.
 module
 
 public import CompStark.Sound.Steps
-public import CompStark.Sound.CurveCA
+public import ArkLib.Data.CodingTheory.ProximityGap.CapacityBounds.UniqueDecoding.Curves
 
 /-! # The batching step
 
@@ -24,14 +24,15 @@ family `ws`, whose uniform probability is the event's density, and at most the s
 The error only decreases as the radius `δ'` of the common set grows (`batchingError_anti`).
 
 `batchingError_le_curve` bounds the error with proximity loss `δ < δ'` in the unique-decoding range
-by correlated agreement for curves (`CompStark/Sound/CurveCA.lean`): `(m - 1) · max(T₁, T₂) / |𝕂|`.
+by correlated agreement for curves (ArkLib's `CodingTheory.UniqueDecoding.card_goodCoeffs_le`):
+`(m - 1) · max(T₁, T₂) / |𝕂|`.
 A combination `δ`-near the code is within relative distance `δ` of it, and words jointly `δ'`-close
 to the code are near it on a common set.
 -/
 
 @[expose] public section
 namespace CompStark.Sound
-open CompStark.Stark CompStark.Iop CoreDefinitions LinearCode
+open CompStark.Stark CompStark.Iop CoreDefinitions LinearCode CodingTheory.UniqueDecoding Curve
 
 variable {F : Type} [BaseField F] {EF : Type} [Challenge F EF]
 variable {lookups : List (Lookup F)}
@@ -184,30 +185,30 @@ theorem batchingError_le_curve (S : Setup EF lookups) (m : Nat) (δ : NNReal) (�
         Nat.cast_zero, zero_le]
     let dom : S.Point ↪ 𝕂 := ⟨fun i ↦ S.domain i, (S.domain).injective⟩
     have hpq : ∀ a : 𝕂, Near S δ (fun i ↦ ∑ k : Fin (M + 1), a ^ (k : Nat) * ws k i) →
-        δᵣ(CurveCA.curveWord ws a, ReedSolomon.code dom S.n) ≤ δ := fun a hn => by
+        δᵣ(polynomialCurveEval ws a, ReedSolomon.code dom S.n) ≤ δ := fun a hn => by
       have hw : (fun i ↦ ∑ k : Fin (M + 1), a ^ (k : Nat) * ws k i) =
-          CurveCA.curveWord ws a := funext fun i => (CurveCA.curveWord_apply ws a i).symm
+          polynomialCurveEval ws a := funext fun i => (polynomialCurveEval_apply ws a i).symm
       rw [hw] at hn
       exact relDist_le_of_near S δ _ hn
     have hsub : (Finset.univ.filter fun a : 𝕂 ↦
         Near S δ (fun i ↦ ∑ k : Fin (M + 1), a ^ (k : Nat) * ws k i) ∧
-        ¬ NearTogether S δ' ws) ⊆ CurveCA.goodCoeffs dom S.n ws δ :=
+        ¬ NearTogether S δ' ws) ⊆ goodCoeffs dom S.n ws δ :=
 by
       intro a ha
       rw [Finset.mem_filter_univ] at ha
-      unfold CurveCA.goodCoeffs
+      unfold goodCoeffs
       rw [Finset.mem_filter_univ]
       exact hpq a ha.1
     have hcard : (Fintype.card S.Point : ℝ) = S.size := by
       rw [Fintype.card_fin]
-    have hbound := CurveCA.card_goodCoeffs_le dom S.n M ws δ δ'
+    have hbound := card_goodCoeffs_le dom S.n M ws δ δ'
       (by rw [hcard]; exact h_ud) h_pos h_lt
       (fun hj => hnt (nearTogether_of_jointProximity S δ' ws hj))
     rw [hcard] at hbound
     rw [Nat.add_sub_cancel]
-    calc _ ≤ ((CurveCA.goodCoeffs dom S.n ws δ).card : ENNReal) :=
+    calc _ ≤ ((goodCoeffs dom S.n ws δ).card : ENNReal) :=
           Nat.cast_le.mpr (Finset.card_le_card hsub)
-      _ = ENNReal.ofReal ((CurveCA.goodCoeffs dom S.n ws δ).card : ℝ) :=
+      _ = ENNReal.ofReal ((goodCoeffs dom S.n ws δ).card : ℝ) :=
           (ENNReal.ofReal_natCast _).symm
       _ ≤ _ := ENNReal.ofReal_le_ofReal hbound
 

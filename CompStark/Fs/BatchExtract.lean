@@ -5,7 +5,8 @@ Released under Apache 2.0 license as described in the file LICENSE.
 module
 
 public import CompStark.Fs.BatchCheck
-public import CompStark.Fs.FriInjected
+public import CompStark.Fs.MixedAccept
+public import CompStark.Fs.FriBinding
 public import CompStark.Fs.BatchAccept
 public import CompStark.Fs.StarkChallenges
 public import CompStark.Sound.BatchRbr
@@ -17,20 +18,15 @@ challenges and whose Merkle hashes are answered from a cache of hash queries. Th
 transcript is read off the proof and the cache (`extractB`): every instance's trace and quotient
 words are the columns extracted under the main and quotient commitments, at the instance's offset
 among the matrices of its height (`Merkle.matColumn`, laid out by `Setup.mainHeights`,
-`quotHeights` and the widths), FRI's words are extracted under the commit-phase commitments, the
-opened values and final polynomial are the proof's, and the challenges are those the challenger
-returns (`friStartB`, `commitReplayB`, `powSampleOfB`, `querySampleOfB`).
+`quotHeights` and the widths), the opened values and final polynomial are the proof's, and the
+challenges are those the challenger returns (`friStartB`, `commitReplayB`, `powSampleOfB`).
 
 A query's accepted opening of each round, if it binds, opens the extracted columns (`main_rows`,
-`quot_rows`, `prep_rows`), so its reduced openings are the batched DEEP words at its point
-(`reducedAt_eq_groupDeepWord`), and FRI's checks on them are the run's (`query_run`).
+`quot_rows`, `prep_rows`).
 
-`bcsB`: if the verifier accepts a proof whose commitments bind the rows extracted from the cache,
-and under whose preprocessed commitment the cache holds the preprocessed traces' extensions, the
-extracted transcript passes the batch's deterministic checks: every instance's constraints hold
-at `ζ`, the final polynomial has low degree, the query grinding sample has its vanishing bits, and
-every query lands where FRI's checks pass and FRI's first word agrees with the tallest batched DEEP
-word.
+`bcsB`: if the verifier accepts a proof, the extracted transcript passes the batch's deterministic
+checks: every instance's constraints hold
+at `ζ`, the final polynomial has low degree, and the query grinding sample has its vanishing bits.
 -/
 
 @[expose] public section
@@ -807,9 +803,8 @@ def permRoot (proof : CompStark.Batch.BatchProof F EF) : Cap F :=
   proof.permutationCommit.getD #[]
 
 /-- The batch IOP's transcript extracted from an accepted proof: every instance's trace,
-permutation trace and quotient words and FRI's words from `cache`, the opened values, terminals
-and final polynomial from the proof, and the challenges of the run on `H`. ArkLib folds at `s β`
-where Plonky3 folds at `β`, `s` the shift of the folded domain. -/
+permutation trace and quotient words from `cache`, the opened values, terminals and final
+polynomial from the proof, and the challenges of the run on `H`. -/
 noncomputable def extractB [BaseField F] [Challenge F EF] (S : Iop.Batch.Setup EF)
     (cache : MixedMerkleTree.Cache (List F) (Digest F)) (H : Primitives F Id)
     (common : CompStark.Batch.Common F)
@@ -831,13 +826,7 @@ noncomputable def extractB [BaseField F] [Challenge F EF] (S : Iop.Batch.Setup E
   openings i := openingsOf (S.instanceSetup i) (proof.opened.toList.getD i noOpenings)
     (proof.permutationLocal.getD i #[]) (proof.permutationNext.getD i #[])
   batch := Challenge.toSpec (batchOfB H S.params S.instances common proof pis)
-  words j m z := if j < S.friArities.length then
-      friWordAt cache (proof.fri.commits.toList.getD j #[]) S.params.capHeight m
-        (S.friArities.getD j 0) z.val
-    else 0
   finalPoly := finalPoly S.domainSetup proof.fri.finalPoly
-  betas j := lift gen ^ 2 ^ (S.friArities.take j).sum *
-    Challenge.toSpec ((commitReplayB H S common proof pis).1.getD j 0)
 
 /-! ### BCS consistency -/
 
@@ -963,27 +952,13 @@ theorem permShapes (S : Iop.Batch.Setup EF) (proof : CompStark.Batch.BatchProof 
   exact ⟨h.1.1.trans hw, h.1.2.trans hw, h.2⟩
 
 /-- **BCS consistency of the batch STARK.** If the batch verifier on pure primitives `H` accepts
-a proof whose commitments bind the rows extracted from `cache`, and under whose preprocessed
-commitment `cache` holds the preprocessed traces' extensions, the extracted transcript passes the
-batch's deterministic checks, with the run's grinding and query samples: the constraints at `ζ`,
-the final polynomial's degree, the query grinding and FRI's query checks. -/
+a proof, the transcript extracted from `cache` passes the batch's deterministic checks, with the
+run's grinding sample: the constraints at `ζ`, the final polynomial's degree and the query
+grinding. -/
 theorem bcsB (S : Iop.Batch.Setup EF) (cache : MixedMerkleTree.Cache (List F) (Digest F))
     (H : Primitives F Id)
     (common : CompStark.Batch.Common F) (proof : CompStark.Batch.BatchProof F EF)
     (publicValues : Fin S.k → List F)
-    (hmain : CapBindingM cache H proof.mainCommit S.params.capHeight S.logTop S.mainHeights)
-    (hquot : CapBindingM cache H proof.quotientCommit S.params.capHeight S.logTop (quotHeights S))
-    (hfri : ∀ c ∈ proof.fri.commits, CapBinding cache H c)
-    (hprepBind : ∀ root ∈ common.preprocessed,
-      CapBindingM cache H root S.params.capHeight (prepLog S) (prepHeights S))
-    (hprep : ∀ root ∈ common.preprocessed, ∀ i : Fin S.k, 0 < (S.air i).preprocessedWidth →
-      ∀ j < (S.air i).preprocessedWidth, ∀ r < 2 ^ (S.logN i + S.params.logBlowup),
-        Merkle.matColumnCap cache root.toList S.params.capHeight (prepLog S) (prepHeights S)
-          (prepWidths S) (prepIndex S i) j (S.logN i + S.params.logBlowup) r =
-        (S.instanceSetup i).preprocessedWord j
-          (finMod _ (reverseBits r (S.logN i + S.params.logBlowup))))
-    (hpermBind : ∀ root ∈ proof.permutationCommit,
-      CapBindingM cache H root S.params.capHeight (permLog S) (permHeights S))
     (h : CompStark.Batch.verifyInstancesWith H S.params S.instances common proof
       (List.ofFn publicValues) = .ok ()) :
     let t := extractB S cache H common proof (List.ofFn publicValues)
@@ -992,9 +967,7 @@ theorem bcsB (S : Iop.Batch.Setup EF) (cache : MixedMerkleTree.Cache (List F) (D
       (S.challenges t.lookupAlpha t.lookupBeta i) (t.terminal i)) ∧
       t.finalPoly.natDegree < 2 ^ S.params.logFinalPolyLen ∧
       CompPoly.CanonicalNat.toNat (powSampleOfB H S common proof (List.ofFn publicValues)) %
-        2 ^ S.params.queryPowBits = 0 ∧
-      ∀ j : Fin S.params.numQueries, queryPoint S.domainSetup
-        (querySampleOfB H S common proof (List.ofFn publicValues) j) ∈ t.consistentQueries := by
+        2 ^ S.params.queryPowBits = 0 := by
   intro t
   set pis := List.ofFn publicValues with hpis
   obtain ⟨hsize, -, hlsize, hnsize, htsize, -, -, hshapeZ, hprepS, hlk, -, -, -, -,
@@ -1017,7 +990,7 @@ theorem bcsB (S : Iop.Batch.Setup EF) (cache : MixedMerkleTree.Cache (List F) (D
   dsimp only at hok
   rw [hD, List.headD_cons] at hok
   obtain ⟨-, -, -, hK, hfolds, hcs, -, hfp, hw, hcrlen, hq⟩ := hok
-  refine ⟨?_, fun i ↦ ?_, ?_, ?_, fun j ↦ ?_⟩
+  refine ⟨?_, fun i ↦ ?_, ?_, ?_⟩
   · show (∑ i with S.lookups i ≠ [],
       Challenge.toSpec ((proof.lookupTerminals.getD i none).getD 0)) = 0
     have h1 := sum_terminals_toSpec S proof.lookupTerminals.toList
@@ -1046,258 +1019,6 @@ theorem bcsB (S : Iop.Batch.Setup EF) (cache : MixedMerkleTree.Cache (List F) (D
     · rename_i h0
       simp only [chkWit, h0, ↓reduceIte, beq_iff_eq] at hw
       exact hw
-  set rounds := CompStark.Batch.batchRounds S.instances common proof zeta with hrounds
-  set alpha := batchOfB H S.params S.instances common proof pis with halpha
-  set index := (smpBits H S.logTop (sampleStates H (chkWit H S.params.queryPowBits
-    proof.fri.queryWitness (queryStateB H S common proof pis)).2 j.val)).1 with hindex
-  have hqj : QueryOkR H S.params S.logTop alpha rounds (commitReplayB H S common proof pis).1
-      proof.fri.commits.toList S.friArities proof.fri.folds.toList proof.fri.inputs.toList
-      proof.fri.finalPoly j index := hq j.val j.isLt
-  have hidx : index < 2 ^ S.logTop := Nat.mod_lt _ (Nat.two_pow_pos _)
-  have hpt : queryPoint S.domainSetup (querySampleOfB H S common proof pis j) =
-      finMod S.logTop (reverseBits index S.logTop) := by
-    apply Fin.ext
-    simp only [queryPoint, finMod, Nat.mod_eq_of_lt (reverseBits_lt _ _), hindex, smpBits,
-      querySampleOfB]
-  unfold QueryOkR at hqj
-  dsimp only at hqj
-  rw [hD, List.tail_cons] at hqj
-  obtain ⟨hrl, hbok, hsteps, hfin, hnil, hfinal⟩ := hqj
-  set rows := proof.fri.inputs.toList.map fun b ↦ (b.values.getD j.val #[]).toList with hrows
-  obtain ⟨rM, rQ, rP, rR, hrs⟩ : ∃ rM rQ rP rR, rows = [rM, rQ] ++
-      (match common.preprocessed with | some _ => [rP] | none => []) ++
-      (match proof.permutationCommit with | some _ => [rR] | none => []) := by
-    have hl := hrl
-    rw [hrounds, batchRounds_cases, prepRounds, permRounds] at hl
-    cases hc : common.preprocessed with
-    | none =>
-      cases hp : proof.permutationCommit with
-      | none =>
-        simp only [hc, hp, List.append_nil, List.length_cons, List.length_nil] at hl
-        exact ⟨_, _, [], [], List.eq_getElem_of_length_eq_two rows hl⟩
-      | some r =>
-        simp only [hc, hp, List.append_nil, List.cons_append, List.nil_append, List.length_cons,
-          List.length_nil] at hl
-        exact ⟨_, _, [], _, List.eq_getElem_of_length_eq_three rows hl⟩
-    | some root =>
-      cases hp : proof.permutationCommit with
-      | none =>
-        simp only [hc, hp, List.append_nil, List.cons_append, List.nil_append, List.length_cons,
-          List.length_nil] at hl
-        exact ⟨_, _, _, [], List.eq_getElem_of_length_eq_three rows hl⟩
-      | some r =>
-        simp only [hc, hp, List.cons_append, List.nil_append, List.length_cons,
-          List.length_nil] at hl
-        obtain ⟨a, b, c, d, hr⟩ : ∃ a b c d, rows = [a, b, c, d] := by
-          match rows, hl with
-          | [a, b, c, d], _ => exact ⟨a, b, c, d, rfl⟩
-        exact ⟨a, b, c, d, hr⟩
-  have hzip : rows.zip rounds = [(rM, proof.mainCommit, mainMats S proof zeta),
-      (rQ, proof.quotientCommit, quotMats S proof zeta)] ++
-      (match common.preprocessed with | some _ => [rP] | none => []).zip
-        (prepRounds S proof zeta common) ++
-      (match proof.permutationCommit with | some _ => [rR] | none => []).zip
-        (permRounds S proof zeta) := by
-    rw [hrs, hrounds, batchRounds_cases, List.zip_append (by
-      rw [prepRounds]; cases common.preprocessed <;> rfl),
-      List.zip_append (by simp only [List.length_cons, List.length_nil])]
-    rfl
-  have hbM : BatchOkR H S.params S.logTop index (rM, proof.mainCommit, mainMats S proof zeta) :=
-    hbok _ (by rw [hzip]; exact List.mem_append_left _ (List.mem_append_left _
-      List.mem_cons_self))
-  have hbQ : BatchOkR H S.params S.logTop index (rQ, proof.quotientCommit, quotMats S proof zeta) :=
-    hbok _ (by rw [hzip]; exact List.mem_append_left _ (List.mem_append_left _
-      (List.mem_cons_of_mem _ List.mem_cons_self)))
-  have hbP : ∀ root, common.preprocessed = some root →
-      BatchOkR H S.params S.logTop index (rP, root, prepMats S proof zeta) := by
-    intro root hc
-    refine hbok _ ?_
-    rw [hzip]
-    refine List.mem_append_left _ (List.mem_append_right _ ?_)
-    simp only [prepRounds, hc, List.zip_cons_cons, List.zip_nil_left, List.mem_singleton]
-  have hbR : ∀ root, proof.permutationCommit = some root →
-      BatchOkR H S.params S.logTop index (rR, root, permMats S proof zeta) := by
-    intro root hc
-    refine hbok _ ?_
-    rw [hzip]
-    refine List.mem_append_right _ ?_
-    simp only [permRounds, hc, List.zip_cons_cons, List.zip_nil_left, List.mem_singleton]
-  have hdeep : ∀ m, Challenge.toSpec (reducedAt S.params S.logTop index alpha
-      (queryMats (rows.zip rounds)) m).2 =
-        t.deepWords m (finMod m (reverseBits (index >>> (S.logTop - m)) m)) := by
-    intro m
-    rw [hrs, hrounds]
-    refine reducedAt_eq_groupDeepWord S t.prover t.lookupAlpha t.lookupBeta t.alpha t.zeta proof
-      zeta S.logTop index m rfl (fun i ↦ rfl) hsize hshape hlsize hnsize
-      (fun i ↦ ⟨(hpw i).1, (hpw i).2.1⟩) common hprepS hperm rM rQ rP rR (fun x hx ↦ ?_)
-      (fun i j hj ↦ ?_) (fun i c e he ↦ ?_) (fun i hp j hj ↦ ?_) (fun i hl c hcw e he ↦ ?_) alpha
-    · have hx' : x ∈ rows.zip rounds := by rw [hrs, hrounds]; exact hx
-      obtain ⟨-, -, -, -, h3, h4⟩ := hbok x hx'
-      exact ⟨h3, h4⟩
-    · rw [main_rows H S cache proof zeta hsize (fun i ↦ (hsh i).1) index rM hbM hmain i j hj]
-      show _ = Merkle.matColumnCap cache proof.mainCommit.toList S.params.capHeight S.logTop
-        S.mainHeights S.mainWidths i j _ (reverseBits (instPoint S S.logTop index i).val _)
-      rw [reverseBits_instPoint S index hidx i]
-    · rw [quot_rows H S cache proof zeta hsize (fun i ↦ ⟨(hsh i).2.2.1.trans
-        (congrArg (2 ^ ·) (logChunks_eq S i).symm), (hsh i).2.2.2.1⟩) index rQ hbQ hquot i c e he]
-      show _ = Merkle.matColumnCap cache proof.quotientCommit.toList S.params.capHeight S.logTop
-        (quotHeights S) (quotWidths S) _ e _ (reverseBits (instPoint S S.logTop index i).val _)
-      rw [reverseBits_instPoint S index hidx i]
-    · cases hc : common.preprocessed with
-      | none =>
-        rw [hc] at hprepS
-        have hany : S.instances.any (0 < ·.air.preprocessedWidth) = true :=
-          List.any_eq_true.mpr ⟨⟨S.air i, S.logN i, S.lookups i⟩, List.mem_ofFn.mpr ⟨i, rfl⟩,
-            decide_eq_true hp⟩
-        rw [hany] at hprepS
-        exact absurd hprepS Bool.false_ne_true
-      | some root =>
-        rw [prep_rows H S cache proof zeta hsize (fun i ↦ (hsh i).2.2.2.2.1) index root rP
-          (hbP root hc) (hprepBind root hc) i hp j hj,
-          hprep root hc i hp j hj _ (shiftRight_lt hidx _ (logTop_ge S i))]
-        rfl
-    · cases hc : proof.permutationCommit with
-      | none =>
-        rw [hc, Option.isSome_none] at hperm
-        have hany : CompStark.Batch.hasLookups S.instances = true :=
-          List.any_eq_true.mpr ⟨⟨S.air i, S.logN i, S.lookups i⟩, List.mem_ofFn.mpr ⟨i, rfl⟩, by
-            rw [← lookups_eq]
-            simpa only [Bool.not_eq_eq_eq_not, Bool.not_true, List.isEmpty_eq_false_iff]
-              using hl⟩
-        rw [hany] at hperm
-        exact absurd hperm Bool.false_ne_true
-      | some root =>
-        have hj : c * Challenge.d EF + e < Challenge.d EF * (S.instanceSetup i).permWidth := by
-          rw [Nat.mul_comm (Challenge.d EF)]
-          calc c * Challenge.d EF + e < c * Challenge.d EF + Challenge.d EF := by omega
-            _ = (c + 1) * Challenge.d EF := (Nat.succ_mul _ _).symm
-            _ ≤ _ := Nat.mul_le_mul_right _ hcw
-        rw [perm_rows H S cache proof zeta hlsize hnsize (fun i ↦ (hpw i).1) index root rR
-          (hbR root hc) (hpermBind root hc) i hl _ hj]
-        show _ = Merkle.matColumnCap cache (permRoot proof).toList S.params.capHeight (permLog S)
-          (permHeights S) (permWidths S) (permIndex S i) (c * Challenge.d EF + e) _
-          (reverseBits (instPoint S S.logTop index i).val _)
-        rw [reverseBits_instPoint S index hidx i, permRoot, hc, Option.getD_some]
-  set cr := commitReplayB H S common proof pis with hcr
-  set l := cr.1.zip (querySteps j.val S.friArities proof.fri.folds.toList) with hl
-  set ro := S.friHeights.map fun h ↦
-    (h, (reducedAt S.params S.logTop index alpha (queryMats (rows.zip rounds)) h).2) with hro
-  set e0 := (reducedAt S.params S.logTop index alpha (queryMats (rows.zip rounds)) S.logTop).2
-    with he0
-  have hfl : proof.fri.folds.toList.length = S.friArities.length := by
-    rw [Array.length_toList, hfolds]
-    rfl
-  have hqs := length_querySteps j.val S.friArities _ hfl
-  have hlar : l.map (·.2.logArity) = S.friArities := by
-    show List.map ((fun x : QueryFold EF ↦ x.logArity) ∘ Prod.snd) _ = _
-    rw [← List.map_map, List.map_snd_zip (by rw [hqs]; exact hcrlen.ge),
-      map_logArity_querySteps _ _ _ hfl]
-  have hll : l.length = S.friArities.length := by rw [← hlar, List.length_map]
-  have hsum : S.friArities.sum ≤ S.logTop := by
-    have := sum_foldSchedule_le S.params.maxLogArity (S.params.logBlowup + S.params.logFinalPolyLen)
-      S.logTop (S.logTop :: S.friHeights)
-    rw [List.headD_cons] at this
-    exact this
-  have hpre : ∀ j', ((l.take j').map (·.2.logArity)).sum = (S.friArities.take j').sum := by
-    intro j'
-    rw [List.map_take, hlar]
-  have hpre_le : ∀ j', (S.friArities.take j').sum ≤ S.logTop := fun j' ↦ by
-    have := List.sum_take_add_sum_drop S.friArities j'
-    omega
-  have hI0 : index >>> (S.logTop - S.logTop) = index := by
-    rw [Nat.sub_self, Nat.shiftRight_zero]
-  have hω : ∀ x : Fin (2 ^ S.logTop), S.domainSetup.domain x =
-      (lift gen : 𝕂) ^ 2 ^ (S.logTop - S.logTop) * lift (twoAdicGen S.logTop ^ x.val) := by
-    intro x
-    rw [Nat.sub_self, pow_zero, pow_one, lift_pow]
-    exact cosetDomain_apply _ _ x
-  have hrom : ro.map (·.1) = S.friHeights := by
-    simp only [hro, List.map_map, Function.comp_def, List.map_id']
-  have hW : ∀ hv ∈ ro, hv.1 ≤ S.logTop ∧ (lift gen : 𝕂) ^ 2 ^ (S.logTop - hv.1) *
-      Sound.Batch.injected S t.deepWords hv.1
-        (finMod hv.1 (reverseBits (index >>> (S.logTop - hv.1)) hv.1)) =
-      Challenge.toSpec hv.2 := by
-    intro hv hmem
-    rw [hro] at hmem
-    obtain ⟨h', hh, rfl⟩ := List.mem_map.mp hmem
-    refine ⟨((fits_friHeights S).2 h' hh).2.le, ?_⟩
-    rw [Sound.Batch.injected, Sound.Batch.foldShift, ← mul_assoc,
-      mul_inv_cancel₀ (pow_ne_zero _ lift_gen_ne_zero), one_mul]
-    exact (hdeep h').symm
-  have hsched : l.map (·.2.logArity) = foldSchedule S.params.maxLogArity
-      (S.params.logFinalPolyLen + S.params.logBlowup) S.logTop (S.logTop :: S.friHeights) := by
-    rw [hlar, Iop.Batch.Setup.friArities, Nat.add_comm S.params.logFinalPolyLen]
-  have hbind : ∀ j' < l.length, CapBinding cache H (proof.fri.commits.toList.getD j' #[]) := by
-    intro j' hj'
-    have hlt : j' < proof.fri.commits.toList.length := by
-      rw [Array.length_toList, hcs]
-      exact hll ▸ hj'
-    rw [List.getD_eq_getElem _ _ hlt]
-    exact hfri _ (Array.mem_toList_iff.mp (List.getElem_mem hlt))
-  have hfw : ∀ j' (hj' : j' < l.length), t.words j' = fun m z ↦
-      friWordAt cache (proof.fri.commits.toList.getD j' #[]) S.params.capHeight m
-        l[j'].2.logArity z.val := by
-    intro j' hj'
-    have hget : l[j'].2.logArity = S.friArities.getD j' 0 := by
-      have := congrArg (fun L : List ℕ ↦ L.getD j' 0) hlar
-      rw [List.getD_eq_getElem (l.map (·.2.logArity)) 0 (by rw [List.length_map]; exact hj'),
-        List.getElem_map] at this
-      exact this
-    funext m z
-    show (if j' < S.friArities.length then friWordAt cache (proof.fri.commits.toList.getD j' #[])
-      S.params.capHeight m (S.friArities.getD j' 0) z.val else 0) = _
-    rw [ite_eq_left_of_eq_true _ _ (eq_true (hll ▸ hj')), hget]
-  have hβ : ∀ j' (hj' : j' < l.length), t.betas j' = (lift gen : 𝕂) ^ 2 ^ (S.logTop -
-      (foldStateR l (ro, e0, index >>> (S.logTop - S.logTop), S.logTop) j').2.2.2) *
-        Challenge.toSpec l[j'].1 := by
-    intro j' hj'
-    rw [foldStateR_snd l ro e0 (index >>> (S.logTop - S.logTop)) S.logTop j']
-    dsimp only
-    rw [hpre j', Nat.sub_sub_self (hpre_le j')]
-    have hj1 : j' < cr.1.length := lt_of_lt_of_le hj'
-      (by rw [List.length_zip]; exact Nat.min_le_left _ _)
-    show (lift gen : 𝕂) ^ 2 ^ (S.friArities.take j').sum * Challenge.toSpec (cr.1.getD j' 0) = _
-    rw [List.getD_eq_getElem _ _ hj1, List.getElem_zip]
-  have hfinal' : t.finalPoly.eval ((lift gen : 𝕂) ^ 2 ^ (S.logTop -
-      (foldStateR l (ro, e0, index >>> (S.logTop - S.logTop), S.logTop) l.length).2.2.2) *
-      lift (twoAdicGen (foldStateR l (ro, e0, index >>> (S.logTop - S.logTop), S.logTop)
-        l.length).2.2.2 ^
-        reverseBits (foldStateR l (ro, e0, index >>> (S.logTop - S.logTop), S.logTop)
-          l.length).2.2.1
-          (foldStateR l (ro, e0, index >>> (S.logTop - S.logTop), S.logTop) l.length).2.2.2)) =
-      Challenge.toSpec (foldStateR l (ro, e0, index >>> (S.logTop - S.logTop), S.logTop)
-        l.length).2.1 := by
-    rw [hI0]
-    have h2 := foldStateR_snd l ro e0 index S.logTop l.length
-    rw [List.take_length, hlar] at h2
-    have hidx' : (foldStateR l (ro, e0, index, S.logTop) l.length).2.2.1 <
-        2 ^ (S.params.logBlowup + S.params.logFinalPolyLen) := by
-      rw [← hfin, h2]
-      dsimp only
-      have := shiftRight_lt hidx (S.logTop - S.friArities.sum) (Nat.sub_le _ _)
-      rwa [Nat.sub_sub_self hsum] at this
-    rw [hfin]
-    have hsub : S.logTop - (S.params.logBlowup + S.params.logFinalPolyLen) =
-        S.domainSetup.logN - S.params.logFinalPolyLen := by
-      have := (S.valid S.top).finalPolyFits
-      have hl : S.domainSetup.logN = S.logN S.top := rfl
-      unfold Iop.Batch.Setup.logTop
-      omega
-    rw [hsub]
-    show (finalPoly S.domainSetup proof.fri.finalPoly).eval _ = _
-    rw [eval_finalPoly S.domainSetup _ _ hidx']
-    exact congrArg Challenge.toSpec hfinal
-  obtain ⟨hacc, hinit⟩ := query_run cache H S.params.capHeight S.logTop index hK
-    S.params.maxLogArity (S.params.logFinalPolyLen + S.params.logBlowup)
-    (2 ^ S.params.logFinalPolyLen) (Nat.two_pow_pos _) (Sound.Batch.injected S t.deepWords)
-    t.finalPoly S.logTop S.logTop
-    S.friHeights S.domainSetup.domain l proof.fri.commits.toList ro e0 t.words t.betas le_rfl hidx
-    hω hrom hW hsched (by rw [hI0]; exact hsteps) hbind hfw hβ (by rw [hI0]; exact hnil) hfinal'
-  rw [hI0] at hacc hinit
-  rw [hpt]
-  simp only [Sound.Batch.Transcript.consistentQueries, Finset.mem_filter]
-  refine ⟨hacc, hinit.trans ?_⟩
-  rw [he0, hdeep, Nat.sub_self, Nat.shiftRight_zero]
 
 end Bcs
 

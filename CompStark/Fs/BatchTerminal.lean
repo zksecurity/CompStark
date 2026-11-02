@@ -314,8 +314,7 @@ theorem terminal_of_verifyWith (S : Setup EF) (cache : MixedMerkleTree.Cache (Li
         S.protocol.oracles noAccess noImpl)
       (S.terminal publicValues
         (S.proofPath cache H common proof (List.ofFn publicValues)).toBranchPath) = true := by
-  obtain ⟨hsum, hcons, -⟩ := bcsB S cache H common proof publicValues hmain hquot hfri hprepBind
-    hprep hpermBind h
+  obtain ⟨hsum, hcons, -⟩ := bcsB S cache H common proof publicValues h
   set pis := List.ofFn publicValues with hpis
   obtain ⟨hsize, -, hlsize, hnsize, htsize, -, -, hshapeZ, hprepS, hlk, -, -, -, -,
     ⟨st, hfriOk⟩, -, -⟩ :=

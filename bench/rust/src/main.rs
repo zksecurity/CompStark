@@ -81,11 +81,36 @@ fn merkle(log_h: u32, width: usize) {
     println!("plonky3 merkle 2^{log_h} x {width} ms median {:.3}", samples[7]);
 }
 
+/// `lde LOG_N WIDTH`: the median milliseconds of five coset low-degree extensions by 2 of a
+/// `2^LOG_N × WIDTH` matrix with `Radix2DitParallel`, as the commitment scheme extends a trace
+/// (`coset_lde_batch` and the bit-reversal of the rows).
+fn lde(log_n: usize, width: usize) {
+    use p3_dft::{Radix2DitParallel, TwoAdicSubgroupDft};
+    use p3_field::{Field, PrimeCharacteristicRing};
+    use p3_matrix::bitrev::BitReversibleMatrix;
+    use p3_matrix::Matrix;
+    use p3_matrix::dense::RowMajorMatrix;
+    let n = 1 << log_n;
+    let dft = Radix2DitParallel::<F>::default();
+    let mut samples = vec![];
+    for k in 0..6 {
+        let m = RowMajorMatrix::new(
+            (0..n * width).map(|i| F::from_u64((i as u64 * 2654435761 + k) % 2130706433)).collect(),
+            width);
+        let t = std::time::Instant::now();
+        let ext = dft.coset_lde_batch(m, 1, F::GENERATOR).bit_reverse_rows().to_row_major_matrix();
+        samples.push(t.elapsed().as_secs_f64() * 1e3);
+        std::hint::black_box(ext);
+    }
+    samples.remove(0);
+    samples.sort_by(|a, b| a.partial_cmp(b).unwrap());
+    println!("plonky3 lde 2^{log_n} x {width} ms median {:.1}", samples[2]);
+}
+
 mod babybear;
 mod batch;
 mod example;
 mod fingerprint;
-mod keccak;
 mod seeds;
 mod stark;
 
@@ -106,14 +131,8 @@ fn main() {
     if args.len() == 3 && args[1] == "keccak-prove-trace" {
         return example::keccak_prove_trace(args[2].parse().unwrap());
     }
-    if args.len() == 4 && args[1] == "keccak-bench" {
-        return example::keccak_bench(args[2].parse().unwrap(), args[3].parse().unwrap());
-    }
     if args.len() == 4 && args[1] == "lde" {
-        return keccak::lde(args[2].parse().unwrap(), args[3].parse().unwrap());
-    }
-    if args.len() == 3 && args[1] == "keccak-trace" {
-        return keccak::trace_kat(args[2].parse().unwrap());
+        return lde(args[2].parse().unwrap(), args[3].parse().unwrap());
     }
     if args.len() == 2 && args[1] == "seeds" {
         return seeds::seeds();

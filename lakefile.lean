@@ -16,11 +16,12 @@ require CompPoly from git "https://github.com/mitschabaude-bot/CompPoly.git" @
 -- correlated agreement, FRI on the interaction layer with its knowledge certificate on Plonky3's
 -- commit-phase tree, state restoration over public-coin protocols with grinding draws, and
 -- Fiat–Shamir on a duplex challenger with challenges of several squeezes, its draws bounded
--- against the certificate's challenge laws, and the BCS compiler: Merkle commitments in place of
--- oracle messages, against VCVio with Merkle trees of injected payloads (branch `vcvio-merkle` of
--- the bot fork).
+-- against the certificate's challenge laws, the BCS compiler: Merkle commitments in place of
+-- oracle messages, correlated agreement and lossy MCA for Reed–Solomon curves in the
+-- unique-decoding range, and the fold lists of Plonky3's schedule, against VCVio with Merkle trees
+-- of injected payloads (branch `compstark` of the bot fork).
 require Arklib from git "https://github.com/mitschabaude-bot/ArkLib.git" @
-    "e768fe4ddb7dea34d07af49adc5d31cb5b911eca"
+    "6bb602c24b595b1b5e53dd00ca63f8a11eba28a4"
 
 -- VCVio with Merkle trees of injected payloads, caps and pruned multi-openings (branch
 -- `merkle-mixed` of the bot fork).
@@ -47,8 +48,8 @@ lean_lib CompStarkPackedNative where
 lean_lib CompStarkTests where
   srcDir := "tests"
 
-/-- AIRs and trace generators of the tests and benchmarks that are not part of the library, such
-as Plonky3's Keccak AIR. -/
+/-- AIRs and constants of the tests and benchmarks that are not part of the library, such as
+Plonky3's Keccak AIR and its quotient kernel. -/
 lean_lib CompStarkFixtures where
   srcDir := "fixtures"
   moreLeancArgs := #["-march=native"]
