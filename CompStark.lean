@@ -33,7 +33,6 @@ public import CompStark.Challenger
 public import CompStark.Primitives
 public import CompStark.Stark.Proof
 public import CompStark.Merkle.Mmcs
-public import CompStark.Merkle.Multi
 public import CompStark.Merkle.Mixed
 public import CompStark.Merkle.MixedMulti
 public import CompStark.Stark.Challenge
@@ -103,7 +102,6 @@ public import CompStark.Stark.ExtWords
 public import CompStark.Complete.Defs
 public import CompStark.Poseidon2.ArkLib
 public import CompStark.Merkle.VCVio
-public import CompStark.Merkle.Extract
 public import CompStark.Merkle.ExtractMixed
 public import CompStark.Complete.Merkle
 public import CompStark.Complete.Deep

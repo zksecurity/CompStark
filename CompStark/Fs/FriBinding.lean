@@ -6,7 +6,7 @@ module
 
 public import CompStark.Fs.FriFold
 public import CompStark.Fs.StarkAccept
-public import CompStark.Merkle.Extract
+public import CompStark.Merkle.ExtractMixed
 
 /-! # FRI's committed words, extracted
 
@@ -30,14 +30,14 @@ local notation "𝕂" => Challenge.Spec EF
 /-! ### Extraction -/
 
 section Extract
-variable (cache : Merkle.Cache F (Digest F))
+variable (cache : MixedMerkleTree.Cache (List F) (Digest F))
 
 /-- Accepted openings against `root` of matrices of one height open the rows extracted from
 `cache`. -/
 def Binding (H : Primitives F Id) (root : Digest F) : Prop :=
   ∀ (n k i : Nat) (values : List (List F)) (path : List (Digest F)), 0 < n →
     verifyBatchH H root (List.replicate n (2 ^ k)) i values path = true →
-      Merkle.extractRow cache k i root = some values.flatten
+      MixedMerkleTree.extract cache (fun _ ↦ false) k k i root = some values.flatten
 
 /-- Accepted openings against every entry of the cap `cap` bind, and so do those against the
 zero digest, which an index past the cap reads. -/
@@ -131,7 +131,8 @@ theorem length_groupOf (s : QueryFold EF) (index : Nat) (eval : EF) :
 
 /-- **An accepted fold opens the extracted word.** If fold `x` passes its checks at index `I` of
 height `2 ^ m` and its commitment binds, the extracted word holds the opened group around `I`. -/
-theorem friWordAt_group (cache : Merkle.Cache F (Digest F)) (H : Primitives F Id) (h : Nat)
+theorem friWordAt_group (cache : MixedMerkleTree.Cache (List F) (Digest F)) (H : Primitives F Id)
+    (h : Nat)
     (commit : Cap F) (x : EF × QueryFold EF) (e : EF) (I m : Nat) (hI : I < 2 ^ m)
     (ha : x.2.logArity ≤ m) (hok : StepOk H h commit x (e, I, m))
     (hbind : CapBinding cache H commit) (k : Nat) (hk : k < 2 ^ x.2.logArity) :
@@ -165,7 +166,8 @@ theorem shiftRight_mul_add_mod (I a : Nat) : (I >>> a) * 2 ^ a + I % 2 ^ a = I :
 theorem finMod_val {m r : Nat} (hr : r < 2 ^ m) : (finMod m r).val = r := Nat.mod_eq_of_lt hr
 
 /-- An accepted fold's commitment holds the running value at the query's index. -/
-theorem friWordAt_eval (cache : Merkle.Cache F (Digest F)) (H : Primitives F Id) (h : Nat)
+theorem friWordAt_eval (cache : MixedMerkleTree.Cache (List F) (Digest F)) (H : Primitives F Id)
+    (h : Nat)
     (commit : Cap F) (x : EF × QueryFold EF) (st : EF × Nat × Nat) (m : Nat) (hm : st.2.2 = m)
     (hI : st.2.1 < 2 ^ m) (ha : x.2.logArity ≤ m) (hok : StepOk H h commit x st)
     (hbind : CapBinding cache H commit) :

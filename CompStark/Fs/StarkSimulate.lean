@@ -40,12 +40,13 @@ variable {d : Nat} {m n : Type → Type} [Monad m] [Monad n] (φ : m →ᵐ n)
 
 theorem levelM_map [Zero F] (compress : Vector F d → Vector F d → m (Vector F d)) :
     ∀ (nodes : List (Nat × Nat × Vector F d)) (sibs : List (Vector F d)),
-      φ (levelM compress nodes sibs) = levelM (fun a b ↦ φ (compress a b)) nodes sibs
-  | [], _ => by simp only [levelM, MonadHom.mmap_pure]
+      φ (MixedMerkleTree.levelM 0 compress nodes sibs) =
+        MixedMerkleTree.levelM 0 (fun a b ↦ φ (compress a b)) nodes sibs
+  | [], _ => by simp only [MixedMerkleTree.levelM, MonadHom.mmap_pure]
   | [(i, q, x)], sibs => by
-    simp only [levelM, MonadHom.mmap_bind, MonadHom.mmap_pure, MonadHom.mmap_ite]
+    simp only [MixedMerkleTree.levelM, MonadHom.mmap_bind, MonadHom.mmap_pure, MonadHom.mmap_ite]
   | (i, q, x) :: (j, q', y) :: rest, sibs => by
-    simp only [levelM]
+    simp only [MixedMerkleTree.levelM]
     have h1 := levelM_map compress rest sibs
     have h2 := levelM_map compress ((j, q', y) :: rest) sibs.tail
     split <;> simp only [MonadHom.mmap_bind, MonadHom.mmap_pure, MonadHom.mmap_ite, h1, h2]

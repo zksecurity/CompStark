@@ -111,7 +111,7 @@ theorem sqFoldMapGen_finMod (n la idx : ℕ) (hla : la ≤ n) :
 /-- **One fold of a query.** If fold `x` of a query at index `idx` of a domain `c ⟨ω_n⟩` passes its
 checks against a binding commitment, the extracted word holds the running value at the query's
 point, and its fold at `β` is ArkLib's fold of the extracted word at `c β`, at the folded point. -/
-theorem fold_step (cache : Merkle.Cache F (Digest F)) (H : Primitives F Id) (h : ℕ)
+theorem fold_step (cache : MixedMerkleTree.Cache (List F) (Digest F)) (H : Primitives F Id) (h : ℕ)
     (commit : Cap F)
     {n : ℕ} (D : Domain.SmoothCosetFftDomain n 𝕂) (c : 𝕂) (hn : n ≤ twoAdicity F)
     (hD : ∀ x : Fin (2 ^ n), D x = c * lift (twoAdicGen n ^ x.val))
@@ -148,7 +148,7 @@ end Step
 /-! ### A query's folds through the rounds -/
 
 section Query
-variable (cache : Merkle.Cache F (Digest F)) (H : Primitives F Id) (K I : ℕ)
+variable (cache : MixedMerkleTree.Cache (List F) (Digest F)) (H : Primitives F Id) (K I : ℕ)
   (hK : K ≤ twoAdicity F) (ma lf d : ℕ) (hd : 0 < d) (W : (m : ℕ) → Fin (2 ^ m) → 𝕂)
   (fp : Polynomial (Challenge.Spec EF))
 
@@ -189,7 +189,8 @@ folds `l` follow the rounds' schedule and pass their checks against binding comm
 the reduced openings `ro` of the injected heights, each the injected word scaled by its domain's
 shift at the query's point, and end at the final polynomial: the query's point is accepted by the
 run on the extracted words at the scaled challenges, and the run's first word holds `e` there. -/
-theorem query_run (cache : Merkle.Cache F (Digest F)) (H : Primitives F Id) (h K I : ℕ)
+theorem query_run (cache : MixedMerkleTree.Cache (List F) (Digest F)) (H : Primitives F Id)
+    (h K I : ℕ)
     (hK : K ≤ twoAdicity F) (ma lf d : ℕ) (hd : 0 < d) (W : (m : ℕ) → Fin (2 ^ m) → 𝕂)
     (fp : Polynomial 𝕂) :
     ∀ (fuel n : ℕ) (heights : List ℕ) (ω : Domain.SmoothCosetFftDomain n 𝕂)

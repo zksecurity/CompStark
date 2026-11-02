@@ -8,6 +8,7 @@ public import CompStark.Merkle.Mmcs
 public import ToMathlib.Data.IndexedBinaryTree.Perfect
 public import VCVio.CryptoFoundations.MerkleTree.Inductive.Binding
 public import VCVio.CryptoFoundations.MerkleTree.Inductive.Completeness
+public import VCVio.CryptoFoundations.MerkleTree.Mixed.Inductive
 
 /-! # Merkle commitments as VCVio Merkle trees
 
@@ -24,39 +25,33 @@ of the concatenated rows `i`:
 * `verifyBatch_openBatch`: honest openings verify, by VCVio's `functional_completeness`.
 * `verifyBatch_binding`: two accepted openings of one index under one commitment with different
   rows of the same widths give a collision of `hash` or of `compress`.
+
+Plonky3's openings of matrices of mixed heights are VCVio's openings of trees with injected
+payloads (`MixedMerkleTree`): the payload of a leaf is the concatenated rows of the tallest
+matrices, and a group of shorter matrices injects its concatenated rows at the layer of its padded
+height. `sched` reads off where a walk over the height groups injects which group:
+
+* `climb_eq`: Plonky3's `climb` is VCVio's `MixedMerkleTree.climb` at the payloads `climbPays`.
+* `walkM_eq`: the walk of a multi-opening, with pure hashes, is VCVio's `MixedMerkleTree.walk` at
+  the payloads `walkPays`, with the zero digest past the end of the siblings.
+* `sched_eq_find`: for heights that are distinct powers of two, tallest first, the group injected
+  at a depth is the group of the height of that depth.
 -/
 
 @[expose] public section
 namespace CompStark.Merkle
 
 open BinaryTree InductiveMerkleTree
+open MixedMerkleTree (nodeValue nodeValue_zero nodeValue_succ perfectLeaves perfectLeaves_get
+  generateProof_perfectLeaves xor_one_eq)
 
 section Perfect
 
 variable {α : Type*}
 
-/-- The leaves of the perfect subtree of depth `k` at heap index `t`: leaf `j` is
-`g (t * 2 ^ k + j)`. -/
-def perfectLeaves (g : Nat → α) : (k : Nat) → Nat → LeafData α (Skeleton.perfect k)
-  | 0, t => .leaf (g t)
-  | k + 1, t => .internal (perfectLeaves g k (2 * t)) (perfectLeaves g k (2 * t + 1))
-
-/-- The digest of the node at height `j` and heap index `t` of the tree with leaves `g`. -/
-def nodeValue (compress : α → α → α) (g : Nat → α) (j t : Nat) : α :=
-  (populateUp (perfectLeaves g j t) compress).getRootValue
-
 /-- The next layer up of the layer `g`. -/
 def pairUp (compress : α → α → α) (g : Nat → α) (t : Nat) : α :=
   compress (g (2 * t)) (g (2 * t + 1))
-
-/-- A node at height `0` is its leaf. -/
-theorem nodeValue_zero (compress : α → α → α) (g : Nat → α) (t : Nat) :
-    nodeValue compress g 0 t = g t := rfl
-
-/-- A node at height `j + 1` compresses its two children. -/
-theorem nodeValue_succ (compress : α → α → α) (g : Nat → α) (j t : Nat) :
-    nodeValue compress g (j + 1) t =
-      compress (nodeValue compress g j (2 * t)) (nodeValue compress g j (2 * t + 1)) := rfl
 
 /-- A node is the node one height lower over the next layer up. -/
 theorem nodeValue_succ_pairUp (compress : α → α → α) (g : Nat → α) (j t : Nat) :
@@ -67,7 +62,7 @@ theorem nodeValue_succ_pairUp (compress : α → α → α) (g : Nat → α) (j 
 
 end Perfect
 
-variable {F : Type*} {d : Nat}
+variable {F : Type} {d : Nat}
 
 /-- Reading a tabulated list. -/
 private theorem getD_map_range {β : Type*} (g : Nat → β) (n i : Nat) (x : β) (hi : i < n) :
@@ -130,17 +125,6 @@ theorem upperLayersAll_range [Zero F] (hash : List F → Vector F d)
     intro t _
     rw [nodeValue_succ_pairUp]
 
-/-- `x ^^^ 1` flips the low bit. -/
-theorem xor_one_eq (x : Nat) : x ^^^ 1 = 2 * (x / 2) + (x + 1) % 2 := by
-  have h1 : (x ^^^ 1) / 2 = x / 2 := by
-    rw [Nat.xor_div_two]; simp only [Nat.reduceDiv, Nat.xor_zero]
-  have h2 : (x ^^^ 1) % 2 = (x + 1) % 2 := by
-    have := Nat.xor_mod_two_pow (a := x) (b := 1) (n := 1)
-    rcases Nat.mod_two_eq_zero_or_one x with h | h <;>
-      simp only [Nat.pow_one, h, Nat.one_mod, Nat.reduceXor] at this <;> omega
-  have := Nat.div_add_mod (x ^^^ 1) 2
-  omega
-
 /-- `takeWhile` keeps a list whose elements all pass. -/
 private theorem takeWhile_of_forall {β : Type*} (p : β → Bool) (l : List β)
     (h : ∀ x ∈ l, p x) :
@@ -168,6 +152,236 @@ private theorem isPowerOfTwo_two_pow : (k : Nat) → (2 ^ k).isPowerOfTwo
 /-- `⌈log₂ 2 ^ k⌉ = k`. -/
 theorem log2Ceil_two_pow (k : Nat) : log2Ceil (2 ^ k) = k := by
   simp only [log2Ceil, Nat.nextPowerOfTwo_eq_self (isPowerOfTwo_two_pow k), Nat.log2_two_pow]
+
+/-- `2 ^ k` pads to itself. -/
+theorem nextPowerOfTwo_two_pow (k : Nat) : (2 ^ k).nextPowerOfTwo = 2 ^ k :=
+  Nat.nextPowerOfTwo_eq_self (isPowerOfTwo_two_pow k)
+
+/-- The levels below the cap of a tree of `2 ^ k` rows and cap height `capHeight`. -/
+theorem capLevels_two_pow (k capHeight : Nat) :
+    capLevels (2 ^ k) capHeight = (k - min capHeight k, min capHeight k) := by
+  rw [capLevels, nextPowerOfTwo_two_pow, Nat.log2_two_pow]
+
+/-! ### Openings of mixed heights as VCVio openings -/
+
+section Schedule
+
+/-- The groups a climb or a walk over `n` layers from the padded height `padded` injects, by depth
+below its top: a group `(h, is)` is injected into the layer of its padded height, the groups taken
+in order. -/
+def sched : Nat → List (Nat × List Nat) → Nat → Nat → Option (List Nat)
+  | 0, _, _, _ => none
+  | _ + 1, [], _, _ => none
+  | n + 1, (h, is) :: rest, padded, e =>
+    if h.nextPowerOfTwo = padded / 2 then
+      if e = n then some is else sched n rest (padded / 2) e
+    else if e = n then none else sched n ((h, is) :: rest) (padded / 2) e
+
+theorem sched_nil : ∀ n padded e, sched n [] padded e = none
+  | 0, _, _ => rfl
+  | _ + 1, _, _ => rfl
+
+/-- The payloads of a single opening of the rows `values`: the concatenated rows of the injected
+groups. -/
+def climbPays (values : List (List F)) (n : Nat) (groups : List (Nat × List Nat)) (padded : Nat)
+    (e : Nat) : Option (List F) :=
+  (sched n groups padded e).map fun is ↦ is.flatMap fun m ↦ values.getD m []
+
+theorem climbPays_nil (values : List (List F)) (n padded : Nat) :
+    climbPays values n [] padded = fun _ ↦ none := by
+  funext e
+  simp only [climbPays, sched_nil, Option.map_none]
+
+/-- The payloads of a multi-opening of the queries' rows `rows`, by lead. -/
+def walkPays (rows : List (List (List F))) (n : Nat) (groups : List (Nat × List Nat))
+    (padded : Nat) (e : Nat) : Option (Nat → List F) :=
+  (sched n groups padded e).map fun is q ↦ is.flatMap fun m ↦ (rows.getD q []).getD m []
+
+/-- A query's payloads in a multi-opening are those of its single opening. -/
+theorem paysOf_walkPays (rows : List (List (List F))) (n : Nat) (groups : List (Nat × List Nat))
+    (padded r : Nat) :
+    MixedMerkleTree.paysOf (walkPays rows n groups padded) r =
+      climbPays (rows.getD r []) n groups padded := by
+  funext e
+  simp only [MixedMerkleTree.paysOf, walkPays, climbPays, Option.map_map]
+  rfl
+
+/-- Plonky3's `climb` is VCVio's climb at the payloads `climbPays`. -/
+theorem climb_eq (hash : List F → Vector F d) (compress : Vector F d → Vector F d → Vector F d)
+    (values : List (List F)) :
+    ∀ (path : List (Vector F d)) (groups : List (Nat × List Nat)) (i padded : Nat)
+      (x : Vector F d), climb hash compress values path groups i padded x =
+        MixedMerkleTree.climb hash compress (climbPays values path.length groups padded) i x path
+  | [], _, _, _, _ => rfl
+  | s :: path, groups, i, padded, x => by
+    rw [MixedMerkleTree.climb_cons]
+    have hpair : (if i % 2 = 0 then compress x s else compress s x) =
+        MixedMerkleTree.pairUp compress i x s := rfl
+    rcases groups with _ | ⟨⟨h, is⟩, rest⟩
+    · simp only [climb, hpair, List.length_cons, climbPays_nil, MixedMerkleTree.inject]
+      rw [climb_eq hash compress values path [] (i / 2) (padded / 2), climbPays_nil]
+    · by_cases hc : h.nextPowerOfTwo = padded / 2
+      · simp only [climb, hpair, hc, ↓reduceIte, hashRows]
+        rw [climb_eq hash compress values path rest (i / 2) (padded / 2)]
+        have hp : climbPays values (path.length + 1) ((h, is) :: rest) padded path.length =
+            some (is.flatMap fun m ↦ values.getD m []) := by
+          simp only [climbPays, sched, hc, ↓reduceIte, Option.map_some]
+        rw [List.length_cons, hp, MixedMerkleTree.inject]
+        refine MixedMerkleTree.climb_congr _ _ _ _ _ fun e he ↦ ?_
+        simp only [climbPays, sched, hc, ↓reduceIte, Nat.ne_of_lt he]
+      · simp only [climb, hpair, hc, ↓reduceIte]
+        rw [climb_eq hash compress values path ((h, is) :: rest) (i / 2) (padded / 2)]
+        have hp : climbPays values (path.length + 1) ((h, is) :: rest) padded path.length =
+            none := by
+          simp only [climbPays, sched, hc, ↓reduceIte, Option.map_none]
+        rw [List.length_cons, hp, MixedMerkleTree.inject]
+        refine MixedMerkleTree.climb_congr _ _ _ _ _ fun e he ↦ ?_
+        simp only [climbPays, sched, hc, ↓reduceIte, Nat.ne_of_lt he]
+
+/-- A walk step injecting the group `(h, is)` when its height is the next layer's. -/
+theorem walkM_succ_cons [Zero F] (hash : List F → Vector F d)
+    (compress : Vector F d → Vector F d → Vector F d) (rows : List (List (List F)))
+    (levels h : Nat) (is : List Nat) (rest : List (Nat × List Nat)) (padded : Nat)
+    (nodes : List (Nat × Nat × Vector F d)) (sibs : List (Vector F d)) :
+    walkM (m := Id) hash compress rows (levels + 1) ((h, is) :: rest) padded nodes sibs =
+      if h.nextPowerOfTwo = padded / 2 then
+        walkM (m := Id) hash compress rows levels rest (padded / 2)
+          ((MixedMerkleTree.level compress 0 nodes sibs).1.map fun x ↦
+            (x.1, x.2.1, compress x.2.2 (hash (is.flatMap fun k ↦ (rows.getD x.2.1 []).getD k []))))
+          (MixedMerkleTree.level compress 0 nodes sibs).2
+      else walkM (m := Id) hash compress rows levels ((h, is) :: rest) (padded / 2)
+        (MixedMerkleTree.level compress 0 nodes sibs).1
+        (MixedMerkleTree.level compress 0 nodes sibs).2 := by
+  simp only [walkM]
+  split
+  · exact congrArg (fun ps ↦ walkM (m := Id) hash compress rows levels rest (padded / 2) ps
+      (MixedMerkleTree.level compress 0 nodes sibs).2) List.idRun_mapM
+  · rfl
+
+/-- A walk step without groups left. -/
+theorem walkM_succ_nil [Zero F] (hash : List F → Vector F d)
+    (compress : Vector F d → Vector F d → Vector F d) (rows : List (List (List F)))
+    (levels padded : Nat) (nodes : List (Nat × Nat × Vector F d)) (sibs : List (Vector F d)) :
+    walkM (m := Id) hash compress rows (levels + 1) [] padded nodes sibs =
+      walkM (m := Id) hash compress rows levels [] (padded / 2)
+        (MixedMerkleTree.level compress 0 nodes sibs).1
+        (MixedMerkleTree.level compress 0 nodes sibs).2 := rfl
+
+/-- The walk of a multi-opening, with pure hashes, is VCVio's walk at the payloads `walkPays`. -/
+theorem walkM_eq [Zero F] (hash : List F → Vector F d)
+    (compress : Vector F d → Vector F d → Vector F d) (rows : List (List (List F))) :
+    ∀ (levels : Nat) (groups : List (Nat × List Nat)) (padded : Nat)
+      (nodes : List (Nat × Nat × Vector F d)) (sibs : List (Vector F d)),
+      walkM (m := Id) hash compress rows levels groups padded nodes sibs =
+        MixedMerkleTree.walk hash compress 0 (walkPays rows levels groups padded) levels nodes
+          sibs
+  | 0, _, _, _, _ => rfl
+  | levels + 1, groups, padded, nodes, sibs => by
+    rw [MixedMerkleTree.walk]
+    rcases groups with _ | ⟨⟨h, is⟩, rest⟩
+    · rw [walkM_succ_nil, walkM_eq hash compress rows levels [] (padded / 2)]
+      have hnone : walkPays rows (levels + 1) [] padded levels = none := by
+        simp only [walkPays, sched_nil, Option.map_none]
+      rw [hnone]
+      simp only [Option.map_none, MixedMerkleTree.inject, Prod.mk.eta, List.map_id']
+      refine MixedMerkleTree.walk_congr _ _ _ _ _ _ fun e _ ↦ ?_
+      simp only [walkPays, sched_nil, Option.map_none]
+    · rw [walkM_succ_cons]
+      by_cases hc : h.nextPowerOfTwo = padded / 2
+      · rw [ite_eq_left_of_eq_true _ _ (eq_true hc),
+          walkM_eq hash compress rows levels rest (padded / 2)]
+        have hp : walkPays rows (levels + 1) ((h, is) :: rest) padded levels =
+            some fun q ↦ is.flatMap fun m ↦ (rows.getD q []).getD m [] := by
+          simp only [walkPays, sched, hc, ↓reduceIte, Option.map_some]
+        rw [hp]
+        simp only [Option.map_some, MixedMerkleTree.inject]
+        refine MixedMerkleTree.walk_congr _ _ _ _ _ _ fun e he ↦ ?_
+        simp only [walkPays, sched, hc, ↓reduceIte, Nat.ne_of_lt he]
+      · rw [ite_eq_right_of_eq_false _ _ (eq_false hc),
+          walkM_eq hash compress rows levels ((h, is) :: rest) (padded / 2)]
+        have hp : walkPays rows (levels + 1) ((h, is) :: rest) padded levels = none := by
+          simp only [walkPays, sched, hc, ↓reduceIte, Option.map_none]
+        rw [hp]
+        simp only [Option.map_none, MixedMerkleTree.inject, Prod.mk.eta, List.map_id']
+        refine MixedMerkleTree.walk_congr _ _ _ _ _ _ fun e he ↦ ?_
+        simp only [walkPays, sched, hc, ↓reduceIte, Nat.ne_of_lt he]
+
+/-- **The injection schedule.** For groups of distinct heights `2 ^ j < 2 ^ k`, tallest first, a
+climb or walk over `L ≤ k` layers from the height `2 ^ k` injects at depth `e` the group of height
+`2 ^ (e + k - L)`, if there is one. -/
+theorem sched_eq_find : ∀ (L k : Nat) (G : List (Nat × List Nat)), L ≤ k →
+    G.Pairwise (fun a b ↦ b.1 < a.1) → (∀ g ∈ G, ∃ j < k, g.1 = 2 ^ j) →
+    ∀ e < L, sched L G (2 ^ k) e = (G.find? fun g ↦ g.1 == 2 ^ (e + (k - L))).map (·.2)
+  | 0, _, _, _, _, _, e, he => absurd he (Nat.not_lt_zero e)
+  | L + 1, k, G, hL, hs, hG, e, he => by
+    obtain ⟨k', rfl⟩ : ∃ k', k = k' + 1 := ⟨k - 1, by omega⟩
+    have hpad : 2 ^ (k' + 1) / 2 = 2 ^ k' := by
+      rw [Nat.pow_succ, Nat.mul_div_cancel _ (by decide)]
+    have hexp : e + (k' + 1 - (L + 1)) = e + (k' - L) := by omega
+    rw [hexp]
+    rcases G with _ | ⟨⟨h, is⟩, rest⟩
+    · simp only [sched, List.find?_nil, Option.map_none]
+    obtain ⟨j, hj, hjh⟩ := hG _ List.mem_cons_self
+    dsimp only at hjh
+    subst hjh
+    have hrest : ∀ g ∈ rest, g.1 < 2 ^ j := fun g hg ↦ List.rel_of_pairwise_cons hs hg
+    have hrestj : ∀ g ∈ rest, ∃ j' < j, g.1 = 2 ^ j' := fun g hg ↦ by
+      obtain ⟨j', -, e'⟩ := hG g (List.mem_cons_of_mem _ hg)
+      exact ⟨j', (Nat.pow_lt_pow_iff_right (by decide)).mp (e' ▸ hrest g hg), e'⟩
+    rw [sched, nextPowerOfTwo_two_pow, hpad]
+    by_cases hjk : j = k'
+    · subst hjk
+      rw [ite_eq_left_of_eq_true _ _ (eq_true rfl)]
+      by_cases heL : e = L
+      · subst heL
+        rw [ite_eq_left_of_eq_true _ _ (eq_true rfl),
+          List.find?_cons_of_pos (by simp only [beq_iff_eq]; congr 1; omega)]
+        rfl
+      · rw [ite_eq_right_of_eq_false _ _ (eq_false heL),
+          sched_eq_find L j rest (by omega) hs.of_cons
+          (fun g hg ↦ hrestj g hg) e (by omega),
+          List.find?_cons_of_neg (by
+            simp only [beq_iff_eq]
+            intro h'
+            have := Nat.pow_right_injective (le_refl 2) h'
+            omega)]
+    · have hjk' : j < k' := by omega
+      rw [ite_eq_right_of_eq_false _ _
+        (eq_false fun h' ↦ hjk (Nat.pow_right_injective (le_refl 2) h'))]
+      by_cases heL : e = L
+      · subst heL
+        rw [ite_eq_left_of_eq_true _ _ (eq_true rfl)]
+        symm
+        rw [Option.map_eq_none_iff, List.find?_eq_none]
+        intro g hg
+        simp only [beq_iff_eq, show e + (k' - e) = k' by omega]
+        rcases List.mem_cons.mp hg with rfl | hg
+        · exact fun h' ↦ hjk (Nat.pow_right_injective (le_refl 2) h')
+        · have := hrest g hg
+          have := Nat.pow_lt_pow_right (show 1 < 2 by decide) hjk'
+          omega
+      · rw [ite_eq_right_of_eq_false _ _ (eq_false heL),
+          sched_eq_find L k' ((2 ^ j, is) :: rest) (by omega) hs
+          (fun g hg ↦ by
+            rcases List.mem_cons.mp hg with rfl | hg
+            · exact ⟨j, hjk', rfl⟩
+            · obtain ⟨j', hj', e'⟩ := hrestj g hg
+              exact ⟨j', by omega, e'⟩) e (by omega)]
+
+/-- In groups of strictly decreasing heights, the group of a height is found by its height. -/
+theorem find?_height_eq {G : List (Nat × List Nat)} (hs : G.Pairwise (fun a b ↦ b.1 < a.1))
+    {g : Nat × List Nat} (hg : g ∈ G) : G.find? (fun g' ↦ g'.1 == g.1) = some g := by
+  induction G with
+  | nil => exact absurd hg List.not_mem_nil
+  | cons a G ih =>
+    rcases List.mem_cons.mp hg with rfl | hg
+    · exact List.find?_cons_of_pos (beq_self_eq_true _)
+    · rw [List.find?_cons_of_neg (by
+        have := List.rel_of_pairwise_cons hs hg
+        simp only [beq_iff_eq]; omega)]
+      exact ih hs.of_cons hg
+
+end Schedule
 
 /-- Leaf `i` of a batch: the hash of the concatenated rows `i`. -/
 def leafHashes [Zero F] (hash : List F → Vector F d) (ms : List (Matrix F))
@@ -255,40 +469,6 @@ theorem openBatch_snd_eq_nodeValue [Zero F] (hash : List F → Vector F d)
   have := Nat.mod_lt (i / 2 ^ j + 1) (show 2 > 0 by decide)
   omega
 
-/-- VCVio's proof for the leaf `ofNat k i` of the perfect subtree containing it lists the
-siblings `(i >>> j) ^^^ 1` from the root down. -/
-theorem generateProof_perfectLeaves {α : Type*} (compress : α → α → α) (g : Nat → α)
-    (k i : Nat) :
-    (generateProof (buildMerkleTreeWithHash (perfectLeaves g k (i / 2 ^ k)) compress)
-        (SkeletonLeafIndex.ofNat k i)).toList =
-      ((List.range k).map fun j ↦ nodeValue compress g j ((i >>> j) ^^^ 1)).reverse := by
-  induction k with
-  | zero => rfl
-  | succ k ih =>
-    have hdiv : i / 2 ^ (k + 1) = i / 2 ^ k / 2 := by
-      rw [Nat.pow_succ, Nat.div_div_eq_div_mul]
-    have hx := xor_one_eq (i / 2 ^ k)
-    have hdm := Nat.div_add_mod (i / 2 ^ k) 2
-    rw [List.range_succ, List.map_append, List.reverse_append, List.map_cons, List.map_nil,
-      List.reverse_singleton, List.singleton_append, Nat.shiftRight_eq_div_pow, ← ih]
-    by_cases hb : i / 2 ^ k % 2 = 0
-    · rw [show SkeletonLeafIndex.ofNat (k + 1) i = .ofLeft (SkeletonLeafIndex.ofNat k i) by
-        simp only [SkeletonLeafIndex.ofNat, hb, ↓reduceIte]]
-      have h2 : 2 * (i / 2 ^ (k + 1)) = i / 2 ^ k := by omega
-      have h3 : 2 * (i / 2 ^ (k + 1)) + 1 = i / 2 ^ k ^^^ 1 := by omega
-      change nodeValue compress g k (2 * (i / 2 ^ (k + 1)) + 1) ::
-        (generateProof (buildMerkleTreeWithHash
-          (perfectLeaves g k (2 * (i / 2 ^ (k + 1)))) compress) _).toList = _
-      rw [h3, h2]
-    · rw [show SkeletonLeafIndex.ofNat (k + 1) i = .ofRight (SkeletonLeafIndex.ofNat k i) by
-        simp only [SkeletonLeafIndex.ofNat, hb, ↓reduceIte]]
-      have h2 : 2 * (i / 2 ^ (k + 1)) + 1 = i / 2 ^ k := by omega
-      have h3 : 2 * (i / 2 ^ (k + 1)) = i / 2 ^ k ^^^ 1 := by omega
-      change nodeValue compress g k (2 * (i / 2 ^ (k + 1))) ::
-        (generateProof (buildMerkleTreeWithHash
-          (perfectLeaves g k (2 * (i / 2 ^ (k + 1)) + 1)) compress) _).toList = _
-      rw [h2, h3]
-
 /-- The sibling path of an opening at `i < 2 ^ k` is VCVio's proof for the leaf `ofNat k i`,
 reversed. -/
 theorem openBatch_snd [Zero F] (hash : List F → Vector F d)
@@ -302,71 +482,6 @@ theorem openBatch_snd [Zero F] (hash : List F → Vector F d)
   rw [h0] at this
   rw [leafData, this, List.reverse_reverse,
     openBatch_snd_eq_nodeValue hash compress ms k i hms hh hi]
-
-/-- The last sibling of a path is compressed in last, on the side of bit `path.length` of the
-index. -/
-theorem climb_append (hash : List F → Vector F d)
-    (compress : Vector F d → Vector F d → Vector F d) (values : List (List F))
-    (path : List (Vector F d)) (sib : Vector F d) (i padded : Nat) (r : Vector F d) :
-    climb hash compress values (path ++ [sib]) [] i padded r =
-      if i / 2 ^ path.length % 2 = 0 then
-        compress (climb hash compress values path [] i padded r) sib
-      else compress sib (climb hash compress values path [] i padded r) := by
-  induction path generalizing i padded r with
-  | nil => simp only [List.nil_append, climb, List.length_nil, Nat.pow_zero, Nat.div_one]
-  | cons a path ih =>
-    simp only [List.cons_append, climb, ih, List.length_cons, Nat.pow_succ, Nat.mul_comm _ 2,
-      ← Nat.div_div_eq_div_mul]
-
-/-- Climbing a path without injections is VCVio's putative root at the leaf `ofNat k i`, for
-any proof listing the path from the root down. -/
-theorem climb_eq_getPutativeRootWithHash (hash : List F → Vector F d)
-    (compress : Vector F d → Vector F d → Vector F d) (values : List (List F)) (i padded : Nat)
-    (leaf : Vector F d) (k : Nat) (path : List (Vector F d))
-    (idx : SkeletonLeafIndex (Skeleton.perfect k)) (v : List.Vector (Vector F d) idx.depth)
-    (hidx : idx = SkeletonLeafIndex.ofNat k i) (hv : v.toList = path.reverse) :
-    climb hash compress values path [] i padded leaf =
-      getPutativeRootWithHash idx leaf v compress := by
-  induction k generalizing path with
-  | zero =>
-    subst hidx
-    have : path = [] := by
-      have := congrArg List.length hv
-      simp only [List.Vector.toList_length, SkeletonLeafIndex.depth_ofNat,
-        List.length_reverse] at this
-      exact List.eq_nil_of_length_eq_zero this.symm
-    subst this
-    rfl
-  | succ k ih =>
-    have hlen : path.length = k + 1 := by
-      have := congrArg List.length hv
-      simp only [List.Vector.toList_length, hidx, SkeletonLeafIndex.depth_ofNat,
-        List.length_reverse] at this
-      exact this.symm
-    obtain ⟨path, sib, rfl⟩ := List.eq_nil_or_concat' path |>.resolve_left
-      (by rintro rfl; simp only [List.length_nil] at hlen; omega)
-    replace hlen : path.length = k := by
-      simp only [List.length_append, List.length_singleton] at hlen; omega
-    obtain ⟨l, hl⟩ := v
-    simp only [List.Vector.toList_mk, List.reverse_append, List.reverse_singleton,
-      List.singleton_append] at hv
-    subst hv
-    rw [climb_append, hlen]
-    by_cases hb : i / 2 ^ k % 2 = 0
-    · have hidx' : idx = .ofLeft (SkeletonLeafIndex.ofNat k i) := by
-        rw [hidx]; simp only [SkeletonLeafIndex.ofNat, hb, ↓reduceIte]
-      subst hidx'
-      simp only [hb, ↓reduceIte, getPutativeRootWithHash]
-      rw [ih path _ ⟨path.reverse, by simp only [List.length_reverse, SkeletonLeafIndex.depth_ofNat,
-        hlen]⟩ rfl rfl]
-      rfl
-    · have hidx' : idx = .ofRight (SkeletonLeafIndex.ofNat k i) := by
-        rw [hidx]; simp only [SkeletonLeafIndex.ofNat, hb, ↓reduceIte]
-      subst hidx'
-      simp only [hb, ↓reduceIte, getPutativeRootWithHash]
-      rw [ih path _ ⟨path.reverse, by simp only [List.length_reverse, SkeletonLeafIndex.depth_ofNat,
-        hlen]⟩ rfl rfl]
-      rfl
 
 /-- The grouping fold of `heightGroups` over indices of one height. -/
 private theorem foldr_group (heights : List Nat) (h : Nat) (l : List Nat) (x : Nat)
@@ -406,7 +521,7 @@ theorem heightGroups_replicate (n h : Nat) (hn : 0 < n) :
   exact foldr_group _ _ _ _ hget
 
 /-- Concatenating a list of lists by index. -/
-private theorem flatMap_range_getD {β : Type*} (l : List (List β)) :
+theorem flatMap_range_getD {β : Type*} (l : List (List β)) :
     (List.range l.length).flatMap (l.getD · []) = l.flatten := by
   induction l with
   | nil => rfl
@@ -435,7 +550,8 @@ theorem verifyBatch_iff [DecidableEq F] (hash : List F → Vector F d)
     List.all_nil, Bool.true_and, List.length_replicate, Bool.and_eq_true, beq_iff_eq,
     decide_eq_true_eq, hlen, Nat.nextPowerOfTwo_eq_self (isPowerOfTwo_two_pow k),
     Nat.log2_two_pow, true_and, and_assoc]
-  rw [climb_eq_getPutativeRootWithHash hash compress values i _ _ k path _ v rfl hv]
+  rw [climb_eq, climbPays_nil,
+    MixedMerkleTree.climb_eq_getPutativeRootWithHash hash compress i _ k path _ v rfl hv]
   constructor
   · rintro ⟨hl, hi, hr⟩
     subst hl
@@ -487,25 +603,6 @@ theorem verifyBatch_binding [DecidableEq F] (hash : List F → Vector F d)
       _ _ hh (h₁.2.2.trans h₂.2.2.symm)
     exact Or.inr ⟨l₁, r₁, l₂, r₂, hc⟩
 
-/-- Leaf `ofNat k i` of the perfect subtree containing it is `g i`. -/
-theorem perfectLeaves_get {α : Type*} (g : Nat → α) (k i : Nat) :
-    (perfectLeaves g k (i / 2 ^ k)).get (SkeletonLeafIndex.ofNat k i) = g i := by
-  induction k with
-  | zero => simp only [Nat.pow_zero, Nat.div_one]; rfl
-  | succ k ih =>
-    have hdiv : i / 2 ^ (k + 1) = i / 2 ^ k / 2 := by
-      rw [Nat.pow_succ, Nat.div_div_eq_div_mul]
-    have hdm := Nat.div_add_mod (i / 2 ^ k) 2
-    by_cases hb : i / 2 ^ k % 2 = 0
-    · rw [show SkeletonLeafIndex.ofNat (k + 1) i = .ofLeft (SkeletonLeafIndex.ofNat k i) by
-        simp only [SkeletonLeafIndex.ofNat, hb, ↓reduceIte]]
-      change (perfectLeaves g k (2 * (i / 2 ^ (k + 1)))).get _ = _
-      rw [show 2 * (i / 2 ^ (k + 1)) = i / 2 ^ k by omega, ih]
-    · rw [show SkeletonLeafIndex.ofNat (k + 1) i = .ofRight (SkeletonLeafIndex.ofNat k i) by
-        simp only [SkeletonLeafIndex.ofNat, hb, ↓reduceIte]]
-      change (perfectLeaves g k (2 * (i / 2 ^ (k + 1)) + 1)).get _ = _
-      rw [show 2 * (i / 2 ^ (k + 1)) + 1 = i / 2 ^ k by omega, ih]
-
 /-- Completeness: an honest opening at `i < 2 ^ k` of a batch of matrices of height `2 ^ k`
 verifies against its commitment, as an instance of VCVio's `functional_completeness`. -/
 theorem verifyBatch_openBatch [Zero F] [DecidableEq F] (hash : List F → Vector F d)
@@ -527,5 +624,6 @@ theorem verifyBatch_openBatch [Zero F] [DecidableEq F] (hash : List F → Vector
     rw [leafData, ← Nat.div_eq_of_lt hi, perfectLeaves_get, leafHashes, List.flatMap_def]
   rw [hleaf]
   exact functional_completeness _ _ _
+
 
 end CompStark.Merkle

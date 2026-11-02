@@ -216,7 +216,8 @@ theorem size_of_batchOk (P : Params) (logMax I : ℕ) (x : List (Array F) × Rou
 /-- **A round's rows are its extracted columns.** If a round's opening at `I` is accepted and
 binds, every matrix's row opens its columns extracted under the round's commitment, at the index
 shifted to the matrix's height. -/
-theorem rows_eq_matColumn (P : Params) (cache : Merkle.Cache F (Digest F)) (logMax I : ℕ)
+theorem rows_eq_matColumn (P : Params) (cache : MixedMerkleTree.Cache (List F) (Digest F))
+    (logMax I : ℕ)
     (x : List (Array F) × Round F EF) (hok : BatchOkR H P logMax I x)
     (hbind : CapBindingM cache H x.2.1 P.capHeight (logBatch P x.2.2) (roundHeights P x.2.2))
     (hle : logBatch P x.2.2 ≤ logMax) (ws : List ℕ)
@@ -248,7 +249,8 @@ end Rows
 
 section Main
 variable [BaseField F] [Challenge F EF] (H : Primitives F Id) (S : Iop.Batch.Setup EF)
-  (cache : Merkle.Cache F (Digest F)) (proof : CompStark.Batch.BatchProof F EF) (zeta : EF)
+  (cache : MixedMerkleTree.Cache (List F) (Digest F)) (proof : CompStark.Batch.BatchProof F EF)
+  (zeta : EF)
 
 theorem getD_ofFn {α : Type} {k : ℕ} (f : Fin k → α) (i : Fin k) (d : α) :
     (List.ofFn f).getD i d = f i := by
@@ -347,7 +349,8 @@ theorem getD_flatMap_blocks {β γ : Type} (f : β → List γ) (d : γ) :
     exact getD_flatMap_blocks f d L i (by simp only [List.length_cons] at hi; omega) c hc
 
 variable [BaseField F] [Challenge F EF] (H : Primitives F Id) (S : Iop.Batch.Setup EF)
-  (cache : Merkle.Cache F (Digest F)) (proof : CompStark.Batch.BatchProof F EF) (zeta : EF)
+  (cache : MixedMerkleTree.Cache (List F) (Digest F)) (proof : CompStark.Batch.BatchProof F EF)
+  (zeta : EF)
 
 /-- The quotient round's matrices: every instance's chunks, opened at `ζ`. -/
 abbrev quotMats : List (Domain F × List (EF × List EF)) :=
@@ -495,7 +498,8 @@ theorem getD_filter_rank {β : Type} (q : β → Bool) (d : β) :
     · exact ih
 
 variable [BaseField F] [Challenge F EF] (H : Primitives F Id) (S : Iop.Batch.Setup EF)
-  (cache : Merkle.Cache F (Digest F)) (proof : CompStark.Batch.BatchProof F EF) (zeta : EF)
+  (cache : MixedMerkleTree.Cache (List F) (Digest F)) (proof : CompStark.Batch.BatchProof F EF)
+  (zeta : EF)
 
 /-- The preprocessed round's matrices: the extended preprocessed traces of the instances that
 have them, opened at `ζ` and, if read, at `ζ ω`. -/
@@ -620,7 +624,8 @@ end Preprocessed
 
 section Permutation
 variable [BaseField F] [Challenge F EF] (H : Primitives F Id) (S : Iop.Batch.Setup EF)
-  (cache : Merkle.Cache F (Digest F)) (proof : CompStark.Batch.BatchProof F EF) (zeta : EF)
+  (cache : MixedMerkleTree.Cache (List F) (Digest F)) (proof : CompStark.Batch.BatchProof F EF)
+  (zeta : EF)
 
 /-- The statement's instances, zipped with a list of one entry per instance. -/
 theorem zip_instances_getD {β : Type} (os : List β) (hos : os.length = S.k) (d : β) :
@@ -806,7 +811,8 @@ permutation trace and quotient words and FRI's words from `cache`, the opened va
 and final polynomial from the proof, and the challenges of the run on `H`. ArkLib folds at `s β`
 where Plonky3 folds at `β`, `s` the shift of the folded domain. -/
 noncomputable def extractB [BaseField F] [Challenge F EF] (S : Iop.Batch.Setup EF)
-    (cache : Merkle.Cache F (Digest F)) (H : Primitives F Id) (common : CompStark.Batch.Common F)
+    (cache : MixedMerkleTree.Cache (List F) (Digest F)) (H : Primitives F Id)
+    (common : CompStark.Batch.Common F)
     (proof : CompStark.Batch.BatchProof F EF) (pis : List (List F)) : Sound.Batch.Transcript S where
   trace i c x := Merkle.matColumnCap cache proof.mainCommit.toList S.params.capHeight S.logTop
     S.mainHeights S.mainWidths i c (S.logN i + S.params.logBlowup)
@@ -961,7 +967,8 @@ a proof whose commitments bind the rows extracted from `cache`, and under whose 
 commitment `cache` holds the preprocessed traces' extensions, the extracted transcript passes the
 batch's deterministic checks, with the run's grinding and query samples: the constraints at `ζ`,
 the final polynomial's degree, the query grinding and FRI's query checks. -/
-theorem bcsB (S : Iop.Batch.Setup EF) (cache : Merkle.Cache F (Digest F)) (H : Primitives F Id)
+theorem bcsB (S : Iop.Batch.Setup EF) (cache : MixedMerkleTree.Cache (List F) (Digest F))
+    (H : Primitives F Id)
     (common : CompStark.Batch.Common F) (proof : CompStark.Batch.BatchProof F EF)
     (publicValues : Fin S.k → List F)
     (hmain : CapBindingM cache H proof.mainCommit S.params.capHeight S.logTop S.mainHeights)

@@ -7,7 +7,7 @@ module
 public import CompStark.Fs.HashChain
 public import ArkLib.Interaction.Oracle.Security.BcsSimulation
 public import CompStark.Merkle.ExtractMixed
-public import CompStark.Merkle.Multi
+public import CompStark.Merkle.MixedMulti
 
 /-! # Merkle commitments on the log of the real oracles
 
@@ -25,9 +25,10 @@ extraction unstable or not binding, and proves stability and binding without the
   before it.
 * `prEvent_hashBad_le`: a program making at most `q` oracle queries logs a `HashBad` log with
   probability at most `hashBadError F capLen offs.length q = (2 + |offs| capLen) q² / |F|⁸`.
-* `extractRow_snapshotAt` (and `extractGroup_`, `extractCapRow_`, `matColumnCap_snapshotAt`):
-  without `HashBad`, extraction under a digest bound by a logged duplex input from the snapshot
-  at that input is extraction from all the logged hash answers (`merkleCache`, `hashCacheOf`).
+* `extract_snapshotAt` (and `extractCapRow_`, `matColumnCap_snapshotAt`): without `HashBad`,
+  VCVio's extraction (`MixedMerkleTree.extract`) under a digest bound by a logged duplex input
+  from the snapshot at that input is extraction from all the logged hash answers (`merkleCache`,
+  `hashCacheOf`).
 * `hashCache_injective`, `extractRow_of_logVerifyBatch` (and the mixed-height, multi-opening and
   capped variants): without `HashBad`, an opening accepted on the logged answers (`logHash`,
   `logCompress`, every other hash query answered by a digest `dstar` outside `logDigests`) opens
@@ -265,7 +266,7 @@ end Digests
 
 /-- Hash answers as a Merkle cache: the leaf hash of `row` answered `y`, and the compression of
 `left, right` answered `y`. -/
-def merkleCache (c : (merkleSpec F).QueryCache) : Merkle.Cache F (Digest F) where
+def merkleCache (c : (merkleSpec F).QueryCache) : MixedMerkleTree.Cache (List F) (Digest F) where
   leaf row y := c (.inl row) = some y
   node left right y := c (.inr (left, right)) = some y
 
@@ -363,26 +364,17 @@ theorem noPrediction_snapshotAt {L : QueryLog (sumSpec F K)} (hL : ¬ HashBad of
     leaf_new := fun row y h hk ↦ hnew (.inl row) y h hk
     node_new := fun left right y h hk ↦ hnew (.inr (left, right)) y h hk }
 
-/-- **Stable extraction.** Without `HashBad`, the row extracted under the initial capacity or a
-digest bound by a logged duplex input is the same from the snapshot at that input and from all
+/-- **Stable extraction.** Without `HashBad`, the rows extracted under the initial capacity or a
+digest bound by a logged duplex input are the same from the snapshot at that input and from all
 the logged hash answers. -/
-theorem extractRow_snapshotAt {L : QueryLog (sumSpec F K)} (hL : ¬ HashBad offs capLen L)
+theorem extract_snapshotAt {L : QueryLog (sumSpec F K)} (hL : ¬ HashBad offs capLen L)
     {s : Digest F} {x : List F} {a : Digest F × Vector F K}
     (hmem : (⟨.inl (s, x), a⟩ : (t : (sumSpec F K).Domain) × (sumSpec F K).Range t) ∈ L)
-    {r : Digest F} (hr : r = initCap ∨ r ∈ boundDigests offs capLen x) (k i : ℕ) :
-    Merkle.extractRow (merkleCache (Bcs.snapshotAt L (s, x))) k i r =
-      Merkle.extractRow (merkleCache (Bcs.hashCacheOf L)) k i r :=
-  (Merkle.extractRow_eq_of_noPrediction _ _ r (noPrediction_snapshotAt hL hmem hr) k i).symm
-
-/-- `extractRow_snapshotAt` for trees of mixed heights. -/
-theorem extractGroup_snapshotAt {L : QueryLog (sumSpec F K)} (hL : ¬ HashBad offs capLen L)
-    {s : Digest F} {x : List F} {a : Digest F × Vector F K}
-    (hmem : (⟨.inl (s, x), a⟩ : (t : (sumSpec F K).Domain) × (sumSpec F K).Range t) ∈ L)
-    {r : Digest F} (hr : r = initCap ∨ r ∈ boundDigests offs capLen x) (inj : List ℕ)
+    {r : Digest F} (hr : r = initCap ∨ r ∈ boundDigests offs capLen x) (inj : ℕ → Bool)
     (top t i : ℕ) :
-    Merkle.extractGroup (merkleCache (Bcs.snapshotAt L (s, x))) inj top t i r =
-      Merkle.extractGroup (merkleCache (Bcs.hashCacheOf L)) inj top t i r :=
-  (Merkle.extractGroup_eq_of_noPrediction _ _ inj r (noPrediction_snapshotAt hL hmem hr)
+    MixedMerkleTree.extract (merkleCache (Bcs.snapshotAt L (s, x))) inj top t i r =
+      MixedMerkleTree.extract (merkleCache (Bcs.hashCacheOf L)) inj top t i r :=
+  (MixedMerkleTree.extract_eq_of_noPrediction _ _ inj r (noPrediction_snapshotAt hL hmem hr)
     top t i).symm
 
 /-- The zero digest is the initial capacity. -/
@@ -396,14 +388,14 @@ theorem getD_cap (cap : List (Digest F)) (j : ℕ) : cap.getD j 0 = initCap ∨ 
   | none => exact Or.inl zero_eq_initCap
   | some d => exact Or.inr (List.mem_of_getElem? h)
 
-/-- `extractRow_snapshotAt` under a cap whose digests a logged duplex input binds. -/
+/-- `extract_snapshotAt` under a cap whose digests a logged duplex input binds. -/
 theorem extractCapRow_snapshotAt {L : QueryLog (sumSpec F K)} (hL : ¬ HashBad offs capLen L)
     {s : Digest F} {x : List F} {a : Digest F × Vector F K}
     (hmem : (⟨.inl (s, x), a⟩ : (t : (sumSpec F K).Domain) × (sumSpec F K).Range t) ∈ L)
     {cap : List (Digest F)} (hcap : ∀ d ∈ cap, d ∈ boundDigests offs capLen x) (k h i : ℕ) :
     Merkle.extractCapRow (merkleCache (Bcs.snapshotAt L (s, x))) k h i cap =
       Merkle.extractCapRow (merkleCache (Bcs.hashCacheOf L)) k h i cap :=
-  extractRow_snapshotAt hL hmem ((getD_cap cap _).imp_right (hcap _)) _ _
+  extract_snapshotAt hL hmem ((getD_cap cap _).imp_right (hcap _)) _ _ _ _
 
 /-- `extractCapRow_snapshotAt` for the columns of matrices of mixed heights. -/
 theorem matColumnCap_snapshotAt {L : QueryLog (sumSpec F K)} (hL : ¬ HashBad offs capLen L)
@@ -414,7 +406,7 @@ theorem matColumnCap_snapshotAt {L : QueryLog (sumSpec F K)} (hL : ¬ HashBad of
     Merkle.matColumnCap (merkleCache (Bcs.snapshotAt L (s, x))) cap capHeight top hs ws t j m r =
       Merkle.matColumnCap (merkleCache (Bcs.hashCacheOf L)) cap capHeight top hs ws t j m r := by
   simp only [Merkle.matColumnCap, Merkle.matColumn]
-  rw [extractGroup_snapshotAt hL hmem ((getD_cap cap _).imp_right (hcap _))]
+  rw [extract_snapshotAt hL hmem ((getD_cap cap _).imp_right (hcap _))]
 
 end Stable
 
@@ -423,50 +415,6 @@ end Stable
 section Climb
 variable {d : ℕ} (hash : List F → Vector F d) (compress : Vector F d → Vector F d → Vector F d)
   (values : List (List F)) (dstar : Vector F d) (cached : Vector F d → Vector F d → Prop)
-
-/-- A climb that does not end at `dstar` compresses only cached pairs, if compressing an uncached
-pair or a pair with `dstar` gives `dstar`. -/
-theorem climbPairs_cached [Zero F] (hfresh : ∀ a b, ¬ cached a b → compress a b = dstar)
-    (hstuck : ∀ a b, (a = dstar ∨ b = dstar) → ¬ cached a b) :
-    ∀ (path : List (Vector F d)) (leaf : Vector F d) (i padded : ℕ),
-      Merkle.climb hash compress values path [] i padded leaf ≠ dstar →
-        leaf ≠ dstar ∧ ∀ pair ∈ Merkle.climbPairs compress leaf i path, cached pair.1 pair.2
-  | [], leaf, _, _, h => ⟨h, fun _ hp ↦ absurd hp List.not_mem_nil⟩
-  | sib :: sibs, leaf, i, padded, h => by
-    set pair := if i % 2 = 0 then (leaf, sib) else (sib, leaf) with hpair
-    have hclimb : Merkle.climb hash compress values (sib :: sibs) [] i padded leaf =
-        Merkle.climb hash compress values sibs [] (i / 2) (padded / 2)
-          (compress pair.1 pair.2) := by
-      by_cases hi : i % 2 = 0 <;> simp only [Merkle.climb, hpair, hi, ↓reduceIte]
-    rw [hclimb] at h
-    obtain ⟨hnext, hrest⟩ := climbPairs_cached hfresh hstuck sibs _ (i / 2) (padded / 2) h
-    have hc : cached pair.1 pair.2 := by
-      by_contra hc
-      exact hnext (hfresh _ _ hc)
-    refine ⟨fun hl ↦ hstuck pair.1 pair.2 ?_ hc, fun p hp ↦ ?_⟩
-    · by_cases hi : i % 2 = 0 <;> simp only [hpair, hi, ↓reduceIte, hl, true_or, or_true]
-    · simp only [Merkle.climbPairs, List.mem_cons] at hp
-      rcases hp with rfl | hp
-      · exact hc
-      · exact hrest p hp
-
-/-- An accepted single-height opening climbs from the hash of the opened rows to the
-commitment. -/
-theorem climb_eq_of_verifyBatch [Zero F] [DecidableEq F] (root : Vector F d) (n k i : ℕ)
-    (hn : 0 < n) (path : List (Vector F d))
-    (hv : Merkle.verifyBatch hash compress root (List.replicate n (2 ^ k)) i values path = true) :
-    Merkle.climb hash compress values path [] i (2 ^ k) (hash values.flatten) = root := by
-  have hlog : Nat.log2 (2 ^ k).nextPowerOfTwo = k := Merkle.log2Ceil_two_pow k
-  have hlen : path.length = k := by
-    simp only [Merkle.verifyBatch, Merkle.heightGroups_replicate n _ hn, Bool.and_eq_true,
-      beq_iff_eq, hlog] at hv
-    exact hv.1.1.2
-  have hdepth : path.reverse.length = (BinaryTree.SkeletonLeafIndex.ofNat k i).depth := by
-    rw [List.length_reverse, hlen, BinaryTree.SkeletonLeafIndex.depth_ofNat]
-  have hroot := ((Merkle.verifyBatch_iff hash compress root n k i hn values path ⟨_, hdepth⟩
-    rfl).mp hv).2.2
-  rwa [← Merkle.climb_eq_getPutativeRootWithHash hash compress values i (2 ^ k) _ k path _
-    ⟨path.reverse, hdepth⟩ rfl rfl] at hroot
 
 /-- An accepted opening of mixed heights climbs from the hash of its tallest rows to the
 commitment. -/
@@ -558,15 +506,25 @@ theorem extractRow_of_logVerifyBatch {L : QueryLog (sumSpec F K)}
     (path : List (Digest F))
     (hv : Merkle.verifyBatch (logHash L dstar) (logCompress L dstar) root
       (List.replicate n (2 ^ k)) i values path = true) :
-    Merkle.extractRow (merkleCache (Bcs.hashCacheOf L)) k i root = some values.flatten := by
-  have hclimb := climb_eq_of_verifyBatch _ _ values root n k i hn path hv
-  obtain ⟨hleaf, hnodes⟩ := climbPairs_cached (logHash L dstar) (logCompress L dstar) values
-    dstar (fun a b ↦ Bcs.hashCacheOf L (.inr (a, b)) ≠ none)
-    (fun a b h ↦ logCompress_of_eq_none (not_not.mp h))
-    (fun a b hab h ↦ h (hashCacheOf_eq_none_of_dstar hdstar hab)) path _ i (2 ^ k)
-    (by rw [hclimb]; exact hroot)
-  exact Merkle.extractRow_eq_of_verifyBatch _ (hashCache_injective hL) _ _ root n k i hn values
-    path hv (leaf_logHash hleaf) fun pair hp ↦ node_logCompress (hnodes pair hp)
+    MixedMerkleTree.extract (merkleCache (Bcs.hashCacheOf L)) (fun _ ↦ false) k k i root =
+      some values.flatten := by
+  have hnode : ∀ a b, logCompress L dstar a b ≠ dstar →
+      (merkleCache (Bcs.hashCacheOf L)).node a b (logCompress L dstar a b) := fun a b h ↦
+    node_logCompress fun hc ↦ h (logCompress_of_eq_none hc)
+  have hstuck : ∀ a b, (a = dstar ∨ b = dstar) → logCompress L dstar a b = dstar :=
+    fun a b hab ↦ logCompress_of_eq_none (hashCacheOf_eq_none_of_dstar hdstar hab)
+  have hv' := hv
+  simp only [Merkle.verifyBatch, Merkle.heightGroups_replicate n _ hn, List.tail_cons,
+    List.zip_nil_right, List.all_nil, Bool.true_and, List.length_replicate, Bool.and_eq_true,
+    beq_iff_eq, decide_eq_true_eq, Merkle.nextPowerOfTwo_two_pow, Nat.log2_two_pow] at hv'
+  obtain ⟨⟨⟨hl, -⟩, -⟩, hclimb⟩ := hv'
+  rw [Merkle.climb_eq, Merkle.climbPays_nil, Merkle.hashRows, ← hl,
+    Merkle.flatMap_range_getD] at hclimb
+  obtain ⟨hx, hcc⟩ := MixedMerkleTree.climbCached_of_fresh (merkleCache (Bcs.hashCacheOf L))
+    (logHash L dstar) (logCompress L dstar) dstar hnode (fun row h ↦ leaf_logHash h) hstuck _ i
+    _ path (by rw [hclimb]; exact hroot)
+  exact Merkle.extractRow_eq_of_verifyBatch _ _ _ values (hashCache_injective hL) root n k i hn
+    path hv (leaf_logHash hx) hcc
 
 /-- **Binding at mixed heights.** Without `HashBad`, an opening of matrices of heights
 `2 ^ j ≤ 2 ^ top`, some of height `2 ^ top`, accepted on the logged answers against any digest
@@ -580,7 +538,7 @@ theorem extractGroup_of_logVerifyBatch {L : QueryLog (sumSpec F K)}
     (hv : Merkle.verifyBatch (logHash L dstar) (logCompress L dstar) root hs i values path =
       true) :
     ∀ g ∈ Merkle.heightGroups hs, ∀ l, g.1 = 2 ^ l →
-      Merkle.extractGroup (merkleCache (Bcs.hashCacheOf L)) (Merkle.injLevels top hs) top l
+      MixedMerkleTree.extract (merkleCache (Bcs.hashCacheOf L)) (Merkle.injLevels top hs) top l
         (i >>> (top - l)) root = some (g.2.flatMap fun m ↦ values.getD m []) := by
   have hnode : ∀ a b, logCompress L dstar a b ≠ dstar →
       (merkleCache (Bcs.hashCacheOf L)).node a b (logCompress L dstar a b) := fun a b h ↦
@@ -602,10 +560,10 @@ theorem extractGroup_of_logVerifyBatch {L : QueryLog (sumSpec F K)}
       · have := List.rel_of_pairwise_cons hk h
         have := Nat.pow_le_pow_right (show 0 < 2 by decide) hj
         omega
-  rw [hmax, Merkle.nextPowerOfTwo_two_pow] at hclimb
-  obtain ⟨hx, hcc⟩ := Merkle.climbCached_of_fresh (merkleCache (Bcs.hashCacheOf L))
-    (logHash L dstar) (logCompress L dstar) values dstar hnode (fun row h ↦ leaf_logHash h)
-    hstuck path rest i _ _ (by rw [hclimb]; exact hroot)
+  rw [hmax, Merkle.nextPowerOfTwo_two_pow, Merkle.climb_eq] at hclimb
+  obtain ⟨hx, hcc⟩ := MixedMerkleTree.climbCached_of_fresh (merkleCache (Bcs.hashCacheOf L))
+    (logHash L dstar) (logCompress L dstar) dstar hnode (fun row h ↦ leaf_logHash h) hstuck _ i
+    _ path (by rw [hclimb]; exact hroot)
   refine Merkle.extractGroup_of_verifyBatch _ _ _ values (hashCache_injective hL) root top hs
     hpow htop i path hv ?_ ?_
   · rw [hG]

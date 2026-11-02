@@ -17,12 +17,15 @@ require CompPoly from git "https://github.com/mitschabaude-bot/CompPoly.git" @
 -- commit-phase tree, state restoration over public-coin protocols with grinding draws, and
 -- Fiat–Shamir on a duplex challenger with challenges of several squeezes, its draws bounded
 -- against the certificate's challenge laws, and the BCS compiler: Merkle commitments in place of
--- oracle messages (branch `bcs` of the bot fork).
-require Arklib from git "https://github.com/mitschabaude-bot/ArkLib.git" @ "bd9623ea0b4c4630bb655a200259dbdcb8ffb560"
+-- oracle messages, against VCVio with Merkle trees of injected payloads (branch `vcvio-merkle` of
+-- the bot fork).
+require Arklib from git "https://github.com/mitschabaude-bot/ArkLib.git" @
+    "cbc1c527cc095f3748a33661179ad3fdd2e3f11d"
 
--- VCVio as ArkLib main pins it.
-require VCVio from git "https://github.com/Verified-zkEVM/VCVio" @
-    "6214f907760776ceab8b1f828c9015f549e66e31"
+-- VCVio with Merkle trees of injected payloads, caps and pruned multi-openings (branch
+-- `merkle-mixed` of the bot fork).
+require VCVio from git "https://github.com/mitschabaude-bot/VCVio.git" @
+    "f649d28a731711a0c96b6da30d09cb4b61cea7ed"
 
 -- Mathlib as CompPoly pins it, last so that its dependencies take precedence over ArkLib's.
 require mathlib from git "https://github.com/leanprover-community/mathlib4" @ "v4.35.0"

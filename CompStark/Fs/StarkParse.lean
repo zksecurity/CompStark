@@ -1052,7 +1052,7 @@ def CommitChecks (G : Primitives F Id) (P : Params) : List (Cap F × F) → G.St
         (Fs.chkWit G P.commitPowBits cw.2 (Fs.obsList G s (capElems cw.1))).2).2
 
 /-- FRI's path read off one more commitment and folding challenge, one layer later. -/
-theorem friPath_cons (cache : Merkle.Cache F (Digest F)) (ch : ℕ) (c₀ : Cap F)
+theorem friPath_cons (cache : MixedMerkleTree.Cache (List F) (Digest F)) (ch : ℕ) (c₀ : Cap F)
     (commits : List (Cap F)) (b₀ : EF) (betas : List EF) {top d t : ℕ} (c : Fin d → 𝕂)
     (xs : Fin t → Fin (2 ^ top)) : ∀ {n : ℕ} (s : Fri.Interaction.Schedule n) (j : ℕ),
     Iop.friPath cache ch (c₀ :: commits) (b₀ :: betas) c xs s (j + 1) =

@@ -247,12 +247,12 @@ def commitPhase (B : Backend F EF width) (P : Params) (arities : List Nat) (inpu
   return { cp with finalPoly := finalPoly }
 
 /-- The multi-opening of the commitment `c` with a cap of height `capHeight` at `indices`: every
-query's rows, and the siblings of their paths below the cap pruned (`Merkle.prune`). -/
+query's rows, and the siblings of their paths below the cap pruned (`MixedMerkleTree.prune`). -/
 def openMulti (B : Backend F EF width) (capHeight : Nat) (c : B.C) (indices : List Nat) :
     MultiOpening F :=
   let os := indices.map (B.openAt c)
   ⟨(os.map (·.values)).toArray,
-    (Merkle.prune (B.logHeight c - min capHeight (B.logHeight c)) indices
+    (MixedMerkleTree.prune 0 (B.logHeight c - min capHeight (B.logHeight c)) indices
       (os.map (·.path.toList))).toArray⟩
 
 /-- The openings of the commit-phase rounds with commitments `cs` and log arities `las` at the

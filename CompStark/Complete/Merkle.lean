@@ -28,6 +28,7 @@ is the nodes of its layer (`cap_eq_injNode`).
 
 namespace CompStark.Fri
 open CompStark.Stark CompStark.Merkle
+open MixedMerkleTree (nodeValue xor_one_eq)
 
 variable {F : Type}
 local notation "hashF" => CompStark.Hash.Poseidon2.hash F
@@ -214,7 +215,7 @@ theorem verifyMulti_openMulti [Poseidon2Field F] {k : Nat} {ms : List (Mat F)}
       (ms.map fun m ↦ (m.height, m.width)) indices
       (indices.map fun i ↦ ((Committed.ofMats hashF compF ms).openAt i).values.toList.map
         (·.toList))
-      (Merkle.prune (k - min capHeight k) indices
+      (MixedMerkleTree.prune 0 (k - min capHeight k) indices
         (indices.map fun i ↦ ((Committed.ofMats hashF compF ms).openAt i).path.toList)) = true := by
   obtain ⟨h1, h2⟩ := h.toMatrix
   have hrows : ∀ i, ((Committed.ofMats hashF compF ms).openAt i).values.toList.map (·.toList) =

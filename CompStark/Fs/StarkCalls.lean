@@ -5,7 +5,7 @@ Released under Apache 2.0 license as described in the file LICENSE.
 module
 
 public import CompStark.Fs.RandomOracle
-public import CompStark.Merkle.Multi
+public import CompStark.Merkle.MixedMulti
 public import CompStark.Fri.Shapes
 public import CompStark.Fs.MixedAccept
 public import VCVio.OracleComp.QueryTracking.QueryBound.Basic
@@ -192,13 +192,13 @@ variable [Zero F]
 theorem levelM_bound (compress : Vector F d → Vector F d → OracleComp spec (Vector F d))
     (hc : ∀ a b, IsTotalQueryBound (compress a b) 1) :
     ∀ (nodes : List (Nat × Nat × Vector F d)) (sibs : List (Vector F d)),
-      IsTotalQueryBound (levelM compress nodes sibs) nodes.length ∧
-        ∀ r ∈ support (levelM compress nodes sibs), r.1.length ≤ nodes.length
+      IsTotalQueryBound (MixedMerkleTree.levelM 0 compress nodes sibs) nodes.length ∧
+        ∀ r ∈ support (MixedMerkleTree.levelM 0 compress nodes sibs), r.1.length ≤ nodes.length
   | [], sibs => ⟨trivial, fun r hr ↦ by
-      rw [levelM, mem_support_pure_iff] at hr
+      rw [MixedMerkleTree.levelM, mem_support_pure_iff] at hr
       rw [hr]⟩
   | [(i, q, x)], sibs => by
-    rw [levelM]
+    rw [MixedMerkleTree.levelM]
     split <;>
     · refine ⟨(isTotalQueryBound_bind (n₁ := 1) (n₂ := 0) (hc _ _) fun _ ↦
         isTotalQueryBound_pure _).mono le_rfl, fun r hr ↦ ?_⟩
@@ -206,7 +206,7 @@ theorem levelM_bound (compress : Vector F d → Vector F d → OracleComp spec (
       obtain ⟨z, -, rfl⟩ := hr
       exact le_rfl
   | (i, q, x) :: (j, q', y) :: rest, sibs => by
-    rw [levelM]
+    rw [MixedMerkleTree.levelM]
     split
     · exact (levelM_cons_bound (hc x y) (levelM_bound compress hc rest sibs) _ _).imp
         (fun h ↦ h.mono (by simp only [List.length_cons]; omega))
@@ -236,8 +236,9 @@ theorem mapM_bound {α β : Type} (f : α → OracleComp spec β) (c : Nat)
     obtain ⟨b, -, bs, hbs, rfl⟩ := hr
     rw [List.length_cons, List.length_cons, ih.2 _ hbs]
 
-theorem length_frontier_le (indices : List Nat) : (frontier indices).length ≤ indices.length := by
-  rw [frontier, List.length_map, List.length_mergeSort]
+theorem length_frontier_le (indices : List Nat) :
+    (MixedMerkleTree.frontier indices).length ≤ indices.length := by
+  rw [MixedMerkleTree.frontier, List.length_map, List.length_mergeSort]
   exact (List.dedup_sublist indices).length_le
 
 /-- A walk compresses at most once per node and level, and hashes and compresses once more per
@@ -314,7 +315,7 @@ theorem isTotalQueryBound_verifyMultiM [DecidableEq F]
       return (iq.1, iq.2, ← hash (((List.range (dims.map (·.1)).length).filter
         ((dims.map (·.1)).getD · 0 == 2 ^ j)).flatMap fun k ↦ (rows.getD iq.2 []).getD k [])))
       1 (fun _ ↦ isTotalQueryBound_bind (hhash _) fun _ ↦ isTotalQueryBound_pure _)
-      (frontier indices)
+      (MixedMerkleTree.frontier indices)
     have hf := length_frontier_le indices
     simp only [List.length_cons] at hklen
     refine (isTotalQueryBound_bind_of_mem_support hleaves.1

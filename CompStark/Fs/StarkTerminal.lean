@@ -167,7 +167,7 @@ theorem lift_twoAdicGen_reverseBits {top m : ℕ} (hm : m ≤ top) (htop : top �
     BaseField.twoAdicGen_pow m r (by omega), Fs.lift_pow]
 
 section Fold
-variable (cache : Merkle.Cache F (Digest F)) (H : Primitives F Id) (ch : ℕ)
+variable (cache : MixedMerkleTree.Cache (List F) (Digest F)) (H : Primitives F Id) (ch : ℕ)
 
 /-- **Plonky3's fold is ArkLib's on the subgroup.** An accepted fold at index `I` of the layer of
 `2 ^ m` points, whose commitment binds, computes ArkLib's fold of the extracted word on the
@@ -200,14 +200,16 @@ end Fold
 /-- FRI's execution path read off a proof from layer `j` of a schedule: layer `j`'s word
 extracted under commitment `j` (`friWordOf`) and Plonky3's folding challenge `j`, then the final
 polynomial `c` and the query positions `xs`. -/
-noncomputable def friPath (cache : Merkle.Cache F (Digest F)) (ch : ℕ) (commits : List (Cap F))
+noncomputable def friPath (cache : MixedMerkleTree.Cache (List F) (Digest F)) (ch : ℕ)
+    (commits : List (Cap F))
     (betas : List EF) {top d t : ℕ} (c : Fin d → 𝕂) (xs : Fin t → Fin (2 ^ top)) :
     {m : ℕ} → (s : Schedule m) → ℕ → (Fri.Interaction.protocol 𝕂 top d t s).tree.ExecutionPath
   | _, .final, _ => ⟨c, xs, ⟨⟩⟩
   | m, .fold k _ _ rest, j => ⟨friWordOf cache ch (commits.getD j #[]) m k,
       Challenge.toSpec (betas.getD j 0), friPath cache ch commits betas c xs rest (j + 1)⟩
 
-theorem friQueries_friPath (cache : Merkle.Cache F (Digest F)) (ch : ℕ) (commits : List (Cap F))
+theorem friQueries_friPath (cache : MixedMerkleTree.Cache (List F) (Digest F)) (ch : ℕ)
+    (commits : List (Cap F))
     (betas : List EF) {top d t : ℕ} (c : Fin d → 𝕂) (xs : Fin t → Fin (2 ^ top)) :
     ∀ {m : ℕ} (s : Schedule m) (j : ℕ),
       friQueries top d t s (friPath cache ch commits betas c xs s j) = xs
@@ -215,7 +217,7 @@ theorem friQueries_friPath (cache : Merkle.Cache F (Digest F)) (ch : ℕ) (commi
   | _, .fold _ _ _ rest, j => friQueries_friPath cache ch commits betas c xs rest (j + 1)
 
 section Query
-variable (cache : Merkle.Cache F (Digest F)) (H : Primitives F Id) (ch : ℕ)
+variable (cache : MixedMerkleTree.Cache (List F) (Digest F)) (H : Primitives F Id) (ch : ℕ)
   (commits : List (Cap F)) (betas : List EF) (steps : List (Fs.QueryFold EF))
   (hbl : betas.length = steps.length) (hcl : commits.length = steps.length)
   (hbind : ∀ c ∈ commits, Fs.CapBinding cache H c) {top : ℕ} (htop : top ≤ twoAdicity F)
@@ -321,7 +323,8 @@ quotient messages under the proof's commitments, extracted from `cache` (`traceM
 `quotientMessageOf`), the challenges `α`, `ζ` and `a` of the run on `H`, the opened values, and
 FRI's path (`friPath`): the layers' words under the proof's FRI commitments, the run's folding
 challenges, the proof's final polynomial and the run's query positions. -/
-noncomputable def proofPath (cache : Merkle.Cache F (Digest F)) (H : Primitives F Id)
+noncomputable def proofPath (cache : MixedMerkleTree.Cache (List F) (Digest F))
+    (H : Primitives F Id)
     (vk : Option (PreprocessedKey F)) (proof : Proof F EF) (pis : List F) :
     S.protocol.tree.ExecutionPath :=
   ⟨S.traceMessageOf cache proof.traceCommit,
@@ -369,7 +372,8 @@ primitives `H` accepts a proof of `2 ^ logN` rows whose trace, quotient and FRI 
 the rows extracted from `cache` (`Fs.CapBinding`), and under whose preprocessed commitment `cache`
 holds the preprocessed trace's extension, the STARK's terminal accepts on the proof's execution
 path (`proofPath`). -/
-theorem terminal_of_verifyWith (cache : Merkle.Cache F (Digest F)) (H : Primitives F Id)
+theorem terminal_of_verifyWith (cache : MixedMerkleTree.Cache (List F) (Digest F))
+    (H : Primitives F Id)
     (vk : Option (PreprocessedKey F)) (proof : Proof F EF) (pis : List F)
     (hdb : proof.degreeBits = S.logN)
     (htrace : Fs.CapBinding cache H proof.traceCommit)

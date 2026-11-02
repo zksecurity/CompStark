@@ -6,7 +6,7 @@ module
 
 public import CompStark.Stark.Verifier
 public import CompStark.Stark.Recompose
-public import CompStark.Merkle.Multi
+public import CompStark.Merkle.MixedMulti
 public import CompStark.Fri.Shapes
 
 /-! # Accepting runs of the verifier on pure primitives
