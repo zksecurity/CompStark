@@ -30,7 +30,9 @@ and runs it.
   the verifying key of its preprocessed trace, the verifier rejects it with a changed opened
   value, a changed preprocessed opening, or a missing or wrong verifying key, and the
   specification prover and the fast prover reproduce it from the same trace. Over the quintic
-  extension, the specification prover's proofs verify.
+  extension, Plonky3's proofs (`tests/data/quintic_AIR_*.json`, from `compstark-bench
+  stark-quintic …`) verify and both provers reproduce them, and the fast batch prover reproduces
+  the specification's batch proofs with lookups.
 * The fast prover over BabyBear reproduces Plonky3's BabyBear proofs
   (`tests/data/babybear_AIR_*.json`), and its batch proofs (`tests/data/babybear_batch_CASE_*.json`,
   from `compstark-bench batch-babybear CASE …`) verify and both provers reproduce them.
@@ -342,17 +344,42 @@ def proof (name : String) (air : Nat → Air F) (inst : Nat → Array F × List 
     (proveWith (CompStark.KoalaBear.backendFor [] P.logBlowup [(logN, A.logQuotientChunks logN)]) P
       A logN #[encodeFields trace] pis == rust)
 
-/-- Over the quintic extension, the specification prover's proof verifies, and is rejected for
-other public values. -/
-def proofExt5 (air : Nat → Air F) (inst : Nat → Array F × List F) (ps : List Nat) : IO Unit := do
+/-- Over the quintic extension, Plonky3's saved proof of `air logN` (`compstark-bench
+stark-quintic …`) verifies, is rejected for other public values, and the specification prover
+and the fast prover reproduce it. -/
+def proofExt5 (name : String) (air : Nat → Air F) (inst : Nat → Array F × List F)
+    (ps : List Nat) : IO Unit := do
   let (logN, P) ← params ps
   let A := air logN
+  let vk := setup P A logN
+  let file := s!"quintic_{name}_{"_".intercalate (ps.map toString)}"
+  let rust : Proof F _root_.KoalaBear.Fast.Ext5 ←
+    IO.ofExcept (Json.parse (← IO.FS.readFile s!"tests/data/{file}.json"))
   let (trace, pis) := inst (2 ^ logN)
-  let pf := prove _root_.KoalaBear.Fast.Ext5 P A logN trace pis
-  if let .error e := verify P A (setup P A logN) pf pis then
-    throw (IO.userError s!"Ext5 {ps}: {e}")
-  check s!"Ext5 {ps}: rejects other public values"
-    (verify P A (setup P A logN) pf (pis.map (· + 1)) matches .error _)
+  if let .error e := verify P A vk rust pis then throw (IO.userError s!"{file}: {e}")
+  check s!"{file}: rejects other public values"
+    (verify P A vk rust (pis.map (· + 1)) matches .error _ || pis.isEmpty)
+  check s!"{file}: specification prover"
+    (prove _root_.KoalaBear.Fast.Ext5 P A logN trace pis == rust)
+  check s!"{file}: fast prover"
+    (proveWith (CompStark.KoalaBear.backendForQuintic [] P.logBlowup
+      [(logN, A.logQuotientChunks logN)]) P A logN #[encodeFields trace] pis == rust)
+
+/-- Over the quintic extension, the fast batch prover reproduces the specification's proof of
+the batch `name`, which verifies. -/
+def batchProofExt5 (name : String) (ps : List Nat) : IO Unit := do
+  let (_, P) ← params (0 :: ps)
+  let insts : List (BatchInstance F) := batchCase name
+  let instances := insts.map (·.1)
+  let traces := insts.map (·.2.1)
+  let pis := insts.map (·.2.2)
+  let pf := Batch.proveBatch _root_.KoalaBear.Fast.Ext5 P instances traces pis
+  if let .error e := Batch.verifyBatch P (instances.map (·.air)) (Batch.setupBatch P instances) pf
+      pis then
+    throw (IO.userError s!"quintic batch {name}: {e}")
+  check s!"quintic batch {name}: fast prover" (Batch.proveBatchWith
+    (CompStark.KoalaBear.backendForQuintic [] P.logBlowup (Batch.shapes instances)) P instances
+      (traces.map fun t ↦ #[encodeFields t]) pis == pf)
 
 /-- The saved batch proof of `name` for the parameters `logBlowup logFinal maxLogArity queries
 commitPow queryPow [batchPow oodPow]` verifies against the batch's common data; is rejected when
@@ -459,6 +486,9 @@ def batchProofs : IO Unit := do
   batchProof "range" [1, 1, 2, 6, 1, 2, 2, 3]
   batchProof "failed-global" [1, 1, 2, 6, 1, 2, 2, 3]
   batchProof "failed-local" [1, 1, 2, 6, 1, 2, 2, 3]
+  batchProofExt5 "lookups" [2, 0, 2, 5, 0, 0]
+  batchProofExt5 "both" [1, 1, 2, 6, 1, 2, 2, 3, 8]
+  batchProofExt5 "heights" [1, 1, 2, 6, 1, 2, 2, 3, 4]
 
 def proofs : IO Unit := do
   for ps in [[3, 2, 2, 1, 2, 0, 0], [3, 2, 2, 1, 2, 1, 1], [6, 1, 0, 1, 10, 0, 8],
@@ -482,10 +512,11 @@ def proofs : IO Unit := do
   for ps in [[4, 2, 0, 1, 4, 0, 0], [5, 1, 1, 2, 6, 1, 2, 2, 3]] do
     proof "square" (fun _ ↦ square) squareInstance ps
   for ps in [[3, 2, 2, 1, 2, 0, 0], [5, 2, 0, 2, 5, 0, 3], [4, 1, 0, 1, 3, 1, 1, 2, 2]] do
-    proofExt5 (fun _ ↦ fibonacci) fibInstance ps
-  proofExt5 (fun _ ↦ cube) cubeInstance [4, 2, 0, 1, 4, 1, 2]
-  proofExt5 (mulFib · true) prepInstance [4, 2, 0, 1, 4, 1, 2]
-  proofExt5 (fun _ ↦ periodicCube) pcubeInstance [4, 2, 0, 1, 4, 1, 2]
+    proofExt5 "fib" (fun _ ↦ fibonacci) fibInstance ps
+  proofExt5 "cube" (fun _ ↦ cube) cubeInstance [4, 2, 0, 1, 4, 1, 2]
+  proofExt5 "prep" (mulFib · true) prepInstance [4, 2, 0, 1, 4, 1, 2]
+  proofExt5 "pcube" (fun _ ↦ periodicCube) pcubeInstance [4, 2, 0, 1, 4, 1, 2]
+  proofExt5 "wide" (fun _ ↦ wide 64) (fun n ↦ (wideTrace n, [])) [10, 1, 0, 1, 20, 0, 4]
 
 end KoalaBear
 

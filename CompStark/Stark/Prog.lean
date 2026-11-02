@@ -5,15 +5,16 @@ Released under Apache 2.0 license as described in the file LICENSE.
 module
 
 public import CompStark.Lookup.LogUp
+public import CompPoly.Fields.Extension.Arithmetic
 public import Std.Data.HashMap.Basic
 
 /-! # Straight-line programs for constraints
 
 A program (`Prog`) evaluates constraints on one row: straight-line code over registers whose
 instructions load a column into a register, combine two operands, or add an operand times a weight
-to four accumulators. An operand is a register, a column of the trace at the current or next row,
-read where it is, or a constant. Run on a block of rows, every instruction is one vectorized pass
-over the block.
+to the accumulators, one per coordinate of the weights. An operand is a register, a column of the
+trace at the current or next row, read where it is, or a constant. Run on a block of rows, every
+instruction is one vectorized pass over the block.
 
 `compile` builds a program from constraints:
 
@@ -24,8 +25,9 @@ over the block.
 * the nodes in order, each constraint's accumulation after its nodes, then register allocation:
   a node gets a free register when it is computed and frees it at its last use.
 
-An extension expression (`Lookup.ExtExpr`) is four nodes, its coordinates over a binomial
-extension `X⁴ = W`; its challenges and terminal are scalars of the run, as public values are.
+An extension expression (`Lookup.ExtExpr`) is `d` nodes, its coordinates over an extension
+`F[X] / f` of degree `d` (`CompPoly.Extension.ExtensionParams`), products reduced by the table of
+`X^k mod f`; its challenges and terminal are scalars of the run, as public values are.
 
 `Prog.run` runs a program on any `Machine`: the field's values row by row (`fieldMachine`), or
 blocks of packed words.
@@ -220,16 +222,21 @@ def ofExpr : Expr F → Dag F → Dag F × Nat
     let (g, j) := ofExpr b g
     g.op .mul i j
 
-/-- The four coordinates of an extension element as nodes. -/
-abbrev Quad := Nat × Nat × Nat × Nat
+/-- Nodes interned in order. -/
+def internAll (g : Dag F) : List (Node F) → Dag F × List Nat
+  | [] => (g, [])
+  | n :: ns =>
+    let (g, i) := g.intern n
+    let (g, is) := g.internAll ns
+    (g, i :: is)
 
-/-- Coordinatewise operation on quadruples of nodes. -/
-def op4 (g : Dag F) (o : Op) (x y : Quad) : Dag F × Quad :=
-  let (g, c0) := g.op o x.1 y.1
-  let (g, c1) := g.op o x.2.1 y.2.1
-  let (g, c2) := g.op o x.2.2.1 y.2.2.1
-  let (g, c3) := g.op o x.2.2.2 y.2.2.2
-  (g, (c0, c1, c2, c3))
+/-- Coordinatewise operation on lists of nodes. -/
+def opN (g : Dag F) (o : Op) : List Nat → List Nat → Dag F × List Nat
+  | x :: xs, y :: ys =>
+    let (g, c) := g.op o x y
+    let (g, cs) := g.opN o xs ys
+    (g, c :: cs)
+  | _, _ => (g, [])
 
 /-- An expression over nodes. -/
 inductive Tree where
@@ -244,20 +251,50 @@ def ofTree (g : Dag F) : Tree → Dag F × Nat
     let (g, j) := g.ofTree b
     g.op o i j
 
-/-- The product of quadruples of nodes in the binomial extension `X⁴ = W`, `w` the node of `W`:
-`x₀y₀ + W (x₁y₃ + x₂y₂ + x₃y₁)`, `x₀y₁ + x₁y₀ + W (x₂y₃ + x₃y₂)`,
-`x₀y₂ + x₁y₁ + x₂y₀ + W x₃y₃`, `x₀y₃ + x₁y₂ + x₂y₁ + x₃y₀`. -/
-def mul4 (g : Dag F) (w : Nat) (x y : Quad) : Dag F × Quad :=
-  let (x0, x1, x2, x3) := x
-  let (y0, y1, y2, y3) := y
-  let m (a b : Nat) : Tree := .op .mul (.leaf a) (.leaf b)
-  let s (u v : Tree) : Tree := .op .add u v
-  let tw (u : Tree) : Tree := .op .mul (.leaf w) u
-  let (g, c0) := g.ofTree (s (m x0 y0) (tw (s (s (m x1 y3) (m x2 y2)) (m x3 y1))))
-  let (g, c1) := g.ofTree (s (s (m x0 y1) (m x1 y0)) (tw (s (m x2 y3) (m x3 y2))))
-  let (g, c2) := g.ofTree (s (s (s (m x0 y2) (m x1 y1)) (m x2 y0)) (tw (m x3 y3)))
-  let (g, c3) := g.ofTree (s (s (s (m x0 y3) (m x1 y2)) (m x2 y1)) (m x3 y0))
-  (g, (c0, c1, c2, c3))
+/-- The sum of expressions over nodes from the first, the node `z` for none. -/
+def sumTree (z : Nat) : List Tree → Tree
+  | [] => .leaf z
+  | t :: ts => ts.foldl (fun acc u ↦ .op .add acc u) t
+
+/-- Coefficient `k` of the unreduced product of the coordinate nodes `x` and `y` of degree `d`,
+`∑_{i + j = k} xᵢ yⱼ`, the node `z` for none. -/
+def convTree (z d : Nat) (x y : List Nat) (k : Nat) : Tree :=
+  sumTree z ((List.range d).filterMap fun i ↦ if i ≤ k ∧ k - i < d then
+    some (.op .mul (.leaf (x.getD i 0)) (.leaf (y.getD (k - i) 0))) else none)
+
+/-- One higher convolution `k` of the coordinate nodes `x` and `y` of degree `d` added to the
+expression `gt.2` with the table's entry `t k`: nothing for `0`, a difference for `-1`, else a
+product by the entry as a constant node of `gt.1`. -/
+def mulStep (z d : Nat) (x y : List Nat) (t : Nat → F) (gt : Dag F × Tree) (k : Nat) :
+    Dag F × Tree :=
+  if t k = 0 then gt
+  else if t k = -1 then (gt.1, .op .sub gt.2 (convTree z d x y k))
+  else
+    let (g, c) := gt.1.intern (.const (t k))
+    (g, .op .add gt.2 (.op .mul (.leaf c) (convTree z d x y k)))
+
+/-- Coordinate `m` of the product of the coordinate nodes `x` and `y` of degree `d`, with the
+entries `t k` of coordinate `m` of the reduction table: the convolution `m` plus the higher
+convolutions `k ≥ d` times the nonzero entries (`mulStep`). -/
+def mulCoord (g : Dag F) (z d : Nat) (x y : List Nat) (t : Nat → F) (m : Nat) : Dag F × Nat :=
+  let (g, tr) := (List.range' d (d - 1)).foldl (mulStep z d x y t) (g, convTree z d x y m)
+  g.ofTree tr
+
+/-- Coordinate `m` of the product of the coordinate nodes `x` and `y` over the extension `P`,
+appended to the coordinates `gs.2`, with the table `tbl` of `X^k mod f`. -/
+def mulNStep (P : CompPoly.Extension.ExtensionParams F) (z : Nat) (x y : List Nat)
+    (tbl : Array (CompPoly.Extension.Ext P)) (gs : Dag F × List Nat) (m : Nat) :
+    Dag F × List Nat :=
+  let (g, c) := mulCoord gs.1 z P.d x y
+    (fun k ↦ CompPoly.Extension.Ext.coeffNat (tbl.getD k 0) m) m
+  (g, gs.2 ++ [c])
+
+/-- The product of the coordinate nodes `x` and `y` over the extension `P`, reduced by the table
+`Ext.red P` of `X^k mod f` (`Ext.coeff_mul_reduce`). -/
+def mulN (P : CompPoly.Extension.ExtensionParams F) (g : Dag F) (x y : List Nat) :
+    Dag F × List Nat :=
+  let (g, z) := g.intern (.const 0)
+  (List.range P.d).foldl (mulNStep P z x y (CompPoly.Extension.Ext.red P).toArray) (g, [])
 
 /-- `e` with every public value from `np` on the constant `0`. -/
 def pubBelow (np : Nat) : Expr F → Expr F
@@ -267,51 +304,32 @@ def pubBelow (np : Nat) : Expr F → Expr F
   | .mul a b => .mul (pubBelow np a) (pubBelow np b)
   | e => e
 
-/-- The coordinates of an extension expression over `X⁴ = W` as nodes. With `np` public values,
-public value `i` is scalar `i`, the terminal's coordinates are the scalars from `np` and challenge
-`i`'s those from `np + 4 (i + 1)`. -/
-def ofExt (W : F) (np : Nat) : Lookup.ExtExpr F → Dag F → Dag F × Quad
+/-- The `d` coordinates of an extension expression over the extension `P` of degree `d` as nodes.
+With `np` public values, public value `i` is scalar `i`, the terminal's coordinates are the scalars
+from `np` and challenge `i`'s those from `np + d (i + 1)`; permutation column `c`'s coordinates are
+the loaded columns from `d c`. -/
+def ofExt (P : CompPoly.Extension.ExtensionParams F) (np : Nat) :
+    Lookup.ExtExpr F → Dag F → Dag F × List Nat
   | .base e, g =>
     let (g, i) := ofExpr (pubBelow np e) g
     let (g, z) := g.intern (.const 0)
-    (g, (i, z, z, z))
-  | .perm c, g =>
-    let (g, c0) := g.intern (.load (.permCur (4 * c)))
-    let (g, c1) := g.intern (.load (.permCur (4 * c + 1)))
-    let (g, c2) := g.intern (.load (.permCur (4 * c + 2)))
-    let (g, c3) := g.intern (.load (.permCur (4 * c + 3)))
-    (g, (c0, c1, c2, c3))
-  | .permNext c, g =>
-    let (g, c0) := g.intern (.load (.permNext (4 * c)))
-    let (g, c1) := g.intern (.load (.permNext (4 * c + 1)))
-    let (g, c2) := g.intern (.load (.permNext (4 * c + 2)))
-    let (g, c3) := g.intern (.load (.permNext (4 * c + 3)))
-    (g, (c0, c1, c2, c3))
-  | .challenge i, g =>
-    let (g, c0) := g.intern (.scalar (np + 4 * (i + 1)))
-    let (g, c1) := g.intern (.scalar (np + 4 * (i + 1) + 1))
-    let (g, c2) := g.intern (.scalar (np + 4 * (i + 1) + 2))
-    let (g, c3) := g.intern (.scalar (np + 4 * (i + 1) + 3))
-    (g, (c0, c1, c2, c3))
-  | .terminal, g =>
-    let (g, c0) := g.intern (.scalar np)
-    let (g, c1) := g.intern (.scalar (np + 1))
-    let (g, c2) := g.intern (.scalar (np + 2))
-    let (g, c3) := g.intern (.scalar (np + 3))
-    (g, (c0, c1, c2, c3))
+    (g, i :: List.replicate (P.d - 1) z)
+  | .perm c, g => g.internAll ((List.range P.d).map fun j ↦ .load (.permCur (P.d * c + j)))
+  | .permNext c, g => g.internAll ((List.range P.d).map fun j ↦ .load (.permNext (P.d * c + j)))
+  | .challenge i, g => g.internAll ((List.range P.d).map fun j ↦ .scalar (np + P.d * (i + 1) + j))
+  | .terminal, g => g.internAll ((List.range P.d).map fun j ↦ .scalar (np + j))
   | .add a b, g =>
-    let (g, x) := ofExt W np a g
-    let (g, y) := ofExt W np b g
-    g.op4 .add x y
+    let (g, x) := ofExt P np a g
+    let (g, y) := ofExt P np b g
+    g.opN .add x y
   | .sub a b, g =>
-    let (g, x) := ofExt W np a g
-    let (g, y) := ofExt W np b g
-    g.op4 .sub x y
+    let (g, x) := ofExt P np a g
+    let (g, y) := ofExt P np b g
+    g.opN .sub x y
   | .mul a b, g =>
-    let (g, x) := ofExt W np a g
-    let (g, y) := ofExt W np b g
-    let (g, w) := g.intern (.const W)
-    g.mul4 w x y
+    let (g, x) := ofExt P np a g
+    let (g, y) := ofExt P np b g
+    g.mulN P x y
 
 end Dag
 
@@ -453,12 +471,13 @@ def compile (cs : List (Expr F)) : Prog F :=
     (g, [(i, k)])) cs
   allocate g.nodes sc.steps #[]
 
-/-- The program accumulating the extension constraints `cs` over `X⁴ = W` with `np` public
-values (`Dag.ofExt`), coordinate `j` of constraint `k` with weight `4 k + j`. -/
-def compileExt (W : F) (np : Nat) (cs : List (Lookup.ExtExpr F)) : Prog F :=
+/-- The program accumulating the extension constraints `cs` over the extension `P` of degree `d`
+with `np` public values (`Dag.ofExt`), coordinate `j` of constraint `k` with weight `d k + j`. -/
+def compileExt (P : CompPoly.Extension.ExtensionParams F) (np : Nat)
+    (cs : List (Lookup.ExtExpr F)) : Prog F :=
   let (g, sc) := buildAll (fun k c g ↦
-    let (g, (c0, c1, c2, c3)) := Dag.ofExt W np c g
-    (g, [(c0, 4 * k), (c1, 4 * k + 1), (c2, 4 * k + 2), (c3, 4 * k + 3)])) cs
+    let (g, xs) := Dag.ofExt P np c g
+    (g, xs.zipIdx.map fun (x, j) ↦ (x, P.d * k + j))) cs
   allocate g.nodes sc.steps #[]
 
 /-- The program whose outputs are the expressions `es`. -/

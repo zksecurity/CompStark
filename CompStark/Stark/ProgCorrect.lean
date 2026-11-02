@@ -5,6 +5,7 @@ Released under Apache 2.0 license as described in the file LICENSE.
 module
 
 public import CompStark.Stark.Prog
+public import CompPoly.Fields.Extension.Bridge
 public import Mathlib.Tactic.Ring
 
 /-! # The compiled program computes the constraints
@@ -390,90 +391,64 @@ end Build
 
 /-! ### Extension expressions -/
 
-/-- Four coordinates over the binomial extension `X⁴ = W`. -/
-structure Coords (F : Type) (W : F) where
-  c0 : F
-  c1 : F
-  c2 : F
-  c3 : F
+open CompPoly.Extension
 
-namespace Coords
+/-- A row's values as an environment of extension expressions' base expressions over the extension
+`P`, with `np` public values: the base embedding of `Ctx.env`, public values from `np` on zero. -/
+def Ctx.envQ [Field F] (P : ExtensionParams F) (np : Nat) (ctx : Ctx F) : Expr.Env F (Ext P) where
+  cur c := CompPoly.Extension.Ext.ofBase (ctx.env.cur c)
+  next c := CompPoly.Extension.Ext.ofBase (ctx.env.next c)
+  prepCur c := CompPoly.Extension.Ext.ofBase (ctx.env.prepCur c)
+  prepNext c := CompPoly.Extension.Ext.ofBase (ctx.env.prepNext c)
+  periodic i := CompPoly.Extension.Ext.ofBase (ctx.env.periodic i)
+  pub i := CompPoly.Extension.Ext.ofBase (if i < np then ctx.env.pub i else 0)
+  const x := CompPoly.Extension.Ext.ofBase x
+  isFirstRow := CompPoly.Extension.Ext.ofBase ctx.env.isFirstRow
+  isLastRow := CompPoly.Extension.Ext.ofBase ctx.env.isLastRow
+  isTransition := CompPoly.Extension.Ext.ofBase ctx.env.isTransition
 
-variable [Field F] {W : F}
+/-- The extension element of the `d` scalars from `k`. -/
+def Ctx.scalarsExt [Field F] (P : ExtensionParams F) (ctx : Ctx F) (k : Nat) : Ext P :=
+  CompPoly.Extension.Ext.ofFn fun j ↦ ctx.scalar (k + j)
 
-instance : Add (Coords F W) :=
-  ⟨fun x y ↦ ⟨x.c0 + y.c0, x.c1 + y.c1, x.c2 + y.c2, x.c3 + y.c3⟩⟩
+/-- A row's permutation trace, challenges and terminal over the extension `P` of degree `d`, with
+`np` public values: column `c` from the loaded permutation columns `d c, …, d c + d - 1`, the
+terminal's coordinates the scalars from `np`, challenge `i`'s from `np + d (i + 1)`. -/
+def Ctx.auxQ [Field F] (P : ExtensionParams F) (np : Nat) (ctx : Ctx F) :
+    Lookup.ExtExpr.Env (Ext P) where
+  perm c := CompPoly.Extension.Ext.ofFn fun j ↦ ctx.src (.permCur (P.d * c + j))
+  permNext c := CompPoly.Extension.Ext.ofFn fun j ↦ ctx.src (.permNext (P.d * c + j))
+  challenge i := ctx.scalarsExt P (np + P.d * (i + 1))
+  terminal := ctx.scalarsExt P np
 
-instance : Sub (Coords F W) :=
-  ⟨fun x y ↦ ⟨x.c0 - y.c0, x.c1 - y.c1, x.c2 - y.c2, x.c3 - y.c3⟩⟩
-
-instance : Mul (Coords F W) :=
-  ⟨fun x y ↦ ⟨x.c0 * y.c0 + W * ((x.c1 * y.c3 + x.c2 * y.c2) + x.c3 * y.c1),
-    (x.c0 * y.c1 + x.c1 * y.c0) + W * (x.c2 * y.c3 + x.c3 * y.c2),
-    ((x.c0 * y.c2 + x.c1 * y.c1) + x.c2 * y.c0) + W * (x.c3 * y.c3),
-    ((x.c0 * y.c3 + x.c1 * y.c2) + x.c2 * y.c1) + x.c3 * y.c0⟩⟩
-
-/-- An element of the base field. -/
-def base (x : F) : Coords F W := ⟨x, 0, 0, 0⟩
-
-end Coords
-
-/-- A row's values as an environment of extension expressions' base expressions, over `X⁴ = W`
-with `np` public values: the base embedding of `Ctx.env`, public values from `np` on zero. -/
-def Ctx.envQ [Field F] (W : F) (np : Nat) (ctx : Ctx F) : Expr.Env F (Coords F W) where
-  cur c := .base (ctx.env.cur c)
-  next c := .base (ctx.env.next c)
-  prepCur c := .base (ctx.env.prepCur c)
-  prepNext c := .base (ctx.env.prepNext c)
-  periodic i := .base (ctx.env.periodic i)
-  pub i := .base (if i < np then ctx.env.pub i else 0)
-  const x := .base x
-  isFirstRow := .base ctx.env.isFirstRow
-  isLastRow := .base ctx.env.isLastRow
-  isTransition := .base ctx.env.isTransition
-
-/-- The coordinates of four scalars from `k`. -/
-def Ctx.scalars4 [Field F] (W : F) (ctx : Ctx F) (k : Nat) : Coords F W :=
-  ⟨ctx.scalar k, ctx.scalar (k + 1), ctx.scalar (k + 2), ctx.scalar (k + 3)⟩
-
-/-- A row's permutation trace, challenges and terminal over `X⁴ = W`, with `np` public values:
-column `c` from the loaded permutation columns `4 c, …, 4 c + 3`, the terminal's coordinates the
-scalars from `np`, challenge `i`'s from `np + 4 (i + 1)`. -/
-def Ctx.auxQ [Field F] (W : F) (np : Nat) (ctx : Ctx F) : Lookup.ExtExpr.Env (Coords F W) where
-  perm c := ⟨ctx.src (.permCur (4 * c)), ctx.src (.permCur (4 * c + 1)),
-    ctx.src (.permCur (4 * c + 2)), ctx.src (.permCur (4 * c + 3))⟩
-  permNext c := ⟨ctx.src (.permNext (4 * c)), ctx.src (.permNext (4 * c + 1)),
-    ctx.src (.permNext (4 * c + 2)), ctx.src (.permNext (4 * c + 3))⟩
-  challenge i := ctx.scalars4 W (np + 4 * (i + 1))
-  terminal := ctx.scalars4 W np
-
-/-- Evaluating a base expression over `X⁴ = W` with `np` public values embeds the value of its
-public values below `np` (`Dag.pubBelow`). -/
-theorem Expr.eval_envQ [Field F] (W : F) (np : Nat) (ctx : Ctx F) :
-    ∀ e : Expr F, e.eval (ctx.envQ W np) = .base ((Dag.pubBelow np e).eval ctx.env)
+/-- Evaluating a base expression over the extension with `np` public values embeds the value of
+its public values below `np` (`Dag.pubBelow`). -/
+theorem Expr.eval_envQ [Field F] (P : ExtensionParams F) (np : Nat) (ctx : Ctx F) :
+    ∀ e : Expr F, e.eval (ctx.envQ P np) = CompPoly.Extension.Ext.ofBase ((Dag.pubBelow np e).eval
+        ctx.env)
   | .add a b => by
-    simp only [Expr.eval, Dag.pubBelow]
-    rw [Expr.eval_envQ W np ctx a, Expr.eval_envQ W np ctx b]
-    show (⟨_, _, _, _⟩ : Coords F W) = ⟨_, _, _, _⟩
-    simp only [Coords.base, add_zero]
+    rw [show Dag.pubBelow np (.add a b) = .add (Dag.pubBelow np a) (Dag.pubBelow np b) from rfl]
+    simp only [Expr.eval]
+    rw [Expr.eval_envQ P np ctx a, Expr.eval_envQ P np ctx b]
+    exact (map_add (CompPoly.Extension.Ext.ofBaseRingHom P) _ _).symm
   | .sub a b => by
-    simp only [Expr.eval, Dag.pubBelow]
-    rw [Expr.eval_envQ W np ctx a, Expr.eval_envQ W np ctx b]
-    show (⟨_, _, _, _⟩ : Coords F W) = ⟨_, _, _, _⟩
-    simp only [Coords.base, sub_zero]
+    rw [show Dag.pubBelow np (.sub a b) = .sub (Dag.pubBelow np a) (Dag.pubBelow np b) from rfl]
+    simp only [Expr.eval]
+    rw [Expr.eval_envQ P np ctx a, Expr.eval_envQ P np ctx b]
+    exact (map_sub (CompPoly.Extension.Ext.ofBaseRingHom P) _ _).symm
   | .mul a b => by
-    simp only [Expr.eval, Dag.pubBelow]
-    rw [Expr.eval_envQ W np ctx a, Expr.eval_envQ W np ctx b]
-    show (⟨_, _, _, _⟩ : Coords F W) = ⟨_, _, _, _⟩
-    simp only [Coords.base, mul_zero, zero_mul, add_zero]
+    rw [show Dag.pubBelow np (.mul a b) = .mul (Dag.pubBelow np a) (Dag.pubBelow np b) from rfl]
+    simp only [Expr.eval]
+    rw [Expr.eval_envQ P np ctx a, Expr.eval_envQ P np ctx b]
+    exact (map_mul (CompPoly.Extension.Ext.ofBaseRingHom P) _ _).symm
   | .pub i => by
     simp only [Expr.eval, Dag.pubBelow]
     by_cases h : i < np
     · simp only [h, ite_true, Expr.eval]
-      show Coords.base (if i < np then ctx.env.pub i else 0) = _
+      show CompPoly.Extension.Ext.ofBase (if i < np then ctx.env.pub i else 0) = _
       rw [ite_eq_left h]
     · simp only [h, ite_false, Expr.eval]
-      show Coords.base (if i < np then ctx.env.pub i else 0) = _
+      show CompPoly.Extension.Ext.ofBase (if i < np then ctx.env.pub i else 0) = _
       rw [ite_eq_right h]
       rfl
   | .cur _ | .next _ | .prepCur _ | .prepNext _ | .periodic _ | .const _ | .isFirstRow
@@ -482,37 +457,23 @@ theorem Expr.eval_envQ [Field F] (W : F) (np : Nat) (ctx : Ctx F) :
 section BuildExt
 variable [DecidableEq F] [Hashable F] [Field F]
 
-/-- `r` is built on `g`: a well-formed extension of it with four nodes, the coordinates `v` on
-every row. -/
-structure Built4 {W : F} (g : Dag F) (r : Dag F × Dag.Quad) (v : Ctx F → Coords F W) :
-    Prop where
+/-- `r` is built on `g`: a well-formed extension of it with `n` nodes, coordinate `i` of value
+`v · i` on every row. -/
+structure BuiltL (g : Dag F) (r : Dag F × List Nat) (n : Nat) (v : Ctx F → Nat → F) : Prop where
   ok : r.1.Ok
   ext : g.Ext r.1
-  lt : r.2.1 < r.1.nodes.size ∧ r.2.2.1 < r.1.nodes.size ∧ r.2.2.2.1 < r.1.nodes.size ∧
-    r.2.2.2.2 < r.1.nodes.size
-  value : ∀ ctx, (⟨val ctx r.1.nodes r.2.1, val ctx r.1.nodes r.2.2.1,
-    val ctx r.1.nodes r.2.2.2.1, val ctx r.1.nodes r.2.2.2.2⟩ : Coords F W) = v ctx
+  len : r.2.length = n
+  lt : ∀ i < n, r.2.getD i 0 < r.1.nodes.size
+  value : ∀ ctx, ∀ i < n, val ctx r.1.nodes (r.2.getD i 0) = v ctx i
 
-theorem Built4.of_eq {W : F} {g : Dag F} {r : Dag F × Dag.Quad} {v w : Ctx F → Coords F W}
-    (h : Built4 g r v) (e : ∀ ctx, v ctx = w ctx) : Built4 g r w :=
-  ⟨h.ok, h.ext, h.lt, fun ctx ↦ by rw [h.value, e]⟩
+theorem BuiltL.of_eq {g : Dag F} {r : Dag F × List Nat} {n : Nat} {v w : Ctx F → Nat → F}
+    (h : BuiltL g r n v) (e : ∀ ctx, ∀ i < n, v ctx i = w ctx i) : BuiltL g r n w :=
+  ⟨h.ok, h.ext, h.len, h.lt, fun ctx i hi ↦ by rw [h.value ctx i hi, e ctx i hi]⟩
 
-/-- Four nodes built one after another. -/
-theorem Built4.of_built {W : F} {g : Dag F} {r0 r1 r2 r3 : Dag F × Nat}
-    {v0 v1 v2 v3 : Ctx F → F} (h0 : Built g r0 v0) (h1 : Built r0.1 r1 v1)
-    (h2 : Built r1.1 r2 v2) (h3 : Built r2.1 r3 v3) :
-    Built4 (W := W) g (r3.1, (r0.2, r1.2, r2.2, r3.2))
-      fun ctx ↦ ⟨v0 ctx, v1 ctx, v2 ctx, v3 ctx⟩ := by
-  have e01 := h1.ext
-  have e12 := h2.ext
-  have e23 := h3.ext
-  refine ⟨h3.ok, h0.ext.trans (e01.trans (e12.trans e23)), ⟨?_, ?_, ?_, h3.lt⟩, fun ctx ↦ ?_⟩
-  · have := h0.lt; have := e01.1; have := e12.1; have := e23.1; dsimp only; omega
-  · have := h1.lt; have := e12.1; have := e23.1; dsimp only; omega
-  · have := h2.lt; have := e23.1; dsimp only; omega
-  · dsimp only
-    rw [h0.mono (e01.trans (e12.trans e23)) ctx, h1.mono (e12.trans e23) ctx, h2.mono e23 ctx,
-      h3.value]
+theorem BuiltL.mono {g : Dag F} {r : Dag F × List Nat} {n : Nat} {v : Ctx F → Nat → F}
+    (h : BuiltL g r n v) {g' : Dag F} (h' : r.1.Ext g') (ctx : Ctx F) (i : Nat) (hi : i < n) :
+    val ctx g'.nodes (r.2.getD i 0) = v ctx i := by
+  rw [h'.val_eq ctx _ (h.lt i hi), h.value ctx i hi]
 
 /-- A leaf node interned. -/
 theorem Dag.leaf_built (g : Dag F) (hg : g.Ok) (n : Node F) (hn : n.Below 0) :
@@ -522,133 +483,351 @@ theorem Dag.leaf_built (g : Dag F) (hg : g.Ok) (n : Node F) (hn : n.Below 0) :
     | bin o a b => exact absurd hn.1 (Nat.not_lt_zero a)
     | _ => rfl
 
-/-- Coordinatewise operations on two built quadruples. -/
-theorem Built4.op4 {W : F} {g : Dag F} {r1 r2 : Dag F × Dag.Quad} {v1 v2 : Ctx F → Coords F W}
-    (h1 : Built4 g r1 v1) (h2 : Built4 r1.1 r2 v2) (o : Op)
-    (hc : ∀ x y : Coords F W, (⟨o.eval x.c0 y.c0, o.eval x.c1 y.c1, o.eval x.c2 y.c2,
-      o.eval x.c3 y.c3⟩ : Coords F W) = o.eval x y) :
-    Built4 g (r2.1.op4 o r1.2 r2.2) fun ctx ↦ o.eval (v1 ctx) (v2 ctx) := by
-  have e12 := h1.ext.trans h2.ext
-  obtain ⟨g2, x0, x1, x2, x3⟩ := r2
-  obtain ⟨g1, y0, y1, y2, y3⟩ := r1
-  obtain ⟨l0, l1, l2, l3⟩ := h1.lt
-  obtain ⟨m0, m1, m2, m3⟩ := h2.lt
-  dsimp only at *
-  have hs : g1.nodes.size ≤ g2.nodes.size := h2.ext.1
-  unfold Dag.op4
-  have b0 := g2.op_built h2.ok o y0 x0 (by omega) m0
-  generalize g2.op o y0 x0 = q0 at b0 ⊢
-  obtain ⟨g3, c0⟩ := q0
-  dsimp only
-  have s0 : g2.nodes.size ≤ g3.nodes.size := b0.ext.1
-  have b1 := g3.op_built b0.ok o y1 x1 (by omega) (by omega)
-  generalize g3.op o y1 x1 = q1 at b1 ⊢
-  obtain ⟨g4, c1⟩ := q1
-  dsimp only
-  have s1 : g3.nodes.size ≤ g4.nodes.size := b1.ext.1
-  have b2 := g4.op_built b1.ok o y2 x2 (by omega) (by omega)
-  generalize g4.op o y2 x2 = q2 at b2 ⊢
-  obtain ⟨g5, c2⟩ := q2
-  dsimp only
-  have s2 : g4.nodes.size ≤ g5.nodes.size := b2.ext.1
-  have b3 := g5.op_built b2.ok o y3 x3 (by omega) (by omega)
-  generalize g5.op o y3 x3 = q3 at b3 ⊢
-  obtain ⟨g6, c3⟩ := q3
-  dsimp only at b0 b1 b2 b3 ⊢
-  have s3 : g5.nodes.size ≤ g6.nodes.size := b3.ext.1
-  have e3 := b1.ext.trans (b2.ext.trans b3.ext)
-  have t0 : c0 < g3.nodes.size := b0.lt
-  have t1 : c1 < g4.nodes.size := b1.lt
-  have t2 : c2 < g5.nodes.size := b2.lt
-  refine ⟨b3.ok, e12.trans (b0.ext.trans e3), ⟨show c0 < g6.nodes.size by omega,
-    show c1 < g6.nodes.size by omega, show c2 < g6.nodes.size by omega, b3.lt⟩, fun ctx ↦ ?_⟩
-  · have ev (g' : Dag F) (e : g2.Ext g') (i : Nat) (hi : i < g2.nodes.size) :
-        val ctx g'.nodes i = val ctx g2.nodes i := e.val_eq ctx i hi
-    have e1 := b0.ext.trans b1.ext
-    have e2 := e1.trans b2.ext
-    rw [b0.mono e3 ctx, b1.mono (b2.ext.trans b3.ext) ctx, b2.mono b3.ext ctx, b3.value,
-      ev _ b0.ext, ev _ b0.ext, ev _ e1, ev _ e1, ev _ e2, ev _ e2,
-      h2.ext.val_eq ctx y0 l0, h2.ext.val_eq ctx y1 l1, h2.ext.val_eq ctx y2 l2,
-      h2.ext.val_eq ctx y3 l3, ← hc]
-    all_goals try omega
-    have hv1 := h1.value ctx
-    have hv2 := h2.value ctx
-    dsimp only at hv1 hv2
-    rw [← hv1, ← hv2]
+/-- Leaf nodes interned in order. -/
+theorem Dag.internAll_built (ns : List (Node F)) (hns : ∀ n ∈ ns, n.Below 0) :
+    ∀ (g : Dag F), g.Ok → BuiltL g (g.internAll ns) ns.length fun ctx i ↦
+      (ns.getD i (.const 0)).value ctx fun _ ↦ 0 := by
+  induction ns with
+  | nil =>
+    intro g hg
+    exact ⟨hg, Dag.Ext.refl g, rfl, fun i hi ↦ absurd hi (Nat.not_lt_zero _),
+      fun _ i hi ↦ absurd hi (Nat.not_lt_zero _)⟩
+  | cons n ns ih =>
+    intro g hg
+    have b0 := g.leaf_built hg n (hns n List.mem_cons_self)
+    have b1 := ih (fun m hm ↦ hns m (List.mem_cons_of_mem _ hm)) _ b0.ok
+    unfold Dag.internAll
+    generalize g.intern n = q0 at b0 b1 ⊢
+    obtain ⟨g1, c⟩ := q0
+    dsimp only at b0 b1 ⊢
+    generalize g1.internAll ns = q1 at b1 ⊢
+    obtain ⟨g2, cs⟩ := q1
+    refine ⟨b1.ok, b0.ext.trans b1.ext, by simp only [List.length_cons, b1.len], fun i hi ↦ ?_,
+      fun ctx i hi ↦ ?_⟩
+    · rcases i with _ | i
+      · simp only [List.getD_cons_zero]; have := b1.ext.1; have := b0.lt; dsimp only at *; omega
+      · simp only [List.getD_cons_succ]
+        exact b1.lt i (by simp only [List.length_cons] at hi; omega)
+    · rcases i with _ | i
+      · simp only [List.getD_cons_zero]
+        exact b0.mono b1.ext ctx
+      · simp only [List.getD_cons_succ]
+        exact b1.value ctx i (by simp only [List.length_cons] at hi; omega)
 
-/-- An expression over nodes built on an extension `g'` of `g` with its leaves `g`'s nodes, valued
-on `g`'s nodes. -/
-theorem Dag.ofTree_built' {g g' : Dag F} (e : g.Ext g') (hg' : g'.Ok) (t : Dag.Tree)
-    (ht : t.Below g.nodes.size) :
-    Built g' (g'.ofTree t) fun ctx ↦ t.eval (val ctx g.nodes) :=
-  (g'.ofTree_built hg' t (ht.mono e.1)).of_eq fun ctx ↦
-    Dag.Tree.eval_congr _ _ g.nodes.size (fun i hi ↦ e.val_eq ctx i hi) t ht
+/-- Coordinatewise operations on two lists of nodes. -/
+theorem Dag.opN_built (o : Op) :
+    ∀ (xs ys : List Nat) (g : Dag F), g.Ok → xs.length = ys.length →
+      (∀ i < xs.length, xs.getD i 0 < g.nodes.size) →
+      (∀ i < xs.length, ys.getD i 0 < g.nodes.size) →
+      BuiltL g (g.opN o xs ys) xs.length fun ctx i ↦
+        o.eval (val ctx g.nodes (xs.getD i 0)) (val ctx g.nodes (ys.getD i 0))
+  | [], _, g, hg, _, _, _ =>
+    ⟨hg, Dag.Ext.refl g, rfl, fun i hi ↦ absurd hi (Nat.not_lt_zero _),
+      fun _ i hi ↦ absurd hi (Nat.not_lt_zero _)⟩
+  | x :: xs, [], g, _, hl, _, _ => absurd hl (by simp)
+  | x :: xs, y :: ys, g, hg, hl, hx, hy => by
+    have hx0 := hx 0 (by simp)
+    have hy0 := hy 0 (by simp)
+    simp only [List.getD_cons_zero] at hx0 hy0
+    have b0 := g.op_built hg o x y hx0 hy0
+    have b1 := Dag.opN_built o xs ys _ b0.ok (by simpa using hl)
+      (fun i hi ↦ by
+        have := hx (i + 1) (by simp only [List.length_cons]; omega)
+        simp only [List.getD_cons_succ] at this; have := b0.ext.1; omega)
+      (fun i hi ↦ by
+        have := hy (i + 1) (by simp only [List.length_cons]; omega)
+        simp only [List.getD_cons_succ] at this; have := b0.ext.1; omega)
+    unfold Dag.opN
+    generalize g.op o x y = q0 at b0 b1 ⊢
+    obtain ⟨g1, c⟩ := q0
+    dsimp only at b0 b1 ⊢
+    generalize g1.opN o xs ys = q1 at b1 ⊢
+    obtain ⟨g2, cs⟩ := q1
+    refine ⟨b1.ok, b0.ext.trans b1.ext, by simp only [List.length_cons, b1.len],
+      fun i hi ↦ ?_, fun ctx i hi ↦ ?_⟩
+    · rcases i with _ | i
+      · simp only [List.getD_cons_zero]; have := b1.ext.1; have := b0.lt; dsimp only at *; omega
+      · simp only [List.getD_cons_succ]
+        exact b1.lt i (by simp only [List.length_cons] at hi; omega)
+    · rcases i with _ | i
+      · simp only [List.getD_cons_zero]
+        exact b0.mono b1.ext ctx
+      · simp only [List.getD_cons_succ]
+        have hi' : i < xs.length := by simp only [List.length_cons] at hi; omega
+        have hxi := hx (i + 1) (by simp only [List.length_cons]; omega)
+        have hyi := hy (i + 1) (by simp only [List.length_cons]; omega)
+        simp only [List.getD_cons_succ] at hxi hyi
+        rw [b1.value ctx i hi', b0.ext.val_eq ctx _ hxi, b0.ext.val_eq ctx _ hyi]
 
-/-- The product of two built quadruples over `X⁴ = W`, `w` a node of value `W`. -/
-theorem Dag.mul4_built {W : F} (g : Dag F) (hg : g.Ok) (w : Nat) (hw : w < g.nodes.size)
-    (hwv : ∀ ctx, val ctx g.nodes w = W) (x y : Dag.Quad) (hx : x.1 < g.nodes.size ∧
-      x.2.1 < g.nodes.size ∧ x.2.2.1 < g.nodes.size ∧ x.2.2.2 < g.nodes.size)
-    (hy : y.1 < g.nodes.size ∧ y.2.1 < g.nodes.size ∧ y.2.2.1 < g.nodes.size ∧
-      y.2.2.2 < g.nodes.size) :
-    Built4 g (g.mul4 w x y) fun ctx ↦
-      (⟨val ctx g.nodes x.1, val ctx g.nodes x.2.1, val ctx g.nodes x.2.2.1,
-        val ctx g.nodes x.2.2.2⟩ : Coords F W) *
-      ⟨val ctx g.nodes y.1, val ctx g.nodes y.2.1, val ctx g.nodes y.2.2.1,
-        val ctx g.nodes y.2.2.2⟩ := by
-  obtain ⟨x0, x1, x2, x3⟩ := x
-  obtain ⟨y0, y1, y2, y3⟩ := y
-  obtain ⟨hx0, hx1, hx2, hx3⟩ := hx
-  obtain ⟨hy0, hy1, hy2, hy3⟩ := hy
-  dsimp only at *
-  unfold Dag.mul4
-  dsimp only
-  have b0 := Dag.ofTree_built' (Dag.Ext.refl g) hg
-    (.op .add (.op .mul (.leaf x0) (.leaf y0)) (.op .mul (.leaf w) (.op .add (.op .add
-      (.op .mul (.leaf x1) (.leaf y3)) (.op .mul (.leaf x2) (.leaf y2)))
-      (.op .mul (.leaf x3) (.leaf y1)))))
-    ⟨⟨hx0, hy0⟩, hw, ⟨⟨hx1, hy3⟩, hx2, hy2⟩, hx3, hy1⟩
-  generalize Dag.ofTree g _ = q0 at b0 ⊢
-  obtain ⟨g1, c0⟩ := q0
+omit [DecidableEq F] [Hashable F] in
+/-- The sum of trees is the sum of their values, the node `z`'s for none. -/
+theorem sumTree_eval (z : Nat) (v : Nat → F) (hz : v z = 0) :
+    ∀ ts : List Dag.Tree, (Dag.sumTree z ts).eval v = (ts.map (·.eval v)).sum
+  | [] => by simp only [Dag.sumTree, Dag.Tree.eval, hz, List.map_nil, List.sum_nil]
+  | t :: ts => by
+    simp only [Dag.sumTree, List.map_cons, List.sum_cons]
+    suffices ∀ acc : Dag.Tree, (ts.foldl (fun acc u ↦ .op .add acc u) acc).eval v =
+        acc.eval v + (ts.map (·.eval v)).sum from this t
+    induction ts with
+    | nil => intro acc; simp only [List.foldl_nil, List.map_nil, List.sum_nil, add_zero]
+    | cons u ts ih =>
+      intro acc
+      rw [List.foldl_cons, ih]
+      simp only [Dag.Tree.eval, Op.eval, List.map_cons, List.sum_cons, add_assoc]
+
+omit [DecidableEq F] [Hashable F] in
+theorem sumTree_below (z N : Nat) (hz : z < N) :
+    ∀ ts : List Dag.Tree, (∀ t ∈ ts, t.Below N) → (Dag.sumTree z ts).Below N
+  | [], _ => hz
+  | t :: ts, h => by
+    simp only [Dag.sumTree]
+    suffices ∀ acc : Dag.Tree, acc.Below N →
+        (ts.foldl (fun acc u ↦ .op .add acc u) acc).Below N from
+      this t (h t List.mem_cons_self)
+    have h' : ∀ u ∈ ts, u.Below N := fun u hu ↦ h u (List.mem_cons_of_mem _ hu)
+    clear h
+    induction ts with
+    | nil => intro acc ha; exact ha
+    | cons u ts ih =>
+      intro acc ha
+      rw [List.foldl_cons]
+      exact ih (fun w hw ↦ h' w (List.mem_cons_of_mem _ hw)) _ ⟨ha, h' u List.mem_cons_self⟩
+
+omit [DecidableEq F] [Hashable F] in
+theorem sum_filterMap_ite {α : Type} (l : List α) (c : α → Prop) [DecidablePred c]
+    (gt : α → Dag.Tree) (e : Dag.Tree → F) :
+    ((l.filterMap fun i ↦ if c i then some (gt i) else none).map e).sum =
+      (l.map fun i ↦ if c i then e (gt i) else 0).sum := by
+  induction l with
+  | nil => rfl
+  | cons i l ih =>
+    by_cases h : c i
+    · simp only [List.filterMap_cons, h, ite_true, List.map_cons, List.sum_cons, ih]
+    · simp only [List.filterMap_cons, h, ite_false, List.map_cons, List.sum_cons, ih, zero_add]
+
+omit [DecidableEq F] [Hashable F] in
+theorem convTree_below (z d : Nat) (x y : List Nat) (k N : Nat) (hz : z < N)
+    (hx : ∀ i < d, x.getD i 0 < N) (hy : ∀ i < d, y.getD i 0 < N) :
+    (Dag.convTree z d x y k).Below N := by
+  refine sumTree_below z N hz _ fun t ht ↦ ?_
+  obtain ⟨i, hi, he⟩ := List.mem_filterMap.mp ht
+  split at he
+  · rename_i hc
+    simp only [Option.some.injEq] at he
+    subst he
+    exact ⟨hx i (List.mem_range.mp hi), hy _ hc.2⟩
+  · exact absurd he (by simp)
+
+omit [DecidableEq F] [Hashable F] in
+/-- The convolution tree's value is the unreduced product's coefficient. -/
+theorem convTree_eval (P : CompPoly.Extension.ExtensionParams F) (z : Nat) (x y : List Nat)
+    (k : Nat) (v : Nat → F) (hz : v z = 0) :
+    (Dag.convTree z P.d x y k).eval v = CompPoly.Extension.Ext.conv
+      (CompPoly.Extension.Ext.ofFn fun i : Fin P.d ↦ v (x.getD i 0))
+      (CompPoly.Extension.Ext.ofFn fun i : Fin P.d ↦ v (y.getD i 0)) k := by
+  rw [Dag.convTree, sumTree_eval z v hz, sum_filterMap_ite, CompPoly.Extension.Ext.conv,
+    ← CompPoly.Extension.Ext.sum_range_eq_list_sum, ← Fin.sum_univ_eq_sum_range (fun i ↦
+      if i ≤ k ∧ k - i < P.d then
+        (Dag.Tree.op .mul (.leaf (x.getD i 0)) (.leaf (y.getD (k - i) 0))).eval v else 0)]
+  refine Finset.sum_congr rfl fun i _ ↦ ?_
+  by_cases h : (i : ℕ) ≤ k ∧ k - (i : ℕ) < P.d
+  · rw [ite_eq_left h, dite_eq_left h]
+    simp only [Dag.Tree.eval, Op.eval, CompPoly.Extension.Ext.coeff_ofFn]
+  · rw [ite_eq_right h, dite_eq_right h]
+
+/-- A coordinate of a product of coordinate nodes: the convolution `m` plus the higher
+convolutions times the table's entries `t k`. -/
+theorem Dag.mulCoord_built (g : Dag F) (hg : g.Ok) (z d : Nat) (x y : List Nat) (t : Nat → F)
+    (m : Nat) (hz : z < g.nodes.size) (hx : ∀ i < d, x.getD i 0 < g.nodes.size)
+    (hy : ∀ i < d, y.getD i 0 < g.nodes.size) :
+    Built g (g.mulCoord z d x y t m) fun ctx ↦ (Dag.convTree z d x y m).eval (val ctx g.nodes) +
+      ((List.range' d (d - 1)).map fun k ↦
+        t k * (Dag.convTree z d x y k).eval (val ctx g.nodes)).sum := by
+  have hc (k : Nat) := convTree_below z d x y k _ hz hx hy
+  have hcv (g' : Dag F) (e : g.Ext g') (k : Nat) (ctx : Ctx F) :
+      (Dag.convTree z d x y k).eval (val ctx g'.nodes) =
+        (Dag.convTree z d x y k).eval (val ctx g.nodes) :=
+    Dag.Tree.eval_congr _ _ _ (fun i hi ↦ e.val_eq ctx i hi) _ (hc k)
+  have key : ∀ (l : List Nat) (g' : Dag F) (tr : Dag.Tree), g'.Ok → g.Ext g' →
+      tr.Below g'.nodes.size →
+      let r := l.foldl (Dag.mulStep z d x y t) (g', tr)
+      r.1.Ok ∧ g.Ext r.1 ∧ r.2.Below r.1.nodes.size ∧ ∀ ctx, r.2.eval (val ctx r.1.nodes) =
+        tr.eval (val ctx g'.nodes) + (l.map fun k ↦
+          t k * (Dag.convTree z d x y k).eval (val ctx g.nodes)).sum := by
+    intro l
+    induction l with
+    | nil =>
+      intro g' tr hg' e htr
+      exact ⟨hg', e, htr, fun ctx ↦ by simp only [List.foldl_nil, List.map_nil, List.sum_nil,
+        add_zero]⟩
+    | cons k l ih =>
+      intro g' tr hg' e htr
+      rw [List.foldl_cons]
+      by_cases h0 : t k = 0
+      · rw [show Dag.mulStep z d x y t (g', tr) k = (g', tr) by
+          simp only [Dag.mulStep, h0, ite_true]]
+        obtain ⟨r1, r2, r3, r4⟩ := ih g' tr hg' e htr
+        refine ⟨r1, r2, r3, fun ctx ↦ ?_⟩
+        rw [r4 ctx]
+        simp only [List.map_cons, List.sum_cons, h0, zero_mul, zero_add]
+      · by_cases h1 : t k = -1
+        · rw [show Dag.mulStep z d x y t (g', tr) k = (g', .op .sub tr (Dag.convTree z d x y k)) by
+            simp [Dag.mulStep, h1]]
+          obtain ⟨r1, r2, r3, r4⟩ := ih g' (.op .sub tr (Dag.convTree z d x y k)) hg' e
+            ⟨htr, (hc k).mono e.1⟩
+          refine ⟨r1, r2, r3, fun ctx ↦ ?_⟩
+          rw [r4 ctx]
+          simp only [Dag.Tree.eval, Op.eval, hcv g' e, List.map_cons, List.sum_cons, h1]
+          ring
+        · rw [show Dag.mulStep z d x y t (g', tr) k = ((g'.intern (.const (t k))).1,
+              .op .add tr (.op .mul (.leaf (g'.intern (.const (t k))).2)
+                (Dag.convTree z d x y k))) by
+            simp only [Dag.mulStep, h0, h1, ite_false]]
+          have b := g'.leaf_built hg' (.const (t k)) trivial
+          generalize g'.intern (.const (t k)) = q at b ⊢
+          obtain ⟨g'', c⟩ := q
+          dsimp only at b ⊢
+          obtain ⟨r1, r2, r3, r4⟩ := ih g''
+            (.op .add tr (.op .mul (.leaf c) (Dag.convTree z d x y k))) b.ok (e.trans b.ext)
+            ⟨htr.mono b.ext.1, b.lt, (hc k).mono (e.trans b.ext).1⟩
+          refine ⟨r1, r2, r3, fun ctx ↦ ?_⟩
+          rw [r4 ctx]
+          simp only [Dag.Tree.eval, Op.eval, hcv g'' (e.trans b.ext), List.map_cons,
+            List.sum_cons]
+          rw [Dag.Tree.eval_congr _ _ _ (fun i hi ↦ b.ext.val_eq ctx i hi) _ htr, b.value]
+          simp only [Node.value]
+          ring
+  unfold Dag.mulCoord
+  obtain ⟨r1, r2, r3, r4⟩ := key (List.range' d (d - 1)) g (Dag.convTree z d x y m) hg
+    (Dag.Ext.refl g) (hc m)
+  generalize List.foldl _ _ _ = r at r1 r2 r3 r4 ⊢
+  obtain ⟨g', tr⟩ := r
+  dsimp only at r1 r2 r3 r4 ⊢
+  have b := g'.ofTree_built r1 tr r3
+  exact ⟨b.ok, r2.trans b.ext, b.lt, fun ctx ↦ by rw [b.value, r4 ctx]⟩
+
+/-- The extension element with the values of coordinate nodes. -/
+def extOf (P : CompPoly.Extension.ExtensionParams F) (ctx : Ctx F) (nodes : Array (Node F))
+    (x : List Nat) : CompPoly.Extension.Ext P :=
+  CompPoly.Extension.Ext.ofFn fun i ↦ val ctx nodes (x.getD i 0)
+
+/-- **The product of coordinate nodes** over the extension `P`, reduced by its table. -/
+theorem Dag.mulN_built (P : CompPoly.Extension.ExtensionParams F) (g : Dag F) (hg : g.Ok)
+    (x y : List Nat) (hx : ∀ i < P.d, x.getD i 0 < g.nodes.size)
+    (hy : ∀ i < P.d, y.getD i 0 < g.nodes.size) :
+    BuiltL g (g.mulN P x y) P.d fun ctx m ↦
+      CompPoly.Extension.Ext.coeffNat (extOf P ctx g.nodes x * extOf P ctx g.nodes y) m := by
+  unfold Dag.mulN
+  have b0 := g.leaf_built hg (.const 0) trivial
+  generalize g.intern (.const 0) = q at b0 ⊢
+  obtain ⟨g1, z⟩ := q
   dsimp only at b0 ⊢
-  have b1 := Dag.ofTree_built' b0.ext b0.ok
-    (.op .add (.op .add (.op .mul (.leaf x0) (.leaf y1)) (.op .mul (.leaf x1) (.leaf y0)))
-      (.op .mul (.leaf w) (.op .add (.op .mul (.leaf x2) (.leaf y3))
-        (.op .mul (.leaf x3) (.leaf y2)))))
-    ⟨⟨⟨hx0, hy1⟩, hx1, hy0⟩, hw, ⟨hx2, hy3⟩, hx3, hy2⟩
-  generalize Dag.ofTree g1 _ = q1 at b1 ⊢
-  obtain ⟨g2, c1⟩ := q1
-  dsimp only at b1 ⊢
-  have b2 := Dag.ofTree_built' (b0.ext.trans b1.ext) b1.ok
-    (.op .add (.op .add (.op .add (.op .mul (.leaf x0) (.leaf y2)) (.op .mul (.leaf x1) (.leaf y1)))
-      (.op .mul (.leaf x2) (.leaf y0))) (.op .mul (.leaf w) (.op .mul (.leaf x3) (.leaf y3))))
-    ⟨⟨⟨⟨hx0, hy2⟩, hx1, hy1⟩, hx2, hy0⟩, hw, hx3, hy3⟩
-  generalize Dag.ofTree g2 _ = q2 at b2 ⊢
-  obtain ⟨g3, c2⟩ := q2
-  dsimp only at b2 ⊢
-  have b3 := Dag.ofTree_built' (b0.ext.trans (b1.ext.trans b2.ext)) b2.ok
-    (.op .add (.op .add (.op .add (.op .mul (.leaf x0) (.leaf y3)) (.op .mul (.leaf x1) (.leaf y2)))
-      (.op .mul (.leaf x2) (.leaf y1))) (.op .mul (.leaf x3) (.leaf y0)))
-    ⟨⟨⟨⟨hx0, hy3⟩, hx1, hy2⟩, hx2, hy1⟩, hx3, hy0⟩
-  generalize Dag.ofTree g3 _ = q3 at b3 ⊢
-  obtain ⟨g4, c3⟩ := q3
-  dsimp only at b3 ⊢
-  have s1 : g1.nodes.size ≤ g2.nodes.size := b1.ext.1
-  have s2 : g2.nodes.size ≤ g3.nodes.size := b2.ext.1
-  have s3 : g3.nodes.size ≤ g4.nodes.size := b3.ext.1
-  have t0 : c0 < g1.nodes.size := b0.lt
-  have t1 : c1 < g2.nodes.size := b1.lt
-  have t2 : c2 < g3.nodes.size := b2.lt
-  refine ⟨b3.ok, b0.ext.trans (b1.ext.trans (b2.ext.trans b3.ext)),
-    ⟨show c0 < g4.nodes.size by omega, show c1 < g4.nodes.size by omega,
-      show c2 < g4.nodes.size by omega, b3.lt⟩, fun ctx ↦ ?_⟩
-  rw [b0.mono (b1.ext.trans (b2.ext.trans b3.ext)) ctx, b1.mono (b2.ext.trans b3.ext) ctx,
-    b2.mono b3.ext ctx, b3.value]
-  simp only [Dag.Tree.eval, Op.eval, hwv]
+  have hz0 (g' : Dag F) (e : g1.Ext g') (ctx : Ctx F) : val ctx g'.nodes z = 0 := by
+    rw [b0.mono e ctx]; rfl
+  have hxv (g' : Dag F) (e : g.Ext g') (ctx : Ctx F) (i : Nat) (hi : i < P.d) :
+      val ctx g'.nodes (x.getD i 0) = val ctx g.nodes (x.getD i 0) := e.val_eq ctx _ (hx i hi)
+  have hyv (g' : Dag F) (e : g.Ext g') (ctx : Ctx F) (i : Nat) (hi : i < P.d) :
+      val ctx g'.nodes (y.getD i 0) = val ctx g.nodes (y.getD i 0) := e.val_eq ctx _ (hy i hi)
+  let tbl := (CompPoly.Extension.Ext.red P).toArray
+  let R : Nat → Dag F × List Nat := fun n ↦
+    (List.range n).foldl (Dag.mulNStep P z x y tbl) (g1, [])
+  have key : ∀ n ≤ P.d,
+      (R n).1.Ok ∧ g1.Ext (R n).1 ∧ (R n).2.length = n ∧
+        (∀ i < n, (R n).2.getD i 0 < (R n).1.nodes.size) ∧
+        ∀ ctx, ∀ i < n, val ctx (R n).1.nodes ((R n).2.getD i 0) =
+          CompPoly.Extension.Ext.coeffNat (extOf P ctx g.nodes x * extOf P ctx g.nodes y) i := by
+    intro n hn
+    induction n with
+    | zero =>
+      exact ⟨b0.ok, Dag.Ext.refl _, rfl, fun i hi ↦ absurd hi (Nat.not_lt_zero _),
+        fun _ i hi ↦ absurd hi (Nat.not_lt_zero _)⟩
+    | succ n ih =>
+      obtain ⟨r1, r2, r3, r4, r5⟩ := ih (by omega)
+      have hR : R (n + 1) = Dag.mulNStep P z x y tbl (R n) n := by
+        simp only [R, List.range_succ, List.foldl_append, List.foldl_cons, List.foldl_nil]
+      rw [hR]
+      generalize R n = r at r1 r2 r3 r4 r5 ⊢
+      obtain ⟨g', out⟩ := r
+      dsimp only at r1 r2 r3 r4 r5 b0 ⊢
+      unfold Dag.mulNStep
+      have e : g.Ext g' := b0.ext.trans r2
+      have bm := g'.mulCoord_built r1 z P.d x y
+        (fun k ↦ CompPoly.Extension.Ext.coeffNat (tbl.getD k 0) n) n
+        (by have := b0.lt; have := r2.1; dsimp only at *; omega)
+        (fun i hi ↦ by have := hx i hi; have := e.1; omega)
+        (fun i hi ↦ by have := hy i hi; have := e.1; omega)
+      generalize g'.mulCoord z P.d x y _ n = q at bm ⊢
+      obtain ⟨g'', c⟩ := q
+      dsimp only at bm ⊢
+      have hlt (i : Nat) (hi : i < n) : out.getD i 0 < g'.nodes.size := r4 i hi
+      refine ⟨bm.ok, r2.trans bm.ext, by rw [List.length_append, r3, List.length_singleton],
+        fun i hi ↦ ?_, fun ctx i hi ↦ ?_⟩
+      · rcases Nat.lt_or_ge i n with h | h
+        · rw [List.getD_append _ _ _ _ (by omega)]
+          have := hlt i h; have := bm.ext.1; dsimp only at *; omega
+        · obtain rfl : i = n := by omega
+          rw [List.getD_append_right _ _ _ _ (by omega), r3, Nat.sub_self]
+          exact bm.lt
+      · rcases Nat.lt_or_ge i n with h | h
+        · rw [List.getD_append _ _ _ _ (by omega), bm.ext.val_eq ctx _ (hlt i h), r5 ctx i h]
+        · obtain rfl : i = n := by omega
+          rw [List.getD_append_right _ _ _ _ (by omega), r3, Nat.sub_self, List.getD_cons_zero,
+            bm.value]
+          have hv : ∀ k, (Dag.convTree z P.d x y k).eval (val ctx g'.nodes) =
+              CompPoly.Extension.Ext.conv (extOf P ctx g.nodes x) (extOf P ctx g.nodes y) k := by
+            intro k
+            rw [convTree_eval P z x y k _ (hz0 g' r2 ctx)]
+            congr 2 <;> funext j
+            · exact hxv g' e ctx j j.isLt
+            · exact hyv g' e ctx j j.isLt
+          simp only [hv]
+          rw [CompPoly.Extension.Ext.coeffNat_of_lt _ (by omega),
+            CompPoly.Extension.Ext.coeff_mul_reduce]
+          refine congrArg₂ (· + ·) rfl (congrArg List.sum (List.map_congr_left fun k hk ↦ ?_))
+          rw [List.mem_range'_1] at hk
+          have hk2 : k < 2 * P.d - 1 := by omega
+          rw [mul_comm]
+          congr 1
+          have hkt : k < tbl.size := by simp only [tbl, Vector.size_toArray]; omega
+          rw [Array.getD_eq_getD_getElem?, Array.getElem?_eq_getElem hkt, Option.getD_some, Vector.getElem_toArray, CompPoly.Extension.Ext.red_getElem hk2,
+            CompPoly.Extension.Ext.coeffNat_of_lt _ (by omega)]
+  obtain ⟨r1, r2, r3, r4, r5⟩ := key P.d le_rfl
+  exact ⟨r1, b0.ext.trans r2, r3, r4, r5⟩
+
+/-- Built coordinates of an element are its coordinate nodes. -/
+theorem BuiltL.extOf_eq {P : CompPoly.Extension.ExtensionParams F} {g : Dag F}
+    {r : Dag F × List Nat} {v : Ctx F → CompPoly.Extension.Ext P}
+    (h : BuiltL g r P.d fun ctx i ↦ CompPoly.Extension.Ext.coeffNat (v ctx) i) {g' : Dag F}
+    (e : r.1.Ext g') (ctx : Ctx F) : extOf P ctx g'.nodes r.2 = v ctx := by
+  ext i
+  rw [extOf, CompPoly.Extension.Ext.coeff_ofFn, h.mono e ctx i i.isLt,
+    CompPoly.Extension.Ext.coeffNat_coe]
+
+omit [DecidableEq F] [Hashable F] in
+theorem coeffNat_ofFn {P : CompPoly.Extension.ExtensionParams F} (f : Fin P.d → F) (i : Nat)
+    (hi : i < P.d) : CompPoly.Extension.Ext.coeffNat (CompPoly.Extension.Ext.ofFn f) i = f ⟨i, hi⟩
+    := by
+  rw [CompPoly.Extension.Ext.coeffNat_of_lt _ hi, CompPoly.Extension.Ext.coeff_ofFn]
+
+/-- Leaves of `d` loaded or scalar nodes. -/
+theorem Dag.internAll_range_built (P : CompPoly.Extension.ExtensionParams F) (g : Dag F)
+    (hg : g.Ok) (n : Nat → Node F) (hn : ∀ j, (n j).Below 0) :
+    BuiltL g (g.internAll ((List.range P.d).map n)) P.d fun ctx i ↦
+      CompPoly.Extension.Ext.coeffNat (CompPoly.Extension.Ext.ofFn (P := P) fun j ↦
+        (n j).value ctx fun _ ↦ 0) i := by
+  have b := Dag.internAll_built ((List.range P.d).map n) (fun m hm ↦ by
+    obtain ⟨j, -, rfl⟩ := List.mem_map.mp hm; exact hn j) g hg
+  rw [List.length_map, List.length_range] at b
+  refine b.of_eq fun ctx i hi ↦ ?_
+  rw [coeffNat_ofFn _ i hi, List.getD_eq_getElem?_getD, List.getElem?_map,
+    List.getElem?_range hi]
   rfl
 
-/-- The coordinates of an extension expression have its value over `X⁴ = W`. -/
-theorem Dag.ofExt_built (W : F) (np : Nat) (e : Lookup.ExtExpr F) (g : Dag F) (hg : g.Ok) :
-    Built4 g (Dag.ofExt W np e g) fun ctx ↦ e.eval (ctx.envQ W np) (ctx.auxQ W np) := by
+/-- **The coordinates of an extension expression** have its value over the extension `P`. -/
+theorem Dag.ofExt_built (P : CompPoly.Extension.ExtensionParams F) (np : Nat)
+    (e : Lookup.ExtExpr F) (g : Dag F) (hg : g.Ok) :
+    BuiltL g (Dag.ofExt P np e g) P.d fun ctx i ↦
+      CompPoly.Extension.Ext.coeffNat (e.eval (ctx.envQ P np) (ctx.auxQ P np)) i := by
   induction e generalizing g with
   | base e =>
     unfold Dag.ofExt
@@ -659,142 +838,97 @@ theorem Dag.ofExt_built (W : F) (np : Nat) (e : Lookup.ExtExpr F) (g : Dag F) (h
     have b1 := g1.leaf_built b0.ok (.const 0) trivial
     generalize g1.intern (.const 0) = q1 at b1 ⊢
     obtain ⟨g2, z⟩ := q1
-    dsimp only at b1 ⊢
-    have t0 : i < g1.nodes.size := b0.lt
-    have s1 : g1.nodes.size ≤ g2.nodes.size := b1.ext.1
-    refine ⟨b1.ok, b0.ext.trans b1.ext, ⟨show i < g2.nodes.size by omega, b1.lt, b1.lt, b1.lt⟩,
-      fun ctx ↦ ?_⟩
-    rw [b0.mono b1.ext ctx, b1.value]
-    simp only [Lookup.ExtExpr.eval, Expr.eval_envQ, Node.value]
-    rfl
+    dsimp only at b0 b1 ⊢
+    have hd := P.d_pos
+    have hlen : (i :: List.replicate (P.d - 1) z).length = P.d := by
+      simp only [List.length_cons, List.length_replicate]; omega
+    refine ⟨b1.ok, b0.ext.trans b1.ext, hlen, fun j hj ↦ ?_, fun ctx j hj ↦ ?_⟩
+    · rcases j with _ | j
+      · simp only [List.getD_cons_zero]; have := b0.lt; have := b1.ext.1; dsimp only at *; omega
+      · have hrep : (List.replicate (P.d - 1) z).getD j 0 = z := by
+          simp [List.getD_eq_getElem?_getD, show j < P.d - 1 by omega]
+        simp only [List.getD_cons_succ, hrep]
+        exact b1.lt
+    · simp only [Lookup.ExtExpr.eval, Expr.eval_envQ, CompPoly.Extension.Ext.ofBase,
+        coeffNat_ofFn _ j hj]
+      rcases j with _ | j
+      · simp only [List.getD_cons_zero, ite_true]
+        exact b0.mono b1.ext ctx
+      · have hrep : (List.replicate (P.d - 1) z).getD j 0 = z := by
+          simp [List.getD_eq_getElem?_getD, show j < P.d - 1 by omega]
+        simp only [List.getD_cons_succ, hrep, Nat.add_one_ne_zero, ite_false]
+        rw [b1.value]; rfl
   | perm c =>
     unfold Dag.ofExt
-    have b0 := g.leaf_built hg (.load (.permCur (4 * c))) trivial
-    generalize g.intern (.load (.permCur (4 * c))) = q0 at b0 ⊢
-    obtain ⟨g1, c0⟩ := q0
-    dsimp only at b0 ⊢
-    have b1 := g1.leaf_built b0.ok (.load (.permCur (4 * c + 1))) trivial
-    generalize g1.intern (.load (.permCur (4 * c + 1))) = q1 at b1 ⊢
-    obtain ⟨g2, c1⟩ := q1
-    dsimp only at b1 ⊢
-    have b2 := g2.leaf_built b1.ok (.load (.permCur (4 * c + 2))) trivial
-    generalize g2.intern (.load (.permCur (4 * c + 2))) = q2 at b2 ⊢
-    obtain ⟨g3, c2⟩ := q2
-    dsimp only at b2 ⊢
-    have b3 := g3.leaf_built b2.ok (.load (.permCur (4 * c + 3))) trivial
-    generalize g3.intern (.load (.permCur (4 * c + 3))) = q3 at b3 ⊢
-    obtain ⟨g4, c3⟩ := q3
-    dsimp only at b3 ⊢
-    exact (Built4.of_built b0 b1 b2 b3).of_eq fun _ ↦ rfl
+    exact (Dag.internAll_range_built P g hg (fun j ↦ .load (.permCur (P.d * c + j)))
+      fun _ ↦ trivial).of_eq fun ctx i hi ↦ rfl
   | permNext c =>
     unfold Dag.ofExt
-    have b0 := g.leaf_built hg (.load (.permNext (4 * c))) trivial
-    generalize g.intern (.load (.permNext (4 * c))) = q0 at b0 ⊢
-    obtain ⟨g1, c0⟩ := q0
-    dsimp only at b0 ⊢
-    have b1 := g1.leaf_built b0.ok (.load (.permNext (4 * c + 1))) trivial
-    generalize g1.intern (.load (.permNext (4 * c + 1))) = q1 at b1 ⊢
-    obtain ⟨g2, c1⟩ := q1
-    dsimp only at b1 ⊢
-    have b2 := g2.leaf_built b1.ok (.load (.permNext (4 * c + 2))) trivial
-    generalize g2.intern (.load (.permNext (4 * c + 2))) = q2 at b2 ⊢
-    obtain ⟨g3, c2⟩ := q2
-    dsimp only at b2 ⊢
-    have b3 := g3.leaf_built b2.ok (.load (.permNext (4 * c + 3))) trivial
-    generalize g3.intern (.load (.permNext (4 * c + 3))) = q3 at b3 ⊢
-    obtain ⟨g4, c3⟩ := q3
-    dsimp only at b3 ⊢
-    exact (Built4.of_built b0 b1 b2 b3).of_eq fun _ ↦ rfl
-  | challenge i =>
+    exact (Dag.internAll_range_built P g hg (fun j ↦ .load (.permNext (P.d * c + j)))
+      fun _ ↦ trivial).of_eq fun ctx i hi ↦ rfl
+  | challenge k =>
     unfold Dag.ofExt
-    have b0 := g.leaf_built hg (.scalar (np + 4 * (i + 1))) trivial
-    generalize g.intern (.scalar (np + 4 * (i + 1))) = q0 at b0 ⊢
-    obtain ⟨g1, c0⟩ := q0
-    dsimp only at b0 ⊢
-    have b1 := g1.leaf_built b0.ok (.scalar (np + 4 * (i + 1) + 1)) trivial
-    generalize g1.intern (.scalar (np + 4 * (i + 1) + 1)) = q1 at b1 ⊢
-    obtain ⟨g2, c1⟩ := q1
-    dsimp only at b1 ⊢
-    have b2 := g2.leaf_built b1.ok (.scalar (np + 4 * (i + 1) + 2)) trivial
-    generalize g2.intern (.scalar (np + 4 * (i + 1) + 2)) = q2 at b2 ⊢
-    obtain ⟨g3, c2⟩ := q2
-    dsimp only at b2 ⊢
-    have b3 := g3.leaf_built b2.ok (.scalar (np + 4 * (i + 1) + 3)) trivial
-    generalize g3.intern (.scalar (np + 4 * (i + 1) + 3)) = q3 at b3 ⊢
-    obtain ⟨g4, c3⟩ := q3
-    dsimp only at b3 ⊢
-    exact (Built4.of_built b0 b1 b2 b3).of_eq fun _ ↦ rfl
+    refine (Dag.internAll_range_built P g hg (fun j ↦ .scalar (np + P.d * (k + 1) + j))
+      fun _ ↦ trivial).of_eq fun ctx i hi ↦ ?_
+    simp only [Lookup.ExtExpr.eval, Ctx.auxQ, Ctx.scalarsExt, Node.value]
   | terminal =>
     unfold Dag.ofExt
-    have b0 := g.leaf_built hg (.scalar (np)) trivial
-    generalize g.intern (.scalar (np)) = q0 at b0 ⊢
-    obtain ⟨g1, c0⟩ := q0
-    dsimp only at b0 ⊢
-    have b1 := g1.leaf_built b0.ok (.scalar (np + 1)) trivial
-    generalize g1.intern (.scalar (np + 1)) = q1 at b1 ⊢
-    obtain ⟨g2, c1⟩ := q1
-    dsimp only at b1 ⊢
-    have b2 := g2.leaf_built b1.ok (.scalar (np + 2)) trivial
-    generalize g2.intern (.scalar (np + 2)) = q2 at b2 ⊢
-    obtain ⟨g3, c2⟩ := q2
-    dsimp only at b2 ⊢
-    have b3 := g3.leaf_built b2.ok (.scalar (np + 3)) trivial
-    generalize g3.intern (.scalar (np + 3)) = q3 at b3 ⊢
-    obtain ⟨g4, c3⟩ := q3
-    dsimp only at b3 ⊢
-    exact (Built4.of_built b0 b1 b2 b3).of_eq fun _ ↦ rfl
+    exact (Dag.internAll_range_built P g hg (fun j ↦ .scalar (np + j))
+      fun _ ↦ trivial).of_eq fun ctx i hi ↦ rfl
   | add a b iha ihb =>
     unfold Dag.ofExt
-    have b0 := iha g hg
-    generalize Dag.ofExt W np a g = q0 at b0 ⊢
-    obtain ⟨g1, x⟩ := q0
-    dsimp only at b0 ⊢
-    have b1 := ihb g1 b0.ok
-    generalize Dag.ofExt W np b g1 = q1 at b1 ⊢
-    obtain ⟨g2, y⟩ := q1
+    have b1 := iha g hg
+    generalize Dag.ofExt P np a g = q1 at b1 ⊢
+    obtain ⟨g1, xs⟩ := q1
     dsimp only at b1 ⊢
-    exact Built4.op4 b0 b1 .add fun _ _ ↦ rfl
+    have b2 := ihb g1 b1.ok
+    generalize Dag.ofExt P np b g1 = q2 at b2 ⊢
+    obtain ⟨g2, ys⟩ := q2
+    dsimp only at b1 b2 ⊢
+    have b3 := g2.opN_built .add xs ys b2.ok (by rw [b1.len, b2.len])
+      (fun i hi ↦ by
+        rw [b1.len] at hi; have := b1.lt i hi; have := b2.ext.1; dsimp only at *; omega)
+      (fun i hi ↦ by rw [b1.len] at hi; exact b2.lt i hi)
+    rw [b1.len] at b3
+    refine ⟨b3.ok, b1.ext.trans (b2.ext.trans b3.ext), b3.len, b3.lt, fun ctx i hi ↦ ?_⟩
+    rw [b3.value ctx i hi, b1.mono b2.ext ctx i hi, b2.value ctx i hi]
+    simp only [Lookup.ExtExpr.eval, Op.eval, CompPoly.Extension.Ext.coeffNat_of_lt _ hi,
+      CompPoly.Extension.Ext.coeff_add]
   | sub a b iha ihb =>
     unfold Dag.ofExt
-    have b0 := iha g hg
-    generalize Dag.ofExt W np a g = q0 at b0 ⊢
-    obtain ⟨g1, x⟩ := q0
-    dsimp only at b0 ⊢
-    have b1 := ihb g1 b0.ok
-    generalize Dag.ofExt W np b g1 = q1 at b1 ⊢
-    obtain ⟨g2, y⟩ := q1
+    have b1 := iha g hg
+    generalize Dag.ofExt P np a g = q1 at b1 ⊢
+    obtain ⟨g1, xs⟩ := q1
     dsimp only at b1 ⊢
-    exact Built4.op4 b0 b1 .sub fun _ _ ↦ rfl
+    have b2 := ihb g1 b1.ok
+    generalize Dag.ofExt P np b g1 = q2 at b2 ⊢
+    obtain ⟨g2, ys⟩ := q2
+    dsimp only at b1 b2 ⊢
+    have b3 := g2.opN_built .sub xs ys b2.ok (by rw [b1.len, b2.len])
+      (fun i hi ↦ by
+        rw [b1.len] at hi; have := b1.lt i hi; have := b2.ext.1; dsimp only at *; omega)
+      (fun i hi ↦ by rw [b1.len] at hi; exact b2.lt i hi)
+    rw [b1.len] at b3
+    refine ⟨b3.ok, b1.ext.trans (b2.ext.trans b3.ext), b3.len, b3.lt, fun ctx i hi ↦ ?_⟩
+    rw [b3.value ctx i hi, b1.mono b2.ext ctx i hi, b2.value ctx i hi]
+    simp only [Lookup.ExtExpr.eval, Op.eval, CompPoly.Extension.Ext.coeffNat_of_lt _ hi,
+      CompPoly.Extension.Ext.coeff_sub]
   | mul a b iha ihb =>
     unfold Dag.ofExt
-    have b0 := iha g hg
-    generalize Dag.ofExt W np a g = q0 at b0 ⊢
-    obtain ⟨g1, x⟩ := q0
-    dsimp only at b0 ⊢
-    have b1 := ihb g1 b0.ok
-    generalize Dag.ofExt W np b g1 = q1 at b1 ⊢
-    obtain ⟨g2, y⟩ := q1
+    have b1 := iha g hg
+    generalize Dag.ofExt P np a g = q1 at b1 ⊢
+    obtain ⟨g1, xs⟩ := q1
     dsimp only at b1 ⊢
-    have b2 := g2.leaf_built b1.ok (.const W) trivial
-    generalize g2.intern (.const W) = q2 at b2 ⊢
-    obtain ⟨g3, w⟩ := q2
-    dsimp only at b2 ⊢
-    have e12 : g1.Ext g3 := b1.ext.trans b2.ext
-    have s2 : g2.nodes.size ≤ g3.nodes.size := b2.ext.1
-    have s1 : g1.nodes.size ≤ g2.nodes.size := b1.ext.1
-    obtain ⟨x0, x1, x2, x3⟩ := x
-    obtain ⟨y0, y1, y2, y3⟩ := y
-    obtain ⟨hx0, hx1, hx2, hx3⟩ := b0.lt
-    obtain ⟨hy0, hy1, hy2, hy3⟩ := b1.lt
-    have b3 := g3.mul4_built (W := W) b2.ok w b2.lt (fun ctx ↦ b2.value ctx)
-      (x0, x1, x2, x3) (y0, y1, y2, y3)
-      (by dsimp only at *; omega) (by dsimp only at *; omega)
-    refine ⟨b3.ok, b0.ext.trans (b1.ext.trans (b2.ext.trans b3.ext)), b3.lt, fun ctx ↦ ?_⟩
-    rw [b3.value, Lookup.ExtExpr.eval, ← b0.value ctx, ← b1.value ctx]
-    dsimp only at *
-    rw [e12.val_eq ctx x0 hx0, e12.val_eq ctx x1 hx1, e12.val_eq ctx x2 hx2,
-      e12.val_eq ctx x3 hx3, b2.ext.val_eq ctx y0 hy0, b2.ext.val_eq ctx y1 hy1,
-      b2.ext.val_eq ctx y2 hy2, b2.ext.val_eq ctx y3 hy3]
+    have b2 := ihb g1 b1.ok
+    generalize Dag.ofExt P np b g1 = q2 at b2 ⊢
+    obtain ⟨g2, ys⟩ := q2
+    dsimp only at b1 b2 ⊢
+    have b3 := g2.mulN_built P b2.ok xs ys
+      (fun i hi ↦ by have := b1.lt i hi; have := b2.ext.1; dsimp only at *; omega)
+      (fun i hi ↦ b2.lt i hi)
+    refine ⟨b3.ok, b1.ext.trans (b2.ext.trans b3.ext), b3.len, b3.lt, fun ctx i hi ↦ ?_⟩
+    rw [b3.value ctx i hi, b1.extOf_eq b2.ext ctx, b2.extOf_eq (Dag.Ext.refl _) ctx]
+    rfl
 
 end BuildExt
 

@@ -304,11 +304,11 @@ def quotientPhase (air : String) (logN reps : Nat) : IO UInt32 := do
 
 /-- The median time of three proofs by `B` of `A` on the traces `trace 0, trace 1, trace 2`,
 checked against the proof `rust?` on the first if given. -/
-def proveTimed (label : String)
-    (B : CompStark.Fri.Backend KoalaBear.Fast.Field KoalaBear.Fast.Ext4 24)
+def proveTimed {EF : Type} [CompStark.Challenge KoalaBear.Fast.Field EF] (label : String)
+    (B : CompStark.Fri.Backend KoalaBear.Fast.Field EF 24)
     (P : CompStark.Fri.Params) (A : CompStark.Stark.Air KoalaBear.Fast.Field) (logN : Nat)
     (trace : Nat → B.Trace) (pis : List KoalaBear.Fast.Field)
-    (rust? : Option (CompStark.Stark.Proof KoalaBear.Fast.Field KoalaBear.Fast.Ext4)) :
+    (rust? : Option (CompStark.Stark.Proof KoalaBear.Fast.Field EF)) :
     IO UInt32 := do
   if let some rust := rust? then
     unless CompStark.Stark.proveWith B P A logN (trace 0) pis == rust do
@@ -348,6 +348,26 @@ def openingsPhase (logN reps : Nat) : IO UInt32 := do
     let m := (s.qsort (· < ·))[s.size / 2]!
     IO.println s!"lean keccak 2^{logN} {l} median {m / 1000000} ms"
   return 0
+
+/-- Plonky3's example configuration: blowup 2, arity up to 8, 87 queries, caps of height 3. -/
+def keccakParams : CompStark.Fri.Params := ⟨1, 0, 3, 87, 0, 16, 10, 0, 0, 3⟩
+
+/-- The Keccak AIR's shape on `2 ^ logN` rows. -/
+def keccakShapes (logN : Nat) : List (Nat × Nat) :=
+  [(logN, (CompStark.Fixtures.Keccak.air : CompStark.Stark.Air
+      KoalaBear.Fast.Field).logQuotientChunks
+    logN)]
+
+open CompStark CompStark.Stark CompStark.Fri in
+/-- `keccak-prove EXT LOG_N`: the median time of three proofs of Plonky3's Keccak AIR on
+`keccakShapedTrace LOG_N` over KoalaBear's `quartic` or `quintic` extension (`fast`), at Plonky3's
+example configuration (blowup 2, arity up to 8, 87 queries, caps of height 3), with the AIR's
+generated quotient kernel (`compstark-bench keccak-prove-bench EXT LOG_N`). -/
+def keccakProve {EF : Type} [Challenge KoalaBear.Fast.Field EF] (ext : String) (logN : Nat)
+    (B : Backend KoalaBear.Fast.Field EF 24) (trace : Array ByteArray → B.Trace) : IO UInt32 := do
+  let chunks := keccakShapedTrace logN
+  proveTimed s!"fast prove keccak {ext} 2^{logN}" B keccakParams CompStark.Fixtures.Keccak.air logN
+    (fun k ↦ trace (chunks.modify 0 (write · 0 k.toUInt32))) [] none
 
 def main (args : List String) : IO UInt32 := do
   match args with
@@ -499,13 +519,20 @@ def main (args : List String) : IO UInt32 := do
         (trace.modify 0 (write · 0 k.toUInt32))) (s!"{·.size} columns")
     return 0
   | ["keccak-phases", logN] => keccakPhases logN.toNat!
+  | ["keccak-prove", "quartic", logN] =>
+    keccakProve "quartic" logN.toNat! (CompStark.KoalaBear.backendFor
+      [CompStark.Fixtures.KeccakKernel.kernel] 1 (keccakShapes logN.toNat!)) id
+  | ["keccak-prove", "quintic", logN] =>
+    keccakProve "quintic" logN.toNat! (CompStark.KoalaBear.backendForQuintic
+      [CompStark.Fixtures.KeccakKernel.kernel] 1 (keccakShapes logN.toNat!)) id
   | ["phases-batch"] => phasesBatch
   | ["openings-phase", logN, reps] => openingsPhase logN.toNat! reps.toNat!
   | ["quotient-phase", air, logN, reps] => quotientPhase air logN.toNat! reps.toNat!
   | "prove" :: backend :: air :: rest =>
-    -- `prove (spec|fast) (fib|wide) LOG_N LOG_BLOWUP LOG_FINAL MAX_LOG_ARITY QUERIES COMMIT_POW
-    -- QUERY_POW [BATCH_POW OOD_POW] [JSON]`: the proof's median time, checked against Plonky3's
-    -- proof in `JSON` if given.
+    -- `prove (spec|fast|fast-quintic) (fib|wide) LOG_N LOG_BLOWUP LOG_FINAL MAX_LOG_ARITY QUERIES
+    -- COMMIT_POW QUERY_POW [BATCH_POW OOD_POW] [JSON]`: the proof's median time, over the quartic
+    -- extension or, for `fast-quintic`, the quintic one, checked against Plonky3's proof in `JSON`
+    -- if given.
     let B := CompStark.Stark.specBackend KoalaBear.Fast.Ext4
     let ps := (rest.takeWhile String.isNat).map String.toNat!
     let P : CompStark.Fri.Params ← match ps.drop 1 with
@@ -516,7 +543,15 @@ def main (args : List String) : IO UInt32 := do
     let A := if air == "wide" then CompStark.Stark.wide 64 else CompStark.Stark.fibonacci
     let (trace, pis) :=
       if air == "wide" then (wideTrace 64 (2 ^ logN), []) else fibInstance (2 ^ logN)
-    let rust? ← (rest.drop ps.length).head?.mapM fun path ↦ do
+    let json? := (rest.drop ps.length).head?
+    if backend == "fast-quintic" then
+      let rust? ← json?.mapM fun path ↦ do
+        IO.ofExcept (CompStark.Stark.Json.parse (p := KoalaBear.fieldSize)
+          (EF := KoalaBear.Fast.Ext5) (← IO.FS.readFile path))
+      return ← proveTimed s!"fast prove {air} quintic 2^{logN}"
+        (CompStark.KoalaBear.backendForQuintic [] P.logBlowup [(logN, A.logQuotientChunks logN)])
+        P A logN (fun k ↦ #[encodeFields (trace.set! 0 (k : _))]) pis rust?
+    let rust? ← json?.mapM fun path ↦ do
       IO.ofExcept (CompStark.Stark.Json.parse (p := KoalaBear.fieldSize)
         (EF := KoalaBear.Fast.Ext4) (← IO.FS.readFile path))
     if backend == "fast" then

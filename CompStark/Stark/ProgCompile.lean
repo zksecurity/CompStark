@@ -448,10 +448,64 @@ theorem Dag.ofTree_leafOk [Field F] {cq : Nat → Prop} {lq : Src → Prop} :
     simp only [Dag.ofTree]
     exact Dag.op_leafOk _ (Dag.ofTree_leafOk b _ (Dag.ofTree_leafOk a g h)) _ _ _
 
-theorem Dag.ofExt_leafOk [Field F] {w wn pw pwn pmw rw : Nat} (W : F) (np : Nat)
-    (hrw : 4 * pmw ≤ rw) (e : Lookup.ExtExpr F) (he : e.colsBelow w wn pw pwn pmw = true)
+theorem Dag.internAll_leafOk {cq : Nat → Prop} {lq : Src → Prop} :
+    ∀ (ns : List (Node F)) (g : Dag F), g.LeafOk cq lq → (∀ n ∈ ns, n.LeafOk cq lq) →
+      (g.internAll ns).1.LeafOk cq lq
+  | [], _, h, _ => h
+  | n :: ns, g, h, hn => by
+    simp only [Dag.internAll]
+    exact Dag.internAll_leafOk ns _ (Dag.intern_leafOk g h n (hn n List.mem_cons_self))
+      fun m hm ↦ hn m (List.mem_cons_of_mem _ hm)
+
+theorem Dag.opN_leafOk [Field F] {cq : Nat → Prop} {lq : Src → Prop} (o : Op) :
+    ∀ (xs ys : List Nat) (g : Dag F), g.LeafOk cq lq → (g.opN o xs ys).1.LeafOk cq lq
+  | [], _, _, h => h
+  | _ :: _, [], _, h => h
+  | x :: xs, y :: ys, g, h => by
+    simp only [Dag.opN]
+    exact Dag.opN_leafOk o xs ys _ (Dag.op_leafOk g h o x y)
+
+theorem Dag.mulN_leafOk [Field F] {cq : Nat → Prop} {lq : Src → Prop}
+    (P : CompPoly.Extension.ExtensionParams F) (x y : List Nat) (g : Dag F)
+    (h : g.LeafOk cq lq) : (g.mulN P x y).1.LeafOk cq lq := by
+  have hcoord : ∀ (g : Dag F) (z : Nat) (t : Nat → F) (m : Nat), g.LeafOk cq lq →
+      (g.mulCoord z P.d x y t m).1.LeafOk cq lq := by
+    intro g z t m hg
+    unfold Dag.mulCoord
+    suffices ∀ (l : List Nat) (gt : Dag F × Dag.Tree), gt.1.LeafOk cq lq →
+        (l.foldl (Dag.mulStep z P.d x y t) gt).1.LeafOk cq lq from
+      Dag.ofTree_leafOk _ _ (this _ _ hg)
+    intro l
+    induction l with
+    | nil => intro gt h; exact h
+    | cons k l ih =>
+      intro gt h
+      rw [List.foldl_cons]
+      refine ih _ ?_
+      unfold Dag.mulStep
+      split
+      · exact h
+      · split
+        · exact h
+        · exact Dag.intern_leafOk _ h _ trivial
+  unfold Dag.mulN
+  suffices ∀ (l : List Nat) (gs : Dag F × List Nat), gs.1.LeafOk cq lq →
+      (l.foldl (Dag.mulNStep P (g.intern (.const 0)).2 x y (CompPoly.Extension.Ext.red P).toArray)
+        gs).1.LeafOk cq lq from
+    this _ _ (Dag.intern_leafOk g h _ trivial)
+  intro l
+  induction l with
+  | nil => intro gs h; exact h
+  | cons k l ih =>
+    intro gs h
+    rw [List.foldl_cons]
+    exact ih _ (hcoord _ _ _ _ h)
+
+theorem Dag.ofExt_leafOk [Field F] {w wn pw pwn pmw rw : Nat}
+    (P : CompPoly.Extension.ExtensionParams F) (np : Nat)
+    (hrw : P.d * pmw ≤ rw) (e : Lookup.ExtExpr F) (he : e.colsBelow w wn pw pwn pmw = true)
     (g : Dag F) (h : g.LeafOk (· < w) (Src.Below wn pw pwn rw)) :
-    (Dag.ofExt W np e g).1.LeafOk (· < w) (Src.Below wn pw pwn rw) := by
+    (Dag.ofExt P np e g).1.LeafOk (· < w) (Src.Below wn pw pwn rw) := by
   induction e generalizing g with
   | base e =>
     simp only [Dag.ofExt]
@@ -460,41 +514,47 @@ theorem Dag.ofExt_leafOk [Field F] {w wn pw pwn pmw rw : Nat} (W : F) (np : Nat)
   | perm c =>
     simp only [Lookup.ExtExpr.colsBelow, decide_eq_true_eq] at he
     simp only [Dag.ofExt]
-    refine Dag.intern_leafOk _ (Dag.intern_leafOk _ (Dag.intern_leafOk _
-      (Dag.intern_leafOk _ h _ ?_) _ ?_) _ ?_) _ ?_ <;>
-      simp only [Node.LeafOk, Src.Below] <;> omega
+    refine Dag.internAll_leafOk _ g h fun n hn ↦ ?_
+    obtain ⟨j, hj, rfl⟩ := List.mem_map.mp hn
+    rw [List.mem_range] at hj
+    have : P.d * c + j < P.d * pmw := by
+      have := Nat.mul_le_mul_left P.d (show c + 1 ≤ pmw by omega)
+      rw [Nat.mul_succ] at this; omega
+    simp only [Node.LeafOk, Src.Below]
+    omega
   | permNext c =>
     simp only [Lookup.ExtExpr.colsBelow, decide_eq_true_eq] at he
     simp only [Dag.ofExt]
-    refine Dag.intern_leafOk _ (Dag.intern_leafOk _ (Dag.intern_leafOk _
-      (Dag.intern_leafOk _ h _ ?_) _ ?_) _ ?_) _ ?_ <;>
-      simp only [Node.LeafOk, Src.Below] <;> omega
+    refine Dag.internAll_leafOk _ g h fun n hn ↦ ?_
+    obtain ⟨j, hj, rfl⟩ := List.mem_map.mp hn
+    rw [List.mem_range] at hj
+    have : P.d * c + j < P.d * pmw := by
+      have := Nat.mul_le_mul_left P.d (show c + 1 ≤ pmw by omega)
+      rw [Nat.mul_succ] at this; omega
+    simp only [Node.LeafOk, Src.Below]
+    omega
   | challenge i =>
     simp only [Dag.ofExt]
-    exact Dag.intern_leafOk _ (Dag.intern_leafOk _ (Dag.intern_leafOk _
-      (Dag.intern_leafOk _ h (.scalar _) trivial) (.scalar _) trivial) (.scalar _) trivial)
-      (.scalar _) trivial
+    refine Dag.internAll_leafOk _ g h fun n hn ↦ ?_
+    obtain ⟨j, -, rfl⟩ := List.mem_map.mp hn
+    trivial
   | terminal =>
     simp only [Dag.ofExt]
-    exact Dag.intern_leafOk _ (Dag.intern_leafOk _ (Dag.intern_leafOk _
-      (Dag.intern_leafOk _ h (.scalar _) trivial) (.scalar _) trivial) (.scalar _) trivial)
-      (.scalar _) trivial
+    refine Dag.internAll_leafOk _ g h fun n hn ↦ ?_
+    obtain ⟨j, -, rfl⟩ := List.mem_map.mp hn
+    trivial
   | add a b iha ihb =>
     simp only [Lookup.ExtExpr.colsBelow, Bool.and_eq_true] at he
-    simp only [Dag.ofExt, Dag.op4]
-    exact Dag.op_leafOk _ (Dag.op_leafOk _ (Dag.op_leafOk _ (Dag.op_leafOk _
-      (ihb he.2 _ (iha he.1 g h)) _ _ _) _ _ _) _ _ _) _ _ _
+    simp only [Dag.ofExt]
+    exact Dag.opN_leafOk _ _ _ _ (ihb he.2 _ (iha he.1 g h))
   | sub a b iha ihb =>
     simp only [Lookup.ExtExpr.colsBelow, Bool.and_eq_true] at he
-    simp only [Dag.ofExt, Dag.op4]
-    exact Dag.op_leafOk _ (Dag.op_leafOk _ (Dag.op_leafOk _ (Dag.op_leafOk _
-      (ihb he.2 _ (iha he.1 g h)) _ _ _) _ _ _) _ _ _) _ _ _
+    simp only [Dag.ofExt]
+    exact Dag.opN_leafOk _ _ _ _ (ihb he.2 _ (iha he.1 g h))
   | mul a b iha ihb =>
     simp only [Lookup.ExtExpr.colsBelow, Bool.and_eq_true] at he
-    simp only [Dag.ofExt, Dag.mul4]
-    exact Dag.ofTree_leafOk _ _ (Dag.ofTree_leafOk _ _ (Dag.ofTree_leafOk _ _
-      (Dag.ofTree_leafOk _ _ (Dag.intern_leafOk _ (ihb he.2 _ (iha he.1 g h)) (.const W)
-        trivial))))
+    simp only [Dag.ofExt]
+    exact Dag.mulN_leafOk P _ _ _ (ihb he.2 _ (iha he.1 g h))
 
 end LeafDag
 
@@ -672,36 +732,60 @@ theorem compile_run (cs : List (Expr F)) (ctx : Ctx F) (st0 : St F) :
   funext j
   exact hT r.1.nodes (fun _ _ ↦ rfl) ctx st0.acc j
 
-/-- An extension value's coordinates weighted by `weight (4 k + i)`. -/
-def extTerm (ctx : Ctx F) {W : F} (k : Nat) (v : Coords F W) (j : Nat) : F :=
-  v.c0 * ctx.weight (4 * k) j + v.c1 * ctx.weight (4 * k + 1) j +
-    v.c2 * ctx.weight (4 * k + 2) j + v.c3 * ctx.weight (4 * k + 3) j
+omit [DecidableEq F] [Hashable F] in
+theorem foldl_zipIdx_acc (V : Nat → F) (wt : Nat → F) (o0 : Nat) :
+    ∀ (xs : List Nat) (o : Nat) (s : F),
+      ((xs.zipIdx o).map fun q ↦ (q.1, o0 + q.2)).foldl (fun s q ↦ s + V q.1 * wt q.2) s =
+        s + ((List.range xs.length).map fun i ↦ V (xs.getD i 0) * wt (o0 + (o + i))).sum
+  | [], _, s => by simp only [List.zipIdx_nil, List.map_nil, List.foldl_nil, List.length_nil,
+      List.range_zero, List.sum_nil, add_zero]
+  | x :: xs, o, s => by
+    rw [List.zipIdx_cons, List.map_cons, List.foldl_cons, foldl_zipIdx_acc V wt o0 xs (o + 1),
+      List.length_cons, List.range_succ_eq_map, List.map_cons, List.map_map, List.sum_cons]
+    simp only [List.getD_cons_zero, Nat.add_zero, Function.comp_def, List.getD_cons_succ,
+      Nat.add_assoc, Nat.add_comm 1]
+    ring
 
-/-- **The compiled extension constraints** over `X⁴ = W` with `np` public values: on a row, the
-program accumulates every constraint's coordinates `i` with the weights `4 k + i`, and its
-registers are below its count. -/
-theorem compileExt_run (W : F) (np : Nat) (cs : List (Lookup.ExtExpr F)) (ctx : Ctx F)
-    (st0 : St F) :
-    (run (fieldMachine ctx) (compileExt W np cs).code st0).acc = (fun j ↦
-      (cs.zipIdx.map fun (c, k) ↦ extTerm ctx k (c.eval (ctx.envQ W np) (ctx.auxQ W np)) j).foldl
+/-- An extension value's coordinates weighted by `weight (d k + i)`. -/
+def extTerm (ctx : Ctx F) {P : CompPoly.Extension.ExtensionParams F} (k : Nat)
+    (v : CompPoly.Extension.Ext P) (j : Nat) : F :=
+  ((List.range P.d).map fun i ↦ CompPoly.Extension.Ext.coeffNat v i * ctx.weight (P.d * k + i)
+      j).sum
+
+/-- **The compiled extension constraints** over the extension `P` of degree `d` with `np` public
+values: on a row, the program accumulates every constraint's coordinates `i` with the weights
+`d k + i`, and its registers are below its count. -/
+theorem compileExt_run (P : CompPoly.Extension.ExtensionParams F) (np : Nat)
+    (cs : List (Lookup.ExtExpr F)) (ctx : Ctx F) (st0 : St F) :
+    (run (fieldMachine ctx) (compileExt P np cs).code st0).acc = (fun j ↦
+      (cs.zipIdx.map fun (c, k) ↦ extTerm ctx k (c.eval (ctx.envQ P np) (ctx.auxQ P np)) j).foldl
         (· + ·) (st0.acc j)) ∧
-    ∀ ins ∈ (compileExt W np cs).code, ins.RegsLt (compileExt W np cs).regs := by
+    ∀ ins ∈ (compileExt P np cs).code, ins.RegsLt (compileExt P np cs).regs := by
   let f : Nat → Lookup.ExtExpr F → Dag F → Dag F × List (Nat × Nat) := fun k c g ↦
-    ((Dag.ofExt W np c g).1, [((Dag.ofExt W np c g).2.1, 4 * k),
-      ((Dag.ofExt W np c g).2.2.1, 4 * k + 1), ((Dag.ofExt W np c g).2.2.2.1, 4 * k + 2),
-      ((Dag.ofExt W np c g).2.2.2.2, 4 * k + 3)])
+    ((Dag.ofExt P np c g).1, (Dag.ofExt P np c g).2.zipIdx.map fun (x, j) ↦ (x, P.d * k + j))
   have hb := buildAll_spec f
-    (fun k c ctx j ↦ extTerm ctx k (c.eval (ctx.envQ W np) (ctx.auxQ W np)) j) (fun k c g hg ↦ by
-      have b := Dag.ofExt_built W np c g hg
-      refine ⟨b.ok, b.ext, fun p hp ↦ ?_, fun ctx j s ↦ ?_⟩
-      · simp only [f, List.mem_cons, List.not_mem_nil, or_false] at hp
-        obtain ⟨l0, l1, l2, l3⟩ := b.lt
-        rcases hp with rfl | rfl | rfl | rfl <;> assumption
-      · simp only [f, List.foldl_cons, List.foldl_nil]
-        rw [← b.value ctx]
-        simp only [extTerm]
-        ring) cs
-  have hc : compileExt W np cs = allocate (buildAll f cs).1.nodes (buildAll f cs).2.steps #[] :=
+    (fun k c ctx j ↦ extTerm ctx k (c.eval (ctx.envQ P np) (ctx.auxQ P np)) j) (fun k c g hg ↦ by
+      have b := Dag.ofExt_built P np c g hg
+      refine ⟨b.ok, b.ext, fun q hq ↦ ?_, fun ctx j s ↦ ?_⟩
+      · simp only [f, List.mem_map] at hq
+        obtain ⟨⟨x, i⟩, hm, rfl⟩ := hq
+        obtain ⟨hi, hx⟩ := List.mem_zipIdx' hm
+        have := b.lt i (by rw [← b.len]; exact hi)
+        rw [List.getD_eq_getElem?_getD, List.getElem?_eq_getElem hi, Option.getD_some] at this
+        simp only [f]
+        rw [hx]
+        exact this
+      · simp only [f, extTerm]
+        generalize (Dag.ofExt P np c g) = r at b ⊢
+        obtain ⟨g', xs⟩ := r
+        dsimp only at b ⊢
+        rw [show xs.zipIdx = xs.zipIdx 0 from rfl,
+          foldl_zipIdx_acc (val ctx g'.nodes) (fun w ↦ ctx.weight w j) (P.d * k) xs 0 s, b.len]
+        congr 1
+        refine congrArg List.sum (List.map_congr_left fun i hi ↦ ?_)
+        rw [List.mem_range] at hi
+        rw [Nat.zero_add, b.value ctx i hi]) cs
+  have hc : compileExt P np cs = allocate (buildAll f cs).1.nodes (buildAll f cs).2.steps #[] :=
     rfl
   rw [hc]
   generalize buildAll f cs = r at hb ⊢
@@ -809,19 +893,17 @@ theorem compile_leafOk (cs : List (Expr F)) (w wn pw pwn rw : Nat)
     Dag.ofExpr_leafOk c (hc c hcm) g hg)
 
 /-- The compiled extension constraints read the columns their expressions read. -/
-theorem compileExt_leafOk (W : F) (np : Nat) (cs : List (Lookup.ExtExpr F))
-    (w wn pw pwn pmw rw : Nat) (hrw : 4 * pmw ≤ rw)
+theorem compileExt_leafOk (P : CompPoly.Extension.ExtensionParams F) (np : Nat)
+    (cs : List (Lookup.ExtExpr F)) (w wn pw pwn pmw rw : Nat) (hrw : P.d * pmw ≤ rw)
     (hc : ∀ c ∈ cs, c.colsBelow w wn pw pwn pmw = true) :
-    ∀ ins ∈ (compileExt W np cs).code, ins.LeafOk (· < w) (Src.Below wn pw pwn rw) := by
+    ∀ ins ∈ (compileExt P np cs).code, ins.LeafOk (· < w) (Src.Below wn pw pwn rw) := by
   let f : Nat → Lookup.ExtExpr F → Dag F → Dag F × List (Nat × Nat) := fun k c g ↦
-    ((Dag.ofExt W np c g).1, [((Dag.ofExt W np c g).2.1, 4 * k),
-      ((Dag.ofExt W np c g).2.2.1, 4 * k + 1), ((Dag.ofExt W np c g).2.2.2.1, 4 * k + 2),
-      ((Dag.ofExt W np c g).2.2.2.2, 4 * k + 3)])
-  have he : compileExt W np cs = allocate (buildAll f cs).1.nodes (buildAll f cs).2.steps #[] :=
+    ((Dag.ofExt P np c g).1, (Dag.ofExt P np c g).2.zipIdx.map fun (x, j) ↦ (x, P.d * k + j))
+  have he : compileExt P np cs = allocate (buildAll f cs).1.nodes (buildAll f cs).2.steps #[] :=
     rfl
   rw [he]
   exact allocate_leafOk _ _ _ _ _ (buildAll_leafOk f cs fun k c hcm g hg ↦
-    Dag.ofExt_leafOk W np hrw c (hc c hcm) g hg)
+    Dag.ofExt_leafOk P np hrw c (hc c hcm) g hg)
 
 /-- The compiled outputs read the columns their expressions read, and so do the outputs. -/
 theorem compileOuts_leafOk (es : List (Expr F)) (w wn pw pwn rw : Nat)

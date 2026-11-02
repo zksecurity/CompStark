@@ -10,7 +10,7 @@ use p3_challenger::DuplexChallenger;
 use p3_commit::ExtensionMmcs;
 use p3_dft::Radix2DitParallel;
 use p3_field::extension::BinomialExtensionField;
-use p3_field::{Field, PrimeField32};
+use p3_field::{ExtensionField, Field, PrimeField32, TwoAdicField};
 use p3_fri::{FriParameters, TwoAdicFriPcs};
 use p3_keccak_air::KeccakAir;
 use p3_koala_bear::{KoalaBear, Poseidon2KoalaBear};
@@ -23,14 +23,15 @@ use rand::rngs::SmallRng;
 use rand::{RngExt, SeedableRng};
 
 type F = KoalaBear;
-type EF = BinomialExtensionField<F, 4>;
+pub type EF = BinomialExtensionField<F, 4>;
 type P16 = Poseidon2KoalaBear<16>;
 type P24 = Poseidon2KoalaBear<24>;
 type ValMmcs = MerkleTreeMmcs<<F as Field>::Packing, <F as Field>::Packing,
     PaddingFreeSponge<P24, 24, 16, 8>, TruncatedPermutation<P16, 2, 8, 16>, 2, 8>;
-type ChallengeMmcs = ExtensionMmcs<F, EF, ValMmcs>;
-pub type ExampleConfig = StarkConfig<TwoAdicFriPcs<F, Radix2DitParallel<F>, ValMmcs, ChallengeMmcs>,
-    EF, DuplexChallenger<F, P24, 24, 16>>;
+type ChallengeMmcs<E> = ExtensionMmcs<F, E, ValMmcs>;
+/// The example's configuration over the extension `E`.
+pub type ExampleConfig<E = EF> = StarkConfig<TwoAdicFriPcs<F, Radix2DitParallel<F>, ValMmcs,
+    ChallengeMmcs<E>>, E, DuplexChallenger<F, P24, 24, 16>>;
 
 /// The round constants of one Poseidon2 instance as `new_from_rng` draws them: the initial and
 /// terminal full rounds' and the partial rounds'.
@@ -72,15 +73,15 @@ pub fn poseidon2() -> (P16, P24, Constants<16>, Constants<24>) {
     (p16, p24, c16, c24)
 }
 
-/// The example's configuration on the Poseidon2 instances `p16`, `p24`.
-pub fn config(p16: P16, p24: P24) -> ExampleConfig {
+/// The example's configuration on the Poseidon2 instances `p16`, `p24`, over the extension `E`.
+pub fn config<E: ExtensionField<F> + TwoAdicField>(p16: P16, p24: P24) -> ExampleConfig<E> {
     let val_mmcs = ValMmcs::new(PaddingFreeSponge::new(p24.clone()), TruncatedPermutation::new(p16),
         3);
     let mut fri = FriParameters::new_benchmark_high_arity(ChallengeMmcs::new(val_mmcs.clone()));
     // `example_fri_parameters`: the fewest queries for 100 conjectured bits.
     fri.num_queries = (100 - fri.query_proof_of_work_bits).div_ceil(fri.log_blowup);
     while ConjecturedSecurity::compute_ldt_only(fri.log_blowup, fri.num_queries,
-        fri.query_proof_of_work_bits, 128, EF::bits()).security_bits < 100
+        fri.query_proof_of_work_bits, 128, E::bits()).security_bits < 100
     {
         fri.num_queries += 1;
     }
@@ -177,7 +178,7 @@ end CompStark.Fixtures.Poseidon2Example",
 pub fn keccak_example(log_n: usize, dir: &str) {
     use p3_matrix::Matrix;
     let (p16, p24, _, _) = poseidon2();
-    let config = config(p16, p24);
+    let config = config::<EF>(p16, p24);
     let air = KeccakAir {};
     let n = (1usize << log_n) / 24;
     let trace = air.generate_random_trace_rows::<F>(n, 1);
@@ -211,8 +212,26 @@ pub fn keccak_prove_trace(log_n: usize) {
         .from_env_lossy();
     Registry::default().with(env_filter).with(ForestLayer::default()).init();
     let (p16, p24, _, _) = poseidon2();
-    let config = config(p16, p24);
+    let config = config::<EF>(p16, p24);
     let air = KeccakAir {};
     let trace = air.generate_random_trace_rows::<F>((1usize << log_n) / 24, 1);
     prove(&config, &air, trace, &[]).expect("Plonky3 cannot prove");
+}
+
+/// `keccak-prove-bench (quartic|quintic) L`: the median milliseconds of three proofs of the
+/// example's `2^L / 24` permutations over the extension `E`, trace generation excluded.
+pub fn keccak_prove_bench<E: ExtensionField<F> + TwoAdicField>(ext: &str, log_n: usize) {
+    let (p16, p24, _, _) = poseidon2();
+    let config = config::<E>(p16, p24);
+    let air = KeccakAir {};
+    let mut samples = vec![];
+    for k in 0..3 {
+        let trace = air.generate_random_trace_rows::<F>((1usize << log_n) / 24, 1 + k);
+        let t = std::time::Instant::now();
+        let proof = prove(&config, &air, trace, &[]).expect("Plonky3 cannot prove");
+        samples.push(t.elapsed().as_secs_f64() * 1000.0);
+        std::hint::black_box(proof);
+    }
+    samples.sort_by(|a, b| a.partial_cmp(b).unwrap());
+    println!("plonky3 prove keccak {ext} 2^{log_n} ms median {:.1}", samples[1]);
 }

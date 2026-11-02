@@ -63,7 +63,8 @@ pub fn known_answers() {
 /// verified it. Run with `RAYON_NUM_THREADS=1` for the smallest grinding witnesses.
 pub fn stark(air: &str, args: &[usize]) {
     let config =
-        config::<F, _, _>(default_babybear_poseidon2_16(), default_babybear_poseidon2_24(), &args[1..]);
+        config::<F, Challenge<F>, _, _>(default_babybear_poseidon2_16(),
+            default_babybear_poseidon2_24(), &args[1..]);
     let proof = prove_air(&config, air, args[0]);
     println!("{}", serde_json::to_string(&proof).unwrap());
 }

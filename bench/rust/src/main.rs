@@ -131,6 +131,12 @@ fn main() {
     if args.len() == 3 && args[1] == "keccak-prove-trace" {
         return example::keccak_prove_trace(args[2].parse().unwrap());
     }
+    if args.len() == 4 && args[1] == "keccak-prove-bench" && args[2] == "quartic" {
+        return example::keccak_prove_bench::<example::EF>("quartic", args[3].parse().unwrap());
+    }
+    if args.len() == 4 && args[1] == "keccak-prove-bench" && args[2] == "quintic" {
+        return example::keccak_prove_bench::<stark::Quintic>("quintic", args[3].parse().unwrap());
+    }
     if args.len() == 4 && args[1] == "lde" {
         return lde(args[2].parse().unwrap(), args[3].parse().unwrap());
     }
@@ -146,11 +152,19 @@ fn main() {
     }
     if args.len() >= 3 && args[1] == "prove-bench" {
         let nums: Vec<usize> = args[3..].iter().map(|a| a.parse().unwrap()).collect();
-        return stark::prove_bench(&args[2], &nums);
+        return stark::prove_bench::<stark::Challenge<F>>(&args[2], &nums);
+    }
+    if args.len() >= 3 && args[1] == "prove-bench-quintic" {
+        let nums: Vec<usize> = args[3..].iter().map(|a| a.parse().unwrap()).collect();
+        return stark::prove_bench::<stark::Quintic>(&args[2], &nums);
     }
     if args.len() >= 3 && args[1] == "stark" {
         let nums: Vec<usize> = args[3..].iter().map(|a| a.parse().unwrap()).collect();
-        return stark::stark(&args[2], &nums);
+        return stark::stark::<stark::Challenge<F>>(&args[2], &nums);
+    }
+    if args.len() >= 3 && args[1] == "stark-quintic" {
+        let nums: Vec<usize> = args[3..].iter().map(|a| a.parse().unwrap()).collect();
+        return stark::stark::<stark::Quintic>(&args[2], &nums);
     }
     if args.len() >= 3 && args[1] == "batch-babybear" {
         let nums: Vec<usize> = args[3..].iter().map(|a| a.parse().unwrap()).collect();

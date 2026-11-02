@@ -27,124 +27,111 @@ open CompPoly.CPolynomial
 
 open Montgomery.Native32
 
-variable {p : ℕ} [Mont32Field p]
+variable {p : ℕ} [Mont32Field p] {EF : Type} [FastExt p EF]
 
 local notation "F" => FastField p
-local notation "EF" => Ext4 p
 
 /-! ### Base elements -/
 
-theorem ofBase_add (a b : F) : Ext4.ofBase a + Ext4.ofBase b = Ext4.ofBase (p := p) (a + b) := by
-  show (⟨a + b, 0 + 0, 0 + 0, 0 + 0⟩ : EF) = ⟨a + b, 0, 0, 0⟩
-  rw [add_zero]
+theorem ofBase_add (a b : F) :
+    FastExt.ofBase (E := EF) a + FastExt.ofBase b = FastExt.ofBase (a + b) :=
+  FastExt.toSpec_injective (by
+    rw [FastExt.toSpec_add, FastExt.toSpec_ofBase, FastExt.toSpec_ofBase, FastExt.toSpec_ofBase]
+    exact (map_add (CompPoly.Extension.Ext.ofBaseRingHom _) a b).symm)
 
-theorem ofBase_sub (a b : F) : Ext4.ofBase a - Ext4.ofBase b = Ext4.ofBase (p := p) (a - b) := by
-  show (⟨a - b, 0 - 0, 0 - 0, 0 - 0⟩ : EF) = ⟨a - b, 0, 0, 0⟩
-  rw [sub_zero]
+theorem ofBase_sub (a b : F) :
+    FastExt.ofBase (E := EF) a - FastExt.ofBase b = FastExt.ofBase (a - b) :=
+  FastExt.toSpec_injective (by
+    rw [FastExt.toSpec_sub, FastExt.toSpec_ofBase, FastExt.toSpec_ofBase, FastExt.toSpec_ofBase]
+    exact (map_sub (CompPoly.Extension.Ext.ofBaseRingHom _) a b).symm)
 
-theorem ofBase_mul [Binomial4 p] (a b : F) :
-    Ext4.ofBase a * Ext4.ofBase b = Ext4.ofBase (p := p) (a * b) := by
-  rw [Ext4.mul_coords]
-  simp only [Ext4.ofBase_c0, Ext4.ofBase_c1, Ext4.ofBase_c2, Ext4.ofBase_c3]
-  show (⟨_, _, _, _⟩ : EF) = ⟨a * b, 0, 0, 0⟩
-  congr 1 <;> ring
+theorem ofBase_mul (a b : F) :
+    FastExt.ofBase (E := EF) a * FastExt.ofBase b = FastExt.ofBase (a * b) :=
+  FastExt.toSpec_injective (by
+    rw [FastExt.toSpec_mul, FastExt.toSpec_ofBase, FastExt.toSpec_ofBase, FastExt.toSpec_ofBase]
+    exact (map_mul (CompPoly.Extension.Ext.ofBaseRingHom _) a b).symm)
 
 /-! ### Block values -/
 
 /-- A block value represents the values `f` on its `B` rows. -/
-def XRel (B : Nat) : XVal p → (Nat → EF) → Prop
+def XRel (B : Nat) : XVal p EF → (Nat → EF) → Prop
   | .const c, f => ∀ i < B, f i = c
-  | .base w, f => ∃ g : Nat → F, w = encode (tab B g) ∧ ∀ i < B, f i = Ext4.ofBase (g i)
-  | .ext v, f => Ext4Planes.Rel v (tab B f)
+  | .base w, f => ∃ g : Nat → F, w = encode (tab B g) ∧ ∀ i < B, f i = FastExt.ofBase (g i)
+  | .ext v, f => ExtPlanes.Rel v (tab B f)
 
-theorem XRel.congr {B : Nat} {x : XVal p} {f g : Nat → EF} (h : XRel B x f)
+theorem XRel.congr {B : Nat} {x : XVal p EF} {f g : Nat → EF} (h : XRel B x f)
     (hfg : ∀ i < B, f i = g i) : XRel B x g := by
   cases x with
   | const c => exact fun i hi ↦ (hfg i hi).symm.trans (h i hi)
   | base w =>
     obtain ⟨g', hw, hg⟩ := h
     exact ⟨g', hw, fun i hi ↦ (hfg i hi).symm.trans (hg i hi)⟩
-  | ext v => exact Ext4Planes.Rel.congr_tab h hfg
+  | ext v => exact ExtPlanes.Rel.congr_tab h hfg
 
 /-- The planes of a block value represent its values. -/
-theorem XRel.planes {B : Nat} (hB : 4 * B < USize.size) {x : XVal p} {f : Nat → EF}
-    (h : XRel B x f) : Ext4Planes.Rel (x.planes B) (tab B f) := by
+theorem XRel.planes {B : Nat} (hB : 4 * B < USize.size) {x : XVal p EF} {f : Nat → EF}
+    (h : XRel B x f) : ExtPlanes.Rel (x.planes B) (tab B f) := by
   cases x with
   | const c =>
-    refine Ext4Planes.rel_tab_iff.mpr ⟨rfl, ?_, ?_, ?_, ?_⟩ <;>
-    · simp only [XVal.planes, XVal.rep]
-      rw [replicateWord_tab hB]
-      exact congrArg encode (tab_congr fun i hi ↦ by rw [h i hi])
+    refine ExtPlanes.rel_tab_iff.mpr ⟨rfl, fun k ↦ ?_⟩
+    simp only [XVal.planes, XVal.rep, ExtPlanes.getElem_ofFn_fin]
+    rw [replicateWord_tab hB]
+    exact congrArg encode (tab_congr fun i hi ↦ by rw [h i hi])
   | base w =>
     obtain ⟨g, hw, hg⟩ := h
-    refine Ext4Planes.rel_tab_iff.mpr ⟨rfl, ?_, ?_, ?_, ?_⟩
-    · rw [XVal.planes, hw]
-      exact congrArg encode (tab_congr fun i hi ↦ by rw [hg i hi]; rfl)
-    all_goals
-      rw [XVal.planes, zeroWords_tab (p := p)]
-      exact congrArg encode (tab_congr fun i hi ↦ by rw [hg i hi]; rfl)
+    refine ExtPlanes.rel_tab_iff.mpr ⟨rfl, fun k ↦ ?_⟩
+    simp only [XVal.planes, ExtPlanes.getElem_ofFn_fin]
+    split
+    · rename_i hk
+      rw [hw]
+      exact congrArg encode (tab_congr fun i hi ↦ by
+        rw [hg i hi, FastExt.coord_ofBase, ite_eq_left_of_eq_true _ _ (eq_true hk)])
+    · rename_i hk
+      rw [zeroWords_tab (p := p)]
+      exact congrArg encode (tab_congr fun i hi ↦ by
+        rw [hg i hi, FastExt.coord_ofBase, ite_eq_right_of_eq_false _ _ (eq_false hk)])
   | ext v => exact h
 
-theorem XRel.planes_n {B : Nat} {x : XVal p} {f : Nat → EF} (h : XRel B x f) :
-    (x.planes B).n = B := by
-  cases x with
-  | const c => rfl
-  | base w => rfl
-  | ext v => exact (Ext4Planes.rel_tab_iff.mp h).1
+/-- Plane `0` mapped by `op`, the others kept. -/
+theorem rv_mapPlane0 {B : Nat} {v : ExtPlanes p EF} {f h : Nat → EF} (op : ByteArray → ByteArray)
+    (hv : ExtPlanes.Rel v (tab B f)) (k0 : Fin (FastExt.d p EF)) (hk0 : k0.val = 0)
+    (h0 : op (encode (tab B fun i ↦ FastExt.coord (f i) k0)) =
+      encode (tab B fun i ↦ FastExt.coord (h i) k0))
+    (hk : ∀ i < B, ∀ k : Fin (FastExt.d p EF), k.val ≠ 0 →
+      FastExt.coord (h i) k = FastExt.coord (f i) k) :
+    ExtPlanes.Rel (mapPlane0 op v) (tab B h) := by
+  obtain ⟨hn, hc⟩ := ExtPlanes.rel_tab_iff.mp hv
+  refine ExtPlanes.rel_tab_iff.mpr ⟨hn, fun k ↦ ?_⟩
+  simp only [mapPlane0, ExtPlanes.getElem_ofFn_fin]
+  split
+  · rename_i hk'
+    obtain rfl : k = k0 := Fin.ext (by rw [hk', hk0])
+    rw [hc]
+    exact h0
+  · rename_i hk'
+    rw [hc]
+    exact congrArg encode (tab_congr fun i hi ↦ (hk i hi k hk').symm)
 
-/-- Base words added to the constant coordinate of planes. -/
-theorem rv_addC0 {B : Nat} (hB : 4 * B < USize.size) {v : Ext4Planes p} (f : Nat → EF) (g : Nat → F)
-    (hv : Ext4Planes.Rel v (tab B f)) :
-    Ext4Planes.Rel ⟨B, Words.addWords p v.c0 (encode (tab B g)) B, v.c1, v.c2, v.c3⟩
-      (tab B fun i ↦ f i + Ext4.ofBase (g i)) := by
-  obtain ⟨-, h0, h1, h2, h3⟩ := Ext4Planes.rel_tab_iff.mp hv
-  refine Ext4Planes.rel_tab_iff.mpr ⟨rfl, ?_, ?_, ?_, ?_⟩
-  · show Words.addWords p v.c0 (encode (tab B g)) B = _
-    rw [h0, addWords_tab hB]; rfl
-  · show v.c1 = _
-    rw [h1]; exact congrArg encode (tab_congr fun i _ ↦ (add_zero _).symm)
-  · show v.c2 = _
-    rw [h2]; exact congrArg encode (tab_congr fun i _ ↦ (add_zero _).symm)
-  · show v.c3 = _
-    rw [h3]; exact congrArg encode (tab_congr fun i _ ↦ (add_zero _).symm)
+/-- The coordinates of `a + x`, `x + a` and `a - x` for a base element `x`. -/
+theorem coord_add_ofBase (a : EF) (x : F) (k : Fin (FastExt.d p EF)) :
+    FastExt.coord (a + FastExt.ofBase x) k = FastExt.coord a k + if k.val = 0 then x else 0 := by
+  rw [FastExt.coord_add, Pi.add_apply, FastExt.coord_ofBase]
 
-theorem rv_addC0' {B : Nat} (hB : 4 * B < USize.size) {v : Ext4Planes p} (f : Nat → EF) (g : Nat →
-    F)
-    (hv : Ext4Planes.Rel v (tab B f)) :
-    Ext4Planes.Rel ⟨B, Words.addWords p (encode (tab B g)) v.c0 B, v.c1, v.c2, v.c3⟩
-      (tab B fun i ↦ Ext4.ofBase (g i) + f i) := by
-  obtain ⟨-, h0, h1, h2, h3⟩ := Ext4Planes.rel_tab_iff.mp hv
-  refine Ext4Planes.rel_tab_iff.mpr ⟨rfl, ?_, ?_, ?_, ?_⟩
-  · show Words.addWords p (encode (tab B g)) v.c0 B = _
-    rw [h0, addWords_tab hB]; rfl
-  · show v.c1 = _
-    rw [h1]; exact congrArg encode (tab_congr fun i _ ↦ (zero_add _).symm)
-  · show v.c2 = _
-    rw [h2]; exact congrArg encode (tab_congr fun i _ ↦ (zero_add _).symm)
-  · show v.c3 = _
-    rw [h3]; exact congrArg encode (tab_congr fun i _ ↦ (zero_add _).symm)
+theorem coord_ofBase_add (a : EF) (x : F) (k : Fin (FastExt.d p EF)) :
+    FastExt.coord (FastExt.ofBase x + a) k = (if k.val = 0 then x else 0) + FastExt.coord a k := by
+  rw [FastExt.coord_add, Pi.add_apply, FastExt.coord_ofBase]
 
-theorem rv_subC0 {B : Nat} (hB : 4 * B < USize.size) {v : Ext4Planes p} (f : Nat → EF) (g : Nat → F)
-    (hv : Ext4Planes.Rel v (tab B f)) :
-    Ext4Planes.Rel ⟨B, Words.subWords p v.c0 (encode (tab B g)) B, v.c1, v.c2, v.c3⟩
-      (tab B fun i ↦ f i - Ext4.ofBase (g i)) := by
-  obtain ⟨-, h0, h1, h2, h3⟩ := Ext4Planes.rel_tab_iff.mp hv
-  refine Ext4Planes.rel_tab_iff.mpr ⟨rfl, ?_, ?_, ?_, ?_⟩
-  · show Words.subWords p v.c0 (encode (tab B g)) B = _
-    rw [h0, subWords_tab hB]; rfl
-  · show v.c1 = _
-    rw [h1]; exact congrArg encode (tab_congr fun i _ ↦ (sub_zero _).symm)
-  · show v.c2 = _
-    rw [h2]; exact congrArg encode (tab_congr fun i _ ↦ (sub_zero _).symm)
-  · show v.c3 = _
-    rw [h3]; exact congrArg encode (tab_congr fun i _ ↦ (sub_zero _).symm)
+theorem coord_sub_ofBase (a : EF) (x : F) (k : Fin (FastExt.d p EF)) :
+    FastExt.coord (a - FastExt.ofBase x) k = FastExt.coord a k - if k.val = 0 then x else 0 := by
+  rw [FastExt.coord_sub, Pi.sub_apply, FastExt.coord_ofBase]
 
-theorem XRel.add {B : Nat} (hB : 4 * B < USize.size) {x y : XVal p} {f g : Nat → EF}
+/-- The zero coordinate. -/
+def k0 : Fin (FastExt.d p EF) := ⟨0, (FastExt.params (p := p) (E := EF)).d_pos⟩
+
+theorem XRel.add {B : Nat} (hB : 4 * B < USize.size) {x y : XVal p EF} {f g : Nat → EF}
     (hx : XRel B x f) (hy : XRel B y g) : XRel B (x.add B y) fun i ↦ f i + g i := by
-  have generic : Ext4Planes.Rel ((x.planes B).add (y.planes B)) (tab B fun i ↦ f i + g i) := by
-    have := Ext4Planes.add_rel (hx.planes hB) (hy.planes hB) (by rw [hx.planes_n, hy.planes_n])
-      (by rw [size_tab]; exact hB)
-    rwa [tab_zipWith] at this
+  have generic : ExtPlanes.Rel ((x.planes B).add (y.planes B)) (tab B fun i ↦ f i + g i) :=
+    ExtPlanes.add_rel hB (hx.planes hB) (hy.planes hB)
   cases x with
   | const a =>
     cases y with
@@ -162,25 +149,33 @@ theorem XRel.add {B : Nat} (hB : 4 * B < USize.size) {x y : XVal p} {f g : Nat �
       show Words.addWords p w w' B = _
       rw [hw1, hw2, addWords_tab hB]
     | ext v =>
-      show Ext4Planes.Rel ⟨B, Words.addWords p w v.c0 B, v.c1, v.c2, v.c3⟩ _
+      show ExtPlanes.Rel (mapPlane0 _ v) _
       rw [hw1]
-      exact (rv_addC0' hB g g1 hy).congr_tab fun i hi ↦ by rw [hg1 i hi]
+      refine rv_mapPlane0 _ hy k0 rfl ?_ fun i hi k hk ↦ ?_
+      · rw [addWords_tab hB]
+        exact congrArg encode (tab_congr fun i hi ↦ by
+          rw [hg1 i hi, coord_ofBase_add, ite_eq_left_of_eq_true _ _ (eq_true (show (k0 (p := p) (EF
+              := EF) : ℕ) = 0 from rfl))])
+      · rw [hg1 i hi, coord_ofBase_add, ite_eq_right_of_eq_false _ _ (eq_false hk), zero_add]
   | ext v =>
     cases y with
     | const b => exact generic
     | base w =>
       obtain ⟨g2, hw2, hg2⟩ := hy
-      show Ext4Planes.Rel ⟨B, Words.addWords p v.c0 w B, v.c1, v.c2, v.c3⟩ _
+      show ExtPlanes.Rel (mapPlane0 _ v) _
       rw [hw2]
-      exact (rv_addC0 hB f g2 hx).congr_tab fun i hi ↦ by rw [hg2 i hi]
+      refine rv_mapPlane0 _ hx k0 rfl ?_ fun i hi k hk ↦ ?_
+      · rw [addWords_tab hB]
+        exact congrArg encode (tab_congr fun i hi ↦ by
+          rw [hg2 i hi, coord_add_ofBase, ite_eq_left_of_eq_true _ _ (eq_true (show (k0 (p := p) (EF
+              := EF) : ℕ) = 0 from rfl))])
+      · rw [hg2 i hi, coord_add_ofBase, ite_eq_right_of_eq_false _ _ (eq_false hk), add_zero]
     | ext v' => exact generic
 
-theorem XRel.sub {B : Nat} (hB : 4 * B < USize.size) {x y : XVal p} {f g : Nat → EF}
+theorem XRel.sub {B : Nat} (hB : 4 * B < USize.size) {x y : XVal p EF} {f g : Nat → EF}
     (hx : XRel B x f) (hy : XRel B y g) : XRel B (x.sub B y) fun i ↦ f i - g i := by
-  have generic : Ext4Planes.Rel ((x.planes B).sub (y.planes B)) (tab B fun i ↦ f i - g i) := by
-    have := Ext4Planes.sub_rel (hx.planes hB) (hy.planes hB) (by rw [hx.planes_n, hy.planes_n])
-      (by rw [size_tab]; exact hB)
-    rwa [tab_zipWith] at this
+  have generic : ExtPlanes.Rel ((x.planes B).sub (y.planes B)) (tab B fun i ↦ f i - g i) :=
+    ExtPlanes.sub_rel hB (hx.planes hB) (hy.planes hB)
   cases x with
   | const a =>
     cases y with
@@ -203,48 +198,48 @@ theorem XRel.sub {B : Nat} (hB : 4 * B < USize.size) {x y : XVal p} {f g : Nat �
     | const b => exact generic
     | base w =>
       obtain ⟨g2, hw2, hg2⟩ := hy
-      show Ext4Planes.Rel ⟨B, Words.subWords p v.c0 w B, v.c1, v.c2, v.c3⟩ _
+      show ExtPlanes.Rel (mapPlane0 _ v) _
       rw [hw2]
-      exact (rv_subC0 hB f g2 hx).congr_tab fun i hi ↦ by rw [hg2 i hi]
+      refine rv_mapPlane0 _ hx k0 rfl ?_ fun i hi k hk ↦ ?_
+      · rw [subWords_tab hB]
+        exact congrArg encode (tab_congr fun i hi ↦ by
+          rw [hg2 i hi, coord_sub_ofBase, ite_eq_left_of_eq_true _ _ (eq_true (show (k0 (p := p) (EF
+              := EF) : ℕ) = 0 from rfl))])
+      · rw [hg2 i hi, coord_sub_ofBase, ite_eq_right_of_eq_false _ _ (eq_false hk), sub_zero]
     | ext v' => exact generic
 
 /-- Base words times an extension scalar. -/
-theorem rv_scaleBase [Binomial4 p] {B : Nat} (hB : 4 * B < USize.size) (g : Nat → F) (c : EF) :
-    Ext4Planes.Rel (XVal.scaleBase B (encode (tab B g)) c) (tab B fun i ↦ Ext4.ofBase (g i) *
-        c) := by
-  refine Ext4Planes.rel_tab_iff.mpr ⟨rfl, ?_, ?_, ?_, ?_⟩ <;>
-  · simp only [XVal.scaleBase]
-    rw [zeroWords_tab (p := p), mulAddWords_tab hB]
-    refine congrArg encode (tab_congr fun i _ ↦ ?_)
-    rw [Ext4.mul_coords]
-    simp only [Ext4.ofBase_c0, Ext4.ofBase_c1, Ext4.ofBase_c2, Ext4.ofBase_c3]
-    ring
+theorem rv_scaleBase [Mont32BaseField p] {B : Nat} (hB : 4 * B < USize.size) (g : Nat → F)
+    (c : EF) : ExtPlanes.Rel (XVal.scaleBase B (encode (tab B g)) c)
+      (tab B fun i ↦ FastExt.ofBase (g i) * c) := by
+  refine ExtPlanes.rel_tab_iff.mpr ⟨rfl, fun k ↦ ?_⟩
+  simp only [XVal.scaleBase, ExtPlanes.getElem_ofFn_fin]
+  rw [zeroWords_tab (p := p), mulAddWords_tab hB]
+  refine congrArg encode (tab_congr fun i _ ↦ ?_)
+  rw [FastExt.coord_smul_ofBase, zero_add]
 
-theorem XRel.mul [Mont32BaseField p] [Binomial4 p] {B : Nat} (hB : 4 * B < USize.size)
-    {x y : XVal p}
+theorem XRel.mul [Mont32BaseField p] {B : Nat} (hB : 4 * B < USize.size) {x y : XVal p EF}
     {f g : Nat → EF} (hx : XRel B x f) (hy : XRel B y g) :
     XRel B (x.mul B y) fun i ↦ f i * g i := by
-  have hBs : 4 * (tab B f).size < USize.size := by rw [size_tab]; exact hB
   cases x with
   | const a =>
     cases y with
     | const b => exact fun i hi ↦ by beta_reduce; rw [hx i hi, hy i hi]
     | base w =>
       obtain ⟨g2, hw2, hg2⟩ := hy
-      show Ext4Planes.Rel (XVal.scaleBase B w a) _
+      show ExtPlanes.Rel (XVal.scaleBase B w a) _
       rw [hw2]
       exact (rv_scaleBase hB g2 a).congr_tab fun i hi ↦ by
-        rw [hx i hi, hg2 i hi, Ext4.mul_comm']
+        rw [hx i hi, hg2 i hi, FastExt.mul_comm]
     | ext v =>
-      show Ext4Planes.Rel (v.smul a) _
-      have := Ext4Planes.smul_rel a hy (by rw [size_tab]; exact hB)
-      rw [tab_map] at this
-      exact this.congr_tab fun i hi ↦ by rw [hx i hi, Ext4.mul_comm']
+      show ExtPlanes.Rel (v.smul a) _
+      exact (ExtPlanes.smul_rel hB a hy).congr_tab fun i hi ↦ by
+        rw [hx i hi, FastExt.mul_comm]
   | base w =>
     obtain ⟨g1, hw1, hg1⟩ := hx
     cases y with
     | const b =>
-      show Ext4Planes.Rel (XVal.scaleBase B w b) _
+      show ExtPlanes.Rel (XVal.scaleBase B w b) _
       rw [hw1]
       exact (rv_scaleBase hB g1 b).congr_tab fun i hi ↦ by rw [hg1 i hi, hy i hi]
     | base w' =>
@@ -254,61 +249,21 @@ theorem XRel.mul [Mont32BaseField p] [Binomial4 p] {B : Nat} (hB : 4 * B < USize
       show Words.mulWords p w w' B = _
       rw [hw1, hw2, mulWords_tab hB]
     | ext v =>
-      show Ext4Planes.Rel (v.mulBase w) _
+      show ExtPlanes.Rel (v.mulBase w) _
       rw [hw1]
-      have := Ext4Planes.mulBase_rel (tab B g1) hy (by rw [size_tab, size_tab])
-        (by rw [size_tab]; exact hB)
-      rw [tab_zipWith] at this
-      exact this.congr_tab fun i hi ↦ by rw [hg1 i hi, Ext4.mul_comm']
+      exact (ExtPlanes.mulBase_rel hB g1 hy).congr_tab fun i hi ↦ by
+        rw [hg1 i hi, FastExt.mul_comm]
   | ext v =>
     cases y with
     | const b =>
-      show Ext4Planes.Rel (v.smul b) _
-      have := Ext4Planes.smul_rel b hx (by rw [size_tab]; exact hB)
-      rw [tab_map] at this
-      exact this.congr_tab fun i hi ↦ by rw [hy i hi]
+      show ExtPlanes.Rel (v.smul b) _
+      exact (ExtPlanes.smul_rel hB b hx).congr_tab fun i hi ↦ by rw [hy i hi]
     | base w =>
       obtain ⟨g2, hw2, hg2⟩ := hy
-      show Ext4Planes.Rel (v.mulBase w) _
+      show ExtPlanes.Rel (v.mulBase w) _
       rw [hw2]
-      have := Ext4Planes.mulBase_rel (tab B g2) hx (by rw [size_tab, size_tab])
-        (by rw [size_tab]; exact hB)
-      rw [tab_zipWith] at this
-      exact this.congr_tab fun i hi ↦ by rw [hg2 i hi]
-    | ext v' =>
-      show Ext4Planes.Rel (v.mul v') _
-      have := Ext4Planes.mul_rel hx hy (by rw [(Ext4Planes.rel_tab_iff.mp hx).1,
-          (Ext4Planes.rel_tab_iff.mp hy).1]) hBs
-      rwa [tab_zipWith] at this
-
-/-! ### Extension expressions on a block -/
-
-/-! ### Accumulating the constraints -/
-
-/-- Four planes tabulating the coordinates of `Y`. -/
-abbrev planesOf (B : Nat) (Y : Nat → EF) : Array ByteArray :=
-  #[encode (tab B fun i ↦ (Y i).c0), encode (tab B fun i ↦ (Y i).c1),
-    encode (tab B fun i ↦ (Y i).c2), encode (tab B fun i ↦ (Y i).c3)]
-
-theorem mulAddInto_tab {B : Nat} (hB : 4 * B < USize.size) (f g : Nat → F) (c : F) :
-    Words.mulAddInto p (encode (tab B f)) (encode (tab B g)) 0 c.val B =
-      encode (tab B fun i ↦ f i + g i * c) := by
-  have h := Words.mulAddInto_encode (tab B f) (tab B g) 0 c
-    (by rw [size_tab, size_tab]; omega) (by rw [size_tab]; exact hB) (by rw [size_tab]; exact hB)
-  rw [size_tab] at h
-  rw [h]
-  refine congrArg encode (?_ : tab B (fun k ↦ (tab B f).getD k 0 + (tab B g).getD (0 + k) 0 * c) =
-    _)
-  exact tab_congr fun i hi ↦ by rw [getD_tab _ _ _ hi, Nat.zero_add, getD_tab _ _ _ hi]
-
-/-- Four multiply-adds into a tabulated plane. -/
-theorem mulAddInto4_tab {B : Nat} (hB : 4 * B < USize.size) (y a b c d : Nat → F)
-    (s0 s1 s2 s3 : F) :
-    Words.mulAddInto p (Words.mulAddInto p (Words.mulAddInto p (Words.mulAddInto p
-      (encode (tab B y)) (encode (tab B a)) 0 s0.val B) (encode (tab B b)) 0 s1.val B)
-      (encode (tab B c)) 0 s2.val B) (encode (tab B d)) 0 s3.val B =
-    encode (tab B fun i ↦ y i + a i * s0 + b i * s1 + c i * s2 + d i * s3) := by
-  rw [mulAddInto_tab hB, mulAddInto_tab hB, mulAddInto_tab hB, mulAddInto_tab hB]
+      exact (ExtPlanes.mulBase_rel hB g2 hx).congr_tab fun i hi ↦ by rw [hg2 i hi]
+    | ext v' => exact ExtPlanes.mul_rel hB hx hy
 
 /-! ### Horner's fold as weights -/
 
@@ -363,60 +318,39 @@ end Horner
 
 /-! ### The specification row by row -/
 
-/-- Coordinate `j` of an extension element. -/
-def cj (x : EF) : Nat → F
-  | 0 => x.c0
-  | 1 => x.c1
-  | 2 => x.c2
-  | 3 => x.c3
-  | _ => 0
-
-theorem cj_add (a b : EF) (j : Nat) : cj (a + b) j = cj a j + cj b j := by
-  rcases j with _ | _ | _ | _ | j
-  · rfl
-  · rfl
-  · rfl
-  · rfl
-  · exact (add_zero 0).symm
-
-theorem cj_zero (j : Nat) : cj (0 : EF) j = 0 := by
-  rcases j with _ | _ | _ | _ | j <;> rfl
-
-/-- Coordinate `j` of a product: the first factor's coordinates times the second's shifted by
-powers of `X` (`xPowMul`). -/
-theorem cj_mul [Binomial4 p] (v s : EF) (j : Nat) (hj : j < 4) :
-    cj (v * s) j = v.c0 * cj s j + v.c1 * cj (xPowMul 1 s) j + v.c2 * cj (xPowMul 2 s) j +
-      v.c3 * cj (xPowMul 3 s) j := by
-  have h1 : xPowMul 1 s = ⟨Binomial4.mulW s.c3, s.c0, s.c1, s.c2⟩ := rfl
-  have h2 : xPowMul 2 s = ⟨Binomial4.mulW s.c2, Binomial4.mulW s.c3, s.c0, s.c1⟩ := rfl
-  have h3 : xPowMul 3 s = ⟨Binomial4.mulW s.c1, Binomial4.mulW s.c2, Binomial4.mulW s.c3,
-    s.c0⟩ := rfl
-  rw [h1, h2, h3]
-  rcases j with _ | _ | _ | _ | j
-  · simp only [cj, Ext4.mul_c0, Binomial4.mulW_eq]; ring
-  · simp only [cj, Ext4.mul_c1, Binomial4.mulW_eq]; ring
-  · simp only [cj, Ext4.mul_c2, Binomial4.mulW_eq]; ring
-  · simp only [cj, Ext4.mul_c3]
-  · omega
-
 /-- Coordinate `j` of products zipped with weights by index, accumulated. -/
-theorem cj_foldl_zip [Binomial4 p] {α : Type} (u : α → EF) (g : Nat → EF) (j : Nat) :
+theorem coord_foldl_zip {α : Type} (u : α → EF) (g : Nat → EF) (j : Nat) :
     ∀ (cs : List α) (n : Nat) (y : EF),
-      cj (((cs.map u).zip ((List.range' n cs.length).map g)).foldl
-        (fun y x ↦ y + x.1 * x.2) y) j =
-        ((cs.zipIdx n).map fun (c, k) ↦ cj (u c * g k) j).foldl (· + ·) (cj y j)
+      coord j (((cs.map u).zip ((List.range' n cs.length).map g)).foldl
+        (fun y x ↦ y + x.1 * x.2) y) =
+        ((cs.zipIdx n).map fun (c, k) ↦ coord j (u c * g k)).foldl (· + ·) (coord j y)
   | [], _, _ => rfl
   | c :: cs, n, y => by
     rw [List.length_cons, List.range'_succ, List.map_cons, List.map_cons, List.zip_cons_cons,
-      List.foldl_cons, List.zipIdx_cons, List.map_cons, List.foldl_cons, ← cj_add]
-    exact cj_foldl_zip u g j cs (n + 1) _
+      List.foldl_cons, List.zipIdx_cons, List.map_cons, List.foldl_cons, ← coord_add]
+    exact coord_foldl_zip u g j cs (n + 1) _
 
-/-- The extension coordinates of `Prog`'s quadruples over `X⁴ = W`. -/
-def toE [Binomial4 p] (x : Prog.Coords F (Binomial4.W (p := p))) : EF := ⟨x.c0, x.c1, x.c2, x.c3⟩
+/-- The fast extension element of a specification element. -/
+abbrev toE (x : FastExt.Spec p EF) : EF := FastExt.ofSpec x
 
-theorem toE_mul [Binomial4 p] (a b : Prog.Coords F (Binomial4.W (p := p))) :
-    toE (a * b) = toE a * toE b := by
-  apply Ext4.ext' <;> simp only [Ext4.mul_c0, Ext4.mul_c1, Ext4.mul_c2, Ext4.mul_c3] <;> rfl
+theorem toE_add (a b : FastExt.Spec p EF) : toE (a + b) = toE a + toE b :=
+  FastExt.toSpec_injective (by
+    simp only [toE, FastExt.toSpec_add, FastExt.toSpec_ofSpec])
+
+theorem toE_sub (a b : FastExt.Spec p EF) : toE (a - b) = toE a - toE b :=
+  FastExt.toSpec_injective (by
+    simp only [toE, FastExt.toSpec_sub, FastExt.toSpec_ofSpec])
+
+theorem toE_mul (a b : FastExt.Spec p EF) : toE (a * b) = toE a * toE b :=
+  FastExt.toSpec_injective (by
+    simp only [toE, FastExt.toSpec_mul, FastExt.toSpec_ofSpec])
+
+theorem toE_ofFn (f : Fin (FastExt.d p EF) → F) :
+    toE (CompPoly.Extension.Ext.ofFn f) = FastExt.ofCoords f :=
+  FastExt.toSpec_injective (by rw [FastExt.toSpec_ofSpec, FastExt.toSpec_ofCoords])
+
+theorem toE_ofBase (x : F) : toE (CompPoly.Extension.Ext.ofBase x) = FastExt.ofBase (E := EF) x :=
+  FastExt.toSpec_injective (by rw [FastExt.toSpec_ofSpec, FastExt.toSpec_ofBase])
 
 theorem eval_pubBelow (np : Nat) (env : Expr.Env F F) : ∀ e : Expr F,
     (Prog.Dag.pubBelow np e).eval env =
@@ -436,7 +370,7 @@ theorem eval_pubBelow (np : Nat) (env : Expr.Env F F) : ∀ e : Expr F,
   | .isLastRow | .isTransition => rfl
 
 section Spec
-variable [Mont32BaseField p] [Binomial4 p]
+variable [Mont32BaseField p] [Mont32.AlgebraId EF]
 
 /-- The base environment of row `r` of `lookupQuotientValues`. -/
 def lqEnv (pis : List F) (d l : Nat) (tq pq : Mat F) (per : List (Array F)) (r : Nat) :
@@ -476,45 +410,44 @@ theorem lookupQuotientValues_getD (ext : List (Lookup.ExtExpr F)) (pis : List F)
   rfl
 
 
-theorem coeffs_getD (x : EF) (j : Nat) : (Challenge.coeffs x).getD j 0 = cj x j := by
-  rcases j with _ | _ | _ | _ | j <;> rfl
+theorem coeffs_getD (x : EF) (j : Nat) : (Challenge.coeffs x).getD j 0 = coord j x := by
+  rw [Mont32.coeffs_eq, List.getD_eq_getElem?_getD, List.getElem?_ofFn, coord]
+  split
+  · simp only [Option.getD_some]
+  · simp only [Option.getD_none]
 
-/-- The coordinates of extension elements laid out four by four. -/
-theorem flatMap_coeffs_getD (xs : List EF) (q e : Nat) (he : e < 4) :
-    (xs.toArray.flatMap fun c ↦ (Challenge.coeffs c).toArray).getD (4 * q + e) 0 =
-      cj (xs.getD q 0) e := by
-  rw [Array.getD_eq_getD_getElem?, ← Array.getElem?_toList, Array.toList_flatMap]
+/-- The coordinates of extension elements laid out `d` by `d`. -/
+theorem flatMap_coeffs_getD (xs : List EF) (q e : Nat) (he : e < FastExt.d p EF) :
+    (xs.toArray.flatMap fun c ↦ (Challenge.coeffs c).toArray).getD (FastExt.d p EF * q + e) 0 =
+      coord e (xs.getD q 0) := by
+  rw [Array.getD_eq_getD_getElem?, ← Array.getElem?_toList, Array.toList_flatMap,
+    List.toList_toArray]
   induction xs generalizing q with
   | nil =>
     simp only [List.flatMap_nil, List.getElem?_nil, Option.getD_none, List.getD_nil]
-    exact (cj_zero e).symm
+    exact (coord_zero e).symm
   | cons x xs ih =>
-    rw [List.flatMap_cons, Mont32.coeffs_ext4]
+    have hl : (Challenge.coeffs x).toArray.toList.length = FastExt.d p EF := by
+      rw [List.toList_toArray, Challenge.length_coeffs]; rfl
+    rw [List.flatMap_cons]
     rcases q with _ | q
-    · rw [List.getElem?_append_left (by simp only [List.length_cons, List.length_nil]; omega),
-        List.getD_cons_zero]
-      rcases e with _ | _ | _ | _ | e
-      · rfl
-      · rfl
-      · rfl
-      · rfl
-      · omega
-    · rw [List.getElem?_append_right (by simp only [List.length_cons, List.length_nil]; omega),
-        List.getD_cons_succ]
-      simp only [List.length_cons, List.length_nil]
-      rw [show 4 * (q + 1) + e - (0 + 1 + 1 + 1 + 1) = 4 * q + e by omega]
+    · rw [List.getElem?_append_left (by rw [hl]; omega), List.getD_cons_zero, Nat.mul_zero,
+        Nat.zero_add, List.toList_toArray, ← List.getD_eq_getElem?_getD, coeffs_getD]
+    · rw [List.getElem?_append_right (by rw [hl, Nat.mul_succ]; omega), List.getD_cons_succ, hl,
+        show FastExt.d p EF * (q + 1) + e - FastExt.d p EF = FastExt.d p EF * q + e by
+          rw [Nat.mul_succ]; omega]
       exact ih q
 
 /-- **The fast LogUp quotient is the specification's** on related extensions of the trace, the
 preprocessed trace and the permutation trace, for extension constraints reading their columns, `k`
-permutation columns of four coordinates. -/
+permutation columns of `d` coordinates. -/
 theorem lookupQuotientWith_rel (kernels : List (Prog.GroupKernel p)) (A : Air F) (ext : List
     (Lookup.ExtExpr F)) (pis : List F)
     (d l : Nat) (chs : List EF) (terminal alpha : EF) (k : Nat) {tr : PMat} {s : Mat F}
     {prep : Option PMat} {ps : Option (Mat F)} {perm : PMat} {rs : Mat F}
     (h : RM tr s) (hs : MatOk s) (hh : 2 ^ (d + l) ≤ s.height) (hp : Option.Rel RM prep ps)
     (hps : ∀ q ∈ ps, MatOk q ∧ q.height = s.height) (hr : RM perm rs) (hrs : MatOk rs)
-    (hrh : rs.height = s.height) (hk : k * 4 ≤ rs.width)
+    (hrh : rs.height = s.height) (hk : k * FastExt.d p EF ≤ rs.width)
     (hc : ∀ c ∈ ext, c.colsBelow s.width s.width ((ps.map (·.width)).getD 0)
       ((ps.map (·.width)).getD 0) k) :
     lookupQuotientWith kernels (quotientTables (p := p) d l) A ext pis tr prep perm chs terminal
@@ -600,9 +533,11 @@ theorem lookupQuotientWith_rel (kernels : List (Prog.GroupKernel p)) (A : Air F)
   let np := pis.length
   let SC : Array F := pis.toArray ++ (terminal :: chs).toArray.flatMap fun c ↦
     (Challenge.coeffs c).toArray
-  let WT : Array F := Array.ofFn (n := 16 * K) fun i ↦
-    (Challenge.coeffs (xPowMul (i.val / 4 % 4) (Ext.pow alpha (K - 1 - i.val / 16)))).getD
-      (i.val % 4) 0
+  let dE := FastExt.d p EF
+  have hd : 0 < dE := (FastExt.params (p := p) (E := EF)).d_pos
+  let WT : Array F := Array.ofFn (n := dE * dE * K) fun i ↦
+    (Ext.coeffs (FastExt.pow FastExt.gen (i.val / dE % dE) *
+      Ext.pow alpha (K - 1 - i.val / (dE * dE)))).getD (i.val % dE) 0
   have hWT : extWeightCoords alpha K = WT := rfl
   unfold lookupQuotientOfLde
   dsimp only
@@ -615,9 +550,9 @@ theorem lookupQuotientWith_rel (kernels : List (Prog.GroupKernel p)) (A : Air F)
   let rq := Mat.ofValues rs.width (2 ^ (d + l)) (permuteRows rs (bitRevPerm (d + l)))
   let V (r : Nat) : EF := ext.foldl (fun acc c ↦ acc * alpha + c.eval (lqEnv pis d l tq pq pl r)
     (lqAux d l rq chs terminal r)) 0
-  let Q (j e : Nat) : F := cj (V ((bitRevPerm (d + l)).getD j 0)) e
+  let Q (j e : Nat) : F := coord e (V ((bitRevPerm (d + l)).getD j 0))
   have hspec : Lookup.lookupQuotientValues ext pis d l tq pq rq pl chs terminal alpha =
-      Array.ofFn (n := 2 ^ (d + l)) fun r ↦ Ext4.smul
+      Array.ofFn (n := 2 ^ (d + l)) fun r ↦ Challenge.smul
         ((batchInv (qZh d l) : Array F).getD (r.val % 2 ^ l) 0) (V r.val) := by
     apply Array.ext (by rw [Lookup.lookupQuotientValues, Array.size_ofFn, Array.size_ofFn])
     intro r h1 h2
@@ -641,18 +576,18 @@ theorem lookupQuotientWith_rel (kernels : List (Prog.GroupKernel p)) (A : Air F)
     · refine Prog.Instr.inRange_of (cq := (· < s.width))
         (lq := Prog.Src.Below s.width sp.width sp.width rs.width) (fun c hc ↦ ?_)
         (qLoads_inRange h.rowsOk hpm.1 hr.rowsOk hsS hspS hrsS rfl hsph hrh pl hr0)
-        ins ((Prog.compileExt_run Binomial4.W np ext ⟨fun _ ↦ 0, fun _ ↦ 0, fun _ ↦ 0,
+        ins ((Prog.compileExt_run (FastExt.params EF) np ext ⟨fun _ ↦ 0, fun _ ↦ 0, fun _ ↦ 0,
           fun _ _ ↦ 0⟩ ⟨fun _ ↦ 0, fun _ ↦ 0⟩).2 ins hins)
-        (Prog.compileExt_leafOk Binomial4.W np ext s.width s.width sp.width sp.width k rs.width
-          (by omega) hc ins hins)
+        (Prog.compileExt_leafOk (FastExt.params EF) np ext s.width s.width sp.width sp.width k
+          rs.width (by rw [Nat.mul_comm]; exact hk) hc ins hins)
       rw [size_blockT, Nat.zero_add]
       have := Nat.mul_le_mul_right B (show c + 1 ≤ s.width by exact hc)
       rw [Nat.succ_mul] at this; exact this
     · have hri : r0 + i < 2 ^ (d + l) := by omega
-      obtain ⟨e1, e2, e3, e4, e5, e6, e7, e8⟩ := qLoads_env d l s sp rs tr.rows
+      obtain ⟨e1, e2, e3, e4, e5, e6, e7, e8⟩ := qLoads_env (FastExt.d p EF) d l s sp rs tr.rows
         (prep.getD PMat.empty).rows perm.rows h.rowsOk hpm.1 hh (by rw [hsph]; exact hh) pl pis
         SC WT r0 B i hi hri
-      set ctx := Prog.blockCtx (blockT s r0 B) 0 B
+      set ctx := Prog.blockCtx (FastExt.d p EF) (blockT s r0 B) 0 B
         (qLoads d l s sp rs tr.rows (prep.getD PMat.empty).rows perm.rows pl
           (quotientTables (p := p) d l).next r0 B) SC WT B i with hctx
       let R := (bitRevPerm (d + l)).getD (r0 + i) 0
@@ -660,45 +595,44 @@ theorem lookupQuotientWith_rel (kernels : List (Prog.GroupKernel p)) (A : Air F)
         (lqAux d l rq chs terminal R)
       let g (k : Nat) : EF := Ext.pow alpha (K - 1 - k)
       -- The scalars: the public values, then the terminal's and the challenges' coordinates.
-      have hsc (q e : Nat) (he : e < 4) : ctx.scalar (np + (4 * q + e)) =
-          cj ((terminal :: chs).getD q 0) e := by
-        show SC.getD (pis.length + (4 * q + e)) 0 = _
+      have hsc (q e : Nat) (he : e < dE) : ctx.scalar (np + (dE * q + e)) =
+          coord e ((terminal :: chs).getD q 0) := by
+        show SC.getD (pis.length + (dE * q + e)) 0 = _
         rw [Array.getD_eq_getD_getElem?, Array.getElem?_append_right (by
           simp only [List.size_toArray]; omega), List.size_toArray, Nat.add_sub_cancel_left,
           ← Array.getD_eq_getD_getElem?]
         exact flatMap_coeffs_getD _ q e he
-      have hsc4 (q : Nat) : toE (ctx.scalars4 Binomial4.W (np + 4 * q)) =
+      have hscE (q : Nat) : toE (ctx.scalarsExt (FastExt.params EF) (np + dE * q)) =
           (terminal :: chs).getD q 0 := by
-        have h0 := hsc q 0 (by decide)
-        have h1 := hsc q 1 (by decide)
-        have h2 := hsc q 2 (by decide)
-        have h3 := hsc q 3 (by decide)
-        simp only [Nat.add_zero, ← Nat.add_assoc] at h0 h1 h2 h3
-        simp only [toE, Prog.Ctx.scalars4, h0, h1, h2, h3]
-        rfl
+        refine (toE_ofFn _).trans (FastExt.ext fun i ↦ ?_)
+        rw [FastExt.coord_ofCoords, Nat.add_assoc, hsc q i i.isLt, coord_fin]
+      have hcd (c : Nat) (hc : c < k) (e : Nat) (he : e < dE) : dE * c + e < rs.width := by
+        have h1 : dE * (c + 1) ≤ dE * k := Nat.mul_le_mul_left dE hc
+        have h2 : dE * k = k * FastExt.d p EF := Nat.mul_comm _ _
+        have h3 := hr.width
+        rw [Nat.mul_succ] at h1
+        omega
       -- The permutation columns of a stored row.
-      have hpermAt (R' : Nat) (c : Nat) (hc : c < k) (x : Nat → F)
-          (hx : ∀ e < 4, x (4 * c + e) = rq.values.getD (R' * rq.width + (c * 4 + e)) 0) :
-          (⟨x (4 * c), x (4 * c + 1), x (4 * c + 2), x (4 * c + 3)⟩ : EF) =
+      have hpermAt (R' : Nat) (c : Nat) (x : Nat → F)
+          (hx : ∀ e < dE, x (dE * c + e) = rq.values.getD (R' * rq.width + (c * dE + e)) 0) :
+          toE (EF := EF) (CompPoly.Extension.Ext.ofFn fun j ↦ x ((FastExt.params EF).d * c + j)) =
             Challenge.ofCoeffs ((List.range (Challenge.d EF)).map fun e ↦
               rq.values.getD (R' * rq.width + (c * Challenge.d EF + e)) 0) := by
-        rw [Mont32.ofCoeffs_ext4, Mont32.d_ext4]
-        have h0 := hx 0 (by decide)
-        have h1 := hx 1 (by decide)
-        have h2 := hx 2 (by decide)
-        have h3 := hx 3 (by decide)
-        rw [Nat.add_zero] at h0
-        rw [h0, h1, h2, h3]
-        rfl
+        rw [toE_ofFn, Mont32.ofCoeffs_eq, Mont32.d_eq]
+        refine congrArg FastExt.ofCoords (funext fun j ↦ ?_)
+        rw [List.getD_eq_getElem?_getD, List.getElem?_map, List.getElem?_range j.isLt,
+          Option.map_some, Option.getD_some]
+        exact hx j j.isLt
       have hu (c : Lookup.ExtExpr F) (hcm : c ∈ ext) :
-          toE (c.eval (ctx.envQ Binomial4.W np) (ctx.auxQ Binomial4.W np)) = u c := by
-        refine Lookup.ExtExpr.eval_hom toE (fun _ _ ↦ Ext4.ext' rfl rfl rfl rfl)
-          (fun _ _ ↦ Ext4.ext' rfl rfl rfl rfl) toE_mul s.width s.width sp.width sp.width k _ _
-          _ _ (fun e he ↦ ?_) (fun c hc ↦ ?_) (fun c hc ↦ ?_) (fun jj ↦ ?_) ?_ c (hc c hcm)
-        · rw [Prog.Expr.eval_envQ, eval_pubBelow]
-          show Ext4.ofBase _ = _
-          have hb := Expr.eval_hom (R := F) (S := EF) Ext4.ofBase (fun a b ↦ (ofBase_add a b).symm)
-            (fun a b ↦ (ofBase_sub a b).symm) (fun a b ↦ (ofBase_mul a b).symm) s.width s.width
+          toE (c.eval (ctx.envQ (FastExt.params EF) np) (ctx.auxQ (FastExt.params EF) np)) =
+            u c := by
+        refine Lookup.ExtExpr.eval_hom toE toE_add toE_sub toE_mul s.width s.width sp.width
+          sp.width k _ _ _ _ (fun e he ↦ ?_) (fun c hc ↦ ?_) (fun c hc ↦ ?_) (fun jj ↦ ?_) ?_ c
+          (hc c hcm)
+        · rw [Prog.Expr.eval_envQ, eval_pubBelow, toE_ofBase]
+          have hb := Expr.eval_hom (R := F) (S := EF) FastExt.ofBase
+            (fun a b ↦ (ofBase_add a b).symm) (fun a b ↦ (ofBase_sub a b).symm)
+            (fun a b ↦ (ofBase_mul a b).symm) s.width s.width
             sp.width sp.width (rowEnv tq pq pl (2 ^ (d + l)) (2 ^ l) pis (qFirst d l) (qLast d l)
               (qTrans d l) R) (lqEnv pis d l tq pq pl R) (fun _ _ ↦ rfl) (fun _ _ ↦ rfl)
             (fun _ _ ↦ rfl) (fun _ _ ↦ rfl) (fun _ ↦ rfl) (fun _ ↦ rfl) (fun _ ↦ rfl) rfl rfl rfl
@@ -718,53 +652,75 @@ theorem lookupQuotientWith_rel (kernels : List (Prog.GroupKernel p)) (A : Air F)
                   List.getD_eq_getElem?_getD]
               · rw [ite_eq_right hj, List.getD_eq_default _ _ (by omega)])
             (fun _ ↦ rfl) e6 e7 e8 e he
-        · refine hpermAt R c hc (fun m ↦ ctx.src (.permCur m)) fun e he ↦ ?_
-          show (blockT rs r0 B).getD ((4 * c + e) * B + i) 0 = _
-          rw [blockT_getD rs r0 B _ i (by omega) hi, show c * 4 + e = 4 * c + e by ring]
-          exact (permuteRows_bitRev rs d l _ _ hri (by omega)).symm
-        · refine hpermAt ((R + 2 ^ l) % 2 ^ (d + l)) c hc (fun m ↦ ctx.src (.permNext m))
+        · refine hpermAt R c (fun m ↦ ctx.src (.permCur m)) fun e he ↦ ?_
+          show (blockT rs r0 B).getD ((dE * c + e) * B + i) 0 = _
+          rw [blockT_getD rs r0 B _ i (hcd c hc e he) hi, show c * dE + e = dE * c + e by ring]
+          exact (permuteRows_bitRev rs d l _ _ hri (hcd c hc e he)).symm
+        · refine hpermAt ((R + 2 ^ l) % 2 ^ (d + l)) c (fun m ↦ ctx.src (.permNext m))
             fun e he ↦ ?_
           have hn : (quotientTables (p := p) d l).next.getD (r0 + i) 0 < 2 ^ (d + l) := by
             rw [tables_next _ _ _ hri]
             exact bitRevPerm_getD_lt _ _ (Nat.mod_lt _ (Nat.two_pow_pos _))
           show (⟨colBlocks rs perm.rows, rs.width, perm.rows⟩ : Prog.ColsF p).at
-            ((quotientTables (p := p) d l).next.getD (r0 + i) 0) (4 * c + e) = _
-          rw [colsF_at hr.rowsOk _ _ (by omega) (by omega), show c * 4 + e = 4 * c + e by ring]
-          exact (permuteRows_bitRev_next rs d l _ _ hri (by omega)).symm
-        · show toE (ctx.scalars4 Binomial4.W (np + 4 * (jj + 1))) = chs.getD jj 0
-          rw [hsc4]
+            ((quotientTables (p := p) d l).next.getD (r0 + i) 0) (dE * c + e) = _
+          rw [colsF_at hr.rowsOk _ _ (by omega) (hcd c hc e he),
+            show c * dE + e = dE * c + e by ring]
+          exact (permuteRows_bitRev_next rs d l _ _ hri (hcd c hc e he)).symm
+        · show toE (ctx.scalarsExt (FastExt.params EF) (np + dE * (jj + 1))) = chs.getD jj 0
+          rw [hscE]
           rfl
-        · show toE (ctx.scalars4 Binomial4.W (np + 4 * 0)) = terminal
-          rw [hsc4]
+        · show toE (ctx.scalarsExt (FastExt.params EF) np) = terminal
+          rw [← Nat.add_zero np, ← Nat.mul_zero dE, hscE]
           rfl
-      rw [(Prog.compileExt_run Binomial4.W np ext ctx st0).1, hst0]
+      rw [(Prog.compileExt_run (FastExt.params EF) np ext ctx st0).1, hst0]
       dsimp only
       have hV : V R = ((ext.map u).zip ((List.range (ext.map u).length).map fun k ↦
           Ext.pow alpha ((ext.map u).length - 1 - k))).foldl (fun y x ↦ y + x.1 * x.2) 0 := by
         rw [weighted_eq_horner, List.foldl_map]
-      show _ = cj (V R) j
-      rw [hV, List.length_map, List.range_eq_range', cj_foldl_zip u g j ext 0 0, cj_zero]
+      show _ = coord j (V R)
+      rw [hV, List.length_map, List.range_eq_range', coord_foldl_zip u g j ext 0 0, coord_zero]
       refine foldl_add_congr _ _ _ (fun a ha ↦ ?_) 0
       obtain ⟨c, kk⟩ := a
       have hcm : c ∈ ext := List.fst_mem_of_mem_zipIdx ha
       have hkk : kk < K := List.snd_lt_of_mem_zipIdx ha
       dsimp only
-      rw [cj_mul _ _ j hj, ← hu c hcm]
-      have hw (e : Nat) (he : e < 4) : ctx.weight (4 * kk + e) j = cj (xPowMul e (g kk)) j := by
-        show WT.getD (4 * (4 * kk + e) + j) 0 = _
-        rw [NTTFast.Packed.getD_ofFn_bounded _ _ (by omega)]
-        have h1 : (4 * (4 * kk + e) + j) / 4 % 4 = e := by omega
-        have h2 : (4 * (4 * kk + e) + j) / 16 = kk := by omega
-        have h3 : (4 * (4 * kk + e) + j) % 4 = j := by omega
-        simp only [h1, h2, h3]
+      have hv : c.eval (ctx.envQ (FastExt.params EF) np) (ctx.auxQ (FastExt.params EF) np) =
+          FastExt.toSpec (u c) := by
+        rw [← hu c hcm, FastExt.toSpec_ofSpec]
+      have hw (e : Nat) (he : e < dE) :
+          ctx.weight (dE * kk + e) j = coord j (FastExt.pow FastExt.gen e * g kk) := by
+        show WT.getD (dE * (dE * kk + e) + j) 0 = _
+        have hlt : dE * (dE * kk + e) + j < dE * dE * K := by
+          have h1 := Nat.mul_le_mul_left dE (show dE * kk + e + 1 ≤ dE * K by
+            have := Nat.mul_le_mul_left dE (show kk + 1 ≤ K from hkk)
+            rw [Nat.mul_succ] at this; omega)
+          rw [Nat.mul_succ, ← Nat.mul_assoc] at h1
+          omega
+        rw [NTTFast.Packed.getD_ofFn_bounded _ _ hlt]
+        have h1 : (dE * (dE * kk + e) + j) / dE = dE * kk + e := by
+          rw [Nat.mul_add_div hd, Nat.div_eq_of_lt hj, Nat.add_zero]
+        have h2 : (dE * (dE * kk + e) + j) / (dE * dE) = kk := by
+          rw [← Nat.div_div_eq_div_mul, h1, Nat.mul_add_div hd, Nat.div_eq_of_lt he,
+            Nat.add_zero]
+        have h3 : (dE * (dE * kk + e) + j) % dE = j := by
+          rw [Nat.mul_add_mod, Nat.mod_eq_of_lt hj]
+        have h4 : (dE * kk + e) % dE = e := by
+          rw [Nat.mul_add_mod, Nat.mod_eq_of_lt he]
+        simp only [h1, h2, h3, h4]
         exact coeffs_getD _ j
       unfold Prog.extTerm
-      rw [show 4 * kk = 4 * kk + 0 from rfl, hw 0 (by decide), hw 1 (by decide),
-        hw 2 (by decide), hw 3 (by decide)]
-      rfl
+      rw [hv, coord, dite_eq_left hj, FastExt.coord_mul_eq_sum,
+        ← CompPoly.Extension.Ext.sum_range_eq_list_sum, ← Fin.sum_univ_eq_sum_range
+          (fun i ↦ CompPoly.Extension.Ext.coeffNat (FastExt.toSpec (u c)) i *
+            ctx.weight ((FastExt.params EF).d * kk + i) j)]
+      refine Finset.sum_congr rfl fun i _ ↦ ?_
+      rw [CompPoly.Extension.Ext.coeffNat_of_lt _ i.isLt, FastExt.coeff_toSpec, hw i i.isLt, coord,
+        dite_eq_left hj]
   refine congrArg Array.ofFn (funext fun r ↦ ?_)
   simp only [Q, bitRevPerm_getD_getD _ _ r.isLt]
-  rfl
+  show _ = FastExt.ofCoords fun i ↦ _ * FastExt.coord _ i
+  refine congrArg FastExt.ofCoords (funext fun j ↦ ?_)
+  rw [coord_fin]
 
 end Spec
 

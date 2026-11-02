@@ -13,7 +13,7 @@ public import CompPoly.Fields.Montgomery.Native32Ext4PlanesCorrectness
 
 On encoded field arrays, a pass of `B` words overwrites a range of the registers (`updR`) with the
 operation on its operands' words, sixteen words or one word at a time (`passBin_encode`,
-`passWord_encode`), or adds its operand times four weights to the accumulator planes
+`passWord_encode`), or adds its operand times the weights to the accumulator planes
 (`passAcc_encode`). So an instruction on a block of `B` rows is the instruction on each row's
 values (`execBlock_rel`, on the rows' values `blockCtx`), and so is a program (`runBlock_rel`):
 the packed run simulates `B` runs on the field.
@@ -691,18 +691,19 @@ theorem constPass_tab (X Ea : Array F) (B S : Nat) (hS : S < USize.size) (hX : X
   | sub => exact hpw (sub p) (· - ·) sub_val
 
 theorem binPass_tab (X Ea Eb : Array F) (B S : Nat) (hS : S < USize.size) (hX : X.size = B)
-    (hSX : S = 4 * B) (o : Op) (d : Nat) (a b : Opd F) (ea eb : ByteArray)
+    (hSX : S = 4 * B) (o : Op) (na d : Nat) (a b : Opd F) (ea eb : ByteArray)
     (hEa : ea.size < USize.size) (hEb : eb.size < USize.size) (hea : ea = encode Ea)
-    (heb : eb = encode Eb) (oa ob : Nat) (hpa : a.Placed (a.isReg (4 + d)) X Ea oa B)
-    (hpb : b.Placed (b.isReg (4 + d)) X Eb ob B) (out : ByteArray) (hr : out.size = S)
+    (heb : eb = encode Eb) (oa ob : Nat) (hpa : a.Placed (a.isReg na (na + d)) X Ea oa B)
+    (hpb : b.Placed (b.isReg na (na + d)) X Eb ob B) (out : ByteArray) (hr : out.size = S)
     (ho : out = encode X) :
-    binPass p o d a b ea eb S hS hEa hEb oa ob B out hr = encode (tab B fun k ↦
-      o.eval (a.rd (a.isReg (4 + d)) X Ea oa k) (b.rd (b.isReg (4 + d)) X Eb ob k)) := by
+    binPass p o na d a b ea eb S hS hEa hEb oa ob B out hr = encode (tab B fun k ↦
+      o.eval (a.rd (a.isReg na (na + d)) X Ea oa k) (b.rd (b.isReg na (na + d)) X Eb ob k)) := by
   subst hea heb
   have hbin (ha : ∀ x, a ≠ .const x) (hb : ∀ x, b ≠ .const x) :
-      passBin (Op.word p o) (encode Ea) (encode Eb) S hS hEa hEb 0 (a.isReg (4 + d)) oa
-        (b.isReg (4 + d)) ob B out hr = encode (tab B fun k ↦
-          o.eval (a.rd (a.isReg (4 + d)) X Ea oa k) (b.rd (b.isReg (4 + d)) X Eb ob k)) := by
+      passBin (Op.word p o) (encode Ea) (encode Eb) S hS hEa hEb 0 (a.isReg na (na + d)) oa
+        (b.isReg na (na + d)) ob B out hr = encode (tab B fun k ↦
+          o.eval (a.rd (a.isReg na (na + d)) X Ea oa k) (b.rd (b.isReg na (na + d)) X Eb ob k)) :=
+              by
     rw [passBin_encode (Op.word p o) o.eval (Op.word_val o) Ea Eb X S hS hEa hEb (by omega) 0 _ _
       _ _ B (by omega) (hpa ha).1 (hpb hb).1 (hpa ha).2 (hpb hb).2 out hr ho, updR_full X B hX]
     refine congrArg encode (tab_congr fun k _ ↦ ?_)
@@ -713,16 +714,17 @@ theorem binPass_tab (X Ea Eb : Array F) (B S : Nat) (hS : S < USize.size) (hX : 
       | const y => exact absurd rfl (hb y)
       | _ => rfl
   have hca (y : F) (ha : ∀ x, a ≠ .const x) :
-      constPass p o (encode Ea) S hS hEa (a.isReg (4 + d)) oa y B out hr = encode (tab B fun k ↦
-        o.eval (a.rd (a.isReg (4 + d)) X Ea oa k) y) := by
+      constPass p o (encode Ea) S hS hEa (a.isReg na (na + d)) oa y B out hr = encode (tab B fun k ↦
+        o.eval (a.rd (a.isReg na (na + d)) X Ea oa k) y) := by
     rw [constPass_tab X Ea B S hS hX hSX o _ hEa rfl _ oa (hpa ha).1 (hpa ha).2 y out hr ho]
     refine congrArg encode (tab_congr fun k _ ↦ ?_)
     cases a with
     | const x => exact absurd rfl (ha x)
     | _ => rfl
   have hcb (x : F) (o' : Op) (hb : ∀ y, b ≠ .const y) (hc : ∀ u v : F, o.eval v u = o'.eval u v) :
-      constPass p o' (encode Eb) S hS hEb (b.isReg (4 + d)) ob x B out hr = encode (tab B fun k ↦
-        o.eval x (b.rd (b.isReg (4 + d)) X Eb ob k)) := by
+      constPass p o' (encode Eb) S hS hEb (b.isReg na (na + d)) ob x B out hr = encode (tab B fun k
+          ↦
+        o.eval x (b.rd (b.isReg na (na + d)) X Eb ob k)) := by
     rw [constPass_tab X Eb B S hS hX hSX o' _ hEb rfl _ ob (hpb hb).1 (hpb hb).2 x out hr ho]
     refine congrArg encode (tab_congr fun k _ ↦ ?_)
     rw [hc]
@@ -730,8 +732,9 @@ theorem binPass_tab (X Ea Eb : Array F) (B S : Nat) (hS : S < USize.size) (hX : 
     | const y => exact absurd rfl (hb y)
     | _ => rfl
   have hsub (x : F) (hb : ∀ y, b ≠ .const y) :
-      passWord (fun x c ↦ sub p c x) (encode Eb) S hS hEb 0 (b.isReg (4 + d)) ob x.val B out hr =
-        encode (tab B fun k ↦ Op.sub.eval x (b.rd (b.isReg (4 + d)) X Eb ob k)) := by
+      passWord (fun x c ↦ sub p c x) (encode Eb) S hS hEb 0 (b.isReg na (na + d)) ob x.val B out hr
+          =
+        encode (tab B fun k ↦ Op.sub.eval x (b.rd (b.isReg na (na + d)) X Eb ob k)) := by
     rw [passWord_encode (fun x c ↦ sub p c x) (fun u c ↦ c - u) (fun u c ↦ sub_val c u) Eb X S hS
       hEb (by omega) 0 _ ob x B (by omega) (hpb hb).1 (hpb hb).2 out hr ho, updR_full X B hX]
     refine congrArg encode (tab_congr fun k _ ↦ ?_)
@@ -805,34 +808,38 @@ theorem accPass_tab (X Ea : Array F) (B S : Nat) (hS : S < USize.size) (hX : X.s
 /-! ### Instructions on a block of rows -/
 
 /-- Row `i` of a block of `B` rows as a program reads it: the trace's current rows in `V` (column
-`c` from word `cb + c · cs`), the loads, the scalars and the weights' coordinates. -/
-def blockCtx (V : Array F) (cb cs : Nat) (L : LoadsF p) (SC WT : Array F) (B i : Nat) : Ctx F :=
+`c` from word `cb + c · cs`), the loads, the scalars and the weights' `na` coordinates each. -/
+def blockCtx (na : Nat) (V : Array F) (cb cs : Nat) (L : LoadsF p) (SC WT : Array F) (B i : Nat) :
+    Ctx F :=
   ⟨fun c ↦ V.getD (cb + c * cs + i) 0, L.src B i, fun k ↦ SC.getD k 0,
-    fun w j ↦ WT.getD (4 * w + j) 0⟩
+    fun w j ↦ WT.getD (na * w + j) 0⟩
 
-/-- Buffer `s` of a row's state: accumulator `s` below four, register `s - 4` from four. -/
-def St.slot (st : St F) (s : Nat) : F := if s < 4 then st.acc s else st.reg (s - 4)
+/-- Buffer `s` of a row's state with `na` accumulators: accumulator `s` below `na`, register
+`s - na` from `na`. -/
+def St.slot (na : Nat) (st : St F) (s : Nat) : F := if s < na then st.acc s else st.reg (s - na)
 
 /-- A row's state with buffer `s` set to `x`. -/
-def St.setSlot (st : St F) (s : Nat) (x : F) : St F :=
-  if s < 4 then { st with acc := Function.update st.acc s x }
-  else { st with reg := Function.update st.reg (s - 4) x }
+def St.setSlot (na : Nat) (st : St F) (s : Nat) (x : F) : St F :=
+  if s < na then { st with acc := Function.update st.acc s x }
+  else { st with reg := Function.update st.reg (s - na) x }
 
-theorem St.slot_setSlot (st : St F) (s t : Nat) (x : F) :
-    (st.setSlot s x).slot t = if t = s then x else st.slot t := by
+theorem St.slot_setSlot (na : Nat) (st : St F) (s t : Nat) (x : F) :
+    (st.setSlot na s x).slot na t = if t = s then x else st.slot na t := by
   unfold St.setSlot St.slot
-  by_cases hs : s < 4 <;> by_cases ht : t < 4
+  by_cases hs : s < na <;> by_cases ht : t < na
   · simp only [hs, ht, ite_true, Function.update_apply]
   · simp only [hs, ht, ite_true, ite_false, show t ≠ s by omega]
   · simp only [hs, ht, ite_true, ite_false, show t ≠ s by omega]
   · simp only [hs, ht, ite_false, Function.update_apply]
     by_cases e : t = s
     · simp only [e, ite_true]
-    · simp only [e, ite_false, show t - 4 ≠ s - 4 by omega]
+    · simp only [e, ite_false, show t - na ≠ s - na by omega]
 
-/-- The registers hold `B` rows' run states: buffer `s` the rows' `s`-th (`St.slot`). -/
-def BlockRel {S : Nat} (B nregs : Nat) (regs : Regs S) (sts : Nat → St F) : Prop :=
-  regs.size = 4 + nregs ∧ ∀ s < 4 + nregs, regBuf regs s = encode (tab B fun i ↦ (sts i).slot s)
+/-- The registers hold `B` rows' run states with `na` accumulators: buffers of `4 B` bytes, buffer
+`s` the rows' `s`-th (`St.slot`). -/
+def BlockRel {S : Nat} (na B nregs : Nat) (regs : Regs S) (sts : Nat → St F) : Prop :=
+  regs.size = na + nregs ∧ S = 4 * B ∧
+    ∀ s < na + nregs, regBuf regs s = encode (tab B fun i ↦ (sts i).slot na s)
 
 theorem regBuf_getElem {S : Nat} (regs : Regs S) (i : Nat) (hi : i < regs.size) :
     regBuf regs i = regs[i].1 := by
@@ -853,38 +860,33 @@ theorem regBuf_modReg {S : Nat} (regs : Regs S) (i : Nat) (hi : i < regs.size)
     simp only [ite_true, Array.getElem?_eq_getElem hi, Option.map_some]
   · simp only [Ne.symm e, e, ite_false]
 
-theorem BlockRel.congr {S B nregs : Nat} {regs : Regs S} {sts sts' : Nat → St F}
-    (h : BlockRel B nregs regs sts)
-    (e : ∀ i < B, ∀ s < 4 + nregs, (sts i).slot s = (sts' i).slot s) :
-    BlockRel B nregs regs sts' :=
-  ⟨h.1, fun s hs ↦ by rw [h.2 s hs, tab_congr fun i hi ↦ e i hi s hs]⟩
+theorem BlockRel.congr {S na B nregs : Nat} {regs : Regs S} {sts sts' : Nat → St F}
+    (h : BlockRel na B nregs regs sts)
+    (e : ∀ i < B, ∀ s < na + nregs, (sts i).slot na s = (sts' i).slot na s) :
+    BlockRel na B nregs regs sts' :=
+  ⟨h.1, h.2.1, fun s hs ↦ by rw [h.2.2 s hs, tab_congr fun i hi ↦ e i hi s hs]⟩
 
-theorem BlockRel.size_eq {S B nregs : Nat} {regs : Regs S} {sts : Nat → St F}
-    (h : BlockRel B nregs regs sts) : S = 4 * B := by
-  have h0 := h.2 0 (by omega)
-  have hl : 0 < regs.size := by rw [h.1]; omega
-  rw [regBuf_getElem regs 0 hl] at h0
-  have := regs[0].2
-  rw [h0, size_encode_fields, size_tab] at this
-  exact this.symm
+theorem BlockRel.size_eq {S na B nregs : Nat} {regs : Regs S} {sts : Nat → St F}
+    (h : BlockRel na B nregs regs sts) : S = 4 * B :=
+  h.2.1
 
 /-- Overwriting buffer `s` with the rows' `G` sets every row's `s`-th. -/
-theorem BlockRel.set {S B nregs : Nat} {regs : Regs S} {sts : Nat → St F}
-    (h : BlockRel B nregs regs sts) (s : Nat) (hs : s < 4 + nregs)
+theorem BlockRel.set {S na B nregs : Nat} {regs : Regs S} {sts : Nat → St F}
+    (h : BlockRel na B nregs regs sts) (s : Nat) (hs : s < na + nregs)
     (f : (b : ByteArray) → b.size = S → ByteArray) (hf) (G : Nat → F)
-    (hG : ∀ b hb, b = encode (tab B fun i ↦ (sts i).slot s) → f b hb = encode (tab B G)) :
-    BlockRel B nregs (modReg regs s f hf) fun i ↦ (sts i).setSlot s (G i) := by
+    (hG : ∀ b hb, b = encode (tab B fun i ↦ (sts i).slot na s) → f b hb = encode (tab B G)) :
+    BlockRel na B nregs (modReg regs s f hf) fun i ↦ (sts i).setSlot na s (G i) := by
   have hsl : s < regs.size := by rw [h.1]; exact hs
-  refine ⟨by rw [size_modReg, h.1], fun t ht ↦ ?_⟩
+  refine ⟨by rw [size_modReg, h.1], h.2.1, fun t ht ↦ ?_⟩
   rw [regBuf_modReg regs s hsl]
   split
   · rename_i e
     subst e
-    rw [hG _ _ (by rw [← regBuf_getElem regs t hsl]; exact h.2 t ht)]
+    rw [hG _ _ (by rw [← regBuf_getElem regs t hsl]; exact h.2.2 t ht)]
     refine congrArg encode (tab_congr fun i _ ↦ ?_)
     rw [St.slot_setSlot, ite_eq_left_of_eq_true _ _ (eq_true rfl)]
   · rename_i e
-    rw [h.2 t ht]
+    rw [h.2.2 t ht]
     refine congrArg encode (tab_congr fun i _ ↦ ?_)
     rw [St.slot_setSlot, ite_eq_right_of_eq_false _ _ (eq_false e)]
 
@@ -904,34 +906,35 @@ def Instr.InRange (V : Array F) (cb cs : Nat) (L : LoadsF p) (B nregs : Nat) :
 
 /-- The array an operand of an instruction writing buffer `t` reads besides that buffer
 (`Opd.buf`): another register's rows, or the view's. -/
-def Opd.arr (t B : Nat) (V : Array F) (sts : Nat → St F) : Opd F → Array F
-  | .reg r => if 4 + r == t then #[] else tab B fun i ↦ (sts i).reg r
+def Opd.arr (na t B : Nat) (V : Array F) (sts : Nat → St F) : Opd F → Array F
+  | .reg r => if na + r == t then #[] else tab B fun i ↦ (sts i).reg r
   | _ => V
 
-theorem Opd.buf_eq {S B nregs : Nat} {regs : Regs S} {sts : Nat → St F} {V : Array F}
-    {cb cs : Nat} (h : BlockRel B nregs regs sts) (a : Opd F) (ha : a.InRange V cb cs B nregs)
-    (t : Nat) : a.buf t regs ⟨encode V, cb, cs⟩ = encode (a.arr t B V sts) := by
+theorem Opd.buf_eq {S na B nregs : Nat} {regs : Regs S} {sts : Nat → St F} {V : Array F}
+    {cb cs : Nat} (h : BlockRel na B nregs regs sts) (a : Opd F) (ha : a.InRange V cb cs B nregs)
+    (t : Nat) : a.buf na t regs ⟨encode V, cb, cs⟩ = encode (a.arr na t B V sts) := by
   cases a with
   | reg r =>
     simp only [Opd.buf, Opd.arr]
     split
     · rfl
-    · rw [h.2 (4 + r) (by simp only [Opd.InRange] at ha; omega)]
+    · rw [h.2.2 (na + r) (by simp only [Opd.InRange] at ha; omega)]
       refine congrArg encode (tab_congr fun i _ ↦ ?_)
-      simp only [St.slot, show ¬4 + r < 4 by omega, ite_false, Nat.add_sub_cancel_left]
+      simp only [St.slot, show ¬na + r < na by omega, ite_false, Nat.add_sub_cancel_left]
   | cur c => rfl
   | const x => rfl
 
 /-- An operand in range of an instruction writing buffer `t` reads every row's value. -/
 theorem Opd.rd_arr {V : Array F} {cb cs : Nat} {L : LoadsF p} {SC WT : Array F} {B : Nat}
-    {sts : Nat → St F} (a : Opd F) (t : Nat) (self : Bool) (hself : self = true → self = a.isReg t)
-    (hsf : self = false → a.isReg t = false) (k : Nat) (hk : k < B) :
-    a.rd self (tab B fun i ↦ (sts i).slot t) (a.arr t B V sts) (a.off ⟨encode V, cb, cs⟩) k =
-      a.val (blockCtx V cb cs L SC WT B k) (sts k) := by
+    {sts : Nat → St F} (a : Opd F) (t : Nat) (self : Bool) (hself : self = true → self = a.isReg na
+        t)
+    (hsf : self = false → a.isReg na t = false) (k : Nat) (hk : k < B) :
+    a.rd self (tab B fun i ↦ (sts i).slot na t) (a.arr na t B V sts) (a.off ⟨encode V, cb, cs⟩) k =
+      a.val (blockCtx na V cb cs L SC WT B k) (sts k) := by
   cases a with
   | reg r =>
     simp only [Opd.rd, Opd.off, Opd.arr, Opd.val, pick, Nat.zero_add]
-    by_cases e : (4 + r == t) = true
+    by_cases e : (na + r == t) = true
     · have hs : self = true := by
         cases self
         · have := hsf rfl; simp only [Opd.isReg] at this; rw [this] at e; exact absurd e (by decide)
@@ -939,7 +942,7 @@ theorem Opd.rd_arr {V : Array F} {cb cs : Nat} {L : LoadsF p} {SC WT : Array F} 
       rw [hs, ite_eq_left rfl, getD_tab _ _ _ hk]
       have := beq_iff_eq.mp e
       subst this
-      simp only [St.slot, show ¬4 + r < 4 by omega, ite_false, Nat.add_sub_cancel_left]
+      simp only [St.slot, show ¬na + r < na by omega, ite_false, Nat.add_sub_cancel_left]
     · have hs : self = false := by
         cases self
         · rfl
@@ -955,8 +958,8 @@ theorem Opd.rd_arr {V : Array F} {cb cs : Nat} {L : LoadsF p} {SC WT : Array F} 
 /-- An operand in range of an instruction writing buffer `t` is placed in its buffer. -/
 theorem Opd.placed_arr {V : Array F} {cb cs B nregs : Nat} {sts : Nat → St F} (a : Opd F)
     (ha : a.InRange V cb cs B nregs) (t : Nat) (self : Bool)
-    (hself : self = true → self = a.isReg t) (hsf : self = false → a.isReg t = false) :
-    a.Placed self (tab B fun i ↦ (sts i).slot t) (a.arr t B V sts) (a.off ⟨encode V, cb, cs⟩)
+    (hself : self = true → self = a.isReg na t) (hsf : self = false → a.isReg na t = false) :
+    a.Placed self (tab B fun i ↦ (sts i).slot na t) (a.arr na t B V sts) (a.off ⟨encode V, cb, cs⟩)
       B := by
   intro hc
   cases a with
@@ -977,7 +980,7 @@ theorem Opd.placed_arr {V : Array F} {cb cs B nregs : Nat} {sts : Nat → St F} 
 
 theorem Opd.size_arr {V : Array F} {B : Nat} {sts : Nat → St F} (hB : 4 * B < USize.size)
     (hV : 4 * V.size < USize.size) (a : Opd F) (t : Nat) :
-    4 * (a.arr t B V sts).size < USize.size := by
+    4 * (a.arr na t B V sts).size < USize.size := by
   cases a with
   | reg r =>
     simp only [Opd.arr]
@@ -988,12 +991,13 @@ theorem Opd.size_arr {V : Array F} {B : Nat} {sts : Nat → St F} (hB : 4 * B < 
   | const x => exact hV
 
 
-theorem St.setSlot_reg (st : St F) (d : Nat) (x : F) :
-    st.setSlot (4 + d) x = { st with reg := Function.update st.reg d x } := by
-  simp only [St.setSlot, show ¬4 + d < 4 by omega, ite_false, Nat.add_sub_cancel_left]
+theorem St.setSlot_reg (na : Nat) (st : St F) (d : Nat) (x : F) :
+    st.setSlot na (na + d) x = { st with reg := Function.update st.reg d x } := by
+  simp only [St.setSlot, show ¬na + d < na by omega, ite_false, Nat.add_sub_cancel_left]
 
-theorem BlockRel.congr' {S B nregs : Nat} {regs : Regs S} {sts sts' : Nat → St F}
-    (h : BlockRel B nregs regs sts) (e : ∀ i < B, sts i = sts' i) : BlockRel B nregs regs sts' :=
+theorem BlockRel.congr' {S na B nregs : Nat} {regs : Regs S} {sts sts' : Nat → St F}
+    (h : BlockRel na B nregs regs sts) (e : ∀ i < B, sts i = sts' i) : BlockRel na B nregs regs sts'
+        :=
   h.congr fun i hi _ _ ↦ by rw [e i hi]
 
 theorem Opd.rd_false (X X' E : Array F) (o : Nat) (a : Opd F) (k : Nat) :
@@ -1001,113 +1005,125 @@ theorem Opd.rd_false (X X' E : Array F) (o : Nat) (a : Opd F) (k : Nat) :
   cases a <;> rfl
 
 /-- One accumulator's pass: accumulator `j` of every row plus the operand times `W`. -/
-theorem BlockRel.accStep {S B nregs : Nat} {regs : Regs S} {sts : Nat → St F}
-    (h : BlockRel B nregs regs sts) (hS : S < USize.size) (j : Nat) (hj : j < 4) (a : Opd F)
+theorem BlockRel.accStep {S na B nregs : Nat} {regs : Regs S} {sts : Nat → St F}
+    (h : BlockRel na B nregs regs sts) (hS : S < USize.size) (j : Nat) (hj : j < na) (a : Opd F)
     (Ea : Array F) (ea : ByteArray) (hEa : ea.size < USize.size) (hea : ea = encode Ea)
     (oa : Nat) (hpa : ∀ X, a.Placed false X Ea oa B) (W : F) (wv : UInt32) (hw : wv = W.val)
     (A : Nat → F) (hA : ∀ X, ∀ k < B, a.rd false X Ea oa k = A k) :
-    BlockRel B nregs (modReg regs j (fun r h ↦ accPass p a ea S hS hEa oa wv B r h)
-      (fun _ _ ↦ size_accPass ..)) fun i ↦ (sts i).setSlot j ((sts i).slot j + A i * W) := by
+    BlockRel na B nregs (modReg regs j (fun r h ↦ accPass p a ea S hS hEa oa wv B r h)
+      (fun _ _ ↦ size_accPass ..)) fun i ↦ (sts i).setSlot na j ((sts i).slot na j + A i * W) := by
   subst hw
   refine h.set j (by omega) _ _ _ fun b hb e ↦ ?_
-  rw [accPass_tab (tab B fun i ↦ (sts i).slot j) Ea B S hS (size_tab ..) h.size_eq a ea hEa hea
+  rw [accPass_tab (tab B fun i ↦ (sts i).slot na j) Ea B S hS (size_tab ..) h.size_eq a ea hEa hea
     oa (hpa _) W b hb e]
   exact congrArg encode (tab_congr fun k hk ↦ by rw [getD_tab _ _ _ hk, hA _ k hk])
 
 /-- **An instruction on a block** of `B` rows in range is the instruction on every row's values
 (`blockCtx`). -/
-theorem execBlock_rel (V : Array F) (cb cs : Nat) (L : LoadsF p) (SC WT : Array F)
+theorem execBlock_rel (na : Nat) (V : Array F) (cb cs : Nat) (L : LoadsF p) (SC WT : Array F)
     (B nregs S : Nat) (hS : S < USize.size) (hE : (encode V).size < USize.size) (regs : Regs S)
-    (sts : Nat → St F) (h : BlockRel B nregs regs sts) (hL : L.Addr)
+    (sts : Nat → St F) (h : BlockRel na B nregs regs sts) (hL : L.Addr)
     (ins : Instr F)
     (hin : ins.InRange V cb cs L B nregs) :
-    BlockRel B nregs (execBlock p ⟨encode V, cb, cs⟩ L.enc SC WT B S hS hE regs ins) fun i ↦
-      ins.exec (fieldMachine (blockCtx V cb cs L SC WT B i)) (sts i) := by
+    BlockRel na B nregs (execBlock p na ⟨encode V, cb, cs⟩ L.enc SC WT B S hS hE regs ins) fun i ↦
+      ins.exec (fieldMachine (blockCtx na V cb cs L SC WT B i)) (sts i) := by
   have hSX := h.size_eq
   have hB : 4 * B < USize.size := by omega
   have hV : 4 * V.size < USize.size := by rw [size_encode_fields] at hE; exact hE
-  have hX (t : Nat) : (tab B fun i ↦ (sts i).slot t).size = B := size_tab ..
+  have hX (t : Nat) : (tab B fun i ↦ (sts i).slot na t).size = B := size_tab ..
   cases ins with
   | load d src =>
     obtain ⟨hd, hs⟩ := hin
-    refine (h.set (4 + d) (by omega) _ (fun _ _ ↦ size_loadSrc ..) (fun k ↦ L.src B k src)
+    refine (h.set (na + d) (by omega) _ (fun _ _ ↦ size_loadSrc ..) (fun k ↦ L.src B k src)
       fun b hb e ↦
       loadSrc_tab _ B S hS (hX _) hSX L hL src hs b hb e).congr' fun i _ ↦ ?_
-    rw [St.setSlot_reg, exec_load]
+    rw [St.setSlot_reg na, exec_load]
     rfl
   | scalar d k =>
     have hd : d < nregs := hin
-    refine (h.set (4 + d) (by omega) _ (fun _ _ ↦ size_fillWord ..) (fun _ ↦ SC.getD k 0)
+    refine (h.set (na + d) (by omega) _ (fun _ _ ↦ size_fillWord ..) (fun _ ↦ SC.getD k 0)
       fun b hb e ↦ ?_).congr' fun i _ ↦ ?_
     · exact fillWord_tab _ B S hS (hX _) hSX _ b hb e
-    · rw [St.setSlot_reg, exec_scalar]
+    · rw [St.setSlot_reg na, exec_scalar]
       rfl
   | bin o d a b =>
     obtain ⟨hd, ha, hb⟩ := hin
-    refine (h.set (4 + d) (by omega) _ (fun _ _ ↦ size_binPass ..) (fun k ↦ o.eval
-      (a.val (blockCtx V cb cs L SC WT B k) (sts k))
-      (b.val (blockCtx V cb cs L SC WT B k) (sts k))) fun b' hb' e ↦ ?_).congr' fun i _ ↦ ?_
-    · rw [binPass_tab _ (a.arr (4 + d) B V sts) (b.arr (4 + d) B V sts) B S hS (hX _) hSX o d a b
+    refine (h.set (na + d) (by omega) _ (fun _ _ ↦ size_binPass ..) (fun k ↦ o.eval
+      (a.val (blockCtx na V cb cs L SC WT B k) (sts k))
+      (b.val (blockCtx na V cb cs L SC WT B k) (sts k))) fun b' hb' e ↦ ?_).congr' fun i _ ↦ ?_
+    · rw [binPass_tab _ (a.arr na (na + d) B V sts) (b.arr na (na + d) B V sts) B S hS (hX _) hSX o
+        na d a b
         _ _ _ _ (Opd.buf_eq h a ha _) (Opd.buf_eq h b hb _) _ _
         (Opd.placed_arr a ha _ _ (fun _ ↦ rfl) id) (Opd.placed_arr b hb _ _ (fun _ ↦ rfl) id)
         b' hb' e]
       exact congrArg encode (tab_congr fun k hk ↦ by
-        rw [Opd.rd_arr a (4 + d) _ (fun _ ↦ rfl) id k hk,
-          Opd.rd_arr b (4 + d) _ (fun _ ↦ rfl) id k hk])
-    · rw [St.setSlot_reg, exec_bin]
+        rw [Opd.rd_arr a (na + d) _ (fun _ ↦ rfl) id k hk,
+          Opd.rd_arr b (na + d) _ (fun _ ↦ rfl) id k hk])
+    · rw [St.setSlot_reg na, exec_bin]
   | acc a w =>
     have ha : a.InRange V cb cs B nregs := hin
-    have hsf : a.isReg 0 = false := by
-      cases a with
-      | reg r => exact beq_eq_false_iff_ne.mpr (by omega)
-      | _ => rfl
-    have hpa (X : Array F) : a.Placed false X (a.arr 0 B V sts) (a.off ⟨encode V, cb, cs⟩) B :=
-      fun hc ↦ by
-        have := Opd.placed_arr (sts := sts) a ha 0 false (fun h ↦ absurd h (by decide))
-          (fun _ ↦ hsf) hc
-        simpa only [Bool.false_eq_true, ite_false] using this
-    have hA (X : Array F) (k : Nat) (hk : k < B) :
-        a.rd false X (a.arr 0 B V sts) (a.off ⟨encode V, cb, cs⟩) k =
-          a.val (blockCtx V cb cs L SC WT B k) (sts k) := by
-      rw [Opd.rd_false X (tab B fun i ↦ (sts i).slot 0)]
-      exact Opd.rd_arr a 0 false (fun h ↦ absurd h (by decide)) (fun _ ↦ hsf) k hk
-    have hw (j : Nat) : (WT.getD (4 * w + j) 0).val = (WT.getD (4 * w + j) 0).val := rfl
-    have hea := Opd.buf_eq h a ha 0
-    have hEa := size_opdBuf 0 regs ⟨encode V, cb, cs⟩ a hS hE
-    have h0 := h.accStep hS 0 (by decide) a _ _ hEa hea _ hpa _ _ (hw 0) _ fun X k hk ↦ hA X k hk
-    have h1 := h0.accStep hS 1 (by decide) a _ _ hEa hea _ hpa _ _ (hw 1) _ fun X k hk ↦ hA X k hk
-    have h2 := h1.accStep hS 2 (by decide) a _ _ hEa hea _ hpa _ _ (hw 2) _ fun X k hk ↦ hA X k hk
-    have h3 := h2.accStep hS 3 (by decide) a _ _ hEa hea _ hpa _ _ (hw 3) _ fun X k hk ↦ hA X k hk
-    refine h3.congr fun i _ s _ ↦ ?_
+    -- the first `m` accumulators' passes
+    have key : ∀ m ≤ na, BlockRel na B nregs ((List.range m).foldl (fun rs j ↦
+        modReg rs j (fun r h ↦ accPass p a (a.buf na 0 regs ⟨encode V, cb, cs⟩) S hS
+          (size_opdBuf na 0 regs ⟨encode V, cb, cs⟩ a hS hE) (a.off ⟨encode V, cb, cs⟩)
+          (WT.getD (na * w + j) 0).val B r h) (fun _ _ ↦ size_accPass ..)) regs) fun i ↦
+        { sts i with acc := fun j ↦ if j < m then ((sts i).acc j +
+          a.val (blockCtx na V cb cs L SC WT B i) (sts i) * WT.getD (na * w + j) 0)
+          else (sts i).acc j } := by
+      intro m hm
+      induction m with
+      | zero =>
+        refine h.congr fun i _ s _ ↦ ?_
+        simp only [St.slot, Nat.not_lt_zero, ite_false]
+      | succ m ih =>
+        have hsf : a.isReg na 0 = false := by
+          cases a with
+          | reg r => exact beq_eq_false_iff_ne.mpr (by omega)
+          | _ => rfl
+        have hpa (X : Array F) :
+            a.Placed false X (a.arr na 0 B V sts) (a.off ⟨encode V, cb, cs⟩) B :=
+          fun hc ↦ by
+            have := Opd.placed_arr (sts := sts) a ha 0 false (fun h ↦ absurd h (by decide))
+              (fun _ ↦ hsf) hc
+            simpa only [Bool.false_eq_true, ite_false] using this
+        have hA (X : Array F) (k : Nat) (hk : k < B) :
+            a.rd false X (a.arr na 0 B V sts) (a.off ⟨encode V, cb, cs⟩) k =
+              a.val (blockCtx na V cb cs L SC WT B k) (sts k) := by
+          rw [Opd.rd_false X (tab B fun i ↦ (sts i).slot na 0)]
+          exact Opd.rd_arr a 0 false (fun h ↦ absurd h (by decide)) (fun _ ↦ hsf) k hk
+        have hea := Opd.buf_eq h a ha 0
+        have hEa := size_opdBuf na 0 regs ⟨encode V, cb, cs⟩ a hS hE
+        rw [List.range_succ, List.foldl_append, List.foldl_cons, List.foldl_nil]
+        refine ((ih (by omega)).accStep hS m (by omega) a _ _ hEa hea _ hpa _ _ rfl _
+          fun X k hk ↦ hA X k hk).congr fun i _ s _ ↦ ?_
+        rw [St.slot_setSlot]
+        by_cases e : s = m
+        · subst e
+          simp only [ite_true, St.slot, show s < na by omega, show s < s + 1 by omega,
+            show ¬s < s by omega, ite_false, blockCtx]
+        · simp only [e, ite_false, St.slot]
+          split
+          · by_cases hs2 : s < m
+            · simp only [hs2, show s < m + 1 by omega, ite_true]
+            · simp only [hs2, show ¬s < m + 1 by omega, ite_false]
+          · rfl
+    simp only [execBlock]
+    refine (key na le_rfl).congr fun i _ s _ ↦ ?_
     rw [exec_acc]
-    simp only [St.slot_setSlot]
-    by_cases s3 : s = 3
-    · subst s3; simp only [St.slot, ite_true, show (3 : Nat) ≠ 2 by decide,
-        show (3 : Nat) ≠ 1 by decide, show (3 : Nat) ≠ 0 by decide, ite_false, show 3 < 4 by decide]
-      rfl
-    by_cases s2 : s = 2
-    · subst s2; simp only [St.slot, ite_true, show (2 : Nat) ≠ 3 by decide,
-        show (2 : Nat) ≠ 1 by decide, show (2 : Nat) ≠ 0 by decide, ite_false, show 2 < 4 by decide]
-      rfl
-    by_cases s1 : s = 1
-    · subst s1; simp only [St.slot, ite_true, show (1 : Nat) ≠ 3 by decide,
-        show (1 : Nat) ≠ 2 by decide, show (1 : Nat) ≠ 0 by decide, ite_false, show 1 < 4 by decide]
-      rfl
-    by_cases s0 : s = 0
-    · subst s0; simp only [St.slot, ite_true, show (0 : Nat) ≠ 3 by decide,
-        show (0 : Nat) ≠ 2 by decide, show (0 : Nat) ≠ 1 by decide, ite_false, show 0 < 4 by decide]
-      rfl
-    simp only [s0, s1, s2, s3, ite_false, St.slot, show ¬s < 4 by omega]
+    simp only [St.slot]
+    split
+    · simp only [blockCtx, *]
+    · rfl
 
 /-- **A program on a block** of `B` rows in range runs the program on every row's values
 (`blockCtx`). -/
-theorem runBlock_rel (code : Array (Instr F)) (V : Array F) (cb cs : Nat) (L : LoadsF p)
+theorem runBlock_rel (na : Nat) (code : Array (Instr F)) (V : Array F) (cb cs : Nat) (L : LoadsF p)
     (SC WT : Array F) (B nregs S : Nat) (hS : S < USize.size) (regs : Regs S)
-    (sts : Nat → St F) (h : BlockRel B nregs regs sts) (hV : 4 * V.size < USize.size)
+    (sts : Nat → St F) (h : BlockRel na B nregs regs sts) (hV : 4 * V.size < USize.size)
     (hL : L.Addr)
     (hcode : ∀ ins ∈ code, ins.InRange V cb cs L B nregs) :
-    BlockRel B nregs (runBlock p code ⟨encode V, cb, cs⟩ L.enc SC WT B hS regs)
-      fun i ↦ run (fieldMachine (blockCtx V cb cs L SC WT B i)) code (sts i) := by
+    BlockRel na B nregs (runBlock p na code ⟨encode V, cb, cs⟩ L.enc SC WT B hS regs)
+      fun i ↦ run (fieldMachine (blockCtx na V cb cs L SC WT B i)) code (sts i) := by
   have hE : (encode V).size < USize.size := by rw [size_encode_fields]; exact hV
   unfold runBlock
   rw [dite_eq_left hE]
@@ -1119,33 +1135,47 @@ theorem runBlock_rel (code : Array (Instr F)) (V : Array F) (cb cs : Nat) (L : L
   | nil => exact h
   | cons ins l ih =>
     simp only [List.foldl_cons]
-    exact ih _ _ (execBlock_rel V cb cs L SC WT B nregs S hS hE regs sts h hL ins
+    exact ih _ _ (execBlock_rel na V cb cs L SC WT B nregs S hS hE regs sts h hL ins
       (hcode' ins List.mem_cons_self)) fun i hi ↦ hcode' i (List.mem_cons_of_mem _ hi)
 
 /-- Clearing the accumulators clears every row's. -/
-theorem clearAcc_rel {S B nregs : Nat} (hS : S < USize.size) (regs : Regs S)
-    (sts : Nat → St F) (h : BlockRel B nregs regs sts) :
-    BlockRel B nregs (clearAcc hS B regs) fun i ↦ { sts i with acc := fun _ ↦ 0 } := by
+theorem clearAcc_rel {S na B nregs : Nat} (hS : S < USize.size) (regs : Regs S)
+    (sts : Nat → St F) (h : BlockRel na B nregs regs sts) :
+    BlockRel na B nregs (clearAcc na hS B regs) fun i ↦ { sts i with acc := fun _ ↦ 0 } := by
   have hSX := h.size_eq
-  have hz {regs : Regs S} {sts : Nat → St F} (h : BlockRel B nregs regs sts) (j : Nat)
-      (hj : j < 4) : BlockRel B nregs (modReg regs j (fun r h ↦ fillWord S hS r h 0 B)
-        (fun _ _ ↦ size_fillWord ..)) fun i ↦ (sts i).setSlot j 0 :=
-    h.set j (by omega) _ _ _ fun b hb e ↦ fillWord_tab _ B S hS (size_tab ..) hSX 0 b hb e
-  refine (hz (hz (hz (hz h 0 (by decide)) 1 (by decide)) 2 (by decide)) 3 (by decide)).congr
-    fun i _ s _ ↦ ?_
-  simp only [St.slot_setSlot]
-  by_cases s4 : s < 4
-  · have : s = 3 ∨ s = 2 ∨ s = 1 ∨ s = 0 := by omega
-    rcases this with e | e | e | e <;> subst e <;>
-      simp only [St.slot, ↓reduceIte, Nat.reduceEqDiff, Nat.reduceLT]
-  · simp only [show s ≠ 3 by omega, show s ≠ 2 by omega, show s ≠ 1 by omega,
-      show s ≠ 0 by omega, ite_false, St.slot, s4]
+  have key : ∀ m ≤ na, BlockRel na B nregs ((List.range m).foldl (fun regs j ↦
+      modReg regs j (fun r h ↦ fillWord S hS r h 0 B) (fun _ _ ↦ size_fillWord ..)) regs)
+      fun i ↦ { sts i with acc := fun j ↦ if j < m then 0 else (sts i).acc j } := by
+    intro m hm
+    induction m with
+    | zero =>
+      refine h.congr fun i _ s _ ↦ ?_
+      simp only [St.slot, Nat.not_lt_zero, ite_false]
+    | succ m ih =>
+      rw [List.range_succ, List.foldl_append, List.foldl_cons, List.foldl_nil]
+      refine ((ih (by omega)).set m (by omega) _ _ (fun _ ↦ 0) fun b hb e ↦
+        fillWord_tab _ B S hS (size_tab ..) hSX 0 b hb e).congr fun i _ s _ ↦ ?_
+      rw [St.slot_setSlot]
+      by_cases e : s = m
+      · subst e
+        simp only [ite_true, St.slot, show s < na by omega, show s < s + 1 by omega]
+      · simp only [e, ite_false, St.slot]
+        split
+        · by_cases hs2 : s < m
+          · simp only [hs2, show s < m + 1 by omega, ite_true]
+          · simp only [hs2, show ¬s < m + 1 by omega, ite_false]
+        · rfl
+  refine (key na le_rfl).congr fun i _ s _ ↦ ?_
+  simp only [St.slot]
+  split
+  · simp only [*]
+  · rfl
 
 /-- Zero registers hold zero run states. -/
-theorem blockRel_zeros (B nregs : Nat) (h : (zeroWords B).size = 4 * B) :
-    BlockRel B nregs (Array.replicate (4 + nregs) ⟨zeroWords B, h⟩ : Regs (4 * B))
+theorem blockRel_zeros (na B nregs : Nat) (h : (zeroWords B).size = 4 * B) :
+    BlockRel na B nregs (Array.replicate (na + nregs) ⟨zeroWords B, h⟩ : Regs (4 * B))
       fun _ ↦ (⟨fun _ ↦ 0, fun _ ↦ 0⟩ : St F) := by
-  refine ⟨Array.size_replicate .., fun s hs ↦ ?_⟩
+  refine ⟨Array.size_replicate .., rfl, fun s hs ↦ ?_⟩
   rw [regBuf_getElem _ _ (by rw [Array.size_replicate]; exact hs)]
   simp only [Array.getElem_replicate]
   rw [Words.zeroWords_eq (p := p)]
@@ -1155,25 +1185,26 @@ theorem blockRel_zeros (B nregs : Nat) (h : (zeroWords B).size = 4 * B) :
   split <;> rfl
 
 /-- The registers of a block of `B` rows are encoded run states. -/
-def Encoded {S : Nat} (B nregs : Nat) (regs : Regs S) : Prop :=
-  ∃ sts : Nat → St F, BlockRel B nregs regs sts
+def Encoded {S : Nat} (na B nregs : Nat) (regs : Regs S) : Prop :=
+  ∃ sts : Nat → St F, BlockRel na B nregs regs sts
 
 /-- **A program accumulating every row** on a block of `B` rows, from cleared accumulators and any
 encoded registers: the accumulators hold its rows' accumulations. -/
-theorem runBlock_acc (code : Array (Instr F)) (nregs : Nat) (V : Array F) (cb cs : Nat)
-    (L : LoadsF p) (SC WT : Array F) (B S : Nat) (hS : S < USize.size) (regs : Regs S)
-    (h : Encoded (p := p) B nregs regs) (hV : 4 * V.size < USize.size) (hL : L.Addr)
-    (hcode : ∀ ins ∈ code, ins.InRange V cb cs L B nregs) (Q : Nat → Nat → F)
-    (hQ : ∀ i < B, ∀ st0 : St F, st0.acc = (fun _ ↦ 0) → ∀ j < 4,
-      (run (fieldMachine (blockCtx V cb cs L SC WT B i)) code st0).acc j = Q i j) :
-    let regs' := runBlock p code ⟨encode V, cb, cs⟩ L.enc SC WT B hS
-      (clearAcc hS B regs)
-    Encoded (p := p) B nregs regs' ∧ ∀ j < 4, regBuf regs' j = encode (tab B fun i ↦ Q i j) := by
+theorem runBlock_acc (na : Nat) (code : Array (Instr F)) (nregs : Nat) (V : Array F)
+    (cb cs : Nat) (L : LoadsF p) (SC WT : Array F) (B S : Nat) (hS : S < USize.size)
+    (regs : Regs S) (h : Encoded (p := p) na B nregs regs) (hV : 4 * V.size < USize.size)
+    (hL : L.Addr) (hcode : ∀ ins ∈ code, ins.InRange V cb cs L B nregs) (Q : Nat → Nat → F)
+    (hQ : ∀ i < B, ∀ st0 : St F, st0.acc = (fun _ ↦ 0) → ∀ j < na,
+      (run (fieldMachine (blockCtx na V cb cs L SC WT B i)) code st0).acc j = Q i j) :
+    let regs' := runBlock p na code ⟨encode V, cb, cs⟩ L.enc SC WT B hS
+      (clearAcc na hS B regs)
+    Encoded (p := p) na B nregs regs' ∧
+      ∀ j < na, regBuf regs' j = encode (tab B fun i ↦ Q i j) := by
   obtain ⟨sts, h⟩ := h
-  have h' := runBlock_rel code V cb cs L SC WT B nregs S hS _ _ (clearAcc_rel hS regs sts h) hV hL
-    hcode
+  have h' := runBlock_rel na code V cb cs L SC WT B nregs S hS _ _ (clearAcc_rel hS regs sts h) hV
+    hL hcode
   refine ⟨⟨_, h'⟩, fun j hj ↦ ?_⟩
-  rw [h'.2 j (by omega)]
+  rw [h'.2.2 j (by omega)]
   refine congrArg encode (tab_congr fun i hi ↦ ?_)
   simp only [St.slot, hj, ite_true]
   exact hQ i hi _ rfl j hj
@@ -1193,22 +1224,22 @@ theorem extract_tab (f : Nat → F) (o B N : Nat) (h : o + B ≤ N) :
   simp only [Array.getElem_extract, tab, Array.getElem_ofFn]
 
 /-- **The outputs' words** on a block after its run: every row's values. -/
-theorem outWords_rel {S B nregs : Nat} (outs : Array (Opd F)) (V : Array F) (cb cs : Nat)
+theorem outWords_rel {S na B nregs : Nat} (outs : Array (Opd F)) (V : Array F) (cb cs : Nat)
     (L : LoadsF p) (SC WT : Array F) (regs : Regs S) (sts : Nat → St F)
-    (h : BlockRel B nregs regs sts) (hB : 4 * B < USize.size)
+    (h : BlockRel na B nregs regs sts) (hB : 4 * B < USize.size)
     (hout : ∀ o ∈ outs, o.InRange V cb cs B nregs) :
-    outWords p outs ⟨encode V, cb, cs⟩ regs B = outs.map fun o ↦
-      encode (tab B fun i ↦ o.val (blockCtx V cb cs L SC WT B i) (sts i)) := by
+    outWords p na outs ⟨encode V, cb, cs⟩ regs B = outs.map fun o ↦
+      encode (tab B fun i ↦ o.val (blockCtx na V cb cs L SC WT B i) (sts i)) := by
   unfold outWords
   refine Array.map_congr_left fun o ho ↦ ?_
   have hin := hout o ho
   cases o with
   | reg r =>
     simp only [Opd.InRange] at hin
-    show wordsAt (regBuf regs (4 + r)) 0 B = _
-    rw [h.2 (4 + r) (by omega), wordsAt_encode, extract_tab _ 0 B B (by omega)]
+    show wordsAt (regBuf regs (na + r)) 0 B = _
+    rw [h.2.2 (na + r) (by omega), wordsAt_encode, extract_tab _ 0 B B (by omega)]
     refine congrArg encode (tab_congr fun i _ ↦ ?_)
-    simp only [St.slot, show ¬4 + r < 4 by omega, ite_false, Nat.add_sub_cancel_left,
+    simp only [St.slot, show ¬na + r < na by omega, ite_false, Nat.add_sub_cancel_left,
       Nat.zero_add, Opd.val]
   | cur c =>
     simp only [Opd.InRange] at hin

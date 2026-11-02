@@ -30,7 +30,6 @@ sorting by height keeps the groups related (`reduce_rel`).
 namespace CompStark.Stark.Fast
 open Montgomery.Native32.Words
 open CompPoly.Array (batchInv batchInv_eq)
-open Montgomery.Native32.Ext4Planes (invDenoms)
 open CompStark.Fri
 open CompPoly.PackedRepr (encode)
 open CompPoly.CPolynomial.NTT.Transform (bitRevNat bitRevNat_lt bitRevNat_involutive)
@@ -219,31 +218,38 @@ theorem size_cosetPointsBitRev (shift : F) (b : Nat) :
 
 end
 
-variable {p : ℕ} [Mont32Field p]
+variable {p : ℕ} [Mont32Field p] {EF : Type} [FastExt p EF]
 
 local notation "F" => FastField p
-local notation "EF" => Ext4 p
 
 /-! ### Coordinates -/
 
 theorem coord_add (c : Nat) (a b : EF) : coord c (a + b) = coord c a + coord c b := by
-  match c with
-  | 0 | 1 | 2 | _ + 3 => rfl
+  unfold coord
+  split
+  · rw [FastExt.coord_add]; rfl
+  · rw [add_zero]
 
-theorem coord_smul [Mont32BaseField p] [Binomial4 p] (c : Nat) (x : F) (a : EF) : coord c
-    (Challenge.smul x a) = x * coord c a := by
-  match c with
-  | 0 | 1 | 2 | _ + 3 => rfl
+theorem coord_smul [Mont32BaseField p] [Mont32.AlgebraId EF] (c : Nat) (x : F) (a : EF) :
+    coord c (Challenge.smul x a) = x * coord c a := by
+  unfold coord
+  split
+  · show FastExt.coord (FastExt.ofCoords fun i ↦ x * FastExt.coord a i) _ = _
+    rw [FastExt.coord_ofCoords]
+  · rw [mul_zero]
 
 theorem coord_zero (c : Nat) : coord c (0 : EF) = 0 := by
-  match c with
-  | 0 | 1 | 2 | _ + 3 => rfl
+  unfold coord
+  split
+  · rw [FastExt.coord_zero]; rfl
+  · rfl
 
-theorem ext_coord {a b : EF} (h : ∀ c < 4, coord c a = coord c b) : a = b :=
-  Ext4.ext' (h 0 (by decide)) (h 1 (by decide)) (h 2 (by decide)) (h 3 (by decide))
+theorem ext_coord {a b : EF} (h : ∀ c < FastExt.d p EF, coord c a = coord c b) : a = b :=
+  FastExt.ext fun i ↦ by rw [← coord_fin, ← coord_fin, h i i.isLt]
 
 /-- Coordinate `c` of a sum of scaled elements is the sum of the scaled coordinates. -/
-theorem coord_foldl_smul [Mont32BaseField p] [Binomial4 p] (f : Nat → F) (g : Nat → EF) (c : Nat)
+theorem coord_foldl_smul [Mont32BaseField p] [Mont32.AlgebraId EF] (f : Nat → F) (g : Nat → EF) (c :
+    Nat)
     (acc : EF) : ∀ n,
     coord c ((List.range' 0 n).foldl (fun acc i ↦ acc + Challenge.smul (f i) (g i)) acc) =
       coord c acc + ∑ i ∈ Finset.range n, f i * coord c (g i)
@@ -257,15 +263,16 @@ theorem coord_foldl_smul [Mont32BaseField p] [Binomial4 p] (f : Nat → F) (g : 
 
 /-! ### The specification's opened values -/
 
-/-- The extension element of four coordinates. -/
-def mk4 (f : Nat → F) : EF := ⟨f 0, f 1, f 2, f 3⟩
+/-- The extension element of the coordinates `f`. -/
+def mkE (f : Nat → F) : EF := FastExt.ofCoords fun i ↦ f i
 
-theorem coord_mk4 (f : Nat → F) (c : Nat) (hc : c < 4) : coord c (mk4 f) = f c := by
-  match c, hc with
-  | 0, _ | 1, _ | 2, _ | 3, _ => rfl
+theorem coord_mkE (f : Nat → F) (c : Nat) (hc : c < FastExt.d p EF) :
+    coord c (mkE (EF := EF) f) = f c := by
+  rw [coord, dite_eq_left hc, mkE, FastExt.coord_ofCoords]
 
 /-- A column sum of the specification, coordinate by coordinate, reindexed to the stored rows. -/
-theorem coord_colSum [Mont32BaseField p] [Binomial4 p] (values : Array F) (w L j : Nat) {z : EF}
+theorem coord_colSum [Mont32BaseField p] [Mont32.AlgebraId EF] (values : Array F) (w L j : Nat) {z :
+    EF}
     (hz : Ext.OutsideBase z)
     (c : Nat) : coord c (colSum values (bitRevPerm L) (baryWeights L z) w (2 ^ L) j) =
       ∑ r ∈ Finset.range (2 ^ L), values.getD (r * w + j) 0 *
@@ -283,16 +290,16 @@ theorem coord_colSum [Mont32BaseField p] [Binomial4 p] (values : Array F) (w L j
 
 /-- The specification's opened values, coordinate by coordinate a sum over the stored rows of
 the row times the weight of its stored point. -/
-theorem openedAt_sum [Mont32BaseField p] [Binomial4 p] (b : Nat) (s : Mat F) {z : EF}
+theorem openedAt_sum [Mont32BaseField p] [Mont32.AlgebraId EF] (b : Nat) (s : Mat F) {z : EF}
     (hz : Ext.OutsideBase z) :
     Fri.openedAt b s z = Array.ofFn (n := s.width) fun j ↦
-      Fri.cosetFactor (Nat.log2 s.height - b) gen z * mk4 fun c ↦
+      Fri.cosetFactor (Nat.log2 s.height - b) gen z * mkE fun c ↦
         ∑ r ∈ Finset.range (2 ^ (Nat.log2 s.height - b)), s.values.getD (r * s.width + j.val) 0 *
           coord c (bw z ((cosetPointsBitRev (gen : F) (Nat.log2 s.height - b)).getD r 0)) := by
   rw [openedAt_eq]
   refine Array.ext (by rw [Array.size_ofFn, Array.size_ofFn]) fun j h1 h2 ↦ ?_
   rw [Array.getElem_ofFn, Array.getElem_ofFn]
-  exact congrArg _ (ext_coord fun c hc ↦ by rw [coord_mk4 _ _ hc, coord_colSum _ _ _ _ hz])
+  exact congrArg _ (ext_coord fun c hc ↦ by rw [coord_mkE _ _ hc, coord_colSum _ _ _ _ hz])
 
 /-! ### The fast column sums -/
 
@@ -326,82 +333,79 @@ theorem transposeRows_encode (M : Array F) (w r0 rows : Nat) (hM : (r0 + rows) *
     CompPoly.CPolynomial.NTTFast.Packed.getD_map_val, Nat.add_zero]
 
 /-- The weight planes of a range of stored points. -/
-theorem weightPlane [Mont32BaseField p] [Binomial4 p] {z : EF}
-    (hz : Ext.OutsideBase z) (X : Array F)
-    (r0 len : Nat)
+theorem weightPlane [Mont32BaseField p] [Mont32.AlgebraId EF] {z : EF}
+    (hz : Ext.OutsideBase z) (X : Array F) (r0 len : Nat)
     (hX : r0 + len ≤ X.size) (hs : 4 * X.size < USize.size) :
-    #[((invDenoms z (slice (encode X) r0 len) len).mulBase (slice (encode X) r0 len)).c0,
-      ((invDenoms z (slice (encode X) r0 len) len).mulBase (slice (encode X) r0 len)).c1,
-      ((invDenoms z (slice (encode X) r0 len) len).mulBase (slice (encode X) r0 len)).c2,
-      ((invDenoms z (slice (encode X) r0 len) len).mulBase (slice (encode X) r0 len)).c3] =
-    Array.ofFn (n := 4) fun c ↦ encode (Array.ofFn (n := len)
+    ((ExtPlanes.invDenoms z (slice (encode X) r0 len) len).mulBase
+      (slice (encode X) r0 len)).c.toArray =
+    Array.ofFn (n := FastExt.d p EF) fun c ↦ encode (Array.ofFn (n := len)
       fun t ↦ coord c (bw z (X.getD (r0 + t.val) 0))) := by
-  have hxr : slice (encode X) r0 len = encode (X.extract r0 (r0 + len)) :=
-    extract_encode X r0 (r0 + len)
-  have hsz : (X.extract r0 (r0 + len)).size = len := by rw [Array.size_extract]; omega
-  have hs' : 4 * (X.extract r0 (r0 + len)).size < USize.size := by omega
-  have hrv := Ext4Planes.mulBase_rel (X.extract r0 (r0 + len))
-    (Ext4Planes.invDenoms_rel ((Mont32.outsideBase_ext4 z).mp hz) (X.extract r0 (r0 + len)) hs')
-    (by rw [Array.size_map]) hs'
-  rw [hsz] at hrv
-  obtain ⟨-, h0, h1, h2, h3⟩ := hrv
-  have hp (c : Nat) : encode ((Array.zipWith (fun x y ↦ x * Ext.ofBase y)
-      ((X.extract r0 (r0 + len)).map fun x ↦ (z - Ext4.ofBase x)⁻¹)
-      (X.extract r0 (r0 + len))).map (coord c)) = encode (Array.ofFn (n := len)
-      fun t ↦ coord c (bw z (X.getD (r0 + t.val) 0))) := by
-    refine congrArg encode (Array.ext (by
-      rw [Array.size_map, Array.size_zipWith, Array.size_map, Array.size_ofFn, hsz,
-        Nat.min_self]) fun t h1 _ ↦ ?_)
-    rw [Array.size_map, Array.size_zipWith, Array.size_map, hsz, Nat.min_self] at h1
-    rw [Array.getElem_map, Array.getElem_zipWith, Array.getElem_map, Array.getElem_ofFn,
-      Array.getElem_extract, Ext.ofBase, Mont32.ofBase_ext4, Ext4.mul_ofBase,
-      Array.getD_eq_getD_getElem?,
-      Array.getElem?_eq_getElem (by omega), Option.getD_some]
-    rfl
+  have hn : 4 * len < USize.size := by omega
+  let g (t : Nat) : F := X.getD (r0 + t) 0
+  have hxr : slice (encode X) r0 len = encode (tab len g) := by
+    rw [show slice (encode X) r0 len = encode (X.extract r0 (r0 + len)) from
+      extract_encode X r0 (r0 + len)]
+    refine congrArg encode (Array.ext (by rw [Array.size_extract, size_tab]; omega)
+      fun t h1 _ ↦ ?_)
+    rw [Array.size_extract] at h1
+    rw [Array.getElem_extract, getElem_tab]
+    exact (getD_lt X _ (by omega)).symm
+  have hrv := ExtPlanes.mulBase_rel hn g
+    (ExtPlanes.invDenoms_rel hn (Mont32.ne_ofBase hz) g)
   rw [hxr]
-  refine Array.ext (by rw [Array.size_ofFn]; rfl) fun c hc _ ↦ ?_
-  rw [Array.getElem_ofFn, ← hp c]
-  match c, hc with
-  | 0, _ => exact h0
-  | 1, _ => exact h1
-  | 2, _ => exact h2
-  | 3, _ => exact h3
+  obtain ⟨-, hc⟩ := ExtPlanes.rel_tab_iff.mp hrv
+  refine Array.ext (by simp) fun c h1 _ ↦ ?_
+  simp only [Vector.size_toArray] at h1
+  rw [Vector.getElem_toArray, Array.getElem_ofFn]
+  have := hc ⟨c, h1⟩
+  simp only [Fin.getElem_fin] at this
+  rw [this]
+  refine congrArg encode (congrArg Array.ofFn (funext fun t ↦ ?_))
+  rw [coord, dite_eq_left h1, bw, Mont32.smul_eq, FastExt.mul_comm, ← Mont32.ofBase_eq]
+  rfl
 
-/-- Appending four elements per item. -/
-theorem foldl_append_ofFn4 {α : Type} (R : EF → Fin 4 → α) : ∀ (l : List EF) (b : Array α), l.foldl
-    (fun b z ↦ b ++ Array.ofFn (R z)) b =
-      b ++ Array.ofFn (n := 4 * l.length) fun i ↦ R (l.getD (i.val / 4) 0) ⟨i.val % 4, by omega⟩
+/-- Appending `n` elements per item. -/
+theorem foldl_append_ofFnN {α : Type} {n : Nat} (hn : 0 < n) (R : EF → Fin n → α) :
+    ∀ (l : List EF) (b : Array α), l.foldl (fun b z ↦ b ++ Array.ofFn (R z)) b =
+      b ++ Array.ofFn (n := n * l.length) fun i ↦ R (l.getD (i.val / n) 0)
+        ⟨i.val % n, Nat.mod_lt _ hn⟩
   | [], b => by rw [List.foldl_nil, Array.eq_empty_of_size_eq_zero (xs := Array.ofFn _)
       (by rw [Array.size_ofFn]; rfl), Array.append_empty]
   | a :: l, b => by
-    rw [List.foldl_cons, foldl_append_ofFn4 R l, Array.append_assoc]
+    rw [List.foldl_cons, foldl_append_ofFnN hn R l, Array.append_assoc]
     congr 1
     refine Array.ext (by rw [Array.size_append, Array.size_ofFn, Array.size_ofFn, Array.size_ofFn,
-      List.length_cons]; omega) fun i h1 h2 ↦ ?_
+      List.length_cons, Nat.mul_succ, Nat.add_comm]) fun i h1 h2 ↦ ?_
     rw [Array.getElem_ofFn, Array.getElem_append]
     split
     · rename_i h
       rw [Array.size_ofFn] at h
-      rw [Array.getElem_ofFn, show i / 4 = 0 by omega, List.getD_cons_zero]
-      exact congrArg _ (Fin.ext (by simp only; omega))
+      rw [Array.getElem_ofFn, Nat.div_eq_of_lt h, List.getD_cons_zero]
+      exact congrArg _ (Fin.ext (by simp only; exact (Nat.mod_eq_of_lt h).symm))
     · rename_i h
       rw [Array.size_ofFn] at h
       simp only [Array.getElem_ofFn, Array.size_ofFn]
+      have hq : i / n = (i - n) / n + 1 := by
+        rw [Nat.div_eq_sub_div hn (by omega)]
+      have hr : i % n = (i - n) % n := by
+        rw [Nat.mod_eq_sub_mod (by omega)]
       congr 1
-      · rw [show i / 4 = (i - 4) / 4 + 1 by omega, List.getD_cons_succ]
-      · exact Fin.ext (by simp only; omega)
+      · rw [hq, List.getD_cons_succ]
+      · exact Fin.ext (by simp only; exact hr.symm)
 
 /-- The weight planes of a range of stored points, for every point and coordinate. -/
-theorem weightPlanes_encode [Mont32BaseField p] [Binomial4 p]
+theorem weightPlanes_encode [Mont32BaseField p] [Mont32.AlgebraId EF]
     (zs : Array EF) (hz : ∀ z ∈ zs, Ext.OutsideBase z) (X : Array F) (r0 len : Nat)
     (hX : r0 + len ≤ X.size) (hsX : 4 * X.size < USize.size) :
-    weightPlanes zs (encode X) r0 len = Array.ofFn (n := 4 * zs.size) fun i ↦
+    weightPlanes zs (encode X) r0 len = Array.ofFn (n := FastExt.d p EF * zs.size) fun i ↦
       encode (Array.ofFn (n := len) fun t ↦
-        coord (i.val % 4) (bw (zs.toList.getD (i.val / 4) 0) (X.getD (r0 + t.val) 0))) := by
+        coord (i.val % FastExt.d p EF) (bw (zs.toList.getD (i.val / FastExt.d p EF) 0)
+          (X.getD (r0 + t.val) 0))) := by
   unfold weightPlanes
-  rw [← Array.foldl_toList, List.foldl_ext _ (fun b z ↦ b ++ Array.ofFn (n := 4) fun c ↦
+  rw [← Array.foldl_toList, List.foldl_ext _ (fun b z ↦ b ++
+    Array.ofFn (n := FastExt.d p EF) fun c ↦
     encode (Array.ofFn (n := len) fun t ↦ coord c.val (bw z (X.getD (r0 + t.val) 0)))) _ ?_,
-    foldl_append_ofFn4, Array.empty_append]
+    foldl_append_ofFnN (FastExt.params (p := p) EF).d_pos, Array.empty_append]
   · rfl
   intro b z hz'
   dsimp only
@@ -409,19 +413,21 @@ theorem weightPlanes_encode [Mont32BaseField p] [Binomial4 p]
 
 /-- The fast column sums of a range of stored rows within one block of the matrix: for every point
 and coordinate, a plane of a sum per column, of the rows times the weights of their points. -/
-theorem weightedColumns_cols [Mont32BaseField p] [Binomial4 p]
+theorem weightedColumns_cols [Mont32BaseField p] [Mont32.AlgebraId EF]
     {pm : PMat} {s : Mat F} (h : RM pm s) (zs : Array EF)
     (hz : ∀ z ∈ zs, Ext.OutsideBase z) (X : Array F) (r0 len : Nat) (hlen : 0 < len)
     (hblk : r0 % pm.rows + len ≤ pm.rows) (hr : r0 + len ≤ s.height) (hX : r0 + len ≤ X.size)
     (hsX : 4 * X.size < USize.size) :
     weightedColumns pm zs (encode X) r0 len =
-      Array.ofFn (n := 4 * zs.size) fun i ↦ encode (Array.ofFn (n := s.width) fun j ↦
+      Array.ofFn (n := FastExt.d p EF * zs.size) fun i ↦ encode (Array.ofFn (n := s.width) fun j ↦
         ∑ t ∈ Finset.range len, s.values.getD ((r0 + t) * s.width + j.val) 0 *
-          coord (i.val % 4) (bw (zs.toList.getD (i.val / 4) 0) (X.getD (r0 + t) 0))) := by
+          coord (i.val % FastExt.d p EF) (bw (zs.toList.getD (i.val / FastExt.d p EF) 0)
+            (X.getD (r0 + t) 0))) := by
   unfold Fast.weightedColumns
   dsimp only
   rw [weightPlanes_encode zs hz X r0 len hX hsX, Array.size_ofFn, h.width]
-  let P (i t : Nat) : F := coord (i % 4) (bw (zs.toList.getD (i / 4) 0) (X.getD (r0 + t) 0))
+  let P (i t : Nat) : F := coord (i % FastExt.d p EF)
+    (bw (zs.toList.getD (i / FastExt.d p EF) 0) (X.getD (r0 + t) 0))
   have hl : 4 * len < USize.size := by omega
   apply Array.ext (by rw [Array.size_map, Array.size_range, Array.size_ofFn])
   intro i h1 h2
@@ -513,7 +519,7 @@ theorem word_plane (n w : Nat) (G : Nat → Nat → F) (idx j : Nat) (hidx : idx
   rw [getD_ofFn_bounded _ _ hidx, word_encode_getD _ _ (by rw [Array.size_ofFn]; exact hw)
     (by omega), getD_ofFn_bounded _ _ hj]
 
-theorem size_openedAt [Mont32BaseField p] [Binomial4 p] (b : Nat) (s : Mat F) (z : EF) :
+theorem size_openedAt [Mont32BaseField p] [Mont32.AlgebraId EF] (b : Nat) (s : Mat F) (z : EF) :
     (Fri.openedAt b s z).size = s.width := by
   rw [openedAt_eq, Array.size_ofFn]
 
@@ -550,7 +556,7 @@ theorem gcd_range_dvd (L R : Nat) :
     exact Nat.div_dvd_of_dvd (Nat.pow_dvd_pow 2 h4)
 
 /-- The fast opened values are the specification's. -/
-theorem openedAt_rel [Mont32BaseField p] [Binomial4 p] (b : Nat)
+theorem openedAt_rel [Mont32BaseField p] [Mont32.AlgebraId EF] (b : Nat)
     (zs : List EF) {m : PMat} {s : Mat F}
     (h : RM m s)
     (hs : MatOk s) (hz : ∀ z ∈ zs, Ext.OutsideBase z) :
@@ -589,9 +595,11 @@ theorem openedAt_rel [Mont32BaseField p] [Binomial4 p] (b : Nat)
   have hG0 : 0 < G := by rw [← hG]; exact Nat.gcd_pos_of_pos_right _ h.pos
   have hGR : G ∣ m.rows := by rw [← hG]; exact Nat.gcd_dvd_right _ _
   obtain ⟨hp, hpG, hranges⟩ := uniform_ranges hG0 hGd (Nat.two_pow_pos L)
-  rw [parts_sum (4 * zs.length) s.width (2 ^ L) _ hp hw4
+  have hd := (FastExt.params (p := p) EF).d_pos
+  rw [parts_sum (FastExt.d p EF * zs.length) s.width (2 ^ L) _ hp hw4
     (fun i j r ↦ s.values.getD (r * s.width + j) 0 *
-      coord (i % 4) (bw (zs.getD (i / 4) 0) ((cosetPointsBitRev (gen : F) L).getD r 0)))
+      coord (i % FastExt.d p EF) (bw (zs.getD (i / FastExt.d p EF) 0)
+        ((cosetPointsBitRev (gen : F) L).getD r 0)))
     (fun r0 len ↦ weightedColumns m zs.toArray
       (encode (cosetPointsBitRev (gen : F) L)) r0 len) (fun k hk ↦ ?_)]
   · refine List.ext_getElem
@@ -599,25 +607,21 @@ theorem openedAt_rel [Mont32BaseField p] [Binomial4 p] (b : Nat)
     rw [List.getElem_map, List.getElem_map, List.getElem_zipIdx, Nat.zero_add]
     rw [List.length_map, List.length_zipIdx] at h1
     rw [openedAt_sum b s (hz _ (List.getElem_mem _)), hL]
-    have hwp : ∀ idx, idx < 4 * zs.length → ∀ j, j < s.width →
-        word ((Array.ofFn (n := 4 * zs.length) fun i ↦ encode (Array.ofFn (n := s.width) fun j ↦
-          ∑ r ∈ Finset.range (2 ^ L), s.values.getD (r * s.width + j.val) 0 * coord (i.val % 4)
-            (bw (zs.getD (i.val / 4) 0) ((cosetPointsBitRev (gen : F) L).getD r 0)))).getD
-          idx .empty) j =
-        ∑ r ∈ Finset.range (2 ^ L), s.values.getD (r * s.width + j) 0 * coord (idx % 4)
-          (bw (zs.getD (idx / 4) 0) ((cosetPointsBitRev (gen : F) L).getD r 0)) :=
-      fun idx hidx j hj ↦ word_plane (4 * zs.length) s.width (fun i j ↦
-        ∑ r ∈ Finset.range (2 ^ L), s.values.getD (r * s.width + j) 0 * coord (i % 4)
-          (bw (zs.getD (i / 4) 0) ((cosetPointsBitRev (gen : F) L).getD r 0))) idx j hidx hj hw4
-    refine congrArg Array.ofFn (funext fun j ↦ congrArg _ (Ext4.ext' ?_ ?_ ?_ ?_)) <;>
-      dsimp only [mk4] <;>
-      rw [hwp _ (by omega) _ j.isLt] <;>
-      refine Finset.sum_congr rfl fun r _ ↦ ?_ <;>
-      simp only [show (4 * k + 1) / 4 = k by omega, show (4 * k + 2) / 4 = k by omega,
-        show (4 * k + 3) / 4 = k by omega, show 4 * k / 4 = k by omega,
-        show (4 * k + 1) % 4 = 1 by omega, show (4 * k + 2) % 4 = 2 by omega,
-        show (4 * k + 3) % 4 = 3 by omega, show 4 * k % 4 = 0 by omega,
-        List.getD_eq_getElem _ _ h1]
+    refine congrArg Array.ofFn (funext fun j ↦ congrArg _ (FastExt.ext fun c ↦ ?_))
+    rw [mkE, FastExt.coord_ofCoords]
+    have hidx : FastExt.d p EF * k + c < FastExt.d p EF * zs.length := by
+      have := Nat.mul_le_mul_left (FastExt.d p EF) (show k + 1 ≤ zs.length by omega)
+      have hc : (c : ℕ) < FastExt.d p EF := c.isLt
+      rw [Nat.mul_succ] at this; omega
+    rw [word_plane (FastExt.d p EF * zs.length) s.width (fun i j ↦
+        ∑ r ∈ Finset.range (2 ^ L), s.values.getD (r * s.width + j) 0 *
+          coord (i % FastExt.d p EF) (bw (zs.getD (i / FastExt.d p EF) 0)
+            ((cosetPointsBitRev (gen : F) L).getD r 0))) _ j hidx j.isLt hw4]
+    have hq : (FastExt.d p EF * k + c) / FastExt.d p EF = k := by
+      rw [Nat.add_comm, Nat.add_mul_div_left _ _ hd, Nat.div_eq_of_lt c.isLt, Nat.zero_add]
+    have hr : (FastExt.d p EF * k + c) % FastExt.d p EF = c := by
+      rw [Nat.add_comm, Nat.add_mul_mod_self_left, Nat.mod_eq_of_lt c.isLt]
+    simp only [hq, hr, List.getD_eq_getElem _ _ h1, FastExt.coord_ofCoords]
   · obtain ⟨hlen, hcov⟩ := hranges k hk
     rw [hlen, hpG]
     rw [weightedColumns_cols h zs.toArray (fun z hz' ↦ hz z (List.mem_toArray.mp hz'))
@@ -632,35 +636,37 @@ theorem openedAt_rel [Mont32BaseField p] [Binomial4 p] (b : Nat)
 
 /-- A matrix of a group of the fast reduction: the packed matrix, the powers of `α` as planes,
 and its terms `(z, yz, offset)`. -/
-abbrev GItem (q : ℕ) [Mont32Field q] := PMat × Ext4Planes q × List (Ext4 q × Ext4 q × Ext4 q)
+abbrev GItem (q : ℕ) [Mont32Field q] (E : Type) [FastExt q E] :=
+  PMat × ExtPlanes q E × List (E × E × E)
 
 /-- One matrix of the fast reduction's grouping by height. -/
-def groupStep [Mont32BaseField p] [Binomial4 p] (alpha : EF) (groups : List (Nat × Nat × Array
-    (GItem p)))
-    (it : PMat × List (EF × Array EF)) : List (Nat × Nat × Array (GItem p)) :=
+def groupStep [Mont32BaseField p] [Mont32.AlgebraId EF] (alpha : EF) (groups : List (Nat × Nat ×
+    Array
+    (GItem p EF)))
+    (it : PMat × List (EF × Array EF)) : List (Nat × Nat × Array (GItem p EF)) :=
   let m := it.1
   let logH := Nat.log2 m.height
   let start := (groups.lookup logH).getD (0, #[])
   let ap := Array.ofFn (n := m.width) fun i ↦ Ext.pow alpha i.val
   let res := it.2.foldl (termsStep alpha ap m.width) (start.1, [])
-  (logH, res.1, start.2.push (m, Ext4Planes.ofArray ap, res.2)) ::
+  (logH, res.1, start.2.push (m, ExtPlanes.ofArray ap, res.2)) ::
     groups.filter (·.1 != logH)
 
 /-- The batched quotient of one group, by parallel ranges of rows within one block of every
 matrix. -/
-def groupPlanes [Mont32BaseField p] [Binomial4 p] (G : Nat × Nat × Array
-    (GItem p)) : Nat × Ext4Planes p :=
+def groupPlanes [Mont32BaseField p] [Mont32.AlgebraId EF] (G : Nat × Nat × Array
+    (GItem p EF)) : Nat × ExtPlanes p EF :=
   let n := 2 ^ G.1
   let xs := CompPoly.CPolynomial.NTTFast.Packed.Native.encodeFields
     (cosetPointsBitRev (gen : F) G.1)
   let parts := n / G.2.2.foldl (fun a (m, _) ↦ Nat.gcd a m.rows) (if n < 4096 then n else n / 16)
   let size := n / parts
-  (G.1, Ext4Planes.join p n <| (Array.range parts).map fun k ↦ Task.spawn fun _ ↦
-    let v := reduceRange G.2.2 xs (k * size) (if k + 1 = parts then n - k * size else size)
-    #[v.c0, v.c1, v.c2, v.c3])
+  (G.1, ExtPlanes.join n <| (Array.range parts).map fun k ↦ Task.spawn fun _ ↦
+    (reduceRange G.2.2 xs (k * size) (if k + 1 = parts then n - k * size else size)).c.toArray)
 
 /-- The fast reduction groups by height, then computes every group's planes. -/
-theorem reduce_fast [Mont32BaseField p] [Binomial4 p] (alpha : EF) (items : List (PMat × List
+theorem reduce_fast [Mont32BaseField p] [Mont32.AlgebraId EF] (alpha : EF) (items : List (PMat ×
+    List
     (EF × Array EF))) :
     reduce alpha items = ((items.foldl (groupStep alpha) []).map groupPlanes).mergeSort
       fun a b ↦ decide (b.1 ≤ a.1) := by
@@ -670,27 +676,29 @@ theorem reduce_fast [Mont32BaseField p] [Binomial4 p] (alpha : EF) (items : List
 /-! ### The grouping simulates the specification's fold -/
 
 /-- Row `r` of a group's batched quotient: every term of every matrix in order. -/
-def gval [Mont32BaseField p] [Binomial4 p] (alpha : EF) (logH : Nat) (g : Array (GItem p))
+def gval [Mont32BaseField p] [Mont32.AlgebraId EF] (alpha : EF) (logH : Nat) (g : Array (GItem p
+    EF))
     (r : Nat) : EF :=
   g.toList.foldl (fun a it ↦ it.2.2.foldl (termStep
     (crow (it.1.vals p) (powers alpha it.1.width) it.1.width r)
     ((cosetPointsBitRev (gen : F) logH).getD r 0)) a) 0
 
 /-- A matrix of a group of height `2 ^ logH` the fast kernels compute on. -/
-def Good [Mont32BaseField p] [Binomial4 p] (alpha : EF) (logH : Nat) (it : GItem p) : Prop :=
+def Good [Mont32BaseField p] [Mont32.AlgebraId EF] (alpha : EF) (logH : Nat) (it : GItem p EF) :
+    Prop :=
   ∃ s : Mat F, RM it.1 s ∧ s.height = 2 ^ logH ∧ 4 * s.values.size < USize.size ∧
-    16 * 2 ^ logH < USize.size ∧ it.2.1 = Ext4Planes.ofArray (powers alpha it.1.width) ∧
+    16 * 2 ^ logH < USize.size ∧ it.2.1 = ExtPlanes.ofArray (powers alpha it.1.width) ∧
     ∀ t ∈ it.2.2, Ext.OutsideBase t.1
 
 /-- A fast group represents the specification's running sums of its height. -/
-def GR [Mont32BaseField p] [Binomial4 p] (alpha : EF) (G : Nat × Nat × Array (GItem p))
+def GR [Mont32BaseField p] [Mont32.AlgebraId EF] (alpha : EF) (G : Nat × Nat × Array (GItem p EF))
     (S : Nat × Nat × Array EF) : Prop :=
   G.1 = S.1 ∧ G.2.1 = S.2.1 ∧ S.2.2 = Array.ofFn (n := 2 ^ G.1) (fun r ↦ gval alpha G.1 G.2.2 r) ∧
     16 * 2 ^ G.1 < USize.size ∧ ∀ it ∈ G.2.2, Good alpha G.1 it
 
 /-- Related group lists hold related groups of every height. -/
-theorem lookup_rel [Mont32BaseField p] [Binomial4 p] (alpha : EF) (k : Nat) {l1 : List
-    (Nat × Nat × Array (GItem p))}
+theorem lookup_rel [Mont32BaseField p] [Mont32.AlgebraId EF] (alpha : EF) (k : Nat) {l1 : List
+    (Nat × Nat × Array (GItem p EF))}
     {l2 : List (Nat × Nat × Array EF)} (h : List.Forall₂ (GR alpha) l1 l2) :
     (l1.lookup k = none ∧ l2.lookup k = none) ∨ ∃ c g, l1.lookup k = some (c, g) ∧
       l2.lookup k = some (c, Array.ofFn (n := 2 ^ k) fun r ↦ gval alpha k g r) ∧
@@ -710,8 +718,8 @@ theorem lookup_rel [Mont32BaseField p] [Binomial4 p] (alpha : EF) (k : Nat) {l1 
       simp only [List.lookup, e]
       exact ih
 
-theorem filter_rel [Mont32BaseField p] [Binomial4 p] (alpha : EF) (k : Nat) {l1 : List
-    (Nat × Nat × Array (GItem p))}
+theorem filter_rel [Mont32BaseField p] [Mont32.AlgebraId EF] (alpha : EF) (k : Nat) {l1 : List
+    (Nat × Nat × Array (GItem p EF))}
     {l2 : List (Nat × Nat × Array EF)} (h : List.Forall₂ (GR alpha) l1 l2) :
     List.Forall₂ (GR alpha) (l1.filter (·.1 != k)) (l2.filter (·.1 != k)) := by
   induction h with
@@ -722,7 +730,8 @@ theorem filter_rel [Mont32BaseField p] [Binomial4 p] (alpha : EF) (k : Nat) {l1 
     · exact List.Forall₂.cons hGS ih
     · exact ih
 
-theorem mem_terms [Mont32BaseField p] [Binomial4 p] (alpha : EF) (ap : Array EF) (w : Nat) : ∀
+theorem mem_terms [Mont32BaseField p] [Mont32.AlgebraId EF] (alpha : EF) (ap : Array EF) (w : Nat) :
+    ∀
     (pts : List (EF × Array EF))
     (c : Nat), ∀ t ∈ (pts.foldl (termsStep alpha ap w) (c, [])).2, ∃ pr ∈ pts, t.1 = pr.1
   | [], _, t, ht => absurd ht List.not_mem_nil
@@ -734,16 +743,17 @@ theorem mem_terms [Mont32BaseField p] [Binomial4 p] (alpha : EF) (ap : Array EF)
     · obtain ⟨q, hq, e⟩ := mem_terms alpha ap w pts _ t ht
       exact ⟨q, List.mem_cons_of_mem pr hq, e⟩
 
-theorem gval_push [Mont32BaseField p] [Binomial4 p] (alpha : EF) (logH : Nat) (g : Array (GItem p))
-    (it : GItem p)
+theorem gval_push [Mont32BaseField p] [Mont32.AlgebraId EF] (alpha : EF) (logH : Nat) (g : Array
+    (GItem p EF))
+    (it : GItem p EF)
     (r : Nat) : gval alpha logH (g.push it) r = it.2.2.foldl (termStep
       (crow (it.1.vals p) (powers alpha it.1.width) it.1.width r)
       ((cosetPointsBitRev (gen : F) logH).getD r 0)) (gval alpha logH g r) := by
   rw [gval, gval, Array.toList_push, List.foldl_append, List.foldl_cons, List.foldl_nil]
 
 /-- One matrix of the grouping simulates one step of the specification's fold. -/
-theorem groupStep_rel [Mont32BaseField p] [Binomial4 p] (alpha : EF) {groups : List
-    (Nat × Nat × Array (GItem p))}
+theorem groupStep_rel [Mont32BaseField p] [Mont32.AlgebraId EF] (alpha : EF) {groups : List
+    (Nat × Nat × Array (GItem p EF))}
     {red : List (Nat × Nat × Array EF)} (hgr : List.Forall₂ (GR alpha) groups red) {m : PMat}
     {s : Mat F} (hm : RM m s) (pts : List (EF × Array EF)) (hs : MatOk s)
     (hz : ∀ pr ∈ pts, Ext.OutsideBase pr.1) :
@@ -806,12 +816,12 @@ theorem groupStep_rel [Mont32BaseField p] [Binomial4 p] (alpha : EF) {groups : L
       exact hz pr hp
 
 /-- The grouping simulates the specification's fold. -/
-theorem foldl_groupStep_rel [Mont32BaseField p] [Binomial4 p] (alpha : EF) :
+theorem foldl_groupStep_rel [Mont32BaseField p] [Mont32.AlgebraId EF] (alpha : EF) :
     ∀ {items : List (PMat × List (EF × Array EF))}
       {sitems : List (Mat F × List (EF × Array EF))},
       List.Forall₂ (fun x y ↦ RM x.1 y.1 ∧ x.2 = y.2) items sitems →
       (∀ x ∈ sitems, MatOk x.1 ∧ ∀ pr ∈ x.2, Ext.OutsideBase pr.1) →
-      ∀ {groups : List (Nat × Nat × Array (GItem p))} {red : List (Nat × Nat × Array EF)},
+      ∀ {groups : List (Nat × Nat × Array (GItem p EF))} {red : List (Nat × Nat × Array EF)},
       List.Forall₂ (GR alpha) groups red →
       List.Forall₂ (GR alpha) (items.foldl (groupStep alpha) groups)
         (sitems.foldl (reduceStep alpha) red)
@@ -860,34 +870,23 @@ theorem forall₂_mergeSort {α β : Type} {R : α → β → Prop} {l1 : List �
 
 /-! ### The fast kernel of one group -/
 
-/-- The fast batching of a range of rows within one block of a packed matrix by the powers `ap`
-of `α`, coordinate by coordinate. -/
-theorem compressRange_cols [Mont32BaseField p] [Binomial4 p] {pm : PMat} {s : Mat F}
-    (h : RM pm s) (ap : Array EF) (hap : ap.size = s.width) (r0 len : Nat) (hlen : 0 < len)
+/-- Four planes of a range of rows within one block of a packed matrix, batched by the scalars
+`W c J` of plane `c` and column `J`, zero past the last column, given as words `a c J`. -/
+theorem compress4_cols {pm : PMat} {s : Mat F} (h : RM pm s) (W : Nat → Nat → F)
+    (hW : ∀ c J, s.width ≤ J → W c J = 0) (a : Nat → Nat → UInt32)
+    (ha : ∀ c < 4, ∀ J, a c J = (W c J).val) (r0 len : Nat) (hlen : 0 < len)
     (hblk : r0 % pm.rows + len ≤ pm.rows) (hr : r0 + len ≤ s.height)
-    (hsa : 4 * ap.size < USize.size) (hl : 16 * len < USize.size) :
-    compressRange p pm (encode (ap.map (·.c0))) (encode (ap.map (·.c1)))
-      (encode (ap.map (·.c2))) (encode (ap.map (·.c3))) r0 len =
-      Array.ofFn (n := 4) fun c ↦ encode (Array.ofFn (n := len) fun t ↦
-        coord c.val (crow s.values ap s.width (r0 + t.val))) := by
-  unfold compressRange
-  dsimp only
+    (hl : 16 * len < USize.size) (c : Nat) (hc : c < 4) :
+    (compress4 p pm a r0 len).extract (4 * (c * len)) (4 * ((c + 1) * len)) =
+      encode (Array.ofFn (n := len) fun t ↦ ∑ J ∈ Finset.range s.width,
+        s.values.getD ((r0 + t.val) * s.width + J) 0 * W c J) := by
+  unfold compress4
   rw [CompStark.Merkle.Packed.foldRange_eq, h.width]
   -- The rows batched by the first `J` columns.
   let x (J t : Nat) : F := s.values.getD ((r0 + t) * s.width + J) 0
-  let part (c J t : Nat) : F := coord c ((List.range' 0 J).foldl (fun acc i ↦
-    acc + Challenge.smul (s.values.getD ((r0 + t) * s.width + i) 0) (ap.getD i 0)) 0)
-  have hpart (c J t : Nat) : part c (J + 1) t = part c J t + x J t * coord c (ap.getD J 0) := by
-    simp only [part, x]
-    rw [List.range'_concat, List.foldl_append, List.foldl_cons, List.foldl_nil, Nat.zero_add,
-      Nat.one_mul, coord_add, coord_smul]
-  have hrd (c J : Nat) (hJ : J < s.width) (pr : EF → F) (hpr : ∀ a, pr a = coord c a) :
-      CompPoly.CPolynomial.NTTFast.Packed.Native.read (encode (ap.map pr)) J =
-        (coord c (ap.getD J 0)).val := by
-    rw [Words.read_encode _ _ (by rw [Array.size_map]; exact hsa) (by
-      rw [Array.size_map, hap]; exact hJ), Ext4Planes.getD_map _ _ _ (by rw [hap]; exact hJ), hpr,
-      Array.getD_eq_getD_getElem?, Array.getElem?_eq_getElem (by rw [hap]; exact hJ),
-      Option.getD_some]
+  let part (c J t : Nat) : F := ∑ i ∈ Finset.range J, x i t * W c i
+  have hpart (c J t : Nat) : part c (J + 1) t = part c J t + x J t * W c J := by
+    simp only [part, Finset.sum_range_succ]
   -- The four planes of the rows batched by the first `J` columns, in one array.
   let pl (J j : Nat) : F := if j < len then part 0 J j else if j < 2 * len then part 1 J (j - len)
     else if j < 3 * len then part 2 J (j - 2 * len) else part 3 J (j - 3 * len)
@@ -900,14 +899,12 @@ theorem compressRange_cols [Mont32BaseField p] [Binomial4 p] {pm : PMat} {s : Ma
     have := hQ J c r hc hr
     rwa [getD_ofFn_bounded _ _ (by interval_cases c <;> omega)] at this
   have hw0 (G : Nat) (hG : G < (s.width + 3) / 4) : 0 < s.width := by omega
-  -- A column's word times a zero power when the column is past the last.
-  have hterm (J c t : Nat) (A : Array F) (o : Nat) (hc : c < 4) (ht : t < len)
+  -- A column's word times a zero scalar when the column is past the last.
+  have hterm (J c t : Nat) (A : Array F) (o : Nat)
       (hA : s.width ≤ J ∨ A.getD (o + t) 0 = x J t) :
-      A.getD (o + t) 0 * coord c (ap.getD J 0) = x J t * coord c (ap.getD J 0) := by
+      A.getD (o + t) 0 * W c J = x J t * W c J := by
     rcases hA with hA | hA
-    · have hz : ap.getD J 0 = 0 := by
-        rw [Array.getD_eq_getD_getElem?, Array.getElem?_eq_none (by omega), Option.getD_none]
-      rw [hz, coord_zero, mul_zero, mul_zero]
+    · rw [hW c J hA, mul_zero, mul_zero]
     · rw [hA]
   have hcol (J : Nat) (hJ : 0 < s.width) : ∃ A, (pm.colAt (min J (s.width - 1)) r0).1 =
       encode A ∧ (pm.colAt (min J (s.width - 1)) r0).2 + len ≤ A.size ∧
@@ -920,15 +917,6 @@ theorem compressRange_cols [Mont32BaseField p] [Binomial4 p] {pm : PMat} {s : Ma
     · right
       rw [e4 t ht, show min J (s.width - 1) = J by omega]
     · left; omega
-  have hrd' (c J : Nat) (pr : EF → F) (hpr : ∀ a, pr a = coord c a) :
-      (if J < s.width then CompPoly.CPolynomial.NTTFast.Packed.Native.read (encode (ap.map pr)) J
-        else 0) = (coord c (ap.getD J 0)).val := by
-    by_cases hJw : J < s.width
-    · rw [Words.ite_of_pos hJw]
-      exact hrd c J hJw pr hpr
-    · rw [Words.ite_of_neg hJw, Array.getD_eq_getD_getElem?,
-        Array.getElem?_eq_none (by omega), Option.getD_none, coord_zero]
-      rfl
   have hstep (G : Nat) (hG : G < (s.width + 3) / 4) :
       Words.mulAdd4x4Into p (encode (Q (4 * G))) (pm.colAt (min (4 * G) (s.width - 1)) r0).1
         (pm.colAt (min (4 * G + 1) (s.width - 1)) r0).1
@@ -938,14 +926,10 @@ theorem compressRange_cols [Mont32BaseField p] [Binomial4 p] {pm : PMat} {s : Ma
         (pm.colAt (min (4 * G + 1) (s.width - 1)) r0).2
         (pm.colAt (min (4 * G + 2) (s.width - 1)) r0).2
         (pm.colAt (min (4 * G + 3) (s.width - 1)) r0).2
-        (coord 0 (ap.getD (4 * G) 0)).val (coord 0 (ap.getD (4 * G + 1) 0)).val
-        (coord 0 (ap.getD (4 * G + 2) 0)).val (coord 0 (ap.getD (4 * G + 3) 0)).val
-        (coord 1 (ap.getD (4 * G) 0)).val (coord 1 (ap.getD (4 * G + 1) 0)).val
-        (coord 1 (ap.getD (4 * G + 2) 0)).val (coord 1 (ap.getD (4 * G + 3) 0)).val
-        (coord 2 (ap.getD (4 * G) 0)).val (coord 2 (ap.getD (4 * G + 1) 0)).val
-        (coord 2 (ap.getD (4 * G + 2) 0)).val (coord 2 (ap.getD (4 * G + 3) 0)).val
-        (coord 3 (ap.getD (4 * G) 0)).val (coord 3 (ap.getD (4 * G + 1) 0)).val
-        (coord 3 (ap.getD (4 * G + 2) 0)).val (coord 3 (ap.getD (4 * G + 3) 0)).val len =
+        (a 0 (4 * G)) (a 0 (4 * G + 1)) (a 0 (4 * G + 2)) (a 0 (4 * G + 3))
+        (a 1 (4 * G)) (a 1 (4 * G + 1)) (a 1 (4 * G + 2)) (a 1 (4 * G + 3))
+        (a 2 (4 * G)) (a 2 (4 * G + 1)) (a 2 (4 * G + 2)) (a 2 (4 * G + 3))
+        (a 3 (4 * G)) (a 3 (4 * G + 1)) (a 3 (4 * G + 2)) (a 3 (4 * G + 3)) len =
       encode (Q (4 * G + 4)) := by
     have hw := hw0 G hG
     obtain ⟨A0, e10, e20, e30, e40⟩ := hcol (4 * G) hw
@@ -953,19 +937,16 @@ theorem compressRange_cols [Mont32BaseField p] [Binomial4 p] {pm : PMat} {s : Ma
     obtain ⟨A2, e12, e22, e32, e42⟩ := hcol (4 * G + 2) hw
     obtain ⟨A3, e13, e23, e33, e43⟩ := hcol (4 * G + 3) hw
     rw [e10, e11, e12, e13]
+    simp only [ha 0 (by decide), ha 1 (by decide), ha 2 (by decide), ha 3 (by decide)]
     have hf (c : Nat) (hc : c < 4) (r : Nat) (hr : r < len) : pl (4 * G + 4) (c * len + r) =
         (Q (4 * G)).getD (c * len + r) 0 +
-          (A0.getD ((pm.colAt (min (4 * G) (s.width - 1)) r0).2 + r) 0 *
-            coord c (ap.getD (4 * G) 0) +
-          A1.getD ((pm.colAt (min (4 * G + 1) (s.width - 1)) r0).2 + r) 0 *
-            coord c (ap.getD (4 * G + 1) 0) +
-          A2.getD ((pm.colAt (min (4 * G + 2) (s.width - 1)) r0).2 + r) 0 *
-            coord c (ap.getD (4 * G + 2) 0) +
-          A3.getD ((pm.colAt (min (4 * G + 3) (s.width - 1)) r0).2 + r) 0 *
-            coord c (ap.getD (4 * G + 3) 0)) := by
-      rw [hpl _ c r hc hr, hQ _ c r hc hr, hterm _ c r A0 _ hc hr (e40 r hr),
-        hterm _ c r A1 _ hc hr (e41 r hr), hterm _ c r A2 _ hc hr (e42 r hr),
-        hterm _ c r A3 _ hc hr (e43 r hr), show 4 * G + 4 = 4 * G + 1 + 1 + 1 + 1 by omega,
+          (A0.getD ((pm.colAt (min (4 * G) (s.width - 1)) r0).2 + r) 0 * W c (4 * G) +
+          A1.getD ((pm.colAt (min (4 * G + 1) (s.width - 1)) r0).2 + r) 0 * W c (4 * G + 1) +
+          A2.getD ((pm.colAt (min (4 * G + 2) (s.width - 1)) r0).2 + r) 0 * W c (4 * G + 2) +
+          A3.getD ((pm.colAt (min (4 * G + 3) (s.width - 1)) r0).2 + r) 0 * W c (4 * G + 3)) := by
+      rw [hpl _ c r hc hr, hQ _ c r hc hr, hterm _ c r A0 _ (e40 r hr),
+        hterm _ c r A1 _ (e41 r hr), hterm _ c r A2 _ (e42 r hr),
+        hterm _ c r A3 _ (e43 r hr), show 4 * G + 4 = 4 * G + 1 + 1 + 1 + 1 by omega,
         hpart, hpart, hpart, hpart]
       ring
     exact Words.mulAdd4x4Into_encode (Q (4 * G)) A0 A1 A2 A3 _ _ _ _ len _ _ _ _ _ _ _ _ _ _ _ _
@@ -983,14 +964,10 @@ theorem compressRange_cols [Mont32BaseField p] [Binomial4 p] {pm : PMat} {s : Ma
         (pm.colAt (min (4 * g + 1) (s.width - 1)) r0).2
         (pm.colAt (min (4 * g + 2) (s.width - 1)) r0).2
         (pm.colAt (min (4 * g + 3) (s.width - 1)) r0).2
-        (coord 0 (ap.getD (4 * g) 0)).val (coord 0 (ap.getD (4 * g + 1) 0)).val
-        (coord 0 (ap.getD (4 * g + 2) 0)).val (coord 0 (ap.getD (4 * g + 3) 0)).val
-        (coord 1 (ap.getD (4 * g) 0)).val (coord 1 (ap.getD (4 * g + 1) 0)).val
-        (coord 1 (ap.getD (4 * g + 2) 0)).val (coord 1 (ap.getD (4 * g + 3) 0)).val
-        (coord 2 (ap.getD (4 * g) 0)).val (coord 2 (ap.getD (4 * g + 1) 0)).val
-        (coord 2 (ap.getD (4 * g + 2) 0)).val (coord 2 (ap.getD (4 * g + 3) 0)).val
-        (coord 3 (ap.getD (4 * g) 0)).val (coord 3 (ap.getD (4 * g + 1) 0)).val
-        (coord 3 (ap.getD (4 * g + 2) 0)).val (coord 3 (ap.getD (4 * g + 3) 0)).val len)
+        (a 0 (4 * g)) (a 0 (4 * g + 1)) (a 0 (4 * g + 2)) (a 0 (4 * g + 3))
+        (a 1 (4 * g)) (a 1 (4 * g + 1)) (a 1 (4 * g + 2)) (a 1 (4 * g + 3))
+        (a 2 (4 * g)) (a 2 (4 * g + 1)) (a 2 (4 * g + 2)) (a 2 (4 * g + 3))
+        (a 3 (4 * g)) (a 3 (4 * g + 1)) (a 3 (4 * g + 2)) (a 3 (4 * g + 3)) len)
       (CompPoly.CPolynomial.NTTFast.Packed.Native.zeroWords (4 * len)) = encode (Q (4 * G)) := by
     intro G hG
     induction G with
@@ -999,13 +976,11 @@ theorem compressRange_cols [Mont32BaseField p] [Binomial4 p] {pm : PMat} {s : Ma
       refine congrArg encode (Array.ext (by rw [Array.size_replicate, Array.size_ofFn])
         fun j h1 _ ↦ ?_)
       rw [Array.getElem_replicate, Array.getElem_ofFn]
-      simp only [pl, part, Nat.mul_zero, List.range'_zero, List.foldl_nil, coord_zero]
+      simp only [pl, part, Nat.mul_zero, Finset.range_zero, Finset.sum_empty]
       split_ifs <;> rfl
     | succ G ih =>
       rw [List.range_succ, List.foldl_append, ih (by omega), List.foldl_cons, List.foldl_nil,
         hstep G (by omega), show 4 * (G + 1) = 4 * G + 4 by omega]
-  simp only [hrd' 0 _ (·.c0) fun _ ↦ rfl, hrd' 1 _ (·.c1) fun _ ↦ rfl,
-    hrd' 2 _ (·.c2) fun _ ↦ rfl, hrd' 3 _ (·.c3) fun _ ↦ rfl]
   rw [key _ le_rfl]
   -- Columns past the last add nothing.
   have hfull (c t : Nat) : ∀ J, part c (s.width + J) t = part c s.width t := by
@@ -1013,44 +988,95 @@ theorem compressRange_cols [Mont32BaseField p] [Binomial4 p] {pm : PMat} {s : Ma
     induction J with
     | zero => rfl
     | succ J ih =>
-      have hz : ap.getD (s.width + J) 0 = 0 := by
-        rw [Array.getD_eq_getD_getElem?, Array.getElem?_eq_none (by omega), Option.getD_none]
-      rw [← Nat.add_assoc, hpart, ih, hz, coord_zero, mul_zero, add_zero]
-  have hplane (c : Nat) (hc : c < 4) :
-      (encode (Q (4 * ((s.width + 3) / 4)))).extract (4 * (c * len)) (4 * (c * len + len)) =
-        encode (Array.ofFn (n := len) fun t ↦
-          coord c (crow s.values ap s.width (r0 + t.val))) := by
-    rw [extract_encode]
-    have hsz : ((Q (4 * ((s.width + 3) / 4))).extract (c * len) (c * len + len)).size =
-        (Array.ofFn (n := len) fun t ↦ coord c (crow s.values ap s.width (r0 + t.val))).size := by
-      rw [Array.size_extract, Array.size_ofFn, Array.size_ofFn]
-      interval_cases c <;> omega
-    refine congrArg encode (Array.ext hsz fun t h1 h2 ↦ ?_)
-    rw [Array.size_ofFn] at h2
-    rw [Array.getElem_eq_getD 0, extract_getD _ _ _ _ h2, hQ _ c t hc h2, Array.getElem_ofFn,
-      show 4 * ((s.width + 3) / 4) = s.width + (4 * ((s.width + 3) / 4) - s.width) by omega,
-      hfull]
-    rfl
-  refine Array.ext (by rfl) fun c hc _ ↦ ?_
-  change c < 4 at hc
-  simp only [Array.getElem_ofFn]
-  interval_cases c
-  · have e := hplane 0 (by decide)
-    simp only [Nat.zero_mul, Nat.zero_add] at e
-    rw [← e]
-    rfl
-  · have e := hplane 1 (by decide)
-    rw [Nat.one_mul, show len + len = 2 * len by omega] at e
-    rw [← e]
-    rfl
-  · have e := hplane 2 (by decide)
-    rw [show 2 * len + len = 3 * len by omega] at e
-    rw [← e]
-    rfl
-  · have e := hplane 3 (by decide)
-    rw [show 3 * len + len = 4 * len by omega] at e
-    rw [← e]
-    rfl
+      rw [← Nat.add_assoc, hpart, ih, hW c _ (by omega), mul_zero, add_zero]
+  rw [show 4 * ((c + 1) * len) = 4 * (c * len + len) by ring, extract_encode]
+  have hsz : ((Q (4 * ((s.width + 3) / 4))).extract (c * len) (c * len + len)).size =
+      (Array.ofFn (n := len) fun t ↦ ∑ J ∈ Finset.range s.width,
+        s.values.getD ((r0 + t.val) * s.width + J) 0 * W c J).size := by
+    rw [Array.size_extract, Array.size_ofFn, Array.size_ofFn]
+    interval_cases c <;> omega
+  refine congrArg encode (Array.ext hsz fun t h1 h2 ↦ ?_)
+  rw [Array.size_ofFn] at h2
+  rw [Array.getElem_eq_getD 0, extract_getD _ _ _ _ h2, hQ _ c t hc h2, Array.getElem_ofFn,
+    show 4 * ((s.width + 3) / 4) = s.width + (4 * ((s.width + 3) / 4) - s.width) by omega,
+    hfull]
+
+/-- Chunks of four, the last one short, are all the elements. -/
+theorem flatMap_chunks {α : Type} (n : Nat) (f : Nat → α) (g : Nat → Nat → α)
+    (hg : ∀ q c, c < 4 → 4 * q + c < n → g q c = f (4 * q + c)) : ∀ Q,
+    (Array.range Q).flatMap (fun q ↦ (Array.range (min 4 (n - 4 * q))).map (g q)) =
+      Array.ofFn (n := min n (4 * Q)) fun i ↦ f i.val
+  | 0 => by
+    rw [Array.eq_empty_of_size_eq_zero (Array.size_range (n := 0)), Array.flatMap_empty]
+    exact Array.ext (by simp) fun i h1 _ ↦ absurd h1 (by simp)
+  | Q + 1 => by
+    rw [Array.range_succ, Array.flatMap_append, flatMap_chunks n f g hg Q]
+    have e : (#[Q] : Array Nat).flatMap (fun q ↦ (Array.range (min 4 (n - 4 * q))).map (g q)) =
+        (Array.range (min 4 (n - 4 * Q))).map (g Q) := by
+      apply Array.toList_inj.mp; simp
+    rw [e]
+    have hs : (Array.ofFn (n := min n (4 * Q)) fun i ↦ f i.val).size = min n (4 * Q) :=
+      Array.size_ofFn
+    refine Array.ext (by simp only [Array.size_append, Array.size_ofFn, Array.size_map,
+      Array.size_range]; omega) fun i h1 h2 ↦ ?_
+    simp only [Array.size_append, Array.size_ofFn, Array.size_map, Array.size_range] at h1
+    rw [Array.getElem_append, Array.getElem_ofFn]
+    split
+    · rename_i h; rw [Array.getElem_ofFn]
+    · rename_i h
+      rw [hs] at h
+      rw [Array.getElem_map, Array.getElem_range, hs, hg _ _ (by omega) (by omega)]
+      dsimp only
+      congr 1
+      omega
+
+/-- The fast batching of a range of rows within one block of a packed matrix by the powers `ap`
+of `α`, coordinate by coordinate. -/
+theorem compressRange_cols [Mont32BaseField p] [Mont32.AlgebraId EF] {pm : PMat} {s : Mat F}
+    (h : RM pm s) (ap : Array EF) (hap : ap.size = s.width) (r0 len : Nat) (hlen : 0 < len)
+    (hblk : r0 % pm.rows + len ≤ pm.rows) (hr : r0 + len ≤ s.height)
+    (hsa : 4 * ap.size < USize.size) (hl : 16 * len < USize.size) :
+    compressRange p pm (ExtPlanes.ofArray ap).c.toArray r0 len =
+      Array.ofFn (n := FastExt.d p EF) fun c ↦ encode (Array.ofFn (n := len) fun t ↦
+        coord c.val (crow s.values ap s.width (r0 + t.val))) := by
+  unfold compressRange
+  have hsz : (ExtPlanes.ofArray ap).c.toArray.size = FastExt.d p EF := by simp
+  rw [hsz]
+  rw [flatMap_chunks _ (fun c ↦ encode (Array.ofFn (n := len) fun t ↦
+      coord c (crow s.values ap s.width (r0 + t.val)))) _ (fun q c hc4 hc ↦ ?_)]
+  · exact ofFn_len (fun c ↦ encode (Array.ofFn (n := len) fun t ↦
+      coord c (crow s.values ap s.width (r0 + t.val)))) (by omega)
+  -- the plane `4 q + c` batched by its coordinates of the powers
+  have hcol := compress4_cols h (fun c J ↦ coord (4 * q + c) (ap.getD J 0)) (fun c J hJ ↦ by
+      rw [Array.getD_eq_getD_getElem?, Array.getElem?_eq_none (by omega), Option.getD_none,
+        coord_zero])
+    (fun c j ↦ if 4 * q + c < FastExt.d p EF ∧ j < pm.width then
+      CompPoly.CPolynomial.NTTFast.Packed.Native.read
+        ((ExtPlanes.ofArray ap).c.toArray.getD (4 * q + c) .empty) j else 0)
+    (fun c _ J ↦ by
+      split
+      · rename_i hj
+        rw [Array.getD_eq_getD_getElem?, Array.getElem?_eq_getElem (by simp; exact hj.1),
+          Option.getD_some, Vector.getElem_toArray]
+        simp only [ExtPlanes.ofArray, Vector.getElem_ofFn,
+          CompPoly.CPolynomial.NTTFast.Packed.Native.encodeFields_eq]
+        rw [h.width] at hj
+        rw [Words.read_encode _ _ (by rw [Array.size_map]; exact hsa)
+            (by rw [Array.size_map, hap]; exact hj.2),
+          ExtPlanes.getD_map _ _ _ (by rw [hap]; exact hj.2), coord, dite_eq_left hj.1,
+          Array.getD_eq_getD_getElem?, Array.getElem?_eq_getElem (by rw [hap]; exact hj.2),
+          Option.getD_some]
+      · rename_i hj
+        rw [h.width] at hj
+        by_cases h1 : 4 * q + c < FastExt.d p EF
+        · rw [Array.getD_eq_getD_getElem?, Array.getElem?_eq_none (by
+            rw [hap]; exact Nat.le_of_not_lt fun h2 ↦ hj ⟨h1, h2⟩), Option.getD_none, coord_zero]
+          rfl
+        · rw [coord, dite_eq_right h1]; rfl)
+    r0 len hlen hblk hr hl c hc4
+  rw [hcol]
+  refine congrArg encode (congrArg Array.ofFn (funext fun t ↦ ?_))
+  rw [crow, coord_foldl_smul, coord_zero, zero_add]
 
 /-- A loop in `Id` whose every step yields simulates a fold. -/
 theorem forIn_sim {α β γ : Type} (Inv : β → γ → Prop) (σ : α → γ → γ)
@@ -1071,63 +1097,40 @@ theorem foldl_pointwise {α : Type} (g : Nat → EF → α → EF) :
   | a :: l, S, t => by
     rw [List.foldl_cons, List.foldl_cons, foldl_pointwise g l _ t]
 
-theorem mul_comm' [Binomial4 p] (a b : EF) : a * b = b * a :=
-  Ext4.toSpec_injective (by rw [Ext4.toSpec_mul, Ext4.toSpec_mul, mul_comm])
-
-theorem mul_assoc' [Binomial4 p] (a b c : EF) : a * b * c = a * (b * c) :=
-  Ext4.toSpec_injective (by
-    rw [Ext4.toSpec_mul, Ext4.toSpec_mul, Ext4.toSpec_mul, Ext4.toSpec_mul, mul_assoc])
-
 /-- The state of `reduceRange`: the running sums and the cached inverses. -/
-def RInv [Mont32BaseField p] [Binomial4 p] (xr : ByteArray) (len : Nat) (s : Ext4Planes p × List
-    (EF × Ext4Planes p)) (S : Nat → EF) : Prop :=
-  Ext4Planes.Rel s.1 (Array.ofFn (n := len) fun t ↦ S t.val) ∧ ∀ pr ∈ s.2, pr.2 =
-      invDenoms pr.1 xr len
+def RInv [Mont32BaseField p] [Mont32.AlgebraId EF] (xr : ByteArray) (len : Nat)
+    (s : ExtPlanes p EF × List (EF × ExtPlanes p EF)) (S : Nat → EF) : Prop :=
+  ExtPlanes.Rel s.1 (Array.ofFn (n := len) fun t ↦ S t.val) ∧ ∀ pr ∈ s.2, pr.2 =
+      ExtPlanes.invDenoms pr.1 xr len
 
 /-- One term of `reduceRange` on planes. -/
-theorem term_rel [Mont32BaseField p] [Binomial4 p] {len : Nat}
-    {acc comp : Ext4Planes p} {S C : Nat → EF}
-    (X : Array F)
+theorem term_rel [Mont32BaseField p] [Mont32.AlgebraId EF] {len : Nat}
+    {acc comp : ExtPlanes p EF} {S C : Nat → EF} (X : Array F)
     (hX : X.size = len) (hl : 4 * len < USize.size)
-    (hacc : Ext4Planes.Rel acc (Array.ofFn (n := len) fun t ↦ S t.val))
-    (hcomp : Ext4Planes.Rel comp (Array.ofFn (n := len) fun t ↦ C t.val)) {z : EF} (hz :
-        Ext.OutsideBase z)
-    (yz offset : EF) :
-    Ext4Planes.Rel (acc.add (((Ext4Planes.rsub yz comp).mul (invDenoms z (encode X)
-        len)).smul offset))
+    (hacc : ExtPlanes.Rel acc (Array.ofFn (n := len) fun t ↦ S t.val))
+    (hcomp : ExtPlanes.Rel comp (Array.ofFn (n := len) fun t ↦ C t.val)) {z : EF}
+    (hz : Ext.OutsideBase z) (yz offset : EF) :
+    ExtPlanes.Rel (acc.add (((ExtPlanes.rsub yz comp).mul
+        (ExtPlanes.invDenoms z (encode X) len)).smul offset))
       (Array.ofFn (n := len) fun t ↦ termStep (C t.val) (X.getD t.val 0) (S t.val)
         (z, yz, offset)) := by
-  have hinv := Ext4Planes.invDenoms_rel ((Mont32.outsideBase_ext4 _).mp hz) X (by omega)
-  rw [hX] at hinv
-  have hsz : (Array.ofFn (n := len) fun t ↦ C t.val).size = len := Array.size_ofFn
-  have h1 := Ext4Planes.rsub_rel yz hcomp (by rw [hsz]; exact hl)
-  have h2 := Ext4Planes.mul_rel h1 hinv (by rw [h1.1, hinv.1, Array.size_map, hsz, Array.size_map,
-      hX])
-    (by rw [Array.size_map, hsz]; exact hl)
-  have h3 := Ext4Planes.smul_rel offset h2 (by
-    rw [Array.size_zipWith, Array.size_map, hsz, Array.size_map, hX, Nat.min_self]; exact hl)
-  have h4 := Ext4Planes.add_rel hacc h3 (by
-    rw [hacc.1, h3.1, Array.size_ofFn, Array.size_map, Array.size_zipWith, Array.size_map, hsz,
-      Array.size_map, hX, Nat.min_self]) (by rw [Array.size_ofFn]; exact hl)
-  convert h4 using 1
-  refine Array.ext (by
-    rw [Array.size_ofFn, Array.size_zipWith, Array.size_ofFn, Array.size_map, Array.size_zipWith,
-      Array.size_map, hsz, Array.size_map, hX, Nat.min_self, Nat.min_self]) fun t h1 _ ↦ ?_
-  rw [Array.size_ofFn] at h1
-  simp only [Array.getElem_ofFn, Array.getElem_zipWith, Array.getElem_map, termStep, Ext.ofBase,
-    Mont32.ofBase_ext4]
-  rw [Array.getD_eq_getD_getElem?, Array.getElem?_eq_getElem (by omega), Option.getD_some,
-    mul_assoc', mul_comm' offset, mul_assoc']
+  have hX' : X = tab len fun t ↦ X.getD t 0 :=
+    Array.ext (by rw [size_tab, hX]) fun t h1 _ ↦ by rw [getElem_tab]; exact (getD_lt X t h1).symm
+  have hinv := ExtPlanes.invDenoms_rel hl (Mont32.ne_ofBase hz) (fun t ↦ X.getD t 0)
+  rw [← hX'] at hinv
+  have h4 := ExtPlanes.add_rel hl hacc (ExtPlanes.smul_rel hl offset
+    (ExtPlanes.mul_rel hl (ExtPlanes.rsub_rel hl yz hcomp) hinv))
+  show ExtPlanes.Rel _ (tab len fun t ↦ termStep (C t) (X.getD t 0) (S t) (z, yz, offset))
+  refine h4.congr_tab fun t _ ↦ ?_
+  simp only [termStep, Ext.ofBase, Mont32.ofBase_eq]
+  rw [FastExt.mul_assoc offset, FastExt.mul_comm offset]
 
 /-- The rows of a range of a group's matrix batched by the powers of `α`, as planes. -/
-theorem comp_rel [Mont32BaseField p] [Binomial4 p] (alpha : EF) (logH : Nat) (it : GItem p)
-    (hit : Good alpha logH it) (r0 len : Nat) (hlen : 0 < len)
+theorem comp_rel [Mont32BaseField p] [Mont32.AlgebraId EF] (alpha : EF) (logH : Nat)
+    (it : GItem p EF) (hit : Good alpha logH it) (r0 len : Nat) (hlen : 0 < len)
     (hblk : r0 % it.1.rows + len ≤ it.1.rows) (hr : r0 + len ≤ 2 ^ logH) :
-    Ext4Planes.Rel ⟨len, (compressRange p it.1 it.2.1.c0 it.2.1.c1 it.2.1.c2 it.2.1.c3 r0 len).getD
-        0 .empty,
-      (compressRange p it.1 it.2.1.c0 it.2.1.c1 it.2.1.c2 it.2.1.c3 r0 len).getD 1 .empty,
-      (compressRange p it.1 it.2.1.c0 it.2.1.c1 it.2.1.c2 it.2.1.c3 r0 len).getD 2 .empty,
-      (compressRange p it.1 it.2.1.c0 it.2.1.c1 it.2.1.c2 it.2.1.c3 r0 len).getD 3 .empty⟩
+    ExtPlanes.Rel ⟨len, Vector.ofFn fun k ↦
+        (compressRange p it.1 it.2.1.c.toArray r0 len).getD k .empty⟩
       (Array.ofFn (n := len) fun t ↦
         crow (it.1.vals p) (powers alpha it.1.width) it.1.width (r0 + t.val)) := by
   obtain ⟨m, a, ts⟩ := it
@@ -1143,21 +1146,15 @@ theorem comp_rel [Mont32BaseField p] [Binomial4 p] (alpha : EF) (logH : Nat) (it
     omega
   have hc := compressRange_cols hm ap hap r0 len hlen hblk (by omega)
     (by rw [hap]; exact hw4) (by have := Nat.pow_le_pow_left hr 1; omega)
-  simp only [Ext4Planes.ofArray, CompPoly.CPolynomial.NTTFast.Packed.Native.encodeFields_eq, hc]
-  rw [vals_rel hm, hm.width]
-  have hg (c : Nat) (hc4 : c < 4) :
-      (Array.ofFn (n := 4) fun c ↦ encode
-          (Array.ofFn (n := len) fun t ↦ coord c.val
-              (crow s.values ap s.width (r0 + t.val)))).getD c .empty =
-      encode (Array.ofFn (n := len) fun t ↦ coord c
-        (crow s.values ap s.width (r0 + t.val))) :=
-    getD_ofFn_bounded _ _ hc4 _
-  rw [hg 0 (by decide), hg 1 (by decide), hg 2 (by decide), hg 3 (by decide)]
-  exact Ext4Planes.rel_ofFn _ Array.size_ofFn _ _ _ _ fun t ↦ by rw [Array.getElem_ofFn]; rfl
+  rw [hc, vals_rel hm, hm.width]
+  show ExtPlanes.Rel _ (tab len fun t ↦ crow s.values ap s.width (r0 + t))
+  refine ExtPlanes.rel_mk _ _ fun k ↦ ?_
+  rw [ExtPlanes.getElem_ofFn_fin, getD_ofFn_bounded _ _ k.isLt]
+  refine congrArg encode (congrArg Array.ofFn (funext fun t ↦ ?_))
+  exact coord_fin _ k
 
-theorem lookup_mem {k : EF} {v : Ext4Planes p} : ∀ {l : List (EF × Ext4Planes p)}, l.lookup k = some
-    v →
-    (k, v) ∈ l
+theorem lookup_mem {k : EF} {v : ExtPlanes p EF} :
+    ∀ {l : List (EF × ExtPlanes p EF)}, l.lookup k = some v → (k, v) ∈ l
   | [], h => absurd h (by simp only [List.lookup, reduceCtorEq, not_false_eq_true])
   | (k', v') :: l, h => by
     by_cases hk : k = k'
@@ -1169,12 +1166,12 @@ theorem lookup_mem {k : EF} {v : Ext4Planes p} : ∀ {l : List (EF × Ext4Planes
       exact List.mem_cons_of_mem _ (lookup_mem h)
 
 /-- A range of rows of a group's batched quotient, on planes. -/
-theorem reduceRange_rel [Mont32BaseField p] [Binomial4 p] (alpha : EF)
-    (logH : Nat) (g : Array (GItem p))
+theorem reduceRange_rel [Mont32BaseField p] [Mont32.AlgebraId EF] (alpha : EF)
+    (logH : Nat) (g : Array (GItem p EF))
     (hg : ∀ it ∈ g, Good alpha logH it) (h4 : 4 * 2 ^ logH < USize.size) (r0 len : Nat)
     (hlen : 0 < len) (hblk : ∀ it ∈ g, r0 % it.1.rows + len ≤ it.1.rows)
     (hr : r0 + len ≤ 2 ^ logH) :
-    Ext4Planes.Rel (reduceRange g (encode (cosetPointsBitRev (gen : F) logH)) r0 len)
+    ExtPlanes.Rel (reduceRange g (encode (cosetPointsBitRev (gen : F) logH)) r0 len)
       (Array.ofFn (n := len) fun t ↦ gval alpha logH g (r0 + t.val)) := by
   have hXs := size_cosetPointsBitRev (gen : F) logH
   have hxr : slice (encode (cosetPointsBitRev (gen : F) logH)) r0 len =
@@ -1189,14 +1186,14 @@ theorem reduceRange_rel [Mont32BaseField p] [Binomial4 p] (alpha : EF)
       Array.getD_eq_getD_getElem?]
   have hl : 4 * len < USize.size := by omega
   -- One term at row `r` of the range, for the matrix `it`.
-  let σ' (it : GItem p) (S : Nat → EF) (tm : EF × EF × EF) : Nat → EF := fun r ↦
+  let σ' (it : GItem p EF) (S : Nat → EF) (tm : EF × EF × EF) : Nat → EF := fun r ↦
     termStep (crow (it.1.vals p) (powers alpha it.1.width) it.1.width (r0 + r))
       (Xr.getD r 0) (S r) tm
-  let σ (it : GItem p) (S : Nat → EF) : Nat → EF := it.2.2.foldl (σ' it) S
+  let σ (it : GItem p EF) (S : Nat → EF) : Nat → EF := it.2.2.foldl (σ' it) S
   suffices H : ∀ f, (∀ a ∈ g.toList, ∀ b c, RInv (encode Xr) len b c →
       ∃ b', f a b = pure (.yield b') ∧ RInv (encode Xr) len b' (σ a c)) →
-      Ext4Planes.Rel ((forIn g.toList (Ext4Planes.zeros len, []) f) >>= fun s ↦ pure s.1 : Id
-          (Ext4Planes p))
+      ExtPlanes.Rel ((forIn g.toList (ExtPlanes.zeros len, []) f) >>= fun s ↦ pure s.1 : Id
+          (ExtPlanes p EF))
         (Array.ofFn (n := len) fun t ↦ gval alpha logH g (r0 + t.val)) by
     simp only [reduceRange, Id.run, pure_bind]
     rw [hxr, ← Array.forIn_toList]
@@ -1208,7 +1205,7 @@ theorem reduceRange_rel [Mont32BaseField p] [Binomial4 p] (alpha : EF)
       fun tm htm b c hb ↦ by
         split
         · rename_i inv hinv
-          have e : inv = invDenoms tm.1 (encode Xr) len := hb.2 _ (lookup_mem hinv)
+          have e : inv = ExtPlanes.invDenoms tm.1 (encode Xr) len := hb.2 _ (lookup_mem hinv)
           subst e
           refine ⟨_, rfl, ?_, hb.2⟩
           exact term_rel (C := fun r ↦ crow (it.1.vals p) (powers alpha it.1.width)
@@ -1222,16 +1219,16 @@ theorem reduceRange_rel [Mont32BaseField p] [Binomial4 p] (alpha : EF)
           · rw [hp]
           · exact hb.2 pr hp
   intro f hf
-  have := forIn_sim (RInv (encode Xr) len) σ f g.toList (Ext4Planes.zeros len, []) (fun _ ↦ 0)
+  have := forIn_sim (RInv (encode Xr) len) σ f g.toList (ExtPlanes.zeros len, []) (fun _ ↦ 0)
     ⟨by
-      have := Ext4Planes.zeros_rel (p := p) len
+      have := ExtPlanes.zeros_rel (p := p) (E := EF) len
       convert this using 1
       exact Array.ext (by rw [Array.size_ofFn, Array.size_replicate]) fun i _ _ ↦ by
         rw [Array.getElem_ofFn, Array.getElem_replicate],
      fun pr hp ↦ absurd hp List.not_mem_nil⟩ hf
   convert this.1 using 1
   refine congrArg Array.ofFn (funext fun t ↦ ?_)
-  have key : ∀ (l : List (GItem p)) (S : Nat → EF), (l.foldl (fun c a ↦ σ a c) S) t.val = l.foldl
+  have key : ∀ (l : List (GItem p EF)) (S : Nat → EF), (l.foldl (fun c a ↦ σ a c) S) t.val = l.foldl
       (fun a it ↦ it.2.2.foldl (termStep
         (crow (it.1.vals p) (powers alpha it.1.width) it.1.width (r0 + t.val))
         ((cosetPointsBitRev (gen : F) logH).getD (r0 + t.val) 0)) a) (S t.val) := by
@@ -1271,24 +1268,24 @@ theorem gcd_fold_pos {α : Type} (f : α → Nat) :
 
 /-- A group's planes, by parallel ranges within one block of every matrix, hold its batched
 quotient. -/
-theorem groupPlanes_rel [Mont32BaseField p] [Binomial4 p] (alpha : EF)
-    (G : Nat × Nat × Array (GItem p))
+theorem groupPlanes_rel [Mont32BaseField p] [Mont32.AlgebraId EF] (alpha : EF)
+    (G : Nat × Nat × Array (GItem p EF))
     (h4 : 4 * 2 ^ G.1 < USize.size)
     (hg : ∀ it ∈ G.2.2, Good alpha G.1 it) :
-    Ext4Planes.Rel (groupPlanes G).2 (Array.ofFn (n := 2 ^ G.1) fun r ↦ gval alpha G.1 G.2.2
+    ExtPlanes.Rel (groupPlanes G).2 (Array.ofFn (n := 2 ^ G.1) fun r ↦ gval alpha G.1 G.2.2
         r.val) := by
   obtain ⟨logH, c, g⟩ := G
   simp only at h4 hg ⊢
   unfold groupPlanes
   dsimp only
   rw [CompPoly.CPolynomial.NTTFast.Packed.Native.encodeFields_eq]
-  have hfold : g.foldl (fun a (x : GItem p) ↦ match x with | (m, _) => Nat.gcd a m.rows)
+  have hfold : g.foldl (fun a (x : GItem p EF) ↦ match x with | (m, _) => Nat.gcd a m.rows)
       (if 2 ^ logH < 4096 then 2 ^ logH else 2 ^ logH / 16) =
-      g.toList.foldl (fun a (x : GItem p) ↦ Nat.gcd a x.1.rows)
+      g.toList.foldl (fun a (x : GItem p EF) ↦ Nat.gcd a x.1.rows)
         (if 2 ^ logH < 4096 then 2 ^ logH else 2 ^ logH / 16) := by
     rw [← Array.foldl_toList]
   rw [hfold]
-  have hDd : g.toList.foldl (fun a (x : GItem p) ↦ Nat.gcd a x.1.rows)
+  have hDd : g.toList.foldl (fun a (x : GItem p EF) ↦ Nat.gcd a x.1.rows)
       (if 2 ^ logH < 4096 then 2 ^ logH else 2 ^ logH / 16) ∣ 2 ^ logH :=
     (gcd_fold_dvd_init _ _ _).trans (by
       split
@@ -1303,19 +1300,19 @@ theorem groupPlanes_rel [Mont32BaseField p] [Binomial4 p] (alpha : EF)
     split
     · exact Nat.two_pow_pos _
     · omega
-  have hD0 : 0 < g.toList.foldl (fun a (x : GItem p) ↦ Nat.gcd a x.1.rows)
+  have hD0 : 0 < g.toList.foldl (fun a (x : GItem p EF) ↦ Nat.gcd a x.1.rows)
       (if 2 ^ logH < 4096 then 2 ^ logH else 2 ^ logH / 16) :=
-    gcd_fold_pos (fun x : GItem p ↦ x.1.rows) g.toList _ hA0
-  have hDr : ∀ it ∈ g, g.toList.foldl (fun a (x : GItem p) ↦ Nat.gcd a x.1.rows)
+    gcd_fold_pos (fun x : GItem p EF ↦ x.1.rows) g.toList _ hA0
+  have hDr : ∀ it ∈ g, g.toList.foldl (fun a (x : GItem p EF) ↦ Nat.gcd a x.1.rows)
       (if 2 ^ logH < 4096 then 2 ^ logH else 2 ^ logH / 16) ∣ it.1.rows :=
-    fun it hit ↦ gcd_fold_dvd (fun x : GItem p ↦ x.1.rows) _ _ it (Array.mem_toList_iff.mpr hit)
-  generalize g.toList.foldl (fun a (x : GItem p) ↦ Nat.gcd a x.1.rows)
+    fun it hit ↦ gcd_fold_dvd (fun x : GItem p EF ↦ x.1.rows) _ _ it (Array.mem_toList_iff.mpr hit)
+  generalize g.toList.foldl (fun a (x : GItem p EF) ↦ Nat.gcd a x.1.rows)
     (if 2 ^ logH < 4096 then 2 ^ logH else 2 ^ logH / 16) = D at hDd hD0 hDr ⊢
   obtain ⟨hp, hpD, hranges⟩ := uniform_ranges hD0 hDd (Nat.two_pow_pos logH)
   generalize 2 ^ logH / D = parts at hp hpD hranges ⊢
   rw [← foldl_ranges (fun r ↦ gval alpha logH g r) (2 ^ logH) parts (2 ^ logH / parts) hp
     (ranges_cover _ _)]
-  refine Ext4Planes.join_rel _ parts _ _ (fun k hk ↦ ?_) (by
+  refine ExtPlanes.join_rel _ parts _ _ (fun k hk ↦ ?_) (by
     rw [foldl_ranges (fun r ↦ gval alpha logH g r) (2 ^ logH) parts (2 ^ logH / parts) hp
       (ranges_cover _ _), Array.size_ofFn])
   obtain ⟨hlen, hcov⟩ := hranges k hk
@@ -1326,18 +1323,19 @@ theorem groupPlanes_rel [Mont32BaseField p] [Binomial4 p] (alpha : EF)
     hcov
 
 /-- The fast reduction is the specification's. -/
-theorem reduce_rel [Mont32BaseField p] [Binomial4 p] (alpha : EF)
+theorem reduce_rel [Mont32BaseField p] [Mont32.AlgebraId EF] (alpha : EF)
     {items : List (PMat × List (EF × Array EF))}
     {sitems : List (Mat F × List (EF × Array EF))}
     (h : List.Forall₂ (fun x y ↦ RM x.1 y.1 ∧ x.2 = y.2) items sitems)
     (hok : ∀ x ∈ sitems, MatOk x.1 ∧ ∀ pr ∈ x.2, Ext.OutsideBase pr.1) :
-    List.Forall₂ (fun x y ↦ x.1 = y.1 ∧ Ext4Planes.Rel x.2 y.2) (reduce alpha items)
+    List.Forall₂ (fun x y ↦ x.1 = y.1 ∧ ExtPlanes.Rel x.2 y.2) (reduce alpha items)
       (Fri.reduce alpha sitems) := by
   rw [reduce_fast alpha items, reduce_eq, List.map_mergeSort
     (r := fun (a b : Nat × Nat × Array EF) ↦ decide (b.1 ≤ a.1))
     (s := fun (a b : Nat × Array EF) ↦ decide (b.1 ≤ a.1)) (f := fun x ↦ (x.1, x.2.2))
     (fun _ _ _ _ ↦ rfl)]
-  refine forall₂_mergeSort (fun (a : Nat × Ext4Planes p) ↦ a.1) (fun (b : Nat × Array EF) ↦ b.1) ?_
+  refine forall₂_mergeSort (fun (a : Nat × ExtPlanes p EF) ↦ a.1) (fun (b : Nat × Array EF) ↦ b.1)
+      ?_
     (fun _ _ hab ↦ hab.1)
   have hgr := foldl_groupStep_rel alpha h hok List.Forall₂.nil
   rw [List.forall₂_map_left_iff, List.forall₂_map_right_iff]

@@ -9,11 +9,12 @@ public import CompPoly.Fields.Montgomery.Native32Words
 
 /-! # Programs on blocks of packed words
 
-A program (`Prog`) runs on a block of `B` rows at once: the four accumulators and the registers
-are buffers of `B` packed Montgomery words (`Regs`), accumulator `j` the `j`-th and register `r`
-the `(4 + r)`-th, and every instruction is a pass over the block in place, sixteen words at a time.
-An operand on the trace's current row is read where it is: column `c` of the block's view at words
-`cb + c · cs` of its buffer. A constant operand is one word for every row.
+A program (`Prog`) runs on a block of `B` rows at once: the `na` accumulators, one per coordinate of
+the weights, and the registers are buffers of `B` packed Montgomery words (`Regs`), accumulator `j`
+the `j`-th and register `r` the `(na + r)`-th, and every instruction is a pass over the block in
+place, sixteen words at a time. An operand on the trace's current row is read where it is: column
+`c` of the block's view at words `cb + c · cs` of its buffer. A constant operand is one word for
+every row.
 -/
 
 @[expose] public section
@@ -294,8 +295,8 @@ structure Loads where
   last : ByteArray
   trans : ByteArray
 
-/-- A block's accumulators and registers, `S` bytes each: accumulator `j` the `j`-th, register `r`
-the `(4 + r)`-th. -/
+/-- A block's accumulators and registers, `S` bytes each: with `na` accumulators, accumulator `j`
+the `j`-th, register `r` the `(na + r)`-th. -/
 abbrev Regs (S : Nat) := Array {b : ByteArray // b.size = S}
 
 /-- Buffer `i` of the registers, empty beyond them. -/
@@ -317,15 +318,16 @@ theorem size_regBuf {S : Nat} (regs : Regs S) (i : Nat) : (regBuf regs i).size �
 
 variable {F : Type}
 
-/-- An operand read from buffer `t` of the registers, written in place: register `t - 4`. -/
-def Opd.isReg (t : Nat) : Opd F → Bool
-  | .reg r => 4 + r == t
+/-- An operand read from buffer `t` of the registers after `na` accumulators, written in place:
+register `t - na`. -/
+def Opd.isReg (na t : Nat) : Opd F → Bool
+  | .reg r => na + r == t
   | _ => false
 
 /-- The buffer an operand of an instruction writing buffer `d` of the registers reads from: another
 register's, or the view's; empty for buffer `d` itself, which is updated in place. -/
-def Opd.buf {S : Nat} (d : Nat) (regs : @& Regs S) (v : @& View) : Opd F → ByteArray
-  | .reg r => if 4 + r == d then .empty else regBuf regs (4 + r)
+def Opd.buf {S : Nat} (na d : Nat) (regs : @& Regs S) (v : @& View) : Opd F → ByteArray
+  | .reg r => if na + r == d then .empty else regBuf regs (na + r)
   | _ => v.buf
 
 /-- The operand's first word in its buffer: `0` for a register, `cb + c · cs` for a column. -/
@@ -334,8 +336,9 @@ def Opd.buf {S : Nat} (d : Nat) (regs : @& Regs S) (v : @& View) : Opd F → Byt
   | .cur c => v.cb + c * v.cs
   | .const _ => 0
 
-theorem size_opdBuf {S : Nat} (d : Nat) (regs : Regs S) (v : View) (a : Opd F)
-    (hS : S < USize.size) (hE : v.buf.size < USize.size) : (a.buf d regs v).size < USize.size := by
+theorem size_opdBuf {S : Nat} (na d : Nat) (regs : Regs S) (v : View) (a : Opd F)
+    (hS : S < USize.size) (hE : v.buf.size < USize.size) : (a.buf na d regs v).size < USize.size :=
+        by
   cases a with
   | reg r =>
     simp only [Opd.buf]
@@ -433,25 +436,27 @@ theorem size_constPass (o : Op) (ea : ByteArray) (S : Nat) (hS : S < USize.size)
     · exact size_passWord ..
   · exact size_passWord ..
 
-/-- An operation on two operands into register `d`'s buffer: the operands' buffers, offsets and
-whether they are `d` itself. -/
-def binPass (o : Op) (d : Nat) (a b : Opd (FastField p)) (ea eb : @& ByteArray) (S : Nat)
+/-- An operation on two operands into register `d`'s buffer, after `na` accumulators: the
+operands' buffers, offsets and whether they are `d` itself. -/
+def binPass (o : Op) (na d : Nat) (a b : Opd (FastField p)) (ea eb : @& ByteArray) (S : Nat)
     (hS : S < USize.size) (hEa : ea.size < USize.size) (hEb : eb.size < USize.size)
     (oa ob B : Nat) (regs : ByteArray) (hr : regs.size = S) : ByteArray :=
   match a, b with
   | .const x, .const y => fillWord S hS regs hr (Op.word p o x.val y.val) B
-  | a, .const y => constPass p o ea S hS hEa (a.isReg (4 + d)) oa y B regs hr
+  | a, .const y => constPass p o ea S hS hEa (a.isReg na (na + d)) oa y B regs hr
   | .const x, b =>
     match o with
-    | .sub => passWord (fun x c ↦ sub p c x) eb S hS hEb 0 (b.isReg (4 + d)) ob x.val B regs hr
-    | o => constPass p o eb S hS hEb (b.isReg (4 + d)) ob x B regs hr
+    | .sub =>
+      passWord (fun x c ↦ sub p c x) eb S hS hEb 0 (b.isReg na (na + d)) ob x.val B regs hr
+    | o => constPass p o eb S hS hEb (b.isReg na (na + d)) ob x B regs hr
   | a, b =>
-    passBin (Op.word p o) ea eb S hS hEa hEb 0 (a.isReg (4 + d)) oa (b.isReg (4 + d)) ob B regs hr
+    passBin (Op.word p o) ea eb S hS hEa hEb 0 (a.isReg na (na + d)) oa (b.isReg na (na + d)) ob
+      B regs hr
 
-theorem size_binPass (o : Op) (d : Nat) (a b : Opd (FastField p)) (ea eb : ByteArray) (S : Nat)
+theorem size_binPass (o : Op) (na d : Nat) (a b : Opd (FastField p)) (ea eb : ByteArray) (S : Nat)
     (hS : S < USize.size) (hEa : ea.size < USize.size) (hEb : eb.size < USize.size)
     (oa ob B : Nat) (regs : ByteArray) (hr : regs.size = S) :
-    (binPass p o d a b ea eb S hS hEa hEb oa ob B regs hr).size = S := by
+    (binPass p o na d a b ea eb S hS hEa hEb oa ob B regs hr).size = S := by
   unfold binPass
   split
   · exact size_fillWord ..
@@ -477,52 +482,54 @@ theorem size_accPass (a : Opd (FastField p)) (ea : ByteArray) (S : Nat) (hS : S 
   · exact size_passWord ..
   · exact size_passBin ..
 
-/-- One instruction on a block of `B` rows, the registers of `S` bytes each: the trace's columns in
-`v`, the loaded sources in `L`, the scalars and the weights' coordinates as words. -/
-def execBlock (v : @& View) (L : @& Loads) (scal wts : @& Array (FastField p)) (B S : Nat)
+/-- One instruction on a block of `B` rows with `na` accumulators, the registers of `S` bytes each:
+the trace's columns in `v`, the loaded sources in `L`, the scalars and the weights' `na`
+coordinates as words. -/
+def execBlock (na : Nat) (v : @& View) (L : @& Loads) (scal wts : @& Array (FastField p)) (B S :
+    Nat)
     (hS : S < USize.size) (hE : v.buf.size < USize.size) (regs : Regs S) :
     Instr (FastField p) → Regs S
   | .load d s =>
-    modReg regs (4 + d) (fun b h ↦ loadSrc S hS b h L B s) (fun _ _ ↦ size_loadSrc ..)
+    modReg regs (na + d) (fun b h ↦ loadSrc S hS b h L B s) (fun _ _ ↦ size_loadSrc ..)
   | .scalar d i =>
-    modReg regs (4 + d) (fun b h ↦ fillWord S hS b h (scal.getD i 0).val B)
+    modReg regs (na + d) (fun b h ↦ fillWord S hS b h (scal.getD i 0).val B)
       (fun _ _ ↦ size_fillWord ..)
   | .bin o d a b =>
-    let ea := a.buf (4 + d) regs v
-    let eb := b.buf (4 + d) regs v
-    modReg regs (4 + d) (fun r h ↦ binPass p o d a b ea eb S hS
-      (size_opdBuf (4 + d) regs v a hS hE) (size_opdBuf (4 + d) regs v b hS hE) (a.off v)
+    let ea := a.buf na (na + d) regs v
+    let eb := b.buf na (na + d) regs v
+    modReg regs (na + d) (fun r h ↦ binPass p o na d a b ea eb S hS
+      (size_opdBuf na (na + d) regs v a hS hE) (size_opdBuf na (na + d) regs v b hS hE) (a.off v)
       (b.off v) B r h) (fun _ _ ↦ size_binPass ..)
   | .acc a w =>
-    let ea := a.buf 0 regs v
-    let hEa := size_opdBuf 0 regs v a hS hE
-    let step (regs : Regs S) (j : Nat) : Regs S :=
-      modReg regs j (fun r h ↦ accPass p a ea S hS hEa (a.off v) (wts.getD (4 * w + j) 0).val B r h)
-        (fun _ _ ↦ size_accPass ..)
-    step (step (step (step regs 0) 1) 2) 3
+    let ea := a.buf na 0 regs v
+    let hEa := size_opdBuf na 0 regs v a hS hE
+    (List.range na).foldl (fun regs j ↦
+      modReg regs j
+        (fun r h ↦ accPass p a ea S hS hEa (a.off v) (wts.getD (na * w + j) 0).val B r h)
+        (fun _ _ ↦ size_accPass ..)) regs
 
-/-- A program's code on a block, the accumulators and registers in `regs`. -/
-def runBlock {S : Nat} (code : @& Array (Instr (FastField p))) (v : @& View) (L : @& Loads)
+/-- A program's code on a block, the `na` accumulators and the registers in `regs`. -/
+def runBlock {S : Nat} (na : Nat) (code : @& Array (Instr (FastField p))) (v : @& View) (L : @&
+    Loads)
     (scal wts : @& Array (FastField p)) (B : Nat) (hS : S < USize.size) (regs : Regs S) :
     Regs S :=
   if hE : v.buf.size < USize.size then
-    code.foldl (fun regs ins ↦ execBlock p v L scal wts B S hS hE regs ins) regs
+    code.foldl (fun regs ins ↦ execBlock p na v L scal wts B S hS hE regs ins) regs
   else regs
 
-/-- The accumulators cleared. -/
-def clearAcc {S : Nat} (hS : S < USize.size) (B : Nat) (regs : Regs S) : Regs S :=
-  let z (regs : Regs S) (j : Nat) : Regs S :=
-    modReg regs j (fun r h ↦ fillWord S hS r h 0 B) (fun _ _ ↦ size_fillWord ..)
-  z (z (z (z regs 0) 1) 2) 3
+/-- The `na` accumulators cleared. -/
+def clearAcc {S : Nat} (na : Nat) (hS : S < USize.size) (B : Nat) (regs : Regs S) : Regs S :=
+  (List.range na).foldl (fun regs j ↦
+    modReg regs j (fun r h ↦ fillWord S hS r h 0 B) (fun _ _ ↦ size_fillWord ..)) regs
 
 /-- `B` words of `b` from `o`. -/
 def wordsAt (b : @& ByteArray) (o B : Nat) : ByteArray := b.extract (4 * o) (4 * (o + B))
 
 /-- The outputs' words on a block after its run: a register's, a column's or a constant's. -/
-def outWords {S : Nat} (outs : @& Array (Opd (FastField p))) (v : @& View) (regs : @& Regs S)
-    (B : Nat) : Array ByteArray :=
+def outWords {S : Nat} (na : Nat) (outs : @& Array (Opd (FastField p))) (v : @& View)
+    (regs : @& Regs S) (B : Nat) : Array ByteArray :=
   outs.map fun o ↦ match o with
-    | .reg r => wordsAt (regBuf regs (4 + r)) 0 B
+    | .reg r => wordsAt (regBuf regs (na + r)) 0 B
     | .cur c => wordsAt v.buf (v.cb + c * v.cs) B
     | .const x => Montgomery.Native32.Words.replicateWord x.val B
 

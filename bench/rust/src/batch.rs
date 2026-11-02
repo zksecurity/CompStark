@@ -13,7 +13,7 @@ use p3_koala_bear::{default_koalabear_poseidon2_16, default_koalabear_poseidon2_
 use p3_matrix::dense::RowMajorMatrix;
 use p3_symmetric::CryptographicPermutation;
 
-use crate::stark::{
+use crate::stark::{Challenge, 
     config, square_trace, trace, wide_trace, Config, FibonacciAir, PeriodicAir, SquareAir, WideAir,
     WIDE,
 };
@@ -398,7 +398,7 @@ fn fib_l<F: PrimeField64>(log_n: usize, bus: &str, count: i64)
 }
 
 /// The batch proof of `name` on `config`, after Plonky3 verified it.
-fn prove_case<F, P16, P24>(config: &Config<F, P16, P24>, name: &str) -> String
+fn prove_case<F, P16, P24>(config: &Config<F, Challenge<F>, P16, P24>, name: &str) -> String
 where
     F: TwoAdicField + PrimeField64 + BinomiallyExtendable<4>,
     P16: CryptographicPermutation<[F; 16]> + CryptographicPermutation<[F::Packing; 16]>,
@@ -426,14 +426,14 @@ where
 /// OOD_POW]`: the batch proof of `case` over KoalaBear as JSON, after Plonky3 verified it. Run
 /// with `RAYON_NUM_THREADS=1` for the smallest grinding witnesses.
 pub fn batch(name: &str, args: &[usize]) {
-    let config = config::<p3_koala_bear::KoalaBear, _, _>(
+    let config = config::<p3_koala_bear::KoalaBear, Challenge<p3_koala_bear::KoalaBear>, _, _>(
         default_koalabear_poseidon2_16(), default_koalabear_poseidon2_24(), args);
     println!("{}", prove_case(&config, name));
 }
 
 /// `batch-babybear CASE …`: the same over BabyBear.
 pub fn batch_babybear(name: &str, args: &[usize]) {
-    let config = config::<p3_baby_bear::BabyBear, _, _>(
+    let config = config::<p3_baby_bear::BabyBear, Challenge<p3_baby_bear::BabyBear>, _, _>(
         default_babybear_poseidon2_16(), default_babybear_poseidon2_24(), args);
     println!("{}", prove_case(&config, name));
 }
@@ -442,7 +442,8 @@ pub fn batch_babybear(name: &str, args: &[usize]) {
 /// without the common data's setup.
 pub fn batch_bench(name: &str, args: &[usize]) {
     use std::time::Instant;
-    let config = config(default_koalabear_poseidon2_16(), default_koalabear_poseidon2_24(), args);
+    let config = config::<_, Challenge<p3_koala_bear::KoalaBear>, _, _>(
+        default_koalabear_poseidon2_16(), default_koalabear_poseidon2_24(), args);
     let insts = case::<p3_koala_bear::KoalaBear>(name);
     let instances: Vec<StarkInstance<'_, _, _>> = insts.iter()
         .map(|(air, trace, pis)| StarkInstance { air, trace, public_values: pis.clone() })
@@ -468,7 +469,8 @@ pub fn batch_trace(name: &str, args: &[usize]) {
     use tracing_subscriber::layer::SubscriberExt;
     use tracing_subscriber::util::SubscriberInitExt;
     use tracing_subscriber::{EnvFilter, Registry};
-    let config = config(default_koalabear_poseidon2_16(), default_koalabear_poseidon2_24(), args);
+    let config = config::<_, Challenge<p3_koala_bear::KoalaBear>, _, _>(
+        default_koalabear_poseidon2_16(), default_koalabear_poseidon2_24(), args);
     let insts = case::<p3_koala_bear::KoalaBear>(name);
     let instances: Vec<StarkInstance<'_, _, _>> = insts.iter()
         .map(|(air, trace, pis)| StarkInstance { air, trace, public_values: pis.clone() })

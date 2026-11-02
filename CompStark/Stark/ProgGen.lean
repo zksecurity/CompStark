@@ -103,18 +103,18 @@ macro "group_kernels " p:term : command => `(
         (m : @& CompStark.Stark.Prog.Cols) (c : Nat) (next : @& Array Nat) (r0 : Nat)
         (nseq : Bool) : ByteArray :=
       CompStark.Stark.Prog.gather nm s d m c next r0 nseq
-    @[noinline] def accS (nm : Nat) (rb : USize) (s : ByteArray) (a : USize)
+    @[noinline] def accS (na nm : Nat) (rb : USize) (s : ByteArray) (a : USize)
         (wts : @& Array UInt32) (w : Nat) :
         ByteArray :=
-      CompStark.Stark.Prog.accS $p nm rb s a wts w
-    @[noinline] def accE (nm : Nat) (rb : USize) (s : ByteArray) (e : @& ByteArray) (a : USize)
-        (wts : @& Array UInt32)
+      CompStark.Stark.Prog.accS $p na nm rb s a wts w
+    @[noinline] def accE (na nm : Nat) (rb : USize) (s : ByteArray) (e : @& ByteArray)
+        (a : USize) (wts : @& Array UInt32)
         (w : Nat) : ByteArray :=
-      CompStark.Stark.Prog.accE $p nm rb s e a wts w
-    @[noinline] def accW (nm : Nat) (rb : USize) (s : ByteArray) (c : UInt32)
+      CompStark.Stark.Prog.accE $p na nm rb s e a wts w
+    @[noinline] def accW (na nm : Nat) (rb : USize) (s : ByteArray) (c : UInt32)
         (wts : @& Array UInt32) (w : Nat) :
         ByteArray :=
-      CompStark.Stark.Prog.accW $p nm rb s c wts w
+      CompStark.Stark.Prog.accW $p na nm rb s c wts w
   )
 
 /-! ### The generator -/
@@ -183,6 +183,7 @@ meta def instrE (g : GenProg) : Instr UInt32 → MetaM Lean.Expr
 
 /-- The kernel call of an instruction on the state `s`, as the group machine reduces it. -/
 meta def callE (ns : Name) (env s : Lean.Expr) (i : Instr UInt32) : MetaM Lean.Expr := do
+  let na ← mkAppM ``GroupEnv.na #[env]
   let nm ← mkAppM ``GroupEnv.nm #[env]
   let rb ← mkAppM ``GroupEnv.rb #[env]
   match i with
@@ -230,13 +231,13 @@ meta def callE (ns : Name) (env s : Lean.Expr) (i : Instr UInt32) : MetaM Lean.E
     let wts ← mkAppM ``GroupEnv.wts #[env]
     match a with
     | .reg r =>
-      return mkAppN (mkConst (ns ++ `accS)) #[nm, rb, s, mkApp2 (mkConst ``regOff) env
+      return mkAppN (mkConst (ns ++ `accS)) #[na, nm, rb, s, mkApp2 (mkConst ``regOff) env
           (natE r), wts, natE w]
     | .cur c => do
       let off := mkApp2 (mkConst ``colOff) env (natE c)
       let view ← mkAppM ``GroupEnv.view #[env]
-      return mkAppN (mkConst (ns ++ `accE)) #[nm, rb, s, view, off, wts, natE w]
-    | .const c => return mkAppN (mkConst (ns ++ `accW)) #[nm, rb, s, toExpr c, wts, natE w]
+      return mkAppN (mkConst (ns ++ `accE)) #[na, nm, rb, s, view, off, wts, natE w]
+    | .const c => return mkAppN (mkConst (ns ++ `accW)) #[na, nm, rb, s, toExpr c, wts, natE w]
 
 /-- `#gen_group_chunks K ns prog size i n`: the `i`-th of `n` parts of the chunks of `size`
 instructions of the program `prog`, as `K.code_k`, `K.chunk_k` (calls of the kernels of `ns`) and

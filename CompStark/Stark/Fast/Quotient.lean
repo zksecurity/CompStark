@@ -78,10 +78,9 @@ theorem getD_map_lt {α β : Type} (a : Array α) (f : α → β) (j : Nat) (h :
 
 end
 
-variable {p : ℕ} [Mont32Field p]
+variable {p : ℕ} [Mont32Field p] {EF : Type} [FastExt p EF]
 
 local notation "F" => FastField p
-local notation "EF" => Ext4 p
 
 /-! ### The bit-reversal permutation -/
 
@@ -218,7 +217,8 @@ theorem foldl_blocks_eq {α σ : Type} (B b0 nb : Nat) (g : Nat → α) (Inv : �
         congrArg Array.ofFn (funext fun i ↦ by simp only; congr 1; ring),
       ofFn_append_ofFn (fun k ↦ g (b0 * B + k)) (m * B) B, show m * B + B = (m + 1) * B by ring]
 
-theorem powerSeq_getD [Mont32BaseField p] [Binomial4 p] (alpha : EF) (K k : Nat) (hk : k < K) :
+theorem powerSeq_getD [Mont32BaseField p] [Mont32.AlgebraId EF] (alpha : EF) (K k : Nat) (hk : k <
+    K) :
     (powerSeq alpha K).getD k 0 = Ext.pow alpha k := by
   suffices h : ∀ n, (List.range n).foldl (fun (acc, x) _ ↦ (acc.push x, x * alpha))
       ((#[] : Array EF), 1) = (Array.ofFn (n := n) fun i ↦ Ext.pow alpha i.val,
@@ -241,12 +241,14 @@ theorem powerSeq_getD [Mont32BaseField p] [Binomial4 p] (alpha : EF) (K k : Nat)
       apply Challenge.toSpec.injective
       rw [Challenge.toSpec_mul, Ext.toSpec_pow, Ext.toSpec_pow, pow_succ]
 
-theorem weightCoords_eq [Mont32BaseField p] [Binomial4 p] (alpha : EF) (K : Nat) :
-    weightCoords alpha K = Array.ofFn (n := 4 * K) fun i ↦
-      (Ext.coeffs (Ext.pow alpha (K - 1 - i.val / 4))).getD (i.val % 4) 0 := by
+theorem weightCoords_eq [Mont32BaseField p] [Mont32.AlgebraId EF] (alpha : EF) (K : Nat) :
+    weightCoords alpha K = Array.ofFn (n := FastExt.d p EF * K) fun i ↦
+      (Ext.coeffs (Ext.pow alpha (K - 1 - i.val / FastExt.d p EF))).getD
+        (i.val % FastExt.d p EF) 0 := by
   unfold weightCoords
   refine congrArg Array.ofFn (funext fun i ↦ ?_)
-  rw [powerSeq_getD alpha K _ (by have := i.isLt; omega)]
+  have hK : 0 < K := Nat.pos_of_ne_zero fun h0 ↦ by subst h0; exact absurd i.isLt (by simp)
+  rw [powerSeq_getD alpha K _ (Nat.lt_of_le_of_lt (Nat.sub_le _ _) (Nat.sub_lt hK Nat.one_pos))]
 
 /-- A program on groups of rows by the kernel with its code is the program on the group machine. -/
 theorem groupRun_eq (kernels : List (Prog.GroupKernel p)) (code : Array (Prog.Instr F))
@@ -286,7 +288,7 @@ theorem progRun_snd (ks : List (CheckedKernel p)) (cs : List (Expr F)) (env : Pr
 
 /-- **The quotient's blocks**: a program accumulating, on every block of rows, every stored row
 `j`'s value coordinates `Q j`, gives the quotient values in natural order. -/
-theorem quotientBlocks_eq [Mont32BaseField p] [Binomial4 p] (d l : Nat) (prog : Prog F)
+theorem quotientBlocks_eq [Mont32BaseField p] [Mont32.AlgebraId EF] (d l : Nat) (prog : Prog F)
     (run : Prog.GroupEnv → ByteArray → ByteArray)
     (hrun : ∀ env s, run env s = Prog.run (Prog.groupMachine p env) prog.code s) (SC WT : Array F)
     (block : Nat → Prog.View × Prog.Loads) (Q : Nat → Nat → F)
@@ -296,14 +298,14 @@ theorem quotientBlocks_eq [Mont32BaseField p] [Binomial4 p] (d l : Nat) (prog : 
         4 * V.size < USize.size ∧ L.Addr ∧
         (∀ ins ∈ prog.code, ins.InRange V cb cs L (quotientTables (p := p) d l).B prog.regs) ∧
         ∀ i < (quotientTables (p := p) d l).B, ∀ st0 : Prog.St F, st0.acc = (fun _ ↦ 0) →
-          ∀ j < 4, (Prog.run (Prog.fieldMachine (Prog.blockCtx V cb cs L SC WT
-            (quotientTables (p := p) d l).B i)) prog.code st0).acc j = Q (r0 + i) j) :
-    quotientBlocks (quotientTables (p := p) d l) prog run SC WT block =
-      Array.ofFn (n := 2 ^ (d + l)) fun r ↦ Ext4.smul ((batchInv (qZh d l) : Array F).getD
-        (r.val % 2 ^ l) 0) ⟨Q ((bitRevPerm (d + l)).getD r 0) 0,
-          Q ((bitRevPerm (d + l)).getD r 0) 1, Q ((bitRevPerm (d + l)).getD r 0) 2,
-          Q ((bitRevPerm (d + l)).getD r 0) 3⟩ := by
+          ∀ j < FastExt.d p EF, (Prog.run (Prog.fieldMachine (Prog.blockCtx (FastExt.d p EF) V cb
+            cs L SC WT (quotientTables (p := p) d l).B i)) prog.code st0).acc j = Q (r0 + i) j) :
+    quotientBlocks (EF := EF) (quotientTables (p := p) d l) prog run SC WT block =
+      Array.ofFn (n := 2 ^ (d + l)) fun r ↦ FastExt.ofCoords fun j ↦
+        (batchInv (qZh d l) : Array F).getD (r.val % 2 ^ l) 0 *
+          Q ((bitRevPerm (d + l)).getD r 0) j.val := by
   obtain ⟨hB0, -, hBn⟩ := tables_B (p := p) d l
+  have hna : 0 < FastExt.d p EF := (FastExt.params (p := p) (E := EF)).d_pos
   have hTd : (quotientTables (p := p) d l).degreeBits = d := rfl
   have hTl : (quotientTables (p := p) d l).logChunks = l := rfl
   have hTp : (quotientTables (p := p) d l).perm = bitRevPerm (d + l) := rfl
@@ -317,8 +319,8 @@ theorem quotientBlocks_eq [Mont32BaseField p] [Binomial4 p] (d l : Nat) (prog : 
   rcases T with ⟨_, _, _, _, _, _, _, _, B, hS⟩
   dsimp only at hblk hB0 hBn ⊢
   -- Stored row `j`'s value.
-  let g (j : Nat) : EF := Ext4.smul ((batchInv (qZh d l) : Array F).getD
-    ((bitRevPerm (d + l)).getD j 0 % 2 ^ l) 0) ⟨Q j 0, Q j 1, Q j 2, Q j 3⟩
+  let g (j : Nat) : EF := FastExt.ofCoords fun k ↦ (batchInv (qZh d l) : Array F).getD
+    ((bitRevPerm (d + l)).getD j 0 % 2 ^ l) 0 * Q j k.val
   show Array.map (fun r ↦ (parChunks _ _ _).getD r 0) (bitRevPerm (d + l)) = _
   rw [parChunks_eq_blocks (2 ^ (d + l) / B) (min (2 ^ (d + l) / B) 16) B _ g ?hf
     (Or.inl (Nat.lt_min.mpr ⟨Nat.div_pos (Nat.le_of_dvd (Nat.two_pow_pos _) hBn) hB0,
@@ -332,44 +334,36 @@ theorem quotientBlocks_eq [Mont32BaseField p] [Binomial4 p] (d l : Nat) (prog : 
       · omega
     split
     · rename_i hc
-      refine foldl_blocks_eq B b0 nb g (Prog.GEncoded (p := p) B prog.regs) _ ?_ _
-        Array.emptyWithCapacity_eq _ (Prog.gEncoded_zeros B prog.regs)
+      refine foldl_blocks_eq B b0 nb g (Prog.GEncoded (p := p) (FastExt.d p EF) B prog.regs) _ ?_
+        _ Array.emptyWithCapacity_eq _ (Prog.gEncoded_zeros (na := FastExt.d p EF) B prog.regs)
       intro out st a hst ha1 ha2
       obtain ⟨V, cb, cs, L, hb, hV, hL, hcode, hQ⟩ := hblk (a * B) (Dvd.intro_left _ rfl)
         (hr0 a ha1 ha2)
-      obtain ⟨hE, hw⟩ := Prog.groupBlock_acc prog.code prog.regs V cb cs L SC WT B hc.1 hc.2 hV hL
-        hcode (fun i j ↦ Q (a * B + i) j) hQ st hst
+      obtain ⟨hE, hw⟩ := Prog.groupBlock_acc prog.code prog.regs V cb cs L SC WT B hc.1 hna hc.2
+        hV hL hcode (fun i j ↦ Q (a * B + i) j) hQ st hst
       dsimp only
       rw [hb, hrun]
       refine ⟨hE, ?_⟩
       rw [CompStark.Stark.foldl_push_range']
       refine congrArg (out ++ ·) (congrArg Array.ofFn (funext fun i ↦ ?_))
-      have h0 := hw 0 (by decide) i i.isLt
-      have h1 := hw 1 (by decide) i i.isLt
-      have h2 := hw 2 (by decide) i i.isLt
-      have h3 := hw 3 (by decide) i i.isLt
-      rw [Nat.mul_zero, Nat.zero_add] at h0
-      rw [Nat.mul_one] at h1
-      rw [Nat.mul_comm B 2] at h2
-      rw [Nat.mul_comm B 3] at h3
-      simp only [Nat.zero_add, g, word, h0, h1, h2, h3,
-          CompPoly.CPolynomial.NTTFast.Packed.ofWord_val]
-    · refine foldl_blocks_eq B b0 nb g (Prog.Encoded (p := p) B prog.regs) _ ?_ _
-        Array.emptyWithCapacity_eq _ ⟨_, Prog.blockRel_zeros B prog.regs _⟩
+      refine congrArg FastExt.ofCoords (funext fun j ↦ ?_)
+      simp only [Nat.zero_add, word, hw j.val j.isLt i i.isLt,
+        CompPoly.CPolynomial.NTTFast.Packed.ofWord_val]
+    · refine foldl_blocks_eq B b0 nb g (Prog.Encoded (p := p) (FastExt.d p EF) B prog.regs) _ ?_
+        _ Array.emptyWithCapacity_eq _ ⟨_, Prog.blockRel_zeros (FastExt.d p EF) B prog.regs _⟩
       intro out st a hst ha1 ha2
       obtain ⟨V, cb, cs, L, hb, hV, hL, hcode, hQ⟩ := hblk (a * B) (Dvd.intro_left _ rfl)
         (hr0 a ha1 ha2)
-      obtain ⟨hE, hw⟩ := Prog.runBlock_acc prog.code prog.regs V cb cs L SC WT B (4 * B) hS st
-        hst hV hL hcode (fun i j ↦ Q (a * B + i) j) hQ
+      obtain ⟨hE, hw⟩ := Prog.runBlock_acc (FastExt.d p EF) prog.code prog.regs V cb cs L SC WT B
+        (4 * B) hS st hst hV hL hcode (fun i j ↦ Q (a * B + i) j) hQ
       dsimp only
       rw [hb]
       refine ⟨hE, ?_⟩
       rw [CompStark.Stark.foldl_push_range']
       refine congrArg (out ++ ·) (congrArg Array.ofFn (funext fun i ↦ ?_))
-      simp only [Nat.zero_add, hw 0 (by decide), hw 1 (by decide), hw 2 (by decide),
-        hw 3 (by decide), g]
-      rw [word_tab hS _ _ i.isLt, word_tab hS _ _ i.isLt, word_tab hS _ _ i.isLt,
-        word_tab hS _ _ i.isLt]
+      refine congrArg FastExt.ofCoords (funext fun j ↦ ?_)
+      simp only [Nat.zero_add, hw j.val j.isLt]
+      rw [word_tab hS _ _ i.isLt]
   apply Array.ext (by rw [Array.size_map, Array.size_ofFn, size_bitRevPerm])
   intro r h1 h2
   rw [Array.size_ofFn] at h2
@@ -701,47 +695,47 @@ theorem qLoads_inRange [Mont32BaseField p] {d l H : Nat} {s sp rs : Mat F} {R Rp
 /-- A block row's base environment (`Prog.blockCtx` on `qLoads`) is the specification's on the
 natural row `perm[r0 + i]` at the columns below the widths and the periodic columns and
 selectors. -/
-theorem qLoads_env [Mont32BaseField p] (d l : Nat) (s sp rs : Mat F) (R Rp Rq : Nat)
+theorem qLoads_env [Mont32BaseField p] (na d l : Nat) (s sp rs : Mat F) (R Rp Rq : Nat)
     (hR : RowsOk s R) (hRp : RowsOk sp Rp) (hs : 2 ^ (d + l) ≤ s.height)
     (hsp : 2 ^ (d + l) ≤ sp.height) (pl : List (Array F))
     (pis : List F) (SC WT : Array F) (r0 B i : Nat) (hi : i < B) (hri : r0 + i < 2 ^ (d + l)) :
-    (∀ c < s.width, (Prog.blockCtx (blockT s r0 B) 0 B (qLoads (p := p) d l s sp rs R Rp Rq pl
+    (∀ c < s.width, (Prog.blockCtx na (blockT s r0 B) 0 B (qLoads (p := p) d l s sp rs R Rp Rq pl
       (quotientTables (p := p) d l).next r0 B) SC WT B i).env.cur c =
       (rowEnv (Mat.ofValues s.width (2 ^ (d + l)) (permuteRows s (bitRevPerm (d + l))))
         (Mat.ofValues sp.width (2 ^ (d + l)) (permuteRows sp (bitRevPerm (d + l)))) pl
         (2 ^ (d + l)) (2 ^ l) pis (qFirst d l) (qLast d l) (qTrans d l)
         ((bitRevPerm (d + l)).getD (r0 + i) 0)).cur c) ∧
-    (∀ c < s.width, (Prog.blockCtx (blockT s r0 B) 0 B (qLoads (p := p) d l s sp rs R Rp Rq pl
+    (∀ c < s.width, (Prog.blockCtx na (blockT s r0 B) 0 B (qLoads (p := p) d l s sp rs R Rp Rq pl
       (quotientTables (p := p) d l).next r0 B) SC WT B i).env.next c =
       (rowEnv (Mat.ofValues s.width (2 ^ (d + l)) (permuteRows s (bitRevPerm (d + l))))
         (Mat.ofValues sp.width (2 ^ (d + l)) (permuteRows sp (bitRevPerm (d + l)))) pl
         (2 ^ (d + l)) (2 ^ l) pis (qFirst d l) (qLast d l) (qTrans d l)
         ((bitRevPerm (d + l)).getD (r0 + i) 0)).next c) ∧
-    (∀ c < sp.width, (Prog.blockCtx (blockT s r0 B) 0 B (qLoads (p := p) d l s sp rs R Rp Rq pl
+    (∀ c < sp.width, (Prog.blockCtx na (blockT s r0 B) 0 B (qLoads (p := p) d l s sp rs R Rp Rq pl
       (quotientTables (p := p) d l).next r0 B) SC WT B i).env.prepCur c =
       (rowEnv (Mat.ofValues s.width (2 ^ (d + l)) (permuteRows s (bitRevPerm (d + l))))
         (Mat.ofValues sp.width (2 ^ (d + l)) (permuteRows sp (bitRevPerm (d + l)))) pl
         (2 ^ (d + l)) (2 ^ l) pis (qFirst d l) (qLast d l) (qTrans d l)
         ((bitRevPerm (d + l)).getD (r0 + i) 0)).prepCur c) ∧
-    (∀ c < sp.width, (Prog.blockCtx (blockT s r0 B) 0 B (qLoads (p := p) d l s sp rs R Rp Rq pl
+    (∀ c < sp.width, (Prog.blockCtx na (blockT s r0 B) 0 B (qLoads (p := p) d l s sp rs R Rp Rq pl
       (quotientTables (p := p) d l).next r0 B) SC WT B i).env.prepNext c =
       (rowEnv (Mat.ofValues s.width (2 ^ (d + l)) (permuteRows s (bitRevPerm (d + l))))
         (Mat.ofValues sp.width (2 ^ (d + l)) (permuteRows sp (bitRevPerm (d + l)))) pl
         (2 ^ (d + l)) (2 ^ l) pis (qFirst d l) (qLast d l) (qTrans d l)
         ((bitRevPerm (d + l)).getD (r0 + i) 0)).prepNext c) ∧
-    (∀ j, (Prog.blockCtx (blockT s r0 B) 0 B (qLoads (p := p) d l s sp rs R Rp Rq pl
+    (∀ j, (Prog.blockCtx na (blockT s r0 B) 0 B (qLoads (p := p) d l s sp rs R Rp Rq pl
       (quotientTables (p := p) d l).next r0 B) SC WT B i).env.periodic j =
       (rowEnv (Mat.ofValues s.width (2 ^ (d + l)) (permuteRows s (bitRevPerm (d + l))))
         (Mat.ofValues sp.width (2 ^ (d + l)) (permuteRows sp (bitRevPerm (d + l)))) pl
         (2 ^ (d + l)) (2 ^ l) pis (qFirst d l) (qLast d l) (qTrans d l)
         ((bitRevPerm (d + l)).getD (r0 + i) 0)).periodic j) ∧
-    (Prog.blockCtx (blockT s r0 B) 0 B (qLoads (p := p) d l s sp rs R Rp Rq pl
+    (Prog.blockCtx na (blockT s r0 B) 0 B (qLoads (p := p) d l s sp rs R Rp Rq pl
       (quotientTables (p := p) d l).next r0 B) SC WT B i).env.isFirstRow =
       (qFirst d l : Array F).getD ((bitRevPerm (d + l)).getD (r0 + i) 0) 0 ∧
-    (Prog.blockCtx (blockT s r0 B) 0 B (qLoads (p := p) d l s sp rs R Rp Rq pl
+    (Prog.blockCtx na (blockT s r0 B) 0 B (qLoads (p := p) d l s sp rs R Rp Rq pl
       (quotientTables (p := p) d l).next r0 B) SC WT B i).env.isLastRow =
       (qLast d l : Array F).getD ((bitRevPerm (d + l)).getD (r0 + i) 0) 0 ∧
-    (Prog.blockCtx (blockT s r0 B) 0 B (qLoads (p := p) d l s sp rs R Rp Rq pl
+    (Prog.blockCtx na (blockT s r0 B) 0 B (qLoads (p := p) d l s sp rs R Rp Rq pl
       (quotientTables (p := p) d l).next r0 B) SC WT B i).env.isTransition =
       (qTrans d l : Array F).getD ((bitRevPerm (d + l)).getD (r0 + i) 0) 0 := by
   refine ⟨fun c hc ↦ ?_, fun c hc ↦ ?_, fun c hc ↦ ?_, fun c hc ↦ ?_, fun j ↦ ?_,
@@ -774,7 +768,7 @@ abbrev prepOrEmpty (ps : Option (Mat F)) (height : Nat) : Mat F := ps.getD ⟨0,
 
 /-- The fast quotient is the specification's on related extensions of the trace and the
 preprocessed trace. -/
-theorem quotientWith_rel [Mont32BaseField p] [Binomial4 p] (ks : List (CheckedKernel p))
+theorem quotientWith_rel [Mont32BaseField p] [Mont32.AlgebraId EF] (ks : List (CheckedKernel p))
     (A : Air F) (pis : List F) (d l : Nat)
     (alpha : EF) {ext : PMat} {s : Mat F} {prep : Option PMat} {ps : Option (Mat F)}
     (h : RM ext s) (hs : MatOk s) (hh : 2 ^ (d + l) ≤ s.height) (hp : Option.Rel RM prep ps)
@@ -853,8 +847,9 @@ theorem quotientWith_rel [Mont32BaseField p] [Binomial4 p] (ks : List (CheckedKe
   have hnU : 4 * 2 ^ (d + l) < USize.size := by omega
   -- The weights and the periodic columns as arrays.
   let K := A.constraints.length
-  let WT : Array F := Array.ofFn (n := 4 * K) fun i ↦
-    (Ext.coeffs (Ext.pow alpha (K - 1 - i.val / 4))).getD (i.val % 4) 0
+  let WT : Array F := Array.ofFn (n := FastExt.d p EF * K) fun i ↦
+    (Ext.coeffs (Ext.pow alpha (K - 1 - i.val / FastExt.d p EF))).getD
+      (i.val % FastExt.d p EF) 0
   have hWT : weightCoords alpha K = WT := weightCoords_eq alpha K
   have hsS : QShape d l s.height s := ⟨hvs', hh, hus⟩
   have hspS : QShape d l s.height sp := ⟨hspv, hh, husp⟩
@@ -904,7 +899,8 @@ theorem quotientWith_rel [Mont32BaseField p] [Binomial4 p] (ks : List (CheckedKe
       have := Nat.mul_le_mul_right B (show c + 1 ≤ s.width by exact hc)
       rw [Nat.succ_mul] at this; exact this
     · have hri : r0 + i < 2 ^ (d + l) := by omega
-      obtain ⟨e1, e2, e3, e4, e5, e6, e7, e8⟩ := qLoads_env d l s sp (⟨0, s.height, #[]⟩ : Mat F)
+      obtain ⟨e1, e2, e3, e4, e5, e6, e7, e8⟩ := qLoads_env (FastExt.d p EF) d l s sp (⟨0, s.height,
+          #[]⟩ : Mat F)
         ext.rows (prep.getD PMat.empty).rows 1 h.rowsOk hpm.1 hh (by rw [hsph]; exact hh) pl pis
         pis.toArray WT r0 B i hi hri
       rw [(Prog.compile_run A.constraints _ st0).1, hst0]
@@ -921,15 +917,25 @@ theorem quotientWith_rel [Mont32BaseField p] [Binomial4 p] (ks : List (CheckedKe
           (fun jj ↦ show pis.toArray.getD jj 0 = pis.getD jj 0 by
             rw [Array.getD_eq_getD_getElem?, List.getElem?_toArray, List.getD_eq_getElem?_getD])
           (fun _ ↦ rfl) e6 e7 e8 c (hc c hcm)
-      · show WT.getD (4 * k + j) 0 = _
-        rw [NTTFast.Packed.getD_ofFn_bounded _ _ (by omega)]
-        have h1 : (4 * k + j) / 4 = k := by omega
-        have h2 : (4 * k + j) % 4 = j := by omega
+      · show WT.getD (FastExt.d p EF * k + j) 0 = _
+        have hlt : FastExt.d p EF * k + j < FastExt.d p EF * K := by
+          have := Nat.mul_le_mul_left (FastExt.d p EF) (show k + 1 ≤ K by omega)
+          rw [Nat.mul_succ] at this; omega
+        rw [NTTFast.Packed.getD_ofFn_bounded _ _ hlt]
+        have h1 : (FastExt.d p EF * k + j) / FastExt.d p EF = k := by
+          rw [Nat.mul_add_div (by omega), Nat.div_eq_of_lt hj, Nat.add_zero]
+        have h2 : (FastExt.d p EF * k + j) % FastExt.d p EF = j := by
+          rw [Nat.mul_add_mod, Nat.mod_eq_of_lt hj]
         simp only [h1, h2]
         rfl
   refine congrArg Array.ofFn (funext fun r ↦ ?_)
   unfold quotientRow
   simp only [Q, E, bitRevPerm_getD_getD _ _ r.isLt]
+  rw [Mont32.ofCoeffs_eq]
+  show _ = FastExt.ofCoords fun j ↦ _ * FastExt.coord (FastExt.ofCoords _) j
+  refine congrArg FastExt.ofCoords (funext fun j ↦ ?_)
+  rw [FastExt.coord_ofCoords, List.getD_eq_getElem?_getD, List.getElem?_map,
+    List.getElem?_range (by rw [Mont32.d_eq]; exact j.isLt)]
   rfl
 
 end CompStark.Stark.Fast

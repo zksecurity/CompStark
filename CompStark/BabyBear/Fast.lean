@@ -7,6 +7,7 @@ module
 public import CompStark.Stark.Fast
 public import CompStark.BabyBear.Poseidon2
 public import CompStark.BabyBear.Challenge
+public import CompPoly.Fields.Montgomery.Native32Ext4PlanesCorrectness
 public import CompPoly.Univariate.NTTFast.Packed.Instances
 
 /-! # The fast prover over BabyBear

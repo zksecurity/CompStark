@@ -25,24 +25,23 @@ proofs are the specification's (`prove_fast`), batch proofs included (`proveBatc
 namespace CompStark.Stark.Fast
 open CompStark.Fri CompStark.Poseidon2 Montgomery.Native32
 
-variable {p : ℕ} [Mont32Field p] [Mont32BaseField p] [Binomial4 p] [Poseidon2Field (FastField p)]
-  [PackedPoseidon2 p]
+variable {p : ℕ} [Mont32Field p] [Mont32BaseField p] [Poseidon2Field (FastField p)]
+  [PackedPoseidon2 p] {EF : Type} [FastExt p EF] [Mont32.AlgebraId EF] [PlanesInv p EF]
 
 local notation "F" => FastField p
-local notation "EF" => Ext4 p
 
 /-- The fast backend refines the specification. -/
 def backendFor_refines (hA : DomainsAddressable F EF)
     (kernels : List (AirKernel p)) (logBlowup : Nat) (shapes : List (Nat × Nat)) :
-    Refines (backendFor kernels logBlowup shapes) :=
-  have h16 : 16 * 2 ^ twoAdicity F < USize.size := by
+    Refines (backendFor (EF := EF) kernels logBlowup shapes) :=
+  have h16 : 4 * (FastExt.d p EF * 2 ^ twoAdicity F) < USize.size := by
     unfold DomainsAddressable Addressable at hA
-    rw [Mont32.d_ext4] at hA
+    rw [Mont32.d_eq] at hA
     omega
   { RT := RT
     RM := RM
     RC := RC
-    RV := Ext4Planes.Rel
+    RV := ExtPlanes.Rel
     transcript := transcript_eq
     ldeTrace := fun logH bits shift w t m ⟨_, k, hk, ht⟩ hm hb ha ↦ by
       change RM (ldeWordsWith _ logH bits shift w t) _
@@ -93,7 +92,7 @@ def backendFor_refines (hA : DomainsAddressable F EF)
         exact ldePlans_valid n logBlowup c e he) bits A ls logN t pis chs hok
     openedAt := fun b zs _ _ h hs hz ↦ openedAt_rel b zs h hs hz
     toArray := toArray_rel h16
-    ofArray := Ext4Planes.ofArray_rel
+    ofArray := ExtPlanes.ofArray_rel
     size := fun h ↦ h.1
     reduce := fun alpha _ _ h hok ↦ reduce_rel alpha h hok
     fold := fun la beta s _ _ h ha hla hs ↦ fold_rel h16 la beta s h ha hla hs
@@ -109,7 +108,8 @@ theorem prove_fast (hA : DomainsAddressable F EF)
     (publicValues : List F) (encoded : RT logN air.width words trace)
     (input : InputOk EF params air logN trace)
     (outOfDomain : Ext.OutsideBase (outOfDomainPoint EF params air logN trace publicValues)) :
-    proveWith (backendFor kernels params.logBlowup [(logN, air.logQuotientChunks logN)]) params
+    proveWith (backendFor (EF := EF) kernels params.logBlowup [(logN, air.logQuotientChunks logN)])
+        params
         air logN words publicValues =
       prove EF params air logN trace publicValues :=
   proveWith_refines hA (backendFor_refines hA _ _ _) publicValues encoded input outOfDomain
@@ -127,7 +127,8 @@ theorem proveBatch_fast (hA : DomainsAddressable F EF)
     (publicValuesLength : publicValues.length = instances.length)
     (outOfDomain :
       Ext.OutsideBase (Batch.batchOutOfDomainPoint EF params instances traces publicValues)) :
-    Batch.proveBatchWith (backendFor kernels params.logBlowup (Batch.shapes instances)) params
+    Batch.proveBatchWith (backendFor (EF := EF) kernels params.logBlowup (Batch.shapes instances))
+        params
         instances words publicValues =
       Batch.proveBatch EF params instances traces publicValues :=
   Batch.proveBatchWith_refines hA (backendFor_refines hA _ _ _) encoded input publicValuesLength

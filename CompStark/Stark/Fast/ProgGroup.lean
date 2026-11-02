@@ -11,10 +11,10 @@ public import CompStark.Stark.Fast.ProgWords
 
 On encoded field arrays, a kernel of the group machine (`CompStark/Stark/ProgGroup.lean`) overwrites
 a range of the state, sixteen words at a time, with the operation on its operands' words, its
-operands' windows checked once (`pass_upd`, `lanes_upd`), or adds an operand times four weights to the four accumulators
-(`accS_upd` and its kin). So an instruction on a group of `B` rows is the instruction on each row's
-values (`execGroup_rel`, on the rows' values `blockCtx`), and so is a program (`runGroup_rel`): the
-group machine simulates `B` runs on the field.
+operands' windows checked once (`pass_upd`, `lanes_upd`), or adds an operand times the weights to
+the accumulators (`accS_upd` and its kin). So an instruction on a group of `B` rows is the
+instruction on each row's values (`execGroup_rel`, on the rows' values `blockCtx`), and so is a
+program (`runGroup_rel`): the group machine simulates `B` runs on the field.
 -/
 
 @[expose] public section
@@ -28,7 +28,7 @@ open CompPoly.CPolynomial.NTTFast.Packed.Native (Buf read write16U toNat_usize_l
 open Montgomery.Native32
 open Montgomery.Native32.Words (tab size_tab tab_congr getD_tab)
 
-variable {p : ℕ} [P : Mont32Field p]
+variable {p : ℕ} [P : Mont32Field p] {na : Nat}
 
 local notation "F" => FastField p
 
@@ -409,17 +409,17 @@ theorem groupsWE_upd (f : UInt32 → UInt32 → UInt32) (g : F → F → F)
 /-! ### Accumulations -/
 
 /-- Word `idx` of `accUpd`. -/
-def accF (X : Array F) (B m c : Nat) (A W : Nat → F) (idx : Nat) : F :=
-  if idx < 4 * B ∧ (idx % B < 16 * m ∨ (idx / B < c ∧ idx % B < 16 * m + 16))
+def accF (na : Nat) (X : Array F) (B m c : Nat) (A W : Nat → F) (idx : Nat) : F :=
+  if idx < na * B ∧ (idx % B < 16 * m ∨ (idx / B < c ∧ idx % B < 16 * m + 16))
   then X.getD idx 0 + A (idx % B) * W (idx / B) else X.getD idx 0
 
-/-- The state with the four accumulators of `B` rows, words `0, …, 4 B - 1`, plus `A i` times the
+/-- The state with the `na` accumulators of `B` rows, words `0, …, na B - 1`, plus `A i` times the
 weights `W j`: of rows `i < 16 m`, and of rows `i < 16 m + 16` of accumulators `j < c`. -/
-def accUpd (X : Array F) (B m c : Nat) (A W : Nat → F) : Array F :=
-  Array.ofFn (n := X.size) fun idx ↦ accF X B m c A W idx.val
+def accUpd (na : Nat) (X : Array F) (B m c : Nat) (A W : Nat → F) : Array F :=
+  Array.ofFn (n := X.size) fun idx ↦ accF na X B m c A W idx.val
 
 theorem getD_accUpd (X : Array F) (B m c : Nat) (A W : Nat → F) (idx : Nat) :
-    (accUpd X B m c A W).getD idx 0 = if idx < X.size ∧ idx < 4 * B ∧
+    (accUpd na X B m c A W).getD idx 0 = if idx < X.size ∧ idx < na * B ∧
       (idx % B < 16 * m ∨ (idx / B < c ∧ idx % B < 16 * m + 16))
     then X.getD idx 0 + A (idx % B) * W (idx / B) else X.getD idx 0 := by
   unfold accUpd
@@ -430,23 +430,26 @@ theorem getD_accUpd (X : Array F) (B m c : Nat) (A W : Nat → F) (idx : Nat) :
     exact (Words.getD_eq_zero X idx (by omega)).symm
 
 @[simp] theorem size_accUpd (X : Array F) (B m c : Nat) (A W : Nat → F) :
-    (accUpd X B m c A W).size = X.size := Array.size_ofFn
+    (accUpd na X B m c A W).size = X.size := Array.size_ofFn
 
-theorem accUpd_zero (X : Array F) (B : Nat) (A W : Nat → F) : accUpd X B 0 0 A W = X := by
+theorem accUpd_zero (X : Array F) (B : Nat) (A W : Nat → F) : accUpd na X B 0 0 A W = X := by
   apply array_eq_of_getD _ _ 0 (size_accUpd ..)
   intro idx
   rw [getD_accUpd]
   simp only [Nat.mul_zero, Nat.not_lt_zero, false_and, false_or, and_false, ite_false]
 
 theorem accUpd_next (X : Array F) (B m : Nat) (A W : Nat → F) :
-    accUpd X B m 4 A W = accUpd X B (m + 1) 0 A W := by
+    accUpd na X B m na A W = accUpd na X B (m + 1) 0 A W := by
   apply array_eq_of_getD _ _ 0 (by simp only [size_accUpd])
   intro idx
   rw [getD_accUpd, getD_accUpd]
-  by_cases h : idx < X.size ∧ idx < 4 * B
-  · have h4 : idx / B < 4 := Nat.div_lt_of_lt_mul (by rw [Nat.mul_comm]; omega)
-    have hlt := Nat.mod_lt idx (show 0 < B by omega)
-    have e : (idx % B < 16 * m ∨ (idx / B < 4 ∧ idx % B < 16 * m + 16)) ↔
+  by_cases h : idx < X.size ∧ idx < na * B
+  · have h4 : idx / B < na := Nat.div_lt_of_lt_mul (by rw [Nat.mul_comm]; exact h.2)
+    have hlt := Nat.mod_lt idx (show 0 < B by
+      rcases Nat.eq_zero_or_pos B with hB | hB
+      · rw [hB, Nat.mul_zero] at h; omega
+      · exact hB)
+    have e : (idx % B < 16 * m ∨ (idx / B < na ∧ idx % B < 16 * m + 16)) ↔
         (idx % B < 16 * (m + 1) ∨ (idx / B < 0 ∧ idx % B < 16 * (m + 1) + 16)) := by
       constructor
       · rintro (a | ⟨-, b⟩) <;> left <;> omega
@@ -456,17 +459,18 @@ theorem accUpd_next (X : Array F) (B m : Nat) (A W : Nat → F) :
           · exact Or.inr ⟨h4, by omega⟩
         · exact absurd b (Nat.not_lt_zero _)
     simp only [h, true_and, e]
-  · simp only [show ¬(idx < X.size ∧ idx < 4 * B ∧ _) from fun h' ↦ h ⟨h'.1, h'.2.1⟩, ite_false]
+  · simp only [show ¬(idx < X.size ∧ idx < na * B ∧ _) from fun h' ↦ h ⟨h'.1, h'.2.1⟩, ite_false]
 
 /-- Sixteen rows more of accumulator `j`. -/
-theorem splice_accUpd (X : Array F) (B m j : Nat) (A W : Nat → F) (hj : j < 4)
-    (hm : 16 * m + 16 ≤ B) (hX : 4 * B ≤ X.size) :
-    splice (accUpd X B m j A W) (j * B + 16 * m) (lit16 fun t ↦
-        X.getD (j * B + 16 * m + t) 0 + A (16 * m + t) * W j) = accUpd X B m (j + 1) A W := by
+theorem splice_accUpd (X : Array F) (B m j : Nat) (A W : Nat → F) (hj : j < na)
+    (hm : 16 * m + 16 ≤ B) (hX : na * B ≤ X.size) :
+    splice (accUpd na X B m j A W) (j * B + 16 * m) (lit16 fun t ↦
+        X.getD (j * B + 16 * m + t) 0 + A (16 * m + t) * W j) = accUpd na X B m (j + 1) A W := by
   have hB : 0 < B := by omega
-  have hjB : j * B + B ≤ 4 * B := by rw [← Nat.succ_mul]; exact Nat.mul_le_mul_right B (by omega)
+  have hjB : j * B + B ≤ na * B := by rw [← Nat.succ_mul]; exact Nat.mul_le_mul_right B (by omega)
   have hs : j * B + 16 * m + (lit16 fun t ↦
-      X.getD (j * B + 16 * m + t) 0 + A (16 * m + t) * W j).size ≤ (accUpd X B m j A W).size := by
+      X.getD (j * B + 16 * m + t) 0 + A (16 * m + t) * W j).size ≤ (accUpd na X B m j A W).size :=
+          by
     rw [size_lit16, size_accUpd]
     omega
   apply array_eq_of_getD _ _ 0 (by rw [size_splice _ _ _ hs, size_accUpd, size_accUpd])
@@ -516,15 +520,15 @@ theorem splice_accUpd (X : Array F) (B m j : Nat) (A W : Nat → F) (hj : j < 4)
       simp only [h1, h2, ite_false, e]
 
 /-- Sixteen rows more of accumulator `j`, by the lanes of the accumulation. -/
-theorem lanesAcc_upd (X : Array F) (B m j : Nat) (A W : Nat → F) (hj : j < 4)
-    (hm : 16 * m + 16 ≤ B) (hX : 4 * X.size < USize.size) (hB : 4 * B ≤ X.size) (o : USize)
-    (ho : o.toNat = j * B + 16 * m) (h : Win (encode (accUpd X B m j A W)) o) (wj : UInt32)
+theorem lanesAcc_upd (X : Array F) (B m j : Nat) (A W : Nat → F) (hj : j < na)
+    (hm : 16 * m + 16 ≤ B) (hX : 4 * X.size < USize.size) (hB : na * B ≤ X.size) (o : USize)
+    (ho : o.toNat = j * B + 16 * m) (h : Win (encode (accUpd na X B m j A W)) o) (wj : UInt32)
     (hw : wj = (W j).val) (y : (k : Nat) → k ≤ 15 → UInt32)
     (hy : ∀ k hk, y k hk = (A (16 * m + k)).val) :
     lanes16 (fun acc x ↦ add p acc (mulM p x wj)) (fun k hk ↦ ld _ o h k hk) y
-        (encode (accUpd X B m j A W)) o = encode (accUpd X B m (j + 1) A W) := by
+        (encode (accUpd na X B m j A W)) o = encode (accUpd na X B m (j + 1) A W) := by
   subst hw
-  have hjB : j * B + B ≤ 4 * B := by rw [← Nat.succ_mul]; exact Nat.mul_le_mul_right B (by omega)
+  have hjB : j * B + B ≤ na * B := by rw [← Nat.succ_mul]; exact Nat.mul_le_mul_right B (by omega)
   rw [lanes16_encode (fun acc x ↦ add p acc (mulM p x (W j).val)) (fun acc x ↦ acc + x * W j)
     (fun x y ↦ by rw [mulM_val, add_val]) _ y (fun k ↦ X.getD (j * B + 16 * m + k) 0)
     (fun k ↦ A (16 * m + k)) (fun k hk ↦ ?_) hy _ o (by rw [size_accUpd]; exact hX)
@@ -541,28 +545,28 @@ theorem lanesAcc_upd (X : Array F) (B m j : Nat) (A W : Nat → F) (hj : j < 4)
 
 /-- An accumulator's offset in a group of `B` rows. -/
 theorem accOff_toNat {jj rb : USize} {j B m : Nat} (hjj : jj.toNat = j) (hrb : rb.toNat = B)
-    (hj : j < 4) (hm : 16 * m + 16 ≤ B) (hB : 4 * (4 * B) < USize.size) :
+    (hj : j < na) (hm : 16 * m + 16 ≤ B) (hB : 4 * (na * B) < USize.size) :
     (jj * rb + (16 * m).toUSize).toNat = j * B + 16 * m := by
-  have hjB : j * B + B ≤ 4 * B := by rw [← Nat.succ_mul]; exact Nat.mul_le_mul_right B (by omega)
+  have hjB : j * B + B ≤ na * B := by rw [← Nat.succ_mul]; exact Nat.mul_le_mul_right B (by omega)
   have hmul : (jj * rb).toNat = j * B := by
     rw [usize_mul_toNat (by rw [hjj, hrb]; omega), hjj, hrb]
   rw [usize_add_toNat (by rw [hmul, toUSize_toNat (by omega)]; omega), hmul,
     toUSize_toNat (by omega)]
 
 variable (p) in
-theorem stepAccS_upd (X : Array F) (B m j : Nat) (A W : Nat → F) (hj : j < 4)
-    (hm : 16 * m + 16 ≤ B) (hX : 4 * X.size < USize.size) (hB : 4 * B ≤ X.size) (jj rb a : USize)
-    (hjj : jj.toNat = j) (hrb : rb.toNat = B) (oa : Nat) (ha : a.toNat = oa) (hoa : 4 * B ≤ oa)
+theorem stepAccS_upd (X : Array F) (B m j : Nat) (A W : Nat → F) (hj : j < na)
+    (hm : 16 * m + 16 ≤ B) (hX : 4 * X.size < USize.size) (hB : na * B ≤ X.size) (jj rb a : USize)
+    (hjj : jj.toNat = j) (hrb : rb.toNat = B) (oa : Nat) (ha : a.toNat = oa) (hoa : na * B ≤ oa)
     (hra : oa + B ≤ X.size) (hA : ∀ k < B, A k = X.getD (oa + k) 0) (wj : UInt32)
     (hw : wj = (W j).val) {n nm : Nat} (hwj : Wins n (jj * rb) nm) (hwa : Wins n a nm)
-    (hsn : (encode (accUpd X B m j A W)).size = n)
+    (hsn : (encode (accUpd na X B m j A W)).size = n)
     (ho : ((16 * m).toUSize).toNat + 16 ≤ 16 * nm) :
-    (stepAccS p rb jj a wj hwj hwa ⟨encode (accUpd X B m j A W), hsn⟩ (16 * m).toUSize ho).1 =
-      encode (accUpd X B m (j + 1) A W) := by
-  have hs : (encode (accUpd X B m j A W)).size = 4 * X.size := by
+    (stepAccS p rb jj a wj hwj hwa ⟨encode (accUpd na X B m j A W), hsn⟩ (16 * m).toUSize ho).1 =
+      encode (accUpd na X B m (j + 1) A W) := by
+  have hs : (encode (accUpd na X B m j A W)).size = 4 * X.size := by
     rw [size_encode_fields, size_accUpd]
   have hoff := accOff_toNat hjj hrb hj hm (by omega)
-  have hjB : j * B + B ≤ 4 * B := by rw [← Nat.succ_mul]; exact Nat.mul_le_mul_right B (by omega)
+  have hjB : j * B + B ≤ na * B := by rw [← Nat.succ_mul]; exact Nat.mul_le_mul_right B (by omega)
   have hoa' : (a + (16 * m).toUSize).toNat = oa + 16 * m :=
     off_toNat (n := X.size) ha (by omega) hX
   unfold stepAccS
@@ -573,19 +577,19 @@ theorem stepAccS_upd (X : Array F) (B m j : Nat) (A W : Nat → F) (hj : j < 4)
       (by omega), Nat.add_assoc]
 
 variable (p) in
-theorem stepAccE_upd (X E : Array F) (B m j : Nat) (A W : Nat → F) (hj : j < 4)
+theorem stepAccE_upd (X E : Array F) (B m j : Nat) (A W : Nat → F) (hj : j < na)
     (hm : 16 * m + 16 ≤ B) (hX : 4 * X.size < USize.size) (hE : 4 * E.size < USize.size)
-    (hB : 4 * B ≤ X.size) (jj rb a : USize) (hjj : jj.toNat = j) (hrb : rb.toNat = B) (oa : Nat)
+    (hB : na * B ≤ X.size) (jj rb a : USize) (hjj : jj.toNat = j) (hrb : rb.toNat = B) (oa : Nat)
     (ha : a.toNat = oa) (hra : oa + B ≤ E.size) (hA : ∀ k < B, A k = E.getD (oa + k) 0)
     (wj : UInt32) (hw : wj = (W j).val) {n nm : Nat} (hwj : Wins n (jj * rb) nm)
-    (hwa : Wins (encode E).size a nm) (hsn : (encode (accUpd X B m j A W)).size = n)
+    (hwa : Wins (encode E).size a nm) (hsn : (encode (accUpd na X B m j A W)).size = n)
     (ho : ((16 * m).toUSize).toNat + 16 ≤ 16 * nm) :
-    (stepAccE p rb jj (encode E) a wj hwj hwa ⟨encode (accUpd X B m j A W), hsn⟩
-      (16 * m).toUSize ho).1 = encode (accUpd X B m (j + 1) A W) := by
-  have hs : (encode (accUpd X B m j A W)).size = 4 * X.size := by
+    (stepAccE p rb jj (encode E) a wj hwj hwa ⟨encode (accUpd na X B m j A W), hsn⟩
+      (16 * m).toUSize ho).1 = encode (accUpd na X B m (j + 1) A W) := by
+  have hs : (encode (accUpd na X B m j A W)).size = 4 * X.size := by
     rw [size_encode_fields, size_accUpd]
   have hoff := accOff_toNat hjj hrb hj hm (by omega)
-  have hjB : j * B + B ≤ 4 * B := by rw [← Nat.succ_mul]; exact Nat.mul_le_mul_right B (by omega)
+  have hjB : j * B + B ≤ na * B := by rw [← Nat.succ_mul]; exact Nat.mul_le_mul_right B (by omega)
   have hoa' : (a + (16 * m).toUSize).toNat = oa + 16 * m :=
     off_toNat (n := E.size) ha (by omega) hE
   unfold stepAccE
@@ -595,128 +599,138 @@ theorem stepAccE_upd (X E : Array F) (B m j : Nat) (A W : Nat → F) (hj : j < 4
   rw [ld_encode, hoa', hA _ (by omega), Nat.add_assoc]
 
 variable (p) in
-theorem stepAccW_upd (X : Array F) (B m j : Nat) (W : Nat → F) (hj : j < 4)
-    (hm : 16 * m + 16 ≤ B) (hX : 4 * X.size < USize.size) (hB : 4 * B ≤ X.size) (jj rb : USize)
+theorem stepAccW_upd (X : Array F) (B m j : Nat) (W : Nat → F) (hj : j < na)
+    (hm : 16 * m + 16 ≤ B) (hX : 4 * X.size < USize.size) (hB : na * B ≤ X.size) (jj rb : USize)
     (hjj : jj.toNat = j) (hrb : rb.toNat = B) (c : F) (wj : UInt32) (hw : wj = (W j).val)
     {n nm : Nat} (hwj : Wins n (jj * rb) nm)
-    (hsn : (encode (accUpd X B m j (fun _ ↦ c) W)).size = n)
+    (hsn : (encode (accUpd na X B m j (fun _ ↦ c) W)).size = n)
     (ho : ((16 * m).toUSize).toNat + 16 ≤ 16 * nm) :
-    (stepAccW p rb jj c.val wj hwj ⟨encode (accUpd X B m j (fun _ ↦ c) W), hsn⟩
-      (16 * m).toUSize ho).1 = encode (accUpd X B m (j + 1) (fun _ ↦ c) W) := by
-  have hs : (encode (accUpd X B m j (fun _ ↦ c) W)).size = 4 * X.size := by
+    (stepAccW p rb jj c.val wj hwj ⟨encode (accUpd na X B m j (fun _ ↦ c) W), hsn⟩
+      (16 * m).toUSize ho).1 = encode (accUpd na X B m (j + 1) (fun _ ↦ c) W) := by
+  have hs : (encode (accUpd na X B m j (fun _ ↦ c) W)).size = 4 * X.size := by
     rw [size_encode_fields, size_accUpd]
   have hoff := accOff_toNat hjj hrb hj hm (by omega)
-  have hjB : j * B + B ≤ 4 * B := by rw [← Nat.succ_mul]; exact Nat.mul_le_mul_right B (by omega)
+  have hjB : j * B + B ≤ na * B := by rw [← Nat.succ_mul]; exact Nat.mul_le_mul_right B (by omega)
   unfold stepAccW
   dsimp only
   rw [st16_eq _ _ _ (by rw [hs]; exact hX)]
   exact lanesAcc_upd X B m j _ W hj hm hX hB _ hoff _ wj hw (fun _ _ ↦ c.val) fun _ _ ↦ rfl
 
-/-- The four coordinates' steps of an accumulation, through the states `Z 0, …, Z 4`. -/
-theorem acc4_buf {n : Nat} (st : (j : Nat) → j < 4 → Buf n → Buf n) (Z : Nat → ByteArray)
-    (hZ : ∀ j, (Z j).size = n) (h : ∀ j (hj : j < 4), (st j hj ⟨Z j, hZ j⟩).1 = Z (j + 1)) :
-    (st 3 (by decide) (st 2 (by decide) (st 1 (by decide) (st 0 (by decide) ⟨Z 0, hZ 0⟩)))).1 =
-      Z 4 := by
-  rw [show st 0 _ ⟨Z 0, hZ 0⟩ = ⟨Z 1, hZ 1⟩ from Subtype.ext (h 0 _),
-    show st 1 _ ⟨Z 1, hZ 1⟩ = ⟨Z 2, hZ 2⟩ from Subtype.ext (h 1 _),
-    show st 2 _ ⟨Z 2, hZ 2⟩ = ⟨Z 3, hZ 3⟩ from Subtype.ext (h 2 _)]
-  exact h 3 _
+/-- The `na` coordinates' steps of an accumulation, through the states `Z 0, …, Z na`. -/
+theorem accN_buf {n : Nat} (st : (j : Nat) → j < na → Buf n → Buf n) (Z : Nat → ByteArray)
+    (hZ : ∀ j, (Z j).size = n) (h : ∀ j (hj : j < na), (st j hj ⟨Z j, hZ j⟩).1 = Z (j + 1)) :
+    (Nat.fold na st ⟨Z 0, hZ 0⟩).1 = Z na := by
+  suffices ∀ M (hM : M ≤ na),
+      Nat.fold M (fun i hi ↦ st i (by omega)) ⟨Z 0, hZ 0⟩ = ⟨Z M, hZ M⟩ by
+    rw [this na le_rfl]
+  intro M hM
+  induction M with
+  | zero => rw [Nat.fold_zero]
+  | succ M ih => rw [Nat.fold_succ, ih (by omega)]; exact Subtype.ext (h M _)
 
-/-- The window of accumulator `j < 4` of a group of `16 nm` rows. -/
-theorem wins_acc (X : Array F) (nm j : Nat) (jj rb : USize) (hjj : jj.toNat = j) (hj : j < 4)
-    (hrb : rb.toNat = 16 * nm) (hX : 4 * X.size < USize.size) (hB : 4 * (16 * nm) ≤ X.size) :
+/-- An accumulator's index of a nonempty group fits a machine word. -/
+theorem acc_lt_size {X : Array F} {nm j : Nat} (hnm : 0 < nm) (hj : j < na)
+    (hX : 4 * X.size < USize.size) (hB : na * (16 * nm) ≤ X.size) : j < USize.size := by
+  have h1 : j * (16 * nm) < na * (16 * nm) := Nat.mul_lt_mul_of_pos_right hj (by omega)
+  have h2 : j ≤ j * (16 * nm) := Nat.le_mul_of_pos_right j (by omega)
+  omega
+
+/-- The window of accumulator `j < na` of a group of `16 nm` rows. -/
+theorem wins_acc (X : Array F) (nm j : Nat) (jj rb : USize) (hjj : jj.toNat = j) (hj : j < na)
+    (hrb : rb.toNat = 16 * nm) (hX : 4 * X.size < USize.size) (hB : na * (16 * nm) ≤ X.size) :
     Wins (encode X).size (jj * rb) nm := by
+  have hjB : j * (16 * nm) + 16 * nm ≤ na * (16 * nm) := by
+    rw [← Nat.succ_mul]; exact Nat.mul_le_mul_right _ (by omega)
   have hmul : (jj * rb).toNat = j * (16 * nm) := by
-    rw [usize_mul_toNat (by rw [hjj, hrb]; interval_cases j <;> omega), hjj, hrb]
+    rw [usize_mul_toNat (by rw [hjj, hrb]; omega), hjj, hrb]
   refine ⟨?_, by rw [size_encode_fields]; exact hX⟩
   rw [size_encode_fields, hmul]
-  interval_cases j <;> omega
+  omega
 
 /-- An accumulation's weights' words. -/
-def WtsOk (wts : Array UInt32) (w : Nat) (W : Nat → F) : Prop :=
-  ∀ j < 4, wts.getD (4 * w + j) 0 = (W j).val
+def WtsOk (na : Nat) (wts : Array UInt32) (w : Nat) (W : Nat → F) : Prop :=
+  ∀ j < na, wts.getD (na * w + j) 0 = (W j).val
 
-theorem usize_lits : (0 : USize).toNat = 0 ∧ (1 : USize).toNat = 1 ∧ (2 : USize).toNat = 2 ∧
-    (3 : USize).toNat = 3 :=
-  ⟨usize_numeral 0 (by decide), usize_numeral 1 (by decide), usize_numeral 2 (by decide),
-    usize_numeral 3 (by decide)⟩
+/-- The windows of the `na` accumulators of a group of `16 nm` rows. -/
+theorem wins_accs (X : Array F) (nm : Nat) (rb : USize) (hrb : rb.toNat = 16 * nm)
+    (hX : 4 * X.size < USize.size) (hB : na * (16 * nm) ≤ X.size) :
+    ∀ j < na, Wins (encode X).size (j.toUSize * rb) nm := fun j hj ↦ by
+  rcases Nat.eq_zero_or_pos nm with h0 | h0
+  · subst h0
+    have : (j.toUSize * rb).toNat = 0 := by
+      rw [USize.toNat_mul, hrb]; simp
+    refine ⟨?_, by rw [size_encode_fields]; exact hX⟩
+    rw [this]; omega
+  · exact wins_acc X nm j _ rb (toUSize_toNat (acc_lt_size h0 hj hX hB)) hj hrb hX hB
 
 /-- **An accumulation of a register** on a group of `16 nm` rows. -/
 theorem accS_upd (X : Array F) (nm : Nat) (A W : Nat → F) (hX : 4 * X.size < USize.size)
-    (hB : 4 * (16 * nm) ≤ X.size) (rb a : USize) (hrb : rb.toNat = 16 * nm) (oa : Nat)
-    (ha : a.toNat = oa) (hoa : 4 * (16 * nm) ≤ oa) (hra : oa + 16 * nm ≤ X.size)
+    (hB : na * (16 * nm) ≤ X.size) (rb a : USize) (hrb : rb.toNat = 16 * nm) (oa : Nat)
+    (ha : a.toNat = oa) (hoa : na * (16 * nm) ≤ oa) (hra : oa + 16 * nm ≤ X.size)
     (hA : ∀ k < 16 * nm, A k = X.getD (oa + k) 0) (wts : Array UInt32) (w : Nat)
-    (hw : WtsOk wts w W) :
-    accS p nm rb (encode X) a wts w = encode (accUpd X (16 * nm) nm 0 A W) := by
-  obtain ⟨u0, u1, u2, u3⟩ := usize_lits
+    (hw : WtsOk na wts w W) :
+    accS p na nm rb (encode X) a wts w = encode (accUpd na X (16 * nm) nm 0 A W) := by
   have hwa := wins_encode X nm oa a ha hX hra
+  have hw4 := wins_accs X nm rb hrb hX hB
+  have hnm : 16 * nm < USize.size := by
+    rw [size_encode_fields] at hwa; have := hwa.2; omega
   unfold accS
-  have hw4 (jj : USize) (j : Nat) (hjj : jj.toNat = j) (hj : j < 4) :=
-    wins_acc X nm j jj rb hjj hj hrb hX hB
-  rw [dite_eq_left_of_eq_true (eq_true ⟨hw4 0 0 u0 (by decide), hw4 1 1 u1 (by decide),
-      hw4 2 2 u2 (by decide), hw4 3 3 u3 (by decide), hwa⟩)]
-  have hZ (m j : Nat) : (encode (accUpd X (16 * nm) m j A W)).size = (encode X).size := by
+  rw [dite_eq_left_of_eq_true (eq_true ⟨hnm, hw4, hwa⟩)]
+  have hZ (m j : Nat) : (encode (accUpd na X (16 * nm) m j A W)).size = (encode X).size := by
     rw [size_encode_fields, size_accUpd, size_encode_fields]
-  refine groupsW_states nm _ _ (fun m ↦ encode (accUpd X (16 * nm) m 0 A W)) (fun m ↦ hZ m 0)
+  refine groupsW_states nm _ _ (fun m ↦ encode (accUpd na X (16 * nm) m 0 A W)) (fun m ↦ hZ m 0)
     (fun m hm ho ↦ ?_) _ (by rw [accUpd_zero])
   rw [← accUpd_next]
-  exact acc4_buf (fun j hj b ↦ stepAccS p rb j.toUSize a (wts.getD (4 * w + j) 0)
-        (hw4 j.toUSize j (toUSize_toNat (by have := usize_size_le; omega)) hj)
-        hwa b (16 * m).toUSize ho)
-    (fun j ↦ encode (accUpd X (16 * nm) m j A W)) (fun j ↦ hZ m j) fun j hj ↦
+  exact accN_buf (fun j hj b ↦ stepAccS p rb j.toUSize a (wts.getD (na * w + j) 0)
+        (hw4 j hj) hwa b (16 * m).toUSize ho)
+    (fun j ↦ encode (accUpd na X (16 * nm) m j A W)) (fun j ↦ hZ m j) fun j hj ↦
       stepAccS_upd p X (16 * nm) m j A W hj (by omega) hX hB _ rb a
-        (toUSize_toNat (by have := usize_size_le; omega)) hrb oa ha hoa hra hA _ (hw j hj) _ _ _ _
+        (toUSize_toNat (acc_lt_size (by omega) hj hX hB)) hrb oa ha hoa hra hA _ (hw j hj) _ _ _ _
 
 /-- **An accumulation of another buffer's words** on a group of `16 nm` rows. -/
 theorem accE_upd (X E : Array F) (nm : Nat) (A W : Nat → F) (hX : 4 * X.size < USize.size)
-    (hE : 4 * E.size < USize.size) (hB : 4 * (16 * nm) ≤ X.size) (rb a : USize)
+    (hE : 4 * E.size < USize.size) (hB : na * (16 * nm) ≤ X.size) (rb a : USize)
     (hrb : rb.toNat = 16 * nm) (oa : Nat) (ha : a.toNat = oa) (hra : oa + 16 * nm ≤ E.size)
     (hA : ∀ k < 16 * nm, A k = E.getD (oa + k) 0) (wts : Array UInt32) (w : Nat)
-    (hw : WtsOk wts w W) :
-    accE p nm rb (encode X) (encode E) a wts w = encode (accUpd X (16 * nm) nm 0 A W) := by
-  obtain ⟨u0, u1, u2, u3⟩ := usize_lits
+    (hw : WtsOk na wts w W) :
+    accE p na nm rb (encode X) (encode E) a wts w = encode (accUpd na X (16 * nm) nm 0 A W) := by
   have hwa := wins_encode E nm oa a ha hE hra
+  have hw4 := wins_accs X nm rb hrb hX hB
+  have hnm : 16 * nm < USize.size := by
+    rw [size_encode_fields] at hwa; have := hwa.2; omega
   unfold accE
-  have hw4 (jj : USize) (j : Nat) (hjj : jj.toNat = j) (hj : j < 4) :=
-    wins_acc X nm j jj rb hjj hj hrb hX hB
-  rw [dite_eq_left_of_eq_true (eq_true ⟨hw4 0 0 u0 (by decide), hw4 1 1 u1 (by decide),
-      hw4 2 2 u2 (by decide), hw4 3 3 u3 (by decide), hwa⟩)]
-  have hZ (m j : Nat) : (encode (accUpd X (16 * nm) m j A W)).size = (encode X).size := by
+  rw [dite_eq_left_of_eq_true (eq_true ⟨hnm, hw4, hwa⟩)]
+  have hZ (m j : Nat) : (encode (accUpd na X (16 * nm) m j A W)).size = (encode X).size := by
     rw [size_encode_fields, size_accUpd, size_encode_fields]
-  refine groupsW_states nm _ _ (fun m ↦ encode (accUpd X (16 * nm) m 0 A W)) (fun m ↦ hZ m 0)
+  refine groupsW_states nm _ _ (fun m ↦ encode (accUpd na X (16 * nm) m 0 A W)) (fun m ↦ hZ m 0)
     (fun m hm ho ↦ ?_) _ (by rw [accUpd_zero])
   rw [← accUpd_next]
-  exact acc4_buf (fun j hj b ↦ stepAccE p rb j.toUSize (encode E) a
-        (wts.getD (4 * w + j) 0)
-        (hw4 j.toUSize j (toUSize_toNat (by have := usize_size_le; omega)) hj)
-        hwa b (16 * m).toUSize ho)
-    (fun j ↦ encode (accUpd X (16 * nm) m j A W)) (fun j ↦ hZ m j) fun j hj ↦
+  exact accN_buf (fun j hj b ↦ stepAccE p rb j.toUSize (encode E) a
+        (wts.getD (na * w + j) 0) (hw4 j hj) hwa b (16 * m).toUSize ho)
+    (fun j ↦ encode (accUpd na X (16 * nm) m j A W)) (fun j ↦ hZ m j) fun j hj ↦
       stepAccE_upd p X E (16 * nm) m j A W hj (by omega) hX hE hB _ rb a
-        (toUSize_toNat (by have := usize_size_le; omega)) hrb oa ha hra hA _ (hw j hj) _ _ _ _
+        (toUSize_toNat (acc_lt_size (by omega) hj hX hB)) hrb oa ha hra hA _ (hw j hj) _ _ _ _
 
 /-- **An accumulation of a constant** on a group of `16 nm` rows. -/
 theorem accW_upd (X : Array F) (nm : Nat) (W : Nat → F) (hX : 4 * X.size < USize.size)
-    (hB : 4 * (16 * nm) ≤ X.size) (rb : USize) (hrb : rb.toNat = 16 * nm) (c : F)
-    (wts : Array UInt32) (w : Nat) (hw : WtsOk wts w W) :
-    accW p nm rb (encode X) c.val wts w = encode (accUpd X (16 * nm) nm 0 (fun _ ↦ c) W) := by
-  obtain ⟨u0, u1, u2, u3⟩ := usize_lits
+    (hB : na * (16 * nm) ≤ X.size) (rb : USize) (hrb : rb.toNat = 16 * nm)
+    (hnm : 16 * nm < USize.size) (c : F) (wts : Array UInt32) (w : Nat) (hw : WtsOk na wts w W) :
+    accW p na nm rb (encode X) c.val wts w =
+      encode (accUpd na X (16 * nm) nm 0 (fun _ ↦ c) W) := by
+  have hw4 := wins_accs X nm rb hrb hX hB
   unfold accW
-  have hw4 (jj : USize) (j : Nat) (hjj : jj.toNat = j) (hj : j < 4) :=
-    wins_acc X nm j jj rb hjj hj hrb hX hB
-  rw [dite_eq_left_of_eq_true (eq_true ⟨hw4 0 0 u0 (by decide), hw4 1 1 u1 (by decide),
-      hw4 2 2 u2 (by decide), hw4 3 3 u3 (by decide)⟩)]
+  rw [dite_eq_left_of_eq_true (eq_true ⟨hnm, hw4⟩)]
   have hZ (m j : Nat) :
-      (encode (accUpd X (16 * nm) m j (fun _ ↦ c) W)).size = (encode X).size := by
+      (encode (accUpd na X (16 * nm) m j (fun _ ↦ c) W)).size = (encode X).size := by
     rw [size_encode_fields, size_accUpd, size_encode_fields]
-  refine groupsW_states nm _ _ (fun m ↦ encode (accUpd X (16 * nm) m 0 (fun _ ↦ c) W))
+  refine groupsW_states nm _ _ (fun m ↦ encode (accUpd na X (16 * nm) m 0 (fun _ ↦ c) W))
     (fun m ↦ hZ m 0) (fun m hm ho ↦ ?_) _ (by rw [accUpd_zero])
   rw [← accUpd_next]
-  exact acc4_buf (fun j hj b ↦ stepAccW p rb j.toUSize c.val (wts.getD (4 * w + j) 0)
-        (hw4 j.toUSize j (toUSize_toNat (by have := usize_size_le; omega)) hj)
-        b (16 * m).toUSize ho)
-    (fun j ↦ encode (accUpd X (16 * nm) m j (fun _ ↦ c) W)) (fun j ↦ hZ m j) fun j hj ↦
+  exact accN_buf (fun j hj b ↦ stepAccW p rb j.toUSize c.val (wts.getD (na * w + j) 0)
+        (hw4 j hj) b (16 * m).toUSize ho)
+    (fun j ↦ encode (accUpd na X (16 * nm) m j (fun _ ↦ c) W)) (fun j ↦ hZ m j) fun j hj ↦
       stepAccW_upd p X (16 * nm) m j W hj (by omega) hX hB _ rb
-        (toUSize_toNat (by have := usize_size_le; omega)) hrb c _ (hw j hj) _ _ _
+        (toUSize_toNat (acc_lt_size (by omega) hj hX hB)) hrb c _ (hw j hj) _ _ _
 
 /-! ### Fills, copies and gathers -/
 
@@ -845,24 +859,25 @@ theorem copyPer_upd (X : Array F) (PER : Array (Array F)) (nm od j oa : Nat) (d 
 /-! ### The group machine on the rows' values -/
 
 /-- The words of `B` rows' run states: slot `s` (`St.slot`) of row `i` at word `B s + i`. -/
-def gtab (B nregs : Nat) (sts : Nat → St F) : Array F :=
-  tab (B * (4 + nregs)) fun idx ↦ (sts (idx % B)).slot (idx / B)
+def gtab (na B nregs : Nat) (sts : Nat → St F) : Array F :=
+  tab (B * (na + nregs)) fun idx ↦ (sts (idx % B)).slot na (idx / B)
 
 /-- A group's state holds `B` rows' run states. -/
 def GroupRel (B nregs : Nat) (st : ByteArray) (sts : Nat → St F) : Prop :=
-  st = encode (gtab B nregs sts)
+  st = encode (gtab na B nregs sts)
 
 theorem size_gtab (B nregs : Nat) (sts : Nat → St F) :
-    (gtab B nregs sts).size = B * (4 + nregs) := size_tab ..
+    (gtab na B nregs sts).size = B * (na + nregs) := size_tab ..
 
 /-- Slot `t` of every row set: its words overwritten. -/
 theorem updR_gtab (B nregs t : Nat) (sts : Nat → St F) (H : Nat → F) :
-    updR (gtab B nregs sts) (B * t) B H = gtab B nregs fun i ↦ (sts i).setSlot t (H i) := by
+    updR (gtab na B nregs sts) (B * t) B H = gtab na B nregs fun i ↦ (sts i).setSlot na t (H i) :=
+        by
   apply array_eq_of_getD _ _ 0 (by rw [size_updR, size_gtab, size_gtab])
   intro idx
   rw [getD_updR, size_gtab]
   unfold gtab
-  by_cases hi : idx < B * (4 + nregs)
+  by_cases hi : idx < B * (na + nregs)
   · rw [getD_tab _ _ _ hi, getD_tab _ _ _ hi, St.slot_setSlot]
     have hB : 0 < B := Nat.pos_of_ne_zero fun h ↦ by subst h; simp only [Nat.zero_mul] at hi; omega
     have hdm := Nat.div_add_mod idx B
@@ -885,23 +900,23 @@ theorem updR_gtab (B nregs t : Nat) (sts : Nat → St F) (H : Nat → F) :
 
 /-- The accumulators of every row plus `A i` times the weights `W j`. -/
 theorem accUpd_gtab (nm nregs : Nat) (sts : Nat → St F) (A W : Nat → F) :
-    accUpd (gtab (16 * nm) nregs sts) (16 * nm) nm 0 A W = gtab (16 * nm) nregs fun i ↦
+    accUpd na (gtab na (16 * nm) nregs sts) (16 * nm) nm 0 A W = gtab na (16 * nm) nregs fun i ↦
       { sts i with acc := fun j ↦ (sts i).acc j + A i * W j } := by
   apply array_eq_of_getD _ _ 0 (by rw [size_accUpd, size_gtab, size_gtab])
   intro idx
   rw [getD_accUpd, size_gtab]
   unfold gtab
-  by_cases hi : idx < 16 * nm * (4 + nregs)
+  by_cases hi : idx < 16 * nm * (na + nregs)
   · rw [getD_tab _ _ _ hi, getD_tab _ _ _ hi]
     have hB : 0 < 16 * nm := Nat.pos_of_ne_zero fun h ↦ by
       rw [h, Nat.zero_mul] at hi; omega
     have hlt := Nat.mod_lt idx hB
-    by_cases h4 : idx < 4 * (16 * nm)
-    · have hq : idx / (16 * nm) < 4 := Nat.div_lt_of_lt_mul (by rw [Nat.mul_comm]; exact h4)
+    by_cases h4 : idx < na * (16 * nm)
+    · have hq : idx / (16 * nm) < na := Nat.div_lt_of_lt_mul (by rw [Nat.mul_comm]; exact h4)
       simp only [hi, h4, hlt, true_or, and_self, ite_true, St.slot, hq]
-    · have hq : ¬idx / (16 * nm) < 4 := fun hq ↦ h4 (by
+    · have hq : ¬idx / (16 * nm) < na := fun hq ↦ h4 (by
         have := Nat.div_add_mod idx (16 * nm)
-        have : idx / (16 * nm) * (16 * nm) + (16 * nm) ≤ 4 * (16 * nm) := by
+        have : idx / (16 * nm) * (16 * nm) + (16 * nm) ≤ na * (16 * nm) := by
           rw [← Nat.succ_mul]; exact Nat.mul_le_mul_right _ hq
         have h3 : 16 * nm * (idx / (16 * nm)) = idx / (16 * nm) * (16 * nm) := Nat.mul_comm _ _
         omega)
@@ -967,23 +982,23 @@ theorem binG_WW (env : GroupEnv) (o : Op) (d : Nat) (x y : F) (s : ByteArray) :
   cases o <;> rfl
 
 theorem regOff_toNat (B nregs r : Nat) (v : View) (L : Loads) (scal wts : Array UInt32)
-    (hr : r < nregs) (hst : 4 * (B * (4 + nregs)) < USize.size) :
-    (regOff (blockEnv B v L scal wts) r).toNat = B * (4 + r) := by
+    (hr : r < nregs) (hst : 4 * (B * (na + nregs)) < USize.size) :
+    (regOff (blockEnv na B v L scal wts) r).toNat = B * (na + r) := by
   simp only [regOff, blockEnv]
   rcases Nat.eq_zero_or_pos B with h0 | h0
   · subst h0
     rw [USize.toNat_mul]
     simp
-  · have h4 : B * (4 + r) ≤ B * (4 + nregs) := Nat.mul_le_mul_left B (by omega)
-    have h5 : 4 + r ≤ B * (4 + r) := Nat.le_mul_of_pos_left _ h0
-    have h6 : B ≤ B * (4 + r) := Nat.le_mul_of_pos_right B (by omega)
-    have e1 : (4 + r).toUSize.toNat = 4 + r := toUSize_toNat (by omega)
+  · have h4 : B * (na + r) ≤ B * (na + nregs) := Nat.mul_le_mul_left B (by omega)
+    have h5 : na + r ≤ B * (na + r) := Nat.le_mul_of_pos_left _ h0
+    have h6 : B ≤ B * (na + nregs) := Nat.le_mul_of_pos_right B (by omega)
+    have e1 : (na + r).toUSize.toNat = na + r := toUSize_toNat (by omega)
     have e2 : B.toUSize.toNat = B := toUSize_toNat (by omega)
     rw [usize_mul_toNat (by rw [e1, e2, Nat.mul_comm]; omega), e1, e2, Nat.mul_comm]
 
 theorem colOff_toNat (B : Nat) (V : Array F) (cb cs c : Nat) (L : Loads) (scal wts : Array UInt32)
     (hc : cb + c * cs + B ≤ V.size) (hV : 4 * V.size < USize.size) :
-    (colOff (blockEnv B ⟨encode V, cb, cs⟩ L scal wts) c).toNat = cb + c * cs := by
+    (colOff (blockEnv na B ⟨encode V, cb, cs⟩ L scal wts) c).toNat = cb + c * cs := by
   simp only [colOff, blockEnv]
   rcases Nat.eq_zero_or_pos c with h0 | h0
   · subst h0
@@ -1015,7 +1030,7 @@ theorem toUSize_toNat_of_le {n m : Nat} (h : n ≤ m) (hm : 4 * m < USize.size) 
 
 theorem tcolOff_toNat (B c : Nat) (v : View) (L : Loads) (scal wts : Array UInt32) (n : Nat)
     (hc : c * B + B ≤ n) (hn : 4 * n < USize.size) :
-    (tcolOff (blockEnv B v L scal wts) c).toNat = c * B := by
+    (tcolOff (blockEnv na B v L scal wts) c).toNat = c * B := by
   simp only [tcolOff, blockEnv]
   rcases Nat.eq_zero_or_pos B with h0 | h0
   · subst h0
@@ -1034,10 +1049,10 @@ theorem tcolOff_toNat (B c : Nat) (v : View) (L : Loads) (scal wts : Array UInt3
     usize_mul_toNat (by rw [e1, e2]; omega), e1, e2, Nat.zero_add]
 
 /-- Word `B s + k` of `B` rows' run states: slot `s` of row `k`. -/
-theorem getD_gtab (B nregs : Nat) (sts : Nat → St F) (s k : Nat) (hs : s < 4 + nregs)
-    (hk : k < B) : (gtab B nregs sts).getD (B * s + k) 0 = (sts k).slot s := by
-  have hlt : B * s + k < B * (4 + nregs) := by
-    have : B * s + B ≤ B * (4 + nregs) := by
+theorem getD_gtab (B nregs : Nat) (sts : Nat → St F) (s k : Nat) (hs : s < na + nregs)
+    (hk : k < B) : (gtab na B nregs sts).getD (B * s + k) 0 = (sts k).slot na s := by
+  have hlt : B * s + k < B * (na + nregs) := by
+    have : B * s + B ≤ B * (na + nregs) := by
       rw [← Nat.mul_succ]; exact Nat.mul_le_mul_left B (by omega)
     omega
   unfold gtab
@@ -1050,7 +1065,7 @@ theorem getD_gtab (B nregs : Nat) (sts : Nat → St F) (s k : Nat) (hs : s < 4 +
   rw [hq, hr]
 
 /-- Two registers' words are the same or apart. -/
-theorem apart_regs (B x d : Nat) : Apart true (B * (4 + x)) (B * (4 + d)) B := fun _ ↦ by
+theorem apart_regs (B x d : Nat) : Apart true (B * (na + x)) (B * (na + d)) B := fun _ ↦ by
   rcases Nat.lt_trichotomy x d with h | h | h
   · right; left
     rw [← Nat.mul_succ]; exact Nat.mul_le_mul_left B (by omega)
@@ -1059,39 +1074,40 @@ theorem apart_regs (B x d : Nat) : Apart true (B * (4 + x)) (B * (4 + d)) B := f
     rw [← Nat.mul_succ]; exact Nat.mul_le_mul_left B (by omega)
 
 theorem scalAt_blockEnv (B : Nat) (v : View) (L : Loads) (SC : Array F) (wts : Array UInt32)
-    (i : Nat) : scalAt (blockEnv B v L (SC.map (·.val)) wts) i = (SC.getD i 0).val :=
+    (i : Nat) : scalAt (blockEnv na B v L (SC.map (·.val)) wts) i = (SC.getD i 0).val :=
   CompPoly.CPolynomial.NTTFast.Packed.getD_map_val SC i
 
 theorem wtsOk_blockCtx (WT : Array F) (w : Nat) :
-    WtsOk (WT.map (·.val)) w fun j ↦ WT.getD (4 * w + j) 0 := fun _ _ ↦
+    WtsOk na (WT.map (·.val)) w fun j ↦ WT.getD (na * w + j) 0 := fun _ _ ↦
   CompPoly.CPolynomial.NTTFast.Packed.getD_map_val WT _
 
 /-- The group of a block of `16 nm` rows: the block's view and loads, the scalars and weights. -/
-abbrev groupOf (nm : Nat) (V : Array F) (cb cs : Nat) (L : LoadsF p) (SC WT : Array F) :
+abbrev groupOf (na nm : Nat) (V : Array F) (cb cs : Nat) (L : LoadsF p) (SC WT : Array F) :
     GroupEnv :=
-  blockEnv (16 * nm) ⟨encode V, cb, cs⟩ L.enc (SC.map (·.val)) (WT.map (·.val))
+  blockEnv na (16 * nm) ⟨encode V, cb, cs⟩ L.enc (SC.map (·.val)) (WT.map (·.val))
 
 theorem groupOf_nm (nm : Nat) (V : Array F) (cb cs : Nat) (L : LoadsF p) (SC WT : Array F) :
-    (groupOf nm V cb cs L SC WT).nm = nm := Nat.mul_div_cancel_left nm (by decide)
+    (groupOf na nm V cb cs L SC WT).nm = nm := Nat.mul_div_cancel_left nm (by decide)
 
 theorem groupOf_rb (nm : Nat) (V : Array F) (cb cs : Nat) (L : LoadsF p) (SC WT : Array F)
-    (h : 16 * nm < USize.size) : (groupOf nm V cb cs L SC WT).rb.toNat = 16 * nm :=
+    (h : 16 * nm < USize.size) : (groupOf na nm V cb cs L SC WT).rb.toNat = 16 * nm :=
   toUSize_toNat h
 
 /-- **A load on a group** of `16 nm` rows in range is the load on every row's values. -/
 theorem loadG_rel (V : Array F) (cb cs : Nat) (L : LoadsF p) (SC WT : Array F) (nm nregs : Nat)
-    (hst : 4 * (16 * nm * (4 + nregs)) < USize.size) (hL : L.Addr) (sts : Nat → St F) (d : Nat)
+    (hst : 4 * (16 * nm * (na + nregs)) < USize.size) (hL : L.Addr) (sts : Nat → St F) (d : Nat)
     (src : Src) (hd : d < nregs) (hs : L.InRange (16 * nm) src) :
-    loadG (groupOf nm V cb cs L SC WT) d src (encode (gtab (16 * nm) nregs sts)) =
-      encode (gtab (16 * nm) nregs fun i ↦ (sts i).setSlot (4 + d) (L.src (16 * nm) i src)) := by
+    loadG (groupOf na nm V cb cs L SC WT) d src (encode (gtab na (16 * nm) nregs sts)) =
+      encode (gtab na (16 * nm) nregs fun i ↦ (sts i).setSlot na (na + d) (L.src (16 * nm) i src))
+          := by
   obtain ⟨hM, hP, hPT, hQ, hQT, hPER, hFS, hLS, hTS⟩ := hL
-  have hX : 4 * (gtab (16 * nm) nregs sts).size < USize.size := by rw [size_gtab]; exact hst
-  have hrd : 16 * nm * (4 + d) + 16 * nm ≤ (gtab (16 * nm) nregs sts).size := by
+  have hX : 4 * (gtab na (16 * nm) nregs sts).size < USize.size := by rw [size_gtab]; exact hst
+  have hrd : 16 * nm * (na + d) + 16 * nm ≤ (gtab na (16 * nm) nregs sts).size := by
     rw [size_gtab, ← Nat.mul_succ]; exact Nat.mul_le_mul_left _ (by omega)
   have hro := regOff_toNat (16 * nm) nregs d ⟨encode V, cb, cs⟩ L.enc (SC.map (·.val))
     (WT.map (·.val)) hd hst
   rw [← updR_gtab _ _ _ _ _]
-  have hnm := groupOf_nm nm V cb cs L SC WT
+  have hnm := groupOf_nm (na := na) nm V cb cs L SC WT
   cases src <;> simp only [LoadsF.InRange] at hs
   case next c =>
     simp only [loadG, hnm]
@@ -1136,28 +1152,29 @@ theorem loadG_rel (V : Array F) (cb cs : Nat) (L : LoadsF p) (SC WT : Array F) (
         (by omega) hTS) hX hTS hrd hs
 
 theorem getD_gtab_reg (B nregs : Nat) (sts : Nat → St F) (r k : Nat) (hr : r < nregs)
-    (hk : k < B) : (gtab B nregs sts).getD (B * (4 + r) + k) 0 = (sts k).reg r := by
+    (hk : k < B) : (gtab na B nregs sts).getD (B * (na + r) + k) 0 = (sts k).reg r := by
   rw [getD_gtab _ _ _ _ _ (by omega) hk]
-  simp only [St.slot, show ¬4 + r < 4 by omega, ite_false, Nat.add_sub_cancel_left]
+  simp only [St.slot, show ¬na + r < na by omega, ite_false, Nat.add_sub_cancel_left]
 
 /-- **An operation on a group** of `16 nm` rows in range is the operation on every row's values. -/
 theorem binG_rel (V : Array F) (cb cs : Nat) (L : LoadsF p) (SC WT : Array F) (nm nregs : Nat)
-    (hst : 4 * (16 * nm * (4 + nregs)) < USize.size) (hV : 4 * V.size < USize.size)
+    (hst : 4 * (16 * nm * (na + nregs)) < USize.size) (hV : 4 * V.size < USize.size)
     (sts : Nat → St F) (o : Op) (d : Nat) (a b : Opd F) (hd : d < nregs)
     (ha : a.InRange V cb cs (16 * nm) nregs) (hb : b.InRange V cb cs (16 * nm) nregs) :
-    binG p (groupOf nm V cb cs L SC WT) o d a b (encode (gtab (16 * nm) nregs sts)) =
-      encode (gtab (16 * nm) nregs fun i ↦ (sts i).setSlot (4 + d)
-        (o.eval (a.val (blockCtx V cb cs L SC WT (16 * nm) i) (sts i))
-          (b.val (blockCtx V cb cs L SC WT (16 * nm) i) (sts i)))) := by
-  have hX : 4 * (gtab (16 * nm) nregs sts).size < USize.size := by rw [size_gtab]; exact hst
-  have hrd : ∀ r < nregs, 16 * nm * (4 + r) + 16 * nm ≤ (gtab (16 * nm) nregs sts).size := by
+    binG p (groupOf na nm V cb cs L SC WT) o d a b (encode (gtab na (16 * nm) nregs sts)) =
+      encode (gtab na (16 * nm) nregs fun i ↦ (sts i).setSlot na (na + d)
+        (o.eval (a.val (blockCtx na V cb cs L SC WT (16 * nm) i) (sts i))
+          (b.val (blockCtx na V cb cs L SC WT (16 * nm) i) (sts i)))) := by
+  have hX : 4 * (gtab na (16 * nm) nregs sts).size < USize.size := by rw [size_gtab]; exact hst
+  have hrd : ∀ r < nregs, 16 * nm * (na + r) + 16 * nm ≤ (gtab na (16 * nm) nregs sts).size := by
     intro r hr
     rw [size_gtab, ← Nat.mul_succ]; exact Nat.mul_le_mul_left _ (by omega)
   have hro (r : Nat) (hr : r < nregs) := regOff_toNat (16 * nm) nregs r ⟨encode V, cb, cs⟩ L.enc
     (SC.map (·.val)) (WT.map (·.val)) hr hst
-  have hco (c : Nat) (hc : cb + c * cs + 16 * nm ≤ V.size) := colOff_toNat (16 * nm) V cb cs c
+  have hco (c : Nat) (hc : cb + c * cs + 16 * nm ≤ V.size) := colOff_toNat (na := na) (16 * nm) V cb
+      cs c
     L.enc (SC.map (·.val)) (WT.map (·.val)) hc hV
-  have hnm := groupOf_nm nm V cb cs L SC WT
+  have hnm := groupOf_nm (na := na) nm V cb cs L SC WT
   have hw := Op.wordG_val (p := p) o
   rw [← updR_gtab _ _ _ _ _]
   cases a with
@@ -1217,20 +1234,23 @@ theorem binG_rel (V : Array F) (cb cs : Nat) (L : LoadsF p) (SC WT : Array F) (n
 /-- **An accumulation on a group** of `16 nm` rows in range is the accumulation on every row's
 values. -/
 theorem accG_rel (V : Array F) (cb cs : Nat) (L : LoadsF p) (SC WT : Array F) (nm nregs : Nat)
-    (hst : 4 * (16 * nm * (4 + nregs)) < USize.size) (hV : 4 * V.size < USize.size)
+    (hna : 0 < na) (hst : 4 * (16 * nm * (na + nregs)) < USize.size) (hV : 4 * V.size < USize.size)
     (sts : Nat → St F) (a : Opd F) (w : Nat) (ha : a.InRange V cb cs (16 * nm) nregs) :
-    accG p (groupOf nm V cb cs L SC WT) a w (encode (gtab (16 * nm) nregs sts)) =
-      encode (gtab (16 * nm) nregs fun i ↦
-        (Instr.acc a w).exec (fieldMachine (blockCtx V cb cs L SC WT (16 * nm) i)) (sts i)) := by
-  have hX : 4 * (gtab (16 * nm) nregs sts).size < USize.size := by rw [size_gtab]; exact hst
-  have hB : 4 * (16 * nm) ≤ (gtab (16 * nm) nregs sts).size := by
-    rw [size_gtab, Nat.mul_comm 4]; exact Nat.mul_le_mul_left _ (by omega)
-  have hnm := groupOf_nm nm V cb cs L SC WT
-  have hrb := groupOf_rb nm V cb cs L SC WT (by omega)
-  have hwt := wtsOk_blockCtx WT w
-  have e : (fun i ↦ (Instr.acc a w).exec (fieldMachine (blockCtx V cb cs L SC WT (16 * nm) i))
+    accG p (groupOf na nm V cb cs L SC WT) a w (encode (gtab na (16 * nm) nregs sts)) =
+      encode (gtab na (16 * nm) nregs fun i ↦
+        (Instr.acc a w).exec (fieldMachine (blockCtx na V cb cs L SC WT (16 * nm) i)) (sts i)) := by
+  have hX : 4 * (gtab na (16 * nm) nregs sts).size < USize.size := by rw [size_gtab]; exact hst
+  have hB : na * (16 * nm) ≤ (gtab na (16 * nm) nregs sts).size := by
+    rw [size_gtab, Nat.mul_comm na]; exact Nat.mul_le_mul_left _ (by omega)
+  have h16 : 16 * nm < USize.size := by
+    have : 16 * nm ≤ 16 * nm * (na + nregs) := Nat.le_mul_of_pos_right _ (by omega)
+    omega
+  have hnm := groupOf_nm (na := na) nm V cb cs L SC WT
+  have hrb := groupOf_rb (na := na) nm V cb cs L SC WT h16
+  have hwt := wtsOk_blockCtx (na := na) WT w
+  have e : (fun i ↦ (Instr.acc a w).exec (fieldMachine (blockCtx na V cb cs L SC WT (16 * nm) i))
       (sts i)) = fun i ↦ ⟨(sts i).reg, fun j ↦ (sts i).acc j +
-        a.val (blockCtx V cb cs L SC WT (16 * nm) i) (sts i) * WT.getD (4 * w + j) 0⟩ :=
+        a.val (blockCtx na V cb cs L SC WT (16 * nm) i) (sts i) * WT.getD (na * w + j) 0⟩ :=
     funext fun _ ↦ rfl
   rw [e, ← accUpd_gtab]
   cases a with
@@ -1238,9 +1258,9 @@ theorem accG_rel (V : Array F) (cb cs : Nat) (L : LoadsF p) (SC WT : Array F) (n
     have hr : r < nregs := ha
     have hro := regOff_toNat (16 * nm) nregs r ⟨encode V, cb, cs⟩ L.enc (SC.map (·.val))
       (WT.map (·.val)) hr hst
-    have h4 : 4 * (16 * nm) ≤ 16 * nm * (4 + r) := by
-      rw [Nat.mul_comm 4]; exact Nat.mul_le_mul_left _ (by omega)
-    have h5 : 16 * nm * (4 + r) + 16 * nm ≤ (gtab (16 * nm) nregs sts).size := by
+    have h4 : na * (16 * nm) ≤ 16 * nm * (na + r) := by
+      rw [Nat.mul_comm na]; exact Nat.mul_le_mul_left _ (by omega)
+    have h5 : 16 * nm * (na + r) + 16 * nm ≤ (gtab na (16 * nm) nregs sts).size := by
       rw [size_gtab, ← Nat.mul_succ]; exact Nat.mul_le_mul_left _ (by omega)
     simp only [accG, hnm]
     exact accS_upd _ nm _ _ hX hB _ _ hrb _ hro h4 h5
@@ -1248,54 +1268,57 @@ theorem accG_rel (V : Array F) (cb cs : Nat) (L : LoadsF p) (SC WT : Array F) (n
   | cur c =>
     have hc : cb + c * cs + 16 * nm ≤ V.size := ha
     simp only [accG, hnm]
-    exact accE_upd _ V nm _ _ hX hV hB _ _ hrb _ (colOff_toNat (16 * nm) V cb cs c L.enc
+    exact accE_upd _ V nm _ _ hX hV hB _ _ hrb _ (colOff_toNat (na := na) (16 * nm) V cb cs c L.enc
       (SC.map (·.val)) (WT.map (·.val)) hc hV) hc (fun k hk ↦ rfl) _ _ hwt
   | const c =>
     simp only [accG, hnm]
-    exact accW_upd _ nm _ hX hB _ hrb c _ _ hwt
+    exact accW_upd _ nm _ hX hB _ hrb h16 c _ _ hwt
 
 /-- **An instruction on a group** of `16 nm` rows in range is the instruction on every row's
 values (`blockCtx`). -/
 theorem execGroup_rel (V : Array F) (cb cs : Nat) (L : LoadsF p) (SC WT : Array F)
-    (nm nregs : Nat) (hst : 4 * (16 * nm * (4 + nregs)) < USize.size)
+    (nm nregs : Nat) (hna : 0 < na) (hst : 4 * (16 * nm * (na + nregs)) < USize.size)
     (hV : 4 * V.size < USize.size) (hL : L.Addr) (sts : Nat → St F) (ins : Instr F)
     (hin : ins.InRange V cb cs L (16 * nm) nregs) :
-    ins.exec (groupMachine p (groupOf nm V cb cs L SC WT)) (encode (gtab (16 * nm) nregs sts)) =
-      encode (gtab (16 * nm) nregs fun i ↦
-        ins.exec (fieldMachine (blockCtx V cb cs L SC WT (16 * nm) i)) (sts i)) := by
+    ins.exec (groupMachine p (groupOf na nm V cb cs L SC WT)) (encode (gtab na (16 * nm) nregs sts))
+        =
+      encode (gtab na (16 * nm) nregs fun i ↦
+        ins.exec (fieldMachine (blockCtx na V cb cs L SC WT (16 * nm) i)) (sts i)) := by
   cases ins with
   | load d src =>
     obtain ⟨hd, hs⟩ := hin
     refine (loadG_rel V cb cs L SC WT nm nregs hst hL sts d src hd hs).trans ?_
-    refine congrArg (fun f ↦ encode (gtab (16 * nm) nregs f)) (funext fun i ↦ ?_)
+    refine congrArg (fun f ↦ encode (gtab na (16 * nm) nregs f)) (funext fun i ↦ ?_)
     rw [St.setSlot_reg, exec_load]
     rfl
   | scalar d k =>
     have hd : d < nregs := hin
-    have hX : 4 * (gtab (16 * nm) nregs sts).size < USize.size := by rw [size_gtab]; exact hst
+    have hX : 4 * (gtab na (16 * nm) nregs sts).size < USize.size := by rw [size_gtab]; exact hst
     show fill _ _ _ _ = _
     rw [groupOf_nm, scalAt_blockEnv, fill_upd _ nm _ _ (regOff_toNat (16 * nm) nregs d
       ⟨encode V, cb, cs⟩ L.enc (SC.map (·.val)) (WT.map (·.val)) hd hst) hX (by
         rw [size_gtab, ← Nat.mul_succ]; exact Nat.mul_le_mul_left _ (by omega)),
       updR_gtab _ _ _ _ _]
-    refine congrArg (fun f ↦ encode (gtab (16 * nm) nregs f)) (funext fun i ↦ ?_)
+    refine congrArg (fun f ↦ encode (gtab na (16 * nm) nregs f)) (funext fun i ↦ ?_)
     rw [St.setSlot_reg, exec_scalar]
     rfl
   | bin o d a b =>
     obtain ⟨hd, ha, hb⟩ := hin
     refine (binG_rel V cb cs L SC WT nm nregs hst hV sts o d a b hd ha hb).trans ?_
-    refine congrArg (fun f ↦ encode (gtab (16 * nm) nregs f)) (funext fun i ↦ ?_)
+    refine congrArg (fun f ↦ encode (gtab na (16 * nm) nregs f)) (funext fun i ↦ ?_)
     rw [St.setSlot_reg, exec_bin]
-  | acc a w => exact accG_rel V cb cs L SC WT nm nregs hst hV sts a w hin
+  | acc a w => exact accG_rel V cb cs L SC WT nm nregs hna hst hV sts a w hin
 
 /-- **A program on a group** of `16 nm` rows in range runs the program on every row's values. -/
 theorem runGroup_rel (code : Array (Instr F)) (V : Array F) (cb cs : Nat) (L : LoadsF p)
-    (SC WT : Array F) (nm nregs : Nat) (hst : 4 * (16 * nm * (4 + nregs)) < USize.size)
+    (SC WT : Array F) (nm nregs : Nat) (hna : 0 < na)
+    (hst : 4 * (16 * nm * (na + nregs)) < USize.size)
     (hV : 4 * V.size < USize.size) (hL : L.Addr) (sts : Nat → St F)
     (hcode : ∀ ins ∈ code, ins.InRange V cb cs L (16 * nm) nregs) :
-    run (groupMachine p (groupOf nm V cb cs L SC WT)) code (encode (gtab (16 * nm) nregs sts)) =
-      encode (gtab (16 * nm) nregs fun i ↦
-        run (fieldMachine (blockCtx V cb cs L SC WT (16 * nm) i)) code (sts i)) := by
+    run (groupMachine p (groupOf na nm V cb cs L SC WT)) code (encode (gtab na (16 * nm) nregs sts))
+        =
+      encode (gtab na (16 * nm) nregs fun i ↦
+        run (fieldMachine (blockCtx na V cb cs L SC WT (16 * nm) i)) code (sts i)) := by
   simp only [run, ← Array.foldl_toList]
   have hcode' : ∀ ins ∈ code.toList, ins.InRange V cb cs L (16 * nm) nregs := fun i hi ↦
     hcode i (Array.mem_toList_iff.mp hi)
@@ -1304,70 +1327,78 @@ theorem runGroup_rel (code : Array (Instr F)) (V : Array F) (cb cs : Nat) (L : L
   | nil => rfl
   | cons ins l ih =>
     simp only [List.foldl_cons]
-    rw [execGroup_rel V cb cs L SC WT nm nregs hst hV hL sts ins (hcode' ins List.mem_cons_self)]
+    rw [execGroup_rel V cb cs L SC WT nm nregs hna hst hV hL sts ins (hcode' ins
+        List.mem_cons_self)]
     exact ih _ fun i hi ↦ hcode' i (List.mem_cons_of_mem _ hi)
 
 /-- A group's state whose words are encoded run states. -/
-def GEncoded (B nregs : Nat) (st : ByteArray) : Prop :=
-  ∃ sts : Nat → St F, st = encode (gtab B nregs sts)
+def GEncoded (na B nregs : Nat) (st : ByteArray) : Prop :=
+  ∃ sts : Nat → St F, st = encode (gtab na B nregs sts)
 
-theorem clearAccs_rel (nm nregs : Nat) (hst : 4 * (16 * nm * (4 + nregs)) < USize.size)
+theorem clearAccs_rel (nm nregs : Nat) (hst : 4 * (16 * nm * (na + nregs)) < USize.size)
     (sts : Nat → St F) :
-    clearAccs (16 * nm) (encode (gtab (16 * nm) nregs sts)) = encode (gtab (16 * nm) nregs
+    clearAccs na (16 * nm) (encode (gtab na (16 * nm) nregs sts)) = encode (gtab na (16 * nm) nregs
       fun i ↦ ⟨(sts i).reg, fun _ ↦ 0⟩) := by
   have hnm : 16 * nm / 16 = nm := Nat.mul_div_cancel_left nm (by decide)
-  have hz (sts : Nat → St F) (j : Nat) (hj : j < 4) (u : USize) (hu : u.toNat = 16 * nm * j) :
-      fill nm (encode (gtab (16 * nm) nregs sts)) u 0 =
-        encode (gtab (16 * nm) nregs fun i ↦ (sts i).setSlot j 0) := by
-    rw [show (0 : UInt32) = (0 : F).val from rfl, fill_upd _ nm _ _ hu
-        (by rw [size_gtab]; exact hst)
-      (by rw [size_gtab, ← Nat.mul_succ]; exact Nat.mul_le_mul_left _ (by omega)),
-      updR_gtab _ _ _ _ _]
-  have hB : 16 * nm < USize.size := by
-    have : 16 * nm ≤ 16 * nm * (4 + nregs) := Nat.le_mul_of_pos_right _ (by omega)
-    omega
-  have h3 : 3 * (16 * nm) < USize.size := by
-    have : 3 * (16 * nm) ≤ 16 * nm * (4 + nregs) := by
-      rw [Nat.mul_comm 3]; exact Nat.mul_le_mul_left _ (by omega)
-    omega
+  have key : ∀ M ≤ na, (List.range M).foldl (fun st j ↦ fill (16 * nm / 16) st
+      (j * (16 * nm)).toUSize 0) (encode (gtab na (16 * nm) nregs sts)) =
+      encode (gtab na (16 * nm) nregs fun i ↦
+        ⟨(sts i).reg, fun j ↦ if j < M then 0 else (sts i).acc j⟩) := by
+    intro M hM
+    induction M with
+    | zero =>
+      refine congrArg encode (tab_congr fun idx _ ↦ ?_)
+      simp only [St.slot, Nat.not_lt_zero, ite_false]
+    | succ M ih =>
+      have hMB : 16 * nm * M + 16 * nm ≤ 16 * nm * (na + nregs) := by
+        rw [← Nat.mul_succ]; exact Nat.mul_le_mul_left _ (by omega)
+      rw [List.range_succ, List.foldl_append, ih (by omega), List.foldl_cons, List.foldl_nil, hnm,
+        show (0 : UInt32) = (0 : F).val from rfl, fill_upd _ nm (16 * nm * M) _ (by
+          rw [toUSize_toNat (by rw [Nat.mul_comm]; omega), Nat.mul_comm])
+        (by rw [size_gtab]; exact hst) (by rw [size_gtab]; omega), updR_gtab _ _ _ _ _]
+      refine congrArg encode (tab_congr fun idx _ ↦ ?_)
+      rw [St.slot_setSlot]
+      generalize idx / (16 * nm) = q
+      by_cases e : q = M
+      · subst e; simp only [ite_true, St.slot, show q < na by omega, show q < q + 1 by omega]
+      · simp only [e, ite_false, St.slot]
+        split
+        · by_cases hq : q < M
+          · simp only [hq, show q < M + 1 by omega, ite_true]
+          · simp only [hq, show ¬q < M + 1 by omega, ite_false]
+        · rfl
   unfold clearAccs
-  rw [hnm, hz _ 0 (by decide) 0 (by rw [usize_numeral 0 (by decide)]; ring),
-    hz _ 1 (by decide) _ (by rw [toUSize_toNat hB]; ring),
-    hz _ 2 (by decide) _ (by rw [toUSize_toNat (by omega)]; ring),
-    hz _ 3 (by decide) _ (by rw [toUSize_toNat h3]; ring)]
+  rw [key na le_rfl]
   refine congrArg encode (tab_congr fun idx _ ↦ ?_)
-  simp only [St.slot_setSlot]
-  generalize idx / (16 * nm) = q
-  by_cases h4 : q < 4
-  · have : q = 3 ∨ q = 2 ∨ q = 1 ∨ q = 0 := by omega
-    rcases this with e | e | e | e <;> simp only [e, St.slot] <;> rfl
-  · simp only [show q ≠ 3 by omega, show q ≠ 2 by omega, show q ≠ 1 by omega,
-      show q ≠ 0 by omega, ite_false, St.slot, h4]
+  simp only [St.slot]
+  split
+  · simp only [*]
+  · rfl
 
 /-- **A program accumulating every row** on a group of `B` rows (`B` a multiple of sixteen), from
 cleared accumulators and any encoded registers: the accumulators hold its rows' accumulations. -/
 theorem groupBlock_acc (code : Array (Instr F)) (nregs : Nat) (V : Array F) (cb cs : Nat)
-    (L : LoadsF p) (SC WT : Array F) (B : Nat) (hB : B % 16 = 0)
-    (hst : 4 * (B * (4 + nregs)) < USize.size) (hV : 4 * V.size < USize.size) (hL : L.Addr)
+    (L : LoadsF p) (SC WT : Array F) (B : Nat) (hB : B % 16 = 0) (hna : 0 < na)
+    (hst : 4 * (B * (na + nregs)) < USize.size) (hV : 4 * V.size < USize.size) (hL : L.Addr)
     (hcode : ∀ ins ∈ code, ins.InRange V cb cs L B nregs) (Q : Nat → Nat → F)
-    (hQ : ∀ i < B, ∀ st0 : St F, st0.acc = (fun _ ↦ 0) → ∀ j < 4,
-      (run (fieldMachine (blockCtx V cb cs L SC WT B i)) code st0).acc j = Q i j)
-    (st : ByteArray) (h : GEncoded (p := p) B nregs st) :
-    let st' := run (groupMachine p (blockEnv B ⟨encode V, cb, cs⟩ L.enc (SC.map (·.val))
-      (WT.map (·.val)))) code (clearAccs B st)
-    GEncoded (p := p) B nregs st' ∧ ∀ j < 4, ∀ i < B, read st' (B * j + i) = (Q i j).val := by
+    (hQ : ∀ i < B, ∀ st0 : St F, st0.acc = (fun _ ↦ 0) → ∀ j < na,
+      (run (fieldMachine (blockCtx na V cb cs L SC WT B i)) code st0).acc j = Q i j)
+    (st : ByteArray) (h : GEncoded (p := p) na B nregs st) :
+    let st' := run (groupMachine p (blockEnv na B ⟨encode V, cb, cs⟩ L.enc (SC.map (·.val))
+      (WT.map (·.val)))) code (clearAccs na B st)
+    GEncoded (p := p) na B nregs st' ∧ ∀ j < na, ∀ i < B, read st' (B * j + i) = (Q i j).val := by
   obtain ⟨nm, rfl⟩ : ∃ nm, B = 16 * nm := ⟨B / 16, by omega⟩
   obtain ⟨sts, rfl⟩ := h
   dsimp only
   rw [clearAccs_rel nm nregs hst sts]
-  have e := runGroup_rel code V cb cs L SC WT nm nregs hst hV hL (fun i ↦ ⟨(sts i).reg, fun _ ↦ 0⟩)
-    hcode
+  have e := runGroup_rel code V cb cs L SC WT nm nregs hna hst hV hL
+    (fun i ↦ ⟨(sts i).reg, fun _ ↦ 0⟩) hcode
   simp only [groupOf] at e
   rw [e]
   refine ⟨⟨_, rfl⟩, fun j hj i hi ↦ ?_⟩
   rw [Words.read_encode _ _ (by rw [size_gtab]; exact hst) (by
       rw [size_gtab]
-      have : 16 * nm * j + 16 * nm ≤ 16 * nm * (4 + nregs) := by
+      have : 16 * nm * j + 16 * nm ≤ 16 * nm * (na + nregs) := by
         rw [← Nat.mul_succ]; exact Nat.mul_le_mul_left _ (by omega)
       omega),
     getD_gtab _ _ _ _ _ (by omega) hi]
@@ -1375,8 +1406,8 @@ theorem groupBlock_acc (code : Array (Instr F)) (nregs : Nat) (V : Array F) (cb 
   rw [hQ i hi _ rfl j hj]
 
 theorem gEncoded_zeros (B nregs : Nat) :
-    GEncoded (p := p) B nregs (CompPoly.CPolynomial.NTTFast.Packed.Native.zeroWords
-      (B * (4 + nregs))) := by
+    GEncoded (p := p) na B nregs (CompPoly.CPolynomial.NTTFast.Packed.Native.zeroWords
+      (B * (na + nregs))) := by
   refine ⟨fun _ ↦ ⟨fun _ ↦ 0, fun _ ↦ 0⟩, ?_⟩
   rw [Words.zeroWords_eq (p := p)]
   refine congrArg encode (Array.ext (by rw [Array.size_replicate, size_gtab]) fun i h1 h2 ↦ ?_)

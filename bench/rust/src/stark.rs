@@ -6,8 +6,8 @@ use p3_challenger::DuplexChallenger;
 use p3_commit::ExtensionMmcs;
 use p3_dft::Radix2DitParallel;
 use p3_field::extension::BinomialExtensionField;
-use p3_field::extension::BinomiallyExtendable;
-use p3_field::{Field, PrimeCharacteristicRing, PrimeField64, TwoAdicField};
+use p3_field::extension::QuinticTrinomialExtensionField;
+use p3_field::{ExtensionField, Field, PrimeCharacteristicRing, PrimeField64, TwoAdicField};
 use p3_fri::{FriParameters, TwoAdicFriPcs};
 use p3_koala_bear::{
     default_koalabear_poseidon2_16, default_koalabear_poseidon2_24, KoalaBear,
@@ -26,18 +26,23 @@ pub type Hash<P24> = PaddingFreeSponge<P24, 24, 16, 8>;
 pub type Compress<P16> = TruncatedPermutation<P16, 2, 8, 16>;
 pub type ValMmcs<F, P16, P24> =
     MerkleTreeMmcs<<F as Field>::Packing, <F as Field>::Packing, Hash<P24>, Compress<P16>, 2, 8>;
+/// The quartic extension.
 pub type Challenge<F> = BinomialExtensionField<F, 4>;
-pub type ChallengeMmcs<F, P16, P24> = ExtensionMmcs<F, Challenge<F>, ValMmcs<F, P16, P24>>;
+/// KoalaBear's quintic extension `KoalaBear[X] / (X^5 + X^2 - 1)`.
+pub type Quintic = QuinticTrinomialExtensionField<KoalaBear>;
+pub type ChallengeMmcs<F, EF, P16, P24> = ExtensionMmcs<F, EF, ValMmcs<F, P16, P24>>;
 pub type Challenger<F, P24> = DuplexChallenger<F, P24, 24, 16>;
-pub type Pcs<F, P16, P24> =
-    TwoAdicFriPcs<F, Radix2DitParallel<F>, ValMmcs<F, P16, P24>, ChallengeMmcs<F, P16, P24>>;
-pub type Config<F, P16, P24> = StarkConfig<Pcs<F, P16, P24>, Challenge<F>, Challenger<F, P24>>;
+pub type Pcs<F, EF, P16, P24> =
+    TwoAdicFriPcs<F, Radix2DitParallel<F>, ValMmcs<F, P16, P24>, ChallengeMmcs<F, EF, P16, P24>>;
+/// The configuration over the extension `EF` of `F`.
+pub type Config<F, EF, P16, P24> = StarkConfig<Pcs<F, EF, P16, P24>, EF, Challenger<F, P24>>;
 
-/// The configuration from the parameters `LOG_BLOWUP LOG_FINAL MAX_LOG_ARITY QUERIES COMMIT_POW
-/// QUERY_POW [BATCH_POW OOD_POW]` (the last two default to 0).
-pub fn config<F, P16, P24>(p16: P16, p24: P24, args: &[usize]) -> Config<F, P16, P24>
+/// The configuration over the extension `EF` from the parameters `LOG_BLOWUP LOG_FINAL
+/// MAX_LOG_ARITY QUERIES COMMIT_POW QUERY_POW [BATCH_POW OOD_POW]` (the last two default to 0).
+pub fn config<F, EF, P16, P24>(p16: P16, p24: P24, args: &[usize]) -> Config<F, EF, P16, P24>
 where
-    F: TwoAdicField + PrimeField64 + BinomiallyExtendable<4>,
+    F: TwoAdicField + PrimeField64,
+    EF: ExtensionField<F> + TwoAdicField,
     P16: CryptographicPermutation<[F; 16]> + CryptographicPermutation<[F::Packing; 16]>,
     P24: CryptographicPermutation<[F; 24]> + CryptographicPermutation<[F::Packing; 24]>,
 {
@@ -437,10 +442,11 @@ pub fn trace<F: Field>(n: usize) -> (RowMajorMatrix<F>, F) {
 /// next preprocessed row, `periodic`, `periodic-wide` and `periodic-tiny`, `PeriodicAir` with
 /// Plonky3's periods, or `pcube`, `PeriodicCubeAir`) on `2^log_n` rows, checked by Plonky3's
 /// verifier.
-pub fn prove_air<F, P16, P24>(config: &Config<F, P16, P24>, air: &str, log_n: usize)
-    -> Proof<Config<F, P16, P24>>
+pub fn prove_air<F, EF, P16, P24>(config: &Config<F, EF, P16, P24>, air: &str, log_n: usize)
+    -> Proof<Config<F, EF, P16, P24>>
 where
-    F: TwoAdicField + PrimeField64 + BinomiallyExtendable<4>,
+    F: TwoAdicField + PrimeField64,
+    EF: ExtensionField<F> + TwoAdicField,
     P16: CryptographicPermutation<[F; 16]> + CryptographicPermutation<[F::Packing; 16]>,
     P24: CryptographicPermutation<[F; 24]> + CryptographicPermutation<[F::Packing; 24]>,
 {
@@ -504,17 +510,18 @@ where
     }
 }
 
-fn koalabear_config(args: &[usize]) -> Config<F, p3_koala_bear::Poseidon2KoalaBear<16>,
-    p3_koala_bear::Poseidon2KoalaBear<24>> {
+fn koalabear_config<EF: ExtensionField<F> + TwoAdicField>(args: &[usize])
+    -> Config<F, EF, p3_koala_bear::Poseidon2KoalaBear<16>, p3_koala_bear::Poseidon2KoalaBear<24>> {
     config(default_koalabear_poseidon2_16(), default_koalabear_poseidon2_24(), args)
 }
 
 /// `stark AIR LOG_N LOG_BLOWUP LOG_FINAL MAX_LOG_ARITY QUERIES COMMIT_POW QUERY_POW [BATCH_POW
 /// OOD_POW]`, `AIR` one of `fib`, `cube`, `square`, `wide`, `prep`, `prep0`, `periodic`, `periodic-wide`,
-/// `periodic-tiny`, `pcube`: the proof as JSON, after Plonky3 verified it. Run with
-/// `RAYON_NUM_THREADS=1` for the smallest grinding witnesses.
-pub fn stark(air: &str, args: &[usize]) {
-    let config = koalabear_config(&args[1..]);
+/// `periodic-tiny`, `pcube`: the proof over the extension `EF` as JSON, after Plonky3 verified it
+/// (`stark-quintic …` over KoalaBear's quintic extension). Run with `RAYON_NUM_THREADS=1` for the
+/// smallest grinding witnesses.
+pub fn stark<EF: ExtensionField<F> + TwoAdicField>(air: &str, args: &[usize]) {
+    let config = koalabear_config::<EF>(&args[1..]);
     let proof = prove_air(&config, air, args[0]);
     println!("{}", serde_json::to_string(&proof).unwrap());
 }
@@ -543,11 +550,12 @@ pub fn challenger() {
 }
 
 /// `prove-bench AIR LOG_N LOG_BLOWUP LOG_FINAL MAX_LOG_ARITY QUERIES COMMIT_POW QUERY_POW
-/// [BATCH_POW OOD_POW]`: the median milliseconds of seven proofs.
-pub fn prove_bench(air: &str, args: &[usize]) {
+/// [BATCH_POW OOD_POW]`: the median milliseconds of seven proofs over the extension `EF`
+/// (`prove-bench-quintic …` over KoalaBear's quintic extension).
+pub fn prove_bench<EF: ExtensionField<F> + TwoAdicField>(air: &str, args: &[usize]) {
     use std::time::Instant;
     let log_n = args[0];
-    let config = koalabear_config(&args[1..]);
+    let config = koalabear_config::<EF>(&args[1..]);
     let mut samples = vec![];
     for _ in 0..7 {
         let (trace, pis) = match air {
@@ -578,5 +586,5 @@ pub fn prove_trace(air: &str, args: &[usize]) {
     use tracing_subscriber::{EnvFilter, Registry};
     let env_filter = EnvFilter::builder().with_default_directive(LevelFilter::INFO.into()).from_env_lossy();
     Registry::default().with(env_filter).with(ForestLayer::default()).init();
-    prove_bench(air, args);
+    prove_bench::<Challenge<F>>(air, args);
 }

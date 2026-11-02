@@ -8,15 +8,19 @@ public import CompStark.Stark.Fast.Refines
 public import CompStark.Stark.Fast.Verify
 public import CompStark.KoalaBear.Poseidon2
 public import CompStark.KoalaBear.Challenge
+public import CompPoly.Fields.KoalaBear.FastExt5Planes
+public import CompPoly.Fields.Montgomery.Native32Ext4PlanesCorrectness
 public import CompPoly.Univariate.NTTFast.Packed.Instances
 
 /-! # The fast prover over KoalaBear
 
 The fast backend over KoalaBear and its quartic extension `KoalaBear.Fast.Ext4`, on KoalaBear's
 vectorized Poseidon2 and CompPoly's compiled coset LDE (`backendFor`), and the fast verifier
-(`verifyFast`). This module belongs to the CPU-targeted native library: the compiler specializes
-the generic backend and verifier here, with KoalaBear's constants as immediates. Its proofs are
-the specification's (`prove_fast`, `verifyFast_eq`).
+(`verifyFast`); the same over the quintic extension `KoalaBear.Fast.Ext5` (`backendForQuintic`,
+`verifyFastQuintic`). This module belongs to the CPU-targeted native library: the compiler
+specializes the generic backend and verifier here, with KoalaBear's constants as immediates. Its
+proofs are the specification's (`prove_fast`, `prove_fast_quintic`, `verifyFast_eq`,
+`verifyFastQuintic_eq`).
 -/
 
 @[expose] public section
@@ -25,6 +29,7 @@ open CompStark.Fri CompStark.Stark
 
 local notation "F" => _root_.KoalaBear.Fast.Field
 local notation "EF" => _root_.KoalaBear.Fast.Ext4
+local notation "EF5" => _root_.KoalaBear.Fast.Ext5
 
 set_option maxHeartbeats 1000000 in
 /-- The fast backend over KoalaBear, with the extension plans and quotient tables of instances of
@@ -129,6 +134,63 @@ theorem Instances.verifyFast_eq (I : Instances) (P : Params) (A : Air F)
     I.verifyFast P A vk proof pis = @verify F _ I.field EF _ P A vk proof pis :=
   letI := I.field
   letI := I.packed
+  Stark.Fast.verifyFast_eq P A vk proof pis
+
+/-! ### The quintic extension -/
+
+set_option maxHeartbeats 1000000 in
+/-- The fast backend over KoalaBear's quintic extension, with the extension plans and quotient
+tables of instances of the shapes `shapes` prepared (`backendFor`). -/
+def backendForQuintic (kernels : List (Stark.Fast.AirKernel _root_.KoalaBear.fieldSize))
+    (logBlowup : Nat) (shapes : List (Nat × Nat)) : Backend F EF5 24 :=
+  Stark.Fast.backendFor kernels logBlowup shapes
+
+/-- KoalaBear's domains of quintic extension elements, up to `5 · 2 ^ 24` words, are
+addressable. -/
+theorem domainsAddressable_quintic : DomainsAddressable F EF5 := by
+  unfold DomainsAddressable Addressable
+  rw [d_ext5, twoAdicity_eq]
+  have := USize.le_size
+  omega
+
+/-- **The fast prover over KoalaBear's quintic extension is correct** (`prove_fast`). -/
+theorem prove_fast_quintic (kernels : List (Stark.Fast.AirKernel _root_.KoalaBear.fieldSize))
+    {params : Params} {air : Air F} {logN : Nat} {words : Array ByteArray}
+    {trace : Array F} (publicValues : List F) (encoded : Stark.Fast.RT logN air.width words trace)
+    (input : InputOk EF5 params air logN trace)
+    (outOfDomain : Ext.OutsideBase (outOfDomainPoint EF5 params air logN trace publicValues)) :
+    proveWith (backendForQuintic kernels params.logBlowup [(logN, air.logQuotientChunks logN)])
+        params air logN words publicValues =
+      prove EF5 params air logN trace publicValues :=
+  Stark.Fast.prove_fast domainsAddressable_quintic kernels publicValues
+    encoded input outOfDomain
+
+/-- **The fast batch prover over KoalaBear's quintic extension is correct**
+(`proveBatch_fast`). -/
+theorem proveBatch_fast_quintic (kernels : List (Stark.Fast.AirKernel _root_.KoalaBear.fieldSize))
+    {params : Params} {instances : List (Batch.Instance F)}
+    {words : List (Array ByteArray)} {traces : List (Array F)} {publicValues : List (List F)}
+    (encoded : List.Forall₂ (fun t (m : Batch.Instance F × Array F) ↦
+      Stark.Fast.RT m.1.logN m.1.air.width t m.2) words (instances.zip traces))
+    (input : Batch.InputOk EF5 params instances traces)
+    (publicValuesLength : publicValues.length = instances.length)
+    (outOfDomain :
+      Ext.OutsideBase (Batch.batchOutOfDomainPoint EF5 params instances traces publicValues)) :
+    Batch.proveBatchWith (backendForQuintic kernels params.logBlowup (Batch.shapes instances))
+        params instances words publicValues =
+      Batch.proveBatch EF5 params instances traces publicValues :=
+  Stark.Fast.proveBatch_fast domainsAddressable_quintic kernels encoded
+    input publicValuesLength outOfDomain
+
+/-- Plonky3's verifier over KoalaBear's quintic extension (`verifyFast`), specialized here. -/
+def verifyFastQuintic (P : Params) (A : Air F) (vk : Option (PreprocessedKey F))
+    (proof : Proof F EF5) (pis : List F) : Except String Unit :=
+  Stark.Fast.verifyFast P A vk proof pis
+
+/-- **The fast verifier over KoalaBear's quintic extension is Plonky3's verifier.** -/
+theorem verifyFastQuintic_eq (P : Params) (A : Air F) (vk : Option (PreprocessedKey F))
+    (proof : Proof F EF5) (pis : List F) :
+    verifyFastQuintic P A vk proof pis = verify P A vk proof pis :=
   Stark.Fast.verifyFast_eq P A vk proof pis
 
 end CompStark.KoalaBear
