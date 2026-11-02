@@ -44,8 +44,8 @@ lean_lib CompStarkPackedNative where
 lean_lib CompStarkTests where
   srcDir := "tests"
 
-/-- AIRs and trace generators of the tests and benchmarks that are not part of the library, such
-as Plonky3's Keccak AIR. -/
+/-- AIRs and constants of the tests and benchmarks that are not part of the library, such as
+Plonky3's Keccak AIR and its quotient kernel. -/
 lean_lib CompStarkFixtures where
   srcDir := "fixtures"
   moreLeancArgs := #["-march=native"]

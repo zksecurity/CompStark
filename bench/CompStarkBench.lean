@@ -199,80 +199,32 @@ def phasesBatch : IO UInt32 := do
         s!"{pf.oodWitness.val}"
   return 0
 
-open CompStark CompStark.Stark CompStark.Fri in
-/-- `keccak LOG_N REPS`: Plonky3's Keccak AIR on `2 ^ LOG_N` rows of pseudorandom permutations, at
-Plonky3's example configuration (blowup 2, arity up to 8, 87 queries, caps of height 3): per round
-the trace generation, the fast prover's phases (the trace's extension from its row chunks, its
-commitment, the quotient) and a whole proof from the row chunks; then the medians of `REPS`
-rounds. -/
-def keccak (logN reps : Nat) : IO UInt32 := do
-  let p := _root_.KoalaBear.fieldSize
-  let A : Air KoalaBear.Fast.Field := CompStark.Fixtures.Keccak.air
-  let w := CompStark.Fixtures.Keccak.width
-  let P : Params := ⟨1, 0, 3, 87, 0, 16, 10, 0, 0, 3⟩
-  let inputs := (Array.range (2 ^ logN / 24)).map fun k ↦ (Array.range 25).map fun i ↦
-    (splitMix (25 * k + i).toUInt64).2
-  let B := CompStark.KoalaBear.backendFor [CompStark.Fixtures.KeccakKernel.kernel] 1
-    [(logN, A.logQuotientChunks logN)]
-  let labels := #["tracegen", "trace lde", "trace commit", "quotient", "whole proof"]
-  let mut samples : Array (Array Nat) := labels.map fun _ ↦ #[]
-  for _ in [0:reps] do
-    let (t0, chunks) ← timeNs fun _ ↦ IO.lazyPure fun _ ↦
-      CompStark.Fixtures.Keccak.trace p inputs 16
-    let (t1, lde) ← timeNs fun _ ↦ IO.lazyPure fun _ ↦ B.ldeTrace logN 1 gen w chunks
-    let (t2, tc) ← timeNs fun _ ↦ IO.lazyPure fun _ ↦ B.commit [lde]
-    let alpha : _root_.KoalaBear.Fast.Ext4 := ⟨5, 7, 11, 13⟩
-    let (t3, q) ← timeNs fun _ ↦ IO.lazyPure fun _ ↦
-      B.quotient A [] logN (A.logQuotientChunks logN) lde none alpha
-    if tc.mats.length + q.size == 12345 then IO.println ""
-    let (t4, pf) ← timeNs fun _ ↦ IO.lazyPure fun _ ↦ proveWith B P A logN chunks []
-    if pf.degreeBits == 12345 then IO.println ""
-    let ts := #[t0, t1, t2, t3, t4]
-    IO.println (" ".intercalate ((labels.zip ts).toList.map fun (l, t) ↦
-      s!"{l} {t / 1000000} ms"))
-    samples := (samples.zip ts).map fun (s, t) ↦ s.push t
-  for (l, s) in labels.zip samples do
-    let m := (s.qsort (· < ·))[s.size / 2]!
-    IO.println s!"lean keccak 2^{logN} {l} median {m / 1000000} ms"
-  return 0
-
+/-- `2 ^ logN` rows of Plonky3's Keccak AIR's width of pseudorandom field elements (SplitMix64),
+in 16 row chunks of packed words. The prover's work does not depend on the trace's values, so the
+Keccak AIR's proof phases are timed on it; Clean's keccak-air showcase times whole proofs from the
+generated trace. -/
+def keccakShapedTrace (logN : Nat) : Array ByteArray :=
+  let p := _root_.KoalaBear.fieldSize.toUInt64
+  let words := 2 ^ logN / 16 * CompStark.Fixtures.Keccak.width
+  let tasks := (Array.range 16).map fun k ↦ Task.spawn fun _ ↦ Id.run do
+    let mut b := CompPoly.CPolynomial.NTTFast.Packed.Native.zeroWords words
+    for i in [0:words] do
+      b := write b i ((CompStark.Stark.splitMix (k * words + i).toUInt64).2 % p).toUInt32
+    return b
+  tasks.map Task.get
 
 open CompStark CompStark.Stark CompStark.Fri in
-/-- `keccak-prove LOG_N`: one whole proof of `keccak LOG_N`'s, from the row chunks, alone in the
-process for its peak memory, then three verifications of it by the specification verifier and
-by the fast one. -/
-def keccakProve (logN : Nat) : IO UInt32 := do
-  let p := _root_.KoalaBear.fieldSize
-  let A : Air KoalaBear.Fast.Field := CompStark.Fixtures.Keccak.air
-  let P : Params := ⟨1, 0, 3, 87, 0, 16, 10, 0, 0, 3⟩
-  let inputs := (Array.range (2 ^ logN / 24)).map fun k ↦ (Array.range 25).map fun i ↦
-    (splitMix (25 * k + i).toUInt64).2
-  let B := CompStark.KoalaBear.backendFor [CompStark.Fixtures.KeccakKernel.kernel] 1
-    [(logN, A.logQuotientChunks logN)]
-  let chunks ← timed "tracegen" (fun _ ↦ CompStark.Fixtures.Keccak.trace p inputs 16)
-    (s!"{·.size} chunks")
-  let pf ← timed "whole proof" (fun _ ↦ proveWith B P A logN chunks []) fun pf ↦
-    s!"{pf.degreeBits}"
-  let vk := setup P A logN
-  for _ in [0:3] do
-    let _ ← timed "verify" (fun _ ↦ verify P A vk pf []) fun r ↦ if r.isOk then "ok" else "rejected"
-    let _ ← timed "verify fast" (fun _ ↦ CompStark.KoalaBear.verifyFast P A vk pf [])
-      fun r ↦ if r.isOk then "ok" else "rejected"
-  return 0
-
-open CompStark CompStark.Stark CompStark.Fri in
-/-- `keccak-phases LOG_N`: the wall time of each phase of `keccak LOG_N`'s proof, twice. -/
+/-- `keccak-phases LOG_N`: the wall time of each phase of a proof of Plonky3's Keccak AIR on
+`keccakShapedTrace LOG_N`, at Plonky3's example configuration (blowup 2, arity up to 8, 87
+queries, caps of height 3), twice. -/
 def keccakPhases (logN : Nat) : IO UInt32 := do
-  let p := _root_.KoalaBear.fieldSize
   let A : Air KoalaBear.Fast.Field := CompStark.Fixtures.Keccak.air
   let w := CompStark.Fixtures.Keccak.width
   let P : Params := ⟨1, 0, 3, 87, 0, 16, 10, 0, 0, 3⟩
-  let inputs := (Array.range (2 ^ logN / 24)).map fun k ↦ (Array.range 25).map fun i ↦
-    (splitMix (25 * k + i).toUInt64).2
   let logChunks := A.logQuotientChunks logN
   let B := CompStark.KoalaBear.backendFor [CompStark.Fixtures.KeccakKernel.kernel] 1
     [(logN, logChunks)]
-  let chunks := CompStark.Fixtures.Keccak.trace p inputs 16
+  let chunks := keccakShapedTrace logN
   for k in [0:2] do
     let lde ← timed "trace lde" (fun _ ↦ B.ldeTrace logN 1 gen w (chunks.modify 0
       (write · 0 k.toUInt32))) fun e ↦ s!"{e.height}"
@@ -307,18 +259,15 @@ def keccakPhases (logN : Nat) : IO UInt32 := do
 
 open CompStark CompStark.Stark CompStark.Fri in
 /-- `quotient-phase AIR LOG_N REPS`: the fast prover's quotient phase on `2 ^ LOG_N` rows,
-blowup 2, for `keccak` (Plonky3's Keccak AIR), `wide` (`wide 64`), `widebus` (`wideBus 64`) or
-`lookup` (`mulAirLookups 8` with local lookups, sending on eight buses): per round the AIR's
-quotient values and, with lookups, the permutation trace's extension and the LogUp constraints'
-quotient values, from the trace's extension; then the medians of `REPS` rounds. -/
+blowup 2, for `keccak` (Plonky3's Keccak AIR on `keccakShapedTrace`), `wide` (`wide 64`),
+`widebus` (`wideBus 64`) or `lookup` (`mulAirLookups 8` with local lookups, sending on eight
+buses): per round the AIR's quotient values and, with lookups, the permutation trace's extension
+and the LogUp constraints' quotient values, from the trace's extension; then the medians of `REPS`
+rounds. -/
 def quotientPhase (air : String) (logN reps : Nat) : IO UInt32 := do
   let n := 2 ^ logN
   let (A, chunks) : Air KoalaBear.Fast.Field × Array ByteArray ← match air with
-    | "keccak" =>
-      let inputs := (Array.range (n / 24)).map fun k ↦ (Array.range 25).map fun i ↦
-        (splitMix (25 * k + i).toUInt64).2
-      pure (CompStark.Fixtures.Keccak.air,
-        CompStark.Fixtures.Keccak.trace _root_.KoalaBear.fieldSize inputs 16)
+    | "keccak" => pure (CompStark.Fixtures.Keccak.air, keccakShapedTrace logN)
     | "wide" => pure (wide 64, #[encodeFields (wideTrace 64 n)])
     | "widebus" => pure (wideBus 64, #[encodeFields (wideTrace 64 n)])
     | "lookup" =>
@@ -377,14 +326,12 @@ def proveTimed (label : String)
 
 
 open CompStark CompStark.Stark CompStark.Fri in
-/-- `openings-phase LOG_N REPS`: the fast prover's opening phases on the trace's extension of
-`keccak LOG_N`'s Keccak trace, blowup 2: per round the values at `ζ` and `ζ ω` (`openedAt`) and
+/-- `openings-phase LOG_N REPS`: the fast prover's opening phases on the extension of
+`keccakShapedTrace LOG_N`, blowup 2: per round the values at `ζ` and `ζ ω` (`openedAt`) and
 the batched reduction of the trace's extension (`reduce`); then the medians of `REPS` rounds. -/
 def openingsPhase (logN reps : Nat) : IO UInt32 := do
   let A : Air KoalaBear.Fast.Field := CompStark.Fixtures.Keccak.air
-  let inputs := (Array.range (2 ^ logN / 24)).map fun k ↦ (Array.range 25).map fun i ↦
-    (splitMix (25 * k + i).toUInt64).2
-  let chunks := CompStark.Fixtures.Keccak.trace _root_.KoalaBear.fieldSize inputs 16
+  let chunks := keccakShapedTrace logN
   let B := CompStark.KoalaBear.backendFor [] 1 [(logN, A.logQuotientChunks logN)]
   let ext := B.ldeTrace logN 1 gen A.width chunks
   let labels := #["opened values", "reduce"]
@@ -540,21 +487,17 @@ def main (args : List String) : IO UInt32 := do
     IO.println s!"perm24 ns/perm median {m / 10}.{m % 10}"
     return 0
   | ["phases", logN] => phases logN.toNat!
-  | ["keccak", logN, reps] => keccak logN.toNat! reps.toNat!
   | ["keccak-lde", logN] =>
-    -- The trace's extension from packed words, five times.
+    -- The extension of `keccakShapedTrace` from packed words, five times.
     let logN := logN.toNat!
     let w := CompStark.Fixtures.Keccak.width
-    let inputs := (Array.range (2 ^ logN / 24)).map fun k ↦ (Array.range 25).map fun i ↦
-      (CompStark.Stark.splitMix (25 * k + i).toUInt64).2
-    let trace := CompStark.Fixtures.Keccak.trace _root_.KoalaBear.fieldSize inputs 16
+    let trace := keccakShapedTrace logN
     let some P := CompStark.Stark.Fast.plan? (p := _root_.KoalaBear.fieldSize) logN 1
       CompStark.gen | return 1
     for k in [0:5] do
       let _ ← timed "coset lde columns" (fun _ ↦ CompStark.Stark.Fast.ldeColumns P w
         (trace.modify 0 (write · 0 k.toUInt32))) (s!"{·.size} columns")
     return 0
-  | ["keccak-prove", logN] => keccakProve logN.toNat!
   | ["keccak-phases", logN] => keccakPhases logN.toNat!
   | ["phases-batch"] => phasesBatch
   | ["openings-phase", logN, reps] => openingsPhase logN.toNat! reps.toNat!
