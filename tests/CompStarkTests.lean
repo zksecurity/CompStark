@@ -2,7 +2,7 @@ import CompStarkTests.Poseidon2
 import CompStarkTests.Merkle
 import CompStarkTests.BabyBear
 import CompStarkTests.Stark
-import CompStarkTests.RandomOracle
+import CompStarkTests.FiatShamir
 import CompStarkTests.Security
 import CompStarkTests.Keccak
 import CompStarkTests.KeccakSecurity

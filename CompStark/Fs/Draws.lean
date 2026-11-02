@@ -4,7 +4,7 @@ Released under Apache 2.0 license as described in the file LICENSE.
 -/
 module
 
-public import CompStark.Ni.RoundBounds
+public import CompStark.Fs.Samples
 public import CompStark.Sound.Sampling
 public import ArkLib.Interaction.Oracle.Security.DecodedChallenges
 public import ArkLib.ProofSystem.Fri.Interaction.QueryKnowledge
@@ -37,7 +37,7 @@ law's positions all land in a set of density `ρ` with probability at most `(ρ 
 
 @[expose] public section
 namespace CompStark.Fs
-open CompStark.Stark CompStark.Sound CompStark.Ni OracleComp OracleSpec CompPoly
+open CompStark.Stark CompStark.Sound CompStark.Fs OracleComp OracleSpec CompPoly
 open Interaction.Oracle Interaction.Oracle.PublicCoin
 open scoped ENNReal
 

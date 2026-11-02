@@ -14,8 +14,8 @@ public import CompStark.Sound.Sampling
 /-! # Round-by-round soundness of the STARK
 
 The STARK's rounds `α`, `ζ` and `a` as bad events on transcript prefixes, each bounded for every
-prefix by its error in `CompStark/SoundnessError.lean`; the knowledge certificate of the
-interactive protocol (`CompStark/Interaction/StarkKnowledge.lean`) is built from them:
+prefix by its error in `CompStark/Iop/StarkError.lean`; the knowledge certificate of the
+interactive protocol (`CompStark/Iop/StarkKnowledge.lean`) is built from them:
 
 * `α` (`AlphaBad`): a candidate trace failing the AIR has a quotient passing the check at more
   than `identityDegree` points; `foldingError` (`prob_alphaBad_le`).

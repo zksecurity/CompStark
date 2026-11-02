@@ -10,8 +10,8 @@ public import ArkLib.Interaction.Oracle.Security.BcsCodec
 public import ArkLib.Interaction.Oracle.Security.HashChainSqueeze
 public import CompStark.Fs.MerkleLog
 public import CompStark.Fs.StarkWords
-public import CompStark.Ni.Seed
-public import CompStark.Interaction.StarkStateRestoration
+public import CompStark.Fs.DomainSeparator
+public import CompStark.Iop.StarkStateRestoration
 
 /-! # The STARK's challenges as Plonky3's duplex challenger draws them
 
@@ -42,7 +42,7 @@ polynomial and the query witness, over as many squeezes as their samples take.
 
 @[expose] public section
 namespace CompStark.Fs
-open CompStark.Stark CompStark.Sound CompStark.Iop CompStark.Ni OracleComp OracleSpec CompPoly
+open CompStark.Stark CompStark.Sound CompStark.Iop CompStark.Fs OracleComp OracleSpec CompPoly
 open Interaction.Oracle Interaction.Oracle.PublicCoin Interaction.Oracle.Security
 open Interaction.Oracle.Security.StateRestoration Interaction.Oracle.Security.HashChain
 open scoped ENNReal
@@ -360,7 +360,7 @@ def friSeed : List F :=
     S.params.maxLogArity
 
 /-- The PCS's domain separator, observed before the claimed values. -/
-def pcsSeed : List F := DomainSeparator.pcsSeed F EF (Ni.pcsCountsS S) S.params.batchPowBits
+def pcsSeed : List F := DomainSeparator.pcsSeed F EF (Fs.pcsCountsS S) S.params.batchPowBits
 
 /-- The law of the query positions Plonky3's verifier draws: the residues of uniform elements of
 `F` on `L`, of slack `1/p` (`queryLaw`). -/

@@ -4,15 +4,15 @@ Released under Apache 2.0 license as described in the file LICENSE.
 -/
 module
 
-public import CompStark.Interaction.Batch
+public import CompStark.Iop.Batch
 public import CompStark.Fs.StarkWords
 public import CompStark.Fs.StarkTerminal
-public import CompStark.Ni.BatchBcs
+public import CompStark.Fs.BatchExtract
 
 /-! # The batch STARK's oracle messages under a commitment
 
 The oracle messages of the batch STARK on ArkLib's interaction layer
-(`CompStark/Interaction/Batch.lean`) read off a cache of hash queries under a Merkle cap, with
+(`CompStark/Iop/Batch.lean`) read off a cache of hash queries under a Merkle cap, with
 Plonky3's layout of matrices of mixed heights in one tree (`Merkle.matColumnCap`): an instance's
 column at the point of its domain of index `z` is the column of its matrix at row `rev z`, the
 matrix's columns at its offset among the matrices of its height.
@@ -33,7 +33,7 @@ verifier on pure primitives, and FRI's path (`friPath`) on the tallest domain.
 
 @[expose] public section
 namespace CompStark.Iop.Batch.Setup
-open CompStark.Stark CompStark.Ni
+open CompStark.Stark CompStark.Fs
 
 variable {F : Type} [BaseField F] {EF : Type} [Challenge F EF]
 variable (S : Setup EF) (cache : Merkle.Cache F (Digest F))
@@ -70,7 +70,7 @@ noncomputable def terminalsOf (proof : CompStark.Batch.BatchProof F EF) : S.Term
 /-- The claimed values of a proof: every instance's opened values with its permutation trace's
 rows at `ζ` and `ζ ω`. -/
 noncomputable def openingsOf (proof : CompStark.Batch.BatchProof F EF) : S.OpeningsMessage :=
-  fun i ↦ Ni.openingsOf (S.instanceSetup i) (proof.opened.toList.getD i noOpenings)
+  fun i ↦ Fs.openingsOf (S.instanceSetup i) (proof.opened.toList.getD i noOpenings)
     (proof.permutationLocal.getD i #[]) (proof.permutationNext.getD i #[])
 
 /-- The batch's execution path read off a proof, at the setup of its lengths: every instance's

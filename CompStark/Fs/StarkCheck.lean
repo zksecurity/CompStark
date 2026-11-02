@@ -1,0 +1,136 @@
+/-
+Copyright (c) 2026 zkSecurity. All rights reserved.
+Released under Apache 2.0 license as described in the file LICENSE.
+-/
+module
+
+public import CompStark.Sound.Rbr
+public import CompStark.Stark.Recompose
+
+/-! # The verifier's constraint check in the spec field
+
+The verifier checks the constraints at `ζ` over Plonky3's fast extension (`checkConstraints`,
+`recompose`). The interactive oracle proof states the same check over the spec field
+(`ConstraintsHoldAt`). `constraintsHoldAt_of_check`: the verifier's check on the proof's opened
+values gives `ConstraintsHoldAt` on them (`openingsOf`), at the spec images of `α` and `ζ`.
+-/
+
+@[expose] public section
+namespace CompStark.Fs
+open CompStark.Stark CompStark.Fri CompStark.Sound CompStark.Iop Polynomial
+
+variable {F : Type} [BaseField F] {EF : Type} [Challenge F EF]
+
+local notation "𝕂" => Challenge.Spec EF
+
+/-- The opened values of a proof as the interactive oracle proof's openings, in the spec field:
+`o`, and the permutation trace's rows `cur` and `next` in base coordinates, `d` per column. -/
+noncomputable def openingsOf {lookups : List (Lookup F)} (S : Iop.Setup EF lookups)
+    (o : OpenedValues EF) (cur next : Array EF := #[]) : Openings S where
+  traceAt j := Challenge.toSpec (o.traceLocal.getD j 0)
+  traceNext j := Challenge.toSpec ((o.traceNext.getD #[]).getD j 0)
+  quotientAt c e := Challenge.toSpec ((o.quotientChunks.getD c #[]).getD e 0)
+  preprocessedAt j := Challenge.toSpec ((o.preprocessedLocal.getD #[]).getD j 0)
+  preprocessedNext j := Challenge.toSpec ((o.preprocessedNext.getD #[]).getD j 0)
+  permAt c e := Challenge.toSpec (cur.getD (c * Challenge.d EF + e) 0)
+  permNext c e := Challenge.toSpec (next.getD (c * Challenge.d EF + e) 0)
+
+/-- A product over the chunks other than `c`, as a product over the range. -/
+theorem prod_fin_ne {M : Type*} [CommMonoid M] (n : Nat) (f : Nat → M) (c : Fin n) :
+    ∏ d : Fin n with d ≠ c, f d.val = ∏ d ∈ (Finset.range n).erase c.val, f d := by
+  rw [Finset.prod_filter, ← Finset.filter_ne' (Finset.range n) c.val, Finset.prod_filter]
+  rw [← Fin.prod_univ_eq_prod_range (fun d ↦ if d ≠ c.val then f d else 1) n]
+  refine Finset.prod_congr rfl fun d _ ↦ ?_
+  simp only [ne_eq, Fin.val_eq_val]
+
+/-- The spec selector of chunk `c` is the verifier's (`chunkSel`). -/
+theorem selectorAt_eq {lookups : List (Lookup F)} (S : Iop.Setup EF lookups) (ζ : 𝕂)
+    (c : Fin S.chunks) : selectorAt S ζ c = chunkSel S.logN S.logChunks c.val ζ := by
+  have hs : ∀ d : Nat, chunkShift S d = algebraMap F 𝕂 (qpt (S.logN + S.logChunks) d) :=
+    fun d ↦ by rw [chunkShift, rootOfUnity, lift, lift, qpt, map_mul, map_pow]
+  have hv : ∀ (d : Nat) (x : 𝕂), vanishing (chunkShift S d) S.n x =
+      vanish S.logN (qpt (S.logN + S.logChunks) d) x := fun d x ↦ by
+    rw [vanishing, vanish, hs, div_eq_mul_inv, map_inv₀]
+  unfold selectorAt chunkSel
+  rw [← prod_fin_ne]
+  refine Finset.prod_congr rfl fun d _ ↦ ?_
+  rw [hv, hv, hs, div_eq_mul_inv]
+
+/-- The spec value of chunk `c` is the verifier's (`chunkInner`). -/
+theorem chunkAt_openingsOf {lookups : List (Lookup F)} (S : Iop.Setup EF lookups)
+    (o : OpenedValues EF) (cur next : Array EF) (c : Fin S.chunks) :
+    chunkAt (openingsOf S o cur next) c =
+      Challenge.toSpec (chunkInner (o.quotientChunks.getD c #[])) := by
+  rw [toSpec_chunkInner, chunkAt, ← Fin.sum_univ_eq_sum_range]
+  refine Finset.sum_congr rfl fun e _ ↦ ?_
+  rw [Ext.toSpec_basis e.isLt]
+  rfl
+
+/-- **The constraint check.** If the verifier's check at `ζ` passes on opened values with
+`2 ^ logQuotientChunks` chunks, the constraints hold at `ζ` in the spec field. -/
+theorem constraintsHoldAt_of_check (S : Iop.Setup EF) (pis : List F)
+    (o : OpenedValues EF)
+    (zeta alpha : EF) (hqc : o.quotientChunks.size = S.chunks)
+    (h : checkConstraints S.air pis o S.logN zeta alpha
+      (recompose (chunkDomains S.logN (S.air.logQuotientChunks S.logN)) o.quotientChunks.toList
+        zeta) =
+        true) :
+    ConstraintsHoldAt S pis (Challenge.toSpec alpha) (Challenge.toSpec zeta) (openingsOf S o) := by
+  rw [checkConstraints_eq_fun] at h
+  have h' := congrArg Challenge.toSpec (beq_iff_eq.mp h)
+  have hlist : o.quotientChunks.toList =
+      (List.range S.chunks).map fun c ↦ o.quotientChunks.getD c #[] := by
+    refine List.ext_getElem (by rw [List.length_map, List.length_range, Array.length_toList, hqc])
+      fun i h1 h2 ↦ ?_
+    rw [List.getElem_map, List.getElem_range, Array.getElem_toList, Array.getD_eq_getD_getElem?,
+      Array.getElem?_eq_getElem (by rwa [← Array.length_toList]), Option.getD_some]
+  have h24 : S.logN + (S.air.logQuotientChunks S.logN) ≤ twoAdicity F := S.valid.quotientFits
+  rw [hlist, toSpec_recompose S.logN _ h24] at h'
+  rw [constraintsHoldAt_iff, extConstraints_nil, List.foldl_nil, ← Fin.sum_univ_eq_sum_range] at *
+  rw [Challenge.toSpec_mul, toSpec_foldedConstraints, Challenge.toSpec_inv, Challenge.toSpec_sub,
+    toSpec_extPowTwo, Challenge.toSpec_one] at h'
+  have hzh : vanishing 1 S.n (Challenge.toSpec zeta) = Challenge.toSpec zeta ^ 2 ^ S.logN - 1 := by
+    rw [vanishing, div_one]
+  have henv : (S.air.constraints.map fun c ↦ Challenge.toSpec (c.eval {
+      cur := fun i ↦ o.traceLocal.getD i 0
+      next := fun i ↦ (o.traceNext.getD #[]).getD i 0
+      prepCur := fun i ↦ (o.preprocessedLocal.getD #[]).getD i 0
+      prepNext := fun i ↦ (o.preprocessedNext.getD #[]).getD i 0
+      periodic := fun i ↦ periodicAt (S.air.periodicColumn i) S.logN zeta
+      pub := fun i ↦ Ext.ofBase (pis.getD i 0)
+      const := Ext.ofBase
+      isFirstRow := (Ext.powTwo zeta S.logN - 1) * (zeta - 1)⁻¹
+      isLastRow := (Ext.powTwo zeta S.logN - 1) * (zeta - Ext.ofBase (twoAdicGen S.logN)⁻¹)⁻¹
+      isTransition := zeta - Ext.ofBase (twoAdicGen S.logN)⁻¹ })) =
+      S.air.constraints.map fun c ↦
+        c.eval (envAt S pis (Challenge.toSpec zeta) (openingsOf S o)) := by
+    refine List.map_congr_left fun c hc ↦ ?_
+    have hlast : Challenge.toSpec (Ext.ofBase (twoAdicGen S.logN)⁻¹ : EF) =
+        (rootOfUnity S.logN : 𝕂)⁻¹ := by
+      rw [Challenge.toSpec_ofBase, ← CompPoly.Extension.Ext.algebraMap_eq_ofBase,
+        map_inv₀]
+      rfl
+    refine Expr.eval_hom Challenge.toSpec Challenge.toSpec_add Challenge.toSpec_sub
+      Challenge.toSpec_mul S.air.width S.air.mainNextWidth S.air.preprocessedWidth
+      S.air.preprocessedNextWidth _ _ (fun j hj ↦ ?_) (fun j hj ↦ ?_) (fun j hj ↦ ?_)
+      (fun j hj ↦ ?_) (fun j ↦ ?_) (fun j ↦ ?_) (fun x ↦ ?_) ?_ ?_ ?_ c
+      (S.valid.colsInWidth c hc)
+    · simp only [envAt, hj, ↓reduceDIte]; rfl
+    · simp only [envAt, hj, ↓reduceDIte]; rfl
+    · simp only [envAt, hj, ↓reduceDIte]; rfl
+    · simp only [envAt, hj, ↓reduceDIte]; rfl
+    · exact toSpec_periodicAt _ S.logN (periodShape_of_fits S.air S.logN S.valid.periodicFits j)
+        ((Nat.le_add_right _ _).trans S.valid.twoAdic) zeta
+    · simp only [envAt, Challenge.toSpec_ofBase]; rfl
+    · simp only [envAt, Challenge.toSpec_ofBase]; rfl
+    · simp only [envAt, Challenge.toSpec_mul, Challenge.toSpec_inv, Challenge.toSpec_sub,
+        toSpec_extPowTwo, Challenge.toSpec_one, hzh, div_eq_mul_inv]
+    · simp only [envAt, Challenge.toSpec_mul, Challenge.toSpec_inv, Challenge.toSpec_sub,
+        toSpec_extPowTwo, Challenge.toSpec_one, hzh, div_eq_mul_inv, hlast]
+    · simp only [envAt, Challenge.toSpec_sub, hlast]
+  rw [henv, horner, List.foldl_map] at h'
+  rw [hzh, div_eq_mul_inv]
+  refine h'.trans (Finset.sum_congr rfl fun c _ ↦ ?_)
+  rw [selectorAt_eq, chunkAt_openingsOf]
+
+end CompStark.Fs

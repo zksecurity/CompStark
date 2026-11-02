@@ -22,7 +22,7 @@ codeword on its own domain is one on every domain the folds reach.
 
 @[expose] public section
 namespace CompStark.Sound
-open CompStark.Stark CompStark.Iop Polynomial Domain FriGame FriInject
+open CompStark.Stark CompStark.Iop Polynomial Domain FriRounds FriInject
 
 variable {F : Type} [BaseField F] {EF : Type} [Challenge F EF]
 variable {lookups : List (Lookup F)}

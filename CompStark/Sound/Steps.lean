@@ -4,7 +4,7 @@ Released under Apache 2.0 license as described in the file LICENSE.
 -/
 module
 
-public import CompStark.SoundnessError
+public import CompStark.Iop.StarkError
 public import CompStark.Lookup.Poly
 
 /-! # The steps of the soundness proof

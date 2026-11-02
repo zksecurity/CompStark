@@ -2,10 +2,10 @@
 Copyright (c) 2026 zkSecurity. All rights reserved.
 Released under Apache 2.0 license as described in the file LICENSE.
 -/
-import CompStark.Completeness
-import CompStark.Soundness
-import CompStark.Security
-import CompStark.LookupInclusion
+import CompStark.Complete.Stark
+import CompStark.Iop.StarkSoundness
+import CompStark.Calculator.Security
+import CompStark.Iop.LookupInclusion
 import CompStark.Sound.Rbr
 import CompStark.KoalaBear.Fast
 import CompStark.KoalaBear.Completeness

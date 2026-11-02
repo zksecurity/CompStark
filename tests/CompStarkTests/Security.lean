@@ -2,12 +2,12 @@
 Copyright (c) 2026 zkSecurity. All rights reserved.
 Released under Apache 2.0 license as described in the file LICENSE.
 -/
-import CompStark.Security
-import CompStark.Fs.Secure
+import CompStark.Calculator.Security
+import CompStark.Calculator.FiatShamir
 
 /-! # The security calculator
 
-The reports of the concrete setups and statements, the analyses of `CompStark/Security.lean` as
+The reports of the concrete setups and statements, the analyses of `CompStark/Calculator/Security.lean` as
 the ones the search (`bestAnalysis`, `bestAnalysisRo`) finds, a check on an AIR of `4096`
 constraints in the kernel, the calculator theorems' axioms, and the calculator's certificates on
 Plonky3's verifiers with Merkle commitments with their bounds at `2 ^ 64` calls (`bcsBound`).

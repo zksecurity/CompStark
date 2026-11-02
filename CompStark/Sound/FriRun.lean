@@ -11,12 +11,12 @@ public import CompStark.Sound.FriSchedule
 FRI's run on fixed committed words (`Rounds.run`): fold `j` folds word `words j`, read on its
 domain, at `βs j`, injecting the rounds' input, and the final word is a polynomial on the final
 domain. An accepted batch proof's queries are accepted by the run on the words extracted under its
-commitments (`Ni/BatchFri.lean`).
+commitments (`Fs/FriInjected.lean`).
 -/
 
 @[expose] public section
 
-namespace CompStark.Sound.FriGame
+namespace CompStark.Sound.FriRounds
 
 open Polynomial Domain ProximityGap ReedSolomon LinearCode CoreDefinitions Fri FriInject
 open OracleComp
@@ -50,4 +50,4 @@ variable (d : ℕ) (hd : 0 < d)
 
 end Rounds
 
-end CompStark.Sound.FriGame
+end CompStark.Sound.FriRounds

@@ -7,7 +7,7 @@ module
 public import CompStark.Sound.Telescope
 public import CompStark.Sound.LogUp
 public import CompStark.Sound.Assembly
-public import CompStark.BatchSoundnessError
+public import CompStark.Iop.BatchError
 
 /-! # The lookup challenges of the batch
 

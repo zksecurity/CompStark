@@ -6,7 +6,7 @@ module
 
 public import CompStark.Fs.BatchParse
 public import CompStark.Fs.StarkStable
-public import CompStark.Ni.Seed
+public import CompStark.Fs.DomainSeparator
 public import ToMathlib.Data.ByteArray
 
 /-! # The batch's openings at the filled snapshots
@@ -151,7 +151,7 @@ end CompStark.DomainSeparator
 /-! ### Stable messages of the batch -/
 
 namespace CompStark.Iop.Batch.Setup
-open CompStark.Stark CompStark.Fs CompStark.Ni CompStark.RandomOracle OracleSpec
+open CompStark.Stark CompStark.Fs CompStark.Fs CompStark.RandomOracle OracleSpec
 open Interaction.Oracle.Security
 
 variable {F : Type} [BaseField F] {EF : Type} [Challenge F EF] {K : ℕ} {offs : List ℕ}
@@ -185,7 +185,7 @@ theorem quotientMessageOf_snapshotAt :
 end CompStark.Iop.Batch.Setup
 
 namespace CompStark.Iop.Batch.Setup
-open CompStark.Stark CompStark.Fs CompStark.Ni CompStark.RandomOracle OracleSpec
+open CompStark.Stark CompStark.Fs CompStark.Fs CompStark.RandomOracle OracleSpec
 open Interaction.Oracle Interaction.Oracle.PublicCoin Interaction.Oracle.Security
 open Interaction.Oracle.Security.StateRestoration Interaction.Oracle.Security.HashChain
 open Interaction.Oracle.Security.Bcs
@@ -319,7 +319,7 @@ theorem length_friArities_le : S.friArities.length ≤ twoAdicity F := by
 end CompStark.Iop.Batch.Setup
 
 namespace CompStark.Iop.Batch.Statement
-open CompStark.Stark CompStark.Fs CompStark.Ni OracleSpec
+open CompStark.Stark CompStark.Fs CompStark.Fs OracleSpec
 open Interaction.Oracle Interaction.Oracle.PublicCoin Interaction.Oracle.Security
 open Interaction.Oracle.Security.StateRestoration Interaction.Oracle.Security.HashChain
 open Interaction.Oracle.Security.Bcs

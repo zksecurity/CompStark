@@ -5,18 +5,18 @@ Released under Apache 2.0 license as described in the file LICENSE.
 module
 
 public import CompStark.Fs.BatchWords
-public import CompStark.Interaction.BatchStateRestoration
+public import CompStark.Iop.BatchStateRestoration
 
 /-! # An accepted batch proof passes the batch IOP's checks
 
 Plonky3's batch verifier `verifyInstancesWith` on pure primitives `H` accepts a proof only if the
 batch IOP's checks (`Batch.Setup.terminal`) pass on the execution path read off the proof
 (`Batch.Setup.proofPath`). That is `Batch.Setup.terminal_of_verifyWith`, under the binding of the
-commitments (`Ni.CapBindingM` for the rounds of mixed heights, `Ni.CapBinding` for FRI's layers).
+commitments (`Fs.CapBindingM` for the rounds of mixed heights, `Fs.CapBinding` for FRI's layers).
 
 FRI's checks along the path are `PassesAt` with injected words: a query whose Plonky3 folds pass
 against binding commitments, adding the reduced opening of each shorter height when its folds
-reach it (`Ni.foldStateR`), passes along the extracted path (`passesAt_of_stepsR`), when the
+reach it (`Fs.foldStateR`), passes along the extracted path (`passesAt_of_stepsR`), when the
 injected words at the query's point are those reduced openings.
 -/
 
@@ -43,11 +43,11 @@ Plonky3's folded value `β ^ 2 ^ k` times the injected word, at the folded point
 over `I`: the verifier's next word there. -/
 theorem foldNext_proj (cache : Merkle.Cache F (Digest F)) (H : Primitives F Id) (ch : ℕ)
     {top m : ℕ} (ω : SmoothCosetFftDomain m 𝕂) (hω : IsSubgroupDomain ω) (commit : Cap F)
-    (x : EF × Ni.QueryFold EF) (e : EF) (I : ℕ) (hI : I < 2 ^ m) {k : ℕ} (hxk : x.2.logArity = k)
-    (ha : k ≤ m) (hok : Ni.StepOk H ch commit x (e, I, m)) (hbind : Ni.CapBinding cache H commit)
-    (pt : Fin (2 ^ top)) (hX : proj m pt = Ni.finMod m (reverseBits I m)) (g : Word 𝕂 (m - k)) :
+    (x : EF × Fs.QueryFold EF) (e : EF) (I : ℕ) (hI : I < 2 ^ m) {k : ℕ} (hxk : x.2.logArity = k)
+    (ha : k ≤ m) (hok : Fs.StepOk H ch commit x (e, I, m)) (hbind : Fs.CapBinding cache H commit)
+    (pt : Fin (2 ^ top)) (hX : proj m pt = Fs.finMod m (reverseBits I m)) (g : Word 𝕂 (m - k)) :
     foldNext ha ω (friWordOf cache ch commit m k) (Challenge.toSpec x.1) g (proj (m - k) pt) =
-      Challenge.toSpec (Ni.foldStep x (e, I, m)).1 +
+      Challenge.toSpec (Fs.foldStep x (e, I, m)).1 +
         Challenge.toSpec x.1 ^ 2 ^ k * g (proj (m - k) pt) := by
   subst hxk
   rw [Fri.Interaction.foldNext_apply, toSpec_foldStep cache H ch ω hω commit x e I hI ha hok hbind,
@@ -60,17 +60,17 @@ theorem foldNext_proj (cache : Merkle.Cache F (Digest F)) (H : Primitives F Id) 
 
 section Query
 variable (cache : Merkle.Cache F (Digest F)) (H : Primitives F Id) (ch : ℕ)
-  (commits : List (Cap F)) (betas : List EF) (steps : List (Ni.QueryFold EF))
+  (commits : List (Cap F)) (betas : List EF) (steps : List (Fs.QueryFold EF))
   (hbl : betas.length = steps.length) (hcl : commits.length = steps.length)
-  (hbind : ∀ c ∈ commits, Ni.CapBinding cache H c) {top : ℕ} (htop : top ≤ twoAdicity F)
+  (hbind : ∀ c ∈ commits, Fs.CapBinding cache H c) {top : ℕ} (htop : top ≤ twoAdicity F)
   (I : ℕ) (hI : I < 2 ^ top) (st0 : List (ℕ × EF) × EF × ℕ × ℕ)
-  (hsteps : ∀ (j : ℕ) (x : EF × Ni.QueryFold EF), (betas.zip steps)[j]? = some x →
-    Ni.StepOk H ch (commits.getD j #[]) x (Ni.foldStateR (betas.zip steps) st0 j).2)
+  (hsteps : ∀ (j : ℕ) (x : EF × Fs.QueryFold EF), (betas.zip steps)[j]? = some x →
+    Fs.StepOk H ch (commits.getD j #[]) x (Fs.foldStateR (betas.zip steps) st0 j).2)
   (coeffs : Array EF) {d : ℕ} (hd : coeffs.size = d)
   (hfinal : coeffs.foldr (fun c acc ↦ acc * Ext.ofBase (powF (twoAdicGen top)
-      (reverseBits (Ni.foldStateR (betas.zip steps) st0 (betas.zip steps).length).2.2.1
+      (reverseBits (Fs.foldStateR (betas.zip steps) st0 (betas.zip steps).length).2.2.1
         top)) + c) 0 =
-    (Ni.foldStateR (betas.zip steps) st0 (betas.zip steps).length).2.1)
+    (Fs.foldStateR (betas.zip steps) st0 (betas.zip steps).length).2.1)
   {t : ℕ} (xs : Fin t → Fin (2 ^ top))
 
 include hbl hcl hbind htop hI hsteps hd hfinal in
@@ -85,24 +85,24 @@ theorem passesAt_of_stepsR (inputs : (m : ℕ) → Fin (2 ^ m) → 𝕂) (ma lf 
     (ω : SmoothCosetFftDomain m 𝕂) (f : Word 𝕂 m),
     IsSubgroupDomain ω → m ≤ top → j ≤ steps.length →
     ((betas.zip steps).drop j).map (·.2.logArity) = foldSchedule ma lf fuel (m :: heights) →
-    (Ni.foldStateR (betas.zip steps) st0 j).2.2 = (I >>> (top - m), m) →
-    (Ni.foldStateR (betas.zip steps) st0 j).1.map (·.1) = heights →
-    (∀ hv ∈ (Ni.foldStateR (betas.zip steps) st0 j).1,
-      inputs hv.1 (proj hv.1 (Ni.finMod top (reverseBits I top))) = Challenge.toSpec hv.2) →
-    f (proj m (Ni.finMod top (reverseBits I top))) =
-      Challenge.toSpec (Ni.foldStateR (betas.zip steps) st0 j).2.1 →
-    PassesAt top d t inputs (Ni.finMod top (reverseBits I top)) ω
+    (Fs.foldStateR (betas.zip steps) st0 j).2.2 = (I >>> (top - m), m) →
+    (Fs.foldStateR (betas.zip steps) st0 j).1.map (·.1) = heights →
+    (∀ hv ∈ (Fs.foldStateR (betas.zip steps) st0 j).1,
+      inputs hv.1 (proj hv.1 (Fs.finMod top (reverseBits I top))) = Challenge.toSpec hv.2) →
+    f (proj m (Fs.finMod top (reverseBits I top))) =
+      Challenge.toSpec (Fs.foldStateR (betas.zip steps) st0 j).2.1 →
+    PassesAt top d t inputs (Fs.finMod top (reverseBits I top)) ω
       (Schedule.plonky3 ma lf fuel m heights) f
       (friPath cache ch commits betas (fun i ↦ Challenge.toSpec (coeffs.getD i 0)) xs
         (Schedule.plonky3 ma lf fuel m heights) j) := by
   set l := betas.zip steps with hl
   have hll : l.length = steps.length := by rw [hl, List.length_zip, hbl, Nat.min_self]
-  set pt := Ni.finMod top (reverseBits I top) with hX
+  set pt := Fs.finMod top (reverseBits I top) with hX
   -- The last layer: the final polynomial.
   have hterm : ∀ {m : ℕ} (j : ℕ) (ω : SmoothCosetFftDomain m 𝕂) (f : Word 𝕂 m),
       IsSubgroupDomain ω → m ≤ top → j ≤ steps.length → l.drop j = [] →
-      (Ni.foldStateR l st0 j).2.2 = (I >>> (top - m), m) →
-      f (proj m pt) = Challenge.toSpec (Ni.foldStateR l st0 j).2.1 →
+      (Fs.foldStateR l st0 j).2.2 = (I >>> (top - m), m) →
+      f (proj m pt) = Challenge.toSpec (Fs.foldStateR l st0 j).2.1 →
       PassesAt top d t inputs pt ω .final f
         (friPath cache ch commits betas (fun i ↦ Challenge.toSpec (coeffs.getD i 0)) xs
           .final j) := by
@@ -110,14 +110,14 @@ theorem passesAt_of_stepsR (inputs : (m : ℕ) → Fin (2 ^ m) → 𝕂) (ma lf 
     have hjl : j = l.length := le_antisymm (by omega) (List.drop_eq_nil_iff.mp hdrop)
     subst hjl
     have hst2 := congrArg Prod.fst hst
-    have hIm : I >>> (top - m) < 2 ^ m := Ni.shiftRight_lt hI m hm
+    have hIm : I >>> (top - m) < 2 ^ m := Fs.shiftRight_lt hI m hm
     change f _ = evalCoeffs (fun i : Fin d ↦ Challenge.toSpec (coeffs.getD i 0)) _
     rw [hf, ← hfinal, hst2, ← Array.foldr_toList, toSpec_horner_list, Array.length_toList, hd,
       hω.2, val_proj_finMod hm, Challenge.toSpec_ofBase', powF_eq]
     dsimp only
     rw [← lift, lift_twoAdicGen_reverseBits hm htop _ hIm, evalCoeffs, Finset.sum_range]
     refine Finset.sum_congr rfl fun i _ ↦ ?_
-    rw [Ni.toList_getD]
+    rw [Fs.toList_getD]
   intro fuel
   induction fuel with
   | zero =>
@@ -147,23 +147,23 @@ theorem passesAt_of_stepsR (inputs : (m : ℕ) → Fin (2 ^ m) → 𝕂) (ma lf 
         (if heights.head? = some (m - la) then (m - la) :: heights.tail else (m - la) :: heights) :=
       har.trans (by rw [hladef]; rfl)
     clear har hk'
-    have hsucc := Ni.foldStateR_succ l st0 j hjl
+    have hsucc := Fs.foldStateR_succ l st0 j hjl
     have hok0 := hsteps j l[j] (List.getElem?_eq_getElem hjl)
-    have hbj : Ni.CapBinding cache H (commits.getD j #[]) :=
+    have hbj : Fs.CapBinding cache H (commits.getD j #[]) :=
       hbind _ (by rw [List.getD_eq_getElem _ _ (by omega)]; exact List.getElem_mem _)
     have hbeta : l[j].1 = betas.getD j 0 := by
       simp only [hl, List.getElem_zip, List.getD_eq_getElem _ _ (by omega : j < betas.length)]
-    rcases hS : Ni.foldStateR l st0 j with ⟨ro, e, im⟩
+    rcases hS : Fs.foldStateR l st0 j with ⟨ro, e, im⟩
     rw [hS] at hst hro hW hf hsucc hok0
     dsimp only at hst
     subst hst
     dsimp only at hro hW hf hok0
-    have hIm : I >>> (top - m) < 2 ^ m := Ni.shiftRight_lt hI m hm
-    have hpt : proj m pt = Ni.finMod m (reverseBits (I >>> (top - m)) m) :=
-      Fin.ext (by rw [val_proj_finMod hm, Ni.finMod_val (reverseBits_lt _ _)])
+    have hIm : I >>> (top - m) < 2 ^ m := Fs.shiftRight_lt hI m hm
+    have hpt : proj m pt = Fs.finMod m (reverseBits (I >>> (top - m)) m) :=
+      Fin.ext (by rw [val_proj_finMod hm, Fs.finMod_val (reverseBits_lt _ _)])
     have hword : friWordOf cache ch (commits.getD j #[]) m la (proj m pt) = Challenge.toSpec e := by
       rw [friWordOf, val_proj_finMod hm, ← hk]
-      exact Ni.friWordAt_eval cache H ch _ l[j] (e, I >>> (top - m), m) m rfl hIm (hk ▸ hla) hok0
+      exact Fs.friWordAt_eval cache H ch _ l[j] (e, I >>> (top - m), m) m rfl hIm (hk ▸ hla) hok0
         hbj
     have hidx' : (I >>> (top - m)) >>> la = I >>> (top - (m - la)) := by
       rw [← Nat.shiftRight_add]
@@ -173,13 +173,13 @@ theorem passesAt_of_stepsR (inputs : (m : ℕ) → Fin (2 ^ m) → 𝕂) (ma lf 
       pt hpt
     rw [hbeta] at hnext
     have hω' := isSubgroupDomain_subdomain ω la hla hω
-    have hfold : ∀ ro', Ni.foldStepR l[j] (ro', e, I >>> (top - m), m) =
+    have hfold : ∀ ro', Fs.foldStepR l[j] (ro', e, I >>> (top - m), m) =
         match ro' with
         | (h, r) :: rest => if (h == m - la) = true then
-            (rest, (Ni.foldStep l[j] (e, I >>> (top - m), m)).1 + Ext.powTwo l[j].1 la * r,
+            (rest, (Fs.foldStep l[j] (e, I >>> (top - m), m)).1 + Ext.powTwo l[j].1 la * r,
               I >>> (top - (m - la)), m - la)
-          else (ro', (Ni.foldStep l[j] (e, I >>> (top - m), m)).1, I >>> (top - (m - la)), m - la)
-        | [] => ([], (Ni.foldStep l[j] (e, I >>> (top - m), m)).1, I >>> (top - (m - la)),
+          else (ro', (Fs.foldStep l[j] (e, I >>> (top - m), m)).1, I >>> (top - (m - la)), m - la)
+        | [] => ([], (Fs.foldStep l[j] (e, I >>> (top - m), m)).1, I >>> (top - (m - la)),
             m - la) := by
       intro ro'
       rw [← hidx', ← hk]
@@ -249,7 +249,7 @@ end Query
 /-! ### The batch's terminal on the proof's execution path -/
 
 namespace Batch.Setup
-open CompStark.Ni
+open CompStark.Fs
 
 set_option backward.isDefEq.respectTransparency false in
 /-- The batch's checks pass on a complete execution if the checks in the clear pass and FRI's

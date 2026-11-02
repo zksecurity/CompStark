@@ -21,7 +21,7 @@ Plonky3's verifier samples.
 * `Statement.parse`: the selection's messages read off a proof at an admitted length, every
   snapshot move `T`: the length, the trace's cap (`capVec`: `none` unless the cap has the size the
   verifier accepts), `α`'s empty witness, the quotient's cap and the out-of-domain witness, the
-  claimed values (`Ni.openingsOf`) and the batching witness, FRI's caps and commit witnesses, the
+  claimed values (`Fs.openingsOf`) and the batching witness, FRI's caps and commit witnesses, the
   final polynomial and the query witness (`parseFri`). Its input is the preprocessed commitment's
   elements and the public values (`Statement.inputOf`).
 * `openedPath`, `replay_realCompletion`: the path that completing messages of a snapshot protocol on
@@ -582,14 +582,14 @@ theorem sample_idealOf_squeeze (cap : Digest F) (input : List F) :
     (idealOf answer).sample ⟨cap, input, []⟩ =
       ((answer (.duplex cap input)).2.toList.getD 0 0,
         ⟨(answer (.duplex cap input)).1, [], (answer (.duplex cap input)).2.toList.drop 1⟩) := by
-  rw [Ni.sample_idealOf_nil, headD_eq_getD, List.drop_one]
+  rw [Fs.sample_idealOf_nil, headD_eq_getD, List.drop_one]
 
 /-- **Plonky3's challenger is a stream of squeezes.** From the capacity of the blocks `p` with `x`
 pending and no sample left, sample `q K + r` (`r < K`) is sample `r` of squeeze `q`, and leaves
 the capacity of squeeze `q`, no input, and the rest of its samples. -/
 theorem sample_sampleStates (hK : 0 < K) (x : List F) (p : List (List F)) :
     ∀ q r, r < K → (idealOf answer).sample
-      (Ni.sampleStates (idealOf answer) ⟨capOf answer p, x, []⟩ (q * K + r)) =
+      (Fs.sampleStates (idealOf answer) ⟨capOf answer p, x, []⟩ (q * K + r)) =
       ((squeezeAnswer answer x p q).2.toList.getD r 0,
         ⟨(squeezeAnswer answer x p q).1, [], (squeezeAnswer answer x p q).2.toList.drop (r + 1)⟩)
   | q, 0, _ => by
@@ -600,18 +600,18 @@ theorem sample_sampleStates (hK : 0 < K) (x : List F) (p : List (List F)) :
     | succ q =>
       have h := sample_sampleStates hK x p q (K - 1) (by omega)
       rw [show (q + 1) * K + 0 = q * K + (K - 1) + 1 by rw [Nat.succ_mul]; omega,
-        Ni.sampleStates, h, show K - 1 + 1 = K by omega,
+        Fs.sampleStates, h, show K - 1 + 1 = K by omega,
         List.drop_of_length_le (by rw [Vector.length_toList])]
       exact sample_idealOf_squeeze answer _ _
   | q, r + 1, hr => by
     have h := sample_sampleStates hK x p q r (by omega)
-    rw [show q * K + (r + 1) = q * K + r + 1 by omega, Ni.sampleStates, h]
+    rw [show q * K + (r + 1) = q * K + r + 1 by omega, Fs.sampleStates, h]
     exact sample_idealOf_drop answer _ _ hr
 
 /-- Sample `i` from the capacity of `p` with `x` pending is sample `i % K` of squeeze `i / K`. -/
 theorem sample_sampleStates' (hK : 0 < K) (x : List F) (p : List (List F)) (i : ℕ) :
     ((idealOf answer).sample
-      (Ni.sampleStates (idealOf answer) ⟨capOf answer p, x, []⟩ i)).1 =
+      (Fs.sampleStates (idealOf answer) ⟨capOf answer p, x, []⟩ i)).1 =
       (squeezeAnswer answer x p (i / K)).2.toList.getD (i % K) 0 := by
   have h := sample_sampleStates answer hK x p (i / K) (i % K) (Nat.mod_lt _ hK)
   rw [Nat.div_add_mod'] at h
@@ -620,12 +620,12 @@ theorem sample_sampleStates' (hK : 0 < K) (x : List F) (p : List (List F)) (i : 
 /-- After `i + 1` samples from the capacity of `p` with `x` pending, the capacity is that of
 squeeze `i / K` and nothing is pending. -/
 theorem sampleStates_succ_eq (hK : 0 < K) (x : List F) (p : List (List F)) (i : ℕ) :
-    (Ni.sampleStates (idealOf answer) ⟨capOf answer p, x, []⟩ (i + 1)).cap =
+    (Fs.sampleStates (idealOf answer) ⟨capOf answer p, x, []⟩ (i + 1)).cap =
         capOf answer (List.replicate (i / K) [] ++ x :: p) ∧
-      (Ni.sampleStates (idealOf answer) ⟨capOf answer p, x, []⟩ (i + 1)).input = [] := by
+      (Fs.sampleStates (idealOf answer) ⟨capOf answer p, x, []⟩ (i + 1)).input = [] := by
   have h := sample_sampleStates answer hK x p (i / K) (i % K) (Nat.mod_lt _ hK)
   rw [Nat.div_add_mod'] at h
-  rw [Ni.sampleStates, h, capOf_replicate]
+  rw [Fs.sampleStates, h, capOf_replicate]
   exact ⟨rfl, rfl⟩
 
 end Stream
@@ -662,19 +662,19 @@ theorem sampleAt_streamCoins_eq (hK : 0 < K) {x : List F} {p : List (List F)} {n
     (hn : n ≤ m) {i : ℕ} (hi : i < n * K) :
     sampleAt (streamCoins (m := m) answer x p n) i =
       ((idealOf answer).sample
-        (Ni.sampleStates (idealOf answer) ⟨capOf answer p, x, []⟩ i)).1 := by
+        (Fs.sampleStates (idealOf answer) ⟨capOf answer p, x, []⟩ i)).1 := by
   rw [sampleAt_streamCoins answer hn ((Nat.div_lt_iff_lt_mul hK).mpr hi),
     sample_sampleStates' answer hK]
 
 omit [BaseField F] in
 /-- `n` samples are the samples along the challenger's states. -/
 theorem smpList_eq {G : Primitives F Id} : ∀ (n : ℕ) (s : G.State),
-    Ni.smpList G s n =
-      ((List.range n).map fun i => (G.sample (Ni.sampleStates G s i)).1, Ni.sampleStates G s n)
+    Fs.smpList G s n =
+      ((List.range n).map fun i => (G.sample (Fs.sampleStates G s i)).1, Fs.sampleStates G s n)
   | 0, _ => rfl
   | n + 1, s => by
-    rw [Ni.smpList, smpList_eq n, List.range_succ_eq_map, List.map_cons, List.map_map]
-    simp only [Function.comp_def, Ni.sampleStates_sample]
+    rw [Fs.smpList, smpList_eq n, List.range_succ_eq_map, List.map_cons, List.map_map]
+    simp only [Function.comp_def, Fs.sampleStates_sample]
     rfl
 
 /-- The `⌈s / K⌉` squeezes of `s ≥ 1` samples less one are `(s - 1) / K`. -/
@@ -685,9 +685,9 @@ theorem squeezesFor_sub_one (hK : 0 < K) {s : ℕ} (hs : 0 < s) :
 
 /-- The samples `o, …, o + d - 1` as an extension element. -/
 theorem toSpec_smpExt (s : Sponge F) :
-    Challenge.toSpec (Ni.smpExt (EF := EF) (idealOf answer) s).1 =
-      Ni.extEquiv fun j => ((idealOf answer).sample (Ni.sampleStates (idealOf answer) s j)).1 := by
-  rw [Ni.smpExt, smpList_eq, Challenge.toSpec_ofCoeffs]
+    Challenge.toSpec (Fs.smpExt (EF := EF) (idealOf answer) s).1 =
+      Fs.extEquiv fun j => ((idealOf answer).sample (Fs.sampleStates (idealOf answer) s j)).1 := by
+  rw [Fs.smpExt, smpList_eq, Challenge.toSpec_ofCoeffs]
   congr 1
   funext j
   rw [List.getD_eq_getElem _ _ (by rw [List.length_map, List.length_range]; exact j.isLt),
@@ -707,13 +707,13 @@ def queryWitnessOf (top t : ℕ) :
 
 theorem extWitnessElems_extWitnessOf (bits : ℕ) (w : F) :
     extWitnessElems (EF := EF) (K := K) (m := m) bits (extWitnessOf bits w) =
-      Ni.witnessInput bits w := by
+      Fs.witnessInput bits w := by
   cases bits <;> rfl
 
 omit [Challenge F EF] in
 theorem queryWitnessElems_queryWitnessOf (top t bits : ℕ) (w : F) :
     queryWitnessElems (K := K) (m := m) top t bits (queryWitnessOf top t bits w) =
-      Ni.witnessInput bits w := by
+      Fs.witnessInput bits w := by
   cases bits <;> rfl
 
 /-- **An extension draw on the stream.** From the capacity of the blocks `acc` with `x₀` pending,
@@ -723,25 +723,25 @@ challenger is left at the capacity after the draw's squeezes with nothing pendin
 theorem extDraw_idealOf (hK : 0 < K) (bits : ℕ) (w : F) (x₀ : List F) (acc : List (List F))
     (hm : squeezesFor K (extSamples (EF := EF) bits) ≤ m) :
     (extDraw (F := F) (EF := EF) bits).accept (streamCoins (m := m) answer
-        (x₀ ++ Ni.witnessInput bits w) acc
+        (x₀ ++ Fs.witnessInput bits w) acc
         (squeezesFor K (extSamples (EF := EF) bits))) =
-        (Ni.chkWit (idealOf answer) bits w ⟨capOf answer acc, x₀, []⟩).1 ∧
+        (Fs.chkWit (idealOf answer) bits w ⟨capOf answer acc, x₀, []⟩).1 ∧
       (extDraw (F := F) (EF := EF) bits).decode (streamCoins (m := m) answer
-        (x₀ ++ Ni.witnessInput bits w) acc
+        (x₀ ++ Fs.witnessInput bits w) acc
         (squeezesFor K (extSamples (EF := EF) bits))) =
-        Challenge.toSpec (Ni.smpExt (EF := EF) (idealOf answer)
-          (Ni.chkWit (idealOf answer) bits w ⟨capOf answer acc, x₀, []⟩).2).1 ∧
-      (Ni.smpExt (EF := EF) (idealOf answer)
-        (Ni.chkWit (idealOf answer) bits w ⟨capOf answer acc, x₀, []⟩).2).2.cap =
+        Challenge.toSpec (Fs.smpExt (EF := EF) (idealOf answer)
+          (Fs.chkWit (idealOf answer) bits w ⟨capOf answer acc, x₀, []⟩).2).1 ∧
+      (Fs.smpExt (EF := EF) (idealOf answer)
+        (Fs.chkWit (idealOf answer) bits w ⟨capOf answer acc, x₀, []⟩).2).2.cap =
         capOf answer (List.replicate (squeezesFor K (extSamples (EF := EF) bits) - 1) [] ++
-          (x₀ ++ Ni.witnessInput bits w) :: acc) ∧
-      (Ni.smpExt (EF := EF) (idealOf answer)
-        (Ni.chkWit (idealOf answer) bits w ⟨capOf answer acc, x₀, []⟩).2).2.input = [] := by
+          (x₀ ++ Fs.witnessInput bits w) :: acc) ∧
+      (Fs.smpExt (EF := EF) (idealOf answer)
+        (Fs.chkWit (idealOf answer) bits w ⟨capOf answer acc, x₀, []⟩).2).2.input = [] := by
   have hd := (Challenge.params EF).d_pos
   have hn := le_squeezesFor_mul (K := K) hK (extSamples (EF := EF) bits)
   cases bits with
   | zero =>
-    have hx : x₀ ++ Ni.witnessInput 0 w = x₀ := List.append_nil x₀
+    have hx : x₀ ++ Fs.witnessInput 0 w = x₀ := List.append_nil x₀
     have hs : extSamples (EF := EF) 0 = Challenge.d EF := by simp only [extSamples, ↓reduceIte,
       Nat.add_zero]
     rw [hx]
@@ -749,21 +749,21 @@ theorem extDraw_idealOf (hK : 0 < K) (bits : ℕ) (w : F) (x₀ : List F) (acc :
     have hst := sampleStates_succ_eq answer hK x₀ acc (Challenge.d EF - 1)
     rw [Nat.sub_add_cancel hd] at hst
     refine ⟨rfl, ?_, ?_⟩
-    · change Ni.extEquiv _ = _
-      rw [show Ni.chkWit (idealOf answer) 0 w ⟨capOf answer acc, x₀, []⟩ =
+    · change Fs.extEquiv _ = _
+      rw [show Fs.chkWit (idealOf answer) 0 w ⟨capOf answer acc, x₀, []⟩ =
         (true, ⟨capOf answer acc, x₀, []⟩) from rfl, toSpec_smpExt]
       congr 1
       funext j
       rw [Nat.zero_add, sampleAt_streamCoins_eq answer hK hm (by omega)]
-    · rw [squeezesFor_sub_one hK hd, Ni.smpExt, smpList_eq]
+    · rw [squeezesFor_sub_one hK hd, Fs.smpExt, smpList_eq]
       exact hst
   | succ b =>
-    have hx : Ni.witnessInput (b + 1) w = [w] := rfl
+    have hx : Fs.witnessInput (b + 1) w = [w] := rfl
     have hs : extSamples (EF := EF) (b + 1) = Challenge.d EF + 1 := by
       simp only [extSamples, Nat.add_one_ne_zero, ↓reduceIte]
     rw [hx]
     rw [hs] at hm hn ⊢
-    have hchk : Ni.chkWit (idealOf answer) (b + 1) w ⟨capOf answer acc, x₀, []⟩ =
+    have hchk : Fs.chkWit (idealOf answer) (b + 1) w ⟨capOf answer acc, x₀, []⟩ =
         (CompPoly.CanonicalNat.toNat ((idealOf answer).sample
           ⟨capOf answer acc, x₀ ++ [w], []⟩).1 % 2 ^ (b + 1) == 0,
           ((idealOf answer).sample ⟨capOf answer acc, x₀ ++ [w], []⟩).2) := rfl
@@ -773,13 +773,13 @@ theorem extDraw_idealOf (hK : 0 < K) (bits : ℕ) (w : F) (x₀ : List F) (acc :
     · change (powSample _ % 2 ^ (b + 1) == 0) = _
       rw [powSample, sampleAt_streamCoins_eq answer hK hm (by omega)]
       rfl
-    · change Ni.extEquiv _ = _
+    · change Fs.extEquiv _ = _
       rw [toSpec_smpExt]
       congr 1
       funext j
-      rw [Ni.sampleStates_sample, sampleAt_streamCoins_eq answer hK hm (by omega), Nat.add_comm]
-    · rw [squeezesFor_sub_one hK (Nat.succ_pos _), Nat.succ_sub_one, Ni.smpExt, smpList_eq,
-        Ni.sampleStates_sample]
+      rw [Fs.sampleStates_sample, sampleAt_streamCoins_eq answer hK hm (by omega), Nat.add_comm]
+    · rw [squeezesFor_sub_one hK (Nat.succ_pos _), Nat.succ_sub_one, Fs.smpExt, smpList_eq,
+        Fs.sampleStates_sample]
       exact hst
 
 /-- **The query draw on the stream.** From the capacity of the blocks `acc` with `x₀` pending,
@@ -787,17 +787,17 @@ Plonky3's grinding check passes as the query draw on the coins of the block `x�
 accepts, and its query samples are the decoded positions' samples. -/
 theorem queryDraw_idealOf (hK : 0 < K) (top t bits : ℕ) (w : F) (x₀ : List F)
     (acc : List (List F)) (hm : squeezesFor K (querySamples t bits) ≤ m) :
-    (queryDraw top t bits).accept (streamCoins (m := m) answer (x₀ ++ Ni.witnessInput bits w) acc
+    (queryDraw top t bits).accept (streamCoins (m := m) answer (x₀ ++ Fs.witnessInput bits w) acc
         (squeezesFor K (querySamples t bits))) =
-        (Ni.chkWit (idealOf answer) bits w ⟨capOf answer acc, x₀, []⟩).1 ∧
+        (Fs.chkWit (idealOf answer) bits w ⟨capOf answer acc, x₀, []⟩).1 ∧
       ∀ j : Fin t, (queryDraw top t bits).decode (streamCoins (m := m) answer
-        (x₀ ++ Ni.witnessInput bits w) acc (squeezesFor K (querySamples t bits))) j =
-        positionOf top ((idealOf answer).sample (Ni.sampleStates (idealOf answer)
-          (Ni.chkWit (idealOf answer) bits w ⟨capOf answer acc, x₀, []⟩).2 j)).1 := by
+        (x₀ ++ Fs.witnessInput bits w) acc (squeezesFor K (querySamples t bits))) j =
+        positionOf top ((idealOf answer).sample (Fs.sampleStates (idealOf answer)
+          (Fs.chkWit (idealOf answer) bits w ⟨capOf answer acc, x₀, []⟩).2 j)).1 := by
   have hn := le_squeezesFor_mul (K := K) hK (querySamples t bits)
   cases bits with
   | zero =>
-    have hx : x₀ ++ Ni.witnessInput 0 w = x₀ := List.append_nil x₀
+    have hx : x₀ ++ Fs.witnessInput 0 w = x₀ := List.append_nil x₀
     have hs : querySamples t 0 = t := by simp only [querySamples, ↓reduceIte, Nat.add_zero]
     rw [hx]
     rw [hs] at hm hn ⊢
@@ -806,12 +806,12 @@ theorem queryDraw_idealOf (hK : 0 < K) (top t bits : ℕ) (w : F) (x₀ : List F
     rw [sampleAt_streamCoins_eq answer hK hm (by omega)]
     rfl
   | succ b =>
-    have hx : Ni.witnessInput (b + 1) w = [w] := rfl
+    have hx : Fs.witnessInput (b + 1) w = [w] := rfl
     have hs : querySamples t (b + 1) = t + 1 := by
       simp only [querySamples, Nat.add_one_ne_zero, ↓reduceIte]
     rw [hx]
     rw [hs] at hm hn ⊢
-    have hchk : Ni.chkWit (idealOf answer) (b + 1) w ⟨capOf answer acc, x₀, []⟩ =
+    have hchk : Fs.chkWit (idealOf answer) (b + 1) w ⟨capOf answer acc, x₀, []⟩ =
         (CompPoly.CanonicalNat.toNat ((idealOf answer).sample
           ⟨capOf answer acc, x₀ ++ [w], []⟩).1 % 2 ^ (b + 1) == 0,
           ((idealOf answer).sample ⟨capOf answer acc, x₀ ++ [w], []⟩).2) := rfl
@@ -821,7 +821,7 @@ theorem queryDraw_idealOf (hK : 0 < K) (top t bits : ℕ) (w : F) (x₀ : List F
       rw [powSample, sampleAt_streamCoins_eq answer hK hm (by omega)]
       rfl
     · change positionOf top (sampleAt _ (1 + j)) = _
-      rw [Ni.sampleStates_sample, sampleAt_streamCoins_eq answer hK hm (by omega), Nat.add_comm]
+      rw [Fs.sampleStates_sample, sampleAt_streamCoins_eq answer hK hm (by omega), Nat.add_comm]
 
 end Draws
 
@@ -837,7 +837,7 @@ def capVec (h k : ℕ) (c : Cap F) : Option (CapOf F h k) :=
 
 /-- An extension element in the spec field is observed as its coefficients. -/
 theorem extElems_toSpec (x : EF) : extElems (F := F) (Challenge.toSpec x) = Ext.coeffs x := by
-  have h : Challenge.toSpec x = Ni.extEquiv fun i => (Challenge.coeffs x).getD i 0 := by
+  have h : Challenge.toSpec x = Fs.extEquiv fun i => (Challenge.coeffs x).getD i 0 := by
     conv_lhs => rw [← Challenge.ofCoeffs_coeffs x, Challenge.toSpec_ofCoeffs]
     rfl
   rw [h, extElems, Equiv.symm_apply_apply]
@@ -846,7 +846,7 @@ theorem extElems_toSpec (x : EF) : extElems (F := F) (Challenge.toSpec x) = Ext.
 
 /-- `n` extension elements read off an array of `n` are observed as the array's coefficients. -/
 theorem extsElems_getD {n : ℕ} (a : Array EF) (ha : a.size = n) :
-    extsElems (F := F) (fun i : Fin n => Challenge.toSpec (a.getD i 0)) = Ni.coeffs a.toList := by
+    extsElems (F := F) (fun i : Fin n => Challenge.toSpec (a.getD i 0)) = Fs.coeffs a.toList := by
   have hl : List.ofFn (fun i : Fin n => Challenge.toSpec (a.getD i 0)) =
       a.toList.map Challenge.toSpec := by
     refine List.ext_getElem (by rw [List.length_ofFn, List.length_map, Array.length_toList, ha])
@@ -854,7 +854,7 @@ theorem extsElems_getD {n : ℕ} (a : Array EF) (ha : a.size = n) :
     rw [List.getElem_ofFn, List.getElem_map, Array.getElem_toList,
       Array.getD_eq_getD_getElem?, Array.getElem?_eq_getElem (by rw [ha]; simpa using h1),
       Option.getD_some]
-  rw [extsElems, hl, List.flatMap_map, Ni.coeffs]
+  rw [extsElems, hl, List.flatMap_map, Fs.coeffs]
   congr 1
   funext x
   exact extElems_toSpec x
@@ -983,7 +983,7 @@ noncomputable def parse (proof : Proof F EF) :
   ⟨tc, extWitnessOf 0 0, PUnit.unit, wrapMsgs T (squeezesFor K (extSamples (EF := EF) 0) != 0)
     ⟨qc, extWitnessOf S.params.oodPowBits proof.oodWitness, PUnit.unit,
       wrapMsgs T (squeezesFor K (extSamples (EF := EF) S.params.oodPowBits) != 0)
-        ⟨Ni.openingsOf S proof.opened, extWitnessOf S.params.batchPowBits proof.fri.batchWitness,
+        ⟨Fs.openingsOf S proof.opened, extWitnessOf S.params.batchPowBits proof.fri.batchWitness,
           PUnit.unit, fri⟩⟩⟩
 
 end CompStark.Iop.Setup
@@ -1047,9 +1047,9 @@ variable (EF) in
 challenger `s`. -/
 def CommitChecks (G : Primitives F Id) (P : Params) : List (Cap F × F) → G.State → Prop
   | [], _ => True
-  | cw :: cws, s => (Ni.chkWit G P.commitPowBits cw.2 (Ni.obsList G s (capElems cw.1))).1 = true ∧
-      CommitChecks G P cws (Ni.smpExt (EF := EF) G
-        (Ni.chkWit G P.commitPowBits cw.2 (Ni.obsList G s (capElems cw.1))).2).2
+  | cw :: cws, s => (Fs.chkWit G P.commitPowBits cw.2 (Fs.obsList G s (capElems cw.1))).1 = true ∧
+      CommitChecks G P cws (Fs.smpExt (EF := EF) G
+        (Fs.chkWit G P.commitPowBits cw.2 (Fs.obsList G s (capElems cw.1))).2).2
 
 /-- FRI's path read off one more commitment and folding challenge, one layer later. -/
 theorem friPath_cons (cache : Merkle.Cache F (Digest F)) (ch : ℕ) (c₀ : Cap F)
@@ -1073,8 +1073,8 @@ variable (answer : (q : Query F) → Answer K q) (top d t : ℕ) (P : Params)
 
 /-- Plonky3's query check after FRI's commitments `cws` from the challenger `s`. -/
 abbrev friQueryCheck (s : Sponge F) (cws : List (Cap F × F)) : Bool × Sponge F :=
-  Ni.chkWit (idealOf answer) P.queryPowBits queryWitness (Ni.obsExts (idealOf answer)
-    (Ni.commitReplay (EF := EF) (idealOf answer) P cws s).2 finalPoly.toList)
+  Fs.chkWit (idealOf answer) P.queryPowBits queryWitness (Fs.obsExts (idealOf answer)
+    (Fs.commitReplay (EF := EF) (idealOf answer) P cws s).2 finalPoly.toList)
 
 /-- **FRI's draws are Plonky3's.** From the capacity of the completed blocks `acc` with nothing
 pending, FRI's messages read off the commitments `cws` (`parseFri`) open, on the coins of their
@@ -1089,8 +1089,8 @@ theorem openedPath_fri (hK : 0 < K)
     (acc : List (List F)) (st : Sponge F) (cws : List (Cap F × F)) (msgs),
     st.cap = capOf answer acc → st.input = [] →
     parseFri K m top d t P T finalPoly queryWitness s start seed cws = some msgs →
-    CommitChecks EF (idealOf answer) P cws (Ni.obsList (idealOf answer) st seed) →
-    (friQueryCheck answer P finalPoly queryWitness (Ni.obsList (idealOf answer) st seed)
+    CommitChecks EF (idealOf answer) P cws (Fs.obsList (idealOf answer) st seed) →
+    (friQueryCheck answer P finalPoly queryWitness (Fs.obsList (idealOf answer) st seed)
       cws).1 = true →
     openedPath (fun r n => streamCoins (m := m) answer r.1 r.2 n)
         (Fri.Interaction.publicCoin 𝕂 top d t s)
@@ -1098,29 +1098,29 @@ theorem openedPath_fri (hK : 0 < K)
         (friLayout K m top d t P.commitPowBits P.queryPowBits P.capHeight s seed) start T [] []
         acc msgs =
       some (Iop.friPath (merkleCache T) P.capHeight (cws.map Prod.fst)
-        (Ni.commitReplay (idealOf answer) P cws (Ni.obsList (idealOf answer) st seed)).1
+        (Fs.commitReplay (idealOf answer) P cws (Fs.obsList (idealOf answer) st seed)).1
         (fun i => Challenge.toSpec (finalPoly.getD i 0))
-        (fun j => positionOf top ((idealOf answer).sample (Ni.sampleStates (idealOf answer)
-          (friQueryCheck answer P finalPoly queryWitness (Ni.obsList (idealOf answer) st seed)
+        (fun j => positionOf top ((idealOf answer).sample (Fs.sampleStates (idealOf answer)
+          (friQueryCheck answer P finalPoly queryWitness (Fs.obsList (idealOf answer) st seed)
             cws).2 j)).1) s 0)
   | _, .final, start, seed, acc, st, [], msgs, hcap, hin, hp, _, hq => by
     obtain rfl := Option.some.inj hp
-    have hne : seed ++ Ni.coeffs finalPoly.toList ≠ [] :=
-      List.append_ne_nil_of_right_ne_nil _ (Ni.coeffs_ne_nil (List.ne_nil_of_length_pos
+    have hne : seed ++ Fs.coeffs finalPoly.toList ≠ [] :=
+      List.append_ne_nil_of_right_ne_nil _ (Fs.coeffs_ne_nil (List.ne_nil_of_length_pos
         (by rw [Array.length_toList, hfp]; exact hd)))
-    have hobs : Ni.obsExts (idealOf answer)
-        (Ni.commitReplay (EF := EF) (idealOf answer) P [] (Ni.obsList (idealOf answer) st seed)).2
-        finalPoly.toList = ⟨capOf answer acc, seed ++ Ni.coeffs finalPoly.toList, []⟩ := by
-      rw [show Ni.commitReplay (EF := EF) (idealOf answer) P [] (Ni.obsList (idealOf answer) st
-        seed) = ([], Ni.obsList (idealOf answer) st seed) from rfl, Ni.obsExts_eq,
-        ← Ni.obsList_append, Ni.obsList_idealOf_ne answer _ _ hne, hcap, hin]
+    have hobs : Fs.obsExts (idealOf answer)
+        (Fs.commitReplay (EF := EF) (idealOf answer) P [] (Fs.obsList (idealOf answer) st seed)).2
+        finalPoly.toList = ⟨capOf answer acc, seed ++ Fs.coeffs finalPoly.toList, []⟩ := by
+      rw [show Fs.commitReplay (EF := EF) (idealOf answer) P [] (Fs.obsList (idealOf answer) st
+        seed) = ([], Fs.obsList (idealOf answer) st seed) from rfl, Fs.obsExts_eq,
+        ← Fs.obsList_append, Fs.obsList_idealOf_ne answer _ _ hne, hcap, hin]
       rfl
     obtain ⟨hacc, hdec⟩ := queryDraw_idealOf (m := m) answer hK top t P.queryPowBits queryWitness
-      (seed ++ Ni.coeffs finalPoly.toList) acc hqm
+      (seed ++ Fs.coeffs finalPoly.toList) acc hqm
     have hx : [] ++ (seed ++ extsElems (fun i : Fin d => Challenge.toSpec (finalPoly.getD i 0))) ++
         [] ++ queryWitnessElems (K := K) (m := m) top t P.queryPowBits
           (queryWitnessOf top t P.queryPowBits queryWitness) =
-        seed ++ Ni.coeffs finalPoly.toList ++ Ni.witnessInput P.queryPowBits queryWitness := by
+        seed ++ Fs.coeffs finalPoly.toList ++ Fs.witnessInput P.queryPowBits queryWitness := by
       rw [extsElems_getD _ hfp, queryWitnessElems_queryWitnessOf, List.nil_append,
         List.append_nil]
     have hq' := hq
@@ -1137,10 +1137,10 @@ theorem openedPath_fri (hK : 0 < K)
       rw [hx, hacc, hq']
     · have hxs : (fun j : Fin t => (queryDraw top t P.queryPowBits).decode
           (streamCoins (m := m) answer
-          (seed ++ Ni.coeffs finalPoly.toList ++ Ni.witnessInput P.queryPowBits queryWitness) acc
+          (seed ++ Fs.coeffs finalPoly.toList ++ Fs.witnessInput P.queryPowBits queryWitness) acc
           (squeezesFor K (querySamples t P.queryPowBits))) j) = fun j : Fin t => positionOf top
-          ((idealOf answer).sample (Ni.sampleStates (idealOf answer)
-            (friQueryCheck answer P finalPoly queryWitness (Ni.obsList (idealOf answer) st seed)
+          ((idealOf answer).sample (Fs.sampleStates (idealOf answer)
+            (friQueryCheck answer P finalPoly queryWitness (Fs.obsList (idealOf answer) st seed)
               []).2 j)).1 := funext fun j => by rw [hdec j, friQueryCheck, hobs]
       refine congrArg some ?_
       rw [← hxs, ← hx]
@@ -1158,9 +1158,9 @@ theorem openedPath_fri (hK : 0 < K)
     · exact absurd hc (by simp)
     obtain rfl := Option.some.inj hc
     have hne : capElems cw.1 ≠ [] := hco ▸ capOfElems_ne_nil _
-    have hst1 : Ni.obsList (idealOf answer) (Ni.obsList (idealOf answer) st seed) (capElems cw.1) =
+    have hst1 : Fs.obsList (idealOf answer) (Fs.obsList (idealOf answer) st seed) (capElems cw.1) =
         ⟨capOf answer acc, seed ++ capElems cw.1, []⟩ := by
-      rw [← Ni.obsList_append, Ni.obsList_idealOf_ne answer _ _
+      rw [← Fs.obsList_append, Fs.obsList_idealOf_ne answer _ _
         (List.append_ne_nil_of_right_ne_nil _ hne), hcap, hin]
       rfl
     obtain ⟨hacc, hdec, hcap', hin'⟩ := extDraw_idealOf (m := m) answer hK P.commitPowBits cw.2
@@ -1168,7 +1168,7 @@ theorem openedPath_fri (hK : 0 < K)
     have hx : [] ++ (seed ++ capOfElems (⟨cw.1, by assumption⟩ : CapOf F P.capHeight (n - k))) ++
         [] ++ extWitnessElems (EF := EF) (K := K) (m := m) P.commitPowBits
           (extWitnessOf P.commitPowBits cw.2) =
-        seed ++ capElems cw.1 ++ Ni.witnessInput P.commitPowBits cw.2 := by
+        seed ++ capElems cw.1 ++ Fs.witnessInput P.commitPowBits cw.2 := by
       rw [extWitnessElems_extWitnessOf, hco, List.nil_append, List.append_nil]
     have hsq := squeezesFor_ne_zero (K := K) hK (s := extSamples (EF := EF) P.commitPowBits)
       (Nat.lt_of_lt_of_le (Challenge.params EF).d_pos (Nat.le_add_right _ _))
@@ -1214,19 +1214,19 @@ variable {F : Type} [BaseField F] {EF : Type} [Challenge F EF] (G : Primitives F
 /-- An accepting commit loop passes every grinding check. -/
 theorem commitChecks_of_loop (P : Params)
     (body : Cap F × F → Array EF → M G (ForInStep (Array EF)))
-    (hbody : ∀ cw betas, body cw betas = Ni.commitBody G P cw betas) :
+    (hbody : ∀ cw betas, body cw betas = Fs.commitBody G P cw betas) :
     ∀ (cws : List (Cap F × F)) (betas : Array EF) (s : G.State) (r : Array EF × G.State),
       forIn cws betas body s = .ok r → CommitChecks EF G P cws s
   | [], _, _, _, _ => trivial
   | cw :: cws, betas, s, r, h => by
-    obtain ⟨step, st', h1, h2⟩ := Ni.forIn_cons_eq_ok G _ _ _ _ _ _ h
+    obtain ⟨step, st', h1, h2⟩ := Fs.forIn_cons_eq_ok G _ _ _ _ _ _ h
     rw [hbody] at h1
-    unfold Ni.commitBody at h1
-    rw [observeCap, Ni.bind_ok_of G (Ni.observeList_eq G _ s),
-      Ni.bind_ok_of G (Ni.checkWitness_eq G _ _ _)] at h1
-    obtain ⟨hc, h1⟩ := Ni.ensure_bind_eq_ok G h1
-    rw [Ni.bind_ok_of G (Ni.sampleExt_eq G _)] at h1
-    obtain ⟨hs1, hs2⟩ := Prod.mk.inj (Ni.pure_eq_ok G h1)
+    unfold Fs.commitBody at h1
+    rw [observeCap, Fs.bind_ok_of G (Fs.observeList_eq G _ s),
+      Fs.bind_ok_of G (Fs.checkWitness_eq G _ _ _)] at h1
+    obtain ⟨hc, h1⟩ := Fs.ensure_bind_eq_ok G h1
+    rw [Fs.bind_ok_of G (Fs.sampleExt_eq G _)] at h1
+    obtain ⟨hs1, hs2⟩ := Prod.mk.inj (Fs.pure_eq_ok G h1)
     subst hs1 hs2
     exact ⟨hc, commitChecks_of_loop P body hbody cws _ _ r h2⟩
 
@@ -1237,13 +1237,13 @@ theorem commitChecks_of_verifyFri (P : Params) (proof : FriProof F EF)
     (hh : ∀ x ∈ rounds, ∀ dp ∈ x.2, dp.1.logSize + P.logBlowup = logMax)
     (s : G.State) (r : Unit × G.State) (h : verifyFri G P proof rounds alpha s = .ok r) :
     CommitChecks EF G P (proof.commits.toList.zip proof.commitWitnesses.toList)
-      (Ni.obsList G s (DomainSeparator.friSeed F EF
+      (Fs.obsList G s (DomainSeparator.friSeed F EF
         (foldSchedule P.maxLogArity (P.logBlowup + P.logFinalPolyLen) logMax [logMax])
         (2 ^ P.logFinalPolyLen) P.commitPowBits P.queryPowBits P.numQueries logMax P.logBlowup
         P.maxLogArity)) := by
   unfold verifyFri at h
-  obtain ⟨-, h⟩ := Ni.ensure_bind_eq_ok G h
-  obtain ⟨hany, h⟩ := Ni.ensure_bind_eq_ok G h
+  obtain ⟨-, h⟩ := Fs.ensure_bind_eq_ok G h
+  obtain ⟨hany, h⟩ := Fs.ensure_bind_eq_ok G h
   have hheights : (((rounds.flatMap (·.2)).map (·.1.logSize + P.logBlowup)).mergeSort
       (fun a b ↦ b ≤ a)).dedup = [logMax] := by
     refine dedup_mergeSort_const _ _ _ (fun x hx ↦ ?_) ?_
@@ -1256,15 +1256,15 @@ theorem commitChecks_of_verifyFri (P : Params) (proof : FriProof F EF)
       obtain ⟨y, hy⟩ := List.exists_mem_of_ne_nil _ hne
       exact List.ne_nil_of_mem (List.mem_map_of_mem (List.mem_flatMap.mpr ⟨r, hr, hy⟩))
   simp only [hheights, List.headD_cons] at h
-  obtain ⟨-, h⟩ := Ni.ensure_bind_eq_ok G h
-  obtain ⟨-, h⟩ := Ni.ensure_bind_eq_ok G h
-  obtain ⟨-, h⟩ := Ni.ensure_bind_eq_ok G h
-  obtain ⟨-, h⟩ := Ni.ensure_bind_eq_ok G h
-  obtain ⟨-, h⟩ := Ni.ensure_bind_eq_ok G h
-  obtain ⟨-, h⟩ := Ni.ensure_bind_eq_ok G h
-  rw [Ni.bind_ok_of G (Ni.observeList_eq G _ s)] at h
-  obtain ⟨-, h⟩ := Ni.ensure_bind_eq_ok G h
-  obtain ⟨betas, st1, h1, -⟩ := Ni.bind_eq_ok G h
+  obtain ⟨-, h⟩ := Fs.ensure_bind_eq_ok G h
+  obtain ⟨-, h⟩ := Fs.ensure_bind_eq_ok G h
+  obtain ⟨-, h⟩ := Fs.ensure_bind_eq_ok G h
+  obtain ⟨-, h⟩ := Fs.ensure_bind_eq_ok G h
+  obtain ⟨-, h⟩ := Fs.ensure_bind_eq_ok G h
+  obtain ⟨-, h⟩ := Fs.ensure_bind_eq_ok G h
+  rw [Fs.bind_ok_of G (Fs.observeList_eq G _ s)] at h
+  obtain ⟨-, h⟩ := Fs.ensure_bind_eq_ok G h
+  obtain ⟨betas, st1, h1, -⟩ := Fs.bind_eq_ok G h
   exact commitChecks_of_loop G P _ (fun _ _ ↦ rfl) _ _ _ _ h1
 
 /-- The claimed values read off a proof of the AIR's shape are observed as Plonky3 observes the
@@ -1276,13 +1276,13 @@ theorem openingsElems_openingsOf (S : Iop.Setup EF) (o : OpenedValues EF)
     (hq4 : ∀ ch ∈ o.quotientChunks, ch.size = Challenge.d EF)
     (hpl : (o.preprocessedLocal.getD #[]).size = S.air.preprocessedWidth)
     (hpn : (o.preprocessedNext.getD #[]).size = S.air.preprocessedNextWidth) :
-    S.openingsElems (Ni.openingsOf S o) = Ni.coeffs (Ni.openedValues o) := by
+    S.openingsElems (Fs.openingsOf S o) = Fs.coeffs (Fs.openedValues o) := by
   have hq : (List.ofFn fun c : Fin S.chunks => extsElems (F := F)
-      ((Ni.openingsOf S o).quotientAt c)).flatten =
-      Ni.coeffs (o.quotientChunks.toList.flatMap (·.toList)) := by
+      ((Fs.openingsOf S o).quotientAt c)).flatten =
+      Fs.coeffs (o.quotientChunks.toList.flatMap (·.toList)) := by
     have hl : (List.ofFn fun c : Fin S.chunks => extsElems (F := F)
-        ((Ni.openingsOf S o).quotientAt c)) =
-        o.quotientChunks.toList.map fun ch => Ni.coeffs ch.toList := by
+        ((Fs.openingsOf S o).quotientAt c)) =
+        o.quotientChunks.toList.map fun ch => Fs.coeffs ch.toList := by
       refine List.ext_getElem (by rw [List.length_ofFn, List.length_map, Array.length_toList,
         hqc]) fun i h1 h2 => ?_
       rw [List.getElem_ofFn, List.getElem_map]
@@ -1296,17 +1296,17 @@ theorem openingsElems_openingsOf (S : Iop.Setup EF) (o : OpenedValues EF)
         Challenge.toSpec ((o.quotientChunks.getD i #[]).getD e 0)) = _
       rw [extsElems_getD _ (by rw [hc, ← Array.getElem_toList] at *; exact h4), hc]
     rw [hl]
-    simp only [Ni.coeffs]
+    simp only [Fs.coeffs]
     rw [List.flatMap_assoc, List.flatMap_def]
-  have h1 : extsElems (F := F) (Ni.openingsOf S o).traceAt = Ni.coeffs o.traceLocal.toList :=
+  have h1 : extsElems (F := F) (Fs.openingsOf S o).traceAt = Fs.coeffs o.traceLocal.toList :=
     extsElems_getD _ htl
-  have h2 : extsElems (F := F) (Ni.openingsOf S o).traceNext =
-      Ni.coeffs (o.traceNext.getD #[]).toList := extsElems_getD _ htn
-  have h3 : extsElems (F := F) (Ni.openingsOf S o).preprocessedAt =
-      Ni.coeffs (o.preprocessedLocal.getD #[]).toList := extsElems_getD _ hpl
-  have h4 : extsElems (F := F) (Ni.openingsOf S o).preprocessedNext =
-      Ni.coeffs (o.preprocessedNext.getD #[]).toList := extsElems_getD _ hpn
-  simp only [Iop.Setup.openingsElems, hq, Ni.openedValues, Ni.coeffs_append, h1, h2, h3, h4]
+  have h2 : extsElems (F := F) (Fs.openingsOf S o).traceNext =
+      Fs.coeffs (o.traceNext.getD #[]).toList := extsElems_getD _ htn
+  have h3 : extsElems (F := F) (Fs.openingsOf S o).preprocessedAt =
+      Fs.coeffs (o.preprocessedLocal.getD #[]).toList := extsElems_getD _ hpl
+  have h4 : extsElems (F := F) (Fs.openingsOf S o).preprocessedNext =
+      Fs.coeffs (o.preprocessedNext.getD #[]).toList := extsElems_getD _ hpn
+  simp only [Iop.Setup.openingsElems, hq, Fs.openedValues, Fs.coeffs_append, h1, h2, h3, h4]
 
 /-- On a proof of the AIR's shape, the PCS's claim counts are the setup's. -/
 theorem pcsCounts_eq_of_shape (S : Iop.Setup EF) (vk : Option (PreprocessedKey F))
@@ -1314,8 +1314,8 @@ theorem pcsCounts_eq_of_shape (S : Iop.Setup EF) (vk : Option (PreprocessedKey F
     (htn : traceNextOk S.air o = true) (hqc : o.quotientChunks.size = S.chunks)
     (hq4 : ∀ ch ∈ o.quotientChunks, ch.size = Challenge.d EF)
     (hshape : preprocessedShapeOk S.air vk o S.logN = true) :
-    Ni.pcsCounts o = Ni.pcsCountsS S := by
-  rw [Ni.pcsCounts, Ni.pcsCountsS, (Ni.prep_of_shapeOk hshape).2.2]
+    Fs.pcsCounts o = Fs.pcsCountsS S := by
+  rw [Fs.pcsCounts, Fs.pcsCountsS, (Fs.prep_of_shapeOk hshape).2.2]
   simp only [htl, (traceNext_of_ok htn).2, List.cons_append, List.cons.injEq, List.nil_append,
     and_true, true_and]
   rw [List.eq_replicate_iff, List.length_map, Array.length_toList, hqc]
@@ -1389,13 +1389,13 @@ theorem openedPath_parse (S : Setup EF) (answer : (q : Query F) → Answer K q) 
         [] msgs =
       some (S.proofPath (merkleCache T) (idealOf answer) vk proof pis) := by
   obtain ⟨htl, htn, hqc, hq4, hshape0, -, -, hood, -, hbc, ⟨st, hfriOk⟩, -⟩ :=
-    Ni.verifyWith_ok (idealOf answer) S.params S.air vk proof pis h
+    Fs.verifyWith_ok (idealOf answer) S.params S.air vk proof pis h
   have hshape := hshape0
   rw [hdb] at hqc hshape
-  have hL : Ni.friLogMax S.params proof = S.logSize := by
-    simp only [Ni.friLogMax, hdb, Iop.Setup.logSize]
+  have hL : Fs.friLogMax S.params proof = S.logSize := by
+    simp only [Fs.friLogMax, hdb, Iop.Setup.logSize]
   have hh : ∀ x ∈ openingRounds S.air vk proof
-      (Ni.zetaOf (idealOf answer) S.params S.air vk proof pis),
+      (Fs.zetaOf (idealOf answer) S.params S.air vk proof pis),
       ∀ dp ∈ x.2, dp.1.logSize + S.params.logBlowup = S.logSize := by
     intro x hx dp hdp
     rw [← hL]
@@ -1413,10 +1413,10 @@ theorem openedPath_parse (S : Setup EF) (answer : (q : Query F) → Answer K q) 
         rw [hdp]
       · exact absurd hx List.not_mem_nil
   obtain ⟨-, -, hcs, hcws, hfp, hw, -, -⟩ :=
-    Ni.verifyFri_ok (idealOf answer) S.params proof.fri _ _ _ hh _ _ hfriOk
+    Fs.verifyFri_ok (idealOf answer) S.params proof.fri _ _ _ hh _ _ hfriOk
   have hchecks := commitChecks_of_verifyFri (idealOf answer) S.params proof.fri _ _ _ hh _ _
     hfriOk
-  have hnq := (Ni.verifyFri_checks (idealOf answer) S.params proof.fri _ _ _ _ hfriOk).1
+  have hnq := (Fs.verifyFri_checks (idealOf answer) S.params proof.fri _ _ _ _ hfriOk).1
   have he (bits : ℕ) : squeezesFor K (extSamples (EF := EF) bits) ≤ m :=
     (squeezesFor_mono ((extSamples_le bits).trans (by omega))).trans hm
   have hqm : squeezesFor K (querySamples S.params.numQueries S.params.queryPowBits) ≤ m :=
@@ -1432,78 +1432,78 @@ theorem openedPath_parse (S : Setup EF) (answer : (q : Query F) → Answer K q) 
   have hqne : capElems proof.quotientCommit ≠ [] :=
     capOfElems_ne_nil (⟨proof.quotientCommit, hqs⟩ : CapOf F S.params.capHeight _)
   -- `α`
-  have hα0 : Ni.stateAlpha (idealOf answer) S.params S.air vk proof pis =
+  have hα0 : Fs.stateAlpha (idealOf answer) S.params S.air vk proof pis =
       ⟨capOf answer [], starkSeedOf EF S.params S.air S.logN ++ capElems proof.traceCommit ++
         preprocessedDigest vk ++ pis, []⟩ := by
-    simp only [Ni.stateAlpha, hdb]
-    simp only [Ni.obsList_idealOf_mk, List.nil_append]
+    simp only [Fs.stateAlpha, hdb]
+    simp only [Fs.obsList_idealOf_mk, List.nil_append]
     rfl
   obtain ⟨-, hdα, hcα, hiα⟩ := extDraw_idealOf (m := m) answer hK 0 0
     (starkSeedOf EF S.params S.air S.logN ++ capElems proof.traceCommit ++
       preprocessedDigest vk ++ pis) [] (he 0)
-  have hcα' : (Ni.smpExt (EF := EF) (idealOf answer) ⟨capOf answer [],
+  have hcα' : (Fs.smpExt (EF := EF) (idealOf answer) ⟨capOf answer [],
       starkSeedOf EF S.params S.air S.logN ++ capElems proof.traceCommit ++ preprocessedDigest vk ++
         pis, []⟩).2.cap = capOf answer (List.replicate (squeezesFor K (extSamples (EF := EF) 0) - 1)
           [] ++ (starkSeedOf EF S.params S.air S.logN ++ capElems proof.traceCommit ++
-            preprocessedDigest vk ++ pis ++ Ni.witnessInput 0 0) :: []) := hcα
-  have hiα' : (Ni.smpExt (EF := EF) (idealOf answer) ⟨capOf answer [],
+            preprocessedDigest vk ++ pis ++ Fs.witnessInput 0 0) :: []) := hcα
+  have hiα' : (Fs.smpExt (EF := EF) (idealOf answer) ⟨capOf answer [],
       starkSeedOf EF S.params S.air S.logN ++ capElems proof.traceCommit ++ preprocessedDigest vk ++
         pis, []⟩).2.input = [] := hiα
   -- `ζ`
   set acc₁ := List.replicate (squeezesFor K (extSamples (EF := EF) 0) - 1) [] ++
     (starkSeedOf EF S.params S.air S.logN ++ capElems proof.traceCommit ++ preprocessedDigest vk ++
-      pis ++ Ni.witnessInput 0 0) :: [] with hacc₁
-  have hζ0 : Ni.obsList (idealOf answer)
-      (Ni.smpExt (EF := EF) (idealOf answer) (Ni.stateAlpha (idealOf answer) S.params S.air vk proof
+      pis ++ Fs.witnessInput 0 0) :: [] with hacc₁
+  have hζ0 : Fs.obsList (idealOf answer)
+      (Fs.smpExt (EF := EF) (idealOf answer) (Fs.stateAlpha (idealOf answer) S.params S.air vk proof
         pis)).2 (capElems proof.quotientCommit) =
       ⟨capOf answer acc₁, capElems proof.quotientCommit, []⟩ := by
-    rw [hα0, Ni.obsList_idealOf_ne answer _ _ hqne]
+    rw [hα0, Fs.obsList_idealOf_ne answer _ _ hqne]
     exact congrArg₂ (fun c i => (⟨c, i, []⟩ : Sponge F)) hcα' (by rw [hiα', List.nil_append])
   obtain ⟨haζ, hdζ, hcζ, hiζ⟩ := extDraw_idealOf (m := m) answer hK S.params.oodPowBits
     proof.oodWitness (capElems proof.quotientCommit) acc₁ (he _)
-  have hood' : (Ni.chkWit (idealOf answer) S.params.oodPowBits proof.oodWitness
+  have hood' : (Fs.chkWit (idealOf answer) S.params.oodPowBits proof.oodWitness
       ⟨capOf answer acc₁, capElems proof.quotientCommit, []⟩).1 = true := by
     rw [← hζ0]
     exact hood
   -- the batching challenge
   set acc₂ := List.replicate (squeezesFor K (extSamples (EF := EF) S.params.oodPowBits) - 1) [] ++
-    (capElems proof.quotientCommit ++ Ni.witnessInput S.params.oodPowBits proof.oodWitness) :: acc₁
+    (capElems proof.quotientCommit ++ Fs.witnessInput S.params.oodPowBits proof.oodWitness) :: acc₁
     with hacc₂
-  have hopen : S.openingsElems (Ni.openingsOf S proof.opened) =
-      Ni.coeffs (Ni.openedValues proof.opened) :=
+  have hopen : S.openingsElems (Fs.openingsOf S proof.opened) =
+      Fs.coeffs (Fs.openedValues proof.opened) :=
     openingsElems_openingsOf S proof.opened htl (traceNext_of_ok htn).1 hqc hq4
-      (Ni.prep_of_shapeOk hshape).1 (Ni.prep_of_shapeOk hshape).2.1
-  have hA0 : Ni.pcsState (idealOf answer) S.params
-      (openingRounds S.air vk proof (Ni.zetaOf (idealOf answer) S.params S.air vk proof pis))
-      (Ni.smpExt (EF := EF) (idealOf answer)
-        (Ni.oodCheck (EF := EF) (idealOf answer) S.params S.air vk proof pis).2).2 =
-      ⟨capOf answer acc₂, S.pcsSeed ++ S.openingsElems (Ni.openingsOf S proof.opened), []⟩ := by
-    rw [Ni.pcsState, Ni.obsOpened_eq, ← Ni.obsList_append,
-      Ni.claimCounts_openingRounds S.air vk proof _ htn hshape0,
-      Ni.roundValues_openingRounds S.air vk proof _ htn hshape0,
+      (Fs.prep_of_shapeOk hshape).1 (Fs.prep_of_shapeOk hshape).2.1
+  have hA0 : Fs.pcsState (idealOf answer) S.params
+      (openingRounds S.air vk proof (Fs.zetaOf (idealOf answer) S.params S.air vk proof pis))
+      (Fs.smpExt (EF := EF) (idealOf answer)
+        (Fs.oodCheck (EF := EF) (idealOf answer) S.params S.air vk proof pis).2).2 =
+      ⟨capOf answer acc₂, S.pcsSeed ++ S.openingsElems (Fs.openingsOf S proof.opened), []⟩ := by
+    rw [Fs.pcsState, Fs.obsOpened_eq, ← Fs.obsList_append,
+      Fs.claimCounts_openingRounds S.air vk proof _ htn hshape0,
+      Fs.roundValues_openingRounds S.air vk proof _ htn hshape0,
       pcsCounts_eq_of_shape S vk proof.opened htl htn hqc hq4 hshape, hopen,
-      Ni.obsList_idealOf_ne answer _ _
-        (List.append_ne_nil_of_left_ne_nil (Ni.pcsSeed_ne_nil _ _) _)]
-    simp only [Ni.oodCheck]
+      Fs.obsList_idealOf_ne answer _ _
+        (List.append_ne_nil_of_left_ne_nil (Fs.pcsSeed_ne_nil _ _) _)]
+    simp only [Fs.oodCheck]
     rw [hζ0]
     exact congrArg₂ (fun c i => (⟨c, i, []⟩ : Sponge F)) hcζ (by rw [hiζ, List.nil_append]; rfl)
   obtain ⟨haA, hdA, hcA, hiA⟩ := extDraw_idealOf (m := m) answer hK S.params.batchPowBits
-    proof.fri.batchWitness (S.pcsSeed ++ S.openingsElems (Ni.openingsOf S proof.opened)) acc₂
+    proof.fri.batchWitness (S.pcsSeed ++ S.openingsElems (Fs.openingsOf S proof.opened)) acc₂
     (he _)
-  have hbc' : (Ni.chkWit (idealOf answer) S.params.batchPowBits proof.fri.batchWitness
-      ⟨capOf answer acc₂, S.pcsSeed ++ S.openingsElems (Ni.openingsOf S proof.opened), []⟩).1 =
+  have hbc' : (Fs.chkWit (idealOf answer) S.params.batchPowBits proof.fri.batchWitness
+      ⟨capOf answer acc₂, S.pcsSeed ++ S.openingsElems (Fs.openingsOf S proof.opened), []⟩).1 =
       true := by
     rw [← hA0]
     exact hbc
   -- FRI
   set acc₃ := List.replicate (squeezesFor K (extSamples (EF := EF) S.params.batchPowBits) - 1) [] ++
-    (S.pcsSeed ++ S.openingsElems (Ni.openingsOf S proof.opened) ++
-      Ni.witnessInput S.params.batchPowBits proof.fri.batchWitness) :: acc₂ with hacc₃
-  have hsF : Ni.stateFri (idealOf answer) S.params S.air vk proof pis =
-      (Ni.smpExt (EF := EF) (idealOf answer) (Ni.chkWit (idealOf answer) S.params.batchPowBits
+    (S.pcsSeed ++ S.openingsElems (Fs.openingsOf S proof.opened) ++
+      Fs.witnessInput S.params.batchPowBits proof.fri.batchWitness) :: acc₂ with hacc₃
+  have hsF : Fs.stateFri (idealOf answer) S.params S.air vk proof pis =
+      (Fs.smpExt (EF := EF) (idealOf answer) (Fs.chkWit (idealOf answer) S.params.batchPowBits
         proof.fri.batchWitness ⟨capOf answer acc₂, S.pcsSeed ++
-          S.openingsElems (Ni.openingsOf S proof.opened), []⟩).2).2 := by
-    rw [Ni.stateFri, Ni.batchCheck, hA0]
+          S.openingsElems (Fs.openingsOf S proof.opened), []⟩).2).2 := by
+    rw [Fs.stateFri, Fs.batchCheck, hA0]
   have hqpos : 0 < querySamples S.params.numQueries S.params.queryPowBits := by
     simp only [querySamples]
     omega
@@ -1511,7 +1511,7 @@ theorem openedPath_parse (S : Setup EF) (answer : (q : Query F) → Answer K q) 
     (2 ^ S.params.logFinalPolyLen) S.params.numQueries S.params T proof.fri.finalPoly
     proof.fri.queryWitness hK (he _) hqm hfp (Nat.two_pow_pos _) hqpos (S.friSchedule [])
     (squeezesFor K (extSamples (EF := EF) S.params.batchPowBits) != 0) S.friSeed acc₃
-    (Ni.stateFri (idealOf answer) S.params S.air vk proof pis) _ fri (by rw [hsF]; exact hcA)
+    (Fs.stateFri (idealOf answer) S.params S.air vk proof pis) _ fri (by rw [hsF]; exact hcA)
     (by rw [hsF]; exact hiA) hfri hchecks hw
   have hsq (bits : ℕ) : squeezesFor K (extSamples (EF := EF) bits) ≠ 0 :=
     squeezesFor_ne_zero hK (Nat.lt_of_lt_of_le hd (Nat.le_add_right _ _))
@@ -1519,7 +1519,7 @@ theorem openedPath_parse (S : Setup EF) (answer : (q : Query F) → Answer K q) 
   case r1 =>
     refine (openedPath_challenge _ _ _ _ T _ _ [] _ _ _
       (starkSeedOf EF S.params S.air S.logN ++ capElems proof.traceCommit ++
-        preprocessedDigest vk ++ pis ++ Ni.witnessInput 0 0) ?hx1 (hsq 0) rfl).trans
+        preprocessedDigest vk ++ pis ++ Fs.witnessInput 0 0) ?hx1 (hsq 0) rfl).trans
       (map_eq_some_of (a := ?a2) ?r2 ?v2)
     case hx1 =>
       change starkSeedOf EF S.params S.air S.logN ++ ([] ++ capElems proof.traceCommit) ++
@@ -1532,7 +1532,7 @@ theorem openedPath_parse (S : Setup EF) (answer : (q : Query F) → Answer K q) 
       case r3 =>
         refine (openedPath_challenge _ _ _ _ T _ [] _ _ _ _
           (capElems proof.quotientCommit ++
-            Ni.witnessInput S.params.oodPowBits proof.oodWitness) ?hx2 (hsq _) ?ha2).trans
+            Fs.witnessInput S.params.oodPowBits proof.oodWitness) ?hx2 (hsq _) ?ha2).trans
           (map_eq_some_of (a := ?a4) ?r4 ?v4)
         case hx2 =>
           change [] ++ ([] ++ capElems proof.quotientCommit) ++ [] ++
@@ -1545,11 +1545,11 @@ theorem openedPath_parse (S : Setup EF) (answer : (q : Query F) → Answer K q) 
             ((openedPath_sender _ _ _ _ T [] [] _ _ _).trans (map_eq_some_of (a := ?a5) ?r5 ?v5))
           case r5 =>
             refine (openedPath_challenge _ _ _ _ T _ [] _ _ _ _
-              (S.pcsSeed ++ S.openingsElems (Ni.openingsOf S proof.opened) ++
-                Ni.witnessInput S.params.batchPowBits proof.fri.batchWitness) ?hx3 (hsq _)
+              (S.pcsSeed ++ S.openingsElems (Fs.openingsOf S proof.opened) ++
+                Fs.witnessInput S.params.batchPowBits proof.fri.batchWitness) ?hx3 (hsq _)
                 ?ha3).trans (map_eq_some_of (a := ?a6) ?r6 ?v6)
             case hx3 =>
-              change [] ++ (S.pcsSeed ++ S.openingsElems (Ni.openingsOf S proof.opened)) ++ [] ++
+              change [] ++ (S.pcsSeed ++ S.openingsElems (Fs.openingsOf S proof.opened)) ++ [] ++
                 extWitnessElems (EF := EF) (K := K) (m := m) S.params.batchPowBits
                   (extWitnessOf S.params.batchPowBits proof.fri.batchWitness) = _
               rw [extWitnessElems_extWitnessOf, List.nil_append, List.append_nil]
@@ -1561,18 +1561,18 @@ theorem openedPath_parse (S : Setup EF) (answer : (q : Query F) → Answer K q) 
       case v3 => rfl
     case v2 => rfl
   case v1 =>
-    have hseed : S.friSeed = Ni.friSeedOf S.params proof := by
-      simp only [friSeed, friArities, Ni.friSeedOf, Ni.friSchedule, Ni.friLogMax, hdb]
+    have hseed : S.friSeed = Fs.friSeedOf S.params proof := by
+      simp only [friSeed, friArities, Fs.friSeedOf, Fs.friSchedule, Fs.friLogMax, hdb]
     refine S.pathOf_congr rfl ?_ rfl ?_ rfl ?_ ?_
     · refine hdα.trans ?_
-      rw [Ni.alphaOf, hα0]
+      rw [Fs.alphaOf, hα0]
       rfl
     · refine hdζ.trans ?_
-      rw [Ni.zetaOf]
-      simp only [Ni.oodCheck]
+      rw [Fs.zetaOf]
+      simp only [Fs.oodCheck]
       rw [hζ0]
     · refine hdA.trans ?_
-      rw [Ni.batchOf, Ni.batchCheck, hA0]
+      rw [Fs.batchOf, Fs.batchCheck, hA0]
     · rw [List.map_fst_zip (by rw [Array.length_toList, Array.length_toList, hcs, hcws]), hseed]
       rfl
 
@@ -1669,16 +1669,16 @@ quotient's caps of the tree on `L`, and FRI's caps of the folds' trees. -/
 theorem caps_of_verifyWith (S : Setup EF) (H : Primitives F Id) (vk : Option (PreprocessedKey F))
     (proof : Proof F EF) (pis : List F) (hdb : proof.degreeBits = S.logN)
     (h : verifyWith H S.params S.air vk proof pis = .ok ()) :
-    (∀ k (hk : k < (openingRounds S.air vk proof (Ni.zetaOf H S.params S.air vk proof pis)).length),
-      (openingRounds S.air vk proof (Ni.zetaOf H S.params S.air vk proof pis))[k].1.size =
+    (∀ k (hk : k < (openingRounds S.air vk proof (Fs.zetaOf H S.params S.air vk proof pis)).length),
+      (openingRounds S.air vk proof (Fs.zetaOf H S.params S.air vk proof pis))[k].1.size =
         2 ^ min S.params.capHeight (S.logN + S.params.logBlowup)) ∧
     CapsFit F S.params.capHeight (S.friSchedule [])
       (proof.fri.commits.toList.zip proof.fri.commitWitnesses.toList) := by
   obtain ⟨-, -, -, -, -, -, -, -, -, -, ⟨st, hfriOk⟩, -⟩ :=
-    Ni.verifyWith_ok H S.params S.air vk proof pis h
-  have hL : Ni.friLogMax S.params proof = S.logSize := by
-    simp only [Ni.friLogMax, hdb, Iop.Setup.logSize]
-  have hh : ∀ x ∈ openingRounds S.air vk proof (Ni.zetaOf H S.params S.air vk proof pis),
+    Fs.verifyWith_ok H S.params S.air vk proof pis h
+  have hL : Fs.friLogMax S.params proof = S.logSize := by
+    simp only [Fs.friLogMax, hdb, Iop.Setup.logSize]
+  have hh : ∀ x ∈ openingRounds S.air vk proof (Fs.zetaOf H S.params S.air vk proof pis),
       ∀ dp ∈ x.2, dp.1.logSize + S.params.logBlowup = S.logSize := by
     intro x hx dp hdp
     rw [← hL]
@@ -1696,9 +1696,9 @@ theorem caps_of_verifyWith (S : Setup EF) (H : Primitives F Id) (vk : Option (Pr
         rw [hdp]
       · exact absurd hx List.not_mem_nil
   obtain ⟨-, hfolds, hcs, hcws, -, -, hcrlen, hq⟩ :=
-    Ni.verifyFri_ok H S.params proof.fri _ _ _ hh _ _ hfriOk
-  have hnq := (Ni.verifyFri_checks H S.params proof.fri _ _ _ _ hfriOk).1
-  obtain ⟨hround, hcomm⟩ := Ni.size_caps_of_queryOk H S.params _ _ _ _ _ _ _ _ _ _ _ hcrlen
+    Fs.verifyFri_ok H S.params proof.fri _ _ _ hh _ _ hfriOk
+  have hnq := (Fs.verifyFri_checks H S.params proof.fri _ _ _ _ hfriOk).1
+  obtain ⟨hround, hcomm⟩ := Fs.size_caps_of_queryOk H S.params _ _ _ _ _ _ _ _ _ _ _ hcrlen
     (by rw [Array.length_toList, hfolds]) (hq 0 hnq)
   have har : Iop.scheduleArities (S.friSchedule []) = foldSchedule S.params.maxLogArity
       (S.params.logBlowup + S.params.logFinalPolyLen) S.logSize [S.logSize] := by
@@ -1749,12 +1749,12 @@ theorem length_preprocessedDigest (H : Primitives F Id) (n : C.Length)
     (vk : Option (PreprocessedKey F)) (proof : Proof F EF) (pis : List F)
     (hdb : proof.degreeBits = n.1) (h : verifyWith H C.params C.air vk proof pis = .ok ()) :
     (preprocessedDigest vk).length = C.digestLength := by
-  obtain ⟨-, -, -, -, hshape, -⟩ := Ni.verifyWith_ok H C.params C.air vk proof pis h
+  obtain ⟨-, -, -, -, hshape, -⟩ := Fs.verifyWith_ok H C.params C.air vk proof pis h
   obtain ⟨hround, -⟩ := (C.setup EF n).caps_of_verifyWith H vk proof pis hdb h
-  have hprep := (Ni.prep_of_shapeOk hshape).2.2
-  rcases Ni.preprocessedRound_cases C.air vk proof.opened proof.degreeBits hshape
-    ⟨1, proof.degreeBits⟩ (Ni.zetaOf H C.params C.air vk proof pis)
-    (Ni.zetaOf H C.params C.air vk proof pis * Ext.ofBase (twoAdicGen proof.degreeBits)) with
+  have hprep := (Fs.prep_of_shapeOk hshape).2.2
+  rcases Fs.preprocessedRound_cases C.air vk proof.opened proof.degreeBits hshape
+    ⟨1, proof.degreeBits⟩ (Fs.zetaOf H C.params C.air vk proof pis)
+    (Fs.zetaOf H C.params C.air vk proof pis * Ext.ofBase (twoAdicGen proof.degreeBits)) with
     ⟨rfl, hl, -, -⟩ | ⟨k, l, rfl, hl, -⟩
   · rw [hl] at hprep
     have hw : C.air.preprocessedWidth = 0 := by

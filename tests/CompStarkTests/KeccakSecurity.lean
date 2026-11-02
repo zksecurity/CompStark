@@ -2,8 +2,8 @@
 Copyright (c) 2026 zkSecurity. All rights reserved.
 Released under Apache 2.0 license as described in the file LICENSE.
 -/
-import CompStark.Security
-import CompStark.Fs.Secure
+import CompStark.Calculator.Security
+import CompStark.Calculator.FiatShamir
 import CompStark.Complete.Quotient
 import CompStarkFixtures.Keccak
 import CompStarkTests.Keccak

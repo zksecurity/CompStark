@@ -4,11 +4,11 @@ Released under Apache 2.0 license as described in the file LICENSE.
 -/
 module
 
-public import CompStark.Sound.FriGame
+public import CompStark.Sound.FriRounds
 
 /-! # Plonky3's folding schedule as FRI rounds
 
-`schedule` builds FRI's rounds (`FriGame.Rounds`) as Plonky3's `fold_schedule` (`foldSchedule`)
+`schedule` builds FRI's rounds (`FriRounds.Rounds`) as Plonky3's `fold_schedule` (`foldSchedule`)
 does for inputs of log heights `m₁ > m₂ > …` below the tallest: from height `n`, fold by
 `min (n - mᵢ) (n - logFinal) maxLogArity` towards the next input's height `mᵢ` and the final
 height, and inject the input `words mᵢ` when its height is reached.
@@ -21,7 +21,7 @@ are `.final`, without folds. `plan` lists the folds as data, one per fold (`numF
 
 @[expose] public section
 
-namespace CompStark.Sound.FriGame
+namespace CompStark.Sound.FriRounds
 
 open Domain FriInject
 
@@ -315,4 +315,4 @@ variable [Field K]
 
 end Rounds
 
-end CompStark.Sound.FriGame
+end CompStark.Sound.FriRounds

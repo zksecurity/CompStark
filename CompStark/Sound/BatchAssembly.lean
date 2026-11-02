@@ -27,7 +27,7 @@ instances:
 
 @[expose] public section
 namespace CompStark.Sound
-open CompStark.Stark CompStark.Iop Polynomial FriGame FriInject
+open CompStark.Stark CompStark.Iop Polynomial FriRounds FriInject
 
 variable {F : Type} [BaseField F] {EF : Type} [Challenge F EF]
 

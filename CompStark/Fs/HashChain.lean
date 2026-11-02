@@ -4,9 +4,9 @@ Released under Apache 2.0 license as described in the file LICENSE.
 -/
 module
 
-public import CompStark.RandomOracle
-public import CompStark.SoundnessError
-public import CompStark.Ni.RoundBounds
+public import CompStark.Fs.RandomOracle
+public import CompStark.Iop.StarkError
+public import CompStark.Fs.Samples
 public import ArkLib.Interaction.Oracle.Security.HashChain
 
 /-! # Plonky3's duplex challenger is a hash chain

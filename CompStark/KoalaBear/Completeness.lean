@@ -4,8 +4,8 @@ Released under Apache 2.0 license as described in the file LICENSE.
 -/
 module
 
-public import CompStark.Completeness
-public import CompStark.BatchCompleteness
+public import CompStark.Complete.Stark
+public import CompStark.Complete.Batch
 public import CompStark.KoalaBear.Poseidon2
 
 /-! # Completeness over KoalaBear

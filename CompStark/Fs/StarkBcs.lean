@@ -6,10 +6,10 @@ module
 
 public import CompStark.Fs.StarkStable
 public import CompStark.Fs.StarkFiatShamir
-public import CompStark.Ni.Answers
-public import CompStark.Ni.Lengths
-public import CompStark.Ni.QueryBound
-public import CompStark.Ni.Setup
+public import CompStark.Fs.StarkSimulate
+public import CompStark.Fs.StarkLengths
+public import CompStark.Fs.StarkCalls
+public import CompStark.Fs.StarkSetup
 
 /-! # Knowledge soundness of Plonky3's STARK verifier with Merkle commitments
 
@@ -433,14 +433,14 @@ theorem capBinding_of_log {offs : List ℕ} {capLen : ℕ}
     (hd : dstar ∉ logDigests offs capLen L) (H : Primitives F Id)
     (hH : H.hash = logHash L dstar) (hC : H.compress = logCompress L dstar) (cap : Cap F)
     (hcap : ∀ d ∈ cap.toList, d ≠ dstar) :
-    Ni.CapBinding (merkleCache (Bcs.hashCacheOf L)) H cap := by
+    Fs.CapBinding (merkleCache (Bcs.hashCacheOf L)) H cap := by
   intro j n k i values path hn hv
   have hroot : cap.toList.getD j 0 ≠ dstar := by
     rcases getD_cap cap.toList j with h0 | h0
     · rw [h0]
       exact fun h => hd (h ▸ initCap_mem_logDigests L)
     · exact hcap _ h0
-  simp only [Ni.verifyBatchH, hH, hC] at hv
+  simp only [Fs.verifyBatchH, hH, hC] at hv
   exact extractRow_of_logVerifyBatch hL hd hroot n k i hn values path hv
 
 end CompStark.Fs
@@ -545,7 +545,7 @@ theorem isTotalQueryBound_verifyWith_max (vk : Option (PreprocessedKey F)) (proo
       (C.verifierCallsMax EF) := by
   by_cases hdb : proof.degreeBits ≤ twoAdicity F
   · exact (Iop.Setup.isTotalQueryBound_verifyWith C.params C.air vk proof pis).mono
-      (Ni.le_foldr_max _ _ (List.mem_map.mpr ⟨_, List.mem_range.mpr (Nat.lt_succ_of_le hdb), rfl⟩))
+      (Fs.le_foldr_max _ _ (List.mem_map.mpr ⟨_, List.mem_range.mpr (Nat.lt_succ_of_le hdb), rfl⟩))
   · refine (show IsTotalQueryBound (verifyWith (ideal F K) C.params C.air vk proof pis) 0
       from ?_).mono (Nat.zero_le _)
     unfold verifyWith
@@ -811,18 +811,18 @@ theorem bcsEvent_of_mem_support (hK : 0 < K) (δ δ' : ℕ → ℝ≥0)
     capBinding_of_log hL hd1 _ hH hC cap fun d hd h => hd2 (h ▸ hc d hd)
   have htrace := hbind proof.traceCommit fun d hd => by simp [capDigests, hd]
   have hquot := hbind proof.quotientCommit fun d hd => by simp [capDigests, hd]
-  have hfri : ∀ c ∈ proof.fri.commits, Ni.CapBinding (merkleCache (Bcs.hashCacheOf L1))
+  have hfri : ∀ c ∈ proof.fri.commits, Fs.CapBinding (merkleCache (Bcs.hashCacheOf L1))
       (idealOf (logAnswer w.2 dstar)) c := fun c hc => hbind c fun d hd => by
     simp only [capDigests, List.mem_append, List.mem_flatMap]
     exact Or.inl (Or.inr ⟨c, Array.mem_toList_iff.mpr hc, hd⟩)
-  have hprepBind : ∀ k ∈ vk, Ni.CapBinding (merkleCache (Bcs.hashCacheOf L1))
+  have hprepBind : ∀ k ∈ vk, Fs.CapBinding (merkleCache (Bcs.hashCacheOf L1))
       (idealOf (logAnswer w.2 dstar)) k.commit := fun k hk => hbind k.commit fun d hd => by
     simp only [capDigests, List.mem_append]
     exact Or.inr (by rw [show vk = some k from hk]; exact hd)
   have hprep : ∀ k ∈ vk, ∀ j < (C.setup EF n).air.preprocessedWidth,
-      Ni.committedColumn (C.setup EF n) (merkleCache (Bcs.hashCacheOf L1)) k.commit j =
+      Fs.committedColumn (C.setup EF n) (merkleCache (Bcs.hashCacheOf L1)) k.commit j =
         (C.setup EF n).preprocessedWord j := fun k hk =>
-    Ni.committedColumn_setup (C.setup EF n) _ (logAnswer w.2 dstar) k
+    Fs.committedColumn_setup (C.setup EF n) _ (logAnswer w.2 dstar) k
       (by rw [C.preprocessedKeyWith_setupAt (EF := EF) _ n.1 n.2, ← hvk]; exact hk)
       (hprepBind k hk)
   have hterm := (C.setup EF n).terminal_of_verifyWith (merkleCache (Bcs.hashCacheOf L1)) _ vk

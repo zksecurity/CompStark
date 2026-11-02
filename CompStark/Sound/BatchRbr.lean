@@ -6,14 +6,14 @@ module
 
 public import CompStark.Sound.BatchAssembly
 public import CompStark.Sound.Rbr
-public import CompStark.BatchSoundnessError
+public import CompStark.Iop.BatchError
 public import CompStark.Sound.FriRun
 
 /-! # Round-by-round soundness of the batch STARK
 
 The batch STARK's rounds as bad events on transcript prefixes, each bounded for every prefix by
-its error: in `CompStark/BatchSoundnessError.lean` for the interactive protocol, whose knowledge
-certificate (`CompStark/Interaction/BatchKnowledge.lean`) is built from the events of the lookup
+its error: in `CompStark/Iop/BatchError.lean` for the interactive protocol, whose knowledge
+certificate (`CompStark/Iop/BatchKnowledge.lean`) is built from the events of the lookup
 challenges, `α`, `ζ` and `a`, with the failing instance's errors (`prob_batchBad_le_failing`). The
 transcript (`Batch.Transcript`) holds every instance's
 words, terminals and claimed values, the challenges, and FRI's committed words and final
@@ -40,7 +40,7 @@ safe `α`, `ζ` and `a` make the batched word of its domain size far (`not_near_
 
 @[expose] public section
 namespace CompStark.Sound
-open CompStark.Stark CompStark.Iop Polynomial OracleComp FriGame FriInject
+open CompStark.Stark CompStark.Iop Polynomial OracleComp FriRounds FriInject
 
 variable {F : Type} [BaseField F] {EF : Type} [Challenge F EF]
 

@@ -6,8 +6,8 @@ module
 
 public import CompStark.Fs.StarkParse
 public import CompStark.Fs.StarkFiatShamir
-public import CompStark.Ni.QueryBound
-public import CompStark.Ni.Setup
+public import CompStark.Fs.StarkCalls
+public import CompStark.Fs.StarkSetup
 
 /-! # Openings at the filled snapshots
 
@@ -256,9 +256,9 @@ variable {EF : Type} [Challenge F EF]
 theorem leafRow_snapshotAt_of_bound {L : QueryLog (sumSpec F K)}
     (hL : ¬ HashBad offs capLen L) (s : Digest F) (x : List F) {cap : Cap F}
     (hcap : ∀ d ∈ cap.toList, d ∈ boundDigests offs capLen x) (k h i : ℕ) :
-    Ni.leafRow (merkleCache (Bcs.snapshotAt L (s, x))) k h i cap =
-      Ni.leafRow (merkleCache (Bcs.hashCacheOf L)) k h i cap := by
-  unfold Ni.leafRow
+    Fs.leafRow (merkleCache (Bcs.snapshotAt L (s, x))) k h i cap =
+      Fs.leafRow (merkleCache (Bcs.hashCacheOf L)) k h i cap := by
+  unfold Fs.leafRow
   rw [extractCapRow_snapshotAt_of_bound hL s x hcap]
 
 /-- `extractCapRow_snapshotAt_of_bound` for the trace message under a cap. -/
@@ -268,7 +268,7 @@ theorem traceMessageOf_snapshotAt_of_bound (S : Iop.Setup EF) {L : QueryLog (sum
     S.traceMessageOf (merkleCache (Bcs.snapshotAt L (s, x))) cap =
       S.traceMessageOf (merkleCache (Bcs.hashCacheOf L)) cap := by
   funext jx
-  simp only [Iop.Setup.traceMessageOf, Ni.committedColumn, leafRow_snapshotAt_of_bound hL s x hcap]
+  simp only [Iop.Setup.traceMessageOf, Fs.committedColumn, leafRow_snapshotAt_of_bound hL s x hcap]
 
 /-- `extractCapRow_snapshotAt_of_bound` for the quotient message under a cap. -/
 theorem quotientMessageOf_snapshotAt_of_bound (S : Iop.Setup EF) {L : QueryLog (sumSpec F K)}
@@ -277,7 +277,7 @@ theorem quotientMessageOf_snapshotAt_of_bound (S : Iop.Setup EF) {L : QueryLog (
     S.quotientMessageOf (merkleCache (Bcs.snapshotAt L (s, x))) cap =
       S.quotientMessageOf (merkleCache (Bcs.hashCacheOf L)) cap := by
   funext cex
-  simp only [Iop.Setup.quotientMessageOf, Ni.committedColumn,
+  simp only [Iop.Setup.quotientMessageOf, Fs.committedColumn,
     leafRow_snapshotAt_of_bound hL s x hcap]
 
 /-- `extractCapRow_snapshotAt_of_bound` for a FRI layer's word under a cap. -/
@@ -287,7 +287,7 @@ theorem friWordOf_snapshotAt_of_bound {L : QueryLog (sumSpec F K)}
     Iop.friWordOf (EF := EF) (merkleCache (Bcs.snapshotAt L (s, x))) capHeight cap m k =
       Iop.friWordOf (merkleCache (Bcs.hashCacheOf L)) capHeight cap m k := by
   funext z
-  simp only [Iop.friWordOf, Ni.friWordAt, leafRow_snapshotAt_of_bound hL s x hcap]
+  simp only [Iop.friWordOf, Fs.friWordAt, leafRow_snapshotAt_of_bound hL s x hcap]
 
 end Stable
 
@@ -580,7 +580,7 @@ theorem size_commit_preprocessedKeyWith (H : Primitives F Id) (P : Fri.Params) (
   · change some ⟨A.preprocessedWidth, n, merkleCapWith H _ (n + P.logBlowup) P.capHeight⟩ =
       some k at hk
     obtain rfl := Option.some.inj hk
-    rw [Ni.merkleCapWith_id, List.size_toArray, List.length_map, List.length_range]
+    rw [Fs.merkleCapWith_id, List.size_toArray, List.length_map, List.length_range]
     exact Nat.pow_le_pow_right (by decide) (Nat.min_le_left _ _)
 
 /-- The bound on digest clashes is at least one when the digests are at most as many as a
@@ -630,10 +630,10 @@ theorem capSizes_of_verifyWith (S : Setup EF) (H : Primitives F Id)
   have hle : 2 ^ min S.params.capHeight (S.logN + S.params.logBlowup) ≤
       2 ^ S.params.capHeight := Nat.pow_le_pow_right (by decide) (Nat.min_le_left _ _)
   obtain ⟨-, -, -, -, -, -, -, -, -, -, ⟨st, hfriOk⟩, -⟩ :=
-    Ni.verifyWith_ok H S.params S.air vk proof pis h
-  have hL : Ni.friLogMax S.params proof = S.logSize := by
-    simp only [Ni.friLogMax, hdb, Iop.Setup.logSize]
-  have hh : ∀ x ∈ openingRounds S.air vk proof (Ni.zetaOf H S.params S.air vk proof pis),
+    Fs.verifyWith_ok H S.params S.air vk proof pis h
+  have hL : Fs.friLogMax S.params proof = S.logSize := by
+    simp only [Fs.friLogMax, hdb, Iop.Setup.logSize]
+  have hh : ∀ x ∈ openingRounds S.air vk proof (Fs.zetaOf H S.params S.air vk proof pis),
       ∀ dp ∈ x.2, dp.1.logSize + S.params.logBlowup = S.logSize := by
     intro x hx dp hdp
     rw [← hL]
@@ -651,7 +651,7 @@ theorem capSizes_of_verifyWith (S : Setup EF) (H : Primitives F Id)
         rw [hdp]
       · exact absurd hx List.not_mem_nil
   obtain ⟨-, -, hcs, hcws, -, -, -, -⟩ :=
-    Ni.verifyFri_ok H S.params proof.fri _ _ _ hh _ _ hfriOk
+    Fs.verifyFri_ok H S.params proof.fri _ _ _ hh _ _ hfriOk
   have har : Iop.scheduleArities (S.friSchedule []) = foldSchedule S.params.maxLogArity
       (S.params.logBlowup + S.params.logFinalPolyLen) S.logSize [S.logSize] := by
     rw [friSchedule, Iop.arities_plonky3, Nat.add_comm S.params.logBlowup]
@@ -681,7 +681,7 @@ variable {F : Type} [BaseField F]
 /-- The setup and the verifier make at least two oracle calls. -/
 theorem two_le_verifierQueries (C : Statement F) (EF : Type) [Challenge F EF] :
     2 ≤ C.verifierQueries EF := by
-  have h := Ni.le_foldr_max ((List.range (twoAdicity F + 1)).map
+  have h := Fs.le_foldr_max ((List.range (twoAdicity F + 1)).map
     (verifierCallsAt EF C.params C.air)) (verifierCallsAt EF C.params C.air 0)
     (List.mem_map.mpr ⟨0, List.mem_range.mpr (Nat.succ_pos _), rfl⟩)
   have h3 : 3 ≤ verifierCallsAt EF C.params C.air 0 := by

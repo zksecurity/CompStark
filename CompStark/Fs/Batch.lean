@@ -6,9 +6,9 @@ module
 
 public import CompStark.Fs.Stark
 public import CompStark.Fs.BatchWords
-public import CompStark.Interaction.BatchStateRestoration
-public import CompStark.Ni.BatchRounds
-public import CompStark.Ni.BatchLengths
+public import CompStark.Iop.BatchStateRestoration
+public import CompStark.Fs.BatchTranscript
+public import CompStark.Fs.BatchLengths
 
 /-! # The batch STARK's challenges as Plonky3's duplex challenger draws them
 
@@ -49,7 +49,7 @@ terminals, before `α`.
 
 @[expose] public section
 namespace CompStark.Fs
-open CompStark.Stark CompStark.Sound CompStark.Iop CompStark.Ni OracleComp OracleSpec CompPoly
+open CompStark.Stark CompStark.Sound CompStark.Iop CompStark.Fs OracleComp OracleSpec CompPoly
 open Interaction.Oracle Interaction.Oracle.PublicCoin Interaction.Oracle.Security
 open Interaction.Oracle.Security.StateRestoration Interaction.Oracle.Security.HashChain
 open scoped ENNReal
@@ -296,7 +296,7 @@ end CompStark.Fs
 /-! ### The batch at its lengths -/
 
 namespace CompStark.Iop.Batch.Setup
-open CompStark.Stark CompStark.Sound CompStark.Fs CompStark.Ni
+open CompStark.Stark CompStark.Sound CompStark.Fs CompStark.Fs
 open Interaction.Oracle Interaction.Oracle.PublicCoin
 open Interaction.Oracle.Security Interaction.Oracle.Security.StateRestoration
 open Interaction.Oracle.Security.HashChain
@@ -356,7 +356,7 @@ theorem length_permElems (o o' : Openings T) :
 end Openings
 
 /-- The claimed values as Plonky3's PCS observes them on the batch's rounds
-(`Ni.roundValues_batchRounds_eq`): every instance's trace values, every instance's quotient
+(`Fs.roundValues_batchRounds_eq`): every instance's trace values, every instance's quotient
 chunks, every instance's preprocessed values, every instance's permutation values. -/
 noncomputable def openingsElems (o : S.OpeningsMessage) : List F :=
   (List.finRange S.k).flatMap (fun i ↦ traceElems (o i)) ++
@@ -558,7 +558,7 @@ end CompStark.Iop.Batch.Setup
 /-! ### The batch for a statement -/
 
 namespace CompStark.Iop.Batch.Statement
-open CompStark.Stark CompStark.Sound CompStark.Fs CompStark.Ni
+open CompStark.Stark CompStark.Sound CompStark.Fs CompStark.Fs
 open Interaction.Oracle Interaction.Oracle.PublicCoin
 open Interaction.Oracle.Security Interaction.Oracle.Security.StateRestoration
 open Interaction.Oracle.Security.HashChain
@@ -571,7 +571,7 @@ abbrev PublicValues : Type :=
   {pis : Fin C.k → List F // ∀ i, (pis i).length = (C.air i).numPublicValues}
 
 /-- The statement's elements Plonky3's batch verifier observes before the first squeeze: the public
-values, and the preprocessed commitment's elements (`Ni.prepDigest`), none without one. -/
+values, and the preprocessed commitment's elements (`Fs.prepDigest`), none without one. -/
 abbrev Input : Type := C.PublicValues × List F
 
 variable {C} in

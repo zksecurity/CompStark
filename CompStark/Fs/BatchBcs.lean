@@ -8,9 +8,9 @@ public import CompStark.Fs.StarkBcs
 public import CompStark.Fs.BatchStable
 public import CompStark.Fs.BatchTerminal
 public import CompStark.Fs.BatchFiatShamir
-public import CompStark.Ni.BatchNatural
-public import CompStark.Ni.BatchQueryBound
-public import CompStark.Ni.BatchLengths
+public import CompStark.Fs.BatchSimulate
+public import CompStark.Fs.BatchCalls
+public import CompStark.Fs.BatchLengths
 
 /-! # Knowledge soundness of Plonky3's batch STARK verifier with Merkle commitments
 
@@ -57,14 +57,14 @@ theorem capBindingM_of_log {L : QueryLog (sumSpec F K)} (hL : ¬ HashBad offs ca
     (hH : H.hash = logHash L dstar) (hC : H.compress = logCompress L dstar) (cap : Cap F)
     (hcap : ∀ d ∈ cap.toList, d ≠ dstar) (capHeight top : ℕ) (hs : List ℕ)
     (hpow : ∀ h ∈ hs, ∃ j, min capHeight top ≤ j ∧ j ≤ top ∧ h = 2 ^ j) (htop : 2 ^ top ∈ hs) :
-    Ni.CapBindingM (merkleCache (Bcs.hashCacheOf L)) H cap capHeight top hs := by
+    Fs.CapBindingM (merkleCache (Bcs.hashCacheOf L)) H cap capHeight top hs := by
   intro e i values path hv
   have hroot : cap.toList.getD e 0 ≠ dstar := by
     rcases getD_cap cap.toList e with h0 | h0
     · rw [h0]
       exact fun h => hd (h ▸ initCap_mem_logDigests L)
     · exact hcap _ h0
-  simp only [Ni.verifyBatchH, hH, hC] at hv
+  simp only [Fs.verifyBatchH, hH, hC] at hv
   refine extractGroup_of_logVerifyBatch hL hd hroot _ _ (fun h hh => ?_)
     (List.mem_map.mpr ⟨_, htop, by rw [Nat.pow_div (Nat.min_le_right _ _) (by decide)]⟩) i values
     path hv
@@ -103,7 +103,7 @@ end CompStark.Batch
 /-! ### The game and the adversary of the BCS theorem -/
 
 namespace CompStark.Iop.Batch.Statement
-open CompStark.Stark CompStark.Fs CompStark.Ni CompStark.RandomOracle OracleComp OracleSpec
+open CompStark.Stark CompStark.Fs CompStark.Fs CompStark.RandomOracle OracleComp OracleSpec
 open Interaction.Oracle Interaction.Oracle.PublicCoin Interaction.Oracle.Security
 open Interaction.Oracle.Security.StateRestoration Interaction.Oracle.Security.HashChain
 open Interaction.Oracle.Security.Bcs
@@ -626,7 +626,7 @@ theorem bcsEvent_of_mem_support (hK : 0 < K) (δ δ' : (Fin C.k → ℕ) → ℝ
 variable (C EF) in
 /-- The setup and the verifier make at least two oracle calls. -/
 theorem two_le_verifierQueries : 2 ≤ C.verifierQueries EF := by
-  have h := Ni.le_foldr_max ((lengthVectors C.k (twoAdicity F)).map fun n ↦
+  have h := Fs.le_foldr_max ((lengthVectors C.k (twoAdicity F)).map fun n ↦
     CompStark.Batch.verifierCallsOf EF C.params (C.instancesAt n))
     (CompStark.Batch.verifierCallsOf EF C.params (C.instancesAt fun _ ↦ 0))
     (List.mem_map.mpr ⟨_, mem_lengthVectors C.k _ _ fun _ ↦ Nat.zero_le _, rfl⟩)
