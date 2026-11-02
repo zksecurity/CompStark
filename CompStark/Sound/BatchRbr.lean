@@ -6,16 +6,16 @@ module
 
 public import CompStark.Sound.BatchAssembly
 public import CompStark.Sound.Rbr
-public import CompStark.BatchNonInteractiveError
+public import CompStark.BatchSoundnessError
+public import CompStark.Sound.FriRun
 
 /-! # Round-by-round soundness of the batch STARK
 
 The batch STARK's rounds as bad events on transcript prefixes, each bounded for every prefix by
 its error: in `CompStark/BatchSoundnessError.lean` for the interactive protocol, whose knowledge
 certificate (`CompStark/Interaction/BatchKnowledge.lean`) is built from the events of the lookup
-challenges, `α`, `ζ` and `a`, with the failing instance's errors (`prob_batchBad_le_failing`), and
-in `CompStark/BatchNonInteractiveError.lean` for the non-interactive proof, where every round is
-one random-oracle answer. The transcript (`Batch.Transcript`) holds every instance's
+challenges, `α`, `ζ` and `a`, with the failing instance's errors (`prob_batchBad_le_failing`). The
+transcript (`Batch.Transcript`) holds every instance's
 words, terminals and claimed values, the challenges, and FRI's committed words and final
 polynomial, which FRI folds by Plonky3's schedule from the tallest domain, injecting the batched
 DEEP words of the shorter domains (`Transcript.rounds`, `Transcript.fri`).
@@ -32,18 +32,10 @@ some constraint, if there is one.
   trace, lookup challenges and terminal included.
 * `a` (`BatchBad`): the DEEP components of the opened words of that instance's domain size are
   not near the code together, the batched word of that size is.
-* FRI fold `j` (`FoldBad`): the fold of committed word `j`, with its injected word, fails
-  (`FriGame.Rounds.FoldFails`).
-* The queries (`QueryBad`): the tallest batched word or an injected one is far, the folds are
-  safe, and every query lands where the checks pass and FRI's first word agrees with the tallest
-  batched word.
 
-The terminal lemma `exists_satisfied_of_safe` is deterministic: if the verifier's checks pass on a
-transcript whose rounds are all safe, some tuple of candidate traces satisfies the batch.
-Otherwise, with safe lookup challenges and terminals summing to zero, an instance fails
-(`exists_failing_instance`), and as for the STARK its safe `α`, `ζ` and `a` make the batched word
-of its domain size far (`not_near_deepWords`); FRI starts with that word or injects it, so with
-safe folds not every query passes.
+With safe lookup challenges and terminals summing to zero, a tuple of candidate traces that does
+not satisfy the batch has a failing instance (`exists_failing_instance`), and as for the STARK its
+safe `α`, `ζ` and `a` make the batched word of its domain size far (`not_near_deepWords`).
 -/
 
 @[expose] public section
@@ -65,11 +57,6 @@ variable {withLookups : Bool} (S : Iop.Batch.Setup EF withLookups)
 `g ⟨ω⟩`: `g ^ 2 ^ (logTop - m)`. -/
 noncomputable def foldShift (m : ℕ) : 𝕂 := lift gen ^ 2 ^ (S.logTop - m)
 
-theorem foldShift_ne_zero (m : ℕ) : foldShift S m ≠ 0 := by
-  refine pow_ne_zero _ ?_
-  rw [lift, ne_eq, map_eq_zero_iff _ (algebraMap F 𝕂).injective]
-  exact BaseField.gen_ne_zero
-
 /-- FRI's injected words: Plonky3 adds the batched DEEP word of the domain of `2 ^ m` points times
 `β ^ 2 ^ k` to a fold by `2 ^ k` at `β`, which is ArkLib's fold at `s β`, `s` the shift of the
 folded domain's square root: so ArkLib's fold injects the word divided by the folded domain's
@@ -79,18 +66,11 @@ noncomputable def injected (words : (m : ℕ) → Fin (2 ^ m) → 𝕂) (m : ℕ
 
 end Injected
 
-/-- A word agreeing with a code after scaling by a nonzero constant agrees with it before. -/
-theorem agrees_of_agrees_mul {m : ℕ} {D : Fin (2 ^ m) ↪ 𝕂} {deg : ℕ} {ρ : ℝ} {c : 𝕂}
-    (hc : c ≠ 0) {w : Fin (2 ^ m) → 𝕂} (h : Agrees D deg ρ fun x ↦ c * w x) : Agrees D deg ρ w := by
-  obtain ⟨T, hT, v, hv, hvT⟩ := h
-  refine ⟨T, hT, c⁻¹ • v, Submodule.smul_mem _ _ hv, fun x hx ↦ ?_⟩
-  rw [Pi.smul_apply, smul_eq_mul, hvT x hx, ← mul_assoc, inv_mul_cancel₀ hc, one_mul]
-
 /-! ### The transcript -/
 
-/-- The transcript of the batch STARK, as the extractor reads it off a non-interactive proof:
-every instance's words, terminals and claimed values, the challenges, and FRI's committed words,
-final polynomial and folding challenges. -/
+/-- The transcript of the batch STARK, as the extractor reads it off a proof: every instance's
+words, terminals and claimed values, the challenges, and FRI's committed words, final polynomial
+and folding challenges. -/
 structure Transcript {withLookups : Bool} (S : Iop.Batch.Setup EF withLookups) where
   trace : (i : Fin S.k) → Fin (S.air i).width → (S.instanceSetup i).Point → F
   lookupAlpha : 𝕂
@@ -204,26 +184,6 @@ def BatchBad (α : 𝕂)
     Near (S.instanceSetup i) δ
       (Iop.Batch.groupDeepWord p lα lβ α ζ a (S.logN i + S.params.logBlowup))
 
-/-- FRI fold `j`: the fold of committed word `j` at `β` fails, on FRI's rounds `rounds`. -/
-def FoldBad (rounds : Rounds 𝕂 S.logTop) (words : ℕ → (m : ℕ) → Fin (2 ^ m) → 𝕂) (j : ℕ)
-    (β : 𝕂) : Prop :=
-  Rounds.FoldFails (2 ^ S.params.logFinalPolyLen) δ loss β words j S.domainSetup.domain rounds
-
-/-- Before the queries: the tallest batched word or an injected word is `δ`-far from its code, no
-fold fails and the final polynomial has degree below `2 ^ logFinalPolyLen`. -/
-def QueryReady (t : Transcript S) : Prop :=
-  ¬ (Agrees S.domainSetup.domain (t.rounds.degree (2 ^ S.params.logFinalPolyLen)) (1 - δ)
-      (t.deepWords S.logTop) ∧
-    t.rounds.InputsAgree (2 ^ S.params.logFinalPolyLen) (1 - δ) S.domainSetup.domain) ∧
-  t.fri.SafeLossy δ loss ∧ t.finalPoly.natDegree < 2 ^ S.params.logFinalPolyLen
-
-/-- The query round: ready, the grinding sample `pow` has `queryPowBits` vanishing low bits, and
-every query sample selects a point where the checks pass and FRI's first word agrees with the
-tallest batched word. -/
-def QueryBad (t : Transcript S) (pow : F) (queries : Fin S.params.numQueries → F) : Prop :=
-  QueryReady S δ loss t ∧ CompPoly.CanonicalNat.toNat pow % 2 ^ S.params.queryPowBits = 0 ∧
-    ∀ j, queryPoint S.domainSetup (queries j) ∈ t.consistentQueries
-
 end Events
 
 /-! ### The bounds -/
@@ -253,14 +213,6 @@ theorem prob_lookupBad_le :
     _ = _ := by
         simp only [Nat.cast_mul]
         rw [ENNReal.mul_div_mul_right _ _ hK hT]
-
-/-- The lookup round with its grinding sample, drawn in the same answer: at most
-`powFraction lookupPowBits · lookupError`. -/
-theorem prob_lookupRound_le :
-    Pr{let z ← $ᵗ (F × (𝕂 × 𝕂))}[CompPoly.CanonicalNat.toNat z.1 % 2 ^ S.params.lookupPowBits = 0 ∧
-      LookupBad S publicValues δ' traces z.2.1 z.2.2] ≤
-      powFraction F S.params.lookupPowBits * S.lookupError δ' :=
-  (prob_pow_and_le _ _).trans (mul_le_mul_right (prob_lookupBad_le S publicValues δ' traces) _)
 
 /-- Round `α`: a uniform `α` is bad with probability at most the worst instance's
 `foldingError`. -/
@@ -330,69 +282,6 @@ theorem prob_batchBad_le (α : 𝕂)
     openings).trans (le_iSup (fun i ↦ batchingErrorOf (S.instanceSetup i)
       (S.groupNumOpened (S.logN i + S.params.logBlowup)) δ δ') _)
 
-/-- FRI fold `j`: a uniform challenge is bad with probability at most the fold's error, for every
-committed word and injected words. -/
-theorem prob_foldBad_le (words : ℕ → (m : ℕ) → Fin (2 ^ m) → 𝕂)
-    (inj : (m : ℕ) → Fin (2 ^ m) → 𝕂) (j : ℕ) :
-    Pr{let β ← $ᵗ 𝕂}[FoldBad S δ loss (S.domainSetup.friRounds inj S.friHeights) words j β] ≤
-      Iop.Batch.friFoldError S δ loss j := by
-  refine (Rounds.prob_foldFails_le (Nat.two_pow_pos _) δ loss words j _ _).trans (le_of_eq ?_)
-  exact Rounds.foldErrorAt_schedule_congr _ _ _ _ _ _ _ _ _ _ _ _
-
-/-- FRI fold `j` with its grinding sample, drawn in the same answer: at most
-`powFraction commitPowBits · friFoldError`. -/
-theorem prob_foldRound_le (words : ℕ → (m : ℕ) → Fin (2 ^ m) → 𝕂)
-    (inj : (m : ℕ) → Fin (2 ^ m) → 𝕂) (j : ℕ) :
-    Pr{let z ← $ᵗ (F × 𝕂)}[CompPoly.CanonicalNat.toNat z.1 % 2 ^ S.params.commitPowBits = 0 ∧
-      FoldBad S δ loss (S.domainSetup.friRounds inj S.friHeights) words j z.2] ≤
-      powFraction F S.params.commitPowBits * Iop.Batch.friFoldError S δ loss j :=
-  (prob_pow_and_le _ _).trans (mul_le_mul_right (prob_foldBad_le S δ loss words inj j) _)
-
-/-- FRI's rounds have as many folds as the rounds of `roundError`. -/
-theorem numFolds_rounds (t : Transcript S) : t.rounds.numFolds = S.friRounds.numFolds :=
-  (Rounds.foldError_schedule_congr _ _ (2 ^ S.params.logFinalPolyLen) 0 0 _ _ _ _
-    S.domainSetup.domain _).2.1
-
-/-- The query round: at most `powFraction queryPowBits · friQueryError`. -/
-theorem prob_queryBad_le (t : Transcript S) :
-    Pr{let z ← $ᵗ (F × (Fin S.params.numQueries → F))}[QueryBad S δ loss t z.1 z.2] ≤
-      powFraction F S.params.queryPowBits * Iop.Batch.friQueryError S δ loss := by
-  classical
-  by_cases hready : QueryReady S δ loss t
-  · set D := S.domainSetup
-    set m := D.logN + D.params.logBlowup
-    set G := t.consistentQueries.image fun z ↦ reverseBits z.val m
-    set nf : ℕ := t.rounds.numFolds
-    have hdens := t.fri.consistent_density_le (t.deepWords S.logTop) δ δ loss loss.coe_nonneg
-      hready.2.1 (Rounds.finalInCode_run _ _ t.finalPoly hready.2.2 _ _ _ _)
-      (by rw [Transcript.fri, Rounds.inputsAgree_run]; exact hready.1)
-    rw [Transcript.fri, Rounds.numFolds_run] at hdens
-    have hmin : min ((δ : ℝ) - ((nf : ℝ) - 1) * loss) (δ - nf * loss) = δ - nf * loss :=
-      min_eq_right (by nlinarith [loss.coe_nonneg])
-    rw [hmin] at hdens
-    have hG : (G.card : ℝ) ≤ 2 ^ m * (1 - δ + S.friRounds.numFolds * loss) := by
-      have hpos : (0 : ℝ) < 2 ^ m := by positivity
-      rw [div_le_iff₀ hpos] at hdens
-      have hcard : (G.card : ℝ) ≤ t.consistentQueries.card := by
-        exact_mod_cast Finset.card_image_le
-      rw [← numFolds_rounds S t]
-      change (G.card : ℝ) ≤ _
-      have : (t.consistentQueries.card : ℝ) ≤ (1 - (δ - nf * loss)) * 2 ^ m := hdens
-      nlinarith
-    have h := prob_queryRound_le S.params.queryPowBits m S.params.numQueries
-      (BaseField.two_pow_dvd_card_sub_one_of_le D.valid.twoAdic) G _ hG
-    refine le_trans (le_of_eq ?_) (h.trans (le_of_eq ?_))
-    · congr 2
-      funext z
-      simp only [QueryBad, hready, true_and, queryPoint_mem_iff, G, m, D]
-    · rw [Iop.Batch.friQueryError]
-  · rw [SampleableType.prEvent_uniformSample]
-    have h : (Finset.univ.filter fun z : F × (Fin S.params.numQueries → F) ↦
-        QueryBad S δ loss t z.1 z.2) = ∅ :=
-      Finset.filter_false_of_mem fun z _ hz ↦ hready hz.1
-    rw [h, Finset.card_empty, Nat.cast_zero, ENNReal.zero_div]
-    exact bot_le
-
 end Bounds
 
 /-! ### The terminal lemma -/
@@ -446,79 +335,6 @@ theorem not_near_deepWords (δ δ' : NNReal) (hδ' : (δ' : ℝ) < 1 - S.rate) (
   rw [Setup.committedTrace_committed, Setup.committedQuotient_committed,
     Setup.committedPerm_committed, ← h]
   exact hcheck i
-
-/-- A batched word far from its code makes FRI's first word or one of its injected words far: it
-is the tallest batched word, or FRI injects it at its domain's size. -/
-theorem not_agrees_of_not_near (δ : NNReal) (t : Transcript S) (i : Fin S.k)
-    (hfar : ¬ Near (S.instanceSetup i) δ (t.deepWords (S.logN i + S.params.logBlowup))) :
-    ¬ (Agrees S.domainSetup.domain (t.rounds.degree (2 ^ S.params.logFinalPolyLen)) (1 - δ)
-        (t.deepWords S.logTop) ∧
-      t.rounds.InputsAgree (2 ^ S.params.logFinalPolyLen) (1 - δ) S.domainSetup.domain) := by
-  set D := S.domainSetup
-  have hf := D.valid.finalPolyFits
-  have hfit := fits_friHeights S
-  have hDl : D.logN = S.logN S.top := rfl
-  have hDf : D.params.logFinalPolyLen = S.params.logFinalPolyLen := rfl
-  have hDb : D.params.logBlowup = S.params.logBlowup := rfl
-  have hfar' : ∀ hm, ¬ Agrees (cosetDomain (EF := EF) (S.logN i + S.params.logBlowup) hm)
-      (2 ^ S.logN i) (1 - δ) (t.deepWords (S.logN i + S.params.logBlowup)) :=
-    fun _ hA ↦ hfar (near_of_agrees (S.instanceSetup i) δ _ hA)
-  rintro ⟨hw, hin⟩
-  by_cases htop : S.logN i = S.logN S.top
-  · rw [Transcript.rounds, degree_friRounds D _ _ hfit] at hw
-    rw [htop] at hfar'
-    exact hfar' D.valid.twoAdic hw
-  · have hm : S.logN i + S.params.logBlowup ∈ S.friHeights :=
-      (mem_friHeights S _).mpr ⟨i, rfl, by omega⟩
-    obtain ⟨E, hE, hagree⟩ := Rounds.agrees_of_inputsAgree D.valid.folds (injected S t.deepWords)
-      _ _ (fun E ↦ IsLevel E) (fun E k hE ↦ isLevel_subdomain E k hE)
-      (D.logN + D.params.logBlowup) _ D.domain S.friHeights (by omega) (Nat.sub_le _ _) hfit
-      (isLevel_cosetDomain _ _) hin _ hm
-    have hdeg : 2 ^ (S.logN i + S.params.logBlowup -
-        (S.params.logFinalPolyLen + S.params.logBlowup)) * 2 ^ S.params.logFinalPolyLen =
-        2 ^ S.logN i := by
-      rw [← pow_add]
-      congr 1
-      have := (S.valid i).finalPolyFits
-      omega
-    rw [hdeg] at hagree
-    have h1 := agrees_of_agrees_mul (inv_ne_zero (foldShift_ne_zero S _)) hagree
-    have h2 := agrees_cosetDomain_of_isLevel E hE _ _ _ h1
-    exact hfar' hE.1 h2
-
-/-- **The terminal lemma.** If the verifier's checks pass on a transcript whose rounds are all
-safe, some tuple of candidate traces satisfies the batch: the terminals of the instances with
-lookups sum to zero, every instance's check at `ζ`, a final polynomial of degree below
-`2 ^ logFinalPolyLen`, a grinding sample with `queryPowBits` vanishing low bits, and every query
-sample selecting a point where the checks pass and FRI's first word agrees with the tallest
-batched word. -/
-theorem exists_satisfied_of_safe (δ δ' loss : NNReal) (hδ' : (δ' : ℝ) < 1 - S.rate)
-    (t : Transcript S) (pow : F) (queries : Fin S.params.numQueries → F)
-    (hsum : (∑ i with S.lookups i ≠ [], t.terminal i) = 0)
-    (hcheck : ∀ i, ConstraintsHoldAt (S.instanceSetup i) (publicValues i) t.alpha t.zeta
-      (t.openings i) (S.challenges t.lookupAlpha t.lookupBeta i) (t.terminal i))
-    (hdegree : t.finalPoly.natDegree < 2 ^ S.params.logFinalPolyLen)
-    (hpow : CompPoly.CanonicalNat.toNat pow % 2 ^ S.params.queryPowBits = 0)
-    (hqueries : ∀ j, queryPoint S.domainSetup (queries j) ∈ t.consistentQueries)
-    (hlookup : ¬ LookupBad S publicValues δ' t.trace t.lookupAlpha t.lookupBeta)
-    (hα : ¬ AlphaBad S publicValues δ' t.trace t.perm t.terminal t.lookupAlpha t.lookupBeta
-      t.alpha)
-    (hζ : ¬ ZetaBad S publicValues δ' t.trace t.perm t.terminal t.lookupAlpha t.lookupBeta
-      t.alpha t.quotient t.zeta)
-    (ha : ¬ BatchBad S publicValues δ δ' t.trace t.perm t.terminal t.lookupAlpha t.lookupBeta
-      t.alpha t.quotient t.zeta t.openings t.batch)
-    (hfolds : ∀ j, ¬ FoldBad S δ loss t.rounds t.words j (t.betas j))
-    (hq : ¬ QueryBad S δ loss t pow queries) :
-    ∃ traces ∈ Iop.Batch.closeTraces S δ' t.trace, S.Satisfied traces publicValues := by
-  by_contra hno
-  have hfail : ∀ traces ∈ Iop.Batch.closeTraces S δ' t.trace, ¬ S.Satisfied traces publicValues :=
-    fun traces h hs ↦ hno ⟨traces, h, hs⟩
-  obtain ⟨i, hi⟩ := exists_failing_instance publicValues δ' t.trace t.perm t.terminal
-    t.lookupAlpha t.lookupBeta hfail hlookup hsum
-  have hfar := not_near_deepWords S publicValues δ δ' hδ' t ⟨i, hi⟩ hcheck hα hζ ha
-  refine hq ⟨⟨not_agrees_of_not_near S δ t _ hfar, ?_, hdegree⟩, hpow, hqueries⟩
-  rw [Transcript.fri, Rounds.safeLossy_run_iff]
-  exact hfolds
 
 end Terminal
 

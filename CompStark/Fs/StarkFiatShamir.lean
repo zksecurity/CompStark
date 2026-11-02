@@ -10,11 +10,11 @@ public import ArkLib.Interaction.Oracle.Security.HashChainSqueeze
 
 /-! # The STARK's challenges on Plonky3's duplex challenger: counts
 
-The counts the duplex-challenger theorems of the STARK take: the STARK's paths have at most
+The counts the theorems on Plonky3's verifier take: the STARK's paths have at most
 `maxChallenges = twoAdicity F + 4` challenges (`Setup.challengesLE_publicCoin`: `α`, `ζ`, the
 batching challenge, FRI's folds, at most the domain's log size, `numFolds_friSchedule_le`, and the
-queries), each drawn from at most `coinCount` squeezes (`FsCoins`, `fsCoin`), so the verifier's
-completion makes at most `verifierChainQueries` duplex calls.
+queries), each drawn from at most `coinCount` squeezes, so the verifier's completion makes at most
+`verifierChainQueries` duplex calls.
 -/
 
 @[expose] public section
@@ -85,14 +85,6 @@ open _root_.Interaction.Oracle.TypeTree
 open scoped ENNReal NNReal
 
 variable {F : Type} [BaseField F] (C : Statement F) (EF : Type) [Challenge F EF] (K : ℕ)
-
-/-- The coins of the STARK's challenges: `coinCount` squeezes of `K` samples. -/
-abbrev FsCoins : Type := Coins F K (C.coinCount EF K)
-
-/-- The STARK's decoded presentation, every challenge drawn from Plonky3's squeezes. -/
-noncomputable abbrev fsCoin : PublicCoin (decodedProtocol (C.FsCoins EF K) (C.publicCoin EF)
-    (C.decoder EF K (C.coinCount EF K))) :=
-  decoded (C.FsCoins EF K) (C.publicCoin EF) (C.decoder EF K (C.coinCount EF K))
 
 /-- The challenges on a path of the STARK at any admitted length: `α`, `ζ`, the batching challenge,
 at most `twoAdicity F` folds and the queries. -/

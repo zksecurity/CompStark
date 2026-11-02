@@ -222,11 +222,6 @@ variable {lookups : List (Lookup F)} {T : Iop.Setup EF lookups} (p : Iop.Prover 
 noncomputable def wordTerm (w : (T.Point → F) × 𝕂 × 𝕂) : 𝕂 :=
   (w.2.2 - algebraMap F 𝕂 (w.1 xi)) / (w.2.1 - lift x)
 
-theorem map_finRange_div (w : ℕ) (u : ℕ → 𝕂) (z : 𝕂) :
-    (List.finRange w).map (fun j ↦ u j.val / z) = (List.range w).map fun j ↦ u j * z⁻¹ := by
-  rw [map_finRange_eq_range (f := fun j ↦ u j / z)]
-  exact List.map_congr_left fun j _ ↦ div_eq_mul_inv _ _
-
 /-- An instance's opened trace words' DEEP terms are its trace matrix's, read from its words. -/
 theorem main_terms (hz : Challenge.toSpec zeta = ζ) (hopen : p.openings α ζ
     = openingsOf T o cur next)
@@ -520,14 +515,6 @@ instances. -/
 def quotOffset (i : Fin S.k) : ℕ :=
   ((List.ofFn fun i' : Fin S.k ↦ (S.instanceSetup i').chunks).take i).sum
 
-theorem flatMap_ite_const {α δ : Type} (L : List α) (c : Prop) [Decidable c] (G : α → List δ) :
-    (L.flatMap fun a ↦ if c then G a else []) = if c then L.flatMap G else [] := by
-  split
-  · rfl
-  · induction L with
-    | nil => rfl
-    | cons a L ih => rw [List.flatMap_cons, ih, List.nil_append]
-
 /-- **The quotient chunks' part.** -/
 theorem quot_part (hz : Challenge.toSpec zeta = ζ)
     (hopen : ∀ i, p.openings lα lβ α ζ i =
@@ -792,10 +779,6 @@ theorem preprocessedOpened_nil {lookups : List (Lookup F)} {T : Iop.Setup EF loo
   simp only [Iop.Batch.preprocessedOpened, List.append_eq_nil_iff, List.map_eq_nil_iff,
     List.finRange_eq_nil_iff]
   exact ⟨hp, hn0⟩
-
-/-- An instance without lookups opens no permutation words. -/
-theorem permOpened_nil {T : Iop.Setup EF} (q : Iop.Prover T) (α ζ : 𝕂) :
-    Iop.Batch.permOpened q α ζ = [] := rfl
 
 /-- Opened values in the shape of an instance have its AIR's widths. -/
 theorem openedShapeOk_spec {I : CompStark.Batch.Instance F} {o : OpenedValues EF}

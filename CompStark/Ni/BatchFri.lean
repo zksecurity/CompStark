@@ -11,13 +11,13 @@ public import CompStark.Sound.FriRun
 /-! # FRI's query checks with injected words
 
 The interactive oracle proof's FRI (`FriGame.Rounds.schedule`) folds by Plonky3's schedule
-(`arities_schedule`: its arities are `foldSchedule`'s). `query_run`: if a query's folds pass
-their checks against binding commitments, from the reduced opening of the tallest height, adding
-each shorter height's reduced opening when they reach it, and end at the final polynomial, then
-the query's point is accepted by FRI's run on the extracted words (`FriGame.Rounds.run`), at the
-folding challenges in ArkLib's coordinate, and the run's first word holds the tallest reduced
-opening there. The injected words are the reduced openings divided by the shift of the domain
-they are injected on, as ArkLib folds at `s β` where Plonky3 folds at `β`.
+(`arities`, `foldSchedule_cons`). `query_run`: if a query's folds pass their checks against
+binding commitments, from the reduced opening of the tallest height, adding each shorter height's
+reduced opening when they reach it, and end at the final polynomial, then the query's point is
+accepted by FRI's run on the extracted words (`FriGame.Rounds.run`), at the folding challenges in
+ArkLib's coordinate, and the run's first word holds the tallest reduced opening there. The injected
+words are the reduced openings divided by the shift of the domain they are injected on, as ArkLib
+folds at `s β` where Plonky3 folds at `β`.
 -/
 
 @[expose] public section
@@ -39,10 +39,6 @@ def arities : {n : ℕ} → Rounds K n → List ℕ
   | _, .final => []
   | _, .fold k _ _ rest => k :: arities rest
 
-theorem length_arities : ∀ {n : ℕ} (r : Rounds K n), (arities r).length = r.numFolds
-  | _, .final => rfl
-  | _, .fold _ _ _ rest => congrArg (· + 1) (length_arities rest)
-
 theorem foldSchedule_cons (maxLogArity logFinal fuel n m : ℕ) (rest : List ℕ)
     (hn : ¬ n ≤ logFinal) :
     foldSchedule maxLogArity logFinal (fuel + 1) (n :: m :: rest) =
@@ -53,29 +49,6 @@ theorem foldSchedule_cons (maxLogArity logFinal fuel n m : ℕ) (rest : List ℕ
   simp only [foldSchedule, ite_eq_right_of_eq_false _ _ (eq_false hn), List.head?_cons,
     Option.some.injEq, List.tail_cons, List.headD_cons]
   rfl
-
-/-- **The rounds fold by Plonky3's schedule.** -/
-theorem arities_schedule (maxLogArity logFinal : ℕ) (words : (m : ℕ) → Fin (2 ^ m) → K) :
-    ∀ (fuel n : ℕ) (heights : List ℕ),
-      arities (Rounds.schedule maxLogArity logFinal words fuel n heights) =
-        foldSchedule maxLogArity logFinal fuel (n :: heights)
-  | 0, _, _ => rfl
-  | fuel + 1, n, heights => by
-    by_cases hfin : n ≤ logFinal
-    · simp only [Rounds.schedule, ite_eq_left_of_eq_true _ _ (eq_true hfin), arities, foldSchedule]
-    have ih := arities_schedule maxLogArity logFinal words fuel
-    match heights with
-    | [] =>
-      simp only [Rounds.schedule, ite_eq_right_of_eq_false _ _ (eq_false hfin), foldSchedule,
-        arities, Rounds.logArity, List.head?_nil, reduceCtorEq, ↓reduceIte, ih]
-    | m :: rest =>
-      rw [foldSchedule_cons _ _ _ _ _ _ hfin]
-      simp only [Rounds.schedule, ite_eq_right_of_eq_false _ _ (eq_false hfin)]
-      by_cases hm : m = n - Rounds.logArity maxLogArity logFinal n (m :: rest)
-      · rw [ite_eq_left_of_eq_true _ _ (eq_true hm), ite_eq_left_of_eq_true _ _ (eq_true hm)]
-        simp only [arities, ih]
-      · rw [ite_eq_right_of_eq_false _ _ (eq_false hm), ite_eq_right_of_eq_false _ _ (eq_false hm)]
-        simp only [arities, ih]
 
 end FriRounds
 
@@ -217,7 +190,6 @@ theorem mem_accepting_inject {n k : ℕ} {ω : Domain.SmoothCosetFftDomain n �
           (Rounds.run d hd (fun j ↦ fw (j + 1)) fp (fun j ↦ βs (j + 1)) (ω.subdomain k)
             rest).accepting := by
   simp only [Rounds.run, InjectTrace.accepting, Finset.mem_filter, Finset.mem_univ, true_and]
-
 
 end Query
 

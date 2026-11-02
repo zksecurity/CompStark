@@ -25,11 +25,9 @@ completion of it draws exactly the challenges Plonky3's batch verifier samples.
   and the out-of-domain witness, the claimed values (`Setup.openingsOf`) and the batching witness,
   FRI's caps and commit witnesses, the final polynomial and the query witness (`parseFri`). Its
   input is the public values and the preprocessed commitment's elements (`Statement.inputOf`).
-* `Setup.openedPath_parse`, `Statement.replay_realCompletion_parse`: if Plonky3's batch verifier on
-  the duplex answers accepts, the real completion of the proof's selection, replayed on the duplex
-  answers, decodes, every draw accepting, and opens to the proof's execution path
-  (`Setup.proofPath`); `Statement.realCompletion_parse_of_replay`: replayed on any cache of those
-  answers, such as the log of a run of the verifier, it completes alike.
+* `Setup.openedPath_parse`: if Plonky3's batch verifier on the duplex answers accepts, the real
+  completion of the proof's selection, replayed on the duplex answers, decodes, every draw
+  accepting, and opens to the proof's execution path (`Setup.proofPath`).
 * `Setup.isSome_parse`, `Statement.isSome_parse`: an accepted proof has a selection, its caps of
   the sizes the verifier accepts (`Setup.caps_of_verifyInstancesWith`).
 -/
@@ -538,7 +536,6 @@ end Values
 
 end CompStark.Fs
 
-
 /-! ### FRI's grinding checks on rounds of mixed heights -/
 
 namespace CompStark.Fs
@@ -963,92 +960,6 @@ theorem seed_eq (n : C.Length) (common : CompStark.Batch.Common F)
   refine List.flatMap_congr fun i _ ↦ ?_
   exact ((congrArg extElems (Challenge.toSpec_ofBase' (EF := EF) _)).symm.trans
     (extElems_toSpec _)).symm
-
-/-- **Plonky3's batch verifier draws its challenges as the real completion.** If Plonky3's batch
-verifier on the duplex answers `answer` accepts a proof of the instances at the admitted lengths
-`n` against the common data `common` with the public values `pis`, the duplex verifier's real
-completion of the proof's selection (`parse`, every snapshot move `T`) with the input of the public
-values and the preprocessed commitment (`inputOf`), replayed on the duplex answers, completes it
-to a path that decodes, every draw accepting, and opens on `T` to the proof's execution path at
-`n` (`Setup.proofPath`). -/
-theorem replay_realCompletion_parse (hK : 0 < K) (answer : (q : Query F) → Answer K q)
-    (T : (merkleSpec F).QueryCache) (n : C.Length) (common : CompStark.Batch.Common F)
-    (proof : CompStark.Batch.BatchProof F EF) (pis : C.PublicValues)
-    (h : CompStark.Batch.verifyInstancesWith (idealOf answer) C.params (C.setup EF n).instances
-      common proof (List.ofFn pis.1) = .ok ())
-    (msgs : Messages PUnit (decoded (Coins F K (C.coinCount EF K))
-      (snapCoin (C.publicCoin EF) (C.decoder EF K (C.coinCount EF K))
-        (C.layout EF K (C.coinCount EF K)) true)
-      (snapDecoder (C.publicCoin EF) (C.decoder EF K (C.coinCount EF K))
-        (C.layout EF K (C.coinCount EF K)) true)))
-    (hp : C.parse EF K T n proof = some msgs) :
-    ∃ path, replay (duplexCache answer) (realCompletion initCap (fun _ => C.publicCoin EF)
-        (fun _ => C.decoder EF K (C.coinCount EF K)) (fun _ => C.layout EF K (C.coinCount EF K))
-        tail (some ⟨inputOf common pis, msgs, ()⟩)) =
-        some (some ⟨inputOf common pis, path, ()⟩) ∧
-      ∃ p, decodePath (snapCoin (C.publicCoin EF) (C.decoder EF K (C.coinCount EF K))
-          (C.layout EF K (C.coinCount EF K)) true)
-          (snapDecoder (C.publicCoin EF) (C.decoder EF K (C.coinCount EF K))
-            (C.layout EF K (C.coinCount EF K)) true) path = some p ∧
-        openPath (C.publicCoin EF) (C.decoder EF K (C.coinCount EF K))
-          (C.layout EF K (C.coinCount EF K)) true ∅ p =
-          C.pathAt EF n ((C.setup EF n).proofPath (merkleCache T) (idealOf answer) common proof
-            (List.ofFn pis.1)) := by
-  obtain ⟨path, hrep, hd⟩ := replay_realCompletion initCap (fun _ => C.publicCoin EF)
-    (fun _ => C.decoder EF K (C.coinCount EF K)) (fun _ => C.layout EF K (C.coinCount EF K)) tail
-    (duplexCache answer) (squeezeAnswer answer) (replay_squeezeAt answer) (inputOf common pis)
-    msgs ()
-  refine ⟨path, hrep, ?_⟩
-  unfold parse at hp
-  obtain ⟨smsgs, hsp, rfl⟩ := Option.map_eq_some_iff.mp hp
-  have hprep := (shape_of_verifyInstancesWith (C.setup EF n) (idealOf answer) common proof
-    (List.ofFn pis.1) h).2.2.1
-  have hs := (C.setup EF n).openedPath_parse answer hK le_rfl T common proof (List.ofFn pis.1) h
-    smsgs hsp
-  rw [seed_eq n common hprep] at hs
-  have hd' := hd.trans (map_eq_some_of (f := fun r => C.pathAt EF n r) hs rfl)
-  exact Option.map_eq_some_iff.mp hd'
-
-/-- **On a cache of the duplex answers.** The real completion of the proof's selection, replayed on
-any cache of the chain whose answers are the duplex answers `answer` (such as a run's log of the
-verifier's queries), completes it as on the duplex answers. -/
-theorem realCompletion_parse_of_replay (hK : 0 < K) (answer : (q : Query F) → Answer K q)
-    (T : (merkleSpec F).QueryCache) (n : C.Length) (common : CompStark.Batch.Common F)
-    (proof : CompStark.Batch.BatchProof F EF) (pis : C.PublicValues)
-    (h : CompStark.Batch.verifyInstancesWith (idealOf answer) C.params (C.setup EF n).instances
-      common proof (List.ofFn pis.1) = .ok ())
-    (msgs : Messages PUnit (decoded (Coins F K (C.coinCount EF K))
-      (snapCoin (C.publicCoin EF) (C.decoder EF K (C.coinCount EF K))
-        (C.layout EF K (C.coinCount EF K)) true)
-      (snapDecoder (C.publicCoin EF) (C.decoder EF K (C.coinCount EF K))
-        (C.layout EF K (C.coinCount EF K)) true)))
-    (hp : C.parse EF K T n proof = some msgs) (c : (duplexSpec F K + []ₒ).QueryCache)
-    (hc : ∀ q u, c (.inl q) = some u → u = answer (.duplex q.1 q.2))
-    (r : SnapOutcome Unit (fun _ : C.Input => C.publicCoin EF)
-      (fun _ => C.decoder EF K (C.coinCount EF K)) (fun _ => C.layout EF K (C.coinCount EF K)))
-    (hr : replay c (realCompletion initCap (fun _ => C.publicCoin EF)
-        (fun _ => C.decoder EF K (C.coinCount EF K)) (fun _ => C.layout EF K (C.coinCount EF K))
-        tail (some ⟨inputOf common pis, msgs, ()⟩)) = some r) :
-    ∃ path, r = some ⟨inputOf common pis, path, ()⟩ ∧
-      ∃ p, decodePath (snapCoin (C.publicCoin EF) (C.decoder EF K (C.coinCount EF K))
-          (C.layout EF K (C.coinCount EF K)) true)
-          (snapDecoder (C.publicCoin EF) (C.decoder EF K (C.coinCount EF K))
-            (C.layout EF K (C.coinCount EF K)) true) path = some p ∧
-        openPath (C.publicCoin EF) (C.decoder EF K (C.coinCount EF K))
-          (C.layout EF K (C.coinCount EF K)) true ∅ p =
-          C.pathAt EF n ((C.setup EF n).proofPath (merkleCache T) (idealOf answer) common proof
-            (List.ofFn pis.1)) := by
-  obtain ⟨path, hrep, hpath⟩ :=
-    replay_realCompletion_parse hK answer T n common proof pis h msgs hp
-  have hmono : ∀ t u, c t = some u → duplexCache answer t = some u := by
-    intro t u ht
-    rcases t with q | e
-    · rw [hc q u ht]
-      rfl
-    · exact e.elim
-  have hr' := replay_mono hmono _ r hr
-  rw [hrep] at hr'
-  exact ⟨path, (Option.some.inj hr').symm, hpath⟩
 
 end CompStark.Iop.Batch.Statement
 

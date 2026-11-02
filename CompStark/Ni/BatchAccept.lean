@@ -230,21 +230,4 @@ theorem verifyInstancesWith_ok (P : Params) (instances : List (Instance F)) (com
   exact ⟨hcount.1.1.1.1, hcount.1.1.1.2, hcount.1.1.2, hcount.1.2, hcount.2, hq,
     fun x hx ↦ hpub x hx, hshape, hprep, hlk, hlw, hood, hz, hbc, ⟨_, hfri⟩, hc, hsum⟩
 
-/-- An accepted batch proof's quotient cap is not empty. -/
-theorem size_quotientCommit_neB (P : Params) (instances : List (Instance F)) (common : Common F)
-    (proof : BatchProof F EF) (pis : List (List F))
-    (h : verifyInstancesWith H P instances common proof pis = .ok ()) :
-    proof.quotientCommit.size ≠ 0 := by
-  unfold verifyInstancesWith at h
-  obtain ⟨-, h⟩ := unless_ok _ _ _ _ h
-  obtain ⟨-, h⟩ := unless_ok _ _ _ _ h
-  obtain ⟨-, h⟩ := unless_ok _ _ _ _ h
-  obtain ⟨-, h⟩ := unless_ok _ _ _ _ h
-  obtain ⟨-, h⟩ := unless_ok _ _ _ _ h
-  obtain ⟨-, h⟩ := unless_ok _ _ _ _ h
-  obtain ⟨-, h⟩ := unless_ok _ _ _ _ h
-  obtain ⟨-, h⟩ := unless_ok _ _ _ _ h
-  obtain ⟨hq, -⟩ := unless_ok _ _ _ _ h
-  simpa only [bne_iff_ne, ne_eq] using hq
-
 end CompStark.Ni

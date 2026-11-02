@@ -438,18 +438,6 @@ theorem length_terminalsElems (τ : S.Terminals) :
     (S.terminalsElems (F := F) τ).length = S.lookupInstances.card * Challenge.d EF :=
   length_extsElems _
 
-/-- With lookups, the terminals are observed: some instance has lookups. -/
-theorem terminalsElems_ne_nil (hl : S.hasLookups = true) (τ : S.Terminals) :
-    S.terminalsElems (F := F) τ ≠ [] := by
-  obtain ⟨_, hmem, hne⟩ := List.any_eq_true.mp hl
-  obtain ⟨i, rfl⟩ := List.mem_ofFn.mp hmem
-  have hi : i ∈ S.lookupInstances := by
-    simpa only [lookupInstances, Finset.mem_filter, Finset.mem_univ, true_and, ne_eq,
-      Bool.not_eq_true', List.isEmpty_eq_false_iff] using hne
-  exact List.ne_nil_of_length_pos (by
-    rw [length_terminalsElems]
-    exact Nat.mul_pos (Finset.card_pos.mpr ⟨i, hi⟩) (Challenge.params EF).d_pos)
-
 /-- The permutation trace's commitment: with lookups, the cap of the permutation tree, as deep as
 the tallest permutation trace (`permLog`), opened to the permutation traces under it
 (`permMessageOf`); without lookups, Plonky3 commits to none and observes nothing, and the message,

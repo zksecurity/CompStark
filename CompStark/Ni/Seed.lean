@@ -116,16 +116,6 @@ theorem flatten_chunks_go (k : Nat) (hk : 1 ≤ k) :
     simp only [chunks.go, List.flatten_cons]
     rw [flatten_chunks_go k hk fuel _ hlen, List.take_append_drop]
 
-theorem chunks_go_mem_length (k : Nat) :
-    ∀ (fuel : Nat) (bs : List UInt8), ∀ c ∈ chunks.go k fuel bs, c.length ≤ k
-  | 0, _, c, hc => by simp only [chunks.go, List.not_mem_nil] at hc
-  | _ + 1, [], c, hc => by simp only [chunks.go, List.not_mem_nil] at hc
-  | fuel + 1, b :: bs, c, hc => by
-    simp only [chunks.go, List.mem_cons] at hc
-    rcases hc with rfl | hc
-    · exact List.length_take_le _ _
-    · exact chunks_go_mem_length k fuel _ c hc
-
 theorem natCast_inj {a b : Nat} (ha : a < Nat.card F) (hb : b < Nat.card F)
     (h : (a : F) = (b : F)) : a = b := by
   have hc : CharP F (Nat.card F) := BaseField.ringChar_eq_card (F := F) ▸ ringChar.charP F

@@ -15,8 +15,8 @@ degree bound of each layer (`Rounds.degree`), which inputs agree with their code
 error (`foldError`; the powers of `β` over `2 ^ k` coefficient words, and the injected input with
 them) and `(1 - δ + m · loss) ^ t` for the queries, `m` folds, at the best proximity loss. It is
 the error of ArkLib's FRI on the interaction layer along the same schedule
-(`CompStark/Interaction/Fri.lean`), and the non-interactive proof runs its folds
-(`Sound/FriRun.lean`).
+(`CompStark/Interaction/Fri.lean`), and an accepted batch proof's queries run its folds on the
+extracted words (`Sound/FriRun.lean`).
 -/
 
 @[expose] public section

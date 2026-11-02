@@ -15,8 +15,8 @@ the extensions of its instances' preprocessed traces, in instance order, those o
 injected into the tree of the tallest, with the instances' keygen heights and lookups
 (`setupBatch`). `commonWith` computes it on any primitives
 `H` (`Primitives`), node by node from the leaves (`injNodeWith`, the nodes `Merkle.injNode` on
-`H`'s hashes), so that the random-oracle model runs Plonky3's setup on random oracles and counts
-its oracle calls.
+`H`'s hashes), so that one definition runs Plonky3's setup on Poseidon2 and on the verifier's
+random oracles, where its oracle calls are counted.
 -/
 
 @[expose] public section

@@ -6,12 +6,14 @@ module
 
 public import CompStark.Security
 public import CompStark.Sound.Range
+public import CompStark.Fs.BatchBcs
 
 /-! # Lookup inclusion, applied
 
 The batch STARK's knowledge soundness with lookup inclusion (`batchKnowledgeSoundness_inclusion`,
-`batchKnowledgeSoundness_ro_inclusion`) asks every AIR to keep its queries' multiplicities within
-their weights (`Air.CountsBounded`). A syntactic check discharges it for any AIR
+and `Batch.Statement.knowledgeSoundness_bcs_inclusion` for Plonky3's batch verifier with Merkle
+commitments) asks every AIR to keep its queries' multiplicities within their weights
+(`Air.CountsBounded`). A syntactic check discharges it for any AIR
 (`Air.countsChecked`, sound by `Sound.Batch.countsBounded_of_countsChecked`): the batches of
 `wideBus 64` pass it by `decide`.
 
@@ -22,7 +24,7 @@ value `v` there with a boolean multiplicity `s`. In a batch of them (`Setup.IsRa
 inclusion makes every query with `s = 1` a row index of some table (`Setup.RangeChecked`), so the
 verifier accepts with probability at most the knowledge error while no tuple of close traces
 satisfies the AIRs with every real query in range (`rangeKnowledgeSoundness`,
-`rangeKnowledgeSoundness_ro`).
+`Batch.Statement.rangeKnowledgeSoundness_bcs`).
 -/
 
 @[expose] public section
@@ -78,29 +80,80 @@ theorem rangeKnowledgeSoundness (C : Batch.Statement F) (hC : C.IsRangeBatch)
     (batchKnowledgeSoundness_inclusion C publicValues prover δ δ' hδ'
       fun n hn ↦ Batch.countsBounded_of_isRangeBatch _ (C.isRangeBatch_setupAt (EF := EF) hC n hn))
 
-/-- **Knowledge soundness of a range check in the random-oracle model.** For a batch statement
-of range tables and range queries: a prover making at most `Q` oracle calls gets a proof accepted,
-while no tuple of traces of the proof's lengths close to the ones it committed to satisfies every
-AIR with every real query in range, with probability at most
-`q · roundError + hashError F (h + 1) q`, `q = Q + verifierQueries`. -/
-theorem rangeKnowledgeSoundness_ro (C : Batch.Statement F) (hC : C.IsRangeBatch)
-    (publicValues : Fin C.k → List F) (δ δ' : (Fin C.k → ℕ) → NNReal)
-    (hδ' : ∀ n, C.Admits n → (δ' n : ℝ) < 1 - C.rate) (Q : Nat) (prover : C.NIProver EF)
-    (hQ : prover.IsTotalQueryBound Q) :
-    Pr{let (proof, log, verdict) ← C.run publicValues prover}[
-      verdict = .ok () ∧
-        ∀ h : C.Admits (C.lengthsOf proof),
-          ∀ traces ∈ Batch.closeTraces (C.setupAt EF _ h) (δ' (C.lengthsOf proof))
-              (Batch.committedTraces (C.setupAt EF _ h) log proof),
-            ¬ ((∀ i, (C.air i).Satisfied (C.lengthsOf proof i) (traces i) (publicValues i)) ∧
-              (C.setupAt EF _ h).RangeChecked traces)] ≤
-      (Q + C.verifierQueries EF) * C.roundError EF δ δ' +
-        hashError F (C.params.capHeight + 1) (Q + C.verifierQueries EF) :=
-  (prEvent_mono _ _ _ fun ⟨_, _, _⟩ h ↦ ⟨h.1, fun hn traces ht hsat ↦ h.2 hn traces ht
-    ⟨hsat.air, Batch.rangeChecked_of_satisfiedWithInclusion _ (C.isRangeBatch_setupAt hC _ hn)
-      traces publicValues hsat⟩⟩).trans
-    (Batch.batchKnowledgeSoundness_ro_inclusion C publicValues δ δ' hδ' Q prover hQ
-      fun n hn ↦ Batch.countsBounded_of_isRangeBatch _
-        (C.isRangeBatch_setupAt (EF := EF) hC n hn))
-
 end CompStark.Iop
+
+namespace CompStark.Iop.Batch.Statement
+open CompStark.Stark CompStark.Sound CompStark.Fs CompStark.RandomOracle OracleComp OracleSpec
+open Interaction.Oracle Interaction.Oracle.PublicCoin Interaction.Oracle.Security
+open Interaction.Oracle.Security.StateRestoration Interaction.Oracle.Security.HashChain
+open scoped ENNReal NNReal
+
+variable {F : Type} [BaseField F] {C : Statement F} {EF : Type} [Challenge F EF] {K : ℕ}
+
+/-- **Knowledge soundness of Plonky3's batch STARK verifier with Merkle commitments, with lookup
+inclusion.** For AIRs that keep their queries' multiplicities within their weights at every
+admitted vector of lengths: the verifier accepts while no tuple of traces of the proof's lengths,
+each close to the trace extracted from the log under the proof's main commitment, satisfies every
+AIR with every bus's queries included in what is provided, with probability at most the bound of
+`knowledgeSoundness_bcs`. -/
+theorem knowledgeSoundness_bcs_inclusion (hK : 0 < K) (δ δ' : (Fin C.k → ℕ) → ℝ≥0)
+    (hδ' : ∀ n, C.Admits n → (δ' n : ℝ) < 1 - C.rate) (loss : C.Length → ℝ≥0)
+    (hcounts : ∀ n, C.Admits n → ∀ i, (C.air i).CountsBounded (n i))
+    (adversary : OracleComp (spec F K) ((Fin C.k → List F) × CompStark.Batch.BatchProof F EF))
+    {Q q : ℕ} (hQ : IsQueryBoundP adversary (fun t => isDuplex t = true) Q)
+    (hq : IsTotalQueryBound adversary q) :
+    Pr{let z ← (simulateQ Bcs.realImpl
+        (simulateQ translate (C.batchGame EF K adversary))).run []}[
+      z.1.2.2.2 = .ok () ∧ ∀ h : C.Admits (C.lengthsOf z.1.2.2.1),
+        ∀ traces ∈ closeTraces (C.setupAt EF _ h) (δ' (C.lengthsOf z.1.2.2.1))
+          ((C.setupAt EF _ h).traceWords ((C.setupAt EF _ h).traceMessageOf
+            (merkleCache (Bcs.hashCacheOf z.2)) z.1.2.2.1.mainCommit)),
+        ¬ (C.setupAt EF _ h).SatisfiedWithInclusion traces z.1.2.1] ≤
+      chainError (Digest F) (Q + C.verifierQueries EF + 3 * C.verifierChainQueries EF K) +
+        hashBadError F (2 ^ C.params.capHeight) (C.capOffsets EF).length
+          (q + C.verifierQueries EF) +
+        (maxError (fun (_ : C.Input) node ↦
+            C.ratio EF node * C.nodeErrors EF δ δ' loss (1 / Nat.card F) node) *
+            (Q + C.verifierQueries EF + 3 * C.verifierChainQueries EF K : ℕ) +
+          sumError (fun (_ : C.Input) node ↦
+            C.ratio EF node * C.nodeErrors EF δ δ' loss (1 / Nat.card F) node)) :=
+  (prEvent_mono _ _ _ fun _ h ↦ ⟨h.1, fun hn traces ht hsat ↦ h.2 hn traces ht
+    (Batch.satisfiedWithInclusion_of_satisfied _ traces _ (C.heightBounded_setupAt _ hn)
+      (hcounts _ hn) hsat)⟩).trans
+    (C.knowledgeSoundness_bcs EF K hK δ δ' hδ' loss adversary hQ hq)
+
+/-- **Knowledge soundness of a range check on Plonky3's batch verifier with Merkle commitments.**
+For a batch statement of range tables and range queries: the verifier accepts while no tuple of
+traces of the proof's lengths, each close to the trace extracted from the log under the proof's
+main commitment, satisfies every AIR with every real query in range, with probability at most the
+bound of `knowledgeSoundness_bcs`. -/
+theorem rangeKnowledgeSoundness_bcs (hC : C.IsRangeBatch) (hK : 0 < K)
+    (δ δ' : (Fin C.k → ℕ) → ℝ≥0) (hδ' : ∀ n, C.Admits n → (δ' n : ℝ) < 1 - C.rate)
+    (loss : C.Length → ℝ≥0)
+    (adversary : OracleComp (spec F K) ((Fin C.k → List F) × CompStark.Batch.BatchProof F EF))
+    {Q q : ℕ} (hQ : IsQueryBoundP adversary (fun t => isDuplex t = true) Q)
+    (hq : IsTotalQueryBound adversary q) :
+    Pr{let z ← (simulateQ Bcs.realImpl
+        (simulateQ translate (C.batchGame EF K adversary))).run []}[
+      z.1.2.2.2 = .ok () ∧ ∀ h : C.Admits (C.lengthsOf z.1.2.2.1),
+        ∀ traces ∈ closeTraces (C.setupAt EF _ h) (δ' (C.lengthsOf z.1.2.2.1))
+          ((C.setupAt EF _ h).traceWords ((C.setupAt EF _ h).traceMessageOf
+            (merkleCache (Bcs.hashCacheOf z.2)) z.1.2.2.1.mainCommit)),
+        ¬ ((∀ i, (C.air i).Satisfied (C.lengthsOf z.1.2.2.1 i) (traces i) (z.1.2.1 i)) ∧
+          (C.setupAt EF _ h).RangeChecked traces)] ≤
+      chainError (Digest F) (Q + C.verifierQueries EF + 3 * C.verifierChainQueries EF K) +
+        hashBadError F (2 ^ C.params.capHeight) (C.capOffsets EF).length
+          (q + C.verifierQueries EF) +
+        (maxError (fun (_ : C.Input) node ↦
+            C.ratio EF node * C.nodeErrors EF δ δ' loss (1 / Nat.card F) node) *
+            (Q + C.verifierQueries EF + 3 * C.verifierChainQueries EF K : ℕ) +
+          sumError (fun (_ : C.Input) node ↦
+            C.ratio EF node * C.nodeErrors EF δ δ' loss (1 / Nat.card F) node)) :=
+  (prEvent_mono _ _ _ fun _ h ↦ ⟨h.1, fun hn traces ht hsat ↦ h.2 hn traces ht
+    ⟨hsat.air, Batch.rangeChecked_of_satisfiedWithInclusion _ (C.isRangeBatch_setupAt hC _ hn)
+      traces _ hsat⟩⟩).trans
+    (knowledgeSoundness_bcs_inclusion hK δ δ' hδ' loss
+      (fun n hn ↦ Batch.countsBounded_of_isRangeBatch _
+        (C.isRangeBatch_setupAt (EF := EF) hC n hn)) adversary hQ hq)
+
+end CompStark.Iop.Batch.Statement

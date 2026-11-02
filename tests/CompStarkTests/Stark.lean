@@ -80,21 +80,6 @@ Quot.sound] -/
 #guard_msgs in
 #print axioms CompStark.Iop.wide_knowledgeError_le
 
-/-- info: 'CompStark.Iop.wideSp1_roundError_le' depends on axioms: [propext, Classical.choice,
-Quot.sound] -/
-#guard_msgs in
-#print axioms CompStark.Iop.wideSp1_roundError_le
-
-/-- info: 'CompStark.Iop.wide5_roundError_le' depends on axioms: [propext, Classical.choice,
-Quot.sound] -/
-#guard_msgs in
-#print axioms CompStark.Iop.wide5_roundError_le
-
-/-- info: 'CompStark.Iop.wideGrind_roundError_le' depends on axioms: [propext, Classical.choice,
-Quot.sound] -/
-#guard_msgs in
-#print axioms CompStark.Iop.wideGrind_roundError_le
-
 /-- info: 'CompStark.Iop.wide5i_knowledgeError_le' depends on axioms: [propext, Classical.choice,
 Quot.sound] -/
 #guard_msgs in
@@ -155,11 +140,6 @@ Classical.choice, Quot.sound] -/
 #guard_msgs in
 #print axioms CompStark.Iop.wideBatch_knowledgeSoundness
 
-/-- info: 'CompStark.Sound.exists_satisfied_of_safe' depends on axioms: [propext, Classical.choice,
-Quot.sound] -/
-#guard_msgs in
-#print axioms CompStark.Sound.exists_satisfied_of_safe
-
 /-- info: 'CompStark.Sound.prob_alphaBad_le' depends on axioms: [propext, Classical.choice,
 Quot.sound] -/
 #guard_msgs in
@@ -174,13 +154,3 @@ Quot.sound] -/
 Quot.sound] -/
 #guard_msgs in
 #print axioms CompStark.Sound.prob_batchBad_le
-
-/-- info: 'CompStark.Sound.prob_foldRound_le' depends on axioms: [propext, Classical.choice,
-Quot.sound] -/
-#guard_msgs in
-#print axioms CompStark.Sound.prob_foldRound_le
-
-/-- info: 'CompStark.Sound.prob_queryBad_le' depends on axioms: [propext, Classical.choice,
-Quot.sound] -/
-#guard_msgs in
-#print axioms CompStark.Sound.prob_queryBad_le

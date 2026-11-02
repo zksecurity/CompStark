@@ -4,23 +4,19 @@ Released under Apache 2.0 license as described in the file LICENSE.
 -/
 module
 
-public import CompStark.Ni.Binding
+public import CompStark.Ni.Rounds
 public import CompStark.Ni.BcsDeep
 public import CompStark.Complete.Lde
 public import CompStark.Complete.Merkle
 
-/-! # The setup in the random-oracle model
+/-! # The setup on fixed answers
 
-The game computes the verifying key of the AIR's preprocessed trace on the oracles
-(`Setup.setupRo`) and logs its queries with the prover's. Against an answer table:
-
-* the setup is `preprocessedKeyWith` on the table's primitives (`evalWithAnswerFn_setupRo`), by
-  the setup's naturality in its primitives (`preprocessedKeyWith_map`);
-* every entry of the key's cap is the digest of one of the setup's queries (`exists_cap_mem`), so
-  a log that holds them binds the cap;
-* a cache under whose cap the honest openings bind holds the preprocessed trace's extension: the
-  columns read off it are the preprocessed words (`committedColumn_setup`), since honest openings
-  verify (`Merkle.verifyMulti_prune_mixed`, `Merkle.verifyBatch_of_verifyMulti`).
+The setup's computation of the verifying key is natural in its primitives
+(`preprocessedKeyWith_map`), so simulating its oracles by `impl` runs it on the answers of `impl`
+(`simulateQ_preprocessedKeyWith`). A cache under whose cap the honest openings bind holds the
+preprocessed trace's extension: the columns read off it are the preprocessed words
+(`committedColumn_setup`), since honest openings verify (`Merkle.verifyMulti_prune_mixed`,
+`Merkle.verifyBatch_of_verifyMulti`).
 -/
 
 @[expose] public section
@@ -69,15 +65,6 @@ theorem simulateQ_preprocessedKeyWith {n : Type → Type} [Monad n] [LawfulMonad
   rw [withAnswers_map] at h
   simpa only [simulateQ'_apply, simulateQ_spec_query] using h
 
-theorem simulateQ_merkleNodeWith {n : Type → Type} [Monad n] [LawfulMonad n]
-    (impl : QueryImpl (spec F K) n) (leaf : Nat → List F) (j t : Nat) :
-    simulateQ impl (merkleNodeWith (ideal F K) (fun r ↦ (ideal F K).hash (leaf r)) j t) =
-      merkleNodeWith (withAnswers K impl) (fun r ↦ (withAnswers K impl).hash (leaf r)) j t := by
-  have h := merkleNodeWith_map (simulateQ' impl) (ideal F K)
-    (fun r ↦ (ideal F K).hash (leaf r)) j t
-  rw [withAnswers_map] at h
-  simpa only [simulateQ'_apply, simulateQ_spec_query] using h
-
 end CompStark.RandomOracle
 
 namespace CompStark.Ni
@@ -85,19 +72,6 @@ open CompStark.Stark CompStark.Fri CompStark.RandomOracle CompStark.Iop OracleSp
 open Polynomial
 
 variable {F : Type} {K : Nat}
-
-/-- The queries of a list's computations are among those of its `mapM`. -/
-theorem mem_tableQueryLog_mapM {α β : Type} (f : α → OracleComp (spec F K) β)
-    (answer : (q : Query F) → Answer K q) :
-    ∀ (l : List α), ∀ x ∈ l, ∀ e ∈ tableQueryLog (f x) answer, e ∈ tableQueryLog (l.mapM f) answer
-  | [], _, hx, _, _ => absurd hx List.not_mem_nil
-  | y :: l, x, hx, e, he => by
-    rw [List.mapM_cons, tableQueryLog_bind]
-    rcases List.mem_cons.mp hx with rfl | hx
-    · exact List.mem_append_left _ he
-    · rw [tableQueryLog_bind]
-      exact List.mem_append_right _
-        (List.mem_append_left _ (mem_tableQueryLog_mapM f answer l x hx e he))
 
 /-- A cap on pure primitives is its nodes. -/
 theorem merkleCapWith_id (H : Primitives F Id) (leaf : Nat → Id (Digest F)) (levels h : Nat) :
@@ -107,70 +81,6 @@ theorem merkleCapWith_id (H : Primitives F Id) (leaf : Nat → Id (Digest F)) (l
   exact congrArg List.toArray List.idRun_mapM
 
 variable [BaseField F] {EF : Type} [Challenge F EF]
-
-/-- **The setup against an answer table** is the setup on `idealOf`. -/
-theorem evalWithAnswerFn_setupRo (S : Iop.Setup EF)
-    (answer : (q : Query F) → Answer S.streamLen q) :
-    evalWithAnswerFn (QueryImpl.ofFn answer) S.setupRo =
-      preprocessedKeyWith (idealOf answer) S.params S.air S.logN :=
-  simulateQ_preprocessedKeyWith (QueryImpl.ofFn answer) S.params S.air S.logN
-
-/-- The digest of a node computed on the oracles is the answer to one of its queries. -/
-theorem exists_digest_merkleNode (answer : (q : Query F) → Answer K q) (leaf : Nat → List F) :
-    ∀ j t, ∃ e ∈ tableQueryLog
-      (merkleNodeWith (ideal F K) (fun r ↦ (ideal F K).hash (leaf r)) j t) answer,
-      digestOf e.1 e.2 =
-        merkleNodeWith (idealOf answer) (fun r ↦ (idealOf answer).hash (leaf r)) j t
-  | 0, t => by
-    refine ⟨⟨.leaf (leaf t), answer (.leaf (leaf t))⟩, ?_, rfl⟩
-    show _ ∈ tableQueryLog (liftM ((spec F K).query (.leaf (leaf t)))) answer
-    rw [tableQueryLog_query]
-    exact List.mem_singleton_self _
-  | j + 1, t => by
-    have hl := simulateQ_merkleNodeWith (QueryImpl.ofFn answer) leaf j (2 * t)
-    have hr := simulateQ_merkleNodeWith (QueryImpl.ofFn answer) leaf j (2 * t + 1)
-    refine ⟨⟨.node (merkleNodeWith (idealOf answer) (fun r ↦ (idealOf answer).hash (leaf r)) j
-      (2 * t)) (merkleNodeWith (idealOf answer) (fun r ↦ (idealOf answer).hash (leaf r)) j
-      (2 * t + 1)), answer (.node _ _)⟩, ?_, rfl⟩
-    simp only [merkleNodeWith]
-    rw [tableQueryLog_bind, tableQueryLog_bind]
-    refine List.mem_append_right _ (List.mem_append_right _ ?_)
-    change _ ∈ tableQueryLog (liftM ((spec F K).query (.node _ _))) answer
-    rw [tableQueryLog_query]
-    simp only [List.mem_singleton]
-    rw [evalWithAnswerFn, evalWithAnswerFn, hl, hr]
-    rfl
-
-/-- Every entry of the verifying key's cap is the digest of one of the setup's queries. -/
-theorem exists_cap_mem (S : Iop.Setup EF) (answer : (q : Query F) → Answer S.streamLen q)
-    (k : PreprocessedKey F)
-    (hk : preprocessedKeyWith (idealOf answer) S.params S.air S.logN = some k) :
-    ∀ j (hj : j < k.commit.size),
-      ∃ e ∈ tableQueryLog S.setupRo answer, digestOf e.1 e.2 = k.commit[j] := by
-  unfold Setup.setupRo
-  unfold preprocessedKeyWith at hk ⊢
-  split at hk
-  · exact absurd hk (by simp only [reduceCtorEq, not_false_eq_true])
-  · rename_i hpw
-    simp only [hpw, ↓reduceIte]
-    obtain rfl := Option.some_injective _ hk
-    intro j hj
-    set c := min S.params.capHeight (S.logN + S.params.logBlowup)
-    have hcap := merkleCapWith_id (idealOf answer)
-      (fun r ↦ (idealOf answer).hash (rowOf (preprocessedLde S.params S.air S.logN) r).toList)
-      (S.logN + S.params.logBlowup) S.params.capHeight
-    simp only [hcap, List.size_toArray, List.length_map, List.length_range] at hj ⊢
-    obtain ⟨e, he, hd⟩ := exists_digest_merkleNode answer
-      (fun r ↦ (rowOf (preprocessedLde S.params S.air S.logN) r).toList)
-      (S.logN + S.params.logBlowup - c) j
-    refine ⟨e, ?_, by
-      simp only [hd, List.getElem_toArray, List.getElem_map, List.getElem_range]
-      rfl⟩
-    rw [tableQueryLog_bind]
-    refine List.mem_append_left _ ?_
-    unfold merkleCapWith
-    rw [tableQueryLog_bind]
-    exact List.mem_append_left _ (mem_tableQueryLog_mapM _ answer _ j (List.mem_range.mpr hj) e he)
 
 /-- The preprocessed trace's polynomials are those of its extension. -/
 theorem lde_eq_preprocessedPoly {lookups : List (Lookup F)} (S : Iop.Setup EF lookups)

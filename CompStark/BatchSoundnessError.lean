@@ -75,6 +75,9 @@ noncomputable def lookupError (δ : NNReal) : ENNReal :=
   (S.traceListSize δ * (S.numInteractions + (S.numInteractions - 1) * S.lookupWidth) : Nat) /
     (Fintype.card (Challenge.Spec EF) : ENNReal)
 
+/-- The log size of the tallest domain, where FRI starts. -/
+abbrev logTop : ℕ := S.logN S.top + S.params.logBlowup
+
 end Setup
 
 /-- The knowledge error, for FRI at `δ` and the extractor at `δ'`: the lookup error, the worst

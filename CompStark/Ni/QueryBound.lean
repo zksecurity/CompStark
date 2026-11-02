@@ -720,8 +720,4 @@ theorem isTotalQueryBound_preprocessedKeyWith (P : Fri.Params) (A : Air F) (n K 
     have := Nat.one_le_two_pow (n := c)
     omega
 
-omit [S.Folds] in
-theorem isTotalQueryBound_setupRo : IsTotalQueryBound S.setupRo S.setupQueries :=
-  isTotalQueryBound_preprocessedKeyWith S.params S.air S.logN _
-
 end CompStark.Iop.Setup

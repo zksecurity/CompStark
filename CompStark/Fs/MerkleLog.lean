@@ -8,7 +8,6 @@ public import CompStark.Fs.HashChain
 public import ArkLib.Interaction.Oracle.Security.BcsSimulation
 public import CompStark.Merkle.ExtractMixed
 public import CompStark.Merkle.Multi
-public import VCVio.OracleComp.Constructions.SampleableType.Measure
 
 /-! # Merkle commitments on the log of the real oracles
 
@@ -550,35 +549,6 @@ theorem logCompress_of_eq_none {L : QueryLog (sumSpec F K)} {dstar a b : Digest 
   rw [h]
   rfl
 
-/-- A cap whose digests a logged duplex input binds is `dstar`, a digest outside the log, at no
-index (the zero digest past its end). -/
-theorem getD_cap_ne_dstar {L : QueryLog (sumSpec F K)} {dstar : Digest F}
-    (hdstar : dstar ∉ logDigests offs capLen L) {s : Digest F} {x : List F}
-    {a : Digest F × Vector F K}
-    (hmem : (⟨.inl (s, x), a⟩ : (t : (sumSpec F K).Domain) × (sumSpec F K).Range t) ∈ L)
-    {cap : List (Digest F)} (hcap : ∀ d ∈ cap, d ∈ boundDigests offs capLen x) (j : ℕ) :
-    cap.getD j 0 ≠ dstar := by
-  intro h
-  rw [← h] at hdstar
-  rcases getD_cap cap j with h0 | hc
-  · rw [h0] at hdstar
-    exact hdstar (initCap_mem_logDigests L)
-  · exact hdstar (mem_logDigests_of_mem hmem (List.mem_cons_of_mem _ (hcap _ hc)))
-
-/-- A log with fewer digests than there are digests leaves one out. -/
-theorem exists_not_mem_logDigests (hB : 0 < offs.length * capLen) (L : QueryLog (sumSpec F K))
-    (h : 1 + (2 + offs.length * capLen) * L.length < Nat.card F ^ 8) :
-    ∃ dstar, dstar ∉ logDigests offs capLen L := by
-  classical
-  by_contra hall
-  simp only [not_exists, not_not] at hall
-  have hsub : (Finset.univ : Finset (Digest F)) ⊆ (logDigests offs capLen L).toFinset :=
-    fun d _ ↦ List.mem_toFinset.mpr (hall d)
-  have hcard := (Finset.card_le_card hsub).trans (List.toFinset_card_le _)
-  rw [Finset.card_univ, ← Nat.card_eq_fintype_card, natCard_digest] at hcard
-  have := length_logDigests_le hB L
-  omega
-
 /-- **Binding.** Without `HashBad`, an opening of `n > 0` matrices of height `2 ^ k` accepted on
 the logged answers, against any digest but `dstar`, a digest outside the log, opens the rows
 extracted from the logged hash answers. -/
@@ -648,60 +618,6 @@ theorem extractGroup_of_logVerifyBatch {L : QueryLog (sumSpec F K)}
     simp only [List.head?_cons, Option.mem_def, Option.some.injEq] at hg
     subst hg
     exact hcc
-
-/-- **Binding of multi-openings.** Without `HashBad`, a multi-opening of `n > 0` matrices of
-height `2 ^ k` accepted on the logged answers against a cap none of whose entries, nor the zero
-digest, is `dstar`, a digest outside the log, opens at every query the row extracted under the
-cap from the logged hash answers. -/
-theorem extractCapRow_of_logVerifyMulti {L : QueryLog (sumSpec F K)}
-    (hL : ¬ HashBad offs capLen L) {dstar : Digest F} (hdstar : dstar ∉ logDigests offs capLen L)
-    (cap : List (Digest F)) (hcap : ∀ j, cap.getD j 0 ≠ dstar) (capHeight n k : ℕ) (hn : 0 < n)
-    (dims : List (ℕ × ℕ)) (hdims : dims.map (·.1) = List.replicate n (2 ^ k))
-    (indices : List ℕ) (rows : List (List (List F))) (sibs : List (Digest F))
-    (h : Merkle.verifyMultiM (m := Id) (logHash L dstar) (logCompress L dstar) cap capHeight dims
-      indices rows sibs = true) (r : ℕ) (hr : r < indices.length) :
-    Merkle.extractCapRow (merkleCache (Bcs.hashCacheOf L)) k capHeight indices[r] cap =
-      some (rows.getD r []).flatten := by
-  obtain ⟨path, hp⟩ := Merkle.verifyBatch_of_verifyMulti _ _ cap capHeight n k hn dims hdims
-    indices rows sibs h r hr
-  exact extractRow_of_logVerifyBatch hL hdstar (hcap _) n _ _ hn _ path hp
-
-/-- **Binding of multi-openings at mixed heights.** Without `HashBad`, a multi-opening of matrices
-of heights `2 ^ j ≤ 2 ^ k`, some of height `2 ^ k`, accepted on the logged answers against a cap
-of height `c = min capHeight k` none of whose entries, nor the zero digest, is `dstar`, a digest
-outside the log, opens at every query every group's rows extracted from the logged hash answers
-in the subtree under the query's cap entry: the heights divided by `2 ^ c`, at the query's low
-`k - c` bits. -/
-theorem extractGroup_of_logVerifyMulti {L : QueryLog (sumSpec F K)}
-    (hL : ¬ HashBad offs capLen L) {dstar : Digest F} (hdstar : dstar ∉ logDigests offs capLen L)
-    (cap : List (Digest F)) (hcap : ∀ j, cap.getD j 0 ≠ dstar) (capHeight k : ℕ)
-    (dims : List (ℕ × ℕ))
-    (hpow : ∀ x ∈ dims, ∃ j ≤ k, x.1 = 2 ^ j) (htop : ∃ x ∈ dims, x.1 = 2 ^ k)
-    (indices : List ℕ) (rows : List (List (List F))) (sibs : List (Digest F))
-    (h : Merkle.verifyMultiM (m := Id) (logHash L dstar) (logCompress L dstar) cap capHeight dims
-      indices rows sibs = true) (r : ℕ) (hr : r < indices.length) :
-    ∀ g ∈ Merkle.heightGroups (dims.map (·.1 / 2 ^ min capHeight k)), ∀ l, g.1 = 2 ^ l →
-      Merkle.extractGroup (merkleCache (Bcs.hashCacheOf L))
-        (Merkle.injLevels (k - min capHeight k) (dims.map (·.1 / 2 ^ min capHeight k)))
-        (k - min capHeight k) l
-        ((indices[r] % 2 ^ (k - min capHeight k)) >>> (k - min capHeight k - l))
-        (cap.getD (indices[r] >>> (k - min capHeight k)) 0) =
-        some (g.2.flatMap fun m ↦ (rows.getD r []).getD m []) := by
-  obtain ⟨path, hp⟩ := Merkle.verifyBatch_of_verifyMulti_mixed _ _ cap capHeight k dims hpow htop
-    indices rows sibs h r hr
-  have hle := Merkle.cap_le_of_verifyMulti_mixed _ _ cap capHeight k dims hpow htop indices rows
-    sibs h
-  refine extractGroup_of_logVerifyBatch hL hdstar (hcap _) _ _ (fun h' hh ↦ ?_) ?_ _ _ path hp
-  · obtain ⟨x, hx, rfl⟩ := List.mem_map.mp hh
-    obtain ⟨j, hj, hxj⟩ := hpow x hx
-    have hcj : min capHeight k ≤ j := by
-      have := hle x hx
-      rw [hxj] at this
-      exact (Nat.pow_le_pow_iff_right (by decide)).mp this
-    exact ⟨j - min capHeight k, by omega, by rw [hxj, Nat.pow_div hcj (by decide)]⟩
-  · obtain ⟨x, hx, hxk⟩ := htop
-    exact List.mem_map.mpr ⟨x, hx, by
-      rw [hxk, Nat.pow_div (Nat.min_le_right _ _) (by decide)]⟩
 
 end Binding
 

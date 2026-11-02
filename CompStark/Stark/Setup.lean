@@ -13,8 +13,8 @@ Plonky3's `setup_preprocessed`: the verifying key of an AIR's preprocessed trace
 the log of its height, and the Merkle cap of its low-degree extension onto `L`, rows in
 bit-reversed order: the nodes of the layer the cap height below the root. `preprocessedKeyWith`
 computes it on any primitives `H` (`Primitives`), node by node from the leaves
-(`merkleNodeWith`), so that one definition is Plonky3's setup on Poseidon2 (`setup`) and the
-random-oracle model's on random oracles, where its oracle calls are counted.
+(`merkleNodeWith`), so that one definition is Plonky3's setup on Poseidon2 (`setup`) and on the
+verifier's random oracles, where its oracle calls are counted.
 
 On pure hashes the nodes are VCVio's (`merkleNodeWith_pure`), so the root is the Merkle tree's
 (`Merkle.root_eq_nodeValue`), and so is the cap.

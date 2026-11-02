@@ -9,7 +9,8 @@ import CompStark.Fs.Secure
 
 The reports of the concrete setups and statements, the analyses of `CompStark/Security.lean` as
 the ones the search (`bestAnalysis`, `bestAnalysisRo`) finds, a check on an AIR of `4096`
-constraints in the kernel, and the calculator theorems' axioms.
+constraints in the kernel, the calculator theorems' axioms, and the calculator's certificates on
+Plonky3's verifiers with Merkle commitments with their bounds at `2 ^ 64` calls (`bcsBound`).
 -/
 
 namespace CompStarkTests.Security
@@ -72,7 +73,6 @@ def wide4096Setup : Setup KoalaBear.Fast.Ext5 where
   valid := (wide_valid wide5iParams rfl (by decide) rfl (by decide) 4096 (by decide) 20
     (by decide)).sound
 
-
 set_option maxRecDepth 100000 in
 /-- The kernel evaluates the `4096` constraints' degrees, about `2 ^ (-127.81)`; the lists of
 constraints recurse deeper than the default depth. -/
@@ -83,30 +83,10 @@ Classical.choice, Quot.sound] -/
 #guard_msgs in
 #print axioms knowledgeSoundness_of_secure
 
-/-- info: 'CompStark.Iop.knowledgeSoundness_ro_of_secureRo' depends on axioms: [propext,
-Classical.choice, Quot.sound] -/
-#guard_msgs in
-#print axioms knowledgeSoundness_ro_of_secureRo
-
 /-- info: 'CompStark.Iop.batchKnowledgeSoundness_of_secure' depends on axioms: [propext,
 Classical.choice, Quot.sound] -/
 #guard_msgs in
 #print axioms batchKnowledgeSoundness_of_secure
-
-/-- info: 'CompStark.Iop.Batch.batchKnowledgeSoundness_ro_of_secureRo' depends on axioms: [propext,
-Classical.choice, Quot.sound] -/
-#guard_msgs in
-#print axioms Batch.batchKnowledgeSoundness_ro_of_secureRo
-
-/-- info: 'CompStark.Iop.wideBatchGrind_knowledgeSoundness_ro' depends on axioms: [propext,
-Classical.choice, Quot.sound] -/
-#guard_msgs in
-#print axioms wideBatchGrind_knowledgeSoundness_ro
-
-/-- info: 'CompStark.Iop.Batch.Statement.roundError_le_of_secureRo' depends on axioms: [propext,
-Classical.choice, Quot.sound] -/
-#guard_msgs in
-#print axioms Batch.Statement.roundError_le_of_secureRo
 
 /-- info: 'CompStark.Iop.Batch.Statement.secureRo_setupAt' depends on axioms: [propext,
 Classical.choice, Quot.sound] -/
@@ -217,6 +197,16 @@ info: 'CompStarkTests.Security.wideBatchGrind_knowledgeSoundness_bcs' depends on
 -/
 #guard_msgs in
 #print axioms wideBatchGrind_knowledgeSoundness_bcs
+
+/-- A float in `[lo, hi)`. -/
+def between (x lo hi : Float) : Bool := lo ≤ x && x < hi
+
+-- The bounds at `Q = q = 2 ^ 64` duplex and oracle calls with squeezes of `8` samples, the round
+-- error's bound per duplex call: about `2 ^ (-53.37)` and `2 ^ (-51.05)`.
+#guard between (securityBits (wideGrindStatement.bcsBound Ext4 2130706433 8 (2 ^ 64) (2 ^ 64)
+  .uniqueDecoding wideGrindAnalysis)) 53.36 53.37
+#guard between (securityBits (wideBatchGrindStatement.bcsBound Ext4 2130706433 8 (2 ^ 64) (2 ^ 64)
+  .uniqueDecoding wideBatchGrindAnalysis)) 51.04 51.05
 
 end MerkleCommitments
 

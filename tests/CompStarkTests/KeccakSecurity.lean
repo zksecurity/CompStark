@@ -3,6 +3,7 @@ Copyright (c) 2026 zkSecurity. All rights reserved.
 Released under Apache 2.0 license as described in the file LICENSE.
 -/
 import CompStark.Security
+import CompStark.Fs.Secure
 import CompStark.Complete.Quotient
 import CompStarkFixtures.Keccak
 import CompStarkTests.Keccak
@@ -21,7 +22,7 @@ constraints' degree profiles), which fixes the calculator's shape at every lengt
 (`shape_setup`), so each certificate only evaluates the calculator's rationals, at one analysis
 for all lengths (`secureRo_of_lengths`, `secure_of_lengths`).
 
-| configuration | field | random-oracle bits | interactive bits |
+| configuration | field | bits per duplex call | interactive bits |
 | --- | --- | --- | --- |
 | Plonky3's example, blowup `2`, `87` queries | quartic | `52` | `36` |
 | blowup `2`, `203` / `244` queries | quartic | `98` | `98` |
@@ -29,22 +30,24 @@ for all lengths (`secureRo_of_lengths`, `secure_of_lengths`).
 | blowup `2`, `270` / `310` queries | quintic | `128` | `127` |
 | blowup `4`, `166` / `190` queries | quintic | `128` | `128` |
 
-The random-oracle bits are per oracle answer (`Statement.SecureRo`), with Plonky3's grinding. The
-analyses are the ones `bestAnalysis` and `bestAnalysisRo` find at the longest admitted length,
-with the MCA bound within the unique-decoding radius (`McaBound.uniqueDecoding`). FRI's proximity
-`δ` stays below the unique-decoding radius `1/4` (blowup `2`) or `3/8` (blowup `4`), so each query
-is worth at most `log₂ (4/3) ≈ 0.415` or `log₂ (8/5) ≈ 0.678` bits; Plonky3's `87` queries and
-`16` bits of grinding give `52` bits per oracle answer. Over the quartic extension the
-out-of-domain term `(3n + n + N) / |𝕂|` caps the bits near `124 - (logN + 2.6)` at blowup `2` and
-`124 - (logN + 3)` at blowup `4`: about `98.4` on `2 ^ 23` rows and `99.0` on `2 ^ 22` rows, the
-longest lengths the verifier admits, so no query count reaches `100` bits there, and `128` bits
-need the quintic extension.
+The bits per duplex call are the calculator's certificate per oracle answer (`Statement.SecureRo`),
+with Plonky3's grinding, which bounds Plonky3's verifier with Merkle commitments
+(`Statement.knowledgeSoundness_bcs_of_secureRo`; `knowledgeSoundness_bcs_quintic` and
+`johnson_knowledgeSoundness_bcs_quintic` below). The analyses are the ones `bestAnalysis` and
+`bestAnalysisRo` find at the longest admitted length, with the MCA bound within the unique-decoding
+radius (`McaBound.uniqueDecoding`). FRI's proximity `δ` stays below the unique-decoding radius `1/4`
+(blowup `2`) or `3/8` (blowup `4`), so each query is worth at most `log₂ (4/3) ≈ 0.415` or
+`log₂ (8/5) ≈ 0.678` bits; Plonky3's `87` queries and `16` bits of grinding give `52` bits per
+duplex call. Over the quartic extension the out-of-domain term `(3n + n + N) / |𝕂|` caps the bits
+near `124 - (logN + 2.6)` at blowup `2` and `124 - (logN + 3)` at blowup `4`: about `98.4` on
+`2 ^ 23` rows and `99.0` on `2 ^ 22` rows, the longest lengths the verifier admits, so no query
+count reaches `100` bits there, and `128` bits need the quintic extension.
 
 Up to the Johnson radius (`McaBound.uniqueOrJohnson`, proved by `McaBound.uniqueOrJohnson_holds`
 on ArkLib's Johnson-regime MCA for power curves), FRI's `δ` goes up to `1 - √ρ` and the queries
 drop:
 
-| configuration | field | grinding | random-oracle bits | interactive bits |
+| configuration | field | grinding | bits per duplex call | interactive bits |
 | --- | --- | --- | --- | --- |
 | blowup `2`, `169` / `205` queries | quintic | Plonky3's | `100` | `98` |
 | blowup `4`, `85` / `102` queries | quintic | Plonky3's | `100` | `99` |
@@ -356,19 +359,80 @@ theorem johnson_secureRo97_quartic_blowup4 :
       johnsonRo4b4 97 :=
   secureRo_of_lengths (by decide +kernel)
 
-/-- **100 bits per oracle answer with `85` queries at every trace length**, Plonky3's grinding,
-over the quintic extension at blowup `4`, FRI beyond the unique-decoding radius at `δ ≈ 0.499`. -/
-theorem johnson_roundError_le_quintic :
-    (statement 1 85 .plonky3).roundError Ext5 (fun _ ↦ 66977665 / 134217728)
-      (fun _ ↦ 268041731 / 536870912) ≤ (2 ^ 100)⁻¹ :=
-  Statement.roundError_le_of_secureRo _ KoalaBear.card_eq McaBound.uniqueOrJohnson_holds _
-    johnson_secureRo100_quintic_blowup4 _ _ (by norm_num [johnsonRo5b4])
-    (by norm_num [johnsonRo5b4])
+/-! ### Plonky3's verifier with Merkle commitments
+
+The certificates per oracle answer bound Plonky3's verifier as it runs, Poseidon2's three roles as
+random oracles, against an adversary making `Q` duplex calls and `q` oracle calls with samples of
+`K` elements per squeeze (`Statement.knowledgeSoundness_bcs_of_secureRo`), by
+`chainError Q' + hashBadError + (Q' + maxChallenges) · 2 ^ (-bits)`,
+`Q' = Q + verifierQueries + 3 verifierChainQueries`. -/
+
+section MerkleCommitments
+open OracleComp OracleSpec CompStark.Fs CompStark.RandomOracle
+open _root_.Interaction.Oracle.Security _root_.Interaction.Oracle.Security.HashChain
+
+/-- The Keccak statement over the quintic extension at blowup `2` with `270` queries. -/
+abbrev statement128 : Statement F := statement 0 270 .plonky3
+
+/-- The Keccak statement over the quintic extension at blowup `4` with `85` queries. -/
+abbrev statement100 : Statement F := statement 1 85 .plonky3
+
+/-- **128 bits per duplex call** for Keccak over the quintic extension at blowup `2` with `270`
+queries, at every trace length, the extractor at `δ' = 1/4 - 2 ^ (-42)`. -/
+theorem knowledgeSoundness_bcs_quintic {K : ℕ} (hK : 0 < K)
+    (adversary : OracleComp (spec F K) (List F × Proof F Ext5)) {Q q : ℕ}
+    (hQ : IsQueryBoundP adversary (fun t => isDuplex t = true) Q)
+    (hq : IsTotalQueryBound adversary q) :
+    Pr{let z ← (simulateQ Bcs.realImpl
+        (simulateQ translate (statement128.starkGame Ext5 K adversary))).run []}[
+      z.1.2.2.2 = .ok () ∧ ∀ h : statement128.Admits z.1.2.2.1.degreeBits,
+        ∀ trace ∈ closeTraces (statement128.setupAt Ext5 _ h) ((1 / 4 - 2 ^ (-42 : ℤ) : NNReal) : ℝ)
+          ((statement128.setupAt Ext5 _ h).traceWords
+            ((statement128.setupAt Ext5 _ h).traceMessageOf
+              (merkleCache (Bcs.hashCacheOf z.2)) z.1.2.2.1.traceCommit)),
+        ¬ statement128.air.Satisfied z.1.2.2.1.degreeBits trace z.1.2.1] ≤
+      chainError (Digest F)
+          (Q + statement128.verifierQueries Ext5 + 3 * statement128.verifierChainQueries Ext5 K) +
+        hashBadError F (2 ^ statement128.params.capHeight) (statement128.capOffsets Ext5).length
+          (q + statement128.verifierQueries Ext5) +
+        (Q + statement128.verifierQueries Ext5 + 3 * statement128.verifierChainQueries Ext5 K +
+            @Statement.maxChallenges F _) * (2 ^ 128)⁻¹ :=
+  Statement.knowledgeSoundness_bcs_of_secureRo _ KoalaBear.card_eq McaBound.uniqueDecoding_holds
+    roAnalysis2q secureRo128_blowup2 (by rw [KoalaBear.card_eq]; norm_num) (by decide) hK _
+    (by rw [coe_sub_two_zpow _ (-42) 42 rfl (by norm_num)]; norm_num [roAnalysis2q])
+    (by decide +kernel) adversary hQ hq
+
+/-- **100 bits per duplex call with `85` queries** for Keccak over the quintic extension at
+blowup `4`, Plonky3's grinding, at every trace length, FRI beyond the unique-decoding radius at
+`δ ≈ 0.499`. -/
+theorem johnson_knowledgeSoundness_bcs_quintic {K : ℕ} (hK : 0 < K)
+    (adversary : OracleComp (spec F K) (List F × Proof F Ext5)) {Q q : ℕ}
+    (hQ : IsQueryBoundP adversary (fun t => isDuplex t = true) Q)
+    (hq : IsTotalQueryBound adversary q) :
+    Pr{let z ← (simulateQ Bcs.realImpl
+        (simulateQ translate (statement100.starkGame Ext5 K adversary))).run []}[
+      z.1.2.2.2 = .ok () ∧ ∀ h : statement100.Admits z.1.2.2.1.degreeBits,
+        ∀ trace ∈ closeTraces (statement100.setupAt Ext5 _ h) ((268041731 / 536870912 : NNReal) : ℝ)
+          ((statement100.setupAt Ext5 _ h).traceWords
+            ((statement100.setupAt Ext5 _ h).traceMessageOf
+              (merkleCache (Bcs.hashCacheOf z.2)) z.1.2.2.1.traceCommit)),
+        ¬ statement100.air.Satisfied z.1.2.2.1.degreeBits trace z.1.2.1] ≤
+      chainError (Digest F)
+          (Q + statement100.verifierQueries Ext5 + 3 * statement100.verifierChainQueries Ext5 K) +
+        hashBadError F (2 ^ statement100.params.capHeight) (statement100.capOffsets Ext5).length
+          (q + statement100.verifierQueries Ext5) +
+        (Q + statement100.verifierQueries Ext5 + 3 * statement100.verifierChainQueries Ext5 K +
+            @Statement.maxChallenges F _) * (2 ^ 100)⁻¹ :=
+  Statement.knowledgeSoundness_bcs_of_secureRo _ KoalaBear.card_eq McaBound.uniqueOrJohnson_holds
+    johnsonRo5b4 johnson_secureRo100_quintic_blowup4 (by rw [KoalaBear.card_eq]; norm_num)
+    (by decide) hK _ (by norm_num [johnsonRo5b4]) (by decide +kernel) adversary hQ hq
+
+end MerkleCommitments
 
 /-! ### The search -/
 
 /-- The analysis the search finds on `2 ^ n` rows for a Keccak configuration, in the
-random-oracle model or interactively. -/
+per duplex call or interactively. -/
 def bestAt (B : McaBound) {EF : Type} [Challenge F EF] (blowup : Fin 2) (numQueries : ℕ+)
     (g : Grinding) (n : ℕ) (hn : n + ((blowup : ℕ) + 1) ≤ 24) (ro : Bool) : Analysis :=
   let S := setup EF blowup numQueries g n hn

@@ -4,7 +4,7 @@ Released under Apache 2.0 license as described in the file LICENSE.
 -/
 module
 
-public import CompStark.Ni.Binding
+public import CompStark.Ni.Rounds
 public import CompStark.Ni.BatchRun
 public import CompStark.Merkle.ExtractMixed
 
@@ -12,14 +12,12 @@ public import CompStark.Merkle.ExtractMixed
 
 The batch STARK commits to matrices of several heights under one root, Plonky3's trees with
 injected matrices. `BindingM`: every accepted opening against a root opens the rows extracted from
-a cache (`Merkle.extractGroup`), group by group of matrices of one height. As for one height
-(`binding_fresh`), the primitives on the answers of a log without digest clashes, and a digest
-outside it elsewhere, bind every digest of the log (`bindingM_fresh`): an accepted climb only makes
-queries of the log (`Merkle.climbCached_of_fresh`).
+a cache (`Merkle.extractGroup`), group by group of matrices of one height; `CapBindingM` the same
+for every entry of a cap.
 
 `Merkle.matColumn`: the extracted column `j` of matrix `t` of a commitment, read off its group's
 rows at the matrix's offset among the matrices of its height; an accepted opening that binds opens
-it (`matColumn_eq`).
+it (`matColumn_eq`, and `matColumnCap_eq` against a cap).
 -/
 
 @[expose] public section
@@ -48,115 +46,7 @@ def CapBindingM (cache : Merkle.Cache F (Digest F)) (H : Primitives F Id) (cap :
   ∀ e, BindingM cache H (cap.toList.getD e 0) (K - min capHeight K)
     (hs.map (· / 2 ^ min capHeight K))
 
-/-- An accepted opening climbs from the hash of its tallest rows to the commitment. -/
-theorem climb_of_verifyBatchM {d : Nat} (hash : List F → Vector F d)
-    (compress : Vector F d → Vector F d → Vector F d) (root : Vector F d) (hs : List ℕ)
-    (i : ℕ) (values : List (List F)) (path : List (Vector F d))
-    (hv : Merkle.verifyBatch hash compress root hs i values path = true) :
-    ∃ maxH tallest rest, Merkle.heightGroups hs = (maxH, tallest) :: rest ∧
-      Merkle.climb hash compress values path rest i maxH.nextPowerOfTwo
-        (Merkle.hashRows hash values tallest) = root := by
-  unfold Merkle.verifyBatch at hv
-  split at hv
-  · exact absurd hv Bool.false_ne_true
-  · rename_i maxH tallest rest hG
-    simp only [Bool.and_eq_true, beq_iff_eq] at hv
-    exact ⟨maxH, tallest, rest, hG, hv.2⟩
-
 variable {K : Nat}
-
-/-- **Binding from a log, at mixed heights.** With no digest clashes in `log`, answered by
-`answer`, the primitives on `fresh log answer dstar` bind every digest other than `dstar`, for
-matrices of heights `2 ^ j ≤ 2 ^ K`, some of height `2 ^ K`. -/
-theorem bindingM_fresh {bd : Digest F → List F → List (Digest F)}
-    (answer : (q : Query F) → Answer K q)
-    (log : QueryLog (spec F K)) (hcons : Consistent answer log) (hclash : NoClash bd log)
-    (dstar : Digest F) (hdstar : dstar ∉ logDigests bd log) (root : Digest F)
-    (hroot : root ≠ dstar) (L : ℕ) (hs : List ℕ)
-    (hpow : ∀ h ∈ hs, ∃ j ≤ L, h = 2 ^ j) (htop : 2 ^ L ∈ hs) :
-    BindingM (logCache log) (idealOf (fresh log answer dstar)) root L hs := by
-  intro i values path hv
-  set g' := fresh log answer dstar
-  set hash : List F → Digest F := fun row ↦ g' (.leaf row)
-  set compress : Digest F → Digest F → Digest F := fun a b ↦ g' (.node a b)
-  have hv' : Merkle.verifyBatch hash compress root hs i values path = true := hv
-  have hmem_digests : ∀ e ∈ log, ∀ x ∈ keyDigests bd e.1, x ∈ logDigests bd log :=
-    fun e he x hx ↦ List.mem_flatMap.mpr ⟨e, he, List.mem_cons_of_mem _ hx⟩
-  have hnode : ∀ a b, compress a b ≠ dstar → (logCache log).node a b (compress a b) := by
-    intro a b h
-    have hm : Query.node a b ∈ log.map Sigma.fst := by
-      by_contra hm
-      exact h (by simp only [compress, g', fresh, hm, ↓reduceIte])
-    show (⟨.node a b, g' (.node a b)⟩ : (q : Query F) × Answer K q) ∈ log
-    rw [show g' (.node a b) = answer (.node a b) from fresh_of_mem log answer dstar _ hm]
-    exact mk_mem_of_consistent hcons hm
-  have hleaf : ∀ row, hash row ≠ dstar → (logCache log).leaf row (hash row) := by
-    intro row h
-    have hm : Query.leaf row ∈ log.map Sigma.fst := by
-      by_contra hm
-      exact h (by simp only [hash, g', fresh, hm, ↓reduceIte])
-    show (⟨.leaf row, g' (.leaf row)⟩ : (q : Query F) × Answer K q) ∈ log
-    rw [show g' (.leaf row) = answer (.leaf row) from fresh_of_mem log answer dstar _ hm]
-    exact mk_mem_of_consistent hcons hm
-  have hstuck : ∀ a b, (a = dstar ∨ b = dstar) → compress a b = dstar := by
-    intro a b hab
-    have hm : Query.node a b ∉ log.map Sigma.fst := by
-      intro hmem
-      obtain ⟨e, he, hek⟩ := List.mem_map.mp hmem
-      refine hdstar ?_
-      rcases hab with rfl | rfl
-      · exact hmem_digests e he _ (by rw [hek]; simp only [keyDigests, List.mem_cons, true_or])
-      · exact hmem_digests e he _ (by rw [hek]; simp only [keyDigests, List.mem_cons,
-          List.not_mem_nil, or_false, or_true])
-    simp only [compress, g', fresh, hm, ↓reduceIte]
-  obtain ⟨maxH, tallest, rest, hG, hclimb⟩ := climb_of_verifyBatchM hash compress root hs i values
-    path hv'
-  obtain ⟨keys, hk, hmem, hG'⟩ := Merkle.heightGroups_eq hs
-  have hmax : maxH = 2 ^ L := by
-    rw [hG'] at hG
-    rcases keys with _ | ⟨a, ks⟩
-    · exact absurd hG (by simp only [List.map_nil, reduceCtorEq, not_false_eq_true])
-    · simp only [List.map_cons, List.cons.injEq, Prod.mk.injEq] at hG
-      rw [← hG.1.1]
-      obtain ⟨j, hj, rfl⟩ := hpow a ((hmem a).mp List.mem_cons_self)
-      rcases List.mem_cons.mp ((hmem _).mpr htop) with h | h
-      · exact h.symm
-      · have := List.rel_of_pairwise_cons hk h
-        have := Nat.pow_le_pow_right (show 0 < 2 by decide) hj
-        omega
-  rw [hmax, Merkle.nextPowerOfTwo_two_pow] at hclimb
-  have hne : root ≠ dstar := hroot
-  obtain ⟨hx, hcc⟩ := Merkle.climbCached_of_fresh (logCache log) hash compress values dstar hnode
-    hleaf hstuck path rest i _ _ (by rw [hclimb]; exact hne)
-  refine Merkle.extractGroup_of_verifyBatch (logCache log) hash compress values
-    (logCache_injective hcons hclash) root L hs hpow htop i path hv' ?_ ?_
-  · rw [hG]
-    intro g hg
-    simp only [List.head?_cons, Option.mem_def, Option.some.injEq] at hg
-    subst hg
-    exact hleaf _ hx
-  · rw [hG]
-    intro g hg
-    simp only [List.head?_cons, Option.mem_def, Option.some.injEq] at hg
-    subst hg
-    exact hcc
-
-/-- **Binding from a log, under a cap.** With no digest clashes in `log`, the primitives on
-`fresh log answer dstar` bind every entry of a cap other than `dstar`, and the zero digest, for
-matrices of heights `2 ^ j`, `c ≤ j ≤ K`, some of height `2 ^ K`, `c` the cap's levels. -/
-theorem capBindingM_fresh {bd : Digest F → List F → List (Digest F)}
-    (answer : (q : Query F) → Answer K q)
-    (log : QueryLog (spec F K)) (hcons : Consistent answer log) (hclash : NoClash bd log)
-    (dstar : Digest F) (hdstar : dstar ∉ logDigests bd log) (cap : Cap F)
-    (hcap : ∀ e, cap.toList.getD e 0 ≠ dstar) (capHeight L : ℕ) (hs : List ℕ)
-    (hpow : ∀ h ∈ hs, ∃ j, min capHeight L ≤ j ∧ j ≤ L ∧ h = 2 ^ j) (htop : 2 ^ L ∈ hs) :
-    CapBindingM (logCache log) (idealOf (fresh log answer dstar)) cap capHeight L hs := by
-  intro e
-  refine bindingM_fresh answer log hcons hclash dstar hdstar _ (hcap e) _ _ (fun h hh ↦ ?_)
-    (List.mem_map.mpr ⟨_, htop, by rw [Nat.pow_div (Nat.min_le_right _ _) (by decide)]⟩)
-  obtain ⟨h', hh', rfl⟩ := List.mem_map.mp hh
-  obtain ⟨j, hcj, hjL, rfl⟩ := hpow h' hh'
-  exact ⟨j - min capHeight L, by omega, by rw [Nat.pow_div hcj (by decide)]⟩
 
 /-! ### Matrix columns -/
 

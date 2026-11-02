@@ -4,19 +4,19 @@ Released under Apache 2.0 license as described in the file LICENSE.
 -/
 module
 
-public import CompStark.BatchNonInteractiveError
+public import CompStark.BatchSoundnessError
 public import CompStark.Sound.McaBound
 
 /-! # The security calculator
 
-Rational upper bounds on the knowledge errors (`knowledgeError`, `Batch.knowledgeError`) and the
-random-oracle round errors (`roundError`, `Batch.roundError`), computed from a setup's numbers:
-its `Shape` (its constraint count and identity degree, its opened words, whether it has lookups),
-its lookups' interactions `T` and widest tuple `W`, its heights and FRI's parameters, for a base
-field of `p` elements and the challenge field's degree `d`. Every term is a rational number, so
-the calculator runs as code (`#eval`, `Report`) and in the kernel (`decide +kernel`), which
-evaluates the AIR's structure itself; the theorems of `CompStark/Security.lean` turn a checked
-bound into a bound on the error.
+Rational upper bounds on the knowledge errors (`knowledgeError`, `Batch.knowledgeError`) and on the
+error of one challenge draw on Plonky3's verifier (the round terms), computed from a setup's
+numbers: its `Shape` (its constraint count and identity degree, its opened words, whether it has
+lookups), its lookups' interactions `T` and widest tuple `W`, its heights and FRI's parameters, for
+a base field of `p` elements and the challenge field's degree `d`. Every term is a rational number,
+so the calculator runs as code (`#eval`, `Report`) and in the kernel (`decide +kernel`), which
+evaluates the AIR's structure itself; the theorems of `CompStark/Security.lean` and
+`CompStark/Fs/Secure.lean` turn a checked bound into a bound on the error.
 
 The analysis is the one of `CompStark/Sound/Numbers.lean`, at any FRI arity, with an MCA bound `B`
 (`McaBound`: `uniqueDecoding` within the unique-decoding radius, `johnson` up to the Johnson
@@ -40,14 +40,14 @@ unique-decoding radius, `⌊(1 - δ' - ρ) / ((1 - δ')² - ρ)⌋` above, the J
 * a batch's lookup challenges: `ℓᵏ (T + (T - 1) W) / K` for `k` instances.
 
 The knowledge error is at most the sum of the terms, a batch's with each instance term at its
-worst instance. In the random-oracle model every round is one oracle answer and the round error
-is at most the largest term, each round after `α` multiplied by its grinding's `powFraction`,
-FRI's folds bounded by their largest fold and its queries by
-`(1 - δ + #folds · loss + 1/p) ^ numQueries`. On Plonky3's duplex challenger
-(`Statement.knowledgeSoundness_fs`) every node error times its draw's ratio is one of these round
-terms, so the round error's bound is also the error per duplex call
-(`Statement.knowledgeSoundness_fs_of_secureRo`); `Setup.chainBound` evaluates that theorem's bound
-at `q` duplex calls and `Setup.roBound` the random-oracle model's at `q` oracle calls.
+worst instance. The round terms are the errors of one challenge draw: each round after `α`
+multiplied by its grinding's `powFraction`, FRI's folds bounded by their largest fold and its
+queries by `(1 - δ + #folds · loss + 1/p) ^ numQueries`, `1/p` the query positions' bias; the
+round error's bound is the largest. On Plonky3's verifier with Merkle commitments
+(`Statement.knowledgeSoundness_bcs`) every node error times its draw's ratio is one of these round
+terms, so the round error's bound is the error per duplex call
+(`Statement.knowledgeSoundness_bcs_of_secureRo`), and `Statement.bcsBound` evaluates that
+theorem's bound at `Q` duplex calls and `q` oracle calls.
 
 `Setup.Secure p B A bits` and `Setup.SecureRo p B A bits` (and the batch's) are decidable: the
 analysis fits the setup (`Setup.Fits`: `B` admits batching and every fold at `δ`) and the bound is
@@ -261,17 +261,6 @@ def SecureRo (p : ℕ) (B : McaBound) (A : Analysis) (bits : ℕ) : Prop :=
 instance (p : ℕ) (B : McaBound) (A : Analysis) (bits : ℕ) : Decidable (S.SecureRo p B A bits) := by
   unfold SecureRo; infer_instance
 
-/-- The bound of `knowledgeSoundness_fs_of_secureRo` at `q` duplex calls for `|F| = p`: the
-capacities' collisions and predictions `q (q + 1) / 2 / p ^ 8`, and `q` plus the path's at most
-`twoAdicity F + 4` challenges times the round error's bound. -/
-def chainBound (p q : ℕ) (B : McaBound) (A : Analysis) : ℚ :=
-  (q * (q + 1) / 2 : ℚ) / (p : ℚ) ^ 8 + (q + (twoAdicity F + 4) : ℚ) * S.roundErrorBound p B A
-
-/-- The random-oracle bound at `q` oracle calls for `|F| = p` and caps of height `h`:
-`q · roundError + (2 + 2 ^ (h + 1)) q² / p ^ 8`. -/
-def roBound (p q : ℕ) (B : McaBound) (A : Analysis) : ℚ :=
-  q * S.roundErrorBound p B A + (2 + 2 ^ (S.params.capHeight + 1)) * (q : ℚ) ^ 2 / (p : ℚ) ^ 8
-
 end Setup
 
 /-- The opened words of the shapes of log trace length `logN`, batched together. -/
@@ -431,16 +420,12 @@ def Setup.bestAnalysisRo (S : Setup EF) (p : ℕ) (B : McaBound) : Analysis :=
   bestAnalysisOf S.rateQ fun A ↦
     if S.Fits B A then some (maxTerms (S.roundErrorTermsOf c p B A)) else none
 
-
-
 /-! ### Statements
 
-A statement's round error is the largest over the trace lengths the verifier admits
-(`Statement.roundError`), and so is its knowledge error (`Statement.knowledgeError`).
+A statement's knowledge error is the largest over the trace lengths the verifier admits
+(`Statement.knowledgeError`), and so is its round error's bound (`Statement.roundErrorBound`).
 `Statement.SecureRo` and `Statement.Secure` check every admitted length below the two-adicity at
-one analysis: the verifier's checks on a length are a Boolean (`Statement.admits`), and at the
-length where FRI does not fold the calculator's terms bound the error without folds
-(`roundError0_le_bound`). -/
+one analysis: the verifier's checks on a length are a Boolean (`Statement.admits`). -/
 
 namespace Statement
 variable (C : Statement F)
@@ -485,6 +470,12 @@ instance (p : ℕ) (B : McaBound) (A : Analysis) (bits : ℕ) :
     Decidable (C.SecureRo EF p B A bits) := by
   unfold SecureRo; infer_instance
 
+/-- The round error's bound at the analysis `A`, the largest over the trace lengths the verifier
+admits. -/
+def roundErrorBound (p : ℕ) (B : McaBound) (A : Analysis) : ℚ :=
+  maxQ ((List.range (twoAdicity F + 1)).map fun n ↦
+    if h : C.admits n = true then (C.setupOf EF n h).roundErrorBound p B A else 0)
+
 /-- The calculator certifies `bits` bits of knowledge soundness at the analysis `A` at every trace
 length the verifier admits. -/
 def Secure (p : ℕ) (B : McaBound) (A : Analysis) (bits : ℕ) : Prop :=
@@ -499,17 +490,17 @@ end Statement
 /-! ### Batch statements
 
 A batch statement's errors are the largest over the vectors of trace lengths the verifier admits
-(`Batch.Statement.roundError`, `Batch.Statement.knowledgeError`), too many to enumerate (`25 ^ 3`
-for three instances over KoalaBear). The verifier's checks on an instance's length are a Boolean
-(`Batch.Statement.admits`), and an admitted vector has admitted lengths. The calculator reads a
-vector through its terms: every instance's shape at its own length; on each domain size, the
+(`Batch.Statement.knowledgeError`, and the round terms of every vector), too many to enumerate
+(`25 ^ 3` for three instances over KoalaBear). The verifier's checks on an instance's length are a
+Boolean (`Batch.Statement.admits`), and an admitted vector has admitted lengths. The calculator
+reads a vector through its terms: every instance's shape at its own length; on each domain size, the
 opened words of the instances there, at most those of every instance admitting that length
 (`batchingOn`); LogUp's numbers `T + (T - 1) W`, affine in the interactions `T`, a share
 `(1 + W) 2 ^ m tᵢ` per instance; and FRI's plan from the tallest domain with the shorter ones
 injected. Up to an input at the height `x`, the plan is the plan without it down to at most
-`maxLogArity` above `x` (`FriGame.Rounds.plan_cons_split`), so the input adds at most
-`injectNum x` to the folds' bound, `injectFolds x` folds, and `injectMax x` as its largest fold;
-at FRI arity `2` these are what it adds.
+`maxLogArity` above `x` (`FriGame.Rounds.plan_cons_split`), so the input adds at most `injectNum x`
+to the folds' bound, `injectFolds x` folds, and `injectMax x` as its largest fold; at FRI arity `2`
+these are what it adds.
 
 The round error is the largest of its terms, so its largest over the vectors is each term's
 largest (`roundErrorTerms`): LogUp with every instance at its longest admitted length, constraint
@@ -869,6 +860,5 @@ def Batch.Statement.knowledgeErrorReport (C : Batch.Statement F) (EF : Type) [Ch
 def Batch.Statement.roundErrorReport (C : Batch.Statement F) (EF : Type) [Challenge F EF]
     (p : ℕ) (B : McaBound) (A : Analysis) : Report :=
   .of A (decide (C.Fits EF B A)) (C.roundErrorTerms EF p B A) (C.roundErrorBound EF p B A)
-
 
 end CompStark.Iop

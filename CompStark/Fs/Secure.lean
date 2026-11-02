@@ -17,12 +17,13 @@ calculator's round terms (`Setup.roundErrorTerms`): constraint folding at `α`, 
 (`friRatio_mul_nodeErrors_le`, with the folds of Plonky3's schedule bounded by the plan's level
 bounds, `foldErrorsLE_plonky3`), and at the queries
 `powFraction · (1 - δ + #folds · loss + 1/p) ^ numQueries`, the query positions' slack `1/p`
-inside the query error as in the random-oracle model (`Setup.ratio_mul_nodeErrors_le`). So the
+inside the query error (`Setup.ratio_mul_nodeErrors_le`). So the
 largest is at most the round error's bound, and a path of at most `maxChallenges` challenges sums
 to at most `maxChallenges` times it. The calculator's certificate per oracle answer
 (`Statement.SecureRo`) then bounds the STARK's knowledge soundness with Merkle commitments by
 `chainError q + hashBadError + (q + maxChallenges) 2 ^ (-bits)`
-(`Statement.knowledgeSoundness_bcs_of_secureRo`). The batch's nodes are the batch calculator's
+(`Statement.knowledgeSoundness_bcs_of_secureRo`), which `Statement.bcsBound` evaluates with the
+round error's bound in place of `2 ^ (-bits)`. The batch's nodes are the batch calculator's
 round terms alike (`Batch.Setup.ratio_mul_nodeErrors_le`), the lookup challenges' with their
 grinding, or without lookups LogUp's error `0` (`Batch.Setup.lookupError_eq_zero`), so the batch
 calculator's certificate (`Batch.Statement.SecureRo`) bounds the batch STARK's knowledge soundness
@@ -277,6 +278,18 @@ theorem knowledgeSoundness_bcs_of_secureRo (C : Statement F) (hp : Nat.card F = 
   · exact iSup_le fun _ ↦ pathError_le_of_challengesLE (C.publicCoin EF)
       (N := maxChallenges (F := F)) (fun n ↦ (C.setup EF n).challengesLE_publicCoin) _ hnode
 
+variable (EF) in
+/-- The bound of `knowledgeSoundness_bcs_of_secureRo` for `|F| = p` at `Q` duplex calls and `q`
+oracle calls with squeezes of `K` samples, the round error's bound in place of `2 ^ (-bits)`:
+`chainError Q' + hashBadError + (Q' + maxChallenges) · roundErrorBound`,
+`Q' = Q + verifierQueries + 3 verifierChainQueries`. -/
+def bcsBound (C : Statement F) (p K Q q : ℕ) (B : McaBound) (A : Analysis) : ℚ :=
+  let Q' := Q + C.verifierQueries EF + 3 * C.verifierChainQueries EF K
+  ((Q' * (Q' + 1) / 2 : ℕ) : ℚ) / (p : ℚ) ^ 8 +
+    (2 + (C.capOffsets EF).length * 2 ^ C.params.capHeight : ℕ) *
+      ((q + C.verifierQueries EF : ℕ) : ℚ) ^ 2 / (p : ℚ) ^ 8 +
+    ((Q' + maxChallenges (F := F) : ℕ) : ℚ) * C.roundErrorBound EF p B A
+
 end CompStark.Iop.Statement
 
 namespace CompStark.Iop.Batch.Setup
@@ -407,5 +420,17 @@ theorem knowledgeSoundness_bcs_of_secureRo (C : Statement F) (hp : Nat.card F = 
     exact le_of_le_of_eq (mul_le_mul_right (iSup_le fun _ ↦ iSup_le hnode) _) (by push_cast; rfl)
   · exact iSup_le fun _ ↦ pathError_le_of_challengesLE (C.publicCoin EF)
       (N := maxChallenges (F := F)) (fun n ↦ (C.setup EF n).challengesLE_publicCoin) _ hnode
+
+variable (EF) in
+/-- The bound of `knowledgeSoundness_bcs_of_secureRo` for `|F| = p` at `Q` duplex calls and `q`
+oracle calls with squeezes of `K` samples, the round error's bound in place of `2 ^ (-bits)`:
+`chainError Q' + hashBadError + (Q' + maxChallenges) · roundErrorBound`,
+`Q' = Q + verifierQueries + 3 verifierChainQueries`. -/
+def bcsBound (C : Statement F) (p K Q q : ℕ) (B : McaBound) (A : Analysis) : ℚ :=
+  let Q' := Q + C.verifierQueries EF + 3 * C.verifierChainQueries EF K
+  ((Q' * (Q' + 1) / 2 : ℕ) : ℚ) / (p : ℚ) ^ 8 +
+    (2 + (C.capOffsets EF).length * 2 ^ C.params.capHeight : ℕ) *
+      ((q + C.verifierQueries EF : ℕ) : ℚ) ^ 2 / (p : ℚ) ^ 8 +
+    ((Q' + maxChallenges (F := F) : ℕ) : ℚ) * C.roundErrorBound EF p B A
 
 end CompStark.Iop.Batch.Statement

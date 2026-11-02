@@ -16,7 +16,7 @@ FRI on rounds of mixed heights makes at most `n (1 + L + 2 G)` calls per query a
 (`Batch.isTotalQueryBound_verifyInstancesWith`), the lookup round's included, and at most
 `Statement.verifierCalls` on a proof of any lengths (`isTotalQueryBound_verifyBatchWith`), which
 `verifierCalls_le` bounds in closed form. The batch setup makes at most four calls per leaf of its
-tree (`isTotalQueryBound_setupRo`).
+tree (`isTotalQueryBound_commonWith`).
 -/
 
 @[expose] public section
@@ -470,7 +470,7 @@ theorem isTotalQueryBound_verifyBatchWith {K : ℕ} (common : CompStark.Batch.Co
 
 omit [Challenge F EF] in
 /-- The common data the setup computes on the random oracles has the statement's lookups. -/
-theorem lookups_of_mem_support_setupRo {K : ℕ} (common : CompStark.Batch.Common F)
+theorem lookups_of_mem_support_commonWith {K : ℕ} (common : CompStark.Batch.Common F)
     (h : common ∈ support (CompStark.Batch.commonWith (ideal F K) C.params C.keyInstances)) :
     common.lookups = List.ofFn C.lookups := by
   unfold CompStark.Batch.commonWith at h
@@ -483,7 +483,7 @@ theorem lookups_of_mem_support_setupRo {K : ℕ} (common : CompStark.Batch.Commo
   rfl
 
 /-- **The batch setup's oracle calls.** -/
-theorem isTotalQueryBound_setupRo {K : ℕ} :
+theorem isTotalQueryBound_commonWith {K : ℕ} :
     IsTotalQueryBound (CompStark.Batch.commonWith (ideal F K) C.params C.keyInstances)
       C.setupQueries := by
   unfold CompStark.Batch.commonWith

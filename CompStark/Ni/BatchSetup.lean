@@ -8,19 +8,14 @@ public import CompStark.Ni.BatchBcs
 public import CompStark.Ni.BatchNatural
 public import CompStark.Ni.Setup
 
-/-! # The batch setup in the random-oracle model
+/-! # The batch setup on fixed answers
 
-The game computes the batch's common data on the oracles (`Setup.setupRo`, Plonky3's setup on the
-instances' preprocessed traces) and logs its queries with the prover's. Against an answer table:
-
-* the setup is `commonWith` on the table's primitives (`evalWithAnswerFn_setupRoB`), whose tree is
-  the mixed-height tree `Merkle.injNode` of the preprocessed traces' extensions
-  (`injNodeWith_idealOf`);
-* the preprocessed commitment is the digest of one of the setup's queries (`exists_prep_mem`), so
-  a log that holds them binds it;
-* a cache under whose commitment the honest openings bind holds the extensions: the columns read
-  off it are the preprocessed words (`matColumn_setup`), since honest multi-openings of mixed
-  heights verify (`Merkle.verifyMulti_prune_mixed`).
+On an answer table, the batch setup's tree is the mixed-height tree `Merkle.injNode` of the
+preprocessed traces' extensions (`injNodeWith_idealOf`), at the instances' keygen heights
+(`preprocessedMats_keyInstances`), and its commitment is that tree's cap
+(`preprocessed_commonWith`). A cache under whose commitment the honest openings bind holds the
+extensions: the columns read off it are the preprocessed words (`matColumn_setup`), since honest
+multi-openings of mixed heights verify (`Merkle.verifyMulti_prune_mixed`).
 -/
 
 @[expose] public section
@@ -38,64 +33,6 @@ theorem injNodeWith_idealOf (g : (q : Query F) → Answer K q) (ms : List (Merkl
     rw [CompStark.Batch.injNodeWith, Merkle.injNode, ← injNodeWith_idealOf g ms k l (2 * i),
       ← injNodeWith_idealOf g ms k l (2 * i + 1)]
     rfl
-
-theorem simulateQ_injNodeWith {n : Type → Type} [Monad n] [LawfulMonad n]
-    (impl : QueryImpl (spec F K) n) (ms : List (Merkle.Matrix F)) (k l i : Nat) :
-    simulateQ impl (CompStark.Batch.injNodeWith (ideal F K) ms k l i) =
-      CompStark.Batch.injNodeWith (withAnswers K impl) ms k l i := by
-  have h := CompStark.Batch.injNodeWith_map (simulateQ' impl) (ideal F K) ms k l i
-  rw [withAnswers_map] at h
-  simpa only [simulateQ'_apply, simulateQ_spec_query] using h
-
-/-- The digest of a node computed on the oracles is the answer to one of its queries. -/
-theorem exists_digest_injNode (answer : (q : Query F) → Answer K q)
-    (ms : List (Merkle.Matrix F)) (k : Nat) :
-    ∀ l i, ∃ e ∈ tableQueryLog (CompStark.Batch.injNodeWith (ideal F K) ms k l i) answer,
-      digestOf e.1 e.2 = CompStark.Batch.injNodeWith (idealOf answer) ms k l i
-  | 0, i => by
-    refine ⟨⟨.leaf (Merkle.groupRows ms k i), answer (.leaf (Merkle.groupRows ms k i))⟩, ?_, rfl⟩
-    show _ ∈ tableQueryLog (liftM ((spec F K).query (.leaf _))) answer
-    rw [tableQueryLog_query]
-    exact List.mem_singleton_self _
-  | l + 1, i => by
-    have hL : evalWithAnswerFn (QueryImpl.ofFn answer)
-        (CompStark.Batch.injNodeWith (ideal F K) ms k l (2 * i)) =
-        CompStark.Batch.injNodeWith (idealOf answer) ms k l (2 * i) :=
-      simulateQ_injNodeWith (QueryImpl.ofFn answer) ms k l (2 * i)
-    have hR : evalWithAnswerFn (QueryImpl.ofFn answer)
-        (CompStark.Batch.injNodeWith (ideal F K) ms k l (2 * i + 1)) =
-        CompStark.Batch.injNodeWith (idealOf answer) ms k l (2 * i + 1) :=
-      simulateQ_injNodeWith (QueryImpl.ofFn answer) ms k l (2 * i + 1)
-    set L := CompStark.Batch.injNodeWith (idealOf answer) ms k l (2 * i)
-    set R := CompStark.Batch.injNodeWith (idealOf answer) ms k l (2 * i + 1)
-    have hval : CompStark.Batch.injNodeWith (idealOf answer) ms k (l + 1) i =
-        if ms.any (·.height == 2 ^ (k - (l + 1))) then
-          answer (.node (answer (.node L R))
-            (answer (.leaf (Merkle.groupRows ms (k - (l + 1)) i))))
-        else answer (.node L R) := by
-      rw [CompStark.Batch.injNodeWith]
-      split <;> rfl
-    rw [hval]
-    simp only [CompStark.Batch.injNodeWith]
-    rw [tableQueryLog_bind, tableQueryLog_bind, hL, hR, tableQueryLog_bind]
-    simp only [evalWithAnswerFn_liftM_query, QueryImpl.ofFn_apply, tableQueryLog_query]
-    split
-    · refine ⟨⟨.node (answer (.node L R)) (answer (.leaf (Merkle.groupRows ms (k - (l + 1)) i))),
-        answer (.node (answer (.node L R))
-          (answer (.leaf (Merkle.groupRows ms (k - (l + 1)) i))))⟩, ?_, rfl⟩
-      refine List.mem_append_right _ (List.mem_append_right _ (List.mem_append_right _ ?_))
-      rw [tableQueryLog_bind, tableQueryLog_query, evalWithAnswerFn_liftM_query,
-        QueryImpl.ofFn_apply, tableQueryLog_query]
-      exact List.mem_append_right _ (List.mem_singleton_self _)
-    · exact ⟨⟨.node L R, answer (.node L R)⟩, List.mem_append_right _ (List.mem_append_right _
-        (List.mem_append_left _ (List.mem_singleton_self _))), rfl⟩
-
-/-- **The batch setup against an answer table** is the batch setup on `idealOf`. -/
-theorem evalWithAnswerFn_setupRoB (S : Iop.Batch.Setup EF)
-    (answer : (q : Query F) → Answer S.streamLen q) :
-    evalWithAnswerFn (QueryImpl.ofFn answer) S.setupRo =
-      CompStark.Batch.commonWith (idealOf answer) S.params S.keyInstances :=
-  evalWithAnswerFn_commonWith answer S.params S.keyInstances
 
 /-- The batch setup's cap on an answer table: the mixed-height tree's nodes at the cap's
 level. -/
@@ -165,30 +102,6 @@ theorem preprocessed_commonWith (S : Iop.Batch.Setup EF)
       CompStark.Batch.preprocessedCapWith (idealOf g) S.params S.instances := by
   rw [← preprocessedCapWith_keyInstances S (idealOf g)]
   rfl
-
-/-- Every entry of the setup's preprocessed cap is the digest of one of its queries. -/
-theorem exists_prep_mem (S : Iop.Batch.Setup EF)
-    (answer : (q : Query F) → Answer S.streamLen q) (root : Cap F)
-    (h : CompStark.Batch.preprocessedCapWith (idealOf answer) S.params S.instances = some root)
-    (e : Nat) (he : e < root.size) :
-    ∃ q ∈ tableQueryLog S.setupRo answer, digestOf q.1 q.2 = root[e] := by
-  have hne := preprocessedMats_ne_of h
-  rw [preprocessedCapWith_idealOf answer S.params S.instances hne] at h
-  obtain rfl := Option.some_injective _ h
-  simp only [List.size_toArray, List.length_map, List.length_range] at he
-  obtain ⟨q, hq, hd⟩ := exists_digest_injNode answer
-    ((CompStark.Batch.preprocessedMats S.params S.instances).map Mat.toMatrix)
-    (CompStark.Batch.preprocessedLogHeight S.params S.instances)
-    (CompStark.Batch.preprocessedLogHeight S.params S.instances -
-      min S.params.capHeight (CompStark.Batch.preprocessedLogHeight S.params S.instances)) e
-  refine ⟨q, ?_, by simp only [hd, List.getElem_toArray, List.getElem_map, List.getElem_range]⟩
-  unfold Iop.Batch.Setup.setupRo CompStark.Batch.commonWith
-  rw [tableQueryLog_bind, preprocessedCapWith_keyInstances]
-  refine List.mem_append_left _ ?_
-  unfold CompStark.Batch.preprocessedCapWith
-  rw [ite_eq_right_of_eq_false _ _ (eq_false (by rw [hne]; exact Bool.false_ne_true)),
-    tableQueryLog_bind]
-  exact List.mem_append_left _ (mem_tableQueryLog_mapM _ answer _ e (List.mem_range.mpr he) q hq)
 
 /-- A row of a preprocessed trace's extension holds the preprocessed words at its point. -/
 theorem lde_row {lookups : List (Lookup F)} (T : Iop.Setup EF lookups) (j : Nat)

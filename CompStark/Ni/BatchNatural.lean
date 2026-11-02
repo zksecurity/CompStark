@@ -7,14 +7,13 @@ module
 public import CompStark.Ni.Answers
 public import CompStark.Batch.Setup
 
-/-! # The batch verifier and setup on fixed answers
+/-! # The batch verifier and setup, natural in their primitives
 
 As for the STARK (`Ni/Natural.lean`, `Ni/Answers.lean`), the batch verifier `verifyBatchWith`, its
 check of the instances `verifyInstancesWith` and the batch setup `commonWith` are natural in their
-primitives (`verifyBatchWith_map`, `verifyInstancesWith_map`, `commonWith_map`). So against an
-answer table they are the verifier and the setup on `idealOf` (`evalWithAnswerFn_verifyBatchWith`,
-`evalWithAnswerFn_commonWith`), and their query logs are the logs of their runs on `idealLogged`
-(`tableQueryLog_verifyInstancesWith`).
+primitives (`verifyBatchWith_map`, `verifyInstancesWith_map`, `commonWith_map`). So simulating
+their oracles by `impl` runs them on the answers of `impl` (`simulateQ_verifyBatchWith`,
+`simulateQ_commonWith`).
 -/
 
 @[expose] public section
@@ -87,34 +86,6 @@ open CompStark.Stark CompStark.Batch OracleSpec OracleComp
 variable {F : Type} [BaseField F] {EF : Type} [Challenge F EF] {K : Nat}
 
 /-- Simulating the oracles of the batch verifier by `impl` runs it on the answers of `impl`. -/
-theorem simulateQ_verifyInstancesWith {n : Type → Type} [Monad n] [LawfulMonad n]
-    (impl : QueryImpl (spec F K) n) (P : Fri.Params) (instances : List (Instance F))
-    (common : Common F) (proof : BatchProof F EF) (pis : List (List F)) :
-    simulateQ impl (verifyInstancesWith (ideal F K) P instances common proof pis) =
-      verifyInstancesWith (withAnswers K impl) P instances common proof pis := by
-  have h := verifyInstancesWith_map (simulateQ' impl) (ideal F K) P instances common proof pis
-  rw [withAnswers_map] at h
-  simpa only [simulateQ'_apply, simulateQ_spec_query] using h
-
-/-- **The batch verifier against an answer table** is the batch verifier on `idealOf`. -/
-theorem evalWithAnswerFn_verifyInstancesWith (answer : (q : Query F) → Answer K q) (P : Fri.Params)
-    (instances : List (Instance F)) (common : Common F) (proof : BatchProof F EF)
-    (pis : List (List F)) :
-    evalWithAnswerFn (QueryImpl.ofFn answer)
-        (verifyInstancesWith (ideal F K) P instances common proof pis) =
-      verifyInstancesWith (idealOf answer) P instances common proof pis :=
-  simulateQ_verifyInstancesWith (QueryImpl.ofFn answer) P instances common proof pis
-
-/-- **The batch verifier's queries against an answer table** are the log of the batch verifier on
-`idealLogged`. -/
-theorem tableQueryLog_verifyInstancesWith (answer : (q : Query F) → Answer K q) (P : Fri.Params)
-    (instances : List (Instance F)) (common : Common F) (proof : BatchProof F EF)
-    (pis : List (List F)) :
-    tableQueryLog (verifyInstancesWith (ideal F K) P instances common proof pis) answer =
-      (verifyInstancesWith (idealLogged answer) P instances common proof pis).run.2 := by
-  rw [tableQueryLog, simulateQ_verifyInstancesWith]
-
-/-- Simulating the oracles of the batch verifier by `impl` runs it on the answers of `impl`. -/
 theorem simulateQ_verifyBatchWith {n : Type → Type} [Monad n] [LawfulMonad n]
     (impl : QueryImpl (spec F K) n) (P : Fri.Params) (airs : List (Air F))
     (common : Common F) (proof : BatchProof F EF) (pis : List (List F)) :
@@ -124,14 +95,6 @@ theorem simulateQ_verifyBatchWith {n : Type → Type} [Monad n] [LawfulMonad n]
   rw [withAnswers_map] at h
   simpa only [simulateQ'_apply, simulateQ_spec_query] using h
 
-/-- **The batch verifier against an answer table** is the batch verifier on `idealOf`. -/
-theorem evalWithAnswerFn_verifyBatchWith (answer : (q : Query F) → Answer K q) (P : Fri.Params)
-    (airs : List (Air F)) (common : Common F) (proof : BatchProof F EF) (pis : List (List F)) :
-    evalWithAnswerFn (QueryImpl.ofFn answer)
-        (verifyBatchWith (ideal F K) P airs common proof pis) =
-      verifyBatchWith (idealOf answer) P airs common proof pis :=
-  simulateQ_verifyBatchWith (QueryImpl.ofFn answer) P airs common proof pis
-
 /-- Simulating the oracles of the batch setup by `impl` runs it on the answers of `impl`. -/
 theorem simulateQ_commonWith {n : Type → Type} [Monad n] [LawfulMonad n]
     (impl : QueryImpl (spec F K) n) (P : Fri.Params) (instances : List (Instance F)) :
@@ -140,12 +103,5 @@ theorem simulateQ_commonWith {n : Type → Type} [Monad n] [LawfulMonad n]
   have h := commonWith_map (simulateQ' impl) (ideal F K) P instances
   rw [withAnswers_map] at h
   simpa only [simulateQ'_apply, simulateQ_spec_query] using h
-
-/-- **The batch setup against an answer table** is the batch setup on `idealOf`. -/
-theorem evalWithAnswerFn_commonWith (answer : (q : Query F) → Answer K q) (P : Fri.Params)
-    (instances : List (Instance F)) :
-    evalWithAnswerFn (QueryImpl.ofFn answer) (commonWith (ideal F K) P instances) =
-      commonWith (idealOf answer) P instances :=
-  simulateQ_commonWith (QueryImpl.ofFn answer) P instances
 
 end CompStark.RandomOracle

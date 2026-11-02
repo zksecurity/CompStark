@@ -199,9 +199,9 @@ theorem isTotalQueryBound_batchGame
     {adversary : OracleComp (spec F K) ((Fin C.k → List F) × CompStark.Batch.BatchProof F EF)}
     {q : ℕ} (hq : IsTotalQueryBound adversary q) :
     IsTotalQueryBound (C.batchGame EF K adversary) (q + C.verifierQueries EF) := by
-  refine (isTotalQueryBound_bind_of_mem_support (C.isTotalQueryBound_setupRo (K := K))
+  refine (isTotalQueryBound_bind_of_mem_support (C.isTotalQueryBound_commonWith (K := K))
     fun common hc => isTotalQueryBound_bind hq fun x => isTotalQueryBound_bind (n₂ := 0)
-      (C.isTotalQueryBound_verifyBatchWith common (C.lookups_of_mem_support_setupRo common hc)
+      (C.isTotalQueryBound_verifyBatchWith common (C.lookups_of_mem_support_commonWith common hc)
         x.2 _) fun v =>
         (show IsTotalQueryBound (pure (common, x.1, x.2, v) : OracleComp (spec F K) _) 0
           from trivial)).mono ?_
@@ -215,9 +215,9 @@ theorem isQueryBoundP_batchGame
     {Q : ℕ} (hQ : IsQueryBoundP adversary (fun t => isDuplex t = true) Q) :
     IsQueryBoundP (C.batchGame EF K adversary) (fun t => isDuplex t = true)
       (Q + C.verifierQueries EF) := by
-  refine (isQueryBoundP_bind (C.isTotalQueryBound_setupRo (K := K)).isQueryBoundP
+  refine (isQueryBoundP_bind (C.isTotalQueryBound_commonWith (K := K)).isQueryBoundP
     fun common hc => isQueryBoundP_bind hQ fun x _ => isQueryBoundP_bind (m := 0)
-      (C.isTotalQueryBound_verifyBatchWith common (C.lookups_of_mem_support_setupRo common hc)
+      (C.isTotalQueryBound_verifyBatchWith common (C.lookups_of_mem_support_commonWith common hc)
         x.2 _).isQueryBoundP fun v _ => isQueryBoundP_pure _ _ _).mono ?_
   unfold verifierQueries
   omega

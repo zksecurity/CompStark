@@ -59,10 +59,6 @@ noncomputable def extElems (x : 𝕂) : List F := List.ofFn (extEquiv.symm x)
 /-- Elements of `𝕂` as Plonky3 observes them, in order. -/
 noncomputable def extsElems {n : ℕ} (x : Fin n → 𝕂) : List F := (List.ofFn x).flatMap extElems
 
-/-- A word over `F` on a finite domain, observed in full. -/
-noncomputable def wordElems {α : Type} [Fintype α] (f : α → F) : List F :=
-  List.ofFn (f ∘ (Fintype.equivFin α).symm)
-
 /-- The grinding witness of an extension draw, observed if it grinds. -/
 def extWitnessElems : (bits : ℕ) → (extDraw (F := F) (EF := EF) (K := K) (m := m) bits).Witness →
     List F
@@ -74,7 +70,6 @@ def queryWitnessElems (top t : ℕ) :
     (bits : ℕ) → (queryDraw (F := F) (K := K) (m := m) top t bits).Witness → List F
   | 0, _ => []
   | _ + 1, w => [w]
-
 
 /-! ### Prefix-free observations -/
 
@@ -122,15 +117,6 @@ theorem prefixFree_extsElems {n : ℕ} (seed : List F) :
     PrefixFree fun x : Fin n → 𝕂 ↦ seed ++ extsElems x :=
   prefixFree_of_length (fun _ _ h ↦ extsElems_injective (List.append_cancel_left h))
     fun _ _ ↦ by simp only [List.length_append, length_extsElems]
-
-omit [BaseField F] in
-/-- Words are observed prefix-free. -/
-theorem prefixFree_wordElems {α : Type} [Fintype α] : PrefixFree (wordElems (F := F) (α := α)) :=
-  prefixFree_of_length (fun f g h ↦ by
-    funext a
-    have h' := congrFun (List.ofFn_injective h) (Fintype.equivFin α a)
-    simp only [Function.comp_apply, Equiv.symm_apply_apply] at h'
-    exact h') fun _ _ ↦ by simp only [wordElems, List.length_ofFn]
 
 /-- An extension draw's witness is told by its observation. -/
 theorem extWitnessElems_injective (bits : ℕ) :
@@ -246,19 +232,6 @@ noncomputable def friDecoder : {n : ℕ} → (s : Fri.Interaction.Schedule n) �
   | _, .final => fun _ => (queryDraw top t queryBits, PUnit.unit)
   | _, .fold _ _ _ rest => (extDraw commitBits, friDecoder rest)
 
-/-- FRI's observations: each committed word, the first after `seed`, and its witness before its
-folding challenge, one squeeze each; the final polynomial and the query witness before the query
-positions, over their squeezes. -/
-noncomputable def friObserver : {n : ℕ} → (s : Fri.Interaction.Schedule n) → List F →
-    Observer F (Fri.Interaction.publicCoin 𝕂 top d t s) (friDecoder (F := F) K m top d t
-      commitBits queryBits s)
-  | _, .final, seed => (fun c ↦ seed ++ extsElems c,
-      fun _ ↦ (squeezesFor K (querySamples t queryBits), queryWitnessElems top t queryBits,
-        PUnit.unit))
-  | _, .fold _ _ _ rest, seed => (fun w ↦ seed ++ extsElems w,
-      (squeezesFor K (extSamples (EF := EF) commitBits), extWitnessElems commitBits,
-        friObserver rest []))
-
 /-- The ratios of FRI's draws: the folds' `powFraction F commitBits`, the queries'
 `powFraction F queryBits`. -/
 noncomputable def friRatio : {n : ℕ} → (s : Fri.Interaction.Schedule n) →
@@ -291,63 +264,11 @@ theorem bounded_friDecoder (hc : extSamples (EF := EF) commitBits ≤ m * K)
       (Fri.Interaction.foldNext hk ω word β (Fri.Interaction.injected inputs (n - k) inject))
       (Fri.Interaction.commitConsistent top f word C)⟩
 
-/-- FRI's draws read only their squeezes. -/
-theorem reads_friDecoder (hK : 0 < K) : {n : ℕ} → (s : Fri.Interaction.Schedule n) →
-    (seed : List F) → HashChain.Decoder.Reads (Fri.Interaction.publicCoin 𝕂 top d t s)
-      (friDecoder (F := F) K m top d t commitBits queryBits s)
-      ((friObserver K m top d t commitBits queryBits s seed).squeezes
-        (Fri.Interaction.publicCoin 𝕂 top d t s) (friDecoder K m top d t commitBits queryBits s))
-  | _, .final, _ => fun _ ↦ ⟨fun c c' h ↦ reads_queryDraw hK top t queryBits c c' h, trivial⟩
-  | _, .fold _ _ _ rest, _ => fun _ ↦
-    ⟨fun c c' h ↦ reads_extDraw hK commitBits c c' h, reads_friDecoder hK rest []⟩
-
-/-- FRI's observations are prefix-free. -/
-theorem prefixFree_friObserver : {n : ℕ} → (s : Fri.Interaction.Schedule n) → (seed : List F) →
-    (friObserver K m top d t commitBits queryBits s seed).PrefixFree
-      (Fri.Interaction.publicCoin 𝕂 top d t s) (friDecoder K m top d t commitBits queryBits s)
-  | _, .final, seed => ⟨prefixFree_extsElems seed,
-      fun _ ↦ ⟨(fixFree_queryWitnessElems top t queryBits).1,
-        (fixFree_queryWitnessElems top t queryBits).2, trivial⟩⟩
-  | _, .fold _ _ _ rest, seed => ⟨prefixFree_extsElems seed,
-      (fixFree_extWitnessElems commitBits).1, (fixFree_extWitnessElems commitBits).2,
-      prefixFree_friObserver rest []⟩
-
-/-- FRI squeezes at most as often as `s` samples take, when its draws' samples are at most `s`. -/
-theorem friObserver_squeezes_le {s : ℕ} (hc : extSamples (EF := EF) commitBits ≤ s)
-    (hq : querySamples t queryBits ≤ s) : {n : ℕ} → (sch : Fri.Interaction.Schedule n) →
-    (seed : List F) → (node : Prefix PUnit (Fri.Interaction.publicCoin 𝕂 top d t sch)) →
-    (friObserver K m top d t commitBits queryBits sch seed).squeezes
-      (Fri.Interaction.publicCoin 𝕂 top d t sch) (friDecoder K m top d t commitBits queryBits sch)
-      node ≤ squeezesFor K s
-  | _, .final, _, node => by
-    obtain ⟨_, _ | ⟨_, node⟩⟩ := (node : (_ : Fin d → 𝕂) × (PUnit ⊕ (PUnit × Empty)))
-    · exact squeezesFor_mono hq
-    · exact nomatch node
-  | n, .fold _ _ _ rest, _, node => by
-    obtain ⟨_, _ | ⟨_, node⟩⟩ := (node : Fri.Interaction.Word 𝕂 n × (PUnit ⊕ (PUnit ×
-      Prefix PUnit (Fri.Interaction.publicCoin 𝕂 top d t rest))))
-    · exact squeezesFor_mono hc
-    · exact friObserver_squeezes_le hc hq rest [] node
 /-- At least one element of `𝕂` is observed nonempty. -/
 theorem extsElems_ne_nil {n : ℕ} (hn : 0 < n) (x : Fin n → 𝕂) : extsElems (F := F) x ≠ [] :=
   List.ne_nil_of_length_pos (by
     rw [length_extsElems]
     exact Nat.mul_pos hn (Challenge.params EF).d_pos)
-
-/-- Every challenge of FRI that squeezes has observations since the last squeeze, when the final
-polynomial has coefficients. -/
-theorem friObserver_fills (hd : 0 < d) : {n : ℕ} → (s : Fri.Interaction.Schedule n) →
-    (seed : List F) → (filled : Prop) →
-    (friObserver K m top d t commitBits queryBits s seed).Fills
-      (Fri.Interaction.publicCoin 𝕂 top d t s) (friDecoder K m top d t commitBits queryBits s)
-      filled
-  | _, .final, _, _ => fun c ↦
-      ⟨fun _ _ ↦ Or.inl (Or.inr (List.append_ne_nil_of_right_ne_nil _ (extsElems_ne_nil hd c))),
-        fun _ ↦ trivial⟩
-  | _, .fold _ _ _ rest, _, _ => fun w ↦
-      ⟨fun _ _ ↦ Or.inl (Or.inr (List.append_ne_nil_of_right_ne_nil _
-          (extsElems_ne_nil (Nat.two_pow_pos _) w))),
-        fun _ ↦ friObserver_fills hd rest [] _⟩
 
 variable (top d t commitBits queryBits) in
 /-- FRI's layout with Merkle caps of height `h`: each committed word of `2 ^ n` points folded by

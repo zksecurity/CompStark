@@ -12,7 +12,7 @@ public import CompStark.Stark.Points
 Plonky3's `foldRow` interpolates a group of `2 ^ arity` committed values through points of the
 subgroup `⟨ω⟩`, while ArkLib's `foldValue` interpolates through the points of the coset
 `s · ⟨ω⟩` the word lives on. The two interpolants differ by the substitution `X ↦ s X`, so
-Plonky3's fold at `β` is ArkLib's fold at `s β` (`toSpec_foldRow_eq_foldValue`).
+Plonky3's fold at `β` is ArkLib's fold at `s β` (`toSpec_foldRow_eq_foldValue_of`).
 -/
 
 @[expose] public section
@@ -43,37 +43,8 @@ theorem lift_ne_zero {x : F} (hx : x ≠ 0) : (lift x : 𝕂) ≠ 0 := by
 
 theorem lift_gen_ne_zero : (lift gen : 𝕂) ≠ 0 := lift_ne_zero BaseField.gen_ne_zero
 
-/-- The points of the `p`-th subdomain of the coset domain: `g ^ 2 ^ p · ω_{n - p} ^ k`. -/
-theorem subdomain_apply (n : Nat) (hn : n ≤ twoAdicity F) (p : Nat) (hp : p ≤ n)
-    (k : Fin (2 ^ (n - p))) :
-    (cosetDomain (EF := EF) n hn).subdomain p k =
-      lift gen ^ 2 ^ p * lift (twoAdicGen (n - p)) ^ k.val := by
-  rw [Domain.CosetFftDomainClass.subdomain_apply]
-  rw [cosetDomain_apply, Fin.val_zero, pow_zero, mul_one]
-  congr 1
-  show (cosetDomain (EF := EF) n hn 0)⁻¹ * cosetDomain (EF := EF) n hn _ = _
-  rw [cosetDomain_apply, cosetDomain_apply, Fin.val_zero, pow_zero, mul_one,
-    inv_mul_cancel_left₀ lift_gen_ne_zero]
-  unfold Domain.CosetFftDomainClass.subdomain_embed
-  by_cases hpn : p ≥ n
-  · have hp' : p = n := by omega
-    subst hp'
-    have hk : k.val = 0 := by have := k.isLt; simp only [Nat.sub_self, pow_zero] at this; omega
-    simp only [ge_iff_le, le_refl, ↓reduceDIte, Fin.val_zero, pow_zero, hk]
-  · simp only [hpn, ↓reduceDIte]
-    have h := BaseField.twoAdicGen_pow (F := F) (n - p) p (by omega)
-    rw [Nat.sub_add_cancel hp] at h
-    rw [pow_mul, lift, lift, ← map_pow, ← map_pow, ← pow_mul, pow_mul, h, map_pow]
-
 /-- An index below `2 ^ m`, reduced. -/
 def finMod (m r : Nat) : Fin (2 ^ m) := ⟨r % 2 ^ m, Nat.mod_lt _ (Nat.two_pow_pos m)⟩
-
-/-- The points of the `p`-th subdomain at an index below its size. -/
-theorem subdomain_finMod (n : Nat) (hn : n ≤ twoAdicity F) (p : Nat) (hp : p ≤ n) (r : Nat)
-    (hr : r < 2 ^ (n - p)) :
-    (cosetDomain (EF := EF) n hn).subdomain p (finMod (n - p) r) =
-      lift gen ^ 2 ^ p * lift (twoAdicGen (n - p) ^ r) := by
-  rw [subdomain_apply n hn p hp, finMod, Fin.val_mk, Nat.mod_eq_of_lt hr, lift_pow]
 
 theorem natDegree_comp_C_mul_X (q : 𝕂[X]) (s : 𝕂) :
     (q.comp (Polynomial.C s * Polynomial.X)).natDegree ≤ q.natDegree :=
@@ -132,21 +103,6 @@ theorem toSpec_foldRow_eq_foldValue_of {m : Nat} (D : Domain.SmoothCosetFftDomai
     refine (Lagrange.eval_interpolate_at_node _ hinjD ?_).symm
     rw [Domain.CosetFftDomainClass.mem_blockIdx, hy, hpow k hk, hpow pos hpos]
 
-/-- **Plonky3's fold is ArkLib's**, on the `p`-th subdomain of `L`, of shift `g ^ 2 ^ p`. -/
-theorem toSpec_foldRow_eq_foldValue (n : Nat) (hn : n ≤ twoAdicity F) (p lF la : Nat)
-    (hm : n - p = lF + la) (hp : p ≤ n) (f : Fin (2 ^ (n - p)) → 𝕂) (i : Nat)
-    (beta : EF) (gy : Nat → EF)
-    (hgy : ∀ k < 2 ^ la, Challenge.toSpec (gy k) =
-      f (finMod (n - p) (reverseBits (i * 2 ^ la + k) (n - p))))
-    (pos : Nat) (hpos : pos < 2 ^ la) :
-    Challenge.toSpec (foldRow i lF la beta ((List.range (2 ^ la)).map gy)) =
-      ProximityGap.foldValue ((cosetDomain (EF := EF) n hn).subdomain p) f la
-        (lift gen ^ 2 ^ p * Challenge.toSpec beta)
-        ((cosetDomain (EF := EF) n hn).subdomain p
-          (finMod (n - p) (reverseBits (i * 2 ^ la + pos) (n - p))) ^ 2 ^ la) :=
-  toSpec_foldRow_eq_foldValue_of _ _ (by omega)
-    (fun x ↦ by rw [subdomain_apply n hn p hp, lift_pow]) lF la hm f i beta gy hgy pos hpos
-
 /-! ### The query's point at each fold -/
 
 /-- The low `n - p` bits of the reversal of `I` in `n` bits are the reversal of `I`'s high bits. -/
@@ -158,22 +114,5 @@ theorem reverseBits_mod (I n p : Nat) (hp : p ≤ n) :
     (Nat.mod_lt _ (Nat.two_pow_pos p))
   rw [← hsplit, Nat.sub_add_cancel hp] at h
   rw [h, Nat.mul_add_mod, Nat.mod_eq_of_lt (reverseBits_lt _ _)]
-
-/-- The `2 ^ p`-th power of the point of `L` at `rev I` is the point of the `p`-th subdomain at the
-reversal of `I`'s high bits: Plonky3's index `I >>> p` at height `n - p`. -/
-theorem domain_pow_eq (n : Nat) (hn : n ≤ twoAdicity F) (p : Nat) (hp : p ≤ n) (I : Nat) :
-    cosetDomain (EF := EF) n hn (finMod n (reverseBits I n)) ^ 2 ^ p =
-      (cosetDomain (EF := EF) n hn).subdomain p
-        (finMod (n - p) (reverseBits (I >>> p) (n - p))) := by
-  rw [subdomain_finMod n hn p hp _ (reverseBits_lt _ _), cosetDomain_apply, finMod,
-    Fin.val_mk, Nat.mod_eq_of_lt (reverseBits_lt _ _), ← reverseBits_mod I n p hp,
-    mul_pow, ← pow_mul, Nat.mul_comm, pow_mul]
-  congr 1
-  have h := BaseField.twoAdicGen_pow (F := F) (n - p) p (by omega)
-  rw [Nat.sub_add_cancel hp] at h
-  have hord := (isPrimitiveRoot_algebraMap (EF := EF) (n - p) (by omega)).pow_eq_one
-  rw [← lift_pow, h, lift_pow]
-  conv_lhs => rw [← Nat.div_add_mod (reverseBits I n) (2 ^ (n - p)), pow_add, pow_mul, hord,
-    one_pow, one_mul]
 
 end CompStark.Ni

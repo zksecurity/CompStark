@@ -27,10 +27,10 @@ A query's accepted opening of each round, if it binds, opens the extracted colum
 
 `bcsB`: if the verifier accepts a proof whose commitments bind the rows extracted from the cache,
 and under whose preprocessed commitment the cache holds the preprocessed traces' extensions, the
-extracted transcript passes the deterministic checks of the batch terminal lemma
-(`Sound.Batch.exists_satisfied_of_safe`): every instance's constraints hold at `ζ`, the final
-polynomial has low degree, the query grinding sample has its vanishing bits, and every query lands
-where FRI's checks pass and FRI's first word agrees with the tallest batched DEEP word.
+extracted transcript passes the batch's deterministic checks: every instance's constraints hold
+at `ζ`, the final polynomial has low degree, the query grinding sample has its vanishing bits, and
+every query lands where FRI's checks pass and FRI's first word agrees with the tallest batched DEEP
+word.
 -/
 
 @[expose] public section
@@ -959,8 +959,8 @@ theorem permShapes (S : Iop.Batch.Setup EF) (proof : CompStark.Batch.BatchProof 
 /-- **BCS consistency of the batch STARK.** If the batch verifier on pure primitives `H` accepts
 a proof whose commitments bind the rows extracted from `cache`, and under whose preprocessed
 commitment `cache` holds the preprocessed traces' extensions, the extracted transcript passes the
-deterministic checks of `Sound.Batch.exists_satisfied_of_safe`, with the run's grinding and query
-samples. -/
+batch's deterministic checks, with the run's grinding and query samples: the constraints at `ζ`,
+the final polynomial's degree, the query grinding and FRI's query checks. -/
 theorem bcsB (S : Iop.Batch.Setup EF) (cache : Merkle.Cache F (Digest F)) (H : Primitives F Id)
     (common : CompStark.Batch.Common F) (proof : CompStark.Batch.BatchProof F EF)
     (publicValues : Fin S.k → List F)

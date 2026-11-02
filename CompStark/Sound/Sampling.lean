@@ -4,7 +4,7 @@ Released under Apache 2.0 license as described in the file LICENSE.
 -/
 module
 
-public import CompStark.NonInteractiveError
+public import CompStark.SoundnessError
 public import Mathlib.Data.Int.CardIntervalMod
 
 /-! # Low bits of uniform base elements
@@ -19,10 +19,8 @@ one more (`card_val_mod_eq`). Hence:
 * `prob_val_mod_eq_zero_le`: `bits` low bits vanish with probability at most `powFraction bits`,
   the `(p - 1) / 2 ^ bits + 1` multiples of `2 ^ bits` below `p`, for every `bits`.
 
-The grinding sample and the challenge of a round come from one oracle answer, independent
-coordinates: `prob_pow_and_le` multiplies the challenge's bad probability by `powFraction`, and
-`prob_queryRound_le` bounds the query round, a grinding sample and `t` query samples whose
-residues must all land in `G`.
+A grinding sample and a challenge drawn independently: `prob_pow_and_le` multiplies the
+challenge's bad probability by `powFraction`.
 -/
 
 @[expose] public section
@@ -120,7 +118,6 @@ theorem card_val_mod_eq_zero (bits : Nat) :
 
 theorem cardF_ne_zero : cardF F ≠ 0 := Nat.cast_ne_zero.mpr Nat.card_pos.ne'
 
-
 /-- `((p - 1) / 2 ^ b) / p ≤ 1 / 2 ^ b`: the preimages of one nonzero residue. -/
 theorem preimages_div_le (b : Nat) :
     (((Nat.card F - 1) / 2 ^ b : Nat) : ENNReal) / cardF F ≤ 1 / 2 ^ b := by
@@ -186,41 +183,5 @@ theorem prob_pow_and_le {β : Type} [Fintype β] [SampleableType β] (bits : Nat
   rw [prob_prod_and (fun x : F ↦ CanonicalNat.toNat x % 2 ^ bits = 0) Q]
   gcongr
   exact prob_val_mod_eq_zero_le bits
-
-/-- The query round: a grinding sample with `bits` vanishing low bits and `t` query samples whose
-residues mod `2 ^ b` all lie in `G`, with `|G| ≤ 2 ^ b · c` and `2 ^ b ∣ p - 1`, has probability
-at most `powFraction bits · (c + 1/p) ^ t`. -/
-theorem prob_queryRound_le (bits b t : Nat) (hb : 2 ^ b ∣ Nat.card F - 1) (G : Finset Nat)
-    (c : ℝ) (hG : (G.card : ℝ) ≤ 2 ^ b * c) :
-    Pr{let z ← $ᵗ (F × (Fin t → F))}[CanonicalNat.toNat z.1 % 2 ^ bits = 0 ∧
-        ∀ j, CanonicalNat.toNat (z.2 j) % 2 ^ b ∈ G] ≤
-      powFraction F bits * ENNReal.ofReal (c + 1 / Nat.card F) ^ t := by
-  classical
-  refine (prob_pow_and_le (β := Fin t → F) bits
-    (fun xs ↦ ∀ j, CanonicalNat.toNat (xs j) % 2 ^ b ∈ G)).trans (mul_le_mul_right ?_ _)
-  set A := Finset.univ.filter fun x : F ↦ CanonicalNat.toNat x % 2 ^ b ∈ G
-  have hA : ∀ xs : Fin t → F, (∀ j, CanonicalNat.toNat (xs j) % 2 ^ b ∈ G) ↔ ∀ j, xs j ∈ A :=
-    fun xs ↦ by
-    simp only [A, Finset.mem_filter, Finset.mem_univ, true_and]
-  simp only [hA]
-  rw [Probability.prob_uniform_pi_mem_finset_eq]
-  gcongr
-  have h := prob_val_mod_mem_le b hb G
-  rw [SampleableType.prEvent_uniformSample] at h
-  refine h.trans ?_
-  have hc : 0 ≤ c := by
-    have : (0 : ℝ) ≤ 2 ^ b * c := (Nat.cast_nonneg _).trans hG
-    exact nonneg_of_mul_nonneg_right (by linarith) (by positivity : (0 : ℝ) < 2 ^ b)
-  rw [ENNReal.ofReal_add hc (by positivity),
-    ENNReal.ofReal_div_of_pos (Nat.cast_pos.mpr Nat.card_pos),
-    ENNReal.ofReal_one, ENNReal.ofReal_natCast]
-  gcongr
-  have hdiv : (G.card : ℝ) / 2 ^ b ≤ c := by
-    rw [div_le_iff₀ (by positivity)]
-    linarith
-  calc (G.card : ENNReal) / 2 ^ b = ENNReal.ofReal ((G.card : ℝ) / 2 ^ b) := by
-        rw [ENNReal.ofReal_div_of_pos (by positivity), ENNReal.ofReal_natCast,
-          ENNReal.ofReal_pow (by norm_num), ENNReal.ofReal_ofNat]
-    _ ≤ ENNReal.ofReal c := ENNReal.ofReal_le_ofReal hdiv
 
 end CompStark.Sound

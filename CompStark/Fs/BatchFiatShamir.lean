@@ -9,12 +9,11 @@ public import CompStark.Fs.StarkFiatShamir
 
 /-! # The batch STARK's challenges on Plonky3's duplex challenger: counts
 
-The counts the duplex-challenger theorems of the batch STARK take: the batch's paths have at most
+The counts the theorems on Plonky3's batch verifier take: the batch's paths have at most
 `maxChallenges = twoAdicity F + 5` challenges (`Setup.challengesLE_publicCoin`: the lookup
 challenges, `α`, `ζ`, the batching challenge, FRI's folds, at most the tallest domain's log size,
-`numFolds_friSchedule_le`, and the queries), each drawn from at most `coinCount` squeezes
-(`FsCoins`, `fsCoin`), so the verifier's completion makes at most `verifierChainQueries` duplex
-calls.
+`numFolds_friSchedule_le`, and the queries), each drawn from at most `coinCount` squeezes, so the
+verifier's completion makes at most `verifierChainQueries` duplex calls.
 -/
 
 @[expose] public section
@@ -40,14 +39,6 @@ open _root_.Interaction.Oracle _root_.Interaction.Oracle.PublicCoin
 open _root_.Interaction.Oracle.Security _root_.Interaction.Oracle.Security.StateRestoration
 
 variable {F : Type} [BaseField F] (C : Statement F) (EF : Type) [Challenge F EF] (K : ℕ)
-
-/-- The coins of the batch's challenges: `coinCount` squeezes of `K` samples. -/
-abbrev FsCoins : Type := Coins F K (C.coinCount EF K)
-
-/-- The batch's decoded presentation, every challenge drawn from Plonky3's squeezes. -/
-noncomputable abbrev fsCoin : PublicCoin (decodedProtocol (C.FsCoins EF K) (C.publicCoin EF)
-    (C.decoder EF K (C.coinCount EF K))) :=
-  decoded (C.FsCoins EF K) (C.publicCoin EF) (C.decoder EF K (C.coinCount EF K))
 
 /-- The challenges on a path of the batch at any admitted lengths: the lookup challenges, `α`,
 `ζ`, the batching challenge, at most `twoAdicity F` folds and the queries. -/

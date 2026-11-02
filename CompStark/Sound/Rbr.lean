@@ -14,33 +14,21 @@ public import CompStark.Sound.ConsistentQueries
 
 /-! # Round-by-round soundness of the STARK
 
-The STARK's rounds as bad events on transcript prefixes, each bounded for every prefix by its
-error: in `CompStark/SoundnessError.lean` for the interactive protocol, whose knowledge certificate
-(`CompStark/Interaction/StarkKnowledge.lean`) is built from the events of `α`, `ζ` and `a`, and in
-`CompStark/NonInteractiveError.lean` for the non-interactive proof, where every round is one
-random-oracle answer:
+The STARK's rounds `α`, `ζ` and `a` as bad events on transcript prefixes, each bounded for every
+prefix by its error in `CompStark/SoundnessError.lean`; the knowledge certificate of the
+interactive protocol (`CompStark/Interaction/StarkKnowledge.lean`) is built from them:
 
 * `α` (`AlphaBad`): a candidate trace failing the AIR has a quotient passing the check at more
-  than `identityDegree` points; `foldingError`.
+  than `identityDegree` points; `foldingError` (`prob_alphaBad_le`).
 * `ζ` (`ZetaBad`): `α` is safe, and `ζ` lies on the trace domain or on `L`, or passes the check
-  for a candidate of the committed words with a failing trace; `outOfDomainError`.
+  for a candidate of the committed words with a failing trace; `outOfDomainError`
+  (`prob_zetaBad_le`).
 * `a` (`BatchBad`): the DEEP components are not near the code together, the batched word is;
-  `batchingError`.
-* FRI fold `i` (`FoldBad`): ArkLib's lossy folding failure of committed word `i` at `β_i`;
-  `friFoldError`.
-* The queries (`QueryBad`): the DEEP word is far, the folds are safe, and every query lands where
-  the checks pass and the recommitted word `f₀'` agrees with the DEEP word
-  (`Transcript.consistentQueries`); `friQueryError`.
+  `batchingError` (`prob_batchBad_le`).
 
-The grinding samples of the FRI rounds come in the same answer as their challenges and multiply
-the bounds by `powFraction` (`prob_foldRound_le`, `prob_queryBad_le`); so do those of `ζ` and `a`
-(`Ni/RoundBounds.lean`).
-
-The terminal lemma `exists_satisfied_of_safe` is deterministic: if the verifier's checks pass on a
-transcript whose rounds are all safe, some candidate trace satisfies the AIR. Safe `α` and `ζ`
-put `ζ` off the trace domain and off `L` and leave no failing candidate pair passing the check, so
-the DEEP components are not near together (`DecodingStep`); safe `a` makes the DEEP word far; safe
-folds are ArkLib's `SafeHistory`; and then not every query can pass.
+Safe `α` and `ζ` put `ζ` off the trace domain and off `L` and leave no failing candidate pair
+passing the check, so the DEEP components are not near together (`DecodingStep`), and safe `a`
+makes the DEEP word far (`not_near_deepWord`).
 -/
 
 @[expose] public section
@@ -56,53 +44,7 @@ local notation "𝕂" => Challenge.Spec EF
 namespace Setup
 variable (S : Iop.Setup EF) [S.Folds]
 
-theorem foldArities_ne_nil : S.foldArities ≠ [] := by
-  obtain ⟨f, fs, h⟩ := folds_cons S.params.maxLogArity (S.logN - S.params.logFinalPolyLen)
-    (by have := S.folds; omega)
-  rw [Iop.Setup.foldArities, h]
-  exact List.cons_ne_nil _ _
-
-/-- The schedule's arities sum to the halvings, `logN - logFinalPolyLen`. -/
-theorem sum_schedule :
-    ∑ j, (S.schedule j).val = S.logN - S.params.logFinalPolyLen := by
-  have hsum := sum_folds S.params.maxLogArity (S.logN - S.params.logFinalPolyLen)
-  rw [← Iop.Setup.foldArities] at hsum
-  rw [← hsum]
-  have hne := foldArities_ne_nil S
-  unfold Iop.Setup.schedule Iop.Setup.lastFold
-  generalize S.foldArities = l at *
-  match l with
-  | [] => exact absurd rfl hne
-  | f :: fs =>
-    rw [← Fin.sum_univ_fun_getElem (f :: fs) PNat.val]
-    refine Finset.sum_congr rfl fun j _ ↦ ?_
-    rw [List.getD_eq_getElem]
-
 end Setup
-
-/-- FRI's final degree bound: the final polynomial has degree below `2 ^ logFinalPolyLen`. -/
-abbrev finalDegreeOf (S : Iop.Setup EF) [S.Folds] : ℕ+ := finalDegree S.params.logFinalPolyLen
-
-theorem schedule_le (S : Iop.Setup EF) [S.Folds] :
-    ∑ j, (S.schedule j).val ≤ S.logN + S.params.logBlowup := by
-  rw [Setup.sum_schedule]
-  omega
-
-/-- ArkLib's code of the folding schedule is `S.code`: degree below `n`. -/
-theorem schedule_degree (S : Iop.Setup EF) [S.Folds] :
-    2 ^ (∑ j, (S.schedule j).val) * (finalDegreeOf S).val = S.n := by
-  have hlt := S.folds
-  rw [Setup.sum_schedule, finalDegreeOf, finalDegree, PNat.mk_coe, ← pow_add,
-    Nat.sub_add_cancel hlt.le]
-
-/-- A word not `δ`-near `S.code` is at relative distance at least `δ` from ArkLib's code. -/
-theorem le_relHammingDist_of_not_near (S : Iop.Setup EF) [S.Folds] (δ : ℝ) (w : S.Point → 𝕂)
-    (hw : ¬ Near S δ w) :
-    ∀ u ∈ ReedSolomon.code S.domain (2 ^ (∑ j, (S.schedule j).val) * (finalDegreeOf S).val),
-      δ ≤ (Code.relHammingDist w u : ℝ) := by
-  intro u hu
-  rw [schedule_degree] at hu
-  exact le_of_not_gt fun h ↦ hw (near_of_relHammingDist_lt S δ w u hu h)
 
 /-! ### The transcript -/
 
@@ -113,8 +55,8 @@ def fixedProver {lookups : List (Lookup F)} {S : Iop.Setup EF lookups}
     (perm : Fin S.permWidth → Fin (Challenge.d EF) → S.Point → F := fun _ _ _ ↦ 0) : Prover S :=
   ⟨trace, fun _ ↦ quotient, fun _ _ ↦ openings, perm⟩
 
-/-- The transcript of the interactive oracle proof, as the extractor reads it off a
-non-interactive proof: the prover's words and messages, and the challenges. -/
+/-- The transcript of the interactive oracle proof, as the extractor reads it off a proof: the
+prover's words and messages, and the challenges. -/
 structure Transcript (S : Iop.Setup EF) [S.Folds] where
   trace : Fin S.air.width → S.Point → F
   alpha : 𝕂
@@ -133,13 +75,6 @@ variable {S : Iop.Setup EF} [S.Folds] (t : Transcript S)
 
 /-- The transcript's prover. -/
 def prover : Prover S := fixedProver t.trace t.quotient t.openings
-
-/-- The batched DEEP word of the transcript. -/
-noncomputable def deepWord : S.Point → 𝕂 := Iop.deepWord t.prover t.alpha t.zeta t.batch
-
-/-- The points where FRI's query checks pass and `f₀'` agrees with the DEEP word. -/
-noncomputable def consistentQueries : Finset S.Point :=
-  Fri.Spec.consistentQueries S.schedule (schedule_le S) t.fri t.betas t.deepWord
 
 end Transcript
 
@@ -207,68 +142,6 @@ def queryPoint {lookups : List (Lookup F)} (S : Iop.Setup EF lookups) (x : F) :
   ⟨reverseBits (CompPoly.CanonicalNat.toNat x % 2 ^ (S.logN + S.params.logBlowup))
       (S.logN + S.params.logBlowup),
     reverseBits_lt _ _⟩
-
-/-- The query samples that select a point of `G` are those whose residues lie in the
-bit-reversed `G`, a set of the same size. -/
-theorem queryPoint_mem_iff {lookups : List (Lookup F)} (S : Iop.Setup EF lookups)
-    (G : Finset S.Point) (x : F) :
-    queryPoint S x ∈ G ↔ CompPoly.CanonicalNat.toNat x % 2 ^ (S.logN + S.params.logBlowup) ∈
-      G.image fun z ↦ reverseBits z.val (S.logN + S.params.logBlowup) := by
-  set m := S.logN + S.params.logBlowup
-  have hlt : CompPoly.CanonicalNat.toNat x % 2 ^ m < 2 ^ m := Nat.mod_lt _ (Nat.two_pow_pos m)
-  simp only [Finset.mem_image]
-  constructor
-  · intro h
-    exact ⟨_, h, reverseBits_reverseBits hlt⟩
-  · rintro ⟨z, hz, hzx⟩
-    have hz' : queryPoint S x = z := by
-      apply Fin.ext
-      simp only [queryPoint, ← hzx, reverseBits_reverseBits z.isLt]
-    rw [hz']
-    exact hz
-
-section FriEvents
-variable (S : Iop.Setup EF) [S.Folds]
-
-/-- FRI fold `i`: ArkLib's lossy folding failure of committed word `i` at `β`. The safe history
-of ArkLib's query analysis (`SafeHistory`) is that no fold is bad. -/
-def FoldBad (δ loss : NNReal) (i : Fin (S.lastFold + 1))
-    (fri : ∀ j, FinalOracleStatement S.schedule S.domain j) (β : 𝕂) : Prop :=
-  Fri.LossyFoldingAgreementFailure (S.domain.subdomain (foldingPrefix S.schedule i.castSucc))
-    (fun z ↦ committedFunction S.schedule fri i.castSucc
-      (S.domain.subdomain (foldingPrefix S.schedule i.castSucc) z))
-    (S.schedule i).val (foldingDegree S.schedule (finalDegreeOf S) i.succ) δ loss β
-
-/-- Before the queries: the DEEP word is `δ`-far, no fold is bad and the final polynomial has
-degree below `2 ^ logFinalPolyLen`. -/
-def QueryReady (δ loss : NNReal) (t : Transcript S) : Prop :=
-  ¬ Near S δ t.deepWord ∧ SafeHistory S.schedule (finalDegreeOf S) t.fri t.betas δ loss ∧
-    (finalPolynomial S.schedule t.fri).natDegree < (finalDegreeOf S).val
-
-/-- The query round: ready, the grinding sample `pow` has `queryPowBits` vanishing low bits, and
-every query sample selects a point where the checks pass and `f₀'` agrees with the DEEP word. -/
-def QueryBad (δ loss : NNReal) (t : Transcript S) (pow : F)
-    (queries : Fin S.params.numQueries → F) : Prop :=
-  QueryReady S δ loss t ∧ CompPoly.CanonicalNat.toNat pow % 2 ^ S.params.queryPowBits = 0 ∧
-    ∀ j, queryPoint S (queries j) ∈ t.consistentQueries
-
-/-- The folds of a transcript are safe in ArkLib's sense when none is bad. -/
-theorem safeHistory_iff (δ loss : NNReal) (t : Transcript S) :
-    SafeHistory S.schedule (finalDegreeOf S) t.fri t.betas δ loss ↔
-      ∀ i, ¬ FoldBad S δ loss i t.fri (t.betas i) := Iff.rfl
-
-/-- Fold `i`'s bad event reads only committed word `i`. -/
-theorem foldBad_congr (δ loss : NNReal) (i : Fin (S.lastFold + 1))
-    {fri fri' : ∀ j, FinalOracleStatement S.schedule S.domain j}
-    (h : committedWord S.schedule fri i = committedWord S.schedule fri' i) (β : 𝕂) :
-    FoldBad S δ loss i fri β ↔ FoldBad S δ loss i fri' β := by
-  have hf : ∀ x, committedFunction S.schedule fri i.castSucc x =
-      committedFunction S.schedule fri' i.castSucc x := by
-    intro x
-    simp only [committedFunction, Fin.val_castSucc, i.isLt, ↓reduceDIte, Fin.eta, h]
-  simp only [FoldBad, hf]
-
-end FriEvents
 
 /-! ### The bounds -/
 
@@ -423,64 +296,6 @@ theorem prob_batchBad_le (δ : NNReal) (δ' : ℝ) (trace : Fin S.air.width → 
 
 end Bounds
 
-section FriBounds
-variable (S : Iop.Setup EF) [S.Folds]
-
-open Classical
-
-/-- FRI fold `i`: a uniform `β` is bad with probability at most `friFoldError`, for every
-committed word. -/
-theorem prob_foldBad_le (δ loss : NNReal) (i : Fin (S.lastFold + 1))
-    (fri : ∀ j, FinalOracleStatement S.schedule S.domain j) :
-    Pr{let β ← $ᵗ 𝕂}[FoldBad S δ loss i fri β] ≤ friFoldError S δ loss i := by
-  unfold FoldBad friFoldError foldingErrorLossy
-  rw [ENNReal.coe_toNNReal (CoreDefinitions.lossyMcaError_ne_top _ _ _ _)]
-  exact Fri.lossyFoldingAgreementFailure_prob_le_powers _ _
-    (foldingDegree_pos S.schedule (finalDegreeOf S) i.succ) _ _
-
-/-- FRI fold `i` with its grinding sample, drawn in the same answer: at most
-`powFraction commitPowBits · friFoldError`. -/
-theorem prob_foldRound_le (δ loss : NNReal) (i : Fin (S.lastFold + 1))
-    (fri : ∀ j, FinalOracleStatement S.schedule S.domain j) :
-    Pr{let z ← $ᵗ (F × 𝕂)}[CompPoly.CanonicalNat.toNat z.1 % 2 ^ S.params.commitPowBits = 0 ∧
-      FoldBad S δ loss i fri z.2] ≤
-      powFraction F S.params.commitPowBits * friFoldError S δ loss i := by
-  exact (prob_pow_and_le _ _).trans (mul_le_mul_right (prob_foldBad_le S δ loss i fri) _)
-
-/-- The query round: at most `powFraction queryPowBits · friQueryError`. -/
-theorem prob_queryBad_le (δ loss : NNReal) (t : Transcript S) :
-    Pr{let z ← $ᵗ (F × (Fin S.params.numQueries → F))}[QueryBad S δ loss t z.1 z.2] ≤
-      powFraction F S.params.queryPowBits * friQueryError S δ loss := by
-  by_cases hready : QueryReady S δ loss t
-  · set m := S.logN + S.params.logBlowup
-    set G := t.consistentQueries.image fun z ↦ reverseBits z.val m
-    have hdens := consistentQueries_density_le S.schedule (finalDegreeOf S) (schedule_le S)
-      t.fri t.betas t.deepWord δ δ loss loss.coe_nonneg hready.2.1 hready.2.2
-      (le_relHammingDist_of_not_near S δ t.deepWord hready.1)
-    have hG : (G.card : ℝ) ≤ 2 ^ m *
-        (1 - min ((δ : ℝ) - S.lastFold * loss) ((δ : ℝ) - (S.lastFold + 1) * loss)) := by
-      have hpos : (0 : ℝ) < 2 ^ m := by positivity
-      rw [div_le_iff₀ hpos] at hdens
-      have hcard : (G.card : ℝ) ≤ (Fri.Spec.consistentQueries S.schedule (schedule_le S) t.fri
-          t.betas t.deepWord).card := by
-        exact_mod_cast Finset.card_image_le
-      change (G.card : ℝ) ≤ _
-      linarith
-    have h := prob_queryRound_le S.params.queryPowBits m S.params.numQueries
-      (BaseField.two_pow_dvd_card_sub_one_of_le S.valid.twoAdic) G _ hG
-    refine le_trans (le_of_eq ?_) h
-    congr 2
-    funext z
-    simp only [QueryBad, hready, true_and, queryPoint_mem_iff, G, m, Transcript.consistentQueries]
-  · rw [SampleableType.prEvent_uniformSample]
-    have h : (Finset.univ.filter fun z : F × (Fin S.params.numQueries → F) ↦
-        QueryBad S δ loss t z.1 z.2) = ∅ :=
-      Finset.filter_false_of_mem fun z _ hz ↦ hready hz.1
-    rw [h, Finset.card_empty, Nat.cast_zero, ENNReal.zero_div]
-    exact bot_le
-
-end FriBounds
-
 /-! ### The terminal lemma -/
 
 /-- If every candidate trace and permutation trace fail a constraint, the check passes at `ζ` and
@@ -514,41 +329,5 @@ theorem not_near_deepWord {lookups : List (Lookup F)} (S : Iop.Setup EF lookups)
   rw [Setup.committedTrace_committed, Setup.committedQuotient_committed,
     Setup.committedPerm_committed, ← h]
   exact hcheck
-
-section Terminal
-variable (S : Iop.Setup EF) [S.Folds] (publicValues : List F)
-
-omit [S.Folds] in
-/-- A STARK of its own: the candidates of its empty permutation trace hold exactly when the trace
-satisfies the AIR. -/
-theorem holds_iff (trace : Array F) (R : Fin S.permWidth → Fin (Challenge.d EF) → F[X]) :
-    Holds S publicValues [] 0 trace R ↔ S.air.Satisfied S.logN trace publicValues :=
-  ⟨fun h ↦ h.air, fun h ↦ ⟨h, fun _ hg ↦ absurd hg List.not_mem_nil⟩⟩
-
-/-- **The terminal lemma.** If the verifier's checks pass on a transcript whose rounds are all
-safe, some candidate trace satisfies the AIR: the check at `ζ`, a final polynomial of degree
-below `2 ^ logFinalPolyLen`, a grinding sample with `queryPowBits` vanishing low bits, and every
-query sample selecting a point where the checks pass and `f₀'` agrees with the DEEP word. -/
-theorem exists_satisfied_of_safe (δ δ' loss : NNReal) (hδ' : (δ' : ℝ) < 1 - S.rate)
-    (t : Transcript S) (pow : F) (queries : Fin S.params.numQueries → F)
-    (hcheck : ConstraintsHoldAt S publicValues t.alpha t.zeta t.openings)
-    (hdegree : (finalPolynomial S.schedule t.fri).natDegree < (finalDegreeOf S).val)
-    (hpow : CompPoly.CanonicalNat.toNat pow % 2 ^ S.params.queryPowBits = 0)
-    (hqueries : ∀ j, queryPoint S (queries j) ∈ t.consistentQueries)
-    (hα : ¬ AlphaBad S publicValues δ' t.trace t.alpha)
-    (hζ : ¬ ZetaBad S publicValues δ' t.trace t.alpha t.quotient t.zeta)
-    (ha : ¬ BatchBad S δ δ' t.trace t.alpha t.quotient t.zeta t.openings t.batch)
-    (hfolds : ∀ i, ¬ FoldBad S δ loss i t.fri (t.betas i))
-    (hq : ¬ QueryBad S δ loss t pow queries) :
-    ∃ P ∈ candidates S δ' t.trace, S.air.Satisfied S.logN (traceOf S P) publicValues := by
-  by_contra hno
-  have hfail : ∀ P ∈ candidates S δ' t.trace, ∀ R ∈ candidates S δ'
-      (fun _ : Fin S.permWidth × Fin (Challenge.d EF) ↦ fun _ ↦ (0 : F)),
-      ¬ Holds S publicValues [] 0 (traceOf S P) fun c e ↦ R (c, e) :=
-    fun P hP _ _ h ↦ hno ⟨P, hP, (holds_iff S publicValues _ _).mp h⟩
-  exact hq ⟨⟨not_near_deepWord S publicValues [] 0 δ δ' hδ' t.trace _ t.alpha t.quotient t.zeta
-    t.openings t.batch hfail hcheck hα hζ ha, hfolds, hdegree⟩, hpow, hqueries⟩
-
-end Terminal
 
 end CompStark.Sound

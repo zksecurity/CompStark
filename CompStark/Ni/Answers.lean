@@ -6,15 +6,13 @@ module
 
 public import CompStark.RandomOracle
 public import CompStark.Ni.Natural
-public import VCVio.OracleComp.QueryTracking.RandomOracle.FreshQuery
 
-/-! # The verifier on fixed answers
+/-! # The verifier's primitives on answers
 
-Against an answer table `answer`, the verifier's oracle computation `verifyWith (ideal K)` is the
-verifier on the pure primitives `idealOf answer` (`evalWithAnswerFn_verifyWith`), and its query
-log is the log of the verifier on `idealLogged answer`, the same primitives that also log every
-query (`tableQueryLog_verifyWith`). Both follow from the naturality of the verifier
-(`Stark.verifyWith_map`) for the simulation of the oracles, `simulateQ_verifyWith`.
+The primitives on oracle answers are natural in the monad the answers come from
+(`withAnswers_map`), so simulating the verifier's oracles by `impl` runs the verifier on the
+answers of `impl` (`simulateQ_verifyWith`, from `Stark.verifyWith_map`). `idealLogged answer`: the
+primitives on fixed answers that also log every query.
 -/
 
 @[expose] public section
@@ -49,20 +47,5 @@ theorem simulateQ_verifyWith {n : Type → Type} [Monad n] [LawfulMonad n]
 abbrev idealLogged (answer : (q : Query F) → Answer K q) :
     Primitives F (WriterT (QueryLog (spec F K)) Id) :=
   withAnswers K (QueryImpl.ofFn answer).withLogging
-
-/-- **The verifier against an answer table** is the verifier on `idealOf`. -/
-theorem evalWithAnswerFn_verifyWith (answer : (q : Query F) → Answer K q) (P : Fri.Params)
-    (A : Air F) (vk : Option (PreprocessedKey F)) (proof : Proof F EF) (pis : List F) :
-    evalWithAnswerFn (QueryImpl.ofFn answer) (verifyWith (ideal F K) P A vk proof pis) =
-      verifyWith (idealOf answer) P A vk proof pis :=
-  simulateQ_verifyWith (QueryImpl.ofFn answer) P A vk proof pis
-
-/-- **The verifier's queries against an answer table** are the log of the verifier on
-`idealLogged`. -/
-theorem tableQueryLog_verifyWith (answer : (q : Query F) → Answer K q) (P : Fri.Params)
-    (A : Air F) (vk : Option (PreprocessedKey F)) (proof : Proof F EF) (pis : List F) :
-    tableQueryLog (verifyWith (ideal F K) P A vk proof pis) answer =
-      (verifyWith (idealLogged answer) P A vk proof pis).run.2 := by
-  rw [tableQueryLog, simulateQ_verifyWith]
 
 end CompStark.RandomOracle

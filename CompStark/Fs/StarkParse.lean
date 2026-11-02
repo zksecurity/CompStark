@@ -30,11 +30,9 @@ Plonky3's verifier samples.
   Plonky3's challenger as a stream of squeezes: from the capacity of the absorbed blocks, sample
   `q K + r` is sample `r` of squeeze `q`. `extDraw_idealOf`, `queryDraw_idealOf`: Plonky3's
   grinding check, extension sample and query samples are the draws on the squeezes' coins.
-* `Setup.openedPath_parse`, `Statement.replay_realCompletion_parse`: if Plonky3's verifier on the
-  duplex answers accepts, the real completion of the proof's selection, replayed on the duplex
-  answers, decodes, every draw accepting, and opens to the proof's execution path
-  (`Setup.proofPath`); `Statement.realCompletion_parse_of_replay`: replayed on any cache of those
-  answers, such as the log of a run of the verifier, it completes alike.
+* `Setup.openedPath_parse`: if Plonky3's verifier on the duplex answers accepts, the real
+  completion of the proof's selection, replayed on the duplex answers, decodes, every draw
+  accepting, and opens to the proof's execution path (`Setup.proofPath`).
 * `Statement.isSome_parse`, `Statement.length_preprocessedDigest`: an accepted proof has a
   selection, and its preprocessed commitment the statement's length.
 -/
@@ -837,7 +835,6 @@ variable {F : Type} [BaseField F] {EF : Type} [Challenge F EF]
 def capVec (h k : ℕ) (c : Cap F) : Option (CapOf F h k) :=
   if hc : c.size = 2 ^ min h k then some ⟨c, hc⟩ else none
 
-
 /-- An extension element in the spec field is observed as its coefficients. -/
 theorem extElems_toSpec (x : EF) : extElems (F := F) (Challenge.toSpec x) = Ext.coeffs x := by
   have h : Challenge.toSpec x = Ni.extEquiv fun i => (Challenge.coeffs x).getD i 0 := by
@@ -1330,7 +1327,6 @@ end Accepting
 
 end CompStark.Fs
 
-
 /-! ### The STARK's path -/
 
 namespace CompStark.Fs
@@ -1596,86 +1592,6 @@ def pathAt (n : C.Length) (p : (C.setup EF n).protocol.tree.ExecutionPath) :
   ⟨n, p⟩
 
 variable {C EF} {K : ℕ}
-
-/-- **Plonky3's verifier draws its challenges as the real completion.** If Plonky3's verifier on
-the duplex answers `answer` accepts a proof of the admitted length `n`, the duplex verifier's real
-completion of the proof's selection (`parse`, every snapshot move `T`), replayed on the duplex
-answers, completes it to a path that decodes, every draw accepting, and opens on `T` to the
-proof's execution path at `n` (`Setup.proofPath`). -/
-theorem replay_realCompletion_parse (hK : 0 < K) (answer : (q : Query F) → Answer K q)
-    (T : (merkleSpec F).QueryCache) (n : C.Length) (vk : Option (PreprocessedKey F))
-    (proof : Proof F EF) (pis : List F) (hdb : proof.degreeBits = n.1)
-    (h : verifyWith (idealOf answer) C.params C.air vk proof pis = .ok ())
-    (hz : (preprocessedDigest vk).length = C.digestLength)
-    (msgs : Messages PUnit (decoded (Coins F K (C.coinCount EF K))
-      (snapCoin (C.publicCoin EF) (C.decoder EF K (C.coinCount EF K))
-        (C.layout EF K (C.coinCount EF K)) true)
-      (snapDecoder (C.publicCoin EF) (C.decoder EF K (C.coinCount EF K))
-        (C.layout EF K (C.coinCount EF K)) true)))
-    (hp : C.parse EF K T n proof = some msgs) :
-    ∃ path, replay (duplexCache answer) (realCompletion initCap (fun _ => C.publicCoin EF)
-        (fun _ => C.decoder EF K (C.coinCount EF K)) (fun _ => C.layout EF K (C.coinCount EF K))
-        tail (some ⟨C.inputOf vk pis hz, msgs, ()⟩)) =
-        some (some ⟨C.inputOf vk pis hz, path, ()⟩) ∧
-      ∃ p, decodePath (snapCoin (C.publicCoin EF) (C.decoder EF K (C.coinCount EF K))
-          (C.layout EF K (C.coinCount EF K)) true)
-          (snapDecoder (C.publicCoin EF) (C.decoder EF K (C.coinCount EF K))
-            (C.layout EF K (C.coinCount EF K)) true) path = some p ∧
-        openPath (C.publicCoin EF) (C.decoder EF K (C.coinCount EF K))
-          (C.layout EF K (C.coinCount EF K)) true ∅ p =
-          C.pathAt EF n
-            ((C.setup EF n).proofPath (merkleCache T) (idealOf answer) vk proof pis) := by
-  obtain ⟨path, hrep, hd⟩ := replay_realCompletion initCap (fun _ => C.publicCoin EF)
-    (fun _ => C.decoder EF K (C.coinCount EF K)) (fun _ => C.layout EF K (C.coinCount EF K)) tail
-    (duplexCache answer) (squeezeAnswer answer) (replay_squeezeAt answer) (C.inputOf vk pis hz)
-    msgs ()
-  refine ⟨path, hrep, ?_⟩
-  unfold parse at hp
-  obtain ⟨smsgs, hsp, rfl⟩ := Option.map_eq_some_iff.mp hp
-  have hs := (C.setup EF n).openedPath_parse answer hK le_rfl T vk proof pis hdb h smsgs hsp
-  have hd' := hd.trans (map_eq_some_of (f := fun r => C.pathAt EF n r) hs rfl)
-  exact Option.map_eq_some_iff.mp hd'
-
-/-- **On a cache of the duplex answers.** The real completion of the proof's selection, replayed on
-any cache of the chain whose answers are the duplex answers `answer` (such as a run's log of the
-verifier's queries), completes it as on the duplex answers. -/
-theorem realCompletion_parse_of_replay (hK : 0 < K) (answer : (q : Query F) → Answer K q)
-    (T : (merkleSpec F).QueryCache) (n : C.Length) (vk : Option (PreprocessedKey F))
-    (proof : Proof F EF) (pis : List F) (hdb : proof.degreeBits = n.1)
-    (h : verifyWith (idealOf answer) C.params C.air vk proof pis = .ok ())
-    (hz : (preprocessedDigest vk).length = C.digestLength)
-    (msgs : Messages PUnit (decoded (Coins F K (C.coinCount EF K))
-      (snapCoin (C.publicCoin EF) (C.decoder EF K (C.coinCount EF K))
-        (C.layout EF K (C.coinCount EF K)) true)
-      (snapDecoder (C.publicCoin EF) (C.decoder EF K (C.coinCount EF K))
-        (C.layout EF K (C.coinCount EF K)) true)))
-    (hp : C.parse EF K T n proof = some msgs) (c : (duplexSpec F K + []ₒ).QueryCache)
-    (hc : ∀ q u, c (.inl q) = some u → u = answer (.duplex q.1 q.2))
-    (r : SnapOutcome Unit (fun _ : C.Input => C.publicCoin EF)
-      (fun _ => C.decoder EF K (C.coinCount EF K)) (fun _ => C.layout EF K (C.coinCount EF K)))
-    (hr : replay c (realCompletion initCap (fun _ => C.publicCoin EF)
-        (fun _ => C.decoder EF K (C.coinCount EF K)) (fun _ => C.layout EF K (C.coinCount EF K))
-        tail (some ⟨C.inputOf vk pis hz, msgs, ()⟩)) = some r) :
-    ∃ path, r = some ⟨C.inputOf vk pis hz, path, ()⟩ ∧
-      ∃ p, decodePath (snapCoin (C.publicCoin EF) (C.decoder EF K (C.coinCount EF K))
-          (C.layout EF K (C.coinCount EF K)) true)
-          (snapDecoder (C.publicCoin EF) (C.decoder EF K (C.coinCount EF K))
-            (C.layout EF K (C.coinCount EF K)) true) path = some p ∧
-        openPath (C.publicCoin EF) (C.decoder EF K (C.coinCount EF K))
-          (C.layout EF K (C.coinCount EF K)) true ∅ p =
-          C.pathAt EF n
-            ((C.setup EF n).proofPath (merkleCache T) (idealOf answer) vk proof pis) := by
-  obtain ⟨path, hrep, hpath⟩ :=
-    replay_realCompletion_parse hK answer T n vk proof pis hdb h hz msgs hp
-  have hmono : ∀ t u, c t = some u → duplexCache answer t = some u := by
-    intro t u ht
-    rcases t with q | e
-    · rw [hc q u ht]
-      rfl
-    · exact e.elim
-  have hr' := replay_mono hmono _ r hr
-  rw [hrep] at hr'
-  exact ⟨path, (Option.some.inj hr').symm, hpath⟩
 
 end CompStark.Iop.Statement
 

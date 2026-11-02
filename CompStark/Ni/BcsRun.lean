@@ -13,8 +13,8 @@ public import CompStark.Fri.Shapes
 
 On primitives `H : Primitives Id` the verifier is a deterministic function of the proof. This file
 reads an accepting run backwards: each check that passes is a fact about the proof and the values
-the challenger returned. The facts are stated without the monad, so that `Ni/Bcs.lean` can turn
-them into the consistency of the extracted oracles.
+the challenger returned. The facts are stated without the monad, for the consistency of the
+extracted oracles (`Ni/BcsDeep.lean`, `Ni/BatchBcs.lean`).
 
 * `bind_eq_ok`, `forIn_cons_eq_ok`: an accepting bind or loop step has accepting parts.
 * `foldState`: the running value, index and height of a query's folds; `foldQuery_ok` reads them
@@ -976,7 +976,6 @@ theorem phaseLoop_ok (capHeight : Nat) (groups : List (List (Nat × List EF)))
       rw [Nat.sub_add_eq]
       exact this
 
-
 /-- **An accepting FRI verifier**, after the batching challenge `alpha`, on batches whose
 matrices all have height `2 ^ logMax`: the proof has Plonky3's shape for the
 fold schedule, the query grinding witness checks, and every query passes its checks at the index
@@ -1170,25 +1169,6 @@ theorem verifyFri_ok (P : Params) (proof : FriProof F EF) (rounds : List (Round 
       List.getElem_map, List.getElem_map, List.getElem_map, List.getElem_map, hgi] at hp
     exact ⟨hcap, path, hp⟩
 
-/-- An accepting FRI verifier's commit-phase caps are not empty. -/
-theorem size_commits_ne (P : Params) (proof : FriProof F EF) (rounds : List (Round F EF))
-    (alpha : EF) (s : H.State) (r : Unit × H.State)
-    (h : verifyFri H P proof rounds alpha s = .ok r) : ∀ c ∈ proof.commits, c.size ≠ 0 := by
-  unfold verifyFri at h
-  obtain ⟨-, h⟩ := ensure_bind_eq_ok H h
-  obtain ⟨-, h⟩ := ensure_bind_eq_ok H h
-  dsimp only at h
-  obtain ⟨-, h⟩ := ensure_bind_eq_ok H h
-  obtain ⟨-, h⟩ := ensure_bind_eq_ok H h
-  obtain ⟨-, h⟩ := ensure_bind_eq_ok H h
-  obtain ⟨-, h⟩ := ensure_bind_eq_ok H h
-  obtain ⟨-, h⟩ := ensure_bind_eq_ok H h
-  obtain ⟨-, h⟩ := ensure_bind_eq_ok H h
-  rw [bind_ok_of H (observeList_eq H _ s)] at h
-  obtain ⟨hcs, -⟩ := ensure_bind_eq_ok H h
-  simp only [Bool.and_eq_true, Array.all_eq_true', bne_iff_ne, ne_eq] at hcs
-  exact hcs.2
-
 /-! ### The STARK verifier -/
 
 /-- The challenger after observing every opened value of `rounds`, in `verifyPcs`'s order. -/
@@ -1356,31 +1336,6 @@ theorem verifyWith_ok (P : Params) (A : Air F) (vk : Option (PreprocessedKey F))
             obtain ⟨⟨⟨⟨h1a, h1b⟩, h1c⟩, h1d⟩, h1e⟩ := hshape
             exact ⟨h1a, h1b, h1c, h1d, h1e, hdeg, beq_iff_eq.mp hpis, hood, hz, hbc, ⟨_, hfri⟩,
               hc⟩
-          · exact absurd h (by intro h'; cases h')
-        · exact absurd h (by intro h'; cases h')
-      · exact absurd h (by intro h'; cases h')
-    · rw [ite_eq_right hper] at h
-      exact absurd h (by intro h'; cases h')
-  · rw [ite_eq_right hdeg] at h
-    exact absurd h (by intro h'; cases h')
-
-/-- An accepted proof's quotient cap is not empty. -/
-theorem size_quotientCommit_ne (P : Params) (A : Air F) (vk : Option (PreprocessedKey F))
-    (proof : Proof F EF) (pis : List F) (h : verifyWith H P A vk proof pis = .ok ()) :
-    proof.quotientCommit.size ≠ 0 := by
-  unfold verifyWith at h
-  dsimp only at h
-  by_cases hdeg : proof.degreeBits + A.logQuotientChunks proof.degreeBits ≤ twoAdicity F
-  · rw [ite_eq_left hdeg] at h
-    by_cases hper : A.periodicFits proof.degreeBits = true
-    · rw [ite_eq_left hper] at h
-      split at h
-      · split at h
-        · split at h
-          · split at h
-            · rename_i hq
-              simpa only [bne_iff_ne, ne_eq] using hq
-            · exact absurd h (by intro h'; cases h')
           · exact absurd h (by intro h'; cases h')
         · exact absurd h (by intro h'; cases h')
       · exact absurd h (by intro h'; cases h')

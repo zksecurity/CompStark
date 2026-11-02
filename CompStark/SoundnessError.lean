@@ -32,6 +32,10 @@ Below the unique-decoding radius `ℓ ≤ 1`; up to the Johnson bound `1 - √ra
 
 A statement's knowledge error (`Statement.knowledgeError`) is the largest over the trace lengths
 the verifier admits, the prover choosing the length.
+
+FRI folds by Plonky3's arities (`Setup.foldArities`, as ArkLib's schedule `Setup.schedule`). A
+challenge drawn after a grinding check of `bits` bits is credited with the probability
+`powFraction F bits` that a uniform sample passes it.
 -/
 
 @[expose] public section
@@ -172,5 +176,28 @@ theorem Statement.rate_setupAt (C : Statement F) (n : Nat) (h : C.Admits n) :
   push_cast
   field_simp
   rfl
+
+/-! ### FRI's folding schedule and grinding -/
+
+namespace Setup
+variable (S : Setup EF)
+
+/-- Plonky3's folding arities for `S`: `logN - logFinalPolyLen` halvings. -/
+def foldArities : List ℕ+ := Sound.folds S.params.maxLogArity (S.logN - S.params.logFinalPolyLen)
+
+/-- FRI folds `lastFold + 1` times. -/
+def lastFold : Nat := S.foldArities.length - 1
+
+/-- The arity of each fold, as ArkLib's folding schedule. -/
+def schedule (i : Fin (S.lastFold + 1)) : ℕ+ := S.foldArities.getD i 1
+
+end Setup
+
+/-- The probability that `bits` low bits of a uniform element of `F`, `p = |F|`, vanish:
+`((p - 1) / 2^bits + 1) / p ≤ 2^-bits + 1/p`, the multiples of `2 ^ bits` below `p`; `1` for
+`bits = 0`. A challenge drawn after a grinding check of `bits` bits has its error multiplied by
+`powFraction F bits`. -/
+noncomputable def powFraction (F : Type) (bits : Nat) : ENNReal :=
+  (((Nat.card F - 1) / 2 ^ bits + 1 : Nat) : ENNReal) / Nat.card F
 
 end CompStark.Iop
