@@ -21,14 +21,15 @@ The draws (`ArkLib`'s `PublicCoin.Draw`):
 * `extDraw bits`: an element of the challenge field `𝕂` from `d` samples, after a grinding sample
   with `bits` vanishing low bits if `bits ≠ 0` (Plonky3's `check_witness` then `sample_ext`), and
   with no witness at `bits = 0`;
-* `queryDraw bits top t`: `t` positions of the domain of `2 ^ top` points, each the low `top` bits
-  of one sample (`sample_bits`), after the grinding sample.
+* `queryDraw bits top t`: `t` positions of the domain of `2 ^ top` points, each the bit reversal
+  of the low `top` bits of one sample (`sample_bits`, an index into the bit-reversed domain), after
+  the grinding sample.
 
 Uniform coins give uniform samples (`prob_samples`), so an extension element is uniform and
 `extDraw bits` is bounded by `powFraction F bits` against the uniform law (`bounded_extDraw`). The
 query positions are the residues of `t` uniform elements of `F` (`positionLaw`), and
 `queryDraw bits top t` is bounded by `powFraction F bits` against that law
-(`bounded_queryDraw`). With `2 ^ top ∣ p - 1`, a residue lands in a set of `c` positions with
+(`bounded_queryDraw`). With `2 ^ top ∣ p - 1`, a residue lands in a set of `c` residues with
 probability at most `c / 2 ^ top + 1 / p`: only the residue `0` has an extra preimage. So the
 law's positions all land in a set of density `ρ` with probability at most `(ρ + 1/p) ^ t`
 (`queryLaw`, FRI's `QueryLaw` with slack `1/p`).
@@ -139,12 +140,13 @@ noncomputable def extDraw : ℕ → Draw (Coins F K m) 𝕂
   | 0 => Draw.plain (extOf · 0)
   | bits + 1 => Draw.grind F (bits + 1) powSample (extOf · 1)
 
-/-- The position of the domain of `2 ^ top` points read off a sample: its low `top` bits. -/
+/-- The position of the domain of `2 ^ top` points read off a sample: the bit reversal of its low
+`top` bits, Plonky3's index into the bit-reversed domain. -/
 def positionOf (top : ℕ) (x : F) : Fin (2 ^ top) :=
-  ⟨CanonicalNat.toNat x % 2 ^ top, Nat.mod_lt _ (Nat.two_pow_pos top)⟩
+  ⟨reverseBits (CanonicalNat.toNat x % 2 ^ top) top, reverseBits_lt _ _⟩
 
-/-- `t` query positions drawn with `bits` bits of grinding, each the low `top` bits of one
-sample, after the grinding sample if `bits ≠ 0`. -/
+/-- `t` query positions drawn with `bits` bits of grinding, each read off one
+sample (`positionOf`), after the grinding sample if `bits ≠ 0`. -/
 noncomputable def queryDraw (top t : ℕ) : ℕ → Draw (Coins F K m) (Fin t → Fin (2 ^ top))
   | 0 => Draw.plain fun c i ↦ positionOf top (sampleAt c i)
   | bits + 1 => Draw.grind F (bits + 1) powSample fun c i ↦ positionOf top (sampleAt c (1 + i))
@@ -188,12 +190,12 @@ theorem bounded_extDraw (bits : ℕ) (hs : extSamples (EF := EF) bits ≤ m * K)
             (fun z ↦ CanonicalNat.toNat z.1 % 2 ^ (b + 1) = 0 ∧ E z.2))
       _ ≤ _ := prob_pow_and_le (b + 1) E
 
-/-- The law of `t` query positions on the domain of `2 ^ top` points, each the low `top` bits of a
-uniform element of `F`. -/
+/-- The law of `t` query positions on the domain of `2 ^ top` points, each read off a uniform
+element of `F` (`positionOf`). -/
 noncomputable def positionLaw (top t : ℕ) : ProbComp (Fin t → Fin (2 ^ top)) :=
   (fun x : Fin t → F ↦ fun i ↦ positionOf top (x i)) <$> ($ᵗ (Fin t → F))
 
-/-- An event on the positions of `positionLaw` is the event on the residues of uniform elements. -/
+/-- An event on the positions of `positionLaw` is the event on the positions of uniform elements. -/
 theorem prob_positionLaw (top t : ℕ) (E : (Fin t → Fin (2 ^ top)) → Prop) :
     Pr{let y ← (positionLaw (F := F) top t)}[E y] =
       Pr{let x ← $ᵗ (Fin t → F)}[E fun i ↦ positionOf top (x i)] := by
@@ -215,14 +217,19 @@ noncomputable def queryLaw (top t : ℕ) (hb : 2 ^ top ∣ Nat.card F - 1) :
     simp only [hA]
     rw [Probability.prob_uniform_pi_mem_finset_eq]
     gcongr
-    have h := prob_val_mod_mem_le top hb (C.map Fin.valEmbedding)
+    let rev : Fin (2 ^ top) ↪ ℕ := ⟨fun y ↦ reverseBits y top, fun a b h ↦
+      Fin.ext (reverseBits_injective a.isLt b.isLt h)⟩
+    have h := prob_val_mod_mem_le top hb (C.map rev)
     rw [SampleableType.prEvent_uniformSample, Finset.card_map] at h
     refine le_of_eq_of_le ?_ h
     have hmem (x : F) :
-        positionOf top x ∈ C ↔ CanonicalNat.toNat x % 2 ^ top ∈ C.map Fin.valEmbedding := by
+        positionOf top x ∈ C ↔ CanonicalNat.toNat x % 2 ^ top ∈ C.map rev := by
       rw [Finset.mem_map]
-      refine ⟨fun hx ↦ ⟨_, hx, rfl⟩, fun ⟨y, hy, he⟩ ↦ ?_⟩
-      have hy' : positionOf top x = y := Fin.ext he.symm
+      refine ⟨fun hx ↦ ⟨_, hx, reverseBits_reverseBits (Nat.mod_lt _ (Nat.two_pow_pos top))⟩,
+        fun ⟨y, hy, he⟩ ↦ ?_⟩
+      have hy' : positionOf top x = y := Fin.ext (by
+        simp only [positionOf, ← he, rev]
+        exact reverseBits_reverseBits y.isLt)
       rwa [hy']
     congr 3
     ext x
