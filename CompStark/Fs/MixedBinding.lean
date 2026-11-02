@@ -12,8 +12,8 @@ public import CompStark.Merkle.ExtractMixed
 
 The batch STARK commits to matrices of several heights under one root, Plonky3's trees with
 injected matrices. `BindingM`: every accepted opening against a root opens the rows extracted from
-a cache (`Merkle.extractGroup`), group by group of matrices of one height; `CapBindingM` the same
-for every entry of a cap.
+a cache (VCVio's `MixedMerkleTree.extract`), group by group of matrices of one height;
+`CapBindingM` the same for every entry of a cap.
 
 `Merkle.matColumn`: the extracted column `j` of matrix `t` of a commitment, read off its group's
 rows at the matrix's offset among the matrices of its height; an accepted opening that binds opens
@@ -30,18 +30,20 @@ variable {F : Type} [BaseField F]
 
 /-- Accepted openings against `root` of matrices of heights `hs`, at most `2 ^ K`, open the rows
 extracted from `cache`, height by height. -/
-def BindingM (cache : Merkle.Cache F (Digest F)) (H : Primitives F Id) (root : Digest F) (K : ℕ)
+def BindingM (cache : MixedMerkleTree.Cache (List F) (Digest F)) (H : Primitives F Id)
+    (root : Digest F) (K : ℕ)
     (hs : List ℕ) : Prop :=
   ∀ (i : ℕ) (values : List (List F)) (path : List (Digest F)),
     verifyBatchH H root hs i values path = true →
     ∀ g ∈ Merkle.heightGroups hs, ∀ l, g.1 = 2 ^ l →
-      Merkle.extractGroup cache (Merkle.injLevels K hs) K l (i >>> (K - l)) root =
+      MixedMerkleTree.extract cache (Merkle.injLevels K hs) K l (i >>> (K - l)) root =
         some (g.2.flatMap fun m ↦ values.getD m [])
 
 /-- Accepted openings against every entry of the cap `cap` of height `capHeight` (capped at `K`,
 `c` levels), of matrices of heights `hs` at most `2 ^ K`, open the rows extracted from `cache` in
 the entry's subtree, whose matrices have the heights divided by `2 ^ c`. -/
-def CapBindingM (cache : Merkle.Cache F (Digest F)) (H : Primitives F Id) (cap : Cap F)
+def CapBindingM (cache : MixedMerkleTree.Cache (List F) (Digest F)) (H : Primitives F Id)
+    (cap : Cap F)
     (capHeight K : ℕ) (hs : List ℕ) : Prop :=
   ∀ e, BindingM cache H (cap.toList.getD e 0) (K - min capHeight K)
     (hs.map (· / 2 ^ min capHeight K))
@@ -89,7 +91,8 @@ theorem range_filter_lt : ∀ (n t : ℕ), t ≤ n → (List.range n).filter (·
     · exact List.filter_eq_self.mpr fun x hx ↦ decide_eq_true (List.mem_range.mp hx)
 
 /-- **An opening that binds opens the extracted columns.** -/
-theorem matColumn_eq (cache : Merkle.Cache F (Digest F)) (H : Primitives F Id) (root : Digest F)
+theorem matColumn_eq (cache : MixedMerkleTree.Cache (List F) (Digest F)) (H : Primitives F Id)
+    (root : Digest F)
     (K : ℕ) (hs ws : List ℕ) (hb : BindingM cache H root K hs) (i : ℕ) (values : List (List F))
     (path : List (Digest F)) (hv : verifyBatchH H root hs i values path = true)
     (hw : ∀ t < hs.length, (values.getD t []).length = ws.getD t 0)
@@ -127,7 +130,8 @@ theorem shiftRight_mod_two_pow (a s n : ℕ) (h : s ≤ n) :
     Nat.mod_mul_right_div_self]
 
 /-- **An opening against a cap that binds opens the extracted columns.** -/
-theorem matColumnCap_eq (cache : Merkle.Cache F (Digest F)) (H : Primitives F Id) (cap : Cap F)
+theorem matColumnCap_eq (cache : MixedMerkleTree.Cache (List F) (Digest F)) (H : Primitives F Id)
+    (cap : Cap F)
     (capHeight K : ℕ) (hs ws : List ℕ) (hb : CapBindingM cache H cap capHeight K hs) (idx : ℕ)
     (values : List (List F)) (path : List (Digest F))
     (hv : verifyCapMixedH H cap capHeight hs K idx values path = true)

@@ -7,7 +7,7 @@ module
 public import CompStark.Stark.Verifier
 public import CompStark.Stark.Setup
 public import CompStark.Iop.StarkSetup
-public import CompStark.Merkle.Extract
+public import CompStark.Merkle.ExtractMixed
 public import VCVio.OracleComp.QueryTracking.RandomOracle.Basic
 public import VCVio.OracleComp.QueryTracking.LoggingOracle.Core
 

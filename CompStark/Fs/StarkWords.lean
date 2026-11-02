@@ -28,12 +28,13 @@ local notation "𝕂" => Challenge.Spec EF
 /-- The word of a FRI layer of `2 ^ m` points folded by `2 ^ k`, committed under the cap `cap` of
 height `capHeight`: its value at the point of index `z` is entry `rev z % 2 ^ k` of leaf
 `rev z >>> k`, read off `cache`. -/
-noncomputable def friWordOf (cache : Merkle.Cache F (Digest F)) (capHeight : ℕ) (cap : Cap F)
+noncomputable def friWordOf (cache : MixedMerkleTree.Cache (List F) (Digest F)) (capHeight : ℕ)
+    (cap : Cap F)
     (m k : ℕ) : Fri.Interaction.Word 𝕂 m :=
   fun z ↦ Fs.friWordAt cache cap capHeight m k z.val
 
 namespace Setup
-variable (S : Setup EF) (cache : Merkle.Cache F (Digest F))
+variable (S : Setup EF) (cache : MixedMerkleTree.Cache (List F) (Digest F))
 
 /-- The trace message committed under the cap `cap`: column `j` at a point of `L` is column `j`
 of the extracted rows there. -/

@@ -41,7 +41,8 @@ theorem isSubgroupDomain_friDomainL {lookups : List (Stark.Lookup F)} (S : Setup
 /-- An accepted fold at index `I` of the layer of `2 ^ m` points, whose commitment binds, adds to
 Plonky3's folded value `β ^ 2 ^ k` times the injected word, at the folded point of a top position
 over `I`: the verifier's next word there. -/
-theorem foldNext_proj (cache : Merkle.Cache F (Digest F)) (H : Primitives F Id) (ch : ℕ)
+theorem foldNext_proj (cache : MixedMerkleTree.Cache (List F) (Digest F)) (H : Primitives F Id)
+    (ch : ℕ)
     {top m : ℕ} (ω : SmoothCosetFftDomain m 𝕂) (hω : IsSubgroupDomain ω) (commit : Cap F)
     (x : EF × Fs.QueryFold EF) (e : EF) (I : ℕ) (hI : I < 2 ^ m) {k : ℕ} (hxk : x.2.logArity = k)
     (ha : k ≤ m) (hok : Fs.StepOk H ch commit x (e, I, m)) (hbind : Fs.CapBinding cache H commit)
@@ -59,7 +60,7 @@ theorem foldNext_proj (cache : Merkle.Cache F (Digest F)) (H : Primitives F Id) 
 /-! ### A query's folds with injected words along the extracted path -/
 
 section Query
-variable (cache : Merkle.Cache F (Digest F)) (H : Primitives F Id) (ch : ℕ)
+variable (cache : MixedMerkleTree.Cache (List F) (Digest F)) (H : Primitives F Id) (ch : ℕ)
   (commits : List (Cap F)) (betas : List EF) (steps : List (Fs.QueryFold EF))
   (hbl : betas.length = steps.length) (hcl : commits.length = steps.length)
   (hbind : ∀ c ∈ commits, Fs.CapBinding cache H c) {top : ℕ} (htop : top ≤ twoAdicity F)
@@ -291,7 +292,7 @@ primitives `H` accepts a proof whose commitments bind the rows extracted from `c
 quotient, preprocessed and permutation commitments at their mixed heights, `CapBindingM`, FRI's
 commitments `CapBinding`), and under whose preprocessed commitment `cache` holds the preprocessed
 traces' extensions, the batch's terminal accepts on the proof's execution path (`proofPath`). -/
-theorem terminal_of_verifyWith (S : Setup EF) (cache : Merkle.Cache F (Digest F))
+theorem terminal_of_verifyWith (S : Setup EF) (cache : MixedMerkleTree.Cache (List F) (Digest F))
     (H : Primitives F Id) (common : CompStark.Batch.Common F)
     (proof : CompStark.Batch.BatchProof F EF) (publicValues : Fin S.k → List F)
     (hmain : CapBindingM cache H proof.mainCommit S.params.capHeight S.logTop S.mainHeights)
@@ -313,8 +314,7 @@ theorem terminal_of_verifyWith (S : Setup EF) (cache : Merkle.Cache F (Digest F)
         S.protocol.oracles noAccess noImpl)
       (S.terminal publicValues
         (S.proofPath cache H common proof (List.ofFn publicValues)).toBranchPath) = true := by
-  obtain ⟨hsum, hcons, -⟩ := bcsB S cache H common proof publicValues hmain hquot hfri hprepBind
-    hprep hpermBind h
+  obtain ⟨hsum, hcons, -⟩ := bcsB S cache H common proof publicValues h
   set pis := List.ofFn publicValues with hpis
   obtain ⟨hsize, -, hlsize, hnsize, htsize, -, -, hshapeZ, hprepS, hlk, -, -, -, -,
     ⟨st, hfriOk⟩, -, -⟩ :=

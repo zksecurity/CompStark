@@ -61,16 +61,19 @@ theorem merkleNodeWith_pure (H : Primitives F Id) (hash : List F → Digest F)
     (compress : Digest F → Digest F → Digest F) (hh : ∀ xs, H.hash xs = hash xs)
     (hc : ∀ a b, H.compress a b = compress a b) (leaf : Nat → List F) :
     ∀ j t, merkleNodeWith H (fun r ↦ H.hash (leaf r)) j t =
-      Merkle.nodeValue compress (fun r ↦ hash (leaf r)) j t
+      MixedMerkleTree.nodeValue compress (fun r ↦ hash (leaf r)) j t
   | 0, t => hh _
   | j + 1, t => by
-    rw [merkleNodeWith, Merkle.nodeValue_succ, ← merkleNodeWith_pure H hash compress hh hc leaf,
+    rw [merkleNodeWith, MixedMerkleTree.nodeValue_succ,
+      ← merkleNodeWith_pure H hash compress hh hc leaf,
       ← merkleNodeWith_pure H hash compress hh hc leaf]
     exact hc _ _
 
 end CompStark.Stark
 
 namespace CompStark.Merkle
+
+open MixedMerkleTree (nodeValue)
 
 variable {F : Type} [Zero F] {d : Nat}
 

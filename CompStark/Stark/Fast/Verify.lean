@@ -321,7 +321,8 @@ def shapeOk {α : Type} [Zero α] [DecidableEq α] {d : Nat} (dims : List (Nat �
       r.length == dims.length && (r.zip dims).all fun (x, (_, w)) ↦ x.length == w) &&
     (indices.all (· < maxH)) &&
     (qs.all fun (i, r) ↦ qs.all fun (i', r') ↦ rowsAgree i i' shifts r r') &&
-    sibs.length == Merkle.siblingCount levels ((Merkle.frontier indices).map (·.1))
+    sibs.length ==
+      MixedMerkleTree.siblingCount levels ((MixedMerkleTree.frontier indices).map (·.1))
 
 theorem shapeOk_eq {α : Type} [Zero α] [DecidableEq α] {d : Nat} (dims : List (Nat × Nat))
     (maxH levels : Nat) (indices : List Nat) (rows : List (List (List α)))
@@ -399,7 +400,7 @@ def verifyMulti (cap : List (Digest F)) (capHeight : Nat) (dims : List (Nat × N
     let (levels, h) := Merkle.capLevels maxH capHeight
     if shapeOk dims maxH levels indices rows sibs && cap.length == 2 ^ h &&
         rest.all (fun g ↦ 2 ^ h ≤ g.1.nextPowerOfTwo) then
-      let fr := Merkle.frontier indices
+      let fr := MixedMerkleTree.frontier indices
       let ds := hashRows (fr.map fun (_, q) ↦ tallest.flatMap fun k ↦ (rows.getD q []).getD k [])
       let leaves := (fr.zip ds).map fun ((i, q), x) ↦ (i, q, x)
       let (top, _) := (Merkle.walkM (m := Id) (fun xs ↦ pure (Hash.Poseidon2.hash F xs))

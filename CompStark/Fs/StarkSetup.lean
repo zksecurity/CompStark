@@ -107,7 +107,7 @@ theorem lde_eq_preprocessedPoly {lookups : List (Lookup F)} (S : Iop.Setup EF lo
 /-- **The preprocessed trace under a binding cap.** If honest openings against the verifying
 key's cap bind the rows of `cache`, the columns read off `cache` under the cap are the
 preprocessed trace's words. -/
-theorem committedColumn_setup (S : Iop.Setup EF) (cache : Merkle.Cache F (Digest F))
+theorem committedColumn_setup (S : Iop.Setup EF) (cache : MixedMerkleTree.Cache (List F) (Digest F))
     (g : (q : Query F) → Answer K q) (k : PreprocessedKey F)
     (hk : preprocessedKeyWith (idealOf g) S.params S.air S.logN = some k)
     (hbind : CapBinding cache (idealOf g) k.commit) :

@@ -7,7 +7,6 @@ module
 public import CompStark.Sound.BatchAssembly
 public import CompStark.Sound.Rbr
 public import CompStark.Iop.BatchError
-public import CompStark.Sound.FriRun
 
 /-! # Round-by-round soundness of the batch STARK
 
@@ -15,10 +14,8 @@ The batch STARK's rounds as bad events on transcript prefixes, each bounded for 
 its error: in `CompStark/Iop/BatchError.lean` for the interactive protocol, whose knowledge
 certificate (`CompStark/Iop/BatchKnowledge.lean`) is built from the events of the lookup
 challenges, `α`, `ζ` and `a`, with the failing instance's errors (`prob_batchBad_le_failing`). The
-transcript (`Batch.Transcript`) holds every instance's
-words, terminals and claimed values, the challenges, and FRI's committed words and final
-polynomial, which FRI folds by Plonky3's schedule from the tallest domain, injecting the batched
-DEEP words of the shorter domains (`Transcript.rounds`, `Transcript.fri`).
+transcript (`Batch.Transcript`) holds every instance's words, terminals and claimed values, the
+challenges, and FRI's final polynomial.
 
 * The lookup challenges `(α_L, β_L)` (`LookupBad`, `Sound/BatchLogUp.lean`): for some tuple of
   candidate traces satisfying every AIR but unbalanced, a message's denominator or the messages'
@@ -40,31 +37,13 @@ safe `α`, `ζ` and `a` make the batched word of its domain size far (`not_near_
 
 @[expose] public section
 namespace CompStark.Sound
-open CompStark.Stark CompStark.Iop Polynomial OracleComp FriRounds FriInject
+open CompStark.Stark CompStark.Iop Polynomial OracleComp
 
 variable {F : Type} [BaseField F] {EF : Type} [Challenge F EF]
 
 local notation "𝕂" => Challenge.Spec EF
 
 namespace Batch
-
-/-! ### FRI's injected words -/
-
-section Injected
-variable {withLookups : Bool} (S : Iop.Batch.Setup EF withLookups)
-
-/-- The shift of the domain of `2 ^ m` points that FRI's folds reach from the tallest domain
-`g ⟨ω⟩`: `g ^ 2 ^ (logTop - m)`. -/
-noncomputable def foldShift (m : ℕ) : 𝕂 := lift gen ^ 2 ^ (S.logTop - m)
-
-/-- FRI's injected words: Plonky3 adds the batched DEEP word of the domain of `2 ^ m` points times
-`β ^ 2 ^ k` to a fold by `2 ^ k` at `β`, which is ArkLib's fold at `s β`, `s` the shift of the
-folded domain's square root: so ArkLib's fold injects the word divided by the folded domain's
-shift. -/
-noncomputable def injected (words : (m : ℕ) → Fin (2 ^ m) → 𝕂) (m : ℕ) (x : Fin (2 ^ m)) : 𝕂 :=
-  (foldShift S m)⁻¹ * words m x
-
-end Injected
 
 /-! ### The transcript -/
 
@@ -84,13 +63,8 @@ structure Transcript {withLookups : Bool} (S : Iop.Batch.Setup EF withLookups) w
   zeta : 𝕂
   openings : (i : Fin S.k) → Openings (S.instanceSetup i)
   batch : 𝕂
-  /-- FRI's committed words, the batched word of the tallest domain again first: word `j`, read
-  on `2 ^ m` points. -/
-  words : ℕ → (m : ℕ) → Fin (2 ^ m) → 𝕂
   /-- FRI's final polynomial, in the final domain's coordinate. -/
   finalPoly : 𝕂[X]
-  /-- The folding challenges, in ArkLib's coordinate. -/
-  betas : ℕ → 𝕂
 
 namespace Transcript
 variable {withLookups : Bool} {S : Iop.Batch.Setup EF withLookups} (t : Transcript S)
@@ -103,22 +77,6 @@ def prover : Iop.Batch.Prover S :=
 /-- The batched DEEP words of the transcript, one per domain size. -/
 noncomputable def deepWords (m : ℕ) : Fin (2 ^ m) → 𝕂 :=
   Iop.Batch.groupDeepWord t.prover t.lookupAlpha t.lookupBeta t.alpha t.zeta t.batch m
-
-/-- FRI's rounds: Plonky3's schedule from the tallest domain, injecting the shorter domains'
-batched words. -/
-noncomputable def rounds : Rounds 𝕂 S.logTop :=
-  S.domainSetup.friRounds (injected S t.deepWords) S.friHeights
-
-/-- FRI's run on the committed words. -/
-noncomputable def fri : InjectTrace S.domainSetup.domain
-    (t.rounds.degree (2 ^ S.params.logFinalPolyLen)) :=
-  Rounds.run _ (Nat.two_pow_pos _) t.words t.finalPoly t.betas S.domainSetup.domain t.rounds
-
-open Classical in
-/-- The points where FRI's query checks pass and its first word agrees with the tallest batched
-word. -/
-noncomputable def consistentQueries : Finset S.domainSetup.Point :=
-  t.fri.accepting.filter fun x ↦ t.fri.initial x = t.deepWords S.logTop x
 
 end Transcript
 

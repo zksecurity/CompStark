@@ -17,13 +17,17 @@ require CompPoly from git "https://github.com/mitschabaude-bot/CompPoly.git" @
 -- correlated agreement, FRI on the interaction layer with its knowledge certificate on Plonky3's
 -- commit-phase tree, state restoration over public-coin protocols with grinding draws, and
 -- Fiat–Shamir on a duplex challenger with challenges of several squeezes, its draws bounded
--- against the certificate's challenge laws, and the BCS compiler: Merkle commitments in place of
--- oracle messages (branch `bcs` of the bot fork).
-require Arklib from git "https://github.com/mitschabaude-bot/ArkLib.git" @ "bd9623ea0b4c4630bb655a200259dbdcb8ffb560"
+-- against the certificate's challenge laws, the BCS compiler: Merkle commitments in place of
+-- oracle messages, correlated agreement and lossy MCA for Reed–Solomon curves in the
+-- unique-decoding range, and the fold lists of Plonky3's schedule, against VCVio with Merkle trees
+-- of injected payloads (branch `compstark` of the bot fork).
+require Arklib from git "https://github.com/mitschabaude-bot/ArkLib.git" @
+    "6bb602c24b595b1b5e53dd00ca63f8a11eba28a4"
 
--- VCVio as ArkLib main pins it.
-require VCVio from git "https://github.com/Verified-zkEVM/VCVio" @
-    "6214f907760776ceab8b1f828c9015f549e66e31"
+-- VCVio with Merkle trees of injected payloads, caps and pruned multi-openings (branch
+-- `merkle-mixed` of the bot fork).
+require VCVio from git "https://github.com/mitschabaude-bot/VCVio.git" @
+    "d8cfe466f594510465d56e06f65075861e32fedc"
 
 -- Mathlib as CompPoly pins it, last so that its dependencies take precedence over ArkLib's.
 require mathlib from git "https://github.com/leanprover-community/mathlib4" @ "v4.35.0"
@@ -44,8 +48,8 @@ lean_lib CompStarkPackedNative where
 lean_lib CompStarkTests where
   srcDir := "tests"
 
-/-- AIRs and trace generators of the tests and benchmarks that are not part of the library, such
-as Plonky3's Keccak AIR. -/
+/-- AIRs and constants of the tests and benchmarks that are not part of the library, such as
+Plonky3's Keccak AIR and its quotient kernel. -/
 lean_lib CompStarkFixtures where
   srcDir := "fixtures"
   moreLeancArgs := #["-march=native"]

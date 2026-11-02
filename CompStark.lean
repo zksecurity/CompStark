@@ -33,7 +33,6 @@ public import CompStark.Challenger
 public import CompStark.Primitives
 public import CompStark.Stark.Proof
 public import CompStark.Merkle.Mmcs
-public import CompStark.Merkle.Multi
 public import CompStark.Merkle.Mixed
 public import CompStark.Merkle.MixedMulti
 public import CompStark.Stark.Challenge
@@ -98,7 +97,6 @@ public import CompStark.Stark.Quotient
 public import CompStark.Complete.Defs
 public import CompStark.Poseidon2.ArkLib
 public import CompStark.Merkle.VCVio
-public import CompStark.Merkle.Extract
 public import CompStark.Merkle.ExtractMixed
 public import CompStark.Complete.Merkle
 public import CompStark.Complete.Deep
@@ -137,7 +135,6 @@ public import CompStark.Calculator.Numbers
 public import CompStark.Calculator.Bounds
 public import CompStark.Calculator.Sound
 public import CompStark.Calculator.Security
-public import CompStark.Sound.CurveCA
 public import CompStark.Sound.LogUp
 public import CompStark.Sound.Telescope
 public import CompStark.Sound.BatchLogUp
@@ -145,12 +142,7 @@ public import CompStark.Sound.Inclusion
 public import CompStark.Sound.Counts
 public import CompStark.Sound.Range
 public import CompStark.Iop.LookupInclusion
-public import CompStark.Sound.LossyMca
 public import CompStark.Calculator.McaBound
-public import CompStark.Sound.FriInject
-public import CompStark.Sound.FriRounds
-public import CompStark.Sound.FriSchedule
-public import CompStark.Sound.FriRun
 public import CompStark.Batch.Setup
 public import CompStark.Fs.BatchRandomOracle
 public import CompStark.Sound.BatchRbr
@@ -181,7 +173,6 @@ public import CompStark.Fs.DomainSeparator
 public import CompStark.Fs.StarkLengths
 public import CompStark.Fs.MixedAccept
 public import CompStark.Fs.BatchAccept
-public import CompStark.Fs.FriInjected
 public import CompStark.Fs.MixedBinding
 public import CompStark.Fs.BatchDeep
 public import CompStark.Fs.BatchCheck

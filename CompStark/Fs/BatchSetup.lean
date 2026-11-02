@@ -30,7 +30,7 @@ theorem injNodeWith_idealOf (g : (q : Query F) → Answer K q) (ms : List (Merkl
       Merkle.injNode (fun xs ↦ g (.leaf xs)) (fun a b ↦ g (.node a b)) ms k l i
   | 0, _ => rfl
   | l + 1, i => by
-    rw [CompStark.Batch.injNodeWith, Merkle.injNode, ← injNodeWith_idealOf g ms k l (2 * i),
+    rw [CompStark.Batch.injNodeWith, Merkle.injNode_succ, ← injNodeWith_idealOf g ms k l (2 * i),
       ← injNodeWith_idealOf g ms k l (2 * i + 1)]
     rfl
 
@@ -182,7 +182,7 @@ theorem le_prepLog (S : Iop.Batch.Setup EF) (i : Fin S.k) (hp : 0 < (S.air i).pr
 /-- **The preprocessed traces under a binding cap.** If honest openings against the batch setup's
 preprocessed cap bind the rows of `cache`, and every preprocessed trace's extension is at least as
 tall as the cap, the columns read off `cache` under it are the preprocessed traces' words. -/
-theorem matColumn_setup (S : Iop.Batch.Setup EF) (cache : Merkle.Cache F (Digest F))
+theorem matColumn_setup (S : Iop.Batch.Setup EF) (cache : MixedMerkleTree.Cache (List F) (Digest F))
     (g : (q : Query F) → Answer K q) (root : Cap F)
     (hroot : CompStark.Batch.preprocessedCapWith (idealOf g) S.params S.instances = some root)
     (hbind : CapBindingM cache (idealOf g) root S.params.capHeight (prepLog S) (prepHeights S))

@@ -25,7 +25,7 @@ variable {F : Type} [BaseField F] {EF : Type} [Challenge F EF]
 
 local notation "𝕂" => Challenge.Spec EF
 
-variable (S : Iop.Setup EF) (cache : Merkle.Cache F (Digest F))
+variable (S : Iop.Setup EF) (cache : MixedMerkleTree.Cache (List F) (Digest F))
 
 /-- Column `j` of the base-field matrices committed under the cap `cap`, at the point of `L` of
 index `z`: entry `j` of the extracted leaf `rev z`, zero where nothing is extracted. -/

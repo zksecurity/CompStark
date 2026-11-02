@@ -968,6 +968,22 @@ end CompStark.Iop.Batch.Statement
 namespace CompStark.Fs
 open CompStark.Stark CompStark.Fri
 
+/-- One step of Plonky3's `foldSchedule` above the final height: a fold by the schedule's
+`logArity`, towards the next height. -/
+theorem foldSchedule_cons (maxLogArity logFinal fuel n m : ℕ) (rest : List ℕ)
+    (hn : ¬ n ≤ logFinal) :
+    foldSchedule maxLogArity logFinal (fuel + 1) (n :: m :: rest) =
+      Fri.Interaction.Schedule.logArity maxLogArity logFinal n (m :: rest) ::
+        foldSchedule maxLogArity logFinal fuel
+          (if m = n - Fri.Interaction.Schedule.logArity maxLogArity logFinal n (m :: rest) then
+            (n - Fri.Interaction.Schedule.logArity maxLogArity logFinal n (m :: rest)) :: rest
+          else
+            (n - Fri.Interaction.Schedule.logArity maxLogArity logFinal n (m :: rest)) :: m ::
+              rest) := by
+  simp only [foldSchedule, ite_eq_right_of_eq_false _ _ (eq_false hn), List.head?_cons,
+    Option.some.injEq, List.tail_cons, List.headD_cons]
+  rfl
+
 /-- Plonky3's schedule with inputs folds by Plonky3's arities of the heights. -/
 theorem arities_plonky3_heights (maxLogArity logFinal : ℕ) : ∀ (fuel n : ℕ) (heights : List ℕ),
     Iop.scheduleArities (Fri.Interaction.Schedule.plonky3 maxLogArity logFinal fuel n heights) =
@@ -984,18 +1000,13 @@ theorem arities_plonky3_heights (maxLogArity logFinal : ℕ) : ∀ (fuel n : ℕ
         foldSchedule, Fri.Interaction.Schedule.logArity, List.headD_nil, List.head?_nil,
         reduceCtorEq, ih]
     | m :: rest =>
-      rw [Fs.foldSchedule_cons _ _ _ _ _ _ hfin]
+      rw [foldSchedule_cons _ _ _ _ _ _ hfin]
       simp only [Fri.Interaction.Schedule.plonky3, hfin, ↓reduceIte]
       by_cases hm : m = n - Fri.Interaction.Schedule.logArity maxLogArity logFinal n (m :: rest)
-      · have hm' : m = n - Sound.FriRounds.Rounds.logArity maxLogArity logFinal n (m :: rest) := hm
-        rw [ite_eq_left_of_eq_true _ _ (eq_true hm), ite_eq_left_of_eq_true _ _ (eq_true hm')]
+      · rw [ite_eq_left_of_eq_true _ _ (eq_true hm), ite_eq_left_of_eq_true _ _ (eq_true hm)]
         simp only [Iop.scheduleArities, ih]
-        rfl
-      · have hm' : ¬ m = n - Sound.FriRounds.Rounds.logArity maxLogArity logFinal n (m :: rest) :=
-          hm
-        rw [ite_eq_right_of_eq_false _ _ (eq_false hm), ite_eq_right_of_eq_false _ _ (eq_false hm')]
+      · rw [ite_eq_right_of_eq_false _ _ (eq_false hm), ite_eq_right_of_eq_false _ _ (eq_false hm)]
         simp only [Iop.scheduleArities, ih]
-        rfl
 
 end CompStark.Fs
 

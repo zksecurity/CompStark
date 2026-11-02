@@ -4,7 +4,7 @@ Released under Apache 2.0 license as described in the file LICENSE.
 -/
 module
 
-public import CompStark.Merkle.Multi
+public import CompStark.Merkle.VCVio
 
 /-! # Merkle trees of mixed heights
 
@@ -22,6 +22,8 @@ injected matrices), with any leaf hash `hash` and compression `compress`:
 
 @[expose] public section
 namespace CompStark.Merkle
+
+open MixedMerkleTree (nodeValue nodeValue_zero nodeValue_succ)
 
 variable {F : Type} {d : Nat}
 
@@ -239,17 +241,31 @@ variable [Zero F] (hash : List F → Vector F d) (compress : Vector F d → Vect
 def groupRows (ms : List (Matrix F)) (j i : Nat) : List F :=
   (ms.filter (·.height == 2 ^ j)).flatMap (·.row i)
 
+/-- The injections of the tree of matrices `ms`: depth `t` injects the rows of the matrices of
+height `2 ^ t`, if there are any. -/
+def injRows (ms : List (Matrix F)) (t : Nat) : Option (Nat → List F) :=
+  if ms.any (·.height == 2 ^ t) then some (groupRows ms t) else none
+
 /-- The node at level `l` and index `i` of the tree of matrices `ms` of heights at most
-`2 ^ k`: a leaf hashes the rows of the tallest matrices; a node compresses its children, then, if
-some matrices have the height `2 ^ (k - l)` of its layer, compresses that with the hash of their
-rows. -/
-def injNode (ms : List (Matrix F)) (k : Nat) : Nat → Nat → Vector F d
-  | 0, i => hash (groupRows ms k i)
-  | l + 1, i =>
-    let p := compress (injNode ms k l (2 * i)) (injNode ms k l (2 * i + 1))
-    if ms.any (·.height == 2 ^ (k - (l + 1))) then
-      compress p (hash (groupRows ms (k - (l + 1)) i))
-    else p
+`2 ^ k`: VCVio's `MixedMerkleTree.node` whose leaves hash the rows of the tallest matrices and
+whose nodes at depth `t` inject the rows of the matrices of height `2 ^ t`. -/
+def injNode (ms : List (Matrix F)) (k : Nat) : Nat → Nat → Vector F d :=
+  MixedMerkleTree.node hash compress k (groupRows ms k) (injRows ms)
+
+theorem injNode_zero (ms : List (Matrix F)) (k i : Nat) :
+    injNode hash compress ms k 0 i = hash (groupRows ms k i) := rfl
+
+/-- A node compresses its children, then, if some matrices have the height `2 ^ (k - l)` of its
+layer, compresses that with the hash of their rows. -/
+theorem injNode_succ (ms : List (Matrix F)) (k l i : Nat) :
+    injNode hash compress ms k (l + 1) i =
+      if ms.any (·.height == 2 ^ (k - (l + 1))) then
+        compress (compress (injNode hash compress ms k l (2 * i))
+          (injNode hash compress ms k l (2 * i + 1))) (hash (groupRows ms (k - (l + 1)) i))
+      else compress (injNode hash compress ms k l (2 * i))
+        (injNode hash compress ms k l (2 * i + 1)) := by
+  simp only [injNode, MixedMerkleTree.node, injRows]
+  split <;> rfl
 
 /-- Reading a tabulated list. -/
 theorem getD_map_range' {β : Type} (g : Nat → β) (n i : Nat) (x : β) (hi : i < n) :
@@ -271,7 +287,7 @@ theorem nextLayer_inj (ms : List (Matrix F)) (k l e : Nat) (hk : l + 1 + e = k) 
     intro t ht
     rw [List.mem_range] at ht
     rw [getD_map_range' _ _ _ _ (by omega), getD_map_range' _ _ _ _ (by omega)]
-    simp only [injNode, he]
+    simp only [injNode_succ, he]
     generalize hG : ms.filter (·.height == 2 ^ e) = G
     rcases G with _ | ⟨m, G⟩
     · have hany : ms.any (·.height == 2 ^ e) = false := by
@@ -402,7 +418,7 @@ perfect tree on the hashes of their rows. -/
 theorem injNode_uniform (ms : List (Matrix F)) (k : Nat) (hms : ∀ m ∈ ms, m.height = 2 ^ k) :
     ∀ l ≤ k, ∀ i, injNode hash compress ms k l i = nodeValue compress (leafHashes hash ms) l i
   | 0, _, i => by
-    rw [injNode, nodeValue_zero, leafHashes, groupRows,
+    rw [injNode_zero, nodeValue_zero, leafHashes, groupRows,
       List.filter_eq_self.mpr fun m hm ↦ by rw [hms m hm, beq_self_eq_true]]
   | l + 1, hl, i => by
     have hany : ms.any (·.height == 2 ^ (k - (l + 1))) = false := by
@@ -412,7 +428,7 @@ theorem injNode_uniform (ms : List (Matrix F)) (k : Nat) (hms : ∀ m ∈ ms, m.
       intro he
       have := Nat.pow_right_injective (le_refl 2) he
       omega
-    rw [injNode, hany, nodeValue_succ, injNode_uniform ms k hms l (by omega),
+    rw [injNode_succ, hany, nodeValue_succ, injNode_uniform ms k hms l (by omega),
       injNode_uniform ms k hms l (by omega)]
     rfl
 
@@ -421,227 +437,7 @@ end Tree
 /-! ### Honest multi-openings -/
 
 section Honest
-variable (hash : List F → Vector F d) (compress : Vector F d → Vector F d → Vector F d)
-  (N : Nat → Nat → Vector F d)
-
-/-- The nodes of a level, each with its digest `N l i`. -/
-def nodesOf (l : Nat) (ns : List (Nat × Nat)) : List (Nat × Nat × Vector F d) :=
-  ns.map fun e ↦ (e.1, e.2, N l e.1)
-
-/-- The compression of the children of node `t` one level up from level `l`. -/
-def pairOf (l t : Nat) : Vector F d := compress (N l (2 * t)) (N l (2 * t + 1))
-
-/-- A node compressed with its sibling, on the node's side, is the pair of its parent. -/
-theorem pairOf_parent (l i : Nat) :
-    (if i % 2 = 0 then compress (N l i) (N l (i ^^^ 1)) else compress (N l (i ^^^ 1)) (N l i)) =
-      pairOf compress N l (i / 2) := by
-  have hx : i ^^^ 1 = if i % 2 = 0 then i + 1 else i - 1 := by
-    rw [show i ^^^ 1 = 2 * (i / 2) + (i + 1) % 2 from by
-      have h1 : (i ^^^ 1) / 2 = i / 2 := by
-        rw [Nat.xor_div_two]; simp only [Nat.reduceDiv, Nat.xor_zero]
-      have h2 : (i ^^^ 1) % 2 = (i + 1) % 2 := by
-        have := Nat.xor_mod_two_pow (a := i) (b := 1) (n := 1)
-        rcases Nat.mod_two_eq_zero_or_one i with h | h <;>
-          simp only [Nat.pow_one, h, Nat.one_mod, Nat.reduceXor] at this <;> omega
-      have := Nat.div_add_mod (i ^^^ 1) 2
-      omega]
-    split <;> omega
-  unfold pairOf
-  by_cases h : i % 2 = 0
-  · simp only [hx, h, ↓reduceIte]
-    congr 2 <;> omega
-  · simp only [hx, h, ↓reduceIte]
-    congr 2 <;> omega
-
-variable [Zero F]
-
-/-- One level of the honest walk: the pruned siblings of the leads' paths take the frontier's
-nodes to the pairs of their parents. -/
-theorem level_pruneOf (paths : List (List (Vector F d))) (l : Nat) :
-    ∀ (ns : List (Nat × Nat)) (rest : List (Vector F d)),
-      (∀ e ∈ ns, (paths.getD e.2 []).getD l 0 = N l (e.1 ^^^ 1)) →
-      level compress (nodesOf N l ns) ((pruneLevel paths l ns).2 ++ rest) =
-        (nodesOf (fun l t ↦ pairOf compress N l t) l (pruneLevel paths l ns).1, rest)
-  | [], rest, _ => rfl
-  | [(i, q)], rest, h => by
-    simp only [nodesOf, List.map_cons, List.map_nil, pruneLevel, List.singleton_append,
-      level_single, List.headD_cons, List.tail_cons]
-    rw [h (i, q) (List.mem_singleton_self _), pairOf_parent]
-  | (i, q) :: (j, q') :: ns, rest, h => by
-    have h1 := h (i, q) List.mem_cons_self
-    have hj : ∀ e ∈ (j, q') :: ns, (paths.getD e.2 []).getD l 0 = N l (e.1 ^^^ 1) :=
-      fun e he ↦ h e (List.mem_cons_of_mem _ he)
-    have hns : ∀ e ∈ ns, (paths.getD e.2 []).getD l 0 = N l (e.1 ^^^ 1) :=
-      fun e he ↦ hj e (List.mem_cons_of_mem _ he)
-    simp only [nodesOf, List.map_cons]
-    rw [level_cons_cons]
-    simp only [pruneLevel]
-    split
-    · rename_i hp
-      obtain ⟨he, rfl⟩ := hp
-      have := level_pruneOf paths l ns rest hns
-      simp only [nodesOf] at this
-      rw [this]
-      simp only [List.map_cons, pairOf]
-      rw [show 2 * (i / 2) = i by omega]
-    · have := level_pruneOf paths l ((j, q') :: ns) rest hj
-      simp only [nodesOf, List.map_cons] at this
-      simp only [List.cons_append, List.headD_cons, List.tail_cons, this, h1, pairOf_parent,
-        List.map_cons]
-
-/-- A walk step injecting the group `(h, is)` when its height is the next layer's. -/
-theorem walkM_succ_cons (rows : List (List (List F))) (levels h : Nat) (is : List Nat)
-    (rest : List (Nat × List Nat)) (padded : Nat) (nodes : List (Nat × Nat × Vector F d))
-    (sibs : List (Vector F d)) :
-    walkM (m := Id) hash compress rows (levels + 1) ((h, is) :: rest) padded nodes sibs =
-      if h.nextPowerOfTwo = padded / 2 then
-        walkM (m := Id) hash compress rows levels rest (padded / 2)
-          ((level compress nodes sibs).1.map fun x ↦
-            (x.1, x.2.1, compress x.2.2 (hash (is.flatMap fun k ↦ (rows.getD x.2.1 []).getD k []))))
-          (level compress nodes sibs).2
-      else walkM (m := Id) hash compress rows levels ((h, is) :: rest) (padded / 2)
-        (level compress nodes sibs).1 (level compress nodes sibs).2 := by
-  simp only [walkM]
-  split
-  · exact congrArg (fun ps ↦ walkM (m := Id) hash compress rows levels rest (padded / 2) ps
-      (level compress nodes sibs).2) List.idRun_mapM
-  · rfl
-
-/-- A walk step without groups left. -/
-theorem walkM_succ_nil (rows : List (List (List F))) (levels padded : Nat)
-    (nodes : List (Nat × Nat × Vector F d)) (sibs : List (Vector F d)) :
-    walkM (m := Id) hash compress rows (levels + 1) [] padded nodes sibs =
-      walkM (m := Id) hash compress rows levels [] (padded / 2) (level compress nodes sibs).1
-        (level compress nodes sibs).2 := rfl
-
-end Honest
-
-/-- In a strictly decreasing list, the elements below `B` are its largest such element `x`
-followed by those below `x`. -/
-theorem filter_lt_of_max : ∀ (L : List Nat) (x B : Nat), L.Pairwise (· > ·) → x ∈ L → x < B →
-    (∀ y ∈ L, y < B → y ≤ x) → L.filter (· < B) = x :: L.filter (· < x)
-  | [], _, _, _, hx, _, _ => absurd hx List.not_mem_nil
-  | a :: L, x, B, hs, hx, hxB, hmax => by
-    have hL : ∀ y ∈ L, y < a := fun y hy ↦ List.rel_of_pairwise_cons hs hy
-    by_cases ha : a < B
-    · have hax : a ≤ x := hmax a List.mem_cons_self ha
-      have hxa : x = a := by
-        rcases List.mem_cons.mp hx with rfl | hx
-        · rfl
-        · have := hL x hx; omega
-      subst hxa
-      rw [List.filter_cons_of_pos (p := fun y ↦ decide (y < B)) (decide_eq_true ha),
-        List.filter_cons_of_neg (p := fun y ↦ decide (y < x)) (by
-          simp only [Nat.lt_irrefl, decide_false, Bool.false_eq_true, not_false_eq_true]),
-        List.filter_eq_self.mpr fun y hy ↦ decide_eq_true (lt_trans (hL y hy) ha),
-        List.filter_eq_self.mpr fun y hy ↦ decide_eq_true (hL y hy)]
-    · have hxL : x ∈ L := by
-        rcases List.mem_cons.mp hx with rfl | hx
-        · exact absurd hxB ha
-        · exact hx
-      rw [List.filter_cons_of_neg (by rw [decide_eq_true_eq]; exact ha),
-        List.filter_cons_of_neg (by rw [decide_eq_true_eq]; omega),
-        filter_lt_of_max L x B hs.of_cons hxL hxB fun y hy ↦ hmax y (List.mem_cons_of_mem _ hy)]
-
-/-- Heights `2 ^ j`, tallest first: those below `2 ^ (e + 1)` are `2 ^ e`, if present, then those
-below `2 ^ e`. -/
-theorem filter_keys_step (keys : List Nat) (hkeys : keys.Pairwise (· > ·))
-    (hpow : ∀ h ∈ keys, ∃ j, h = 2 ^ j) (e : Nat) :
-    (2 ^ e ∈ keys → keys.filter (· < 2 ^ (e + 1)) = 2 ^ e :: keys.filter (· < 2 ^ e)) ∧
-      (2 ^ e ∉ keys → keys.filter (· < 2 ^ (e + 1)) = keys.filter (· < 2 ^ e)) := by
-  refine ⟨fun hin ↦ filter_lt_of_max keys _ _ hkeys hin
-    (Nat.pow_lt_pow_right (by decide) (Nat.lt_succ_self e)) fun y hy hyB ↦ ?_, fun hin ↦ ?_⟩
-  · obtain ⟨j, rfl⟩ := hpow y hy
-    have := (Nat.pow_lt_pow_iff_right (by decide)).mp hyB
-    exact Nat.pow_le_pow_right (by decide) (by omega)
-  · refine List.filter_congr fun y hy ↦ ?_
-    obtain ⟨j, rfl⟩ := hpow y hy
-    have hj : j ≠ e := fun h ↦ hin (h ▸ hy)
-    simp only [decide_eq_decide, Nat.pow_lt_pow_iff_right (show 1 < 2 by decide)]
-    omega
-
-section Honest
 variable [Zero F] (hash : List F → Vector F d) (compress : Vector F d → Vector F d → Vector F d)
-  (N : Nat → Nat → Vector F d)
-
-/-- **The honest walk with injections.** From the frontier `ns` at level `l`, whose leads open the
-paths of the tree of nodes `N`, the walk over `levels` levels injecting the groups of heights
-`keys` below the layer's, of indices `idx`, ends at the nodes `N` of its parents, when every node
-`N` is the pair of its children, compressed with the hash of the injected rows of its lead if a
-group has its layer's height. -/
-theorem walk_inj (rows : List (List (List F))) (indices : List Nat) (k : Nat) (keys : List Nat)
-    (idx : Nat → List Nat) (hkeys : keys.Pairwise (· > ·)) (hpow : ∀ h ∈ keys, ∃ j, h = 2 ^ j)
-    (paths : List (List (Vector F d)))
-    (hpaths : ∀ q (hq : q < indices.length), ∀ j < k,
-      (paths.getD q []).getD j 0 = N j ((indices[q] >>> j) ^^^ 1))
-    (hN : ∀ l < k, ∀ q (hq : q < indices.length),
-      N (l + 1) (indices[q] >>> (l + 1)) =
-        if 2 ^ (k - (l + 1)) ∈ keys then
-          compress (pairOf compress N l (indices[q] >>> (l + 1)))
-            (hash ((idx (2 ^ (k - (l + 1)))).flatMap fun k' ↦ (rows.getD q []).getD k' []))
-        else pairOf compress N l (indices[q] >>> (l + 1))) :
-    ∀ (levels l : Nat) (ns : List (Nat × Nat)) (rest : List (Vector F d)),
-      l + levels ≤ k → (∀ e ∈ ns, ∃ h : e.2 < indices.length, indices[e.2] >>> l = e.1) →
-      ∃ ns' : List (Nat × Nat), (∀ e ∈ ns', ∃ h : e.2 < indices.length,
-          indices[e.2] >>> (l + levels) = e.1) ∧
-        walkM (m := Id) hash compress rows levels
-          ((keys.filter (· < 2 ^ (k - l))).map fun h ↦ (h, idx h)) (2 ^ (k - l))
-          (nodesOf N l ns) (pruneWalk paths levels l ns ++ rest) =
-          (nodesOf N (l + levels) ns', rest)
-  | 0, l, ns, rest, _, hns => ⟨ns, hns, rfl⟩
-  | levels + 1, l, ns, rest, hk, hns => by
-    have hlev : ∀ e ∈ ns, (paths.getD e.2 []).getD l 0 = N l (e.1 ^^^ 1) := fun e he ↦ by
-      obtain ⟨hq, hi⟩ := hns e he
-      rw [hpaths e.2 hq l (by omega), hi]
-    have hpar : ∀ e ∈ (pruneLevel paths l ns).1, ∃ h : e.2 < indices.length,
-        indices[e.2] >>> (l + 1) = e.1 := fun e' he' ↦ by
-      obtain ⟨e, he, rfl⟩ := pruneLevel_parents paths l ns e' he'
-      obtain ⟨hq, hi⟩ := hns e he
-      exact ⟨hq, by rw [shiftRight_succ, hi]⟩
-    obtain ⟨e, he⟩ : ∃ e, k - (l + 1) = e := ⟨_, rfl⟩
-    have hkl : k - l = e + 1 := by omega
-    have hpad : 2 ^ (e + 1) / 2 = 2 ^ e := by
-      rw [Nat.pow_succ, Nat.mul_div_cancel _ (by decide)]
-    have hlevel := level_pruneOf compress N paths l ns (pruneWalk paths levels (l + 1)
-      (pruneLevel paths l ns).1 ++ rest) hlev
-    obtain ⟨ns', h1, h2⟩ := walk_inj rows indices k keys idx hkeys hpow paths hpaths hN levels
-      (l + 1) (pruneLevel paths l ns).1 rest (by omega) hpar
-    rw [he] at h2
-    refine ⟨ns', by rw [show l + (levels + 1) = l + 1 + levels by omega]; exact h1, ?_⟩
-    rw [show l + (levels + 1) = l + 1 + levels by omega, ← h2]
-    simp only [pruneWalk, List.append_assoc]
-    obtain ⟨hin, hout⟩ := filter_keys_step keys hkeys hpow e
-    rw [hkl]
-    by_cases hk' : 2 ^ e ∈ keys
-    · rw [hin hk', List.map_cons, walkM_succ_cons, hpad, nextPowerOfTwo_two_pow,
-        ite_eq_left rfl, hlevel]
-      refine congrArg₂ _ ?_ rfl
-      simp only [nodesOf, List.map_map]
-      refine List.map_congr_left fun x hx ↦ ?_
-      obtain ⟨hq, hi⟩ := hpar x hx
-      simp only [Function.comp_apply]
-      rw [← hi, hN l (by omega) x.2 hq, he, ite_eq_left hk']
-    · rw [hout hk']
-      have hnodes : nodesOf (fun l t ↦ pairOf compress N l t) l (pruneLevel paths l ns).1 =
-          nodesOf N (l + 1) (pruneLevel paths l ns).1 := by
-        refine List.map_congr_left fun x hx ↦ ?_
-        obtain ⟨hq, hi⟩ := hpar x hx
-        rw [← hi, hN l (by omega) x.2 hq, he, ite_eq_right hk']
-      generalize hG : (keys.filter (· < 2 ^ e)).map (fun h ↦ (h, idx h)) = G
-      rcases G with _ | ⟨⟨h, is⟩, G⟩
-      · rw [walkM_succ_nil, hlevel, hnodes, hpad]
-      · have hh : h ∈ keys.filter (· < 2 ^ e) := by
-          have : (h, is) ∈ (keys.filter (· < 2 ^ e)).map (fun h ↦ (h, idx h)) := by
-            rw [hG]; exact List.mem_cons_self
-          obtain ⟨h', hh', he'⟩ := List.mem_map.mp this
-          rw [Prod.mk.injEq] at he'
-          rwa [← he'.1]
-        rw [List.mem_filter, decide_eq_true_eq] at hh
-        obtain ⟨j, rfl⟩ := hpow h hh.1
-        have hne : (2 ^ j).nextPowerOfTwo ≠ 2 ^ (e + 1) / 2 := by
-          rw [nextPowerOfTwo_two_pow, hpad]
-          exact Nat.ne_of_lt hh.2
-        rw [walkM_succ_cons, ite_eq_right hne, hlevel, hnodes, hpad]
 
 /-- Concatenating the images of a list's elements that pass `p`, by index. -/
 theorem flatMap_filter_range {α β : Type} (l : List α) (x : α) (p : α → Bool) (g : α → List β) :
@@ -691,7 +487,7 @@ theorem verifyMulti_prune_mixed [DecidableEq F] (ms : List (Matrix F)) (k capHei
         (injNode hash compress ms k (k - min capHeight k))) capHeight
       (ms.map fun m ↦ (m.height, m.width)) indices
       (indices.map fun i ↦ ms.map fun m ↦ m.row (i >>> (k - Nat.log2 m.height)))
-      (prune (k - min capHeight k) indices paths) = true := by
+      (MixedMerkleTree.prune 0 (k - min capHeight k) indices paths) = true := by
   set N := injNode hash compress ms k with hN
   set rowsAt : Nat → List (List F) := fun i ↦ ms.map fun m ↦ m.row (i >>> (k - Nat.log2 m.height))
     with hrowsAt
@@ -745,27 +541,10 @@ theorem verifyMulti_prune_mixed [DecidableEq F] (ms : List (Matrix F)) (k capHei
     simp only [hrowsAt, List.getD_eq_getElem?_getD, List.getElem?_map,
       List.getElem?_eq_getElem hi.1, Option.map_some, Option.getD_some] at hi ⊢
     rw [hi.2, Nat.log2_two_pow]
-  -- The nodes of the tree are the injected pairs.
-  have hNstep : ∀ l < k, ∀ q (hq : q < indices.length),
-      N (l + 1) (indices[q] >>> (l + 1)) =
-        if 2 ^ (k - (l + 1)) ∈ keys then
-          compress (pairOf compress N l (indices[q] >>> (l + 1)))
-            (hash ((idx (2 ^ (k - (l + 1)))).flatMap fun k' ↦
-              ((indices.map rowsAt).getD q []).getD k' []))
-        else pairOf compress N l (indices[q] >>> (l + 1)) := by
-    intro l hl q hq
-    have hany : ms.any (·.height == 2 ^ (k - (l + 1))) = decide (2 ^ (k - (l + 1)) ∈ keys) := by
-      rw [Bool.eq_iff_iff, List.any_eq_true, decide_eq_true_eq, hmem']
-      simp only [beq_iff_eq]
-    rw [hrows q hq _ (by omega), show k - (k - (l + 1)) = l + 1 by omega]
-    simp only [hN, injNode, pairOf, hany]
-    by_cases h : 2 ^ (k - (l + 1)) ∈ keys
-    · simp only [h, decide_true, ↓reduceIte]
-    · simp only [h, decide_false, Bool.false_eq_true, ↓reduceIte]
   set h := min capHeight k with hh
   have hhk : h ≤ k := Nat.min_le_right _ _
   have hshape : multiShapeOk (ms.map fun m ↦ (m.height, m.width)) (2 ^ k) (k - h) indices
-      (indices.map rowsAt) (prune (k - h) indices paths) = true := by
+      (indices.map rowsAt) (MixedMerkleTree.prune 0 (k - h) indices paths) = true := by
     have hshift : ∀ m ∈ ms, log2Ceil (2 ^ k) - log2Ceil m.height = k - Nat.log2 m.height :=
       fun m hm ↦ by
         obtain ⟨j, -, hj⟩ := hpow m hm
@@ -795,15 +574,15 @@ theorem verifyMulti_prune_mixed [DecidableEq F] (ms : List (Matrix F)) (k capHei
       by_cases he : a.1 >>> (k - Nat.log2 m.height) = b.1 >>> (k - Nat.log2 m.height)
       · rw [he, bne_self_eq_false, Bool.false_or, beq_self_eq_true]
       · rw [bne_iff_ne.mpr he, Bool.true_or]
-    · rw [prune, length_pruneWalk]
-  have hrest : ks.map (fun h ↦ (h, idx h)) =
-      (keys.filter (· < 2 ^ (k - 0))).map fun h ↦ (h, idx h) := by
-    rw [Nat.sub_zero, hks, List.filter_cons_of_neg (by simp only [Nat.lt_irrefl, decide_false,
-      Bool.false_eq_true, not_false_eq_true]), List.filter_eq_self.mpr fun h hh ↦
-        decide_eq_true (hksl h hh)]
-  have hcapRest : ((keys.filter (· < 2 ^ (k - 0))).map fun g ↦ (g, idx g)).all
-      (fun g ↦ 2 ^ h ≤ g.1.nextPowerOfTwo) = true := by
-    rw [← hrest, List.all_eq_true]
+    · rw [MixedMerkleTree.length_prune]
+  set G := ks.map fun h ↦ (h, idx h) with hGdef
+  have hGs : G.Pairwise fun a b ↦ b.1 < a.1 := List.pairwise_map.mpr ((hks ▸ hk).of_cons.imp id)
+  have hGp : ∀ g ∈ G, ∃ j < k, g.1 = 2 ^ j := fun g hg ↦ by
+    obtain ⟨g', hg', rfl⟩ := List.mem_map.mp hg
+    obtain ⟨j, rfl⟩ := hpowK g' (hks ▸ List.mem_cons_of_mem _ hg')
+    exact ⟨j, (Nat.pow_lt_pow_iff_right (by decide)).mp (hksl _ hg'), rfl⟩
+  have hcapRest : G.all (fun g ↦ 2 ^ h ≤ g.1.nextPowerOfTwo) = true := by
+    rw [List.all_eq_true]
     intro g hg
     obtain ⟨g', hg', rfl⟩ := List.mem_map.mp hg
     obtain ⟨m, hm, hmg⟩ := (hmem' g').mp (hks ▸ List.mem_cons_of_mem _ hg')
@@ -814,53 +593,92 @@ theorem verifyMulti_prune_mixed [DecidableEq F] (ms : List (Matrix F)) (k capHei
     exact decide_eq_true this
   have hcapLen : ((List.range (2 ^ h)).map (N (k - h))).length == 2 ^ h := by
     rw [List.length_map, List.length_range, beq_self_eq_true]
+  -- The nodes of the tree are the injected pairs, the payloads the walk's.
+  have hNstep : ∀ l < k - h, ∀ q (hq : q < indices.length),
+      N (l + 1) (indices[q] >>> (l + 1)) =
+        MixedMerkleTree.inject hash compress
+          ((walkPays (indices.map rowsAt) (k - h) G (2 ^ k) (k - h - (l + 1))).map (· q))
+          (compress (N l (2 * (indices[q] >>> (l + 1))))
+            (N l (2 * (indices[q] >>> (l + 1)) + 1))) := by
+    intro l hl q hq
+    have hpays : (walkPays (indices.map rowsAt) (k - h) G (2 ^ k) (k - h - (l + 1))).map (· q) =
+        if 2 ^ (k - (l + 1)) ∈ ks then
+          some (groupRows ms (k - (l + 1)) (indices[q] >>> (l + 1)))
+        else none := by
+      rw [walkPays, sched_eq_find (k - h) k G (Nat.sub_le _ _) hGs hGp _ (by omega),
+        show k - h - (l + 1) + (k - (k - h)) = k - (l + 1) by omega]
+      by_cases hin : 2 ^ (k - (l + 1)) ∈ ks
+      · have hg : (2 ^ (k - (l + 1)), idx (2 ^ (k - (l + 1)))) ∈ G := List.mem_map_of_mem hin
+        rw [find?_height_eq hGs hg]
+        simp only [hin, ↓reduceIte, Option.map_some, Option.some.injEq]
+        rw [hrows q hq _ (by omega), show k - (k - (l + 1)) = l + 1 by omega]
+      · simp only [hin, ↓reduceIte]
+        have : G.find? (fun g ↦ g.1 == 2 ^ (k - (l + 1))) = none := by
+          rw [List.find?_eq_none]
+          intro g hg
+          obtain ⟨g', hg', rfl⟩ := List.mem_map.mp hg
+          simp only [beq_iff_eq]
+          rintro rfl
+          exact hin hg'
+        rw [this]
+        rfl
+    have hany : ms.any (·.height == 2 ^ (k - (l + 1))) = decide (2 ^ (k - (l + 1)) ∈ ks) := by
+      rw [Bool.eq_iff_iff, List.any_eq_true, decide_eq_true_eq]
+      constructor
+      · rintro ⟨m, hm, hmh⟩
+        rw [beq_iff_eq] at hmh
+        have := (hmem' _).mpr ⟨m, hm, hmh⟩
+        rw [hks] at this
+        rcases List.mem_cons.mp this with e | e
+        · have := Nat.pow_right_injective (le_refl 2) e
+          omega
+        · exact e
+      · intro hin
+        obtain ⟨m, hm, hmh⟩ := (hmem' _).mp (hks ▸ List.mem_cons_of_mem _ hin)
+        exact ⟨m, hm, by rw [hmh, beq_self_eq_true]⟩
+    rw [hpays, hN, injNode_succ, hany]
+    by_cases hin : 2 ^ (k - (l + 1)) ∈ ks
+    · simp only [hin, decide_true, ↓reduceIte, MixedMerkleTree.inject]
+    · simp only [hin, decide_false, Bool.false_eq_true, ↓reduceIte, MixedMerkleTree.inject]
   unfold verifyMultiM
   rw [hheights, hG, hks, List.map_cons]
   dsimp only
   rw [capLevels_two_pow, nextPowerOfTwo_two_pow]
   dsimp only
-  rw [← hh, hrest]
+  rw [← hh, ← hGdef]
   simp only [hshape, hcapLen, hcapRest, Bool.and_self, ↓reduceIte]
-  have hleaves : ((frontier indices).mapM (m := Id) fun (x : Nat × Nat) ↦ match x with
+  have hleaves : ((MixedMerkleTree.frontier indices).mapM (m := Id) fun (x : Nat × Nat) ↦
+      match x with
       | (i, q) => do
         return (i, q, ← hash ((idx (2 ^ k)).flatMap fun k' ↦
           ((indices.map rowsAt).getD q []).getD k' []))) =
-        nodesOf N 0 (frontier indices) := by
-    rw [nodesOf]
+        (MixedMerkleTree.frontier indices).map fun e ↦ (e.1, e.2, N 0 e.1) := by
     refine List.idRun_mapM.trans ?_
     apply List.map_congr_left
     rintro ⟨i, q⟩ he
-    obtain ⟨hi, hq⟩ := mem_frontier.mp he
-    dsimp only at hi hq ⊢
-    have hql : q < indices.length := hq ▸ List.idxOf_lt_length_of_mem hi
-    have hqi : indices[q] = i := by subst hq; exact List.getElem_idxOf hql
+    obtain ⟨hql, hqi⟩ := MixedMerkleTree.lead_of_mem_frontier he
+    dsimp only at hql hqi ⊢
     rw [hrows q hql k le_rfl, Nat.sub_self, Nat.shiftRight_zero, hqi]
     rfl
   rw [hleaves]
-  obtain ⟨ns', hns', hwalk⟩ := walk_inj hash compress N (indices.map rowsAt) indices k keys idx hk
-    hpowK paths hpaths hNstep (k - h) 0 (frontier indices) [] (by omega) fun ⟨i, q⟩ he ↦ by
-      obtain ⟨hi, hq⟩ := mem_frontier.mp he
-      dsimp only at hi hq ⊢
-      subst hq
-      have hql : indices.idxOf i < indices.length := List.idxOf_lt_length_of_mem hi
-      exact ⟨hql, by rw [Nat.shiftRight_zero]; exact List.getElem_idxOf hql⟩
-  rw [Nat.sub_zero] at hwalk
-  rw [Nat.sub_zero, prune, ← List.append_nil (pruneWalk paths (k - h) 0 (frontier indices))]
-  change ((walkM (m := Id) hash compress _ (k - h) _ (2 ^ k) _ _).1.all
+  obtain ⟨ns', hns', hwalk⟩ := MixedMerkleTree.walk_prune hash compress 0 N indices (k - h)
+    (walkPays (indices.map rowsAt) (k - h) G (2 ^ k)) paths
+    (fun q hq j hj ↦ hpaths q hq j (by omega)) hNstep
+  change ((walkM (m := Id) hash compress (indices.map rowsAt) (k - h) G (2 ^ k)
+    ((MixedMerkleTree.frontier indices).map fun e ↦ (e.1, e.2, N 0 e.1))
+    (MixedMerkleTree.prune 0 (k - h) indices paths)).1.all
     fun (x : Nat × Nat × Vector F d) ↦ x.2.2 == ((List.range (2 ^ h)).map (N (k - h))).getD x.1 0)
       = true
-  rw [hwalk, List.all_eq_true]
+  rw [walkM_eq, hwalk, List.all_eq_true]
   intro x hx
   obtain ⟨e, he, rfl⟩ := List.mem_map.mp hx
   obtain ⟨hq, hi⟩ := hns' e he
   have hlt : e.1 < 2 ^ h := by
-    rw [← hi, Nat.zero_add, Nat.shiftRight_eq_div_pow, Nat.div_lt_iff_lt_mul (Nat.two_pow_pos _),
+    rw [← hi, Nat.shiftRight_eq_div_pow, Nat.div_lt_iff_lt_mul (Nat.two_pow_pos _),
       ← Nat.pow_add, Nat.add_sub_cancel' hhk]
     exact hidx _ (List.getElem_mem hq)
-  simp only [Nat.zero_add, List.getD_eq_getElem?_getD, List.getElem?_map,
-    List.getElem?_range hlt, Option.map_some, Option.getD_some, beq_self_eq_true]
-
-
+  simp only [List.getD_eq_getElem?_getD, List.getElem?_map, List.getElem?_range hlt,
+    Option.map_some, Option.getD_some, beq_self_eq_true]
 
 end Mixed
 

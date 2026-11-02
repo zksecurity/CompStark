@@ -190,7 +190,7 @@ variable [DecidableEq F] in
 /-- A Merkle commitment of a tree of depth `k` with cap height `h`: its cap, observed after
 `seed`, opened on a snapshot of the Merkle hashes by `read` (`merkleCache`). -/
 def capCommit {Messages : Type} (h k : ℕ) (seed : List F)
-    (read : Merkle.Cache F (Digest F) → Cap F → Messages) :
+    (read : MixedMerkleTree.Cache (List F) (Digest F) → Cap F → Messages) :
     Bcs.Commit F (merkleSpec F).QueryCache Messages where
   Com := CapOf F h k
   observe c := seed ++ capOfElems c
@@ -199,7 +199,7 @@ def capCommit {Messages : Type} (h k : ℕ) (seed : List F)
 omit [BaseField F] in
 /-- A Merkle commitment is observed prefix-free. -/
 theorem prefixFree_capCommit [DecidableEq F] {Messages : Type} (h k : ℕ) (seed : List F)
-    (read : Merkle.Cache F (Digest F) → Cap F → Messages) :
+    (read : MixedMerkleTree.Cache (List F) (Digest F) → Cap F → Messages) :
     PrefixFree (capCommit h k seed read).observe :=
   prefixFree_of_length (fun _ _ hab ↦ capOfElems_injective (List.append_cancel_left hab))
     fun a b ↦ by

@@ -36,7 +36,7 @@ namespace CompStark.Iop.Batch.Setup
 open CompStark.Stark CompStark.Fs
 
 variable {F : Type} [BaseField F] {EF : Type} [Challenge F EF]
-variable (S : Setup EF) (cache : Merkle.Cache F (Digest F))
+variable (S : Setup EF) (cache : MixedMerkleTree.Cache (List F) (Digest F))
 
 /-- Every instance's trace committed under the main cap `cap`: column `j` of instance `i` at the
 point `x` of its domain is column `j` of matrix `i` at row `rev x`. -/

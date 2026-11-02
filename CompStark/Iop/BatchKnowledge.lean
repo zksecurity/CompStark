@@ -181,14 +181,15 @@ theorem near_of_levelState (w : (m : ℕ) → Fin (2 ^ m) → 𝕂) (loss : ℝ�
   have hft := (S.valid S.top).finalPolyFits
   have hDl : S.domainSetup.logN = S.logN S.top := rfl
   have hDb : S.domainSetup.params.logBlowup = S.params.logBlowup := rfl
-  suffices h : ∀ hm, FriInject.Agrees (cosetDomain (EF := EF) (S.logN i + S.params.logBlowup) hm)
-      (2 ^ S.logN i) (1 - δ) (w (S.logN i + S.params.logBlowup)) from
+  suffices h : ∀ hm,
+      Fri.Interaction.Agrees (cosetDomain (EF := EF) (S.logN i + S.params.logBlowup) hm)
+        (2 ^ S.logN i) (1 - δ) (w (S.logN i + S.params.logBlowup)) from
     near_of_agrees (S.instanceSetup i) δ _ (h (S.valid i).twoAdic)
   intro hm
   by_cases htop : S.logN i = S.logN S.top
   · rw [S.domainSetup.degree_friSchedule _ hfit] at hword
     have key : ∀ (n : ℕ) (hn : n + S.params.logBlowup ≤ twoAdicity F), n = S.logN S.top →
-        FriInject.Agrees (cosetDomain (EF := EF) (n + S.params.logBlowup) hn) (2 ^ n) (1 - δ)
+        Fri.Interaction.Agrees (cosetDomain (EF := EF) (n + S.params.logBlowup) hn) (2 ^ n) (1 - δ)
           (w (n + S.params.logBlowup)) := by
       intro n hn h
       subst h
@@ -213,8 +214,7 @@ theorem near_of_levelState (w : (m : ℕ) → Fin (2 ^ m) → 𝕂) (loss : ℝ�
 noncomputable def transcriptOf (T : S.TraceMessage) (l : 𝕂 × 𝕂) (P : S.PermMessage)
     (terminals : Fin S.k → 𝕂) (α : 𝕂) (Q : S.QuotientMessage) (ζ : 𝕂) (o : S.OpeningsMessage)
     (a : 𝕂) : Sound.Batch.Transcript S :=
-  ⟨S.traceWords T, l.1, l.2, S.permWords P, terminals, α, S.quotientWords Q, ζ, o, a,
-    fun _ _ _ ↦ 0, 0, fun _ ↦ 0⟩
+  ⟨S.traceWords T, l.1, l.2, S.permWords P, terminals, α, S.quotientWords Q, ζ, o, a, 0⟩
 
 theorem prefixExtractor_isLocallyBounded (hδ' : (δ' : ℝ) < 1 - S.rate) (loss : ℝ≥0) :
     (S.prefixExtractor publicValues δ δ' loss).IsLocallyBounded S.prefixProtocol.roles

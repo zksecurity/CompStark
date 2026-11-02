@@ -169,11 +169,13 @@ end CompStark.Fixtures.Poseidon2Example",
 }
 
 /// `keccak-example L DIR`: the example's proof of `2^L / 24` Keccak-f permutations, after
-/// Plonky3 verified it, as `DIR/keccak_example_L.json`, and the permutations' inputs as
-/// `DIR/keccak_example_L_inputs.txt`, one input of 25 lanes per line. Prints the proof's postcard
-/// size, the example's `Proof size`. Run with `RAYON_NUM_THREADS=1` for the smallest grinding
-/// witnesses.
+/// Plonky3 verified it, as `DIR/keccak_example_L.json`, the permutations' inputs as
+/// `DIR/keccak_example_L_inputs.txt`, one input of 25 lanes per line, and the trace as
+/// `DIR/keccak_example_L_trace.txt`, one row of canonical values per line. Prints the proof's
+/// postcard size, the example's `Proof size`. Run with `RAYON_NUM_THREADS=1` for the smallest
+/// grinding witnesses.
 pub fn keccak_example(log_n: usize, dir: &str) {
+    use p3_matrix::Matrix;
     let (p16, p24, _, _) = poseidon2();
     let config = config(p16, p24);
     let air = KeccakAir {};
@@ -181,6 +183,10 @@ pub fn keccak_example(log_n: usize, dir: &str) {
     let trace = air.generate_random_trace_rows::<F>(n, 1);
     let ins = inputs(n);
     assert_eq!(trace, p3_keccak_air::generate_trace_rows::<F>(ins.clone(), 1), "inputs");
+    let rows: String = (0..trace.height())
+        .map(|r| trace.row_slice(r).unwrap().iter().map(|x| x.as_canonical_u32().to_string())
+            .collect::<Vec<_>>().join(" ") + "\n")
+        .collect();
     let proof = prove(&config, &air, trace, &[]).expect("Plonky3 cannot prove");
     verify(&config, &air, &proof, &[]).expect("Plonky3 rejects its own proof");
     println!("Proof size: {} bytes", postcard::to_allocvec(&proof).unwrap().len());
@@ -190,38 +196,11 @@ pub fn keccak_example(log_n: usize, dir: &str) {
         .map(|i| i.iter().map(|x| x.to_string()).collect::<Vec<_>>().join(" ") + "\n")
         .collect();
     std::fs::write(format!("{dir}/keccak_example_{log_n}_inputs.txt"), lines).unwrap();
+    std::fs::write(format!("{dir}/keccak_example_{log_n}_trace.txt"), rows).unwrap();
 }
 
-/// `keccak-bench L REPS`: the example's trace generation, proof and verification of `2^L / 24`
-/// permutations, `REPS` times; prints the median milliseconds of each.
-pub fn keccak_bench(log_n: usize, reps: usize) {
-    use std::time::Instant;
-    let (p16, p24, _, _) = poseidon2();
-    let config = config(p16, p24);
-    let air = KeccakAir {};
-    let n = (1usize << log_n) / 24;
-    let (mut tg, mut tp, mut tv) = (vec![], vec![], vec![]);
-    for _ in 0..reps {
-        let t = Instant::now();
-        let trace = air.generate_random_trace_rows::<F>(n, 1);
-        tg.push(t.elapsed().as_secs_f64() * 1e3);
-        let t = Instant::now();
-        let proof = prove(&config, &air, trace, &[]).unwrap();
-        tp.push(t.elapsed().as_secs_f64() * 1e3);
-        let t = Instant::now();
-        verify(&config, &air, &proof, &[]).unwrap();
-        tv.push(t.elapsed().as_secs_f64() * 1e3);
-    }
-    let med = |v: &mut Vec<f64>| {
-        v.sort_by(|a, b| a.partial_cmp(b).unwrap());
-        v[v.len() / 2]
-    };
-    println!("plonky3 keccak 2^{log_n} tracegen {:.1} prove {:.1} verify {:.1} ms (median of {reps})",
-        med(&mut tg), med(&mut tp), med(&mut tv));
-}
-
-/// `keccak-prove-trace L`: one round of `keccak-bench` with Plonky3's tracing spans printed, the
-/// proof's phases.
+/// `keccak-prove-trace L`: the example's proof of `2^L / 24` permutations with Plonky3's tracing
+/// spans printed, the proof's phases.
 pub fn keccak_prove_trace(log_n: usize) {
     use tracing_forest::util::LevelFilter;
     use tracing_forest::ForestLayer;
@@ -231,5 +210,9 @@ pub fn keccak_prove_trace(log_n: usize) {
     let env_filter = EnvFilter::builder().with_default_directive(LevelFilter::INFO.into())
         .from_env_lossy();
     Registry::default().with(env_filter).with(ForestLayer::default()).init();
-    keccak_bench(log_n, 1);
+    let (p16, p24, _, _) = poseidon2();
+    let config = config(p16, p24);
+    let air = KeccakAir {};
+    let trace = air.generate_random_trace_rows::<F>((1usize << log_n) / 24, 1);
+    prove(&config, &air, trace, &[]).expect("Plonky3 cannot prove");
 }

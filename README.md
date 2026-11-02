@@ -22,7 +22,7 @@ The knowledge errors are explicit sums of one term per challenge, proved from co
 ## How it is built
 
 - **[CompPoly](https://github.com/Verified-zkEVM/CompPoly)** provides the fields and transforms: 32-bit Montgomery fields, their extensions, parallel NTTs and the batched coset low-degree extension.
-- **Hashing and commitments** (`CompStark/Poseidon2`, `CompStark/Hash`, `CompStark/Merkle`): Poseidon2 on any field, equal to ArkLib's specification, vectorized kernels for KoalaBear, Plonky3's sponge, compression and Merkle trees of mixed heights, bridged to [VCVio](https://github.com/Verified-zkEVM/VCVio)'s verified Merkle tree.
+- **Hashing and commitments** (`CompStark/Poseidon2`, `CompStark/Hash`, `CompStark/Merkle`): Poseidon2 on any field, equal to ArkLib's specification, vectorized kernels for KoalaBear, Plonky3's sponge, compression and Merkle trees of mixed heights as instances of [VCVio](https://github.com/Verified-zkEVM/VCVio)'s verified Merkle trees with injected payloads, caps, multi-openings and extraction.
 - **Protocols** (`CompStark/Fri`, `CompStark/Stark`, `CompStark/Batch`, `CompStark/Lookup`): specification provers and verifiers, written once over their hash functions so that the same verifier runs on Poseidon2 and on random oracles.
 - **Fast backend** (`CompStark/Stark/Fast`): the prover over packed Montgomery words, with constraints compiled to vectorized straight-line code, each kernel proved against its specification.
 - **Interactive protocols and certificates** (`CompStark/Iop`, `CompStark/Sound`, `CompStark/Complete`): the STARK and the batch STARK as oracle protocols on [ArkLib](https://github.com/Verified-zkEVM/ArkLib)'s interaction layer with their round-by-round knowledge certificates, knowledge soundness, state restoration and knowledge errors (`Iop`); the round arguments behind the certificates, on ArkLib's coding theory and FRI (`Sound`); and completeness of the provers and of the oracle protocols (`Complete`, `Iop`).
@@ -42,10 +42,10 @@ Proving time on an 8-core Ryzen 7 3700X, against Plonky3 built for the native CP
 | `wide 64` AIR (64 columns, degree 3), $2^{16}$ rows, blowup 2, 100 queries | 0.33 s / 1.32 s | 0.35 s / 1.96 s |
 | `wide 64` AIR, $2^{18}$ rows | 1.14 s / 4.8 s | 1.20 s / 7.9 s |
 | Batch of three `wide 64` tables, $2^{20}$, $2^{19}$ and $2^{16}$ rows | 6.0 s / 26.7 s | 6.3 s / 42.0 s |
-| Plonky3's Keccak-f example, $2^{16}$ rows | 1.96 s | 1.82 s |
-| Plonky3's Keccak-f example, $2^{18}$ rows | 8.2 s | 10.9 s |
+| Plonky3's Keccak-f example, $2^{16}$ rows | 1.90 s / 12.2 s | 1.85 s / 7.9 s |
+| Plonky3's Keccak-f example, $2^{18}$ rows | 6.5 s / 50.0 s | 11.2 s / 33.6 s |
 
-Verifying the Keccak proof takes about 50 ms, against 11 ms for Plonky3. [docs/components.md](docs/components.md) has the configurations, the commands and per-phase breakdowns.
+The Keccak-f rows are proofs from the trace in the keccak-air showcase of [Clean](https://github.com/Verified-zkEVM/clean)'s CompStark backend, which generates the trace; verifying the proof takes about 45 ms, against 11 ms for Plonky3. [docs/components.md](docs/components.md) has the configurations, the commands and per-phase breakdowns.
 
 ## Security of your own AIR
 
