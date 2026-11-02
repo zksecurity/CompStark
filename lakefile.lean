@@ -20,12 +20,12 @@ require CompPoly from git "https://github.com/mitschabaude-bot/CompPoly.git" @
 -- oracle messages, against VCVio with Merkle trees of injected payloads (branch `vcvio-merkle` of
 -- the bot fork).
 require Arklib from git "https://github.com/mitschabaude-bot/ArkLib.git" @
-    "cbc1c527cc095f3748a33661179ad3fdd2e3f11d"
+    "e768fe4ddb7dea34d07af49adc5d31cb5b911eca"
 
 -- VCVio with Merkle trees of injected payloads, caps and pruned multi-openings (branch
 -- `merkle-mixed` of the bot fork).
 require VCVio from git "https://github.com/mitschabaude-bot/VCVio.git" @
-    "f649d28a731711a0c96b6da30d09cb4b61cea7ed"
+    "d8cfe466f594510465d56e06f65075861e32fedc"
 
 -- Mathlib as CompPoly pins it, last so that its dependencies take precedence over ArkLib's.
 require mathlib from git "https://github.com/leanprover-community/mathlib4" @ "v4.35.0"
