@@ -22,12 +22,12 @@ require CompPoly from git "https://github.com/mitschabaude-bot/CompPoly.git" @
 -- unique-decoding range, and the fold lists of Plonky3's schedule, against VCVio with Merkle trees
 -- of injected payloads (branch `compstark` of the bot fork).
 require Arklib from git "https://github.com/mitschabaude-bot/ArkLib.git" @
-    "6bb602c24b595b1b5e53dd00ca63f8a11eba28a4"
+    "4765c7244f1e57892e9d0b016b35ecbf9a7f2500"
 
 -- VCVio with Merkle trees of injected payloads, caps and pruned multi-openings (branch
 -- `merkle-mixed` of the bot fork).
 require VCVio from git "https://github.com/mitschabaude-bot/VCVio.git" @
-    "d8cfe466f594510465d56e06f65075861e32fedc"
+    "b46db1d8226410dd2e6b66ce2f982027f1c26fba"
 
 -- Mathlib as CompPoly pins it, last so that its dependencies take precedence over ArkLib's.
 require mathlib from git "https://github.com/leanprover-community/mathlib4" @ "v4.35.0"
