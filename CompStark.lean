@@ -142,7 +142,6 @@ public import CompStark.Calculator.Numbers
 public import CompStark.Calculator.Bounds
 public import CompStark.Calculator.Sound
 public import CompStark.Calculator.Security
-public import CompStark.Sound.CurveCA
 public import CompStark.Sound.LogUp
 public import CompStark.Sound.Telescope
 public import CompStark.Sound.BatchLogUp
@@ -150,12 +149,7 @@ public import CompStark.Sound.Inclusion
 public import CompStark.Sound.Counts
 public import CompStark.Sound.Range
 public import CompStark.Iop.LookupInclusion
-public import CompStark.Sound.LossyMca
 public import CompStark.Calculator.McaBound
-public import CompStark.Sound.FriInject
-public import CompStark.Sound.FriRounds
-public import CompStark.Sound.FriSchedule
-public import CompStark.Sound.FriRun
 public import CompStark.Batch.Setup
 public import CompStark.Fs.BatchRandomOracle
 public import CompStark.Sound.BatchRbr
@@ -186,7 +180,6 @@ public import CompStark.Fs.DomainSeparator
 public import CompStark.Fs.StarkLengths
 public import CompStark.Fs.MixedAccept
 public import CompStark.Fs.BatchAccept
-public import CompStark.Fs.FriInjected
 public import CompStark.Fs.MixedBinding
 public import CompStark.Fs.BatchDeep
 public import CompStark.Fs.BatchCheck

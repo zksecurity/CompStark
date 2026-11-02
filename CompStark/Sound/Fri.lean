@@ -8,8 +8,8 @@ public import CompStark.Sound.Steps
 
 /-! # FRI's codes on `L` and the domains it reaches
 
-FRI on `L` with Plonky3's schedule (`friRounds`) tests the code of degree `n`: a word agreeing with
-it is near the code (`near_of_agrees`).
+FRI on `L` with Plonky3's schedule (`friSchedule`) tests the code of degree `n`: a word agreeing
+with it is near the code (`near_of_agrees`).
 
 Every domain FRI's folds reach from `L = g ⟨ω⟩` is a coset `c ⟨ω'⟩` of a two-adic subgroup, `ω'`
 the base field's generator of its order (`IsLevel`): the folds square the points; so is the
@@ -22,7 +22,7 @@ codeword on its own domain is one on every domain the folds reach.
 
 @[expose] public section
 namespace CompStark.Sound
-open CompStark.Stark CompStark.Iop Polynomial Domain FriRounds FriInject
+open CompStark.Stark CompStark.Iop Polynomial Domain Fri.Interaction
 
 variable {F : Type} [BaseField F] {EF : Type} [Challenge F EF]
 variable {lookups : List (Lookup F)}
@@ -86,32 +86,17 @@ theorem isLevel_subgroupDomain (n : Nat) (hn : n ≤ twoAdicity F) :
     IsLevel (subgroupDomain (EF := EF) n hn) :=
   ⟨hn, 1, one_ne_zero, fun x ↦ by rw [subgroupDomain_apply, one_mul]⟩
 
-/-- The Reed–Solomon codes on two cosets `c ⟨ω_m⟩` and `c' ⟨ω_m⟩` are the same words: a polynomial
-`p` on the one is `p (c / c' · X)` on the other, of no larger degree. -/
+/-- The Reed–Solomon codes on two cosets `c ⟨ω_m⟩` and `c' ⟨ω_m⟩` are the same words: the one
+domain is the other scaled by `c' / c`. -/
 theorem code_le_of_isLevel {m : ℕ} {D D' : SmoothCosetFftDomain m 𝕂} (hD : IsLevel D)
     (hD' : IsLevel D') (deg : ℕ) :
     ReedSolomon.code (D : Fin (2 ^ m) ↪ 𝕂) deg ≤ ReedSolomon.code (D' : Fin (2 ^ m) ↪ 𝕂) deg := by
   obtain ⟨-, c, hc, hDc⟩ := hD
   obtain ⟨-, c', hc', hDc'⟩ := hD'
-  intro v hv
-  obtain ⟨p, hp, rfl⟩ := Submodule.mem_map.mp hv
-  set q := p.comp (Polynomial.C (c / c') * Polynomial.X)
-  refine Submodule.mem_map.mpr ⟨q, ?_, funext fun x ↦ ?_⟩
-  · rw [Polynomial.mem_degreeLT] at hp ⊢
-    by_cases hp0 : p = 0
-    · simp only [q, hp0, Polynomial.zero_comp, Polynomial.degree_zero]
-      exact WithBot.bot_lt_coe deg
-    have hlin : (Polynomial.C (c / c') * Polynomial.X).natDegree ≤ 1 :=
-      (natDegree_C_mul_le _ _).trans natDegree_X_le
-    have hq : q.natDegree ≤ p.natDegree :=
-      natDegree_comp_le.trans ((Nat.mul_le_mul_left _ hlin).trans (Nat.mul_one _).le)
-    refine lt_of_le_of_lt (Polynomial.degree_le_natDegree.trans (WithBot.coe_le_coe.mpr hq)) ?_
-    rwa [Polynomial.degree_eq_natDegree hp0] at hp
-  · change q.eval (D' x) = p.eval (D x)
-    simp only [q, eval_comp, eval_mul, eval_C, eval_X]
-    congr 1
-    rw [hDc', hDc]
-    field_simp
+  refine ReedSolomon.code_le_of_eq_mul (div_ne_zero hc' hc) fun x ↦ ?_
+  change D' x = c' / c * D x
+  rw [hDc', hDc]
+  field_simp
 
 /-- A word close to the Reed–Solomon code on a coset `c ⟨ω_m⟩` is close to it on the coset
 `g ⟨ω_m⟩`, which has the same codewords (`code_le_of_isLevel`). -/
@@ -128,7 +113,5 @@ theorem near_of_agrees (S : Setup EF lookups) (δ : ℝ) (w : S.Point → 𝕂)
   refine ⟨T, ?_, v, hv, fun x hx ↦ (hvT x hx).symm⟩
   rw [ge_iff_le, Setup.size, Nat.cast_pow, Nat.cast_ofNat, mul_comm]
   exact hT
-
-/-! ### FRI's rounds on `L` -/
 
 end CompStark.Sound

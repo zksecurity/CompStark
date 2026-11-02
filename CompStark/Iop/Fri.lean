@@ -15,9 +15,9 @@ along Plonky3's schedule (`Setup.friSchedule`, ArkLib's `Schedule.plonky3`) down
 polynomial's domain of `2 ^ (logFinalPolyLen + logBlowup)` points, injecting the words of the
 shorter domains of log sizes `heights` when the folds reach them. ArkLib's FRI on the interaction
 layer (`Fri.Interaction.protocol`) is that protocol, and its knowledge certificate bounds its
-acceptance by `Fri.Interaction.error`. That error is the STARK's FRI error `friErrorWith`
-(`friErrorWith_eq`): the schedules have the same folds and the same injections, and their codes
-on `L` and on `⟨ω⟩` are the same words (`foldError_eq_of_isLevel`).
+acceptance by `Fri.Interaction.error`. That error on `⟨ω⟩` is the STARK's FRI error `friErrorWith`,
+the same error on `L` (`friErrorWith_eq`): the codes on `L` and on `⟨ω⟩` are the same words
+(`foldError_eq_of_isLevel`).
 -/
 
 @[expose] public section
@@ -28,69 +28,8 @@ variable {F : Type} [BaseField F] {EF : Type} [Challenge F EF]
 
 local notation "𝕂" => Challenge.Spec EF
 
-/-- CompStark's FRI rounds along Plonky3's schedule have ArkLib's schedule's fold errors, number
-of folds and degree. -/
-theorem foldError_schedule_eq {K : Type} [Field K] [Fintype K] [DecidableEq K]
-    [SampleableType K] (maxLogArity logFinal d : ℕ) (θ loss : ℝ)
-    (words : (m : ℕ) → Fin (2 ^ m) → K) :
-    ∀ (fuel n : ℕ) (ω : SmoothCosetFftDomain n K) (heights : List ℕ),
-      (FriRounds.Rounds.schedule maxLogArity logFinal words fuel n heights).foldError d θ loss ω =
-          (Fri.Interaction.Schedule.plonky3 maxLogArity logFinal fuel n heights).foldError d θ
-            loss ω ∧
-        (FriRounds.Rounds.schedule maxLogArity logFinal words fuel n heights).numFolds =
-          (Fri.Interaction.Schedule.plonky3 maxLogArity logFinal fuel n heights).numFolds ∧
-        (FriRounds.Rounds.schedule maxLogArity logFinal words fuel n heights).degree d =
-          (Fri.Interaction.Schedule.plonky3 maxLogArity logFinal fuel n heights).degree d
-  | 0, _, _, _ => ⟨rfl, rfl, rfl⟩
-  | fuel + 1, n, ω, heights => by
-    by_cases hfin : n ≤ logFinal
-    · simp only [FriRounds.Rounds.schedule, Fri.Interaction.Schedule.plonky3, ite_eq_left hfin,
-        FriRounds.Rounds.foldError, Fri.Interaction.Schedule.foldError,
-        FriRounds.Rounds.numFolds, Fri.Interaction.Schedule.numFolds, FriRounds.Rounds.degree,
-        Fri.Interaction.Schedule.degree, and_self]
-    simp only [FriRounds.Rounds.schedule, Fri.Interaction.Schedule.plonky3, ite_eq_right hfin]
-    have ih := foldError_schedule_eq maxLogArity logFinal d θ loss words fuel
-    match heights with
-    | [] =>
-      obtain ⟨h1, h2, h3⟩ := ih (n - FriRounds.Rounds.logArity maxLogArity logFinal n [])
-        (ω.subdomain (FriRounds.Rounds.logArity maxLogArity logFinal n [])) []
-      simp only [FriRounds.Rounds.foldError, Fri.Interaction.Schedule.foldError,
-        Fri.Interaction.Schedule.roundError, FriRounds.Rounds.numFolds,
-        Fri.Interaction.Schedule.numFolds, FriRounds.Rounds.degree, Fri.Interaction.Schedule.degree,
-        h1, h2, h3]
-      exact ⟨rfl, rfl, rfl⟩
-    | m :: rest =>
-      by_cases hm : m = n - FriRounds.Rounds.logArity maxLogArity logFinal n (m :: rest)
-      all_goals have hm' : (m = n - Fri.Interaction.Schedule.logArity maxLogArity logFinal n
-        (m :: rest)) = (m = n - FriRounds.Rounds.logArity maxLogArity logFinal n (m :: rest)) := rfl
-      · obtain ⟨h1, h2, h3⟩ :=
-          ih (n - FriRounds.Rounds.logArity maxLogArity logFinal n (m :: rest))
-            (ω.subdomain (FriRounds.Rounds.logArity maxLogArity logFinal n (m :: rest)))
-            rest
-        simp only [hm', ite_eq_left hm, FriRounds.Rounds.foldError,
-          Fri.Interaction.Schedule.foldError, Fri.Interaction.Schedule.roundError,
-          FriRounds.Rounds.numFolds, Fri.Interaction.Schedule.numFolds, FriRounds.Rounds.degree,
-          Fri.Interaction.Schedule.degree, h1, h2, h3]
-        exact ⟨rfl, rfl, rfl⟩
-      · obtain ⟨h1, h2, h3⟩ :=
-          ih (n - FriRounds.Rounds.logArity maxLogArity logFinal n (m :: rest))
-            (ω.subdomain (FriRounds.Rounds.logArity maxLogArity logFinal n (m :: rest)))
-            (m :: rest)
-        simp only [hm', ite_eq_right hm, FriRounds.Rounds.foldError,
-          Fri.Interaction.Schedule.foldError, Fri.Interaction.Schedule.roundError,
-          FriRounds.Rounds.numFolds, Fri.Interaction.Schedule.numFolds, FriRounds.Rounds.degree,
-          Fri.Interaction.Schedule.degree, h1, h2, h3]
-        exact ⟨rfl, rfl, rfl⟩
-
 namespace Setup
 variable {lookups : List (Lookup F)} (S : Setup EF lookups)
-
-/-- FRI's schedule on `L`: Plonky3's, from `L` down to the final polynomial's domain of
-`2 ^ (logFinalPolyLen + logBlowup)` points, injecting the words of the log sizes `heights`. -/
-def friSchedule (heights : List ℕ) : Fri.Interaction.Schedule (S.logN + S.params.logBlowup) :=
-  Fri.Interaction.Schedule.plonky3 S.params.maxLogArity
-    (S.params.logFinalPolyLen + S.params.logBlowup) (S.logN + S.params.logBlowup)
-    (S.logN + S.params.logBlowup) heights
 
 /-- Each fold of FRI's schedule halves `L` at least once. -/
 theorem arityPos_friSchedule (heights : List ℕ)
@@ -148,15 +87,11 @@ theorem friErrorWith_eq {lookups : List (Lookup F)} (S : Setup EF lookups) (heig
     (δ : NNReal) :
     friErrorWith S heights δ = Fri.Interaction.error S.friDomain (S.friSchedule heights)
       (2 ^ S.params.logFinalPolyLen) S.params.numQueries δ := by
-  unfold friErrorWith FriRounds.error Fri.Interaction.error
+  unfold friErrorWith Fri.Interaction.error
   refine iInf_congr fun loss ↦ ?_
-  obtain ⟨h1, h2, -⟩ := foldError_schedule_eq S.params.maxLogArity
-    (S.params.logFinalPolyLen + S.params.logBlowup) (2 ^ S.params.logFinalPolyLen) δ loss
-    (fun _ _ ↦ 0) (S.logN + S.params.logBlowup) (S.logN + S.params.logBlowup) S.domain heights
-  rw [Setup.friRounds, h1, h2, foldError_eq_of_isLevel _ _ _ _ (ω := S.domain)
-    (ω' := S.friDomain) (isLevel_cosetDomain (EF := EF) _ S.valid.twoAdic)
+  rw [foldError_eq_of_isLevel _ _ _ _ (ω := S.domain) (ω' := S.friDomain)
+    (isLevel_cosetDomain (EF := EF) _ S.valid.twoAdic)
     (isLevel_subgroupDomain (EF := EF) _ S.valid.twoAdic)]
-  rfl
 
 /-- FRI's error without injected inputs is ArkLib's along Plonky3's schedule without inputs. -/
 theorem friError_eq {lookups : List (Lookup F)} (S : Setup EF lookups) (δ : NNReal) :

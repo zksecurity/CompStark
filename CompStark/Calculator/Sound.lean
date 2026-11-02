@@ -24,6 +24,7 @@ interactive protocols; the round terms bound the node errors of the theorems on 
 @[expose] public section
 namespace CompStark.Sound
 open CompStark.Stark CompStark.Iop NNReal
+open Fri.Interaction (Schedule)
 
 variable {F : Type} [BaseField F] {EF : Type} [Challenge F EF]
 
@@ -125,16 +126,17 @@ theorem lossyBound_nonneg {ρ' : ℚ} (hA : A.Valid ρ') (ρ : ℚ) : 0 ≤ A.lo
 
 /-- The lossy bound for `δ` and `loss` equal to the analysis'. -/
 theorem lossyBound_eq (b : ℕ) (δ loss : ℝ≥0) (hδ : (δ : ℝ) = A.δ) (hloss : (loss : ℝ) = A.loss) :
-    LossyMca.lossyBound 1 (2 ^ b) δ (δ + loss) loss = (A.lossyBound (1 / 2 ^ b) : ℝ) := by
-  simp only [LossyMca.lossyBound, Analysis.lossyBound, Analysis.curveT₁, NNReal.coe_add, hδ,
-    hloss]
+    CodingTheory.UniqueDecoding.lossyBound 1 (2 ^ b) δ (δ + loss) loss =
+      (A.lossyBound (1 / 2 ^ b) : ℝ) := by
+  simp only [CodingTheory.UniqueDecoding.lossyBound, Analysis.lossyBound, Analysis.curveT₁,
+    NNReal.coe_add, hδ, hloss]
   push_cast
   rfl
 
 theorem levelBound_nonneg (B : McaBound) (lb : ℕ) (f : ℕ × ℕ × Bool) {ρ : ℚ}
     (hA : A.Valid ρ) : 0 ≤ A.levelBound B lb f := by
   have hl := lossyBound_nonneg A hA (1 / 2 ^ lb)
-  have hc := B.count_nonneg (2 ^ f.2.1) (2 ^ (f.2.1 - lb)) (FriRounds.Rounds.foldWords f) A.δ
+  have hc := B.count_nonneg (2 ^ f.2.1) (2 ^ (f.2.1 - lb)) (Schedule.foldWords f) A.δ
   unfold Analysis.levelBound
   dsimp only
   split_ifs
@@ -162,14 +164,14 @@ theorem foldBounds_calc (B : McaBound) (hB : B.Holds) (lb : ℕ) (hA : A.Valid (
   have hdeg' := eq_two_pow_sub hdeg
   subst hdeg'
   have hK : (0 : ℝ) < Fintype.card 𝕂 := by exact_mod_cast Fintype.card_pos
-  have hmca := mcaLevel_le B hB D (FriRounds.Rounds.foldWords f) _ A.δ δ loss hδ loss.coe_nonneg
+  have hmca := mcaLevel_le B hB D (Schedule.foldWords f) _ A.δ δ loss hδ loss.coe_nonneg
     (hadm f hf)
   unfold Analysis.levelBound
   dsimp only
   split_ifs with hl
   · have h0 : 0 < δ := by rw [← NNReal.coe_pos, hδ]; exact_mod_cast hA.1
     have hl0 : 0 < loss := by rw [← NNReal.coe_pos, hloss]; exact_mod_cast hA.2.1
-    have hlossy := lossyLevel_le D (FriRounds.Rounds.foldWords f) (2 ^ lb) _ hdeg δ (δ + loss) loss
+    have hlossy := lossyLevel_le D (Schedule.foldWords f) (2 ^ lb) _ hdeg δ (δ + loss) loss
       (by
         have := (Rat.cast_le (K := ℝ)).mpr hl
         rw [hδ]
@@ -354,7 +356,7 @@ theorem batchingErrorOf_le_calc (hp : Nat.card F = p) (B : McaBound) (hB : B.Hol
 /-- FRI with injected inputs at any arity, with an MCA bound `B` that admits its folds. -/
 theorem friErrorWith_le_calc (hp : Nat.card F = p) (B : McaBound) (hB : B.Holds)
     (hA : A.Valid S.rateQ) (heights : List ℕ)
-    (hfit : FriRounds.Rounds.Fits (S.params.logFinalPolyLen + S.params.logBlowup)
+    (hfit : Schedule.Fits (S.params.logFinalPolyLen + S.params.logBlowup)
       (S.logN + S.params.logBlowup) heights)
     (hadm : A.Admits B S.params.logBlowup (S.friPlan heights)) (δ : ℝ≥0) (hδ : (δ : ℝ) = A.δ) :
     friErrorWith S heights δ ≤ ENNReal.ofReal
@@ -399,7 +401,7 @@ theorem knowledgeError_le_bound (hp : Nat.card F = p) (B : McaBound) (hB : B.Hol
   have h2 := outOfDomainError_le_calc S A hp hA.1 δ' hδ'
   have h3 := batchingErrorOf_le_calc S A hp B hB S.shape.numOpened hA.1 hA.2.1 δ δ' hδ
     hδ'
-  have h4 := friErrorWith_le_calc S A hp B hB hA.1 [] (FriRounds.Rounds.fits_nil _ _) hA.2.2 δ hδ
+  have h4 := friErrorWith_le_calc S A hp B hB hA.1 [] (Schedule.fits_nil _ _) hA.2.2 δ hδ
   have hK := card_pow_pos (EF := EF) hp
   have hb := batchingNum_nonneg A S.shape S.params.logBlowup B S.shape.numOpened hA.1
   have hq := queryDensity_nonneg S A hA.1 []
@@ -674,8 +676,8 @@ variable {r L : ℕ} (ha : 0 < r)
 include ha
 
 omit ha in
-theorem fits_tail {a x : ℕ} {rest : List ℕ} (hfit : FriRounds.Rounds.Fits L a (x :: rest)) :
-    FriRounds.Rounds.Fits L x rest :=
+theorem fits_tail {a x : ℕ} {rest : List ℕ} (hfit : Schedule.Fits L a (x :: rest)) :
+    Schedule.Fits L x rest :=
   ⟨(List.pairwise_cons.mp hfit.1).2, fun m hm ↦
     ⟨(hfit.2 m (List.mem_cons_of_mem _ hm)).1, List.rel_of_pairwise_cons hfit.1 hm⟩⟩
 
@@ -683,14 +685,14 @@ theorem fits_tail {a x : ℕ} {rest : List ℕ} (hfit : FriRounds.Rounds.Fits L 
 its last fold and the plan from it add against the plan without it. -/
 theorem sum_plan_le (g : ℕ × ℕ × Bool → ℚ) (Δ : ℕ → ℚ)
     (hΔ : ∀ x a', L ≤ x → x < a' → a' - x ≤ r →
-      g (a' - x, x, true) + ((FriRounds.Rounds.plan r L x x []).map g).sum -
-        ((FriRounds.Rounds.plan r L a' a' []).map g).sum ≤ Δ x) :
-    ∀ (hs : List ℕ) (a : ℕ), FriRounds.Rounds.Fits L a hs →
-      ((FriRounds.Rounds.plan r L a a hs).map g).sum ≤
-        ((FriRounds.Rounds.plan r L a a []).map g).sum + (hs.map Δ).sum
+      g (a' - x, x, true) + ((Schedule.plonky3 r L x x []).folds.map g).sum -
+        ((Schedule.plonky3 r L a' a' []).folds.map g).sum ≤ Δ x) :
+    ∀ (hs : List ℕ) (a : ℕ), Schedule.Fits L a hs →
+      ((Schedule.plonky3 r L a a hs).folds.map g).sum ≤
+        ((Schedule.plonky3 r L a a []).folds.map g).sum + (hs.map Δ).sum
   | [], a, _ => by simp only [List.map_nil, List.sum_nil, add_zero, le_refl]
   | x :: rest, a, hfit => by
-    obtain ⟨P, a', h1, h2, h3, h4⟩ := FriRounds.Rounds.plan_cons_split ha a x rest hfit
+    obtain ⟨P, a', h1, h2, h3, h4⟩ := Schedule.folds_plonky3_cons_split ha a x rest hfit
     have ih := sum_plan_le g Δ hΔ rest x (fits_tail hfit)
     have hd := hΔ x a' (hfit.2 x List.mem_cons_self).1 h1 h2
     rw [h3, h4]
@@ -701,14 +703,14 @@ theorem sum_plan_le (g : ℕ × ℕ × Bool → ℚ) (Δ : ℕ → ℚ)
 it adds. -/
 theorem length_plan_le_add (φ : ℕ → ℕ)
     (hφ : ∀ x a', L ≤ x → x < a' → a' - x ≤ r →
-      1 + (FriRounds.Rounds.plan r L x x []).length ≤
-        (FriRounds.Rounds.plan r L a' a' []).length + φ x) :
-    ∀ (hs : List ℕ) (a : ℕ), FriRounds.Rounds.Fits L a hs →
-      (FriRounds.Rounds.plan r L a a hs).length ≤
-        (FriRounds.Rounds.plan r L a a []).length + (hs.map φ).sum
+      1 + (Schedule.plonky3 r L x x []).folds.length ≤
+        (Schedule.plonky3 r L a' a' []).folds.length + φ x) :
+    ∀ (hs : List ℕ) (a : ℕ), Schedule.Fits L a hs →
+      (Schedule.plonky3 r L a a hs).folds.length ≤
+        (Schedule.plonky3 r L a a []).folds.length + (hs.map φ).sum
   | [], a, _ => by simp only [List.map_nil, List.sum_nil, add_zero, le_refl]
   | x :: rest, a, hfit => by
-    obtain ⟨P, a', h1, h2, h3, h4⟩ := FriRounds.Rounds.plan_cons_split ha a x rest hfit
+    obtain ⟨P, a', h1, h2, h3, h4⟩ := Schedule.folds_plonky3_cons_split ha a x rest hfit
     have ih := length_plan_le_add φ hφ rest x (fits_tail hfit)
     have hd := hφ x a' (hfit.2 x List.mem_cons_self).1 h1 h2
     rw [h3, h4]
@@ -719,16 +721,16 @@ theorem length_plan_le_add (φ : ℕ → ℕ)
 last fold and the plan from it. -/
 theorem maxQ_plan_le (g : ℕ × ℕ × Bool → ℚ) (Ψ : ℕ → ℚ)
     (hΨ : ∀ x a', L ≤ x → x < a' → a' - x ≤ r → g (a' - x, x, true) ≤ Ψ x)
-    (hΨ' : ∀ x, L ≤ x → maxQ ((FriRounds.Rounds.plan r L x x []).map g) ≤ Ψ x) :
-    ∀ (hs : List ℕ) (a : ℕ), FriRounds.Rounds.Fits L a hs →
-      maxQ ((FriRounds.Rounds.plan r L a a hs).map g) ≤
-        max (maxQ ((FriRounds.Rounds.plan r L a a []).map g)) (maxQ (hs.map Ψ))
+    (hΨ' : ∀ x, L ≤ x → maxQ ((Schedule.plonky3 r L x x []).folds.map g) ≤ Ψ x) :
+    ∀ (hs : List ℕ) (a : ℕ), Schedule.Fits L a hs →
+      maxQ ((Schedule.plonky3 r L a a hs).folds.map g) ≤
+        max (maxQ ((Schedule.plonky3 r L a a []).folds.map g)) (maxQ (hs.map Ψ))
   | [], a, _ => le_max_left _ _
   | x :: rest, a, hfit => by
-    obtain ⟨P, a', h1, h2, h3, h4⟩ := FriRounds.Rounds.plan_cons_split ha a x rest hfit
+    obtain ⟨P, a', h1, h2, h3, h4⟩ := Schedule.folds_plonky3_cons_split ha a x rest hfit
     have hL := (hfit.2 x List.mem_cons_self).1
     have ih := maxQ_plan_le g Ψ hΨ hΨ' rest x (fits_tail hfit)
-    have hP : maxQ (P.map g) ≤ maxQ ((FriRounds.Rounds.plan r L a a []).map g) := by
+    have hP : maxQ (P.map g) ≤ maxQ ((Schedule.plonky3 r L a a []).folds.map g) := by
       rw [h4, List.map_append, maxQ_append]
       exact le_max_left _ _
     have hx : Ψ x ≤ maxQ ((x :: rest).map Ψ) := le_maxQ (List.mem_map_of_mem List.mem_cons_self)
@@ -793,14 +795,15 @@ theorem planFrom_add {x : ℕ} (hx : C.params.logFinalPolyLen + C.params.logBlow
       (C.params.maxLogArity, x, false) :: C.planFrom x [] := by
   unfold Iop.Batch.Statement.planFrom
   obtain ⟨c, hc⟩ : ∃ c, x + C.params.maxLogArity = c + 1 := ⟨x + C.params.maxLogArity - 1, by omega⟩
-  have hla : FriRounds.Rounds.logArity C.params.maxLogArity
+  have hla : Schedule.logArity C.params.maxLogArity
       (C.params.logFinalPolyLen + C.params.logBlowup) (c + 1) [] = C.params.maxLogArity := by
-    simp only [FriRounds.Rounds.logArity, List.headD_nil]
+    simp only [Schedule.logArity, List.headD_nil]
     omega
-  rw [hc, FriRounds.Rounds.plan, ite_eq_right (by omega)]
-  simp only [hla]
-  rw [show c + 1 - C.params.maxLogArity = x by omega,
-    FriRounds.Rounds.plan_fuel hr c x x [] (FriRounds.Rounds.fits_nil _ _) (by omega) (by omega)]
+  rw [hc, Schedule.plonky3, ite_eq_right (by omega)]
+  simp only [Schedule.folds]
+  rw [hla, show c + 1 - C.params.maxLogArity = x by omega,
+    Schedule.plonky3_fuel hr c x x [] (Schedule.fits_nil _ _)
+      (by omega) (by omega)]
 
 theorem plainNum_add {x : ℕ} (hx : C.params.logFinalPolyLen + C.params.logBlowup ≤ x) :
     C.plainNum B A (x + C.params.maxLogArity) =
@@ -947,7 +950,7 @@ theorem mem_foldsOnto_of_mem_plan {f : ℕ × ℕ × Bool}
   set S := C.setupAt EF n hn
   have ha : 0 < C.params.maxLogArity := (S.valid S.top).folds
   have htop : S.logN S.top + C.params.logBlowup ≤ twoAdicity F := (S.valid S.top).twoAdic
-  obtain ⟨h1, h2, h3, h4⟩ := FriRounds.Rounds.mem_plan ha _ _ _ (fits_friHeights S) f hf
+  obtain ⟨h1, h2, h3, h4⟩ := Schedule.mem_folds_plonky3 ha _ _ _ (fits_friHeights S) f hf
   obtain ⟨la, m, inj⟩ := f
   change 1 ≤ la at h1
   change la ≤ C.params.maxLogArity at h2
@@ -1165,7 +1168,8 @@ theorem lengthTerms_le (hA : A.Valid (1 / 2 ^ C.params.logBlowup)) (p : ℕ) :
   have hcap0 : (C.planFrom (topLength EF C n hn + C.params.logBlowup) []).length ≤
       topLength EF C n hn + C.params.logBlowup -
         (C.params.logFinalPolyLen + C.params.logBlowup) :=
-    FriRounds.Rounds.length_plan_le ha _ _ [] (FriRounds.Rounds.fits_nil _ _)
+    (Schedule.length_folds _).trans_le
+      (Schedule.numFolds_plonky3_le ha _ _ [] (Schedule.fits_nil _ _))
   have eF : (C.setupAt EF n hn).domainSetup.friFoldsNum B A (C.setupAt EF n hn).friHeights =
       ((C.planFrom (topLength EF C n hn + C.params.logBlowup) (C.setupAt EF n hn).friHeights).map
         (A.levelBound B C.params.logBlowup)).sum := rfl
@@ -1175,12 +1179,13 @@ theorem lengthTerms_le (hA : A.Valid (1 / 2 ^ C.params.logBlowup)) (p : ℕ) :
   have eL : A.listBound (C.setupAt EF n hn).domainSetup.rateQ ^ (C.setupAt EF n hn).k =
       A.listBound (1 / 2 ^ C.params.logBlowup) ^ C.k := rfl
   have hLC := lookupCount_eq EF C n hn
-  change FriRounds.Rounds.Fits (C.params.logFinalPolyLen + C.params.logBlowup)
+  change Schedule.Fits (C.params.logFinalPolyLen + C.params.logBlowup)
     (topLength EF C n hn + C.params.logBlowup) _ at hfit
   have hcap : (C.planFrom (topLength EF C n hn + C.params.logBlowup)
       (C.setupAt EF n hn).friHeights).length ≤ topLength EF C n hn + C.params.logBlowup -
         (C.params.logFinalPolyLen + C.params.logBlowup) :=
-    FriRounds.Rounds.length_plan_le ha _ _ _ hfit
+    (Schedule.length_folds _).trans_le
+      (Schedule.numFolds_plonky3_le ha _ _ _ hfit)
   rw [eF, eQ, eL, hLC]
   generalize (C.setupAt EF n hn).friHeights = hs at hfit hnd hsub hlenP hcap ⊢
   generalize hh : topLength EF C n hn = h at hfit hsub hlenP hcap hcap0 ⊢

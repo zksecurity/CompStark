@@ -27,7 +27,7 @@ instances:
 
 @[expose] public section
 namespace CompStark.Sound
-open CompStark.Stark CompStark.Iop Polynomial FriRounds FriInject
+open CompStark.Stark CompStark.Iop Polynomial
 
 variable {F : Type} [BaseField F] {EF : Type} [Challenge F EF]
 
@@ -157,7 +157,7 @@ theorem mem_friHeights (m : ℕ) :
 
 /-- The sizes where FRI injects fit below the tallest domain and at or above the final one. -/
 theorem fits_friHeights :
-    Rounds.Fits (S.params.logFinalPolyLen + S.params.logBlowup)
+    Fri.Interaction.Schedule.Fits (S.params.logFinalPolyLen + S.params.logBlowup)
       (S.logN S.top + S.params.logBlowup) S.friHeights := by
   refine ⟨?_, fun m hm ↦ ?_⟩
   · refine (List.Pairwise.filter _ ?_)
