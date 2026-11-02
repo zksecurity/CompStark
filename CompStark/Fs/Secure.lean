@@ -5,6 +5,7 @@ Released under Apache 2.0 license as described in the file LICENSE.
 module
 
 public import CompStark.Fs.StarkBcs
+public import CompStark.Fs.BatchBcs
 public import CompStark.Sound.Calculator
 
 /-! # The calculator's bound on Plonky3's duplex challenger
@@ -21,7 +22,12 @@ largest is at most the round error's bound, and a path of at most `maxChallenges
 to at most `maxChallenges` times it. The calculator's certificate per oracle answer
 (`Statement.SecureRo`) then bounds the STARK's knowledge soundness with Merkle commitments by
 `chainError q + hashBadError + (q + maxChallenges) 2 ^ (-bits)`
-(`Statement.knowledgeSoundness_bcs_of_secureRo`).
+(`Statement.knowledgeSoundness_bcs_of_secureRo`). The batch's nodes are the batch calculator's
+round terms alike (`Batch.Setup.ratio_mul_nodeErrors_le`), the lookup challenges' with their
+grinding, or without lookups LogUp's error `0` (`Batch.Setup.lookupError_eq_zero`), so the batch
+calculator's certificate (`Batch.Statement.SecureRo`) bounds the batch STARK's knowledge soundness
+with Merkle commitments by the same expression
+(`Batch.Statement.knowledgeSoundness_bcs_of_secureRo`).
 -/
 
 @[expose] public section
@@ -272,3 +278,134 @@ theorem knowledgeSoundness_bcs_of_secureRo (C : Statement F) (hp : Nat.card F = 
       (N := maxChallenges (F := F)) (fun n ↦ (C.setup EF n).challengesLE_publicCoin) _ hnode
 
 end CompStark.Iop.Statement
+
+namespace CompStark.Iop.Batch.Setup
+open CompStark.Stark CompStark.Sound CompStark.Fs
+open _root_.Interaction.Oracle _root_.Interaction.Oracle.PublicCoin
+open _root_.Interaction.Oracle.Security.StateRestoration
+open scoped ENNReal NNReal
+
+variable {F : Type} [BaseField F] {EF : Type} [Challenge F EF] {p : ℕ}
+
+/-- Without lookups, LogUp has no interactions and no error. -/
+theorem lookupError_eq_zero (S : Setup EF) (hl : S.hasLookups = false) (δ : ℝ≥0) :
+    S.lookupError δ = 0 := by
+  have h0 : S.numInteractions = 0 := Finset.sum_eq_zero fun i _ ↦ by
+    rw [Ni.lookups_eq_nil_of S hl i, List.map_nil, List.sum_nil, Nat.mul_zero]
+  rw [lookupError, h0, Nat.zero_add, Nat.zero_sub, Nat.zero_mul, Nat.mul_zero, Nat.cast_zero,
+    ENNReal.zero_div]
+
+/-- **The calculator bounds every node of the batch's duplex-challenger theorem.** For `|F| = p`
+and an analysis that fits the batch with an MCA bound that holds, every node error with the query
+positions' slack `1/p`, times its draw's ratio, is at most the calculator's round error bound:
+without lookups, the lookup challenges' ratio `|𝕂| ^ 2` meets LogUp's error `0`. -/
+theorem ratio_mul_nodeErrors_le (S : Setup EF) (hp : Nat.card F = p) {B : McaBound}
+    (hB : B.Holds) (A : Analysis) (hA : S.Fits B A) (δ δ' loss : ℝ≥0) (hδ : (δ : ℝ) = A.δ)
+    (hδ' : (δ' : ℝ) = A.δ') (hloss : (loss : ℝ) = A.loss) (node : Prefix PUnit S.publicCoin) :
+    S.ratio node * S.nodeErrors δ δ' loss (1 / Nat.card F) node ≤
+      ENNReal.ofReal (S.roundErrorBound p B A : ℝ) := by
+  have hT {x : String × ℚ} (h : x ∈ S.roundErrorTerms p B A) :
+      ENNReal.ofReal (x.2 : ℝ) ≤ ENNReal.ofReal (S.roundErrorBound p B A : ℝ) :=
+    ENNReal.ofReal_le_ofReal (Rat.cast_le.mpr (le_maxTerms h))
+  have hi := instance_le_calc S B A hp hB hA δ δ' hδ hδ'
+  obtain ⟨_, _ | ⟨_, _, _, _ | ⟨_, _, _ | ⟨_, _, _ | ⟨_, node⟩⟩⟩⟩⟩ := (node : S.PrefixShape)
+  · change lookupRatio F EF S.hasLookups S.params.lookupPowBits * S.lookupError δ' ≤ _
+    cases hl : S.hasLookups
+    · rw [S.lookupError_eq_zero hl, mul_zero]
+      exact zero_le
+    · exact (powFraction_mul_le_ofReal hp _ (lookupError_le_calc S B A hp hA δ' hδ')).trans
+        (hT (.head _))
+  · change 1 * (⨆ i, foldingError (S.instanceSetup i) δ') ≤ _
+    rw [one_mul]
+    exact (iSup_le fun i ↦ (hi i).1).trans (hT (.tail _ (.head _)))
+  · exact (powFraction_mul_le_ofReal hp _ (iSup_le fun i ↦ (hi i).2.1)).trans
+      (hT (.tail _ (.tail _ (.head _))))
+  · exact (powFraction_mul_le_ofReal hp _ (iSup_le fun i ↦ (hi i).2.2)).trans
+      (hT (.tail _ (.tail _ (.tail _ (.head _)))))
+  have hfin : S.params.logFinalPolyLen ≤ S.logN S.top := S.domainSetup.valid.finalPolyFits
+  have hfolds := foldErrorsLE_plonky3 (2 ^ S.params.logBlowup) S.params.maxLogArity
+    S.domainSetup.valid.folds (2 ^ S.params.logFinalPolyLen)
+    (S.params.logFinalPolyLen + S.params.logBlowup) (by rw [← pow_add, Nat.add_comm]) δ loss _
+    (S.logN S.top + S.params.logBlowup) (S.logN S.top + S.params.logBlowup)
+    S.domainSetup.friDomain S.friHeights (by omega) (Nat.sub_le _ _) (fits_friHeights S)
+    (foldBounds_calc A B hB _ hA.1 δ loss hδ hloss _ hA.2.2)
+  refine (friRatio_mul_nodeErrors_le (F := F) (S.logN S.top + S.params.logBlowup)
+    (2 ^ S.params.logFinalPolyLen) S.params.numQueries S.params.commitPowBits
+    S.params.queryPowBits δ loss _ _ S.domainSetup.friDomain
+    (S.domainSetup.friSchedule S.friHeights) 0 hfolds node).trans (max_le ?_ ?_)
+  · refine (powFraction_mul_le_ofReal hp _ (le_of_eq ?_)).trans
+      (hT (.tail _ (.tail _ (.tail _ (.tail _ (.head _))))))
+    rw [← cast_maxQ_map, ofReal_div_card_eq' hp]
+    rfl
+  · have hq0 := queryDensity_nonneg S.domainSetup A hA.1 S.friHeights
+    have hp0 : (0 : ℚ) ≤ 1 / p := by positivity
+    refine (powFraction_mul_le_ofReal hp _ (le_of_eq ?_)).trans
+      (hT (.tail _ (.tail _ (.tail _ (.tail _ (.tail _ (.head _)))))))
+    rw [Rat.cast_pow, ENNReal.ofReal_pow (Rat.cast_nonneg.mpr (add_nonneg hq0 hp0)), Rat.cast_add,
+      ENNReal.ofReal_add (Rat.cast_nonneg.mpr hq0) (Rat.cast_nonneg.mpr hp0)]
+    congr 2
+    · rw [Fri.Interaction.threshold, Nat.zero_add, Iop.Setup.numFolds_friSchedule,
+        Iop.Setup.queryDensity, hδ, hloss]
+      push_cast
+      rfl
+    · rw [hp, Rat.cast_div, Rat.cast_one, Rat.cast_natCast,
+        ENNReal.ofReal_div_of_pos (by exact_mod_cast hp ▸ Nat.card_pos), ENNReal.ofReal_one,
+        ENNReal.ofReal_natCast]
+
+end CompStark.Iop.Batch.Setup
+
+namespace CompStark.Iop.Batch.Statement
+open CompStark.Stark CompStark.Sound CompStark.Fs CompStark.RandomOracle OracleComp OracleSpec
+open _root_.Interaction.Oracle _root_.Interaction.Oracle.PublicCoin
+open _root_.Interaction.Oracle.Security _root_.Interaction.Oracle.Security.StateRestoration
+open _root_.Interaction.Oracle.Security.HashChain
+open scoped ENNReal NNReal
+
+variable {F : Type} [BaseField F] {EF : Type} [Challenge F EF] {p : ℕ}
+
+/-- **Batch knowledge soundness with Merkle commitments from the calculator.** If the calculator
+certifies `bits` bits per oracle answer for the batch statement `C` at `A` with an MCA bound that
+holds (`C.SecureRo EF p B A bits`), an adversary making at most `Q` duplex calls and `q` oracle
+calls in all gets Plonky3's batch verifier to accept while no tuple of traces of the proof's
+lengths, each within `δ' = A.δ'` of the trace extracted from the log under the proof's main
+commitment, satisfies the batch with probability at most
+`chainError Q' + hashBadError + (Q' + maxChallenges) 2 ^ (-bits)`,
+`Q' = Q + verifierQueries + 3 verifierChainQueries`. -/
+theorem knowledgeSoundness_bcs_of_secureRo (C : Statement F) (hp : Nat.card F = p)
+    {B : McaBound} (hB : B.Holds) (A : Analysis) {bits : ℕ} (h : C.SecureRo EF p B A bits)
+    {K : ℕ} (hK : 0 < K) (δ' : ℝ≥0) (hδ' : (δ' : ℝ) = A.δ')
+    (adversary : OracleComp (spec F K) ((Fin C.k → List F) × CompStark.Batch.BatchProof F EF))
+    {Q q : ℕ} (hQ : IsQueryBoundP adversary (fun t => isDuplex t = true) Q)
+    (hq : IsTotalQueryBound adversary q) :
+    Pr{let z ← (simulateQ Bcs.realImpl
+        (simulateQ translate (C.batchGame EF K adversary))).run []}[
+      z.1.2.2.2 = .ok () ∧ ∀ h : C.Admits (C.lengthsOf z.1.2.2.1),
+        ∀ traces ∈ closeTraces (C.setupAt EF _ h) δ'
+          ((C.setupAt EF _ h).traceWords ((C.setupAt EF _ h).traceMessageOf
+            (merkleCache (Bcs.hashCacheOf z.2)) z.1.2.2.1.mainCommit)),
+        ¬ (C.setupAt EF _ h).Satisfied traces z.1.2.1] ≤
+      chainError (Digest F) (Q + C.verifierQueries EF + 3 * C.verifierChainQueries EF K) +
+        hashBadError F (2 ^ C.params.capHeight) (C.capOffsets EF).length
+          (q + C.verifierQueries EF) +
+        (Q + C.verifierQueries EF + 3 * C.verifierChainQueries EF K + maxChallenges (F := F)) *
+          (2 ^ bits)⁻¹ := by
+  have hA := h.1.1
+  have hl0 : (0 : ℝ) < A.loss := by exact_mod_cast hA.2.1
+  have hloss : ((Real.toNNReal A.loss : ℝ≥0) : ℝ) = A.loss := Real.coe_toNNReal _ hl0.le
+  have hnode (node : Prefix PUnit (C.publicCoin EF)) :
+      C.ratio EF node * C.nodeErrors EF (fun _ ↦ Real.toNNReal A.δ) (fun _ ↦ δ')
+        (fun _ ↦ Real.toNNReal A.loss) (1 / Nat.card F) node ≤ (2 ^ bits)⁻¹ := by
+    have hs := C.secureRo_setupAt EF h node.1.1 node.1.2
+    exact ((C.setup EF node.1).ratio_mul_nodeErrors_le hp hB A hs.1 _ _ _
+      (coe_toNNReal_δ A hA) hδ' hloss node.2).trans (ofReal_le_inv_two_pow hs.2)
+  refine (C.knowledgeSoundness_bcs EF K hK (fun _ ↦ Real.toNNReal A.δ) (fun _ ↦ δ')
+    (fun n hn ↦ batch_lt_one_sub_rate (C.setupAt EF n hn) B A (C.secureRo_setupAt EF h n hn).1
+      δ' hδ') (fun _ ↦ Real.toNNReal A.loss) adversary hQ hq).trans (add_le_add le_rfl ?_)
+  rw [add_mul]
+  refine add_le_add ?_ ?_
+  · rw [mul_comm]
+    exact le_of_le_of_eq (mul_le_mul_right (iSup_le fun _ ↦ iSup_le hnode) _) (by push_cast; rfl)
+  · exact iSup_le fun _ ↦ pathError_le_of_challengesLE (C.publicCoin EF)
+      (N := maxChallenges (F := F)) (fun n ↦ (C.setup EF n).challengesLE_publicCoin) _ hnode
+
+end CompStark.Iop.Batch.Statement

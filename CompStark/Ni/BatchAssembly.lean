@@ -57,23 +57,11 @@ theorem run_eqB (prover : C.NIProver EF) :
     C.run publicValues prover = (simulateQ randomOracle (gameB C publicValues prover)).run' ∅ :=
   rfl
 
-/-- The common data the setup computes has the statement's lookups. -/
-theorem lookups_of_mem_support_setupRo (common : CompStark.Batch.Common F)
-    (h : common ∈ support (C.setupRo EF)) : common.lookups = List.ofFn C.lookups := by
-  unfold Iop.Batch.Statement.setupRo CompStark.Batch.commonWith at h
-  rw [mem_support_bind_iff] at h
-  obtain ⟨c, -, hc⟩ := h
-  rw [support_pure, Set.mem_singleton_iff] at hc
-  rw [hc]
-  show C.keyInstances.map (·.lookups) = _
-  rw [Iop.Batch.Statement.keyInstances, Iop.Batch.Statement.instancesAt, List.map_ofFn]
-  rfl
-
 theorem isTotalQueryBound_gameB (prover : C.NIProver EF) (Q : Nat)
     (hQ : prover.IsTotalQueryBound Q) :
     (gameB C publicValues prover).IsTotalQueryBound (Q + C.verifierQueries EF) := by
   have hsp : (setupAndProveB C prover).IsTotalQueryBound (C.setupQueries + Q) :=
-    isTotalQueryBound_bind (C.isTotalQueryBound_setupRo (EF := EF)) fun common ↦
+    isTotalQueryBound_bind (C.isTotalQueryBound_setupRo (K := C.streamLen EF)) fun common ↦
       (isTotalQueryBound_bind (n₂ := 0) hQ fun proof ↦
         (show IsTotalQueryBound (pure (common, proof) : OracleComp (spec F (C.streamLen EF)) _) 0
           from trivial)).mono (by omega)
@@ -92,7 +80,7 @@ theorem isTotalQueryBound_gameB (prover : C.NIProver EF) (Q : Nat)
     obtain ⟨p, -, hmem⟩ := hmem
     rw [support_pure, Set.mem_singleton_iff, Prod.mk.injEq] at hmem
     rw [hmem.1]
-    exact lookups_of_mem_support_setupRo C c hc
+    exact C.lookups_of_mem_support_setupRo c hc
   exact (isTotalQueryBound_bind (n₂ := 0)
     (C.isTotalQueryBound_verifyBatchWith common hl proof (List.ofFn publicValues))
     fun v ↦ (show IsTotalQueryBound (pure (proof, log, v) :

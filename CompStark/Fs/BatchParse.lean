@@ -1094,7 +1094,8 @@ variable {F : Type} [BaseField F] {EF : Type} [Challenge F EF]
 
 /-- An accepted batch proof's caps have the sizes Plonky3's verifier accepts: the main and
 quotient commitments' that of the tallest instance's tree, the permutation commitment's that of
-the tallest instance's with lookups, and fold `i`'s that of its tree. -/
+the tallest instance's with lookups, and fold `i`'s that of its tree; and every instance's
+extension is at least as tall as the main commitment's cap. -/
 theorem caps_of_verifyInstancesWith (S : Setup EF) (H : Primitives F Id)
     (common : CompStark.Batch.Common F) (proof : CompStark.Batch.BatchProof F EF)
     (pis : List (List F))
@@ -1102,6 +1103,7 @@ theorem caps_of_verifyInstancesWith (S : Setup EF) (H : Primitives F Id)
     proof.mainCommit.size = 2 ^ min S.params.capHeight S.logTop ∧
       proof.quotientCommit.size = 2 ^ min S.params.capHeight S.logTop ∧
       (∀ root ∈ proof.permutationCommit, root.size = 2 ^ min S.params.capHeight (permLog S)) ∧
+      (∀ i : Fin S.k, min S.params.capHeight S.logTop ≤ S.logN i + S.params.logBlowup) ∧
       ∀ i < S.friArities.length, (proof.fri.commits.toList.getD i #[]).size =
         2 ^ min S.params.capHeight (friDepthB S i) := by
   obtain ⟨hsize, -, hlsize, hnsize, -, -, -, -, -, -, -, -, -, -, ⟨st, hfriOk⟩, -⟩ :=
@@ -1117,7 +1119,7 @@ theorem caps_of_verifyInstancesWith (S : Setup EF) (H : Primitives F Id)
   obtain ⟨hround, hfold⟩ := size_caps_of_queryOkR _ _ _ _ _ _ _ _ _ _ _ _ _ hcrlen
     (by rw [Array.length_toList]; exact hfolds) (hq 0 hq0)
   rw [batchRounds_cases] at hround
-  obtain ⟨-, hmsz, -⟩ := hround _ (List.mem_append_left _ (List.mem_append_left _
+  obtain ⟨-, hmsz, hmfit⟩ := hround _ (List.mem_append_left _ (List.mem_append_left _
     List.mem_cons_self))
   obtain ⟨-, hqsz, -⟩ := hround _ (List.mem_append_left _ (List.mem_append_left _
     (List.mem_cons_of_mem _ List.mem_cons_self)))
@@ -1125,14 +1127,17 @@ theorem caps_of_verifyInstancesWith (S : Setup EF) (H : Primitives F Id)
   have hlbQ := logBatch_quotMats S proof (zetaOfB H S.params S.instances common proof pis) hsize
     fun i ↦ (openedShapeOk_spec (hshape i)).2.2.1.trans
       (congrArg (2 ^ ·) (logChunks_eq S i).symm)
-  dsimp only at hlbM hlbQ hmsz hqsz
-  rw [hlbM] at hmsz
+  dsimp only at hlbM hlbQ hmsz hmfit hqsz
+  rw [hlbM] at hmsz hmfit
   rw [hlbQ] at hqsz
-  refine ⟨hmsz, hqsz, fun root hroot ↦ ?_, hfold⟩
-  rw [Option.mem_def] at hroot
-  obtain ⟨-, hpsz, -⟩ := hround _ (List.mem_append_right _ (by
-    rw [permRounds, hroot]; exact List.mem_cons_self))
-  rwa [logBatch_permMats S proof _ hlsize hnsize] at hpsz
+  refine ⟨hmsz, hqsz, fun root hroot ↦ ?_, fun i ↦ ?_, hfold⟩
+  · rw [Option.mem_def] at hroot
+    obtain ⟨-, hpsz, -⟩ := hround _ (List.mem_append_right _ (by
+      rw [permRounds, hroot]; exact List.mem_cons_self))
+    rwa [logBatch_permMats S proof _ hlsize hnsize] at hpsz
+  · change ∀ dp ∈ mainMats S proof (zetaOfB H S.params S.instances common proof pis), _ at hmfit
+    rw [mainMats_eq S proof _ hsize] at hmfit
+    exact hmfit _ (List.mem_map.mpr ⟨i, List.mem_finRange _, rfl⟩)
 
 /-- **An accepted proof has a selection.** Plonky3's batch verifier on any primitives accepts a
 proof of the setup's instances only if its messages of the snapshot protocol can be read off
@@ -1142,7 +1147,7 @@ theorem isSome_parse (S : Setup EF) (K m : ℕ) (T : (merkleSpec F).QueryCache)
     (proof : CompStark.Batch.BatchProof F EF) (pis : List (List F))
     (h : CompStark.Batch.verifyInstancesWith H S.params S.instances common proof pis = .ok ()) :
     (S.parse K m T proof).isSome = true := by
-  obtain ⟨hmsz, hqsz, hpsz, hfsz⟩ := S.caps_of_verifyInstancesWith H common proof pis h
+  obtain ⟨hmsz, hqsz, hpsz, -, hfsz⟩ := S.caps_of_verifyInstancesWith H common proof pis h
   obtain ⟨-, -, -, hcs, hcws, -, -, -, -, -, hperm⟩ :=
     shape_of_verifyInstancesWith S H common proof pis h
   have har : Iop.scheduleArities (S.domainSetup.friSchedule S.friHeights) = S.friArities := by

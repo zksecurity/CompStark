@@ -584,15 +584,15 @@ theorem size_commit_preprocessedKeyWith (H : Primitives F Id) (P : Fri.Params) (
     exact Nat.pow_le_pow_right (by decide) (Nat.min_le_left _ _)
 
 /-- The bound on digest clashes is at least one when the digests are at most as many as a
-log of `q ≥ 2` entries and `m capLen` more can name. -/
+log of `q ≥ 2` entries and `2 m capLen` more can name. -/
 theorem one_le_hashBadError (F : Type) (capLen m q : ℕ) (hq : 2 ≤ q)
-    (h : Nat.card F ^ 8 ≤ 1 + (2 + m * capLen) * q + m * capLen) :
+    (h : Nat.card F ^ 8 ≤ 1 + (2 + m * capLen) * q + 2 * (m * capLen)) :
     1 ≤ hashBadError F capLen m q := by
   have hn : Nat.card F ^ 8 ≤ (2 + m * capLen) * q ^ 2 := by
-    have h1 : (2 + m * capLen) * q + (2 + m * capLen) * q ≤ (2 + m * capLen) * q ^ 2 := by
-      rw [← Nat.mul_add, pow_two]
-      exact Nat.mul_le_mul_left _ (by nlinarith)
-    have h2 : 1 + m * capLen < (2 + m * capLen) * q := by nlinarith
+    have h1 : (2 + m * capLen) * (q + 2) ≤ (2 + m * capLen) * q ^ 2 :=
+      Nat.mul_le_mul_left _ (by nlinarith)
+    have h2 : (2 + m * capLen) * (q + 2) = (2 + m * capLen) * q + 4 + 2 * (m * capLen) := by
+      ring
     omega
   unfold hashBadError
   rcases Nat.eq_zero_or_pos (Nat.card F) with h0 | h0

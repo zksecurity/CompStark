@@ -237,3 +237,5 @@ public import CompStark.Fs.Secure
 public import CompStark.Fs.BatchFiatShamir
 public import CompStark.Fs.BatchParse
 public import CompStark.Fs.BatchTerminal
+public import CompStark.Fs.BatchStable
+public import CompStark.Fs.BatchBcs

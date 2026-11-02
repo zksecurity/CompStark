@@ -878,7 +878,8 @@ theorem knowledgeSoundness_bcs (h8 : 2 ^ 8 ≤ Nat.card F) (h64 : twoAdicity F <
   have hgameq := isQueryBoundP_translate_isRight (isTotalQueryBound_starkGame (C := C) hq)
   by_cases hbig : Nat.card F ^ 8 ≤ 1 + (2 + (C.capOffsets EF).length * 2 ^ C.params.capHeight) *
       (q + C.verifierQueries EF) + (C.capOffsets EF).length * 2 ^ C.params.capHeight
-  · refine (prEvent_le_one _).trans ((one_le_hashBadError F _ _ _ hq2 hbig).trans ?_)
+  · refine (prEvent_le_one _).trans ((one_le_hashBadError F _ _ _ hq2
+      (hbig.trans (Nat.add_le_add_left (Nat.le_mul_of_pos_left _ (by norm_num)) _))).trans ?_)
     exact le_add_right (le_add_self)
   rw [not_le] at hbig
   have hHB := prEvent_hashBad_le (offs := C.capOffsets EF) (capLen := 2 ^ C.params.capHeight) hB

@@ -438,10 +438,10 @@ theorem length_degreeBits_of_keyOk (common : CompStark.Batch.Common F)
 
 /-- **The batch verifier's oracle calls on a proof of any lengths**, against common data of the
 statement's lookups. -/
-theorem isTotalQueryBound_verifyBatchWith (common : CompStark.Batch.Common F)
+theorem isTotalQueryBound_verifyBatchWith {K : ℕ} (common : CompStark.Batch.Common F)
     (hl : common.lookups = List.ofFn C.lookups) (proof : CompStark.Batch.BatchProof F EF)
     (pis : List (List F)) :
-    IsTotalQueryBound (CompStark.Batch.verifyBatchWith (ideal F (C.streamLen EF)) C.params C.airs
+    IsTotalQueryBound (CompStark.Batch.verifyBatchWith (ideal F K) C.params C.airs
       common proof pis) (C.verifierCalls EF) := by
   unfold CompStark.Batch.verifyBatchWith
   split
@@ -453,7 +453,7 @@ theorem isTotalQueryBound_verifyBatchWith (common : CompStark.Batch.Common F)
         pis).mono (Ni.le_foldr_max _ _ (List.mem_map_of_mem
           (mem_lengthVectors C.k _ n hle)))
     · refine (show IsTotalQueryBound (CompStark.Batch.verifyInstancesWith
-          (ideal F (C.streamLen EF)) C.params (C.instancesAt n) common proof pis) 0
+          (ideal F K) C.params (C.instancesAt n) common proof pis) 0
           from ?_).mono (Nat.zero_le _)
       push Not at hle
       obtain ⟨i, hi⟩ := hle
@@ -468,9 +468,25 @@ theorem isTotalQueryBound_verifyBatchWith (common : CompStark.Batch.Common F)
       trivial
   · trivial
 
+omit [Challenge F EF] in
+/-- The common data the setup computes on the random oracles has the statement's lookups. -/
+theorem lookups_of_mem_support_setupRo {K : ℕ} (common : CompStark.Batch.Common F)
+    (h : common ∈ support (CompStark.Batch.commonWith (ideal F K) C.params C.keyInstances)) :
+    common.lookups = List.ofFn C.lookups := by
+  unfold CompStark.Batch.commonWith at h
+  rw [mem_support_bind_iff] at h
+  obtain ⟨c, -, hc⟩ := h
+  rw [support_pure, Set.mem_singleton_iff] at hc
+  rw [hc]
+  show C.keyInstances.map (·.lookups) = _
+  rw [keyInstances, instancesAt, List.map_ofFn]
+  rfl
+
 /-- **The batch setup's oracle calls.** -/
-theorem isTotalQueryBound_setupRo : IsTotalQueryBound (C.setupRo EF) C.setupQueries := by
-  unfold setupRo CompStark.Batch.commonWith
+theorem isTotalQueryBound_setupRo {K : ℕ} :
+    IsTotalQueryBound (CompStark.Batch.commonWith (ideal F K) C.params C.keyInstances)
+      C.setupQueries := by
+  unfold CompStark.Batch.commonWith
   refine (isTotalQueryBound_bind (n₂ := 0) ?_ fun _ ↦ Merkle.isTotalQueryBound_pure _).mono
     (Nat.add_zero _).le
   unfold CompStark.Batch.preprocessedCapWith setupQueries
