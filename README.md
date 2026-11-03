@@ -39,12 +39,12 @@ Proving time on an 8-core Ryzen 7 3700X, quiet, against Plonky3 at `a4982ec`, bo
 
 | Workload | CompStark | Plonky3 |
 |---|---|---|
-| `wide 64` AIR (64 columns, degree 3), $2^{16}$ rows, blowup 2, 100 queries | 0.15 s / 0.90 s | 0.11 s / 0.39 s |
-| `wide 64` AIR, $2^{18}$ rows | 0.50 s / 3.2 s | 0.42 s / 1.58 s |
-| Batch of three `wide 64` tables, $2^{20}$, $2^{19}$ and $2^{16}$ rows | 3.5 s / 17.2 s | 1.85 s / 9.7 s |
-| Batch with LogUp lookups, $2^{18}$, $2^{18}$ and $2^{16}$ rows | 1.41 s / 8.0 s | 0.53 s / 3.45 s |
-| Plonky3's Keccak-f example, $2^{16}$ rows | 1.60 s / 12.3 s | 1.91 s / 8.0 s |
-| Plonky3's Keccak-f example, $2^{18}$ rows | 6.6 s / 50 s | 11.0 s / 32 s |
+| `wide 64` AIR (64 columns, degree 3), $2^{16}$ rows, blowup 2, 100 queries | 0.12 s / 0.85 s | 0.11 s / 0.39 s |
+| `wide 64` AIR, $2^{18}$ rows | 0.44 s / 2.9 s | 0.41 s / 1.59 s |
+| Batch of three `wide 64` tables, $2^{20}$, $2^{19}$ and $2^{16}$ rows | 3.2 s / 15.0 s | 2.0 s / 9.6 s |
+| Batch with LogUp lookups, $2^{18}$, $2^{18}$ and $2^{16}$ rows | 1.22 s / 6.8 s | 0.57 s / 3.42 s |
+| Plonky3's Keccak-f example, $2^{16}$ rows | 1.56 s / 11.7 s | 1.90 s / 7.8 s |
+| Plonky3's Keccak-f example, $2^{18}$ rows | 6.3 s / 47 s | 10.9 s / 31 s |
 
 Plonky3 is faster on `wide 64`, on the batches and on one thread; CompStark is faster on Keccak-f on 16 threads. The `wide 64` rows and the batches use blowup 2, folding arity 2, 100 queries and 16 bits of query grinding (`1 0 1 100 0 16`), the Keccak-f rows the example's configuration (blowup 2, arity up to 8, 87 queries, 16 bits of query grinding and 10 of batching grinding, caps of height 3). The Keccak-f rows are proofs from a pseudorandom trace of the AIR's width, trace generation excluded on both sides (`CompStarkBench keccak-prove quartic LOG_N`, `compstark-bench keccak-prove-bench quartic LOG_N`); the other commands are in [docs/components.md](docs/components.md), with the configurations and per-phase breakdowns.
 
@@ -52,10 +52,10 @@ Over KoalaBear's quintic extension, against the quartic, on 16 threads in the sa
 
 | Workload | CompStark quartic | CompStark quintic | Plonky3 quartic | Plonky3 quintic |
 |---|---|---|---|---|
-| `wide 64` AIR, $2^{16}$ rows | 0.15 s | 0.16 s | 0.11 s | 0.11 s |
-| `wide 64` AIR, $2^{18}$ rows | 0.50 s | 0.55 s | 0.42 s | 0.46 s |
-| Plonky3's Keccak-f example, $2^{16}$ rows | 1.60 s | 1.80 s | 1.91 s | 1.92 s |
-| Plonky3's Keccak-f example, $2^{18}$ rows | 6.6 s | 6.8 s | 11.0 s | 11.3 s |
+| `wide 64` AIR, $2^{16}$ rows | 0.12 s | 0.13 s | 0.11 s | 0.11 s |
+| `wide 64` AIR, $2^{18}$ rows | 0.44 s | 0.49 s | 0.41 s | 0.48 s |
+| Plonky3's Keccak-f example, $2^{16}$ rows | 1.56 s | 1.64 s | 1.90 s | 1.92 s |
+| Plonky3's Keccak-f example, $2^{18}$ rows | 6.3 s | 6.7 s | 10.9 s | 11.1 s |
 
 ## Security of your own AIR
 
