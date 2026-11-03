@@ -35,26 +35,26 @@ CompPoly and ArkLib are pinned to branches of forks that carry the results CompS
 
 ## Performance
 
-Proving time on an 8-core Ryzen 7 3700X, against Plonky3 built for the native CPU (16 threads / 1 thread):
+Proving time on an 8-core Ryzen 7 3700X, quiet, against Plonky3 built for the native CPU (16 threads / 1 thread; medians of three interleaved rounds):
 
 | Workload | CompStark | Plonky3 |
 |---|---|---|
-| `wide 64` AIR (64 columns, degree 3), $2^{16}$ rows, blowup 2, 100 queries | 0.33 s / 1.32 s | 0.35 s / 1.96 s |
-| `wide 64` AIR, $2^{18}$ rows | 1.14 s / 4.8 s | 1.20 s / 7.9 s |
-| Batch of three `wide 64` tables, $2^{20}$, $2^{19}$ and $2^{16}$ rows | 6.0 s / 26.7 s | 6.3 s / 42.0 s |
-| Plonky3's Keccak-f example, $2^{16}$ rows | 1.90 s / 12.2 s | 1.85 s / 7.9 s |
-| Plonky3's Keccak-f example, $2^{18}$ rows | 6.5 s / 50.0 s | 11.2 s / 33.6 s |
+| `wide 64` AIR (64 columns, degree 3), $2^{16}$ rows, blowup 2, 100 queries | 0.15 s / 0.90 s | 0.11 s / 0.39 s |
+| `wide 64` AIR, $2^{18}$ rows | 0.50 s / 3.2 s | 0.42 s / 1.58 s |
+| Batch of three `wide 64` tables, $2^{20}$, $2^{19}$ and $2^{16}$ rows | 17 s / 30 s | 1.95 s / 9.8 s |
+| Plonky3's Keccak-f example, $2^{16}$ rows | 1.60 s / 12.3 s | 1.91 s / 8.0 s |
+| Plonky3's Keccak-f example, $2^{18}$ rows | 6.6 s / 50 s | 11.0 s / 32 s |
 
-The Keccak-f rows are proofs from the trace in the keccak-air showcase of [Clean](https://github.com/Verified-zkEVM/clean)'s CompStark backend, which generates the trace; verifying the proof takes about 45 ms, against 11 ms for Plonky3. [docs/components.md](docs/components.md) has the configurations, the commands and per-phase breakdowns.
+Plonky3 is faster on `wide 64`, on the batch and on one thread; CompStark is faster on Keccak-f on 16 threads. The Keccak-f rows are proofs from a pseudorandom trace of the AIR's width, trace generation excluded on both sides (`CompStarkBench keccak-prove quartic LOG_N`, `compstark-bench keccak-prove-bench quartic LOG_N`); the other commands are in [docs/components.md](docs/components.md), with the configurations and per-phase breakdowns.
 
-Over KoalaBear's quintic extension, measured alongside the quartic on the same host, quiet, on 16 threads (Keccak-f proofs from a pseudorandom trace of the AIR's width, trace generation excluded on both sides):
+Over KoalaBear's quintic extension, against the quartic, on 16 threads in the same rounds:
 
 | Workload | CompStark quartic | CompStark quintic | Plonky3 quartic | Plonky3 quintic |
 |---|---|---|---|---|
-| `wide 64` AIR, $2^{16}$ rows | 0.14 s | 0.17 s | 0.11 s | 0.12 s |
-| `wide 64` AIR, $2^{18}$ rows | 0.49 s | 0.58 s | 0.44 s | 0.45 s |
-| Plonky3's Keccak-f example, $2^{16}$ rows | 1.63 s | 1.75 s | 1.90 s | 1.91 s |
-| Plonky3's Keccak-f example, $2^{18}$ rows | 6.5 s | 6.9 s | 10.9 s | 11.1 s |
+| `wide 64` AIR, $2^{16}$ rows | 0.15 s | 0.16 s | 0.11 s | 0.11 s |
+| `wide 64` AIR, $2^{18}$ rows | 0.50 s | 0.55 s | 0.42 s | 0.46 s |
+| Plonky3's Keccak-f example, $2^{16}$ rows | 1.60 s | 1.80 s | 1.91 s | 1.92 s |
+| Plonky3's Keccak-f example, $2^{18}$ rows | 6.6 s | 6.8 s | 11.0 s | 11.3 s |
 
 ## Security of your own AIR
 
