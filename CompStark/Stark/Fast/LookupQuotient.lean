@@ -449,7 +449,7 @@ theorem lookupQuotientWith_rel (kernels : List (Prog.GroupKernel p)) (A : Air F)
     (hps : ∀ q ∈ ps, MatOk q ∧ q.height = s.height) (hr : RM perm rs) (hrs : MatOk rs)
     (hrh : rs.height = s.height) (hk : k * FastExt.d p EF ≤ rs.width)
     (hc : ∀ c ∈ ext, c.colsBelow s.width s.width ((ps.map (·.width)).getD 0)
-      ((ps.map (·.width)).getD 0) k) (hU : 4 * (2 ^ (d + l) * FastExt.d p EF) < USize.size) :
+      ((ps.map (·.width)).getD 0) k) :
     QRel (lookupQuotientWith kernels (quotientTables (p := p) d l) A ext pis tr prep perm
       chs terminal alpha) (lookupQuotientOfLde A ext pis d l s ps rs chs terminal alpha) := by
   have hw := h.width
@@ -562,7 +562,7 @@ theorem lookupQuotientWith_rel (kernels : List (Prog.GroupKernel p)) (A : Air F)
   dsimp only
   rw [hspec, hWT]
   refine (congrArg (QRel _) ?_).mp (quotientBlocks_rel d l _ _ (groupRun_eq kernels _) SC WT _ Q
-    ?hblk hU)
+    ?hblk)
   case hblk =>
     intro r0 hdvd hr0
     obtain ⟨hB0, -, -⟩ := tables_B (p := p) d l

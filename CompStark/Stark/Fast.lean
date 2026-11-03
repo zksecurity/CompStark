@@ -517,8 +517,8 @@ vanishing polynomial; the ranges keep them row by row, and every coordinate's pl
           for j in [0:d] do
             out := out.push (z * word (Prog.regBuf regs j) i)
     return out
-  let stored := CompPoly.CPolynomial.NTTFast.Packed.Native.encodeFields byRow
-  let planes := (Array.range d).map fun j ↦ Task.spawn fun _ ↦ strided stored j d n
+  let planes := (Array.range d).map fun j ↦ Task.spawn fun _ ↦
+    CompPoly.CPolynomial.NTTFast.Packed.Native.generate n fun s ↦ (byRow.getD (s * d + j) 0).val
   return ⟨n, Vector.ofFn fun j ↦ (planes.getD j.val (Task.pure .empty)).get⟩
 
 /-- The periodic columns of `A` on the quotient domain of the tables `T`, in the extension's

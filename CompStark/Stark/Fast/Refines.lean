@@ -39,13 +39,6 @@ def backendFor_refines (hA : DomainsAddressable F EF)
     unfold DomainsAddressable Addressable at hA
     rw [Mont32.d_eq] at hA
     omega
-  have hU (d l : Nat) {s : Mat F} (hs : MatOk s) (hh : 2 ^ (d + l) ≤ s.height) :
-      4 * (2 ^ (d + l) * FastExt.d p EF) < USize.size := by
-    obtain ⟨-, ⟨k, hk, hkh⟩, -⟩ := hs
-    have := Nat.pow_le_pow_right (show 0 < 2 by decide) hk
-    have := Nat.mul_le_mul_right (FastExt.d p EF) (show 2 ^ (d + l) ≤ 2 ^ twoAdicity F by omega)
-    rw [Nat.mul_comm (2 ^ twoAdicity F)] at this
-    omega
   { RT := RT
     RM := RM
     RC := RC
@@ -79,8 +72,8 @@ def backendFor_refines (hA : DomainsAddressable F EF)
         simp only [Prod.mk.injEq] at he
         obtain ⟨rfl, rfl, rfl⟩ := he
         obtain ⟨rfl, rfl⟩ := hd
-        exact quotientWith_rel _ A pis _ _ alpha h hs hh hp hps hc (hU _ _ hs hh)
-      · exact quotientWith_rel [] A pis _ _ alpha h hs hh hp hps hc (hU _ _ hs hh)
+        exact quotientWith_rel _ A pis _ _ alpha h hs hh hp hps hc
+      · exact quotientWith_rel [] A pis _ _ alpha h hs hh hp hps hc
     lookupQuotient := fun A ext pis d l _ _ _ _ _ _ chs t alpha k h hs hh hp hps hr hrs hrh hk hc ↦
       by
       dsimp only [backendFor]
@@ -94,9 +87,9 @@ def backendFor_refines (hA : DomainsAddressable F EF)
         obtain ⟨rfl, rfl, rfl⟩ := he
         obtain ⟨rfl, rfl⟩ := hd
         exact lookupQuotientWith_rel _ A ext pis _ _ chs t alpha k h hs hh hp hps hr hrs hrh hk hc
-          (hU _ _ hs hh)
+         
       · exact lookupQuotientWith_rel [] A ext pis _ _ chs t alpha k h hs hh hp hps hr hrs hrh hk hc
-          (hU _ _ hs hh)
+         
     combine := fun x _ _ _ _ hq hr hab ha ↦ combine_rel h16 x hq hr hab ha
     chunks := fun bits logN l _ _ hv ha hlb hb ↦ chunksWith_rel _ (fun e he ↦ by
         obtain ⟨⟨n, c⟩, -, he⟩ := List.mem_flatMap.mp he

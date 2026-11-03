@@ -301,8 +301,7 @@ theorem quotientBlocks_rel [Mont32BaseField p] [Mont32.AlgebraId EF] (d l : Nat)
         (∀ ins ∈ prog.code, ins.InRange V cb cs L (quotientTables (p := p) d l).B prog.regs) ∧
         ∀ i < (quotientTables (p := p) d l).B, ∀ st0 : Prog.St F, st0.acc = (fun _ ↦ 0) →
           ∀ j < FastExt.d p EF, (Prog.run (Prog.fieldMachine (Prog.blockCtx (FastExt.d p EF) V cb
-            cs L SC WT (quotientTables (p := p) d l).B i)) prog.code st0).acc j = Q (r0 + i) j)
-    (hU : 4 * (2 ^ (d + l) * FastExt.d p EF) < USize.size) :
+            cs L SC WT (quotientTables (p := p) d l).B i)) prog.code st0).acc j = Q (r0 + i) j) :
     QRel (quotientBlocks (EF := EF) (quotientTables (p := p) d l) prog run SC WT block)
       (Array.ofFn (n := 2 ^ (d + l)) fun r ↦ FastExt.ofCoords fun j ↦
         (batchInv (qZh d l) : Array F).getD (r.val % 2 ^ l) 0 *
@@ -382,15 +381,8 @@ theorem quotientBlocks_rel [Mont32BaseField p] [Mont32.AlgebraId EF] (d l : Nat)
   refine ⟨by simp only [bitRevValues, Array.size_ofFn], fun k ↦ ?_⟩
   simp only [Fin.getElem_fin, Vector.getElem_ofFn]
   rw [CompPoly.CPolynomial.NTTFast.Packed.getD_map_range _ _ _ k.isLt, CompPoly.Tasks.get_spawn,
-    CompPoly.CPolynomial.NTTFast.Packed.Native.encodeFields_eq, strided_encode _ _ _ _
-      (fun r hr ↦ by
-        rw [Array.size_ofFn, hsz]
-        have := Nat.mul_le_mul_right (FastExt.d p EF) (show r + 1 ≤ 2 ^ (d + l) by omega)
-        rw [Nat.succ_mul] at this
-        have := k.isLt
-        omega) (by rw [Array.size_ofFn, hsz]; exact hU) (by
-      have : 2 ^ (d + l) ≤ 2 ^ (d + l) * FastExt.d p EF := Nat.le_mul_of_pos_right _ hna
-      omega)]
+    CompPoly.CPolynomial.NTTFast.Packed.Native.generate_eq,
+    CompPoly.CPolynomial.NTTFast.Packed.encode_eq_map_val (Array.map _ _)]
   refine congrArg encode (Array.ext (by simp only [bitRevValues, Array.size_ofFn, Array.size_map])
     fun r h1 _ ↦ ?_)
   rw [Array.size_ofFn] at h1
@@ -405,9 +397,9 @@ theorem quotientBlocks_rel [Mont32BaseField p] [Mont32.AlgebraId EF] (d l : Nat)
   have e2 : (r * FastExt.d p EF + k.val) % FastExt.d p EF = k.val := by
     rw [Nat.add_comm, Nat.add_mul_mod_self_right, Nat.mod_eq_of_lt k.isLt]
   have hb := NTT.Transform.bitRevNat_lt (d + l) r
-  simp only [bitRevValues, Array.size_ofFn, Nat.log2_two_pow]
-  rw [Array.getElem_ofFn, Array.getElem_map, Array.getElem_ofFn,
-    CompPoly.CPolynomial.NTTFast.Packed.getD_ofFn_bounded _ _ hrk,
+  simp only [bitRevValues, Array.size_ofFn, Nat.log2_two_pow, Array.getElem_ofFn,
+    Array.getElem_map]
+  rw [CompPoly.CPolynomial.NTTFast.Packed.getD_ofFn_bounded _ _ hrk,
     CompPoly.CPolynomial.NTTFast.Packed.getD_ofFn_bounded _ _ hb, FastExt.coord_ofCoords]
   simp only [g, e1, e2, bitRevPerm_getD _ _ h1, bitRevPerm_getD _ _ hb,
     NTT.Transform.bitRevNat_involutive _ _ h1]
@@ -811,7 +803,7 @@ theorem quotientWith_rel [Mont32BaseField p] [Mont32.AlgebraId EF] (ks : List (C
     (h : RM ext s) (hs : MatOk s) (hh : 2 ^ (d + l) ≤ s.height) (hp : Option.Rel RM prep ps)
     (hps : ∀ q ∈ ps, MatOk q ∧ q.height = s.height)
     (hc : ∀ c ∈ A.constraints, c.colsBelow s.width s.width ((ps.map (·.width)).getD 0)
-      ((ps.map (·.width)).getD 0)) (hU : 4 * (2 ^ (d + l) * FastExt.d p EF) < USize.size) :
+      ((ps.map (·.width)).getD 0)) :
     QRel (quotientWith ks (quotientTables (p := p) d l) A pis ext prep alpha)
       (quotientOfLde A pis d l s ps alpha) := by
   have hw := h.width
@@ -907,7 +899,7 @@ theorem quotientWith_rel [Mont32BaseField p] [Mont32.AlgebraId EF] (ks : List (C
   dsimp only
   rw [progRun_fst, hWT]
   refine (congrArg (QRel _) ?_).mp (quotientBlocks_rel d l _ _ (progRun_snd ks A.constraints)
-    pis.toArray WT _ Q ?hblk hU)
+    pis.toArray WT _ Q ?hblk)
   case hblk =>
     intro r0 hdvd hr0
     obtain ⟨hB0, -, -⟩ := tables_B (p := p) d l
