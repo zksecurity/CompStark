@@ -75,40 +75,41 @@ structure PMat where
 def word (b : ByteArray) (i : Nat) : F :=
   CompPoly.CPolynomial.NTTFast.Packed.ofWord p (CompPoly.CPolynomial.NTTFast.Packed.Native.read b i)
 
-/-- The first passing candidate of batch `b`, `8 b, …, 8 b + 7`: `group` holds eight copies of the
-duplexed state as a packed group, and the candidates go into coordinate `wi`. -/
+/-- The first passing candidate of batch `b`, `8 b, …, 8 b + 7`, whose permuted word is divisible
+by `m`: `group` holds eight copies of the duplexed state as a packed group, and the candidates go
+into coordinate `wi`. -/
 def grindBatch (p : ℕ) [Mont32Field p] [Poseidon2Field (FastField p)] [PackedPoseidon2 p]
     (group : @& ByteArray)
-    (wi bits b : Nat) : Option Nat :=
+    (wi m b : Nat) : Option Nat :=
   let W := (List.range 8).foldl (fun W l ↦ CompPoly.CPolynomial.NTTFast.Packed.Native.write W
     (8 * wi + l) ((8 * b + l : Nat) : FastField p).val)
     (group.copySlice 0 ByteArray.empty 0 group.size)
   let out := PackedPoseidon2.permute24 p W
   ((List.range 8).find? fun l ↦ 8 * b + l < p &&
-    FastField.toNat (word (p := p) out (8 * 15 + l)) % 2 ^ bits == 0).map (8 * b + ·)
+    FastField.toNat (word (p := p) out (8 * 15 + l)) % m == 0).map (8 * b + ·)
 
 /-- The first passing candidate of the `nb` batches from `b`, if any. -/
 def grindRange (p : ℕ) [Mont32Field p] [Poseidon2Field (FastField p)] [PackedPoseidon2 p]
     (group : @& ByteArray)
-    (wi bits : Nat) : Nat → Nat → Option Nat
+    (wi m : Nat) : Nat → Nat → Option Nat
   | 0, _ => none
   | nb + 1, b =>
-    match grindBatch p group wi bits b with
-    | some m => some m
-    | none => grindRange p group wi bits nb (b + 1)
+    match grindBatch p group wi m b with
+    | some c => some c
+    | none => grindRange p group wi m nb (b + 1)
 
 /-- The smallest passing candidate from wave `wave` on: each wave splits 1024 batches of eight
 candidates among 16 tasks, and the first wave with a passing candidate has the smallest. -/
 def grindWaves (p : ℕ) [Mont32Field p] [Poseidon2Field (FastField p)] [PackedPoseidon2 p]
-    (group : ByteArray) (wi bits : Nat) :
+    (group : ByteArray) (wi m : Nat) :
     Nat → Nat → FastField p
   | 0, _ => 0
   | fuel + 1, wave =>
     let ts := (Array.range 16).map fun k ↦ Task.spawn fun _ ↦
-      grindRange p group wi bits 64 (1024 * wave + 64 * k)
+      grindRange p group wi m 64 (1024 * wave + 64 * k)
     match (ts.map Task.get).findSome? id with
     | some c => (c : FastField p)
-    | none => grindWaves p group wi bits fuel (wave + 1)
+    | none => grindWaves p group wi m fuel (wave + 1)
 
 /-- The coordinate of a grinding witness after the pending input `c.input`: its length, or 24,
 past the group, if the input fills the rate, where the absorption drops the witness. -/
@@ -122,7 +123,7 @@ def grind [Poseidon2Field (FastField p)] [PackedPoseidon2 p] (c : Challenger F 2
   let base := Challenger.absorbInto 16 c.state (c.input.push 0).toList
   let group := CompPoly.CPolynomial.NTTFast.Packed.Native.encodeFields
     (Array.ofFn (n := 192) fun k ↦ base.toArray.getD (k / 8) 0)
-  grindWaves p group (witnessSlot c) bits (p / 8192 + 1) 0
+  grindWaves p group (witnessSlot c) (2 ^ bits) (p / 8192 + 1) 0
 
 /-- The fast transcript. -/
 def transcript [Mont32BaseField p] [Poseidon2Field (FastField p)]

@@ -262,7 +262,7 @@ abbrev baseGroup (c : Challenger F 24) : ByteArray :=
     (Array.ofFn (n := 192) fun k ↦ (baseState c).toArray.getD (k / 8) 0)
 
 theorem grindBatch_eq (c : Challenger F 24) (bits b : Nat) :
-    grindBatch p (baseGroup c) (witnessSlot c) bits b =
+    grindBatch p (baseGroup c) (witnessSlot c) (2 ^ bits) b =
       firstFrom (passes c bits) 8 (8 * b) := by
   have h0 : (Array.ofFn (n := 192) fun k ↦ (baseState c).toArray.getD (k / 8) 0) =
       batchGroup (baseState c) (witnessSlot c) b 0 := by
@@ -286,7 +286,7 @@ theorem grindBatch_eq (c : Challenger F 24) (bits b : Nat) :
   rw [hw, h15]
 
 theorem grindRange_eq (c : Challenger F 24) (bits : Nat) :
-    ∀ nb b, grindRange p (baseGroup c) (witnessSlot c) bits nb b =
+    ∀ nb b, grindRange p (baseGroup c) (witnessSlot c) (2 ^ bits) nb b =
       firstFrom (passes c bits) (8 * nb) (8 * b)
   | 0, _ => rfl
   | nb + 1, b => by
@@ -305,12 +305,12 @@ theorem findSome?_ranges (P : Nat → Bool) (L a : Nat) : ∀ n,
     cases firstFrom P L (a + L * n) <;> rfl
 
 theorem grindWaves_eq (c : Challenger F 24) (bits : Nat) :
-    ∀ fuel wave, grindWaves p (baseGroup c) (witnessSlot c) bits fuel wave =
+    ∀ fuel wave, grindWaves p (baseGroup c) (witnessSlot c) (2 ^ bits) fuel wave =
       ((firstFrom (passes c bits) (8192 * fuel) (8192 * wave)).map fun m : Nat ↦ (m : F)).getD 0
   | 0, _ => rfl
   | fuel + 1, wave => by
     have hw : ((Array.range 16).map fun k ↦ Task.spawn fun _ ↦
-        grindRange p (baseGroup c) (witnessSlot c) bits 64 (1024 * wave + 64 * k)).map
+        grindRange p (baseGroup c) (witnessSlot c) (2 ^ bits) 64 (1024 * wave + 64 * k)).map
           Task.get =
         ((List.range 16).map fun k ↦
           firstFrom (passes c bits) 512 (8192 * wave + 512 * k)).toArray := by
