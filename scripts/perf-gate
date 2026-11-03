@@ -137,7 +137,10 @@ def run_suite():
 def build():
     cmd = ["systemd-run", "--user", "--scope", "-q", "-p", "MemoryMax=12G",
            "-p", "MemorySwapMax=0", "--", "lake", "build", "CompStarkBench"]
-    r = subprocess.run(cmd, cwd=ROOT, stdout=subprocess.PIPE, stderr=subprocess.STDOUT)
+    # Lake runs git in the dependencies' checkouts: the repository variables a git hook exports
+    # would point those commands at this repository.
+    env = {k: v for k, v in os.environ.items() if not k.startswith("GIT_")}
+    r = subprocess.run(cmd, cwd=ROOT, env=env, stdout=subprocess.PIPE, stderr=subprocess.STDOUT)
     if r.returncode != 0:
         sys.stderr.write(r.stdout.decode()[-20000:])
         sys.exit("perf-gate: building CompStarkBench failed")
