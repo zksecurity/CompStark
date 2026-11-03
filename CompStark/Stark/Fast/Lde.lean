@@ -7,7 +7,6 @@ module
 public import CompStark.Stark.Fast.Columns
 public import CompStark.Stark.Points
 public import CompPoly.Univariate.NTTFast.Packed.CosetLdeCorrectness
-public import CompPoly.Univariate.NTTFast.Packed.StripBlocksCorrectness
 public import CompPoly.Univariate.NTT.Interpolation
 import all CompPoly.Univariate.Basic
 
@@ -197,13 +196,13 @@ theorem blocks_ldeSpec (P : LdePlan p) (w : Nat) (M : Array F) :
 
 open NTTFast.Packed.Native (rowChunks transposeRows gatherColumn columnCoefficients cosetBlock)
   in
-/-- The column-by-column extension of columns `c0, …, w - 1`: entry `j` holds the blocks of column
-`c0 + j`. -/
-theorem ldeColumnRange_eq (P : LdePlan p) (w c0 : Nat) (hc0 : c0 ≤ w) (M : Array F) (k : Nat)
-    (hk : k ≤ P.logH) (hM : M.size = 2 ^ P.logH * w)
-    (hu : 4 * (2 ^ P.domain.logN * w) < USize.size) :
-    ldeColumnRange P w c0 (rowChunks M w P.logH k) = (Array.range (w - c0)).map fun j ↦
-      (Array.range (2 ^ P.bits)).map fun t ↦ encode (colBlock P w M t (c0 + j)) := by
+/-- **The column-wise extension is `ldeSpec`**, in blocks of the input's height: column `j` of
+block `t` holds rows `t · 2 ^ logH, …` of column `j`. -/
+theorem ldeColumns_eq (P : LdePlan p) (w : Nat) (M : Array F) (k : Nat) (hk : k ≤ P.logH)
+    (hM : M.size = 2 ^ P.logH * w) (hu : 4 * (2 ^ P.domain.logN * w) < USize.size) :
+    ldeColumns P w (rowChunks M w P.logH k) = (Array.range (2 ^ P.bits * w)).map fun i ↦
+      encode (Array.ofFn (n := 2 ^ P.logH) fun kk ↦
+        (ldeSpec P w M).getD ((i / w * 2 ^ P.logH + kk.val) * w + i % w) 0) := by
   have hHN : 2 ^ P.logH * w ≤ 2 ^ P.domain.logN * w :=
     Nat.mul_le_mul_right w (Nat.pow_le_pow_right (by decide) (Nat.sub_le _ _))
   have hMs : 4 * M.size < USize.size := by omega
@@ -226,124 +225,30 @@ theorem ldeColumnRange_eq (P : LdePlan p) (w c0 : Nat) (hc0 : c0 ≤ w) (M : Arr
           encode (colBlock P w M t (c0 + j)) := by
     rw [NTTFast.Packed.Native.gatherColumn_eq_column M w c0 n _ R rows j hn hj hR hM hMs,
       cosetBlock_column]
-  have hL : 0 < columnChains P.logH := by
-    unfold columnChains rangeColumns
-    split
-    · decide
-    · exact lt_of_lt_of_le Nat.one_pos (Nat.le_max_left 1 _)
-  unfold ldeColumnRange
+  unfold ldeColumns
   simp only [Array.map_map, Function.comp_def, CompPoly.Tasks.get_bind,
     CompPoly.Tasks.get_spawn, CompPoly.Tasks.get_join, CompPoly.Tasks.map_get_spawnAll,
     rowChunks, Array.size_map, Array.size_range, Array.map_flatMap]
-  rw [← flatMap_ranges (fun j ↦ (Array.range (2 ^ P.bits)).map fun t ↦
-    encode (colBlock P w M t (c0 + j))) (w - c0) rangeColumns (by decide)]
-  refine flatMap_range_congr _ _ _ fun a ha ↦ ?_
-  have hn : c0 + rangeColumns * a + min rangeColumns (w - c0 - rangeColumns * a) ≤ w := by
-    simp only [rangeColumns] at ha ⊢
-    omega
-  apply Array.ext (by simp only [Array.size_map])
-  intro x hx _
-  simp only [Array.size_map, Array.size_range] at hx
-  simp only [Array.getElem_map, Array.getElem_range]
-  rw [← rowChunks, hpieces _ _ hn, map_chained, getD_chained _ _ hL _ _ hx, Function.comp_apply]
-  dsimp only
-  apply Array.ext (by simp only [Array.size_map])
-  intro t ht _
-  simp only [Array.size_map, Array.size_range] at ht
-  simp only [Array.getElem_map, Array.getElem_range]
-  rw [hcol _ _ _ hn hx, Nat.add_assoc]
-
-/-- A range splits at `c0`. -/
-theorem map_range_split {α : Type} (f : Nat → α) (n c0 : Nat) (h : c0 ≤ n) :
-    (Array.range n).map f = (Array.range c0).map f ++ (Array.range (n - c0)).map
-      fun j ↦ f (c0 + j) := by
-  obtain ⟨d, rfl⟩ : ∃ d, n = c0 + d := ⟨n - c0, by omega⟩
-  rw [Array.range_add, Array.map_append, Array.map_map, Nat.add_sub_cancel_left]
-  rfl
-
-open NTTFast.Packed.Native (rowChunks stripOfChunks stripCoefficients stripBlock) in
-/-- A strip's coset blocks are its columns' blocks. -/
-theorem stripBlock_rowChunks (P : LdePlan p) (w : Nat) (M : Array F) (k s : Nat) (hk : k ≤ P.logH)
-    (hM : M.size = 2 ^ P.logH * w) (hu : 4 * (2 ^ P.domain.logN * w) < USize.size)
-    (h8 : 8 * 2 ^ k ≤ 2 ^ P.logH ∧ 2 ^ P.logH % (8 * 2 ^ k) = 0) (hs : 8 * s + 8 ≤ w)
-    (t : Nat) :
-    stripBlock P (stripCoefficients P (stripOfChunks (rowChunks M w P.logH k) w s
-      (2 ^ P.logH / 2 ^ k))) t =
-      (Array.range 8).map fun l ↦ encode (colBlock P w M t (8 * s + l)) := by
-  have hHN : 2 ^ P.logH ≤ 2 ^ P.domain.logN := Nat.pow_le_pow_right (by decide) (Nat.sub_le _ _)
-  have hu' : 4 * (8 * 2 ^ P.logH) < USize.size := by
-    have := Nat.mul_le_mul hHN (show 8 ≤ w by omega)
-    omega
-  have hMs : 4 * M.size < USize.size := by
-    rw [hM]; have := Nat.mul_le_mul_right w hHN; omega
-  have hdiv : 2 ^ P.logH / 2 ^ k = 2 ^ (P.logH - k) := Nat.pow_div hk (by decide)
-  have hd8 : 8 ∣ 2 ^ (P.logH - k) := by
-    rw [← hdiv]
-    obtain ⟨c, hc⟩ := Nat.dvd_of_mod_eq_zero h8.2
-    exact ⟨c, by rw [hc, Nat.mul_assoc, Nat.mul_left_comm,
-      Nat.mul_div_cancel_left _ (Nat.two_pow_pos k)]⟩
-  have h3 : 3 ≤ P.logH := by
-    by_contra hl
-    have : 2 ^ P.logH ≤ 2 ^ 2 := Nat.pow_le_pow_right (by decide) (by omega)
-    have := Nat.two_pow_pos k
-    omega
-  rw [hdiv, NTTFast.Packed.Native.stripOfChunks_rowChunks M w P.logH k s hk hd8 hs hM hMs hu',
-    NTTFast.Packed.Native.stripBlock_stripCoefficients P _ (by
-      simp only [NTTFast.Packed.stripOf, Array.size_ofFn]) (by omega) h3 hu' t]
-  apply Array.ext (by simp only [Array.size_map, Array.size_range])
-  intro l hl _
-  simp only [Array.size_map, Array.size_range] at hl
-  simp only [Array.getElem_map, Array.getElem_range]
-  rw [NTTFast.Packed.lane8_stripOf M w s _ l hl, cosetBlock_column]
-
-open NTTFast.Packed.Native (rowChunks) in
-/-- **The column-wise extension is `ldeSpec`**, in blocks of the input's height: column `j` of
-block `t` holds rows `t · 2 ^ logH, …` of column `j`. -/
-theorem ldeColumns_eq (P : LdePlan p) (w : Nat) (M : Array F) (k : Nat) (hk : k ≤ P.logH)
-    (hM : M.size = 2 ^ P.logH * w) (hu : 4 * (2 ^ P.domain.logN * w) < USize.size) :
-    ldeColumns P w (rowChunks M w P.logH k) = (Array.range (2 ^ P.bits * w)).map fun i ↦
-      encode (Array.ofFn (n := 2 ^ P.logH) fun kk ↦
-        (ldeSpec P w M).getD ((i / w * 2 ^ P.logH + kk.val) * w + i % w) 0) := by
-  rw [← blocks_ldeSpec P w M, ← flatMap_range_map (2 ^ P.bits) w
-    fun t c ↦ encode (colBlock P w M t c)]
-  have hms : (rowChunks M w P.logH k).size = 2 ^ k := by
-    simp only [rowChunks, Array.size_map, Array.size_range]
-  unfold ldeColumns
-  rw [hms]
-  dsimp only
-  set c0 := stripColumnCount P.logH (2 ^ k) w with hc0d
-  have hc0 : c0 ≤ w ∧ c0 = 8 * (c0 / 8) ∧
-      (0 < c0 → 8 * 2 ^ k ≤ 2 ^ P.logH ∧ 2 ^ P.logH % (8 * 2 ^ k) = 0) := by
-    simp only [hc0d, stripColumnCount]
-    split
-    · rename_i h
-      exact ⟨by omega, by omega, fun _ ↦ ⟨h.1, h.2.1⟩⟩
-    · exact ⟨Nat.zero_le _, rfl, fun h ↦ absurd h (Nat.lt_irrefl 0)⟩
-  rw [ldeColumnRange_eq P w c0 hc0.1 M k hk hM hu]
-  refine flatMap_range_congr _ _ _ fun t ht ↦ ?_
-  have hsplit : (Array.range w).map (fun c ↦ encode (colBlock P w M t c)) =
-      (Array.range c0).map (fun c ↦ encode (colBlock P w M t c)) ++
-        (Array.range (w - c0)).map fun j ↦ encode (colBlock P w M t (c0 + j)) := by
-    exact map_range_split _ w c0 hc0.1
-  have hstrips : (Array.range c0).map (fun c ↦ encode (colBlock P w M t c)) =
-      (Array.range (c0 / 8)).flatMap fun s ↦
-        (Array.range 8).map fun l ↦ encode (colBlock P w M t (8 * s + l)) := by
-    rw [flatMap_range_map, show c0 / 8 * 8 = c0 by omega]
+  rw [flatMap_range_congr _ _ (fun t ↦ (Array.range w).map fun c ↦ encode (colBlock P w M t c))
+    fun t ht ↦ by
+    rw [← flatMap_ranges (fun c ↦ encode (colBlock P w M t c)) w rangeColumns (by decide)]
+    refine flatMap_range_congr _ _ _ fun a ha ↦ ?_
+    have hn : rangeColumns * a + min rangeColumns (w - rangeColumns * a) ≤ w := by
+      simp only [rangeColumns] at ha ⊢
+      omega
     apply Array.ext (by simp only [Array.size_map])
-    intro c h1 _
+    intro x hx _
+    simp only [Array.size_map, Array.size_range] at hx
     simp only [Array.getElem_map, Array.getElem_range]
-    rw [Nat.div_add_mod]
-  rw [hsplit, hstrips]
-  congr 1
-  · refine flatMap_range_congr _ _ _ fun s hs ↦ ?_
-    rw [getD_map_range _ _ _ hs, getD_map_range _ _ _ ht]
-    simp only [CompPoly.Tasks.get_bind, CompPoly.Tasks.get_spawn]
-    exact stripBlock_rowChunks P w M k s hk hM hu (hc0.2.2 (by omega)) (by omega) t
-  · apply Array.ext (by simp only [Array.size_map, Array.size_range])
-    intro j hj _
-    simp only [Array.size_map, Array.size_range] at hj
-    simp only [Array.getElem_map, Array.getElem_range]
-    rw [getD_map_range _ _ _ ht]
+    have hL : 0 < columnChains P.logH := by
+      unfold columnChains rangeColumns
+      split
+      · decide
+      · exact lt_of_lt_of_le Nat.one_pos (Nat.le_max_left 1 _)
+    rw [← rowChunks, hpieces _ _ hn, map_chained, getD_chained _ _ hL _ _ hx, Function.comp_apply]
+    dsimp only
+    rw [getD_map_range _ _ _ ht, hcol _ _ _ hn hx], flatMap_range_map]
+  exact blocks_ldeSpec P w M
 
 variable [Mont32BaseField p]
 

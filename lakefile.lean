@@ -7,12 +7,11 @@ package CompStark where
   testDriver := "CompStarkNativeTests"
 
 -- Pinned to a CompPoly commit with the packed NTT, the batched coset LDE on chunks of rows with
--- input transposes by column range and on strips of eight interleaved columns, coset interpolation
--- generic over 32-bit Montgomery fields, fast KoalaBear⁵ and spec fields over the fast base field,
--- word-sized packed loads and stores and decodes, the Montgomery word kernels, and coordinate
--- planes generic over fast extensions.
+-- input transposes by column range, coset interpolation generic over 32-bit Montgomery fields,
+-- fast KoalaBear⁵ and spec fields over the fast base field, word-sized packed loads and stores and
+-- decodes, the Montgomery word kernels, and coordinate planes generic over fast extensions.
 require CompPoly from git "https://github.com/mitschabaude-bot/CompPoly.git" @
-    "2b9e6e32c82935272b7cc0b19288c06b493abda7"
+    "f5e8d4edcd939f18cd0d4dad481a791529f445dd"
 
 -- ArkLib main with Johnson-regime mutual correlated agreement for power curves, lossy mutual
 -- correlated agreement, FRI on the interaction layer with its knowledge certificate on Plonky3's
