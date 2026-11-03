@@ -236,7 +236,8 @@ theorem fold2Range_rel [Mont32BaseField p] [Mont32.AlgebraId EF] {v : ExtPlanes 
   unfold fold2Range
   simp only
   rw [batchInvRange_encode T r0 len hT hsT hnz]
-  have h1 := ExtPlanes.smul_rel hn (FastExt.ofBase (2 : F)⁻¹) (ExtPlanes.add_rel hn hl hh)
+  have h1 := ExtPlanes.mulBase_rel hn (fun _ ↦ (2 : F)⁻¹) (ExtPlanes.add_rel hn hl hh)
+  rw [← Words.replicateWord_tab hn] at h1
   have h2 := ExtPlanes.smul_rel hn beta (ExtPlanes.mulBase_rel hn
     (fun k ↦ (T.getD (r0 + k) 0)⁻¹) (ExtPlanes.sub_rel hn hl hh))
   refine RV_congr (ExtPlanes.add_rel hn h1 h2) (congrArg Array.ofFn (funext fun k ↦ ?_))

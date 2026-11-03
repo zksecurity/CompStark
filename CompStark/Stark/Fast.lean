@@ -966,7 +966,7 @@ def fold2Range (v : @& ExtPlanes p EF) (twoX : @& ByteArray) (beta : EF) (r0 len
   let lo : ExtPlanes p EF := ⟨len, halves.map (·.1)⟩
   let hi : ExtPlanes p EF := ⟨len, halves.map (·.2)⟩
   let inv2x := Words.batchInvRange p twoX r0 len
-  ((lo.add hi).smul (FastExt.ofBase (2 : F)⁻¹)).add (((lo.sub hi).mulBase inv2x).smul beta)
+  ((lo.add hi).mulBase (Words.replicateWord ((2 : F)⁻¹).val len)).add (((lo.sub hi).mulBase inv2x).smul beta)
 
 /-- `Fri.foldPairs` on planes, `(lo + hi) / 2 + β (lo - hi) / (2 x)`, in parallel ranges. -/
 def fold2 [Mont32BaseField p] (v : ExtPlanes p EF) (beta : EF) (logRows : Nat) : ExtPlanes p EF :=
