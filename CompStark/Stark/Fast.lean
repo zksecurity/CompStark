@@ -451,7 +451,8 @@ block from row `r0` its view and loads, in parallel ranges of blocks, each range
 blocks of a multiple of sixteen rows as one group (`run`, the program on the group machine), else
 by `Prog.runBlock`. Every row's accumulators are its value's coordinates, times the inverse
 vanishing polynomial. -/
-def quotientBlocks [Mont32BaseField p] [Mont32.AlgebraId EF] (T : QuotientTables p) (prog : Prog F)
+@[specialize] def quotientBlocks [Mont32BaseField p] [Mont32.AlgebraId EF]
+    (T : QuotientTables p) (prog : Prog F)
     (run : Prog.GroupEnv → ByteArray → ByteArray) (scal wts : Array F)
     (block : Nat → Prog.View × Prog.Loads) : Array EF := Id.run do
   let n := 2 ^ (T.degreeBits + T.logChunks)
@@ -819,16 +820,38 @@ def compress4 (p : ℕ) [Mont32Field p] (m : @& PMat) (a : Nat → Nat → UInt3
       (a 3 (4 * g + 3)) len)
     ((m.width + 3) / 4) 0 (CompPoly.CPolynomial.NTTFast.Packed.Native.zeroWords (4 * len))
 
+/-- Rows `r0, …, r0 + len - 1` of a packed matrix, within one block of its rows, batched into one
+coordinate plane by the column weights `a j`: the columns multiply-added four at a time, every word
+reduced once per four columns (`Words.mulAdd4Into`); a last group short of four columns repeats the
+last column with zero weights. -/
+def compress1 (p : ℕ) [Mont32Field p] (m : @& PMat) (a : Nat → UInt32) (r0 len : Nat) :
+    ByteArray :=
+  let col (j : Nat) := m.colAt (min j (m.width - 1)) r0
+  Merkle.Packed.foldRange (fun out g ↦
+    Words.mulAdd4Into p out (col (4 * g)).1 (col (4 * g + 1)).1 (col (4 * g + 2)).1
+      (col (4 * g + 3)).1 (col (4 * g)).2 (col (4 * g + 1)).2 (col (4 * g + 2)).2
+      (col (4 * g + 3)).2 (a (4 * g)) (a (4 * g + 1)) (a (4 * g + 2)) (a (4 * g + 3)) len)
+    ((m.width + 3) / 4) 0 (CompPoly.CPolynomial.NTTFast.Packed.Native.zeroWords len)
+
+/-- Word `j` of plane `c` of the planes `a`, zero past the planes or the matrix's columns. -/
+@[inline] def planeWord (m : @& PMat) (a : @& Array ByteArray) (c j : Nat) : UInt32 :=
+  if c < a.size ∧ j < m.width then
+    CompPoly.CPolynomial.NTTFast.Packed.Native.read (a.getD c .empty) j
+  else 0
+
 /-- Rows `r0, …, r0 + len - 1` of a packed matrix, within one block of its rows, batched by the
-coordinate planes `a` of the powers of `α`: the planes four at a time (`compress4`), a last group
-short of four with zero planes. -/
+coordinate planes `a` of the powers of `α`: the planes four at a time (`compress4`), the last up
+to three one at a time (`compress1`). -/
 def compressRange (p : ℕ) [Mont32Field p] (m : @& PMat) (a : @& Array ByteArray) (r0 len : Nat) :
     Array ByteArray :=
   (Array.range ((a.size + 3) / 4)).flatMap fun q ↦
-    let out := compress4 p m (fun c j ↦ if 4 * q + c < a.size ∧ j < m.width then
-      CompPoly.CPolynomial.NTTFast.Packed.Native.read (a.getD (4 * q + c) .empty) j else 0) r0 len
-    (Array.range (min 4 (a.size - 4 * q))).map fun c ↦ out.extract (4 * (c * len))
-      (4 * ((c + 1) * len))
+    if min 4 (a.size - 4 * q) = 4 then
+      let out := compress4 p m (fun c j ↦ planeWord m a (4 * q + c) j) r0 len
+      (Array.range (min 4 (a.size - 4 * q))).map fun c ↦ out.extract (4 * (c * len))
+        (4 * ((c + 1) * len))
+    else
+      (Array.range (min 4 (a.size - 4 * q))).map fun c ↦
+        compress1 p m (planeWord m a (4 * q + c)) r0 len
 
 /-- Rows `r0, …, r0 + len - 1` of the batched quotient of one height: for every matrix, its rows
 batched by the planes `a` of the powers of `α`, and for every point `(z, yz, offset)` the term

@@ -1001,8 +1001,107 @@ theorem compress4_cols {pm : PMat} {s : Mat F} (h : RM pm s) (W : Nat → Nat �
     show 4 * ((s.width + 3) / 4) = s.width + (4 * ((s.width + 3) / 4) - s.width) by omega,
     hfull]
 
-/-- Chunks of four, the last one short, are all the elements. -/
-theorem flatMap_chunks {α : Type} (n : Nat) (f : Nat → α) (g : Nat → Nat → α)
+/-- The fast batching of a range of rows within one block of a packed matrix into one plane. -/
+theorem compress1_cols {pm : PMat} {s : Mat F} (h : RM pm s) (W : Nat → F)
+    (hW : ∀ J, s.width ≤ J → W J = 0) (a : Nat → UInt32) (ha : ∀ J, a J = (W J).val)
+    (r0 len : Nat) (hlen : 0 < len) (hblk : r0 % pm.rows + len ≤ pm.rows)
+    (hr : r0 + len ≤ s.height) :
+    compress1 p pm a r0 len = encode (Array.ofFn (n := len) fun t ↦ ∑ J ∈ Finset.range s.width,
+        s.values.getD ((r0 + t.val) * s.width + J) 0 * W J) := by
+  unfold compress1
+  rw [CompStark.Merkle.Packed.foldRange_eq, h.width]
+  -- The rows batched by the first `J` columns.
+  let x (J t : Nat) : F := s.values.getD ((r0 + t) * s.width + J) 0
+  let part (J t : Nat) : F := ∑ i ∈ Finset.range J, x i t * W i
+  have hpart (J t : Nat) : part (J + 1) t = part J t + x J t * W J := by
+    simp only [part, Finset.sum_range_succ]
+  let Q (J : Nat) : Array F := Array.ofFn (n := len) fun t ↦ part J t.val
+  have hQ (J t : Nat) (ht : t < len) : (Q J).getD t 0 = part J t :=
+    getD_ofFn_bounded _ _ ht _
+  have hw0 (G : Nat) (hG : G < (s.width + 3) / 4) : 0 < s.width := by omega
+  -- A column's word times a zero scalar when the column is past the last.
+  have hterm (J t : Nat) (A : Array F) (o : Nat)
+      (hA : s.width ≤ J ∨ A.getD (o + t) 0 = x J t) :
+      A.getD (o + t) 0 * W J = x J t * W J := by
+    rcases hA with hA | hA
+    · rw [hW J hA, mul_zero, mul_zero]
+    · rw [hA]
+  have hcol (J : Nat) (hJ : 0 < s.width) : ∃ A, (pm.colAt (min J (s.width - 1)) r0).1 =
+      encode A ∧ (pm.colAt (min J (s.width - 1)) r0).2 + len ≤ A.size ∧
+      4 * A.size < USize.size ∧ ∀ t < len, s.width ≤ J ∨
+        A.getD ((pm.colAt (min J (s.width - 1)) r0).2 + t) 0 = x J t := by
+    obtain ⟨A, e1, e2, e3, e4⟩ := colAt_spec h r0 len (min J (s.width - 1)) hblk hr hlen
+      (by omega)
+    refine ⟨A, e1, e2, e3, fun t ht ↦ ?_⟩
+    by_cases hJw : J < s.width
+    · right
+      rw [e4 t ht, show min J (s.width - 1) = J by omega]
+    · left; omega
+  have hstep (G : Nat) (hG : G < (s.width + 3) / 4) :
+      Words.mulAdd4Into p (encode (Q (4 * G))) (pm.colAt (min (4 * G) (s.width - 1)) r0).1
+        (pm.colAt (min (4 * G + 1) (s.width - 1)) r0).1
+        (pm.colAt (min (4 * G + 2) (s.width - 1)) r0).1
+        (pm.colAt (min (4 * G + 3) (s.width - 1)) r0).1
+        (pm.colAt (min (4 * G) (s.width - 1)) r0).2
+        (pm.colAt (min (4 * G + 1) (s.width - 1)) r0).2
+        (pm.colAt (min (4 * G + 2) (s.width - 1)) r0).2
+        (pm.colAt (min (4 * G + 3) (s.width - 1)) r0).2
+        (a (4 * G)) (a (4 * G + 1)) (a (4 * G + 2)) (a (4 * G + 3)) len =
+      encode (Q (4 * G + 4)) := by
+    have hw := hw0 G hG
+    obtain ⟨A0, e10, e20, e30, e40⟩ := hcol (4 * G) hw
+    obtain ⟨A1, e11, e21, e31, e41⟩ := hcol (4 * G + 1) hw
+    obtain ⟨A2, e12, e22, e32, e42⟩ := hcol (4 * G + 2) hw
+    obtain ⟨A3, e13, e23, e33, e43⟩ := hcol (4 * G + 3) hw
+    have hQs : (Q (4 * G)).size = len := Array.size_ofFn
+    rw [e10, e11, e12, e13, ha, ha, ha, ha, ← hQs,
+      Words.mulAdd4Into_encode (Q (4 * G)) A0 A1 A2 A3 _ _ _ _ _ _ _ _ (by rw [hQs]; exact e20)
+        (by rw [hQs]; exact e21) (by rw [hQs]; exact e22) (by rw [hQs]; exact e23)
+        (by rw [hQs]; omega) e30 e31 e32 e33]
+    refine congrArg encode (Array.ext (by simp only [Q, Array.size_ofFn]) fun t ht _ ↦ ?_)
+    rw [Array.size_ofFn, hQs] at ht
+    simp only [Q, Array.getElem_ofFn]
+    rw [getD_ofFn_bounded _ _ ht, hterm _ _ A0 _ (e40 _ ht), hterm _ _ A1 _ (e41 _ ht),
+      hterm _ _ A2 _ (e42 _ ht),
+      hterm _ _ A3 _ (e43 _ ht), show 4 * G + 4 = 4 * G + 1 + 1 + 1 + 1 by omega, hpart, hpart,
+      hpart, hpart]
+    ring
+  have key : ∀ G ≤ (s.width + 3) / 4, (List.range G).foldl (fun out g ↦
+      Words.mulAdd4Into p out (pm.colAt (min (4 * g) (s.width - 1)) r0).1
+        (pm.colAt (min (4 * g + 1) (s.width - 1)) r0).1
+        (pm.colAt (min (4 * g + 2) (s.width - 1)) r0).1
+        (pm.colAt (min (4 * g + 3) (s.width - 1)) r0).1
+        (pm.colAt (min (4 * g) (s.width - 1)) r0).2
+        (pm.colAt (min (4 * g + 1) (s.width - 1)) r0).2
+        (pm.colAt (min (4 * g + 2) (s.width - 1)) r0).2
+        (pm.colAt (min (4 * g + 3) (s.width - 1)) r0).2
+        (a (4 * g)) (a (4 * g + 1)) (a (4 * g + 2)) (a (4 * g + 3)) len)
+      (CompPoly.CPolynomial.NTTFast.Packed.Native.zeroWords len) = encode (Q (4 * G)) := by
+    intro G hG
+    induction G with
+    | zero =>
+      rw [List.range_zero, List.foldl_nil, CompStark.Merkle.Packed.zeroWords_fields (p := p)]
+      refine congrArg encode (Array.ext (by rw [Array.size_replicate, Array.size_ofFn])
+        fun j h1 _ ↦ ?_)
+      rw [Array.getElem_replicate, Array.getElem_ofFn]
+      simp only [part, Nat.mul_zero, Finset.range_zero, Finset.sum_empty]
+    | succ G ih =>
+      rw [List.range_succ, List.foldl_append, ih (by omega), List.foldl_cons, List.foldl_nil,
+        hstep G (by omega), show 4 * (G + 1) = 4 * G + 4 by omega]
+  rw [key _ le_rfl]
+  -- Columns past the last add nothing.
+  have hfull (t : Nat) : ∀ J, part (s.width + J) t = part s.width t := by
+    intro J
+    induction J with
+    | zero => rfl
+    | succ J ih =>
+      rw [← Nat.add_assoc, hpart, ih, hW _ (by omega), mul_zero, add_zero]
+  refine congrArg encode (congrArg Array.ofFn (funext fun t ↦ ?_))
+  rw [show 4 * ((s.width + 3) / 4) = s.width + (4 * ((s.width + 3) / 4) - s.width) by omega,
+    hfull]
+
+/-- `flatMap_chunks` on the chunks spelled out. -/
+theorem flatMap_chunks_aux {α : Type} (n : Nat) (f : Nat → α) (g : Nat → Nat → α)
     (hg : ∀ q c, c < 4 → 4 * q + c < n → g q c = f (4 * q + c)) : ∀ Q,
     (Array.range Q).flatMap (fun q ↦ (Array.range (min 4 (n - 4 * q))).map (g q)) =
       Array.ofFn (n := min n (4 * Q)) fun i ↦ f i.val
@@ -1010,7 +1109,7 @@ theorem flatMap_chunks {α : Type} (n : Nat) (f : Nat → α) (g : Nat → Nat �
     rw [Array.eq_empty_of_size_eq_zero (Array.size_range (n := 0)), Array.flatMap_empty]
     exact Array.ext (by simp) fun i h1 _ ↦ absurd h1 (by simp)
   | Q + 1 => by
-    rw [Array.range_succ, Array.flatMap_append, flatMap_chunks n f g hg Q]
+    rw [Array.range_succ, Array.flatMap_append, flatMap_chunks_aux n f g hg Q]
     have e : (#[Q] : Array Nat).flatMap (fun q ↦ (Array.range (min 4 (n - 4 * q))).map (g q)) =
         (Array.range (min 4 (n - 4 * Q))).map (g Q) := by
       apply Array.toList_inj.mp; simp
@@ -1030,6 +1129,14 @@ theorem flatMap_chunks {α : Type} (n : Nat) (f : Nat → α) (g : Nat → Nat �
       congr 1
       omega
 
+/-- Chunks of four, the last one short, are all the elements. -/
+theorem flatMap_chunks {α : Type} (n : Nat) (f : Nat → α) (g : Nat → Nat → α)
+    (hg : ∀ q c, c < 4 → 4 * q + c < n → g q c = f (4 * q + c)) (G : Nat → Array α)
+    (hG : ∀ q, G q = (Array.range (min 4 (n - 4 * q))).map (g q)) (Q : Nat) :
+    (Array.range Q).flatMap G = Array.ofFn (n := min n (4 * Q)) fun i ↦ f i.val := by
+  obtain rfl : G = fun q ↦ (Array.range (min 4 (n - 4 * q))).map (g q) := funext hG
+  exact flatMap_chunks_aux n f g hg Q
+
 /-- The fast batching of a range of rows within one block of a packed matrix by the powers `ap`
 of `α`, coordinate by coordinate. -/
 theorem compressRange_cols [Mont32BaseField p] [Mont32.AlgebraId EF] {pm : PMat} {s : Mat F}
@@ -1041,42 +1148,52 @@ theorem compressRange_cols [Mont32BaseField p] [Mont32.AlgebraId EF] {pm : PMat}
         coord c.val (crow s.values ap s.width (r0 + t.val))) := by
   unfold compressRange
   have hsz : (ExtPlanes.ofArray ap).c.toArray.size = FastExt.d p EF := by simp
-  rw [hsz]
-  rw [flatMap_chunks _ (fun c ↦ encode (Array.ofFn (n := len) fun t ↦
-      coord c (crow s.values ap s.width (r0 + t.val)))) _ (fun q c hc4 hc ↦ ?_)]
-  · exact ofFn_len (fun c ↦ encode (Array.ofFn (n := len) fun t ↦
+  -- The planes' words are the coordinates of the powers.
+  have hpw (P J : Nat) : planeWord pm (ExtPlanes.ofArray ap).c.toArray P J =
+      (coord P (ap.getD J 0)).val := by
+    unfold planeWord
+    rw [hsz]
+    split
+    · rename_i hj
+      rw [Array.getD_eq_getD_getElem?, Array.getElem?_eq_getElem (by simp; exact hj.1),
+        Option.getD_some, Vector.getElem_toArray]
+      simp only [ExtPlanes.ofArray, Vector.getElem_ofFn,
+        CompPoly.CPolynomial.NTTFast.Packed.Native.encodeFields_eq]
+      rw [h.width] at hj
+      rw [Words.read_encode _ _ (by rw [Array.size_map]; exact hsa)
+          (by rw [Array.size_map, hap]; exact hj.2),
+        ExtPlanes.getD_map _ _ _ (by rw [hap]; exact hj.2), coord, dite_eq_left hj.1,
+        Array.getD_eq_getD_getElem?, Array.getElem?_eq_getElem (by rw [hap]; exact hj.2),
+        Option.getD_some]
+    · rename_i hj
+      rw [h.width] at hj
+      by_cases h1 : P < FastExt.d p EF
+      · rw [Array.getD_eq_getD_getElem?, Array.getElem?_eq_none (by
+          rw [hap]; exact Nat.le_of_not_lt fun h2 ↦ hj ⟨h1, h2⟩), Option.getD_none, coord_zero]
+        rfl
+      · rw [coord, dite_eq_right h1]; rfl
+  have hW (P J : Nat) (hJ : s.width ≤ J) : coord P (ap.getD J 0) = 0 := by
+    rw [Array.getD_eq_getD_getElem?, Array.getElem?_eq_none (by omega), Option.getD_none,
+      coord_zero]
+  have hcrow (P : Nat) : (Array.ofFn (n := len) fun t ↦ ∑ J ∈ Finset.range s.width,
+      s.values.getD ((r0 + t.val) * s.width + J) 0 * coord P (ap.getD J 0)) =
+      Array.ofFn (n := len) fun t ↦ coord P (crow s.values ap s.width (r0 + t.val)) :=
+    congrArg Array.ofFn (funext fun t ↦ by rw [crow, coord_foldl_smul, coord_zero, zero_add])
+  refine flatMap_chunks _ (fun c ↦ encode (Array.ofFn (n := len) fun t ↦
+      coord c (crow s.values ap s.width (r0 + t.val))))
+    (fun q c ↦ if min 4 ((ExtPlanes.ofArray ap).c.toArray.size - 4 * q) = 4 then
+      (compress4 p pm (fun c j ↦ planeWord pm (ExtPlanes.ofArray ap).c.toArray (4 * q + c) j)
+        r0 len).extract (4 * (c * len)) (4 * ((c + 1) * len))
+      else compress1 p pm (planeWord pm (ExtPlanes.ofArray ap).c.toArray (4 * q + c)) r0 len)
+    (fun q c hc4 hc ↦ ?_) _ (fun q ↦ by split <;> rfl) _ |>.trans ?_
+  · split
+    · rw [compress4_cols h (fun c J ↦ coord (4 * q + c) (ap.getD J 0)) (fun c J hJ ↦ hW _ J hJ)
+        _ (fun c _ J ↦ hpw _ J) r0 len hlen hblk hr hl c hc4, hcrow]
+    · rw [compress1_cols h (fun J ↦ coord (4 * q + c) (ap.getD J 0)) (fun J hJ ↦ hW _ J hJ) _
+        (fun J ↦ hpw _ J) r0 len hlen hblk hr, hcrow]
+  · rw [hsz]
+    exact ofFn_len (fun c ↦ encode (Array.ofFn (n := len) fun t ↦
       coord c (crow s.values ap s.width (r0 + t.val)))) (by omega)
-  -- the plane `4 q + c` batched by its coordinates of the powers
-  have hcol := compress4_cols h (fun c J ↦ coord (4 * q + c) (ap.getD J 0)) (fun c J hJ ↦ by
-      rw [Array.getD_eq_getD_getElem?, Array.getElem?_eq_none (by omega), Option.getD_none,
-        coord_zero])
-    (fun c j ↦ if 4 * q + c < FastExt.d p EF ∧ j < pm.width then
-      CompPoly.CPolynomial.NTTFast.Packed.Native.read
-        ((ExtPlanes.ofArray ap).c.toArray.getD (4 * q + c) .empty) j else 0)
-    (fun c _ J ↦ by
-      split
-      · rename_i hj
-        rw [Array.getD_eq_getD_getElem?, Array.getElem?_eq_getElem (by simp; exact hj.1),
-          Option.getD_some, Vector.getElem_toArray]
-        simp only [ExtPlanes.ofArray, Vector.getElem_ofFn,
-          CompPoly.CPolynomial.NTTFast.Packed.Native.encodeFields_eq]
-        rw [h.width] at hj
-        rw [Words.read_encode _ _ (by rw [Array.size_map]; exact hsa)
-            (by rw [Array.size_map, hap]; exact hj.2),
-          ExtPlanes.getD_map _ _ _ (by rw [hap]; exact hj.2), coord, dite_eq_left hj.1,
-          Array.getD_eq_getD_getElem?, Array.getElem?_eq_getElem (by rw [hap]; exact hj.2),
-          Option.getD_some]
-      · rename_i hj
-        rw [h.width] at hj
-        by_cases h1 : 4 * q + c < FastExt.d p EF
-        · rw [Array.getD_eq_getD_getElem?, Array.getElem?_eq_none (by
-            rw [hap]; exact Nat.le_of_not_lt fun h2 ↦ hj ⟨h1, h2⟩), Option.getD_none, coord_zero]
-          rfl
-        · rw [coord, dite_eq_right h1]; rfl)
-    r0 len hlen hblk hr hl c hc4
-  rw [hcol]
-  refine congrArg encode (congrArg Array.ofFn (funext fun t ↦ ?_))
-  rw [crow, coord_foldl_smul, coord_zero, zero_add]
 
 /-- A loop in `Id` whose every step yields simulates a fold. -/
 theorem forIn_sim {α β γ : Type} (Inv : β → γ → Prop) (σ : α → γ → γ)

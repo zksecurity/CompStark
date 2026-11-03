@@ -115,6 +115,28 @@ theorem win_bytes {b : ByteArray} {i : USize} (h : Win b i) :
 /-- `16 · nm` words from word `i`, `nm` groups of sixteen, fit buffers of `n` bytes. -/
 abbrev Wins (n : Nat) (i : USize) (nm : Nat) : Prop := 4 * (i.toNat + 16 * nm) ≤ n ∧ n < USize.size
 
+/-- The `na` accumulators of `rb = 16 nm` words each fit a buffer of `n` bytes: one check for all
+of them (`AccsFit.wins`). -/
+abbrev AccsFit (n na : Nat) (rb : USize) (nm : Nat) : Prop :=
+  rb.toNat = 16 * nm ∧ 4 * (na * rb.toNat) ≤ n ∧ n < USize.size
+
+theorem AccsFit.wins {n na nm : Nat} {rb : USize} (h : AccsFit n na rb nm) :
+    ∀ j < na, Wins n (j.toUSize * rb) nm := fun j hj ↦ by
+  obtain ⟨h1, h2, h3⟩ := h
+  have hsz : (2 : Nat) ^ System.Platform.numBits = USize.size := rfl
+  by_cases hr : rb.toNat = 0
+  · have e : (j.toUSize * rb).toNat = 0 := by rw [USize.toNat_mul, hr, Nat.mul_zero, Nat.zero_mod]
+    refine ⟨?_, h3⟩
+    rw [e]
+    omega
+  · have hjr : (j + 1) * rb.toNat ≤ na * rb.toNat := Nat.mul_le_mul_right _ hj
+    have hjl : j ≤ j * rb.toNat := Nat.le_mul_of_pos_right j (by omega)
+    rw [Nat.succ_mul] at hjr
+    have hjs : j < USize.size := by omega
+    have e : (j.toUSize * rb).toNat = j * rb.toNat := by
+      rw [USize.toNat_mul, USize.toNat_ofNat_of_lt' hjs, Nat.mod_eq_of_lt (by omega)]
+    exact ⟨by rw [e]; omega, h3⟩
+
 theorem usize_add_lt {i o : USize} (h : i.toNat + o.toNat < USize.size) :
     (i + o).toNat = i.toNat + o.toNat := by
   have hsz : (2 : Nat) ^ System.Platform.numBits = USize.size := rfl
@@ -417,122 +439,213 @@ of `x y` and of `q p` subtracted (`sub`), which vectorizes to word multiplicatio
   | .sub => CompPoly.CPolynomial.NTTFast.Packed.sub p
   | .mul => mulM p
 
-/-- Sixteen words of accumulator `j` (word `j · rb`) plus the operand's words times `w`. -/
-@[inline] def stepAccS (rb j : USize) (a : USize) (w : UInt32) {n nm : Nat}
-    (hj : Wins n (j * rb) nm) (ha : Wins n a nm) (s : Buf n) (o : USize)
+/-- Sixteen words of the accumulator at word `q` plus the operand's words times `w`. -/
+@[inline] def stepAccS (q : USize) (a : USize) (w : UInt32) {n nm : Nat}
+    (hj : Wins n q nm) (ha : Wins n a nm) (s : Buf n) (o : USize)
     (ho : o.toNat + 16 ≤ 16 * nm) : Buf n :=
   have wj := win_of_wins hj s.2 ho
   have wa := win_of_wins ha s.2 ho
-  ⟨st16 s.1 (j * rb + o) wj
-      (add p (ld s.1 (j * rb + o) wj 0) (mulM p (ld s.1 (a + o) wa 0) w))
-      (add p (ld s.1 (j * rb + o) wj 1) (mulM p (ld s.1 (a + o) wa 1) w))
-      (add p (ld s.1 (j * rb + o) wj 2) (mulM p (ld s.1 (a + o) wa 2) w))
-      (add p (ld s.1 (j * rb + o) wj 3) (mulM p (ld s.1 (a + o) wa 3) w))
-      (add p (ld s.1 (j * rb + o) wj 4) (mulM p (ld s.1 (a + o) wa 4) w))
-      (add p (ld s.1 (j * rb + o) wj 5) (mulM p (ld s.1 (a + o) wa 5) w))
-      (add p (ld s.1 (j * rb + o) wj 6) (mulM p (ld s.1 (a + o) wa 6) w))
-      (add p (ld s.1 (j * rb + o) wj 7) (mulM p (ld s.1 (a + o) wa 7) w))
-      (add p (ld s.1 (j * rb + o) wj 8) (mulM p (ld s.1 (a + o) wa 8) w))
-      (add p (ld s.1 (j * rb + o) wj 9) (mulM p (ld s.1 (a + o) wa 9) w))
-      (add p (ld s.1 (j * rb + o) wj 10) (mulM p (ld s.1 (a + o) wa 10) w))
-      (add p (ld s.1 (j * rb + o) wj 11) (mulM p (ld s.1 (a + o) wa 11) w))
-      (add p (ld s.1 (j * rb + o) wj 12) (mulM p (ld s.1 (a + o) wa 12) w))
-      (add p (ld s.1 (j * rb + o) wj 13) (mulM p (ld s.1 (a + o) wa 13) w))
-      (add p (ld s.1 (j * rb + o) wj 14) (mulM p (ld s.1 (a + o) wa 14) w))
-      (add p (ld s.1 (j * rb + o) wj 15) (mulM p (ld s.1 (a + o) wa 15) w)),
+  ⟨st16 s.1 (q + o) wj
+      (add p (ld s.1 (q + o) wj 0) (mulM p (ld s.1 (a + o) wa 0) w))
+      (add p (ld s.1 (q + o) wj 1) (mulM p (ld s.1 (a + o) wa 1) w))
+      (add p (ld s.1 (q + o) wj 2) (mulM p (ld s.1 (a + o) wa 2) w))
+      (add p (ld s.1 (q + o) wj 3) (mulM p (ld s.1 (a + o) wa 3) w))
+      (add p (ld s.1 (q + o) wj 4) (mulM p (ld s.1 (a + o) wa 4) w))
+      (add p (ld s.1 (q + o) wj 5) (mulM p (ld s.1 (a + o) wa 5) w))
+      (add p (ld s.1 (q + o) wj 6) (mulM p (ld s.1 (a + o) wa 6) w))
+      (add p (ld s.1 (q + o) wj 7) (mulM p (ld s.1 (a + o) wa 7) w))
+      (add p (ld s.1 (q + o) wj 8) (mulM p (ld s.1 (a + o) wa 8) w))
+      (add p (ld s.1 (q + o) wj 9) (mulM p (ld s.1 (a + o) wa 9) w))
+      (add p (ld s.1 (q + o) wj 10) (mulM p (ld s.1 (a + o) wa 10) w))
+      (add p (ld s.1 (q + o) wj 11) (mulM p (ld s.1 (a + o) wa 11) w))
+      (add p (ld s.1 (q + o) wj 12) (mulM p (ld s.1 (a + o) wa 12) w))
+      (add p (ld s.1 (q + o) wj 13) (mulM p (ld s.1 (a + o) wa 13) w))
+      (add p (ld s.1 (q + o) wj 14) (mulM p (ld s.1 (a + o) wa 14) w))
+      (add p (ld s.1 (q + o) wj 15) (mulM p (ld s.1 (a + o) wa 15) w)),
     (size_st16 ..).trans s.2⟩
 
-/-- Sixteen words of the `na` accumulators plus the operand's words times the weights' words
-`wts[base + j]`. -/
-@[inline] def stepAccNS (na : Nat) (rb : USize) (a : USize) (wts : @& Array UInt32) (base : Nat)
-    {n nm : Nat} (hj : ∀ j < na, Wins n (j.toUSize * rb) nm) (ha : Wins n a nm) (s : Buf n)
-    (o : USize) (ho : o.toNat + 16 ≤ 16 * nm) : Buf n :=
-  Nat.fold na (fun j h s ↦ stepAccS p rb j.toUSize a (wts.getD (base + j) 0) (hj j h) ha s o ho) s
+/-- The `na` accumulators from `j` plus the operand's words times the weights' words `wts[base + j]`,
+accumulator `j` at word `j · rb`: a pass over the group's rows for every four accumulators, the
+weights and offsets read once per pass, then a pass for each of the last up to three. -/
+@[specialize] def accPassesS (nm : Nat) (hnm : 16 * nm < USize.size) (rb : USize) (a : USize)
+    (wts : @& Array UInt32) (base na : Nat) {n : Nat}
+    (hj : ∀ j < na, Wins n (j.toUSize * rb) nm) (ha : Wins n a nm) :
+    (k j : Nat) → j + k = na → Buf n → Buf n
+  | k + 4, j, h, s =>
+    let w0 := wts.getD (base + j) 0
+    let w1 := wts.getD (base + j + 1) 0
+    let w2 := wts.getD (base + j + 2) 0
+    let w3 := wts.getD (base + j + 3) 0
+    let q0 := j.toUSize * rb
+    let q1 := (j + 1).toUSize * rb
+    let q2 := (j + 2).toUSize * rb
+    let q3 := (j + 3).toUSize * rb
+    accPassesS nm hnm rb a wts base na hj ha k (j + 4) (by omega)
+      (runW nm hnm (fun s o ho ↦
+        stepAccS p q3 a w3 (hj (j + 3) (by omega)) ha (stepAccS p q2 a w2 (hj (j + 2) (by omega)) ha (stepAccS p q1 a w1 (hj (j + 1) (by omega)) ha
+          (stepAccS p q0 a w0 (hj j (by omega)) ha s o ho) o ho) o ho) o ho) s)
+  | 3, j, h, s =>
+    let w0 := wts.getD (base + j) 0
+    let q0 := j.toUSize * rb
+    accPassesS nm hnm rb a wts base na hj ha 2 (j + 1) (by omega)
+      (runW nm hnm (stepAccS p q0 a w0 (hj j (by omega)) ha) s)
+  | 2, j, h, s =>
+    let w0 := wts.getD (base + j) 0
+    let q0 := j.toUSize * rb
+    accPassesS nm hnm rb a wts base na hj ha 1 (j + 1) (by omega)
+      (runW nm hnm (stepAccS p q0 a w0 (hj j (by omega)) ha) s)
+  | 1, j, h, s =>
+    let w0 := wts.getD (base + j) 0
+    let q0 := j.toUSize * rb
+    accPassesS nm hnm rb a wts base na hj ha 0 (j + 1) (by omega)
+      (runW nm hnm (stepAccS p q0 a w0 (hj j (by omega)) ha) s)
+  | 0, _, _, s => s
 
 /-- The `na` accumulators plus the operand's words times the weight `w`'s `na` words. -/
 @[inline] def accS (na nm : Nat) (rb : USize) (s : ByteArray) (a : USize)
     (wts : @& Array UInt32) (w : Nat) : ByteArray :=
-  if h : 16 * nm < USize.size ∧ (∀ j < na, Wins s.size (j.toUSize * rb) nm) ∧ Wins s.size a nm
-  then (runW nm h.1 (stepAccNS p na rb a wts (na * w) h.2.1 h.2.2) ⟨s, rfl⟩).1
+  if h : 16 * nm < USize.size ∧ AccsFit s.size na rb nm ∧ Wins s.size a nm
+  then (accPassesS p nm h.1 rb a wts (na * w) na h.2.1.wins h.2.2 na 0 (Nat.zero_add na)
+    ⟨s, rfl⟩).1
   else s
 
-/-- Sixteen words of accumulator `j` (word `j · rb`) plus the operand's words times `w`. -/
-@[inline] def stepAccE (rb j : USize) (e : @& ByteArray) (a : USize) (w : UInt32) {n nm : Nat}
-    (hj : Wins n (j * rb) nm) (ha : Wins e.size a nm) (s : Buf n) (o : USize)
+/-- Sixteen words of the accumulator at word `q` plus the operand's words times `w`. -/
+@[inline] def stepAccE (q : USize) (e : @& ByteArray) (a : USize) (w : UInt32) {n nm : Nat}
+    (hj : Wins n q nm) (ha : Wins e.size a nm) (s : Buf n) (o : USize)
     (ho : o.toNat + 16 ≤ 16 * nm) : Buf n :=
   have wj := win_of_wins hj s.2 ho
   have wa := win_of_wins ha rfl ho
-  ⟨st16 s.1 (j * rb + o) wj
-      (add p (ld s.1 (j * rb + o) wj 0) (mulM p (ld e (a + o) wa 0) w))
-      (add p (ld s.1 (j * rb + o) wj 1) (mulM p (ld e (a + o) wa 1) w))
-      (add p (ld s.1 (j * rb + o) wj 2) (mulM p (ld e (a + o) wa 2) w))
-      (add p (ld s.1 (j * rb + o) wj 3) (mulM p (ld e (a + o) wa 3) w))
-      (add p (ld s.1 (j * rb + o) wj 4) (mulM p (ld e (a + o) wa 4) w))
-      (add p (ld s.1 (j * rb + o) wj 5) (mulM p (ld e (a + o) wa 5) w))
-      (add p (ld s.1 (j * rb + o) wj 6) (mulM p (ld e (a + o) wa 6) w))
-      (add p (ld s.1 (j * rb + o) wj 7) (mulM p (ld e (a + o) wa 7) w))
-      (add p (ld s.1 (j * rb + o) wj 8) (mulM p (ld e (a + o) wa 8) w))
-      (add p (ld s.1 (j * rb + o) wj 9) (mulM p (ld e (a + o) wa 9) w))
-      (add p (ld s.1 (j * rb + o) wj 10) (mulM p (ld e (a + o) wa 10) w))
-      (add p (ld s.1 (j * rb + o) wj 11) (mulM p (ld e (a + o) wa 11) w))
-      (add p (ld s.1 (j * rb + o) wj 12) (mulM p (ld e (a + o) wa 12) w))
-      (add p (ld s.1 (j * rb + o) wj 13) (mulM p (ld e (a + o) wa 13) w))
-      (add p (ld s.1 (j * rb + o) wj 14) (mulM p (ld e (a + o) wa 14) w))
-      (add p (ld s.1 (j * rb + o) wj 15) (mulM p (ld e (a + o) wa 15) w)),
+  ⟨st16 s.1 (q + o) wj
+      (add p (ld s.1 (q + o) wj 0) (mulM p (ld e (a + o) wa 0) w))
+      (add p (ld s.1 (q + o) wj 1) (mulM p (ld e (a + o) wa 1) w))
+      (add p (ld s.1 (q + o) wj 2) (mulM p (ld e (a + o) wa 2) w))
+      (add p (ld s.1 (q + o) wj 3) (mulM p (ld e (a + o) wa 3) w))
+      (add p (ld s.1 (q + o) wj 4) (mulM p (ld e (a + o) wa 4) w))
+      (add p (ld s.1 (q + o) wj 5) (mulM p (ld e (a + o) wa 5) w))
+      (add p (ld s.1 (q + o) wj 6) (mulM p (ld e (a + o) wa 6) w))
+      (add p (ld s.1 (q + o) wj 7) (mulM p (ld e (a + o) wa 7) w))
+      (add p (ld s.1 (q + o) wj 8) (mulM p (ld e (a + o) wa 8) w))
+      (add p (ld s.1 (q + o) wj 9) (mulM p (ld e (a + o) wa 9) w))
+      (add p (ld s.1 (q + o) wj 10) (mulM p (ld e (a + o) wa 10) w))
+      (add p (ld s.1 (q + o) wj 11) (mulM p (ld e (a + o) wa 11) w))
+      (add p (ld s.1 (q + o) wj 12) (mulM p (ld e (a + o) wa 12) w))
+      (add p (ld s.1 (q + o) wj 13) (mulM p (ld e (a + o) wa 13) w))
+      (add p (ld s.1 (q + o) wj 14) (mulM p (ld e (a + o) wa 14) w))
+      (add p (ld s.1 (q + o) wj 15) (mulM p (ld e (a + o) wa 15) w)),
     (size_st16 ..).trans s.2⟩
 
-/-- Sixteen words of the `na` accumulators plus the operand's words times the weights' words
-`wts[base + j]`. -/
-@[inline] def stepAccNE (na : Nat) (rb : USize) (e : @& ByteArray) (a : USize)
-    (wts : @& Array UInt32) (base : Nat) {n nm : Nat}
-    (hj : ∀ j < na, Wins n (j.toUSize * rb) nm) (ha : Wins e.size a nm) (s : Buf n)
-    (o : USize) (ho : o.toNat + 16 ≤ 16 * nm) : Buf n :=
-  Nat.fold na (fun j h s ↦ stepAccE p rb j.toUSize e a (wts.getD (base + j) 0) (hj j h) ha s o ho)
-    s
+/-- The `na` accumulators from `j` plus the operand's words times the weights' words `wts[base + j]`,
+accumulator `j` at word `j · rb`: a pass over the group's rows for every four accumulators, the
+weights and offsets read once per pass, then a pass for each of the last up to three. -/
+@[specialize] def accPassesE (nm : Nat) (hnm : 16 * nm < USize.size) (rb : USize) (e : @& ByteArray) (a : USize)
+    (wts : @& Array UInt32) (base na : Nat) {n : Nat}
+    (hj : ∀ j < na, Wins n (j.toUSize * rb) nm) (ha : Wins e.size a nm) :
+    (k j : Nat) → j + k = na → Buf n → Buf n
+  | k + 4, j, h, s =>
+    let w0 := wts.getD (base + j) 0
+    let w1 := wts.getD (base + j + 1) 0
+    let w2 := wts.getD (base + j + 2) 0
+    let w3 := wts.getD (base + j + 3) 0
+    let q0 := j.toUSize * rb
+    let q1 := (j + 1).toUSize * rb
+    let q2 := (j + 2).toUSize * rb
+    let q3 := (j + 3).toUSize * rb
+    accPassesE nm hnm rb e a wts base na hj ha k (j + 4) (by omega)
+      (runW nm hnm (fun s o ho ↦
+        stepAccE p q3 e a w3 (hj (j + 3) (by omega)) ha (stepAccE p q2 e a w2 (hj (j + 2) (by omega)) ha (stepAccE p q1 e a w1 (hj (j + 1) (by omega)) ha
+          (stepAccE p q0 e a w0 (hj j (by omega)) ha s o ho) o ho) o ho) o ho) s)
+  | 3, j, h, s =>
+    let w0 := wts.getD (base + j) 0
+    let q0 := j.toUSize * rb
+    accPassesE nm hnm rb e a wts base na hj ha 2 (j + 1) (by omega)
+      (runW nm hnm (stepAccE p q0 e a w0 (hj j (by omega)) ha) s)
+  | 2, j, h, s =>
+    let w0 := wts.getD (base + j) 0
+    let q0 := j.toUSize * rb
+    accPassesE nm hnm rb e a wts base na hj ha 1 (j + 1) (by omega)
+      (runW nm hnm (stepAccE p q0 e a w0 (hj j (by omega)) ha) s)
+  | 1, j, h, s =>
+    let w0 := wts.getD (base + j) 0
+    let q0 := j.toUSize * rb
+    accPassesE nm hnm rb e a wts base na hj ha 0 (j + 1) (by omega)
+      (runW nm hnm (stepAccE p q0 e a w0 (hj j (by omega)) ha) s)
+  | 0, _, _, s => s
 
 /-- The `na` accumulators plus the operand's words times the weight `w`'s `na` words. -/
 @[inline] def accE (na nm : Nat) (rb : USize) (s : ByteArray) (e : @& ByteArray) (a : USize)
     (wts : @& Array UInt32) (w : Nat) : ByteArray :=
-  if h : 16 * nm < USize.size ∧ (∀ j < na, Wins s.size (j.toUSize * rb) nm) ∧ Wins e.size a nm
-  then (runW nm h.1 (stepAccNE p na rb e a wts (na * w) h.2.1 h.2.2) ⟨s, rfl⟩).1
+  if h : 16 * nm < USize.size ∧ AccsFit s.size na rb nm ∧ Wins e.size a nm
+  then (accPassesE p nm h.1 rb e a wts (na * w) na h.2.1.wins h.2.2 na 0 (Nat.zero_add na)
+    ⟨s, rfl⟩).1
   else s
 
-/-- Sixteen words of accumulator `j` (word `j · rb`) plus the operand's words times `w`. -/
-@[inline] def stepAccW (rb j : USize) (c : UInt32) (w : UInt32) {n nm : Nat}
-    (hj : Wins n (j * rb) nm) (s : Buf n) (o : USize)
+/-- Sixteen words of the accumulator at word `q` plus the operand's words times `w`. -/
+@[inline] def stepAccW (q : USize) (c : UInt32) (w : UInt32) {n nm : Nat}
+    (hj : Wins n q nm) (s : Buf n) (o : USize)
     (ho : o.toNat + 16 ≤ 16 * nm) : Buf n :=
   have wj := win_of_wins hj s.2 ho
-  ⟨st16 s.1 (j * rb + o) wj
-      (add p (ld s.1 (j * rb + o) wj 0) (mulM p c w))
-      (add p (ld s.1 (j * rb + o) wj 1) (mulM p c w))
-      (add p (ld s.1 (j * rb + o) wj 2) (mulM p c w))
-      (add p (ld s.1 (j * rb + o) wj 3) (mulM p c w))
-      (add p (ld s.1 (j * rb + o) wj 4) (mulM p c w))
-      (add p (ld s.1 (j * rb + o) wj 5) (mulM p c w))
-      (add p (ld s.1 (j * rb + o) wj 6) (mulM p c w))
-      (add p (ld s.1 (j * rb + o) wj 7) (mulM p c w))
-      (add p (ld s.1 (j * rb + o) wj 8) (mulM p c w))
-      (add p (ld s.1 (j * rb + o) wj 9) (mulM p c w))
-      (add p (ld s.1 (j * rb + o) wj 10) (mulM p c w))
-      (add p (ld s.1 (j * rb + o) wj 11) (mulM p c w))
-      (add p (ld s.1 (j * rb + o) wj 12) (mulM p c w))
-      (add p (ld s.1 (j * rb + o) wj 13) (mulM p c w))
-      (add p (ld s.1 (j * rb + o) wj 14) (mulM p c w))
-      (add p (ld s.1 (j * rb + o) wj 15) (mulM p c w)),
+  ⟨st16 s.1 (q + o) wj
+      (add p (ld s.1 (q + o) wj 0) (mulM p c w))
+      (add p (ld s.1 (q + o) wj 1) (mulM p c w))
+      (add p (ld s.1 (q + o) wj 2) (mulM p c w))
+      (add p (ld s.1 (q + o) wj 3) (mulM p c w))
+      (add p (ld s.1 (q + o) wj 4) (mulM p c w))
+      (add p (ld s.1 (q + o) wj 5) (mulM p c w))
+      (add p (ld s.1 (q + o) wj 6) (mulM p c w))
+      (add p (ld s.1 (q + o) wj 7) (mulM p c w))
+      (add p (ld s.1 (q + o) wj 8) (mulM p c w))
+      (add p (ld s.1 (q + o) wj 9) (mulM p c w))
+      (add p (ld s.1 (q + o) wj 10) (mulM p c w))
+      (add p (ld s.1 (q + o) wj 11) (mulM p c w))
+      (add p (ld s.1 (q + o) wj 12) (mulM p c w))
+      (add p (ld s.1 (q + o) wj 13) (mulM p c w))
+      (add p (ld s.1 (q + o) wj 14) (mulM p c w))
+      (add p (ld s.1 (q + o) wj 15) (mulM p c w)),
     (size_st16 ..).trans s.2⟩
 
-/-- Sixteen words of the `na` accumulators plus the constant times the weights' words
-`wts[base + j]`. -/
-@[inline] def stepAccNW (na : Nat) (rb : USize) (c : UInt32) (wts : @& Array UInt32) (base : Nat)
-    {n nm : Nat} (hj : ∀ j < na, Wins n (j.toUSize * rb) nm) (s : Buf n) (o : USize)
-    (ho : o.toNat + 16 ≤ 16 * nm) : Buf n :=
-  Nat.fold na (fun j h s ↦ stepAccW p rb j.toUSize c (wts.getD (base + j) 0) (hj j h) s o ho) s
+/-- The `na` accumulators from `j` plus the constant times the weights' words `wts[base + j]`,
+accumulator `j` at word `j · rb`: a pass over the group's rows for every four accumulators, the
+weights and offsets read once per pass, then a pass for each of the last up to three. -/
+@[specialize] def accPassesW (nm : Nat) (hnm : 16 * nm < USize.size) (rb : USize) (c : UInt32)
+    (wts : @& Array UInt32) (base na : Nat) {n : Nat}
+    (hj : ∀ j < na, Wins n (j.toUSize * rb) nm) :
+    (k j : Nat) → j + k = na → Buf n → Buf n
+  | k + 4, j, h, s =>
+    let w0 := wts.getD (base + j) 0
+    let w1 := wts.getD (base + j + 1) 0
+    let w2 := wts.getD (base + j + 2) 0
+    let w3 := wts.getD (base + j + 3) 0
+    let q0 := j.toUSize * rb
+    let q1 := (j + 1).toUSize * rb
+    let q2 := (j + 2).toUSize * rb
+    let q3 := (j + 3).toUSize * rb
+    accPassesW nm hnm rb c wts base na hj k (j + 4) (by omega)
+      (runW nm hnm (fun s o ho ↦
+        stepAccW p q3 c w3 (hj (j + 3) (by omega)) (stepAccW p q2 c w2 (hj (j + 2) (by omega)) (stepAccW p q1 c w1 (hj (j + 1) (by omega))
+          (stepAccW p q0 c w0 (hj j (by omega)) s o ho) o ho) o ho) o ho) s)
+  | 3, j, h, s =>
+    let w0 := wts.getD (base + j) 0
+    let q0 := j.toUSize * rb
+    accPassesW nm hnm rb c wts base na hj 2 (j + 1) (by omega)
+      (runW nm hnm (stepAccW p q0 c w0 (hj j (by omega))) s)
+  | 2, j, h, s =>
+    let w0 := wts.getD (base + j) 0
+    let q0 := j.toUSize * rb
+    accPassesW nm hnm rb c wts base na hj 1 (j + 1) (by omega)
+      (runW nm hnm (stepAccW p q0 c w0 (hj j (by omega))) s)
+  | 1, j, h, s =>
+    let w0 := wts.getD (base + j) 0
+    let q0 := j.toUSize * rb
+    accPassesW nm hnm rb c wts base na hj 0 (j + 1) (by omega)
+      (runW nm hnm (stepAccW p q0 c w0 (hj j (by omega))) s)
+  | 0, _, _, s => s
 
 /-- The `na` accumulators plus the constant times the weight `w`'s `na` words. -/
 @[inline] def accW (na nm : Nat) (rb : USize) (s : ByteArray) (c : UInt32)
     (wts : @& Array UInt32) (w : Nat) : ByteArray :=
-  if h : 16 * nm < USize.size ∧ ∀ j < na, Wins s.size (j.toUSize * rb) nm
-  then (runW nm h.1 (stepAccNW p na rb c wts (na * w) h.2) ⟨s, rfl⟩).1
+  if h : 16 * nm < USize.size ∧ AccsFit s.size na rb nm
+  then (accPassesW p nm h.1 rb c wts (na * w) na h.2.wins na 0 (Nat.zero_add na)
+    ⟨s, rfl⟩).1
   else s
 
 ''')

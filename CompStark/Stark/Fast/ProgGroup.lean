@@ -432,108 +432,137 @@ theorem getD_accUpd (X : Array F) (B m c : Nat) (A W : Nat → F) (idx : Nat) :
 @[simp] theorem size_accUpd (X : Array F) (B m c : Nat) (A W : Nat → F) :
     (accUpd na X B m c A W).size = X.size := Array.size_ofFn
 
-theorem accUpd_zero (X : Array F) (B : Nat) (A W : Nat → F) : accUpd na X B 0 0 A W = X := by
-  apply array_eq_of_getD _ _ 0 (size_accUpd ..)
-  intro idx
-  rw [getD_accUpd]
-  simp only [Nat.mul_zero, Nat.not_lt_zero, false_and, false_or, and_false, ite_false]
+/-- The chunk of rows `16 m, …, 16 m + 15` of accumulator `j`. -/
+def chunkP (j m : Nat) (j' i : Nat) : Bool := j' == j && (16 * m ≤ i && i < 16 * m + 16)
 
-theorem accUpd_next (X : Array F) (B m : Nat) (A W : Nat → F) :
-    accUpd na X B m na A W = accUpd na X B (m + 1) 0 A W := by
-  apply array_eq_of_getD _ _ 0 (by simp only [size_accUpd])
+/-- Word `idx` of `accP`. -/
+def accPF (na : Nat) (X : Array F) (B : Nat) (P : Nat → Nat → Bool) (A W : Nat → F) (idx : Nat) :
+    F :=
+  if idx < na * B ∧ P (idx / B) (idx % B) = true
+  then X.getD idx 0 + A (idx % B) * W (idx / B) else X.getD idx 0
+
+/-- The state with the `na` accumulators of `B` rows, words `0, …, na B - 1`, plus `A i` times the
+weights `W j` at the rows `i` of the accumulators `j` where `P j i`. -/
+def accP (na : Nat) (X : Array F) (B : Nat) (P : Nat → Nat → Bool) (A W : Nat → F) : Array F :=
+  Array.ofFn (n := X.size) fun idx ↦ accPF na X B P A W idx.val
+
+@[simp] theorem size_accP (X : Array F) (B : Nat) (P : Nat → Nat → Bool) (A W : Nat → F) :
+    (accP na X B P A W).size = X.size := Array.size_ofFn
+
+theorem getD_accP (X : Array F) (B : Nat) (P : Nat → Nat → Bool) (A W : Nat → F) (idx : Nat) :
+    (accP na X B P A W).getD idx 0 = if idx < X.size ∧ idx < na * B ∧ P (idx / B) (idx % B) = true
+    then X.getD idx 0 + A (idx % B) * W (idx / B) else X.getD idx 0 := by
+  unfold accP
+  rw [Words.getD_ofFn X.size]
+  by_cases h : idx < X.size
+  · simp only [h, true_and, ite_true, accPF]
+  · simp only [h, false_and, ite_false]
+    exact (Words.getD_eq_zero X idx (by omega)).symm
+
+/-- Rows and accumulators of a group: `idx < na B` is row `idx % B` of accumulator `idx / B`. -/
+theorem div_mod_lt {B idx : Nat} (hi : idx < na * B) : idx / B < na ∧ idx % B < B := by
+  have hB : 0 < B := by
+    rcases Nat.eq_zero_or_pos B with h0 | h0
+    · rw [h0, Nat.mul_zero] at hi; omega
+    · exact h0
+  exact ⟨Nat.div_lt_of_lt_mul (by rw [Nat.mul_comm]; exact hi), Nat.mod_lt _ hB⟩
+
+theorem accP_congr (X : Array F) (B : Nat) (P Q : Nat → Nat → Bool) (A W : Nat → F)
+    (h : ∀ j < na, ∀ i < B, P j i = Q j i) : accP na X B P A W = accP na X B Q A W := by
+  apply array_eq_of_getD _ _ 0 (by simp only [size_accP])
   intro idx
-  rw [getD_accUpd, getD_accUpd]
-  by_cases h : idx < X.size ∧ idx < na * B
-  · have h4 : idx / B < na := Nat.div_lt_of_lt_mul (by rw [Nat.mul_comm]; exact h.2)
-    have hlt := Nat.mod_lt idx (show 0 < B by
-      rcases Nat.eq_zero_or_pos B with hB | hB
-      · rw [hB, Nat.mul_zero] at h; omega
-      · exact hB)
-    have e : (idx % B < 16 * m ∨ (idx / B < na ∧ idx % B < 16 * m + 16)) ↔
-        (idx % B < 16 * (m + 1) ∨ (idx / B < 0 ∧ idx % B < 16 * (m + 1) + 16)) := by
-      constructor
-      · rintro (a | ⟨-, b⟩) <;> left <;> omega
-      · rintro (a | ⟨b, -⟩)
-        · by_cases c : idx % B < 16 * m
-          · exact Or.inl c
-          · exact Or.inr ⟨h4, by omega⟩
-        · exact absurd b (Nat.not_lt_zero _)
-    simp only [h, true_and, e]
-  · simp only [show ¬(idx < X.size ∧ idx < na * B ∧ _) from fun h' ↦ h ⟨h'.1, h'.2.1⟩, ite_false]
+  rw [getD_accP, getD_accP]
+  by_cases hi : idx < na * B
+  · obtain ⟨h1, h2⟩ := div_mod_lt hi
+    rw [h _ h1 _ h2]
+  · simp only [hi, false_and, and_false, ite_false]
+
+/-- No accumulation is the state. -/
+theorem accP_none (X : Array F) (B : Nat) (P : Nat → Nat → Bool) (A W : Nat → F)
+    (h : ∀ j < na, ∀ i < B, P j i = false) : accP na X B P A W = X := by
+  apply array_eq_of_getD _ _ 0 (by simp only [size_accP])
+  intro idx
+  rw [getD_accP]
+  by_cases hi : idx < na * B
+  · obtain ⟨h1, h2⟩ := div_mod_lt hi
+    rw [h _ h1 _ h2]
+    simp only [Bool.false_eq_true, and_false, ite_false]
+  · simp only [hi, false_and, and_false, ite_false]
+
+/-- Every accumulator's every row is `accUpd`'s complete accumulation. -/
+theorem accP_all (X : Array F) (nm : Nat) (A W : Nat → F) :
+    accP na X (16 * nm) (fun _ _ ↦ true) A W = accUpd na X (16 * nm) nm 0 A W := by
+  apply array_eq_of_getD _ _ 0 (by simp only [size_accP, size_accUpd])
+  intro idx
+  rw [getD_accP, getD_accUpd]
+  by_cases hi : idx < na * (16 * nm)
+  · have h2 := (div_mod_lt hi).2
+    simp only [hi, h2, true_or, and_true]
+  · simp only [hi, false_and, and_false, ite_false]
 
 /-- Sixteen rows more of accumulator `j`. -/
-theorem splice_accUpd (X : Array F) (B m j : Nat) (A W : Nat → F) (hj : j < na)
-    (hm : 16 * m + 16 ≤ B) (hX : na * B ≤ X.size) :
-    splice (accUpd na X B m j A W) (j * B + 16 * m) (lit16 fun t ↦
-        X.getD (j * B + 16 * m + t) 0 + A (16 * m + t) * W j) = accUpd na X B m (j + 1) A W := by
+theorem splice_accP (X : Array F) (B m j : Nat) (P : Nat → Nat → Bool) (A W : Nat → F)
+    (hj : j < na) (hm : 16 * m + 16 ≤ B) (hX : na * B ≤ X.size) :
+    splice (accP na X B P A W) (j * B + 16 * m) (lit16 fun t ↦
+        X.getD (j * B + 16 * m + t) 0 + A (16 * m + t) * W j) =
+      accP na X B (fun j' i ↦ P j' i || chunkP j m j' i) A W := by
   have hB : 0 < B := by omega
   have hjB : j * B + B ≤ na * B := by rw [← Nat.succ_mul]; exact Nat.mul_le_mul_right B (by omega)
   have hs : j * B + 16 * m + (lit16 fun t ↦
-      X.getD (j * B + 16 * m + t) 0 + A (16 * m + t) * W j).size ≤ (accUpd na X B m j A W).size :=
-          by
-    rw [size_lit16, size_accUpd]
+      X.getD (j * B + 16 * m + t) 0 + A (16 * m + t) * W j).size ≤ (accP na X B P A W).size := by
+    rw [size_lit16, size_accP]
     omega
-  apply array_eq_of_getD _ _ 0 (by rw [size_splice _ _ _ hs, size_accUpd, size_accUpd])
+  apply array_eq_of_getD _ _ 0 (by rw [size_splice _ _ _ hs, size_accP, size_accP])
   intro idx
   have hdm := Nat.div_add_mod idx B
   have hlt := Nat.mod_lt idx hB
   have hcomm : B * (idx / B) = idx / B * B := Nat.mul_comm _ _
-  rw [getD_splice _ _ _ hs, size_lit16, getD_accUpd, getD_accUpd]
-  by_cases h1 : idx < j * B + 16 * m
-  · have e : (idx % B < 16 * m ∨ (idx / B < j ∧ idx % B < 16 * m + 16)) ↔
-        (idx % B < 16 * m ∨ (idx / B < j + 1 ∧ idx % B < 16 * m + 16)) := by
-      constructor
-      · rintro (a | ⟨b, c⟩)
-        · exact Or.inl a
-        · exact Or.inr ⟨by omega, c⟩
-      · rintro (a | ⟨b, c⟩)
-        · exact Or.inl a
-        · by_cases q : idx / B = j
-          · left
-            rw [q] at hcomm hdm
-            have : j * B ≤ idx := by rw [← hcomm]; omega
-            omega
-          · exact Or.inr ⟨by omega, c⟩
-    simp only [h1, ite_true, e]
-  · by_cases h2 : idx < j * B + 16 * m + 16
-    · have hq : idx / B = j := Nat.div_eq_of_lt_le (by omega)
-        (by rw [Nat.add_mul, Nat.one_mul]; omega)
-      have hr : idx % B = 16 * m + (idx - (j * B + 16 * m)) := by
-        rw [hq] at hcomm hdm
-        omega
-      simp only [h1, h2, ite_false, ite_true]
-      rw [getD_lit16 _ _ (by omega), ite_eq_left ⟨by omega, by omega, Or.inr ⟨by omega, by omega⟩⟩,
-        hq, hr, show j * B + 16 * m + (idx - (j * B + 16 * m)) = idx by omega]
-    · have e : (idx % B < 16 * m ∨ (idx / B < j ∧ idx % B < 16 * m + 16)) ↔
-          (idx % B < 16 * m ∨ (idx / B < j + 1 ∧ idx % B < 16 * m + 16)) := by
-        constructor
-        · rintro (a | ⟨b, c⟩)
-          · exact Or.inl a
-          · exact Or.inr ⟨by omega, c⟩
-        · rintro (a | ⟨b, c⟩)
-          · exact Or.inl a
-          · by_cases q : idx / B = j
-            · exfalso
-              rw [q] at hcomm hdm
-              omega
-            · exact Or.inr ⟨by omega, c⟩
-      simp only [h1, h2, ite_false, e]
+  rw [getD_splice _ _ _ hs, size_lit16, getD_accP, getD_accP]
+  by_cases hin : j * B + 16 * m ≤ idx ∧ idx < j * B + 16 * m + 16
+  · have hq : idx / B = j := Nat.div_eq_of_lt_le (by omega)
+      (by rw [Nat.add_mul, Nat.one_mul]; omega)
+    have hr : idx % B = 16 * m + (idx - (j * B + 16 * m)) := by
+      rw [hq] at hcomm hdm
+      omega
+    rw [ite_eq_right_of_eq_false _ _ (eq_false (by omega)), ite_eq_left_of_eq_true _ _
+      (eq_true (by omega)), getD_lit16 _ _ (by omega), ite_eq_left_of_eq_true _ _ (eq_true
+        ⟨by omega, by omega, by simp only [chunkP, hq, hr, beq_self_eq_true, Bool.true_and,
+          Bool.and_eq_true, decide_eq_true_eq, Bool.or_eq_true]; right; omega⟩), hq, hr,
+      show j * B + 16 * m + (idx - (j * B + 16 * m)) = idx by omega]
+  · have e : (P (idx / B) (idx % B) || chunkP j m (idx / B) (idx % B)) = P (idx / B) (idx % B) := by
+      have hc : chunkP j m (idx / B) (idx % B) = false := by
+        simp only [chunkP, Bool.and_eq_false_iff, beq_eq_false_iff_ne, ne_eq,
+            decide_eq_false_iff_not,
+          Nat.not_le, Nat.not_lt]
+        by_cases q : idx / B = j
+        · rw [q] at hcomm hdm
+          right
+          omega
+        · left; exact q
+      rw [hc, Bool.or_false]
+    rw [e]
+    by_cases h1 : idx < j * B + 16 * m
+    · rw [ite_eq_left_of_eq_true _ _ (eq_true h1)]
+    · rw [ite_eq_right_of_eq_false _ _ (eq_false h1),
+        ite_eq_right_of_eq_false _ _ (eq_false (by omega))]
 
 /-- Sixteen rows more of accumulator `j`, by the lanes of the accumulation. -/
-theorem lanesAcc_upd (X : Array F) (B m j : Nat) (A W : Nat → F) (hj : j < na)
-    (hm : 16 * m + 16 ≤ B) (hX : 4 * X.size < USize.size) (hB : na * B ≤ X.size) (o : USize)
-    (ho : o.toNat = j * B + 16 * m) (h : Win (encode (accUpd na X B m j A W)) o) (wj : UInt32)
+theorem lanesAcc_upd (X : Array F) (B m j : Nat) (P : Nat → Nat → Bool) (A W : Nat → F)
+    (hj : j < na) (hm : 16 * m + 16 ≤ B) (hX : 4 * X.size < USize.size) (hB : na * B ≤ X.size)
+    (hP : ∀ t < 16, P j (16 * m + t) = false) (o : USize) (ho : o.toNat = j * B + 16 * m)
+    (h : Win (encode (accP na X B P A W)) o) (wj : UInt32)
     (hw : wj = (W j).val) (y : (k : Nat) → k ≤ 15 → UInt32)
     (hy : ∀ k hk, y k hk = (A (16 * m + k)).val) :
     lanes16 (fun acc x ↦ add p acc (mulM p x wj)) (fun k hk ↦ ld _ o h k hk) y
-        (encode (accUpd na X B m j A W)) o = encode (accUpd na X B m (j + 1) A W) := by
+        (encode (accP na X B P A W)) o =
+      encode (accP na X B (fun j' i ↦ P j' i || chunkP j m j' i) A W) := by
   subst hw
   have hjB : j * B + B ≤ na * B := by rw [← Nat.succ_mul]; exact Nat.mul_le_mul_right B (by omega)
   rw [lanes16_encode (fun acc x ↦ add p acc (mulM p x (W j).val)) (fun acc x ↦ acc + x * W j)
     (fun x y ↦ by rw [mulM_val, add_val]) _ y (fun k ↦ X.getD (j * B + 16 * m + k) 0)
-    (fun k ↦ A (16 * m + k)) (fun k hk ↦ ?_) hy _ o (by rw [size_accUpd]; exact hX)
-    (by rw [size_accUpd, ho]; omega), ho]
-  · rw [← splice_accUpd X B m j A W hj hm (by omega)]
+    (fun k ↦ A (16 * m + k)) (fun k hk ↦ ?_) hy _ o (by rw [size_accP]; exact hX)
+    (by rw [size_accP, ho]; omega), ho]
+  · rw [← splice_accP X B m j P A W hj hm (by omega)]
   · have hB0 : 0 < B := by omega
     have hq : (j * B + 16 * m + k) / B = j :=
       Nat.div_eq_of_lt_le (by rw [Nat.add_assoc]; exact Nat.le_add_right _ _)
@@ -541,127 +570,209 @@ theorem lanesAcc_upd (X : Array F) (B m j : Nat) (A W : Nat → F) (hj : j < na)
     have hr : (j * B + 16 * m + k) % B = 16 * m + k := by
       rw [show j * B + 16 * m + k = (16 * m + k) + B * j by ring, Nat.add_mul_mod_self_left,
         Nat.mod_eq_of_lt (by omega)]
-    rw [ld_encode, ho, getD_accUpd, hq, hr, ite_eq_right_of_eq_false _ _ (eq_false (by omega))]
+    rw [ld_encode, ho, getD_accP, hq, hr, hP k (by omega)]
+    simp only [Bool.false_eq_true, and_false, ite_false]
 
 /-- An accumulator's offset in a group of `B` rows. -/
-theorem accOff_toNat {jj rb : USize} {j B m : Nat} (hjj : jj.toNat = j) (hrb : rb.toNat = B)
-    (hj : j < na) (hm : 16 * m + 16 ≤ B) (hB : 4 * (na * B) < USize.size) :
-    (jj * rb + (16 * m).toUSize).toNat = j * B + 16 * m := by
+theorem accOff_toNat {q : USize} {j B m : Nat} (hq : q.toNat = j * B) (hj : j < na)
+    (hm : 16 * m + 16 ≤ B) (hB : 4 * (na * B) < USize.size) :
+    (q + (16 * m).toUSize).toNat = j * B + 16 * m := by
   have hjB : j * B + B ≤ na * B := by rw [← Nat.succ_mul]; exact Nat.mul_le_mul_right B (by omega)
-  have hmul : (jj * rb).toNat = j * B := by
-    rw [usize_mul_toNat (by rw [hjj, hrb]; omega), hjj, hrb]
-  rw [usize_add_toNat (by rw [hmul, toUSize_toNat (by omega)]; omega), hmul,
+  rw [usize_add_toNat (by rw [hq, toUSize_toNat (by omega)]; omega), hq,
     toUSize_toNat (by omega)]
 
 variable (p) in
-theorem stepAccS_upd (X : Array F) (B m j : Nat) (A W : Nat → F) (hj : j < na)
-    (hm : 16 * m + 16 ≤ B) (hX : 4 * X.size < USize.size) (hB : na * B ≤ X.size) (jj rb a : USize)
-    (hjj : jj.toNat = j) (hrb : rb.toNat = B) (oa : Nat) (ha : a.toNat = oa) (hoa : na * B ≤ oa)
-    (hra : oa + B ≤ X.size) (hA : ∀ k < B, A k = X.getD (oa + k) 0) (wj : UInt32)
-    (hw : wj = (W j).val) {n nm : Nat} (hwj : Wins n (jj * rb) nm) (hwa : Wins n a nm)
-    (hsn : (encode (accUpd na X B m j A W)).size = n)
+theorem stepAccS_upd (X : Array F) (B m j : Nat) (P : Nat → Nat → Bool) (A W : Nat → F)
+    (hj : j < na) (hm : 16 * m + 16 ≤ B) (hX : 4 * X.size < USize.size) (hB : na * B ≤ X.size)
+    (hP : ∀ t < 16, P j (16 * m + t) = false) (q a : USize) (hq : q.toNat = j * B) (oa : Nat)
+    (ha : a.toNat = oa) (hoa : na * B ≤ oa) (hra : oa + B ≤ X.size)
+    (hA : ∀ k < B, A k = X.getD (oa + k) 0) (wj : UInt32) (hw : wj = (W j).val) {n nm : Nat}
+    (hwj : Wins n q nm) (hwa : Wins n a nm) (hsn : (encode (accP na X B P A W)).size = n)
     (ho : ((16 * m).toUSize).toNat + 16 ≤ 16 * nm) :
-    (stepAccS p rb jj a wj hwj hwa ⟨encode (accUpd na X B m j A W), hsn⟩ (16 * m).toUSize ho).1 =
-      encode (accUpd na X B m (j + 1) A W) := by
-  have hs : (encode (accUpd na X B m j A W)).size = 4 * X.size := by
-    rw [size_encode_fields, size_accUpd]
-  have hoff := accOff_toNat hjj hrb hj hm (by omega)
+    (stepAccS p q a wj hwj hwa ⟨encode (accP na X B P A W), hsn⟩ (16 * m).toUSize ho).1 =
+      encode (accP na X B (fun j' i ↦ P j' i || chunkP j m j' i) A W) := by
+  have hs : (encode (accP na X B P A W)).size = 4 * X.size := by
+    rw [size_encode_fields, size_accP]
+  have hoff := accOff_toNat hq hj hm (by omega)
   have hjB : j * B + B ≤ na * B := by rw [← Nat.succ_mul]; exact Nat.mul_le_mul_right B (by omega)
   have hoa' : (a + (16 * m).toUSize).toNat = oa + 16 * m :=
     off_toNat (n := X.size) ha (by omega) hX
   unfold stepAccS
   dsimp only
   rw [st16_eq _ _ _ (by rw [hs]; exact hX)]
-  refine lanesAcc_upd X B m j A W hj hm hX hB _ hoff _ wj hw _ fun k hk ↦ ?_
-  rw [ld_encode, hoa', getD_accUpd, ite_eq_right_of_eq_false _ _ (eq_false (by omega)), hA _
+  refine lanesAcc_upd X B m j P A W hj hm hX hB hP _ hoff _ wj hw _ fun k hk ↦ ?_
+  rw [ld_encode, hoa', getD_accP, ite_eq_right_of_eq_false _ _ (eq_false (by omega)), hA _
       (by omega), Nat.add_assoc]
 
 variable (p) in
-theorem stepAccE_upd (X E : Array F) (B m j : Nat) (A W : Nat → F) (hj : j < na)
-    (hm : 16 * m + 16 ≤ B) (hX : 4 * X.size < USize.size) (hE : 4 * E.size < USize.size)
-    (hB : na * B ≤ X.size) (jj rb a : USize) (hjj : jj.toNat = j) (hrb : rb.toNat = B) (oa : Nat)
+theorem stepAccE_upd (X E : Array F) (B m j : Nat) (P : Nat → Nat → Bool) (A W : Nat → F)
+    (hj : j < na) (hm : 16 * m + 16 ≤ B) (hX : 4 * X.size < USize.size)
+    (hE : 4 * E.size < USize.size) (hB : na * B ≤ X.size)
+    (hP : ∀ t < 16, P j (16 * m + t) = false) (q a : USize) (hq : q.toNat = j * B) (oa : Nat)
     (ha : a.toNat = oa) (hra : oa + B ≤ E.size) (hA : ∀ k < B, A k = E.getD (oa + k) 0)
-    (wj : UInt32) (hw : wj = (W j).val) {n nm : Nat} (hwj : Wins n (jj * rb) nm)
-    (hwa : Wins (encode E).size a nm) (hsn : (encode (accUpd na X B m j A W)).size = n)
+    (wj : UInt32) (hw : wj = (W j).val) {n nm : Nat} (hwj : Wins n q nm)
+    (hwa : Wins (encode E).size a nm) (hsn : (encode (accP na X B P A W)).size = n)
     (ho : ((16 * m).toUSize).toNat + 16 ≤ 16 * nm) :
-    (stepAccE p rb jj (encode E) a wj hwj hwa ⟨encode (accUpd na X B m j A W), hsn⟩
-      (16 * m).toUSize ho).1 = encode (accUpd na X B m (j + 1) A W) := by
-  have hs : (encode (accUpd na X B m j A W)).size = 4 * X.size := by
-    rw [size_encode_fields, size_accUpd]
-  have hoff := accOff_toNat hjj hrb hj hm (by omega)
-  have hjB : j * B + B ≤ na * B := by rw [← Nat.succ_mul]; exact Nat.mul_le_mul_right B (by omega)
+    (stepAccE p q (encode E) a wj hwj hwa ⟨encode (accP na X B P A W), hsn⟩
+      (16 * m).toUSize ho).1 = encode (accP na X B (fun j' i ↦ P j' i || chunkP j m j' i) A W) := by
+  have hs : (encode (accP na X B P A W)).size = 4 * X.size := by
+    rw [size_encode_fields, size_accP]
+  have hoff := accOff_toNat hq hj hm (by omega)
   have hoa' : (a + (16 * m).toUSize).toNat = oa + 16 * m :=
     off_toNat (n := E.size) ha (by omega) hE
   unfold stepAccE
   dsimp only
   rw [st16_eq _ _ _ (by rw [hs]; exact hX)]
-  refine lanesAcc_upd X B m j A W hj hm hX hB _ hoff _ wj hw _ fun k hk ↦ ?_
+  refine lanesAcc_upd X B m j P A W hj hm hX hB hP _ hoff _ wj hw _ fun k hk ↦ ?_
   rw [ld_encode, hoa', hA _ (by omega), Nat.add_assoc]
 
 variable (p) in
-theorem stepAccW_upd (X : Array F) (B m j : Nat) (W : Nat → F) (hj : j < na)
-    (hm : 16 * m + 16 ≤ B) (hX : 4 * X.size < USize.size) (hB : na * B ≤ X.size) (jj rb : USize)
-    (hjj : jj.toNat = j) (hrb : rb.toNat = B) (c : F) (wj : UInt32) (hw : wj = (W j).val)
-    {n nm : Nat} (hwj : Wins n (jj * rb) nm)
-    (hsn : (encode (accUpd na X B m j (fun _ ↦ c) W)).size = n)
+theorem stepAccW_upd (X : Array F) (B m j : Nat) (P : Nat → Nat → Bool) (W : Nat → F)
+    (hj : j < na) (hm : 16 * m + 16 ≤ B) (hX : 4 * X.size < USize.size) (hB : na * B ≤ X.size)
+    (hP : ∀ t < 16, P j (16 * m + t) = false) (q : USize) (hq : q.toNat = j * B) (c : F)
+    (wj : UInt32) (hw : wj = (W j).val) {n nm : Nat} (hwj : Wins n q nm)
+    (hsn : (encode (accP na X B P (fun _ ↦ c) W)).size = n)
     (ho : ((16 * m).toUSize).toNat + 16 ≤ 16 * nm) :
-    (stepAccW p rb jj c.val wj hwj ⟨encode (accUpd na X B m j (fun _ ↦ c) W), hsn⟩
-      (16 * m).toUSize ho).1 = encode (accUpd na X B m (j + 1) (fun _ ↦ c) W) := by
-  have hs : (encode (accUpd na X B m j (fun _ ↦ c) W)).size = 4 * X.size := by
-    rw [size_encode_fields, size_accUpd]
-  have hoff := accOff_toNat hjj hrb hj hm (by omega)
-  have hjB : j * B + B ≤ na * B := by rw [← Nat.succ_mul]; exact Nat.mul_le_mul_right B (by omega)
+    (stepAccW p q c.val wj hwj ⟨encode (accP na X B P (fun _ ↦ c) W), hsn⟩
+      (16 * m).toUSize ho).1 =
+      encode (accP na X B (fun j' i ↦ P j' i || chunkP j m j' i) (fun _ ↦ c) W) := by
+  have hs : (encode (accP na X B P (fun _ ↦ c) W)).size = 4 * X.size := by
+    rw [size_encode_fields, size_accP]
+  have hoff := accOff_toNat hq hj hm (by omega)
   unfold stepAccW
   dsimp only
   rw [st16_eq _ _ _ (by rw [hs]; exact hX)]
-  exact lanesAcc_upd X B m j _ W hj hm hX hB _ hoff _ wj hw (fun _ _ ↦ c.val) fun _ _ ↦ rfl
-
-/-- The `na` coordinates' steps of an accumulation, through the states `Z 0, …, Z na`. -/
-theorem accN_buf {n : Nat} (st : (j : Nat) → j < na → Buf n → Buf n) (Z : Nat → ByteArray)
-    (hZ : ∀ j, (Z j).size = n) (h : ∀ j (hj : j < na), (st j hj ⟨Z j, hZ j⟩).1 = Z (j + 1)) :
-    (Nat.fold na st ⟨Z 0, hZ 0⟩).1 = Z na := by
-  suffices ∀ M (hM : M ≤ na),
-      Nat.fold M (fun i hi ↦ st i (by omega)) ⟨Z 0, hZ 0⟩ = ⟨Z M, hZ M⟩ by
-    rw [this na le_rfl]
-  intro M hM
-  induction M with
-  | zero => rw [Nat.fold_zero]
-  | succ M ih => rw [Nat.fold_succ, ih (by omega)]; exact Subtype.ext (h M _)
-
-/-- An accumulator's index of a nonempty group fits a machine word. -/
-theorem acc_lt_size {X : Array F} {nm j : Nat} (hnm : 0 < nm) (hj : j < na)
-    (hX : 4 * X.size < USize.size) (hB : na * (16 * nm) ≤ X.size) : j < USize.size := by
-  have h1 : j * (16 * nm) < na * (16 * nm) := Nat.mul_lt_mul_of_pos_right hj (by omega)
-  have h2 : j ≤ j * (16 * nm) := Nat.le_mul_of_pos_right j (by omega)
-  omega
-
-/-- The window of accumulator `j < na` of a group of `16 nm` rows. -/
-theorem wins_acc (X : Array F) (nm j : Nat) (jj rb : USize) (hjj : jj.toNat = j) (hj : j < na)
-    (hrb : rb.toNat = 16 * nm) (hX : 4 * X.size < USize.size) (hB : na * (16 * nm) ≤ X.size) :
-    Wins (encode X).size (jj * rb) nm := by
-  have hjB : j * (16 * nm) + 16 * nm ≤ na * (16 * nm) := by
-    rw [← Nat.succ_mul]; exact Nat.mul_le_mul_right _ (by omega)
-  have hmul : (jj * rb).toNat = j * (16 * nm) := by
-    rw [usize_mul_toNat (by rw [hjj, hrb]; omega), hjj, hrb]
-  refine ⟨?_, by rw [size_encode_fields]; exact hX⟩
-  rw [size_encode_fields, hmul]
-  omega
+  exact lanesAcc_upd X B m j P _ W hj hm hX hB hP _ hoff _ wj hw (fun _ _ ↦ c.val) fun _ _ ↦ rfl
 
 /-- An accumulation's weights' words. -/
 def WtsOk (na : Nat) (wts : Array UInt32) (w : Nat) (W : Nat → F) : Prop :=
   ∀ j < na, wts.getD (na * w + j) 0 = (W j).val
 
-/-- The windows of the `na` accumulators of a group of `16 nm` rows. -/
-theorem wins_accs (X : Array F) (nm : Nat) (rb : USize) (hrb : rb.toNat = 16 * nm)
-    (hX : 4 * X.size < USize.size) (hB : na * (16 * nm) ≤ X.size) :
-    ∀ j < na, Wins (encode X).size (j.toUSize * rb) nm := fun j hj ↦ by
+/-- Accumulators `j, …, j + g - 1` of a pass: the accumulators before `j` complete, rows before
+`16 m` of the pass's, and rows before `16 m + 16` of the first `c` of them. -/
+def passP (j g m c : Nat) (j' i : Nat) : Bool :=
+  decide (j' < j ∨ (j ≤ j' ∧ j' < j + g ∧ (i < 16 * m ∨ (j' < j + c ∧ i < 16 * m + 16))))
+
+theorem passP_step (j g m c : Nat) (hc : c < g) (B : Nat) :
+    ∀ j' < na, ∀ i < B, (passP j g m c j' i || chunkP (j + c) m j' i) = passP j g m (c + 1) j' i :=
+  fun j' _ i _ ↦ by
+    rw [Bool.eq_iff_iff]
+    simp only [passP, chunkP, Bool.or_eq_true, Bool.and_eq_true, decide_eq_true_eq, beq_iff_eq]
+    omega
+
+theorem passP_free (j g m c : Nat) :
+    ∀ t < 16, passP j g m c (j + c) (16 * m + t) = false := fun t _ ↦ by
+  simp only [passP, decide_eq_false_iff_not]
+  omega
+
+theorem passP_init (j g : Nat) (B : Nat) :
+    ∀ j' < na, ∀ i < B, decide (j' < j) = passP j g 0 0 j' i := fun j' _ i _ ↦ by
+  simp only [passP]
+  exact decide_eq_decide.mpr (by omega)
+
+theorem passP_next (j g m : Nat) (B : Nat) :
+    ∀ j' < na, ∀ i < B, passP j g m g j' i = passP j g (m + 1) 0 j' i := fun j' _ i _ ↦ by
+  simp only [passP]
+  exact decide_eq_decide.mpr (by omega)
+
+theorem passP_done (j g nm : Nat) :
+    ∀ j' < na, ∀ i < 16 * nm, passP j g nm 0 j' i = decide (j' < j + g) := fun j' _ i _ ↦ by
+  simp only [passP]
+  exact decide_eq_decide.mpr (by omega)
+
+/-- The offset of accumulator `j < na` of a group of `16 nm` rows. -/
+theorem accOff (nm j : Nat) (rb : USize) (hrb : rb.toNat = 16 * nm) (hj : j < na)
+    (hs : 4 * (na * (16 * nm)) < USize.size) : (j.toUSize * rb).toNat = j * (16 * nm) := by
   rcases Nat.eq_zero_or_pos nm with h0 | h0
   · subst h0
-    have : (j.toUSize * rb).toNat = 0 := by
-      rw [USize.toNat_mul, hrb]; simp
-    refine ⟨?_, by rw [size_encode_fields]; exact hX⟩
-    rw [this]; omega
-  · exact wins_acc X nm j _ rb (toUSize_toNat (acc_lt_size h0 hj hX hB)) hj hrb hX hB
+    rw [USize.toNat_mul, hrb]
+    simp
+  · have hjB : j * (16 * nm) < na * (16 * nm) := Nat.mul_lt_mul_of_pos_right hj (by omega)
+    have hjl : j ≤ j * (16 * nm) := Nat.le_mul_of_pos_right j (by omega)
+    have hsz : (2 : Nat) ^ System.Platform.numBits = USize.size := rfl
+    rw [USize.toNat_mul, toUSize_toNat (by omega), hrb, hsz, Nat.mod_eq_of_lt (by omega)]
+
+variable (p) in
+/-- A step of a register's accumulation pass. -/
+theorem stepAccS_pass (X : Array F) (nm j g m c : Nat) (A W : Nat → F) (hc : c < g)
+    (hjc : j + c < na) (hm : m < nm) (hX : 4 * X.size < USize.size)
+    (hB : na * (16 * nm) ≤ X.size) (q a : USize) (hq : q.toNat = (j + c) * (16 * nm)) (oa : Nat)
+    (ha : a.toNat = oa) (hoa : na * (16 * nm) ≤ oa) (hra : oa + 16 * nm ≤ X.size)
+    (hA : ∀ k < 16 * nm, A k = X.getD (oa + k) 0) (w : UInt32) (hw : w = (W (j + c)).val)
+    {n : Nat} (hwq : Wins n q nm) (hwa : Wins n a nm)
+    (hsn : (encode (accP na X (16 * nm) (passP j g m c) A W)).size = n)
+    (ho : ((16 * m).toUSize).toNat + 16 ≤ 16 * nm) :
+    stepAccS p q a w hwq hwa ⟨encode (accP na X (16 * nm) (passP j g m c) A W), hsn⟩
+      (16 * m).toUSize ho = ⟨encode (accP na X (16 * nm) (passP j g m (c + 1)) A W),
+        by rw [size_encode_fields, size_accP]; rw [size_encode_fields, size_accP] at hsn
+           exact hsn⟩ := by
+  apply Subtype.ext
+  rw [stepAccS_upd p X (16 * nm) m (j + c) _ A W hjc (by omega) hX hB
+    (passP_free j g m c) q a hq oa ha hoa hra hA w hw hwq hwa hsn ho]
+  exact congrArg encode (accP_congr _ _ _ _ _ _ (passP_step j g m c hc _))
+
+variable (p) in
+/-- **A register's accumulation passes** from accumulator `j`. -/
+theorem accPassesS_upd (X : Array F) (nm : Nat) (A W : Nat → F) (hX : 4 * X.size < USize.size)
+    (hB : na * (16 * nm) ≤ X.size) (hnm : 16 * nm < USize.size) (rb a : USize)
+    (hrb : rb.toNat = 16 * nm) (oa : Nat) (ha : a.toNat = oa) (hoa : na * (16 * nm) ≤ oa)
+    (hra : oa + 16 * nm ≤ X.size) (hA : ∀ k < 16 * nm, A k = X.getD (oa + k) 0)
+    (wts : Array UInt32) (base : Nat) (hw : ∀ j < na, wts.getD (base + j) 0 = (W j).val)
+    (hj : ∀ j < na, Wins (encode X).size (j.toUSize * rb) nm)
+    (hwa : Wins (encode X).size a nm) :
+    ∀ k j (hk : j + k = na) (s : Buf (encode X).size),
+      s.1 = encode (accP na X (16 * nm) (fun j' _ ↦ decide (j' < j)) A W) →
+      (accPassesS p nm hnm rb a wts base na hj hwa k j hk s).1 =
+        encode (accP na X (16 * nm) (fun j' _ ↦ decide (j' < na)) A W) := by
+  have hsz (j g m c : Nat) : (encode (accP na X (16 * nm) (passP j g m c) A W)).size =
+      (encode X).size := by rw [size_encode_fields, size_accP, size_encode_fields]
+  have hs4 : 4 * (na * (16 * nm)) < USize.size := by omega
+  have hoff (j : Nat) (hc : j < na) : (j.toUSize * rb).toNat = j * (16 * nm) :=
+    accOff nm j rb hrb hc hs4
+  -- One pass of a single accumulator `j`.
+  have single (j : Nat) (hj1 : j < na) (s : Buf (encode X).size)
+      (hs : s.1 = encode (accP na X (16 * nm) (fun j' _ ↦ decide (j' < j)) A W)) :
+      (runW nm hnm (stepAccS p (j.toUSize * rb) a (wts.getD (base + j) 0) (hj j hj1) hwa) s).1 =
+        encode (accP na X (16 * nm) (fun j' _ ↦ decide (j' < j + 1)) A W) := by
+    rw [groupsW_states nm hnm _ (fun m ↦ encode (accP na X (16 * nm) (passP j 1 m 0) A W))
+      (fun m ↦ hsz j 1 m 0) (fun m hm ho ↦ ?_) s (by
+        rw [hs]; exact congrArg encode (accP_congr _ _ _ _ _ _ (passP_init j 1 _)))]
+    · exact congrArg encode (accP_congr _ _ _ _ _ _ (passP_done j 1 nm))
+    · rw [stepAccS_pass p X nm j 1 m 0 A W (by decide) (by omega) hm hX hB _ a
+          (by rw [Nat.add_zero]; exact hoff j hj1) oa ha hoa hra hA _
+          (by rw [Nat.add_zero, hw j hj1])]
+      exact congrArg encode (accP_congr _ _ _ _ _ _ (passP_next j 1 m _))
+  intro k
+  induction k using Nat.strongRecOn with
+  | ind k ih =>
+  intro j hk s hs
+  match k, ih, hk with
+  | 0, _, hk =>
+    obtain rfl : j = na := by omega
+    rw [accPassesS]
+    exact hs
+  | 1, ih, hk | 2, ih, hk | 3, ih, hk =>
+    rw [accPassesS]
+    exact ih _ (by omega) (j + 1) (by omega) _ (single j (by omega) s hs)
+  | k + 4, ih, hk =>
+    have hw' (c : Nat) (hc : j + c < na) : wts.getD (base + j + c) 0 = (W (j + c)).val := by
+      rw [Nat.add_assoc]; exact hw _ hc
+    rw [accPassesS]
+    refine ih k (by omega) (j + 4) (by omega) _ ?_
+    rw [groupsW_states nm hnm _ (fun m ↦ encode (accP na X (16 * nm) (passP j 4 m 0) A W))
+      (fun m ↦ hsz j 4 m 0) (fun m hm ho ↦ ?_) s (by
+        rw [hs]; exact congrArg encode (accP_congr _ _ _ _ _ _ (passP_init j 4 _)))]
+    · exact congrArg encode (accP_congr _ _ _ _ _ _ (passP_done j 4 nm))
+    · rw [stepAccS_pass p X nm j 4 m 0 A W (by decide) (by omega) hm hX hB _ a
+          (by rw [Nat.add_zero]; exact hoff j (by omega)) oa ha hoa hra hA _
+          (by rw [Nat.add_zero, hw j (by omega)]),
+        stepAccS_pass p X nm j 4 m 1 A W (by decide) (by omega) hm hX hB _ a
+          (hoff (j + 1) (by omega)) oa ha hoa hra hA _ (hw' 1 (by omega)),
+        stepAccS_pass p X nm j 4 m 2 A W (by decide) (by omega) hm hX hB _ a
+          (hoff (j + 2) (by omega)) oa ha hoa hra hA _ (hw' 2 (by omega)),
+        stepAccS_pass p X nm j 4 m 3 A W (by decide) (by omega) hm hX hB _ a
+          (hoff (j + 3) (by omega)) oa ha hoa hra hA _ (hw' 3 (by omega))]
+      exact congrArg encode (accP_congr _ _ _ _ _ _ (passP_next j 4 m _))
 
 /-- **An accumulation of a register** on a group of `16 nm` rows. -/
 theorem accS_upd (X : Array F) (nm : Nat) (A W : Nat → F) (hX : 4 * X.size < USize.size)
@@ -671,21 +782,99 @@ theorem accS_upd (X : Array F) (nm : Nat) (A W : Nat → F) (hX : 4 * X.size < U
     (hw : WtsOk na wts w W) :
     accS p na nm rb (encode X) a wts w = encode (accUpd na X (16 * nm) nm 0 A W) := by
   have hwa := wins_encode X nm oa a ha hX hra
-  have hw4 := wins_accs X nm rb hrb hX hB
   have hnm : 16 * nm < USize.size := by
     rw [size_encode_fields] at hwa; have := hwa.2; omega
+  have hfit : AccsFit (encode X).size na rb nm :=
+    ⟨hrb, by rw [size_encode_fields, hrb]; omega, by rw [size_encode_fields]; omega⟩
   unfold accS
-  rw [dite_eq_left_of_eq_true (eq_true ⟨hnm, hw4, hwa⟩)]
-  have hZ (m j : Nat) : (encode (accUpd na X (16 * nm) m j A W)).size = (encode X).size := by
-    rw [size_encode_fields, size_accUpd, size_encode_fields]
-  refine groupsW_states nm _ _ (fun m ↦ encode (accUpd na X (16 * nm) m 0 A W)) (fun m ↦ hZ m 0)
-    (fun m hm ho ↦ ?_) _ (by rw [accUpd_zero])
-  rw [← accUpd_next]
-  exact accN_buf (fun j hj b ↦ stepAccS p rb j.toUSize a (wts.getD (na * w + j) 0)
-        (hw4 j hj) hwa b (16 * m).toUSize ho)
-    (fun j ↦ encode (accUpd na X (16 * nm) m j A W)) (fun j ↦ hZ m j) fun j hj ↦
-      stepAccS_upd p X (16 * nm) m j A W hj (by omega) hX hB _ rb a
-        (toUSize_toNat (acc_lt_size (by omega) hj hX hB)) hrb oa ha hoa hra hA _ (hw j hj) _ _ _ _
+  rw [dite_eq_left_of_eq_true (eq_true ⟨hnm, hfit, hwa⟩), ← accP_all,
+    accPassesS_upd p X nm A W hX hB hnm rb a hrb oa ha hoa hra hA wts (na * w) hw _ hwa na 0
+      (Nat.zero_add na) _ (by
+        rw [accP_none _ _ _ _ _ fun j' _ _ _ ↦ by simp only [Nat.not_lt_zero, decide_false]])]
+  exact congrArg encode (accP_congr _ _ _ _ _ _ fun j' hj' _ _ ↦ by simp only [hj', decide_true])
+
+variable (p) in
+/-- A step of another buffer's accumulation pass. -/
+theorem stepAccE_pass (X E : Array F) (nm j g m c : Nat) (A W : Nat → F) (hc : c < g)
+    (hjc : j + c < na) (hm : m < nm) (hX : 4 * X.size < USize.size)
+    (hE : 4 * E.size < USize.size) (hB : na * (16 * nm) ≤ X.size) (q a : USize)
+    (hq : q.toNat = (j + c) * (16 * nm)) (oa : Nat) (ha : a.toNat = oa)
+    (hra : oa + 16 * nm ≤ E.size) (hA : ∀ k < 16 * nm, A k = E.getD (oa + k) 0) (w : UInt32)
+    (hw : w = (W (j + c)).val) {n : Nat} (hwq : Wins n q nm) (hwa : Wins (encode E).size a nm)
+    (hsn : (encode (accP na X (16 * nm) (passP j g m c) A W)).size = n)
+    (ho : ((16 * m).toUSize).toNat + 16 ≤ 16 * nm) :
+    stepAccE p q (encode E) a w hwq hwa ⟨encode (accP na X (16 * nm) (passP j g m c) A W), hsn⟩
+      (16 * m).toUSize ho = ⟨encode (accP na X (16 * nm) (passP j g m (c + 1)) A W),
+        by rw [size_encode_fields, size_accP]; rw [size_encode_fields, size_accP] at hsn
+           exact hsn⟩ := by
+  apply Subtype.ext
+  rw [stepAccE_upd p X E (16 * nm) m (j + c) _ A W hjc (by omega) hX hE hB
+    (passP_free j g m c) q a hq oa ha hra hA w hw hwq hwa hsn ho]
+  exact congrArg encode (accP_congr _ _ _ _ _ _ (passP_step j g m c hc _))
+
+variable (p) in
+/-- **Another buffer's accumulation passes** from accumulator `j`. -/
+theorem accPassesE_upd (X E : Array F) (nm : Nat) (A W : Nat → F) (hX : 4 * X.size < USize.size)
+    (hE : 4 * E.size < USize.size) (hB : na * (16 * nm) ≤ X.size) (hnm : 16 * nm < USize.size)
+    (rb a : USize) (hrb : rb.toNat = 16 * nm) (oa : Nat) (ha : a.toNat = oa)
+    (hra : oa + 16 * nm ≤ E.size) (hA : ∀ k < 16 * nm, A k = E.getD (oa + k) 0)
+    (wts : Array UInt32) (base : Nat) (hw : ∀ j < na, wts.getD (base + j) 0 = (W j).val)
+    (hj : ∀ j < na, Wins (encode X).size (j.toUSize * rb) nm)
+    (hwa : Wins (encode E).size a nm) :
+    ∀ k j (hk : j + k = na) (s : Buf (encode X).size),
+      s.1 = encode (accP na X (16 * nm) (fun j' _ ↦ decide (j' < j)) A W) →
+      (accPassesE p nm hnm rb (encode E) a wts base na hj hwa k j hk s).1 =
+        encode (accP na X (16 * nm) (fun j' _ ↦ decide (j' < na)) A W) := by
+  have hsz (j g m c : Nat) : (encode (accP na X (16 * nm) (passP j g m c) A W)).size =
+      (encode X).size := by rw [size_encode_fields, size_accP, size_encode_fields]
+  have hs4 : 4 * (na * (16 * nm)) < USize.size := by omega
+  have hoff (j : Nat) (hc : j < na) : (j.toUSize * rb).toNat = j * (16 * nm) :=
+    accOff nm j rb hrb hc hs4
+  -- One pass of a single accumulator `j`.
+  have single (j : Nat) (hj1 : j < na) (s : Buf (encode X).size)
+      (hs : s.1 = encode (accP na X (16 * nm) (fun j' _ ↦ decide (j' < j)) A W)) :
+      (runW nm hnm (stepAccE p (j.toUSize * rb) (encode E) a (wts.getD (base + j) 0) (hj j hj1) hwa)
+        s).1 =
+        encode (accP na X (16 * nm) (fun j' _ ↦ decide (j' < j + 1)) A W) := by
+    rw [groupsW_states nm hnm _ (fun m ↦ encode (accP na X (16 * nm) (passP j 1 m 0) A W))
+      (fun m ↦ hsz j 1 m 0) (fun m hm ho ↦ ?_) s (by
+        rw [hs]; exact congrArg encode (accP_congr _ _ _ _ _ _ (passP_init j 1 _)))]
+    · exact congrArg encode (accP_congr _ _ _ _ _ _ (passP_done j 1 nm))
+    · rw [stepAccE_pass p X E nm j 1 m 0 A W (by decide) (by omega) hm hX hE hB _ a
+          (by rw [Nat.add_zero]; exact hoff j hj1) oa ha hra hA _
+          (by rw [Nat.add_zero, hw j hj1])]
+      exact congrArg encode (accP_congr _ _ _ _ _ _ (passP_next j 1 m _))
+  intro k
+  induction k using Nat.strongRecOn with
+  | ind k ih =>
+  intro j hk s hs
+  match k, ih, hk with
+  | 0, _, hk =>
+    obtain rfl : j = na := by omega
+    rw [accPassesE]
+    exact hs
+  | 1, ih, hk | 2, ih, hk | 3, ih, hk =>
+    rw [accPassesE]
+    exact ih _ (by omega) (j + 1) (by omega) _ (single j (by omega) s hs)
+  | k + 4, ih, hk =>
+    have hw' (c : Nat) (hc : j + c < na) : wts.getD (base + j + c) 0 = (W (j + c)).val := by
+      rw [Nat.add_assoc]; exact hw _ hc
+    rw [accPassesE]
+    refine ih k (by omega) (j + 4) (by omega) _ ?_
+    rw [groupsW_states nm hnm _ (fun m ↦ encode (accP na X (16 * nm) (passP j 4 m 0) A W))
+      (fun m ↦ hsz j 4 m 0) (fun m hm ho ↦ ?_) s (by
+        rw [hs]; exact congrArg encode (accP_congr _ _ _ _ _ _ (passP_init j 4 _)))]
+    · exact congrArg encode (accP_congr _ _ _ _ _ _ (passP_done j 4 nm))
+    · rw [stepAccE_pass p X E nm j 4 m 0 A W (by decide) (by omega) hm hX hE hB _ a
+          (by rw [Nat.add_zero]; exact hoff j (by omega)) oa ha hra hA _
+          (by rw [Nat.add_zero, hw j (by omega)]),
+        stepAccE_pass p X E nm j 4 m 1 A W (by decide) (by omega) hm hX hE hB _ a
+          (hoff (j + 1) (by omega)) oa ha hra hA _ (hw' 1 (by omega)),
+        stepAccE_pass p X E nm j 4 m 2 A W (by decide) (by omega) hm hX hE hB _ a
+          (hoff (j + 2) (by omega)) oa ha hra hA _ (hw' 2 (by omega)),
+        stepAccE_pass p X E nm j 4 m 3 A W (by decide) (by omega) hm hX hE hB _ a
+          (hoff (j + 3) (by omega)) oa ha hra hA _ (hw' 3 (by omega))]
+      exact congrArg encode (accP_congr _ _ _ _ _ _ (passP_next j 4 m _))
 
 /-- **An accumulation of another buffer's words** on a group of `16 nm` rows. -/
 theorem accE_upd (X E : Array F) (nm : Nat) (A W : Nat → F) (hX : 4 * X.size < USize.size)
@@ -695,21 +884,96 @@ theorem accE_upd (X E : Array F) (nm : Nat) (A W : Nat → F) (hX : 4 * X.size <
     (hw : WtsOk na wts w W) :
     accE p na nm rb (encode X) (encode E) a wts w = encode (accUpd na X (16 * nm) nm 0 A W) := by
   have hwa := wins_encode E nm oa a ha hE hra
-  have hw4 := wins_accs X nm rb hrb hX hB
   have hnm : 16 * nm < USize.size := by
     rw [size_encode_fields] at hwa; have := hwa.2; omega
+  have hfit : AccsFit (encode X).size na rb nm :=
+    ⟨hrb, by rw [size_encode_fields, hrb]; omega, by rw [size_encode_fields]; omega⟩
   unfold accE
-  rw [dite_eq_left_of_eq_true (eq_true ⟨hnm, hw4, hwa⟩)]
-  have hZ (m j : Nat) : (encode (accUpd na X (16 * nm) m j A W)).size = (encode X).size := by
-    rw [size_encode_fields, size_accUpd, size_encode_fields]
-  refine groupsW_states nm _ _ (fun m ↦ encode (accUpd na X (16 * nm) m 0 A W)) (fun m ↦ hZ m 0)
-    (fun m hm ho ↦ ?_) _ (by rw [accUpd_zero])
-  rw [← accUpd_next]
-  exact accN_buf (fun j hj b ↦ stepAccE p rb j.toUSize (encode E) a
-        (wts.getD (na * w + j) 0) (hw4 j hj) hwa b (16 * m).toUSize ho)
-    (fun j ↦ encode (accUpd na X (16 * nm) m j A W)) (fun j ↦ hZ m j) fun j hj ↦
-      stepAccE_upd p X E (16 * nm) m j A W hj (by omega) hX hE hB _ rb a
-        (toUSize_toNat (acc_lt_size (by omega) hj hX hB)) hrb oa ha hra hA _ (hw j hj) _ _ _ _
+  rw [dite_eq_left_of_eq_true (eq_true ⟨hnm, hfit, hwa⟩), ← accP_all,
+    accPassesE_upd p X E nm A W hX hE hB hnm rb a hrb oa ha hra hA wts (na * w) hw _ hwa na 0
+      (Nat.zero_add na) _ (by
+        rw [accP_none _ _ _ _ _ fun j' _ _ _ ↦ by simp only [Nat.not_lt_zero, decide_false]])]
+  exact congrArg encode (accP_congr _ _ _ _ _ _ fun j' hj' _ _ ↦ by simp only [hj', decide_true])
+
+variable (p) in
+/-- A step of a constant's accumulation pass. -/
+theorem stepAccW_pass (X : Array F) (nm j g m c : Nat) (cv : F) (W : Nat → F) (hc : c < g)
+    (hjc : j + c < na) (hm : m < nm) (hX : 4 * X.size < USize.size)
+    (hB : na * (16 * nm) ≤ X.size) (q : USize) (hq : q.toNat = (j + c) * (16 * nm))
+    (w : UInt32) (hw : w = (W (j + c)).val) {n : Nat} (hwq : Wins n q nm)
+    (hsn : (encode (accP na X (16 * nm) (passP j g m c) (fun _ ↦ cv) W)).size = n)
+    (ho : ((16 * m).toUSize).toNat + 16 ≤ 16 * nm) :
+    stepAccW p q cv.val w hwq ⟨encode (accP na X (16 * nm) (passP j g m c) (fun _ ↦ cv) W), hsn⟩
+      (16 * m).toUSize ho = ⟨encode (accP na X (16 * nm) (passP j g m (c + 1)) (fun _ ↦ cv) W),
+        by rw [size_encode_fields, size_accP]; rw [size_encode_fields, size_accP] at hsn
+           exact hsn⟩ := by
+  apply Subtype.ext
+  rw [stepAccW_upd p X (16 * nm) m (j + c) _ W hjc (by omega) hX hB
+    (passP_free j g m c) q hq cv w hw hwq hsn ho]
+  exact congrArg encode (accP_congr _ _ _ _ _ _ (passP_step j g m c hc _))
+
+variable (p) in
+/-- **A constant's accumulation passes** from accumulator `j`. -/
+theorem accPassesW_upd (X : Array F) (nm : Nat) (cv : F) (W : Nat → F)
+    (hX : 4 * X.size < USize.size) (hB : na * (16 * nm) ≤ X.size) (hnm : 16 * nm < USize.size)
+    (rb : USize) (hrb : rb.toNat = 16 * nm) (wts : Array UInt32) (base : Nat)
+    (hw : ∀ j < na, wts.getD (base + j) 0 = (W j).val)
+    (hj : ∀ j < na, Wins (encode X).size (j.toUSize * rb) nm) :
+    ∀ k j (hk : j + k = na) (s : Buf (encode X).size),
+      s.1 = encode (accP na X (16 * nm) (fun j' _ ↦ decide (j' < j)) (fun _ ↦ cv) W) →
+      (accPassesW p nm hnm rb cv.val wts base na hj k j hk s).1 =
+        encode (accP na X (16 * nm) (fun j' _ ↦ decide (j' < na)) (fun _ ↦ cv) W) := by
+  have hsz (j g m c : Nat) : (encode (accP na X (16 * nm) (passP j g m c) (fun _ ↦ cv) W)).size =
+      (encode X).size := by rw [size_encode_fields, size_accP, size_encode_fields]
+  have hs4 : 4 * (na * (16 * nm)) < USize.size := by omega
+  have hoff (j : Nat) (hc : j < na) : (j.toUSize * rb).toNat = j * (16 * nm) :=
+    accOff nm j rb hrb hc hs4
+  -- One pass of a single accumulator `j`.
+  have single (j : Nat) (hj1 : j < na) (s : Buf (encode X).size)
+      (hs : s.1 = encode (accP na X (16 * nm) (fun j' _ ↦ decide (j' < j)) (fun _ ↦ cv) W)) :
+      (runW nm hnm (stepAccW p (j.toUSize * rb) cv.val (wts.getD (base + j) 0) (hj j hj1)) s).1 =
+        encode (accP na X (16 * nm) (fun j' _ ↦ decide (j' < j + 1)) (fun _ ↦ cv) W) := by
+    rw [groupsW_states nm hnm _ (fun m ↦ encode (accP na X (16 * nm) (passP j 1 m 0)
+      (fun _ ↦ cv) W))
+      (fun m ↦ hsz j 1 m 0) (fun m hm ho ↦ ?_) s (by
+        rw [hs]; exact congrArg encode (accP_congr _ _ _ _ _ _ (passP_init j 1 _)))]
+    · exact congrArg encode (accP_congr _ _ _ _ _ _ (passP_done j 1 nm))
+    · rw [stepAccW_pass p X nm j 1 m 0 cv W (by decide) (by omega) hm hX hB _
+          (by rw [Nat.add_zero]; exact hoff j hj1) _
+          (by rw [Nat.add_zero, hw j hj1])]
+      exact congrArg encode (accP_congr _ _ _ _ _ _ (passP_next j 1 m _))
+  intro k
+  induction k using Nat.strongRecOn with
+  | ind k ih =>
+  intro j hk s hs
+  match k, ih, hk with
+  | 0, _, hk =>
+    obtain rfl : j = na := by omega
+    rw [accPassesW]
+    exact hs
+  | 1, ih, hk | 2, ih, hk | 3, ih, hk =>
+    rw [accPassesW]
+    exact ih _ (by omega) (j + 1) (by omega) _ (single j (by omega) s hs)
+  | k + 4, ih, hk =>
+    have hw' (c : Nat) (hc : j + c < na) : wts.getD (base + j + c) 0 = (W (j + c)).val := by
+      rw [Nat.add_assoc]; exact hw _ hc
+    rw [accPassesW]
+    refine ih k (by omega) (j + 4) (by omega) _ ?_
+    rw [groupsW_states nm hnm _ (fun m ↦ encode (accP na X (16 * nm) (passP j 4 m 0)
+      (fun _ ↦ cv) W))
+      (fun m ↦ hsz j 4 m 0) (fun m hm ho ↦ ?_) s (by
+        rw [hs]; exact congrArg encode (accP_congr _ _ _ _ _ _ (passP_init j 4 _)))]
+    · exact congrArg encode (accP_congr _ _ _ _ _ _ (passP_done j 4 nm))
+    · rw [stepAccW_pass p X nm j 4 m 0 cv W (by decide) (by omega) hm hX hB _
+          (by rw [Nat.add_zero]; exact hoff j (by omega)) _
+          (by rw [Nat.add_zero, hw j (by omega)]),
+        stepAccW_pass p X nm j 4 m 1 cv W (by decide) (by omega) hm hX hB _
+          (hoff (j + 1) (by omega)) _ (hw' 1 (by omega)),
+        stepAccW_pass p X nm j 4 m 2 cv W (by decide) (by omega) hm hX hB _
+          (hoff (j + 2) (by omega)) _ (hw' 2 (by omega)),
+        stepAccW_pass p X nm j 4 m 3 cv W (by decide) (by omega) hm hX hB _
+          (hoff (j + 3) (by omega)) _ (hw' 3 (by omega))]
+      exact congrArg encode (accP_congr _ _ _ _ _ _ (passP_next j 4 m _))
 
 /-- **An accumulation of a constant** on a group of `16 nm` rows. -/
 theorem accW_upd (X : Array F) (nm : Nat) (W : Nat → F) (hX : 4 * X.size < USize.size)
@@ -717,20 +981,13 @@ theorem accW_upd (X : Array F) (nm : Nat) (W : Nat → F) (hX : 4 * X.size < USi
     (hnm : 16 * nm < USize.size) (c : F) (wts : Array UInt32) (w : Nat) (hw : WtsOk na wts w W) :
     accW p na nm rb (encode X) c.val wts w =
       encode (accUpd na X (16 * nm) nm 0 (fun _ ↦ c) W) := by
-  have hw4 := wins_accs X nm rb hrb hX hB
+  have hfit : AccsFit (encode X).size na rb nm :=
+    ⟨hrb, by rw [size_encode_fields, hrb]; omega, by rw [size_encode_fields]; omega⟩
   unfold accW
-  rw [dite_eq_left_of_eq_true (eq_true ⟨hnm, hw4⟩)]
-  have hZ (m j : Nat) :
-      (encode (accUpd na X (16 * nm) m j (fun _ ↦ c) W)).size = (encode X).size := by
-    rw [size_encode_fields, size_accUpd, size_encode_fields]
-  refine groupsW_states nm _ _ (fun m ↦ encode (accUpd na X (16 * nm) m 0 (fun _ ↦ c) W))
-    (fun m ↦ hZ m 0) (fun m hm ho ↦ ?_) _ (by rw [accUpd_zero])
-  rw [← accUpd_next]
-  exact accN_buf (fun j hj b ↦ stepAccW p rb j.toUSize c.val (wts.getD (na * w + j) 0)
-        (hw4 j hj) b (16 * m).toUSize ho)
-    (fun j ↦ encode (accUpd na X (16 * nm) m j (fun _ ↦ c) W)) (fun j ↦ hZ m j) fun j hj ↦
-      stepAccW_upd p X (16 * nm) m j W hj (by omega) hX hB _ rb
-        (toUSize_toNat (acc_lt_size (by omega) hj hX hB)) hrb c _ (hw j hj) _ _ _
+  rw [dite_eq_left_of_eq_true (eq_true ⟨hnm, hfit⟩), ← accP_all,
+    accPassesW_upd p X nm c W hX hB hnm rb hrb wts (na * w) hw _ na 0 (Nat.zero_add na) _ (by
+      rw [accP_none _ _ _ _ _ fun j' _ _ _ ↦ by simp only [Nat.not_lt_zero, decide_false]])]
+  exact congrArg encode (accP_congr _ _ _ _ _ _ fun j' hj' _ _ ↦ by simp only [hj', decide_true])
 
 /-! ### Fills, copies and gathers -/
 
