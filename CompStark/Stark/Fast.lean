@@ -765,11 +765,10 @@ def permutationLdeWith [Mont32BaseField p] [PlanesInv p EF]
 def slicePlanes (v : @& ExtPlanes p EF) (r0 len : Nat) : ExtPlanes p EF :=
   ⟨len, v.c.map fun b ↦ slice b r0 len⟩
 
-/-- `1 / (z - x)` on the stored points `x` of height `2 ^ logN`, in parallel ranges. -/
-def denomPlanes [Mont32BaseField p] (z : EF) (logN : Nat) : ExtPlanes p EF :=
+/-- `1 / (z - x)` on the stored points `x` of height `2 ^ logN`, the first `2 ^ logN` words of the
+stored points `xs` of a height at least as large, in parallel ranges. -/
+def denomPlanes (xs : @& ByteArray) (z : EF) (logN : Nat) : ExtPlanes p EF :=
   let n := 2 ^ logN
-  let xs := CompPoly.CPolynomial.NTTFast.Packed.Native.encodeFields
-    (cosetPointsBitRev (gen : F) logN)
   let parts := if n < 4096 then 1 else 16
   let size := n / parts
   ExtPlanes.join n <| (Array.range parts).map fun k ↦ Task.spawn fun _ ↦
@@ -781,11 +780,13 @@ def tallest (items : List (PMat × List EF)) (z : EF) : Nat :=
   items.foldl (fun a (m, zs) ↦ if zs.contains z then max a (Nat.log2 m.height) else a) 0
 
 /-- `1 / (z - x)` for every distinct point `z` of the matrices `items`, on the stored points `x` of
-the tallest height `2 ^ logN` it is opened at (`denomPlanes`): `(z, logN, planes)`. The stored
-points of a smaller height are a prefix of these. -/
-def denoms [Mont32BaseField p] (items : List (PMat × List EF)) : List (EF × Nat × ExtPlanes p EF) :=
+the tallest height `2 ^ logN` it is opened at (`denomPlanes`), from the stored points `xs` of the
+tallest height of all: `(z, logN, planes)`. The stored points of a smaller height are a prefix of
+these. -/
+def denoms (xs : @& ByteArray) (items : List (PMat × List EF)) :
+    List (EF × Nat × ExtPlanes p EF) :=
   (items.flatMap (·.2)).eraseDups.map fun z ↦
-    (z, tallest items z, denomPlanes z (tallest items z))
+    (z, tallest items z, denomPlanes xs z (tallest items z))
 
 /-- The planes of `1 / (z - x)` of the point `z` in `invs`. -/
 def denomsOf (invs : @& List (EF × Nat × ExtPlanes p EF)) (z : EF) : ExtPlanes p EF :=
@@ -814,16 +815,15 @@ def weightedColumns (invs : @& List (EF × Nat × ExtPlanes p EF)) (m : @& PMat)
       CompPoly.CPolynomial.NTTFast.Packed.ofWord p ((sums.getD j.val #[]).getD i 0))
 
 /-- `openedAt` on packed words, at all points of a matrix: the barycentric weights `x / (z - x)` in
-the stored bit-reversed row order, from the planes of `1 / (z - x)` in `invs`, and the column sums
-over parallel row ranges, each range within one block of the matrix's rows. -/
+the stored bit-reversed row order, from the stored points `xs` of a height at least the matrix's
+and the planes of `1 / (z - x)` in `invs`, and the column sums over parallel row ranges, each range
+within one block of the matrix's rows. -/
 def openedAt [Mont32BaseField p] [Mont32.AlgebraId EF] (invs : List (EF × Nat × ExtPlanes p EF))
-    (logBlowup : Nat) (m : PMat) (zs : List EF) : List (Array EF) :=
+    (xs : ByteArray) (logBlowup : Nat) (m : PMat) (zs : List EF) : List (Array EF) :=
   let d := FastExt.d p EF
   let logH := Nat.log2 m.height - logBlowup
   let h := 2 ^ logH
   let w := m.width
-  let xs := CompPoly.CPolynomial.NTTFast.Packed.Native.encodeFields
-      (cosetPointsBitRev (gen : F) logH)
   let parts := h / Nat.gcd (if h < 4096 then h else h / 16) m.rows
   let size := h / parts
   let tasks := (Array.range parts).map fun k ↦ Task.spawn fun _ ↦
@@ -939,12 +939,17 @@ def reduce [Mont32BaseField p] [Mont32.AlgebraId EF] (invs : List (EF × Nat × 
   return out.mergeSort fun a b ↦ b.1 ≤ a.1
 
 /-- The opened values and the batched reduction on planes, `1 / (z - x)` computed once per point
-on its tallest height (`denoms`) for both. -/
+on its tallest height (`denoms`) for both, the stored points computed once at the tallest height,
+and every matrix's values in a task of its own. -/
 def openings [Mont32BaseField p] [Mont32.AlgebraId EF] (b : Nat)
     (rounds : List (List (PMat × List EF))) :
     List (List (List (Array EF))) × (EF → List (Nat × ExtPlanes p EF)) :=
-  let invs := denoms rounds.flatten
-  let ov := rounds.map (·.map fun x ↦ openedAt invs b x.1 x.2)
+  let L := rounds.flatten.foldl (fun a x ↦ max a (Nat.log2 x.1.height)) 0
+  let xs := CompPoly.CPolynomial.NTTFast.Packed.Native.encodeFields
+    (cosetPointsBitRev (gen : F) L)
+  let invs := denoms xs rounds.flatten
+  let tasks := rounds.map (·.map fun x ↦ Task.spawn fun _ ↦ openedAt invs xs b x.1 x.2)
+  let ov := tasks.map (·.map Task.get)
   (ov, fun alpha ↦ reduce invs alpha (Fri.openItems rounds ov))
 
 /-- Words `0, 2, 4, …` and `1, 3, 5, …` of the first `2 n` words of `b`. -/

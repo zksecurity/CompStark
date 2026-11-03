@@ -618,10 +618,13 @@ theorem gcd_range_dvd (L R : Nat) :
 
 /-- The fast opened values are the specification's. -/
 theorem openedAt_rel [Mont32BaseField p] [Mont32.AlgebraId EF]
-    (invs : List (EF × Nat × ExtPlanes p EF)) (b : Nat) (zs : List EF) {m : PMat} {s : Mat F}
-    (h : RM m s) (hs : MatOk s) (hz : ∀ z ∈ zs, Ext.OutsideBase z)
-    (hinv : ∀ z ∈ zs, DenomsOk invs z (Nat.log2 s.height - b)) :
-    openedAt invs b m zs = zs.map (Fri.openedAt b s) := by
+    (invs : List (EF × Nat × ExtPlanes p EF)) {L0 : Nat} (b : Nat) (zs : List EF) {m : PMat}
+    {s : Mat F} (h : RM m s) (hs : MatOk s) (hz : ∀ z ∈ zs, Ext.OutsideBase z)
+    (hinv : ∀ z ∈ zs, DenomsOk invs z (Nat.log2 s.height - b))
+    (hL0 : Nat.log2 s.height - b ≤ L0) (hL0' : L0 ≤ twoAdicity F)
+    (hL0s : 4 * 2 ^ L0 < USize.size) :
+    openedAt invs (encode (cosetPointsBitRev (gen : F) L0)) b m zs =
+      zs.map (Fri.openedAt b s) := by
   unfold Fast.openedAt
   obtain ⟨-, ⟨k, -, hk⟩, hM, hA⟩ := hs
   have hle : s.height ≥ 2 ^ (Nat.log2 s.height - b) := by
@@ -632,7 +635,7 @@ theorem openedAt_rel [Mont32BaseField p] [Mont32.AlgebraId EF]
     omega
   dsimp only
   rw [h.width, h.height]
-  generalize hL : Nat.log2 s.height - b = L at hle hinv ⊢
+  generalize hL : Nat.log2 s.height - b = L at hle hinv hL0 ⊢
   -- An empty row: both sides are empty.
   by_cases hw0 : s.width = 0
   · refine List.ext_getElem
@@ -643,14 +646,12 @@ theorem openedAt_rel [Mont32BaseField p] [Mont32.AlgebraId EF]
     omega
   have hpos : 0 < s.height := lt_of_lt_of_le (Nat.two_pow_pos L) hle
   have hsM : 4 * s.values.size < USize.size := hfits
-  have hX : (cosetPointsBitRev (gen : F) L).size = 2 ^ L := size_cosetPointsBitRev (gen : F) L
+  have hX : (cosetPointsBitRev (gen : F) L0).size = 2 ^ L0 := size_cosetPointsBitRev (gen : F) L0
+  have hLL : 2 ^ L ≤ 2 ^ L0 := Nat.pow_le_pow_right (by decide) hL0
   have hw4 : 4 * s.width < USize.size := by
     have := Nat.mul_le_mul_left s.width (show 1 ≤ s.height from hpos)
     omega
-  have hsX : 4 * (cosetPointsBitRev (gen : F) L).size < USize.size := by
-    have := Nat.mul_le_mul_right s.height (show 1 ≤ s.width by omega)
-    omega
-  rw [CompPoly.CPolynomial.NTTFast.Packed.Native.encodeFields_eq]
+  have hsX : 4 * (cosetPointsBitRev (gen : F) L0).size < USize.size := by rw [hX]; exact hL0s
   have hGd := gcd_range_dvd L m.rows
   generalize hG : Nat.gcd (if 2 ^ L < 4096 then 2 ^ L else 2 ^ L / 16) m.rows = G at hGd ⊢
   have hG0 : 0 < G := by rw [← hG]; exact Nat.gcd_pos_of_pos_right _ h.pos
@@ -662,7 +663,7 @@ theorem openedAt_rel [Mont32BaseField p] [Mont32.AlgebraId EF]
       coord (i % FastExt.d p EF) (bw (zs.getD (i / FastExt.d p EF) 0)
         ((cosetPointsBitRev (gen : F) L).getD r 0)))
     (fun r0 len ↦ weightedColumns invs m zs.toArray
-      (encode (cosetPointsBitRev (gen : F) L)) r0 len) (fun k hk ↦ ?_)]
+      (encode (cosetPointsBitRev (gen : F) L0)) r0 len) (fun k hk ↦ ?_)]
   · refine List.ext_getElem
       (by rw [List.length_map, List.length_map, List.length_zipIdx]) fun k h1 h2 ↦ ?_
     rw [List.getElem_map, List.getElem_map, List.getElem_zipIdx, Nat.zero_add]
@@ -687,8 +688,12 @@ theorem openedAt_rel [Mont32BaseField p] [Mont32.AlgebraId EF]
     rw [hlen, hpG]
     rw [weightedColumns_cols invs h zs.toArray _ (k * G) G hG0
       (mod_add_le_of_dvd h.pos hGR (Nat.dvd_mul_left G k)) (by omega) (by omega) hsX
-      fun z hz' ↦ (hinv z (List.mem_toArray.mp hz')).slice (by omega)]
-    rfl
+      fun z hz' ↦ ((hinv z (List.mem_toArray.mp hz')).slice (by omega)).congr_tab fun t ht ↦ by
+        rw [cosetPointsBitRev_prefix (gen : F) hL0 hL0' (by omega)]]
+    refine congrArg Array.ofFn (funext fun i ↦ congrArg encode (congrArg Array.ofFn
+      (funext fun j ↦ Finset.sum_congr rfl fun t ht ↦ ?_)))
+    have ht := Finset.mem_range.mp ht
+    rw [cosetPointsBitRev_prefix (gen : F) hL0 hL0' (by omega)]
 
 /-! ### The specification's reduction row by row -/
 
@@ -1599,16 +1604,17 @@ theorem slice_encode_tab (X : Array F) (r0 len : Nat) (h : r0 + len ≤ X.size) 
   exact (getD_lt X _ (by omega)).symm
 
 /-- `denomPlanes` holds `1 / (z - x)` on the stored points of its height. -/
-theorem denomPlanes_rel [Mont32BaseField p] [Mont32.AlgebraId EF] {z : EF} (hz : Ext.OutsideBase z) (L : Nat)
-    (hL : 4 * 2 ^ L < USize.size) :
-    ExtPlanes.Rel (denomPlanes z L) (tab (2 ^ L) fun r ↦
+theorem denomPlanes_rel [Mont32BaseField p] [Mont32.AlgebraId EF] {z : EF}
+    (hz : Ext.OutsideBase z) {L0 : Nat} (L : Nat) (hL : L ≤ L0) (hL0 : L0 ≤ twoAdicity F)
+    (hs : 4 * 2 ^ L0 < USize.size) :
+    ExtPlanes.Rel (denomPlanes (encode (cosetPointsBitRev (gen : F) L0)) z L) (tab (2 ^ L) fun r ↦
       (z - FastExt.ofBase ((cosetPointsBitRev (gen : F) L).getD r 0))⁻¹) := by
   unfold denomPlanes
   dsimp only
-  rw [CompPoly.CPolynomial.NTTFast.Packed.Native.encodeFields_eq]
   generalize hP : (if 2 ^ L < 4096 then 1 else 16) = parts
   have hp : 0 < parts := by rw [← hP]; split <;> decide
-  have hX := size_cosetPointsBitRev (gen : F) L
+  have hX := size_cosetPointsBitRev (gen : F) L0
+  have hLL : 2 ^ L ≤ 2 ^ L0 := Nat.pow_le_pow_right (by decide) hL
   let f (r : Nat) : EF := (z - FastExt.ofBase ((cosetPointsBitRev (gen : F) L).getD r 0))⁻¹
   show ExtPlanes.Rel _ (Array.ofFn (n := 2 ^ L) fun r ↦ f r.val)
   have hcov := ranges_cover (2 ^ L) parts
@@ -1626,8 +1632,14 @@ theorem denomPlanes_rel [Mont32BaseField p] [Mont32.AlgebraId EF] {z : EF} (hz :
       omega
   generalize (if k + 1 = parts then 2 ^ L - k * (2 ^ L / parts) else 2 ^ L / parts) = len
     at hle ⊢
-  rw [slice_encode_tab _ _ _ (by rw [hX]; exact hle)]
-  exact ExtPlanes.invDenoms_rel (by omega) (Mont32.ne_ofBase hz) _
+  rw [slice_encode_tab _ _ _ (by rw [hX]; omega)]
+  show ExtPlanes.Rel _ (tab len fun t ↦ f (k * (2 ^ L / parts) + t))
+  refine (ExtPlanes.invDenoms_rel (B := len) (by omega) (Mont32.ne_ofBase hz)
+    (fun t ↦ (cosetPointsBitRev (gen : F) L0).getD (k * (2 ^ L / parts) + t) 0)).congr_tab
+    fun t ht ↦ ?_
+  show _ = f _
+  simp only [f]
+  rw [cosetPointsBitRev_prefix (gen : F) hL hL0 (by omega)]
 
 theorem tallest_ge (items : List (PMat × List EF)) {m : PMat} {zs : List EF} {z : EF}
     (hm : (m, zs) ∈ items) (hz : z ∈ zs) : Nat.log2 m.height ≤ tallest items z := by
@@ -1695,29 +1707,25 @@ theorem lookup_map_self {α β : Type} [BEq α] [LawfulBEq α] (f : α → β) {
 /-- The planes of every point of the matrices hold `1 / (z - x)` on the tallest height it is
 opened at. -/
 theorem denoms_ok [Mont32BaseField p] [Mont32.AlgebraId EF] {items : List (PMat × List EF)}
-    (hok : ∀ x ∈ items, 16 * x.1.height < USize.size ∧
-      (∃ k ≤ twoAdicity F, x.1.height = 2 ^ k) ∧ ∀ z ∈ x.2, Ext.OutsideBase z)
+    {L0 : Nat} (hL0 : L0 ≤ twoAdicity F) (hs : 4 * 2 ^ L0 < USize.size)
+    (hok : ∀ x ∈ items, Nat.log2 x.1.height ≤ L0 ∧ ∀ z ∈ x.2, Ext.OutsideBase z)
     {m : PMat} {zs : List EF} (hm : (m, zs) ∈ items) {z : EF} (hz : z ∈ zs) :
-    DenomsOk (denoms items) z (Nat.log2 m.height) := by
+    DenomsOk (denoms (encode (cosetPointsBitRev (gen : F) L0)) items) z (Nat.log2 m.height) := by
   have hmem : z ∈ (items.flatMap (·.2)).eraseDups :=
     List.mem_eraseDups.mpr (List.mem_flatMap.mpr ⟨(m, zs), hm, hz⟩)
-  have hd : denomsOf (denoms items) z = denomPlanes z (tallest items z) := by
+  have hd : denomsOf (denoms (encode (cosetPointsBitRev (gen : F) L0)) items) z =
+      denomPlanes (encode (cosetPointsBitRev (gen : F) L0)) z (tallest items z) := by
     unfold denomsOf denoms
-    rw [List.map_congr_left (g := fun y ↦ (y, (tallest items y, denomPlanes y (tallest items y))))
-      (fun _ _ ↦ rfl), lookup_map_self (fun y ↦ (tallest items y, denomPlanes y (tallest items y)))
-      hmem]
+    rw [lookup_map_self (fun y ↦ (tallest items y,
+      denomPlanes (encode (cosetPointsBitRev (gen : F) L0)) y (tallest items y))) hmem]
     rfl
-  have hbound : tallest items z ≤ twoAdicity F ∧ 4 * 2 ^ tallest items z < USize.size := by
+  have hle : tallest items z ≤ L0 := by
     rcases tallest_cases items z with h | ⟨x, hx, h⟩
-    · obtain ⟨h1, ⟨k, -, hk'⟩, -⟩ := hok _ hm
-      have : 1 ≤ m.height := by rw [hk']; exact Nat.one_le_two_pow
-      rw [h]; exact ⟨Nat.zero_le _, by simp only at h1; omega⟩
-    · obtain ⟨h1, ⟨k, hk, hk'⟩, -⟩ := hok x hx
-      rw [h, hk', Nat.log2_two_pow]
-      exact ⟨hk, by rw [hk'] at h1; omega⟩
-  refine ⟨tallest items z, tallest_ge items hm hz, hbound.1, ?_⟩
+    · rw [h]; exact Nat.zero_le _
+    · rw [h]; exact (hok x hx).1
+  refine ⟨tallest items z, tallest_ge items hm hz, le_trans hle hL0, ?_⟩
   rw [hd]
-  exact denomPlanes_rel ((hok _ hm).2.2 z hz) _ hbound.2
+  exact denomPlanes_rel ((hok _ hm).2 z hz) _ hle hL0 hs
 
 theorem forall₂_mem_both {α β : Type} {R : α → β → Prop} :
     ∀ {l₁ : List α} {l₂ : List β}, List.Forall₂ R l₁ l₂ →
@@ -1782,6 +1790,30 @@ theorem openItems_rel {rs : List (List (PMat × List EF))} {srs : List (List (Ma
             · exact List.mem_append_left _ (List.mem_cons_of_mem _ h)
             · exact List.mem_append_right _ h
 
+theorem foldl_max_ge {α : Type} (f : α → Nat) :
+    ∀ (l : List α) (a : Nat), a ≤ l.foldl (fun a x ↦ max a (f x)) a
+  | [], _ => le_rfl
+  | y :: l, a => le_trans (le_max_left a (f y)) (foldl_max_ge f l _)
+
+/-- The largest value of `f` on a list, from `a`. -/
+theorem foldl_max_spec {α : Type} (f : α → Nat) :
+    ∀ (l : List α) (a : Nat), (∀ x ∈ l, f x ≤ l.foldl (fun a x ↦ max a (f x)) a) ∧
+      (l.foldl (fun a x ↦ max a (f x)) a = a ∨ ∃ x ∈ l, l.foldl (fun a x ↦ max a (f x)) a = f x)
+  | [], _ => ⟨fun _ h ↦ absurd h List.not_mem_nil, Or.inl rfl⟩
+  | y :: l, a => by
+    obtain ⟨h1, h2⟩ := foldl_max_spec f l (max a (f y))
+    rw [List.foldl_cons]
+    refine ⟨fun x hx ↦ ?_, ?_⟩
+    · rcases List.mem_cons.mp hx with rfl | hx
+      · exact le_trans (le_max_right a (f x)) (foldl_max_ge f l _)
+      · exact h1 x hx
+    · rcases h2 with h | ⟨z, hz, h⟩
+      · rw [h]
+        rcases le_total a (f y) with hle | hle
+        · exact Or.inr ⟨y, List.mem_cons_self, max_eq_right hle⟩
+        · exact Or.inl (max_eq_left hle)
+      · exact Or.inr ⟨z, List.mem_cons_of_mem _ hz, h⟩
+
 /-- The fast opened values and reduction are the specification's. -/
 theorem openings_rel [Mont32BaseField p] [Mont32.AlgebraId EF] (b : Nat)
     {rs : List (List (PMat × List EF))} {srs : List (List (Mat F × List EF))}
@@ -1806,23 +1838,40 @@ theorem openings_rel [Mont32BaseField p] [Mont32.AlgebraId EF] (b : Nat)
     unfold Addressable at hA
     have := Nat.le_mul_of_pos_left y.1.height hw
     refine ⟨by rw [hm.height]; omega, by rw [hm.height]; exact hk, fun z h ↦ hzs z (hz ▸ h)⟩
-  have hd : ∀ x ∈ rs.flatten, ∀ z ∈ x.2, DenomsOk (denoms rs.flatten) z (Nat.log2 x.1.height) :=
-    fun x hx z hz ↦ denoms_ok hfast hx hz
-  have hov : rs.map (·.map fun x ↦ openedAt (denoms rs.flatten) b x.1 x.2) =
+  -- The tallest height of all.
+  obtain ⟨hmax, hcases⟩ := foldl_max_spec (fun x : PMat × List EF ↦ Nat.log2 x.1.height)
+    rs.flatten 0
+  generalize hL0 : rs.flatten.foldl (fun a x ↦ max a (Nat.log2 x.1.height)) 0 = L0 at hmax hcases
+  have hL0b : L0 ≤ twoAdicity F ∧ 4 * 2 ^ L0 < USize.size := by
+    rcases hcases with h | ⟨x, hx, h⟩
+    · rw [h]; exact ⟨Nat.zero_le _, by have := USize.le_size; simp only [Nat.pow_zero]; omega⟩
+    · obtain ⟨h1, ⟨k, hk, hk'⟩, -⟩ := hfast x hx
+      rw [h, hk', Nat.log2_two_pow]
+      exact ⟨hk, by rw [hk'] at h1; omega⟩
+  have hd : ∀ x ∈ rs.flatten, ∀ z ∈ x.2, DenomsOk (denoms (encode (cosetPointsBitRev (gen : F) L0))
+      rs.flatten) z (Nat.log2 x.1.height) :=
+    fun x hx z hz ↦ denoms_ok hL0b.1 hL0b.2 (fun y hy ↦ ⟨hmax y hy, (hfast y hy).2.2⟩) hx hz
+  have hov : (rs.map (·.map fun x ↦ Task.spawn fun _ ↦ openedAt
+      (denoms (encode (cosetPointsBitRev (gen : F) L0)) rs.flatten)
+      (encode (cosetPointsBitRev (gen : F) L0)) b x.1 x.2)).map (·.map Task.get) =
       srs.map (·.map fun x ↦ x.2.map (Fri.openedAt b x.1)) := by
+    rw [List.map_map]
     refine forall₂_map_eq' (fun ms sms hms ↦ ?_) (forall₂_mem_both hr)
     obtain ⟨hms, hms1, hms2⟩ := hms
+    rw [Function.comp_apply, List.map_map]
     refine forall₂_map_eq' (fun x y hxy ↦ ?_) (forall₂_mem_both hms)
     obtain ⟨⟨hm, hz⟩, hx, hy⟩ := hxy
     obtain ⟨hs, hzs⟩ := hok sms hms2 y hy
     have hx' : x ∈ rs.flatten := List.mem_flatten.mpr ⟨ms, hms1, hx⟩
-    show openedAt _ b x.1 x.2 = y.2.map (Fri.openedAt b y.1)
+    show openedAt _ _ b x.1 x.2 = y.2.map (Fri.openedAt b y.1)
     rw [hz]
-    exact openedAt_rel _ b y.2 hm hs hzs fun z hz' ↦
-      (hd x hx' z (hz ▸ hz')).mono (by rw [hm.height]; exact Nat.sub_le _ _)
+    exact openedAt_rel _ b y.2 hm hs hzs (fun z hz' ↦
+      (hd x hx' z (hz ▸ hz')).mono (by rw [hm.height]; exact Nat.sub_le _ _))
+      (by rw [← hm.height]; exact le_trans (Nat.sub_le _ _) (hmax x hx')) hL0b.1 hL0b.2
+  subst hL0
+  unfold openings
+  simp only [CompPoly.CPolynomial.NTTFast.Packed.Native.encodeFields_eq]
   refine ⟨hov, fun alpha ↦ ?_⟩
-  show List.Forall₂ _ (reduce (denoms rs.flatten) alpha (Fri.openItems rs _))
-    (Fri.reduce alpha (Fri.openItems srs _))
   rw [hov]
   have hit := openItems_rel hr (srs.map (·.map fun x ↦ x.2.map (Fri.openedAt b x.1)))
   refine reduce_rel _ alpha (hit.imp fun _ _ h ↦ h.1) fun y hy ↦ ?_
