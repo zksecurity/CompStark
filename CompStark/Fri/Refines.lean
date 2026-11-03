@@ -79,13 +79,14 @@ theorem shapeOk_le {a : Array EF} (h : ShapeOk (F := F) a) : a.size ≤ 2 ^ twoA
 variable [Poseidon2Field F] [Challenge F EF]
 
 /-- The backend `B` computes the specification's functions on the inputs the prover gives them,
-through relations `RT`, `RM`, `RC`, `RV` between its traces, matrices, commitments and vectors and
-the specification's; `RT logH w` relates traces of `2 ^ logH` rows and `w` columns. -/
+through relations `RT`, `RM`, `RC`, `RV`, `RQ` between its traces, matrices, commitments, vectors
+and quotient values and the specification's; `RT logH w` relates traces of `2 ^ logH` rows and `w` columns. -/
 structure Refines (B : Backend F EF 24) where
   RT : Nat → Nat → B.Trace → Array F → Prop
   RM : B.M → (specBackend EF).M → Prop
   RC : B.C → (specBackend EF).C → Prop
   RV : B.V → (specBackend EF).V → Prop
+  RQ : B.Q → (specBackend EF).Q → Prop
   transcript : B.transcript = (specBackend EF).transcript
   ldeTrace : ∀ logH bits shift w {t m}, RT logH w t m → m.size = 2 ^ logH * w →
     logH + bits ≤ twoAdicity F → Addressable (2 ^ (logH + bits) * w) →
@@ -103,14 +104,19 @@ structure Refines (B : Backend F EF 24) where
     Option.Rel RM pm ps → (∀ p ∈ ps, MatOk p ∧ p.height = s.height) →
     (∀ c ∈ A.constraints, c.colsBelow s.width s.width ((ps.map (·.width)).getD 0)
       ((ps.map (·.width)).getD 0)) →
-    B.quotient A pis d l m pm alpha = (specBackend EF).quotient A pis d l s ps alpha
+    RQ (B.quotient A pis d l m pm alpha) ((specBackend EF).quotient A pis d l s ps alpha)
   lookupQuotient : ∀ A ext pis d l {m s pm ps rm rs} chs t alpha k, RM m s → MatOk s →
     2 ^ (d + l) ≤ s.height → Option.Rel RM pm ps → (∀ p ∈ ps, MatOk p ∧ p.height = s.height) →
     RM rm rs → MatOk rs → rs.height = s.height → k * Challenge.d EF ≤ rs.width →
     (∀ c ∈ ext, c.colsBelow s.width s.width ((ps.map (·.width)).getD 0)
       ((ps.map (·.width)).getD 0) k) →
-    B.lookupQuotient A ext pis d l m pm rm chs t alpha =
-      (specBackend EF).lookupQuotient A ext pis d l s ps rs chs t alpha
+    RQ (B.lookupQuotient A ext pis d l m pm rm chs t alpha)
+      ((specBackend EF).lookupQuotient A ext pis d l s ps rs chs t alpha)
+  combine : ∀ x {q a r b}, RQ q a → RQ r b → a.size = b.size → a.size ≤ 2 ^ twoAdicity F →
+    RQ (B.combine q r x) ((specBackend EF).combine a b x)
+  chunks : ∀ bits logN l {v a}, RQ v a → a.size = 2 ^ (logN + l) → l ≤ bits →
+    logN + bits ≤ twoAdicity F →
+    List.Forall₂ RM (B.chunks bits logN l v) ((specBackend EF).chunks bits logN l a)
   permutation : ∀ bits A ls logN t pis chs, PermutationOk EF A ls logN bits t →
     RM (B.permutation bits A ls logN t pis chs).1
         ((specBackend EF).permutation bits A ls logN t pis chs).1 ∧

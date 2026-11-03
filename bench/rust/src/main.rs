@@ -81,10 +81,10 @@ fn merkle(log_h: u32, width: usize) {
     println!("plonky3 merkle 2^{log_h} x {width} ms median {:.3}", samples[7]);
 }
 
-/// `lde LOG_N WIDTH`: the median milliseconds of five coset low-degree extensions by 2 of a
+/// `lde LOG_N WIDTH REPS`: the median milliseconds of `REPS` coset low-degree extensions by 2 of a
 /// `2^LOG_N × WIDTH` matrix with `Radix2DitParallel`, as the commitment scheme extends a trace
-/// (`coset_lde_batch` and the bit-reversal of the rows).
-fn lde(log_n: usize, width: usize) {
+/// (`coset_lde_batch` and the bit-reversal of the rows), after one unmeasured extension.
+fn lde(log_n: usize, width: usize, reps: usize) {
     use p3_dft::{Radix2DitParallel, TwoAdicSubgroupDft};
     use p3_field::{Field, PrimeCharacteristicRing};
     use p3_matrix::bitrev::BitReversibleMatrix;
@@ -92,11 +92,13 @@ fn lde(log_n: usize, width: usize) {
     use p3_matrix::dense::RowMajorMatrix;
     let n = 1 << log_n;
     let dft = Radix2DitParallel::<F>::default();
+    let base: Vec<F> =
+        (0..n * width).map(|i| F::from_u64((i as u64 * 2654435761) % 2130706433)).collect();
     let mut samples = vec![];
-    for k in 0..6 {
-        let m = RowMajorMatrix::new(
-            (0..n * width).map(|i| F::from_u64((i as u64 * 2654435761 + k) % 2130706433)).collect(),
-            width);
+    for k in 0..=reps {
+        let mut values = base.clone();
+        values[0] = F::from_u64(k as u64);
+        let m = RowMajorMatrix::new(values, width);
         let t = std::time::Instant::now();
         let ext = dft.coset_lde_batch(m, 1, F::GENERATOR).bit_reverse_rows().to_row_major_matrix();
         samples.push(t.elapsed().as_secs_f64() * 1e3);
@@ -104,7 +106,7 @@ fn lde(log_n: usize, width: usize) {
     }
     samples.remove(0);
     samples.sort_by(|a, b| a.partial_cmp(b).unwrap());
-    println!("plonky3 lde 2^{log_n} x {width} ms median {:.1}", samples[2]);
+    println!("plonky3 lde 2^{log_n} x {width} ms median {:.1}", samples[reps / 2]);
 }
 
 mod babybear;
@@ -137,8 +139,8 @@ fn main() {
     if args.len() == 4 && args[1] == "keccak-prove-bench" && args[2] == "quintic" {
         return example::keccak_prove_bench::<stark::Quintic>("quintic", args[3].parse().unwrap());
     }
-    if args.len() == 4 && args[1] == "lde" {
-        return lde(args[2].parse().unwrap(), args[3].parse().unwrap());
+    if args.len() == 5 && args[1] == "lde" {
+        return lde(args[2].parse().unwrap(), args[3].parse().unwrap(), args[4].parse().unwrap());
     }
     if args.len() == 2 && args[1] == "seeds" {
         return seeds::seeds();

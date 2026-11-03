@@ -98,7 +98,7 @@ def hAlpha : EF := ((hTA EF P A logN trace pis).sampleExtValue : EF)
 
 /-- The quotient's chunks' extensions. -/
 def hChunks : List (Mat F) :=
-  chunksOf (specBackend EF) P logN (A.logQuotientChunks logN)
+  chunksRef P.logBlowup logN (A.logQuotientChunks logN)
     (quotientOfLde A pis logN (A.logQuotientChunks logN) (hExt P A logN trace)
       ((hPrep EF P A logN).map (·.1)) (hAlpha EF P A logN trace pis))
 
@@ -109,7 +109,7 @@ theorem hChunks_eq : hChunks EF P A logN trace pis =
     (List.range (2 ^ lc)).map fun c ↦
       ldeRef logN P.logBlowup (gen * (gen * powF (twoAdicGen (logN + lc)) c)⁻¹) (Challenge.d EF)
         (chunkValues qs (2 ^ lc) c (2 ^ logN)) := by
-  rw [hChunks, chunksOf_eq]
+  rw [hChunks, chunksRef]
 
 /-- The transcript after the quotient commitment. -/
 def hTC : Transcript F 24 :=
@@ -376,7 +376,7 @@ def hDRounds : List (Committed F × List (Mat F × List (EF × Array EF))) :=
   hBaseDRounds EF P A logN trace pis ++ hPrepDRounds EF P A logN trace pis
 
 theorem hChunks_ne_nil : hChunks EF P A logN trace pis ≠ [] := by
-  simp only [hChunks, chunksOf_eq, ne_eq, List.map_eq_nil_iff, List.range_eq_nil]
+  simp only [hChunks, chunksRef, ne_eq, List.map_eq_nil_iff, List.range_eq_nil]
   exact Nat.pos_iff_ne_zero.mp (Nat.two_pow_pos _)
 
 end Honest
@@ -387,7 +387,7 @@ variable (EF) (P : Params) (A : Air F) (logN : Nat) (trace : Array F) (pis : Lis
 theorem height_hChunks (hin : Fits P A logN trace) :
     ∀ m ∈ hChunks EF P A logN trace pis, m.height = 2 ^ (logN + P.logBlowup) := by
   intro m hm
-  rw [hChunks, chunksOf_eq] at hm
+  rw [hChunks, chunksRef] at hm
   obtain ⟨c, -, rfl⟩ := List.mem_map.mp hm
   obtain ⟨ps, hl, -⟩ := chunk_isLde (EF := EF) P logN _ _ hin.twoAdic hin.chunks c
   exact hl.2.1
@@ -526,7 +526,7 @@ theorem hRounds_honest (hin : Fits P A logN trace)
     obtain ⟨ps, hl, -⟩ := trace_lde P A logN trace hin
     exact ⟨_, ps, hl, hhl⟩
   · obtain ⟨m, hm, rfl⟩ := List.mem_map.mp hx
-    rw [hChunks, chunksOf_eq] at hm
+    rw [hChunks, chunksRef] at hm
     obtain ⟨c, -, rfl⟩ := List.mem_map.mp hm
     obtain ⟨ps, hl, -⟩ := chunk_isLde (EF := EF) P logN _ _ hin.twoAdic hin.chunks c
     exact ⟨_, ps, hl, hhl⟩

@@ -7,6 +7,7 @@ module
 public import CompStark.Fri.Refines
 public import CompStark.Stark.Prover
 public import CompStark.Stark.Fast.OpeningsSpec
+public import CompStark.Stark.Fast.QuotientSpec
 
 /-! # Provers on refining backends
 
@@ -86,6 +87,33 @@ structure InputOk (EF : Type) [Challenge F EF] (P : Params) (A : Air F) (logN : 
   mem : Addressable (2 ^ (logN + P.logBlowup) *
     (A.width + A.preprocessedWidth + Challenge.d EF * 2 ^ A.logQuotientChunks logN))
 
+theorem size_quotientOfLde {EF : Type} [Challenge F EF] (A : Air F) (pis : List F) (d l : Nat)
+    (ext : Mat F) (prep : Option (Mat F)) (alpha : EF) :
+    (quotientOfLde A pis d l ext prep alpha).size = 2 ^ (d + l) := by
+  rw [quotientOfLde, quotientValues_eq, Array.size_ofFn]
+
+theorem size_lookupQuotientOfLde {EF : Type} [Challenge F EF] (A : Air F)
+    (ext : List (Lookup.ExtExpr F)) (pis : List F) (d l : Nat) (tr : Mat F) (prep : Option (Mat F)) (perm : Mat F) (chs : List EF)
+    (t alpha : EF) :
+    (lookupQuotientOfLde A ext pis d l tr prep perm chs t alpha).size = 2 ^ (d + l) := by
+  simp only [lookupQuotientOfLde, Lookup.lookupQuotientValues, Array.size_ofFn]
+
+/-- The specification's chunks of any quotient values are of the prover's shapes, `d` columns wide
+and `2 ^ logChunks` of them. -/
+theorem chunksRef_shapes {EF : Type} [Challenge F EF] {logN bits : Nat}
+    (hlog : logN + bits ≤ twoAdicity F)
+    (hm4 : Addressable (2 ^ (logN + bits) * Challenge.d EF)) (lc : Nat) (qs : Array EF) :
+    (∀ m ∈ chunksRef (F := F) bits logN lc qs, MatOk m ∧ m.height = 2 ^ (logN + bits) ∧
+        m.width = Challenge.d EF) ∧
+      (chunksRef (F := F) bits logN lc qs).length = 2 ^ lc := by
+  refine ⟨fun m hm ↦ ?_, by rw [chunksRef, List.length_map, List.length_range]⟩
+  obtain ⟨c, -, rfl⟩ := List.mem_map.mp hm
+  obtain ⟨h1, h2, h3⟩ := shape_ldeRef logN bits
+    (gen * (gen * powF (twoAdicGen (logN + lc)) c)⁻¹) (Challenge.d EF)
+    (chunkValues qs (2 ^ lc) c (2 ^ logN))
+  exact ⟨⟨by rw [h1]; exact (Challenge.params EF).d_pos, ⟨_, hlog, h2⟩, by rw [h3, h1, h2],
+    by rw [h1, h2, Nat.mul_comm]; exact hm4⟩, h2, h1⟩
+
 variable [Poseidon2Field F] {EF : Type} [Challenge F EF] {B : Backend F EF 24}
 
 /-- The preprocessed trace's extensions and commitments by a refining backend and by the
@@ -162,32 +190,16 @@ theorem quotientChunks_refines (h : Refines B) {P : Params} {A : Air F} {logN : 
     obtain ⟨hok, hh⟩ := hpok q hq
     exact ⟨hok, by rw [hh, heh]⟩
   unfold quotientChunks
-  rw [chunksOf_eq, chunksOf_eq]
   have hq :
       2 ^ (logN + A.logQuotientChunks logN) ≤ (ldeRef logN P.logBlowup gen A.width trace).height :=
     heh ▸ Nat.pow_le_pow_right (by decide) (by omega)
-  rw [h.quotient _ _ _ _ _ hext hextOk hq hp hprepQok (fun c hc ↦ by
-    rw [hew, hpw]
-    exact Expr.colsBelow_mono A.mainNextWidth_le le_rfl A.preprocessedNextWidth_le c
-      (hcols c hc))]
-  dsimp only
-  generalize quotientOfLde A pis logN (A.logQuotientChunks logN) _ _ alpha = qs
-  have hchOk : ∀ c, MatOk (ldeRef logN P.logBlowup
-      (gen * (gen * powF (twoAdicGen (logN + A.logQuotientChunks logN)) c)⁻¹) (Challenge.d EF)
-      (chunkValues qs (2 ^ A.logQuotientChunks logN) c (2 ^ logN))) := fun c ↦ by
-    obtain ⟨h1, h2, h3⟩ := shape_ldeRef logN P.logBlowup
-      (gen * (gen * powF (twoAdicGen (logN + A.logQuotientChunks logN)) c)⁻¹) (Challenge.d EF)
-      (chunkValues qs (2 ^ A.logQuotientChunks logN) c (2 ^ logN))
-    exact ⟨by rw [h1]; exact (Challenge.params EF).d_pos, ⟨_, hlog, h2⟩, by rw [h3, h1, h2],
-      by rw [h1, h2, Nat.mul_comm]; exact hm4⟩
-  refine ⟨forall₂_map (fun c c' hc ↦ ?_) (List.forall₂_same.2 fun _ _ ↦ rfl), fun m hm ↦ ?_, by
-    rw [List.length_map, List.length_range]⟩
-  · subst hc
-    exact h.lde _ _ _ _ _ (by
-      rw [size_chunkValues (K := EF) qs (2 ^ A.logQuotientChunks logN) c (2 ^ logN), Nat.mul_comm])
-      hlog hm4
-  obtain ⟨c, -, rfl⟩ := List.mem_map.mp hm
-  exact ⟨hchOk c, (shape_ldeRef ..).2.1, (shape_ldeRef ..).1⟩
+  have hrel := h.quotient A pis logN (A.logQuotientChunks logN) alpha hext hextOk hq hp hprepQok
+    (fun c hc ↦ by
+      rw [hew, hpw]
+      exact Expr.colsBelow_mono A.mainNextWidth_le le_rfl A.preprocessedNextWidth_le c
+        (hcols c hc))
+  refine ⟨h.chunks _ _ _ hrel (size_quotientOfLde ..) hchunks hlog, ?_⟩
+  exact chunksRef_shapes hlog hm4 _ _
 
 /-- The widths of matrices of width `w` side by side. -/
 theorem foldl_width_const {K : Type} (l : List (Mat K)) (w : Nat) (hl : ∀ m ∈ l, m.width = w)

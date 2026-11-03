@@ -177,13 +177,18 @@ def ldeColumns (P : LdePlan p) (w : Nat) (ms : Array ByteArray) : Array ByteArra
         (Array.range (2 ^ P.bits)).map fun t ↦ cosetBlock P c t)).get
   (Array.range (2 ^ P.bits)).flatMap fun t ↦ blocks.map fun b ↦ b.getD t .empty
 
+/-- The plan for extensions of `2 ^ logH`-row matrices by `2 ^ bits` onto `shift · ⟨ω_N⟩`: from
+`plans` when one matches, else built (`plan?`); there is none beyond the two-adic subgroups. -/
+def planFor [Mont32BaseField p] (plans : List (Nat × Nat × F × LdePlan p)) (logH bits : Nat)
+    (shift : F) : Option (LdePlan p) :=
+  ((plans.find? fun (h, b, s, _) ↦ h == logH && b == bits && s == shift).map (·.2.2.2)) <|>
+    plan? logH bits shift
+
 /-- CompPoly's batched coset extension, bit-reversed rows, of a matrix given as chunks of packed
-rows, as columns in blocks of the input's height (`ldeColumns`). Plans come from `plans` when one
-matches, else are built; there is none beyond the two-adic subgroups. -/
+rows, as columns in blocks of the input's height (`ldeColumns`), by the plan `planFor`. -/
 def ldeWordsWith [Mont32BaseField p] (plans : List (Nat × Nat × F × LdePlan p))
     (logH bits : Nat) (shift : F) (w : Nat) (ms : Array ByteArray) : PMat :=
-  let found := plans.find? fun (h, b, s, _) ↦ h == logH && b == bits && s == shift
-  match found.map (·.2.2.2) <|> plan? logH bits shift with
+  match planFor plans logH bits shift with
   | some P => ⟨w, 2 ^ (logH + bits), 2 ^ logH, ldeColumns P w ms⟩
   | none => ⟨w, 0, 1, #[]⟩
 
@@ -446,16 +451,24 @@ def progRun (ks : List (CheckedKernel p)) (cs : List (Expr F)) :
     let prog := Prog.compile cs
     (prog, groupRun (kernelFor (ks.map (·.1.kernel)) prog.code) prog.code)
 
+/-- Words `i, i + k, i + 2 k, …` of `a`, `count` of them. -/
+def strided (a : @& ByteArray) (i k count : Nat) : ByteArray := Id.run do
+  let mut out := CompPoly.CPolynomial.NTTFast.Packed.Native.zeroWords count
+  for r in [0:count] do
+    out := CompPoly.CPolynomial.NTTFast.Packed.Native.write out r
+      (CompPoly.CPolynomial.NTTFast.Packed.Native.read a (r * k + i))
+  return out
+
 /-- The values of a program accumulating every row of the quotient domain, in the extension's
-bit-reversed order, put in natural order: the program runs on blocks of rows, `block r0` giving the
+bit-reversed order, as planes in that order: the program runs on blocks of rows, `block r0` giving the
 block from row `r0` its view and loads, in parallel ranges of blocks, each range with one state; on
 blocks of a multiple of sixteen rows as one group (`run`, the program on the group machine), else
 by `Prog.runBlock`. Every row's accumulators are its value's coordinates, times the inverse
-vanishing polynomial. -/
+vanishing polynomial; the ranges keep them row by row, and every coordinate's plane is one task. -/
 @[specialize] def quotientBlocks [Mont32BaseField p] [Mont32.AlgebraId EF]
     (T : QuotientTables p) (prog : Prog F)
     (run : Prog.GroupEnv → ByteArray → ByteArray) (scal wts : Array F)
-    (block : Nat → Prog.View × Prog.Loads) : Array EF := Id.run do
+    (block : Nat → Prog.View × Prog.Loads) : ExtPlanes p EF := Id.run do
   let n := 2 ^ (T.degreeBits + T.logChunks)
   let period := 2 ^ T.logChunks
   let perm := T.perm
@@ -465,7 +478,7 @@ vanishing polynomial. -/
   let scalW := scal.map (·.val)
   let wtsW := wts.map (·.val)
   let byRow := parChunks blocks (min blocks 16) fun b0 nb ↦ Id.run do
-    let mut out := Array.emptyWithCapacity (nb * B)
+    let mut out := Array.emptyWithCapacity (nb * B * d)
     if B % 16 = 0 ∧ 4 * (B * (d + prog.regs)) < USize.size then
       let mut st := CompPoly.CPolynomial.NTTFast.Packed.Native.zeroWords (B * (d + prog.regs))
       for blk in [b0:b0 + nb] do
@@ -475,7 +488,8 @@ vanishing polynomial. -/
         st := run env (Prog.clearAccs d B st)
         for i in [0:B] do
           let z := T.invZh.getD (perm.getD (r0 + i) 0 % period) 0
-          out := out.push (FastExt.ofCoords fun j ↦ z * word st (B * j + i))
+          for j in [0:d] do
+            out := out.push (z * word st (B * j + i))
     else
       let mut regs : Prog.Regs (4 * B) := Array.replicate (d + prog.regs)
         ⟨CompPoly.CPolynomial.NTTFast.Packed.Native.zeroWords B, ByteArray.size_zeros _⟩
@@ -485,9 +499,12 @@ vanishing polynomial. -/
         regs := Prog.runBlock p d prog.code v L scal wts B T.hB (Prog.clearAcc d T.hB B regs)
         for i in [0:B] do
           let z := T.invZh.getD (perm.getD (r0 + i) 0 % period) 0
-          out := out.push (FastExt.ofCoords fun j ↦ z * word (Prog.regBuf regs j) i)
+          for j in [0:d] do
+            out := out.push (z * word (Prog.regBuf regs j) i)
     return out
-  return perm.map fun r ↦ byRow.getD r 0
+  let stored := CompPoly.CPolynomial.NTTFast.Packed.Native.encodeFields byRow
+  let planes := (Array.range d).map fun j ↦ Task.spawn fun _ ↦ strided stored j d n
+  return ⟨n, Vector.ofFn fun j ↦ (planes.getD j.val (Task.pure .empty)).get⟩
 
 /-- The periodic columns of `A` on the quotient domain of the tables `T`, in the extension's
 bit-reversed order, as words. -/
@@ -503,7 +520,7 @@ extension's bit-reversed order (`quotientBlocks`), every block's rows of the ext
 from their columns, their next rows gathered. -/
 def quotientWith [Mont32BaseField p] [Mont32.AlgebraId EF] (ks : List (CheckedKernel p))
     (T : QuotientTables p) (A : Air F) (pis : List F) (ext : PMat) (prep : Option PMat)
-    (alpha : EF) : Array EF :=
+    (alpha : EF) : ExtPlanes p EF :=
   let pm := prep.getD PMat.empty
   let per := periodicWords T A
   let pr := progRun ks A.constraints
@@ -515,7 +532,7 @@ def quotientWith [Mont32BaseField p] [Mont32.AlgebraId EF] (ks : List (CheckedKe
 
 /-- `quotientOfLde` on packed words. -/
 def quotient [Mont32BaseField p] [Mont32.AlgebraId EF] (A : Air F) (pis : List F)
-    (degreeBits logChunks : Nat) (ext : PMat) (prep : Option PMat) (alpha : EF) : Array EF :=
+    (degreeBits logChunks : Nat) (ext : PMat) (prep : Option PMat) (alpha : EF) : ExtPlanes p EF :=
   quotientWith [] (quotientTables degreeBits logChunks) A pis ext prep alpha
 
 /-! ### LogUp kernels -/
@@ -588,7 +605,7 @@ and the challenges) on blocks of rows (`quotientBlocks`). -/
 def lookupQuotientWith [Mont32BaseField p] [Mont32.AlgebraId EF]
     (kernels : List (Prog.GroupKernel p))
     (T : QuotientTables p) (A : Air F) (ext : List (Lookup.ExtExpr F)) (pis : List F) (tr : PMat)
-    (prep : Option PMat) (perm : PMat) (chs : List EF) (terminal alpha : EF) : Array EF :=
+    (prep : Option PMat) (perm : PMat) (chs : List EF) (terminal alpha : EF) : ExtPlanes p EF :=
   let pm := prep.getD PMat.empty
   let per := periodicWords T A
   let prog := Prog.compileExt (FastExt.params EF) pis.length ext
@@ -604,7 +621,7 @@ def lookupQuotientWith [Mont32BaseField p] [Mont32.AlgebraId EF]
 def lookupQuotient [Mont32BaseField p] [Mont32.AlgebraId EF] (A : Air F)
     (ext : List (Lookup.ExtExpr F))
     (pis : List F) (degreeBits logChunks : Nat) (tr : PMat) (prep : Option PMat) (perm : PMat)
-    (chs : List EF) (terminal alpha : EF) : Array EF :=
+    (chs : List EF) (terminal alpha : EF) : ExtPlanes p EF :=
   lookupQuotientWith [] (quotientTables degreeBits logChunks) A ext pis tr prep perm chs terminal
     alpha
 
@@ -996,13 +1013,42 @@ def fold [Mont32BaseField p] [Mont32.AlgebraId EF] (la : Nat) (beta : EF) (v : E
       Array.ofFn (n := len) fun i ↦ Fri.foldRow (r0 + i.val) (Nat.log2 rows) la beta
         ((List.range (2 ^ la)).map fun k ↦ vs.getD ((r0 + i.val) * 2 ^ la + k) 0))
 
-/-- Words `i, i + k, i + 2 k, …` of `a`, `count` of them. -/
-def strided (a : @& ByteArray) (i k count : Nat) : ByteArray := Id.run do
+open CompPoly.CPolynomial.NTTFast.Packed.Native (columnCoefficients cosetBlock) in
+/-- The extension by the plan `P` of the columns `cols`, one task per column: its coefficients
+and then each of its coset blocks. -/
+def columnTasks (P : LdePlan p) (cols : Array (Unit → ByteArray)) : Array (Task (Array ByteArray)) :=
+  cols.map fun col ↦ Task.spawn fun _ ↦
+    let c := columnCoefficients P (col ())
+    (Array.range (2 ^ P.bits)).map fun t ↦ cosetBlock P c t
+
+/-- Words `base + perm[0], base + perm[1], …` of `a`, `count` of them. -/
+def permuted (a : @& ByteArray) (base : Nat) (perm : @& Array Nat) (count : Nat) : ByteArray :=
+  Id.run do
   let mut out := CompPoly.CPolynomial.NTTFast.Packed.Native.zeroWords count
   for r in [0:count] do
     out := CompPoly.CPolynomial.NTTFast.Packed.Native.write out r
-      (CompPoly.CPolynomial.NTTFast.Packed.Native.read a (r * k + i))
+      (CompPoly.CPolynomial.NTTFast.Packed.Native.read a (base + perm.getD r 0))
   return out
+
+/-- The extensions by `2 ^ bits` of the `2 ^ l` chunks of the quotient values `v`, planes in the
+extension's bit-reversed order, on the quotient domain of a trace of `2 ^ logN` rows (`chunksRef`),
+by the plans `planFor`: every coordinate of every chunk is one task (`columnTasks`), and all of
+them are started before any is awaited. Chunk `c` is the `2 ^ logN` values from
+`2 ^ logN · bitrev c` in that order, its column the bit-reversal of theirs. Block `t` of
+coordinate `k` is at `t * d + k`. -/
+def chunksWith [Mont32BaseField p] (plans : List (Nat × Nat × F × LdePlan p)) (bits logN l : Nat)
+    (v : ExtPlanes p EF) : List PMat :=
+  let d := FastExt.d p EF
+  let perm := bitRevPerm logN
+  let exts := (List.range (2 ^ l)).map fun c ↦
+    (planFor plans logN bits (gen * (gen * powF (twoAdicGen (logN + l)) c)⁻¹)).map fun P ↦
+      columnTasks P ((Array.range d).map fun k _ ↦
+        permuted (v.c.toArray.getD k .empty) (2 ^ logN * CompPoly.CPolynomial.NTT.Transform.bitRevNat l c) perm
+          (2 ^ logN))
+  exts.map fun
+    | some ts => ⟨d, 2 ^ (logN + bits), 2 ^ logN,
+        (Array.range (2 ^ bits)).flatMap fun t ↦ ts.map fun b ↦ b.get.getD t .empty⟩
+    | none => ⟨d, 0, 1, #[]⟩
 
 /-- The matrix of rows of `k` elements, flattened, packed as one block of columns: column
 `d i + c` holds coordinate `c` of the `i`-th element of every row, gathered by parallel tasks. -/
@@ -1034,8 +1080,11 @@ def backend : Backend F EF 24 where
   logHeight c := Nat.log2 c.maxHeight
   quotient := quotient
   lookupQuotient := lookupQuotient
+  chunks := chunksWith []
   permutation := permutationLdeWith []
   V := ExtPlanes p EF
+  Q := ExtPlanes p EF
+  combine q r x := addScaled r q x
   toArray := ExtPlanes.toArray
   ofArray := ExtPlanes.ofArray
   size := (·.n)
@@ -1059,6 +1108,7 @@ def backendFor (kernels : List (AirKernel p)) (logBlowup : Nat) (shapes : List (
   { backend with
     ldeTrace := ldeWordsWith plans
     lde := ldeWith plans
+    chunks := chunksWith plans
     permutation := permutationLdeWith plans
     quotient := fun A pis db lc ext prep alpha ↦
       match tables.find? fun (n, c, _) ↦ n == db && c == lc with

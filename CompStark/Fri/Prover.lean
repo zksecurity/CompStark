@@ -64,6 +64,7 @@ structure Backend (F EF : Type) (width : Nat) where
   M : Type
   C : Type
   V : Type
+  Q : Type
   /-- The extension of a trace, as `lde` of its values. -/
   ldeTrace : Nat → Nat → F → Nat → Trace → M
   /-- A trace's values, row-major. -/
@@ -75,12 +76,17 @@ structure Backend (F EF : Type) (width : Nat) where
   openAt : C → Nat → BatchOpening F
   /-- `log₂` of the largest committed height. -/
   logHeight : C → Nat
-  quotient : Air F → List F → Nat → Nat → M → Option M → EF → Array EF
+  quotient : Air F → List F → Nat → Nat → M → Option M → EF → Q
   /-- The extension constraints of an AIR folded by `α` on the quotient domain, divided by
   `Z_H` (`lookupQuotientOfLde`), from the extensions of the trace, the preprocessed trace and the
   permutation trace in base coordinates, and the challenges and the terminal. -/
   lookupQuotient : Air F → List (Lookup.ExtExpr F) → List F → Nat → Nat → M → Option M → M →
-    List EF → EF → EF → Array EF
+    List EF → EF → EF → Q
+  /-- Quotient values `q · s + l` from quotient values `q` and `l`. -/
+  combine : Q → Q → EF → Q
+  /-- The extensions by `2 ^ bits` of the `2 ^ logChunks` chunks of quotient values on the
+  quotient domain of a trace of `2 ^ logN` rows (`chunksRef`). -/
+  chunks : Nat → Nat → Nat → Q → List M
   /-- The extension by `2 ^ bits` of an AIR's permutation trace for its lookups in base
   coordinates and its terminal (`permutationLdeOf`), from its trace of `2 ^ logN` rows, its public
   values and its challenges. -/
@@ -412,6 +418,23 @@ def openings (b : Nat) (rounds : List (List (Mat F × List EF))) :
   let ov := rounds.map (·.map fun x ↦ x.2.map (openedAt b x.1))
   (ov, fun alpha ↦ reduce alpha (openItems rounds ov))
 
+/-- The coordinates of every `stride`-th quotient value from `c`, `n` of them: chunk `c`'s values,
+as rows of `d` base elements, in parallel row ranges. -/
+def chunkValues (qs : @& Array EF) (stride c n : Nat) : Array F :=
+  parChunks n (if n < 4096 then 1 else 16) fun r0 len ↦ Id.run do
+    let mut out := Array.emptyWithCapacity (Challenge.d EF * len)
+    for r in [r0:r0 + len] do
+      out := out ++ (Ext.coeffs (qs.getD (r * stride + c) 0)).toArray
+    return out
+
+/-- The extensions by `2 ^ bits` of the chunks of the quotient values `qs` on the quotient domain
+of `2 ^ logChunks` cosets of the trace domain of size `2 ^ logN`: chunk `c` holds the values on
+coset `c`, extended onto `g · ⟨ω_N⟩`. -/
+def chunksRef (bits logN logChunks : Nat) (qs : Array EF) : List (Mat F) :=
+  (List.range (2 ^ logChunks)).map fun c ↦
+    ldeRef logN bits (gen * (gen * powF (twoAdicGen (logN + logChunks)) c)⁻¹) (Challenge.d EF)
+      (chunkValues qs (2 ^ logChunks) c (2 ^ logN))
+
 /-- The specification backend, on the transcript `t` and the Merkle hashes `hash` and
 `compress`. -/
 @[reducible]
@@ -422,6 +445,7 @@ def Backend.spec (EF : Type) [Challenge F EF] (t : Transcript F width) (hash : L
   M := Mat F
   C := Committed F
   V := Array EF
+  Q := Array EF
   ldeTrace := ldeRef
   traceValues := id
   lde := ldeRef
@@ -431,6 +455,8 @@ def Backend.spec (EF : Type) [Challenge F EF] (t : Transcript F width) (hash : L
   logHeight c := Nat.log2 c.maxHeight
   quotient := quotientOfLde
   lookupQuotient := lookupQuotientOfLde
+  combine qs ls s := Array.zipWith (fun q l ↦ q * s + l) qs ls
+  chunks := chunksRef
   permutation := permutationLdeOf
   toArray := id
   ofArray := id

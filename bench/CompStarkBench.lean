@@ -109,16 +109,12 @@ def phases {EF : Type} [Challenge KoalaBear.Fast.Field EF] (logN : Nat)
   IO.println s!"trace lde {t1 - t} ms"
   let tc := B.commit [lde]
   IO.println s!"trace commit {(← IO.monoMsNow) - t1} ms {((B.cap tc 0).getD 0 0)[0].val}"
-  let qlog := logN + 1
   let t3 ← IO.monoMsNow
   let alpha : EF := Challenge.ofCoeffs [5, 7, 11, 13]
-  let qs := B.quotient A [] logN 1 lde none alpha
+  let qs ← IO.lazyPure fun _ ↦ B.quotient A [] logN 1 lde none alpha
   let t4 ← IO.monoMsNow
-  IO.println s!"quotient {t4 - t3} ms {qs.size}"
-  let chunks := (List.range 2).map fun c ↦
-    let shift := gen * powF (twoAdicGen qlog) c
-    let vals := chunkValues qs 2 c (2 ^ logN)
-    B.lde logN 1 (gen * shift⁻¹) 4 vals
+  IO.println s!"quotient {t4 - t3} ms"
+  let chunks := B.chunks 1 logN 1 qs
   let t5 ← IO.monoMsNow
   IO.println s!"quotient chunks lde {t5 - t4} ms {chunks.length}"
   let qc := B.commit chunks
@@ -171,10 +167,9 @@ def phasesBatch : IO UInt32 := do
       fun c ↦ s!"{((B.cap c 0).getD 0 0)[0].val}"
     let alpha : _root_.KoalaBear.Fast.Ext4 := ⟨5, 7, 11, k⟩
     let qs ← timed "quotient" (fun _ ↦ (instances.zip exts).map fun (I, e) ↦
-      B.quotient I.air [] I.logN I.logQuotientChunks e none alpha) fun q ↦ s!"{(q.map
-          (·.size)).sum}"
+      B.quotient I.air [] I.logN I.logQuotientChunks e none alpha) fun _ ↦ ""
     let chunks ← timed "quotient chunks lde" (fun _ ↦ (instances.zip qs).map fun (I, q) ↦
-      chunksOf B P I.logN I.logQuotientChunks q) fun c ↦ s!"{(c.map (·.length)).sum}"
+      B.chunks P.logBlowup I.logN I.logQuotientChunks q) fun c ↦ s!"{(c.map (·.length)).sum}"
     let quotC ← timed "quotient commit" (fun _ ↦ B.commit chunks.flatten)
       fun c ↦ s!"{((B.cap c 0).getD 0 0)[0].val}"
     let zeta : _root_.KoalaBear.Fast.Ext4 := ⟨17, 19, 23, k⟩
@@ -197,19 +192,23 @@ def phasesBatch : IO UInt32 := do
         s!"{pf.oodWitness.val}"
   return 0
 
-/-- `2 ^ logN` rows of Plonky3's Keccak AIR's width of pseudorandom field elements (SplitMix64),
-in 16 row chunks of packed words. The prover's work does not depend on the trace's values, so the
-Keccak AIR's proof phases are timed on it; Clean's keccak-air showcase times whole proofs from the
-generated trace. -/
-def keccakShapedTrace (logN : Nat) : Array ByteArray :=
+/-- `2 ^ logN` rows of `w` pseudorandom field elements (SplitMix64), in 16 row chunks of packed
+words. -/
+def randomTrace (w logN : Nat) : Array ByteArray :=
   let p := _root_.KoalaBear.fieldSize.toUInt64
-  let words := 2 ^ logN / 16 * CompStark.Fixtures.Keccak.width
+  let words := 2 ^ logN / 16 * w
   let tasks := (Array.range 16).map fun k ↦ Task.spawn fun _ ↦ Id.run do
     let mut b := CompPoly.CPolynomial.NTTFast.Packed.Native.zeroWords words
     for i in [0:words] do
       b := write b i ((CompStark.Stark.splitMix (k * words + i).toUInt64).2 % p).toUInt32
     return b
   tasks.map Task.get
+
+/-- `2 ^ logN` rows of Plonky3's Keccak AIR's width of pseudorandom field elements. The prover's
+work does not depend on the trace's values, so the Keccak AIR's proof phases are timed on it;
+Clean's keccak-air showcase times whole proofs from the generated trace. -/
+def keccakShapedTrace (logN : Nat) : Array ByteArray :=
+  randomTrace CompStark.Fixtures.Keccak.width logN
 
 open CompStark CompStark.Stark CompStark.Fri in
 /-- `keccak-phases (quartic|quintic) LOG_N`: the wall time of each phase of a proof of Plonky3's
@@ -229,8 +228,8 @@ def keccakPhases {EF : Type} [Challenge KoalaBear.Fast.Field EF] (logN : Nat)
       fun c ↦ s!"{((B.cap c 0).getD 0 0)[0].val}"
     let alpha : EF := Challenge.ofCoeffs [5, 7, 11, (k : KoalaBear.Fast.Field)]
     let q ← timed "quotient" (fun _ ↦ B.quotient A [] logN logChunks lde none alpha)
-      fun q ↦ s!"{q.size}"
-    let qms ← timed "quotient chunks lde" (fun _ ↦ chunksOf B P logN logChunks q)
+      fun _ ↦ ""
+    let qms ← timed "quotient chunks lde" (fun _ ↦ B.chunks P.logBlowup logN logChunks q)
       fun c ↦ s!"{c.length}"
     let qc ← timed "quotient commit" (fun _ ↦ B.commit qms)
       fun c ↦ s!"{((B.cap c 0).getD 0 0)[0].val}"
@@ -285,11 +284,11 @@ def quotientPhase (air : String) (logN reps : Nat) : IO UInt32 := do
     let (t1, pm) ← timeNs fun _ ↦ IO.lazyPure fun _ ↦
       if I.lookups.isEmpty then none else some (B.permutation 1 A I.lookups logN trace [] chs)
     let (t2, lq) ← timeNs fun _ ↦ IO.lazyPure fun _ ↦ match pm with
-      | none => #[]
+      | none => B.ofArray #[]
       | some (perm, t) => B.lookupQuotient A (A.lookupConstraints logN) [] logN
           I.logQuotientChunks ext none perm chs t alpha
     IO.println s!"quotient {t0 / 1000000} ms permutation {t1 / 1000000} ms \
-      lookup quotient {t2 / 1000000} ms {((q.getD 5 0) + lq.getD 5 0).c0.val}"
+      lookup quotient {t2 / 1000000} ms {((B.toArray q).getD 5 0 + (B.toArray lq).getD 5 0).c0.val}"
     samples := (samples.zip #[t0, t1, t2]).map fun (s, t) ↦ s.push t
   for (l, s) in labels.zip samples do
     let m := (s.qsort (· < ·))[s.size / 2]!
@@ -410,7 +409,7 @@ def gatePhases {EF : Type} [Challenge KoalaBear.Fast.Field EF] (m : Marks)
   let qs ← m.phase "quotient" fun _ ↦ (items.zip exts).map fun ((A, logN, _), e) ↦
     B.quotient A [] logN (A.logQuotientChunks logN) e none alpha
   let chunks ← m.phase "quotient lde" fun _ ↦ (items.zip qs).map fun ((A, logN, _), q) ↦
-    chunksOf B P logN (A.logQuotientChunks logN) q
+    B.chunks P.logBlowup logN (A.logQuotientChunks logN) q
   let qc ← m.phase "quotient commit" fun _ ↦ B.commit chunks.flatten
   let rounds : List (OpenRound B) :=
     [(tc, (items.zip exts).map fun ((_, logN, _), e) ↦
@@ -523,7 +522,7 @@ def gate (workload : String) (dir : System.FilePath) : IO UInt32 := do
       I.logN I.logQuotientChunks ext none perm chs t ⟨5, 7, 11, 13⟩
     let pf ← m.phase "prove" fun _ ↦ Batch.proveBatchWith (EF := KoalaBear.Fast.Ext4) B wideParams
       instances words pis
-    IO.println s!"lookup quotient: {lq.size} values, prove: witness {pf.oodWitness.val}"
+    IO.println s!"lookup quotient: {lq.n} values, prove: witness {pf.oodWitness.val}"
     return 0
   | "merkle" =>
     let w := 64
@@ -685,16 +684,23 @@ def main (args : List String) : IO UInt32 := do
     phases logN.toNat! (CompStark.KoalaBear.backendFor [] 1 [(logN.toNat!, 1)])
   | ["phases", "quintic", logN] =>
     phases logN.toNat! (CompStark.KoalaBear.backendForQuintic [] 1 [(logN.toNat!, 1)])
-  | ["keccak-lde", logN] =>
-    -- The extension of `keccakShapedTrace` from packed words, five times.
+  | ["lde", logN, w, reps] =>
+    -- `lde LOG_N WIDTH REPS`: the median of `REPS` coset extensions by 2 of `randomTrace WIDTH
+    -- LOG_N`, column by column (`compstark-bench lde LOG_N WIDTH`).
     let logN := logN.toNat!
-    let w := CompStark.Fixtures.Keccak.width
-    let trace := keccakShapedTrace logN
+    let w := w.toNat!
+    let trace := randomTrace w logN
     let some P := CompStark.Stark.Fast.plan? (p := _root_.KoalaBear.fieldSize) logN 1
       CompStark.gen | return 1
-    for k in [0:5] do
-      let _ ← timed "coset lde columns" (fun _ ↦ CompStark.Stark.Fast.ldeColumns P w
-        (trace.modify 0 (write · 0 k.toUInt32))) (s!"{·.size} columns")
+    let mut samples := #[]
+    for k in [0:reps.toNat!] do
+      let input := trace.modify 0 (write · 0 k.toUInt32)
+      let (ns, cols) ← timeNs fun _ ↦ IO.lazyPure fun _ ↦
+        CompStark.Stark.Fast.ldeColumns P w input
+      if cols.size == 12345 then IO.println ""
+      samples := samples.push ns
+    let m := (samples.qsort (· < ·))[samples.size / 2]!
+    IO.println s!"lean lde 2^{logN} x {w} ms median {m / 1000000}.{m / 100000 % 10}"
     return 0
   | ["keccak-phases", "quartic", logN] =>
     keccakPhases logN.toNat! (CompStark.KoalaBear.backendFor

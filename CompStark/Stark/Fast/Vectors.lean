@@ -140,6 +140,14 @@ theorem coord_fin (x : EF) (k : Fin (FastExt.d p EF)) : coord k x = FastExt.coor
 theorem RV_congr {v : ExtPlanes p EF} {a b : Array EF} (h : ExtPlanes.Rel v a) (e : a = b) :
     ExtPlanes.Rel v b := e ▸ h
 
+/-- Values in the extension's bit-reversed order: entry `s` is entry `bitrev s` of `a`. -/
+def bitRevValues (a : Array EF) : Array EF :=
+  Array.ofFn (n := a.size) fun s ↦
+    a.getD (CompPoly.CPolynomial.NTT.Transform.bitRevNat (Nat.log2 a.size) s.val) 0
+
+/-- Quotient values as planes in the extension's bit-reversed order. -/
+def QRel (q : ExtPlanes p EF) (a : Array EF) : Prop := ExtPlanes.Rel q (bitRevValues a)
+
 /-- A slice of words is the encoded range. -/
 theorem slice_encode (X : Array F) (i B : Nat) :
     slice (encode X) i B = encode (X.extract i (i + B)) := by
@@ -349,6 +357,32 @@ theorem addScaled_rel [Mont32BaseField p] [Mont32.AlgebraId EF]
   rw [size_tab] at h1
   rw [getElem_tab, Array.getElem_zipWith, ← getD_lt a i h1, ← getD_lt b i (by omega)]
   exact congrArg _ (FastExt.mul_comm _ _)
+
+/-- A bit-reversed index is an index. -/
+theorem bitRevNat_log2_lt {n s : Nat} (hs : s < n) :
+    CompPoly.CPolynomial.NTT.Transform.bitRevNat (Nat.log2 n) s < n :=
+  Nat.lt_of_lt_of_le (CompPoly.CPolynomial.NTT.Transform.bitRevNat_lt _ _)
+    (Nat.log2_self_le (by omega))
+
+/-- `q · x + l` on quotient values in bit-reversed order. -/
+theorem combine_rel [Mont32BaseField p] [Mont32.AlgebraId EF]
+    (hA : 4 * (FastExt.d p EF * 2 ^ twoAdicity F) < USize.size)
+    {q r : ExtPlanes p EF} {a b : Array EF} (x : EF) (hq : QRel q a) (hr : QRel r b)
+    (hab : a.size = b.size) (ha : a.size ≤ 2 ^ twoAdicity F) :
+    QRel (addScaled r q x) (Array.zipWith (fun q l ↦ q * x + l) a b) := by
+  have h := addScaled_rel hA x hr hq (by simp only [bitRevValues, Array.size_ofFn, hab])
+    (by simp only [bitRevValues, Array.size_ofFn, ← hab]; exact ha)
+  refine RV_congr h (Array.ext (by simp only [bitRevValues, Array.size_zipWith, Array.size_ofFn,
+    hab, Nat.min_self]) fun s h1 _ ↦ ?_)
+  simp only [bitRevValues, Array.size_zipWith, Array.size_ofFn, hab, Nat.min_self] at h1
+  have hs := bitRevNat_log2_lt h1
+  simp only [bitRevValues, Array.getElem_zipWith, Array.getElem_ofFn, Array.size_zipWith, hab,
+    Nat.min_self]
+  rw [getD_lt _ _ hs, getD_lt _ _ (by rw [hab]; exact hs), getD_lt _ _ (by
+    rw [Array.size_zipWith, hab, Nat.min_self]; exact hs), Array.getElem_zipWith]
+  apply FastExt.toSpec_injective
+  simp only [← Mont32.toSpec_eq, Challenge.toSpec_add, Challenge.toSpec_mul]
+  ring
 
 /-- The coordinates of tabulated elements, flattened. -/
 theorem flatMap_coeffs [Mont32BaseField p] [Mont32.AlgebraId EF] (n : Nat) (g : Nat → EF) :

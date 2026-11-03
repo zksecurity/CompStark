@@ -80,6 +80,7 @@ public import CompStark.Stark.Fast.Rel
 public import CompStark.Stark.Fast.Lde
 public import CompStark.Stark.Fast.QuotientSpec
 public import CompStark.Stark.Fast.OpeningsSpec
+public import CompStark.Stark.Fast.Chunks
 public import CompStark.Stark.Fast.Commit
 public import CompStark.Stark.Fast.ProgWords
 public import CompStark.Stark.Fast.ProgGroup

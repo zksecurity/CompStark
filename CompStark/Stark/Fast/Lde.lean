@@ -118,59 +118,31 @@ theorem flatMap_ranges {α : Type} (f : Nat → α) (w K : Nat) (hK : 0 < K) :
   · omega
   · omega
 
-open NTTFast.Packed.Native (rowChunks transposeRows gatherColumn columnCoefficients cosetBlock)
-  in
-/-- **The column-wise extension is `ldeSpec`**, in blocks of the input's height: column `j` of
-block `t` holds rows `t · 2 ^ logH, …` of column `j`. -/
-theorem ldeColumns_eq (P : LdePlan p) (w : Nat) (M : Array F) (k : Nat) (hk : k ≤ P.logH)
-    (hM : M.size = 2 ^ P.logH * w) (hu : 4 * (2 ^ P.domain.logN * w) < USize.size) :
-    ldeColumns P w (rowChunks M w P.logH k) = (Array.range (2 ^ P.bits * w)).map fun i ↦
-      encode (Array.ofFn (n := 2 ^ P.logH) fun kk ↦
-        (ldeSpec P w M).getD ((i / w * 2 ^ P.logH + kk.val) * w + i % w) 0) := by
+/-- Block `t` of column `j` of the extension of `M`, `w` columns wide: the DIF transform of the
+column's coefficients scaled by coset table `bitrev t`. -/
+def colBlock (P : LdePlan p) (w : Nat) (M : Array F) (t j : Nat) : Array F :=
+  NTTFast.Packed.difSpec P.low (Array.ofFn (n := 2 ^ P.logH) fun l ↦
+    (cosetTable P.domain P.bits P.shift (NTT.Transform.bitRevNat P.bits t)).getD l.val 0 *
+      (NTT.Forward.forwardSpec P.low.inverse (column M w (2 ^ P.logH) j).toArray).getD l.val 0)
+
+open NTTFast.Packed.Native (columnCoefficients cosetBlock) in
+/-- The extension's kernels on a packed column give its blocks. -/
+theorem cosetBlock_column (P : LdePlan p) (w : Nat) (M : Array F) (j t : Nat) :
+    cosetBlock P (columnCoefficients P (encode (column M w (2 ^ P.logH) j).toArray)) t =
+      encode (colBlock P w M t j) := by
+  rw [NTTFast.Packed.Native.columnCoefficients_encode P _ (by simp only [Vector.size_toArray]),
+    NTTFast.Packed.Native.cosetBlock_encode P _ (by
+      rw [NTT.Forward.forwardSpec, Array.size_ofFn]; rfl)]
+  rfl
+
+/-- The blocks of the columns, block-major, are the blocks of `ldeSpec`'s columns. -/
+theorem blocks_ldeSpec (P : LdePlan p) (w : Nat) (M : Array F) :
+    (Array.range (2 ^ P.bits * w)).map (fun i ↦ encode (colBlock P w M (i / w) (i % w))) =
+      (Array.range (2 ^ P.bits * w)).map fun i ↦
+        encode (Array.ofFn (n := 2 ^ P.logH) fun kk ↦
+          (ldeSpec P w M).getD ((i / w * 2 ^ P.logH + kk.val) * w + i % w) 0) := by
   have hlog : P.domain.logN = P.bits + P.logH := by
     have := P.bits_le; simp only [LdePlan.logH]; omega
-  have hHN : 2 ^ P.logH * w ≤ 2 ^ P.domain.logN * w :=
-    Nat.mul_le_mul_right w (Nat.pow_le_pow_right (by decide) (Nat.sub_le _ _))
-  have hMs : 4 * M.size < USize.size := by omega
-  obtain ⟨hq0, hR, hq⟩ := lineRanges_spec P.logH k hk
-  set q := lineRanges P.logH (2 ^ k) with hqd
-  set R := 2 ^ k * q with hRd
-  set rows := 2 ^ P.logH / R with hrows
-  have hpieces (c0 n : Nat) (hn : c0 + n ≤ w) : (Array.range R).map (fun j ↦ transposeRows
-      ((rowChunks M w P.logH k).getD (j / q) .empty) w c0 n (j % q * rows) rows) =
-      (Array.range R).map fun j ↦ transposeRows (encode M) w c0 n (j * rows) rows := by
-    apply Array.ext (by simp only [Array.size_map])
-    intro j h1 _
-    simp only [Array.size_map, Array.size_range] at h1
-    simp only [Array.getElem_map, Array.getElem_range]
-    exact NTTFast.Packed.Native.transposeRows_rowChunks M w c0 n P.logH k q rows hn hM hk hq0 hq
-      hMs j h1
-  -- Block `t` of column `j`, as field coordinates.
-  let B (t j : Nat) : Array F := NTTFast.Packed.difSpec P.low (Array.ofFn (n := 2 ^ P.logH)
-    fun l ↦ (cosetTable P.domain P.bits P.shift (NTT.Transform.bitRevNat P.bits t)).getD l.val 0 *
-      (NTT.Forward.forwardSpec P.low.inverse (column M w (2 ^ P.logH) j).toArray).getD l.val 0)
-  have hcol (c0 n j : Nat) (hn : c0 + n ≤ w) (hj : j < n) (t : Nat) : cosetBlock P
-      (columnCoefficients P (gatherColumn ((Array.range R).map fun k ↦
-        transposeRows (encode M) w c0 n (k * rows) rows) rows j)) t = encode (B t (c0 + j)) := by
-    rw [NTTFast.Packed.Native.gatherColumn_eq_column M w c0 n _ R rows j hn hj hR hM hMs,
-      NTTFast.Packed.Native.columnCoefficients_encode P _ (by simp only [Vector.size_toArray]),
-      NTTFast.Packed.Native.cosetBlock_encode P _ (by
-        rw [NTT.Forward.forwardSpec, Array.size_ofFn]; rfl)]
-  unfold ldeColumns
-  simp only [Array.map_map, Function.comp_def, CompPoly.Tasks.get_bind,
-    CompPoly.Tasks.get_spawn, CompPoly.Tasks.get_join, CompPoly.Tasks.map_get_spawnAll,
-    rowChunks, Array.size_map, Array.size_range, Array.map_flatMap]
-  rw [flatMap_range_congr _ _ (fun t ↦ (Array.range w).map fun c ↦ encode (B t c)) fun t ht ↦ by
-    rw [← flatMap_ranges (fun c ↦ encode (B t c)) w rangeColumns (by decide)]
-    refine flatMap_range_congr _ _ _ fun a ha ↦ ?_
-    have hn : rangeColumns * a + min rangeColumns (w - rangeColumns * a) ≤ w := by
-      simp only [rangeColumns] at ha ⊢
-      omega
-    apply Array.ext (by simp only [Array.size_map])
-    intro x hx _
-    simp only [Array.size_map, Array.size_range] at hx
-    simp only [Array.getElem_map, Array.getElem_range]
-    rw [← rowChunks, hpieces _ _ hn, getD_map_range _ _ _ ht, hcol _ _ _ hn hx], flatMap_range_map]
   apply Array.ext (by simp only [Array.size_map])
   intro c h1 _
   simp only [Array.size_map, Array.size_range] at h1
@@ -180,11 +152,11 @@ theorem ldeColumns_eq (P : LdePlan p) (w : Nat) (M : Array F) (k : Nat) (hk : k 
   have h1' : c < 2 ^ P.bits * w := h1
   have hct0 : c / w < 2 ^ P.bits := (Nat.div_lt_iff_lt_mul hw0).mpr h1'
   congr 1
-  apply Array.ext (by simp only [B, NTTFast.Packed.size_difSpec, Array.size_ofFn]; rfl)
+  apply Array.ext (by simp only [colBlock, NTTFast.Packed.size_difSpec, Array.size_ofFn]; rfl)
   intro kk k1 k2
   simp only [Array.size_ofFn] at k2
   rw [Array.getElem_ofFn, Array.getElem_eq_getD 0]
-  simp only [B]
+  simp only [colBlock]
   rw [getD_block P _ _ _ k2]
   have hcw : c % w < w := hcw0
   have hct : c / w < 2 ^ P.bits := hct0
@@ -203,6 +175,55 @@ theorem ldeColumns_eq (P : LdePlan p) (w : Nat) (M : Array F) (k : Nat) (hk : k 
     rw [Nat.add_comm, Nat.add_mul_div_right _ _ hw0, Nat.div_eq_of_lt hcw, Nat.zero_add,
       Nat.mul_comm]
   simp only [e1, e2]
+
+open NTTFast.Packed.Native (rowChunks transposeRows gatherColumn columnCoefficients cosetBlock)
+  in
+/-- **The column-wise extension is `ldeSpec`**, in blocks of the input's height: column `j` of
+block `t` holds rows `t · 2 ^ logH, …` of column `j`. -/
+theorem ldeColumns_eq (P : LdePlan p) (w : Nat) (M : Array F) (k : Nat) (hk : k ≤ P.logH)
+    (hM : M.size = 2 ^ P.logH * w) (hu : 4 * (2 ^ P.domain.logN * w) < USize.size) :
+    ldeColumns P w (rowChunks M w P.logH k) = (Array.range (2 ^ P.bits * w)).map fun i ↦
+      encode (Array.ofFn (n := 2 ^ P.logH) fun kk ↦
+        (ldeSpec P w M).getD ((i / w * 2 ^ P.logH + kk.val) * w + i % w) 0) := by
+  have hHN : 2 ^ P.logH * w ≤ 2 ^ P.domain.logN * w :=
+    Nat.mul_le_mul_right w (Nat.pow_le_pow_right (by decide) (Nat.sub_le _ _))
+  have hMs : 4 * M.size < USize.size := by omega
+  obtain ⟨hq0, hR, hq⟩ := lineRanges_spec P.logH k hk
+  set q := lineRanges P.logH (2 ^ k) with hqd
+  set R := 2 ^ k * q with hRd
+  set rows := 2 ^ P.logH / R with hrows
+  have hpieces (c0 n : Nat) (hn : c0 + n ≤ w) : (Array.range R).map (fun j ↦ transposeRows
+      ((rowChunks M w P.logH k).getD (j / q) .empty) w c0 n (j % q * rows) rows) =
+      (Array.range R).map fun j ↦ transposeRows (encode M) w c0 n (j * rows) rows := by
+    apply Array.ext (by simp only [Array.size_map])
+    intro j h1 _
+    simp only [Array.size_map, Array.size_range] at h1
+    simp only [Array.getElem_map, Array.getElem_range]
+    exact NTTFast.Packed.Native.transposeRows_rowChunks M w c0 n P.logH k q rows hn hM hk hq0 hq
+      hMs j h1
+  have hcol (c0 n j : Nat) (hn : c0 + n ≤ w) (hj : j < n) (t : Nat) : cosetBlock P
+      (columnCoefficients P (gatherColumn ((Array.range R).map fun k ↦
+        transposeRows (encode M) w c0 n (k * rows) rows) rows j)) t =
+          encode (colBlock P w M t (c0 + j)) := by
+    rw [NTTFast.Packed.Native.gatherColumn_eq_column M w c0 n _ R rows j hn hj hR hM hMs,
+      cosetBlock_column]
+  unfold ldeColumns
+  simp only [Array.map_map, Function.comp_def, CompPoly.Tasks.get_bind,
+    CompPoly.Tasks.get_spawn, CompPoly.Tasks.get_join, CompPoly.Tasks.map_get_spawnAll,
+    rowChunks, Array.size_map, Array.size_range, Array.map_flatMap]
+  rw [flatMap_range_congr _ _ (fun t ↦ (Array.range w).map fun c ↦ encode (colBlock P w M t c))
+    fun t ht ↦ by
+    rw [← flatMap_ranges (fun c ↦ encode (colBlock P w M t c)) w rangeColumns (by decide)]
+    refine flatMap_range_congr _ _ _ fun a ha ↦ ?_
+    have hn : rangeColumns * a + min rangeColumns (w - rangeColumns * a) ≤ w := by
+      simp only [rangeColumns] at ha ⊢
+      omega
+    apply Array.ext (by simp only [Array.size_map])
+    intro x hx _
+    simp only [Array.size_map, Array.size_range] at hx
+    simp only [Array.getElem_map, Array.getElem_range]
+    rw [← rowChunks, hpieces _ _ hn, getD_map_range _ _ _ ht, hcol _ _ _ hn hx], flatMap_range_map]
+  exact blocks_ldeSpec P w M
 
 variable [Mont32BaseField p]
 
@@ -319,13 +340,12 @@ theorem ldeSpec_eq (P : LdePlan p) (logH bits : Nat) (shift : F) (w : Nat) (m : 
       simp only [Array.getElem_map, List.getElem_toArray, List.getElem_map, List.getElem_range,
         Array.getElem_range]
 
-/-- The plan `ldeWith` uses is `plan?`'s. -/
-theorem ldeWith_plan (plans : List (Nat × Nat × F × LdePlan p))
+/-- A plan `planFor` gives is `plan?`'s. -/
+theorem planFor_some {plans : List (Nat × Nat × F × LdePlan p)}
     (hplans : ∀ e ∈ plans, plan? e.1 e.2.1 e.2.2.1 = some e.2.2.2)
-    (logH bits : Nat) (shift : F) (P : LdePlan p)
-    (h : ((plans.find? fun (h, b, s, _) ↦ h == logH && b == bits && s == shift).map (·.2.2.2)
-      <|> plan? logH bits shift) = some P) :
+    {logH bits : Nat} {shift : F} {P : LdePlan p} (h : planFor plans logH bits shift = some P) :
     plan? logH bits shift = some P := by
+  unfold planFor at h
   cases hf : plans.find? fun (h, b, s, _) ↦ h == logH && b == bits && s == shift with
   | none =>
     rw [hf] at h
@@ -340,6 +360,53 @@ theorem ldeWith_plan (plans : List (Nat × Nat × F × LdePlan p))
     obtain ⟨⟨rfl, rfl⟩, rfl⟩ := hm
     exact he
 
+/-- Within the two-adic subgroups `planFor` gives a plan. -/
+theorem planFor_isSome (plans : List (Nat × Nat × F × LdePlan p)) (logH bits : Nat) (shift : F)
+    (hb : logH + bits ≤ twoAdicity F) : ∃ P, planFor plans logH bits shift = some P := by
+  unfold planFor
+  cases (plans.find? fun (h, b, s, _) ↦ h == logH && b == bits && s == shift).map (·.2.2.2) with
+  | some P => exact ⟨P, rfl⟩
+  | none =>
+    unfold plan?
+    rw [dite_eq_left_of_eq_true (eq_true hb)]
+    exact ⟨_, rfl⟩
+
+/-- A packed matrix of `ldeSpec`'s column blocks, by a plan `plan?` gave, represents `ldeRef`. -/
+theorem rm_ldeRef {logH bits : Nat} {shift : F} {P : LdePlan p}
+    (hP : plan? logH bits shift = some P) (w : Nat) (m : Array F) (cols : Array ByteArray)
+    (hc : cols = (Array.range (2 ^ P.bits * w)).map fun i ↦
+      encode (Array.ofFn (n := 2 ^ P.logH) fun kk ↦
+        (ldeSpec P w m).getD ((i / w * 2 ^ P.logH + kk.val) * w + i % w) 0)) :
+    RM ⟨w, 2 ^ (logH + bits), 2 ^ logH, cols⟩ (ldeRef logH bits shift w m) := by
+  obtain ⟨h24, hlog, hbits, hs, hω⟩ := plan?_some hP
+  have hlogH : P.logH = logH := by
+    change P.domain.logN - P.bits = logH
+    omega
+  have hv := ldeSpec_eq P logH bits shift w m hlog hbits hs hω h24
+  have hsz : (ldeRef logH bits shift w m).values.size = w * 2 ^ (logH + bits) := by
+    rw [← hv, ldeSpec, Array.size_ofFn, hlog, Nat.mul_comm]
+  have hw : (ldeRef logH bits shift w m).width = w := rfl
+  have hh : (ldeRef logH bits shift w m).height = 2 ^ (logH + bits) := rfl
+  have h29 : logH + bits ≤ 29 := le_trans h24 (Mont32BaseField.twoAdicity_le_29 p)
+  refine ⟨rfl, rfl, by rw [hw, hh, hsz], Nat.two_pow_pos _, ?_, ?_, ?_⟩
+  · show 4 * 2 ^ logH < USize.size
+    have := Nat.pow_le_pow_right (show 0 < 2 by decide) (show logH ≤ 29 by omega)
+    have := USize.le_size
+    omega
+  · rw [hh, Nat.pow_add, Nat.mul_mod_right]
+  · change cols = _
+    rw [hc]
+    rw [hlogH] at ⊢
+    have hsize : 2 ^ P.bits * w = ((colBlocks (ldeRef logH bits shift w m) (2 ^ logH)).map
+        encode).size := by
+      rw [Array.size_map, size_colBlocks, hh, hw, Nat.pow_add, Nat.mul_comm (2 ^ logH),
+        Nat.mul_div_cancel _ (Nat.two_pow_pos logH), hbits]
+    apply Array.ext (by rw [Array.size_map, Array.size_range]; exact hsize)
+    intro i h1 h2
+    simp only [Array.size_map, Array.size_range] at h1
+    rw [Array.getElem_map, Array.getElem_range, Array.getElem_map]
+    simp only [colBlocks, Array.getElem_ofFn, hw, hv]
+
 /-- **The fast low-degree extension of packed words is `ldeRef`**, with plans `plan?` built, on a
 matrix of `2 ^ logH` rows in `2 ^ k` chunks of rows within the two-adic subgroups whose extension
 is addressable. -/
@@ -350,53 +417,21 @@ theorem ldeWordsWith_rel (plans : List (Nat × Nat × F × LdePlan p))
     (ha : Addressable (2 ^ (logH + bits) * w)) :
     RM (ldeWordsWith plans logH bits shift w (NTTFast.Packed.Native.rowChunks m w logH k))
       (ldeRef logH bits shift w m) := by
+  obtain ⟨P, hP⟩ := planFor_isSome plans logH bits shift hb
+  have hP' := planFor_some hplans hP
+  obtain ⟨-, hlog, hbits, -, -⟩ := plan?_some hP'
+  have hlogH : P.logH = logH := by
+    change P.domain.logN - P.bits = logH
+    omega
+  have hu : 4 * (2 ^ P.domain.logN * w) < USize.size := by
+    rw [hlog]
+    unfold Addressable at ha
+    omega
   unfold ldeWordsWith
-  dsimp only
-  split
-  · rename_i P hfound
-    obtain ⟨h24, hlog, hbits, hs, hω⟩ :=
-      plan?_some (ldeWith_plan plans hplans logH bits shift P hfound)
-    have hlogH : P.logH = logH := by
-      change P.domain.logN - P.bits = logH
-      omega
-    have hM : m.size = 2 ^ P.logH * w := by rw [hlogH]; exact hm
-    have hu : 4 * (2 ^ P.domain.logN * w) < USize.size := by
-      rw [hlog]
-      unfold Addressable at ha
-      omega
-    have hv := ldeSpec_eq P logH bits shift w m hlog hbits hs hω h24
-    have hsz : (ldeRef logH bits shift w m).values.size = w * 2 ^ (logH + bits) := by
-      rw [← hv, ldeSpec, Array.size_ofFn, hlog, Nat.mul_comm]
-    have hw : (ldeRef logH bits shift w m).width = w := rfl
-    have hh : (ldeRef logH bits shift w m).height = 2 ^ (logH + bits) := rfl
-    have h29 : logH + bits ≤ 29 := le_trans h24 (Mont32BaseField.twoAdicity_le_29 p)
-    refine ⟨rfl, rfl, by rw [hw, hh, hsz], Nat.two_pow_pos _, ?_, ?_, ?_⟩
-    · show 4 * 2 ^ logH < USize.size
-      have := Nat.pow_le_pow_right (show 0 < 2 by decide) (show logH ≤ 29 by omega)
-      have := USize.le_size
-      omega
-    · rw [hh, Nat.pow_add, Nat.mul_mod_right]
-    · change ldeColumns P w (NTTFast.Packed.Native.rowChunks m w logH k) = _
-      have he := ldeColumns_eq P w m k (by omega) hM hu
-      rw [hlogH] at he
-      rw [he]
-      have hsize : 2 ^ P.bits * w = ((colBlocks (ldeRef logH bits shift w m) (2 ^ logH)).map
-          encode).size := by
-        rw [Array.size_map, size_colBlocks, hh, hw, Nat.pow_add, Nat.mul_comm (2 ^ logH),
-          Nat.mul_div_cancel _ (Nat.two_pow_pos logH), hbits]
-      apply Array.ext (by rw [Array.size_map, Array.size_range]; exact hsize)
-      intro i h1 h2
-      simp only [Array.size_map, Array.size_range] at h1
-      rw [Array.getElem_map, Array.getElem_range, Array.getElem_map]
-      simp only [colBlocks, Array.getElem_ofFn, hw, hv]
-  · rename_i hnone
-    have hp : plan? logH bits shift ≠ none := by
-      rw [plan?, dite_eq_left_of_eq_true (eq_true hb)]
-      exact Option.some_ne_none _
-    cases hf : (plans.find? fun (h, b, s, _) ↦ h == logH && b == bits && s == shift).map
-      (·.2.2.2) with
-    | none => rw [hf] at hnone; exact absurd hnone hp
-    | some _ => rw [hf] at hnone; exact absurd hnone (Option.some_ne_none _)
+  rw [hP]
+  refine rm_ldeRef hP' w m _ ?_
+  rw [← hlogH]
+  exact ldeColumns_eq P w m k (by omega) (by rw [hlogH]; exact hm) hu
 
 /-- `ldeWordsWith_rel` on one chunk. -/
 theorem ldeWordsWith_one_rel (plans : List (Nat × Nat × F × LdePlan p))
