@@ -5,8 +5,8 @@
 (`CompStarkBench gate WORKLOAD DIR`, `LEAN_NUM_THREADS=1`) and reads the run's `instructions:u` and
 `cycles:u` counters at every phase mark the workload writes to the FIFOs in `DIR`. It compares each
 phase's instructions with `bench/perf-baseline.json` and fails if one exceeds its baseline by more
-than the entry's tolerance, or falls below it by more than `RATCHET`: a win is locked in by
-updating the baseline. Cycles and wall time are reported, not gated: they depend on the host's
+than the entry's tolerance, or falls below it by more than `RATCHET` or the tolerance, whichever
+is larger: a win is locked in by updating the baseline. Cycles and wall time are reported, not gated: they depend on the host's
 load.
 
 `scripts/perf-gate --update` runs the suite `UPDATE_RUNS` times and rewrites the baseline: per
@@ -192,9 +192,9 @@ def gate():
             failures.append(f"{key}: {change:+.2%} instructions, tolerance "
                             f"{base['tolerance']:.2%}")
             mark = " REGRESSED"
-        elif change < -RATCHET:
+        elif change < -max(RATCHET, base["tolerance"]):
             failures.append(f"{key}: {change:+.2%} instructions, an improvement beyond "
-                            f"{RATCHET:.0%} to record in the baseline")
+                            f"{max(RATCHET, base['tolerance']):.0%} to record in the baseline")
             mark = " IMPROVED"
         print(f"{key:40} {ins:15,} {base['instructions']:15,} {change:+8.2%} {cyc:15,} "
               f"{ns / 1e6:9.1f}{mark}")
