@@ -15,7 +15,10 @@ public import CompStark.Poseidon2.Arithmetic
 public import CompStark.Poseidon2.ArithmeticLemmas
 public import CompStark.Poseidon2.Unrolled
 public import CompStark.Poseidon2.Packed
-public import CompStark.Poseidon2.Packed24
+public import CompStark.Poseidon2.PackedBabyBear
+public import CompStark.Poseidon2.PackedInstances
+public import CompStark.Poseidon2.PackedKernels
+public import CompStark.Poseidon2.PackedKoalaBear
 public import CompStark.Poseidon2.PackedLanes
 public import CompStark.Poseidon2.PackedCorrectness
 public import CompStark.Poseidon2.PackedCorrectness24

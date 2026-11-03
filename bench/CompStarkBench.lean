@@ -1,5 +1,5 @@
 import CompStark.Poseidon2.KoalaBear
-import CompStark.Poseidon2.Packed
+import CompStark.Poseidon2.PackedKoalaBear
 import CompStark.Merkle.Packed
 import CompStark.Merkle.Tree
 import CompStark.Stark.Prover
@@ -575,7 +575,7 @@ def main (args : List String) : IO UInt32 := do
     let run (b : ByteArray) : ByteArray := Id.run do
       let mut b := b
       for g in [0:groups] do
-        b := Packed.permute16 K b (128 * g).toUSize
+        b := Packed.permute16 _root_.KoalaBear.fieldSize K b (128 * g).toUSize
       return b
     -- Check every lane of the first group against the specification.
     let out := run buf
@@ -674,7 +674,7 @@ def main (args : List String) : IO UInt32 := do
       let (ns, r) ← timeNs fun _ ↦ do
         let mut b := input
         for g in [0:groups] do
-          b := Packed.permute24 K b (192 * g).toUSize
+          b := Packed.permute24 _root_.KoalaBear.fieldSize K b (192 * g).toUSize
         return (CompPoly.CPolynomial.NTTFast.Packed.Native.read b 0).toUInt64
       samples := samples.push (ns * 10 / (8 * groups))
       if r == 12345 then IO.println ""

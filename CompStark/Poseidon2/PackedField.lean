@@ -13,8 +13,7 @@ A group of eight states of width `t` holds coordinate `j` of state `l` at word `
 (`Group.lane`). `PackedPoseidon2 p` gives permutations of whole groups of packed words for
 Plonky3's Poseidon2 instances over `FastField p` (`Poseidon2Field`), which permute every state by
 the specification (`permute16_encode`, `permute24_encode`). They are the fast prover's leaf hashes,
-compressions and grinding. A field with vectorized kernels gives those; any field has them state
-by state on its `Poseidon2Field` implementations (`PackedPoseidon2.ofLanes`).
+compressions and grinding; a field's packed kernels give them (`Packed.Instances.packed`).
 -/
 
 @[expose] public section
@@ -65,16 +64,5 @@ class PackedPoseidon2 where
   permute24_encode (W : Array (FastField p)) : W.size = 8 * 24 →
     permute24 (encode W) =
       encode (Group.map 24 (permute (Poseidon2Field.params24 (F := FastField p))) W)
-
-/-- The packed permutations state by state, on the field's implementations. -/
-@[instance_reducible] def PackedPoseidon2.ofLanes : PackedPoseidon2 p where
-  permute16 b := encode (Group.map 16 (Poseidon2Field.perm16 (F := FastField p)).perm (decode b))
-  permute24 b := encode (Group.map 24 (Poseidon2Field.perm24 (F := FastField p)).perm (decode b))
-  permute16_encode W _ := by
-    rw [CompPoly.PackedRepr.decode_encode, funext
-        (Poseidon2Field.perm16 (F := FastField p)).perm_eq]
-  permute24_encode W _ := by
-    rw [CompPoly.PackedRepr.decode_encode, funext
-        (Poseidon2Field.perm24 (F := FastField p)).perm_eq]
 
 end CompStark.Poseidon2

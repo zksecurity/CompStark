@@ -4,7 +4,7 @@ Released under Apache 2.0 license as described in the file LICENSE.
 -/
 module
 
-public import CompStark.Poseidon2.Packed24
+public import CompStark.Poseidon2.Packed
 public import CompStark.Poseidon2.PackedField
 public import CompPoly.Data.Tasks
 import CompStark.Poseidon2.Unrolled
