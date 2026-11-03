@@ -111,13 +111,14 @@ def permutations (instances : List (Instance F)) (traces : List (Array F)) (pis 
     if I.lookups.isEmpty then none else some (permutationTrace I.air I.lookups I.logN t p c)
 
 /-- The extension of the permutation trace in base coordinates and the terminal of every instance
-with lookups, by the backend `B` (`Backend.permutation`). -/
+with lookups, by the backend `B` (`Backend.permutation`), from the backend's traces: only an
+instance with lookups reads its trace's values. -/
 def permutationsWith (B : Backend F EF width) (P : Params) (instances : List (Instance F))
-    (traces : List (Array F)) (pis : List (List F)) (chs : List (List EF)) :
+    (traces : List B.Trace) (pis : List (List F)) (chs : List (List EF)) :
     List (Option (B.M × EF)) :=
   (instances.zip (traces.zip (pis.zip chs))).map fun (I, t, p, c) ↦
     if I.lookups.isEmpty then none
-    else some (B.permutation P.logBlowup I.air I.lookups I.logN t p c)
+    else some (B.permutation P.logBlowup I.air I.lookups I.logN (B.traceValues t) p c)
 
 /-- The extensions of the permutation traces `perms`, and their commitment by the backend `B` if
 the batch has lookups. -/
@@ -150,7 +151,7 @@ def batchCommitAndSample (B : Backend F EF width) (P : Params) (instances : List
   pObserveList pis.flatten
   pObserveList ((prep.2.map fun c ↦ capElems (B.cap c P.capHeight)).getD [])
   let (lw, chs) ← lookupChallenges P instances
-  let perms := permutationsWith B P instances (traces.map B.traceValues) pis chs
+  let perms := permutationsWith B P instances traces pis chs
   let (permExts, permC) := commitPermutations B instances perms
   pObserveList ((permC.map fun c ↦ capElems (B.cap c P.capHeight)).getD [])
   let terminals := perms.map (·.map (·.2))

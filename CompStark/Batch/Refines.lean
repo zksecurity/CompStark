@@ -186,7 +186,7 @@ theorem forall_mem_zip_map_zip {α β γ : Type} (P : α → γ → Prop) (g : �
 
 theorem length_permutationsWith {EF : Type} [Challenge F EF] {width : Nat}
     (B : Backend F EF width) (P : Params) (instances : List (Instance F))
-    (traces : List (Array F)) (pis : List (List F)) (chs : List (List EF))
+    (traces : List B.Trace) (pis : List (List F)) (chs : List (List EF))
     (ht : traces.length = instances.length) (hp : pis.length = instances.length)
     (hc : chs.length = instances.length) :
     (permutationsWith B P instances traces pis chs).length = instances.length := by
@@ -421,19 +421,46 @@ theorem batchQuotientChunks_refines (h : Refines B) {P : Params} {I : Instance F
         exact colsBelow_logUpConstraints _ hlk c hc)]
     exact chunksOf_refines h P _ _ hlog hm4
 
+/-- The backend's traces `ts` represent the instances' traces `traces`, each of its instance's
+shape. -/
+abbrev TracesRel (h : Refines B) (instances : List (Instance F)) (ts : List B.Trace)
+    (traces : List (Array F)) : Prop :=
+  List.Forall₂ (fun t (m : Instance F × Array F) ↦ h.RT m.1.logN m.1.air.width t m.2) ts
+    (instances.zip traces)
+
+theorem TracesRel.getElem {h : Refines B} {instances : List (Instance F)} {ts : List B.Trace}
+    {traces : List (Array F)} (hts : TracesRel h instances ts traces) (i : Nat)
+    (h1 : i < ts.length) (h2 : i < instances.length) (h3 : i < traces.length) :
+    h.RT instances[i].logN instances[i].air.width ts[i] traces[i] := by
+  have := getElem_of_forall₂ hts i h1 (by rw [List.length_zip]; omega)
+  simpa only [List.getElem_zip] using this
+
+theorem TracesRel.length_eq {h : Refines B} {instances : List (Instance F)} {ts : List B.Trace}
+    {traces : List (Array F)} (hts : TracesRel h instances ts traces)
+    (hl : traces.length = instances.length) : ts.length = instances.length := by
+  rw [List.Forall₂.length_eq hts, List.length_zip, hl, Nat.min_self]
+
+theorem TracesRel.map_traceValues {h : Refines B} {instances : List (Instance F)}
+    {ts : List B.Trace} {traces : List (Array F)} (hts : TracesRel h instances ts traces)
+    (hl : traces.length = instances.length) : ts.map B.traceValues = traces := by
+  rw [h.map_traceValues (fun I : Instance F ↦ (I.logN, I.air.width)) hts,
+    List.map_snd_zip (by omega)]
+
 /-- The permutation traces' extensions and terminals by a refining backend and by the
 specification are related, the specification's of the prover's shapes. -/
 theorem permutationsWith_refines (h : Refines B) {P : Params} {instances : List (Instance F)}
-    {traces : List (Array F)} (hin : InputOk EF P instances traces) {pis : List (List F)}
+    {traces : List (Array F)} (hin : InputOk EF P instances traces) {ts : List B.Trace}
+    (hts : TracesRel h instances ts traces) {pis : List (List F)}
     {chs : List (List EF)} (hpis : pis.length = instances.length)
     (hchs : chs.length = instances.length) :
     List.Forall₂ (Option.Rel fun x y ↦ h.RM x.1 y.1 ∧ x.2 = y.2)
-        (permutationsWith B P instances traces pis chs)
+        (permutationsWith B P instances ts pis chs)
         (permutationsWith (specBackend EF) P instances traces pis chs) ∧
       List.Forall₂ (PermShape EF P) instances
         (permutationsWith (specBackend EF) P instances traces pis chs) := by
   have htl := hin.traces.length_eq
-  have hlB := length_permutationsWith B P instances traces pis chs htl.symm hpis hchs
+  have htsl := hts.length_eq htl.symm
+  have hlB := length_permutationsWith B P instances ts pis chs htsl hpis hchs
   have hlS := length_permutationsWith (specBackend EF) P instances traces pis chs htl.symm hpis
     hchs
   have hi : ∀ i, i < (instances.zip (traces.zip (pis.zip chs))).length → i < instances.length ∧
@@ -442,8 +469,11 @@ theorem permutationsWith_refines (h : Refines B) {P : Params} {instances : List 
   refine ⟨forall₂_of_getElem (by rw [hlB, hlS]) fun i h1 h2 ↦ ?_,
     forall₂_of_getElem (by rw [hlS]) fun i h1 h2 ↦ ?_⟩
   · simp only [permutationsWith, List.length_map] at h1 h2
-    obtain ⟨hiI, hiT⟩ := hi i h1
-    simp only [permutationsWith, List.getElem_map, List.getElem_zip]
+    obtain ⟨hiI, hiT⟩ := hi i h2
+    have hv : B.traceValues (ts[i]'(by rw [htsl]; exact hiI)) = traces[i] := by
+      rw [← List.getElem_map B.traceValues]
+      exact List.getElem_of_eq (hts.map_traceValues htl.symm) (by rw [List.length_map]; omega)
+    simp only [permutationsWith, List.getElem_map, List.getElem_zip, hv, id_eq]
     split
     · exact .none
     · rename_i hne
@@ -451,7 +481,7 @@ theorem permutationsWith_refines (h : Refines B) {P : Params} {instances : List 
         (getElem_of_forall₂ hin.traces i hiI hiT) (Bool.eq_false_iff.mpr hne)))
   · simp only [permutationsWith, List.length_map] at h2
     obtain ⟨hiI, hiT⟩ := hi i h2
-    simp only [permutationsWith, List.getElem_map, List.getElem_zip]
+    simp only [permutationsWith, List.getElem_map, List.getElem_zip, id_eq]
     split
     · rename_i he
       exact ⟨by simp only [Option.isSome_none, he, Bool.not_true], fun q hq ↦ nomatch hq⟩
@@ -557,31 +587,6 @@ theorem forall₂_filterMap {α β γ δ : Type} {R : α → β → Prop} {S : �
     · cases hr
     · cases hr with
       | some hr => exact .cons hr (forall₂_filterMap hfg hs)
-
-/-- The backend's traces `ts` represent the instances' traces `traces`, each of its instance's
-shape. -/
-abbrev TracesRel (h : Refines B) (instances : List (Instance F)) (ts : List B.Trace)
-    (traces : List (Array F)) : Prop :=
-  List.Forall₂ (fun t (m : Instance F × Array F) ↦ h.RT m.1.logN m.1.air.width t m.2) ts
-    (instances.zip traces)
-
-theorem TracesRel.getElem {h : Refines B} {instances : List (Instance F)} {ts : List B.Trace}
-    {traces : List (Array F)} (hts : TracesRel h instances ts traces) (i : Nat)
-    (h1 : i < ts.length) (h2 : i < instances.length) (h3 : i < traces.length) :
-    h.RT instances[i].logN instances[i].air.width ts[i] traces[i] := by
-  have := getElem_of_forall₂ hts i h1 (by rw [List.length_zip]; omega)
-  simpa only [List.getElem_zip] using this
-
-theorem TracesRel.length_eq {h : Refines B} {instances : List (Instance F)} {ts : List B.Trace}
-    {traces : List (Array F)} (hts : TracesRel h instances ts traces)
-    (hl : traces.length = instances.length) : ts.length = instances.length := by
-  rw [List.Forall₂.length_eq hts, List.length_zip, hl, Nat.min_self]
-
-theorem TracesRel.map_traceValues {h : Refines B} {instances : List (Instance F)}
-    {ts : List B.Trace} {traces : List (Array F)} (hts : TracesRel h instances ts traces)
-    (hl : traces.length = instances.length) : ts.map B.traceValues = traces := by
-  rw [h.map_traceValues (fun I : Instance F ↦ (I.logN, I.air.width)) hts,
-    List.map_snd_zip (by omega)]
 
 /-- Every instance's quotient chunks by a refining backend and by the specification, from related
 extensions, are related, of the prover's shapes, and as many as each instance's chunks. -/
@@ -780,18 +785,17 @@ theorem batchCommitAndSample_refines (h : Refines B) {P : Params}
     | some hr => exact congrArg capElems (h.cap _ hr)
   unfold batchCommitAndSample
   dsimp only
-  rw [hroot, h.cap _ hct, hroots, hts.map_traceValues htl.symm,
-    show traces.map (specBackend EF).traceValues = traces from List.map_id traces]
+  rw [hroot, h.cap _ hct, hroots]
   refine RelM.bind_eq fun _ ↦ RelM.bind_eq fun _ ↦ RelM.bind_eq fun _ ↦
     RelM.bind_eq fun _ ↦ RelM.bind_eq fun _ ↦ ?_
   refine RelM.bind (lookupChallenges_rel P instances) fun lc lc' ⟨hlc, hchs⟩ ↦ hlc ▸ ?_
   obtain ⟨lw, chs⟩ := lc
   dsimp only at hchs ⊢
   -- The permutation traces.
-  obtain ⟨hpr, hpS⟩ := permutationsWith_refines h hin (traces := traces) hpis hchs
+  obtain ⟨hpr, hpS⟩ := permutationsWith_refines h hin hts hpis hchs
   have hpl := length_permutationsWith (specBackend EF) P instances traces pis chs htl.symm hpis
     hchs
-  have hterm : (permutationsWith B P instances traces pis chs).map (·.map (·.2)) =
+  have hterm : (permutationsWith B P instances ts pis chs).map (·.map (·.2)) =
       (permutationsWith (specBackend EF) P instances traces pis chs).map (·.map (·.2)) :=
     forall₂_map_eq (fun _ _ hab ↦ by
       cases hab with
@@ -804,7 +808,7 @@ theorem batchCommitAndSample_refines (h : Refines B) {P : Params}
   have hpeSl : (commitPermutations (specBackend EF) instances perms).1.length =
       instances.length := by
     simp only [commitPermutations, List.length_map, hpl]
-  generalize commitPermutations B instances (permutationsWith B P instances traces pis chs) = cpB
+  generalize commitPermutations B instances (permutationsWith B P instances ts pis chs) = cpB
     at hpe hpc
   generalize commitPermutations (specBackend EF) instances perms = cpS
     at hpe hpc hpeOk hpeS hpeSl
