@@ -1,0 +1,223 @@
+#!/usr/bin/env python3
+"""The performance gate: user-space instruction counts of single-threaded runs of every hot path.
+
+`scripts/perf-gate` builds `CompStarkBench`, runs each workload of `WORKLOADS` once on one thread
+(`CompStarkBench gate WORKLOAD DIR`, `LEAN_NUM_THREADS=1`) and reads the run's `instructions:u` and
+`cycles:u` counters at every phase mark the workload writes to the FIFOs in `DIR`. It compares each
+phase's instructions with `bench/perf-baseline.json` and fails if one exceeds its baseline by more
+than the entry's tolerance, or falls below it by more than `RATCHET`: a win is locked in by
+updating the baseline. Cycles and wall time are reported, not gated: they depend on the host's
+load.
+
+`scripts/perf-gate --update` runs the suite `UPDATE_RUNS` times and rewrites the baseline: per
+entry the median instructions, the largest relative deviation from it (`variation`) and the
+tolerance `max(TOLERANCE, 4 · variation)`.
+"""
+
+import ctypes
+import json
+import os
+import platform
+import select
+import struct
+import subprocess
+import sys
+import tempfile
+import time
+
+ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+BENCH = os.path.join(ROOT, ".lake", "build", "bin", "CompStarkBench")
+BASELINE = os.path.join(ROOT, "bench", "perf-baseline.json")
+WORKLOADS = ["wide-quartic", "wide-quintic", "keccak", "batch", "lookup", "merkle", "lde"]
+TOLERANCE = 0.005
+RATCHET = 0.02
+UPDATE_RUNS = 3
+
+PERF_TYPE_HARDWARE = 0
+PERF_COUNT_HW_CPU_CYCLES = 0
+PERF_COUNT_HW_INSTRUCTIONS = 1
+SYS_PERF_EVENT_OPEN = 298  # x86_64
+PERF_FLAG_FD_CLOEXEC = 8
+# disabled, inherit, exclude_kernel, exclude_hv, enable_on_exec
+ATTR_FLAGS = (1 << 0) | (1 << 1) | (1 << 5) | (1 << 6) | (1 << 12)
+# PERF_FORMAT_TOTAL_TIME_ENABLED | PERF_FORMAT_TOTAL_TIME_RUNNING
+READ_FORMAT = 1 | 2
+
+libc = ctypes.CDLL(None, use_errno=True)
+
+
+def counter(pid, config):
+    """A user-space hardware counter on `pid` and the threads it creates, from its next exec."""
+    attr = ctypes.create_string_buffer(128)
+    struct.pack_into("IIQ", attr, 0, PERF_TYPE_HARDWARE, 128, config)
+    struct.pack_into("QQ", attr, 32, READ_FORMAT, ATTR_FLAGS)
+    fd = libc.syscall(SYS_PERF_EVENT_OPEN, attr, pid, -1, -1, PERF_FLAG_FD_CLOEXEC)
+    if fd < 0:
+        err = ctypes.get_errno()
+        sys.exit(f"perf_event_open: {os.strerror(err)}")
+    return fd
+
+
+def read_counter(fd):
+    value, enabled, running = struct.unpack("QQQ", os.read(fd, 24))
+    if enabled != running:
+        sys.exit("perf-gate: the hardware counters were multiplexed; rerun on a host without "
+                 "system-wide perf sessions")
+    return value
+
+
+def run_workload(workload):
+    """Per phase of `workload`: instructions, cycles and nanoseconds, summed over its marks."""
+    with tempfile.TemporaryDirectory(prefix="perf-gate-") as d:
+        ctl, ack = os.path.join(d, "ctl"), os.path.join(d, "ack")
+        os.mkfifo(ctl)
+        os.mkfifo(ack)
+        log_path = os.path.join(d, "log")
+        log = open(log_path, "wb")
+        go_r, go_w = os.pipe()
+        pid = os.fork()
+        if pid == 0:
+            os.close(go_w)
+            os.read(go_r, 1)
+            os.dup2(log.fileno(), 1)
+            os.dup2(log.fileno(), 2)
+            env = dict(os.environ, LEAN_NUM_THREADS="1")
+            os.execve(BENCH, [BENCH, "gate", workload, d], env)
+        os.close(go_r)
+        log.close()
+        ins_fd = counter(pid, PERF_COUNT_HW_INSTRUCTIONS)
+        cyc_fd = counter(pid, PERF_COUNT_HW_CPU_CYCLES)
+        ctl_fd = os.open(ctl, os.O_RDONLY | os.O_NONBLOCK)
+        ack_fd = os.open(ack, os.O_RDWR)
+        os.write(go_w, b"x")
+        os.close(go_w)
+        phases, start, buf, status = {}, None, b"", None
+        while status is None:
+            ready, _, _ = select.select([ctl_fd], [], [], 0.2)
+            chunk = os.read(ctl_fd, 4096) if ready else b""
+            if not chunk:
+                done, st = os.waitpid(pid, os.WNOHANG)
+                if done:
+                    status = st
+                elif ready:
+                    time.sleep(0.01)
+                continue
+            buf += chunk
+            while b"\n" in buf:
+                line, buf = buf.split(b"\n", 1)
+                now = (read_counter(ins_fd), read_counter(cyc_fd), time.monotonic_ns())
+                msg = line.decode()
+                if msg == "begin":
+                    start = now
+                elif msg.startswith("end ") and start is not None:
+                    acc = phases.setdefault(msg[4:], [0, 0, 0])
+                    for k in range(3):
+                        acc[k] += now[k] - start[k]
+                    start = None
+                else:
+                    sys.exit(f"perf-gate: unexpected mark {msg!r} from {workload}")
+                os.write(ack_fd, b"ok\n")
+        for fd in (ins_fd, cyc_fd, ctl_fd, ack_fd):
+            os.close(fd)
+        if not os.WIFEXITED(status) or os.WEXITSTATUS(status) != 0:
+            sys.stderr.write(open(log_path).read())
+            sys.exit(f"perf-gate: workload {workload} failed")
+    return {f"{workload}/{label}": v for label, v in phases.items()}
+
+
+def run_suite():
+    results = {}
+    for w in WORKLOADS:
+        t = time.monotonic()
+        results.update(run_workload(w))
+        print(f"  {w}: {time.monotonic() - t:.1f} s", file=sys.stderr)
+    return results
+
+
+def build():
+    cmd = ["systemd-run", "--user", "--scope", "-q", "-p", "MemoryMax=12G",
+           "-p", "MemorySwapMax=0", "--", "lake", "build", "CompStarkBench"]
+    r = subprocess.run(cmd, cwd=ROOT, stdout=subprocess.PIPE, stderr=subprocess.STDOUT)
+    if r.returncode != 0:
+        sys.stderr.write(r.stdout.decode()[-20000:])
+        sys.exit("perf-gate: building CompStarkBench failed")
+
+
+def update():
+    runs = []
+    for k in range(UPDATE_RUNS):
+        print(f"run {k + 1} of {UPDATE_RUNS}", file=sys.stderr)
+        runs.append(run_suite())
+    entries = {}
+    for key in runs[0]:
+        counts = sorted(r[key][0] for r in runs)
+        med = counts[len(counts) // 2]
+        variation = max(abs(c - med) for c in counts) / med
+        entries[key] = {
+            "instructions": med,
+            "variation": round(variation, 6),
+            "tolerance": round(max(TOLERANCE, 4 * variation), 4),
+        }
+    with open(BASELINE, "w") as f:
+        json.dump({
+            "about": "User-space instructions per workload phase of scripts/perf-gate, single "
+                     "threaded: the median of " + str(UPDATE_RUNS) + " runs, the largest relative "
+                     "deviation from it (variation) and the allowed relative increase "
+                     "(tolerance). Rewritten by scripts/perf-gate --update.",
+            "entries": entries,
+        }, f, indent=2)
+        f.write("\n")
+    print(f"wrote {os.path.relpath(BASELINE, ROOT)}: {len(entries)} entries", file=sys.stderr)
+
+
+def gate():
+    with open(BASELINE) as f:
+        entries = json.load(f)["entries"]
+    results = run_suite()
+    failures = []
+    print(f"{'entry':40} {'instructions':>15} {'baseline':>15} {'change':>8} {'cycles':>15} "
+          f"{'wall ms':>9}")
+    for key, (ins, cyc, ns) in results.items():
+        base = entries.get(key)
+        if base is None:
+            failures.append(f"{key}: not in the baseline")
+            print(f"{key:40} {ins:15,} {'-':>15} {'new':>8} {cyc:15,} {ns / 1e6:9.1f}")
+            continue
+        change = ins / base["instructions"] - 1
+        mark = ""
+        if change > base["tolerance"]:
+            failures.append(f"{key}: {change:+.2%} instructions, tolerance "
+                            f"{base['tolerance']:.2%}")
+            mark = " REGRESSED"
+        elif change < -RATCHET:
+            failures.append(f"{key}: {change:+.2%} instructions, an improvement beyond "
+                            f"{RATCHET:.0%} to record in the baseline")
+            mark = " IMPROVED"
+        print(f"{key:40} {ins:15,} {base['instructions']:15,} {change:+8.2%} {cyc:15,} "
+              f"{ns / 1e6:9.1f}{mark}")
+    for key in entries:
+        if key not in results:
+            failures.append(f"{key}: in the baseline, not measured")
+    if failures:
+        print("\nperf-gate FAILED:\n  " + "\n  ".join(failures))
+        print("An intended change of these counts is a baseline update (scripts/perf-gate "
+              "--update) in the same push, with the reason in the commit message.")
+        sys.exit(1)
+    print("\nperf-gate passed")
+
+
+def main():
+    if platform.machine() != "x86_64":
+        sys.exit("perf-gate: x86_64 only")
+    args = sys.argv[1:]
+    if args not in ([], ["--update"]):
+        sys.exit("usage: scripts/perf-gate [--update]")
+    build()
+    if args == ["--update"]:
+        update()
+    else:
+        gate()
+
+
+if __name__ == "__main__":
+    main()

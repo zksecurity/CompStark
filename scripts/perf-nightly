@@ -1,0 +1,182 @@
+#!/usr/bin/env python3
+"""The nightly wall-clock benchmarks: the README's workloads at full size, CompStark and Plonky3.
+
+`scripts/perf-nightly` builds `CompStarkBench` and Plonky3's `compstark-bench` (`bench/rust`) at
+the checkout's HEAD, waits for the host's load to fall below `QUIET_LOAD`, takes the shared lock
+`LOCK` and runs every workload of `WORKLOADS` on 16 threads and on one. It appends the times to
+`HISTORY` in the notes repository, flags every time more than `REGRESSION` above the previous
+night's at the top of that file, and commits and pushes it. The timer `compstark-perf.timer` runs
+it on main's HEAD in a dedicated checkout.
+"""
+
+import datetime
+import fcntl
+import os
+import re
+import subprocess
+import sys
+import time
+
+ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+LEAN_BENCH = os.path.join(ROOT, ".lake", "build", "bin", "CompStarkBench")
+RUST_DIR = os.path.join(ROOT, "bench", "rust")
+RUST_BENCH = os.path.join(RUST_DIR, "target", "release", "compstark-bench")
+NOTES = os.path.expanduser("~/code/notes-bot")
+HISTORY = os.path.join(NOTES, "compstark", "perf-history.md")
+LOCK = "/tmp/compstark-bench.lock"
+QUIET_LOAD = 1.5
+MAX_WAIT = 4 * 3600
+REGRESSION = 0.05
+THREADS = [16, 1]
+
+FRI = ["1", "0", "1", "100", "0", "16"]
+# (workload, CompStarkBench arguments, compstark-bench arguments): the README's rows.
+WORKLOADS = [
+    (f"wide 64 quartic 2^{n}", ["prove", "fast", "wide", str(n)] + FRI,
+     ["prove-bench", "wide", str(n)] + FRI) for n in (16, 18)
+] + [
+    (f"wide 64 quintic 2^{n}", ["prove", "fast-quintic", "wide", str(n)] + FRI,
+     ["prove-bench-quintic", "wide", str(n)] + FRI) for n in (16, 18)
+] + [
+    ("batch wide 64 2^20+2^19+2^16", ["prove-batch"] + FRI, ["batch-bench", "wide"] + FRI),
+    ("batch lookups 2^18+2^18+2^16", ["prove-batch-lookup"] + FRI,
+     ["batch-bench", "lookup-bench"] + FRI),
+] + [
+    (f"keccak {ext} 2^{n}", ["keccak-prove", ext, str(n)], ["keccak-prove-bench", ext, str(n)])
+    for ext in ("quartic", "quintic") for n in (16, 18)
+]
+COLUMNS = [f"{impl} {t}" for impl in ("CompStark", "Plonky3") for t in THREADS]
+
+HEADER = """# CompStark nightly wall-clock benchmarks
+
+Written by `scripts/perf-nightly` in CompStark (systemd user timer `compstark-perf.timer`): the README's workloads at full size at main's HEAD, CompStark and Plonky3 on 16 threads and on one, on a quiet host under `/tmp/compstark-bench.lock`. Seconds, each the median of the benchmark's samples. A time more than 5% above the previous night's is flagged under Regressions, newest first.
+
+## Regressions
+
+## Nights
+"""
+
+
+def sh(cmd, cwd=ROOT, env=None):
+    r = subprocess.run(cmd, cwd=cwd, env=env, stdout=subprocess.PIPE, stderr=subprocess.STDOUT)
+    return r.returncode, r.stdout.decode(errors="replace")
+
+
+def build():
+    code, out = sh(["systemd-run", "--user", "--scope", "-q", "-p", "MemoryMax=12G",
+                    "-p", "MemorySwapMax=0", "--", "lake", "build", "CompStarkBench"])
+    if code != 0:
+        sys.exit("perf-nightly: building CompStarkBench failed\n" + out[-20000:])
+    code, out = sh(["cargo", "build", "--release", "-q"], cwd=RUST_DIR)
+    if code != 0:
+        sys.exit("perf-nightly: building compstark-bench failed\n" + out[-20000:])
+
+
+def load():
+    with open("/proc/loadavg") as f:
+        return float(f.read().split()[0])
+
+
+def seconds(binary, args, threads):
+    env = dict(os.environ, LEAN_NUM_THREADS=str(threads), RAYON_NUM_THREADS=str(threads))
+    code, out = sh([binary] + args, env=env)
+    found = re.findall(r"ms median ([0-9.]+)", out)
+    if code != 0 or not found:
+        print(f"perf-nightly: {binary} {' '.join(args)} failed:\n{out[-4000:]}", file=sys.stderr)
+        return None
+    return float(found[-1]) / 1000
+
+
+def measure():
+    rows = {}
+    for name, lean_args, rust_args in WORKLOADS:
+        row = {}
+        for t in THREADS:
+            row[f"CompStark {t}"] = seconds(LEAN_BENCH, lean_args, t)
+            row[f"Plonky3 {t}"] = seconds(RUST_BENCH, rust_args, t)
+        rows[name] = row
+        print(f"{name}: {row}", file=sys.stderr)
+    return rows
+
+
+def fmt(x):
+    return "failed" if x is None else f"{x:.3f}"
+
+
+def previous_night(text):
+    """The commit and times of the last night in the history."""
+    nights = text.split("\n### ")
+    if len(nights) < 2:
+        return None, {}
+    last = nights[-1]
+    commit = re.search(r"CompStark `([0-9a-f]+)`", last.splitlines()[0])
+    rows = {}
+    for line in last.splitlines():
+        cells = [c.strip() for c in line.strip().strip("|").split("|")]
+        if len(cells) == len(COLUMNS) + 1 and cells[0] not in ("Workload",) and \
+                not cells[0].startswith("---"):
+            rows[cells[0]] = {col: (None if v == "failed" else float(v))
+                              for col, v in zip(COLUMNS, cells[1:])}
+    return (commit.group(1) if commit else None), rows
+
+
+def record(commit, rows, note=None):
+    os.makedirs(os.path.dirname(HISTORY), exist_ok=True)
+    code, out = sh(["git", "pull", "-q", "--no-rebase"], cwd=NOTES)
+    if code != 0:
+        sys.exit("perf-nightly: pulling the notes repository failed\n" + out)
+    text = open(HISTORY).read() if os.path.exists(HISTORY) else HEADER
+    now = datetime.datetime.now(datetime.timezone.utc).strftime("%Y-%m-%d %H:%M UTC")
+    entry = f"\n### {now}, CompStark `{commit}`\n\n"
+    if note:
+        entry += note + "\n"
+    else:
+        prev_commit, prev = previous_night(text)
+        entry += "| Workload | " + " | ".join(COLUMNS) + " |\n"
+        entry += "|---" * (len(COLUMNS) + 1) + "|\n"
+        flagged = []
+        for name, row in rows.items():
+            entry += f"| {name} | " + " | ".join(fmt(row[c]) for c in COLUMNS) + " |\n"
+            for c in COLUMNS:
+                old, new = prev.get(name, {}).get(c), row[c]
+                if old and new and new > old * (1 + REGRESSION):
+                    flagged.append(f"`{name}`, {c} thread{'s' if c.split()[1] != '1' else ''}: "
+                                   f"{old:.3f} s → {new:.3f} s ({new / old - 1:+.1%})")
+        if flagged:
+            alert = (f"- **{now[:10]}, CompStark `{commit}` against `{prev_commit}`**: "
+                     + "; ".join(flagged) + "\n")
+            marker = "## Regressions\n\n"
+            i = text.index(marker) + len(marker)
+            text = text[:i] + alert + text[i:]
+    text = text.rstrip("\n") + "\n" + entry
+    with open(HISTORY, "w") as f:
+        f.write(text)
+    rel = os.path.relpath(HISTORY, NOTES)
+    for cmd in (["git", "add", rel],
+                ["git", "commit", "-q", "-m", f"CompStark nightly benchmarks at {commit}", "--",
+                 rel],
+                ["git", "push", "-q"]):
+        code, out = sh(cmd, cwd=NOTES)
+        if code != 0:
+            sys.exit(f"perf-nightly: {' '.join(cmd)} failed\n{out}")
+
+
+def main():
+    _, commit = sh(["git", "rev-parse", "--short=10", "HEAD"])
+    commit = commit.strip()
+    build()
+    start = time.monotonic()
+    while load() >= QUIET_LOAD:
+        if time.monotonic() - start > MAX_WAIT:
+            record(commit, {}, f"Not measured: the load stayed at or above {QUIET_LOAD} for "
+                               f"{MAX_WAIT // 3600} hours.")
+            return
+        time.sleep(60)
+    with open(LOCK, "a") as lock:
+        fcntl.flock(lock, fcntl.LOCK_EX)
+        rows = measure()
+    record(commit, rows)
+
+
+if __name__ == "__main__":
+    main()

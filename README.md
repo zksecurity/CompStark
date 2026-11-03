@@ -100,6 +100,8 @@ lake test
 
 `lake test` runs the known-answer tests and checks Plonky3's proofs. The Rust side in `bench/rust` produces the reference data and runs Plonky3's benchmarks; [docs/components.md](docs/components.md) lists its commands.
 
+Pushes to `main` pass a performance gate, a pre-push hook that runs `scripts/perf-gate`: user-space instruction counts of single-threaded runs of every hot path, phase by phase, against `bench/perf-baseline.json`. Activate it in a clone with `git config core.hooksPath scripts/git-hooks`; `scripts/perf-gate --update` rewrites the baseline. Wall-clock benchmarks take the lock `flock /tmp/compstark-bench.lock`.
+
 ## Roadmap
 
 1. Binary fields, following [leanVM](https://github.com/leanEthereum/leanMultisig): a binary tower field, WHIR, and Binius-style ring switching.

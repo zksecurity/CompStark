@@ -1,0 +1,32 @@
+#!/usr/bin/env bash
+# The performance gate on pushes to main: `scripts/perf-gate` on the pushed commit, unless the
+# pushed range changes only docs (`*.md`, `docs/`). The gate runs in the pushing worktree, whose
+# HEAD must be the pushed commit, without changes to tracked files.
+set -euo pipefail
+zero=0000000000000000000000000000000000000000
+root=$(git rev-parse --show-toplevel)
+while read -r _ local_sha remote_ref remote_sha; do
+  [ "$remote_ref" = refs/heads/main ] || continue
+  [ "$local_sha" = "$zero" ] && continue
+  if [ "$remote_sha" != "$zero" ] && git cat-file -e "$remote_sha^{commit}" 2>/dev/null; then
+    files=$(git diff --name-only "$remote_sha" "$local_sha")
+  else
+    files=$(git ls-tree -r --name-only "$local_sha")
+  fi
+  [ -n "$files" ] || continue
+  if ! grep -qvE '(\.md$|^docs/)' <<<"$files"; then
+    echo "perf-gate: docs only, skipped"
+    continue
+  fi
+  head=$(git rev-parse HEAD)
+  if [ "$head" != "$local_sha" ]; then
+    echo "perf-gate: refusing the push: the worktree's HEAD $head is not the pushed commit" \
+      "$local_sha; push main from a worktree checked out at the pushed commit" >&2
+    exit 1
+  fi
+  if ! git diff --quiet HEAD --; then
+    echo "perf-gate: refusing the push: tracked files differ from the pushed commit" >&2
+    exit 1
+  fi
+  "$root/scripts/perf-gate" </dev/null
+done
