@@ -501,7 +501,7 @@ theorem honestChunks_eq (lα lβ α : 𝕂) (i : Fin S.k) : ∃ qs : Array EF,
           (gen * (gen * powF (twoAdicGen (S.logN i + (S.specInstance i).logQuotientChunks)) c)⁻¹)
           (Challenge.d EF) (chunkValues qs (2 ^ (S.specInstance i).logQuotientChunks) c
             (2 ^ S.logN i)) :=
-  ⟨_, rfl⟩
+  ⟨_, chunksOf_eq _ _ _ _ _⟩
 
 variable (lα lβ α ζ : Challenge.Spec EF) (i : Fin S.k)
 

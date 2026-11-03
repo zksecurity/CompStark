@@ -782,6 +782,8 @@ theorem batchRounds_eq_of (hts : ts.length = Is.length) (hps : ps.length = Is.le
       simp only [honestOpened, List.toList_toArray, List.map_map]
       refine List.map_congr_left fun m hm ↦ ?_
       rw [getElem_bChunks EF P Is ts ps hts hps i hi] at hm
+      unfold honestChunks batchQuotientChunks at hm
+      rw [chunksOf_eq] at hm
       obtain ⟨c, -, rfl⟩ := List.mem_map.mp hm
       simp only [Function.comp_apply, openedOf, List.map_cons, List.map_nil, List.zip_cons_cons,
         List.zip_nil_left]
@@ -837,14 +839,15 @@ theorem mem_honestChunks (I : Instance F) (t : Array F) (p : List F) (chs : List
         (ldeRef I.logN P.logBlowup gen I.air.width t) (prepLde P.logBlowup I.air I.logN)
         (permLde P.logBlowup I t p chs) p chs (permutationTrace I.air I.lookups I.logN t p chs).2
           alpha) (2 ^ I.logQuotientChunks) c (2 ^ I.logN)) := by
-  unfold honestChunks batchQuotientChunks chunksOf at hm
+  unfold honestChunks batchQuotientChunks at hm
+  rw [chunksOf_eq] at hm
   obtain ⟨c, hc, rfl⟩ := List.mem_map.mp hm
   exact ⟨c, List.mem_range.mp hc, rfl⟩
 
 theorem honestChunks_ne_nil (I : Instance F) (t : Array F) (p : List F) (chs : List EF)
     (alpha : EF) : honestChunks P I t p chs alpha ≠ [] := by
-  unfold honestChunks batchQuotientChunks chunksOf
-  rw [ne_eq, List.map_eq_nil_iff, List.range_eq_nil]
+  unfold honestChunks batchQuotientChunks
+  rw [chunksOf_eq, ne_eq, List.map_eq_nil_iff, List.range_eq_nil]
   exact (Nat.two_pow_pos _).ne'
 
 /-- The matrices of the permutation round are the permutation traces' extensions. -/
@@ -1262,11 +1265,11 @@ theorem openedShapeOk_honest (P : Params) (I : Instance F) (trace : Array F) (pi
     cases hn : I.air.mainNextRow
     · simp only [Bool.false_eq_true, ↓reduceIte, Bool.not_false]
     · simp only [↓reduceIte, hs, hw, beq_self_eq_true, Bool.and_self]
-  · simp only [honestOpened, honestChunks, batchQuotientChunks, chunksOf, List.size_toArray,
+  · simp only [honestOpened, honestChunks, batchQuotientChunks, chunksOf_eq, List.size_toArray,
       List.length_map, List.length_range]
   · rw [Array.all_eq_true]
     intro i hi
-    simp only [honestOpened, honestChunks, batchQuotientChunks, chunksOf, List.getElem_toArray,
+    simp only [honestOpened, honestChunks, batchQuotientChunks, chunksOf_eq, List.getElem_toArray,
       List.getElem_map, hs, beq_iff_eq]
     rfl
   · by_cases hpw : I.air.preprocessedWidth = 0

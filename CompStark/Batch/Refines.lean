@@ -350,8 +350,7 @@ theorem chunksOf_refines (h : Refines B) (P : Params) {logN : Nat} (lc : Nat) (q
       (∀ m ∈ chunksOf (specBackend EF) P logN lc qs, MatOk m ∧
         m.height = 2 ^ (logN + P.logBlowup) ∧ m.width = Challenge.d EF) ∧
       (chunksOf (specBackend EF) P logN lc qs).length = 2 ^ lc := by
-  unfold chunksOf
-  dsimp only
+  rw [chunksOf_eq, chunksOf_eq]
   have hchOk : ∀ c, MatOk (ldeRef logN P.logBlowup
       (gen * (gen * powF (twoAdicGen (logN + lc)) c)⁻¹) (Challenge.d EF)
       (chunkValues qs (2 ^ lc) c (2 ^ logN))) := fun c ↦ by

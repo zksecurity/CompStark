@@ -51,15 +51,22 @@ def setupWith (B : Backend F EF width) (P : Params) (A : Air F) (logN : Nat) :
 
 /-- The extensions of the chunks of the quotient's values `qs` on the quotient domain of
 `2 ^ logChunks` cosets of the trace domain of size `2 ^ logN`: chunk `c` the values on coset `c`,
-extended by the backend `B` onto `L`. -/
+extended by the backend `B` onto `L`, every chunk in a task of its own. -/
 def chunksOf (B : Backend F EF width) (P : Params) (logN logChunks : Nat) (qs : Array EF) :
     List B.M :=
   let qlog := logN + logChunks
   let stride := 2 ^ logChunks
-  (List.range stride).map fun c ↦
+  ((List.range stride).map fun c ↦ Task.spawn fun _ ↦
     let shift := gen * powF (twoAdicGen qlog) c
     let vals := chunkValues qs stride c (2 ^ logN)
-    B.lde logN P.logBlowup (gen * shift⁻¹) (Challenge.d EF) vals
+    B.lde logN P.logBlowup (gen * shift⁻¹) (Challenge.d EF) vals).map Task.get
+
+theorem chunksOf_eq (B : Backend F EF width) (P : Params) (logN logChunks : Nat) (qs : Array EF) :
+    chunksOf B P logN logChunks qs = (List.range (2 ^ logChunks)).map fun c ↦
+      B.lde logN P.logBlowup (gen * (gen * powF (twoAdicGen (logN + logChunks)) c)⁻¹)
+        (Challenge.d EF) (chunkValues qs (2 ^ logChunks) c (2 ^ logN)) := by
+  simp only [chunksOf, List.map_map]
+  rfl
 
 /-- The extensions of the quotient's chunks for `A` on `2 ^ logN` rows (`chunksOf`), from the
 extensions `ext` of the trace and `prep` of the preprocessed trace, if any. -/

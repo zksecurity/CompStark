@@ -589,7 +589,7 @@ theorem instanceCheck_honest (P : Params) (I : Instance F) (trace : Array F) (pi
         (chunkValues (batchQuotientValues (specBackend EF) I (ldeRef logN b gen A.width trace)
           (prepLde b A logN) (permLde b I trace pis chs) pis chs pt.2 alpha) (2 ^ lc) c
           (2 ^ logN))) zeta := by
-    simp only [o, honestOpened, honestChunks, batchQuotientChunks, chunksOf, List.toList_toArray,
+    simp only [o, honestOpened, honestChunks, batchQuotientChunks, chunksOf_eq, List.toList_toArray,
       List.map_map]
     rfl
   -- the LogUp constraints at `ζ`
