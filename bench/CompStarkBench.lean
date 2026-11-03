@@ -80,18 +80,19 @@ def mulTrace (rows reps : Nat) : Array KoalaBear.Fast.Field :=
     else if j % 3 = 1 then f.getD (i + 1) 0
     else f.getD i 0 * f.getD (i + 1) 0
 
-/-- The batch `lookup-bench` of `compstark-bench`: `mulAirLookups 8` on `2 ^ 18` rows with local
-lookups and sending on the bus `MulFib`, `fibonacciLookups` receiving eight times on `2 ^ 18`
-rows, and `mulAirLookups 8` with local lookups on `2 ^ 16` rows; with traces and public values. -/
-def lookupBatch : List (CompStark.Batch.Instance KoalaBear.Fast.Field) ×
+/-- The batch `lookup-bench` of `compstark-bench` at `lookupBatch 18 16`: `mulAirLookups 8` on
+`2 ^ logN` rows with local lookups and sending on the bus `MulFib`, `fibonacciLookups` receiving
+eight times on `2 ^ logN` rows, and `mulAirLookups 8` with local lookups on `2 ^ logSmall` rows;
+with traces and public values. -/
+def lookupBatch (logN logSmall : Nat) : List (CompStark.Batch.Instance KoalaBear.Fast.Field) ×
     List (Array KoalaBear.Fast.Field) × List (List KoalaBear.Fast.Field) :=
-  let n := 2 ^ 18
+  let n := 2 ^ logN
   let f := fibs n
-  ([.ofAir (CompStark.Stark.mulAirLookups 8 true (List.replicate 8 "MulFib")) 18,
-      .ofAir (CompStark.Stark.fibonacciLookups 18 "MulFib" 8) 18,
-      .ofAir (CompStark.Stark.mulAirLookups 8 true []) 16],
+  ([.ofAir (CompStark.Stark.mulAirLookups 8 true (List.replicate 8 "MulFib")) logN,
+      .ofAir (CompStark.Stark.fibonacciLookups logN "MulFib" 8) logN,
+      .ofAir (CompStark.Stark.mulAirLookups 8 true []) logSmall],
     [mulTrace n 8, Array.ofFn (n := 2 * n) fun j ↦ f.getD (j.val / 2 + j.val % 2) 0,
-      mulTrace (2 ^ 16) 8],
+      mulTrace (2 ^ logSmall) 8],
     [[], [0, 1, f.getD n 0], []])
 
 open CompStark CompStark.Stark CompStark.Fri in
@@ -369,6 +370,183 @@ def keccakProve {EF : Type} [Challenge KoalaBear.Fast.Field EF] (ext : String) (
   proveTimed s!"fast prove keccak {ext} 2^{logN}" B keccakParams CompStark.Fixtures.Keccak.air logN
     (fun k ↦ trace (chunks.modify 0 (write · 0 k.toUInt32))) [] none
 
+/-- The phase marks of a `gate` run, written to `scripts/perf-gate`'s control FIFO, each
+acknowledged on its acknowledgement FIFO before the run goes on, so that the counters it reads at
+a mark are the run's exactly at that point. -/
+structure Marks where
+  ctl : IO.FS.Handle
+  ack : IO.FS.Handle
+
+/-- The marks through the FIFOs `ctl` and `ack` of the directory `dir`. -/
+def Marks.open (dir : System.FilePath) : IO Marks := do
+  let ctl ← IO.FS.Handle.mk (dir / "ctl") .write
+  let ack ← IO.FS.Handle.mk (dir / "ack") .read
+  return ⟨ctl, ack⟩
+
+def Marks.send (m : Marks) (msg : String) : IO Unit := do
+  m.ctl.putStrLn msg
+  m.ctl.flush
+  let _ ← m.ack.getLine
+
+/-- Compute `f ()` between the marks `begin` and `end label`. -/
+def Marks.phase {α : Type} (m : Marks) (label : String) (f : Unit → α) : IO α := do
+  m.send "begin"
+  let r ← IO.lazyPure f
+  m.send s!"end {label}"
+  return r
+
+open CompStark CompStark.Stark CompStark.Fri in
+/-- The phases of a proof of the AIR instances `items` (an AIR, its rows' `logN` and its trace)
+by the backend `B`, each between marks: the traces' extension and commitment, the quotients, the
+extension and commitment of their chunks, the opened values at `zeta` and `zeta ω`, the batched
+reduction by `alpha`, FRI's commit phase, the query grinding and the query openings at
+pseudorandom indices. -/
+def gatePhases {EF : Type} [Challenge KoalaBear.Fast.Field EF] (m : Marks)
+    (B : Backend KoalaBear.Fast.Field EF 24) (P : Params)
+    (items : List (Air KoalaBear.Fast.Field × Nat × B.Trace)) (alpha zeta : EF) : IO Unit := do
+  let exts ← m.phase "trace lde" fun _ ↦ items.map fun (A, logN, t) ↦
+    B.ldeTrace logN P.logBlowup gen A.width t
+  let tc ← m.phase "trace commit" fun _ ↦ B.commit exts
+  let qs ← m.phase "quotient" fun _ ↦ (items.zip exts).map fun ((A, logN, _), e) ↦
+    B.quotient A [] logN (A.logQuotientChunks logN) e none alpha
+  let chunks ← m.phase "quotient lde" fun _ ↦ (items.zip qs).map fun ((A, logN, _), q) ↦
+    chunksOf B P logN (A.logQuotientChunks logN) q
+  let qc ← m.phase "quotient commit" fun _ ↦ B.commit chunks.flatten
+  let rounds : List (OpenRound B) :=
+    [(tc, (items.zip exts).map fun ((_, logN, _), e) ↦
+        (e, [zeta, zeta * Ext.ofBase (twoAdicGen logN)])),
+      (qc, chunks.flatten.map fun c ↦ (c, [zeta]))]
+  let opened ← m.phase "opened values" fun _ ↦ rounds.map fun (_, ms) ↦ ms.map fun (e, zs) ↦
+    B.openedAt P.logBlowup e zs
+  let claims := ((rounds.zip opened).map fun ((_, ms), orow) ↦
+    (ms.zip orow).map fun ((e, zs), ovs) ↦ (e, zs.zip ovs)).flatten
+  let red ← m.phase "reduce" fun _ ↦ B.reduce alpha claims
+  let heights := red.map (·.1)
+  let logMax := heights.headD 0
+  let arities := foldSchedule P.maxLogArity (P.logBlowup + P.logFinalPolyLen) logMax heights
+  let cp ← m.phase "commit phase" fun _ ↦
+    ((commitPhase B P arities (red.map (·.2))).run B.transcript).1
+  let w ← m.phase "grind" fun _ ↦ B.transcript.grinder B.transcript.state P.queryPowBits
+  let indices := (List.range P.numQueries).map fun i ↦
+    ((splitMix i.toUInt64).2 % (2 ^ logMax).toUInt64).toNat
+  let (ins, folds) ← m.phase "query openings" fun _ ↦
+    (rounds.map fun (c, _) ↦ openMulti B P.capHeight c (indices.map (· >>> (logMax - B.logHeight c))),
+      answerFolds B P.capHeight cp.data cp.arities.toList indices)
+  IO.println s!"phases: {cp.commits.size} commits, witness \
+    {Montgomery.Native32.FastField.toNat w}, {ins.length} rounds, {folds.length} folds"
+
+/-- `wide 64` on `2 ^ logN` rows with blowup 2, 100 queries and 16 bits of query grinding. -/
+def wideParams : CompStark.Fri.Params := ⟨1, 0, 1, 100, 0, 16, 0, 0, 0, 0⟩
+
+open CompStark CompStark.Stark CompStark.Fri in
+/-- A proof of `A` on `2 ^ logN` rows by `B`, between marks, and its verification by `verify`,
+between marks, which must end in `expected`. -/
+def gateProveVerify {EF : Type} [Challenge KoalaBear.Fast.Field EF] (m : Marks)
+    (B : Backend KoalaBear.Fast.Field EF 24) (P : Params) (A : Air KoalaBear.Fast.Field)
+    (logN : Nat) (trace : B.Trace)
+    (verify : Proof KoalaBear.Fast.Field EF → Except String Unit)
+    (expected : Except String Unit) : IO UInt32 := do
+  let pf ← m.phase "prove" fun _ ↦ proveWith B P A logN trace []
+  let r ← m.phase "verify" fun _ ↦ verify pf
+  unless r == expected do
+    IO.eprintln s!"verifier: {repr r}, expected {repr expected}"; return 1
+  IO.println s!"prove: witness {pf.oodWitness.val}, verify: {repr r}"
+  return 0
+
+open CompStark CompStark.Stark CompStark.Fri in
+/-- `gate WORKLOAD DIR`: one single-threaded run of a workload of `scripts/perf-gate`, its phases
+marked through the FIFOs of `DIR`, at a fixed size from fixed inputs:
+
+* `wide-quartic`, `wide-quintic`: `wide 64` on $2^{16}$ rows (`wideParams`) over the quartic or
+  quintic extension, by phase (`gatePhases`), then a whole proof and its verification.
+* `keccak`: Plonky3's Keccak AIR on `keccakShapedTrace 13` at Plonky3's example configuration, by
+  phase, then a whole proof and its verification, which runs to the last check and rejects the
+  pseudorandom trace's out-of-domain evaluation.
+* `batch`: three `wide 64` tables of $2^{16}$, $2^{15}$ and $2^{12}$ rows, by phase, then a whole
+  batch proof.
+* `lookup`: `lookupBatch 14 12`, the first table's permutation trace and LogUp quotient, then a
+  whole batch proof.
+* `merkle`: the packed Merkle root of $2^{16}$ rows of 64 elements.
+* `lde`: the coset LDE of `keccakShapedTrace 14`, column by column. -/
+def gate (workload : String) (dir : System.FilePath) : IO UInt32 := do
+  let m ← Marks.open dir
+  match workload with
+  | "wide-quartic" | "wide-quintic" =>
+    let logN := 16
+    let A := wide 64
+    let trace := #[encodeFields (wideTrace 64 (2 ^ logN))]
+    let shapes := [(logN, A.logQuotientChunks logN)]
+    if workload == "wide-quartic" then
+      let B := CompStark.KoalaBear.backendFor [] 1 shapes
+      gatePhases m B wideParams [(A, logN, trace)] (Challenge.ofCoeffs [5, 7, 11, 13])
+        (Challenge.ofCoeffs [17, 19, 23, 29])
+      gateProveVerify m B wideParams A logN trace
+        (CompStark.KoalaBear.verifyFast wideParams A none · []) (.ok ())
+    else
+      let B := CompStark.KoalaBear.backendForQuintic [] 1 shapes
+      gatePhases m B wideParams [(A, logN, trace)] (Challenge.ofCoeffs [5, 7, 11, 13])
+        (Challenge.ofCoeffs [17, 19, 23, 29])
+      gateProveVerify m B wideParams A logN trace
+        (CompStark.KoalaBear.verifyFastQuintic wideParams A none · []) (.ok ())
+  | "keccak" =>
+    let logN := 13
+    let A := CompStark.Fixtures.Keccak.air
+    let trace := keccakShapedTrace logN
+    let B := CompStark.KoalaBear.backendFor [CompStark.Fixtures.KeccakKernel.kernel] 1
+      (keccakShapes logN)
+    gatePhases m B keccakParams [(A, logN, trace)] (Challenge.ofCoeffs [5, 7, 11, 13])
+      (Challenge.ofCoeffs [17, 19, 23, 29])
+    gateProveVerify m B keccakParams A logN trace
+      (CompStark.KoalaBear.verifyFast keccakParams A none · [])
+      (.error "out-of-domain evaluation mismatch")
+  | "batch" =>
+    let logNs := [16, 15, 12]
+    let instances : List (Batch.Instance KoalaBear.Fast.Field) :=
+      logNs.map fun logN ↦ .ofAir (wide 64) logN
+    let traces := logNs.map fun logN ↦ #[encodeFields (wideTrace 64 (2 ^ logN))]
+    let B := CompStark.KoalaBear.backendFor [] 1 (Batch.shapes instances)
+    gatePhases m B wideParams ((instances.zip traces).map fun (I, t) ↦ (I.air, I.logN, t))
+      (Challenge.ofCoeffs [5, 7, 11, 13]) (Challenge.ofCoeffs [17, 19, 23, 29])
+    let pf ← m.phase "prove" fun _ ↦ Batch.proveBatchWith (EF := KoalaBear.Fast.Ext4) B wideParams
+      instances traces (logNs.map fun _ ↦ [])
+    IO.println s!"prove: witness {pf.oodWitness.val}"
+    return 0
+  | "lookup" =>
+    let (instances, traces, pis) := lookupBatch 14 12
+    let words := traces.map fun t ↦ #[encodeFields t]
+    let B := CompStark.KoalaBear.backendFor [] 1 (Batch.shapes instances)
+    let some I := instances.head? | return 1
+    let A := I.air
+    let ext := B.ldeTrace I.logN 1 gen A.width (words.headD #[])
+    let chs := (Lookup.challengeLayout [I.lookups] (⟨3, 1, 4, 1⟩ : _root_.KoalaBear.Fast.Ext4)
+      ⟨5, 9, 2, 6⟩).headD []
+    let values := B.traceValues (words.headD #[])
+    let (perm, t) ← m.phase "permutation" fun _ ↦ B.permutation 1 A I.lookups I.logN values [] chs
+    let lq ← m.phase "lookup quotient" fun _ ↦ B.lookupQuotient A (A.lookupConstraints I.logN) []
+      I.logN I.logQuotientChunks ext none perm chs t ⟨5, 7, 11, 13⟩
+    let pf ← m.phase "prove" fun _ ↦ Batch.proveBatchWith (EF := KoalaBear.Fast.Ext4) B wideParams
+      instances words pis
+    IO.println s!"lookup quotient: {lq.size} values, prove: witness {pf.oodWitness.val}"
+    return 0
+  | "merkle" =>
+    let w := 64
+    let vals := Array.ofFn (n := 2 ^ 16 * w) fun k ↦
+      KoalaBear.Fast.ofUInt32 ((7 * k.val + 1) % 2130706433).toUInt32
+    let chunks := #[encodeFields vals]
+    let root ← m.phase "root" fun _ ↦ CompStark.Merkle.Packed.root KoalaBear.fieldSize w chunks
+    IO.println s!"root word {read root 0}"
+    return 0
+  | "lde" =>
+    let logN := 14
+    let trace := keccakShapedTrace logN
+    let some P := CompStark.Stark.Fast.plan? (p := _root_.KoalaBear.fieldSize) logN 1
+      CompStark.gen | return 1
+    let cols ← m.phase "coset lde" fun _ ↦
+      CompStark.Stark.Fast.ldeColumns P CompStark.Fixtures.Keccak.width trace
+    IO.println s!"lde: {cols.size} columns"
+    return 0
+  | _ => IO.eprintln s!"unknown workload {workload}"; return 1
+
 def main (args : List String) : IO UInt32 := do
   match args with
   | ["poseidon2-spec", logN] =>
@@ -534,6 +712,7 @@ def main (args : List String) : IO UInt32 := do
     keccakProve "quintic" logN.toNat! (CompStark.KoalaBear.backendForQuintic
       [CompStark.Fixtures.KeccakKernel.kernel] 1 (keccakShapes logN.toNat!)) id
   | ["phases-batch"] => phasesBatch
+  | ["gate", workload, dir] => gate workload dir
   | ["openings-phase", logN, reps] => openingsPhase logN.toNat! reps.toNat!
   | ["quotient-phase", air, logN, reps] => quotientPhase air logN.toNat! reps.toNat!
   | "prove" :: backend :: air :: rest =>
@@ -598,13 +777,13 @@ def main (args : List String) : IO UInt32 := do
     return 0
   | "prove-batch-lookup" :: rest =>
     -- `prove-batch-lookup LOG_BLOWUP LOG_FINAL MAX_LOG_ARITY QUERIES COMMIT_POW QUERY_POW [JSON]`:
-    -- the fast batch prover's median time on `lookupBatch` (`compstark-bench batch-bench
+    -- the fast batch prover's median time on `lookupBatch 18 16` (`compstark-bench batch-bench
     -- lookup-bench …`), checked against Plonky3's proof in `JSON` if given.
     let ps := (rest.takeWhile String.isNat).map String.toNat!
     let P : CompStark.Fri.Params ← match ps with
       | [b, f, a, q, cp, qp] => pure ⟨b, f, a, q, cp, qp, 0, 0, 0, 0⟩
       | _ => IO.eprintln "six parameters"; return 1
-    let (instances, traces, pis) := lookupBatch
+    let (instances, traces, pis) := lookupBatch 18 16
     let words := traces.map fun t ↦ #[encodeFields t]
     let B := CompStark.KoalaBear.backendFor [] P.logBlowup (CompStark.Batch.shapes instances)
     if let path :: _ := rest.drop ps.length then
