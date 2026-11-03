@@ -3,6 +3,7 @@ Copyright (c) 2026 zkSecurity. All rights reserved.
 Released under Apache 2.0 license as described in the file LICENSE.
 -/
 import CompStark.KoalaBear.Poseidon2
+import CompStark.BabyBear.Poseidon2
 
 /-! # Poseidon2 known answers
 
@@ -59,20 +60,28 @@ def sage16 : Vector Nat 16 :=
   1447982946, 605505945, 247386051, 1223069940, 354661286, 233493652, 2075130821, 1961191294,
   313483662, 1701936810, 1815724394]
 
-/-- info: 'CompStark.Poseidon2.Packed.permute16_width16' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+/-- info: 'CompStark.Poseidon2.KoalaBear.Packed.permute16_width16' depends on axioms: [propext, Classical.choice, Quot.sound] -/
 #guard_msgs in
-#print axioms CompStark.Poseidon2.Packed.permute16_width16
+#print axioms CompStark.Poseidon2.KoalaBear.Packed.permute16_width16
 
-/-- info: 'CompStark.Poseidon2.Packed.permute24_width24' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+/-- info: 'CompStark.Poseidon2.KoalaBear.Packed.permute24_width24' depends on axioms: [propext, Classical.choice, Quot.sound] -/
 #guard_msgs in
-#print axioms CompStark.Poseidon2.Packed.permute24_width24
+#print axioms CompStark.Poseidon2.KoalaBear.Packed.permute24_width24
 
-/-- info: 'CompStark.KoalaBear.Instances.perm16_eq' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+/-- info: 'CompStark.Poseidon2.Packed.Instances.perm16_eq' depends on axioms: [propext, Classical.choice, Quot.sound] -/
 #guard_msgs in
-#print axioms CompStark.KoalaBear.Instances.perm16_eq
+#print axioms CompStark.Poseidon2.Packed.Instances.perm16_eq
 
-/-- info: 'CompStark.KoalaBear.Instances.perm24_eq' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+/-- info: 'CompStark.Poseidon2.Packed.Instances.perm24_eq' depends on axioms: [propext, Classical.choice, Quot.sound] -/
 #guard_msgs in
-#print axioms CompStark.KoalaBear.Instances.perm24_eq
+#print axioms CompStark.Poseidon2.Packed.Instances.perm24_eq
+
+/-- info: 'CompStark.Poseidon2.BabyBear.Packed.permute16_width16' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in
+#print axioms CompStark.Poseidon2.BabyBear.Packed.permute16_width16
+
+/-- info: 'CompStark.Poseidon2.BabyBear.Packed.permute24_width24' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in
+#print axioms CompStark.Poseidon2.BabyBear.Packed.permute24_width24
 
 end CompStarkTests.Poseidon2

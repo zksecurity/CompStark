@@ -10,14 +10,11 @@ import CompStark.Mont32.Json
 /-! # BabyBear known answers
 
 Plonky3 over BabyBear (`bench/rust: RAYON_NUM_THREADS=1 compstark-bench babybear`): the default
-Poseidon2 permutations `default_babybear_poseidon2_16` and `_24`, the Merkle sponge and
-compression on them, and the challenger `DuplexChallenger<BabyBear, Poseidon2BabyBear<24>, 24, 16>`
-on the sequence of `CompStarkTests.Challenger`. Then `uni-stark` proofs over BabyBear with the
-quartic extension (`compstark-bench stark-babybear AIR LOG_N LOG_BLOWUP LOG_FINAL MAX_LOG_ARITY
-QUERIES COMMIT_POW QUERY_POW`), saved as `tests/data/babybear_AIR_*.json`: each must verify, with
-the verifying key of its preprocessed trace for `prep` and `prep0`, the Lean prover must reproduce
-it exactly, and the verifier must reject it with a changed opened value. `periodic`,
-`periodic-tiny` and `pcube` have periodic columns; `square` does not read the next row.
+Poseidon2 permutations `default_babybear_poseidon2_16` and `_24` against the specification, and the
+traces of the `uni-stark` proofs over BabyBear that the compiled tests check
+(`tests/CompStarkNativeTests.lean`), where the Merkle sponge and compression, the challenger and
+the proofs run on BabyBear's packed kernels. `periodic`, `periodic-tiny` and `pcube` have periodic
+columns; `square` does not read the next row.
 -/
 
 namespace CompStarkTests.BabyBear
@@ -28,11 +25,13 @@ local notation "EF" => _root_.BabyBear.Fast.Ext4
 
 def canon (x : F) : Nat := Montgomery.Native32.FastField.toNat x
 
+/-- The width-16 specification on the Montgomery field, as canonical outputs. -/
 def perm16 (x : Vector Nat 16) : Vector Nat 16 :=
-  ((@Poseidon2Field.perm16 F _ _).perm (x.map Nat.cast)).map canon
+  (Poseidon2.permute (Poseidon2.BabyBear.width16 F) (x.map Nat.cast)).map canon
 
+/-- The width-24 specification on the Montgomery field, as canonical outputs. -/
 def perm24 (x : Vector Nat 24) : Vector Nat 24 :=
-  ((@Poseidon2Field.perm24 F _ _).perm (x.map Nat.cast)).map canon
+  (Poseidon2.permute (Poseidon2.BabyBear.width24 F) (x.map Nat.cast)).map canon
 
 #guard perm16 (Vector.replicate 16 0) == #v[1168947398, 128782440, 747404447, 883925857, 360581875,
   1704698758, 1878363991, 1054281681, 682225194, 705839125, 1218819873, 41544645, 1095344608,
@@ -57,35 +56,6 @@ def perm24 (x : Vector Nat 24) : Vector Nat 24 :=
   1235046754, 142170282, 1876178281, 428001087, 602964561, 1634659810, 1459495659, 1386997552,
   559996597, 1579968629, 971061809, 169813032, 163759111, 57819583, 648482598, 838234366,
   112505394, 245852421, 766005377]
-
-/-- The leaf hash of `0, …, n - 1`, as canonical outputs. -/
-def hashIota (n : Nat) : Vector Nat 8 :=
-  (Hash.Poseidon2.hash F ((List.range n).map Nat.cast)).map canon
-
-#guard hashIota 0 == #v[0, 0, 0, 0, 0, 0, 0, 0]
-#guard hashIota 17 == #v[1875502830, 974397544, 704688170, 1883141588, 1041265242, 1629291250,
-  320604243, 1355043471]
-#guard hashIota 50 == #v[399795265, 1943283828, 1079297912, 1957627797, 1004533225, 1719359129,
-  725623019, 1932653308]
-
-#guard (Hash.Poseidon2.compress F (Vector.ofFn fun i ↦ (i.val : _))
-    (Vector.ofFn fun i ↦ ((100 + i.val : Nat) : _))).map canon ==
-  #v[1530764323, 683220462, 336738649, 272658290, 1124681686, 416762908, 1018721039, 1796156880]
-
-/-- The challenger sequence of `CompStarkTests.Challenger`. -/
-def challengerRun : List Nat :=
-  let c := (List.range 20).foldl (fun c i ↦ Transcript.observe c (i : F)) Poseidon2.initTranscript
-  let (a, c) := c.sample
-  let (b, c) := c.sample
-  let (e, c) := (c.sampleExt : EF × Transcript F 24)
-  let c := (c.observe 7).observeExt (⟨100, 101, 102, 103⟩ : EF)
-  let (bits, c) := c.sampleBits 10
-  let (w, c) := c.grind 6
-  let (z, _) := c.sample
-  [canon a, canon b, canon e.c0, canon e.c1, canon e.c2, canon e.c3, bits, canon w, canon z]
-
-#guard challengerRun == [1136121201, 999034627, 1736188539, 573305400, 1322564753, 481613251, 227,
-  139, 1612444506]
 
 /-- The Fibonacci trace of `n` rows from `(0, 1)` and its public values. -/
 def fibInstance (n : Nat) : Array F × List F :=
@@ -134,37 +104,5 @@ def periodicTinyCols : List (List F) := [[9], [1, 2]]
 def tamper (proof : Proof F EF) : Proof F EF :=
   { proof with opened := { proof.opened with
       traceLocal := proof.opened.traceLocal.modify 0 (· + 1) } }
-
-/-- Verify against the verifying key of its preprocessed trace, reproduce and reject when
-tampered the saved proof of `air logN` for parameters `logN logBlowup logFinal maxLogArity queries
-commitPow queryPow [batchPow oodPow]`. -/
-def check (name : String) (air : Nat → Air F) (inst : Nat → Array F × List F) (ps : List Nat) :
-    IO Unit := do
-  let (logN, P) ← match ps with
-    | [logN, b, f, a, q, cp, qp] => pure (logN, (⟨b, f, a, q, cp, qp, 0, 0, 0, 0⟩ : Fri.Params))
-    | [logN, b, f, a, q, cp, qp, bp, op] => pure (logN, ⟨b, f, a, q, cp, qp, bp, op, 0, 0⟩)
-    | _ => throw (IO.userError "seven or nine parameters")
-  let A := air logN
-  let vk := setup P A logN
-  let file := s!"babybear_{name}_{"_".intercalate (ps.map toString)}"
-  let rust : Proof F EF ← IO.ofExcept (Json.parse (← IO.FS.readFile s!"tests/data/{file}.json"))
-  let (trace, pis) := inst (2 ^ logN)
-  if let .error e := verify P A vk rust pis then throw (IO.userError s!"{file}: {e}")
-  unless prove EF P A logN trace pis == rust do throw (IO.userError s!"{file}: proofs differ")
-  if let .ok () := verify P A vk (tamper rust) pis then
-    throw (IO.userError s!"{file}: accepted a tampered proof")
-
-#eval do
-  for ps in [[3, 2, 2, 1, 2, 0, 0], [6, 1, 1, 3, 8, 2, 4], [4, 1, 1, 2, 5, 1, 1, 3, 2]] do
-    check "fib" (fun _ ↦ fibonacci) fibInstance ps
-  check "cube" (fun _ ↦ cube) cubeInstance [5, 3, 1, 2, 6, 1, 3]
-  check "prep" (mulFib · true) prepInstance [4, 2, 0, 1, 4, 0, 0]
-  check "prep0" (mulFib · false) prepInstance [5, 1, 1, 2, 5, 1, 1, 3, 2]
-  check "periodic" (fun _ ↦ periodicAir periodicCols) (periodicInstance periodicCols)
-    [5, 1, 1, 2, 6, 1, 2, 2, 3]
-  check "periodic-tiny" (fun _ ↦ periodicAir periodicTinyCols) (periodicInstance periodicTinyCols)
-    [1, 1, 0, 1, 6, 0, 2]
-  check "pcube" (fun _ ↦ periodicCube) pcubeInstance [4, 1, 1, 2, 6, 1, 2, 2, 3]
-  check "square" (fun _ ↦ square) squareInstance [4, 1, 1, 2, 6, 1, 2, 2, 3]
 
 end CompStarkTests.BabyBear

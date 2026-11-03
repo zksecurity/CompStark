@@ -1,5 +1,6 @@
 import CompStark.Poseidon2.KoalaBear
-import CompStark.Poseidon2.Packed
+import CompStark.Poseidon2.PackedKoalaBear
+import CompStark.BabyBear.Poseidon2
 import CompStark.Merkle.Packed
 import CompStark.Merkle.Tree
 import CompStark.Stark.Prover
@@ -14,6 +15,8 @@ import CompStarkFixtures.KeccakKernel
 
 `CompStarkBench poseidon2-spec LOG_N`: the width-16 specification on the Montgomery field, on
 `2 ^ LOG_N` chained states; prints the median nanoseconds per permutation of seven runs.
+`CompStarkBench babybear-perm LOG_N`: BabyBear's packed permutations of widths 16 and 24 on
+`2 ^ LOG_N` states, and its width-16 specification on one state.
 -/
 
 open CompStark.Poseidon2
@@ -574,7 +577,7 @@ def main (args : List String) : IO UInt32 := do
     let run (b : ByteArray) : ByteArray := Id.run do
       let mut b := b
       for g in [0:groups] do
-        b := Packed.permute16 K b (128 * g).toUSize
+        b := Packed.permute16 _root_.KoalaBear.fieldSize K b (128 * g).toUSize
       return b
     -- Check every lane of the first group against the specification.
     let out := run buf
@@ -660,6 +663,38 @@ def main (args : List String) : IO UInt32 := do
     let med := (samples.qsort (· < ·))[3]!
     IO.println s!"leavespar {rows} x {w} in {C} chunks: {med / 1000} us"
     return 0
+  | ["babybear-perm", logN] =>
+    -- BabyBear's packed permutations of both widths, against the specification on one state.
+    let groups := 2 ^ logN.toNat! / 8
+    let K16 := CompStark.BabyBear.defaultInstances.K16
+    let K24 := CompStark.BabyBear.defaultInstances.K24
+    let time (t : Nat) (perm : ByteArray → USize → ByteArray) : IO Nat := do
+      let buf := CompPoly.CPolynomial.NTTFast.Packed.Native.encodeFields
+        (Array.ofFn (n := 8 * t * groups) fun k ↦ _root_.BabyBear.Fast.ofUInt32 k.val.toUInt32)
+      let mut samples := #[]
+      for k in [0:15] do
+        let input := CompPoly.CPolynomial.NTTFast.Packed.Native.write buf 0 k.toUInt32
+        if CompPoly.CPolynomial.NTTFast.Packed.Native.read input 1 == 12345 then IO.println ""
+        let (ns, r) ← timeNs fun _ ↦ do
+          let mut b := input
+          for g in [0:groups] do
+            b := perm b (8 * t * g).toUSize
+          return (CompPoly.CPolynomial.NTTFast.Packed.Native.read b 0).toUInt64
+        samples := samples.push (ns * 10 / (8 * groups))
+        if r == 12345 then IO.println ""
+      return (samples.qsort (· < ·))[7]!
+    let m16 ← time 16 (Packed.permute16 _root_.BabyBear.fieldSize K16)
+    let m24 ← time 24 (Packed.permute24 _root_.BabyBear.fieldSize K24)
+    let P := CompStark.Poseidon2.BabyBear.width16 _root_.BabyBear.Fast.Field
+    let (ns, r) ← timeNs fun _ ↦ do
+      let mut s : Vector _root_.BabyBear.Fast.Field 16 := Vector.ofFn fun i ↦ (i.val : _)
+      for _ in [0:64] do
+        s := permute P s
+      return s[0].val.toUInt64
+    if r == 12345 then IO.println ""
+    IO.println s!"babybear packed ns/perm width16 {m16 / 10}.{m16 % 10} width24 {m24 / 10}.{m24 % 10}"
+    IO.println s!"babybear specification ns/perm width16 {ns / 64}"
+    return 0
   | ["perm24", logN] =>
     let groups := 2 ^ logN.toNat! / 8
     let K := Packed.Packed24.ofParams (KoalaBear.width24 KoalaBear.Fast.Field)
@@ -673,7 +708,7 @@ def main (args : List String) : IO UInt32 := do
       let (ns, r) ← timeNs fun _ ↦ do
         let mut b := input
         for g in [0:groups] do
-          b := Packed.permute24 K b (192 * g).toUSize
+          b := Packed.permute24 _root_.KoalaBear.fieldSize K b (192 * g).toUSize
         return (CompPoly.CPolynomial.NTTFast.Packed.Native.read b 0).toUInt64
       samples := samples.push (ns * 10 / (8 * groups))
       if r == 12345 then IO.println ""

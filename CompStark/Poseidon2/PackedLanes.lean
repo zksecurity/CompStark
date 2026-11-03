@@ -6,6 +6,7 @@ module
 
 public import CompStark.Poseidon2.Packed
 public import CompPoly.Univariate.NTTFast.Packed.FieldStorage
+public import CompStark.Poseidon2.ArithmeticLemmas
 import all CompStark.Poseidon2.Packed
 import all CompPoly.Univariate.NTTFast.Packed.Native
 import CompPoly.Univariate.NTTFast.Packed.StorageLemmas
@@ -287,11 +288,9 @@ end Rows
 
 /-! ### Kernel models -/
 
-/-- The model of the S-box kernel: coordinate `j` becomes `(x + c_j) ^ 3`. -/
-def sboxModel (cs : List Nat) (rc W : Array F) (r i : Nat) : Array F :=
-  spliceRows cs W i fun j l ↦
-    let a := word W i j l + rc.getD (r + j) 0
-    a * a * a
+/-- The model of the S-box kernel: coordinate `j` becomes `(x + c_j) ^ d`. -/
+def sboxModel (d : Nat) (cs : List Nat) (rc W : Array F) (r i : Nat) : Array F :=
+  spliceRows cs W i fun j l ↦ (word W i j l + rc.getD (r + j) 0) ^ d
 
 /-- `mat4` on coordinates `x0, …, x3` with Plonky3's addition chain, except row 2 as
 `(t0123 + x2) + 2 x3`; `k` selects the row. -/
@@ -326,8 +325,8 @@ and the row functions `rows`. -/
 def spliceList (cs : List Nat) (W : Array F) (i : Nat) (rows : List (Nat → F)) : Array F :=
   (cs.zip rows).foldl (fun A jg ↦ splice A (i + 8 * jg.1) (lit8 jg.2)) W
 
-/-- `(x + c) ^ 3` as two products. -/
-def cubeAdd (c x : F) : F := (x + c) * (x + c) * (x + c)
+/-- The S-box `(x + c) ^ d`. -/
+def powAdd (d : Nat) (c x : F) : F := (x + c) ^ d
 
 /-- Neighbours added pairwise, an odd last term carried. -/
 def pairSums : List F → List F
@@ -345,8 +344,8 @@ def restSum (ks : List Nat) (W : Array F) (i l : Nat) : F :=
 
 /-- The sum of lane `l` after the S-box of a partial round: the S-box output plus the tree sum of
 the coordinates `ks`. -/
-def rowSum (ks : List Nat) (c : F) (W : Array F) (i l : Nat) : F :=
-  cubeAdd c (word W i 0 l) + restSum ks W i l
+def rowSum (d : Nat) (ks : List Nat) (c : F) (W : Array F) (i l : Nat) : F :=
+  powAdd d c (word W i 0 l) + restSum ks W i l
 
 /-! ### The round loops -/
 
@@ -438,13 +437,109 @@ theorem fullRounds_spec {t : Nat} (P : Params F t) (rows : List (Vector F t))
   exact foldl_range_getD (fullRound P) 0 rows s
 
 /-- The S-box kernel's lanes. -/
-theorem lane_sbox {t : Nat} {cs : List Nat} (hc : Coords t cs) (rc W : Array F) (r i : Nat)
-    (hW : i + 8 * t ≤ W.size) (l : Nat) (hl : l < 8) :
-    lane t (sboxModel cs rc W r i) i l =
-      Vector.ofFn fun j : Fin t ↦ ((lane t W i l)[j] + (row t rc r)[j]) ^ 3 := by
+theorem lane_sbox (d : Nat) {t : Nat} {cs : List Nat} (hc : Coords t cs) (rc W : Array F)
+    (r i : Nat) (hW : i + 8 * t ≤ W.size) (l : Nat) (hl : l < 8) :
+    lane t (sboxModel d cs rc W r i) i l =
+      Vector.ofFn fun j : Fin t ↦ ((lane t W i l)[j] + (row t rc r)[j]) ^ d := by
   rw [sboxModel, lane_spliceRows hc _ _ _ hW l hl]
   ext j hj
   simp only [Vector.getElem_ofFn, Fin.getElem_fin, lane, row]
-  ring
+
+
+/-! ### Word models -/
+
+variable (p) in
+/-- A word below `2 p` reduced once, as a field element. -/
+def red (u : UInt32) : F := CompPoly.CPolynomial.NTTFast.Packed.ofWord p
+  (CompPoly.CPolynomial.NTTFast.Packed.reduceOnce p u)
+
+theorem reduceOnce_eq_red (u : UInt32) (h : u.toNat < 2 * p) :
+    CompPoly.CPolynomial.NTTFast.Packed.reduceOnce p u = (red p u).val := by
+  have hp : (CompPoly.CPolynomial.NTTFast.Packed.reduceOnce p u).toNat < p := by
+    rw [CompPoly.CPolynomial.NTTFast.Packed.reduceOnce_eq]
+    split <;> rename_i hu
+    · rw [UInt32.lt_iff_toNat_lt, modulus32_toNat'] at hu; exact hu
+    · rw [UInt32.lt_iff_toNat_lt, modulus32_toNat'] at hu
+      rw [UInt32.toNat_sub_of_le _ _ (by rw [UInt32.le_iff_toNat_le, modulus32_toNat']; omega),
+        modulus32_toNat']
+      omega
+  simp only [red, CompPoly.CPolynomial.NTTFast.Packed.ofWord, hp, ↓reduceDIte]
+
+/-- A canonical word reduced once is its field element. -/
+theorem red_val (x : F) : red p x.val = x := by
+  rw [red, reduceOnce_val, CompPoly.CPolynomial.NTTFast.Packed.ofWord_val]
+
+/-- The words of a packed field array are below `2 p`. -/
+theorem map_val_lt (W : Array F) (k : Nat) :
+    ((W.map Subtype.val).getD k 0).toNat < 2 * p := by
+  rw [getD_map_val]
+  have := (W.getD k 0).property
+  omega
+
+/-- The words of a packed field array reduced are its elements. -/
+theorem red_word_map (W : Array F) (i j l : Nat) :
+    red p (word (W.map Subtype.val) i j l) = word W i j l := by
+  rw [word, getD_map_val, red_val]
+
+/-- A packed field array, as the words of its encoding. -/
+theorem touch8_encode_words (W : Array F) (i : USize) (h) :
+    touch8 (encode W) i h = ⟨encode (W.map Subtype.val), by rw [← encode_eq_map_val]⟩ := by
+  rw [touch8_encode]
+  apply Subtype.ext
+  exact encode_eq_map_val W
+
+/-- The words of the S-box kernel with the lazy S-box `lazy`: the powers of the group, below `2 p`,
+and the other words. -/
+def sboxWords (lazy : UInt32 → UInt32) (cs : List Nat) (rc W : Array F) (r i : Nat) :
+    Array UInt32 :=
+  spliceRows cs (W.map Subtype.val) i fun j l ↦ lazy (word W i j l + rc.getD (r + j) 0).val
+
+variable (p) in
+/-- The words `mat4` writes on a group of words below `2 p`. -/
+def mat4Words (cs : List Nat) (U : Array UInt32) (i : Nat) : Array UInt32 :=
+  spliceRows cs U i fun j l ↦
+    (mat4Word (red p (word U i (4 * (j / 4)) l)) (red p (word U i (4 * (j / 4) + 1) l))
+      (red p (word U i (4 * (j / 4) + 2) l)) (red p (word U i (4 * (j / 4) + 3) l)) (j % 4)).val
+
+/-- The coordinates of a width-24 state. -/
+def coords24 : List Nat :=
+  [0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18, 19, 20, 21, 22, 23]
+
+theorem coords24_spec : Coords 24 coords24 :=
+  ⟨by decide, fun j hj ↦ by interval_cases j <;> decide⟩
+
+/-! ### The partial-round model -/
+
+/-- The rows `j, j + 1, …` of a partial round for the diagonal entries `±2 ^ (-k)` of `tail`, as
+`(k, negative)`: `s ± x_j · 2 ^ (-k)`. -/
+def tailRows (s : Nat → F) (x : Nat → Nat → F) : Nat → List (Nat × Bool) → List (Nat → F)
+  | _, [] => []
+  | j, (k, neg) :: rest =>
+    (fun l ↦ if neg then s l - x j l * invPow2 p k else s l + x j l * invPow2 p k) ::
+      tailRows s x (j + 1) rest
+
+/-- The rows of a partial round with S-box degree `d` and the internal diagonal
+`[-2, 1, 2, 1/2, 3, 4, -1/2, -3, -4]` followed by the entries of `tail`, as the kernels compute
+them: coordinate `0` as `rest - y = -2 y + (y + rest)`, the others as `V_j · x + sum`; `ks` lists
+the coordinates after `0`. -/
+def partialRows (d : Nat) (tail : List (Nat × Bool)) (ks : List Nat) (c : F) (W : Array F)
+    (i : Nat) : List (Nat → F) :=
+  let x (j l : Nat) := word W i j l
+  let r (l : Nat) := restSum ks W i l
+  let s (l : Nat) := rowSum d ks c W i l
+  [fun l ↦ r l - powAdd d c (x 0 l),
+   fun l ↦ s l + x 1 l,
+   fun l ↦ s l + (x 2 l + x 2 l),
+   fun l ↦ s l + x 3 l * half p,
+   fun l ↦ s l + (x 4 l + x 4 l + x 4 l),
+   fun l ↦ s l + (x 5 l + x 5 l + (x 5 l + x 5 l)),
+   fun l ↦ s l - x 6 l * half p,
+   fun l ↦ s l - (x 7 l + x 7 l + x 7 l),
+   fun l ↦ s l - (x 8 l + x 8 l + (x 8 l + x 8 l))] ++ tailRows s x 9 tail
+
+/-- The model of a partial-round kernel on the coordinates `cs`. -/
+def partialModel (d : Nat) (tail : List (Nat × Bool)) (cs : List Nat) (c : F) (W : Array F)
+    (i : Nat) : Array F :=
+  spliceList cs W i (partialRows d tail cs.tail c W i)
 
 end CompStark.Poseidon2.Packed

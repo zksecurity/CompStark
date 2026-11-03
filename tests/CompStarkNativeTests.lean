@@ -33,9 +33,11 @@ and runs it.
   extension, Plonky3's proofs (`tests/data/quintic_AIR_*.json`, from `compstark-bench
   stark-quintic …`) verify and both provers reproduce them, and the fast batch prover reproduces
   the specification's batch proofs with lookups.
-* The fast prover over BabyBear reproduces Plonky3's BabyBear proofs
-  (`tests/data/babybear_AIR_*.json`), and its batch proofs (`tests/data/babybear_batch_CASE_*.json`,
-  from `compstark-bench batch-babybear CASE …`) verify and both provers reproduce them.
+* BabyBear's Poseidon2 Merkle hashes and challenger on its packed implementation against Plonky3,
+  and Plonky3's BabyBear proofs (`tests/data/babybear_AIR_*.json`): each verifies and is rejected
+  when tampered, and both provers reproduce it; its batch proofs
+  (`tests/data/babybear_batch_CASE_*.json`, from `compstark-bench batch-babybear CASE …`) verify and
+  both provers reproduce them.
 * Plonky3 `batch-stark` proofs over KoalaBear (`tests/data/batch_CASE_*.json`, from
   `RAYON_NUM_THREADS=1 compstark-bench batch CASE LOG_BLOWUP LOG_FINAL MAX_LOG_ARITY QUERIES
   COMMIT_POW QUERY_POW [BATCH_POW OOD_POW [LOOKUP_POW]]`), of instances of mixed heights with
@@ -526,6 +528,46 @@ local notation "F" => _root_.BabyBear.Fast.Field
 local notation "EF" => _root_.BabyBear.Fast.Ext4
 
 /-- The fast prover reproduces Plonky3's saved BabyBear proof of `air logN`. -/
+def canon (x : F) : Nat := Montgomery.Native32.FastField.toNat x
+
+/-- Plonky3's BabyBear permutations, Merkle sponge and compression, and challenger
+(`bench/rust: RAYON_NUM_THREADS=1 compstark-bench babybear`) on the packed kernels. -/
+def knownAnswers : IO Unit := do
+  let perm16 (x : Vector Nat 16) : Vector Nat 16 :=
+    ((@Poseidon2Field.perm16 F _ _).perm (x.map Nat.cast)).map canon
+  let perm24 (x : Vector Nat 24) : Vector Nat 24 :=
+    ((@Poseidon2Field.perm24 F _ _).perm (x.map Nat.cast)).map canon
+  check "babybear perm16 zero" (perm16 (Vector.replicate 16 0) ==
+    CompStarkTests.BabyBear.perm16 (Vector.replicate 16 0))
+  check "babybear perm16 iota" (perm16 (Vector.ofFn (·.val)) ==
+    CompStarkTests.BabyBear.perm16 (Vector.ofFn (·.val)))
+  check "babybear perm24 iota" (perm24 (Vector.ofFn (·.val)) ==
+    CompStarkTests.BabyBear.perm24 (Vector.ofFn (·.val)))
+  let hashIota (n : Nat) : Vector Nat 8 :=
+    (Hash.Poseidon2.hash F ((List.range n).map Nat.cast)).map canon
+  check "babybear hash 0" (hashIota 0 == #v[0, 0, 0, 0, 0, 0, 0, 0])
+  check "babybear hash 17" (hashIota 17 == #v[1875502830, 974397544, 704688170, 1883141588,
+    1041265242, 1629291250, 320604243, 1355043471])
+  check "babybear hash 50" (hashIota 50 == #v[399795265, 1943283828, 1079297912, 1957627797,
+    1004533225, 1719359129, 725623019, 1932653308])
+  check "babybear compress" ((Hash.Poseidon2.compress F (Vector.ofFn fun i ↦ (i.val : _))
+      (Vector.ofFn fun i ↦ ((100 + i.val : Nat) : _))).map canon ==
+    #v[1530764323, 683220462, 336738649, 272658290, 1124681686, 416762908, 1018721039, 1796156880])
+  let c := (List.range 20).foldl (fun c i ↦ Transcript.observe c (i : F)) Poseidon2.initTranscript
+  let (a, c) := c.sample
+  let (b, c) := c.sample
+  let (e, c) := (c.sampleExt : EF × Transcript F 24)
+  let c := (c.observe 7).observeExt (⟨100, 101, 102, 103⟩ : EF)
+  let (bits, c) := c.sampleBits 10
+  let (w, c) := c.grind 6
+  let (z, _) := c.sample
+  check "babybear challenger" ([canon a, canon b, canon e.c0, canon e.c1, canon e.c2, canon e.c3,
+    bits, canon w, canon z] == [1136121201, 999034627, 1736188539, 573305400, 1322564753,
+    481613251, 227, 139, 1612444506])
+
+/-- Plonky3's saved BabyBear proof of `air logN` verifies, with the verifying key of its
+preprocessed trace, the specification prover and the fast prover reproduce it, and the verifier
+rejects it with a changed opened value. -/
 def proof (name : String) (air : Nat → Air F) (inst : Nat → Array F × List F)
     (ps : List Nat) : IO Unit := do
   let (logN, P) ← KoalaBear.params ps
@@ -533,6 +575,11 @@ def proof (name : String) (air : Nat → Air F) (inst : Nat → Array F × List 
   let file := s!"babybear_{name}_{"_".intercalate (ps.map toString)}"
   let rust : Proof F EF ← IO.ofExcept (Json.parse (← IO.FS.readFile s!"tests/data/{file}.json"))
   let (trace, pis) := inst (2 ^ logN)
+  let vk := setup P A logN
+  if let .error e := verify P A vk rust pis then throw (IO.userError s!"{file}: {e}")
+  check s!"{file}: specification prover" (prove EF P A logN trace pis == rust)
+  check s!"{file}: rejects a tampered proof"
+    (verify P A vk (CompStarkTests.BabyBear.tamper rust) pis matches .error _)
   check s!"{file}: fast prover"
     (proveWith (CompStark.BabyBear.backendFor [] P.logBlowup [(logN, A.logQuotientChunks logN)]) P
       A logN #[encodeFields trace] pis == rust)
@@ -600,6 +647,7 @@ def main : IO UInt32 := do
     CompStarkTests.Keccak.plonky3Example
     KoalaBear.proofs
     KoalaBear.batchProofs
+    BabyBear.knownAnswers
     BabyBear.proofs
     BabyBear.batchProofs
     IO.println "native tests passed"
