@@ -22,7 +22,7 @@ namespace CompStark.Poseidon2.Packed
 open Montgomery.Native32 (Mont32Field FastField)
 open Montgomery.Native32.Words (Fits Fits.mono Fits.of_size inBounds)
 open CompPoly.PackedRepr (encode)
-open CompPoly.CPolynomial.NTTFast.Packed (size_encode_fields ofWord ofWord_val)
+open CompPoly.CPolynomial.NTTFast.Packed (size_encode_fields)
 open CompPoly.CPolynomial.NTTFast.Packed.Native (encodeFields encodeFields_eq read read_encode)
 
 variable {p : ℕ} [Mont32Field p] [PackedKernels p]
@@ -68,6 +68,20 @@ def Instances.ofNat (initial16 : List (Vector Nat 16)) (internal16 : List Nat)
     initial24 := by simp only [P24, Params.ofNat, List.length_map, h24.1]
     terminal24 := by simp only [P24, Params.ofNat, List.length_map, h24.2] }
 
+/-- A word as a field element, checked against the modulus word, which a field's instance makes
+an immediate; noncanonical words read as `0`. -/
+@[inline] def ofWord32 (x : UInt32) : F :=
+  if h : x < Mont32Field.modulus32 p then
+    ⟨x, by rwa [UInt32.lt_iff_toNat_lt, Mont32Field.modulus32_toNat] at h⟩
+  else 0
+
+omit [PackedKernels p] in
+theorem ofWord32_val (x : F) : ofWord32 x.val = x := by
+  have h : x.val < Mont32Field.modulus32 p := by
+    rw [UInt32.lt_iff_toNat_lt, Mont32Field.modulus32_toNat]; exact x.property
+  simp only [ofWord32, h, ↓reduceDIte]
+  rfl
+
 /-- The `8 t` words of a packed group of width `t` with `s` in lane 0 and zeros elsewhere. -/
 def lane0 {t : Nat} (s : Vector F t) : Array F :=
   Array.ofFn (n := 8 * t) fun k ↦ if k.val % 8 = 0 then s.toArray.getD (k / 8) 0 else 0
@@ -84,12 +98,12 @@ variable (I : Instances p)
 /-- The width-16 permutation of one state, in lane 0 of a packed group. -/
 @[specialize] def perm16 (s : Vector F 16) : Vector F 16 :=
   let out := permute16 p I.K16 (lane0Words s) 0
-  Vector.ofFn fun j ↦ ofWord _ (read out (8 * j.val))
+  Vector.ofFn fun j ↦ ofWord32 (read out (8 * j.val))
 
 /-- The width-24 permutation of one state, in lane 0 of a packed group. -/
 @[specialize] def perm24 (s : Vector F 24) : Vector F 24 :=
   let out := permute24 p I.K24 (lane0Words s) 0
-  Vector.ofFn fun j ↦ ofWord _ (read out (8 * j.val))
+  Vector.ofFn fun j ↦ ofWord32 (read out (8 * j.val))
 
 end Instances
 
@@ -157,12 +171,12 @@ theorem lane_lane0 {t : Nat} (s : Vector F t) : lane t (lane0 s) 0 0 = s := by
 omit [PackedKernels p] in
 /-- Reading word `8 j` of an encoded group gives coordinate `j` of lane 0. -/
 theorem read_lane {t : Nat} (ht : t ≤ 24) (W : Array F) (hW : W.size = 8 * t) (j : Nat)
-    (hj : j < t) : ofWord _ (read (encode W) (8 * j)) = (lane t W 0 0)[j] := by
+    (hj : j < t) : ofWord32 (read (encode W) (8 * j)) = (lane t W 0 0)[j] := by
   have hs : (encode W).size < USize.size := by
     rw [size_encode_fields, hW]
     have := USize.le_size
     omega
-  rw [read_encode W _ hs (by omega), ofWord_val]
+  rw [read_encode W _ hs (by omega), ofWord32_val]
   simp only [lane, Vector.getElem_ofFn, word, Nat.zero_add, Nat.add_zero]
 
 namespace Instances

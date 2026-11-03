@@ -41,8 +41,20 @@ def defaultInstances : Instances where
   initial24 := rfl
   terminal24 := rfl
 
+/-- The width-16 permutation of one state on the packed kernels, with Plonky3's default
+constants: a definition of its own, so that it compiles to the field's kernels. -/
+def perm16 (s : Vector F 16) : Vector F 16 := defaultInstances.perm16 s
+
+/-- The width-24 permutation of one state on the packed kernels, with Plonky3's default
+constants. -/
+def perm24 (s : Vector F 24) : Vector F 24 := defaultInstances.perm24 s
+
 /-- Plonky3's default BabyBear Poseidon2 instances on the packed kernels. -/
-instance instPoseidon2Field : Poseidon2Field F := defaultInstances.field
+instance instPoseidon2Field : Poseidon2Field F where
+  params16 := Poseidon2.BabyBear.width16 F
+  params24 := Poseidon2.BabyBear.width24 F
+  perm16 := ⟨perm16, defaultInstances.perm16_eq⟩
+  perm24 := ⟨perm24, defaultInstances.perm24_eq⟩
 
 theorem params16_eq :
     (Poseidon2Field.params16 : Poseidon2.Params F 16) = Poseidon2.BabyBear.width16 F := rfl
@@ -50,9 +62,22 @@ theorem params16_eq :
 theorem params24_eq :
     (Poseidon2Field.params24 : Poseidon2.Params F 24) = Poseidon2.BabyBear.width24 F := rfl
 
+/-- The width-16 permutation of the group of eight states at word `0`, with Plonky3's default
+constants. -/
+def packed16 (b : ByteArray) : ByteArray :=
+  permute16 _root_.BabyBear.fieldSize defaultInstances.K16 b 0
+
+/-- The width-24 permutation of the group of eight states at word `0`, with Plonky3's default
+constants. -/
+def packed24 (b : ByteArray) : ByteArray :=
+  permute24 _root_.BabyBear.fieldSize defaultInstances.K24 b 0
+
 /-- BabyBear's vectorized Poseidon2 kernels on groups of eight states, with Plonky3's default
 constants. -/
-instance instPackedPoseidon2 : Poseidon2.PackedPoseidon2 _root_.BabyBear.fieldSize :=
-  defaultInstances.packed
+instance instPackedPoseidon2 : Poseidon2.PackedPoseidon2 _root_.BabyBear.fieldSize where
+  permute16 := packed16
+  permute24 := packed24
+  permute16_encode := defaultInstances.permute16_group
+  permute24_encode := defaultInstances.permute24_group
 
 end CompStark.BabyBear
