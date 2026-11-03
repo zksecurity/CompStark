@@ -301,6 +301,63 @@ theorem openedAt_sum [Mont32BaseField p] [Mont32.AlgebraId EF] (b : Nat) (s : Ma
   rw [Array.getElem_ofFn, Array.getElem_ofFn]
   exact congrArg _ (ext_coord fun c hc ↦ by rw [coord_mkE _ _ hc, coord_colSum _ _ _ _ hz])
 
+/-! ### `1 / (z - x)` once per point -/
+
+/-- Reversing the bits of `0`. -/
+theorem bitRevNat_zero : ∀ b, bitRevNat b 0 = 0
+  | 0 => by
+    have := bitRevNat_lt 0 0
+    rw [Nat.pow_zero] at this
+    omega
+  | b + 1 => by
+    have := CompPoly.CPolynomial.NTT.Transform.bitRevNat_even b 0
+    rw [Nat.mul_zero, bitRevNat_zero b] at this
+    exact this
+
+/-- The stored points of `shift · ⟨ω⟩` of size `2 ^ k` are the first ones of any larger size. -/
+theorem cosetPointsBitRev_prefix {G : Type} [BaseField G] (shift : G) {k L : Nat} (hkL : k ≤ L)
+    (hL : L ≤ twoAdicity G) {i : Nat} (hi : i < 2 ^ k) :
+    (cosetPointsBitRev shift L).getD i 0 = (cosetPointsBitRev shift k).getD i 0 := by
+  obtain ⟨e, rfl⟩ : ∃ e, L = e + k := ⟨L - k, by omega⟩
+  have hi' : i < 2 ^ (e + k) := lt_of_lt_of_le hi (Nat.pow_le_pow_right (by decide) (by omega))
+  have hc := CompPoly.CPolynomial.NTTFast.Packed.bitRevNat_concat e k 0 i hi
+  rw [Nat.mul_zero, Nat.zero_add, bitRevNat_zero, Nat.add_zero] at hc
+  rw [cosetPointsBitRev_getD _ _ _ hi', cosetPointsBitRev_getD _ _ _ hi, cosetPoints_eq,
+    cosetPoints_eq, CompPoly.CPolynomial.NTTFast.Packed.getD_ofFn_bounded _ _ (bitRevNat_lt _ _),
+    CompPoly.CPolynomial.NTTFast.Packed.getD_ofFn_bounded _ _ (bitRevNat_lt _ _)]
+  show _ * _ ^ bitRevNat (e + k) i = _ * _ ^ bitRevNat k i
+  rw [hc, pow_mul, Nat.add_comm e k, BaseField.twoAdicGen_pow k e (by omega)]
+
+/-- The planes `invs` hold `1 / (z - x)` for the point `z` on the stored points `x` of a height
+`2 ^ L` of at least `2 ^ logH`. -/
+def DenomsOk [Mont32BaseField p] (invs : List (EF × Nat × ExtPlanes p EF)) (z : EF)
+    (logH : Nat) : Prop :=
+  ∃ L, logH ≤ L ∧ L ≤ twoAdicity F ∧ ExtPlanes.Rel (denomsOf invs z)
+    (tab (2 ^ L) fun r ↦ (z - FastExt.ofBase ((cosetPointsBitRev (gen : F) L).getD r 0))⁻¹)
+
+theorem DenomsOk.mono [Mont32BaseField p] {invs : List (EF × Nat × ExtPlanes p EF)} {z : EF} {k logH : Nat}
+    (h : DenomsOk invs z logH) (hk : k ≤ logH) : DenomsOk invs z k := by
+  obtain ⟨L, h1, h2, h3⟩ := h
+  exact ⟨L, by omega, h2, h3⟩
+
+/-- A range of the planes of `1 / (z - x)` on the stored points of height `2 ^ logH`. -/
+theorem DenomsOk.slice [Mont32BaseField p] {invs : List (EF × Nat × ExtPlanes p EF)} {z : EF} {logH : Nat}
+    (h : DenomsOk invs z logH) {r0 len : Nat} (hr : r0 + len ≤ 2 ^ logH) :
+    ExtPlanes.Rel (slicePlanes (denomsOf invs z) r0 len) (tab len fun t ↦
+      (z - FastExt.ofBase ((cosetPointsBitRev (gen : F) logH).getD (r0 + t) 0))⁻¹) := by
+  obtain ⟨L, h1, h2, h3⟩ := h
+  obtain ⟨-, hc⟩ := ExtPlanes.rel_tab_iff.mp h3
+  have hle : 2 ^ logH ≤ 2 ^ L := Nat.pow_le_pow_right (by decide) h1
+  refine ExtPlanes.rel_mk _ _ fun k ↦ ?_
+  have hk := hc k
+  simp only [Fin.getElem_fin] at hk ⊢
+  rw [Vector.getElem_map, hk, slice_encode]
+  refine congrArg encode (Array.ext (by rw [Array.size_extract, size_tab, size_tab]; omega)
+    fun t h4 _ ↦ ?_)
+  rw [Array.size_extract, size_tab] at h4
+  rw [Array.getElem_extract, getElem_tab, getElem_tab,
+    cosetPointsBitRev_prefix (gen : F) h1 h2 (by omega)]
+
 /-! ### The fast column sums -/
 
 open CompPoly.CPolynomial.NTTFast.Packed (getD_ofFn_bounded size_encode_fields)
@@ -333,11 +390,12 @@ theorem transposeRows_encode (M : Array F) (w r0 rows : Nat) (hM : (r0 + rows) *
     CompPoly.CPolynomial.NTTFast.Packed.getD_map_val, Nat.add_zero]
 
 /-- The weight planes of a range of stored points. -/
-theorem weightPlane [Mont32BaseField p] [Mont32.AlgebraId EF] {z : EF}
-    (hz : Ext.OutsideBase z) (X : Array F) (r0 len : Nat)
-    (hX : r0 + len ≤ X.size) (hs : 4 * X.size < USize.size) :
-    ((ExtPlanes.invDenoms z (slice (encode X) r0 len) len).mulBase
-      (slice (encode X) r0 len)).c.toArray =
+theorem weightPlane [Mont32BaseField p] [Mont32.AlgebraId EF]
+    (invs : List (EF × Nat × ExtPlanes p EF)) {z : EF} (X : Array F) (r0 len : Nat)
+    (hX : r0 + len ≤ X.size) (hs : 4 * X.size < USize.size)
+    (hinv : ExtPlanes.Rel (slicePlanes (denomsOf invs z) r0 len)
+      (tab len fun t ↦ (z - FastExt.ofBase (X.getD (r0 + t) 0))⁻¹)) :
+    ((slicePlanes (denomsOf invs z) r0 len).mulBase (slice (encode X) r0 len)).c.toArray =
     Array.ofFn (n := FastExt.d p EF) fun c ↦ encode (Array.ofFn (n := len)
       fun t ↦ coord c (bw z (X.getD (r0 + t.val) 0))) := by
   have hn : 4 * len < USize.size := by omega
@@ -350,8 +408,7 @@ theorem weightPlane [Mont32BaseField p] [Mont32.AlgebraId EF] {z : EF}
     rw [Array.size_extract] at h1
     rw [Array.getElem_extract, getElem_tab]
     exact (getD_lt X _ (by omega)).symm
-  have hrv := ExtPlanes.mulBase_rel hn g
-    (ExtPlanes.invDenoms_rel hn (Mont32.ne_ofBase hz) g)
+  have hrv := ExtPlanes.mulBase_rel hn g hinv
   rw [hxr]
   obtain ⟨-, hc⟩ := ExtPlanes.rel_tab_iff.mp hrv
   refine Array.ext (by simp) fun c h1 _ ↦ ?_
@@ -395,9 +452,11 @@ theorem foldl_append_ofFnN {α : Type} {n : Nat} (hn : 0 < n) (R : EF → Fin n 
 
 /-- The weight planes of a range of stored points, for every point and coordinate. -/
 theorem weightPlanes_encode [Mont32BaseField p] [Mont32.AlgebraId EF]
-    (zs : Array EF) (hz : ∀ z ∈ zs, Ext.OutsideBase z) (X : Array F) (r0 len : Nat)
-    (hX : r0 + len ≤ X.size) (hsX : 4 * X.size < USize.size) :
-    weightPlanes zs (encode X) r0 len = Array.ofFn (n := FastExt.d p EF * zs.size) fun i ↦
+    (invs : List (EF × Nat × ExtPlanes p EF)) (zs : Array EF) (X : Array F) (r0 len : Nat)
+    (hX : r0 + len ≤ X.size) (hsX : 4 * X.size < USize.size)
+    (hinv : ∀ z ∈ zs, ExtPlanes.Rel (slicePlanes (denomsOf invs z) r0 len)
+      (tab len fun t ↦ (z - FastExt.ofBase (X.getD (r0 + t) 0))⁻¹)) :
+    weightPlanes invs zs (encode X) r0 len = Array.ofFn (n := FastExt.d p EF * zs.size) fun i ↦
       encode (Array.ofFn (n := len) fun t ↦
         coord (i.val % FastExt.d p EF) (bw (zs.toList.getD (i.val / FastExt.d p EF) 0)
           (X.getD (r0 + t.val) 0))) := by
@@ -409,23 +468,25 @@ theorem weightPlanes_encode [Mont32BaseField p] [Mont32.AlgebraId EF]
   · rfl
   intro b z hz'
   dsimp only
-  rw [weightPlane (hz z (Array.mem_toList_iff.mp hz')) X r0 len hX hsX]
+  rw [weightPlane invs X r0 len hX hsX (hinv z (Array.mem_toList_iff.mp hz'))]
 
 /-- The fast column sums of a range of stored rows within one block of the matrix: for every point
 and coordinate, a plane of a sum per column, of the rows times the weights of their points. -/
 theorem weightedColumns_cols [Mont32BaseField p] [Mont32.AlgebraId EF]
-    {pm : PMat} {s : Mat F} (h : RM pm s) (zs : Array EF)
-    (hz : ∀ z ∈ zs, Ext.OutsideBase z) (X : Array F) (r0 len : Nat) (hlen : 0 < len)
+    (invs : List (EF × Nat × ExtPlanes p EF)) {pm : PMat} {s : Mat F} (h : RM pm s)
+    (zs : Array EF) (X : Array F) (r0 len : Nat) (hlen : 0 < len)
     (hblk : r0 % pm.rows + len ≤ pm.rows) (hr : r0 + len ≤ s.height) (hX : r0 + len ≤ X.size)
-    (hsX : 4 * X.size < USize.size) :
-    weightedColumns pm zs (encode X) r0 len =
+    (hsX : 4 * X.size < USize.size)
+    (hinv : ∀ z ∈ zs, ExtPlanes.Rel (slicePlanes (denomsOf invs z) r0 len)
+      (tab len fun t ↦ (z - FastExt.ofBase (X.getD (r0 + t) 0))⁻¹)) :
+    weightedColumns invs pm zs (encode X) r0 len =
       Array.ofFn (n := FastExt.d p EF * zs.size) fun i ↦ encode (Array.ofFn (n := s.width) fun j ↦
         ∑ t ∈ Finset.range len, s.values.getD ((r0 + t) * s.width + j.val) 0 *
           coord (i.val % FastExt.d p EF) (bw (zs.toList.getD (i.val / FastExt.d p EF) 0)
             (X.getD (r0 + t) 0))) := by
   unfold Fast.weightedColumns
   dsimp only
-  rw [weightPlanes_encode zs hz X r0 len hX hsX, Array.size_ofFn, h.width]
+  rw [weightPlanes_encode invs zs X r0 len hX hsX hinv, Array.size_ofFn, h.width]
   let P (i t : Nat) : F := coord (i % FastExt.d p EF)
     (bw (zs.toList.getD (i / FastExt.d p EF) 0) (X.getD (r0 + t) 0))
   have hl : 4 * len < USize.size := by omega
@@ -556,11 +617,11 @@ theorem gcd_range_dvd (L R : Nat) :
     exact Nat.div_dvd_of_dvd (Nat.pow_dvd_pow 2 h4)
 
 /-- The fast opened values are the specification's. -/
-theorem openedAt_rel [Mont32BaseField p] [Mont32.AlgebraId EF] (b : Nat)
-    (zs : List EF) {m : PMat} {s : Mat F}
-    (h : RM m s)
-    (hs : MatOk s) (hz : ∀ z ∈ zs, Ext.OutsideBase z) :
-    openedAt b m zs = zs.map (Fri.openedAt b s) := by
+theorem openedAt_rel [Mont32BaseField p] [Mont32.AlgebraId EF]
+    (invs : List (EF × Nat × ExtPlanes p EF)) (b : Nat) (zs : List EF) {m : PMat} {s : Mat F}
+    (h : RM m s) (hs : MatOk s) (hz : ∀ z ∈ zs, Ext.OutsideBase z)
+    (hinv : ∀ z ∈ zs, DenomsOk invs z (Nat.log2 s.height - b)) :
+    openedAt invs b m zs = zs.map (Fri.openedAt b s) := by
   unfold Fast.openedAt
   obtain ⟨-, ⟨k, -, hk⟩, hM, hA⟩ := hs
   have hle : s.height ≥ 2 ^ (Nat.log2 s.height - b) := by
@@ -571,7 +632,7 @@ theorem openedAt_rel [Mont32BaseField p] [Mont32.AlgebraId EF] (b : Nat)
     omega
   dsimp only
   rw [h.width, h.height]
-  generalize hL : Nat.log2 s.height - b = L at hle ⊢
+  generalize hL : Nat.log2 s.height - b = L at hle hinv ⊢
   -- An empty row: both sides are empty.
   by_cases hw0 : s.width = 0
   · refine List.ext_getElem
@@ -600,7 +661,7 @@ theorem openedAt_rel [Mont32BaseField p] [Mont32.AlgebraId EF] (b : Nat)
     (fun i j r ↦ s.values.getD (r * s.width + j) 0 *
       coord (i % FastExt.d p EF) (bw (zs.getD (i / FastExt.d p EF) 0)
         ((cosetPointsBitRev (gen : F) L).getD r 0)))
-    (fun r0 len ↦ weightedColumns m zs.toArray
+    (fun r0 len ↦ weightedColumns invs m zs.toArray
       (encode (cosetPointsBitRev (gen : F) L)) r0 len) (fun k hk ↦ ?_)]
   · refine List.ext_getElem
       (by rw [List.length_map, List.length_map, List.length_zipIdx]) fun k h1 h2 ↦ ?_
@@ -624,15 +685,18 @@ theorem openedAt_rel [Mont32BaseField p] [Mont32.AlgebraId EF] (b : Nat)
     simp only [hq, hr, List.getD_eq_getElem _ _ h1, FastExt.coord_ofCoords]
   · obtain ⟨hlen, hcov⟩ := hranges k hk
     rw [hlen, hpG]
-    rw [weightedColumns_cols h zs.toArray (fun z hz' ↦ hz z (List.mem_toArray.mp hz'))
-      _ (k * G) G hG0 (mod_add_le_of_dvd h.pos hGR (Nat.dvd_mul_left G k)) (by omega)
-      (by omega) hsX]
+    rw [weightedColumns_cols invs h zs.toArray _ (k * G) G hG0
+      (mod_add_le_of_dvd h.pos hGR (Nat.dvd_mul_left G k)) (by omega) (by omega) hsX
+      fun z hz' ↦ (hinv z (List.mem_toArray.mp hz')).slice (by omega)]
     rfl
 
 /-! ### The specification's reduction row by row -/
 
 
 /-! ### The fast reduction as a fold -/
+
+section
+variable (invs : List (EF × Nat × ExtPlanes p EF))
 
 /-- A matrix of a group of the fast reduction: the packed matrix, the powers of `α` as planes,
 and its terms `(z, yz, offset)`. -/
@@ -657,18 +721,16 @@ matrix. -/
 def groupPlanes [Mont32BaseField p] [Mont32.AlgebraId EF] (G : Nat × Nat × Array
     (GItem p EF)) : Nat × ExtPlanes p EF :=
   let n := 2 ^ G.1
-  let xs := CompPoly.CPolynomial.NTTFast.Packed.Native.encodeFields
-    (cosetPointsBitRev (gen : F) G.1)
   let parts := n / G.2.2.foldl (fun a (m, _) ↦ Nat.gcd a m.rows) (if n < 4096 then n else n / 16)
   let size := n / parts
   (G.1, ExtPlanes.join n <| (Array.range parts).map fun k ↦ Task.spawn fun _ ↦
-    (reduceRange G.2.2 xs (k * size) (if k + 1 = parts then n - k * size else size)).c.toArray)
+    (reduceRange invs G.2.2 (k * size) (if k + 1 = parts then n - k * size else size)).c.toArray)
 
 /-- The fast reduction groups by height, then computes every group's planes. -/
 theorem reduce_fast [Mont32BaseField p] [Mont32.AlgebraId EF] (alpha : EF) (items : List (PMat ×
     List
     (EF × Array EF))) :
-    reduce alpha items = ((items.foldl (groupStep alpha) []).map groupPlanes).mergeSort
+    reduce invs alpha items = ((items.foldl (groupStep alpha) []).map (groupPlanes invs)).mergeSort
       fun a b ↦ decide (b.1 ≤ a.1) := by
   simp only [reduce, Id.run, List.forIn_pure_yield_eq_foldl, pure_bind]
   rfl
@@ -688,21 +750,21 @@ def Good [Mont32BaseField p] [Mont32.AlgebraId EF] (alpha : EF) (logH : Nat) (it
     Prop :=
   ∃ s : Mat F, RM it.1 s ∧ s.height = 2 ^ logH ∧ 4 * s.values.size < USize.size ∧
     16 * 2 ^ logH < USize.size ∧ it.2.1 = ExtPlanes.ofArray (powers alpha it.1.width) ∧
-    ∀ t ∈ it.2.2, Ext.OutsideBase t.1
+    ∀ t ∈ it.2.2, Ext.OutsideBase t.1 ∧ DenomsOk invs t.1 logH
 
 /-- A fast group represents the specification's running sums of its height. -/
 def GR [Mont32BaseField p] [Mont32.AlgebraId EF] (alpha : EF) (G : Nat × Nat × Array (GItem p EF))
     (S : Nat × Nat × Array EF) : Prop :=
   G.1 = S.1 ∧ G.2.1 = S.2.1 ∧ S.2.2 = Array.ofFn (n := 2 ^ G.1) (fun r ↦ gval alpha G.1 G.2.2 r) ∧
-    16 * 2 ^ G.1 < USize.size ∧ ∀ it ∈ G.2.2, Good alpha G.1 it
+    16 * 2 ^ G.1 < USize.size ∧ ∀ it ∈ G.2.2, Good invs alpha G.1 it
 
 /-- Related group lists hold related groups of every height. -/
 theorem lookup_rel [Mont32BaseField p] [Mont32.AlgebraId EF] (alpha : EF) (k : Nat) {l1 : List
     (Nat × Nat × Array (GItem p EF))}
-    {l2 : List (Nat × Nat × Array EF)} (h : List.Forall₂ (GR alpha) l1 l2) :
+    {l2 : List (Nat × Nat × Array EF)} (h : List.Forall₂ (GR invs alpha) l1 l2) :
     (l1.lookup k = none ∧ l2.lookup k = none) ∨ ∃ c g, l1.lookup k = some (c, g) ∧
       l2.lookup k = some (c, Array.ofFn (n := 2 ^ k) fun r ↦ gval alpha k g r) ∧
-      ∀ it ∈ g, Good alpha k it := by
+      ∀ it ∈ g, Good invs alpha k it := by
   induction h with
   | nil => exact Or.inl ⟨rfl, rfl⟩
   | @cons G S l1 l2 hGS _ ih =>
@@ -720,8 +782,8 @@ theorem lookup_rel [Mont32BaseField p] [Mont32.AlgebraId EF] (alpha : EF) (k : N
 
 theorem filter_rel [Mont32BaseField p] [Mont32.AlgebraId EF] (alpha : EF) (k : Nat) {l1 : List
     (Nat × Nat × Array (GItem p EF))}
-    {l2 : List (Nat × Nat × Array EF)} (h : List.Forall₂ (GR alpha) l1 l2) :
-    List.Forall₂ (GR alpha) (l1.filter (·.1 != k)) (l2.filter (·.1 != k)) := by
+    {l2 : List (Nat × Nat × Array EF)} (h : List.Forall₂ (GR invs alpha) l1 l2) :
+    List.Forall₂ (GR invs alpha) (l1.filter (·.1 != k)) (l2.filter (·.1 != k)) := by
   induction h with
   | nil => exact List.Forall₂.nil
   | @cons G S l1 l2 hGS _ ih =>
@@ -754,10 +816,10 @@ theorem gval_push [Mont32BaseField p] [Mont32.AlgebraId EF] (alpha : EF) (logH :
 /-- One matrix of the grouping simulates one step of the specification's fold. -/
 theorem groupStep_rel [Mont32BaseField p] [Mont32.AlgebraId EF] (alpha : EF) {groups : List
     (Nat × Nat × Array (GItem p EF))}
-    {red : List (Nat × Nat × Array EF)} (hgr : List.Forall₂ (GR alpha) groups red) {m : PMat}
+    {red : List (Nat × Nat × Array EF)} (hgr : List.Forall₂ (GR invs alpha) groups red) {m : PMat}
     {s : Mat F} (hm : RM m s) (pts : List (EF × Array EF)) (hs : MatOk s)
-    (hz : ∀ pr ∈ pts, Ext.OutsideBase pr.1) :
-    List.Forall₂ (GR alpha) (groupStep alpha groups (m, pts)) (reduceStep alpha red (s, pts)) := by
+    (hz : ∀ pr ∈ pts, Ext.OutsideBase pr.1 ∧ DenomsOk invs pr.1 (Nat.log2 s.height)) :
+    List.Forall₂ (GR invs alpha) (groupStep alpha groups (m, pts)) (reduceStep alpha red (s, pts)) := by
   obtain ⟨hw0, ⟨k, -, hk⟩, hM, hA⟩ := hs
   unfold Addressable at hA
   have hsV : 4 * s.values.size < USize.size := by omega
@@ -772,14 +834,14 @@ theorem groupStep_rel [Mont32BaseField p] [Mont32.AlgebraId EF] (alpha : EF) {gr
   dsimp only
   rw [hw, hh]
   rw [hh] at hpow hus
-  generalize hL : Nat.log2 s.height = logH at hpow
-  refine List.Forall₂.cons ?_ (filter_rel alpha logH hgr)
+  generalize hL : Nat.log2 s.height = logH at hpow hz
+  refine List.Forall₂.cons ?_ (filter_rel invs alpha logH hgr)
   -- The running sums and count of the height before this matrix.
   obtain ⟨c, g, h1, h2, hg⟩ : ∃ c g, (groups.lookup logH).getD (0, #[]) = (c, g) ∧
       (red.lookup logH).getD (0, Array.replicate s.height 0) =
         (c, Array.ofFn (n := s.height) fun r ↦ gval alpha logH g r.val) ∧
-      ∀ it ∈ g, Good alpha logH it := by
-    rcases lookup_rel alpha logH hgr with ⟨h1, h2⟩ | ⟨c, g, h1, h2, hg⟩
+      ∀ it ∈ g, Good invs alpha logH it := by
+    rcases lookup_rel invs alpha logH hgr with ⟨h1, h2⟩ | ⟨c, g, h1, h2, hg⟩
     · refine ⟨0, #[], by rw [h1]; rfl, by
         rw [h2, Option.getD_none]
         refine congrArg _ (Array.ext (by rw [Array.size_replicate, Array.size_ofFn])
@@ -791,7 +853,8 @@ theorem groupStep_rel [Mont32BaseField p] [Mont32.AlgebraId EF] (alpha : EF) {gr
   dsimp only
   have hxs : s.height ≤ (cosetPointsBitRev (gen : F) logH).size := by
     rw [size_cosetPointsBitRev, ← hpow]
-  rw [foldl_accumulate alpha (powers alpha s.width) s.width s.height _ _ hxs pts hz c]
+  rw [foldl_accumulate alpha (powers alpha s.width) s.width s.height _ _ hxs pts
+    (fun pr hp ↦ (hz pr hp).1) c]
   refine ⟨rfl, rfl, ?_, show 16 * 2 ^ logH < USize.size by rw [← hpow]; exact hus,
     fun it hit ↦ ?_⟩
   · dsimp only
@@ -820,10 +883,11 @@ theorem foldl_groupStep_rel [Mont32BaseField p] [Mont32.AlgebraId EF] (alpha : E
     ∀ {items : List (PMat × List (EF × Array EF))}
       {sitems : List (Mat F × List (EF × Array EF))},
       List.Forall₂ (fun x y ↦ RM x.1 y.1 ∧ x.2 = y.2) items sitems →
-      (∀ x ∈ sitems, MatOk x.1 ∧ ∀ pr ∈ x.2, Ext.OutsideBase pr.1) →
+      (∀ x ∈ sitems, MatOk x.1 ∧
+        ∀ pr ∈ x.2, Ext.OutsideBase pr.1 ∧ DenomsOk invs pr.1 (Nat.log2 x.1.height)) →
       ∀ {groups : List (Nat × Nat × Array (GItem p EF))} {red : List (Nat × Nat × Array EF)},
-      List.Forall₂ (GR alpha) groups red →
-      List.Forall₂ (GR alpha) (items.foldl (groupStep alpha) groups)
+      List.Forall₂ (GR invs alpha) groups red →
+      List.Forall₂ (GR invs alpha) (items.foldl (groupStep alpha) groups)
         (sitems.foldl (reduceStep alpha) red)
   | _, _, .nil, _, _, _, hgr => hgr
   | (m, pts) :: _, (s, _) :: _, .cons ⟨hm, hp⟩ hrest, hgood, _, _, hgr => by
@@ -832,7 +896,7 @@ theorem foldl_groupStep_rel [Mont32BaseField p] [Mont32.AlgebraId EF] (alpha : E
     rw [List.foldl_cons, List.foldl_cons]
     obtain ⟨hs, hz⟩ := hgood (s, pts) List.mem_cons_self
     exact foldl_groupStep_rel alpha hrest (fun it hit ↦ hgood it (List.mem_cons_of_mem _ hit))
-      (groupStep_rel alpha hgr hm pts hs hz)
+      (groupStep_rel invs alpha hgr hm pts hs hz)
 
 theorem forall₂_zip {α β : Type} {R : α → β → Prop} {l1 : List α} {l2 : List β}
     (h : List.Forall₂ R l1 l2) : ∀ pr ∈ l1.zip l2, R pr.1 pr.2 := by
@@ -1214,37 +1278,108 @@ theorem foldl_pointwise {α : Type} (g : Nat → EF → α → EF) :
   | a :: l, S, t => by
     rw [List.foldl_cons, List.foldl_cons, foldl_pointwise g l _ t]
 
-/-- The state of `reduceRange`: the running sums and the cached inverses. -/
-def RInv [Mont32BaseField p] [Mont32.AlgebraId EF] (xr : ByteArray) (len : Nat)
-    (s : ExtPlanes p EF × List (EF × ExtPlanes p EF)) (S : Nat → EF) : Prop :=
-  ExtPlanes.Rel s.1 (Array.ofFn (n := len) fun t ↦ S t.val) ∧ ∀ pr ∈ s.2, pr.2 =
-      ExtPlanes.invDenoms pr.1 xr len
+/-- `addToPoint` on the sums' values as functions of the row. -/
+def addToPointS (z y : EF) (C : Nat → EF) :
+    List (EF × EF × (Nat → EF)) → List (EF × EF × (Nat → EF))
+  | [] => [(z, y, C)]
+  | e :: es => if e.1 == z then (z, e.2.1 + y, fun t ↦ e.2.2 t + C t) :: es
+    else e :: addToPointS z y C es
 
-/-- One term of `reduceRange` on planes. -/
-theorem term_rel [Mont32BaseField p] [Mont32.AlgebraId EF] {len : Nat}
-    {acc comp : ExtPlanes p EF} {S C : Nat → EF} (X : Array F)
-    (hX : X.size = len) (hl : 4 * len < USize.size)
-    (hacc : ExtPlanes.Rel acc (Array.ofFn (n := len) fun t ↦ S t.val))
-    (hcomp : ExtPlanes.Rel comp (Array.ofFn (n := len) fun t ↦ C t.val)) {z : EF}
-    (hz : Ext.OutsideBase z) (yz offset : EF) :
-    ExtPlanes.Rel (acc.add (((ExtPlanes.rsub yz comp).mul
-        (ExtPlanes.invDenoms z (encode X) len)).smul offset))
-      (Array.ofFn (n := len) fun t ↦ termStep (C t.val) (X.getD t.val 0) (S t.val)
-        (z, yz, offset)) := by
-  have hX' : X = tab len fun t ↦ X.getD t 0 :=
-    Array.ext (by rw [size_tab, hX]) fun t h1 _ ↦ by rw [getElem_tab]; exact (getD_lt X t h1).symm
-  have hinv := ExtPlanes.invDenoms_rel hl (Mont32.ne_ofBase hz) (fun t ↦ X.getD t 0)
-  rw [← hX'] at hinv
-  have h4 := ExtPlanes.add_rel hl hacc (ExtPlanes.smul_rel hl offset
-    (ExtPlanes.mul_rel hl (ExtPlanes.rsub_rel hl yz hcomp) hinv))
-  show ExtPlanes.Rel _ (tab len fun t ↦ termStep (C t) (X.getD t 0) (S t) (z, yz, offset))
-  refine h4.congr_tab fun t _ ↦ ?_
-  simp only [termStep, Ext.ofBase, Mont32.ofBase_eq]
-  rw [FastExt.mul_assoc offset, FastExt.mul_comm offset]
+theorem mem_addToPointS (z y : EF) (C : Nat → EF) :
+    ∀ (L : List (EF × EF × (Nat → EF))), ∀ l ∈ addToPointS z y C L, l.1 = z ∨ ∃ l' ∈ L, l'.1 = l.1
+  | [], l, hl => by
+    simp only [addToPointS, List.mem_singleton] at hl
+    exact Or.inl (by rw [hl])
+  | e :: es, l, hl => by
+    simp only [addToPointS] at hl
+    split at hl
+    · rcases List.mem_cons.mp hl with rfl | hl
+      · exact Or.inl rfl
+      · exact Or.inr ⟨l, List.mem_cons_of_mem _ hl, rfl⟩
+    · rcases List.mem_cons.mp hl with rfl | hl
+      · exact Or.inr ⟨l, List.mem_cons_self, rfl⟩
+      · rcases mem_addToPointS z y C es l hl with h | ⟨l', hl', h⟩
+        · exact Or.inl h
+        · exact Or.inr ⟨l', List.mem_cons_of_mem _ hl', h⟩
+
+/-- The value at row `t` of per-point sums `(z, Y, D)`: `∑ (Y - D t) / (z - x t)`. -/
+def sumsVal [Mont32BaseField p] (x : Nat → F) (L : List (EF × EF × (Nat → EF))) (t : Nat) : EF :=
+  (L.map fun e ↦ (e.2.1 - e.2.2 t) * (e.1 - FastExt.ofBase (x t))⁻¹).sum
+
+/-- Planes of per-point sums representing their values. -/
+def SR (len : Nat) (sums : List (EF × EF × ExtPlanes p EF)) (L : List (EF × EF × (Nat → EF))) :
+    Prop :=
+  List.Forall₂ (fun e l ↦ e.1 = l.1 ∧ e.2.1 = l.2.1 ∧ ExtPlanes.Rel e.2.2 (tab len l.2.2)) sums L
+
+theorem addToPoint_rel {len : Nat} (hl : 4 * len < USize.size) (z y : EF) {c : ExtPlanes p EF}
+    {C : Nat → EF} (hc : ExtPlanes.Rel c (tab len C)) :
+    ∀ {sums L}, SR len sums L → SR len (addToPoint z y c sums) (addToPointS z y C L)
+  | [], [], .nil => .cons ⟨rfl, rfl, hc⟩ .nil
+  | e :: es, l :: ls, .cons he hs => by
+    simp only [addToPoint, addToPointS, he.1]
+    split
+    · exact .cons ⟨rfl, by rw [he.2.1], ExtPlanes.add_rel hl he.2.2 hc⟩ hs
+    · exact .cons he (addToPoint_rel hl z y hc hs)
+
+theorem sumsVal_addToPointS [Mont32BaseField p] (x : Nat → F) (z y : EF) (C : Nat → EF) (t : Nat) :
+    ∀ L : List (EF × EF × (Nat → EF)), sumsVal x (addToPointS z y C L) t =
+      sumsVal x L t + (y - C t) * (z - FastExt.ofBase (x t))⁻¹
+  | [] => by
+    simp only [sumsVal, addToPointS, List.map_cons, List.map_nil, List.sum_cons, List.sum_nil]
+    refine FastExt.toSpec_injective ?_
+    simp only [FastExt.toSpec_add, FastExt.toSpec_zero]
+    ring
+  | l :: ls => by
+    simp only [addToPointS]
+    split
+    · rename_i h
+      have h := beq_iff_eq.mp h
+      subst h
+      simp only [sumsVal, List.map_cons, List.sum_cons]
+      refine FastExt.toSpec_injective ?_
+      simp only [FastExt.toSpec_add, FastExt.toSpec_sub, FastExt.toSpec_mul, FastExt.toSpec_inv]
+      ring
+    · have ih := sumsVal_addToPointS x z y C t ls
+      simp only [sumsVal, List.map_cons, List.sum_cons] at ih ⊢
+      rw [ih]
+      refine FastExt.toSpec_injective ?_
+      simp only [FastExt.toSpec_add]
+      ring
+
+/-- The last step of `reduceRange`: every point's `(Y - D) / (z - x)` added. -/
+theorem foldl_points_rel [Mont32BaseField p] (invs : List (EF × Nat × ExtPlanes p EF))
+    {logH r0 len : Nat} (hl : 4 * len < USize.size) (hr : r0 + len ≤ 2 ^ logH) :
+    ∀ {sums L} (A : Nat → EF) {acc : ExtPlanes p EF}, SR len sums L →
+      (∀ l ∈ L, DenomsOk invs l.1 logH) → ExtPlanes.Rel acc (tab len A) →
+      ExtPlanes.Rel (sums.foldl (fun acc (e : EF × EF × ExtPlanes p EF) ↦
+          acc.add ((ExtPlanes.rsub e.2.1 e.2.2).mul (slicePlanes (denomsOf invs e.1) r0 len))) acc)
+        (tab len fun t ↦ A t +
+          sumsVal (fun t ↦ (cosetPointsBitRev (gen : F) logH).getD (r0 + t) 0) L t)
+  | [], [], A, acc, .nil, _, hacc => by
+    refine hacc.congr_tab fun t _ ↦ ?_
+    simp only [sumsVal, List.map_nil, List.sum_nil]
+    refine FastExt.toSpec_injective ?_
+    simp only [FastExt.toSpec_add, FastExt.toSpec_zero]
+    ring
+  | (z, y, c) :: es, (z', y', D) :: ls, A, acc, .cons he hs, hd, hacc => by
+    obtain ⟨h1, h2, h3⟩ := he
+    dsimp only at h1 h2 h3
+    subst h1 h2
+    rw [List.foldl_cons]
+    have hden : DenomsOk invs z logH := hd _ List.mem_cons_self
+    have hstep := ExtPlanes.add_rel hl hacc (ExtPlanes.mul_rel hl (ExtPlanes.rsub_rel hl y h3)
+      (hden.slice hr))
+    have := foldl_points_rel invs hl hr _ hs (fun l hl' ↦ hd l (List.mem_cons_of_mem _ hl'))
+      hstep
+    refine this.congr_tab fun t _ ↦ ?_
+    simp only [sumsVal, List.map_cons, List.sum_cons]
+    refine FastExt.toSpec_injective ?_
+    simp only [FastExt.toSpec_add]
+    ring
 
 /-- The rows of a range of a group's matrix batched by the powers of `α`, as planes. -/
 theorem comp_rel [Mont32BaseField p] [Mont32.AlgebraId EF] (alpha : EF) (logH : Nat)
-    (it : GItem p EF) (hit : Good alpha logH it) (r0 len : Nat) (hlen : 0 < len)
+    (it : GItem p EF) (hit : Good invs alpha logH it) (r0 len : Nat) (hlen : 0 < len)
     (hblk : r0 % it.1.rows + len ≤ it.1.rows) (hr : r0 + len ≤ 2 ^ logH) :
     ExtPlanes.Rel ⟨len, Vector.ofFn fun k ↦
         (compressRange p it.1 it.2.1.c.toArray r0 len).getD k .empty⟩
@@ -1285,70 +1420,59 @@ theorem lookup_mem {k : EF} {v : ExtPlanes p EF} :
 /-- A range of rows of a group's batched quotient, on planes. -/
 theorem reduceRange_rel [Mont32BaseField p] [Mont32.AlgebraId EF] (alpha : EF)
     (logH : Nat) (g : Array (GItem p EF))
-    (hg : ∀ it ∈ g, Good alpha logH it) (h4 : 4 * 2 ^ logH < USize.size) (r0 len : Nat)
+    (hg : ∀ it ∈ g, Good invs alpha logH it) (h4 : 4 * 2 ^ logH < USize.size) (r0 len : Nat)
     (hlen : 0 < len) (hblk : ∀ it ∈ g, r0 % it.1.rows + len ≤ it.1.rows)
     (hr : r0 + len ≤ 2 ^ logH) :
-    ExtPlanes.Rel (reduceRange g (encode (cosetPointsBitRev (gen : F) logH)) r0 len)
+    ExtPlanes.Rel (reduceRange invs g r0 len)
       (Array.ofFn (n := len) fun t ↦ gval alpha logH g (r0 + t.val)) := by
-  have hXs := size_cosetPointsBitRev (gen : F) logH
-  have hxr : slice (encode (cosetPointsBitRev (gen : F) logH)) r0 len =
-      encode ((cosetPointsBitRev (gen : F) logH).extract r0 (r0 + len)) := extract_encode _ r0
-          (r0 + len)
-  generalize hXr : (cosetPointsBitRev (gen : F) logH).extract r0 (r0 + len) = Xr at hxr
-  have hXrs : Xr.size = len := by rw [← hXr, Array.size_extract]; omega
-  have hXget (t : Nat) (ht : t < len) :
-      Xr.getD t 0 = (cosetPointsBitRev (gen : F) logH).getD (r0 + t) 0 := by
-    rw [← hXr, Array.getD_eq_getD_getElem?, Array.getElem?_extract,
-      ite_eq_left_of_eq_true _ _ (eq_true (by rw [Nat.min_def]; split <;> omega)),
-      Array.getD_eq_getD_getElem?]
   have hl : 4 * len < USize.size := by omega
+  let x (t : Nat) : F := (cosetPointsBitRev (gen : F) logH).getD (r0 + t) 0
   -- One term at row `r` of the range, for the matrix `it`.
   let σ' (it : GItem p EF) (S : Nat → EF) (tm : EF × EF × EF) : Nat → EF := fun r ↦
-    termStep (crow (it.1.vals p) (powers alpha it.1.width) it.1.width (r0 + r))
-      (Xr.getD r 0) (S r) tm
+    termStep (crow (it.1.vals p) (powers alpha it.1.width) it.1.width (r0 + r)) (x r) (S r) tm
   let σ (it : GItem p EF) (S : Nat → EF) : Nat → EF := it.2.2.foldl (σ' it) S
-  suffices H : ∀ f, (∀ a ∈ g.toList, ∀ b c, RInv (encode Xr) len b c →
-      ∃ b', f a b = pure (.yield b') ∧ RInv (encode Xr) len b' (σ a c)) →
-      ExtPlanes.Rel ((forIn g.toList (ExtPlanes.zeros len, []) f) >>= fun s ↦ pure s.1 : Id
-          (ExtPlanes p EF))
+  let Inv (sums : List (EF × EF × ExtPlanes p EF)) (S : Nat → EF) : Prop :=
+    ∃ L, SR len sums L ∧ (∀ l ∈ L, DenomsOk invs l.1 logH) ∧ ∀ t < len, sumsVal x L t = S t
+  suffices H : ∀ f, (∀ a ∈ g.toList, ∀ b c, Inv b c →
+      ∃ b', f a b = pure (.yield b') ∧ Inv b' (σ a c)) →
+      ExtPlanes.Rel ((forIn g.toList [] f) >>= fun sums ↦ pure (sums.foldl
+          (fun acc (e : EF × EF × ExtPlanes p EF) ↦ acc.add ((ExtPlanes.rsub e.2.1 e.2.2).mul
+            (slicePlanes (denomsOf invs e.1) r0 len))) (ExtPlanes.zeros len)) : Id (ExtPlanes p EF))
         (Array.ofFn (n := len) fun t ↦ gval alpha logH g (r0 + t.val)) by
-    simp only [reduceRange, Id.run, pure_bind]
-    rw [hxr, ← Array.forIn_toList]
+    simp only [reduceRange, Id.run]
+    rw [← Array.forIn_toList]
     refine H _ fun it hit b c hb ↦ ⟨_, rfl, ?_⟩
     obtain ⟨-, -, -, -, -, -, hz⟩ := hg it (Array.mem_toList_iff.mp hit)
-    have hcomp := comp_rel alpha logH it (hg it (Array.mem_toList_iff.mp hit)) r0 len hlen
+    have hcomp := comp_rel invs alpha logH it (hg it (Array.mem_toList_iff.mp hit)) r0 len hlen
       (hblk it (Array.mem_toList_iff.mp hit)) hr
-    exact forIn_sim (RInv (encode Xr) len) (fun tm S ↦ σ' it S tm) _ it.2.2 (b.1, b.2) c hb
-      fun tm htm b c hb ↦ by
-        split
-        · rename_i inv hinv
-          have e : inv = ExtPlanes.invDenoms tm.1 (encode Xr) len := hb.2 _ (lookup_mem hinv)
-          subst e
-          refine ⟨_, rfl, ?_, hb.2⟩
-          exact term_rel (C := fun r ↦ crow (it.1.vals p) (powers alpha it.1.width)
-            it.1.width (r0 + r)) Xr hXrs hl hb.1 hcomp (hz tm htm) tm.2.1 tm.2.2
-        · refine ⟨_, rfl, term_rel
-            (C := fun r ↦ crow (it.1.vals p) (powers alpha it.1.width) it.1.width
-                (r0 + r)) Xr hXrs hl hb.1 hcomp (hz tm htm) tm.2.1 tm.2.2,
-            ?_⟩
-          intro pr hp
-          rcases List.mem_cons.mp hp with hp | hp
-          · rw [hp]
-          · exact hb.2 pr hp
+    exact forIn_sim Inv (fun tm S ↦ σ' it S tm) _ it.2.2 b c hb fun tm htm b c hb ↦ by
+      obtain ⟨L, hL, hd, hv⟩ := hb
+      refine ⟨_, rfl, _, addToPoint_rel hl tm.1 (tm.2.2 * tm.2.1)
+        (ExtPlanes.smul_rel hl tm.2.2 (show ExtPlanes.Rel _ (tab len fun t ↦
+          crow (it.1.vals p) (powers alpha it.1.width) it.1.width (r0 + t)) from hcomp)) hL, fun l hl' ↦ ?_, fun t ht ↦ ?_⟩
+      · rcases mem_addToPointS _ _ _ L l hl' with h | ⟨l', hl'', h⟩
+        · rw [h]; exact (hz tm htm).2
+        · rw [← h]; exact hd l' hl''
+      · rw [sumsVal_addToPointS, hv t ht]
+        simp only [σ', termStep, Ext.ofBase, Mont32.ofBase_eq]
+        refine FastExt.toSpec_injective ?_
+        simp only [FastExt.toSpec_add, FastExt.toSpec_sub, FastExt.toSpec_mul]
+        ring
   intro f hf
-  have := forIn_sim (RInv (encode Xr) len) σ f g.toList (ExtPlanes.zeros len, []) (fun _ ↦ 0)
-    ⟨by
-      have := ExtPlanes.zeros_rel (p := p) (E := EF) len
-      convert this using 1
-      exact Array.ext (by rw [Array.size_ofFn, Array.size_replicate]) fun i _ _ ↦ by
-        rw [Array.getElem_ofFn, Array.getElem_replicate],
-     fun pr hp ↦ absurd hp List.not_mem_nil⟩ hf
-  convert this.1 using 1
-  refine congrArg Array.ofFn (funext fun t ↦ ?_)
-  have key : ∀ (l : List (GItem p EF)) (S : Nat → EF), (l.foldl (fun c a ↦ σ a c) S) t.val = l.foldl
-      (fun a it ↦ it.2.2.foldl (termStep
-        (crow (it.1.vals p) (powers alpha it.1.width) it.1.width (r0 + t.val))
-        ((cosetPointsBitRev (gen : F) logH).getD (r0 + t.val) 0)) a) (S t.val) := by
+  have := forIn_sim Inv σ f g.toList [] (fun _ ↦ 0) ⟨[], .nil, fun l hl' ↦ absurd hl' List.not_mem_nil,
+    fun t _ ↦ rfl⟩ hf
+  obtain ⟨L, hL, hd, hv⟩ := this
+  have hfin := foldl_points_rel invs hl hr (fun _ ↦ 0) hL hd (by
+    have := ExtPlanes.zeros_rel (p := p) (E := EF) len
+    convert this using 1
+    exact Array.ext (by rw [size_tab, Array.size_replicate]) fun i _ _ ↦ by
+      rw [getElem_tab, Array.getElem_replicate])
+  show ExtPlanes.Rel _ (tab len fun t ↦ gval alpha logH g (r0 + t))
+  refine hfin.congr_tab fun t ht ↦ ?_
+  have key : ∀ (l : List (GItem p EF)) (S : Nat → EF), (l.foldl (fun c a ↦ σ a c) S) t =
+      l.foldl (fun a it ↦ it.2.2.foldl (termStep
+        (crow (it.1.vals p) (powers alpha it.1.width) it.1.width (r0 + t))
+        ((cosetPointsBitRev (gen : F) logH).getD (r0 + t) 0)) a) (S t) := by
     intro l
     induction l with
     | nil => intro S; rfl
@@ -1356,10 +1480,11 @@ theorem reduceRange_rel [Mont32BaseField p] [Mont32.AlgebraId EF] (alpha : EF)
       intro S
       rw [List.foldl_cons, List.foldl_cons, ih]
       congr 1
-      rw [← hXget t.val t.isLt]
       exact foldl_pointwise (fun r acc tm ↦ termStep (crow (a.1.vals p)
-        (powers alpha a.1.width) a.1.width (r0 + r)) (Xr.getD r 0) acc tm) a.2.2 S t.val
-  rw [key]
+        (powers alpha a.1.width) a.1.width (r0 + r)) (x r) acc tm) a.2.2 S t
+  rw [hv t ht, key]
+  refine FastExt.toSpec_injective ?_
+  simp only [FastExt.toSpec_add, FastExt.toSpec_zero, zero_add]
   rfl
 
 theorem gcd_fold_dvd_init {α : Type} (f : α → Nat) :
@@ -1388,14 +1513,13 @@ quotient. -/
 theorem groupPlanes_rel [Mont32BaseField p] [Mont32.AlgebraId EF] (alpha : EF)
     (G : Nat × Nat × Array (GItem p EF))
     (h4 : 4 * 2 ^ G.1 < USize.size)
-    (hg : ∀ it ∈ G.2.2, Good alpha G.1 it) :
-    ExtPlanes.Rel (groupPlanes G).2 (Array.ofFn (n := 2 ^ G.1) fun r ↦ gval alpha G.1 G.2.2
+    (hg : ∀ it ∈ G.2.2, Good invs alpha G.1 it) :
+    ExtPlanes.Rel (groupPlanes invs G).2 (Array.ofFn (n := 2 ^ G.1) fun r ↦ gval alpha G.1 G.2.2
         r.val) := by
   obtain ⟨logH, c, g⟩ := G
   simp only at h4 hg ⊢
   unfold groupPlanes
   dsimp only
-  rw [CompPoly.CPolynomial.NTTFast.Packed.Native.encodeFields_eq]
   have hfold : g.foldl (fun a (x : GItem p EF) ↦ match x with | (m, _) => Nat.gcd a m.rows)
       (if 2 ^ logH < 4096 then 2 ^ logH else 2 ^ logH / 16) =
       g.toList.foldl (fun a (x : GItem p EF) ↦ Nat.gcd a x.1.rows)
@@ -1434,7 +1558,7 @@ theorem groupPlanes_rel [Mont32BaseField p] [Mont32.AlgebraId EF] (alpha : EF)
       (ranges_cover _ _), Array.size_ofFn])
   obtain ⟨hlen, hcov⟩ := hranges k hk
   rw [hlen, hpD]
-  exact reduceRange_rel alpha logH g hg h4 (k * D) D hD0
+  exact reduceRange_rel invs alpha logH g hg h4 (k * D) D hD0
     (fun it hit ↦ mod_add_le_of_dvd (by obtain ⟨s, hm, -⟩ := hg it hit; exact hm.pos)
       (hDr it hit) (Nat.dvd_mul_left D k))
     hcov
@@ -1444,19 +1568,267 @@ theorem reduce_rel [Mont32BaseField p] [Mont32.AlgebraId EF] (alpha : EF)
     {items : List (PMat × List (EF × Array EF))}
     {sitems : List (Mat F × List (EF × Array EF))}
     (h : List.Forall₂ (fun x y ↦ RM x.1 y.1 ∧ x.2 = y.2) items sitems)
-    (hok : ∀ x ∈ sitems, MatOk x.1 ∧ ∀ pr ∈ x.2, Ext.OutsideBase pr.1) :
-    List.Forall₂ (fun x y ↦ x.1 = y.1 ∧ ExtPlanes.Rel x.2 y.2) (reduce alpha items)
+    (hok : ∀ x ∈ sitems, MatOk x.1 ∧
+      ∀ pr ∈ x.2, Ext.OutsideBase pr.1 ∧ DenomsOk invs pr.1 (Nat.log2 x.1.height)) :
+    List.Forall₂ (fun x y ↦ x.1 = y.1 ∧ ExtPlanes.Rel x.2 y.2) (reduce invs alpha items)
       (Fri.reduce alpha sitems) := by
-  rw [reduce_fast alpha items, reduce_eq, List.map_mergeSort
+  rw [reduce_fast invs alpha items, reduce_eq, List.map_mergeSort
     (r := fun (a b : Nat × Nat × Array EF) ↦ decide (b.1 ≤ a.1))
     (s := fun (a b : Nat × Array EF) ↦ decide (b.1 ≤ a.1)) (f := fun x ↦ (x.1, x.2.2))
     (fun _ _ _ _ ↦ rfl)]
   refine forall₂_mergeSort (fun (a : Nat × ExtPlanes p EF) ↦ a.1) (fun (b : Nat × Array EF) ↦ b.1)
       ?_
     (fun _ _ hab ↦ hab.1)
-  have hgr := foldl_groupStep_rel alpha h hok List.Forall₂.nil
+  have hgr := foldl_groupStep_rel invs alpha h hok List.Forall₂.nil
   rw [List.forall₂_map_left_iff, List.forall₂_map_right_iff]
   refine hgr.imp fun G S hGS ↦ ⟨hGS.1, ?_⟩
   obtain ⟨-, -, h3, h4, h5⟩ := hGS
   rw [h3]
-  exact groupPlanes_rel alpha G (by omega) h5
+  exact groupPlanes_rel invs alpha G (by omega) h5
+
+end
+
+/-! ### `1 / (z - x)` once per point, for the opened values and the reduction -/
+
+theorem slice_encode_tab (X : Array F) (r0 len : Nat) (h : r0 + len ≤ X.size) :
+    slice (encode X) r0 len = encode (tab len fun t ↦ X.getD (r0 + t) 0) := by
+  rw [slice_encode]
+  refine congrArg encode (Array.ext (by rw [Array.size_extract, size_tab]; omega) fun t h1 _ ↦ ?_)
+  rw [Array.size_extract] at h1
+  rw [Array.getElem_extract, getElem_tab]
+  exact (getD_lt X _ (by omega)).symm
+
+/-- `denomPlanes` holds `1 / (z - x)` on the stored points of its height. -/
+theorem denomPlanes_rel [Mont32BaseField p] [Mont32.AlgebraId EF] {z : EF} (hz : Ext.OutsideBase z) (L : Nat)
+    (hL : 4 * 2 ^ L < USize.size) :
+    ExtPlanes.Rel (denomPlanes z L) (tab (2 ^ L) fun r ↦
+      (z - FastExt.ofBase ((cosetPointsBitRev (gen : F) L).getD r 0))⁻¹) := by
+  unfold denomPlanes
+  dsimp only
+  rw [CompPoly.CPolynomial.NTTFast.Packed.Native.encodeFields_eq]
+  generalize hP : (if 2 ^ L < 4096 then 1 else 16) = parts
+  have hp : 0 < parts := by rw [← hP]; split <;> decide
+  have hX := size_cosetPointsBitRev (gen : F) L
+  let f (r : Nat) : EF := (z - FastExt.ofBase ((cosetPointsBitRev (gen : F) L).getD r 0))⁻¹
+  show ExtPlanes.Rel _ (Array.ofFn (n := 2 ^ L) fun r ↦ f r.val)
+  have hcov := ranges_cover (2 ^ L) parts
+  rw [← foldl_ranges f (2 ^ L) parts (2 ^ L / parts) hp hcov]
+  refine ExtPlanes.join_rel _ parts _ _ (fun k hk ↦ ?_)
+    (by rw [foldl_ranges f (2 ^ L) parts (2 ^ L / parts) hp hcov, Array.size_ofFn])
+  have hle : k * (2 ^ L / parts) + (if k + 1 = parts then 2 ^ L - k * (2 ^ L / parts)
+      else 2 ^ L / parts) ≤ 2 ^ L := by
+    split
+    · rename_i e
+      have : k * (2 ^ L / parts) ≤ 2 ^ L := by rw [show k = parts - 1 by omega]; exact hcov
+      omega
+    · have := Nat.mul_le_mul_right (2 ^ L / parts) (show k + 1 ≤ parts - 1 by omega)
+      rw [Nat.succ_mul] at this
+      omega
+  generalize (if k + 1 = parts then 2 ^ L - k * (2 ^ L / parts) else 2 ^ L / parts) = len
+    at hle ⊢
+  rw [slice_encode_tab _ _ _ (by rw [hX]; exact hle)]
+  exact ExtPlanes.invDenoms_rel (by omega) (Mont32.ne_ofBase hz) _
+
+theorem tallest_ge (items : List (PMat × List EF)) {m : PMat} {zs : List EF} {z : EF}
+    (hm : (m, zs) ∈ items) (hz : z ∈ zs) : Nat.log2 m.height ≤ tallest items z := by
+  unfold tallest
+  have key : ∀ (l : List (PMat × List EF)) (a : Nat), a ≤ l.foldl (fun a (x : PMat × List EF) ↦
+      if x.2.contains z then max a (Nat.log2 x.1.height) else a) a := by
+    intro l
+    induction l with
+    | nil => intro a; exact le_rfl
+    | cons x l ih =>
+      intro a
+      rw [List.foldl_cons]
+      refine le_trans ?_ (ih _)
+      split
+      · exact le_max_left _ _
+      · exact le_rfl
+  have go : ∀ (l : List (PMat × List EF)) (a : Nat), (m, zs) ∈ l →
+      Nat.log2 m.height ≤ l.foldl (fun a (x : PMat × List EF) ↦
+        if x.2.contains z then max a (Nat.log2 x.1.height) else a) a := by
+    intro l
+    induction l with
+    | nil => intro a h; exact absurd h List.not_mem_nil
+    | cons x l ih =>
+      intro a h
+      rw [List.foldl_cons]
+      rcases List.mem_cons.mp h with rfl | h
+      · refine le_trans ?_ (key _ _)
+        rw [ite_eq_left_of_eq_true _ _ (eq_true (List.contains_iff_mem.mpr hz))]
+        exact le_max_right _ _
+      · exact ih _ h
+  exact go items 0 hm
+
+theorem tallest_cases (items : List (PMat × List EF)) (z : EF) :
+    tallest items z = 0 ∨ ∃ x ∈ items, tallest items z = Nat.log2 x.1.height := by
+  unfold tallest
+  have go : ∀ (l : List (PMat × List EF)) (a : Nat), (a = 0 ∨ ∃ x ∈ items, a = Nat.log2 x.1.height) →
+      (∀ x ∈ l, x ∈ items) →
+      (l.foldl (fun a (x : PMat × List EF) ↦
+        if x.2.contains z then max a (Nat.log2 x.1.height) else a) a = 0 ∨
+      ∃ x ∈ items, l.foldl (fun a (x : PMat × List EF) ↦
+        if x.2.contains z then max a (Nat.log2 x.1.height) else a) a = Nat.log2 x.1.height) := by
+    intro l
+    induction l with
+    | nil => intro a h _; exact h
+    | cons y l ih =>
+      intro a h hl
+      rw [List.foldl_cons]
+      refine ih _ ?_ fun x hx ↦ hl x (List.mem_cons_of_mem _ hx)
+      split
+      · rcases Nat.le_total a (Nat.log2 y.1.height) with hle | hle
+        · exact Or.inr ⟨y, hl y List.mem_cons_self, max_eq_right hle⟩
+        · rw [max_eq_left hle]; exact h
+      · exact h
+  exact go items 0 (Or.inl rfl) fun _ h ↦ h
+
+theorem lookup_map_self {α β : Type} [BEq α] [LawfulBEq α] (f : α → β) {z : α} :
+    ∀ {l : List α}, z ∈ l → (l.map fun y ↦ (y, f y)).lookup z = some (f z)
+  | y :: l, h => by
+    rw [List.map_cons, List.lookup]
+    by_cases e : z = y
+    · subst e; rw [beq_self_eq_true]
+    · rw [beq_false_of_ne e]
+      exact lookup_map_self f ((List.mem_cons.mp h).resolve_left e)
+
+/-- The planes of every point of the matrices hold `1 / (z - x)` on the tallest height it is
+opened at. -/
+theorem denoms_ok [Mont32BaseField p] [Mont32.AlgebraId EF] {items : List (PMat × List EF)}
+    (hok : ∀ x ∈ items, 16 * x.1.height < USize.size ∧
+      (∃ k ≤ twoAdicity F, x.1.height = 2 ^ k) ∧ ∀ z ∈ x.2, Ext.OutsideBase z)
+    {m : PMat} {zs : List EF} (hm : (m, zs) ∈ items) {z : EF} (hz : z ∈ zs) :
+    DenomsOk (denoms items) z (Nat.log2 m.height) := by
+  have hmem : z ∈ (items.flatMap (·.2)).eraseDups :=
+    List.mem_eraseDups.mpr (List.mem_flatMap.mpr ⟨(m, zs), hm, hz⟩)
+  have hd : denomsOf (denoms items) z = denomPlanes z (tallest items z) := by
+    unfold denomsOf denoms
+    rw [List.map_congr_left (g := fun y ↦ (y, (tallest items y, denomPlanes y (tallest items y))))
+      (fun _ _ ↦ rfl), lookup_map_self (fun y ↦ (tallest items y, denomPlanes y (tallest items y)))
+      hmem]
+    rfl
+  have hbound : tallest items z ≤ twoAdicity F ∧ 4 * 2 ^ tallest items z < USize.size := by
+    rcases tallest_cases items z with h | ⟨x, hx, h⟩
+    · obtain ⟨h1, ⟨k, -, hk'⟩, -⟩ := hok _ hm
+      have : 1 ≤ m.height := by rw [hk']; exact Nat.one_le_two_pow
+      rw [h]; exact ⟨Nat.zero_le _, by simp only at h1; omega⟩
+    · obtain ⟨h1, ⟨k, hk, hk'⟩, -⟩ := hok x hx
+      rw [h, hk', Nat.log2_two_pow]
+      exact ⟨hk, by rw [hk'] at h1; omega⟩
+  refine ⟨tallest items z, tallest_ge items hm hz, hbound.1, ?_⟩
+  rw [hd]
+  exact denomPlanes_rel ((hok _ hm).2.2 z hz) _ hbound.2
+
+theorem forall₂_mem_both {α β : Type} {R : α → β → Prop} :
+    ∀ {l₁ : List α} {l₂ : List β}, List.Forall₂ R l₁ l₂ →
+      List.Forall₂ (fun a b ↦ R a b ∧ a ∈ l₁ ∧ b ∈ l₂) l₁ l₂
+  | [], [], .nil => .nil
+  | _ :: _, _ :: _, .cons h hs =>
+    .cons ⟨h, List.mem_cons_self, List.mem_cons_self⟩ ((forall₂_mem_both hs).imp
+      fun _ _ ⟨h, ha, hb⟩ ↦ ⟨h, List.mem_cons_of_mem _ ha, List.mem_cons_of_mem _ hb⟩)
+
+theorem forall₂_map_eq' {α β γ : Type} {R : α → β → Prop} {f : α → γ} {g : β → γ}
+    (hfg : ∀ a b, R a b → f a = g b) : ∀ {xs ys}, List.Forall₂ R xs ys → xs.map f = ys.map g
+  | [], [], .nil => rfl
+  | _ :: _, _ :: _, .cons h hs => by
+    rw [List.map_cons, List.map_cons, hfg _ _ h, forall₂_map_eq' hfg hs]
+
+theorem forall₂_mem_left' {α β : Type} {R : α → β → Prop} {l₁ : List α} {l₂ : List β}
+    (h : List.Forall₂ R l₁ l₂) {a : α} (ha : a ∈ l₁) : ∃ b ∈ l₂, R a b := by
+  induction h with
+  | nil => exact absurd ha List.not_mem_nil
+  | cons hab _ ih =>
+    rcases List.mem_cons.mp ha with rfl | ha
+    · exact ⟨_, List.mem_cons_self, hab⟩
+    · obtain ⟨b, hb, h⟩ := ih ha
+      exact ⟨b, List.mem_cons_of_mem _ hb, h⟩
+
+omit [FastExt p EF] in
+/-- The items of related rounds with the same values are related, each point one of its
+matrix's. -/
+theorem openItems_rel {rs : List (List (PMat × List EF))} {srs : List (List (Mat F × List EF))}
+    (hr : List.Forall₂ (List.Forall₂ fun x y ↦ RM x.1 y.1 ∧ x.2 = y.2) rs srs)
+    (ov : List (List (List (Array EF)))) :
+    List.Forall₂ (fun x y ↦ (RM x.1 y.1 ∧ x.2 = y.2) ∧
+        ∃ zs, (x.1, zs) ∈ rs.flatten ∧ (y.1, zs) ∈ srs.flatten ∧ ∀ pr ∈ x.2, pr.1 ∈ zs)
+      (Fri.openItems rs ov) (Fri.openItems srs ov) := by
+  unfold Fri.openItems
+  induction hr generalizing ov with
+  | nil => exact .nil
+  | @cons ms sms rs srs hms _ ih =>
+    cases ov with
+    | nil => exact .nil
+    | cons os ov =>
+      simp only [List.zip_cons_cons, List.map_cons, List.flatten_cons]
+      refine List.rel_append ?_ ((ih ov).imp fun x y ⟨h1, zs, h2, h3, h4⟩ ↦
+        ⟨h1, zs, List.mem_append_right _ h2, List.mem_append_right _ h3, h4⟩)
+      clear ih
+      induction hms generalizing os with
+      | nil => exact .nil
+      | @cons a b as bs hab _ ih =>
+        cases os with
+        | nil => exact .nil
+        | cons o os =>
+          simp only [List.zip_cons_cons, List.map_cons]
+          obtain ⟨hm, hz⟩ := hab
+          refine .cons ⟨⟨hm, by rw [hz]⟩, a.2, List.mem_append_left _ List.mem_cons_self,
+            by simp only [hz, Prod.mk.eta]; exact List.mem_append_left _ List.mem_cons_self,
+            fun pr hp ↦ (List.of_mem_zip hp).1⟩ ((ih os).imp fun x y ⟨h1, zs, h2, h3, h4⟩ ↦
+              ⟨h1, zs, ?_, ?_, h4⟩)
+          · rcases List.mem_append.mp h2 with h | h
+            · exact List.mem_append_left _ (List.mem_cons_of_mem _ h)
+            · exact List.mem_append_right _ h
+          · rcases List.mem_append.mp h3 with h | h
+            · exact List.mem_append_left _ (List.mem_cons_of_mem _ h)
+            · exact List.mem_append_right _ h
+
+/-- The fast opened values and reduction are the specification's. -/
+theorem openings_rel [Mont32BaseField p] [Mont32.AlgebraId EF] (b : Nat)
+    {rs : List (List (PMat × List EF))} {srs : List (List (Mat F × List EF))}
+    (hr : List.Forall₂ (List.Forall₂ fun x y ↦ RM x.1 y.1 ∧ x.2 = y.2) rs srs)
+    (hok : ∀ ms ∈ srs, ∀ x ∈ ms, MatOk x.1 ∧ ∀ z ∈ x.2, Ext.OutsideBase z) :
+    (openings b rs).1 = (Fri.openings b srs).1 ∧
+      ∀ alpha, List.Forall₂ (fun x y ↦ x.1 = y.1 ∧ ExtPlanes.Rel x.2 y.2)
+        ((openings b rs).2 alpha) ((Fri.openings b srs).2 alpha) := by
+  have hflat := List.rel_flatten hr
+  -- Every fast matrix with its points is related to a specification matrix of the prover's
+  -- shapes.
+  have hrel : ∀ x ∈ rs.flatten, ∃ y ∈ srs.flatten, (RM x.1 y.1 ∧ x.2 = y.2) ∧ MatOk y.1 ∧
+      ∀ z ∈ y.2, Ext.OutsideBase z := by
+    intro x hx
+    obtain ⟨y, hy, hxy⟩ := forall₂_mem_left' hflat hx
+    obtain ⟨ms, hms, hy'⟩ := List.mem_flatten.mp hy
+    exact ⟨y, hy, hxy, hok ms hms y hy'⟩
+  have hfast : ∀ x ∈ rs.flatten, 16 * x.1.height < USize.size ∧
+      (∃ k ≤ twoAdicity F, x.1.height = 2 ^ k) ∧ ∀ z ∈ x.2, Ext.OutsideBase z := by
+    intro x hx
+    obtain ⟨y, -, ⟨hm, hz⟩, ⟨hw, hk, -, hA⟩, hzs⟩ := hrel x hx
+    unfold Addressable at hA
+    have := Nat.le_mul_of_pos_left y.1.height hw
+    refine ⟨by rw [hm.height]; omega, by rw [hm.height]; exact hk, fun z h ↦ hzs z (hz ▸ h)⟩
+  have hd : ∀ x ∈ rs.flatten, ∀ z ∈ x.2, DenomsOk (denoms rs.flatten) z (Nat.log2 x.1.height) :=
+    fun x hx z hz ↦ denoms_ok hfast hx hz
+  have hov : rs.map (·.map fun x ↦ openedAt (denoms rs.flatten) b x.1 x.2) =
+      srs.map (·.map fun x ↦ x.2.map (Fri.openedAt b x.1)) := by
+    refine forall₂_map_eq' (fun ms sms hms ↦ ?_) (forall₂_mem_both hr)
+    obtain ⟨hms, hms1, hms2⟩ := hms
+    refine forall₂_map_eq' (fun x y hxy ↦ ?_) (forall₂_mem_both hms)
+    obtain ⟨⟨hm, hz⟩, hx, hy⟩ := hxy
+    obtain ⟨hs, hzs⟩ := hok sms hms2 y hy
+    have hx' : x ∈ rs.flatten := List.mem_flatten.mpr ⟨ms, hms1, hx⟩
+    show openedAt _ b x.1 x.2 = y.2.map (Fri.openedAt b y.1)
+    rw [hz]
+    exact openedAt_rel _ b y.2 hm hs hzs fun z hz' ↦
+      (hd x hx' z (hz ▸ hz')).mono (by rw [hm.height]; exact Nat.sub_le _ _)
+  refine ⟨hov, fun alpha ↦ ?_⟩
+  show List.Forall₂ _ (reduce (denoms rs.flatten) alpha (Fri.openItems rs _))
+    (Fri.reduce alpha (Fri.openItems srs _))
+  rw [hov]
+  have hit := openItems_rel hr (srs.map (·.map fun x ↦ x.2.map (Fri.openedAt b x.1)))
+  refine reduce_rel _ alpha (hit.imp fun _ _ h ↦ h.1) fun y hy ↦ ?_
+  obtain ⟨x, hx, ⟨hm, hz⟩, zs, hx1, hy1, hpts⟩ := forall₂_mem_right hit hy
+  obtain ⟨ms, hms, hy2⟩ := List.mem_flatten.mp hy1
+  obtain ⟨hs, hzs⟩ := hok ms hms _ hy2
+  refine ⟨hs, fun pr hpr ↦ ⟨hzs _ (hpts pr (hz ▸ hpr)), ?_⟩⟩
+  rw [← hm.height]
+  exact hd _ hx1 _ (hpts pr (hz ▸ hpr))

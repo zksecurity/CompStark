@@ -90,11 +90,11 @@ def backendFor_refines (hA : DomainsAddressable F EF)
       permutationLdeWith_rel _ (fun e he ↦ by
         obtain ⟨⟨n, c⟩, -, he⟩ := List.mem_flatMap.mp he
         exact ldePlans_valid n logBlowup c e he) bits A ls logN t pis chs hok
-    openedAt := fun b zs _ _ h hs hz ↦ openedAt_rel b zs h hs hz
+
     toArray := toArray_rel h16
     ofArray := ExtPlanes.ofArray_rel
     size := fun h ↦ h.1
-    reduce := fun alpha _ _ h hok ↦ reduce_rel alpha h hok
+    openings := fun b _ _ h hok ↦ openings_rel b h hok
     fold := fun la beta s _ _ h ha hla hs ↦ fold_rel h16 la beta s h ha hla hs
     addScaled := fun x _ _ _ _ hv hw hab ha ↦ addScaled_rel h16 x hv hw hab ha
     leaves := fun k _ _ h ha hk hp ↦ leaves_rel h16 k h ha hk hp }

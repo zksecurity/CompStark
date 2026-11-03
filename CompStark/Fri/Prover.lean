@@ -85,13 +85,13 @@ structure Backend (F EF : Type) (width : Nat) where
   coordinates and its terminal (`permutationLdeOf`), from its trace of `2 ^ logN` rows, its public
   values and its challenges. -/
   permutation : Nat → Air F → List (Stark.Lookup F) → Nat → Array F → List F → List EF → M × EF
-  openedAt : Nat → M → List EF → List (Array EF)
   toArray : V → Array EF
   ofArray : Array EF → V
   size : V → Nat
-  /-- The batched quotients by log height, tallest first, of committed matrices with their points
-  and opened values, for the batching challenge `α`. -/
-  reduce : EF → List (M × List (EF × Array EF)) → List (Nat × V)
+  /-- The values of every round's matrices at their points (`openedAt`), and for every batching
+  challenge `α` the batched quotients by log height, tallest first, of the matrices with their
+  points and values (`reduce`). -/
+  openings : Nat → List (List (M × List EF)) → List (List (List (Array EF))) × (EF → List (Nat × V))
   /-- The fold by `2 ^ la` at `β` (`foldOnce`). -/
   fold : Nat → EF → V → V
   /-- `a + s · b`. -/
@@ -400,6 +400,18 @@ def reduce (alpha : EF) (items : List (Mat F × List (EF × Array EF))) : List (
     red := (logH, cnt, acc) :: red.filter (·.1 != logH)
   return (red.mergeSort fun a b ↦ b.1 ≤ a.1).map fun (h, _, acc) ↦ (h, acc)
 
+/-- The matrices of rounds with their points and values, flattened. -/
+def openItems {M : Type} (rounds : List (List (M × List EF))) (ov : List (List (List (Array EF)))) :
+    List (M × List (EF × Array EF)) :=
+  ((rounds.zip ov).map fun (ms, os) ↦ (ms.zip os).map fun ((m, zs), ys) ↦ (m, zs.zip ys)).flatten
+
+/-- The values of every round's matrices at their points, and the batched quotients of the
+matrices with their values for every `α`. -/
+def openings (b : Nat) (rounds : List (List (Mat F × List EF))) :
+    List (List (List (Array EF))) × (EF → List (Nat × Array EF)) :=
+  let ov := rounds.map (·.map fun x ↦ x.2.map (openedAt b x.1))
+  (ov, fun alpha ↦ reduce alpha (openItems rounds ov))
+
 /-- The specification backend, on the transcript `t` and the Merkle hashes `hash` and
 `compress`. -/
 @[reducible]
@@ -420,11 +432,10 @@ def Backend.spec (EF : Type) [Challenge F EF] (t : Transcript F width) (hash : L
   quotient := quotientOfLde
   lookupQuotient := lookupQuotientOfLde
   permutation := permutationLdeOf
-  openedAt b m zs := zs.map (Fri.openedAt b m)
   toArray := id
   ofArray := id
   size := Array.size
-  reduce := Fri.reduce
+  openings := Fri.openings
   fold := foldOnce
   addScaled a b x := Array.zipWith (fun u v ↦ u + x * v) a b
   leaves k vs :=
@@ -455,15 +466,13 @@ def proveFri (B : Backend F EF width) (P : Params) (rounds : List (OpenRound B))
 after the domain separator, the batching grinding and challenge `α`, and the FRI proof. -/
 def openPcs (B : Backend F EF width) (P : Params) (rounds : List (OpenRound B)) :
     PM F width (List (List (List (Array EF))) × FriProof F EF) := do
-  let opened := rounds.map fun (_, ms) ↦ ms.map fun (m, zs) ↦
-    let ov := B.openedAt P.logBlowup m zs
-    (ov, m, zs.zip ov)
-  pObserveList (DomainSeparator.pcsSeed F EF
-    (opened.map (·.map fun (ov, _) ↦ ov.map (·.size))) P.batchPowBits)
-  opened.forM fun os ↦ os.forM fun (ov, _) ↦ ov.forM fun ys ↦ pObserveExts ys.toList
+  let (opened, red) := B.openings P.logBlowup (rounds.map (·.2))
+  pObserveList (DomainSeparator.pcsSeed F EF (opened.map (·.map (·.map (·.size))))
+    P.batchPowBits)
+  opened.forM fun os ↦ os.forM fun ov ↦ ov.forM fun ys ↦ pObserveExts ys.toList
   let bw ← pGrind P.batchPowBits
   let alpha : EF ← pSampleExt
-  let fri ← proveFri B P rounds ((B.reduce alpha (opened.flatten.map (·.2))).map (·.2)) bw
-  return (opened.map (·.map (·.1)), fri)
+  let fri ← proveFri B P rounds ((red alpha).map (·.2)) bw
+  return (opened, fri)
 
 end CompStark.Fri

@@ -150,8 +150,8 @@ theorem length_zip_openedOf (b : Nat) (m : Mat F) (zs : List EF) :
     rw [ih]
 
 theorem forM_mats (b : Nat) (ms : List (Mat F × List EF)) (t : Transcript F 24) :
-    ((ms.map fun x ↦ (openedOf b x, x.1, x.2.zip (openedOf b x))).forM
-        fun x ↦ x.1.forM fun ys ↦ pObserveExts ys.toList : PM F 24 Unit).run t =
+    ((ms.map (openedOf b)).forM fun ov ↦ ov.forM fun ys ↦ pObserveExts ys.toList :
+        PM F 24 Unit).run t =
       ((), t.observeExts ((ms.flatMap (openedOf b)).flatMap (·.toList))) := by
   induction ms generalizing t with
   | nil => rfl
@@ -213,18 +213,32 @@ variable [Poseidon2Field F]
 /-! ### Opening -/
 
 theorem forM_rounds (b : Nat) (rounds : List (OpenRound (specBackend EF))) (t : Transcript F 24) :
-    ((rounds.map fun r ↦ r.2.map fun x ↦ (openedOf b x, x.1, x.2.zip (openedOf b x))).forM
-        fun os ↦ os.forM fun x ↦ x.1.forM fun ys ↦ pObserveExts ys.toList : PM F 24 Unit).run t =
+    ((rounds.map fun r ↦ r.2.map (openedOf b)).forM
+        fun os ↦ os.forM fun ov ↦ ov.forM fun ys ↦ pObserveExts ys.toList : PM F 24 Unit).run t =
       ((), t.observeExts
         ((rounds.flatMap fun r ↦ r.2.flatMap (openedOf b)).flatMap (·.toList))) := by
   induction rounds generalizing t with
   | nil => rfl
   | cons r rounds ih =>
     simp only [List.map_cons, List.forM]
-    rw [prun_bind]
-    erw [forM_mats]
-    rw [ih, List.flatMap_cons,
-      List.flatMap_append, observeExts_append]
+    rw [prun_bind, forM_mats, ih, List.flatMap_cons, List.flatMap_append, observeExts_append]
+
+omit [Poseidon2Field F] in
+theorem openItems_openedOf {C : Type} (b : Nat) :
+    ∀ rounds : List (C × List (Mat F × List EF)),
+      openItems (rounds.map (·.2)) (rounds.map fun r ↦ r.2.map (openedOf b)) =
+        (rounds.map fun r ↦ r.2.map fun x ↦ (x.1, x.2.zip (openedOf b x))).flatten
+  | [] => rfl
+  | r :: rounds => by
+    have ih := openItems_openedOf b rounds
+    simp only [openItems, List.map_cons, List.zip_cons_cons, List.flatten_cons] at ih ⊢
+    rw [ih]
+    congr 1
+    obtain ⟨-, ms⟩ := r
+    dsimp only
+    induction ms with
+    | nil => rfl
+    | cons x ms ih => simp only [List.map_cons, List.zip_cons_cons, ih]
 
 /-- The claimed evaluation counts of opened values: per round, per matrix, per point. -/
 def countsOf (opened : List (List (List (Array EF) × Mat F × List (EF × Array EF)))) :
@@ -245,8 +259,13 @@ theorem openPcs_run (P : Params) (rounds : List (OpenRound (specBackend EF)))
       ((opened.map (·.map (·.1)), (fri.run (Transcript.sampleExtState EF g.2)).1),
         (fri.run (Transcript.sampleExtState EF g.2)).2) := by
   unfold openPcs
-  simp only [prun_bind]
-  erw [forM_rounds]
+  simp only [prun_bind, Fri.openings]
+  have e : (rounds.map (·.2)).map (·.map fun x ↦ x.2.map (Fri.openedAt P.logBlowup x.1)) =
+      rounds.map fun r ↦ r.2.map (openedOf P.logBlowup) := by
+    rw [List.map_map]; rfl
+  erw [e, forM_rounds]
+  rw [openItems_openedOf]
+  simp only [countsOf, List.map_map, List.map_flatten, Function.comp_def]
   rfl
 
 /-! ### The verifier's observations -/

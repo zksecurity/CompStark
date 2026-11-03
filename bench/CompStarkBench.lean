@@ -127,12 +127,10 @@ def phases {EF : Type} [Challenge KoalaBear.Fast.Field EF] (logN : Nat)
   let rounds : List (OpenRound B) :=
     [(tc, [(lde, [zeta, zeta * zeta])]), (qc, chunks.map fun m ↦ (m, [zeta]))]
   let t6 ← IO.monoMsNow
-  let opened := rounds.map fun (_, ms) ↦ ms.map fun (m, zs) ↦ B.openedAt 1 m zs
+  let (opened, reduce) := B.openings 1 (rounds.map (·.2))
   let t7 ← IO.monoMsNow
   IO.println s!"opened values {t7 - t6} ms {opened.length}"
-  let items := ((rounds.zip opened).map fun ((_, ms), orow) ↦
-    (ms.zip orow).map fun ((m, zs), ovs) ↦ (m, zs.zip ovs)).flatten
-  let red := B.reduce alpha items
+  let red := reduce alpha
   let t8 ← IO.monoMsNow
   IO.println s!"reduce {t8 - t7} ms {red.length}"
   let arities := foldSchedule P.maxLogArity (P.logBlowup + P.logFinalPolyLen) (logN + 1)
@@ -183,11 +181,9 @@ def phasesBatch : IO UInt32 := do
       [(mainC, (instances.zip exts).map fun (I, e) ↦
           (e, [zeta, zeta * Ext.ofBase (twoAdicGen I.logN)])),
         (quotC, chunks.flatten.map fun m ↦ (m, [zeta]))]
-    let opened ← timed "opened values" (fun _ ↦ rounds.map fun (_, ms) ↦ ms.map fun (m, zs) ↦
-      B.openedAt 1 m zs) fun o ↦ s!"{o.length}"
-    let items := ((rounds.zip opened).map fun ((_, ms), orow) ↦
-      (ms.zip orow).map fun ((m, zs), ovs) ↦ (m, zs.zip ovs)).flatten
-    let red ← timed "reduce" (fun _ ↦ B.reduce alpha items) fun r ↦ s!"{r.length}"
+    let (opened, reduce) ← timed "opened values" (fun _ ↦ B.openings 1 (rounds.map (·.2)))
+      fun o ↦ s!"{o.1.length}"
+    let red ← timed "reduce" (fun _ ↦ reduce alpha) fun r ↦ s!"{r.length}"
     let heights := red.map fun (h, _) ↦ h
     let arities := foldSchedule P.maxLogArity (P.logBlowup + P.logFinalPolyLen) (heights.headD 0)
       heights
@@ -241,11 +237,9 @@ def keccakPhases {EF : Type} [Challenge KoalaBear.Fast.Field EF] (logN : Nat)
     let rounds : List (OpenRound B) :=
       [(tc, [(lde, [zeta, zeta * Ext.ofBase (twoAdicGen logN)])]),
         (qc, qms.map fun m ↦ (m, [zeta]))]
-    let opened ← timed "opened values" (fun _ ↦ rounds.map fun (_, ms) ↦ ms.map fun (m, zs) ↦
-      B.openedAt 1 m zs) fun o ↦ s!"{o.length}"
-    let items := ((rounds.zip opened).map fun ((_, ms), orow) ↦
-      (ms.zip orow).map fun ((m, zs), ovs) ↦ (m, zs.zip ovs)).flatten
-    let red ← timed "reduce" (fun _ ↦ B.reduce alpha items) fun r ↦ s!"{r.length}"
+    let (opened, reduce) ← timed "opened values" (fun _ ↦ B.openings 1 (rounds.map (·.2)))
+      fun o ↦ s!"{o.1.length}"
+    let red ← timed "reduce" (fun _ ↦ reduce alpha) fun r ↦ s!"{r.length}"
     let heights := red.map fun (h, _) ↦ h
     let arities := foldSchedule P.maxLogArity (P.logBlowup + P.logFinalPolyLen) (heights.headD 0)
       heights
@@ -326,27 +320,33 @@ def proveTimed {EF : Type} [CompStark.Challenge KoalaBear.Fast.Field EF] (label 
 
 
 open CompStark CompStark.Stark CompStark.Fri in
-/-- `openings-phase LOG_N REPS`: the fast prover's opening phases on the extension of
-`keccakShapedTrace LOG_N`, blowup 2: per round the values at `ζ` and `ζ ω` (`openedAt`) and
-the batched reduction of the trace's extension (`reduce`); then the medians of `REPS` rounds. -/
-def openingsPhase (logN reps : Nat) : IO UInt32 := do
-  let A : Air KoalaBear.Fast.Field := CompStark.Fixtures.Keccak.air
-  let chunks := keccakShapedTrace logN
+/-- `openings-phase (wide|keccak) LOG_N REPS`: the fast prover's openings, blowup 2, on the
+extension of `wideTrace 64` or `keccakShapedTrace LOG_N` with its two quotient chunks of the
+extension's height: per round the values of the trace at `ζ` and `ζ ω` and of the chunks at `ζ`,
+and the batched reduction; then the medians of `REPS` rounds. -/
+def openingsPhase (air : String) (logN reps : Nat) : IO UInt32 := do
+  let (A, chunks) : Air KoalaBear.Fast.Field × Array ByteArray :=
+    if air == "keccak" then (CompStark.Fixtures.Keccak.air, keccakShapedTrace logN)
+    else (wide 64, #[encodeFields (wideTrace 64 (2 ^ logN))])
   let B := CompStark.KoalaBear.backendFor [] 1 [(logN, A.logQuotientChunks logN)]
-  let ext := B.ldeTrace logN 1 gen A.width chunks
+  let ext ← IO.lazyPure fun _ ↦ B.ldeTrace logN 1 gen A.width chunks
+  let quot ← IO.lazyPure fun _ ↦ (List.range 2).map fun c ↦
+    B.lde logN 1 gen 4 ((wideTrace 4 (2 ^ logN)).set! 0 (c : KoalaBear.Fast.Field))
+  IO.println s!"extensions of {ext.height} and {(quot.map (·.height)).sum} rows"
   let labels := #["opened values", "reduce"]
   let mut samples : Array (Array Nat) := labels.map fun _ ↦ #[]
   for k in [0:reps] do
     let zeta : _root_.KoalaBear.Fast.Ext4 := ⟨17, 19, 23, (k : KoalaBear.Fast.Field)⟩
     let alpha : _root_.KoalaBear.Fast.Ext4 := ⟨5, 7, 11, (k : KoalaBear.Fast.Field)⟩
-    let zs := [zeta, zeta * Ext.ofBase (twoAdicGen logN)]
-    let (t0, ys) ← timeNs fun _ ↦ IO.lazyPure fun _ ↦ B.openedAt 1 ext zs
-    let (t1, red) ← timeNs fun _ ↦ IO.lazyPure fun _ ↦ B.reduce alpha [(ext, zs.zip ys)]
+    let rounds := [[(ext, [zeta, zeta * Ext.ofBase (twoAdicGen logN)])],
+      quot.map fun m ↦ (m, [zeta])]
+    let (t0, op) ← timeNs fun _ ↦ IO.lazyPure fun _ ↦ B.openings 1 rounds
+    let (t1, red) ← timeNs fun _ ↦ IO.lazyPure fun _ ↦ op.2 alpha
     IO.println s!"opened values {t0 / 1000000} ms reduce {t1 / 1000000} ms {red.length}"
     samples := (samples.zip #[t0, t1]).map fun (s, t) ↦ s.push t
   for (l, s) in labels.zip samples do
     let m := (s.qsort (· < ·))[s.size / 2]!
-    IO.println s!"lean keccak 2^{logN} {l} median {m / 1000000} ms"
+    IO.println s!"lean {air} 2^{logN} {l} median {m / 1000000} ms"
   return 0
 
 /-- Plonky3's example configuration: blowup 2, arity up to 8, 87 queries, caps of height 3. -/
@@ -534,7 +534,7 @@ def main (args : List String) : IO UInt32 := do
     keccakProve "quintic" logN.toNat! (CompStark.KoalaBear.backendForQuintic
       [CompStark.Fixtures.KeccakKernel.kernel] 1 (keccakShapes logN.toNat!)) id
   | ["phases-batch"] => phasesBatch
-  | ["openings-phase", logN, reps] => openingsPhase logN.toNat! reps.toNat!
+  | ["openings-phase", air, logN, reps] => openingsPhase air logN.toNat! reps.toNat!
   | ["quotient-phase", air, logN, reps] => quotientPhase air logN.toNat! reps.toNat!
   | "prove" :: backend :: air :: rest =>
     -- `prove (spec|fast|fast-quintic) (fib|wide) LOG_N LOG_BLOWUP LOG_FINAL MAX_LOG_ARITY QUERIES

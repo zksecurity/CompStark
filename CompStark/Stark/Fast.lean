@@ -760,20 +760,52 @@ def permutationLdeWith [Mont32BaseField p] [PlanesInv p EF]
   let (words, t) := permutationWords A ls logN trace pis chs
   (ldeWordsWith plans logN bits gen ((ls.length + 1) * FastExt.d p EF) #[words], t)
 
+/-- Words `r0, …, r0 + len - 1` of every plane. -/
+def slicePlanes (v : @& ExtPlanes p EF) (r0 len : Nat) : ExtPlanes p EF :=
+  ⟨len, v.c.map fun b ↦ slice b r0 len⟩
+
+/-- `1 / (z - x)` on the stored points `x` of height `2 ^ logN`, in parallel ranges. -/
+def denomPlanes [Mont32BaseField p] (z : EF) (logN : Nat) : ExtPlanes p EF :=
+  let n := 2 ^ logN
+  let xs := CompPoly.CPolynomial.NTTFast.Packed.Native.encodeFields
+    (cosetPointsBitRev (gen : F) logN)
+  let parts := if n < 4096 then 1 else 16
+  let size := n / parts
+  ExtPlanes.join n <| (Array.range parts).map fun k ↦ Task.spawn fun _ ↦
+    let len := if k + 1 = parts then n - k * size else size
+    (ExtPlanes.invDenoms z (slice xs (k * size) len) len).c.toArray
+
+/-- The tallest log height of the matrices of `items` opened at `z`. -/
+def tallest (items : List (PMat × List EF)) (z : EF) : Nat :=
+  items.foldl (fun a (m, zs) ↦ if zs.contains z then max a (Nat.log2 m.height) else a) 0
+
+/-- `1 / (z - x)` for every distinct point `z` of the matrices `items`, on the stored points `x` of
+the tallest height `2 ^ logN` it is opened at (`denomPlanes`): `(z, logN, planes)`. The stored
+points of a smaller height are a prefix of these. -/
+def denoms [Mont32BaseField p] (items : List (PMat × List EF)) : List (EF × Nat × ExtPlanes p EF) :=
+  (items.flatMap (·.2)).eraseDups.map fun z ↦
+    (z, tallest items z, denomPlanes z (tallest items z))
+
+/-- The planes of `1 / (z - x)` of the point `z` in `invs`. -/
+def denomsOf (invs : @& List (EF × Nat × ExtPlanes p EF)) (z : EF) : ExtPlanes p EF :=
+  ((invs.lookup z).map (·.2)).getD (ExtPlanes.zeros 0)
+
 /-- The weight planes of the stored rows `r0, …, r0 + len - 1` for every point `z` of `zs`: the
-`d` coordinate planes of `x_r / (z - x_r)` for each point, in order. -/
-def weightPlanes (zs : @& Array EF) (xs : @& ByteArray) (r0 len : Nat) : Array ByteArray :=
+`d` coordinate planes of `x_r / (z - x_r)` for each point, in order, from the planes of
+`1 / (z - x)` in `invs`. -/
+def weightPlanes (invs : @& List (EF × Nat × ExtPlanes p EF)) (zs : @& Array EF)
+    (xs : @& ByteArray) (r0 len : Nat) : Array ByteArray :=
   let xr := slice xs r0 len
   zs.foldl (fun acc z ↦
-    let wt := (ExtPlanes.invDenoms z xr len).mulBase xr
+    let wt := (slicePlanes (denomsOf invs z) r0 len).mulBase xr
     acc ++ wt.c.toArray) #[]
 
 /-- The column sums `∑_r m[r][j] · x_r / (z - x_r)` over the stored rows `r0, …, r0 + len - 1` of a
 packed matrix, within one block of its rows, for every point `z` of `zs`: per point `d` planes of
 a word per column. Each column's rows are dotted with every plane while they are in cache. -/
-def weightedColumns (m : @& PMat) (zs : @& Array EF) (xs : @& ByteArray) (r0 len : Nat) :
-    Array ByteArray :=
-  let wts := weightPlanes zs xs r0 len
+def weightedColumns (invs : @& List (EF × Nat × ExtPlanes p EF)) (m : @& PMat) (zs : @& Array EF)
+    (xs : @& ByteArray) (r0 len : Nat) : Array ByteArray :=
+  let wts := weightPlanes invs zs xs r0 len
   let sums := (Array.range m.width).map fun j ↦
     wts.map fun pl ↦ Words.dotAt p (m.colAt j r0).1 (m.colAt j r0).2 pl len
   (Array.range wts.size).map fun i ↦ CompPoly.CPolynomial.NTTFast.Packed.Native.encodeFields
@@ -781,10 +813,10 @@ def weightedColumns (m : @& PMat) (zs : @& Array EF) (xs : @& ByteArray) (r0 len
       CompPoly.CPolynomial.NTTFast.Packed.ofWord p ((sums.getD j.val #[]).getD i 0))
 
 /-- `openedAt` on packed words, at all points of a matrix: the barycentric weights `x / (z - x)` in
-the stored bit-reversed row order, as planes by the norm, and the column sums over parallel row
-ranges, each range within one block of the matrix's rows. -/
-def openedAt [Mont32BaseField p] [Mont32.AlgebraId EF] (logBlowup : Nat) (m : PMat)
-    (zs : List EF) : List (Array EF) :=
+the stored bit-reversed row order, from the planes of `1 / (z - x)` in `invs`, and the column sums
+over parallel row ranges, each range within one block of the matrix's rows. -/
+def openedAt [Mont32BaseField p] [Mont32.AlgebraId EF] (invs : List (EF × Nat × ExtPlanes p EF))
+    (logBlowup : Nat) (m : PMat) (zs : List EF) : List (Array EF) :=
   let d := FastExt.d p EF
   let logH := Nat.log2 m.height - logBlowup
   let h := 2 ^ logH
@@ -794,7 +826,7 @@ def openedAt [Mont32BaseField p] [Mont32.AlgebraId EF] (logBlowup : Nat) (m : PM
   let parts := h / Nat.gcd (if h < 4096 then h else h / 16) m.rows
   let size := h / parts
   let tasks := (Array.range parts).map fun k ↦ Task.spawn fun _ ↦
-    weightedColumns m zs.toArray xs (k * size) (if k + 1 = parts then h - k * size else size)
+    weightedColumns invs m zs.toArray xs (k * size) (if k + 1 = parts then h - k * size else size)
   let sums := tasks.foldl (fun acc t ↦ (acc.zip t.get).map fun (a, b) ↦ Words.addWords p a b w)
     (Array.replicate (d * zs.length) (CompPoly.CPolynomial.NTTFast.Packed.Native.zeroWords w))
   zs.zipIdx.map fun (z, k) ↦
@@ -853,31 +885,32 @@ def compressRange (p : ℕ) [Mont32Field p] (m : @& PMat) (a : @& Array ByteArra
       (Array.range (min 4 (a.size - 4 * q))).map fun c ↦
         compress1 p m (planeWord m a (4 * q + c)) r0 len
 
+/-- `sums` with `(y, c)` added to the sums of the point `z`, a new point last. -/
+def addToPoint (z y : EF) (c : ExtPlanes p EF) :
+    List (EF × EF × ExtPlanes p EF) → List (EF × EF × ExtPlanes p EF)
+  | [] => [(z, y, c)]
+  | e :: es => if e.1 == z then (z, e.2.1 + y, e.2.2.add c) :: es else e :: addToPoint z y c es
+
 /-- Rows `r0, …, r0 + len - 1` of the batched quotient of one height: for every matrix, its rows
-batched by the planes `a` of the powers of `α`, and for every point `(z, yz, offset)` the term
-`offset · (yz - comp) / (z - x)`, `xs` the height's points. -/
-def reduceRange (items : @& Array (PMat × ExtPlanes p EF × List (EF × EF × EF)))
-    (xs : @& ByteArray) (r0 len : Nat) : ExtPlanes p EF := Id.run do
-  let xr := slice xs r0 len
-  let mut acc := ExtPlanes.zeros len
-  -- `1 / (z - x)` once per distinct point.
-  let mut invs : List (EF × ExtPlanes p EF) := []
+batched by the planes `a` of the powers of `α`, and for every point `(z, yz, offset)` of it,
+`offset · yz` and `offset · comp` added to the sums `Y` and `D` of `z`; then `(Y - D) / (z - x)`
+summed over the points, `1 / (z - x)` from `invs`. -/
+def reduceRange (invs : @& List (EF × Nat × ExtPlanes p EF))
+    (items : @& Array (PMat × ExtPlanes p EF × List (EF × EF × EF))) (r0 len : Nat) :
+    ExtPlanes p EF := Id.run do
+  let mut sums : List (EF × EF × ExtPlanes p EF) := []
   for (m, a, pts) in items do
     let comp := compressRange p m a.c.toArray r0 len
     let comp : ExtPlanes p EF := ⟨len, Vector.ofFn fun k ↦ comp.getD k .empty⟩
     for (z, yz, offset) in pts do
-      let inv ← match invs.lookup z with
-        | some v => pure v
-        | none => do
-          let v := ExtPlanes.invDenoms z xr len
-          invs := (z, v) :: invs
-          pure v
-      acc := acc.add (((ExtPlanes.rsub yz comp).mul inv).smul offset)
-  return acc
+      sums := addToPoint z (offset * yz) (comp.smul offset) sums
+  return sums.foldl (fun acc (z, y, c) ↦
+    acc.add ((ExtPlanes.rsub y c).mul (slicePlanes (denomsOf invs z) r0 len))) (ExtPlanes.zeros len)
 
 /-- `Fri.reduce` on planes, every height in parallel ranges of rows within one block of every
-matrix: rows batched column by column, `1 / (z - x)` by the norm. -/
-def reduce [Mont32BaseField p] [Mont32.AlgebraId EF] (alpha : EF)
+matrix: rows batched column by column, `1 / (z - x)` from `invs`. -/
+def reduce [Mont32BaseField p] [Mont32.AlgebraId EF] (invs : List (EF × Nat × ExtPlanes p EF))
+    (alpha : EF)
     (items : List (PMat × List (EF × Array EF))) :
     List (Nat × ExtPlanes p EF) :=
   Id.run do
@@ -897,14 +930,21 @@ def reduce [Mont32BaseField p] [Mont32.AlgebraId EF] (alpha : EF)
       groups.filter (·.1 != logH)
   let out := groups.map fun (logH, _, g) ↦
     let n := 2 ^ logH
-    let xs := CompPoly.CPolynomial.NTTFast.Packed.Native.encodeFields
-        (cosetPointsBitRev (gen : F) logH)
     let parts := n / g.foldl (fun a (m, _) ↦ Nat.gcd a m.rows) (if n < 4096 then n else n / 16)
     let size := n / parts
     let ts := (Array.range parts).map fun k ↦ Task.spawn fun _ ↦
-      (reduceRange g xs (k * size) (if k + 1 = parts then n - k * size else size)).c.toArray
+      (reduceRange invs g (k * size) (if k + 1 = parts then n - k * size else size)).c.toArray
     (logH, ExtPlanes.join n ts)
   return out.mergeSort fun a b ↦ b.1 ≤ a.1
+
+/-- The opened values and the batched reduction on planes, `1 / (z - x)` computed once per point
+on its tallest height (`denoms`) for both. -/
+def openings [Mont32BaseField p] [Mont32.AlgebraId EF] (b : Nat)
+    (rounds : List (List (PMat × List EF))) :
+    List (List (List (Array EF))) × (EF → List (Nat × ExtPlanes p EF)) :=
+  let invs := denoms rounds.flatten
+  let ov := rounds.map (·.map fun x ↦ openedAt invs b x.1 x.2)
+  (ov, fun alpha ↦ reduce invs alpha (Fri.openItems rounds ov))
 
 /-- Words `0, 2, 4, …` and `1, 3, 5, …` of the first `2 n` words of `b`. -/
 def deinterleave (b : @& ByteArray) (n : Nat) : ByteArray × ByteArray := Id.run do
@@ -989,12 +1029,11 @@ def backend : Backend F EF 24 where
   quotient := quotient
   lookupQuotient := lookupQuotient
   permutation := permutationLdeWith []
-  openedAt := openedAt
   V := ExtPlanes p EF
   toArray := ExtPlanes.toArray
   ofArray := ExtPlanes.ofArray
   size := (·.n)
-  reduce := reduce
+  openings := Fast.openings
   fold := fold
   addScaled := addScaled
   leaves := leaves

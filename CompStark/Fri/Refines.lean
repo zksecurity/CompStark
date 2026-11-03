@@ -116,16 +116,15 @@ structure Refines (B : Backend F EF 24) where
         ((specBackend EF).permutation bits A ls logN t pis chs).1 ∧
       (B.permutation bits A ls logN t pis chs).2 =
         ((specBackend EF).permutation bits A ls logN t pis chs).2
-  openedAt : ∀ b zs {m s}, RM m s → MatOk s → (∀ z ∈ zs, Ext.OutsideBase z) →
-    B.openedAt b m zs = (specBackend EF).openedAt b s zs
   toArray : ∀ {v a}, RV v a → a.size ≤ 2 ^ twoAdicity F → B.toArray v = (specBackend EF).toArray a
   ofArray : ∀ a, RV (B.ofArray a) ((specBackend EF).ofArray a)
   size : ∀ {v a}, RV v a → B.size v = (specBackend EF).size a
-  reduce : ∀ alpha {items sitems},
-    List.Forall₂ (fun x y ↦ RM x.1 y.1 ∧ x.2 = y.2) items sitems →
-    (∀ x ∈ sitems, MatOk x.1 ∧ ∀ p ∈ x.2, Ext.OutsideBase p.1) →
-    List.Forall₂ (fun x y ↦ x.1 = y.1 ∧ RV x.2 y.2) (B.reduce alpha items)
-      ((specBackend EF).reduce alpha sitems)
+  openings : ∀ b {rs srs},
+    List.Forall₂ (List.Forall₂ fun x y ↦ RM x.1 y.1 ∧ x.2 = y.2) rs srs →
+    (∀ ms ∈ srs, ∀ x ∈ ms, MatOk x.1 ∧ ∀ z ∈ x.2, Ext.OutsideBase z) →
+    (B.openings b rs).1 = ((specBackend EF).openings b srs).1 ∧
+      ∀ alpha, List.Forall₂ (fun x y ↦ x.1 = y.1 ∧ RV x.2 y.2) ((B.openings b rs).2 alpha)
+        (((specBackend EF).openings b srs).2 alpha)
   fold : ∀ la beta s {v a}, RV v a → a.size = 2 ^ s → la ≤ s → s ≤ twoAdicity F →
     RV (B.fold la beta v) ((specBackend EF).fold la beta a)
   addScaled : ∀ x {v a w b}, RV v a → RV w b → a.size = b.size → a.size ≤ 2 ^ twoAdicity F →
@@ -398,76 +397,43 @@ theorem proveFri_refines (hA : DomainsAddressable F EF) (h : Refines B) (P : Par
     hc.finalPoly]
   exact RelM.pure rfl
 
+theorem mem_openItems {M : Type} {rounds : List (List (M × List EF))}
+    {ov : List (List (List (Array EF)))} {x : M × List (EF × Array EF)}
+    (hx : x ∈ openItems rounds ov) : ∃ ms ∈ rounds, ∃ y ∈ ms, x.1 = y.1 := by
+  unfold openItems at hx
+  obtain ⟨l, hl, hxl⟩ := List.mem_flatten.mp hx
+  obtain ⟨⟨ms, os⟩, hmo, rfl⟩ := List.mem_map.mp hl
+  obtain ⟨⟨⟨m, zs⟩, ys⟩, hp, rfl⟩ := List.mem_map.mp hxl
+  exact ⟨ms, (List.of_mem_zip hmo).1, (m, zs), (List.of_mem_zip hp).1, rfl⟩
+
 /-- `openPcs` of related rounds is the specification's. -/
 theorem openPcs_refines (hA : DomainsAddressable F EF) (h : Refines B) (P : Params)
     {rounds srounds} (hr : List.Forall₂ (RoundRel h) rounds srounds) (hok : RoundsOk srounds) :
     RelM Eq (openPcs B P rounds) (openPcs (specBackend EF) P srounds) := by
+  have hrs : List.Forall₂ (List.Forall₂ fun x y ↦ h.RM x.1 y.1 ∧ x.2 = y.2)
+      (rounds.map (·.2)) (srounds.map (·.2)) :=
+    forall₂_map (fun _ _ hrs ↦ hrs.2) hr
+  have hsok : ∀ ms ∈ srounds.map (·.2), ∀ x ∈ ms, MatOk x.1 ∧ ∀ z ∈ x.2, Ext.OutsideBase z := by
+    intro ms hms
+    obtain ⟨r, hr', rfl⟩ := List.mem_map.mp hms
+    exact hok r hr'
+  obtain ⟨hov, hred⟩ := h.openings P.logBlowup hrs hsok
   rw [openPcs, openPcs]
-  -- The opened values agree, the matrices are related and of the prover's shapes.
-  let S : List (Array EF) × B.M × List (EF × Array EF) →
-      List (Array EF) × (specBackend EF).M × List (EF × Array EF) → Prop :=
-    fun x y ↦ x.1 = y.1 ∧ h.RM x.2.1 y.2.1 ∧ x.2.2 = y.2.2 ∧
-      (MatOk y.2.1 ∧ ∀ p ∈ y.2.2, Ext.OutsideBase p.1)
-  have hos : List.Forall₂ (List.Forall₂ S)
-      (rounds.map fun (_, ms) ↦ ms.map fun (m, zs) ↦
-        let ov := B.openedAt P.logBlowup m zs
-        (ov, m, zs.zip ov))
-      (srounds.map fun (_, ms) ↦ ms.map fun (m, zs) ↦
-        let ov := (specBackend EF).openedAt P.logBlowup m zs
-        (ov, m, zs.zip ov)) :=
-    forall₂_map (fun r s hrs ↦ forall₂_map (fun x y hxy ↦ by
-        obtain ⟨⟨hm, hz⟩, hmat, hzs⟩ := hxy
-        dsimp only at hm hz hmat hzs ⊢
-        rw [hz, h.openedAt _ _ hm hmat hzs]
-        exact ⟨rfl, hm, rfl, hmat, fun p hp ↦ hzs p.1 (List.of_mem_zip hp).1⟩)
-      (forall₂_and_mem hrs.1.2 hrs.2))
-      (forall₂_and_mem hr hok)
-  generalize rounds.map _ = opened at hos ⊢
-  generalize srounds.map _ = sopened at hos ⊢
-  have hfst : opened.map (List.map Prod.fst) = sopened.map (List.map Prod.fst) :=
-    forall₂_map_eq (fun a b hab ↦ forall₂_map_eq (fun x y hxy ↦ hxy.1) hab) hos
-  have hcounts : opened.map (List.map fun x ↦ x.1.map Array.size) =
-      sopened.map (List.map fun x ↦ x.1.map Array.size) :=
-    forall₂_map_eq (fun a b hab ↦ forall₂_map_eq (fun x y hxy ↦ by rw [hxy.1]) hab) hos
-  have hobs : opened.forM (fun os ↦ os.forM fun x ↦ x.1.forM fun ys ↦
-        (pObserveExts ys.toList : PM F 24 Unit)) =
-      sopened.forM (fun os ↦ os.forM fun x ↦ x.1.forM fun ys ↦
-        (pObserveExts ys.toList : PM F 24 Unit)) := by
-    have e : ∀ {M : Type} (l : List (List (List (Array EF) × M × List (EF × Array EF)))),
-        l.forM (fun os ↦ os.forM fun x ↦ x.1.forM fun ys ↦
-          (pObserveExts ys.toList : PM F 24 Unit)) =
-        (l.map (List.map Prod.fst)).forM fun os ↦ os.forM fun ov ↦ ov.forM fun ys ↦
-          (pObserveExts ys.toList : PM F 24 Unit) := by
-      intro M l
-      induction l with
-      | nil => rfl
-      | cons os l ih =>
-        simp only [List.map_cons, List.forM, ih]
-        congr 1
-        induction os with
-        | nil => rfl
-        | cons x os ih' => simp only [List.map_cons, List.forM, ih']
-    rw [e, e, hfst]
-  rw [hcounts, hobs]
+  generalize B.openings P.logBlowup (rounds.map (·.2)) = o at hov hred
+  obtain ⟨ov, red⟩ := o
+  dsimp only at hov hred ⊢
+  subst hov
   refine RelM.bind_eq fun _ ↦ RelM.bind_eq fun _ ↦ RelM.bind_eq fun bw ↦
     RelM.bind_eq fun alpha ↦ ?_
-  have hflat := List.rel_flatten hos
-  have hitems : List.Forall₂ (fun x y ↦ h.RM x.1 y.1 ∧ x.2 = y.2)
-      (opened.flatten.map (·.2)) (sopened.flatten.map (·.2)) :=
-    forall₂_map (fun _ _ hs ↦ ⟨hs.2.1, hs.2.2.1⟩) hflat
-  have hsok : ∀ x ∈ sopened.flatten.map (·.2), MatOk x.1 ∧ ∀ p ∈ x.2, Ext.OutsideBase p.1 := by
-    intro x hx
+  have hin := forall₂_map (S := h.RV) (f := (·.2)) (g := (·.2)) (fun _ _ hs ↦ hs.2) (hred alpha)
+  have hshape : ∀ x ∈ ((specBackend EF).openings P.logBlowup (srounds.map (·.2))).2 alpha |>.map
+      (·.2), ShapeOk (F := F) x := fun x hx ↦ by
     obtain ⟨y, hy, rfl⟩ := List.mem_map.mp hx
-    exact forall₂_mem_right (R := S) (fun _ _ hs ↦ hs.2.2.2) hflat y hy
-  have hin : List.Forall₂ h.RV ((B.reduce alpha (opened.flatten.map (·.2))).map (·.2))
-      (((specBackend EF).reduce alpha (sopened.flatten.map (·.2))).map (·.2)) :=
-    forall₂_map (fun _ _ hs ↦ hs.2) (h.reduce alpha hitems hsok)
-  have hshape : ∀ x ∈ ((specBackend EF).reduce alpha (sopened.flatten.map (·.2))).map (·.2),
-      ShapeOk (F := F) x := fun x hx ↦ by
-    obtain ⟨y, hy, rfl⟩ := List.mem_map.mp hx
-    exact Or.inr (reduce_shape alpha _ (fun x hx ↦ (hsok x hx).1) y hy)
+    refine Or.inr (reduce_shape alpha _ (fun x hx ↦ ?_) y hy)
+    obtain ⟨ms, hms, z, hz, e⟩ := mem_openItems hx
+    rw [e]
+    exact (hsok ms hms z hz).1
   refine RelM.bind (proveFri_refines hA h P hr hin hshape bw) fun fri _ hf ↦ hf ▸ ?_
-  rw [forall₂_map_eq (fun a b hab ↦ forall₂_map_eq (fun x y hxy ↦ hxy.1) hab) hos]
   exact RelM.pure rfl
 
 end CompStark.Fri
