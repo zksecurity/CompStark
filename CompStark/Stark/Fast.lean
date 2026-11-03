@@ -157,24 +157,39 @@ def lineRanges (logH chunks : Nat) : Nat := max 1 (2 ^ logH / chunks / 256)
 once its columns are extended, so the input's transposed copy shrinks while the extension grows. -/
 def rangeColumns : Nat := 256
 
+/-- The number of chains the column tasks of an extension of `2 ^ logH`-row columns run in: from
+`2 ^ 20` rows on, `3 · 2 ^ 21 / 2 ^ logH`, so that the columns extended at once keep their buffers
+within the caches, as more at once would wait on memory; below, a chain per column of a range. -/
+def columnChains (logH : Nat) : Nat :=
+  if logH < 20 then rangeColumns else max 1 (3 * 2 ^ 21 / 2 ^ logH)
+
+/-- `f` on `0, …, n - 1` in `L` chains: chain `c` holds `f c, f (c + L), …`. -/
+def chained {α : Type} (L n : Nat) (f : Nat → α) : Array (Array α) :=
+  (Array.range (min L n)).map fun c ↦ (Array.range ((n - c + L - 1) / L)).map fun i ↦ f (c + L * i)
+
 open CompPoly.CPolynomial.NTTFast.Packed.Native (transposeRows columnCoefficients
   gatherColumn cosetBlock) in
 /-- The extension by `P` of the `w`-column matrix whose rows are the chunks `ms` of equal heights,
 column by column: block `t` of column `j`, the values on coset `bitrev t`, at `t * w + j`. For each
 range of `rangeColumns` columns, tasks transpose row ranges of the chunks into columns
-(`lineRanges`); every column is one task, its coefficients and then each of its coset blocks, the
+(`lineRanges`); the columns are extended by `columnChains` tasks, each extending its columns one
+after the other (`chained`), every column its coefficients and then each of its coset blocks, the
 last one from the coefficients' buffer. -/
 def ldeColumns (P : LdePlan p) (w : Nat) (ms : Array ByteArray) : Array ByteArray :=
   let q := lineRanges P.logH ms.size
   let rows := 2 ^ P.logH / (ms.size * q)
+  let L := columnChains P.logH
   let blocks := (CompPoly.Tasks.join ((Array.range ((w + rangeColumns - 1) / rangeColumns)).flatMap
     fun r ↦
       let n := min rangeColumns (w - rangeColumns * r)
       let pieces := CompPoly.Tasks.join (CompPoly.Tasks.spawnAll (ms.size * q) fun k ↦
         transposeRows (ms.getD (k / q) .empty) w (rangeColumns * r) n (k % q * rows) rows)
-      (Array.range n).map fun j ↦ pieces.bind fun ps ↦ Task.spawn fun _ ↦
-        let c := columnCoefficients P (gatherColumn ps rows j)
-        (Array.range (2 ^ P.bits)).map fun t ↦ cosetBlock P c t)).get
+      let chains := pieces.bind fun ps ↦ CompPoly.Tasks.join
+        (((chained L n fun j ↦ (j, ps)).map fun cs ↦ Task.spawn fun _ ↦ cs.map fun (j, ps) ↦
+          let c := columnCoefficients P (gatherColumn ps rows j)
+          (Array.range (2 ^ P.bits)).map fun t ↦ cosetBlock P c t))
+      (Array.range n).map fun j ↦ chains.bind fun cs ↦
+        .pure ((cs.getD (j % L) #[]).getD (j / L) #[]))).get
   (Array.range (2 ^ P.bits)).flatMap fun t ↦ blocks.map fun b ↦ b.getD t .empty
 
 /-- The plan for extensions of `2 ^ logH`-row matrices by `2 ^ bits` onto `shift · ⟨ω_N⟩`: from

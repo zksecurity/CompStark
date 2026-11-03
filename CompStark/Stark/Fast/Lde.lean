@@ -118,6 +118,24 @@ theorem flatMap_ranges {α : Type} (f : Nat → α) (w K : Nat) (hK : 0 < K) :
   · omega
   · omega
 
+/-- Chains map entry by entry. -/
+theorem map_chained {α β : Type} (L n : Nat) (f : Nat → α) (g : α → β) :
+    (chained L n f).map (·.map g) = chained L n (g ∘ f) := by
+  simp only [chained, Array.map_map, Function.comp_def]
+
+/-- Entry `j % L` of chain `j / L` is `f j`. -/
+theorem getD_chained {α : Type} (L n : Nat) (hL : 0 < L) (f : Nat → α) (j : Nat) (hj : j < n)
+    (d : α) : ((chained L n f).getD (j % L) #[]).getD (j / L) d = f j := by
+  have hc : j % L < min L n := Nat.lt_min.mpr ⟨Nat.mod_lt _ hL, by
+    have := Nat.mod_le j L; omega⟩
+  have hdm := Nat.mod_add_div j L
+  have hi : j / L < (n - j % L + L - 1) / L := by
+    rw [Nat.lt_div_iff_mul_lt hL]
+    have : L * (j / L) ≤ n - j % L - 1 := by omega
+    rw [Nat.mul_comm]
+    omega
+  rw [chained, getD_map_range _ _ _ hc, getD_map_range _ _ _ hi, hdm]
+
 /-- Block `t` of column `j` of the extension of `M`, `w` columns wide: the DIF transform of the
 column's coefficients scaled by coset table `bitrev t`. -/
 def colBlock (P : LdePlan p) (w : Nat) (M : Array F) (t j : Nat) : Array F :=
@@ -222,7 +240,14 @@ theorem ldeColumns_eq (P : LdePlan p) (w : Nat) (M : Array F) (k : Nat) (hk : k 
     intro x hx _
     simp only [Array.size_map, Array.size_range] at hx
     simp only [Array.getElem_map, Array.getElem_range]
-    rw [← rowChunks, hpieces _ _ hn, getD_map_range _ _ _ ht, hcol _ _ _ hn hx], flatMap_range_map]
+    have hL : 0 < columnChains P.logH := by
+      unfold columnChains rangeColumns
+      split
+      · decide
+      · exact lt_of_lt_of_le Nat.one_pos (Nat.le_max_left 1 _)
+    rw [← rowChunks, hpieces _ _ hn, map_chained, getD_chained _ _ hL _ _ hx, Function.comp_apply]
+    dsimp only
+    rw [getD_map_range _ _ _ ht, hcol _ _ _ hn hx], flatMap_range_map]
   exact blocks_ldeSpec P w M
 
 variable [Mont32BaseField p]
