@@ -980,34 +980,46 @@ def deinterleave (b : @& ByteArray) (n : Nat) : ByteArray × ByteArray := Id.run
       (CompPoly.CPolynomial.NTTFast.Packed.Native.read b (2 * i + 1))
   return (e, o)
 
-/-- Pairs `r0, …, r0 + len - 1` of the arity-2 fold of planes `v` at `β`; `twoX` holds `2 x` of
-every pair. -/
-def fold2Range (v : @& ExtPlanes p EF) (twoX : @& ByteArray) (beta : EF) (r0 len : Nat) :
+/-- Pairs `r0, …, r0 + len - 1` of the arity-2 fold of planes `v` at `β`; `inv2x` holds `1 / (2 x)`
+of every pair. -/
+def fold2Range (v : @& ExtPlanes p EF) (inv2x : @& ByteArray) (beta : EF) (r0 len : Nat) :
     ExtPlanes p EF :=
   let split (b : ByteArray) := deinterleave (slice b (2 * r0) (2 * len)) len
   let halves := v.c.map split
   let lo : ExtPlanes p EF := ⟨len, halves.map (·.1)⟩
   let hi : ExtPlanes p EF := ⟨len, halves.map (·.2)⟩
-  let inv2x := Words.batchInvRange p twoX r0 len
-  ((lo.add hi).mulBase (Words.replicateWord ((2 : F)⁻¹).val len)).add (((lo.sub hi).mulBase inv2x).smul beta)
+  ((lo.add hi).mulBase (Words.replicateWord ((2 : F)⁻¹).val len)).add
+    (((lo.sub hi).mulBase (slice inv2x r0 len)).smul beta)
 
-/-- `Fri.foldPairs` on planes, `(lo + hi) / 2 + β (lo - hi) / (2 x)`, in parallel ranges. -/
-def fold2 [Mont32BaseField p] (v : ExtPlanes p EF) (beta : EF) (logRows : Nat) : ExtPlanes p EF :=
-  let rows := 2 ^ logRows
+/-- The inverses of `2 x` of the pairs of the arity-2 fold of `2 ^ (logRows + 1)` values, packed:
+pair `i` is at the points `±x`, `x` the `bitrev i`-th power of the generator of order
+`2 ^ (logRows + 1)`. -/
+def invTwoX [Mont32BaseField p] (logRows : Nat) : ByteArray :=
   let pw := cosetPoints (1 : F) (logRows + 1)
-  let twoX := CompPoly.CPolynomial.NTTFast.Packed.Native.encodeFields
-    ((bitRevPerm logRows).map fun i ↦ 2 * pw.getD i 0)
+  CompPoly.CPolynomial.NTTFast.Packed.Native.encodeFields
+    (batchInv ((bitRevPerm logRows).map fun i ↦ 2 * pw.getD i 0))
+
+/-- The folds' inverses `invTwoX` for every number of rows below `2 ^ L`, computed once. -/
+def foldTables [Mont32BaseField p] (L : Nat) : Array ByteArray :=
+  (Array.range L).map (invTwoX (p := p))
+
+/-- `Fri.foldPairs` on planes, `(lo + hi) / 2 + β (lo - hi) / (2 x)`, in parallel ranges, with the
+inverses of `2 x` from `tables` when they hold the layer's, else computed. -/
+def fold2 [Mont32BaseField p] (tables : Array ByteArray) (v : ExtPlanes p EF) (beta : EF)
+    (logRows : Nat) : ExtPlanes p EF :=
+  let rows := 2 ^ logRows
+  let inv2x := if h : logRows < tables.size then tables[logRows] else invTwoX (p := p) logRows
   let parts := if rows < 4096 then 1 else 16
   let size := rows / parts
   ExtPlanes.join rows <| (Array.range parts).map fun k ↦ Task.spawn fun _ ↦
-    (fold2Range v twoX beta (k * size) (if k + 1 = parts then rows - k * size else size)).c.toArray
+    (fold2Range v inv2x beta (k * size) (if k + 1 = parts then rows - k * size else size)).c.toArray
 
 /-- `Fri.foldOnce` on planes: the arity-2 fold `fold2`, otherwise every group's `foldRow`, in
 parallel ranges of rows. -/
-def fold [Mont32BaseField p] [Mont32.AlgebraId EF] (la : Nat) (beta : EF) (v : ExtPlanes p EF) :
-    ExtPlanes p EF :=
+def fold [Mont32BaseField p] [Mont32.AlgebraId EF] (tables : Array ByteArray) (la : Nat)
+    (beta : EF) (v : ExtPlanes p EF) : ExtPlanes p EF :=
   let rows := v.n / 2 ^ la
-  if la = 1 then fold2 v beta (Nat.log2 rows) else
+  if la = 1 then fold2 tables v beta (Nat.log2 rows) else
     let vs := v.toArray
     ExtPlanes.ofArray (parChunks rows (if rows < 1024 then 1 else 16) fun r0 len ↦
       Array.ofFn (n := len) fun i ↦ Fri.foldRow (r0 + i.val) (Nat.log2 rows) la beta
@@ -1089,14 +1101,15 @@ def backend : Backend F EF 24 where
   ofArray := ExtPlanes.ofArray
   size := (·.n)
   openings := Fast.openings
-  fold := fold
+  fold := fold #[]
   addScaled := addScaled
   leaves := leaves
 
 /-- The fast backend with the extension plans and quotient tables of proofs of instances of the
 shapes `shapes` prepared: for every `(logN, logChunks)`, a `2 ^ logN`-row trace with
 `2 ^ logChunks` quotient chunks, the trace's extension on `g · ⟨ω_N⟩`, every chunk's and the
-quotient's tables, and the kernels of `kernels` whose code is their program's
+quotient's tables, the folds' inverses of `2 x` below the largest extension (`foldTables`), and the
+kernels of `kernels` whose code is their program's
 (`checkedKernels`): an AIR's constraints with a kernel are not compiled again, and every program
 runs by a kernel with its code (`kernelFor`). -/
 def backendFor (kernels : List (AirKernel p)) (logBlowup : Nat) (shapes : List (Nat × Nat)) :
@@ -1105,7 +1118,9 @@ def backendFor (kernels : List (AirKernel p)) (logBlowup : Nat) (shapes : List (
   let shapes := shapes.eraseDups
   let tables := shapes.map fun (n, c) ↦ (n, c, quotientTables n c)
   let plans := shapes.flatMap fun (n, c) ↦ ldePlans n logBlowup c
+  let folds := foldTables (p := p) (shapes.foldl (fun m (n, _) ↦ max m (n + logBlowup)) 0)
   { backend with
+    fold := fold folds
     ldeTrace := ldeWordsWith plans
     lde := ldeWith plans
     chunks := chunksWith plans

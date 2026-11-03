@@ -111,7 +111,8 @@ def backendFor_refines (hA : DomainsAddressable F EF)
     ofArray := ExtPlanes.ofArray_rel
     size := fun h ↦ h.1
     openings := fun b _ _ h hok ↦ openings_rel b h hok
-    fold := fun la beta s _ _ h ha hla hs ↦ fold_rel h16 la beta s h ha hla hs
+    fold := fun la beta s _ _ h ha hla hs ↦ fold_rel h16 (fun k hk ↦ by
+        simp only [foldTables, Array.getElem_map, Array.getElem_range]) la beta s h ha hla hs
     addScaled := fun x _ _ _ _ hv hw hab ha ↦ addScaled_rel h16 x hv hw hab ha
     leaves := fun k _ _ h ha hk hp ↦ leaves_rel h16 k h ha hk hp }
 

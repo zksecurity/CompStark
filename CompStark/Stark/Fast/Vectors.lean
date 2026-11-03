@@ -229,21 +229,30 @@ theorem split_rel {v : ExtPlanes p EF} {a : Array EF} (hv : ExtPlanes.Rel v a) (
     show _ = FastExt.coord (a.getD (2 * (r0 + i.val) + 1) 0) k
     rw [Nat.mul_add, Nat.add_assoc]
 
-/-- Pairs `r0, …, r0 + len - 1` of the fold, given the encoded `2 x` of all pairs. -/
+/-- Pairs `r0, …, r0 + len - 1` of the fold, given the encoded inverses of `2 x` of all pairs. -/
 theorem fold2Range_rel [Mont32BaseField p] [Mont32.AlgebraId EF] {v : ExtPlanes p EF}
     {a : Array EF} (hv : ExtPlanes.Rel v a) (T : Array F) (beta : EF)
     (r0 len : Nat) (hr : 2 * (r0 + len) ≤ a.size) (hs : 4 * a.size < USize.size)
-    (hT : r0 + len ≤ T.size) (hsT : 4 * T.size < USize.size)
-    (hnz : ∀ k < len, T.getD (r0 + k) 0 ≠ 0) :
-    ExtPlanes.Rel (fold2Range v (encode T) beta r0 len) (Array.ofFn (n := len) fun k ↦
+    (hT : r0 + len ≤ T.size) :
+    ExtPlanes.Rel (fold2Range v (encode (T.map (·⁻¹))) beta r0 len) (Array.ofFn (n := len) fun k ↦
       (a.getD (2 * (r0 + k.val)) 0 + a.getD (2 * (r0 + k.val) + 1) 0) * Ext.ofBase (2 : F)⁻¹ +
         beta * (a.getD (2 * (r0 + k.val)) 0 - a.getD (2 * (r0 + k.val) + 1) 0) *
           Ext.ofBase (T.getD (r0 + k.val) 0)⁻¹) := by
   obtain ⟨hl, hh⟩ := split_rel hv r0 len hr hs
   have hn : 4 * len < USize.size := by omega
+  have hinv : slice (encode (T.map (·⁻¹))) r0 len =
+      encode (Array.ofFn (n := len) fun k ↦ (T.getD (r0 + k.val) 0)⁻¹) := by
+    rw [slice_encode]
+    apply congrArg encode
+    apply Array.ext
+    · simp only [Array.size_extract, Array.size_map, Array.size_ofFn]
+      omega
+    · intro k h1 _
+      simp only [Array.size_extract, Array.size_map] at h1
+      rw [Array.getElem_extract, Array.getElem_map, Array.getElem_ofFn, getD_lt _ _ (by omega)]
   unfold fold2Range
   simp only
-  rw [batchInvRange_encode T r0 len hT hsT hnz]
+  rw [hinv]
   have h1 := ExtPlanes.mulBase_rel hn (fun _ ↦ (2 : F)⁻¹) (ExtPlanes.add_rel hn hl hh)
   rw [← Words.replicateWord_tab hn] at h1
   have h2 := ExtPlanes.smul_rel hn beta (ExtPlanes.mulBase_rel hn
@@ -270,23 +279,47 @@ theorem size_bound' [Mont32BaseField p] {n : Nat}
     Nat.le_mul_of_pos_left n (FastExt.params (p := p) EF).d_pos
   omega
 
+/-- The packed inverses of `2 x` are the inverses of the pairs' `2 x`, nonzero within the two-adic
+subgroups. -/
+theorem invTwoX_eq [Mont32BaseField p] (k : Nat) (hk : k < twoAdicity F) :
+    invTwoX (p := p) k = encode (((bitRevPerm k).map fun i ↦
+      2 * (cosetPoints (1 : F) (k + 1)).getD i 0).map (·⁻¹)) := by
+  unfold invTwoX
+  rw [CompPoly.CPolynomial.NTTFast.Packed.Native.encodeFields_eq, CompPoly.Array.batchInv_eq id
+    Function.injective_id (fun _ _ ↦ rfl) (fun _ ↦ rfl) rfl _ fun x hx ↦ ?_]
+  obtain ⟨i, hi, rfl⟩ := Array.mem_map.mp hx
+  have hb := (bitRevPerm_spec k).2 i hi
+  have hw : (twoAdicGen (k + 1) : F) ≠ 0 := BaseField.twoAdicGen_ne_zero _ (by omega)
+  rw [cosetPoints_eq, getD_ofFn_bounded _ _ (by rw [Nat.pow_succ]; omega)]
+  exact mul_ne_zero BaseField.two_ne_zero (mul_ne_zero one_ne_zero (pow_ne_zero _ hw))
+
 /-- The fast fold is the specification's: both invert every `2 x` of the pairs, which are
-nonzero within the two-adic subgroups. -/
+nonzero within the two-adic subgroups; the fast one reads the inverses from `tables` when they hold
+the layer's (`invTwoX`). -/
 theorem fold2_rel [Mont32BaseField p] [Mont32.AlgebraId EF]
-    (hA : 4 * (FastExt.d p EF * 2 ^ twoAdicity F) < USize.size)
+    (hA : 4 * (FastExt.d p EF * 2 ^ twoAdicity F) < USize.size) {tables : Array ByteArray}
+    (htab : ∀ k (h : k < tables.size), tables[k] = invTwoX (p := p) k)
     {v : ExtPlanes p EF} {a : Array EF} (beta : EF)
     (k : Nat) (h : ExtPlanes.Rel v a) (ha : a.size = 2 ^ (k + 1)) (hk : k < twoAdicity F) :
-    ExtPlanes.Rel (fold2 v beta k) (Fri.foldPairs a beta k) := by
+    ExtPlanes.Rel (fold2 tables v beta k) (Fri.foldPairs a beta k) := by
   unfold fold2
   have hs : 4 * a.size < USize.size :=
     size_bound' hA (by rw [ha]; exact Nat.pow_le_pow_right (by decide) hk)
   rw [Nat.pow_succ, Nat.mul_comm] at ha
-  simp only [CompPoly.CPolynomial.NTTFast.Packed.Native.encodeFields_eq]
-  have hp : 0 < (if 2 ^ k < 4096 then 1 else 16) := by split <;> decide
-  generalize (if 2 ^ k < 4096 then 1 else 16) = parts at hp ⊢
   let pw := cosetPoints (1 : F) (k + 1)
   let perm := bitRevPerm k
   let T : Array F := perm.map fun i ↦ 2 * pw.getD i 0
+  have hinv : (if h : k < tables.size then tables[k] else invTwoX (p := p) k) =
+      encode (T.map (·⁻¹)) := by
+    split
+    · rename_i hlt
+      rw [htab k hlt]
+      exact invTwoX_eq k hk
+    · exact invTwoX_eq k hk
+  dsimp only
+  rw [hinv]
+  have hp : 0 < (if 2 ^ k < 4096 then 1 else 16) := by split <;> decide
+  generalize (if 2 ^ k < 4096 then 1 else 16) = parts at hp ⊢
   have hT : T.size = 2 ^ k := by rw [Array.size_map]; exact (bitRevPerm_spec k).1
   have hTx : ∀ i < 2 ^ k, T.getD i 0 = twoX pw perm i := fun i hi ↦ by
     rw [getD_lt _ _ (by rw [hT]; exact hi), Array.getElem_map, twoX,
@@ -295,16 +328,13 @@ theorem fold2_rel [Mont32BaseField p] [Mont32.AlgebraId EF]
     beta * (a.getD (2 * i) 0 - a.getD (2 * i + 1) 0) * Ext.ofBase (T.getD i 0)⁻¹
   have hcat := foldl_ranges E (2 ^ k) parts _ hp (ranges_cover (2 ^ k) parts)
   have hj := ExtPlanes.join_rel (2 ^ k) parts
-    (fun p ↦ fold2Range v (encode T) beta (p * (2 ^ k / parts))
+    (fun p ↦ fold2Range v (encode (T.map (·⁻¹))) beta (p * (2 ^ k / parts))
       (if p + 1 = parts then 2 ^ k - p * (2 ^ k / parts) else 2 ^ k / parts))
     (fun p ↦ Array.ofFn (n := if p + 1 = parts then 2 ^ k - p * (2 ^ k / parts)
       else 2 ^ k / parts) fun j ↦ E (p * (2 ^ k / parts) + j.val))
     (fun p hp' ↦ by
       have hle := range_le (2 ^ k) parts p hp'
-      exact fold2Range_rel h T beta _ _ (by omega) hs (by omega) (by omega)
-        fun j hj ↦ by
-          rw [hTx _ (by omega)]
-          exact twoX_ne_zero k hk _ (by omega))
+      exact fold2Range_rel h T beta _ _ (by omega) hs (by omega))
     (by rw [hcat, Array.size_ofFn])
   rw [hcat] at hj
   refine RV_congr hj ?_
@@ -315,10 +345,11 @@ theorem fold2_rel [Mont32BaseField p] [Mont32.AlgebraId EF]
 
 /-- The fast fold by `2 ^ la` is the specification's. -/
 theorem fold_rel [Mont32BaseField p] [Mont32.AlgebraId EF]
-    (hA : 4 * (FastExt.d p EF * 2 ^ twoAdicity F) < USize.size)
+    (hA : 4 * (FastExt.d p EF * 2 ^ twoAdicity F) < USize.size) {tables : Array ByteArray}
+    (htab : ∀ k (h : k < tables.size), tables[k] = invTwoX (p := p) k)
     (la : Nat) (beta : EF) (s : Nat) {v : ExtPlanes p EF} {a : Array EF}
     (h : ExtPlanes.Rel v a) (ha : a.size = 2 ^ s) (hla : la ≤ s) (hs : s ≤ twoAdicity F) :
-    ExtPlanes.Rel (fold la beta v) (Fri.foldOnce la beta a) := by
+    ExtPlanes.Rel (fold tables la beta v) (Fri.foldOnce la beta a) := by
   have hrows : v.n / 2 ^ la = 2 ^ (s - la) := by rw [h.1, ha, Nat.pow_div hla (by decide)]
   have hrows' : a.size / 2 ^ la = 2 ^ (s - la) := by rw [← h.1, hrows]
   unfold fold Fri.foldOnce
@@ -327,7 +358,7 @@ theorem fold_rel [Mont32BaseField p] [Mont32.AlgebraId EF]
   split
   · rename_i h1
     subst h1
-    exact fold2_rel hA beta (s - 1) h (by rw [ha]; congr 1; omega) (by omega)
+    exact fold2_rel hA htab beta (s - 1) h (by rw [ha]; congr 1; omega) (by omega)
   · rw [ExtPlanes.toArray_eq h (size_bound' hA (n := a.size) (by
       rw [ha]; exact Nat.pow_le_pow_right (by decide) hs))]
     rw [parChunks_eq (2 ^ (s - la)) _ _ (fun r ↦ Fri.foldRow r (s - la) la beta
