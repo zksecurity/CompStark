@@ -25,6 +25,12 @@ variable {F : Type} [BaseField F] [Poseidon2Field F]
 abbrev specBackend (EF : Type) [Challenge F EF] : Backend F EF 24 :=
   Backend.spec EF Poseidon2.initTranscript (Hash.Poseidon2.hash F) (Hash.Poseidon2.compress F)
 
+/-- The specification's quotient chunks are the extensions of the chunks' values. -/
+theorem specBackend_chunks (EF : Type) [Challenge F EF] (bits logN l : Nat) (qs : Array EF) :
+    (specBackend EF).chunks bits logN l qs = (List.range (2 ^ l)).map fun c ↦
+      (specBackend EF).lde logN bits (gen * (gen * powF (twoAdicGen (logN + l)) c)⁻¹)
+        (Challenge.d EF) (chunkValues qs (2 ^ l) c (2 ^ logN)) := rfl
+
 /-- The verifying key of `A`'s preprocessed trace for `2 ^ logN` rows (Plonky3's
 `setup_preprocessed`): its width and height and the Poseidon2 Merkle root of its low-degree
 extension, if it has columns (`preprocessedKeyWith`). -/

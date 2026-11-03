@@ -341,32 +341,6 @@ theorem sum_le_sum_map {α : Type} (l : List α) (f g : α → Nat) (h : ∀ x �
     rw [List.map_cons, List.map_cons, List.sum_cons, List.sum_cons]
     exact Nat.add_le_add (h x List.mem_cons_self) (ih fun y hy ↦ h y (List.mem_cons_of_mem _ hy))
 
-/-- The chunks of the same quotient values by a refining backend and by the specification are
-related, of the prover's shapes, `d` columns wide and `2 ^ logChunks` of them. -/
-theorem chunksOf_refines (h : Refines B) (P : Params) {logN : Nat} (lc : Nat) (qs : Array EF)
-    (hlog : logN + P.logBlowup ≤ twoAdicity F)
-    (hm4 : Addressable (2 ^ (logN + P.logBlowup) * Challenge.d EF)) :
-    List.Forall₂ h.RM (chunksOf B P logN lc qs) (chunksOf (specBackend EF) P logN lc qs) ∧
-      (∀ m ∈ chunksOf (specBackend EF) P logN lc qs, MatOk m ∧
-        m.height = 2 ^ (logN + P.logBlowup) ∧ m.width = Challenge.d EF) ∧
-      (chunksOf (specBackend EF) P logN lc qs).length = 2 ^ lc := by
-  rw [chunksOf_eq, chunksOf_eq]
-  have hchOk : ∀ c, MatOk (ldeRef logN P.logBlowup
-      (gen * (gen * powF (twoAdicGen (logN + lc)) c)⁻¹) (Challenge.d EF)
-      (chunkValues qs (2 ^ lc) c (2 ^ logN))) := fun c ↦ by
-    obtain ⟨h1, h2, h3⟩ := shape_ldeRef logN P.logBlowup
-      (gen * (gen * powF (twoAdicGen (logN + lc)) c)⁻¹) (Challenge.d EF)
-      (chunkValues qs (2 ^ lc) c (2 ^ logN))
-    exact ⟨by rw [h1]; exact (Challenge.params EF).d_pos, ⟨_, hlog, h2⟩, by rw [h3, h1, h2],
-      by rw [h1, h2, Nat.mul_comm]; exact hm4⟩
-  refine ⟨forall₂_map (fun c c' hc ↦ ?_) (List.forall₂_same.2 fun _ _ ↦ rfl), fun m hm ↦ ?_, by
-    rw [List.length_map, List.length_range]⟩
-  · subst hc
-    exact h.lde _ _ _ _ _ (by
-      rw [size_chunkValues (K := EF) qs (2 ^ lc) c (2 ^ logN), Nat.mul_comm]) hlog hm4
-  obtain ⟨c, -, rfl⟩ := List.mem_map.mp hm
-  exact ⟨hchOk c, (shape_ldeRef ..).2.1, (shape_ldeRef ..).1⟩
-
 /-- An instance's quotient chunks by a refining backend and by the specification, from related
 extensions of a trace of the prover's shapes, of its preprocessed trace and of its permutation
 trace, are related, of the prover's shapes, `d` columns wide and `2 ^ logChunks` of them. -/
@@ -405,20 +379,28 @@ theorem batchQuotientChunks_refines (h : Refines B) {P : Params} {I : Instance F
       rw [hew, hpw]
       exact Expr.colsBelow_mono I.air.mainNextWidth_le le_rfl I.air.preprocessedNextWidth_le c
         (hcols c hc))
+  have hsz : (quotientOfLde I.air pis I.logN I.logQuotientChunks
+      (ldeRef I.logN P.logBlowup gen I.air.width trace) spext alpha).size =
+      2 ^ (I.logN + I.logQuotientChunks) := size_quotientOfLde ..
   unfold batchQuotientChunks batchQuotientValues
   dsimp only
-  rw [hquot]
+  refine ⟨?_, chunksRef_shapes hlog hm4 _ _⟩
   cases hr with
-  | none => exact chunksOf_refines h P _ _ hlog hm4
+  | none => exact h.chunks _ _ _ hquot hsz hlc hlog
   | @some _ rs hr =>
     dsimp only
     obtain ⟨hrok, hrh, hrw⟩ := hrS rs rfl
-    rw [h.lookupQuotient _ _ _ _ _ chs terminal alpha (I.lookups.length + 1) hext hextOk hq hp
+    have hlq := h.lookupQuotient I.air I.lookupConstraints pis I.logN I.logQuotientChunks chs
+      terminal alpha (I.lookups.length + 1) hext hextOk hq hp
       (fun q hq' ↦ ⟨(hpok q hq').1, by rw [(hpok q hq').2, heh]⟩) hr hrok (by rw [hrh, heh])
       (by rw [hrw]) (fun c hc ↦ by
         rw [hew, hpw]
-        exact colsBelow_logUpConstraints _ hlk c hc)]
-    exact chunksOf_refines h P _ _ hlog hm4
+        exact colsBelow_logUpConstraints _ hlk c hc)
+    have hlsz := size_lookupQuotientOfLde I.air I.lookupConstraints pis I.logN I.logQuotientChunks
+      (ldeRef I.logN P.logBlowup gen I.air.width trace) spext rs chs terminal alpha
+    exact h.chunks _ _ _ (h.combine _ hquot hlq (by rw [hlsz, hsz]) (by
+      rw [hsz]; exact Nat.pow_le_pow_right (by decide) (by omega)))
+      (by simp only [Array.size_zipWith, hlsz, hsz, Nat.min_self]) hlc hlog
 
 /-- The backend's traces `ts` represent the instances' traces `traces`, each of its instance's
 shape. -/

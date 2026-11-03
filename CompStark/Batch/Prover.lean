@@ -51,22 +51,22 @@ def setupBatchWith (B : Backend F EF width) (P : Params) (instances : List (Inst
 quotient values (`Backend.quotient`), followed in Horner's order by its LogUp constraints'
 (`Backend.lookupQuotient`) over its challenges `chs` and terminal. -/
 def batchQuotientValues (B : Backend F EF width) (I : Instance F) (ext : B.M) (prep : Option B.M)
-    (perm : Option B.M) (pis : List F) (chs : List EF) (terminal alpha : EF) : Array EF :=
+    (perm : Option B.M) (pis : List F) (chs : List EF) (terminal alpha : EF) : B.Q :=
   let qs := B.quotient I.air pis I.logN I.logQuotientChunks ext prep alpha
   match perm with
   | none => qs
   | some pm =>
     let ext' := I.lookupConstraints
-    let shift := Ext.pow alpha ext'.length
-    Array.zipWith (fun q l ↦ q * shift + l) qs
+    B.combine qs
       (B.lookupQuotient I.air ext' pis I.logN I.logQuotientChunks ext prep pm chs terminal alpha)
+      (Ext.pow alpha ext'.length)
 
-/-- The extensions of instance `I`'s quotient chunks (`chunksOf`) of its quotient values
+/-- The extensions of instance `I`'s quotient chunks (`Backend.chunks`) of its quotient values
 (`batchQuotientValues`). -/
 def batchQuotientChunks (B : Backend F EF width) (P : Params) (I : Instance F) (ext : B.M)
     (prep : Option B.M) (perm : Option B.M) (pis : List F) (chs : List EF) (terminal alpha : EF) :
     List B.M :=
-  chunksOf B P I.logN I.logQuotientChunks
+  B.chunks P.logBlowup I.logN I.logQuotientChunks
     (batchQuotientValues B I ext prep perm pis chs terminal alpha)
 
 /-- What the batch prover commits to before `ζ`, on the backend `B`: the main traces' extensions

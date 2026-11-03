@@ -8,6 +8,7 @@ public import CompStark.Stark.Refines
 public import CompStark.Batch.Refines
 public import CompStark.Stark.Fast.Transcript
 public import CompStark.Stark.Fast.Lde
+public import CompStark.Stark.Fast.Chunks
 public import CompStark.Stark.Fast.Commit
 public import CompStark.Stark.Fast.Vectors
 public import CompStark.Stark.Fast.Quotient
@@ -42,6 +43,7 @@ def backendFor_refines (hA : DomainsAddressable F EF)
     RM := RM
     RC := RC
     RV := ExtPlanes.Rel
+    RQ := QRel
     transcript := transcript_eq
     ldeTrace := fun logH bits shift w t m ⟨_, k, hk, ht⟩ hm hb ha ↦ by
       change RM (ldeWordsWith _ logH bits shift w t) _
@@ -85,7 +87,14 @@ def backendFor_refines (hA : DomainsAddressable F EF)
         obtain ⟨rfl, rfl, rfl⟩ := he
         obtain ⟨rfl, rfl⟩ := hd
         exact lookupQuotientWith_rel _ A ext pis _ _ chs t alpha k h hs hh hp hps hr hrs hrh hk hc
+         
       · exact lookupQuotientWith_rel [] A ext pis _ _ chs t alpha k h hs hh hp hps hr hrs hrh hk hc
+         
+    combine := fun x _ _ _ _ hq hr hab ha ↦ combine_rel h16 x hq hr hab ha
+    chunks := fun bits logN l _ _ hv ha hlb hb ↦ chunksWith_rel _ (fun e he ↦ by
+        obtain ⟨⟨n, c⟩, -, he⟩ := List.mem_flatMap.mp he
+        exact ldePlans_valid n logBlowup c e he) bits logN l hv ha hb
+      (size_bound' h16 (by rw [ha]; exact Nat.pow_le_pow_right (by decide) (by omega)))
     permutation := fun bits A ls logN t pis chs hok ↦
       permutationLdeWith_rel _ (fun e he ↦ by
         obtain ⟨⟨n, c⟩, -, he⟩ := List.mem_flatMap.mp he
@@ -95,7 +104,8 @@ def backendFor_refines (hA : DomainsAddressable F EF)
     ofArray := ExtPlanes.ofArray_rel
     size := fun h ↦ h.1
     openings := fun b _ _ h hok ↦ openings_rel b h hok
-    fold := fun la beta s _ _ h ha hla hs ↦ fold_rel h16 la beta s h ha hla hs
+    fold := fun la beta s _ _ h ha hla hs ↦ fold_rel h16 (fun k hk ↦ by
+        simp only [foldTables, Array.getElem_map, Array.getElem_range]) la beta s h ha hla hs
     addScaled := fun x _ _ _ _ hv hw hab ha ↦ addScaled_rel h16 x hv hw hab ha
     leaves := fun k _ _ h ha hk hp ↦ leaves_rel h16 k h ha hk hp }
 

@@ -450,8 +450,8 @@ theorem lookupQuotientWith_rel (kernels : List (Prog.GroupKernel p)) (A : Air F)
     (hrh : rs.height = s.height) (hk : k * FastExt.d p EF ≤ rs.width)
     (hc : ∀ c ∈ ext, c.colsBelow s.width s.width ((ps.map (·.width)).getD 0)
       ((ps.map (·.width)).getD 0) k) :
-    lookupQuotientWith kernels (quotientTables (p := p) d l) A ext pis tr prep perm chs terminal
-      alpha = lookupQuotientOfLde A ext pis d l s ps rs chs terminal alpha := by
+    QRel (lookupQuotientWith kernels (quotientTables (p := p) d l) A ext pis tr prep perm
+      chs terminal alpha) (lookupQuotientOfLde A ext pis d l s ps rs chs terminal alpha) := by
   have hw := h.width
   have hrw := hr.width
   obtain ⟨hw0, -, hvs', hadd⟩ := hs
@@ -560,7 +560,9 @@ theorem lookupQuotientWith_rel (kernels : List (Prog.GroupKernel p)) (A : Air F)
     rw [Array.getElem_ofFn, ← getD_lt _ _ (d := 0) h1]
     exact lookupQuotientValues_getD ext pis d l tq pq rq pl chs terminal alpha r h2
   dsimp only
-  rw [hspec, hWT, quotientBlocks_eq d l _ _ (groupRun_eq kernels _) SC WT _ Q ?hblk]
+  rw [hspec, hWT]
+  refine (congrArg (QRel _) ?_).mp (quotientBlocks_rel d l _ _ (groupRun_eq kernels _) SC WT _ Q
+    ?hblk)
   case hblk =>
     intro r0 hdvd hr0
     obtain ⟨hB0, -, -⟩ := tables_B (p := p) d l
