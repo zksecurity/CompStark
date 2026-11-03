@@ -9,6 +9,7 @@ public import CompStark.Mont32.Challenge
 public import CompStark.Poseidon2.PackedField
 public import CompStark.Merkle.PackedColumns
 public import CompPoly.Univariate.NTTFast.Packed.CosetLde
+public import CompPoly.Univariate.NTTFast.Packed.Strips
 public import CompPoly.Fields.Montgomery.Native32ExtPlanes
 public import CompStark.Mont32.Challenge
 public import CompStark.Stark.ProgWords
@@ -25,8 +26,10 @@ are packed column by column (`PMat`), in blocks of rows:
 * The transcript is Plonky3's duplex challenger on the field's Poseidon2 implementation. Grinding
   tries eight candidates per packed permutation, as Plonky3 does, and returns the smallest that
   passes.
-* Low-degree extension is CompPoly's batched coset LDE, every column extended by one task into its
-  coset blocks (`ldeColumns`), which are the extension's blocks of columns.
+* Low-degree extension is CompPoly's batched coset LDE (`ldeColumns`): below `2 ^ 20` rows the
+  whole strips of eight interleaved columns, gathered from the trace's rows, by CompPoly's strip
+  transforms, the others column by column; the coset blocks of the columns are the extension's
+  blocks of columns.
 * The Merkle digest layers come from the packed Merkle commitment: the tallest matrices' rows side
   by side are hashed from their columns, and the matrices of each smaller height are hashed
   likewise and injected into the layer of their height by one more packed compression.
@@ -169,28 +172,49 @@ def chained {α : Type} (L n : Nat) (f : Nat → α) : Array (Array α) :=
 
 open CompPoly.CPolynomial.NTTFast.Packed.Native (transposeRows columnCoefficients
   gatherColumn cosetBlock) in
-/-- The extension by `P` of the `w`-column matrix whose rows are the chunks `ms` of equal heights,
-column by column: block `t` of column `j`, the values on coset `bitrev t`, at `t * w + j`. For each
-range of `rangeColumns` columns, tasks transpose row ranges of the chunks into columns
+/-- The extension by `P` of columns `c0, …, w - 1` of the `w`-column matrix whose rows are the
+chunks `ms` of equal heights, column by column: entry `j - c0` holds the blocks of column `j`. For
+each range of `rangeColumns` columns, tasks transpose row ranges of the chunks into columns
 (`lineRanges`); the columns are extended by `columnChains` tasks, each extending its columns one
-after the other (`chained`), every column its coefficients and then each of its coset blocks, the
-last one from the coefficients' buffer. -/
-def ldeColumns (P : LdePlan p) (w : Nat) (ms : Array ByteArray) : Array ByteArray :=
+after the other (`chained`), every column its coefficients and then each of its coset blocks. -/
+def ldeColumnRange (P : LdePlan p) (w c0 : Nat) (ms : Array ByteArray) :
+    Array (Array ByteArray) :=
   let q := lineRanges P.logH ms.size
   let rows := 2 ^ P.logH / (ms.size * q)
   let L := columnChains P.logH
-  let blocks := (CompPoly.Tasks.join ((Array.range ((w + rangeColumns - 1) / rangeColumns)).flatMap
+  (CompPoly.Tasks.join ((Array.range ((w - c0 + rangeColumns - 1) / rangeColumns)).flatMap
     fun r ↦
-      let n := min rangeColumns (w - rangeColumns * r)
+      let n := min rangeColumns (w - c0 - rangeColumns * r)
       let pieces := CompPoly.Tasks.join (CompPoly.Tasks.spawnAll (ms.size * q) fun k ↦
-        transposeRows (ms.getD (k / q) .empty) w (rangeColumns * r) n (k % q * rows) rows)
+        transposeRows (ms.getD (k / q) .empty) w (c0 + rangeColumns * r) n (k % q * rows) rows)
       let chains := pieces.bind fun ps ↦ CompPoly.Tasks.join
         (((chained L n fun j ↦ (j, ps)).map fun cs ↦ Task.spawn fun _ ↦ cs.map fun (j, ps) ↦
           let c := columnCoefficients P (gatherColumn ps rows j)
           (Array.range (2 ^ P.bits)).map fun t ↦ cosetBlock P c t))
       (Array.range n).map fun j ↦ chains.bind fun cs ↦
         .pure ((cs.getD (j % L) #[]).getD (j / L) #[]))).get
-  (Array.range (2 ^ P.bits)).flatMap fun t ↦ blocks.map fun b ↦ b.getD t .empty
+
+/-- The columns of a `w`-column matrix of `2 ^ logH` rows in `chunks` chunks that the extension
+runs as strips of eight: the whole strips if the chunks hold whole groups of eight rows and the
+columns are shorter than `2 ^ 20` rows, where a strip's transforms stay within the caches. -/
+def stripColumnCount (logH chunks w : Nat) : Nat :=
+  if 8 * chunks ≤ 2 ^ logH ∧ 2 ^ logH % (8 * chunks) = 0 ∧ logH < 20 then 8 * (w / 8) else 0
+
+open CompPoly.CPolynomial.NTTFast.Packed.Native (stripOfChunks stripCoefficients stripBlock) in
+/-- The extension by `P` of the `w`-column matrix whose rows are the chunks `ms` of equal heights,
+column by column: block `t` of column `j`, the values on coset `bitrev t`, at `t * w + j`. The
+first `stripColumnCount` columns are extended as strips of eight, a task per strip for its
+coefficients and one per coset block; the others column by column (`ldeColumnRange`). -/
+def ldeColumns (P : LdePlan p) (w : Nat) (ms : Array ByteArray) : Array ByteArray :=
+  let c0 := stripColumnCount P.logH ms.size w
+  let rows := 2 ^ P.logH / ms.size
+  let strips := (Array.range (c0 / 8)).map fun s ↦
+    let C := Task.spawn fun _ ↦ stripCoefficients P (stripOfChunks ms w s rows)
+    (Array.range (2 ^ P.bits)).map fun t ↦ C.bind fun C ↦ Task.spawn fun _ ↦ stripBlock P C t
+  let rest := ldeColumnRange P w c0 ms
+  (Array.range (2 ^ P.bits)).flatMap fun t ↦
+    ((Array.range (c0 / 8)).flatMap fun s ↦ ((strips.getD s #[]).getD t (.pure #[])).get) ++
+      rest.map fun b ↦ b.getD t .empty
 
 /-- The plan for extensions of `2 ^ logH`-row matrices by `2 ^ bits` onto `shift · ⟨ω_N⟩`: from
 `plans` when one matches, else built (`plan?`); there is none beyond the two-adic subgroups. -/
