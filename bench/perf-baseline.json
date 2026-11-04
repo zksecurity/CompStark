@@ -2,263 +2,263 @@
   "about": "User-space instructions per workload phase of scripts/perf-gate, single threaded: the median of 3 runs, the largest relative deviation from it (variation) and the allowed relative increase (tolerance). Rewritten by scripts/perf-gate --update.",
   "entries": {
     "wide-quartic/trace lde": {
-      "instructions": 570525842,
-      "variation": 2e-06,
-      "tolerance": 0.005
-    },
-    "wide-quartic/trace commit": {
-      "instructions": 1761726384,
-      "variation": 5e-06,
-      "tolerance": 0.005
-    },
-    "wide-quartic/quotient": {
-      "instructions": 362689201,
-      "variation": 0.000184,
-      "tolerance": 0.005
-    },
-    "wide-quartic/quotient lde": {
-      "instructions": 111996333,
-      "variation": 1e-06,
-      "tolerance": 0.005
-    },
-    "wide-quartic/quotient commit": {
-      "instructions": 658475441,
-      "variation": 4.3e-05,
-      "tolerance": 0.005
-    },
-    "wide-quartic/opened values": {
-      "instructions": 286877287,
-      "variation": 0.000865,
-      "tolerance": 0.005
-    },
-    "wide-quartic/reduce": {
-      "instructions": 319003611,
-      "variation": 7.9e-05,
-      "tolerance": 0.005
-    },
-    "wide-quartic/commit phase": {
-      "instructions": 776310631,
-      "variation": 9.2e-05,
-      "tolerance": 0.005
-    },
-    "wide-quartic/grind": {
-      "instructions": 237128326,
-      "variation": 0.000228,
-      "tolerance": 0.005
-    },
-    "wide-quartic/query openings": {
-      "instructions": 79813673,
-      "variation": 4e-05,
-      "tolerance": 0.005
-    },
-    "wide-quartic/prove": {
-      "instructions": 5147405040,
-      "variation": 0.00014,
-      "tolerance": 0.005
-    },
-    "wide-quartic/verify": {
-      "instructions": 325697898,
-      "variation": 7e-06,
-      "tolerance": 0.005
-    },
-    "wide-quintic/trace lde": {
-      "instructions": 570516045,
-      "variation": 3e-05,
-      "tolerance": 0.005
-    },
-    "wide-quintic/trace commit": {
-      "instructions": 1761730927,
-      "variation": 3.6e-05,
-      "tolerance": 0.005
-    },
-    "wide-quintic/quotient": {
-      "instructions": 397273319,
-      "variation": 3e-06,
-      "tolerance": 0.005
-    },
-    "wide-quintic/quotient lde": {
-      "instructions": 137982765,
-      "variation": 9e-06,
-      "tolerance": 0.005
-    },
-    "wide-quintic/quotient commit": {
-      "instructions": 659576072,
-      "variation": 2e-05,
-      "tolerance": 0.005
-    },
-    "wide-quintic/opened values": {
-      "instructions": 357611366,
-      "variation": 0.000721,
-      "tolerance": 0.005
-    },
-    "wide-quintic/reduce": {
-      "instructions": 582143984,
-      "variation": 6.9e-05,
-      "tolerance": 0.005
-    },
-    "wide-quintic/commit phase": {
-      "instructions": 826904326,
-      "variation": 6e-05,
-      "tolerance": 0.005
-    },
-    "wide-quintic/grind": {
-      "instructions": 237093105,
-      "variation": 0.000894,
-      "tolerance": 0.005
-    },
-    "wide-quintic/query openings": {
-      "instructions": 82910153,
-      "variation": 7e-06,
-      "tolerance": 0.005
-    },
-    "wide-quintic/prove": {
-      "instructions": 5433623686,
-      "variation": 0.000117,
-      "tolerance": 0.005
-    },
-    "wide-quintic/verify": {
-      "instructions": 458606712,
-      "variation": 1.2e-05,
-      "tolerance": 0.005
-    },
-    "keccak/trace lde": {
-      "instructions": 2548428491,
-      "variation": 2.6e-05,
-      "tolerance": 0.005
-    },
-    "keccak/trace commit": {
-      "instructions": 7672617806,
+      "instructions": 570526411,
       "variation": 6e-06,
       "tolerance": 0.005
     },
+    "wide-quartic/trace commit": {
+      "instructions": 1761721887,
+      "variation": 0.0,
+      "tolerance": 0.005
+    },
+    "wide-quartic/quotient": {
+      "instructions": 362689675,
+      "variation": 1.3e-05,
+      "tolerance": 0.005
+    },
+    "wide-quartic/quotient lde": {
+      "instructions": 111996329,
+      "variation": 0.0,
+      "tolerance": 0.005
+    },
+    "wide-quartic/quotient commit": {
+      "instructions": 659102902,
+      "variation": 7e-06,
+      "tolerance": 0.005
+    },
+    "wide-quartic/opened values": {
+      "instructions": 287109062,
+      "variation": 0.000253,
+      "tolerance": 0.005
+    },
+    "wide-quartic/reduce": {
+      "instructions": 319003211,
+      "variation": 3.5e-05,
+      "tolerance": 0.005
+    },
+    "wide-quartic/commit phase": {
+      "instructions": 776977024,
+      "variation": 2e-05,
+      "tolerance": 0.005
+    },
+    "wide-quartic/grind": {
+      "instructions": 237137606,
+      "variation": 0.000171,
+      "tolerance": 0.005
+    },
+    "wide-quartic/query openings": {
+      "instructions": 79815839,
+      "variation": 6e-06,
+      "tolerance": 0.005
+    },
+    "wide-quartic/prove": {
+      "instructions": 5149537396,
+      "variation": 2.4e-05,
+      "tolerance": 0.005
+    },
+    "wide-quartic/verify": {
+      "instructions": 325697851,
+      "variation": 2.4e-05,
+      "tolerance": 0.005
+    },
+    "wide-quintic/trace lde": {
+      "instructions": 570526385,
+      "variation": 0.0,
+      "tolerance": 0.005
+    },
+    "wide-quintic/trace commit": {
+      "instructions": 1761722242,
+      "variation": 0.0,
+      "tolerance": 0.005
+    },
+    "wide-quintic/quotient": {
+      "instructions": 397272752,
+      "variation": 4e-06,
+      "tolerance": 0.005
+    },
+    "wide-quintic/quotient lde": {
+      "instructions": 137982759,
+      "variation": 0.0,
+      "tolerance": 0.005
+    },
+    "wide-quintic/quotient commit": {
+      "instructions": 660223246,
+      "variation": 3e-06,
+      "tolerance": 0.005
+    },
+    "wide-quintic/opened values": {
+      "instructions": 357969316,
+      "variation": 0.0002,
+      "tolerance": 0.005
+    },
+    "wide-quintic/reduce": {
+      "instructions": 582144096,
+      "variation": 3e-06,
+      "tolerance": 0.005
+    },
+    "wide-quintic/commit phase": {
+      "instructions": 827597131,
+      "variation": 6.1e-05,
+      "tolerance": 0.005
+    },
+    "wide-quintic/grind": {
+      "instructions": 237126170,
+      "variation": 0.000445,
+      "tolerance": 0.005
+    },
+    "wide-quintic/query openings": {
+      "instructions": 82910932,
+      "variation": 1.6e-05,
+      "tolerance": 0.005
+    },
+    "wide-quintic/prove": {
+      "instructions": 5435513026,
+      "variation": 6e-05,
+      "tolerance": 0.005
+    },
+    "wide-quintic/verify": {
+      "instructions": 458606344,
+      "variation": 1e-06,
+      "tolerance": 0.005
+    },
+    "keccak/trace lde": {
+      "instructions": 2548648911,
+      "variation": 4.1e-05,
+      "tolerance": 0.005
+    },
+    "keccak/trace commit": {
+      "instructions": 7672765039,
+      "variation": 8e-06,
+      "tolerance": 0.005
+    },
     "keccak/quotient": {
-      "instructions": 2411963855,
+      "instructions": 2411962767,
       "variation": 0.0,
       "tolerance": 0.005
     },
     "keccak/quotient lde": {
-      "instructions": 15959109,
-      "variation": 0.00019,
+      "instructions": 15961971,
+      "variation": 0.0,
       "tolerance": 0.005
     },
     "keccak/quotient commit": {
-      "instructions": 82577790,
-      "variation": 0.000142,
+      "instructions": 82657494,
+      "variation": 7.5e-05,
       "tolerance": 0.005
     },
     "keccak/opened values": {
-      "instructions": 919691936,
-      "variation": 3.8e-05,
+      "instructions": 919734098,
+      "variation": 2.1e-05,
       "tolerance": 0.005
     },
     "keccak/reduce": {
-      "instructions": 603557887,
-      "variation": 5.1e-05,
+      "instructions": 603585712,
+      "variation": 4.7e-05,
       "tolerance": 0.005
     },
     "keccak/commit phase": {
-      "instructions": 139000534,
-      "variation": 0.00063,
+      "instructions": 139367742,
+      "variation": 0.000427,
       "tolerance": 0.005
     },
     "keccak/grind": {
-      "instructions": 237180137,
-      "variation": 0.00013,
+      "instructions": 237198523,
+      "variation": 0.000307,
       "tolerance": 0.005
     },
     "keccak/query openings": {
-      "instructions": 101280740,
-      "variation": 9e-06,
+      "instructions": 101290861,
+      "variation": 4.8e-05,
       "tolerance": 0.005
     },
     "keccak/prove": {
-      "instructions": 15021132579,
-      "variation": 3.5e-05,
+      "instructions": 15021219616,
+      "variation": 2.8e-05,
       "tolerance": 0.005
     },
     "keccak/verify": {
-      "instructions": 400053843,
-      "variation": 5.1e-05,
+      "instructions": 400031458,
+      "variation": 0.0,
       "tolerance": 0.005
     },
     "batch/trace lde": {
-      "instructions": 869412720,
-      "variation": 4.2e-05,
+      "instructions": 869408860,
+      "variation": 1e-06,
       "tolerance": 0.005
     },
     "batch/trace commit": {
-      "instructions": 2813968081,
-      "variation": 6.7e-05,
+      "instructions": 2813781394,
+      "variation": 2e-06,
       "tolerance": 0.005
     },
     "batch/quotient": {
-      "instructions": 575180720,
-      "variation": 3e-06,
+      "instructions": 575179023,
+      "variation": 1.5e-05,
       "tolerance": 0.005
     },
     "batch/quotient lde": {
-      "instructions": 172263067,
-      "variation": 5e-06,
+      "instructions": 172263858,
+      "variation": 0.0,
       "tolerance": 0.005
     },
     "batch/quotient commit": {
-      "instructions": 1089926340,
-      "variation": 2.2e-05,
+      "instructions": 1090898861,
+      "variation": 1.2e-05,
       "tolerance": 0.005
     },
     "batch/opened values": {
-      "instructions": 413107162,
-      "variation": 0.001865,
-      "tolerance": 0.0075
+      "instructions": 413612746,
+      "variation": 0.000479,
+      "tolerance": 0.005
     },
     "batch/reduce": {
-      "instructions": 505109003,
-      "variation": 9.4e-05,
+      "instructions": 505372051,
+      "variation": 2.5e-05,
       "tolerance": 0.005
     },
     "batch/commit phase": {
-      "instructions": 788097968,
-      "variation": 0.000173,
+      "instructions": 788805362,
+      "variation": 3.8e-05,
       "tolerance": 0.005
     },
     "batch/grind": {
-      "instructions": 237001435,
-      "variation": 0.000523,
+      "instructions": 237134573,
+      "variation": 0.000257,
       "tolerance": 0.005
     },
     "batch/query openings": {
-      "instructions": 84567660,
-      "variation": 0.001042,
+      "instructions": 84564375,
+      "variation": 3.7e-05,
       "tolerance": 0.005
     },
     "batch/prove": {
-      "instructions": 7381450966,
-      "variation": 0.000118,
+      "instructions": 7383963075,
+      "variation": 4.5e-05,
       "tolerance": 0.005
     },
     "lookup/permutation": {
-      "instructions": 750556274,
-      "variation": 2e-05,
+      "instructions": 558222465,
+      "variation": 0.0,
       "tolerance": 0.005
     },
     "lookup/lookup quotient": {
-      "instructions": 184503566,
+      "instructions": 184503074,
       "variation": 0.0,
       "tolerance": 0.005
     },
     "lookup/prove": {
-      "instructions": 3594079465,
-      "variation": 0.000128,
+      "instructions": 3356121878,
+      "variation": 6.6e-05,
       "tolerance": 0.005
     },
     "merkle/root": {
-      "instructions": 884455719,
-      "variation": 1.1e-05,
+      "instructions": 884455798,
+      "variation": 1e-06,
       "tolerance": 0.005
     },
     "lde/coset lde": {
-      "instructions": 5376221994,
-      "variation": 2.8e-05,
+      "instructions": 5376270528,
+      "variation": 1e-05,
       "tolerance": 0.005
     }
   }

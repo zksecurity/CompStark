@@ -670,52 +670,33 @@ def accWords (a : EF) : ByteArray :=
   CompPoly.CPolynomial.NTTFast.Packed.Native.encodeFields
     (Array.ofFn fun k : Fin (FastExt.d p EF) ↦ FastExt.coord a k)
 
-/-- Words `o, …, o + d - 1` of `out` set to words `0, …, d - 1` of `src` from word `s`. -/
-def copyCoords (out : ByteArray) (o : Nat) (src : @& ByteArray) (s : Nat) : ByteArray := Id.run do
-  let mut out := out
-  for k in [0:FastExt.d p EF] do
-    out := CompPoly.CPolynomial.NTTFast.Packed.Native.write out (o + k)
-      (CompPoly.CPolynomial.NTTFast.Packed.Native.read src (s + k))
-  return out
+/-- Words `k, …, k + rem - 1` of `out` the running sums of words `k, …` of `s` from `acc`, each the
+sum before its word, and the sum after them. The loop carries its sum as an unboxed word. -/
+def scanWords (s : @& ByteArray) (out : ByteArray) (acc : UInt32) (k : Nat) :
+    Nat → ByteArray × UInt32
+  | 0 => (out, acc)
+  | rem + 1 => scanWords s (CompPoly.CPolynomial.NTTFast.Packed.Native.write out k acc)
+      (CompPoly.CPolynomial.NTTFast.Packed.add p acc
+        (CompPoly.CPolynomial.NTTFast.Packed.Native.read s k)) (k + 1) rem
 
-/-- The accumulator's words `accW` plus the coordinates of element `i` of the planes `f`. -/
-def addCoords (accW : ByteArray) (f : @& ExtPlanes p EF) (i : Nat) : ByteArray := Id.run do
-  let mut accW := accW
-  for k in [0:FastExt.d p EF] do
-    accW := CompPoly.CPolynomial.NTTFast.Packed.Native.write accW k
-      (CompPoly.CPolynomial.NTTFast.Packed.add p
-        (CompPoly.CPolynomial.NTTFast.Packed.Native.read accW k)
-        (CompPoly.CPolynomial.NTTFast.Packed.Native.read (f.c.toArray.getD k .empty) i))
-  return accW
-
-/-- Row `i` of the permutation trace in base coordinates, written from word `o` of `out`: the
-accumulator's words `accW`, then every lookup's fraction, the planes `fs`, `d` coordinates each;
-and the accumulator's words plus the fractions. -/
-def writeRow (out accW : ByteArray) (o : Nat) (fs : Array (ExtPlanes p EF)) (i : Nat) :
-    ByteArray × ByteArray := Id.run do
+/-- A block of `B` rows of the permutation trace in base coordinates, as packed rows: the
+accumulator from `acc` before every row, then every lookup's fraction, the planes `fs`, `d`
+coordinates each; and the accumulator after the block. The rows' sums are planes (`ExtPlanes.add`),
+the accumulator's planes their running sums coordinate by coordinate (`scanWords`), and the rows
+are the planes' transpose (`rowsOfColumns`). -/
+def blockRows (fs : Array (ExtPlanes p EF)) (acc : EF) (B : Nat) : ByteArray × EF :=
+  let S := fs.foldl (fun a f ↦ a.add f) (ExtPlanes.zeros B)
+  let scans := (Array.range (FastExt.d p EF)).map fun k ↦
+    scanWords (p := p) (S.c.toArray.getD k .empty)
+      (CompPoly.CPolynomial.NTTFast.Packed.Native.zeroWords B)
+      (CompPoly.CPolynomial.NTTFast.Packed.Native.read (accWords acc) k) 0 B
   let d := FastExt.d p EF
-  let mut out := copyCoords (p := p) (EF := EF) out o accW 0
-  let mut accW := accW
-  for c in [0:fs.size] do
-    let f := fs.getD c (ExtPlanes.zeros 0)
-    let oc := o + d * (c + 1)
-    for k in [0:d] do
-      out := CompPoly.CPolynomial.NTTFast.Packed.Native.write out (oc + k)
-        (CompPoly.CPolynomial.NTTFast.Packed.Native.read (f.c.toArray.getD k .empty) i)
-    accW := addCoords accW f i
-  return (out, accW)
-
-/-- A block of `B` rows of the permutation trace in base coordinates, `W` words per row, written
-from row `r` of `out` (`writeRow`), the accumulator from `acc` carried as words; and the
-accumulator after it. -/
-def writeBlock (out : ByteArray) (r : Nat) (fs : Array (ExtPlanes p EF)) (acc : EF) (B W : Nat) :
-    ByteArray × EF := Id.run do
-  let mut st := (out, accWords acc)
-  for i in [0:B] do
-    st := writeRow st.1 st.2 ((r + i) * W) fs i
-  return (st.1, FastExt.ofCoords fun k ↦
-    CompPoly.CPolynomial.NTTFast.Packed.ofWord p
-      (CompPoly.CPolynomial.NTTFast.Packed.Native.read st.2 k))
+  let cols := Array.ofFn (n := (fs.size + 1) * d) fun q ↦
+    if q.val < d then (scans.getD q.val (.empty, 0)).1
+    else ((fs.getD ((q.val - d) / d) (ExtPlanes.zeros 0)).c.toArray.getD ((q.val - d) % d) .empty)
+  (CompPoly.CPolynomial.NTTFast.Packed.Native.rowsOfColumns cols 0 B,
+    FastExt.ofCoords fun k ↦
+      CompPoly.CPolynomial.NTTFast.Packed.ofWord p (scans.getD k (.empty, 0)).2)
 
 /-- Words `o, …, o + d - 1` of `out` plus the coordinates of `s`. -/
 def shiftRow (out : ByteArray) (o : Nat) (s : EF) : ByteArray :=
@@ -737,8 +718,9 @@ def rangeRows [PlanesInv p EF] {β E : Type} (blk : Nat → β) (get : β → E 
   let apl := (Array.range ts.length).map fun c ↦
     (XVal.const (p := p) (chs.getD (2 * c) 0)).planes B
   (List.range nb).foldl (fun (out, acc) j ↦
-      writeBlock out (j * B) (fractionsX B get (blk ((b0 + j) * B)) ts chs apl).toArray acc B W)
-    (CompPoly.CPolynomial.NTTFast.Packed.Native.zeroWords (nb * B * W), 0)
+      let (rows, acc) := blockRows (fractionsX B get (blk ((b0 + j) * B)) ts chs apl).toArray acc B
+      (out ++ rows, acc))
+    (ByteArray.emptyWithCapacity (4 * (nb * B * W)), 0)
 
 /-- The permutation trace's rows of `blocks` blocks of `B` rows, `W` words per row, as packed
 words, and its terminal: in parallel ranges of blocks, the rows with the accumulator from the
@@ -772,8 +754,8 @@ def indexTuples {α : Type} : List (List (List α × α)) → Nat → List (List
   | [], _ => []
   | l :: ls, k => (indexLookup l k).1 :: indexTuples ls (indexLookup l k).2
 
-theorem blockSize_lt (x : Nat) : 4 * min x 256 < USize.size :=
-  Nat.lt_of_lt_of_le (by have := Nat.min_le_right x 256; omega) USize.le_size
+theorem blockSize_lt (x : Nat) : 4 * min x 1024 < USize.size :=
+  Nat.lt_of_lt_of_le (by have := Nat.min_le_right x 1024; omega) USize.le_size
 
 /-- Lookups' tuples' expressions in order: every tuple's elements, then its multiplicity. -/
 def flatTuples {α : Type} (ts : List (List (List α × α))) : List α :=
@@ -790,7 +772,7 @@ def permutationWords [Mont32BaseField p] [PlanesInv p EF] (A : Air F)
   let w := A.width
   let pw := A.preprocessedWidth
   let parts := if n < 4096 then 1 else 16
-  let B := min (n / parts) 256
+  let B := min (n / parts) 1024
   have hS : 4 * B < USize.size := blockSize_lt (n / parts)
   let blocks := n / B
   let enc := CompPoly.CPolynomial.NTTFast.Packed.Native.encodeFields
