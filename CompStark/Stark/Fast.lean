@@ -467,14 +467,6 @@ def progRun (ks : List (CheckedKernel p)) (cs : List (Expr F)) :
     let prog := Prog.compile cs
     (prog, groupRun (kernelFor (ks.map (·.1.kernel)) prog.code) prog.code)
 
-/-- Words `i, i + k, i + 2 k, …` of `a`, `count` of them. -/
-def strided (a : @& ByteArray) (i k count : Nat) : ByteArray := Id.run do
-  let mut out := CompPoly.CPolynomial.NTTFast.Packed.Native.zeroWords count
-  for r in [0:count] do
-    out := CompPoly.CPolynomial.NTTFast.Packed.Native.write out r
-      (CompPoly.CPolynomial.NTTFast.Packed.Native.read a (r * k + i))
-  return out
-
 /-- The values of a program on the blocks of `nb` rows of `B` from block `b0`, each block from
 `block r0` giving the block from row `r0` its view and loads, its accumulators multiplied by the
 words `z r0` of the block: plane `j` the `j`-th accumulator of every row in order, times the row's
@@ -1084,7 +1076,7 @@ def leaves (k : Nat) (v : ExtPlanes p EF) : PMat :=
   let d := FastExt.d p EF
   let h := v.n / k
   ⟨d * k, h, h, (CompPoly.Tasks.join (CompPoly.Tasks.spawnAll (d * k) fun j ↦
-    strided (v.c.toArray.getD (j % d) .empty) (j / d) k h)).get⟩
+    CompStark.Fri.FoldWords.strided (v.c.toArray.getD (j % d) .empty) (j / d) k h)).get⟩
 
 /-- `a + x · b`. -/
 def addScaled (a b : ExtPlanes p EF) (x : EF) : ExtPlanes p EF := a.add (b.smul x)

@@ -401,29 +401,6 @@ theorem flatMap_coeffs [Mont32BaseField p] [Mont32.AlgebraId EF] (n : Nat) (g : 
         rw [Nat.add_comm, Nat.add_mul_mod_self_left, Nat.mod_eq_of_lt h1]]
     rw [coord, dite_eq_left h1]
 
-/-- Every `k`-th word from word `i`. -/
-theorem strided_encode (A : Array F) (i k count : Nat) (hA : ∀ r < count, r * k + i < A.size)
-    (hs : 4 * A.size < USize.size) (hc : 4 * count < USize.size) :
-    strided (encode A) i k count = encode (Array.ofFn (n := count) fun r ↦ A.getD (r.val * k + i) 0)
-    := by
-  unfold strided
-  simp only [Std.Legacy.Range.forIn_eq_forIn_range', Std.Legacy.Range.size,
-    Nat.sub_zero, Nat.add_sub_cancel, Nat.div_one, ← List.range_eq_range',
-    pure_bind, List.forIn_pure_yield_eq_foldl, Id.run_pure]
-  let f (r : Nat) : F := A.getD (r * k + i) 0
-  have ho : 4 * (Array.replicate count (0 : F)).size < USize.size := by
-    rw [Array.size_replicate]; exact hc
-  have key : ∀ K ≤ count, (List.range K).foldl (fun b r ↦ write b r (read (encode A) (r * k + i)))
-      (zeroWords count) = encode (upto (Array.replicate count 0) f K) := by
-    intro K hK
-    induction K with
-    | zero => rw [List.range_zero, List.foldl_nil, zeroWords_eq (p := p), upto_zero]
-    | succ K ih =>
-      rw [List.range_succ, List.foldl_append, ih (by omega), List.foldl_cons, List.foldl_nil,
-        read_encode _ _ hs (hA K (by omega)),
-        write_upto _ f _ (by rw [Array.size_replicate]; omega) ho]
-  rw [key count le_rfl, upto_full _ _ _ (Array.size_replicate ..)]
-
 /-- The leaves are the elements' coordinates, `k` elements per row. -/
 theorem leaves_rel [Mont32BaseField p] [Mont32.AlgebraId EF]
     (hA : 4 * (FastExt.d p EF * 2 ^ twoAdicity F) < USize.size)
@@ -458,7 +435,8 @@ theorem leaves_rel [Mont32BaseField p] [Mont32.AlgebraId EF]
   · show 4 * n < USize.size
     omega
   · show (CompPoly.Tasks.join (CompPoly.Tasks.spawnAll (FastExt.d p EF * k) fun j ↦
-      strided (v.c.toArray.getD (j % FastExt.d p EF) .empty) (j / FastExt.d p EF) k n)).get = _
+      CompStark.Fri.FoldWords.strided (v.c.toArray.getD (j % FastExt.d p EF) .empty)
+        (j / FastExt.d p EF) k n)).get = _
     rw [CompPoly.Tasks.get_join, CompPoly.Tasks.map_get_spawnAll]
     apply Array.ext (by
       simp only [Array.size_map, Array.size_range, size_colBlocks, Mat.ofValues,
@@ -478,7 +456,7 @@ theorem leaves_rel [Mont32BaseField p] [Mont32.AlgebraId EF]
       simp only [Fin.getElem_fin] at this
       rw [this]
       exact congrArg encode (Array.map_congr_left fun x _ ↦ (coord_fin x _).symm)
-    rw [hj, strided_encode _ _ _ _ (fun r hr ↦ by
+    rw [hj, CompStark.Fri.FoldWords.strided_encode _ _ _ _ (fun r hr ↦ by
         rw [Array.size_map, hn]
         have := Nat.mul_le_mul_right k (show r + 1 ≤ n by omega)
         rw [Nat.succ_mul] at this

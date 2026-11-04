@@ -127,4 +127,84 @@ theorem diffs_encode (A C : Array F) (r0 len : Nat) (hA : 2 * (r0 + len) ≤ A.s
     Nat.add_sub_cancel' (Nat.mul_div_le len 16), upto_full _ f _ (Array.size_replicate ..)]
   rfl
 
+theorem readOff (A : Array F) (j k : USize)
+    (h : 4 * (j.toNat + 15 * k.toNat) + 3 < (encode A).size ∧ (encode A).size < USize.size)
+    (t : Nat) (ht : t ≤ 15) :
+    readUOffset (encode A) j (t.toUSize * k) (stridedOff k h t ht) =
+      (A.getD (j.toNat + t * k.toNat) 0).val := by
+  rw [CompPoly.CPolynomial.NTTFast.Packed.Native.readUOffset_encode]
+  have hk : t * k.toNat < USize.size := by
+    have := Nat.mul_le_mul_right k.toNat ht; have := h.2; omega
+  have ht' : t < USize.size := by have := USize.le_size; omega
+  rw [USize.toNat_mul, USize.toNat_ofNat_of_lt' ht', Nat.mod_eq_of_lt hk]
+
+/-- `strided16` splices sixteen words `k` apart. -/
+theorem strided16_encode (A o : Array F) (j k i : USize) (h) (hi : i.toNat + 16 ≤ o.size)
+    (ho : 4 * o.size < USize.size) :
+    strided16 (encode A) j k i (encode o) h = encode (splice o i.toNat (lit16 fun t ↦
+      A.getD (j.toNat + t * k.toNat) 0)) := by
+  unfold strided16
+  rw [readOff A j k h 0 (by decide),
+    readOff A j k h 1 (by decide),
+    readOff A j k h 2 (by decide),
+    readOff A j k h 3 (by decide),
+    readOff A j k h 4 (by decide),
+    readOff A j k h 5 (by decide),
+    readOff A j k h 6 (by decide),
+    readOff A j k h 7 (by decide),
+    readOff A j k h 8 (by decide),
+    readOff A j k h 9 (by decide),
+    readOff A j k h 10 (by decide),
+    readOff A j k h 11 (by decide),
+    readOff A j k h 12 (by decide),
+    readOff A j k h 13 (by decide),
+    readOff A j k h 14 (by decide),
+    readOff A j k h 15 (by decide)]
+  rw [CompPoly.CPolynomial.NTTFast.Packed.Native.write16U_encode _ _
+    (by rw [size_encode_fields]; exact ho) hi]
+  rfl
+
+/-- Every `k`-th word from word `i`. -/
+theorem strided_encode (A : Array F) (i k count : Nat) (hA : ∀ r < count, r * k + i < A.size)
+    (hs : 4 * A.size < USize.size) (hc : 4 * count < USize.size) :
+    strided (encode A) i k count =
+      encode (Array.ofFn (n := count) fun r ↦ A.getD (r.val * k + i) 0) := by
+  unfold strided
+  simp only [Std.Legacy.Range.forIn_eq_forIn_range', Std.Legacy.Range.size,
+    Nat.sub_zero, Nat.add_sub_cancel, Nat.div_one, ← List.range_eq_range',
+    bind_pure, pure_bind, dite_pure_yield, List.forIn_pure_yield_eq_foldl, Id.run_pure]
+  have hsA : (encode A).size = 4 * A.size := size_encode_fields A
+  let f (r : Nat) : F := A.getD (r * k + i) 0
+  rw [zeroWords_eq (p := p), foldl_blocks (Array.replicate count 0) f (count / 16) _ (fun m hm ↦ by
+    have h16 : 16 * m + 16 ≤ count := by omega
+    have hlast := hA (16 * m + 15) (by omega)
+    have hcond : 4 * ((i + 16 * m * k) + 15 * k) + 3 < (encode A).size ∧
+        (encode A).size < USize.size ∧ 16 * m < USize.size := by
+      refine ⟨?_, by omega, by omega⟩
+      rw [hsA]
+      have : (16 * m + 15) * k = 16 * m * k + 15 * k := by ring
+      omega
+    have hi16 : (16 * m).toUSize.toNat + 16 ≤
+        (upto (Array.replicate count (0 : F)) f (16 * m)).size := by
+      rw [USize.toNat_ofNat_of_lt' (by omega), size_upto, Array.size_replicate]; omega
+    have ho16 : 4 * (upto (Array.replicate count (0 : F)) f (16 * m)).size < USize.size := by
+      rw [size_upto, Array.size_replicate]; omega
+    rw [dite_eq_left_of_eq_true (eq_true hcond), strided16_encode _ _ _ _ _ _ hi16 ho16]
+    have hk : k < USize.size := by
+      have : k ≤ 15 * k := by omega
+      have := hcond.2.1; omega
+    have hj : i + 16 * m * k < USize.size := by have := hcond.2.1; omega
+    rw [USize.toNat_ofNat_of_lt' (by omega), USize.toNat_ofNat_of_lt' hj,
+      USize.toNat_ofNat_of_lt' hk]
+    refine congrArg encode ((congrArg _ (Montgomery.Native32.Words.lit16_congr _ _
+      fun t ht ↦ ?_)).trans (splice_upto _ f _ (by rw [Array.size_replicate]; omega)))
+    show _ = f (16 * m + t)
+    simp only [f]
+    rw [show i + 16 * m * k + t * k = (16 * m + t) * k + i by ring]),
+    foldl_tail _ f _ _ _ (fun r _ hr ↦ by
+      rw [read_encode A _ hs (hA r (by omega))]
+      exact write_upto _ f r (by rw [Array.size_replicate]; omega)
+        (by rw [Array.size_replicate]; omega)),
+    Nat.add_sub_cancel' (Nat.mul_div_le count 16), upto_full _ f _ (Array.size_replicate ..)]
+
 end CompStark.Fri.FoldWords
