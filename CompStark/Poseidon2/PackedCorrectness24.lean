@@ -222,11 +222,11 @@ theorem fullRounds24Go_holds {n : Nat} (P : Params F 24) (hd : P.degree = K.degr
       simp only [List.foldl_cons, fullRound, hd]
 
 /-- The partial rounds with the constants `k, …` of `Packed24.ofParams P`. -/
-theorem partialRounds24Go_holds {n : Nat} (P : Params F 24) (hd : P.degree = K.degree)
+theorem partialsLoop24_holds {n : Nat} (P : Params F 24) (hd : P.degree = K.degree)
     (hD : P.diagonal = K.diagonal24) (W0 : Array F) (i : USize) (hr : Room24 n i) :
     ∀ (m k : Nat), P.internal.length - k = m → ∀ (W : Array F) (S : Nat → Vector F 24),
       Holds 24 W0 i.toNat S W → ∀ s : Buf n, s.1 = encode W →
-      ∃ W', (partialRounds24Go p (Packed24.ofParams P) i hr k s).1 = encode W' ∧
+      ∃ W', (partialsLoop24 K.partial24 (Packed24.ofParams P) i hr k s).1 = encode W' ∧
         Holds 24 W0 i.toNat (fun l ↦ (P.internal.drop k).foldl (partialRound P) (S l)) W' := by
   intro m
   induction m with
@@ -235,7 +235,7 @@ theorem partialRounds24Go_holds {n : Nat} (P : Params F 24) (hd : P.degree = K.d
     have hk : ¬ k < (Packed24.ofParams P).internal.size := by
       simp only [Packed24.ofParams, List.size_toArray, List.length_map]; omega
     refine ⟨W, ?_, by rw [List.drop_eq_nil_of_le (by omega)]; exact h⟩
-    rw [partialRounds24Go, dite_eq_right hk, hs]
+    rw [partialsLoop24, dite_eq_right hk, hs]
   | succ m ih =>
     intro k hm W S h s hs
     have hk : k < (Packed24.ofParams P).internal.size := by
@@ -259,11 +259,21 @@ theorem partialRounds24Go_holds {n : Nat} (P : Params F 24) (hd : P.degree = K.d
       exact e1
     obtain ⟨W', e, h'⟩ := ih (k + 1) (by omega) _ _ hp _ hs2
     refine ⟨W', ?_, ?_⟩
-    · rw [partialRounds24Go, dite_eq_left hk]
+    · rw [partialsLoop24, dite_eq_left hk]
       exact e
     · refine ⟨h'.1, fun l hl ↦ ?_, h'.2.2⟩
       rw [h'.2.1 l hl, List.drop_eq_getElem_cons hk']
       simp only [List.foldl_cons, hc]
+
+/-- The field's partial rounds of `Packed24.ofParams P`. -/
+theorem partials24_holds {n : Nat} (P : Params F 24) (hd : P.degree = K.degree)
+    (hD : P.diagonal = K.diagonal24) (W0 : Array F) (i : USize) (hr : Room24 n i)
+    (W : Array F) (S : Nat → Vector F 24) (h : Holds 24 W0 i.toNat S W) (s : Buf n)
+    (hs : s.1 = encode W) :
+    ∃ W', (K.partials24 (Packed24.ofParams P) i hr s).1 = encode W' ∧
+      Holds 24 W0 i.toNat (fun l ↦ (P.internal.drop 0).foldl (partialRound P) (S l)) W' := by
+  rw [K.partials24_eq]
+  exact partialsLoop24_holds P hd hD W0 i hr _ 0 rfl W S h s hs
 
 /-- **The packed permutation is correct.** On a group of eight states at word `i` of a packed
 buffer, `permute24` applies the Poseidon2 permutation to every state, and leaves the rest of the
@@ -289,7 +299,7 @@ theorem permute24_spec (P : Params F 24) (hd : P.degree = K.degree)
   obtain ⟨W1, e1, h1⟩ := external24_holds W W i _ h0 hr ⟨encode W, rfl⟩ rfl
   obtain ⟨W2, e2, h2⟩ := fullRounds24Go_holds P hd _ W (by
       simpa only [Packed24.ofParams, Native.encodeFields_eq] using hK.1) i hr 4 0 rfl W1 _ h1 _ e1
-  obtain ⟨W3, e3, h3⟩ := partialRounds24Go_holds P hd hD W i hr _ 0 rfl W2 _ h2 _ e2
+  obtain ⟨W3, e3, h3⟩ := partials24_holds P hd hD W i hr W2 _ h2 _ e2
   obtain ⟨W4, e4, h4⟩ := fullRounds24Go_holds P hd _ W (by
       simpa only [Packed24.ofParams, Native.encodeFields_eq] using hK.2) i hr 4 0 rfl W3 _ h3
       _ e3

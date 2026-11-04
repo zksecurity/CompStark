@@ -45,9 +45,15 @@ def tail24 : List (Nat × Bool) :=
 set_option maxRecDepth 16384 in
 set_option maxHeartbeats 4000000 in
 /-- A partial round with constant `c` on the eight states at `i`. -/
-@[noinline] def partial16 (c : UInt32) (b : ByteArray) (i : USize) (hb : GroupFits b i) :
+@[inline] def partial16 (c : UInt32) (b : ByteArray) (i : USize) (hb : GroupFits b i) :
     { x : ByteArray // x.size = b.size } :=
   p2_partial% babybear 16 8
+
+set_option maxHeartbeats 4000000 in
+/-- The partial rounds of `C`, `partial16` inlined into the loop. -/
+@[noinline] def partials16 {n : Nat} (C : @& Packed16) (i : USize) (h : Room16 n i) (b : Buf n) :
+    Buf n :=
+  partialsLoop16 partial16 C i h 0 b
 
 set_option maxRecDepth 16384 in
 set_option maxHeartbeats 4000000 in
@@ -115,9 +121,15 @@ theorem lane_partial16 (P : Params F 16) (hd : P.degree = 7) (hD : P.diagonal = 
 set_option maxRecDepth 16384 in
 set_option maxHeartbeats 4000000 in
 /-- A width-24 partial round with constant `c`. -/
-@[noinline] def partial24 (c : UInt32) (b : ByteArray) (i : USize) (hb : GroupFits24 b i) :
+@[inline] def partial24 (c : UInt32) (b : ByteArray) (i : USize) (hb : GroupFits24 b i) :
     { x : ByteArray // x.size = b.size } :=
   p2_partial% babybear 24 8
+
+set_option maxHeartbeats 4000000 in
+/-- The width-24 partial rounds of `C`, `partial24` inlined into the loop. -/
+@[noinline] def partials24 {n : Nat} (C : @& Packed24) (i : USize) (h : Room24 n i) (b : Buf n) :
+    Buf n :=
+  partialsLoop24 partial24 C i h 0 b
 
 set_option maxRecDepth 16384 in
 set_option maxHeartbeats 4000000 in
@@ -193,10 +205,14 @@ instance instPackedKernels : PackedKernels _root_.BabyBear.fieldSize where
   mat4x16 := mat4x16
   mix16 := mix16
   partial16 := partial16
+  partials16 := partials16
+  partials16_eq _ _ _ _ := rfl
   sbox24 := sbox24
   mat4x24 := mat4x24
   mix24 := mix24
   partial24 := partial24
+  partials24 := partials24
+  partials24_eq _ _ _ _ := rfl
   sbox16_encode := sbox16_encode
   mat4x16_encodeWords := mat4x16_encodeWords
   mix16_encode := mix16_encode

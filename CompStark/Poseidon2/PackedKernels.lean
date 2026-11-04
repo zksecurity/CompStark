@@ -12,7 +12,8 @@ public import CompStark.Poseidon2.PackedLanes
 states of widths 16 and 24, each with the model of `PackedLanes` it computes. A field instantiates
 the kernels that `Unrolled` generates for its shape (modulus, S-box degree, internal diagonals).
 `permute16` and `permute24` run Plonky3's round structure on them: the external matrix, four full
-rounds, the partial rounds and four full rounds, each round part one call on the whole group.
+rounds, the partial rounds and four full rounds, each full round part one call on the whole group
+and the partial rounds one loop.
 -/
 
 @[expose] public section
@@ -20,6 +21,27 @@ namespace CompStark.Poseidon2.Packed
 open Montgomery.Native32 (Mont32Field FastField)
 open Montgomery.Native32.Words (Fits)
 open CompPoly.PackedRepr (encode)
+
+/-- The partial rounds with the constants `k, …` of `C`, each by the kernel `f`. A field's loop
+(`PackedKernels.partials16`) is this loop on its kernel, compiled with the kernel inlined, so a
+round makes no call. -/
+@[specialize] def partialsLoop16
+    (f : UInt32 → (b : ByteArray) → (i : USize) → GroupFits b i → { x : ByteArray // x.size = b.size })
+    {n : Nat} (C : @& Packed16) (i : USize) (h : Room16 n i) (k : Nat) (b : Buf n) : Buf n :=
+  if hk : k < C.internal.size then
+    partialsLoop16 f C i h (k + 1) (b.of (f C.internal[k] b.1 i (h.fits b)))
+  else b
+termination_by C.internal.size - k
+
+/-- The width-24 partial rounds with the constants `k, …` of `C`, each by the kernel `f`. -/
+@[specialize] def partialsLoop24
+    (f : UInt32 → (b : ByteArray) → (i : USize) → GroupFits24 b i →
+      { x : ByteArray // x.size = b.size })
+    {n : Nat} (C : @& Packed24) (i : USize) (h : Room24 n i) (k : Nat) (b : Buf n) : Buf n :=
+  if hk : k < C.internal.size then
+    partialsLoop24 f C i h (k + 1) (b.of (f C.internal[k] b.1 i (h.fits b)))
+  else b
+termination_by C.internal.size - k
 
 /-- The packed round kernels of Poseidon2 over `FastField p` at widths 16 and 24, with their
 models: the S-boxes of a full round (left below `2 p` by `lazyPow`), `mat4` on every block of four
@@ -43,6 +65,10 @@ class PackedKernels (p : ℕ) [Mont32Field p] where
   mix16 (b : ByteArray) (i : USize) (hb : GroupFits b i) : { x : ByteArray // x.size = b.size }
   partial16 (c : UInt32) (b : ByteArray) (i : USize) (hb : GroupFits b i) :
     { x : ByteArray // x.size = b.size }
+  /-- The partial rounds of `C`: `partialsLoop16` on `partial16`. -/
+  partials16 {n : Nat} (C : @& Packed16) (i : USize) (h : Room16 n i) (b : Buf n) : Buf n
+  partials16_eq {n : Nat} (C : Packed16) (i : USize) (h : Room16 n i) (b : Buf n) :
+    partials16 C i h b = partialsLoop16 partial16 C i h 0 b
   sbox24 (rc : @& ByteArray) (r : USize) (b : ByteArray) (i : USize) (hb : GroupFits24 b i)
     (hr : Fits rc r 23) : { x : ByteArray // x.size = b.size }
   mat4x24 (b : ByteArray) (i : USize) (hb : GroupFits24 b i) :
@@ -50,6 +76,10 @@ class PackedKernels (p : ℕ) [Mont32Field p] where
   mix24 (b : ByteArray) (i : USize) (hb : GroupFits24 b i) : { x : ByteArray // x.size = b.size }
   partial24 (c : UInt32) (b : ByteArray) (i : USize) (hb : GroupFits24 b i) :
     { x : ByteArray // x.size = b.size }
+  /-- The width-24 partial rounds of `C`: `partialsLoop24` on `partial24`. -/
+  partials24 {n : Nat} (C : @& Packed24) (i : USize) (h : Room24 n i) (b : Buf n) : Buf n
+  partials24_eq {n : Nat} (C : Packed24) (i : USize) (h : Room24 n i) (b : Buf n) :
+    partials24 C i h b = partialsLoop24 partial24 C i h 0 b
   sbox16_encode (rc W : Array (FastField p)) (r i : USize) (hb) (hr) :
     (sbox16 (encode rc) r (encode W) i hb hr).1 =
       encode (sboxWords lazyPow coords16 rc W r.toNat i.toNat)
@@ -104,21 +134,13 @@ decreasing_by
   rw [USize.toNat_add, USize.toNat_one, hsize, Nat.mod_eq_of_lt (by omega)]
   omega
 
-/-- The partial rounds with the constants `k, …` of `C`. -/
-@[specialize] def partialRoundsGo {n : Nat} (C : @& Packed16) (i : USize) (h : Room16 n i)
-    (k : Nat) (b : Buf n) : Buf n :=
-  if hk : k < C.internal.size then
-    partialRoundsGo C i h (k + 1) (b.of (K.partial16 C.internal[k] b.1 i (h.fits b)))
-  else b
-termination_by C.internal.size - k
-
 /-- The width-16 permutation of the eight states at `i`. -/
 @[specialize] def permute16 (C : @& Packed16) (b : ByteArray) (i : USize) : ByteArray :=
   if h : GroupFits b i ∧ C.Fits then
     let s : Buf b.size := ⟨b, rfl⟩
     let s := external16 p s i h.1
     let s := fullRoundsGo p C.initial h.2.1 i h.1 0 s
-    let s := partialRoundsGo p C i h.1 0 s
+    let s := K.partials16 C i h.1 s
     (fullRoundsGo p C.terminal h.2.2 i h.1 0 s).1
   else b
 
@@ -145,21 +167,13 @@ decreasing_by
   rw [USize.toNat_add, USize.toNat_one, hsize, Nat.mod_eq_of_lt (by omega)]
   omega
 
-/-- The width-24 partial rounds with the constants `k, …` of `C`. -/
-@[specialize] def partialRounds24Go {n : Nat} (C : @& Packed24) (i : USize) (h : Room24 n i)
-    (k : Nat) (b : Buf n) : Buf n :=
-  if hk : k < C.internal.size then
-    partialRounds24Go C i h (k + 1) (b.of (K.partial24 C.internal[k] b.1 i (h.fits b)))
-  else b
-termination_by C.internal.size - k
-
 /-- The width-24 permutation of the eight states at `i`. -/
 @[specialize] def permute24 (C : @& Packed24) (b : ByteArray) (i : USize) : ByteArray :=
   if h : GroupFits24 b i ∧ C.Fits then
     let s : Buf b.size := ⟨b, rfl⟩
     let s := external24 p s i h.1
     let s := fullRounds24Go p C.initial h.2.1 i h.1 0 s
-    let s := partialRounds24Go p C i h.1 0 s
+    let s := K.partials24 C i h.1 s
     (fullRounds24Go p C.terminal h.2.2 i h.1 0 s).1
   else b
 
