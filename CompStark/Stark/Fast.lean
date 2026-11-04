@@ -475,52 +475,57 @@ def strided (a : @& ByteArray) (i k count : Nat) : ByteArray := Id.run do
       (CompPoly.CPolynomial.NTTFast.Packed.Native.read a (r * k + i))
   return out
 
+/-- The values of a program on the blocks of `nb` rows of `B` from block `b0`, each block from
+`block r0` giving the block from row `r0` its view and loads, its accumulators multiplied by the
+words `z r0` of the block: plane `j` the `j`-th accumulator of every row in order, times the row's
+word of `z`. On blocks of a multiple of sixteen rows as one group (`run`, the program on the group
+machine), else by `Prog.runBlock`. -/
+@[specialize] def accPlanes [Mont32BaseField p] (d B : Nat) (hB : 4 * B < USize.size)
+    (prog : Prog F) (run : Prog.GroupEnv → ByteArray → ByteArray) (scal wts : Array F)
+    (block : Nat → Prog.View × Prog.Loads) (z : Nat → ByteArray) (b0 nb : Nat) :
+    Array ByteArray := Id.run do
+  let scalW := scal.map (·.val)
+  let wtsW := wts.map (·.val)
+  let mut acc := Array.replicate d (ByteArray.emptyWithCapacity (4 * (nb * B)))
+  if B % 16 = 0 ∧ 4 * (B * (d + prog.regs)) < USize.size then
+    let mut st := CompPoly.CPolynomial.NTTFast.Packed.Native.zeroWords (B * (d + prog.regs))
+    for blk in [b0:b0 + nb] do
+      let (v, L) := block (blk * B)
+      st := run (Prog.blockEnv d B v L scalW wtsW) (Prog.clearAccs d B st)
+      let zb := z (blk * B)
+      for j in [0:d] do
+        acc := acc.modify j (· ++ Words.mulWords p zb (slice st (B * j) B) B)
+  else
+    let mut regs : Prog.Regs (4 * B) := Array.replicate (d + prog.regs)
+      ⟨CompPoly.CPolynomial.NTTFast.Packed.Native.zeroWords B, ByteArray.size_zeros _⟩
+    for blk in [b0:b0 + nb] do
+      let (v, L) := block (blk * B)
+      regs := Prog.runBlock p d prog.code v L scal wts B hB (Prog.clearAcc d hB B regs)
+      let zb := z (blk * B)
+      for j in [0:d] do
+        acc := acc.modify j (· ++ Words.mulWords p zb (Prog.regBuf regs j) B)
+  return acc
+
 /-- The values of a program accumulating every row of the quotient domain, in the extension's
-bit-reversed order, as planes in that order: the program runs on blocks of rows, `block r0` giving the
-block from row `r0` its view and loads, in parallel ranges of blocks, each range with one state; on
-blocks of a multiple of sixteen rows as one group (`run`, the program on the group machine), else
-by `Prog.runBlock`. Every row's accumulators are its value's coordinates, times the inverse
-vanishing polynomial; the ranges keep them row by row, and every coordinate's plane is one task. -/
+bit-reversed order, as planes in that order: parallel ranges of whole blocks of rows, each range's
+planes (`accPlanes`) its rows' accumulators times the inverse vanishing polynomial, the ranges'
+planes concatenated. -/
 @[specialize] def quotientBlocks [Mont32BaseField p] [Mont32.AlgebraId EF]
     (T : QuotientTables p) (prog : Prog F)
     (run : Prog.GroupEnv → ByteArray → ByteArray) (scal wts : Array F)
-    (block : Nat → Prog.View × Prog.Loads) : ExtPlanes p EF := Id.run do
+    (block : Nat → Prog.View × Prog.Loads) : ExtPlanes p EF :=
   let n := 2 ^ (T.degreeBits + T.logChunks)
   let period := 2 ^ T.logChunks
-  let perm := T.perm
   let B := T.B
   let blocks := n / B
-  let d := FastExt.d p EF
-  let scalW := scal.map (·.val)
-  let wtsW := wts.map (·.val)
-  let byRow := parChunks blocks (min blocks 16) fun b0 nb ↦ Id.run do
-    let mut out := Array.emptyWithCapacity (nb * B * d)
-    if B % 16 = 0 ∧ 4 * (B * (d + prog.regs)) < USize.size then
-      let mut st := CompPoly.CPolynomial.NTTFast.Packed.Native.zeroWords (B * (d + prog.regs))
-      for blk in [b0:b0 + nb] do
-        let r0 := blk * B
-        let (v, L) := block r0
-        let env := Prog.blockEnv d B v L scalW wtsW
-        st := run env (Prog.clearAccs d B st)
-        for i in [0:B] do
-          let z := T.invZh.getD (perm.getD (r0 + i) 0 % period) 0
-          for j in [0:d] do
-            out := out.push (z * word st (B * j + i))
-    else
-      let mut regs : Prog.Regs (4 * B) := Array.replicate (d + prog.regs)
-        ⟨CompPoly.CPolynomial.NTTFast.Packed.Native.zeroWords B, ByteArray.size_zeros _⟩
-      for blk in [b0:b0 + nb] do
-        let r0 := blk * B
-        let (v, L) := block r0
-        regs := Prog.runBlock p d prog.code v L scal wts B T.hB (Prog.clearAcc d T.hB B regs)
-        for i in [0:B] do
-          let z := T.invZh.getD (perm.getD (r0 + i) 0 % period) 0
-          for j in [0:d] do
-            out := out.push (z * word (Prog.regBuf regs j) i)
-    return out
-  let planes := (Array.range d).map fun j ↦ Task.spawn fun _ ↦
-    CompPoly.CPolynomial.NTTFast.Packed.Native.generate n fun s ↦ (byRow.getD (s * d + j) 0).val
-  return ⟨n, Vector.ofFn fun j ↦ (planes.getD j.val (Task.pure .empty)).get⟩
+  let parts := min blocks 16
+  let size := blocks / parts
+  let z (r0 : Nat) : ByteArray := CompPoly.CPolynomial.NTTFast.Packed.Native.generate B fun i ↦
+    (T.invZh.getD (T.perm.getD (r0 + i) 0 % period) 0).val
+  ExtPlanes.join n <| (Array.range parts).map fun k ↦ Task.spawn fun _ ↦
+    let nb := if k + 1 = parts then blocks - k * size else size
+    let acc := accPlanes (FastExt.d p EF) B T.hB prog run scal wts block z (k * size) nb
+    (Vector.ofFn (n := FastExt.d p EF) fun j ↦ acc.getD j.val .empty).toArray
 
 /-- The periodic columns of `A` on the quotient domain of the tables `T`, in the extension's
 bit-reversed order, as words. -/
