@@ -1027,7 +1027,7 @@ theorem fracOf_map [Mont32BaseField p] [Mont32.AlgebraId EF] {E : Type} (val : E
 theorem rowMajorCols_eq (M : Array F) (w n : Nat) (hn : 0 < n) (hM : M.size = n * w)
     (hs : 4 * M.size < USize.size) :
     rowMajorCols (encode M) w n = (⟨colBlocks ⟨w, n, M⟩ n, w, n⟩ : Prog.ColsF p).enc := by
-  unfold rowMajorCols Prog.ColsF.enc
+  unfold rowMajorCols colsOf Prog.ColsF.enc
   dsimp only
   rw [transposeRows_encode M w 0 n (by rw [Nat.zero_add, hM]) hs]
   congr 1
@@ -1199,15 +1199,21 @@ theorem permutationWords_eq [Mont32BaseField p] [Mont32.AlgebraId EF] [PlanesInv
       by show 4 * FS.size < USize.size; rw [Array.size_ofFn]; exact hn,
       by show 4 * LS.size < USize.size; rw [Array.size_ofFn]; exact hn,
       by show 4 * TS.size < USize.size; rw [Array.size_ofFn]; exact hn⟩
-    have hVs : 4 * (blockT mt r0 B).size < USize.size := by
+    have hVs : 4 * (blockT mt 0 n).size < USize.size := by
       rw [size_blockT]
-      show 4 * (A.width * B) < USize.size
-      omega
+      show 4 * (A.width * n) < USize.size
+      have := hus; rw [htr] at this
+      show 4 * (A.width * 2 ^ logN) < USize.size
+      rw [Nat.mul_comm A.width]; exact this
     let prog := Prog.compileOuts flat
     have hlo := Prog.compileOuts_leafOk flat A.width A.width A.preprocessedWidth
       A.preprocessedWidth 0 hflat
-    have hcq (c : Nat) (hc : c < A.width) : 0 + c * B + B ≤ (blockT mt r0 B).size := by
-      rw [Nat.zero_add]; exact hcolB mt c hc
+    have hcq (c : Nat) (hc : c < A.width) : r0 + c * n + B ≤ (blockT mt 0 n).size := by
+      rw [size_blockT]
+      have := Nat.mul_le_mul_right n (show c + 1 ≤ A.width by omega)
+      rw [Nat.succ_mul] at this
+      show r0 + c * n + B ≤ A.width * n
+      omega
     have hlq : ∀ src, Prog.Src.Below A.width A.preprocessedWidth A.preprocessedWidth 0 src →
         L.InRange B src := by
       intro src hsrc
@@ -1222,14 +1228,14 @@ theorem permutationWords_eq [Mont32BaseField p] [Mont32.AlgebraId EF] [PlanesInv
       | isFirstRow => show r0 + B ≤ FS.size; rw [Array.size_ofFn]; exact hjB
       | isLastRow => show r0 + B ≤ LS.size; rw [Array.size_ofFn]; exact hjB
       | isTransition => show r0 + B ≤ TS.size; rw [Array.size_ofFn]; exact hjB
-    have hcode : ∀ ins ∈ prog.code, ins.InRange (blockT mt r0 B) 0 B L B prog.regs :=
+    have hcode : ∀ ins ∈ prog.code, ins.InRange (blockT mt 0 n) r0 n L B prog.regs :=
       fun ins hins ↦ Prog.Instr.inRange_of (cq := (· < A.width))
         (lq := Prog.Src.Below A.width A.preprocessedWidth A.preprocessedWidth 0) hcq hlq ins
         ((Prog.compileOuts_run flat ⟨fun _ ↦ 0, fun _ ↦ 0, fun _ ↦ 0, fun _ _ ↦ 0⟩
           ⟨fun _ ↦ 0, fun _ ↦ 0⟩).2.2 ins hins) (hlo.1 ins hins)
     obtain ⟨hosz, -, -⟩ := Prog.compileOuts_run flat ⟨fun _ ↦ 0, fun _ ↦ 0, fun _ ↦ 0,
       fun _ _ ↦ 0⟩ ⟨fun _ ↦ 0, fun _ ↦ 0⟩
-    have hout : ∀ o ∈ prog.outs, o.InRange (blockT mt r0 B) 0 B B prog.regs := by
+    have hout : ∀ o ∈ prog.outs, o.InRange (blockT mt 0 n) r0 n B prog.regs := by
       intro o ho
       obtain ⟨k, hk, rfl⟩ := Array.mem_iff_getElem.mp ho
       have hg : prog.outs[k] = prog.outs.getD k (.reg 0) := by
@@ -1244,37 +1250,37 @@ theorem permutationWords_eq [Mont32BaseField p] [Mont32.AlgebraId EF] [PlanesInv
       | cur c => exact hcq c hleaf
       | const x => trivial
     have key : ∀ (vb : ByteArray) (Lc : Prog.Loads) (h0 : (NTTFast.Packed.Native.zeroWords
-        B).size = 4 * B), vb = encode (blockT mt r0 B) → Lc = L.enc → ∀ k < flat.length,
-        (Prog.outWords p 0 prog.outs ⟨vb, 0, B⟩
-          (Prog.runBlock p 0 prog.code ⟨vb, 0, B⟩ Lc pis.toArray #[] B hBs
+        B).size = 4 * B), vb = encode (blockT mt 0 n) → Lc = L.enc → ∀ k < flat.length,
+        (Prog.outWords p 0 prog.outs ⟨vb, r0, n⟩
+          (Prog.runBlock p 0 prog.code ⟨vb, r0, n⟩ Lc pis.toArray #[] B hBs
             (Array.replicate prog.regs ⟨NTTFast.Packed.Native.zeroWords B, h0⟩)) B).getD k
           ByteArray.empty = encode (tab B fun i ↦ val k (r0 + i)) := by
       intro vb Lc h0 hvb hLc k hk
       subst hvb hLc
       have hz := Prog.blockRel_zeros (p := p) 0 B prog.regs h0
       rw [Nat.zero_add] at hz
-      have hrel := Prog.runBlock_rel 0 prog.code (blockT mt r0 B) 0 B L pis.toArray #[] B prog.regs
+      have hrel := Prog.runBlock_rel 0 prog.code (blockT mt 0 n) r0 n L pis.toArray #[] B prog.regs
         (4 * B) hBs _ _ hz (by exact hVs) hL hcode
-      rw [Prog.outWords_rel prog.outs (blockT mt r0 B) 0 B L pis.toArray #[] _ _ hrel hBs hout,
+      rw [Prog.outWords_rel prog.outs (blockT mt 0 n) r0 n L pis.toArray #[] _ _ hrel hBs hout,
         Array.getD_eq_getD_getElem?, Array.getElem?_map,
         Array.getElem?_eq_getElem (by rw [hosz]; exact hk), Option.map_some, Option.getD_some]
       refine congrArg encode (tab_congr fun i hi ↦ ?_)
       have hg : prog.outs[k]'(by rw [hosz]; exact hk) = prog.outs.getD k (.reg 0) := by
         rw [Array.getD_eq_getD_getElem?, Array.getElem?_eq_getElem, Option.getD_some]
-      rw [hg, ((Prog.compileOuts_run flat (Prog.blockCtx 0 (blockT mt r0 B) 0 B L pis.toArray #[]
+      rw [hg, ((Prog.compileOuts_run flat (Prog.blockCtx 0 (blockT mt 0 n) r0 n L pis.toArray #[]
         B i) ⟨fun _ ↦ 0, fun _ ↦ 0⟩).2.1 k hk).1]
       show _ = (flat.getD k (.const 0)).eval (genRow (r0 + i))
       rw [List.getD_eq_getElem _ _ hk]
       have hri : r0 + i < n := by omega
       refine Expr.eval_hom (R := F) (S := F) id (fun _ _ ↦ rfl) (fun _ _ ↦ rfl) (fun _ _ ↦ rfl)
         A.width A.width A.preprocessedWidth A.preprocessedWidth
-        (Prog.blockCtx 0 (blockT mt r0 B) 0 B L pis.toArray #[] B i).env (genRow (r0 + i))
+        (Prog.blockCtx 0 (blockT mt 0 n) r0 n L pis.toArray #[] B i).env (genRow (r0 + i))
         (fun c hc ↦ ?_)
         (fun c hc ↦ ?_) (fun c hc ↦ ?_) (fun c hc ↦ ?_) (fun jj ↦ ?_) (fun jj ↦ ?_)
         (fun _ ↦ rfl) ?_ ?_ ?_ _ (hflat _ (List.getElem_mem hk))
-      · show (blockT mt r0 B).getD (0 + c * B + i) 0 = trace.getD ((r0 + i) * A.width + c) 0
-        rw [Nat.zero_add]
-        exact blockT_getD mt r0 B c i hc hi
+      · show (blockT mt 0 n).getD (r0 + c * n + i) 0 = trace.getD ((r0 + i) * A.width + c) 0
+        rw [show r0 + c * n + i = c * n + (r0 + i) by ring, blockT_getD mt 0 n c (r0 + i) hc hri,
+          Nat.zero_add]
       · show (⟨colBlocks mt n, A.width, n⟩ : Prog.ColsF p).at
           ((Array.ofFn (n := n) fun i ↦ (i.val + 1) % n).getD (r0 + i) 0) c =
           trace.getD ((r0 + i + 1) % 2 ^ logN * A.width + c) 0
@@ -1304,9 +1310,9 @@ theorem permutationWords_eq [Mont32BaseField p] [Mont32.AlgebraId EF] [PlanesInv
       fun jj hj' ↦ by rw [Nat.zero_add, List.getD_eq_getElem _ _ hj']; rfl
     obtain ⟨h1, -, h2⟩ := hidx t ht x hx
     have hvb : NTTFast.Packed.Native.transposeRows (NTTFast.Packed.Native.encodeFields trace)
-        A.width 0 A.width r0 B = encode (blockT mt r0 B) := by
+        A.width 0 A.width 0 n = encode (blockT mt 0 n) := by
       rw [NTTFast.Packed.Native.encodeFields_eq]
-      exact transposeRows_encode trace A.width r0 B hmt hus
+      exact transposeRows_encode trace A.width 0 n (by rw [Nat.zero_add, htr]) hus
     have hLc : (⟨rowMajorCols (NTTFast.Packed.Native.encodeFields trace) A.width n,
         rowMajorCols (NTTFast.Packed.Native.encodeFields A.preprocessed) A.preprocessedWidth n,
         NTTFast.Packed.Native.transposeRows (NTTFast.Packed.Native.encodeFields A.preprocessed)

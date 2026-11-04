@@ -351,10 +351,13 @@ def seqRows (next : @& Array Nat) (r0 B : Nat) : Bool :=
 /-- The empty matrix. -/
 def PMat.empty : PMat := ⟨0, 0, 1, #[]⟩
 
+/-- The columns of a matrix of width `w` and `n` rows from its transpose `t`, in one block. -/
+def colsOf (t : @& ByteArray) (w n : Nat) : Prog.Cols :=
+  ⟨(Array.range w).map fun j ↦ t.extract (4 * (j * n)) (4 * (j * n + n)), w, n⟩
+
 /-- The columns of a packed row-major matrix of width `w` and `n` rows, in one block. -/
 def rowMajorCols (m : @& ByteArray) (w n : Nat) : Prog.Cols :=
-  let t := CompPoly.CPolynomial.NTTFast.Packed.Native.transposeRows m w 0 w 0 n
-  ⟨(Array.range w).map fun j ↦ t.extract (4 * (j * n)) (4 * (j * n + n)), w, n⟩
+  colsOf (CompPoly.CPolynomial.NTTFast.Packed.Native.transposeRows m w 0 w 0 n) w n
 
 /-- Words `i, …, i + B - 1` of `b`. -/
 def slice (b : @& ByteArray) (i B : Nat) : ByteArray := b.extract (4 * i) (4 * (i + B))
@@ -776,13 +779,14 @@ def permutationWords [Mont32BaseField p] [PlanesInv p EF] (A : Air F)
   let trans := sel (· + 1 < n)
   let tups := ls.map Stark.Lookup.tuples
   let prog := Prog.compileOuts (flatTuples tups)
-  let mc := rowMajorCols words w n
+  let t := CompPoly.CPolynomial.NTTFast.Packed.Native.transposeRows words w 0 w 0 n
+  let mc := colsOf t w n
   let pc := rowMajorCols pwords pw n
   let blk (r0 : Nat) : Array ByteArray :=
     let tr := CompPoly.CPolynomial.NTTFast.Packed.Native.transposeRows
     let L : Prog.Loads := ⟨mc, pc, tr pwords pw 0 pw r0 B, PMat.empty.toCols, .empty, r0, next,
       seqRows next r0 B, #[], first, last, trans⟩
-    let v : Prog.View := ⟨tr words w 0 w r0 B, 0, B⟩
+    let v : Prog.View := ⟨t, r0, n⟩
     let regs := Prog.runBlock p 0 prog.code v L pis.toArray #[] B hS (Array.replicate prog.regs
       ⟨CompPoly.CPolynomial.NTTFast.Packed.Native.zeroWords B, ByteArray.size_zeros _⟩)
     Prog.outWords p 0 prog.outs v regs B
