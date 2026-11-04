@@ -58,6 +58,8 @@ public import CompStark.Stark.Constraints
 public import CompStark.Stark.Recompose
 public import CompStark.Fri.Prover
 public import CompStark.Fri.Assumptions
+public import CompStark.Fri.FoldWords
+public import CompStark.Fri.FoldWordsCorrectness
 public import CompStark.Fri.Shapes
 public import CompStark.Fri.Refines
 public import CompStark.Stark.Prover

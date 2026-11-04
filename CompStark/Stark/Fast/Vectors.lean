@@ -6,6 +6,7 @@ module
 
 public import CompStark.Stark.Fast.Columns
 public import CompStark.Stark.Fast.OpeningsSpec
+public import CompStark.Fri.FoldWordsCorrectness
 
 /-! # The fast backend's vector laws
 
@@ -155,35 +156,6 @@ theorem slice_encode (X : Array F) (i B : Nat) :
   rw [slice, ByteArray.data_extract]
   exact CompPoly.PackedRepr.encode_extract X i (i + B)
 
-/-- The even and odd words. -/
-theorem deinterleave_encode (Y : Array F) (n : Nat) (hn : 2 * n ≤ Y.size)
-    (hs : 4 * Y.size < USize.size) :
-    deinterleave (encode Y) n = (encode (Array.ofFn (n := n) fun i ↦ Y.getD (2 * i.val) 0),
-      encode (Array.ofFn (n := n) fun i ↦ Y.getD (2 * i.val + 1) 0)) := by
-  unfold deinterleave
-  simp only [Std.Legacy.Range.forIn_eq_forIn_range', Std.Legacy.Range.size,
-    Nat.sub_zero, Nat.add_sub_cancel, Nat.div_one, ← List.range_eq_range',
-    pure_bind, List.forIn_pure_yield_eq_foldl, Id.run_pure]
-  have hz : 4 * (Array.replicate n (0 : F)).size < USize.size := by
-    rw [Array.size_replicate]; omega
-  let fe (i : Nat) : F := Y.getD (2 * i) 0
-  let fo (i : Nat) : F := Y.getD (2 * i + 1) 0
-  have key : ∀ K ≤ n, (List.range K).foldl
-      (fun b i ↦ (write b.1 i (read (encode Y) (2 * i)), write b.2 i
-          (read (encode Y) (2 * i + 1)))) (zeroWords n, zeroWords n) =
-      (encode (upto (Array.replicate n 0) fe K), encode (upto (Array.replicate n 0) fo K)) := by
-    intro K hK
-    induction K with
-    | zero => rw [List.range_zero, List.foldl_nil, zeroWords_eq (p := p), upto_zero, upto_zero]
-    | succ K ih =>
-      rw [List.range_succ, List.foldl_append, ih (by omega), List.foldl_cons, List.foldl_nil]
-      simp only
-      rw [read_encode Y _ hs (by omega), read_encode Y _ hs (by omega),
-        write_upto _ fe K (by rw [Array.size_replicate]; omega) hz,
-        write_upto _ fo K (by rw [Array.size_replicate]; omega) hz]
-  rw [key n (Nat.le_refl _), upto_full _ _ _ (Array.size_replicate ..),
-    upto_full _ _ _ (Array.size_replicate ..)]
-
 /-- A plane of an array, tabulated. -/
 theorem encode_map_coord (a : Array EF) (k : Fin (FastExt.d p EF)) :
     encode (a.map (FastExt.coord · k)) =
@@ -192,75 +164,60 @@ theorem encode_map_coord (a : Array EF) (k : Fin (FastExt.d p EF)) :
   rw [Array.size_map] at h1
   rw [Array.getElem_map, getElem_tab, getD_lt a i h1]
 
-/-- The even and odd elements of pairs `r0, …, r0 + len - 1`. -/
-theorem split_rel {v : ExtPlanes p EF} {a : Array EF} (hv : ExtPlanes.Rel v a) (r0 len : Nat)
-    (hr : 2 * (r0 + len) ≤ a.size) (hs : 4 * a.size < USize.size) :
-    ExtPlanes.Rel ⟨len, (v.c.map fun b ↦ deinterleave (slice b (2 * r0) (2 * len)) len).map (·.1)⟩
-      (tab len fun i ↦ a.getD (2 * (r0 + i)) 0) ∧
-    ExtPlanes.Rel ⟨len, (v.c.map fun b ↦ deinterleave (slice b (2 * r0) (2 * len)) len).map (·.2)⟩
-      (tab len fun i ↦ a.getD (2 * (r0 + i) + 1) 0) := by
-  obtain ⟨-, hc⟩ := hv
-  have hx (k : Fin (FastExt.d p EF)) :
-      2 * r0 + 2 * len ≤ (a.map (FastExt.coord · k)).size := by rw [Array.size_map]; omega
-  have hd (k : Fin (FastExt.d p EF)) :
-      2 * len ≤ ((a.map (FastExt.coord · k)).extract (2 * r0) (2 * r0 + 2 * len)).size := by
-    rw [Array.size_extract, Array.size_map]; omega
-  have hds (k : Fin (FastExt.d p EF)) :
-      4 * ((a.map (FastExt.coord · k)).extract (2 * r0) (2 * r0 + 2 * len)).size < USize.size := by
-    rw [Array.size_extract, Array.size_map]; omega
-  have he (k : Fin (FastExt.d p EF)) (j : Nat) (hj : j < 2 * len) :
-      ((a.map (FastExt.coord · k)).extract (2 * r0) (2 * r0 + 2 * len)).getD j 0 =
-        FastExt.coord (a.getD (2 * r0 + j) 0) k := by
-    rw [CompPoly.CPolynomial.NTTFast.Packed.getD_extract _ _ _ _ _ (hx k) hj,
-      ExtPlanes.getD_map a _ _ (by omega), getD_lt a _ (by omega)]
-  constructor
-  · refine ExtPlanes.rel_mk _ _ fun k ↦ ?_
-    rw [Fin.getElem_fin, Vector.getElem_map, Vector.getElem_map, ← Fin.getElem_fin, hc k,
-      slice_encode, deinterleave_encode _ _ (hd k) (hds k)]
-    refine congrArg encode (congrArg Array.ofFn (funext fun i ↦ ?_))
-    rw [he k _ (by omega)]
-    show _ = FastExt.coord (a.getD (2 * (r0 + i.val)) 0) k
-    rw [Nat.mul_add]
-  · refine ExtPlanes.rel_mk _ _ fun k ↦ ?_
-    rw [Fin.getElem_fin, Vector.getElem_map, Vector.getElem_map, ← Fin.getElem_fin, hc k,
-      slice_encode, deinterleave_encode _ _ (hd k) (hds k)]
-    refine congrArg encode (congrArg Array.ofFn (funext fun i ↦ ?_))
-    rw [he k _ (by omega)]
-    show _ = FastExt.coord (a.getD (2 * (r0 + i.val) + 1) 0) k
-    rw [Nat.mul_add, Nat.add_assoc]
-
 /-- Pairs `r0, …, r0 + len - 1` of the fold, given the encoded inverses of `2 x` of all pairs. -/
 theorem fold2Range_rel [Mont32BaseField p] [Mont32.AlgebraId EF] {v : ExtPlanes p EF}
     {a : Array EF} (hv : ExtPlanes.Rel v a) (T : Array F) (beta : EF)
     (r0 len : Nat) (hr : 2 * (r0 + len) ≤ a.size) (hs : 4 * a.size < USize.size)
-    (hT : r0 + len ≤ T.size) :
+    (hT : r0 + len ≤ T.size) (hTs : 4 * T.size < USize.size) :
     ExtPlanes.Rel (fold2Range v (encode (T.map (·⁻¹))) beta r0 len) (Array.ofFn (n := len) fun k ↦
       (a.getD (2 * (r0 + k.val)) 0 + a.getD (2 * (r0 + k.val) + 1) 0) * Ext.ofBase (2 : F)⁻¹ +
         beta * (a.getD (2 * (r0 + k.val)) 0 - a.getD (2 * (r0 + k.val) + 1) 0) *
           Ext.ofBase (T.getD (r0 + k.val) 0)⁻¹) := by
-  obtain ⟨hl, hh⟩ := split_rel hv r0 len hr hs
+  obtain ⟨-, hc⟩ := hv
   have hn : 4 * len < USize.size := by omega
-  have hinv : slice (encode (T.map (·⁻¹))) r0 len =
-      encode (Array.ofFn (n := len) fun k ↦ (T.getD (r0 + k.val) 0)⁻¹) := by
-    rw [slice_encode]
-    apply congrArg encode
-    apply Array.ext
-    · simp only [Array.size_extract, Array.size_map, Array.size_ofFn]
-      omega
-    · intro k h1 _
-      simp only [Array.size_extract, Array.size_map] at h1
-      rw [Array.getElem_extract, Array.getElem_map, Array.getElem_ofFn, getD_lt _ _ (by omega)]
+  have hx (k : Fin (FastExt.d p EF)) : 2 * (r0 + len) ≤ (a.map (FastExt.coord · k)).size := by
+    rw [Array.size_map]; exact hr
+  have hxs (k : Fin (FastExt.d p EF)) : 4 * (a.map (FastExt.coord · k)).size < USize.size := by
+    rw [Array.size_map]; exact hs
+  have he (k : Fin (FastExt.d p EF)) (j : Nat) (hj : j < a.size) :
+      (a.map (FastExt.coord · k)).getD j 0 = FastExt.coord (a.getD j 0) k := by
+    rw [ExtPlanes.getD_map a _ _ hj, getD_lt a j hj]
+  let lo (i : Nat) : EF := a.getD (2 * (r0 + i)) 0
+  let hi (i : Nat) : EF := a.getD (2 * (r0 + i) + 1) 0
+  have hS : ExtPlanes.Rel ⟨len, v.c.map fun b ↦ CompStark.Fri.FoldWords.halves p b r0 len⟩
+      (tab len fun i ↦ (lo i + hi i) * FastExt.ofBase (2 : F)⁻¹) := by
+    refine ExtPlanes.rel_mk _ _ fun k ↦ ?_
+    rw [Fin.getElem_fin, Vector.getElem_map, ← Fin.getElem_fin, hc k,
+      CompStark.Fri.FoldWords.halves_encode _ _ _ (hx k) (hxs k)]
+    refine congrArg encode (congrArg Array.ofFn (funext fun i ↦ ?_))
+    have := i.isLt
+    dsimp only [lo, hi]
+    rw [he k (2 * (r0 + i)) (by omega), he k (2 * (r0 + i) + 1) (by omega),
+      FastExt.coord_mul_ofBase, FastExt.coord_add,
+      Pi.add_apply]
+    rfl
+  have hD : ExtPlanes.Rel
+      ⟨len, v.c.map fun b ↦ CompStark.Fri.FoldWords.diffs p b (encode (T.map (·⁻¹))) r0 len⟩
+      (tab len fun i ↦ (lo i - hi i) * FastExt.ofBase (T.getD (r0 + i) 0)⁻¹) := by
+    refine ExtPlanes.rel_mk _ _ fun k ↦ ?_
+    rw [Fin.getElem_fin, Vector.getElem_map, ← Fin.getElem_fin, hc k,
+      CompStark.Fri.FoldWords.diffs_encode _ _ _ _ (hx k) (by rw [Array.size_map]; exact hT)
+        (hxs k) (by rw [Array.size_map]; exact hTs)]
+    refine congrArg encode (congrArg Array.ofFn (funext fun i ↦ ?_))
+    have := i.isLt
+    dsimp only [lo, hi]
+    rw [he k (2 * (r0 + i)) (by omega), he k (2 * (r0 + i) + 1) (by omega),
+      FastExt.coord_mul_ofBase, FastExt.coord_sub,
+      Pi.sub_apply, getD_lt (T.map (·⁻¹)) (r0 + i) (by rw [Array.size_map]; omega),
+      Array.getElem_map,
+      ← getD_lt T _ (by omega)]
   unfold fold2Range
   simp only
-  rw [hinv]
-  have h1 := ExtPlanes.mulBase_rel hn (fun _ ↦ (2 : F)⁻¹) (ExtPlanes.add_rel hn hl hh)
-  rw [← Words.replicateWord_tab hn] at h1
-  have h2 := ExtPlanes.smul_rel hn beta (ExtPlanes.mulBase_rel hn
-    (fun k ↦ (T.getD (r0 + k) 0)⁻¹) (ExtPlanes.sub_rel hn hl hh))
-  refine RV_congr (ExtPlanes.add_rel hn h1 h2) (congrArg Array.ofFn (funext fun k ↦ ?_))
+  have h2 := ExtPlanes.smul_rel hn beta hD
+  refine RV_congr (ExtPlanes.add_rel hn hS h2) (congrArg Array.ofFn (funext fun k ↦ ?_))
   apply FastExt.toSpec_injective
-  simp only [← Mont32.toSpec_eq, Challenge.toSpec_add, Challenge.toSpec_mul, Challenge.toSpec_sub,
-    ← Mont32.ofBase_eq]
+  simp only [lo, hi, ← Mont32.toSpec_eq, Challenge.toSpec_add, Challenge.toSpec_mul,
+    Challenge.toSpec_sub, ← Mont32.ofBase_eq]
   ring
 
 /-- Vectors within the two-adic subgroups have indexable coordinates when the largest
@@ -334,7 +291,7 @@ theorem fold2_rel [Mont32BaseField p] [Mont32.AlgebraId EF]
       else 2 ^ k / parts) fun j ↦ E (p * (2 ^ k / parts) + j.val))
     (fun p hp' ↦ by
       have hle := range_le (2 ^ k) parts p hp'
-      exact fold2Range_rel h T beta _ _ (by omega) hs (by omega))
+      exact fold2Range_rel h T beta _ _ (by omega) hs (by omega) (by omega))
     (by rw [hcat, Array.size_ofFn])
   rw [hcat] at hj
   refine RV_congr hj ?_
