@@ -12,7 +12,7 @@ package CompStark where
 -- decodes, the Montgomery word kernels with batch inversions carrying unboxed products, and
 -- coordinate planes generic over fast extensions.
 require CompPoly from git "https://github.com/mitschabaude-bot/CompPoly.git" @
-    "e747d79067f3cd7d550c31e56ccd28edeb672597"
+    "f660f186e7c47e7b5cb87e8da72f077b294e83dd"
 
 -- ArkLib main with Johnson-regime mutual correlated agreement for power curves, lossy mutual
 -- correlated agreement, FRI on the interaction layer with its knowledge certificate on Plonky3's
