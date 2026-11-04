@@ -14,8 +14,8 @@ The leaf digests of a matrix whose columns lie in separate buffers: column `j` o
 width-24 group, one row per lane, as for row-major matrices (`hashRange`); a block of sixteen
 columns of the eight rows is sixteen lines of eight consecutive words, loaded straight into the
 group's lanes, and a partial last block loads the group's other coordinates from the group itself,
-so that the sponge's overwrite leaves them. All groups of a range of rows are absorbed side by side, block by block, so that
-every block's columns are read once for the range.
+so that the sponge's overwrite leaves them. All groups of a range of rows are absorbed side by
+side, block by block, so that every block's columns are read once for the range.
 -/
 
 @[expose] public section

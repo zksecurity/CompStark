@@ -17,7 +17,8 @@ import CompStarkFixtures.KeccakKernel
 `2 ^ LOG_N` chained states; prints the median nanoseconds per permutation of seven runs.
 `CompStarkBench babybear-perm LOG_N`: BabyBear's packed permutations of widths 16 and 24 on
 `2 ^ LOG_N` states, and its width-16 specification on one state.
-`CompStarkBench phases-lookup`: the wall time of every phase of a batch proof of `lookupBatch 18 16`.
+`CompStarkBench phases-lookup`: the wall time of every phase of a batch proof of
+`lookupBatch 18 16`.
 -/
 
 open CompStark.Poseidon2
