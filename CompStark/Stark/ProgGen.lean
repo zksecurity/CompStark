@@ -518,4 +518,307 @@ elab "#gen_fused_chunks " K:ident prog:term:max size:num part:num parts:num : co
       let tv : TheoremVal := { name := thmName, levelParams := [], type := thm.1, value := thm.2 }
       liftCoreM <| addDecl (.thmDecl tv)
 
+elab "#gen_fused_chunks_local " K:ident prog:term:max size:num part:num parts:num : command =>
+  withScope (fun sc ↦ { sc with opts := maxHeartbeats.set (maxRecDepth.set sc.opts 100000) 0 }) do
+    let g ← liftTermElabM (evalProg prog)
+    let N := size.getNat
+    let K := K.getId
+    let R := g.code.foldl (init := 0) fun m i ↦ match i with
+      | .load d _ | .scalar d _ | .bin _ d _ _ => max m (d + 1)
+      | .acc .. => m
+    let chunks := (g.code.size + N - 1) / N
+    -- every chunk's accumulations in slots from register `R0` on, `nslots` for the most of them
+    let nslots := (List.range chunks).foldl (init := 0) fun m k ↦ max m
+      ((g.code.extract (k * N) ((k + 1) * N)).foldl (init := 0) fun m i ↦ match i with
+        | .acc .. => m + 1 | _ => m)
+    let R0 := R
+    let R := R0 + nslots
+    let colsOf : Opd UInt32 → Nat := fun | .cur c => c | _ => 0
+    let C := g.code.foldl (init := 0) fun m i ↦ match i with
+      | .bin _ _ a b => max m (max (colsOf a) (colsOf b))
+      | .acc a _ => max m (colsOf a)
+      | _ => m
+    let lo := part.getNat * chunks / parts.getNat
+    let hi := (part.getNat + 1) * chunks / parts.getNat
+    let envT := mkConst ``GroupEnv
+    let baT := mkConst ``ByteArray
+    let u32 := mkConst ``UInt32
+    -- the operations on words as functions of this module, which the C compiler inlines
+    let opStr : Op → String := fun | .add => "add" | .sub => "sub" | .mul => "mul"
+    let opName (o : String) : Name := K ++ Name.mkSimple s!"{o}_{part.getNat}"
+    for (o, oE) in [("add", mkConst ``Op.add), ("sub", mkConst ``Op.sub),
+        ("mul", mkConst ``Op.mul)] do
+      let ty ← liftTermElabM do mkArrow u32 (← mkArrow u32 u32)
+      let val ← liftTermElabM do
+        withLocalDeclD `x u32 fun x => withLocalDeclD `y u32 fun y => do
+          mkLambdaFVars #[x, y] (mkAppN (mkConst ``Op.wordG) #[g.P, g.inst, oE, x, y])
+      -- opaque to the kernel's lazy unfolding, so that checking a chunk unfolds `ops` to it
+      -- instead of unfolding it into word arithmetic
+      liftCoreM <| addDecl (.defnDecl (mkDefinitionValEx (opName o) [] ty val .opaque .safe []))
+      match Lean.Compiler.setInlineAttribute (← getEnv) (opName o) .noinline with
+      | .ok env => setEnv env
+      | .error e => throwError e
+      liftCoreM <| compileDecl (.defnDecl (mkDefinitionValEx (opName o) [] ty val .opaque .safe
+        []))
+    let opsName := K ++ Name.mkSimple s!"ops_{part.getNat}"
+    let opsT ← liftTermElabM do
+      mkArrow (mkConst ``Op) (← mkArrow u32 (← mkArrow u32 u32))
+    let opsV ← liftTermElabM do
+      withLocalDeclD `o (mkConst ``Op) fun o => withLocalDeclD `x u32 fun x =>
+        withLocalDeclD `y u32 fun y => do
+          mkLambdaFVars #[o, x, y] (mkAppN (mkConst ``opsOf) #[mkConst (opName "add"),
+            mkConst (opName "sub"), mkConst (opName "mul"), o, x, y])
+    liftCoreM <| addAndCompile (.defnDecl (mkDefinitionValEx opsName [] opsT opsV
+      (.regular 0) .safe []))
+    let instrT := mkApp (mkConst ``Instr) g.F
+    for k in [lo:hi] do
+      let instrs := (g.code.extract (k * N) ((k + 1) * N)).toList
+      let colsK : Array Nat := instrs.foldl (init := #[]) fun acc i ↦
+        let add (acc : Array Nat) : Opd UInt32 → Array Nat := fun
+          | .cur c => if acc.contains c then acc else acc.push c | _ => acc
+        match i with
+        | .bin _ _ a b => add (add acc a) b
+        | .acc a _ => add acc a
+        | _ => acc
+      let C := colsK.size - 1
+      let colsName := K ++ Name.mkSimple s!"fcols_{k}"
+      liftCoreM <| addAndCompile (.defnDecl (mkDefinitionValEx colsName []
+        (mkApp (mkConst ``Array [0]) (mkConst ``Nat))
+        (← liftTermElabM (mkArrayLit (mkConst ``Nat) (colsK.toList.map mkNatLit)))
+        (.regular 0) .safe []))
+      let codeName := K ++ Name.mkSimple s!"fcode_{k}"
+      let codeE ← liftTermElabM do mkListLit instrT (← instrs.mapM fun i =>
+          (instrE g i : MetaM Lean.Expr))
+      liftCoreM <| addAndCompile (.defnDecl (mkDefinitionValEx codeName []
+        (mkApp (mkConst ``List [0]) instrT) codeE (.regular 0) .safe []))
+      let chunkName := K ++ Name.mkSimple s!"fchunk_{k}"
+      let (ty, val) ← liftTermElabM do
+        withLocalDeclD `env envT fun env => withLocalDeclD `s baT fun s => do
+          let n := mkApp (mkConst ``ByteArray.size) s
+          let okT := mkAppN (mkConst ``FusedOk) #[env, n, natE R, natE C]
+          let bufT := mkApp (mkConst ``CompPoly.CPolynomial.NTTFast.Packed.Native.Buf) n
+          let pred := Lean.mkLambda `x .default baT
+            (mkApp3 (mkConst ``Eq [1]) (mkConst ``Nat) (mkApp (mkConst ``ByteArray.size) (.bvar 0)) n)
+          let valE (b : Lean.Expr) : Lean.Expr := mkApp3 (mkConst ``Subtype.val [1]) baT pred b
+          let thenE ← withLocalDeclD `h okT fun h => do
+            let lctx ← getLCtx
+            let b0 := mkApp (mkConst ``bufOf) s
+            let st0 : FusedGen := ⟨lctx, #[], b0, {}, {}, 0⟩
+            let lanesT := mkConst ``Lanes
+            let wE (L : Lean.Expr) (j : Nat) : Lean.Expr :=
+              mkApp (mkConst (``Lanes ++ Name.mkSimple s!"w{j}")) L
+            -- a let of the chunk, in order (`lets`): every read of the buffer before the next
+            -- store, so that the buffer is stored into in place
+            let addLet (st : FusedGen) (ty v : Lean.Expr) : MetaM (FusedGen × Lean.Expr) := do
+              let fid ← mkFreshFVarId
+              let lctx := st.lctx.mkLetDecl fid (Name.mkSimple s!"x{st.next}") ty v
+              return ({ st with lctx, lets := st.lets.push (.fvar fid), next := st.next + 1 },
+                .fvar fid)
+            let regLanes (st : FusedGen) (r : Nat) : MetaM (FusedGen × Array Lean.Expr) := do
+              match st.regs[r]? with
+              | some ls => return (st, ls)
+              | none =>
+                let (st, L) ← addLet st lanesT (mkAppN (mkConst ``ldLanes)
+                  #[env, n, natE R, natE C, h, st.buf, natE r])
+                let ls := (Array.range 16).map (wE L)
+                return ({ st with regs := st.regs.insert r ls }, ls)
+            let lanes (st : FusedGen) (a : Opd UInt32) : MetaM (FusedGen × Array Lean.Expr) := do
+              match a with
+              | .const x => return (st, Array.replicate 16 (toExpr x))
+              | .reg r => regLanes st r
+              | .cur c =>
+                match st.cols[c]? with
+                | some ls => return (st, ls)
+                | none =>
+                  let ci := colsK.idxOf c
+                  let ls := (Array.range 16).map fun j ↦ mkAppN (mkConst ``ldC)
+                    #[env, n, natE R, natE C, h, natE ci, leProof ci C, natE j, leProof j 15]
+                  return ({ st with cols := st.cols.insert c ls }, ls)
+            let store (st : FusedGen) (d : Nat) (ls : Array Lean.Expr) : FusedGen :=
+              let b := mkAppN (mkConst ``stR)
+                (#[env, n, natE R, natE C, h, st.buf, natE d, leProof (d + 1) R] ++ ls)
+              { st with buf := b }
+            let mut st := st0
+            let mut slot := 0
+            for i in instrs do
+              match i with
+              | .bin o d a b =>
+                let (st1, la) ← lanes st a
+                let (st2, lb) ← lanes st1 b
+                let lz := (Array.range 16).map fun j ↦
+                  mkApp2 (mkConst (opName (opStr o))) la[j]! lb[j]!
+                st := { store st2 d lz with regs := st2.regs.insert d lz }
+              | .load d src =>
+                let call := mkAppN (mkConst ``loadF) #[env, natE d, srcE src, valE st.buf]
+                let (st1, b') ← addLet st bufT (mkAppN (mkConst ``keep) #[n, st.buf, call,
+                  mkAppN (mkConst ``size_loadF) #[env, natE d, srcE src, valE st.buf]])
+                let (st2, L) ← addLet { st1 with buf := b' } lanesT
+                  (mkAppN (mkConst ``ldLanes) #[env, n, natE R, natE C, h, b', natE d])
+                st := { st2 with regs := st2.regs.insert d ((Array.range 16).map (wE L)) }
+              | .scalar d si =>
+                let lx := Array.replicate 16 (mkApp2 (mkConst ``scalAt) env (natE si))
+                st := { store st d lx with regs := st.regs.insert d lx }
+              | .acc a _ =>
+                let (st1, la) ← lanes st a
+                st := store st1 (R0 + slot) la
+                slot := slot + 1
+            let body := st.lctx.mkBinding true st.lets (valE st.buf)
+            mkLambdaFVars #[h] body
+          let elseE ← withLocalDeclD `h (mkNot okT) fun h => mkLambdaFVars #[h] s
+          let inst := mkAppN (mkConst ``instDecidableFusedOk) #[env, n, natE R, natE C]
+          let body := mkAppN (mkConst ``dite [1]) #[baT, okT, inst, thenE, elseE]
+          return (← mkForallFVars #[env, s] baT, ← mkLambdaFVars #[env, s] body)
+      liftCoreM <| addAndCompile (.defnDecl
+          (mkDefinitionValEx chunkName [] ty val .opaque .safe []))
+      let thm ← liftTermElabM do
+        withLocalDeclD `env envT fun env => withLocalDeclD `s baT fun s => do
+          let lhs := mkApp2 (mkConst chunkName) env s
+          let rhs := mkAppN (mkConst ``fusedChunk) #[g.P, g.inst, mkConst opsName, mkNatLit R0,
+            mkNatLit nslots, mkNatLit C, mkConst codeName, env, s]
+          return (← mkForallFVars #[env, s] (← mkEq lhs rhs),
+            ← mkLambdaFVars #[env, s] (← mkEqRefl lhs))
+      let thmName := K ++ Name.mkSimple s!"fchunk_{k}_eq"
+      let tv : TheoremVal := { name := thmName, levelParams := [], type := thm.1, value := thm.2 }
+      let _ := tv
+
+/-- `#gen_acc_chunks K prog na size i n`: for the `i`-th of `n` parts of the chunks of `size`
+instructions of the program `prog`, their accumulation chunks for `na` accumulators,
+`K.achunk_na_k`, with `K.achunk_na_k_eq : K.achunk_na_k = accChunk K.aops_na_i R0 na ws` for the
+chunk's weights `ws`, checked by `rfl`. -/
+elab "#gen_acc_chunks " K:ident prog:term:max na:num size:num part:num parts:num : command =>
+  withScope (fun sc ↦ { sc with opts := maxHeartbeats.set (maxRecDepth.set sc.opts 100000) 0 }) do
+    let g ← liftTermElabM (evalProg prog)
+    let N := size.getNat
+    let K := K.getId
+    let na := na.getNat
+    let R0 := g.code.foldl (init := 0) fun m i ↦ match i with
+      | .load d _ | .scalar d _ | .bin _ d _ _ => max m (d + 1)
+      | .acc .. => m
+    let chunks := (g.code.size + N - 1) / N
+    let lo := part.getNat * chunks / parts.getNat
+    let hi := (part.getNat + 1) * chunks / parts.getNat
+    let envT := mkConst ``GroupEnv
+    let baT := mkConst ``ByteArray
+    let u32 := mkConst ``UInt32
+    let lanesT := mkConst ``Lanes
+    let opName (o : String) : Name := K ++ Name.mkSimple s!"a{o}_{na}_{part.getNat}"
+    for (o, oE) in [("add", mkConst ``Op.add), ("sub", mkConst ``Op.sub),
+        ("mul", mkConst ``Op.mul)] do
+      let ty ← liftTermElabM do mkArrow u32 (← mkArrow u32 u32)
+      let val ← liftTermElabM do
+        withLocalDeclD `x u32 fun x => withLocalDeclD `y u32 fun y => do
+          mkLambdaFVars #[x, y] (mkAppN (mkConst ``Op.wordG) #[g.P, g.inst, oE, x, y])
+      liftCoreM <| addDecl (.defnDecl (mkDefinitionValEx (opName o) [] ty val .opaque .safe []))
+      match Lean.Compiler.setInlineAttribute (← getEnv) (opName o) .noinline with
+      | .ok env => setEnv env
+      | .error e => throwError e
+      liftCoreM <| compileDecl (.defnDecl (mkDefinitionValEx (opName o) [] ty val .opaque .safe
+        []))
+    let mul4Name := K ++ Name.mkSimple s!"amul4_{na}_{part.getNat}"
+    let mul4T ← liftTermElabM do
+      let mut t := u32
+      for _ in [0:8] do t ← mkArrow u32 t
+      return t
+    let mul4V ← liftTermElabM do
+      let names := #[`a, `b, `c, `d, `e, `f, `g, `k]
+      let rec go (i : Nat) (xs : Array Lean.Expr) : MetaM Lean.Expr := do
+        if h : i < names.size then
+          withLocalDeclD names[i] u32 fun x => go (i + 1) (xs.push x)
+        else
+          mkLambdaFVars xs (mkAppN (mkConst ``Montgomery.Native32.Words.mulAdd4)
+            (#[g.P, g.inst] ++ xs))
+      go 0 #[]
+    liftCoreM <| addDecl (.defnDecl (mkDefinitionValEx mul4Name [] mul4T mul4V .opaque .safe []))
+    match Lean.Compiler.setInlineAttribute (← getEnv) mul4Name .noinline with
+    | .ok env => setEnv env
+    | .error e => throwError e
+    liftCoreM <| compileDecl (.defnDecl (mkDefinitionValEx mul4Name [] mul4T mul4V .opaque .safe
+      []))
+    let opsName := K ++ Name.mkSimple s!"aops_{na}_{part.getNat}"
+    let opsT ← liftTermElabM do
+      mkArrow (mkConst ``Op) (← mkArrow u32 (← mkArrow u32 u32))
+    let opsV ← liftTermElabM do
+      withLocalDeclD `o (mkConst ``Op) fun o => withLocalDeclD `x u32 fun x =>
+        withLocalDeclD `y u32 fun y => do
+          mkLambdaFVars #[o, x, y] (mkAppN (mkConst ``opsOf) #[mkConst (opName "add"),
+            mkConst (opName "sub"), mkConst (opName "mul"), o, x, y])
+    liftCoreM <| addAndCompile (.defnDecl (mkDefinitionValEx opsName [] opsT opsV
+      (.regular 0) .safe []))
+    for k in [lo:hi] do
+      let ws : List Nat := (g.code.extract (k * N) ((k + 1) * N)).toList.filterMap fun
+        | .acc _ w => some w | _ => none
+      let m := ws.length
+      let chunkName := K ++ Name.mkSimple s!"achunk_{na}_{k}"
+      let wE (L : Lean.Expr) (j : Nat) : Lean.Expr :=
+        mkApp (mkConst (``Lanes ++ Name.mkSimple s!"w{j}")) L
+      let (ty, val) ← liftTermElabM do
+        withLocalDeclD `env envT fun env => withLocalDeclD `sc baT fun sc =>
+            withLocalDeclD `acc baT fun acc => do
+          let n := mkApp (mkConst ``ByteArray.size) sc
+          let a := mkApp (mkConst ``ByteArray.size) acc
+          let okT := mkAppN (mkConst ``AccOk) #[n, a, natE R0, natE m, natE na]
+          let bufT := mkApp (mkConst ``CompPoly.CPolynomial.NTTFast.Packed.Native.Buf) a
+          let pred := Lean.mkLambda `x .default baT
+            (mkApp3 (mkConst ``Eq [1]) (mkConst ``Nat) (mkApp (mkConst ``ByteArray.size) (.bvar 0)) a)
+          let thenE ← withLocalDeclD `h okT fun h => do
+            let imp := #[n, a, natE R0, natE m, natE na, h]
+            let b0 := mkApp (mkConst ``bufOf) acc
+            let mut lctx ← getLCtx
+            let mut lets : Array Lean.Expr := #[]
+            let mut planes : Array (Array Lean.Expr) := #[]
+            for j in [0:na] do
+              let fid ← mkFreshFVarId
+              lctx := lctx.mkLetDecl fid (Name.mkSimple s!"p{j}") lanesT
+                (mkAppN (mkConst ``planeLanes) (imp ++ #[b0, natE j]))
+              lets := lets.push (.fvar fid)
+              planes := planes.push ((Array.range 16).map (wE (.fvar fid)))
+            let mut slots : Array (Array Lean.Expr) := #[]
+            for t in [0:m] do
+              let fid ← mkFreshFVarId
+              lctx := lctx.mkLetDecl fid (Name.mkSimple s!"s{t}") lanesT
+                (mkAppN (mkConst ``slotLanes) (imp ++ #[sc,
+                  mkApp2 (mkConst ``Eq.refl [1]) (mkConst ``Nat) n, natE t]))
+              lets := lets.push (.fvar fid)
+              slots := slots.push ((Array.range 16).map (wE (.fvar fid)))
+            let mut buf := b0
+            let c (t j : Nat) : Lean.Expr := mkApp2 (mkConst ``wtAt) env (natE (na * ws.getD t 0 + j))
+            for q in [0:m / 4] do
+              for j in [0:na] do
+                let pj := planes.getD j #[]
+                let lz := (Array.range 16).map fun x ↦ mkApp2 (mkConst (opName "add")) (pj.getD x b0)
+                  (mkAppN (mkConst mul4Name) #[(slots.getD (4 * q) #[]).getD x b0, c (4 * q) j,
+                    (slots.getD (4 * q + 1) #[]).getD x b0, c (4 * q + 1) j,
+                    (slots.getD (4 * q + 2) #[]).getD x b0, c (4 * q + 2) j,
+                    (slots.getD (4 * q + 3) #[]).getD x b0, c (4 * q + 3) j])
+                buf := mkAppN (mkConst ``stP) (imp ++ #[buf, natE j, leProof (j + 1) na] ++ lz)
+                planes := planes.set! j lz
+            for t in [4 * (m / 4):m] do
+              for j in [0:na] do
+                let pj := planes.getD j #[]
+                let st := slots.getD t #[]
+                let lz := (Array.range 16).map fun x ↦ mkApp2 (mkConst (opName "add")) (pj.getD x b0)
+                  (mkApp2 (mkConst (opName "mul")) (st.getD x b0) (c t j))
+                buf := mkAppN (mkConst ``stP) (imp ++ #[buf, natE j, leProof (j + 1) na] ++ lz)
+                planes := planes.set! j lz
+            mkLambdaFVars #[h] (lctx.mkBinding true lets
+              (mkApp3 (mkConst ``Subtype.val [1]) baT pred buf))
+          let elseE ← withLocalDeclD `h (mkNot okT) fun h => mkLambdaFVars #[h] acc
+          let inst := mkAppN (mkConst ``instDecidableAccOk) #[n, a, natE R0, natE m, natE na]
+          let body := mkAppN (mkConst ``dite [1]) #[baT, okT, inst, thenE, elseE]
+          return (← mkForallFVars #[env, sc, acc] baT, ← mkLambdaFVars #[env, sc, acc] body)
+      liftCoreM <| addAndCompile (.defnDecl
+          (mkDefinitionValEx chunkName [] ty val .opaque .safe []))
+      let thm ← liftTermElabM do
+        withLocalDeclD `env envT fun env => withLocalDeclD `sc baT fun sc =>
+            withLocalDeclD `acc baT fun acc => do
+          let lhs := mkApp3 (mkConst chunkName) env sc acc
+          let wsE ← mkListLit (mkConst ``Nat) (ws.map mkNatLit)
+          let rhs := mkAppN (mkConst ``accChunk) #[mkConst opsName, mkConst mul4Name, mkNatLit R0,
+            mkNatLit na, wsE, env, sc, acc]
+          return (← mkForallFVars #[env, sc, acc] (← mkEq lhs rhs),
+            ← mkLambdaFVars #[env, sc, acc] (← mkEqRefl lhs))
+      let thmName := chunkName ++ `eq
+      let tv : TheoremVal := { name := thmName, levelParams := [], type := thm.1, value := thm.2 }
+      liftCoreM <| addDecl (.thmDecl tv)
+
 end CompStark.Stark.Prog

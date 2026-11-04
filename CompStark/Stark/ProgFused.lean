@@ -364,4 +364,137 @@ def runGroup (k : FusedKernel p) (env : GroupEnv) (g : Nat) (sc : ByteArray) : B
 
 end FusedKernel
 
+/-- The weights' word `i` of a group. -/
+@[inline] def wtAt (env : @& GroupEnv) (i : Nat) : UInt32 := env.wts.getD i 0
+
+/-! ### Accumulation chunks
+
+After a chunk, its slots times their weights are added to the group's accumulators, one
+accumulation chunk per chunk and number of accumulators: straight-line code holding the
+accumulators' words in locals, every result stored (`accChunk`). -/
+
+/-- The words an accumulation chunk reads and writes: `m` slots of sixteen words from register
+`R0` of a chunk's buffer of `n` bytes, and `na` accumulators of sixteen words in a buffer of
+`a` bytes. -/
+def AccOk (n a R0 m na : Nat) : Prop :=
+  4 * (16 * (R0 + m)) ≤ n ∧ n < USize.size ∧ 4 * (16 * na) ≤ a ∧ a < USize.size
+
+instance instDecidableAccOk (n a R0 m na : Nat) : Decidable (AccOk n a R0 m na) := by
+  unfold AccOk; infer_instance
+
+section
+variable {n a R0 m na : Nat}
+
+theorem slotWin (h : AccOk n a R0 m na) {b : ByteArray} (hb : b.size = n) {t : Nat}
+    (ht : t < m) : Win b (fOff (R0 + t)) := by
+  obtain ⟨h1, h2, -⟩ := h
+  have e : (fOff (R0 + t)).toNat = 16 * (R0 + t) := USize.toNat_ofNat_of_lt' (by omega)
+  unfold Win
+  rw [e, hb]
+  omega
+
+theorem planeWin (h : AccOk n a R0 m na) {b : ByteArray} (hb : b.size = a) {j : Nat}
+    (hj : j < na) : Win b (fOff j) := by
+  obtain ⟨-, -, h3, h4⟩ := h
+  have e : (fOff j).toNat = 16 * j := USize.toNat_ofNat_of_lt' (by omega)
+  unfold Win
+  rw [e, hb]
+  omega
+
+/-- Word `k` of slot `t`. -/
+@[inline] def ldS (h : AccOk n a R0 m na) (sc : @& ByteArray) (hsc : sc.size = n) (t : Nat)
+    (ht : t < m) (k : Nat) (hk : k ≤ 15) : UInt32 :=
+  ld sc (fOff (R0 + t)) (slotWin h hsc ht) k hk
+
+/-- Word `k` of accumulator `j`. -/
+@[inline] def ldP (h : AccOk n a R0 m na) (b : @& Buf a) (j : Nat) (hj : j < na) (k : Nat)
+    (hk : k ≤ 15) : UInt32 :=
+  ld b.1 (fOff j) (planeWin h b.2 hj) k hk
+
+/-- Sixteen words stored into accumulator `j`. -/
+@[inline] def stP (h : AccOk n a R0 m na) (b : Buf a) (j : Nat) (hj : j < na)
+    (v0 v1 v2 v3 v4 v5 v6 v7 v8 v9 v10 v11 v12 v13 v14 v15 : UInt32) : Buf a :=
+  ⟨st16 b.1 (fOff j) (planeWin h b.2 hj) v0 v1 v2 v3 v4 v5 v6 v7 v8 v9 v10 v11 v12 v13 v14 v15,
+    (size_st16 ..).trans b.2⟩
+
+/-- Slot `t`'s words. -/
+@[inline] def slotLanes (h : AccOk n a R0 m na) (sc : @& ByteArray) (hsc : sc.size = n)
+    (t : Nat) : Lanes :=
+  if ht : t < m then
+    ⟨ldS h sc hsc t ht 0 (by decide), ldS h sc hsc t ht 1 (by decide),
+    ldS h sc hsc t ht 2 (by decide), ldS h sc hsc t ht 3 (by decide),
+    ldS h sc hsc t ht 4 (by decide), ldS h sc hsc t ht 5 (by decide),
+    ldS h sc hsc t ht 6 (by decide), ldS h sc hsc t ht 7 (by decide),
+    ldS h sc hsc t ht 8 (by decide), ldS h sc hsc t ht 9 (by decide),
+    ldS h sc hsc t ht 10 (by decide), ldS h sc hsc t ht 11 (by decide),
+    ldS h sc hsc t ht 12 (by decide), ldS h sc hsc t ht 13 (by decide),
+    ldS h sc hsc t ht 14 (by decide), ldS h sc hsc t ht 15 (by decide)⟩
+  else Lanes.rep 0
+
+/-- Accumulator `j`'s words. -/
+@[inline] def planeLanes (h : AccOk n a R0 m na) (b : Buf a) (j : Nat) : Lanes :=
+  if hj : j < na then
+    ⟨ldP h b j hj 0 (by decide), ldP h b j hj 1 (by decide), ldP h b j hj 2 (by decide),
+    ldP h b j hj 3 (by decide), ldP h b j hj 4 (by decide), ldP h b j hj 5 (by decide),
+    ldP h b j hj 6 (by decide), ldP h b j hj 7 (by decide), ldP h b j hj 8 (by decide),
+    ldP h b j hj 9 (by decide), ldP h b j hj 10 (by decide), ldP h b j hj 11 (by decide),
+    ldP h b j hj 12 (by decide), ldP h b j hj 13 (by decide), ldP h b j hj 14 (by decide),
+    ldP h b j hj 15 (by decide)⟩
+  else Lanes.rep 0
+
+/-- Words stored into accumulator `j`. -/
+@[inline] def stPlane (h : AccOk n a R0 m na) (b : Buf a) (j : Nat) (L : Lanes) : Buf a :=
+  if hj : j < na then
+    stP h b j hj L.w0 L.w1 L.w2 L.w3 L.w4 L.w5 L.w6 L.w7 L.w8 L.w9 L.w10 L.w11 L.w12 L.w13
+      L.w14 L.w15
+  else b
+
+end
+
+/-- Words combined word by word with four words of four operands each. -/
+@[inline] def Lanes.zip4 (f : UInt32 → UInt32 → UInt32 → UInt32 → UInt32 → UInt32 → UInt32 →
+    UInt32 → UInt32) (A B C D : Lanes) (a b c d : UInt32) : Lanes :=
+  ⟨f A.w0 a B.w0 b C.w0 c D.w0 d, f A.w1 a B.w1 b C.w1 c D.w1 d,
+    f A.w2 a B.w2 b C.w2 c D.w2 d, f A.w3 a B.w3 b C.w3 c D.w3 d,
+    f A.w4 a B.w4 b C.w4 c D.w4 d, f A.w5 a B.w5 b C.w5 c D.w5 d,
+    f A.w6 a B.w6 b C.w6 c D.w6 d, f A.w7 a B.w7 b C.w7 c D.w7 d,
+    f A.w8 a B.w8 b C.w8 c D.w8 d, f A.w9 a B.w9 b C.w9 c D.w9 d,
+    f A.w10 a B.w10 b C.w10 c D.w10 d, f A.w11 a B.w11 b C.w11 c D.w11 d,
+    f A.w12 a B.w12 b C.w12 c D.w12 d, f A.w13 a B.w13 b C.w13 c D.w13 d,
+    f A.w14 a B.w14 b C.w14 c D.w14 d, f A.w15 a B.w15 b C.w15 c D.w15 d⟩
+
+/-- The words of the accumulators with accumulator `j`'s set to `L`. -/
+def updA (v : Nat → Lanes) (j : Nat) (L : Lanes) : Nat → Lanes := fun i ↦
+  if i = j then L else v i
+
+/-- The state of an accumulation chunk: its accumulators' buffer and their words. -/
+structure AState (a : Nat) where
+  b : Buf a
+  v : Nat → Lanes
+
+/-- Accumulator `j` plus the words `L`. -/
+@[inline] def AState.add {a : Nat} {n R0 m na : Nat} (ops : Op → UInt32 → UInt32 → UInt32)
+    (h : AccOk n a R0 m na) (st : AState a) (j : Nat) (L : Lanes) : AState a :=
+  let L := Lanes.zip (ops .add) (st.v j) L
+  ⟨stPlane h st.b j L, updA st.v j L⟩
+
+/-- An accumulation chunk: the `na` accumulators plus the slots `t` of the chunk's buffer `sc`
+times the coordinates of their weights `ws[t]`, four slots at a time by `mul4` (four products
+summed and reduced once), the last slots one at a time, the operations on words `ops`. -/
+def accChunk (ops : Op → UInt32 → UInt32 → UInt32)
+    (mul4 : UInt32 → UInt32 → UInt32 → UInt32 → UInt32 → UInt32 → UInt32 → UInt32 → UInt32)
+    (R0 na : Nat) (ws : List Nat) (env : @& GroupEnv) (sc : @& ByteArray) (acc : ByteArray) :
+    ByteArray :=
+  if h : AccOk sc.size acc.size R0 ws.length na then
+    let S := slotLanes h sc rfl
+    let c (t j : Nat) : UInt32 := wtAt env (na * ws.getD t 0 + j)
+    let st := (List.range (ws.length / 4)).foldl (fun st q ↦ (List.range na).foldl (fun st j ↦
+      st.add ops h j (Lanes.zip4 mul4 (S (4 * q)) (S (4 * q + 1)) (S (4 * q + 2)) (S (4 * q + 3))
+        (c (4 * q) j) (c (4 * q + 1) j) (c (4 * q + 2) j) (c (4 * q + 3) j))) st)
+      (⟨bufOf acc, planeLanes h (bufOf acc)⟩ : AState acc.size)
+    ((List.range' (4 * (ws.length / 4)) (ws.length % 4)).foldl (fun st t ↦
+      (List.range na).foldl (fun st j ↦
+        st.add ops h j (Lanes.zip (ops .mul) (S t) (Lanes.rep (c t j)))) st) st).b.1
+  else acc
+
 end CompStark.Stark.Prog
