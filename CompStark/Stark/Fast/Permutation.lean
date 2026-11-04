@@ -547,9 +547,9 @@ theorem blockRows_eq (fs : Array (ExtPlanes p EF)) (acc : EF) (B W : Nat) (rf : 
       ← NTTFast.Packed.encode_eq_map_val]
     dsimp only
     by_cases hq : q < d
-    · rw [if_pos hq, hscan q hq]
+    · rw [ite_eq_left_of_eq_true _ _ (eq_true hq), hscan q hq]
       exact congrArg encode (congrArg (tab B) (funext fun i ↦ by simp only [val, hq, ite_true]))
-    · rw [if_neg hq]
+    · rw [ite_eq_right_of_eq_false _ _ (eq_false hq)]
       have hc : (q - d) / d < fs.size := by
         have : q - d < fs.size * d := by
           have := h1; rw [Nat.add_mul, Nat.one_mul] at this; omega
