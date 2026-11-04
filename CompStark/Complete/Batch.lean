@@ -271,7 +271,7 @@ theorem bPrep_snd : (bPrep EF P Is).2 =
 theorem terminals_permutationsWith (chs : List (List EF)) :
     (permutationsWith (specBackend EF) P Is ts ps chs).map (·.map (·.2)) =
       (permutations Is ts ps chs).map (·.map (·.2)) := by
-  simp only [permutationsWith, permutations, List.map_map]
+  simp only [permutationsWith, CompStark.Stark.parMap_eq, permutations, List.map_map]
   refine List.map_congr_left fun x _ ↦ ?_
   simp only [Function.comp_apply]
   split <;> rfl
@@ -281,7 +281,7 @@ theorem length_bChs : (bChs EF P Is ts ps).length = Is.length := by
 
 theorem length_bPerms (hts : ts.length = Is.length) (hps : ps.length = Is.length) :
     (bPerms EF P Is ts ps).length = Is.length := by
-  rw [bPerms, permutationsWith, List.length_map, List.length_zip, List.length_zip,
+  rw [bPerms, permutationsWith, CompStark.Stark.parMap_eq, List.length_map, List.length_zip, List.length_zip,
     List.length_zip, hts, hps, length_bChs]
   simp only [Nat.min_self]
 
@@ -291,7 +291,8 @@ theorem getElem_bPerms (hts : ts.length = Is.length) (hps : ps.length = Is.lengt
       if Is[i].lookups.isEmpty then none else some (permutationLdeOf P.logBlowup Is[i].air
         Is[i].lookups Is[i].logN (ts[i]'(by rw [hts]; exact hi)) (ps[i]'(by rw [hps]; exact hi))
         ((bChs EF P Is ts ps)[i]'(by rw [length_bChs]; exact hi))) := by
-  simp only [bPerms, permutationsWith, List.getElem_map, List.getElem_zip, id_eq]
+  simp only [bPerms, permutationsWith, CompStark.Stark.parMap_eq, List.getElem_map, List.getElem_zip,
+    id_eq]
 
 theorem length_bPermExts (hts : ts.length = Is.length) (hps : ps.length = Is.length) :
     (bPermCP EF P Is ts ps).1.length = Is.length := by
