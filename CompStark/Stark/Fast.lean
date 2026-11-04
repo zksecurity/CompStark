@@ -409,7 +409,7 @@ def quotientTables [Mont32BaseField p] (degreeBits logChunks : Nat) : QuotientTa
   let invLast := batchInv (xs.map (· - gInv))
   let next := perm.map fun i ↦ perm.getD ((i + period) % n) 0
   let R := n / (if n < 4096 then 1 else 16)
-  let B := min R 256
+  let B := min R 1024
   { degreeBits, logChunks, perm, invZh := batchInv zhs, next, B
     hB := Nat.lt_of_lt_of_le (by omega) USize.le_size
     first := CompPoly.CPolynomial.NTTFast.Packed.Native.encodeFields (perm.map fun i ↦

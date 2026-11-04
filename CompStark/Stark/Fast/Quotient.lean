@@ -146,12 +146,12 @@ theorem getElem!_lit4
     (a b c d : ByteArray) : #[a, b, c, d][0]! = a ∧ #[a, b, c, d][1]! = b ∧ #[a, b, c,
         d][2]! = c ∧ #[a, b, c, d][3]! = d := ⟨rfl, rfl, rfl, rfl⟩
 
-/-- The block height of the quotient tables: a power of two, at most 256, dividing the domain. -/
+/-- The block height of the quotient tables: a power of two, at most 1024, dividing the domain. -/
 theorem tables_B [Mont32BaseField p] (d l : Nat) :
-    0 < (quotientTables (p := p) d l).B ∧ (quotientTables (p := p) d l).B ≤ 256 ∧
+    0 < (quotientTables (p := p) d l).B ∧ (quotientTables (p := p) d l).B ≤ 1024 ∧
       (quotientTables (p := p) d l).B ∣ 2 ^ (d + l) := by
   have hTB : (quotientTables (p := p) d l).B =
-      min (2 ^ (d + l) / (if 2 ^ (d + l) < 4096 then 1 else 16)) 256 := rfl
+      min (2 ^ (d + l) / (if 2 ^ (d + l) < 4096 then 1 else 16)) 1024 := rfl
   have hpow : ∃ e, 2 ^ (d + l) / (if 2 ^ (d + l) < 4096 then 1 else 16) = 2 ^ e ∧
       2 ^ e ∣ 2 ^ (d + l) := by
     split
@@ -170,11 +170,11 @@ theorem tables_B [Mont32BaseField p] (d l : Nat) :
   obtain ⟨e, hRe, hd⟩ := hpow
   rw [hTB, hRe]
   refine ⟨Nat.lt_min.mpr ⟨Nat.two_pow_pos _, by decide⟩, Nat.min_le_right _ _, ?_⟩
-  by_cases h8 : e ≤ 8
-  · rw [Nat.min_eq_left (le_trans (Nat.pow_le_pow_right (by decide) h8) (le_refl (2 ^ 8)))]
+  by_cases h10 : e ≤ 10
+  · rw [Nat.min_eq_left (le_trans (Nat.pow_le_pow_right (by decide) h10) (le_refl (2 ^ 10)))]
     exact hd
   · rw [Nat.min_eq_right
-      (le_trans (le_refl (2 ^ 8)) (Nat.pow_le_pow_right (by decide) (by omega)))]
+      (le_trans (le_refl (2 ^ 10)) (Nat.pow_le_pow_right (by decide) (by omega)))]
     exact Nat.dvd_trans (Nat.pow_dvd_pow 2 (by omega)) hd
 
 theorem powerSeq_getD [Mont32BaseField p] [Mont32.AlgebraId EF] (alpha : EF) (K k : Nat) (hk : k <
