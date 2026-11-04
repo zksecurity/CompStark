@@ -166,42 +166,51 @@ theorem absorbColumnsBlock_encode {cs : Array ByteArray} {os : Array Nat} {C : N
   intro e s wl
   unfold absorbColumnsBlock
   split
-  · rename_i hfull
-    obtain ⟨hr, hw⟩ := hfull
-    have hcnt : min 16 (w - 16 * blk) = 16 := by omega
-    have hjw (j : Nat) (hj : j < 16) : 16 * blk + j < w := by omega
-    have hq (j : Nat) (hj : j < 16) : o (16 * blk + j) + r0 + 8 ≤ (C (16 * blk + j)).size := by
-      have := h.fits _ (hjw j hj); omega
-    have hqu (j : Nat) (hj : j < 16) : o (16 * blk + j) + r0 < USize.size := by
-      have := hq j hj; have := h.addr _ (hjw j hj); omega
-    have hfit (j : Nat) (hj' : j < 16) :
-        Fits (cs.getD (16 * blk + j) .empty) (os.getD (16 * blk + j) 0 + r0).toUSize 7 := by
-      rw [h.enc _ (hjw j hj'), h.off _ (hjw j hj')]
-      have := hq j hj'
-      have := h.addr _ (hjw j hj')
-      simp only [Fits, size_encode_fields, USize.toNat_ofNat_of_lt' (hqu j hj')]
-      omega
+  · rename_i hr
+    unfold loadColumnLines24
+    set n := min 16 (w - 16 * blk) with hndef
+    have hn : n ≤ 16 := Nat.min_le_left _ _
+    have hjw (j : Nat) (hj : j < n) : 16 * blk + j < w := by omega
+    let C' (j : Nat) : Array F := if j < n then C (16 * blk + j) else A
+    let o' (j : Nat) : Nat := if j < n then o (16 * blk + j) + r0 else 8 * j
+    have hu (j : Nat) (hj : j < 16) : o' j < USize.size := by
+      simp only [o']
+      split
+      · rename_i hjn
+        have := h.fits _ (hjw j hjn); have := h.addr _ (hjw j hjn); omega
+      · have := USize.le_size; omega
+    have hc (j : Nat) (hj : j < 16) : blockColumn cs (16 * blk) n (encode A) j = encode (C' j) := by
+      simp only [blockColumn, C']
+      split
+      · rename_i hjn; exact h.enc _ (hjw j hjn)
+      · rfl
+    have hq' (j : Nat) (hj : j < 16) : blockOffset os (16 * blk) n r0 j = o' j := by
+      simp only [blockOffset, o']
+      split
+      · rename_i hjn; rw [h.off _ (hjw j hjn)]
+      · rfl
+    have hfit (j : Nat) (hj : j < 16) : Fits (encode (C' j)) (o' j).toUSize 7 := by
+      simp only [Fits, size_encode_fields, USize.toNat_ofNat_of_lt' (hu j hj)]
+      simp only [C', o']
+      split
+      · rename_i hjn
+        have := h.fits _ (hjw j hjn); have := h.addr _ (hjw j hjn); omega
+      · rw [hA]; have := USize.le_size; omega
     have hg : GroupFits24 (encode A) 0 := groupFits24_zero A hA
-    unfold loadColumnLines24 loadColumnsAt
+    simp only [hc 0 (by decide), hc 1 (by decide), hc 2 (by decide), hc 3 (by decide),
+      hc 4 (by decide), hc 5 (by decide), hc 6 (by decide), hc 7 (by decide), hc 8 (by decide),
+      hc 9 (by decide), hc 10 (by decide), hc 11 (by decide), hc 12 (by decide), hc 13 (by decide),
+      hc 14 (by decide), hc 15 (by decide), hq' 0 (by decide), hq' 1 (by decide), hq' 2 (by decide),
+      hq' 3 (by decide), hq' 4 (by decide), hq' 5 (by decide), hq' 6 (by decide), hq' 7 (by decide),
+      hq' 8 (by decide), hq' 9 (by decide), hq' 10 (by decide), hq' 11 (by decide),
+      hq' 12 (by decide), hq' 13 (by decide), hq' 14 (by decide), hq' 15 (by decide)]
+    unfold loadColumnsAt
     rw [dite_eq_left_of_eq_true (eq_true ⟨hfit 0 (by decide), hfit 1 (by decide),
       hfit 2 (by decide), hfit 3 (by decide), hfit 4 (by decide), hfit 5 (by decide),
       hfit 6 (by decide), hfit 7 (by decide), hfit 8 (by decide), hfit 9 (by decide),
       hfit 10 (by decide), hfit 11 (by decide), hfit 12 (by decide), hfit 13 (by decide),
       hfit 14 (by decide), hfit 15 (by decide), hg⟩)]
-    have he : ∀ j < 16, cs.getD (16 * blk + j) .empty = encode (C (16 * blk + j)) :=
-      fun j hj' ↦ h.enc _ (hjw j hj')
-    have ho : ∀ j < 16, os.getD (16 * blk + j) 0 + r0 = o (16 * blk + j) + r0 :=
-      fun j hj' ↦ by rw [h.off _ (hjw j hj')]
-    simp only [he 0 (by decide), he 1 (by decide), he 2 (by decide), he 3 (by decide),
-      he 4 (by decide), he 5 (by decide), he 6 (by decide), he 7 (by decide), he 8 (by decide),
-      he 9 (by decide), he 10 (by decide), he 11 (by decide), he 12 (by decide),
-      he 13 (by decide), he 14 (by decide), he 15 (by decide), ho 0 (by decide),
-      ho 1 (by decide), ho 2 (by decide), ho 3 (by decide), ho 4 (by decide), ho 5 (by decide),
-      ho 6 (by decide), ho 7 (by decide), ho 8 (by decide), ho 9 (by decide), ho 10 (by decide),
-      ho 11 (by decide), ho 12 (by decide), ho 13 (by decide), ho 14 (by decide),
-      ho 15 (by decide)]
-    rw [loadColumns24_encode (fun j ↦ C (16 * blk + j)) (fun j ↦ o (16 * blk + j) + r0)
-      (fun j hj' ↦ USize.toNat_ofNat_of_lt' (hqu j hj'))]
+    rw [loadColumns24_encode C' o' (fun j hj' ↦ USize.toNat_ofNat_of_lt' (hu j hj'))]
     have hL : ∀ j ∈ coords16, j < 24 := fun j hj ↦ by have := coords16_spec.lt j hj; omega
     refine ⟨_, rfl, ?_, ?_⟩
     · rw [spliceRows, USize.toNat_zero, (foldl_splice_rows 24 _ 0 coords16 hL A (by rw [hA])).1,
@@ -209,17 +218,20 @@ theorem absorbColumnsBlock_encode {cs : Array ByteArray} {os : Array Nat} {C : N
     · intro l hl
       rw [ite_eq_left_of_eq_true _ _ (eq_true (by omega))]
       ext j hj
-      simp only [lane, Vector.getElem_ofFn, CompStark.Hash.overwrite, Fin.getElem_fin, getD_block,
-        hcnt]
+      simp only [lane, Vector.getElem_ofFn, CompStark.Hash.overwrite, Fin.getElem_fin, getD_block]
       rw [word, spliceRows, USize.toNat_zero,
         (foldl_splice_rows 24 _ 0 coords16 hL A (by rw [hA])).2.1 j hj l hl]
       by_cases hj16 : j < 16
-      · rw [ite_eq_left_of_eq_true _ _ (eq_true (coords16_spec.mem j hj16)),
-          ite_eq_left_of_eq_true _ _ (eq_true hj16), Nat.add_assoc (o _),
-          Nat.add_assoc ((r0 + l) * w), hM _ _ (by omega) (hjw j hj16)]
+      · rw [ite_eq_left_of_eq_true _ _ (eq_true (coords16_spec.mem j hj16))]
+        by_cases hjn : j < n
+        · rw [ite_eq_left_of_eq_true _ _ (eq_true hjn)]
+          simp only [C', o', hjn, ite_true]
+          rw [Nat.add_assoc (o _), Nat.add_assoc ((r0 + l) * w), hM _ _ (by omega) (hjw j hjn)]
+        · rw [ite_eq_right_of_eq_false _ _ (eq_false hjn)]
+          simp only [C', o', hjn, ite_false, word, Nat.zero_add]
       · rw [ite_eq_right_of_eq_false _ _
           (eq_false fun h ↦ hj16 (coords16_spec.lt j h)), ite_eq_right_of_eq_false _ _
-              (eq_false hj16)]
+              (eq_false (by omega))]
   · refine ⟨A', e, by rw [s, hA], fun l hl ↦ ?_⟩
     ext j hj
     simp only [lane, Vector.getElem_ofFn]
@@ -294,27 +306,20 @@ theorem absorbColumns_eq [Poseidon2Field (FastField p)] [PackedPoseidon2 p] (cs 
         PackedPoseidon2.permute24 p (absorbColumnsBlock cs os w rows (r0 + 8 * k) blk st)) g 0
           sts := by
     intro blk sts
-    unfold absorbBlockGroups absorbColumnsBlock
+    unfold absorbBlockGroups absorbColumnsBlock loadColumnLines24
     split
     · rename_i hw
+      have hn : min 16 (w - 16 * blk) = 16 := by omega
       dsimp only
       congr 1
       funext sts k
       congr 1
       funext st
       congr 1
-      by_cases hr : r0 + 8 * k + 8 ≤ rows
-      · rw [ite_eq_left_of_eq_true _ _ (eq_true hr),
-          ite_eq_left_of_eq_true _ _ (eq_true ⟨hr, hw⟩)]
-        rfl
-      · rw [ite_eq_right_of_eq_false _ _ (eq_false hr),
-          ite_eq_right_of_eq_false _ _ (eq_false fun h ↦ hr h.1)]
-    · rename_i hw
-      congr 1
-      funext sts k
-      congr 1
-      funext st
-      rw [ite_eq_right_of_eq_false _ _ (eq_false fun h ↦ hw h.2)]
+      split
+      · simp only [blockColumn, blockOffset, hn, Nat.reduceLT, ite_true]
+      · rfl
+    · rfl
   unfold absorbColumns
   simp only [hb]
   exact foldRange_modify (fun blk k st ↦

@@ -903,7 +903,8 @@ theorem assembleRanges_eq [Mont32BaseField p] [Mont32.AlgebraId EF] [PlanesInv p
         = (encode (tab (size * B * W) (rangeVal frs (k * size * B) W)),
           localAcc frs (k * size * B) (size * B)) := by
     rw [hcount k hk]
-    refine rangeRows_eq blk get ts chs B W (k * size) size val frs hW.symm hB hd ?_ hfrs fun j hj ↦ ?_
+    refine rangeRows_eq blk get ts chs B W (k * size) size val frs hW.symm hB hd ?_ hfrs
+      fun j hj ↦ ?_
     · exact lt_of_le_of_lt (Nat.mul_le_mul_left 4 (Nat.mul_le_mul_right W
         (Nat.mul_le_mul_right B (Nat.le_mul_of_pos_left size ht0)))) hsz
     · exact hev (k * size + j) (by nlinarith)
@@ -1137,7 +1138,8 @@ theorem permutationWords_eq [Mont32BaseField p] [Mont32.AlgebraId EF] [PlanesInv
     have h2 := Nat.le_mul_of_pos_left (A.width + A.preprocessedWidth + (ls.length + 1) * d)
       (Nat.two_pow_pos logN)
     omega
-  rw [assembleRanges_eq _ _ (indexTuples tups 0) chs B blocks val frs hBs hd (by rw [hlen]; exact hsz)
+  rw [assembleRanges_eq _ _ (indexTuples tups 0) chs B blocks val frs hBs hd
+    (by rw [hlen]; exact hsz)
     htasks (fun r ↦ ?hfrs) ?hev, hnB, hlen]
   case hfrs =>
     rw [← hfrs]

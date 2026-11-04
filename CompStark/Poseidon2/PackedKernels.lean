@@ -26,7 +26,8 @@ open CompPoly.PackedRepr (encode)
 (`PackedKernels.partials16`) is this loop on its kernel, compiled with the kernel inlined, so a
 round makes no call. -/
 @[specialize] def partialsLoop16
-    (f : UInt32 → (b : ByteArray) → (i : USize) → GroupFits b i → { x : ByteArray // x.size = b.size })
+    (f : UInt32 → (b : ByteArray) → (i : USize) → GroupFits b i →
+      { x : ByteArray // x.size = b.size })
     {n : Nat} (C : @& Packed16) (i : USize) (h : Room16 n i) (k : Nat) (b : Buf n) : Buf n :=
   if hk : k < C.internal.size then
     partialsLoop16 f C i h (k + 1) (b.of (f C.internal[k] b.1 i (h.fits b)))

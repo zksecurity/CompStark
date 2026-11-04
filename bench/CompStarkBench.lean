@@ -207,14 +207,17 @@ def phasesLookup : IO UInt32 := do
   for k in [0:2] do
     let words := traces.map fun t ↦ #[encodeFields (t.set! 0 (k : _))]
     let exts ← timed "trace lde" (fun _ ↦ (instances.zip words).map fun (I, t) ↦
-      B.ldeTrace I.logN P.logBlowup BaseField.gen I.air.width t) fun e ↦ s!"{(e.map (·.height)).sum}"
+      B.ldeTrace I.logN P.logBlowup BaseField.gen I.air.width t)
+      fun e ↦ s!"{(e.map (·.height)).sum}"
     let mainC ← timed "trace commit" (fun _ ↦ B.commit exts)
       fun c ↦ s!"{((B.cap c 0).getD 0 0)[0].val}"
     let chs := Lookup.challengeLayout (instances.map (·.lookups))
       (⟨3, 1, 4, k⟩ : _root_.KoalaBear.Fast.Ext4) ⟨1, 5, 9, 2⟩
-    let perms ← timed "permutation trace and lde" (fun _ ↦ permutationsWith B P instances words pis chs)
+    let perms ← timed "permutation trace and lde"
+      (fun _ ↦ permutationsWith B P instances words pis chs)
       fun ps ↦ s!"{(ps.filterMap id).length}"
-    let (permExts, permC) ← timed "permutation commit" (fun _ ↦ commitPermutations B instances perms)
+    let (permExts, permC) ← timed "permutation commit"
+      (fun _ ↦ commitPermutations B instances perms)
       fun c ↦ s!"{(c.2.map fun c ↦ ((B.cap c 0).getD 0 0)[0].val)}"
     let terminals := perms.map (·.map (·.2))
     let alpha : _root_.KoalaBear.Fast.Ext4 := ⟨5, 7, 11, k⟩
