@@ -665,31 +665,57 @@ def fractionsX [PlanesInv p EF] {β E : Type} (B : Nat) (get : β → E → Byte
         (combineX B (chs.getD (2 * c + 1) 0) (t.map (get v)))
       s.add ((PlanesInv.inv (den.planes B)).mulBase (get v m))) (ExtPlanes.zeros B)
 
+/-- The `d` coordinates of `a` as words. -/
+def accWords (a : EF) : ByteArray :=
+  CompPoly.CPolynomial.NTTFast.Packed.Native.encodeFields
+    (Array.ofFn fun k : Fin (FastExt.d p EF) ↦ FastExt.coord a k)
+
+/-- Words `o, …, o + d - 1` of `out` set to words `0, …, d - 1` of `src` from word `s`. -/
+def copyCoords (out : ByteArray) (o : Nat) (src : @& ByteArray) (s : Nat) : ByteArray := Id.run do
+  let mut out := out
+  for k in [0:FastExt.d p EF] do
+    out := CompPoly.CPolynomial.NTTFast.Packed.Native.write out (o + k)
+      (CompPoly.CPolynomial.NTTFast.Packed.Native.read src (s + k))
+  return out
+
+/-- The accumulator's words `accW` plus the coordinates of element `i` of the planes `f`. -/
+def addCoords (accW : ByteArray) (f : @& ExtPlanes p EF) (i : Nat) : ByteArray := Id.run do
+  let mut accW := accW
+  for k in [0:FastExt.d p EF] do
+    accW := CompPoly.CPolynomial.NTTFast.Packed.Native.write accW k
+      (CompPoly.CPolynomial.NTTFast.Packed.add p
+        (CompPoly.CPolynomial.NTTFast.Packed.Native.read accW k)
+        (CompPoly.CPolynomial.NTTFast.Packed.Native.read (f.c.toArray.getD k .empty) i))
+  return accW
+
 /-- Row `i` of the permutation trace in base coordinates, written from word `o` of `out`: the
-accumulator `acc`, then every lookup's fraction, the planes `fs`, `d` coordinates each. -/
-def writeRow (out : ByteArray) (o : Nat) (fs : Array (ExtPlanes p EF)) (acc : EF) (i : Nat) :
-    ByteArray := Id.run do
+accumulator's words `accW`, then every lookup's fraction, the planes `fs`, `d` coordinates each;
+and the accumulator's words plus the fractions. -/
+def writeRow (out accW : ByteArray) (o : Nat) (fs : Array (ExtPlanes p EF)) (i : Nat) :
+    ByteArray × ByteArray := Id.run do
   let d := FastExt.d p EF
-  let mut out := (List.finRange d).foldl (fun out (k : Fin d) ↦
-    CompPoly.CPolynomial.NTTFast.Packed.Native.write out (o + k) (FastExt.coord acc k).val) out
+  let mut out := copyCoords (p := p) (EF := EF) out o accW 0
+  let mut accW := accW
   for c in [0:fs.size] do
     let f := fs.getD c (ExtPlanes.zeros 0)
     let oc := o + d * (c + 1)
-    out := (List.finRange d).foldl (fun out (k : Fin d) ↦
-      CompPoly.CPolynomial.NTTFast.Packed.Native.write out (oc + k)
-        (CompPoly.CPolynomial.NTTFast.Packed.Native.read f.c[k] i)) out
-  return out
+    for k in [0:d] do
+      out := CompPoly.CPolynomial.NTTFast.Packed.Native.write out (oc + k)
+        (CompPoly.CPolynomial.NTTFast.Packed.Native.read (f.c.toArray.getD k .empty) i)
+    accW := addCoords accW f i
+  return (out, accW)
 
 /-- A block of `B` rows of the permutation trace in base coordinates, `W` words per row, written
-from row `r` of `out` (`writeRow`), the accumulator from `acc`; and the accumulator after it. -/
+from row `r` of `out` (`writeRow`), the accumulator from `acc` carried as words; and the
+accumulator after it. -/
 def writeBlock (out : ByteArray) (r : Nat) (fs : Array (ExtPlanes p EF)) (acc : EF) (B W : Nat) :
     ByteArray × EF := Id.run do
-  let mut out := out
-  let mut acc := acc
+  let mut st := (out, accWords acc)
   for i in [0:B] do
-    out := writeRow out ((r + i) * W) fs acc i
-    acc := fs.foldl (fun a f ↦ a + f.get i) acc
-  return (out, acc)
+    st := writeRow st.1 st.2 ((r + i) * W) fs i
+  return (st.1, FastExt.ofCoords fun k ↦
+    CompPoly.CPolynomial.NTTFast.Packed.ofWord p
+      (CompPoly.CPolynomial.NTTFast.Packed.Native.read st.2 k))
 
 /-- Words `o, …, o + d - 1` of `out` plus the coordinates of `s`. -/
 def shiftRow (out : ByteArray) (o : Nat) (s : EF) : ByteArray :=

@@ -190,7 +190,7 @@ theorem length_permutationsWith {EF : Type} [Challenge F EF] {width : Nat}
     (ht : traces.length = instances.length) (hp : pis.length = instances.length)
     (hc : chs.length = instances.length) :
     (permutationsWith B P instances traces pis chs).length = instances.length := by
-  simp only [permutationsWith, List.length_map, List.length_zip, ht, hp, hc, Nat.min_self]
+  simp only [permutationsWith, CompStark.Stark.parMap_eq, List.length_map, List.length_zip, ht, hp, hc, Nat.min_self]
 
 /-- The lookup phase returns a list of challenges per instance. -/
 theorem lookupChallenges_rel {EF : Type} [Challenge F EF] (P : Params)
@@ -449,20 +449,20 @@ theorem permutationsWith_refines (h : Refines B) {P : Params} {instances : List 
     simp only [List.length_zip] at hi; omega
   refine ⟨forall₂_of_getElem (by rw [hlB, hlS]) fun i h1 h2 ↦ ?_,
     forall₂_of_getElem (by rw [hlS]) fun i h1 h2 ↦ ?_⟩
-  · simp only [permutationsWith, List.length_map] at h1 h2
+  · simp only [permutationsWith, CompStark.Stark.parMap_eq, List.length_map] at h1 h2
     obtain ⟨hiI, hiT⟩ := hi i h2
     have hv : B.traceValues (ts[i]'(by rw [htsl]; exact hiI)) = traces[i] := by
       rw [← List.getElem_map B.traceValues]
       exact List.getElem_of_eq (hts.map_traceValues htl.symm) (by rw [List.length_map]; omega)
-    simp only [permutationsWith, List.getElem_map, List.getElem_zip, hv, id_eq]
+    simp only [permutationsWith, CompStark.Stark.parMap_eq, List.getElem_map, List.getElem_zip, hv, id_eq]
     split
     · exact .none
     · rename_i hne
       exact .some (h.permutation _ _ _ _ _ _ _ (permutationOk hin (List.getElem_mem hiI)
         (getElem_of_forall₂ hin.traces i hiI hiT) (Bool.eq_false_iff.mpr hne)))
-  · simp only [permutationsWith, List.length_map] at h2
+  · simp only [permutationsWith, CompStark.Stark.parMap_eq, List.length_map] at h2
     obtain ⟨hiI, hiT⟩ := hi i h2
-    simp only [permutationsWith, List.getElem_map, List.getElem_zip, id_eq]
+    simp only [permutationsWith, CompStark.Stark.parMap_eq, List.getElem_map, List.getElem_zip, id_eq]
     split
     · rename_i he
       exact ⟨by simp only [Option.isSome_none, he, Bool.not_true], fun q hq ↦ nomatch hq⟩

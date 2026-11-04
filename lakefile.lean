@@ -9,9 +9,10 @@ package CompStark where
 -- Pinned to a CompPoly commit with the packed NTT, the batched coset LDE on chunks of rows with
 -- input transposes by column range, coset interpolation generic over 32-bit Montgomery fields,
 -- fast KoalaBear⁵ and spec fields over the fast base field, word-sized packed loads and stores and
--- decodes, the Montgomery word kernels, and coordinate planes generic over fast extensions.
+-- decodes, the Montgomery word kernels with batch inversions carrying unboxed products, and
+-- coordinate planes generic over fast extensions.
 require CompPoly from git "https://github.com/mitschabaude-bot/CompPoly.git" @
-    "c24987692b0f0763d49f6ee031619381fd81c326"
+    "e747d79067f3cd7d550c31e56ccd28edeb672597"
 
 -- ArkLib main with Johnson-regime mutual correlated agreement for power curves, lossy mutual
 -- correlated agreement, FRI on the interaction layer with its knowledge certificate on Plonky3's
