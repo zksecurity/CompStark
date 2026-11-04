@@ -91,7 +91,6 @@ structure Refines (B : Backend F EF 24) where
   ldeTrace : ∀ logH bits shift w {t m}, RT logH w t m → m.size = 2 ^ logH * w →
     logH + bits ≤ twoAdicity F → Addressable (2 ^ (logH + bits) * w) →
     RM (B.ldeTrace logH bits shift w t) ((specBackend EF).lde logH bits shift w m)
-  traceValues : ∀ {logH w t m}, RT logH w t m → B.traceValues t = m
   lde : ∀ logH bits shift w m, m.size = 2 ^ logH * w → logH + bits ≤ twoAdicity F →
     Addressable (2 ^ (logH + bits) * w) →
     RM (B.lde logH bits shift w m) ((specBackend EF).lde logH bits shift w m)
@@ -117,11 +116,12 @@ structure Refines (B : Backend F EF 24) where
   chunks : ∀ bits logN l {v a}, RQ v a → a.size = 2 ^ (logN + l) → l ≤ bits →
     logN + bits ≤ twoAdicity F →
     List.Forall₂ RM (B.chunks bits logN l v) ((specBackend EF).chunks bits logN l a)
-  permutation : ∀ bits A ls logN t pis chs, PermutationOk EF A ls logN bits t →
+  permutation : ∀ bits A ls logN {t m} pis chs, RT logN A.width t m →
+    PermutationOk EF A ls logN bits m →
     RM (B.permutation bits A ls logN t pis chs).1
-        ((specBackend EF).permutation bits A ls logN t pis chs).1 ∧
+        ((specBackend EF).permutation bits A ls logN m pis chs).1 ∧
       (B.permutation bits A ls logN t pis chs).2 =
-        ((specBackend EF).permutation bits A ls logN t pis chs).2
+        ((specBackend EF).permutation bits A ls logN m pis chs).2
   toArray : ∀ {v a}, RV v a → a.size ≤ 2 ^ twoAdicity F → B.toArray v = (specBackend EF).toArray a
   ofArray : ∀ a, RV (B.ofArray a) ((specBackend EF).ofArray a)
   size : ∀ {v a}, RV v a → B.size v = (specBackend EF).size a
@@ -137,15 +137,6 @@ structure Refines (B : Backend F EF 24) where
     RV (B.addScaled v w x) ((specBackend EF).addScaled a b x)
   leaves : ∀ k {v a}, RV v a → a.size ≤ 2 ^ twoAdicity F → k ∣ a.size → 0 < a.size →
       RM (B.leaves k v) ((specBackend EF).leaves k a)
-
-/-- Related traces have the specification's values. -/
-theorem Refines.map_traceValues {B : Backend F EF 24} (h : Refines B) {α : Type}
-    (shape : α → Nat × Nat) {ts : List B.Trace} {ms : List (α × Array F)}
-    (hts : List.Forall₂ (fun t m ↦ h.RT (shape m.1).1 (shape m.1).2 t m.2) ts ms) :
-    ts.map B.traceValues = ms.map (·.2) := by
-  induction hts with
-  | nil => rfl
-  | cons hr _ ih => rw [List.map_cons, List.map_cons, h.traceValues hr, ih]
 
 theorem forall₂_map_eq {α β γ : Type} {R : α → β → Prop} {f : α → γ} {g : β → γ}
     (hfg : ∀ a b, R a b → f a = g b) : ∀ {xs ys}, List.Forall₂ R xs ys → xs.map f = ys.map g

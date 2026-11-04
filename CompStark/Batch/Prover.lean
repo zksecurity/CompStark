@@ -111,14 +111,14 @@ def permutations (instances : List (Instance F)) (traces : List (Array F)) (pis 
     if I.lookups.isEmpty then none else some (permutationTrace I.air I.lookups I.logN t p c)
 
 /-- The extension of the permutation trace in base coordinates and the terminal of every instance
-with lookups, by the backend `B` (`Backend.permutation`), from the backend's traces: only an
-instance with lookups reads its trace's values; the instances in parallel tasks. -/
+with lookups, by the backend `B` (`Backend.permutation`), from the backend's traces; the instances
+in parallel tasks. -/
 def permutationsWith (B : Backend F EF width) (P : Params) (instances : List (Instance F))
     (traces : List B.Trace) (pis : List (List F)) (chs : List (List EF)) :
     List (Option (B.M × EF)) :=
   parMap (fun (I, t, p, c) ↦
     if I.lookups.isEmpty then none
-    else some (B.permutation P.logBlowup I.air I.lookups I.logN (B.traceValues t) p c))
+    else some (B.permutation P.logBlowup I.air I.lookups I.logN t p c))
     (instances.zip (traces.zip (pis.zip chs)))
 
 /-- The extensions of the permutation traces `perms`, and their commitment by the backend `B` if

@@ -421,12 +421,6 @@ theorem TracesRel.length_eq {h : Refines B} {instances : List (Instance F)} {ts 
     (hl : traces.length = instances.length) : ts.length = instances.length := by
   rw [List.Forall₂.length_eq hts, List.length_zip, hl, Nat.min_self]
 
-theorem TracesRel.map_traceValues {h : Refines B} {instances : List (Instance F)}
-    {ts : List B.Trace} {traces : List (Array F)} (hts : TracesRel h instances ts traces)
-    (hl : traces.length = instances.length) : ts.map B.traceValues = traces := by
-  rw [h.map_traceValues (fun I : Instance F ↦ (I.logN, I.air.width)) hts,
-    List.map_snd_zip (by omega)]
-
 /-- The permutation traces' extensions and terminals by a refining backend and by the
 specification are related, the specification's of the prover's shapes. -/
 theorem permutationsWith_refines (h : Refines B) {P : Params} {instances : List (Instance F)}
@@ -451,14 +445,13 @@ theorem permutationsWith_refines (h : Refines B) {P : Params} {instances : List 
     forall₂_of_getElem (by rw [hlS]) fun i h1 h2 ↦ ?_⟩
   · simp only [permutationsWith, CompStark.Stark.parMap_eq, List.length_map] at h1 h2
     obtain ⟨hiI, hiT⟩ := hi i h2
-    have hv : B.traceValues (ts[i]'(by rw [htsl]; exact hiI)) = traces[i] := by
-      rw [← List.getElem_map B.traceValues]
-      exact List.getElem_of_eq (hts.map_traceValues htl.symm) (by rw [List.length_map]; omega)
-    simp only [permutationsWith, CompStark.Stark.parMap_eq, List.getElem_map, List.getElem_zip, hv, id_eq]
+    have hrt := hts.getElem i (by rw [htsl]; exact hiI) hiI hiT
+    simp only [permutationsWith, CompStark.Stark.parMap_eq, List.getElem_map, List.getElem_zip,
+      id_eq]
     split
     · exact .none
     · rename_i hne
-      exact .some (h.permutation _ _ _ _ _ _ _ (permutationOk hin (List.getElem_mem hiI)
+      exact .some (h.permutation _ _ _ _ _ _ hrt (permutationOk hin (List.getElem_mem hiI)
         (getElem_of_forall₂ hin.traces i hiI hiT) (Bool.eq_false_iff.mpr hne)))
   · simp only [permutationsWith, CompStark.Stark.parMap_eq, List.length_map] at h2
     obtain ⟨hiI, hiT⟩ := hi i h2

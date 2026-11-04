@@ -325,7 +325,6 @@ def quotientPhase (air : String) (logN reps : Nat) : IO UInt32 := do
   let I : Batch.Instance KoalaBear.Fast.Field := .ofAir A logN
   let B := CompStark.KoalaBear.backendFor [CompStark.Fixtures.KeccakKernel.kernel] 1
     [(logN, I.logQuotientChunks)]
-  let trace := B.traceValues chunks
   let ext := B.ldeTrace logN 1 gen A.width chunks
   let alpha : _root_.KoalaBear.Fast.Ext4 := ⟨5, 7, 11, 13⟩
   let chs := (Lookup.challengeLayout [I.lookups] (⟨3, 1, 4, 1⟩ : _root_.KoalaBear.Fast.Ext4)
@@ -337,7 +336,7 @@ def quotientPhase (air : String) (logN reps : Nat) : IO UInt32 := do
     let (t0, q) ← timeNs fun _ ↦ IO.lazyPure fun _ ↦
       B.quotient A [] logN I.logQuotientChunks ext none alpha
     let (t1, pm) ← timeNs fun _ ↦ IO.lazyPure fun _ ↦
-      if I.lookups.isEmpty then none else some (B.permutation 1 A I.lookups logN trace [] chs)
+      if I.lookups.isEmpty then none else some (B.permutation 1 A I.lookups logN chunks [] chs)
     let (t2, lq) ← timeNs fun _ ↦ IO.lazyPure fun _ ↦ match pm with
       | none => B.ofArray #[]
       | some (perm, t) => B.lookupQuotient A (A.lookupConstraints logN) [] logN
@@ -571,8 +570,8 @@ def gate (workload : String) (dir : System.FilePath) : IO UInt32 := do
     let ext := B.ldeTrace I.logN 1 gen A.width (words.headD #[])
     let chs := (Lookup.challengeLayout [I.lookups] (⟨3, 1, 4, 1⟩ : _root_.KoalaBear.Fast.Ext4)
       ⟨5, 9, 2, 6⟩).headD []
-    let values := B.traceValues (words.headD #[])
-    let (perm, t) ← m.phase "permutation" fun _ ↦ B.permutation 1 A I.lookups I.logN values [] chs
+    let (perm, t) ← m.phase "permutation" fun _ ↦
+      B.permutation 1 A I.lookups I.logN (words.headD #[]) [] chs
     let lq ← m.phase "lookup quotient" fun _ ↦ B.lookupQuotient A (A.lookupConstraints I.logN) []
       I.logN I.logQuotientChunks ext none perm chs t ⟨5, 7, 11, 13⟩
     let pf ← m.phase "prove" fun _ ↦ Batch.proveBatchWith (EF := KoalaBear.Fast.Ext4) B wideParams

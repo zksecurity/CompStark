@@ -1066,7 +1066,7 @@ theorem permutationWords_eq [Mont32BaseField p] [Mont32.AlgebraId EF] [PlanesInv
     (hpre : A.preprocessed.size = 2 ^ logN * A.preprocessedWidth) (hw : 0 < A.width)
     (hls : ∀ l ∈ ls, l.ColsBelow A.width A.preprocessedWidth)
     (hmem : Addressable (2 ^ logN * (A.width + A.preprocessedWidth + (ls.length + 1) * d))) :
-    permutationWords A ls logN trace pis chs =
+    permutationWords A ls logN (NTTFast.Packed.Native.encodeFields trace) pis chs =
       (encode (permutationOf A ls logN trace pis chs).1,
         (permutationOf A ls logN trace pis chs).2) := by
   generalize hfrs : Lookup.rowFractions A ls logN trace pis chs = frs
@@ -1334,11 +1334,12 @@ terminal. -/
 theorem permutationLdeWith_rel [Mont32BaseField p] [Mont32.AlgebraId EF] [PlanesInv p EF]
     (plans : List (Nat × Nat × F × LdePlan p))
     (hplans : ∀ e ∈ plans, plan? e.1 e.2.1 e.2.2.1 = some e.2.2.2) (bits : Nat) (A : Air F)
-    (ls : List (Stark.Lookup F)) (logN : Nat) (t : Array F) (pis : List F) (chs : List EF)
+    (ls : List (Stark.Lookup F)) (logN : Nat) (ts : Array ByteArray) (t : Array F)
+    (pis : List F) (chs : List EF) (hts : NTTFast.Packed.Native.joinRows ts = encode t)
     (hok : PermutationOk EF A ls logN bits t) :
-    RM (permutationLdeWith plans bits A ls logN t pis chs).1
+    RM (permutationLdeWith plans bits A ls logN ts pis chs).1
         (permutationLdeOf bits A ls logN t pis chs).1 ∧
-      (permutationLdeWith plans bits A ls logN t pis chs).2 =
+      (permutationLdeWith plans bits A ls logN ts pis chs).2 =
         (permutationLdeOf bits A ls logN t pis chs).2 := by
   have hmem : Addressable (2 ^ logN * (A.width + A.preprocessedWidth + (ls.length + 1) * d)) := by
     have := hok.mem
@@ -1356,7 +1357,7 @@ theorem permutationLdeWith_rel [Mont32BaseField p] [Mont32.AlgebraId EF] [Planes
     rw [permutationTrace_eq, flatten_tab, size_tab]
     ring
   unfold permutationLdeWith permutationLdeOf
-  rw [hw]
+  rw [hts, ← NTTFast.Packed.Native.encodeFields_eq, hw]
   dsimp only
   refine ⟨ldeWordsWith_one_rel plans hplans logN bits gen _ _ hsize hok.twoAdic ?_, rfl⟩
   have := hok.mem

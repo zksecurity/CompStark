@@ -766,8 +766,8 @@ terminal (`permutationOf`): the lookups' expressions as one program (`Prog.compi
 blocks of rows, every lookup's fractions computed block by block (`fractionsX`) with one batch
 inversion per tuple, in parallel ranges of blocks (`assembleRanges`). -/
 def permutationWords [Mont32BaseField p] [PlanesInv p EF] (A : Air F)
-    (ls : List (Stark.Lookup F)) (logN : Nat) (trace : Array F) (pis : List F) (chs : List EF) :
-    ByteArray × EF :=
+    (ls : List (Stark.Lookup F)) (logN : Nat) (words : @& ByteArray) (pis : List F)
+    (chs : List EF) : ByteArray × EF :=
   let n := 2 ^ logN
   let w := A.width
   let pw := A.preprocessedWidth
@@ -776,7 +776,6 @@ def permutationWords [Mont32BaseField p] [PlanesInv p EF] (A : Air F)
   have hS : 4 * B < USize.size := blockSize_lt (n / parts)
   let blocks := n / B
   let enc := CompPoly.CPolynomial.NTTFast.Packed.Native.encodeFields
-  let words := enc trace
   let pwords := enc A.preprocessed
   let next := Array.ofFn (n := n) fun i ↦ (i.val + 1) % n
   let sel (f : Nat → Bool) := enc (Array.ofFn (n := n) fun i ↦ if f i.val then (1 : F) else 0)
@@ -798,13 +797,15 @@ def permutationWords [Mont32BaseField p] [PlanesInv p EF] (A : Air F)
   assembleRanges blk (fun ws k ↦ ws.getD k .empty) (indexTuples tups 0) chs B
       ((ls.length + 1) * FastExt.d p EF) blocks
 
-/-- `permutationLdeOf` on packed words: the permutation trace's words (`permutationWords`)
-extended by CompPoly's batched coset LDE with plans from `plans`. -/
+/-- `permutationLdeOf` on packed words: the permutation trace's words (`permutationWords`) of the
+trace's chunks of rows, joined, extended by CompPoly's batched coset LDE with plans from
+`plans`. -/
 def permutationLdeWith [Mont32BaseField p] [PlanesInv p EF]
     (plans : List (Nat × Nat × F × LdePlan p)) (bits : Nat) (A : Air F)
-    (ls : List (Stark.Lookup F)) (logN : Nat) (trace : Array F) (pis : List F) (chs : List EF) :
-    PMat × EF :=
-  let (words, t) := permutationWords A ls logN trace pis chs
+    (ls : List (Stark.Lookup F)) (logN : Nat) (trace : Array ByteArray) (pis : List F)
+    (chs : List EF) : PMat × EF :=
+  let (words, t) := permutationWords A ls logN
+    (CompPoly.CPolynomial.NTTFast.Packed.Native.joinRows trace) pis chs
   (ldeWordsWith plans logN bits gen ((ls.length + 1) * FastExt.d p EF) #[words], t)
 
 /-- Words `r0, …, r0 + len - 1` of every plane. -/
@@ -1098,8 +1099,6 @@ def backend : Backend F EF 24 where
   M := PMat
   C := Commit
   ldeTrace := ldeWordsWith []
-  traceValues t :=
-    CompPoly.PackedRepr.decode (CompPoly.CPolynomial.NTTFast.Packed.Native.joinRows t)
   lde := lde
   commit := commit p
   cap := Commit.cap

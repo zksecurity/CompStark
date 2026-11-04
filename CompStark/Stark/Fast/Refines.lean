@@ -51,9 +51,6 @@ def backendFor_refines (hA : DomainsAddressable F EF)
       exact ldeWordsWith_rel _ (fun e he ↦ by
         obtain ⟨⟨n, c⟩, -, he⟩ := List.mem_flatMap.mp he
         exact ldePlans_valid n logBlowup c e he) logH bits shift w m k hk hm hb ha
-    traceValues := fun ⟨hm, k, hk, ht⟩ ↦ by
-      change CompPoly.PackedRepr.decode _ = _
-      rw [ht, joinRows_rowChunks _ _ _ k hk hm, CompPoly.PackedRepr.decode_encode]
     lde := ldeWith_rel _ fun e he ↦ by
       obtain ⟨⟨n, c⟩, -, he⟩ := List.mem_flatMap.mp he
       exact ldePlans_valid n logBlowup c e he
@@ -95,10 +92,11 @@ def backendFor_refines (hA : DomainsAddressable F EF)
         obtain ⟨⟨n, c⟩, -, he⟩ := List.mem_flatMap.mp he
         exact ldePlans_valid n logBlowup c e he) bits logN l hv ha hb
       (size_bound' h16 (by rw [ha]; exact Nat.pow_le_pow_right (by decide) (by omega)))
-    permutation := fun bits A ls logN t pis chs hok ↦
+    permutation := fun bits A ls logN t m pis chs ⟨hm, k, hk, ht⟩ hok ↦
       permutationLdeWith_rel _ (fun e he ↦ by
         obtain ⟨⟨n, c⟩, -, he⟩ := List.mem_flatMap.mp he
-        exact ldePlans_valid n logBlowup c e he) bits A ls logN t pis chs hok
+        exact ldePlans_valid n logBlowup c e he) bits A ls logN t m pis chs
+        (by rw [ht, joinRows_rowChunks _ _ _ k hk hm]) hok
 
     toArray := toArray_rel h16
     ofArray := ExtPlanes.ofArray_rel

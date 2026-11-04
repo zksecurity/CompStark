@@ -67,8 +67,6 @@ structure Backend (F EF : Type) (width : Nat) where
   Q : Type
   /-- The extension of a trace, as `lde` of its values. -/
   ldeTrace : Nat → Nat → F → Nat → Trace → M
-  /-- A trace's values, row-major. -/
-  traceValues : Trace → Array F
   lde : Nat → Nat → F → Nat → Array F → M
   commit : List M → C
   /-- The commitment's cap of the given height (capped at the tree's levels). -/
@@ -90,7 +88,7 @@ structure Backend (F EF : Type) (width : Nat) where
   /-- The extension by `2 ^ bits` of an AIR's permutation trace for its lookups in base
   coordinates and its terminal (`permutationLdeOf`), from its trace of `2 ^ logN` rows, its public
   values and its challenges. -/
-  permutation : Nat → Air F → List (Stark.Lookup F) → Nat → Array F → List F → List EF → M × EF
+  permutation : Nat → Air F → List (Stark.Lookup F) → Nat → Trace → List F → List EF → M × EF
   toArray : V → Array EF
   ofArray : Array EF → V
   size : V → Nat
@@ -447,7 +445,6 @@ def Backend.spec (EF : Type) [Challenge F EF] (t : Transcript F width) (hash : L
   V := Array EF
   Q := Array EF
   ldeTrace := ldeRef
-  traceValues := id
   lde := ldeRef
   commit := Committed.ofMats hash compress
   cap := Committed.cap
