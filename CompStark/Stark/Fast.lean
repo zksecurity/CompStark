@@ -13,6 +13,7 @@ public import CompPoly.Fields.Montgomery.Native32ExtPlanes
 public import CompStark.Mont32.Challenge
 public import CompStark.Stark.ProgWords
 public import CompStark.Stark.ProgGroup
+public import CompStark.Fri.FoldWords
 
 /-! # The fast prover backend
 
@@ -984,27 +985,13 @@ def openings [Mont32BaseField p] [Mont32.AlgebraId EF] (b : Nat)
   let ov := tasks.map (·.map Task.get)
   (ov, fun alpha ↦ reduce invs alpha (Fri.openItems rounds ov))
 
-/-- Words `0, 2, 4, …` and `1, 3, 5, …` of the first `2 n` words of `b`. -/
-def deinterleave (b : @& ByteArray) (n : Nat) : ByteArray × ByteArray := Id.run do
-  let mut e := CompPoly.CPolynomial.NTTFast.Packed.Native.zeroWords n
-  let mut o := CompPoly.CPolynomial.NTTFast.Packed.Native.zeroWords n
-  for i in [0:n] do
-    e := CompPoly.CPolynomial.NTTFast.Packed.Native.write e i
-      (CompPoly.CPolynomial.NTTFast.Packed.Native.read b (2 * i))
-    o := CompPoly.CPolynomial.NTTFast.Packed.Native.write o i
-      (CompPoly.CPolynomial.NTTFast.Packed.Native.read b (2 * i + 1))
-  return (e, o)
-
 /-- Pairs `r0, …, r0 + len - 1` of the arity-2 fold of planes `v` at `β`; `inv2x` holds `1 / (2 x)`
-of every pair. -/
+of every pair. Every plane's pairs are read in place (`FoldWords.halves`, `FoldWords.diffs`). -/
 def fold2Range (v : @& ExtPlanes p EF) (inv2x : @& ByteArray) (beta : EF) (r0 len : Nat) :
     ExtPlanes p EF :=
-  let split (b : ByteArray) := deinterleave (slice b (2 * r0) (2 * len)) len
-  let halves := v.c.map split
-  let lo : ExtPlanes p EF := ⟨len, halves.map (·.1)⟩
-  let hi : ExtPlanes p EF := ⟨len, halves.map (·.2)⟩
-  ((lo.add hi).mulBase (Words.replicateWord ((2 : F)⁻¹).val len)).add
-    (((lo.sub hi).mulBase (slice inv2x r0 len)).smul beta)
+  let s : ExtPlanes p EF := ⟨len, v.c.map fun b ↦ CompStark.Fri.FoldWords.halves p b r0 len⟩
+  let t : ExtPlanes p EF := ⟨len, v.c.map fun b ↦ CompStark.Fri.FoldWords.diffs p b inv2x r0 len⟩
+  s.add (t.smul beta)
 
 /-- The inverses of `2 x` of the pairs of the arity-2 fold of `2 ^ (logRows + 1)` values, packed:
 pair `i` is at the points `±x`, `x` the `bitrev i`-th power of the generator of order
