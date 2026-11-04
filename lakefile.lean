@@ -11,7 +11,7 @@ package CompStark where
 -- fast KoalaBear⁵ and spec fields over the fast base field, word-sized packed loads and stores and
 -- decodes, the Montgomery word kernels, and coordinate planes generic over fast extensions.
 require CompPoly from git "https://github.com/mitschabaude-bot/CompPoly.git" @
-    "f5e8d4edcd939f18cd0d4dad481a791529f445dd"
+    "c24987692b0f0763d49f6ee031619381fd81c326"
 
 -- ArkLib main with Johnson-regime mutual correlated agreement for power curves, lossy mutual
 -- correlated agreement, FRI on the interaction layer with its knowledge certificate on Plonky3's
