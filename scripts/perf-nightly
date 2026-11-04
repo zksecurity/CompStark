@@ -4,8 +4,9 @@
 `scripts/perf-nightly` builds `CompStarkBench` and Plonky3's `compstark-bench` (`bench/rust`) at
 the checkout's HEAD, waits for the host's load to fall below `QUIET_LOAD`, takes the shared lock
 `LOCK` and runs every workload of `WORKLOADS` on 16 threads and on one. It appends the times to
-`HISTORY` in the notes repository, flags every time more than `REGRESSION` above the previous
-night's at the top of that file, and commits and pushes it. The timer `compstark-perf.timer` runs
+`HISTORY` in the notes repository, flags every CompStark time more than `REGRESSION` above
+the previous night's at the top of that file (Plonky3's times are the reference, recorded but not
+flagged), and commits and pushes it. The timer `compstark-perf.timer` runs
 it on main's HEAD in a dedicated checkout.
 """
 
@@ -49,7 +50,7 @@ COLUMNS = [f"{impl} {t}" for impl in ("CompStark", "Plonky3") for t in THREADS]
 
 HEADER = """# CompStark nightly wall-clock benchmarks
 
-Written by `scripts/perf-nightly` in CompStark (systemd user timer `compstark-perf.timer`): the README's workloads at full size at main's HEAD, CompStark and Plonky3 on 16 threads and on one, on a quiet host under `/tmp/compstark-bench.lock`. Seconds, each the median of the benchmark's samples. A time more than 5% above the previous night's is flagged under Regressions, newest first.
+Written by `scripts/perf-nightly` in CompStark (systemd user timer `compstark-perf.timer`): the README's workloads at full size at main's HEAD, CompStark and Plonky3 on 16 threads and on one, on a quiet host under `/tmp/compstark-bench.lock`. Seconds, each the median of the benchmark's samples. A CompStark time more than 5% above the previous night's is flagged under Regressions, newest first.
 
 ## Regressions
 
@@ -138,6 +139,8 @@ def record(commit, rows, note=None):
         for name, row in rows.items():
             entry += f"| {name} | " + " | ".join(fmt(row[c]) for c in COLUMNS) + " |\n"
             for c in COLUMNS:
+                if not c.startswith("CompStark "):
+                    continue
                 old, new = prev.get(name, {}).get(c), row[c]
                 if old and new and new > old * (1 + REGRESSION):
                     flagged.append(f"`{name}`, {c} thread{'s' if c.split()[1] != '1' else ''}: "
