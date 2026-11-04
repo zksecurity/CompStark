@@ -17,6 +17,7 @@ import CompStarkFixtures.KeccakKernel
 `2 ^ LOG_N` chained states; prints the median nanoseconds per permutation of seven runs.
 `CompStarkBench babybear-perm LOG_N`: BabyBear's packed permutations of widths 16 and 24 on
 `2 ^ LOG_N` states, and its width-16 specification on one state.
+`CompStarkBench phases-lookup`: the wall time of every phase of a batch proof of `lookupBatch 18 16`.
 -/
 
 open CompStark.Poseidon2
@@ -192,6 +193,54 @@ def phasesBatch : IO UInt32 := do
       fun r ↦ s!"{r.1.2.folds.size}"
     let _ ← timed "whole proof" (fun _ ↦ Batch.proveBatchWith B P instances
       (traces.map fun t ↦ #[encodeFields t]) (logNs.map fun _ ↦ [])) fun pf ↦
+        s!"{pf.oodWitness.val}"
+  return 0
+
+open CompStark CompStark.Stark CompStark.Fri CompStark.Batch in
+/-- The wall time of each phase of the fast batch prover on `lookupBatch 18 16`, blowup 2, 100
+queries, from fixed challenges: the phases of `batchCommitAndSample`, the openings and FRI
+(`openPcs`), then a whole proof. -/
+def phasesLookup : IO UInt32 := do
+  let P : Params := ⟨1, 0, 1, 100, 0, 16, 0, 0, 0, 0⟩
+  let (instances, traces, pis) := lookupBatch 18 16
+  let B := CompStark.KoalaBear.backendFor [] P.logBlowup (Batch.shapes instances)
+  for k in [0:2] do
+    let words := traces.map fun t ↦ #[encodeFields (t.set! 0 (k : _))]
+    let exts ← timed "trace lde" (fun _ ↦ (instances.zip words).map fun (I, t) ↦
+      B.ldeTrace I.logN P.logBlowup BaseField.gen I.air.width t) fun e ↦ s!"{(e.map (·.height)).sum}"
+    let mainC ← timed "trace commit" (fun _ ↦ B.commit exts)
+      fun c ↦ s!"{((B.cap c 0).getD 0 0)[0].val}"
+    let chs := Lookup.challengeLayout (instances.map (·.lookups))
+      (⟨3, 1, 4, k⟩ : _root_.KoalaBear.Fast.Ext4) ⟨1, 5, 9, 2⟩
+    let perms ← timed "permutation trace and lde" (fun _ ↦ permutationsWith B P instances words pis chs)
+      fun ps ↦ s!"{(ps.filterMap id).length}"
+    let (permExts, permC) ← timed "permutation commit" (fun _ ↦ commitPermutations B instances perms)
+      fun c ↦ s!"{(c.2.map fun c ↦ ((B.cap c 0).getD 0 0)[0].val)}"
+    let terminals := perms.map (·.map (·.2))
+    let alpha : _root_.KoalaBear.Fast.Ext4 := ⟨5, 7, 11, k⟩
+    let qvs ← timed "quotient values" (fun _ ↦ ((instances.zip exts).zip ((permExts.zip pis).zip
+      (chs.zip terminals))).map fun ((I, e), (r, p), c, t) ↦
+        batchQuotientValues B I e none r p c (t.getD 0) alpha) fun q ↦ s!"{q.length}"
+    let chunks ← timed "quotient chunks lde" (fun _ ↦ (instances.zip qvs).map fun (I, q) ↦
+      B.chunks P.logBlowup I.logN I.logQuotientChunks q) fun c ↦ s!"{(c.map (·.length)).sum}"
+    let quotC ← timed "quotient commit" (fun _ ↦ B.commit chunks.flatten)
+      fun c ↦ s!"{((B.cap c 0).getD 0 0)[0].val}"
+    let zeta : _root_.KoalaBear.Fast.Ext4 := ⟨17, 19, 23, k⟩
+    let zetaNext (I : Instance _) := zeta * Ext.ofBase (twoAdicGen I.logN)
+    let rounds : List (OpenRound B) :=
+      [(mainC, (instances.zip exts).map fun (I, e) ↦ (e, [zeta, zetaNext I])),
+        (quotC, chunks.flatten.map fun m ↦ (m, [zeta]))] ++
+      (permC.map fun pc ↦ (pc, (instances.zip permExts).filterMap fun (I, r) ↦
+        r.map fun e ↦ (e, [zeta, zetaNext I]))).toList
+    let (opened, reduce) ← timed "opened values" (fun _ ↦ B.openings 1 (rounds.map (·.2)))
+      fun o ↦ s!"{o.1.length}"
+    let red ← timed "reduce" (fun _ ↦ reduce alpha) fun r ↦ s!"{r.length}"
+    let heights := red.map fun (h, _) ↦ h
+    let arities := foldSchedule P.maxLogArity (P.logBlowup + P.logFinalPolyLen) (heights.headD 0)
+      heights
+    let _ ← timed "commit phase" (fun _ ↦ (commitPhase B P arities (red.map (·.2))).run
+      B.transcript) fun cp ↦ s!"{cp.1.commits.size}"
+    let _ ← timed "whole proof" (fun _ ↦ proveBatchWith B P instances words pis) fun pf ↦
         s!"{pf.oodWitness.val}"
   return 0
 
@@ -750,6 +799,7 @@ def main (args : List String) : IO UInt32 := do
     keccakProve "quintic" logN.toNat! (CompStark.KoalaBear.backendForQuintic
       [CompStark.Fixtures.KeccakKernel.kernel] 1 (keccakShapes logN.toNat!)) id
   | ["phases-batch"] => phasesBatch
+  | ["phases-lookup"] => phasesLookup
   | ["gate", workload, dir] => gate workload dir
   | ["openings-phase", air, logN, reps] => openingsPhase air logN.toNat! reps.toNat!
   | ["quotient-phase", air, logN, reps] => quotientPhase air logN.toNat! reps.toNat!
