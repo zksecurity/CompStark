@@ -12,7 +12,7 @@ import CompStarkFixtures.Keccak
 import CompStarkFixtures.KeccakKernel
 import CompStark.Keccak.Hash
 import CompStarkFixtures.KeccakMerkle
-import CompStark.Sumcheck.Fold
+import CompStark.Sumcheck.PackedFold
 
 /-! # CompStark micro-benchmarks
 
@@ -592,6 +592,13 @@ def sumcheckFoldRun (phase : {α : Type} → String → (Unit → α) → IO α)
   let r := value 19
   let plan ← phase "prepare" fun _ => CompStark.Sumcheck.prepare r
   let output ← phase "fold" fun _ => CompStark.Sumcheck.fold plan rows width input
+  have hn : 8 * (2 * rows * width) < USize.size := lt_of_lt_of_le (by decide) USize.le_size
+  let packed := CompStark.Sumcheck.fillScalars (2 * rows * width) hn fun i hi => input.uget i hi
+  let packedOutput ← phase "packed-fold" fun _ =>
+    CompStark.Sumcheck.foldPacked plan rows width (2 * rows * width) packed hn (by rfl)
+  let unpacked := packedOutput.toArray (lt_of_lt_of_le (by decide) USize.le_size)
+  unless unpacked == output.toArray do
+    throw (IO.userError "packed sumcheck fold disagrees with scalar array fold")
   for i in [:rows * width] do
     let a := input[2 * (i / width) * width + i % width]!
     let b := input[(2 * (i / width) + 1) * width + i % width]!

@@ -3,7 +3,8 @@ Copyright (c) 2026 zkSecurity. All rights reserved.
 Released under Apache 2.0 license as described in the file LICENSE.
 -/
 module
-public import CompStark.Sumcheck.Fold
+public import CompStark.Sumcheck.PackedFold
+public import CompStark.Sumcheck.IndexFold
 meta import Lean.Util.CollectAxioms
 meta import Lean.Elab.Command
 
@@ -30,6 +31,14 @@ def check : IO Unit := do
       for width in [0, 1, 4, 15] do
         let table := Vector.ofFn fun i : Fin (2 * rows * width) => value i.val
         let folded := fold plan rows width table
+        if hn : 8 * table.size < USize.size then
+          let packed := PackedScalars.ofArray table.toArray (by simpa only [Vector.size_toArray] using hn)
+          let packedOutput := (foldPacked plan rows width table.toArray.size packed (by simpa only [Vector.size_toArray] using hn) (by simp only [Vector.size_toArray]; rfl)).toArray (by
+            simp only [Vector.size] at hn
+            nlinarith)
+          unless packedOutput == folded.toArray do
+            throw (IO.userError s!"packed fold mismatch rows={rows} width={width}")
+        else throw (IO.userError "unaddressable packed fold fixture")
         for i in [:folded.size] do
           let a := table[2 * (i / width) * width + i % width]!
           let b := table[(2 * (i / width) + 1) * width + i % width]!

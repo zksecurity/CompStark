@@ -217,3 +217,5 @@ public import CompStark.Sumcheck.ByteMap
 public import CompStark.Sumcheck.Fold
 public import CompStark.Sumcheck.Preparation
 public import CompStark.Sumcheck.Buffer
+public import CompStark.Sumcheck.PackedFold
+public import CompStark.Sumcheck.IndexFold

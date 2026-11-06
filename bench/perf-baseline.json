@@ -313,12 +313,17 @@
     },
     "sumcheck-fold/prepare": {
       "instructions": 4371073,
-      "variation": 8.6e-05,
+      "variation": 0.0,
       "tolerance": 0.005
     },
     "sumcheck-fold/fold": {
-      "instructions": 58017035,
-      "variation": 1.4e-05,
+      "instructions": 58015303,
+      "variation": 0.0,
+      "tolerance": 0.005
+    },
+    "sumcheck-fold/packed-fold": {
+      "instructions": 31702185,
+      "variation": 9e-06,
       "tolerance": 0.005
     }
   }
