@@ -497,12 +497,12 @@ def wideParams : CompStark.Fri.Params := ⟨1, 0, 1, 100, 0, 16, 0, 0, 0, 0⟩
   | n + 1 => keccakChain n (CompStark.Keccak.f1600 s)
 
 /-- Serial hash loop consuming a complete output lane from every digest. -/
-@[noinline] def keccakHashes (n : Nat) (input : ByteArray) (sink : UInt64) : UInt64 :=
+@[noinline] def keccakHashes (n : Nat) (input : ByteArray) (hu : input.size < USize.size) (sink : UInt64) : UInt64 :=
   match n with
   | 0 => sink
   | n + 1 =>
-    let h := CompStark.Keccak.keccak256 input
-    keccakHashes n input (sink + CompStark.Keccak.readLane h 0)
+    let h := CompStark.Keccak.keccak256 input hu
+    keccakHashes n input hu (sink + CompStark.Keccak.readLane h 0)
 
 /-- Independent states with different nonzero lane values. -/
 def keccakStates : Array (Array UInt64) :=
@@ -514,6 +514,13 @@ def keccakInputs (len : Nat) : Array ByteArray :=
   Array.ofFn (n := 1024) fun j ↦ ByteArray.mk (Array.ofFn (n := len) fun i ↦
     (j.val * len + i.val).toUInt8)
 
+theorem keccakInputs_addressable (len : Nat) (hlen : len < 4294967296) :
+    ∀ input ∈ keccakInputs len, input.size < USize.size := by
+  intro input hi
+  obtain ⟨i, rfl⟩ := Array.mem_ofFn.mp hi
+  simp only [ByteArray.size, Array.size_ofFn]
+  exact lt_of_lt_of_le hlen USize.le_size
+
 /-- Independent permutation throughput, carrying all outputs into the next batch. -/
 @[noinline] def keccakStateBatches (n : Nat) (states : Array (Array UInt64)) :
     Array (Array UInt64) :=
@@ -522,13 +529,14 @@ def keccakInputs (len : Nat) : Array ByteArray :=
   | n + 1 => keccakStateBatches n (CompStark.Keccak.f1600Batch states)
 
 /-- Consume every digest of every independent hash batch. -/
-@[noinline] def keccakHashBatches (n : Nat) (inputs : Array ByteArray) (sink : UInt64) : UInt64 :=
+@[noinline] def keccakHashBatches (n : Nat) (inputs : Array ByteArray)
+    (hu : ∀ input ∈ inputs, input.size < USize.size) (sink : UInt64) : UInt64 :=
   match n with
   | 0 => sink
   | n + 1 =>
-    let hashes := CompStark.Keccak.keccak256Batch inputs
+    let hashes := CompStark.Keccak.keccak256Batch inputs hu
     let sink := hashes.foldl (fun s h ↦ s + CompStark.Keccak.readLane h 0) sink
-    keccakHashBatches n inputs sink
+    keccakHashBatches n inputs hu sink
 
 /-- Keccak kernel timings. Input-dependent sinks prevent loop-invariant hash elimination. -/
 def keccakKernels (n : Nat) : IO UInt32 := do
@@ -537,18 +545,22 @@ def keccakKernels (n : Nat) : IO UInt32 := do
   let seed := (Array.replicate 25 (0 : UInt64)).set! 0 0x123456789abcdef0
   let (ns, s) ← timeNs fun _ ↦ IO.lazyPure fun _ ↦ keccakChain n seed
   IO.println s!"f1600 n={n} ns/op={ns / n} sink={s[0]!}"
-  for len in [64, 512] do
-    let input := ByteArray.mk (Array.ofFn (n := len) fun i ↦ i.val.toUInt8)
-    let (ns, sink) ← timeNs fun _ ↦ IO.lazyPure fun _ ↦ keccakHashes n input 0
+  for len in ([⟨64, by decide⟩, ⟨512, by decide⟩] : List (Fin 10000)) do
+    let input := ByteArray.mk (Array.ofFn (n := len.val) fun i ↦ i.val.toUInt8)
+    have hu : input.size < USize.size := by
+      simp only [input, ByteArray.size, Array.size_ofFn]
+      exact lt_of_lt_of_le (by omega) USize.le_size
+    let (ns, sink) ← timeNs fun _ ↦ IO.lazyPure fun _ ↦ keccakHashes n input hu 0
     IO.println s!"keccak256 len={len} n={n} ns/op={ns / n} sink={sink}"
   let rounds := (n + 1023) / 1024
   let count := rounds * 1024
   let (ns, states) ← timeNs fun _ ↦ IO.lazyPure fun _ ↦ keccakStateBatches rounds keccakStates
   let sink := states.foldl (fun s state ↦ s + state[0]!) (0 : UInt64)
   IO.println s!"f1600 batch n={count} ns/op={ns / count} sink={sink}"
-  for len in [64, 512] do
-    let inputs := keccakInputs len
-    let (ns, sink) ← timeNs fun _ ↦ IO.lazyPure fun _ ↦ keccakHashBatches rounds inputs 0
+  for len in ([⟨64, by decide⟩, ⟨512, by decide⟩] : List (Fin 10000)) do
+    let inputs := keccakInputs len.val
+    let (ns, sink) ← timeNs fun _ ↦ IO.lazyPure fun _ ↦ keccakHashBatches rounds inputs
+      (keccakInputs_addressable len.val (by omega)) 0
     IO.println s!"keccak256 batch len={len} n={count} ns/op={ns / count} sink={sink}"
   return 0
 
@@ -658,9 +670,12 @@ def gate (workload : String) (dir : System.FilePath) : IO UInt32 := do
     unless s[0]! == 0x03d0008026579d6c do
       IO.eprintln "Keccak permutation sink mismatch"; return 1
     IO.println s!"permutation sink {s[0]!}"
-    for len in [64, 512] do
-      let input := ByteArray.mk (Array.ofFn (n := len) fun i ↦ i.val.toUInt8)
-      let sink ← m.phase s!"hash {len}" fun _ ↦ keccakHashes 10000 input 0
+    for len in ([⟨64, by decide⟩, ⟨512, by decide⟩] : List (Fin 10000)) do
+      let input := ByteArray.mk (Array.ofFn (n := len.val) fun i ↦ i.val.toUInt8)
+      have hu : input.size < USize.size := by
+        simp only [input, ByteArray.size, Array.size_ofFn]
+        exact lt_of_lt_of_le (by omega) USize.le_size
+      let sink ← m.phase s!"hash {len}" fun _ ↦ keccakHashes 10000 input hu 0
       let expected := 10000 * CompStark.Keccak.readLane
         (VCVio.Algorithms.Keccak.keccak256 input) 0
       unless sink == expected do
@@ -674,9 +689,10 @@ def gate (workload : String) (dir : System.FilePath) : IO UInt32 := do
     unless states == expected do
       IO.eprintln "Keccak batch permutation mismatch"; return 1
     IO.println s!"batch states {states.size}, sink {(states[0]!)[0]!}"
-    for len in [64, 512] do
-      let inputs := keccakInputs len
-      let sink ← m.phase s!"hash {len}" fun _ ↦ keccakHashBatches 10 inputs 0
+    for len in ([⟨64, by decide⟩, ⟨512, by decide⟩] : List (Fin 10000)) do
+      let inputs := keccakInputs len.val
+      let sink ← m.phase s!"hash {len}" fun _ ↦ keccakHashBatches 10 inputs
+        (keccakInputs_addressable len.val (by omega)) 0
       let expected := 10 * (inputs.map VCVio.Algorithms.Keccak.keccak256).foldl
         (fun s h ↦ s + CompStark.Keccak.readLane h 0) (0 : UInt64)
       unless sink == expected do

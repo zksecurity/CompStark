@@ -4,7 +4,7 @@ Released under Apache 2.0 license as described in the file LICENSE.
 -/
 module
 
-public import CompStark.Keccak.Scalar
+public import CompStark.Keccak.Sponge
 
 /-! # Keccak-256 and independent batches
 
@@ -52,24 +52,26 @@ namespace CompStark.Keccak
   return s
 
 /-- Original Keccak-256, with a 32-byte digest. -/
-@[expose] def keccak256 (input : ByteArray) : ByteArray :=
-  VCVio.Algorithms.Keccak.squeeze (absorb input) 32
+@[expose] def keccak256 (input : @& ByteArray) (hu : input.size < USize.size) : ByteArray :=
+  Sponge.keccak256 input hu
 
 /-- Permute several independent states in input order. -/
 @[expose] def f1600Batch (states : Array (Array UInt64)) : Array (Array UInt64) :=
   states.map f1600
 
 /-- Hash several independent messages in input order. -/
-@[expose] def keccak256Batch (inputs : Array ByteArray) : Array ByteArray :=
-  inputs.map keccak256
+@[expose] def keccak256Batch (inputs : Array ByteArray)
+    (hu : ∀ input ∈ inputs, input.size < USize.size) : Array ByteArray :=
+  inputs.pmap (fun input h ↦ keccak256 input h) hu
 
 /-- A Merkle node's two 32-byte children, concatenated left then right. -/
-@[expose] def hashNode (left right : ByteArray) (_hl : left.size = 32) (_hr : right.size = 32) :
+@[expose] def hashNode (left right : ByteArray) (hl : left.size = 32) (hr : right.size = 32) :
     ByteArray :=
-  keccak256 (left ++ right)
+  keccak256 (left ++ right) (lt_of_lt_of_le (by rw [ByteArray.size_append, hl, hr]; decide)
+    USize.le_size)
 
 /-- A leanVM Merkle leaf's 512-byte payload. -/
-@[expose] def hashLeaf (payload : ByteArray) (_h : payload.size = 512) : ByteArray :=
-  keccak256 payload
+@[expose] def hashLeaf (payload : ByteArray) (h : payload.size = 512) : ByteArray :=
+  keccak256 payload (lt_of_lt_of_le (by rw [h]; decide) USize.le_size)
 
 end CompStark.Keccak

@@ -206,5 +206,6 @@ public import CompStark.Fs.BatchStable
 public import CompStark.Fs.BatchBcs
 
 public import CompStark.Keccak.Scalar
+public import CompStark.Keccak.Sponge
 public import CompStark.Keccak.Hash
 public import CompStark.Keccak.Refines

@@ -147,11 +147,11 @@ For the Keccak fixture, `compstark-bench fingerprint AIR LOG_N` prints an AIR's 
 
 ## Keccak hash kernels
 
-`CompStark.Keccak` provides pure-Lean Keccak-f[1600] and original Keccak-256, with no new externs or inline C. `Scalar.lean` carries 25 `UInt64` scalar arguments through the round loop; `scripts/gen_keccak.py` generates its straight-line theta, rho/pi, chi and iota operations with immediate rotations. The emitted native loop retains unboxed lanes between rounds and materializes the output array once per permutation. `Hash.lean` absorbs eight little-endian bytes per lane at the 136-byte rate, retains the original `0x01 … 0x80` padding, and returns 32 digest bytes.
+`CompStark.Keccak` provides pure-Lean Keccak-f[1600] and original Keccak-256, with no new externs or inline C. `scripts/gen_keccak.py` generates the straight-line round in `Scalar.lean` and the sponge in `Sponge.lean`. Both retain 25 unboxed `UInt64` lanes across rounds; the sponge retains them across absorption too, with no boxed lane arrays or padded message allocation. Complete lanes load directly from the input through two approved `ByteArray.ugetUInt32LE` accesses. The final partial lane supplies the `0x01` delimiter, lane 16 supplies the final `0x80` bit, and eight approved `usetUInt32LE` stores write the 32-byte digest. Each 136-byte block, including the final padding block, executes one absorption transition and 24 rounds in a structurally recursive scalar loop. Both kernels use the packed-native library's `-march=native -mstackrealign` compilation flags.
 
-`Refines.lean` proves each scalar round agrees with VCVio (`roundWith_eq`), then any number of rounds (`permute_eq`, `permute_succ_eq`) and the complete permutation (`f1600_eq`). `absorbBlock_eq` proves whole-lane absorption equals the reference byte loop, `absorb_eq` transports the entire sponge, and `keccak256_eq` proves exact equality with `VCVio.Algorithms.Keccak.keccak256` for every input length. The independent APIs `f1600Batch` and `keccak256Batch` preserve input order, with their `_eq` refinements. These batches use the scalar kernel serially. `hashNode left right` hashes two 32-byte child digests in left/right order; `hashLeaf payload` hashes a 512-byte payload. Their byte-length arguments are proofs erased by compilation, and `hashNode_eq`/`hashLeaf_eq` establish the reference digests. The refinements depend only on Lean's standard logical axioms (`propext`, `Classical.choice`, `Quot.sound`).
+`Refines.lean` proves each scalar round agrees with VCVio (`roundWith_eq`), then any number of rounds (`permute_eq`, `permute_succ_eq`) and the complete permutation (`f1600_eq`). The named sponge lemmas `loadLane_eq`, `partialLane_eq`, `lastLane_eq`, `digest_eq`, `absorbWith_eq`, `run_rounds_eq` and `run_blocks_eq` establish the packed accesses, padding and scalar transitions; `keccak256_eq` proves exact equality with `VCVio.Algorithms.Keccak.keccak256`. The public hash requires `input.size < USize.size`: the approved word accessor uses machine-sized offsets, while Lean's abstract `ByteArray` admits larger sizes. `keccak256Batch` takes the corresponding membership proof for every input and preserves input order, with its `_eq` refinement. These proofs are erased by compilation. The independent permutation API `f1600Batch` also preserves input order and uses the scalar kernel serially. `hashNode left right` hashes two 32-byte child digests in left/right order; `hashLeaf payload` hashes a 512-byte payload. Their existing length proofs discharge machine addressability, and `hashNode_eq`/`hashLeaf_eq` establish the reference digests. The complete hash and batch refinements depend only on Lean's standard logical axioms (`propext`, `Classical.choice`, `Quot.sound`).
 
-`tests/CompStarkTests/KeccakHash.lean` checks the empty and `abc` known answers, 26 lengths around byte/lane/rate boundaries and the 512-byte leaf size with four byte patterns, nonzero independent permutation states, both empty batches, and node/leaf framing. The compiled test driver repeats the comparisons. The performance gate adds `keccak-scalar` (10,000 dependent permutations and 10,000 hashes of each message size) and `keccak-batch` (ten batches of 1,024 independent states/messages), with a phase for each operation and reference-checked sinks outside the measurements.
+`tests/CompStarkTests/KeccakHash.lean` checks the empty and `abc` known answers, 26 lengths around byte/lane/rate boundaries and the 512-byte leaf size with four byte patterns, nonzero independent permutation states, both empty batches, and node/leaf framing. These checks run in the compiled test driver because the approved word accessors execute through their native implementations. The performance gate includes `keccak-scalar` (10,000 dependent permutations and 10,000 hashes of each message size) and `keccak-batch` (ten batches of 1,024 independent states/messages), with a phase for each operation and reference-checked sinks outside the measurements.
 
 Build the Lean benchmark with `systemd-run --user --scope -p MemoryMax=12G -p MemorySwapMax=0 -- lake build CompStarkBench` and the pinned Plonky3 comparison with `cd bench/rust && cargo build --release --bin keccak-kernels`. Run `LEAN_NUM_THREADS=1 flock /tmp/compstark-bench.lock taskset -c 5 .lake/build/bin/CompStarkBench keccak-kernels 10000` from the repository root and `flock /tmp/compstark-bench.lock taskset -c 5 bench/rust/target/release/keccak-kernels 10000` for Rust. The scalar initial state, patterned 64/512-byte messages, batch inputs and consumed 64-bit sinks match on both sides. Rust uses `black_box`, and its batch hashes use Plonky3's runtime-selected vector backend. The compiled Lean hash is called from a separate module, and every output contributes to the sink. Wall-clock runs hold the shared lock; the instruction counts from `scripts/perf-gate` decide regressions under host load.
 
@@ -163,13 +163,38 @@ On the shared Ryzen 7 3700X, three interleaved Lean/Rust process pairs, one thre
 
 | Operation | Lean ns/op | Rust ns/op | Lean instructions/op | Rust instructions/op | Instruction ratio |
 | --- | ---: | ---: | ---: | ---: | ---: |
-| Keccak-f dependent chain | 728 | 285 | 9,987.2 | 4,689.1 | 2.13× |
-| Keccak-256, 64 bytes | 3,075 | 316 | 37,541.7 | 4,890.1 | 7.68× |
-| Keccak-256, 512 bytes | 6,173 | 1,301 | 76,448.4 | 19,187.1 | 3.98× |
-| Keccak-f independent states | 768 | 282 | 9,967.0 | 4,690.1 | 2.13× |
-| Keccak-256 batch, 64 bytes | 3,281 | 155 | 37,565.6 | 1,697.3 | 22.13× |
-| Keccak-256 batch, 512 bytes | 5,640 | 662 | 76,367.4 | 6,599.5 | 11.57× |
+| Keccak-f dependent chain | 919 | 492 | 7,742.2 | 4,689.1 | 1.65× |
+| Keccak-256, 64 bytes | 879 | 534 | 6,487.6 | 4,890.1 | 1.33× |
+| Keccak-256, 512 bytes | 3,282 | 2,013 | 23,994.3 | 19,187.1 | 1.25× |
+| Keccak-f independent states | 951 | 487 | 7,722.0 | 4,690.1 | 1.65× |
+| Keccak-256 batch, 64 bytes | 890 | 225 | 6,525.7 | 1,697.3 | 3.84× |
+| Keccak-256 batch, 512 bytes | 3,294 | 871 | 24,031.6 | 6,599.5 | 3.64× |
 
-The 1/5/15-minute load averages before/between/after round 1 were `8.32/17.29/19.46`; round 2 began at those values and ended at `8.38/17.15/19.41`; round 3 retained the latter values. Scalar permutation times ranged from 664–777 ns in Lean and 279–334 ns in Rust. These are loaded-host measurements, not quiet-host performance claims. The survey's Rust reference was 301 ns for the permutation, 287/1,101 ns for scalar 64/512-byte hashes, and 136/545 ns for its AVX2 batch hashes. Instruction counts, rather than these wall times, decide the A/B results: whole-lane absorption reduces the byte-loop prototype's instruction count by 34% for 64-byte messages and 50% for 512-byte messages.
+The 1/5/15-minute load averages were `4.085/5.681/6.189` before the wall-clock runs and `4.078/5.652/6.177` afterward. These are loaded-host measurements, not quiet-host performance claims. The survey's Rust reference was 301 ns for the permutation, 287/1,101 ns for scalar 64/512-byte hashes, and 136/545 ns for its AVX2 batch hashes. Instruction counts decide the A/B results: the scalar packed sponge reduces the 64/512-byte hash counts from 37,541.7/76,448.4 to 6,487.6/23,994.3 per operation, reductions of 83%/69%. CPU targeting also reduces the permutation count from 9,987.2 to 7,742.2. A 512-byte hash executes four permutations and costs 3.70 times the instructions of a 64-byte hash, which executes one.
 
-The scalar permutation removes the reference implementation's repeated round-array construction, but Rust parity is not established: the measured permutation costs 2.13 times Rust's instructions and about 2.6 times its median wall time. The scalar sponge still costs 7.68/3.98 times Rust's instructions on 64/512-byte messages, with padding, byte loading and boxed lane arrays outside the scalar round loop. Independent Lean hashes retain essentially the scalar instruction cost, whereas Rust benefits from vector batching, leaving 22.13/11.57 times its instructions per hash. The remaining work is an absorber with less allocation and a vector batch kernel; this implementation does not meet a within-two-times-Rust kernel bar.
+### Batch vectorization and interleaving
+
+Two- and four-state packed prototypes use structure-of-arrays storage at byte offset `(lane * states + state) * 8`, paired approved word accesses, and straight-line operations grouped across independent states. Separate scalar prototypes carry 50 or 100 unboxed lane parameters across all rounds. Lean's emitted C represents the lanes as individual `uint64_t` locals. With the bundled clang at `-O3 -march=native -mstackrealign`, all four hot bodies (`round2`, `round4`, `scalar2`, `scalar4`) contain zero packed arithmetic instructions and zero YMM register references. YMM copies appear only in interface wrappers. The four-state packed round uses scalar instructions such as:
+
+```asm
+69e: rorx $0x3f,%rbx,%rdx
+6bc: rorx $0x3f,%rcx,%rcx
+6e5: rorx $0x15,%rdx,%r8
+724: rorx $0x3f,%r11,%rdx
+76a: rorx $0x14,%r15,%rdi
+780: andn %r8,%rdi,%rcx
+```
+
+In particular, its round arithmetic has no `vpxor`, `vpand`, `vpandn`, `vpsllq`, `vpsrlq` or `vpor`. Recompiling the emitted C with `-Rpass=slp-vectorizer -Rpass-missed=slp-vectorizer -Rpass-analysis=slp-vectorizer` reports “Cannot SLP vectorize list: vectorization was impossible with available vectorization factors” and “List vectorization was possible but not beneficial with cost 0 >= 0”. This establishes the outcome for these tested formulations, rather than ruling out all pure-Lean SIMD formulations. The packed two/four-state round stack frames are 496/1,008 bytes; the scalar interleaved bodies use 464/976 bytes, exposing the register pressure from many live lanes.
+
+The following counter measurements are per independent permutation, including each candidate's interface. Cycle counts and IPC are representative medians on the loaded host and are secondary to instructions.
+
+| Candidate | Instructions/state | Cycles/state | IPC |
+| --- | ---: | ---: | ---: |
+| Packed two-state, reload/store each round | 7,630.7 | 2,379.9 | 3.21 |
+| Packed four-state, reload/store each round | 7,601.1 | 2,650.5 | 2.87 |
+| Scalar interleave two, packed interface | 5,080.8 | 1,694.1 | 3.00 |
+| Scalar interleave four, packed interface | 5,300.6 | 2,003.7 | 2.65 |
+| Scalar interleave two, public array interface | 7,720.9 | 2,559.4 | 3.02 |
+
+The retained scalar array mapping takes about 7,722 instructions and 2,228 cycles per independent permutation. Converting the public arrays consumes the packed two-state interleaving's instruction advantage, and its public interface is instruction-flat with worse cycles. A paired scalar sponge also costs 22%/24% more instructions per 64/512-byte hash than the single-state sponge measured alongside it. None of these batch candidates improves the public API enough to retain, so production batches map the scalar kernel. Scalar hashes cost 1.33/1.25 times Rust's instructions; batches remain at 3.84/3.64 times Rust because the tested Lean formulations do not obtain Rust's four-lane AVX2 arithmetic.

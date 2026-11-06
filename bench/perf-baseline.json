@@ -262,32 +262,32 @@
       "tolerance": 0.005
     },
     "keccak-scalar/f1600 chain": {
-      "instructions": 99871614,
-      "variation": 1.6e-05,
+      "instructions": 77421607,
+      "variation": 0.0,
       "tolerance": 0.005
     },
     "keccak-scalar/hash 64": {
-      "instructions": 375416446,
-      "variation": 1e-06,
+      "instructions": 64875686,
+      "variation": 0.0,
       "tolerance": 0.005
     },
     "keccak-scalar/hash 512": {
-      "instructions": 764483706,
+      "instructions": 239942792,
       "variation": 0.0,
       "tolerance": 0.005
     },
     "keccak-batch/f1600": {
-      "instructions": 102061507,
-      "variation": 4e-06,
+      "instructions": 79073064,
+      "variation": 0.0,
       "tolerance": 0.005
     },
     "keccak-batch/hash 64": {
-      "instructions": 384671336,
+      "instructions": 66823518,
       "variation": 0.0,
       "tolerance": 0.005
     },
     "keccak-batch/hash 512": {
-      "instructions": 782002425,
+      "instructions": 246083211,
       "variation": 0.0,
       "tolerance": 0.005
     }
