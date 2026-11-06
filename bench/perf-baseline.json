@@ -317,8 +317,8 @@
       "tolerance": 0.005
     },
     "sumcheck-fold/fold": {
-      "instructions": 59849263,
-      "variation": 6e-06,
+      "instructions": 58014024,
+      "variation": 0.0,
       "tolerance": 0.005
     }
   }

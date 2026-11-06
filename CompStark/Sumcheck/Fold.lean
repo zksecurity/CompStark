@@ -4,7 +4,7 @@ Released under Apache 2.0 license as described in the file LICENSE.
 -/
 module
 
-public import CompPoly.Fields.Binary.BF64.FixedMapProofs
+public import CompStark.Sumcheck.ByteMap
 public import CompPoly.Fields.Binary.BF64.WordExt3Proofs
 
 /-! Shared-challenge folds of interleaved cubic-extension tables. The width is the
@@ -53,12 +53,12 @@ def prepare (r : WordExt3) : Prepared :=
 
 /-- Multiply by the prepared challenge, using six lookup products. -/
 @[inline] def Prepared.mul (r : Prepared) (a : WordExt3) : WordExt3 :=
-  let p0 := r.c0.mul a.c0
-  let p1 := r.c1.mul a.c1
-  let p2 := r.c2.mul a.c2
-  let p01 := Word.add (Word.add (r.c01.mul (Word.add a.c0 a.c1)) p0) p1
-  let p02 := Word.add (Word.add (r.c02.mul (Word.add a.c0 a.c2)) p0) p2
-  let p12 := Word.add (Word.add (r.c12.mul (Word.add a.c1 a.c2)) p1) p2
+  let p0 := mapMul r.c0 a.c0
+  let p1 := mapMul r.c1 a.c1
+  let p2 := mapMul r.c2 a.c2
+  let p01 := Word.add (Word.add (mapMul r.c01 (Word.add a.c0 a.c1)) p0) p1
+  let p02 := Word.add (Word.add (mapMul r.c02 (Word.add a.c0 a.c2)) p0) p2
+  let p12 := Word.add (Word.add (mapMul r.c12 (Word.add a.c1 a.c2)) p1) p2
   ⟨Word.add p0 p12, Word.add (Word.add p01 p12) p2,
     Word.add (Word.add p02 p1) p2⟩
 
@@ -67,7 +67,7 @@ theorem prepared_mul_eq (r a : WordExt3) : (prepare r).mul a = WordExt3.mul r a 
   have hm (x y : Word) : (Word.ByteMap.ofScalar x).mul y = Word.mulMasked x y := by
     apply Word.toField_injective
     rw [Word.ByteMap.toField_mul, Word.toField_mulMasked]
-  simp only [prepare, byteMap_eq, Prepared.mul, WordExt3.mul, hm]
+  simp only [prepare, byteMap_eq, Prepared.mul, mapMul_eq, WordExt3.mul, hm]
 
 /-- Prepared multiplication refines the specification extension field. -/
 @[simp] theorem toField_prepared_mul (r a : WordExt3) :
