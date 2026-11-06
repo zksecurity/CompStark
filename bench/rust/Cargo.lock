@@ -70,6 +70,7 @@ dependencies = [
  "p3-dft",
  "p3-field",
  "p3-fri",
+ "p3-keccak",
  "p3-keccak-air",
  "p3-koala-bear",
  "p3-lookup",

@@ -204,3 +204,7 @@ public import CompStark.Fs.BatchParse
 public import CompStark.Fs.BatchTerminal
 public import CompStark.Fs.BatchStable
 public import CompStark.Fs.BatchBcs
+
+public import CompStark.Keccak.Scalar
+public import CompStark.Keccak.Hash
+public import CompStark.Keccak.Refines

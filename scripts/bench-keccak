@@ -1,0 +1,37 @@
+#!/usr/bin/env python3
+"""Compare Lean and pinned Plonky3 Keccak kernels with acknowledged instruction counters.
+
+Build CompStarkBench and bench/rust's release binary first. This measures three
+single-threaded runs, without the wall-clock benchmark lock, and prints median
+instructions per operation. Counter setup and multiplexing checks are perf-gate's.
+"""
+from pathlib import Path
+import runpy
+import statistics
+
+ROOT = Path(__file__).resolve().parent.parent
+scope = runpy.run_path(str(ROOT / 'scripts/perf-gate'), run_name='perf_gate')
+run_workload = scope['run_workload']
+lean = {}
+for _ in range(3):
+    for workload in ['keccak-scalar', 'keccak-batch']:
+        for label, counters in run_workload(workload).items():
+            lean.setdefault(label, []).append(counters[0])
+run_workload.__globals__['BENCH'] = str(ROOT / 'bench/rust/target/release/keccak-kernels')
+rust = {}
+for _ in range(3):
+    for label, counters in run_workload('keccak-kernels').items():
+        rust.setdefault(label, []).append(counters[0])
+operations = [
+    ('f1600 chain', 'keccak-scalar/f1600 chain', 'f1600 chain', 10000),
+    ('hash 64', 'keccak-scalar/hash 64', 'hash 64', 10000),
+    ('hash 512', 'keccak-scalar/hash 512', 'hash 512', 10000),
+    ('f1600 batch', 'keccak-batch/f1600', 'f1600 batch', 10240),
+    ('batch hash 64', 'keccak-batch/hash 64', 'batch hash 64', 10240),
+    ('batch hash 512', 'keccak-batch/hash 512', 'batch hash 512', 10240),
+]
+print('operation             Lean instructions/op    Rust instructions/op    Lean/Rust')
+for name, ll, rl, n in operations:
+    li = statistics.median(lean[ll]) / n
+    ri = statistics.median(rust['keccak-kernels/' + rl]) / n
+    print(f'{name:20} {li:23.1f} {ri:23.1f} {li / ri:12.2f}')

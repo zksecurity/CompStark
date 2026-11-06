@@ -6,3 +6,4 @@ import CompStarkTests.FiatShamir
 import CompStarkTests.Security
 import CompStarkTests.Keccak
 import CompStarkTests.KeccakSecurity
+import CompStarkTests.KeccakHash

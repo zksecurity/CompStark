@@ -3,6 +3,7 @@ name = "compstark-bench"
 version = "0.1.0"
 edition = "2021"
 publish = false
+default-run = "compstark-bench"
 
 [dependencies]
 p3-field = { git = "https://github.com/Plonky3/Plonky3", rev = "a4982ec" }
@@ -20,6 +21,7 @@ p3-challenger = { git = "https://github.com/Plonky3/Plonky3", rev = "a4982ec" }
 p3-air = { git = "https://github.com/Plonky3/Plonky3", rev = "a4982ec" }
 p3-dft = { git = "https://github.com/Plonky3/Plonky3", rev = "a4982ec" }
 p3-lookup = { git = "https://github.com/Plonky3/Plonky3", rev = "a4982ec" }
+p3-keccak = { git = "https://github.com/Plonky3/Plonky3", rev = "a4982ec" }
 p3-keccak-air = { git = "https://github.com/Plonky3/Plonky3", rev = "a4982ec" }
 p3-util = { git = "https://github.com/Plonky3/Plonky3", rev = "a4982ec" }
 rand = { version = "0.10", default-features = false }

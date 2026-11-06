@@ -10,6 +10,7 @@ import CompStark.Batch.Prover
 import CompStark.Stark.Fingerprint
 import CompStarkFixtures.Keccak
 import CompStarkFixtures.KeccakKernel
+import CompStark.Keccak.Hash
 
 /-! # CompStark micro-benchmarks
 
@@ -489,6 +490,68 @@ def gatePhases {EF : Type} [Challenge KoalaBear.Fast.Field EF] (m : Marks)
 /-- `wide 64` on `2 ^ logN` rows with blowup 2, 100 queries and 16 bits of query grinding. -/
 def wideParams : CompStark.Fri.Params := ⟨1, 0, 1, 100, 0, 16, 0, 0, 0, 0⟩
 
+/-- Dependent permutation chain, with the survey's nonzero initial lane. -/
+@[noinline] def keccakChain (n : Nat) (s : Array UInt64) : Array UInt64 :=
+  match n with
+  | 0 => s
+  | n + 1 => keccakChain n (CompStark.Keccak.f1600 s)
+
+/-- Serial hash loop consuming a complete output lane from every digest. -/
+@[noinline] def keccakHashes (n : Nat) (input : ByteArray) (sink : UInt64) : UInt64 :=
+  match n with
+  | 0 => sink
+  | n + 1 =>
+    let h := CompStark.Keccak.keccak256 input
+    keccakHashes n input (sink + CompStark.Keccak.readLane h 0)
+
+/-- Independent states with different nonzero lane values. -/
+def keccakStates : Array (Array UInt64) :=
+  Array.ofFn (n := 1024) fun j ↦ Array.ofFn (n := 25) fun i ↦
+    (j.val * 25 + i.val + 1).toUInt64 * 0x9e3779b97f4a7c15
+
+/-- Independent messages in the survey's contiguous, repeating byte pattern. -/
+def keccakInputs (len : Nat) : Array ByteArray :=
+  Array.ofFn (n := 1024) fun j ↦ ByteArray.mk (Array.ofFn (n := len) fun i ↦
+    (j.val * len + i.val).toUInt8)
+
+/-- Independent permutation throughput, carrying all outputs into the next batch. -/
+@[noinline] def keccakStateBatches (n : Nat) (states : Array (Array UInt64)) :
+    Array (Array UInt64) :=
+  match n with
+  | 0 => states
+  | n + 1 => keccakStateBatches n (CompStark.Keccak.f1600Batch states)
+
+/-- Consume every digest of every independent hash batch. -/
+@[noinline] def keccakHashBatches (n : Nat) (inputs : Array ByteArray) (sink : UInt64) : UInt64 :=
+  match n with
+  | 0 => sink
+  | n + 1 =>
+    let hashes := CompStark.Keccak.keccak256Batch inputs
+    let sink := hashes.foldl (fun s h ↦ s + CompStark.Keccak.readLane h 0) sink
+    keccakHashBatches n inputs sink
+
+/-- Keccak kernel timings. Input-dependent sinks prevent loop-invariant hash elimination. -/
+def keccakKernels (n : Nat) : IO UInt32 := do
+  if n = 0 then
+    IO.eprintln "positive operation count required"; return 1
+  let seed := (Array.replicate 25 (0 : UInt64)).set! 0 0x123456789abcdef0
+  let (ns, s) ← timeNs fun _ ↦ IO.lazyPure fun _ ↦ keccakChain n seed
+  IO.println s!"f1600 n={n} ns/op={ns / n} sink={s[0]!}"
+  for len in [64, 512] do
+    let input := ByteArray.mk (Array.ofFn (n := len) fun i ↦ i.val.toUInt8)
+    let (ns, sink) ← timeNs fun _ ↦ IO.lazyPure fun _ ↦ keccakHashes n input 0
+    IO.println s!"keccak256 len={len} n={n} ns/op={ns / n} sink={sink}"
+  let rounds := (n + 1023) / 1024
+  let count := rounds * 1024
+  let (ns, states) ← timeNs fun _ ↦ IO.lazyPure fun _ ↦ keccakStateBatches rounds keccakStates
+  let sink := states.foldl (fun s state ↦ s + state[0]!) (0 : UInt64)
+  IO.println s!"f1600 batch n={count} ns/op={ns / count} sink={sink}"
+  for len in [64, 512] do
+    let inputs := keccakInputs len
+    let (ns, sink) ← timeNs fun _ ↦ IO.lazyPure fun _ ↦ keccakHashBatches rounds inputs 0
+    IO.println s!"keccak256 batch len={len} n={count} ns/op={ns / count} sink={sink}"
+  return 0
+
 open CompStark CompStark.Stark CompStark.Fri in
 /-- A proof of `A` on `2 ^ logN` rows by `B`, between marks, and its verification by `verify`,
 between marks, which must end in `expected`. -/
@@ -518,7 +581,9 @@ marked through the FIFOs of `DIR`, at a fixed size from fixed inputs:
 * `lookup`: `lookupBatch 14 12`, the first table's permutation trace and LogUp quotient, then a
   whole batch proof.
 * `merkle`: the packed Merkle root of $2^{16}$ rows of 64 elements.
-* `lde`: the coset LDE of `keccakShapedTrace 14`, column by column. -/
+* `lde`: the coset LDE of `keccakShapedTrace 14`, column by column.
+* `keccak-scalar`: 10,000 chained Keccak-f permutations and 64/512-byte hashes.
+* `keccak-batch`: ten batches of 1,024 independent permutations and 64/512-byte hashes. -/
 def gate (workload : String) (dir : System.FilePath) : IO UInt32 := do
   let m ← Marks.open dir
   match workload with
@@ -587,6 +652,37 @@ def gate (workload : String) (dir : System.FilePath) : IO UInt32 := do
     let root ← m.phase "root" fun _ ↦ CompStark.Merkle.Packed.root KoalaBear.fieldSize w chunks
     IO.println s!"root word {read root 0}"
     return 0
+  | "keccak-scalar" =>
+    let seed := (Array.replicate 25 (0 : UInt64)).set! 0 0x123456789abcdef0
+    let s ← m.phase "f1600 chain" fun _ ↦ keccakChain 10000 seed
+    unless s[0]! == 0x03d0008026579d6c do
+      IO.eprintln "Keccak permutation sink mismatch"; return 1
+    IO.println s!"permutation sink {s[0]!}"
+    for len in [64, 512] do
+      let input := ByteArray.mk (Array.ofFn (n := len) fun i ↦ i.val.toUInt8)
+      let sink ← m.phase s!"hash {len}" fun _ ↦ keccakHashes 10000 input 0
+      let expected := 10000 * CompStark.Keccak.readLane
+        (VCVio.Algorithms.Keccak.keccak256 input) 0
+      unless sink == expected do
+        IO.eprintln s!"Keccak hash {len} sink mismatch"; return 1
+      IO.println s!"hash {len} sink {sink}"
+    return 0
+  | "keccak-batch" =>
+    let states ← m.phase "f1600" fun _ ↦ keccakStateBatches 10 keccakStates
+    let expected := (List.range 10).foldl
+      (fun ss _ ↦ ss.map VCVio.Algorithms.Keccak.f1600) keccakStates
+    unless states == expected do
+      IO.eprintln "Keccak batch permutation mismatch"; return 1
+    IO.println s!"batch states {states.size}, sink {(states[0]!)[0]!}"
+    for len in [64, 512] do
+      let inputs := keccakInputs len
+      let sink ← m.phase s!"hash {len}" fun _ ↦ keccakHashBatches 10 inputs 0
+      let expected := 10 * (inputs.map VCVio.Algorithms.Keccak.keccak256).foldl
+        (fun s h ↦ s + CompStark.Keccak.readLane h 0) (0 : UInt64)
+      unless sink == expected do
+        IO.eprintln s!"Keccak batch hash {len} sink mismatch"; return 1
+      IO.println s!"batch hash {len} sink {sink}"
+    return 0
   | "lde" =>
     let logN := 14
     let trace := keccakShapedTrace logN
@@ -600,6 +696,7 @@ def gate (workload : String) (dir : System.FilePath) : IO UInt32 := do
 
 def main (args : List String) : IO UInt32 := do
   match args with
+  | ["keccak-kernels", n] => keccakKernels n.toNat!
   | ["poseidon2-spec", logN] =>
     let n := 2 ^ logN.toNat!
     let P := KoalaBear.width16 KoalaBear.Fast.Field
