@@ -33,11 +33,23 @@ structure Prepared where
   /-- Linear-plus-quadratic Karatsuba multiplier. -/
   c12 : Word.ByteMap
 
+/-- Prepare a fixed multiplier with the certified masked-integer word kernel. -/
+def byteMap (a : Word) : Word.ByteMap :=
+  ⟨Packed.ofFn 2048 fun i => Word.mulMasked a
+    ⟨UInt64.ofNat (i.val % 256) <<< UInt64.ofNat (8 * (i.val / 256))⟩⟩
+
+/-- Masked map preparation gives exactly the canonical fixed-multiplier map. -/
+theorem byteMap_eq (a : Word) : byteMap a = Word.ByteMap.ofScalar a := by
+  have hm (b : Word) : Word.mulMasked a b = Word.mul a b := by
+    apply Word.toField_injective
+    rw [Word.toField_mulMasked, Word.toField_mul]
+  simp only [byteMap, Word.ByteMap.ofScalar, hm]
+
 /-- Prepare a challenge once, independently of the table shape. -/
 def prepare (r : WordExt3) : Prepared :=
-  ⟨.ofScalar r.c0, .ofScalar r.c1, .ofScalar r.c2,
-    .ofScalar (Word.add r.c0 r.c1), .ofScalar (Word.add r.c0 r.c2),
-    .ofScalar (Word.add r.c1 r.c2)⟩
+  ⟨byteMap r.c0, byteMap r.c1, byteMap r.c2,
+    byteMap (Word.add r.c0 r.c1), byteMap (Word.add r.c0 r.c2),
+    byteMap (Word.add r.c1 r.c2)⟩
 
 /-- Multiply by the prepared challenge, using six lookup products. -/
 @[inline] def Prepared.mul (r : Prepared) (a : WordExt3) : WordExt3 :=
@@ -55,7 +67,7 @@ theorem prepared_mul_eq (r a : WordExt3) : (prepare r).mul a = WordExt3.mul r a 
   have hm (x y : Word) : (Word.ByteMap.ofScalar x).mul y = Word.mulMasked x y := by
     apply Word.toField_injective
     rw [Word.ByteMap.toField_mul, Word.toField_mulMasked]
-  simp only [prepare, Prepared.mul, WordExt3.mul, hm]
+  simp only [prepare, byteMap_eq, Prepared.mul, WordExt3.mul, hm]
 
 /-- Prepared multiplication refines the specification extension field. -/
 @[simp] theorem toField_prepared_mul (r a : WordExt3) :
