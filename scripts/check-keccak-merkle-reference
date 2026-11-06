@@ -1,0 +1,45 @@
+#!/usr/bin/env python3
+"""Check Keccak Merkle/duplex fixtures against unchanged pinned leanMultisig crates."""
+import json
+import os
+import pathlib
+import subprocess
+import tempfile
+
+ROOT = pathlib.Path(__file__).resolve().parent.parent
+REV = "9d8bce818aa7c7e18e67026e522a9b1539d0a57d"
+
+
+def run(*args, cwd=ROOT):
+    subprocess.run(args, cwd=cwd, check=True)
+
+
+def main():
+    binary = ROOT / ".lake/keccak-merkle-reference"
+    with tempfile.TemporaryDirectory(prefix="keccak-merkle-", suffix="-src") as tmp:
+        run("git", "clone", "--quiet", "https://github.com/leanEthereum/leanMultisig.git", tmp)
+        run("git", "checkout", "--quiet", "--detach", REV, cwd=tmp)
+        run("cargo", "build", "--release", "--locked", "-p", "pcs", "-p", "fiat_shamir",
+            "-j", "4", cwd=tmp)
+        deps = pathlib.Path(tmp) / "target/release/deps"
+        cmd = ["rustc", "--edition=2024", "-D", "warnings", "-C", "opt-level=3", "-C",
+               "target-cpu=native", "-L", f"dependency={deps}"]
+        for name in ["pcs", "primitives", "fiat_shamir"]:
+            artifacts = list(deps.glob(f"lib{name}-*.rlib"))
+            assert len(artifacts) == 1, artifacts
+            cmd += ["--extern", f"{name}={artifacts[0]}"]
+        run(*cmd, "tests/rust/keccak-merkle.rs", "-o", str(binary))
+        assert subprocess.check_output(["git", "status", "--porcelain"], cwd=tmp) == b""
+    expected = json.loads((ROOT / "tests/data/keccak_merkle.json").read_text())
+    for workers in [1, 16]:
+        actual = json.loads(subprocess.check_output([binary, "fixtures"],
+            env=dict(os.environ, LEANVM_NUM_THREADS=str(workers))))
+        if actual != expected:
+            raise SystemExit(f"Keccak Merkle/duplex reference fixtures differ at {workers} workers")
+    print(f"Rust {REV}: {len(actual['trees'])} canonical openings, "
+          f"{len(actual['duplex'])} permutation checkpoints, "
+          f"{len(actual['grinding'])} smallest nonces match (1 and 16 workers)")
+
+
+if __name__ == "__main__":
+    main()

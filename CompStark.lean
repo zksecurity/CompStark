@@ -209,3 +209,6 @@ public import CompStark.Keccak.Scalar
 public import CompStark.Keccak.Sponge
 public import CompStark.Keccak.Hash
 public import CompStark.Keccak.Refines
+
+public import CompStark.Keccak.Merkle
+public import CompStark.Keccak.Duplex

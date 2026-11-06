@@ -292,7 +292,7 @@ theorem getElem_bPerms (hts : ts.length = Is.length) (hps : ps.length = Is.lengt
         Is[i].lookups Is[i].logN (ts[i]'(by rw [hts]; exact hi)) (ps[i]'(by rw [hps]; exact hi))
         ((bChs EF P Is ts ps)[i]'(by rw [length_bChs]; exact hi))) := by
   simp only [bPerms, permutationsWith, CompStark.Stark.parMap_eq, List.getElem_map,
-    List.getElem_zip, id_eq]
+    List.getElem_zip]
 
 theorem length_bPermExts (hts : ts.length = Is.length) (hps : ps.length = Is.length) :
     (bPermCP EF P Is ts ps).1.length = Is.length := by

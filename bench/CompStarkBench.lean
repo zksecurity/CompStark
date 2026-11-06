@@ -11,6 +11,7 @@ import CompStark.Stark.Fingerprint
 import CompStarkFixtures.Keccak
 import CompStarkFixtures.KeccakKernel
 import CompStark.Keccak.Hash
+import CompStarkFixtures.KeccakMerkle
 
 /-! # CompStark micro-benchmarks
 
@@ -579,6 +580,37 @@ def gateProveVerify {EF : Type} [Challenge KoalaBear.Fast.Field EF] (m : Marks)
   IO.println s!"prove: witness {pf.oodWitness.val}, verify: {repr r}"
   return 0
 
+/-- Commitment, canonical opening, retained writer transport and deterministic grinding. -/
+def keccakMerkleRun (phase : {α : Type} → String → (Unit → α) → IO α) : IO UInt32 := do
+  let input := CompStark.Fixtures.KeccakMerkle.rows 4096 64 (by decide)
+  let tree ← IO.ofExcept (← phase "commit" fun _ ↦ CompStark.Keccak.Merkle.commit input)
+  unless tree.2.root.val.data == #[246, 17, 103, 241, 171, 70, 74, 202, 75, 217, 117,
+      91, 169, 255, 12, 45, 103, 72, 209, 98, 119, 43, 201, 23, 37, 220, 29, 144,
+      241, 233, 48, 207] do
+    throw (IO.userError "Keccak Merkle root differs from Rust")
+  let opening ← IO.ofExcept (← phase "open" fun _ ↦
+    tree.2.open CompStark.Fixtures.KeccakMerkle.queries)
+  unless opening.leafData.length == 100 && opening.siblingHashes.length == 528 do
+    throw (IO.userError "Keccak Merkle opening shape differs from Rust")
+  unless CompStark.Keccak.Merkle.verify tree.1 tree.2.root
+      CompStark.Fixtures.KeccakMerkle.queries opening do
+    throw (IO.userError "Keccak Merkle opening failed")
+  IO.println s!"commit root {tree.2.root.val.data}, rows {opening.leafData.length}, siblings {opening.siblingHashes.length}"
+  let result ← phase "duplex" fun _ ↦ CompStark.Fixtures.KeccakMerkle.duplexLoop
+    10000 0 ⟨CompStark.Fixtures.KeccakMerkle.initial, #[]⟩ 0
+  unless result.1 == 15976019921783725211 && result.2.stream.size == 10000 do
+    throw (IO.userError "Keccak duplex sink differs from Rust")
+  IO.println s!"duplex sink {result.1}, messages {result.2.stream.size}"
+  let frame (n : Nat) : Array UInt64 := #[n.toUInt64, 0, 0, 4]
+  let accept (out : Array UInt64) := out[0]! &&& 0xff == 0
+  let nonce ← phase "grind" fun _ ↦ CompStark.Keccak.Duplex.grind
+    CompStark.Fixtures.KeccakMerkle.rate (fun _ _ _ ↦ ())
+    CompStark.Fixtures.KeccakMerkle.initial frame accept 65536
+  let some (nonce, _) := nonce | throw (IO.userError "Keccak grind exhausted")
+  unless nonce == 73 do throw (IO.userError "Keccak grinding nonce differs from Rust")
+  IO.println s!"grinding nonce {nonce}"
+  return 0
+
 open CompStark CompStark.Stark CompStark.Fri in
 /-- `gate WORKLOAD DIR`: one single-threaded run of a workload of `scripts/perf-gate`, its phases
 marked through the FIFOs of `DIR`, at a fixed size from fixed inputs:
@@ -595,7 +627,9 @@ marked through the FIFOs of `DIR`, at a fixed size from fixed inputs:
 * `merkle`: the packed Merkle root of $2^{16}$ rows of 64 elements.
 * `lde`: the coset LDE of `keccakShapedTrace 14`, column by column.
 * `keccak-scalar`: 10,000 chained Keccak-f permutations and 64/512-byte hashes.
-* `keccak-batch`: ten batches of 1,024 independent permutations and 64/512-byte hashes. -/
+* `keccak-batch`: ten batches of 1,024 independent permutations and 64/512-byte hashes.
+* `keccak-merkle`: 4,096 leaves of 64 lanes, 100 pruned queries, 10,000 writer messages,
+  and an eight-bit smallest-nonce grind. -/
 def gate (workload : String) (dir : System.FilePath) : IO UInt32 := do
   let m ← Marks.open dir
   match workload with
@@ -664,6 +698,7 @@ def gate (workload : String) (dir : System.FilePath) : IO UInt32 := do
     let root ← m.phase "root" fun _ ↦ CompStark.Merkle.Packed.root KoalaBear.fieldSize w chunks
     IO.println s!"root word {read root 0}"
     return 0
+  | "keccak-merkle" => keccakMerkleRun (fun label f ↦ m.phase label f)
   | "keccak-scalar" =>
     let seed := (Array.replicate 25 (0 : UInt64)).set! 0 0x123456789abcdef0
     let s ← m.phase "f1600 chain" fun _ ↦ keccakChain 10000 seed
@@ -712,6 +747,12 @@ def gate (workload : String) (dir : System.FilePath) : IO UInt32 := do
 
 def main (args : List String) : IO UInt32 := do
   match args with
+  | ["keccak-merkle"] => keccakMerkleRun (fun label f ↦ do
+      let t ← IO.monoNanosNow
+      let result ← IO.lazyPure f
+      let elapsed := (← IO.monoNanosNow) - t
+      IO.println s!"{label} ns={elapsed}"
+      return result)
   | ["keccak-kernels", n] => keccakKernels n.toNat!
   | ["poseidon2-spec", logN] =>
     let n := 2 ^ logN.toNat!

@@ -447,8 +447,7 @@ theorem permutationsWith_refines (h : Refines B) {P : Params} {instances : List 
   · simp only [permutationsWith, CompStark.Stark.parMap_eq, List.length_map] at h1 h2
     obtain ⟨hiI, hiT⟩ := hi i h2
     have hrt := hts.getElem i (by rw [htsl]; exact hiI) hiI hiT
-    simp only [permutationsWith, CompStark.Stark.parMap_eq, List.getElem_map, List.getElem_zip,
-      id_eq]
+    simp only [permutationsWith, CompStark.Stark.parMap_eq, List.getElem_map, List.getElem_zip]
     split
     · exact .none
     · rename_i hne
@@ -456,8 +455,7 @@ theorem permutationsWith_refines (h : Refines B) {P : Params} {instances : List 
         (getElem_of_forall₂ hin.traces i hiI hiT) (Bool.eq_false_iff.mpr hne)))
   · simp only [permutationsWith, CompStark.Stark.parMap_eq, List.length_map] at h2
     obtain ⟨hiI, hiT⟩ := hi i h2
-    simp only [permutationsWith, CompStark.Stark.parMap_eq, List.getElem_map, List.getElem_zip,
-      id_eq]
+    simp only [permutationsWith, CompStark.Stark.parMap_eq, List.getElem_map, List.getElem_zip]
     split
     · rename_i he
       exact ⟨by simp only [Option.isSome_none, he, Bool.not_true], fun q hq ↦ nomatch hq⟩

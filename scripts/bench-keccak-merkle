@@ -1,0 +1,79 @@
+#!/usr/bin/env python3
+"""Identical-input Lean/Rust component measurements; JSON includes loaded-host diagnostics."""
+import datetime
+import fcntl
+import importlib.machinery
+import importlib.util
+import json
+import os
+import pathlib
+import re
+import statistics
+import subprocess
+
+ROOT = pathlib.Path(__file__).resolve().parent.parent
+
+
+def main():
+    os.chdir(ROOT)
+    subprocess.run(["scripts/check-keccak-merkle-reference"], check=True)
+    subprocess.run(["systemd-run", "--user", "--scope", "-p", "MemoryMax=12G", "-p",
+                    "MemorySwapMax=0", "--", "lake", "build", "CompStarkBench", "CompStarkNativeTests"], check=True)
+    subprocess.run([".lake/build/bin/CompStarkNativeTests"], check=True)
+    loader = importlib.machinery.SourceFileLoader("perf_gate", str(ROOT / "scripts/perf-gate"))
+    spec = importlib.util.spec_from_loader(loader.name, loader)
+    gate = importlib.util.module_from_spec(spec)
+    loader.exec_module(gate)
+    programs = {
+        "lean": [str(ROOT / ".lake/build/bin/CompStarkBench"), "keccak-merkle"],
+        "rust": [str(ROOT / ".lake/keccak-merkle-reference"), "bench"],
+    }
+    os.sched_setaffinity(0, {5})
+    report = {"date": datetime.datetime.now(datetime.timezone.utc).isoformat(),
+              "cpu": subprocess.check_output(["lscpu"], text=True), "cpu_affinity": [5],
+              "lean": subprocess.check_output(["elan", "run", "leanprover/lean4:v4.35.0",
+                                               "lean", "--version"], text=True),
+              "rust": subprocess.check_output(["rustc", "--version"], text=True),
+              "inputs": {"leaves": 4096, "words_per_leaf": 64, "queries": 100,
+                         "writer_messages": 10000, "grinding_bits": 8},
+              "workers": 1, "setup": "packing, allocation of inputs and seeding excluded",
+              "tracing": False, "runs": []}
+    with open("/tmp/compstark-bench.lock", "w") as lock:
+        fcntl.flock(lock, fcntl.LOCK_EX)
+        for round_ in range(3):
+            for name, argv in programs.items():
+                before = pathlib.Path("/proc/loadavg").read_text().strip()
+                measured = subprocess.run(["/usr/bin/time", "-f", "maxrss_kib=%M", *argv],
+                    text=True, stdout=subprocess.PIPE, stderr=subprocess.PIPE, check=True,
+                    env=dict(os.environ, LEAN_NUM_THREADS="1", LEANVM_NUM_THREADS="1"))
+                out = measured.stdout
+                rss = int(re.search(r"maxrss_kib=(\d+)", measured.stderr).group(1))
+                after = pathlib.Path("/proc/loadavg").read_text().strip()
+                phases = {k: int(v) for k, v in re.findall(r"(commit|open|duplex|grind) ns=(\d+)", out)}
+                assert len(phases) == 4, out
+                report["runs"].append({"round": round_+1, "implementation": name,
+                    "load_before": before, "load_after": after, "nanoseconds": phases,
+                    "maxrss_kib": rss, "output": out})
+    report["instructions"] = {}
+    for name, argv in programs.items():
+        gate.BENCH = argv[0]
+        report["instructions"][name] = [gate.run_workload("keccak-merkle") for _ in range(3)]
+    report["medians"] = {}
+    for phase in ["commit", "open", "duplex", "grind"]:
+        entry = {}
+        for name in programs:
+            ns = [r["nanoseconds"][phase] for r in report["runs"] if r["implementation"] == name]
+            instructions = [r[f"keccak-merkle/{phase}"][0] for r in report["instructions"][name]]
+            entry[name] = {"nanoseconds": statistics.median(ns),
+                           "instructions": statistics.median(instructions)}
+        entry["instruction_ratio"] = entry["lean"]["instructions"] / entry["rust"]["instructions"]
+        entry["time_ratio"] = entry["lean"]["nanoseconds"] / entry["rust"]["nanoseconds"]
+        report["medians"][phase] = entry
+    output = ROOT / ".lake/keccak-merkle-measurements.json"
+    output.write_text(json.dumps(report, indent=2) + "\n")
+    print(json.dumps(report["medians"], indent=2))
+    print(f"Full measurements: {output}")
+
+
+if __name__ == "__main__":
+    main()

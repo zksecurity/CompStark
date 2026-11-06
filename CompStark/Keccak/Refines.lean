@@ -115,8 +115,8 @@ theorem loadLane_eq (input : ByteArray) (o : USize)
     change (o.toNat + (4 : USize).toNat) % USize.size = o.toNat + 4
     rw [he, Nat.mod_eq_of_lt (by omega)]
   simp only [loadLane, ByteArray.ugetUInt32LE, ByteArray.getUInt32LE!, h4,
-    if_pos (show o.toNat + 4 ≤ input.size by omega),
-    if_pos (show o.toNat + 4 + 4 ≤ input.size by omega),
+    ite_eq_left (show o.toNat + 4 ≤ input.size by omega),
+    ite_eq_left (show o.toNat + 4 + 4 ≤ input.size by omega),
     ByteArray.get!_eq_getElem!, readLane, Nat.add_assoc, Nat.add_zero]
   simp only [UInt64.shiftLeft_zero]
   exact pack8_eq ..
@@ -180,18 +180,19 @@ theorem digest_eq (a b c d : UInt64) :
     apply UInt8.toBitVec_inj.mp
     apply BitVec.eq_of_getLsbD_eq
     intro j hj
-    simp only [UInt8.toBitVec_and, UInt8.toBitVec_or, UInt8.toBitVec_xor,
+    simp only [UInt8.toBitVec_and,
       UInt64.toBitVec_toUInt8, UInt32.toBitVec_toUInt8, UInt64.toBitVec_toUInt32,
-      UInt64.toBitVec_shiftRight, UInt32.toBitVec_shiftRight, UInt8.toBitVec_shiftRight,
+      UInt64.toBitVec_shiftRight, UInt32.toBitVec_shiftRight,
       BitVec.ushiftRight_eq', BitVec.getLsbD_and, BitVec.getLsbD_ushiftRight,
       BitVec.getLsbD_setWidth]
-    interval_cases j <;> simp (disch := decide) [BitVec.getLsbD_of_ge]
+    interval_cases j <;> simp (disch := decide)
 def padding (p : Nat) : List UInt8 :=
   if p = 1 then [0x81] else 1 :: (List.replicate (p-2) 0 ++ [0x80])
 
 theorem length_padding (p : Nat) (hp : 0 < p) : (padding p).length = p := by
   unfold padding
-  split <;> simp_all <;> omega
+  split <;> simp_all
+  omega
 
 theorem get_padding (p i : Nat) (hp : 0 < p) (hi : i < p) :
     (padding p)[i]! = (if i=0 then (1 : UInt8) else 0) ^^^
@@ -202,13 +203,13 @@ theorem get_padding (p i : Nat) (hp : 0 < p) (hi : i < p) :
     subst i
     rfl
   · have hlen : (padding p).length = p := length_padding p hp
-    simp only [padding, if_neg hp1]
-    rw [getElem!_pos _ _ (by simp only [List.length_cons, List.length_append, List.length_replicate, List.length_singleton]; omega)]
+    simp only [padding, ite_eq_right hp1]
+    rw [getElem!_pos _ _ (by simp only [List.length_cons, List.length_append, List.length_replicate]; omega)]
     by_cases hi0 : i=0
     · subst i
       simp [show 1 ≠ p by omega]
     · obtain ⟨j, rfl⟩ := Nat.exists_eq_succ_of_ne_zero hi0
-      simp only [List.getElem_cons_succ, Nat.succ_ne_zero, if_false]
+      simp only [List.getElem_cons_succ, Nat.succ_ne_zero, ite_false]
       by_cases hj : j < p-2
       · simp [List.getElem_append_left (show j < (List.replicate (p-2) (0 : UInt8)).length by simpa only [List.length_replicate] using hj), List.getElem_replicate,
           show ¬ (j+1+1=p) by omega]
@@ -243,12 +244,12 @@ theorem get_padded (input : ByteArray) (i : Nat) (hi : i < (padded input).size) 
   rw [getElem!_pos (padded input) i (by omega)]
   by_cases h : i < input.size
   · simp only [padded, ByteArray.getElem_append_left h]
-    rw [if_pos h, getElem!_pos input i h,
-      if_neg (show ¬(i+1=input.size+(136-input.size%136)) by omega), UInt8.xor_zero]
+    rw [ite_eq_left h, getElem!_pos input i h,
+      ite_eq_right (show ¬(i+1=input.size+(136-input.size%136)) by omega), UInt8.xor_zero]
   · simp only [padded, ByteArray.getElem_append_right (show input.size ≤ i by omega)]
     have hj : i-input.size < (padding (136-input.size%136)).length := by rw [length_padding _ hp]; omega
     change (padding (136-input.size%136))[i-input.size]'hj = _
-    rw [← getElem!_pos _ _ (by rw [length_padding _ hp]; omega), get_padding _ _ hp (by omega), if_neg h]
+    rw [← getElem!_pos _ _ (by rw [length_padding _ hp]; omega), get_padding _ _ hp (by omega), ite_eq_right h]
     have h0 : (i-input.size=0) ↔ i=input.size := by omega
     have h1 : (i-input.size+1=136-input.size%136) ↔ i+1=input.size+(136-input.size%136) := by omega
     simp only [h0, h1]
@@ -325,11 +326,11 @@ theorem readLane_final (input : ByteArray) (offset i : Nat) (hi : i ≤ 16)
   by_cases h16 : i=16
   · subst i
     simp (disch := omega) only [readLane, messageLane, Nat.add_assoc,
-      get, ite_eq_left, ite_eq_right, ite_true, ite_false, UInt8.toUInt64_xor, UInt64.shiftLeft_xor,
-      hz, hh, UInt64.zero_shiftLeft, UInt64.xor_zero, UInt64.xor_assoc]
+      get, ite_eq_right, ite_true, UInt8.toUInt64_xor, UInt64.shiftLeft_xor,
+      hz, hh, UInt64.xor_zero, UInt64.xor_assoc]
   · simp (disch := omega) only [readLane, messageLane, Nat.add_assoc,
-      get, ite_eq_left, ite_eq_right, ite_true, ite_false, UInt8.toUInt64_xor, UInt64.shiftLeft_xor,
-      hz, UInt64.zero_shiftLeft, UInt64.xor_zero]
+      get, ite_eq_right, UInt8.toUInt64_xor,
+      hz, UInt64.xor_zero]
 
 
 theorem absorbBlock_args {α : Type} (k : UInt64 → UInt64 → UInt64 → UInt64 → UInt64 → UInt64 → UInt64 → UInt64 → UInt64 → UInt64 → UInt64 → UInt64 → UInt64 → UInt64 → UInt64 → UInt64 → UInt64 → UInt64 → UInt64 → UInt64 → UInt64 → UInt64 → UInt64 → UInt64 → UInt64 → α)
@@ -369,7 +370,7 @@ theorem absorbWith_eq {α : Type} (k : UInt64 → UInt64 → UInt64 → UInt64 �
     have l14 := readLane_final input (b*136) 14 (by decide) hf
     have l15 := readLane_final input (b*136) 15 (by decide) hf
     have l16 := readLane_final input (b*136) 16 (by decide) hf
-    simp only [lastLane_eq, l0, l1, l2, l3, l4, l5, l6, l7, l8, l9, l10, l11, l12, l13, l14, l15, l16, ↓reduceIte, Nat.reduceEqDiff, ite_true, ite_false,
+    simp only [lastLane_eq, l0, l1, l2, l3, l4, l5, l6, l7, l8, l9, l10, l11, l12, l13, l14, l15, l16, ↓reduceIte, Nat.reduceEqDiff,
       UInt64.xor_zero, UInt64.xor_assoc]
 
 set_option maxHeartbeats 2000000 in

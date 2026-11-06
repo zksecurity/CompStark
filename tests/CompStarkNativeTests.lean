@@ -651,6 +651,7 @@ def main : IO UInt32 := do
     BabyBear.proofs
     BabyBear.batchProofs
     check "Keccak hashes and batches" CompStarkTests.KeccakHash.comparisons
+    CompStarkTests.KeccakMerkle.run
     IO.println "native tests passed"
     return 0
   catch e =>
