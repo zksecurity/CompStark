@@ -10,9 +10,10 @@ package CompStark where
 -- input transposes by column range in whole tiles, coset interpolation generic over 32-bit
 -- Montgomery fields, fast KoalaBear⁵ and spec fields over the fast base field, word-sized packed
 -- loads and stores and decodes, the Montgomery word kernels with batch inversions carrying
--- unboxed products, and coordinate planes generic over fast extensions.
+-- unboxed products, coordinate planes generic over fast extensions, and the BF64 word
+-- extension kernels and prepared byte maps.
 require CompPoly from git "https://github.com/mitschabaude-bot/CompPoly.git" @
-    "fc78efdf092ae174e4eab4d00f7450abb8e40f81"
+    "44b78471072cb5cec397feafc5d3c0cb19c2c0ef"
 
 -- ArkLib main with Johnson-regime mutual correlated agreement for power curves, lossy mutual
 -- correlated agreement, FRI on the interaction layer with its knowledge certificate on Plonky3's

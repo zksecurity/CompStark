@@ -12,6 +12,7 @@ import CompStarkFixtures.Keccak
 import CompStarkFixtures.KeccakKernel
 import CompStark.Keccak.Hash
 import CompStarkFixtures.KeccakMerkle
+import CompStark.Sumcheck.Fold
 
 /-! # CompStark micro-benchmarks
 
@@ -580,6 +581,26 @@ def gateProveVerify {EF : Type} [Challenge KoalaBear.Fast.Field EF] (m : Marks)
   IO.println s!"prove: witness {pf.oodWitness.val}, verify: {repr r}"
   return 0
 
+/-- Shared-challenge E-table folds, checked against the independent scalar word kernel. -/
+def sumcheckFoldRun (phase : {α : Type} → String → (Unit → α) → IO α) : IO UInt32 := do
+  let rows := 16384
+  let width := 4
+  let value := fun i : Nat => (⟨⟨UInt64.ofNat (31 * i + 0x123456789abcdef0)⟩,
+    ⟨UInt64.ofNat (i * i + 0xfedcba9876543210)⟩,
+    ⟨UInt64.ofNat (17 * i + 0x8000000000000001)⟩⟩ : BF64.WordExt3)
+  let input := Vector.ofFn fun i : Fin (2 * rows * width) => value i.val
+  let r := value 19
+  let plan ← phase "prepare" fun _ => CompStark.Sumcheck.prepare r
+  let output ← phase "fold" fun _ => CompStark.Sumcheck.fold plan rows width input
+  for i in [:rows * width] do
+    let a := input[2 * (i / width) * width + i % width]!
+    let b := input[(2 * (i / width) + 1) * width + i % width]!
+    let expected := BF64.WordExt3.add a (BF64.WordExt3.mul r (BF64.WordExt3.add a b))
+    unless output[i]!.toField == expected.toField do
+      throw (IO.userError s!"sumcheck fold mismatch at {i}")
+  IO.println s!"fold rows={rows} width={width} sink={output[rows * width - 1]!.c0.val}"
+  return 0
+
 /-- Commitment, canonical opening, retained writer transport and deterministic grinding. -/
 def keccakMerkleRun (phase : {α : Type} → String → (Unit → α) → IO α) : IO UInt32 := do
   let input := CompStark.Fixtures.KeccakMerkle.rows 4096 64 (by decide)
@@ -629,7 +650,8 @@ marked through the FIFOs of `DIR`, at a fixed size from fixed inputs:
 * `keccak-scalar`: 10,000 chained Keccak-f permutations and 64/512-byte hashes.
 * `keccak-batch`: ten batches of 1,024 independent permutations and 64/512-byte hashes.
 * `keccak-merkle`: 4,096 leaves of 64 lanes, 100 pruned queries, 10,000 writer messages,
-  and an eight-bit smallest-nonce grind. -/
+  and an eight-bit smallest-nonce grind.
+* `sumcheck-fold`: prepare one cubic-extension challenge and fold 16,384 four-column row pairs. -/
 def gate (workload : String) (dir : System.FilePath) : IO UInt32 := do
   let m ← Marks.open dir
   match workload with
@@ -698,6 +720,7 @@ def gate (workload : String) (dir : System.FilePath) : IO UInt32 := do
     let root ← m.phase "root" fun _ ↦ CompStark.Merkle.Packed.root KoalaBear.fieldSize w chunks
     IO.println s!"root word {read root 0}"
     return 0
+  | "sumcheck-fold" => sumcheckFoldRun (fun label f ↦ m.phase label f)
   | "keccak-merkle" => keccakMerkleRun (fun label f ↦ m.phase label f)
   | "keccak-scalar" =>
     let seed := (Array.replicate 25 (0 : UInt64)).set! 0 0x123456789abcdef0
@@ -747,6 +770,7 @@ def gate (workload : String) (dir : System.FilePath) : IO UInt32 := do
 
 def main (args : List String) : IO UInt32 := do
   match args with
+  | ["sumcheck-fold"] => sumcheckFoldRun (fun _ f => pure (f ()))
   | ["keccak-merkle"] => keccakMerkleRun (fun label f ↦ do
       let t ← IO.monoNanosNow
       let result ← IO.lazyPure f

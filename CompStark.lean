@@ -212,3 +212,5 @@ public import CompStark.Keccak.Refines
 
 public import CompStark.Keccak.Merkle
 public import CompStark.Keccak.Duplex
+
+public import CompStark.Sumcheck.Fold

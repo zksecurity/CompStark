@@ -1,0 +1,148 @@
+{
+  "rust_revision": "9d8bce818aa7c7e18e67026e522a9b1539d0a57d",
+  "rows": 16384,
+  "width": 4,
+  "records": [
+    {
+      "repetition": 0,
+      "engine": "lean",
+      "load_before": [
+        "22.97",
+        "30.13",
+        "37.66"
+      ],
+      "load_after": [
+        "22.97",
+        "30.13",
+        "37.66"
+      ],
+      "phases": {
+        "sumcheck-fold/prepare": [
+          14863284,
+          5673025,
+          8428735
+        ],
+        "sumcheck-fold/fold": [
+          59849311,
+          32437352,
+          118301087
+        ]
+      }
+    },
+    {
+      "repetition": 0,
+      "engine": "rust",
+      "load_before": [
+        "22.97",
+        "30.13",
+        "37.66"
+      ],
+      "load_after": [
+        "22.97",
+        "30.13",
+        "37.66"
+      ],
+      "phases": {
+        "sumcheck-fold/fold": [
+          6361316,
+          3435162,
+          14995777
+        ]
+      }
+    },
+    {
+      "repetition": 1,
+      "engine": "lean",
+      "load_before": [
+        "22.97",
+        "30.13",
+        "37.66"
+      ],
+      "load_after": [
+        "23.62",
+        "30.14",
+        "37.62"
+      ],
+      "phases": {
+        "sumcheck-fold/prepare": [
+          14863654,
+          7171061,
+          254325510
+        ],
+        "sumcheck-fold/fold": [
+          59877814,
+          33381888,
+          320122517
+        ]
+      }
+    },
+    {
+      "repetition": 1,
+      "engine": "rust",
+      "load_before": [
+        "23.62",
+        "30.14",
+        "37.62"
+      ],
+      "load_after": [
+        "23.62",
+        "30.14",
+        "37.62"
+      ],
+      "phases": {
+        "sumcheck-fold/fold": [
+          6361317,
+          3171841,
+          22986309
+        ]
+      }
+    },
+    {
+      "repetition": 2,
+      "engine": "lean",
+      "load_before": [
+        "23.62",
+        "30.14",
+        "37.62"
+      ],
+      "load_after": [
+        "23.62",
+        "30.14",
+        "37.62"
+      ],
+      "phases": {
+        "sumcheck-fold/prepare": [
+          14865220,
+          6073181,
+          48036222
+        ],
+        "sumcheck-fold/fold": [
+          59849034,
+          32404734,
+          11904528
+        ]
+      }
+    },
+    {
+      "repetition": 2,
+      "engine": "rust",
+      "load_before": [
+        "23.62",
+        "30.14",
+        "37.62"
+      ],
+      "load_after": [
+        "23.62",
+        "30.14",
+        "37.62"
+      ],
+      "phases": {
+        "sumcheck-fold/fold": [
+          6361317,
+          3227613,
+          3951935
+        ]
+      }
+    }
+  ]
+}

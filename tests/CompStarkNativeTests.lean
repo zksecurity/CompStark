@@ -3,6 +3,7 @@ Copyright (c) 2026 zkSecurity. All rights reserved.
 Released under Apache 2.0 license as described in the file LICENSE.
 -/
 import CompStarkTests
+import CompStarkTests.Sumcheck
 import CompStark.KoalaBear.Fast
 import CompStark.BabyBear.Fast
 import CompStark.Mont32.Json
@@ -640,6 +641,7 @@ end CompStarkTests.Native
 open CompStarkTests.Native in
 def main : IO UInt32 := do
   try
+    CompStarkTests.Sumcheck.check
     KoalaBear.hashes
     KoalaBear.merkle
     KoalaBear.challenger

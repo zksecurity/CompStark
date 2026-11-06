@@ -1,0 +1,37 @@
+#!/usr/bin/env python3
+"""Validate and count shared-challenge folds against the matching Rust binary extension."""
+import fcntl
+import json
+import runpy
+from pathlib import Path
+import subprocess
+
+ROOT = Path(__file__).resolve().parent.parent
+
+
+def main():
+    subprocess.run([str(ROOT / 'scripts/check-sumcheck-fold-reference')], cwd=ROOT, check=True)
+    subprocess.run(['systemd-run', '--user', '--scope', '-p', 'MemoryMax=12G', '--', 'lake', 'build',
+        'CompStarkNativeTests', 'CompStarkBench'], cwd=ROOT, check=True)
+    subprocess.run([str(ROOT / '.lake/build/bin/CompStarkNativeTests')], cwd=ROOT, check=True)
+    namespace = runpy.run_path(str(ROOT / 'scripts/perf-gate'))
+    run = namespace['run_workload']
+    records = []
+    with open('/tmp/compstark-bench.lock', 'w') as lock:
+        fcntl.flock(lock, fcntl.LOCK_EX)
+        for repetition in range(3):
+            for engine, binary in [('lean', '.lake/build/bin/CompStarkBench'), ('rust', '.lake/sumcheck-fold-reference')]:
+                run.__globals__['BENCH'] = str(ROOT / binary)
+                before = Path('/proc/loadavg').read_text().split()[:3]
+                phases = run('sumcheck-fold')
+                record = dict(repetition=repetition, engine=engine, load_before=before,
+                    load_after=Path('/proc/loadavg').read_text().split()[:3], phases=phases)
+                records.append(record)
+                print(record, flush=True)
+    report = dict(rust_revision='9d8bce818aa7c7e18e67026e522a9b1539d0a57d', rows=16384, width=4,
+        records=records)
+    (ROOT / 'bench/sumcheck-fold.json').write_text(json.dumps(report, indent=2) + '\n')
+
+
+if __name__ == '__main__':
+    main()

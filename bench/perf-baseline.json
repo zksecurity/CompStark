@@ -310,6 +310,16 @@
       "instructions": 1070464,
       "variation": 0.0,
       "tolerance": 0.005
+    },
+    "sumcheck-fold/prepare": {
+      "instructions": 14865628,
+      "variation": 0.000158,
+      "tolerance": 0.005
+    },
+    "sumcheck-fold/fold": {
+      "instructions": 59849263,
+      "variation": 6e-06,
+      "tolerance": 0.005
     }
   }
 }

@@ -1,0 +1,35 @@
+#!/usr/bin/env python3
+"""Reproduce extension-fold vectors with unchanged pinned leanMultisig interpolation."""
+import os
+from pathlib import Path
+import subprocess
+import tempfile
+
+ROOT = Path(__file__).resolve().parent.parent
+REVISION = '9d8bce818aa7c7e18e67026e522a9b1539d0a57d'
+
+
+def main():
+    binary = ROOT / '.lake/sumcheck-fold-reference'
+    binary.parent.mkdir(exist_ok=True)
+    with tempfile.TemporaryDirectory(prefix='sumcheck-fold-', suffix='-src') as source:
+        subprocess.run(['git', 'clone', '--quiet', 'https://github.com/leanEthereum/leanMultisig.git', source], check=True)
+        subprocess.run(['git', 'checkout', '--quiet', '--detach', REVISION], cwd=source, check=True)
+        subprocess.run(['cargo', 'build', '--release', '--locked', '-p', 'primitives', '-j', '4'], cwd=source,
+            env=dict(os.environ, RUSTFLAGS='-C target-cpu=native'), check=True)
+        deps = Path(source) / 'target/release/deps'
+        artifact, = deps.glob('libprimitives-*.rlib')
+        subprocess.run(['rustc', '--edition=2024', '-D', 'warnings', '-C', 'opt-level=3', '-C', 'target-cpu=native',
+            '-L', f'dependency={deps}', '--extern', f'primitives={artifact}',
+            str(ROOT / 'tests/rust/sumcheck-fold.rs'), '-o', str(binary)], check=True)
+        assert subprocess.check_output(['git', 'status', '--porcelain'], cwd=source) == b''
+    with tempfile.TemporaryDirectory(prefix='sumcheck-fold-') as scratch:
+        actual = Path(scratch) / 'fold.bin'
+        subprocess.run([binary, 'fixture', actual], check=True)
+        expected = ROOT / 'tests/data/sumcheck-fold.bin'
+        assert actual.read_bytes() == expected.read_bytes(), 'Rust fold fixture differs'
+    print(f'Rust {REVISION}: all 68 three-limb fold outputs match')
+
+
+if __name__ == '__main__':
+    main()
