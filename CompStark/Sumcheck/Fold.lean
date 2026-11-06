@@ -4,7 +4,7 @@ Released under Apache 2.0 license as described in the file LICENSE.
 -/
 module
 
-public import CompStark.Sumcheck.ByteMap
+public import CompStark.Sumcheck.Preparation
 public import CompPoly.Fields.Binary.BF64.WordExt3Proofs
 
 /-! Shared-challenge folds of interleaved cubic-extension tables. The width is the
@@ -32,18 +32,6 @@ structure Prepared where
   c02 : Word.ByteMap
   /-- Linear-plus-quadratic Karatsuba multiplier. -/
   c12 : Word.ByteMap
-
-/-- Prepare a fixed multiplier with the certified masked-integer word kernel. -/
-def byteMap (a : Word) : Word.ByteMap :=
-  ⟨Packed.ofFn 2048 fun i => Word.mulMasked a
-    ⟨UInt64.ofNat (i.val % 256) <<< UInt64.ofNat (8 * (i.val / 256))⟩⟩
-
-/-- Masked map preparation gives exactly the canonical fixed-multiplier map. -/
-theorem byteMap_eq (a : Word) : byteMap a = Word.ByteMap.ofScalar a := by
-  have hm (b : Word) : Word.mulMasked a b = Word.mul a b := by
-    apply Word.toField_injective
-    rw [Word.toField_mulMasked, Word.toField_mul]
-  simp only [byteMap, Word.ByteMap.ofScalar, hm]
 
 /-- Prepare a challenge once, independently of the table shape. -/
 def prepare (r : WordExt3) : Prepared :=

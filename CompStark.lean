@@ -215,3 +215,4 @@ public import CompStark.Keccak.Duplex
 
 public import CompStark.Sumcheck.ByteMap
 public import CompStark.Sumcheck.Fold
+public import CompStark.Sumcheck.Preparation
