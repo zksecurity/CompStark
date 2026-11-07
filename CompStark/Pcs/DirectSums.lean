@@ -4,6 +4,7 @@ Released under Apache 2.0 license as described in the file LICENSE.
 -/
 module
 public import CompStark.Pcs.NativeRound
+public import CompStark.Sumcheck.WordProductProofs
 public import CompStark.Pcs.BasisColumn
 
 /-! Specialized extension-coordinate accumulators for sumcheck messages and final Basis lifting. -/
@@ -12,6 +13,61 @@ set_option smartUnfolding false
 @[expose] public section
 namespace CompStark.Pcs
 open BF64
+
+/-- Specialize zero and unit base factors before entering mixed multiplication. -/
+@[inline] def roundBaseProduct (a : Word) (b : WordExt3) : WordExt3 :=
+  if a.val = 0 then 0 else if a.val = 1 then b else WordExt3.mulScalar b a
+
+/-- Base-factor specialization retains the complete mixed product. -/
+theorem roundBaseProduct_eq (a : Word) (b : WordExt3) :
+    roundBaseProduct a b = WordExt3.mulScalar b a := by
+  unfold roundBaseProduct
+  split
+  · rename_i h
+    have ha : a = ⟨0⟩ := by cases a; exact congrArg Word.mk h
+    rw [ha]
+    apply WordExt3.toField_injective
+    rw [WordExt3.toField_mulScalar]
+    change (0 : BF64.Ext3) = (0 : BF64) • b.toField
+    exact (zero_smul _ _).symm
+  · split
+    · rename_i h
+      have ha : a = ⟨1⟩ := by cases a; exact congrArg Word.mk h
+      rw [ha]
+      apply WordExt3.toField_injective
+      rw [WordExt3.toField_mulScalar]
+      change b.toField = (1 : BF64) • b.toField
+      exact (one_smul _ _).symm
+    · rfl
+
+/-- Specialize base factors and use five base products for full extension factors. -/
+@[inline] def roundProduct (a b : WordExt3) : WordExt3 :=
+  if a.c1.val = 0 ∧ a.c2.val = 0 then roundBaseProduct a.c0 b
+  else if b.c1.val = 0 ∧ b.c2.val = 0 then roundBaseProduct b.c0 a
+  else Sumcheck.extMulFive a b
+
+/-- Shape-directed message multiplication equals the reference extension product. -/
+theorem roundProduct_eq (a b : WordExt3) : roundProduct a b = WordExt3.mul a b := by
+  have baseValue (a : WordExt3) (h : a.c1.val = 0 ∧ a.c2.val = 0) :
+      a.toField = (algebraMap BF64 BF64.Ext3) a.c0.toField := by
+    rcases a with ⟨a0, ⟨a1⟩, ⟨a2⟩⟩
+    rcases h with ⟨h1,h2⟩
+    dsimp only at h1 h2
+    subst a1; subst a2
+    rfl
+  unfold roundProduct
+  split
+  · rename_i h
+    rw [roundBaseProduct_eq]
+    apply WordExt3.toField_injective
+    rw [WordExt3.toField_mulScalar, Algebra.smul_def, WordExt3.toField_mul, baseValue a h]
+  · split
+    · rename_i h
+      rw [roundBaseProduct_eq]
+      apply WordExt3.toField_injective
+      rw [WordExt3.toField_mulScalar, Algebra.smul_def, WordExt3.toField_mul, baseValue b h]
+      exact mul_comm _ _
+    · exact Sumcheck.extMulFive_eq a b
 
 /-- Accumulate extension coordinates without retaining a list of product records. -/
 @[specialize] def sumExtLoop (count : Nat) (f : Fin count → WordExt3)
@@ -66,8 +122,8 @@ def roundCoefficientsDirect (rows width : Nat) (table weights : Vector WordExt3 
     Vector WordExt3 2 :=
   let low := roundLow rows width
   let high := roundHigh rows width
-  #v[sumExt (rows*width) (fun i => WordExt3.mul table[low i] weights[low i]),
-    sumExt (rows*width) (fun i => WordExt3.mul (WordExt3.add table[low i] table[high i])
+  #v[sumExt (rows*width) (fun i => roundProduct table[low i] weights[low i]),
+    sumExt (rows*width) (fun i => roundProduct (WordExt3.add table[low i] table[high i])
       (WordExt3.add weights[low i] weights[high i]))]
 
 /-- Direct message accumulation preserves both exact native quadratic coefficients. -/
@@ -75,7 +131,7 @@ def roundCoefficientsDirect (rows width : Nat) (table weights : Vector WordExt3 
   funext rows width table weights
   unfold roundCoefficients roundCoefficientsDirect
   dsimp only
-  rw [sumExt_eq, sumExt_eq]
+  simp only [roundProduct_eq, sumExt_eq]
 
 /-- Lift compact point and binary factors without allocating their complete product list. -/
 def liftColumnsDirect (cols terms : Nat) (a : Vector WordExt3 terms)

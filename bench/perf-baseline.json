@@ -392,8 +392,8 @@
       "tolerance": 0.005
     },
     "pcs/whir-round": {
-      "instructions": 441786,
-      "variation": 0.0,
+      "instructions": 431302,
+      "variation": 2e-06,
       "tolerance": 0.005
     },
     "sumcheck-fold/products": {
