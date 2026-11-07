@@ -674,6 +674,11 @@ def pcsRun (phase : {α : Type} → String → (Unit → α) → IO α) : IO UIn
   let expectedRound ← IO.FS.readBinFile "tests/data/pcs/round.bin"
   unless CompStark.Fixtures.Pcs.bytes round.toArray == expectedRound do
     throw (IO.userError "native WHIR round mismatch")
+  let projected ← phase "basis-project" fun _ => CompStark.Fixtures.Pcs.basisMatrices (coordinates.size-192)
+  for (name, values) in [("projection", projected.1.toArray), ("lane-factors", projected.2.toArray)] do
+    let expected ← IO.FS.readBinFile s!"tests/data/pcs/{name}.bin"
+    unless CompStark.Fixtures.Pcs.bytes values == expected do
+      throw (IO.userError s!"projected Basis Rust mismatch: {name}")
   let expected ← IO.FS.readBinFile "tests/data/pcs/encoded.bin"
   unless encoded.val.bytes == expected do throw (IO.userError "bitsliced E encoding Rust mismatch")
   for (name, actual) in [("coordinates", coordinates.toArray), ("tensor", tensor.toArray),

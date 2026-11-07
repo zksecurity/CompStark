@@ -49,8 +49,37 @@ def testEmpty : Bool :=
     (encodeLevel (Nat.castRingHom (ZMod 17)) schedule table) []
     (honestWhir (Nat.castRingHom (ZMod 17)) schedule table [] coins)
 
+/-- Compare the projected lane matrices with Rust and follow all six folded messages. -/
+def checkBasis : IO Unit := do
+  let (projection, factors) := basisMatrices 0
+  for (name, values) in [("projection", projection.toArray), ("lane-factors", factors.toArray)] do
+    let expected ← IO.FS.readBinFile s!"tests/data/pcs/{name}.bin"
+    unless bytes values == expected do throw (IO.userError s!"projected Basis Rust mismatch: {name}")
+  let kernels := basisKernels 0
+  let mut projected := projection.toArray
+  let mut lanes := factors.toArray
+  let mut table := (basisWitness 0).toArray.map fun x => (⟨x, ⟨0⟩, ⟨0⟩⟩ : WordExt3)
+  let mut weight := (Array.ofFn fun i : Fin 4096 =>
+    (liftBasis 64 3 (Vector.ofFn fun t => factors[basisAddress (⟨i.val/64, by omega⟩ : Fin 64) t])
+      kernels)[i.val%64]!)
+  for j in [:6] do
+    let rows := 2^(5-j)
+    let small := roundCoefficients rows 3 (Vector.ofFn fun i => projected[i.val]!)
+      (Vector.ofFn fun i => lanes[i.val]!)
+    let large := roundCoefficients rows 64 (Vector.ofFn fun i => table[i.val]!)
+      (Vector.ofFn fun i => weight[i.val]!)
+    unless small == large do throw (IO.userError s!"projected Basis round mismatch: {j}")
+    let map := CompStark.Sumcheck.prepare (value (j+701))
+    projected := (CompStark.Sumcheck.fold map rows 3 (Vector.ofFn fun i => projected[i.val]!)).toArray
+    lanes := (CompStark.Sumcheck.fold map rows 3 (Vector.ofFn fun i => lanes[i.val]!)).toArray
+    table := (CompStark.Sumcheck.fold map rows 64 (Vector.ofFn fun i => table[i.val]!)).toArray
+    weight := (CompStark.Sumcheck.fold map rows 64 (Vector.ofFn fun i => weight[i.val]!)).toArray
+  let lifted := liftBasis 64 3 (Vector.ofFn fun i => lanes[i.val]!) kernels
+  unless lifted.toArray == weight do throw (IO.userError "projected Basis final lift mismatch")
+
 /-- Compare coordinate maps, cached factors, packed-bit folds and mapped tensors against Rust bytes. -/
 def check : IO Unit := do
+  checkBasis
   unless testWhir && testEmpty do throw (IO.userError "honest WHIR acceptance failed")
   let coordinates := coordinateWeights challenges
   let point : Fin (4 + 4) → BF64.Ext3 := fun i => (value (i.val + 101)).toField

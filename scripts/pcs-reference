@@ -30,6 +30,12 @@ def main():
             module.write(f'\npub mod pcs_accumulated_fixture {{ include!("{ROOT}/tests/rust/accumulated.rs"); }}\n')
         with (crate / 'src/lib.rs').open('a') as module:
             module.write('\npub use whir::pcs_accumulated_fixture;\n')
+        with (crate / 'src/stack_open/basis.rs').open('a') as module:
+            module.write(f'\npub mod pcs_basis_fixture {{ include!("{ROOT}/tests/rust/basis.rs"); }}\n')
+        with (crate / 'src/stack_open.rs').open('a') as module:
+            module.write('\npub use basis::pcs_basis_fixture;\n')
+        with (crate / 'src/lib.rs').open('a') as module:
+            module.write('\npub use stack_open::pcs_basis_fixture;\n')
         shutil.copy2(source / 'Cargo.lock', directory / 'Cargo.lock')
         (directory / 'src').mkdir()
         (directory / 'Cargo.toml').write_text('[package]\nname = "pcs-reference"\nversion = "0.1.0"\nedition = "2024"\n[dependencies]\n' + '\n'.join(f'{name} = {{path = "{source}/crates/{name}"}}' for name in ['primitives']) + f'\npcs = {{path = "{crate}"}}\n')

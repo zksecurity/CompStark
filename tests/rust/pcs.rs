@@ -101,7 +101,13 @@ fn main() {
     let round = pcs::pcs_accumulated_fixture::round(&accumulated, &incoming);
     std::hint::black_box(&round);
     mark(&mut marks, "end whir-round");
+    mark(&mut marks, "begin");
+    let projected = pcs::pcs_basis_fixture::matrices();
+    std::hint::black_box(&projected);
+    mark(&mut marks, "end basis-project");
     if fixture {
+        fs::write(Path::new(&args[2]).join("projection.bin"), bytes(&projected.0)).unwrap();
+        fs::write(Path::new(&args[2]).join("lane-factors.bin"), bytes(&projected.1)).unwrap();
         fs::write(Path::new(&args[2]).join("round.bin"), bytes(&round)).unwrap();
         let d = Path::new(&args[2]); fs::create_dir_all(d).unwrap();
         fs::write(d.join("accumulated.bin"), bytes(&accumulated)).unwrap();
