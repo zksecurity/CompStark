@@ -337,4 +337,36 @@ theorem induceRows_adjoint {ell rate : Nat} (hd : ell + rate < 64)
   rw [← scatterRows_pairing, transposeRows_adjoint, collapseRows_adjoint]
   rfl
 
+/-- A packed coordinate vector with one at its selected address and zero elsewhere. -/
+def unitRows (n : Nat) (index : Fin n) : BF64.Packed.Buffer n :=
+  Packed.tabulate n fun i => if i = index then ⟨1⟩ else ⟨0⟩
+
+/-- Pairing with a packed coordinate vector selects exactly its addressed field element. -/
+theorem unitRows_pairing {n : Nat} (index : Fin n) (a : BF64.Packed.Buffer n) :
+    packedPairing (unitRows n index) a = (BF64.Packed.read a index).toField := by
+  have term (i : Fin n) :
+      (BF64.Packed.read (unitRows n index) i).toField * (BF64.Packed.read a i).toField =
+        if i = index then (BF64.Packed.read a index).toField else 0 := by
+    simp only [unitRows, Packed.read_tabulate]
+    split
+    · rename_i same
+      subst i
+      exact one_mul _
+    · exact zero_mul _
+  simp only [packedPairing, term, Finset.sum_ite_eq', Finset.mem_univ, ↓reduceIte]
+
+/-- Each native induced coordinate is the ordered query sum of the encoder's corresponding column. -/
+theorem induceRows_coordinate {ell rate : Nat} (hd : ell + rate < 64)
+    (plan : Packed.FlatPlan (ell + rate) hd) (lanes : Nat) {count : Nat}
+    (positions : Vector (Fin (2 ^ (ell + rate))) count)
+    (values : Fin count → Fin lanes → Word) (i : Fin (2^ell*lanes)) :
+    (BF64.Packed.read (induceRows hd plan lanes positions values) i).toField =
+      ∑ q : Fin count, ∑ c : Fin lanes,
+        (BF64.Packed.read
+          (Packed.forward plan ell (by omega) lanes
+            (Packed.tileRows ell rate lanes (unitRows _ i)))
+          ⟨positions[q].val * lanes + c.val, by
+            have := positions[q].isLt; have := c.isLt; nlinarith⟩).toField * (values q c).toField := by
+  rw [← unitRows_pairing i, induceRows_adjoint]
+
 end CompStark.Pcs
