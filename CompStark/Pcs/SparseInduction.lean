@@ -8,6 +8,7 @@ Modifications copyright 2026 Succinct Labs, Benedikt Bunz, William Wang.
 -/
 module
 public import CompStark.Pcs.Induction
+public import CompStark.Sumcheck.Preparation
 
 /-! Occupied-block transposed additive transforms. -/
 set_option backward.isDefEq.respectTransparency false
@@ -15,6 +16,25 @@ set_option smartUnfolding false
 @[expose] public section
 namespace CompStark.Pcs
 open BF64 AdditiveNTT
+
+/-- A certified fixed multiplier with nibble-built tables and machine-size lookups. -/
+def inductionMultiplier (scalar : Word) : Packed.Multiplier where
+  scalar := scalar
+  apply := Sumcheck.mapMul (Sumcheck.byteMap scalar)
+  correct a := by
+    rw [Sumcheck.mapMul_eq, Sumcheck.byteMap_eq, Word.ByteMap.toField_mul]
+
+/-- Prepare byte maps only for the sixteen-block frontier reused by sparse induction. -/
+def sparseInductionPlan (d : Nat) (hd : d < 64) : Packed.FlatPlan d hd where
+  stages := Vector.ofFn fun i =>
+    let raw := Packed.stageTwiddles Packed.flatBasis d hd i
+    Array.ofFn fun u : Fin (2^(d-i.val-1)) =>
+      let scalar := raw.getD u.val 0
+      if d-i.val-1 < 4 then inductionMultiplier scalar else Packed.Multiplier.masked scalar
+  stageSize i := by simp only [Vector.getElem_ofFn, Array.size_ofFn]
+  scalar_eq i u := by
+    simp only [Vector.getElem_ofFn, Array.getElem_ofFn]
+    split <;> rfl
 
 /-- The distinct blocks touched by the original ordered query positions at a transpose stage. -/
 def occupiedBlocks {d count : Nat} (i : Fin d)

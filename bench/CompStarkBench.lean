@@ -681,15 +681,20 @@ def pcsRun (phase : {α : Type} → String → (Unit → α) → IO α) : IO UIn
       split.val.bytes == expectedInduced && sparse.val.bytes == expectedInduced do throw (IO.userError "induced weights Rust mismatch")
   let largePositions : Vector (Fin 16384) 137 := Vector.ofFn fun q =>
     ⟨(if q.val%7 = 0 then 0 else q.val*7919+91) % 16384, Nat.mod_lt _ (by decide)⟩
-  let largePlan := (AdditiveNTT.Bitsliced.Plan.create AdditiveNTT.Packed.flatBasis 14 (by decide)).toPacked
+  let largePlan ← phase "induction-scalar-plan" fun _ =>
+    (AdditiveNTT.Bitsliced.Plan.create AdditiveNTT.Packed.flatBasis 14 (by decide)).toPacked
   let largeDense ← phase "induction-large-dense" fun _ =>
     CompStark.Pcs.induceSplitRows 6 6 2 (by decide) 3 largePositions fun q c =>
       CompStark.Pcs.mapLimb (CompStark.Fixtures.Pcs.value (q.val+77)) c
   let largeSparse ← phase "induction-large-sparse" fun _ =>
     CompStark.Pcs.induceOccupiedRows (ell := 12) (rate := 2) (by decide) largePlan 3 largePositions fun q c =>
       CompStark.Pcs.mapLimb (CompStark.Fixtures.Pcs.value (q.val+77)) c
+  let preparedPlan ← phase "induction-plan" fun _ => CompStark.Pcs.sparseInductionPlan 14 (by decide)
+  let largePrepared ← phase "induction-large-prepared" fun _ =>
+    CompStark.Pcs.induceOccupiedRows (ell := 12) (rate := 2) (by decide) preparedPlan 3 largePositions fun q c =>
+      CompStark.Pcs.mapLimb (CompStark.Fixtures.Pcs.value (q.val+77)) c
   let expectedLarge ← IO.FS.readBinFile "tests/data/pcs/induced-large.bin"
-  unless largeDense.val.bytes == expectedLarge && largeSparse.val.bytes == expectedLarge do
+  unless largeDense.val.bytes == expectedLarge && largeSparse.val.bytes == expectedLarge && largePrepared.val.bytes == expectedLarge do
     throw (IO.userError "large induced weights Rust mismatch")
   let acc : Vector BF64.WordExt3 256 := Vector.ofFn fun i => CompStark.Fixtures.Pcs.value (i.val + 100)
   let incoming : Vector BF64.WordExt3 256 := Vector.ofFn fun i => CompStark.Fixtures.Pcs.value (i.val + 200)

@@ -109,7 +109,8 @@ def checkInduction : IO Unit := do
       let original := induceRows hd plan lanes positions values
       let split := induceSplitRows lo hi rate hd lanes positions values
       let sparse := induceOccupiedRows hd plan lanes positions values
-      unless original.val.bytes == split.val.bytes && original.val.bytes == sparse.val.bytes do
+      let prepared := induceOccupiedRows hd (sparseInductionPlan _ hd) lanes positions values
+      unless original.val.bytes == split.val.bytes && original.val.bytes == sparse.val.bytes && original.val.bytes == prepared.val.bytes do
         throw (IO.userError s!"induction shape mismatch: {lo}/{hi}/{rate}/{lanes}/{count}")
       if lo = 6 && hi = 6 then
         let expected ← IO.FS.readBinFile "tests/data/pcs/induced-large.bin"

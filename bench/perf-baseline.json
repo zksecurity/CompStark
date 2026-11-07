@@ -430,6 +430,21 @@
       "instructions": 1499663,
       "variation": 0.0,
       "tolerance": 0.005
+    },
+    "pcs/induction-scalar-plan": {
+      "instructions": 250044494,
+      "variation": 0.0,
+      "tolerance": 0.005
+    },
+    "pcs/induction-plan": {
+      "instructions": 248634564,
+      "variation": 0.0,
+      "tolerance": 0.005
+    },
+    "pcs/induction-large-prepared": {
+      "instructions": 172149914,
+      "variation": 0.0,
+      "tolerance": 0.005
     }
   }
 }
