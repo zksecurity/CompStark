@@ -11,95 +11,95 @@
       "repetition": 0,
       "engine": "lean",
       "load_before": [
-        "11.43",
-        "10.69",
-        "15.89"
+        "6.22",
+        "9.19",
+        "13.89"
       ],
       "load_after": [
-        "11.16",
-        "10.65",
-        "15.85"
+        "6.22",
+        "9.19",
+        "13.89"
       ],
       "phases": {
         "pcs/coordinates": [
-          6514140,
-          2028793,
-          730925
+          6514141,
+          2016857,
+          1074927
         ],
         "pcs/bit-fold": [
           321240,
-          142165,
-          65280
+          142784,
+          58550
         ],
         "pcs/basis": [
           1974208,
-          1077257,
-          295912
+          1074078,
+          296802
         ],
         "pcs/encoding-plan": [
-          2228550,
-          892480,
-          342943
+          2228551,
+          887441,
+          255762
         ],
         "pcs/encoding": [
-          35153775,
-          13305662,
-          9051948
+          35153753,
+          12676308,
+          3959515
         ],
         "pcs/induction": [
-          1868781,
-          658435,
-          190991
+          1868780,
+          588529,
+          171691
         ],
         "pcs/induction-dense": [
           2223074,
-          646538,
-          188822
+          685496,
+          197251
         ],
         "pcs/induction-split": [
           2119745,
-          841965,
-          236051
+          801464,
+          226131
         ],
         "pcs/induction-sparse": [
-          1499663,
-          486142,
-          146541
+          1499664,
+          503952,
+          163171
         ],
         "pcs/induction-large-dense": [
-          671652284,
-          225709890,
-          59699853
+          671652135,
+          222480559,
+          57095715
         ],
         "pcs/induction-large-sparse": [
-          183150225,
-          54839093,
-          22163662
+          183150167,
+          58279793,
+          15793361
         ],
         "pcs/accumulated-prepare": [
-          1179991,
-          344751,
-          431673
+          1179990,
+          434014,
+          197391
         ],
         "pcs/accumulated": [
           117165,
-          47048,
-          43990
+          64297,
+          45680
         ],
         "pcs/whir-round": [
-          526231,
-          177546,
-          72390
+          441786,
+          150042,
+          58850
         ],
         "pcs/basis-project": [
-          93126596,
-          34183391,
-          9210589
+          93133510,
+          33117016,
+          8396004
         ],
         "pcs/basis-columns": [
-          70068415,
-          21836838,
-          7370407
+          70068410,
+          21675836,
+          6835313
         ]
       }
     },
@@ -107,343 +107,343 @@
       "repetition": 0,
       "engine": "rust",
       "load_before": [
-        "11.16",
-        "10.65",
-        "15.85"
+        "6.22",
+        "9.19",
+        "13.89"
       ],
       "load_after": [
-        "11.16",
-        "10.65",
-        "15.85"
+        "6.22",
+        "9.19",
+        "13.89"
       ],
       "phases": {
         "pcs/coordinates": [
           759399,
-          10230807,
-          2855468
-        ],
-        "pcs/bit-fold": [
-          83545,
-          59091,
-          40320
-        ],
-        "pcs/basis": [
-          271469,
-          120166,
-          56340
-        ],
-        "pcs/encoding-plan": [
-          94806,
-          70975,
-          57430
-        ],
-        "pcs/encoding": [
-          397018,
-          214418,
-          318222
-        ],
-        "pcs/induction-dense": [
-          27906,
-          38544,
-          30720
-        ],
-        "pcs/induction": [
-          32264,
-          30029,
-          30180
-        ],
-        "pcs/induction-large-dense": [
-          8113824,
-          4106030,
-          1784832
-        ],
-        "pcs/induction-large-sparse": [
-          2810987,
-          1608687,
-          826775
-        ],
-        "pcs/accumulated": [
-          11978,
-          10304,
-          26191
-        ],
-        "pcs/whir-round": [
-          18632,
-          18375,
-          23370
-        ],
-        "pcs/basis-project": [
-          310872,
-          197661,
-          84971
-        ]
-      }
-    },
-    {
-      "repetition": 1,
-      "engine": "lean",
-      "load_before": [
-        "11.16",
-        "10.65",
-        "15.85"
-      ],
-      "load_after": [
-        "11.16",
-        "10.65",
-        "15.85"
-      ],
-      "phases": {
-        "pcs/coordinates": [
-          6514141,
-          2457467,
-          689444
-        ],
-        "pcs/bit-fold": [
-          321241,
-          204388,
-          89990
-        ],
-        "pcs/basis": [
-          1974212,
-          1260702,
-          345273
-        ],
-        "pcs/encoding-plan": [
-          2228550,
-          1295303,
-          371902
-        ],
-        "pcs/encoding": [
-          35153839,
-          16839767,
-          39560443
-        ],
-        "pcs/induction": [
-          1868780,
-          909311,
-          264732
-        ],
-        "pcs/induction-dense": [
-          2223075,
-          876752,
-          276542
-        ],
-        "pcs/induction-split": [
-          2119745,
-          1157774,
-          325062
-        ],
-        "pcs/induction-sparse": [
-          1499663,
-          648414,
-          196582
-        ],
-        "pcs/induction-large-dense": [
-          671652224,
-          286998690,
-          77127444
-        ],
-        "pcs/induction-large-sparse": [
-          183150206,
-          74248387,
-          19911848
-        ],
-        "pcs/accumulated-prepare": [
-          1179991,
-          434368,
-          213221
-        ],
-        "pcs/accumulated": [
-          117165,
-          58375,
-          49721
-        ],
-        "pcs/whir-round": [
-          526231,
-          229463,
-          90131
-        ],
-        "pcs/basis-project": [
-          93126633,
-          46467789,
-          11941327
-        ],
-        "pcs/basis-columns": [
-          70068452,
-          28696582,
-          10187245
-        ]
-      }
-    },
-    {
-      "repetition": 1,
-      "engine": "rust",
-      "load_before": [
-        "11.16",
-        "10.65",
-        "15.85"
-      ],
-      "load_after": [
-        "11.16",
-        "10.65",
-        "15.85"
-      ],
-      "phases": {
-        "pcs/coordinates": [
-          759399,
-          10250864,
-          2728267
+          10387586,
+          2653687
         ],
         "pcs/bit-fold": [
           83536,
-          56941,
-          44670
+          53258,
+          39241
         ],
         "pcs/basis": [
           271469,
-          123248,
-          59381
+          120526,
+          58040
         ],
         "pcs/encoding-plan": [
           94805,
-          71077,
-          60980
+          75466,
+          58631
         ],
         "pcs/encoding": [
-          397019,
-          212687,
-          174041
+          397018,
+          208341,
+          164661
         ],
         "pcs/induction-dense": [
           27906,
-          42314,
-          35540
+          41867,
+          30750
         ],
         "pcs/induction": [
           32264,
-          35369,
-          35630
+          32055,
+          29660
         ],
         "pcs/induction-large-dense": [
-          8113826,
-          4091825,
-          1580950
+          8113825,
+          4109191,
+          1300378
         ],
         "pcs/induction-large-sparse": [
           2810986,
-          1184353,
-          582554
+          1369196,
+          630904
         ],
         "pcs/accumulated": [
           11978,
-          12246,
-          25630
+          9823,
+          24100
         ],
         "pcs/whir-round": [
           18632,
-          18039,
-          25981
+          15327,
+          23200
         ],
         "pcs/basis-project": [
           310872,
-          169086,
-          72840
+          164101,
+          67040
         ]
       }
     },
     {
-      "repetition": 2,
+      "repetition": 1,
       "engine": "lean",
       "load_before": [
-        "11.16",
-        "10.65",
-        "15.85"
+        "6.22",
+        "9.19",
+        "13.89"
       ],
       "load_after": [
-        "11.16",
-        "10.65",
-        "15.85"
+        "6.22",
+        "9.19",
+        "13.89"
       ],
       "phases": {
         "pcs/coordinates": [
           6514140,
-          2468721,
-          896435
+          2034284,
+          541184
         ],
         "pcs/bit-fold": [
           321240,
-          175361,
-          82770
+          141924,
+          59541
         ],
         "pcs/basis": [
-          1974208,
-          1202726,
-          338192
+          1974207,
+          1062280,
+          280972
         ],
         "pcs/encoding-plan": [
-          2228551,
-          1308373,
-          621554
+          2228550,
+          906037,
+          272852
         ],
         "pcs/encoding": [
-          35153753,
-          15874386,
-          46869300
+          35153752,
+          12758878,
+          3696994
         ],
         "pcs/induction": [
           1868780,
-          671763,
-          204951
+          586739,
+          170671
         ],
         "pcs/induction-dense": [
           2223074,
-          635938,
-          188661
+          684078,
+          186992
         ],
         "pcs/induction-split": [
           2119746,
-          850959,
-          254532
+          798970,
+          222461
         ],
         "pcs/induction-sparse": [
           1499663,
-          485715,
-          149041
+          506991,
+          143411
         ],
         "pcs/induction-large-dense": [
-          671652358,
-          275180562,
-          74036504
+          671652136,
+          221508354,
+          55686827
         ],
         "pcs/induction-large-sparse": [
-          183150177,
-          89931903,
-          26131268
+          183150168,
+          58986942,
+          16175594
         ],
         "pcs/accumulated-prepare": [
           1179990,
-          475857,
-          217761
+          338097,
+          163741
         ],
         "pcs/accumulated": [
           117165,
-          65853,
-          45531
+          43313,
+          38820
         ],
         "pcs/whir-round": [
-          526232,
-          256043,
-          101031
+          441786,
+          144085,
+          59120
         ],
         "pcs/basis-project": [
-          93126653,
-          51322511,
-          13460526
+          93133519,
+          33003944,
+          8302383
         ],
         "pcs/basis-columns": [
-          70068486,
-          32235560,
-          43530398
+          70068409,
+          21169030,
+          7472358
+        ]
+      }
+    },
+    {
+      "repetition": 1,
+      "engine": "rust",
+      "load_before": [
+        "6.22",
+        "9.19",
+        "13.89"
+      ],
+      "load_after": [
+        "6.22",
+        "9.19",
+        "13.89"
+      ],
+      "phases": {
+        "pcs/coordinates": [
+          759397,
+          10226137,
+          2580847
+        ],
+        "pcs/bit-fold": [
+          83535,
+          51248,
+          31400
+        ],
+        "pcs/basis": [
+          271469,
+          120285,
+          51211
+        ],
+        "pcs/encoding-plan": [
+          94806,
+          69506,
+          54490
+        ],
+        "pcs/encoding": [
+          397019,
+          206785,
+          159131
+        ],
+        "pcs/induction-dense": [
+          27906,
+          39082,
+          28100
+        ],
+        "pcs/induction": [
+          32264,
+          34613,
+          28540
+        ],
+        "pcs/induction-large-dense": [
+          8113825,
+          4086173,
+          1271128
+        ],
+        "pcs/induction-large-sparse": [
+          2810987,
+          1189807,
+          550193
+        ],
+        "pcs/accumulated": [
+          11978,
+          9816,
+          20201
+        ],
+        "pcs/whir-round": [
+          18632,
+          14069,
+          20940
+        ],
+        "pcs/basis-project": [
+          310872,
+          161224,
+          64000
+        ]
+      }
+    },
+    {
+      "repetition": 2,
+      "engine": "lean",
+      "load_before": [
+        "6.22",
+        "9.19",
+        "13.89"
+      ],
+      "load_after": [
+        "6.22",
+        "9.19",
+        "13.89"
+      ],
+      "phases": {
+        "pcs/coordinates": [
+          6514141,
+          2035004,
+          772995
+        ],
+        "pcs/bit-fold": [
+          321240,
+          145556,
+          69721
+        ],
+        "pcs/basis": [
+          1974207,
+          1065392,
+          289242
+        ],
+        "pcs/encoding-plan": [
+          2228550,
+          934637,
+          269302
+        ],
+        "pcs/encoding": [
+          35153752,
+          12929772,
+          3732654
+        ],
+        "pcs/induction": [
+          1868780,
+          604655,
+          176501
+        ],
+        "pcs/induction-dense": [
+          2223074,
+          692991,
+          196092
+        ],
+        "pcs/induction-split": [
+          2119746,
+          831770,
+          247082
+        ],
+        "pcs/induction-sparse": [
+          1499663,
+          513863,
+          151741
+        ],
+        "pcs/induction-large-dense": [
+          671652136,
+          220046784,
+          55829367
+        ],
+        "pcs/induction-large-sparse": [
+          183150167,
+          58241878,
+          15993572
+        ],
+        "pcs/accumulated-prepare": [
+          1179990,
+          441662,
+          192751
+        ],
+        "pcs/accumulated": [
+          117165,
+          43290,
+          40871
+        ],
+        "pcs/whir-round": [
+          441786,
+          149321,
+          61020
+        ],
+        "pcs/basis-project": [
+          93133518,
+          33237775,
+          8426524
+        ],
+        "pcs/basis-columns": [
+          70068409,
+          21024250,
+          6568743
         ]
       }
     },
@@ -451,75 +451,75 @@
       "repetition": 2,
       "engine": "rust",
       "load_before": [
-        "11.16",
-        "10.65",
-        "15.85"
+        "6.22",
+        "9.19",
+        "13.89"
       ],
       "load_after": [
-        "11.16",
-        "10.65",
-        "15.85"
+        "6.22",
+        "9.19",
+        "13.89"
       ],
       "phases": {
         "pcs/coordinates": [
-          759399,
-          10256689,
-          3032539
+          759398,
+          10224748,
+          2658747
         ],
         "pcs/bit-fold": [
-          83536,
-          59862,
-          50620
+          83581,
+          56133,
+          43701
         ],
         "pcs/basis": [
           271469,
-          121546,
-          60061
+          120623,
+          57760
         ],
         "pcs/encoding-plan": [
-          94806,
-          82225,
-          82931
+          94805,
+          74172,
+          60520
         ],
         "pcs/encoding": [
-          397018,
-          217829,
-          172581
+          397019,
+          214500,
+          193511
         ],
         "pcs/induction-dense": [
           27906,
-          42354,
-          36700
+          39123,
+          34451
         ],
         "pcs/induction": [
           32264,
-          36637,
-          49280
+          31988,
+          33770
         ],
         "pcs/induction-large-dense": [
           8113825,
-          4105059,
-          1359419
+          4087819,
+          1311489
         ],
         "pcs/induction-large-sparse": [
-          2810986,
-          1193420,
-          575804
+          2810987,
+          1174029,
+          566494
         ],
         "pcs/accumulated": [
           11978,
-          10739,
-          25720
+          9934,
+          21200
         ],
         "pcs/whir-round": [
           18632,
-          16823,
-          26230
+          16280,
+          22680
         ],
         "pcs/basis-project": [
           310872,
-          171157,
-          74570
+          165321,
+          66571
         ]
       }
     }
@@ -530,216 +530,216 @@
       "engine": "lean",
       "threads": 1,
       "load_before": [
-        "11.16",
-        "10.65",
-        "15.85"
+        "6.22",
+        "9.19",
+        "13.89"
       ],
       "load_after": [
-        "11.16",
-        "10.65",
-        "15.85"
+        "6.29",
+        "9.16",
+        "13.85"
       ],
-      "elapsed_seconds": 0.6,
-      "peak_kib": 104348,
-      "output": "coordinates: 523004 ns\nbit-fold: 37620 ns\nbasis: 269702 ns\nencoding-plan: 233962 ns\nencoding: 7666939 ns\ninduction: 180501 ns\ninduction-dense: 159521 ns\ninduction-split: 218091 ns\ninduction-sparse: 126341 ns\ninduction-large-dense: 62641761 ns\ninduction-large-sparse: 14673824 ns\naccumulated-prepare: 140191 ns\naccumulated: 12750 ns\nwhir-round: 47560 ns\nbasis-project: 8572095 ns\nbasis-columns: 6462691 ns\nPCS coordinates=192 sink=5242164331567799370 slices=5513153008462933316"
+      "elapsed_seconds": 0.45,
+      "peak_kib": 101580,
+      "output": "coordinates: 1010766 ns\nbit-fold: 34840 ns\nbasis: 263121 ns\nencoding-plan: 226722 ns\nencoding: 4042786 ns\ninduction: 160211 ns\ninduction-dense: 173081 ns\ninduction-split: 213611 ns\ninduction-sparse: 125561 ns\ninduction-large-dense: 58777356 ns\ninduction-large-sparse: 17030559 ns\naccumulated-prepare: 136911 ns\naccumulated: 16010 ns\nwhir-round: 41450 ns\nbasis-project: 8844337 ns\nbasis-columns: 7731470 ns\nPCS coordinates=192 sink=5242164331567799370 slices=5513153008462933316"
     },
     {
       "repetition": 0,
       "engine": "rust",
       "threads": 1,
       "load_before": [
-        "11.16",
-        "10.65",
-        "15.85"
+        "6.29",
+        "9.16",
+        "13.85"
       ],
       "load_after": [
-        "11.16",
-        "10.65",
-        "15.85"
+        "6.29",
+        "9.16",
+        "13.85"
       ],
       "elapsed_seconds": 0.0,
-      "peak_kib": 3328,
-      "output": "nanoseconds coordinates=2600096 bit-fold=18900 basis=33071 encoding-plan=41160 encoding=148801 induction=10610 accumulated=1680\ncoordinates=192 sink=5242164331567799370 slices=5513153008462933316"
+      "peak_kib": 3236,
+      "output": "nanoseconds coordinates=2584437 bit-fold=14130 basis=32750 encoding-plan=42400 encoding=153821 induction=10650 accumulated=1640\ncoordinates=192 sink=5242164331567799370 slices=5513153008462933316"
     },
     {
       "repetition": 1,
       "engine": "lean",
       "threads": 1,
       "load_before": [
-        "11.16",
-        "10.65",
-        "15.85"
+        "6.29",
+        "9.16",
+        "13.85"
       ],
       "load_after": [
-        "11.16",
-        "10.65",
-        "15.85"
+        "6.29",
+        "9.16",
+        "13.85"
       ],
-      "elapsed_seconds": 0.57,
-      "peak_kib": 105576,
-      "output": "coordinates: 583764 ns\nbit-fold: 34340 ns\nbasis: 326322 ns\nencoding-plan: 269582 ns\nencoding: 12095677 ns\ninduction: 170911 ns\ninduction-dense: 196611 ns\ninduction-split: 268552 ns\ninduction-sparse: 145971 ns\ninduction-large-dense: 65287028 ns\ninduction-large-sparse: 20245989 ns\naccumulated-prepare: 121551 ns\naccumulated: 14550 ns\nwhir-round: 51880 ns\nbasis-project: 9817613 ns\nbasis-columns: 19027081 ns\nPCS coordinates=192 sink=5242164331567799370 slices=5513153008462933316"
+      "elapsed_seconds": 0.41,
+      "peak_kib": 100944,
+      "output": "coordinates: 510963 ns\nbit-fold: 35510 ns\nbasis: 272312 ns\nencoding-plan: 230091 ns\nencoding: 4097626 ns\ninduction: 155291 ns\ninduction-dense: 170281 ns\ninduction-split: 197952 ns\ninduction-sparse: 124020 ns\ninduction-large-dense: 56894544 ns\ninduction-large-sparse: 16281415 ns\naccumulated-prepare: 141941 ns\naccumulated: 16570 ns\nwhir-round: 34390 ns\nbasis-project: 8322883 ns\nbasis-columns: 7117485 ns\nPCS coordinates=192 sink=5242164331567799370 slices=5513153008462933316"
     },
     {
       "repetition": 1,
       "engine": "rust",
       "threads": 1,
       "load_before": [
-        "11.16",
-        "10.65",
-        "15.85"
+        "6.29",
+        "9.16",
+        "13.85"
       ],
       "load_after": [
-        "11.16",
-        "10.65",
-        "15.85"
-      ],
-      "elapsed_seconds": 0.0,
-      "peak_kib": 3328,
-      "output": "nanoseconds coordinates=2624027 bit-fold=12740 basis=33650 encoding-plan=39991 encoding=263601 induction=165691 accumulated=1690\ncoordinates=192 sink=5242164331567799370 slices=5513153008462933316"
-    },
-    {
-      "repetition": 2,
-      "engine": "lean",
-      "threads": 1,
-      "load_before": [
-        "11.16",
-        "10.65",
-        "15.85"
-      ],
-      "load_after": [
-        "11.16",
-        "10.65",
-        "15.85"
-      ],
-      "elapsed_seconds": 0.55,
-      "peak_kib": 101436,
-      "output": "coordinates: 555134 ns\nbit-fold: 48640 ns\nbasis: 321283 ns\nencoding-plan: 315452 ns\nencoding: 50347382 ns\ninduction: 241032 ns\ninduction-dense: 227781 ns\ninduction-split: 277022 ns\ninduction-sparse: 149361 ns\ninduction-large-dense: 64685224 ns\ninduction-large-sparse: 15418499 ns\naccumulated-prepare: 149741 ns\naccumulated: 16841 ns\nwhir-round: 47410 ns\nbasis-project: 9028008 ns\nbasis-columns: 7600709 ns\nPCS coordinates=192 sink=5242164331567799370 slices=5513153008462933316"
-    },
-    {
-      "repetition": 2,
-      "engine": "rust",
-      "threads": 1,
-      "load_before": [
-        "11.16",
-        "10.65",
-        "15.85"
-      ],
-      "load_after": [
-        "11.16",
-        "10.65",
-        "15.85"
+        "6.29",
+        "9.16",
+        "13.85"
       ],
       "elapsed_seconds": 0.0,
       "peak_kib": 3200,
-      "output": "nanoseconds coordinates=2626226 bit-fold=18260 basis=33180 encoding-plan=144191 encoding=152151 induction=10630 accumulated=1600\ncoordinates=192 sink=5242164331567799370 slices=5513153008462933316"
+      "output": "nanoseconds coordinates=2550016 bit-fold=19240 basis=32470 encoding-plan=41700 encoding=150221 induction=11070 accumulated=1990\ncoordinates=192 sink=5242164331567799370 slices=5513153008462933316"
+    },
+    {
+      "repetition": 2,
+      "engine": "lean",
+      "threads": 1,
+      "load_before": [
+        "6.29",
+        "9.16",
+        "13.85"
+      ],
+      "load_after": [
+        "6.29",
+        "9.16",
+        "13.85"
+      ],
+      "elapsed_seconds": 0.46,
+      "peak_kib": 100944,
+      "output": "coordinates: 988117 ns\nbit-fold: 35470 ns\nbasis: 270632 ns\nencoding-plan: 222931 ns\nencoding: 5191214 ns\ninduction: 146801 ns\ninduction-dense: 168401 ns\ninduction-split: 196201 ns\ninduction-sparse: 123431 ns\ninduction-large-dense: 55249274 ns\ninduction-large-sparse: 17414331 ns\naccumulated-prepare: 143211 ns\naccumulated: 15190 ns\nwhir-round: 33791 ns\nbasis-project: 8252353 ns\nbasis-columns: 6901275 ns\nPCS coordinates=192 sink=5242164331567799370 slices=5513153008462933316"
+    },
+    {
+      "repetition": 2,
+      "engine": "rust",
+      "threads": 1,
+      "load_before": [
+        "6.29",
+        "9.16",
+        "13.85"
+      ],
+      "load_after": [
+        "6.29",
+        "9.16",
+        "13.85"
+      ],
+      "elapsed_seconds": 0.0,
+      "peak_kib": 3200,
+      "output": "nanoseconds coordinates=2597017 bit-fold=17790 basis=33390 encoding-plan=40310 encoding=141331 induction=10560 accumulated=1960\ncoordinates=192 sink=5242164331567799370 slices=5513153008462933316"
     },
     {
       "repetition": 0,
       "engine": "lean",
       "threads": 16,
       "load_before": [
-        "11.16",
-        "10.65",
-        "15.85"
+        "6.29",
+        "9.16",
+        "13.85"
       ],
       "load_after": [
-        "11.16",
-        "10.65",
-        "15.85"
+        "6.29",
+        "9.16",
+        "13.85"
       ],
-      "elapsed_seconds": 0.9,
-      "peak_kib": 101308,
-      "output": "coordinates: 627024 ns\nbit-fold: 42310 ns\nbasis: 292442 ns\nencoding-plan: 529104 ns\nencoding: 20006428 ns\ninduction: 228481 ns\ninduction-dense: 209842 ns\ninduction-split: 286802 ns\ninduction-sparse: 163251 ns\ninduction-large-dense: 86458514 ns\ninduction-large-sparse: 94040401 ns\naccumulated-prepare: 177651 ns\naccumulated: 20060 ns\nwhir-round: 69750 ns\nbasis-project: 12283439 ns\nbasis-columns: 8967017 ns\nPCS coordinates=192 sink=5242164331567799370 slices=5513153008462933316"
+      "elapsed_seconds": 0.43,
+      "peak_kib": 101324,
+      "output": "coordinates: 512833 ns\nbit-fold: 34701 ns\nbasis: 265821 ns\nencoding-plan: 224221 ns\nencoding: 5612156 ns\ninduction: 153541 ns\ninduction-dense: 168391 ns\ninduction-split: 200692 ns\ninduction-sparse: 132241 ns\ninduction-large-dense: 57871740 ns\ninduction-large-sparse: 17224400 ns\naccumulated-prepare: 142871 ns\naccumulated: 15580 ns\nwhir-round: 33960 ns\nbasis-project: 8995508 ns\nbasis-columns: 7687529 ns\nPCS coordinates=192 sink=5242164331567799370 slices=5513153008462933316"
     },
     {
       "repetition": 0,
       "engine": "rust",
       "threads": 16,
       "load_before": [
-        "11.16",
-        "10.65",
-        "15.85"
+        "6.29",
+        "9.16",
+        "13.85"
       ],
       "load_after": [
-        "11.16",
-        "10.65",
-        "15.85"
+        "6.29",
+        "9.16",
+        "13.85"
       ],
-      "elapsed_seconds": 0.03,
-      "peak_kib": 3424,
-      "output": "nanoseconds coordinates=2775698 bit-fold=5901987 basis=39841 encoding-plan=50810 encoding=168661 induction=1151077 accumulated=2060\ncoordinates=192 sink=5242164331567799370 slices=5513153008462933316"
+      "elapsed_seconds": 0.02,
+      "peak_kib": 3008,
+      "output": "nanoseconds coordinates=2577006 bit-fold=3853585 basis=33260 encoding-plan=46501 encoding=147531 induction=1995453 accumulated=1940\ncoordinates=192 sink=5242164331567799370 slices=5513153008462933316"
     },
     {
       "repetition": 1,
       "engine": "lean",
       "threads": 16,
       "load_before": [
-        "11.16",
-        "10.65",
-        "15.85"
+        "6.29",
+        "9.16",
+        "13.85"
       ],
       "load_after": [
-        "11.38",
-        "10.70",
-        "15.84"
+        "6.29",
+        "9.16",
+        "13.85"
       ],
-      "elapsed_seconds": 0.72,
-      "peak_kib": 100612,
-      "output": "coordinates: 634364 ns\nbit-fold: 45401 ns\nbasis: 320582 ns\nencoding-plan: 413583 ns\nencoding: 4645400 ns\ninduction: 192421 ns\ninduction-dense: 191161 ns\ninduction-split: 267662 ns\ninduction-sparse: 145331 ns\ninduction-large-dense: 86450724 ns\ninduction-large-sparse: 22691935 ns\naccumulated-prepare: 798205 ns\naccumulated: 23980 ns\nwhir-round: 66350 ns\nbasis-project: 13473476 ns\nbasis-columns: 9681662 ns\nPCS coordinates=192 sink=5242164331567799370 slices=5513153008462933316"
+      "elapsed_seconds": 0.47,
+      "peak_kib": 100560,
+      "output": "coordinates: 507294 ns\nbit-fold: 36440 ns\nbasis: 266142 ns\nencoding-plan: 243752 ns\nencoding: 11339902 ns\ninduction: 168651 ns\ninduction-dense: 170451 ns\ninduction-split: 201912 ns\ninduction-sparse: 133811 ns\ninduction-large-dense: 57689660 ns\ninduction-large-sparse: 16196773 ns\naccumulated-prepare: 137181 ns\naccumulated: 16270 ns\nwhir-round: 33960 ns\nbasis-project: 8535745 ns\nbasis-columns: 7507148 ns\nPCS coordinates=192 sink=5242164331567799370 slices=5513153008462933316"
     },
     {
       "repetition": 1,
       "engine": "rust",
       "threads": 16,
       "load_before": [
-        "11.38",
-        "10.70",
-        "15.84"
+        "6.29",
+        "9.16",
+        "13.85"
       ],
       "load_after": [
-        "11.38",
-        "10.70",
-        "15.84"
+        "6.29",
+        "9.16",
+        "13.85"
       ],
-      "elapsed_seconds": 0.07,
-      "peak_kib": 3404,
-      "output": "nanoseconds coordinates=3812945 bit-fold=14774095 basis=41080 encoding-plan=54231 encoding=406372 induction=5980258 accumulated=2220\ncoordinates=192 sink=5242164331567799370 slices=5513153008462933316"
+      "elapsed_seconds": 0.01,
+      "peak_kib": 3416,
+      "output": "nanoseconds coordinates=2575307 bit-fold=4915711 basis=31700 encoding-plan=41500 encoding=153161 induction=2025353 accumulated=1710\ncoordinates=192 sink=5242164331567799370 slices=5513153008462933316"
     },
     {
       "repetition": 2,
       "engine": "lean",
       "threads": 16,
       "load_before": [
-        "11.38",
-        "10.70",
-        "15.84"
+        "6.29",
+        "9.16",
+        "13.85"
       ],
       "load_after": [
-        "11.38",
-        "10.70",
-        "15.84"
+        "6.29",
+        "9.16",
+        "13.85"
       ],
-      "elapsed_seconds": 0.74,
-      "peak_kib": 101264,
-      "output": "coordinates: 577774 ns\nbit-fold: 39671 ns\nbasis: 289941 ns\nencoding-plan: 456233 ns\nencoding: 6852794 ns\ninduction: 194791 ns\ninduction-dense: 194611 ns\ninduction-split: 237182 ns\ninduction-sparse: 164801 ns\ninduction-large-dense: 87016807 ns\ninduction-large-sparse: 28481202 ns\naccumulated-prepare: 191451 ns\naccumulated: 19361 ns\nwhir-round: 65670 ns\nbasis-project: 13839108 ns\nbasis-columns: 10399147 ns\nPCS coordinates=192 sink=5242164331567799370 slices=5513153008462933316"
+      "elapsed_seconds": 0.44,
+      "peak_kib": 101200,
+      "output": "coordinates: 501533 ns\nbit-fold: 34690 ns\nbasis: 265272 ns\nencoding-plan: 259992 ns\nencoding: 4321027 ns\ninduction: 148131 ns\ninduction-dense: 170311 ns\ninduction-split: 196762 ns\ninduction-sparse: 123790 ns\ninduction-large-dense: 57170026 ns\ninduction-large-sparse: 16451755 ns\naccumulated-prepare: 138321 ns\naccumulated: 15720 ns\nwhir-round: 35160 ns\nbasis-project: 8409614 ns\nbasis-columns: 34470350 ns\nPCS coordinates=192 sink=5242164331567799370 slices=5513153008462933316"
     },
     {
       "repetition": 2,
       "engine": "rust",
       "threads": 16,
       "load_before": [
-        "11.38",
-        "10.70",
-        "15.84"
+        "6.29",
+        "9.16",
+        "13.85"
       ],
       "load_after": [
-        "11.38",
-        "10.70",
-        "15.84"
+        "6.29",
+        "9.16",
+        "13.85"
       ],
-      "elapsed_seconds": 0.11,
-      "peak_kib": 3320,
-      "output": "nanoseconds coordinates=2822108 bit-fold=59843073 basis=3229561 encoding-plan=55450 encoding=300532 induction=1842122 accumulated=2510\ncoordinates=192 sink=5242164331567799370 slices=5513153008462933316"
+      "elapsed_seconds": 0.01,
+      "peak_kib": 3132,
+      "output": "nanoseconds coordinates=3208221 bit-fold=1245258 basis=32600 encoding-plan=44180 encoding=147601 induction=319142 accumulated=1980\ncoordinates=192 sink=5242164331567799370 slices=5513153008462933316"
     }
   ]
 }

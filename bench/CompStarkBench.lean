@@ -17,6 +17,7 @@ import CompStark.Sumcheck.WordProductProofs
 import CompStarkFixtures.Pcs
 import CompStark.Pcs.InductionDot
 import CompStark.Pcs.SparseInduction
+import CompStark.Pcs.DirectSums
 
 /-! # CompStark micro-benchmarks
 

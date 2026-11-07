@@ -392,7 +392,7 @@
       "tolerance": 0.005
     },
     "pcs/whir-round": {
-      "instructions": 525293,
+      "instructions": 441786,
       "variation": 0.0,
       "tolerance": 0.005
     },
@@ -402,7 +402,7 @@
       "tolerance": 0.005
     },
     "pcs/basis-project": {
-      "instructions": 95179854,
+      "instructions": 93133518,
       "variation": 0.0,
       "tolerance": 0.005
     },
