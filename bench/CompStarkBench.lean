@@ -685,6 +685,12 @@ def pcsRun (phase : {α : Type} → String → (Unit → α) → IO α) : IO UIn
     let expected ← IO.FS.readBinFile s!"tests/data/pcs/{name}.bin"
     unless CompStark.Fixtures.Pcs.bytes values == expected do
       throw (IO.userError s!"projected Basis Rust mismatch: {name}")
+  let columns := CompStark.Fixtures.Pcs.projectionColumns (coordinates.size-192)
+  let witness := CompStark.Fixtures.Pcs.projectionWitness (coordinates.size-192)
+  let projected ← phase "basis-columns" fun _ => CompStark.Pcs.projectColumns 8 1024 200 witness columns
+  unless projected == CompStark.Pcs.projectBasis 8 1024 200 witness
+      (columns.map CompStark.Pcs.BasisColumn.expand) do
+    throw (IO.userError "shared Basis column matrix mismatch")
   let expected ← IO.FS.readBinFile "tests/data/pcs/encoded.bin"
   unless encoded.val.bytes == expected do throw (IO.userError "bitsliced E encoding Rust mismatch")
   for (name, actual) in [("coordinates", coordinates.toArray), ("tensor", tensor.toArray),

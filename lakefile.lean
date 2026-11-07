@@ -67,3 +67,7 @@ lean_exe CompStarkNativeTests where
 lean_exe CompStarkBench where
   srcDir := "bench"
   moreLeancArgs := #["-march=native"]
+
+/-- Production-shape binary Basis projection comparison. -/
+lean_exe basisProjectionBench where
+  root := `bench.BasisProjection

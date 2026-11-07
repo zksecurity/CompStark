@@ -3,7 +3,7 @@ Copyright (c) 2026 zkSecurity. All rights reserved.
 Released under Apache 2.0 license as described in the file LICENSE.
 -/
 module
-public import CompStark.Pcs.Tensor
+public import CompStark.Pcs.BasisColumnPrepared
 public import CompStark.Pcs.HonestWhir
 public import CompStarkFixtures.Pcs
 meta import Lean.Util.CollectAxioms
@@ -54,16 +54,16 @@ def checkBasis : IO Unit := do
   let input : Vector Word (8*32) := Vector.ofFn fun i => ⟨UInt64.ofNat (i.val*31337)⟩
   let tensor : Vector WordExt3 32 := Vector.ofFn fun i => value (i.val+31)
   let coordinates : Vector (Fin 192) 6 := #v[0, 63, 64, 127, 128, 191]
-  let columns : Vector (BasisColumn 32) 8 := Vector.ofFn fun i =>
+  let columns : Vector (BasisColumn 32) 10 := Vector.ofFn fun i =>
     if h : i.val < 6 then .binary tensor coordinates[i.val] else
-    if i.val = 6 then .point ⟨3, 5, Vector.ofFn (fun j => value (j.val+17)), by decide⟩
+    if i.val < 9 then .point ⟨3, 5, Vector.ofFn (fun j => value (j.val+17)), by decide⟩
     else .point ⟨32, 0, #v[], by decide⟩
-  unless projectColumns 8 32 8 input columns ==
-      projectBasis 8 32 8 input (columns.map BasisColumn.expand) do
+  unless projectColumns 8 32 10 input columns ==
+      projectBasis 8 32 10 input (columns.map BasisColumn.expand) do
     throw (IO.userError "compact Basis point/binary projection mismatch")
-  let coefficients : Vector WordExt3 8 := Vector.ofFn fun i => value (i.val+131)
-  unless liftColumns 32 8 coefficients columns ==
-      liftBasis 32 8 coefficients (columns.map BasisColumn.expand) do
+  let coefficients : Vector WordExt3 10 := Vector.ofFn fun i => value (i.val+131)
+  unless liftColumns 32 10 coefficients columns ==
+      liftBasis 32 10 coefficients (columns.map BasisColumn.expand) do
     throw (IO.userError "compact Basis final lift mismatch")
   let (projection, factors) := basisMatrices 0
   for (name, values) in [("projection", projection.toArray), ("lane-factors", factors.toArray)] do

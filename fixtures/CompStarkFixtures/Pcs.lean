@@ -9,7 +9,7 @@ public import CompStark.Pcs.Induction
 public import CompStark.Pcs.Accumulated
 public import CompStark.Pcs.NativeRound
 public import CompStark.Pcs.NativeBasis
-public import CompStark.Pcs.BasisColumn
+public import CompStark.Pcs.BasisColumnPrepared
 /-! Deterministic inputs for binary-field PCS conformance and measurement. -/
 @[expose] public section
 namespace CompStark.Fixtures.Pcs
@@ -64,5 +64,15 @@ def basisColumns (seed : Nat) : Vector (BasisColumn 64) 3 :=
 /-- The production-style projection and lane matrices for the Rust fixture. -/
 def basisMatrices (seed : Nat) : Vector WordExt3 (64*3) × Vector WordExt3 (64*3) :=
   (projectColumns 64 64 3 (basisWitness seed) (basisColumns seed), basisLaneFactors seed)
+
+/-- Production-style shared binary columns and repeated point windows for the instruction gate. -/
+def projectionColumns (seed : Nat) : Vector (BasisColumn 1024) 200 :=
+  let values := Vector.ofFn fun i : Fin 1024 => value (i.val+31+seed)
+  let window : BasisWindow 1024 := ⟨0, 1024, values, by decide⟩
+  Vector.ofFn fun i => if h : i.val < 192 then .binary values ⟨i.val, h⟩ else .point window
+
+/-- A complete eight-lane witness for the shared-column gate. -/
+def projectionWitness (seed : Nat) : Vector Word (8*1024) :=
+  Vector.ofFn fun i => ⟨UInt64.ofNat ((i.val+seed+1)*0x9e3779b97f4a7c15)⟩
 
 end CompStark.Fixtures.Pcs
