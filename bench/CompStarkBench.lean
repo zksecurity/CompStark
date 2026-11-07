@@ -605,6 +605,17 @@ def sumcheckFoldRun (phase : {α : Type} → String → (Unit → α) → IO α)
     let expected := BF64.WordExt3.add a (BF64.WordExt3.mul r (BF64.WordExt3.add a b))
     unless output[i]!.toField == expected.toField do
       throw (IO.userError s!"sumcheck fold mismatch at {i}")
+  let constantInput := Vector.ofFn fun i : Fin (2 * rows * width) =>
+    value ((i.val / (2 * width)) * width + i.val % width)
+  let constantOutput ← phase "constant-fold" fun _ => CompStark.Sumcheck.fold plan rows width constantInput
+  let constantPacked := CompStark.Sumcheck.fillScalars (2 * rows * width) hn fun i hi => constantInput.uget i hi
+  let constantPackedOutput ← phase "packed-constant-fold" fun _ =>
+    CompStark.Sumcheck.foldPacked plan rows width (2 * rows * width) constantPacked hn (by rfl)
+  unless constantPackedOutput.toArray (lt_of_lt_of_le (by decide) USize.le_size) == constantOutput.toArray do
+    throw (IO.userError "packed constant fold disagrees with scalar fold")
+  for i in [:rows * width] do
+    unless constantOutput[i]! == value i do
+      throw (IO.userError s!"constant fold mismatch at {i}")
   IO.println s!"fold rows={rows} width={width} sink={output[rows * width - 1]!.c0.val}"
   return 0
 
@@ -658,7 +669,7 @@ marked through the FIFOs of `DIR`, at a fixed size from fixed inputs:
 * `keccak-batch`: ten batches of 1,024 independent permutations and 64/512-byte hashes.
 * `keccak-merkle`: 4,096 leaves of 64 lanes, 100 pruned queries, 10,000 writer messages,
   and an eight-bit smallest-nonce grind.
-* `sumcheck-fold`: prepare one cubic-extension challenge and fold 16,384 four-column row pairs. -/
+* `sumcheck-fold`: prepare one cubic-extension challenge and fold 16,384 ordinary and constant four-column row pairs. -/
 def gate (workload : String) (dir : System.FilePath) : IO UInt32 := do
   let m ← Marks.open dir
   match workload with

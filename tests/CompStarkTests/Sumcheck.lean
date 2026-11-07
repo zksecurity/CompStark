@@ -27,6 +27,9 @@ def check : IO Unit := do
     for i in [0:128] do
       unless (plan.mul (value i)).toField == (WordExt3.mul r (value i)).toField do
         throw (IO.userError s!"prepared multiplication mismatch at {i}")
+    for a in [value 0, value 17, ⟨⟨0⟩, ⟨0⟩, ⟨0⟩⟩, ⟨⟨1⟩, ⟨0⟩, ⟨0⟩⟩] do
+      unless plan.interpolate a a == a do
+        throw (IO.userError "constant interpolation changed an endpoint")
     for rows in [0, 1, 2, 17, 256] do
       for width in [0, 1, 4, 15] do
         let table := Vector.ofFn fun i : Fin (2 * rows * width) => value i.val
