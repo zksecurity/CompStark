@@ -5,6 +5,7 @@ Released under Apache 2.0 license as described in the file LICENSE.
 module
 public import CompStark.Sumcheck.PackedFold
 public import CompStark.Sumcheck.IndexFold
+public import CompStark.Sumcheck.WordProductProofs
 meta import Lean.Util.CollectAxioms
 meta import Lean.Elab.Command
 
@@ -22,6 +23,24 @@ def value (i : Nat) : WordExt3 :=
 
 /-- Compare native multiplication and folds with the independently evaluated scalar kernels. -/
 def check : IO Unit := do
+  for i in [:1024] do
+    let a := value i
+    let b := value (31 * i + 7)
+    unless extMulFive a b == WordExt3.mul a b do
+      throw (IO.userError s!"five-product extension mismatch at {i}")
+  for limbA in [:3] do
+    for limbB in [:3] do
+      for i in [:64] do
+        for j in [:64] do
+          let x : Word := ⟨(1 : UInt64) <<< i.toUInt64⟩
+          let y : Word := ⟨(1 : UInt64) <<< j.toUInt64⟩
+          let z : Word := ⟨0⟩
+          let a : WordExt3 := ⟨if limbA = 0 then x else z,
+            if limbA = 1 then x else z, if limbA = 2 then x else z⟩
+          let b : WordExt3 := ⟨if limbB = 0 then y else z,
+            if limbB = 1 then y else z, if limbB = 2 then y else z⟩
+          unless extMulFive a b == WordExt3.mul a b do
+            throw (IO.userError s!"five-product basis mismatch {limbA}/{i}, {limbB}/{j}")
   for r in [value 0, ⟨⟨0⟩, ⟨0⟩, ⟨0⟩⟩, ⟨⟨1⟩, ⟨0⟩, ⟨0⟩⟩] do
     let plan := prepare r
     for i in [0:128] do

@@ -395,6 +395,11 @@
       "instructions": 525293,
       "variation": 0.0,
       "tolerance": 0.005
+    },
+    "sumcheck-fold/products": {
+      "instructions": 81477926,
+      "variation": 7e-06,
+      "tolerance": 0.005
     }
   }
 }

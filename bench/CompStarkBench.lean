@@ -13,6 +13,7 @@ import CompStarkFixtures.KeccakKernel
 import CompStark.Keccak.Hash
 import CompStarkFixtures.KeccakMerkle
 import CompStark.Sumcheck.PackedFold
+import CompStark.Sumcheck.WordProductProofs
 import CompStarkFixtures.Pcs
 
 /-! # CompStark micro-benchmarks
@@ -590,6 +591,11 @@ def sumcheckFoldRun (phase : {α : Type} → String → (Unit → α) → IO α)
     ⟨UInt64.ofNat (i * i + 0xfedcba9876543210)⟩,
     ⟨UInt64.ofNat (17 * i + 0x8000000000000001)⟩⟩ : BF64.WordExt3)
   let input := Vector.ofFn fun i : Fin (2 * rows * width) => value i.val
+  let products ← phase "products" fun _ => Array.ofFn fun i : Fin (rows * width) =>
+    CompStark.Sumcheck.extMulFive input[2 * i.val]! input[2 * i.val + 1]!
+  for i in [:products.size] do
+    unless products[i]! == BF64.WordExt3.mul input[2 * i]! input[2 * i + 1]! do
+      throw (IO.userError s!"five-product multiplication mismatch at {i}")
   let r := value 19
   let plan ← phase "prepare" fun _ => CompStark.Sumcheck.prepare r
   let output ← phase "fold" fun _ => CompStark.Sumcheck.fold plan rows width input
