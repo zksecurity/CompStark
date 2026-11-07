@@ -47,6 +47,9 @@ structure Prepared where
   c12 : Word.ByteMap
   /-- Every lookup product is multiplication by the represented scalar. -/
   correct : ∀ a, multiplyMaps c0 c1 c2 c01 c02 c12 a = WordExt3.mul scalar a
+  /-- The three coordinate maps also certify multiplication by a base-field input. -/
+  baseCorrect : ∀ a, (⟨mapMul c0 a, mapMul c1 a, mapMul c2 a⟩ : WordExt3) =
+    WordExt3.mulScalar scalar a
 
 /-- Prepare a challenge once, independently of the table shape. -/
 def prepare (r : WordExt3) : Prepared :=
@@ -57,7 +60,11 @@ def prepare (r : WordExt3) : Prepared :=
       have hm (x y : Word) : (Word.ByteMap.ofScalar x).mul y = Word.mulMasked x y := by
         apply Word.toField_injective
         rw [Word.ByteMap.toField_mul, Word.toField_mulMasked]
-      simp only [multiplyMaps, byteMap_eq, mapMul_eq, WordExt3.mul, hm]⟩
+      simp only [multiplyMaps, byteMap_eq, mapMul_eq, WordExt3.mul, hm], by
+      intro a
+      apply WordExt3.toField_injective
+      simp only [WordExt3.toField, WordExt3.mulScalar, mapMul_eq, byteMap_eq,
+        Word.ByteMap.toField_mul, Word.toField_mulMasked]⟩
 
 /-- Multiply by the prepared challenge, using six lookup products. -/
 @[inline] def Prepared.mul (r : Prepared) (a : WordExt3) : WordExt3 :=
@@ -66,6 +73,38 @@ def prepare (r : WordExt3) : Prepared :=
 /-- Every certified prepared multiplier agrees with its represented scalar. -/
 theorem Prepared.mul_correct (r : Prepared) (a : WordExt3) :
     r.mul a = WordExt3.mul r.scalar a := r.correct a
+
+/-- Base-field inputs need only the three coordinate maps of the common multiplier. -/
+@[inline] def Prepared.mulBase (r : Prepared) (a : Word) : WordExt3 :=
+  ⟨mapMul r.c0 a, mapMul r.c1 a, mapMul r.c2 a⟩
+
+/-- Select the mixed product while both higher input coordinates vanish. -/
+@[inline] def Prepared.mulSubfield (r : Prepared) (a : WordExt3) : WordExt3 :=
+  if a.c1.val == 0 && a.c2.val == 0 then r.mulBase a.c0 else r.mul a
+
+/-- Subfield dispatch preserves every product of a certified prepared multiplier. -/
+theorem Prepared.mulSubfield_eq (r : Prepared) (a : WordExt3) :
+    r.mulSubfield a = r.mul a := by
+  unfold mulSubfield
+  split
+  · rename_i h
+    simp only [Bool.and_eq_true, beq_iff_eq] at h
+    have ha : a = ⟨a.c0, ⟨0⟩, ⟨0⟩⟩ := by
+      rcases a with ⟨a0, ⟨a1⟩, ⟨a2⟩⟩
+      rcases h with ⟨h1, h2⟩
+      cases h1; cases h2
+      rfl
+    rw [mulBase, r.baseCorrect, r.mul_correct, ha]
+    apply WordExt3.toField_injective
+    rw [WordExt3.toField_mulScalar, WordExt3.toField_mul]
+    change a.c0.toField • r.scalar.toField = r.scalar.toField * algebraMap BF64 BF64.Ext3 a.c0.toField
+    rw [Algebra.smul_def, mul_comm]
+  · rfl
+
+/-- Native shared multiplication uses three maps for base-field inputs. -/
+@[csimp] theorem Prepared.mul_code : @Prepared.mul = @Prepared.mulSubfield := by
+  funext r a
+  exact (r.mulSubfield_eq a).symm
 
 /-- Prepared multiplication agrees with the word extension kernel. -/
 theorem prepared_mul_eq (r a : WordExt3) : (prepare r).mul a = WordExt3.mul r a :=

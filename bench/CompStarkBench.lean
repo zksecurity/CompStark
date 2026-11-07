@@ -606,6 +606,20 @@ def sumcheckFoldRun (phase : {α : Type} → String → (Unit → α) → IO α)
     let expected := BF64.WordExt3.add a (BF64.WordExt3.mul r (BF64.WordExt3.add a b))
     unless output[i]!.toField == expected.toField do
       throw (IO.userError s!"sumcheck fold mismatch at {i}")
+  let baseInput := Vector.ofFn fun i : Fin (2 * rows * width) =>
+    (⟨(value i.val).c0, ⟨0⟩, ⟨0⟩⟩ : BF64.WordExt3)
+  let baseOutput ← phase "base-fold" fun _ => CompStark.Sumcheck.fold plan rows width baseInput
+  let basePacked := CompStark.Sumcheck.fillScalars (2 * rows * width) hn fun i hi => baseInput.uget i hi
+  let basePackedOutput ← phase "packed-base-fold" fun _ =>
+    CompStark.Sumcheck.foldPacked plan rows width (2 * rows * width) basePacked hn (by rfl)
+  unless basePackedOutput.toArray (lt_of_lt_of_le (by decide) USize.le_size) == baseOutput.toArray do
+    throw (IO.userError "packed base fold disagrees with scalar fold")
+  for i in [:rows * width] do
+    let a := baseInput[2 * (i / width) * width + i % width]!
+    let b := baseInput[(2 * (i / width) + 1) * width + i % width]!
+    let expected := BF64.WordExt3.add a (BF64.WordExt3.mul r (BF64.WordExt3.add a b))
+    unless baseOutput[i]! == expected do
+      throw (IO.userError s!"base sumcheck fold mismatch at {i}")
   let constantInput := Vector.ofFn fun i : Fin (2 * rows * width) =>
     value ((i.val / (2 * width)) * width + i.val % width)
   let constantOutput ← phase "constant-fold" fun _ => CompStark.Sumcheck.fold plan rows width constantInput
