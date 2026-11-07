@@ -11,30 +11,40 @@
       "repetition": 0,
       "engine": "lean",
       "load_before": [
-        "11.29",
-        "13.03",
-        "16.88"
+        "4.75",
+        "5.36",
+        "6.99"
       ],
       "load_after": [
-        "11.29",
-        "13.03",
-        "16.88"
+        "4.75",
+        "5.36",
+        "6.99"
       ],
       "phases": {
         "pcs/coordinates": [
           6514141,
-          2903720,
-          1171690
+          1996248,
+          1061118
         ],
         "pcs/bit-fold": [
           321240,
-          234654,
-          98391
+          142833,
+          90201
         ],
         "pcs/basis": [
           8661401,
-          3831980,
-          1016409
+          2610989,
+          1002327
+        ],
+        "pcs/encoding-plan": [
+          2228467,
+          878039,
+          358823
+        ],
+        "pcs/encoding": [
+          35153727,
+          12695032,
+          3529136
         ]
       }
     },
@@ -42,92 +52,122 @@
       "repetition": 0,
       "engine": "rust",
       "load_before": [
-        "11.29",
-        "13.03",
-        "16.88"
+        "4.75",
+        "5.36",
+        "6.99"
       ],
       "load_after": [
-        "11.29",
-        "13.03",
-        "16.88"
-      ],
-      "phases": {
-        "pcs/coordinates": [
-          759412,
-          11305459,
-          2971106
-        ],
-        "pcs/bit-fold": [
-          83569,
-          58529,
-          49091
-        ],
-        "pcs/basis": [
-          271463,
-          153164,
-          78371
-        ]
-      }
-    },
-    {
-      "repetition": 1,
-      "engine": "lean",
-      "load_before": [
-        "11.29",
-        "13.03",
-        "16.88"
-      ],
-      "load_after": [
-        "11.29",
-        "13.03",
-        "16.88"
-      ],
-      "phases": {
-        "pcs/coordinates": [
-          6514140,
-          3033195,
-          829337
-        ],
-        "pcs/bit-fold": [
-          321240,
-          229386,
-          88780
-        ],
-        "pcs/basis": [
-          8661401,
-          3967437,
-          1039569
-        ]
-      }
-    },
-    {
-      "repetition": 1,
-      "engine": "rust",
-      "load_before": [
-        "11.29",
-        "13.03",
-        "16.88"
-      ],
-      "load_after": [
-        "11.29",
-        "13.03",
-        "16.88"
+        "4.75",
+        "5.36",
+        "6.99"
       ],
       "phases": {
         "pcs/coordinates": [
           759411,
-          11598099,
-          3166888
+          10257120,
+          2586128
         ],
         "pcs/bit-fold": [
-          83621,
-          69146,
-          41581
+          83550,
+          56577,
+          43180
         ],
         "pcs/basis": [
-          271463,
-          161527,
-          69811
+          271484,
+          125895,
+          64341
+        ],
+        "pcs/encoding-plan": [
+          94820,
+          74546,
+          69851
+        ],
+        "pcs/encoding": [
+          397035,
+          209235,
+          167651
+        ]
+      }
+    },
+    {
+      "repetition": 1,
+      "engine": "lean",
+      "load_before": [
+        "4.75",
+        "5.36",
+        "6.99"
+      ],
+      "load_after": [
+        "4.75",
+        "5.36",
+        "6.99"
+      ],
+      "phases": {
+        "pcs/coordinates": [
+          6514141,
+          1998585,
+          702535
+        ],
+        "pcs/bit-fold": [
+          321241,
+          154721,
+          74790
+        ],
+        "pcs/basis": [
+          8661400,
+          2571715,
+          655665
+        ],
+        "pcs/encoding-plan": [
+          2228467,
+          885376,
+          247402
+        ],
+        "pcs/encoding": [
+          35153729,
+          12998294,
+          3378705
+        ]
+      }
+    },
+    {
+      "repetition": 1,
+      "engine": "rust",
+      "load_before": [
+        "4.75",
+        "5.36",
+        "6.99"
+      ],
+      "load_after": [
+        "4.75",
+        "5.36",
+        "6.99"
+      ],
+      "phases": {
+        "pcs/coordinates": [
+          759411,
+          10265577,
+          2593139
+        ],
+        "pcs/bit-fold": [
+          83560,
+          56322,
+          50101
+        ],
+        "pcs/basis": [
+          271484,
+          125648,
+          62180
+        ],
+        "pcs/encoding-plan": [
+          94821,
+          72849,
+          72340
+        ],
+        "pcs/encoding": [
+          397035,
+          212136,
+          174152
         ]
       }
     },
@@ -135,30 +175,40 @@
       "repetition": 2,
       "engine": "lean",
       "load_before": [
-        "11.29",
-        "13.03",
-        "16.88"
+        "4.75",
+        "5.36",
+        "6.99"
       ],
       "load_after": [
-        "11.29",
-        "13.03",
-        "16.88"
+        "4.75",
+        "5.36",
+        "6.99"
       ],
       "phases": {
         "pcs/coordinates": [
           6514141,
-          2391356,
-          914577
+          1986745,
+          1013827
         ],
         "pcs/bit-fold": [
           321240,
-          192253,
-          92651
+          141230,
+          87830
         ],
         "pcs/basis": [
-          8661400,
-          3334937,
-          876638
+          8661401,
+          2597808,
+          995957
+        ],
+        "pcs/encoding-plan": [
+          2228467,
+          879784,
+          360373
+        ],
+        "pcs/encoding": [
+          35154077,
+          13009616,
+          3432995
         ]
       }
     },
@@ -166,30 +216,40 @@
       "repetition": 2,
       "engine": "rust",
       "load_before": [
-        "11.29",
-        "13.03",
-        "16.88"
+        "4.75",
+        "5.36",
+        "6.99"
       ],
       "load_after": [
-        "11.29",
-        "13.03",
-        "16.88"
+        "4.75",
+        "5.36",
+        "6.99"
       ],
       "phases": {
         "pcs/coordinates": [
-          759279,
-          11367999,
-          3052047
+          759411,
+          10251416,
+          2821900
         ],
         "pcs/bit-fold": [
-          83551,
-          63845,
-          77291
+          83559,
+          57809,
+          44640
         ],
         "pcs/basis": [
-          271463,
-          158462,
-          101391
+          271484,
+          127021,
+          62031
+        ],
+        "pcs/encoding-plan": [
+          94820,
+          73693,
+          70580
+        ],
+        "pcs/encoding": [
+          397035,
+          209406,
+          167211
         ]
       }
     }
@@ -200,216 +260,216 @@
       "engine": "lean",
       "threads": 1,
       "load_before": [
-        "11.29",
-        "13.03",
-        "16.88"
+        "4.75",
+        "5.36",
+        "6.99"
       ],
       "load_after": [
-        "11.29",
-        "13.03",
-        "16.88"
+        "4.75",
+        "5.36",
+        "6.99"
       ],
-      "elapsed_seconds": 0.14,
-      "peak_kib": 89900,
-      "output": "coordinates: 714996 ns\nbit-fold: 54141 ns\nbasis: 935908 ns\nPCS coordinates=192 sink=5242164331567799370 slices=5513153008462933316"
+      "elapsed_seconds": 0.1,
+      "peak_kib": 103268,
+      "output": "coordinates: 963977 ns\nbit-fold: 34231 ns\nbasis: 620984 ns\nencoding-plan: 214641 ns\nencoding: 3225524 ns\nPCS coordinates=192 sink=5242164331567799370 slices=5513153008462933316"
     },
     {
       "repetition": 0,
       "engine": "rust",
       "threads": 1,
       "load_before": [
-        "11.29",
-        "13.03",
-        "16.88"
+        "4.75",
+        "5.36",
+        "6.99"
       ],
       "load_after": [
-        "11.29",
-        "13.03",
-        "16.88"
+        "4.75",
+        "5.36",
+        "6.99"
       ],
       "elapsed_seconds": 0.0,
-      "peak_kib": 2176,
-      "output": "nanoseconds coordinates=3061477 bit-fold=21560 basis=44610\ncoordinates=192 sink=5242164331567799370 slices=5513153008462933316"
+      "peak_kib": 2432,
+      "output": "nanoseconds coordinates=3168603 bit-fold=18780 basis=33620 encoding-plan=40880 encoding=140931\ncoordinates=192 sink=5242164331567799370 slices=5513153008462933316"
     },
     {
       "repetition": 1,
       "engine": "lean",
       "threads": 1,
       "load_before": [
-        "11.29",
-        "13.03",
-        "16.88"
+        "4.75",
+        "5.36",
+        "6.99"
       ],
       "load_after": [
-        "11.29",
-        "13.03",
-        "16.88"
+        "4.75",
+        "5.36",
+        "6.99"
       ],
-      "elapsed_seconds": 0.15,
-      "peak_kib": 90064,
-      "output": "coordinates: 717606 ns\nbit-fold: 48511 ns\nbasis: 877297 ns\nPCS coordinates=192 sink=5242164331567799370 slices=5513153008462933316"
+      "elapsed_seconds": 0.1,
+      "peak_kib": 103140,
+      "output": "coordinates: 501514 ns\nbit-fold: 34230 ns\nbasis: 644175 ns\nencoding-plan: 228772 ns\nencoding: 3316704 ns\nPCS coordinates=192 sink=5242164331567799370 slices=5513153008462933316"
     },
     {
       "repetition": 1,
       "engine": "rust",
       "threads": 1,
       "load_before": [
-        "11.29",
-        "13.03",
-        "16.88"
+        "4.75",
+        "5.36",
+        "6.99"
       ],
       "load_after": [
-        "11.29",
-        "13.03",
-        "16.88"
+        "4.75",
+        "5.36",
+        "6.99"
       ],
       "elapsed_seconds": 0.0,
-      "peak_kib": 2176,
-      "output": "nanoseconds coordinates=2953955 bit-fold=15240 basis=44331\ncoordinates=192 sink=5242164331567799370 slices=5513153008462933316"
+      "peak_kib": 2432,
+      "output": "nanoseconds coordinates=2506578 bit-fold=12510 basis=33050 encoding-plan=38931 encoding=133291\ncoordinates=192 sink=5242164331567799370 slices=5513153008462933316"
     },
     {
       "repetition": 2,
       "engine": "lean",
       "threads": 1,
       "load_before": [
-        "11.29",
-        "13.03",
-        "16.88"
+        "4.75",
+        "5.36",
+        "6.99"
       ],
       "load_after": [
-        "11.29",
-        "13.03",
-        "16.88"
+        "4.75",
+        "5.36",
+        "6.99"
       ],
-      "elapsed_seconds": 0.23,
-      "peak_kib": 89420,
-      "output": "coordinates: 514095 ns\nbit-fold: 37760 ns\nbasis: 661616 ns\nPCS coordinates=192 sink=5242164331567799370 slices=5513153008462933316"
+      "elapsed_seconds": 0.1,
+      "peak_kib": 103396,
+      "output": "coordinates: 605765 ns\nbit-fold: 34410 ns\nbasis: 630764 ns\nencoding-plan: 267142 ns\nencoding: 3538566 ns\nPCS coordinates=192 sink=5242164331567799370 slices=5513153008462933316"
     },
     {
       "repetition": 2,
       "engine": "rust",
       "threads": 1,
       "load_before": [
-        "11.29",
-        "13.03",
-        "16.88"
+        "4.75",
+        "5.36",
+        "6.99"
       ],
       "load_after": [
-        "11.29",
-        "13.03",
-        "16.88"
+        "4.75",
+        "5.36",
+        "6.99"
       ],
       "elapsed_seconds": 0.0,
-      "peak_kib": 2176,
-      "output": "nanoseconds coordinates=2586542 bit-fold=11920 basis=35191\ncoordinates=192 sink=5242164331567799370 slices=5513153008462933316"
+      "peak_kib": 2432,
+      "output": "nanoseconds coordinates=2514178 bit-fold=18371 basis=34490 encoding-plan=41320 encoding=137541\ncoordinates=192 sink=5242164331567799370 slices=5513153008462933316"
     },
     {
       "repetition": 0,
       "engine": "lean",
       "threads": 16,
       "load_before": [
-        "11.29",
-        "13.03",
-        "16.88"
+        "4.75",
+        "5.36",
+        "6.99"
       ],
       "load_after": [
-        "11.29",
-        "13.03",
-        "16.88"
+        "4.85",
+        "5.37",
+        "6.99"
       ],
-      "elapsed_seconds": 0.11,
-      "peak_kib": 90060,
-      "output": "coordinates: 496514 ns\nbit-fold: 37911 ns\nbasis: 671025 ns\nPCS coordinates=192 sink=5242164331567799370 slices=5513153008462933316"
+      "elapsed_seconds": 0.1,
+      "peak_kib": 103396,
+      "output": "coordinates: 502984 ns\nbit-fold: 34191 ns\nbasis: 644174 ns\nencoding-plan: 217532 ns\nencoding: 3312684 ns\nPCS coordinates=192 sink=5242164331567799370 slices=5513153008462933316"
     },
     {
       "repetition": 0,
       "engine": "rust",
       "threads": 16,
       "load_before": [
-        "11.29",
-        "13.03",
-        "16.88"
+        "4.85",
+        "5.37",
+        "6.99"
       ],
       "load_after": [
-        "11.29",
-        "13.03",
-        "16.88"
+        "4.85",
+        "5.37",
+        "6.99"
       ],
       "elapsed_seconds": 0.0,
-      "peak_kib": 2304,
-      "output": "nanoseconds coordinates=2596092 bit-fold=3478490 basis=34071\ncoordinates=192 sink=5242164331567799370 slices=5513153008462933316"
+      "peak_kib": 2560,
+      "output": "nanoseconds coordinates=2570598 bit-fold=823246 basis=31860 encoding-plan=38741 encoding=133791\ncoordinates=192 sink=5242164331567799370 slices=5513153008462933316"
     },
     {
       "repetition": 1,
       "engine": "lean",
       "threads": 16,
       "load_before": [
-        "11.29",
-        "13.03",
-        "16.88"
+        "4.85",
+        "5.37",
+        "6.99"
       ],
       "load_after": [
-        "11.29",
-        "13.03",
-        "16.88"
+        "4.85",
+        "5.37",
+        "6.99"
       ],
-      "elapsed_seconds": 0.14,
-      "peak_kib": 90060,
-      "output": "coordinates: 511394 ns\nbit-fold: 38561 ns\nbasis: 676626 ns\nPCS coordinates=192 sink=5242164331567799370 slices=5513153008462933316"
+      "elapsed_seconds": 0.1,
+      "peak_kib": 103524,
+      "output": "coordinates: 490974 ns\nbit-fold: 34170 ns\nbasis: 637925 ns\nencoding-plan: 217812 ns\nencoding: 3349934 ns\nPCS coordinates=192 sink=5242164331567799370 slices=5513153008462933316"
     },
     {
       "repetition": 1,
       "engine": "rust",
       "threads": 16,
       "load_before": [
-        "11.29",
-        "13.03",
-        "16.88"
+        "4.85",
+        "5.37",
+        "6.99"
       ],
       "load_after": [
-        "11.29",
-        "13.03",
-        "16.88"
+        "4.85",
+        "5.37",
+        "6.99"
       ],
       "elapsed_seconds": 0.0,
-      "peak_kib": 2176,
-      "output": "nanoseconds coordinates=2590313 bit-fold=2354080 basis=33910\ncoordinates=192 sink=5242164331567799370 slices=5513153008462933316"
+      "peak_kib": 2560,
+      "output": "nanoseconds coordinates=2535328 bit-fold=4591104 basis=32400 encoding-plan=39990 encoding=135901\ncoordinates=192 sink=5242164331567799370 slices=5513153008462933316"
     },
     {
       "repetition": 2,
       "engine": "lean",
       "threads": 16,
       "load_before": [
-        "11.29",
-        "13.03",
-        "16.88"
+        "4.85",
+        "5.37",
+        "6.99"
       ],
       "load_after": [
-        "11.29",
-        "13.03",
-        "16.88"
+        "4.85",
+        "5.37",
+        "6.99"
       ],
-      "elapsed_seconds": 0.11,
-      "peak_kib": 90700,
-      "output": "coordinates: 501954 ns\nbit-fold: 39171 ns\nbasis: 660735 ns\nPCS coordinates=192 sink=5242164331567799370 slices=5513153008462933316"
+      "elapsed_seconds": 0.1,
+      "peak_kib": 103672,
+      "output": "coordinates: 493924 ns\nbit-fold: 33930 ns\nbasis: 646955 ns\nencoding-plan: 226941 ns\nencoding: 3276164 ns\nPCS coordinates=192 sink=5242164331567799370 slices=5513153008462933316"
     },
     {
       "repetition": 2,
       "engine": "rust",
       "threads": 16,
       "load_before": [
-        "11.29",
-        "13.03",
-        "16.88"
+        "4.85",
+        "5.37",
+        "6.99"
       ],
       "load_after": [
-        "11.29",
-        "13.03",
-        "16.88"
+        "4.85",
+        "5.37",
+        "6.99"
       ],
       "elapsed_seconds": 0.0,
-      "peak_kib": 2304,
-      "output": "nanoseconds coordinates=2598622 bit-fold=3921734 basis=33261\ncoordinates=192 sink=5242164331567799370 slices=5513153008462933316"
+      "peak_kib": 2560,
+      "output": "nanoseconds coordinates=2527178 bit-fold=4235621 basis=34310 encoding-plan=40250 encoding=142871\ncoordinates=192 sink=5242164331567799370 slices=5513153008462933316"
     }
   ]
 }

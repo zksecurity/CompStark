@@ -22,7 +22,7 @@ def main():
     with tempfile.TemporaryDirectory(prefix='pcs-bytes-') as directory:
         for threads in [1, 16]:
             subprocess.run([str(rust), 'fixture', directory], check=True, env={**os.environ, 'LEANVM_NUM_THREADS': str(threads)})
-            for name in ['coordinates', 'tensor', 'slices', 'mapped']:
+            for name in ['coordinates', 'tensor', 'slices', 'mapped', 'encoded']:
                 assert (Path(directory) / f'{name}.bin').read_bytes() == (ROOT / f'tests/data/pcs/{name}.bin').read_bytes()
     namespace = runpy.run_path(str(ROOT / 'scripts/perf-gate'))
     run = namespace['run_workload']

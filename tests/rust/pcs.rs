@@ -56,12 +56,25 @@ fn main() {
     std::hint::black_box(&mapped);
     let basis_ns = started.elapsed().as_nanos();
     mark(&mut marks, "end basis");
+    let msg: Vec<_> = (0..1024).map(value).flat_map(|x| [F64(x.c0), F64(x.c1), F64(x.c2)]).collect();
+    mark(&mut marks, "begin");
+    let started = std::time::Instant::now();
+    let ntt = pcs::ntt::AdditiveNttF64::standard(8);
+    let plan_ns = started.elapsed().as_nanos();
+    mark(&mut marks, "end encoding-plan");
+    mark(&mut marks, "begin");
+    let started = std::time::Instant::now();
+    let pcs::ntt::Codeword::Whole(encoded, _) = ntt.encode_interleaved_with(&msg, 48, 2, false, &|_, _| {}) else { panic!("retained full codeword required") };
+    std::hint::black_box(&encoded);
+    let encoding_ns = started.elapsed().as_nanos();
+    mark(&mut marks, "end encoding");
     if fixture {
         let d = Path::new(&args[2]); fs::create_dir_all(d).unwrap();
+        fs::write(d.join("encoded.bin"), encoded.iter().flat_map(|w| w.0.to_le_bytes()).collect::<Vec<_>>()).unwrap();
         for (name, values) in [("coordinates", coordinates.as_slice()), ("tensor", &tensor), ("slices", &slices), ("mapped", &mapped)] {
             fs::write(d.join(format!("{name}.bin")), bytes(values)).unwrap();
         }
     }
-    println!("nanoseconds coordinates={coordinate_ns} bit-fold={fold_ns} basis={basis_ns}");
+    println!("nanoseconds coordinates={coordinate_ns} bit-fold={fold_ns} basis={basis_ns} encoding-plan={plan_ns} encoding={encoding_ns}");
     println!("coordinates={} sink={} slices={}", coordinates.len(), coordinates[191].c0, slices[63].c0);
 }

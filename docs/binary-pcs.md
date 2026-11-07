@@ -14,7 +14,7 @@
 
 ## Kernel measurements
 
-Run `scripts/bench-pcs /path/to/leanMultisig` to rebuild the unchanged Rust dependency, compare all four binary fixtures with one and sixteen Rust threads, and record interleaved instruction and loaded-host wall measurements in `bench/pcs.json`. Counters exclude process startup; direct phase clocks exclude the FIFO handshake. Each wall run holds `/tmp/compstark-bench.lock`. The fixed workload has 192 coordinates, 256 packed words, 64 slice outputs and 256 mapped weights. Each process starts cold; preparation for a shared tensor occurs before the bit-fold and basis phase.
+Run `scripts/bench-pcs /path/to/leanMultisig` to rebuild the unchanged Rust dependency, compare all five binary fixtures with one and sixteen Rust threads, and record interleaved instruction and loaded-host wall measurements in `bench/pcs.json`. Counters exclude process startup; direct phase clocks exclude the FIFO handshake. Each wall run holds `/tmp/compstark-bench.lock`. The fixed workload has 192 coordinates, 256 packed words, 64 slice outputs and 256 mapped weights. Each process starts cold; preparation for a shared tensor occurs before the bit-fold and basis phase.
 
 | Kernel | Lean instructions | Rust instructions | Lean/Rust |
 | --- | ---: | ---: | ---: |
@@ -33,3 +33,9 @@ The PCS workload baseline adds three entries. Updating CompPoly, ArkLib and VCVi
 | Mapped tensor entries | 877.30 | 44.33 | 671.02 | 33.91 |
 
 Load averages were 11.29 / 13.03 / 16.88 during these runs. Peak process RSS was 90,700 KiB for Lean and 2,304 KiB for Rust, including runtime/module startup. The Lean kernels themselves execute sequentially at both thread settings. Rust’s cold coordinate preparation and first parallel bit-fold include their library initialization costs; these tiny loaded-host timings are diagnostic, not release-speed or end-to-end PCS measurements. Production `PCS open`, `Ring switch`, `Basis` and WHIR subphase timings require the complete native wire driver.
+
+## Native extension encoding
+
+`CompStark.Pcs.Encoding.encodeExtensionRows` encodes consecutive constant, linear and quadratic extension limbs using CompPoly’s native bit-plane additive NTT. Rows contain at most 21 extension lanes; padding to 64 base-field lanes and compaction preserve each retained coordinate. `encodeExtensionRows_refines` identifies every output extension lane with the generic additive encoder. The plan is reusable across messages with the same domain dimension.
+
+The Rust fixture contains all 98,304 bytes of a six-variable message encoded at rate exponent two with 16 extension lanes. Both one-thread and sixteen-thread Rust runs produce the same bytes. The performance gate counts plan preparation separately from encoding. For this small shape, median Lean/Rust user instructions are 2,228,467 / 94,820 for plan preparation and 35,153,729 / 397,035 for encoding. These measurements include padding, bit-plane conversion and compaction; they do not establish production-size performance. Full phase counters and load averages are recorded in `bench/pcs.json`.

@@ -634,6 +634,14 @@ def pcsRun (phase : {α : Type} → String → (Unit → α) → IO α) : IO UIn
     ⟨UInt64.ofNat (0x9e3779b97f4a7c15 * (i.val + 1))⟩
   let slices ← phase "bit-fold" fun _ => CompStark.Pcs.foldBits packed tensor
   let mapped ← phase "basis" fun _ => tensor.map (CompStark.Pcs.binary64Map challenges)
+  let input := CompStark.Fixtures.Pcs.encodingInput 6 16
+  let plan ← phase "encoding-plan" fun _ =>
+    AdditiveNTT.Bitsliced.Plan.create AdditiveNTT.Packed.flatBasis 8 (by decide)
+  let encoded ← phase "encoding" fun _ =>
+    CompStark.Pcs.encodeExtensionRows (ell := 6) (rate := 2) (by decide) plan 16
+      (by decide) input (by decide)
+  let expected ← IO.FS.readBinFile "tests/data/pcs/encoded.bin"
+  unless encoded.val.bytes == expected do throw (IO.userError "bitsliced E encoding Rust mismatch")
   for (name, actual) in [("coordinates", coordinates.toArray), ("tensor", tensor.toArray),
       ("slices", slices.toArray), ("mapped", mapped.toArray)] do
     let expected ← IO.FS.readBinFile s!"tests/data/pcs/{name}.bin"

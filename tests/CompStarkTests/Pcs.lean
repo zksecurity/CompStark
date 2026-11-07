@@ -63,6 +63,11 @@ def check : IO Unit := do
       ("slices", slices.toArray), ("mapped", mapped.toArray)] do
     let expected ← IO.FS.readBinFile s!"tests/data/pcs/{name}.bin"
     unless bytes actual == expected do throw (IO.userError s!"PCS Rust mismatch: {name}")
+  let plan := AdditiveNTT.Bitsliced.Plan.create AdditiveNTT.Packed.flatBasis 8 (by decide)
+  let encoded := encodeExtensionRows (ell := 6) (rate := 2) (by decide) plan 16
+    (by decide) (encodingInput 6 16) (by decide)
+  let expected ← IO.FS.readBinFile "tests/data/pcs/encoded.bin"
+  unless encoded.val.bytes == expected do throw (IO.userError "bitsliced E encoding Rust mismatch")
   for lo in [0, 1, 3, 8] do
     let point : Fin (lo + 2) → BF64.Ext3 := fun i => (value (i.val + 7)).toField
     let factors := wordFactoredEq (lo := lo) (hi := 2) point

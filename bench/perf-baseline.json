@@ -350,6 +350,16 @@
       "instructions": 10006424,
       "variation": 0.0,
       "tolerance": 0.005
+    },
+    "pcs/encoding-plan": {
+      "instructions": 2228467,
+      "variation": 0.0,
+      "tolerance": 0.005
+    },
+    "pcs/encoding": {
+      "instructions": 35153729,
+      "variation": 1e-05,
+      "tolerance": 0.005
     }
   }
 }
