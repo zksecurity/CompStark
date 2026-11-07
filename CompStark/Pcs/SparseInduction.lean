@@ -7,7 +7,7 @@ Copyright (c) 2026 Bain Capital Crypto, LP and Ron Rothblum.
 Modifications copyright 2026 Succinct Labs, Benedikt Bunz, William Wang.
 -/
 module
-public import CompStark.Pcs.Induction
+public import CompStark.Pcs.InductionDot
 public import CompStark.Sumcheck.Preparation
 
 /-! Occupied-block transposed additive transforms. -/
@@ -24,17 +24,32 @@ def inductionMultiplier (scalar : Word) : Packed.Multiplier where
   correct a := by
     rw [Sumcheck.mapMul_eq, Sumcheck.byteMap_eq, Word.ByteMap.toField_mul]
 
-/-- Prepare byte maps only for the sixteen-block frontier reused by sparse induction. -/
+/-- Build a stage's subset sums with one scalar accumulator per twiddle. -/
+def inductionTwiddles (d : Nat) (hd : d < 64) (i : Fin d) : Array Word :=
+  let values := computableNormalizedWValuesArray (β := Packed.flatBasis) (ℓ := d)
+    (R_rate := 0) (h_ℓ_add_R_rate := by omega) i
+  Array.ofFn fun u : Fin (2^(d-i.val-1)) =>
+    inductionDotLoop (d-i.val-1) (fun k =>
+      if Nat.getBit k.val u.val = 1 then values.getD k.val 0 else 0)
+      (d-i.val-1) (Nat.le_refl _) 0
+
+/-- Direct scalar accumulation retains every generic twiddle table entry. -/
+theorem inductionTwiddles_eq (d : Nat) (hd : d < 64) (i : Fin d) :
+    inductionTwiddles d hd i = Packed.stageTwiddles Packed.flatBasis d hd i := by
+  unfold inductionTwiddles Packed.stageTwiddles computableTwiddleTableArray
+  simp only [Nat.add_zero, inductionDotLoop_eq, zero_add]
+
+/-- Prepare byte maps only for the 256-block frontier reused by sparse induction. -/
 def sparseInductionPlan (d : Nat) (hd : d < 64) : Packed.FlatPlan d hd where
   stages := Vector.ofFn fun i =>
-    let raw := Packed.stageTwiddles Packed.flatBasis d hd i
+    let raw := inductionTwiddles d hd i
     Array.ofFn fun u : Fin (2^(d-i.val-1)) =>
       let scalar := raw.getD u.val 0
-      if d-i.val-1 < 4 then inductionMultiplier scalar else Packed.Multiplier.masked scalar
+      if d-i.val-1 < 8 then inductionMultiplier scalar else Packed.Multiplier.masked scalar
   stageSize i := by simp only [Vector.getElem_ofFn, Array.size_ofFn]
   scalar_eq i u := by
     simp only [Vector.getElem_ofFn, Array.getElem_ofFn]
-    split <;> rfl
+    split <;> simp only [inductionMultiplier, Packed.Multiplier.masked, inductionTwiddles_eq]
 
 /-- The distinct blocks touched by the original ordered query positions at a transpose stage. -/
 def occupiedBlocks {d count : Nat} (i : Fin d)

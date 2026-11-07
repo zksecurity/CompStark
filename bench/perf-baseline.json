@@ -437,12 +437,12 @@
       "tolerance": 0.005
     },
     "pcs/induction-plan": {
-      "instructions": 248634564,
+      "instructions": 108944961,
       "variation": 0.0,
       "tolerance": 0.005
     },
     "pcs/induction-large-prepared": {
-      "instructions": 172149914,
+      "instructions": 153329912,
       "variation": 0.0,
       "tolerance": 0.005
     }
