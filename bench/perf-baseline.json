@@ -417,13 +417,13 @@
       "tolerance": 0.005
     },
     "pcs/induction-split": {
-      "instructions": 3617056,
-      "variation": 0.000102,
+      "instructions": 2119745,
+      "variation": 4e-06,
       "tolerance": 0.005
     },
     "pcs/induction-large-dense": {
-      "instructions": 2411775558,
-      "variation": 1e-05,
+      "instructions": 671697391,
+      "variation": 3.3e-05,
       "tolerance": 0.005
     },
     "pcs/induction-sparse": {

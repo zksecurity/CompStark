@@ -241,5 +241,5 @@ public import CompStark.Pcs.BasisWindow
 public import CompStark.Pcs.BasisColumn
 public import CompStark.Pcs.BasisColumnPrepared
 
-public import CompStark.Pcs.DenseInduction
+public import CompStark.Pcs.InductionDot
 public import CompStark.Pcs.SparseInduction

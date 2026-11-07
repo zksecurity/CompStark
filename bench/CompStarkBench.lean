@@ -15,7 +15,7 @@ import CompStarkFixtures.KeccakMerkle
 import CompStark.Sumcheck.PackedFold
 import CompStark.Sumcheck.WordProductProofs
 import CompStarkFixtures.Pcs
-import CompStark.Pcs.DenseInduction
+import CompStark.Pcs.InductionDot
 import CompStark.Pcs.SparseInduction
 
 /-! # CompStark micro-benchmarks

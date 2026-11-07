@@ -4,7 +4,7 @@ Released under Apache 2.0 license as described in the file LICENSE.
 -/
 module
 public import CompStark.Pcs.BasisColumnPrepared
-public import CompStark.Pcs.DenseInduction
+public import CompStark.Pcs.InductionDot
 public import CompStark.Pcs.SparseInduction
 public import CompStark.Pcs.HonestWhir
 public import CompStarkFixtures.Pcs
