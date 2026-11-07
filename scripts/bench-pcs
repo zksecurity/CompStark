@@ -1,0 +1,61 @@
+#!/usr/bin/env python3
+"""Check Rust PCS kernel bytes and measure matching native workloads on the loaded host."""
+import fcntl
+import json
+import os
+from pathlib import Path
+import runpy
+import subprocess
+import sys
+import tempfile
+
+ROOT = Path(__file__).resolve().parents[1]
+
+
+def main():
+    source = Path(sys.argv[1]).resolve()
+    target = ROOT / '.lake/pcs-reference-target'
+    subprocess.run([str(ROOT / 'scripts/pcs-reference'), str(source), str(target)], check=True)
+    subprocess.run(['systemd-run', '--user', '--scope', '-p', 'MemoryMax=12G', '--', 'lake', 'build', 'CompStarkBench'], cwd=ROOT, check=True)
+    rust = target / 'release/pcs-reference'
+    lean = ROOT / '.lake/build/bin/CompStarkBench'
+    with tempfile.TemporaryDirectory(prefix='pcs-bytes-') as directory:
+        for threads in [1, 16]:
+            subprocess.run([str(rust), 'fixture', directory], check=True, env={**os.environ, 'LEANVM_NUM_THREADS': str(threads)})
+            for name in ['coordinates', 'tensor', 'slices', 'mapped']:
+                assert (Path(directory) / f'{name}.bin').read_bytes() == (ROOT / f'tests/data/pcs/{name}.bin').read_bytes()
+    namespace = runpy.run_path(str(ROOT / 'scripts/perf-gate'))
+    run = namespace['run_workload']
+    report = dict(rust_revision='9d8bce818aa7c7e18e67026e522a9b1539d0a57d',
+        lean_toolchain=(ROOT / 'lean-toolchain').read_text().strip(),
+        rust_toolchain=subprocess.check_output(['rustc', '--version'], text=True).strip(),
+        cpu=next(line.split(':', 1)[1].strip() for line in Path('/proc/cpuinfo').read_text().splitlines() if line.startswith('model name')),
+        coordinate_count=192, tensor_count=256, slice_count=64, counters=[], wall=[])
+    os.environ['LEANVM_NUM_THREADS'] = '1'
+    for repetition in range(3):
+        for engine, binary in [('lean', lean), ('rust', rust)]:
+            run.__globals__['BENCH'] = str(binary)
+            before = Path('/proc/loadavg').read_text().split()[:3]
+            phases = run('pcs')
+            report['counters'].append(dict(repetition=repetition, engine=engine, load_before=before,
+                load_after=Path('/proc/loadavg').read_text().split()[:3], phases=phases))
+    (ROOT / 'bench/pcs.json').write_text(json.dumps(report, indent=2) + '\n')
+    with open('/tmp/compstark-bench.lock', 'w') as lock:
+        fcntl.flock(lock, fcntl.LOCK_EX)
+        for threads in [1, 16]:
+            for repetition in range(3):
+                for engine, binary, args in [('lean', lean, ['pcs']), ('rust', rust, ['run'])]:
+                    before = Path('/proc/loadavg').read_text().split()[:3]
+                    result = subprocess.run(['/usr/bin/time', '-f', '%e %M', str(binary), *args], cwd=ROOT,
+                        env={**os.environ, 'LEAN_NUM_THREADS': str(threads), 'LEANVM_NUM_THREADS': str(threads)},
+                        text=True, stdout=subprocess.PIPE, stderr=subprocess.PIPE, check=True)
+                    elapsed, peak = result.stderr.strip().split()
+                    report['wall'].append(dict(repetition=repetition, engine=engine, threads=threads,
+                        load_before=before, load_after=Path('/proc/loadavg').read_text().split()[:3],
+                        elapsed_seconds=float(elapsed), peak_kib=int(peak), output=result.stdout.strip()))
+    (ROOT / 'bench/pcs.json').write_text(json.dumps(report, indent=2) + '\n')
+    print('wrote bench/pcs.json')
+
+
+if __name__ == '__main__':
+    main()

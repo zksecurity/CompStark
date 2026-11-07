@@ -312,9 +312,9 @@
       "tolerance": 0.005
     },
     "sumcheck-fold/prepare": {
-      "instructions": 2375935,
-      "variation": 2e-05,
-      "tolerance": 0.005
+      "instructions": 1182715,
+      "variation": 0.001667,
+      "tolerance": 0.0067
     },
     "sumcheck-fold/fold": {
       "instructions": 58017151,
@@ -322,8 +322,23 @@
       "tolerance": 0.005
     },
     "sumcheck-fold/packed-fold": {
-      "instructions": 31702126,
-      "variation": 4.7e-05,
+      "instructions": 26062611,
+      "variation": 0.0,
+      "tolerance": 0.005
+    },
+    "pcs/coordinates": {
+      "instructions": 6514141,
+      "variation": 0.0,
+      "tolerance": 0.005
+    },
+    "pcs/bit-fold": {
+      "instructions": 321240,
+      "variation": 0.0,
+      "tolerance": 0.005
+    },
+    "pcs/basis": {
+      "instructions": 8661401,
+      "variation": 0.0,
       "tolerance": 0.005
     }
   }

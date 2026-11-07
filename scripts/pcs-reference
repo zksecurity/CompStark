@@ -1,0 +1,27 @@
+#!/usr/bin/env python3
+"""Build an external read-only driver of the pinned leanMultisig PCS kernels."""
+from pathlib import Path
+import os
+import subprocess
+import sys
+import tempfile
+
+ROOT = Path(__file__).resolve().parents[1]
+REVISION = '9d8bce818aa7c7e18e67026e522a9b1539d0a57d'
+
+def main():
+    source = Path(sys.argv[1]).resolve()
+    output = Path(sys.argv[2]).resolve()
+    assert subprocess.check_output(['git', '-C', str(source), 'rev-parse', 'HEAD'], text=True).strip() == REVISION
+    assert not subprocess.check_output(['git', '-C', str(source), 'status', '--porcelain', '--untracked-files=no'], text=True).strip()
+    with tempfile.TemporaryDirectory(prefix='pcs-reference-') as directory:
+        directory = Path(directory)
+        (directory / 'src').mkdir()
+        (directory / 'Cargo.toml').write_text('[package]\nname = "pcs-reference"\nversion = "0.1.0"\nedition = "2024"\n[dependencies]\n' + '\n'.join(f'{name} = {{path = "{source}/crates/{name}"}}' for name in ['pcs', 'primitives']) + '\n')
+        (directory / 'src/main.rs').write_text((ROOT / 'tests/rust/pcs.rs').read_text())
+        subprocess.run(['cargo', 'build', '--release', '--manifest-path', str(directory / 'Cargo.toml'), '-j', '4'], check=True,
+                       env={**os.environ, 'CARGO_TARGET_DIR': str(output), 'RUSTFLAGS': '-C target-cpu=native'})
+    print(output / 'release/pcs-reference')
+
+if __name__ == '__main__':
+    main()

@@ -31,7 +31,7 @@ The knowledge errors are explicit sums of one term per challenge, proved from co
 
 CompPoly and ArkLib are pinned to branches of forks that carry the results CompStark needs before they are upstream.
 
-[docs/components.md](docs/components.md) describes every component with its files, theorems, assumptions and benchmarks.
+[docs/components.md](docs/components.md) describes every component with its files, theorems, assumptions and benchmarks. [Binary PCS prover components](docs/binary-pcs.md) covers ordered ring maps, packed bit folds, factored opening weights and honest WHIR completeness.
 
 ## Performance
 
