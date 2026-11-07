@@ -178,6 +178,22 @@ def grind (rate : Rate) (observer : Observer O) (state : State rate O)
     Option (Nat × State rate O) :=
   grindWith f1600 fast_width rate observer state frame accept limit
 
+/-- A successful grinding result is the smallest accepted framed nonce in the search range. -/
+theorem grind_min (rate : Rate) (observer : Observer O) (state : State rate O)
+    (frame : Nat → Array UInt64) (accept : Array UInt64 → Bool) (limit nonce : Nat)
+    (next : State rate O) (h : grind rate observer state frame accept limit = some (nonce, next)) :
+    let probe := fun n => (flushWith f1600 fast_width rate (fun o _ _ => o)
+      (absorbWith f1600 fast_width rate (fun o _ _ => o) state (frame n))).1
+    nonce < limit ∧ accept (probe nonce) = true ∧
+      ∀ m, m < nonce → accept (probe m) = false := by
+  unfold grind grindWith at h
+  obtain ⟨found, search, result⟩ := Option.map_eq_some_iff.mp h
+  have eq : found = nonce := congrArg Prod.fst result
+  subst found
+  obtain ⟨_, bound, accepted, minimal⟩ := findNonce_min _ limit 0 nonce search
+  exact ⟨by simpa only [Nat.zero_add] using bound, accepted,
+    fun m hm => minimal m (Nat.zero_le _) hm⟩
+
 /-- Grinding's chosen nonce, carried state and observer agree with VCVio. -/
 theorem grind_eq (rate : Rate) (observer : Observer O) (state : State rate O)
     (frame : Nat → Array UInt64) (accept : Array UInt64 → Bool) (limit : Nat) :
