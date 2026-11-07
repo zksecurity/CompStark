@@ -412,8 +412,8 @@
       "tolerance": 0.005
     },
     "pcs/induction-large-sparse": {
-      "instructions": 103435976,
-      "variation": 6e-06,
+      "instructions": 183150171,
+      "variation": 0.0,
       "tolerance": 0.005
     },
     "pcs/induction-split": {
@@ -427,8 +427,8 @@
       "tolerance": 0.005
     },
     "pcs/induction-sparse": {
-      "instructions": 5327691,
-      "variation": 6.9e-05,
+      "instructions": 1499663,
+      "variation": 0.0,
       "tolerance": 0.005
     }
   }

@@ -31,6 +31,59 @@ def occupiedPair (blocks : List (Fin k)) (span : Nat) : Fin (blocks.length*span)
   let cached := blocks.toArray
   fun j => finProdFinEquiv (cached[j.divNat.val]'(by simpa only [cached, List.size_toArray] using j.divNat.isLt), j.modNat)
 
+/-- Address an occupied pair using its retained block array and direct row-major arithmetic. -/
+@[inline] def occupiedPairCached {k n : Nat} (blocks : Vector (Fin k) n) (span : Nat)
+    (j : Fin (n*span)) : Fin (k*span) :=
+  ⟨blocks[j.divNat].val*span+j.modNat.val, by
+    have := blocks[j.divNat].isLt
+    have := j.modNat.isLt
+    nlinarith⟩
+
+/-- Cached direct addressing is exactly the certified occupied-pair map. -/
+theorem occupiedPairCached_eq {k : Nat} (blocks : List (Fin k)) (span : Nat) :
+    occupiedPairCached (⟨blocks.toArray, List.size_toArray⟩ : Vector (Fin k) blocks.length) span =
+      occupiedPair blocks span := by
+  funext j
+  apply Fin.ext
+  simp only [occupiedPairCached, occupiedPair, finProdFinEquiv, Equiv.coe_fn_mk,
+    Fin.getElem_fin, Vector.getElem_mk]
+  simp only [Nat.add_comm, Nat.mul_comm]
+
+/-- Cached occupied-pair addressing retains its selected parent block. -/
+theorem occupiedPairCached_divNat {k n : Nat} (blocks : Vector (Fin k) n) (span : Nat)
+    (j : Fin (n*span)) : (occupiedPairCached blocks span j).divNat = blocks[j.divNat] := by
+  have positive : 0 < span := by have := j.modNat.isLt; omega
+  apply Fin.ext
+  change (blocks[j.divNat].val*span+j.modNat.val)/span = blocks[j.divNat].val
+  rw [Nat.mul_comm blocks[j.divNat].val span, Nat.mul_add_div positive,
+    Nat.div_eq_of_lt j.modNat.isLt, Nat.add_zero]
+
+/-- Cached occupied-pair addressing retains its position inside the selected block. -/
+theorem occupiedPairCached_modNat {k n : Nat} (blocks : Vector (Fin k) n) (span : Nat)
+    (j : Fin (n*span)) : (occupiedPairCached blocks span j).modNat = j.modNat := by
+  apply Fin.ext
+  exact Nat.mul_add_mod_of_lt j.modNat.isLt
+
+/-- Address one side of an active butterfly with its cached block and shared stride. -/
+@[inline] def occupiedIndexCached {k n : Nat} (blocks : Vector (Fin k) n) (span : Nat)
+    (p : Fin (n*span) × Fin 2) : Fin (k*(2*span)) :=
+  ⟨p.1.modNat.val+span*p.2.val+2*span*blocks[p.1.divNat].val, by
+    have := p.1.modNat.isLt
+    have := p.2.isLt
+    have := blocks[p.1.divNat].isLt
+    nlinarith⟩
+
+/-- Direct active addresses are the complete stage permutation on the same occupied pair. -/
+theorem occupiedIndexCached_eq {d n : Nat} (i : Fin d) (lanes : Nat)
+    (blocks : Vector (Fin (2^(d-i.val-1))) n) (p : Fin (n*(2^i.val*lanes)) × Fin 2) :
+    Fin.cast (Packed.stage_word_count d i lanes) (occupiedIndexCached blocks (2^i.val*lanes) p) =
+      Packed.stageIndex d i lanes (occupiedPairCached blocks (2^i.val*lanes) p.1,p.2) := by
+  apply Fin.ext
+  change p.1.modNat.val+(2^i.val*lanes)*p.2.val+2*(2^i.val*lanes)*blocks[p.1.divNat].val =
+    (occupiedPairCached blocks (2^i.val*lanes) p.1).modNat.val+(2^i.val*lanes)*p.2.val+
+      2*(2^i.val*lanes)*(occupiedPairCached blocks (2^i.val*lanes) p.1).divNat.val
+  rw [occupiedPairCached_modNat, occupiedPairCached_divNat]
+
 /-- Active-pair addressing is injective when each occupied block occurs once. -/
 theorem occupiedPair_injective {k : Nat} (blocks : List (Fin k)) (span : Nat) (unique : blocks.Nodup) :
     Function.Injective (occupiedPair blocks span) := by
@@ -86,9 +139,23 @@ def occupiedStage {d count : Nat} {hd : d < 64} (plan : Packed.FlatPlan d hd) (i
     (lanes : Nat) (positions : Vector (Fin (2^d)) count) (a : BF64.Packed.Buffer (2^d*lanes)) :
     BF64.Packed.Buffer (2^d*lanes) :=
   let blocks := occupiedBlocks i positions
-  let selected := occupiedPair blocks (2^i.val*lanes)
-  Packed.sweep (fun p => Packed.stageIndex d i lanes (selected p.1,p.2))
-    (fun j => transposePair (plan.get i (selected j).divNat)) a
+  let cached : Vector _ blocks.length := ⟨blocks.toArray, List.size_toArray⟩
+  let span := 2^i.val*lanes
+  Packed.sweep (fun p => Fin.cast (Packed.stage_word_count d i lanes)
+      (occupiedIndexCached cached span p))
+    (fun j => transposePair (plan.get i cached[j.divNat])) a
+
+/-- The cached implementation retains the original occupied butterfly sweep. -/
+theorem occupiedStage_eq {d count : Nat} {hd : d < 64} (plan : Packed.FlatPlan d hd) (i : Fin d)
+    (lanes : Nat) (positions : Vector (Fin (2^d)) count) (a : BF64.Packed.Buffer (2^d*lanes)) :
+    occupiedStage plan i lanes positions a =
+      Packed.sweep (fun p => Packed.stageIndex d i lanes
+        (occupiedPair (occupiedBlocks i positions) (2^i.val*lanes) p.1,p.2))
+        (fun j => transposePair (plan.get i
+          (occupiedPair (occupiedBlocks i positions) (2^i.val*lanes) j).divNat)) a := by
+  unfold occupiedStage
+  dsimp only
+  simp only [occupiedIndexCached_eq, ← occupiedPairCached_divNat, occupiedPairCached_eq]
 
 /-- Each occupied-stage result reads its original pair, and every omitted pair is unchanged. -/
 theorem occupiedStage_read {d count : Nat} {hd : d < 64} (plan : Packed.FlatPlan d hd)
@@ -117,10 +184,11 @@ theorem occupiedStage_read {d count : Nat} {hd : d < 64} (plan : Packed.FlatPlan
   · obtain ⟨j,entry⟩ := (occupiedPair_range blocks _ t).mpr member
     simp only [show t.divNat ∈ occupiedBlocks i positions from member, ↓reduceIte]
     rw [← entry]
-    unfold occupiedStage
+    rw [occupiedStage_eq]
     change BF64.Packed.read (Packed.sweep _ _ a) ((fun p : Fin (blocks.length*(2^i.val*lanes)) × Fin 2 => Packed.stageIndex d i lanes (selected p.1,p.2)) (j,b)) = _
     rw [Packed.read_sweep _ injective]
   · simp only [show ¬t.divNat ∈ occupiedBlocks i positions from member, ↓reduceIte]
+    rw [occupiedStage_eq]
     apply read_sweep_outside
     intro j side equal
     have components := (Packed.stageIndex d i lanes).injective equal

@@ -101,7 +101,7 @@ def checkInduction : IO Unit := do
     if hd : lo+hi+rate < 64 then
       let plan := (AdditiveNTT.Bitsliced.Plan.create AdditiveNTT.Packed.flatBasis (lo+hi+rate) hd).toPacked
       let positions : Vector (Fin (2^(lo+hi+rate))) count := Vector.ofFn fun q =>
-        ⟨(if q.val%7 = 0 then 0 else q.val*65537+91) % 2^(lo+hi+rate),
+        ⟨(if q.val%7 = 0 then 0 else q.val*7919+91) % 2^(lo+hi+rate),
           Nat.mod_lt _ (Nat.two_pow_pos _)⟩
       let values := fun q : Fin count => fun c : Fin lanes =>
         mapLimb (value (q.val+77)) ⟨c.val%3, Nat.mod_lt _ (by decide)⟩

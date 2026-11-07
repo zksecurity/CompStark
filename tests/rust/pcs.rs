@@ -89,7 +89,7 @@ fn main() {
         queries.iter().zip(&query_weights).fold(F192::ZERO, |acc, (&q, &w)| acc + w.mul_base(word[q]))
     }).collect();
     assert_eq!(induced, reference);
-    let large_queries: Vec<usize> = (0..137).map(|q| if q%7 == 0 { 0 } else { (q*65537+91) % (1<<14) }).collect();
+    let large_queries: Vec<usize> = (0..137).map(|q| if q%7 == 0 { 0 } else { (q*7919+91) % (1<<14) }).collect();
     let large_weights: Vec<_> = (0..137).map(|q| value(q+77)).collect();
     let large_constants = pcs::pcs_induction_fixture::constants(12);
     mark(&mut marks, "begin");

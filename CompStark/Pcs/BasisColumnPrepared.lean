@@ -158,10 +158,60 @@ theorem projectColumnsShared_eq (lanes cols terms : Nat) (f : Vector Word (lanes
     simp only [Vector.getElem_map, entry, BasisColumn.prepareProjection]
   · rfl
 
+/-- Resolve each compact point window once, sharing its address across all witness lanes. -/
+def projectionAddresses {cols terms : Nat} (columns : Vector (BasisColumn cols) terms) :
+    Vector Nat terms :=
+  columns.map fun column => match column with
+    | .point w => (projectionWindows columns).idxOf w
+    | .binary _ _ => 0
+
+/-- Project shared columns using cached point-window addresses for every witness lane. -/
+def projectColumnsIndexed (lanes cols terms : Nat) (f : Vector Word (lanes*cols))
+    (columns : Vector (BasisColumn cols) terms) : Vector WordExt3 (lanes*terms) :=
+  let windows := projectionWindows columns
+  let points : Vector WordExt3 (lanes*windows.length) := Vector.ofFn fun i =>
+    (BasisProjection.point windows[i.modNat.val]).projectFrom f (i.divNat.val*cols)
+      (by have := i.divNat.isLt; nlinarith)
+  let plans := columns.map BasisColumn.prepareProjection
+  let addresses := projectionAddresses columns
+  Vector.ofFn fun i => match entry : columns[i.modNat] with
+    | .point w =>
+      points[basisAddress i.divNat (⟨addresses[i.modNat], by
+        simp only [addresses, projectionAddresses, Fin.getElem_fin, Vector.getElem_map]
+        simp only [Fin.getElem_fin] at entry
+        simp only [entry]
+        exact List.idxOf_lt_length_iff.mpr (projectionWindows_mem columns i.modNat w entry)⟩ : Fin windows.length)]
+    | .binary _ _ => plans[i.modNat].projectFrom f (i.divNat.val*cols)
+        (by have := i.divNat.isLt; nlinarith)
+
+/-- Cached point addresses select exactly the shared projection at every row and term. -/
+theorem projectColumnsIndexed_eq (lanes cols terms : Nat) (f : Vector Word (lanes*cols))
+    (columns : Vector (BasisColumn cols) terms) :
+    projectColumnsIndexed lanes cols terms f columns = projectColumnsShared lanes cols terms f columns := by
+  apply Vector.ext
+  intro i hi
+  simp only [projectColumnsIndexed, projectColumnsShared, Vector.getElem_ofFn]
+  split
+  · rename_i w entry
+    simp only [Fin.getElem_fin, Fin.modNat] at entry
+    simp only [projectionAddresses, Fin.getElem_fin, Vector.getElem_map, Fin.modNat, entry]
+    split
+    · rename_i w' entry'
+      have same : w' = w := BasisColumn.point.inj (entry'.symm.trans entry)
+      subst w'
+      rfl
+    · rename_i values coordinate entry'
+      cases entry.symm.trans entry'
+  · rename_i values coordinate entry
+    split
+    · rename_i w entry'
+      cases entry.symm.trans entry'
+    · rfl
+
 /-- The compiled projection matrix shares point windows and binary selections across all lanes. -/
-@[csimp] theorem projectColumns_code : @projectColumns = @projectColumnsShared := by
+@[csimp] theorem projectColumns_code : @projectColumns = @projectColumnsIndexed := by
   funext lanes cols terms f columns
-  rw [projectColumnsShared_eq]
+  rw [projectColumnsIndexed_eq, projectColumnsShared_eq]
   exact congrFun (congrFun (congrFun (congrFun (congrFun projectColumnsPrepared_eq lanes) cols) terms) f) columns
 
 end CompStark.Pcs

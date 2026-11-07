@@ -679,7 +679,7 @@ def pcsRun (phase : {α : Type} → String → (Unit → α) → IO α) : IO UIn
   unless induced.val.bytes == expectedInduced && dense.val.bytes == expectedInduced &&
       split.val.bytes == expectedInduced && sparse.val.bytes == expectedInduced do throw (IO.userError "induced weights Rust mismatch")
   let largePositions : Vector (Fin 16384) 137 := Vector.ofFn fun q =>
-    ⟨(if q.val%7 = 0 then 0 else q.val*65537+91) % 16384, Nat.mod_lt _ (by decide)⟩
+    ⟨(if q.val%7 = 0 then 0 else q.val*7919+91) % 16384, Nat.mod_lt _ (by decide)⟩
   let largePlan := (AdditiveNTT.Bitsliced.Plan.create AdditiveNTT.Packed.flatBasis 14 (by decide)).toPacked
   let largeDense ← phase "induction-large-dense" fun _ =>
     CompStark.Pcs.induceSplitRows 6 6 2 (by decide) 3 largePositions fun q c =>
