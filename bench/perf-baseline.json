@@ -360,6 +360,26 @@
       "instructions": 35153729,
       "variation": 1e-05,
       "tolerance": 0.005
+    },
+    "pcs/induction": {
+      "instructions": 1870570,
+      "variation": 0.0,
+      "tolerance": 0.005
+    },
+    "pcs/induction-dense": {
+      "instructions": 2223074,
+      "variation": 0.0,
+      "tolerance": 0.005
+    },
+    "pcs/accumulated-prepare": {
+      "instructions": 1182524,
+      "variation": 0.0,
+      "tolerance": 0.005
+    },
+    "pcs/accumulated": {
+      "instructions": 190261,
+      "variation": 0.0,
+      "tolerance": 0.005
     }
   }
 }

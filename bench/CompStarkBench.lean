@@ -635,11 +635,27 @@ def pcsRun (phase : {α : Type} → String → (Unit → α) → IO α) : IO UIn
   let slices ← phase "bit-fold" fun _ => CompStark.Pcs.foldBits packed tensor
   let mapped ← phase "basis" fun _ => tensor.map (CompStark.Pcs.applyCoordinates coordinates)
   let input := CompStark.Fixtures.Pcs.encodingInput 6 16
-  let plan ← phase "encoding-plan" fun _ =>
+  let plan : AdditiveNTT.Bitsliced.Plan AdditiveNTT.Packed.flatBasis 8 (by decide) ← phase "encoding-plan" fun _ =>
     AdditiveNTT.Bitsliced.Plan.create AdditiveNTT.Packed.flatBasis 8 (by decide)
   let encoded ← phase "encoding" fun _ =>
     CompStark.Pcs.encodeExtensionRows (ell := 6) (rate := 2) (by decide) plan 16
       (by decide) input (by decide)
+  let positions : Vector (Fin 256) 7 := ⟨#[3, 17, 3, 255, 128, 0, 64], rfl⟩
+  let induced ← phase "induction" fun _ =>
+    CompStark.Pcs.induceRows (ell := 6) (rate := 2) (by decide) plan.toPacked 3 positions fun q c =>
+      CompStark.Pcs.mapLimb (CompStark.Fixtures.Pcs.value (q.val + 77)) c
+  let dense ← phase "induction-dense" fun _ =>
+    CompStark.Pcs.induceDenseRows (ell := 6) (rate := 2) (by decide) plan.toPacked 3 positions fun q c =>
+      CompStark.Pcs.mapLimb (CompStark.Fixtures.Pcs.value (q.val + 77)) c
+  let expectedInduced ← IO.FS.readBinFile "tests/data/pcs/induced.bin"
+  unless induced.val.bytes == expectedInduced && dense.val.bytes == expectedInduced do throw (IO.userError "induced weights Rust mismatch")
+  let acc : Vector BF64.WordExt3 256 := Vector.ofFn fun i => CompStark.Fixtures.Pcs.value (i.val + 100)
+  let incoming : Vector BF64.WordExt3 256 := Vector.ofFn fun i => CompStark.Fixtures.Pcs.value (i.val + 200)
+  let shared ← phase "accumulated-prepare" fun _ => CompStark.Sumcheck.prepare (CompStark.Fixtures.Pcs.value 43)
+  let accumulated ← phase "accumulated" fun _ => CompStark.Pcs.addScaled shared acc incoming
+  let expectedAccumulated ← IO.FS.readBinFile "tests/data/pcs/accumulated.bin"
+  unless CompStark.Fixtures.Pcs.bytes accumulated.toArray == expectedAccumulated do
+    throw (IO.userError "accumulated weights Rust mismatch")
   let expected ← IO.FS.readBinFile "tests/data/pcs/encoded.bin"
   unless encoded.val.bytes == expected do throw (IO.userError "bitsliced E encoding Rust mismatch")
   for (name, actual) in [("coordinates", coordinates.toArray), ("tensor", tensor.toArray),

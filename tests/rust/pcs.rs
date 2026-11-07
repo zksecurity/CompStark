@@ -68,13 +68,44 @@ fn main() {
     std::hint::black_box(&encoded);
     let encoding_ns = started.elapsed().as_nanos();
     mark(&mut marks, "end encoding");
+    let queries = [3, 17, 3, 255, 128, 0, 64];
+    let query_weights: Vec<_> = (0..queries.len()).map(|i| value(i as u64 + 77)).collect();
+    let constants = pcs::pcs_induction_fixture::constants(6);
+    mark(&mut marks, "begin");
+    let dense = pcs::pcs_induction_fixture::dense(6, &constants, &queries, &query_weights);
+    std::hint::black_box(&dense);
+    mark(&mut marks, "end induction-dense");
+    mark(&mut marks, "begin");
+    let started = std::time::Instant::now();
+    let induced = pcs::pcs_induction_fixture::sparse(&ntt, 6, 2, &queries, &query_weights);
+    std::hint::black_box(&induced);
+    let induction_ns = started.elapsed().as_nanos();
+    mark(&mut marks, "end induction");
+    assert_eq!(induced, dense);
+    let reference: Vec<_> = (0..64).map(|i| {
+        let mut message = vec![F64::ZERO; 64];
+        message[i] = F64::ONE;
+        let pcs::ntt::Codeword::Whole(word, _) = ntt.encode_interleaved_with(&message, 1, 2, false, &|_, _| {}) else { panic!("full word required") };
+        queries.iter().zip(&query_weights).fold(F192::ZERO, |acc, (&q, &w)| acc + w.mul_base(word[q]))
+    }).collect();
+    assert_eq!(induced, reference);
+    let mut accumulated: Vec<_> = (0..256).map(|i| value(i + 100)).collect();
+    let incoming: Vec<_> = (0..256).map(|i| value(i + 200)).collect();
+    mark(&mut marks, "begin");
+    let started = std::time::Instant::now();
+    pcs::pcs_accumulated_fixture::add(&mut accumulated, &incoming, value(43));
+    std::hint::black_box(&accumulated);
+    let accumulated_ns = started.elapsed().as_nanos();
+    mark(&mut marks, "end accumulated");
     if fixture {
         let d = Path::new(&args[2]); fs::create_dir_all(d).unwrap();
+        fs::write(d.join("accumulated.bin"), bytes(&accumulated)).unwrap();
+        fs::write(d.join("induced.bin"), bytes(&induced)).unwrap();
         fs::write(d.join("encoded.bin"), encoded.iter().flat_map(|w| w.0.to_le_bytes()).collect::<Vec<_>>()).unwrap();
         for (name, values) in [("coordinates", coordinates.as_slice()), ("tensor", &tensor), ("slices", &slices), ("mapped", &mapped)] {
             fs::write(d.join(format!("{name}.bin")), bytes(values)).unwrap();
         }
     }
-    println!("nanoseconds coordinates={coordinate_ns} bit-fold={fold_ns} basis={basis_ns} encoding-plan={plan_ns} encoding={encoding_ns}");
+    println!("nanoseconds coordinates={coordinate_ns} bit-fold={fold_ns} basis={basis_ns} encoding-plan={plan_ns} encoding={encoding_ns} induction={induction_ns} accumulated={accumulated_ns}");
     println!("coordinates={} sink={} slices={}", coordinates.len(), coordinates[191].c0, slices[63].c0);
 }

@@ -68,6 +68,18 @@ def check : IO Unit := do
     (by decide) (encodingInput 6 16) (by decide)
   let expected ← IO.FS.readBinFile "tests/data/pcs/encoded.bin"
   unless encoded.val.bytes == expected do throw (IO.userError "bitsliced E encoding Rust mismatch")
+  let positions : Vector (Fin 256) 7 := ⟨#[3, 17, 3, 255, 128, 0, 64], rfl⟩
+  let induced := induceRows (ell := 6) (rate := 2) (by decide) plan.toPacked 3 positions fun q c =>
+    mapLimb (value (q.val + 77)) c
+  let dense := induceDenseRows (ell := 6) (rate := 2) (by decide) plan.toPacked 3 positions fun q c =>
+    mapLimb (value (q.val + 77)) c
+  let expected ← IO.FS.readBinFile "tests/data/pcs/induced.bin"
+  unless induced.val.bytes == expected && dense.val.bytes == expected do throw (IO.userError "sparse induced weights Rust mismatch")
+  let acc : Vector WordExt3 256 := Vector.ofFn fun i => value (i.val + 100)
+  let incoming : Vector WordExt3 256 := Vector.ofFn fun i => value (i.val + 200)
+  let accumulated := addScaled (CompStark.Sumcheck.prepare (value 43)) acc incoming
+  let expected ← IO.FS.readBinFile "tests/data/pcs/accumulated.bin"
+  unless bytes accumulated.toArray == expected do throw (IO.userError "accumulated weights Rust mismatch")
   for lo in [0, 1, 3, 8] do
     let point : Fin (lo + 2) → BF64.Ext3 := fun i => (value (i.val + 7)).toField
     let factors := wordFactoredEq (lo := lo) (hi := 2) point

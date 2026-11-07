@@ -5,6 +5,8 @@ Released under Apache 2.0 license as described in the file LICENSE.
 module
 public import CompStark.Pcs.CoordinateMap
 public import CompStark.Pcs.Encoding
+public import CompStark.Pcs.Induction
+public import CompStark.Pcs.Accumulated
 /-! Deterministic inputs for binary-field PCS conformance and measurement. -/
 @[expose] public section
 namespace CompStark.Fixtures.Pcs

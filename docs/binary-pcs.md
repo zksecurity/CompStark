@@ -14,13 +14,13 @@
 
 ## Kernel measurements
 
-Run `scripts/bench-pcs /path/to/leanMultisig` to rebuild the unchanged Rust dependency, compare all five binary fixtures with one and sixteen Rust threads, and record interleaved instruction and loaded-host wall measurements in `bench/pcs.json`. Counters exclude process startup; direct phase clocks exclude the FIFO handshake. Each wall run holds `/tmp/compstark-bench.lock`. The fixed workload has 192 coordinates, 256 packed words, 64 slice outputs and 256 mapped weights. Each process starts cold; preparation for a shared tensor occurs before the bit-fold and basis phase.
+Run `scripts/bench-pcs /path/to/leanMultisig` to rebuild the unchanged Rust dependency, compare all seven binary fixtures with one and sixteen Rust threads, and record interleaved instruction and loaded-host wall measurements in `bench/pcs.json`. Counters exclude process startup; direct phase clocks exclude the FIFO handshake. Each wall run holds `/tmp/compstark-bench.lock`. The fixed workload has 192 coordinates, 256 packed words, 64 slice outputs and 256 mapped weights. Each process starts cold; preparation for a shared tensor occurs before the bit-fold and basis phase.
 
 | Kernel | Lean instructions | Rust instructions | Lean/Rust |
 | --- | ---: | ---: | ---: |
 | Six-map coordinate preparation | 6,514,141 | 759,411 | 8.58× |
 | Packed bit folds | 321,240 | 83,569 | 3.84× |
-| Mapped tensor entries | 8,661,401 | 271,463 | 31.91× |
+| Mapped tensor entries | 1,974,207 | 271,470 | 7.27× |
 
 These are three-run median user instruction counts on AMD Ryzen 7 3700X, Lean 4.35.0, with Rust built using `-C target-cpu=native`. The recorded load averages are in `bench/pcs.json`. The Rust mapped-weight comparison is a scalar coordinate-XOR reference using the public coordinate weights; it does not measure the production prepared bit-fold `Basis` span. The Lean bit fold uses descending numeric cursors and three scalar XOR accumulators; each visited bit uses a proved machine shift/mask test.
 
@@ -45,3 +45,20 @@ The Rust fixture contains all 98,304 bytes of a six-variable message encoded at 
 `CompStark.Pcs.CoordinateMap.applyCoordinates` applies the 192 shared binary coordinate images with a descending numeric cursor and three machine-word XOR accumulators. `coordinateExpansion` proves the exact limb-and-bit decomposition of every extension word; `applyCoordinates_refines` proves equality with the complete six-stage Frobenius composition for arbitrary challenges and inputs. The preparation is shared with the ring-switch coordinate weights.
 
 For the fixed 256-entry mapped tensor, the three-run median is 1,974,207 Lean instructions versus 271,463 Rust instructions, a 7.27× ratio. This is a 4.39× reduction in Lean instructions relative to applying the Frobenius composition separately at every entry. The gate records the intended decrease in `pcs/basis`; all other phase baselines remain fixed.
+
+## Query induction and accumulated weights
+
+`CompStark.Pcs.Induction` scatters ordered queries, adds duplicate positions, runs the additive transform in transposed stage order, and sums the encoder's replicas. `induceRows_adjoint` proves the complete output has exactly the dense encoded-query pairing for every message. The sparse sweep skips zero pairs; `induceDenseRows_eq` proves the unconditional dense sweep gives the same output. Both kernels reuse the encoder's prepared twiddles. They sweep the complete domain; they do not implement the Rust window/strip decomposition or its split-tensor dense dot kernel.
+
+The induction fixture has six message variables, inverse-rate exponent two, three physical extension limbs and seven ordered queries including a duplicate. All 64 induced extension values match both unchanged Rust production kernels and an independent impulse-encoder reference. The external harness copies the pinned PCS modules verbatim into a disposable crate and appends diagnostic children that expose private entry points; the original source remains clean.
+
+`CompStark.Pcs.Accumulated.addScaled` prepares one extension multiplier outside the table update. `addScaled_refines` proves the exact pointwise accumulated linear combination. All 256 extension outputs match Rust's production `add_scaled`.
+
+| Kernel | Lean instructions | Rust instructions | Lean/Rust |
+| --- | ---: | ---: | ---: |
+| Sparse induction | 1,870,570 | 32,264 | 57.98× |
+| Dense induction | 2,223,074 | 27,875 | 79.75× |
+| Shared accumulation preparation | 1,182,524 | — | — |
+| Accumulation of 256 weights | 190,261 | 11,980 | 15.88× |
+
+These three-run medians measure identical fixture inputs. Preparation is separate and must be amortized across a production table; the Rust update prepares no byte maps. `bench/pcs.json` records phase clocks, thread settings, load averages and peak RSS. The performance gate adds four entries without changing unrelated baselines. Production-size optimization and the full `PCS open` comparison require the integrated driver.
