@@ -30,6 +30,19 @@ fn fold(rows: usize, width: usize, directory: Option<&Path>) -> Vec<F192> {
     if let Some(d) = directory { mark(d, "end fold"); }
     output
 }
+fn base_fold(rows: usize, width: usize, directory: Option<&Path>) -> Vec<F192> {
+    let input: Vec<_> = (0..2 * rows * width).map(|i| F192::new(value(i as u64).c0, 0, 0)).collect();
+    let r = value(19);
+    if let Some(d) = directory { mark(d, "begin"); }
+    let output: Vec<_> = (0..rows * width).map(|i| {
+        let row = i / width;
+        let col = i % width;
+        interp(input[2 * row * width + col], input[(2 * row + 1) * width + col], r)
+    }).collect();
+    std::hint::black_box(&output);
+    if let Some(d) = directory { mark(d, "end base-fold"); }
+    output
+}
 fn main() {
     let args: Vec<String> = std::env::args().collect();
     if args.get(1).map(String::as_str) == Some("fixture") {
@@ -39,6 +52,8 @@ fn main() {
     } else {
         let directory = if args.len() == 4 { Some(Path::new(&args[3])) } else { None };
         let output = fold(16384, 4, directory);
-        println!("fold rows=16384 width=4 sink={}", output.last().unwrap().c0);
+        let base_output = base_fold(16384, 4, directory);
+        println!("fold rows=16384 width=4 sink={} base_sink={}", output.last().unwrap().c0,
+            base_output.last().unwrap().c0);
     }
 }

@@ -27,6 +27,10 @@ def check : IO Unit := do
     for i in [0:128] do
       unless (plan.mul (value i)).toField == (WordExt3.mul r (value i)).toField do
         throw (IO.userError s!"prepared multiplication mismatch at {i}")
+    for i in [0:128] do
+      let a : WordExt3 := ⟨(value i).c0, ⟨0⟩, ⟨0⟩⟩
+      unless plan.mul a == WordExt3.mul r a do
+        throw (IO.userError s!"prepared subfield multiplication mismatch at {i}")
     for a in [value 0, value 17, ⟨⟨0⟩, ⟨0⟩, ⟨0⟩⟩, ⟨⟨1⟩, ⟨0⟩, ⟨0⟩⟩] do
       unless plan.interpolate a a == a do
         throw (IO.userError "constant interpolation changed an endpoint")
