@@ -1,0 +1,415 @@
+{
+  "rust_revision": "9d8bce818aa7c7e18e67026e522a9b1539d0a57d",
+  "lean_toolchain": "leanprover/lean4:v4.35.0",
+  "rust_toolchain": "rustc 1.99.1 (58cf8f9c3 2026-10-13)",
+  "cpu": "AMD Ryzen 7 3700X 8-Core Processor",
+  "coordinate_count": 192,
+  "tensor_count": 256,
+  "slice_count": 64,
+  "counters": [
+    {
+      "repetition": 0,
+      "engine": "lean",
+      "load_before": [
+        "11.29",
+        "13.03",
+        "16.88"
+      ],
+      "load_after": [
+        "11.29",
+        "13.03",
+        "16.88"
+      ],
+      "phases": {
+        "pcs/coordinates": [
+          6514141,
+          2903720,
+          1171690
+        ],
+        "pcs/bit-fold": [
+          321240,
+          234654,
+          98391
+        ],
+        "pcs/basis": [
+          8661401,
+          3831980,
+          1016409
+        ]
+      }
+    },
+    {
+      "repetition": 0,
+      "engine": "rust",
+      "load_before": [
+        "11.29",
+        "13.03",
+        "16.88"
+      ],
+      "load_after": [
+        "11.29",
+        "13.03",
+        "16.88"
+      ],
+      "phases": {
+        "pcs/coordinates": [
+          759412,
+          11305459,
+          2971106
+        ],
+        "pcs/bit-fold": [
+          83569,
+          58529,
+          49091
+        ],
+        "pcs/basis": [
+          271463,
+          153164,
+          78371
+        ]
+      }
+    },
+    {
+      "repetition": 1,
+      "engine": "lean",
+      "load_before": [
+        "11.29",
+        "13.03",
+        "16.88"
+      ],
+      "load_after": [
+        "11.29",
+        "13.03",
+        "16.88"
+      ],
+      "phases": {
+        "pcs/coordinates": [
+          6514140,
+          3033195,
+          829337
+        ],
+        "pcs/bit-fold": [
+          321240,
+          229386,
+          88780
+        ],
+        "pcs/basis": [
+          8661401,
+          3967437,
+          1039569
+        ]
+      }
+    },
+    {
+      "repetition": 1,
+      "engine": "rust",
+      "load_before": [
+        "11.29",
+        "13.03",
+        "16.88"
+      ],
+      "load_after": [
+        "11.29",
+        "13.03",
+        "16.88"
+      ],
+      "phases": {
+        "pcs/coordinates": [
+          759411,
+          11598099,
+          3166888
+        ],
+        "pcs/bit-fold": [
+          83621,
+          69146,
+          41581
+        ],
+        "pcs/basis": [
+          271463,
+          161527,
+          69811
+        ]
+      }
+    },
+    {
+      "repetition": 2,
+      "engine": "lean",
+      "load_before": [
+        "11.29",
+        "13.03",
+        "16.88"
+      ],
+      "load_after": [
+        "11.29",
+        "13.03",
+        "16.88"
+      ],
+      "phases": {
+        "pcs/coordinates": [
+          6514141,
+          2391356,
+          914577
+        ],
+        "pcs/bit-fold": [
+          321240,
+          192253,
+          92651
+        ],
+        "pcs/basis": [
+          8661400,
+          3334937,
+          876638
+        ]
+      }
+    },
+    {
+      "repetition": 2,
+      "engine": "rust",
+      "load_before": [
+        "11.29",
+        "13.03",
+        "16.88"
+      ],
+      "load_after": [
+        "11.29",
+        "13.03",
+        "16.88"
+      ],
+      "phases": {
+        "pcs/coordinates": [
+          759279,
+          11367999,
+          3052047
+        ],
+        "pcs/bit-fold": [
+          83551,
+          63845,
+          77291
+        ],
+        "pcs/basis": [
+          271463,
+          158462,
+          101391
+        ]
+      }
+    }
+  ],
+  "wall": [
+    {
+      "repetition": 0,
+      "engine": "lean",
+      "threads": 1,
+      "load_before": [
+        "11.29",
+        "13.03",
+        "16.88"
+      ],
+      "load_after": [
+        "11.29",
+        "13.03",
+        "16.88"
+      ],
+      "elapsed_seconds": 0.14,
+      "peak_kib": 89900,
+      "output": "coordinates: 714996 ns\nbit-fold: 54141 ns\nbasis: 935908 ns\nPCS coordinates=192 sink=5242164331567799370 slices=5513153008462933316"
+    },
+    {
+      "repetition": 0,
+      "engine": "rust",
+      "threads": 1,
+      "load_before": [
+        "11.29",
+        "13.03",
+        "16.88"
+      ],
+      "load_after": [
+        "11.29",
+        "13.03",
+        "16.88"
+      ],
+      "elapsed_seconds": 0.0,
+      "peak_kib": 2176,
+      "output": "nanoseconds coordinates=3061477 bit-fold=21560 basis=44610\ncoordinates=192 sink=5242164331567799370 slices=5513153008462933316"
+    },
+    {
+      "repetition": 1,
+      "engine": "lean",
+      "threads": 1,
+      "load_before": [
+        "11.29",
+        "13.03",
+        "16.88"
+      ],
+      "load_after": [
+        "11.29",
+        "13.03",
+        "16.88"
+      ],
+      "elapsed_seconds": 0.15,
+      "peak_kib": 90064,
+      "output": "coordinates: 717606 ns\nbit-fold: 48511 ns\nbasis: 877297 ns\nPCS coordinates=192 sink=5242164331567799370 slices=5513153008462933316"
+    },
+    {
+      "repetition": 1,
+      "engine": "rust",
+      "threads": 1,
+      "load_before": [
+        "11.29",
+        "13.03",
+        "16.88"
+      ],
+      "load_after": [
+        "11.29",
+        "13.03",
+        "16.88"
+      ],
+      "elapsed_seconds": 0.0,
+      "peak_kib": 2176,
+      "output": "nanoseconds coordinates=2953955 bit-fold=15240 basis=44331\ncoordinates=192 sink=5242164331567799370 slices=5513153008462933316"
+    },
+    {
+      "repetition": 2,
+      "engine": "lean",
+      "threads": 1,
+      "load_before": [
+        "11.29",
+        "13.03",
+        "16.88"
+      ],
+      "load_after": [
+        "11.29",
+        "13.03",
+        "16.88"
+      ],
+      "elapsed_seconds": 0.23,
+      "peak_kib": 89420,
+      "output": "coordinates: 514095 ns\nbit-fold: 37760 ns\nbasis: 661616 ns\nPCS coordinates=192 sink=5242164331567799370 slices=5513153008462933316"
+    },
+    {
+      "repetition": 2,
+      "engine": "rust",
+      "threads": 1,
+      "load_before": [
+        "11.29",
+        "13.03",
+        "16.88"
+      ],
+      "load_after": [
+        "11.29",
+        "13.03",
+        "16.88"
+      ],
+      "elapsed_seconds": 0.0,
+      "peak_kib": 2176,
+      "output": "nanoseconds coordinates=2586542 bit-fold=11920 basis=35191\ncoordinates=192 sink=5242164331567799370 slices=5513153008462933316"
+    },
+    {
+      "repetition": 0,
+      "engine": "lean",
+      "threads": 16,
+      "load_before": [
+        "11.29",
+        "13.03",
+        "16.88"
+      ],
+      "load_after": [
+        "11.29",
+        "13.03",
+        "16.88"
+      ],
+      "elapsed_seconds": 0.11,
+      "peak_kib": 90060,
+      "output": "coordinates: 496514 ns\nbit-fold: 37911 ns\nbasis: 671025 ns\nPCS coordinates=192 sink=5242164331567799370 slices=5513153008462933316"
+    },
+    {
+      "repetition": 0,
+      "engine": "rust",
+      "threads": 16,
+      "load_before": [
+        "11.29",
+        "13.03",
+        "16.88"
+      ],
+      "load_after": [
+        "11.29",
+        "13.03",
+        "16.88"
+      ],
+      "elapsed_seconds": 0.0,
+      "peak_kib": 2304,
+      "output": "nanoseconds coordinates=2596092 bit-fold=3478490 basis=34071\ncoordinates=192 sink=5242164331567799370 slices=5513153008462933316"
+    },
+    {
+      "repetition": 1,
+      "engine": "lean",
+      "threads": 16,
+      "load_before": [
+        "11.29",
+        "13.03",
+        "16.88"
+      ],
+      "load_after": [
+        "11.29",
+        "13.03",
+        "16.88"
+      ],
+      "elapsed_seconds": 0.14,
+      "peak_kib": 90060,
+      "output": "coordinates: 511394 ns\nbit-fold: 38561 ns\nbasis: 676626 ns\nPCS coordinates=192 sink=5242164331567799370 slices=5513153008462933316"
+    },
+    {
+      "repetition": 1,
+      "engine": "rust",
+      "threads": 16,
+      "load_before": [
+        "11.29",
+        "13.03",
+        "16.88"
+      ],
+      "load_after": [
+        "11.29",
+        "13.03",
+        "16.88"
+      ],
+      "elapsed_seconds": 0.0,
+      "peak_kib": 2176,
+      "output": "nanoseconds coordinates=2590313 bit-fold=2354080 basis=33910\ncoordinates=192 sink=5242164331567799370 slices=5513153008462933316"
+    },
+    {
+      "repetition": 2,
+      "engine": "lean",
+      "threads": 16,
+      "load_before": [
+        "11.29",
+        "13.03",
+        "16.88"
+      ],
+      "load_after": [
+        "11.29",
+        "13.03",
+        "16.88"
+      ],
+      "elapsed_seconds": 0.11,
+      "peak_kib": 90700,
+      "output": "coordinates: 501954 ns\nbit-fold: 39171 ns\nbasis: 660735 ns\nPCS coordinates=192 sink=5242164331567799370 slices=5513153008462933316"
+    },
+    {
+      "repetition": 2,
+      "engine": "rust",
+      "threads": 16,
+      "load_before": [
+        "11.29",
+        "13.03",
+        "16.88"
+      ],
+      "load_after": [
+        "11.29",
+        "13.03",
+        "16.88"
+      ],
+      "elapsed_seconds": 0.0,
+      "peak_kib": 2304,
+      "output": "nanoseconds coordinates=2598622 bit-fold=3921734 basis=33261\ncoordinates=192 sink=5242164331567799370 slices=5513153008462933316"
+    }
+  ]
+}

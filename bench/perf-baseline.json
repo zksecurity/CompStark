@@ -326,6 +326,21 @@
       "variation": 1.3e-05,
       "tolerance": 0.005
     },
+    "pcs/coordinates": {
+      "instructions": 6514141,
+      "variation": 0.0,
+      "tolerance": 0.005
+    },
+    "pcs/bit-fold": {
+      "instructions": 321240,
+      "variation": 0.0,
+      "tolerance": 0.005
+    },
+    "pcs/basis": {
+      "instructions": 8661401,
+      "variation": 0.0,
+      "tolerance": 0.005
+    },
     "sumcheck-fold/constant-fold": {
       "instructions": 23873101,
       "variation": 0.0,

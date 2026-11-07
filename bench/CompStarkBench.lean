@@ -13,6 +13,7 @@ import CompStarkFixtures.KeccakKernel
 import CompStark.Keccak.Hash
 import CompStarkFixtures.KeccakMerkle
 import CompStark.Sumcheck.PackedFold
+import CompStarkFixtures.Pcs
 
 /-! # CompStark micro-benchmarks
 
@@ -619,6 +620,28 @@ def sumcheckFoldRun (phase : {α : Type} → String → (Unit → α) → IO α)
   IO.println s!"fold rows={rows} width={width} sink={output[rows * width - 1]!.c0.val}"
   return 0
 
+/-- Binary-field PCS map preparation, packed bit folds and factored opening weights. -/
+def pcsRun (phase : {α : Type} → String → (Unit → α) → IO α) : IO UInt32 := do
+  let challenges := CompStark.Fixtures.Pcs.challenges
+  let coordinates ← phase "coordinates" fun _ => CompStark.Pcs.coordinateWeights challenges
+  unless coordinates[191]!.c0.val == 5242164331567799370 do
+    throw (IO.userError "ring coordinate weights disagree with Rust")
+  let point : Fin (4 + 4) → BF64.Ext3 := fun i =>
+    (CompStark.Fixtures.Pcs.value (i.val + 101)).toField
+  let factors := CompStark.Pcs.wordFactoredEq (lo := 4) (hi := 4) point
+  let tensor : Vector BF64.WordExt3 256 := Vector.ofFn fun i => factors.eval (CompStark.Pcs.vertex 8 i)
+  let packed : Vector BF64.Word 256 := Vector.ofFn fun i =>
+    ⟨UInt64.ofNat (0x9e3779b97f4a7c15 * (i.val + 1))⟩
+  let slices ← phase "bit-fold" fun _ => CompStark.Pcs.foldBits packed tensor
+  let mapped ← phase "basis" fun _ => tensor.map (CompStark.Pcs.binary64Map challenges)
+  for (name, actual) in [("coordinates", coordinates.toArray), ("tensor", tensor.toArray),
+      ("slices", slices.toArray), ("mapped", mapped.toArray)] do
+    let expected ← IO.FS.readBinFile s!"tests/data/pcs/{name}.bin"
+    unless CompStark.Fixtures.Pcs.bytes actual == expected do
+      throw (IO.userError s!"PCS byte mismatch: {name}")
+  IO.println s!"PCS coordinates={coordinates.size} sink={coordinates[191]!.c0.val} slices={slices[63]!.c0.val}"
+  return 0
+
 /-- Commitment, canonical opening, retained writer transport and deterministic grinding. -/
 def keccakMerkleRun (phase : {α : Type} → String → (Unit → α) → IO α) : IO UInt32 := do
   let input := CompStark.Fixtures.KeccakMerkle.rows 4096 64 (by decide)
@@ -738,6 +761,7 @@ def gate (workload : String) (dir : System.FilePath) : IO UInt32 := do
     let root ← m.phase "root" fun _ ↦ CompStark.Merkle.Packed.root KoalaBear.fieldSize w chunks
     IO.println s!"root word {read root 0}"
     return 0
+  | "pcs" => pcsRun (fun label f ↦ m.phase label f)
   | "sumcheck-fold" => sumcheckFoldRun (fun label f ↦ m.phase label f)
   | "keccak-merkle" => keccakMerkleRun (fun label f ↦ m.phase label f)
   | "keccak-scalar" =>
@@ -788,6 +812,12 @@ def gate (workload : String) (dir : System.FilePath) : IO UInt32 := do
 
 def main (args : List String) : IO UInt32 := do
   match args with
+  | ["pcs"] => pcsRun (fun label f => do
+      let start ← IO.monoNanosNow
+      let result := f ()
+      let finish ← IO.monoNanosNow
+      IO.println s!"{label}: {finish - start} ns"
+      pure result)
   | ["sumcheck-fold"] => sumcheckFoldRun (fun _ f => pure (f ()))
   | ["keccak-merkle"] => keccakMerkleRun (fun label f ↦ do
       let t ← IO.monoNanosNow

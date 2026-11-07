@@ -219,3 +219,8 @@ public import CompStark.Sumcheck.Preparation
 public import CompStark.Sumcheck.Buffer
 public import CompStark.Sumcheck.PackedFold
 public import CompStark.Sumcheck.IndexFold
+
+public import CompStark.Pcs.RingSwitch
+public import CompStark.Pcs.Tensor
+public import CompStark.Pcs.HonestRound
+public import CompStark.Pcs.HonestWhir

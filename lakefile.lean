@@ -13,7 +13,7 @@ package CompStark where
 -- unboxed products, coordinate planes generic over fast extensions, and the BF64 word
 -- extension kernels and prepared byte maps.
 require CompPoly from git "https://github.com/mitschabaude-bot/CompPoly.git" @
-    "44b78471072cb5cec397feafc5d3c0cb19c2c0ef"
+    "9e0e342bc383241e81ef8c070c9d37b2a3d525da"
 
 -- ArkLib main with Johnson-regime mutual correlated agreement for power curves, lossy mutual
 -- correlated agreement, FRI on the interaction layer with its knowledge certificate on Plonky3's
@@ -24,12 +24,12 @@ require CompPoly from git "https://github.com/mitschabaude-bot/CompPoly.git" @
 -- unique-decoding range, and the fold lists of Plonky3's schedule, against VCVio with Merkle trees
 -- of injected payloads (branch `compstark` of the bot fork).
 require Arklib from git "https://github.com/mitschabaude-bot/ArkLib.git" @
-    "4765c7244f1e57892e9d0b016b35ecbf9a7f2500"
+    "14ea6fcb3e725af9f2bdb8deda3ec7b0e97d760e"
 
 -- VCVio with Merkle trees of injected payloads, caps and pruned multi-openings (branch
 -- `merkle-mixed` of the bot fork).
 require VCVio from git "https://github.com/mitschabaude-bot/VCVio.git" @
-    "b46db1d8226410dd2e6b66ce2f982027f1c26fba"
+    "c6dd01ec9d3eaf767452adfb445a9b905d406845"
 
 -- Mathlib as CompPoly pins it, last so that its dependencies take precedence over ArkLib's.
 require mathlib from git "https://github.com/leanprover-community/mathlib4" @ "v4.35.0"
