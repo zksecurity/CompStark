@@ -50,6 +50,17 @@ theorem sumExt_eq (count : Nat) (f : Fin count → WordExt3) :
   change 0 + (∑ i : Fin count, (f i).toField) = _
   simp only [zero_add, sumWords_refines, List.map_ofFn, Function.comp_apply, List.sum_ofFn]
 
+/-- Project compact point windows directly into three native coordinate accumulators. -/
+def BasisWindow.projectAtDirect {cols : Nat} (w : BasisWindow cols) (f : Fin cols → Word) : WordExt3 :=
+  sumExt w.count fun i => WordExt3.mulScalar w.values[i]
+    (f ⟨w.start+i.val, by have := i.isLt; have := w.fits; omega⟩)
+
+/-- Direct compact point projections preserve their exact weighted sums. -/
+@[csimp] theorem BasisWindow.projectAt_code : @BasisWindow.projectAt = @BasisWindow.projectAtDirect := by
+  funext cols w f
+  unfold BasisWindow.projectAt BasisWindow.projectAtDirect
+  rw [sumExt_eq]
+
 /-- Author both quadratic message coefficients with direct coordinate accumulation. -/
 def roundCoefficientsDirect (rows width : Nat) (table weights : Vector WordExt3 (2*rows*width)) :
     Vector WordExt3 2 :=

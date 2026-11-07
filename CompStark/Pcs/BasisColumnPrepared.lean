@@ -3,7 +3,7 @@ Copyright (c) 2026 zkSecurity. All rights reserved.
 Released under Apache 2.0 license as described in the file LICENSE.
 -/
 module
-public import CompStark.Pcs.BasisColumn
+public import CompStark.Pcs.DirectSums
 
 /-! Shared binary-column selections for projected lane matrices. -/
 set_option backward.isDefEq.respectTransparency false
@@ -41,6 +41,46 @@ def BasisColumn.prepareProjection {cols : Nat} : BasisColumn cols → BasisProje
 @[noinline] def BasisProjection.projectFrom {total cols : Nat} (plan : BasisProjection cols)
     (f : Vector Word total) (offset : Nat) (fits : offset+cols ≤ total) : WordExt3 :=
   plan.project fun x => f[offset+x.val]'(by have := x.isLt; omega)
+
+/-- XOR a prepared binary selection with a fixed packed witness offset. -/
+def projectionXorFrom {total cols : Nat} (f : Vector Word total) (offset : Nat)
+    (fits : offset+cols ≤ total) : List (Fin cols) → UInt64 → Word
+  | [], acc => ⟨acc⟩
+  | i::rest, acc => projectionXorFrom f offset fits rest
+      (acc ^^^ (f[offset+i.val]'(by have := i.isLt; omega)).val)
+
+/-- Direct indexed XOR agrees with the generic prepared binary projection. -/
+theorem projectionXorFrom_eq {total cols : Nat} (f : Vector Word total) (offset : Nat)
+    (fits : offset+cols ≤ total) (indices : List (Fin cols)) (acc : UInt64) :
+    projectionXorFrom f offset fits indices acc =
+      projectionXor (fun i => f[offset+i.val]'(by have := i.isLt; omega)) indices acc := by
+  induction indices generalizing acc with
+  | nil => rfl
+  | cons i rest ih => exact ih _
+
+/-- Project a prepared factor using direct witness reads inside the accumulator. -/
+@[noinline] def BasisProjection.projectFromNative {total cols : Nat} (plan : BasisProjection cols)
+    (f : Vector Word total) (offset : Nat) (fits : offset+cols ≤ total) : WordExt3 :=
+  match plan with
+  | .point w => sumExt w.count fun i => WordExt3.mulScalar w.values[i]
+      (f[offset+w.start+i.val]'(by have := i.isLt; have := w.fits; omega))
+  | .binary indices => ⟨projectionXorFrom f offset fits indices 0, ⟨0⟩, ⟨0⟩⟩
+
+/-- Direct indexed projection preserves every compact point and binary factor. -/
+@[csimp] theorem BasisProjection.projectFrom_code :
+    @BasisProjection.projectFrom = @BasisProjection.projectFromNative := by
+  funext total cols plan f offset fits
+  cases plan with
+  | point w =>
+    unfold BasisProjection.projectFrom BasisProjection.project BasisWindow.projectAt
+      BasisProjection.projectFromNative
+    dsimp only
+    rw [sumExt_eq]
+    simp only [Nat.add_assoc]
+  | binary indices =>
+    unfold BasisProjection.projectFrom BasisProjection.project BasisProjection.projectFromNative
+    dsimp only
+    rw [projectionXorFrom_eq]
 
 /-- Project all lanes after sharing every binary column's selected coordinates. -/
 def projectColumnsPrepared (lanes cols terms : Nat) (f : Vector Word (lanes*cols))
@@ -161,8 +201,9 @@ theorem projectColumnsShared_eq (lanes cols terms : Nat) (f : Vector Word (lanes
 /-- Resolve each compact point window once, sharing its address across all witness lanes. -/
 def projectionAddresses {cols terms : Nat} (columns : Vector (BasisColumn cols) terms) :
     Vector Nat terms :=
+  let windows := projectionWindows columns
   columns.map fun column => match column with
-    | .point w => (projectionWindows columns).idxOf w
+    | .point w => windows.idxOf w
     | .binary _ _ => 0
 
 /-- Project shared columns using cached point-window addresses for every witness lane. -/
