@@ -235,3 +235,4 @@ public import CompStark.Pcs.NativeRound
 
 public import CompStark.Pcs.Basis
 public import CompStark.Pcs.NativeBasis
+public import CompStark.Sumcheck.WordProductProofs
