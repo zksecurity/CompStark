@@ -400,6 +400,11 @@
       "instructions": 81477926,
       "variation": 7e-06,
       "tolerance": 0.005
+    },
+    "pcs/basis-project": {
+      "instructions": 93833301,
+      "variation": 0.0,
+      "tolerance": 0.005
     }
   }
 }

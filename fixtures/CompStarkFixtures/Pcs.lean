@@ -9,6 +9,7 @@ public import CompStark.Pcs.Induction
 public import CompStark.Pcs.Accumulated
 public import CompStark.Pcs.NativeRound
 public import CompStark.Pcs.NativeBasis
+public import CompStark.Pcs.BasisColumn
 /-! Deterministic inputs for binary-field PCS conformance and measurement. -/
 @[expose] public section
 namespace CompStark.Fixtures.Pcs
@@ -56,8 +57,12 @@ def basisLaneFactors (seed : Nat) : Vector WordExt3 (64*3) :=
   Vector.ofFn fun i => WordExt3.mul (value (seed+i.val%3+501))
     (factors[(⟨i.val%3, by omega⟩ : Fin 3)].high (vertex 6 ⟨i.val/3, by omega⟩))
 
+/-- The point factors retain their native window representation. -/
+def basisColumns (seed : Nat) : Vector (BasisColumn 64) 3 :=
+  (basisKernels seed).map fun values => .point ⟨0, 64, values, by decide⟩
+
 /-- The production-style projection and lane matrices for the Rust fixture. -/
 def basisMatrices (seed : Nat) : Vector WordExt3 (64*3) × Vector WordExt3 (64*3) :=
-  (projectBasis 64 64 3 (basisWitness seed) (basisKernels seed), basisLaneFactors seed)
+  (projectColumns 64 64 3 (basisWitness seed) (basisColumns seed), basisLaneFactors seed)
 
 end CompStark.Fixtures.Pcs

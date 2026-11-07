@@ -236,3 +236,6 @@ public import CompStark.Pcs.NativeRound
 public import CompStark.Pcs.Basis
 public import CompStark.Pcs.NativeBasis
 public import CompStark.Sumcheck.WordProductProofs
+
+public import CompStark.Pcs.BasisWindow
+public import CompStark.Pcs.BasisColumn

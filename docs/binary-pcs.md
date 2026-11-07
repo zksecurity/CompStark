@@ -14,7 +14,7 @@
 
 ## Kernel measurements
 
-Run `scripts/bench-pcs /path/to/leanMultisig` to rebuild the unchanged Rust dependency, compare all eight binary fixtures with one and sixteen Rust threads, and record interleaved instruction and loaded-host wall measurements in `bench/pcs.json`. Counters exclude process startup; direct phase clocks exclude the FIFO handshake. Each wall run holds `/tmp/compstark-bench.lock`. The fixed workload has 192 coordinates, 256 packed words, 64 slice outputs and 256 mapped weights. Each process starts cold; preparation for a shared tensor occurs before the bit-fold and basis phase.
+Run `scripts/bench-pcs /path/to/leanMultisig` to rebuild the unchanged Rust dependency, compare all binary fixtures with one and sixteen Rust threads, and record interleaved instruction and loaded-host wall measurements in `bench/pcs.json`. Counters exclude process startup; direct phase clocks exclude the FIFO handshake. Each wall run holds `/tmp/compstark-bench.lock`. The fixed workload has 192 coordinates, 256 packed words, 64 slice outputs and 256 mapped weights. Each process starts cold; preparation for a shared tensor occurs before the bit-fold and basis phase.
 
 | Kernel | Lean instructions | Rust instructions | Lean/Rust |
 | --- | ---: | ---: | ---: |
@@ -66,3 +66,13 @@ These three-run medians measure identical fixture inputs. Preparation is separat
 ## Native quadratic messages
 
 `Pcs.NativeRound.roundCoefficients` computes the constant and quadratic coefficients of a weighted pair interpolation, supporting adjacent pairs and blocked lane pairs. `roundCoefficients_constant` and `roundCoefficients_quadratic` prove the exact endpoint product sums over the extension field. All coefficients match Rust’s unchanged `round_msg_lsb` on the accumulated-weight fixture. The 256-entry phase uses 525293 Lean instructions against 18632 Rust instructions (three-run medians); the performance baseline adds only this phase.
+
+## Projected lane Basis
+
+`Pcs.Basis` represents a weight as a sum of lane coefficients times shared column factors. `basis_dot` replaces each full witness lane with its projections onto those factors. `basis_honestRound` proves that both compressed coefficients are contractions of the two small lane matrices; projection and weight factorization commute with lane restriction. `basis_mapped_product` decomposes a binary-linear ring map into its 192 shared coordinate columns.
+
+`Pcs.NativeBasis` supplies row-major projection matrices, compressed messages, prepared lane folds and the final weight lift. `basisRound_projected` identifies the native message with the honest full-table quadratic. `Pcs.BasisWindow` retains only an occupied point interval, and `Pcs.BasisColumn` projects point windows and binary coordinates without expanding their complete column tables. `projectColumns_eq` proves equality with the full-kernel projection. These modules use the same kernel-only axiom audit as the other PCS components.
+
+The conformance workload has 64 lanes, 64 base-field columns per lane and three independent full point claims. A diagnostic child of the unchanged Rust production `initial_basis` exposes its projection and lane-factor matrices; every byte matches Lean. Regression tests compare all six native projected rounds and the final lift against dense witness/weight restrictions, and cover empty windows, interior windows and the six boundary coordinates of the cubic binary representation.
+
+The `pcs/basis-project` phase constructs the two matrices, including tensor preparation. The three-run medians are 93,833,312 Lean instructions and 310,217 Rust instructions (302.48×), with loaded-host phase clocks of 8.683 ms and 0.108 ms at load 7.61. This small full-point workload uses the cached equality-factor constructor; it does not measure a production combined PCS opening. The measured inputs, counters and clocks are in `bench/pcs.json`. The gate records this additional phase and retains all unrelated baselines.
