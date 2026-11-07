@@ -312,18 +312,18 @@
       "tolerance": 0.005
     },
     "sumcheck-fold/prepare": {
-      "instructions": 2378152,
-      "variation": 0.000671,
+      "instructions": 1184704,
+      "variation": 1e-06,
       "tolerance": 0.005
     },
     "sumcheck-fold/fold": {
-      "instructions": 36127730,
-      "variation": 1e-05,
+      "instructions": 36126067,
+      "variation": 0.0,
       "tolerance": 0.005
     },
     "sumcheck-fold/packed-fold": {
-      "instructions": 28880884,
-      "variation": 1.3e-05,
+      "instructions": 23241523,
+      "variation": 0.0,
       "tolerance": 0.005
     },
     "pcs/coordinates": {
@@ -342,12 +342,12 @@
       "tolerance": 0.005
     },
     "sumcheck-fold/constant-fold": {
-      "instructions": 23873101,
+      "instructions": 23873230,
       "variation": 0.0,
       "tolerance": 0.005
     },
     "sumcheck-fold/packed-constant-fold": {
-      "instructions": 15645962,
+      "instructions": 10006424,
       "variation": 0.0,
       "tolerance": 0.005
     }
