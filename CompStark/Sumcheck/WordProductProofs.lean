@@ -1,5 +1,7 @@
 /-
 Copyright (c) 2026 zkSecurity.
+Copyright (c) 2026 CompPoly Contributors. All rights reserved.
+The top-bit identity is adapted from CompPoly.Fields.Binary.BF64.WordProofs (Gregor Mitscha-Baude).
 Released under Apache 2.0 license as described in the file LICENSE.
 -/
 module
