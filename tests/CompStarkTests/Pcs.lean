@@ -80,6 +80,9 @@ def check : IO Unit := do
   let accumulated := addScaled (CompStark.Sumcheck.prepare (value 43)) acc incoming
   let expected ← IO.FS.readBinFile "tests/data/pcs/accumulated.bin"
   unless bytes accumulated.toArray == expected do throw (IO.userError "accumulated weights Rust mismatch")
+  let round := roundCoefficients 128 1 accumulated incoming
+  let expected ← IO.FS.readBinFile "tests/data/pcs/round.bin"
+  unless bytes round.toArray == expected do throw (IO.userError "native WHIR round mismatch")
   for lo in [0, 1, 3, 8] do
     let point : Fin (lo + 2) → BF64.Ext3 := fun i => (value (i.val + 7)).toField
     let factors := wordFactoredEq (lo := lo) (hi := 2) point

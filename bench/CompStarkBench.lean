@@ -656,6 +656,10 @@ def pcsRun (phase : {α : Type} → String → (Unit → α) → IO α) : IO UIn
   let expectedAccumulated ← IO.FS.readBinFile "tests/data/pcs/accumulated.bin"
   unless CompStark.Fixtures.Pcs.bytes accumulated.toArray == expectedAccumulated do
     throw (IO.userError "accumulated weights Rust mismatch")
+  let round ← phase "whir-round" fun _ => CompStark.Pcs.roundCoefficients 128 1 accumulated incoming
+  let expectedRound ← IO.FS.readBinFile "tests/data/pcs/round.bin"
+  unless CompStark.Fixtures.Pcs.bytes round.toArray == expectedRound do
+    throw (IO.userError "native WHIR round mismatch")
   let expected ← IO.FS.readBinFile "tests/data/pcs/encoded.bin"
   unless encoded.val.bytes == expected do throw (IO.userError "bitsliced E encoding Rust mismatch")
   for (name, actual) in [("coordinates", coordinates.toArray), ("tensor", tensor.toArray),

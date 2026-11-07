@@ -7,6 +7,7 @@ public import CompStark.Pcs.CoordinateMap
 public import CompStark.Pcs.Encoding
 public import CompStark.Pcs.Induction
 public import CompStark.Pcs.Accumulated
+public import CompStark.Pcs.NativeRound
 /-! Deterministic inputs for binary-field PCS conformance and measurement. -/
 @[expose] public section
 namespace CompStark.Fixtures.Pcs

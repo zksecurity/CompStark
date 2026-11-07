@@ -97,7 +97,12 @@ fn main() {
     std::hint::black_box(&accumulated);
     let accumulated_ns = started.elapsed().as_nanos();
     mark(&mut marks, "end accumulated");
+    mark(&mut marks, "begin");
+    let round = pcs::pcs_accumulated_fixture::round(&accumulated, &incoming);
+    std::hint::black_box(&round);
+    mark(&mut marks, "end whir-round");
     if fixture {
+        fs::write(Path::new(&args[2]).join("round.bin"), bytes(&round)).unwrap();
         let d = Path::new(&args[2]); fs::create_dir_all(d).unwrap();
         fs::write(d.join("accumulated.bin"), bytes(&accumulated)).unwrap();
         fs::write(d.join("induced.bin"), bytes(&induced)).unwrap();

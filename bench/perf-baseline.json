@@ -380,6 +380,11 @@
       "instructions": 190261,
       "variation": 0.0,
       "tolerance": 0.005
+    },
+    "pcs/whir-round": {
+      "instructions": 525293,
+      "variation": 0.0,
+      "tolerance": 0.05
     }
   }
 }

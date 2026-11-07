@@ -14,7 +14,7 @@
 
 ## Kernel measurements
 
-Run `scripts/bench-pcs /path/to/leanMultisig` to rebuild the unchanged Rust dependency, compare all seven binary fixtures with one and sixteen Rust threads, and record interleaved instruction and loaded-host wall measurements in `bench/pcs.json`. Counters exclude process startup; direct phase clocks exclude the FIFO handshake. Each wall run holds `/tmp/compstark-bench.lock`. The fixed workload has 192 coordinates, 256 packed words, 64 slice outputs and 256 mapped weights. Each process starts cold; preparation for a shared tensor occurs before the bit-fold and basis phase.
+Run `scripts/bench-pcs /path/to/leanMultisig` to rebuild the unchanged Rust dependency, compare all eight binary fixtures with one and sixteen Rust threads, and record interleaved instruction and loaded-host wall measurements in `bench/pcs.json`. Counters exclude process startup; direct phase clocks exclude the FIFO handshake. Each wall run holds `/tmp/compstark-bench.lock`. The fixed workload has 192 coordinates, 256 packed words, 64 slice outputs and 256 mapped weights. Each process starts cold; preparation for a shared tensor occurs before the bit-fold and basis phase.
 
 | Kernel | Lean instructions | Rust instructions | Lean/Rust |
 | --- | ---: | ---: | ---: |
@@ -62,3 +62,7 @@ The induction fixture has six message variables, inverse-rate exponent two, thre
 | Accumulation of 256 weights | 190,261 | 11,980 | 15.88× |
 
 These three-run medians measure identical fixture inputs. Preparation is separate and must be amortized across a production table; the Rust update prepares no byte maps. `bench/pcs.json` records phase clocks, thread settings, load averages and peak RSS. The performance gate adds four entries without changing unrelated baselines. Production-size optimization and the full `PCS open` comparison require the integrated driver.
+
+## Native quadratic messages
+
+`Pcs.NativeRound.roundCoefficients` computes the constant and quadratic coefficients of a weighted pair interpolation, supporting adjacent pairs and blocked lane pairs. `roundCoefficients_constant` and `roundCoefficients_quadratic` prove the exact endpoint product sums over the extension field. All coefficients match Rust’s unchanged `round_msg_lsb` on the accumulated-weight fixture. The 256-entry phase uses 525293 Lean instructions against 18632 Rust instructions (three-run medians); the performance baseline adds only this phase.
