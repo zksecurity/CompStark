@@ -240,3 +240,6 @@ public import CompStark.Sumcheck.WordProductProofs
 public import CompStark.Pcs.BasisWindow
 public import CompStark.Pcs.BasisColumn
 public import CompStark.Pcs.BasisColumnPrepared
+
+public import CompStark.Pcs.DenseInduction
+public import CompStark.Pcs.SparseInduction

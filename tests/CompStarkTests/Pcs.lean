@@ -4,6 +4,8 @@ Released under Apache 2.0 license as described in the file LICENSE.
 -/
 module
 public import CompStark.Pcs.BasisColumnPrepared
+public import CompStark.Pcs.DenseInduction
+public import CompStark.Pcs.SparseInduction
 public import CompStark.Pcs.HonestWhir
 public import CompStarkFixtures.Pcs
 meta import Lean.Util.CollectAxioms
@@ -91,9 +93,31 @@ def checkBasis : IO Unit := do
   let lifted := liftBasis 64 3 (Vector.ofFn fun i => lanes[i.val]!) kernels
   unless lifted.toArray == weight do throw (IO.userError "projected Basis final lift mismatch")
 
+/-- Split tensors and occupied butterflies preserve empty shapes, duplicate queries and all limbs. -/
+def checkInduction : IO Unit := do
+  for (lo, hi, rate, lanes, count) in
+      [(0, 0, 0, 3, 0), (0, 0, 1, 3, 3), (2, 3, 0, 0, 7),
+       (2, 3, 0, 3, 0), (2, 3, 2, 3, 10), (6, 6, 2, 3, 137)] do
+    if hd : lo+hi+rate < 64 then
+      let plan := (AdditiveNTT.Bitsliced.Plan.create AdditiveNTT.Packed.flatBasis (lo+hi+rate) hd).toPacked
+      let positions : Vector (Fin (2^(lo+hi+rate))) count := Vector.ofFn fun q =>
+        ⟨(if q.val%7 = 0 then 0 else q.val*65537+91) % 2^(lo+hi+rate),
+          Nat.mod_lt _ (Nat.two_pow_pos _)⟩
+      let values := fun q : Fin count => fun c : Fin lanes =>
+        mapLimb (value (q.val+77)) ⟨c.val%3, Nat.mod_lt _ (by decide)⟩
+      let original := induceRows hd plan lanes positions values
+      let split := induceSplitRows lo hi rate hd lanes positions values
+      let sparse := induceOccupiedRows hd plan lanes positions values
+      unless original.val.bytes == split.val.bytes && original.val.bytes == sparse.val.bytes do
+        throw (IO.userError s!"induction shape mismatch: {lo}/{hi}/{rate}/{lanes}/{count}")
+      if lo = 6 && hi = 6 then
+        let expected ← IO.FS.readBinFile "tests/data/pcs/induced-large.bin"
+        unless original.val.bytes == expected do throw (IO.userError "large induced weights Rust mismatch")
+
 /-- Compare coordinate maps, cached factors, packed-bit folds and mapped tensors against Rust bytes. -/
 def check : IO Unit := do
   checkBasis
+  checkInduction
   unless testWhir && testEmpty do throw (IO.userError "honest WHIR acceptance failed")
   let coordinates := coordinateWeights challenges
   let point : Fin (4 + 4) → BF64.Ext3 := fun i => (value (i.val + 101)).toField

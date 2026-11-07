@@ -15,6 +15,8 @@ import CompStarkFixtures.KeccakMerkle
 import CompStark.Sumcheck.PackedFold
 import CompStark.Sumcheck.WordProductProofs
 import CompStarkFixtures.Pcs
+import CompStark.Pcs.DenseInduction
+import CompStark.Pcs.SparseInduction
 
 /-! # CompStark micro-benchmarks
 
@@ -667,8 +669,27 @@ def pcsRun (phase : {α : Type} → String → (Unit → α) → IO α) : IO UIn
   let dense ← phase "induction-dense" fun _ =>
     CompStark.Pcs.induceDenseRows (ell := 6) (rate := 2) (by decide) plan.toPacked 3 positions fun q c =>
       CompStark.Pcs.mapLimb (CompStark.Fixtures.Pcs.value (q.val + 77)) c
+  let split ← phase "induction-split" fun _ =>
+    CompStark.Pcs.induceSplitRows 3 3 2 (by decide) 3 positions fun q c =>
+      CompStark.Pcs.mapLimb (CompStark.Fixtures.Pcs.value (q.val + 77)) c
+  let sparse ← phase "induction-sparse" fun _ =>
+    CompStark.Pcs.induceOccupiedRows (ell := 6) (rate := 2) (by decide) plan.toPacked 3 positions fun q c =>
+      CompStark.Pcs.mapLimb (CompStark.Fixtures.Pcs.value (q.val + 77)) c
   let expectedInduced ← IO.FS.readBinFile "tests/data/pcs/induced.bin"
-  unless induced.val.bytes == expectedInduced && dense.val.bytes == expectedInduced do throw (IO.userError "induced weights Rust mismatch")
+  unless induced.val.bytes == expectedInduced && dense.val.bytes == expectedInduced &&
+      split.val.bytes == expectedInduced && sparse.val.bytes == expectedInduced do throw (IO.userError "induced weights Rust mismatch")
+  let largePositions : Vector (Fin 16384) 137 := Vector.ofFn fun q =>
+    ⟨(if q.val%7 = 0 then 0 else q.val*65537+91) % 16384, Nat.mod_lt _ (by decide)⟩
+  let largePlan := (AdditiveNTT.Bitsliced.Plan.create AdditiveNTT.Packed.flatBasis 14 (by decide)).toPacked
+  let largeDense ← phase "induction-large-dense" fun _ =>
+    CompStark.Pcs.induceSplitRows 6 6 2 (by decide) 3 largePositions fun q c =>
+      CompStark.Pcs.mapLimb (CompStark.Fixtures.Pcs.value (q.val+77)) c
+  let largeSparse ← phase "induction-large-sparse" fun _ =>
+    CompStark.Pcs.induceOccupiedRows (ell := 12) (rate := 2) (by decide) largePlan 3 largePositions fun q c =>
+      CompStark.Pcs.mapLimb (CompStark.Fixtures.Pcs.value (q.val+77)) c
+  let expectedLarge ← IO.FS.readBinFile "tests/data/pcs/induced-large.bin"
+  unless largeDense.val.bytes == expectedLarge && largeSparse.val.bytes == expectedLarge do
+    throw (IO.userError "large induced weights Rust mismatch")
   let acc : Vector BF64.WordExt3 256 := Vector.ofFn fun i => CompStark.Fixtures.Pcs.value (i.val + 100)
   let incoming : Vector BF64.WordExt3 256 := Vector.ofFn fun i => CompStark.Fixtures.Pcs.value (i.val + 200)
   let shared ← phase "accumulated-prepare" fun _ => CompStark.Sumcheck.prepare (CompStark.Fixtures.Pcs.value 43)

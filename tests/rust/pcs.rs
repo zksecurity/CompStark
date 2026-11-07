@@ -89,6 +89,19 @@ fn main() {
         queries.iter().zip(&query_weights).fold(F192::ZERO, |acc, (&q, &w)| acc + w.mul_base(word[q]))
     }).collect();
     assert_eq!(induced, reference);
+    let large_queries: Vec<usize> = (0..137).map(|q| if q%7 == 0 { 0 } else { (q*65537+91) % (1<<14) }).collect();
+    let large_weights: Vec<_> = (0..137).map(|q| value(q+77)).collect();
+    let large_constants = pcs::pcs_induction_fixture::constants(12);
+    mark(&mut marks, "begin");
+    let large_dense = pcs::pcs_induction_fixture::dense(12, &large_constants, &large_queries, &large_weights);
+    std::hint::black_box(&large_dense);
+    mark(&mut marks, "end induction-large-dense");
+    let large_ntt = pcs::ntt::AdditiveNttF64::standard(14);
+    mark(&mut marks, "begin");
+    let large_sparse = pcs::pcs_induction_fixture::sparse(&large_ntt, 12, 2, &large_queries, &large_weights);
+    std::hint::black_box(&large_sparse);
+    mark(&mut marks, "end induction-large-sparse");
+    assert_eq!(large_dense, large_sparse);
     let mut accumulated: Vec<_> = (0..256).map(|i| value(i + 100)).collect();
     let incoming: Vec<_> = (0..256).map(|i| value(i + 200)).collect();
     mark(&mut marks, "begin");
@@ -112,6 +125,7 @@ fn main() {
         let d = Path::new(&args[2]); fs::create_dir_all(d).unwrap();
         fs::write(d.join("accumulated.bin"), bytes(&accumulated)).unwrap();
         fs::write(d.join("induced.bin"), bytes(&induced)).unwrap();
+        fs::write(d.join("induced-large.bin"), bytes(&large_dense)).unwrap();
         fs::write(d.join("encoded.bin"), encoded.iter().flat_map(|w| w.0.to_le_bytes()).collect::<Vec<_>>()).unwrap();
         for (name, values) in [("coordinates", coordinates.as_slice()), ("tensor", &tensor), ("slices", &slices), ("mapped", &mapped)] {
             fs::write(d.join(format!("{name}.bin")), bytes(values)).unwrap();
