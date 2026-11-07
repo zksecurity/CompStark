@@ -3,7 +3,7 @@ Copyright (c) 2026 zkSecurity. All rights reserved.
 Released under Apache 2.0 license as described in the file LICENSE.
 -/
 module
-public import CompStark.Pcs.Tensor
+public import CompStark.Pcs.CoordinateMap
 public import CompStark.Pcs.Encoding
 /-! Deterministic inputs for binary-field PCS conformance and measurement. -/
 @[expose] public section

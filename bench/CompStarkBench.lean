@@ -633,7 +633,7 @@ def pcsRun (phase : {α : Type} → String → (Unit → α) → IO α) : IO UIn
   let packed : Vector BF64.Word 256 := Vector.ofFn fun i =>
     ⟨UInt64.ofNat (0x9e3779b97f4a7c15 * (i.val + 1))⟩
   let slices ← phase "bit-fold" fun _ => CompStark.Pcs.foldBits packed tensor
-  let mapped ← phase "basis" fun _ => tensor.map (CompStark.Pcs.binary64Map challenges)
+  let mapped ← phase "basis" fun _ => tensor.map (CompStark.Pcs.applyCoordinates coordinates)
   let input := CompStark.Fixtures.Pcs.encodingInput 6 16
   let plan ← phase "encoding-plan" fun _ =>
     AdditiveNTT.Bitsliced.Plan.create AdditiveNTT.Packed.flatBasis 8 (by decide)

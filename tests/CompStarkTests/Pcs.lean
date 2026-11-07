@@ -58,7 +58,7 @@ def check : IO Unit := do
   let tensor : Vector WordExt3 256 := Vector.ofFn fun i => factors.eval (vertex 8 i)
   let packed : Vector Word 256 := Vector.ofFn fun i => ⟨UInt64.ofNat (0x9e3779b97f4a7c15 * (i.val + 1))⟩
   let slices := foldBits packed tensor
-  let mapped : Vector WordExt3 256 := tensor.map (binary64Map challenges)
+  let mapped : Vector WordExt3 256 := tensor.map (applyCoordinates coordinates)
   for (name, actual) in [("coordinates", coordinates.toArray), ("tensor", tensor.toArray),
       ("slices", slices.toArray), ("mapped", mapped.toArray)] do
     let expected ← IO.FS.readBinFile s!"tests/data/pcs/{name}.bin"

@@ -226,3 +226,4 @@ public import CompStark.Pcs.HonestRound
 public import CompStark.Pcs.HonestWhir
 
 public import CompStark.Pcs.Encoding
+public import CompStark.Pcs.CoordinateMap
