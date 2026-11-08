@@ -770,9 +770,9 @@ def pcsRun (phase : {α : Type} → String → (Unit → α) → IO α) : IO UIn
     ⟨0, 1024, Vector.ofFn (fun x => CompStark.Pcs.roundProduct highWeights[t][x.val/128]
       lowPatterns[t].expand[x.val%128]), by decide⟩
   let ringWeights := Vector.ofFn fun x : Fin 1024 => CompStark.Fixtures.Pcs.value (x.val+71)
-  let tensor ← phase "basis-tensor-columns" fun _ =>
+  let projectedTensor ← phase "basis-tensor-columns" fun _ =>
     CompStark.Pcs.projectTensorPointBinary 8 1024 128 8 8 rfl witness lowPatterns highWeights ringWeights
-  unless tensor == CompStark.Pcs.projectPointBinary 8 1024 8 witness fullPatterns ringWeights do
+  unless projectedTensor == CompStark.Pcs.projectPointBinary 8 1024 8 witness fullPatterns ringWeights do
     throw (IO.userError "shared low/high Basis projection mismatch")
   let ringWindow : CompStark.Pcs.BasisWindow 1024 :=
     ⟨256, 512, Vector.ofFn (fun x => CompStark.Fixtures.Pcs.value (x.val+71)), by decide⟩
