@@ -26,16 +26,19 @@ def WhirCoins (K F : Type) : {n : Nat} → Whir.Schedule K n → Type
 /-- Encode the head level with its supplied interleaving and additive encoding. -/
 def encodeLevel {K F : Type} [Semiring K] [Semiring F] (ι : K →+* F) :
     {n : Nat} → (schedule : Whir.Schedule K n) → Whir.Table F n → Whir.oracleMessage F schedule
-  | _, .last _ _ enc _, table => enc.interleave ι table
-  | _, .more _ enc _ _, table => enc.interleave ι table
+  | _, .last _ _ enc _, table => Whir.fullWord (enc.interleave ι table)
+  | _, .more _ enc _ _, table => Whir.fullWord (enc.interleave ι table)
 
 /-- Scalar extension commutes with the entire interleaved head commitment. -/
 theorem encodeLevel_map {K F : Type} [Semiring K] [Semiring F] (ι : K →+* F)
     {n : Nat} (schedule : Whir.Schedule K n) (table : Whir.Table K n) :
-    (fun x u => ι (encodeLevel (RingHom.id K) schedule table x u)) =
+    Whir.mapMasked ι (encodeLevel (RingHom.id K) schedule table) =
       encodeLevel ι schedule (fun u => ι (table u)) := by
-  cases schedule <;> funext x u <;>
-    simp only [encodeLevel, Whir.Encoding.interleave, Whir.Encoding.encode,
+  cases schedule <;> funext x <;>
+    simp only [encodeLevel, Whir.mapMasked, Whir.fullWord, Function.comp_apply,
+      Option.map_some, Option.some.injEq] <;>
+    funext u <;>
+    simp only [Whir.Encoding.interleave, Whir.Encoding.encode,
       map_sum, map_mul, RingHom.id_apply]
 
 /-- Final consistency claims retain the residual first and every ordered query afterwards. -/
@@ -102,9 +105,10 @@ theorem honestWhir_accepts {K F : Type} [Semiring K] [CommRing F] [DecidableEq F
       change F × (Fin lanes → F) × (Fin queries → enc.Columns) × F × (Fin tail → F) at coins
       have hb := Whir.batch_holds claims table coins.1 holds
       change dot (Whir.batch claims coins.1).weight table = (Whir.batch claims coins.1).value at hb
-      change Whir.accepts ι (.last lanes tail enc queries) (enc.interleave ι table) _ _ = true
+      change Whir.accepts ι (.last lanes tail enc queries) (Whir.fullWord (enc.interleave ι table)) _ _ = true
       simp only [honestWhir, Whir.accepts, ← hb, read_honestRounds,
-        Whir.fold_interleave, Bool.true_and]
+        Whir.foldMaskedWord_fullWord, Whir.fold_interleave, Option.getD_some,
+        Whir.queriesKnown_fullWord, Bool.true_and]
       have hf := Whir.batch_holds
         (finalClaims enc ι (Whir.restrict (Whir.batch claims coins.1).weight coins.2.1)
           (Whir.restrict table coins.2.1) coins.2.2.1)
@@ -117,9 +121,10 @@ theorem honestWhir_accepts {K F : Type} [Semiring K] [CommRing F] [DecidableEq F
       change F × (Fin lanes → F) × (Fin tail → F) × (Fin queries → enc.Columns) × WhirCoins K F rest at coins
       have hb := Whir.batch_holds claims table coins.1 holds
       change dot (Whir.batch claims coins.1).weight table = (Whir.batch claims coins.1).value at hb
-      change Whir.accepts ι (.more lanes enc queries rest) (enc.interleave ι table) _ _ = true
+      change Whir.accepts ι (.more lanes enc queries rest) (Whir.fullWord (enc.interleave ι table)) _ _ = true
       simp only [honestWhir, Whir.accepts, ← hb, read_honestRounds,
-        Whir.fold_interleave, Bool.true_and]
+        Whir.foldMaskedWord_fullWord, Whir.fold_interleave, Option.getD_some,
+        Whir.queriesKnown_fullWord, Bool.true_and]
       exact ih _ _ _ (nextClaims_hold enc ι _ _ _ _)
 
 end CompStark.Pcs
