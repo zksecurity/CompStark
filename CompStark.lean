@@ -245,6 +245,8 @@ public import CompStark.Pcs.InductionDot
 public import CompStark.Pcs.SparseInduction
 public import CompStark.Pcs.CompactInduction
 public import CompStark.Pcs.TwiddleRow
+public import CompStark.Pcs.TiledInduction
+public import CompStark.Pcs.SparseStrip
 public import CompStark.Pcs.DirectSums
 
 public import CompStark.Pcs.ChallengeFold

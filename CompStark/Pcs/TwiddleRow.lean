@@ -29,25 +29,27 @@ private theorem sum_pad {A : Type} [AddCommMonoid A] (n extra : Nat) (f : Nat �
 
 /-- Sum the row entries selected by a block's binary digits. -/
 def rowSubset (n : Nat) (values : Nat → Word) (block : Nat) : Word :=
-  inductionDotLoop n (fun k => if block.testBit k.val then values k.val else 0) n (Nat.le_refl _) 0
+  inductionDotLoop n (fun k => if block.testBit k.val then values k.val else ⟨0⟩) n (Nat.le_refl _) ⟨0⟩
 
 /-- Row accumulation is precisely its finite subset sum. -/
 theorem rowSubset_eq (n : Nat) (values : Nat → Word) (block : Nat) :
     rowSubset n values block = ∑ k : Fin n, if block.testBit k.val then values k.val else 0 := by
-  rw [rowSubset, inductionDotLoop_eq, zero_add]
+  rw [rowSubset, inductionDotLoop_eq]
+  change (0 : Word) + (∑ k : Fin n, if block.testBit k.val then values k.val else 0) = _
+  exact zero_add _
 
 /-- A normalized subspace row retains three independent byte subset-sum tables. -/
 def rowByteTables (n : Nat) (values : Nat → Word) : Vector (Vector Word 256) 3 :=
   Vector.ofFn fun byte => Vector.ofFn fun digit =>
-    rowSubset 8 (fun bit => if 8*byte.val+bit < n then values (8*byte.val+bit) else 0) digit.val
+    rowSubset 8 (fun bit => if 8*byte.val+bit < n then values (8*byte.val+bit) else ⟨0⟩) digit.val
 
 /-- Build subset tables a bit at a time, sharing every shorter subset. -/
 def subsetTable (values : Nat → Word) : (bits : Nat) → Vector Word (2^bits)
-  | 0 => Vector.replicate 1 0
+  | 0 => Vector.replicate 1 ⟨0⟩
   | bits+1 =>
     let previous := subsetTable values bits
     Vector.ofFn fun digit => Word.add previous[digit.val%2^bits]
-      (if digit.val.testBit bits then values bits else 0)
+      (if digit.val.testBit bits then values bits else ⟨0⟩)
 
 /-- The shared table recurrence retains every subset sum. -/
 theorem subsetTable_eq (values : Nat → Word) (bits : Nat) (digit : Fin (2^bits)) :
@@ -63,19 +65,57 @@ theorem subsetTable_eq (values : Nat → Word) (bits : Nat) (digit : Fin (2^bits
       rowSubset bits values (digit.val%2^bits) from ih ⟨_, Nat.mod_lt _ (Nat.two_pow_pos _)⟩]
     rw [rowSubset_eq, rowSubset_eq, Fin.sum_univ_castSucc]
     change (∑ k : Fin bits, if (digit.val%2^bits).testBit k.val then values k.val else 0) +
-      (if digit.val.testBit bits then values bits else 0) =
+      (if digit.val.testBit bits then values bits else ⟨0⟩) =
       (∑ k : Fin bits, if digit.val.testBit k.val then values k.val else 0) +
-      (if digit.val.testBit bits then values bits else 0)
+      (if digit.val.testBit bits then values bits else ⟨0⟩)
     congr 1
     apply Finset.sum_congr rfl
     intro k _
     rw [Nat.testBit_mod_two_pow]
     simp only [k.isLt, decide_true, Bool.true_and]
 
+/-- Append the upper half of each subset table with one shared row entry. -/
+def subsetTableAppend (values : Nat → Word) : (bits : Nat) → Vector Word (2^bits)
+  | 0 => Vector.replicate 1 ⟨0⟩
+  | bits+1 =>
+    let previous := subsetTableAppend values bits
+    let high := values bits
+    (previous ++ previous.map (fun x => Word.add x high)).cast (by simp only [pow_succ]; omega)
+
+/-- Appending a scaled upper half preserves every shared subset-table entry. -/
+theorem subsetTableAppend_eq (values : Nat → Word) (bits : Nat) :
+    subsetTableAppend values bits = subsetTable values bits := by
+  induction bits with
+  | zero => rfl
+  | succ bits ih =>
+    apply Vector.ext
+    intro digit hdigit
+    rw [subsetTableAppend,subsetTable,ih]
+    simp only [Vector.getElem_cast,Vector.getElem_append,Vector.getElem_ofFn]
+    by_cases low : digit < 2^bits
+    · simp only [low,↓reduceDIte,Nat.mod_eq_of_lt low,Nat.testBit_lt_two_pow low,Bool.false_eq_true,↓reduceIte]
+      exact (add_zero ((subsetTable values bits)[digit])).symm
+    · have high : 2^bits ≤ digit := by omega
+      have digitDiv : digit / 2^bits = 1 := by
+        apply Nat.div_eq_of_lt_le
+        · simpa only [one_mul] using high
+        · simpa only [pow_succ,Nat.mul_comm] using hdigit
+      have digitMod : digit % 2^bits = digit-2^bits := by
+        have := Nat.mod_add_div digit (2^bits)
+        rw [digitDiv,Nat.mul_one] at this
+        omega
+      simp only [low,↓reduceDIte,Vector.getElem_map,Nat.testBit_eq_decide_div_mod_eq,digitDiv,
+        Nat.reduceMod,decide_true,↓reduceIte,digitMod]
+
+/-- Compiled byte tables append their upper halves without per-entry bit tests. -/
+@[csimp] theorem subsetTable_code : subsetTable = subsetTableAppend := by
+  funext values bits
+  exact (subsetTableAppend_eq values bits).symm
+
 /-- Three byte tables share their successive partial subset sums. -/
 def rowByteTablesShared (n : Nat) (values : Nat → Word) : Vector (Vector Word 256) 3 :=
   Vector.ofFn fun byte => subsetTable
-    (fun bit => if 8*byte.val+bit < n then values (8*byte.val+bit) else 0) 8
+    (fun bit => if 8*byte.val+bit < n then values (8*byte.val+bit) else ⟨0⟩) 8
 
 section
 attribute [local irreducible] subsetTable rowSubset
@@ -172,19 +212,19 @@ structure TwiddleRow (n : Nat) where
   /-- The three low-byte subset-sum tables. -/
   tables : Vector (Vector Word 256) 3
   /-- Every table entry is the subset sum of its eight row coordinates. -/
-  tables_eq : tables = rowByteTables n (fun k => values.toArray.getD k 0)
+  tables_eq : tables = rowByteTables n (fun k => values.toArray.getD k ⟨0⟩)
 
 /-- Build the compact row and its byte tables once. -/
 def TwiddleRow.create (n : Nat) (values : Vector Word n) : TwiddleRow n :=
-  ⟨values, rowByteTables n (fun k => values.toArray.getD k 0), rfl⟩
+  ⟨values, rowByteTables n (fun k => values.toArray.getD k ⟨0⟩), rfl⟩
 
 /-- Use the byte tables below 24 bits and the scalar row above that range. -/
 def TwiddleRow.lookup {n : Nat} (row : TwiddleRow n) (block : Nat) : Word :=
-  if block < 2^24 then rowByteLookup row.tables block else rowSubset n (fun k => row.values.toArray.getD k 0) block
+  if block < 2^24 then rowByteLookup row.tables block else rowSubset n (fun k => row.values.toArray.getD k ⟨0⟩) block
 
 /-- Both supported block ranges retain the exact normalized-row subset sum. -/
 theorem TwiddleRow.lookup_eq {n : Nat} (row : TwiddleRow n) (block : Nat) :
-    row.lookup block = rowSubset n (fun k => row.values.toArray.getD k 0) block := by
+    row.lookup block = rowSubset n (fun k => row.values.toArray.getD k ⟨0⟩) block := by
   unfold lookup
   split
   · rw [row.tables_eq, rowByteLookup_small _ _ _ ‹_›]
@@ -229,10 +269,10 @@ def CompactRows.create (d : Nat) (hd : d < 64) : CompactRows d hd where
 
 /-- Sweep one occupied block at a time with its compact normalized-row lookup. -/
 def occupiedSweepRows {k n words rowLength : Nat} (blocks : Vector (Fin k) n) (span : Nat)
-    (size : k*(2*span) = words) (row : TwiddleRow rowLength)
+    (size : k*(2*span) = words) (offset : Nat) (row : TwiddleRow rowLength)
     (a : BF64.Packed.Buffer words) : BF64.Packed.Buffer words :=
   Fin.foldl n (fun a b =>
-    let scalar := row.lookup blocks[b].val
+    let scalar := row.lookup (offset+blocks[b].val)
     let multiplier := if rowLength < 8 then inductionMultiplier scalar else Packed.Multiplier.masked scalar
     let base := 2*span*blocks[b].val
     Fin.foldl span (fun a c =>
@@ -247,10 +287,10 @@ def occupiedSweepRows {k n words rowLength : Nat} (blocks : Vector (Fin k) n) (s
 
 /-- Inline row lookup agrees with a materialized occupied multiplier vector. -/
 theorem occupiedSweepRows_eq {k n words rowLength : Nat} (blocks : Vector (Fin k) n) (span : Nat)
-    (size : k*(2*span) = words) (row : TwiddleRow rowLength) (a : BF64.Packed.Buffer words) :
-    occupiedSweepRows blocks span size row a = occupiedSweepBlocks blocks span size
-      (Vector.ofFn fun b => if rowLength < 8 then inductionMultiplier (row.lookup blocks[b].val)
-        else Packed.Multiplier.masked (row.lookup blocks[b].val)) a := by
+    (size : k*(2*span) = words) (offset : Nat) (row : TwiddleRow rowLength) (a : BF64.Packed.Buffer words) :
+    occupiedSweepRows blocks span size offset row a = occupiedSweepBlocks blocks span size
+      (Vector.ofFn fun b => if rowLength < 8 then inductionMultiplier (row.lookup (offset+blocks[b].val))
+        else Packed.Multiplier.masked (row.lookup (offset+blocks[b].val))) a := by
   unfold occupiedSweepRows occupiedSweepBlocks
   simp only [Fin.getElem_fin, Vector.getElem_ofFn]
 
@@ -260,7 +300,7 @@ def occupiedStageRows {d count : Nat} {hd : d < 64} (rows : CompactRows d hd) (i
     BF64.Packed.Buffer (2^d*lanes) :=
   let blocks := occupiedBlocks i positions
   let cached : Vector _ blocks.length := ⟨blocks.toArray, List.size_toArray⟩
-  occupiedSweepRows cached (2^i.val*lanes) (Packed.stage_word_count d i lanes) rows.stages[i].2 a
+  occupiedSweepRows cached (2^i.val*lanes) (Packed.stage_word_count d i lanes) 0 rows.stages[i].2 a
 
 /-- Compact row lookups preserve every word of an occupied stage. -/
 theorem occupiedStageRows_eq {d count : Nat} {hd : d < 64} (rows : CompactRows d hd)
@@ -281,6 +321,7 @@ theorem occupiedStageRows_eq {d count : Nat} {hd : d < 64} (rows : CompactRows d
     all_goals exact (rows.lookup_eq i cached[j.divNat]).trans (plan.scalar_eq i cached[j.divNat]).symm
   unfold occupiedStageRows
   rw [occupiedSweepRows_eq, occupiedSweepBlocks_eq]
+  simp only [Nat.zero_add]
   exact congrArg (fun op => Packed.sweep (fun p => Fin.cast (Packed.stage_word_count d i lanes)
     (occupiedIndexCached cached (2^i.val*lanes) p)) op a) (funext pair)
 
