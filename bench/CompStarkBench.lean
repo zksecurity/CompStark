@@ -718,6 +718,16 @@ def pcsRun (phase : {α : Type} → String → (Unit → α) → IO α) : IO UIn
   unless projected == CompStark.Pcs.projectBasis 8 1024 200 witness
       (columns.map CompStark.Pcs.BasisColumn.expand) do
     throw (IO.userError "shared Basis column matrix mismatch")
+  let liftValues := Vector.ofFn fun i : Fin 4096 => CompStark.Fixtures.Pcs.value (i.val+31)
+  let liftPoints : Vector (CompStark.Pcs.BasisWindow 4096) 8 := Vector.ofFn fun _ =>
+    ⟨0, 4096, liftValues, by decide⟩
+  let liftWeights := Vector.ofFn fun i : Fin 200 => CompStark.Fixtures.Pcs.value (i.val+601)
+  let lifted ← phase "basis-lift" fun _ => CompStark.Pcs.liftPointBinary 4096 8 liftPoints liftValues liftWeights
+  let referenceLift ← phase "basis-lift-reference" fun _ => CompStark.Pcs.liftColumns 4096 200 liftWeights
+    (liftPoints.map CompStark.Pcs.BasisColumn.point ++
+      Vector.ofFn (fun bit : Fin 192 => CompStark.Pcs.BasisColumn.binary liftValues bit))
+  unless lifted == referenceLift do
+    throw (IO.userError "byte-prepared Basis reconstruction mismatch")
   let expected ← IO.FS.readBinFile "tests/data/pcs/encoded.bin"
   unless encoded.val.bytes == expected do throw (IO.userError "bitsliced E encoding Rust mismatch")
   for (name, actual) in [("coordinates", coordinates.toArray), ("tensor", tensor.toArray),
