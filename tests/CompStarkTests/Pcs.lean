@@ -4,11 +4,11 @@ Released under Apache 2.0 license as described in the file LICENSE.
 -/
 module
 public import CompStark.Pcs.BasisColumnPrepared
-public import CompStark.Pcs.InductionDot
+public import CompStark.Pcs.PackedInductionDot
 public import CompStark.Pcs.SparseInduction
 public import CompStark.Pcs.CompactInduction
 public import CompStark.Pcs.SparseStrip
-public import CompStark.Pcs.ChallengeFold
+public import CompStark.Pcs.FusedRound
 public import CompStark.Pcs.DirectSums
 public import CompStark.Pcs.HonestWhir
 public import CompStarkFixtures.Pcs
@@ -111,12 +111,13 @@ def checkInduction : IO Unit := do
         mapLimb (value (q.val+77)) ⟨c.val%3, Nat.mod_lt _ (by decide)⟩
       let original := induceRows hd plan lanes positions values
       let split := induceSplitRows lo hi rate hd lanes positions values
+      let packed := induceSplitRowsPacked lo hi rate hd lanes positions values
       let sparse := induceOccupiedRows hd plan lanes positions values
       let prepared := induceOccupiedRows hd (sparseInductionPlan _ hd) lanes positions values
       let compact := induceOccupiedCompactRows hd lanes positions values
       let byteRows := induceOccupiedByteRows hd lanes positions values
       let tiled := induceSparseStripRows hd lanes positions values
-      unless original.val.bytes == tiled.val.bytes && original.val.bytes == byteRows.val.bytes && original.val.bytes == compact.val.bytes && original.val.bytes == split.val.bytes && original.val.bytes == sparse.val.bytes && original.val.bytes == prepared.val.bytes do
+      unless original.val.bytes == packed.val.bytes && original.val.bytes == tiled.val.bytes && original.val.bytes == byteRows.val.bytes && original.val.bytes == compact.val.bytes && original.val.bytes == split.val.bytes && original.val.bytes == sparse.val.bytes && original.val.bytes == prepared.val.bytes do
         throw (IO.userError s!"induction shape mismatch: {lo}/{hi}/{rate}/{lanes}/{count}")
       if lo = 6 && hi = 6 then
         let expected ← IO.FS.readBinFile "tests/data/pcs/induced-large.bin"
@@ -135,11 +136,28 @@ def checkChallengeFold : IO Unit := do
         (foldScalar r rows width input, foldScalar r rows width weight) == expected do
       throw (IO.userError s!"challenge fold mismatch: {rows}/{width}")
 
+/-- Fused folds retain both restricted arrays and the following message across the map threshold. -/
+def checkFusedRound : IO Unit := do
+  for rows in [0,1,7,128,129,1024] do
+    let input : Vector WordExt3 (4*rows) := Vector.ofFn fun i => value (i.val+71)
+    let weight : Vector WordExt3 (4*rows) := Vector.ofFn fun i => value (i.val+173)
+    let r := value 43
+    let fused := foldMessage r rows input weight
+    let table := Vector.ofFn (foldedCoordinate (CompStark.Sumcheck.prepare r) rows input)
+    let weights := Vector.ofFn (foldedCoordinate (CompStark.Sumcheck.prepare r) rows weight)
+    let message := roundCoefficients rows 1
+      (Vector.ofFn fun i => table[i.val]'(by have := i.isLt; omega))
+      (Vector.ofFn fun i => weights[i.val]'(by have := i.isLt; omega))
+    unless fused.table == table.toArray && fused.weight == weights.toArray &&
+        #[fused.constant,fused.quadratic] == message.toArray do
+      throw (IO.userError s!"fused WHIR round mismatch: {rows}")
+
 /-- Compare coordinate maps, cached factors, packed-bit folds and mapped tensors against Rust bytes. -/
 def check : IO Unit := do
   checkBasis
   checkInduction
   checkChallengeFold
+  checkFusedRound
   unless testWhir && testEmpty do throw (IO.userError "honest WHIR acceptance failed")
   let coordinates := coordinateWeights challenges
   let point : Fin (4 + 4) → BF64.Ext3 := fun i => (value (i.val + 101)).toField

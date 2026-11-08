@@ -15,12 +15,12 @@ import CompStarkFixtures.KeccakMerkle
 import CompStark.Sumcheck.PackedFold
 import CompStark.Sumcheck.WordProductProofs
 import CompStarkFixtures.Pcs
-import CompStark.Pcs.InductionDot
+import CompStark.Pcs.PackedInductionDot
 import CompStark.Pcs.SparseInduction
 import CompStark.Pcs.CompactInduction
 import CompStark.Pcs.TwiddleRow
 import CompStark.Pcs.SparseStrip
-import CompStark.Pcs.ChallengeFold
+import CompStark.Pcs.FusedRound
 import CompStark.Pcs.DirectSums
 
 /-! # CompStark micro-benchmarks
@@ -690,6 +690,9 @@ def pcsRun (phase : {α : Type} → String → (Unit → α) → IO α) : IO UIn
   let largeDense ← phase "induction-large-dense" fun _ =>
     CompStark.Pcs.induceSplitRows 6 6 2 (by decide) 3 largePositions fun q c =>
       CompStark.Pcs.mapLimb (CompStark.Fixtures.Pcs.value (q.val+77)) c
+  let largePacked ← phase "induction-large-packed" fun _ =>
+    CompStark.Pcs.induceSplitRowsPacked 6 6 2 (by decide) 3 largePositions fun q c =>
+      CompStark.Pcs.mapLimb (CompStark.Fixtures.Pcs.value (q.val+77)) c
   let largeSparse ← phase "induction-large-sparse" fun _ =>
     CompStark.Pcs.induceOccupiedRows (ell := 12) (rate := 2) (by decide) largePlan 3 largePositions fun q c =>
       CompStark.Pcs.mapLimb (CompStark.Fixtures.Pcs.value (q.val+77)) c
@@ -709,7 +712,7 @@ def pcsRun (phase : {α : Type} → String → (Unit → α) → IO α) : IO UIn
     CompStark.Pcs.tiledInduceSparse 10 2 2 4 (by decide) (by decide) 3 largePositions fun q c =>
       CompStark.Pcs.mapLimb (CompStark.Fixtures.Pcs.value (q.val+77)) c
   let expectedLarge ← IO.FS.readBinFile "tests/data/pcs/induced-large.bin"
-  unless largeTiled.val.bytes == expectedLarge && largeByteRows.val.bytes == expectedLarge && largeCompact.val.bytes == expectedLarge && largeDense.val.bytes == expectedLarge && largeSparse.val.bytes == expectedLarge && largePrepared.val.bytes == expectedLarge do
+  unless largePacked.val.bytes == expectedLarge && largeTiled.val.bytes == expectedLarge && largeByteRows.val.bytes == expectedLarge && largeCompact.val.bytes == expectedLarge && largeDense.val.bytes == expectedLarge && largeSparse.val.bytes == expectedLarge && largePrepared.val.bytes == expectedLarge do
     throw (IO.userError "large induced weights Rust mismatch")
   for rows in [16, 256, 1024] do
     let input : Vector BF64.WordExt3 (2*rows*1) := Vector.ofFn fun i =>
