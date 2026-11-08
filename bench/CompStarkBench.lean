@@ -22,6 +22,8 @@ import CompStark.Pcs.TwiddleRow
 import CompStark.Pcs.SparseStrip
 import CompStark.Pcs.FusedRound
 import CompStark.Pcs.DirectSums
+import CompStark.Pcs.WindowBitFold
+import CompStark.Pcs.WindowScatter
 
 /-! # CompStark micro-benchmarks
 
@@ -751,6 +753,44 @@ def pcsRun (phase : {α : Type} → String → (Unit → α) → IO α) : IO UIn
   unless projected == CompStark.Pcs.projectBasis 8 1024 200 witness
       (columns.map CompStark.Pcs.BasisColumn.expand) do
     throw (IO.userError "shared Basis column matrix mismatch")
+  let jointPoints : Vector (CompStark.Pcs.BasisWindow 1024) 8 := Vector.ofFn fun _ =>
+    ⟨0, 1024, (Vector.ofFn fun i : Fin 1024 => CompStark.Fixtures.Pcs.value (i.val+31+(coordinates.size-192))), by decide⟩
+  let joint ← phase "basis-byte-columns" fun _ => CompStark.Pcs.projectPointBinary 8 1024 8 witness jointPoints
+    ((Vector.ofFn fun i : Fin 1024 => CompStark.Fixtures.Pcs.value (i.val+31+(coordinates.size-192))))
+  unless joint == CompStark.Pcs.projectColumns 8 1024 200 witness
+      (jointPoints.map CompStark.Pcs.BasisColumn.point ++ Vector.ofFn (fun bit : Fin 192 =>
+        CompStark.Pcs.BasisColumn.binary (Vector.ofFn fun i : Fin 1024 =>
+          CompStark.Fixtures.Pcs.value (i.val+31+(coordinates.size-192))) bit)) do
+    throw (IO.userError "joint byte Basis projection mismatch")
+  let lowPatterns : Vector (CompStark.Pcs.BasisWindow 128) 8 := Vector.ofFn fun t =>
+    ⟨0, 128, Vector.ofFn (fun x => CompStark.Fixtures.Pcs.value (x.val+31+t.val%2)), by decide⟩
+  let highWeights : Vector (Vector BF64.WordExt3 8) 8 := Vector.ofFn fun t =>
+    Vector.ofFn fun h => if h.val%3 = 0 then 0 else CompStark.Fixtures.Pcs.value (t.val+17*h.val+31)
+  let fullPatterns : Vector (CompStark.Pcs.BasisWindow 1024) 8 := Vector.ofFn fun t =>
+    ⟨0, 1024, Vector.ofFn (fun x => CompStark.Pcs.roundProduct highWeights[t][x.val/128]
+      lowPatterns[t].expand[x.val%128]), by decide⟩
+  let ringWeights := Vector.ofFn fun x : Fin 1024 => CompStark.Fixtures.Pcs.value (x.val+71)
+  let tensor ← phase "basis-tensor-columns" fun _ =>
+    CompStark.Pcs.projectTensorPointBinary 8 1024 128 8 8 rfl witness lowPatterns highWeights ringWeights
+  unless tensor == CompStark.Pcs.projectPointBinary 8 1024 8 witness fullPatterns ringWeights do
+    throw (IO.userError "shared low/high Basis projection mismatch")
+  let ringWindow : CompStark.Pcs.BasisWindow 1024 :=
+    ⟨256, 512, Vector.ofFn (fun x => CompStark.Fixtures.Pcs.value (x.val+71)), by decide⟩
+  let occupiedRing ← phase "basis-window-ring" fun _ =>
+    CompStark.Pcs.projectTensorPointWindow 8 1024 128 8 8 rfl witness lowPatterns highWeights ringWindow
+  unless occupiedRing == CompStark.Pcs.projectTensorPointBinary 8 1024 128 8 8 rfl witness
+      lowPatterns highWeights ringWindow.expand do
+    throw (IO.userError "occupied ring Basis projection mismatch")
+  let dotInput := Vector.ofFn fun x : Fin 1024 => witness[x.val]
+  let packedDot ← phase "basis-packed-dot" fun _ =>
+    CompStark.Pcs.dotMixedPlan (CompStark.Pcs.prepareMixedDot ringWeights) (fun x => dotInput[x])
+  unless packedDot == CompStark.Pcs.sumExt 1024 (fun x => BF64.WordExt3.mulScalar ringWeights[x] dotInput[x]) do
+    throw (IO.userError "packed mixed Basis dot mismatch")
+  let tensorWeights := Vector.ofFn fun t : Fin 200 => CompStark.Fixtures.Pcs.value (t.val+61)
+  let liftedTensor ← phase "basis-tensor-lift" fun _ =>
+    CompStark.Pcs.liftTensorPointBinary 1024 128 8 8 rfl lowPatterns highWeights ringWeights tensorWeights
+  unless liftedTensor == CompStark.Pcs.liftPointBinary 1024 8 fullPatterns ringWeights tensorWeights do
+    throw (IO.userError "grouped low/high Basis lifting mismatch")
   let liftValues := Vector.ofFn fun i : Fin 4096 => CompStark.Fixtures.Pcs.value (i.val+31)
   let liftPoints : Vector (CompStark.Pcs.BasisWindow 4096) 8 := Vector.ofFn fun _ =>
     ⟨0, 4096, liftValues, by decide⟩

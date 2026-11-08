@@ -10,6 +10,8 @@ public import CompStark.Pcs.CompactInduction
 public import CompStark.Pcs.SparseStrip
 public import CompStark.Pcs.FusedRound
 public import CompStark.Pcs.DirectSums
+public import CompStark.Pcs.WindowBitFold
+public import CompStark.Pcs.WindowScatter
 public import CompStark.Pcs.HonestWhir
 public import CompStarkFixtures.Pcs
 meta import Lean.Util.CollectAxioms
@@ -219,6 +221,54 @@ def check : IO Unit := do
     unless liftPointBinary cols 2 points values weights == liftColumns cols 194 weights
         (points.map BasisColumn.point ++ Vector.ofFn (fun bit : Fin 192 => BasisColumn.binary values bit)) do
       throw (IO.userError "shared binary Basis reconstruction mismatch")
+  for cols in [0, 1, 17, 63, 64, 65, 129] do
+    let values := Vector.ofFn fun i : Fin cols => value (i.val+91)
+    let words := Vector.ofFn fun i : Fin cols =>
+      (⟨UInt64.ofNat (0x9e3779b97f4a7c15*(i.val+1))⟩ : Word)
+    let plan := prepareByteFold values
+    unless foldBytePlan plan words == foldBits words values do
+      throw (IO.userError "padded byte-table bit fold mismatch")
+    unless dotBytePlan plan words == sumExt cols (fun i => WordExt3.mulScalar values[i] words[i]) do
+      throw (IO.userError "byte-table mixed dot mismatch")
+    unless dotMixedPlan (prepareMixedDot values) (fun i => words[i]) ==
+        sumExt cols (fun i => WordExt3.mulScalar values[i] words[i]) do
+      throw (IO.userError "packed mixed dot mismatch")
+    let sparse := words.map fun a => if a.val % 3 = 0 then (⟨0⟩ : Word) else a
+    unless dotMixedPlan (prepareMixedDot values) (fun i => sparse[i]) ==
+        sumExt cols (fun i => WordExt3.mulScalar values[i] sparse[i]) do
+      throw (IO.userError "packed sparse mixed dot mismatch")
+    let points : Vector (BasisWindow cols) 2 :=
+      #v[⟨0, 0, #v[], by omega⟩, ⟨0, cols, values, by omega⟩]
+    let witness : Vector Word (2*cols) := Vector.ofFn fun i =>
+      ⟨UInt64.ofNat (0x9e3779b97f4a7c15*(i.val+1))⟩
+    unless projectPointBinary 2 cols 2 witness points values == projectColumns 2 cols 194 witness
+        (points.map BasisColumn.point ++ Vector.ofFn (fun bit : Fin 192 => BasisColumn.binary values bit)) do
+      throw (IO.userError "joint point/ring byte projection mismatch")
+  for low in [0, 1, 17, 64] do
+    for high in [0, 1, 3] do
+      let windows : Vector (BasisWindow low) 3 := Vector.ofFn fun t =>
+        if t.val = 0 then ⟨0, 0, #v[], by omega⟩ else
+          ⟨low/3, low-low/3, Vector.ofFn (fun x => value (x.val+31)), by omega⟩
+      let gamma : Vector (Vector WordExt3 high) 3 := Vector.ofFn fun t =>
+        Vector.ofFn fun h => if h.val = 0 then 0 else value (t.val+19*h.val)
+      let full : Vector (BasisWindow (high*low)) 3 := Vector.ofFn fun t =>
+        ⟨0, high*low, Vector.ofFn (fun x => roundProduct gamma[t][x.divNat] windows[t].expand[x.modNat]), by omega⟩
+      let ring : Vector WordExt3 (high*low) := Vector.ofFn fun x => value (x.val+21)
+      let witness : Vector Word (2*(high*low)) := Vector.ofFn fun x =>
+        ⟨UInt64.ofNat ((x.val+1)*0x9e3779b97f4a7c15)⟩
+      let columns := full.map BasisColumn.point ++ Vector.ofFn (fun bit : Fin 192 => BasisColumn.binary ring bit)
+      unless projectTensorPointBinary 2 (high*low) low high 3 rfl witness windows gamma ring ==
+          projectColumns 2 (high*low) 195 witness columns do
+        throw (IO.userError "shared low/high tensor projection mismatch")
+      let ringWindow : BasisWindow (high*low) :=
+        ⟨high*low/3, high*low-high*low/3, Vector.ofFn (fun x => value (x.val+21)), by omega⟩
+      unless projectTensorPointWindow 2 (high*low) low high 3 rfl witness windows gamma ringWindow ==
+          projectTensorPointBinary 2 (high*low) low high 3 rfl witness windows gamma ringWindow.expand do
+        throw (IO.userError "occupied ring projection mismatch")
+      let weights : Vector WordExt3 195 := Vector.ofFn fun t => value (t.val+41)
+      unless liftTensorPointBinary (high*low) low high 3 rfl windows gamma ring weights ==
+          liftColumns (high*low) 195 weights columns do
+        throw (IO.userError "grouped low/high tensor lift mismatch")
   IO.println "PCS coordinate maps, factored weights, bit folds, honest WHIR: passed"
 
 end CompStarkTests.Pcs

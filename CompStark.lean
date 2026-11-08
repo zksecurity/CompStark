@@ -252,3 +252,14 @@ public import CompStark.Pcs.DirectSums
 
 public import CompStark.Pcs.ChallengeFold
 public import CompStark.Pcs.FusedRound
+
+public import CompStark.Pcs.BitFold
+public import CompStark.Pcs.Projected
+
+public import CompStark.Pcs.TensorProjection
+public import CompStark.Pcs.TensorProjectionActive
+public import CompStark.Pcs.ByteFoldRows
+public import CompStark.Pcs.MixedDot
+public import CompStark.Pcs.TensorProjectionPacked
+public import CompStark.Pcs.WindowBitFold
+public import CompStark.Pcs.WindowScatter
