@@ -7,6 +7,7 @@ public import CompStark.Pcs.BasisColumnPrepared
 public import CompStark.Pcs.InductionDot
 public import CompStark.Pcs.SparseInduction
 public import CompStark.Pcs.CompactInduction
+public import CompStark.Pcs.TwiddleRow
 public import CompStark.Pcs.ChallengeFold
 public import CompStark.Pcs.DirectSums
 public import CompStark.Pcs.HonestWhir
@@ -113,7 +114,8 @@ def checkInduction : IO Unit := do
       let sparse := induceOccupiedRows hd plan lanes positions values
       let prepared := induceOccupiedRows hd (sparseInductionPlan _ hd) lanes positions values
       let compact := induceOccupiedCompactRows hd lanes positions values
-      unless original.val.bytes == compact.val.bytes && original.val.bytes == split.val.bytes && original.val.bytes == sparse.val.bytes && original.val.bytes == prepared.val.bytes do
+      let byteRows := induceOccupiedByteRows hd lanes positions values
+      unless original.val.bytes == byteRows.val.bytes && original.val.bytes == compact.val.bytes && original.val.bytes == split.val.bytes && original.val.bytes == sparse.val.bytes && original.val.bytes == prepared.val.bytes do
         throw (IO.userError s!"induction shape mismatch: {lo}/{hi}/{rate}/{lanes}/{count}")
       if lo = 6 && hi = 6 then
         let expected ← IO.FS.readBinFile "tests/data/pcs/induced-large.bin"

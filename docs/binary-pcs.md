@@ -96,3 +96,5 @@ The three-run medians are 69,446,904 instructions for byte-prepared reconstructi
 
 
 `foldPairChallenge` shares one prepared challenge across witness and weight above 256 output elements; shorter rounds interpolate with direct scalar products. `foldScalar_eq` and `foldPairChallenge_eq` prove complete vector equality with the prepared restriction. The PCS gate compares direct, prepared and selected folds at 16, 256 and 1,024 outputs, including preparation inside the counters; the native shape regressions cover both sides of the selection boundary, blocked rows and empty dimensions.
+
+`CompactRows` retains normalized subspace rows and three 256-entry byte subset-sum tables per row. `TwiddleRow.lookup_eq` covers both the three-load path below 24 block bits and the direct subset sum above that range. `subsetTable_eq` certifies the shared-prefix table constructor. `occupiedStageRows_eq`, `occupiedRunRows_eq`, and `induceOccupiedByteRows_refines` identify the resulting stages and induction coordinates with the certified transform. The gate measures row preparation separately from the occupied transform, and compares the complete packed output with the Rust fixture.

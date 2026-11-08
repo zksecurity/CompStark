@@ -18,6 +18,7 @@ import CompStarkFixtures.Pcs
 import CompStark.Pcs.InductionDot
 import CompStark.Pcs.SparseInduction
 import CompStark.Pcs.CompactInduction
+import CompStark.Pcs.TwiddleRow
 import CompStark.Pcs.ChallengeFold
 import CompStark.Pcs.DirectSums
 
@@ -698,8 +699,13 @@ def pcsRun (phase : {α : Type} → String → (Unit → α) → IO α) : IO UIn
   let largeCompact ← phase "induction-large-compact" fun _ =>
     CompStark.Pcs.induceOccupiedCompactRows (ell := 12) (rate := 2) (by decide) 3 largePositions fun q c =>
       CompStark.Pcs.mapLimb (CompStark.Fixtures.Pcs.value (q.val+77)) c
+  let byteRowsPlan ← phase "induction-byte-rows-plan" fun _ => CompStark.Pcs.CompactRows.create 14 (of_decide_eq_true rfl)
+  let largeByteRows ← phase "induction-large-byte-rows" fun _ =>
+    CompStark.Pcs.collapseRows 12 2 3 (CompStark.Pcs.occupiedRunRows byteRowsPlan 3 largePositions 12 (by decide)
+      (CompStark.Pcs.scatterRows _ 3 largePositions fun q c =>
+        CompStark.Pcs.mapLimb (CompStark.Fixtures.Pcs.value (q.val+77)) c))
   let expectedLarge ← IO.FS.readBinFile "tests/data/pcs/induced-large.bin"
-  unless largeCompact.val.bytes == expectedLarge && largeDense.val.bytes == expectedLarge && largeSparse.val.bytes == expectedLarge && largePrepared.val.bytes == expectedLarge do
+  unless largeByteRows.val.bytes == expectedLarge && largeCompact.val.bytes == expectedLarge && largeDense.val.bytes == expectedLarge && largeSparse.val.bytes == expectedLarge && largePrepared.val.bytes == expectedLarge do
     throw (IO.userError "large induced weights Rust mismatch")
   for rows in [16, 256, 1024] do
     let input : Vector BF64.WordExt3 (2*rows*1) := Vector.ofFn fun i =>
