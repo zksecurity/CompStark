@@ -249,10 +249,115 @@ theorem projectColumnsIndexed_eq (lanes cols terms : Nat) (f : Vector Word (lane
       cases entry.symm.trans entry'
     · rfl
 
+/-- XOR a contiguous selection without traversing linked index nodes. -/
+def projectionXorArray {total cols : Nat} (f : Vector Word total) (offset : Nat)
+    (fits : offset+cols ≤ total) (indices : Array (Fin cols)) (acc : UInt64) : Word :=
+  ⟨indices.foldl (fun (acc : UInt64) (i : Fin cols) => acc ^^^ (f[offset+i.val]'(by have := i.isLt; omega)).val) acc⟩
+
+/-- Contiguous and linked selections accumulate the same ordered XOR. -/
+theorem projectionXorArray_eq {total cols : Nat} (f : Vector Word total) (offset : Nat)
+    (fits : offset+cols ≤ total) (indices : Array (Fin cols)) (acc : UInt64) :
+    projectionXorArray f offset fits indices acc = projectionXorFrom f offset fits indices.toList acc := by
+  unfold projectionXorArray
+  rw [← Array.foldl_toList]
+  induction indices.toList generalizing acc with
+  | nil => rfl
+  | cons i rest ih => exact ih _
+
+/-- Project an addressable witness with machine-size indices throughout the selection loop. -/
+def projectionXorArrayNative {total cols : Nat} (f : Vector Word total) (offset : Nat)
+    (fits : offset+cols ≤ total) (indices : Array (Fin cols)) (acc : UInt64) : Word :=
+  if ht : total < USize.size then
+    let off := offset.toUSize
+    ⟨indices.foldl (fun (acc : UInt64) (i : Fin cols) =>
+      let index := off + i.val.toUSize
+      have address : index.toNat = offset+i.val := by
+        have hi := i.isLt
+        simp only [index, off, USize.toNat_add,
+          USize.toNat_ofNat_of_lt' (by omega : offset < USize.size),
+          USize.toNat_ofNat_of_lt' (by omega : i.val < USize.size),
+          Nat.mod_eq_of_lt (by omega : offset+i.val < USize.size)]
+      acc ^^^ (f.toArray.uget index (by rw [address, Vector.size_toArray]; have := i.isLt; omega)).val) acc⟩
+  else projectionXorArray f offset fits indices acc
+
+/-- Machine-size address calculation preserves every contiguous selected-word projection. -/
+@[csimp] theorem projectionXorArray_code : @projectionXorArray = @projectionXorArrayNative := by
+  funext total cols f offset fits indices acc
+  unfold projectionXorArrayNative
+  split
+  · rename_i ht
+    unfold projectionXorArray
+    apply congrArg Word.mk
+    apply congrArg (fun step : UInt64 → Fin cols → UInt64 => indices.foldl step acc)
+    funext acc i
+    have hi := i.isLt
+    simp only [Array.uget, USize.toNat_add,
+      USize.toNat_ofNat_of_lt' (by omega : offset < USize.size),
+      USize.toNat_ofNat_of_lt' (by omega : i.val < USize.size),
+      Nat.mod_eq_of_lt (by omega : offset+i.val < USize.size)]
+    rfl
+  · rfl
+
+/-- A prepared projection with contiguous binary selections. -/
+inductive ProjectionPlan (cols : Nat) where
+  /-- Retained local numeric weights. -/
+  | point (window : BasisWindow cols)
+  /-- Selected binary coordinates in traversal order. -/
+  | binary (indices : Array (Fin cols))
+
+/-- Materialize the selection once before visiting any witness lane. -/
+def BasisProjection.contiguous {cols : Nat} : BasisProjection cols → ProjectionPlan cols
+  | .point w => .point w
+  | .binary indices => .binary indices.toArray
+
+/-- Project a witness row using the retained compact factor. -/
+@[noinline] def ProjectionPlan.projectFrom {total cols : Nat} (plan : ProjectionPlan cols)
+    (f : Vector Word total) (offset : Nat) (fits : offset+cols ≤ total) : WordExt3 :=
+  match plan with
+  | .point w => (BasisProjection.point w).projectFromNative f offset fits
+  | .binary indices => ⟨projectionXorArray f offset fits indices 0, ⟨0⟩, ⟨0⟩⟩
+
+/-- Materializing binary indices preserves every projected witness row. -/
+theorem BasisProjection.contiguous_projectFrom {total cols : Nat} (plan : BasisProjection cols)
+    (f : Vector Word total) (offset : Nat) (fits : offset+cols ≤ total) :
+    plan.contiguous.projectFrom f offset fits = plan.projectFrom f offset fits := by
+  rw [BasisProjection.projectFrom_code]
+  cases plan with
+  | point w => rfl
+  | binary indices =>
+    simp only [BasisProjection.contiguous, ProjectionPlan.projectFrom, projectionXorArray_eq,
+      BasisProjection.projectFromNative]
+
+/-- Project shared factors with contiguous binary indices and cached point-window addresses. -/
+def projectColumnsContiguous (lanes cols terms : Nat) (f : Vector Word (lanes*cols))
+    (columns : Vector (BasisColumn cols) terms) : Vector WordExt3 (lanes*terms) :=
+  let windows := projectionWindows columns
+  let points : Vector WordExt3 (lanes*windows.length) := Vector.ofFn fun i =>
+    (BasisProjection.point windows[i.modNat.val]).projectFrom f (i.divNat.val*cols)
+      (by have := i.divNat.isLt; nlinarith)
+  let plans := columns.map (fun column => column.prepareProjection.contiguous)
+  let addresses := projectionAddresses columns
+  Vector.ofFn fun i => match entry : columns[i.modNat] with
+    | .point w =>
+      points[basisAddress i.divNat (⟨addresses[i.modNat], by
+        simp only [addresses, projectionAddresses, Fin.getElem_fin, Vector.getElem_map]
+        simp only [Fin.getElem_fin] at entry
+        simp only [entry]
+        exact List.idxOf_lt_length_iff.mpr (projectionWindows_mem columns i.modNat w entry)⟩ : Fin windows.length)]
+    | .binary _ _ => plans[i.modNat].projectFrom f (i.divNat.val*cols)
+        (by have := i.divNat.isLt; nlinarith)
+
+/-- Contiguous selection storage retains the entire certified projection matrix. -/
+theorem projectColumnsContiguous_eq (lanes cols terms : Nat) (f : Vector Word (lanes*cols))
+    (columns : Vector (BasisColumn cols) terms) :
+    projectColumnsContiguous lanes cols terms f columns = projectColumnsIndexed lanes cols terms f columns := by
+  simp only [projectColumnsContiguous, projectColumnsIndexed, Fin.getElem_fin,
+    Vector.getElem_map, BasisProjection.contiguous_projectFrom]
+
 /-- The compiled projection matrix shares point windows and binary selections across all lanes. -/
-@[csimp] theorem projectColumns_code : @projectColumns = @projectColumnsIndexed := by
+@[csimp] theorem projectColumns_code : @projectColumns = @projectColumnsContiguous := by
   funext lanes cols terms f columns
-  rw [projectColumnsIndexed_eq, projectColumnsShared_eq]
+  rw [projectColumnsContiguous_eq, projectColumnsIndexed_eq, projectColumnsShared_eq]
   exact congrFun (congrFun (congrFun (congrFun (congrFun projectColumnsPrepared_eq lanes) cols) terms) f) columns
 
 end CompStark.Pcs
