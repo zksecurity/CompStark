@@ -183,4 +183,9 @@ theorem extMulFive_eq (a b : WordExt3) : extMulFive a b = WordExt3.mul a b := by
     ring_nf <;>
     simp only [CharTwo.ofNat_eq_mod (R := BF64)] <;> norm_num
 
+/-- Compiled extension products use the deferred carry-less kernel. -/
+@[csimp] theorem extMulFive_code : extMulFive = WordExt3.mul := by
+  funext a b
+  exact extMulFive_eq a b
+
 end CompStark.Sumcheck

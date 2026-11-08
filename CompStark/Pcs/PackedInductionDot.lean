@@ -49,35 +49,35 @@ theorem InductionWide.reduce_add (a b : InductionWide) :
   let mid := Word.clMul32 (a.val ^^^ (a.val >>> 32)) (b.val ^^^ (b.val >>> 32)) ^^^ lo ^^^ hi
   ⟨lo ^^^ (mid <<< 32),hi ^^^ (mid >>> 32)⟩
 
+/-- Hardware carry-less multiplication before the shared final reduction. -/
+@[inline] def InductionWide.mulClmul (a b : Word) : InductionWide :=
+  ⟨Word.clMulLo a.val b.val, Word.clMulHi a.val b.val⟩
+
+/-- The hardware product has the original pure Karatsuba polynomial coefficients. -/
+@[csimp] theorem InductionWide.mul_code : InductionWide.mul = InductionWide.mulClmul := by
+  rfl
+
 /-- The unreduced base product reduces to the exact field product. -/
 theorem InductionWide.mul_eq (a b : Word) : (InductionWide.mul a b).reduce.toField = a.toField*b.toField :=
   Word.toField_mulMasked a b
 
-/-- Three vectors of pre-split coefficients for eight high-scaled query weights. -/
+/-- Eight full-width coefficients of shared mixed-dot weights. -/
 structure Weights8 where
-  /-- Coefficients used by the low 32-bit carry-less products. -/
-  low : Vector UInt64 8
-  /-- Coefficients used by the high 32-bit carry-less products. -/
-  high : Vector UInt64 8
-  /-- XORs of the low and high halves for the Karatsuba middle product. -/
-  middle : Vector UInt64 8
+  /-- Polynomial-coordinate words in query order. -/
+  words : Vector UInt64 8
 
 /-- Pack eight shared mixed-dot weights. -/
 def Weights8.create (f : Fin 8 → Word) : Weights8 :=
-  let words := Vector.ofFn fun i => (f i).val
-  ⟨words,words.map (fun x : UInt64 => x >>> 32),words.map (fun x : UInt64 => x ^^^ (x >>> 32))⟩
+  ⟨Vector.ofFn fun i => (f i).val⟩
 
 /-- Multiply one packed weight without reducing its carry-less polynomial. -/
 @[inline] def Weights8.product (weights : Weights8) (i : Fin 8) (a : Word) : InductionWide :=
-  let lo := Word.clMul32 a.val weights.low[i]
-  let hi := Word.clMul32 (a.val >>> 32) weights.high[i]
-  let mid := Word.clMul32 (a.val ^^^ (a.val >>> 32)) weights.middle[i] ^^^ lo ^^^ hi
-  ⟨lo ^^^ (mid <<< 32),hi ^^^ (mid >>> 32)⟩
+  InductionWide.mul a ⟨weights.words[i]⟩
 
-/-- Packed pre-splitting retains the exact base-field product. -/
+/-- Packed weights retain the exact base-field product. -/
 theorem Weights8.product_eq (f : Fin 8 → Word) (i : Fin 8) (a : Word) :
     ((Weights8.create f).product i a).reduce.toField = a.toField * (f i).toField := by
-  simp only [Weights8.create,Weights8.product,Fin.getElem_fin,Vector.getElem_map,Vector.getElem_ofFn]
+  simp only [Weights8.create, Weights8.product, Fin.getElem_fin, Vector.getElem_ofFn]
   exact Word.toField_mulMasked a (f i)
 
 /-- Eight cubic extension weights in paired low/high limbs and consecutive third limbs. -/
