@@ -352,28 +352,28 @@
       "tolerance": 0.005
     },
     "pcs/coordinates": {
-      "instructions": 6514141,
-      "variation": 2e-06,
+      "instructions": 6513764,
+      "variation": 0.0,
       "tolerance": 0.005
     },
     "pcs/bit-fold": {
-      "instructions": 321241,
-      "variation": 0.001167,
+      "instructions": 321616,
+      "variation": 0.001169,
       "tolerance": 0.005
     },
     "pcs/basis": {
-      "instructions": 1974207,
-      "variation": 0.00019,
+      "instructions": 1974210,
+      "variation": 0.000189,
       "tolerance": 0.005
     },
     "pcs/encoding-plan": {
-      "instructions": 2228550,
+      "instructions": 2228548,
       "variation": 1e-06,
       "tolerance": 0.005
     },
     "pcs/encoding": {
-      "instructions": 35153377,
-      "variation": 1.2e-05,
+      "instructions": 35153754,
+      "variation": 1e-06,
       "tolerance": 0.005
     },
     "pcs/induction": {
@@ -382,8 +382,8 @@
       "tolerance": 0.005
     },
     "pcs/induction-dense": {
-      "instructions": 2223074,
-      "variation": 0.0,
+      "instructions": 2223077,
+      "variation": 0.000168,
       "tolerance": 0.005
     },
     "pcs/induction-split": {
@@ -392,59 +392,59 @@
       "tolerance": 0.005
     },
     "pcs/induction-sparse": {
-      "instructions": 1499663,
-      "variation": 1e-06,
+      "instructions": 1499664,
+      "variation": 0.00025,
       "tolerance": 0.005
     },
     "pcs/induction-scalar-plan": {
-      "instructions": 250045866,
-      "variation": 0.000181,
+      "instructions": 250073839,
+      "variation": 9e-05,
       "tolerance": 0.005
     },
     "pcs/induction-large-dense": {
-      "instructions": 671652430,
-      "variation": 2e-06,
+      "instructions": 671655199,
+      "variation": 6e-06,
       "tolerance": 0.005
     },
     "pcs/induction-large-sparse": {
-      "instructions": 183145358,
-      "variation": 2e-06,
+      "instructions": 183145182,
+      "variation": 1e-06,
       "tolerance": 0.005
     },
     "pcs/induction-plan": {
-      "instructions": 108953770,
-      "variation": 0.000117,
+      "instructions": 108944769,
+      "variation": 4.4e-05,
       "tolerance": 0.005
     },
     "pcs/induction-large-prepared": {
-      "instructions": 153330338,
-      "variation": 2e-06,
+      "instructions": 153329792,
+      "variation": 0.0,
       "tolerance": 0.005
     },
     "pcs/induction-large-compact": {
-      "instructions": 135165022,
-      "variation": 3e-06,
+      "instructions": 135165446,
+      "variation": 5.7e-05,
       "tolerance": 0.005
     },
     "pcs/induction-byte-rows-plan": {
-      "instructions": 2274407,
-      "variation": 0.000166,
+      "instructions": 2274321,
+      "variation": 2.8e-05,
       "tolerance": 0.005
     },
     "pcs/induction-large-byte-rows": {
-      "instructions": 98122102,
-      "variation": 4e-06,
+      "instructions": 98122103,
+      "variation": 3e-06,
       "tolerance": 0.005
     },
     "pcs/induction-large-tiled": {
-      "instructions": 154305300,
-      "variation": 2e-06,
+      "instructions": 154305855,
+      "variation": 4.8e-05,
       "tolerance": 0.005
     },
     "pcs/challenge-fold-16": {
       "instructions": 59957,
-      "variation": 0.0,
-      "tolerance": 0.005
+      "variation": 0.006271,
+      "tolerance": 0.0251
     },
     "pcs/challenge-scalar-16": {
       "instructions": 59925,
@@ -453,77 +453,77 @@
     },
     "pcs/challenge-prepared-16": {
       "instructions": 1193630,
-      "variation": 1e-06,
+      "variation": 0.000315,
       "tolerance": 0.005
     },
     "pcs/challenge-fold-256": {
-      "instructions": 928941,
-      "variation": 0.0,
+      "instructions": 929057,
+      "variation": 0.000124,
       "tolerance": 0.005
     },
     "pcs/challenge-scalar-256": {
-      "instructions": 926719,
-      "variation": 0.0,
+      "instructions": 926720,
+      "variation": 1e-06,
       "tolerance": 0.005
     },
     "pcs/challenge-prepared-256": {
       "instructions": 1507404,
-      "variation": 0.00025,
-      "tolerance": 0.005
-    },
-    "pcs/challenge-fold-1024": {
-      "instructions": 2303943,
-      "variation": 0.000163,
-      "tolerance": 0.005
-    },
-    "pcs/challenge-scalar-1024": {
-      "instructions": 3701207,
       "variation": 1e-06,
       "tolerance": 0.005
     },
+    "pcs/challenge-fold-1024": {
+      "instructions": 2303999,
+      "variation": 0.000189,
+      "tolerance": 0.005
+    },
+    "pcs/challenge-scalar-1024": {
+      "instructions": 3701268,
+      "variation": 1.6e-05,
+      "tolerance": 0.005
+    },
     "pcs/challenge-prepared-1024": {
-      "instructions": 2512072,
-      "variation": 0.000149,
+      "instructions": 2512245,
+      "variation": 6.9e-05,
       "tolerance": 0.005
     },
     "pcs/accumulated-prepare": {
       "instructions": 1172120,
-      "variation": 0.0,
+      "variation": 1e-06,
       "tolerance": 0.005
     },
     "pcs/accumulated": {
       "instructions": 115281,
-      "variation": 0.0,
-      "tolerance": 0.005
+      "variation": 0.003262,
+      "tolerance": 0.013
     },
     "pcs/whir-round": {
       "instructions": 431302,
-      "variation": 2e-06,
+      "variation": 0.0,
       "tolerance": 0.005
     },
     "pcs/basis-project": {
-      "instructions": 86713703,
-      "variation": 4e-06,
-      "tolerance": 0.005
-    },
-    "pcs/basis-columns": {
-      "instructions": 54516426,
-      "variation": 7e-06,
-      "tolerance": 0.005
-    },
-    "pcs/basis-lift": {
-      "instructions": 69440091,
-      "variation": 1.3e-05,
-      "tolerance": 0.005
-    },
-    "pcs/basis-lift-reference": {
-      "instructions": 441740039,
+      "instructions": 86713794,
       "variation": 5e-06,
       "tolerance": 0.005
     },
+    "pcs/basis-columns": {
+      "instructions": 54517149,
+      "variation": 1.4e-05,
+      "tolerance": 0.005
+    },
+    "pcs/basis-lift": {
+      "instructions": 69440085,
+      "variation": 2.8e-05,
+      "tolerance": 0.005
+    },
+    "pcs/basis-lift-reference": {
+      "instructions": 441738961,
+      "variation": 1.6e-05,
+      "tolerance": 0.005
+    },
     "pcs/induction-large-packed": {
-      "instructions": 750508092,
-      "variation": 4.7e-05,
+      "instructions": 750508733,
+      "variation": 8e-06,
       "tolerance": 0.005
     }
   }
