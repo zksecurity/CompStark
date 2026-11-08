@@ -285,6 +285,39 @@ def occupiedSweepRows {k n words rowLength : Nat} (blocks : Vector (Fin k) n) (s
       let out := transposePair multiplier (BF64.Packed.read a lo) (BF64.Packed.read a hi)
       BF64.Packed.write (BF64.Packed.write a lo out.1) hi out.2) a) a
 
+/-- Sweep a contiguous butterfly block with a specialized scalar multiplication closure. -/
+@[specialize] def twiddleBlockSweep {k words : Nat} (block : Fin k) (span : Nat)
+    (size : k*(2*span) = words) (applyScalar : Word → Word)
+    (a : BF64.Packed.Buffer words) : BF64.Packed.Buffer words :=
+  let base := 2*span*block.val
+  Fin.foldl span (fun a c =>
+    let lo : Fin words := ⟨c.val+base,by dsimp only [base]; have := c.isLt; have := block.isLt; nlinarith⟩
+    let hi : Fin words := ⟨c.val+span+base,by dsimp only [base]; have := c.isLt; have := block.isLt; nlinarith⟩
+    let total := Word.add (BF64.Packed.read a lo) (BF64.Packed.read a hi)
+    let high := Word.add (BF64.Packed.read a hi) (applyScalar total)
+    BF64.Packed.write (BF64.Packed.write a lo total) hi high) a
+
+/-- Dispatch scalar multiplication outside the inner window butterfly loop. -/
+def occupiedSweepRowsNative {k n words rowLength : Nat} (blocks : Vector (Fin k) n) (span : Nat)
+    (size : k*(2*span) = words) (offset : Nat) (row : TwiddleRow rowLength)
+    (a : BF64.Packed.Buffer words) : BF64.Packed.Buffer words :=
+  Fin.foldl n (fun a b =>
+    let scalar := row.lookup (offset+blocks[b].val)
+    if rowLength < 8 then
+      let map := Sumcheck.byteMap scalar
+      twiddleBlockSweep blocks[b] span size (Sumcheck.mapMul map) a
+    else twiddleBlockSweep blocks[b] span size (Word.mulMasked scalar) a) a
+
+/-- Specialized inner multiplication preserves every occupied butterfly and output word. -/
+@[csimp] theorem occupiedSweepRows_code : @occupiedSweepRows = @occupiedSweepRowsNative := by
+  funext k n words rowLength blocks span size offset row a
+  unfold occupiedSweepRows occupiedSweepRowsNative
+  apply congrArg (fun update => Fin.foldl n update a)
+  funext input b
+  dsimp only
+  split <;>
+    simp only [twiddleBlockSweep,transposePair,inductionMultiplier,Packed.Multiplier.masked]
+
 /-- Inline row lookup agrees with a materialized occupied multiplier vector. -/
 theorem occupiedSweepRows_eq {k n words rowLength : Nat} (blocks : Vector (Fin k) n) (span : Nat)
     (size : k*(2*span) = words) (offset : Nat) (row : TwiddleRow rowLength) (a : BF64.Packed.Buffer words) :
