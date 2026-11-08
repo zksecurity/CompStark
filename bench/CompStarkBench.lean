@@ -17,6 +17,8 @@ import CompStark.Sumcheck.WordProductProofs
 import CompStarkFixtures.Pcs
 import CompStark.Pcs.InductionDot
 import CompStark.Pcs.SparseInduction
+import CompStark.Pcs.CompactInduction
+import CompStark.Pcs.ChallengeFold
 import CompStark.Pcs.DirectSums
 
 /-! # CompStark micro-benchmarks
@@ -693,9 +695,27 @@ def pcsRun (phase : {α : Type} → String → (Unit → α) → IO α) : IO UIn
   let largePrepared ← phase "induction-large-prepared" fun _ =>
     CompStark.Pcs.induceOccupiedRows (ell := 12) (rate := 2) (by decide) preparedPlan 3 largePositions fun q c =>
       CompStark.Pcs.mapLimb (CompStark.Fixtures.Pcs.value (q.val+77)) c
+  let largeCompact ← phase "induction-large-compact" fun _ =>
+    CompStark.Pcs.induceOccupiedCompactRows (ell := 12) (rate := 2) (by decide) 3 largePositions fun q c =>
+      CompStark.Pcs.mapLimb (CompStark.Fixtures.Pcs.value (q.val+77)) c
   let expectedLarge ← IO.FS.readBinFile "tests/data/pcs/induced-large.bin"
-  unless largeDense.val.bytes == expectedLarge && largeSparse.val.bytes == expectedLarge && largePrepared.val.bytes == expectedLarge do
+  unless largeCompact.val.bytes == expectedLarge && largeDense.val.bytes == expectedLarge && largeSparse.val.bytes == expectedLarge && largePrepared.val.bytes == expectedLarge do
     throw (IO.userError "large induced weights Rust mismatch")
+  for rows in [16, 256, 1024] do
+    let input : Vector BF64.WordExt3 (2*rows*1) := Vector.ofFn fun i =>
+      CompStark.Fixtures.Pcs.value (i.val+71)
+    let weight : Vector BF64.WordExt3 (2*rows*1) := Vector.ofFn fun i =>
+      CompStark.Fixtures.Pcs.value (i.val+173)
+    let r := CompStark.Fixtures.Pcs.value 43
+    let folded ← phase s!"challenge-fold-{rows}" fun _ =>
+      CompStark.Pcs.foldPairChallenge r rows 1 input weight
+    let direct ← phase s!"challenge-scalar-{rows}" fun _ =>
+      (CompStark.Pcs.foldScalar r rows 1 input, CompStark.Pcs.foldScalar r rows 1 weight)
+    let reference ← phase s!"challenge-prepared-{rows}" fun _ =>
+      let shared := CompStark.Sumcheck.prepare r
+      (CompStark.Sumcheck.fold shared rows 1 input, CompStark.Sumcheck.fold shared rows 1 weight)
+    unless folded == reference && direct == reference do
+      throw (IO.userError s!"challenge fold mismatch: {rows}")
   let acc : Vector BF64.WordExt3 256 := Vector.ofFn fun i => CompStark.Fixtures.Pcs.value (i.val + 100)
   let incoming : Vector BF64.WordExt3 256 := Vector.ofFn fun i => CompStark.Fixtures.Pcs.value (i.val + 200)
   let shared ← phase "accumulated-prepare" fun _ => CompStark.Sumcheck.prepare (CompStark.Fixtures.Pcs.value 43)

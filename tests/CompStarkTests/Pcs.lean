@@ -6,6 +6,8 @@ module
 public import CompStark.Pcs.BasisColumnPrepared
 public import CompStark.Pcs.InductionDot
 public import CompStark.Pcs.SparseInduction
+public import CompStark.Pcs.CompactInduction
+public import CompStark.Pcs.ChallengeFold
 public import CompStark.Pcs.DirectSums
 public import CompStark.Pcs.HonestWhir
 public import CompStarkFixtures.Pcs
@@ -110,16 +112,31 @@ def checkInduction : IO Unit := do
       let split := induceSplitRows lo hi rate hd lanes positions values
       let sparse := induceOccupiedRows hd plan lanes positions values
       let prepared := induceOccupiedRows hd (sparseInductionPlan _ hd) lanes positions values
-      unless original.val.bytes == split.val.bytes && original.val.bytes == sparse.val.bytes && original.val.bytes == prepared.val.bytes do
+      let compact := induceOccupiedCompactRows hd lanes positions values
+      unless original.val.bytes == compact.val.bytes && original.val.bytes == split.val.bytes && original.val.bytes == sparse.val.bytes && original.val.bytes == prepared.val.bytes do
         throw (IO.userError s!"induction shape mismatch: {lo}/{hi}/{rate}/{lanes}/{count}")
       if lo = 6 && hi = 6 then
         let expected ← IO.FS.readBinFile "tests/data/pcs/induced-large.bin"
         unless original.val.bytes == expected do throw (IO.userError "large induced weights Rust mismatch")
 
+/-- Short scalar folds and shared maps preserve blocked pairs and the preparation boundary. -/
+def checkChallengeFold : IO Unit := do
+  for (rows, width) in [(0, 0), (3, 0), (0, 3), (7, 3), (256, 1), (257, 1), (129, 2)] do
+    let input : Vector WordExt3 (2*rows*width) := Vector.ofFn fun i => value (i.val+71)
+    let weight : Vector WordExt3 (2*rows*width) := Vector.ofFn fun i => value (i.val+173)
+    let r := value 43
+    let shared := CompStark.Sumcheck.prepare r
+    let expected := (CompStark.Sumcheck.fold shared rows width input,
+      CompStark.Sumcheck.fold shared rows width weight)
+    unless foldPairChallenge r rows width input weight == expected &&
+        (foldScalar r rows width input, foldScalar r rows width weight) == expected do
+      throw (IO.userError s!"challenge fold mismatch: {rows}/{width}")
+
 /-- Compare coordinate maps, cached factors, packed-bit folds and mapped tensors against Rust bytes. -/
 def check : IO Unit := do
   checkBasis
   checkInduction
+  checkChallengeFold
   unless testWhir && testEmpty do throw (IO.userError "honest WHIR acceptance failed")
   let coordinates := coordinateWeights challenges
   let point : Fin (4 + 4) → BF64.Ext3 := fun i => (value (i.val + 101)).toField

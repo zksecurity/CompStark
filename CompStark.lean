@@ -243,4 +243,7 @@ public import CompStark.Pcs.BasisColumnPrepared
 
 public import CompStark.Pcs.InductionDot
 public import CompStark.Pcs.SparseInduction
+public import CompStark.Pcs.CompactInduction
 public import CompStark.Pcs.DirectSums
+
+public import CompStark.Pcs.ChallengeFold
