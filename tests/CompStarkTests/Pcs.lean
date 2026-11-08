@@ -164,6 +164,23 @@ def check : IO Unit := do
       unless powersFrom (value 3) (rings + points) 1 ==
           powersFrom (value 3) rings 1 ++ powersFrom (value 3) points ((value 3) ^ rings) do
         throw (IO.userError "PCS shared batching-power order mismatch")
+  for seed in [0, 1, 73] do
+    let weights := Vector.ofFn fun i : Fin 192 => value (i.val+seed)
+    let prepared := prepareCoordinates weights
+    let inputs := #[⟨⟨0⟩, ⟨0⟩, ⟨0⟩⟩, value seed,
+      ⟨⟨0xffffffffffffffff⟩, ⟨0xffffffffffffffff⟩, ⟨0xffffffffffffffff⟩⟩] ++
+      (Vector.ofFn coordinateBasis).toArray
+    for a in inputs do
+      unless applyCoordinateBytes prepared a == applyCoordinates weights a do
+        throw (IO.userError "prepared binary-coordinate map mismatch")
+  for cols in [0, 1, 17] do
+    let values := Vector.ofFn fun i : Fin cols => value (i.val+91)
+    let points : Vector (BasisWindow cols) 2 :=
+      #v[⟨0, 0, #v[], by omega⟩, ⟨0, cols, values, by omega⟩]
+    let weights := Vector.ofFn fun i : Fin 194 => value (i.val+12)
+    unless liftPointBinary cols 2 points values weights == liftColumns cols 194 weights
+        (points.map BasisColumn.point ++ Vector.ofFn (fun bit : Fin 192 => BasisColumn.binary values bit)) do
+      throw (IO.userError "shared binary Basis reconstruction mismatch")
   IO.println "PCS coordinate maps, factored weights, bit folds, honest WHIR: passed"
 
 end CompStarkTests.Pcs

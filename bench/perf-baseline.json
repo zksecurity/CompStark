@@ -445,6 +445,16 @@
       "instructions": 153329912,
       "variation": 0.0,
       "tolerance": 0.005
+    },
+    "pcs/basis-lift": {
+      "instructions": 69446904,
+      "variation": 1.6e-05,
+      "tolerance": 0.005
+    },
+    "pcs/basis-lift-reference": {
+      "instructions": 441759604,
+      "variation": 1.7e-05,
+      "tolerance": 0.005
     }
   }
 }

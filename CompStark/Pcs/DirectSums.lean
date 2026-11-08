@@ -10,6 +10,7 @@ public import CompStark.Pcs.BasisColumn
 /-! Specialized extension-coordinate accumulators for sumcheck messages and final Basis lifting. -/
 set_option backward.isDefEq.respectTransparency false
 set_option smartUnfolding false
+set_option maxRecDepth 4096
 @[expose] public section
 namespace CompStark.Pcs
 open BF64
@@ -143,5 +144,105 @@ def liftColumnsDirect (cols terms : Nat) (a : Vector WordExt3 terms)
   funext cols terms a columns
   unfold liftColumns liftColumnsDirect
   simp only [sumExt_eq]
+
+/-- Read one of the twenty-four physical bytes of an extension word. -/
+@[inline] def coordinateByte (a : WordExt3) (byte : Fin 24) : UInt8 :=
+  ((mapLimb a ⟨byte.val/8, by omega⟩).val >>> (8*(byte.val%8)).toUInt64).toUInt8
+
+/-- A selected physical byte retains exactly its eight polynomial-basis bits. -/
+theorem coordinateByte_bit (a : WordExt3) (byte : Fin 24) (bit : Fin 8) :
+    (coordinateByte a byte).toNat.testBit bit.val =
+      packedBit (mapLimb a ⟨(8*byte.val+bit.val)/64, by omega⟩).val
+        ⟨(8*byte.val+bit.val)%64, by omega⟩ := by
+  have quotient : (8*byte.val+bit.val)/64 = byte.val/8 := by omega
+  have remainder : (8*byte.val+bit.val)%64 = 8*(byte.val%8)+bit.val := by omega
+  rw [packedBit_eq]
+  change _ = (mapLimb a ⟨(8*byte.val+bit.val)/64, _⟩).val.toNat.testBit _
+  simp only [coordinateByte, UInt64.toNat_toUInt8, UInt64.toNat_shiftRight,
+    Nat.toUInt64, UInt64.toNat_ofNat', Nat.testBit_mod_two_pow, bit.isLt, decide_true, Bool.true_and,
+    quotient, remainder]
+  have shift : 8*(byte.val%8) < 64 := by omega
+  rw [Nat.mod_eq_of_lt (show 8*(byte.val%8) < 2^64 by omega), Nat.mod_eq_of_lt shift,
+    Nat.testBit_shiftRight]
+
+/-- Tabulate the images of all possible bytes at each physical byte position. -/
+def prepareCoordinates (weights : Vector WordExt3 192) : Vector (Vector WordExt3 256) 24 :=
+  Vector.ofFn fun byte => Vector.ofFn fun digit => sumExt 8 fun bit =>
+    if digit.val.testBit bit.val then weights[8*byte.val+bit.val] else ⟨⟨0⟩, ⟨0⟩, ⟨0⟩⟩
+
+/-- Apply a shared binary-linear map with twenty-four byte-table reads. -/
+def applyCoordinateBytes (tables : Vector (Vector WordExt3 256) 24) (a : WordExt3) : WordExt3 :=
+  sumExt 24 fun byte => tables[byte][(coordinateByte a byte).toNat]'(coordinateByte a byte).toNat_lt
+
+/-- Prepared byte application equals every selected binary-coordinate image. -/
+theorem applyCoordinateBytes_eq (weights : Vector WordExt3 192) (a : WordExt3) :
+    applyCoordinateBytes (prepareCoordinates weights) a = applyCoordinates weights a := by
+  apply WordExt3.toField_injective
+  have sumField (n : Nat) (f : Fin n → WordExt3) :
+      (sumExt n f).toField = ∑ i, (f i).toField := by
+    rw [sumExt, sumExtLoop_refines]
+    exact zero_add _
+  rw [applyCoordinateBytes, sumField, applyCoordinates, coordinateLoop_refines]
+  change _ = 0 + _
+  rw [zero_add, ← (finProdFinEquiv : Fin 24 × Fin 8 ≃ Fin 192).sum_comp,
+    Fintype.sum_prod_type]
+  apply Finset.sum_congr rfl
+  intro byte _
+  simp only [prepareCoordinates, Fin.getElem_fin, Vector.getElem_ofFn, sumField]
+  apply Finset.sum_congr rfl
+  intro bit _
+  rw [coordinateByte_bit]
+  have index : (finProdFinEquiv (byte,bit)).val = 8*byte.val+bit.val := by
+    simp only [finProdFinEquiv, Equiv.coe_fn_mk]
+    omega
+  simp only [index]
+  split <;> rfl
+
+/-- Share byte images across every input of one binary-linear map. -/
+def liftPointBinaryBytes (cols count : Nat) (points : Vector (BasisWindow cols) count)
+    (values : Vector WordExt3 cols) (a : Vector WordExt3 (count+192)) : Vector WordExt3 cols :=
+  let binary := prepareCoordinates (Vector.ofFn fun bit : Fin 192 => a[count+bit.val])
+  Vector.ofFn fun i => WordExt3.add
+    (sumExt count fun t => (BasisColumn.point points[t]).scaleAt a[t.val] i)
+    (applyCoordinateBytes binary values[i])
+
+/-- Reconstruct physical point windows and one shared binary-coordinate tensor. -/
+def liftPointBinary (cols count : Nat) (points : Vector (BasisWindow cols) count)
+    (values : Vector WordExt3 cols) (a : Vector WordExt3 (count+192)) : Vector WordExt3 cols :=
+  let binary := Vector.ofFn fun bit : Fin 192 => a[count+bit.val]
+  Vector.ofFn fun i => WordExt3.add
+    (sumExt count fun t => (BasisColumn.point points[t]).scaleAt a[t.val] i)
+    (applyCoordinates binary values[i])
+
+/-- Shared binary-coordinate reconstruction preserves the complete compact-factor lift. -/
+theorem liftPointBinary_eq (cols count : Nat) (points : Vector (BasisWindow cols) count)
+    (values : Vector WordExt3 cols) (a : Vector WordExt3 (count+192)) :
+    liftPointBinary cols count points values a =
+      liftColumns cols (count+192) a
+        (points.map BasisColumn.point ++ Vector.ofFn (fun bit : Fin 192 => BasisColumn.binary values bit)) := by
+  apply Vector.ext
+  intro i hi
+  apply WordExt3.toField_injective
+  simp only [liftPointBinary, liftColumns, Vector.getElem_ofFn, WordExt3.toField_add,
+    sumExt_eq, sumWords_refines, List.map_ofFn, Function.comp_apply, List.sum_ofFn,
+    applyCoordinates, coordinateLoop_refines]
+  change _ + (0 + _) = _
+  rw [zero_add, Fin.sum_univ_add]
+  apply congrArg₂ HAdd.hAdd
+  · apply Finset.sum_congr rfl
+    intro t _
+    simp only [Fin.val_castAdd, Vector.getElem_append_left t.isLt, Vector.getElem_map, Fin.getElem_fin]
+  · apply Finset.sum_congr rfl
+    intro bit _
+    change _ = ((points.map BasisColumn.point ++ Vector.ofFn (fun bit : Fin 192 => BasisColumn.binary values bit))[count+bit.val].scaleAt a[count+bit.val] ⟨i, hi⟩).toField
+    rw [Vector.getElem_append_right _ (by omega)]
+    simp only [Vector.getElem_ofFn, Fin.getElem_fin,
+      Nat.add_sub_cancel_left, BasisColumn.scaleAt]
+    split <;> rfl
+
+/-- Byte images preserve the complete point and binary-tensor reconstruction. -/
+@[csimp] theorem liftPointBinary_code : @liftPointBinary = @liftPointBinaryBytes := by
+  funext cols count points values a
+  simp only [liftPointBinary, liftPointBinaryBytes, applyCoordinateBytes_eq]
 
 end CompStark.Pcs
