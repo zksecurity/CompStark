@@ -1,5 +1,6 @@
 /-
 Copyright (c) 2026 zkSecurity. All rights reserved.
+Copyright (c) 2026 CompPoly Contributors. All rights reserved.
 Released under Apache 2.0 license as described in the file LICENSE.
 -/
 module
@@ -131,13 +132,63 @@ theorem wordByte_bit (a : UInt64) (byte bit : Fin 8) :
   rw [Nat.mod_eq_of_lt (by have := byte.isLt; omega : 8*byte.val < 2^64),
     Nat.mod_eq_of_lt (by have := byte.isLt; omega : 8*byte.val < 64), Nat.testBit_shiftRight]
   rfl
+set_option smartUnfolding true
+
+/-- Build binary subset sums by sharing the lower half of each successive table. -/
+def byteSubsetSums {R : Type} [AddCommMonoid R] (values : Array R) (n : Nat) : Array R :=
+  match n with
+  | 0 => #[0]
+  | n+1 =>
+    let low := byteSubsetSums values n
+    low ++ low.map (fun x => x + values.getD n 0)
+termination_by structural n
+
+/-- A subset table has one entry for every binary mask. -/
+@[simp] theorem byteSubsetSums_size {R : Type} [AddCommMonoid R] (values : Array R) (n : Nat) :
+    (byteSubsetSums values n).size = 2^n := by
+  induction n with
+  | zero => rfl
+  | succ n ih => simp only [byteSubsetSums, Array.size_append, Array.size_map, ih, pow_succ]; omega
+
+/-- Each shared table entry is the sum selected by its binary mask. -/
+theorem byteSubsetSums_get {R : Type} [AddCommMonoid R] (values : Array R) (n u : Nat)
+    (hu : u < 2^n) :
+    (byteSubsetSums values n)[u]'(by rw [byteSubsetSums_size]; exact hu) =
+      ∑ k : Fin n, if u.testBit k.val then values.getD k.val 0 else 0 := by
+  induction n generalizing u with
+  | zero =>
+    have : u = 0 := by simp only [pow_zero] at hu; omega
+    subst u
+    simp only [byteSubsetSums, Array.getElem_singleton, Fin.sum_univ_zero]
+  | succ n ih =>
+    rw [Fin.sum_univ_castSucc]
+    by_cases low : u < 2^n
+    · have bit : u.testBit n = false := Nat.testBit_lt_two_pow low
+      simp only [byteSubsetSums]
+      rw [Array.getElem_append_left (by rw [byteSubsetSums_size]; exact low)]
+      simp only [bit, Bool.false_eq_true, ↓reduceIte, add_zero, Fin.val_castSucc, Fin.val_last]
+      exact ih u low
+    · have bound : u - 2^n < 2^n := by rw [pow_succ] at hu; omega
+      have split : u = 2^n + (u-2^n) := by omega
+      have bit : u.testBit n = true := by
+        rw [split, Nat.testBit_two_pow_add_eq, Nat.testBit_lt_two_pow bound]; rfl
+      have bits (k : Fin n) : u.testBit k.val = (u-2^n).testBit k.val := by
+        conv_lhs => rw [split]
+        exact Nat.testBit_two_pow_add_gt k.isLt _
+      simp only [byteSubsetSums]
+      rw [Array.getElem_append_right (by rw [byteSubsetSums_size]; omega)]
+      simp only [Array.getElem_map, byteSubsetSums_size, ih (u-2^n) bound, Fin.val_castSucc,
+        Fin.val_last, bit, ↓reduceIte, bits]
+
+set_option smartUnfolding false
+
 /-- The Four-Russians images of each group of eight extension weights. -/
 def prepareBitFold (blocks : Nat) (weights : Vector WordExt3 (blocks*64)) :
     Vector (Vector WordExt3 256) (blocks*8) :=
   Vector.ofFn fun byte =>
     let values : Vector WordExt3 8 := Vector.ofFn fun bit =>
       weights[8*byte.val+bit.val]'(by have := byte.isLt; have := bit.isLt; omega)
-    ⟨AdditiveNTT.Packed.subsetSums values.toArray 8, AdditiveNTT.Packed.subsetSums_size _ _⟩
+    ⟨byteSubsetSums values.toArray 8, byteSubsetSums_size _ _⟩
 /-- Each byte-table entry is its selected eight-weight sum. -/
 theorem prepareBitFold_get (blocks : Nat) (weights : Vector WordExt3 (blocks*64))
     (byte : Fin (blocks*8)) (digit : Fin 256) :
@@ -145,7 +196,7 @@ theorem prepareBitFold_get (blocks : Nat) (weights : Vector WordExt3 (blocks*64)
       ∑ bit : Fin 8, if digit.val.testBit bit.val then
         weights[8*byte.val+bit.val]'(by have := byte.isLt; have := bit.isLt; omega) else 0 := by
   simp only [prepareBitFold, Fin.getElem_fin, Vector.getElem_ofFn, Vector.getElem_mk]
-  rw [AdditiveNTT.Packed.subsetSums_get _ _ _ (by exact digit.isLt)]
+  rw [byteSubsetSums_get _ _ _ (by exact digit.isLt)]
   simp only [Array.getD_eq_getD_getElem?, Vector.size_toArray, Fin.isLt,
     Array.getElem?_eq_getElem, Option.getD_some, Vector.getElem_toArray, Vector.getElem_ofFn]
 /-- Bit-transposed 64-word blocks of one witness lane. -/
