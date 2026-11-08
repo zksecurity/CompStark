@@ -220,18 +220,22 @@ theorem foldMessagePairDirect_eq (r : WordExt3) (rows : Nat)
 
 /-- Fused restriction and message traversal without a materialized index list. -/
 def foldMessageNative (r : WordExt3) (rows : Nat) (table weight : Vector WordExt3 (4*rows)) : FoldMessageState :=
-  let pair := if 2*rows ≤ 256 then foldMessagePairDirect r rows table weight
-    else foldMessagePair (Sumcheck.prepare r) rows table weight
-  Fin.foldl rows (fun state i => state.push (pair i))
+  let initial : FoldMessageState :=
     ⟨Array.emptyWithCapacity (2*rows),Array.emptyWithCapacity (2*rows),0,0⟩
+  if 2*rows ≤ 256 then
+    Fin.foldl rows (fun state i => state.push (foldMessagePairDirect r rows table weight i)) initial
+  else
+    let shared := Sumcheck.prepare r
+    Fin.foldl rows (fun state i => state.push (foldMessagePair shared rows table weight i)) initial
 
 /-- The native fused traversal retains both output arrays and both compressed coefficients. -/
 @[csimp] theorem foldMessage_code : @foldMessage = @foldMessageNative := by
   funext r rows table weight
   unfold foldMessageNative
-  have same : foldMessagePairDirect r rows table weight = foldMessagePair (Sumcheck.prepare r) rows table weight :=
-    funext (foldMessagePairDirect_eq r rows table weight)
-  simp only [same,ite_self,Fin.foldl_eq_foldl_finRange]
-  rfl
+  split
+  · simp only [foldMessagePairDirect_eq,Fin.foldl_eq_foldl_finRange]
+    rfl
+  · rw [Fin.foldl_eq_foldl_finRange]
+    rfl
 
 end CompStark.Pcs
