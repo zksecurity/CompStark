@@ -1,0 +1,1115 @@
+{
+  "before_revision": "56e59c8ff73018d9fff911409286b5fd5ce30855",
+  "implementation_revision": "e71093e74ba50d1fe5f8b3dcb5b6cda07488a1b5",
+  "comppoly_revision": "50601b6b96059a29b16c35d8129c959d0ff533b9",
+  "before": {
+    "about": "User-space instructions per workload phase of scripts/perf-gate, single threaded: the median of 3 runs, the largest relative deviation from it (variation) and the allowed relative increase (tolerance). Rewritten by scripts/perf-gate --update.",
+    "entries": {
+      "wide-quartic/trace lde": {
+        "instructions": 569934866,
+        "variation": 7.3e-05,
+        "tolerance": 0.005
+      },
+      "wide-quartic/trace commit": {
+        "instructions": 1761685453,
+        "variation": 2.8e-05,
+        "tolerance": 0.005
+      },
+      "wide-quartic/quotient": {
+        "instructions": 311195583,
+        "variation": 2.7e-05,
+        "tolerance": 0.005
+      },
+      "wide-quartic/quotient lde": {
+        "instructions": 111994749,
+        "variation": 5.5e-05,
+        "tolerance": 0.005
+      },
+      "wide-quartic/quotient commit": {
+        "instructions": 658383926,
+        "variation": 0.0002,
+        "tolerance": 0.005
+      },
+      "wide-quartic/opened values": {
+        "instructions": 251070862,
+        "variation": 0.000704,
+        "tolerance": 0.005
+      },
+      "wide-quartic/reduce": {
+        "instructions": 290536552,
+        "variation": 0.000132,
+        "tolerance": 0.005
+      },
+      "wide-quartic/commit phase": {
+        "instructions": 717485594,
+        "variation": 0.000226,
+        "tolerance": 0.005
+      },
+      "wide-quartic/grind": {
+        "instructions": 236889998,
+        "variation": 0.000571,
+        "tolerance": 0.005
+      },
+      "wide-quartic/query openings": {
+        "instructions": 79828451,
+        "variation": 0.000223,
+        "tolerance": 0.005
+      },
+      "wide-quartic/prove": {
+        "instructions": 4971627870,
+        "variation": 0.000105,
+        "tolerance": 0.005
+      },
+      "wide-quartic/verify": {
+        "instructions": 325722956,
+        "variation": 6.3e-05,
+        "tolerance": 0.005
+      },
+      "wide-quintic/trace lde": {
+        "instructions": 569939673,
+        "variation": 8.8e-05,
+        "tolerance": 0.005
+      },
+      "wide-quintic/trace commit": {
+        "instructions": 1761692632,
+        "variation": 4.9e-05,
+        "tolerance": 0.005
+      },
+      "wide-quintic/quotient": {
+        "instructions": 342855942,
+        "variation": 2.7e-05,
+        "tolerance": 0.005
+      },
+      "wide-quintic/quotient lde": {
+        "instructions": 137980506,
+        "variation": 1.3e-05,
+        "tolerance": 0.005
+      },
+      "wide-quintic/quotient commit": {
+        "instructions": 659434309,
+        "variation": 1.4e-05,
+        "tolerance": 0.005
+      },
+      "wide-quintic/opened values": {
+        "instructions": 314842491,
+        "variation": 0.000595,
+        "tolerance": 0.005
+      },
+      "wide-quintic/reduce": {
+        "instructions": 546585996,
+        "variation": 9.6e-05,
+        "tolerance": 0.005
+      },
+      "wide-quintic/commit phase": {
+        "instructions": 753370501,
+        "variation": 0.000239,
+        "tolerance": 0.005
+      },
+      "wide-quintic/grind": {
+        "instructions": 236874852,
+        "variation": 6.4e-05,
+        "tolerance": 0.005
+      },
+      "wide-quintic/query openings": {
+        "instructions": 82913246,
+        "variation": 0.000103,
+        "tolerance": 0.005
+      },
+      "wide-quintic/prove": {
+        "instructions": 5225625033,
+        "variation": 8e-05,
+        "tolerance": 0.005
+      },
+      "wide-quintic/verify": {
+        "instructions": 458689780,
+        "variation": 5.5e-05,
+        "tolerance": 0.005
+      },
+      "keccak/trace lde": {
+        "instructions": 2538005418,
+        "variation": 0.000152,
+        "tolerance": 0.005
+      },
+      "keccak/trace commit": {
+        "instructions": 7672517316,
+        "variation": 1e-06,
+        "tolerance": 0.005
+      },
+      "keccak/quotient": {
+        "instructions": 2030349000,
+        "variation": 8e-06,
+        "tolerance": 0.005
+      },
+      "keccak/quotient lde": {
+        "instructions": 15962326,
+        "variation": 0.00053,
+        "tolerance": 0.005
+      },
+      "keccak/quotient commit": {
+        "instructions": 82557632,
+        "variation": 7.6e-05,
+        "tolerance": 0.005
+      },
+      "keccak/opened values": {
+        "instructions": 915260533,
+        "variation": 0.000632,
+        "tolerance": 0.005
+      },
+      "keccak/reduce": {
+        "instructions": 600013758,
+        "variation": 3.6e-05,
+        "tolerance": 0.005
+      },
+      "keccak/commit phase": {
+        "instructions": 134392451,
+        "variation": 0.004278,
+        "tolerance": 0.0171
+      },
+      "keccak/grind": {
+        "instructions": 237171626,
+        "variation": 0.000307,
+        "tolerance": 0.005
+      },
+      "keccak/query openings": {
+        "instructions": 101277666,
+        "variation": 2.1e-05,
+        "tolerance": 0.005
+      },
+      "keccak/prove": {
+        "instructions": 14615614013,
+        "variation": 0.000114,
+        "tolerance": 0.005
+      },
+      "keccak/verify": {
+        "instructions": 400083328,
+        "variation": 7.3e-05,
+        "tolerance": 0.005
+      },
+      "batch/trace lde": {
+        "instructions": 868474358,
+        "variation": 4.6e-05,
+        "tolerance": 0.005
+      },
+      "batch/trace commit": {
+        "instructions": 2813807528,
+        "variation": 1.1e-05,
+        "tolerance": 0.005
+      },
+      "batch/quotient": {
+        "instructions": 503498484,
+        "variation": 5.3e-05,
+        "tolerance": 0.005
+      },
+      "batch/quotient lde": {
+        "instructions": 172264569,
+        "variation": 3.4e-05,
+        "tolerance": 0.005
+      },
+      "batch/quotient commit": {
+        "instructions": 1089762119,
+        "variation": 6.1e-05,
+        "tolerance": 0.005
+      },
+      "batch/opened values": {
+        "instructions": 367122133,
+        "variation": 0.000472,
+        "tolerance": 0.005
+      },
+      "batch/reduce": {
+        "instructions": 460676935,
+        "variation": 5.1e-05,
+        "tolerance": 0.005
+      },
+      "batch/commit phase": {
+        "instructions": 729289171,
+        "variation": 4.5e-05,
+        "tolerance": 0.005
+      },
+      "batch/grind": {
+        "instructions": 236970482,
+        "variation": 0.000417,
+        "tolerance": 0.005
+      },
+      "batch/query openings": {
+        "instructions": 84562878,
+        "variation": 4.4e-05,
+        "tolerance": 0.005
+      },
+      "batch/prove": {
+        "instructions": 7158925057,
+        "variation": 6.2e-05,
+        "tolerance": 0.005
+      },
+      "lookup/permutation": {
+        "instructions": 468688240,
+        "variation": 0.000111,
+        "tolerance": 0.005
+      },
+      "lookup/lookup quotient": {
+        "instructions": 152511288,
+        "variation": 0.000141,
+        "tolerance": 0.005
+      },
+      "lookup/prove": {
+        "instructions": 3052450169,
+        "variation": 8.6e-05,
+        "tolerance": 0.005
+      },
+      "merkle/root": {
+        "instructions": 884470625,
+        "variation": 2.3e-05,
+        "tolerance": 0.005
+      },
+      "lde/coset lde": {
+        "instructions": 5355426841,
+        "variation": 3.5e-05,
+        "tolerance": 0.005
+      },
+      "keccak-scalar/f1600 chain": {
+        "instructions": 77421235,
+        "variation": 5e-06,
+        "tolerance": 0.005
+      },
+      "keccak-scalar/hash 64": {
+        "instructions": 64875314,
+        "variation": 0.0,
+        "tolerance": 0.005
+      },
+      "keccak-scalar/hash 512": {
+        "instructions": 239942807,
+        "variation": 0.0,
+        "tolerance": 0.005
+      },
+      "keccak-batch/f1600": {
+        "instructions": 79073109,
+        "variation": 2e-05,
+        "tolerance": 0.005
+      },
+      "keccak-batch/hash 64": {
+        "instructions": 66823534,
+        "variation": 6e-06,
+        "tolerance": 0.005
+      },
+      "keccak-batch/hash 512": {
+        "instructions": 246083241,
+        "variation": 2e-06,
+        "tolerance": 0.005
+      },
+      "keccak-merkle/commit": {
+        "instructions": 129349908,
+        "variation": 7e-06,
+        "tolerance": 0.005
+      },
+      "keccak-merkle/open": {
+        "instructions": 8950977,
+        "variation": 7.1e-05,
+        "tolerance": 0.005
+      },
+      "keccak-merkle/duplex": {
+        "instructions": 137605050,
+        "variation": 4.1e-05,
+        "tolerance": 0.005
+      },
+      "keccak-merkle/grind": {
+        "instructions": 1070465,
+        "variation": 1e-06,
+        "tolerance": 0.005
+      },
+      "sumcheck-fold/products": {
+        "instructions": 81479167,
+        "variation": 2e-05,
+        "tolerance": 0.005
+      },
+      "sumcheck-fold/prepare": {
+        "instructions": 1182475,
+        "variation": 2.9e-05,
+        "tolerance": 0.005
+      },
+      "sumcheck-fold/fold": {
+        "instructions": 36178276,
+        "variation": 3.5e-05,
+        "tolerance": 0.005
+      },
+      "sumcheck-fold/packed-fold": {
+        "instructions": 24026307,
+        "variation": 2.3e-05,
+        "tolerance": 0.005
+      },
+      "sumcheck-fold/base-fold": {
+        "instructions": 32913018,
+        "variation": 3.1e-05,
+        "tolerance": 0.005
+      },
+      "sumcheck-fold/packed-base-fold": {
+        "instructions": 20360365,
+        "variation": 2.6e-05,
+        "tolerance": 0.005
+      },
+      "sumcheck-fold/constant-fold": {
+        "instructions": 23673576,
+        "variation": 2.2e-05,
+        "tolerance": 0.005
+      },
+      "sumcheck-fold/packed-constant-fold": {
+        "instructions": 10727290,
+        "variation": 2.9e-05,
+        "tolerance": 0.005
+      },
+      "pcs/coordinates": {
+        "instructions": 6513764,
+        "variation": 5.8e-05,
+        "tolerance": 0.005
+      },
+      "pcs/bit-fold": {
+        "instructions": 321240,
+        "variation": 3e-06,
+        "tolerance": 0.005
+      },
+      "pcs/basis": {
+        "instructions": 1974210,
+        "variation": 0.000189,
+        "tolerance": 0.005
+      },
+      "pcs/encoding-plan": {
+        "instructions": 2228924,
+        "variation": 0.000168,
+        "tolerance": 0.005
+      },
+      "pcs/encoding": {
+        "instructions": 35153753,
+        "variation": 1.1e-05,
+        "tolerance": 0.005
+      },
+      "pcs/induction": {
+        "instructions": 1870563,
+        "variation": 0.000201,
+        "tolerance": 0.005
+      },
+      "pcs/induction-dense": {
+        "instructions": 2223075,
+        "variation": 0.0,
+        "tolerance": 0.005
+      },
+      "pcs/induction-split": {
+        "instructions": 2119745,
+        "variation": 0.000177,
+        "tolerance": 0.005
+      },
+      "pcs/induction-sparse": {
+        "instructions": 1499663,
+        "variation": 0.0,
+        "tolerance": 0.005
+      },
+      "pcs/induction-scalar-plan": {
+        "instructions": 250095390,
+        "variation": 1.7e-05,
+        "tolerance": 0.005
+      },
+      "pcs/induction-large-dense": {
+        "instructions": 671653690,
+        "variation": 3e-06,
+        "tolerance": 0.005
+      },
+      "pcs/induction-large-packed": {
+        "instructions": 750511824,
+        "variation": 2.3e-05,
+        "tolerance": 0.005
+      },
+      "pcs/induction-large-sparse": {
+        "instructions": 183145180,
+        "variation": 3e-06,
+        "tolerance": 0.005
+      },
+      "pcs/induction-plan": {
+        "instructions": 108948516,
+        "variation": 3.8e-05,
+        "tolerance": 0.005
+      },
+      "pcs/induction-large-prepared": {
+        "instructions": 153329744,
+        "variation": 2e-06,
+        "tolerance": 0.005
+      },
+      "pcs/induction-large-compact": {
+        "instructions": 135165301,
+        "variation": 8e-06,
+        "tolerance": 0.005
+      },
+      "pcs/induction-byte-rows-plan": {
+        "instructions": 2274697,
+        "variation": 0.000127,
+        "tolerance": 0.005
+      },
+      "pcs/induction-large-byte-rows": {
+        "instructions": 98122089,
+        "variation": 4e-06,
+        "tolerance": 0.005
+      },
+      "pcs/induction-large-tiled": {
+        "instructions": 154305805,
+        "variation": 5e-06,
+        "tolerance": 0.005
+      },
+      "pcs/challenge-fold-16": {
+        "instructions": 59957,
+        "variation": 0.006271,
+        "tolerance": 0.0251
+      },
+      "pcs/challenge-scalar-16": {
+        "instructions": 59925,
+        "variation": 0.0,
+        "tolerance": 0.005
+      },
+      "pcs/challenge-prepared-16": {
+        "instructions": 1193631,
+        "variation": 1e-06,
+        "tolerance": 0.005
+      },
+      "pcs/challenge-fold-256": {
+        "instructions": 929057,
+        "variation": 0.000125,
+        "tolerance": 0.005
+      },
+      "pcs/challenge-scalar-256": {
+        "instructions": 926719,
+        "variation": 0.0,
+        "tolerance": 0.005
+      },
+      "pcs/challenge-prepared-256": {
+        "instructions": 1507404,
+        "variation": 1e-06,
+        "tolerance": 0.005
+      },
+      "pcs/challenge-fold-1024": {
+        "instructions": 2304004,
+        "variation": 0.003743,
+        "tolerance": 0.015
+      },
+      "pcs/challenge-scalar-1024": {
+        "instructions": 3701267,
+        "variation": 1.6e-05,
+        "tolerance": 0.005
+      },
+      "pcs/challenge-prepared-1024": {
+        "instructions": 2512079,
+        "variation": 6.6e-05,
+        "tolerance": 0.005
+      },
+      "pcs/accumulated-prepare": {
+        "instructions": 1172120,
+        "variation": 0.0,
+        "tolerance": 0.005
+      },
+      "pcs/accumulated": {
+        "instructions": 115281,
+        "variation": 0.0,
+        "tolerance": 0.005
+      },
+      "pcs/whir-round": {
+        "instructions": 431302,
+        "variation": 0.000874,
+        "tolerance": 0.005
+      },
+      "pcs/basis-project": {
+        "instructions": 86713673,
+        "variation": 4e-06,
+        "tolerance": 0.005
+      },
+      "pcs/basis-columns": {
+        "instructions": 54516787,
+        "variation": 2e-05,
+        "tolerance": 0.005
+      },
+      "pcs/basis-byte-columns": {
+        "instructions": 46147383,
+        "variation": 2e-05,
+        "tolerance": 0.005
+      },
+      "pcs/basis-tensor-columns": {
+        "instructions": 32311448,
+        "variation": 8e-05,
+        "tolerance": 0.005
+      },
+      "pcs/basis-window-ring": {
+        "instructions": 24866656,
+        "variation": 5e-05,
+        "tolerance": 0.005
+      },
+      "pcs/basis-packed-dot": {
+        "instructions": 2988823,
+        "variation": 3.9e-05,
+        "tolerance": 0.005
+      },
+      "pcs/basis-tensor-lift": {
+        "instructions": 19089537,
+        "variation": 1.5e-05,
+        "tolerance": 0.005
+      },
+      "pcs/basis-lift": {
+        "instructions": 29994616,
+        "variation": 1.9e-05,
+        "tolerance": 0.005
+      },
+      "pcs/basis-lift-reference": {
+        "instructions": 441747230,
+        "variation": 1.7e-05,
+        "tolerance": 0.005
+      }
+    }
+  },
+  "after": {
+    "about": "User-space instructions per workload phase of scripts/perf-gate, single threaded: the median of 3 runs, the largest relative deviation from it (variation) and the allowed relative increase (tolerance). Rewritten by scripts/perf-gate --update.",
+    "entries": {
+      "wide-quartic/trace lde": {
+        "instructions": 569979137,
+        "variation": 5.9e-05,
+        "tolerance": 0.005
+      },
+      "wide-quartic/trace commit": {
+        "instructions": 1761733255,
+        "variation": 9e-06,
+        "tolerance": 0.005
+      },
+      "wide-quartic/quotient": {
+        "instructions": 311196086,
+        "variation": 6e-06,
+        "tolerance": 0.005
+      },
+      "wide-quartic/quotient lde": {
+        "instructions": 111995144,
+        "variation": 1.3e-05,
+        "tolerance": 0.005
+      },
+      "wide-quartic/quotient commit": {
+        "instructions": 658380926,
+        "variation": 2.1e-05,
+        "tolerance": 0.005
+      },
+      "wide-quartic/opened values": {
+        "instructions": 251140070,
+        "variation": 0.00052,
+        "tolerance": 0.005
+      },
+      "wide-quartic/reduce": {
+        "instructions": 290530317,
+        "variation": 1.1e-05,
+        "tolerance": 0.005
+      },
+      "wide-quartic/commit phase": {
+        "instructions": 717211705,
+        "variation": 0.000343,
+        "tolerance": 0.005
+      },
+      "wide-quartic/grind": {
+        "instructions": 236936618,
+        "variation": 0.000352,
+        "tolerance": 0.005
+      },
+      "wide-quartic/query openings": {
+        "instructions": 79826625,
+        "variation": 0.00021,
+        "tolerance": 0.005
+      },
+      "wide-quartic/prove": {
+        "instructions": 4971900261,
+        "variation": 5.2e-05,
+        "tolerance": 0.005
+      },
+      "wide-quartic/verify": {
+        "instructions": 325700134,
+        "variation": 2.5e-05,
+        "tolerance": 0.005
+      },
+      "wide-quintic/trace lde": {
+        "instructions": 569968407,
+        "variation": 0.000122,
+        "tolerance": 0.005
+      },
+      "wide-quintic/trace commit": {
+        "instructions": 1761734862,
+        "variation": 3.1e-05,
+        "tolerance": 0.005
+      },
+      "wide-quintic/quotient": {
+        "instructions": 342846593,
+        "variation": 5e-06,
+        "tolerance": 0.005
+      },
+      "wide-quintic/quotient lde": {
+        "instructions": 137980473,
+        "variation": 1e-05,
+        "tolerance": 0.005
+      },
+      "wide-quintic/quotient commit": {
+        "instructions": 659436909,
+        "variation": 9.4e-05,
+        "tolerance": 0.005
+      },
+      "wide-quintic/opened values": {
+        "instructions": 314748133,
+        "variation": 0.000222,
+        "tolerance": 0.005
+      },
+      "wide-quintic/reduce": {
+        "instructions": 546576038,
+        "variation": 7.4e-05,
+        "tolerance": 0.005
+      },
+      "wide-quintic/commit phase": {
+        "instructions": 753087795,
+        "variation": 0.000206,
+        "tolerance": 0.005
+      },
+      "wide-quintic/grind": {
+        "instructions": 236874361,
+        "variation": 6.9e-05,
+        "tolerance": 0.005
+      },
+      "wide-quintic/query openings": {
+        "instructions": 82907396,
+        "variation": 3.7e-05,
+        "tolerance": 0.005
+      },
+      "wide-quintic/prove": {
+        "instructions": 5226053106,
+        "variation": 7.2e-05,
+        "tolerance": 0.005
+      },
+      "wide-quintic/verify": {
+        "instructions": 455615593,
+        "variation": 1.4e-05,
+        "tolerance": 0.005
+      },
+      "keccak/trace lde": {
+        "instructions": 2538048819,
+        "variation": 5.8e-05,
+        "tolerance": 0.005
+      },
+      "keccak/trace commit": {
+        "instructions": 7672595293,
+        "variation": 7e-06,
+        "tolerance": 0.005
+      },
+      "keccak/quotient": {
+        "instructions": 2030322837,
+        "variation": 5e-06,
+        "tolerance": 0.005
+      },
+      "keccak/quotient lde": {
+        "instructions": 15960203,
+        "variation": 9.3e-05,
+        "tolerance": 0.005
+      },
+      "keccak/quotient commit": {
+        "instructions": 82563886,
+        "variation": 8e-05,
+        "tolerance": 0.005
+      },
+      "keccak/opened values": {
+        "instructions": 915243323,
+        "variation": 5.6e-05,
+        "tolerance": 0.005
+      },
+      "keccak/reduce": {
+        "instructions": 600012637,
+        "variation": 1e-06,
+        "tolerance": 0.005
+      },
+      "keccak/commit phase": {
+        "instructions": 134800311,
+        "variation": 0.011258,
+        "tolerance": 0.045
+      },
+      "keccak/grind": {
+        "instructions": 237106464,
+        "variation": 0.000275,
+        "tolerance": 0.005
+      },
+      "keccak/query openings": {
+        "instructions": 101275470,
+        "variation": 0.000148,
+        "tolerance": 0.005
+      },
+      "keccak/prove": {
+        "instructions": 14616746115,
+        "variation": 4.4e-05,
+        "tolerance": 0.005
+      },
+      "keccak/verify": {
+        "instructions": 400057602,
+        "variation": 0.000247,
+        "tolerance": 0.005
+      },
+      "batch/trace lde": {
+        "instructions": 868524524,
+        "variation": 2e-05,
+        "tolerance": 0.005
+      },
+      "batch/trace commit": {
+        "instructions": 2813797005,
+        "variation": 3e-06,
+        "tolerance": 0.005
+      },
+      "batch/quotient": {
+        "instructions": 503495955,
+        "variation": 0.000138,
+        "tolerance": 0.005
+      },
+      "batch/quotient lde": {
+        "instructions": 172263478,
+        "variation": 0.000333,
+        "tolerance": 0.005
+      },
+      "batch/quotient commit": {
+        "instructions": 1089763645,
+        "variation": 8.7e-05,
+        "tolerance": 0.005
+      },
+      "batch/opened values": {
+        "instructions": 367196145,
+        "variation": 0.000957,
+        "tolerance": 0.005
+      },
+      "batch/reduce": {
+        "instructions": 460642019,
+        "variation": 8.6e-05,
+        "tolerance": 0.005
+      },
+      "batch/commit phase": {
+        "instructions": 729291729,
+        "variation": 0.000597,
+        "tolerance": 0.005
+      },
+      "batch/grind": {
+        "instructions": 236901681,
+        "variation": 0.000138,
+        "tolerance": 0.005
+      },
+      "batch/query openings": {
+        "instructions": 84563398,
+        "variation": 4.1e-05,
+        "tolerance": 0.005
+      },
+      "batch/prove": {
+        "instructions": 7158685865,
+        "variation": 0.000107,
+        "tolerance": 0.005
+      },
+      "lookup/permutation": {
+        "instructions": 468610051,
+        "variation": 1.4e-05,
+        "tolerance": 0.005
+      },
+      "lookup/lookup quotient": {
+        "instructions": 152507632,
+        "variation": 7e-06,
+        "tolerance": 0.005
+      },
+      "lookup/prove": {
+        "instructions": 3052456552,
+        "variation": 4.5e-05,
+        "tolerance": 0.005
+      },
+      "merkle/root": {
+        "instructions": 884447352,
+        "variation": 3e-06,
+        "tolerance": 0.005
+      },
+      "lde/coset lde": {
+        "instructions": 5355766374,
+        "variation": 3.2e-05,
+        "tolerance": 0.005
+      },
+      "keccak-scalar/f1600 chain": {
+        "instructions": 77421610,
+        "variation": 5e-06,
+        "tolerance": 0.005
+      },
+      "keccak-scalar/hash 64": {
+        "instructions": 64875313,
+        "variation": 6e-06,
+        "tolerance": 0.005
+      },
+      "keccak-scalar/hash 512": {
+        "instructions": 239942799,
+        "variation": 2e-06,
+        "tolerance": 0.005
+      },
+      "keccak-batch/f1600": {
+        "instructions": 79072701,
+        "variation": 5e-06,
+        "tolerance": 0.005
+      },
+      "keccak-batch/hash 64": {
+        "instructions": 66823521,
+        "variation": 0.0,
+        "tolerance": 0.005
+      },
+      "keccak-batch/hash 512": {
+        "instructions": 246083224,
+        "variation": 0.0,
+        "tolerance": 0.005
+      },
+      "keccak-merkle/commit": {
+        "instructions": 129347928,
+        "variation": 1.4e-05,
+        "tolerance": 0.005
+      },
+      "keccak-merkle/open": {
+        "instructions": 8950965,
+        "variation": 4.1e-05,
+        "tolerance": 0.005
+      },
+      "keccak-merkle/duplex": {
+        "instructions": 137601085,
+        "variation": 0.0,
+        "tolerance": 0.005
+      },
+      "keccak-merkle/grind": {
+        "instructions": 1070464,
+        "variation": 1e-06,
+        "tolerance": 0.005
+      },
+      "sumcheck-fold/products": {
+        "instructions": 21643556,
+        "variation": 7.4e-05,
+        "tolerance": 0.005
+      },
+      "sumcheck-fold/prepare": {
+        "instructions": 3829,
+        "variation": 0.098981,
+        "tolerance": 0.3959
+      },
+      "sumcheck-fold/fold": {
+        "instructions": 27127569,
+        "variation": 2e-05,
+        "tolerance": 0.005
+      },
+      "sumcheck-fold/packed-fold": {
+        "instructions": 14197912,
+        "variation": 2.7e-05,
+        "tolerance": 0.005
+      },
+      "sumcheck-fold/base-fold": {
+        "instructions": 24526228,
+        "variation": 5e-06,
+        "tolerance": 0.005
+      },
+      "sumcheck-fold/packed-base-fold": {
+        "instructions": 12102803,
+        "variation": 3.2e-05,
+        "tolerance": 0.005
+      },
+      "sumcheck-fold/constant-fold": {
+        "instructions": 21969697,
+        "variation": 8e-06,
+        "tolerance": 0.005
+      },
+      "sumcheck-fold/packed-constant-fold": {
+        "instructions": 10464403,
+        "variation": 3.7e-05,
+        "tolerance": 0.005
+      },
+      "pcs/coordinates": {
+        "instructions": 2349660,
+        "variation": 0.000679,
+        "tolerance": 0.005
+      },
+      "pcs/bit-fold": {
+        "instructions": 337682,
+        "variation": 0.001113,
+        "tolerance": 0.005
+      },
+      "pcs/basis": {
+        "instructions": 1916794,
+        "variation": 0.0,
+        "tolerance": 0.005
+      },
+      "pcs/encoding-plan": {
+        "instructions": 185751,
+        "variation": 0.0,
+        "tolerance": 0.005
+      },
+      "pcs/encoding": {
+        "instructions": 35154119,
+        "variation": 1e-06,
+        "tolerance": 0.005
+      },
+      "pcs/induction": {
+        "instructions": 1668662,
+        "variation": 0.0,
+        "tolerance": 0.005
+      },
+      "pcs/induction-dense": {
+        "instructions": 1635548,
+        "variation": 1e-06,
+        "tolerance": 0.005
+      },
+      "pcs/induction-split": {
+        "instructions": 1633680,
+        "variation": 1e-06,
+        "tolerance": 0.005
+      },
+      "pcs/induction-sparse": {
+        "instructions": 1294574,
+        "variation": 0.0,
+        "tolerance": 0.005
+      },
+      "pcs/induction-scalar-plan": {
+        "instructions": 13531342,
+        "variation": 5e-06,
+        "tolerance": 0.005
+      },
+      "pcs/induction-large-dense": {
+        "instructions": 243734731,
+        "variation": 2e-06,
+        "tolerance": 0.005
+      },
+      "pcs/induction-large-packed": {
+        "instructions": 343339125,
+        "variation": 2e-06,
+        "tolerance": 0.005
+      },
+      "pcs/induction-large-sparse": {
+        "instructions": 145833691,
+        "variation": 2e-06,
+        "tolerance": 0.005
+      },
+      "pcs/induction-plan": {
+        "instructions": 108092476,
+        "variation": 7e-06,
+        "tolerance": 0.005
+      },
+      "pcs/induction-large-prepared": {
+        "instructions": 149411649,
+        "variation": 0.0,
+        "tolerance": 0.005
+      },
+      "pcs/induction-large-compact": {
+        "instructions": 130615535,
+        "variation": 3e-06,
+        "tolerance": 0.005
+      },
+      "pcs/induction-byte-rows-plan": {
+        "instructions": 1951591,
+        "variation": 1e-06,
+        "tolerance": 0.005
+      },
+      "pcs/induction-large-byte-rows": {
+        "instructions": 93682079,
+        "variation": 0.0,
+        "tolerance": 0.005
+      },
+      "pcs/induction-large-tiled": {
+        "instructions": 149784931,
+        "variation": 0.0,
+        "tolerance": 0.005
+      },
+      "pcs/challenge-fold-16": {
+        "instructions": 18933,
+        "variation": 0.0,
+        "tolerance": 0.005
+      },
+      "pcs/challenge-scalar-16": {
+        "instructions": 18901,
+        "variation": 0.0,
+        "tolerance": 0.005
+      },
+      "pcs/challenge-prepared-16": {
+        "instructions": 19161,
+        "variation": 0.019623,
+        "tolerance": 0.0785
+      },
+      "pcs/challenge-fold-256": {
+        "instructions": 272567,
+        "variation": 0.0,
+        "tolerance": 0.005
+      },
+      "pcs/challenge-scalar-256": {
+        "instructions": 270335,
+        "variation": 0.0,
+        "tolerance": 0.005
+      },
+      "pcs/challenge-prepared-256": {
+        "instructions": 266701,
+        "variation": 4e-06,
+        "tolerance": 0.005
+      },
+      "pcs/challenge-fold-1024": {
+        "instructions": 851231,
+        "variation": 0.000442,
+        "tolerance": 0.005
+      },
+      "pcs/challenge-scalar-1024": {
+        "instructions": 1075728,
+        "variation": 1e-06,
+        "tolerance": 0.005
+      },
+      "pcs/challenge-prepared-1024": {
+        "instructions": 1059687,
+        "variation": 0.0,
+        "tolerance": 0.005
+      },
+      "pcs/accumulated-prepare": {
+        "instructions": 2313,
+        "variation": 0.0,
+        "tolerance": 0.005
+      },
+      "pcs/accumulated": {
+        "instructions": 74321,
+        "variation": 0.005059,
+        "tolerance": 0.0202
+      },
+      "pcs/whir-round": {
+        "instructions": 73292,
+        "variation": 0.00513,
+        "tolerance": 0.0205
+      },
+      "pcs/basis-project": {
+        "instructions": 71049890,
+        "variation": 0.0,
+        "tolerance": 0.005
+      },
+      "pcs/basis-columns": {
+        "instructions": 48772881,
+        "variation": 0.0,
+        "tolerance": 0.005
+      },
+      "pcs/basis-byte-columns": {
+        "instructions": 45885038,
+        "variation": 8e-06,
+        "tolerance": 0.005
+      },
+      "pcs/basis-tensor-columns": {
+        "instructions": 25673358,
+        "variation": 1e-05,
+        "tolerance": 0.005
+      },
+      "pcs/basis-window-ring": {
+        "instructions": 18228452,
+        "variation": 2e-05,
+        "tolerance": 0.005
+      },
+      "pcs/basis-packed-dot": {
+        "instructions": 2370293,
+        "variation": 0.0,
+        "tolerance": 0.005
+      },
+      "pcs/basis-tensor-lift": {
+        "instructions": 7086313,
+        "variation": 0.0,
+        "tolerance": 0.005
+      },
+      "pcs/basis-lift": {
+        "instructions": 15698001,
+        "variation": 2.4e-05,
+        "tolerance": 0.005
+      },
+      "pcs/basis-lift-reference": {
+        "instructions": 395215258,
+        "variation": 1e-06,
+        "tolerance": 0.005
+      }
+    }
+  }
+}
