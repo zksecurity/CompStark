@@ -41,8 +41,8 @@ lean_lib CompStark where
 
 /-- CPU-targeted packed kernels; the proof artifacts remain platform independent. -/
 lean_lib CompStarkPackedNative where
-  roots := #[`CompStark.Keccak.Scalar, `CompStark.Keccak.Sponge,
-    `CompStark.Keccak.Merkle, `CompStark.Keccak.Duplex,
+  roots := #[`CompStark.Keccak.Scalar, `CompStark.Keccak.WordLoop, `CompStark.Keccak.Sponge,
+    `CompStark.Keccak.Merkle, `CompStark.Keccak.Duplex, `CompStark.Keccak.Prepared,
     `CompStark.Poseidon2.PackedKoalaBear, `CompStark.Poseidon2.PackedBabyBear,
     `CompStark.Merkle.Packed, `CompStark.Merkle.PackedColumns,
     `CompStark.Stark.ProgWords, `CompStark.Stark.ProgGroup, `CompStark.Stark.Fast,

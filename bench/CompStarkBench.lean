@@ -11,6 +11,7 @@ import CompStark.Stark.Fingerprint
 import CompStarkFixtures.Keccak
 import CompStarkFixtures.KeccakKernel
 import CompStark.Keccak.Hash
+import CompStark.Keccak.Prepared
 import CompStarkFixtures.KeccakMerkle
 import CompStark.Keccak.MerkleGenerate
 import CompStark.Sumcheck.PackedFold
@@ -839,6 +840,19 @@ def pcsRun (phase : {α : Type} → String → (Unit → α) → IO α) : IO UIn
   IO.println s!"PCS coordinates={coordinates.size} sink={coordinates[191]!.c0.val} slices={slices[63]!.c0.val}"
   return 0
 
+/-- Deterministic production-size nonce search and its next transcript challenge. -/
+def keccakGrindRun (phase : {α : Type} → String → (Unit → α) → IO α) : IO UInt32 := do
+  let initial := CompStark.Fixtures.KeccakMerkle.initial
+  let result ← phase "grind20" fun _ => CompStark.Keccak.Duplex.grindNonce
+    CompStark.Fixtures.KeccakMerkle.rate (fun _ _ _ => ()) initial 20 (2 ^ 24)
+  let some (nonce, next) := result | throw (IO.userError "grinding exhausted")
+  let challenge := (CompStark.Keccak.Duplex.sample CompStark.Fixtures.KeccakMerkle.rate
+    (fun _ _ _ => ()) next 3 (by decide)).1
+  unless nonce == 124138 && challenge == #[5366933390071687144, 3650987668691482591,
+      2331228947711704332] do throw (IO.userError "parallel grind differs from Rust")
+  IO.println s!"nonce={nonce} challenge={challenge}"
+  pure 0
+
 /-- Commitment, canonical opening, retained writer transport and deterministic grinding. -/
 def keccakMerkleRun (phase : {α : Type} → String → (Unit → α) → IO α) : IO UInt32 := do
   let input := CompStark.Fixtures.KeccakMerkle.rows 4096 64 (by decide)
@@ -865,11 +879,9 @@ def keccakMerkleRun (phase : {α : Type} → String → (Unit → α) → IO α)
   unless result.1 == 15976019921783725211 && result.2.stream.size == 10000 do
     throw (IO.userError "Keccak duplex sink differs from Rust")
   IO.println s!"duplex sink {result.1}, messages {result.2.stream.size}"
-  let frame (n : Nat) : Array UInt64 := #[n.toUInt64, 0, 0, 4]
-  let accept (out : Array UInt64) := out[0]! &&& 0xff == 0
-  let nonce ← phase "grind" fun _ ↦ CompStark.Keccak.Duplex.grind
+  let nonce ← phase "grind" fun _ ↦ CompStark.Keccak.Duplex.grindNonce
     CompStark.Fixtures.KeccakMerkle.rate (fun _ _ _ ↦ ())
-    CompStark.Fixtures.KeccakMerkle.initial frame accept 65536
+    CompStark.Fixtures.KeccakMerkle.initial 8 65536
   let some (nonce, _) := nonce | throw (IO.userError "Keccak grind exhausted")
   unless nonce == 73 do throw (IO.userError "Keccak grinding nonce differs from Rust")
   IO.println s!"grinding nonce {nonce}"
@@ -965,6 +977,7 @@ def gate (workload : String) (dir : System.FilePath) : IO UInt32 := do
     return 0
   | "pcs" => pcsRun (fun label f ↦ m.phase label f)
   | "sumcheck-fold" => sumcheckFoldRun (fun label f ↦ m.phase label f)
+  | "keccak-grind" => keccakGrindRun (fun label f ↦ m.phase label f)
   | "keccak-merkle" => keccakMerkleRun (fun label f ↦ m.phase label f)
   | "keccak-scalar" =>
     let seed := (Array.replicate 25 (0 : UInt64)).set! 0 0x123456789abcdef0
@@ -1021,6 +1034,11 @@ def main (args : List String) : IO UInt32 := do
       IO.println s!"{label}: {finish - start} ns"
       pure result)
   | ["sumcheck-fold"] => sumcheckFoldRun (fun _ f => pure (f ()))
+  | ["keccak-grind"] => keccakGrindRun (fun label f => do
+      let start ← IO.monoNanosNow
+      let result ← IO.lazyPure f
+      IO.println s!"{label} ns={(← IO.monoNanosNow) - start}"
+      pure result)
   | ["keccak-merkle"] => keccakMerkleRun (fun label f ↦ do
       let t ← IO.monoNanosNow
       let result ← IO.lazyPure f

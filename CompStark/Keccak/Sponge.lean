@@ -4,7 +4,7 @@ Released under Apache 2.0 license as described in the file LICENSE.
 -/
 module
 
-public import CompStark.Keccak.Scalar
+public import CompStark.Keccak.WordLoop
 public import CompPoly.Data.ByteArray.Pack
 
 /-! # Scalar Keccak-256 sponge

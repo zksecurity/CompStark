@@ -206,6 +206,7 @@ public import CompStark.Fs.BatchStable
 public import CompStark.Fs.BatchBcs
 
 public import CompStark.Keccak.Scalar
+public import CompStark.Keccak.WordLoop
 public import CompStark.Keccak.Sponge
 public import CompStark.Keccak.Hash
 public import CompStark.Keccak.Refines
@@ -214,6 +215,7 @@ public import CompStark.Keccak.Merkle
 public import CompStark.Keccak.MerkleGenerate
 public import CompStark.Keccak.MerkleRows
 public import CompStark.Keccak.Duplex
+public import CompStark.Keccak.Prepared
 
 public import CompStark.Sumcheck.ByteMap
 public import CompStark.Sumcheck.Fold
