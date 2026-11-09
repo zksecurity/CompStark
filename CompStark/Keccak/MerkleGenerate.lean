@@ -38,16 +38,9 @@ def Tree.generateAt {n : Nat} (row : Fin n → Row) :
     (depth start : Nat) → start + 2 ^ depth ≤ n → Tree depth
   | 0, start, bound => Tree.leaf (row ⟨start, by simp only [Nat.pow_zero] at bound; omega⟩)
   | depth + 1, start, bound =>
-    if depth < 10 then
-      Tree.join
-        (Tree.generateAt row depth start (by rw [pow_succ] at bound; omega))
-        (Tree.generateAt row depth (start + 2 ^ depth) (by rw [pow_succ] at bound; omega))
-    else
-      let left := Task.spawn fun _ =>
-        Tree.generateAt row depth start (by rw [pow_succ] at bound; omega)
-      let right := Task.spawn fun _ =>
-        Tree.generateAt row depth (start + 2 ^ depth) (by rw [pow_succ] at bound; omega)
-      Tree.join left.get right.get
+    Tree.join
+      (Tree.generateAt row depth start (by rw [pow_succ] at bound; omega))
+      (Tree.generateAt row depth (start + 2 ^ depth) (by rw [pow_succ] at bound; omega))
 
 /-- Absolute row addresses preserve the complete generated subtree. -/
 theorem Tree.generateAt_eq {n : Nat} (row : Fin n → Row) (depth start : Nat)
@@ -59,27 +52,23 @@ theorem Tree.generateAt_eq {n : Nat} (row : Fin n → Row) (depth start : Nat)
     simp only [Tree.generateAt, Tree.generate, Fin.val_zero, Nat.add_zero]
   | succ depth ih =>
     rw [Tree.generateAt, Tree.generate]
-    split <;>
-      change Tree.join (Tree.generateAt row depth start _)
-        (Tree.generateAt row depth (start + 2 ^ depth) _) = _
-    all_goals
-      rw [ih, ih]
-      apply congrArg₂ Tree.join
-      · apply congrArg (Tree.generate depth)
-        funext i
-        rfl
-      · apply congrArg (Tree.generate depth)
-        funext i
-        unfold rightRows
-        congr 1
-        apply Fin.ext
-        simp only [Nat.add_assoc]
+    rw [ih, ih]
+    apply congrArg₂ Tree.join
+    · apply congrArg (Tree.generate depth)
+      funext i
+      rfl
+    · apply congrArg (Tree.generate depth)
+      funext i
+      unfold rightRows
+      congr 1
+      apply Fin.ext
+      simp only [Nat.add_assoc]
 
 /-- Complete subtree batches use one absolute row address per leaf. -/
 def Tree.generateAddressed (depth : Nat) (row : Fin (2 ^ depth) → Row) : Tree depth :=
   Tree.generateAt row depth 0 (by omega)
 
-/-- Addressed parallel subtrees retain every payload and every cached digest. -/
+/-- Addressed subtrees retain every payload and every cached digest on the consumer. -/
 @[csimp] theorem Tree.generate_code : Tree.generate = Tree.generateAddressed := by
   funext depth row
   symm

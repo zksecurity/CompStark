@@ -3,7 +3,7 @@ Copyright (c) 2026 zkSecurity. All rights reserved.
 Released under Apache 2.0 license as described in the file LICENSE.
 -/
 import CompStarkFixtures.KeccakMerkle
-import CompStark.Keccak.MerkleGenerate
+import CompStark.Keccak.MerkleRows
 import Lean.Data.Json.Parser
 import Lean.Util.CollectAxioms
 
@@ -40,6 +40,10 @@ def trees (fixtures : Array Json) : IO Unit := do
         ((← IO.ofExcept (fixture.getObjVal? "leaf_data")).getArr?)).mapM bytes)
       let tree ← IO.ofExcept (Merkle.commit input)
       let generated ← IO.ofExcept (Merkle.commitGenerated depth (fun i => row width hw i.val))
+      let leafRows := fun i : Fin (2 ^ depth) => row width hw i.val
+      let hashed := Merkle.hashRows (2 ^ depth) leafRows
+      let cached := Merkle.Tree.generateCachedAt leafRows hashed.get hashed.get_eq depth 0 (by omega)
+      check "flat hashed Merkle root differs from Rust" (cached.root.val == expectedRoot)
       check "generated Merkle root differs from Rust" (generated.2.root.val == expectedRoot)
       check "Merkle root differs from Rust" (tree.2.root.val == expectedRoot)
       let opening ← IO.ofExcept (tree.2.open queries)
@@ -116,7 +120,8 @@ run_cmd do
   let allowed := #[``propext, ``Classical.choice, ``Quot.sound]
   for declaration in #[``Merkle.hashRow_eq, ``Merkle.compress_eq,
       ``Merkle.Tree.leaf, ``Merkle.Tree.join, ``Merkle.Tree.generate_code,
-      ``Merkle.absorb_generate, ``Merkle.commitGenerated_eq, ``Merkle.Tree.nodes_eq, ``Merkle.Tree.root_eq,
+      ``Merkle.packDigests_code, ``Merkle.extract_packDigests,
+      ``Merkle.Tree.generateCachedAt_eq, ``Merkle.absorb_generate, ``Merkle.commitGenerated_eq, ``Merkle.Tree.nodes_eq, ``Merkle.Tree.root_eq,
       ``Merkle.carry_rows, ``Merkle.Builder.absorb_rows, ``Merkle.commit_rows,
       ``Merkle.Tree.open_eq, ``Merkle.Tree.batch_complete,
       ``Duplex.absorb_eq, ``Duplex.sample_eq, ``Duplex.Writer.write_eq,

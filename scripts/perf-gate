@@ -11,7 +11,8 @@ load.
 
 `scripts/perf-gate --update` runs the suite `UPDATE_RUNS` times and rewrites the baseline: per
 entry the median instructions, the largest relative deviation from it (`variation`) and the
-tolerance `max(TOLERANCE, 4 · variation)`.
+tolerance `max(TOLERANCE, 4 · variation)`, capped by existing tolerances. Existing
+instruction ceilings never increase; regressions fail the update.
 """
 
 import ctypes
@@ -148,6 +149,16 @@ def build():
 
 
 def update():
+    # Respect both the checked-out ceilings and the last fetched main. Updating
+    # measurements must never authorize a regression by increasing a baseline.
+    with open(BASELINE) as f:
+        previous = json.load(f)["entries"]
+    upstream = json.loads(subprocess.check_output(
+        ["git", "show", "origin/main:bench/perf-baseline.json"], cwd=ROOT, text=True))["entries"]
+    ceilings = dict(upstream)
+    for key, entry in previous.items():
+        if key not in ceilings or entry["instructions"] < ceilings[key]["instructions"]:
+            ceilings[key] = entry
     runs = []
     for k in range(UPDATE_RUNS):
         print(f"run {k + 1} of {UPDATE_RUNS}", file=sys.stderr)
@@ -162,6 +173,20 @@ def update():
             "variation": round(variation, 6),
             "tolerance": round(max(TOLERANCE, 4 * variation), 4),
         }
+    regressions = []
+    for key, entry in entries.items():
+        ceiling = ceilings.get(key)
+        if ceiling is None:
+            continue
+        change = entry["instructions"] / ceiling["instructions"] - 1
+        if change > ceiling["tolerance"]:
+            regressions.append(f"{key}: {change:+.2%}, above its existing ceiling")
+        if entry["instructions"] >= ceiling["instructions"]:
+            entries[key] = ceiling
+        else:
+            entry["tolerance"] = min(entry["tolerance"], ceiling["tolerance"])
+    if regressions:
+        sys.exit("perf-gate: refusing to rebaseline regressions:\n  " + "\n  ".join(regressions))
     with open(BASELINE, "w") as f:
         json.dump({
             "about": "User-space instructions per workload phase of scripts/perf-gate, single "
