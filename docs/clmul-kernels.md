@@ -22,3 +22,17 @@ The [gate measurements](clmul-gate.json) compare `56e59c8f` with the CLMUL imple
 | `pcs/basis-lift` | 29,994,616 | 15,698,001 | 0.523 |
 
 `prepare_eq_prepareClmul`, `Prepared.mul_code`, `extMulFive_code` and `InductionWide.mul_code` identify the compiled paths with the specification functions. The six-product deferred cubic kernel replaces the five-product interpolation implementation in compiled sumcheck products. Pure Lean definitions and theorems retain their kernel semantics.
+
+## Scalar deferred accumulation and fused survivors
+
+CompPoly `5f494a0` retains ten scalar unreduced accumulators in the packed extension dot. The shared PCS layer prepares retained tensor coefficients, reconstructs live weights on demand and accumulates survivor vectors and the residual message in one traversal. Kernel-checked refinements identify the complete weights, both survivors and both message coefficients with the reference operations. `materializeTensorPairs` takes the physical column stride as a scalar so exponentiation stays outside the product loop.
+
+The [fused gate records](fused-pcs-gate.json) compare `2b79a572` with implementation `88bdbd98` using three-run instruction medians. The ratchet includes 112 entries and adds separate tensor-plan and fused-survivor phases; native sumcheck, coordinate-map, packed-fold and honest-WHIR tests and the PCS axiom audit pass. Production Lean/native-Rust phase comparisons are recorded in LeanVM’s `docs/pcs-fused-performance.md`.
+
+| Gate kernel | Before instructions | Fused instructions | Fused / before |
+|---|---:|---:|---:|
+| `pcs/whir-round` | 73,292 | 68,732 | 0.938 |
+| `pcs/basis-tensor-columns` | 25,673,358 | 21,667,458 | 0.844 |
+| `pcs/basis-window-ring` | 18,228,452 | 14,222,800 | 0.780 |
+| `pcs/basis-tensor-prepare` | — | 4,600,909 | new measured phase |
+| `pcs/basis-fused-survivors` | — | 2,356,591 | new measured phase |
