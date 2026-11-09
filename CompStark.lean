@@ -263,3 +263,5 @@ public import CompStark.Pcs.MixedDot
 public import CompStark.Pcs.TensorProjectionPacked
 public import CompStark.Pcs.WindowBitFold
 public import CompStark.Pcs.WindowScatter
+public import CompStark.Pcs.FusedPairs
+public import CompStark.Pcs.FusedTensor

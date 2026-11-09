@@ -29,7 +29,7 @@ def packedWindowProjector {cols : Nat} (w : BasisWindow cols) : PackedWindowProj
   ⟨w, prepareMixedDot w.values⟩
 
 /-- Project one occupied interval with deferred polynomial reduction. -/
-def PackedWindowProjection.project {cols : Nat} (p : PackedWindowProjection cols)
+@[inline] def PackedWindowProjection.project {cols : Nat} (p : PackedWindowProjection cols)
     (f : Fin cols → Word) : WordExt3 :=
   dotMixedPlan p.weights fun i =>
     f ⟨p.window.start+i.val, by have := p.window.fits; have := i.isLt; omega⟩

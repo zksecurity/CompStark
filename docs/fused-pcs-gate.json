@@ -1,0 +1,568 @@
+{
+  "reference": "2b79a572",
+  "implementation": "88bdbd98",
+  "compPoly": "5f494a0ffa3913ee41fd1ed2535351c2e1f38d3f",
+  "measurement": "Three-run median user instructions, single-threaded; scripts/perf-gate --update",
+  "entries": {
+    "wide-quartic/trace lde": {
+      "before": 569979137,
+      "after": 569936818,
+      "ratio": 0.9999257534227959
+    },
+    "wide-quartic/trace commit": {
+      "before": 1761733255,
+      "after": 1761721676,
+      "ratio": 0.999993427495356
+    },
+    "wide-quartic/quotient": {
+      "before": 311196086,
+      "after": 311194639,
+      "ratio": 0.9999953501985883
+    },
+    "wide-quartic/quotient lde": {
+      "before": 111995144,
+      "after": 111995199,
+      "ratio": 1.000000491092721
+    },
+    "wide-quartic/quotient commit": {
+      "before": 658380926,
+      "after": 658377787,
+      "ratio": 0.999995232243408
+    },
+    "wide-quartic/opened values": {
+      "before": 251140070,
+      "after": 251173421,
+      "ratio": 1.000132798402103
+    },
+    "wide-quartic/reduce": {
+      "before": 290530317,
+      "after": 290528587,
+      "ratio": 0.9999940453718639
+    },
+    "wide-quartic/commit phase": {
+      "before": 717211705,
+      "after": 717306588,
+      "ratio": 1.000132294271466
+    },
+    "wide-quartic/grind": {
+      "before": 236936618,
+      "after": 236927797,
+      "ratio": 0.9999627706342968
+    },
+    "wide-quartic/query openings": {
+      "before": 79826625,
+      "after": 79815712,
+      "ratio": 0.9998632912264548
+    },
+    "wide-quartic/prove": {
+      "before": 4971900261,
+      "after": 4971442331,
+      "ratio": 0.9999078963824773
+    },
+    "wide-quartic/verify": {
+      "before": 325700134,
+      "after": 325697889,
+      "ratio": 0.9999931071566583
+    },
+    "wide-quintic/trace lde": {
+      "before": 569968407,
+      "after": 569975821,
+      "ratio": 1.000013007738515
+    },
+    "wide-quintic/trace commit": {
+      "before": 1761734862,
+      "after": 1761716783,
+      "ratio": 0.9999897379563804
+    },
+    "wide-quintic/quotient": {
+      "before": 342846593,
+      "after": 342847314,
+      "ratio": 1.0000021029813764
+    },
+    "wide-quintic/quotient lde": {
+      "before": 137980473,
+      "after": 137980896,
+      "ratio": 1.000003065651181
+    },
+    "wide-quintic/quotient commit": {
+      "before": 659436909,
+      "after": 659449571,
+      "ratio": 1.0000192012303637
+    },
+    "wide-quintic/opened values": {
+      "before": 314748133,
+      "after": 314760480,
+      "ratio": 1.000039228191387
+    },
+    "wide-quintic/reduce": {
+      "before": 546576038,
+      "after": 546547496,
+      "ratio": 0.999947780367203
+    },
+    "wide-quintic/commit phase": {
+      "before": 753087795,
+      "after": 753024097,
+      "ratio": 0.999915417564296
+    },
+    "wide-quintic/grind": {
+      "before": 236874361,
+      "after": 236898417,
+      "ratio": 1.0001015559467832
+    },
+    "wide-quintic/query openings": {
+      "before": 82907396,
+      "after": 82906218,
+      "ratio": 0.9999857913762
+    },
+    "wide-quintic/prove": {
+      "before": 5226053106,
+      "after": 5225148426,
+      "ratio": 0.9998268903928739
+    },
+    "wide-quintic/verify": {
+      "before": 455615593,
+      "after": 455615146,
+      "ratio": 0.9999990189097852
+    },
+    "keccak/trace lde": {
+      "before": 2538048819,
+      "after": 2537853177,
+      "ratio": 0.9999229163763378
+    },
+    "keccak/trace commit": {
+      "before": 7672595293,
+      "after": 7672530076,
+      "ratio": 0.9999915000078188
+    },
+    "keccak/quotient": {
+      "before": 2030322837,
+      "after": 2030372364,
+      "ratio": 1.0000243936575492
+    },
+    "keccak/quotient lde": {
+      "before": 15960203,
+      "after": 15961773,
+      "ratio": 1.000098369676125
+    },
+    "keccak/quotient commit": {
+      "before": 82563886,
+      "after": 82566306,
+      "ratio": 1.0000293106358875
+    },
+    "keccak/opened values": {
+      "before": 915243323,
+      "after": 915195923,
+      "ratio": 0.999948210493528
+    },
+    "keccak/reduce": {
+      "before": 600012637,
+      "after": 600011928,
+      "ratio": 0.9999988183582207
+    },
+    "keccak/commit phase": {
+      "before": 134800311,
+      "after": 135017293,
+      "ratio": 1.0016096550400393
+    },
+    "keccak/grind": {
+      "before": 237106464,
+      "after": 237195287,
+      "ratio": 1.0003746123091777
+    },
+    "keccak/query openings": {
+      "before": 101275470,
+      "after": 101279343,
+      "ratio": 1.000038242231806
+    },
+    "keccak/prove": {
+      "before": 14616746115,
+      "after": 14615373518,
+      "ratio": 0.9999060942162366
+    },
+    "keccak/verify": {
+      "before": 400057602,
+      "after": 400059651,
+      "ratio": 1.0000051217624406
+    },
+    "batch/trace lde": {
+      "before": 868524524,
+      "after": 868525339,
+      "ratio": 1.0000009383730424
+    },
+    "batch/trace commit": {
+      "before": 2813797005,
+      "after": 2813795471,
+      "ratio": 0.9999994548291873
+    },
+    "batch/quotient": {
+      "before": 503495955,
+      "after": 503521144,
+      "ratio": 1.0000500282072773
+    },
+    "batch/quotient lde": {
+      "before": 172263478,
+      "after": 172263991,
+      "ratio": 1.0000029779962993
+    },
+    "batch/quotient commit": {
+      "before": 1089763645,
+      "after": 1089767729,
+      "ratio": 1.0000037476016188
+    },
+    "batch/opened values": {
+      "before": 367196145,
+      "after": 367273010,
+      "ratio": 1.0002093295396661
+    },
+    "batch/reduce": {
+      "before": 460642019,
+      "after": 460655353,
+      "ratio": 1.0000289465560024
+    },
+    "batch/commit phase": {
+      "before": 729291729,
+      "after": 728966155,
+      "ratio": 0.9995535750824346
+    },
+    "batch/grind": {
+      "before": 236901681,
+      "after": 236884016,
+      "ratio": 0.9999254332011261
+    },
+    "batch/query openings": {
+      "before": 84563398,
+      "after": 84569477,
+      "ratio": 1.0000718868936653
+    },
+    "batch/prove": {
+      "before": 7158685865,
+      "after": 7158490441,
+      "ratio": 0.9999727011348611
+    },
+    "lookup/permutation": {
+      "before": 468610051,
+      "after": 468621545,
+      "ratio": 1.0000245278563178
+    },
+    "lookup/lookup quotient": {
+      "before": 152507632,
+      "after": 152508187,
+      "ratio": 1.0000036391621372
+    },
+    "lookup/prove": {
+      "before": 3052456552,
+      "after": 3052077301,
+      "ratio": 0.9998757554797131
+    },
+    "merkle/root": {
+      "before": 884447352,
+      "after": 884464041,
+      "ratio": 1.0000188694103298
+    },
+    "lde/coset lde": {
+      "before": 5355766374,
+      "after": 5355528440,
+      "ratio": 0.9999555742384217
+    },
+    "keccak-scalar/f1600 chain": {
+      "before": 77421610,
+      "after": 77421238,
+      "ratio": 0.9999951951399616
+    },
+    "keccak-scalar/hash 64": {
+      "before": 64875313,
+      "after": 64876068,
+      "ratio": 1.0000116377087847
+    },
+    "keccak-scalar/hash 512": {
+      "before": 239942799,
+      "after": 239943182,
+      "ratio": 1.000001596213771
+    },
+    "keccak-batch/f1600": {
+      "before": 79072701,
+      "after": 79073069,
+      "ratio": 1.0000046539449816
+    },
+    "keccak-batch/hash 64": {
+      "before": 66823521,
+      "after": 66823159,
+      "ratio": 0.999994582745797
+    },
+    "keccak-batch/hash 512": {
+      "before": 246083224,
+      "after": 246082849,
+      "ratio": 0.9999984761252966
+    },
+    "keccak-merkle/commit": {
+      "before": 129347928,
+      "after": 129349955,
+      "ratio": 1.0000156709120227
+    },
+    "keccak-merkle/open": {
+      "before": 8950965,
+      "after": 8950977,
+      "ratio": 1.0000013406375736
+    },
+    "keccak-merkle/duplex": {
+      "before": 137601085,
+      "after": 137601115,
+      "ratio": 1.0000002180215366
+    },
+    "keccak-merkle/grind": {
+      "before": 1070464,
+      "after": 1070464,
+      "ratio": 1.0
+    },
+    "sumcheck-fold/products": {
+      "before": 21643556,
+      "after": 21643180,
+      "ratio": 0.9999826276236677
+    },
+    "sumcheck-fold/prepare": {
+      "before": 3829,
+      "after": 3451,
+      "ratio": 0.9012797074954296
+    },
+    "sumcheck-fold/fold": {
+      "before": 27127569,
+      "after": 27127324,
+      "ratio": 0.9999909685972967
+    },
+    "sumcheck-fold/packed-fold": {
+      "before": 14197912,
+      "after": 14197524,
+      "ratio": 0.9999726720379729
+    },
+    "sumcheck-fold/base-fold": {
+      "before": 24526228,
+      "after": 24525693,
+      "ratio": 0.9999781866172002
+    },
+    "sumcheck-fold/packed-base-fold": {
+      "before": 12102803,
+      "after": 12102415,
+      "ratio": 0.9999679413107856
+    },
+    "sumcheck-fold/constant-fold": {
+      "before": 21969697,
+      "after": 21969702,
+      "ratio": 1.0000002275862065
+    },
+    "sumcheck-fold/packed-constant-fold": {
+      "before": 10464403,
+      "after": 10464788,
+      "ratio": 1.0000367913965087
+    },
+    "pcs/coordinates": {
+      "before": 2349660,
+      "after": 2349664,
+      "ratio": 1.0000017023739605
+    },
+    "pcs/bit-fold": {
+      "before": 337682,
+      "after": 337684,
+      "ratio": 1.000005922732038
+    },
+    "pcs/basis": {
+      "before": 1916794,
+      "after": 1916796,
+      "ratio": 1.0000010434089421
+    },
+    "pcs/encoding-plan": {
+      "before": 185751,
+      "after": 186132,
+      "ratio": 1.0020511329683286
+    },
+    "pcs/encoding": {
+      "before": 35154119,
+      "after": 35154092,
+      "ratio": 0.9999992319534448
+    },
+    "pcs/induction": {
+      "before": 1668662,
+      "after": 1666886,
+      "ratio": 0.9989356742108347
+    },
+    "pcs/induction-dense": {
+      "before": 1635548,
+      "after": 1635548,
+      "ratio": 1.0
+    },
+    "pcs/induction-split": {
+      "before": 1633680,
+      "after": 1633679,
+      "ratio": 0.9999993878850203
+    },
+    "pcs/induction-sparse": {
+      "before": 1294574,
+      "after": 1294577,
+      "ratio": 1.000002317364631
+    },
+    "pcs/induction-scalar-plan": {
+      "before": 13531342,
+      "after": 13531247,
+      "ratio": 0.9999929792625152
+    },
+    "pcs/induction-large-dense": {
+      "before": 243734731,
+      "after": 243735251,
+      "ratio": 1.000002133466978
+    },
+    "pcs/induction-large-packed": {
+      "before": 343339125,
+      "after": 343385787,
+      "ratio": 1.0001359064452675
+    },
+    "pcs/induction-large-sparse": {
+      "before": 145833691,
+      "after": 145834075,
+      "ratio": 1.0000026331363991
+    },
+    "pcs/induction-plan": {
+      "before": 108092476,
+      "after": 108105977,
+      "ratio": 1.0001249023104994
+    },
+    "pcs/induction-large-prepared": {
+      "before": 149411649,
+      "after": 149411729,
+      "ratio": 1.0000005354334855
+    },
+    "pcs/induction-large-compact": {
+      "before": 130615535,
+      "after": 130624509,
+      "ratio": 1.0000687054568203
+    },
+    "pcs/induction-byte-rows-plan": {
+      "before": 1951591,
+      "after": 1951908,
+      "ratio": 1.0001624315750586
+    },
+    "pcs/induction-large-byte-rows": {
+      "before": 93682079,
+      "after": 93681866,
+      "ratio": 0.9999977263527638
+    },
+    "pcs/induction-large-tiled": {
+      "before": 149784931,
+      "after": 149785011,
+      "ratio": 1.0000005340991212
+    },
+    "pcs/challenge-fold-16": {
+      "before": 18933,
+      "after": 18933,
+      "ratio": 1.0
+    },
+    "pcs/challenge-scalar-16": {
+      "before": 18901,
+      "after": 18901,
+      "ratio": 1.0
+    },
+    "pcs/challenge-prepared-16": {
+      "before": 19161,
+      "after": 19161,
+      "ratio": 1.0
+    },
+    "pcs/challenge-fold-256": {
+      "before": 272567,
+      "after": 272567,
+      "ratio": 1.0
+    },
+    "pcs/challenge-scalar-256": {
+      "before": 270335,
+      "after": 270336,
+      "ratio": 1.0000036991140622
+    },
+    "pcs/challenge-prepared-256": {
+      "before": 266701,
+      "after": 266703,
+      "ratio": 1.0000074990344994
+    },
+    "pcs/challenge-fold-1024": {
+      "before": 851231,
+      "after": 851232,
+      "ratio": 1.0000011747692459
+    },
+    "pcs/challenge-scalar-1024": {
+      "before": 1075728,
+      "after": 1075727,
+      "ratio": 0.9999990703969777
+    },
+    "pcs/challenge-prepared-1024": {
+      "before": 1059687,
+      "after": 1059688,
+      "ratio": 1.0000009436748776
+    },
+    "pcs/accumulated-prepare": {
+      "before": 2313,
+      "after": 2313,
+      "ratio": 1.0
+    },
+    "pcs/accumulated": {
+      "before": 74321,
+      "after": 74321,
+      "ratio": 1.0
+    },
+    "pcs/whir-round": {
+      "before": 73292,
+      "after": 68732,
+      "ratio": 0.937783114118867
+    },
+    "pcs/basis-project": {
+      "before": 71049890,
+      "after": 71050065,
+      "ratio": 1.0000024630580004
+    },
+    "pcs/basis-columns": {
+      "before": 48772881,
+      "after": 48772885,
+      "ratio": 1.000000082012789
+    },
+    "pcs/basis-byte-columns": {
+      "before": 45885038,
+      "after": 45890744,
+      "ratio": 1.0001243542611864
+    },
+    "pcs/basis-tensor-columns": {
+      "before": 25673358,
+      "after": 21667458,
+      "ratio": 0.8439666521224064
+    },
+    "pcs/basis-window-ring": {
+      "before": 18228452,
+      "after": 14222800,
+      "ratio": 0.7802527609036686
+    },
+    "pcs/basis-packed-dot": {
+      "before": 2370293,
+      "after": 2330253,
+      "ratio": 0.9831075736206452
+    },
+    "pcs/basis-tensor-lift": {
+      "before": 7086313,
+      "after": 7087263,
+      "ratio": 1.0001340612530099
+    },
+    "pcs/basis-tensor-prepare": {
+      "before": null,
+      "after": 4600909,
+      "ratio": null
+    },
+    "pcs/basis-fused-survivors": {
+      "before": null,
+      "after": 2356591,
+      "ratio": null
+    },
+    "pcs/basis-lift": {
+      "before": 15698001,
+      "after": 15665581,
+      "ratio": 0.9979347688919118
+    },
+    "pcs/basis-lift-reference": {
+      "before": 395215258,
+      "after": 394346858,
+      "ratio": 0.9978027164123304
+    }
+  }
+}

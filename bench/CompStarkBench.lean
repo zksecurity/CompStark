@@ -24,6 +24,7 @@ import CompStark.Pcs.FusedRound
 import CompStark.Pcs.DirectSums
 import CompStark.Pcs.WindowBitFold
 import CompStark.Pcs.WindowScatter
+import CompStark.Pcs.FusedTensor
 
 /-! # CompStark micro-benchmarks
 
@@ -791,6 +792,16 @@ def pcsRun (phase : {α : Type} → String → (Unit → α) → IO α) : IO UIn
     CompStark.Pcs.liftTensorPointBinary 1024 128 8 8 rfl lowPatterns highWeights ringWeights tensorWeights
   unless liftedTensor == CompStark.Pcs.liftPointBinary 1024 8 fullPatterns ringWeights tensorWeights do
     throw (IO.userError "grouped low/high Basis lifting mismatch")
+  let tensorPlan ← phase "basis-tensor-prepare" fun _ =>
+    CompStark.Pcs.prepareTensorLift 128 8 8 lowPatterns highWeights tensorWeights
+  let survivors ← phase "basis-fused-survivors" fun _ =>
+    CompStark.Pcs.materializePairs 512
+      (fun i => BF64.WordExt3.mulScalar tensorWeights[0] dotInput[i.val])
+      (fun i => tensorPlan.weightAt rfl ringWeights i)
+  unless survivors.weights == liftedTensor && survivors.message ==
+      CompStark.Pcs.roundCoefficients 512 1 (survivors.table.cast (by omega))
+        (liftedTensor.cast (by omega)) do
+    throw (IO.userError "fused survivor weights and message mismatch")
   let liftValues := Vector.ofFn fun i : Fin 4096 => CompStark.Fixtures.Pcs.value (i.val+31)
   let liftPoints : Vector (CompStark.Pcs.BasisWindow 4096) 8 := Vector.ofFn fun _ =>
     ⟨0, 4096, liftValues, by decide⟩

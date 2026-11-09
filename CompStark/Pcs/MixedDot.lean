@@ -43,6 +43,24 @@ theorem MixedWide.reduce_add (a b : MixedWide) :
 /-- An empty wide accumulator reduces to the extension zero. -/
 theorem MixedWide.reduce_zero : (⟨⟨0,0⟩,⟨0,0⟩,⟨0,0⟩⟩ : MixedWide).reduce = 0 := rfl
 
+/-- Multiply extension coordinates before the final base-polynomial reduction. -/
+@[inline] def MixedWide.mul (a b : WordExt3) : MixedWide :=
+  let p0 := InductionWide.mul a.c0 b.c0
+  let p1 := InductionWide.mul a.c1 b.c1
+  let p2 := InductionWide.mul a.c2 b.c2
+  let p01 := ((InductionWide.mul (Word.add a.c0 a.c1) (Word.add b.c0 b.c1)).add p0).add p1
+  let p02 := ((InductionWide.mul (Word.add a.c0 a.c2) (Word.add b.c0 b.c2)).add p0).add p2
+  let p12 := ((InductionWide.mul (Word.add a.c1 a.c2) (Word.add b.c1 b.c2)).add p1).add p2
+  ⟨p0.add p12, (p01.add p12).add p2, (p02.add p1).add p2⟩
+
+/-- Cubic folding before base reduction retains the exact extension product. -/
+theorem MixedWide.reduce_mul (a b : WordExt3) :
+    (MixedWide.mul a b).reduce = WordExt3.mul a b := by
+  simp only [MixedWide.mul, MixedWide.reduce, InductionWide.mul_code,
+    InductionWide.mulClmul, InductionWide.add, InductionWide.reduce,
+    WordExt3.mul_eq_mulDeferred, WordExt3.mulDeferred, WordExt3.wideProduct,
+    WordExt3.wideXor, WordExt3.reduceProduct]
+
 /-- Eight extension weights in the paired limb layout of the mixed dot kernel. -/
 abbrev MixedWeights8 := ExtensionWeights8
 
@@ -105,6 +123,17 @@ theorem mixedWideLoop_refines (count : Nat) (f : Fin count → MixedWide)
     rw [MixedWide.reduce_add, WordExt3.toField_add]
     ac_rfl
 
+/-- Sum extension products with scalar accumulators and one reduction at the boundary. -/
+@[inline] def dotExtWide (count : Nat) (a b : Fin count → WordExt3) : WordExt3 :=
+  mixedWideLoop count (fun i => MixedWide.mul (a i) (b i)) count (Nat.le_refl _) 0 0 0 0 0 0
+
+/-- Deferred extension dots preserve the complete finite product sum. -/
+theorem dotExtWide_refines (count : Nat) (a b : Fin count → WordExt3) :
+    (dotExtWide count a b).toField = ∑ i : Fin count, (a i).toField * (b i).toField := by
+  rw [dotExtWide, mixedWideLoop_refines, MixedWide.reduce_zero]
+  have z : (0 : WordExt3).toField = 0 := map_zero WordExt3.ringEquiv
+  simp only [z, zero_add, MixedWide.reduce_mul, WordExt3.toField_mul]
+
 /-- Eight-wide packed extension weights with a zero-padded final group. -/
 abbrev MixedDotPlan (count : Nat) := Vector MixedWeights8 ((count+7)/8)
 
@@ -114,7 +143,7 @@ def prepareMixedDot {count : Nat} (weights : Vector WordExt3 count) : MixedDotPl
     if h : group.val*8+i.val < count then weights[group.val*8+i.val]'h else 0
 
 /-- Apply retained weights to a complete mixed dot and reduce each coordinate once. -/
-def dotMixedPlan {count : Nat} (plan : MixedDotPlan count) (f : Fin count → Word) : WordExt3 :=
+@[inline] def dotMixedPlan {count : Nat} (plan : MixedDotPlan count) (f : Fin count → Word) : WordExt3 :=
   let groups := (count+7)/8
   mixedWideLoop (groups*8) (fun q => if h : q.val < count then
     plan[q.divNat].product q.modNat (f ⟨q.val,h⟩) else ⟨⟨0,0⟩,⟨0,0⟩,⟨0,0⟩⟩)
@@ -143,5 +172,26 @@ theorem dotMixedPlan_refines {count : Nat} (weights : Vector WordExt3 count) (f 
     _ = _ := by
       simpa only [Fin.getElem_fin] using sum_zero_padding count (((count+7)/8)*8) (by omega)
         (fun i : Fin count => weights[i].toField * (algebraMap BF64 BF64.Ext3) (f i).toField)
+
+/-- Author PCS coefficients with unreduced extension dots. -/
+def roundCoefficientsWide (rows width : Nat) (table weights : Vector WordExt3 (2*rows*width)) :
+    Vector WordExt3 2 :=
+  #v[dotExtWide (rows*width) (fun i => table[roundLow rows width i])
+      (fun i => weights[roundLow rows width i]),
+    dotExtWide (rows*width) (fun i => WordExt3.add table[roundLow rows width i] table[roundHigh rows width i])
+      (fun i => WordExt3.add weights[roundLow rows width i] weights[roundHigh rows width i])]
+
+/-- Deferred PCS messages preserve both full quadratic coefficients. -/
+@[csimp] theorem roundCoefficientsDirect_code : @roundCoefficientsDirect = @roundCoefficientsWide := by
+  funext rows width table weights
+  apply Vector.ext
+  intro i hi
+  apply WordExt3.toField_injective
+  have cases : i = 0 ∨ i = 1 := by omega
+  rcases cases with rfl | rfl
+  · change (sumExt _ _).toField = (dotExtWide _ _ _).toField
+    simp only [sumExt_toField, dotExtWide_refines, roundProduct_eq, WordExt3.toField_mul]
+  · change (sumExt _ _).toField = (dotExtWide _ _ _).toField
+    simp only [sumExt_toField, dotExtWide_refines, roundProduct_eq, WordExt3.toField_mul]
 
 end CompStark.Pcs
