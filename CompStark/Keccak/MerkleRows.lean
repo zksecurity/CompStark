@@ -62,7 +62,7 @@ structure HashedRows (n : Nat) (row : Fin n → Row) where
   correct : ∀ i : Fin n, bytes.extract (32 * i.val) (32 * (i.val + 1)) = (hashRow (row i)).val
 
 /-- Hash an encoder window on its creating worker and flatten all temporary digests there. -/
-def hashRows (n : Nat) (row : Fin n → Row) : HashedRows n row where
+@[specialize] def hashRows (n : Nat) (row : Fin n → Row) : HashedRows n row where
   bytes := packDigests (List.ofFn fun i => hashRow (row i))
   size := by simp only [size_packDigests, List.length_ofFn]
   correct i := by
@@ -70,7 +70,7 @@ def hashRows (n : Nat) (row : Fin n → Row) : HashedRows n row where
     simp only [List.getElem_ofFn]
 
 /-- Allocate one retained digest on the consuming thread. -/
-def HashedRows.get (hashes : HashedRows n row) (i : Fin n) : Digest :=
+@[inline] def HashedRows.get (hashes : HashedRows n row) (i : Fin n) : Digest :=
   ⟨hashes.bytes.extract (32 * i.val) (32 * (i.val + 1)), by
     rw [hashes.correct i]; exact (hashRow (row i)).property⟩
 
@@ -88,8 +88,19 @@ def Tree.leafHashed (row : Row) (digest : Digest) (h : digest = hashRow row) : T
 theorem Tree.leafHashed_eq (row : Row) (digest : Digest) (h : digest = hashRow row) :
     Tree.leafHashed row digest h = Tree.leaf row := by cases h; rfl
 
+/-- Mathematical subtree widths with a shift-based executable form. -/
+def subtreeWidth (depth : Nat) : Nat := 2 ^ depth
+
+/-- Native subtree widths use a single shift. -/
+def subtreeWidthFast (depth : Nat) : Nat := 1 <<< depth
+
+/-- Dynamic tree offsets use machine shifts rather than general exponentiation. -/
+@[csimp] theorem subtreeWidth_code : subtreeWidth = subtreeWidthFast := by
+  funext depth
+  simp only [subtreeWidth, subtreeWidthFast, Nat.shiftLeft_eq, Nat.one_mul]
+
 /-- Build retained tree nodes and payloads entirely on the thread consuming a flat hash batch. -/
-def Tree.generateCachedAt {n : Nat} (row : Fin n → Row) (digest : Fin n → Digest)
+@[specialize] def Tree.generateCachedAt {n : Nat} (row : Fin n → Row) (digest : Fin n → Digest)
     (agree : ∀ i, digest i = hashRow (row i)) :
     (depth start : Nat) → start + 2 ^ depth ≤ n → Tree depth
   | 0, start, bound =>
@@ -98,7 +109,9 @@ def Tree.generateCachedAt {n : Nat} (row : Fin n → Row) (digest : Fin n → Di
   | depth + 1, start, bound =>
     Tree.join
       (Tree.generateCachedAt row digest agree depth start (by rw [pow_succ] at bound; omega))
-      (Tree.generateCachedAt row digest agree depth (start + 2 ^ depth) (by rw [pow_succ] at bound; omega))
+      (Tree.generateCachedAt row digest agree depth (start + subtreeWidth depth) (by
+        change start + 2 ^ depth + 2 ^ depth ≤ n
+        rw [pow_succ] at bound; omega))
 
 /-- Flat hash batches reconstruct every retained payload and internal digest exactly. -/
 theorem Tree.generateCachedAt_eq {n : Nat} (row : Fin n → Row) (digest : Fin n → Digest)
@@ -106,6 +119,6 @@ theorem Tree.generateCachedAt_eq {n : Nat} (row : Fin n → Row) (digest : Fin n
     Tree.generateCachedAt row digest agree depth start bound = Tree.generateAt row depth start bound := by
   induction depth generalizing start with
   | zero => simp only [Tree.generateCachedAt, Tree.generateAt, Tree.leafHashed_eq]
-  | succ depth ih => simp only [Tree.generateCachedAt, Tree.generateAt, ih]
+  | succ depth ih => simp only [Tree.generateCachedAt, Tree.generateAt, ih, subtreeWidth]
 
 end CompStark.Keccak.Merkle
