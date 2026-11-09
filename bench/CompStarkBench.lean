@@ -12,6 +12,7 @@ import CompStarkFixtures.Keccak
 import CompStarkFixtures.KeccakKernel
 import CompStark.Keccak.Hash
 import CompStarkFixtures.KeccakMerkle
+import CompStark.Keccak.MerkleGenerate
 import CompStark.Sumcheck.PackedFold
 import CompStark.Sumcheck.WordProductProofs
 import CompStarkFixtures.Pcs
@@ -842,6 +843,11 @@ def pcsRun (phase : {α : Type} → String → (Unit → α) → IO α) : IO UIn
 def keccakMerkleRun (phase : {α : Type} → String → (Unit → α) → IO α) : IO UInt32 := do
   let input := CompStark.Fixtures.KeccakMerkle.rows 4096 64 (by decide)
   let tree ← IO.ofExcept (← phase "commit" fun _ ↦ CompStark.Keccak.Merkle.commit input)
+  let generated ← IO.ofExcept (← phase "commit-generated" fun _ ↦
+    CompStark.Keccak.Merkle.commitGenerated 12 (fun i => input[i.val]'(by
+      simpa only [input, CompStark.Fixtures.KeccakMerkle.rows, Array.size_ofFn, Nat.reducePow] using i.isLt)))
+  unless generated.2.root == tree.2.root do
+    throw (IO.userError "generated Keccak subtree differs from streaming commitment")
   unless tree.2.root.val.data == #[246, 17, 103, 241, 171, 70, 74, 202, 75, 217, 117,
       91, 169, 255, 12, 45, 103, 72, 209, 98, 119, 43, 201, 23, 37, 220, 29, 144,
       241, 233, 48, 207] do
