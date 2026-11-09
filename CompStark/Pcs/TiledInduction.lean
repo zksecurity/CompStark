@@ -502,18 +502,18 @@ theorem stripRun_read (base high : Nat) (hd : base+high < 64) (rows : CompactRow
         rfl
 
 /-- The multiplier reused by every pair of an occupied block in one retained row. -/
-def rowMultiplier {n : Nat} (row : TwiddleRow n) (block : Nat) : Packed.Multiplier :=
+def rowMultiplier {n : Nat} (row : Packed.TwiddleRow n) (block : Nat) : Packed.Multiplier :=
   if n < 8 then inductionMultiplier (row.lookup block) else Packed.Multiplier.masked (row.lookup block)
 
 /-- Execute only selected local blocks, retaining one row multiplier per outer loop. -/
-def selectedStage {n : Nat} (row : TwiddleRow n) (d : Nat) (i : Fin d) (lanes offset : Nat)
+def selectedStage {n : Nat} (row : Packed.TwiddleRow n) (d : Nat) (i : Fin d) (lanes offset : Nat)
     (blocks : List (Fin (2^(d-i.val-1)))) (a : BF64.Packed.Buffer (2^d*lanes)) :
     BF64.Packed.Buffer (2^d*lanes) :=
   occupiedSweepRows (⟨blocks.toArray,List.size_toArray⟩ : Vector _ blocks.length)
     (2^i.val*lanes) (Packed.stage_word_count d i lanes) offset row a
 
 /-- The selected local blocks form a disjoint subset of the complete stage. -/
-theorem selectedStage_eq {n : Nat} (row : TwiddleRow n) (d : Nat) (i : Fin d) (lanes offset : Nat)
+theorem selectedStage_eq {n : Nat} (row : Packed.TwiddleRow n) (d : Nat) (i : Fin d) (lanes offset : Nat)
     (blocks : List (Fin (2^(d-i.val-1)))) (a : BF64.Packed.Buffer (2^d*lanes)) :
     selectedStage row d i lanes offset blocks a =
       Packed.sweep (fun p => Packed.stageIndex d i lanes
@@ -525,7 +525,7 @@ theorem selectedStage_eq {n : Nat} (row : TwiddleRow n) (d : Nat) (i : Fin d) (l
     Fin.getElem_fin, Vector.getElem_ofFn, rowMultiplier]
 
 /-- Selected local stages update each live pair once and leave every omitted pair unchanged. -/
-theorem selectedStage_read {n : Nat} (row : TwiddleRow n) (d : Nat) (i : Fin d) (lanes offset : Nat)
+theorem selectedStage_read {n : Nat} (row : Packed.TwiddleRow n) (d : Nat) (i : Fin d) (lanes offset : Nat)
     (blocks : List (Fin (2^(d-i.val-1)))) (unique : blocks.Nodup)
     (a : BF64.Packed.Buffer (2^d*lanes)) (t : Fin (2^(d-i.val-1)*(2^i.val*lanes))) (b : Fin 2) :
     BF64.Packed.read (selectedStage row d i lanes offset blocks a) (Packed.stageIndex d i lanes (t,b)) =
@@ -654,7 +654,7 @@ theorem windowSparseStage_read {d count : Nat} {hd : d < 64} (rows : CompactRows
   simp only [pairDiv, mem_windowBlocks, pairEq, tileProject, Packed.read_tabulate, windowStage_closed]
 
 /-- Equal inputs remain equal through a selected local stage. -/
-theorem selectedStage_congr {n : Nat} (row : TwiddleRow n) (d : Nat) (i : Fin d) (lanes offset : Nat)
+theorem selectedStage_congr {n : Nat} (row : Packed.TwiddleRow n) (d : Nat) (i : Fin d) (lanes offset : Nat)
     (blocks : List (Fin (2^(d-i.val-1)))) (unique : blocks.Nodup)
     (a b : BF64.Packed.Buffer (2^d*lanes))
     (same : ∀ x, BF64.Packed.read a x = BF64.Packed.read b x) (x : Fin (2^d*lanes)) :

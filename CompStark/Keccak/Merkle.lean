@@ -129,10 +129,6 @@ def Builder.finish (builder : Builder) : Except String Subtree :=
   | [tree] => .ok tree
   | _ => .error "Merkle commitment requires a nonempty power-of-two row count"
 
-/-- Commit a complete array, returning both root access and private tree data. -/
-def commit (rows : Array Row) : Except String Subtree :=
-  (Builder.absorb {} rows).finish
-
 /-- Hash contiguous leaf batches in parallel, preserving their input order. -/
 def leafBatches {α : Type} (row : α → Row) (rows : List α) : List (Tree 0) :=
   if rows.length ≤ 1024 then rows.map (fun i => Tree.leaf (row i))
@@ -171,6 +167,10 @@ def Builder.absorbBatched (builder : Builder) (rows : Array Row) : Builder :=
   simp only [Builder.absorbBatched, leafBatches_eq, List.foldl_map,
     Builder.absorb, Array.foldl_toList]
   rfl
+
+/-- Commit a complete array, returning both root access and private tree data. -/
+def commit (rows : Array Row) : Except String Subtree :=
+  (Builder.absorb {} rows).finish
 
 /-- Consume generated rows directly, retaining no intermediate array of leaves. -/
 def Builder.absorbOfFn (builder : Builder) (n : Nat) (row : Fin n → Row) : Builder :=
