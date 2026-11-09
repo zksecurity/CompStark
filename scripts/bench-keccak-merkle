@@ -2,6 +2,7 @@
 """Identical-input Lean/Rust component measurements; JSON includes loaded-host diagnostics."""
 import datetime
 import fcntl
+import hashlib
 import importlib.machinery
 import importlib.util
 import json
@@ -16,6 +17,7 @@ ROOT = pathlib.Path(__file__).resolve().parent.parent
 
 def main():
     os.chdir(ROOT)
+    os.environ["LEANVM_NUM_THREADS"] = "1"
     subprocess.run(["scripts/check-keccak-merkle-reference"], check=True)
     subprocess.run(["systemd-run", "--user", "--scope", "-p", "MemoryMax=12G", "-p",
                     "MemorySwapMax=0", "--", "lake", "build", "CompStarkBench", "CompStarkNativeTests"], check=True)
@@ -36,7 +38,10 @@ def main():
               "rust": subprocess.check_output(["rustc", "--version"], text=True),
               "inputs": {"leaves": 4096, "words_per_leaf": 64, "queries": 100,
                          "writer_messages": 10000, "grinding_bits": 8},
-              "workers": 1, "setup": "packing, allocation of inputs and seeding excluded",
+              "workers": 1, "rust_flags": "-C target-cpu=native on wrapper and dependencies",
+              "binary_sha256": {name: hashlib.sha256(pathlib.Path(argv[0]).read_bytes()).hexdigest()
+                                for name, argv in programs.items()},
+              "setup": "packing, allocation of inputs and seeding excluded",
               "tracing": False, "runs": []}
     with open("/tmp/compstark-bench.lock", "w") as lock:
         fcntl.flock(lock, fcntl.LOCK_EX)
