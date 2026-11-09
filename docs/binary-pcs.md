@@ -122,3 +122,12 @@ The instruction gate includes `pcs/basis-byte-columns`, `pcs/basis-tensor-column
 `Pcs.TensorProjectionPacked` applies retained mixed weights to occupied point blocks. `Pcs.WindowBitFold` prepares ring byte tables only for the certified occupied interval, and `windowBits_eq` identifies its result with the complete zero-extended fold. `Pcs.WindowScatter` reconstructs point contributions by adding each retained coefficient directly to its physical coordinate. Its prefix and complete-window invariants prove that each occupied coefficient contributes exactly once.
 
 The [CLMUL shared-kernel measurements](clmul-kernels.md) record the native primitive pin, certified compiled paths and the instruction-gate reductions for folds, packed dots and Basis lifting.
+
+
+## Fused tensor survivors and messages
+
+`Pcs.FusedTensor` retains each low pattern, its contracted high-block coefficients, the nonzero pattern indices for each block, and the shared coordinate-byte map. `TensorLiftPlan.pointAt_refines` proves that deferred reconstruction over live patterns equals the complete point sum, and `prepareTensorLift_weightAt` identifies each combined point/ring coordinate with `liftTensorPointBinary`. Filtering consumes materialized coefficient rows through `liveTensorPatterns`.
+
+`Pcs.FusedPairs` materializes the restricted witness and reconstructed weight together, retaining twelve scalar unreduced message words in its adjacent-pair loop. `materializePairs_table`, `materializePairs_weights` and `materializePairs_message` identify both survivor arrays and the complete residual quadratic with the reference round. `materializeTensorPairs` takes the physical witness stride as a materialized argument, so the contraction loop reuses that stride for every lane product. The `pcs/basis-tensor-prepare` and `pcs/basis-fused-survivors` gate phases include plan preparation and fused construction, with complete weight and message comparisons outside their counters.
+
+`dotExtWide_refines` proves that extension dots reduce once after accumulating every product. `roundCoefficientsDirect_code` uses that implementation for both quadratic message coefficients at arbitrary row and block widths. The PCS axiom audit covers these declarations together with the survivor and tensor refinements.

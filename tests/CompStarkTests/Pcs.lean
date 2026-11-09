@@ -12,6 +12,7 @@ public import CompStark.Pcs.FusedRound
 public import CompStark.Pcs.DirectSums
 public import CompStark.Pcs.WindowBitFold
 public import CompStark.Pcs.WindowScatter
+public import CompStark.Pcs.FusedTensor
 public import CompStark.Pcs.HonestWhir
 public import CompStarkFixtures.Pcs
 meta import Lean.Util.CollectAxioms
@@ -269,6 +270,19 @@ def check : IO Unit := do
       unless liftTensorPointBinary (high*low) low high 3 rfl windows gamma ring weights ==
           liftColumns (high*low) 195 weights columns do
         throw (IO.userError "grouped low/high tensor lift mismatch")
+      let plan := prepareTensorLift low high 3 windows gamma weights
+      unless (Vector.ofFn fun i => plan.weightAt rfl ring i) ==
+          liftTensorPointBinary (high*low) low high 3 rfl windows gamma ring weights do
+        throw (IO.userError "on-demand tensor lift mismatch")
+  for rows in [0, 1, 9] do
+    let f := fun i : Fin (2*rows) => value (i.val+11)
+    let b := fun i : Fin (2*rows) => value (i.val*3+51)
+    let result := materializePairs rows f b
+    unless result.table == Vector.ofFn f && result.weights == Vector.ofFn b do
+      throw (IO.userError "fused survivor materialization mismatch")
+    unless result.message == roundCoefficients rows 1
+        ((Vector.ofFn f).cast (by omega)) ((Vector.ofFn b).cast (by omega)) do
+      throw (IO.userError "fused survivor residual message mismatch")
   IO.println "PCS coordinate maps, factored weights, bit folds, honest WHIR: passed"
 
 end CompStarkTests.Pcs
