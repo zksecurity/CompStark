@@ -794,7 +794,7 @@ def pcsRun (phase : {α : Type} → String → (Unit → α) → IO α) : IO UIn
   unless scalarDot == packedDot do throw (IO.userError "scalar mixed dot mismatch")
   let ringHigh := highWeights[0]
   let factoredRing : Vector BF64.WordExt3 1024 := Vector.ofFn fun x =>
-    BF64.WordExt3.mul ringHigh[x.divNat] lowPatterns[0].expand[x.modNat]
+    BF64.WordExt3.mul ringHigh[x.val/128] lowPatterns[0].expand[x.val%128]
   let ringTensor ← phase "basis-factored-ring" fun _ =>
     CompStark.Pcs.projectTensorFactoredRing 8 1024 128 8 8 rfl witness lowPatterns highWeights lowPatterns[0] ringHigh
   unless ringTensor == CompStark.Pcs.projectTensorPointBinary 8 1024 128 8 8 rfl witness
