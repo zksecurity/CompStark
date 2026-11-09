@@ -267,3 +267,6 @@ public import CompStark.Pcs.WindowBitFold
 public import CompStark.Pcs.WindowScatter
 public import CompStark.Pcs.FusedPairs
 public import CompStark.Pcs.FusedTensor
+public import CompStark.Pcs.TensorRing
+
+public import CompStark.Pcs.WindowFold

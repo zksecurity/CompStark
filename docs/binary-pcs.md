@@ -132,6 +132,14 @@ The [CLMUL shared-kernel measurements](clmul-kernels.md) record the native primi
 
 `dotExtWide_refines` proves that extension dots reduce once after accumulating every product. `roundCoefficientsDirect_code` uses that implementation for both quadratic message coefficients at arbitrary row and block widths. The PCS axiom audit covers these declarations together with the survivor and tensor refinements.
 
+## Scalar projection and factored ring rows
+
+`Pcs.TensorProjectionPacked.windowDot` reads a contiguous occupied witness interval through proved `uget` indices and retains six unreduced `UInt64` accumulators. `tensorWindowMatrixScalar` shares active low-pattern results across point claims and defers the high-block dot's polynomial reduction to its output. Its compiler refinement preserves every packed projection coordinate.
+
+`Pcs.TensorRing` shares one low-window subset-sum plan across lanes and high blocks. Each occupied block is bit-transposed and folded through those tables; the high factors are contracted with deferred extension products before the 64 extension rows are transposed into 192 binary columns. `projectTensorFactoredRing_eq` identifies the complete result with the point/binary projection for any certified low/high factorization. `WindowFold` transposes occupied physical intervals directly without allocating an intermediate word vector; incomplete final blocks are zero-padded. Complete transposition blocks retain their source buffer through `bitFoldPadShared`.
+
+`roundCoefficientsWith` visits each blocked pair once, reads both endpoints from retained getters, and accumulates both quadratic-message coefficients in twelve scalar words. Its refinement identifies both outputs with the complete two-pass message. The instruction gate measures scalar mixed dots, factored ring projection and direct blocked messages separately; native tests cover empty dimensions and partial low blocks.
+
 ## Contiguous scalar encoding and generated Merkle rows
 
 `encodeExtensionRowsScalar` transforms the physical cubic-extension limbs directly with CompPoly's scalar CLMUL encoder. `encodeExtensionRows_code` proves complete buffer equality with the certified padded encoder, including zero lanes. The compiled path replicates the row-major message with machine addresses and retains its exact physical width throughout the transform.

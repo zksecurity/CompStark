@@ -422,6 +422,24 @@ theorem bitFoldBlocks_fits (count : Nat) : count ≤ bitFoldBlocks count*64 := b
 def bitFoldPad {F : Type} [Zero F] {count : Nat} (values : Vector F count) :
     Vector F (bitFoldBlocks count*64) :=
   Vector.ofFn fun i => if h : i.val < count then values[i.val]'h else 0
+
+/-- Complete transposition blocks retain their input buffer without copying. -/
+def bitFoldPadShared {F : Type} [Zero F] {count : Nat} (values : Vector F count) :
+    Vector F (bitFoldBlocks count*64) :=
+  if full : bitFoldBlocks count*64 = count then values.cast full.symm else bitFoldPad values
+
+/-- Sharing a complete input preserves every padded coordinate. -/
+@[csimp] theorem bitFoldPad_code : @bitFoldPad = @bitFoldPadShared := by
+  funext F inst count values
+  unfold bitFoldPadShared
+  split
+  · rename_i full
+    apply Vector.ext
+    intro i hi
+    simp only [bitFoldPad, Vector.getElem_ofFn, Vector.getElem_cast,
+      show i < count by omega, dite_true]
+  · rfl
+
 /-- Shared byte images of an arbitrary-length extension-weight table. -/
 abbrev ByteFoldPlan (count : Nat) := Vector (Vector WordExt3 256) (bitFoldBlocks count*8)
 /-- Prepare each eight-weight byte table once for every witness lane. -/

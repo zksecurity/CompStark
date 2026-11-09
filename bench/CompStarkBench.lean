@@ -26,6 +26,7 @@ import CompStark.Pcs.DirectSums
 import CompStark.Pcs.WindowBitFold
 import CompStark.Pcs.WindowScatter
 import CompStark.Pcs.FusedTensor
+import CompStark.Pcs.TensorRing
 
 /-! # CompStark micro-benchmarks
 
@@ -788,6 +789,21 @@ def pcsRun (phase : {α : Type} → String → (Unit → α) → IO α) : IO UIn
     CompStark.Pcs.dotMixedPlan (CompStark.Pcs.prepareMixedDot ringWeights) (fun x => dotInput[x])
   unless packedDot == CompStark.Pcs.sumExt 1024 (fun x => BF64.WordExt3.mulScalar ringWeights[x] dotInput[x]) do
     throw (IO.userError "packed mixed Basis dot mismatch")
+  let scalarDot ← phase "basis-scalar-dot" fun _ =>
+    CompStark.Pcs.windowDot dotInput 0 ringWeights (by omega)
+  unless scalarDot == packedDot do throw (IO.userError "scalar mixed dot mismatch")
+  let ringHigh := highWeights[0]
+  let factoredRing : Vector BF64.WordExt3 1024 := Vector.ofFn fun x =>
+    BF64.WordExt3.mul ringHigh[x.val/128] lowPatterns[0].expand[x.val%128]
+  let ringTensor ← phase "basis-factored-ring" fun _ =>
+    CompStark.Pcs.projectTensorFactoredRing 8 1024 128 8 8 rfl witness lowPatterns highWeights lowPatterns[0] ringHigh
+  unless ringTensor == CompStark.Pcs.projectTensorPointBinary 8 1024 128 8 8 rfl witness
+      lowPatterns highWeights factoredRing do
+    throw (IO.userError "factored ring projection mismatch")
+  let laneMessage ← phase "basis-lane-message" fun _ =>
+    CompStark.Pcs.roundCoefficientsWith 16 8 (fun i => accumulated[i]) (fun i => incoming[i])
+  unless laneMessage == CompStark.Pcs.roundCoefficients 16 8 accumulated incoming do
+    throw (IO.userError "fused blocked message mismatch")
   let tensorWeights := Vector.ofFn fun t : Fin 200 => CompStark.Fixtures.Pcs.value (t.val+61)
   let liftedTensor ← phase "basis-tensor-lift" fun _ =>
     CompStark.Pcs.liftTensorPointBinary 1024 128 8 8 rfl lowPatterns highWeights ringWeights tensorWeights

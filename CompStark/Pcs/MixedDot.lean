@@ -194,4 +194,88 @@ def roundCoefficientsWide (rows width : Nat) (table weights : Vector WordExt3 (2
   · change (sumExt _ _).toField = (dotExtWide _ _ _).toField
     simp only [sumExt_toField, dotExtWide_refines, roundProduct_eq, WordExt3.toField_mul]
 
+/-- Author both message coefficients in one traversal with twelve unreduced scalar words. -/
+@[specialize] def roundPairLoop (count : Nat) (f0 f1 w0 w1 : Fin count → WordExt3)
+    (left : Nat) (bound : left ≤ count)
+    (a0 a1 a2 a3 a4 a5 b0 b1 b2 b3 b4 b5 : UInt64) : Vector WordExt3 2 :=
+  match left with
+  | 0 => #v[(⟨⟨a0,a1⟩,⟨a2,a3⟩,⟨a4,a5⟩⟩ : MixedWide).reduce,
+      (⟨⟨b0,b1⟩,⟨b2,b3⟩,⟨b4,b5⟩⟩ : MixedWide).reduce]
+  | left+1 =>
+    let i : Fin count := ⟨left,by omega⟩
+    let x0 := f0 i
+    let x1 := f1 i
+    let y0 := w0 i
+    let y1 := w1 i
+    let u := MixedWide.mul x0 y0
+    let v := MixedWide.mul (WordExt3.add x0 x1) (WordExt3.add y0 y1)
+    roundPairLoop count f0 f1 w0 w1 left (by omega)
+      (a0 ^^^ u.c0.lo) (a1 ^^^ u.c0.hi) (a2 ^^^ u.c1.lo) (a3 ^^^ u.c1.hi)
+      (a4 ^^^ u.c2.lo) (a5 ^^^ u.c2.hi)
+      (b0 ^^^ v.c0.lo) (b1 ^^^ v.c0.hi) (b2 ^^^ v.c1.lo) (b3 ^^^ v.c1.hi)
+      (b4 ^^^ v.c2.lo) (b5 ^^^ v.c2.hi)
+termination_by structural left
+
+/-- The fused message coordinate 0 retains its exact visited finite sum. -/
+theorem roundPairLoop_message0 (count : Nat) (f0 f1 w0 w1 : Fin count → WordExt3)
+    (left : Nat) (bound : left ≤ count)
+    (a0 a1 a2 a3 a4 a5 b0 b1 b2 b3 b4 b5 : UInt64) :
+    (roundPairLoop count f0 f1 w0 w1 left bound a0 a1 a2 a3 a4 a5 b0 b1 b2 b3 b4 b5)[0].toField =
+      (⟨⟨a0,a1⟩,⟨a2,a3⟩,⟨a4,a5⟩⟩ : MixedWide).reduce.toField +
+        ∑ i : Fin left, (f0 ⟨i.val,by omega⟩).toField * (w0 ⟨i.val,by omega⟩).toField := by
+  induction left generalizing a0 a1 a2 a3 a4 a5 b0 b1 b2 b3 b4 b5 with
+  | zero => simp only [roundPairLoop, Fin.sum_univ_zero, add_zero]; rfl
+  | succ left ih =>
+    rw [roundPairLoop, ih, Fin.sum_univ_castSucc]
+    change (MixedWide.add (⟨⟨a0,a1⟩,⟨a2,a3⟩,⟨a4,a5⟩⟩ : MixedWide) _).reduce.toField + _ = _
+    rw [MixedWide.reduce_add, WordExt3.toField_add, MixedWide.reduce_mul, WordExt3.toField_mul]
+    simp only [Fin.val_castSucc, Fin.val_last]
+    ac_rfl
+
+/-- The fused message coordinate 1 retains its exact visited finite sum. -/
+theorem roundPairLoop_message1 (count : Nat) (f0 f1 w0 w1 : Fin count → WordExt3)
+    (left : Nat) (bound : left ≤ count)
+    (a0 a1 a2 a3 a4 a5 b0 b1 b2 b3 b4 b5 : UInt64) :
+    (roundPairLoop count f0 f1 w0 w1 left bound a0 a1 a2 a3 a4 a5 b0 b1 b2 b3 b4 b5)[1].toField =
+      (⟨⟨b0,b1⟩,⟨b2,b3⟩,⟨b4,b5⟩⟩ : MixedWide).reduce.toField +
+        ∑ i : Fin left, ((f0 ⟨i.val,by omega⟩).toField + (f1 ⟨i.val,by omega⟩).toField) *
+        ((w0 ⟨i.val,by omega⟩).toField + (w1 ⟨i.val,by omega⟩).toField) := by
+  induction left generalizing a0 a1 a2 a3 a4 a5 b0 b1 b2 b3 b4 b5 with
+  | zero => simp only [roundPairLoop, Fin.sum_univ_zero, add_zero]; rfl
+  | succ left ih =>
+    rw [roundPairLoop, ih, Fin.sum_univ_castSucc]
+    change (MixedWide.add (⟨⟨b0,b1⟩,⟨b2,b3⟩,⟨b4,b5⟩⟩ : MixedWide) _).reduce.toField + _ = _
+    rw [MixedWide.reduce_add, WordExt3.toField_add, MixedWide.reduce_mul, WordExt3.toField_mul]
+    simp only [WordExt3.toField_add, Fin.val_castSucc, Fin.val_last]
+    ac_rfl
+
+/-- Fused messages consume indexed tables directly without materializing input copies. -/
+@[inline] def roundCoefficientsWith (rows width : Nat)
+    (table weights : Fin (2*rows*width) → WordExt3) : Vector WordExt3 2 :=
+  roundPairLoop (rows*width) (fun i => table (roundLow rows width i))
+    (fun i => table (roundHigh rows width i)) (fun i => weights (roundLow rows width i))
+    (fun i => weights (roundHigh rows width i)) (rows*width) (Nat.le_refl _)
+    0 0 0 0 0 0 0 0 0 0 0 0
+
+/-- Direct indexed messages equal the complete two-pass deferred message. -/
+theorem roundCoefficientsWith_eq (rows width : Nat)
+    (table weights : Fin (2*rows*width) → WordExt3) :
+    roundCoefficientsWith rows width table weights =
+      roundCoefficientsWide rows width (Vector.ofFn table) (Vector.ofFn weights) := by
+  apply Vector.ext
+  intro i hi
+  apply WordExt3.toField_injective
+  have cases : i = 0 ∨ i = 1 := by omega
+  have z : (0 : WordExt3).toField = 0 := map_zero WordExt3.ringEquiv
+  rcases cases with rfl | rfl
+  · rw [roundCoefficientsWith, roundPairLoop_message0]
+    change _ = (dotExtWide (rows*width) (fun i => (Vector.ofFn table)[roundLow rows width i])
+      (fun i => (Vector.ofFn weights)[roundLow rows width i])).toField
+    simp only [MixedWide.reduce_zero, z, zero_add, dotExtWide_refines, Fin.getElem_fin, Vector.getElem_ofFn]
+  · rw [roundCoefficientsWith, roundPairLoop_message1]
+    change _ = (dotExtWide (rows*width)
+      (fun i => WordExt3.add ((Vector.ofFn table)[roundLow rows width i]) ((Vector.ofFn table)[roundHigh rows width i]))
+      (fun i => WordExt3.add ((Vector.ofFn weights)[roundLow rows width i]) ((Vector.ofFn weights)[roundHigh rows width i]))).toField
+    simp only [MixedWide.reduce_zero, z, zero_add, dotExtWide_refines, Fin.getElem_fin, Vector.getElem_ofFn, WordExt3.toField_add]
+
 end CompStark.Pcs
