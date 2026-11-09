@@ -19,14 +19,6 @@ open BF64
 @[inline] def roundBaseProduct (a : Word) (b : WordExt3) : WordExt3 :=
   if a.val = 0 then 0 else if a.val = 1 then b else WordExt3.mulScalar b a
 
-/-- Return the concrete word zero without constructing a field-equivalence value. -/
-@[inline] def roundBaseProductScalar (a : Word) (b : WordExt3) : WordExt3 :=
-  if a.val = 0 then ⟨⟨0⟩,⟨0⟩,⟨0⟩⟩ else if a.val = 1 then b else WordExt3.mulScalar b a
-
-/-- Concrete zero dispatch preserves the complete mixed product. -/
-@[csimp] theorem roundBaseProduct_code : roundBaseProduct = roundBaseProductScalar := by
-  rfl
-
 /-- Base-factor specialization retains the complete mixed product. -/
 theorem roundBaseProduct_eq (a : Word) (b : WordExt3) :
     roundBaseProduct a b = WordExt3.mulScalar b a := by
