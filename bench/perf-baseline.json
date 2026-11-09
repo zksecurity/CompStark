@@ -2,13 +2,13 @@
   "about": "User-space instructions per workload phase of scripts/perf-gate, single threaded: the median of 3 runs, the largest relative deviation from it (variation) and the allowed relative increase (tolerance). Rewritten by scripts/perf-gate --update.",
   "entries": {
     "wide-quartic/trace lde": {
-      "instructions": 569986427,
-      "variation": 2e-06,
+      "instructions": 569949977,
+      "variation": 6.5e-05,
       "tolerance": 0.005
     },
     "wide-quartic/trace commit": {
-      "instructions": 1761727047,
-      "variation": 4.1e-05,
+      "instructions": 1761629092,
+      "variation": 5e-05,
       "tolerance": 0.005
     },
     "wide-quartic/quotient": {
@@ -42,8 +42,8 @@
       "tolerance": 0.005
     },
     "wide-quartic/grind": {
-      "instructions": 236941133,
-      "variation": 0.00023,
+      "instructions": 236910975,
+      "variation": 0.000598,
       "tolerance": 0.005
     },
     "wide-quartic/query openings": {
@@ -62,13 +62,13 @@
       "tolerance": 0.005
     },
     "wide-quintic/trace lde": {
-      "instructions": 570019828,
-      "variation": 7.1e-05,
+      "instructions": 569916769,
+      "variation": 9.3e-05,
       "tolerance": 0.005
     },
     "wide-quintic/trace commit": {
-      "instructions": 1761722956,
-      "variation": 9e-06,
+      "instructions": 1761680230,
+      "variation": 1.6e-05,
       "tolerance": 0.005
     },
     "wide-quintic/quotient": {
@@ -82,13 +82,13 @@
       "tolerance": 0.005
     },
     "wide-quintic/quotient commit": {
-      "instructions": 659425063,
-      "variation": 2.2e-05,
+      "instructions": 659422937,
+      "variation": 0.00017,
       "tolerance": 0.005
     },
     "wide-quintic/opened values": {
-      "instructions": 314746160,
-      "variation": 0.000206,
+      "instructions": 314633739,
+      "variation": 0.000202,
       "tolerance": 0.005
     },
     "wide-quintic/reduce": {
@@ -112,8 +112,8 @@
       "tolerance": 0.005
     },
     "wide-quintic/prove": {
-      "instructions": 5225954355,
-      "variation": 0.000117,
+      "instructions": 5225842975,
+      "variation": 9.3e-05,
       "tolerance": 0.005
     },
     "wide-quintic/verify": {
@@ -122,8 +122,8 @@
       "tolerance": 0.005
     },
     "keccak/trace lde": {
-      "instructions": 2538212491,
-      "variation": 4.7e-05,
+      "instructions": 2537776499,
+      "variation": 5.8e-05,
       "tolerance": 0.005
     },
     "keccak/trace commit": {
@@ -142,8 +142,8 @@
       "tolerance": 0.005
     },
     "keccak/quotient commit": {
-      "instructions": 82564957,
-      "variation": 7.4e-05,
+      "instructions": 82554468,
+      "variation": 7.1e-05,
       "tolerance": 0.005
     },
     "keccak/opened values": {
@@ -152,8 +152,8 @@
       "tolerance": 0.005
     },
     "keccak/reduce": {
-      "instructions": 600012862,
-      "variation": 5.2e-05,
+      "instructions": 600012278,
+      "variation": 6e-06,
       "tolerance": 0.005
     },
     "keccak/commit phase": {
@@ -172,8 +172,8 @@
       "tolerance": 0.005
     },
     "keccak/prove": {
-      "instructions": 14615180570,
-      "variation": 6.6e-05,
+      "instructions": 14614517919,
+      "variation": 0.000102,
       "tolerance": 0.005
     },
     "keccak/verify": {
@@ -182,28 +182,28 @@
       "tolerance": 0.005
     },
     "batch/trace lde": {
-      "instructions": 868538565,
-      "variation": 0.000164,
+      "instructions": 868469811,
+      "variation": 7e-05,
       "tolerance": 0.005
     },
     "batch/trace commit": {
-      "instructions": 2813789905,
-      "variation": 6e-06,
+      "instructions": 2813723481,
+      "variation": 4.6e-05,
       "tolerance": 0.005
     },
     "batch/quotient": {
-      "instructions": 503496068,
-      "variation": 3e-06,
+      "instructions": 503495571,
+      "variation": 5.4e-05,
       "tolerance": 0.005
     },
     "batch/quotient lde": {
-      "instructions": 172263513,
-      "variation": 5e-06,
+      "instructions": 172262702,
+      "variation": 0.000245,
       "tolerance": 0.005
     },
     "batch/quotient commit": {
-      "instructions": 1089815890,
-      "variation": 8.2e-05,
+      "instructions": 1089741046,
+      "variation": 5.3e-05,
       "tolerance": 0.005
     },
     "batch/opened values": {
@@ -247,8 +247,8 @@
       "tolerance": 0.005
     },
     "lookup/prove": {
-      "instructions": 3052549377,
-      "variation": 9.6e-05,
+      "instructions": 3052075341,
+      "variation": 0.000246,
       "tolerance": 0.005
     },
     "merkle/root": {
@@ -257,13 +257,13 @@
       "tolerance": 0.005
     },
     "lde/coset lde": {
-      "instructions": 5355828996,
-      "variation": 2e-06,
+      "instructions": 5355337209,
+      "variation": 4.5e-05,
       "tolerance": 0.005
     },
     "keccak-scalar/f1600 chain": {
-      "instructions": 77421611,
-      "variation": 0.0,
+      "instructions": 75891238,
+      "variation": 5e-06,
       "tolerance": 0.005
     },
     "keccak-scalar/hash 64": {
@@ -277,8 +277,8 @@
       "tolerance": 0.005
     },
     "keccak-batch/f1600": {
-      "instructions": 79073068,
-      "variation": 5e-06,
+      "instructions": 77506381,
+      "variation": 9e-06,
       "tolerance": 0.005
     },
     "keccak-batch/hash 64": {
@@ -307,13 +307,13 @@
       "tolerance": 0.7159
     },
     "keccak-merkle/duplex": {
-      "instructions": 137593270,
-      "variation": 7.7e-05,
+      "instructions": 136070116,
+      "variation": 5e-05,
       "tolerance": 0.005
     },
     "keccak-merkle/grind": {
-      "instructions": 1070466,
-      "variation": 7e-05,
+      "instructions": 545590,
+      "variation": 0.0,
       "tolerance": 0.005
     },
     "sumcheck-fold/products": {
@@ -337,14 +337,14 @@
       "tolerance": 0.005
     },
     "sumcheck-fold/base-fold": {
-      "instructions": 24526333,
-      "variation": 0.001908,
+      "instructions": 24525930,
+      "variation": 4e-05,
       "tolerance": 0.005
     },
     "sumcheck-fold/packed-base-fold": {
-      "instructions": 12102804,
-      "variation": 0.003919,
-      "tolerance": 0.0157
+      "instructions": 12102539,
+      "variation": 5.3e-05,
+      "tolerance": 0.005
     },
     "sumcheck-fold/constant-fold": {
       "instructions": 21969702,
@@ -522,8 +522,8 @@
       "tolerance": 0.005
     },
     "pcs/basis-byte-columns": {
-      "instructions": 41867941,
-      "variation": 1e-06,
+      "instructions": 41867481,
+      "variation": 0.000191,
       "tolerance": 0.005
     },
     "pcs/basis-tensor-columns": {

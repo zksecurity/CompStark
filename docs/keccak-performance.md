@@ -1,6 +1,6 @@
 # Keccak kernel measurements
 
-The single-thread user-instruction comparison uses CompStark main `8772ae76` and unchanged leanMultisig revision `9d8bce818aa7c7e18e67026e522a9b1539d0a57d`, built with `target-cpu=native`. The host selects Rust's AVX-512 single-state permutation. The additional scalar reference uses the portable `u64` implementation from the same revision. FIFO phase markers acknowledge hardware-counter boundaries; allocation and result materialization belong to the measured operation. Wall times require the shared `/tmp/compstark-bench.lock`.
+The single-thread user-instruction comparison uses CompStark main `8772ae76` and unchanged leanMultisig revision `9d8bce818aa7c7e18e67026e522a9b1539d0a57d`, built with `target-cpu=native`. The Ryzen 7 3700X host selects Rust's scalar single-state permutation and AVX2 batched hashing and nonce probes. The additional scalar reference uses the portable `u64` implementation from the same revision. FIFO phase markers acknowledge hardware-counter boundaries; allocation and result materialization belong to the measured operation. Wall times require the shared `/tmp/compstark-bench.lock`.
 
 | Kernel | Main instructions/op | Rust native instructions/op | Main/native |
 | --- | ---: | ---: | ---: |
