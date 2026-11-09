@@ -8,6 +8,7 @@ Modifications copyright 2026 Succinct Labs, Benedikt Bunz, William Wang.
 -/
 module
 public import CompStark.Pcs.ChallengeFold
+public import CompStark.Pcs.FusedPairs
 public import Mathlib.Data.List.OfFn
 
 /-! A fused adjacent restriction and next-message pass for later WHIR rounds. -/
@@ -237,5 +238,41 @@ def foldMessageNative (r : WordExt3) (rows : Nat) (table weight : Vector WordExt
     rfl
   · rw [Fin.foldl_eq_foldl_finRange]
     rfl
+
+/-- Restrict both inputs while accumulating the following message in scalar registers. -/
+def foldMessageSurvivors (r : WordExt3) (rows : Nat) (table weight : Vector WordExt3 (4*rows)) : FoldMessageState :=
+  let shared := Sumcheck.prepare r
+  let result := materializePairs rows (foldedCoordinate shared rows table) (foldedCoordinate shared rows weight)
+  ⟨result.table.toArray,result.weights.toArray,result.message[0],result.message[1]⟩
+
+/-- Equal survivor arrays and message coefficients identify the complete fused state. -/
+private theorem foldMessageState_ext (a b : FoldMessageState)
+    (table : a.table = b.table) (weight : a.weight = b.weight)
+    (constant : a.constant = b.constant) (quadratic : a.quadratic = b.quadratic) : a = b := by
+  cases a
+  cases b
+  cases table
+  cases weight
+  cases constant
+  cases quadratic
+  rfl
+
+/-- Scalar-register message accumulation retains both restricted arrays and both coefficients. -/
+@[csimp] theorem foldMessageNative_code : @foldMessageNative = @foldMessageSurvivors := by
+  funext r rows table weight
+  rw [← foldMessage_code]
+  apply foldMessageState_ext
+  · simp only [foldMessageSurvivors,materializePairs_table,foldMessage_table]
+  · simp only [foldMessageSurvivors,materializePairs_weights,foldMessage_weight]
+  · apply WordExt3.toField_injective
+    simp only [foldMessageSurvivors,materializePairs]
+    rw [survivorLoop_message0,foldMessage_constant]
+    simp only [MixedWide.reduce_zero,show (0 : WordExt3).toField = (0 : Ext3) from rfl,
+      zero_add,foldMessagePair]
+  · apply WordExt3.toField_injective
+    simp only [foldMessageSurvivors,materializePairs]
+    rw [survivorLoop_message1,foldMessage_quadratic]
+    simp only [MixedWide.reduce_zero,show (0 : WordExt3).toField = (0 : Ext3) from rfl,
+      zero_add,foldMessagePair]
 
 end CompStark.Pcs

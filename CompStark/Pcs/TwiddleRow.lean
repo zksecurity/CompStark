@@ -95,6 +95,31 @@ def occupiedSweepRowsNative {k n words rowLength : Nat} (blocks : Vector (Fin k)
       twiddleBlockSweep blocks[b] span size (Sumcheck.mapMul map) a
     else twiddleBlockSweep blocks[b] span size (Word.mulMasked scalar) a) a
 
+/-- Arithmetic scalar multiplication is shared across each occupied block. -/
+def occupiedSweepRowsScalar {k n words rowLength : Nat} (blocks : Vector (Fin k) n) (span : Nat)
+    (size : k*(2*span) = words) (offset : Nat) (row : TwiddleRow rowLength)
+    (a : BF64.Packed.Buffer words) : BF64.Packed.Buffer words :=
+  Fin.foldl n (fun a b =>
+    let scalar := row.lookup (offset+blocks[b].val)
+    scalarBlockSweep blocks[b] span size scalar a) a
+
+/-- Hardware-backed products preserve the prepared-map butterfly. -/
+@[csimp] theorem occupiedSweepRowsNative_code : @occupiedSweepRowsNative = @occupiedSweepRowsScalar := by
+  funext k n words rowLength blocks span size offset row a
+  unfold occupiedSweepRowsNative occupiedSweepRowsScalar
+  simp only [scalarBlockSweep_eq,twiddleBlockSweep,transposePair,Packed.Multiplier.masked]
+  apply congrArg (fun update => Fin.foldl n update a)
+  funext input b
+  split
+  · have same : Sumcheck.mapMul (Sumcheck.byteMap (row.lookup (offset+blocks[b].val))) =
+        Word.mulMasked (row.lookup (offset+blocks[b].val)) := by
+      funext v
+      apply Word.toField_injective
+      rw [Sumcheck.mapMul_eq, Sumcheck.byteMap_eq, Word.ByteMap.toField_mul,
+        Word.toField_mulMasked]
+    rw [same]
+  · rfl
+
 /-- Specialized inner multiplication preserves every occupied butterfly and output word. -/
 @[csimp] theorem occupiedSweepRows_code : @occupiedSweepRows = @occupiedSweepRowsNative := by
   funext k n words rowLength blocks span size offset row a

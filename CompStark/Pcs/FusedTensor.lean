@@ -39,14 +39,68 @@ structure TensorLiftPlan (low high : Nat) where
   ((List.finRange patterns).filter fun p =>
     decide (coefficients[p.val] ≠ (⟨⟨0⟩,⟨0⟩,⟨0⟩⟩ : WordExt3))).toArray
 
+/-- Group scalar contributions by their retained low-pattern key. -/
+def patternCoefficients (patterns count : Nat) (keys : Vector (Fin patterns) count)
+    (f : Fin count → WordExt3) : Vector WordExt3 patterns :=
+  Vector.ofFn fun p => sumExt count fun t => if keys[t.val] = p then f t else 0
+
+/-- Scatter each contribution once into its shared pattern accumulator. -/
+@[specialize] def patternScatter (patterns count : Nat) (keys : Vector (Fin patterns) count)
+    (f : Fin count → WordExt3) (left : Nat) (bound : left ≤ count)
+    (out : Vector WordExt3 patterns) : Vector WordExt3 patterns :=
+  match left with
+  | 0 => out
+  | left+1 =>
+    let key := keys[left]
+    patternScatter patterns count keys f left (by omega)
+      (out.set key (WordExt3.add out[key] (f ⟨left,by omega⟩)))
+termination_by structural left
+
+/-- Scattering retains the complete sum for every pattern, including duplicate keys. -/
+theorem patternScatter_refines (patterns count : Nat) (keys : Vector (Fin patterns) count)
+    (f : Fin count → WordExt3) (left : Nat) (bound : left ≤ count)
+    (out : Vector WordExt3 patterns) (p : Fin patterns) :
+    (patternScatter patterns count keys f left bound out)[p].toField = out[p].toField +
+      ∑ t : Fin left, if keys[t.val] = p then (f ⟨t.val,by omega⟩).toField else 0 := by
+  induction left generalizing out with
+  | zero =>
+    rw [patternScatter]
+    simp only [Fin.sum_univ_zero, add_zero]
+  | succ left ih =>
+    rw [patternScatter, ih, Fin.sum_univ_castSucc]
+    simp only [Fin.getElem_fin, Vector.getElem_set, Fin.val_castSucc, Fin.val_last]
+    by_cases same : keys[left].val = p.val
+    · have equal : keys[left] = p := Fin.ext same
+      simp only [equal, ite_true, WordExt3.toField_add]
+      ac_rfl
+    · have different : keys[left] ≠ p := fun e => same (congrArg Fin.val e)
+      simp only [same, different, ite_false, add_zero]
+
+/-- Aggregate pattern coefficients in one pass through the point terms. -/
+def patternCoefficientsScatter (patterns count : Nat) (keys : Vector (Fin patterns) count)
+    (f : Fin count → WordExt3) : Vector WordExt3 patterns :=
+  patternScatter patterns count keys f count (Nat.le_refl _) (Vector.replicate patterns 0)
+
+/-- Keyed accumulation equals the complete filtered finite sums. -/
+@[csimp] theorem patternCoefficients_code : patternCoefficients = patternCoefficientsScatter := by
+  funext patterns count keys f
+  apply Vector.ext
+  intro p hp
+  apply WordExt3.toField_injective
+  rw [show (patternCoefficientsScatter patterns count keys f)[p].toField = _ from
+    patternScatter_refines patterns count keys f count (Nat.le_refl _) (Vector.replicate patterns 0) ⟨p,hp⟩]
+  have z : (0 : WordExt3).toField = 0 := map_zero WordExt3.ringEquiv
+  simp only [patternCoefficients, Vector.getElem_ofFn, sumExt_toField, Fin.getElem_fin,
+    Vector.getElem_replicate, z, zero_add, apply_ite]
+
 /-- Retain one coefficient for each distinct low pattern and high block. -/
 def prepareTensorLift (low high count : Nat) (windows : Vector (BasisWindow low) count)
     (gamma : Vector (Vector WordExt3 high) count) (a : Vector WordExt3 (count+192)) :
     TensorLiftPlan low high :=
   let unique := windows.toList.dedup
   let keys := tensorPatternKeys windows
-  let coefficients := Vector.ofFn (fun h : Fin high => Vector.ofFn fun p : Fin unique.length =>
-    sumExt count fun t => if keys[t.val] = p then roundProduct a[t.val] gamma[t.val][h.val] else 0)
+  let coefficients := Vector.ofFn (fun h : Fin high =>
+    patternCoefficients unique.length count keys (fun t => roundProduct a[t.val] gamma[t.val][h.val]))
   let live := coefficients.map liveTensorPatterns
   { patterns := unique.length
     windows := unique.toArray.toVector
@@ -133,7 +187,7 @@ theorem prepareTensorLift_weightAt (cols low high count : Nat) (shape : cols = h
       (liftTensorPointBinary cols low high count shape windows gamma ring a)[i.val] := by
   apply WordExt3.toField_injective
   simp only [TensorLiftPlan.weightAt, WordExt3.toField_add, TensorLiftPlan.pointAt_refines,
-    prepareTensorLift, liftTensorPointBinary, tensorWeightedWindows_code, tensorWeightedWindowsShared, Vector.getElem_ofFn,
+    prepareTensorLift, patternCoefficients, liftTensorPointBinary, tensorWeightedWindows_code, tensorWeightedWindowsShared, Vector.getElem_ofFn,
     sumExt_toField, scaleTensorWindow_refines, Fin.getElem_fin]
   rfl
 

@@ -24,6 +24,16 @@ def inductionMultiplier (scalar : Word) : Packed.Multiplier where
   correct a := by
     rw [Sumcheck.mapMul_eq, Sumcheck.byteMap_eq, Word.ByteMap.toField_mul]
 
+/-- Compiled fixed multipliers use the hardware-backed field product. -/
+@[csimp] theorem inductionMultiplier_code : inductionMultiplier = Packed.Multiplier.masked := by
+  funext scalar
+  unfold inductionMultiplier Packed.Multiplier.masked
+  congr 1
+  funext a
+  apply Word.toField_injective
+  rw [Sumcheck.mapMul_eq, Sumcheck.byteMap_eq, Word.ByteMap.toField_mul,
+    Word.toField_mulMasked]
+
 /-- Build a stage's subset sums with one scalar accumulator per twiddle. -/
 def inductionTwiddles (d : Nat) (hd : d < 64) (i : Fin d) : Array Word :=
   let values := computableNormalizedWValuesArray (β := Packed.flatBasis) (ℓ := d)

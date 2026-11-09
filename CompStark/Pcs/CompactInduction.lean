@@ -8,6 +8,7 @@ Modifications copyright 2026 Succinct Labs, Benedikt Bunz, William Wang.
 -/
 module
 public import CompStark.Pcs.SparseInduction
+public import CompStark.Sumcheck.Buffer
 
 /-! Query-local twiddle preparation for occupied transposed transforms. -/
 set_option backward.isDefEq.respectTransparency false
@@ -107,6 +108,150 @@ def occupiedSweepBlocks {k n words : Nat} (blocks : Vector (Fin k) n) (span : Na
         simpa only [frontierIndex, Fin.val_cast, Fin.val_one, Nat.mul_one, base] using bound⟩
       let out := transposePair multiplier (BF64.Packed.read a lo) (BF64.Packed.read a hi)
       BF64.Packed.write (BF64.Packed.write a lo out.1) hi out.2) a) a
+
+/-- Fixed-length byte storage carried directly by the butterfly loop. -/
+abbrev InductionBytes (words : Nat) := {bytes : ByteArray // bytes.size = 8*words}
+
+/-- Restore the certified word view once at a butterfly-block boundary. -/
+@[inline] def InductionBytes.buffer {words : Nat} (bytes : InductionBytes words) : BF64.Packed.Buffer words :=
+  ⟨⟨words,bytes.val,bytes.property⟩,rfl⟩
+
+/-- Retain only the physical byte array inside a butterfly block. -/
+@[inline] def InductionBytes.ofBuffer {words : Nat} (a : BF64.Packed.Buffer words) : InductionBytes words :=
+  ⟨a.val.bytes,by rw [a.val.byteSize,a.property]⟩
+
+/-- The physical byte view preserves every certified buffer. -/
+theorem InductionBytes.buffer_ofBuffer {words : Nat} (a : BF64.Packed.Buffer words) :
+    (InductionBytes.ofBuffer a).buffer = a := by
+  rcases a with ⟨⟨size,bytes,h⟩,equal⟩
+  dsimp only at equal
+  subst size
+  rfl
+
+/-- Update a butterfly while carrying no runtime word-buffer constructor. -/
+@[inline] def InductionBytes.butterfly {words : Nat} (bytes : InductionBytes words)
+    (lo hi : Fin words) (scalar : Word) : InductionBytes words :=
+  let a := bytes.buffer
+  let total := Word.add (BF64.Packed.read a lo) (BF64.Packed.read a hi)
+  let high := Word.add (BF64.Packed.read a hi) (Word.mulMasked scalar total)
+  InductionBytes.ofBuffer (BF64.Packed.write (BF64.Packed.write a lo total) hi high)
+
+/-- Load and store butterflies with the approved bounded native word accessors. -/
+@[inline] def InductionBytes.butterflyIndices {words : Nat} (native : 8*words < USize.size)
+    (bytes : InductionBytes words) (lo hi : USize) (low : lo.toNat < words) (high : hi.toNat < words)
+    (scalar : Word) : InductionBytes words :=
+  let a := bytes.buffer
+  let u := Sumcheck.readWord a lo low native
+  let v := Sumcheck.readWord a hi high native
+  let total := Word.add u v
+  let bot := Word.add v (Word.mulMasked scalar total)
+  InductionBytes.ofBuffer (Sumcheck.writeWord (Sumcheck.writeWord a lo low native total) hi high native bot)
+
+/-- Native word access preserves every input read and output byte. -/
+theorem InductionBytes.butterflyIndices_eq {words : Nat} (native : 8*words < USize.size)
+    (bytes : InductionBytes words) (lo hi : USize) (low : lo.toNat < words) (high : hi.toNat < words)
+    (scalar : Word) :
+    bytes.butterflyIndices native lo hi low high scalar =
+      bytes.butterfly ⟨lo.toNat,low⟩ ⟨hi.toNat,high⟩ scalar := by
+  simp only [butterflyIndices,butterfly,Sumcheck.readWord_eq,Sumcheck.writeWord_eq]
+
+/-- Bounded native addition agrees with its natural coordinate. -/
+private theorem inductionAdd (x y : USize) (safe : x.toNat+y.toNat < USize.size) :
+    (x+y).toNat = x.toNat+y.toNat := by
+  rw [USize.toNat_add]
+  change (x.toNat+y.toNat)%USize.size = x.toNat+y.toNat
+  exact Nat.mod_eq_of_lt safe
+
+/-- Both butterfly endpoints use exact native addition in an addressable block. -/
+theorem inductionBlockIndices {k words : Nat} (block : Fin k) (span : Nat)
+    (size : k*(2*span) = words) (native : 8*words < USize.size) (c : Fin span) :
+    (c.val.toUSize+(2*span*block.val).toUSize).toNat = c.val+2*span*block.val ∧
+      (c.val.toUSize+(2*span*block.val).toUSize+span.toUSize).toNat = c.val+span+2*span*block.val := by
+  have bound : c.val+span+2*span*block.val < words := by
+    have := c.isLt; have := block.isLt; nlinarith
+  have ci := USize.toNat_ofNat_of_lt' (show c.val < USize.size by omega)
+  have bi := USize.toNat_ofNat_of_lt' (show 2*span*block.val < USize.size by omega)
+  have si := USize.toNat_ofNat_of_lt' (show span < USize.size by omega)
+  have low : (c.val.toUSize+(2*span*block.val).toUSize).toNat = c.val+2*span*block.val := by
+    rw [inductionAdd _ _ (by rw [ci,bi]; omega),ci,bi]
+  refine ⟨low,?_⟩
+  rw [inductionAdd _ _ (by rw [low,si]; omega),low,si]
+  omega
+
+/-- Direct byte-array state retains the ordered scalar butterflies. -/
+def scalarBlockSweep {k words : Nat} (block : Fin k) (span : Nat)
+    (size : k*(2*span) = words) (scalar : Word)
+    (a : BF64.Packed.Buffer words) : BF64.Packed.Buffer words :=
+  let base := 2*span*block.val
+  InductionBytes.buffer (Fin.foldl span (fun bytes c =>
+    let lo : Fin words := ⟨c.val+base,by dsimp only [base]; have := c.isLt; have := block.isLt; nlinarith⟩
+    let hi : Fin words := ⟨c.val+span+base,by dsimp only [base]; have := c.isLt; have := block.isLt; nlinarith⟩
+    bytes.butterfly lo hi scalar) (InductionBytes.ofBuffer a))
+
+/-- Addressable buffers retain machine byte offsets for the whole block. -/
+def scalarBlockSweepMachine {k words : Nat} (block : Fin k) (span : Nat)
+    (size : k*(2*span) = words) (scalar : Word) (a : BF64.Packed.Buffer words) : BF64.Packed.Buffer words :=
+  if native : 8*words < USize.size then
+    let base := (2*span*block.val).toUSize
+    InductionBytes.buffer (Fin.foldl span (fun bytes c =>
+      let lo := c.val.toUSize+base
+      let hi := lo+span.toUSize
+      bytes.butterflyIndices native lo hi
+        (by rw [(inductionBlockIndices block span size native c).1]; have := c.isLt; have := block.isLt; nlinarith)
+        (by rw [(inductionBlockIndices block span size native c).2]; have := c.isLt; have := block.isLt; nlinarith)
+        scalar) (InductionBytes.ofBuffer a))
+  else scalarBlockSweep block span size scalar a
+
+/-- Machine byte addressing preserves the complete butterfly-block fold. -/
+@[csimp] theorem scalarBlockSweep_code : @scalarBlockSweep = @scalarBlockSweepMachine := by
+  funext k words block span size scalar a
+  unfold scalarBlockSweepMachine
+  split
+  · rename_i native
+    simp only [InductionBytes.butterflyIndices_eq,
+      (inductionBlockIndices block span size native _).1,
+      (inductionBlockIndices block span size native _).2]
+    rfl
+  · rfl
+
+/-- Byte-array state is equal to the complete word-buffer fold. -/
+theorem scalarBlockSweep_eq {k words : Nat} (block : Fin k) (span : Nat)
+    (size : k*(2*span) = words) (scalar : Word) (a : BF64.Packed.Buffer words) :
+    scalarBlockSweep block span size scalar a =
+      Fin.foldl span (fun a c =>
+        let lo : Fin words := ⟨c.val+2*span*block.val,by have := c.isLt; have := block.isLt; nlinarith⟩
+        let hi : Fin words := ⟨c.val+span+2*span*block.val,by have := c.isLt; have := block.isLt; nlinarith⟩
+        let out := transposePair (Packed.Multiplier.masked scalar) (BF64.Packed.read a lo) (BF64.Packed.read a hi)
+        BF64.Packed.write (BF64.Packed.write a lo out.1) hi out.2) a := by
+  unfold scalarBlockSweep
+  simp only [Fin.foldl_eq_finRange_foldl]
+  symm
+  conv_lhs => rw [← InductionBytes.buffer_ofBuffer a]
+  apply List.foldl_hom InductionBytes.buffer
+  intro bytes c
+  rw [InductionBytes.butterfly,InductionBytes.buffer_ofBuffer]
+  rfl
+
+/-- Scalar multipliers remove the per-butterfly indirect call. -/
+def occupiedSweepBlocksScalar {k n words : Nat} (blocks : Vector (Fin k) n) (span : Nat)
+    (size : k*(2*span) = words) (multipliers : Vector Packed.Multiplier n)
+    (a : BF64.Packed.Buffer words) : BF64.Packed.Buffer words :=
+  Fin.foldl n (fun a b => scalarBlockSweep blocks[b] span size multipliers[b].scalar a) a
+
+/-- The scalar butterfly agrees with any certified multiplier implementation. -/
+@[csimp] theorem occupiedSweepBlocks_code : @occupiedSweepBlocks = @occupiedSweepBlocksScalar := by
+  funext k n words blocks span size multipliers a
+  unfold occupiedSweepBlocks occupiedSweepBlocksScalar
+  simp only [scalarBlockSweep_eq]
+  apply congrArg (fun update => Fin.foldl n update a)
+  funext input b
+  have same : transposePair multipliers[b] =
+      transposePair (Packed.Multiplier.masked multipliers[b].scalar) := by
+    funext u v
+    exact transposePair_scalar_eq multipliers[b]
+      (Packed.Multiplier.masked multipliers[b].scalar) rfl u v
+  rw [same]
+
 
 section
 attribute [local irreducible] BF64.Packed.read BF64.Packed.write transposePair
