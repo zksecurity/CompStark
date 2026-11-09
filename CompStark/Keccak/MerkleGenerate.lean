@@ -33,29 +33,62 @@ def Tree.generate : (depth : Nat) → (Fin (2 ^ depth) → Row) → Tree depth
   | depth + 1, row => Tree.join (Tree.generate depth (leftRows row))
       (Tree.generate depth (rightRows row))
 
-/-- Completed subtrees are independent tasks above the 1024-row batch size. -/
-def Tree.generateParallel : (depth : Nat) → (Fin (2 ^ depth) → Row) → Tree depth
-  | 0, row => Tree.leaf (row 0)
-  | depth + 1, row =>
-    if depth < 10 then Tree.join (Tree.generate depth (leftRows row))
-      (Tree.generate depth (rightRows row))
+/-- Generate an aligned interval while retaining one row accessor and an absolute offset. -/
+def Tree.generateAt {n : Nat} (row : Fin n → Row) :
+    (depth start : Nat) → start + 2 ^ depth ≤ n → Tree depth
+  | 0, start, bound => Tree.leaf (row ⟨start, by simp only [Nat.pow_zero] at bound; omega⟩)
+  | depth + 1, start, bound =>
+    if depth < 10 then
+      Tree.join
+        (Tree.generateAt row depth start (by rw [pow_succ] at bound; omega))
+        (Tree.generateAt row depth (start + 2 ^ depth) (by rw [pow_succ] at bound; omega))
     else
-      let left := Task.spawn fun _ => Tree.generateParallel depth (leftRows row)
-      let right := Task.spawn fun _ => Tree.generateParallel depth (rightRows row)
+      let left := Task.spawn fun _ =>
+        Tree.generateAt row depth start (by rw [pow_succ] at bound; omega)
+      let right := Task.spawn fun _ =>
+        Tree.generateAt row depth (start + 2 ^ depth) (by rw [pow_succ] at bound; omega)
       Tree.join left.get right.get
 
-/-- Parallel subtree construction retains every payload and every cached digest. -/
-@[csimp] theorem Tree.generate_code : Tree.generate = Tree.generateParallel := by
-  funext depth row
-  induction depth with
-  | zero => rfl
+/-- Absolute row addresses preserve the complete generated subtree. -/
+theorem Tree.generateAt_eq {n : Nat} (row : Fin n → Row) (depth start : Nat)
+    (bound : start + 2 ^ depth ≤ n) :
+    Tree.generateAt row depth start bound =
+      Tree.generate depth (fun i => row ⟨start + i.val, by have := i.isLt; omega⟩) := by
+  induction depth generalizing start with
+  | zero =>
+    simp only [Tree.generateAt, Tree.generate, Fin.val_zero, Nat.add_zero]
   | succ depth ih =>
-    simp only [Tree.generate, Tree.generateParallel]
-    split
-    · rfl
-    · change Tree.join (Tree.generate depth _) (Tree.generate depth _) =
-        Tree.join (Tree.generateParallel depth _) (Tree.generateParallel depth _)
+    rw [Tree.generateAt, Tree.generate]
+    split <;>
+      change Tree.join (Tree.generateAt row depth start _)
+        (Tree.generateAt row depth (start + 2 ^ depth) _) = _
+    all_goals
       rw [ih, ih]
+      apply congrArg₂ Tree.join
+      · apply congrArg (Tree.generate depth)
+        funext i
+        rfl
+      · apply congrArg (Tree.generate depth)
+        funext i
+        unfold rightRows
+        congr 1
+        apply Fin.ext
+        simp only [Nat.add_assoc]
+
+/-- Complete subtree batches use one absolute row address per leaf. -/
+def Tree.generateAddressed (depth : Nat) (row : Fin (2 ^ depth) → Row) : Tree depth :=
+  Tree.generateAt row depth 0 (by omega)
+
+/-- Addressed parallel subtrees retain every payload and every cached digest. -/
+@[csimp] theorem Tree.generate_code : Tree.generate = Tree.generateAddressed := by
+  funext depth row
+  symm
+  rw [Tree.generateAddressed, Tree.generateAt_eq]
+  congr 1
+  funext i
+  congr 1
+  apply Fin.ext
+  exact Nat.zero_add _
 
 /-- A smaller subtree does not collide with a forest of strictly taller trees. -/
 theorem carry_below (tree : Tree depth) (forest : List Subtree)
