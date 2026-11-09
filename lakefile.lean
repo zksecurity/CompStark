@@ -14,7 +14,7 @@ package CompStark where
 -- unboxed products, coordinate planes generic over fast extensions, and the BF64 word
 -- extension kernels and prepared byte maps.
 require CompPoly from git "https://github.com/mitschabaude-bot/CompPoly.git" @
-    "50601b6b96059a29b16c35d8129c959d0ff533b9"
+    "5cb8b67efc0d0846c4dff85b8afb96f2987be140"
 
 -- ArkLib main with Johnson-regime mutual correlated agreement for power curves, lossy mutual
 -- correlated agreement, FRI on the interaction layer with its knowledge certificate on Plonky3's

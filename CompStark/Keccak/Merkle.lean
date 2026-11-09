@@ -5,6 +5,7 @@ Released under Apache 2.0 license as described in the file LICENSE.
 module
 
 public import CompStark.Keccak.Refines
+public import Mathlib.Data.List.FinRange
 public import ToMathlib.Data.IndexedBinaryTree.Perfect
 public import VCVio.CryptoFoundations.MerkleTree.Inductive.Batch.Completeness
 public import VCVio.CryptoFoundations.MerkleTree.Mixed.Multi
@@ -131,6 +132,76 @@ def Builder.finish (builder : Builder) : Except String Subtree :=
 /-- Commit a complete array, returning both root access and private tree data. -/
 def commit (rows : Array Row) : Except String Subtree :=
   (Builder.absorb {} rows).finish
+
+/-- Hash contiguous leaf batches in parallel, preserving their input order. -/
+def leafBatches {α : Type} (row : α → Row) (rows : List α) : List (Tree 0) :=
+  if rows.length ≤ 1024 then rows.map (fun i => Tree.leaf (row i))
+  else
+    let half := rows.length / 2
+    let left := Task.spawn fun _ => leafBatches row (rows.take half)
+    let right := Task.spawn fun _ => leafBatches row (rows.drop half)
+    left.get ++ right.get
+termination_by rows.length
+ decreasing_by
+  · simp only [List.length_take]; omega
+  · simp only [List.length_drop]; omega
+
+/-- Parallel leaf batches retain the complete scalar leaf trees in order. -/
+theorem leafBatches_eq {α : Type} (row : α → Row) (rows : List α) :
+    leafBatches row rows = rows.map (fun i => Tree.leaf (row i)) := by
+  rw [leafBatches]
+  split
+  · rfl
+  · change leafBatches row (rows.take (rows.length / 2)) ++
+      leafBatches row (rows.drop (rows.length / 2)) = rows.map (fun i => Tree.leaf (row i))
+    rw [leafBatches_eq, leafBatches_eq, ← List.map_append, List.take_append_drop]
+termination_by rows.length
+ decreasing_by
+  · simp only [List.length_take]; omega
+  · simp only [List.length_drop]; omega
+
+/-- Merge independently hashed leaf batches into the retained binary-carry tree. -/
+def Builder.absorbBatched (builder : Builder) (rows : Array Row) : Builder :=
+  (leafBatches id rows.toList).foldl
+    (fun builder leaf => ⟨carry ⟨0, leaf⟩ builder.forest⟩) builder
+
+/-- Batched leaf hashing preserves the complete streaming builder. -/
+@[csimp] theorem Builder.absorb_code : @Builder.absorb = @Builder.absorbBatched := by
+  funext builder rows
+  simp only [Builder.absorbBatched, leafBatches_eq, List.foldl_map,
+    Builder.absorb, Array.foldl_toList]
+  rfl
+
+/-- Consume generated rows directly, retaining no intermediate array of leaves. -/
+def Builder.absorbOfFn (builder : Builder) (n : Nat) (row : Fin n → Row) : Builder :=
+  Fin.foldl n (fun builder i => builder.absorbRow (row i)) builder
+
+/-- Generated-row consumption is the exact array-based streaming builder. -/
+theorem Builder.absorbOfFn_eq (builder : Builder) (n : Nat) (row : Fin n → Row) :
+    builder.absorbOfFn n row = builder.absorb (Array.ofFn row) := by
+  simp only [Builder.absorbOfFn, Fin.foldl_eq_finRange_foldl, Builder.absorb,
+    ← Array.foldl_toList, Array.toList_ofFn, List.ofFn_eq_map, List.foldl_map]
+
+/-- Generate and hash leaves inside contiguous parallel batches. -/
+def Builder.absorbOfFnBatched (builder : Builder) (n : Nat) (row : Fin n → Row) : Builder :=
+  (leafBatches row (List.finRange n)).foldl
+    (fun builder leaf => ⟨carry ⟨0, leaf⟩ builder.forest⟩) builder
+
+/-- Batched row generation preserves the exact sequential row stream. -/
+@[csimp] theorem Builder.absorbOfFn_code : @Builder.absorbOfFn = @Builder.absorbOfFnBatched := by
+  funext builder n row
+  simp only [Builder.absorbOfFn, Fin.foldl_eq_finRange_foldl,
+    Builder.absorbOfFnBatched, leafBatches_eq, List.foldl_map]
+  rfl
+
+/-- Commit a generated row stream, returning its retained private tree. -/
+def commitOfFn (n : Nat) (row : Fin n → Row) : Except String Subtree :=
+  (Builder.absorbOfFn {} n row).finish
+
+/-- Generated-row commitments preserve all payloads and all cached hashes. -/
+theorem commitOfFn_eq (n : Nat) (row : Fin n → Row) :
+    commitOfFn n row = commit (Array.ofFn row) := by
+  rw [commitOfFn, Builder.absorbOfFn_eq, commit]
 
 /-- Retained rows in left-to-right order. -/
 def rowList : {s : Skeleton} → LeafData Row s → List Row

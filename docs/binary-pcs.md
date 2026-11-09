@@ -122,3 +122,9 @@ The instruction gate includes `pcs/basis-byte-columns`, `pcs/basis-tensor-column
 `Pcs.TensorProjectionPacked` applies retained mixed weights to occupied point blocks. `Pcs.WindowBitFold` prepares ring byte tables only for the certified occupied interval, and `windowBits_eq` identifies its result with the complete zero-extended fold. `Pcs.WindowScatter` reconstructs point contributions by adding each retained coefficient directly to its physical coordinate. Its prefix and complete-window invariants prove that each occupied coefficient contributes exactly once.
 
 The [CLMUL shared-kernel measurements](clmul-kernels.md) record the native primitive pin, certified compiled paths and the instruction-gate reductions for folds, packed dots and Basis lifting.
+
+## Contiguous scalar encoding and generated Merkle rows
+
+`encodeExtensionRowsScalar` transforms the physical cubic-extension limbs directly with CompPoly's scalar CLMUL encoder. `encodeExtensionRows_code` proves complete buffer equality with the certified padded encoder, including zero lanes. The compiled path replicates the row-major message with machine addresses and retains its exact physical width throughout the transform.
+
+`Keccak.Merkle.commitOfFn` consumes generated rows without an intermediate row array. Its refinement preserves the complete private tree, including all payloads and cached digests. Leaf generation and hashing run in contiguous batches of at most 1,024 rows, split into parallel tasks; the binary-carry merge retains input order. `Builder.absorb_code` and `Builder.absorbOfFn_code` prove equality with the scalar streaming builder for arbitrary row counts.
