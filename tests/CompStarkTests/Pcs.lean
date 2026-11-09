@@ -13,6 +13,7 @@ public import CompStark.Pcs.DirectSums
 public import CompStark.Pcs.WindowBitFold
 public import CompStark.Pcs.WindowScatter
 public import CompStark.Pcs.FusedTensor
+public import CompStark.Pcs.TensorRing
 public import CompStark.Pcs.HonestWhir
 public import CompStarkFixtures.Pcs
 meta import Lean.Util.CollectAxioms
@@ -266,6 +267,13 @@ def check : IO Unit := do
       unless projectTensorPointWindow 2 (high*low) low high 3 rfl witness windows gamma ringWindow ==
           projectTensorPointBinary 2 (high*low) low high 3 rfl witness windows gamma ringWindow.expand do
         throw (IO.userError "occupied ring projection mismatch")
+      let ringLow := windows[2]
+      let ringHigh := gamma[2]
+      let factoredRing : Vector WordExt3 (high*low) := Vector.ofFn fun x =>
+        WordExt3.mul ringHigh[x.divNat] ringLow.expand[x.modNat]
+      unless projectTensorFactoredRing 2 (high*low) low high 3 rfl witness windows gamma ringLow ringHigh ==
+          projectTensorPointBinary 2 (high*low) low high 3 rfl witness windows gamma factoredRing do
+        throw (IO.userError "factored low/high ring projection mismatch")
       let weights : Vector WordExt3 195 := Vector.ofFn fun t => value (t.val+41)
       unless liftTensorPointBinary (high*low) low high 3 rfl windows gamma ring weights ==
           liftColumns (high*low) 195 weights columns do
@@ -283,6 +291,13 @@ def check : IO Unit := do
     unless result.message == roundCoefficients rows 1
         ((Vector.ofFn f).cast (by omega)) ((Vector.ofFn b).cast (by omega)) do
       throw (IO.userError "fused survivor residual message mismatch")
+  for rows in [0, 1, 3] do
+    for width in [0, 1, 7] do
+      let table := Vector.ofFn fun i : Fin (2*rows*width) => value (i.val+37)
+      let weight := Vector.ofFn fun i : Fin (2*rows*width) => value (i.val*3+71)
+      unless roundCoefficientsWith rows width (fun i => table[i]) (fun i => weight[i]) ==
+          roundCoefficients rows width table weight do
+        throw (IO.userError "direct fused blocked message mismatch")
   IO.println "PCS coordinate maps, factored weights, bit folds, honest WHIR: passed"
 
 end CompStarkTests.Pcs
