@@ -342,4 +342,56 @@ theorem induceOccupiedCompactRows_refines {ell rate : Nat} (hd : ell+rate < 64)
   simp only [induceOccupiedCompactRows, occupiedRunCompact_eq hd plan]
   exact induceOccupiedRows_refines hd plan lanes positions values index
 
+/-- Replica sums materialized with bounded native word loads and stores. -/
+def collapseRowsNative (ell rate lanes : Nat) (a : BF64.Packed.Buffer (2^(ell+rate)*lanes)) :
+    BF64.Packed.Buffer (2^ell*lanes) :=
+  if native : 8*(2^(ell+rate)*lanes) < USize.size then
+    have smaller : 2^ell*lanes ≤ 2^(ell+rate)*lanes := by
+      rw [pow_add]
+      exact Nat.mul_le_mul_right lanes (Nat.le_mul_of_pos_right _ (Nat.two_pow_pos rate))
+    have outputBound : 8*(2^ell*lanes) < USize.size := by omega
+    Sumcheck.fillWordBuffer (2^ell*lanes) outputBound fun i hi =>
+      Fin.foldl (2^rate) (fun acc replica =>
+        let j : Fin (2^(ell+rate)*lanes) := ⟨replica.val*(2^ell*lanes)+i.toNat,by
+          have := replica.isLt
+          rw [pow_add]
+          nlinarith⟩
+        Word.add acc (Sumcheck.readWord a j.val.toUSize (by
+          rw [USize.toNat_ofNat_of_lt' (by have := j.isLt; omega)]
+          exact j.isLt) native)) ⟨0⟩
+  else collapseRows ell rate lanes a
+
+/-- Native replica collapse retains every packed output byte. -/
+@[csimp] theorem collapseRows_code : collapseRows = collapseRowsNative := by
+  funext ell rate lanes a
+  unfold collapseRowsNative
+  split
+  · rename_i native
+    rw [Sumcheck.fillWordBuffer_eq]
+    unfold collapseRows Packed.tabulate BF64.Packed.ofFn
+    rw [Fin.foldl_eq_finRange_foldl]
+    congr 1
+    funext buffer i
+    congr 1
+    have h : i.val.toUSize.toNat = i.val := by
+      apply USize.toNat_ofNat_of_lt'
+      have := i.isLt
+      have smaller : 2^ell*lanes ≤ 2^(ell+rate)*lanes := by
+        rw [pow_add]
+        exact Nat.mul_le_mul_right lanes (Nat.le_mul_of_pos_right _ (Nat.two_pow_pos rate))
+      omega
+    simp only [Sumcheck.readWord_eq,h]
+    congr 1
+    funext acc replica
+    congr 1
+    apply congrArg (BF64.Packed.read a)
+    apply Fin.ext
+    symm
+    apply USize.toNat_ofNat_of_lt'
+    have := replica.isLt
+    have := i.isLt
+    rw [pow_add] at native
+    nlinarith
+  · rfl
+
 end CompStark.Pcs
