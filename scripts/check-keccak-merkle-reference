@@ -15,6 +15,7 @@ def run(*args, cwd=ROOT):
 
 
 def main():
+    os.environ["RUSTFLAGS"] = "-C target-cpu=native"
     binary = ROOT / ".lake/keccak-merkle-reference"
     with tempfile.TemporaryDirectory(prefix="keccak-merkle-", suffix="-src") as tmp:
         run("git", "clone", "--quiet", "https://github.com/leanEthereum/leanMultisig.git", tmp)

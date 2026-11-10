@@ -1,0 +1,15 @@
+The projected PCS opening algorithms in CompStark/Pcs/BitFold.lean,
+CompStark/Pcs/Projected.lean, CompStark/Pcs/TensorProjection*.lean and
+CompStark/Pcs/Fused*.lean, CompStark/Pcs/TensorRing.lean and
+CompStark/Pcs/MixedDot.lean follow
+leanEthereum/leanMultisig revision 9d8bce818aa7c7e18e67026e522a9b1539d0a57d,
+crates/pcs/src/stack_open/basis.rs, crates/pcs/src/whir.rs,
+crates/primitives/src/bit_fold.rs and
+crates/primitives/src/field/gf2_64x3.rs,
+under Apache License 2.0.
+Copyright (c) 2026 leanEthereum.
+
+The shared subset-table constructor in CompStark/Pcs/BitFold.lean follows
+CompPoly revision f2fab061b77b08eedcb7a9927419a963959f375a,
+CompPoly/Fields/Binary/AdditiveNTT/Packed/Plan.lean, under Apache License 2.0.
+Copyright (c) 2026 CompPoly Contributors.

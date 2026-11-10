@@ -11,13 +11,23 @@ import CompStark.Stark.Fingerprint
 import CompStarkFixtures.Keccak
 import CompStarkFixtures.KeccakKernel
 import CompStark.Keccak.Hash
+import CompStark.Keccak.Prepared
 import CompStarkFixtures.KeccakMerkle
+import CompStark.Keccak.MerkleGenerate
 import CompStark.Sumcheck.PackedFold
 import CompStark.Sumcheck.WordProductProofs
 import CompStarkFixtures.Pcs
-import CompStark.Pcs.InductionDot
+import CompStark.Pcs.PackedInductionDot
 import CompStark.Pcs.SparseInduction
+import CompStark.Pcs.CompactInduction
+import CompStark.Pcs.TwiddleRow
+import CompStark.Pcs.SparseStrip
+import CompStark.Pcs.FusedRound
 import CompStark.Pcs.DirectSums
+import CompStark.Pcs.WindowBitFold
+import CompStark.Pcs.WindowScatter
+import CompStark.Pcs.FusedTensor
+import CompStark.Pcs.TensorRing
 
 /-! # CompStark micro-benchmarks
 
@@ -686,6 +696,9 @@ def pcsRun (phase : {α : Type} → String → (Unit → α) → IO α) : IO UIn
   let largeDense ← phase "induction-large-dense" fun _ =>
     CompStark.Pcs.induceSplitRows 6 6 2 (by decide) 3 largePositions fun q c =>
       CompStark.Pcs.mapLimb (CompStark.Fixtures.Pcs.value (q.val+77)) c
+  let largePacked ← phase "induction-large-packed" fun _ =>
+    CompStark.Pcs.induceSplitRowsPacked 6 6 2 (by decide) 3 largePositions fun q c =>
+      CompStark.Pcs.mapLimb (CompStark.Fixtures.Pcs.value (q.val+77)) c
   let largeSparse ← phase "induction-large-sparse" fun _ =>
     CompStark.Pcs.induceOccupiedRows (ell := 12) (rate := 2) (by decide) largePlan 3 largePositions fun q c =>
       CompStark.Pcs.mapLimb (CompStark.Fixtures.Pcs.value (q.val+77)) c
@@ -693,9 +706,35 @@ def pcsRun (phase : {α : Type} → String → (Unit → α) → IO α) : IO UIn
   let largePrepared ← phase "induction-large-prepared" fun _ =>
     CompStark.Pcs.induceOccupiedRows (ell := 12) (rate := 2) (by decide) preparedPlan 3 largePositions fun q c =>
       CompStark.Pcs.mapLimb (CompStark.Fixtures.Pcs.value (q.val+77)) c
+  let largeCompact ← phase "induction-large-compact" fun _ =>
+    CompStark.Pcs.induceOccupiedCompactRows (ell := 12) (rate := 2) (by decide) 3 largePositions fun q c =>
+      CompStark.Pcs.mapLimb (CompStark.Fixtures.Pcs.value (q.val+77)) c
+  let byteRowsPlan ← phase "induction-byte-rows-plan" fun _ => CompStark.Pcs.CompactRows.create 14 (of_decide_eq_true rfl)
+  let largeByteRows ← phase "induction-large-byte-rows" fun _ =>
+    CompStark.Pcs.collapseRows 12 2 3 (CompStark.Pcs.occupiedRunRows byteRowsPlan 3 largePositions 12 (by decide)
+      (CompStark.Pcs.scatterRows _ 3 largePositions fun q c =>
+        CompStark.Pcs.mapLimb (CompStark.Fixtures.Pcs.value (q.val+77)) c))
+  let largeTiled ← phase "induction-large-tiled" fun _ =>
+    CompStark.Pcs.tiledInduceSparse 10 2 2 4 (by decide) (by decide) 3 largePositions fun q c =>
+      CompStark.Pcs.mapLimb (CompStark.Fixtures.Pcs.value (q.val+77)) c
   let expectedLarge ← IO.FS.readBinFile "tests/data/pcs/induced-large.bin"
-  unless largeDense.val.bytes == expectedLarge && largeSparse.val.bytes == expectedLarge && largePrepared.val.bytes == expectedLarge do
+  unless largePacked.val.bytes == expectedLarge && largeTiled.val.bytes == expectedLarge && largeByteRows.val.bytes == expectedLarge && largeCompact.val.bytes == expectedLarge && largeDense.val.bytes == expectedLarge && largeSparse.val.bytes == expectedLarge && largePrepared.val.bytes == expectedLarge do
     throw (IO.userError "large induced weights Rust mismatch")
+  for rows in [16, 256, 1024] do
+    let input : Vector BF64.WordExt3 (2*rows*1) := Vector.ofFn fun i =>
+      CompStark.Fixtures.Pcs.value (i.val+71)
+    let weight : Vector BF64.WordExt3 (2*rows*1) := Vector.ofFn fun i =>
+      CompStark.Fixtures.Pcs.value (i.val+173)
+    let r := CompStark.Fixtures.Pcs.value 43
+    let folded ← phase s!"challenge-fold-{rows}" fun _ =>
+      CompStark.Pcs.foldPairChallenge r rows 1 input weight
+    let direct ← phase s!"challenge-scalar-{rows}" fun _ =>
+      (CompStark.Pcs.foldScalar r rows 1 input, CompStark.Pcs.foldScalar r rows 1 weight)
+    let reference ← phase s!"challenge-prepared-{rows}" fun _ =>
+      let shared := CompStark.Sumcheck.prepare r
+      (CompStark.Sumcheck.fold shared rows 1 input, CompStark.Sumcheck.fold shared rows 1 weight)
+    unless folded == reference && direct == reference do
+      throw (IO.userError s!"challenge fold mismatch: {rows}")
   let acc : Vector BF64.WordExt3 256 := Vector.ofFn fun i => CompStark.Fixtures.Pcs.value (i.val + 100)
   let incoming : Vector BF64.WordExt3 256 := Vector.ofFn fun i => CompStark.Fixtures.Pcs.value (i.val + 200)
   let shared ← phase "accumulated-prepare" fun _ => CompStark.Sumcheck.prepare (CompStark.Fixtures.Pcs.value 43)
@@ -718,6 +757,69 @@ def pcsRun (phase : {α : Type} → String → (Unit → α) → IO α) : IO UIn
   unless projected == CompStark.Pcs.projectBasis 8 1024 200 witness
       (columns.map CompStark.Pcs.BasisColumn.expand) do
     throw (IO.userError "shared Basis column matrix mismatch")
+  let jointPoints : Vector (CompStark.Pcs.BasisWindow 1024) 8 := Vector.ofFn fun _ =>
+    ⟨0, 1024, (Vector.ofFn fun i : Fin 1024 => CompStark.Fixtures.Pcs.value (i.val+31+(coordinates.size-192))), by decide⟩
+  let joint ← phase "basis-byte-columns" fun _ => CompStark.Pcs.projectPointBinary 8 1024 8 witness jointPoints
+    ((Vector.ofFn fun i : Fin 1024 => CompStark.Fixtures.Pcs.value (i.val+31+(coordinates.size-192))))
+  unless joint == CompStark.Pcs.projectColumns 8 1024 200 witness
+      (jointPoints.map CompStark.Pcs.BasisColumn.point ++ Vector.ofFn (fun bit : Fin 192 =>
+        CompStark.Pcs.BasisColumn.binary (Vector.ofFn fun i : Fin 1024 =>
+          CompStark.Fixtures.Pcs.value (i.val+31+(coordinates.size-192))) bit)) do
+    throw (IO.userError "joint byte Basis projection mismatch")
+  let lowPatterns : Vector (CompStark.Pcs.BasisWindow 128) 8 := Vector.ofFn fun t =>
+    ⟨0, 128, Vector.ofFn (fun x => CompStark.Fixtures.Pcs.value (x.val+31+t.val%2)), by decide⟩
+  let highWeights : Vector (Vector BF64.WordExt3 8) 8 := Vector.ofFn fun t =>
+    Vector.ofFn fun h => if h.val%3 = 0 then 0 else CompStark.Fixtures.Pcs.value (t.val+17*h.val+31)
+  let fullPatterns : Vector (CompStark.Pcs.BasisWindow 1024) 8 := Vector.ofFn fun t =>
+    ⟨0, 1024, Vector.ofFn (fun x => CompStark.Pcs.roundProduct highWeights[t][x.val/128]
+      lowPatterns[t].expand[x.val%128]), by decide⟩
+  let ringWeights := Vector.ofFn fun x : Fin 1024 => CompStark.Fixtures.Pcs.value (x.val+71)
+  let projectedTensor ← phase "basis-tensor-columns" fun _ =>
+    CompStark.Pcs.projectTensorPointBinary 8 1024 128 8 8 rfl witness lowPatterns highWeights ringWeights
+  unless projectedTensor == CompStark.Pcs.projectPointBinary 8 1024 8 witness fullPatterns ringWeights do
+    throw (IO.userError "shared low/high Basis projection mismatch")
+  let ringWindow : CompStark.Pcs.BasisWindow 1024 :=
+    ⟨256, 512, Vector.ofFn (fun x => CompStark.Fixtures.Pcs.value (x.val+71)), by decide⟩
+  let occupiedRing ← phase "basis-window-ring" fun _ =>
+    CompStark.Pcs.projectTensorPointWindow 8 1024 128 8 8 rfl witness lowPatterns highWeights ringWindow
+  unless occupiedRing == CompStark.Pcs.projectTensorPointBinary 8 1024 128 8 8 rfl witness
+      lowPatterns highWeights ringWindow.expand do
+    throw (IO.userError "occupied ring Basis projection mismatch")
+  let dotInput := Vector.ofFn fun x : Fin 1024 => witness[x.val]
+  let packedDot ← phase "basis-packed-dot" fun _ =>
+    CompStark.Pcs.dotMixedPlan (CompStark.Pcs.prepareMixedDot ringWeights) (fun x => dotInput[x])
+  unless packedDot == CompStark.Pcs.sumExt 1024 (fun x => BF64.WordExt3.mulScalar ringWeights[x] dotInput[x]) do
+    throw (IO.userError "packed mixed Basis dot mismatch")
+  let scalarDot ← phase "basis-scalar-dot" fun _ =>
+    CompStark.Pcs.windowDot dotInput 0 ringWeights (by omega)
+  unless scalarDot == packedDot do throw (IO.userError "scalar mixed dot mismatch")
+  let ringHigh := highWeights[0]
+  let factoredRing : Vector BF64.WordExt3 1024 := Vector.ofFn fun x =>
+    BF64.WordExt3.mul ringHigh[x.val/128] lowPatterns[0].expand[x.val%128]
+  let ringTensor ← phase "basis-factored-ring" fun _ =>
+    CompStark.Pcs.projectTensorFactoredRing 8 1024 128 8 8 rfl witness lowPatterns highWeights lowPatterns[0] ringHigh
+  unless ringTensor == CompStark.Pcs.projectTensorPointBinary 8 1024 128 8 8 rfl witness
+      lowPatterns highWeights factoredRing do
+    throw (IO.userError "factored ring projection mismatch")
+  let laneMessage ← phase "basis-lane-message" fun _ =>
+    CompStark.Pcs.roundCoefficientsWith 16 8 (fun i => accumulated[i]) (fun i => incoming[i])
+  unless laneMessage == CompStark.Pcs.roundCoefficients 16 8 accumulated incoming do
+    throw (IO.userError "fused blocked message mismatch")
+  let tensorWeights := Vector.ofFn fun t : Fin 200 => CompStark.Fixtures.Pcs.value (t.val+61)
+  let liftedTensor ← phase "basis-tensor-lift" fun _ =>
+    CompStark.Pcs.liftTensorPointBinary 1024 128 8 8 rfl lowPatterns highWeights ringWeights tensorWeights
+  unless liftedTensor == CompStark.Pcs.liftPointBinary 1024 8 fullPatterns ringWeights tensorWeights do
+    throw (IO.userError "grouped low/high Basis lifting mismatch")
+  let tensorPlan ← phase "basis-tensor-prepare" fun _ =>
+    CompStark.Pcs.prepareTensorLift 128 8 8 lowPatterns highWeights tensorWeights
+  let survivors ← phase "basis-fused-survivors" fun _ =>
+    CompStark.Pcs.materializePairs 512
+      (fun i => BF64.WordExt3.mulScalar tensorWeights[0] dotInput[i.val])
+      (fun i => tensorPlan.weightAt rfl ringWeights i)
+  unless survivors.weights == liftedTensor && survivors.message ==
+      CompStark.Pcs.roundCoefficients 512 1 (survivors.table.cast (by omega))
+        (liftedTensor.cast (by omega)) do
+    throw (IO.userError "fused survivor weights and message mismatch")
   let liftValues := Vector.ofFn fun i : Fin 4096 => CompStark.Fixtures.Pcs.value (i.val+31)
   let liftPoints : Vector (CompStark.Pcs.BasisWindow 4096) 8 := Vector.ofFn fun _ =>
     ⟨0, 4096, liftValues, by decide⟩
@@ -738,10 +840,28 @@ def pcsRun (phase : {α : Type} → String → (Unit → α) → IO α) : IO UIn
   IO.println s!"PCS coordinates={coordinates.size} sink={coordinates[191]!.c0.val} slices={slices[63]!.c0.val}"
   return 0
 
+/-- Deterministic production-size nonce search and its next transcript challenge. -/
+def keccakGrindRun (phase : {α : Type} → String → (Unit → α) → IO α) : IO UInt32 := do
+  let initial := CompStark.Fixtures.KeccakMerkle.initial
+  let result ← phase "grind20" fun _ => CompStark.Keccak.Duplex.grindNonce
+    CompStark.Fixtures.KeccakMerkle.rate (fun _ _ _ => ()) initial 20 (2 ^ 24)
+  let some (nonce, next) := result | throw (IO.userError "grinding exhausted")
+  let challenge := (CompStark.Keccak.Duplex.sample CompStark.Fixtures.KeccakMerkle.rate
+    (fun _ _ _ => ()) next 3 (by decide)).1
+  unless nonce == 124138 && challenge == #[5366933390071687144, 3650987668691482591,
+      2331228947711704332] do throw (IO.userError "parallel grind differs from Rust")
+  IO.println s!"nonce={nonce} challenge={challenge}"
+  pure 0
+
 /-- Commitment, canonical opening, retained writer transport and deterministic grinding. -/
 def keccakMerkleRun (phase : {α : Type} → String → (Unit → α) → IO α) : IO UInt32 := do
   let input := CompStark.Fixtures.KeccakMerkle.rows 4096 64 (by decide)
   let tree ← IO.ofExcept (← phase "commit" fun _ ↦ CompStark.Keccak.Merkle.commit input)
+  let generated ← IO.ofExcept (← phase "commit-generated" fun _ ↦
+    CompStark.Keccak.Merkle.commitGenerated 12 (fun i => input[i.val]'(by
+      simpa only [input, CompStark.Fixtures.KeccakMerkle.rows, Array.size_ofFn, Nat.reducePow] using i.isLt)))
+  unless generated.2.root == tree.2.root do
+    throw (IO.userError "generated Keccak subtree differs from streaming commitment")
   unless tree.2.root.val.data == #[246, 17, 103, 241, 171, 70, 74, 202, 75, 217, 117,
       91, 169, 255, 12, 45, 103, 72, 209, 98, 119, 43, 201, 23, 37, 220, 29, 144,
       241, 233, 48, 207] do
@@ -759,11 +879,9 @@ def keccakMerkleRun (phase : {α : Type} → String → (Unit → α) → IO α)
   unless result.1 == 15976019921783725211 && result.2.stream.size == 10000 do
     throw (IO.userError "Keccak duplex sink differs from Rust")
   IO.println s!"duplex sink {result.1}, messages {result.2.stream.size}"
-  let frame (n : Nat) : Array UInt64 := #[n.toUInt64, 0, 0, 4]
-  let accept (out : Array UInt64) := out[0]! &&& 0xff == 0
-  let nonce ← phase "grind" fun _ ↦ CompStark.Keccak.Duplex.grind
+  let nonce ← phase "grind" fun _ ↦ CompStark.Keccak.Duplex.grindNonce
     CompStark.Fixtures.KeccakMerkle.rate (fun _ _ _ ↦ ())
-    CompStark.Fixtures.KeccakMerkle.initial frame accept 65536
+    CompStark.Fixtures.KeccakMerkle.initial 8 65536
   let some (nonce, _) := nonce | throw (IO.userError "Keccak grind exhausted")
   unless nonce == 73 do throw (IO.userError "Keccak grinding nonce differs from Rust")
   IO.println s!"grinding nonce {nonce}"
@@ -859,6 +977,7 @@ def gate (workload : String) (dir : System.FilePath) : IO UInt32 := do
     return 0
   | "pcs" => pcsRun (fun label f ↦ m.phase label f)
   | "sumcheck-fold" => sumcheckFoldRun (fun label f ↦ m.phase label f)
+  | "keccak-grind" => keccakGrindRun (fun label f ↦ m.phase label f)
   | "keccak-merkle" => keccakMerkleRun (fun label f ↦ m.phase label f)
   | "keccak-scalar" =>
     let seed := (Array.replicate 25 (0 : UInt64)).set! 0 0x123456789abcdef0
@@ -915,6 +1034,11 @@ def main (args : List String) : IO UInt32 := do
       IO.println s!"{label}: {finish - start} ns"
       pure result)
   | ["sumcheck-fold"] => sumcheckFoldRun (fun _ f => pure (f ()))
+  | ["keccak-grind"] => keccakGrindRun (fun label f => do
+      let start ← IO.monoNanosNow
+      let result ← IO.lazyPure f
+      IO.println s!"{label} ns={(← IO.monoNanosNow) - start}"
+      pure result)
   | ["keccak-merkle"] => keccakMerkleRun (fun label f ↦ do
       let t ← IO.monoNanosNow
       let result ← IO.lazyPure f

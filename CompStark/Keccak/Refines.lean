@@ -61,6 +61,59 @@ theorem permute_succ_eq (n r : Nat) (s : Array UInt64) :
   simpa only [f1600, VCVio.Algorithms.Keccak.f1600, List.range_eq_range'] using
     permute_succ_eq 23 0 s
 
+/-- A function of the round output can be fused into its scalar continuation. -/
+theorem roundWith_map {α β : Type} (f : α → β) (k : UInt64 → UInt64 → UInt64 → UInt64 → UInt64 → UInt64 → UInt64 → UInt64 → UInt64 → UInt64 → UInt64 → UInt64 → UInt64 → UInt64 → UInt64 → UInt64 → UInt64 → UInt64 → UInt64 → UInt64 → UInt64 → UInt64 → UInt64 → UInt64 → UInt64 → α)
+    (rc a0 a1 a2 a3 a4 a5 a6 a7 a8 a9 a10 a11 a12 a13 a14 a15 a16 a17 a18 a19 a20 a21 a22 a23 a24 : UInt64) :
+    f (roundWith k rc a0 a1 a2 a3 a4 a5 a6 a7 a8 a9 a10 a11 a12 a13 a14 a15 a16 a17 a18 a19 a20 a21 a22 a23 a24) =
+      roundWith (fun a0 a1 a2 a3 a4 a5 a6 a7 a8 a9 a10 a11 a12 a13 a14 a15 a16 a17 a18 a19 a20 a21 a22 a23 a24 => f (k a0 a1 a2 a3 a4 a5 a6 a7 a8 a9 a10 a11 a12 a13 a14 a15 a16 a17 a18 a19 a20 a21 a22 a23 a24)) rc a0 a1 a2 a3 a4 a5 a6 a7 a8 a9 a10 a11 a12 a13 a14 a15 a16 a17 a18 a19 a20 a21 a22 a23 a24 := rfl
+
+/-- Unboxed counters execute the same scalar rounds before their counter range ends. -/
+theorem permute32First_eq (n r : Nat) (bound : n + r < 4294967296)
+    (a0 a1 a2 a3 a4 a5 a6 a7 a8 a9 a10 a11 a12 a13 a14 a15 a16 a17 a18 a19 a20 a21 a22 a23 a24 : UInt64) :
+    permute32First n.toUInt32 r.toUInt32 a0 a1 a2 a3 a4 a5 a6 a7 a8 a9 a10 a11 a12 a13 a14 a15 a16 a17 a18 a19 a20 a21 a22 a23 a24 = (permute n r a0 a1 a2 a3 a4 a5 a6 a7 a8 a9 a10 a11 a12 a13 a14 a15 a16 a17 a18 a19 a20 a21 a22 a23 a24)[0]! := by
+  induction n generalizing r a0 a1 a2 a3 a4 a5 a6 a7 a8 a9 a10 a11 a12 a13 a14 a15 a16 a17 a18 a19 a20 a21 a22 a23 a24 with
+  | zero => rw [permute32First]; rfl
+  | succ n ih =>
+    have hn : (n + 1).toUInt32 ≠ 0 := by
+      intro h
+      have eq := congrArg UInt32.toNat h
+      simp only [UInt32.toNat_ofNat', UInt32.toNat_zero] at eq
+      omega
+    have hsub : (n + 1).toUInt32 - 1 = n.toUInt32 := by
+      apply UInt32.toNat_inj.mp
+      rw [UInt32.toNat_sub_of_le _ _ (by
+        simp only [UInt32.le_iff_toNat_le, UInt32.toNat_one, UInt32.toNat_ofNat']; omega)]
+      simp only [UInt32.toNat_ofNat', UInt32.toNat_one]
+      omega
+    have hadd : r.toUInt32 + 1 = (r + 1).toUInt32 := by
+      apply UInt32.toNat_inj.mp
+      simp only [UInt32.toNat_add, UInt32.toNat_one, UInt32.toNat_ofNat']
+      omega
+    have hr : r.toUInt32.toNat = r := by
+      simp only [UInt32.toNat_ofNat']; omega
+    rw [permute32First, ite_eq_right hn, hsub, hadd, hr, permute, roundWith_map (fun s : Array UInt64 => s[0]!)]
+    have tail : permute32First n.toUInt32 (r + 1).toUInt32 = (fun a0 a1 a2 a3 a4 a5 a6 a7 a8 a9 a10 a11 a12 a13 a14 a15 a16 a17 a18 a19 a20 a21 a22 a23 a24 => (permute n (r + 1) a0 a1 a2 a3 a4 a5 a6 a7 a8 a9 a10 a11 a12 a13 a14 a15 a16 a17 a18 a19 a20 a21 a22 a23 a24)[0]!) := by
+      funext a0 a1 a2 a3 a4 a5 a6 a7 a8 a9 a10 a11 a12 a13 a14 a15 a16 a17 a18 a19 a20 a21 a22 a23 a24
+      exact ih (r + 1) (by omega) a0 a1 a2 a3 a4 a5 a6 a7 a8 a9 a10 a11 a12 a13 a14 a15 a16 a17 a18 a19 a20 a21 a22 a23 a24
+    rw [tail]
+
+/-- A nonce probe returns precisely the first lane of the full overwritten-state permutation. -/
+theorem f1600FirstOverwrite_eq (s : Array UInt64) (hs : s.size = 25)
+    (lane : Nat) (value : UInt64) :
+    f1600FirstOverwrite s lane value = (f1600 (s.set! lane value))[0]! := by
+  unfold f1600FirstOverwrite f1600
+  have eq : permute32First 24 0 = (fun a0 a1 a2 a3 a4 a5 a6 a7 a8 a9 a10 a11 a12 a13 a14 a15 a16 a17 a18 a19 a20 a21 a22 a23 a24 => (permute 24 0 a0 a1 a2 a3 a4 a5 a6 a7 a8 a9 a10 a11 a12 a13 a14 a15 a16 a17 a18 a19 a20 a21 a22 a23 a24)[0]!) := by
+    funext a0 a1 a2 a3 a4 a5 a6 a7 a8 a9 a10 a11 a12 a13 a14 a15 a16 a17 a18 a19 a20 a21 a22 a23 a24
+    exact permute32First_eq 24 0 (by decide) a0 a1 a2 a3 a4 a5 a6 a7 a8 a9 a10 a11 a12 a13 a14 a15 a16 a17 a18 a19 a20 a21 a22 a23 a24
+  rw [eq]
+  have get (i : Nat) (hi : i < 25) :
+      (s.set! lane value)[i]! = if lane = i then value else s[i]! := by
+    by_cases h : lane = i
+    · subst lane
+      rw [ite_eq_left rfl, Array.getElem!_set!_self _ _ _ (by omega)]
+    · rw [ite_eq_right h, Array.getElem!_set!_ne _ _ _ _ h]
+  congr 2 <;> symm <;> exact get _ (by decide)
+
 /-- Successive XORs into one lane combine, including out-of-bounds updates. -/
 theorem xorAt_xorAt (s : Array UInt64) (i : Nat) (a b : UInt64) :
     xorAt (xorAt s i a) i b = xorAt s i (a ^^^ b) := by

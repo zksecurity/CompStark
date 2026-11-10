@@ -1,0 +1,562 @@
+{
+  "source": "https://github.com/zksecurity/leanvm-security/blob/perf-rounds-2/docs/prover-counter-audit.json",
+  "metadata": {
+    "recorded_at": "2026-11-09T12:26:28.680296+00:00",
+    "revision": "d218d08b3b0a2e33e635e6476a69b6726497de99",
+    "rust_revision": "9d8bce818aa7c7e18e67026e522a9b1539d0a57d",
+    "workers": 1,
+    "rayon_num_threads": 1,
+    "repetitions": 3,
+    "affinity_cpu": 5,
+    "rust_flags": "-C target-cpu=native on complete prover and every dependency",
+    "rustc": "rustc 1.99.1 (58cf8f9c3 2026-10-13)",
+    "perf": "perf version 6.8.12",
+    "cpu": "Architecture:                            x86_64\nCPU op-mode(s):                          32-bit, 64-bit\nAddress sizes:                           43 bits physical, 48 bits virtual\nByte Order:                              Little Endian\nCPU(s):                                  16\nOn-line CPU(s) list:                     0-15\nVendor ID:                               AuthenticAMD\nModel name:                              AMD Ryzen 7 3700X 8-Core Processor\nCPU family:                              23\nModel:                                   113\nThread(s) per core:                      2\nCore(s) per socket:                      8\nSocket(s):                               1\nStepping:                                0\nFrequency boost:                         enabled\nCPU(s) scaling MHz:                      89%\nCPU max MHz:                             4426.1709\nCPU min MHz:                             2200.0000\nBogoMIPS:                                7199.83\nFlags:                                   fpu vme de pse tsc msr pae mce cx8 apic sep mtrr pge mca cmov pat pse36 clflush mmx fxsr sse sse2 ht syscall nx mmxext fxsr_opt pdpe1gb rdtscp lm constant_tsc rep_good nopl nonstop_tsc cpuid extd_apicid aperfmperf rapl pni pclmulqdq monitor ssse3 fma cx16 sse4_1 sse4_2 x2apic movbe popcnt aes xsave avx f16c rdrand lahf_lm cmp_legacy svm extapic cr8_legacy abm sse4a misalignsse 3dnowprefetch osvw ibs skinit wdt tce topoext perfctr_core perfctr_nb bpext perfctr_llc mwaitx cpb cat_l3 cdp_l3 hw_pstate ssbd mba ibpb stibp vmmcall fsgsbase bmi1 avx2 smep bmi2 cqm rdt_a rdseed adx smap clflushopt clwb sha_ni xsaveopt xsavec xgetbv1 cqm_llc cqm_occup_llc cqm_mbm_total cqm_mbm_local clzero irperf xsaveerptr rdpru wbnoinvd arat npt lbrv svm_lock nrip_save tsc_scale vmcb_clean flushbyasid decodeassists pausefilter pfthreshold avic v_vmsave_vmload vgif v_spec_ctrl umip rdpid overflow_recov succor smca sev sev_es ibpb_exit_to_user\nVirtualization:                          AMD-V\nL1d cache:                               256 KiB (8 instances)\nL1i cache:                               256 KiB (8 instances)\nL2 cache:                                4 MiB (8 instances)\nL3 cache:                                32 MiB (2 instances)\nNUMA node(s):                            1\nNUMA node0 CPU(s):                       0-15\nVulnerability Gather data sampling:      Not affected\nVulnerability Indirect target selection: Not affected\nVulnerability Itlb multihit:             Not affected\nVulnerability L1tf:                      Not affected\nVulnerability Mds:                       Not affected\nVulnerability Meltdown:                  Not affected\nVulnerability Mmio stale data:           Not affected\nVulnerability Reg file data sampling:    Not affected\nVulnerability Retbleed:                  Mitigation; untrained return thunk; SMT enabled with STIBP protection\nVulnerability Spec rstack overflow:      Mitigation; Safe RET\nVulnerability Spec store bypass:         Mitigation; Speculative Store Bypass disabled via prctl\nVulnerability Spectre v1:                Mitigation; usercopy/swapgs barriers and __user pointer sanitization\nVulnerability Spectre v2:                Mitigation; Retpolines; IBPB conditional; STIBP always-on; RSB filling; PBRSB-eIBRS Not affected; BHI Not affected\nVulnerability Srbds:                     Not affected\nVulnerability Tsa:                       Not affected\nVulnerability Tsx async abort:           Not affected\nVulnerability Vmscape:                   Mitigation; IBPB before exit to userspace\n",
+    "process_counters": "inherit + enable_on_exec, installed before exec; always enabled; difference at acknowledged marks",
+    "cross_check": "independent non-inherited instructions:u on every live TID; stable TID coverage per interval",
+    "phase_accounting": "outermost interval per label, accumulated over levels; PCS includes its children",
+    "manifest": {
+      "version": "1.3.0",
+      "packagesDir": ".lake/packages",
+      "packages": [
+        {
+          "url": "https://github.com/leanprover-community/mathlib4",
+          "type": "git",
+          "subDir": null,
+          "scope": "",
+          "rev": "56a005855ea17e0b0958f73ec801ae140b0a1679",
+          "name": "mathlib",
+          "manifestFile": "lake-manifest.json",
+          "inputRev": "v4.35.0",
+          "inherited": false,
+          "configFile": "lakefile.lean"
+        },
+        {
+          "url": "https://github.com/Verified-zkEVM/clean.git",
+          "type": "git",
+          "subDir": null,
+          "scope": "",
+          "rev": "2ca265f5c402d71911e4a2c865ea29c8e03fbef2",
+          "name": "Clean",
+          "manifestFile": "lake-manifest.json",
+          "inputRev": "2ca265f5c402d71911e4a2c865ea29c8e03fbef2",
+          "inherited": false,
+          "configFile": "lakefile.lean"
+        },
+        {
+          "url": "https://github.com/mitschabaude-bot/CompPoly.git",
+          "type": "git",
+          "subDir": null,
+          "scope": "",
+          "rev": "14330de845bfeea480f865b5fb71c5e728ccee98",
+          "name": "CompPoly",
+          "manifestFile": "lake-manifest.json",
+          "inputRev": "14330de845bfeea480f865b5fb71c5e728ccee98",
+          "inherited": false,
+          "configFile": "lakefile.lean"
+        },
+        {
+          "url": "https://github.com/mitschabaude-bot/VCVio.git",
+          "type": "git",
+          "subDir": null,
+          "scope": "",
+          "rev": "b15b5fb1f627daf1bf913c0ba30b6dc5c92128b5",
+          "name": "VCVio",
+          "manifestFile": "lake-manifest.json",
+          "inputRev": "b15b5fb1f627daf1bf913c0ba30b6dc5c92128b5",
+          "inherited": false,
+          "configFile": "lakefile.lean"
+        },
+        {
+          "url": "https://github.com/mitschabaude-bot/ArkLib.git",
+          "type": "git",
+          "subDir": null,
+          "scope": "",
+          "rev": "ba43933c0a8a6028180afda19f4b883802f70093",
+          "name": "Arklib",
+          "manifestFile": "lake-manifest.json",
+          "inputRev": "ba43933c0a8a6028180afda19f4b883802f70093",
+          "inherited": false,
+          "configFile": "lakefile.toml"
+        },
+        {
+          "url": "https://github.com/zksecurity/CompStark.git",
+          "type": "git",
+          "subDir": null,
+          "scope": "",
+          "rev": "8fecf317aa88fa8ead0b0456292ec93896ff9e24",
+          "name": "CompStark",
+          "manifestFile": "lake-manifest.json",
+          "inputRev": "8fecf317aa88fa8ead0b0456292ec93896ff9e24",
+          "inherited": false,
+          "configFile": "lakefile.lean"
+        },
+        {
+          "url": "https://github.com/leanprover-community/plausible",
+          "type": "git",
+          "subDir": null,
+          "scope": "leanprover-community",
+          "rev": "dfa4f38190d07c37e315953e08b90fe2d95b3c24",
+          "name": "plausible",
+          "manifestFile": "lake-manifest.json",
+          "inputRev": "main",
+          "inherited": true,
+          "configFile": "lakefile.toml"
+        },
+        {
+          "url": "https://github.com/leanprover-community/LeanSearchClient",
+          "type": "git",
+          "subDir": null,
+          "scope": "leanprover-community",
+          "rev": "d6b4c7be5be75ec4917c873ac50c756dc1436372",
+          "name": "LeanSearchClient",
+          "manifestFile": "lake-manifest.json",
+          "inputRev": "main",
+          "inherited": true,
+          "configFile": "lakefile.toml"
+        },
+        {
+          "url": "https://github.com/leanprover-community/import-graph",
+          "type": "git",
+          "subDir": null,
+          "scope": "leanprover-community",
+          "rev": "a41f0e9a4dea23188ea9cc1c41ac9f8bbafe0b93",
+          "name": "importGraph",
+          "manifestFile": "lake-manifest.json",
+          "inputRev": "main",
+          "inherited": true,
+          "configFile": "lakefile.toml"
+        },
+        {
+          "url": "https://github.com/leanprover-community/ProofWidgets4",
+          "type": "git",
+          "subDir": null,
+          "scope": "leanprover-community",
+          "rev": "df72b022e558978a1c50264cfc4d7fec86fa8e04",
+          "name": "proofwidgets",
+          "manifestFile": "lake-manifest.json",
+          "inputRev": "main",
+          "inherited": true,
+          "configFile": "lakefile.lean"
+        },
+        {
+          "url": "https://github.com/leanprover-community/aesop",
+          "type": "git",
+          "subDir": null,
+          "scope": "leanprover-community",
+          "rev": "4a174c490d8707121c4a9290800489f105d85e07",
+          "name": "aesop",
+          "manifestFile": "lake-manifest.json",
+          "inputRev": "master",
+          "inherited": true,
+          "configFile": "lakefile.toml"
+        },
+        {
+          "url": "https://github.com/leanprover-community/quote4",
+          "type": "git",
+          "subDir": null,
+          "scope": "leanprover-community",
+          "rev": "dce0ad79c486cb1fb504af04f953c3466b0c6db8",
+          "name": "Qq",
+          "manifestFile": "lake-manifest.json",
+          "inputRev": "master",
+          "inherited": true,
+          "configFile": "lakefile.toml"
+        },
+        {
+          "url": "https://github.com/leanprover-community/batteries",
+          "type": "git",
+          "subDir": null,
+          "scope": "leanprover-community",
+          "rev": "66e469188fe07963e5cf666c7d4433f45b8131c5",
+          "name": "batteries",
+          "manifestFile": "lake-manifest.json",
+          "inputRev": "main",
+          "inherited": true,
+          "configFile": "lakefile.toml"
+        },
+        {
+          "url": "https://github.com/lean-crypto-foundations/QuantumFoundations",
+          "type": "git",
+          "subDir": null,
+          "scope": "",
+          "rev": "901aaab7967ceecd2240d0b38bbde7cf3e2c14ac",
+          "name": "QuantumFoundations",
+          "manifestFile": "lake-manifest.json",
+          "inputRev": "901aaab7967ceecd2240d0b38bbde7cf3e2c14ac",
+          "inherited": true,
+          "configFile": "lakefile.toml"
+        },
+        {
+          "url": "https://github.com/Verified-zkEVM/PolyFun",
+          "type": "git",
+          "subDir": null,
+          "scope": "",
+          "rev": "4181c82238142d9b73403fbf4c4b13e1a801e400",
+          "name": "PolyFun",
+          "manifestFile": "lake-manifest.json",
+          "inputRev": "4181c82238142d9b73403fbf4c4b13e1a801e400",
+          "inherited": true,
+          "configFile": "lakefile.toml"
+        },
+        {
+          "url": "https://github.com/PatrickMassot/checkdecls.git",
+          "type": "git",
+          "subDir": null,
+          "scope": "",
+          "rev": "3d425859e73fcfbef85b9638c2a91708ef4a22d4",
+          "name": "checkdecls",
+          "manifestFile": "lake-manifest.json",
+          "inputRev": "lean4.18.0",
+          "inherited": true,
+          "configFile": "lakefile.lean"
+        },
+        {
+          "url": "https://github.com/leanprover/doc-gen4",
+          "type": "git",
+          "subDir": null,
+          "scope": "",
+          "rev": "0e1ffe2e4ba5ecfdfaf15c65b8d3805dbb7134ae",
+          "name": "\u00abdoc-gen4\u00bb",
+          "manifestFile": "lake-manifest.json",
+          "inputRev": "v4.35.0",
+          "inherited": true,
+          "configFile": "lakefile.lean"
+        },
+        {
+          "url": "https://github.com/leanprover/lean4-cli",
+          "type": "git",
+          "subDir": null,
+          "scope": "leanprover",
+          "rev": "c24fe6078c630e89b489bffe59b3e20ac30d12c8",
+          "name": "Cli",
+          "manifestFile": "lake-manifest.json",
+          "inputRev": "v4.35.0",
+          "inherited": true,
+          "configFile": "lakefile.toml"
+        },
+        {
+          "url": "https://github.com/leanprover/cslib",
+          "type": "git",
+          "subDir": null,
+          "scope": "leanprover",
+          "rev": "5b56df99362532c46e1175381fbbdd755bd56030",
+          "name": "cslib",
+          "manifestFile": "lake-manifest.json",
+          "inputRev": "v4.35.0",
+          "inherited": true,
+          "configFile": "lakefile.toml"
+        },
+        {
+          "url": "https://github.com/leanprover/leansqlite",
+          "type": "git",
+          "subDir": null,
+          "scope": "",
+          "rev": "4ed2f27ecf81792abc8ff848670ac4356d0c4794",
+          "name": "leansqlite",
+          "manifestFile": "lake-manifest.json",
+          "inputRev": "main",
+          "inherited": true,
+          "configFile": "lakefile.lean"
+        },
+        {
+          "url": "https://github.com/fgdorais/lean4-unicode-basic",
+          "type": "git",
+          "subDir": null,
+          "scope": "",
+          "rev": "6e48acac3a91665fcdc4a20d50b7ce6b7b41711f",
+          "name": "UnicodeBasic",
+          "manifestFile": "lake-manifest.json",
+          "inputRev": "main",
+          "inherited": true,
+          "configFile": "lakefile.lean"
+        },
+        {
+          "url": "https://github.com/dupuisf/BibtexQuery",
+          "type": "git",
+          "subDir": null,
+          "scope": "",
+          "rev": "876b844aa52183cbcc0d82fdd4d1fc349f0dac34",
+          "name": "BibtexQuery",
+          "manifestFile": "lake-manifest.json",
+          "inputRev": "master",
+          "inherited": true,
+          "configFile": "lakefile.toml"
+        },
+        {
+          "url": "https://github.com/acmepjz/md4lean",
+          "type": "git",
+          "subDir": null,
+          "scope": "",
+          "rev": "31907cc18f48a95384f99cee5582c00fb39e0f67",
+          "name": "MD4Lean",
+          "manifestFile": "lake-manifest.json",
+          "inputRev": "main",
+          "inherited": true,
+          "configFile": "lakefile.lean"
+        }
+      ],
+      "name": "LeanVmSecurity",
+      "lakeDir": ".lake",
+      "fixedToolchain": false
+    },
+    "sources": {
+      "scripts/audit-prover-counters.py": "3d4bf35c6c84e3fc7bab39f42f50de5496ec15e296c0765311bbb1f903a95033",
+      "scripts/perf-gate": "a0b45b18d5a6b9f0952ffd53ca3ff8040bd967602dfc83194b19ed16f341b13a",
+      "scripts/profile-ntt.py": "dda4b2f5e9eddb3f974670990b8ae0312c20414c6b85084dfe957a3144e3d9e2",
+      "tests/rust/prover-profile.rs": "1739c925a0cdf46cf12e22b2ed7df34f7fd2f0f711e1a453d250da1d4110793d",
+      "tests/rust/generate-prover.py": "62989a7bbc11ffa8955437ac1f9f5bf9c64447d8525f597d97f2c63ba614d21e",
+      ".lake/packages/CompStark/scripts/check-keccak-merkle-reference": "f029a9bf722fe2d8fc6354e52ab8da99f5978412519f7d7d65e63b4f8abb5ceb",
+      ".lake/packages/CompStark/tests/rust/keccak-merkle.rs": "0b04499a247cf95e7bf5b99bea9b61e874bd9336f62fa4586c7ace0bb930ae7d"
+    },
+    "instrumentation_diff": {
+      "crates/pcs/src/whir.rs": "--- pinned\n+++ observed\n@@ -968,6 +968,7 @@\n /// `glue_pending` then folds every claim of the level in with its own power.\n /// A verifier replays it operation for operation.\n fn send_ood(sc: &mut SumcheckProver, ps: &mut ProverState, n_vars: usize, count: usize) {\n+    let _counter_span = tracing::info_span!(\"Counter audit OOD\").entered();\n     for _ in 0..count {\n         let z = ps.sample_vec(n_vars);\n         let (intro, y) = sc.introduce_ood(&z);\n@@ -1087,7 +1088,7 @@\n \n     // Query-phase PoW grinding for L0 (0 bits in the production profile; the\n     // canonical 0 nonce is still absorbed to keep the transcript in lockstep).\n-    ps.grind(config.grinding_bits[0] as u32);\n+    { let _counter_span = tracing::info_span!(\"Counter audit grind\").entered(); ps.grind(config.grinding_bits[0] as u32); }\n \n     // Open L0; lane-fold weights = r_lane_fold.\n     let num_queries_0 = config.queries[0];\n@@ -1158,7 +1159,7 @@\n         if i == r - 1 {\n             ps.add_scalars(sc_prover.f_ext());\n             // PoW grinding for the last level before sampling its queries.\n-            ps.grind(config.grinding_bits[i + 1] as u32);\n+            { let _counter_span = tracing::info_span!(\"Counter audit grind\").entered(); ps.grind(config.grinding_bits[i + 1] as u32); }\n             let num_queries_last = config.queries[i + 1];\n             let queries_last = sample_queries_ordered(ps, wtns_prev.block_len, num_queries_last);\n             // The final level's batching challenge is drawn only after `yr`\n@@ -1216,7 +1217,7 @@\n         send_ood(&mut sc_prover, ps, n_next, ood_count(i + 2));\n \n         // PoW grinding for this iteration's query phase.\n-        ps.grind(config.grinding_bits[i + 1] as u32);\n+        { let _counter_span = tracing::info_span!(\"Counter audit grind\").entered(); ps.grind(config.grinding_bits[i + 1] as u32); }\n         let num_queries_i = config.queries[i + 1];\n         let queries_i = sample_queries_ordered(ps, wtns_prev.block_len, num_queries_i);\n         let lambda_i = ps.sample();\n",
+      "crates/fiat_shamir/src/lib.rs": "--- pinned\n+++ observed\n@@ -188,6 +188,7 @@\n                 start = start.saturating_add(block);\n             }\n         };\n+        eprintln!(\"counter_audit_nonce bits={bits} nonce={nonce}\");\n         self.absorb_nonce(F192::new(nonce, 0, 0));\n         nonce\n     }\n"
+    },
+    "binaries": {
+      "lean": "a5f271acd56dd7c3b3497077cc98a5bde394cda06d6320ced748198f2b96b6d3",
+      "rust_control": "392437d6e14906e0c9588b8643baa2b5db0705d3dd451f4ab682e274f3963398",
+      "rust": "fcf97c98221dccd5743e29d0266dfeb6543c13722881304a0ed447d83c8efc0d"
+    }
+  },
+  "worker_control": {
+    "inherited": 334458121,
+    "per_thread": {
+      "2856337": 36919,
+      "2856338": 334421202
+    },
+    "main_tid": 2856337,
+    "worker_instructions": 334421202,
+    "worker_started_before_phase": true
+  },
+  "runs": [
+    {
+      "build": "portable-dependencies",
+      "repetition": 0,
+      "binary_sha256": "905cc5d4aa88a4d7b9683f808b7a40f460cf5cfc41319c9f0ec61652a8f480a4",
+      "compiled_hash_lanes": 1,
+      "phases": {
+        "keccak-merkle/f1600 native": [
+          47560930,
+          21091757,
+          5505669
+        ],
+        "keccak-merkle/commit": [
+          132210860,
+          46452955,
+          12110556
+        ],
+        "keccak-merkle/open": [
+          51077630,
+          17159906,
+          4643123
+        ],
+        "keccak-merkle/duplex": [
+          64150309,
+          21795751,
+          6023163
+        ],
+        "keccak-merkle/grind": [
+          481424,
+          164616,
+          94201
+        ],
+        "keccak-grind/grind20": [
+          805814302,
+          251427442,
+          70553290
+        ]
+      }
+    },
+    {
+      "build": "portable-dependencies",
+      "repetition": 1,
+      "binary_sha256": "905cc5d4aa88a4d7b9683f808b7a40f460cf5cfc41319c9f0ec61652a8f480a4",
+      "compiled_hash_lanes": 1,
+      "phases": {
+        "keccak-merkle/f1600 native": [
+          47560931,
+          22990904,
+          9179815
+        ],
+        "keccak-merkle/commit": [
+          132210858,
+          54756887,
+          14727504
+        ],
+        "keccak-merkle/open": [
+          51077762,
+          21244674,
+          5614279
+        ],
+        "keccak-merkle/duplex": [
+          64150311,
+          24909932,
+          9890490
+        ],
+        "keccak-merkle/grind": [
+          481424,
+          186111,
+          84591
+        ],
+        "keccak-grind/grind20": [
+          805814341,
+          295494054,
+          82713917
+        ]
+      }
+    },
+    {
+      "build": "portable-dependencies",
+      "repetition": 2,
+      "binary_sha256": "905cc5d4aa88a4d7b9683f808b7a40f460cf5cfc41319c9f0ec61652a8f480a4",
+      "compiled_hash_lanes": 1,
+      "phases": {
+        "keccak-merkle/f1600 native": [
+          47560929,
+          20475092,
+          5363868
+        ],
+        "keccak-merkle/commit": [
+          132210862,
+          47851498,
+          12436518
+        ],
+        "keccak-merkle/open": [
+          51077630,
+          17672316,
+          4732933
+        ],
+        "keccak-merkle/duplex": [
+          64150309,
+          21351309,
+          5950332
+        ],
+        "keccak-merkle/grind": [
+          481424,
+          174663,
+          97750
+        ],
+        "keccak-grind/grind20": [
+          805814317,
+          272422442,
+          69751735
+        ]
+      }
+    },
+    {
+      "build": "native",
+      "repetition": 0,
+      "binary_sha256": "85c942495b854d136ea90fbdf9e01abcc5957cd4cc83f636a6f30891d0b9c252",
+      "compiled_hash_lanes": 4,
+      "phases": {
+        "keccak-merkle/f1600 native": [
+          47560928,
+          17411899,
+          4677043
+        ],
+        "keccak-merkle/commit": [
+          32077253,
+          15429176,
+          8200428
+        ],
+        "keccak-merkle/open": [
+          12474173,
+          6121573,
+          1789753
+        ],
+        "keccak-merkle/duplex": [
+          47820308,
+          20814347,
+          5789161
+        ],
+        "keccak-merkle/grind": [
+          357761,
+          143082,
+          80431
+        ],
+        "keccak-grind/grind20": [
+          197268758,
+          98315615,
+          25408581
+        ]
+      }
+    },
+    {
+      "build": "native",
+      "repetition": 1,
+      "binary_sha256": "85c942495b854d136ea90fbdf9e01abcc5957cd4cc83f636a6f30891d0b9c252",
+      "compiled_hash_lanes": 4,
+      "phases": {
+        "keccak-merkle/f1600 native": [
+          47560929,
+          19795521,
+          8163998
+        ],
+        "keccak-merkle/commit": [
+          32077386,
+          14916629,
+          3990568
+        ],
+        "keccak-merkle/open": [
+          12474174,
+          5527188,
+          1539801
+        ],
+        "keccak-merkle/duplex": [
+          47820308,
+          18111536,
+          5049846
+        ],
+        "keccak-merkle/grind": [
+          357761,
+          164833,
+          94701
+        ],
+        "keccak-grind/grind20": [
+          197268916,
+          96524299,
+          28788155
+        ]
+      }
+    },
+    {
+      "build": "native",
+      "repetition": 2,
+      "binary_sha256": "85c942495b854d136ea90fbdf9e01abcc5957cd4cc83f636a6f30891d0b9c252",
+      "compiled_hash_lanes": 4,
+      "phases": {
+        "keccak-merkle/f1600 native": [
+          47560929,
+          20115337,
+          5337697
+        ],
+        "keccak-merkle/commit": [
+          32077253,
+          15846688,
+          4268160
+        ],
+        "keccak-merkle/open": [
+          12474174,
+          6356094,
+          1843363
+        ],
+        "keccak-merkle/duplex": [
+          47820307,
+          16154010,
+          4540452
+        ],
+        "keccak-merkle/grind": [
+          357761,
+          143558,
+          92811
+        ],
+        "keccak-grind/grind20": [
+          197268886,
+          118532941,
+          39356739
+        ]
+      }
+    }
+  ]
+}

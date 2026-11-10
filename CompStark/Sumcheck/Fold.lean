@@ -9,7 +9,7 @@ public import CompPoly.Fields.Binary.BF64.WordExt3Proofs
 
 /-! Shared-challenge folds of interleaved cubic-extension tables. The width is the
 number of adjacent columns in each row; a high-variable fold uses one pair of rows.
-Prepared byte maps are shared by every column and row of a round. -/
+A certified shared multiplier serves every column and row of a round. -/
 
 @[expose] public section
 namespace CompStark.Sumcheck
@@ -29,54 +29,73 @@ open BF64
   ⟨Word.add p0 p12, Word.add (Word.add p01 p12) p2,
     Word.add (Word.add p02 p1) p2⟩
 
-/-- Certified six-map multiplication by a shared cubic-extension scalar. -/
+/-- Certified full and mixed products by one shared cubic-extension scalar. -/
 structure Prepared where
-  /-- The common multiplier represented by the maps. -/
+  /-- The common multiplier. -/
   scalar : WordExt3
-  /-- Constant-coordinate multiplier. -/
-  c0 : Word.ByteMap
-  /-- Linear-coordinate multiplier. -/
-  c1 : Word.ByteMap
-  /-- Quadratic-coordinate multiplier. -/
-  c2 : Word.ByteMap
-  /-- Constant-plus-linear Karatsuba multiplier. -/
-  c01 : Word.ByteMap
-  /-- Constant-plus-quadratic Karatsuba multiplier. -/
-  c02 : Word.ByteMap
-  /-- Linear-plus-quadratic Karatsuba multiplier. -/
-  c12 : Word.ByteMap
-  /-- Every lookup product is multiplication by the represented scalar. -/
-  correct : ∀ a, multiplyMaps c0 c1 c2 c01 c02 c12 a = WordExt3.mul scalar a
-  /-- The three coordinate maps also certify multiplication by a base-field input. -/
-  baseCorrect : ∀ a, (⟨mapMul c0 a, mapMul c1 a, mapMul c2 a⟩ : WordExt3) =
-    WordExt3.mulScalar scalar a
+  /-- Executable multiplication of a complete extension element. -/
+  product : WordExt3 → WordExt3
+  /-- Executable multiplication of a base-field element. -/
+  baseProduct : Word → WordExt3
+  /-- Complete products agree with the represented scalar. -/
+  correct : ∀ a, product a = WordExt3.mul scalar a
+  /-- Mixed products agree with the represented scalar. -/
+  baseCorrect : ∀ a, baseProduct a = WordExt3.mulScalar scalar a
 
 /-- Prepare a challenge once, independently of the table shape. -/
 def prepare (r : WordExt3) : Prepared :=
-  ⟨r, byteMap r.c0, byteMap r.c1, byteMap r.c2,
-    byteMap (Word.add r.c0 r.c1), byteMap (Word.add r.c0 r.c2),
-    byteMap (Word.add r.c1 r.c2), by
+  let c0 := byteMap r.c0
+  let c1 := byteMap r.c1
+  let c2 := byteMap r.c2
+  let c01 := byteMap (Word.add r.c0 r.c1)
+  let c02 := byteMap (Word.add r.c0 r.c2)
+  let c12 := byteMap (Word.add r.c1 r.c2)
+  ⟨r, multiplyMaps c0 c1 c2 c01 c02 c12,
+    (fun a => ⟨mapMul c0 a, mapMul c1 a, mapMul c2 a⟩), by
       intro a
       have hm (x y : Word) : (Word.ByteMap.ofScalar x).mul y = Word.mulMasked x y := by
         apply Word.toField_injective
         rw [Word.ByteMap.toField_mul, Word.toField_mulMasked]
-      simp only [multiplyMaps, byteMap_eq, mapMul_eq, WordExt3.mul, hm], by
+      simp only [c0, c1, c2, c01, c02, c12, multiplyMaps, byteMap_eq, mapMul_eq,
+        WordExt3.mul, hm], by
       intro a
       apply WordExt3.toField_injective
-      simp only [WordExt3.toField, WordExt3.mulScalar, mapMul_eq, byteMap_eq,
+      simp only [c0, c1, c2, WordExt3.toField, WordExt3.mulScalar, mapMul_eq, byteMap_eq,
         Word.ByteMap.toField_mul, Word.toField_mulMasked]⟩
 
-/-- Multiply by the prepared challenge, using six lookup products. -/
+/-- Retain the shared scalar and its carry-less products without preparing lookup tables. -/
+def prepareClmul (r : WordExt3) : Prepared :=
+  ⟨r, WordExt3.mul r, WordExt3.mulScalar r, fun _ => rfl, fun _ => rfl⟩
+
+/-- Shared multipliers are determined by their scalar and two executable products. -/
+theorem Prepared.ext_products {a b : Prepared} (scalar : a.scalar = b.scalar)
+    (product : a.product = b.product) (baseProduct : a.baseProduct = b.baseProduct) : a = b := by
+  cases a
+  cases b
+  cases scalar
+  cases product
+  cases baseProduct
+  rfl
+
+/-- Direct carry-less preparation preserves both certified product functions. -/
+@[csimp] theorem prepare_eq_prepareClmul : prepare = prepareClmul := by
+  funext r
+  apply Prepared.ext_products
+  · rfl
+  · exact funext (prepare r).correct
+  · exact funext (prepare r).baseCorrect
+
+/-- Multiply by the certified shared challenge. -/
 @[inline] def Prepared.mul (r : Prepared) (a : WordExt3) : WordExt3 :=
-  multiplyMaps r.c0 r.c1 r.c2 r.c01 r.c02 r.c12 a
+  r.product a
 
 /-- Every certified prepared multiplier agrees with its represented scalar. -/
 theorem Prepared.mul_correct (r : Prepared) (a : WordExt3) :
     r.mul a = WordExt3.mul r.scalar a := r.correct a
 
-/-- Base-field inputs need only the three coordinate maps of the common multiplier. -/
+/-- Base-field inputs use the certified mixed product. -/
 @[inline] def Prepared.mulBase (r : Prepared) (a : Word) : WordExt3 :=
-  ⟨mapMul r.c0 a, mapMul r.c1 a, mapMul r.c2 a⟩
+  r.baseProduct a
 
 /-- Select the mixed product while both higher input coordinates vanish. -/
 @[inline] def Prepared.mulSubfield (r : Prepared) (a : WordExt3) : WordExt3 :=
@@ -101,10 +120,17 @@ theorem Prepared.mulSubfield_eq (r : Prepared) (a : WordExt3) :
     rw [Algebra.smul_def, mul_comm]
   · rfl
 
-/-- Native shared multiplication uses three maps for base-field inputs. -/
-@[csimp] theorem Prepared.mul_code : @Prepared.mul = @Prepared.mulSubfield := by
+/-- Inline the scalar kernels after dispatching on the input subfield. -/
+@[inline] def Prepared.mulClmul (r : Prepared) (a : WordExt3) : WordExt3 :=
+  if a.c1.val == 0 && a.c2.val == 0 then WordExt3.mulScalar r.scalar a.c0
+  else WordExt3.mul r.scalar a
+
+/-- Native shared multiplication selects the mixed product for base-field inputs. -/
+@[csimp] theorem Prepared.mul_code : @Prepared.mul = @Prepared.mulClmul := by
   funext r a
-  exact (r.mulSubfield_eq a).symm
+  rw [← r.mulSubfield_eq a]
+  simp only [Prepared.mulSubfield, Prepared.mulClmul, Prepared.mulBase, Prepared.mul,
+    r.baseCorrect, r.correct]
 
 /-- Prepared multiplication agrees with the word extension kernel. -/
 theorem prepared_mul_eq (r a : WordExt3) : (prepare r).mul a = WordExt3.mul r a :=
@@ -119,7 +145,7 @@ theorem prepared_mul_eq (r a : WordExt3) : (prepare r).mul a = WordExt3.mul r a 
 @[inline] def Prepared.interpolate (r : Prepared) (a b : WordExt3) : WordExt3 :=
   WordExt3.add a (r.mul (WordExt3.add a b))
 
-/-- Equal endpoints have zero slope and need no prepared-map loads. -/
+/-- Equal endpoints have zero slope and need no products. -/
 @[inline] def Prepared.interpolateShared (r : Prepared) (a b : WordExt3) : WordExt3 :=
   let slope := WordExt3.add a b
   let product := if slope.c0.val == 0 && slope.c1.val == 0 && slope.c2.val == 0 then

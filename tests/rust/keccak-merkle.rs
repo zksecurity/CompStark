@@ -88,6 +88,12 @@ fn fixtures() {
     println!("]}}");
 }
 fn run(mut mark: impl FnMut(&str)) {
+    let mut state = [0u64;25];
+    state[0] = 0x123456789abcdef0;
+    mark("begin");
+    for _ in 0..10000 { hash::keccak_f(black_box(&mut state)); }
+    mark("end f1600 native");
+    assert_eq!(state[0], 0x03d0008026579d6c);
     let (n,width) = (4096,64);
     let rows = data(n,width);
     mark("begin");
@@ -125,14 +131,34 @@ fn run(mut mark: impl FnMut(&str)) {
     mark("end grind");
     println!("grind ns={ns} nonce={nonce}");
 }
+fn run_grind20(mut mark: impl FnMut(&str)) {
+    let mut fs = FiatShamirState::new(std::array::from_fn(|i| F64(word(0,i))),
+        std::array::from_fn(|i| F64(word(1,i))));
+    mark("begin");
+    let nonce = fs.grind_pow(20);
+    mark("end grind20");
+    assert_eq!(nonce, 124138);
+    let c = fs.sample();
+    assert_eq!([c.c0,c.c1,c.c2], [5366933390071687144,3650987668691482591,2331228947711704332]);
+}
 fn main() {
     let args: Vec<String> = std::env::args().collect();
     match args.get(1).map(String::as_str) {
         Some("fixtures") => fixtures(),
+        Some("grind") => {
+            let mut fs = FiatShamirState::new(std::array::from_fn(|i| F64(word(0,i))),
+                std::array::from_fn(|i| F64(word(1,i))));
+            let t = Instant::now();
+            let nonce = fs.grind_pow(20);
+            let ns = t.elapsed().as_nanos();
+            let c = fs.sample();
+            println!("grind ns={ns} nonce={nonce} challenge={:?}", [c.c0,c.c1,c.c2]);
+        },
         Some("gate") => {
             let mut ctl = std::fs::OpenOptions::new().write(true).open(format!("{}/ctl",args.last().unwrap())).unwrap();
             let mut ack = BufReader::new(std::fs::File::open(format!("{}/ack",args.last().unwrap())).unwrap());
-            run(|msg| { writeln!(ctl,"{msg}").unwrap(); ctl.flush().unwrap(); let mut line=String::new(); ack.read_line(&mut line).unwrap(); });
+            let mark = |msg: &str| { writeln!(ctl,"{msg}").unwrap(); ctl.flush().unwrap(); let mut line=String::new(); ack.read_line(&mut line).unwrap(); };
+            if args.get(2).is_some_and(|s| s == "keccak-grind") { run_grind20(mark); } else { run(mark); }
         },
         Some("bench") => run(|_| {}),
         _ => panic!("usage: keccak-merkle-reference fixtures|bench|gate DIR"),

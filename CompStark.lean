@@ -206,12 +206,16 @@ public import CompStark.Fs.BatchStable
 public import CompStark.Fs.BatchBcs
 
 public import CompStark.Keccak.Scalar
+public import CompStark.Keccak.WordLoop
 public import CompStark.Keccak.Sponge
 public import CompStark.Keccak.Hash
 public import CompStark.Keccak.Refines
 
 public import CompStark.Keccak.Merkle
+public import CompStark.Keccak.MerkleGenerate
+public import CompStark.Keccak.MerkleRows
 public import CompStark.Keccak.Duplex
+public import CompStark.Keccak.Prepared
 
 public import CompStark.Sumcheck.ByteMap
 public import CompStark.Sumcheck.Fold
@@ -242,5 +246,29 @@ public import CompStark.Pcs.BasisColumn
 public import CompStark.Pcs.BasisColumnPrepared
 
 public import CompStark.Pcs.InductionDot
+public import CompStark.Pcs.PackedInductionDot
 public import CompStark.Pcs.SparseInduction
+public import CompStark.Pcs.CompactInduction
+public import CompStark.Pcs.TwiddleRow
+public import CompStark.Pcs.TiledInduction
+public import CompStark.Pcs.SparseStrip
 public import CompStark.Pcs.DirectSums
+
+public import CompStark.Pcs.ChallengeFold
+public import CompStark.Pcs.FusedRound
+
+public import CompStark.Pcs.BitFold
+public import CompStark.Pcs.Projected
+
+public import CompStark.Pcs.TensorProjection
+public import CompStark.Pcs.TensorProjectionActive
+public import CompStark.Pcs.ByteFoldRows
+public import CompStark.Pcs.MixedDot
+public import CompStark.Pcs.TensorProjectionPacked
+public import CompStark.Pcs.WindowBitFold
+public import CompStark.Pcs.WindowScatter
+public import CompStark.Pcs.FusedPairs
+public import CompStark.Pcs.FusedTensor
+public import CompStark.Pcs.TensorRing
+
+public import CompStark.Pcs.WindowFold

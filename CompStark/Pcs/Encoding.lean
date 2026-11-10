@@ -109,6 +109,47 @@ theorem encodeExtensionRows_coordinate {ell rate : Nat} (hd : ell + rate < 64)
   rw [Packed.laneView_encodeRows (F := ZMod 2) hd plan.toPacked,
     laneView_padEncodingRows]
 
+/-- Encode only the physical cubic-extension limbs, without padding to sixty-four lanes. -/
+def encodeExtensionRowsScalar {ell rate : Nat} (hd : ell + rate < 64)
+    (plan : Bitsliced.Plan Packed.flatBasis (ell + rate) hd) (lanes : Nat)
+    (hlanes : 3 * lanes ≤ 64) (a : BF64.Packed.Buffer (2 ^ ell * (3 * lanes)))
+    (hn : 8 * (2 ^ (ell + rate) * 64) < 4294967296) :
+    BF64.Packed.Buffer (2 ^ (ell + rate) * (3 * lanes)) :=
+  if hl : 0 < 3 * lanes then
+    have hsize : 8 * (2 ^ (ell + rate) * (3 * lanes)) < 4294967296 := by nlinarith
+    Packed.Scalar.forward plan ell (by omega) (3 * lanes) hl
+      (Packed.Scalar.tileRows ell rate (3 * lanes) hl a hsize) hsize
+  else ⟨BF64.Packed.zeros _, rfl⟩
+
+/-- Direct physical-limb encoding preserves every output byte of padded encoding. -/
+@[csimp] theorem encodeExtensionRows_code : @encodeExtensionRows = @encodeExtensionRowsScalar := by
+  funext ell rate hd plan lanes hlanes a hn
+  unfold encodeExtensionRowsScalar
+  split
+  · rename_i hl
+    rw [Packed.Scalar.forward_eq, Packed.Scalar.tileRows_eq]
+    apply BF64.Packed.read_ext
+    intro j
+    let row : Fin (2 ^ (ell + rate)) := ⟨j.val / (3 * lanes),
+      (Nat.div_lt_iff_lt_mul hl).mpr j.isLt⟩
+    let lane : Fin (3 * lanes) := ⟨j.val % (3 * lanes), Nat.mod_lt _ hl⟩
+    have he : finProdFinEquiv (row, lane) = j := by
+      apply Fin.ext
+      change j.val % (3 * lanes) + (3 * lanes) * (j.val / (3 * lanes)) = j.val
+      exact Nat.mod_add_div _ _
+    let : Fintype Word := Fintype.ofFinite Word
+    have hleft := congrFun (encodeExtensionRows_coordinate hd plan lanes hlanes a hn lane) row
+    have hright := congrFun (Packed.laneView_encodeRows (F := ZMod 2)
+      hd plan.toPacked (3 * lanes) a lane) row
+    simpa only [Packed.laneView, he] using hleft.trans hright.symm
+  · rename_i hl
+    apply BF64.Packed.read_ext
+    intro j
+    have hz : 3 * lanes = 0 := by omega
+    have hj := j.isLt
+    simp only [hz, Nat.mul_zero] at hj
+    omega
+
 local instance : Algebra (ZMod 2) Ext3 := ZMod.algebra Ext3 2
 
 /-- Cubic-extension row encoding refines the generic extension-field additive encoder. -/

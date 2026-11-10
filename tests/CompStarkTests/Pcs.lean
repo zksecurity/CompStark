@@ -4,9 +4,16 @@ Released under Apache 2.0 license as described in the file LICENSE.
 -/
 module
 public import CompStark.Pcs.BasisColumnPrepared
-public import CompStark.Pcs.InductionDot
+public import CompStark.Pcs.PackedInductionDot
 public import CompStark.Pcs.SparseInduction
+public import CompStark.Pcs.CompactInduction
+public import CompStark.Pcs.SparseStrip
+public import CompStark.Pcs.FusedRound
 public import CompStark.Pcs.DirectSums
+public import CompStark.Pcs.WindowBitFold
+public import CompStark.Pcs.WindowScatter
+public import CompStark.Pcs.FusedTensor
+public import CompStark.Pcs.TensorRing
 public import CompStark.Pcs.HonestWhir
 public import CompStarkFixtures.Pcs
 meta import Lean.Util.CollectAxioms
@@ -108,18 +115,53 @@ def checkInduction : IO Unit := do
         mapLimb (value (q.val+77)) ⟨c.val%3, Nat.mod_lt _ (by decide)⟩
       let original := induceRows hd plan lanes positions values
       let split := induceSplitRows lo hi rate hd lanes positions values
+      let packed := induceSplitRowsPacked lo hi rate hd lanes positions values
       let sparse := induceOccupiedRows hd plan lanes positions values
       let prepared := induceOccupiedRows hd (sparseInductionPlan _ hd) lanes positions values
-      unless original.val.bytes == split.val.bytes && original.val.bytes == sparse.val.bytes && original.val.bytes == prepared.val.bytes do
+      let compact := induceOccupiedCompactRows hd lanes positions values
+      let byteRows := induceOccupiedByteRows hd lanes positions values
+      let tiled := induceSparseStripRows hd lanes positions values
+      unless original.val.bytes == packed.val.bytes && original.val.bytes == tiled.val.bytes && original.val.bytes == byteRows.val.bytes && original.val.bytes == compact.val.bytes && original.val.bytes == split.val.bytes && original.val.bytes == sparse.val.bytes && original.val.bytes == prepared.val.bytes do
         throw (IO.userError s!"induction shape mismatch: {lo}/{hi}/{rate}/{lanes}/{count}")
       if lo = 6 && hi = 6 then
         let expected ← IO.FS.readBinFile "tests/data/pcs/induced-large.bin"
         unless original.val.bytes == expected do throw (IO.userError "large induced weights Rust mismatch")
 
+/-- Short scalar folds and shared maps preserve blocked pairs and the preparation boundary. -/
+def checkChallengeFold : IO Unit := do
+  for (rows, width) in [(0, 0), (3, 0), (0, 3), (7, 3), (256, 1), (257, 1), (129, 2)] do
+    let input : Vector WordExt3 (2*rows*width) := Vector.ofFn fun i => value (i.val+71)
+    let weight : Vector WordExt3 (2*rows*width) := Vector.ofFn fun i => value (i.val+173)
+    let r := value 43
+    let shared := CompStark.Sumcheck.prepare r
+    let expected := (CompStark.Sumcheck.fold shared rows width input,
+      CompStark.Sumcheck.fold shared rows width weight)
+    unless foldPairChallenge r rows width input weight == expected &&
+        (foldScalar r rows width input, foldScalar r rows width weight) == expected do
+      throw (IO.userError s!"challenge fold mismatch: {rows}/{width}")
+
+/-- Fused folds retain both restricted arrays and the following message across the map threshold. -/
+def checkFusedRound : IO Unit := do
+  for rows in [0,1,7,128,129,1024] do
+    let input : Vector WordExt3 (4*rows) := Vector.ofFn fun i => value (i.val+71)
+    let weight : Vector WordExt3 (4*rows) := Vector.ofFn fun i => value (i.val+173)
+    let r := value 43
+    let fused := foldMessage r rows input weight
+    let table := Vector.ofFn (foldedCoordinate (CompStark.Sumcheck.prepare r) rows input)
+    let weights := Vector.ofFn (foldedCoordinate (CompStark.Sumcheck.prepare r) rows weight)
+    let message := roundCoefficients rows 1
+      (Vector.ofFn fun i => table[i.val]'(by have := i.isLt; omega))
+      (Vector.ofFn fun i => weights[i.val]'(by have := i.isLt; omega))
+    unless fused.table == table.toArray && fused.weight == weights.toArray &&
+        #[fused.constant,fused.quadratic] == message.toArray do
+      throw (IO.userError s!"fused WHIR round mismatch: {rows}")
+
 /-- Compare coordinate maps, cached factors, packed-bit folds and mapped tensors against Rust bytes. -/
 def check : IO Unit := do
   checkBasis
   checkInduction
+  checkChallengeFold
+  checkFusedRound
   unless testWhir && testEmpty do throw (IO.userError "honest WHIR acceptance failed")
   let coordinates := coordinateWeights challenges
   let point : Fin (4 + 4) → BF64.Ext3 := fun i => (value (i.val + 101)).toField
@@ -181,6 +223,81 @@ def check : IO Unit := do
     unless liftPointBinary cols 2 points values weights == liftColumns cols 194 weights
         (points.map BasisColumn.point ++ Vector.ofFn (fun bit : Fin 192 => BasisColumn.binary values bit)) do
       throw (IO.userError "shared binary Basis reconstruction mismatch")
+  for cols in [0, 1, 17, 63, 64, 65, 129] do
+    let values := Vector.ofFn fun i : Fin cols => value (i.val+91)
+    let words := Vector.ofFn fun i : Fin cols =>
+      (⟨UInt64.ofNat (0x9e3779b97f4a7c15*(i.val+1))⟩ : Word)
+    let plan := prepareByteFold values
+    unless foldBytePlan plan words == foldBits words values do
+      throw (IO.userError "padded byte-table bit fold mismatch")
+    unless dotBytePlan plan words == sumExt cols (fun i => WordExt3.mulScalar values[i] words[i]) do
+      throw (IO.userError "byte-table mixed dot mismatch")
+    unless dotMixedPlan (prepareMixedDot values) (fun i => words[i]) ==
+        sumExt cols (fun i => WordExt3.mulScalar values[i] words[i]) do
+      throw (IO.userError "packed mixed dot mismatch")
+    let sparse := words.map fun a => if a.val % 3 = 0 then (⟨0⟩ : Word) else a
+    unless dotMixedPlan (prepareMixedDot values) (fun i => sparse[i]) ==
+        sumExt cols (fun i => WordExt3.mulScalar values[i] sparse[i]) do
+      throw (IO.userError "packed sparse mixed dot mismatch")
+    let points : Vector (BasisWindow cols) 2 :=
+      #v[⟨0, 0, #v[], by omega⟩, ⟨0, cols, values, by omega⟩]
+    let witness : Vector Word (2*cols) := Vector.ofFn fun i =>
+      ⟨UInt64.ofNat (0x9e3779b97f4a7c15*(i.val+1))⟩
+    unless projectPointBinary 2 cols 2 witness points values == projectColumns 2 cols 194 witness
+        (points.map BasisColumn.point ++ Vector.ofFn (fun bit : Fin 192 => BasisColumn.binary values bit)) do
+      throw (IO.userError "joint point/ring byte projection mismatch")
+  for low in [0, 1, 17, 64] do
+    for high in [0, 1, 3] do
+      let windows : Vector (BasisWindow low) 3 := Vector.ofFn fun t =>
+        if t.val = 0 then ⟨0, 0, #v[], by omega⟩ else
+          ⟨low/3, low-low/3, Vector.ofFn (fun x => value (x.val+31)), by omega⟩
+      let gamma : Vector (Vector WordExt3 high) 3 := Vector.ofFn fun t =>
+        Vector.ofFn fun h => if h.val = 0 then 0 else value (t.val+19*h.val)
+      let full : Vector (BasisWindow (high*low)) 3 := Vector.ofFn fun t =>
+        ⟨0, high*low, Vector.ofFn (fun x => roundProduct gamma[t][x.divNat] windows[t].expand[x.modNat]), by omega⟩
+      let ring : Vector WordExt3 (high*low) := Vector.ofFn fun x => value (x.val+21)
+      let witness : Vector Word (2*(high*low)) := Vector.ofFn fun x =>
+        ⟨UInt64.ofNat ((x.val+1)*0x9e3779b97f4a7c15)⟩
+      let columns := full.map BasisColumn.point ++ Vector.ofFn (fun bit : Fin 192 => BasisColumn.binary ring bit)
+      unless projectTensorPointBinary 2 (high*low) low high 3 rfl witness windows gamma ring ==
+          projectColumns 2 (high*low) 195 witness columns do
+        throw (IO.userError "shared low/high tensor projection mismatch")
+      let ringWindow : BasisWindow (high*low) :=
+        ⟨high*low/3, high*low-high*low/3, Vector.ofFn (fun x => value (x.val+21)), by omega⟩
+      unless projectTensorPointWindow 2 (high*low) low high 3 rfl witness windows gamma ringWindow ==
+          projectTensorPointBinary 2 (high*low) low high 3 rfl witness windows gamma ringWindow.expand do
+        throw (IO.userError "occupied ring projection mismatch")
+      let ringLow := windows[2]
+      let ringHigh := gamma[2]
+      let factoredRing : Vector WordExt3 (high*low) := Vector.ofFn fun x =>
+        WordExt3.mul ringHigh[x.divNat] ringLow.expand[x.modNat]
+      unless projectTensorFactoredRing 2 (high*low) low high 3 rfl witness windows gamma ringLow ringHigh ==
+          projectTensorPointBinary 2 (high*low) low high 3 rfl witness windows gamma factoredRing do
+        throw (IO.userError "factored low/high ring projection mismatch")
+      let weights : Vector WordExt3 195 := Vector.ofFn fun t => value (t.val+41)
+      unless liftTensorPointBinary (high*low) low high 3 rfl windows gamma ring weights ==
+          liftColumns (high*low) 195 weights columns do
+        throw (IO.userError "grouped low/high tensor lift mismatch")
+      let plan := prepareTensorLift low high 3 windows gamma weights
+      unless (Vector.ofFn fun i => plan.weightAt rfl ring i) ==
+          liftTensorPointBinary (high*low) low high 3 rfl windows gamma ring weights do
+        throw (IO.userError "on-demand tensor lift mismatch")
+  for rows in [0, 1, 9] do
+    let f := fun i : Fin (2*rows) => value (i.val+11)
+    let b := fun i : Fin (2*rows) => value (i.val*3+51)
+    let result := materializePairs rows f b
+    unless result.table == Vector.ofFn f && result.weights == Vector.ofFn b do
+      throw (IO.userError "fused survivor materialization mismatch")
+    unless result.message == roundCoefficients rows 1
+        ((Vector.ofFn f).cast (by omega)) ((Vector.ofFn b).cast (by omega)) do
+      throw (IO.userError "fused survivor residual message mismatch")
+  for rows in [0, 1, 3] do
+    for width in [0, 1, 7] do
+      let table := Vector.ofFn fun i : Fin (2*rows*width) => value (i.val+37)
+      let weight := Vector.ofFn fun i : Fin (2*rows*width) => value (i.val*3+71)
+      unless roundCoefficientsWith rows width (fun i => table[i]) (fun i => weight[i]) ==
+          roundCoefficients rows width table weight do
+        throw (IO.userError "direct fused blocked message mismatch")
   IO.println "PCS coordinate maps, factored weights, bit folds, honest WHIR: passed"
 
 end CompStarkTests.Pcs

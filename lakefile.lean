@@ -5,6 +5,7 @@ open System Lake DSL
 package CompStark where
   version := v!"0.1.0"
   testDriver := "CompStarkNativeTests"
+  moreLeancArgs := #["-march=native"]
 
 -- Pinned to a CompPoly commit with the packed NTT, the batched coset LDE on chunks of rows with
 -- input transposes by column range in whole tiles, coset interpolation generic over 32-bit
@@ -13,7 +14,7 @@ package CompStark where
 -- unboxed products, coordinate planes generic over fast extensions, and the BF64 word
 -- extension kernels and prepared byte maps.
 require CompPoly from git "https://github.com/mitschabaude-bot/CompPoly.git" @
-    "9e0e342bc383241e81ef8c070c9d37b2a3d525da"
+    "14330de845bfeea480f865b5fb71c5e728ccee98"
 
 -- ArkLib main with Johnson-regime mutual correlated agreement for power curves, lossy mutual
 -- correlated agreement, FRI on the interaction layer with its knowledge certificate on Plonky3's
@@ -40,8 +41,8 @@ lean_lib CompStark where
 
 /-- CPU-targeted packed kernels; the proof artifacts remain platform independent. -/
 lean_lib CompStarkPackedNative where
-  roots := #[`CompStark.Keccak.Scalar, `CompStark.Keccak.Sponge,
-    `CompStark.Keccak.Merkle, `CompStark.Keccak.Duplex,
+  roots := #[`CompStark.Keccak.Scalar, `CompStark.Keccak.WordLoop, `CompStark.Keccak.Sponge,
+    `CompStark.Keccak.Merkle, `CompStark.Keccak.Duplex, `CompStark.Keccak.Prepared,
     `CompStark.Poseidon2.PackedKoalaBear, `CompStark.Poseidon2.PackedBabyBear,
     `CompStark.Merkle.Packed, `CompStark.Merkle.PackedColumns,
     `CompStark.Stark.ProgWords, `CompStark.Stark.ProgGroup, `CompStark.Stark.Fast,
