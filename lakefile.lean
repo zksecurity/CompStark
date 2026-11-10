@@ -23,14 +23,14 @@ require CompPoly from git "https://github.com/mitschabaude-bot/CompPoly.git" @
 -- against the certificate's challenge laws, the BCS compiler: Merkle commitments in place of
 -- oracle messages, correlated agreement and lossy MCA for Reed–Solomon curves in the
 -- unique-decoding range, and the fold lists of Plonky3's schedule, against VCVio with Merkle trees
--- of injected payloads (branch `compstark` of the bot fork).
+-- of injected payloads and masked words (branch `masked-ci` of the bot fork).
 require Arklib from git "https://github.com/mitschabaude-bot/ArkLib.git" @
-    "14ea6fcb3e725af9f2bdb8deda3ec7b0e97d760e"
+    "c40ddafde0f1d04b080cdb73369f8c48ec7da91e"
 
--- VCVio with Merkle trees of injected payloads, caps and pruned multi-openings (branch
--- `merkle-mixed` of the bot fork).
+-- VCVio with Merkle trees of injected payloads, caps, pruned multi-openings and masked
+-- authentication (branch `masked-ci` of the bot fork).
 require VCVio from git "https://github.com/mitschabaude-bot/VCVio.git" @
-    "c6dd01ec9d3eaf767452adfb445a9b905d406845"
+    "1f70059fc842ea67c59918fd458f4589a1eb85c1"
 
 -- Mathlib as CompPoly pins it, last so that its dependencies take precedence over ArkLib's.
 require mathlib from git "https://github.com/leanprover-community/mathlib4" @ "v4.35.0"
