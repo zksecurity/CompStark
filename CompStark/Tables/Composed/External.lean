@@ -98,12 +98,17 @@ structure External where
   evaluated : TableSumcheck.Output S L k → Output → List (Pcs.EvaluatedClaim M)
   /-- The evaluated claims are the argument's claims. -/
   evaluated_claims : ∀ out a, (evaluated out a).map Pcs.EvaluatedClaim.claim = (stackOutput out a).claims
+
+/-- The argument's honest prover. -/
+structure External.Honest (ext : External S L k M) where
   /-- The verifier's coins. -/
   Coins : Type
   /-- The honest transcript against the verifier's coins. -/
-  honest : TableSumcheck.Output S L k → Whir.Table K M → Coins → protocol.tree.ExecutionPath
-  /-- From its start relation, the honest transcript's output holds on the stack. -/
-  honest_holds : ∀ out q coins, start out q → (stackOutput out (output out (honest out q coins))).Holds q
+  honest : TableSumcheck.Output S L k → Whir.Table K M → Coins → ext.protocol.tree.ExecutionPath
+  /-- From its start relation on a stack whose witness satisfies the external relation, the honest
+  transcript's output holds on the stack. -/
+  honest_holds : ∀ out q coins, ext.start out q → S.external (ext.interpret q) →
+    (ext.stackOutput out (ext.output out (honest out q coins))).Holds q
 
 /-- The argument's reductions and error: on the stack from its start relation, framed by an obligation
 it carries through unchanged. -/
@@ -152,9 +157,14 @@ def External.none (hM : (S.stackBlocks L).total ≤ 2 ^ M)
   claims_le _ _ := le_rfl
   evaluated _ _ := []
   evaluated_claims _ _ := rfl
+
+/-- The trivial argument's honest prover: an empty transcript. -/
+def External.none.honest (hM : (S.stackBlocks L).total ≤ 2 ^ M)
+    (novirtual : ∀ t, (S.table t).virtual = []) (noexternal : ∀ w, S.external w) :
+    (External.none S L k M hM novirtual noexternal).Honest where
   Coins := PUnit
   honest _ _ _ := PUnit.unit
-  honest_holds _ _ _ _ := ⟨rfl, fun _ h ↦ absurd h List.not_mem_nil⟩
+  honest_holds _ _ _ _ _ := ⟨rfl, fun _ h ↦ absurd h List.not_mem_nil⟩
 
 /-- The trivial argument's reductions: nothing to reduce. -/
 noncomputable def External.none.reductions (hM : (S.stackBlocks L).total ≤ 2 ^ M)

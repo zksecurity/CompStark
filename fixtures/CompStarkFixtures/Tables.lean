@@ -40,11 +40,15 @@ def programSetup : Setup program programLayout 2 5 where
   degree_le := by decide
   external := External.none program programLayout 2 5 programFits (by decide) (fun _ ↦ trivial)
 
+/-- The program's external honest prover: an empty transcript. -/
+def programHonest : programSetup.external.Honest :=
+  External.none.honest program programLayout 2 5 programFits (by decide) (fun _ ↦ trivial)
+
 /-- A four-variable terminal table after one folded coordinate. -/
 def schedule : CompStark.Pcs.EvaluatedSchedule 5 := .last 1 4 (CompStark.Pcs.evaluatedEncoding 4 1 (by decide)) 3
 
 /-- Fixed verifier coins. -/
-def coins : Coins programSetup schedule.schedule where
+def coins : Coins programSetup programHonest schedule.schedule where
   bus := ((fun i ↦ value (i.val + 1), value 3), GrandProduct.Coins.fill (fun n ↦ value (n + 11)) _ 0 0)
   table := (value 5, fun i ↦ value (i.val + 41))
   external := PUnit.unit
@@ -54,7 +58,7 @@ def coins : Coins programSetup schedule.schedule where
 /-- The honest transcript of a witness of the program. -/
 def programProof (w : Witness K program.tables.length) :
     (composedProtocol programSetup schedule.schedule).tree.ExecutionPath :=
-  honestPath programSetup schedule.schedule w coins
+  honestPath programSetup programHonest schedule.schedule w coins
 
 /-- The fast verifier on a transcript of the program. -/
 def programVerify (path : (composedProtocol programSetup schedule.schedule).tree.ExecutionPath) : Bool :=
