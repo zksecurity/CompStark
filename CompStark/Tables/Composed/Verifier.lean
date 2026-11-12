@@ -96,17 +96,23 @@ theorem publicAcceptedB_iff
   | some o =>
     simp only [publicAcceptedB, publicAccepted, Bool.and_eq_true, decide_eq_true_eq, and_assoc]
 
-variable {M} (params : Parameters S L k M)
+variable {M}
+
+/-- The fast verifier of the composed system of a setup and an evaluated opening schedule. -/
+def verifyWith (setup : Setup S L k M) (evaluated : Pcs.EvaluatedSchedule M)
+    (path : (composedProtocol setup evaluated.schedule).tree.ExecutionPath) : Bool :=
+  let parts := splitPath (outerProtocol setup) (Whir.opening E evaluated.schedule) path.2
+  let out := outerOutput setup parts.1
+  let externalPath := (splitPath (appendProtocol (Bus.protocol S L k) (TableSumcheck.protocol S L))
+    setup.external.protocol parts.1).2
+  publicAcceptedB M out &&
+    Pcs.acceptsBaseEvaluated evaluated path.1 (openingClaimsEvaluated M setup out externalPath) parts.2
+
+variable (params : Parameters S L k M)
 
 /-- The fast verifier of the composed system. -/
-def verify (path : (protocol params).tree.ExecutionPath) : Bool :=
-  let parts := splitPath (outerProtocol params.toSetup) (Whir.opening E params.schedule) path.2
-  let out := outerOutput params.toSetup parts.1
-  let externalPath := (splitPath (appendProtocol (Bus.protocol S L k) (TableSumcheck.protocol S L))
-    params.external.protocol parts.1).2
-  publicAcceptedB M out &&
-    Pcs.acceptsBaseEvaluated params.evaluated path.1 (openingClaimsEvaluated M params.toSetup out externalPath)
-      parts.2
+abbrev verify (path : (protocol params).tree.ExecutionPath) : Bool :=
+  verifyWith params.toSetup params.evaluated path
 
 /-- Forgetting the evaluators of the opening's factored claims gives the opening's claims. -/
 theorem openingClaimsEvaluated_map (setup : Setup S L k M) (bus : Option (Bus.Output S L k))
@@ -122,7 +128,7 @@ theorem openingClaimsEvaluated_map (setup : Setup S L k M) (bus : Option (Bus.Ou
 /-- The fast verifier decides the specification verifier. -/
 theorem verify_iff (path : (protocol params).tree.ExecutionPath) :
     verify params path = true ↔ Accepts params path := by
-  unfold verify Accepts executionParts
+  unfold verify verifyWith Accepts executionParts
   dsimp only
   rw [← outerOutput_eq, Bool.and_eq_true, publicAcceptedB_iff, Pcs.acceptsBaseEvaluated_eq,
     Pcs.acceptsEvaluated_eq]

@@ -218,10 +218,14 @@ noncomputable def committedCertificate (word : Whir.oracleMessage K params.sched
   (outerCertificate params word).append (fun _ => (Whir.opening E params.schedule).tree)
     (fun _ => (Whir.opening E params.schedule).roles) (openingCertificate params word)
 
-/-- The composed protocol: the stack's commitment, the outer reductions, the opening. -/
-def protocol : Protocol :=
-  .oracle (Whir.oracleMessage K params.schedule)
-    (appendProtocol (outerProtocol params.toSetup) (Whir.opening E params.schedule))
+/-- The composed protocol of a setup and an opening schedule: the stack's commitment, the outer
+reductions, the opening. -/
+def composedProtocol (setup : Setup S L k M) (schedule : Whir.Schedule K M) : Protocol :=
+  .oracle (Whir.oracleMessage K schedule)
+    (appendProtocol (outerProtocol setup) (Whir.opening E schedule))
+
+/-- The composed protocol of the parameters. -/
+abbrev protocol : Protocol := composedProtocol params.toSetup params.schedule
 
 /-- Before the commitment: a stack satisfying the outer reductions' input. -/
 def inputState : KnowledgeState :=

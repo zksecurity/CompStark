@@ -26,44 +26,48 @@ open CompStark.Stark CompStark.BinaryFields CompStark.Multilinear CompStark.Tabl
 open CompStark.Compose
 open _root_.Interaction _root_.Interaction.Oracle
 
-variable {S : System K} {L : Layout S.tables.length} {k M : ℕ} (params : Parameters S L k M)
+variable {S : System K} {L : Layout S.tables.length} {k M : ℕ}
 
-/-- The verifier's coins of the composed system. -/
-structure Coins where
+/-- The verifier's coins of the composed system of a setup and an opening schedule. -/
+structure Coins (setup : Setup S L k M) (schedule : Whir.Schedule K M) where
   /-- The bus's coins. -/
   bus : BusCoins S L k
   /-- The table sumcheck's coins. -/
   table : TableCoins S L
   /-- The external argument's coins. -/
-  external : params.external.Coins
+  external : setup.external.Coins
   /-- The opening's coins. -/
-  opening : Pcs.WhirCoins K E params.schedule
+  opening : Pcs.WhirCoins K E schedule
 
 /-- A bus output for a rejected bus, which an honest prover never meets. -/
 def rejectedBus : Bus.Output S L k := ⟨0, 0, [], 0, 0, false⟩
 
 /-- The honest outer transcript. -/
-def honestOuterPath (w : Witness K S.tables.length) (coins : Coins params) :
-    (outerProtocol params.toSetup).tree.ExecutionPath :=
+def honestOuterPath (setup : Setup S L k M) {schedule : Whir.Schedule K M}
+    (w : Witness K S.tables.length) (coins : Coins setup schedule) :
+    (outerProtocol setup).tree.ExecutionPath :=
   let busPath := honestBusPath S L k w coins.bus
   let bus := (Bus.outputClaim S L k busPath).getD rejectedBus
   let tablePath := honestTablePath S L k bus w coins.table
   let table := (TableSumcheck.outputClaim S L k bus tablePath).getD rejectedOutput
   joinPath _ _ (joinPath _ _ busPath tablePath)
-    (params.external.honest table (S.stack L M w) coins.external)
+    (setup.external.honest table (S.stack L M w) coins.external)
 
-/-- The honest transcript of the composed system. -/
-def honestPath (w : Witness K S.tables.length) (coins : Coins params) :
-    (protocol params).tree.ExecutionPath :=
-  let outer := honestOuterPath params w coins
-  let opening := Pcs.Honest.prove params.schedule (S.stack L M w)
-    (openingClaims (outerOutput params.toSetup outer)) coins.opening
+/-- The honest transcript of the composed system of a setup and an opening schedule. -/
+def honestPath (setup : Setup S L k M) (schedule : Whir.Schedule K M) (w : Witness K S.tables.length)
+    (coins : Coins setup schedule) : (composedProtocol setup schedule).tree.ExecutionPath :=
+  let outer := honestOuterPath setup w coins
+  let opening := Pcs.Honest.prove schedule (S.stack L M w)
+    (openingClaims (outerOutput setup outer)) coins.opening
   ⟨opening.initial, joinPath _ _ outer opening.transcript⟩
+
+variable (params : Parameters S L k M)
 
 /-- Completeness: for every satisfying witness whose padding rows are the padding row, the
 specification verifier accepts the honest transcript against every coin sequence. -/
 theorem completeness (w : Witness K S.tables.length) (hsat : S.Satisfied L w) (padded : S.Padded L w)
-    (coins : Coins params) : Accepts params (honestPath params w coins) := by
+    (coins : Coins params.toSetup params.schedule) :
+    Accepts params (honestPath params.toSetup params.schedule w coins) := by
   have shaped := hsat.1
   have hext := hsat.2.2.2.2
   have hinterp := params.external.interpret_stack w shaped hext
@@ -73,14 +77,14 @@ theorem completeness (w : Witness K S.tables.length) (hsat : S.Satisfied L w) (p
   set busPath := honestBusPath S L k w coins.bus
   set tablePath := honestTablePath S L k o w coins.table
   set extPath := params.external.honest o' q coins.external
-  have houter : honestOuterPath params w coins =
+  have houter : honestOuterPath params.toSetup w coins =
       joinPath _ _ (joinPath _ _ busPath tablePath) extPath := by
     unfold honestOuterPath
     dsimp only
     rw [show Bus.outputClaim S L k (honestBusPath S L k w coins.bus) = some o from hbus, Option.getD_some]
     rw [show TableSumcheck.outputClaim S L k o (honestTablePath S L k o w coins.table) = some o' from htable,
       Option.getD_some]
-  have hout : (outerReduction params.toSetup).output (honestOuterPath params w coins) =
+  have hout : (outerReduction params.toSetup).output (honestOuterPath params.toSetup w coins) =
       ((some o, some o'), params.external.output o' extPath) := by
     rw [houter]
     unfold outerReduction
@@ -106,7 +110,7 @@ theorem completeness (w : Witness K S.tables.length) (hsat : S.Satisfied L w) (p
     · rw [← hinterp]
       exact agrees_interpret params.toSetup q
   have hclaims : ∀ c ∈ openingClaims (outerOutput params.toSetup
-      (honestOuterPath params w coins)), c.Holds (fun u ↦ ofK (q u)) := by
+      (honestOuterPath params.toSetup w coins)), c.Holds (fun u ↦ ofK (q u)) := by
     rw [outerOutput_eq, hout]
     intro c hc
     rcases List.mem_append.mp hc with h | h
