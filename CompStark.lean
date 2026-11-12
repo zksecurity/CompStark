@@ -511,3 +511,5 @@ public import CompStark.Tables.TablePoly
 public import CompStark.Tables.TableSumcheck
 public import CompStark.Tables.Argument
 public import CompStark.Tables.Stack
+public import CompStark.Tables.Composed.External
+public import CompStark.Tables.Composed.Pool
