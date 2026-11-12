@@ -95,10 +95,24 @@ structure External where
   /-- The start relation gives the rider on the table's draws and the virtual values. -/
   start_sound : ∀ out q, Retained.input (labels out) q →
     rider out.point.reverse q ∧ VirtualHold S L k out (interpret q)
+  /-- The stack of a satisfying witness interprets to the witness. -/
+  interpret_stack : ∀ w, S.Shaped L w → S.external w → interpret (S.stack L M w) = w
+  /-- The stack of a satisfying witness has a true rider at every draw. -/
+  rider_stack : ∀ w draws, S.Shaped L w → S.external w → rider draws (S.stack L M w)
+  /-- The rider on the table's draws and the virtual values give the start relation. -/
+  start_complete : ∀ out q, rider out.point.reverse q → VirtualHold S L k out (interpret q) →
+    Retained.input (labels out) q
+  /-- The verifier's coins. -/
+  Coins : Type
+  /-- The honest transcript against the verifier's coins. -/
+  honest : TableSumcheck.Output S L k → Whir.Table K M → Coins → protocol.tree.ExecutionPath
+  /-- From its start relation, the honest transcript's output holds on the stack. -/
+  honest_holds : ∀ out q coins, Retained.input (labels out) q → (output out (honest out q coins)).Holds q
 
 /-- A system with no virtual columns and no external relation needs no argument: the stack is the
 witness. -/
-def External.none (novirtual : ∀ t, (S.table t).virtual = []) (noexternal : ∀ w, S.external w) :
+def External.none (hM : (S.stackBlocks L).total ≤ 2 ^ M) (novirtual : ∀ t, (S.table t).virtual = [])
+    (noexternal : ∀ w, S.external w) :
     External S L k M where
   interpret := S.read L M
   interpret_shaped := S.read_shaped L M
@@ -124,5 +138,11 @@ def External.none (novirtual : ∀ t, (S.table t).virtual = []) (noexternal : �
   budget _ := trivial
   start_sound out q _ := ⟨trivial, fun t i hv ↦ by
     simp only [TableSumcheck.virtualAt, novirtual, List.contains_nil, Bool.false_eq_true] at hv⟩
+  interpret_stack w shaped _ := S.read_stack L M hM w shaped novirtual
+  rider_stack _ _ _ _ := trivial
+  start_complete _ _ _ _ := trivial
+  Coins := PUnit
+  honest _ _ _ := PUnit.unit
+  honest_holds _ _ _ _ := ⟨rfl, fun _ h ↦ absurd h List.not_mem_nil⟩
 
 end CompStark.Tables.Composed

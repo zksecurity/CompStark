@@ -519,3 +519,4 @@ public import CompStark.Tables.Composed.Budget
 public import CompStark.Tables.Composed.Certificate
 public import CompStark.Tables.Composed.HonestBus
 public import CompStark.Tables.Composed.HonestTable
+public import CompStark.Tables.Composed.Honest

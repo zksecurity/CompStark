@@ -314,4 +314,43 @@ theorem stackClaim_read_iff (hM : (S.stackBlocks L).total ≤ 2 ^ M) (q : Whir.T
     · exact (map_zero (algebraMap K E)).symm
   rw [he]
 
+/-- With no virtual columns, reading the stack of a witness of the system's shape returns the
+witness. -/
+theorem read_stack (hM : (S.stackBlocks L).total ≤ 2 ^ M) (w : Witness K S.tables.length)
+    (shaped : S.Shaped L w) (novirtual : ∀ t, (S.table t).virtual = []) :
+    S.read L M (S.stack L M w) = w := by
+  funext t
+  obtain ⟨hlen, hsize⟩ := shaped t
+  apply List.ext_getElem (by simp only [read, List.length_ofFn, hlen])
+  intro i h1 h2
+  simp only [read, List.getElem_ofFn]
+  have hrow := hsize _ (List.getElem_mem h2)
+  apply Array.ext (by simp only [Array.size_ofFn, hrow])
+  intro c hc1 hc2
+  simp only [Array.getElem_ofFn]
+  have hi : i < 2 ^ L.logHeight t := by simpa only [read, List.length_ofFn] using h1
+  have hc : c < (S.table t).air.width := by simpa only [Array.size_ofFn] using hc1
+  have hcomm : c ∈ S.committedColumns t := by
+    simp only [committedColumns, novirtual, List.contains_nil, Bool.not_false, List.filter_true,
+      List.mem_range, hc]
+  have mem := (S.mem_stackColumns L t c).mpr hcomm
+  obtain ⟨b, hb⟩ : ∃ b, (S.stackColumns L).finIdxOf? (t, c) = some b := by
+    cases h : (S.stackColumns L).finIdxOf? (t, c) with
+    | none => exact absurd mem (List.finIdxOf?_eq_none_iff.mp h)
+    | some b => exact ⟨b, rfl⟩
+  have hget := (List.finIdxOf?_eq_some_iff.mp hb).1
+  have hsizeb : L.logHeight (S.stackColumns L)[b].1 = L.logHeight t := by rw [hget]
+  have hbound : (S.stackBlocks L).offset b + i < 2 ^ M := by
+    have := ((S.stackBlocks L).offset_add_pow_le_total b).trans hM
+    have h2 : 2 ^ (S.stackBlocks L).size b = 2 ^ L.logHeight t := by
+      change 2 ^ L.logHeight (S.stackColumns L)[b].1 = _
+      rw [hsizeb]
+    omega
+  unfold readCell
+  rw [hb]
+  simp only [hbound, ↓reduceDIte]
+  rw [stack_window S L M hM w b i (by rw [hsizeb]; exact hi) hbound, hget]
+  simp only [List.getD_eq_getElem _ _ h2, Array.getD_eq_getD_getElem?, Array.getElem?_eq_getElem hc2,
+    Option.getD_some]
+
 end CompStark.Tables.System

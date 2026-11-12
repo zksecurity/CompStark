@@ -32,6 +32,18 @@ def splitPath (first second : Protocol)
   let parts := PathAlong.split TypeTree.runtimeLens first.tree (fun _ => second.tree) path
   (parts.1, parts.2)
 
+/-- Join an execution of the first protocol and one of the second into an appended execution. -/
+def joinPath (first second : Protocol) (path₁ : first.tree.ExecutionPath)
+    (path₂ : second.tree.ExecutionPath) : (appendProtocol first second).tree.ExecutionPath :=
+  PathAlong.append TypeTree.runtimeLens first.tree (fun _ => second.tree) path₁ path₂
+
+/-- Splitting a joined execution recovers its parts. -/
+theorem splitPath_joinPath (first second : Protocol) (path₁ : first.tree.ExecutionPath)
+    (path₂ : second.tree.ExecutionPath) :
+    splitPath first second (joinPath first second path₁ path₂) = (path₁, path₂) := by
+  unfold splitPath joinPath
+  rw [PathAlong.split_append]
+
 /-- A closed endpoint problem over the actual retained object. -/
 def endpointProblem (W A : Type) (fixed : W) (relation : A → W → Prop) :
     Problem (⟨fun _ : Unit => A⟩ : ClaimFamily Unit) where
@@ -209,6 +221,15 @@ def Reduction.then {P Q : Protocol} {W A B : Type} (first : Reduction P W A)
         (first.certificate fixed).challenges
         (fun path => ((second (first.output path)).certificate fixed).challenges) = _
       simp only [Reduction.schedule_eq] }
+/-- A sequential reduction's output is the first output and the second's at it. -/
+theorem Reduction.then_output {P Q : Protocol} {W A B : Type} (first : Reduction P W A)
+    (second : A → Reduction Q W B)
+    (seam : ∀ claim witness, (second claim).input witness ↔ first.relation claim witness)
+    (path : (appendProtocol P Q).tree.ExecutionPath) :
+    (first.then second seam).output path =
+      (first.output (splitPath P Q path).1,
+        (second (first.output (splitPath P Q path).1)).output (splitPath P Q path).2) := rfl
+
 /-- Executable retained maps and endpoint identifications, independent of challenge distributions. -/
 structure ReductionMaps (protocol : Protocol) (W A : Type) where
   /-- Predicate at the input. -/
