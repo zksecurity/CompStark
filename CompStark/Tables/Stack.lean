@@ -31,6 +31,21 @@ def stackColumns : List (Fin S.tables.length × ℕ) :=
   ((List.finRange S.tables.length).flatMap fun t ↦ (S.committedColumns t).map (t, ·)).insertionSort
     fun a b ↦ L.logHeight b.1 ≤ L.logHeight a.1
 
+/-- With its tables tallest first, the stack keeps the tables' order. -/
+theorem stackColumns_of_descending
+    (descending : (List.finRange S.tables.length).Pairwise fun a b ↦ L.logHeight b ≤ L.logHeight a) :
+    S.stackColumns L =
+      (List.finRange S.tables.length).flatMap fun t ↦ (S.committedColumns t).map (t, ·) := by
+  apply List.Pairwise.insertionSort_eq
+  rw [List.pairwise_flatMap]
+  refine ⟨fun t _ ↦ ?_, descending.imp ?_⟩
+  · rw [List.pairwise_map]
+    exact List.pairwise_iff_getElem.mpr fun _ _ _ _ _ ↦ le_refl _
+  · intro a b hab x hx y hy
+    obtain ⟨c, _, rfl⟩ := List.mem_map.mp hx
+    obtain ⟨d, _, rfl⟩ := List.mem_map.mp hy
+    exact hab
+
 /-- Stacked columns have decreasing heights. -/
 theorem stackColumns_antitone :
     Antitone fun b : Fin (S.stackColumns L).length ↦ L.logHeight (S.stackColumns L)[b].1 := by

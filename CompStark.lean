@@ -532,3 +532,12 @@ public import CompStark.Tables.Composed.Keccak.Checks
 public import CompStark.Tables.Composed.Keccak.Protocol
 public import CompStark.Tables.Composed.Keccak.External
 public import CompStark.Tables.Composed.Keccak.Honest
+public import CompStark.Compiled.Projection
+public import CompStark.Compiled.Presentation
+public import CompStark.Compiled.Whir
+public import CompStark.Compiled.Protocol
+public import CompStark.Compiled.Transfer
+public import CompStark.Tables.Compiled.Presentation
+public import CompStark.Tables.Compiled.Protocol
+public import CompStark.Tables.Compiled.Transfer
+public import CompStark.Tables.Compiled.Acceptance
