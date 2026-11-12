@@ -90,11 +90,6 @@ variable (S : System K) (L : Layout S.tables.length) (k : ℕ)
 /-- The tables the table sumcheck covers: those the bus does not open directly. -/
 abbrev Active := {t : Fin S.tables.length // S.Direct L t = false}
 
-/-- The active tables in table order. -/
-def activeList : List (Active S L) :=
-  (List.finRange S.tables.length).filterMap fun t ↦
-    if h : S.Direct L t = false then some ⟨t, h⟩ else none
-
 /-- The sumcheck's number of variables: the tallest active table's. -/
 def maxHeight : ℕ := Finset.univ.sup fun t : Active S L ↦ L.logHeight t.1
 
@@ -102,17 +97,16 @@ def maxHeight : ℕ := Finset.univ.sup fun t : Active S L ↦ L.logHeight t.1
 theorem height_le_maxHeight (t : Active S L) : L.logHeight t.1 ≤ maxHeight S L :=
   Finset.le_sup (f := fun t : Active S L ↦ L.logHeight t.1) (Finset.mem_univ t)
 
-/-- An active table's constraints as polynomials in its row values. -/
-noncomputable def constraints (t : Active S L) : List (MvPolynomial ℕ E) :=
-  (S.table t.1).air.constraints.map (Expr.toPoly (S.table t.1).air.width)
+/-- The number of constraints of table `t`. -/
+abbrev constraintLength (t : Fin S.tables.length) : ℕ := (S.table t).air.constraints.length
 
-/-- The number of constraints of the active tables before `t`, in table order. -/
-def constraintOffset (t : Active S L) : ℕ :=
-  (((activeList S L).takeWhile (· ≠ t)).map fun s ↦ (S.table s.1).air.constraints.length).sum
+/-- The number of constraints of the tables before `t`; directly opened tables have none, so this
+counts the active tables' constraints in table order. -/
+def constraintOffset (t : Fin S.tables.length) : ℕ :=
+  ∑ j : Fin t.val, constraintLength S (Fin.castLE t.isLt.le j)
 
-/-- The number of constraints of all active tables. -/
-def constraintCount : ℕ :=
-  ((activeList S L).map fun s ↦ (S.table s.1).air.constraints.length).sum
+/-- The number of constraints of all tables. -/
+def constraintCount : ℕ := ∑ t : Fin S.tables.length, constraintLength S t
 
 /-- The largest individual degree of a constraint or tuple entry of an active table, at least
 one. -/
@@ -149,9 +143,9 @@ def valuesAt (vals : Values S L) (t : Active S L) (z : List E) (c : ℕ) : E :=
 
 /-- One active table's batched row formula: its constraints and its three bus forms. -/
 noncomputable def rowValue (o : Bus.Output S L k) (ξ : E) (t : Active S L) (v : ℕ → E) : E :=
-  (∑ i : Fin (constraints S L t).length,
-    ξ ^ (constraintOffset S L t + i.val) * MvPolynomial.eval v (constraints S L t)[i]) +
-  ∑ s : Fin 3, ξ ^ (constraintCount S L + s.val) *
+  (∑ i : Fin (constraintLength S t.1), ξ ^ (constraintOffset S t.1 + i.val) *
+    MvPolynomial.eval v (Expr.toPoly (S.table t.1).air.width (S.table t.1).air.constraints[i])) +
+  ∑ s : Fin 3, ξ ^ (constraintCount S + s.val) *
     S.tableForm L k o.alpha o.beta (Bus.μ S L) s t.1 o.point v
       (fun c ↦ v ((S.table t.1).air.width + c))
 
@@ -174,7 +168,7 @@ noncomputable def summandValue (o : Bus.Output S L k) (ξ : E) (w : Witness K S.
 
 /-- The verifier's target: the three bus debts batched by `ξ`. -/
 def target (o : Bus.Output S L k) (ξ : E) : E :=
-  ∑ s : Fin 3, ξ ^ (constraintCount S L + s.val) * o.remainders s
+  ∑ s : Fin 3, ξ ^ (constraintCount S + s.val) * o.remainders s
 
 /-- Reversing the challenge vector recovers a physical coordinate. -/
 theorem reversed_getD {m : ℕ} (r : Fin m → E) (j : ℕ) (hj : j < m) :
@@ -412,10 +406,11 @@ variables. -/
 noncomputable def polynomial (o : Bus.Output S L k) (ξ : E) (w : Witness K S.tables.length) :
     MvPolynomial (Fin (maxHeight S L)) E :=
   ∑ t : Active S L, weightPolynomial S L k o t *
-    ((∑ i : Fin (constraints S L t).length,
-      MvPolynomial.C (ξ ^ (constraintOffset S L t + i.val)) *
-        MvPolynomial.bind₁ (columnPolynomial S L w t) (constraints S L t)[i]) +
-      ∑ side : Fin 3, MvPolynomial.C (ξ ^ (constraintCount S L + side.val)) *
+    ((∑ i : Fin (constraintLength S t.1),
+      MvPolynomial.C (ξ ^ (constraintOffset S t.1 + i.val)) *
+        MvPolynomial.bind₁ (columnPolynomial S L w t)
+          (Expr.toPoly (S.table t.1).air.width (S.table t.1).air.constraints[i])) +
+      ∑ side : Fin 3, MvPolynomial.C (ξ ^ (constraintCount S + side.val)) *
         MvPolynomial.bind₁ (columnPolynomial S L w t) (tableFormPolynomial S L k o side t.1))
 
 /-- Every variable's degree is at most one more than the sumcheck degree. -/
@@ -427,18 +422,17 @@ theorem polynomial_degree (o : Bus.Output S L k) (ξ : E) (w : Witness K S.table
   unfold polynomial
   refine (degreeOf_sum_le j _ _).trans (Finset.sup_le fun t _ ↦ ?_)
   refine (degreeOf_mul_le j _ _).trans ?_
-  have hair : (∑ i : Fin (constraints S L t).length,
-      C (ξ ^ (constraintOffset S L t + i.val)) *
-        bind₁ (columnPolynomial S L w t) (constraints S L t)[i]).degreeOf j ≤ degree S L := by
+  have hair : (∑ i : Fin (constraintLength S t.1),
+      C (ξ ^ (constraintOffset S t.1 + i.val)) *
+        bind₁ (columnPolynomial S L w t)
+          (Expr.toPoly (S.table t.1).air.width (S.table t.1).air.constraints[i])).degreeOf j ≤
+        degree S L := by
     refine (degreeOf_sum_le j _ _).trans (Finset.sup_le fun i _ ↦ ?_)
     refine (degreeOf_mul_le j _ _).trans ?_
     rw [degreeOf_C, zero_add]
-    obtain ⟨e, he, hpoly⟩ := List.mem_map.mp (List.getElem_mem (l := constraints S L t) i.isLt)
-    simp only [Fin.getElem_fin]
-    rw [← hpoly]
-    exact (Expr.toPoly_bind_degreeOf _ e _ j (fun c ↦ columnPolynomial_degree S L w t c j)).trans
-      (constraint_degree_le S L t e he)
-  have hbus : (∑ side : Fin 3, C (ξ ^ (constraintCount S L + side.val)) *
+    exact (Expr.toPoly_bind_degreeOf _ _ _ j (fun c ↦ columnPolynomial_degree S L w t c j)).trans
+      (constraint_degree_le S L t _ (List.getElem_mem _))
+  have hbus : (∑ side : Fin 3, C (ξ ^ (constraintCount S + side.val)) *
       bind₁ (columnPolynomial S L w t) (tableFormPolynomial S L k o side t.1)).degreeOf j ≤
         degree S L := by
     refine (degreeOf_sum_le j _ _).trans (Finset.sup_le fun side _ ↦ ?_)
@@ -510,6 +504,50 @@ theorem valuesAt_eq_cellColumn (w : Witness K S.tables.length) (z : List E) (val
       simp only [column, cellColumn, cell, hw, ↓reduceIte]
   · simp only [prepColumn, cellColumn, cell, hw, ↓reduceIte]
 
+/-- A transmitted column: one a table's constraints, tuples or nonzero checks read. -/
+theorem mem_transmitted (t : Fin S.tables.length) (c : ℕ) (hc : c < (S.table t).air.width) :
+    c ∈ transmitted S t ↔
+      ((S.table t).air.constraints.any (Expr.readsCol c) ||
+        ((S.table t).interactions.any fun I ↦ I.tuple.any (Expr.readsCol c)) ||
+        (S.table t).nonzero.contains c) = true := by
+  simp only [transmitted, List.mem_filter, List.mem_range, hc, true_and]
+
+/-- A table's bus form depends only on its transmitted columns and its preprocessed values. -/
+theorem tableForm_congr (hT : ∀ t, (S.table t).WellFormed) (α : Fin k → E) (β : E) (μ : ℕ)
+    (side : Fin 3) (t : Fin S.tables.length) (ζ : List E) (v v' p p' : ℕ → E)
+    (agree : ∀ c ∈ transmitted S t, v c = v' c) (hp : ∀ c, p c = p' c) :
+    S.tableForm L k α β μ side t ζ v p = S.tableForm L k α β μ side t ζ v' p' := by
+  unfold tableForm
+  apply S.sumBlocks_congr L _ _ _ _ _ 0
+  intro b hb
+  obtain ⟨hnz, hint⟩ := S.mem_sortedBlocks L side b hb
+  split_ifs with htb
+  · cases b with
+    | nonzero t' c =>
+      have hc := hnz t' c rfl
+      simp only [Block.table] at htb
+      subst htb
+      have hlt := (hT t').2.2.2.2.2.1 c hc
+      simp only [formE]
+      exact agree c ((mem_transmitted S t' c hlt).mpr (by
+        simp only [Bool.or_eq_true, List.contains_iff_mem]
+        exact Or.inr hc))
+    | interaction t' I =>
+      have hI := hint t' I rfl
+      simp only [Block.table] at htb
+      subst htb
+      simp only [formE]
+      refine congrArg (fun l ↦ β - fingerprintE k α (encodeE k (S.busIndex I.bus) l))
+        (List.map_congr_left fun e he ↦ ?_)
+      have hwf := (hT t').2.2.2.2.1 I hI e he
+      apply Expr.eval_envE_congr e _ _ _ _ _ hp
+      intro c hr
+      have hlt := Expr.readsCol_lt e hwf.2 hr
+      exact agree c ((mem_transmitted S t' c hlt).mpr (by
+        simp only [Bool.or_eq_true, List.any_eq_true]
+        exact Or.inl (Or.inr ⟨I, hI, e, he, hr⟩)))
+  · rfl
+
 /-- An active table's batched row formula depends only on the variables it reads. -/
 theorem rowValue_congr (hT : ∀ t, (S.table t).WellFormed) (o : Bus.Output S L k) (ξ : E)
     (t : Active S L) (v v' : ℕ → E)
@@ -517,58 +555,21 @@ theorem rowValue_congr (hT : ∀ t, (S.table t).WellFormed) (o : Bus.Output S L 
     rowValue S L k o ξ t v = rowValue S L k o ξ t v' := by
   have hpre : ∀ c, v ((S.table t.1).air.width + c) = v' ((S.table t.1).air.width + c) :=
     fun c ↦ agree _ fun h ↦ absurd h (by omega)
-  have read : ∀ c, c < (S.table t.1).air.width → (c ∈ transmitted S t.1 ↔
-      ((S.table t.1).air.constraints.any (Expr.readsCol c) ||
-        ((S.table t.1).interactions.any fun I ↦ I.tuple.any (Expr.readsCol c)) ||
-        (S.table t.1).nonzero.contains c) = true) := by
-    intro c hc
-    simp only [transmitted, List.mem_filter, List.mem_range, hc, true_and]
   unfold rowValue
   apply congrArg₂ (· + ·)
   · apply Finset.sum_congr rfl
     intro i _
-    apply congrArg (ξ ^ (constraintOffset S L t + i.val) * ·)
-    obtain ⟨e, he, eq⟩ := List.mem_map.mp (List.getElem_mem i.isLt : (constraints S L t)[i] ∈ constraints S L t)
-    simp only [Fin.getElem_fin, ← eq]
-    apply Expr.toPoly_eval_congr _ e v v' _ hpre
+    apply congrArg (ξ ^ (constraintOffset S t.1 + i.val) * ·)
+    have he := List.getElem_mem (l := (S.table t.1).air.constraints) i.isLt
+    apply Expr.toPoly_eval_congr _ _ v v' _ hpre
     intro c hr
-    have hlt := Expr.readsCol_lt e ((hT t.1).2.2.2.1 e he).2 hr
-    exact agree c fun _ ↦ (read c hlt).mpr (by
+    have hlt := Expr.readsCol_lt _ ((hT t.1).2.2.2.1 _ he).2 hr
+    exact agree c fun _ ↦ (mem_transmitted S t.1 c hlt).mpr (by
       simp only [Bool.or_eq_true, List.any_eq_true]
-      exact Or.inl (Or.inl ⟨e, he, hr⟩))
+      exact Or.inl (Or.inl ⟨_, he, hr⟩))
   · apply Finset.sum_congr rfl
     intro s _
-    apply congrArg (ξ ^ (constraintCount S L + s.val) * ·)
-    unfold tableForm
-    apply S.sumBlocks_congr L _ _ _ _ _ 0
-    intro b hb
-    obtain ⟨hnz, hint⟩ := S.mem_sortedBlocks L s b hb
-    split_ifs with htb
-    · cases b with
-      | nonzero t' c =>
-        have hc := hnz t' c rfl
-        simp only [Block.table] at htb
-        subst htb
-        have hlt := (hT t.1).2.2.2.2.2.1 c hc
-        simp only [formE]
-        exact agree c fun _ ↦ (read c hlt).mpr (by
-          simp only [Bool.or_eq_true, List.contains_iff_mem]
-          exact Or.inr hc)
-      | interaction t' I =>
-        have hI := hint t' I rfl
-        simp only [Block.table] at htb
-        subst htb
-        simp only [formE]
-        refine congrArg (fun l ↦ o.beta - fingerprintE k o.alpha (encodeE k (S.busIndex I.bus) l))
-          (List.map_congr_left fun e he ↦ ?_)
-        have hwf := (hT t.1).2.2.2.2.1 I hI e he
-        apply Expr.eval_envE_congr e _ _ _ _ _ hpre
-        intro c hr
-        have hlt := Expr.readsCol_lt e hwf.2 hr
-        exact agree c fun _ ↦ (read c hlt).mpr (by
-          simp only [Bool.or_eq_true, List.any_eq_true]
-          exact Or.inl (Or.inr ⟨I, hI, e, he, hr⟩))
-    · rfl
+    rw [tableForm_congr S L k hT _ _ _ s t.1 _ v v' _ _ (fun c hc ↦ agree c fun _ ↦ hc) hpre]
 
 /-- With true transmitted values, the verifier's formula is the witness's summand value. -/
 theorem formula_eq_summandValue (hT : ∀ t, (S.table t).WellFormed) (w : Witness K S.tables.length)
@@ -717,7 +718,7 @@ noncomputable def roundsChallenges : (n : ℕ) → E → RoundExtractor.Challeng
 `constraintCount + 2`; each round's message has degree `degree + 1`. -/
 noncomputable def challenges (o : Bus.Output S L k) :
     RoundExtractor.ChallengeSchedule (protocol S L).tree (protocol S L).roles :=
-  ⟨⟨$ᵗ E, overE (constraintCount S L + 2)⟩, fun ξ ↦ roundsChallenges S L (maxHeight S L) (target S L k o ξ)⟩
+  ⟨⟨$ᵗ E, overE (constraintCount S + 2)⟩, fun ξ ↦ roundsChallenges S L (maxHeight S L) (target S L k o ξ)⟩
 
 /-- The rounds' output from the messages and the transmitted values. -/
 noncomputable def roundsOutput (o : Bus.Output S L k) (ξ : E) :
@@ -770,5 +771,256 @@ def terminalRelation (o : Bus.Output S L k) (w₀ : Witness K S.tables.length) :
   witnessEquiv := Retained.terminalEquiv w₀ (labels S L k o)
   knowledge_iff path witness := rounds_terminal_iff S L k o w₀ path.1 (maxHeight S L) []
     (target S L k o path.1) o.active path.2 witness
+
+/-- A sum over the cube's indices is a sum over an embedded Boolean domain's points. -/
+theorem sum_embedded_cube {M : Type} [AddCommMonoid M] (n : ℕ)
+    (D : Fin 2 ↪ E) (hD : ∀ i, D i = if i.val = 1 then 1 else 0)
+    (f : (Fin n → E) → M) :
+    (∑ i : Fin (2 ^ n), f (fun a ↦ bit i.val a.val)) = ∑ x ∈ (Finset.univ.map D) ^ᶠ n, f x := by
+  classical
+  have he (i : Fin (2 ^ n)) :
+      (fun a : Fin n ↦ bit i.val a.val) = D ∘ finFunctionFinEquiv.symm i := by
+    funext a
+    rw [Function.comp_apply, hD]
+    change (if i.val.testBit a.val then (1 : E) else 0) =
+      if i.val / 2 ^ a.val % 2 = 1 then 1 else 0
+    rw [Nat.testBit_eq_decide_div_mod_eq]
+    simp only [decide_eq_true_eq]
+  simp_rw [he]
+  rw [show (∑ i : Fin (2 ^ n), f (D ∘ finFunctionFinEquiv.symm i)) =
+    ∑ g : Fin n → Fin 2, f (D ∘ g) from finFunctionFinEquiv.symm.sum_comp (fun g ↦ f (D ∘ g))]
+  apply Finset.sum_bij (fun g _ ↦ D ∘ g)
+  · intro g _
+    apply Fintype.mem_piFinset.mpr
+    intro a
+    exact Finset.mem_map.mpr ⟨g a, Finset.mem_univ _, rfl⟩
+  · intro a _ b _ hab
+    funext x
+    exact D.injective (congrFun hab x)
+  · intro x hx
+    have hx := Fintype.mem_piFinset.mp hx
+    have hx : ∀ a, ∃ c : Fin 2, D c = x a := fun a ↦ by
+      obtain ⟨c, _, hc⟩ := Finset.mem_map.mp (hx a)
+      exact ⟨c, hc⟩
+    choose g hg using hx
+    exact ⟨g, Finset.mem_univ _, funext hg⟩
+  · intro _ _
+    rfl
+
+/-- The Boolean domain's points. -/
+theorem booleanDomain_apply (i : Fin 2) : booleanDomain i = if i.val = 1 then 1 else 0 := by
+  fin_cases i <;> rfl
+
+/-- A list's entries recover the list. -/
+theorem ofFn_getD (χ : List E) : List.ofFn (fun a : Fin χ.length ↦ χ.getD a.val 0) = χ := by
+  have h : (fun a : Fin χ.length ↦ χ.getD a.val 0) = fun a : Fin χ.length ↦ χ[a.val] := by
+    funext a
+    exact List.getD_eq_getElem _ _ a.isLt
+  rw [h, List.ofFn_getElem]
+
+/-- Evaluation through the sumcheck oracle is polynomial evaluation. -/
+theorem behavior_eval (n d : ℕ) (p : Sumcheck.Spec.OracleStatement E n d ()) (r : Fin n → E) :
+    (polynomialFamily E n d).behaviorOfRealizations (fun _ ↦ p) ⟨(), r⟩ =
+      MvPolynomial.eval r p.val := by rfl
+
+/-- The running claim is ArkLib's closed polynomial claim. -/
+theorem reduced_core_iff (hT : ∀ t, (S.table t).WellFormed) (o : Bus.Output S L k) (ξ : E)
+    (w : Witness K S.tables.length) (χ : List E) (hlen : χ.length ≤ maxHeight S L) (current : E) :
+    reduced S L k o ξ χ current w ↔
+      closedRelation E (maxHeight S L) (degree S L + 1) booleanDomain ⟨χ.length, by omega⟩
+        ⟨⟨current, fun a ↦ χ.getD a.val 0⟩,
+          (polynomialFamily E (maxHeight S L) (degree S L + 1)).behaviorOfRealizations
+            (fun _ ↦ summand S L k o ξ w)⟩ := by
+  classical
+  unfold reduced closedRelation
+  simp only [behavior_eval]
+  rw [← sum_embedded_cube (maxHeight S L - χ.length) booleanDomain booleanDomain_apply]
+  rw [eq_comm]
+  apply (fun (a b : E) (h : a = b) ↦ show a = current ↔ b = current from h ▸ Iff.rfl)
+  apply Finset.sum_congr rfl
+  intro a _
+  rw [summand_eval S L k hT]
+  congr 1
+  congr 1
+  rw [List.ofFn_congr (by omega : maxHeight S L = χ.length + (maxHeight S L - χ.length))]
+  simp only [Function.comp_def, Fin.cast_cast, Fin.cast_refl, id_eq, List.ofFn_fin_append, ofFn_getD]
+
+/-- The running claim is ArkLib's closed claim at a statement's challenges. -/
+theorem reduced_core_ofFn_iff (hT : ∀ t, (S.table t).WellFormed) (o : Bus.Output S L k) (ξ : E)
+    (w : Witness K S.tables.length) (i : Fin (maxHeight S L + 1))
+    (stmt : Sumcheck.Spec.StatementRound E (maxHeight S L) i) :
+    reduced S L k o ξ (List.ofFn stmt.challenges) stmt.target w ↔
+      closedRelation E (maxHeight S L) (degree S L + 1) booleanDomain i
+        ⟨stmt, (polynomialFamily E (maxHeight S L) (degree S L + 1)).behaviorOfRealizations
+          (fun _ ↦ summand S L k o ξ w)⟩ := by
+  have h := reduced_core_iff S L k hT o ξ w (List.ofFn stmt.challenges)
+    (by simp only [List.length_ofFn]; omega) stmt.target
+  have hi : (⟨(List.ofFn stmt.challenges).length, by simp only [List.length_ofFn]; omega⟩ :
+      Fin (maxHeight S L + 1)) = i := Fin.ext List.length_ofFn
+  have he (j : Fin (maxHeight S L + 1)) (hj : j = i) (p : Fin j.val → E)
+      (hp : ∀ a : Fin j.val, p a = stmt.challenges ⟨a.val, by
+        have := a.isLt; have := congrArg Fin.val hj; omega⟩) :
+      closedRelation E (maxHeight S L) (degree S L + 1) booleanDomain j
+        ⟨⟨stmt.target, p⟩, (polynomialFamily E (maxHeight S L) (degree S L + 1)).behaviorOfRealizations
+          (fun _ ↦ summand S L k o ξ w)⟩ ↔
+      closedRelation E (maxHeight S L) (degree S L + 1) booleanDomain i
+        ⟨stmt, (polynomialFamily E (maxHeight S L) (degree S L + 1)).behaviorOfRealizations
+          (fun _ ↦ summand S L k o ξ w)⟩ := by
+    subst j
+    have hfun : p = stmt.challenges := funext hp
+    rw [hfun]
+  exact h.trans (he _ hi _ (fun a ↦ by
+    rw [List.getD_eq_getElem _ _ a.isLt, List.getElem_ofFn]))
+
+/-- Boolean cube coordinates, low first. -/
+def cubeList {n : ℕ} (x : Fin n → Fin 2) : List E := List.ofFn fun a ↦ (x a).val
+
+/-- Reversing the coordinates permutes the cube. -/
+def reverseCube (n : ℕ) : (Fin n → Fin 2) ≃ (Fin n → Fin 2) where
+  toFun x a := x a.rev
+  invFun x a := x a.rev
+  left_inv x := funext fun a ↦ by dsimp only; rw [Fin.rev_rev]
+  right_inv x := funext fun a ↦ by dsimp only; rw [Fin.rev_rev]
+
+/-- A cube index's coordinates are its bits. -/
+theorem cubeList_index (n : ℕ) (i : Fin (2 ^ n)) :
+    cubeList (finFunctionFinEquiv.symm i) = List.ofFn (fun a : Fin n ↦ bit i.val a.val) := by
+  apply congrArg List.ofFn
+  funext a
+  exact finFunction_bits n i a
+
+/-- Reversing a coordinate list applies the cube permutation. -/
+theorem cubeList_reverse (n : ℕ) (x : Fin n → Fin 2) :
+    (cubeList x).reverse = cubeList (reverseCube n x) := by
+  apply List.ext_getElem
+  · simp only [List.length_reverse, cubeList, List.length_ofFn]
+  · intro i hi hj
+    simp only [cubeList, List.getElem_reverse, List.length_ofFn, List.getElem_ofFn,
+      reverseCube, Equiv.coe_fn_mk, Fin.rev]
+    apply congrArg (fun j : Fin n ↦ ((x j).val : E))
+    apply Fin.ext
+    change n - 1 - i = n - (i + 1)
+    omega
+
+/-- Reversing the coordinates permutes a Boolean sum. -/
+theorem sum_bits_reverse (n : ℕ) (f : List E → E) :
+    (∑ i : Fin (2 ^ n), f (List.ofFn (fun a : Fin n ↦ bit i.val a.val)).reverse) =
+      ∑ i : Fin (2 ^ n), f (List.ofFn (fun a : Fin n ↦ bit i.val a.val)) := by
+  simp_rw [← cubeList_index]
+  rw [finFunctionFinEquiv.symm.sum_comp (fun x ↦ f (cubeList x).reverse),
+    finFunctionFinEquiv.symm.sum_comp (fun x ↦ f (cubeList x))]
+  simp_rw [cubeList_reverse]
+  exact (reverseCube n).sum_comp (fun x ↦ f (cubeList x))
+
+/-- The low coordinates of a split cube point are the low cube point. -/
+theorem bits_cubeIndex_take (h m : ℕ) (i : Fin (2 ^ h)) (j : Fin (2 ^ m)) :
+    (List.ofFn fun a : Fin (h + m) ↦ bit (Algebra.cubeIndex i j).val a.val).take h =
+      List.ofFn fun a : Fin h ↦ bit i.val a.val := by
+  apply List.ext_getElem
+  · simp only [List.length_take, List.length_ofFn]; omega
+  · intro a ha hb
+    simp only [List.getElem_take, List.getElem_ofFn, bit, Algebra.testBit_cubeIndex,
+      show a < h from by simpa only [List.length_ofFn] using hb, ↓reduceIte]
+
+/-- The all-ones weight on the high coordinates sums to one. -/
+theorem sum_high_bits (m : ℕ) : (∑ j : Fin (2 ^ m), ∏ a : Fin m, bit j.val a.val) = (1 : E) := by
+  have h := mle_const m (1 : E) (List.replicate m 1)
+  have hz (a : Fin m) : (List.replicate m (1 : E)).getD a.val 0 = 1 := by
+    rw [List.getD_eq_getElem _ _ (by simpa only [List.length_replicate] using a.isLt),
+      List.getElem_replicate]
+  unfold mle at h
+  simp_rw [hz] at h
+  simpa only [eqFactor, sub_self, zero_mul, one_mul, zero_add] using h
+
+/-- Summing out the high coordinates leaves the low equality-weighted extension. -/
+theorem backload_sum (h m : ℕ) (ζ : List E) (f : List E → E) :
+    (∑ x : Fin (2 ^ (h + m)),
+      ((∏ a : Fin h, eqFactor (ζ.getD a.val 0) (bit x.val a.val)) *
+        ∏ a : Fin m, bit x.val (h + a.val)) *
+          f ((List.ofFn fun a : Fin (h + m) ↦ bit x.val a.val).take h)) =
+      mle h (fun i ↦ f (List.ofFn fun a : Fin h ↦ bit i a.val)) ζ := by
+  rw [Algebra.sum_cube_split]
+  simp_rw [bits_cubeIndex_take]
+  have hlo (i : Fin (2 ^ h)) (j : Fin (2 ^ m)) (a : Fin h) :
+      bit (Algebra.cubeIndex i j).val a.val = bit i.val a.val := by
+    simp only [bit, Algebra.testBit_cubeIndex, a.isLt, ↓reduceIte]
+  have hhi (i : Fin (2 ^ h)) (j : Fin (2 ^ m)) (a : Fin m) :
+      bit (Algebra.cubeIndex i j).val (h + a.val) = bit j.val a.val := by
+    simp only [bit, Algebra.testBit_cubeIndex, Nat.not_lt.mpr (Nat.le_add_right _ _),
+      ↓reduceIte, Nat.add_sub_cancel_left]
+  simp_rw [hlo, hhi]
+  rw [Finset.sum_comm]
+  unfold mle
+  apply Finset.sum_congr rfl
+  intro i _
+  rw [← Finset.sum_mul, ← Finset.mul_sum, sum_high_bits, mul_one]
+  exact mul_comm _ _
+
+/-- The high-coordinate product. -/
+def highBits (h m i : ℕ) : E := ∏ a : Fin m, bit i (h + a.val)
+
+/-- A table's equality and high-coordinate weights on the ambient cube. -/
+def backloadCube (m h : ℕ) (ζ : List E) (f : List E → E) : E :=
+  ∑ x : Fin (2 ^ m),
+    ((∏ a : Fin h, eqFactor (ζ.getD a.val 0) (bit x.val a.val)) * highBits h (m - h) x.val) *
+      f ((List.ofFn fun a : Fin m ↦ bit x.val a.val).take h)
+
+/-- Summing out works at every table height below the ambient one. -/
+theorem backloadCube_eq (m h : ℕ) (hh : h ≤ m) (ζ : List E) (f : List E → E) :
+    backloadCube m h ζ f = mle h (fun i ↦ f (List.ofFn fun a : Fin h ↦ bit i a.val)) ζ := by
+  obtain ⟨d, rfl⟩ := Nat.exists_eq_add_of_le hh
+  unfold backloadCube
+  rw [Nat.add_sub_cancel_left]
+  exact backload_sum h d ζ f
+
+/-- An active table's share of the cube sum is the extension of its rows' formulas. -/
+theorem table_cube_sum (o : Bus.Output S L k) (ξ : E) (w : Witness K S.tables.length)
+    (t : Active S L) :
+    (∑ i : Fin (2 ^ maxHeight S L),
+      tableWeight S L k o t (List.ofFn fun a : Fin (maxHeight S L) ↦ bit i.val a.val) *
+        rowValue S L k o ξ t (fun c ↦ cellColumn S L w t.1 c
+          ((List.ofFn fun a : Fin (maxHeight S L) ↦ bit i.val a.val).take (L.logHeight t.1)))) =
+      mle (L.logHeight t.1) (fun i ↦ rowValue S L k o ξ t (fun c ↦ ofK (cell S w t.1 i c))) o.point := by
+  have hle := height_le_maxHeight S L t
+  have hw (i : Fin (2 ^ maxHeight S L)) :
+      tableWeight S L k o t (List.ofFn fun a : Fin (maxHeight S L) ↦ bit i.val a.val) =
+        (∏ a : Fin (L.logHeight t.1), eqFactor (o.point.getD a.val 0) (bit i.val a.val)) *
+          highBits (L.logHeight t.1) (maxHeight S L - L.logHeight t.1) i.val := by
+    unfold tableWeight highBits
+    apply congrArg₂ (fun a b : E ↦ a * b)
+    · apply Finset.prod_congr rfl
+      intro a _
+      rw [List.getD_eq_getElem (List.ofFn fun a : Fin (maxHeight S L) ↦ bit i.val a.val) 0
+        (by simpa only [List.length_ofFn] using a.isLt.trans_le hle), List.getElem_ofFn]
+    · apply Finset.prod_congr rfl
+      intro a _
+      rw [List.getD_eq_getElem (List.ofFn fun a : Fin (maxHeight S L) ↦ bit i.val a.val) 0
+        (by have := a.isLt; simp only [List.length_ofFn]; omega), List.getElem_ofFn]
+  simp_rw [hw]
+  rw [show (∑ i : Fin (2 ^ maxHeight S L),
+      ((∏ a : Fin (L.logHeight t.1), eqFactor (o.point.getD a.val 0) (bit i.val a.val)) *
+        highBits (L.logHeight t.1) (maxHeight S L - L.logHeight t.1) i.val) *
+      rowValue S L k o ξ t (fun c ↦ cellColumn S L w t.1 c
+        ((List.ofFn fun a : Fin (maxHeight S L) ↦ bit i.val a.val).take (L.logHeight t.1)))) =
+      backloadCube (maxHeight S L) (L.logHeight t.1) o.point
+        (fun z ↦ rowValue S L k o ξ t (fun c ↦ cellColumn S L w t.1 c z)) from rfl,
+    backloadCube_eq _ _ hle]
+  apply Finset.sum_congr rfl
+  intro i _
+  apply congrArg (fun x : E ↦ x * ∏ a : Fin (L.logHeight t.1), eqFactor (o.point.getD a.val 0) (bit i.val a.val))
+  apply congrArg (rowValue S L k o ξ t)
+  funext c
+  exact mle_bits _ _ i
+
+/-- The summand's cube sum is the sum of the active tables' row-formula extensions. -/
+theorem summand_cube_sum (o : Bus.Output S L k) (ξ : E) (w : Witness K S.tables.length) :
+    (∑ i : Fin (2 ^ maxHeight S L),
+      summandValue S L k o ξ w (List.ofFn (fun a : Fin (maxHeight S L) ↦ bit i.val a.val)).reverse) =
+      ∑ t : Active S L, mle (L.logHeight t.1)
+        (fun i ↦ rowValue S L k o ξ t (fun c ↦ ofK (cell S w t.1 i c))) o.point := by
+  rw [sum_bits_reverse]
+  unfold summandValue
+  rw [Finset.sum_comm]
+  exact Finset.sum_congr rfl fun t _ ↦ table_cube_sum S L k o ξ w t
 
 end CompStark.Tables.TableSumcheck
