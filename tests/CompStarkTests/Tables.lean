@@ -5,7 +5,9 @@ Released under Apache 2.0 license as described in the file LICENSE.
 module
 
 public import CompStark.Tables.Examples
+public import CompStark.Tables.TableSumcheck
 meta import CompStark.Tables.Examples
+meta import CompStark.Tables.TableSumcheck
 
 /-! The example sets of tables: their witnesses satisfy them, and tampered witnesses do not. -/
 
@@ -45,5 +47,21 @@ def sixRows : Layout program.tables.length :=
 #guard decide (∀ b ∈ program.buses,
   program.tuples sixRows programWitness b true = program.tuples sixRows programWitness b false)
 #guard !decide (program.Satisfied sixRows programWitness)
+
+-- The bus opens the query table directly; the table sumcheck covers the square table.
+#guard (List.finRange squares.tables.length).map (squares.Direct squaresLayout) = [false, true, true]
+#guard (squares.boundaryColumns squaresLayout).map (fun p => (p.1.val, p.2)) = [(1, 0), (1, 1), (2, 0), (2, 1)]
+#guard TableSumcheck.constraintCount squares = 1
+#guard TableSumcheck.degree squares squaresLayout = 2
+#guard TableSumcheck.maxHeight squares squaresLayout = 2
+
+-- The program table is opened directly at its final counts, as a memory or bytecode table is; the
+-- execution table's columns, its count column among them, go through the table sumcheck.
+#guard (List.finRange program.tables.length).map (program.Direct programLayout) = [true, false]
+#guard (program.boundaryColumns programLayout).map (fun p => (p.1.val, p.2)) = [(0, 0)]
+#guard (List.finRange program.tables.length).map (TableSumcheck.transmitted program) = [[0], [0, 1, 2]]
+#guard TableSumcheck.degree program programLayout = 1
+#guard TableSumcheck.maxHeight program programLayout = 3
+#guard program.depth programLayout = 4
 
 end CompStarkTests.Tables
