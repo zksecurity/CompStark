@@ -68,9 +68,11 @@ ToCompPoly/Multilinear.lean, Fingerprint.lean, Stacking.lean and
 AmbientStacking.lean. Their protocol layout follows leanEthereum/leanMultisig
 revision 9d8bce818aa7c7e18e67026e522a9b1539d0a57d, sections 5, 6 and 8.5.
 
-The knowledge-certificate composition under CompStark/Compose follows
-leanEthereum/leanMultisig revision 9d8bce818aa7c7e18e67026e522a9b1539d0a57d,
-sections 4 and 8.5 and annexes A, B and C, under Apache License 2.0.
+The knowledge-certificate composition under CompStark/Compose, the composed
+proof system under CompStark/Tables/Composed and its compilation under
+CompStark/Compiled and CompStark/Tables/Compiled follow leanEthereum/leanMultisig
+revision 9d8bce818aa7c7e18e67026e522a9b1539d0a57d, sections 4 and 8.5 and
+annexes A, B and C, under Apache License 2.0.
 
 The WHIR ladder, Johnson multiplicities and certified error levels in
 CompStark/Pcs/{Schedule,Bits,LevelBounds,Multiplicity,Levels,ProductionLevels,Errors}.lean
