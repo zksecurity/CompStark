@@ -1,0 +1,130 @@
+#!/usr/bin/env python3
+"""Reproduce the binary-field stack's Rust fixtures from a read-only leanMultisig checkout.
+
+`scripts/check-binary-stack-reference /path/to/leanMultisig` builds the harnesses in `tests/rust`
+against the checkout's unchanged crates at the pinned revision, writes every fixture into a
+temporary directory with one and with sixteen Rust workers, and compares each with the committed
+bytes: the Keccak-f GKR reduction (`tests/data/keccak-gkr/active`, from its `committed.bin`), the
+ring-switching slices and target and the extension encoding (`tests/data/binary-pcs`, from the same
+`committed.bin`), duplex grinding and Keccak Merkle openings (`tests/data/keccak-transport`), and
+the transcript vectors (`tests/data/keccak-transcript/vectors.txt`, whose values
+`tests/CompStarkTests/KeccakTranscript.lean` checks). `--write` replaces the committed fixtures
+instead. The checkout is left unchanged; build products go to `.lake/binary-stack-reference`.
+"""
+import filecmp
+import os
+from pathlib import Path
+import re
+import shutil
+import subprocess
+import sys
+import tempfile
+
+ROOT = Path(__file__).resolve().parents[1]
+REVISION = '9d8bce818aa7c7e18e67026e522a9b1539d0a57d'
+TARGET = ROOT / '.lake/binary-stack-reference'
+DATA = ROOT / 'tests/data'
+COMMITTED = DATA / 'keccak-gkr/active/committed.bin'
+
+
+def clean(source):
+    return not subprocess.check_output(
+        ['git', '-C', str(source), 'status', '--porcelain', '--untracked-files=no'], text=True).strip()
+
+
+def cargo_project(directory, name, source, crates, main, library=None):
+    """A binary crate against the checkout's crates, with the checkout's lock file."""
+    (directory / 'src').mkdir(parents=True)
+    dependencies = '\n'.join(f'{crate} = {{path = "{source}/crates/{crate}"}}' for crate in crates)
+    (directory / 'Cargo.toml').write_text(
+        f'[package]\nname = "{name}"\nversion = "0.1.0"\nedition = "2024"\n'
+        f'[features]\nbench = []\n[dependencies]\ntracing = "0.1.26"\n{dependencies}\n')
+    shutil.copy2(source / 'Cargo.lock', directory / 'Cargo.lock')
+    (directory / 'src/main.rs').write_text(main)
+    if library is not None:
+        (directory / 'src/lib.rs').write_text(library)
+    subprocess.run(['cargo', 'build', '--release', '-j', '4', '--manifest-path',
+                    str(directory / 'Cargo.toml')], check=True,
+                   env={**os.environ, 'CARGO_TARGET_DIR': str(TARGET),
+                        'RUSTFLAGS': '-C target-cpu=native'})
+    return TARGET / 'release' / name
+
+
+def build(source, temp):
+    gkr = source / 'crates/keccak_gkr'
+    library = re.sub(r'(?m)^(pub )?mod (\w+);$',
+                     lambda m: f'#[path = "{gkr}/src/{m[2]}.rs"]\n{m[1] or ""}mod {m[2]};',
+                     (gkr / 'src/lib.rs').read_text())
+    library += f'\npub mod fixture {{ include!("{ROOT}/tests/rust/keccak-gkr.rs"); }}\n'
+    binaries = {
+        'keccak-gkr': cargo_project(temp / 'keccak-gkr', 'keccak-gkr-reference', source,
+                                    ['parallel', 'primitives', 'fiat_shamir', 'pcs'],
+                                    'fn main() { keccak_gkr_reference::fixture::run(); }\n', library),
+        'binary-pcs': cargo_project(temp / 'binary-pcs', 'binary-pcs-reference', source,
+                                    ['pcs', 'primitives'],
+                                    (ROOT / 'tests/rust/binary-pcs.rs').read_text()),
+        'keccak-transport': cargo_project(temp / 'keccak-transport', 'keccak-transport-reference',
+                                          source, ['pcs', 'fiat_shamir', 'primitives'],
+                                          (ROOT / 'tests/rust/keccak-transport.rs').read_text()),
+    }
+    errors = ('FieldElementLength DigestHalf MultilinearSize NotPowerOfTwo StreamNotWholeElements '
+              'StreamExhausted GrindingNonce MerkleOpeningMissing MerkleOpeningShape '
+              'MerkleRootMismatch StreamNotConsumed MerkleNotConsumed').split()
+    wrapper = '#[derive(Debug)] enum VerifierError {' + ','.join(errors) + '}\n'
+    wrapper += 'fn require(b: bool, e: VerifierError) -> Result<(), VerifierError> { if b { Ok(()) } else { Err(e) } }\n'
+    for name in ['field', 'hash', 'multilinear', 'merkle', 'transcript']:
+        wrapper += f'#[path = "{source}/crates/verifier/src/{name}.rs"] mod {name};\n'
+    wrapper += (ROOT / 'tests/rust/keccak-transcript.rs').read_text()
+    (temp / 'keccak-transcript.rs').write_text(wrapper)
+    binaries['keccak-transcript'] = TARGET / 'keccak-transcript-reference'
+    subprocess.run(['rustc', '--edition=2024', '-Awarnings', '-O', str(temp / 'keccak-transcript.rs'),
+                    '-o', str(binaries['keccak-transcript'])], check=True)
+    return binaries
+
+
+def generate(binaries, out, workers):
+    env = {**os.environ, 'LEANVM_NUM_THREADS': str(workers)}
+    subprocess.run([binaries['keccak-gkr'], out / 'keccak-gkr/active', COMMITTED], check=True, env=env)
+    subprocess.run([binaries['binary-pcs'], COMMITTED, out / 'binary-pcs'], check=True, env=env)
+    subprocess.run([binaries['keccak-transport'], out / 'keccak-transport'], check=True, env=env)
+    (out / 'keccak-transcript').mkdir(parents=True)
+    (out / 'keccak-transcript/vectors.txt').write_bytes(
+        subprocess.check_output([binaries['keccak-transcript']], env=env))
+
+
+def main():
+    source = Path(sys.argv[1]).resolve()
+    write = sys.argv[2:] == ['--write']
+    assert subprocess.check_output(['git', '-C', str(source), 'rev-parse', 'HEAD'],
+                                   text=True).strip() == REVISION
+    assert clean(source)
+    TARGET.mkdir(parents=True, exist_ok=True)
+    with tempfile.TemporaryDirectory(prefix='binary-stack-reference-') as temp:
+        temp = Path(temp)
+        binaries = build(source, temp)
+        runs = {workers: temp / f'out-{workers}' for workers in [1, 16]}
+        for workers, out in runs.items():
+            generate(binaries, out, workers)
+        files = sorted(p.relative_to(runs[1]) for p in runs[1].rglob('*') if p.is_file())
+        for name in files:
+            if not filecmp.cmp(runs[1] / name, runs[16] / name, shallow=False):
+                raise SystemExit(f'{name}: one and sixteen Rust workers disagree')
+        if write:
+            for name in files:
+                (DATA / name).parent.mkdir(parents=True, exist_ok=True)
+                shutil.copy2(runs[1] / name, DATA / name)
+            print(f'wrote {len(files)} fixtures')
+        else:
+            differ = [str(name) for name in files
+                      if not (DATA / name).exists() or not filecmp.cmp(runs[1] / name, DATA / name, shallow=False)]
+            if differ:
+                raise SystemExit('fixtures differ from leanMultisig ' + REVISION + ':\n  ' + '\n  '.join(differ))
+            print(f'leanMultisig {REVISION}: all {len(files)} fixtures reproduced byte for byte '
+                  f'(1 and 16 Rust workers)')
+            for group in ['keccak-gkr', 'binary-pcs', 'keccak-transport', 'keccak-transcript']:
+                print(f'  {group}: {sum(1 for n in files if n.parts[0] == group)} files')
+    assert clean(source)
+
+
+if __name__ == '__main__':
+    main()

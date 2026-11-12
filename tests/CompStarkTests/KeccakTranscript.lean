@@ -7,9 +7,10 @@ module
 public import CompStark.Keccak.Commit.Merkle
 public import CompStark.Keccak.Transcript.Duplex
 
-/-! Expected answers produced by unmodified pinned Rust verifier modules through
-`python3 tests/rust/generate-vectors.py /tmp/transcript-src`. These are executable
-regressions, not cryptographic assumptions or kernel certificates. -/
+/-! Expected answers of the unmodified verifier modules of leanMultisig
+`9d8bce818aa7c7e18e67026e522a9b1539d0a57d`, as `tests/rust/keccak-transcript.rs` prints them into
+`tests/data/keccak-transcript/vectors.txt`; `scripts/check-binary-stack-reference` reproduces
+them. These are executable regressions, not cryptographic assumptions or kernel certificates. -/
 
 namespace CompStarkTests.KeccakTranscript
 open CompStark.BinaryFields CompStark.Keccak.Commit CompStark.Keccak.Transcript

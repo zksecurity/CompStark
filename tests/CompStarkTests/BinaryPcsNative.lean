@@ -9,8 +9,8 @@ public import CompStark.Pcs.Prover.Encoding
 
 /-! Compiled checks of the binary PCS prover: the honest opening is accepted and an inconsistent
 claim rejected, and the native extension encoding and the ring-switching target agree with
-leanMultisig `9d8bce818aa7c7e18e67026e522a9b1539d0a57d` on the bytes in `tests/data/binary-pcs`
-(leanvm-security's `tests/rust/generate-pcs.py`). -/
+leanMultisig `9d8bce818aa7c7e18e67026e522a9b1539d0a57d` on the bytes in `tests/data/binary-pcs`, which
+`tests/rust/binary-pcs.rs` writes and `scripts/check-binary-stack-reference` reproduces. -/
 
 @[expose] public section
 namespace CompStarkTests.BinaryPcsNative

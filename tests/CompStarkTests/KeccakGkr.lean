@@ -6,7 +6,7 @@ module
 
 public import CompStark.Keccak.GkrProver.SharedTable
 
-/-! Rust conformance of the Keccak-f GKR prover: every sliced witness layer, transmitted scalar, challenge, batch claim and terminal opening on the 512-permutation fixture in `tests/data/keccak-gkr/active`, from leanMultisig `9d8bce818aa7c7e18e67026e522a9b1539d0a57d` (leanvm-security's `tests/rust/generate-gkr.py`). -/
+/-! Rust conformance of the Keccak-f GKR prover: every sliced witness layer, transmitted scalar, challenge, batch claim and terminal opening on the 512-permutation fixture in `tests/data/keccak-gkr/active`, written from its `committed.bin` by `tests/rust/keccak-gkr.rs` against leanMultisig `9d8bce818aa7c7e18e67026e522a9b1539d0a57d` and reproduced by `scripts/check-binary-stack-reference`. -/
 
 @[expose] public section
 namespace CompStarkTests.KeccakGkr

@@ -8,7 +8,8 @@ public import CompStark.Keccak.Commit.Native
 
 /-! Rust conformance of the lane-level duplex grinding and the streaming Keccak Merkle commitment
 on field-word leaves. The expected bytes in `tests/data/keccak-transport` come from leanMultisig
-`9d8bce818aa7c7e18e67026e522a9b1539d0a57d` (leanvm-security's `tests/rust/generate-pcs-whir.py`). -/
+`9d8bce818aa7c7e18e67026e522a9b1539d0a57d`, written by `tests/rust/keccak-transport.rs` and reproduced by
+`scripts/check-binary-stack-reference`. -/
 @[expose] public section
 namespace CompStarkTests.KeccakTransport
 open CompStark CompStark.BinaryFields CompStark.Keccak CompStark.Keccak.TranscriptDuplex

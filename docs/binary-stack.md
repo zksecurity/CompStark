@@ -15,9 +15,13 @@ None of these components is at parity with the Rust reference. The table gives t
 | Keccak-f GKR verifier (`Keccak.Gkr.Executable`) | — | Unmeasured as a component |
 | Grand-product GKR (`Multilinear.GrandProduct`) | — | Unmeasured; specification and soundness only |
 
-The Keccak-f GKR count is the `keccak-gkr` performance-gate workload, 2.31 billion instructions; the Rust counts are leanvm-security's single-thread measurements of leanMultisig at the same revision on the same host (an AMD Ryzen 7 3700X), the standalone one from its `docs/keccak-gkr-benchmark.md` and the in-proof one from its `docs/gkr-packed-performance.md`, not re-measured here.
+The Keccak-f GKR count is the `keccak-gkr` performance-gate workload, 2.31 billion instructions. The Rust counts are single-thread user-space instruction counts of leanMultisig `9d8bce818aa7c7e18e67026e522a9b1539d0a57d` on an AMD Ryzen 7 3700X, not re-measured here: 291 million for its `Keccak reduction` span on the same 512 permutations, run on its own after the output claims are bound, and 218 million for the same span inside the prover of a complete Fibonacci proof.
 
-The last leanvm-security measurements of the complete leanVM proof system put its PCS opening at 22× Rust and its whole verifier at 4.6–4.9×; the opening driver and the verifier as measured there are leanVM's composition and are not part of this library.
+leanVM's complete proof system, measured the same way on the same host and revision, opens its PCS at 22× the Rust instructions and verifies at 4.6–4.9× (72–77 ms against 13 ms on the SET and Fibonacci programs); that opening driver and verifier are leanVM's composition and not part of this library.
+
+## Reproducing the Rust fixtures
+
+`scripts/check-binary-stack-reference /path/to/leanMultisig` builds the harnesses `tests/rust/keccak-gkr.rs`, `binary-pcs.rs`, `keccak-transport.rs` and `keccak-transcript.rs` against an unchanged checkout of leanMultisig `9d8bce818aa7c7e18e67026e522a9b1539d0a57d`, regenerates every fixture of `tests/data/keccak-gkr`, `binary-pcs`, `keccak-transport` and `keccak-transcript` with one and with sixteen Rust workers, and compares them byte for byte with the committed files; `--write` replaces them. The Keccak-f GKR fixture and the ring-switching slices are computed from `tests/data/keccak-gkr/active/committed.bin`, the 64-lane Keccak region of a leanVM execution with 512 padded permutations (input and middle lanes and nonzero metadata in the spare lanes); that input is data, not regenerated.
 
 ## Fields
 
