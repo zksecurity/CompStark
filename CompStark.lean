@@ -521,3 +521,5 @@ public import CompStark.Tables.Composed.HonestBus
 public import CompStark.Tables.Composed.HonestTable
 public import CompStark.Tables.Composed.Honest
 public import CompStark.Tables.Composed.Verifier
+public import CompStark.Tables.Composed.Keccak.Transport
+public import CompStark.Tables.Composed.Keccak.Encoding

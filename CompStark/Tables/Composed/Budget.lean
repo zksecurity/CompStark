@@ -1,7 +1,5 @@
 /-
 Copyright (c) 2026 zkSecurity.
-Adapted from Verified-zkEVM/leanerVM (Apache-2.0), revision a9d42bfdae8081a4e16aef1cd8526cdaa2a8f4d6:
-LeanerVM.Compose.
 Released under Apache 2.0 license as described in the file LICENSE.
 -/
 module
