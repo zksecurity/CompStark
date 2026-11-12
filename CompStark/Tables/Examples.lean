@@ -13,11 +13,11 @@ public import CompStark.BinaryFields.Generator
 tuples, one tuple twice, so the bus balances only with multiplicities; the first puller has a
 virtual column `z = y²` that `external` binds.
 
-`program`: a public program of four instruction slots, three of them used, is a non-table source
-with preprocessed `(pc, op)` columns; it pushes each instruction with count `1` and pulls it with
-its committed final count. An execution table of eight rows, five executed, reads an instruction
+`program`: a public program of four instruction slots is a non-table source with preprocessed
+`(pc, op)` columns; it pushes each instruction with count `1` and pulls it with its committed final
+count, `1` for the slot never read. An execution table of eight rows, five executed, reads an instruction
 by pulling `(pc, op, c)` and pushing `(pc, op, c g)`; its count column is nonzero, and every row,
-padding included, has `op = pc + 10`. -/
+padding included, has `op = pc + 10`. Each table's padding row satisfies its constraints. -/
 
 @[expose] public section
 
@@ -32,17 +32,20 @@ abbrev k (n : ℕ) : K := K.ofBits n
 def squareTable : Table K where
   air := { width := 2, numPublicValues := 0, constraints := [.cur 1 - .cur 0 * .cur 0] }
   interactions := [⟨"sq", true, [.cur 0, .cur 1]⟩]
+  padding := [0, 0]
 
 /-- A puller of `(x, y)` with a virtual column `z`. -/
 def queryTable : Table K where
   air := { width := 3, numPublicValues := 0, constraints := [] }
   interactions := [⟨"sq", false, [.cur 0, .cur 1]⟩]
   virtual := [2]
+  padding := [0, 0, 0]
 
 /-- A puller of `(x, y)`. -/
 def otherTable : Table K where
   air := { width := 2, numPublicValues := 0, constraints := [] }
   interactions := [⟨"sq", false, [.cur 0, .cur 1]⟩]
+  padding := [0, 0]
 
 /-- Every row of the query table has `z = y²`. -/
 def squaresExternal (w : Witness K 3) : Bool :=
@@ -51,6 +54,7 @@ def squaresExternal (w : Witness K 3) : Bool :=
 /-- Squares pushed by one table and pulled by two, one tuple twice. -/
 def squares : System K where
   tables := [squareTable, queryTable, otherTable]
+  buses := ["sq"]
   external w := squaresExternal w = true
 
 instance : DecidablePred squares.external :=
@@ -75,6 +79,7 @@ def programTable : Table K where
            preprocessed := #[k 0, k 0 + k 10, k 1, k 1 + k 10, k 2, k 2 + k 10, k 3, k 3 + k 10] }
   interactions := [⟨"code", true, [.prepCur 0, .prepCur 1, .const 1]⟩,
     ⟨"code", false, [.prepCur 0, .prepCur 1, .cur 0]⟩]
+  padding := [0]
 
 /-- The execution table `(pc, op, c)`: reads the instruction at count `c` and returns it at `c g`. -/
 def executionTable : Table K where
@@ -82,23 +87,25 @@ def executionTable : Table K where
   interactions := [⟨"code", false, [.cur 0, .cur 1, .cur 2]⟩,
     ⟨"code", true, [.cur 0, .cur 1, .cur 2 * .const g]⟩]
   nonzero := [2]
+  padding := [k 0, k 0 + k 10, 0]
 
 /-- A public program read by an execution table. -/
 def program : System K where
   tables := [programTable, executionTable]
+  buses := ["code"]
 
 instance : DecidablePred program.external := fun _ => isTrue trivial
 
-/-- Three of four program slots and five of eight execution rows executed. -/
+/-- Four program slots, all executed, and five of eight execution rows executed. -/
 def programLayout : Layout program.tables.length :=
-  ⟨fun t => [3, 5].getD t.val 0, fun t => [2, 3].getD t.val 0⟩
+  ⟨fun t => [4, 5].getD t.val 0, fun t => [2, 3].getD t.val 0⟩
 
 /-- An execution row. -/
 def executionRow (pc : ℕ) (c : K) : Array K := #[k pc, k pc + k 10, c]
 
-/-- The witness: reads of slots 0, 1, 2, 1, 0 and three padding rows. -/
+/-- The witness: reads of slots 0, 1, 2, 1, 0, slot 3 unread, and three padding rows. -/
 def programWitness : Witness K program.tables.length := fun t =>
-  [[#[g * g], #[g * g], #[g], #[0]],
+  [[#[g * g], #[g * g], #[g], #[1]],
     [executionRow 0 1, executionRow 1 1, executionRow 2 1, executionRow 1 g, executionRow 0 g,
       executionRow 0 0, executionRow 0 0, executionRow 0 0]].getD t.val []
 

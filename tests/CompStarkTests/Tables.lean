@@ -31,15 +31,15 @@ def setRow {n : ℕ} (w : Witness K n) (t i : ℕ) (row : Array K) : Witness K n
 #guard decide (program.Satisfied programLayout programWitness)
 -- A wrong final count unbalances the bus.
 #guard !decide (program.Satisfied programLayout (setRow programWitness 0 0 #[g]))
--- The unused program slot's final count is padding and free.
-#guard decide (program.Satisfied programLayout (setRow programWitness 0 3 #[k 99]))
+-- The unread program slot is pulled back at count one.
+#guard !decide (program.Satisfied programLayout (setRow programWitness 0 3 #[k 99]))
 -- A padding row must still satisfy the constraint.
 #guard !decide (program.Satisfied programLayout (setRow programWitness 1 6 #[k 0, k 11, 0]))
 -- A padding row may carry any data that does.
 #guard decide (program.Satisfied programLayout (setRow programWitness 1 6 (executionRow 3 0)))
 /-- Six executed rows: the sixth reads and returns `(0, op, 0)`, which balances. -/
 def sixRows : Layout program.tables.length :=
-  ⟨fun t => [3, 6].getD t.val 0, fun t => [2, 3].getD t.val 0⟩
+  ⟨fun t => [4, 6].getD t.val 0, fun t => [2, 3].getD t.val 0⟩
 
 -- A zero count on an executed row breaks the nonzero column, with the bus balanced.
 #guard decide (∀ b ∈ program.buses,

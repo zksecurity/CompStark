@@ -6,6 +6,7 @@ module
 
 public import CompStark.Tables.Basic
 public import CompStark.Tables.Fingerprint
+public import CompStark.BinaryFields.Generator
 
 /-! The bus relation of a set of tables as one multiset equality, and its fingerprint test.
 
@@ -21,9 +22,9 @@ namespace CompStark.Tables
 
 open CompStark.Stark CompStark.BinaryFields CompStark.Multilinear OracleComp
 
-/-- A bus index followed by a tuple, padded with zeros to `2 ^ k` entries. -/
+/-- The separator `g ^ i` of bus `i` followed by a tuple, padded with zeros to `2 ^ k` entries. -/
 def encode (k i : ℕ) (tuple : List K) : Vector K (2 ^ k) :=
-  Vector.ofFn fun j ↦ (K.ofBits i :: tuple).getD j.val 0
+  Vector.ofFn fun j ↦ (gpow i :: tuple).getD j.val 0
 
 /-- The bus index of an encoding: its first entry. -/
 def head {k : ℕ} (v : Vector K (2 ^ k)) : K := v.toList.getD 0 0
@@ -46,20 +47,12 @@ theorem decode_encode (k i : ℕ) (tuple : List K) (hfit : 1 + tuple.length ≤ 
     rw [List.getD_eq_getElem _ _ (by simp only [List.length_cons]; omega)]
     simp only [Nat.add_comm 1 j, List.getElem_cons_succ]
 
-/-- The head of an encoding is its bus index. -/
-theorem head_encode (k i : ℕ) (tuple : List K) : head (encode k i tuple) = K.ofBits i := by
+/-- The head of an encoding is its bus's separator. -/
+theorem head_encode (k i : ℕ) (tuple : List K) : head (encode k i tuple) = gpow i := by
   have hk : 0 < 2 ^ k := Nat.two_pow_pos k
   simp only [head, encode, Vector.toList_ofFn]
   rw [List.getD_eq_getElem _ _ (by simp only [List.length_ofFn]; exact hk), List.getElem_ofFn]
   rfl
-
-/-- Bus indices below `2 ^ 64` have distinct encodings. -/
-theorem ofBits_injective {i j : ℕ} (hi : i < 2 ^ 64) (hj : j < 2 ^ 64)
-    (h : K.ofBits i = K.ofBits j) : i = j := by
-  have hv := congrArg BF64.toBitVec h
-  simp only [K.ofBits, BF64.toBitVec_ofBitVec] at hv
-  have := congrArg BitVec.toNat hv
-  simpa only [BitVec.toNat_ofNat, Nat.mod_eq_of_lt hi, Nat.mod_eq_of_lt hj] using this
 
 namespace System
 
@@ -68,11 +61,11 @@ variable (S : System K)
 /-- A bus's position among the buses. -/
 def busIndex (b : String) : ℕ := S.buses.idxOf b
 
-/-- Every bus has one tuple width, its encodings fit `2 ^ k` entries, and there are fewer than
-`2 ^ 64` buses. -/
+/-- The buses are distinct, fewer than `2 ^ 64 - 1` and name every interaction's bus; every bus has
+one tuple width, and its encodings fit `2 ^ k` entries. -/
 def BusShape (k : ℕ) (width : String → ℕ) : Prop :=
-  S.buses.length < 2 ^ 64 ∧ (∀ b ∈ S.buses, 1 + width b ≤ 2 ^ k) ∧
-  ∀ T ∈ S.tables, ∀ I ∈ T.interactions, I.tuple.length = width I.bus
+  S.buses.Nodup ∧ S.buses.length < 2 ^ 64 - 1 ∧ (∀ b ∈ S.buses, 1 + width b ≤ 2 ^ k) ∧
+  ∀ T ∈ S.tables, ∀ I ∈ T.interactions, I.tuple.length = width I.bus ∧ I.bus ∈ S.buses
 
 /-- All pushed (`push = true`) or pulled tuples, encoded. -/
 def encoded (k : ℕ) (L : Layout S.tables.length) (w : Witness K S.tables.length) (push : Bool) :
@@ -88,7 +81,7 @@ theorem tuples_length {k : ℕ} {width : String → ℕ} (h : S.BusShape k width
     tableTuples, List.mem_range, List.mem_map, List.mem_filter, Bool.and_eq_true,
     beq_iff_eq] at hx
   obtain ⟨t, i, -, I, ⟨hI, hb, -⟩, rfl⟩ := hx
-  rw [List.length_map, h.2.2 _ (List.getElem_mem _) I hI, hb]
+  rw [List.length_map, (h.2.2.2 _ (List.getElem_mem _) I hI).1, hb]
 
 /-- A filter distributes over a list's sum of multisets. -/
 theorem filter_list_sum {α β : Type} (p : α → Prop) [DecidablePred p] (l : List β)
@@ -119,14 +112,14 @@ theorem sum_select {α β : Type} [DecidableEq β] (l : List β) (hl : l.Nodup) 
 theorem filter_encoded {k : ℕ} {width : String → ℕ} (h : S.BusShape k width)
     (L : Layout S.tables.length) (w : Witness K S.tables.length) (push : Bool)
     (b : String) (hb : b ∈ S.buses) (hk : 0 < 2 ^ k) :
-    (S.encoded k L w push).filter (fun v ↦ head v = K.ofBits (S.busIndex b)) =
+    (S.encoded k L w push).filter (fun v ↦ head v = gpow (S.busIndex b)) =
       (S.tuples L w b push).map (encode k (S.busIndex b)) := by
-  have nodup : S.buses.Nodup := List.nodup_dedup _
+  have nodup : S.buses.Nodup := h.1
   unfold encoded
   rw [filter_list_sum]
   have each : ∀ b' ∈ S.buses,
       ((S.tuples L w b' push).map (encode k (S.busIndex b'))).filter
-          (fun v ↦ head v = K.ofBits (S.busIndex b)) =
+          (fun v ↦ head v = gpow (S.busIndex b)) =
         if b' = b then (S.tuples L w b push).map (encode k (S.busIndex b)) else 0 := by
     intro b' hb'
     rw [Multiset.filter_map]
@@ -137,9 +130,9 @@ theorem filter_encoded {k : ℕ} {width : String → ℕ} (h : S.BusShape k widt
       rw [Multiset.map_eq_zero]
       apply Multiset.filter_eq_nil.mpr
       intro x _ hx
-      have hi := ofBits_injective
-        (lt_of_lt_of_le (List.idxOf_lt_length_of_mem hb') h.1.le)
-        (lt_of_lt_of_le (List.idxOf_lt_length_of_mem hb) h.1.le) hx
+      have hi := gpow_injOn
+        (Set.mem_Iio.mpr (lt_of_lt_of_le (List.idxOf_lt_length_of_mem hb') h.2.1.le))
+        (Set.mem_Iio.mpr (lt_of_lt_of_le (List.idxOf_lt_length_of_mem hb) h.2.1.le)) hx
       exact e ((List.idxOf_inj hb').mp hi)
   rw [List.map_congr_left each]
   exact sum_select _ nodup b hb _
@@ -155,7 +148,7 @@ theorem balanced_iff {k : ℕ} {width : String → ℕ} (h : S.BusShape k width)
     unfold encoded
     exact congrArg List.sum (List.map_congr_left fun b hb ↦ by rw [bal b hb])
   · intro eq b hb
-    have filtered := congrArg (Multiset.filter (fun v ↦ head v = K.ofBits (S.busIndex b))) eq
+    have filtered := congrArg (Multiset.filter (fun v ↦ head v = gpow (S.busIndex b))) eq
     rw [S.filter_encoded h L w true b hb hk, S.filter_encoded h L w false b hb hk] at filtered
     have decoded := congrArg (Multiset.map (decode k (width b))) filtered
     have back (push : Bool) : ((S.tuples L w b push).map (encode k (S.busIndex b))).map
@@ -167,7 +160,7 @@ theorem balanced_iff {k : ℕ} {width : String → ℕ} (h : S.BusShape k width)
       have hlen := S.tuples_length h L w b push x hx
       simp only [Function.comp_apply, id]
       rw [← hlen]
-      exact decode_encode k _ x (hlen ▸ h.2.1 b hb)
+      exact decode_encode k _ x (hlen ▸ h.2.2.1 b hb)
     rwa [back, back] at decoded
 
 /-- An unbalanced set of tables with at most `cap` pushed and pulled tuples passes the
@@ -226,14 +219,14 @@ theorem tuples_eq_emitted (L : Layout S.tables.length) (w : Witness K S.tables.l
   rfl
 
 /-- Every emission's bus is a bus of the system. -/
-theorem emitted_bus (L : Layout S.tables.length) (push : Bool) :
+theorem emitted_bus {k : ℕ} {width : String → ℕ} (h : S.BusShape k width)
+    (L : Layout S.tables.length) (push : Bool) :
     ∀ x ∈ S.emitted L push, x.2.2.bus ∈ S.buses := by
   intro x hx
   simp only [emitted, Multiset.mem_coe, List.mem_flatMap, List.mem_finRange, true_and,
     List.mem_range, List.mem_map, List.mem_filter] at hx
   obtain ⟨t, i, -, I, ⟨hI, -⟩, rfl⟩ := hx
-  exact List.mem_dedup.mpr (List.mem_flatMap.mpr
-    ⟨S.table t, List.getElem_mem _, List.mem_map.mpr ⟨I, hI, rfl⟩⟩)
+  exact (h.2.2.2 _ (List.getElem_mem _) I hI).2
 
 /-- Splitting a multiset by a key over a list of all keys, each once, recovers it. -/
 theorem sum_filter_key {α β : Type} [DecidableEq β] (B : List β) (hB : B.Nodup) (key : α → β)
@@ -256,8 +249,8 @@ theorem sum_filter_key {α β : Type} [DecidableEq β] (B : List β) (hB : B.Nod
     rw [pick, Multiset.singleton_add]
 
 /-- The encoded pushes or pulls are the encodings of all emissions. -/
-theorem encoded_eq_emitted (k : ℕ) (L : Layout S.tables.length) (w : Witness K S.tables.length)
-    (push : Bool) :
+theorem encoded_eq_emitted {k : ℕ} {width : String → ℕ} (h : S.BusShape k width)
+    (L : Layout S.tables.length) (w : Witness K S.tables.length) (push : Bool) :
     S.encoded k L w push = (S.emitted L push).map fun x ↦
       encode k (S.busIndex x.2.2.bus) (S.emittedTuple L w x) := by
   unfold encoded
@@ -271,8 +264,8 @@ theorem encoded_eq_emitted (k : ℕ) (L : Layout S.tables.length) (w : Witness K
     rw [(Multiset.mem_filter.mp hx).2]
     rfl
   rw [List.map_congr_left each]
-  conv_rhs => rw [← sum_filter_key S.buses (List.nodup_dedup _) (·.2.2.bus) (S.emitted L push)
-    (S.emitted_bus L push)]
+  conv_rhs => rw [← sum_filter_key S.buses h.1 (·.2.2.bus) (S.emitted L push)
+    (S.emitted_bus h L push)]
   induction S.buses with
   | nil => simp only [List.map_nil, List.sum_nil, Multiset.map_zero]
   | cons b B ih => simp only [List.map_cons, List.sum_cons, Multiset.map_add, ih]

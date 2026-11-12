@@ -24,8 +24,11 @@ program, the boundary of a memory) is a table whose tuple coordinates are prepro
 committed columns and which may have no constraints. Virtual columns are part of the witness but
 not of the commitment; the relation `external` that other arguments establish binds them.
 
-A `Layout` gives each table its executed row count and its power-of-two height; tables have
-different heights. `Satisfied` is the relation the proof system proves; `WellFormed` collects the
+A table carries a public padding row that satisfies its constraints: the bus argument corrects
+every padding row by it, so padding rows hold arbitrary data that satisfies the constraints, and a
+table with padding rows reads no preprocessed column in its tuples. The `i`-th bus of
+`System.buses` is separated from the others by `g ^ i`. A `Layout` gives each table its executed
+row count and its power-of-two height; tables have different heights. `Satisfied` is the relation the proof system proves; `WellFormed` collects the
 side conditions on a description and a layout. -/
 
 @[expose] public section
@@ -55,10 +58,10 @@ structure Interaction (F : Type) where
   /-- The tuple's coordinates. -/
   tuple : List (Expr F)
 
-/-- An AIR with row-local constraints, its bus interactions, its nonzero columns and its virtual
-columns. -/
+/-- An AIR with current-row constraints, its bus interactions, its nonzero columns, its virtual
+columns and its public padding row. -/
 structure Table (F : Type) where
-  /-- Width, row-local constraints and preprocessed columns. -/
+  /-- Width, current-row constraints and preprocessed columns. -/
   air : Air F
   /-- The bus interactions, on every executed row. -/
   interactions : List (Interaction F) := []
@@ -66,6 +69,8 @@ structure Table (F : Type) where
   nonzero : List ℕ := []
   /-- Columns not committed, bound by `System.external`. -/
   virtual : List ℕ := []
+  /-- The public padding row: the bus argument corrects every padding row by it. -/
+  padding : List F := []
 
 /-- One trace per table, as rows. -/
 abbrev Witness (F : Type) (n : ℕ) := Fin n → List (Array F)
@@ -74,6 +79,8 @@ abbrev Witness (F : Type) (n : ℕ) := Fin n → List (Array F)
 structure System (F : Type) where
   /-- The tables. -/
   tables : List (Table F)
+  /-- The buses; the `i`-th is separated by `g ^ i` in the bus argument. -/
+  buses : List String
   /-- The relation of the virtual columns, established by other arguments. -/
   external : Witness F tables.length → Prop := fun _ => True
 
@@ -91,10 +98,6 @@ variable {F : Type} (S : System F)
 /-- Table `t`. -/
 def table (t : Fin S.tables.length) : Table F := S.tables[t]
 
-/-- Every bus that some interaction names, in order of first appearance. -/
-def buses : List String :=
-  (S.tables.flatMap fun T => T.interactions.map (·.bus)).dedup
-
 variable [Zero F]
 
 /-- The row environment of row `i` of table `t`: its columns, its preprocessed columns, and zero for
@@ -111,6 +114,11 @@ def env (L : Layout S.tables.length) (w : Witness F S.tables.length) (t : Fin S.
   isFirstRow := 0
   isLastRow := 0
   isTransition := 0
+
+/-- The environment of table `t`'s padding row at row `i`: its public padding row and the
+preprocessed row `i`. -/
+def paddingEnv (L : Layout S.tables.length) (t : Fin S.tables.length) (i : ℕ) : Expr.Env F F :=
+  { S.env L (fun _ => []) t i with cur := fun c => (S.table t).padding.getD c 0 }
 
 variable [Add F] [Sub F] [Mul F]
 
@@ -161,13 +169,24 @@ instance : Decidable T.WellFormed := by unfold WellFormed; infer_instance
 
 end Table
 
-/-- Every table is well formed, executes at most its height, and its preprocessed trace has the
-table's height. -/
-def System.WellFormed {F : Type} (S : System F) (L : Layout S.tables.length) : Prop :=
+/-- The buses are distinct, fewer than `2 ^ 64 - 1`, and name every interaction's bus; every table
+is well formed and executes at most its height; its preprocessed trace has its height; its padding
+row has its width and satisfies its constraints on every padding row; and a table with padding
+rows reads no preprocessed column in its tuples. -/
+def System.WellFormed {F : Type} [Zero F] [Add F] [Sub F] [Mul F] [DecidableEq F] (S : System F)
+    (L : Layout S.tables.length) : Prop :=
+  S.buses.Nodup ∧ S.buses.length < 2 ^ 64 - 1 ∧
   ∀ t, (S.table t).WellFormed ∧ L.executed t ≤ 2 ^ L.logHeight t ∧
-    (S.table t).air.preprocessed.size = 2 ^ L.logHeight t * (S.table t).air.preprocessedWidth
+    (∀ I ∈ (S.table t).interactions, I.bus ∈ S.buses) ∧
+    (S.table t).air.preprocessed.size = 2 ^ L.logHeight t * (S.table t).air.preprocessedWidth ∧
+    (S.table t).padding.length = (S.table t).air.width ∧
+    (∀ i ∈ List.range' (L.executed t) (2 ^ L.logHeight t - L.executed t),
+      ∀ c ∈ (S.table t).air.constraints, c.eval (S.paddingEnv L t i) = 0) ∧
+    (L.executed t < 2 ^ L.logHeight t → ∀ I ∈ (S.table t).interactions, ∀ e ∈ I.tuple,
+      e.colsBelow (S.table t).air.width 0 0 0 = true)
 
-instance {F : Type} (S : System F) (L : Layout S.tables.length) : Decidable (S.WellFormed L) := by
+instance {F : Type} [Zero F] [Add F] [Sub F] [Mul F] [DecidableEq F] (S : System F)
+    (L : Layout S.tables.length) : Decidable (S.WellFormed L) := by
   unfold System.WellFormed; infer_instance
 
 end CompStark.Tables
