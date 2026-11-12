@@ -29,6 +29,7 @@ import CompStark.Pcs.WindowScatter
 import CompStark.Pcs.FusedTensor
 import CompStark.Pcs.TensorRing
 import CompStark.Keccak.GkrProver.SharedTable
+import CompStarkFixtures.Tables
 
 /-! # CompStark micro-benchmarks
 
@@ -680,6 +681,16 @@ def keccakGkrRun (phase : {α : Type} → String → (Unit → α) → IO α) : 
   IO.println s!"keccak-gkr: {result.writer.stream.size} scalars, {result.writer.challenges.size} challenges"
   return 0
 
+/-- The `program` system through the composed honest prover and the fast verifier. -/
+def tablesRun (phase : {α : Type} → String → (Unit → α) → IO α) : IO UInt32 := do
+  let proof ← phase "prove" fun _ => CompStark.Fixtures.Tables.programProof
+    CompStark.Tables.Examples.programWitness
+  let accepted ← phase "verify" fun _ => CompStark.Fixtures.Tables.programVerify proof
+  unless accepted do
+    throw (IO.userError "the composed verifier rejects the honest program proof")
+  IO.println "tables: program proof accepted"
+  return 0
+
 /-- Binary-field PCS map preparation, packed bit folds and factored opening weights. -/
 def pcsRun (phase : {α : Type} → String → (Unit → α) → IO α) : IO UInt32 := do
   let challenges := CompStark.Fixtures.Pcs.challenges
@@ -1005,6 +1016,7 @@ def gate (workload : String) (dir : System.FilePath) : IO UInt32 := do
     return 0
   | "pcs" => pcsRun (fun label f ↦ m.phase label f)
   | "keccak-gkr" => keccakGkrRun (fun label f ↦ m.phase label f)
+  | "tables" => tablesRun (fun label f ↦ m.phase label f)
   | "sumcheck-fold" => sumcheckFoldRun (fun label f ↦ m.phase label f)
   | "keccak-grind" => keccakGrindRun (fun label f ↦ m.phase label f)
   | "keccak-merkle" => keccakMerkleRun (fun label f ↦ m.phase label f)

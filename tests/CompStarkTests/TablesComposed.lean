@@ -4,12 +4,8 @@ Released under Apache 2.0 license as described in the file LICENSE.
 -/
 module
 
-public import CompStark.Tables.Composed.Verifier
-public import CompStark.Tables.Examples
-public import CompStark.Pcs.WordEncoding
-meta import CompStark.Tables.Composed.Verifier
-meta import CompStark.Tables.Examples
-meta import CompStark.Pcs.WordEncoding
+public import CompStarkFixtures.Tables
+meta import CompStarkFixtures.Tables
 
 /-! The `program` system through the composed honest prover and fast verifier: the honest
 transcript is accepted, and transcripts of an unsatisfying witness or with a tampered value are
@@ -18,60 +14,22 @@ rejected. -/
 @[expose] public section
 namespace CompStarkTests.TablesComposed
 open CompStark.Tables CompStark.Tables.Examples CompStark.Tables.Composed CompStark.BinaryFields
-open CompStark.Multilinear
-
-/-- Distinct challenge-field values. -/
-def value (n : ℕ) : E := ofK (gpow n) + ofK (gpow (n + 7)) * ofK g
-
-/-- The bus's tuples: the separator and three entries. -/
-def width : String → ℕ := fun _ ↦ 3
-
-/-- The program's buses have one width and fit four entries. -/
-theorem programShape : program.BusShape 2 width := by decide
-
-/-- The program's stack fits five variables. -/
-theorem programFits : (program.stackBlocks programLayout).total ≤ 2 ^ 5 := by
-  rw [System.stackBlocks_total]
-  decide
-
-/-- The program's composed setup: no virtual columns, no external relation. -/
-def programSetup : Setup program programLayout 2 5 where
-  width := width
-  wellFormed := program_wellFormed
-  busShape := programShape
-  fits := programFits
-  boundary := by decide
-  degree_le := by decide
-  external := External.none program programLayout 2 5 programFits (by decide) (fun _ ↦ trivial)
-
-/-- A four-variable terminal table after one folded coordinate. -/
-def schedule : CompStark.Pcs.EvaluatedSchedule 5 := .last 1 4 (CompStark.Pcs.evaluatedEncoding 4 1 (by decide)) 3
-
-/-- Fixed verifier coins. -/
-def coins : Coins programSetup schedule.schedule where
-  bus := ((fun i ↦ value (i.val + 1), value 3), GrandProduct.Coins.fill (fun n ↦ value (n + 11)) _ 0 0)
-  table := (value 5, fun i ↦ value (i.val + 41))
-  external := PUnit.unit
-  opening := (value 61, fun _ ↦ value 67, fun i ↦ ⟨i.val, by change i.val < 32; omega⟩, value 73,
-    fun i ↦ value (i.val + 79))
+open CompStark.Multilinear CompStark.Fixtures.Tables
 
 /-- Replace row `i` of table `t`. -/
 def setRow {n : ℕ} (w : Witness K n) (t i : ℕ) (row : Array K) : Witness K n :=
   fun s => if s.val = t then (w s).set i row else w s
 
 /-- The honest transcript of the program's witness is accepted. -/
-def acceptsHonest : Bool :=
-  verifyWith programSetup schedule (honestPath programSetup schedule.schedule programWitness coins)
+def acceptsHonest : Bool := programVerify (programProof programWitness)
 
 /-- An unbalanced witness, its final count wrong, is rejected. -/
 def rejectsUnbalanced : Bool :=
-  !verifyWith programSetup schedule
-    (honestPath programSetup schedule.schedule (setRow programWitness 0 0 #[g]) coins)
+  !programVerify (programProof (setRow programWitness 0 0 #[g]))
 
 /-- A witness breaking the execution table's constraint is rejected. -/
 def rejectsConstraint : Bool :=
-  !verifyWith programSetup schedule
-    (honestPath programSetup schedule.schedule (setRow programWitness 1 1 #[k 1, k 12, 1]) coins)
+  !programVerify (programProof (setRow programWitness 1 1 #[k 1, k 12, 1]))
 
 #guard acceptsHonest
 #guard rejectsUnbalanced

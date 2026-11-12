@@ -30,7 +30,8 @@ ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 BENCH = os.path.join(ROOT, ".lake", "build", "bin", "CompStarkBench")
 BASELINE = os.path.join(ROOT, "bench", "perf-baseline.json")
 WORKLOADS = ["wide-quartic", "wide-quintic", "keccak", "batch", "lookup", "merkle", "lde",
-             "keccak-scalar", "keccak-batch", "keccak-merkle", "sumcheck-fold", "pcs", "keccak-gkr"]
+             "keccak-scalar", "keccak-batch", "keccak-merkle", "sumcheck-fold", "pcs", "keccak-gkr",
+             "tables"]
 TOLERANCE = 0.005
 RATCHET = 0.02
 UPDATE_RUNS = 3
