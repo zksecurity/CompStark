@@ -23,7 +23,7 @@ fixed; its only non-GKR error is the fingerprint test's, `max 1 k · 2 ^ μ / |E
 namespace CompStark.Tables.Bus
 
 open CompStark.Stark CompStark.BinaryFields CompStark.Multilinear CompStark.Tables.System
-open Interaction Interaction.Oracle Interaction.Oracle.Security OracleComp
+open _root_.Interaction _root_.Interaction.Oracle _root_.Interaction.Oracle.Security OracleComp
 
 variable (S : System K) (L : Layout S.tables.length) (k : ℕ)
 

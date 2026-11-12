@@ -82,7 +82,7 @@ end CompStark.Stark.Expr
 namespace CompStark.Tables.TableSumcheck
 
 open CompStark.Stark CompStark.BinaryFields CompStark.Multilinear CompStark.Tables.System
-open Interaction Interaction.Oracle Interaction.Oracle.Security OracleComp MvPolynomial
+open _root_.Interaction _root_.Interaction.Oracle _root_.Interaction.Oracle.Security OracleComp MvPolynomial
 open Sumcheck.Interaction.MultivariateRound
 
 variable (S : System K) (L : Layout S.tables.length) (k : ℕ)
