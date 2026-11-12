@@ -14,6 +14,7 @@ None of these components is at parity with the Rust reference. The table gives t
 | PCS verifier and extractor (`Pcs.Verifier`, `Pcs.Extraction`, `Pcs.ExtractorCache`) | — | Unmeasured as components |
 | Keccak-f GKR verifier (`Keccak.Gkr.Executable`) | — | Unmeasured as a component |
 | Grand-product GKR (`Multilinear.GrandProduct`) | — | Unmeasured; specification and soundness only |
+| Bus argument and table sumcheck over a `System` (`Tables`) | — | Unmeasured; specification and soundness only, no prover or executable verifier |
 
 The Keccak-f GKR count is the `keccak-gkr` performance-gate workload, 2.31 billion instructions. The Rust counts are single-thread user-space instruction counts of leanMultisig `9d8bce818aa7c7e18e67026e522a9b1539d0a57d` on an AMD Ryzen 7 3700X, not re-measured here: 291 million for its `Keccak reduction` span on the same 512 permutations, run on its own after the output claims are bound, and 218 million for the same span inside the prover of a complete Fibonacci proof.
 
