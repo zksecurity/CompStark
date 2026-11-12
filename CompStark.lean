@@ -507,3 +507,4 @@ public import CompStark.Tables.Forms
 public import CompStark.Tables.BusOutput
 public import CompStark.Tables.BusDecomposition
 public import CompStark.Tables.BusProtocol
+public import CompStark.Tables.TablePoly
