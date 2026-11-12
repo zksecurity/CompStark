@@ -44,7 +44,7 @@ def KeccakRelation (p : ℕ) (w : Witness K S.tables.length) (t : Fin S.tables.l
   Keccak.Gkr.InputRelation (ofK g) (witnessOutputs p w t output) (witnessBits p w t slot)
 
 /-- The output lane word of a row: the last twelve rounds of its middle lanes. -/
-noncomputable def outputWord {p : ℕ} (bits : Keccak.Gkr.Witness p) (b : Fin (2 ^ (p + 4)))
+def outputWord {p : ℕ} (bits : Keccak.Gkr.Witness p) (b : Fin (2 ^ (p + 4)))
     (l : Fin 25) : K :=
   ∑ z : Fin 64, ZMod.castHom (dvd_refl 2) K
     (Keccak.Gkr.segmentState bits b 1 12 (by omega) ⟨z.val + 64 * l.val, by omega⟩) * g ^ z.val
@@ -148,7 +148,7 @@ def bits (q : Whir.Table K M) : Keccak.Gkr.Witness kt.p :=
 
 /-- The witness read off a stack: the stack's committed columns, and each output lane computed
 from the middle lanes. -/
-noncomputable def interpret (q : Whir.Table K M) : Witness K S.tables.length := fun t ↦
+def interpret (q : Whir.Table K M) : Witness K S.tables.length := fun t ↦
   if h : t = kt.table then
     List.ofFn fun b : Fin (2 ^ L.logHeight t) ↦ Array.ofFn fun c : Fin (S.table t).air.width ↦
       match kt.outputLane c.val with
