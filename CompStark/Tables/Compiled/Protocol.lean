@@ -5,6 +5,7 @@ Released under Apache 2.0 license as described in the file LICENSE.
 module
 
 public import CompStark.Compiled.Count
+public import CompStark.Compiled.Check
 public import CompStark.Tables.Compiled.Presentation
 
 /-! The composed system compiled with one Keccak root per encoded word: its parameters, its
@@ -40,6 +41,8 @@ structure Parameters (S : System K) (L : Layout S.tables.length) (k M : ℕ)
   externalShapes : externalPresentation.HasShapes []
   /-- The external argument's messages have prefix-free encodings and its draws squeeze. -/
   externalFramed : externalPresentation.Framed
+  /-- The external argument announces nothing. -/
+  externalUnannounced : externalPresentation.Unannounced
   /-- The external argument's number of draws. -/
   externalCount : ℕ
   /-- The external argument has one rank per draw. -/

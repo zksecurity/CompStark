@@ -543,8 +543,10 @@ public import CompStark.Tables.Compiled.Transfer
 public import CompStark.Tables.Compiled.Acceptance
 public import CompStark.Compiled.Transcript
 public import CompStark.Compiled.Count
+public import CompStark.Compiled.Check
 public import CompStark.Tables.Compiled.Transcript
 public import CompStark.Tables.Compiled.Count
 public import CompStark.Compiled.WhirTerminal
 public import CompStark.Tables.Compiled.Soundness
 public import CompStark.Tables.Compiled.External
+public import CompStark.Tables.Compiled.Verifier

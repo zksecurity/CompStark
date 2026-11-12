@@ -64,6 +64,21 @@ theorem gkrPresentation_framed (steps : List Keccak.Gkr.WireStep) : (gkrPresenta
     | message _ => exact ⟨fieldEvents_framed id Function.injective_id, fun _ => ih⟩
     | challenge _ => exact ⟨by decide, ih⟩
 
+/-- The GKR announces nothing. -/
+theorem gkrPresentation_unannounced (steps : List Keccak.Gkr.WireStep) :
+    (gkrPresentation steps).Unannounced := by
+  induction steps with
+  | nil => trivial
+  | cons step rest ih => cases step with
+    | message _ => exact fun _ => ih
+    | challenge _ => exact ih
+
+/-- Ring switching announces nothing. -/
+theorem ringPresentation_unannounced (count : ℕ) : (ringPresentation count).Unannounced := by
+  induction count with
+  | zero => trivial
+  | succ count ih => exact ih
+
 /-- The GKR has one rank per challenge step. -/
 theorem gkrPresentation_counted (steps : List Keccak.Gkr.WireStep) :
     (gkrPresentation steps).Counted (wireRankCount steps) := by
@@ -100,6 +115,10 @@ theorem keccakPresentation_shapes : (keccakPresentation kt).HasShapes [] :=
 /-- The Keccak table's argument's encodings are prefix free and its draws squeeze. -/
 theorem keccakPresentation_framed : (keccakPresentation kt).Framed :=
   Presentation.Framed.append _ _ (gkrPresentation_framed _) (ringPresentation_framed 6)
+
+/-- The Keccak table's argument announces nothing. -/
+theorem keccakPresentation_unannounced : (keccakPresentation kt).Unannounced :=
+  Presentation.Unannounced.append _ _ (gkrPresentation_unannounced _) (ringPresentation_unannounced 6)
 
 /-- The Keccak table's argument's draws: the GKR's after its instance draws, then six. -/
 theorem keccakPresentation_counted :
