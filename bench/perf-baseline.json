@@ -2,8 +2,8 @@
   "about": "User-space instructions per workload phase of scripts/perf-gate, single threaded: the median of 3 runs, the largest relative deviation from it (variation) and the allowed relative increase (tolerance). Rewritten by scripts/perf-gate --update.",
   "entries": {
     "wide-quartic/trace lde": {
-      "instructions": 569949977,
-      "variation": 6.5e-05,
+      "instructions": 569948564,
+      "variation": 0.000101,
       "tolerance": 0.005
     },
     "wide-quartic/trace commit": {
@@ -77,13 +77,13 @@
       "tolerance": 0.005
     },
     "wide-quintic/quotient lde": {
-      "instructions": 137979592,
-      "variation": 1e-05,
+      "instructions": 137979412,
+      "variation": 1.2e-05,
       "tolerance": 0.005
     },
     "wide-quintic/quotient commit": {
-      "instructions": 659422937,
-      "variation": 0.00017,
+      "instructions": 659414484,
+      "variation": 7.3e-05,
       "tolerance": 0.005
     },
     "wide-quintic/opened values": {
@@ -177,8 +177,8 @@
       "tolerance": 0.005
     },
     "keccak/verify": {
-      "instructions": 400089858,
-      "variation": 0.000172,
+      "instructions": 400033911,
+      "variation": 7.8e-05,
       "tolerance": 0.005
     },
     "batch/trace lde": {
@@ -227,8 +227,8 @@
       "tolerance": 0.005
     },
     "batch/query openings": {
-      "instructions": 84562914,
-      "variation": 7.1e-05,
+      "instructions": 84561642,
+      "variation": 8.4e-05,
       "tolerance": 0.005
     },
     "batch/prove": {
@@ -237,8 +237,8 @@
       "tolerance": 0.005
     },
     "lookup/permutation": {
-      "instructions": 468612732,
-      "variation": 1e-05,
+      "instructions": 468598455,
+      "variation": 1.9e-05,
       "tolerance": 0.005
     },
     "lookup/lookup quotient": {
@@ -307,8 +307,8 @@
       "tolerance": 0.0751
     },
     "keccak-merkle/duplex": {
-      "instructions": 136070116,
-      "variation": 5e-05,
+      "instructions": 136062882,
+      "variation": 2e-06,
       "tolerance": 0.005
     },
     "keccak-merkle/grind": {
@@ -357,8 +357,8 @@
       "tolerance": 0.005
     },
     "pcs/coordinates": {
-      "instructions": 2349660,
-      "variation": 0.0,
+      "instructions": 2349304,
+      "variation": 0.00016,
       "tolerance": 0.005
     },
     "pcs/bit-fold": {
@@ -377,8 +377,8 @@
       "tolerance": 0.005
     },
     "pcs/encoding": {
-      "instructions": 867020,
-      "variation": 0.000434,
+      "instructions": 866977,
+      "variation": 0.0,
       "tolerance": 0.005
     },
     "pcs/induction": {
@@ -387,7 +387,7 @@
       "tolerance": 0.005
     },
     "pcs/induction-dense": {
-      "instructions": 1651844,
+      "instructions": 1651769,
       "variation": 1e-06,
       "tolerance": 0.005
     },
@@ -407,28 +407,28 @@
       "tolerance": 0.005
     },
     "pcs/induction-large-dense": {
-      "instructions": 243751658,
-      "variation": 2e-06,
+      "instructions": 243751120,
+      "variation": 0.0,
       "tolerance": 0.005
     },
     "pcs/induction-large-packed": {
-      "instructions": 343355486,
+      "instructions": 343354568,
       "variation": 1e-06,
       "tolerance": 0.005
     },
     "pcs/induction-large-sparse": {
-      "instructions": 145837935,
-      "variation": 4e-06,
+      "instructions": 145837775,
+      "variation": 3e-06,
       "tolerance": 0.005
     },
     "pcs/induction-plan": {
-      "instructions": 58158874,
-      "variation": 0.000101,
+      "instructions": 58152973,
+      "variation": 6e-06,
       "tolerance": 0.005
     },
     "pcs/induction-large-prepared": {
-      "instructions": 145899748,
-      "variation": 1e-06,
+      "instructions": 145899596,
+      "variation": 0.0,
       "tolerance": 0.005
     },
     "pcs/induction-large-compact": {
@@ -447,8 +447,8 @@
       "tolerance": 0.005
     },
     "pcs/induction-large-tiled": {
-      "instructions": 78478958,
-      "variation": 0.000224,
+      "instructions": 78478031,
+      "variation": 0.0,
       "tolerance": 0.005
     },
     "pcs/challenge-fold-16": {
@@ -487,8 +487,8 @@
       "tolerance": 0.005
     },
     "pcs/challenge-scalar-1024": {
-      "instructions": 1074310,
-      "variation": 4.5e-05,
+      "instructions": 1074305,
+      "variation": 0.0,
       "tolerance": 0.005
     },
     "pcs/challenge-prepared-1024": {
@@ -584,6 +584,16 @@
     "keccak-gkr/reduction": {
       "instructions": 2308293720,
       "variation": 9.7e-05,
+      "tolerance": 0.005
+    },
+    "tables/prove": {
+      "instructions": 132857856,
+      "variation": 3e-06,
+      "tolerance": 0.005
+    },
+    "tables/verify": {
+      "instructions": 23988599,
+      "variation": 3.1e-05,
       "tolerance": 0.005
     }
   }
