@@ -528,3 +528,4 @@ public import CompStark.Tables.Composed.Keccak.Table
 public import CompStark.Tables.Composed.Keccak.Rider
 public import CompStark.Tables.Composed.Keccak.Start
 public import CompStark.Tables.Composed.Keccak.Ring
+public import CompStark.Tables.Composed.Keccak.Checks
