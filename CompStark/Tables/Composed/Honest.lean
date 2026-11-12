@@ -98,9 +98,9 @@ theorem completeness (w : Witness K S.tables.length) (hsat : S.Satisfied L w) (p
       (externalReduction params.toSetup params.reductions (TableSumcheck.outputClaim S L k o tablePath)).output extPath) = _
     rw [htable, externalReduction_output]
     rfl
-  obtain ⟨hactive, ⟨_, hpoint, hboundary⟩, hvalues⟩ := hterm'
+  obtain ⟨hlength, hactive, ⟨_, hpoint, hboundary⟩, hvalues⟩ := hterm'
   have hstart : params.external.start o' q := by
-    apply params.external.start_complete o' q (params.external.rider_stack w _ shaped hext)
+    apply params.external.start_complete o' q hlength (params.external.rider_stack w _ shaped hext)
     rw [hinterp]
     exact fun t i _ ↦ hvalues t i
   obtain ⟨eactive, eclaims⟩ := params.external.honest_holds o' q coins.external hstart

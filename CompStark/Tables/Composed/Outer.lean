@@ -93,14 +93,14 @@ theorem agrees_interpret (q : Whir.Table K M) : Agrees S L M (setup.external.int
 /-- The table phase's endpoint gives the table sumcheck's terminal relation on the interpreted
 witness and the rider on the table's draws. -/
 theorem table_final (bus : Bus.Output S L k) (χ : List E) (vals : TableSumcheck.Values S L)
-    (active : Bool) (q : Whir.Table K M)
+    (active : Bool) (q : Whir.Table K M) (length : χ.length = TableSumcheck.maxHeight S L)
     (known : tableEndpoint setup (some ⟨bus, χ.reverse, vals, active⟩) q) :
     TableSumcheck.Terminal S L k ⟨bus, χ.reverse, vals, active⟩ (setup.external.interpret q) ∧
       setup.external.rider χ q := by
   obtain ⟨hactive, hpoint, hpool, hstart⟩ := known
   obtain ⟨boundary, committed⟩ := (pool_holds_iff setup.fits setup.boundary _ q
     (agrees_interpret setup q) _).mp hpool
-  obtain ⟨rider, virtual⟩ := setup.external.start_sound _ q hstart
+  obtain ⟨rider, virtual⟩ := setup.external.start_sound _ q (by rw [List.length_reverse, length]) hstart
   refine ⟨⟨hactive, ⟨setup.external.interpret_shaped q, hpoint, boundary⟩, ?_⟩, ?_⟩
   · intro t i
     cases hv : TableSumcheck.virtualAt S t.1 (TableSumcheck.transmitted S t.1)[i]
@@ -152,7 +152,7 @@ theorem tableRounds_retained_preserving (bus : Bus.Output S L k) (ξ : E) (fixed
       change Whir.Table K M at q
       change q = fixed ∧ tableEndpoint setup (some ⟨bus, χ.reverse, vals,
         active && decide (TableSumcheck.formula S L k bus ξ χ.reverse vals = current)⟩) q at good
-      obtain ⟨terminal, rider⟩ := table_final setup bus χ vals _ q good.2
+      obtain ⟨terminal, rider⟩ := table_final setup bus χ vals _ q (by omega) good.2
       have known := (TableSumcheck.rounds_prover_preserving setup.wellFormed bus ξ
         (setup.external.interpret fixed) 0 χ current active length).1 vals rfl
         (setup.external.interpret q) ⟨congrArg setup.external.interpret good.1, terminal⟩

@@ -218,7 +218,7 @@ theorem honestTable_terminal (hwf : S.WellFormed L) (hdeg : TableSumcheck.degree
     (w : Witness K S.tables.length) (hsat : S.Satisfied L w) (terminal : Bus.Terminal S L k o w)
     (coins : TableCoins S L) :
     ∃ o', TableSumcheck.outputClaim S L k o (honestTablePath S L k o w coins) = some o' ∧
-      TableSumcheck.Terminal S L k o' w := by
+      o'.point.length = TableSumcheck.maxHeight S L ∧ TableSumcheck.Terminal S L k o' w := by
   have hT : ∀ t, (S.table t).WellFormed := fun t ↦ (hwf.2.2 t).1
   obtain ⟨hactive, shaped, hpoint, _, boundary, debts⟩ := terminal
   have hzero : TableSumcheck.debtPolynomial S L k o w = 0 := by
@@ -235,6 +235,7 @@ theorem honestTable_terminal (hwf : S.WellFormed L) (hdeg : TableSumcheck.degree
     have := roundsOutput_honest hT hdeg o coins.1 w _ [] _ coins.2
       (by simp only [List.length_nil, Nat.zero_add]) hstart
     simpa only [List.nil_append] using this
-  · exact ⟨rfl, ⟨shaped, hpoint, boundary⟩, honestValues_hold S L w _⟩
+  · exact ⟨by simp only [List.length_reverse, List.length_ofFn],
+      rfl, ⟨shaped, hpoint, boundary⟩, honestValues_hold S L w _⟩
 
 end CompStark.Tables.Composed

@@ -73,11 +73,13 @@ structure External where
   rider_stack : ∀ w draws, S.Shaped L w → S.external w → rider draws (S.stack L M w)
   /-- The argument's start relation at the table sumcheck's output. -/
   start : TableSumcheck.Output S L k → Whir.Table K M → Prop
-  /-- The start relation gives the rider on the table's draws and the virtual values. -/
-  start_sound : ∀ out q, start out q →
+  /-- At a full table point, the start relation gives the rider on the table's draws and the
+  virtual values. -/
+  start_sound : ∀ out q, out.point.length = TableSumcheck.maxHeight S L → start out q →
     rider out.point.reverse q ∧ VirtualHold S L k out (interpret q)
-  /-- The rider on the table's draws and the virtual values give the start relation. -/
-  start_complete : ∀ out q, rider out.point.reverse q → VirtualHold S L k out (interpret q) →
+  /-- At a full table point, the rider on the table's draws and the virtual values give the start
+  relation. -/
+  start_complete : ∀ out q, out.point.length = TableSumcheck.maxHeight S L → rider out.point.reverse q → VirtualHold S L k out (interpret q) →
     start out q
   /-- The argument's protocol, after the table sumcheck; its shape does not depend on the table's
   output. -/
@@ -139,9 +141,9 @@ def External.none (hM : (S.stackBlocks L).total ≤ 2 ^ M)
   interpret_stack w shaped _ := S.read_stack L M hM w shaped novirtual
   rider_stack _ _ _ _ := trivial
   start _ _ := True
-  start_sound out q _ := ⟨trivial, fun t i hv ↦ by
+  start_sound out q _ _ := ⟨trivial, fun t i hv ↦ by
     simp only [TableSumcheck.virtualAt, novirtual, List.contains_nil, Bool.false_eq_true] at hv⟩
-  start_complete _ _ _ _ := trivial
+  start_complete _ _ _ _ _ := trivial
   protocol := .done
   Output := Unit
   output _ _ := ()

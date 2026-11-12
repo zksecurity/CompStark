@@ -89,6 +89,8 @@ structure KeccakTable where
   fits : (S.stackBlocks L).offsetNat first + 2 ^ (p + 10) ≤ 2 ^ M
   /-- The output lanes are columns of the table. -/
   output_lt : ∀ l, output l < (S.table table).air.width
+  /-- The output lanes are transmitted by the table sumcheck. -/
+  output_transmitted : ∀ l, output l ∈ TableSumcheck.transmitted S table
   /-- Distinct lanes have distinct columns. -/
   output_injective : Function.Injective output
   /-- The virtual columns are exactly the Keccak table's output lanes. -/
