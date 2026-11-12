@@ -60,10 +60,12 @@ def column (w : Witness K S.tables.length) (t : Fin S.tables.length) (c : ℕ) (
 def paddingMass (t : Fin S.tables.length) (z : List E) : E :=
   mle (L.logHeight t) (fun i ↦ if L.executed t ≤ i then 1 else 0) z
 
+/-- The number of block leaves of a side. -/
+def sideLeaves (side : Fin 3) : ℕ := ((S.blocks side).map fun b ↦ 2 ^ Block.height S L b).sum
+
 /-- The bus's depth: the largest side, the tallest table, and at least one variable. -/
 def depth : ℕ :=
-  max 1 (max (S.maxLogHeight L) (Nat.clog 2 ((List.finRange 3).map fun side ↦
-    ((S.blocks side).map fun b ↦ 2 ^ Block.height S L b).sum).max?.get!))
+  max 1 (max (S.maxLogHeight L) (Nat.clog 2 (max (S.sideLeaves L 0) (max (S.sideLeaves L 1) (S.sideLeaves L 2)))))
 
 variable (k : ℕ) (α : Fin k → E) (β : E)
 
