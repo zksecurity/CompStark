@@ -48,17 +48,16 @@ def programHonest : programSetup.external.Honest :=
 def schedule : CompStark.Pcs.EvaluatedSchedule 5 := .last 1 4 (CompStark.Pcs.evaluatedEncoding 4 1 (by decide)) 3
 
 /-- Fixed verifier coins. -/
-def coins : Coins programSetup programHonest schedule.schedule where
+def coins : Coins (S := program) (L := programLayout) (k := 2) schedule.schedule where
   bus := ((fun i ↦ value (i.val + 1), value 3), GrandProduct.Coins.fill (fun n ↦ value (n + 11)) _ 0 0)
   table := (value 5, fun i ↦ value (i.val + 41))
-  external := PUnit.unit
   opening := (value 61, fun _ ↦ value 67, fun i ↦ ⟨i.val, by change i.val < 32; omega⟩, value 73,
     fun i ↦ value (i.val + 79))
 
 /-- The honest transcript of a witness of the program. -/
 def programProof (w : Witness K program.tables.length) :
     (composedProtocol programSetup schedule.schedule).tree.ExecutionPath :=
-  honestPath programSetup programHonest schedule.schedule w coins
+  honestPath programSetup schedule.schedule (fun o q ↦ programHonest.honest o q PUnit.unit) w coins
 
 /-- The fast verifier on a transcript of the program. -/
 def programVerify (path : (composedProtocol programSetup schedule.schedule).tree.ExecutionPath) : Bool :=
