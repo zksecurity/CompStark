@@ -84,7 +84,7 @@ def tableEndpoint : Option (TableSumcheck.Output S L k) → Whir.Table K M → P
   | none, _ => False
   | some o, q => o.active = true ∧ o.bus.point.length = Bus.μ S L ∧
       (∀ c ∈ pool S L k M o, c.Holds (fun u ↦ ofK (q u))) ∧
-      Retained.input (setup.external.labels o) q
+      setup.external.start o q
 
 /-- An interpreted witness agrees with its stack on the committed columns. -/
 theorem agrees_interpret (q : Whir.Table K M) : Agrees S L M (setup.external.interpret q) q :=
@@ -373,46 +373,26 @@ def tableGate (o : TableSumcheck.Output S L k) (q : Whir.Table K M) : Prop :=
   o.active = true ∧ o.bus.point.length = Bus.μ S L ∧
     ∀ c ∈ pool S L k M o, c.Holds (fun u ↦ ofK (q u))
 
-/-- The external phase's endpoint: the table phase's checks, point and pool, and the external
-argument's output. -/
-def externalRelation : Option (TableSumcheck.Output S L k) → StackOutput M → Whir.Table K M → Prop
-  | none, _, _ => False
-  | some o, out, q => out.Holds q ∧ tableGate o q
-
 /-- The schedule of the external argument after a rejected table phase. -/
 def rejectedOutput : TableSumcheck.Output S L k :=
   ⟨⟨0, 0, [], 0, 0, false⟩, [], fun _ _ ↦ 0, false⟩
 
+variable (red : setup.external.Reductions)
+
 /-- The external argument on the stack from the table phase's output, framed by the table phase's
 checks and pool; a rejected table phase has no knowledge. -/
 noncomputable def externalReduction : Option (TableSumcheck.Output S L k) →
-    Reduction setup.external.protocol (Whir.Table K M) (StackOutput M)
+    Reduction setup.external.protocol (Whir.Table K M) setup.external.Output
   | none => reduction setup.external.protocol (falseLabels _ _)
-      (fun _ ↦ (⟨[], false⟩ : StackOutput M))
-      (externalRelation (none : Option (TableSumcheck.Output S L k)))
-      (setup.external.challenges (rejectedOutput : TableSumcheck.Output S L k))
+      (setup.external.output (rejectedOutput : TableSumcheck.Output S L k)) (fun _ _ ↦ False)
+      (red.reduction (rejectedOutput : TableSumcheck.Output S L k) (fun _ ↦ False)).challenges
       (fun fixed ↦ false_preserving fixed _ _)
       (fun fixed ↦ false_bounded fixed _ _ _)
       (by
         intro fixed path witness
-        change _ ↔ ListLift.boundTerminalEquiv fixed (falseLabels _ _) path witness = fixed ∧
-          externalRelation (none : Option (TableSumcheck.Output S L k)) _
-            (ListLift.boundTerminalEquiv fixed (falseLabels _ _) path witness)
-        rw [ListLift.bound_terminal_holds, terminalPredicate_falseLabels]
-        simp only [externalRelation, and_false])
-  | some o => reduction setup.external.protocol
-      (pullLabels id (tableGate o) (setup.external.labels o))
-      (setup.external.output o) (externalRelation (some o))
-      (setup.external.challenges o)
-      (fun fixed ↦ pull_preserving id (tableGate o) fixed (setup.external.labels o) _
-        (setup.external.preserving o fixed))
-      (fun fixed ↦ pull_bounded id (tableGate o) fixed (setup.external.labels o) _ _
-        (setup.external.bounded o fixed))
-      (pull_endpoint setup.external.protocol id (tableGate o) (setup.external.labels o)
-        (setup.external.output o) (fun out q ↦ out.Holds q) (by
-          intro fixed path witness
-          rw [Retained.terminal_iff, setup.external.endpoint]
-          exact Iff.rfl))
+        change _ ↔ ListLift.boundTerminalEquiv fixed (falseLabels _ _) path witness = fixed ∧ False
+        rw [ListLift.bound_terminal_holds, terminalPredicate_falseLabels])
+  | some o => red.reduction o (tableGate o)
 
 /-- The bus, the table sumcheck and the external argument in sequence. -/
 def outerProtocol : Protocol :=
@@ -422,7 +402,7 @@ def outerProtocol : Protocol :=
 /-- The outer reductions in sequence on the stack. -/
 noncomputable def outerReduction :
     Reduction (outerProtocol setup) (Whir.Table K M)
-      ((Option (Bus.Output S L k) × Option (TableSumcheck.Output S L k)) × StackOutput M) :=
+      ((Option (Bus.Output S L k) × Option (TableSumcheck.Output S L k)) × setup.external.Output) :=
   ((busReduction setup).then (tableReduction setup) (by
       intro bus q
       cases bus with
@@ -430,43 +410,46 @@ noncomputable def outerReduction :
         simp only [tableReduction, reduction, busReduction, componentReduction, busRelation,
           input_falseLabels]
       | some bus => exact Iff.rfl)).then
-    (fun claim ↦ externalReduction setup claim.2) (by
+    (fun claim ↦ externalReduction setup red claim.2) (by
       intro claim q
       rcases claim with ⟨bus, table⟩
-      change (externalReduction setup table).input q ↔ (tableReduction setup bus).relation table q
+      change (externalReduction setup red table).input q ↔ (tableReduction setup bus).relation table q
       cases bus <;> cases table <;>
       first
       | (change ListLift.input (falseLabels _ _) q ↔ False; rw [input_falseLabels])
-      | (change ListLift.input (pullLabels id _ _) q ↔ tableEndpoint setup (some _) q
-         rw [input_pullLabels]
-         simp only [id, tableEndpoint, tableGate]
+      | (rename_i o
+         change (red.reduction o (tableGate o)).input q ↔ tableEndpoint setup (some o) q
+         rw [red.reduction_input]
+         simp only [tableEndpoint, tableGate]
          exact ⟨fun ⟨h1, h2, h3, h4⟩ ↦ ⟨h2, h3, h4, h1⟩, fun ⟨h2, h3, h4, h1⟩ ↦ ⟨h1, h2, h3, h4⟩⟩))
 
 /-- The claims the opening owes: the pool and the external argument's claims. -/
-def openingClaims : (Option (Bus.Output S L k) × Option (TableSumcheck.Output S L k)) × StackOutput M →
-    List (Whir.Claim E M)
+def openingClaims :
+    (Option (Bus.Output S L k) × Option (TableSumcheck.Output S L k)) × setup.external.Output →
+      List (Whir.Claim E M)
   | ((_, none), _) => []
-  | ((_, some o), out) => pool S L k M o ++ out.claims
+  | ((_, some o), a) => pool S L k M o ++ (setup.external.stackOutput o a).claims
 
 /-- The outer protocol's public checks. -/
-def publicAccepted : (Option (Bus.Output S L k) × Option (TableSumcheck.Output S L k)) × StackOutput M →
-    Prop
+def publicAccepted :
+    (Option (Bus.Output S L k) × Option (TableSumcheck.Output S L k)) × setup.external.Output → Prop
   | ((_, none), _) => False
-  | ((_, some o), out) => o.active = true ∧ o.bus.point.length = Bus.μ S L ∧ out.active = true
+  | ((_, some o), a) => o.active = true ∧ o.bus.point.length = Bus.μ S L ∧
+      (setup.external.stackOutput o a).active = true
 
 /-- The outer endpoint is the public checks and the opening claims on the stack. -/
 theorem outer_endpoint_iff
-    (out : (Option (Bus.Output S L k) × Option (TableSumcheck.Output S L k)) × StackOutput M)
+    (out : (Option (Bus.Output S L k) × Option (TableSumcheck.Output S L k)) × setup.external.Output)
     (q : Whir.Table K M) :
-    (outerReduction setup).relation out q ↔
-      publicAccepted out ∧ ∀ c ∈ openingClaims out, c.Holds (fun u ↦ ofK (q u)) := by
+    (outerReduction setup red).relation out q ↔
+      publicAccepted setup out ∧ ∀ c ∈ openingClaims setup out, c.Holds (fun u ↦ ofK (q u)) := by
   rcases out with ⟨⟨bus, table⟩, eo⟩
   cases table with
   | none => exact ⟨False.elim, fun h ↦ h.1.elim⟩
   | some o =>
-    change externalRelation (some o) eo q ↔ _
-    simp only [externalRelation, StackOutput.Holds, tableGate, publicAccepted, openingClaims,
-      List.mem_append]
+    change (red.reduction o (tableGate o)).relation eo q ↔ _
+    rw [red.reduction_relation]
+    simp only [StackOutput.Holds, tableGate, publicAccepted, openingClaims, List.mem_append]
     constructor
     · rintro ⟨⟨ea, ec⟩, ta, tp, tc⟩
       exact ⟨⟨ta, tp, ea⟩, fun c hc ↦ hc.elim (tc c) (ec c)⟩
@@ -476,7 +459,7 @@ theorem outer_endpoint_iff
 /-- The outer reductions start at the bus's input relation on the interpreted witness and the
 rider before any draw. -/
 theorem outer_input_iff (q : Whir.Table K M) :
-    (outerReduction setup).input q ↔
+    (outerReduction setup red).input q ↔
       Bus.Input S L (setup.external.interpret q) ∧ setup.external.rider [] q := by
   change ListLift.input (pullLabels setup.external.interpret (setup.external.rider []) (Bus.labels S L k)) q ↔ _
   rw [input_pullLabels]
@@ -495,21 +478,26 @@ theorem tableReduction_output (setup : Setup S L k M) (bus : Option (Bus.Output 
   cases bus <;> rfl
 
 /-- The external argument's output after the table sumcheck's. -/
-def externalOutput (setup : Setup S L k M) : Option (TableSumcheck.Output S L k) →
-    setup.external.protocol.tree.ExecutionPath → StackOutput M
-  | none, _ => ⟨[], false⟩
-  | some o, path => setup.external.output o path
+def externalOutput (setup : Setup S L k M) (table : Option (TableSumcheck.Output S L k))
+    (path : setup.external.protocol.tree.ExecutionPath) : setup.external.Output :=
+  setup.external.output (table.getD rejectedOutput) path
 
 /-- The external phase's parser is the argument's after the table sumcheck's output. -/
-theorem externalReduction_output (setup : Setup S L k M) (table : Option (TableSumcheck.Output S L k))
+theorem externalReduction_output (setup : Setup S L k M) (red : setup.external.Reductions)
+    (table : Option (TableSumcheck.Output S L k))
     (path : setup.external.protocol.tree.ExecutionPath) :
-    (externalReduction setup table).output path = externalOutput setup table path := by
-  cases table <;> rfl
+    (externalReduction setup red table).output path = externalOutput setup table path := by
+  cases table with
+  | none => rfl
+  | some o =>
+    change (red.reduction o (tableGate o)).output path = _
+    rw [red.reduction_output]
+    rfl
 
 /-- The outer endpoint parsed from a transcript: the bus's, then the table sumcheck's at it, then
 the external argument's at that. -/
 def outerOutput (setup : Setup S L k M) (path : (outerProtocol setup).tree.ExecutionPath) :
-    (Option (Bus.Output S L k) × Option (TableSumcheck.Output S L k)) × StackOutput M :=
+    (Option (Bus.Output S L k) × Option (TableSumcheck.Output S L k)) × setup.external.Output :=
   let parts := splitPath (appendProtocol (Bus.protocol S L k) (TableSumcheck.protocol S L))
     setup.external.protocol path
   let first := splitPath (Bus.protocol S L k) (TableSumcheck.protocol S L) parts.1
@@ -518,8 +506,9 @@ def outerOutput (setup : Setup S L k M) (path : (outerProtocol setup).tree.Execu
   ((bus, table), externalOutput setup table parts.2)
 
 /-- The direct parser is the outer reductions' parser. -/
-theorem outerOutput_eq (setup : Setup S L k M) (path : (outerProtocol setup).tree.ExecutionPath) :
-    outerOutput setup path = (outerReduction setup).output path := by
+theorem outerOutput_eq (setup : Setup S L k M) (red : setup.external.Reductions)
+    (path : (outerProtocol setup).tree.ExecutionPath) :
+    outerOutput setup path = (outerReduction setup red).output path := by
   unfold outerReduction
   rw [Reduction.then_output, Reduction.then_output, externalReduction_output, tableReduction_output]
   rfl

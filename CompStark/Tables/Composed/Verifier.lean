@@ -75,21 +75,22 @@ theorem poolEvaluated_claims (o : TableSumcheck.Output S L k) :
 
 /-- The opening's claims with factored weights. -/
 def openingClaimsEvaluated (setup : Setup S L k M) :
-    (Option (Bus.Output S L k) × Option (TableSumcheck.Output S L k)) × StackOutput M →
-      setup.external.protocol.tree.ExecutionPath → List (Pcs.EvaluatedClaim M)
-  | ((_, none), _), _ => []
-  | ((_, some o), _), path => poolEvaluated M o ++ setup.external.evaluated o path
+    (Option (Bus.Output S L k) × Option (TableSumcheck.Output S L k)) × setup.external.Output →
+      List (Pcs.EvaluatedClaim M)
+  | ((_, none), _) => []
+  | ((_, some o), a) => poolEvaluated M o ++ setup.external.evaluated o a
 
 /-- The outer public checks, decided. -/
-def publicAcceptedB :
-    (Option (Bus.Output S L k) × Option (TableSumcheck.Output S L k)) × StackOutput M → Bool
+def publicAcceptedB (setup : Setup S L k M) :
+    (Option (Bus.Output S L k) × Option (TableSumcheck.Output S L k)) × setup.external.Output → Bool
   | ((_, none), _) => false
-  | ((_, some o), out) => o.active && decide (o.bus.point.length = Bus.μ S L) && out.active
+  | ((_, some o), a) => o.active && decide (o.bus.point.length = Bus.μ S L) &&
+      (setup.external.stackOutput o a).active
 
 /-- The decided checks are the public checks. -/
-theorem publicAcceptedB_iff
-    (out : (Option (Bus.Output S L k) × Option (TableSumcheck.Output S L k)) × StackOutput M) :
-    publicAcceptedB M out = true ↔ publicAccepted out := by
+theorem publicAcceptedB_iff (setup : Setup S L k M)
+    (out : (Option (Bus.Output S L k) × Option (TableSumcheck.Output S L k)) × setup.external.Output) :
+    publicAcceptedB M setup out = true ↔ publicAccepted setup out := by
   rcases out with ⟨⟨bus, table⟩, eo⟩
   cases table with
   | none => exact ⟨fun h ↦ absurd h Bool.false_ne_true, False.elim⟩
@@ -103,10 +104,8 @@ def verifyWith (setup : Setup S L k M) (evaluated : Pcs.EvaluatedSchedule M)
     (path : (composedProtocol setup evaluated.schedule).tree.ExecutionPath) : Bool :=
   let parts := splitPath (outerProtocol setup) (Whir.opening E evaluated.schedule) path.2
   let out := outerOutput setup parts.1
-  let externalPath := (splitPath (appendProtocol (Bus.protocol S L k) (TableSumcheck.protocol S L))
-    setup.external.protocol parts.1).2
-  publicAcceptedB M out &&
-    Pcs.acceptsBaseEvaluated evaluated path.1 (openingClaimsEvaluated M setup out externalPath) parts.2
+  publicAcceptedB M setup out &&
+    Pcs.acceptsBaseEvaluated evaluated path.1 (openingClaimsEvaluated M setup out) parts.2
 
 variable (params : Parameters S L k M)
 
@@ -115,14 +114,14 @@ abbrev verify (path : (protocol params).tree.ExecutionPath) : Bool :=
   verifyWith params.toSetup params.evaluated path
 
 /-- Forgetting the evaluators of the opening's factored claims gives the opening's claims. -/
-theorem openingClaimsEvaluated_map (setup : Setup S L k M) (bus : Option (Bus.Output S L k))
-    (table : Option (TableSumcheck.Output S L k)) (path : setup.external.protocol.tree.ExecutionPath) :
-    (openingClaimsEvaluated M setup ((bus, table), externalOutput setup table path) path).map
-      Pcs.EvaluatedClaim.claim = openingClaims ((bus, table), externalOutput setup table path) := by
+theorem openingClaimsEvaluated_map (setup : Setup S L k M)
+    (out : (Option (Bus.Output S L k) × Option (TableSumcheck.Output S L k)) × setup.external.Output) :
+    (openingClaimsEvaluated M setup out).map Pcs.EvaluatedClaim.claim = openingClaims setup out := by
+  rcases out with ⟨⟨bus, table⟩, a⟩
   cases table with
   | none => rfl
   | some o =>
-    simp only [openingClaimsEvaluated, openingClaims, externalOutput, List.map_append,
+    simp only [openingClaimsEvaluated, openingClaims, List.map_append,
       poolEvaluated_claims, setup.external.evaluated_claims]
 
 /-- The fast verifier decides the specification verifier. -/
@@ -130,10 +129,7 @@ theorem verify_iff (path : (protocol params).tree.ExecutionPath) :
     verify params path = true ↔ Accepts params path := by
   unfold verify verifyWith Accepts executionParts
   dsimp only
-  rw [← outerOutput_eq, Bool.and_eq_true, publicAcceptedB_iff, Pcs.acceptsBaseEvaluated_eq,
-    Pcs.acceptsEvaluated_eq]
-  unfold outerOutput
-  dsimp only
-  rw [openingClaimsEvaluated_map]
+  rw [← outerOutput_eq params.toSetup params.reductions, Bool.and_eq_true, publicAcceptedB_iff, Pcs.acceptsBaseEvaluated_eq,
+    Pcs.acceptsEvaluated_eq, openingClaimsEvaluated_map]
 
 end CompStark.Tables.Composed

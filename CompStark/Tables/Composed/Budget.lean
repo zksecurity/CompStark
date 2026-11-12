@@ -206,20 +206,23 @@ theorem table_budget (bus : Option (Bus.Output S L k)) :
       simp only [TableSumcheck.error, overE_add]
   | some bus => exact TableSumcheck.challenges_budget S L k bus
 
+variable (red : setup.external.Reductions)
+
 /-- The external phase meets the argument's error on both table branches. -/
 theorem external_budget (table : Option (TableSumcheck.Output S L k)) :
-    Retained.Budget setup.external.protocol.roles (externalReduction setup table).challenges
-      setup.external.error := by
+    Retained.Budget setup.external.protocol.roles (externalReduction setup red table).challenges
+      red.error := by
   cases table with
-  | none => exact setup.external.budget _
-  | some o => exact setup.external.budget o
+  | none => exact red.budget _ (fun _ ↦ False)
+  | some o => exact red.budget o (tableGate o)
 
 /-- The outer error: the bus, the table sumcheck and the external argument. -/
-def outerError : ENNReal := Bus.error S L k + TableSumcheck.error S L + setup.external.error
+def outerError : ENNReal := Bus.error S L k + TableSumcheck.error S L + red.error
 
 /-- The outer reductions meet the outer error. -/
 theorem outer_budget :
-    Retained.Budget (outerProtocol setup).roles (outerReduction setup).challenges (outerError setup) := by
+    Retained.Budget (outerProtocol setup).roles (outerReduction setup red).challenges
+      (outerError setup red) := by
   unfold outerReduction outerError
   apply reduction_then_budget
   · apply reduction_then_budget
@@ -227,7 +230,7 @@ theorem outer_budget :
     · intro bus
       exact table_budget setup bus
   · intro claim
-    exact external_budget setup claim.2
+    exact external_budget setup red claim.2
 
 end
 

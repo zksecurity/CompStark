@@ -48,6 +48,8 @@ structure Parameters (S : System K) (L : Layout S.tables.length) (k M : ℕ) ext
   /-- Their coverage and list bounds. -/
   familyCorrect : Whir.DecoderFamily.Correct (algebraMap K E) evaluated.schedule decoders
     (Pcs.johnsonSecurity evaluated.schedule johnson)
+  /-- The external argument's reductions. -/
+  reductions : toSetup.external.Reductions
 
 variable {S : System K} {L : Layout S.tables.length} {k M : ℕ}
 
@@ -113,13 +115,13 @@ noncomputable def taggedOuter (word : Whir.oracleMessage K params.schedule) :=
   ListLift.certificate (candidates params.schedule params.decoder word)
     (Pcs.initialListBound params.schedule params.security)
     (candidates_card_le params.schedule params.security params.decoder params.correct word)
-    (outerReduction params.toSetup).certificate (outerReduction params.toSetup).challenges
-    (outerReduction params.toSetup).schedule_eq
+    (outerReduction params.toSetup params.reductions).certificate (outerReduction params.toSetup params.reductions).challenges
+    (outerReduction params.toSetup params.reductions).schedule_eq
 
 /-- After the commitment: a member of the list satisfies the outer reductions' input. -/
 def committedState (word : Whir.oracleMessage K params.schedule) : KnowledgeState :=
   ⟨Whir.Table K M, fun q => q ∈ candidates params.schedule params.decoder word ∧
-    (outerReduction params.toSetup).input q⟩
+    (outerReduction params.toSetup params.reductions).input q⟩
 
 /-- The outer certificate over the list, with the redundant root tag erased. -/
 noncomputable def outerCertificate (word : Whir.oracleMessage K params.schedule) :
@@ -139,9 +141,9 @@ noncomputable def outerTerminalEquiv (word : Whir.oracleMessage K params.schedul
     (outer_ne_done params.toSetup) (taggedOuter params word).extractor
     (fun witness => witness.2) path).trans
     ((ListLift.terminalEquiv (candidates params.schedule params.decoder word)
-      (fun fixed => ((outerReduction params.toSetup).certificate fixed).extractor) path).trans
+      (fun fixed => ((outerReduction params.toSetup params.reductions).certificate fixed).extractor) path).trans
       (Equiv.sigmaEquivProdOfEquiv fun fixed =>
-        ((outerReduction params.toSetup).terminal fixed).witnessEquiv path))
+        ((outerReduction params.toSetup params.reductions).terminal fixed).witnessEquiv path))
 
 /-- The outer endpoint names a member of the list and that stack satisfies the outer relation. -/
 theorem outer_terminal_iff (word : Whir.oracleMessage K params.schedule)
@@ -150,15 +152,15 @@ theorem outer_terminal_iff (word : Whir.oracleMessage K params.schedule)
     ((outerCertificate params word).extractor.terminalState path).holds witness ↔
       (outerTerminalEquiv params word path witness).1 ∈ candidates params.schedule params.decoder word ∧
       (outerTerminalEquiv params word path witness).2 = (outerTerminalEquiv params word path witness).1 ∧
-      (outerReduction params.toSetup).relation ((outerReduction params.toSetup).output path)
+      (outerReduction params.toSetup params.reductions).relation ((outerReduction params.toSetup params.reductions).output path)
         (outerTerminalEquiv params word path witness).2 := by
   exact (ListLift.rebase_terminal_holds (target := committedState params word)
     (outer_ne_done params.toSetup) (taggedOuter params word).extractor (fun witness => witness.2) path
     witness).trans
       ((ListLift.terminal_holds (candidates params.schedule params.decoder word)
-        (fun fixed => ((outerReduction params.toSetup).certificate fixed).extractor) path _).trans
+        (fun fixed => ((outerReduction params.toSetup params.reductions).certificate fixed).extractor) path _).trans
           (and_congr_right fun _ =>
-            ((outerReduction params.toSetup).terminal _).knowledge_iff path _))
+            ((outerReduction params.toSetup params.reductions).terminal _).knowledge_iff path _))
 
 /-- Outer extraction keeps the stack named at the endpoint. -/
 theorem outer_extractWitness (word : Whir.oracleMessage K params.schedule)
@@ -173,21 +175,21 @@ theorem outer_extractWitness (word : Whir.oracleMessage K params.schedule)
     (outer_ne_done params.toSetup) (taggedOuter params word).extractor
     (fun witness => witness.2) path witness
   have union := ListLift.extractWitness_eq (candidates params.schedule params.decoder word)
-    (fun fixed => ((outerReduction params.toSetup).certificate fixed).extractor) path tagged
+    (fun fixed => ((outerReduction params.toSetup params.reductions).certificate fixed).extractor) path tagged
   exact erase.trans ((congrArg (fun witness => witness.2) union).trans
-    ((outerReduction params.toSetup).extract_eq _ path _))
+    ((outerReduction params.toSetup params.reductions).extract_eq _ path _))
 
 /-- WHIR's certificate on the claim pool, framed by the outer public checks. -/
 noncomputable def framedWhir (word : Whir.oracleMessage K params.schedule)
-    (out : (Option (Bus.Output S L k) × Option (TableSumcheck.Output S L k)) × StackOutput M) :
+    (out : (Option (Bus.Output S L k) × Option (TableSumcheck.Output S L k)) × params.external.Output) :
     KnowledgeCertificate (Whir.opening E params.schedule).tree (Whir.opening E params.schedule).roles
-      (ListLift.frameState (publicAccepted out)
-        (Whir.openingState (algebraMap K E) params.schedule params.security word (openingClaims out))) :=
+      (ListLift.frameState (publicAccepted params.toSetup out)
+        (Whir.openingState (algebraMap K E) params.schedule params.security word (openingClaims params.toSetup out))) :=
   ListLift.frame
     (Whir.certificate (algebraMap K E) params.schedule params.security
       params.decoders params.familyCorrect params.valid word
-      (openingClaims out) params.decoder params.correct)
-    (publicAccepted out)
+      (openingClaims params.toSetup out) params.decoder params.correct)
+    (publicAccepted params.toSetup out)
 
 /-- WHIR's extracted stack lifts to the outer endpoint as its own candidate. -/
 noncomputable def openingCertificate (word : Whir.oracleMessage K params.schedule)
@@ -195,7 +197,7 @@ noncomputable def openingCertificate (word : Whir.oracleMessage K params.schedul
     KnowledgeCertificate (Whir.opening E params.schedule).tree (Whir.opening E params.schedule).roles
       ((outerCertificate params word).extractor.terminalState path) :=
   ListLift.rebase
-    (framedWhir params word ((outerReduction params.toSetup).output path))
+    (framedWhir params word ((outerReduction params.toSetup params.reductions).output path))
     (opening_ne_done params.schedule) ((outerCertificate params word).extractor.terminalState path)
     (fun q => (outerTerminalEquiv params word path).symm (q, q)) (by
       intro q known
@@ -203,7 +205,7 @@ noncomputable def openingCertificate (word : Whir.oracleMessage K params.schedul
       rw [Equiv.apply_symm_apply]
       exact ⟨((candidates_mem_iff params.schedule params.security params.decoder params.correct word
         _ q).mp known.2).1, rfl,
-        (outer_endpoint_iff params.toSetup _ q).mpr
+        (outer_endpoint_iff params.toSetup params.reductions _ q).mpr
           ⟨known.1, ((candidates_mem_iff params.schedule params.security params.decoder params.correct word
             _ q).mp known.2).2⟩⟩)
 
@@ -227,7 +229,7 @@ abbrev protocol : Protocol := composedProtocol params.toSetup params.schedule
 
 /-- Before the commitment: a stack satisfying the outer reductions' input. -/
 def inputState : KnowledgeState :=
-  ⟨Whir.Table K M, (outerReduction params.toSetup).input⟩
+  ⟨Whir.Table K M, (outerReduction params.toSetup params.reductions).input⟩
 
 /-- The composed knowledge certificate. -/
 noncomputable def certificate :
@@ -250,10 +252,10 @@ def executionParts (path : (protocol params).tree.ExecutionPath) :=
 /-- The specification verifier: the outer public checks and WHIR's acceptance of the claim pool. -/
 def Accepts (path : (protocol params).tree.ExecutionPath) : Prop :=
   let parts := executionParts params path
-  let out := (outerReduction params.toSetup).output parts.1
-  publicAccepted out ∧
+  let out := (outerReduction params.toSetup params.reductions).output parts.1
+  publicAccepted params.toSetup out ∧
     Whir.accepts (algebraMap K E) params.schedule (Whir.mapMasked ofK path.1)
-      (openingClaims out) parts.2 = true
+      (openingClaims params.toSetup out) parts.2 = true
 
 /-- A bound on the number of pool claims. -/
 def poolBound : ℕ :=
@@ -283,25 +285,17 @@ def claimBound : ℕ := poolBound (S := S) (L := L) + params.external.claimBound
 /-- The composed error: the outer error over the initial list, and WHIR's level errors at the
 claim bound. -/
 noncomputable def totalError : ENNReal :=
-  ENNReal.ofReal (Pcs.initialListBound params.schedule params.security) * outerError params.toSetup +
+  ENNReal.ofReal (Pcs.initialListBound params.schedule params.security) * outerError params.toSetup params.reductions +
     whirBudget params.schedule params.security (claimBound params)
-
-/-- The external phase's output has at most the argument's claims. -/
-theorem external_claims_le (setup : Setup S L k M) (table : Option (TableSumcheck.Output S L k))
-    (path : setup.external.protocol.tree.ExecutionPath) :
-    ((externalReduction setup table).output path).claims.length ≤ setup.external.claimBound := by
-  cases table with
-  | none => exact Nat.zero_le _
-  | some o => exact setup.external.claims_le o path
 
 /-- Every outer endpoint owes at most `claimBound` claims. -/
 theorem openingClaims_length_le (path : (outerProtocol params.toSetup).tree.ExecutionPath) :
-    (openingClaims ((outerReduction params.toSetup).output path)).length ≤ claimBound params := by
+    (openingClaims params.toSetup ((outerReduction params.toSetup params.reductions).output path)).length ≤ claimBound params := by
   let parts := splitPath (appendProtocol (Bus.protocol S L k) (TableSumcheck.protocol S L))
     params.external.protocol path
-  have hout : (outerReduction params.toSetup).output path =
+  have hout : (outerReduction params.toSetup params.reductions).output path =
       (((busReduction params.toSetup).then (tableReduction params.toSetup) _).output parts.1,
-        (externalReduction params.toSetup
+        (externalReduction params.toSetup params.reductions
           (((busReduction params.toSetup).then (tableReduction params.toSetup) _).output parts.1).2).output
             parts.2) := rfl
   rw [hout]
@@ -312,7 +306,7 @@ theorem openingClaims_length_le (path : (outerProtocol params.toSetup).tree.Exec
   | some o =>
     change (pool S L k M o ++ _).length ≤ _
     rw [List.length_append]
-    exact Nat.add_le_add (pool_length_le o) (external_claims_le params.toSetup (some o) parts.2)
+    exact Nat.add_le_add (pool_length_le o) (params.external.claims_le o _)
 
 /-- The composed schedule meets the composed error. -/
 theorem challenges_budget :
@@ -322,10 +316,10 @@ theorem challenges_budget :
     (fun _ => (Whir.opening E params.schedule).tree)
     (fun _ => (Whir.opening E params.schedule).roles)
     (ListLift.scale (outerProtocol params.toSetup).roles
-      (Pcs.initialListBound params.schedule params.security) (outerReduction params.toSetup).challenges)
+      (Pcs.initialListBound params.schedule params.security) (outerReduction params.toSetup params.reductions).challenges)
     (fun path => Whir.challenges params.schedule params.security
-      (openingClaims ((outerReduction params.toSetup).output path)).length)
-    _ _ (budget_scale _ _ _ _ (outer_budget params.toSetup))
+      (openingClaims params.toSetup ((outerReduction params.toSetup params.reductions).output path)).length)
+    _ _ (budget_scale _ _ _ _ (outer_budget params.toSetup params.reductions))
     (fun path => budget_mono _ _ (whir_budget params.schedule params.security _)
       (whirBudget_mono params.schedule params.security (openingClaims_length_le params path)))
 
@@ -348,7 +342,7 @@ theorem accepts_terminal (path : (protocol params).tree.ExecutionPath) (accepted
   change ∃ witness, ((openingCertificate params path.1 (executionParts params path).1).extractor.terminalState
     (executionParts params path).2).holds witness
   apply (ListLift.exists_rebase_terminal_iff (opening_ne_done params.schedule)
-    (framedWhir params path.1 ((outerReduction params.toSetup).output (executionParts params path).1)).extractor
+    (framedWhir params path.1 ((outerReduction params.toSetup params.reductions).output (executionParts params path).1)).extractor
     (fun q => (outerTerminalEquiv params path.1 (executionParts params path).1).symm (q, q))
     (executionParts params path).2).mpr
   apply (ListLift.exists_frame_terminal_iff _ _ (executionParts params path).2).mpr
@@ -359,7 +353,7 @@ theorem accepts_terminal (path : (protocol params).tree.ExecutionPath) (accepted
 /-- The composed input relation on a stack: its interpreted witness satisfies the system. -/
 theorem inputState_satisfied (q : Whir.Table K M) (known : (inputState params).holds q) :
     S.Satisfied L (params.external.interpret q) := by
-  obtain ⟨input, rider⟩ := (outer_input_iff params.toSetup q).mp known
+  obtain ⟨input, rider⟩ := (outer_input_iff params.toSetup params.reductions q).mp known
   exact (Argument.input_satisfied S L _).mp ⟨input, params.external.external_of_rider q rider⟩
 
 /-- At terminal knowledge with no bad challenge on its extraction path, the extracted stack

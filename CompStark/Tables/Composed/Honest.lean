@@ -58,7 +58,7 @@ def honestPath (setup : Setup S L k M) (schedule : Whir.Schedule K M) (w : Witne
     (coins : Coins setup schedule) : (composedProtocol setup schedule).tree.ExecutionPath :=
   let outer := honestOuterPath setup w coins
   let opening := Pcs.Honest.prove schedule (S.stack L M w)
-    (openingClaims (outerOutput setup outer)) coins.opening
+    (openingClaims setup (outerOutput setup outer)) coins.opening
   ⟨opening.initial, joinPath _ _ outer opening.transcript⟩
 
 variable (params : Parameters S L k M)
@@ -84,22 +84,22 @@ theorem completeness (w : Witness K S.tables.length) (hsat : S.Satisfied L w) (p
     rw [show Bus.outputClaim S L k (honestBusPath S L k w coins.bus) = some o from hbus, Option.getD_some]
     rw [show TableSumcheck.outputClaim S L k o (honestTablePath S L k o w coins.table) = some o' from htable,
       Option.getD_some]
-  have hout : (outerReduction params.toSetup).output (honestOuterPath params.toSetup w coins) =
+  have hout : (outerReduction params.toSetup params.reductions).output (honestOuterPath params.toSetup w coins) =
       ((some o, some o'), params.external.output o' extPath) := by
     rw [houter]
     unfold outerReduction
     rw [Reduction.then_output, splitPath_joinPath, Reduction.then_output, splitPath_joinPath]
     change ((Bus.outputClaim S L k busPath,
       (tableReduction params.toSetup (Bus.outputClaim S L k busPath)).output tablePath),
-      (externalReduction params.toSetup
+      (externalReduction params.toSetup params.reductions
         ((tableReduction params.toSetup (Bus.outputClaim S L k busPath)).output tablePath)).output extPath) = _
     rw [hbus]
     change ((some o, TableSumcheck.outputClaim S L k o tablePath),
-      (externalReduction params.toSetup (TableSumcheck.outputClaim S L k o tablePath)).output extPath) = _
-    rw [htable]
+      (externalReduction params.toSetup params.reductions (TableSumcheck.outputClaim S L k o tablePath)).output extPath) = _
+    rw [htable, externalReduction_output]
     rfl
   obtain ⟨hactive, ⟨_, hpoint, hboundary⟩, hvalues⟩ := hterm'
-  have hstart : Retained.input (params.external.labels o') q := by
+  have hstart : params.external.start o' q := by
     apply params.external.start_complete o' q (params.external.rider_stack w _ shaped hext)
     rw [hinterp]
     exact fun t i _ ↦ hvalues t i
@@ -109,9 +109,9 @@ theorem completeness (w : Witness K S.tables.length) (hsat : S.Satisfied L w) (p
     · exact ⟨hboundary, fun t i _ ↦ hvalues t i⟩
     · rw [← hinterp]
       exact agrees_interpret params.toSetup q
-  have hclaims : ∀ c ∈ openingClaims (outerOutput params.toSetup
+  have hclaims : ∀ c ∈ openingClaims params.toSetup (outerOutput params.toSetup
       (honestOuterPath params.toSetup w coins)), c.Holds (fun u ↦ ofK (q u)) := by
-    rw [outerOutput_eq, hout]
+    rw [outerOutput_eq params.toSetup params.reductions, hout]
     intro c hc
     rcases List.mem_append.mp hc with h | h
     · exact hpool c h
@@ -120,9 +120,9 @@ theorem completeness (w : Witness K S.tables.length) (hsat : S.Satisfied L w) (p
   dsimp only
   rw [splitPath_joinPath]
   dsimp only
-  rw [← outerOutput_eq]
+  rw [← outerOutput_eq params.toSetup params.reductions]
   refine ⟨?_, Pcs.Honest.prove_accepts params.schedule q _ coins.opening hclaims⟩
-  rw [outerOutput_eq, hout]
+  rw [outerOutput_eq params.toSetup params.reductions, hout]
   exact ⟨hactive, hpoint, eactive⟩
 
 end CompStark.Tables.Composed

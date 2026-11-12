@@ -7,6 +7,7 @@ module
 public import CompStark.Tables.TableSumcheck
 public import CompStark.Tables.Stack
 public import CompStark.Pcs.Evaluated
+public import CompStark.Compose.Reduction
 
 /-! The argument that opens a system's virtual columns, the interface the composed proof system
 takes for "opened by another argument".
@@ -66,56 +67,66 @@ structure External where
     Pr{let r ← ($ᵗ E)}[¬ rider draws q ∧ rider (draws ++ [r]) q] ≤ overE 1
   /-- Before any draw the rider gives the system's external relation. -/
   external_of_rider : ∀ q, rider [] q → S.external (interpret q)
-  /-- The argument's protocol, after the table sumcheck; its shape does not depend on the table's
-  output. -/
-  protocol : Protocol
-  /-- Prefix predicates on the stack; the root is the argument's start relation. -/
-  labels : (out : TableSumcheck.Output S L k) → Retained.Labels (Whir.Table K M) protocol.tree
-  /-- The argument's output from a transcript. -/
-  output : (out : TableSumcheck.Output S L k) → protocol.tree.ExecutionPath → StackOutput M
-  /-- The authored endpoint predicate is the output's relation. -/
-  endpoint : ∀ out path, Retained.endpoint (labels out) path = (output out path).Holds
-  /-- The argument's challenge schedule. -/
-  challenges : (out : TableSumcheck.Output S L k) →
-    RoundExtractor.ChallengeSchedule protocol.tree protocol.roles
-  /-- The identity extractor is prover-preserving. -/
-  preserving : ∀ out q, (Retained.extractor q (labels out)).IsProverPreserving protocol.roles
-  /-- The identity extractor meets the schedule's local bounds. -/
-  bounded : ∀ out q, (Retained.extractor q (labels out)).IsLocallyBounded protocol.roles
-    (challenges out)
-  /-- The argument's claims with certified evaluators of their weights. -/
-  evaluated : (out : TableSumcheck.Output S L k) → protocol.tree.ExecutionPath → List (Pcs.EvaluatedClaim M)
-  /-- The evaluated claims are the argument's claims. -/
-  evaluated_claims : ∀ out path, (evaluated out path).map Pcs.EvaluatedClaim.claim = (output out path).claims
-  /-- A bound on the number of the argument's claims. -/
-  claimBound : ℕ
-  /-- The argument's output has at most `claimBound` claims. -/
-  claims_le : ∀ out path, (output out path).claims.length ≤ claimBound
-  /-- The argument's error. -/
-  error : ENNReal
-  /-- The schedule's errors add up to at most the argument's error. -/
-  budget : ∀ out, Retained.Budget protocol.roles (challenges out) error
-  /-- The start relation gives the rider on the table's draws and the virtual values. -/
-  start_sound : ∀ out q, Retained.input (labels out) q →
-    rider out.point.reverse q ∧ VirtualHold S L k out (interpret q)
   /-- The stack of a satisfying witness interprets to the witness. -/
   interpret_stack : ∀ w, S.Shaped L w → S.external w → interpret (S.stack L M w) = w
   /-- The stack of a satisfying witness has a true rider at every draw. -/
   rider_stack : ∀ w draws, S.Shaped L w → S.external w → rider draws (S.stack L M w)
+  /-- The argument's start relation at the table sumcheck's output. -/
+  start : TableSumcheck.Output S L k → Whir.Table K M → Prop
+  /-- The start relation gives the rider on the table's draws and the virtual values. -/
+  start_sound : ∀ out q, start out q →
+    rider out.point.reverse q ∧ VirtualHold S L k out (interpret q)
   /-- The rider on the table's draws and the virtual values give the start relation. -/
   start_complete : ∀ out q, rider out.point.reverse q → VirtualHold S L k out (interpret q) →
-    Retained.input (labels out) q
+    start out q
+  /-- The argument's protocol, after the table sumcheck; its shape does not depend on the table's
+  output. -/
+  protocol : Protocol
+  /-- The argument's parsed output. -/
+  Output : Type
+  /-- The argument's output from a transcript. -/
+  output : TableSumcheck.Output S L k → protocol.tree.ExecutionPath → Output
+  /-- The argument's public checks and claims on the stack. -/
+  stackOutput : TableSumcheck.Output S L k → Output → StackOutput M
+  /-- A bound on the number of the argument's claims. -/
+  claimBound : ℕ
+  /-- The argument's output has at most `claimBound` claims. -/
+  claims_le : ∀ out a, (stackOutput out a).claims.length ≤ claimBound
+  /-- The argument's claims with certified evaluators of their weights. -/
+  evaluated : TableSumcheck.Output S L k → Output → List (Pcs.EvaluatedClaim M)
+  /-- The evaluated claims are the argument's claims. -/
+  evaluated_claims : ∀ out a, (evaluated out a).map Pcs.EvaluatedClaim.claim = (stackOutput out a).claims
   /-- The verifier's coins. -/
   Coins : Type
   /-- The honest transcript against the verifier's coins. -/
   honest : TableSumcheck.Output S L k → Whir.Table K M → Coins → protocol.tree.ExecutionPath
   /-- From its start relation, the honest transcript's output holds on the stack. -/
-  honest_holds : ∀ out q coins, Retained.input (labels out) q → (output out (honest out q coins)).Holds q
+  honest_holds : ∀ out q coins, start out q → (stackOutput out (output out (honest out q coins))).Holds q
+
+/-- The argument's reductions and error: on the stack from its start relation, framed by an obligation
+it carries through unchanged. -/
+structure External.Reductions (ext : External S L k M) where
+  /-- The argument as a reduction on the stack. -/
+  reduction : TableSumcheck.Output S L k → (Whir.Table K M → Prop) →
+    Compose.Reduction ext.protocol (Whir.Table K M) ext.Output
+  /-- The reduction starts at the start relation and the frame. -/
+  reduction_input : ∀ out frame q, (reduction out frame).input q ↔ ext.start out q ∧ frame q
+  /-- The reduction parses its output. -/
+  reduction_output : ∀ out frame, (reduction out frame).output = ext.output out
+  /-- The reduction ends at its checks and claims and the frame. -/
+  reduction_relation : ∀ out frame a q, (reduction out frame).relation a q ↔
+    (ext.stackOutput out a).Holds q ∧ frame q
+  /-- The argument's error. -/
+  error : ENNReal
+  /-- The schedule's errors add up to at most the argument's error. -/
+  budget : ∀ out frame, Retained.Budget ext.protocol.roles (reduction out frame).challenges error
+  /-- The schedule does not depend on the frame. -/
+  challenges_frame : ∀ out frame frame', (reduction out frame).challenges = (reduction out frame').challenges
 
 /-- A system with no virtual columns and no external relation needs no argument: the stack is the
 witness. -/
-def External.none (hM : (S.stackBlocks L).total ≤ 2 ^ M) (novirtual : ∀ t, (S.table t).virtual = [])
-    (noexternal : ∀ w, S.external w) :
+def External.none (hM : (S.stackBlocks L).total ≤ 2 ^ M)
+    (novirtual : ∀ t, (S.table t).virtual = []) (noexternal : ∀ w, S.external w) :
     External S L k M where
   interpret := S.read L M
   interpret_shaped := S.read_shaped L M
@@ -125,29 +136,38 @@ def External.none (hM : (S.stackBlocks L).total ≤ 2 ^ M) (novirtual : ∀ t, (
     apply le_trans (prEvent_mono _ _ (fun _ ↦ False) fun _ h ↦ h.1 trivial)
     simp only [prEvent_false, zero_le]
   external_of_rider q _ := noexternal _
-  protocol := .done
-  labels _ := fun _ ↦ True
-  output _ _ := ⟨[], true⟩
-  endpoint _ _ := by
-    funext q
-    simp only [StackOutput.Holds, List.not_mem_nil, IsEmpty.forall_iff, implies_true, and_self]
-    rfl
-  challenges _ := PUnit.unit
-  evaluated _ _ := []
-  evaluated_claims _ _ := rfl
-  claimBound := 0
-  claims_le _ _ := le_rfl
-  preserving _ _ := trivial
-  bounded _ _ := trivial
-  error := 0
-  budget _ := trivial
-  start_sound out q _ := ⟨trivial, fun t i hv ↦ by
-    simp only [TableSumcheck.virtualAt, novirtual, List.contains_nil, Bool.false_eq_true] at hv⟩
   interpret_stack w shaped _ := S.read_stack L M hM w shaped novirtual
   rider_stack _ _ _ _ := trivial
+  start _ _ := True
+  start_sound out q _ := ⟨trivial, fun t i hv ↦ by
+    simp only [TableSumcheck.virtualAt, novirtual, List.contains_nil, Bool.false_eq_true] at hv⟩
   start_complete _ _ _ _ := trivial
+  protocol := .done
+  Output := Unit
+  output _ _ := ()
+  stackOutput _ _ := ⟨[], true⟩
+  claimBound := 0
+  claims_le _ _ := le_rfl
+  evaluated _ _ := []
+  evaluated_claims _ _ := rfl
   Coins := PUnit
   honest _ _ _ := PUnit.unit
   honest_holds _ _ _ _ := ⟨rfl, fun _ h ↦ absurd h List.not_mem_nil⟩
+
+/-- The trivial argument's reductions: nothing to reduce. -/
+noncomputable def External.none.reductions (hM : (S.stackBlocks L).total ≤ 2 ^ M)
+    (novirtual : ∀ t, (S.table t).virtual = []) (noexternal : ∀ w, S.external w) :
+    (External.none S L k M hM novirtual noexternal).Reductions where
+  reduction _ frame := Compose.reduction .done (fun q ↦ True ∧ frame q) (fun _ ↦ ())
+    (fun _ q ↦ True ∧ frame q) PUnit.unit (fun _ ↦ trivial) (fun _ ↦ trivial)
+    (Compose.endpoint_of_terminalPredicate _ _ _ _ (fun _ _ ↦ Iff.rfl))
+  reduction_input _ _ _ := Iff.rfl
+  reduction_output _ _ := rfl
+  reduction_relation _ _ _ _ := by
+    change True ∧ _ ↔ (true = true ∧ ∀ claim ∈ ([] : List (Whir.Claim E M)), _) ∧ _
+    simp only [List.not_mem_nil, IsEmpty.forall_iff, implies_true, and_self, true_and]
+  error := 0
+  budget _ _ := trivial
+  challenges_frame _ _ _ := rfl
 
 end CompStark.Tables.Composed
