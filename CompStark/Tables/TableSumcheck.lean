@@ -1023,4 +1023,215 @@ theorem summand_cube_sum (o : Bus.Output S L k) (ξ : E) (w : Witness K S.tables
   rw [Finset.sum_comm]
   exact Finset.sum_congr rfl fun t _ ↦ table_cube_sum S L k o ξ w t
 
+/-- A sum over the active tables is a sum over all tables with the direct ones dropped. -/
+theorem sum_active (f : Fin S.tables.length → E) :
+    (∑ t : Active S L, f t.1) = ∑ t, if S.Direct L t then 0 else f t := by
+  rw [← Fintype.sum_subtype_add_sum_subtype (fun t ↦ S.Direct L t = false)
+    (fun t ↦ if S.Direct L t then 0 else f t)]
+  have h2 : (∑ t : {t // ¬ S.Direct L t = false}, if S.Direct L t.1 then (0 : E) else f t.1) = 0 :=
+    Finset.sum_eq_zero fun t _ ↦ by
+      rw [if_pos (Bool.not_eq_false _ ▸ t.2 : S.Direct L t.1 = true)]
+  rw [h2, add_zero]
+  exact Finset.sum_congr rfl fun t _ ↦ by rw [if_neg (by simp only [t.2, Bool.false_eq_true, not_false_eq_true])]
+
+/-- A directly opened table has no constraints. -/
+theorem constraintLength_direct (t : Fin S.tables.length) (h : S.Direct L t = true) :
+    constraintLength S t = 0 := by
+  simp only [Direct, Bool.and_eq_true] at h
+  exact List.length_eq_zero_iff.mpr (List.isEmpty_iff.mp h.1.1.1)
+
+/-- The batch's positions: table by table, then constraint by constraint. -/
+def constraintPosition : (Σ t : Fin S.tables.length, Fin (constraintLength S t)) ≃ Fin (constraintCount S) :=
+  finSigmaFinEquiv
+
+/-- A constraint's position is its table's offset plus its index. -/
+theorem constraintPosition_val (p : Σ t : Fin S.tables.length, Fin (constraintLength S t)) :
+    (constraintPosition S p).val = constraintOffset S p.1 + p.2.val := by
+  exact finSigmaFinEquiv_apply p
+
+/-- A constraint's debt: its residual's extension at the bus point. -/
+def constraintDebt (o : Bus.Output S L k) (w : Witness K S.tables.length)
+    (p : Σ t : Fin S.tables.length, Fin (constraintLength S t)) : E :=
+  mle (L.logHeight p.1) (fun j ↦ ofK ((S.table p.1).air.constraints[p.2].eval (S.env L w p.1 j)))
+    (o.point.take (L.logHeight p.1))
+
+/-- Every constraint debt and bus debt, in the order of their powers of `ξ`. -/
+def debtValues (o : Bus.Output S L k) (w : Witness K S.tables.length) : Fin (constraintCount S + 3) → E :=
+  Fin.append (fun j ↦ constraintDebt S L k o w ((constraintPosition S).symm j))
+    (fun side ↦ S.tableDebt L k o.alpha o.beta (Bus.μ S L) w side o.point - o.remainders side)
+
+/-- The polynomial in `ξ` whose roots are the false batches. -/
+noncomputable def debtPolynomial (o : Bus.Output S L k) (w : Witness K S.tables.length) : Polynomial E :=
+  GrandProduct.messagePolynomial (constraintCount S + 2) (debtValues S L k o w)
+
+/-- The debt polynomial has degree at most `constraintCount + 2`. -/
+theorem debtPolynomial_degree (o : Bus.Output S L k) (w : Witness K S.tables.length) :
+    (debtPolynomial S L k o w).natDegree ≤ constraintCount S + 2 :=
+  GrandProduct.messagePolynomial_degree _ _
+
+/-- The debt polynomial vanishes exactly when every debt does. -/
+theorem debtPolynomial_eq_zero_iff (o : Bus.Output S L k) (w : Witness K S.tables.length) :
+    debtPolynomial S L k o w = 0 ↔ ∀ i, debtValues S L k o w i = 0 := by
+  constructor
+  · intro h i
+    have hc := GrandProduct.messagePolynomial_coeff (constraintCount S + 2) (debtValues S L k o w) i
+    rw [show GrandProduct.messagePolynomial (constraintCount S + 2) (debtValues S L k o w) = 0 from h,
+      Polynomial.coeff_zero] at hc
+    exact hc.symm
+  · intro h
+    unfold debtPolynomial GrandProduct.messagePolynomial
+    simp only [h, Polynomial.C_0, zero_mul, Finset.sum_const_zero]
+
+/-- The constraint debts vanish exactly when the bus's riders vanish at its point. -/
+theorem constraint_debts_zero_iff (o : Bus.Output S L k) (w : Witness K S.tables.length) :
+    (∀ j, constraintDebt S L k o w ((constraintPosition S).symm j) = 0) ↔
+      ∀ i, GrandProduct.rider (S.riders L) w i (o.point.take ((S.riders L).height i)) = 0 := by
+  constructor
+  · intro h n
+    have mem := List.getElem_mem (l := S.constraintPairs) n.isLt
+    obtain ⟨t, -, hp⟩ := List.mem_flatMap.mp mem
+    obtain ⟨e, he, hpe⟩ := List.mem_map.mp hp
+    obtain ⟨i, hi, rfl⟩ := List.getElem_of_mem he
+    have hpair : S.constraintPairs[n.val] = (t, (S.table t).air.constraints[i]) := hpe.symm
+    have hd := h (constraintPosition S ⟨t, ⟨i, hi⟩⟩)
+    rw [Equiv.symm_apply_apply] at hd
+    simp only [GrandProduct.rider, riders, Fin.getElem_fin]
+    rw [hpair]
+    exact hd
+  · intro h j
+    obtain ⟨t, i⟩ := (constraintPosition S).symm j
+    have mem : (t, (S.table t).air.constraints[i]) ∈ S.constraintPairs :=
+      List.mem_flatMap.mpr ⟨t, List.mem_finRange t, List.mem_map.mpr ⟨_, List.getElem_mem _, rfl⟩⟩
+    obtain ⟨n, hn, hpair⟩ := List.getElem_of_mem mem
+    have hr := h ⟨n, hn⟩
+    simp only [GrandProduct.rider, riders, Fin.getElem_fin] at hr
+    rw [hpair] at hr
+    exact hr
+
+/-- Every debt vanishes exactly when the riders vanish and each bus debt is its table debt. -/
+theorem debtValues_zero_iff (o : Bus.Output S L k) (w : Witness K S.tables.length) :
+    (∀ i, debtValues S L k o w i = 0) ↔
+      (∀ i, GrandProduct.rider (S.riders L) w i (o.point.take ((S.riders L).height i)) = 0) ∧
+        ∀ side, o.remainders side = S.tableDebt L k o.alpha o.beta (Bus.μ S L) w side o.point := by
+  unfold debtValues
+  rw [Fin.forall_fin_add]
+  simp only [Fin.append_left, Fin.append_right, sub_eq_zero]
+  rw [constraint_debts_zero_iff]
+  exact and_congr_right fun _ ↦ forall_congr' fun _ ↦ eq_comm
+
+/-- A constraint's polynomial at a row's values is the embedded residual. -/
+theorem constraint_row (hT : ∀ t, (S.table t).WellFormed) (w : Witness K S.tables.length)
+    (t : Fin S.tables.length) (j : ℕ) (e : Expr K) (he : e ∈ (S.table t).air.constraints) :
+    MvPolynomial.eval (fun c ↦ ofK (cell S w t j c)) (Expr.toPoly (S.table t).air.width e) =
+      ofK (e.eval (S.env L w t j)) := by
+  have hwf := (hT t).2.2.2.1 e he
+  have hv : (fun c ↦ ofK (cell S w t j c)) = fun c ↦ if c < (S.table t).air.width then
+      ofK ((S.env L w t j).cur c) else ofK ((S.env L w t j).prepCur (c - (S.table t).air.width)) := by
+    funext c
+    unfold cell
+    split_ifs <;> rfl
+  rw [hv]
+  exact (Expr.toPoly_eval _ _ e hwf.1 hwf.2 (fun c ↦ ofK ((S.env L w t j).cur c))
+    (fun c ↦ ofK ((S.env L w t j).prepCur c))).trans (eval_ofK _ (fun _ ↦ rfl) e hwf.1).symm
+
+/-- A table's bus form at a row's variables is its form at the row. -/
+theorem form_row (hT : ∀ t, (S.table t).WellFormed) (w : Witness K S.tables.length) (α : Fin k → E)
+    (β : E) (μ : ℕ) (side : Fin 3) (t : Fin S.tables.length) (ζ : List E) (j : ℕ) :
+    S.tableForm L k α β μ side t ζ (fun c ↦ ofK (cell S w t j c))
+        (fun c ↦ ofK (cell S w t j ((S.table t).air.width + c))) =
+      S.tableForm L k α β μ side t ζ (fun c ↦ ofK (((w t).getD j #[]).getD c 0))
+        (fun c ↦ ofK ((S.table t).air.preprocessed.getD (j * (S.table t).air.preprocessedWidth + c) 0)) := by
+  apply tableForm_congr S L k hT
+  · intro c hc
+    simp only [cell, lt_of_mem_transmitted S t c hc, ↓reduceIte]
+  · intro c
+    simp only [cell, show ¬ (S.table t).air.width + c < (S.table t).air.width by omega, ↓reduceIte,
+      Nat.add_sub_cancel_left]
+
+/-- An active table's row-formula extension: its constraint debts and its bus forms. -/
+theorem table_row_expansion (hT : ∀ t, (S.table t).WellFormed) (o : Bus.Output S L k) (ξ : E)
+    (w : Witness K S.tables.length) (t : Active S L) :
+    mle (L.logHeight t.1) (fun i ↦ rowValue S L k o ξ t (fun c ↦ ofK (cell S w t.1 i c))) o.point =
+      (∑ i : Fin (constraintLength S t.1),
+        ξ ^ (constraintOffset S t.1 + i.val) * constraintDebt S L k o w ⟨t.1, i⟩) +
+      ∑ side : Fin 3, ξ ^ (constraintCount S + side.val) *
+        mle (L.logHeight t.1) (fun i ↦ S.tableForm L k o.alpha o.beta (Bus.μ S L) side t.1 o.point
+          (fun c ↦ ofK (((w t.1).getD i #[]).getD c 0))
+          (fun c ↦ ofK ((S.table t.1).air.preprocessed.getD
+            (i * (S.table t.1).air.preprocessedWidth + c) 0))) (o.point.take (L.logHeight t.1)) := by
+  unfold rowValue
+  rw [mle_add, mle_sum, mle_sum]
+  simp_rw [mle_smul]
+  apply congrArg₂ (· + ·)
+  · apply Finset.sum_congr rfl
+    intro i _
+    apply congrArg (_ * ·)
+    unfold constraintDebt
+    rw [mle_take]
+    apply congrArg (fun f ↦ mle (L.logHeight t.1) f o.point)
+    funext j
+    exact constraint_row S L hT w t.1 j _ (List.getElem_mem _)
+  · apply Finset.sum_congr rfl
+    intro side _
+    apply congrArg (_ * ·)
+    rw [mle_take]
+    apply congrArg (fun f ↦ mle (L.logHeight t.1) f o.point)
+    funext j
+    exact form_row S L k hT w o.alpha o.beta (Bus.μ S L) side t.1 o.point j
+
+/-- The constraint debts batched by powers of `ξ` at their positions. -/
+theorem constraint_batch_sum (o : Bus.Output S L k) (ξ : E) (w : Witness K S.tables.length) :
+    (∑ t : Active S L, ∑ i : Fin (constraintLength S t.1),
+      ξ ^ (constraintOffset S t.1 + i.val) * constraintDebt S L k o w ⟨t.1, i⟩) =
+      ∑ j : Fin (constraintCount S), ξ ^ j.val * constraintDebt S L k o w ((constraintPosition S).symm j) := by
+  rw [sum_active S L (fun t ↦ ∑ i : Fin (constraintLength S t),
+    ξ ^ (constraintOffset S t + i.val) * constraintDebt S L k o w ⟨t, i⟩)]
+  have hz : ∀ t, (if S.Direct L t then (0 : E) else ∑ i : Fin (constraintLength S t),
+      ξ ^ (constraintOffset S t + i.val) * constraintDebt S L k o w ⟨t, i⟩) =
+      ∑ i : Fin (constraintLength S t),
+        ξ ^ (constraintOffset S t + i.val) * constraintDebt S L k o w ⟨t, i⟩ := by
+    intro t
+    split_ifs with hd
+    · have : IsEmpty (Fin (constraintLength S t)) :=
+        ⟨fun i ↦ by have := i.isLt; have := constraintLength_direct S L t hd; omega⟩
+      rw [Finset.univ_eq_empty, Finset.sum_empty]
+    · rfl
+  simp_rw [hz]
+  rw [← (constraintPosition S).sum_comp]
+  simp only [Equiv.symm_apply_apply, constraintPosition_val]
+  exact (Fintype.sum_sigma (fun p : Σ t : Fin S.tables.length, Fin (constraintLength S t) ↦
+    ξ ^ (constraintOffset S p.1 + p.2.val) * constraintDebt S L k o w p)).symm
+
+/-- A bus debt is the active tables' bus-form extensions. -/
+theorem tableDebt_active (o : Bus.Output S L k) (w : Witness K S.tables.length) (side : Fin 3) :
+    S.tableDebt L k o.alpha o.beta (Bus.μ S L) w side o.point =
+      ∑ t : Active S L, mle (L.logHeight t.1) (fun i ↦ S.tableForm L k o.alpha o.beta (Bus.μ S L) side t.1 o.point
+          (fun c ↦ ofK (((w t.1).getD i #[]).getD c 0))
+          (fun c ↦ ofK ((S.table t.1).air.preprocessed.getD
+            (i * (S.table t.1).air.preprocessedWidth + c) 0))) (o.point.take (L.logHeight t.1)) := by
+  rw [sum_active S L (fun t ↦ mle (L.logHeight t) (fun i ↦ S.tableForm L k o.alpha o.beta (Bus.μ S L) side t o.point
+          (fun c ↦ ofK (((w t).getD i #[]).getD c 0))
+          (fun c ↦ ofK ((S.table t).air.preprocessed.getD
+            (i * (S.table t).air.preprocessedWidth + c) 0))) (o.point.take (L.logHeight t)))]
+  rfl
+
+/-- The cube sum minus the target is the debt polynomial at `ξ`. -/
+theorem debtPolynomial_eval (hT : ∀ t, (S.table t).WellFormed) (o : Bus.Output S L k) (ξ : E)
+    (w : Witness K S.tables.length) :
+    (debtPolynomial S L k o w).eval ξ =
+      (∑ i : Fin (2 ^ maxHeight S L), summandValue S L k o ξ w
+        (List.ofFn (fun a : Fin (maxHeight S L) ↦ bit i.val a.val)).reverse) - target S L k o ξ := by
+  rw [summand_cube_sum]
+  simp_rw [table_row_expansion S L k hT o ξ w]
+  rw [Finset.sum_add_distrib, constraint_batch_sum, Finset.sum_comm]
+  simp_rw [← Finset.mul_sum, ← tableDebt_active]
+  unfold debtPolynomial target
+  rw [GrandProduct.messagePolynomial_eval]
+  change (∑ i : Fin (constraintCount S + 3), debtValues S L k o w i * ξ ^ i.val) = _
+  rw [Fin.sum_univ_add]
+  simp only [debtValues, Fin.append_left, Fin.append_right, Fin.val_castAdd, Fin.val_natAdd, sub_mul,
+    Finset.sum_sub_distrib]
+  simp_rw [mul_comm _ (ξ ^ _)]
+  ring
+
 end CompStark.Tables.TableSumcheck
