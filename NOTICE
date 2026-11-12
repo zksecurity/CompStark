@@ -13,3 +13,89 @@ The shared subset-table constructor in CompStark/Pcs/BitFold.lean follows
 CompPoly revision f2fab061b77b08eedcb7a9927419a963959f375a,
 CompPoly/Fields/Binary/AdditiveNTT/Packed/Plan.lean, under Apache License 2.0.
 Copyright (c) 2026 CompPoly Contributors.
+
+The binary field glue under CompStark/BinaryFields and the Keccak lane
+conversions in CompStark/Keccak/Lanes.lean are adapted from
+Verified-zkEVM/leanerVM, https://github.com/Verified-zkEVM/leanerVM, revision
+a9d42bfdae8081a4e16aef1cd8526cdaa2a8f4d6, under Apache License 2.0.
+
+The RMFE construction and Keccak-f GKR specification in
+CompStark/Keccak/{Construction,Embedding,EmbeddingData,Factors}.lean and
+CompStark/Keccak/Gkr are adapted from leanEthereum/leanMultisig revision
+9d8bce818aa7c7e18e67026e522a9b1539d0a57d, annex C and
+crates/keccak_gkr/src/{rmfe,protocol,basis,open,keccak}.rs, under Apache
+License 2.0.
+
+The executable Keccak-f GKR reduction under CompStark/Keccak/GkrProver and the
+harness tests/rust/keccak-gkr.rs follow leanEthereum/leanMultisig revision
+9d8bce818aa7c7e18e67026e522a9b1539d0a57d,
+crates/keccak_gkr/src/{witness,prover,open,protocol,keccak}.rs and
+crates/fiat_shamir/src/{lib,transcript}.rs, under Apache License 2.0.
+The upstream Keccak GKR implementation credits Hashcaster 2
+(https://github.com/levs57/hashcaster2).
+
+The Keccak Merkle layout and overwrite-duplex transcript under
+CompStark/Keccak/Commit and CompStark/Keccak/Transcript, and the harnesses
+tests/rust/keccak-transport.rs and tests/rust/keccak-transcript.rs, are adapted
+from leanEthereum/leanMultisig revision
+9d8bce818aa7c7e18e67026e522a9b1539d0a57d, section 8.4, annex B,
+crates/fiat_shamir, crates/verifier and crates/pcs/src/merkle.rs, under Apache
+License 2.0. The upstream duplex credits Plonky3's challenger (MIT OR
+Apache-2.0); the upstream commitment implementation credits succinctlabs/flock
+(flock-core, MIT OR Apache-2.0).
+
+The Frobenius algebra and ring-switching protocol under CompStark/Pcs/RingSwitch
+and the flat-basis independence proof in CompStark/Pcs/BinaryDomain.lean are
+adapted from Verified-zkEVM/leanerVM revision
+a9d42bfdae8081a4e16aef1cd8526cdaa2a8f4d6, under Apache License 2.0:
+LeanerVM/Protocol/ToArkLib/Flock/{FrobeniusMap,RingSwitch,Security}.lean,
+LeanerVM/Protocol/FlockFields.lean and LeanerVM/Protocol/NovelBasis.lean.
+Their target specification is leanEthereum/leanMultisig revision
+9d8bce818aa7c7e18e67026e522a9b1539d0a57d, annexes A and D. The ring-switching
+preparation in CompStark/Pcs/RingSwitch/Prover.lean, the extension encoding in
+CompStark/Pcs/Prover/Encoding.lean and the harness tests/rust/binary-pcs.rs
+follow crates/pcs/src/{ring_switch,ntt}.rs of the same revision, under Apache
+License 2.0.
+
+The multilinear extensions, fingerprints, stacking and padded product-tree GKR
+under CompStark/Multilinear adapt the algebra and fixed-prefix security
+statements from Verified-zkEVM/leanerVM revision
+a9d42bfdae8081a4e16aef1cd8526cdaa2a8f4d6, under Apache License 2.0:
+LeanerVM/Protocol/Fingerprint.lean, Bus.lean, BusSecurity.lean,
+ToArkLib/GrandProduct.lean, GrandProductSecurity.lean,
+ToArkLib/GrandProductPoly.lean, TableSumcheck.lean, and
+ToCompPoly/Multilinear.lean, Fingerprint.lean, Stacking.lean and
+AmbientStacking.lean. Their protocol layout follows leanEthereum/leanMultisig
+revision 9d8bce818aa7c7e18e67026e522a9b1539d0a57d, sections 5, 6 and 8.5.
+
+The knowledge-certificate composition under CompStark/Compose follows
+leanEthereum/leanMultisig revision 9d8bce818aa7c7e18e67026e522a9b1539d0a57d,
+sections 4 and 8.5 and annexes A, B and C, under Apache License 2.0.
+
+The WHIR ladder, Johnson multiplicities and certified error levels in
+CompStark/Pcs/{Schedule,Bits,LevelBounds,Multiplicity,Levels,ProductionLevels,Errors}.lean
+follow leanEthereum/leanMultisig revision
+9d8bce818aa7c7e18e67026e522a9b1539d0a57d, sections 4, 7.6 and 8.5, annex C,
+crates/pcs/src/whir_config.rs and crates/verifier/src/{layout,whir}.rs, under
+Apache License 2.0. The WHIR configuration credits succinctlabs/flock (MIT OR
+Apache-2.0) and bcc-research/bolt-rs (MIT); copyright 2026 Bain Capital
+Crypto, LP and Ron Rothblum, with modifications copyright 2026 Succinct Labs,
+Benedikt Bunz and William Wang.
+
+The word and Merkle codecs in CompStark/Keccak/Commit/{Codec,MerkleCodec}.lean
+follow leanEthereum/leanMultisig revision
+9d8bce818aa7c7e18e67026e522a9b1539d0a57d, crates/fiat_shamir/src/transcript.rs
+and crates/verifier/src, under Apache License 2.0.
+
+The shared WHIR extractor in CompStark/Pcs/ExtractorCache.lean adapts
+ArkLib/ProofSystem/Whir/Extractor.lean, and the WHIR verifier and boundary
+claims in CompStark/Pcs/{Verifier,Evaluated}.lean adapt
+ArkLib/ProofSystem/Whir/Protocol.lean, from ArkLib revision
+14ea6fcb3e725af9f2bdb8deda3ec7b0e97d760e, under Apache License 2.0.
+Copyright (c) 2026 ArkLib Contributors. Author: Gregor Mitscha-Baude.
+
+The reference harnesses tests/rust/{pcs,basis,induction,accumulated,sumcheck-fold,keccak-merkle}.rs
+call or are compiled as child modules of the unchanged crates of
+leanEthereum/leanMultisig revision 9d8bce818aa7c7e18e67026e522a9b1539d0a57d,
+crates/pcs, crates/primitives and crates/fiat_shamir, under Apache License 2.0.
+Copyright (c) 2026 leanEthereum.
