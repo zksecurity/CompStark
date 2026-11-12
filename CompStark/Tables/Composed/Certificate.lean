@@ -10,6 +10,7 @@ public import CompStark.Tables.Composed.Budget
 public import CompStark.Pcs.Parameters
 public import CompStark.Tables.Argument
 public import ArkLib.ProofSystem.Whir.Certificate
+public import CompStark.Pcs.Evaluated
 
 /-! The composed proof system for a set of tables: the commitment of the stack, the bus, the table
 sumcheck, the external argument, and the WHIR opening of the claim pool. The first message fixes
@@ -34,23 +35,26 @@ open _root_.Interaction _root_.Interaction.Oracle _root_.Interaction.Oracle.Secu
 /-- The parameters of a composed system: its side conditions and a certified WHIR opening of the
 stack. -/
 structure Parameters (S : System K) (L : Layout S.tables.length) (k M : ℕ) extends Setup S L k M where
-  /-- The encoded levels and closing rounds. -/
-  schedule : Whir.Schedule K M
+  /-- The encoded levels and closing rounds, with certified evaluators of their query weights. -/
+  evaluated : Pcs.EvaluatedSchedule M
   /-- Integer Johnson choices, one per level. -/
-  johnson : Pcs.JohnsonParameters schedule
+  johnson : Pcs.JohnsonParameters evaluated.schedule
   /-- Encoding contracts and positive folding dimensions. -/
-  valid : schedule.Valid (algebraMap K E) (Pcs.johnsonSecurity schedule johnson)
+  valid : evaluated.schedule.Valid (algebraMap K E) (Pcs.johnsonSecurity evaluated.schedule johnson)
   /-- The initial list decoder. -/
-  decoder : Whir.InitialDecoder schedule
+  decoder : Whir.InitialDecoder evaluated.schedule
   /-- Its coverage and real list bound. -/
-  correct : Whir.InitialDecoder.Correct decoder (Pcs.johnsonSecurity schedule johnson)
+  correct : Whir.InitialDecoder.Correct decoder (Pcs.johnsonSecurity evaluated.schedule johnson)
   /-- The decoders of the later levels. -/
-  decoders : Whir.DecoderFamily (E := E) schedule
+  decoders : Whir.DecoderFamily (E := E) evaluated.schedule
   /-- Their coverage and list bounds. -/
-  familyCorrect : Whir.DecoderFamily.Correct (algebraMap K E) schedule decoders
-    (Pcs.johnsonSecurity schedule johnson)
+  familyCorrect : Whir.DecoderFamily.Correct (algebraMap K E) evaluated.schedule decoders
+    (Pcs.johnsonSecurity evaluated.schedule johnson)
 
 variable {S : System K} {L : Layout S.tables.length} {k M : ℕ}
+
+/-- The opening's schedule. -/
+abbrev Parameters.schedule (params : Parameters S L k M) : Whir.Schedule K M := params.evaluated.schedule
 
 /-- The analytical security of the opening. -/
 noncomputable def Parameters.security (params : Parameters S L k M) :
