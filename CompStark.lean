@@ -495,3 +495,7 @@ public import CompStark.Compiled.FreshSnapshot
 public import CompStark.Compiled.MerkleTrace
 public import CompStark.Keccak.Commit.Codec
 public import CompStark.Keccak.Commit.MerkleCodec
+public import CompStark.Tables.Basic
+public import CompStark.Tables.Examples
+public import CompStark.Tables.Fingerprint
+public import CompStark.Tables.Bus
