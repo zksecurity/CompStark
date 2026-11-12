@@ -8,3 +8,4 @@ import CompStarkTests.Keccak
 import CompStarkTests.KeccakSecurity
 import CompStarkTests.KeccakHash
 import CompStarkTests.KeccakMerkle
+import CompStarkTests.BinaryPcs

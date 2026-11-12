@@ -5,6 +5,10 @@ Released under Apache 2.0 license as described in the file LICENSE.
 import CompStarkTests
 import CompStarkTests.Sumcheck
 import CompStarkTests.Pcs
+import CompStarkTests.KeccakTranscript
+import CompStarkTests.KeccakTransport
+import CompStarkTests.KeccakGkr
+import CompStarkTests.BinaryPcsNative
 import CompStark.KoalaBear.Fast
 import CompStark.BabyBear.Fast
 import CompStark.Mont32.Json
@@ -35,6 +39,14 @@ and runs it.
   extension, Plonky3's proofs (`tests/data/quintic_AIR_*.json`, from `compstark-bench
   stark-quintic …`) verify and both provers reproduce them, and the fast batch prover reproduces
   the specification's batch proofs with lookups.
+* The binary-field stack against leanMultisig `9d8bce818aa7c7e18e67026e522a9b1539d0a57d`: the
+  overwrite-duplex transcript's seeds, squeezes, rate batching and grinding checks and Keccak
+  Merkle pruned openings (`tests/CompStarkTests/KeccakTranscript.lean`), smallest-nonce grinding on the overwrite duplex and Keccak Merkle roots, rows and hints on
+  field-word leaves (`tests/data/keccak-transport`), and every witness layer, message,
+  challenge and opening of the Keccak-f GKR prover on 512 permutations
+  (`tests/data/keccak-gkr/active`), and the binary PCS prover's native extension encoding and
+  ring-switching target (`tests/data/binary-pcs`), with its honest opening accepted and an
+  inconsistent claim rejected.
 * BabyBear's Poseidon2 Merkle hashes and challenger on its packed implementation against Plonky3,
   and Plonky3's BabyBear proofs (`tests/data/babybear_AIR_*.json`): each verifies and is rejected
   when tampered, and both provers reproduce it; its batch proofs
@@ -656,6 +668,10 @@ def main : IO UInt32 := do
     BabyBear.batchProofs
     check "Keccak hashes and batches" CompStarkTests.KeccakHash.comparisons
     CompStarkTests.KeccakMerkle.run
+    CompStarkTests.KeccakTranscript.check
+    CompStarkTests.KeccakTransport.check
+    CompStarkTests.KeccakGkr.check
+    CompStarkTests.BinaryPcsNative.check
     IO.println "native tests passed"
     return 0
   catch e =>
