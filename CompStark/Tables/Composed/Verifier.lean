@@ -1,0 +1,175 @@
+/-
+Copyright (c) 2026 zkSecurity.
+Released under Apache 2.0 license as described in the file LICENSE.
+-/
+module
+
+public import CompStark.Tables.Composed.Honest
+
+/-! The fast verifier of the composed system: the outer endpoint parsed directly, the claim pool
+with factored equality weights, and the PCS's word-level acceptance of the base-field oracle. It
+decides the specification verifier (`verify_iff`). -/
+
+set_option Elab.async false
+set_option smartUnfolding false
+set_option backward.isDefEq.respectTransparency false
+set_option maxHeartbeats 1600000
+set_option maxRecDepth 8192
+
+@[expose] public section
+
+namespace CompStark.Tables.Composed
+
+open CompStark.Stark CompStark.BinaryFields CompStark.Multilinear CompStark.Tables.System
+open CompStark.Compose
+open _root_.Interaction _root_.Interaction.Oracle
+
+variable {S : System K} {L : Layout S.tables.length} {k M : ℕ}
+
+/-- The table sumcheck's output after the bus's. -/
+def tableOutput : Option (Bus.Output S L k) → (TableSumcheck.protocol S L).tree.ExecutionPath →
+    Option (TableSumcheck.Output S L k)
+  | none, _ => none
+  | some o, path => TableSumcheck.outputClaim S L k o path
+
+/-- The table phase's parser is the table sumcheck's after the bus's output. -/
+theorem tableReduction_output (setup : Setup S L k M) (bus : Option (Bus.Output S L k))
+    (path : (TableSumcheck.protocol S L).tree.ExecutionPath) :
+    (tableReduction setup bus).output path = tableOutput bus path := by
+  cases bus <;> rfl
+
+/-- The external argument's output after the table sumcheck's. -/
+def externalOutput (setup : Setup S L k M) : Option (TableSumcheck.Output S L k) →
+    setup.external.protocol.tree.ExecutionPath → StackOutput M
+  | none, _ => ⟨[], false⟩
+  | some o, path => setup.external.output o path
+
+/-- The external phase's parser is the argument's after the table sumcheck's output. -/
+theorem externalReduction_output (setup : Setup S L k M) (table : Option (TableSumcheck.Output S L k))
+    (path : setup.external.protocol.tree.ExecutionPath) :
+    (externalReduction setup table).output path = externalOutput setup table path := by
+  cases table <;> rfl
+
+/-- The outer endpoint parsed from a transcript: the bus's, then the table sumcheck's at it, then
+the external argument's at that. -/
+def outerOutput (setup : Setup S L k M) (path : (outerProtocol setup).tree.ExecutionPath) :
+    (Option (Bus.Output S L k) × Option (TableSumcheck.Output S L k)) × StackOutput M :=
+  let parts := splitPath (appendProtocol (Bus.protocol S L k) (TableSumcheck.protocol S L))
+    setup.external.protocol path
+  let first := splitPath (Bus.protocol S L k) (TableSumcheck.protocol S L) parts.1
+  let bus := Bus.outputClaim S L k first.1
+  let table := tableOutput bus first.2
+  ((bus, table), externalOutput setup table parts.2)
+
+/-- The direct parser is the outer reductions' parser. -/
+theorem outerOutput_eq (setup : Setup S L k M) (path : (outerProtocol setup).tree.ExecutionPath) :
+    outerOutput setup path = (outerReduction setup).output path := by
+  unfold outerReduction
+  rw [Reduction.then_output, Reduction.then_output, externalReduction_output, tableReduction_output]
+  rfl
+
+variable (M)
+
+/-- A column claim with a factored equality weight, if the column is stacked. -/
+def columnClaimEvaluated (t : Fin S.tables.length) (c : ℕ) (z : List E) (value : E) :
+    Option (Pcs.EvaluatedClaim M) :=
+  ((S.stackColumns L).finIdxOf? (t, c)).map fun b ↦ ⟨.eq (S.liftPoint L M b z), value⟩
+
+/-- The pool's claims with factored weights. -/
+def poolEvaluated (o : TableSumcheck.Output S L k) : List (Pcs.EvaluatedClaim M) :=
+  ((List.finRange (S.boundaryColumns L).length).filterMap fun j ↦
+    columnClaimEvaluated (L := L) M (S.boundaryColumns L)[j].1 (S.boundaryColumns L)[j].2
+      (o.bus.point.take (L.logHeight (S.boundaryColumns L)[j].1)) (o.bus.boundary j)) ++
+  (List.finRange S.tables.length).flatMap fun t ↦
+    if h : S.Direct L t = false then
+      (List.finRange (TableSumcheck.transmitted S t).length).filterMap fun i ↦
+        if TableSumcheck.virtualAt S t (TableSumcheck.transmitted S t)[i] then none
+        else columnClaimEvaluated (L := L) M t (TableSumcheck.transmitted S t)[i]
+          (o.point.take (L.logHeight t)) (o.values ⟨t, h⟩ i)
+    else []
+
+/-- Forgetting the evaluators of a factored column claim gives the column claim. -/
+theorem columnClaimEvaluated_claim (t : Fin S.tables.length) (c : ℕ) (z : List E) (value : E) :
+    (columnClaimEvaluated (S := S) (L := L) M t c z value).map Pcs.EvaluatedClaim.claim =
+      columnClaim S L M t c z value := by
+  unfold columnClaimEvaluated columnClaim
+  cases (S.stackColumns L).finIdxOf? (t, c) <;> rfl
+
+/-- Forgetting the evaluators of the factored pool gives the pool. -/
+theorem poolEvaluated_claims (o : TableSumcheck.Output S L k) :
+    (poolEvaluated M o).map Pcs.EvaluatedClaim.claim = pool S L k M o := by
+  unfold poolEvaluated pool boundaryClaims valueClaims
+  rw [List.map_append, List.map_filterMap, List.map_flatMap]
+  congr 1
+  · apply List.filterMap_congr
+    intro j _
+    exact columnClaimEvaluated_claim M _ _ _ _
+  · apply List.flatMap_congr
+    intro t _
+    split
+    · rw [List.map_filterMap]
+      apply List.filterMap_congr
+      intro i _
+      split
+      · rfl
+      · exact columnClaimEvaluated_claim M _ _ _ _
+    · rfl
+
+/-- The opening's claims with factored weights. -/
+def openingClaimsEvaluated (setup : Setup S L k M) :
+    (Option (Bus.Output S L k) × Option (TableSumcheck.Output S L k)) × StackOutput M →
+      setup.external.protocol.tree.ExecutionPath → List (Pcs.EvaluatedClaim M)
+  | ((_, none), _), _ => []
+  | ((_, some o), _), path => poolEvaluated M o ++ setup.external.evaluated o path
+
+/-- The outer public checks, decided. -/
+def publicAcceptedB :
+    (Option (Bus.Output S L k) × Option (TableSumcheck.Output S L k)) × StackOutput M → Bool
+  | ((_, none), _) => false
+  | ((_, some o), out) => o.active && decide (o.bus.point.length = Bus.μ S L) && out.active
+
+/-- The decided checks are the public checks. -/
+theorem publicAcceptedB_iff
+    (out : (Option (Bus.Output S L k) × Option (TableSumcheck.Output S L k)) × StackOutput M) :
+    publicAcceptedB M out = true ↔ publicAccepted out := by
+  rcases out with ⟨⟨bus, table⟩, eo⟩
+  cases table with
+  | none => exact ⟨fun h ↦ absurd h Bool.false_ne_true, False.elim⟩
+  | some o =>
+    simp only [publicAcceptedB, publicAccepted, Bool.and_eq_true, decide_eq_true_eq, and_assoc]
+
+variable {M} (params : Parameters S L k M)
+
+/-- The fast verifier of the composed system. -/
+def verify (path : (protocol params).tree.ExecutionPath) : Bool :=
+  let parts := splitPath (outerProtocol params.toSetup) (Whir.opening E params.schedule) path.2
+  let out := outerOutput params.toSetup parts.1
+  let externalPath := (splitPath (appendProtocol (Bus.protocol S L k) (TableSumcheck.protocol S L))
+    params.external.protocol parts.1).2
+  publicAcceptedB M out &&
+    Pcs.acceptsBaseEvaluated params.evaluated path.1 (openingClaimsEvaluated M params.toSetup out externalPath)
+      parts.2
+
+/-- Forgetting the evaluators of the opening's factored claims gives the opening's claims. -/
+theorem openingClaimsEvaluated_map (setup : Setup S L k M) (bus : Option (Bus.Output S L k))
+    (table : Option (TableSumcheck.Output S L k)) (path : setup.external.protocol.tree.ExecutionPath) :
+    (openingClaimsEvaluated M setup ((bus, table), externalOutput setup table path) path).map
+      Pcs.EvaluatedClaim.claim = openingClaims ((bus, table), externalOutput setup table path) := by
+  cases table with
+  | none => rfl
+  | some o =>
+    simp only [openingClaimsEvaluated, openingClaims, externalOutput, List.map_append,
+      poolEvaluated_claims, setup.external.evaluated_claims]
+
+/-- The fast verifier decides the specification verifier. -/
+theorem verify_iff (path : (protocol params).tree.ExecutionPath) :
+    verify params path = true ↔ Accepts params path := by
+  unfold verify Accepts executionParts
+  dsimp only
+  rw [← outerOutput_eq, Bool.and_eq_true, publicAcceptedB_iff, Pcs.acceptsBaseEvaluated_eq,
+    Pcs.acceptsEvaluated_eq]
+  unfold outerOutput
+  dsimp only
+  rw [openingClaimsEvaluated_map]
+
+end CompStark.Tables.Composed

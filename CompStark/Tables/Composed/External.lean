@@ -8,6 +8,7 @@ module
 
 public import CompStark.Tables.TableSumcheck
 public import CompStark.Tables.Stack
+public import CompStark.Pcs.Evaluated
 
 /-! The argument that opens a system's virtual columns, the interface the composed proof system
 takes for "opened by another argument".
@@ -84,6 +85,10 @@ structure External where
   /-- The identity extractor meets the schedule's local bounds. -/
   bounded : ∀ out q, (Retained.extractor q (labels out)).IsLocallyBounded protocol.roles
     (challenges out)
+  /-- The argument's claims with certified evaluators of their weights. -/
+  evaluated : (out : TableSumcheck.Output S L k) → protocol.tree.ExecutionPath → List (Pcs.EvaluatedClaim M)
+  /-- The evaluated claims are the argument's claims. -/
+  evaluated_claims : ∀ out path, (evaluated out path).map Pcs.EvaluatedClaim.claim = (output out path).claims
   /-- A bound on the number of the argument's claims. -/
   claimBound : ℕ
   /-- The argument's output has at most `claimBound` claims. -/
@@ -130,6 +135,8 @@ def External.none (hM : (S.stackBlocks L).total ≤ 2 ^ M) (novirtual : ∀ t, (
     simp only [StackOutput.Holds, List.not_mem_nil, IsEmpty.forall_iff, implies_true, and_self]
     rfl
   challenges _ := PUnit.unit
+  evaluated _ _ := []
+  evaluated_claims _ _ := rfl
   claimBound := 0
   claims_le _ _ := le_rfl
   preserving _ _ := trivial

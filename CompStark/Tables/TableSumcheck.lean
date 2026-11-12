@@ -149,6 +149,41 @@ noncomputable def rowValue (o : Bus.Output S L k) (ξ : E) (t : Active S L) (v :
     S.tableForm L k o.alpha o.beta (Bus.μ S L) s t.1 o.point v
       (fun c ↦ v ((S.table t.1).air.width + c))
 
+/-- An expression's polynomial evaluated at a row's variables, computed on the expression. -/
+def Expr.evalVariables (width : ℕ) (v : ℕ → E) : Expr K → E
+  | .cur c => v c
+  | .prepCur c => v (width + c)
+  | .const c => ofK c
+  | .add a b => Expr.evalVariables width v a + Expr.evalVariables width v b
+  | .sub a b => Expr.evalVariables width v a - Expr.evalVariables width v b
+  | .mul a b => Expr.evalVariables width v a * Expr.evalVariables width v b
+  | _ => 0
+
+/-- Evaluating on the expression is evaluating its polynomial. -/
+theorem Expr.evalVariables_eq (width : ℕ) (v : ℕ → E) (e : Expr K) :
+    Expr.evalVariables width v e = MvPolynomial.eval v (Expr.toPoly width e) := by
+  induction e with
+  | cur c => simp only [Expr.evalVariables, Expr.toPoly, MvPolynomial.eval_X]
+  | prepCur c => simp only [Expr.evalVariables, Expr.toPoly, MvPolynomial.eval_X]
+  | const c => simp only [Expr.evalVariables, Expr.toPoly, MvPolynomial.eval_C]
+  | add a b ha hb => simp only [Expr.evalVariables, Expr.toPoly, map_add, ha, hb]
+  | sub a b ha hb => simp only [Expr.evalVariables, Expr.toPoly, map_sub, ha, hb]
+  | mul a b ha hb => simp only [Expr.evalVariables, Expr.toPoly, map_mul, ha, hb]
+  | _ => simp only [Expr.evalVariables, Expr.toPoly, map_zero]
+
+/-- The batched row formula computed on the expressions. -/
+def rowValueExec (o : Bus.Output S L k) (ξ : E) (t : Active S L) (v : ℕ → E) : E :=
+  (∑ i : Fin (constraintLength S t.1), ξ ^ (constraintOffset S t.1 + i.val) *
+    Expr.evalVariables (S.table t.1).air.width v (S.table t.1).air.constraints[i]) +
+  ∑ s : Fin 3, ξ ^ (constraintCount S + s.val) *
+    S.tableForm L k o.alpha o.beta (Bus.μ S L) s t.1 o.point v
+      (fun c ↦ v ((S.table t.1).air.width + c))
+
+/-- The computed row formula is the specification's. -/
+@[csimp] theorem rowValue_code : @rowValue = @rowValueExec := by
+  funext S L k o ξ t v
+  simp only [rowValue, rowValueExec, Expr.evalVariables_eq]
+
 /-- An active table's weight: the equality weight at the bus point on its variables, times the
 variables above its height. -/
 def tableWeight (o : Bus.Output S L k) (t : Active S L) (z : List E) : E :=
@@ -156,12 +191,12 @@ def tableWeight (o : Bus.Output S L k) (t : Active S L) (z : List E) : E :=
     ∏ a : Fin (maxHeight S L - L.logHeight t.1), z.getD (L.logHeight t.1 + a.val) 0
 
 /-- The verifier's terminal formula from the transmitted values. -/
-noncomputable def formula (o : Bus.Output S L k) (ξ : E) (z : List E) (vals : Values S L) : E :=
+def formula (o : Bus.Output S L k) (ξ : E) (z : List E) (vals : Values S L) : E :=
   ∑ t : Active S L, tableWeight S L k o t z *
     rowValue S L k o ξ t (valuesAt S L vals t (z.take (L.logHeight t.1)))
 
 /-- The summand at a point, from the witness. -/
-noncomputable def summandValue (o : Bus.Output S L k) (ξ : E) (w : Witness K S.tables.length)
+def summandValue (o : Bus.Output S L k) (ξ : E) (w : Witness K S.tables.length)
     (z : List E) : E :=
   ∑ t : Active S L, tableWeight S L k o t z *
     rowValue S L k o ξ t (fun c ↦ cellColumn S L w t.1 c (z.take (L.logHeight t.1)))
@@ -721,7 +756,7 @@ noncomputable def challenges (o : Bus.Output S L k) :
   ⟨⟨$ᵗ E, overE (constraintCount S + 2)⟩, fun ξ ↦ roundsChallenges S L (maxHeight S L) (target S L k o ξ)⟩
 
 /-- The rounds' output from the messages and the transmitted values. -/
-noncomputable def roundsOutput (o : Bus.Output S L k) (ξ : E) :
+def roundsOutput (o : Bus.Output S L k) (ξ : E) :
     (n : ℕ) → List E → E → Bool → (roundsProtocol S L n).tree.ExecutionPath → Option (Output S L k)
   | 0, χ, current, active, path => some
       ⟨o, χ.reverse, path.1, active && decide (formula S L k o ξ χ.reverse path.1 = current)⟩
@@ -732,7 +767,7 @@ noncomputable def roundsOutput (o : Bus.Output S L k) (ξ : E) :
         (active && (messageOps S L).accept current message) rest
 
 /-- The table sumcheck's output on a path. -/
-noncomputable def outputClaim (o : Bus.Output S L k) (path : (protocol S L).tree.ExecutionPath) :
+def outputClaim (o : Bus.Output S L k) (path : (protocol S L).tree.ExecutionPath) :
     Option (Output S L k) :=
   roundsOutput S L k o path.1 (maxHeight S L) [] (target S L k o path.1) o.active path.2
 

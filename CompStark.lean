@@ -520,3 +520,4 @@ public import CompStark.Tables.Composed.Certificate
 public import CompStark.Tables.Composed.HonestBus
 public import CompStark.Tables.Composed.HonestTable
 public import CompStark.Tables.Composed.Honest
+public import CompStark.Tables.Composed.Verifier
