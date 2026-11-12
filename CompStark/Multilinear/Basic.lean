@@ -98,6 +98,12 @@ theorem mle_congr (n : ℕ) (values : ℕ → E) (z z' : List E)
   apply congrArg (fun x : E ↦ values i.val * x)
   exact Finset.prod_congr rfl fun k _ ↦ congrArg (fun x ↦ eqFactor x (bit i.val k.val)) (h k k.isLt)
 
+/-- Extensions agree when their values agree on the cube. -/
+theorem mle_congr_values (n : ℕ) (f g : ℕ → E) (z : List E) (h : ∀ i < 2 ^ n, f i = g i) :
+    mle n f z = mle n g z := by
+  unfold mle
+  exact Finset.sum_congr rfl fun i _ ↦ by rw [h i i.isLt]
+
 /-- List coordinates of a vector recover its multilinear evaluation. -/
 theorem mle_toList (n : ℕ) (values : ℕ → E) (z : Vector E n) :
     mle n values z.toList = CompPoly.CMlPolynomialEval.evalMle

@@ -89,12 +89,6 @@ def stackClaim (M : ℕ) (b : Fin (S.stackColumns L).length) (z : List E) (value
     Whir.Claim E M :=
   ⟨Whir.eqWeight (S.liftPoint L M b z), value⟩
 
-/-- Extensions agree when their values agree on the cube. -/
-theorem mle_congr_values (n : ℕ) (f g : ℕ → E) (z : List E) (h : ∀ i < 2 ^ n, f i = g i) :
-    mle n f z = mle n g z := by
-  unfold mle
-  exact Finset.sum_congr rfl fun i _ ↦ by rw [h i i.isLt]
-
 /-- A Boolean table's extension is the low-bit-first extension of its numeric values. -/
 theorem whirMle_eq_mle (n : ℕ) (f : Whir.Table E n) (p : Fin n → E) :
     Whir.mle f p = mle n (fun x ↦ if h : x < 2 ^ n then f (Pcs.mask n ⟨x, h⟩) else 0) (List.ofFn p) := by
