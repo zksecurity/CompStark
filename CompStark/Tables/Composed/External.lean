@@ -67,26 +67,27 @@ structure External where
     Pr{let r ← ($ᵗ E)}[¬ rider draws q ∧ rider (draws ++ [r]) q] ≤ overE 1
   /-- Before any draw the rider gives the system's external relation. -/
   external_of_rider : ∀ q, rider [] q → S.external (interpret q)
-  /-- The argument's protocol, after the table sumcheck. -/
-  protocol : TableSumcheck.Output S L k → Protocol
+  /-- The argument's protocol, after the table sumcheck; its shape does not depend on the table's
+  output. -/
+  protocol : Protocol
   /-- Prefix predicates on the stack; the root is the argument's start relation. -/
-  labels : (out : TableSumcheck.Output S L k) → Retained.Labels (Whir.Table K M) (protocol out).tree
+  labels : (out : TableSumcheck.Output S L k) → Retained.Labels (Whir.Table K M) protocol.tree
   /-- The argument's output from a transcript. -/
-  output : (out : TableSumcheck.Output S L k) → (protocol out).tree.ExecutionPath → StackOutput M
+  output : (out : TableSumcheck.Output S L k) → protocol.tree.ExecutionPath → StackOutput M
   /-- The authored endpoint predicate is the output's relation. -/
   endpoint : ∀ out path, Retained.endpoint (labels out) path = (output out path).Holds
   /-- The argument's challenge schedule. -/
   challenges : (out : TableSumcheck.Output S L k) →
-    RoundExtractor.ChallengeSchedule (protocol out).tree (protocol out).roles
+    RoundExtractor.ChallengeSchedule protocol.tree protocol.roles
   /-- The identity extractor is prover-preserving. -/
-  preserving : ∀ out q, (Retained.extractor q (labels out)).IsProverPreserving (protocol out).roles
+  preserving : ∀ out q, (Retained.extractor q (labels out)).IsProverPreserving protocol.roles
   /-- The identity extractor meets the schedule's local bounds. -/
-  bounded : ∀ out q, (Retained.extractor q (labels out)).IsLocallyBounded (protocol out).roles
+  bounded : ∀ out q, (Retained.extractor q (labels out)).IsLocallyBounded protocol.roles
     (challenges out)
   /-- The argument's error. -/
   error : ENNReal
   /-- The schedule's errors add up to at most the argument's error. -/
-  budget : ∀ out, Retained.Budget (protocol out).roles (challenges out) error
+  budget : ∀ out, Retained.Budget protocol.roles (challenges out) error
   /-- The start relation gives the rider on the table's draws and the virtual values. -/
   start_sound : ∀ out q, Retained.input (labels out) q →
     rider out.point.reverse q ∧ VirtualHold S L k out (interpret q)
@@ -103,7 +104,7 @@ def External.none (novirtual : ∀ t, (S.table t).virtual = []) (noexternal : �
     apply le_trans (prEvent_mono _ _ (fun _ ↦ False) fun _ h ↦ h.1 trivial)
     simp only [prEvent_false, zero_le]
   external_of_rider q _ := noexternal _
-  protocol _ := .done
+  protocol := .done
   labels _ := fun _ ↦ True
   output _ _ := ⟨[], true⟩
   endpoint _ _ := by

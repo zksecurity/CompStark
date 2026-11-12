@@ -513,3 +513,4 @@ public import CompStark.Tables.Argument
 public import CompStark.Tables.Stack
 public import CompStark.Tables.Composed.External
 public import CompStark.Tables.Composed.Pool
+public import CompStark.Tables.Composed.Outer
