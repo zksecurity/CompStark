@@ -531,3 +531,4 @@ public import CompStark.Tables.Composed.Keccak.Ring
 public import CompStark.Tables.Composed.Keccak.Checks
 public import CompStark.Tables.Composed.Keccak.Protocol
 public import CompStark.Tables.Composed.Keccak.External
+public import CompStark.Tables.Composed.Keccak.Honest
