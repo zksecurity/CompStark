@@ -208,6 +208,96 @@ theorem interpret_committed (q : Whir.Table K M) (t : Fin S.tables.length) (b c 
         omega)]
     rw [h1, h2]
 
+/-- A row of the Keccak table is below its height. -/
+theorem row_lt (b : Fin (2 ^ (kt.p + 4))) : b.val < 2 ^ L.logHeight kt.table := by
+  rw [kt.height]
+  exact b.isLt
+
+/-- The GKR witness of an interpreted witness is the stack's. -/
+theorem witnessBits_interpret (q : Whir.Table K M) :
+    witnessBits kt.p (kt.interpret q) kt.table kt.slot = kt.bits q := by
+  funext b j z
+  simp only [witnessBits, rowWord, kt.interpret_committed q kt.table b.val _ (kt.slot_committed j), bits]
+
+/-- The outputs of an interpreted witness are the last twelve rounds of its middle lanes. -/
+theorem witnessOutputs_interpret (q : Whir.Table K M) (b : Fin (2 ^ (kt.p + 4))) (l : Fin 25) :
+    witnessOutputs kt.p (kt.interpret q) kt.table kt.output b l =
+      Keccak.Gkr.laneValue (ofK g) (fun z ↦
+        Keccak.Gkr.segmentState (kt.bits q) b 1 12 (by omega) ⟨z.val + 64 * l.val, by omega⟩) := by
+  simp only [witnessOutputs, rowWord]
+  rw [kt.interpret_cell q kt.table b.val (kt.output l) (kt.row_lt b) (kt.output_lt l)]
+  simp only [↓reduceDIte, kt.outputLane_output l]
+  exact ofK_outputWord (kt.bits q) b l
+
+/-- The Keccak-f relation of an interpreted witness is the middle-lane chain of its stack. -/
+theorem relation_interpret_iff (q : Whir.Table K M) :
+    KeccakRelation kt.p (kt.interpret q) kt.table kt.slot kt.output ↔
+      ∀ b j, Keccak.Gkr.segmentState (kt.bits q) b 0 12 (by omega) j =
+        Keccak.Gkr.startState (kt.bits q) b 1 j := by
+  unfold KeccakRelation Keccak.Gkr.InputRelation
+  rw [witnessBits_interpret]
+  exact and_iff_left fun b l ↦ kt.witnessOutputs_interpret q b l
+
+/-- The stack of a witness of the system's shape that satisfies the Keccak-f relation interprets
+back to the witness. -/
+theorem interpret_stack (hM : (S.stackBlocks L).total ≤ 2 ^ M) (w : Witness K S.tables.length)
+    (shaped : S.Shaped L w) (external : S.external w) : kt.interpret (S.stack L M w) = w := by
+  have relation := (kt.external_iff w).mp external
+  have hbits : kt.bits (S.stack L M w) = witnessBits kt.p w kt.table kt.slot := by
+    funext b j z
+    simp only [bits, witnessBits, rowWord]
+    rw [read_cell S L M _ kt.table b.val (kt.slot j) (kt.row_lt b)
+      (List.mem_range.mp (List.mem_filter.mp (kt.slot_committed j)).1),
+      readCell_stack S L M hM w kt.table b.val (kt.slot j) (kt.row_lt b) (kt.slot_committed j)]
+  funext t
+  obtain ⟨hlen, hsize⟩ := shaped t
+  apply List.ext_getElem (by
+    have := (kt.interpret_shaped (S.stack L M w) t).1
+    rw [this, hlen])
+  intro i h1 h2
+  have hi : i < 2 ^ L.logHeight t := hlen ▸ h2
+  have hrow := hsize _ (List.getElem_mem h2)
+  have hrow' := (kt.interpret_shaped (S.stack L M w) t).2 _ (List.getElem_mem h1)
+  apply Array.ext (by rw [hrow, hrow'])
+  intro c hc1 hc2
+  have hc : c < (S.table t).air.width := hrow' ▸ hc1
+  have cell := kt.interpret_cell (S.stack L M w) t i c hi hc
+  rw [List.getD_eq_getElem _ _ h1, Array.getD_eq_getD_getElem?, Array.getElem?_eq_getElem hc1,
+    Option.getD_some] at cell
+  rw [cell]
+  have committed (hv : c ∉ (S.table t).virtual) : S.readCell L M (S.stack L M w) t i c = (w t)[i][c] := by
+    have hcomm : c ∈ S.committedColumns t := List.mem_filter.mpr ⟨List.mem_range.mpr hc, by
+      simp only [Bool.not_eq_eq_eq_not, Bool.not_true, List.contains_eq_mem, decide_eq_false_iff_not]
+      exact hv⟩
+    rw [readCell_stack S L M hM w t i c hi hcomm, List.getD_eq_getElem _ _ h2,
+      Array.getD_eq_getD_getElem?, Array.getElem?_eq_getElem hc2, Option.getD_some]
+  split
+  · rename_i ht
+    subst ht
+    cases hl : kt.outputLane c with
+    | none =>
+      apply committed
+      intro hv
+      obtain ⟨-, l, rfl⟩ := (kt.virtual_iff _ c).mp hv
+      rw [kt.outputLane_output] at hl
+      cases hl
+    | some l =>
+      have hcl : kt.output l = c := by
+        have := List.find?_some hl
+        simpa only [decide_eq_true_eq] using this
+      subst hcl
+      simp only
+      apply ofK_injective
+      rw [ofK_outputWord, hbits]
+      have := relation.2 ⟨i, by rw [← kt.height]; exact hi⟩ l
+      simp only [witnessOutputs, rowWord, List.getD_eq_getElem _ _ h2, Array.getD_eq_getD_getElem?,
+        Array.getElem?_eq_getElem hc2, Option.getD_some] at this
+      exact this.symm
+  · rename_i ht
+    apply committed
+    intro hv
+    exact ht ((kt.virtual_iff t c).mp hv).1
+
 end KeccakTable
 
 end CompStark.Tables.Composed

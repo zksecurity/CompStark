@@ -327,6 +327,28 @@ theorem stackClaim_read_iff (hM : (S.stackBlocks L).total ≤ 2 ^ M) (q : Whir.T
     · exact (map_zero (algebraMap K E)).symm
   rw [he]
 
+/-- Reading a committed cell off the stack of a witness gives the witness's cell. -/
+theorem readCell_stack (hM : (S.stackBlocks L).total ≤ 2 ^ M) (w : Witness K S.tables.length)
+    (t : Fin S.tables.length) (i c : ℕ) (hi : i < 2 ^ L.logHeight t) (hc : c ∈ S.committedColumns t) :
+    S.readCell L M (S.stack L M w) t i c = ((w t).getD i #[]).getD c 0 := by
+  have mem := (S.mem_stackColumns L t c).mpr hc
+  obtain ⟨b, hb⟩ : ∃ b, (S.stackColumns L).finIdxOf? (t, c) = some b := by
+    cases h : (S.stackColumns L).finIdxOf? (t, c) with
+    | none => exact absurd mem (List.finIdxOf?_eq_none_iff.mp h)
+    | some b => exact ⟨b, rfl⟩
+  have hget := (List.finIdxOf?_eq_some_iff.mp hb).1
+  have hsizeb : L.logHeight (S.stackColumns L)[b].1 = L.logHeight t := by rw [hget]
+  have hbound : (S.stackBlocks L).offset b + i < 2 ^ M := by
+    have := ((S.stackBlocks L).offset_add_pow_le_total b).trans hM
+    have h2 : 2 ^ (S.stackBlocks L).size b = 2 ^ L.logHeight t := by
+      change 2 ^ L.logHeight (S.stackColumns L)[b].1 = _
+      rw [hsizeb]
+    omega
+  unfold readCell
+  rw [hb]
+  simp only [hbound, ↓reduceDIte]
+  rw [stack_window S L M hM w b i (by rw [hsizeb]; exact hi) hbound, hget]
+
 /-- With no virtual columns, reading the stack of a witness of the system's shape returns the
 witness. -/
 theorem read_stack (hM : (S.stackBlocks L).total ≤ 2 ^ M) (w : Witness K S.tables.length)
@@ -346,23 +368,7 @@ theorem read_stack (hM : (S.stackBlocks L).total ≤ 2 ^ M) (w : Witness K S.tab
   have hcomm : c ∈ S.committedColumns t := by
     simp only [committedColumns, novirtual, List.contains_nil, Bool.not_false, List.filter_true,
       List.mem_range, hc]
-  have mem := (S.mem_stackColumns L t c).mpr hcomm
-  obtain ⟨b, hb⟩ : ∃ b, (S.stackColumns L).finIdxOf? (t, c) = some b := by
-    cases h : (S.stackColumns L).finIdxOf? (t, c) with
-    | none => exact absurd mem (List.finIdxOf?_eq_none_iff.mp h)
-    | some b => exact ⟨b, rfl⟩
-  have hget := (List.finIdxOf?_eq_some_iff.mp hb).1
-  have hsizeb : L.logHeight (S.stackColumns L)[b].1 = L.logHeight t := by rw [hget]
-  have hbound : (S.stackBlocks L).offset b + i < 2 ^ M := by
-    have := ((S.stackBlocks L).offset_add_pow_le_total b).trans hM
-    have h2 : 2 ^ (S.stackBlocks L).size b = 2 ^ L.logHeight t := by
-      change 2 ^ L.logHeight (S.stackColumns L)[b].1 = _
-      rw [hsizeb]
-    omega
-  unfold readCell
-  rw [hb]
-  simp only [hbound, ↓reduceDIte]
-  rw [stack_window S L M hM w b i (by rw [hsizeb]; exact hi) hbound, hget]
+  rw [readCell_stack S L M hM w t i c hi hcomm]
   simp only [List.getD_eq_getElem _ _ h2, Array.getD_eq_getD_getElem?, Array.getElem?_eq_getElem hc2,
     Option.getD_some]
 
