@@ -502,3 +502,4 @@ public import CompStark.Tables.Bus
 public import CompStark.Tables.Riders
 public import CompStark.Tables.Leaves
 public import CompStark.Tables.BusSound
+public import CompStark.Tables.Decomposition
