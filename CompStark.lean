@@ -545,3 +545,5 @@ public import CompStark.Compiled.Transcript
 public import CompStark.Compiled.Count
 public import CompStark.Tables.Compiled.Transcript
 public import CompStark.Tables.Compiled.Count
+public import CompStark.Compiled.WhirTerminal
+public import CompStark.Tables.Compiled.Soundness
