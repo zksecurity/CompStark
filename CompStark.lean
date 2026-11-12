@@ -487,6 +487,7 @@ public import CompStark.Pcs.ProductionLevels
 public import CompStark.Pcs.Honest
 public import CompStark.Multilinear.GrandProduct
 public import CompStark.Multilinear.GrandProductHonest
+public import CompStark.Multilinear.Coefficients
 public import CompStark.Multilinear.GrandProductDecision
 public import CompStark.Multilinear.GrandProductBadEvents
 public import CompStark.Multilinear.WordGrandProduct
@@ -523,3 +524,5 @@ public import CompStark.Tables.Composed.Honest
 public import CompStark.Tables.Composed.Verifier
 public import CompStark.Tables.Composed.Keccak.Transport
 public import CompStark.Tables.Composed.Keccak.Encoding
+public import CompStark.Tables.Composed.Keccak.Table
+public import CompStark.Tables.Composed.Keccak.Rider

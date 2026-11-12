@@ -72,6 +72,8 @@ structure KeccakTable where
   p : ℕ
   /-- The table's height. -/
   height : L.logHeight table = p + 4
+  /-- The table sumcheck covers the table. -/
+  active : S.Direct L table = false
   /-- The 64 committed slot columns: input lanes, middle lanes, fourteen further columns. -/
   slot : Fin 64 → ℕ
   /-- The 25 virtual output lane columns. -/
@@ -297,6 +299,11 @@ theorem interpret_stack (hM : (S.stackBlocks L).total ≤ 2 ^ M) (w : Witness K 
     apply committed
     intro hv
     exact ht ((kt.virtual_iff t c).mp hv).1
+
+/-- The Keccak table's height is within the table sumcheck's variables. -/
+theorem height_le : kt.p + 4 ≤ TableSumcheck.maxHeight S L := by
+  rw [← kt.height]
+  exact TableSumcheck.height_le_maxHeight S L ⟨kt.table, kt.active⟩
 
 end KeccakTable
 
