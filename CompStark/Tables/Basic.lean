@@ -35,10 +35,10 @@ namespace CompStark.Stark.Expr
 variable {F : Type}
 
 /-- The expression reads only the current row of the trace and of the preprocessed trace. -/
-def rowLocal : Expr F → Bool
+def currentRow : Expr F → Bool
   | cur _ | prepCur _ | const _ => true
   | next _ | prepNext _ | periodic _ | pub _ | isFirstRow | isLastRow | isTransition => false
-  | add a b | sub a b | mul a b => a.rowLocal && b.rowLocal
+  | add a b | sub a b | mul a b => a.currentRow && b.currentRow
 
 end CompStark.Stark.Expr
 
@@ -151,9 +151,9 @@ reads columns inside its widths; its tuples are row-local and its nonzero and vi
 columns of its trace. -/
 def WellFormed : Prop :=
   T.air.lookups.isEmpty = true ∧ T.air.periodic.isEmpty = true ∧ T.air.numPublicValues = 0 ∧
-  (∀ c ∈ T.air.constraints, c.rowLocal = true ∧
+  (∀ c ∈ T.air.constraints, c.currentRow = true ∧
     c.colsBelow T.air.width 0 T.air.preprocessedWidth 0 = true) ∧
-  (∀ I ∈ T.interactions, ∀ e ∈ I.tuple, e.rowLocal = true ∧
+  (∀ I ∈ T.interactions, ∀ e ∈ I.tuple, e.currentRow = true ∧
     e.colsBelow T.air.width 0 T.air.preprocessedWidth 0 = true) ∧
   (∀ c ∈ T.nonzero, c < T.air.width) ∧ (∀ c ∈ T.virtual, c < T.air.width)
 

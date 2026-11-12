@@ -499,3 +499,5 @@ public import CompStark.Tables.Basic
 public import CompStark.Tables.Examples
 public import CompStark.Tables.Fingerprint
 public import CompStark.Tables.Bus
+public import CompStark.Tables.Riders
+public import CompStark.Tables.Leaves

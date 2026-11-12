@@ -192,3 +192,89 @@ theorem balanced_sideProduct {k : ℕ} {width : String → ℕ} (h : S.BusShape 
 end System
 
 end CompStark.Tables
+
+namespace CompStark.Tables.System
+
+open CompStark.Stark CompStark.BinaryFields
+
+variable (S : System K)
+
+/-- Every row and interaction that emits on a side: table, row and interaction. -/
+def emitted (L : Layout S.tables.length) (push : Bool) :
+    Multiset (Fin S.tables.length × ℕ × Interaction K) :=
+  ((List.finRange S.tables.length).flatMap fun t ↦ (List.range (L.executed t)).flatMap fun i ↦
+    ((S.table t).interactions.filter (·.push == push)).map fun I ↦ (t, i, I) : List _)
+
+/-- The tuple an emission carries. -/
+def emittedTuple (L : Layout S.tables.length) (w : Witness K S.tables.length)
+    (x : Fin S.tables.length × ℕ × Interaction K) : List K :=
+  x.2.2.tuple.map (Expr.eval (S.env L w x.1 x.2.1))
+
+/-- A bus's tuples are the tuples of the emissions on it. -/
+theorem tuples_eq_emitted (L : Layout S.tables.length) (w : Witness K S.tables.length)
+    (b : String) (push : Bool) :
+    S.tuples L w b push = ((S.emitted L push).filter (·.2.2.bus = b)).map (S.emittedTuple L w) := by
+  simp only [tuples, emitted, tableTuples, Multiset.filter_coe, Multiset.map_coe,
+    List.filter_flatMap, List.map_flatMap, List.filter_map, List.map_map, List.map_filter]
+  congr 1
+  apply List.flatMap_congr
+  intro t _
+  apply List.flatMap_congr
+  intro i _
+  rw [List.filter_filter]
+  simp only [Function.comp_def, emittedTuple, Bool.and_comm, decide_eq_true_eq, beq_iff_eq]
+  rfl
+
+/-- Every emission's bus is a bus of the system. -/
+theorem emitted_bus (L : Layout S.tables.length) (push : Bool) :
+    ∀ x ∈ S.emitted L push, x.2.2.bus ∈ S.buses := by
+  intro x hx
+  simp only [emitted, Multiset.mem_coe, List.mem_flatMap, List.mem_finRange, true_and,
+    List.mem_range, List.mem_map, List.mem_filter] at hx
+  obtain ⟨t, i, -, I, ⟨hI, -⟩, rfl⟩ := hx
+  exact List.mem_dedup.mpr (List.mem_flatMap.mpr
+    ⟨S.table t, List.getElem_mem _, List.mem_map.mpr ⟨I, hI, rfl⟩⟩)
+
+/-- Splitting a multiset by a key over a list of all keys, each once, recovers it. -/
+theorem sum_filter_key {α β : Type} [DecidableEq β] (B : List β) (hB : B.Nodup) (key : α → β)
+    (M : Multiset α) (hM : ∀ x ∈ M, key x ∈ B) :
+    (B.map fun b ↦ M.filter (key · = b)).sum = M := by
+  induction M using Multiset.induction_on with
+  | empty => simp only [Multiset.filter_zero, List.map_const', List.sum_replicate, nsmul_zero]
+  | cons a M ih =>
+    have split : ∀ b ∈ B, (a ::ₘ M).filter (key · = b) =
+        (if key a = b then {a} else 0) + M.filter (key · = b) := by
+      intro b _
+      by_cases h : key a = b
+      · simp only [Multiset.filter_cons, h, ↓reduceIte, Multiset.singleton_add]
+      · simp only [Multiset.filter_cons, h, ↓reduceIte, zero_add]
+    rw [List.map_congr_left split, List.sum_map_add, ih fun x hx ↦ hM x (Multiset.mem_cons_of_mem hx)]
+    have pick : (B.map fun b ↦ if key a = b then ({a} : Multiset α) else 0).sum = {a} := by
+      exact (congrArg List.sum (List.map_congr_left fun b _ ↦
+        if_congr ⟨Eq.symm, Eq.symm⟩ rfl rfl)).trans
+        (sum_select B hB (key a) (hM a (Multiset.mem_cons_self a M)) ({a} : Multiset α))
+    rw [pick, Multiset.singleton_add]
+
+/-- The encoded pushes or pulls are the encodings of all emissions. -/
+theorem encoded_eq_emitted (k : ℕ) (L : Layout S.tables.length) (w : Witness K S.tables.length)
+    (push : Bool) :
+    S.encoded k L w push = (S.emitted L push).map fun x ↦
+      encode k (S.busIndex x.2.2.bus) (S.emittedTuple L w x) := by
+  unfold encoded
+  have each : ∀ b ∈ S.buses, (S.tuples L w b push).map (encode k (S.busIndex b)) =
+      ((S.emitted L push).filter (·.2.2.bus = b)).map fun x ↦
+        encode k (S.busIndex x.2.2.bus) (S.emittedTuple L w x) := by
+    intro b _
+    rw [tuples_eq_emitted, Multiset.map_map]
+    apply Multiset.map_congr rfl
+    intro x hx
+    rw [(Multiset.mem_filter.mp hx).2]
+    rfl
+  rw [List.map_congr_left each]
+  conv_rhs => rw [← sum_filter_key S.buses (List.nodup_dedup _) (·.2.2.bus) (S.emitted L push)
+    (S.emitted_bus L push)]
+  induction S.buses with
+  | nil => simp only [List.map_nil, List.sum_nil, Multiset.map_zero]
+  | cons b B ih => simp only [List.map_cons, List.sum_cons, Multiset.map_add, ih]
+
+end CompStark.Tables.System
