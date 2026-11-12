@@ -489,3 +489,9 @@ public import CompStark.Multilinear.GrandProduct
 public import CompStark.Multilinear.GrandProductDecision
 public import CompStark.Multilinear.GrandProductBadEvents
 public import CompStark.Multilinear.WordGrandProduct
+public import CompStark.Compiled.ChallengeSnapshot
+public import CompStark.Compiled.FreshOracleLog
+public import CompStark.Compiled.FreshSnapshot
+public import CompStark.Compiled.MerkleTrace
+public import CompStark.Keccak.Commit.Codec
+public import CompStark.Keccak.Commit.MerkleCodec

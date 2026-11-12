@@ -234,5 +234,43 @@ theorem digestScalars_injective : Function.Injective digestScalars := by
     getElem!_pos _ i (by simpa only [ByteArray.size, Vector.size_toArray] using hi)] at eq
   exact eq
 
+/-- Index a concatenation of blocks of one fixed width. -/
+theorem flatMap_getD {α β : Type} (encode : α → List β) (width : ℕ)
+    (length : ∀ a, (encode a).length = width) (xs : List α) (i : Fin xs.length)
+    (j : Fin width) (zero : β) :
+    (xs.flatMap encode).getD (width * i.val + j.val) zero = (encode xs[i.val]).getD j.val zero := by
+  induction xs with
+  | nil => exact Fin.elim0 i
+  | cons a xs ih =>
+      refine Fin.cases ?_ (fun i => ?_) i
+      · simp only [Fin.val_zero, Nat.mul_zero, Nat.zero_add, List.getElem_cons_zero,
+          List.flatMap_cons, List.getD_eq_getElem?_getD]
+        rw [List.getElem?_append_left (by simpa only [length a] using j.isLt)]
+      · simp only [Fin.val_succ, List.getElem_cons_succ, List.flatMap_cons,
+          List.getD_eq_getElem?_getD]
+        rw [List.getElem?_append_right (by rw [length a]; exact Nat.le_add_right_of_le (Nat.le_mul_of_pos_right width (Nat.succ_pos _))), length a]
+        have index : width * (i.val + 1) + j.val - width = width * i.val + j.val := by rw [Nat.mul_add, Nat.mul_one]; omega
+        rw [index]
+        exact ih i
+
+/-- Little-endian reads recover every serialized field word. -/
+theorem readWord_leafBytes (xs : List K) (i : Fin xs.length) :
+    readWord (leafBytes xs) (8 * i.val) = laneWord xs[i.val] := by
+  apply word_eq_of_bytes
+  intro j
+  rw [readWord_byte]
+  have byte := flatMap_getD wordBytes 8 wordBytes_length xs i j 0
+  have bound : 8 * i.val + j.val < (leafBytes xs).size := by
+    simp only [leafBytes, ByteArray.size, List.size_toArray, List.length_flatMap,
+      wordBytes_length, List.map_const', List.sum_replicate, smul_eq_mul]
+    omega
+  simp only [leafBytes, ByteArray.size] at bound ⊢
+  rw [getElem!_pos _ (8 * i.val + j.val) bound]
+  change ((xs.flatMap wordBytes).toArray)[8 * i.val + j.val] = _
+  rw [List.getElem_toArray]
+  simpa only [List.getD_eq_getElem?_getD, List.getElem?_eq_getElem (by
+      simpa only [List.size_toArray] using bound), Option.getD_some, wordBytes,
+    List.getElem?_map, List.getElem?_range j.isLt, Option.map_some] using byte
+
 end
 end CompStark.Keccak.Commit
