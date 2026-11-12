@@ -42,6 +42,8 @@ structure Setup (S : System K) (L : Layout S.tables.length) (k M : ℕ) where
   fits : (S.stackBlocks L).total ≤ 2 ^ M
   /-- The bus opens committed columns only. -/
   boundary : ∀ p ∈ S.boundaryColumns L, p.2 ∈ S.committedColumns p.1
+  /-- The table sumcheck's round degree leaves room for distinct interpolation points. -/
+  degree_le : TableSumcheck.degree S L + 2 ≤ 2 ^ 64 - 1
   /-- The argument for the virtual columns. -/
   external : External S L k M
 
@@ -481,5 +483,47 @@ theorem outer_input_iff (q : Whir.Table K M) :
   change ListLift.input (pullLabels setup.external.interpret (setup.external.rider []) (Bus.labels S L k)) q ↔ _
   rw [input_pullLabels]
   exact Iff.rfl
+
+/-- The table sumcheck's output after the bus's. -/
+def tableOutput : Option (Bus.Output S L k) → (TableSumcheck.protocol S L).tree.ExecutionPath →
+    Option (TableSumcheck.Output S L k)
+  | none, _ => none
+  | some o, path => TableSumcheck.outputClaim S L k o path
+
+/-- The table phase's parser is the table sumcheck's after the bus's output. -/
+theorem tableReduction_output (setup : Setup S L k M) (bus : Option (Bus.Output S L k))
+    (path : (TableSumcheck.protocol S L).tree.ExecutionPath) :
+    (tableReduction setup bus).output path = tableOutput bus path := by
+  cases bus <;> rfl
+
+/-- The external argument's output after the table sumcheck's. -/
+def externalOutput (setup : Setup S L k M) : Option (TableSumcheck.Output S L k) →
+    setup.external.protocol.tree.ExecutionPath → StackOutput M
+  | none, _ => ⟨[], false⟩
+  | some o, path => setup.external.output o path
+
+/-- The external phase's parser is the argument's after the table sumcheck's output. -/
+theorem externalReduction_output (setup : Setup S L k M) (table : Option (TableSumcheck.Output S L k))
+    (path : setup.external.protocol.tree.ExecutionPath) :
+    (externalReduction setup table).output path = externalOutput setup table path := by
+  cases table <;> rfl
+
+/-- The outer endpoint parsed from a transcript: the bus's, then the table sumcheck's at it, then
+the external argument's at that. -/
+def outerOutput (setup : Setup S L k M) (path : (outerProtocol setup).tree.ExecutionPath) :
+    (Option (Bus.Output S L k) × Option (TableSumcheck.Output S L k)) × StackOutput M :=
+  let parts := splitPath (appendProtocol (Bus.protocol S L k) (TableSumcheck.protocol S L))
+    setup.external.protocol path
+  let first := splitPath (Bus.protocol S L k) (TableSumcheck.protocol S L) parts.1
+  let bus := Bus.outputClaim S L k first.1
+  let table := tableOutput bus first.2
+  ((bus, table), externalOutput setup table parts.2)
+
+/-- The direct parser is the outer reductions' parser. -/
+theorem outerOutput_eq (setup : Setup S L k M) (path : (outerProtocol setup).tree.ExecutionPath) :
+    outerOutput setup path = (outerReduction setup).output path := by
+  unfold outerReduction
+  rw [Reduction.then_output, Reduction.then_output, externalReduction_output, tableReduction_output]
+  rfl
 
 end CompStark.Tables.Composed

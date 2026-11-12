@@ -43,7 +43,7 @@ structure Coins where
 def rejectedBus : Bus.Output S L k := ⟨0, 0, [], 0, 0, false⟩
 
 /-- The honest outer transcript. -/
-noncomputable def honestOuterPath (w : Witness K S.tables.length) (coins : Coins params) :
+def honestOuterPath (w : Witness K S.tables.length) (coins : Coins params) :
     (outerProtocol params.toSetup).tree.ExecutionPath :=
   let busPath := honestBusPath S L k w coins.bus
   let bus := (Bus.outputClaim S L k busPath).getD rejectedBus
@@ -53,11 +53,11 @@ noncomputable def honestOuterPath (w : Witness K S.tables.length) (coins : Coins
     (params.external.honest table (S.stack L M w) coins.external)
 
 /-- The honest transcript of the composed system. -/
-noncomputable def honestPath (w : Witness K S.tables.length) (coins : Coins params) :
+def honestPath (w : Witness K S.tables.length) (coins : Coins params) :
     (protocol params).tree.ExecutionPath :=
   let outer := honestOuterPath params w coins
   let opening := Pcs.Honest.prove params.schedule (S.stack L M w)
-    (openingClaims ((outerReduction params.toSetup).output outer)) coins.opening
+    (openingClaims (outerOutput params.toSetup outer)) coins.opening
   ⟨opening.initial, joinPath _ _ outer opening.transcript⟩
 
 /-- Completeness: for every satisfying witness whose padding rows are the padding row, the
@@ -68,7 +68,7 @@ theorem completeness (w : Witness K S.tables.length) (hsat : S.Satisfied L w) (p
   have hext := hsat.2.2.2.2
   have hinterp := params.external.interpret_stack w shaped hext
   obtain ⟨o, hbus, hterm⟩ := honestBus_terminal params.wellFormed params.busShape w hsat padded coins.bus
-  obtain ⟨o', htable, hterm'⟩ := honestTable_terminal params.wellFormed o w hsat hterm coins.table
+  obtain ⟨o', htable, hterm'⟩ := honestTable_terminal params.wellFormed params.degree_le o w hsat hterm coins.table
   set q := S.stack L M w
   set busPath := honestBusPath S L k w coins.bus
   set tablePath := honestTablePath S L k o w coins.table
@@ -105,9 +105,9 @@ theorem completeness (w : Witness K S.tables.length) (hsat : S.Satisfied L w) (p
     · exact ⟨hboundary, fun t i _ ↦ hvalues t i⟩
     · rw [← hinterp]
       exact agrees_interpret params.toSetup q
-  have hclaims : ∀ c ∈ openingClaims ((outerReduction params.toSetup).output
+  have hclaims : ∀ c ∈ openingClaims (outerOutput params.toSetup
       (honestOuterPath params w coins)), c.Holds (fun u ↦ ofK (q u)) := by
-    rw [hout]
+    rw [outerOutput_eq, hout]
     intro c hc
     rcases List.mem_append.mp hc with h | h
     · exact hpool c h
@@ -116,8 +116,9 @@ theorem completeness (w : Witness K S.tables.length) (hsat : S.Satisfied L w) (p
   dsimp only
   rw [splitPath_joinPath]
   dsimp only
+  rw [← outerOutput_eq]
   refine ⟨?_, Pcs.Honest.prove_accepts params.schedule q _ coins.opening hclaims⟩
-  rw [hout]
+  rw [outerOutput_eq, hout]
   exact ⟨hactive, hpoint, eactive⟩
 
 end CompStark.Tables.Composed

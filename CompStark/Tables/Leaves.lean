@@ -56,14 +56,14 @@ variable (k : ℕ) (w : Witness K S.tables.length) (α : Fin k → E) (β : E)
 
 /-- A block's form on a row: `β` minus the fingerprint of the encoded tuple, or the column's
 value. -/
-noncomputable def blockForm (b : Block S.tables.length) (env : Expr.Env K K) (row : ℕ → K) : E :=
+def blockForm (b : Block S.tables.length) (env : Expr.Env K K) (row : ℕ → K) : E :=
   match b with
   | .interaction _ I => β - fingerprint k α (encode k (S.busIndex I.bus) (I.tuple.map (Expr.eval env)))
   | .nonzero _ c => ofK (row c)
 
 /-- The leaf of row `i` of a block: its form, corrected on padding rows by the form of the public
 padding row. -/
-noncomputable def blockLeaf (b : Block S.tables.length) (i : ℕ) : E :=
+def blockLeaf (b : Block S.tables.length) (i : ℕ) : E :=
   let t := Block.table S b
   S.blockForm k α β b (S.env L w t i) (fun c ↦ ((w t).getD i #[]).getD c 0) +
     if L.executed t ≤ i then
@@ -94,13 +94,13 @@ theorem blockLeaf_executed (b : Block S.tables.length) (i : ℕ) (hi : i < L.exe
   simp only [blockLeaf, show ¬ L.executed (Block.table S b) ≤ i by omega, ↓reduceIte, add_zero]
 
 /-- Stacked blocks, then ones. -/
-noncomputable def stackLeaves : List (Block S.tables.length) → ℕ → E
+def stackLeaves : List (Block S.tables.length) → ℕ → E
   | [], _ => 1
   | b :: rest, i => if i < 2 ^ Block.height S L b then S.blockLeaf L k w α β b i
       else stackLeaves rest (i - 2 ^ Block.height S L b)
 
 /-- The three sides' leaves, as the grand-product GKR reads them. -/
-noncomputable def leaves (side : Fin 3) (i : ℕ) : E :=
+def leaves (side : Fin 3) (i : ℕ) : E :=
   S.stackLeaves L k w α β (S.sortedBlocks L side) i
 
 /-- A block's padding leaves are one. -/

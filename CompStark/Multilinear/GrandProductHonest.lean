@@ -5,6 +5,7 @@ Released under Apache 2.0 license as described in the file LICENSE.
 module
 
 public import CompStark.Multilinear.GrandProduct
+public import CompStark.Multilinear.Coefficients
 
 /-! The honest prover of the grand-product GKR, computed from coefficient lists, and its
 completeness: against every sequence of verifier coins the parsed result is the true final claim,
@@ -20,140 +21,6 @@ namespace CompStark.Multilinear.GrandProduct
 
 open CompStark.BinaryFields
 open Interaction Interaction.Oracle
-
-/-- A coefficient list's value at a point, constant term first. -/
-def evalCoeffs (p : List E) (x : E) : E := p.foldr (fun c acc ↦ c + x * acc) 0
-
-/-- The sum of two coefficient lists. -/
-def addCoeffs : List E → List E → List E
-  | [], q => q
-  | a :: p, [] => a :: p
-  | a :: p, b :: q => (a + b) :: addCoeffs p q
-
-/-- A coefficient list scaled by a constant. -/
-def scaleCoeffs (c : E) (p : List E) : List E := p.map (c * ·)
-
-/-- The product of two coefficient lists. -/
-def mulCoeffs : List E → List E → List E
-  | [], _ => []
-  | a :: p, q => addCoeffs (scaleCoeffs a q) (0 :: mulCoeffs p q)
-
-/-- Sums of coefficient lists evaluate to sums. -/
-theorem evalCoeffs_add (p q : List E) (x : E) :
-    evalCoeffs (addCoeffs p q) x = evalCoeffs p x + evalCoeffs q x := by
-  induction p generalizing q with
-  | nil => simp only [addCoeffs, evalCoeffs, List.foldr_nil, zero_add]
-  | cons a p ih =>
-    cases q with
-    | nil => simp only [addCoeffs, evalCoeffs, List.foldr_nil, add_zero]
-    | cons b q =>
-      simp only [addCoeffs, evalCoeffs, List.foldr_cons] at ih ⊢
-      rw [ih]
-      ring
-
-/-- Scaled coefficient lists evaluate to scaled values. -/
-theorem evalCoeffs_scale (c : E) (p : List E) (x : E) :
-    evalCoeffs (scaleCoeffs c p) x = c * evalCoeffs p x := by
-  induction p with
-  | nil => simp only [scaleCoeffs, evalCoeffs, List.map_nil, List.foldr_nil, mul_zero]
-  | cons a p ih =>
-    simp only [scaleCoeffs, evalCoeffs, List.map_cons, List.foldr_cons] at ih ⊢
-    rw [ih]
-    ring
-
-/-- Products of coefficient lists evaluate to products. -/
-theorem evalCoeffs_mul (p q : List E) (x : E) :
-    evalCoeffs (mulCoeffs p q) x = evalCoeffs p x * evalCoeffs q x := by
-  induction p with
-  | nil => simp only [mulCoeffs, evalCoeffs, List.foldr_nil, zero_mul]
-  | cons a p ih =>
-    simp only [mulCoeffs, evalCoeffs_add, evalCoeffs_scale]
-    simp only [evalCoeffs, List.foldr_cons] at ih ⊢
-    rw [ih]
-    ring
-
-/-- A sum has the length of its longer operand. -/
-theorem length_addCoeffs (p q : List E) : (addCoeffs p q).length = max p.length q.length := by
-  induction p generalizing q with
-  | nil => simp only [addCoeffs, List.length_nil, Nat.zero_max]
-  | cons a p ih =>
-    cases q with
-    | nil => simp only [addCoeffs, List.length_cons, List.length_nil, Nat.max_zero]
-    | cons b q => simp only [addCoeffs, List.length_cons, ih, Nat.succ_max_succ]
-
-/-- A product with a nonempty list has at most one less than the sum of the lengths. -/
-theorem length_mulCoeffs_le (p q : List E) (hq : q ≠ []) :
-    (mulCoeffs p q).length ≤ p.length + q.length - 1 := by
-  have hq' : 0 < q.length := List.length_pos_iff.mpr hq
-  induction p with
-  | nil => simp only [mulCoeffs, List.length_nil, Nat.zero_le]
-  | cons a p ih =>
-    simp only [mulCoeffs, length_addCoeffs, scaleCoeffs, List.length_map, List.length_cons]
-    omega
-
-/-- A sum of coefficient lists over a list of indices. -/
-def sumCoeffs {ι : Type} (l : List ι) (f : ι → List E) : List E :=
-  l.foldr (fun i acc ↦ addCoeffs (f i) acc) []
-
-/-- A product of coefficient lists over a list of indices. -/
-def prodCoeffs {ι : Type} (l : List ι) (f : ι → List E) : List E :=
-  l.foldr (fun i acc ↦ mulCoeffs (f i) acc) [1]
-
-/-- Sums over an index list evaluate to sums. -/
-theorem evalCoeffs_sum {ι : Type} (l : List ι) (f : ι → List E) (x : E) :
-    evalCoeffs (sumCoeffs l f) x = (l.map fun i ↦ evalCoeffs (f i) x).sum := by
-  induction l with
-  | nil => simp only [sumCoeffs, evalCoeffs, List.foldr_nil, List.map_nil, List.sum_nil]
-  | cons i l ih =>
-    simp only [sumCoeffs, List.foldr_cons, evalCoeffs_add, List.map_cons, List.sum_cons] at ih ⊢
-    rw [ih]
-
-/-- Products over an index list evaluate to products. -/
-theorem evalCoeffs_prod {ι : Type} (l : List ι) (f : ι → List E) (x : E) :
-    evalCoeffs (prodCoeffs l f) x = (l.map fun i ↦ evalCoeffs (f i) x).prod := by
-  induction l with
-  | nil =>
-    simp only [prodCoeffs, evalCoeffs, List.foldr_nil, List.foldr_cons, mul_zero, add_zero,
-      List.map_nil, List.prod_nil]
-  | cons i l ih =>
-    simp only [prodCoeffs, List.foldr_cons, evalCoeffs_mul, List.map_cons, List.prod_cons] at ih ⊢
-    rw [ih]
-
-/-- A sum's length is at most the bound of its terms. -/
-theorem length_sumCoeffs_le {ι : Type} (l : List ι) (f : ι → List E) (d : ℕ)
-    (h : ∀ i ∈ l, (f i).length ≤ d) : (sumCoeffs l f).length ≤ d := by
-  induction l with
-  | nil => simp only [sumCoeffs, List.foldr_nil, List.length_nil, Nat.zero_le]
-  | cons i l ih =>
-    simp only [sumCoeffs, List.foldr_cons, length_addCoeffs] at ih ⊢
-    exact max_le (h i (List.mem_cons_self ..)) (ih fun j hj ↦ h j (List.mem_cons_of_mem _ hj))
-
-/-- A product with a nonempty first factor is nonempty. -/
-theorem mulCoeffs_ne_nil (p q : List E) (hp : p ≠ []) : mulCoeffs p q ≠ [] := by
-  cases p with
-  | nil => exact absurd rfl hp
-  | cons a p =>
-    intro h
-    have := congrArg List.length h
-    simp only [mulCoeffs, length_addCoeffs, List.length_cons, List.length_nil] at this
-    omega
-
-/-- A product of nonempty affine factors is nonempty with at most one more coefficient than
-factors. -/
-theorem length_prodCoeffs_le {ι : Type} (l : List ι) (f : ι → List E)
-    (h : ∀ i ∈ l, (f i).length ≤ 2 ∧ f i ≠ []) :
-    (prodCoeffs l f).length ≤ l.length + 1 ∧ prodCoeffs l f ≠ [] := by
-  induction l with
-  | nil => simp only [prodCoeffs, List.foldr_nil, List.length_cons, List.length_nil, le_refl,
-      ne_eq, List.cons_ne_nil, not_false_eq_true, and_self]
-  | cons i l ih =>
-    obtain ⟨hl, hne⟩ := ih fun j hj ↦ h j (List.mem_cons_of_mem _ hj)
-    obtain ⟨hf, hfne⟩ := h i (List.mem_cons_self ..)
-    simp only [prodCoeffs, List.foldr_cons] at hl hne ⊢
-    refine ⟨?_, mulCoeffs_ne_nil _ _ hfne⟩
-    have := length_mulCoeffs_le (f i) _ hne
-    simp only [List.length_cons]
-    omega
 
 /-- The affine interpolation of two endpoint values as coefficients. -/
 def affineCoeffs (a b : E) : List E := [a, b - a]

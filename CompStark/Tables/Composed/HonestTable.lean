@@ -33,25 +33,42 @@ abbrev TableCoins := E × (Fin (TableSumcheck.maxHeight S L) → E)
 def honestValues (w : Witness K S.tables.length) (z : List E) : TableSumcheck.Values S L :=
   fun t i ↦ S.column L w t.1 (TableSumcheck.transmitted S t.1)[i] (z.take (L.logHeight t.1))
 
-/-- The honest round message after the draws `χ`: the compressed projected round polynomial of
-the summand. -/
-noncomputable def honestTableMessage (o : Bus.Output S L k) (ξ : E) (w : Witness K S.tables.length)
+/-- The round function after the draws `χ`: the summand at `x` next, summed over the remaining
+Boolean coordinates. -/
+def roundValue (o : Bus.Output S L k) (ξ : E) (w : Witness K S.tables.length) (χ : List E) (x : E) : E :=
+  ∑ i : Fin (2 ^ (TableSumcheck.maxHeight S L - (χ ++ [x]).length)),
+    TableSumcheck.summandValue S L k o ξ w
+      ((χ ++ [x]) ++ List.ofFn (fun a : Fin (TableSumcheck.maxHeight S L - (χ ++ [x]).length) ↦
+        bit i.val a.val)).reverse
+
+/-- The interpolation points: powers of the base field's generator. -/
+def interpolationPoint (n : ℕ) (j : Fin n) : E := ofK (gpow j.val)
+
+/-- Below the generator's order, the interpolation points are distinct. -/
+theorem interpolationPoint_injective (n : ℕ) (hn : n ≤ 2 ^ 64 - 1) :
+    Function.Injective (interpolationPoint n) := by
+  intro a b h
+  apply Fin.ext
+  apply gpow_injOn (Set.mem_Iio.mpr (by omega)) (Set.mem_Iio.mpr (by omega))
+  exact ofK_injective h
+
+/-- The honest round message after the draws `χ`: the round function interpolated at
+`degree + 2` points, compressed. -/
+def honestTableMessage (o : Bus.Output S L k) (ξ : E) (w : Witness K S.tables.length)
     (χ : List E) : TableSumcheck.Message S L :=
-  if h : χ.length < TableSumcheck.maxHeight S L then
-    Sumcheck.compress (Sumcheck.Spec.SingleRound.projectedRoundPolynomial E (TableSumcheck.maxHeight S L)
-      (TableSumcheck.degree S L + 1) TableSumcheck.booleanDomain ⟨χ.length, h⟩
-      (fun a ↦ χ.getD a.val 0) (TableSumcheck.summand S L k o ξ w))
-  else (0, 0)
+  let p := lagrangeCoeffs (interpolationPoint (TableSumcheck.degree S L + 2))
+    (fun j ↦ roundValue S L k o ξ w χ (interpolationPoint (TableSumcheck.degree S L + 2) j))
+  (p.getD 0 0, fun i ↦ p.getD (i.val + 2) 0)
 
 /-- The honest rounds after the draws `χ`, then the true values at the final point. -/
-noncomputable def honestTableRounds (o : Bus.Output S L k) (ξ : E) (w : Witness K S.tables.length) :
+def honestTableRounds (o : Bus.Output S L k) (ξ : E) (w : Witness K S.tables.length) :
     (n : ℕ) → List E → (Fin n → E) → (TableSumcheck.roundsProtocol S L n).tree.ExecutionPath
   | 0, χ, _ => ⟨honestValues S L w χ.reverse, PUnit.unit⟩
   | n + 1, χ, rs => ⟨honestTableMessage S L k o ξ w χ, some (rs 0),
       honestTableRounds o ξ w n (χ ++ [rs 0]) (Fin.tail rs)⟩
 
 /-- The honest table transcript. -/
-noncomputable def honestTablePath (o : Bus.Output S L k) (w : Witness K S.tables.length)
+def honestTablePath (o : Bus.Output S L k) (w : Witness K S.tables.length)
     (coins : TableCoins S L) : (TableSumcheck.protocol S L).tree.ExecutionPath :=
   ⟨coins.1, honestTableRounds S L k o coins.1 w (TableSumcheck.maxHeight S L) [] coins.2⟩
 
@@ -67,9 +84,60 @@ theorem booleanDomain_sum (f : E → E) :
 
 variable {S L k}
 
+/-- The projected round polynomial is the round function. -/
+theorem projected_eval (hT : ∀ t, (S.table t).WellFormed) (o : Bus.Output S L k) (ξ : E)
+    (w : Witness K S.tables.length) (χ : List E) (hlen : χ.length < TableSumcheck.maxHeight S L)
+    (x : E) :
+    (Sumcheck.Spec.SingleRound.projectedRoundPolynomial E (TableSumcheck.maxHeight S L)
+      (TableSumcheck.degree S L + 1) TableSumcheck.booleanDomain ⟨χ.length, hlen⟩
+      (fun a ↦ χ.getD a.val 0) (TableSumcheck.summand S L k o ξ w)).val.eval x =
+        roundValue S L k o ξ w χ x := by
+  set i : Fin (TableSumcheck.maxHeight S L) := ⟨χ.length, hlen⟩
+  have hp : List.ofFn (Fin.snoc (fun a : Fin i.castSucc ↦ χ.getD a.val 0) x) = χ ++ [x] := by
+    rw [List.ofFn_succ_last]
+    simp only [Fin.snoc_castSucc, Fin.snoc_last]
+    exact congrArg (· ++ [x]) (TableSumcheck.ofFn_getD χ)
+  have hred : TableSumcheck.reduced S L k o ξ
+      (List.ofFn (Fin.snoc (fun a : Fin i.castSucc ↦ χ.getD a.val 0) x)) (roundValue S L k o ξ w χ x) w := by
+    rw [hp]
+    rfl
+  have hc := (TableSumcheck.reduced_core_ofFn_iff S L k hT o ξ w i.succ
+    ⟨roundValue S L k o ξ w χ x, Fin.snoc (fun a ↦ χ.getD a.val 0) x⟩).mp hred
+  exact (Sumcheck.Spec.SingleRound.relationRound_output_iff E _ _ TableSumcheck.booleanDomain i
+    ⟨0, fun a ↦ χ.getD a.val 0⟩ (TableSumcheck.summand S L k o ξ w) x _).mp hc
+
+/-- The interpolated message is the compressed projected round polynomial. -/
+theorem honestTableMessage_eq (hT : ∀ t, (S.table t).WellFormed)
+    (hdeg : TableSumcheck.degree S L + 2 ≤ 2 ^ 64 - 1) (o : Bus.Output S L k) (ξ : E)
+    (w : Witness K S.tables.length) (χ : List E) (hlen : χ.length < TableSumcheck.maxHeight S L) :
+    honestTableMessage S L k o ξ w χ =
+      Sumcheck.compress (Sumcheck.Spec.SingleRound.projectedRoundPolynomial E (TableSumcheck.maxHeight S L)
+        (TableSumcheck.degree S L + 1) TableSumcheck.booleanDomain ⟨χ.length, hlen⟩
+        (fun a ↦ χ.getD a.val 0) (TableSumcheck.summand S L k o ξ w)) := by
+  set q := Sumcheck.Spec.SingleRound.projectedRoundPolynomial E (TableSumcheck.maxHeight S L)
+    (TableSumcheck.degree S L + 1) TableSumcheck.booleanDomain ⟨χ.length, hlen⟩
+    (fun a ↦ χ.getD a.val 0) (TableSumcheck.summand S L k o ξ w)
+  have hq : q.val.natDegree < TableSumcheck.degree S L + 2 := by
+    have := Polynomial.natDegree_le_iff_degree_le.mpr (Polynomial.mem_degreeLE.mp q.property)
+    omega
+  have hvals : (fun j ↦ roundValue S L k o ξ w χ (interpolationPoint (TableSumcheck.degree S L + 2) j)) =
+      fun j ↦ q.val.eval (interpolationPoint (TableSumcheck.degree S L + 2) j) := by
+    funext j
+    exact (projected_eval hT o ξ w χ hlen _).symm
+  have hpoly := coeffsPoly_lagrange (interpolationPoint (TableSumcheck.degree S L + 2))
+    (interpolationPoint_injective _ hdeg) q.val hq
+  have hc (i : ℕ) : (lagrangeCoeffs (interpolationPoint (TableSumcheck.degree S L + 2))
+      fun j ↦ q.val.eval (interpolationPoint (TableSumcheck.degree S L + 2) j)).getD i 0 = q.val.coeff i := by
+    rw [← coeffsPoly_coeff, hpoly]
+  unfold honestTableMessage
+  rw [hvals]
+  simp only [Sumcheck.compress, hc]
+  rfl
+
 /-- An honest round keeps the running claim true: the message decodes at the claim to the next
 claim. -/
-theorem honest_round (hT : ∀ t, (S.table t).WellFormed) (o : Bus.Output S L k) (ξ : E)
+theorem honest_round (hT : ∀ t, (S.table t).WellFormed)
+    (hdeg : TableSumcheck.degree S L + 2 ≤ 2 ^ 64 - 1) (o : Bus.Output S L k) (ξ : E)
     (w : Witness K S.tables.length) (χ : List E) (current : E)
     (hlen : χ.length < TableSumcheck.maxHeight S L)
     (known : TableSumcheck.reduced S L k o ξ χ current w) (r : E) :
@@ -87,9 +155,8 @@ theorem honest_round (hT : ∀ t, (S.table t).WellFormed) (o : Bus.Output S L k)
   have hsum := Sumcheck.Spec.SingleRound.projected_sum_of_relationRound E _ _ TableSumcheck.booleanDomain
     i _ _ hrel
   rw [booleanDomain_sum] at hsum
-  have hmsg : honestTableMessage S L k o ξ w χ = Sumcheck.compress q := by
-    simp only [honestTableMessage, hlen, ↓reduceDIte]
-    rfl
+  have hmsg : honestTableMessage S L k o ξ w χ = Sumcheck.compress q :=
+    honestTableMessage_eq hT hdeg o ξ w χ hlen
   have heval : (TableSumcheck.messageOps S L).evaluate current (honestTableMessage S L k o ξ w χ) r =
       q.val.eval r := by
     rw [hmsg]
@@ -111,7 +178,8 @@ theorem honest_round (hT : ∀ t, (S.table t).WellFormed) (o : Bus.Output S L k)
   exact hc
 
 /-- Honest rounds from a true running claim reach a true endpoint with every check passed. -/
-theorem roundsOutput_honest (hT : ∀ t, (S.table t).WellFormed) (o : Bus.Output S L k) (ξ : E)
+theorem roundsOutput_honest (hT : ∀ t, (S.table t).WellFormed)
+    (hdeg : TableSumcheck.degree S L + 2 ≤ 2 ^ 64 - 1) (o : Bus.Output S L k) (ξ : E)
     (w : Witness K S.tables.length) (n : ℕ) (χ : List E) (current : E) (rs : Fin n → E)
     (hlen : χ.length + n = TableSumcheck.maxHeight S L)
     (known : TableSumcheck.reduced S L k o ξ χ current w) :
@@ -137,7 +205,7 @@ theorem roundsOutput_honest (hT : ∀ t, (S.table t).WellFormed) (o : Bus.Output
       (honestTableRounds S L k o ξ w n (χ ++ [rs 0]) (Fin.tail rs)) = _
     have hacc : (TableSumcheck.messageOps S L).accept current (honestTableMessage S L k o ξ w χ) = true := rfl
     rw [hacc, Bool.and_true]
-    have hnext := honest_round hT o ξ w χ current (by omega) known (rs 0)
+    have hnext := honest_round hT hdeg o ξ w χ current (by omega) known (rs 0)
     rw [ih (χ ++ [rs 0]) _ (Fin.tail rs) (by simp only [List.length_append, List.length_singleton]; omega)
       hnext]
     simp only [List.ofFn_succ, List.append_assoc, List.singleton_append]
@@ -145,7 +213,8 @@ theorem roundsOutput_honest (hT : ∀ t, (S.table t).WellFormed) (o : Bus.Output
 
 /-- Completeness of the table sumcheck: from a true bus endpoint, against every coin sequence, the
 honest transcript reaches the table sumcheck's endpoint. -/
-theorem honestTable_terminal (hwf : S.WellFormed L) (o : Bus.Output S L k)
+theorem honestTable_terminal (hwf : S.WellFormed L) (hdeg : TableSumcheck.degree S L + 2 ≤ 2 ^ 64 - 1)
+    (o : Bus.Output S L k)
     (w : Witness K S.tables.length) (hsat : S.Satisfied L w) (terminal : Bus.Terminal S L k o w)
     (coins : TableCoins S L) :
     ∃ o', TableSumcheck.outputClaim S L k o (honestTablePath S L k o w coins) = some o' ∧
@@ -163,7 +232,7 @@ theorem honestTable_terminal (hwf : S.WellFormed L) (o : Bus.Output S L k)
   refine ⟨⟨o, (List.ofFn coins.2).reverse, honestValues S L w (List.ofFn coins.2).reverse, true⟩, ?_, ?_⟩
   · unfold TableSumcheck.outputClaim honestTablePath
     rw [hactive]
-    have := roundsOutput_honest hT o coins.1 w _ [] _ coins.2
+    have := roundsOutput_honest hT hdeg o coins.1 w _ [] _ coins.2
       (by simp only [List.length_nil, Nat.zero_add]) hstart
     simpa only [List.nil_append] using this
   · exact ⟨rfl, ⟨shaped, hpoint, boundary⟩, honestValues_hold S L w _⟩

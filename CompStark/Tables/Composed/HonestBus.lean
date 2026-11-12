@@ -35,12 +35,12 @@ def honestBoundary (w : Witness K S.tables.length) (z : List E) : S.BoundaryValu
     (z.take (L.logHeight (S.boundaryColumns L)[j].1))
 
 /-- The roots of the push and nonzero trees. -/
-noncomputable def honestRoots (w : Witness K S.tables.length) (α : Fin k → E) (β : E) : E × E :=
+def honestRoots (w : Witness K S.tables.length) (α : Fin k → E) (β : E) : E × E :=
   (GrandProduct.level (Bus.μ S L) 0 (S.leaves L k w α β) 0 0,
     GrandProduct.level (Bus.μ S L) 0 (S.leaves L k w α β) 2 0)
 
 /-- The honest bus transcript. -/
-noncomputable def honestBusPath (w : Witness K S.tables.length) (coins : BusCoins S L k) :
+def honestBusPath (w : Witness K S.tables.length) (coins : BusCoins S L k) :
     (Bus.protocol S L k).tree.ExecutionPath :=
   let roots := honestRoots S L k w coins.1.1 coins.1.2
   ⟨coins.1, roots, GrandProduct.honestPath (Bus.μ S L) (S.leaves L k w coins.1.1 coins.1.2)
