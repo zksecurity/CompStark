@@ -580,6 +580,11 @@
       "instructions": 394347264,
       "variation": 0.00021,
       "tolerance": 0.005
+    },
+    "keccak-gkr/reduction": {
+      "instructions": 2308293720,
+      "variation": 9.7e-05,
+      "tolerance": 0.005
     }
   }
 }

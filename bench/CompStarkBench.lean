@@ -28,6 +28,7 @@ import CompStark.Pcs.WindowBitFold
 import CompStark.Pcs.WindowScatter
 import CompStark.Pcs.FusedTensor
 import CompStark.Pcs.TensorRing
+import CompStark.Keccak.GkrProver.SharedTable
 
 /-! # CompStark micro-benchmarks
 
@@ -653,6 +654,32 @@ def sumcheckFoldRun (phase : {α : Type} → String → (Unit → α) → IO α)
   IO.println s!"fold rows={rows} width={width} sink={output[rows * width - 1]!.c0.val}"
   return 0
 
+/-- Little-endian words of a file. -/
+def readWordsLE (path : System.FilePath) : IO (Array UInt64) := do
+  let bytes ← IO.FS.readBinFile path
+  return Array.ofFn fun i : Fin (bytes.size / 8) => Id.run do
+    let mut word : UInt64 := 0
+    for b in [:8] do word := word ||| (bytes[8 * i.val + b]!.toUInt64 <<< (8 * b).toUInt64)
+    return word
+
+open CompStark.Keccak.GkrProver in
+/-- The Keccak-f GKR reduction on the 512 permutations of `tests/data/keccak-gkr/active`, from its
+sliced witness and output claims, as leanMultisig's `Keccak reduction` phase. -/
+def keccakGkrRun (phase : {α : Type} → String → (Unit → α) → IO α) : IO UInt32 := do
+  let committed ← readWordsLE "tests/data/keccak-gkr/active/committed.bin"
+  let n := committed.size / 64
+  let nLog := n.log2
+  let witness := buildWitness nLog committed
+  let writer := Writer.seed #[1, 2, 3, 4] #[5, 6, 7, 8]
+  let (batchPoint, writer) := writer.sampleMany nLog
+  let output := outputWords witness.outputs n batchPoint |>.extract 0 25
+  let writer := writer.writeAll output
+  let result ← phase "reduction" fun _ => prove writer witness committed batchPoint output
+  unless result.writer.stream.size == 1263 && result.writer.challenges.size == 259 do
+    throw (IO.userError "Keccak GKR reduction transcript has the wrong shape")
+  IO.println s!"keccak-gkr: {result.writer.stream.size} scalars, {result.writer.challenges.size} challenges"
+  return 0
+
 /-- Binary-field PCS map preparation, packed bit folds and factored opening weights. -/
 def pcsRun (phase : {α : Type} → String → (Unit → α) → IO α) : IO UInt32 := do
   let challenges := CompStark.Fixtures.Pcs.challenges
@@ -906,6 +933,7 @@ marked through the FIFOs of `DIR`, at a fixed size from fixed inputs:
 * `keccak-batch`: ten batches of 1,024 independent permutations and 64/512-byte hashes.
 * `keccak-merkle`: 4,096 leaves of 64 lanes, 100 pruned queries, 10,000 writer messages,
   and an eight-bit smallest-nonce grind.
+* `keccak-gkr`: the Keccak-f GKR reduction on 512 permutations (`tests/data/keccak-gkr/active`).
 * `sumcheck-fold`: prepare one cubic-extension challenge and fold 16,384 ordinary and constant four-column row pairs. -/
 def gate (workload : String) (dir : System.FilePath) : IO UInt32 := do
   let m ← Marks.open dir
@@ -976,6 +1004,7 @@ def gate (workload : String) (dir : System.FilePath) : IO UInt32 := do
     IO.println s!"root word {read root 0}"
     return 0
   | "pcs" => pcsRun (fun label f ↦ m.phase label f)
+  | "keccak-gkr" => keccakGkrRun (fun label f ↦ m.phase label f)
   | "sumcheck-fold" => sumcheckFoldRun (fun label f ↦ m.phase label f)
   | "keccak-grind" => keccakGrindRun (fun label f ↦ m.phase label f)
   | "keccak-merkle" => keccakMerkleRun (fun label f ↦ m.phase label f)
