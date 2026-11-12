@@ -11,3 +11,4 @@ import CompStarkTests.KeccakMerkle
 import CompStarkTests.BinaryPcs
 import CompStarkTests.GrandProduct
 import CompStarkTests.Tables
+import CompStarkTests.TablesComposed
