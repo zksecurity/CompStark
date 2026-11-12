@@ -84,6 +84,10 @@ structure External where
   /-- The identity extractor meets the schedule's local bounds. -/
   bounded : ∀ out q, (Retained.extractor q (labels out)).IsLocallyBounded protocol.roles
     (challenges out)
+  /-- A bound on the number of the argument's claims. -/
+  claimBound : ℕ
+  /-- The argument's output has at most `claimBound` claims. -/
+  claims_le : ∀ out path, (output out path).claims.length ≤ claimBound
   /-- The argument's error. -/
   error : ENNReal
   /-- The schedule's errors add up to at most the argument's error. -/
@@ -112,6 +116,8 @@ def External.none (novirtual : ∀ t, (S.table t).virtual = []) (noexternal : �
     simp only [StackOutput.Holds, List.not_mem_nil, IsEmpty.forall_iff, implies_true, and_self]
     rfl
   challenges _ := PUnit.unit
+  claimBound := 0
+  claims_le _ _ := le_rfl
   preserving _ _ := trivial
   bounded _ _ := trivial
   error := 0
