@@ -65,6 +65,21 @@ theorem stackColumns_antitone :
   size b := L.logHeight (S.stackColumns L)[b].1
   descending := S.stackColumns_antitone L
 
+/-- The stack's blocks with the stacked columns computed once. -/
+def stackBlocksShared : Algebra.Blocks :=
+  let columns := (S.stackColumns L).toArray
+  { n := (S.stackColumns L).length
+    size := fun b ↦ L.logHeight (columns[b.val]'(by simp only [columns, List.size_toArray, b.isLt])).1
+    descending := by
+      intro a b hab
+      simp only [columns, List.getElem_toArray]
+      exact S.stackColumns_antitone L hab }
+
+/-- Sharing the stacked columns leaves the blocks. -/
+@[csimp] theorem stackBlocks_code : @stackBlocks = @stackBlocksShared := by
+  funext S L
+  simp only [stackBlocks, stackBlocksShared, List.getElem_toArray, Fin.getElem_fin]
+
 /-- A stacked column is a committed column of its table. -/
 theorem mem_stackColumns (t : Fin S.tables.length) (c : ℕ) :
     (t, c) ∈ S.stackColumns L ↔ c ∈ S.committedColumns t := by

@@ -4,7 +4,7 @@ Released under Apache 2.0 license as described in the file LICENSE.
 -/
 module
 
-public import CompStark.Compiled.Protocol
+public import CompStark.Compiled.Count
 public import CompStark.Tables.Compiled.Presentation
 
 /-! The composed system compiled with one Keccak root per encoded word: its parameters, its
@@ -38,6 +38,16 @@ structure Parameters (S : System K) (L : Layout S.tables.length) (k M : ℕ)
   externalPresentation : Presentation toSetup.external.protocol
   /-- The external argument commits no word. -/
   externalShapes : externalPresentation.HasShapes []
+  /-- The external argument's messages have prefix-free encodings and its draws squeeze. -/
+  externalFramed : externalPresentation.Framed
+  /-- The external argument's number of draws. -/
+  externalCount : ℕ
+  /-- The external argument has one rank per draw. -/
+  externalCounted : externalPresentation.Counted externalCount
+  /-- The duplex's initialization vector. -/
+  iv : Commit.Digest
+  /-- The digest of the statement the transcript is bound to. -/
+  statement : Commit.Digest
 
 /-- The rows of the stack's initial word, one per folding lane pattern. -/
 def Parameters.semanticRowWords (params : Parameters S L k M) : ℕ := 2 ^ params.schedule.lanes

@@ -37,11 +37,20 @@ def busPresentation : Presentation (Bus.protocol S L k) :=
       grandProduct (.sender (fun values ↦ fieldEvents values) fun _ ↦ .done)
         (GrandProduct.layers (Bus.μ S L)) 0)
 
-/-- The transmitted values, active table by active table in increasing order. -/
+/-- The number of values a table transmits: its transmitted columns if active, none otherwise. -/
+def valuesWidth (t : Fin S.tables.length) : ℕ :=
+  if S.Direct L t = false then (TableSumcheck.transmitted S t).length else 0
+
+/-- The transmitted values as a family over every table. -/
+def valuesFamily (values : TableSumcheck.Values S L) (t : Fin S.tables.length) :
+    Fin (valuesWidth S L t) → E :=
+  if h : S.Direct L t = false then fun i ↦ values ⟨t, h⟩ (Fin.cast (by simp only [valuesWidth, h, ↓reduceIte]) i)
+  else fun _ ↦ 0
+
+/-- The transmitted values, table by table in increasing order. -/
 def valuesEvents (values : TableSumcheck.Values S L) : List Transcript.Event :=
-  ((List.finRange S.tables.length).flatMap fun t ↦
-    if h : S.Direct L t = false then List.ofFn (values ⟨t, h⟩) else []).map
-      fun value ↦ .absorb (.scalar value)
+  ((List.finRange S.tables.length).flatMap fun t ↦ List.ofFn (valuesFamily S L values t)).map
+    fun value ↦ .absorb (.scalar value)
 
 /-- The table sumcheck's compressed messages and live draws, then the transmitted values. -/
 def tableRounds : (count : ℕ) → Presentation (TableSumcheck.roundsProtocol S L count)

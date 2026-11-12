@@ -541,3 +541,7 @@ public import CompStark.Tables.Compiled.Presentation
 public import CompStark.Tables.Compiled.Protocol
 public import CompStark.Tables.Compiled.Transfer
 public import CompStark.Tables.Compiled.Acceptance
+public import CompStark.Compiled.Transcript
+public import CompStark.Compiled.Count
+public import CompStark.Tables.Compiled.Transcript
+public import CompStark.Tables.Compiled.Count

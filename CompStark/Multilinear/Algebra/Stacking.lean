@@ -173,6 +173,21 @@ def stackAt (t : B.Tables R) (μ : ℕ) (pad : R) : CMlPolynomialEval R μ :=
     else ∑ b : Fin B.n,
       if B.InWindow b x.val then ((t b)[x.val - B.offset b]?).getD 0 else 0
 
+/-- The stack with the blocks' offsets and the total computed once. -/
+def stackAtShared (t : B.Tables R) (μ : ℕ) (pad : R) : CMlPolynomialEval R μ :=
+  let offsets := Vector.ofFn fun b : Fin B.n ↦ B.offset b
+  let total := B.total
+  Vector.ofFn fun x ↦
+    if total ≤ x.val then pad
+    else ∑ b : Fin B.n,
+      if offsets[b] ≤ x.val ∧ x.val < offsets[b] + 2 ^ B.size b then
+        ((t b)[x.val - offsets[b]]?).getD 0 else 0
+
+/-- Sharing the offsets leaves the stack. -/
+@[csimp] theorem stackAt_code : @stackAt = @stackAtShared := by
+  funext B R _ t μ pad
+  simp only [stackAt, stackAtShared, Fin.getElem_fin, Vector.getElem_ofFn]
+
 /-- An index inside a block reads that block’s corresponding entry. -/
 theorem stackAt_getElem_of_inWindow (t : B.Tables R) {μ : ℕ} (pad : R) {b : Fin B.n} {x : ℕ}
     (hx : x < 2 ^ μ) (h : B.InWindow b x) :
