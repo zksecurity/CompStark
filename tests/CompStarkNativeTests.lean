@@ -9,6 +9,7 @@ import CompStarkTests.KeccakTranscript
 import CompStarkTests.KeccakTransport
 import CompStarkTests.KeccakGkr
 import CompStarkTests.BinaryPcsNative
+import CompStarkTests.TablesKeccak
 import CompStark.KoalaBear.Fast
 import CompStark.BabyBear.Fast
 import CompStark.Mont32.Json
@@ -672,6 +673,7 @@ def main : IO UInt32 := do
     CompStarkTests.KeccakTransport.check
     CompStarkTests.KeccakGkr.check
     CompStarkTests.BinaryPcsNative.check
+    CompStarkTests.TablesKeccak.check
     IO.println "native tests passed"
     return 0
   catch e =>

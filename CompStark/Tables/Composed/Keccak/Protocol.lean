@@ -198,6 +198,16 @@ def wordClaim (t : Keccak.Gkr.Transcript E kt.p) : Whir.Claim E M :=
   ⟨Whir.eqWeight (kt.ring.lift (Keccak.Gkr.appendSlot t.instancePoint t.openings.outputPoint)),
     t.openings.outputValue⟩
 
+/-- The word claim with its weight's table computed once. -/
+@[macro_inline] def wordClaimCached (t : Keccak.Gkr.Transcript E kt.p) : Whir.Claim E M :=
+  ⟨Pcs.cachedEqWeight (kt.ring.lift (Keccak.Gkr.appendSlot t.instancePoint t.openings.outputPoint)),
+    t.openings.outputValue⟩
+
+/-- Materializing the weight leaves the word claim. -/
+@[csimp] theorem wordClaim_code : @wordClaim = @wordClaimCached := by
+  funext S L M kt t
+  simp only [wordClaim, wordClaimCached, Pcs.cachedEqWeight_eq]
+
 /-- The word claim holds exactly when the transmitted word value is the GKR's lane extension. -/
 theorem wordClaim_iff (t : Keccak.Gkr.Transcript E kt.p) (q : Whir.Table K M) :
     (kt.wordClaim t).Holds (fun u => ofK (q u)) ↔

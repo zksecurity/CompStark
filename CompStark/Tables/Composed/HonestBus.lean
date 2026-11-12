@@ -29,6 +29,19 @@ variable (S : System K) (L : Layout S.tables.length) (k : ℕ)
 /-- The bus's coins: the fingerprint draw, then the descent's. -/
 abbrev BusCoins := ((Fin k → E) × E) × GrandProduct.Coins (GrandProduct.layers (Bus.μ S L)) 0
 
+/-- The leaves on the bus's depth computed once, read off a table. -/
+@[macro_inline] def leavesMemo (w : Witness K S.tables.length) (α : Fin k → E) (β : E) : Fin 3 → ℕ → E :=
+  let table := Vector.ofFn fun side : Fin 3 ↦ Vector.ofFn fun i : Fin (2 ^ S.depth L) ↦
+    S.stackLeaves L k w α β (S.sortedBlocks L side) i.val
+  fun side i ↦ if h : i < 2 ^ S.depth L then table[side][i] else
+    S.stackLeaves L k w α β (S.sortedBlocks L side) i
+
+/-- Computing the leaves once leaves them. -/
+@[csimp] theorem leaves_code : @System.leaves = @leavesMemo := by
+  funext S L k w α β side i
+  simp only [leavesMemo, Fin.getElem_fin, Vector.getElem_ofFn]
+  split <;> rfl
+
 /-- The true boundary values at a point. -/
 def honestBoundary (w : Witness K S.tables.length) (z : List E) : S.BoundaryValues L :=
   fun j ↦ S.column L w (S.boundaryColumns L)[j].1 (S.boundaryColumns L)[j].2

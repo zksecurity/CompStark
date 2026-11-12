@@ -16,8 +16,14 @@ namespace CompStark.Fixtures.Tables
 open CompStark.Tables CompStark.Tables.Examples CompStark.Tables.Composed CompStark.BinaryFields
 open CompStark.Multilinear
 
-/-- Distinct challenge-field values. -/
-def value (n : ℕ) : E := ofK (gpow n) + ofK (gpow (n + 7)) * ofK g
+/-- Distinct challenge-field values, computed. -/
+def valueSpec (n : ℕ) : E := ofK (gpow n) + ofK (gpow (n + 7)) * ofK g
+
+/-- The first 256 values, computed once. -/
+def values : Array E := Array.ofFn fun i : Fin 256 ↦ valueSpec i.val
+
+/-- Distinct challenge-field values, read from the table below 256. -/
+def value (n : ℕ) : E := if n < 256 then values[n]! else valueSpec n
 
 /-- The bus's tuples: the separator and three entries. -/
 def width : String → ℕ := fun _ ↦ 3

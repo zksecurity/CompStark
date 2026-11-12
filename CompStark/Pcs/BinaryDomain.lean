@@ -71,6 +71,10 @@ theorem mask_injective (n : ℕ) : Function.Injective (mask n) := by
 def cubeIndex (n : ℕ) (u : Whir.Cube n) : Fin (2 ^ n) :=
   ((BitVec.ofBoolListLE (List.ofFn u)).cast (List.length_ofFn)).toFin
 
+/-- The table of a materialized vector of values, read at each point's index. -/
+@[noinline] def tableOf {R : Type} (n : ℕ) (values : Vector R (2 ^ n)) : Whir.Table R n :=
+  fun u => values[cubeIndex n u]
+
 /-- Assemble little-endian bits without constructing intermediate bounded bitvectors. -/
 def bitsIndex : List Bool → Nat
   | [] => 0

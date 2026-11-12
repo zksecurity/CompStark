@@ -8,6 +8,7 @@ public import CompStark.Tables.Basic
 public import CompStark.Tables.BusOutput
 public import CompStark.Multilinear.Algebra.Stacking
 public import CompStark.Pcs.BinaryDomain
+public import CompStark.Pcs.Weights
 
 /-! The stacked commitment of a system: every committed column of every table, tallest table first,
 in one aligned base-field table. A claim on a committed column at a point is the stack's extension
@@ -116,10 +117,26 @@ def columnValues (w : Witness K S.tables.length) (b : Fin (S.stackColumns L).len
     CompPoly.CMlPolynomialEval K ((S.stackBlocks L).size b) :=
   Vector.ofFn fun i ↦ (((w (S.stackColumns L)[b].1).getD i.val #[]).getD (S.stackColumns L)[b].2 0)
 
+/-- A stacked column's values with its rows read from an array. -/
+def columnValuesShared (w : Witness K S.tables.length) (b : Fin (S.stackColumns L).length) :
+    CompPoly.CMlPolynomialEval K ((S.stackBlocks L).size b) :=
+  let column := (S.stackColumns L)[b]
+  let rows := (w column.1).toArray
+  Vector.ofFn fun i ↦ (rows.getD i.val #[]).getD column.2 0
+
+/-- Reading the rows from an array leaves the column's values. -/
+@[csimp] theorem columnValues_code : @columnValues = @columnValuesShared := by
+  funext S L w b
+  simp only [columnValues, columnValuesShared, Array.getD_eq_getD_getElem?, List.getElem?_toArray,
+    List.getD_eq_getElem?_getD]
+
+/-- The stack of a witness as a vector of `2 ^ M` values; cells no column covers are zero. -/
+def stackValues (M : ℕ) (w : Witness K S.tables.length) : Vector K (2 ^ M) :=
+  (S.stackBlocks L).stackAt (S.columnValues L w) M 0
+
 /-- The stack of a witness as a table on `M` variables; cells no column covers are zero. -/
 def stack (M : ℕ) (w : Witness K S.tables.length) : Whir.Table K M :=
-  let values := (S.stackBlocks L).stackAt (S.columnValues L w) M 0
-  fun u ↦ values[Pcs.cubeIndex M u]
+  Pcs.tableOf M (S.stackValues L M w)
 
 /-- A point of a stacked column lifted to the stack: the point below the column's height, the bits
 of its offset above. -/
@@ -131,6 +148,25 @@ def liftPoint (M : ℕ) (b : Fin (S.stackColumns L).length) (z : List E) : Fin M
 def stackClaim (M : ℕ) (b : Fin (S.stackColumns L).length) (z : List E) (value : E) :
     Whir.Claim E M :=
   ⟨Whir.eqWeight (S.liftPoint L M b z), value⟩
+
+/-- The lifted point with the column's height and offset computed once. -/
+@[macro_inline] def liftPointMemo (M : ℕ) (b : Fin (S.stackColumns L).length) (z : List E) : Fin M → E :=
+  let height := L.logHeight (S.stackColumns L)[b].1
+  let offset := (S.stackBlocks L).offset b
+  fun k ↦ if k.val < height then z.getD k.val 0 else bit offset k.val
+
+/-- Computing the height and offset once leaves the lifted point. -/
+@[csimp] theorem liftPoint_code : @liftPoint = @liftPointMemo := rfl
+
+/-- A stacked column's claim with its weight's table computed once. -/
+@[macro_inline] def stackClaimCached (M : ℕ) (b : Fin (S.stackColumns L).length) (z : List E) (value : E) :
+    Whir.Claim E M :=
+  ⟨Pcs.cachedEqWeight (S.liftPoint L M b z), value⟩
+
+/-- Materializing the weight leaves the claim. -/
+@[csimp] theorem stackClaim_code : @stackClaim = @stackClaimCached := by
+  funext S L M b z value
+  simp only [stackClaim, stackClaimCached, Pcs.cachedEqWeight_eq]
 
 /-- A Boolean table's extension is the low-bit-first extension of its numeric values. -/
 theorem whirMle_eq_mle (n : ℕ) (f : Whir.Table E n) (p : Fin n → E) :
@@ -254,7 +290,7 @@ theorem stack_window (hM : (S.stackBlocks L).total ≤ 2 ^ M) (w : Witness K S.t
     (h : (S.stackBlocks L).offset b + i < 2 ^ M) :
     S.stack L M w (Pcs.mask M ⟨(S.stackBlocks L).offset b + i, h⟩) =
       ((w (S.stackColumns L)[b].1).getD i #[]).getD (S.stackColumns L)[b].2 0 := by
-  unfold stack
+  unfold stack stackValues Pcs.tableOf
   have hcube : Pcs.cubeIndex M (Pcs.mask M ⟨(S.stackBlocks L).offset b + i, h⟩) =
       ⟨(S.stackBlocks L).offset b + i, h⟩ :=
     (Pcs.cubeEquiv M).left_inv _

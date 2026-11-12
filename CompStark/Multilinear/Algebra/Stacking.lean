@@ -173,20 +173,55 @@ def stackAt (t : B.Tables R) (μ : ℕ) (pad : R) : CMlPolynomialEval R μ :=
     else ∑ b : Fin B.n,
       if B.InWindow b x.val then ((t b)[x.val - B.offset b]?).getD 0 else 0
 
-/-- The stack with the blocks' offsets and the total computed once. -/
-def stackAtShared (t : B.Tables R) (μ : ℕ) (pad : R) : CMlPolynomialEval R μ :=
+/-- The entry of a sum over blocks with at most one nonzero term, read off the first block whose
+test passes. -/
+theorem sum_ite_find {α : Type*} [AddCommMonoid α] {n : ℕ} (test : Fin n → Bool) (value : Fin n → α)
+    (unique : ∀ b c, test b = true → test c = true → b = c) :
+    (∑ b : Fin n, if test b = true then value b else 0) =
+      ((List.finRange n).find? test).elim 0 value := by
+  cases found : (List.finRange n).find? test with
+  | some b =>
+    simp only [Option.elim_some]
+    have hb := List.find?_some found
+    rw [Finset.sum_eq_single b]
+    · simp only [hb, ↓reduceIte]
+    · intro c _ hc
+      rw [if_neg]
+      exact fun hct ↦ hc (unique c b hct hb)
+    · intro h
+      exact absurd (Finset.mem_univ b) h
+  | none =>
+    simp only [Option.elim_none]
+    apply Finset.sum_eq_zero
+    intro b _
+    rw [if_neg]
+    have := List.find?_eq_none.mp found b (List.mem_finRange b)
+    simpa only [Bool.not_eq_true] using this
+
+/-- The stack with the blocks' offsets, the total and the tables computed once, each entry read off
+the block whose window holds it. -/
+@[nospecialize] def stackAtShared (t : B.Tables R) (μ : ℕ) (pad : R) : CMlPolynomialEval R μ :=
   let offsets := Vector.ofFn fun b : Fin B.n ↦ B.offset b
+  let tables := Vector.ofFn fun b : Fin B.n ↦ (t b).toArray
   let total := B.total
   Vector.ofFn fun x ↦
     if total ≤ x.val then pad
-    else ∑ b : Fin B.n,
-      if offsets[b] ≤ x.val ∧ x.val < offsets[b] + 2 ^ B.size b then
-        ((t b)[x.val - offsets[b]]?).getD 0 else 0
+    else ((List.finRange B.n).find? (fun b ↦
+        decide (offsets[b] ≤ x.val ∧ x.val < offsets[b] + 2 ^ B.size b))).elim 0
+      fun b ↦ (tables[b][x.val - offsets[b]]?).getD 0
 
-/-- Sharing the offsets leaves the stack. -/
+/-- Reading each entry off its block leaves the stack. -/
 @[csimp] theorem stackAt_code : @stackAt = @stackAtShared := by
-  funext B R _ t μ pad
-  simp only [stackAt, stackAtShared, Fin.getElem_fin, Vector.getElem_ofFn]
+  funext R _ B t μ pad
+  apply Vector.ext
+  intro x hx
+  simp only [stackAt, stackAtShared, Vector.getElem_ofFn, Fin.getElem_fin, Vector.getElem?_toArray, Fin.eta]
+  split
+  · rfl
+  · refine Eq.trans ?_ (sum_ite_find (fun b : Fin B.n ↦ decide (B.offset b ≤ x ∧ x < B.offset b + 2 ^ B.size b))
+      (fun b ↦ ((t b)[x - B.offset b]?).getD 0)
+      (fun b c hb hc ↦ B.inWindow_unique (of_decide_eq_true hb) (of_decide_eq_true hc)))
+    simp only [decide_eq_true_eq]
 
 /-- An index inside a block reads that block’s corresponding entry. -/
 theorem stackAt_getElem_of_inWindow (t : B.Tables R) {μ : ℕ} (pad : R) {b : Fin B.n} {x : ℕ}

@@ -110,7 +110,7 @@ theorem evaluateCoefficients_getD (d : ℕ) (p : List E) (hp : p.length ≤ d + 
       simp only [Fin.val_zero, List.getD_cons_zero, pow_zero, mul_one, evalCoeffs, List.foldr_cons]
 
 /-- The honest round message: the partial cofactor's coefficients of degrees one to `2 ^ ρ`. -/
-def honestMessage (μ m ρ : ℕ) (leaves : Fin 3 → ℕ → E) (lam : E) (point χ : List E) :
+@[macro_inline] def honestMessage (μ m ρ : ℕ) (leaves : Fin 3 → ℕ → E) (lam : E) (point χ : List E) :
     Message (2 ^ ρ) :=
   let p := partialCoeffs μ m ρ leaves lam point χ
   fun j ↦ p.getD (j.val + 1) 0
@@ -172,6 +172,16 @@ def honestInterpolation (tail : Protocol) (after : List E → tail.tree.Executio
 /-- The honest child values at a full sumcheck prefix. -/
 def honestChildren (m ρ : ℕ) (χ : List E) : Fin 3 → Fin (2 ^ ρ) → E :=
   fun s a ↦ childValue μ m ρ leaves s a.val χ
+
+/-- The honest child values, computed once. -/
+@[macro_inline] def honestChildrenMemo (m ρ : ℕ) (χ : List E) : Fin 3 → Fin (2 ^ ρ) → E :=
+  let table := Vector.ofFn fun s : Fin 3 ↦ Vector.ofFn fun a : Fin (2 ^ ρ) ↦ childValue μ m ρ leaves s a.val χ
+  fun s a ↦ table[s][a]
+
+/-- Computing the child values once leaves them. -/
+@[csimp] theorem honestChildren_code : @honestChildren = @honestChildrenMemo := by
+  funext μ leaves m ρ χ s a
+  simp only [honestChildren, honestChildrenMemo, Fin.getElem_fin, Vector.getElem_ofFn]
 
 /-- The honest descent from a layer claim, then the terminal protocol at the final claim. -/
 def honestPath (tail : Protocol) (tailPath : Claim → tail.tree.ExecutionPath) :

@@ -54,7 +54,7 @@ def honestOuterPath (setup : Setup S L k M) (prove : ExternalProver setup) {sche
   let tablePath := honestTablePath S L k bus w coins.table
   let table := (TableSumcheck.outputClaim S L k bus tablePath).getD rejectedOutput
   joinPath _ _ (joinPath _ _ busPath tablePath)
-    (prove table (S.stack L M w))
+    (prove table (Pcs.tableOf M (S.stackValues L M w)))
 
 /-- The honest transcript of the composed system of a setup and an opening schedule, with the
 external argument's transcript from its prover. -/
@@ -62,7 +62,7 @@ def honestPath (setup : Setup S L k M) (schedule : Whir.Schedule K M) (prove : E
     (w : Witness K S.tables.length) (coins : Coins (S := S) (L := L) (k := k) schedule) :
     (composedProtocol setup schedule).tree.ExecutionPath :=
   let outer := honestOuterPath setup prove w coins
-  let opening := Pcs.Honest.prove schedule (S.stack L M w)
+  let opening := Pcs.Honest.prove schedule (Pcs.tableOf M (S.stackValues L M w))
     (openingClaims setup (outerOutput setup outer)) coins.opening
   ⟨opening.initial, joinPath _ _ outer opening.transcript⟩
 
@@ -91,6 +91,7 @@ theorem completeness (honest : params.external.Honest) (external : honest.Coins)
     rw [show Bus.outputClaim S L k (honestBusPath S L k w coins.bus) = some o from hbus, Option.getD_some]
     rw [show TableSumcheck.outputClaim S L k o (honestTablePath S L k o w coins.table) = some o' from htable,
       Option.getD_some]
+    rfl
   have hout : (outerReduction params.toSetup params.reductions).output (honestOuterPath params.toSetup (fun o q ↦ honest.honest o q external) w coins) =
       ((some o, some o'), params.external.output o' extPath) := by
     rw [houter]
