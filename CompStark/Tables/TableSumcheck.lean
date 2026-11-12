@@ -33,6 +33,50 @@ def readsCol {F : Type} (c : ℕ) : Expr F → Bool
   | add a b | sub a b | mul a b => readsCol c a || readsCol c b
   | _ => false
 
+/-- A column an expression reads is below its column bound. -/
+theorem readsCol_lt {F : Type} {w wNext pw pwNext c : ℕ} (e : Expr F)
+    (h : e.colsBelow w wNext pw pwNext = true) (hr : e.readsCol c = true) : c < w := by
+  induction e with
+  | cur c' =>
+    simp only [readsCol, beq_iff_eq] at hr
+    simp only [colsBelow, decide_eq_true_eq] at h
+    exact hr ▸ h
+  | add a b ha hb | sub a b ha hb | mul a b ha hb =>
+    simp only [colsBelow, Bool.and_eq_true] at h
+    simp only [readsCol, Bool.or_eq_true] at hr
+    exact hr.elim (ha h.1) (hb h.2)
+  | _ => simp only [readsCol, Bool.false_eq_true] at hr
+
+open CompStark.BinaryFields in
+/-- An expression's value depends only on the columns it reads and the preprocessed values. -/
+theorem eval_envE_congr (e : Expr K) (v v' p p' : ℕ → E) (hv : ∀ c, e.readsCol c = true → v c = v' c)
+    (hp : ∀ c, p c = p' c) :
+    e.eval (CompStark.Tables.System.envE v p) = e.eval (CompStark.Tables.System.envE v' p') := by
+  induction e with
+  | cur c => exact hv c (by simp only [readsCol, beq_self_eq_true])
+  | prepCur c => exact hp c
+  | add a b ha hb | sub a b ha hb | mul a b ha hb =>
+    simp only [eval]
+    rw [ha fun c h ↦ hv c (by simp only [readsCol, h, Bool.true_or]),
+      hb fun c h ↦ hv c (by simp only [readsCol, h, Bool.or_true])]
+  | _ => rfl
+
+open CompStark.BinaryFields in
+/-- An expression's polynomial depends only on the columns it reads and the preprocessed
+variables. -/
+theorem toPoly_eval_congr (width : ℕ) (e : Expr K) (v v' : ℕ → E)
+    (hv : ∀ c, e.readsCol c = true → v c = v' c) (hp : ∀ c, v (width + c) = v' (width + c)) :
+    MvPolynomial.eval v (toPoly width e) = MvPolynomial.eval v' (toPoly width e) := by
+  induction e with
+  | cur c => simpa only [toPoly, MvPolynomial.eval_X] using hv c (by simp only [readsCol, beq_self_eq_true])
+  | prepCur c => simpa only [toPoly, MvPolynomial.eval_X] using hp c
+  | const c => simp only [toPoly, MvPolynomial.eval_C]
+  | add a b ha hb | sub a b ha hb | mul a b ha hb =>
+    simp only [toPoly, map_add, map_sub, map_mul]
+    rw [ha fun c h ↦ hv c (by simp only [readsCol, h, Bool.true_or]),
+      hb fun c h ↦ hv c (by simp only [readsCol, h, Bool.or_true])]
+  | _ => simp only [toPoly, map_zero]
+
 end CompStark.Stark.Expr
 
 namespace CompStark.Tables.TableSumcheck
@@ -76,11 +120,13 @@ def degree : ℕ :=
   max 1 (Finset.univ.sup fun t : Active S L ↦ max (S.tupleDegree t.1)
     (((S.table t.1).air.constraints.map Expr.degree).foldl max 0))
 
-/-- The columns a table's constraints or tuples read: those the table phase transmits. -/
+/-- The columns a table's constraints, tuples or nonzero checks read: those the table phase
+transmits. -/
 def transmitted (t : Fin S.tables.length) : List ℕ :=
   (List.range (S.table t).air.width).filter fun c ↦
     (S.table t).air.constraints.any (Expr.readsCol c) ||
-      (S.table t).interactions.any fun I ↦ I.tuple.any (Expr.readsCol c)
+      ((S.table t).interactions.any fun I ↦ I.tuple.any (Expr.readsCol c)) ||
+      (S.table t).nonzero.contains c
 
 /-- Row `i`'s value of variable `c` of table `t`: committed below the width, preprocessed above. -/
 def cell (w : Witness K S.tables.length) (t : Fin S.tables.length) (i c : ℕ) : K :=
@@ -435,5 +481,294 @@ theorem summand_eval (hT : ∀ t, (S.table t).WellFormed) (o : Bus.Output S L k)
   · apply Finset.prod_congr rfl
     intro a _
     rw [MvPolynomial.eval_X, reversed_getD r (L.logHeight t.1 + a.val) (by have := a.isLt; omega)]
+
+/-- The transmitted values are the transmitted columns' extensions at the final point. -/
+def ValuesHold (w : Witness K S.tables.length) (z : List E) (vals : Values S L) : Prop :=
+  ∀ t (i : Fin (transmitted S t.1).length),
+    vals t i = S.column L w t.1 (transmitted S t.1)[i] (z.take (L.logHeight t.1))
+
+/-- A transmitted column is a committed column. -/
+theorem lt_of_mem_transmitted (t : Fin S.tables.length) (c : ℕ) (hc : c ∈ transmitted S t) :
+    c < (S.table t).air.width :=
+  List.mem_range.mp (List.mem_filter.mp hc).1
+
+/-- True transmitted values give every variable a formula reads. -/
+theorem valuesAt_eq_cellColumn (w : Witness K S.tables.length) (z : List E) (vals : Values S L)
+    (hvals : ValuesHold S L w z vals) (t : Active S L) (c : ℕ)
+    (hc : c < (S.table t.1).air.width → c ∈ transmitted S t.1) :
+    valuesAt S L vals t (z.take (L.logHeight t.1)) c =
+      cellColumn S L w t.1 c (z.take (L.logHeight t.1)) := by
+  unfold valuesAt
+  split_ifs with hw
+  · have hm := hc hw
+    cases hi : (transmitted S t.1).finIdxOf? c with
+    | none => exact absurd hm (List.finIdxOf?_eq_none_iff.mp hi)
+    | some i =>
+      have hget := (List.finIdxOf?_eq_some_iff.mp hi).1
+      simp only [Option.elim_some]
+      rw [hvals t i, hget]
+      simp only [column, cellColumn, cell, hw, ↓reduceIte]
+  · simp only [prepColumn, cellColumn, cell, hw, ↓reduceIte]
+
+/-- An active table's batched row formula depends only on the variables it reads. -/
+theorem rowValue_congr (hT : ∀ t, (S.table t).WellFormed) (o : Bus.Output S L k) (ξ : E)
+    (t : Active S L) (v v' : ℕ → E)
+    (agree : ∀ c, (c < (S.table t.1).air.width → c ∈ transmitted S t.1) → v c = v' c) :
+    rowValue S L k o ξ t v = rowValue S L k o ξ t v' := by
+  have hpre : ∀ c, v ((S.table t.1).air.width + c) = v' ((S.table t.1).air.width + c) :=
+    fun c ↦ agree _ fun h ↦ absurd h (by omega)
+  have read : ∀ c, c < (S.table t.1).air.width → (c ∈ transmitted S t.1 ↔
+      ((S.table t.1).air.constraints.any (Expr.readsCol c) ||
+        ((S.table t.1).interactions.any fun I ↦ I.tuple.any (Expr.readsCol c)) ||
+        (S.table t.1).nonzero.contains c) = true) := by
+    intro c hc
+    simp only [transmitted, List.mem_filter, List.mem_range, hc, true_and]
+  unfold rowValue
+  apply congrArg₂ (· + ·)
+  · apply Finset.sum_congr rfl
+    intro i _
+    apply congrArg (ξ ^ (constraintOffset S L t + i.val) * ·)
+    obtain ⟨e, he, eq⟩ := List.mem_map.mp (List.getElem_mem i.isLt : (constraints S L t)[i] ∈ constraints S L t)
+    simp only [Fin.getElem_fin, ← eq]
+    apply Expr.toPoly_eval_congr _ e v v' _ hpre
+    intro c hr
+    have hlt := Expr.readsCol_lt e ((hT t.1).2.2.2.1 e he).2 hr
+    exact agree c fun _ ↦ (read c hlt).mpr (by
+      simp only [Bool.or_eq_true, List.any_eq_true]
+      exact Or.inl (Or.inl ⟨e, he, hr⟩))
+  · apply Finset.sum_congr rfl
+    intro s _
+    apply congrArg (ξ ^ (constraintCount S L + s.val) * ·)
+    unfold tableForm
+    apply S.sumBlocks_congr L _ _ _ _ _ 0
+    intro b hb
+    obtain ⟨hnz, hint⟩ := S.mem_sortedBlocks L s b hb
+    split_ifs with htb
+    · cases b with
+      | nonzero t' c =>
+        have hc := hnz t' c rfl
+        simp only [Block.table] at htb
+        subst htb
+        have hlt := (hT t.1).2.2.2.2.2.1 c hc
+        simp only [formE]
+        exact agree c fun _ ↦ (read c hlt).mpr (by
+          simp only [Bool.or_eq_true, List.contains_iff_mem]
+          exact Or.inr hc)
+      | interaction t' I =>
+        have hI := hint t' I rfl
+        simp only [Block.table] at htb
+        subst htb
+        simp only [formE]
+        refine congrArg (fun l ↦ o.beta - fingerprintE k o.alpha (encodeE k (S.busIndex I.bus) l))
+          (List.map_congr_left fun e he ↦ ?_)
+        have hwf := (hT t.1).2.2.2.2.1 I hI e he
+        apply Expr.eval_envE_congr e _ _ _ _ _ hpre
+        intro c hr
+        have hlt := Expr.readsCol_lt e hwf.2 hr
+        exact agree c fun _ ↦ (read c hlt).mpr (by
+          simp only [Bool.or_eq_true, List.any_eq_true]
+          exact Or.inl (Or.inr ⟨I, hI, e, he, hr⟩))
+    · rfl
+
+/-- With true transmitted values, the verifier's formula is the witness's summand value. -/
+theorem formula_eq_summandValue (hT : ∀ t, (S.table t).WellFormed) (w : Witness K S.tables.length)
+    (o : Bus.Output S L k) (ξ : E) (z : List E) (vals : Values S L) (hvals : ValuesHold S L w z vals) :
+    formula S L k o ξ z vals = summandValue S L k o ξ w z := by
+  unfold formula summandValue
+  apply Finset.sum_congr rfl
+  intro t _
+  rw [rowValue_congr S L k hT o ξ t _ _ (valuesAt_eq_cellColumn S L w z vals hvals t)]
+
+/-- A round message: the constant coefficient and those of degree two to `degree + 1`. -/
+abbrev Message := Sumcheck.CompressedMessage E (degree S L)
+
+/-- The compressed message operations; the running sum fixes the linear coefficient. -/
+def messageOps : Sumcheck.MessageOps E (Message S L) := Sumcheck.compressedOps (degree S L)
+
+/-- The table sumcheck's Boolean domain. -/
+def booleanDomain : Fin 2 ↪ E := ⟨![0, 1], by
+  intro i j h
+  fin_cases i <;> fin_cases j
+  · rfl
+  · exact (zero_ne_one (show (0 : E) = 1 from h)).elim
+  · exact (one_ne_zero (show (1 : E) = 0 from h)).elim
+  · rfl⟩
+
+/-- The compressed message model on that Boolean domain. -/
+noncomputable def messageModel :
+    Sumcheck.MessageModel (Finset.univ.map booleanDomain) (messageOps S L) (degree S L + 1) where
+  interpret := Sumcheck.compressed
+  evaluate_eq := Sumcheck.compressed_evaluate_eq
+  accept_iff c m := by
+    have hD : Finset.univ.map booleanDomain = ({0, 1} : Finset E) := by
+      ext x
+      constructor
+      · intro hx
+        obtain ⟨i, _, rfl⟩ := Finset.mem_map.mp hx
+        fin_cases i
+        · exact Finset.mem_insert_self _ _
+        · exact Finset.mem_insert_of_mem (Finset.mem_singleton_self _)
+      · intro hx
+        simp only [Finset.mem_insert, Finset.mem_singleton] at hx
+        rcases hx with rfl | rfl
+        · exact Finset.mem_map.mpr ⟨0, Finset.mem_univ _, rfl⟩
+        · exact Finset.mem_map.mpr ⟨1, Finset.mem_univ _, rfl⟩
+    rw [hD]
+    exact (Sumcheck.compressedModel (R := E) (degree S L)).accept_iff c m
+
+/-- The committed witness fixes the summand before any sumcheck challenge. -/
+theorem bindsSummand (o : Bus.Output S L k) (ξ : E) (w₀ : Witness K S.tables.length) :
+    Sumcheck.Interaction.Knowledge.BindsSummand (fun w ↦ w = w₀)
+      (summand S L k o ξ) (summand S L k o ξ w₀) := by
+  intro w hw
+  exact congrArg (summand S L k o ξ) hw
+
+/-- The sumcheck's initial statement: the batched target. -/
+def initialStatement (o : Bus.Output S L k) (ξ : E) :
+    Sumcheck.Spec.StatementRound E (maxHeight S L) ⟨0, by omega⟩ :=
+  ⟨target S L k o ξ, Fin.elim0⟩
+
+/-- ArkLib's sumcheck knowledge certificate for the table summand, the witness retained. -/
+noncomputable def coreCertificate (o : Bus.Output S L k) (ξ : E) (w₀ : Witness K S.tables.length) :=
+  Sumcheck.Interaction.Knowledge.certificate (messageOps S L) booleanDomain (messageModel S L)
+    (fun w ↦ w = w₀) (summand S L k o ξ) (summand S L k o ξ w₀) (bindsSummand S L k o ξ w₀)
+    (maxHeight S L) 0 (by omega) (initialStatement S L k o ξ) o.active
+
+/-- The table sumcheck's output: the bus output, the final point and the transmitted values. -/
+structure Output where
+  /-- The bus output the table sumcheck reduces. -/
+  bus : Bus.Output S L k
+  /-- The final sumcheck point, low variable first. -/
+  point : List E
+  /-- The transmitted columns' values at the point. -/
+  values : Values S L
+  /-- Whether every public check passed. -/
+  active : Bool
+
+/-- The bus's shape and boundary claims, which the table sumcheck carries through. -/
+def sideRelation (o : Bus.Output S L k) (w : Witness K S.tables.length) : Prop :=
+  S.Shaped L w ∧ o.point.length = Bus.μ S L ∧
+    ∀ p ∈ S.boundaryColumns L, S.boundaryValue L o.boundary p.1 p.2 =
+      S.column L w p.1 p.2 (o.point.take (L.logHeight p.1))
+
+/-- The endpoint: the bus's boundary claims and the transmitted values. -/
+def Terminal (o : Output S L k) (w : Witness K S.tables.length) : Prop :=
+  o.active = true ∧ sideRelation S L k o.bus w ∧ ValuesHold S L w o.point o.values
+
+/-- The running claim after the challenges `χ`, highest variable first. -/
+def reduced (o : Bus.Output S L k) (ξ : E) (χ : List E) (current : E)
+    (w : Witness K S.tables.length) : Prop :=
+  current = ∑ i : Fin (2 ^ (maxHeight S L - χ.length)),
+    summandValue S L k o ξ w
+      ((χ ++ List.ofFn (fun a : Fin (maxHeight S L - χ.length) ↦ bit i.val a.val)).reverse)
+
+/-- The relation at a round. -/
+def roundRelation (o : Bus.Output S L k) (ξ : E) (χ : List E) (current : E) (active : Bool)
+    (w : Witness K S.tables.length) : Prop :=
+  active = true ∧ sideRelation S L k o w ∧ reduced S L k o ξ χ current w
+
+/-- The final message: the transmitted values. -/
+def terminalProtocol : Protocol := .public .sender (Values S L) fun _ ↦ .done
+
+/-- The sumcheck rounds, then the transmitted values. -/
+def roundsProtocol : ℕ → Protocol
+  | 0 => terminalProtocol S L
+  | n + 1 => .oracleWith (Message S L) (Sumcheck.Interaction.Knowledge.messageInterface (messageOps S L))
+      (.public .receiver (Option E) fun | none => .done | some _ => roundsProtocol n)
+
+/-- The batching draw `ξ`, then one sumcheck over the tallest active table's variables. -/
+def protocol : Protocol := .public .receiver E fun _ ↦ roundsProtocol S L (maxHeight S L)
+
+/-- Prefix predicates on the rounds, the witness fixed throughout. -/
+def roundsLabels (o : Bus.Output S L k) (ξ : E) :
+    (n : ℕ) → List E → E → Bool → Retained.Labels (Witness K S.tables.length) (roundsProtocol S L n).tree
+  | 0, χ, current, active =>
+      ⟨roundRelation S L k o ξ χ current active, fun vals ↦
+        Terminal S L k ⟨o, χ.reverse, vals,
+          active && decide (formula S L k o ξ χ.reverse vals = current)⟩⟩
+  | n + 1, χ, current, active =>
+      ⟨roundRelation S L k o ξ χ current active, fun message ↦
+        ⟨roundRelation S L k o ξ χ current active, fun
+          | none => fun _ ↦ False
+          | some r => roundsLabels o ξ n (χ ++ [r])
+              ((messageOps S L).evaluate current message r)
+              (active && (messageOps S L).accept current message)⟩⟩
+
+/-- Prefix predicates on the table sumcheck, starting at the bus's endpoint. -/
+def labels (o : Bus.Output S L k) : Retained.Labels (Witness K S.tables.length) (protocol S L).tree :=
+  ⟨Bus.Terminal S L k o, fun ξ ↦ roundsLabels S L k o ξ (maxHeight S L) [] (target S L k o ξ) o.active⟩
+
+/-- The extractor keeps the committed witness throughout. -/
+def extractor (o : Bus.Output S L k) (w₀ : Witness K S.tables.length) :
+    RoundExtractor (protocol S L).tree (Retained.state w₀ (Bus.Terminal S L k o)) :=
+  Retained.extractor w₀ (labels S L k o)
+
+/-- The rounds' draws, as in ArkLib's sumcheck certificate. -/
+noncomputable def roundsChallenges : (n : ℕ) → E → RoundExtractor.ChallengeSchedule
+    (roundsProtocol S L n).tree (roundsProtocol S L n).roles
+  | 0, _ => ⟨PUnit.unit, fun _ ↦ PUnit.unit⟩
+  | n + 1, current => fun message ↦
+      ⟨⟨Sumcheck.Interaction.Knowledge.nextChallenge (messageOps S L) current message,
+          overE (degree S L + 1)⟩, fun
+        | none => PUnit.unit
+        | some r => roundsChallenges n ((messageOps S L).evaluate current message r)⟩
+
+/-- The `ξ` draw batches `constraintCount + 3` claims in a polynomial of degree
+`constraintCount + 2`; each round's message has degree `degree + 1`. -/
+noncomputable def challenges (o : Bus.Output S L k) :
+    RoundExtractor.ChallengeSchedule (protocol S L).tree (protocol S L).roles :=
+  ⟨⟨$ᵗ E, overE (constraintCount S L + 2)⟩, fun ξ ↦ roundsChallenges S L (maxHeight S L) (target S L k o ξ)⟩
+
+/-- The rounds' output from the messages and the transmitted values. -/
+noncomputable def roundsOutput (o : Bus.Output S L k) (ξ : E) :
+    (n : ℕ) → List E → E → Bool → (roundsProtocol S L n).tree.ExecutionPath → Option (Output S L k)
+  | 0, χ, current, active, path => some
+      ⟨o, χ.reverse, path.1, active && decide (formula S L k o ξ χ.reverse path.1 = current)⟩
+  | n + 1, χ, current, active, path => match path with
+    | ⟨_, none, _⟩ => none
+    | ⟨message, some r, rest⟩ => roundsOutput o ξ n (χ ++ [r])
+        ((messageOps S L).evaluate current message r)
+        (active && (messageOps S L).accept current message) rest
+
+/-- The table sumcheck's output on a path. -/
+noncomputable def outputClaim (o : Bus.Output S L k) (path : (protocol S L).tree.ExecutionPath) :
+    Option (Output S L k) :=
+  roundsOutput S L k o path.1 (maxHeight S L) [] (target S L k o path.1) o.active path.2
+
+/-- The output claim family. -/
+def claimFamily : ClaimFamily Unit := ⟨fun _ ↦ Option (Output S L k)⟩
+
+/-- The terminal problem, bound to the committed witness. -/
+def terminalProblem (w₀ : Witness K S.tables.length) : Problem (claimFamily S L k) where
+  Witness _ _ := Witness K S.tables.length
+  admissible _ _ := True
+  rel _ claim w := w = w₀ ∧ match claim with | none => False | some o => Terminal S L k o w
+  rel_admissible := by intros; trivial
+
+/-- The rounds' terminal knowledge is the terminal problem at their output. -/
+theorem rounds_terminal_iff (o : Bus.Output S L k) (w₀ : Witness K S.tables.length)
+    (ξ : E) (n : ℕ) (χ : List E) (current : E) (active : Bool)
+    (path : (roundsProtocol S L n).tree.ExecutionPath)
+    (w : ((Retained.extractor w₀ (roundsLabels S L k o ξ n χ current active)).terminalState path).Witness) :
+    ((Retained.extractor w₀ (roundsLabels S L k o ξ n χ current active)).terminalState path).holds w ↔
+      (terminalProblem S L k w₀).rel () (roundsOutput S L k o ξ n χ current active path)
+        (Retained.terminalEquiv w₀ (roundsLabels S L k o ξ n χ current active) path w) := by
+  induction n generalizing χ current active with
+  | zero => rfl
+  | succ n ih =>
+    rcases path with ⟨message, choice, path⟩
+    cases choice with
+    | none =>
+        change (_ ∧ False) ↔ (_ ∧ False)
+        rfl
+    | some r => exact ih _ _ _ path w
+
+/-- The extractor's terminal knowledge is the terminal problem at the output claim. -/
+def terminalRelation (o : Bus.Output S L k) (w₀ : Witness K S.tables.length) :
+    TerminalRelation (extractor S L k o w₀) (terminalProblem S L k w₀) (fun _ ↦ ())
+      (outputClaim S L k o) where
+  witnessEquiv := Retained.terminalEquiv w₀ (labels S L k o)
+  knowledge_iff path witness := rounds_terminal_iff S L k o w₀ path.1 (maxHeight S L) []
+    (target S L k o path.1) o.active path.2 witness
 
 end CompStark.Tables.TableSumcheck
