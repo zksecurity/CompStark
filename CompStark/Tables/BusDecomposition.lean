@@ -281,6 +281,27 @@ theorem sumBlocks_congr (μ : ℕ) (ζ : List E) (f g : Block S.tables.length �
     simp only [sumBlocks, h b (List.mem_cons_self ..),
       ih _ fun x hx ↦ h x (List.mem_cons_of_mem _ hx)]
 
+omit k α β w in
+/-- A side's blocks come from its tables' nonzero columns and interactions. -/
+theorem mem_sortedBlocks (side : Fin 3) : ∀ b ∈ S.sortedBlocks L side,
+    (∀ t c, b = .nonzero t c → c ∈ (S.table t).nonzero) ∧
+      ∀ t I, b = .interaction t I → I ∈ (S.table t).interactions := by
+  intro b hb
+  have hb' := (List.mergeSort_perm (S.blocks side) _).mem_iff.mp hb
+  simp only [blocks, List.mem_flatMap, List.mem_finRange, true_and] at hb'
+  obtain ⟨t, ht⟩ := hb'
+  split at ht
+  · obtain ⟨c, hc, rfl⟩ := List.mem_map.mp ht
+    refine ⟨fun t' c' (h : Block.nonzero t c = .nonzero t' c') ↦ ?_,
+      fun t' I' (h : Block.nonzero t c = .interaction t' I') ↦ by cases h⟩
+    cases h
+    exact hc
+  · obtain ⟨I, hI, rfl⟩ := List.mem_map.mp ht
+    refine ⟨fun t' c' (h : Block.interaction t I = .nonzero t' c') ↦ (by cases h),
+      fun t' I' (h : Block.interaction t I = .interaction t' I') ↦ ?_⟩
+    cases h
+    exact (List.mem_filter.mp hI).1
+
 /-- A side's leaf extension is its public part, at the true boundary values, plus its table
 debt. -/
 theorem leaf_decomposition (hT : ∀ t, (S.table t).WellFormed)
@@ -294,23 +315,7 @@ theorem leaf_decomposition (hT : ∀ t, (S.table t).WellFormed)
       S.publicPart L k α β μ vals side z.toList + S.tableDebt L k α β μ w side z.toList := by
   have hh : ∀ b : Block S.tables.length, Block.height S L b = L.logHeight (Block.table S b) := by
     intro b; cases b <;> rfl
-  have mem : ∀ b ∈ S.sortedBlocks L side, (∀ t c, b = .nonzero t c → c ∈ (S.table t).nonzero) ∧
-      ∀ t I, b = .interaction t I → I ∈ (S.table t).interactions := by
-    intro b hb
-    have hb' := (List.mergeSort_perm (S.blocks side) _).mem_iff.mp hb
-    simp only [blocks, List.mem_flatMap, List.mem_finRange, true_and] at hb'
-    obtain ⟨t, ht⟩ := hb'
-    split at ht
-    · obtain ⟨c, hc, rfl⟩ := List.mem_map.mp ht
-      refine ⟨fun t' c' (h : Block.nonzero t c = .nonzero t' c') ↦ ?_,
-        fun t' I' (h : Block.nonzero t c = .interaction t' I') ↦ by cases h⟩
-      cases h
-      exact hc
-    · obtain ⟨I, hI, rfl⟩ := List.mem_map.mp ht
-      refine ⟨fun t' c' (h : Block.interaction t I = .nonzero t' c') ↦ (by cases h),
-        fun t' I' (h : Block.interaction t I = .interaction t' I') ↦ ?_⟩
-      cases h
-      exact (List.mem_filter.mp hI).1
+  have mem := S.mem_sortedBlocks L side
   rw [S.leaves_blocks L k w α β μ fits side z, tableDebt_eq, publicPart]
   rw [S.sumBlocks_congr L μ z.toList _ _ _ 0 (fun b hb ↦ S.mle_blockLeaf k α β L w hT hexec hpad vals
     (z.toList.take (Block.height S L b)) b
