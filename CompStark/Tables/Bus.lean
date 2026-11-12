@@ -67,6 +67,10 @@ def BusShape (k : ℕ) (width : String → ℕ) : Prop :=
   S.buses.Nodup ∧ S.buses.length < 2 ^ 64 - 1 ∧ (∀ b ∈ S.buses, 1 + width b ≤ 2 ^ k) ∧
   ∀ T ∈ S.tables, ∀ I ∈ T.interactions, I.tuple.length = width I.bus ∧ I.bus ∈ S.buses
 
+instance (k : ℕ) (width : String → ℕ) : Decidable (S.BusShape k width) := by
+  unfold BusShape
+  infer_instance
+
 /-- All pushed (`push = true`) or pulled tuples, encoded. -/
 def encoded (k : ℕ) (L : Layout S.tables.length) (w : Witness K S.tables.length) (push : Bool) :
     Multiset (Vector K (2 ^ k)) :=

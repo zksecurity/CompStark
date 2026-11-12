@@ -147,6 +147,12 @@ def Coins : List ℕ → ℕ → Type
   | [], _ => PUnit
   | ρ :: rest, m => E × (Fin m → E) × (Fin ρ → E) × Coins rest (m + ρ)
 
+/-- Coins filled from a sequence of field elements, layer by layer. -/
+def Coins.fill (f : ℕ → E) : (steps : List ℕ) → (m : ℕ) → (offset : ℕ) → Coins steps m
+  | [], _, _ => PUnit.unit
+  | ρ :: rest, m, offset => (f offset, fun i ↦ f (offset + 1 + i.val),
+      fun i ↦ f (offset + 1 + m + i.val), Coins.fill f rest (m + ρ) (offset + 1 + m + ρ))
+
 variable (μ : ℕ) (leaves : Fin 3 → ℕ → E)
 
 /-- The honest normalized rounds, then the continuation at the full prefix. -/

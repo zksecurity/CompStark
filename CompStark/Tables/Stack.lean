@@ -28,8 +28,8 @@ def committedColumns (t : Fin S.tables.length) : List ℕ :=
 
 /-- Every committed column, tallest table first. -/
 def stackColumns : List (Fin S.tables.length × ℕ) :=
-  ((List.finRange S.tables.length).flatMap fun t ↦ (S.committedColumns t).map (t, ·)).mergeSort
-    fun a b ↦ decide (L.logHeight b.1 ≤ L.logHeight a.1)
+  ((List.finRange S.tables.length).flatMap fun t ↦ (S.committedColumns t).map (t, ·)).insertionSort
+    fun a b ↦ L.logHeight b.1 ≤ L.logHeight a.1
 
 /-- Stacked columns have decreasing heights. -/
 theorem stackColumns_antitone :
@@ -37,12 +37,12 @@ theorem stackColumns_antitone :
   intro a b hab
   rcases eq_or_lt_of_le hab with h | h
   · rw [h]
-  · have hp := List.pairwise_mergeSort
-      (le := fun a b : Fin S.tables.length × ℕ ↦ decide (L.logHeight b.1 ≤ L.logHeight a.1))
-      (fun a b c hab hbc ↦ by simp only [decide_eq_true_eq] at *; omega)
-      (fun a b ↦ by simp only [Bool.or_eq_true, decide_eq_true_eq]; omega)
+  · let r := fun a b : Fin S.tables.length × ℕ ↦ L.logHeight b.1 ≤ L.logHeight a.1
+    have : Std.Total r := ⟨fun a b ↦ le_total _ _⟩
+    have : IsTrans (Fin S.tables.length × ℕ) r := ⟨fun a b c h1 h2 ↦ le_trans h2 h1⟩
+    have hp := List.pairwise_insertionSort r
       ((List.finRange S.tables.length).flatMap fun t ↦ (S.committedColumns t).map (t, ·))
-    exact of_decide_eq_true (List.pairwise_iff_getElem.mp hp a.val b.val a.isLt b.isLt h)
+    exact List.pairwise_iff_getElem.mp hp a.val b.val a.isLt b.isLt h
 
 /-- The stack's aligned blocks: one per committed column, on its table's variables. -/
 @[reducible] def stackBlocks : Algebra.Blocks where
@@ -53,13 +53,26 @@ theorem stackColumns_antitone :
 /-- A stacked column is a committed column of its table. -/
 theorem mem_stackColumns (t : Fin S.tables.length) (c : ℕ) :
     (t, c) ∈ S.stackColumns L ↔ c ∈ S.committedColumns t := by
-  rw [stackColumns, (List.mergeSort_perm _ _).mem_iff]
+  rw [stackColumns, (List.perm_insertionSort _ _).mem_iff]
   simp only [List.mem_flatMap, List.mem_finRange, true_and, List.mem_map, Prod.mk.injEq]
   constructor
   · rintro ⟨t', c', hc, rfl, rfl⟩
     exact hc
   · intro hc
     exact ⟨t, c, hc, rfl, rfl⟩
+
+/-- The stack's size: one window of its table's height per committed column. -/
+theorem stackBlocks_total : (S.stackBlocks L).total =
+    (((List.finRange S.tables.length).flatMap fun t ↦ (S.committedColumns t).map (t, ·)).map
+      fun p ↦ 2 ^ L.logHeight p.1).sum := by
+  rw [Algebra.Blocks.total_eq_sum]
+  rw [← ((List.perm_insertionSort (fun a b : Fin S.tables.length × ℕ ↦ L.logHeight b.1 ≤ L.logHeight a.1)
+    ((List.finRange S.tables.length).flatMap fun t ↦ (S.committedColumns t).map (t, ·))).map
+      (fun p : Fin S.tables.length × ℕ ↦ 2 ^ L.logHeight p.1)).sum_eq]
+  change _ = ((S.stackColumns L).map fun p ↦ 2 ^ L.logHeight p.1).sum
+  rw [← List.sum_ofFn]
+  congr 1
+  exact List.ofFn_getElem_eq_map (S.stackColumns L) (fun p ↦ 2 ^ L.logHeight p.1)
 
 /-- The number of variables the stack needs. -/
 def stackVars : ℕ := Nat.clog 2 (S.stackBlocks L).total
@@ -241,7 +254,7 @@ theorem stackClaim_stack_iff (hM : (S.stackBlocks L).total ≤ 2 ^ M) (w : Witne
 
 /-- Stacked columns are distinct. -/
 theorem stackColumns_nodup : (S.stackColumns L).Nodup := by
-  rw [stackColumns, (List.mergeSort_perm _ _).nodup_iff]
+  rw [stackColumns, (List.perm_insertionSort _ _).nodup_iff]
   apply List.nodup_flatMap.mpr
   refine ⟨fun t _ ↦ (List.nodup_range.filter _).map fun _ _ h ↦ (Prod.mk.inj h).2, ?_⟩
   apply (List.nodup_finRange S.tables.length).pairwise_of_forall_ne
