@@ -114,10 +114,10 @@ theorem mle_blockLeaf (hT : ∀ t, (S.table t).WellFormed)
     (hexec : ∀ t, L.executed t ≤ 2 ^ L.logHeight t)
     (hpad : ∀ t, L.executed t < 2 ^ L.logHeight t → ∀ I ∈ (S.table t).interactions, ∀ e ∈ I.tuple,
       e.colsBelow (S.table t).air.width 0 0 0 = true)
-    (vals : S.BoundaryValues L) (z : List E)
-    (hvals : ∀ t c, S.Direct L t = true → (∃ I ∈ (S.table t).interactions, Expr.cur c ∈ I.tuple) →
-      S.boundaryValue L vals t c = S.column L w t c z)
-    (b : Block S.tables.length)
+    (vals : S.BoundaryValues L) (z : List E) (b : Block S.tables.length)
+    (hvals : ∀ c, S.Direct L (Block.table S b) = true →
+      (∃ I ∈ (S.table (Block.table S b)).interactions, Expr.cur c ∈ I.tuple) →
+      S.boundaryValue L vals (Block.table S b) c = S.column L w (Block.table S b) c z)
     (hb : ∀ t c, b = .nonzero t c → c ∈ (S.table t).nonzero)
     (hI : ∀ t I, b = .interaction t I → I ∈ (S.table t).interactions) :
     mle (Block.height S L b) (S.blockLeaf L k w α β b) z =
@@ -186,7 +186,7 @@ theorem mle_blockLeaf (hT : ∀ t, (S.table t).WellFormed)
     apply S.formE_congr k α β b _ _ _ hatomic
     · intro t' I hbI c hc
       subst hbI
-      exact ((hvals t' c hd ⟨I, hI t' I rfl, hc⟩).trans rfl).symm
+      exact ((hvals c hd ⟨I, hI t' I rfl, hc⟩).trans rfl).symm
     · intro t' c hbI
       subst hbI
       simp only [Direct, Bool.and_eq_true, List.isEmpty_iff] at hd
@@ -196,5 +196,127 @@ theorem mle_blockLeaf (hT : ∀ t, (S.table t).WellFormed)
       cases this
   · simp only [hd, Bool.false_eq_true, ↓reduceIte, zero_add]
     ring
+
+/-- The table debt is the selector-weighted sum of the other tables' blocks' form extensions. -/
+theorem tableDebt_eq (μ : ℕ) (side : Fin 3) (ζ : List E) :
+    S.tableDebt L k α β μ w side ζ =
+      S.sumBlocks L μ ζ (fun b ↦ if S.Direct L (Block.table S b) then 0 else
+        mle (Block.height S L b) (fun i ↦ S.formE k α β b (S.rowE w (Block.table S b) i)
+          (S.prepE (Block.table S b) i)) (ζ.take (Block.height S L b))) (S.sortedBlocks L side) 0 := by
+  set bs := S.sortedBlocks L side
+  have hh : ∀ b : Block S.tables.length, Block.height S L b = L.logHeight (Block.table S b) := by
+    intro b; cases b <;> rfl
+  unfold tableDebt tableForm
+  simp only [sumBlocks_eq_sum, Nat.zero_add]
+  have inner : ∀ t : Fin S.tables.length,
+      mle (L.logHeight t) (fun i ↦ ∑ j : Fin bs.length,
+        selectorWeight μ (Block.height S L bs[j]) (S.blockOffset L bs j.val) ζ *
+          (if Block.table S bs[j] = t then S.formE k α β bs[j] (S.rowE w t i) (S.prepE t i) else 0))
+        (ζ.take (L.logHeight t)) =
+      ∑ j : Fin bs.length, selectorWeight μ (Block.height S L bs[j]) (S.blockOffset L bs j.val) ζ *
+        (if Block.table S bs[j] = t then
+          mle (L.logHeight t) (fun i ↦ S.formE k α β bs[j] (S.rowE w t i) (S.prepE t i))
+            (ζ.take (L.logHeight t)) else 0) := by
+    intro t
+    rw [mle_sum]
+    apply Finset.sum_congr rfl
+    intro j _
+    rw [mle_smul]
+    congr 1
+    split
+    · rfl
+    · exact mle_const _ _ _
+  have collapse : ∀ (c : Fin S.tables.length) (f : Fin S.tables.length → E),
+      (∑ t : Fin S.tables.length, if S.Direct L t = true then 0 else if c = t then f t else 0) =
+        if S.Direct L c = true then 0 else f c := by
+    intro c f
+    rw [show (fun t ↦ if S.Direct L t = true then 0 else if c = t then f t else 0) =
+        fun t ↦ if c = t then (if S.Direct L t = true then 0 else f t) else 0 from
+      funext fun t ↦ by by_cases h : c = t <;> simp [h]]
+    rw [Finset.sum_ite_eq, if_pos (Finset.mem_univ c)]
+  calc (∑ t : Fin S.tables.length, if S.Direct L t = true then 0 else
+        mle (L.logHeight t) (fun i ↦ ∑ j : Fin bs.length,
+          selectorWeight μ (Block.height S L bs[j]) (S.blockOffset L bs j.val) ζ *
+            (if Block.table S bs[j] = t then S.formE k α β bs[j] (S.rowE w t i) (S.prepE t i) else 0))
+          (ζ.take (L.logHeight t)))
+      = ∑ t : Fin S.tables.length, ∑ j : Fin bs.length,
+          selectorWeight μ (Block.height S L bs[j]) (S.blockOffset L bs j.val) ζ *
+            (if S.Direct L t = true then 0 else if Block.table S bs[j] = t then
+              mle (L.logHeight t) (fun i ↦ S.formE k α β bs[j] (S.rowE w t i) (S.prepE t i))
+                (ζ.take (L.logHeight t)) else 0) := by
+        apply Finset.sum_congr rfl
+        intro t _
+        by_cases hd : S.Direct L t = true
+        · simp only [hd, ↓reduceIte, mul_zero, Finset.sum_const_zero]
+        · simp only [hd, Bool.false_eq_true, ↓reduceIte]
+          exact inner t
+    _ = ∑ j : Fin bs.length, selectorWeight μ (Block.height S L bs[j]) (S.blockOffset L bs j.val) ζ *
+          (if S.Direct L (Block.table S bs[j]) = true then 0 else
+            mle (Block.height S L bs[j]) (fun i ↦ S.formE k α β bs[j]
+              (S.rowE w (Block.table S bs[j]) i) (S.prepE (Block.table S bs[j]) i))
+              (ζ.take (Block.height S L bs[j]))) := by
+        rw [Finset.sum_comm]
+        apply Finset.sum_congr rfl
+        intro j _
+        rw [← Finset.mul_sum, collapse, hh]
+
+omit k α β w in
+/-- Block sums are additive. -/
+theorem sumBlocks_add (μ : ℕ) (ζ : List E) (f g : Block S.tables.length → E)
+    (bs : List (Block S.tables.length)) (offset : ℕ) :
+    S.sumBlocks L μ ζ (fun b ↦ f b + g b) bs offset =
+      S.sumBlocks L μ ζ f bs offset + S.sumBlocks L μ ζ g bs offset := by
+  induction bs generalizing offset with
+  | nil => simp only [sumBlocks, add_zero]
+  | cons b bs ih => simp only [sumBlocks, ih]; ring
+
+omit k α β w in
+/-- Block sums depend only on their members' values. -/
+theorem sumBlocks_congr (μ : ℕ) (ζ : List E) (f g : Block S.tables.length → E)
+    (bs : List (Block S.tables.length)) (offset : ℕ) (h : ∀ b ∈ bs, f b = g b) :
+    S.sumBlocks L μ ζ f bs offset = S.sumBlocks L μ ζ g bs offset := by
+  induction bs generalizing offset with
+  | nil => rfl
+  | cons b bs ih =>
+    simp only [sumBlocks, h b (List.mem_cons_self ..),
+      ih _ fun x hx ↦ h x (List.mem_cons_of_mem _ hx)]
+
+/-- A side's leaf extension is its public part, at the true boundary values, plus its table
+debt. -/
+theorem leaf_decomposition (hT : ∀ t, (S.table t).WellFormed)
+    (hexec : ∀ t, L.executed t ≤ 2 ^ L.logHeight t)
+    (hpad : ∀ t, L.executed t < 2 ^ L.logHeight t → ∀ I ∈ (S.table t).interactions, ∀ e ∈ I.tuple,
+      e.colsBelow (S.table t).air.width 0 0 0 = true)
+    (μ : ℕ) (fits : S.Fits L μ) (side : Fin 3) (z : Vector E μ) (vals : S.BoundaryValues L)
+    (hvals : ∀ t c, S.Direct L t = true → (∃ I ∈ (S.table t).interactions, Expr.cur c ∈ I.tuple) →
+      S.boundaryValue L vals t c = S.column L w t c (z.toList.take (L.logHeight t))) :
+    mle μ (S.leaves L k w α β side) z.toList =
+      S.publicPart L k α β μ vals side z.toList + S.tableDebt L k α β μ w side z.toList := by
+  have hh : ∀ b : Block S.tables.length, Block.height S L b = L.logHeight (Block.table S b) := by
+    intro b; cases b <;> rfl
+  have mem : ∀ b ∈ S.sortedBlocks L side, (∀ t c, b = .nonzero t c → c ∈ (S.table t).nonzero) ∧
+      ∀ t I, b = .interaction t I → I ∈ (S.table t).interactions := by
+    intro b hb
+    have hb' := (List.mergeSort_perm (S.blocks side) _).mem_iff.mp hb
+    simp only [blocks, List.mem_flatMap, List.mem_finRange, true_and] at hb'
+    obtain ⟨t, ht⟩ := hb'
+    split at ht
+    · obtain ⟨c, hc, rfl⟩ := List.mem_map.mp ht
+      refine ⟨fun t' c' (h : Block.nonzero t c = .nonzero t' c') ↦ ?_,
+        fun t' I' (h : Block.nonzero t c = .interaction t' I') ↦ by cases h⟩
+      cases h
+      exact hc
+    · obtain ⟨I, hI, rfl⟩ := List.mem_map.mp ht
+      refine ⟨fun t' c' (h : Block.interaction t I = .nonzero t' c') ↦ (by cases h),
+        fun t' I' (h : Block.interaction t I = .interaction t' I') ↦ ?_⟩
+      cases h
+      exact (List.mem_filter.mp hI).1
+  rw [S.leaves_blocks L k w α β μ fits side z, tableDebt_eq, publicPart]
+  rw [S.sumBlocks_congr L μ z.toList _ _ _ 0 (fun b hb ↦ S.mle_blockLeaf k α β L w hT hexec hpad vals
+    (z.toList.take (Block.height S L b)) b
+    (fun c hd hr ↦ (hvals (Block.table S b) c hd hr).trans (by rw [hh]))
+    (mem b hb).1 (mem b hb).2)]
+  rw [sumBlocks_add]
+  ring
 
 end CompStark.Tables.System
