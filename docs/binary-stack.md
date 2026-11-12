@@ -13,6 +13,7 @@ None of these components is at parity with the Rust reference. The table gives t
 | Honest PCS prover (`Pcs.Honest`) | — | Unmeasured; a specification prover, not the fast opening |
 | PCS verifier and extractor (`Pcs.Verifier`, `Pcs.Extraction`, `Pcs.ExtractorCache`) | — | Unmeasured as components |
 | Keccak-f GKR verifier (`Keccak.Gkr.Executable`) | — | Unmeasured as a component |
+| Grand-product GKR (`Multilinear.GrandProduct`) | — | Unmeasured; specification and soundness only |
 
 The Keccak-f GKR count is the `keccak-gkr` performance-gate workload, 2.31 billion instructions; the Rust counts are leanvm-security's single-thread measurements of leanMultisig at the same revision on the same host (an AMD Ryzen 7 3700X), the standalone one from its `docs/keccak-gkr-benchmark.md` and the in-proof one from its `docs/gkr-packed-performance.md`, not re-measured here.
 
@@ -47,6 +48,10 @@ The extractor decodes with CompPoly's Guruswami–Sudan decoder at exact integer
 `Keccak.Gkr` is a public-coin reduction from claims on the outputs of `2^(p+4)` Keccak-f permutations to claims on their inputs and committed middle states: twelve layers per segment of two twelve-round segments, the nonlinear layer through the sixteen-coordinate reverse multiplication-friendly embedding of `Keccak.Embedding` (injectivity and the CRT correspondence kernel-checked), pack and position sumchecks and the linear layer by its transpose. `Gkr.soundness` bounds acceptance for a wrong input table by `(37 (p + 4) + 902) / |E|` over any characteristic-two field `E`; `Gkr.certificate` is its knowledge certificate on ArkLib's interaction layer.
 
 `Keccak.GkrProver.prove` is the word-level prover. `specificationTranscript_complete` proves the specification prover accepted for every challenge sequence; `prove_eq_specificationTranscript` and `prove_buildWitness_eq_specificationTranscript` prove the fast prover equal to it, and `prove_complete` and `prove_buildWitness_complete` transfer completeness. `tests/CompStarkTests/KeccakGkr.lean` compares every witness layer, transmitted scalar, challenge, batch claim and opening with Rust on 512 permutations, and the `keccak-gkr` performance-gate workload counts the reduction.
+
+## Grand-product GKR
+
+`Multilinear.GrandProduct` proves three batched product trees over any leaves: an odd root-most binary layer followed by radix-four layers, each a sumcheck of normalized messages carrying the cofactor of the known equality factor, then child interpolation. Its knowledge certificate carries riders, constraint-residual tables over an arbitrary witness (`Riders W`: a fit predicate, tables of fixed heights below a common bound, and their values on the Boolean rows); intermediate layers keep every rider zero on its Boolean rows, and the final layer restricts each rider at its own challenges. `GrandProductDecision` decides the riders by their finite mixed Boolean grid (`ridersRestricted_iff_grid`) and every layer relation, and `GrandProductBadEvents` bounds each normalized round and child interpolation of a fixed candidate list by its local error. `WordGrandProduct` evaluates the layers on machine words. `tests/CompStarkTests/GrandProduct.lean` checks layer schedules, layer claims and rider decisions. The prover is not part of the library and the component is unmeasured.
 
 ## Multilinear algebra and composition
 

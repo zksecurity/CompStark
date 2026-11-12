@@ -485,3 +485,7 @@ public import CompStark.Pcs.Levels
 public import CompStark.Pcs.Multiplicity
 public import CompStark.Pcs.ProductionLevels
 public import CompStark.Pcs.Honest
+public import CompStark.Multilinear.GrandProduct
+public import CompStark.Multilinear.GrandProductDecision
+public import CompStark.Multilinear.GrandProductBadEvents
+public import CompStark.Multilinear.WordGrandProduct
