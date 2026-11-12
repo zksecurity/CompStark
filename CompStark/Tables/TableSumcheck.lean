@@ -1234,4 +1234,226 @@ theorem debtPolynomial_eval (hT : ∀ t, (S.table t).WellFormed) (o : Bus.Output
   simp_rw [mul_comm _ (ξ ^ _)]
   ring
 
+/-- A round's labels start at its round relation. -/
+theorem roundsLabels_input_eq (o : Bus.Output S L k) (ξ : E) (n : ℕ) (χ : List E) (current : E)
+    (active : Bool) :
+    Retained.input (roundsLabels S L k o ξ n χ current active) = roundRelation S L k o ξ χ current active := by
+  cases n <;> rfl
+
+/-- A single remaining assignment. -/
+theorem remaining_cube_zero (n : ℕ) (hn : n = 0) (f : List E → E) (χ : List E) :
+    (∑ i : Fin (2 ^ n), f (χ ++ List.ofFn (fun a : Fin n ↦ bit i.val a.val))) = f χ := by
+  subst n
+  simp only [List.ofFn_zero, List.append_nil]
+  change (∑ _ : Fin 1, f χ) = f χ
+  exact Fin.sum_univ_one _
+
+section Certificate
+
+variable {S L k} (hwf : S.WellFormed L)
+include hwf
+
+/-- A false batch of constraint and bus debts survives `ξ` only at a root of the debt polynomial,
+of degree at most `constraintCount + 2`. -/
+theorem xi_local_le (o : Bus.Output S L k) (w₀ : Witness K S.tables.length) :
+    Pr{let ξ ← ($ᵗ E)}[RoundExtractor.badChallenge (extractor S L k o w₀) ξ] ≤
+      overE (constraintCount S + 2) := by
+  classical
+  have hT : ∀ t, (S.table t).WellFormed := fun t ↦ (hwf.2.2 t).1
+  have next (ξ : E) (bad : RoundExtractor.badChallenge (extractor S L k o w₀) ξ) :
+      ¬ Bus.Terminal S L k o w₀ ∧ (o.active = true ∧ sideRelation S L k o w₀) ∧
+        (debtPolynomial S L k o w₀).eval ξ = 0 := by
+    change ∃ w, ¬ (w = w₀ ∧ Bus.Terminal S L k o w) ∧ w = w₀ ∧
+      Retained.input (roundsLabels S L k o ξ (maxHeight S L) [] (target S L k o ξ) o.active) w at bad
+    obtain ⟨w, wrong, rfl, good⟩ := bad
+    rw [roundsLabels_input_eq] at good
+    obtain ⟨active, side, scalar⟩ := good
+    refine ⟨fun h ↦ wrong ⟨rfl, h⟩, ⟨active, side⟩, ?_⟩
+    rw [debtPolynomial_eval S L k hT]
+    apply sub_eq_zero.mpr
+    exact (show target S L k o ξ = _ from scalar).symm
+  by_cases hzero : debtPolynomial S L k o w₀ = 0
+  · apply le_trans (prEvent_mono _ _ (fun _ ↦ False) fun ξ bad ↦ ?_)
+    · simp only [prEvent_false, zero_le]
+    · obtain ⟨wrong, ⟨active, shaped, point, boundary⟩, _⟩ := next ξ bad
+      obtain ⟨riders, debts⟩ :=
+        (debtValues_zero_iff S L k o w₀).mp ((debtPolynomial_eq_zero_iff S L k o w₀).mp hzero)
+      exact wrong ⟨active, shaped, point, riders, boundary, debts⟩
+  · have bound := sumcheck_polynomial_eval_eq_le (constraintCount S + 2)
+      (debtPolynomial S L k o w₀) 0 hzero (debtPolynomial_degree S L k o w₀)
+      (by simp only [Polynomial.natDegree_zero]; omega)
+    simp only [Polynomial.eval_zero] at bound
+    exact (prEvent_mono _ _ _ fun ξ bad ↦ (next ξ bad).2.2).trans bound
+
+/-- Each round errs with probability at most `(degree + 1) / |E|`, the witness retained. -/
+theorem round_local_le (o : Bus.Output S L k) (w₀ : Witness K S.tables.length)
+    (ξ : E) (n : ℕ) (χ : List E) (current : E) (active : Bool) (message : Message S L)
+    (hlen : χ.length + (n + 1) = maxHeight S L) :
+    Pr{let r ← Sumcheck.Interaction.Knowledge.nextChallenge (messageOps S L) current message}[
+      RoundExtractor.badChallenge
+        ((Retained.extractor w₀ (roundsLabels S L k o ξ (n + 1) χ current active) message).2.2) r] ≤
+        overE (degree S L + 1) := by
+  classical
+  have hT : ∀ t, (S.table t).WellFormed := fun t ↦ (hwf.2.2 t).1
+  let valid := fun w : Witness K S.tables.length ↦ w = w₀ ∧ sideRelation S L k o w
+  let stmt : Sumcheck.Spec.StatementRound E (maxHeight S L) ⟨χ.length, by omega⟩ :=
+    ⟨current, fun a ↦ χ.getD a.val 0⟩
+  have binding : Sumcheck.Interaction.Knowledge.BindsSummand valid
+      (summand S L k o ξ) (summand S L k o ξ w₀) := fun w h ↦ congrArg (summand S L k o ξ) h.1
+  have bound := Sumcheck.Interaction.Knowledge.local_badChallenge_le (messageOps S L) booleanDomain
+    (messageModel S L) valid (summand S L k o ξ) (summand S L k o ξ w₀) binding n χ.length hlen stmt
+    active message
+  apply le_trans (prEvent_mono _ _ _ ?_) bound
+  intro choice bad
+  cases choice with
+  | none =>
+    obtain ⟨w, _, good⟩ := bad
+    exact good.2.elim
+  | some r =>
+    change ∃ w : Witness K S.tables.length, ¬ (w = w₀ ∧ roundRelation S L k o ξ χ current active w) ∧
+      w = w₀ ∧ Retained.input (roundsLabels S L k o ξ n (χ ++ [r])
+        ((messageOps S L).evaluate current message r)
+        (active && (messageOps S L).accept current message)) w at bad
+    obtain ⟨w, bad, same, good⟩ := bad
+    rw [roundsLabels_input_eq] at good
+    obtain ⟨ha, side, reducedNext⟩ := good
+    change ∃ w : Witness K S.tables.length,
+      ¬ (Sumcheck.Interaction.Knowledge.claimState booleanDomain valid (summand S L k o ξ)
+        ⟨χ.length, by omega⟩ stmt active).holds w ∧
+      (Sumcheck.Interaction.Knowledge.claimState booleanDomain valid (summand S L k o ξ)
+        ⟨χ.length + 1, by omega⟩
+        ⟨(messageOps S L).evaluate current message r, Fin.snoc stmt.challenges r⟩
+        (active && (messageOps S L).accept current message)).holds w
+    refine ⟨w, ?_, ha, ⟨same, side⟩, ?_⟩
+    · rintro ⟨active, valid, related⟩
+      exact bad ⟨valid.1, active, valid.2,
+        (reduced_core_iff S L k hT o ξ w χ (by omega) current).mpr related⟩
+    · have h := reduced_core_ofFn_iff S L k hT o ξ w ⟨χ.length + 1, by omega⟩
+        ⟨(messageOps S L).evaluate current message r, Fin.snoc stmt.challenges r⟩
+      have hp : List.ofFn (Fin.snoc stmt.challenges r) = χ ++ [r] := by
+        rw [List.ofFn_succ_last]
+        simp only [Fin.snoc_castSucc, Fin.snoc_last, stmt, ofFn_getD]
+      rw [hp] at h
+      exact h.mp reducedNext
+
+/-- The transmitted values preserve the running claim: a prover's true values make the formula
+the claim. -/
+theorem rounds_prover_preserving (o : Bus.Output S L k) (ξ : E) (w₀ : Witness K S.tables.length)
+    (n : ℕ) (χ : List E) (current : E) (active : Bool) (hlen : χ.length + n = maxHeight S L) :
+    (Retained.extractor w₀ (roundsLabels S L k o ξ n χ current active)).IsProverPreserving
+      (roundsProtocol S L n).roles := by
+  have hT : ∀ t, (S.table t).WellFormed := fun t ↦ (hwf.2.2 t).1
+  induction n generalizing χ current active with
+  | zero =>
+    refine ⟨?_, fun _ ↦ trivial⟩
+    intro vals _ w known
+    change w = w₀ ∧ Terminal S L k ⟨o, χ.reverse, vals,
+      active && decide (formula S L k o ξ χ.reverse vals = current)⟩ w at known
+    obtain ⟨same, checks, side, columns⟩ := known
+    obtain ⟨ha, hc⟩ := Bool.and_eq_true_iff.mp checks
+    refine ⟨same, ha, side, ?_⟩
+    change reduced S L k o ξ χ current w
+    unfold reduced
+    have hr : maxHeight S L - χ.length = 0 := by omega
+    rw [remaining_cube_zero _ hr (fun z ↦ summandValue S L k o ξ w z.reverse) χ]
+    exact (of_decide_eq_true hc).symm.trans
+      (formula_eq_summandValue S L k hT w o ξ χ.reverse vals columns)
+  | succ n ih =>
+    refine ⟨fun _ _ known ↦ known, fun message ↦ ⟨?_, ?_⟩⟩
+    · intro choice impossible
+      cases impossible
+    · intro choice
+      cases choice with
+      | none => trivial
+      | some r =>
+        apply ih
+        simp only [List.length_append, List.length_singleton]
+        omega
+
+/-- The extractor is prover-preserving. -/
+theorem prover_preserving (o : Bus.Output S L k) (w₀ : Witness K S.tables.length) :
+    (extractor S L k o w₀).IsProverPreserving (protocol S L).roles := by
+  refine ⟨?_, fun ξ ↦ rounds_prover_preserving hwf o ξ w₀ (maxHeight S L) [] (target S L k o ξ)
+    o.active (by simp only [List.length_nil, Nat.zero_add])⟩
+  intro ξ impossible
+  cases impossible
+
+/-- Every round prefix meets its local challenge bound. -/
+theorem rounds_locally_bounded (o : Bus.Output S L k) (w₀ : Witness K S.tables.length)
+    (ξ : E) (n : ℕ) (χ : List E) (current : E) (active : Bool) (hlen : χ.length + n = maxHeight S L) :
+    (Retained.extractor w₀ (roundsLabels S L k o ξ n χ current active)).IsLocallyBounded
+      (roundsProtocol S L n).roles (roundsChallenges S L n current) := by
+  induction n generalizing χ current active with
+  | zero => intro vals; trivial
+  | succ n ih =>
+    intro message
+    constructor
+    · rw [_root_.RoundByRound.GameFamily.isBounded_iff]
+      intro _ _
+      exact round_local_le hwf o w₀ ξ n χ current active message hlen
+    · intro choice
+      cases choice with
+      | none => trivial
+      | some r =>
+        apply ih
+        simp only [List.length_append, List.length_singleton]
+        omega
+
+/-- The `ξ` draw and every round meet their local challenge bounds. -/
+theorem locally_bounded (o : Bus.Output S L k) (w₀ : Witness K S.tables.length) :
+    (extractor S L k o w₀).IsLocallyBounded (protocol S L).roles (challenges S L k o) := by
+  constructor
+  · rw [_root_.RoundByRound.GameFamily.isBounded_iff]
+    intro _ _
+    exact xi_local_le hwf o w₀
+  · intro ξ
+    exact rounds_locally_bounded hwf o w₀ ξ (maxHeight S L) [] (target S L k o ξ) o.active
+      (by simp only [List.length_nil, Nat.zero_add])
+
+/-- The table sumcheck's knowledge certificate from the bus's endpoint, the witness retained. -/
+noncomputable def certificate (o : Bus.Output S L k) (w₀ : Witness K S.tables.length) :
+    KnowledgeCertificate (protocol S L).tree (protocol S L).roles
+      (Retained.state w₀ (Bus.Terminal S L k o)) where
+  extractor := extractor S L k o w₀
+  challenges := challenges S L k o
+  prover_preserving := prover_preserving hwf o w₀
+  local_bound := locally_bounded hwf o w₀
+
+end Certificate
+
+/-- The table sumcheck's error: the `ξ` batch and one round error per variable. -/
+noncomputable def error : ENNReal := overE (constraintCount S + 2 + (degree S L + 1) * maxHeight S L)
+
+/-- The rounds' errors add up to `(degree + 1)` per round. -/
+theorem rounds_budget (n : ℕ) (current : E) :
+    Retained.Budget (roundsProtocol S L n).roles (roundsChallenges S L n current)
+      (overE ((degree S L + 1) * n)) := by
+  induction n generalizing current with
+  | zero => intro vals; trivial
+  | succ n ih =>
+    intro message
+    refine ⟨overE ((degree S L + 1) * n), le_of_eq ?_, ?_⟩
+    · simp only [roundsChallenges, Nat.mul_succ, overE_add]
+      exact add_comm _ _
+    · intro choice
+      cases choice with
+      | none => trivial
+      | some r => exact ih _
+
+/-- The schedule's errors add up to the table sumcheck's error. -/
+theorem challenges_budget (o : Bus.Output S L k) :
+    Retained.Budget (protocol S L).roles (challenges S L k o) (error S L) := by
+  refine ⟨overE ((degree S L + 1) * maxHeight S L), le_of_eq ?_, fun ξ ↦ rounds_budget S L _ _⟩
+  simp only [challenges, error, overE_add]
+
+/-- Against every prover, extraction from the table sumcheck fails with probability at most its
+error. -/
+theorem knowledgeSoundness (hwf : S.WellFormed L) (o : Bus.Output S L k) (w₀ : Witness K S.tables.length)
+    (prover : Retained.Strategy (protocol S L).tree (protocol S L).roles) :
+    Pr{let path ← Retained.play (protocol S L).roles (challenges S L k o) prover}[
+      Retained.Failure (extractor S L k o w₀) path] ≤ error S L :=
+  Retained.failure_le (extractor S L k o w₀) (protocol S L).roles (challenges S L k o)
+    (prover_preserving hwf o w₀) (locally_bounded hwf o w₀) (error S L)
+    (challenges_budget S L k o) prover
+
 end CompStark.Tables.TableSumcheck
