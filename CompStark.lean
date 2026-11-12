@@ -503,3 +503,6 @@ public import CompStark.Tables.Riders
 public import CompStark.Tables.Leaves
 public import CompStark.Tables.BusSound
 public import CompStark.Tables.Decomposition
+public import CompStark.Tables.Forms
+public import CompStark.Tables.BusOutput
+public import CompStark.Tables.BusDecomposition
