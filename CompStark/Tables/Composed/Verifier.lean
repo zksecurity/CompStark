@@ -73,6 +73,51 @@ theorem poolEvaluated_claims (o : TableSumcheck.Output S L k) :
       · exact columnClaimEvaluated_claim M _ _ _ _
     · rfl
 
+/-- The stacked columns' heights and offsets, computed once. -/
+def stackLifts : Array (ℕ × ℕ) :=
+  let columns := (S.stackColumns L).toArray
+  let blocks := S.stackBlocks L
+  Array.ofFn fun b : Fin columns.size =>
+    (L.logHeight columns[b].1, blocks.offsetNat b.val)
+
+/-- A point lifted to the stack by a column's height and offset. -/
+def liftWith (lift : ℕ × ℕ) (z : List E) : Fin M → E :=
+  fun j => if j.val < lift.1 then z.getD j.val 0 else bit lift.2 j.val
+
+/-- The precomputed height and offset lift a point as the stack does. -/
+theorem liftPoint_stackLifts (b : Fin (S.stackColumns L).length) (z : List E) :
+    S.liftPoint L M b z = liftWith M ((stackLifts (S := S) (L := L)).getD b.val (0, 0)) z := by
+  have size : b.val < (stackLifts (S := S) (L := L)).size := by
+    simp only [stackLifts, Array.size_ofFn, List.size_toArray, b.isLt]
+  rw [Array.getD_eq_getD_getElem?, Array.getElem?_eq_getElem size, Option.getD_some]
+  simp only [stackLifts, Array.getElem_ofFn]
+  rfl
+
+/-- The pool with the boundary and stacked columns, each table's transmitted columns and the
+stack's lifts computed once. -/
+def poolEvaluatedShared (o : TableSumcheck.Output S L k) : List (Pcs.EvaluatedClaim M) :=
+  let stack := S.stackColumns L
+  let lifts := stackLifts (S := S) (L := L)
+  let boundary := S.boundaryColumns L
+  let claim := fun (t : Fin S.tables.length) (c : ℕ) (z : List E) (value : E) =>
+    (stack.finIdxOf? (t, c)).map fun b =>
+      (⟨.eq (liftWith M (lifts.getD b.val (0, 0)) z), value⟩ : Pcs.EvaluatedClaim M)
+  ((List.finRange boundary.length).filterMap fun j ↦
+    claim boundary[j].1 boundary[j].2 (o.bus.point.take (L.logHeight boundary[j].1)) (o.bus.boundary j)) ++
+  (List.finRange S.tables.length).flatMap fun t ↦
+    if h : S.Direct L t = false then
+      let transmitted := TableSumcheck.transmitted S t
+      (List.finRange transmitted.length).filterMap fun i ↦
+        if TableSumcheck.virtualAt S t transmitted[i] then none
+        else claim t transmitted[i] (o.point.take (L.logHeight t)) (o.values ⟨t, h⟩ i)
+    else []
+
+/-- Sharing the pool's structure leaves its claims. -/
+@[csimp] theorem poolEvaluated_code : @poolEvaluated = @poolEvaluatedShared := by
+  funext S L k M o
+  unfold poolEvaluated poolEvaluatedShared columnClaimEvaluated
+  simp only [← liftPoint_stackLifts]
+
 /-- The opening's claims with factored weights. -/
 def openingClaimsEvaluated (setup : Setup S L k M) :
     (Option (Bus.Output S L k) × Option (TableSumcheck.Output S L k)) × setup.external.Output →

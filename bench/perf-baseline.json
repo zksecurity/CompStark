@@ -612,8 +612,8 @@
       "tolerance": 0.005
     },
     "tables-compiled/hashes verify": {
-      "instructions": 489791134,
-      "variation": 1.4e-05,
+      "instructions": 402427386,
+      "variation": 0.0,
       "tolerance": 0.005
     }
   }

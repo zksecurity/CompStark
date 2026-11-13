@@ -84,6 +84,25 @@ def publicPart (μ : ℕ) (vals : S.BoundaryValues L) (side : Fin 3) (ζ : List 
     (S.sortedBlocks L side) 0 +
   (1 - S.sumBlocks L μ ζ (fun _ ↦ 1) (S.sortedBlocks L side) 0)
 
+/-- The public part of a block at given boundary values of its columns. -/
+@[macro_inline] def blockPublicWith (value : Fin S.tables.length → ℕ → E) (b : Block S.tables.length) (z : List E) : E :=
+  let t := Block.table S b
+  (if S.Direct L t then
+    S.formE k α β b (value t) (fun c ↦ S.prepColumn L t c z) else 0) +
+  (1 - S.formE k α β b (fun c ↦ ofK ((S.table t).padding.getD c 0)) (fun _ ↦ 0)) *
+    S.paddingMass L t z
+
+/-- The public part of a side with the boundary columns and sorted blocks computed once. -/
+def publicPartShared (μ : ℕ) (vals : S.BoundaryValues L) (side : Fin 3) (ζ : List E) : E :=
+  let boundary := S.boundaryColumns L
+  let value := fun (t : Fin S.tables.length) (c : ℕ) => (boundary.finIdxOf? (t, c)).elim 0 vals
+  let blocks := S.sortedBlocks L side
+  S.sumBlocks L μ ζ (fun b ↦ S.blockPublicWith L k α β value b (ζ.take (Block.height S L b))) blocks 0 +
+  (1 - S.sumBlocks L μ ζ (fun _ ↦ 1) blocks 0)
+
+/-- Sharing the boundary columns and sorted blocks leaves the public part. -/
+@[csimp] theorem publicPart_code : @publicPart = @publicPartShared := rfl
+
 /-- The selector-weighted bus form of table `t` on a side, at a row's challenge-field values. -/
 def tableForm (μ : ℕ) (side : Fin 3) (t : Fin S.tables.length) (ζ : List E) (v p : ℕ → E) : E :=
   S.sumBlocks L μ ζ (fun b ↦ if Block.table S b = t then S.formE k α β b v p else 0)
