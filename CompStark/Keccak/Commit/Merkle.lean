@@ -726,6 +726,27 @@ theorem mapM_exists {α β : Type} (f : α → Option β) (xs : List α)
       obtain ⟨ys, hs⟩ := ih (fun z hz ↦ total z (List.mem_cons_of_mem _ hz))
       exact ⟨y :: ys, by simp [List.mapM_cons, hy, hs]⟩
 
+/-- Every result of a successful option traversal is the result of some input member. -/
+theorem mapM_mem {α β : Type} (f : α → Option β) :
+    (xs : List α) → (ys : List β) → xs.mapM f = some ys → ∀ y ∈ ys, ∃ x ∈ xs, f x = some y
+  | [], ys, h, y, hy => by
+      cases h
+      exact absurd hy List.not_mem_nil
+  | x :: xs, ys, h, y, hy => by
+      rw [List.mapM_cons] at h
+      cases hx : f x with
+      | none => simp only [hx] at h; cases h
+      | some b =>
+          cases hxs : xs.mapM f with
+          | none => simp only [hx, hxs] at h; cases h
+          | some bs =>
+              simp only [hx, hxs] at h
+              cases h
+              rcases List.mem_cons.mp hy with rfl | hy
+              · exact ⟨x, List.mem_cons_self, hx⟩
+              · obtain ⟨z, hz, hzy⟩ := mapM_mem f xs bs hxs y hy
+                exact ⟨z, List.mem_cons_of_mem _ hz, hzy⟩
+
 /-- An option traversal returns the pointwise results when every step succeeds with them. -/
 theorem mapM_eq_some_map {α β : Type} (f : α → Option β) (g : α → β) (xs : List α)
     (total : ∀ x ∈ xs, f x = some (g x)) : xs.mapM f = some (xs.map g) := by
@@ -822,12 +843,15 @@ theorem expandLevels_eq (height : ℕ) (value : ℕ → ℕ → Digest) (Active 
 
 end Generic
 
-/-- Every nonempty in-range honest query batch verifies against its honest root. -/
-theorem honest_accepts (height rowWords leafWords : ℕ) (rows : ℕ → List K)
+/-- A nonempty in-range honest query batch expands to its honest root, every path carrying its
+honest leaf. -/
+theorem honest_expand (height rowWords leafWords : ℕ) (rows : ℕ → List K)
     (width : rowWords ≤ leafWords) (shape : ∀ i < 2 ^ height, (rows i).length = rowWords)
     (queries : List ℕ) (nonempty : queries ≠ []) (range : ∀ i ∈ queries, i < 2 ^ height) :
-    accepts Keccak.Commit.hash height rowWords leafWords queries (honestBatch height leafWords rows queries)
-      (root height (fun i ↦ restoreLeaf leafWords (rows i))) = true := by
+    ∃ paths, expand Keccak.Commit.hash height rowWords leafWords queries
+      (honestBatch height leafWords rows queries) =
+        some (root height (fun i ↦ restoreLeaf leafWords (rows i)), paths) ∧
+      ∀ p ∈ paths, p.leaf = restoreLeaf leafWords (rows p.index) := by
   let leaves := fun i ↦ restoreLeaf leafWords (rows i)
   let initial := (positions queries).map fun i ↦ Path.mk i (leaves i) []
   have positionsMem : ∀ i, i ∈ positions queries ↔ i ∈ queries := by
@@ -910,9 +934,21 @@ theorem honest_accepts (height rowWords leafWords : ℕ) (rows : ℕ → List K)
         change Option.bind (queries.mapM (fun i ↦ finalPaths.find? (fun p ↦ p.index == i))) _ = _
         rw [mapped]
         exact congrArg (fun d ↦ some (d, ordered)) value
-      change accepts Keccak.Commit.hash height rowWords leafWords queries (honestBatch height leafWords rows queries)
-        (root height leaves) = true
-      simp only [accepts, ex, beq_self_eq_true]
+      refine ⟨ordered, ex, ?_⟩
+      intro p hp
+      obtain ⟨i, _, found⟩ := mapM_mem _ queries ordered mapped p hp
+      obtain ⟨q, hq, rfl⟩ := List.mem_map.mp (List.mem_of_find?_eq_some found)
+      obtain ⟨j, _, rfl⟩ := List.mem_map.mp hq
+      rfl
+
+/-- Every nonempty in-range honest query batch verifies against its honest root. -/
+theorem honest_accepts (height rowWords leafWords : ℕ) (rows : ℕ → List K)
+    (width : rowWords ≤ leafWords) (shape : ∀ i < 2 ^ height, (rows i).length = rowWords)
+    (queries : List ℕ) (nonempty : queries ≠ []) (range : ∀ i ∈ queries, i < 2 ^ height) :
+    accepts Keccak.Commit.hash height rowWords leafWords queries (honestBatch height leafWords rows queries)
+      (root height (fun i ↦ restoreLeaf leafWords (rows i))) = true := by
+  obtain ⟨paths, ex, _⟩ := honest_expand height rowWords leafWords rows width shape queries nonempty range
+  simp only [accepts, ex, beq_self_eq_true]
 
 
 

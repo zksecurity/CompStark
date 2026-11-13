@@ -101,6 +101,77 @@ theorem authenticated_acceptance_of_leafAgreement (hash : ByteArray → Commit.D
   exact ⟨acceptedOriginal.1, whir_eq ▸ acceptedOriginal.2⟩
 
 
+/-- Acceptance of complete leaf images transfers to the opened rows agreeing with them at the sampled
+columns, when the batches are the sampled query lists of the commitments. -/
+theorem acceptance_of_leafAgreement_complete (hash : ByteArray → Commit.Digest) (params : Parameters S L k M)
+    (proof : Proof params) (leafImage : ℕ → ℕ → Option (List K))
+    (queries : proof.2.2.map OpeningBatch.queries = whirQueries params.schedule
+      (executionParts params.toParameters ((presentation params).openedPath hash proof.2.1 proof.2.2)).2)
+    (length : proof.2.2.length = (trees params proof).length)
+    (accepted : Accepts params.toParameters ((presentation params).originalPath
+      (StandardBcs.extractedPath (coin params) proof.2.1
+        ((presentation params).messages proof.2.1 leafImage 0))))
+    (agreement : LeafAgreement (fun _ tree => tree.openedLeaves hash)
+      (fun index _ => leafImage index) 0 (trees params proof)) :
+    Accepts params.toParameters ((presentation params).openedPath hash proof.2.1 proof.2.2) := by
+  let openings := proof.2.2
+  let first : ℕ → TreeOpening → ℕ → Option (List K) := fun _ tree => tree.openedLeaves hash
+  let leaves := leafImage
+  let second : ℕ → TreeOpening → ℕ → Option (List K) := fun index _ => leaves index
+  let rootTree : TreeOpening := ⟨proof.2.1.1, (baseLayout params.schedule params.semanticRowWords).height,
+    (baseLayout params.schedule params.semanticRowWords).rowWords, (baseLayout params.schedule params.semanticRowWords).leafWords, openingAt openings 0⟩
+  obtain ⟨outer, whir, tree_eq, parsed⟩ :=
+    (outerPresentation params).append_split (whirPresentation params.schedule)
+      (outerPresentation_shapes params) proof.2.1.2 openings 1
+  let out := (outerReduction params.toSetup params.reductions).output outer
+  have fullAgreement := agreement
+  change (∀ index ∈ rootTree.opening.queries, first 0 rootTree index = second 0 rootTree index) ∧
+    LeafAgreement first second 1
+      (((outerPresentation params).append (whirPresentation params.schedule)).trees
+        proof.2.1.2 openings 1) at fullAgreement
+  rw [tree_eq] at fullAgreement
+  have queried := congrArg (List.map OpeningBatch.queries)
+    (trees_openings params proof length)
+  simp only [List.map_map] at queried
+  have queryLists := queried.trans queries
+  change (trees params proof).map (fun tree => tree.opening.queries) =
+    whirQueries params.schedule (executionParts params.toParameters
+      ((presentation params).originalPath (StandardBcs.extractedPath (coin params) proof.2.1
+        ((presentation params).openedMessages hash proof.2.1 openings 0)))).2 at queryLists
+  erw [Presentation.reconstruct_opened] at queryLists
+  change (rootTree :: ((outerPresentation params).append (whirPresentation params.schedule)).trees
+      proof.2.1.2 openings 1).map (fun tree => tree.opening.queries) =
+    whirQueries params.schedule (splitPath (outerProtocol params.toSetup)
+      (Whir.opening E params.schedule)
+      (((outerPresentation params).append (whirPresentation params.schedule)).reconstruct
+        proof.2.1.2 openings first 1)).2 at queryLists
+  rw [tree_eq, parsed] at queryLists
+  have whir_eq := whir_accepts_congr params.schedule whir openings first second 1
+    (Whir.mapMasked (algebraMap K E) ((baseLayout params.schedule params.semanticRowWords).decode (first 0 rootTree)))
+    (Whir.mapMasked (algebraMap K E) ((baseLayout params.schedule params.semanticRowWords).decode (second 0 rootTree)))
+    (openingClaims params.toSetup out) rootTree.opening.queries queryLists
+    (fun column member => by
+      unfold Whir.mapMasked
+      rw [baseLayout_congr params.schedule params.semanticRowWords _ _ column
+        (fullAgreement.1 column.val member)])
+    fullAgreement.2
+  have acceptedFull := accepted
+  erw [Presentation.reconstruct_messages (openings := openings)] at acceptedFull
+  simp only [Accepts, executionParts] at acceptedFull
+  erw [parsed second] at acceptedFull
+  change publicAccepted params.toSetup out ∧
+    Whir.accepts (algebraMap K E) params.schedule
+      (Whir.mapMasked (algebraMap K E) ((baseLayout params.schedule params.semanticRowWords).decode (second 0 rootTree)))
+      (openingClaims params.toSetup out)
+      ((whirPresentation params.schedule).reconstruct whir openings second 1) = true at acceptedFull
+  change Accepts params.toParameters ((presentation params).originalPath
+    (StandardBcs.extractedPath (coin params) proof.2.1
+      ((presentation params).openedMessages hash proof.2.1 openings 0)))
+  erw [Presentation.reconstruct_opened]
+  simp only [Accepts, executionParts]
+  erw [parsed first]
+  exact ⟨acceptedFull.1, whir_eq.trans acceptedFull.2⟩
+
 /-- Authentication transfers composed acceptance to the identical same-coins extracted path. -/
 theorem authenticated_acceptance (params : Parameters S L k M) {Coins : Type} (A : Coins → Proof params)
     (X : MixedMerkleTree.Knowledge.ExtractorMap Coins (List K) Commit.Digest) (c : Coins)

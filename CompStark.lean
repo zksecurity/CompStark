@@ -557,3 +557,7 @@ public import CompStark.Compiled.GrandProductProver
 public import CompStark.Compiled.WhirProver
 public import CompStark.Tables.Compiled.Prover
 public import CompStark.Tables.Compiled.KeccakProver
+public import CompStark.Compiled.ProverChecks
+public import CompStark.Compiled.ProverRun
+public import CompStark.Compiled.GrandProductRun
+public import CompStark.Tables.Compiled.HonestRun
