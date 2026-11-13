@@ -5,6 +5,7 @@ Adapted from leanEthereum/leanMultisig (Apache-2.0), revision
 -/
 module
 
+public import Mathlib.Data.Erased
 public import CompStark.Keccak.GkrProver.Kernels
 public import CompStark.Keccak.GkrProver.Rmfe
 public import CompStark.Keccak.Duplex
@@ -205,6 +206,13 @@ def buildWitness (nLog : Nat) (committed : Array UInt64) : SlicedWitness := Id.r
   let state := w.layers[12*(m+1)-d]!
   ((state[j*(2^w.nLog/64)+b/4]! >>> (16*(b%4)).toUInt64) &&& 65535).toNat
 
+/-- One transcript operation of the writer: a written scalar or a drawn challenge. -/
+inductive WriterEvent where
+  /-- A scalar absorbed with domain tag one. -/
+  | write (a : W)
+  /-- A challenge squeezed. -/
+  | sample
+
 /-- Mutable transcript transport, retaining every challenge for conformance checks. -/
 structure Writer where
   /-- Pending scalar framing and carried Keccak capacity. -/
@@ -213,6 +221,8 @@ structure Writer where
   stream : Array W := #[]
   /-- Challenges in squeeze order. -/
   challenges : Array W := #[]
+  /-- Every write and sample in order, erased at run time. -/
+  log : Erased (List WriterEvent) := Erased.mk []
 
 /-- Seed with the two fixed statement digests, without absorbing derived lane claims. -/
 def Writer.seed (iv input : Array UInt64) : Writer := Id.run do
@@ -220,14 +230,15 @@ def Writer.seed (iv input : Array UInt64) : Writer := Id.run do
     if i.val < 4 then iv[i.val]! else if i.val < 8 then input[i.val-4]! else 0)
   let cleared := s.mapIdx fun i a => if i < 16 then 0 else a
   return ⟨⟨cleared, by simp only [cleared, Array.size_mapIdx, s, CompStark.Keccak.Duplex.fast_width],
-    0, by decide, ()⟩, #[], #[]⟩
+    0, by decide, ()⟩, #[], #[], Erased.mk []⟩
 
 /-- Transmit and bind one scalar with domain tag one. -/
 def Writer.write (writer : Writer) (a : W) : Writer :=
   let lanes := #[a.c0.val, a.c1.val, a.c2.val, 1]
   { writer with
     state := CompStark.Keccak.Duplex.absorb _ (fun _ _ _ => ()) writer.state lanes
-    stream := writer.stream.push a }
+    stream := writer.stream.push a
+    log := writer.log.map (· ++ [.write a]) }
 
 /-- Transmit a buffer in scalar order. -/
 def Writer.writeAll (writer : Writer) (a : Array W) : Writer := a.foldl Writer.write writer
@@ -236,7 +247,10 @@ def Writer.writeAll (writer : Writer) (a : Array W) : Writer := a.foldl Writer.w
 def Writer.sample (writer : Writer) : W × Writer :=
   let (out, state) := CompStark.Keccak.Duplex.sample _ (fun _ _ _ => ()) writer.state 3 (by decide)
   let a : W := ⟨⟨out[0]!⟩, ⟨out[1]!⟩, ⟨out[2]!⟩⟩
-  (a, {writer with state := state, challenges := writer.challenges.push a})
+  (a, { writer with
+    state := state
+    challenges := writer.challenges.push a
+    log := writer.log.map (· ++ [.sample]) })
 
 /-- Draw separate permutations for a vector of field challenges. -/
 def Writer.sampleMany (writer : Writer) (n : Nat) : Array W × Writer := Id.run do
