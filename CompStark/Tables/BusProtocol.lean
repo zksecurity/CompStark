@@ -90,7 +90,7 @@ def protocol : Protocol :=
       GrandProduct.protocol (terminalProtocol S L) (GrandProduct.layers (μ S L)) 0
 
 /-- Prefix predicates on the bus's transcript tree, the witness fixed throughout. -/
-noncomputable def labels : Retained.Labels (Witness K S.tables.length) (protocol S L k).tree :=
+def labels : Retained.Labels (Witness K S.tables.length) (protocol S L k).tree :=
   ⟨Input S L, fun (ab : (Fin k → E) × E) ↦ ⟨afterFingerprint S L k ab.1 ab.2, fun (roots : E × E) ↦
     GrandProduct.labels (S.riders L) (μ S L) (fun w ↦ S.leaves L k w ab.1 ab.2)
       (terminalProtocol S L)
@@ -100,7 +100,7 @@ noncomputable def labels : Retained.Labels (Witness K S.tables.length) (protocol
       (decide (roots.2 ≠ 0))⟩⟩
 
 /-- The extractor keeps the committed witness throughout. -/
-noncomputable def extractor (w₀ : Witness K S.tables.length) :
+def extractor (w₀ : Witness K S.tables.length) :
     RoundExtractor (protocol S L k).tree (Retained.state w₀ (Input S L)) :=
   Retained.extractor w₀ (labels S L k)
 
