@@ -210,8 +210,8 @@ def buildWitness (nLog : Nat) (committed : Array UInt64) : SlicedWitness := Id.r
 inductive WriterEvent where
   /-- A scalar absorbed with domain tag one. -/
   | write (a : W)
-  /-- A challenge squeezed. -/
-  | sample
+  /-- A challenge squeezed, with its value. -/
+  | sample (r : W)
 
 /-- Mutable transcript transport, retaining every challenge for conformance checks. -/
 structure Writer where
@@ -250,7 +250,7 @@ def Writer.sample (writer : Writer) : W × Writer :=
   (a, { writer with
     state := state
     challenges := writer.challenges.push a
-    log := writer.log.map (· ++ [.sample]) })
+    log := writer.log.map (· ++ [.sample a]) })
 
 /-- Draw separate permutations for a vector of field challenges. -/
 def Writer.sampleMany (writer : Writer) (n : Nat) : Array W × Writer := Id.run do

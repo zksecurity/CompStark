@@ -11,6 +11,8 @@ public import CompStark.Keccak.Scalar
 public import CompStark.Pcs.WordEncoding
 public import CompStarkFixtures.Tables
 public import CompStark.Tables.Compiled.KeccakProver
+public import CompStark.Tables.Compiled.KeccakFollows
+public import CompStark.Tables.Compiled.Completeness
 
 /-! `hashes`: a Keccak table of 256 rows, four executed, whose 25 output lanes are virtual columns
 discharged by the Keccak-f GKR, pushes `(input, output)` states on bus `keccak`; a user table of
@@ -232,5 +234,15 @@ theorem hashesParams_data : hashesParams.data = hashesData := rfl
 /-- The honest compiled proof of a witness of `hashes`. -/
 def hashesCompiledProof (w : Witness K hashes.tables.length) : Option hashesData.Proof :=
   hashesData.prove (fun o q ↦ Compiled.keccakProver keccak o q) w
+
+/-- Every compiled proof the native Keccak prover produces for a satisfying, padded witness of
+`hashes` is accepted. -/
+theorem hashesCompiled_complete (w : Witness K hashes.tables.length) (hsat : hashes.Satisfied hashesLayout w)
+    (padded : hashes.Padded hashesLayout w) (proof : hashesData.Proof)
+    (proved : hashesCompiledProof w = some proof) : Compiled.verify hashesParams proof :=
+  Compiled.completeness hashesParams (keccak.honest hashesFits) (fun o q ↦ Compiled.keccakProver keccak o q)
+    (fun o q hstart hext state path final run ↦
+      Compiled.keccakProver_honest keccak hashesFits (by decide) (by decide) o q hstart hext state path final run)
+    (by decide +kernel) w hsat padded proof proved
 
 end CompStark.Fixtures.TablesKeccak

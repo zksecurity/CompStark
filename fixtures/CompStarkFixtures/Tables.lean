@@ -121,6 +121,6 @@ theorem programCompiled_complete (w : Witness K program.tables.length) (hsat : p
     (padded : program.Padded programLayout w) (proof : programData.Proof)
     (proved : programCompiledProof w = some proof) : Compiled.verify programParams proof :=
   Compiled.completeness programParams programHonest (fun _ _ ↦ PUnit.unit)
-    (fun _ _ _ _ _ _ _ ↦ ⟨PUnit.unit, rfl⟩) (by decide +kernel) w hsat padded proof proved
+    (fun _ _ _ _ _ _ _ _ ↦ ⟨PUnit.unit, rfl⟩) (by decide +kernel) w hsat padded proof proved
 
 end CompStark.Fixtures.Tables

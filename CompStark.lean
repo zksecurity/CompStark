@@ -424,6 +424,8 @@ public import CompStark.Keccak.GkrProver.WeightMapEval
 public import CompStark.Keccak.GkrProver.WeightMapProofs
 public import CompStark.Keccak.GkrProver.WitnessTrace
 public import CompStark.Keccak.GkrProver.WordOpeningSemantics
+public import CompStark.Keccak.GkrProver.WriterLog
+public import CompStark.Keccak.GkrProver.WriterSchedule
 public import CompStark.Keccak.Gkr.ResidualAlgebra
 public import CompStark.Keccak.Gkr.RoundProjection
 public import CompStark.Keccak.Gkr.Soundness
@@ -564,6 +566,7 @@ public import CompStark.Tables.Compiled.HonestRun
 public import CompStark.Compiled.WhirRun
 public import CompStark.Compiled.LeafRows
 public import CompStark.Tables.Compiled.Completeness
+public import CompStark.Tables.Compiled.KeccakFollows
 public import CompStark.Tables.Composed.Extractor
 public import CompStark.Tables.Compiled.Extractor
 public import CompStark.Tables.Compiled.Listed
