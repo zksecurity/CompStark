@@ -322,9 +322,9 @@
       "tolerance": 0.005
     },
     "sumcheck-fold/prepare": {
-      "instructions": 3451,
-      "variation": 0.109244,
-      "tolerance": 0.437
+      "instructions": 3810,
+      "variation": 0.0,
+      "tolerance": 0.005
     },
     "sumcheck-fold/fold": {
       "instructions": 27127551,
@@ -508,8 +508,8 @@
     },
     "pcs/whir-round": {
       "instructions": 55343,
-      "variation": 0.006794,
-      "tolerance": 0.0272
+      "variation": 0.0,
+      "tolerance": 0.005
     },
     "pcs/basis-project": {
       "instructions": 71053004,
@@ -543,8 +543,8 @@
     },
     "pcs/basis-scalar-dot": {
       "instructions": 31637,
-      "variation": 0.011885,
-      "tolerance": 0.0475
+      "variation": 0.0,
+      "tolerance": 0.005
     },
     "pcs/basis-factored-ring": {
       "instructions": 6384890,
@@ -553,8 +553,8 @@
     },
     "pcs/basis-lane-message": {
       "instructions": 45595,
-      "variation": 0.008247,
-      "tolerance": 0.033
+      "variation": 0.0,
+      "tolerance": 0.005
     },
     "pcs/basis-tensor-lift": {
       "instructions": 7088391,
