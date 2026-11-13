@@ -121,4 +121,19 @@ def nextClaimShared {R : Type} [CommRing R] [CharP R 2] {p : Nat}
   funext R inst characteristic p transcript
   simp only [nextClaimFast, nextClaimShared, cubeWeights_get, positionWeights_get]
 
+/-- A left fold accumulating a sum over `Fin m` is its Finset sum. -/
+theorem foldl_finRange_sum {R : Type*} [AddCommMonoid R] {m : Nat} (g : Fin m → R) :
+    (List.finRange m).foldl (fun acc i => acc + g i) 0 = ∑ i, g i := by
+  rw [Fin.sum_univ_def, List.sum_eq_foldl, List.foldl_map]
+
+/-- Multilinear evaluation against the shared equality table, one product per entry. -/
+def mleShared {R : Type*} [CommRing R] {n : Nat} (a : Fin (2^n) → R) (r : Fin n → R) : R :=
+  let weights := cubeWeightsShared r
+  (List.finRange (2^n)).foldl (fun acc b => acc + weights[b] * a b) 0
+
+/-- The shared-table evaluation is the multilinear evaluation. -/
+@[csimp] theorem mle_shared : @mle = @mleShared := by
+  funext R inst n a r
+  simp only [mle, mleShared, cubeWeightsShared_get, foldl_finRange_sum]
+
 end CompStark.Keccak.Gkr

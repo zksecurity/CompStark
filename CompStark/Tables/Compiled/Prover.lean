@@ -34,6 +34,23 @@ set_option smartUnfolding true
 set_option backward.isDefEq.respectTransparency true
 attribute [local instance 3000] Pcs.RingSwitch.sampleableE Pcs.RingSwitch.sampleableK
 
+variable (S L) in
+/-- The true boundary values at a point as a table. -/
+def boundaryImage (w : Witness K S.tables.length) (z : List E) : Array E :=
+  Array.ofFn (honestBoundary S L w z)
+
+variable (S L) in
+/-- Boundary values read off a table. -/
+def boundaryOf (image : Array E) : S.BoundaryValues L := fun j => image.getD j.val 0
+
+variable (S L) in
+/-- Boundary values read off their table are the true boundary values. -/
+theorem boundaryOf_image (w : Witness K S.tables.length) (z : List E) :
+    boundaryOf S L (boundaryImage S L w z) = honestBoundary S L w z := by
+  funext j
+  simp only [boundaryOf, boundaryImage, Array.getD_eq_getD_getElem?, Array.getElem?_ofFn, j.isLt,
+    ↓reduceDIte, Option.getD_some]
+
 variable (S L k) in
 /-- The honest bus: the roots at the drawn fingerprint, the honest descent, the true boundary
 values. -/
@@ -41,14 +58,38 @@ def busProver (w : Witness K S.tables.length) : (busPresentation S L k).Prover :
   let leaves := S.leaves L k w αβ.1 αβ.2
   let roots := honestRoots S L k w αβ.1 αβ.2
   fun _ => ⟨roots, grandProductProver (Bus.μ S L) leaves (boundaryStep S L)
-    (fun c => fun _ => ⟨honestBoundary S L w c.point, PUnit.unit⟩)
+    (fun c => fun _ =>
+      let image := boundaryImage S L w c.point
+      ⟨boundaryOf S L image, PUnit.unit⟩)
     (GrandProduct.layers (Bus.μ S L)) 0 ⟨[], ![roots.1, roots.1, roots.2]⟩⟩
+
+variable (S L) in
+/-- The true transmitted values at a point as a table, table by table. -/
+def valuesImage (w : Witness K S.tables.length) (z : List E) : Array (Array E) :=
+  Array.ofFn fun t : Fin S.tables.length =>
+    Array.ofFn fun i : Fin (TableSumcheck.transmitted S t).length =>
+      S.column L w t (TableSumcheck.transmitted S t)[i] (z.take (L.logHeight t))
+
+variable (S L) in
+/-- Transmitted values read off a table. -/
+def valuesOf (image : Array (Array E)) : TableSumcheck.Values S L :=
+  fun t i => (image.getD t.1.val #[]).getD i.val 0
+
+variable (S L) in
+/-- Values read off their table are the true values. -/
+theorem valuesOf_image (w : Witness K S.tables.length) (z : List E) :
+    valuesOf S L (valuesImage S L w z) = honestValues S L w z := by
+  funext t i
+  simp only [valuesOf, valuesImage, Array.getD_eq_getD_getElem?, Array.getElem?_ofFn, t.1.isLt, i.isLt,
+    ↓reduceDIte, Option.getD_some, honestValues]
 
 variable (S L k) in
 /-- The honest table rounds after the draws `χ`, then the true values at the final point. -/
 def tableRoundsProver (o : Bus.Output S L k) (ξ : E) (w : Witness K S.tables.length) :
     (count : ℕ) → List E → (tableRounds S L count).Prover
-  | 0, χ => fun _ => ⟨honestValues S L w χ.reverse, PUnit.unit⟩
+  | 0, χ => fun _ =>
+      let image := valuesImage S L w χ.reverse
+      ⟨valuesOf S L image, PUnit.unit⟩
   | count + 1, χ => fun _ => (honestTableMessage S L k o ξ w χ, fun _ r =>
       tableRoundsProver o ξ w count (χ ++ [r]))
 

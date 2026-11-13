@@ -98,6 +98,10 @@ structure External where
   evaluated : TableSumcheck.Output S L k → Output → List (Pcs.EvaluatedClaim M)
   /-- The evaluated claims are the argument's claims. -/
   evaluated_claims : ∀ out a, (evaluated out a).map Pcs.EvaluatedClaim.claim = (stackOutput out a).claims
+  /-- The argument's public checks, decided without building its claims. -/
+  accepts : TableSumcheck.Output S L k → Output → Bool
+  /-- The decided checks are the output's checks. -/
+  accepts_eq : ∀ out a, accepts out a = (stackOutput out a).active
 
 /-- The argument's honest prover. -/
 structure External.Honest (ext : External S L k M) where
@@ -157,6 +161,8 @@ def External.none (hM : (S.stackBlocks L).total ≤ 2 ^ M)
   claims_le _ _ := le_rfl
   evaluated _ _ := []
   evaluated_claims _ _ := rfl
+  accepts _ _ := true
+  accepts_eq _ _ := rfl
 
 /-- The trivial argument's honest prover: an empty transcript. -/
 def External.none.honest (hM : (S.stackBlocks L).total ≤ 2 ^ M)

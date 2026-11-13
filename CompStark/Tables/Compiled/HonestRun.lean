@@ -37,15 +37,15 @@ theorem bus_idealRun (w : Witness K S.tables.length) (state : Transcript.State) 
   let αβ := (fingerprint.run state).1
   let roots := honestRoots S L k w αβ.1 αβ.2
   obtain ⟨coins, final, descent⟩ := grandProduct_idealRun (Bus.μ S L) (S.leaves L k w αβ.1 αβ.2)
-    (boundaryStep S L) (fun c => fun _ => ⟨honestBoundary S L w c.point, PUnit.unit⟩)
+    (boundaryStep S L) (fun c => fun _ => ⟨boundaryOf S L (boundaryImage S L w c.point), PUnit.unit⟩)
     (fun c => ⟨honestBoundary S L w c.point, PUnit.unit⟩)
-    (fun _ state => ⟨_, rfl⟩) (GrandProduct.layers (Bus.μ S L)) 0 ⟨[], ![roots.1, roots.1, roots.2]⟩
+    (fun c state => ⟨_, by rw [boundaryOf_image]; rfl⟩) (GrandProduct.layers (Bus.μ S L)) 0 ⟨[], ![roots.1, roots.1, roots.2]⟩
     (Transcript.replay (fingerprint.run state).2 (fieldEvents ![roots.1, roots.2]))
   refine ⟨(αβ, coins), final, ?_⟩
   have unfolded : (busPresentation S L k).idealRun (busProver S L k w) state =
       (((grandProduct (boundaryStep S L) (GrandProduct.layers (Bus.μ S L)) 0).idealRun
         (grandProductProver (Bus.μ S L) (S.leaves L k w αβ.1 αβ.2) (boundaryStep S L)
-          (fun c => fun _ => ⟨honestBoundary S L w c.point, PUnit.unit⟩) (GrandProduct.layers (Bus.μ S L)) 0
+          (fun c => fun _ => ⟨boundaryOf S L (boundaryImage S L w c.point), PUnit.unit⟩) (GrandProduct.layers (Bus.μ S L)) 0
           ⟨[], ![roots.1, roots.1, roots.2]⟩)
         (Transcript.replay (fingerprint.run state).2 (fieldEvents ![roots.1, roots.2]))).map
           (fun result => (⟨roots, result.1⟩, result.2))).map (fun result => (⟨αβ, result.1⟩, result.2)) := rfl
@@ -57,7 +57,11 @@ theorem tableRounds_idealRun (o : Bus.Output S L k) (ξ : E) (w : Witness K S.ta
     (n : ℕ) → (χ : List E) → (state : Transcript.State) → ∃ rs final,
       (tableRounds S L n).idealRun (tableRoundsProver S L k o ξ w n χ) state =
         some (honestTableRounds S L k o ξ w n χ rs, final)
-  | 0, χ, state => ⟨Fin.elim0, _, rfl⟩
+  | 0, χ, state => ⟨Fin.elim0, _, by
+      change some ((⟨valuesOf S L (valuesImage S L w χ.reverse), PUnit.unit⟩ :
+        (TableSumcheck.roundsProtocol S L 0).tree.ExecutionPath), _) = _
+      rw [valuesOf_image]
+      rfl⟩
   | n + 1, χ, state => by
       let message := honestTableMessage S L k o ξ w χ
       let drawn := scalarDraw.run (Transcript.replay state (fieldEvents (Fin.cons message.1 message.2)))

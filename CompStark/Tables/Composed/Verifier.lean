@@ -85,7 +85,7 @@ def publicAcceptedB (setup : Setup S L k M) :
     (Option (Bus.Output S L k) × Option (TableSumcheck.Output S L k)) × setup.external.Output → Bool
   | ((_, none), _) => false
   | ((_, some o), a) => o.active && decide (o.bus.point.length = Bus.μ S L) &&
-      (setup.external.stackOutput o a).active
+      setup.external.accepts o a
 
 /-- The decided checks are the public checks. -/
 theorem publicAcceptedB_iff (setup : Setup S L k M)
@@ -95,7 +95,8 @@ theorem publicAcceptedB_iff (setup : Setup S L k M)
   cases table with
   | none => exact ⟨fun h ↦ absurd h Bool.false_ne_true, False.elim⟩
   | some o =>
-    simp only [publicAcceptedB, publicAccepted, Bool.and_eq_true, decide_eq_true_eq, and_assoc]
+    simp only [publicAcceptedB, publicAccepted, setup.external.accepts_eq, Bool.and_eq_true,
+      decide_eq_true_eq, and_assoc]
 
 variable {M}
 

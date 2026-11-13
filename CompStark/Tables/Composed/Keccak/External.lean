@@ -147,6 +147,8 @@ def external (hM : (S.stackBlocks L).total ≤ 2 ^ M) : External S L k M where
   claims_le _ _ := le_rfl
   evaluated _ := kt.evaluated
   evaluated_claims _ a := kt.evaluated_claims a
+  accepts out a := kt.acceptsWord out a.1
+  accepts_eq out a := kt.acceptsWord_eq out a.1
 
 /-- The Keccak table's argument's reductions. -/
 noncomputable def reductions (hM : (S.stackBlocks L).total ≤ 2 ^ M) :
