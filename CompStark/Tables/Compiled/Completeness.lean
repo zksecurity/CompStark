@@ -32,12 +32,13 @@ attribute [local instance 3000] Pcs.RingSwitch.sampleableE Pcs.RingSwitch.sample
 
 variable {S : System K} {L : Layout S.tables.length} {k M : ℕ}
 
-/-- An external argument's prover follows an honest strategy: every ideal run is the honest
-transcript at some coins. -/
+/-- An external argument's prover follows an honest strategy: from the argument's start
+relation, every ideal run is the honest transcript at some coins. -/
 def ExternalFollows (params : Parameters S L k M) (honest : params.external.Honest)
     (external : params.data.ExternalProver) : Prop :=
-  ∀ o q state path final, params.externalPresentation.idealRun (external o q) state = some (path, final) →
-    ∃ coins, path = honest.honest o q coins
+  ∀ o q, params.external.start o q → ∀ state path final,
+    params.externalPresentation.idealRun (external o q) state = some (path, final) →
+      ∃ coins, path = honest.honest o q coins
 
 /-- The compiled prover's words decode from its rows. -/
 theorem prover_faithful (params : Parameters S L k M) (external : params.data.ExternalProver)
@@ -53,7 +54,8 @@ theorem prover_faithful (params : Parameters S L k M) (external : params.data.Ex
 /-- The compiled prover's ideal run is the composed honest transcript at the drawn coins. -/
 theorem prover_idealRun (params : Parameters S L k M) (honest : params.external.Honest)
     (external : params.data.ExternalProver) (follows : ExternalFollows params honest external)
-    (w : Witness K S.tables.length) (state : Transcript.State)
+    (w : Witness K S.tables.length) (hsat : S.Satisfied L w) (padded : S.Padded L w)
+    (state : Transcript.State)
     (path : (Composed.protocol params.toParameters).tree.ExecutionPath) (final : Transcript.State)
     (h : params.data.presentation.idealRun (params.data.prover external w) state = some (path, final)) :
     ∃ coins externalCoins, path = honestPath params.toSetup params.schedule
@@ -95,7 +97,8 @@ theorem prover_idealRun (params : Parameters S L k M) (honest : params.external.
   rw [htable] at htableRun
   cases htableRun
   rw [splitPath_joinPath] at hext
-  obtain ⟨externalCoins, hexternal⟩ := follows _ _ _ ext.1 ext.2 hext
+  obtain ⟨externalCoins, hexternal⟩ := follows _ _
+    (Composed.honest_start params.toParameters w hsat padded busCoins tableCoins) _ ext.1 ext.2 hext
   obtain ⟨openingCoins, hopening⟩ := whir_idealRun params.data.evaluated _ _ _ whir.1 whir.2 hwhir
   refine ⟨⟨busCoins, tableCoins, openingCoins⟩, externalCoins, ?_⟩
   rw [hopening, hexternal, TableCache_get]
@@ -289,7 +292,8 @@ theorem completeness (params : Parameters S L k M) (honest : params.external.Hon
         funext column
         simp only [leafImage, Nat.zero_add, List.getD_eq_getElem?_getD, List.getElem?_eq_getElem bound,
           Option.getD_some])
-    obtain ⟨coins, externalCoins, hpath⟩ := prover_idealRun params honest external follows w _ _ _ ideal
+    obtain ⟨coins, externalCoins, hpath⟩ := prover_idealRun params honest external follows w hsat padded
+      _ _ _ ideal
     erw [hpath]
     exact Composed.completeness params.toParameters honest externalCoins w hsat padded coins
   exact ⟨acceptance_of_leafAgreement_complete Commit.hash params ⟨PUnit.unit, result.1, openings⟩ leafImage

@@ -68,6 +68,25 @@ def honestPath (setup : Setup S L k M) (schedule : Whir.Schedule K M) (prove : E
 
 variable (params : Parameters S L k M)
 
+/-- The honest table output of a satisfying, padded witness meets the external argument's start
+relation on the witness's stack. -/
+theorem honest_start (w : Witness K S.tables.length) (hsat : S.Satisfied L w) (padded : S.Padded L w)
+    (busCoins : BusCoins S L k) (tableCoins : TableCoins S L) :
+    params.external.start
+      ((TableSumcheck.outputClaim S L k ((Bus.outputClaim S L k (honestBusPath S L k w busCoins)).getD rejectedBus)
+        (honestTablePath S L k ((Bus.outputClaim S L k (honestBusPath S L k w busCoins)).getD rejectedBus) w
+          tableCoins)).getD rejectedOutput) (S.stack L M w) := by
+  have shaped := hsat.1
+  have hext := hsat.2.2.2.2
+  have hinterp := params.external.interpret_stack w shaped hext
+  obtain ⟨o, hbus, hterm⟩ := honestBus_terminal params.wellFormed params.busShape w hsat padded busCoins
+  obtain ⟨o', htable, hterm'⟩ := honestTable_terminal params.wellFormed params.degree_le o w hsat hterm tableCoins
+  rw [hbus, Option.getD_some, htable, Option.getD_some]
+  obtain ⟨hlength, hactive, ⟨_, hpoint, hboundary⟩, hvalues⟩ := hterm'
+  apply params.external.start_complete o' _ hlength (params.external.rider_stack w _ shaped hext)
+  rw [hinterp]
+  exact fun t i _ ↦ hvalues t i
+
 /-- Completeness: for every satisfying witness whose padding rows are the padding row, the
 specification verifier accepts the honest transcript against every coin sequence. -/
 theorem completeness (honest : params.external.Honest) (external : honest.Coins)
