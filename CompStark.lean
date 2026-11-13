@@ -570,3 +570,4 @@ public import CompStark.Tables.Compiled.KeccakFollows
 public import CompStark.Tables.Composed.Extractor
 public import CompStark.Tables.Compiled.Extractor
 public import CompStark.Tables.Compiled.Listed
+public import CompStark.Tables.Compiled.ListedOracle

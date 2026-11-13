@@ -5,13 +5,16 @@ Released under Apache 2.0 license as described in the file LICENSE.
 module
 
 public import CompStark.Tables.Compiled.Soundness
+public import CompStark.Keccak.Commit.MerkleCodec
 
-/-! The list form of compiled knowledge soundness: the adversary outputs, next to its proof, the
-hash inputs it computed while building its Merkle commitments (leaf payloads and child pairs), and
-the Merkle extractor is the dictionary of that list (`dictionary`). The Merkle failure term is the
-probability of a named event of the adversary's output, generic in the hash: an unexplained
-opening (`Unexplained`), a revealed hash input that hashes to its node's target but is not the
-dictionary's input for that target (`knowledgeSoundness_listed`). -/
+/-! The list form of compiled knowledge soundness: the adversary outputs, next to its proof, the raw
+hash inputs it computed while building its Merkle commitments, and the Merkle extractor is the
+dictionary of that list (`dictionary`): at a node, the first listed input hashing to the node's
+target, decoded at the node's stage. Merkle hashing is untagged, so a leaf of eight words and a
+child pair share their bytes; decoding at the stage keeps the dictionary's operation of the node's
+shape. The Merkle failure term is the probability of a named event of the adversary's output,
+generic in the hash: an unexplained opening (`Unexplained`), a revealed operation that hashes to its
+node's target but is not the dictionary's operation for that target (`knowledgeSoundness_listed`). -/
 
 set_option Elab.async false
 set_option smartUnfolding false
@@ -32,11 +35,12 @@ open scoped ENNReal
 theorem derived_dictionary {Coins Payload Digest : Type} [DecidableEq Digest] (hash : Payload → Digest)
     (compress : Digest → Digest → Digest) (p₀ : Payload) (K h : ℕ) (inj : ℕ → Bool)
     (A : MerkleAdversary Coins Payload Digest) {Entries : Type} (entries : Coins → Entries)
-    (lookup : Entries → Digest → Op Payload Digest) (c : Coins) :
+    (lookup : Entries → MixedMerkleTree.Knowledge.Position → Digest → Op Payload Digest) (c : Coins) :
     ∀ (n : ℕ) (v : MixedMerkleTree.Knowledge.Position), v.rank = n →
-      derivedAdversary hash compress p₀ K h inj A (fun _ adversary c => lookup (entries c) (adversary c).1) v c =
+      derivedAdversary hash compress p₀ K h inj A
+          (fun u adversary c => lookup (entries c) u (adversary c).1) v c =
         derivedAdversary hash compress p₀ K h inj (fun _ : PUnit => A c)
-          (fun _ adversary _ => lookup (entries c) (adversary PUnit.unit).1) v PUnit.unit := by
+          (fun u adversary _ => lookup (entries c) u (adversary PUnit.unit).1) v PUnit.unit := by
   intro n
   induction n using Nat.strong_induction_on with
   | _ n ih =>
@@ -52,18 +56,19 @@ theorem derived_dictionary {Coins Payload Digest : Type} [DecidableEq Digest] (h
 
 variable {S : System K} {L : Layout S.tables.length} {k M : ℕ}
 
-/-- A listing adversary's output: a compiled proof and the hash inputs it computed. -/
-abbrev Listing (params : Parameters S L k M) := Proof params × List (Op (List K) Commit.Digest)
+/-- A listing adversary's output: a compiled proof and the raw hash inputs it computed. -/
+abbrev Listing (params : Parameters S L k M) := Proof params × List ByteArray
 
-/-- The first listed hash input with a digest under a hash; the empty leaf when none is listed. -/
-def dictionaryOp (hash : ByteArray → Commit.Digest) (entries : List (Op (List K) Commit.Digest))
-    (target : Commit.Digest) : Op (List K) Commit.Digest :=
-  (entries.find? fun op => Commit.answerWith hash op == target).getD (.inl [])
+/-- The dictionary's operation at a node: the first listed input hashing to the target, decoded at
+the node's stage; the empty leaf when none is listed or it does not decode. -/
+def dictionaryOp (hash : ByteArray → Commit.Digest) (inputs : List ByteArray)
+    (position : MixedMerkleTree.Knowledge.Position) (target : Commit.Digest) : Op (List K) Commit.Digest :=
+  Commit.dictionary (Commit.listedEntries hash inputs) position.stage target
 
 /-- The Merkle extractor that reads only the listed hash inputs. -/
 def dictionary (hash : ByteArray → Commit.Digest) {Coins : Type}
-    (entries : Coins → List (Op (List K) Commit.Digest)) : ExtractorMap Coins (List K) Commit.Digest :=
-  fun _ adversary c => dictionaryOp hash (entries c) (adversary c).1
+    (inputs : Coins → List ByteArray) : ExtractorMap Coins (List K) Commit.Digest :=
+  fun position adversary c => dictionaryOp hash (inputs c) position (adversary c).1
 
 /-- The node adversary of one listing at a Merkle position, under a hash. -/
 def listedNode (hash : ByteArray → Commit.Digest) (params : Parameters S L k M) (o : Listing params)
@@ -75,8 +80,8 @@ def listedNode (hash : ByteArray → Commit.Digest) (params : Parameters S L k M
     (Commit.mixedAdversary hash shape.1 shape.2.1 shape.2.2 (merkleAdversary params (fun _ : PUnit => o.1) position.1))
     (dictionary hash fun _ => o.2) position.2
 
-/-- An unexplained opening of a listing: at some Merkle position a revealed hash input hashes to the
-node's target and is not the dictionary's input for that target. -/
+/-- An unexplained opening of a listing: at some Merkle position a revealed operation hashes to the
+node's target and is not the dictionary's operation for that target. -/
 def Unexplained (hash : ByteArray → Commit.Digest) (params : Parameters S L k M) (o : Listing params) : Prop :=
   ∃ position ∈ merklePositions params.schedule params.semanticRowWords,
     NodeBad (Commit.answerWith hash) (listedNode hash params o position)
@@ -99,10 +104,10 @@ theorem disagree_unexplained (params : Parameters S L k M) {Coins : Type} (A : C
   let derived := derivedAdversary Commit.hashLeaf Commit.compress [] shape.1 0 (fun _ => false)
     (Commit.mixedAdversary Commit.hash shape.1 shape.2.1 shape.2.2
       (merkleAdversary params (fun c => (A c).1) position.1))
-    (fun _ adversary c => dictionaryOp Commit.hash (A c).2 (adversary c).1) position.2 c
+    (fun u adversary c => dictionaryOp Commit.hash (A c).2 u (adversary c).1) position.2 c
   change op ∈ derived.2 at opMember
   change Commit.answer op = derived.1 at opHash
-  change op ≠ dictionaryOp Commit.hash (A c).2 derived.1 at opDiffers
+  change op ≠ dictionaryOp Commit.hash (A c).2 position.2 derived.1 at opDiffers
   have same : derived = _ := pointwise
   rw [same] at opMember opHash opDiffers
   exact ⟨op, opMember, opHash, opDiffers⟩
