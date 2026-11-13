@@ -68,6 +68,23 @@ theorem interleaveFast_correct [Fintype S] [DecidableEq S] [Algebra (ZMod 2) S]
   simp only [interleaveFast, Vector.getElem_ofFn, encodeArray_correct,
     ← cubeEquiv_apply, Fin.eta, Equiv.apply_symm_apply, Whir.Encoding.interleave]
 
+/-- The base-field butterfly array is the encoder's value in every column. -/
+theorem encodeArrayBase_correct (vars rate : ℕ) (h : vars + rate < 64) (f : Whir.Table K vars)
+    (x : Fin (2 ^ (vars + rate))) :
+    (encodeArray (RingHom.id K) vars rate h f).getD x.val 0 =
+      (encoding vars rate (Nat.le_of_lt h)).encode (RingHom.id K) f x := by
+  let : Algebra (ZMod 2) K := (ZMod.castHom (by decide) K).toAlgebra
+  exact encodeArray_correct (RingHom.id K) vars rate h f x
+
+/-- The extension-field butterfly array is the encoder's value in every column. -/
+theorem encodeArrayExtension_correct (vars rate : ℕ) (h : vars + rate < 64) (f : Whir.Table E vars)
+    (x : Fin (2 ^ (vars + rate))) :
+    (encodeArray (algebraMap K E) vars rate h f).getD x.val 0 =
+      (encoding vars rate (Nat.le_of_lt h)).encode (algebraMap K E) f x := by
+  let : Algebra (ZMod 2) E := (ZMod.castHom (by decide) E).toAlgebra
+  let : Fintype E := Fintype.ofFinite E
+  exact encodeArray_correct (algebraMap K E) vars rate h f x
+
 /-- Encode all candidate lanes through their executable scalar-field carrier. -/
 def scalarEncodingRows {T : Type} [Field T] (e : S ≃+* T) (phi : K →+* S)
     (vars rate lanes : Nat) (h : vars + rate < 64) (f : Whir.Table S (lanes + vars)) :

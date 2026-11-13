@@ -7,6 +7,9 @@ module
 public import CompStark.Tables.Composed.Verifier
 public import CompStark.Tables.Examples
 public import CompStark.Pcs.WordEncoding
+public import CompStark.Pcs.EvaluatedLadder
+public import CompStark.Pcs.Multiplicity
+public import CompStark.Tables.Compiled.Prover
 
 /-! The `program` system as a composed proof system: its setup, a small opening schedule and fixed
 verifier coins, for the tests and the performance gate. -/
@@ -68,5 +71,47 @@ def programProof (w : Witness K program.tables.length) :
 /-- The fast verifier on a transcript of the program. -/
 def programVerify (path : (composedProtocol programSetup schedule.schedule).tree.ExecutionPath) : Bool :=
   verifyWith programSetup schedule path
+
+/-- The duplex's initialization vector of the fixtures. -/
+def iv : CompStark.Keccak.Commit.Digest := Vector.replicate 32 1
+
+/-- The statement digest of the fixtures. -/
+def statement : CompStark.Keccak.Commit.Digest := Vector.replicate 32 2
+
+/-- The program's certified opening: one folded coordinate, then a four-variable last level. -/
+def programLadder : CompStark.Pcs.CertifiedEvaluated 5 1 :=
+  CompStark.Pcs.evaluatedLadder CompStark.Pcs.productionChoices (fun _ ↦ 3) 5 1 1
+    (by decide) (by decide) (by decide) (by decide)
+
+/-- The program's compiled verifier data. -/
+def programData : Compiled.Data program programLayout 2 5 :=
+  ⟨programSetup, programLadder.evaluated, .done, iv, statement⟩
+
+/-- The program's compiled parameters. -/
+noncomputable def programParams : Compiled.Parameters program programLayout 2 5 where
+  toSetup := programSetup
+  evaluated := programLadder.evaluated
+  johnson := programLadder.johnson
+  valid := programLadder.valid
+  decoder := programLadder.decoder
+  correct := programLadder.correct
+  decoders := programLadder.decoders
+  familyCorrect := programLadder.familyCorrect
+  reductions := External.none.reductions program programLayout 2 5 programFits (by decide) (fun _ ↦ trivial)
+  externalPresentation := .done
+  externalUnannounced := trivial
+  externalShapes := rfl
+  externalFramed := trivial
+  externalCount := 0
+  externalCounted := rfl
+  iv := iv
+  statement := statement
+
+/-- The parameters' verifier data is the program's. -/
+theorem programParams_data : programParams.data = programData := rfl
+
+/-- The honest compiled proof of a witness of the program. -/
+def programCompiledProof (w : Witness K program.tables.length) : Option programData.Proof :=
+  programData.prove (fun _ _ ↦ PUnit.unit) w
 
 end CompStark.Fixtures.Tables

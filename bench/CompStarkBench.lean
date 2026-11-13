@@ -30,6 +30,7 @@ import CompStark.Pcs.FusedTensor
 import CompStark.Pcs.TensorRing
 import CompStark.Keccak.GkrProver.SharedTable
 import CompStarkFixtures.Tables
+import CompStarkFixtures.TablesKeccak
 
 /-! # CompStark micro-benchmarks
 
@@ -691,6 +692,33 @@ def tablesRun (phase : {α : Type} → String → (Unit → α) → IO α) : IO 
   IO.println "tables: program proof accepted"
   return 0
 
+section
+set_option smartUnfolding false
+set_option backward.isDefEq.respectTransparency false
+
+/-- A compiled system's honest non-interactive proof of `w` and its executable verification. -/
+def compiledRun {S : CompStark.Tables.System CompStark.BinaryFields.K} {L : CompStark.Tables.Layout S.tables.length}
+    {k M : ℕ} (phase : {α : Type} → String → (Unit → α) → IO α) (name : String)
+    (d : CompStark.Tables.Compiled.Data S L k M) (external : d.ExternalProver)
+    (w : CompStark.Tables.Witness CompStark.BinaryFields.K S.tables.length) : IO Unit := do
+  let some proof ← phase s!"{name} prove" fun _ => d.prove external w
+    | throw (IO.userError s!"the compiled {name} prover failed to grind")
+  unless ← phase s!"{name} verify" fun _ => d.check proof do
+    throw (IO.userError s!"the compiled verifier rejects the honest {name} proof")
+
+/-- The compiled `program` and `hashes` systems through the honest non-interactive prover and the
+executable compiled verifier. -/
+def tablesCompiledRun (phase : {α : Type} → String → (Unit → α) → IO α) : IO UInt32 := do
+  compiledRun phase "program" CompStark.Fixtures.Tables.programData (fun _ _ ↦ PUnit.unit)
+    CompStark.Tables.Examples.programWitness
+  compiledRun phase "hashes" CompStark.Fixtures.TablesKeccak.hashesData
+    (fun o q ↦ CompStark.Tables.Compiled.keccakProver CompStark.Fixtures.TablesKeccak.keccak o q)
+    CompStark.Fixtures.TablesKeccak.hashesWitness
+  IO.println "tables-compiled: program and hashes proofs accepted"
+  return 0
+
+end
+
 /-- Binary-field PCS map preparation, packed bit folds and factored opening weights. -/
 def pcsRun (phase : {α : Type} → String → (Unit → α) → IO α) : IO UInt32 := do
   let challenges := CompStark.Fixtures.Pcs.challenges
@@ -945,7 +973,9 @@ marked through the FIFOs of `DIR`, at a fixed size from fixed inputs:
 * `keccak-merkle`: 4,096 leaves of 64 lanes, 100 pruned queries, 10,000 writer messages,
   and an eight-bit smallest-nonce grind.
 * `keccak-gkr`: the Keccak-f GKR reduction on 512 permutations (`tests/data/keccak-gkr/active`).
-* `sumcheck-fold`: prepare one cubic-extension challenge and fold 16,384 ordinary and constant four-column row pairs. -/
+* `sumcheck-fold`: prepare one cubic-extension challenge and fold 16,384 ordinary and constant four-column row pairs.
+* `tables-compiled`: the compiled `program` and `hashes` systems, each proved by the honest
+  non-interactive prover and checked by the executable compiled verifier. -/
 def gate (workload : String) (dir : System.FilePath) : IO UInt32 := do
   let m ← Marks.open dir
   match workload with
@@ -1017,6 +1047,7 @@ def gate (workload : String) (dir : System.FilePath) : IO UInt32 := do
   | "pcs" => pcsRun (fun label f ↦ m.phase label f)
   | "keccak-gkr" => keccakGkrRun (fun label f ↦ m.phase label f)
   | "tables" => tablesRun (fun label f ↦ m.phase label f)
+  | "tables-compiled" => tablesCompiledRun (fun label f ↦ m.phase label f)
   | "sumcheck-fold" => sumcheckFoldRun (fun label f ↦ m.phase label f)
   | "keccak-grind" => keccakGrindRun (fun label f ↦ m.phase label f)
   | "keccak-merkle" => keccakMerkleRun (fun label f ↦ m.phase label f)

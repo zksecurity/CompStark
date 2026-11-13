@@ -5,6 +5,7 @@ Released under Apache 2.0 license as described in the file LICENSE.
 module
 
 public import CompStark.Pcs.Evaluated
+public import CompStark.Pcs.FastEncoding
 
 /-! Shared word subspace recurrences for additive-domain query weights. -/
 
@@ -159,7 +160,33 @@ def evaluatedEncoding (vars rate : Nat) (h : vars+rate ≤ 64) : EvaluatedEncodi
           (𝔽q := ZMod 2) (β := basis) (ℓ := 0) (R_rate := 0) ⟨i.val,by omega⟩]
         rw [← div_eq_mul_inv]
         exact congrArg ofK (normalizedValueFast_eq ⟨i.val,by omega⟩ (domain h column))
-      · rfl }
+      · rfl
+    encodeRowsBase := fun f =>
+      if strict : vars + rate < 64 then
+        Vector.ofFn fun row => encodeArray (RingHom.id K) vars rate strict
+          (fun v => f (Fin.addCases (mask _ row) v))
+      else Vector.ofFn fun row => Array.ofFn fun x =>
+        (encoding vars rate h).encode (RingHom.id K) (fun v => f (Fin.addCases (mask _ row) v)) x
+    encodeRowsBase_eq := fun f row x => by
+      split
+      · rename_i strict
+        simp only [Fin.getElem_fin, Vector.getElem_ofFn]
+        exact encodeArrayBase_correct vars rate strict _ x
+      · simp only [Fin.getElem_fin, Vector.getElem_ofFn, Array.getD_eq_getD_getElem?,
+          Array.getElem?_ofFn, x.isLt, ↓reduceDIte, Option.getD_some]
+    encodeRowsExtension := fun f =>
+      if strict : vars + rate < 64 then
+        Vector.ofFn fun row => encodeArray (algebraMap K E) vars rate strict
+          (fun v => f (Fin.addCases (mask _ row) v))
+      else Vector.ofFn fun row => Array.ofFn fun x =>
+        (encoding vars rate h).encode (algebraMap K E) (fun v => f (Fin.addCases (mask _ row) v)) x
+    encodeRowsExtension_eq := fun f row x => by
+      split
+      · rename_i strict
+        simp only [Fin.getElem_fin, Vector.getElem_ofFn]
+        exact encodeArrayExtension_correct vars rate strict _ x
+      · simp only [Fin.getElem_fin, Vector.getElem_ofFn, Array.getD_eq_getD_getElem?,
+          Array.getElem?_ofFn, x.isLt, ↓reduceDIte, Option.getD_some] }
 
 /-- Shared query towers retain the exact normalized-novel weight and its word evaluator. -/
 theorem evaluatedEncoding_encoding (vars rate : Nat) (h : vars+rate ≤ 64) :

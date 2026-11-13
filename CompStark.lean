@@ -550,3 +550,10 @@ public import CompStark.Compiled.WhirTerminal
 public import CompStark.Tables.Compiled.Soundness
 public import CompStark.Tables.Compiled.External
 public import CompStark.Tables.Compiled.Verifier
+public import CompStark.Pcs.HonestRoundFast
+public import CompStark.Pcs.EvaluatedLadder
+public import CompStark.Compiled.Prover
+public import CompStark.Compiled.GrandProductProver
+public import CompStark.Compiled.WhirProver
+public import CompStark.Tables.Compiled.Prover
+public import CompStark.Tables.Compiled.KeccakProver

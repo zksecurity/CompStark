@@ -28,14 +28,17 @@ attribute [local instance 3000] Pcs.RingSwitch.sampleableE Pcs.RingSwitch.sample
 
 variable (S : System K) (L : Layout S.tables.length) (k : ℕ)
 
+/-- The boundary values, the bus's last message. -/
+def boundaryStep : Presentation (Bus.terminalProtocol S L) :=
+  .sender (fun values ↦ fieldEvents values) fun _ ↦ .done
+
 /-- The bus: the fingerprint's `k + 1` draws, the two roots, the product descent and the boundary
 values. -/
 def busPresentation : Presentation (Bus.protocol S L k) :=
   .challenge id (fun _ ↦ rfl)
     ⟨k + 1, (fun values ↦ ((fun i ↦ values[i.val]), values[k])), inferInstance⟩
     (.sender (fun roots ↦ fieldEvents ![roots.1, roots.2]) fun _ ↦
-      grandProduct (.sender (fun values ↦ fieldEvents values) fun _ ↦ .done)
-        (GrandProduct.layers (Bus.μ S L)) 0)
+      grandProduct (boundaryStep S L) (GrandProduct.layers (Bus.μ S L)) 0)
 
 /-- The number of values a table transmits: its transmitted columns if active, none otherwise. -/
 def valuesWidth (t : Fin S.tables.length) : ℕ :=

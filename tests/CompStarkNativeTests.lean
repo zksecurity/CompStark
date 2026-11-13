@@ -10,6 +10,7 @@ import CompStarkTests.KeccakTransport
 import CompStarkTests.KeccakGkr
 import CompStarkTests.BinaryPcsNative
 import CompStarkTests.TablesKeccak
+import CompStarkTests.TablesCompiled
 import CompStark.KoalaBear.Fast
 import CompStark.BabyBear.Fast
 import CompStark.Mont32.Json
@@ -65,6 +66,10 @@ and runs it.
   characteristic; Plonky3's proofs of unbalanced batches (`failed-global`, a wrong
   multiplicity, and `failed-local`, a tampered table column) are rejected by the terminals' sum;
   and the specification prover and the fast prover reproduce every proof.
+* The compiled `program` and `hashes` systems (`tests/CompStarkTests/TablesCompiled.lean`): the
+  honest non-interactive prover's proofs are accepted by the executable compiled verifier, and
+  proofs with a tampered Merkle root, grinding nonce or opening row, and the proof of a prover
+  sending a wrong first table-sumcheck message with consistent challenges, are rejected.
 -/
 
 namespace CompStarkTests.Native
@@ -674,6 +679,7 @@ def main : IO UInt32 := do
     CompStarkTests.KeccakGkr.check
     CompStarkTests.BinaryPcsNative.check
     CompStarkTests.TablesKeccak.check
+    CompStarkTests.TablesCompiled.check
     IO.println "native tests passed"
     return 0
   catch e =>

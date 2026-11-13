@@ -10,6 +10,7 @@ public import CompStark.Keccak.GkrProver.Refinement
 public import CompStark.Keccak.Scalar
 public import CompStark.Pcs.WordEncoding
 public import CompStarkFixtures.Tables
+public import CompStark.Tables.Compiled.KeccakProver
 
 /-! `hashes`: a Keccak table of 256 rows, four executed, whose 25 output lanes are virtual columns
 discharged by the Keccak-f GKR, pushes `(input, output)` states on bus `keccak`; a user table of
@@ -195,5 +196,41 @@ def hashesProof (w : Witness K hashes.tables.length) :
 /-- The fast verifier on a transcript of `hashes`. -/
 def hashesVerify (path : (composedProtocol hashesSetup schedule.schedule).tree.ExecutionPath) : Bool :=
   verifyWith hashesSetup schedule path
+
+/-- The certified opening of `hashes`: one folded coordinate, then levels of four. -/
+def hashesLadder : CompStark.Pcs.CertifiedEvaluated 15 1 :=
+  CompStark.Pcs.evaluatedLadder CompStark.Pcs.productionChoices (fun _ ↦ 3) 15 1 1
+    (by decide) (by decide) (by decide) (by decide)
+
+/-- The compiled verifier data of `hashes`. -/
+def hashesData : Compiled.Data hashes hashesLayout 6 15 :=
+  ⟨hashesSetup, hashesLadder.evaluated, Compiled.keccakPresentation keccak, iv, statement⟩
+
+/-- The compiled parameters of `hashes`. -/
+noncomputable def hashesParams : Compiled.Parameters hashes hashesLayout 6 15 where
+  toSetup := hashesSetup
+  evaluated := hashesLadder.evaluated
+  johnson := hashesLadder.johnson
+  valid := hashesLadder.valid
+  decoder := hashesLadder.decoder
+  correct := hashesLadder.correct
+  decoders := hashesLadder.decoders
+  familyCorrect := hashesLadder.familyCorrect
+  reductions := keccak.reductions hashesFits
+  externalPresentation := Compiled.keccakPresentation keccak
+  externalUnannounced := Compiled.keccakPresentation_unannounced keccak
+  externalShapes := Compiled.keccakPresentation_shapes keccak
+  externalFramed := Compiled.keccakPresentation_framed keccak
+  externalCount := Compiled.wireRankCount (gkrSteps 4) + 6
+  externalCounted := Compiled.keccakPresentation_counted keccak
+  iv := iv
+  statement := statement
+
+/-- The parameters' verifier data is `hashes`'. -/
+theorem hashesParams_data : hashesParams.data = hashesData := rfl
+
+/-- The honest compiled proof of a witness of `hashes`. -/
+def hashesCompiledProof (w : Witness K hashes.tables.length) : Option hashesData.Proof :=
+  hashesData.prove (fun o q ↦ Compiled.keccakProver keccak o q) w
 
 end CompStark.Fixtures.TablesKeccak

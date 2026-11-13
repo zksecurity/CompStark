@@ -91,9 +91,11 @@ theorem error_eq (p : ℕ) :
 
 /-- The ring-switched claim with a certified evaluator of its weight. -/
 def ringEvaluated (t : Keccak.Gkr.Transcript E kt.p) (c : Vector E 6) : Pcs.EvaluatedClaim M :=
+  let statement := sliceStatement t
+  let point := Vector.ofFn statement.point
   ⟨.combine ((Pcs.RingSwitch.frobTerms (Pcs.RingSwitch.ringStages c)).map fun term =>
-      (term.1, .eq (kt.ring.lift (fun i => (sliceStatement t).point i ^ 2 ^ term.2)))),
-    Pcs.RingSwitch.ringTarget (sliceStatement t) c⟩
+      (term.1, .eq (kt.ring.lift (fun i => point[i] ^ 2 ^ term.2)))),
+    Pcs.RingSwitch.ringTarget statement c⟩
 
 /-- The argument's claims with certified evaluators of their weights. -/
 def evaluated (a : Keccak.Gkr.Transcript E kt.p × Vector E 6) : List (Pcs.EvaluatedClaim M) :=
@@ -109,7 +111,7 @@ theorem evaluated_claims (a : Keccak.Gkr.Transcript E kt.p × Vector E 6) :
   refine congrArg (fun weight ↦ (⟨weight, _⟩ : Whir.Claim E M)) ?_
   funext u
   simp only [ringEvaluated, Pcs.EvaluatedWeight.combine, List.map_map, Function.comp_def,
-    Pcs.EvaluatedWeight.eq_table, Pcs.RingSwitch.ringWeight]
+    Pcs.EvaluatedWeight.eq_table, Pcs.RingSwitch.ringWeight, Fin.getElem_fin, Vector.getElem_ofFn]
 
 /-- A witness read off a stack satisfies the external relation exactly when the stack's GKR
 witness satisfies the Keccak-f relation with its computed outputs. -/

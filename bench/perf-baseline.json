@@ -12,8 +12,8 @@
       "tolerance": 0.005
     },
     "wide-quartic/quotient": {
-      "instructions": 311195453,
-      "variation": 6.7e-05,
+      "instructions": 311195298,
+      "variation": 3e-06,
       "tolerance": 0.005
     },
     "wide-quartic/quotient lde": {
@@ -22,8 +22,8 @@
       "tolerance": 0.005
     },
     "wide-quartic/quotient commit": {
-      "instructions": 658359731,
-      "variation": 3.7e-05,
+      "instructions": 658344563,
+      "variation": 6.3e-05,
       "tolerance": 0.005
     },
     "wide-quartic/opened values": {
@@ -92,8 +92,8 @@
       "tolerance": 0.005
     },
     "wide-quintic/reduce": {
-      "instructions": 546536691,
-      "variation": 0.000145,
+      "instructions": 546533174,
+      "variation": 7e-05,
       "tolerance": 0.005
     },
     "wide-quintic/commit phase": {
@@ -177,8 +177,8 @@
       "tolerance": 0.005
     },
     "keccak/verify": {
-      "instructions": 400033911,
-      "variation": 7.8e-05,
+      "instructions": 400003059,
+      "variation": 7.9e-05,
       "tolerance": 0.005
     },
     "batch/trace lde": {
@@ -212,8 +212,8 @@
       "tolerance": 0.005
     },
     "batch/reduce": {
-      "instructions": 460641966,
-      "variation": 5.2e-05,
+      "instructions": 460632927,
+      "variation": 4.5e-05,
       "tolerance": 0.005
     },
     "batch/commit phase": {
@@ -307,7 +307,7 @@
       "tolerance": 0.0751
     },
     "keccak-merkle/duplex": {
-      "instructions": 136062882,
+      "instructions": 136062634,
       "variation": 2e-06,
       "tolerance": 0.005
     },
@@ -327,8 +327,8 @@
       "tolerance": 0.437
     },
     "sumcheck-fold/fold": {
-      "instructions": 27127570,
-      "variation": 0.0,
+      "instructions": 27127551,
+      "variation": 1.4e-05,
       "tolerance": 0.005
     },
     "sumcheck-fold/packed-fold": {
@@ -412,7 +412,7 @@
       "tolerance": 0.005
     },
     "pcs/induction-large-packed": {
-      "instructions": 343354568,
+      "instructions": 343354370,
       "variation": 1e-06,
       "tolerance": 0.005
     },
@@ -587,13 +587,33 @@
       "tolerance": 0.005
     },
     "tables/prove": {
-      "instructions": 132857856,
-      "variation": 3e-06,
+      "instructions": 132857843,
+      "variation": 0.0,
       "tolerance": 0.005
     },
     "tables/verify": {
-      "instructions": 23988599,
-      "variation": 3.1e-05,
+      "instructions": 23988175,
+      "variation": 1.6e-05,
+      "tolerance": 0.005
+    },
+    "tables-compiled/program prove": {
+      "instructions": 986149355,
+      "variation": 0.0,
+      "tolerance": 0.005
+    },
+    "tables-compiled/program verify": {
+      "instructions": 11088662,
+      "variation": 0.0,
+      "tolerance": 0.005
+    },
+    "tables-compiled/hashes prove": {
+      "instructions": 277024644105,
+      "variation": 1e-06,
+      "tolerance": 0.005
+    },
+    "tables-compiled/hashes verify": {
+      "instructions": 10321148760,
+      "variation": 3.4e-05,
       "tolerance": 0.005
     }
   }

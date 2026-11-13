@@ -118,4 +118,61 @@ theorem check_iff (params : Parameters S L k M) (proof : Proof params) :
     CorrelationIntractable.Consistent _ _ proof.2.1 ∧ _ ∧ _
   tauto
 
+/-- The data the verifier reads: the setup, the evaluated opening schedule, the external
+argument's presentation and the transcript seed. -/
+structure Data (S : System K) (L : Layout S.tables.length) (k M : ℕ) where
+  /-- The setup. -/
+  setup : Setup S L k M
+  /-- The opening schedule with its query-weight evaluators. -/
+  evaluated : Pcs.EvaluatedSchedule M
+  /-- The external argument's presentation. -/
+  externalPresentation : Presentation setup.external.protocol
+  /-- The duplex's initialization vector. -/
+  iv : Commit.Digest
+  /-- The statement digest. -/
+  statement : Commit.Digest
+
+/-- The verifier's data of the parameters. -/
+def Parameters.data (params : Parameters S L k M) : Data S L k M :=
+  ⟨params.toSetup, params.evaluated, params.externalPresentation, params.iv, params.statement⟩
+
+namespace Data
+
+variable (d : Data S L k M)
+
+/-- The compiled presentation of the data. -/
+def presentation : Presentation (composedProtocol d.setup d.evaluated.schedule) :=
+  .merkle (baseLayout d.evaluated.schedule (2 ^ d.evaluated.schedule.lanes))
+    ((((busPresentation S L k).append (tablePresentation S L)).append d.externalPresentation).append
+      (whirPresentation d.evaluated.schedule))
+
+/-- A compiled proof of the data. -/
+abbrev Proof := FSProof PUnit Commit.Digest Openings (fun _ => d.presentation.coin)
+
+/-- The executable verifier on the data. -/
+def check (proof : d.Proof) : Bool :=
+  let state := Transcript.seedDigests d.iv d.statement
+  let path := d.presentation.openedPath Commit.hash proof.2.1 proof.2.2
+  let parts := splitPath (outerProtocol d.setup) (Whir.opening E d.evaluated.schedule) path.2
+  let trees := d.presentation.trees proof.2.1 proof.2.2 0
+  WireObserver.check _ d.presentation.observer state proof.2.1 &&
+    d.presentation.grindingCheck proof.2.1 state &&
+    (verifyWith d.setup d.evaluated path &&
+      decide (proof.2.2.map OpeningBatch.queries = whirQueries d.evaluated.schedule parts.2) &&
+      decide (proof.2.2.length = trees.length) &&
+      trees.all fun tree => Commit.accepts Commit.hash tree.height tree.rowWords
+        tree.leafWords tree.opening.queries tree.opening.batch tree.root)
+
+end Data
+
+/-- The verifier reads only the parameters' data. -/
+theorem check_data (params : Parameters S L k M) (proof : Proof params) :
+    check params proof = params.data.check proof := rfl
+
+/-- The executable verifier on the parameters' data decides the compiled verifier. -/
+theorem data_check_iff (params : Parameters S L k M) (proof : Proof params) :
+    params.data.check proof = true ↔ verify params proof := by
+  rw [← check_data]
+  exact check_iff params proof
+
 end CompStark.Tables.Compiled

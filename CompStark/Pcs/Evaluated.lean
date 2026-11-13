@@ -264,6 +264,18 @@ structure EvaluatedEncoding (n : Nat) where
   query : encoding.Columns → EvaluatedWeight n
   /-- Each query evaluator represents the scalar-extended protocol weight. -/
   query_table : ∀ x, (query x).table = fun u => ofK (encoding.weight x u)
+  /-- An executable encoding of every base-field row, as data. -/
+  encodeRowsBase : {lanes : Nat} → Whir.Table K (lanes + n) → Vector (Array K) (2 ^ lanes)
+  /-- Each row's entries are the protocol's encoding of that row. -/
+  encodeRowsBase_eq : ∀ {lanes : Nat} (f : Whir.Table K (lanes + n)) (row : Fin (2 ^ lanes))
+    (x : encoding.Columns), (encodeRowsBase f)[row].getD x.val 0 =
+      encoding.encode (RingHom.id K) (fun v => f (Fin.addCases (mask lanes row) v)) x
+  /-- An executable encoding of every extension-field row, as data. -/
+  encodeRowsExtension : {lanes : Nat} → Whir.Table E (lanes + n) → Vector (Array E) (2 ^ lanes)
+  /-- Each row's entries are the protocol's encoding of that row. -/
+  encodeRowsExtension_eq : ∀ {lanes : Nat} (f : Whir.Table E (lanes + n)) (row : Fin (2 ^ lanes))
+    (x : encoding.Columns), (encodeRowsExtension f)[row].getD x.val 0 =
+      encoding.encode (algebraMap K E) (fun v => f (Fin.addCases (mask lanes row) v)) x
 
 /-- Shared recurrence constants and denominator inverse for one normalized basis factor. -/
 def normalizedFactorPlan (i : Fin 64) : Array K × K :=
