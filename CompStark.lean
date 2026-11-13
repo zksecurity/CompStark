@@ -561,3 +561,4 @@ public import CompStark.Compiled.ProverChecks
 public import CompStark.Compiled.ProverRun
 public import CompStark.Compiled.GrandProductRun
 public import CompStark.Tables.Compiled.HonestRun
+public import CompStark.Compiled.WhirRun

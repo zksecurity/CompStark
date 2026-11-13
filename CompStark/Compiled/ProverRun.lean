@@ -55,6 +55,41 @@ def Presentation.idealRun : {original : Protocol} → (presentation : Presentati
         (⟨move drawn.1, cast (congrArg (fun protocol : Protocol => protocol.tree.ExecutionPath)
           (shape drawn.1).symm) result.1⟩, result.2)
 
+/-- The ideal run of a sender. -/
+theorem Presentation.idealRun_sender {Moves : Type} [DecidableEq Moves] {rest : Moves → Protocol}
+    (encode : Moves → List Transcript.Event) (next : (move : Moves) → Presentation (rest move))
+    (prover : (Presentation.sender encode next).Prover) (state : Transcript.State) :
+    (Presentation.sender encode next).idealRun prover state =
+      ((next (prover state).1).idealRun (prover state).2
+        (Transcript.replay state (encode (prover state).1))).map
+        fun result => (⟨(prover state).1, result.1⟩, result.2) := rfl
+
+/-- The ideal run of a Merkle word. -/
+theorem Presentation.idealRun_merkle {Messages : Type} [DecidableEq Messages]
+    {interface : OracleInterface Messages} {rest : Protocol} (layout : LeafLayout Messages)
+    (next : Presentation rest) (prover : (Presentation.merkle (interface := interface) layout next).Prover)
+    (state : Transcript.State) :
+    (Presentation.merkle (interface := interface) layout next).idealRun prover state =
+      (next.idealRun (prover state).2.2 (Transcript.replay state (Transcript.digestEvents
+        (Commit.root layout.height fun i => Commit.restoreLeaf layout.leafWords ((prover state).2.1 i))))).map
+        fun result => (⟨(prover state).1, result.1⟩, result.2) := rfl
+
+/-- The ideal run of a grinding move. -/
+theorem Presentation.idealRun_grind {original : Protocol} (bits : ℕ) (next : Presentation original)
+    (prover : (Presentation.grind bits next).Prover) (state : Transcript.State) :
+    (Presentation.grind bits next).idealRun prover state =
+      (grindSearch state bits grindFuel).bind fun nonce =>
+        next.idealRun prover (Transcript.grindCheck state bits nonce).2 := rfl
+
+/-- The ideal run of a challenge whose move is the challenge. -/
+theorem Presentation.idealRun_challenge {Challenge : Type} [SampleableType Challenge] {tail : Protocol}
+    (draw : Draw Challenge) (next : Presentation tail)
+    (prover : (Presentation.challenge (rest := fun _ => tail) id (fun _ => rfl) draw next).Prover)
+    (state : Transcript.State) :
+    (Presentation.challenge (rest := fun _ => tail) id (fun _ => rfl) draw next).idealRun prover state =
+      (next.idealRun (prover state (draw.run state).1) (draw.run state).2).map
+        fun result => (⟨(draw.run state).1, result.1⟩, result.2) := rfl
+
 /-- Joining commutes with a transport of the prefix's protocol. -/
 theorem joinPath_cast {first next : Protocol} (equal : first = next) (second : Protocol)
     (head : next.tree.ExecutionPath) (tail : second.tree.ExecutionPath) :
