@@ -87,6 +87,46 @@ def Unexplained (hash : ByteArray → Commit.Digest) (params : Parameters S L k 
     NodeBad (Commit.answerWith hash) (listedNode hash params o position)
       (dictionary hash (fun _ => o.2) position.2 (listedNode hash params o position)) PUnit.unit
 
+/-- The WHIR schedule's query count at each commitment. -/
+def queryCounts : {n : ℕ} → Whir.Schedule K n → List ℕ
+  | _, .last _ _ _ queries => [queries]
+  | _, .more _ _ queries rest => queries :: queryCounts rest
+
+/-- The verifier's query lists have the schedule's counts. -/
+theorem whirQueries_lengths : {n : ℕ} → (schedule : Whir.Schedule K n) →
+    (path : (Whir.opening E schedule).tree.ExecutionPath) →
+    (whirQueries schedule path).map List.length = queryCounts schedule
+  | _, .last _ _ _ queries, _ => by
+    show List.map List.length [List.ofFn _] = [queries]
+    rw [List.map_cons, List.map_nil, List.length_ofFn]
+  | _, .more _ _ queries rest, _ => by
+    show List.map List.length (List.ofFn _ :: whirQueries rest _) = queries :: queryCounts rest
+    rw [List.map_cons, List.length_ofFn, whirQueries_lengths rest]
+
+/-- A proof's opening batches carry the schedule's query counts. -/
+def OpeningCounts (params : Parameters S L k M) (proof : Proof params) : Prop :=
+  (trees params proof).map (fun tree => tree.opening.queries.length) = queryCounts params.schedule
+
+/-- A verified proof carries the schedule's query counts. -/
+theorem verify_openingCounts (params : Parameters S L k M) (proof : Proof params) (verified : verify params proof) :
+    OpeningCounts params proof := by
+  obtain ⟨-, queries, size, -⟩ := verified.2.1
+  have batches : (trees params proof).map (fun tree => tree.opening.queries.length) =
+      proof.2.2.map fun batch => batch.queries.length := by
+    apply List.ext_getElem (by simp only [List.length_map, size])
+    intro i hi _
+    simp only [List.getElem_map]
+    have bound : i < (trees params proof).length := by simpa only [List.length_map] using hi
+    have opening : (trees params proof)[i].opening = openingAt proof.2.2 (0 + i) :=
+      Presentation.trees_openingAt _ _ _ 0 i bound
+    rw [opening, Nat.zero_add, openingAt,
+      List.getElem?_eq_getElem (by simpa only [List.length_map, size] using hi), Option.getD_some]
+  unfold OpeningCounts
+  have lengths := congrArg (List.map List.length) queries
+  rw [List.map_map, whirQueries_lengths] at lengths
+  rw [batches]
+  exact lengths
+
 /-- Disagreement with the dictionary extractor is an unexplained opening of the adversary's
 output at the same coins. -/
 theorem disagree_unexplained (params : Parameters S L k M) {Coins : Type} (A : Coins → Listing params)
@@ -114,8 +154,9 @@ theorem disagree_unexplained (params : Parameters S L k M) {Coins : Type} (A : C
 
 /-- Knowledge soundness of the compiled system for an adversary that lists its hash inputs: a proof
 verifies while the stack extracted through the dictionary of its list fails the composed input
-relation with probability at most that of an unexplained opening plus, at each of the `count`
-draws, the correlation-intractability failure of the challenge table. -/
+relation with probability at most that of an unexplained opening of a proof carrying the
+schedule's query counts plus, at each of the `count` draws, the correlation-intractability failure
+of the challenge table. -/
 theorem knowledgeSoundness_listed (params : Parameters S L k M) {Coins : Type} [SampleableType Coins]
     (A : Coins → Listing params) :
     Pr{let c ← ($ᵗ Coins : ProbComp Coins)}[
@@ -124,7 +165,8 @@ theorem knowledgeSoundness_listed (params : Parameters S L k M) {Coins : Type} [
           (fun _ => (certificate params).extractor) (fun c => (A c).1)
           (messages params (fun c => (A c).1) (dictionary Commit.hash fun c => (A c).2))
           (terminalWitness params (fun c => (A c).1) (dictionary Commit.hash fun c => (A c).2)) c)] ≤
-      Pr{let c ← ($ᵗ Coins : ProbComp Coins)}[Unexplained Commit.hash params (A c)] +
+      Pr{let c ← ($ᵗ Coins : ProbComp Coins)}[OpeningCounts params (A c).1 ∧
+        Unexplained Commit.hash params (A c)] +
         ∑ rank ∈ Finset.range (count params),
           StandardBcs.ciRel (fun _ => coin params) (fun _ => Composed.inputState params.toParameters)
             (fun _ => certificate params) (fun c => (A c).1)
@@ -134,10 +176,12 @@ theorem knowledgeSoundness_listed (params : Parameters S L k M) {Coins : Type} [
     (fun _ => certificate params) (fun c => (A c).1)
     (messages params (fun c => (A c).1) (dictionary Commit.hash fun c => (A c).2)) (challengeTable params)
     (accept Commit.hash params) (terminalWitness params (fun c => (A c).1) (dictionary Commit.hash fun c => (A c).2))
-    (Disagree params (fun c => (A c).1) (dictionary Commit.hash fun c => (A c).2))
-    (fun c accepted agreement => transfer params (fun c => (A c).1) _ c accepted agreement)
+    (fun c => verify params (A c).1 ∧ Disagree params (fun c => (A c).1) (dictionary Commit.hash fun c => (A c).2) c)
+    (fun c accepted agreement => transfer params (fun c => (A c).1) _ c accepted
+      fun disagree => agreement ⟨accepted, disagree⟩)
     (count params) (fun _ path => challenge_bound params PUnit.unit path)).trans
       (add_le_add (prEvent_mono ($ᵗ Coins : ProbComp Coins) _ _
-        fun c disagree => disagree_unexplained params A c disagree) le_rfl)
+        fun c disagree => ⟨verify_openingCounts params (A c).1 disagree.1,
+          disagree_unexplained params A c disagree.2⟩) le_rfl)
 
 end CompStark.Tables.Compiled

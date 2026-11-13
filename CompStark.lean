@@ -497,6 +497,7 @@ public import CompStark.Compiled.ChallengeSnapshot
 public import CompStark.Compiled.FreshOracleLog
 public import CompStark.Compiled.FreshSnapshot
 public import CompStark.Compiled.MerkleTrace
+public import CompStark.Compiled.MerkleOracle
 public import CompStark.Keccak.Commit.Codec
 public import CompStark.Keccak.Commit.MerkleCodec
 public import CompStark.Tables.Basic
@@ -571,3 +572,4 @@ public import CompStark.Tables.Composed.Extractor
 public import CompStark.Tables.Compiled.Extractor
 public import CompStark.Tables.Compiled.Listed
 public import CompStark.Tables.Compiled.ListedOracle
+public import CompStark.Tables.Compiled.ListedGame
