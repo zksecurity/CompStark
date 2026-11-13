@@ -2,8 +2,12 @@
 """The performance gate: user-space instruction counts of single-threaded runs of every hot path.
 
 `scripts/perf-gate` builds `CompStarkBench`, runs each workload of `WORKLOADS` once on one thread
-(`CompStarkBench gate WORKLOAD DIR`, `LEAN_NUM_THREADS=1`) and reads the run's `instructions:u` and
-`cycles:u` counters at every phase mark the workload writes to the FIFOs in `DIR`. It compares each
+(`CompStarkBench gate WORKLOAD DIR`, `LEAN_NUM_THREADS=0`: no task workers) and reads the run's `instructions:u` and
+`cycles:u` counters at every phase mark the workload writes to the FIFOs in `DIR`, once every
+user thread of the workload is blocked (`wait_blocked`), so that a count ends at the same
+instruction on every run whatever the host's load. The workload runs without transparent huge
+pages, whose availability would change how often page faults interrupt, and so recount, its
+memory-filling instructions. It compares each
 phase's instructions with `bench/perf-baseline.json` and fails if one exceeds its baseline by more
 than the entry's tolerance, or falls below it by more than `RATCHET` or the tolerance, whichever
 is larger: a win is locked in by updating the baseline. Cycles and wall time are reported, not gated: they depend on the host's
@@ -41,6 +45,7 @@ PERF_COUNT_HW_CPU_CYCLES = 0
 PERF_COUNT_HW_INSTRUCTIONS = 1
 SYS_PERF_EVENT_OPEN = 298  # x86_64
 PERF_FLAG_FD_CLOEXEC = 8
+PR_SET_THP_DISABLE = 41
 # disabled, inherit, exclude_kernel, exclude_hv, enable_on_exec
 ATTR_FLAGS = (1 << 0) | (1 << 1) | (1 << 5) | (1 << 6) | (1 << 12)
 # PERF_FORMAT_TOTAL_TIME_ENABLED | PERF_FORMAT_TOTAL_TIME_RUNNING
@@ -69,6 +74,31 @@ def read_counter(fd):
     return value
 
 
+def wait_blocked(pid):
+    """Wait until every user thread of the workload is blocked in a system call: the thread running
+    Lean's `main` has written a mark and reads its acknowledgement, and the runtime's other threads
+    are idle. No user instruction of the workload runs while the counters are read, so a count ends
+    at the same instruction on every run. The kernel's `io_uring` polling threads run no user
+    instructions and are skipped."""
+    tasks = f"/proc/{pid}/task"
+    while True:
+        blocked = True
+        for tid in os.listdir(tasks):
+            try:
+                with open(f"{tasks}/{tid}/comm") as f:
+                    if f.read().startswith("iou-"):
+                        continue
+                with open(f"{tasks}/{tid}/syscall") as f:
+                    if f.read().startswith("running"):
+                        blocked = False
+                        break
+            except FileNotFoundError:
+                continue
+        if blocked:
+            return
+        os.sched_yield()
+
+
 def run_workload(workload):
     """Per phase of `workload`: instructions, cycles and nanoseconds, summed over its marks."""
     with tempfile.TemporaryDirectory(prefix="perf-gate-") as d:
@@ -84,7 +114,14 @@ def run_workload(workload):
             os.read(go_r, 1)
             os.dup2(log.fileno(), 1)
             os.dup2(log.fileno(), 2)
-            env = dict(os.environ, LEAN_NUM_THREADS="1")
+            # Fresh memory is first touched by `rep` string instructions, and every page fault that
+            # interrupts one counts it again; transparent huge pages make the number of faults
+            # depend on the host's free memory, so the workload runs on base pages only.
+            if libc.prctl(PR_SET_THP_DISABLE, 1, 0, 0, 0) != 0:
+                sys.exit(f"perf-gate: prctl: {os.strerror(ctypes.get_errno())}")
+            # Without task workers `Task.spawn` evaluates on the spawning thread, so the split of
+            # work between threads, and the instructions of waiting for it, cannot vary.
+            env = dict(os.environ, LEAN_NUM_THREADS="0")
             os.execve(BENCH, [BENCH, "gate", workload, d], env)
         os.close(go_r)
         log.close()
@@ -108,6 +145,7 @@ def run_workload(workload):
             buf += chunk
             while b"\n" in buf:
                 line, buf = buf.split(b"\n", 1)
+                wait_blocked(pid)
                 now = (read_counter(ins_fd), read_counter(cyc_fd), time.monotonic_ns())
                 msg = line.decode()
                 if msg == "begin":
