@@ -562,3 +562,5 @@ public import CompStark.Compiled.ProverRun
 public import CompStark.Compiled.GrandProductRun
 public import CompStark.Tables.Compiled.HonestRun
 public import CompStark.Compiled.WhirRun
+public import CompStark.Compiled.LeafRows
+public import CompStark.Tables.Compiled.Completeness

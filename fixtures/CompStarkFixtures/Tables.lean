@@ -10,6 +10,7 @@ public import CompStark.Pcs.WordEncoding
 public import CompStark.Pcs.EvaluatedLadder
 public import CompStark.Pcs.Multiplicity
 public import CompStark.Tables.Compiled.Prover
+public import CompStark.Tables.Compiled.Completeness
 
 /-! The `program` system as a composed proof system: its setup, a small opening schedule and fixed
 verifier coins, for the tests and the performance gate. -/
@@ -113,5 +114,13 @@ theorem programParams_data : programParams.data = programData := rfl
 /-- The honest compiled proof of a witness of the program. -/
 def programCompiledProof (w : Witness K program.tables.length) : Option programData.Proof :=
   programData.prove (fun _ _ ↦ PUnit.unit) w
+
+/-- Every compiled proof the honest prover produces for a satisfying, padded program witness is
+accepted. -/
+theorem programCompiled_complete (w : Witness K program.tables.length) (hsat : program.Satisfied programLayout w)
+    (padded : program.Padded programLayout w) (proof : programData.Proof)
+    (proved : programCompiledProof w = some proof) : Compiled.verify programParams proof :=
+  Compiled.completeness programParams programHonest (fun _ _ ↦ PUnit.unit)
+    (fun _ _ _ _ _ _ ↦ ⟨PUnit.unit, rfl⟩) (by decide +kernel) w hsat padded proof proved
 
 end CompStark.Fixtures.Tables

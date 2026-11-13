@@ -6,6 +6,7 @@ module
 
 public import CompStark.Compiled.ProverRun
 public import CompStark.Compiled.WhirProver
+public import CompStark.Compiled.LeafRows
 
 /-! The compiled WHIR prover's ideal run, projected to WHIR's opening, is the honest opening at the
 drawn coins (`whir_idealRun`). The wire sends each level's first quadratic in parts; their
@@ -335,5 +336,167 @@ theorem whir_idealRun {n : ℕ} (schedule : EvaluatedSchedule n) (table : Whir.T
   obtain ⟨hpath, -⟩ := Prod.mk.inj pair
   subst hpath
   exact whirWire_idealRun schedule table claims _ (fun _ => id) (fun _ => rfl) state wire.1 wire.2 hwire
+
+/-- The separated rounds keep a faithful continuation faithful. -/
+theorem separatedProver_faithful {tail : Protocol} (suffix : Presentation tail) {vars : ℕ}
+    (next : Whir.Table E vars → Whir.Table E vars → suffix.Prover)
+    (faithful : ∀ W T, Presentation.Prover.Faithful suffix (next W T)) :
+    (count : ℕ) → (first : Whir.Quadratic E) → (W T : Whir.Table E (count + vars)) →
+    Presentation.Prover.Faithful (whirRounds suffix count) (separatedProver suffix next count first W T)
+  | 0, _, _, _ => faithful _ _
+  | count + 1, _, _, _ => fun _ _ _ => separatedProver_faithful suffix next faithful count _ _ _
+
+/-- The WHIR wire prover's words decode from its rows. -/
+theorem whirWireProver_faithful : {n : ℕ} → (schedule : EvaluatedSchedule n) → (table : Whir.Table E n) →
+    (claims : List (Whir.Claim E n)) → (introduction : E → Whir.Table E n) →
+    Presentation.Prover.Faithful (whirWirePresentation schedule.schedule)
+      (whirWireProver schedule table claims introduction)
+  | _, .last lanes tail enc queries, table, claims, introduction => by
+      intro _ _
+      apply separatedProver_faithful
+      intro _ _ _ _ _ _ _ _
+      exact separatedProver_faithful (vars := 0) .done _ (fun _ _ => trivial) tail _ _ _
+  | _, .more lanes enc queries rest, table, claims, introduction => by
+      intro _ _
+      apply separatedProver_faithful
+      intro _ folded _ _
+      refine ⟨extensionRows_decode rest.schedule _ (wordOfRows_full _),
+        extensionRows_length rest.schedule _ (wordOfRows_full _), ?_⟩
+      intro _ _ _ _ _ _
+      exact whirWireProver_faithful rest folded _ _
+
+/-- Reconstruction reads the openings only through the trees it passes to the leaf images. -/
+theorem Presentation.reconstruct_openings : {original : Protocol} → (presentation : Presentation original) →
+    (path : (StandardBcs.compile Commit.Digest presentation.coin).tree.ExecutionPath) → (openings : Openings) →
+    (leaves : ℕ → TreeOpening → ℕ → Option (List K)) → (slot : ℕ) →
+    presentation.reconstruct path openings leaves slot =
+      presentation.reconstruct path [] (fun index tree => leaves index { tree with opening := openingAt openings index })
+        slot
+  | _, .refine wire projection, path, openings, leaves, slot =>
+      congrArg projection.path (reconstruct_openings wire path openings leaves slot)
+  | _, .done, _, _, _, _ => rfl
+  | _, @Presentation.sender _ _ _ _ next, path, openings, leaves, slot =>
+      congrArg (Sigma.mk path.1) (reconstruct_openings (next path.1) path.2 openings leaves slot)
+  | _, @Presentation.reveal _ _ _ _ _ next, path, openings, leaves, slot =>
+      congrArg (Sigma.mk path.1) (reconstruct_openings next path.2 openings leaves slot)
+  | _, @Presentation.merkle _ _ _ _ _ next, path, openings, leaves, slot =>
+      congrArg (Sigma.mk _) (reconstruct_openings next path.2 openings leaves (slot + 1))
+  | _, @Presentation.announce _ _ _ _ _ next, path, openings, leaves, slot =>
+      reconstruct_openings (next path.1) path.2 openings leaves slot
+  | _, .grind _ next, path, openings, leaves, slot => reconstruct_openings next path.2 openings leaves slot
+  | _, @Presentation.challenge _ _ _ _ _ move shape _ next, path, openings, leaves, slot =>
+      congrArg (Sigma.mk (move path.1)) (congrArg
+        (cast (congrArg (fun p : Protocol => p.tree.ExecutionPath) (shape path.1).symm))
+        (reconstruct_openings next path.2 openings leaves slot))
+
+/-- WHIR's query lists are challenges: they do not depend on the reconstructed leaf images. -/
+theorem whirQueries_reconstruct : {n : ℕ} → (schedule : Whir.Schedule K n) →
+    (combine : E → Whir.Quadratic E → Whir.Quadratic E) →
+    (path : (StandardBcs.compile Commit.Digest (whirWirePresentation schedule).coin).tree.ExecutionPath) →
+    (openings : Openings) → (first second : ℕ → TreeOpening → ℕ → Option (List K)) → (slot : ℕ) →
+    whirQueries schedule ((whirProjection schedule combine).path
+      ((whirWirePresentation schedule).reconstruct path openings first slot)) =
+    whirQueries schedule ((whirProjection schedule combine).path
+      ((whirWirePresentation schedule).reconstruct path openings second slot))
+  | _, .last lanes tail encoding queries, combine, path, openings, first, second, slot => by
+      obtain ⟨residual, rest, prepare, -, parsed⟩ := foldProjection_split _ (combine path.1)
+        (whirBoundaryProjection (.last lanes tail encoding queries)) lanes path.2 openings slot
+      change [List.ofFn fun i : Fin queries => ((Whir.readRounds _ lanes 0 ((foldProjection (combine path.1)
+          (whirBoundaryProjection (.last lanes tail encoding queries)) lanes).path
+            ((whirRounds _ lanes).reconstruct path.2 openings first slot))).2.2.2.2.1 i).val] =
+        [List.ofFn fun i : Fin queries => ((Whir.readRounds _ lanes 0 ((foldProjection (combine path.1)
+          (whirBoundaryProjection (.last lanes tail encoding queries)) lanes).path
+            ((whirRounds _ lanes).reconstruct path.2 openings second slot))).2.2.2.2.1 i).val]
+      rw [parsed first 0, parsed second 0]
+      rfl
+  | _, .more lanes encoding queries rest, combine, path, openings, first, second, slot => by
+      obtain ⟨residual, tailPath, prepare, -, parsed⟩ := foldProjection_split _ (combine path.1)
+        (whirBoundaryProjection (.more lanes encoding queries rest)) lanes path.2 openings slot
+      change (List.ofFn fun i : Fin queries => ((Whir.readRounds _ lanes 0 ((foldProjection (combine path.1)
+          (whirBoundaryProjection (.more lanes encoding queries rest)) lanes).path
+            ((whirRounds _ lanes).reconstruct path.2 openings first slot))).2.2.2.2.2.2.1 i).val) ::
+          whirQueries rest (Whir.readRounds _ lanes 0 ((foldProjection (combine path.1)
+            (whirBoundaryProjection (.more lanes encoding queries rest)) lanes).path
+              ((whirRounds _ lanes).reconstruct path.2 openings first slot))).2.2.2.2.2.2.2 =
+        (List.ofFn fun i : Fin queries => ((Whir.readRounds _ lanes 0 ((foldProjection (combine path.1)
+          (whirBoundaryProjection (.more lanes encoding queries rest)) lanes).path
+            ((whirRounds _ lanes).reconstruct path.2 openings second slot))).2.2.2.2.2.2.1 i).val) ::
+          whirQueries rest (Whir.readRounds _ lanes 0 ((foldProjection (combine path.1)
+            (whirBoundaryProjection (.more lanes encoding queries rest)) lanes).path
+              ((whirRounds _ lanes).reconstruct path.2 openings second slot))).2.2.2.2.2.2.2
+      rw [parsed first 0, parsed second 0]
+      exact congrArg (List.cons _) (whirQueries_reconstruct rest _ _ openings first second (slot + 1))
+
+/-- Every level of a schedule samples at least one query. -/
+def QueriesPositive : {n : ℕ} → Whir.Schedule K n → Prop
+  | _, .last _ _ _ queries => 0 < queries
+  | _, .more _ _ queries rest => 0 < queries ∧ QueriesPositive rest
+
+/-- Positive query counts are decidable. -/
+instance QueriesPositive.decidable : {n : ℕ} → (schedule : Whir.Schedule K n) →
+    Decidable (QueriesPositive schedule)
+  | _, .last _ _ _ queries => inferInstanceAs (Decidable (0 < queries))
+  | _, .more _ _ queries rest =>
+      @instDecidableAnd _ _ (inferInstanceAs (Decidable (0 < queries))) (QueriesPositive.decidable rest)
+
+/-- One query list per committed word. -/
+theorem whirQueries_length : {n : ℕ} → (schedule : Whir.Schedule K n) →
+    (path : (Whir.opening E schedule).tree.ExecutionPath) → (liveRows : ℕ) →
+    (whirQueries schedule path).length = (treeShapes schedule liveRows).length
+  | _, .last _ _ _ _, _, _ => rfl
+  | _, .more lanes encoding queries rest, path, liveRows => by
+      change (whirQueries rest _).length + 1 = (treeShapes.later rest).length + 1 + 1
+      rw [whirQueries_length rest _ (2 ^ rest.lanes)]
+      rfl
+
+/-- Every sampled position lies in its committed word's tree. -/
+theorem whirQueries_range : {n : ℕ} → (schedule : Whir.Schedule K n) →
+    (path : (Whir.opening E schedule).tree.ExecutionPath) → (liveRows : ℕ) →
+    ∀ (index : ℕ) (bound : index < (whirQueries schedule path).length),
+      ∀ x ∈ (whirQueries schedule path)[index],
+        x < 2 ^ ((treeShapes schedule liveRows)[index]'(by
+          rw [← whirQueries_length schedule path liveRows]; exact bound)).1
+  | _, .last lanes tail encoding queries, path, liveRows, 0, _, x, member => by
+      obtain ⟨i, rfl⟩ := List.mem_ofFn.mp member
+      exact Fin.isLt _
+  | _, .more lanes encoding queries rest, path, liveRows, 0, _, x, member => by
+      obtain ⟨i, rfl⟩ := List.mem_ofFn.mp member
+      exact Fin.isLt _
+  | _, .more lanes encoding queries rest, path, liveRows, index + 1, bound, x, member => by
+      have inner := whirQueries_range rest _ (2 ^ rest.lanes) index (Nat.lt_of_succ_lt_succ bound) x member
+      cases index <;> exact inner
+
+/-- Positive query counts give nonempty query lists. -/
+theorem whirQueries_nonempty : {n : ℕ} → (schedule : Whir.Schedule K n) → QueriesPositive schedule →
+    (path : (Whir.opening E schedule).tree.ExecutionPath) →
+    ∀ (index : ℕ) (bound : index < (whirQueries schedule path).length),
+      (whirQueries schedule path)[index] ≠ []
+  | _, .last _ _ _ queries, positive, _, 0, _ => by
+      change List.ofFn _ ≠ []
+      rw [Ne, List.ofFn_eq_nil_iff]
+      exact Nat.pos_iff_ne_zero.mp positive
+  | _, .more _ _ queries _, positive, _, 0, _ => by
+      change List.ofFn _ ≠ []
+      rw [Ne, List.ofFn_eq_nil_iff]
+      exact Nat.pos_iff_ne_zero.mp positive.1
+  | _, .more _ _ _ rest, positive, _, index + 1, bound =>
+      whirQueries_nonempty rest positive.2 _ index (Nat.lt_of_succ_lt_succ bound)
+
+/-- Every committed tree stores full leaves. -/
+theorem treeShapes_full {n : ℕ} (schedule : Whir.Schedule K n) :
+    ∀ shape ∈ treeShapes schedule (2 ^ schedule.lanes), shape.2.1 = shape.2.2 := by
+  have later : ∀ {m : ℕ} (rest : Whir.Schedule K m), ∀ shape ∈ treeShapes.later rest, shape.2.1 = shape.2.2 := by
+    intro m rest
+    induction rest with
+    | last => intro shape member; cases member
+    | more lanes encoding queries rest ih =>
+        intro shape member
+        rcases List.mem_cons.mp member with rfl | member
+        · rfl
+        · exact ih shape member
+  intro shape member
+  rcases List.mem_cons.mp member with rfl | member
+  · rfl
+  · exact later schedule shape member
 
 end CompStark.Compiled

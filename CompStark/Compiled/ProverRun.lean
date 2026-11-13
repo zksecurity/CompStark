@@ -215,7 +215,7 @@ theorem Presentation.idealRun_append {first second : Protocol} :
               exact congrArg (fun path => some (path, result.2)) (congrArg (Sigma.mk (move (draw.run state).1))
                 (joinPath_cast (shape (draw.run state).1) second head.1 result.1).symm)
 
-/-- Every Merkle word a prover sends decodes from the complete leaf images of its rows. -/
+/-- Every Merkle word a prover sends decodes from its rows, each of the layout's width. -/
 def Presentation.Prover.Faithful : {original : Protocol} → (presentation : Presentation original) →
     presentation.Prover → Prop
   | _, .refine wire _, prover => Prover.Faithful wire prover
@@ -224,15 +224,15 @@ def Presentation.Prover.Faithful : {original : Protocol} → (presentation : Pre
       ∀ state, Prover.Faithful (next (prover state).1) (prover state).2
   | _, @Presentation.reveal _ _ _ _ _ next, prover => ∀ state, Prover.Faithful next (prover state).2
   | _, @Presentation.merkle _ _ _ _ layout next, prover => ∀ state,
-      layout.decode (fun i => some (Commit.restoreLeaf layout.leafWords ((prover state).2.1 i))) =
-        (prover state).1 ∧ Prover.Faithful next (prover state).2.2
+      layout.decode (fun i => some ((prover state).2.1 i)) = (prover state).1 ∧
+        (∀ i < 2 ^ layout.height, ((prover state).2.1 i).length = layout.rowWords) ∧
+        Prover.Faithful next (prover state).2.2
   | _, @Presentation.announce _ _ _ _ _ _, _ => True
   | _, .grind _ next, prover => Prover.Faithful next prover
   | _, @Presentation.challenge _ _ _ _ _ _ _ _ next, prover =>
       ∀ state challenge, Prover.Faithful next (prover state challenge)
 
-/-- A faithful prover's compiled path, reconstructed from complete leaf images of its rows, is its
-ideal run's path. -/
+/-- A faithful prover's compiled path, reconstructed from its rows, is its ideal run's path. -/
 theorem Presentation.run_reconstruct : {original : Protocol} → (presentation : Presentation original) →
     (prover : presentation.Prover) → Prover.Faithful presentation prover →
     (state : Transcript.State) →
@@ -240,8 +240,7 @@ theorem Presentation.run_reconstruct : {original : Protocol} → (presentation :
       List (ℕ → List K)) →
     presentation.run prover state = some result →
     (openings : Openings) → (leaves : ℕ → TreeOpening → ℕ → Option (List K)) → (slot : ℕ) →
-    (∀ i (bound : i < result.2.length) tree, leaves (slot + i) tree =
-      fun column => some (Commit.restoreLeaf tree.leafWords (result.2[i] column))) →
+    (∀ i (bound : i < result.2.length) tree, leaves (slot + i) tree = fun column => some (result.2[i] column)) →
     ∃ after, presentation.idealRun prover state =
       some (presentation.reconstruct result.1 openings leaves slot, after)
   | _, .refine wire projection, prover, faithful, state, result, h, openings, leaves, slot, rows => by
@@ -271,12 +270,12 @@ theorem Presentation.run_reconstruct : {original : Protocol} → (presentation :
       openings, leaves, slot, rows => by
       obtain ⟨tail, htail, rfl⟩ := Option.map_eq_some_iff.mp h
       have shifted : ∀ i (bound : i < tail.2.length) tree, leaves (slot + 1 + i) tree =
-          fun column => some (Commit.restoreLeaf tree.leafWords (tail.2[i] column)) := by
+          fun column => some (tail.2[i] column) := by
         intro i bound tree
         have := rows (i + 1) (by simp only [List.length_cons]; omega) tree
         rw [show slot + 1 + i = slot + (i + 1) by omega]
         exact this
-      obtain ⟨after, ideal⟩ := run_reconstruct next (prover state).2.2 (faithful state).2
+      obtain ⟨after, ideal⟩ := run_reconstruct next (prover state).2.2 (faithful state).2.2
         _ tail htail openings leaves (slot + 1) shifted
       refine ⟨after, ?_⟩
       change (next.idealRun (prover state).2.2 _).map _ = _
@@ -284,8 +283,7 @@ theorem Presentation.run_reconstruct : {original : Protocol} → (presentation :
       let tree : TreeOpening :=
         ⟨Commit.root layout.height fun i => Commit.restoreLeaf layout.leafWords ((prover state).2.1 i),
           layout.height, layout.rowWords, layout.leafWords, openingAt openings slot⟩
-      have word : leaves slot tree = fun column =>
-          some (Commit.restoreLeaf layout.leafWords ((prover state).2.1 column)) :=
+      have word : leaves slot tree = fun column => some ((prover state).2.1 column) :=
         rows 0 (by simp only [List.length_cons]; omega) tree
       have decoded : layout.decode (leaves slot tree) = (prover state).1 := by
         rw [word]
@@ -311,5 +309,96 @@ theorem Presentation.run_reconstruct : {original : Protocol} → (presentation :
         change (next.idealRun (prover state (draw.run state).1) (draw.run state).2).map _ = _
         rw [ideal]
         rfl⟩
+
+/-- Every prover of a presentation without Merkle words is faithful. -/
+theorem Presentation.Prover.faithful_of_shapes : {original : Protocol} → (presentation : Presentation original) →
+    presentation.HasShapes [] → (prover : presentation.Prover) → Prover.Faithful presentation prover
+  | _, .refine wire _, empty, prover => faithful_of_shapes wire empty prover
+  | _, .done, _, _ => trivial
+  | _, @Presentation.sender _ _ _ _ next, empty, prover => fun state =>
+      faithful_of_shapes (next (prover state).1) (empty _) _
+  | _, @Presentation.reveal _ _ _ _ _ next, empty, prover => fun state => faithful_of_shapes next empty _
+  | _, @Presentation.merkle _ _ _ _ _ _, empty, _ => by
+      obtain ⟨_, impossible, _⟩ := empty
+      cases impossible
+  | _, @Presentation.announce _ _ _ _ _ _, _, _ => trivial
+  | _, .grind _ next, empty, prover => faithful_of_shapes next empty prover
+  | _, @Presentation.challenge _ _ _ _ _ _ _ _ next, empty, prover => fun state challenge =>
+      faithful_of_shapes next empty _
+
+/-- Appended faithful provers are faithful. -/
+theorem Presentation.Prover.faithful_append {first second : Protocol} :
+    (presentation : Presentation first) → (suffix : Presentation second) →
+    (prover : presentation.Prover) → (next : first.tree.ExecutionPath → suffix.Prover) →
+    Prover.Faithful presentation prover → (∀ path, Prover.Faithful suffix (next path)) →
+    Prover.Faithful (presentation.append suffix) (Prover.append presentation suffix prover next)
+  | .refine wire _, suffix, prover, next, head, tail =>
+      faithful_append wire suffix prover _ head fun _ => tail _
+  | .done, _, _, next, _, tail => tail PUnit.unit
+  | @Presentation.sender _ _ _ _ rest, suffix, prover, next, head, tail => fun state =>
+      faithful_append (rest (prover state).1) suffix (prover state).2 _ (head state) fun _ => tail _
+  | @Presentation.reveal _ _ _ _ _ rest, suffix, prover, next, head, tail => fun state =>
+      faithful_append rest suffix (prover state).2 _ (head state) fun _ => tail _
+  | @Presentation.merkle _ _ _ _ _ rest, suffix, prover, next, head, tail => fun state =>
+      ⟨(head state).1, (head state).2.1,
+        faithful_append rest suffix (prover state).2.2 _ (head state).2.2 fun _ => tail _⟩
+  | @Presentation.announce _ _ _ _ _ _, _, prover, _, _, _ => nomatch prover
+  | .grind _ rest, suffix, prover, next, head, tail => faithful_append rest suffix prover next head tail
+  | @Presentation.challenge _ _ _ _ _ _ _ _ rest, suffix, prover, next, head, tail => fun state challenge =>
+      faithful_append rest suffix (prover state challenge) _ (head state challenge) fun _ => tail _
+
+/-- The trees of a faithful prover's compiled path commit to its rows, each of the tree's width. -/
+theorem Presentation.run_trees : {original : Protocol} → (presentation : Presentation original) →
+    (prover : presentation.Prover) → Prover.Faithful presentation prover → (state : Transcript.State) →
+    (result : (StandardBcs.compile Commit.Digest presentation.coin).tree.ExecutionPath × List (ℕ → List K)) →
+    presentation.run prover state = some result → (openings : Openings) → (slot : ℕ) →
+    List.Forall₂ (fun (tree : TreeOpening) (rows : ℕ → List K) =>
+      tree.root = Commit.root tree.height (fun i => Commit.restoreLeaf tree.leafWords (rows i)) ∧
+        ∀ i < 2 ^ tree.height, (rows i).length = tree.rowWords)
+      (presentation.trees result.1 openings slot) result.2
+  | _, .refine wire _, prover, faithful, state, result, h, openings, slot =>
+      run_trees wire prover faithful state result h openings slot
+  | _, .done, _, _, _, result, h, _, _ => by cases h; exact List.Forall₂.nil
+  | _, @Presentation.sender _ _ _ _ next, prover, faithful, state, result, h, openings, slot => by
+      obtain ⟨tail, htail, rfl⟩ := Option.map_eq_some_iff.mp h
+      exact run_trees (next (prover state).1) (prover state).2 (faithful state) _ tail htail openings slot
+  | _, @Presentation.reveal _ _ _ _ _ next, prover, faithful, state, result, h, openings, slot => by
+      obtain ⟨tail, htail, rfl⟩ := Option.map_eq_some_iff.mp h
+      exact run_trees next (prover state).2 (faithful state) _ tail htail openings slot
+  | _, @Presentation.merkle _ _ _ _ layout next, prover, faithful, state, result, h, openings, slot => by
+      obtain ⟨tail, htail, rfl⟩ := Option.map_eq_some_iff.mp h
+      exact List.Forall₂.cons ⟨rfl, (faithful state).2.1⟩
+        (run_trees next (prover state).2.2 (faithful state).2.2 _ tail htail openings (slot + 1))
+  | _, @Presentation.announce _ _ _ _ _ _, prover, _, _, _, _, _, _ => nomatch prover
+  | _, .grind bits next, prover, faithful, state, result, h, openings, slot => by
+      obtain ⟨nonce, -, h⟩ := Option.bind_eq_some_iff.mp h
+      obtain ⟨tail, htail, rfl⟩ := Option.map_eq_some_iff.mp h
+      exact run_trees next prover faithful _ tail htail openings slot
+  | _, @Presentation.challenge _ _ _ _ _ _ _ draw next, prover, faithful, state, result, h, openings, slot => by
+      obtain ⟨tail, htail, rfl⟩ := Option.map_eq_some_iff.mp h
+      exact run_trees next (prover state (draw.run state).1) (faithful state _) _ tail htail openings slot
+
+/-- A path's trees read the openings only through their opening fields. -/
+theorem Presentation.trees_openings : {original : Protocol} → (presentation : Presentation original) →
+    (path : (StandardBcs.compile Commit.Digest presentation.coin).tree.ExecutionPath) →
+    (openings : Openings) → (slot : ℕ) →
+    presentation.trees path openings slot = (presentation.trees path [] slot).mapIdx fun index tree =>
+      { tree with opening := openingAt openings (slot + index) }
+  | _, .refine wire _, path, openings, slot => trees_openings wire path openings slot
+  | _, .done, _, _, _ => rfl
+  | _, @Presentation.sender _ _ _ _ next, path, openings, slot => trees_openings (next path.1) path.2 openings slot
+  | _, @Presentation.reveal _ _ _ _ _ next, path, openings, slot => trees_openings next path.2 openings slot
+  | _, @Presentation.merkle _ _ _ _ layout next, path, openings, slot => by
+      change _ :: next.trees path.2 openings (slot + 1) = List.mapIdx _ (_ :: next.trees path.2 [] (slot + 1))
+      rw [List.mapIdx_cons, trees_openings next path.2 openings (slot + 1)]
+      congr 1
+      congr 1
+      funext index tree
+      rw [show slot + 1 + index = slot + (index + 1) by omega]
+  | _, @Presentation.announce _ _ _ _ _ next, path, openings, slot =>
+      trees_openings (next path.1) path.2 openings slot
+  | _, .grind _ next, path, openings, slot => trees_openings next path.2 openings slot
+  | _, @Presentation.challenge _ _ _ _ _ _ _ _ next, path, openings, slot =>
+      trees_openings next path.2 openings slot
 
 end CompStark.Compiled
